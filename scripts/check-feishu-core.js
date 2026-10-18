@@ -4,9 +4,10 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 const root = path.resolve(__dirname, '../src/components/feishu')
+const sourceRoot = path.resolve(__dirname, '../src')
 const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
-  if (filename.startsWith(root + path.sep)) {
+  if (filename.startsWith(sourceRoot + path.sep)) {
     const { code } = require('@babel/core').transformSync(fs.readFileSync(filename, 'utf8'), {
       babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'],
     })

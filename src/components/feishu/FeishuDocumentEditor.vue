@@ -1215,6 +1215,7 @@ import { filterCommands } from './commands'
 import { createFeishuExtensions } from './extensions'
 import { collectOutline, findTextMatches, foldedRange, moveBlockRange, replaceText, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isCommandEnabled, isConfigEnabled, mergeLegacyConfig } from './feishuConfig'
+import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 import './feishu.css'
 
 const marks = [
@@ -1251,6 +1252,7 @@ export default {
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
     templates: { type: Array, default: () => [] },
     uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
+    session: { type: Object, default: null },
   },
   data() { return {
     editor: null, localTitle: this.title, reading: false, slides: false, fullscreen: false, widthMode: 'standard',
@@ -1294,7 +1296,7 @@ export default {
       get() { return this.editor?.getHTML() || this.pendingHTML || this.value || '<p></p>' },
       set(value) { this.htmlSeeded = true; if (this.editor) this.setContent(value); else this.pendingHTML = value },
     },
-    effectiveReadonly() { return this.readonly || this.reading || this.slides },
+    effectiveReadonly() { return this.readonly || this.reading || this.slides || (this.session && typeof this.session.can === 'function' && !this.session.can('canEdit')) },
     filteredCommands() { return filterCommands(this.menuQuery, this.menuKind || 'slash', this.feishuConfig) },
     activeCommandId() { return this.filteredCommands[this.activeCommandIndex]?.id || '' },
     calloutEmojiCategories() { return [...new Set(this.emojiItems.map(item => item.category).filter(Boolean))] },
@@ -1390,6 +1392,8 @@ export default {
         extensions: createFeishuExtensions({ imageView: ImageNode, codeView: CodeNode, maxLength: this.effectiveMaxLength, config: this.feishuConfig, resolveImageFile: this.resolveImageFile, onSlash: this.onSlash, onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: () => this.onUpdate(), onTransaction: () => { this.syncFoldState(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
+      this.session?.attachEditor(this.editor)
+      this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
       this.refreshDocumentState()
       this.$nextTick(() => this.updateTableBoundary())
       this.$emit('mode-change', { readonly: this.effectiveReadonly })
@@ -1403,8 +1407,12 @@ export default {
       window.addEventListener('pointermove', this.onDocumentPointerMove, true)
     } catch (error) { this.error = error.message }
   },
-  beforeDestroy() { document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); clearTimeout(this.handleHideTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null },
-  destroyed() { this.editor?.destroy(); this.editor = null },
+  beforeDestroy() { document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null },
+  destroyed() {
+    if (this.session && this.editor) this.session.detachEditor(this.editor)
+    this.editor?.destroy()
+    this.editor = null
+  },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.feishuConfig, name) },
     toolbarEnabled(name) { return this.feishuConfig.toolbar[name] !== false && this.featureEnabled(name) },
@@ -1430,7 +1438,7 @@ export default {
       if (next.eq(this.editor.state.doc)) return false
       // 使用普通事务替换正文，让本地历史可撤销模板、导入与快照恢复。
       const tr = this.editor.state.tr.replaceWith(0, this.editor.state.doc.content.size, next.content)
-      this.editor.view.dispatch(tr)
+      this.editor.view.dispatch(setTransactionMetadata(tr, { origin: TRANSACTION_ORIGINS.HOST }))
       if (this.editor.commands && typeof this.editor.commands.resetFeishuFolds === 'function') this.editor.commands.resetFeishuFolds()
       this.savedSelection = null
       this.editor.view.dispatch(closeHistory(this.editor.state.tr))

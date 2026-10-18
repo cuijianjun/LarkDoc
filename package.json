@@ -7,9 +7,10 @@
   "scripts": {
     "build": "vue-cli-service build --target lib --name feishu-document src/index.js",
     "lint": "eslint --ext .js,.vue src scripts",
-    "check": "npm run check:node14 && npm run check:feishu && npm run lint && npm run build",
+    "check": "npm run check:node14 && npm run check:feishu && npm run check:architecture && npm run lint && npm run build",
     "check:feishu": "node scripts/check-feishu-core.js && node scripts/check-feishu-workspace.js && node scripts/check-ecs-images.js",
-    "check:node14": "node scripts/check-node14.js"
+    "check:node14": "node scripts/check-node14.js",
+    "check:architecture": "node scripts/check-architecture.js"
   },
   "dependencies": {
     "@tiptap/core": "3.27.4",
@@ -34,7 +35,6 @@
     "@tiptap/extension-youtube": "3.27.4",
     "@tiptap/pm": "3.27.4",
     "@tiptap/starter-kit": "3.27.4",
-    "@tiptap/vue-2": "3.27.4",
     "core-js": "3.37.1",
     "docx": "8.5.0",
     "emojibase": "15.3.1",
@@ -42,8 +42,7 @@
     "katex": "0.16.47",
     "mammoth": "1.12.1",
     "marked": "4.3.0",
-    "turndown": "7.2.2",
-    "vue": "2.7.14"
+    "turndown": "7.2.2"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "5.0.8",

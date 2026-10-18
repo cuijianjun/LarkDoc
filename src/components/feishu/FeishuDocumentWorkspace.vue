@@ -5,6 +5,7 @@
     :title.sync="title"
     :config="editorConfig"
     :templates="templateItems"
+    :session="getSession()"
     @change="onChange"
     @ready="onReady"
     @mode-change="effectiveReadonly = $event.readonly"
@@ -464,6 +465,7 @@ import { TEMPLATES } from './templates'
 import { createFeishuConfig } from './feishuConfig'
 import { sanitizeHTML, validateDocument } from './documentOperations'
 import { logger } from '../../utils/logger'
+import { createDocumentSession } from '../../session/DocumentSession'
 
 export default {
   name: 'FeishuDocumentWorkspace',
@@ -474,6 +476,10 @@ export default {
     config: { type: Object, default: () => ({}) },
     templates: { type: Array, default: null },
     persistence: { type: Object, default: null },
+    session: { type: Object, default: null },
+    documentId: { type: [String, Number], default: null },
+    user: { type: Object, default: null },
+    capabilities: { type: Object, default: null },
   },
   data() {
     const templateItems = Array.isArray(this.templates) ? this.templates : TEMPLATES
@@ -485,6 +491,7 @@ export default {
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
       aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
       templateOpen: false, templateQuery: '',
+      sessionInstance: null,
     }
   },
   computed: {
@@ -500,6 +507,16 @@ export default {
     config: { deep: true, handler(value) { this.editorConfig = createFeishuConfig(value) } },
     templates(value) { this.templateItems = Array.isArray(value) ? value : TEMPLATES },
   },
+  created() {
+    // 宿主传入 Session 时由宿主管理生命周期；否则工作台创建本地会话。
+    this.sessionInstance = this.session || createDocumentSession({
+      documentId: this.documentId || 'local',
+      mode: 'local',
+      user: this.user,
+      capabilities: this.capabilities || {},
+      persistence: this.persistence,
+    })
+  },
   beforeDestroy() {
     this._disposed = true
     this.stopAI()
@@ -508,6 +525,7 @@ export default {
     window.removeEventListener('beforeunload', this.flushOnLeave)
     const editor = this.getEditor()
     if (editor) editor.off('transaction', this.mapAI)
+    if (!this.session) void this.sessionInstance?.dispose()
   },
   methods: {
     featureEnabled(name) { return !this.editorConfig?.features || this.editorConfig.features[name] !== false },
@@ -517,11 +535,19 @@ export default {
       return this._mathStylesPromise
     },
     getEditor() { return this.$refs.document && this.$refs.document.getEditor() },
+    getSession() { return this.sessionInstance || this.session },
     writable() { const editor = this.getEditor(); return editor && editor.isEditable && !this.importing },
-    record() { return { title: this.title, json: this.$refs.document.getJSON() } },
+    record() {
+      const session = this.getSession()
+      const record = session ? session.getDocumentRecord({ title: this.title }) : null
+      return record ? { title: record.title, json: record.content, documentId: record.documentId, schemaVersion: record.schemaVersion, revisionId: record.revisionId, updatedAt: record.updatedAt } : { title: this.title, json: this.$refs.document.getJSON() }
+    },
     persistenceLabel() { return this.persistence ? '宿主' : '本浏览器' },
     getWorkspace() {
-      if (!this._workspace) this._workspace = this.persistence || createWorkspace(window.localStorage, { maxSnapshots: this.editorConfig.limits.maxSnapshots })
+      if (!this._workspace) {
+        this._workspace = this.getSession()?.getProvider('persistence') || this.persistence || createWorkspace(window.localStorage, { maxSnapshots: this.editorConfig.limits.maxSnapshots })
+        if (!this.getSession()?.getProvider('persistence')) this.getSession()?.setProvider('persistence', this._workspace)
+      }
       return this._workspace
     },
     callWorkspace(method, ...args) {
@@ -531,6 +557,7 @@ export default {
     },
     async onReady() {
       this.loadMathStyles()
+      this.getSession()?.attachEditor(this.getEditor())
       if (this.featureEnabled('persistence')) {
         try {
           const draft = await this.callWorkspace('load')
