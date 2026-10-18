@@ -1,0 +1,14 @@
+{
+  "name": "serialize-javascript",
+  "version": "7.0.5+node14.1",
+  "description": "Node 14 compatibility backport of upstream serialize-javascript 7.0.5",
+  "main": "index.js",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yahoo/serialize-javascript.git"
+  },
+  "engines": {
+    "node": ">=14.21.3"
+  }
+}
