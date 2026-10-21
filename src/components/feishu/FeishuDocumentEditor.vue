@@ -1520,7 +1520,8 @@ import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transact
 import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
-import './feishu.css'
+// feishu.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让
+// 同一份样式在模块图里出现两次，改成单一归属，避免以后 CSS 被静默写两份。
 
 export default {
   name: 'FeishuDocumentEditor',

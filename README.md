@@ -101,6 +101,23 @@ npm run check:feishu
 npm run build
 ```
 
+## 产物与按需加载
+
+四份产物按「宿主怎么用」划分，重依赖（KaTeX / docx / mammoth / marked / turndown / highlight.js）
+全部拆成按需区块，首屏不下载：
+
+```bash
+npm run build          # dist/feishu-document.common.js        CJS 单文件（main）
+npm run build:umd      # dist/feishu-document.umd.min.js       <script> / CDN（unpkg）
+npm run build:esm      # dist/feishu-document.esm.js           ES Module（module，拆包最彻底）
+npm run build:element  # dist/feishu-document-element.umd.min.js  Web Component（Vue 内联）
+npm run build:analyze  # 以上四份 + 体积诊断输出
+```
+
+首屏 JS：UMD 847 KB（gzip 246）、element 930 KB（gzip 275）、ESM 848 KB（gzip 248，三块并行），
+改造前分别是 1.91 MB（gzip 548）与 2.16 MB（gzip 658）。
+部署时按需区块要与主文件同目录，详见文档站「打包产物与按需加载」。
+
 ## 边界
 
 包默认不创建 Yjs、WebSocket 或后台连接。`DocumentSession` 统一文档身份、事务来源、能力判断和 Provider 生命周期；协同、版本、评论、权限都通过显式 Provider 接入。数据模型与 Provider 契约见 [DEMO_INTEGRATION_GUIDE.md](DEMO_INTEGRATION_GUIDE.md)。

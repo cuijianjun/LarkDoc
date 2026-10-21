@@ -40,7 +40,8 @@
 .feishu-document .feishu-color { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
 .feishu-document .feishu-color:hover { background: #f2f6f4; }
 .feishu-document .feishu-color-letter { font-size: 16px; font-weight: 700; line-height: 1; color: #3f5149; padding: 0 1px; }
-.feishu-document .feishu-color-arrow { align-self: flex-end; margin-bottom: 4px; color: #86909c; transition: transform 0.18s ease; }
+/* 颜色触发器箭头：与「字号 / 行高」等下拉箭头同轴（30px 触发区里 12px 图标 → 上下各 9px），不再用 margin 微调。 */
+.feishu-document .feishu-color-arrow { flex: 0 0 12px; width: 12px; height: 12px; color: #86909c; transition: transform 0.18s ease; }
 .feishu-document .feishu-color[aria-expanded="true"] .feishu-color-arrow { transform: rotate(180deg); }
 .feishu-document .feishu-color input { width: 0; height: 0; min-width: 0; padding: 0; border: 0; opacity: 0; }
 /* 所有关闭按钮（aria-label 以「关闭」开头）：26px 方圆热区 + close 图标，hover 浅灰。 */
@@ -54,8 +55,6 @@
 .feishu-document .feishu-select-caret { color: #86909c; transition: transform 0.18s ease; }
 .feishu-document .feishu-select-open .feishu-select-caret { transform: rotate(180deg); }
 .feishu-document .feishu-heading-tool { position: relative; }
-.feishu-document .feishu-color { display: flex; align-items: center; gap: 2px; font-size: 12px; }
-.feishu-document .feishu-color input { width: 28px; height: 26px; padding: 1px; border: 0; background: transparent; cursor: pointer; }
 .feishu-document .feishu-dropdown { position: fixed; z-index: 65; display: grid; width: 155px; max-height: 70vh; overflow-y: auto; margin-top: 33px; padding: 5px; background: white; border: 1px solid var(--feishu-line); border-radius: 9px; box-shadow: 0 12px 35px #1c43311c; }
 .feishu-document .feishu-dropdown button { text-align: left; }
 /* 下拉菜单项：flex 行布局 + 左侧级别图标列（标题菜单 T/H1..H9）。 */

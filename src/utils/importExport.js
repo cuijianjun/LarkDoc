@@ -28,7 +28,7 @@ export function downloadText(value, fileName, type) {
 
 export async function exportDocx(title, plainText) {
   // DOCX is only needed after an explicit export. Keep it out of the editor route's initial chunk.
-  const { Document, Packer, Paragraph, TextRun } = await import('docx')
+  const { Document, Packer, Paragraph, TextRun } = await import(/* webpackChunkName: "office" */ 'docx')
   const children = plainText.split(/\n+/).filter(Boolean).map((line) => new Paragraph({
     children: [new TextRun(line)],
   }))

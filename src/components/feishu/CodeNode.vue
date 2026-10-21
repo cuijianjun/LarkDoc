@@ -103,8 +103,8 @@ let highlighterPromise
 function loadHighlighter() {
   if (!highlighterPromise) {
     highlighterPromise = Promise.all([
-      import('highlight.js/lib/core.js'),
-      import('highlight.js/lib/languages/javascript.js'),
+      import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/core.js'),
+      import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/javascript.js'),
     ]).then(([coreModule, javascriptModule]) => {
       hljs = coreModule.default || coreModule
       hljs.registerLanguage('javascript', javascriptModule.default || javascriptModule)
@@ -115,13 +115,13 @@ function loadHighlighter() {
 }
 
 const languageLoaders = {
-  typescript: () => import('highlight.js/lib/languages/typescript.js'),
-  json: () => import('highlight.js/lib/languages/json.js'),
-  css: () => import('highlight.js/lib/languages/css.js'),
-  xml: () => import('highlight.js/lib/languages/xml.js'),
-  python: () => import('highlight.js/lib/languages/python.js'),
-  bash: () => import('highlight.js/lib/languages/bash.js'),
-  sql: () => import('highlight.js/lib/languages/sql.js'),
+  typescript: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/typescript.js'),
+  json: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/json.js'),
+  css: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/css.js'),
+  xml: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/xml.js'),
+  python: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/python.js'),
+  bash: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/bash.js'),
+  sql: () => import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/sql.js'),
 }
 const languagePromises = Object.create(null)
 function ensureLanguage(name) {

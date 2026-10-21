@@ -1,19 +1,23 @@
 {
   "name": "feishu-document",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": false,
   "description": "Vue 2 Feishu-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "vue-cli-service build --target lib --name feishu-document src/index.js",
+    "build": "vue-cli-service build --target lib --no-clean --name feishu-document --formats commonjs src/index.js",
+    "build:umd": "FEISHU_TARGET=umd vue-cli-service build --target lib --no-clean --name feishu-document --formats umd-min src/index.js",
+    "build:esm": "node scripts/build-esm.js",
+    "build:analyze": "FEISHU_ANALYZE=1 npm run build && FEISHU_ANALYZE=1 npm run build:umd && FEISHU_ANALYZE=1 npm run build:esm && FEISHU_ANALYZE=1 npm run build:element",
     "lint": "eslint --ext .js,.vue src scripts",
-    "check": "npm run check:node14 && npm run check:offline && npm run check:feishu && npm run check:architecture && npm run lint && npm run build && npm run check:vditor",
+    "check": "npm run check:node14 && npm run check:offline && npm run check:feishu && npm run check:architecture && npm run lint && npm run build && npm run build:umd && npm run build:esm && npm run build:element && npm run check:vditor",
     "check:vditor": "node scripts/check-vditor-html.js",
     "check:feishu": "node scripts/check-feishu-core.js && node scripts/check-feishu-workspace.js && node scripts/check-ecs-images.js",
     "check:offline": "node scripts/check-offline-assets.js",
     "check:node14": "node scripts/check-node14.js",
     "check:architecture": "node scripts/check-architecture.js",
-    "prepack": "npm run build"
+    "prepack": "npm run build && npm run build:umd && npm run build:esm && npm run build:element",
+    "build:element": "FEISHU_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name feishu-document-element --formats umd-min src/web-component/index.js"
   },
   "dependencies": {
     "@tiptap/core": "3.27.4",
@@ -131,7 +135,7 @@
     "not dead"
   ],
   "main": "dist/feishu-document.common.js",
-  "module": "dist/feishu-document.common.js",
+  "module": "dist/feishu-document.esm.js",
   "unpkg": "dist/feishu-document.umd.min.js",
   "style": "style.css",
   "files": [
@@ -146,5 +150,15 @@
   "peerDependencies": {
     "@tiptap/vue-2": "^3.27.4",
     "vue": "^2.7.14"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/feishu-document.esm.js",
+      "require": "./dist/feishu-document.common.js",
+      "default": "./dist/feishu-document.common.js"
+    },
+    "./element": "./dist/feishu-document-element.umd.min.js",
+    "./style.css": "./dist/feishu-document.css",
+    "./package.json": "./package.json"
   }
 }

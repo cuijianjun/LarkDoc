@@ -708,7 +708,7 @@ export default {
         let content
         let importedTitle
         if (format === 'docx') {
-          const mammoth = await import('mammoth/mammoth.browser')
+          const mammoth = await import(/* webpackChunkName: "office" */ 'mammoth/mammoth.browser')
           const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() })
           content = sanitizeHTML(result.value)
         } else {
@@ -719,7 +719,7 @@ export default {
             if (typeof value.title === 'string') importedTitle = value.title
           } else if (format === 'html' || format === 'htm') content = sanitizeHTML(text)
           else if (format === 'md' || format === 'markdown') {
-            const { markdownToHtml } = await import('../../utils/importExport')
+            const { markdownToHtml } = await import(/* webpackChunkName: "import-export" */ '../../utils/importExport')
             content = sanitizeHTML(markdownToHtml(text))
           }
           else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
@@ -749,7 +749,7 @@ export default {
       if (!this.featureEnabled('importExport') || !format) return
       const component = this.$refs.document
       try {
-        const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import('../../utils/importExport')
+        const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../../utils/importExport')
         const filename = safeFileName(this.title)
         if (format === 'html') downloadText(component.getHTML(), `${filename}.html`, 'text/html;charset=utf-8')
         else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: 1, title: this.title, document: component.getJSON() }, null, 2), `${filename}.json`, 'application/json')

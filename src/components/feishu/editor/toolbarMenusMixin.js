@@ -147,7 +147,7 @@ export default {
     async insertMath() {
       if (!this.writable() || !this.featureEnabled('math')) return
       try {
-        const module = await import('katex')
+        const module = await import(/* webpackChunkName: "math" */ 'katex')
         if (!this.writable() || !this.mathDialog) return
         const katex = module.default || module
         katex.renderToString(this.mathValue, { throwOnError: true, trust: false })

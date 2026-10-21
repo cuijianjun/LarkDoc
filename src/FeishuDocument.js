@@ -3,13 +3,12 @@
  *
  * 这一层不实现任何编辑器逻辑，只做五件事：
  * 1. 把 AiEditor 风格的扁平配置翻译成内部的 `createFeishuConfig` 结构；
- * 2. 用 Vue 2 运行时渲染函数挂载现有 Workspace，避免依赖模板编译器；
+ * 2. 通过 mount/ 渲染适配层挂载 Workspace（默认 Vue 2，可替换），本文件不 import 任何 UI 框架；
  * 3. 把实例方法转发给 Workspace / Editor；
  * 4. 解析并透传协同 / 权限会话（session 或 providers 快捷项）；
  * 5. 按固定顺序销毁，保证 AI 流、会话和监听器都被释放。
  */
-import Vue from 'vue'
-import FeishuDocumentWorkspace from './components/feishu/FeishuDocumentWorkspace.vue'
+import { createRenderer } from './mount'
 import { createFeishuConfig } from './components/feishu/feishuConfig'
 import { resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy } from './networkPolicy'
@@ -74,47 +73,43 @@ export class FeishuDocument {
     this._ownsSession = false
     this._session = this._resolveSession(source)
 
-    this._vm = new Vue({
-      name: 'FeishuDocumentHost',
-      render: (h) => h(FeishuDocumentWorkspace, {
-        ref: 'workspace',
-        props: {
-          config: this.config,
-          initialTitle: documentInput.title != null ? documentInput.title : String(this.options.title || ''),
-          initialContent: documentInput.content,
-          contentFormat: this.options.contentFormat,
-          readonly: Boolean(source.readonly),
-          persistence: this._resolvePersistence(source),
-          uploadImage: this._resolveUploader(source),
-          aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
-          session: this._session,
+    this._renderer = createRenderer()
+    this._handle = this._renderer.mount({
+      element: this.element,
+      props: {
+        config: this.config,
+        initialTitle: documentInput.title != null ? documentInput.title : String(this.options.title || ''),
+        initialContent: documentInput.content,
+        contentFormat: this.options.contentFormat,
+        readonly: Boolean(source.readonly),
+        persistence: this._resolvePersistence(source),
+        uploadImage: this._resolveUploader(source),
+        aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
+        session: this._session,
+      },
+      on: {
+        ready: () => {
+          this._applyHostAttributes()
+          if (this.options.autofocus && !this.isReadonly()) this.focus()
+          this._emit('ready', { document: this, editor: this.getEditor(), workspace: this.getWorkspace() })
         },
-        on: {
-          ready: () => {
-            this._applyHostAttributes()
-            if (this.options.autofocus && !this.isReadonly()) this.focus()
-            this._emit('ready', { document: this, editor: this.getEditor(), workspace: this.getWorkspace() })
-          },
-          update: (payload) => {
-            this._emit('update', payload)
-            const title = this.getTitle()
-            if (title !== this._lastTitle) {
-              this._lastTitle = title
-              this._emit('title-change', title)
-            }
-          },
-          change: (payload) => this._emit('change', payload),
-          'import-report': (report) => {
-            this.lastImportReport = report
-            this._emit('import-report', report)
-          },
-          save: (payload) => this._emit('save', payload),
-          error: (error) => this._emit('error', error),
+        update: (payload) => {
+          this._emit('update', payload)
+          const title = this.getTitle()
+          if (title !== this._lastTitle) {
+            this._lastTitle = title
+            this._emit('title-change', title)
+          }
         },
-      }),
+        change: (payload) => this._emit('change', payload),
+        'import-report': (report) => {
+          this.lastImportReport = report
+          this._emit('import-report', report)
+        },
+        save: (payload) => this._emit('save', payload),
+        error: (error) => this._emit('error', error),
+      },
     })
-    this._vm.$mount()
-    if (this._vm.$el) this.element.appendChild(this._vm.$el)
     this._lastTitle = this.options.title || ''
     this._applyHostAttributes()
   }
@@ -194,9 +189,10 @@ export class FeishuDocument {
 
   _applyHostAttributes() {
     const theme = this.options.theme === 'dark' ? 'dark' : 'light'
-    if (this._vm && this._vm.$el && this._vm.$el.setAttribute) {
-      this._vm.$el.setAttribute('data-theme', theme)
-      this._vm.$el.classList.toggle('feishu-document-dark', theme === 'dark')
+    const root = this._renderer && this._handle ? this._renderer.getRoot(this._handle) : null
+    if (root && root.setAttribute) {
+      root.setAttribute('data-theme', theme)
+      root.classList.toggle('feishu-document-dark', theme === 'dark')
     }
   }
 
@@ -239,7 +235,10 @@ export class FeishuDocument {
   /* 实例方法                                                            */
   /* ------------------------------------------------------------------ */
 
-  getWorkspace() { return this._vm && this._vm.$refs.workspace ? this._vm.$refs.workspace : null }
+  getWorkspace() {
+    if (!this._renderer || !this._handle) return null
+    return this._renderer.getInstance(this._handle)
+  }
 
   getEditor() {
     const workspace = this.getWorkspace()
@@ -342,6 +341,16 @@ export class FeishuDocument {
     return this
   }
 
+  /**
+   * 热更新渲染层 props（Web Component 属性变化时调用）。
+   * 只有 Workspace 声明过的 prop 会被写入；未挂载或已销毁时返回 false。
+   */
+  patchProps(props) {
+    if (this._destroyed || !this._renderer || !this._handle) return false
+    if (props && typeof props === 'object') this._renderer.update(this._handle, props)
+    return true
+  }
+
   setReadonly(value) {
     const workspace = this.getWorkspace()
     if (workspace) workspace.setReadonly(value === true)
@@ -384,13 +393,9 @@ export class FeishuDocument {
       })
     }
     this._session = null
-    const vm = this._vm
-    this._vm = null
-    if (vm) {
-      const el = vm.$el
-      vm.$destroy()
-      if (el && el.parentNode) el.parentNode.removeChild(el)
-    }
+    if (this._renderer && this._handle) this._renderer.destroy(this._handle)
+    this._handle = null
+    this._renderer = null
     EVENT_NAMES.forEach((name) => { this._handlers[name] = [] })
     this.config = null
     this.networkPolicy = null

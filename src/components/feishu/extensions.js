@@ -30,8 +30,18 @@ import { findTextMatches, foldedRange, getSlashMatch, isPageHeading, resolveHead
 import { createNetworkPolicy } from '../../networkPolicy'
 
 let katexPromise
+/**
+ * KaTeX 与它的样式一起按需加载：katex.css 有 118 KB（产物 CSS 的 2/3），
+ * 文档里没有公式时完全不必下载。样式写在 async 块里，webpack 会把它拆成
+ * 独立的 CSS 块（lib 单文件构建则合并回主 CSS），无需运行时按 URL 拼路径。
+ */
 function loadKatex() {
-  if (!katexPromise) katexPromise = import('katex').then((module) => module.default || module)
+  if (!katexPromise) {
+    katexPromise = Promise.all([
+      import(/* webpackChunkName: "math" */ 'katex'),
+      import(/* webpackChunkName: "math" */ '../../styles/vendor/katex.css'),
+    ]).then(([module]) => module.default || module)
+  }
   return katexPromise
 }
 

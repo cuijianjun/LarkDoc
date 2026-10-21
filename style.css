@@ -1,4 +1,7 @@
 /* Public package stylesheet entry, matching the AiEditor integration pattern.
- * 只引入包内相对路径资源：KaTeX 字体随包发布，运行时不请求任何外部域名。 */
+ * 只引入包内相对路径资源：KaTeX 字体随包发布，运行时不请求任何外部域名。
+ *
+ * KaTeX 样式（118 KB，占产物 CSS 的 2/3）不在这里：它由公式节点首次渲染时
+ * 连同 katex 一起按需加载（src/components/feishu/extensions.js 的 loadKatex）。
+ * 没有公式的文档因此不会为这份样式付费。 */
 @import './src/components/feishu/feishu.css';
-@import './src/styles/vendor/katex.css';

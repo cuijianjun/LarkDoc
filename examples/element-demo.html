@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>feishu-document · Web Component 跨框架演示</title>
+  <style>
+    /* 演示页自身样式：与编辑器无关，证明宿主页面不需要任何框架 */
+    body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; color: #1f2329; background: #f5f6f7; }
+    header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e6eb; }
+    h1 { margin: 0 0 4px; font-size: 18px; }
+    header p { margin: 0; color: #86909c; font-size: 13px; }
+    main { max-width: 960px; margin: 0 auto; padding: 20px 24px 60px; }
+    section { margin-bottom: 24px; }
+    .toolbar-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    button { padding: 5px 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
+    button:hover { background: #f2f6f4; border-color: #b7d3c8; color: #0c7a58; }
+    /* 编辑器容器必须有高度，和任何 CMS 里嵌富文本一样 */
+    feishu-document { display: block; height: 460px; overflow: hidden; border-radius: 10px; background: #fff; box-shadow: 0 2px 12px rgba(31, 35, 41, .08); }
+    .log { max-height: 160px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: #1f2329; color: #a9d6c2; font: 12px/1.7 ui-monospace, Menlo, monospace; }
+    .log div + div { border-top: 1px solid #33383f; }
+    .tag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: #0c7a58; color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Web Component 演示 · 无框架宿主</h1>
+    <p>本页只有原生 HTML + JS，没有 Vue / React。编辑器通过 <code>&lt;feishu-document&gt;</code> 标签接入。</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. 纯属性配置</h2>
+      <div class="toolbar-row">
+        <button type="button" data-action="toggle-readonly">切换只读</button>
+        <button type="button" data-action="toggle-theme">切换主题</button>
+        <button type="button" data-action="get-json">打印 getJSON()</button>
+        <button type="button" data-action="set-content">setContent() 覆写正文</button>
+        <button type="button" data-action="insert">insert() 追加内容</button>
+      </div>
+      <feishu-document
+        id="editor-a"
+        title="属性驱动的文档"
+        theme="light"
+        placeholder="试着输入正文，或输入 / 唤出命令菜单"
+        toolbar-keys="history,headings,marks,textStyle,blockStyle,insert"
+      ><h1>飞书风格文档</h1><p>这段初始内容来自 <strong>HTML 属性</strong>：content 支持 HTML 字符串，也支持 Tiptap JSON。</p></feishu-document>
+    </section>
+
+    <section>
+      <h2>2. JS 能力注入（上传 / AI / 持久化）</h2>
+      <p style="color:#86909c;margin:0 0 8px">对象型能力无法写进 HTML 属性，通过 element.options 传入（会触发实例重建）。</p>
+      <feishu-document id="editor-b" readonly></feishu-document>
+    </section>
+
+    <section>
+      <h2>事件日志</h2>
+      <div class="log" id="log"><div>等待事件…</div></div>
+    </section>
+  </main>
+
+  <!-- 产物自带 Vue 运行时与全部样式：宿主无需安装任何依赖 -->
+  <script src="../dist/feishu-document-element.umd.min.js"></script>
+  <script>
+    /**
+     * 演示页逻辑：全部走原生 API。
+     * - element.document            命令式门面实例
+     * - element.getJSON() 等        代理方法
+     * - feishu-* 事件               冒泡 + composed，可在任意祖先上委托
+     */
+    var log = document.getElementById('log')
+    function push(name, value) {
+      var line = document.createElement('div')
+      var tag = document.createElement('span')
+      tag.className = 'tag'
+      tag.textContent = name
+      line.appendChild(tag)
+      line.appendChild(document.createTextNode(typeof value === 'string' ? value : JSON.stringify(value)))
+      log.insertBefore(line, log.firstChild)
+    }
+
+    // 事件委托：两个实例的事件都在这里接收
+    document.addEventListener('feishu-ready', function (event) {
+      push('ready', event.target.id + ' 已就绪')
+    })
+    document.addEventListener('feishu-change', function (event) {
+      var payload = event.detail.payload || {}
+      push('change', event.target.id + ' 文本长度 ' + String((payload.text || '').length))
+    })
+    document.addEventListener('feishu-save', function (event) { push('save', event.detail.payload) })
+    document.addEventListener('feishu-import-report', function (event) { push('import-report', event.detail.payload) })
+    document.addEventListener('feishu-error', function (event) { push('error', event.detail.message) })
+
+    var editorA = document.getElementById('editor-a')
+    var editorB = document.getElementById('editor-b')
+
+    /**
+     * 对象型能力：挂载前设置即可；命令式调用必须等 ready ——
+     * connectedCallback 是延到微任务执行的，同步脚本阶段实例还不存在。
+     */
+    editorB.options = {
+      uploadImage: function (file) {
+        push('upload', file.name + '（演示：未真正上传）')
+        return Promise.resolve(URL.createObjectURL(file))
+      },
+      ai: { enabled: false },
+    }
+    editorB.addEventListener('feishu-ready', function () {
+      editorB.setContent('<h2>通过 JS 注入能力</h2><p>uploadImage / ai / providers 这类对象能力走 property。</p>')
+      editorB.removeAttribute('readonly')
+      push('property', 'editor-b 能力注入完成')
+    }, { once: true })
+
+    document.addEventListener('click', function (event) {
+      var action = event.target.getAttribute && event.target.getAttribute('data-action')
+      if (!action) return
+      if (action === 'toggle-readonly') {
+        var next = !editorA.hasAttribute('readonly')
+        if (next) editorA.setAttribute('readonly', '')
+        else editorA.removeAttribute('readonly')
+        push('attribute', 'readonly=' + String(next))
+      } else if (action === 'toggle-theme') {
+        var theme = editorA.getAttribute('theme') === 'dark' ? 'light' : 'dark'
+        editorA.setAttribute('theme', theme)
+        push('attribute', 'theme=' + theme)
+      } else if (action === 'get-json') {
+        var json = editorA.getJSON()
+        push('getJSON', '顶层类型 ' + (json && json.type) + '，节点数 ' + ((json && json.content) || []).length)
+      } else if (action === 'set-content') {
+        editorA.setContent('<h1>覆写成功</h1><p>' + new Date().toLocaleTimeString() + ' 由 setContent 写入。</p>')
+        push('setContent', 'ok')
+      } else if (action === 'insert') {
+        editorA.insert('<p>—— insert() 追加的一段话。</p>')
+        push('insert', 'ok')
+      }
+    })
+  </script>
+</body>
+</html>
