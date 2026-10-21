@@ -1,0 +1,342 @@
+/**
+ * 命令式入口：`new FeishuDocument(...)`。
+ *
+ * 这一层不实现任何编辑器逻辑，只做四件事：
+ * 1. 把 AiEditor 风格的扁平配置翻译成内部的 `createFeishuConfig` 结构；
+ * 2. 用 Vue 2 运行时渲染函数挂载现有 Workspace，避免依赖模板编译器；
+ * 3. 把实例方法转发给 Workspace / Editor；
+ * 4. 按固定顺序销毁，保证 AI 流、会话和监听器都被释放。
+ */
+import Vue from 'vue'
+import FeishuDocumentWorkspace from './components/feishu/FeishuDocumentWorkspace.vue'
+import { createFeishuConfig } from './components/feishu/feishuConfig'
+import { resolveToolbarKeys } from './toolbarKeys'
+import { createNetworkPolicy } from './networkPolicy'
+
+const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report'])
+
+const DEFAULTS = Object.freeze({
+  title: '',
+  content: '',
+  placeholder: '输入正文，或输入 / 插入内容',
+  readonly: false,
+  theme: 'light',
+  storage: 'none',
+  autofocus: false,
+  // 'auto' 按指纹识别 Vditor getHTML() 产物；'vditor' 强制归一化；'html' 跳过归一化。
+  contentFormat: 'auto',
+})
+
+function resolveElement(element) {
+  if (!element) throw new Error('FeishuDocument: 缺少 element 配置')
+  // 兼容 Vue 组件的 this.$refs.xxx 传进来的组件实例。
+  const target = element.$el || element
+  if (typeof target === 'string') {
+    const found = document.querySelector(target)
+    if (!found) throw new Error(`FeishuDocument: 未找到挂载节点 ${target}`)
+    return found
+  }
+  if (typeof target === 'object' && target.nodeType === 1) return target
+  throw new Error('FeishuDocument: element 必须是选择器、DOM 节点或组件实例')
+}
+
+/**
+ * 统一 content 入参：
+ * - HTML 字符串
+ * - Tiptap JSON（type: 'doc'）
+ * - 文档信封 DocumentRecord（含 documentId/schemaVersion/content）
+ */
+function normalizeDocumentInput(input) {
+  if (input == null || input === '') return { title: null, content: null }
+  if (typeof input === 'string') return { title: null, content: input }
+  if (typeof input !== 'object') return { title: null, content: null }
+  if (input.content && typeof input.content === 'object' && (input.schemaVersion || input.documentId)) {
+    return { title: input.title == null ? null : String(input.title), content: input.content }
+  }
+  if (input.type === 'doc') return { title: null, content: input }
+  return { title: input.title == null ? null : String(input.title), content: null }
+}
+
+export class FeishuDocument {
+  constructor(options = {}) {
+    const source = options && typeof options === 'object' ? options : {}
+    this.options = { ...DEFAULTS, ...source }
+    this.element = resolveElement(source.element)
+    this._destroyed = false
+    this._handlers = Object.create(null)
+    EVENT_NAMES.forEach((name) => { this._handlers[name] = [] })
+
+    const documentInput = normalizeDocumentInput(source.content)
+    this.config = this._buildConfig(source)
+    this.networkPolicy = createNetworkPolicy(this.config.network)
+
+    this._vm = new Vue({
+      name: 'FeishuDocumentHost',
+      render: (h) => h(FeishuDocumentWorkspace, {
+        ref: 'workspace',
+        props: {
+          config: this.config,
+          initialTitle: documentInput.title != null ? documentInput.title : String(this.options.title || ''),
+          initialContent: documentInput.content,
+          contentFormat: this.options.contentFormat,
+          readonly: Boolean(source.readonly),
+          persistence: this._resolvePersistence(source),
+          uploadImage: this._resolveUploader(source),
+          aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
+        },
+        on: {
+          ready: () => {
+            this._applyHostAttributes()
+            if (this.options.autofocus && !this.isReadonly()) this.focus()
+            this._emit('ready', { document: this, editor: this.getEditor(), workspace: this.getWorkspace() })
+          },
+          update: (payload) => {
+            this._emit('update', payload)
+            const title = this.getTitle()
+            if (title !== this._lastTitle) {
+              this._lastTitle = title
+              this._emit('title-change', title)
+            }
+          },
+          change: (payload) => this._emit('change', payload),
+          'import-report': (report) => {
+            this.lastImportReport = report
+            this._emit('import-report', report)
+          },
+          save: (payload) => this._emit('save', payload),
+          error: (error) => this._emit('error', error),
+        },
+      }),
+    })
+    this._vm.$mount()
+    if (this._vm.$el) this.element.appendChild(this._vm.$el)
+    this._lastTitle = this.options.title || ''
+    this._applyHostAttributes()
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 初始化辅助                                                          */
+  /* ------------------------------------------------------------------ */
+
+  _buildConfig(source) {
+    const raw = { ...(source.config || {}) }
+    if (source.features && typeof source.features === 'object') {
+      raw.features = { ...(raw.features || {}) }
+      Object.keys(source.features).forEach((key) => {
+        if (typeof source.features[key] === 'boolean') raw.features[key] = source.features[key]
+      })
+    }
+    if (source.layout && typeof source.layout === 'object') raw.layout = { ...(raw.layout || {}), ...source.layout }
+    if (source.limits && typeof source.limits === 'object') raw.limits = { ...(raw.limits || {}), ...source.limits }
+    if (source.network && typeof source.network === 'object') raw.network = { ...(raw.network || {}), ...source.network }
+
+    // 工具栏：toolbarKeys / toolbarExcludes 为权威；未传时保留 config.toolbar。
+    if (source.toolbarKeys || source.toolbarExcludes) {
+      const resolved = resolveToolbarKeys({ toolbarKeys: source.toolbarKeys, toolbarExcludes: source.toolbarExcludes })
+      raw.toolbar = { ...(raw.toolbar || {}), ...resolved.toolbar, marksAllow: resolved.marksAllow }
+      this.unknownToolbarKeys = resolved.unknown
+    }
+
+    // 控制器默认不写 localStorage：宿主明确给 storage: 'local' 才开启本地草稿。
+    if (this.options.storage !== 'local') {
+      raw.features = { ...(raw.features || {}) }
+      if (raw.features.persistence === undefined) raw.features.persistence = false
+    }
+    if (source.ai && source.ai.enabled === false) raw.features = { ...(raw.features || {}), ai: false }
+
+    if (this.options.placeholder) raw.text = { ...(raw.text || {}), placeholder: this.options.placeholder }
+
+    return createFeishuConfig(raw)
+  }
+
+  _resolvePersistence(source) {
+    if (source.persistence && typeof source.persistence === 'object') return source.persistence
+    return null
+  }
+
+  _resolveUploader(source) {
+    const uploader = source.uploader
+    if (uploader && typeof uploader.upload === 'function') return uploader.upload
+    if (typeof source.uploadImage === 'function') return source.uploadImage
+    return null
+  }
+
+  _applyHostAttributes() {
+    const theme = this.options.theme === 'dark' ? 'dark' : 'light'
+    if (this._vm && this._vm.$el && this._vm.$el.setAttribute) {
+      this._vm.$el.setAttribute('data-theme', theme)
+      this._vm.$el.classList.toggle('feishu-document-dark', theme === 'dark')
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 事件                                                                */
+  /* ------------------------------------------------------------------ */
+
+  on(name, handler) {
+    if (this._handlers[name] && typeof handler === 'function') this._handlers[name].push(handler)
+    return this
+  }
+
+  off(name, handler) {
+    const list = this._handlers[name]
+    if (!list) return this
+    if (!handler) this._handlers[name] = []
+    else this._handlers[name] = list.filter((item) => item !== handler)
+    return this
+  }
+
+  _emit(name, payload) {
+    const list = this._handlers[name] || []
+    list.slice().forEach((handler) => {
+      try { handler(payload) } catch (error) { if (typeof console !== 'undefined') console.error(`[FeishuDocument] ${name} 回调异常`, error) }
+    })
+    if (name === 'update' && this.options.onUpdate) this._safeCall(this.options.onUpdate, payload)
+    if (name === 'change' && this.options.onChange) this._safeCall(this.options.onChange, payload)
+    if (name === 'import-report' && this.options.onImportReport) this._safeCall(this.options.onImportReport, payload)
+    if (name === 'ready' && this.options.onReady) this._safeCall(this.options.onReady, payload)
+    if (name === 'error' && this.options.onError) this._safeCall(this.options.onError, payload)
+    if (name === 'save' && this.options.onSave) this._safeCall(this.options.onSave, payload)
+    if (name === 'destroy' && this.options.onDestroy) this._safeCall(this.options.onDestroy, payload)
+  }
+
+  _safeCall(fn, payload) {
+    try { fn(payload) } catch (error) { if (typeof console !== 'undefined') console.error('[FeishuDocument] 回调异常', error) }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 实例方法                                                            */
+  /* ------------------------------------------------------------------ */
+
+  getWorkspace() { return this._vm && this._vm.$refs.workspace ? this._vm.$refs.workspace : null }
+
+  getEditor() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.getEditor() : null
+  }
+
+  getConfig() { return this.config }
+
+  getHTML() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.getHTML() : ''
+  }
+
+  getJSON() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.getJSON() : null
+  }
+
+  getText() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.getText() : ''
+  }
+
+  getTitle() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.getTitle() : this.options.title
+  }
+
+  setTitle(value) {
+    const workspace = this.getWorkspace()
+    if (workspace) workspace.setTitle(value)
+    return this
+  }
+
+  /** 接受 HTML / Tiptap JSON / DocumentRecord；返回是否写入成功。 */
+  setContent(content, options = {}) {
+    const workspace = this.getWorkspace()
+    if (!workspace) return false
+    const normalized = normalizeDocumentInput(content)
+    if (normalized.title != null) workspace.setTitle(normalized.title)
+    if (normalized.content == null) return false
+    const format = options.format || this.options.contentFormat || 'auto'
+    return workspace.setContent(normalized.content, { format: format === 'wangeditor' ? 'auto' : format })
+  }
+
+  /**
+   * 导入 Vditor（`getHTML()`）导出的 HTML。
+   * 与 setContent 的区别：不依赖指纹检测，强制按 Vditor 结构归一化。
+   */
+  importVditor(html, options = {}) {
+    return this.setContent(html, { ...options, format: 'vditor' })
+  }
+
+  /** 最近一次旧数据转换报告；非旧数据为 null。 */
+  getImportReport() {
+    const workspace = this.getWorkspace()
+    if (workspace && typeof workspace.getImportReport === 'function') return workspace.getImportReport()
+    return this.lastImportReport || null
+  }
+
+  insert(content) {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.insertContent(content) : false
+  }
+
+  insertText(text) {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.insertText(text) : false
+  }
+
+  focus() {
+    const workspace = this.getWorkspace()
+    if (workspace) workspace.focus()
+    return this
+  }
+
+  setReadonly(value) {
+    const workspace = this.getWorkspace()
+    if (workspace) workspace.setReadonly(value === true)
+    return this
+  }
+
+  isReadonly() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.isReadonly() : Boolean(this.options.readonly)
+  }
+
+  undo() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.undo() : false
+  }
+
+  redo() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.redo() : false
+  }
+
+  /** 交给宿主持久化适配器保存；未配置时解析为 null。 */
+  save() {
+    const workspace = this.getWorkspace()
+    return workspace ? workspace.save() : Promise.resolve(null)
+  }
+
+  destroy() {
+    if (this._destroyed) return
+    this._destroyed = true
+    this._emit('destroy', { document: this })
+    const workspace = this.getWorkspace()
+    if (workspace && typeof workspace.stopAI === 'function') {
+      try { workspace.stopAI() } catch (error) { /* 已在销毁流程中，忽略 */ }
+    }
+    const vm = this._vm
+    this._vm = null
+    if (vm) {
+      const el = vm.$el
+      vm.$destroy()
+      if (el && el.parentNode) el.parentNode.removeChild(el)
+    }
+    EVENT_NAMES.forEach((name) => { this._handlers[name] = [] })
+    this.config = null
+    this.networkPolicy = null
+    this.element = null
+  }
+}
+
+/** 支持不带 new 调用：FeishuDocument({...})。 */
+export function createFeishuDocument(options) {
+  return new FeishuDocument(options)
+}
+
+export default FeishuDocument

@@ -1,37 +1,108 @@
 # feishu-document
 
-Vue 2 + Tiptap 3 的飞书风格文档编辑器与工作台包。
+Vue 2 + Tiptap 3 的飞书风格文档编辑器与工作台包（`0.4.0`）。
 
-当前迁移基线包含 `/feishu-document` 的全部单人编辑能力：富文本、块操作、表格、图片、公式、目录、搜索替换、模板、本地草稿、本地快照、导入导出和确定性 Mock AI。`FeishuDocumentEditor` 负责编辑器交互，`FeishuDocumentWorkspace` 负责文档工作台流程。
+完整文档：[VitePress 使用手册](https://your-docs-host/feishu-document/)（源码在 `codex/开发agent/aieditor-core-docs`）。
 
-包不在默认模式创建 Yjs、WebSocket 或真实后台连接。`DocumentSession` 统一文档身份、事务来源、能力判断和 Provider 生命周期；后续协同编辑、版本服务、评论线程和权限控制通过 Provider 层接入，保持编辑器核心和 Demo 调用方式稳定。完整的文件职责、数据模型和 Provider 契约见 [DEMO_INTEGRATION_GUIDE.md](DEMO_INTEGRATION_GUIDE.md)。
+## 接入方式
 
-## 构建
+默认导出是命令式入口，View 层只留一个挂载点：
 
-```bash
-nvm use 14.21.3
-npm ci
-npm run check
+```js
+import { FeishuDocument } from 'feishu-document'
+import 'feishu-document/style.css'
+
+const doc = new FeishuDocument({
+  element: '#editor',
+  title: '未命名文档',
+  content: '<p>开始编辑。</p>',
+})
+
+doc.getHTML()
+doc.getJSON()
+doc.destroy()
 ```
 
-## Vue 2 使用
+## 旧数据兼容（Vditor）
+
+Vditor `getHTML()` 导出的 HTML 可直接喂给 `content`，命中 `vditor-*` / `language-math` / 图表 `language-*` 等指纹时自动归一化公式、任务列表、图表代码块、脚注与表格列宽：
+
+```js
+const doc = new FeishuDocument({ element: '#editor', content: vditorHtml })
+doc.importVditor(vditorHtml)      // 或显式强制归一化
+doc.getImportReport()             // { source, math, taskList, taskItem, diagram, table, footnote, dropped }
+```
+
+图片无需配置（默认 `open`，http 直连）。校验脚本 `npm run check:vditor`。
+
+旧调用方式仍然可用：
 
 ```js
 import {
   FeishuDocumentEditor,
   FeishuDocumentWorkspace,
 } from 'feishu-document'
-import 'feishu-document/style.css'
 ```
 
-`style.css` 是包公开的样式入口，宿主应用只需要引入一次；入口会加载包内命名空间样式和 KaTeX 样式，组件内部的 `src/components/feishu/feishu.css` 不应由宿主应用直接引用。
+`style.css` 是唯一公开样式入口，宿主只需引入一次；它包含正文样式与本地 KaTeX 字体，不要直接引 `src/components/feishu/feishu.css`。
 
-标题栏默认随页面滚动。需要让标题栏吸附在窗口顶端时，在 `FeishuDocumentEditor` 或 `FeishuDocumentWorkspace` 上传入布局配置：
+## 资源本地化与网络策略
 
-```vue
-<FeishuDocumentWorkspace :config="{ layout: { titleBarFixed: true } }" />
+- KaTeX 样式与字体随包发布（`src/assets/fonts/katex`），构建产物带 `dist/fonts/`；代码高亮、Emoji 同样本地化，不请求任何 CDN。
+- `network.mode` 默认 `open`：正文里的外链图片（含老系统的 http 图床）按原地址加载，开箱可用。
+- 需要收敛时显式配置：
+
+```js
+new FeishuDocument({
+  element: '#editor',
+  // 只放行白名单 host
+  network: { mode: 'allowlist', allowlist: ['img.your-corp.com'] },
+  // 或完全离线：外链图片显示占位并保留 data-original-src
+  // network: { mode: 'offline' },
+})
 ```
 
-`titleBarFixed` 默认是 `false`，只控制文档标题栏，下面的编辑工具栏仍按页面正常滚动。
+- 构建守卫：`npm run check:offline` 扫描 `src`、`dist` 的远程地址与字体完整性。
 
-Demo 应用只负责路由和页面呈现，包本身包含编辑器和工作台能力。发布包时，Vue 2.7 应用直接使用 `npm i feishu-document`；本仓库 Demo 通过本地 `file:` 依赖验证同样的调用方式。
+## 配置示例
+
+```js
+new FeishuDocument({
+  element: this.$refs.host,
+  title: '项目说明',
+  content: record,                 // HTML / Tiptap JSON / 文档信封
+  readonly: false,
+  storage: 'none',                 // 默认不写 localStorage
+  toolbarKeys: ['bold', 'italic', 'heading', 'table', 'image', 'ai'],
+  features: { ai: false, importExport: false },
+  limits: { maxLength: 5000, maxImageSize: 3 * 1024 * 1024 },
+  uploader: { upload: fileToOss },
+  onUpdate: ({ html, json }) => { /* 自动保存 */ },
+  onError: (error) => console.error(error),
+})
+```
+
+- `toolbarKeys` 是白名单，`toolbarExcludes` 是黑名单，12 个分组 + 8 个 mark key，详见文档「配置总览」。
+- `storage: 'local'` 才启用浏览器草稿；命令式入口默认关闭，避免不同文档互相覆盖。
+
+## 构建与校验
+
+```bash
+nvm use 14.21.3
+npm ci
+npm run check          # node14 + offline + feishu + architecture + lint + build
+```
+
+单独跑：
+
+```bash
+npm run check:offline
+npm run check:feishu
+npm run build
+```
+
+## 边界
+
+包默认不创建 Yjs、WebSocket 或后台连接。`DocumentSession` 统一文档身份、事务来源、能力判断和 Provider 生命周期；协同、版本、评论、权限都通过显式 Provider 接入。数据模型与 Provider 契约见 [DEMO_INTEGRATION_GUIDE.md](DEMO_INTEGRATION_GUIDE.md)。
+
+Demo 应用只负责路由与页面呈现；本仓库通过 `file:` 依赖以真实消费方的方式验证包，开发期再 alias 到源码。

@@ -1246,6 +1246,9 @@ import { createFeishuExtensions } from './extensions'
 import { collectOutline, findTextMatches, headingActionRange, moveBlockRange, replaceText, resolveHeadingHighlightSection, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isCommandEnabled, isConfigEnabled, mergeLegacyConfig } from './feishuConfig'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
+import { createNetworkPolicy } from '../../networkPolicy'
+// 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
+import { normalizeVditorHtml } from '../../legacy'
 import './feishu.css'
 
 const marks = [
@@ -1283,6 +1286,8 @@ export default {
     templates: { type: Array, default: () => [] },
     uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
     session: { type: Object, default: null },
+    // 'auto' 按指纹识别 Vditor HTML；'vditor' 强制归一化；'html' 明确跳过归一化。
+    contentFormat: { type: String, default: 'auto' },
   },
   data() { return {
     editor: null, localTitle: this.title, reading: false, slides: false, fullscreen: false, widthMode: 'standard',
@@ -1326,7 +1331,11 @@ export default {
         return items
       }, [])
     },
-    visibleMarks() { return this.feishuConfig.features.marks ? this.marks : [] },
+    visibleMarks() {
+      if (!this.feishuConfig.features.marks) return []
+      const allow = this.feishuConfig.toolbar.marksAllow
+      return Array.isArray(allow) ? this.marks.filter((item) => allow.includes(item.id)) : this.marks
+    },
     visibleTableActions() { return this.feishuConfig.features.tables ? this.tableActions : [] },
     visibleBlockActions() { return this.blockActions.filter((item) => isBlockActionEnabled(this.feishuConfig, item.id)) },
     visibleBlockTypeActions() {
@@ -1431,7 +1440,7 @@ export default {
         try { const cached = localStorage.getItem(String(this.msgId)); if (cached) initialHTML = cached } catch (_) { this.error = '浏览器阻止读取公告缓存' }
       }
       this.editor = new Editor({
-        content: sanitizeHTML(initialHTML), editable: !this.effectiveReadonly,
+        content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
         extensions: createFeishuExtensions({ imageView: ImageNode, codeView: CodeNode, maxLength: this.effectiveMaxLength, config: this.feishuConfig, resolveImageFile: this.resolveImageFile, onSlash: this.onSlash, onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: () => this.onUpdate(), onTransaction: () => { this.syncFoldState(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
@@ -1462,15 +1471,39 @@ export default {
     isBlockActionEnabled(id) { return isBlockActionEnabled(this.feishuConfig, id) },
     getEditor() { return this.editor }, getHTML() { return this.editor?.getHTML() || '' }, getJSON() { return this.editor?.getJSON() || null }, getText() { return this.editor?.getText() || '' },
     focus() { this.editor?.commands.focus() },
-    setContent(content) {
+    /**
+     * 统一内容准备：旧数据（Vditor HTML）归一化 + 安全清洗。
+     * 初始内容与 setContent 都走这里，避免两条路径行为不一致。
+     */
+    prepareHTML(content, format) {
+      let mode = format || this.contentFormat || 'auto'
+      if (mode === 'wangeditor') {
+        // 0.4.0 起不再支持 wangEditor，老宿主传旧枚举时降级为自动识别，避免直接抛错。
+        if (!this._legacyFormatWarned) {
+          this._legacyFormatWarned = true
+          console.warn("[feishu-document] contentFormat 'wangeditor' 已不支持，按 'auto' 处理")
+        }
+        mode = 'auto'
+      }
+      const legacy = normalizeVditorHtml(content, { force: mode === 'vditor', skip: mode === 'html' })
+      if (legacy.converted) {
+        this.lastImportReport = legacy.report
+        this.$emit('import-report', legacy.report)
+      }
+      return sanitizeHTML(legacy.html)
+    },
+    setContent(content, options = {}) {
       if (!this.editor) return false
       const schema = this.editor.schema
       let json
       if (typeof content === 'string') {
-        const safe = sanitizeHTML(content)
+        const safe = this.prepareHTML(content, options.format)
         const container = document.createElement('div'); container.innerHTML = safe
         json = ProseMirrorDOMParser.fromSchema(schema).parse(container).toJSON()
       } else json = validateDocument(content, schema)
+      // 离线策略在这里统一生效：外链图片降级为占位，避免渲染时发起外部请求。
+      // 旧宿主会绕过 Vue 计算属性直接调用本方法，此时没有归一化配置，按默认策略处理。
+      json = createNetworkPolicy(this.feishuConfig ? this.feishuConfig.network : null).applyDocument(json)
       const next = schema.nodeFromJSON(validateDocument(json, schema))
       // Keep this method usable by the legacy imperative API and small host-side
       // harnesses that call it without Vue's computed properties.

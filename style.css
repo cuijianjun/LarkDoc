@@ -1,3 +1,4 @@
-/* Public package stylesheet entry, matching the AiEditor integration pattern. */
+/* Public package stylesheet entry, matching the AiEditor integration pattern.
+ * 只引入包内相对路径资源：KaTeX 字体随包发布，运行时不请求任何外部域名。 */
 @import './src/components/feishu/feishu.css';
-@import 'katex/dist/katex.min.css';
+@import './src/styles/vendor/katex.css';

@@ -4,7 +4,7 @@ export const FEISHU_FEATURES = Object.freeze([
   'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
   'codeBlocks', 'math', 'emoji', 'templates', 'callouts', 'columns', 'search',
   'outline', 'folding', 'blockHandle', 'blockDrag', 'ai', 'viewModes', 'shortcuts', 'insert',
-  'persistence', 'importExport',
+  'persistence', 'importExport', 'diagram',
 ])
 
 export const DEFAULT_FEISHU_CONFIG = Object.freeze({
@@ -15,11 +15,15 @@ export const DEFAULT_FEISHU_CONFIG = Object.freeze({
     folding: true, blockHandle: true, blockDrag: true, ai: true, viewModes: true,
     shortcuts: true, insert: true,
     persistence: true, importExport: true,
+    // 图表预览（mermaid）：关闭后代码块保持纯源码形态，渲染器不会加载。
+    diagram: true,
   },
   toolbar: {
     history: true, headings: true, marks: true, textStyle: true, blockStyle: true,
     insert: true, tables: true, ai: true, search: true, outline: true, viewModes: true,
     shortcuts: true,
+    // null = 展示全部行内格式；数组 = 只展示列出的 mark。
+    marksAllow: null,
   },
   commands: {
     disabled: [],
@@ -33,6 +37,15 @@ export const DEFAULT_FEISHU_CONFIG = Object.freeze({
   layout: {
     // 标题栏默认跟随文档滚动，宿主可按页面场景开启顶端吸附。
     titleBarFixed: false,
+  },
+  text: {
+    // 正文为空时的占位提示，命令式入口的 placeholder 配置项落到这里。
+    placeholder: '输入正文，或输入 / 插入内容',
+  },
+  network: {
+    // 默认放行：老系统的 http 图床可直接显示。需要离线时显式改为 'offline'。
+    mode: 'open',
+    allowlist: [],
   },
   limits: {
     titleLength: 120,
@@ -48,6 +61,10 @@ export const DEFAULT_FEISHU_CONFIG = Object.freeze({
     changeDebounce: 16,
     stateUpdateFrame: true,
     syntaxHighlight: true,
+    // 图表渲染器（mermaid）的脚本地址。默认用包内 vendored 产物：
+    // 源码打包的宿主由 file-loader 自动落盘；直接消费预构建 dist 的宿主
+    // 需把 dist/vendor/ 拷进站点静态目录，或在此指定自托管地址。
+    diagramScriptUrl: null,
   },
 })
 
@@ -74,6 +91,8 @@ export function createFeishuConfig(overrides = {}) {
     commands: mergeSection(DEFAULT_FEISHU_CONFIG.commands, source.commands),
     blockMenu: mergeSection(DEFAULT_FEISHU_CONFIG.blockMenu, source.blockMenu),
     layout: mergeSection(DEFAULT_FEISHU_CONFIG.layout, source.layout),
+    text: mergeSection(DEFAULT_FEISHU_CONFIG.text, source.text),
+    network: mergeSection(DEFAULT_FEISHU_CONFIG.network, source.network),
     limits: mergeSection(DEFAULT_FEISHU_CONFIG.limits, source.limits),
     performance: mergeSection(DEFAULT_FEISHU_CONFIG.performance, source.performance),
   }
@@ -81,6 +100,11 @@ export function createFeishuConfig(overrides = {}) {
   // Unknown feature names are ignored by the UI, while known names always have a boolean value.
   FEISHU_FEATURES.forEach((name) => { config.features[name] = config.features[name] !== false })
   config.layout.titleBarFixed = config.layout.titleBarFixed === true
+  config.toolbar.marksAllow = Array.isArray(config.toolbar.marksAllow) ? config.toolbar.marksAllow.filter((id) => typeof id === 'string') : null
+  config.network.mode = ['offline', 'allowlist', 'open'].includes(config.network.mode) ? config.network.mode : DEFAULT_FEISHU_CONFIG.network.mode
+  config.network.allowlist = Array.isArray(config.network.allowlist)
+    ? config.network.allowlist.map((host) => String(host || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')).filter(Boolean)
+    : []
   config.limits.titleLength = Math.max(1, Number(config.limits.titleLength) || DEFAULT_FEISHU_CONFIG.limits.titleLength)
   config.limits.maxLength = Math.max(0, Number(config.limits.maxLength) || 0)
   config.limits.maxImageSize = Math.max(1, Number(config.limits.maxImageSize) || DEFAULT_FEISHU_CONFIG.limits.maxImageSize)

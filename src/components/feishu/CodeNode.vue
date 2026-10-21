@@ -12,12 +12,12 @@
         @change="setLanguage($event.target.value)"
       >
         <option
-          v-for="item in languages"
+          v-for="item in languageOptions"
           :key="item.value"
           :value="item.value"
         >{{ item.label }}</option>
         <option
-          v-if="!languages.some(item => item.value === node.attrs.language)"
+          v-if="!languageOptions.some(item => item.value === node.attrs.language)"
           :value="node.attrs.language"
         >{{ node.attrs.language || '纯文本' }}</option>
       </select></label>
@@ -27,6 +27,11 @@
       >
         复制代码
       </button>
+      <button
+        v-if="isDiagram"
+        type="button"
+        @click="togglePreview"
+      >{{ showPreview ? '查看源码' : '预览图表' }}</button>
       <span role="status">{{ message }}</span>
     </div>
     <div class="feishu-code-body">
@@ -44,11 +49,34 @@
         spellcheck="false"
       />
     </div>
+    <!-- 图表预览层：schema 契约不变，源码仍是节点正文；渲染失败保留源码。 -->
+    <div
+      v-if="showPreview"
+      class="feishu-diagram"
+      contenteditable="false"
+    >
+      <div
+        v-if="diagramState === 'loading'"
+        class="feishu-diagram-status"
+      >图表渲染中…</div>
+      <div
+        v-else-if="diagramState === 'error'"
+        class="feishu-diagram-status feishu-diagram-error"
+      >{{ diagramError || '图表渲染失败，请检查语法' }}</div>
+      <!-- eslint-disable vue/no-v-html -->
+      <div
+        v-else
+        class="feishu-diagram-svg"
+        v-html="diagramSvg"
+      />
+      <!-- eslint-enable vue/no-v-html -->
+    </div>
   </node-view-wrapper>
 </template>
 
 <script>
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
+import { isDiagramLanguage, renderDiagram } from './diagram'
 
 // Code blocks are uncommon on the document's first paint. Keep both the
 // highlighter core and grammars out of the route chunk until one is rendered.
@@ -111,21 +139,57 @@ export default {
   name: 'FeishuCodeNode',
   components: { NodeViewWrapper, NodeViewContent },
   props: nodeViewProps,
-  data() { return { languages, message: '', editable: this.editor.isEditable, highlightedCode: '' } },
+  data() {
+    return {
+      languages,
+      message: '',
+      editable: this.editor.isEditable,
+      highlightedCode: '',
+      diagramState: 'idle', // idle | loading | ok | error
+      diagramSvg: '',
+      diagramError: '',
+      // 编辑态默认展示源码，只读态默认展示预览。
+      previewShown: !this.editor.isEditable,
+    }
+  },
   computed: {
     highlighted() {
       if (this.highlightedCode) return this.highlightedCode
       return renderHighlighted(this.node?.textContent || '', this.node?.attrs?.language, this.extension?.options?.syntaxHighlight !== false)
     },
+    diagramEnabled() {
+      return this.extension?.options?.diagram !== false
+    },
+    isDiagram() {
+      return this.diagramEnabled && isDiagramLanguage(this.node?.attrs?.language)
+    },
+    showPreview() {
+      return this.isDiagram && this.previewShown
+    },
+    languageOptions() {
+      // 图表功能开启时才把 mermaid 放进语言下拉，关闭后保持原有清单。
+      if (!this.diagramEnabled) return this.languages
+      return this.languages.concat([{ value: 'mermaid', label: 'Mermaid 图表' }])
+    },
   },
   watch: {
     node: {
       deep: true,
-      handler() { this.refreshHighlighted() },
+      handler() { this.refreshHighlighted(); this.scheduleDiagramRender() },
     },
   },
-  created() { this.editor.on('update', this.syncEditable); this.editor.on('transaction', this.syncEditable); this.refreshHighlighted() },
-  beforeDestroy() { this.editor.off('update', this.syncEditable); this.editor.off('transaction', this.syncEditable) },
+  created() {
+    this.editor.on('update', this.syncEditable)
+    this.editor.on('transaction', this.syncEditable)
+    this.refreshHighlighted()
+    if (this.showPreview) this.scheduleDiagramRender()
+  },
+  beforeDestroy() {
+    this.editor.off('update', this.syncEditable)
+    this.editor.off('transaction', this.syncEditable)
+    if (this.diagramTimer) clearTimeout(this.diagramTimer)
+    this.diagramVersion = -1
+  },
   methods: {
     refreshHighlighted() {
       const text = this.node.textContent
@@ -138,11 +202,53 @@ export default {
       }
       this.highlightedCode = renderHighlighted(text, language, true)
     },
-    syncEditable() { this.editable = this.editor.isEditable },
+    syncEditable() {
+      const next = this.editor.isEditable
+      if (next === this.editable) return
+      this.editable = next
+      // 进入只读态时若无预览则渲染一份，回到编辑态时保留用户当前的切换选择。
+      if (this.isDiagram && !this.previewShown && !next) this.previewShown = true
+    },
+    togglePreview() {
+      this.previewShown = !this.previewShown
+      if (this.previewShown) this.renderDiagramNow()
+    },
+    scheduleDiagramRender() {
+      if (!this.showPreview) return
+      if (this.diagramTimer) clearTimeout(this.diagramTimer)
+      this.diagramTimer = setTimeout(() => { this.diagramTimer = null; this.renderDiagramNow() }, 300)
+    },
+    renderDiagramNow() {
+      if (!this.isDiagram) return
+      const version = (this.diagramVersion = (this.diagramVersion || 0) + 1)
+      const source = this.node.textContent
+      if (!source.trim()) {
+        this.diagramState = 'error'
+        this.diagramError = '暂无图表内容'
+        return
+      }
+      this.diagramState = 'loading'
+      renderDiagram(source, { scriptUrl: this.extension?.options?.diagramScriptUrl || undefined }).then((svg) => {
+        if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
+        this.diagramSvg = svg
+        this.diagramState = 'ok'
+        this.diagramError = ''
+      }).catch((error) => {
+        if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
+        this.diagramState = 'error'
+        this.diagramError = ''
+        if (this.extension?.options?.onDiagramError) this.extension.options.onDiagramError(error)
+      })
+    },
     setLanguage(language) {
-      if (!this.editor.isEditable || !languages.some((item) => item.value === language)) return
+      // check 脚本会在脱离 Vue 上下文时调用这里，computed 可能不可用，回退到模块常量。
+      const options = this.languageOptions || this.languages || languages
+      if (!this.editor.isEditable || !options.some((item) => item.value === language)) return
       this.updateAttributes({ language })
       this.message = ''
+      // 切成图表语言时立即给出预览；切走则丢弃渲染结果。
+      if (isDiagramLanguage(language)) { this.previewShown = true; this.renderDiagramNow() }
+      else { this.diagramState = 'idle'; this.diagramSvg = '' }
     },
     async copyCode() {
       try {
@@ -181,4 +287,9 @@ export default {
 .feishu-document .feishu-code .hljs-number, .feishu-document .feishu-code .hljs-literal { color: #ecb783; }
 .feishu-document .feishu-code .hljs-comment { color: #8caa97; font-style: italic; }
 .feishu-document .feishu-code .hljs-title, .feishu-document .feishu-code .hljs-built_in { color: #7ccce5; }
+.feishu-document .feishu-diagram { border-top: 1px solid #dce5e1; background: #ffffff; padding: 16px; display: flex; justify-content: center; overflow: auto; }
+.feishu-document .feishu-diagram-status { color: #66756e; font-size: 13px; padding: 8px; }
+.feishu-document .feishu-diagram-error { color: #c0392b; }
+.feishu-document .feishu-diagram-svg { max-width: 100%; line-height: 0; }
+.feishu-document .feishu-diagram-svg svg { max-width: 100%; height: auto; user-select: none; }
 </style>

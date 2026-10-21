@@ -72,7 +72,18 @@
       class="feishu-image-frame"
       :style="frameStyle"
     >
+      <div
+        v-if="blocked"
+        class="feishu-image-blocked"
+        role="img"
+        aria-label="外链图片已被离线策略拦截"
+      >
+        <strong>外链图片已拦截</strong>
+        <code v-if="node.attrs.originalSrc">{{ node.attrs.originalSrc }}</code>
+        <span>把图片上传到本地或对象存储后替换，或调整 network 策略放行该域名</span>
+      </div>
       <img
+        v-else
         ref="image"
         :src="node.attrs.src"
         :alt="node.attrs.alt || node.attrs.caption || '文档图片'"
@@ -222,6 +233,7 @@
 <script>
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-2'
 import { safeUrl } from './documentOperations'
+import { BLOCKED_IMAGE_PLACEHOLDER } from '../../networkPolicy'
 
 export default {
   name: 'FeishuImageNode',
@@ -238,6 +250,8 @@ export default {
     }
   },
   computed: {
+    // 外链图片在离线策略下被替换为透明占位，渲染时改成说明块而不是空图。
+    blocked() { return !this.node.attrs.src || this.node.attrs.src === BLOCKED_IMAGE_PLACEHOLDER },
     displayWidth() { return this.resizeWidth || this.node.attrs.width },
     frameStyle() {
       const align = this.node.attrs.align || 'center'
@@ -261,7 +275,7 @@ export default {
       this.updateAttributes({ caption: String(value).slice(0, 100000) })
     },
     startResize(event, corner = 'bottom-right') {
-      if (!this.editor.isEditable) return
+      if (!this.editor.isEditable || this.blocked || !this.$refs.image) return
       this.resizeStart = { x: event.clientX, width: this.$refs.image.getBoundingClientRect().width, direction: corner.includes('left') ? -1 : 1 }
       window.addEventListener('mousemove', this.onResize)
       window.addEventListener('mouseup', this.finishResize)
@@ -321,9 +335,11 @@ export default {
         this.error = ''
       } catch (error) { if (generation === this.replaceGeneration && !this.editor.isDestroyed && this.editor.isEditable) this.error = error.message || '图片替换失败' }
     },
-    openPreview() { this.openDialog('preview') },
+    openPreview() { if (this.blocked) return this.openReplace(); this.openDialog('preview') },
     openCrop() {
       if (!this.editor.isEditable) return
+      // 被离线策略拦截的图片没有本地像素，裁剪会重新请求远端原图。
+      if (this.blocked) { this.error = '外链图片已被拦截，请先上传到本地再裁剪'; return }
       this.crop = { x: 10, y: 10, width: 80, height: 80 }
       this.openDialog('crop')
     },
@@ -399,6 +415,10 @@ export default {
 .feishu-document .feishu-image-frame { position: relative; max-width: 100%; }
 .feishu-document .feishu-image-frame img { display: block; max-width: 100%; width: 100%; height: auto; border-radius: 6px; }
 .feishu-document .feishu-image.is-selected .feishu-image-frame { outline: 2px solid #2f6df6; outline-offset: -1px; }
+/* 离线策略拦截的外链图片：不渲染 img，避免浏览器发起外部请求。 */
+.feishu-document .feishu-image-blocked { display: grid; gap: 4px; justify-items: start; padding: 18px 20px; border: 1px dashed #c9d4cf; border-radius: 8px; background: #f7faf8; color: #5a6b63; font-size: 12px; }
+.feishu-document .feishu-image-blocked strong { color: #2f3835; font-size: 13px; }
+.feishu-document .feishu-image-blocked code { max-width: 100%; overflow-wrap: anywhere; color: #7c8b84; font-size: 11px; }
 .feishu-document .feishu-image-toolbar { position: absolute; z-index: 5; top: -58px; left: 50%; display: flex; align-items: center; gap: 2px; min-height: 42px; padding: 4px 8px; border: 1px solid #d9dfdc; border-radius: 10px; background: #fff; box-shadow: 0 5px 18px #1c43311f; transform: translateX(-50%); white-space: nowrap; }
 .feishu-document .feishu-image-toolbar button { min-width: 34px; height: 34px; padding: 0 7px; border: 0; border-radius: 7px; background: transparent; color: #2f3835; cursor: pointer; font-size: 20px; line-height: 1; }
 .feishu-document .feishu-image-toolbar button:hover, .feishu-document .feishu-image-toolbar button[aria-pressed="true"] { background: #e7f0ff; color: #2f6df6; }

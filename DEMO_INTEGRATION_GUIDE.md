@@ -21,6 +21,26 @@
 npm i feishu-document
 ```
 
+### 2.1 命令式入口（推荐）
+
+```js
+import { FeishuDocument } from 'feishu-document'
+import 'feishu-document/style.css'
+
+const doc = new FeishuDocument({
+  element: '#editor',
+  title: '未命名文档',
+  content: '<p>开始编辑。</p>',
+})
+
+doc.on('update', ({ html, json }) => { /* 自动保存 */ })
+doc.destroy()
+```
+
+`src/FeishuDocument.js` 只做四件事：把 AiEditor 风格配置翻译成 `createFeishuConfig` 结构、用 Vue 渲染函数挂载 Workspace、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
+
+### 2.2 组件式（原有方式）
+
 ```js
 import Vue from 'vue'
 import {
@@ -33,9 +53,15 @@ Vue.component('FeishuDocumentEditor', FeishuDocumentEditor)
 Vue.component('FeishuDocumentWorkspace', FeishuDocumentWorkspace)
 ```
 
-`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和 KaTeX 样式，`src/components/feishu/feishu.css` 不应由宿主应用直接引用。
+`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和本地 KaTeX 样式，`src/components/feishu/feishu.css` 不应由宿主应用直接引用。
 
-本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费 `feishu-document` 包，入口只有 `src/views/FeishuDocumentView.vue`；这保证 Demo 的调用方式和 npm 使用方一致。
+### 2.3 离线承诺
+
+- `network.mode` 默认 `offline`，外链图片降级为占位块并保留 `data-original-src`。
+- KaTeX 样式与字体收在 `src/styles/vendor/katex.css` 与 `src/assets/fonts/katex/`，构建产物带 `dist/fonts/`。
+- `npm run check:offline` 会扫描 `src`、`dist` 的远程地址并校验字体完整性。
+
+本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费 `feishu-document` 包，入口只有 `src/views/FeishuDocumentView.vue`（内部 `new FeishuDocument(...)`）；这保证 Demo 的调用方式和 npm 使用方一致。
 
 标题栏布局可以按宿主页面选择是否固定：
 
@@ -49,7 +75,12 @@ Vue.component('FeishuDocumentWorkspace', FeishuDocumentWorkspace)
 
 ```text
 src/
-  index.js                         公共导出，保持包的 npm 入口稳定
+  index.js                         公共导出：默认 FeishuDocument，具名保留组件与工具
+  FeishuDocument.js                命令式入口：配置翻译、挂载、方法转发、销毁
+  toolbarKeys.js                   toolbarKeys / toolbarExcludes 到内部工具栏的映射
+  networkPolicy.js                 出网策略：offline / allowlist / open 与图片拦截
+  styles/vendor/katex.css          收编的 KaTeX 样式，字体为相对路径
+  assets/fonts/katex/              随包发布的 KaTeX 字体（woff2 + woff）
   core/
     documentSchema.js              文档 JSON 信封、Schema 版本和节点身份
     migrations.js                  正文 Schema 迁移注册表

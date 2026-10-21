@@ -1,14 +1,16 @@
 {
   "name": "feishu-document",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": false,
   "description": "Vue 2 Feishu-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
     "build": "vue-cli-service build --target lib --name feishu-document src/index.js",
     "lint": "eslint --ext .js,.vue src scripts",
-    "check": "npm run check:node14 && npm run check:feishu && npm run check:architecture && npm run lint && npm run build",
+    "check": "npm run check:node14 && npm run check:offline && npm run check:feishu && npm run check:architecture && npm run lint && npm run build && npm run check:vditor",
+    "check:vditor": "node scripts/check-vditor-html.js",
     "check:feishu": "node scripts/check-feishu-core.js && node scripts/check-feishu-workspace.js && node scripts/check-ecs-images.js",
+    "check:offline": "node scripts/check-offline-assets.js",
     "check:node14": "node scripts/check-node14.js",
     "check:architecture": "node scripts/check-architecture.js",
     "prepack": "npm run build"
@@ -46,16 +48,18 @@
     "turndown": "7.2.2"
   },
   "devDependencies": {
+    "@tiptap/vue-2": "3.27.4",
     "@vue/cli-plugin-babel": "5.0.8",
     "@vue/cli-service": "5.0.8",
     "babel-eslint": "10.1.0",
     "eslint": "7.32.0",
     "eslint-plugin-vue": "8.7.1",
+    "file-loader": "^6.2.0",
+    "jsdom": "^16.7.0",
     "semver": "7.6.3",
     "serialize-javascript": "file:vendor/serialize-javascript-node14",
-    "vue-template-compiler": "2.7.14",
     "vue": "2.7.14",
-    "@tiptap/vue-2": "3.27.4"
+    "vue-template-compiler": "2.7.14"
   },
   "engines": {
     "node": "14.21.3",
@@ -140,7 +144,7 @@
     "vue.config.js"
   ],
   "peerDependencies": {
-    "vue": "^2.7.14",
-    "@tiptap/vue-2": "^3.27.4"
+    "@tiptap/vue-2": "^3.27.4",
+    "vue": "^2.7.14"
   }
 }

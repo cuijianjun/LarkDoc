@@ -6,7 +6,11 @@
     :config="editorConfig"
     :templates="templateItems"
     :session="getSession()"
+    :readonly="readonly || forcedReadonly"
+    :content-format="contentFormat"
+    :upload-image="uploadImage"
     @change="onChange"
+    @import-report="onImportReport"
     @ready="onReady"
     @mode-change="effectiveReadonly = $event.readonly"
     @ai-request="startAI"
@@ -480,20 +484,31 @@ export default {
     documentId: { type: [String, Number], default: null },
     user: { type: Object, default: null },
     capabilities: { type: Object, default: null },
+    // 命令式入口（new FeishuDocument）通过这两个可选属性注入初始文档。
+    initialTitle: { type: String, default: null },
+    initialContent: { type: [String, Object], default: null },
+    // 'auto' 按指纹识别 Vditor HTML；'vditor' 强制归一化；'html' 明确跳过归一化。
+    contentFormat: { type: String, default: 'auto' },
+    readonly: { type: Boolean, default: false },
+    // 宿主侧能力注入：图片上传钩子与 AI 流式生成钩子。
+    uploadImage: { type: Function, default: null },
+    aiProvider: { type: Object, default: null },
   },
   data() {
     const templateItems = Array.isArray(this.templates) ? this.templates : TEMPLATES
     const firstTemplate = templateItems[0] || { html: '<p></p>', title: '未命名文档' }
     return {
-      html: firstTemplate.html, 
-      title: firstTemplate.title, 
-      templateItems, 
+      html: typeof this.initialContent === 'string' ? this.initialContent : firstTemplate.html,
+      title: this.initialTitle != null ? this.initialTitle : firstTemplate.title,
+      templateItems,
+      forcedReadonly: false,
       editorConfig: createFeishuConfig(this.config),
       effectiveReadonly: false, importing: false, initialized: false,
       saveStatus: '初始化…', storageError: false, notice: '',
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
       aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
       templateOpen: false, templateQuery: '',
+      importReport: null,
       sessionInstance: null,
     }
   },
@@ -532,11 +547,7 @@ export default {
   },
   methods: {
     featureEnabled(name) { return !this.editorConfig?.features || this.editorConfig.features[name] !== false },
-    loadMathStyles() {
-      if (!this.featureEnabled('math') || this._mathStylesPromise) return this._mathStylesPromise
-      this._mathStylesPromise = import('katex/dist/katex.min.css').catch(() => null)
-      return this._mathStylesPromise
-    },
+    // 公式样式随包样式入口一次性引入，运行时不再动态加载任何样式资源。
     getEditor() { return this.$refs.document && this.$refs.document.getEditor() },
     getSession() { return this.sessionInstance || this.session },
     writable() { const editor = this.getEditor(); return editor && editor.isEditable && !this.importing },
@@ -558,9 +569,32 @@ export default {
       if (!workspace || typeof workspace[method] !== 'function') throw new Error(`持久化适配器缺少 ${method} 方法`)
       return workspace[method](...args)
     },
+    // ↓ 命令式入口面向宿主的稳定方法，全部转给内部编辑器；不要在这里放业务逻辑。
+    getHTML() { return this.$refs.document ? this.$refs.document.getHTML() : '' },
+    getJSON() { return this.$refs.document ? this.$refs.document.getJSON() : null },
+    getText() { return this.$refs.document ? this.$refs.document.getText() : '' },
+    setContent(content, options) { return this.$refs.document ? this.$refs.document.setContent(content, options) : false },
+    focus() { if (this.$refs.document) this.$refs.document.focus() },
+    getTitle() { return this.title },
+    setTitle(value) { this.title = value == null ? '' : String(value) },
+    setReadonly(value) { this.forcedReadonly = value === true },
+    isReadonly() { return Boolean(this.readonly || this.forcedReadonly || this.effectiveReadonly) },
+    insertContent(content) {
+      const editor = this.getEditor()
+      if (!editor || !this.writable()) return false
+      return editor.chain().focus().insertContent(content).run()
+    },
+    insertText(text) { return this.insertContent(String(text == null ? '' : text)) },
+    undo() { const editor = this.getEditor(); return editor ? editor.chain().focus().undo().run() : false },
+    redo() { const editor = this.getEditor(); return editor ? editor.chain().focus().redo().run() : false },
+    save() { return this.saveNow(true) },
     async onReady() {
-      this.loadMathStyles()
       this.getSession()?.attachEditor(this.getEditor())
+      // 对象形式的初始内容（Tiptap JSON）在编辑器就绪后写入，字符串已通过 v-model 注入。
+      if (this.initialContent && typeof this.initialContent === 'object' && !this._contentSeeded) {
+        this._contentSeeded = true
+        try { this.$refs.document.setContent(this.initialContent) } catch (error) { this.storageFailure(error) }
+      }
       if (this.featureEnabled('persistence')) {
         try {
           const draft = await this.callWorkspace('load')
@@ -576,8 +610,20 @@ export default {
       this.getEditor().on('transaction', this.mapAI)
       window.addEventListener('beforeunload', this.flushOnLeave)
       logger.info('lifecycle', 'feishu.workspace.ready', { status: this.persistence ? 'host' : 'local' })
+      this.$emit('ready', { editor: this.getEditor(), document: this })
     },
-    onChange(value) { this.html = value.html; this.queueSave() },
+    onChange(value) {
+      this.html = value.html
+      this.queueSave()
+      this.$emit('change', value)
+      this.$emit('update', value)
+    },
+    // 旧数据（Vditor）转换结果：宿主可据此判断是否补传图片或改造结构。
+    onImportReport(report) {
+      this.importReport = report
+      this.$emit('import-report', report)
+    },
+    getImportReport() { return this.importReport },
     queueSave() {
       if (!this.featureEnabled('persistence') || !this.initialized || this.storageError || this._disposed) return
       clearTimeout(this._saveTimer)
@@ -597,12 +643,15 @@ export default {
         this.storageError = false
         this.saveStatus = `已保存到${this.persistenceLabel()} ${new Date().toLocaleTimeString()}`
         logger.info('storage', 'feishu.draft.saved', { status: this.persistence ? 'host' : 'local' })
+        this.$emit('save', { status: 'saved', manual, target: this.persistenceLabel(), savedAt: Date.now() })
       } catch (error) { if (generation === this._saveGeneration && !this._disposed) this.storageFailure(error) }
     },
     storageFailure(error) {
       this.storageError = true
       this.saveStatus = error.message || '本地存储不可用，请导出当前文档'
       logger.warn('storage', 'feishu.storage.failed', { status: 'failed' })
+      this.$emit('save', { status: 'failed', message: this.saveStatus })
+      this.$emit('error', error)
     },
     applyTemplate(id) {
       if (!this.featureEnabled('templates') || !id || !this.writable()) return false
@@ -768,10 +817,7 @@ export default {
       this.aiReviewIssues = []
       this.aiProposal = null
       const generation = this._aiGeneration
-      this._aiStream = streamMock(this._aiPreviewAction, context.text, {
-        prompt: options.prompt || this.aiPrompt,
-        language: this.aiLanguage,
-        delay: 16,
+      const callbacks = {
         onStart: () => { if (generation === this._aiGeneration) this.aiStatus = '生成中…' },
         onChunk: chunk => { if (!this._disposed && generation === this._aiGeneration) { this.aiPreview += chunk; this.aiStatus = '生成中…' } },
         onDone: () => {
@@ -784,7 +830,30 @@ export default {
         },
         onCancelled: () => { if (generation === this._aiGeneration) this.aiStatus = '已停止' },
         onError: error => { if (generation === this._aiGeneration) { this.aiRunning = false; this.aiError = error.message || 'AI 生成失败'; this.aiStatus = '失败' } },
-      })
+      }
+      // 宿主提供 stream 钩子时完全接管生成；否则退回本地 Mock，保证 Demo 与离线可用。
+      if (this.aiProvider && typeof this.aiProvider.stream === 'function') {
+        try {
+          const handle = this.aiProvider.stream({
+            action: this._aiPreviewAction,
+            text: context.text,
+            prompt: options.prompt || this.aiPrompt,
+            language: this.aiLanguage,
+            range: { from: context.from, to: context.to, source: context.source },
+            ...callbacks,
+          })
+          this._aiStream = typeof handle === 'function' ? { cancel: handle } : (handle || { cancel() {} })
+        } catch (error) {
+          callbacks.onError(error)
+        }
+      } else {
+        this._aiStream = streamMock(this._aiPreviewAction, context.text, {
+          prompt: options.prompt || this.aiPrompt,
+          language: this.aiLanguage,
+          delay: 16,
+          ...callbacks,
+        })
+      }
       logger.info('ai', 'feishu.mock.started', { action: previewAction, status: 'local' })
     },
     sendAIChat() {
@@ -797,7 +866,9 @@ export default {
     regenerateAI() { if (!this.aiRunning) this.startAI(this.aiAction, { prompt: this.aiPrompt }) },
     stopAI() {
       this._aiGeneration = (this._aiGeneration || 0) + 1
-      if (this._aiStream) this._aiStream.cancel()
+      if (this._aiStream && typeof this._aiStream.cancel === 'function') {
+        try { this._aiStream.cancel() } catch (error) { /* 宿主流已关闭时忽略 */ }
+      }
       this._aiStream = null
       this.aiRunning = false
       if (this.aiOpen && !this.aiStatus.includes('完成')) this.aiStatus = '已停止'

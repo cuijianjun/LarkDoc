@@ -20,6 +20,7 @@ import { VueNodeViewRenderer } from '@tiptap/vue-2'
 import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { findTextMatches, foldedRange, getSlashMatch, isPageHeading, resolveHeadingHighlightSection, safeAttachmentId, safeColor, safeUrl, sanitizeHTML } from './documentOperations'
+import { createNetworkPolicy } from '../../networkPolicy'
 
 let katexPromise
 function loadKatex() {
@@ -201,7 +202,11 @@ function codeExtension(view, config) {
       return { language: { default: 'plaintext', parseHTML: (el) => el.getAttribute('data-language') || Array.from(el.firstElementChild?.classList || []).find((name) => name.startsWith('language-'))?.slice(9) || 'plaintext', renderHTML: ({ language }) => ({ 'data-language': /^[\w+-]{0,32}$/.test(language) ? language : 'plaintext' }) } }
     },
     ...(view ? { addNodeView() { return VueNodeViewRenderer(view) } } : {}),
-  }).configure({ syntaxHighlight: config?.performance?.syntaxHighlight !== false })
+  }).configure({
+    syntaxHighlight: config?.performance?.syntaxHighlight !== false,
+    diagram: config?.features?.diagram !== false,
+    diagramScriptUrl: (config?.performance && config.performance.diagramScriptUrl) || null,
+  })
 }
 
 const EMOJI_GLYPHS = {
@@ -270,6 +275,8 @@ function mathExtension(name, onError) {
 
 function documentExtension(options) {
   const enabled = (name) => options.config?.features?.[name] !== false
+  // 粘贴/拖入的 HTML 先做安全清洗，再按离线策略拦截远端图片地址。
+  const network = createNetworkPolicy(options.config?.network)
   return Extension.create({
     name: 'feishuDocument',
     priority: 1000,
@@ -310,7 +317,7 @@ function documentExtension(options) {
           },
         },
         props: {
-          transformPastedHTML: sanitizeHTML,
+          transformPastedHTML: (html) => network.filterHtml(sanitizeHTML(html)),
           handleKeyDown: (view, event) => {
             if (enabled('shortcuts') && event.key === 'Backspace' && !view.composing && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && options.onBackspace?.(view)) {
               event.preventDefault()
@@ -414,6 +421,6 @@ export function createFeishuExtensions(options = {}) {
     }),
     mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
     Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
-    Placeholder.configure({ placeholder: '输入正文，或输入 / 插入内容' }), documentExtension(options),
+    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension(options),
   ]
 }
