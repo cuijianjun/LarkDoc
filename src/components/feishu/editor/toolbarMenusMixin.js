@@ -1,0 +1,162 @@
+/**
+ * toolbarMenusMixin — 顶部工具栏下拉：标题级别菜单、链接对话框、公式对话框、表情对话框。
+ * 通过 this.editor、this.writable()、this.rememberSelection()/this.restoreSelection()/this.run()
+ * （主组件方法）协作；commandMenuMixin 的 executeCommand 会打开这里的 mathDialog/emojiDialog/linkDialog。
+ * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
+ */
+import { safeUrl } from '../documentOperations'
+import {
+  marks, fontFamilyOptions, fontSizeOptions, lineHeightOptions,
+  widthModeOptions, cellTextAlignOptions, cellVerticalAlignOptions,
+} from './constants'
+
+export default {
+  data() { return {
+    headingOpen: false, headingStyle: {},
+    // 顶栏隐藏时（layout.headerVisible=false），工具栏「⋯」下拉承接 header-actions 插槽。
+    headerMenuOpen: false, headerMenuStyle: {},
+    linkDialog: false, linkValue: '', linkText: '', linkInsertMode: false,
+    mathDialog: '', mathValue: '', mathError: '', emojiDialog: false, marks,
+    // 自绘下拉（FeishuSelect）选项清单与最近一次应用的值（替代原生 select 的非受控展示）。
+    fontFamilyOptions, fontSizeOptions, lineHeightOptions, widthModeOptions,
+    cellTextAlignOptions, cellVerticalAlignOptions,
+    appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: '#263b35', backgroundColor: '#fff2a8' },
+    cellAlignState: { textAlign: '', verticalAlign: '' },
+    // 飞书式 hover 弹窗：鼠标离开触发器/弹层后延迟关闭（跨过 6px 间隙时不误关）。
+    hoverCloseTimer: null,
+  } },
+  computed: {
+    visibleMarks() {
+      if (!this.feishuConfig.features.marks) return []
+      const allow = this.feishuConfig.toolbar.marksAllow
+      return Array.isArray(allow) ? this.marks.filter((item) => allow.includes(item.id)) : this.marks
+    },
+    currentBlockLabel() { if (!this.editor) return '正文'; const level = this.editor.getAttributes('heading').level; return this.editor.isActive('heading') ? `H${level}` : '正文' },
+  },
+  methods: {
+    /** hover 弹窗公共：取消延迟关闭 / 离开后延迟关闭（进入弹层会取消）。 */
+    cancelPopupHoverClose() { if (this.hoverCloseTimer) { clearTimeout(this.hoverCloseTimer); this.hoverCloseTimer = null } },
+    schedulePopupHoverClose(close) {
+      this.cancelPopupHoverClose()
+      this.hoverCloseTimer = setTimeout(() => { this.hoverCloseTimer = null; close() }, 150)
+    },
+    openHeadingMenuOnHover() {
+      if (!this.writable()) return
+      this.cancelPopupHoverClose()
+      if (this.headingOpen) return
+      // 直接置态而非复用 toggleHeadingMenu：避免其把 hover 标志清掉，导致紧随的 click 又关闭弹窗。
+      this._headingHoverOpened = true
+      this.headingOpen = true
+      this.headingStyle = {}
+      this.menuOpen = false
+      this.$nextTick(() => this.positionHeadingMenu())
+    },
+    scheduleHeadingMenuClose() { this.schedulePopupHoverClose(() => { this._headingHoverOpened = false; if (this.headingOpen) this.toggleHeadingMenu() }) },
+    openColorPaletteOnHover(event) {
+      this.cancelPopupHoverClose()
+      if (this.colorPaletteOpen !== 'textColor') { this._paletteHoverOpened = true; this.toggleColorPalette('textColor', event) }
+    },
+    scheduleColorPaletteClose() { this.schedulePopupHoverClose(() => { this._paletteHoverOpened = false; if (this.colorPaletteOpen) this.colorPaletteOpen = '' }) },
+    setHeading(level) { if (!this.featureEnabled('headings')) return; this.headingOpen = false; this.headingStyle = {}; if (level) this.run('setHeading', { level }); else this.run('setParagraph') },
+    toggleHeadingMenu() {
+      if (!this.writable()) return
+      // hover 已打开时点击不关闭（飞书行为：hover 弹窗靠移开鼠标关闭），避免 hover+click 冲突。
+      if (this._headingHoverOpened && this.headingOpen) return
+      this._headingHoverOpened = false
+      this.headingOpen = !this.headingOpen
+      this.headingStyle = {}
+      this.menuOpen = false
+      if (this.headingOpen) this.$nextTick(() => this.positionHeadingMenu())
+    },
+    positionHeadingMenu() {
+      if (!this.headingOpen) return
+      const root = this.$refs.root
+      const trigger = root?.querySelector('.feishu-heading-tool > button')
+      const menu = root?.querySelector('.feishu-dropdown')
+      if (!trigger || !menu) return
+      const margin = 8
+      const triggerRect = trigger.getBoundingClientRect()
+      const menuRect = menu.getBoundingClientRect()
+      const viewportSpace = Math.max(40, window.innerHeight - margin * 2)
+      const naturalHeight = Math.max(menu.scrollHeight, menuRect.height)
+      const desiredHeight = Math.min(naturalHeight, viewportSpace)
+      const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin)
+      const above = Math.max(0, triggerRect.top - margin)
+      const useAbove = below < desiredHeight && above > below
+      const available = useAbove ? above : below
+      const maxHeight = Math.max(40, Math.min(desiredHeight, available || viewportSpace))
+      const top = useAbove ? triggerRect.top - maxHeight - 6 : triggerRect.bottom + 6
+      const width = Math.min(menuRect.width || 155, window.innerWidth - margin * 2)
+      const left = Math.max(margin, Math.min(window.innerWidth - width - margin, triggerRect.left))
+      this.headingStyle = { top: `${Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, top))}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+    },
+    /** 打开/关闭工具栏右侧「⋯」文档操作下拉（fixed 定位，贴按钮右下）。 */
+    toggleHeaderMenu() {
+      this.headerMenuOpen = !this.headerMenuOpen
+      this.headerMenuStyle = {}
+      if (this.headerMenuOpen) this.$nextTick(() => this.positionHeaderMenu())
+    },
+    closeHeaderMenu() { this.headerMenuOpen = false; this.headerMenuStyle = {} },
+    /** 「更多」弹层中的文档操作入口：内联「⋯」按钮被收纳隐藏时，以点击位置为锚点打开。 */
+    openHeaderMenuFrom(event) {
+      this.headerMenuOpen = true
+      this.headerMenuStyle = {}
+      const anchor = event?.currentTarget?.getBoundingClientRect?.()
+      this.$nextTick(() => {
+        if (!this.headerMenuOpen || !this.$refs.root?.querySelector('.feishu-header-menu')) return
+        if (!anchor || !anchor.width) { this.positionHeaderMenu(); return }
+        const margin = 8
+        const maxHeight = Math.max(120, window.innerHeight - anchor.bottom - margin * 2)
+        this.headerMenuStyle = { top: `${anchor.bottom + 6}px`, right: `${Math.max(margin, window.innerWidth - anchor.right)}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      })
+    },
+    positionHeaderMenu() {
+      if (!this.headerMenuOpen) return
+      const root = this.$refs.root
+      // 触发按钮可能在 .feishu-tools-end-inner（折叠改造后的内层容器）或 .feishu-tools-end 直接子级。
+      const trigger = root?.querySelector('button[aria-label="文档操作"]')
+      const menu = root?.querySelector('.feishu-header-menu')
+      if (!trigger || !menu) return
+      const margin = 8
+      const triggerRect = trigger.getBoundingClientRect()
+      const maxHeight = Math.max(120, window.innerHeight - triggerRect.bottom - margin * 2)
+      const right = Math.max(margin, window.innerWidth - triggerRect.right)
+      this.headerMenuStyle = { top: `${triggerRect.bottom + 6}px`, right: `${right}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+    },
+    openLinkDialog(allowEmpty = false) {
+      if (!this.writable() || (!allowEmpty && this.editor.state.selection.empty)) return
+      this.rememberSelection(allowEmpty)
+      this.linkInsertMode = this.editor.state.selection.empty
+      this.linkText = ''
+      this.linkValue = this.editor.getAttributes('link').href || ''
+      this.linkDialog = true
+    },
+    applyLink() {
+      if (!this.writable() || !this.linkValue || !safeUrl(this.linkValue)) { this.error = '链接地址无效，仅支持 http、https、mailto、tel 或 # 锚点'; return }
+      const attrs = { href: this.linkValue, target: '_blank', rel: 'noopener noreferrer' }
+      if (this.linkInsertMode) {
+        if (!this.linkText.trim()) { this.error = '请输入链接显示文字'; return }
+        this.restoreSelection(true)
+        this.editor.chain().focus().insertContent({ type: 'text', text: this.linkText.trim(), marks: [{ type: 'link', attrs }] }).run()
+      } else this.run('setLink', attrs)
+      this.linkDialog = false
+      this.linkInsertMode = false
+      this.linkText = ''
+    },
+    removeLink() { if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
+    async insertMath() {
+      if (!this.writable() || !this.featureEnabled('math')) return
+      try {
+        const module = await import('katex')
+        if (!this.writable() || !this.mathDialog) return
+        const katex = module.default || module
+        katex.renderToString(this.mathValue, { throwOnError: true, trust: false })
+        this.mathError = ''
+        this.run('insertContent', { type: this.mathDialog, attrs: { latex: this.mathValue } })
+        this.mathDialog = ''
+      } catch (_) { this.mathError = '公式无法解析，请检查 LaTeX 语法' }
+    },
+    insertEmoji(name) { if (!this.writable() || !this.featureEnabled('emoji')) return; if (!this.run('setEmoji', name)) this.error = '无法插入该表情'; this.emojiDialog = false },
+  },
+  beforeDestroy() { if (this.hoverCloseTimer) clearTimeout(this.hoverCloseTimer) },
+}

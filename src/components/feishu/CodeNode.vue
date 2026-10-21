@@ -1,40 +1,52 @@
 <template>
-  <node-view-wrapper class="feishu-code">
+  <node-view-wrapper
+    class="feishu-code"
+    :class="{ 'feishu-code-diagram': isDiagram }"
+  >
+    <!-- 图表块使用独立外观（白底卡片，无代码框 chrome），语言下拉仅在代码块显示。 -->
     <div
       class="feishu-code-toolbar"
       contenteditable="false"
       @mousedown.stop
     >
-      <label>代码语言 <select
-        aria-label="代码语言"
-        :value="node.attrs.language || 'plaintext'"
-        :disabled="!editable"
-        @change="setLanguage($event.target.value)"
-      >
-        <option
-          v-for="item in languageOptions"
-          :key="item.value"
-          :value="item.value"
-        >{{ item.label }}</option>
-        <option
-          v-if="!languageOptions.some(item => item.value === node.attrs.language)"
-          :value="node.attrs.language"
-        >{{ node.attrs.language || '纯文本' }}</option>
-      </select></label>
-      <button
-        type="button"
-        @click="copyCode"
-      >
-        复制代码
-      </button>
-      <button
-        v-if="isDiagram"
-        type="button"
-        @click="togglePreview"
-      >{{ showPreview ? '查看源码' : '预览图表' }}</button>
-      <span role="status">{{ message }}</span>
+      <template v-if="isDiagram">
+        <label>图表</label>
+        <button
+          type="button"
+          @click="togglePreview"
+        >
+          {{ showPreview ? '编辑源码' : '预览图表' }}
+        </button>
+        <button
+          type="button"
+          @click="copyCode"
+        >
+          复制源码
+        </button>
+        <span role="status">{{ message }}</span>
+      </template>
+      <template v-else>
+        <label>代码语言 <feishu-select
+          aria-label="代码语言"
+          :options="languageOptions"
+          :value="node.attrs.language || 'plaintext'"
+          :placeholder="node.attrs.language || '纯文本'"
+          :disabled="!editable"
+          @change="setLanguage"
+        /></label>
+        <button
+          type="button"
+          @click="copyCode"
+        >
+          复制代码
+        </button>
+        <span role="status">{{ message }}</span>
+      </template>
     </div>
-    <div class="feishu-code-body">
+    <div
+      v-show="!showPreview || diagramState === 'error'"
+      class="feishu-code-body"
+    >
       <!-- 高亮层只接收 highlight.js 已转义的输出；正文始终由 Tiptap contentDOM 管理。 -->
       <!-- eslint-disable vue/no-v-html -->
       <pre
@@ -58,15 +70,20 @@
       <div
         v-if="diagramState === 'loading'"
         class="feishu-diagram-status"
-      >图表渲染中…</div>
+      >
+        图表渲染中…
+      </div>
       <div
         v-else-if="diagramState === 'error'"
         class="feishu-diagram-status feishu-diagram-error"
-      >{{ diagramError || '图表渲染失败，请检查语法' }}</div>
+      >
+        {{ diagramError || '图表渲染失败，请检查语法' }}
+      </div>
       <!-- eslint-disable vue/no-v-html -->
       <div
         v-else
         class="feishu-diagram-svg"
+        data-diagram-engine="mermaid-svg-text"
         v-html="diagramSvg"
       />
       <!-- eslint-enable vue/no-v-html -->
@@ -77,6 +94,7 @@
 <script>
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
 import { isDiagramLanguage, renderDiagram } from './diagram'
+import FeishuSelect from './FeishuSelect.vue'
 
 // Code blocks are uncommon on the document's first paint. Keep both the
 // highlighter core and grammars out of the route chunk until one is rendered.
@@ -137,7 +155,7 @@ const languages = [
 
 export default {
   name: 'FeishuCodeNode',
-  components: { NodeViewWrapper, NodeViewContent },
+  components: { NodeViewWrapper, NodeViewContent, FeishuSelect },
   props: nodeViewProps,
   data() {
     return {
@@ -148,8 +166,8 @@ export default {
       diagramState: 'idle', // idle | loading | ok | error
       diagramSvg: '',
       diagramError: '',
-      // 编辑态默认展示源码，只读态默认展示预览。
-      previewShown: !this.editor.isEditable,
+      // 图表块（mermaid）直接渲染预览，与 Vditor 行为一致；「编辑源码」可切回编辑。
+      previewShown: isDiagramLanguage(this.node?.attrs?.language) && this.extension?.options?.diagram !== false,
     }
   },
   computed: {
@@ -290,6 +308,17 @@ export default {
 .feishu-document .feishu-diagram { border-top: 1px solid #dce5e1; background: #ffffff; padding: 16px; display: flex; justify-content: center; overflow: auto; }
 .feishu-document .feishu-diagram-status { color: #66756e; font-size: 13px; padding: 8px; }
 .feishu-document .feishu-diagram-error { color: #c0392b; }
-.feishu-document .feishu-diagram-svg { max-width: 100%; line-height: 0; }
+.feishu-document .feishu-diagram-svg { max-width: 100%; }
 .feishu-document .feishu-diagram-svg svg { max-width: 100%; height: auto; user-select: none; }
+/* 图表标签为 SVG 原生 <text>（diagram.js 关闭 htmlLabels），不经过 foreignObject，
+   天然不受宿主 CSS 继承影响；overflow 放开只为边标签的测量误差兜底。 */
+.feishu-document .feishu-diagram-svg svg { overflow: visible; }
+/* 图表块独立外观：白底卡片，去掉代码框的深色 chrome 与高亮配色。 */
+.feishu-document .feishu-code-diagram { background: #ffffff; border-color: #e3ebe6; }
+.feishu-document .feishu-code-diagram .feishu-code-toolbar { background: #f6faf7; color: #3f5149; }
+.feishu-document .feishu-code-diagram .feishu-code-body { background: #fbfdfc; }
+.feishu-document .feishu-code-diagram .feishu-code-body pre { color: #24352d; caret-color: #1f2d26; }
+.feishu-document .feishu-code-diagram .feishu-code-highlight { color: #24352d; }
+.feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-keyword, .feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-string, .feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-attr, .feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-number, .feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-comment, .feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-title, .feishu-document .feishu-code-diagram .feishu-code-highlight .hljs-built_in { color: inherit; }
+.feishu-document .feishu-code-diagram .feishu-diagram { border-top: 1px solid #eef3f0; }
 </style>

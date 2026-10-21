@@ -3,6 +3,7 @@ import { Fragment } from '@tiptap/pm/model'
 const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
 
 // HTML 是导入适配器；所有 JSON 在写入编辑器前必须通过完整 schema 校验。
+/** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image。返回 boolean。 */
 export function safeUrl(value, image = false) {
   if (typeof value !== 'string' || !value || Array.from(value).some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return false
   if (image && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
@@ -12,10 +13,12 @@ export function safeUrl(value, image = false) {
   return !image && (/^(mailto|tel):[^:<>]+$/i.test(value) || /^#[\w\u0080-\uffff-]+$/.test(value))
 }
 
+/** 校验颜色值（hex / rgb(a) / hsl(a) / CSS 关键字），防止 style 注入。 */
 export function safeColor(value) {
   return typeof value === 'string' && (/^#[\da-f]{3,8}$/i.test(value) || /^(rgb|hsl)a?\([\d.,%\s+-]+\)$/i.test(value) || /^[a-z]+$/i.test(value))
 }
 
+/** 校验附件 id：非空、长度 ≤1000、不含控制字符。 */
 export function safeAttachmentId(value) {
   return typeof value === 'string' && value.length > 0 && value.length <= 1000 && !Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
 }
@@ -58,6 +61,7 @@ function validateAttrs(type, attrs, definition) {
   })
 }
 
+/** 全量校验 Tiptap JSON（节点/属性/深度/规模白名单）并返回规范化 JSON，导入与快照恢复的必经入口。 */
 export function validateDocument(json, schema) {
   if (!json || json.type !== 'doc') throw new Error('请输入有效的 Tiptap 文档 JSON')
   let count = 0
@@ -89,6 +93,7 @@ export function validateDocument(json, schema) {
   return node.toJSON()
 }
 
+/** 清洗粘贴/导入的 HTML：标签、属性、style 全走白名单，返回安全的 HTML 字符串。 */
 export function sanitizeHTML(html) {
   if (typeof html !== 'string') throw new Error('HTML 必须为字符串')
   const container = document.createElement('div')
@@ -138,6 +143,7 @@ export function sanitizeHTML(html) {
   return container.innerHTML
 }
 
+/** 检测段落中未完成的 slash 输入；返回 { from, to, query } 或 null（代码内不触发）。 */
 export function getSlashMatch(state) {
   const { $from, empty } = state.selection
   if (!empty || $from.parent.type.name !== 'paragraph') return null
@@ -149,6 +155,7 @@ export function getSlashMatch(state) {
   return inCode ? null : { from: $from.pos - match[1].length - 1, to: $from.pos, query: match[1] }
 }
 
+/** 全文查找字符串（按字面量转义，跨块不误配）；返回 [{ from, to }] 位置数组。 */
 export function findTextMatches(doc, query) {
   if (typeof query !== 'string' || !query) return []
   const matches = []
@@ -167,6 +174,7 @@ export function findTextMatches(doc, query) {
   return matches
 }
 
+/** 替换查找命中：默认替换当前/首个匹配，all=true 替换全部；返回替换数量。 */
 export function replaceText(editor, query, replacement, all = false) {
   if (!editor.isEditable || typeof replacement !== 'string') return 0
   const matches = findTextMatches(editor.state.doc, query)
@@ -185,6 +193,7 @@ export function replaceText(editor, query, replacement, all = false) {
   return selected.length
 }
 
+/** 把 [from, to) 的完整块整体移动到 target 位置；结构非法时返回 false 不动文档。 */
 export function moveBlockRange(editor, from, to, target) {
   const { doc } = editor.state
   if (!editor.isEditable || ![from, to, target].every(Number.isInteger) || from < 0 || from >= to || to > doc.content.size || target < 0 || target > doc.content.size || (target >= from && target <= to)) return false
@@ -214,6 +223,7 @@ export function moveBlockRange(editor, from, to, target) {
   return true
 }
 
+/** 收集页面级标题大纲（排除容器内标题）；返回 [{ pos, level, text }]。 */
 export function collectOutline(doc) {
   const result = []
   doc.descendants((node, pos) => {
@@ -309,10 +319,12 @@ export function resolveHeadingSectionMode(doc, pos, mode = 'highlight') {
   return { from: pos, to: end, headingPos: pos, heading, parent, blocks, hasContent, hasDescendantHeading }
 }
 
+/** resolveHeadingSectionMode 的 highlight 模式别名，供旧调用方与高亮逻辑使用。 */
 export function resolveHeadingHighlightSection(doc, pos) {
   return resolveHeadingSectionMode(doc, pos, 'highlight')
 }
 
+/** 判断标题是否属于页面大纲（不在 callout/表格等隔离容器内）。 */
 export function isPageHeading(doc, pos) {
   if (!doc || pos < 0 || pos > doc.content.size) return false
   const heading = doc.nodeAt(pos)
@@ -324,6 +336,7 @@ export function isPageHeading(doc, pos) {
   return true
 }
 
+/** 计算标题折叠时的正文范围 [{ from, to }]；不可折叠（容器内标题）返回 null。 */
 export function foldedRange(doc, pos) {
   if (!isPageHeading(doc, pos)) return null
   const section = resolveHeadingSectionMode(doc, pos, 'fold')

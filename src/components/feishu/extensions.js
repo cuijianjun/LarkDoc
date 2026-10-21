@@ -1,3 +1,10 @@
+/**
+ * 扩展装配入口。
+ *
+ * createFeishuExtensions 是 schema 的唯一来源：这里决定文档 JSON 认识哪些
+ * 节点、mark 和属性；config.features 开关在此映射为各 Tiptap 扩展的启停，
+ * 关闭能力只隐藏入口，历史 JSON 仍可解析。
+ */
 import { Extension, Node, mergeAttributes, nodeInputRule } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Heading from '@tiptap/extension-heading'
@@ -161,6 +168,7 @@ const Formatting = Extension.create({
   },
 })
 
+/** 图片扩展：figure/img 双层契约，所有 src 与附件 id 入 schema 前先做安全校验。 */
 function imageExtension(view, resolveImageFile) {
   return Image.extend({
     addAttributes() {
@@ -196,6 +204,7 @@ function imageExtension(view, resolveImageFile) {
   }).configure({ allowBase64: true, resolveImageFile })
 }
 
+/** 代码块扩展：语言标记进 data-language，并透传图表/高亮性能配置。 */
 function codeExtension(view, config) {
   return CodeBlock.extend({
     addAttributes() {
@@ -233,6 +242,7 @@ const FeishuEmoji = Node.create({
   },
 })
 
+/** 公式扩展：行内/块级共用一套实现，只差 group 与渲染容器。 */
 function mathExtension(name, onError) {
   // 保留公式节点的 JSON/HTML 契约；KaTeX 只在公式节点实际挂载时加载。
   const isBlock = name === 'blockMath'
@@ -273,6 +283,7 @@ function mathExtension(name, onError) {
   })
 }
 
+/** 文档级扩展：折叠、搜索、块把手、slash 监听与粘贴网络策略都挂在这个插件上。 */
 function documentExtension(options) {
   const enabled = (name) => options.config?.features?.[name] !== false
   // 粘贴/拖入的 HTML 先做安全清洗，再按离线策略拦截远端图片地址。

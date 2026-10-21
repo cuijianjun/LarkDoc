@@ -1,6 +1,10 @@
 /**
  * 版本 Provider 保存不可变快照和恢复操作。恢复应由服务端创建新版本，
  * 不覆盖原版本；本阶段只定义接口，不启用远端实现。
+ *
+ * 必需方法：list、createSnapshot、get、restore。
+ * DocumentSession 的 createVersion/restoreVersion 只消费 createSnapshot
+ * 与 restore，并先经 canCreateVersion/canRestoreVersion 能力把关。
  */
 export const VERSIONING_METHODS = ['list', 'createSnapshot', 'get', 'restore']
 

@@ -46,7 +46,10 @@
       >
         ↶
       </button>
-      <span class="feishu-image-toolbar-divider" aria-hidden="true" />
+      <span
+        class="feishu-image-toolbar-divider"
+        aria-hidden="true"
+      />
       <button
         v-for="item in alignments"
         :key="item.value"
@@ -58,7 +61,10 @@
       >
         {{ item.glyph }}
       </button>
-      <span class="feishu-image-toolbar-divider" aria-hidden="true" />
+      <span
+        class="feishu-image-toolbar-divider"
+        aria-hidden="true"
+      />
       <button
         type="button"
         aria-label="预览图片"
@@ -137,8 +143,8 @@
     >
     <input
       v-if="editable && selected"
-      class="feishu-image-caption"
       ref="caption"
+      class="feishu-image-caption"
       aria-label="图片说明"
       placeholder="添加图片说明"
       :value="node.attrs.caption"

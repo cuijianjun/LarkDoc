@@ -6,3 +6,4 @@ npm-debug.log*
 .playwright-cli/
 .superpowers/
 .history/
+.verify-shots/

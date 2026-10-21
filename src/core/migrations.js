@@ -1,3 +1,9 @@
+/**
+ * 文档 Schema 迁移链。
+ *
+ * 正文版本从 fromVersion 逐级 +1 走到 DOCUMENT_SCHEMA_VERSION，每个跨版本
+ * 步骤由 registerDocumentMigration 注册；缺链会直接抛错，避免静默丢数据。
+ */
 import { DOCUMENT_SCHEMA_VERSION } from './documentSchema'
 
 const migrations = new Map()

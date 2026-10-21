@@ -10,6 +10,9 @@
 .feishu-document .feishu-skip:focus { left: 8px; }
 .feishu-document .feishu-topbar { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 7px clamp(12px, 2vw, 30px); background: white; border-bottom: 1px solid var(--feishu-line); }
 .feishu-document.feishu-titlebar-fixed .feishu-topbar { position: sticky; z-index: 35; top: 0; }
+/* 工具栏吸附：独立开启时贴视口顶；与标题栏同开时贴在标题栏（min-height 58px + 1px 下边框）之下。 */
+.feishu-document.feishu-toolbar-fixed .feishu-toolbar { position: sticky; z-index: 34; top: 0; }
+.feishu-document.feishu-titlebar-fixed.feishu-toolbar-fixed .feishu-toolbar { top: 59px; }
 .feishu-document .feishu-brand { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; color: var(--feishu-green); font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
 .feishu-document .feishu-brand span { color: #24493c; font-size: 14px; letter-spacing: 0; }
 .feishu-document .feishu-title-wrap { display: flex; flex-direction: column; min-width: 140px; width: min(370px, 30vw); }
@@ -22,12 +25,67 @@
 .feishu-document .feishu-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 7px; border-right: 1px solid var(--feishu-line); }
 .feishu-document .feishu-tools-end { margin-left: auto; border-right: 0; }
 .feishu-document .feishu-tools select { max-width: 115px; height: 30px; border-color: transparent; background: transparent; padding: 3px 5px; }
-.feishu-document .feishu-tools button { min-width: 29px; height: 30px; padding: 3px 6px; }
+.feishu-document .feishu-tools button { min-width: 29px; height: 30px; padding: 3px 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 12.5px; color: #3f5149; }
+/* 扁平化（对齐飞书）：hover 仅浅灰底无边框；展开（aria-expanded）/激活（aria-pressed）浅绿底 + 主色图标。 */
+.feishu-document .feishu-tools button:hover:not(:disabled), .feishu-document .feishu-select-trigger:hover:not(:disabled) { background: #f2f6f4; border-color: transparent; color: var(--feishu-ink); }
+.feishu-document .feishu-tools button[aria-pressed="true"], .feishu-document .feishu-tools button[aria-expanded="true"], .feishu-document .feishu-select-open .feishu-select-trigger { background: #e3f2ea; border-color: transparent; color: #0c7a58; }
+/* 格式字母按钮（B/I/U/S 等）：用排版本身当图标，飞书同款做法。 */
+.feishu-document .feishu-tools button[class*="feishu-mark-"] { font-size: 13px; font-weight: 700; }
+.feishu-document .feishu-mark-bold { font-weight: 800; }
+.feishu-document .feishu-mark-italic { font-family: Georgia, "Times New Roman", serif; font-style: italic; }
+.feishu-document .feishu-mark-underline { text-decoration: underline; text-underline-offset: 2px; }
+.feishu-document .feishu-mark-strike { text-decoration: line-through; }
+.feishu-document .feishu-mark-code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; font-weight: 600; }
+/* 颜色按钮：字色 = A + 底部色条；背景色 = A 带下半高亮（飞书同款语义）。 */
+.feishu-document .feishu-color { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.feishu-document .feishu-color:hover { background: #f2f6f4; }
+.feishu-document .feishu-color-letter { font-size: 16px; font-weight: 700; line-height: 1; color: #3f5149; padding: 0 1px; }
+.feishu-document .feishu-color-arrow { align-self: flex-end; margin-bottom: 4px; color: #86909c; transition: transform 0.18s ease; }
+.feishu-document .feishu-color[aria-expanded="true"] .feishu-color-arrow { transform: rotate(180deg); }
+.feishu-document .feishu-color input { width: 0; height: 0; min-width: 0; padding: 0; border: 0; opacity: 0; }
+/* 所有关闭按钮（aria-label 以「关闭」开头）：26px 方圆热区 + close 图标，hover 浅灰。 */
+.feishu-document button[aria-label^="关闭"] { width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: #8ba197; }
+.feishu-document button[aria-label^="关闭"]:hover:not(:disabled) { background: #f2f6f4; border-color: transparent; color: var(--feishu-ink); }
+/* SVG 图标与下拉箭头。 */
+.feishu-document .feishu-icon { display: inline-flex; align-items: center; justify-content: center; }
+.feishu-document .feishu-icon svg { width: 100%; height: 100%; display: block; }
+.feishu-document .feishu-caret { color: #86909c; transition: transform 0.18s ease; }
+.feishu-document [aria-expanded="true"] .feishu-caret { transform: rotate(180deg); }
+.feishu-document .feishu-select-caret { color: #86909c; transition: transform 0.18s ease; }
+.feishu-document .feishu-select-open .feishu-select-caret { transform: rotate(180deg); }
 .feishu-document .feishu-heading-tool { position: relative; }
 .feishu-document .feishu-color { display: flex; align-items: center; gap: 2px; font-size: 12px; }
 .feishu-document .feishu-color input { width: 28px; height: 26px; padding: 1px; border: 0; background: transparent; cursor: pointer; }
 .feishu-document .feishu-dropdown { position: fixed; z-index: 65; display: grid; width: 155px; max-height: 70vh; overflow-y: auto; margin-top: 33px; padding: 5px; background: white; border: 1px solid var(--feishu-line); border-radius: 9px; box-shadow: 0 12px 35px #1c43311c; }
 .feishu-document .feishu-dropdown button { text-align: left; }
+/* 下拉菜单项：flex 行布局 + 左侧级别图标列（标题菜单 T/H1..H9）。 */
+.feishu-document .feishu-dropdown button[role="menuitem"] { display: flex; align-items: center; gap: 8px; border-radius: 6px; }
+.feishu-document .feishu-dropdown button[role="menuitem"]:hover:not(:disabled) { background: #f2f6f4; border-color: transparent; color: var(--feishu-ink); }
+.feishu-document .feishu-heading-glyph { flex: 0 0 30px; width: 30px; text-align: center; font-size: 11.5px; font-weight: 700; color: #8ba197; letter-spacing: -.02em; }
+.feishu-document .feishu-menu-active { background: #e3f2ea; color: #0c7a58; }
+.feishu-document .feishu-menu-active .feishu-heading-glyph { color: #0c7a58; }
+/* 共享下拉原语（FeishuSelect）：触发按钮沿用工具栏按钮观感，选项列表为 fixed 自绘弹层。 */
+.feishu-document .feishu-select { position: relative; display: inline-flex; }
+.feishu-document .feishu-select-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 29px; height: 30px; padding: 3px 6px; font-size: 12px; color: var(--feishu-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.feishu-document .feishu-tools .feishu-select-trigger:hover { background: #e6efe9; }
+.feishu-document .feishu-select-trigger:disabled { opacity: 0.45; cursor: default; }
+.feishu-document .feishu-select-caret { font-size: 10px; color: var(--feishu-muted); }
+.feishu-document .feishu-select-menu { position: fixed; z-index: 70; display: grid; padding: 5px; background: white; border: 1px solid var(--feishu-line); border-radius: 9px; box-shadow: 0 12px 35px #1c43311c; max-height: 60vh; overflow-y: auto; }
+.feishu-document .feishu-select-menu button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; text-align: left; color: var(--feishu-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.feishu-document .feishu-select-menu button:hover, .feishu-document .feishu-select-menu button.is-highlight { background: #eef5f0; }
+.feishu-document .feishu-select-menu .feishu-select-check { width: 14px; flex: 0 0 14px; color: #2f9e6e; }
+/* 工具栏自适应折叠：tools-end 内层容器 + 「更多」弹层分节样式。 */
+.feishu-document .feishu-tools-end-inner { display: flex; align-items: center; gap: 1px; }
+.feishu-document .feishu-more-title { padding: 7px 10px 3px; font-size: 11px; color: var(--feishu-muted); border-bottom: 1px solid var(--feishu-line); }
+.feishu-document .feishu-more-menu button[role="menuitem"] { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 10px; font-size: 13px; text-align: left; color: var(--feishu-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.feishu-document .feishu-more-menu button[role="menuitem"]:hover { background: #eef5f0; }
+.feishu-document .feishu-more-menu button[role="menuitem"]:disabled { opacity: 0.45; cursor: default; }
+.feishu-document .feishu-more-menu .feishu-select-check { width: 14px; flex: 0 0 14px; color: #2f9e6e; }
+/* 顶栏隐藏时工具栏「⋯」下拉：纵向菜单承接原 header-actions 插槽内容 */
+.feishu-document .feishu-header-menu { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: auto; margin-top: 0; }
+.feishu-document .feishu-header-menu > * { min-width: 0; }
+.feishu-document .feishu-header-menu button, .feishu-document .feishu-header-menu select { width: 100%; min-height: 32px; border-color: var(--feishu-line); }
+.feishu-document .feishu-header-menu .feishu-save-status { padding: 2px 4px; }
 .feishu-document .feishu-search, .feishu-document .feishu-table-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 8px clamp(12px, 2vw, 30px); background: white; border-bottom: 1px solid var(--feishu-line); }
 .feishu-document .feishu-search input { width: min(185px, 42vw); }
 .feishu-document .feishu-search span { color: var(--feishu-muted); font-size: 12px; min-width: 50px; }
@@ -109,7 +167,7 @@
 .feishu-document .feishu-bubble-align { display: flex; align-items: center; }
 .feishu-document .feishu-bubble-align-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 2px; min-width: 38px !important; padding: 4px 5px; }
 .feishu-document .feishu-bubble-align-trigger > span:first-child { color: #3e4a45; font-size: 18px; line-height: 1; }
-.feishu-document .feishu-bubble-align-arrow { color: var(--feishu-muted); font-size: 13px; line-height: 1; }
+.feishu-document .feishu-bubble-align-arrow { color: #86909c; }
 .feishu-document .feishu-bubble-align-menu { position: fixed; z-index: 72; display: grid; width: 230px; gap: 1px; padding: 7px; border: 1px solid var(--feishu-line); border-radius: 7px; background: white; box-shadow: 0 12px 28px #1c433121; }
 .feishu-document .feishu-bubble-align-menu button { position: relative; display: flex; width: 100%; align-items: center; gap: 11px; min-height: 34px; padding: 6px 9px; text-align: left; }
 .feishu-document .feishu-bubble-align-menu button:hover, .feishu-document .feishu-bubble-align-menu button:focus-visible { background: #f1f2f4; outline: 0; }
@@ -163,4 +221,16 @@
 .feishu-document .feishu-color-palette-section button:hover { transform: scale(1.08); }
 .feishu-document .feishu-color-palette-section button.is-transparent { background: linear-gradient(135deg, transparent 42%, #ca4d54 43%, #ca4d54 56%, transparent 57%); }
 .feishu-document .feishu-color-palette-reset { border-color: var(--feishu-line); text-align: center; }
+.feishu-document .feishu-color-palette-text { width: 280px; }
+.feishu-document .feishu-color-palette-text-section small { display: block; margin-bottom: 6px; color: var(--feishu-muted); font-size: 11px; }
+.feishu-document .feishu-color-letters { display: flex; gap: 4px; }
+.feishu-document .feishu-color-letters button { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 4px; font-size: 14px; font-weight: 700; line-height: 1; }
+.feishu-document .feishu-color-letters button:hover { background: #f2f6f4; }
+.feishu-document .feishu-color-grid { display: grid; grid-template-columns: repeat(9, 24px); gap: 5px; }
+.feishu-document .feishu-color-grid + .feishu-color-grid { margin-top: 5px; }
+.feishu-document .feishu-color-grid button { position: relative; width: 24px; height: 24px; min-width: 0; min-height: 0; padding: 0; border: 1px solid rgba(31, 35, 41, 0.12); border-radius: 4px; }
+.feishu-document .feishu-color-grid button:hover { transform: scale(1.1); }
+.feishu-document .feishu-color-grid button.is-transparent { background: white; }
+.feishu-document .feishu-color-grid button.is-transparent::after { content: ''; position: absolute; inset: 2px; background: linear-gradient(to top right, transparent 44%, #ca4d54 44%, #ca4d54 56%, transparent 56%); }
+.feishu-document .feishu-color-palette button.is-active { outline: 2px solid #0c7a58; outline-offset: 1px; }
 .feishu-document .feishu-block-handle-main.is-callout .feishu-block-handle-type { color: #ff7a1a; font-size: 17px; }

@@ -15,20 +15,14 @@
     @mode-change="effectiveReadonly = $event.readonly"
     @ai-request="startAI"
   >
+    <!-- 标题栏操作区：字数上限、保存状态、模板 / 导入导出 / 本地快照入口 -->
     <template #header-actions>
       <span class="feishu-local-badge">本地 Demo</span>
-      <select
+      <feishu-select
         v-model.number="editorConfig.limits.maxLength"
         aria-label="字数上限"
-        title="字数上限"
-      >
-        <option :value="0">
-          不限字数
-        </option>
-        <option :value="200">
-          200 字（ECS）
-        </option>
-      </select>
+        :options="maxLengthOptions"
+      />
       <span
         class="feishu-save-status"
         :class="{ 'is-error': storageError }"
@@ -43,26 +37,17 @@
       >
         保存
       </button>
-      <select
+      <feishu-select
         v-if="featureEnabled('templates')"
         ref="templateSelect"
         aria-label="选择文档模板"
         title="选择本地模板"
         :disabled="effectiveReadonly || importing"
+        :options="templateOptions"
         :value="''"
-        @change="applyTemplate($event.target.value); $event.target.value = ''"
-      >
-        <option value="">
-          模板
-        </option>
-        <option
-          v-for="item in templateItems"
-          :key="item.id"
-          :value="item.id"
-        >
-          {{ item.label }}
-        </option>
-      </select>
+        placeholder="模板"
+        @change="applyTemplate($event)"
+      />
       <button
         v-if="featureEnabled('importExport')"
         type="button"
@@ -81,35 +66,15 @@
         aria-label="导入文档"
         @change="importDocument"
       >
-      <select
+      <feishu-select
         v-if="featureEnabled('importExport')"
         aria-label="导出文档格式"
         title="导出文档"
+        :options="exportOptions"
         :value="''"
-        @change="exportDocument($event.target.value); $event.target.value = ''"
-      >
-        <option value="">
-          导出
-        </option>
-        <option value="html">
-          HTML
-        </option>
-        <option value="json">
-          JSON（完整正文）
-        </option>
-        <option value="md">
-          Markdown（简化）
-        </option>
-        <option value="txt">
-          纯文本
-        </option>
-        <option value="docx">
-          Word（简化）
-        </option>
-        <option value="print">
-          打印 / PDF
-        </option>
-      </select>
+        placeholder="导出"
+        @change="exportDocument($event)"
+      />
       <button
         v-if="featureEnabled('history')"
         type="button"
@@ -120,7 +85,9 @@
         本地快照
       </button>
     </template>
+    <!-- 侧边面板：模板选择、本地快照、AI 模拟预览与全局提示 -->
     <template #side-panel>
+      <!-- 模板面板：搜索并应用本地模板 -->
       <section
         v-if="templateOpen && featureEnabled('templates')"
         class="feishu-side-panel feishu-template-panel"
@@ -135,7 +102,10 @@
             aria-label="关闭模板"
             @click="closeTemplatePicker"
           >
-            ×
+            <feishu-icon
+              :size="14"
+              name="close"
+            />
           </button>
         </div>
         <input
@@ -167,6 +137,7 @@
           </button>
         </div>
       </section>
+      <!-- 快照面板：列出 / 保存 / 恢复本地快照 -->
       <section
         v-if="historyOpen && featureEnabled('history')"
         class="feishu-side-panel"
@@ -180,7 +151,10 @@
             aria-label="关闭本地快照"
             @click="historyOpen = false; $refs.document.focus()"
           >
-            ×
+            <feishu-icon
+              :size="14"
+              name="close"
+            />
           </button>
         </div>
         <p>仅保存在{{ persistenceLabel() }}，最多 {{ editorConfig.limits.maxSnapshots }} 份。</p>
@@ -211,6 +185,7 @@
           </li>
         </ul>
       </section>
+      <!-- AI 面板：本地 Mock 流式预览、审阅建议与修改提案，确认后才落盘正文 -->
       <section
         v-if="aiOpen && featureEnabled('ai')"
         class="feishu-side-panel feishu-ai-panel"
@@ -224,62 +199,43 @@
             aria-label="关闭 AI 预览"
             @click="closeAI"
           >
-            ×
+            <feishu-icon
+              :size="14"
+              name="close"
+            />
           </button>
         </div>
         <p>单人本地工作区，不调用模型；只有明确接受、插入或替换才修改正文。</p>
         <div class="feishu-ai-context">
-          <label for="feishu-ai-context">上下文范围</label>
-          <select
-            id="feishu-ai-context"
-            v-model="aiContextScope"
+          <label>上下文范围</label>
+          <feishu-select
+            aria-label="上下文范围"
+            :options="aiContextOptions"
+            :value="aiContextScope"
             :disabled="aiRunning || effectiveReadonly"
-            @change="resetAIPreview"
-          >
-            <option
-              v-for="item in aiContextOptions"
-              :key="item.value"
-              :value="item.value"
-            >
-              {{ item.label }}
-            </option>
-          </select>
+            @change="aiContextScope = $event; resetAIPreview()"
+          />
           <small class="feishu-ai-context-summary">{{ aiContextSummary }}</small>
         </div>
-        <label for="feishu-ai-action">操作</label>
-        <select
-          id="feishu-ai-action"
-          v-model="aiAction"
+        <label>操作</label>
+        <feishu-select
+          aria-label="AI 操作"
+          :options="aiActions"
+          :value="aiAction"
           :disabled="effectiveReadonly"
-        >
-          <option
-            v-for="item in aiActions"
-            :key="item.value"
-            :value="item.value"
-          >
-            {{ item.label }}
-          </option>
-        </select>
+          @change="aiAction = $event"
+        />
         <label
           v-if="aiAction === 'translate'"
-          for="feishu-ai-language"
         >目标语言</label>
-        <select
+        <feishu-select
           v-if="aiAction === 'translate'"
-          id="feishu-ai-language"
-          v-model="aiLanguage"
+          aria-label="目标语言"
+          :options="aiLanguageOptions"
+          :value="aiLanguage"
           :disabled="aiRunning || effectiveReadonly"
-        >
-          <option value="en">
-            英语
-          </option>
-          <option value="zh">
-            中文
-          </option>
-          <option value="ja">
-            日语
-          </option>
-        </select>
+          @change="aiLanguage = $event"
+        />
         <label for="feishu-ai-prompt">给 AI 的要求（可选）</label>
         <textarea
           id="feishu-ai-prompt"
@@ -329,7 +285,9 @@
           v-if="aiStatus"
           class="feishu-ai-status"
           role="status"
-        >{{ aiStatus }}</p>
+        >
+          {{ aiStatus }}
+        </p>
         <pre
           class="feishu-ai-result"
           aria-live="polite"
@@ -453,7 +411,10 @@
           aria-label="关闭提示"
           @click="notice = ''"
         >
-          ×
+          <feishu-icon
+            :size="14"
+            name="close"
+          />
         </button>
       </div>
     </template>
@@ -470,10 +431,12 @@ import { createFeishuConfig } from './feishuConfig'
 import { sanitizeHTML, validateDocument } from './documentOperations'
 import { logger } from '../../utils/logger'
 import { createDocumentSession } from '../../session/DocumentSession'
+import FeishuSelect from './FeishuSelect.vue'
+import FeishuIcon from './FeishuIcon.vue'
 
 export default {
   name: 'FeishuDocumentWorkspace',
-  components: { FeishuDocumentEditor },
+  components: { FeishuDocumentEditor, FeishuSelect, FeishuIcon },
   props: {
     // The route keeps the local Demo defaults, while hosts may reuse this
     // shell with the same editor strategy and their own data sources.
@@ -510,9 +473,33 @@ export default {
       templateOpen: false, templateQuery: '',
       importReport: null,
       sessionInstance: null,
+      // 自绘下拉（FeishuSelect）的选项清单。
+      maxLengthOptions: [
+        { value: 0, label: '不限字数' },
+        { value: 200, label: '200 字（ECS）' },
+      ],
+      exportOptions: [
+        { value: '', label: '导出' },
+        { value: 'html', label: 'HTML' },
+        { value: 'json', label: 'JSON（完整正文）' },
+        { value: 'md', label: 'Markdown（简化）' },
+        { value: 'txt', label: '纯文本' },
+        { value: 'docx', label: 'Word（简化）' },
+        { value: 'print', label: '打印 / PDF' },
+      ],
+      aiLanguageOptions: [
+        { value: 'en', label: '英语' },
+        { value: 'zh', label: '中文' },
+        { value: 'ja', label: '日语' },
+      ],
     }
   },
   computed: {
+    templateOptions() {
+      return [{ value: '', label: '模板' }].concat(
+        this.templateItems.map((item) => ({ value: item.id, label: item.label })),
+      )
+    },
     filteredTemplates() {
       const query = String(this.templateQuery || '').trim().toLocaleLowerCase()
       if (!query) return this.templateItems
@@ -557,6 +544,7 @@ export default {
       return record ? { title: record.title, json: record.content, documentId: record.documentId, schemaVersion: record.schemaVersion, revisionId: record.revisionId, updatedAt: record.updatedAt } : { title: this.title, json: this.$refs.document.getJSON() }
     },
     persistenceLabel() { return this.persistence ? '宿主' : '本浏览器' },
+    // —— 持久化：草稿防抖保存，失败即关闸（storageError）避免反复报错 ——
     getWorkspace() {
       if (!this._workspace) {
         this._workspace = this.getSession()?.getProvider('persistence') || this.persistence || createWorkspace(window.localStorage, { maxSnapshots: this.editorConfig.limits.maxSnapshots })
@@ -588,6 +576,7 @@ export default {
     undo() { const editor = this.getEditor(); return editor ? editor.chain().focus().undo().run() : false },
     redo() { const editor = this.getEditor(); return editor ? editor.chain().focus().redo().run() : false },
     save() { return this.saveNow(true) },
+    // 编辑器就绪后：绑定 Session，恢复宿主/本地草稿（持久化解析失败则降级提示）。
     async onReady() {
       this.getSession()?.attachEditor(this.getEditor())
       // 对象形式的初始内容（Tiptap JSON）在编辑器就绪后写入，字符串已通过 v-model 注入。
@@ -653,6 +642,7 @@ export default {
       this.$emit('save', { status: 'failed', message: this.saveStatus })
       this.$emit('error', error)
     },
+    // —— 文档操作：模板、本地快照、导入导出；所有入口写入前都做可写与开关校验 ——
     applyTemplate(id) {
       if (!this.featureEnabled('templates') || !id || !this.writable()) return false
       const template = this.templateItems.find(item => item.id === id)
@@ -781,6 +771,7 @@ export default {
         }
       } catch (error) { this.notice = `导出失败：${error.message}` }
     },
+    // —— AI 流：Mock/宿主流式生成、锚点跟随事务，接受与拒绝前校验锚点仍有效 ——
     mapAI({ transaction }) { mapAnchor(this._aiAnchor, transaction) },
     currentAIContext() {
       const editor = this.getEditor()

@@ -1,3 +1,8 @@
+/**
+ * 命令目录：slash 菜单与「+」菜单共用的数据源。
+ * filterCommands 按 features 开关、commands.disabled/allow 与关键词过滤，
+ * 分栏数量等实现 id 不作为独立命令暴露。
+ */
 const headingGlyphs = ['T', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9']
 
 export const COMMANDS = [
@@ -7,6 +12,7 @@ export const COMMANDS = [
   { id: 'bulletList', label: '无序列表', category: '列表', plusCategory: '基础', glyph: '•≡', tone: 'indigo', keywords: 'list wuxu bulleted' },
   { id: 'taskList', label: '任务列表', category: '列表', plusCategory: '常用', glyph: '☑', tone: 'indigo', keywords: 'todo task renwu checkbox' },
   { id: 'code', label: '代码块', category: '插入', plusCategory: '基础', glyph: '{}', tone: 'green', keywords: 'code daima' },
+  { id: 'diagram', label: '图表', category: '插入', plusCategory: '常用', glyph: '▥', tone: 'teal', keywords: 'diagram mermaid chart tubiao flowchart liuchengtu 图' },
   { id: 'blockquote', label: '引用', category: '布局', plusCategory: '基础', glyph: '❝', tone: 'blue', keywords: 'quote yinyong' },
   { id: 'divider', label: '分割线', category: '布局', plusCategory: '基础', glyph: '≡', tone: 'orange', keywords: 'divider hr fengexian' },
   { id: 'link', label: '链接', category: '文字', plusCategory: '基础', glyph: '↗', tone: 'blue', keywords: 'link lianjie hyperlink' },
@@ -27,7 +33,7 @@ export const COMMANDS = [
 
 const COMMAND_FEATURES = {
   table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
-  image: 'images', code: 'codeBlocks', inlineMath: 'math', blockMath: 'math', emoji: 'emoji', template: 'templates',
+  image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', emoji: 'emoji', template: 'templates',
   callout: 'callouts', ai: 'ai',
 }
 

@@ -36,7 +36,19 @@ function loadComponent(name) {
   const originalCssLoader = require.extensions['.css']
   require.extensions['.vue'] = (child, childPath) => { child.exports = loadComponent(path.basename(childPath)) }
   require.extensions['.css'] = () => {}
-  try { module._compile(code, filename); return module.exports.default }
+  try {
+    module._compile(code, filename)
+    const component = module.exports.default
+    // 编辑器拆分了 mixin（./editor/*）：这里模拟 Vue 2 的选项合并语义，
+    // 让 component.methods/computed 与运行时 this 上的可调用面保持一致。
+    const methods = { ...(component.methods || {}) }
+    const computed = { ...(component.computed || {}) }
+    for (const mixin of component.mixins || []) {
+      Object.assign(methods, mixin.methods || {})
+      Object.assign(computed, mixin.computed || {})
+    }
+    return { ...component, methods, computed }
+  }
   finally { require.extensions['.vue'] = originalVueLoader; require.extensions['.css'] = originalCssLoader }
 }
 const text = (value, marks) => ({ type: 'text', text: value, ...(marks ? { marks } : {}) })
@@ -66,6 +78,13 @@ check('Public Feishu config gates features, commands, block actions and limits',
   assert.strictEqual(config.layout.titleBarFixed, false)
   assert.strictEqual(createFeishuConfig({ layout: { titleBarFixed: true } }).layout.titleBarFixed, true)
   assert.strictEqual(createFeishuConfig({ layout: { titleBarFixed: 'true' } }).layout.titleBarFixed, false)
+  assert.strictEqual(config.layout.toolbarFixed, false)
+  assert.strictEqual(createFeishuConfig({ layout: { toolbarFixed: true } }).layout.toolbarFixed, true)
+  assert.strictEqual(createFeishuConfig({ layout: { toolbarFixed: 'true' } }).layout.toolbarFixed, false)
+  // headerVisible 默认开启，显式 false 时顶栏隐藏、操作移入工具栏下拉
+  assert.strictEqual(config.layout.headerVisible, true)
+  assert.strictEqual(createFeishuConfig({ layout: { headerVisible: false } }).layout.headerVisible, false)
+  assert.strictEqual(createFeishuConfig({ layout: { headerVisible: 'false' } }).layout.headerVisible, true)
 })
 
 check('Handle hover bounds use text content rather than the full block row', () => {

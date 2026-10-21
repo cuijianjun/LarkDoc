@@ -1,5 +1,9 @@
-// Feishu 编辑器的公开配置契约。
-// 这里保持 schema 稳定：关闭能力只隐藏入口并阻止新操作，历史 JSON 仍可读取。
+/**
+ * Feishu 编辑器的公开配置契约。
+ * createFeishuConfig 负责规范化与守卫：未知字段丢弃、非法值回落默认值，
+ * 保证组件拿到的 config 恒定可用。这里保持 schema 稳定：关闭能力只隐藏
+ * 入口并阻止新操作，历史 JSON 仍可读取。
+ */
 export const FEISHU_FEATURES = Object.freeze([
   'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
   'codeBlocks', 'math', 'emoji', 'templates', 'callouts', 'columns', 'search',
@@ -37,6 +41,11 @@ export const DEFAULT_FEISHU_CONFIG = Object.freeze({
   layout: {
     // 标题栏默认跟随文档滚动，宿主可按页面场景开启顶端吸附。
     titleBarFixed: false,
+    // 工具栏吸附顶端：开启后滚动时格式工具栏固定在标题栏下方。
+    toolbarFixed: false,
+    // 顶部标题栏可见性：置 false 时整行隐藏，原有 header-actions 插槽内容
+    // 自动移入工具栏右侧「⋯」下拉弹窗，功能入口不丢失。
+    headerVisible: true,
   },
   text: {
     // 正文为空时的占位提示，命令式入口的 placeholder 配置项落到这里。
@@ -100,6 +109,8 @@ export function createFeishuConfig(overrides = {}) {
   // Unknown feature names are ignored by the UI, while known names always have a boolean value.
   FEISHU_FEATURES.forEach((name) => { config.features[name] = config.features[name] !== false })
   config.layout.titleBarFixed = config.layout.titleBarFixed === true
+  config.layout.toolbarFixed = config.layout.toolbarFixed === true
+  config.layout.headerVisible = config.layout.headerVisible !== false
   config.toolbar.marksAllow = Array.isArray(config.toolbar.marksAllow) ? config.toolbar.marksAllow.filter((id) => typeof id === 'string') : null
   config.network.mode = ['offline', 'allowlist', 'open'].includes(config.network.mode) ? config.network.mode : DEFAULT_FEISHU_CONFIG.network.mode
   config.network.allowlist = Array.isArray(config.network.allowlist)

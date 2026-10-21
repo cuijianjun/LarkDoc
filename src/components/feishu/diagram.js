@@ -56,14 +56,29 @@ function loadMermaidScript(scriptUrl) {
   })
 }
 
+/**
+ * 图表字体栈：与 Vditor 一致使用 mermaid 默认字体（trebuchet ms 起头），
+ * 追加 CJK 兜底。必须用具体字体而不是 'inherit' —— mermaid 在隐藏容器里按该
+ * fontFamily 测量文本宽度，'inherit' 在测量容器与 SVG 内解析不一致，中文会被
+ * 算窄导致节点标签横向被裁剪。
+ */
+const DIAGRAM_FONT_FAMILY = '"trebuchet ms", verdana, arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif'
+
 function loadRenderer(scriptUrl) {
   if (!rendererPromise) {
     rendererPromise = loadMermaidScript(scriptUrl).then((mermaid) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
-        theme: 'default',
-        fontFamily: 'inherit',
+        fontFamily: DIAGRAM_FONT_FAMILY,
+        // 标签一律用 SVG <text> 渲染，关闭 HTML 标签（foreignObject）：
+        // mermaid 在页面隐藏容器里测量 HTML 标签、又在 SVG 内渲染，宿主
+        // 样式（行高/字号/边距）两边继承不一致，节点文字就会上下偏移——
+        // 这是此前「文字偏上/偏下」反复出现的根因。SVG 文本由 mermaid 用
+        // getBBox 实测尺寸定位，居中精确且不受宿主任何 CSS 影响。
+        flowchart: { htmlLabels: false },
+        class: { htmlLabels: false },
+        state: { htmlLabels: false },
       })
       return mermaid
     })

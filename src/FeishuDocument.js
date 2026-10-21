@@ -1,17 +1,19 @@
 /**
  * 命令式入口：`new FeishuDocument(...)`。
  *
- * 这一层不实现任何编辑器逻辑，只做四件事：
+ * 这一层不实现任何编辑器逻辑，只做五件事：
  * 1. 把 AiEditor 风格的扁平配置翻译成内部的 `createFeishuConfig` 结构；
  * 2. 用 Vue 2 运行时渲染函数挂载现有 Workspace，避免依赖模板编译器；
  * 3. 把实例方法转发给 Workspace / Editor；
- * 4. 按固定顺序销毁，保证 AI 流、会话和监听器都被释放。
+ * 4. 解析并透传协同 / 权限会话（session 或 providers 快捷项）；
+ * 5. 按固定顺序销毁，保证 AI 流、会话和监听器都被释放。
  */
 import Vue from 'vue'
 import FeishuDocumentWorkspace from './components/feishu/FeishuDocumentWorkspace.vue'
 import { createFeishuConfig } from './components/feishu/feishuConfig'
 import { resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy } from './networkPolicy'
+import { createDocumentSession } from './session/DocumentSession'
 
 const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report'])
 
@@ -69,6 +71,8 @@ export class FeishuDocument {
     const documentInput = normalizeDocumentInput(source.content)
     this.config = this._buildConfig(source)
     this.networkPolicy = createNetworkPolicy(this.config.network)
+    this._ownsSession = false
+    this._session = this._resolveSession(source)
 
     this._vm = new Vue({
       name: 'FeishuDocumentHost',
@@ -83,6 +87,7 @@ export class FeishuDocument {
           persistence: this._resolvePersistence(source),
           uploadImage: this._resolveUploader(source),
           aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
+          session: this._session,
         },
         on: {
           ready: () => {
@@ -154,6 +159,32 @@ export class FeishuDocument {
     return null
   }
 
+  /**
+   * 解析协同/权限会话：
+   * - 宿主直接给 `session`（DocumentSession 实例）→ 原样复用，生命周期归宿主；
+   * - 宿主给 `providers` 或 collaboration / authorization 等单项 → 由门面创建并持有，
+   *   destroy 时随实例一起释放；
+   * - 都没传 → 返回 null，Workspace 内部会创建默认本地会话。
+   */
+  _resolveSession(source) {
+    if (source.session) return source.session
+    const hasProviders = source.providers || source.collaboration || source.authorization || source.versioning || source.comments
+    if (!hasProviders) return null
+    this._ownsSession = true
+    return createDocumentSession({
+      documentId: source.documentId == null ? null : String(source.documentId),
+      user: source.user || null,
+      mode: source.mode || (source.collaboration ? 'collaborative' : 'local'),
+      providers: source.providers || {
+        collaboration: source.collaboration,
+        authorization: source.authorization,
+        versioning: source.versioning,
+        comments: source.comments,
+      },
+      capabilities: source.capabilities,
+    })
+  }
+
   _resolveUploader(source) {
     const uploader = source.uploader
     if (uploader && typeof uploader.upload === 'function') return uploader.upload
@@ -216,6 +247,32 @@ export class FeishuDocument {
   }
 
   getConfig() { return this.config }
+
+  /** 返回会话（协同 / 权限 / 版本 / 评论 Provider 的宿主）；未配置时为内部默认会话或 null。 */
+  getSession() {
+    const workspace = this.getWorkspace()
+    if (workspace && typeof workspace.getSession === 'function') return workspace.getSession()
+    return this._session
+  }
+
+  /** 权限能力查询：未配置授权 Provider 时默认放行，服务端仍是最终授权方。 */
+  can(capability) {
+    const session = this.getSession()
+    return session && typeof session.can === 'function' ? session.can(capability) : true
+  }
+
+  /** 连接协同服务（collaborative 模式才有实际连接）；返回连接结果或 { status: 'local' }。 */
+  async connectCollaboration() {
+    const session = this.getSession()
+    if (!session) return { status: 'local' }
+    return session.connect()
+  }
+
+  /** 断开协同连接；本地模式安全空操作。 */
+  async disconnectCollaboration() {
+    const session = this.getSession()
+    if (session) await session.disconnect()
+  }
 
   getHTML() {
     const workspace = this.getWorkspace()
@@ -320,6 +377,13 @@ export class FeishuDocument {
     if (workspace && typeof workspace.stopAI === 'function') {
       try { workspace.stopAI() } catch (error) { /* 已在销毁流程中，忽略 */ }
     }
+    // 门面自建的会话随实例释放；宿主传入的会话由宿主自行管理。
+    if (this._ownsSession && this._session) {
+      Promise.resolve(this._session.dispose()).catch((error) => {
+        if (typeof console !== 'undefined') console.error('[FeishuDocument] 会话释放异常', error)
+      })
+    }
+    this._session = null
     const vm = this._vm
     this._vm = null
     if (vm) {

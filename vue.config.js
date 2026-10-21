@@ -1,4 +1,5 @@
 const { defineConfig } = require('@vue/cli-service')
+const path = require('path')
 const webpack = require('webpack')
 
 module.exports = defineConfig({
@@ -8,6 +9,12 @@ module.exports = defineConfig({
   // KaTeX fonts resolvable from the package's own dist/fonts directory when a
   // Vue 2 host imports the stylesheet through its normal css-loader pipeline.
   publicPath: './',
+  chainWebpack(config) {
+    // vendored 第三方 UMD（mermaid）绝不能进 babel：transpileDependencies 的
+    // core-js 注入会往文件头加 require()，file-loader 落盘后在浏览器里
+    // 直接 ReferenceError: require is not defined。源码资产按原样落盘。
+    config.module.rule('js').exclude.add(path.resolve(__dirname, 'src/assets'))
+  },
   // The library is consumed as an npm package. Vue must resolve to the
   // CommonJS constructor so Tiptap's Vue 2 node-view runtime receives the
   // same constructor shape as a normal Vue 2 application.

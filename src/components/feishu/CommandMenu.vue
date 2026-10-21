@@ -79,7 +79,9 @@
         <div
           v-if="!templates.length"
           class="feishu-command-empty"
-        >暂无可用模板</div>
+        >
+          暂无可用模板
+        </div>
         <button
           v-for="template in templates"
           :key="`template-${template.id}`"
@@ -95,9 +97,19 @@
           >◇</span><span class="feishu-command-label"><span>{{ template.label || template.title || template.id }}</span><small v-if="template.label && template.title && template.label !== template.title">{{ template.title }}</small></span>
         </button>
       </template><template v-else-if="submenuType === 'columns'">
-        <div class="feishu-submenu-picker-head"><span>选择栏数</span><output v-if="columnsHover">{{ columnsHover }}</output></div>
-        <div class="feishu-columns-picker" role="group" aria-label="选择栏数" @mouseleave="columnsHover = null">
-          <div class="feishu-columns-preview" aria-hidden="true">
+        <div class="feishu-submenu-picker-head">
+          <span>选择栏数</span><output v-if="columnsHover">{{ columnsHover }}</output>
+        </div>
+        <div
+          class="feishu-columns-picker"
+          role="group"
+          aria-label="选择栏数"
+          @mouseleave="columnsHover = null"
+        >
+          <div
+            class="feishu-columns-preview"
+            aria-hidden="true"
+          >
             <span
               v-for="column in 5"
               :key="`columns-preview-${column}`"
@@ -118,12 +130,21 @@
             @mousedown.prevent
             @click="$emit('choose', { id: `columns${count}` })"
           >
-            <span v-for="column in count" :key="`${count}-${column}`" />
+            <span
+              v-for="column in count"
+              :key="`${count}-${column}`"
+            />
           </button>
         </div>
       </template><template v-else-if="submenuType === 'table'">
-        <div class="feishu-submenu-picker-head"><span>选择大小</span><output>{{ tableHover.cols }} × {{ tableHover.rows }}</output></div>
-        <div class="feishu-table-submenu-grid" role="group" aria-label="选择表格大小">
+        <div class="feishu-submenu-picker-head">
+          <span>选择大小</span><output>{{ tableHover.cols }} × {{ tableHover.rows }}</output>
+        </div>
+        <div
+          class="feishu-table-submenu-grid"
+          role="group"
+          aria-label="选择表格大小"
+        >
           <button
             v-for="cell in 36"
             :key="`table-${cell}`"
@@ -147,7 +168,10 @@
           @mousedown.prevent
           @click="$emit('choose', item)"
         >
-          <span class="feishu-command-icon" aria-hidden="true">{{ item.glyph || '·' }}</span>{{ item.label }}
+          <span
+            class="feishu-command-icon"
+            aria-hidden="true"
+          >{{ item.glyph || '·' }}</span>{{ item.label }}
         </button>
       </template>
     </div>
