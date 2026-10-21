@@ -216,19 +216,126 @@ export function moveBlockRange(editor, from, to, target) {
 
 export function collectOutline(doc) {
   const result = []
-  doc.descendants((node, pos) => { if (node.type.name === 'heading') result.push({ pos, level: node.attrs.level, text: node.textContent }) })
+  doc.descendants((node, pos) => {
+    if (node.type.name !== 'heading') return
+    const resolved = doc.resolve(pos)
+    const hiddenByContainer = Array.from({ length: resolved.depth }, (_, index) => resolved.node(index + 1).type.name)
+      .some((type) => ['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'].includes(type))
+    if (!hiddenByContainer) result.push({ pos, level: node.attrs.level, text: node.textContent })
+  })
   return result
 }
 
-export function foldedRange(doc, pos) {
+const independentSectionBlocks = new Set(['codeBlock', 'blockquote', 'callout', 'table', 'columns', 'image', 'horizontalRule'])
+const isolatedHeadingContainers = new Set(['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'])
+
+function nodeIndent(node, fallback = 0) {
+  return Number.isInteger(node?.attrs?.indent) ? node.attrs.indent : fallback
+}
+
+function sectionBlock(node, pos, role) {
+  return { from: pos, to: pos + node.nodeSize, node, role }
+}
+
+/**
+ * Resolve one heading's real section in its immediate parent container.
+ * The returned blocks are the only blocks allowed to receive section state;
+ * `to` is intentionally the first excluded sibling rather than a giant DOM range.
+ */
+export function resolveHeadingSection(doc, pos) {
+  return resolveHeadingSectionMode(doc, pos, 'highlight')
+}
+
+/**
+ * Resolve a heading section for either the local block hover or the document
+ * folding model. Hover keeps independent root shells as visual boundaries;
+ * folding follows the document rule and includes every following block until
+ * the next same-or-higher heading.
+ */
+export function resolveHeadingSectionMode(doc, pos, mode = 'highlight') {
   if (pos < 0 || pos > doc.content.size) return null
   const heading = doc.nodeAt(pos)
   if (!heading || heading.type.name !== 'heading') return null
   const resolved = doc.resolve(pos)
+  const parent = resolved.parent
+  const baseIndent = nodeIndent(heading)
+  let childIndent = baseIndent
+  let hasDescendantHeading = false
   let end = resolved.end()
+  let hasContent = false
+  const blocks = [sectionBlock(heading, pos, 'heading')]
+  const hasFollowingBoundary = (startIndex) => {
+    for (let lookahead = startIndex + 1; lookahead < resolved.parent.childCount; lookahead += 1) {
+      const candidate = resolved.parent.child(lookahead)
+      if (candidate.type.name === 'heading' && candidate.attrs.level <= heading.attrs.level) return true
+      if (parent.type.name === 'doc' && independentSectionBlocks.has(candidate.type.name)) return true
+    }
+    return false
+  }
   for (let index = resolved.index() + 1; index < resolved.parent.childCount; index += 1) {
     const sibling = resolved.parent.child(index)
-    if (sibling.type.name === 'heading' && sibling.attrs.level <= heading.attrs.level) { end = resolved.posAtIndex(index); break }
+    const siblingPos = resolved.posAtIndex(index)
+    if (sibling.type.name === 'heading') {
+      if (sibling.attrs.level <= heading.attrs.level) { end = siblingPos; break }
+      if (mode === 'fold') {
+        blocks.push(sectionBlock(sibling, siblingPos, 'descendant-heading'))
+        hasDescendantHeading = true
+        hasContent = true
+        continue
+      }
+      hasDescendantHeading = true
+      // Missing indent attributes still represent a structural child heading.
+      // Keep a minimum one-level step so a following root paragraph does not
+      // become part of the parent section merely because both default to 0.
+      childIndent = Math.max(baseIndent + 1, nodeIndent(sibling, baseIndent + 1))
+      blocks.push(sectionBlock(sibling, siblingPos, 'descendant-heading'))
+      hasContent = true
+      continue
+    }
+    // At the document root these are independent canvas blocks. A nested
+    // code/quote/callout remains part of its actual parent container.
+    if (mode === 'highlight' && parent.type.name === 'doc' && independentSectionBlocks.has(sibling.type.name)) { end = siblingPos; break }
+    // A paragraph that drops back out of a nested heading's structural path is
+    // the next root-level block (the common H2 -> H3 -> root paragraph case).
+    // A lower-indent paragraph is outside a nested heading when another
+    // section boundary still follows. If this is the terminal section, the
+    // paragraph is its trailing body even when it has no explicit indent.
+    if (mode === 'highlight' && hasDescendantHeading && sibling.type.name === 'paragraph' && nodeIndent(sibling) < childIndent && hasFollowingBoundary(index)) { end = siblingPos; break }
+    if (sibling.isBlock) {
+      blocks.push(sectionBlock(sibling, siblingPos, 'body'))
+      hasContent = true
+    }
   }
-  return { from: pos + heading.nodeSize, to: end }
+  return { from: pos, to: end, headingPos: pos, heading, parent, blocks, hasContent, hasDescendantHeading }
+}
+
+export function resolveHeadingHighlightSection(doc, pos) {
+  return resolveHeadingSectionMode(doc, pos, 'highlight')
+}
+
+export function isPageHeading(doc, pos) {
+  if (!doc || pos < 0 || pos > doc.content.size) return false
+  const heading = doc.nodeAt(pos)
+  if (!heading || heading.type.name !== 'heading') return false
+  const resolved = doc.resolve(pos)
+  for (let depth = 1; depth <= resolved.depth; depth += 1) {
+    if (isolatedHeadingContainers.has(resolved.node(depth).type.name)) return false
+  }
+  return true
+}
+
+export function foldedRange(doc, pos) {
+  if (!isPageHeading(doc, pos)) return null
+  const section = resolveHeadingSectionMode(doc, pos, 'fold')
+  if (!section) return null
+  return { from: pos + section.heading.nodeSize, to: section.to }
+}
+
+// 复制、剪切和拖动标题时沿用正文折叠的完整章节范围；视觉高亮仍使用
+// resolveHeadingHighlightSection 的独立块边界，避免两个交互共享错误的 DOM 区段。
+export function headingActionRange(doc, pos) {
+  if (!doc || pos < 0 || pos > doc.content.size || !isPageHeading(doc, pos)) return null
+  const section = resolveHeadingSectionMode(doc, pos, 'fold')
+  if (!section || section.to <= pos + section.heading.nodeSize) return null
+  return { from: pos, to: section.to, parentDepth: doc.resolve(pos).depth }
 }

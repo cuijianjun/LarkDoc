@@ -19,7 +19,7 @@ import Typography from '@tiptap/extension-typography'
 import { VueNodeViewRenderer } from '@tiptap/vue-2'
 import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { findTextMatches, foldedRange, getSlashMatch, safeAttachmentId, safeColor, safeUrl, sanitizeHTML } from './documentOperations'
+import { findTextMatches, foldedRange, getSlashMatch, isPageHeading, resolveHeadingHighlightSection, safeAttachmentId, safeColor, safeUrl, sanitizeHTML } from './documentOperations'
 
 let katexPromise
 function loadKatex() {
@@ -142,7 +142,21 @@ const Formatting = Extension.create({
       const type = this.editor.isActive('taskItem') ? 'taskItem' : 'listItem'
       return this.editor.commands[command](type)
     }
-    return { Tab: () => listCommand('sinkListItem'), 'Shift-Tab': () => listCommand('liftListItem') }
+    const indentCommand = (delta) => {
+      if (!this.editor.isEditable || this.editor.view.composing) return false
+      if (this.editor.isActive('taskItem') || this.editor.isActive('listItem')) return listCommand(delta > 0 ? 'sinkListItem' : 'liftListItem')
+
+      const { selection } = this.editor.state
+      const blockType = selection.$from.parent.type.name
+      // Keep table navigation and code-block editing on their own extensions.
+      if (!['paragraph', 'heading'].includes(blockType) || ['table', 'tableCell', 'tableHeader', 'codeBlock'].some((type) => this.editor.isActive(type))) return false
+
+      const currentIndent = Number(this.editor.getAttributes(blockType).indent) || 0
+      const nextIndent = Math.max(0, Math.min(8, currentIndent + delta))
+      if (nextIndent === currentIndent) return true
+      return this.editor.chain().focus().updateAttributes(blockType, { indent: nextIndent }).run()
+    }
+    return { Tab: () => indentCommand(1), 'Shift-Tab': () => indentCommand(-1) }
   },
 })
 
@@ -325,14 +339,15 @@ function documentExtension(options) {
             const decorations = findTextMatches(state.doc, storage.query).map(({ from, to }, index) => Decoration.inline(from, to, { class: index === storage.activeIndex ? 'feishu-search-hit feishu-search-active' : 'feishu-search-hit' }))
             const hover = storage.handleHover
             if (hover && hover.from >= 0 && hover.to > hover.from && hover.to <= state.doc.content.size) {
-              const rootDepth = state.doc.resolve(hover.from).depth
-              state.doc.nodesBetween(hover.from, hover.to, (node, pos) => {
-                if (!node.isBlock || node.type.name === 'doc' || state.doc.resolve(pos).depth !== rootDepth || pos + node.nodeSize > hover.to) return
-                decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: `feishu-block-handle-hovered${hover.section ? ' feishu-heading-section-hovered' : ''}` }))
+              const section = hover.section ? resolveHeadingHighlightSection(state.doc, hover.from) : null
+              const blocks = section?.blocks || [{ from: hover.from, to: hover.to, node: state.doc.nodeAt(hover.from) }]
+              blocks.forEach((block) => {
+                if (!block.node?.isBlock || block.to <= block.from || block.to > state.doc.content.size) return
+                decorations.push(Decoration.node(block.from, block.to, { class: `feishu-block-handle-hovered${hover.section ? ' feishu-heading-section-hovered' : ''}` }))
               })
             }
             state.doc.descendants((node, pos) => {
-              if (node.type.name !== 'heading') return
+              if (node.type.name !== 'heading' || !isPageHeading(state.doc, pos)) return
               const range = foldedRange(state.doc, pos)
               if (!range || range.from >= range.to) return
               const collapsed = storage.folded.has(pos)

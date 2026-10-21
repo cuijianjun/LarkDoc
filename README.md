@@ -1,4 +1,4 @@
-# @tiptap-integration/feishu-document
+# feishu-document
 
 Vue 2 + Tiptap 3 的飞书风格文档编辑器与工作台包。
 
@@ -20,8 +20,18 @@ npm run check
 import {
   FeishuDocumentEditor,
   FeishuDocumentWorkspace,
-} from '@tiptap-integration/feishu-document'
-import '@tiptap-integration/feishu-document/dist/feishu-document.css'
+} from 'feishu-document'
+import 'feishu-document/style.css'
 ```
 
-Demo 应用只负责路由和页面呈现，包本身包含编辑器和工作台能力。发布包时，Vue 2.7 应用直接使用 `npm i @tiptap-integration/feishu-document`；本仓库 Demo 通过本地 `file:` 依赖验证同样的调用方式。
+`style.css` 是包公开的样式入口，宿主应用只需要引入一次；入口会加载包内命名空间样式和 KaTeX 样式，组件内部的 `src/components/feishu/feishu.css` 不应由宿主应用直接引用。
+
+标题栏默认随页面滚动。需要让标题栏吸附在窗口顶端时，在 `FeishuDocumentEditor` 或 `FeishuDocumentWorkspace` 上传入布局配置：
+
+```vue
+<FeishuDocumentWorkspace :config="{ layout: { titleBarFixed: true } }" />
+```
+
+`titleBarFixed` 默认是 `false`，只控制文档标题栏，下面的编辑工具栏仍按页面正常滚动。
+
+Demo 应用只负责路由和页面呈现，包本身包含编辑器和工作台能力。发布包时，Vue 2.7 应用直接使用 `npm i feishu-document`；本仓库 Demo 通过本地 `file:` 依赖验证同样的调用方式。

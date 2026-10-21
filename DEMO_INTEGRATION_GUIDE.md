@@ -2,7 +2,7 @@
 
 ## 1. 包的职责
 
-`@tiptap-integration/feishu-document` 把 `/feishu-document` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
+`feishu-document` 把 `/feishu-document` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
 
 包公开两个稳定的 Vue 2 组件入口：
 
@@ -18,7 +18,7 @@
 发布后，Vue 2.7 应用可以直接安装：
 
 ```bash
-npm i @tiptap-integration/feishu-document
+npm i feishu-document
 ```
 
 ```js
@@ -26,14 +26,24 @@ import Vue from 'vue'
 import {
   FeishuDocumentEditor,
   FeishuDocumentWorkspace,
-} from '@tiptap-integration/feishu-document'
-import '@tiptap-integration/feishu-document/dist/feishu-document.css'
+} from 'feishu-document'
+import 'feishu-document/style.css'
 
 Vue.component('FeishuDocumentEditor', FeishuDocumentEditor)
 Vue.component('FeishuDocumentWorkspace', FeishuDocumentWorkspace)
 ```
 
-本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费重构 worktree，入口只有 `src/views/FeishuDocumentView.vue`；这保证 Demo 的调用方式和 npm 使用方一致。
+`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和 KaTeX 样式，`src/components/feishu/feishu.css` 不应由宿主应用直接引用。
+
+本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费 `feishu-document` 包，入口只有 `src/views/FeishuDocumentView.vue`；这保证 Demo 的调用方式和 npm 使用方一致。
+
+标题栏布局可以按宿主页面选择是否固定：
+
+```vue
+<FeishuDocumentWorkspace :config="{ layout: { titleBarFixed: true } }" />
+```
+
+`layout.titleBarFixed` 默认值为 `false`。开启后只有顶部标题栏吸附到窗口顶端，编辑工具栏保持原有文档流位置；`FeishuDocumentEditor` 与 `FeishuDocumentWorkspace` 均支持该配置。
 
 ## 3. 目录结构
 
@@ -78,6 +88,8 @@ scripts/
   check-feishu-workspace.js        工作区和本地持久化检查
   check-ecs-images.js              ECS 图片适配器检查
 ```
+
+包根目录的 `style.css` 组合包内命名空间样式与 KaTeX 样式，并随 npm 包发布；这样宿主应用可以使用与 AiEditor 相同的显式样式接入方式，同时避免宿主 `css-loader` 对已编译 CSS 的字体路径进行二次解析。
 
 注释集中解释跨模块约束、Node 14 兼容、销毁顺序、数据边界和 Provider 设计；普通 Vue 模板、赋值和循环不重复写逐行注释。需要理解某个函数时，先看同目录的契约检查脚本，再看组件对外方法。
 

@@ -2,7 +2,7 @@
   <section
     ref="root"
     class="feishu-document"
-    :class="[`feishu-width-${widthMode}`, { 'feishu-reading': effectiveReadonly, 'feishu-slides': slides, 'feishu-fullscreen': fullscreen }]"
+    :class="[`feishu-width-${widthMode}`, { 'feishu-reading': effectiveReadonly, 'feishu-slides': slides, 'feishu-fullscreen': fullscreen, 'feishu-titlebar-fixed': feishuConfig.layout.titleBarFixed }]"
     @keydown.esc="closeOverlay"
   >
     <a
@@ -437,6 +437,16 @@
     </div>
 
     <div class="feishu-body">
+      <button
+        v-if="!outlineOpen && featureEnabled('outline')"
+        type="button"
+        class="feishu-outline-reopen"
+        aria-label="展开目录"
+        title="展开目录"
+        @click="outlineOpen = true"
+      >
+        ☰
+      </button>
       <aside
         v-if="outlineOpen && featureEnabled('outline')"
         class="feishu-outline"
@@ -453,19 +463,31 @@
         </div><p v-if="!outline.length">
           添加标题后自动生成目录
         </p><div
-          v-for="item in outline"
+          v-for="item in outlineItems"
           :key="item.pos"
           class="feishu-outline-item"
           :style="{ paddingLeft: `${Math.min(item.level - 1, 5) * 10}px` }"
         >
           <button
+            v-if="item.hasChildren"
             type="button"
-            :aria-label="`${folded.has(item.pos) ? '展开' : '收起'}${item.text || '标题'}`"
-            :aria-expanded="String(!folded.has(item.pos))"
-            @click="toggleFold(item.pos)"
+            :class="{ active: item.pos === activeHeading }"
+            :aria-label="`${item.collapsed ? '展开' : '收起'}目录：${item.text || '标题'}`"
+            :aria-expanded="String(!item.collapsed)"
+            :title="item.collapsed ? '展开目录' : '收起目录'"
+            @click="toggleOutline(item.pos)"
           >
-            {{ folded.has(item.pos) ? '▸' : '▾' }}
-          </button><button
+            <span
+              class="feishu-outline-arrow"
+              :class="{ 'is-collapsed': item.collapsed }"
+              aria-hidden="true"
+            />
+          </button><span
+            v-else
+            class="feishu-outline-toggle-placeholder"
+            aria-hidden="true"
+          />
+          <button
             type="button"
             :class="{ active: item.pos === activeHeading }"
             @click="jumpHeading(item.pos)"
@@ -510,6 +532,7 @@
           <div
             v-if="editor && !effectiveReadonly && featureEnabled('blockHandle') && handleRange"
             class="feishu-block-handle"
+            :class="{ 'is-menu-open': blockMenuOpen }"
             :style="blockHandleStyle"
             @mouseenter="onBlockHandleEnter"
             @mouseleave="onBlockHandleLeave"
@@ -520,29 +543,37 @@
               class="feishu-empty-block-insert"
               aria-label="插入内容"
               title="插入内容"
-              @click="openCommandMenu('plus', $event)"
+              @mousedown.prevent
+              @mouseenter="openEmptyBlockInsertMenu"
+              @click="openEmptyBlockInsertMenu"
             >
               ＋
-            </button><template v-else-if="handleIsTaskList" /><template v-else>
-              <button
-                type="button"
-                class="feishu-block-handle-main"
-                :class="{ 'is-callout': handleBlockNode()?.type?.name === 'callout' }"
-                aria-label="块操作"
-                title="块操作与拖动"
-                :draggable="featureEnabled('blockDrag')"
-                @click="toggleBlockMenu"
-                @pointerdown="handlePressed = true"
-                @dragstart="startBlockDrag"
-                @dragend="handlePressed = false; dragging = null; dropPosition = null; refreshHandleHighlight()"
-              >
-                <span class="feishu-block-handle-type">{{ handleGlyph }}</span><span class="feishu-block-handle-dots" aria-hidden="true">⠿</span>
-              </button><div
+            </button><button
+              v-else-if="!handleIsTaskList"
+              type="button"
+              class="feishu-block-handle-main"
+              :class="{ 'is-callout': handleBlockNode()?.type?.name === 'callout' }"
+              aria-label="块操作"
+              title="块操作与拖动"
+              :draggable="featureEnabled('blockDrag')"
+              @mouseenter="openBlockMenuOnHover"
+              @focus="openBlockMenuOnHover"
+              @click="openBlockMenu"
+              @pointerdown="handlePressed = true"
+              @dragstart="startBlockDrag"
+              @dragend="handlePressed = false; dragging = null; dropPosition = null; refreshHandleHighlight()"
+            >
+              <span class="feishu-block-handle-type">{{ handleGlyph }}</span><span class="feishu-block-handle-dots" aria-hidden="true">⠿</span>
+            </button><div
                 v-if="blockMenuOpen"
                 class="feishu-block-menu"
                 role="menu"
                 aria-label="块操作"
                 :style="blockMenuStyle"
+                @mouseenter="onBlockMenuEnter"
+                @mouseleave="onBlockMenuLeave"
+                @focusin="onBlockMenuFocusIn"
+                @focusout="onBlockMenuFocusOut"
               >
                 <div v-if="visibleBlockTypeActions.length" class="feishu-block-menu-section feishu-block-type-actions" role="group" aria-label="类型转换">
                   <button
@@ -684,7 +715,6 @@
                     <span class="feishu-block-align-glyph" aria-hidden="true">⇤</span><span>减少缩进</span>
                   </button>
                 </div>
-            </template>
           </div><div
             v-if="dropPosition !== null"
             class="feishu-drop-line"
@@ -1175,7 +1205,7 @@
           >
             ×
           </button>
-        </header><p>⌘/Ctrl+B 加粗 · ⌘/Ctrl+I 斜体 · ⌘/Ctrl+Z 撤销</p><p>行首或空格后输入 / 插入内容；Tab 调整列表层级。</p>
+        </header><p>⌘/Ctrl+B 加粗 · ⌘/Ctrl+I 斜体 · ⌘/Ctrl+Z 撤销</p><p>行首或空格后输入 / 插入内容；Tab 调整列表层级或段落缩进，Shift+Tab 减少缩进。</p>
       </section>
     </div>
     <input
@@ -1213,7 +1243,7 @@ import ImageNode from './ImageNode.vue'
 import CodeNode from './CodeNode.vue'
 import { filterCommands } from './commands'
 import { createFeishuExtensions } from './extensions'
-import { collectOutline, findTextMatches, foldedRange, moveBlockRange, replaceText, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { collectOutline, findTextMatches, headingActionRange, moveBlockRange, replaceText, resolveHeadingHighlightSection, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isCommandEnabled, isConfigEnabled, mergeLegacyConfig } from './feishuConfig'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 import './feishu.css'
@@ -1256,11 +1286,11 @@ export default {
   },
   data() { return {
     editor: null, localTitle: this.title, reading: false, slides: false, fullscreen: false, widthMode: 'standard',
-    outlineOpen: window.innerWidth > 760, outline: [], activeHeading: -1, folded: new Set(), wordCount: 0,
+    outlineOpen: window.innerWidth > 760, outline: [], outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
     marks, tableActions, blockActions, blockTypeActions, alignNames: { left: '左', center: '居中', right: '右', justify: '两端' }, alignGlyphs: { left: '≡', center: '☷', right: '≣', justify: '▤' },
     headingOpen: false, headingStyle: {}, tableToolsOpen: false, tablePicker: false, tablePickerHover: { rows: 3, cols: 3 }, tableBoundary: { visible: false, hover: null, columnSide: 'before', rowSide: 'before', rowIndex: -1, columnIndex: -1, rowSpan: 1, columnSpan: 1, cellPosition: null, style: { top: '0px', left: '0px', width: '0px', height: '0px' }, columnLineLeft: 0, rowLineTop: 0 }, helpOpen: false,
     menuOpen: false, menuKind: '', menuQuery: '', menuPosition: { left: 20, top: 120 }, menuMaxHeight: '', menuAnchor: null, activeCommandIndex: 0, slashMatch: null, menuTrigger: null,
-    bubbleVisible: false, bubblePosition: { left: 20, top: 120 }, bubbleAlignOpen: false, bubbleAlignMenuStyle: {}, savedSelection: null, blockMenuOpen: false, blockTypeMenuOpen: false, blockAlignMenuOpen: false, blockColorMenuOpen: false, blockHandlePosition: { top: 200, left: 0 }, blockMenuStyle: {}, blockAlignMenuStyle: {}, blockColorMenuStyle: {}, handleRange: null, handleHideTimer: null, dragging: null, handlePressed: false, handleHovering: false, dropPosition: null, dropLineTop: 0, columnResize: null,
+    bubbleVisible: false, bubblePosition: { left: 20, top: 120 }, bubbleAlignOpen: false, bubbleAlignMenuStyle: {}, savedSelection: null, blockMenuOpen: false, blockTypeMenuOpen: false, blockAlignMenuOpen: false, blockColorMenuOpen: false, blockHandlePosition: { top: 200, left: 0 }, blockMenuStyle: {}, blockAlignMenuStyle: {}, blockColorMenuStyle: {}, handleRange: null, handleHideTimer: null, blockMenuCloseTimer: null, dragging: null, handlePressed: false, handleHovering: false, blockMenuHovering: false, dropPosition: null, dropLineTop: 0, columnResize: null,
     calloutEmojiOpen: false, calloutEmojiQuery: '', calloutEmojiCategory: 'all', calloutEmojiRecent: [], calloutToolsPosition: { top: 0, left: 0 },
     colorPaletteOpen: '', colorPalettePosition: { top: 0, left: 0 }, colorPaletteRecent: [], colorPaletteOptions: COLOR_PALETTE_OPTIONS,
     searchOpen: false, searchQuery: '', replacement: '', searchMatches: [], searchIndex: 0,
@@ -1283,6 +1313,19 @@ export default {
     effectiveMaxLength() { return Math.max(0, Number(this.feishuConfig.limits.maxLength) || 0) },
     effectiveImageMaxSize() { return this.feishuConfig.limits.maxImageSize },
     titleLength() { return this.feishuConfig.limits.titleLength },
+    outlineItems() {
+      const hiddenLevels = []
+      return this.outline.reduce((items, item, index) => {
+        while (hiddenLevels.length && item.level <= hiddenLevels[hiddenLevels.length - 1]) hiddenLevels.pop()
+        const next = this.outline[index + 1]
+        const hasChildren = Boolean(next && next.level > item.level)
+        if (hiddenLevels.length) return items
+        const collapsed = this.outlineCollapsed.has(item.pos)
+        items.push({ ...item, hasChildren, collapsed })
+        if (collapsed && hasChildren) hiddenLevels.push(item.level)
+        return items
+      }, [])
+    },
     visibleMarks() { return this.feishuConfig.features.marks ? this.marks : [] },
     visibleTableActions() { return this.feishuConfig.features.tables ? this.tableActions : [] },
     visibleBlockActions() { return this.blockActions.filter((item) => isBlockActionEnabled(this.feishuConfig, item.id)) },
@@ -1373,7 +1416,7 @@ export default {
       if (this.editor) this.editor.storage.characterCount.setLimit(this.effectiveMaxLength)
       this.$nextTick(() => this.refreshDocumentState())
     } },
-    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.headingOpen = false; this.headingStyle = {}; this.blockMenuOpen = false; this.blockTypeMenuOpen = false; this.blockAlignMenuOpen = false; this.blockColorMenuOpen = false; this.blockAlignMenuStyle = {}; this.blockColorMenuStyle = {}; this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
+    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.feishu-table-grid button')?.focus()) } },
     emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.feishu-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
@@ -1407,7 +1450,7 @@ export default {
       window.addEventListener('pointermove', this.onDocumentPointerMove, true)
     } catch (error) { this.error = error.message }
   },
-  beforeDestroy() { document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null },
+  beforeDestroy() { document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null },
   destroyed() {
     if (this.session && this.editor) this.session.detachEditor(this.editor)
     this.editor?.destroy()
@@ -1436,6 +1479,9 @@ export default {
         : Math.max(0, Number(this.maxLength) || 0)
       if (maxLength > 0 && this.editor.storage.characterCount.characters({ node: next }) > maxLength) throw new Error(`正文不能超过 ${maxLength} 字`)
       if (next.eq(this.editor.state.doc)) return false
+      // Content replacement invalidates the transient handle/menu target.
+      if (typeof this.closeBlockMenu === 'function') this.closeBlockMenu()
+      this.handleRange = null
       // 使用普通事务替换正文，让本地历史可撤销模板、导入与快照恢复。
       const tr = this.editor.state.tr.replaceWith(0, this.editor.state.doc.content.size, next.content)
       this.editor.view.dispatch(setTransactionMetadata(tr, { origin: TRANSACTION_ORIGINS.HOST }))
@@ -1479,15 +1525,18 @@ export default {
       if (!this.handleRange) return
       const { from, to } = this.handleRange
       const doc = this.editor.state.doc
-      if (from < 0 || from >= to || to > doc.content.size) { this.handleRange = null; return }
+      if (from < 0 || from >= to || to > doc.content.size) { this.closeBlockMenu(); this.handleRange = null; return }
       const start = doc.resolve(from)
       const end = doc.resolve(to)
-      if (!start.sameParent(end) || start.textOffset || end.textOffset || from !== start.posAtIndex(start.index(), start.depth) || to !== end.posAtIndex(end.index(), end.depth)) this.handleRange = null
-      else this.positionBlockHandle(this.handleRange)
+      if (!start.sameParent(end) || start.textOffset || end.textOffset || from !== start.posAtIndex(start.index(), start.depth) || to !== end.posAtIndex(end.index(), end.depth)) {
+        this.closeBlockMenu()
+        this.handleRange = null
+      } else this.positionBlockHandle(this.handleRange)
     },
     refreshDocumentState() {
       if (!this.editor) return
       this.outline = collectOutline(this.editor.state.doc)
+      this.syncOutlineCollapseState()
       this.syncFoldState()
       this.wordCount = this.editor.storage.characterCount.characters()
       if (this.effectiveMaxLength > 0 && this.wordCount > this.effectiveMaxLength) this.error = `正文不能超过 ${this.effectiveMaxLength} 字，请缩短正文`
@@ -1500,6 +1549,12 @@ export default {
       const next = new Set(current)
       if (next.size === this.folded.size && [...next].every((pos) => this.folded.has(pos))) return
       this.folded = next
+    },
+    syncOutlineCollapseState() {
+      const positions = new Set(this.outline.map((item) => item.pos))
+      const next = new Set([...this.outlineCollapsed].filter((pos) => positions.has(pos)))
+      if (next.size === this.outlineCollapsed.size && [...next].every((pos) => this.outlineCollapsed.has(pos))) return
+      this.outlineCollapsed = next
     },
     onSelectionUpdate() {
       if (!this.editor) return
@@ -1699,16 +1754,28 @@ export default {
       this.menuOpen = true
       this.headingOpen = false
       this.headingStyle = {}
-      this.blockMenuOpen = false
-      this.blockTypeMenuOpen = false
-      this.blockAlignMenuOpen = false
-      this.blockColorMenuOpen = false
-      this.blockAlignMenuStyle = {}
-      this.blockColorMenuStyle = {}
+      this.closeBlockMenu()
       this.$nextTick(() => {
         this.positionCommandMenu()
         if (kind === 'plus') this.$children.find((child) => child.$options.name === 'FeishuCommandMenu')?.focusSearch()
       })
+    },
+    openEmptyBlockInsertMenu(event) {
+      if (!this.writable() || !this.handleIsEmptyParagraph) return
+      this.closeBlockMenu()
+      const cursor = this.handleRange.from + 1
+      // Hover opens this menu before the pointer click event; keep the same
+      // insertion menu instead of treating that click as a second toggle.
+      if (this.menuOpen && this.menuKind === 'plus') {
+        this.savedSelection = { from: cursor, to: cursor }
+        this.menuTrigger = event?.currentTarget || this.menuTrigger
+        const rect = event?.currentTarget?.getBoundingClientRect?.()
+        if (rect) this.menuAnchor = { left: rect.left, top: rect.top, bottom: rect.bottom }
+        this.$nextTick(() => this.positionCommandMenu())
+        return
+      }
+      this.openCommandMenu('plus', event)
+      this.savedSelection = { from: cursor, to: cursor }
     },
     onSlash(match) {
       if (this._isDestroyed) return
@@ -2071,8 +2138,21 @@ export default {
       this.updateSearch()
     },
     closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.editor?.commands.setFeishuSearch(''); this.focus() },
-    toggleFold(pos) { if (!this.featureEnabled('folding')) return; this.editor?.commands.toggleFeishuFold(pos); this.folded = new Set(this.editor.storage.feishuDocument.folded) },
-    jumpHeading(pos) { this.editor?.commands.setTextSelection(pos + 1); this.editor?.view.domAtPos(pos + 1).node.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'start' }); this.activeHeading = pos },
+    toggleOutline(pos) {
+      if (!this.featureEnabled('outline')) return
+      const next = new Set(this.outlineCollapsed)
+      if (next.has(pos)) next.delete(pos)
+      else next.add(pos)
+      this.outlineCollapsed = next
+    },
+    jumpHeading(pos) {
+      if (!this.editor) return
+      this.editor.commands.setTextSelection(Math.min(pos + 1, this.editor.state.doc.content.size))
+      const node = this.editor.view.nodeDOM(pos)
+      const target = node instanceof Element ? node : this.editor.view.domAtPos(pos + 1).node.parentElement
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      this.activeHeading = pos
+    },
     currentBlockRange() {
       if (!this.editor) return null
       const { selection } = this.editor.state
@@ -2089,6 +2169,11 @@ export default {
         if (start.sameParent(end) && end.index() - start.index() > 1) return selected
       }
       return this.handleRange || selected
+    },
+    headingActionRange(range) {
+      if (!range || !this.editor) return null
+      const node = this.editor.state.doc.nodeAt(range.from)
+      return node?.type.name === 'heading' ? headingActionRange(this.editor.state.doc, range.from) : null
     },
     rangeAt(from, to = from) {
       const doc = this.editor.state.doc
@@ -2114,23 +2199,43 @@ export default {
       const dom = this.editor.view.nodeDOM(range.from)
       const paper = this.$refs.root?.querySelector('.feishu-paper')
       if (!(dom instanceof Element) || !paper) return
+      if (this.blockMenuOpen && this.handleRange && (this.handleRange.from !== range.from || this.handleRange.to !== range.to)) this.closeBlockMenu()
       clearTimeout(this.handleHideTimer)
+      this.clearBlockMenuCloseTimer()
       this.handleRange = range
       if (this.handleHovering || this.handlePressed || this.dragging || this.blockMenuOpen) this.setHandleHighlight(true)
+      const shell = this.blockShellElement(dom)
       const callout = dom.closest?.('[data-type="callout"]')
-      const anchor = callout instanceof Element ? callout : dom
+      const anchor = shell instanceof Element ? shell : callout instanceof Element ? callout : dom
       const domRect = anchor.getBoundingClientRect()
       const paperRect = paper.getBoundingClientRect()
-      const isHeading = /^H[1-6]$/.test(anchor.tagName) || anchor.matches?.('[data-type="heading"]')
       const isCallout = anchor.matches?.('[data-type="callout"]')
+      const isHeading = /^H[1-6]$/.test(anchor.tagName) || anchor.matches?.('[data-type="heading"]')
+      const foldToggle = isHeading ? anchor.querySelector?.('.feishu-heading-fold-toggle') : null
+      const foldRect = foldToggle instanceof Element ? foldToggle.getBoundingClientRect() : null
+      const handleElement = this.$refs.root?.querySelector('.feishu-block-handle-main')
+      const handleWidth = handleElement instanceof Element ? handleElement.getBoundingClientRect().width : 42
+      const handleHeight = handleElement instanceof Element ? handleElement.getBoundingClientRect().height : 30
+      const isCodeBlock = anchor.matches?.('.feishu-code, [data-type="codeBlock"]')
+      const textBounds = isCodeBlock || shell instanceof Element ? this.outerBlockBounds(anchor) : this.highlightStartBounds(anchor)
+      // 代码块的首行是飞书式语言/复制工具栏行；代码正文仍属于同一外壳高亮。
+      const firstLineAnchor = isCodeBlock ? anchor.querySelector?.('.feishu-code-toolbar') || anchor : anchor
+      const firstLineBounds = this.firstTextLineBounds(firstLineAnchor) || textBounds
+      // 标题的折叠箭头会随文字对齐方式移动；以箭头实际位置为锚点，保持句柄与箭头固定间距。
+      const handleLeft = foldRect
+        ? foldRect.left - paperRect.left - handleWidth - 10
+        : isCallout
+          ? domRect.left - paperRect.left - handleWidth - 12
+          : (textBounds ? textBounds.left : domRect.left) - paperRect.left - handleWidth - 12
+      const verticalAnchor = foldRect || firstLineBounds
+      const firstTop = verticalAnchor ? verticalAnchor.top : domRect.top
+      const firstBottom = verticalAnchor ? verticalAnchor.bottom : domRect.bottom
       this.blockHandlePosition = {
-        // Feishu centers the H1–H9 handle on the heading line. Keep other
-        // block handles anchored to their block start so tables and callouts
-        // do not shift when their first line is taller than the handle.
-        top: Math.max(10, domRect.top - paperRect.top + (isHeading ? Math.max(0, (domRect.height - 26) / 2) : 0)),
+        // 句柄垂直跟随首行文字；多行块仍锚定第一行，而不是整个块盒。
+        top: Math.max(0, Math.round(((firstTop + firstBottom) / 2 - paperRect.top - (paper.clientTop || 0) - handleHeight / 2) * 2) / 2),
         // Keep the narrow handle immediately before the fold widget and the
         // text, regardless of paper padding or viewport width.
-        left: Math.round(domRect.left - paperRect.left - (isCallout ? 51 : 70)),
+        left: Math.round(handleLeft),
       }
     },
     columnsRangeFor(range) {
@@ -2166,31 +2271,146 @@ export default {
       if (!this.editor || !this.handleRange) return null
       const node = this.editor.state.doc.nodeAt(this.handleRange.from)
       if (node?.type.name === 'heading') {
-        const section = foldedRange(this.editor.state.doc, this.handleRange.from)
-        if (section) return { from: this.handleRange.from, to: section.to, section: true }
+        const section = resolveHeadingHighlightSection(this.editor.state.doc, this.handleRange.from)
+        if (section?.hasContent) return { from: section.from, to: section.to, section: true }
       }
       return { from: this.handleRange.from, to: this.handleRange.to }
+    },
+    textContentBounds(element) {
+      if (typeof Element === 'undefined' || !(element instanceof Element) || typeof document.createTreeWalker !== 'function' || typeof NodeFilter === 'undefined') return element?.getBoundingClientRect?.() || null
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      const rects = []
+      let textNode = walker.nextNode()
+      while (textNode) {
+        const value = textNode.textContent || ''
+        const start = value.search(/\S/)
+        const end = value.search(/\s*$/)
+        if (start >= 0 && end > start) {
+          const range = document.createRange()
+          range.setStart(textNode, start)
+          range.setEnd(textNode, end)
+          Array.from(range.getClientRects()).forEach((rect) => {
+            if (rect.width > 0 && rect.height > 0) rects.push(rect)
+          })
+        }
+        textNode = walker.nextNode()
+      }
+      if (!rects.length) return element.getBoundingClientRect()
+      return {
+        left: Math.min(...rects.map((rect) => rect.left)),
+        top: Math.min(...rects.map((rect) => rect.top)),
+        right: Math.max(...rects.map((rect) => rect.right)),
+        bottom: Math.max(...rects.map((rect) => rect.bottom)),
+      }
+    },
+    firstTextLineBounds(element) {
+      if (typeof Element === 'undefined' || !(element instanceof Element) || typeof document.createTreeWalker !== 'function' || typeof NodeFilter === 'undefined') return element?.getBoundingClientRect?.() || null
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      const rects = []
+      let textNode = walker.nextNode()
+      while (textNode) {
+        const value = textNode.textContent || ''
+        const start = value.search(/\S/)
+        const end = value.search(/\s*$/)
+        if (start >= 0 && end > start) {
+          const range = document.createRange()
+          range.setStart(textNode, start)
+          range.setEnd(textNode, end)
+          Array.from(range.getClientRects()).forEach((rect) => {
+            if (rect.width > 0 && rect.height > 0) rects.push(rect)
+          })
+        }
+        textNode = walker.nextNode()
+      }
+      if (!rects.length) return element.getBoundingClientRect()
+      rects.sort((left, right) => left.top - right.top || left.left - right.left)
+      const firstTop = rects[0].top
+      const lineRects = rects.filter((rect) => Math.abs(rect.top - firstTop) <= 1)
+      return {
+        left: Math.min(...lineRects.map((rect) => rect.left)),
+        top: Math.min(...lineRects.map((rect) => rect.top)),
+        right: Math.max(...lineRects.map((rect) => rect.right)),
+        bottom: Math.max(...lineRects.map((rect) => rect.bottom)),
+      }
+    },
+    highlightStartBounds(element) {
+      const bounds = this.textContentBounds(element)
+      if (!bounds || !(element instanceof Element)) return bounds
+      const result = { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom }
+      // 列表编号/项目符号是首个可见内容的一部分，不能把高亮或句柄放到 marker 之后。
+      if (element.matches('ol, ul, li, [data-type="taskList"], [data-type="taskItem"]')) {
+        result.left = Math.min(result.left, element.getBoundingClientRect().left)
+      }
+      return result
+    },
+    outerBlockBounds(element) {
+      if (!(element instanceof Element)) return element?.getBoundingClientRect?.() || null
+      const code = element.matches('.feishu-code, [data-type="codeBlock"]') ? element : element.closest('.feishu-code, [data-type="codeBlock"]')
+      const rect = code?.getBoundingClientRect?.() || element.getBoundingClientRect()
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+    },
+    blockShellElement(element) {
+      if (!(element instanceof Element)) return null
+      return element.closest('.feishu-code, [data-type="codeBlock"], blockquote, [data-type="callout"], [data-type="columns"], [data-type="column"], table, figure[data-type="image"], hr')
+    },
+    handleHighlightBounds(element) {
+      if (!(element instanceof Element)) return element?.getBoundingClientRect?.() || null
+      return element.matches('.feishu-code, [data-type="codeBlock"]') ? this.outerBlockBounds(element) : this.highlightStartBounds(element)
+    },
+    highlightContainer(element, root) {
+      if (!(element instanceof Element)) return root
+      return element.closest('[data-type="column"], [data-type="callout"], [data-type="detailsContent"], blockquote, li, td, th') || root
+    },
+    highlightContentRight(element, root) {
+      return this.highlightContainer(element, root)?.getBoundingClientRect?.().right ?? root?.getBoundingClientRect?.().right ?? 0
     },
     syncHandleHighlightBackdrop() {
       const root = this.editor?.view?.dom
       if (!root) return
-      const sectionNodes = root.querySelectorAll('.feishu-heading-section-hovered')
+      const overlayHost = root.parentElement || root
+      overlayHost.querySelector('.feishu-heading-hover-overlay')?.remove()
+      const hoveredNodes = Array.from(root.querySelectorAll('.feishu-block-handle-hovered'))
+      hoveredNodes.forEach((node) => {
+        ['--feishu-block-hover-left', '--feishu-block-hover-top', '--feishu-block-hover-width', '--feishu-block-hover-height'].forEach((name) => node.style.removeProperty(name))
+      })
+      hoveredNodes.filter((node) => !node.classList.contains('feishu-heading-section-hovered')).forEach((node) => {
+        const bounds = this.handleHighlightBounds(node)
+        const nodeRect = node.getBoundingClientRect()
+        if (!bounds || !nodeRect.width || !nodeRect.height) return
+        const isCodeBlock = node.matches?.('.feishu-code, [data-type="codeBlock"]')
+        const contentRight = isCodeBlock ? bounds.right : this.highlightContentRight(node, root)
+        node.style.setProperty('--feishu-block-hover-left', `${bounds.left - nodeRect.left}px`)
+        node.style.setProperty('--feishu-block-hover-top', `${bounds.top - nodeRect.top}px`)
+        node.style.setProperty('--feishu-block-hover-width', `${Math.max(0, contentRight - bounds.left)}px`)
+        node.style.setProperty('--feishu-block-hover-height', `${Math.max(0, bounds.bottom - bounds.top)}px`)
+      })
+      const sectionNodes = hoveredNodes.filter((node) => node.classList.contains('feishu-heading-section-hovered'))
       if (!sectionNodes.length) {
-        root.classList.remove('feishu-has-heading-handle-hover')
-        root.style.removeProperty('--feishu-heading-hover-left')
-        root.style.removeProperty('--feishu-heading-hover-top')
-        root.style.removeProperty('--feishu-heading-hover-width')
-        root.style.removeProperty('--feishu-heading-hover-height')
         return
       }
-      const first = sectionNodes[0].getBoundingClientRect()
-      const last = sectionNodes[sectionNodes.length - 1].getBoundingClientRect()
-      const rootRect = root.getBoundingClientRect()
-      root.style.setProperty('--feishu-heading-hover-left', `${first.left - rootRect.left}px`)
-      root.style.setProperty('--feishu-heading-hover-top', `${first.top - rootRect.top}px`)
-      root.style.setProperty('--feishu-heading-hover-width', `${Math.max(first.right, last.right) - first.left}px`)
-      root.style.setProperty('--feishu-heading-hover-height', `${last.bottom - first.top}px`)
-      root.classList.add('feishu-has-heading-handle-hover')
+      const first = sectionNodes[0]
+      const firstBounds = this.handleHighlightBounds(first)
+      if (!firstBounds) return
+      const hostRect = overlayHost.getBoundingClientRect()
+      const left = firstBounds.left
+      const contentRight = this.highlightContentRight(first, root)
+      const overlay = document.createElement('div')
+      overlay.className = 'feishu-heading-hover-overlay'
+      overlay.setAttribute('aria-hidden', 'true')
+      sectionNodes.forEach((node, index) => {
+        const bounds = this.handleHighlightBounds(node)
+        if (!bounds) return
+        const segment = document.createElement('span')
+        segment.className = 'feishu-heading-hover-segment'
+        if (index === 0) segment.classList.add('is-first')
+        if (index === sectionNodes.length - 1) segment.classList.add('is-last')
+        segment.style.left = `${left - hostRect.left}px`
+        segment.style.top = `${bounds.top - hostRect.top}px`
+        segment.style.width = `${Math.max(0, contentRight - left)}px`
+        segment.style.height = `${Math.max(0, bounds.bottom - bounds.top)}px`
+        overlay.appendChild(segment)
+      })
+      if (overlay.childElementCount) overlayHost.appendChild(overlay)
     },
     clearHandleHighlight() {
       if (!this.editor || this.editor.isDestroyed || !this.editor.commands?.setFeishuHandleHover) return
@@ -2209,16 +2429,66 @@ export default {
     refreshHandleHighlight() {
       this.setHandleHighlight(this.handleHovering || this.handlePressed || this.dragging || this.blockMenuOpen)
     },
+    clearBlockMenuCloseTimer() {
+      clearTimeout(this.blockMenuCloseTimer)
+      this.blockMenuCloseTimer = null
+    },
+    blockMenuHasFocus() {
+      const active = typeof document !== 'undefined' ? document.activeElement : null
+      const handle = this.$refs.root?.querySelector('.feishu-block-handle')
+      return Boolean(active && handle?.contains(active))
+    },
+    closeBlockMenu() {
+      this.clearBlockMenuCloseTimer()
+      this.blockMenuHovering = false
+      this.blockMenuOpen = false
+      this.blockTypeMenuOpen = false
+      this.blockAlignMenuOpen = false
+      this.blockColorMenuOpen = false
+      this.blockAlignMenuStyle = {}
+      this.blockColorMenuStyle = {}
+      this.refreshHandleHighlight()
+    },
+    scheduleBlockMenuClose() {
+      this.clearBlockMenuCloseTimer()
+      this.blockMenuCloseTimer = setTimeout(() => {
+        this.blockMenuCloseTimer = null
+        if (this.handleHovering || this.blockMenuHovering || this.handlePressed || this.dragging || this.blockMenuHasFocus()) return
+        this.closeBlockMenu()
+      }, 180)
+    },
     onBlockHandleEnter() {
+      this.clearBlockMenuCloseTimer()
       this.handleHovering = true
       this.refreshHandleHighlight()
     },
-    onBlockHandleLeave() {
+    onBlockHandleLeave(event) {
+      if (event?.relatedTarget?.closest?.('.feishu-block-menu')) return
       this.handleHovering = false
+      if (this.blockMenuOpen && !this.handlePressed) this.scheduleBlockMenuClose()
       this.refreshHandleHighlight()
     },
+    onBlockMenuEnter() {
+      this.clearBlockMenuCloseTimer()
+      this.blockMenuHovering = true
+      this.refreshHandleHighlight()
+    },
+    onBlockMenuLeave(event) {
+      if (event?.relatedTarget?.closest?.('.feishu-block-handle')) return
+      this.blockMenuHovering = false
+      if (this.blockMenuOpen && !this.handlePressed) this.scheduleBlockMenuClose()
+      this.refreshHandleHighlight()
+    },
+    onBlockMenuFocusIn() {
+      this.clearBlockMenuCloseTimer()
+      this.refreshHandleHighlight()
+    },
+    onBlockMenuFocusOut(event) {
+      if (event.relatedTarget && this.$refs.root?.querySelector('.feishu-block-handle')?.contains(event.relatedTarget)) return
+      if (this.blockMenuOpen && !this.handlePressed) this.scheduleBlockMenuClose()
+    },
     onEditorPointerMove(event) {
-      if (this.dragging || this.handlePressed || this.columnResize || this.blockMenuOpen || this.blockTypeMenuOpen) return
+      if (this.dragging || this.handlePressed || this.columnResize) return
       this.updateTableBoundaryHover(event)
       const pos = this.editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
       if (Number.isInteger(pos)) this.positionBlockHandle(this.rangeAt(pos))
@@ -2244,10 +2514,10 @@ export default {
     onDocumentPointerDown(event) {
       const target = event.target
       if (this.menuOpen && !target.closest?.('.feishu-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target)) this.closeCommandMenu()
-      if (this.blockMenuOpen && !target.closest?.('.feishu-block-menu') && !target.closest?.('.feishu-block-handle')) { this.blockMenuOpen = false; this.blockAlignMenuOpen = false; this.blockColorMenuOpen = false; this.blockAlignMenuStyle = {}; this.blockColorMenuStyle = {}; this.refreshHandleHighlight() }
+      if (this.blockMenuOpen && !target.closest?.('.feishu-block-menu') && !target.closest?.('.feishu-block-handle')) this.closeBlockMenu()
       if (this.blockTypeMenuOpen && !target.closest?.('.feishu-block-type-menu') && !target.closest?.('.feishu-block-handle')) this.blockTypeMenuOpen = false
-      if (this.blockAlignMenuOpen && !target.closest?.('.feishu-block-menu') && !target.closest?.('.feishu-block-handle')) { this.blockAlignMenuOpen = false; this.blockMenuOpen = false; this.blockAlignMenuStyle = {}; this.refreshHandleHighlight() }
-      if (this.blockColorMenuOpen && !target.closest?.('.feishu-block-menu') && !target.closest?.('.feishu-block-handle')) { this.blockColorMenuOpen = false; this.blockMenuOpen = false; this.blockColorMenuStyle = {}; this.refreshHandleHighlight() }
+      if (this.blockAlignMenuOpen && !target.closest?.('.feishu-block-menu') && !target.closest?.('.feishu-block-handle')) this.closeBlockMenu()
+      if (this.blockColorMenuOpen && !target.closest?.('.feishu-block-menu') && !target.closest?.('.feishu-block-handle')) this.closeBlockMenu()
       if (this.bubbleAlignOpen && !target.closest?.('.feishu-bubble-align') && !target.closest?.('.feishu-bubble-align-menu')) this.closeBubbleAlignMenu()
       if (this.calloutEmojiOpen && !target.closest?.('.feishu-callout-tools')) this.calloutEmojiOpen = false
       if (this.colorPaletteOpen && !target.closest?.('.feishu-color-palette') && !target.closest?.('.feishu-color')) this.colorPaletteOpen = ''
@@ -2390,27 +2660,49 @@ export default {
         const handle = this.$refs.root?.querySelector('.feishu-block-handle')
         const menu = handle?.querySelector(selector)
         if (!handle || !menu) return
-        const top = handle.getBoundingClientRect().top
+        const handleRect = handle.getBoundingClientRect()
+        const menuRect = menu.getBoundingClientRect()
+        const content = this.$refs.root?.querySelector('.feishu-editor-content, .ProseMirror')
+        const contentRect = content?.getBoundingClientRect?.() || handleRect
+        const viewportGap = 8
+        const menuWidth = menuRect.width || 230
+        const maxViewportLeft = Math.max(viewportGap, window.innerWidth - menuWidth - viewportGap)
+        const preferredViewportLeft = contentRect.left - menuWidth - viewportGap
+        const menuViewportLeft = preferredViewportLeft >= viewportGap && preferredViewportLeft <= maxViewportLeft
+          ? preferredViewportLeft
+          : Math.min(Math.max(handleRect.left, viewportGap), maxViewportLeft)
+        const top = handleRect.top
         const below = Math.max(0, window.innerHeight - top - 40)
         const above = Math.max(0, top - 8)
         const useAbove = below < menu.scrollHeight && above > below
         const available = Math.max(32, useAbove ? above : below)
-        this.blockMenuStyle = { top: useAbove ? `${-Math.min(menu.scrollHeight, available) - 8}px` : '32px', maxHeight: `${available}px` }
+        this.blockMenuStyle = {
+          left: `${Math.round(menuViewportLeft - handleRect.left)}px`,
+          top: useAbove ? `${-Math.min(menu.scrollHeight, available) - 8}px` : '32px',
+          maxHeight: `${available}px`,
+        }
       })
     },
-    toggleBlockTypeMenu() { this.toggleBlockMenu() },
-    toggleBlockMenu() {
-      this.blockMenuOpen = !this.blockMenuOpen
-      if (this.blockMenuOpen) {
-        this.setHandleHighlight(true)
-        this.blockTypeMenuOpen = false
-        this.blockAlignMenuOpen = false
-        this.blockColorMenuOpen = false
-        this.blockAlignMenuStyle = {}
-        this.blockColorMenuStyle = {}
-        this.positionBlockMenu('.feishu-block-menu')
-      } else { this.blockAlignMenuOpen = false; this.blockColorMenuOpen = false; this.blockAlignMenuStyle = {}; this.blockColorMenuStyle = {}; this.refreshHandleHighlight() }
+    openBlockMenuOnHover() {
+      if (!this.writable() || this.handleIsEmptyParagraph || this.handleIsTaskList) return
+      this.handleHovering = true
+      this.openBlockMenu()
     },
+    toggleBlockTypeMenu() { this.openBlockMenu() },
+    openBlockMenu() {
+      if (!this.writable() || this.handleIsEmptyParagraph || this.handleIsTaskList) return
+      this.clearBlockMenuCloseTimer()
+      this.blockMenuOpen = true
+      this.setHandleHighlight(true)
+      this.blockTypeMenuOpen = false
+      this.blockAlignMenuOpen = false
+      this.blockColorMenuOpen = false
+      this.blockAlignMenuStyle = {}
+      this.blockColorMenuStyle = {}
+      this.blockMenuStyle = {}
+      this.positionBlockMenu('.feishu-block-menu')
+    },
+    toggleBlockMenu() { this.openBlockMenu() },
     openBlockAlignMenuOnHover() {
       if (!this.blockMenuOpen || !this.writable() || this.blockAlignMenuOpen) return
       this.blockAlignMenuOpen = true
@@ -2463,12 +2755,7 @@ export default {
       if (!this.writable() || !this.featureEnabled('blockStyle')) return
       const range = this.handleActionRange()
       if (!range) return
-      this.blockAlignMenuOpen = false
-      this.blockColorMenuOpen = false
-      this.blockMenuOpen = false
-      this.blockAlignMenuStyle = {}
-      this.blockColorMenuStyle = {}
-      this.refreshHandleHighlight()
+      this.closeBlockMenu()
       const target = this.blockTextblockTarget(range)
       if (!target) return
       if (id === 'increaseIndent' || id === 'decreaseIndent') {
@@ -2484,10 +2771,7 @@ export default {
       if (!target) return
       const from = target.pos + 1
       const to = Math.max(from, target.pos + target.node.nodeSize - 1)
-      this.blockColorMenuOpen = false
-      this.blockMenuOpen = false
-      this.blockColorMenuStyle = {}
-      this.refreshHandleHighlight()
+      this.closeBlockMenu()
       this.editor.commands.setTextSelection({ from, to })
       if (value) this.editor.chain().focus().setColor(value).run()
       else this.editor.chain().focus().unsetColor().run()
@@ -2498,13 +2782,7 @@ export default {
       const range = this.handleActionRange()
       const node = range && this.editor.state.doc.nodeAt(range.from)
       if (!range || !node || !['paragraph', 'heading'].includes(node.type.name)) return
-      this.blockTypeMenuOpen = false
-      this.blockMenuOpen = false
-      this.blockAlignMenuOpen = false
-      this.blockColorMenuOpen = false
-      this.blockAlignMenuStyle = {}
-      this.blockColorMenuStyle = {}
-      this.refreshHandleHighlight()
+      this.closeBlockMenu()
       this.savedSelection = null
       this.editor.commands.setTextSelection({ from: range.from + 1, to: Math.max(range.from + 1, range.to - 1) })
       if (id === 'paragraph') this.run('setParagraph')
@@ -2525,14 +2803,12 @@ export default {
     },
     blockAction(id) {
       if (!this.writable() || !isBlockActionEnabled(this.feishuConfig, id)) return
-      this.blockMenuOpen = false
-      this.blockAlignMenuOpen = false
-      this.blockColorMenuOpen = false
-      this.blockAlignMenuStyle = {}
-      this.blockColorMenuStyle = {}
-      this.refreshHandleHighlight()
+      this.closeBlockMenu()
       const selectedRange = this.handleActionRange()
-      const range = id === 'delete' ? (this.columnsRangeFor(selectedRange) || this.detailsRangeFor(selectedRange) || selectedRange) : selectedRange
+      const sectionRange = ['copy', 'cut', 'duplicate', 'moveUp', 'moveDown'].includes(id) ? this.headingActionRange(selectedRange) : null
+      const range = id === 'delete'
+        ? (this.columnsRangeFor(selectedRange) || this.detailsRangeFor(selectedRange) || selectedRange)
+        : sectionRange || selectedRange
       if (!range) return
       if (id === 'copy' || id === 'cut') { this.copyBlock(range, id === 'cut'); return }
       if (id === 'translate') { this.$emit('ai-request', 'translate'); this.editor.view.focus(); return }
@@ -2566,7 +2842,8 @@ export default {
     },
     startBlockDrag(event) {
       if (!this.writable() || !this.featureEnabled('blockDrag')) return
-      this.dragging = this.blockDragRange(this.handleActionRange())
+      const selected = this.handleActionRange()
+      this.dragging = this.blockDragRange(this.headingActionRange(selected) || selected)
       if (!this.dragging) return
       this.refreshHandleHighlight()
       if (event.dataTransfer) {
@@ -2654,8 +2931,13 @@ export default {
     async toggleFullscreen() { if (!this.fullscreen) { try { await this.$refs.root.requestFullscreen() } catch (_) { this.fullscreen = true } } else if (document.fullscreenElement) await document.exitFullscreen(); else this.fullscreen = false },
     onFullscreenChange() { this.fullscreen = document.fullscreenElement === this.$refs.root },
     toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },
-    onWindowKeydown(event) { if (event.key === 'Escape' && this.slides) this.toggleSlides(); else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1); else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1) },
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen) { this.blockAlignMenuOpen = false; this.blockAlignMenuStyle = {} } else if (this.blockColorMenuOpen) { this.blockColorMenuOpen = false; this.blockColorMenuStyle = {} } else if (this.blockTypeMenuOpen) this.blockTypeMenuOpen = false; else if (this.blockMenuOpen) { this.blockMenuOpen = false; this.refreshHandleHighlight() } else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    onWindowKeydown(event) {
+      if (event.key === 'Escape' && this.slides) this.toggleSlides()
+      else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
+      else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1)
+      else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1)
+    },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }
 </script>

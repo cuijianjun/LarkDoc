@@ -1,0 +1,3 @@
+/* Public package stylesheet entry, matching the AiEditor integration pattern. */
+@import './src/components/feishu/feishu.css';
+@import 'katex/dist/katex.min.css';

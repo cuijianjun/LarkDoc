@@ -16,7 +16,7 @@ require.extensions['.js'] = (module, filename) => {
 }
 assert(fs.existsSync(path.join(root, 'extensions.js')), 'Missing Feishu schema: H9 and serializable blocks are not implemented')
 const { createFeishuExtensions } = require(path.join(root, 'extensions.js'))
-const { safeUrl, validateDocument, getSlashMatch, findTextMatches, replaceText, moveBlockRange, collectOutline } = require(path.join(root, 'documentOperations.js'))
+const { safeUrl, validateDocument, getSlashMatch, findTextMatches, replaceText, moveBlockRange, collectOutline, resolveHeadingSection, resolveHeadingSectionMode, foldedRange, headingActionRange, isPageHeading } = require(path.join(root, 'documentOperations.js'))
 const { createFeishuConfig, isCommandEnabled, isBlockActionEnabled } = require(path.join(root, 'feishuConfig.js'))
 const { filterCommands } = require(path.join(root, 'commands.js'))
 const { getSchema, getExtensionField } = require('@tiptap/core')
@@ -63,6 +63,192 @@ check('Public Feishu config gates features, commands, block actions and limits',
   assert.strictEqual(isBlockActionEnabled(config, 'delete'), false)
   assert.strictEqual(config.limits.maxLength, 200)
   assert.strictEqual(config.limits.maxSnapshots, 3)
+  assert.strictEqual(config.layout.titleBarFixed, false)
+  assert.strictEqual(createFeishuConfig({ layout: { titleBarFixed: true } }).layout.titleBarFixed, true)
+  assert.strictEqual(createFeishuConfig({ layout: { titleBarFixed: 'true' } }).layout.titleBarFixed, false)
+})
+
+check('Handle hover bounds use text content rather than the full block row', () => {
+  const component = loadComponent('FeishuDocumentEditor.vue')
+  const bounds = component.methods.textContentBounds
+  const startBounds = component.methods.highlightStartBounds
+  const firstLineBounds = component.methods.firstTextLineBounds
+  const previous = { Element: global.Element, NodeFilter: global.NodeFilter, document: global.document }
+  class FakeElement {
+    getBoundingClientRect() { return { left: 0, top: 0, right: 800, bottom: 40, width: 800, height: 40 } }
+    matches() { return false }
+  }
+  const textNode = { textContent: '缩进标题' }
+  global.Element = FakeElement
+  global.NodeFilter = { SHOW_TEXT: 4 }
+  global.document = {
+    createTreeWalker: () => { let visited = false; return { nextNode: () => (visited ? null : (visited = true, textNode)) } },
+    createRange: () => ({ setStart() {}, setEnd() {}, getClientRects: () => [{ left: 32, top: 5, right: 180, bottom: 29, width: 148, height: 24 }] }),
+  }
+  try {
+    const boundsResult = bounds.call({}, new FakeElement())
+    assert.deepStrictEqual(boundsResult, { left: 32, top: 5, right: 180, bottom: 29 })
+    assert(boundsResult.right < 800, 'hover bounds must end at the final text glyph')
+    assert.deepStrictEqual(startBounds.call({ textContentBounds: bounds }, new FakeElement()), boundsResult)
+    assert.deepStrictEqual(firstLineBounds.call({}, new FakeElement()), boundsResult)
+  } finally {
+    if (previous.Element) global.Element = previous.Element
+    else delete global.Element
+    if (previous.NodeFilter) global.NodeFilter = previous.NodeFilter
+    else delete global.NodeFilter
+    if (previous.document) global.document = previous.document
+    else delete global.document
+  }
+})
+
+check('Handle hover sections follow heading hierarchy and stop at root independent blocks', () => {
+  const component = loadComponent('FeishuDocumentEditor.vue')
+  const heading = (level, value) => ({ type: 'heading', attrs: { level }, content: [text(value)] })
+  const quote = { type: 'blockquote', content: [p('独立引用')] }
+  const code = { type: 'codeBlock', content: [text('independent')] }
+  const document = doc([heading(1, '根标题'), p('根正文'), heading(2, '子标题'), { type: 'paragraph', attrs: { indent: 1 }, content: [text('子正文')] }, quote, code, heading(1, '下一章'), p('下一章正文')])
+  const positions = []
+  document.forEach((node, pos) => positions.push({ node, pos }))
+  const editor = { state: { doc: document } }
+  const section = component.methods.handleHighlightRange.call({ editor, handleRange: { from: positions[0].pos, to: positions[0].pos + positions[0].node.nodeSize } })
+  assert.strictEqual(section.section, true)
+  assert.strictEqual(section.to, positions[4].pos, 'root blockquote must end the heading section before later independent blocks')
+  const leafDocument = doc([heading(2, '叶标题'), heading(2, '下一标题')])
+  const leafPositions = []
+  leafDocument.forEach((node, pos) => leafPositions.push({ node, pos }))
+  const leafEditor = { state: { doc: leafDocument } }
+  const leaf = component.methods.handleHighlightRange.call({ editor: leafEditor, handleRange: { from: leafPositions[0].pos, to: leafPositions[0].pos + leafPositions[0].node.nodeSize } })
+  assert.strictEqual(leaf.section, undefined, 'a heading without descendants or direct body remains a leaf block')
+})
+
+check('Changing the active handle target closes a stale block menu', () => {
+  const component = loadComponent('FeishuDocumentEditor.vue')
+  const previousElement = global.Element
+  class FakeElement {
+    constructor(rect) { this.rect = rect; this.tagName = 'P' }
+    getBoundingClientRect() { return this.rect }
+    matches() { return false }
+    closest() { return null }
+    querySelector() { return null }
+  }
+  global.Element = FakeElement
+  try {
+    const rect = { left: 10, top: 20, right: 40, bottom: 40, width: 30, height: 20 }
+    const paragraph = new FakeElement(rect)
+    const paper = new FakeElement(rect)
+    const context = {
+      editor: { view: { nodeDOM: () => paragraph } },
+      $refs: { root: { querySelector: selector => selector === '.feishu-paper' ? paper : null } },
+      handleRange: { from: 0, to: 2 },
+      blockMenuOpen: true,
+      handleHovering: false,
+      handlePressed: false,
+      dragging: null,
+      closeBlockMenuCalls: 0,
+      clearBlockMenuCloseTimer() {},
+      closeBlockMenu() { this.closeBlockMenuCalls += 1; this.blockMenuOpen = false },
+      setHandleHighlight() {},
+      blockShellElement: () => null,
+      highlightStartBounds: () => rect,
+      firstTextLineBounds: () => rect,
+      outerBlockBounds: () => rect,
+    }
+    component.methods.positionBlockHandle.call(context, { from: 2, to: 4 })
+    assert.strictEqual(context.closeBlockMenuCalls, 1, 'changing the active block while its menu is open must close that menu')
+    assert.strictEqual(context.blockMenuOpen, false, 'a stale block menu cannot remain over the next block handle')
+    context.blockMenuOpen = true
+    component.methods.positionBlockHandle.call(context, { from: 2, to: 4 })
+    assert.strictEqual(context.blockMenuOpen, true, 'repositioning the same active block must preserve its menu')
+  } finally {
+    if (previousElement) global.Element = previousElement
+    else delete global.Element
+  }
+})
+
+check('Empty block plus opens the insert menu while six-dot handles open block actions', () => {
+  const component = loadComponent('FeishuDocumentEditor.vue')
+  const source = fs.readFileSync(path.join(root, 'FeishuDocumentEditor.vue'), 'utf8')
+  let insertCalls = 0
+  let blockMenuCloses = 0
+  let repositionCalls = 0
+  const firstPlus = { getBoundingClientRect: () => ({ left: 10, top: 20, bottom: 40 }) }
+  const secondPlus = { getBoundingClientRect: () => ({ left: 50, top: 60, bottom: 80 }) }
+  const emptyParagraphPlus = {
+    writable: () => true,
+    handleIsEmptyParagraph: true,
+    handleRange: { from: 12, to: 14 },
+    savedSelection: { from: 1, to: 1 },
+    menuOpen: false,
+    menuKind: '',
+    menuTrigger: null,
+    menuAnchor: null,
+    $nextTick(callback) { callback() },
+    positionCommandMenu() { repositionCalls += 1 },
+    closeBlockMenu() { blockMenuCloses += 1 },
+    openCommandMenu(kind, event) { insertCalls += 1; this.lastInsert = { kind, event }; this.savedSelection = { from: 1, to: 1 } },
+  }
+  const event = { type: 'mouseenter', currentTarget: firstPlus }
+  component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, event)
+  assert.strictEqual(insertCalls, 1)
+  assert.deepStrictEqual(emptyParagraphPlus.lastInsert, { kind: 'plus', event }, 'the empty paragraph plus opens the insertion command menu')
+  assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 13, to: 13 }, 'insert commands target the empty paragraph even when the editor selection was elsewhere')
+  assert.strictEqual(blockMenuCloses, 1, 'opening the empty paragraph plus clears a stale six-dot block menu')
+  emptyParagraphPlus.menuOpen = true
+  emptyParagraphPlus.menuKind = 'plus'
+  emptyParagraphPlus.handleRange = { from: 20, to: 22 }
+  component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, { type: 'click', currentTarget: secondPlus })
+  assert.strictEqual(insertCalls, 1, 'the click following hover must not close the insertion menu')
+  assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 21, to: 21 }, 'a repeated plus event keeps the current empty paragraph as the insertion target')
+  assert.strictEqual(emptyParagraphPlus.menuTrigger, secondPlus, 'moving to another empty paragraph retargets the existing insert menu')
+  assert.deepStrictEqual(emptyParagraphPlus.menuAnchor, { left: 50, top: 60, bottom: 80 }, 'the insert menu anchor follows the active empty paragraph')
+  assert.strictEqual(repositionCalls, 1, 'retargeting the insert menu recalculates its position')
+  assert.strictEqual(blockMenuCloses, 2, 'reusing the insertion menu also clears any stale block menu')
+  assert(source.includes('@mouseenter="openEmptyBlockInsertMenu"') && source.includes('@click="openEmptyBlockInsertMenu"'), 'the empty plus must route hover and click to the insertion menu')
+  assert(source.includes('@mouseenter="openBlockMenuOnHover"') && source.includes('@focus="openBlockMenuOnHover"'), 'the six-dot handle opens its separate block menu on hover or keyboard focus')
+
+  let hoverMenuCalls = 0
+  const wrapperHandle = {
+    clearBlockMenuCloseTimer() {},
+    handleHovering: false,
+    refreshHandleHighlight() {},
+    openBlockMenuOnHover() { hoverMenuCalls += 1 },
+  }
+  component.methods.onBlockHandleEnter.call(wrapperHandle)
+  assert.strictEqual(hoverMenuCalls, 0, 'the wrapper hover must never open block actions before the six-dot button is entered')
+  component.methods.openBlockMenuOnHover.call({ writable: () => true, handleIsEmptyParagraph: true, handleIsTaskList: false, openBlockMenu() { hoverMenuCalls += 1 } })
+  assert.strictEqual(hoverMenuCalls, 0, 'the six-dot hover handler rejects an empty paragraph even when called directly')
+  let directBlockMenuCalls = 0
+  component.methods.openBlockMenu.call({ writable: () => true, handleIsEmptyParagraph: true, handleIsTaskList: false, clearBlockMenuCloseTimer() { directBlockMenuCalls += 1 }, setHandleHighlight() { directBlockMenuCalls += 1 }, positionBlockMenu() { directBlockMenuCalls += 1 } })
+  assert.strictEqual(directBlockMenuCalls, 0, 'the block menu itself rejects an empty paragraph even when called directly')
+
+  let opened = 0
+  const taskHandle = {
+    writable: () => true,
+    handleIsTaskList: true,
+    handleHovering: false,
+    openBlockMenu() { opened += 1 },
+  }
+  component.methods.openBlockMenuOnHover.call(taskHandle)
+  assert.strictEqual(opened, 0, 'task list handles remain excluded from the block menu')
+})
+
+check('Pointer movement over the editor can switch away from an open block menu', () => {
+  const component = loadComponent('FeishuDocumentEditor.vue')
+  const calls = []
+  const context = {
+    dragging: null,
+    handlePressed: false,
+    columnResize: null,
+    blockMenuOpen: true,
+    blockTypeMenuOpen: false,
+    editor: { view: { posAtCoords: () => ({ pos: 7 }) } },
+    updateTableBoundaryHover() {},
+    rangeAt(pos) { return { from: pos, to: pos + 2 } },
+    positionBlockHandle(range) { calls.push(range) },
+    scheduleHandleHide() { throw new Error('pointer over the editor should not schedule handle hiding') },
+  }
+  component.methods.onEditorPointerMove.call(context, { clientX: 10, clientY: 20 })
+  assert.deepStrictEqual(calls, [{ from: 7, to: 9 }], 'an open menu must yield to a newly hovered editor block')
 })
 
 check('ECS character limit uses the official filter, counts Unicode, and keeps over-limit initial text intact', () => {
@@ -249,7 +435,60 @@ check('Moves are atomic, preserve text, reject partial and illegal nested moves'
 })
 check('Outline includes nested and ninth-level headings with document positions', () => {
   const document = doc([{ type: 'heading', attrs: { level: 1 }, content: [text('A')] }, p('body'), { type: 'callout', content: [{ type: 'heading', attrs: { level: 9 }, content: [text('B')] }] }])
-  assert.deepStrictEqual(collectOutline(document), [{ pos: 0, level: 1, text: 'A' }, { pos: 10, level: 9, text: 'B' }])
+  assert.deepStrictEqual(collectOutline(document), [{ pos: 0, level: 1, text: 'A' }])
+})
+check('Heading sections use structural ownership for lists, descendants and independent blocks', () => {
+  const h2 = { type: 'heading', attrs: { level: 2, indent: 0 }, content: [text('你好我是1')] }
+  const h3 = { type: 'heading', attrs: { level: 3, indent: 1 }, content: [text('你好 我是3')] }
+  const rootParagraph = { type: 'paragraph', attrs: { indent: 0 }, content: [text('根级文字')] }
+  const nextText = p('22222')
+  const code = { type: 'codeBlock', content: [text('独立代码')] }
+  const list = { type: 'orderedList', content: [{ type: 'listItem', content: [p('1. 你好')] }, { type: 'listItem', content: [p('2. 我是')] }] }
+  const nextHeading = { type: 'heading', attrs: { level: 2 }, content: [text('下一章节')] }
+  const document = doc([h2, h3, rootParagraph, nextText, code, nextHeading, list])
+  const positions = []
+  document.forEach((node, pos) => positions.push({ node, pos }))
+  const section = resolveHeadingSection(document, positions[0].pos)
+  assert.deepStrictEqual(section.blocks.map((block) => block.node.type.name), ['heading', 'heading'])
+  assert.strictEqual(section.to, positions[2].pos, 'a root paragraph after an indented child heading is outside the section')
+  assert.deepStrictEqual(foldedRange(document, positions[0].pos), { from: positions[0].pos + positions[0].node.nodeSize, to: positions[5].pos }, 'folding follows heading levels and keeps root code/list blocks in the section')
+  const defaultIndentDocument = doc([
+    { type: 'heading', attrs: { level: 2 }, content: [text('默认层级父标题')] },
+    { type: 'heading', attrs: { level: 3 }, content: [text('默认层级子标题')] },
+    p('默认根级文字'),
+  ])
+  const defaultIndentPositions = []
+  defaultIndentDocument.forEach((node, pos) => defaultIndentPositions.push({ node, pos }))
+  const defaultIndentSection = resolveHeadingSection(defaultIndentDocument, defaultIndentPositions[0].pos)
+  assert.deepStrictEqual(defaultIndentSection.blocks.map((block) => block.node.type.name), ['heading', 'heading', 'paragraph'], 'a terminal heading section keeps its trailing paragraph even without an explicit indent')
+  assert.strictEqual(defaultIndentSection.to, defaultIndentDocument.content.size, 'a terminal section extends to the end of its parent when no later boundary exists')
+  const terminalDocument = doc([
+    { type: 'heading', attrs: { level: 4 }, content: [text('终止标题')] },
+    p('终止标题正文'),
+    p('末尾文字块'),
+    { type: 'blockquote', content: [p('章节外引用')] },
+  ])
+  const terminalPositions = []
+  terminalDocument.forEach((node, pos) => terminalPositions.push({ node, pos }))
+  const terminalSection = resolveHeadingSection(terminalDocument, terminalPositions[0].pos)
+  assert.deepStrictEqual(terminalSection.blocks.map((block) => block.node.type.name), ['heading', 'paragraph', 'paragraph'], 'terminal heading keeps all same-parent trailing text blocks')
+  assert.strictEqual(terminalSection.to, terminalPositions[3].pos, 'an independent block still ends a terminal heading section')
+  assert.strictEqual(foldedRange(terminalDocument, terminalPositions[0].pos).to, terminalDocument.content.size, 'document folding keeps every trailing block until the next heading or parent end')
+  assert.deepStrictEqual(headingActionRange(terminalDocument, terminalPositions[0].pos), { from: terminalPositions[0].pos, to: terminalDocument.content.size, parentDepth: 0 }, 'heading copy and drag ranges include terminal trailing blocks')
+  assert.strictEqual(headingActionRange(terminalDocument, terminalPositions[3].pos), null, 'independent blocks never receive a heading section action range')
+  const listDocument = doc([{ type: 'heading', attrs: { level: 1 }, content: [text('回归结果')] }, list, { type: 'heading', attrs: { level: 1 }, content: [text('下一章节')] }])
+  const listPositions = []
+  listDocument.forEach((node, pos) => listPositions.push({ node, pos }))
+  const listSection = resolveHeadingSection(listDocument, listPositions[0].pos)
+  assert.deepStrictEqual(listSection.blocks.map((block) => block.node.type.name), ['heading', 'orderedList'])
+  const codeSection = resolveHeadingSection(document, positions[5].pos)
+  assert(codeSection && codeSection.blocks[0].node.type.name === 'heading' && !codeSection.blocks.some((block) => block.node.type.name === 'codeBlock'), 'a heading after an independent code block starts a fresh section')
+  const foldSection = resolveHeadingSectionMode(document, positions[0].pos, 'fold')
+  assert.deepStrictEqual(foldSection.blocks.map((block) => block.node.type.name), ['heading', 'heading', 'paragraph', 'paragraph', 'codeBlock'], 'fold sections include all blocks before the next heading boundary')
+  const nestedHeadingDocument = doc([{ type: 'callout', content: [{ type: 'heading', attrs: { level: 2 }, content: [text('容器标题')] }, p('容器正文')] }])
+  let nestedHeadingPos = -1
+  nestedHeadingDocument.descendants((node, pos) => { if (node.type.name === 'heading') nestedHeadingPos = pos })
+  assert.strictEqual(isPageHeading(nestedHeadingDocument, nestedHeadingPos), false, 'container headings stay out of the page heading fold/outline model')
 })
 check('Callout style and emoji attributes are whitelisted and round-trip through HTML', () => {
   const callout = schema.nodeFromJSON({ type: 'callout', attrs: { backgroundColor: '#eff9f4', borderColor: '#00b887', color: '#263830', emoji: '🎉' }, content: [p('body')] })

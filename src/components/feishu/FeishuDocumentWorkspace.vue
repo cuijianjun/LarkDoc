@@ -485,7 +485,10 @@ export default {
     const templateItems = Array.isArray(this.templates) ? this.templates : TEMPLATES
     const firstTemplate = templateItems[0] || { html: '<p></p>', title: '未命名文档' }
     return {
-      html: firstTemplate.html, title: firstTemplate.title, templateItems, editorConfig: createFeishuConfig(this.config),
+      html: firstTemplate.html, 
+      title: firstTemplate.title, 
+      templateItems, 
+      editorConfig: createFeishuConfig(this.config),
       effectiveReadonly: false, importing: false, initialized: false,
       saveStatus: '初始化…', storageError: false, notice: '',
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],

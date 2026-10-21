@@ -4,6 +4,10 @@ const webpack = require('webpack')
 module.exports = defineConfig({
   transpileDependencies: true,
   productionSourceMap: false,
+  // CSS is published as a separate npm asset. Relative URLs keep bundled
+  // KaTeX fonts resolvable from the package's own dist/fonts directory when a
+  // Vue 2 host imports the stylesheet through its normal css-loader pipeline.
+  publicPath: './',
   // The library is consumed as an npm package. Vue must resolve to the
   // CommonJS constructor so Tiptap's Vue 2 node-view runtime receives the
   // same constructor shape as a normal Vue 2 application.

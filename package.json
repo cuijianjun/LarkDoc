@@ -1,5 +1,5 @@
 {
-  "name": "@tiptap-integration/feishu-document",
+  "name": "feishu-document",
   "version": "0.1.0",
   "private": false,
   "description": "Vue 2 Feishu-style Tiptap document editor and workspace package",
@@ -129,9 +129,11 @@
   "main": "dist/feishu-document.common.js",
   "module": "dist/feishu-document.common.js",
   "unpkg": "dist/feishu-document.umd.min.js",
+  "style": "style.css",
   "files": [
     "dist",
     "src",
+    "style.css",
     "README.md",
     "DEMO_INTEGRATION_GUIDE.md",
     "babel.config.js",

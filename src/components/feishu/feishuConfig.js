@@ -30,6 +30,10 @@ export const DEFAULT_FEISHU_CONFIG = Object.freeze({
     disabled: [],
     allow: null,
   },
+  layout: {
+    // 标题栏默认跟随文档滚动，宿主可按页面场景开启顶端吸附。
+    titleBarFixed: false,
+  },
   limits: {
     titleLength: 120,
     maxLength: 0,
@@ -69,12 +73,14 @@ export function createFeishuConfig(overrides = {}) {
     toolbar: mergeSection(DEFAULT_FEISHU_CONFIG.toolbar, source.toolbar),
     commands: mergeSection(DEFAULT_FEISHU_CONFIG.commands, source.commands),
     blockMenu: mergeSection(DEFAULT_FEISHU_CONFIG.blockMenu, source.blockMenu),
+    layout: mergeSection(DEFAULT_FEISHU_CONFIG.layout, source.layout),
     limits: mergeSection(DEFAULT_FEISHU_CONFIG.limits, source.limits),
     performance: mergeSection(DEFAULT_FEISHU_CONFIG.performance, source.performance),
   }
 
   // Unknown feature names are ignored by the UI, while known names always have a boolean value.
   FEISHU_FEATURES.forEach((name) => { config.features[name] = config.features[name] !== false })
+  config.layout.titleBarFixed = config.layout.titleBarFixed === true
   config.limits.titleLength = Math.max(1, Number(config.limits.titleLength) || DEFAULT_FEISHU_CONFIG.limits.titleLength)
   config.limits.maxLength = Math.max(0, Number(config.limits.maxLength) || 0)
   config.limits.maxImageSize = Math.max(1, Number(config.limits.maxImageSize) || DEFAULT_FEISHU_CONFIG.limits.maxImageSize)
