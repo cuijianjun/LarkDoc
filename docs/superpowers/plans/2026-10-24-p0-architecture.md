@@ -42,20 +42,32 @@
 
 ---
 
-### Task 1: P0-01 删死代码
+### Task 1: 基线与测试脚手架 + P0-01 删死代码
+
+> **为什么本任务要先建脚手架**：仓库当前**无 `test/` 目录、vitest 未安装**，而后续多个任务的验收都依赖"重构前"的基线。基线一旦错过就再也抓不到（schema 快照、DOM 快照、老 JSON），故并入本任务第一步，先于任何删改动作。
 
 **Files:**
+- Create: `vitest.config.js`、`test/bootstrap.js`、`test/unit/no-dead-code.test.js`
+- Create: `test/fixtures/schema-v1.json`、`test/fixtures/legacy/document-v1.json`、`test/fixtures/editor-dom-before.html`
+- Modify: `package.json`（`check:` 链加 `check:unit`；devDependencies 加 vitest）
 - Delete: `src/components/lark-doc/ImageNode.vue`、`src/components/lark-doc/CodeNode.vue`（合计 788 行）
 - Modify: `src/components/lark-doc/extensions.js:427`、`src/components/lark-doc/extensions.js:445` —— `addNodeView` 分支改为查 registry
 
 **Interfaces:**
-- Produces: `src/registry/nodeviews.js` 的 `getNodeView(name)`（Task 2 建；本 Task 先建空壳 + `set/get`，返回 `undefined` 时走默认渲染）
+- Produces（本任务自用）: `src/registry/nodeviews.js` 的 `getNodeView(name)` —— 本任务建空壳 + `setNodeView/getNodeView`，`getNodeView` 返回 `undefined` 时走默认渲染；**Task 2 补完整实现**
+- Produces（**供后续任务消费，务必落盘**）:
+  - `test/fixtures/schema-v1.json` → Task 4 的 schema 快照比对
+  - `test/fixtures/legacy/document-v1.json` → Task 4 的 RF1 老 JSON round-trip
+  - `test/fixtures/editor-dom-before.html` → Task 3 的 RF5 DOM 快照比对
 
-- [ ] **Step 1: 写失败测试** —— 新增 `test/unit/no-dead-code.test.js`：断言 `require('../../../src/components/lark-doc/extensions')` 的依赖闭包内不含 `ImageNode` / `CodeNode` 字符串；`git grep -n "ImageNode\|CodeNode" src/` 退出码非 0。
-- [ ] **Step 2: 跑，确认失败** —— `npm run check:unit`；预期 FAIL（当前文件仍在）。
-- [ ] **Step 3: 实现** —— 建 `src/registry/nodeviews.js`（导出 `setNodeView(name, factory)` / `getNodeView(name)`）；删除两个 `.vue`；`extensions.js:427,445` 的 `addNodeView` 改为 `const v = getNodeView(type); if (v) return v`。
-- [ ] **Step 4: 跑，确认通过** —— `npm run check:unit` + `npm run check` + 10 套断言；预期全绿且断言数不回退。
-- [ ] **Step 5: Commit** —— `git add -A src test && git commit -m "refactor(p0-01): 删除 ImageNode/CodeNode 死代码，addNodeView 改查注册表"`
+- [ ] **Step 1: 建测试脚手架（先于任何删改）** —— 装 vitest；建 `vitest.config.js` + `test/bootstrap.js`；`package.json` 的 `check:` 链插入 `check:unit`；写一条占位测试并跑绿，确认 `npm run check:unit` 可用。
+- [ ] **Step 2: 抓取三个"重构前"基线** —— ① `schema-v1.json` = `editor.getSchema()` 序列化快照；② `legacy/document-v1.json` = 一份真实老正文 JSON —— **仓库 `examples/` 下只有 `element-demo.html`，无任何 JSON**，需自行构造一份覆盖文本/标题/列表/表格/折叠的 v1 文档并存盘；③ `editor-dom-before.html` = demo 挂载后的完整 DOM 快照（剔除动态 id）。
+- [ ] **Step 3: 实测 colors 断言基线并回填** —— 起 demo（`apps/vue2-webpack-node14`，8080，`/lark-doc`）后跑 `node scripts/verify-browser-colors.js`，把实测数字回填本文档 Global Constraints 的 ⚠️ 处。
+- [ ] **Step 4: 写失败测试** —— 新增 `test/unit/no-dead-code.test.js`：断言 `require('../../../src/components/lark-doc/extensions')` 的依赖闭包内不含 `ImageNode` / `CodeNode` 字符串；`git grep -n "ImageNode\|CodeNode" src/` 退出码非 0。
+- [ ] **Step 5: 跑，确认失败** —— `npm run check:unit`；预期 FAIL（当前文件仍在）。
+- [ ] **Step 6: 实现** —— 建 `src/registry/nodeviews.js`（导出 `setNodeView(name, factory)` / `getNodeView(name)`）；删除两个 `.vue`；`extensions.js:427,445` 的 `addNodeView` 改为 `const v = getNodeView(type); if (v) return v`。
+- [ ] **Step 7: 跑，确认通过** —— `npm run check:unit` + `npm run check` + 10 套断言；预期全绿且断言数不回退。
+- [ ] **Step 8: Commit** —— 两条分开提交：① `"test(p0-01): 建 vitest 骨架与三个重构前基线"`（Step 1–3）② `"refactor(p0-01): 删除 ImageNode/CodeNode 死代码，addNodeView 改查注册表"`（Step 4–7）
 
 ---
 
@@ -87,8 +99,8 @@
 **Interfaces:**
 - Produces: 8 个子组件；父组件对外 props/events **完全不变**
 
-- [ ] **Step 1: 写失败测试（RF5）** —— `test/unit/editor-dom-snapshot.test.js`：拆分前先在 demo 里抓一次完整 DOM 快照（`outerHTML`，剔除动态 id）存为 `test/fixtures/editor-dom-before.html`；断言脚本比对拆分前后**逐节点相同**。
-- [ ] **Step 2: 跑，确认基线建立** —— 快照入库，测试当前 PASS（作为基线）。
+- [ ] **Step 1: 写失败测试（RF5）** —— `test/unit/editor-dom-snapshot.test.js`：比对 demo 当前 DOM 与 **Task 1 已抓取的** `test/fixtures/editor-dom-before.html`，断言**逐节点相同**。
+- [ ] **Step 2: 跑，确认基线建立** —— 测试当前 PASS（作为基线）。
 - [ ] **Step 3: 实现** —— 按 §5.1.1 的 8 段区间顺序拆，**一次只拆一段**，每段拆完立刻跑 Step 4。
 - [ ] **Step 4: 跑，确认通过** —— DOM 快照比对无差异 + `npm run check` + 10 套断言。
 - [ ] **Step 5: Commit** —— 按段提交（8 次），消息 `"refactor(p0-03): 拆出 editor/<Name>.vue（模板 <区间>）"`；最后补一条断言：父组件 < 700 行。
@@ -104,8 +116,8 @@
 **Interfaces:**
 - Produces: `src/registry/blocks.js` 导出 `registerBlock(def)` / `getAllBlocks()` / `getBlock(name)`
 
-- [ ] **Step 1: 写失败测试（RF1）** —— `test/unit/schema-snapshot.test.js`：拆分前先存一份 `editor.getSchema()` 序列化快照 `test/fixtures/schema-v1.json`；再做**老 JSON round-trip** 测试——用 `test/fixtures/legacy/*.json`（schema v1 的老正文）导入后 `getJSON()` 与导入前逐字节相同。
-- [ ] **Step 2: 跑，确认基线建立** —— 快照入库。
+- [ ] **Step 1: 写失败测试（RF1）** —— `test/unit/schema-snapshot.test.js`：① 断言 `editor.getSchema()` 序列化与 **Task 1 已抓取的** `test/fixtures/schema-v1.json` 逐字节相同；② **老 JSON round-trip**：用 `test/fixtures/legacy/document-v1.json`（Task 1 造的 v1 正文）导入后 `getJSON()` 与导入前逐字节相同。
+- [ ] **Step 2: 跑，确认基线建立** —— 测试当前 PASS（作为基线）。
 - [ ] **Step 3: 实现** —— 24 个块逐一搬到 `src/core/blocks/`；`extensions.js` 改为遍历注册表。每文件 < 250 行。
 - [ ] **Step 4: 跑，确认通过** —— schema 快照**逐字节相同** + 老 JSON round-trip 无损 + 10 套断言。
 - [ ] **Step 5: Commit** —— `"refactor(p0-04): 块定义拆到 core/blocks/*，extensions 改查注册表"`
@@ -148,20 +160,21 @@
 
 ---
 
-### Task 7: P0-07 单测 + fixtures 骨架
+### Task 7: P0-07 补齐 24 个块 fixture
+
+> **脚手架部分已上移到 Task 1**（vitest / bootstrap / `check:unit` 接入在那里完成）。本任务只补 24 份块 fixture 与 round-trip 测试。
 
 **Files:**
-- Create: `test/fixtures/blocks/`（24 个块各一份）、`test/unit/`、`test/bootstrap.js`、`vitest.config.js`
-- Modify: `package.json`（`check:` 链加 `check:unit`）
+- Create: `test/fixtures/blocks/`（24 个块各一份）、`test/unit/block-roundtrip.test.js`
 
 **Interfaces:**
-- Produces: `npm run check:unit`
+- Consumes: Task 1 建好的 `npm run check:unit`
 
 - [ ] **Step 1: 写失败测试** —— `test/unit/block-roundtrip.test.js`：遍历 `test/fixtures/blocks/*.json`，各做一次 `setContent → getJSON` round-trip。
-- [ ] **Step 2: 跑，确认失败** —— 预期 FAIL（fixtures 目录为空 / 框架未配）。
-- [ ] **Step 3: 实现** —— 建 vitest 配置与 bootstrap；补 24 份 fixture；`check:` 链插入 `check:unit`。
+- [ ] **Step 2: 跑，确认失败** —— 预期 FAIL（fixtures 目录为空）。
+- [ ] **Step 3: 实现** —— 补 24 份块 fixture（对应 Task 4 拆出的 `src/core/blocks/*.js` 24 个块）。
 - [ ] **Step 4: 跑，确认通过** —— `npm run check:unit` 24 份全绿；`npm run check` 全链绿。
-- [ ] **Step 5: Commit** —— `"test(p0-07): 建 vitest 骨架与 24 个块 fixture，接入 check 链"`
+- [ ] **Step 5: Commit** —— `"test(p0-07): 补 24 个块 fixture 与 round-trip 测试"`
 
 ---
 
