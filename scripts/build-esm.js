@@ -49,6 +49,11 @@ config.output = Object.assign({}, config.output, {
   // 与浏览器直用 ESM 都按 dist 目录相对寻址，放到任意目录不 404。
   publicPath: '',
 })
+// library.type='module' 是「把入口的 export 变成产物 export」的开关。
+// 少了它 webpack 只把入口当 app 来打包：产物里只有 chunk 加载运行时
+// （`export { r as __webpack_require__ }`），`import { LarkDoc } from 'lark-doc'`
+// 会得到 undefined —— 0.11.0 / 0.11.1 的 esm 产物就缺这一行。
+config.output.library = { type: 'module' }
 // Vue 仍是 peer 依赖：产物里保留 `import ... from 'vue'`，交给宿主去重。
 config.externalsType = 'module'
 config.externals = { vue: 'vue' }

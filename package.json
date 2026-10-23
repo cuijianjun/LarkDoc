@@ -1,11 +1,11 @@
 {
   "name": "lark-doc",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "private": false,
   "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js",
+    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
     "build:umd": "LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
     "build:esm": "node scripts/build-esm.js",
     "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:umd && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
@@ -178,9 +178,9 @@
       "gzip": true
     },
     {
-    "name": "CJS 全量产物（内联 mermaid，gzip）",
-    "path": "dist/lark-doc.common.js",
-    "limit": "2200 KB",
+      "name": "CJS 全量产物（内联 mermaid，gzip）",
+      "path": "dist/lark-doc.common.js",
+      "limit": "2200 KB",
       "gzip": true
     }
   ]
