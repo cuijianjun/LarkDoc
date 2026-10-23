@@ -2,7 +2,7 @@
 
 飞书风格富文本文档编辑器与工作台组件库 —— 基于 Vue 2.7 + Tiptap 3，完整还原飞书文档排版与交互（折叠/高亮、标题编号、列表、表格、气泡菜单），支持 Web Component 与命令式 API，零依赖嵌入 Vue 2 项目（`0.10.0`）。
 
-完整文档：[VitePress 使用手册](https://your-docs-host/lark-doc/)（源码在 `codex/开发agent/aieditor-core-docs`）。
+完整文档：[VitePress 使用手册](https://cuijianjun.github.io/LarkDoc/)（源码在 `docs/` 目录，随仓库自动部署到 GitHub Pages）。
 
 > **开发/改代码前必读**：[DEVELOPMENT.md](./DEVELOPMENT.md) —— 踩坑清单与回归防护（折叠高亮、blockId、缩进、编号、弹窗、排版实测值、Vditor 兼容）。
 
