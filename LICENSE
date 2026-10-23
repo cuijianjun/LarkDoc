@@ -1,0 +1,48 @@
+MIT License
+
+Copyright (c) 2026 cuijianjun
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## 附加声明 / Additional Notice
+
+（本段为使用提示，不构成对上述 MIT 许可条款的修改；如与正文冲突，以 MIT 许可正文为准。）
+
+1. **学习用途**。本项目是个人学习与技术研究的练习产物，目的是研究富文本编辑器技术栈
+   （ProseMirror / Tiptap 3 / Vue 2.7）的工程实现，包括但不限于块级结构、折叠与高亮、
+   标题自动编号、气泡菜单与表格交互等。
+
+2. **界面参考，非官方产物**。项目在交互与视觉呈现上参考、模仿了飞书文档（Lark Docs /
+   Feishu Docs）的使用体验，用作还原练习。本项目与飞书、Lark、字节跳动及其关联公司
+   **没有任何隶属、合作、授权或背书关系**，不是其官方或衍生产品，也未使用其专有资产
+   （代码、接口、设计源文件、商标与 Logo 均未使用）。
+
+3. **禁止商用**。本项目**不得用于任何商业用途**，包括但不限于：作为商业产品或其组成部分
+   对外销售、交付、运营，或用于面向客户/用户的收费服务。仅允许在个人学习、研究与
+   技术评估场景中使用。
+
+4. **风险自负**。使用者应自行判断并承担使用本软件可能带来的全部风险与后果，包括但
+   不限于知识产权、商标、外观设计、不正当竞争等方面的争议或责任。作者不对因使用、
+   修改、分发本软件而产生的任何直接或间接后果承担责任；如当地法律法规对界面设计
+   或交互的模仿有特别规定，请以当地法律为准并在使用前自行完成合规评估。
+
+5. **第三方资源**。本包随附的静态资源（如字体、公式渲染样式、图标等）均来自各自的
+   开源项目，遵循其原始许可证（见 `README.md`「第三方资源与协议」）。

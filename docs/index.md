@@ -36,3 +36,10 @@ features:
     title: Node 14 兼容
     details: 存量 Vue2/webpack4 宿主可直接使用，带完整 Node14 校验与 ES2023 polyfill。
 ---
+
+::: warning 声明
+本项目为**个人学习用途**的开源练习项目，界面与交互模仿飞书文档（Lark Docs），
+**与飞书 / 字节跳动无任何关联、非官方产物、禁止商用**，侵权等后果由使用者自负。
+详见 [背景与免责声明](/guide/about)。
+:::
+

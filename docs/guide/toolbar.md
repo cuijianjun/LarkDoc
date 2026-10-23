@@ -79,3 +79,7 @@ new LarkDoc({
 | 宽度不够 | 从低优先级分组开始（视图与工具 → 插入 → 段落 → 文本样式 → 格式 → 标题 → 历史）整组收进末尾「更多 ▾」弹层，按组分节展示；宽度恢复时逆序自动展开。 |
 
 全部下拉（字体 / 字号 / 行高 / 页面宽度 / 代码语言 / 单元格对齐 / 字数上限 / 模板 / 导出等）均为自绘组件（触发按钮 + fixed 定位选项列表），不再使用原生 `<select>`：支持键盘 ↑↓ / Enter / Esc、点击外部关闭、当前值 ✓ 高亮，且 `mousedown.prevent` 保证编辑器选区不丢失。
+
+## 按宿主裁剪（各环境写法）
+
+`toolbarKeys` / `toolbarExcludes` 与宿主无关，但**不同引入方式把配置传进去的位置不同**：命令式入口走 `new LarkDoc(options)`，SFC 走 `config` prop，Web Component 走 `el.options`。各环境可直接粘贴的完整 demo 见[各环境引入对照](/guide/environments)。

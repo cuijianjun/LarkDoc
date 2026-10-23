@@ -19,6 +19,7 @@ export default defineConfig({
       { text: '指南', link: '/guide/getting-started' },
       { text: '功能配置', link: '/blocks/heading' },
       { text: '实例与事件', link: '/guide/instance' },
+      { text: '关于', link: '/guide/about' },
     ],
 
     outline: { level: [2, 3], label: '本页目录' },
@@ -43,6 +44,7 @@ export default defineConfig({
           text: '指南',
           items: [
             { text: '快速开始', link: '/guide/getting-started' },
+            { text: '各环境引入对照', link: '/guide/environments' },
             { text: '配置总览', link: '/guide/configuration' },
             { text: '实例与事件', link: '/guide/instance' },
             { text: '工具栏配置', link: '/guide/toolbar' },
@@ -50,6 +52,7 @@ export default defineConfig({
             { text: '协同与权限', link: '/guide/collaboration' },
             { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
             { text: 'Web Component（跨框架）', link: '/guide/web-component' },
+            { text: '背景与免责声明', link: '/guide/about' },
             { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
             { text: '离线与资源本地化', link: '/guide/offline' },
           ],

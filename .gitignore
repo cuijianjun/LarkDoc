@@ -9,3 +9,10 @@ npm-debug.log*
 .history/
 .verify-shots/
 .release/
+
+# 真实旧数据端到端验证脚本：数据源硬编码本机私有路径，且断言绑定那份数据的具体内容，
+# 入库对他人无意义（换台机器跑不起来），保留在本地。
+scripts/verify-vditor-real-data.js
+docs/.vitepress/.temp/
+docs/.vitepress/cache/
+docs/.vitepress/.dist-verify/
