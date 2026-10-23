@@ -5,7 +5,8 @@
 #   一条命令跑完：版本号 → 全链校验 → 打包 → npm publish → sha1 校验 → git commit/tag/push
 #
 # 常规用法（默认 patch，即 0.11.2 → 0.11.3）：
-#   bash scripts/release.sh                    # 或 npm run release
+#   npm run ship                               # ← 最常用：一个命令同时发 npm + GitHub
+#   npm run release                            # 同上（等价别名）
 #   bash scripts/release.sh --minor            # 0.11.2 → 0.12.0
 #   bash scripts/release.sh --version 1.0.0
 #
@@ -23,6 +24,11 @@
 # 设计原则：全程非交互、可重入、每一步都自证。任何一步失败立刻停，退出码非 0。
 #
 set -euo pipefail
+
+# 经 `npm run ship` 调用时，宿主的 NODE_OPTIONS 会被传进来（本机是 WorkBuddy 的
+# node-language-shim.cjs，Node 14 跑 check 时会直接崩）。这里统一清掉，
+# 下游 node / npm 子进程一律拿干净环境 —— 所以不需要再手写 `env -u NODE_OPTIONS`。
+unset NODE_OPTIONS
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PKG_DIR"

@@ -306,11 +306,14 @@ const doc = new LarkDoc({ element: host })
 
 ```bash
 cd apps/lark-doc
-bash scripts/release.sh            # = npm run release，0.11.2 → 0.11.3
-bash scripts/release.sh --minor    # 0.11.2 → 0.12.0
-bash scripts/release.sh --version 1.0.0
-bash scripts/release.sh --dry-run  # 只看计划，不动任何东西
+npm run ship                       # ← 一个命令同时发 npm + GitHub（patch：0.11.2 → 0.11.3）
+npm run ship:minor                 # 0.11.2 → 0.12.0
+npm run sync                       # 只把改动推到 GitHub，不动版本号、不发 npm
+npm run ship -- --version 1.0.0    # 指定版本
+npm run ship -- --dry-run          # 只看计划，不动任何东西
 ```
+
+`ship` / `release` / `release:patch` 三个是同一件事的别名（都等于 `bash scripts/release.sh`），给不同习惯的人用；`sync` = `--git-only`。经 `npm run` 调用时**不需要**再手写 `env -u NODE_OPTIONS`——脚本顶部已经 `unset NODE_OPTIONS`（宿主注入的 WorkBuddy shim 会让 Node 14 的 check 直接崩）。
 
 脚本按序执行 7 步，任一步失败立即中止（退出码非 0），已 bump 的版本号记在 `.release/pending-version`，修好后 `--resume` 从断点继续：
 
@@ -328,7 +331,8 @@ bash scripts/release.sh --dry-run  # 只看计划，不动任何东西
 
 ```bash
 # 只同步代码到 GitHub（不发版）
-bash scripts/release.sh --git-only -m "fix: 某某问题"
+npm run sync -- -m "fix: 某某问题"
+# 等价于 bash scripts/release.sh --git-only -m "fix: 某某问题"
 ```
 
 ### 发布三坑（脚本已内建处理，改脚本时别退回去）
