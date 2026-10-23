@@ -3,8 +3,7 @@
  *
  * 用法（任意框架 / 无框架）：
  *
- *   import 'lark-doc/element'          // 自动注册 <lark-doc>
- *   import 'lark-doc/dist/style.css'   // 若没有开启自动注入样式
+ *   import 'lark-doc/element'          // 自动注册 <lark-doc>（样式随 JS 注入，无需另引 CSS）
  *
  *   <lark-doc readonly theme="light"></lark-doc>
  *

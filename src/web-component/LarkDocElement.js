@@ -96,11 +96,25 @@ export class LarkDocElement extends HTMLElement {
     // 读过的 title 会被摘掉（见 _stripTitleAttribute），摘除引起的回调不能把标题清空。
     if (this._titleAttrMuted) return
     if (!this.document) return // 尚未挂载：等首次 mount 统一读取全部属性
+    // title 热更：渲染层 prop 是 initialTitle（仅创建期消费），patchProps 不生效，
+    // 必须走门面 setTitle() 命令；值已写入后再摘除原生 tooltip 属性。
+    if (name === 'title') {
+      if (newValue != null) {
+        this._titleAttrValue = String(newValue)
+        try { this.document.setTitle(String(newValue)) } catch (error) { this._fail('title', error) }
+      }
+      this._stripTitleAttribute()
+      return
+    }
     const result = applyAttributeChange(name, newValue)
     if (result.rebuild) { this._scheduleRebuild(); return }
     if (result.props && Object.keys(result.props).length) this._safePatch(result.props)
+    // options 目标的 live 属性（user/theme 等）：同步写回门面 options，
+    // 宿主重建实例或读取 options 时拿到的才是新值。
+    if (result.options && Object.keys(result.options).length && this.document && this.document.options) {
+      Object.assign(this.document.options, result.options)
+    }
     if (name === 'theme') this._applyTheme()
-    if (name === 'title') this._stripTitleAttribute()
   }
 
   /**
@@ -216,13 +230,20 @@ export class LarkDocElement extends HTMLElement {
     try {
       if (typeof structuredClone === 'function') { structuredClone(payload); return payload }
     } catch (_) {
-      // 不可克隆：降级为浅拷贝可序列化字段
+      // 不可克隆：走降级，保证返回值一定可克隆。
+    }
+    // 降级 1：JSON 往返——产物必然可结构化克隆（Date 变 ISO 字符串、
+    // undefined/函数被丢弃），比原样放行 object 安全。
+    try { return JSON.parse(JSON.stringify(payload)) } catch (_) {
+      // 循环引用等连 JSON 都序列化不了：走逐字段兜底。
     }
     const plain = {}
     Object.keys(payload).forEach((key) => {
       const value = payload[key]
+      if (value == null) { plain[key] = value; return }
       const type = typeof value
-      if (value == null || ['string', 'number', 'boolean', 'object'].includes(type)) plain[key] = value
+      if (type === 'function' || type === 'symbol') return
+      try { JSON.stringify(value); plain[key] = value } catch (_) { /* 丢弃不可序列化字段 */ }
     })
     return plain
   }

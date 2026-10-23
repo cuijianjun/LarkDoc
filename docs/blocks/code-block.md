@@ -4,7 +4,7 @@
 
 代码块组件提供语言选择、语法高亮（highlight.js 按需动态加载，本地 chunk 无外网请求）、行内复制与编辑态切换。可通过 `performance.syntaxHighlight` 关闭高亮以减小包体积感知。
 
-语言选为 **Mermaid 图表** 时，代码块升级为图表块：**默认直接渲染图表**（与 Vditor 行为一致），点「编辑源码」可切回源码编辑，渲染器（mermaid，本地 vendored 产物）只在首次渲染时按需加载。
+语言选为 **Mermaid 图表** 时，代码块升级为图表块：**默认直接渲染图表**（与 Vditor 行为一致），点「编辑源码」可切回源码编辑。渲染器（mermaid，打包进产物、不请求外网）是 `import()` 懒 chunk，只在首次渲染时按需加载。
 
 图表块使用**独立外观**（白底卡片），不与深色代码框共用样式；工具栏提供独立的「图表」按钮，下拉可选流程图 / 时序图 / 甘特图 / 饼图 / 状态图 / 类图直接插入。
 
@@ -26,7 +26,7 @@ new LarkDoc({
 | --- | --- | --- | --- |
 | `features.codeBlocks` | `boolean` | `true` | 关闭后代码块入口与命令不可用。 |
 | `features.diagram` | `boolean` | `true` | 关闭后语言下拉不再提供 Mermaid 图表，预览按钮与渲染器加载一并禁用；已有 mermaid 代码块退化为纯源码展示。 |
-| `performance.diagramScriptUrl` | `string \| null` | `null` | 自托管渲染器地址。默认用包内 vendored 产物：源码打包的宿主自动落盘；直接消费预构建 `dist` 的宿主需把 `dist/vendor/` 拷进站点静态目录，或传此参数指定地址。 |
+| `performance.diagramScriptUrl` | `string \| null` | `null` | 逃生舱：显式给出一个自托管 mermaid UMD 地址时，改为运行时注入 `<script data-lark-doc-diagram="mermaid">` 加载（DOM 里出现该标签即说明走了这条路）。默认 `null` 走 `import()` 懒 chunk，地址由打包器 / 脚本自身 URL 解析，内网无需配置。 |
 | `performance.syntaxHighlight` | `boolean` | `true` | 关闭后不做语法高亮。 |
 | `blockMenu.disabled: ['codeBlock']` | `string[]` | `[]` | 禁用块菜单「转为代码块」。 |
 
@@ -69,13 +69,16 @@ new LarkDoc({
 
 - 支持 mermaid 语法（流程图、时序图、甘特图、饼图等），本地渲染，不请求外部服务。
 - 编辑源码后 300ms 防抖重新渲染；渲染失败（语法错误）时自动展开源码区并显示提示，源码始终保留。
-- 渲染器不参与打包：首次渲染时才注入 `<script>` 加载本地 vendored 产物（约 3.3MB，浏览器有缓存后几乎零成本），首屏体积零增加。
+- 渲染器不参与首屏：mermaid 是 `import()` 懒 chunk，首次渲染时才下载对应区块（约 3.3MB raw，浏览器有缓存后几乎零成本），首屏体积零增加。布局上它被拆成独立区块，源码打包的宿主会再按自己的规则二次分包。
+- `window.mermaid` 已存在时直接复用，不再加载自己的副本（宿主已有 mermaid 可省这 3.3MB）。
 - `securityLevel: 'strict'`，标签文本中的 HTML 会被转义，不执行脚本。
 
 ::: warning 部署资源
-渲染器是**运行时资源**（`<package>/dist/vendor/mermaid.<hash>.js`），不在 JS 包里：
-- 源码打包（webpack/vite alias 到 src）：file-loader / 资源模块自动落盘，无需处理；
-- 直接消费预构建 `dist`：把 `node_modules/lark-doc/dist/vendor/` 拷进站点静态目录，或配置 `performance.diagramScriptUrl` 指向自托管地址。加载失败时预览层会显示「图表渲染失败」，源码不受影响。
+渲染器**在 JS 产物体系内**，不是需要单独拷贝的运行时资源：
+- 按 `exports` 消费（webpack5 / vite / rollup）：宿主打包器接管懒 chunk，零附加文件、零配置；
+- 预构建 `dist` 直引（CDN / 内网 Nginx / `<script>`）：把 **`dist/` 整目录**同位部署即可——`publicPath: 'auto'` 会按脚本自身 URL 找 `lark-doc-element.umd.min.mermaid.js` 等按需区块，放在任意子目录都成立；
+- CJS 入口（`require('lark-doc')`）：`LimitChunkCountPlugin` 把 mermaid 内联进单文件，不存在附加区块；
+- 只有你**自己**想接管加载（例如已有 mermaid CDN 镜像）才需要配 `performance.diagramScriptUrl`。加载失败时预览层显示「图表渲染失败」，源码不受影响。
 :::
 
 ### 数据契约

@@ -124,4 +124,4 @@ new LarkDoc({
 | `changeDebounce` | `16` | change 通知防抖毫秒数，`0` 为同步。 |
 | `stateUpdateFrame` | `true` | 状态更新按帧合并。 |
 | `syntaxHighlight` | `true` | 代码块语法高亮。 |
-| `diagramScriptUrl` | `null` | 图表渲染器（mermaid）自托管地址；默认用包内 vendored 产物。 |
+| `diagramScriptUrl` | `null` | 逃生舱：显式给出自托管 mermaid UMD 地址时改为运行时注入 `<script>` 加载。默认 `null` 走 `import()` 懒 chunk（打包进产物，不请求外网），内网无需配置。 |

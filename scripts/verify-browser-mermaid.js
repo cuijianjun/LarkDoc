@@ -11,7 +11,7 @@
  * 断言清单：
  *  1. 页面加载，编辑器挂载，初始内容含 mermaid 代码块
  *  2. 编辑态默认渲染预览（无需手动切换）
- *  3. mermaid 渲染脚本按需注入，且走本地 vendor 地址（非 http/https 外链）
+ *  3. mermaid 走动态 import() 懒 chunk（无自注入 script 标签），全页无外网请求（内网可用）
  *  4. 预览层出现真实 SVG（jsdom 做不到的验证点）
  *  5. 预览层 contenteditable=false，源码区 v-show 隐藏
  *  6. 「编辑源码 / 预览图表」双向切换
@@ -56,7 +56,13 @@ async function main() {
   const browser = await chromium.launch({ headless: true, executablePath })
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const pageErrors = []
+  const externalRequests = []
+  const localOrigin = new URL(BASE_URL).origin
   page.on('pageerror', (error) => pageErrors.push(String(error)))
+  page.on('request', (request) => {
+    const url = request.url()
+    if (/^https?:/i.test(url) && new URL(url).origin !== localOrigin) externalRequests.push(url)
+  })
 
   try {
     // ---- 1. 页面加载 + 编辑器挂载 ----
@@ -67,15 +73,10 @@ async function main() {
     const mermaidBlock = page.locator('.lark-doc-code', { has: page.locator('.lark-doc-diagram') })
 
     // ---- 2. 编辑态默认渲染 ----
-    // ---- 3. 脚本按需注入 + 本地 vendor 地址 ----
-    const scriptInfo = await page.evaluate(() => {
-      const script = document.querySelector('script[data-lark-doc-diagram="mermaid"]')
-      if (!script) return null
-      const src = script.getAttribute('src') || ''
-      return { src, external: /^https?:/.test(src) }
-    })
-    record('mermaid 渲染脚本按需注入', !!scriptInfo, scriptInfo ? `src=${scriptInfo.src}` : '未找到 script 标签')
-    record('脚本走本地 vendor 地址（非外链）', !!scriptInfo && !scriptInfo.external, scriptInfo ? String(scriptInfo.src) : '')
+    // ---- 3. 懒加载契约：动态 import 接管寻址，无自注入 script 标签 ----
+    const customInjected = await page.evaluate(() => Boolean(document.querySelector('script[data-lark-doc-diagram="mermaid"]')))
+    record('无自定义渲染 script 注入（动态 import 接管）', !customInjected)
+    // mermaid 懒 chunk 由构建工具加载（webpack runtime 注入无自定义属性的 script），走本地 dev server
 
     // ---- 4. 预览层出现真实 SVG ----
     const firstBlock = mermaidBlock.first()
@@ -188,6 +189,9 @@ async function main() {
     record('时序图块自动渲染 SVG', true)
 
     await page.screenshot({ path: path.join(SHOT_DIR, '02-after-inserts.png'), fullPage: true })
+
+    // ---- 内网可用性：全程无外网请求（懒 chunk 走本地 origin） ----
+    record('全页无外网请求（内网可用）', externalRequests.length === 0, externalRequests.slice(0, 3).join(' | '))
 
     // ---- 页面 JS 错误收集 ----
     const realErrors = pageErrors.filter((message) => !/ResizeObserver loop/.test(message))

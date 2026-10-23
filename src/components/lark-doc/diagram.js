@@ -3,8 +3,9 @@
  *
  * 设计约束：
  * - JSON/HTML 契约不变：图表始终存为 codeBlock + language，渲染只发生在 NodeView；
- * - 渲染器懒加载：vendored UMD 产物不参与打包，只在文档真的出现 mermaid
- *   代码块且需要预览时，才通过 <script> 注入加载；
+ * - 渲染器懒加载：vendored UMD 通过动态 import() 拆成懒 chunk，寻址由构建
+ *   工具统一接管——宿主从源码编译时由宿主输出 chunk（内网/外网零配置），
+ *   直接消费预构建 dist 时按同目录 chunk 加载（整目录静态托管即可）；
  * - 全程本地渲染，不请求外部服务（遵守 check:offline）；
  * - mermaid.render 是异步竞态源，调用方必须用版本号丢弃过期结果。
  */
@@ -23,28 +24,36 @@ export function listDiagramLanguages() {
   return DIAGRAM_LANGUAGES.slice()
 }
 
-/** vendored mermaid.min.js 的运行时地址（构建期由 file-loader 落盘）。 */
-function defaultScriptUrl() {
-  // eslint-disable-next-line global-require
-  const module = require('file-loader?name=vendor/[name].[hash:8].[ext]!../../assets/vendor/mermaid/mermaid.min.js')
-  return module && module.default ? module.default : module
+/**
+ * 默认加载通道：动态 import() 懒 chunk。
+ * vendored 产物是 UMD（`module.exports = factory()`），webpack 以 CJS 互操作
+ * 处理后完整接口挂在 namespace.default 上；页面已自行加载 mermaid 时直接复用
+ * 全局实例，避免双份运行时。
+ */
+function loadMermaidModule() {
+  if (typeof window !== 'undefined' && window.mermaid && typeof window.mermaid.initialize === 'function') {
+    return Promise.resolve(window.mermaid)
+  }
+  return import(/* webpackChunkName: "mermaid" */ '../../assets/vendor/mermaid/mermaid.min.js')
+    .then((m) => {
+      const mermaid = (m && m.default) || m
+      if (mermaid && typeof mermaid.initialize === 'function') return mermaid
+      throw new Error('mermaid 模块缺失 initialize 接口')
+    })
 }
 
+/**
+ * 逃生舱通道：宿主自托管 mermaid 或需要固定 URL 时，仍通过 <script> 注入。
+ * 仅当调用方显式传 scriptUrl 时启用。
+ */
 function loadMermaidScript(scriptUrl) {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined') { reject(new Error('图表渲染需要浏览器环境')); return }
     const existing = window.mermaid
     if (existing && typeof existing.initialize === 'function') { resolve(existing); return }
-    let url
-    if (scriptUrl) {
-      url = String(scriptUrl)
-    } else {
-      try {
-        url = defaultScriptUrl()
-      } catch (error) { reject(new Error('mermaid 资源缺失')); return }
-    }
+    if (!scriptUrl) { reject(new Error('mermaid 自定义地址缺失')); return }
     const script = document.createElement('script')
-    script.src = url
+    script.src = String(scriptUrl)
     script.async = true
     script.setAttribute('data-lark-doc-diagram', 'mermaid')
     script.onload = () => {
@@ -66,7 +75,8 @@ const DIAGRAM_FONT_FAMILY = '"trebuchet ms", verdana, arial, "PingFang SC", "Hir
 
 function loadRenderer(scriptUrl) {
   if (!rendererPromise) {
-    rendererPromise = loadMermaidScript(scriptUrl).then((mermaid) => {
+    const loaded = scriptUrl ? loadMermaidScript(scriptUrl) : loadMermaidModule()
+    rendererPromise = loaded.then((mermaid) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
@@ -92,8 +102,7 @@ function loadRenderer(scriptUrl) {
  *
  * @param {string} source 图表源码
  * @param {{ scriptUrl?: string }} options 自定义渲染器地址（宿主自托管时用）；
- *   默认使用包内 vendored 产物——从源码打包的宿主由 file-loader 自动落盘，
- *   直接消费预构建 dist 的宿主需把 `dist/vendor/` 拷进站点静态目录，或传此参数。
+ *   默认走动态 import() 懒 chunk，由构建工具统一接管寻址，无需任何配置。
  */
 export function renderDiagram(source, options = {}) {
   const id = 'lark-doc-diagram-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)

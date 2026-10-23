@@ -44,8 +44,10 @@ config.output = Object.assign({}, config.output, {
   // 逻辑区块 → vue.esm.js / tiptap.esm.js / vendor.esm.js，按需区块 → math.esm.js 等。
   filename: '[name].esm.js',
   chunkFilename: '[name].esm.js',
-  // 'auto'：chunk 地址按 import.meta.url 推导，产物放到任意目录都不会 404。
-  publicPath: 'auto',
+  // ''：chunk 地址用相对 import() 串（按本文件自身 URL 解析），不再生成
+  // import.meta.url —— webpack4 不支持该语法会直接 parse error，宿主统一编译
+  // 与浏览器直用 ESM 都按 dist 目录相对寻址，放到任意目录不 404。
+  publicPath: '',
 })
 // Vue 仍是 peer 依赖：产物里保留 `import ... from 'vue'`，交给宿主去重。
 config.externalsType = 'module'

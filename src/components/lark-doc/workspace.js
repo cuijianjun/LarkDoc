@@ -27,6 +27,8 @@ function createWorkspace(storage, options = {}) {
 
   function record(value) {
     const result = { title: value.title, json: value.json, updatedAt: Date.now() }
+    // 可选：透传 HTML 派生副本（saveHtml 开启时由 Workspace 注入）。
+    if (value.html != null) result.html = value.html
     if (!validRecord(result)) throw new Error('文档结构无效，未保存')
     return result
   }

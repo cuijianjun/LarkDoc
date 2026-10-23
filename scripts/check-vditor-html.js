@@ -227,7 +227,10 @@ async function main() {
   check('图表块默认渲染预览（无需切换）', Boolean(previewBoxDefault))
   check('预览层不可编辑', Boolean(previewBoxDefault) && previewBoxDefault.getAttribute('contenteditable') === 'false')
   const codeBody = firstBlock.querySelector('.lark-doc-code-body')
-  check('预览态源码区隐藏', Boolean(codeBody) && codeBody.style.display === 'none')
+  // jsdom 无真实布局，common.js 内联构建下 mermaid 会真正执行并渲染失败 → 错误态。
+  // 错误态按设计显示源码区 + 错误提示（便于修错）；渲染成功路径由 verify-browser-mermaid.js 在真浏览器验证。
+  check('渲染失败显错提示（jsdom 无布局，成功路径见浏览器断言）', Boolean(firstBlock.querySelector('.lark-doc-diagram-error')))
+  check('错误态源码区可见（便于修错）', Boolean(codeBody) && codeBody.style.display !== 'none')
   const blockButtons = () => Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('图表块出现「编辑源码」按钮', blockButtons().indexOf('编辑源码') !== -1)
   check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
@@ -248,17 +251,16 @@ async function main() {
   blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '预览图表')
   check('切换后按钮变「预览图表」', Boolean(blockButton))
   if (blockButton) blockButton.click()
-  await delay(100)
-  check('切回预览后源码区再次隐藏', Boolean(codeBody) && codeBody.style.display === 'none' && Boolean(firstBlock.querySelector('.lark-doc-diagram')))
-  check('渲染器按需注入脚本（懒加载）', Boolean(document.querySelector('script[data-lark-doc-diagram="mermaid"]')))
-  check('渲染脚本走本地产物', (() => {
-    const script = document.querySelector('script[data-lark-doc-diagram="mermaid"]')
-    const src = script && script.getAttribute('src')
-    return Boolean(src) && !/^https?:/i.test(src) && src.indexOf('vendor/mermaid') !== -1
-  })())
+  await delay(300)
+  check('切回预览后预览层重建', Boolean(codeBody) && Boolean(firstBlock.querySelector('.lark-doc-diagram')))
+  check('切回预览后错误态保持（源码仍可见，jsdom 无布局）',
+    Boolean(firstBlock.querySelector('.lark-doc-diagram-error')) && codeBody.style.display !== 'none')
+  // 新契约：mermaid 走动态 import()（构建工具接管寻址），不再手动注入 <script> 标签。
+  check('渲染走动态 import（无 script 注入）', !document.querySelector('script[data-lark-doc-diagram="mermaid"]'))
 
   /* ---------- 4.5 「图表」插入命令 ---------- */
   const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.js'), 'utf8')
+  check('mermaid 内联进 common 包（内网零外链）', bundle.indexOf('flowchart-v2') !== -1)
   check('命令清单含「图表」插入项', /id:\s*'diagram'/.test(bundle))
   check('插入命令携带 mermaid 示例源码', bundle.indexOf('A[开始]') !== -1)
 
@@ -277,8 +279,7 @@ async function main() {
   check('销毁后移除 DOM', host.children.length === 0)
 
   /* ---------- 6. features.diagram: false 关闭图表 ---------- */
-  // 渲染脚本是全局单例（模块级缓存），上一实例注入的不代表本实例会注入，先清场。
-  Array.from(document.querySelectorAll('script[data-lark-doc-diagram]')).forEach((script) => script.remove())
+  // 渲染走动态 import（common.js 下内联同步执行），新实例关闭 features.diagram 后不应触发任何渲染副作用。
   const host2 = document.createElement('div')
   document.body.appendChild(host2)
   const doc2 = new pkg.LarkDoc({
@@ -298,7 +299,7 @@ async function main() {
   await delay(60)
   const langMenuItems2 = Array.from(host2.querySelectorAll('.lark-doc-select-menu button')).map((button) => button.textContent.trim())
   check('关闭后下拉无 Mermaid 图表功能项', langMenuItems2.every((text) => text.indexOf('Mermaid 图表') === -1))
-  check('关闭后渲染脚本未注入', !document.querySelector('script[data-lark-doc-diagram="mermaid"]'))
+  check('关闭后无 mermaid 渲染痕迹（无 SVG / 错误态）', host2.querySelectorAll('.lark-doc-diagram-svg, .lark-doc-diagram-error, .lark-doc-diagram-status').length === 0)
   doc2.destroy()
   check('第二个实例销毁', host2.children.length === 0)
 

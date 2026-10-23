@@ -31,6 +31,18 @@ doc.getJSON()
 doc.destroy()
 ```
 
+### 各环境引入对照（内网 / 外网统一，零配置）
+
+| 宿主环境 | 引入写法 | 说明 |
+|---|---|---|
+| Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | 宿主统一编译：懒区块（公式 / Word / 高亮 / mermaid）由宿主输出，内网外网零配置 |
+| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 0.11.0 起主入口可直接引入；CSS 需显式写 dist 路径（webpack4 不读 `exports`） |
+| Vue 3 / React | `import { mountLarkDoc } from 'lark-doc/element'` | 预打包产物，自带内联 Vue；`dist/` 整目录拷入静态目录 |
+| 原生 / CDN / 静态托管 | `<script src=".../lark-doc-element.umd.min.js">` | `<lark-doc>` 标签直接可用，`dist/` 整目录拷贝（按需区块同目录寻址） |
+| Nuxt / Next（SSR） | `process.client` / `dynamic(..., { ssr: false })` 内动态 `import('lark-doc/element')` | 仅客户端挂载 |
+
+mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管加载可挂载前设 `window.mermaid`，或传 `performance.diagramScriptUrl` 指定自托管渲染器地址。
+
 ## 旧数据兼容（Vditor）
 
 Vditor `getHTML()` 导出的 HTML 可直接喂给 `content`，命中 `vditor-*` / `language-math` / 图表 `language-*` 等指纹时自动归一化公式、任务列表、图表代码块、脚注与表格列宽：
@@ -81,6 +93,7 @@ new LarkDoc({
   content: record,                 // HTML / Tiptap JSON / 文档信封
   readonly: false,
   storage: 'none',                 // 默认不写 localStorage
+  saveHtml: false,                 // true 时保存 record 附带 html 派生副本（默认仅存 json）
   toolbarKeys: ['bold', 'italic', 'heading', 'table', 'image', 'ai'],
   features: { ai: false, importExport: false },
   limits: { maxLength: 5000, maxImageSize: 3 * 1024 * 1024 },
@@ -92,6 +105,7 @@ new LarkDoc({
 
 - `toolbarKeys` 是白名单，`toolbarExcludes` 是黑名单，12 个分组 + 8 个 mark key，详见文档「配置总览」。
 - `storage: 'local'` 才启用浏览器草稿；命令式入口默认关闭，避免不同文档互相覆盖。
+- `saveHtml: true` 时，`persistence.save(record)` 的 `record` 会额外带 `html` 字段（Tiptap 还原后的 HTML），方便后端直接渲染；默认 `false` 只传 `json` 结构化数据（无损、可协同）。
 
 ## 构建与校验
 
@@ -111,7 +125,7 @@ npm run build
 
 ## 产物与按需加载
 
-四份产物按「宿主怎么用」划分，重依赖（KaTeX / docx / mammoth / marked / turndown / highlight.js）
+四份产物按「宿主怎么用」划分，重依赖（KaTeX / docx / mammoth / marked / turndown / highlight.js / mermaid）
 全部拆成按需区块，首屏不下载：
 
 ```bash

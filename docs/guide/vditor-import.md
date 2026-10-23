@@ -83,7 +83,7 @@ if (isVditorHtml(html)) {
 
 - 导入后即显示图表（与 Vditor 行为一致）；工具栏「查看源码 / 预览图表」随时切换。
 - 也可以通过插入菜单的「图表」命令（搜索 `图表` / `mermaid`）新建带示例源码的图表块。
-- mermaid 渲染器是本地 vendored 产物，**首次渲染时才按需加载**（不参与主包打包，首屏体积零增加）。
+- mermaid 渲染器打包在产物体系内（不请求外网），是 `import()` 懒 chunk：**首次渲染时才下载**，首屏体积零增加；宿主已有 `window.mermaid` 时直接复用。
 - 渲染失败（语法错误）时自动展开源码区并显示提示，源码始终保留；关闭 `features.diagram` 后退化为纯源码展示。
 - 其余图表语言（echarts / plantuml / graphviz 等）保留为代码块源码——plantuml 依赖远程渲染服务、echarts 需执行任意代码，均违反离线与安全约束。
 

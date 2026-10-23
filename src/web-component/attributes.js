@@ -62,6 +62,7 @@ export const ATTRIBUTE_SCHEMA = Object.freeze([
   { attr: 'placeholder', key: 'placeholder', target: 'options', type: 'string' },
   { attr: 'theme', key: 'theme', target: 'options', type: 'string', live: true },
   { attr: 'readonly', key: 'readonly', target: 'prop', type: 'boolean', live: true, toProp: true },
+  { attr: 'save-html', key: 'saveHtml', target: 'prop', type: 'boolean', live: true, toProp: true },
   { attr: 'autofocus', key: 'autofocus', target: 'options', type: 'boolean' },
   { attr: 'storage', key: 'storage', target: 'options', type: 'string' },
   { attr: 'mode', key: 'mode', target: 'options', type: 'string' },
@@ -73,9 +74,9 @@ export const ATTRIBUTE_SCHEMA = Object.freeze([
   { attr: 'layout', key: 'layout', target: 'options', type: 'json' },
   { attr: 'network', key: 'network', target: 'options', type: 'json' },
   { attr: 'capabilities', key: 'capabilities', target: 'options', type: 'json' },
-  { attr: 'user', key: 'user', target: 'options', type: 'json', live: true },
-  // 静态资源基址（KaTeX 字体 / mermaid vendor 等），不传时按相对路径解析。
-  { attr: 'assets-base', key: 'assetsBase', target: 'options', type: 'string' },
+  { attr: 'user', key: 'user', target: 'options', type: 'json', live: true, toProp: true },
+  // 注：不要加 assets-base。0.11.0 起按需区块地址由打包器 / 脚本自身 URL 解析（publicPath:'auto'），
+  // 曾经声明过的 assets-base 从未被任何代码消费，属死配置，已删除。
   // 最大宽高等数字型限制示例：走 limits.maxLength
   { attr: 'max-length', key: 'limits.maxLength', target: 'options', type: 'number' },
 ])
@@ -125,22 +126,25 @@ export function readOptionsFromElement(el) {
 }
 
 /**
- * 单个属性变化时的增量处理：返回 { live, props, rebuild } 三元组。
+ * 单个属性变化时的增量处理：返回 { live, props, options, rebuild } 四元组。
  * - live=false → 调用方需要重建实例
  * - props 非空 → 交给 document.patchProps
+ * - options 非空 → 合并进 document.options（target=options 的 live 属性，如 user/theme）
  */
 export function applyAttributeChange(name, rawValue) {
   const entry = SCHEMA_BY_ATTR[name]
-  if (!entry) return { live: true, props: null, rebuild: false }
+  if (!entry) return { live: true, props: null, options: null, rebuild: false }
   const parse = PARSERS[entry.type] || PARSERS.string
   const value = rawValue === null ? null : parse(rawValue, entry.attr)
-  if (value === undefined) return { live: true, props: null, rebuild: false }
-  if (!entry.live) return { live: false, props: null, rebuild: true }
+  if (value === undefined) return { live: true, props: null, options: null, rebuild: false }
+  if (!entry.live) return { live: false, props: null, options: null, rebuild: true }
   // 生命期内可更新的项：逐项落到对应目标。
   const props = {}
+  const options = {}
   if (entry.target === 'prop') props[entry.key] = value
   if (entry.toProp) props[entry.key] = value
-  return { live: true, props, rebuild: false, entry, value }
+  if (entry.target === 'options') setPath(options, entry.key, value)
+  return { live: true, props, options, rebuild: false, entry, value }
 }
 
 export default readOptionsFromElement

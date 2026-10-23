@@ -444,6 +444,8 @@ export default {
     config: { type: Object, default: () => ({}) },
     templates: { type: Array, default: null },
     persistence: { type: Object, default: null },
+    // 保存时是否在 record 里附带 html 字段（默认 false，仅存 json）。
+    saveHtml: { type: Boolean, default: false },
     session: { type: Object, default: null },
     documentId: { type: [String, Number], default: null },
     user: { type: Object, default: null },
@@ -512,6 +514,11 @@ export default {
     title() { this.queueSave() },
     config: { deep: true, handler(value) { this.editorConfig = createLarkDocConfig(value) } },
     templates(value) { this.templateItems = Array.isArray(value) ? value : TEMPLATES },
+    // user 只在 created() 进 session 一次；Web Component 的 user 属性热更
+    // （patchProps 写 prop）后，session 侧的引用也要跟上，鉴权/协作才用新用户。
+    user(value) {
+      if (this.sessionInstance && this.sessionInstance.user !== value) this.sessionInstance.user = value
+    },
   },
   created() {
     // 宿主传入 Session 时由宿主管理生命周期；否则工作台创建本地会话。
@@ -542,7 +549,12 @@ export default {
     record() {
       const session = this.getSession()
       const record = session ? session.getDocumentRecord({ title: this.title }) : null
-      return record ? { title: record.title, json: record.content, documentId: record.documentId, schemaVersion: record.schemaVersion, revisionId: record.revisionId, updatedAt: record.updatedAt } : { title: this.title, json: this.$refs.document.getJSON() }
+      const base = record
+        ? { title: record.title, json: record.content, documentId: record.documentId, schemaVersion: record.schemaVersion, revisionId: record.revisionId, updatedAt: record.updatedAt }
+        : { title: this.title, json: this.$refs.document.getJSON() }
+      // 可选：附带 HTML 派生副本（宿主后端需要直接渲染、不做 Tiptap 还原时开启）。
+      if (this.saveHtml) base.html = this.getHTML()
+      return base
     },
     persistenceLabel() { return this.persistence ? '宿主' : '本浏览器' },
     // —— 持久化：草稿防抖保存，失败即关闸（storageError）避免反复报错 ——

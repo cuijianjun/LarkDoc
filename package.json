@@ -1,6 +1,6 @@
 {
   "name": "lark-doc",
-  "version": "0.10.0",
+  "version": "0.11.1",
   "private": false,
   "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
@@ -155,6 +155,7 @@
     },
     "./element": "./dist/lark-doc-element.umd.min.js",
     "./style.css": "./dist/lark-doc.css",
+    "./dist/*": "./dist/*",
     "./package.json": "./package.json"
   },
   "size-limit": [
@@ -177,9 +178,9 @@
       "gzip": true
     },
     {
-      "name": "CJS 全量产物 (gzip)",
-      "path": "dist/lark-doc.common.js",
-      "limit": "1100 KB",
+    "name": "CJS 全量产物（内联 mermaid，gzip）",
+    "path": "dist/lark-doc.common.js",
+    "limit": "2200 KB",
       "gzip": true
     }
   ]

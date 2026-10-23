@@ -15,7 +15,7 @@
  *     （math 与 mermaid vendor 会因初始内容含公式 / 图表而加载 —— 这正是按需生效的证据）
  *  3. WC 路由：element 主文件 ≤ 1 MiB（改造前是 2.16 MiB 单文件）
  *  4. 插入代码块 → highlight 区块按需下载 + 高亮类渲染（Vue 路由，暴露 window.__larkDoc）
- *  5. mermaid vendor 脚本本地按需注入 + 预览层渲染出 SVG
+ *  5. mermaid 懒 chunk 按需请求（import()，不再是 file-loader 落盘 + 插 <script>）+ 预览层渲染出 SVG
  *  6. 无 404、无页面脚本错误
  */
 
@@ -50,7 +50,7 @@ function record(name, ok, detail) {
 
 /** 与首屏无关、必须按需下载的区块。math / mermaid 由初始内容决定，单独统计。 */
 const SHOULD_BE_LAZY = /(office|markdown|highlight|import-export)[^/]*\.js(\?|$)/i
-const ON_DEMAND_ALL = /(math|office|markdown|highlight|import-export)[^/]*\.js(\?|$)|vendor\/mermaid/i
+const ON_DEMAND_ALL = /(math|office|markdown|highlight|import-export|mermaid)[^/]*\.js(\?|$)/i
 const kb = (v) => `${(v / 1024).toFixed(0)} KiB`
 
 async function runRoute(page, url, label, isWc) {
@@ -97,17 +97,17 @@ async function runRoute(page, url, label, isWc) {
     record(`[${label}] element 主文件 ≤ 1 MiB`, mainSize > 0 && mainSize <= 1024 * 1024, `${mainResponse.status()} ${kb(mainSize)}`)
   }
 
-  // 4. mermaid vendor 本地按需注入 + SVG（走初始内容里的图表块）
-  const diagram = await page.evaluate(() => {
-    const script = document.querySelector('script[data-lark-doc-diagram="mermaid"]')
-    return {
-      src: script ? (script.getAttribute('src') || '') : '',
-      sameOrigin: script ? new URL(script.src, location.href).host === location.host : false,
-      svg: document.querySelectorAll('.lark-doc-diagram svg').length,
-    }
-  })
-  record(`[${label}] mermaid vendor 本地脚本按需注入并渲染 SVG`, !!diagram.src && diagram.sameOrigin && diagram.svg > 0,
-    `src=${diagram.src || '(未注入)'} svg=${diagram.svg}`)
+  // 4. mermaid 懒 chunk 按需请求 + SVG（走初始内容里的图表块）
+  //    注意：webpack JSONP 加载完会移除 <script>，只能从 request 事件里取证。
+  const mermaidChunk = firstScreen.find((entry) => /mermaid[^/]*\.js(\?|$)/i.test(entry)) || ''
+  const diagram = await page.evaluate(() => ({
+    injectedScript: !!document.querySelector('script[data-lark-doc-diagram="mermaid"]'),
+    svg: document.querySelectorAll('.lark-doc-diagram svg').length,
+  }))
+  const mermaidSameOrigin = mermaidChunk ? new URL(mermaidChunk).host === new URL(url).host : false
+  record(`[${label}] mermaid 懒 chunk 按需请求并渲染 SVG`,
+    !!mermaidChunk && mermaidSameOrigin && diagram.svg > 0 && !diagram.injectedScript,
+    `chunk=${mermaidChunk.split('/').pop() || '(未请求)'} svg=${diagram.svg} 注入script=${diagram.injectedScript}`)
 
   // 5. 代码块 → highlight 区块按需加载
   scripts.length = 0

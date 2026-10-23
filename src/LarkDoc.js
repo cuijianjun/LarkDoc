@@ -26,6 +26,8 @@ const DEFAULTS = Object.freeze({
   autofocus: false,
   // 'auto' 按指纹识别 Vditor getHTML() 产物；'vditor' 强制归一化；'html' 跳过归一化。
   contentFormat: 'auto',
+  // 保存时是否在 record 里附带 html 字段（默认 false，仅存 json 结构化数据）。
+  saveHtml: false,
 })
 
 function resolveElement(element) {
@@ -83,6 +85,7 @@ export class LarkDoc {
         contentFormat: this.options.contentFormat,
         readonly: Boolean(source.readonly),
         persistence: this._resolvePersistence(source),
+        saveHtml: this.options.saveHtml === true,
         uploadImage: this._resolveUploader(source),
         aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
         session: this._session,

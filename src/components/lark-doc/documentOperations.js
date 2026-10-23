@@ -3,10 +3,14 @@ import { Fragment } from '@tiptap/pm/model'
 const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
 
 // HTML 是导入适配器；所有 JSON 在写入编辑器前必须通过完整 schema 校验。
-/** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image。返回 boolean。 */
+/** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image 与本地相对路径。返回 boolean。 */
 export function safeUrl(value, image = false) {
   if (typeof value !== 'string' || !value || Array.from(value).some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return false
   if (image && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
+  // 图片的相对路径（/、./、../ 开头）是本地资源引用，与 networkPolicy.isLocalUrl 语义一致。
+  // 它们不含 javascript:/data: 等危险协议，可直接进 schema（老系统图床 /note/... 即此类）。
+  // 注意排除协议相对 URL（//host/... 会被浏览器解析为 http(s)://host/...，属外链而非本地资源）。
+  if (image && /^(?:#|\.{1,2}\/|(?:\/(?!\/)))/.test(value)) return true
   if (/^https?:\/\//i.test(value)) {
     try { const url = new URL(value); return !!url.hostname && !url.username && !url.password } catch (_) { return false }
   }

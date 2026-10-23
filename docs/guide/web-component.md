@@ -74,7 +74,6 @@ function Editor() {
 | `storage` | `none` \| `local` | 本地草稿 |
 | `autofocus` | boolean | 挂载后自动聚焦 |
 | `mode` / `document-id` | string | 协同模式与文档标识 |
-| `assets-base` | string | 静态资源基址（mermaid vendor / KaTeX 字体），不传按相对路径解析 |
 | `max-length` | number | 正文最大字符数（写入 `limits.maxLength`） |
 
 **热更新规则**：`readonly` / `content-format` / `theme` / `title` / `user` 变更会增量生效（不重建实例）；其余属性（含 `content`）变更会**重建实例**（运行时内容回到初始值，请先用 `getJSON()` 保存现场）。
@@ -148,9 +147,10 @@ npm run build:element   # dist/lark-doc-element.umd.min.js + 若干按需区块
 
 - 产物内置 Vue 运行时与样式（CSS 由 JS 注入 `<style>`），首屏一个文件即可；
 - 重依赖按逻辑拆成按需区块，只在真正用到时下载：`math`（KaTeX + 公式样式）、
-  `office`（docx 导出 / mammoth 导入）、`markdown`（marked / turndown）、`highlight`（代码高亮）；
-- `dist/vendor/mermaid.min.*.js` 同样按需加载，托管目录不固定时给元素设置 `assets-base` 属性；
-- 部署时按需区块要与主文件放在同一目录（`publicPath:'auto'` 按主文件地址推导）。
+  `office`（docx 导出 / mammoth 导入）、`markdown`（marked / turndown）、`highlight`（代码高亮）、
+  `mermaid`（图表渲染器）；
+- 部署时把 **`dist/` 整目录**同位托管（主文件 + `lark-doc-element.umd.min.*.js` 各按需区块 + `fonts/`）：`publicPath:'auto'` 按主文件自身 URL 推导区块地址，放在任意子目录都成立，无需任何配置；
+- 想复用宿主自己的一份 mermaid 时，挂载前置 `window.mermaid` 即可（检测到就不再加载内置副本），或给元素设 `options.performance.diagramScriptUrl` 走 `<script>` 注入分支。
 
 ## 演示
 

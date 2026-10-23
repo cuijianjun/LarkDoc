@@ -4,18 +4,22 @@
 
 包一次构建产出四份产物，按「宿主怎么用」而不是「我们怎么编译」来分：
 
-| 产物 | 入口 | 适用宿主 | 首屏 JS（gzip） |
+| 产物 | 入口 | 适用宿主 | 首屏 JS（体积同 `npm run size` 口径） |
 | --- | --- | --- | --- |
-| `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 848 KB → gzip 248 KB（主文件 + tiptap + vendor 三块并行） |
-| `dist/lark-doc.common.js` | `src/index.js` | Node / CJS / 老打包器（`main` 字段） | 单文件 3.7 MB（不拆，拿走就能用） |
-| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` 字段） | 847 KB → gzip 246 KB |
-| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`） | 930 KB → gzip 275 KB |
+| `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 381 kB → gzip 98 kB；连带 `tiptap.esm.js` 467 kB（gzip 139 kB）与 `vendor.esm.js` 106 kB（gzip 39 kB）并行，合计 **gzip 276 kB** |
+| `dist/lark-doc.common.js` | `src/index.js` | Node / CJS / 老打包器（`main` 字段） | 单文件 7.5 MB → gzip 1.99 MB（内联 mermaid 与全部按需区块，不拆） |
+| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` 字段） | 955 kB → gzip 275 kB |
+| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联） | 1.04 MB → gzip 304 kB |
 
-改造前只有「一个巨大的单文件」：UMD 1.91 MB（gzip 548 KB）、element 2.16 MB（gzip 658 KB），
-公式、Word 导入导出、代码高亮全部塞在首屏里。改造后首屏 JS 少掉约 **57%**（gzip 少掉约 **55%**）。
+改造前只有「一个巨大的单文件」：UMD 1.91 MB（gzip 548 kB）、element 2.16 MB（gzip 658 kB），
+公式、Word 导入导出、代码高亮全部塞在首屏里。改造后首屏分别少掉约 **50%** 与 **52%**（gzip 同比例）。
 
-重依赖（KaTeX、docx、mammoth、marked、turndown、highlight.js）**都不在首屏**：
-它们被拆成按需区块，只有用户真的插入公式、导出 Word、导入 .docx / Markdown、渲染代码块时才下载。
+CJS 那份是**唯一反其道而行**的：它把 mermaid 与全部按需区块都内联进单文件（gzip 1.99 MB）。
+原因是 `require('lark-doc')` 可能跑在 Node / jsdom / 任意老打包器里，运行时根本没法可靠地解析
+chunk 地址，宁可体积换「拿走就能用」。嫌大的宿主走 ESM 入口即可。
+
+重依赖（KaTeX、docx、mammoth、marked、turndown、highlight.js、mermaid）**都不在首屏**：
+它们被拆成按需区块，只有用户真的插入公式、导出 Word、导入 .docx / Markdown、渲染代码块、插入图表时才下载。
 
 ## 配置内容
 
@@ -28,7 +32,7 @@
 | `markdown` | marked、turndown | 导入 / 导出 Markdown |
 | `highlight` | highlight.js 内核与语言包 | 文档里出现代码块 |
 | `import-export` | 导入导出的编排代码 | 同上 |
-| `vendor/mermaid.min.*.js` | 图表渲染器（不参与打包） | 文档里出现 mermaid 图表块 |
+| `mermaid` | 图表渲染器（`import()` 懒 chunk，不是外置运行时文件） | 文档里出现 mermaid 图表块 |
 
 ### 初始区块（仅 ESM 产物拆分）
 
@@ -43,7 +47,8 @@ UMD / element 产物的首屏**永远只有一个文件**：它们的 `output.fi
 
 ### 样式
 
-- `lib`（CJS）：样式抽成 `dist/lark-doc.css`，宿主显式 `import 'lark-doc/style.css'`；
+- `lib`（CJS）：样式抽成 `dist/lark-doc.css`，宿主显式引 `import 'lark-doc/style.css'`
+  （webpack4 不认 `exports` 子路径，要写全 `lark-doc/dist/lark-doc.css`）；
 - `umd` / `esm` / `element`：样式随 JS 注入 `<style>`，宿主不需要额外引 CSS；
   KaTeX 那条 118 KB 的样式跟着 `math` 区块走，没有公式的文档不为它付费。
 
@@ -63,9 +68,14 @@ npm run build:analyze  # 以上四份 + 体积诊断输出（按依赖聚合 + �
 
 ### 部署注意
 
-- 按需区块必须和主文件放在**同一个目录**：UMD / element / ESM 都用 `publicPath:'auto'`，
-  运行时按主文件（或 `import.meta.url`）的地址推导 chunk 地址；
-- `dist/vendor/mermaid.min.*.js` 与 `dist/fonts/` 是运行时资源，同样要一起部署；
+- 按需区块必须和主文件放在**同一个目录**：UMD / element 用 `publicPath:'auto'` 按主文件
+  （`<script>` 自身 URL）推导 chunk 地址；ESM 用相对 `import()` 串按文件自身 URL 解析。
+  所以只要把 **`dist/` 整目录同位托管**（主文件 + 各按需区块 `*.math.js` / `*.mermaid.js` … + `fonts/`），
+  放在任意子目录都成立，不需要配置任何 base path；
+- **不需要单独拷 `vendor/`**：0.11.0 起 mermaid 是普通按需区块，`dist/vendor/` 目录已不再产出
+  （老版本残留的 `dist/vendor/mermaid.min.<hash>.js` 可以直接删）；
+- 想改用自己托管的 mermaid（例如复用宿主的 CDN 镜像）才需要两种做法之一：挂载前置 `window.mermaid`，
+  或传 `performance.diagramScriptUrl`（走 `<script data-lark-doc-diagram="mermaid">` 注入分支）；
 - 二次打包（把 element 产物再打进自己的 bundle）时，chunk 地址会按**你自己的 chunk 目录**推导，
   把它们拷到对应目录即可（本仓库 Demo 的 `copy-lark-doc-vendor` 就是干这个的）。
 
