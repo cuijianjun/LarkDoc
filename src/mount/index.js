@@ -2,7 +2,7 @@
  * mount/ — 渲染适配层（唯一允许依赖 UI 框架的目录）。
  *
  * 为什么要有这一层：
- * 命令式门面 `FeishuDocument` 不该关心“用哪个框架画 UI”。历史上它直接 `new Vue(...)`
+ * 命令式门面 `LarkDoc` 不该关心“用哪个框架画 UI”。历史上它直接 `new Vue(...)`
  * 挂载 Workspace，导致整个包被 Vue 2 绑死：外层必须是 Vue 2、且版本还得一致。
  * 这里把「挂载 / 更新 / 卸载」收敛成一个可替换的 renderer 契约：
  *
@@ -14,8 +14,8 @@
  *   }
  *
  * 目前只提供 Vue 2 实现（vueRenderer）；将来换成原生 DOM 渲染器时，只要实现同一份
- * 契约并在 createRenderer 里切换，FeishuDocument 与 Web Component 外壳都无需改动。
- * 上层（FeishuDocument / web-component）禁止 import 任何框架，只能 import 本目录。
+ * 契约并在 createRenderer 里切换，LarkDoc 与 Web Component 外壳都无需改动。
+ * 上层（LarkDoc / web-component）禁止 import 任何框架，只能 import 本目录。
  */
 import { createVue2Renderer } from './vueRenderer'
 

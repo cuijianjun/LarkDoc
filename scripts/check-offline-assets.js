@@ -61,14 +61,14 @@ else {
     if (/https?:\/\//.test(statement)) fail(`style.css 引入了远程样式：${statement.trim()}`)
     if (!/['"]\.?\//.test(statement)) fail(`style.css 只允许相对路径导入：${statement.trim()}`)
   })
-  if (!/feishu\.css/.test(entry)) fail('style.css 必须引用包内 feishu.css')
+  if (!/lark-doc\.css/.test(entry)) fail('style.css 必须引用包内 lark-doc.css')
 }
 // KaTeX 样式不再由 style.css 静态引入（118 KB，改由公式节点首次渲染时随 math 区块按需加载），
 // 但仍必须是包内 vendored 文件、仍必须被源码引用——只是引用点换到了 extensions.js。
 {
-  const source = read('src/components/feishu/extensions.js')
+  const source = read('src/components/lark-doc/extensions.js')
   if (!/\.\.\/\.\.\/styles\/vendor\/katex\.css/.test(source)) {
-    fail('KaTeX 样式必须由 src/components/feishu/extensions.js 引入（按需加载）')
+    fail('KaTeX 样式必须由 src/components/lark-doc/extensions.js 引入（按需加载）')
   }
   const entry = read('style.css')
   if (/\/src\/styles\/vendor\/katex\.css/.test(entry)) {

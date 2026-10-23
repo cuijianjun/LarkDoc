@@ -36,7 +36,7 @@ function asJson(raw, attr) {
   try {
     return JSON.parse(raw)
   } catch (error) {
-    if (typeof console !== 'undefined') console.error(`[feishu-document] 属性 ${attr} 不是合法 JSON：`, error)
+    if (typeof console !== 'undefined') console.error(`[lark-doc] 属性 ${attr} 不是合法 JSON：`, error)
     return undefined
   }
 }
@@ -50,7 +50,7 @@ export const PARSERS = { string: (raw) => raw, boolean: asBoolean, number: asNum
 
 /**
  * 属性映射表。target=prop 且 live=true 的项会走 patchProps 增量热更，
- * 其余项变更时统一触发实例重建（见 FeishuDocumentElement._scheduleRebuild）。
+ * 其余项变更时统一触发实例重建（见 LarkDocElement._scheduleRebuild）。
  */
 export const ATTRIBUTE_SCHEMA = Object.freeze([
   { attr: 'title', key: 'title', target: 'prop', type: 'string', live: true, toProp: false },
@@ -102,7 +102,7 @@ function setPath(target, path, value) {
 
 /**
  * 读取元素上的全部属性 → { options, props }。
- * - options：交给 `new FeishuDocument(options)`
+ * - options：交给 `new LarkDoc(options)`
  * - props：交给渲染层（initialContent / contentFormat / readonly / initialTitle...）
  * 解析失败的项会被跳过并由 asJson 打日志，不影响其余属性。
  */

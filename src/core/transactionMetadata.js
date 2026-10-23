@@ -2,7 +2,7 @@
  * 事务来源统一放在 ProseMirror transaction meta 中，供协同、历史、审计和
  * AI 提案层区分用户输入、远端同步、导入和恢复操作。
  */
-export const TRANSACTION_META_KEY = 'feishuDocumentTransaction'
+export const TRANSACTION_META_KEY = 'larkDocTransaction'
 export const TRANSACTION_ORIGINS = Object.freeze({
   USER: 'user',
   REMOTE: 'remote',

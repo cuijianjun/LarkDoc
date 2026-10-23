@@ -5,18 +5,18 @@ import 'core-js/features/array/find-last'
 import 'core-js/features/array/find-last-index'
 import 'core-js/features/array/at'
 import 'core-js/features/structured-clone'
-// 样式随入口一并进入构建，保证 dist/feishu-document.css 自带正文样式与
-// 本地 KaTeX 字体；宿主显式 import 'feishu-document/style.css' 也走同一份源。
+// 样式随入口一并进入构建，保证 dist/lark-doc.css 自带正文样式与
+// 本地 KaTeX 字体；宿主显式 import 'lark-doc/style.css' 也走同一份源。
 import '../style.css'
-import FeishuDocumentEditor from './components/feishu/FeishuDocumentEditor.vue'
-import FeishuDocumentWorkspace from './components/feishu/FeishuDocumentWorkspace.vue'
-import FeishuDocument, { createFeishuDocument } from './FeishuDocument'
-import { createWorkspace } from './components/feishu/workspace'
-import { createFeishuConfig } from './components/feishu/feishuConfig'
-import { TEMPLATES } from './components/feishu/templates'
-import { createEcsImageUpload } from './components/feishu/ecsImages'
-import * as documentOperations from './components/feishu/documentOperations'
-import * as mockAI from './components/feishu/mockAI'
+import LarkDocEditor from './components/lark-doc/LarkDocEditor.vue'
+import LarkDocWorkspace from './components/lark-doc/LarkDocWorkspace.vue'
+import LarkDoc, { createLarkDoc } from './LarkDoc'
+import { createWorkspace } from './components/lark-doc/workspace'
+import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
+import { TEMPLATES } from './components/lark-doc/templates'
+import { createEcsImageUpload } from './components/lark-doc/ecsImages'
+import * as documentOperations from './components/lark-doc/documentOperations'
+import * as mockAI from './components/lark-doc/mockAI'
 import { DocumentSession, createDocumentSession } from './session/DocumentSession'
 import * as documentSchema from './core/documentSchema'
 import * as transactionMetadata from './core/transactionMetadata'
@@ -27,12 +27,12 @@ import { createNetworkPolicy, NETWORK_MODES, DEFAULT_NETWORK } from './networkPo
 import { detectLegacyHtml, isVditorHtml, normalizeVditorHtml } from './legacy'
 
 export {
-  FeishuDocument,
-  createFeishuDocument,
-  FeishuDocumentEditor,
-  FeishuDocumentWorkspace,
+  LarkDoc,
+  createLarkDoc,
+  LarkDocEditor,
+  LarkDocWorkspace,
   createWorkspace,
-  createFeishuConfig,
+  createLarkDocConfig,
   createEcsImageUpload,
   TOOLBAR_GROUPS,
   TOOLBAR_KEYS,
@@ -55,4 +55,4 @@ export {
   providers,
 }
 
-export default FeishuDocument
+export default LarkDoc

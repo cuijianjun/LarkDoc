@@ -1,18 +1,26 @@
-# feishu-document
+# lark-doc
 
-Vue 2 + Tiptap 3 的飞书风格文档编辑器与工作台包（`0.4.0`）。
+Vue 2 + Tiptap 3 的飞书风格文档编辑器与工作台包（`0.10.0`）。
 
-完整文档：[VitePress 使用手册](https://your-docs-host/feishu-document/)（源码在 `codex/开发agent/aieditor-core-docs`）。
+完整文档：[VitePress 使用手册](https://your-docs-host/lark-doc/)（源码在 `codex/开发agent/aieditor-core-docs`）。
+
+> **开发/改代码前必读**：[DEVELOPMENT.md](./DEVELOPMENT.md) —— 踩坑清单与回归防护（折叠高亮、blockId、缩进、编号、弹窗、排版实测值、Vditor 兼容）。
+
+## 环境要求
+
+- **运行时（接入方）**：Node `>= 14.21.3`（`engines.node` 已放宽；Tiptap 3 依赖的 ES2022+ API 已由入口 core-js polyfill 补齐，Node 14 可正常运行）。无需固定某个版本。
+- **peerDependencies**：`vue ^2.7.14` + `@tiptap/vue-2 ^3.32.0`（Vue 2.7 项目专属）。
+- **从源码构建/跑 check**：Node `>= 14.21.3` + npm `>= 8.19.4` 即可（`check-node14.js` 只做最低版本门禁，Node 20 等更高版本同样合法）。
 
 ## 接入方式
 
 默认导出是命令式入口，View 层只留一个挂载点：
 
 ```js
-import { FeishuDocument } from 'feishu-document'
-import 'feishu-document/style.css'
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
 
-const doc = new FeishuDocument({
+const doc = new LarkDoc({
   element: '#editor',
   title: '未命名文档',
   content: '<p>开始编辑。</p>',
@@ -28,7 +36,7 @@ doc.destroy()
 Vditor `getHTML()` 导出的 HTML 可直接喂给 `content`，命中 `vditor-*` / `language-math` / 图表 `language-*` 等指纹时自动归一化公式、任务列表、图表代码块、脚注与表格列宽：
 
 ```js
-const doc = new FeishuDocument({ element: '#editor', content: vditorHtml })
+const doc = new LarkDoc({ element: '#editor', content: vditorHtml })
 doc.importVditor(vditorHtml)      // 或显式强制归一化
 doc.getImportReport()             // { source, math, taskList, taskItem, diagram, table, footnote, dropped }
 ```
@@ -39,12 +47,12 @@ doc.getImportReport()             // { source, math, taskList, taskItem, diagram
 
 ```js
 import {
-  FeishuDocumentEditor,
-  FeishuDocumentWorkspace,
-} from 'feishu-document'
+  LarkDocEditor,
+  LarkDocWorkspace,
+} from 'lark-doc'
 ```
 
-`style.css` 是唯一公开样式入口，宿主只需引入一次；它包含正文样式与本地 KaTeX 字体，不要直接引 `src/components/feishu/feishu.css`。
+`style.css` 是唯一公开样式入口，宿主只需引入一次；它包含正文样式与本地 KaTeX 字体，不要直接引 `src/components/lark-doc/lark-doc.css`。
 
 ## 资源本地化与网络策略
 
@@ -53,7 +61,7 @@ import {
 - 需要收敛时显式配置：
 
 ```js
-new FeishuDocument({
+new LarkDoc({
   element: '#editor',
   // 只放行白名单 host
   network: { mode: 'allowlist', allowlist: ['img.your-corp.com'] },
@@ -67,7 +75,7 @@ new FeishuDocument({
 ## 配置示例
 
 ```js
-new FeishuDocument({
+new LarkDoc({
   element: this.$refs.host,
   title: '项目说明',
   content: record,                 // HTML / Tiptap JSON / 文档信封
@@ -88,16 +96,16 @@ new FeishuDocument({
 ## 构建与校验
 
 ```bash
-nvm use 14.21.3
+nvm use 14   # 任意 >= 14.21.3 均可（Node 20 等更高版本同样合法）
 npm ci
-npm run check          # node14 + offline + feishu + architecture + lint + build
+npm run check          # node14 门禁 + offline + lark-doc + architecture + lint + build
 ```
 
 单独跑：
 
 ```bash
 npm run check:offline
-npm run check:feishu
+npm run check:lark-doc
 npm run build
 ```
 
@@ -107,10 +115,10 @@ npm run build
 全部拆成按需区块，首屏不下载：
 
 ```bash
-npm run build          # dist/feishu-document.common.js        CJS 单文件（main）
-npm run build:umd      # dist/feishu-document.umd.min.js       <script> / CDN（unpkg）
-npm run build:esm      # dist/feishu-document.esm.js           ES Module（module，拆包最彻底）
-npm run build:element  # dist/feishu-document-element.umd.min.js  Web Component（Vue 内联）
+npm run build          # dist/lark-doc.common.js        CJS 单文件（main）
+npm run build:umd      # dist/lark-doc.umd.min.js       <script> / CDN（unpkg）
+npm run build:esm      # dist/lark-doc.esm.js           ES Module（module，拆包最彻底）
+npm run build:element  # dist/lark-doc-element.umd.min.js  Web Component（Vue 内联）
 npm run build:analyze  # 以上四份 + 体积诊断输出
 ```
 

@@ -23,7 +23,7 @@ const path = require('path')
 const fs = require('fs')
 const { chromium } = require('playwright-core')
 
-const BASE_URL = process.argv[2] || 'http://localhost:8080/feishu-document'
+const BASE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
 const SHOT_DIR = path.join(__dirname, '..', '.verify-shots')
 
 function findChromium() {
@@ -61,15 +61,15 @@ async function main() {
   try {
     // ---- 1. 页面加载 + 编辑器挂载 ----
     await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 })
-    await page.waitForSelector('.feishu-code', { timeout: 30000 })
+    await page.waitForSelector('.lark-doc-code', { timeout: 30000 })
     record('页面加载且 mermaid 代码块存在', true)
 
-    const mermaidBlock = page.locator('.feishu-code', { has: page.locator('.feishu-diagram') })
+    const mermaidBlock = page.locator('.lark-doc-code', { has: page.locator('.lark-doc-diagram') })
 
     // ---- 2. 编辑态默认渲染 ----
     // ---- 3. 脚本按需注入 + 本地 vendor 地址 ----
     const scriptInfo = await page.evaluate(() => {
-      const script = document.querySelector('script[data-feishu-diagram="mermaid"]')
+      const script = document.querySelector('script[data-lark-doc-diagram="mermaid"]')
       if (!script) return null
       const src = script.getAttribute('src') || ''
       return { src, external: /^https?:/.test(src) }
@@ -80,22 +80,22 @@ async function main() {
     // ---- 4. 预览层出现真实 SVG ----
     const firstBlock = mermaidBlock.first()
     try {
-      await firstBlock.locator('.feishu-diagram-svg svg').first()
+      await firstBlock.locator('.lark-doc-diagram-svg svg').first()
         .waitFor({ state: 'visible', timeout: 20000 })
     } catch (error) {
       // 诊断：预览层卡在 loading / error 时截图并读取状态文案
-      const status = await firstBlock.locator('.feishu-diagram-status').allTextContents().catch(() => [])
-      const html = await firstBlock.locator('.feishu-diagram').innerHTML().catch(() => '(无预览层)')
+      const status = await firstBlock.locator('.lark-doc-diagram-status').allTextContents().catch(() => [])
+      const html = await firstBlock.locator('.lark-doc-diagram').innerHTML().catch(() => '(无预览层)')
       const dump = await page.evaluate(() => {
-        const blocks = [...document.querySelectorAll('.feishu-code')]
+        const blocks = [...document.querySelectorAll('.lark-doc-code')]
         return {
           totalBlocks: blocks.length,
           blocks: blocks.map((b, i) => ({
             index: i,
             classes: b.className,
-            hasDiagram: !!b.querySelector('.feishu-diagram'),
+            hasDiagram: !!b.querySelector('.lark-doc-diagram'),
             hasSvg: !!b.querySelector('svg'),
-            bodyDisplay: b.querySelector('.feishu-code-body')?.style.display ?? null,
+            bodyDisplay: b.querySelector('.lark-doc-code-body')?.style.display ?? null,
             textStart: b.textContent.slice(0, 60),
           })),
         }
@@ -103,14 +103,14 @@ async function main() {
       await page.screenshot({ path: path.join(SHOT_DIR, 'failure-mermaid.png'), fullPage: true })
       throw new Error(`SVG 未出现。状态文案=${JSON.stringify(status)} 预览层HTML=${html.slice(0, 200)} 全局=${JSON.stringify(dump)}`)
     }
-    const svgCount = await firstBlock.locator('.feishu-diagram-svg svg').count()
+    const svgCount = await firstBlock.locator('.lark-doc-diagram-svg svg').count()
     record('预览层渲染出真实 SVG', svgCount > 0, `第一个图表块内 svg 数量=${svgCount}`)
 
     // ---- 5. 预览层不可编辑 + 源码区隐藏 ----
     const editable = await firstBlock.locator('[contenteditable="false"]').count()
     record('预览层 contenteditable=false', editable > 0, `计数=${editable}`)
     const srcHidden = await firstBlock.evaluate((node) => {
-      const body = node.querySelector('.feishu-code-body')
+      const body = node.querySelector('.lark-doc-code-body')
       return !body || (body.style.display === 'none')
     })
     record('源码区默认隐藏（v-show display:none）', srcHidden)
@@ -120,15 +120,15 @@ async function main() {
     // ---- 6. 编辑源码 / 预览图表 双向切换 ----
     // 切到源码态后预览层（v-if）会移除，has 过滤器会失配，改用索引定位。
     const mermaidIndex = await page.evaluate(() => {
-      const blocks = [...document.querySelectorAll('.feishu-code')]
-      return blocks.findIndex((b) => b.querySelector('.feishu-diagram'))
+      const blocks = [...document.querySelectorAll('.lark-doc-code')]
+      return blocks.findIndex((b) => b.querySelector('.lark-doc-diagram'))
     })
-    const toggleBlock = page.locator('.feishu-code').nth(mermaidIndex)
+    const toggleBlock = page.locator('.lark-doc-code').nth(mermaidIndex)
     const sourceBtn = toggleBlock.getByText('编辑源码', { exact: false }).first()
     await sourceBtn.click()
     await page.waitForTimeout(300)
     const afterShow = await toggleBlock.evaluate((node) => {
-      const body = node.querySelector('.feishu-code-body')
+      const body = node.querySelector('.lark-doc-code-body')
       return { srcVisible: !!body && body.style.display !== 'none' }
     })
     record('点击「编辑源码」后源码区可见', afterShow.srcVisible)
@@ -136,36 +136,36 @@ async function main() {
     const previewBtn = toggleBlock.getByText('预览图表', { exact: false }).first()
     await previewBtn.click()
     await page.waitForTimeout(500)
-    await toggleBlock.locator('.feishu-diagram-svg svg').first()
+    await toggleBlock.locator('.lark-doc-diagram-svg svg').first()
       .waitFor({ state: 'visible', timeout: 20000 })
     record('点击「预览图表」后 SVG 恢复显示', true)
 
     // ---- 7. 门面 insert() 追加第二个 mermaid 块 ----
-    const beforeCount = await page.locator('.feishu-code').count()
+    const beforeCount = await page.locator('.lark-doc-code').count()
     await page.evaluate(() => {
-      window.__feishu.insert({
+      window.__larkDoc.insert({
         type: 'codeBlock',
         attrs: { language: 'mermaid' },
         content: [{ type: 'text', text: 'graph LR\n  X[插入命令] --> Y[第二个图表]\n  Y --> Z[自动渲染]' }],
       })
     })
     await page.waitForTimeout(1000)
-    const afterCount = await page.locator('.feishu-code').count()
+    const afterCount = await page.locator('.lark-doc-code').count()
     record('insert() 追加图表块', afterCount === beforeCount + 1, `${beforeCount} → ${afterCount}`)
-    const secondBlock = page.locator('.feishu-code').nth(afterCount - 1)
+    const secondBlock = page.locator('.lark-doc-code').nth(afterCount - 1)
     await secondBlock.locator('svg').first().waitFor({ state: 'visible', timeout: 20000 })
     record('第二个图表块自动渲染 SVG（渲染器全局复用）', true)
 
     // ---- 8. 图表按钮命令（executeCommand('diagram')，与插入菜单「图表」同路径） ----
     const thirdOk = await page.evaluate(() => {
-      const workspace = window.__feishu.getWorkspace()
+      const workspace = window.__larkDoc.getWorkspace()
       const editorComponent = workspace && workspace.$refs && workspace.$refs.document
       if (!editorComponent || typeof editorComponent.executeCommand !== 'function') return false
       editorComponent.executeCommand('diagram')
       return true
     })
     await page.waitForTimeout(1200)
-    const finalCount = await page.locator('.feishu-code').count()
+    const finalCount = await page.locator('.lark-doc-code').count()
     record('executeCommand("diagram") 图表按钮插入', thirdOk && finalCount > afterCount, `块数 ${afterCount} → ${finalCount}`)
 
     // ---- 9. 工具栏「图表」按钮：类型下拉插入 ----
@@ -173,18 +173,18 @@ async function main() {
     record('工具栏出现「图表」按钮', await menuBtn.count() > 0)
     await menuBtn.click()
     await page.waitForTimeout(300)
-    const menuItems = await page.locator('.feishu-diagram-menu button').allTextContents()
+    const menuItems = await page.locator('.lark-doc-diagram-menu button').allTextContents()
     record('图表类型下拉含流程图/时序图/甘特图/饼图',
       ['流程图', '时序图', '甘特图', '饼图'].every((label) => menuItems.some((text) => text.includes(label))),
       menuItems.join('、'))
-    await page.locator('.feishu-diagram-menu button', { hasText: '时序图' }).first().click()
+    await page.locator('.lark-doc-diagram-menu button', { hasText: '时序图' }).first().click()
     await page.waitForTimeout(1200)
-    const seqCount = await page.locator('.feishu-code').count()
+    const seqCount = await page.locator('.lark-doc-code').count()
     record('选择「时序图」插入新图表块', seqCount === finalCount + 1, `块数 ${finalCount} → ${seqCount}`)
-    const lastBlock = page.locator('.feishu-code').nth(seqCount - 1)
-    record('图表块独立外观（不与代码框共用样式）', (await lastBlock.getAttribute('class')).includes('feishu-code-diagram'))
-    record('图表块无代码语言下拉', await lastBlock.locator('.feishu-code-toolbar select').count() === 0)
-    await lastBlock.locator('.feishu-diagram-svg svg').first().waitFor({ state: 'visible', timeout: 20000 })
+    const lastBlock = page.locator('.lark-doc-code').nth(seqCount - 1)
+    record('图表块独立外观（不与代码框共用样式）', (await lastBlock.getAttribute('class')).includes('lark-doc-code-diagram'))
+    record('图表块无代码语言下拉', await lastBlock.locator('.lark-doc-code-toolbar select').count() === 0)
+    await lastBlock.locator('.lark-doc-diagram-svg svg').first().waitFor({ state: 'visible', timeout: 20000 })
     record('时序图块自动渲染 SVG', true)
 
     await page.screenshot({ path: path.join(SHOT_DIR, '02-after-inserts.png'), fullPage: true })

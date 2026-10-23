@@ -3,10 +3,10 @@ const path = require('path')
 const webpack = require('webpack')
 
 /**
- * 四种构建目标（FEISHU_TARGET）：
+ * 四种构建目标（LARK_DOC_TARGET）：
  * - lib（默认，src/index.js）：**单文件** CJS 产物。宿主可能是任意打包器、任意版本，
  *   运行时按 URL 去加载 chunk 不可靠，所以动态 import 全部内联，保持「拿走就能用」；
- *   样式抽成 dist/feishu-document.css，宿主显式 import。
+ *   样式抽成 dist/lark-doc.css，宿主显式 import。
  * - umd（同入口）：CDN / <script> 直挂产物。只拆按需区块，首屏永远不依赖 chunk 加载；
  *   样式随 JS 注入，宿主不需要额外引 CSS。
  * - element（src/web-component/index.js）：自定义元素产物，Vue 内联 + CSS 由 JS 注入，
@@ -19,7 +19,7 @@ const webpack = require('webpack')
  *   math(katex) / office(docx+mammoth) / markdown(marked+turndown) / highlight 只在
  *   真正用到时才下载（按需区块），主包因此小一半。
  */
-const target = process.env.FEISHU_TARGET || 'lib'
+const target = process.env.LARK_DOC_TARGET || 'lib'
 const isElement = target === 'element'
 const isUmd = target === 'umd'
 const isEsm = target === 'esm'
@@ -29,12 +29,12 @@ const split = !isLib
 const initialChunks = isEsm ? 'all' : 'async'
 
 /**
- * 体积诊断插件（FEISHU_ANALYZE=1 时启用）：按 npm 包聚合模块体积 + 列出产物清单。
+ * 体积诊断插件（LARK_DOC_ANALYZE=1 时启用）：按 npm 包聚合模块体积 + 列出产物清单。
  * 用来判断「该把谁拆出去 / 该把谁懒加载」，不进产物，只在构建结束时打印。
  */
 class BundleAnalyzePlugin {
   apply(compiler) {
-    compiler.hooks.done.tap('feishu-bundle-analyze', (stats) => {
+    compiler.hooks.done.tap('lark-doc-bundle-analyze', (stats) => {
       const json = stats.toJson({ modules: true, assets: true, chunks: true, reasons: false, source: false })
       const groups = new Map()
       for (const mod of json.modules || []) {
@@ -58,7 +58,7 @@ class BundleAnalyzePlugin {
         console.log(`  ${key.padEnd(38)}${kb(size).padStart(12)}  ${((size / total) * 100).toFixed(1)}%`)
       }
       console.log(`  ${'合计'.padEnd(38)}${kb(total).padStart(12)}`)
-      if (process.env.FEISHU_ANALYZE_MODULES) {
+      if (process.env.LARK_DOC_ANALYZE_MODULES) {
         console.log('[体积诊断] 单模块 Top 20')
         const mods = (json.modules || []).slice().sort((a, b) => (b.size || 0) - (a.size || 0)).slice(0, 20)
         for (const mod of mods) {
@@ -98,7 +98,7 @@ module.exports = defineConfig({
   css: {
     // element / umd / esm 都是「直挂即用」的产物：样式随 JS 注入 <style>，宿主不需要
     // 再引 CSS，按需区块（如 KaTeX 样式）也跟着自己的 chunk 走。
-    // 只有 lib（CJS）抽成 dist/feishu-document.css —— 保持既有接入方式不变。
+    // 只有 lib（CJS）抽成 dist/lark-doc.css —— 保持既有接入方式不变。
     extract: isLib,
   },
   configureWebpack: {
@@ -107,7 +107,7 @@ module.exports = defineConfig({
     // 共用一份缓存会让模块级别的结果串味（external vue 的 ESM/CJS 形态就是典型）。
     cache: {
       type: 'filesystem',
-      name: `feishu-${target}`,
+      name: `lark-doc-${target}`,
       buildDependencies: { config: [__filename] },
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。
@@ -154,7 +154,7 @@ module.exports = defineConfig({
     plugins: [
       // lib 产物保持单文件：动态 import 全部内联，宿主不需要复制/解析任何 chunk。
       ...(isLib ? [new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 })] : []),
-      ...(process.env.FEISHU_ANALYZE ? [new BundleAnalyzePlugin()] : []),
+      ...(process.env.LARK_DOC_ANALYZE ? [new BundleAnalyzePlugin()] : []),
     ],
   },
 })

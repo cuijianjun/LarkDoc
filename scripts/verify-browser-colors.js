@@ -24,7 +24,7 @@ const path = require('path')
 const fs = require('fs')
 const { chromium } = require('playwright-core')
 
-const BASE_URL = process.argv[2] || 'http://localhost:8080/feishu-document'
+const BASE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
 const SHOT_DIR = path.join(__dirname, '..', '.verify-shots')
 
 function findChromium() {
@@ -63,28 +63,28 @@ async function main() {
     // ---- 1. 页面加载 + 合并触发器 ----
     await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 })
     await page.waitForSelector('.ProseMirror', { timeout: 30000 })
-    await page.waitForSelector('.feishu-toolbar', { timeout: 30000 })
-    const triggerCount = await page.locator('.feishu-toolbar label.feishu-color').count()
+    await page.waitForSelector('.lark-doc-toolbar', { timeout: 30000 })
+    const triggerCount = await page.locator('.lark-doc-toolbar label.lark-doc-color').count()
     record('工具栏只有 1 个合并颜色触发器', triggerCount === 1, `计数=${triggerCount}`)
-    const triggerGlyph = await page.locator('.feishu-toolbar label.feishu-color .feishu-color-letter').first().textContent()
-    record('触发器为 A 字 + 下拉箭头', triggerGlyph.trim() === 'A' && await page.locator('.feishu-toolbar label.feishu-color .feishu-caret').count() === 1, `glyph=${triggerGlyph.trim()}`)
+    const triggerGlyph = await page.locator('.lark-doc-toolbar label.lark-doc-color .lark-doc-color-letter').first().textContent()
+    record('触发器为 A 字 + 下拉箭头', triggerGlyph.trim() === 'A' && await page.locator('.lark-doc-toolbar label.lark-doc-color .lark-doc-caret').count() === 1, `glyph=${triggerGlyph.trim()}`)
 
     // ---- 2. 打开飞书式面板 ----
-    await page.locator('.feishu-toolbar label.feishu-color').click()
-    const panel = page.locator('.feishu-color-palette-text')
+    await page.locator('.lark-doc-toolbar label.lark-doc-color').click()
+    const panel = page.locator('.lark-doc-color-palette-text')
     await panel.waitFor({ state: 'visible', timeout: 5000 })
     const sectionTitles = await panel.locator('small').allTextContents()
     record('面板含「字体颜色」「背景颜色」两节', sectionTitles.join(',') === '字体颜色,背景颜色', JSON.stringify(sectionTitles))
 
     // ---- 3. A 字行 ----
-    const letterCount = await panel.locator('.feishu-color-letters button').count()
+    const letterCount = await panel.locator('.lark-doc-color-letters button').count()
     record('字体颜色 A 字行 8 个', letterCount === 8, `计数=${letterCount}`)
 
     // ---- 4. 背景网格 ----
-    const rows = await panel.locator('.feishu-color-grid').count()
-    const rowCells = await panel.locator('.feishu-color-grid').first().locator('button').count()
-    const row2Cells = await panel.locator('.feishu-color-grid').nth(1).locator('button').count()
-    const hasDefault = await panel.locator('.feishu-color-grid button.is-transparent').first().isVisible()
+    const rows = await panel.locator('.lark-doc-color-grid').count()
+    const rowCells = await panel.locator('.lark-doc-color-grid').first().locator('button').count()
+    const row2Cells = await panel.locator('.lark-doc-color-grid').nth(1).locator('button').count()
+    const hasDefault = await panel.locator('.lark-doc-color-grid button.is-transparent').first().isVisible()
     record('背景网格两行、各 9 格', rows === 2 && rowCells === 9 && row2Cells === 9, `行=${rows} 首行=${rowCells} 次行=${row2Cells}`)
     record('首格为斜杠默认格', hasDefault)
 
@@ -92,38 +92,38 @@ async function main() {
 
     // ---- 5. 应用文字颜色 ----
     await page.evaluate(() => {
-      const editor = window.__feishu.getEditor()
+      const editor = window.__larkDoc.getEditor()
       editor.commands.selectAll()
     })
-    await panel.locator('.feishu-color-letters button').nth(2).click() // 红色 #f54a45
-    const textColor = await page.evaluate(() => window.__feishu.getEditor().getAttributes('textStyle').color)
+    await panel.locator('.lark-doc-color-letters button').nth(2).click() // 红色 #f54a45
+    const textColor = await page.evaluate(() => window.__larkDoc.getEditor().getAttributes('textStyle').color)
     record('点击红色 A 后 textStyle.color 生效', String(textColor).toLowerCase() === '#f54a45', String(textColor))
-    const triggerColor = await page.locator('.feishu-toolbar label.feishu-color .feishu-color-letter').first().evaluate((node) => node.style.color)
+    const triggerColor = await page.locator('.lark-doc-toolbar label.lark-doc-color .lark-doc-color-letter').first().evaluate((node) => node.style.color)
     record('触发器 A 字回显当前字色', triggerColor.toLowerCase() === 'rgb(245, 74, 69)', triggerColor)
 
     // ---- 6. 选中描边 ----
-    await page.locator('.feishu-toolbar label.feishu-color').click()
+    await page.locator('.lark-doc-toolbar label.lark-doc-color').click()
     await panel.waitFor({ state: 'visible', timeout: 5000 })
-    const activeLetter = await panel.locator('.feishu-color-letters button.is-active').count()
+    const activeLetter = await panel.locator('.lark-doc-color-letters button.is-active').count()
     record('当前字色 A 字有选中描边', activeLetter === 1, `is-active 计数=${activeLetter}`)
 
     // ---- 7. 应用背景颜色 ----
-    await panel.locator('.feishu-color-grid').first().locator('button').nth(1).click() // 浅红 #fbd0d0
-    const bgColor = await page.evaluate(() => window.__feishu.getEditor().getAttributes('textStyle').backgroundColor)
+    await panel.locator('.lark-doc-color-grid').first().locator('button').nth(1).click() // 浅红 #fbd0d0
+    const bgColor = await page.evaluate(() => window.__larkDoc.getEditor().getAttributes('textStyle').backgroundColor)
     record('点击浅红背景格后 backgroundColor 生效', String(bgColor).toLowerCase() === '#fbd0d0', String(bgColor))
 
     // ---- 8. 默认格清除背景 ----
-    await page.locator('.feishu-toolbar label.feishu-color').click()
+    await page.locator('.lark-doc-toolbar label.lark-doc-color').click()
     await panel.waitFor({ state: 'visible', timeout: 5000 })
-    await panel.locator('.feishu-color-grid').first().locator('button.is-transparent').first().click()
-    const bgCleared = await page.evaluate(() => window.__feishu.getEditor().getAttributes('textStyle').backgroundColor)
+    await panel.locator('.lark-doc-color-grid').first().locator('button.is-transparent').first().click()
+    const bgCleared = await page.evaluate(() => window.__larkDoc.getEditor().getAttributes('textStyle').backgroundColor)
     record('点击默认格后背景清除', !bgCleared, String(bgCleared))
 
     await page.screenshot({ path: path.join(SHOT_DIR, 'colors-02-applied.png') })
 
     // ---- 9. callout 旧面板不受影响 ----
     await page.evaluate(() => {
-      const editor = window.__feishu.getEditor()
+      const editor = window.__larkDoc.getEditor()
       editor.commands.selectAll()
       editor.commands.insertContent({ type: 'callout', content: [{ type: 'paragraph' }] })
     })
@@ -138,10 +138,10 @@ async function main() {
     const calloutTrigger = page.locator('label[title="高亮块文字颜色"]').first()
     const clicked = await calloutTrigger.click({ timeout: 3000 }).then(() => true).catch(() => false)
     if (clicked) {
-      const oldPanel = page.locator('.feishu-color-palette:not(.feishu-color-palette-text)')
+      const oldPanel = page.locator('.lark-doc-color-palette:not(.lark-doc-color-palette-text)')
       await oldPanel.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {})
       const oldVisible = await oldPanel.isVisible().catch(() => false)
-      const roundCells = oldVisible ? await oldPanel.locator('.feishu-color-palette-section button').count() : 0
+      const roundCells = oldVisible ? await oldPanel.locator('.lark-doc-color-palette-section button').count() : 0
       record('callout 颜色面板为旧版圆形色块结构', oldVisible && roundCells >= 9, `可见=${oldVisible} 色块=${roundCells}`)
       await page.screenshot({ path: path.join(SHOT_DIR, 'colors-03-callout.png') })
     } else {

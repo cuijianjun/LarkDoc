@@ -31,7 +31,7 @@ if (!window.Range.prototype.getBoundingClientRect) {
   window.Range.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 })
 }
 
-const pkg = require('../dist/feishu-document.common.js')
+const pkg = require('../dist/lark-doc.common.js')
 
 // 真实 Vditor getHTML() 样本（Lute 3.11 输出形态），覆盖全部需要改写的结构。
 const FIXTURE = [
@@ -167,7 +167,7 @@ async function main() {
   /* ---------- 3. 端到端：真实编辑器 ---------- */
   const host = document.getElementById('editor')
   const reports = []
-  const doc = new pkg.FeishuDocument({
+  const doc = new pkg.LarkDoc({
     element: host,
     content: FIXTURE,
     storage: 'none',
@@ -222,43 +222,43 @@ async function main() {
 
   /* ---------- 4. 图表直接渲染（默认预览，无需切换） ---------- */
   await delay(1200)
-  const firstBlock = host.querySelector('.feishu-code')
-  const previewBoxDefault = firstBlock.querySelector('.feishu-diagram')
+  const firstBlock = host.querySelector('.lark-doc-code')
+  const previewBoxDefault = firstBlock.querySelector('.lark-doc-diagram')
   check('图表块默认渲染预览（无需切换）', Boolean(previewBoxDefault))
   check('预览层不可编辑', Boolean(previewBoxDefault) && previewBoxDefault.getAttribute('contenteditable') === 'false')
-  const codeBody = firstBlock.querySelector('.feishu-code-body')
+  const codeBody = firstBlock.querySelector('.lark-doc-code-body')
   check('预览态源码区隐藏', Boolean(codeBody) && codeBody.style.display === 'none')
-  const blockButtons = () => Array.from(firstBlock.querySelectorAll('.feishu-code-toolbar button')).map((button) => button.textContent.trim())
+  const blockButtons = () => Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('图表块出现「编辑源码」按钮', blockButtons().indexOf('编辑源码') !== -1)
-  check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.feishu-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.feishu-code-toolbar .feishu-select').length === 0)
-  check('图表块携带独立外观类', firstBlock.className.indexOf('feishu-code-diagram') !== -1)
-  // 代码块语言下拉已换自绘组件（FeishuSelect）：点击展开后校验选项清单。
-  const langSelect = Array.from(host.querySelectorAll('.feishu-code-toolbar .feishu-select'))
+  check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
+  check('图表块携带独立外观类', firstBlock.className.indexOf('lark-doc-code-diagram') !== -1)
+  // 代码块语言下拉已换自绘组件（LarkDocSelect）：点击展开后校验选项清单。
+  const langSelect = Array.from(host.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select'))
     .find((node) => node.querySelector('[aria-label="代码语言"]'))
   check('代码块使用自绘语言下拉', Boolean(langSelect))
-  const langTrigger = langSelect && langSelect.querySelector('.feishu-select-trigger')
+  const langTrigger = langSelect && langSelect.querySelector('.lark-doc-select-trigger')
   if (langTrigger) langTrigger.click()
   await delay(60)
-  const langMenuItems = Array.from(host.querySelectorAll('.feishu-select-menu button')).map((button) => button.textContent.trim())
+  const langMenuItems = Array.from(host.querySelectorAll('.lark-doc-select-menu button')).map((button) => button.textContent.trim())
   check('语言下拉含 Mermaid 图表项', langMenuItems.some((text) => text.indexOf('Mermaid 图表') !== -1))
-  let blockButton = Array.from(firstBlock.querySelectorAll('.feishu-code-toolbar button')).find((button) => button.textContent.trim() === '编辑源码')
+  let blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '编辑源码')
   if (blockButton) blockButton.click()
   await delay(100)
-  check('切换后显示源码区', Boolean(codeBody) && codeBody.style.display !== 'none' && firstBlock.querySelectorAll('.feishu-diagram').length === 0)
-  blockButton = Array.from(firstBlock.querySelectorAll('.feishu-code-toolbar button')).find((button) => button.textContent.trim() === '预览图表')
+  check('切换后显示源码区', Boolean(codeBody) && codeBody.style.display !== 'none' && firstBlock.querySelectorAll('.lark-doc-diagram').length === 0)
+  blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '预览图表')
   check('切换后按钮变「预览图表」', Boolean(blockButton))
   if (blockButton) blockButton.click()
   await delay(100)
-  check('切回预览后源码区再次隐藏', Boolean(codeBody) && codeBody.style.display === 'none' && Boolean(firstBlock.querySelector('.feishu-diagram')))
-  check('渲染器按需注入脚本（懒加载）', Boolean(document.querySelector('script[data-feishu-diagram="mermaid"]')))
+  check('切回预览后源码区再次隐藏', Boolean(codeBody) && codeBody.style.display === 'none' && Boolean(firstBlock.querySelector('.lark-doc-diagram')))
+  check('渲染器按需注入脚本（懒加载）', Boolean(document.querySelector('script[data-lark-doc-diagram="mermaid"]')))
   check('渲染脚本走本地产物', (() => {
-    const script = document.querySelector('script[data-feishu-diagram="mermaid"]')
+    const script = document.querySelector('script[data-lark-doc-diagram="mermaid"]')
     const src = script && script.getAttribute('src')
     return Boolean(src) && !/^https?:/i.test(src) && src.indexOf('vendor/mermaid') !== -1
   })())
 
   /* ---------- 4.5 「图表」插入命令 ---------- */
-  const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/feishu-document.common.js'), 'utf8')
+  const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.js'), 'utf8')
   check('命令清单含「图表」插入项', /id:\s*'diagram'/.test(bundle))
   check('插入命令携带 mermaid 示例源码', bundle.indexOf('A[开始]') !== -1)
 
@@ -278,27 +278,27 @@ async function main() {
 
   /* ---------- 6. features.diagram: false 关闭图表 ---------- */
   // 渲染脚本是全局单例（模块级缓存），上一实例注入的不代表本实例会注入，先清场。
-  Array.from(document.querySelectorAll('script[data-feishu-diagram]')).forEach((script) => script.remove())
+  Array.from(document.querySelectorAll('script[data-lark-doc-diagram]')).forEach((script) => script.remove())
   const host2 = document.createElement('div')
   document.body.appendChild(host2)
-  const doc2 = new pkg.FeishuDocument({
+  const doc2 = new pkg.LarkDoc({
     element: host2,
     content: '<pre><code class="language-mermaid">graph TD\n  A --&gt; B</code></pre>',
     storage: 'none',
     features: { diagram: false },
   })
   await delay(1200)
-  const buttons2 = Array.from(host2.querySelectorAll('.feishu-code-toolbar button')).map((button) => button.textContent.trim())
+  const buttons2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('关闭 features.diagram 无预览按钮', buttons2.indexOf('预览图表') === -1)
-  check('关闭后无预览层', host2.querySelectorAll('.feishu-diagram').length === 0)
-  const langSelect2 = Array.from(host2.querySelectorAll('.feishu-code-toolbar .feishu-select'))
+  check('关闭后无预览层', host2.querySelectorAll('.lark-doc-diagram').length === 0)
+  const langSelect2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select'))
     .find((node) => node.querySelector('[aria-label="代码语言"]'))
-  const langTrigger2 = langSelect2 && langSelect2.querySelector('.feishu-select-trigger')
+  const langTrigger2 = langSelect2 && langSelect2.querySelector('.lark-doc-select-trigger')
   if (langTrigger2) langTrigger2.click()
   await delay(60)
-  const langMenuItems2 = Array.from(host2.querySelectorAll('.feishu-select-menu button')).map((button) => button.textContent.trim())
+  const langMenuItems2 = Array.from(host2.querySelectorAll('.lark-doc-select-menu button')).map((button) => button.textContent.trim())
   check('关闭后下拉无 Mermaid 图表功能项', langMenuItems2.every((text) => text.indexOf('Mermaid 图表') === -1))
-  check('关闭后渲染脚本未注入', !document.querySelector('script[data-feishu-diagram="mermaid"]'))
+  check('关闭后渲染脚本未注入', !document.querySelector('script[data-lark-doc-diagram="mermaid"]'))
   doc2.destroy()
   check('第二个实例销毁', host2.children.length === 0)
 

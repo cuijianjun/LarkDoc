@@ -14,7 +14,7 @@
  *  2. 首屏没有下载 office / markdown / highlight / import-export 区块
  *     （math 与 mermaid vendor 会因初始内容含公式 / 图表而加载 —— 这正是按需生效的证据）
  *  3. WC 路由：element 主文件 ≤ 1 MiB（改造前是 2.16 MiB 单文件）
- *  4. 插入代码块 → highlight 区块按需下载 + 高亮类渲染（Vue 路由，暴露 window.__feishu）
+ *  4. 插入代码块 → highlight 区块按需下载 + 高亮类渲染（Vue 路由，暴露 window.__larkDoc）
  *  5. mermaid vendor 脚本本地按需注入 + 预览层渲染出 SVG
  *  6. 无 404、无页面脚本错误
  */
@@ -23,8 +23,8 @@ const path = require('path')
 const fs = require('fs')
 const { chromium } = require('playwright-core')
 
-const VUE_URL = process.argv[2] || 'http://localhost:8080/feishu-document'
-const WC_URL = process.argv[3] || 'http://localhost:8080/feishu-document-wc'
+const VUE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
+const WC_URL = process.argv[3] || 'http://localhost:8080/lark-doc-wc'
 
 function findChromium() {
   const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
@@ -67,10 +67,10 @@ async function runRoute(page, url, label, isWc) {
 
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
   await page.waitForSelector('.ProseMirror', { timeout: 30000 })
-  await page.waitForSelector('.feishu-toolbar', { timeout: 30000 })
+  await page.waitForSelector('.lark-doc-toolbar', { timeout: 30000 })
 
   // 1. 挂载
-  const buttons = await page.locator('.feishu-toolbar button').count()
+  const buttons = await page.locator('.lark-doc-toolbar button').count()
   record(`[${label}] 编辑器挂载且工具栏可用`, buttons > 10, `按钮=${buttons}`)
 
   // 2. 首屏按需区块：office / markdown / highlight 必须缺席
@@ -82,7 +82,7 @@ async function runRoute(page, url, label, isWc) {
 
   // 3. WC：element 运行时 chunk 寻址正确（publicPath:'auto' 能解析到 /js/）
   if (isWc) {
-    const chunk = firstScreen.find((entry) => /feishu-document-element\.umd\.min\.(math|office|highlight|markdown)\.js(\?|$)/.test(entry))
+    const chunk = firstScreen.find((entry) => /lark-doc-element\.umd\.min\.(math|office|highlight|markdown)\.js(\?|$)/.test(entry))
     let ok = false
     let detail = '首屏未请求按需区块'
     if (chunk) {
@@ -91,7 +91,7 @@ async function runRoute(page, url, label, isWc) {
       detail = `${response.status()} ${chunk.split('/').pop()}`
     }
     record(`[${label}] element 按需区块按 publicPath:'auto' 正确寻址`, ok, detail)
-    const mainUrl = new URL('/js/feishu-document-element.umd.min.js', url).toString()
+    const mainUrl = new URL('/js/lark-doc-element.umd.min.js', url).toString()
     const mainResponse = await page.request.get(mainUrl)
     const mainSize = mainResponse.status() === 200 ? (await mainResponse.body()).length : 0
     record(`[${label}] element 主文件 ≤ 1 MiB`, mainSize > 0 && mainSize <= 1024 * 1024, `${mainResponse.status()} ${kb(mainSize)}`)
@@ -99,11 +99,11 @@ async function runRoute(page, url, label, isWc) {
 
   // 4. mermaid vendor 本地按需注入 + SVG（走初始内容里的图表块）
   const diagram = await page.evaluate(() => {
-    const script = document.querySelector('script[data-feishu-diagram="mermaid"]')
+    const script = document.querySelector('script[data-lark-doc-diagram="mermaid"]')
     return {
       src: script ? (script.getAttribute('src') || '') : '',
       sameOrigin: script ? new URL(script.src, location.href).host === location.host : false,
-      svg: document.querySelectorAll('.feishu-diagram svg').length,
+      svg: document.querySelectorAll('.lark-doc-diagram svg').length,
     }
   })
   record(`[${label}] mermaid vendor 本地脚本按需注入并渲染 SVG`, !!diagram.src && diagram.sameOrigin && diagram.svg > 0,
@@ -111,18 +111,18 @@ async function runRoute(page, url, label, isWc) {
 
   // 5. 代码块 → highlight 区块按需加载
   scripts.length = 0
-  const hasApi = await page.evaluate(() => !!(window.__feishu && window.__feishu.getEditor && window.__feishu.getEditor()))
+  const hasApi = await page.evaluate(() => !!(window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor()))
   if (hasApi) {
     await page.evaluate(() => {
-      window.__feishu.getEditor().commands.setContent('<pre><code class="language-javascript">const answer = 42</code></pre>')
+      window.__larkDoc.getEditor().commands.setContent('<pre><code class="language-javascript">const answer = 42</code></pre>')
     })
     await page.waitForTimeout(2000)
-    const highlighted = await page.locator('.feishu-code [class^="hljs-"]').count()
+    const highlighted = await page.locator('.lark-doc-code [class^="hljs-"]').count()
     const pulled = scripts.filter((entry) => /highlight/i.test(entry))
     record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, highlighted > 0 && pulled.length > 0,
       `高亮节点=${highlighted}，新增 highlight 脚本=${pulled.length}`)
   } else {
-    record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, true, '该路由未暴露 window.__feishu，跳过')
+    record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, true, '该路由未暴露 window.__larkDoc，跳过')
   }
 
   // 6. 无 404 / 无脚本错误

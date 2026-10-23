@@ -1,7 +1,7 @@
 'use strict'
 const assert = require('assert')
 let images = {}
-try { images = require('../src/components/feishu/ecsImages') } catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error }
+try { images = require('../src/components/lark-doc/ecsImages') } catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error }
 assert.strictEqual(typeof images.createEcsImageApi, 'function', 'Existing ECS upload and preview APIs must be reusable')
 const { createEcsImageApi, createEcsImageUpload } = images
 async function check() {

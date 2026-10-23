@@ -1,10 +1,10 @@
 'use strict'
 
 /**
- * 真实浏览器验证：Web Component（跨框架 <feishu-document> 元素）。
+ * 真实浏览器验证：Web Component（跨框架 <lark-doc> 元素）。
  *
  * 依赖：playwright-core（NODE_PATH 指向已装 node_modules）+ 本机 chromium 缓存
- * 前置：npm run build:element（产物 dist/feishu-document-element.umd.min.js）
+ * 前置：npm run build:element（产物 dist/lark-doc-element.umd.min.js）
  * 静态服务：python3 -m http.server 8765（从包根目录起，演示页需要 ../dist 相对路径）
  * 运行：
  *   NODE_PATH=/Users/cjjxw/.workbuddy/binaries/node/workspace/node_modules \
@@ -34,14 +34,14 @@ async function main() {
     const url = (m.location && m.location().url) || ''
     if (m.type() === 'error' && !/favicon\.ico$/.test(url)) errors.push('console: ' + m.text() + ' @ ' + url)
   })
-  const SHOTS = '/Users/cjjxw/codex/tiptap-integration-demos/apps/feishu-document/.verify-shots'
+  const SHOTS = '/Users/cjjxw/codex/tiptap-integration-demos/apps/lark-doc/.verify-shots'
   await page.goto('http://localhost:8765/examples/element-demo.html', { waitUntil: 'networkidle', timeout: 60000 })
   await page.waitForTimeout(2500)
 
   // 1. 自定义元素注册 + 挂载
   const mounted = await page.evaluate(() => {
     const el = document.getElementById('editor-a')
-    return { hasTag: !!window.customElements.get('feishu-document'), mounted: el.getAttribute('data-mounted'), childCount: el.children.length }
+    return { hasTag: !!window.customElements.get('lark-doc'), mounted: el.getAttribute('data-mounted'), childCount: el.children.length }
   })
   record('自定义元素已注册并挂载', mounted.hasTag && mounted.mounted === 'true' && mounted.childCount > 0, JSON.stringify(mounted))
 
@@ -60,6 +60,15 @@ async function main() {
   const textA = await page.locator('#editor-a .ProseMirror').first().innerText()
   record('标签内 HTML 作为初始内容', textA.includes('飞书风格文档'), textA.slice(0, 30).replace(/\n/g, ' '))
 
+  // 4.5 title 属性读完即摘：宿主是 Light DOM 且铺满编辑器，
+  //     留着 title 会让浏览器在正文上画一个灰色「文档标题」原生 tips。
+  const titleAttr = await page.evaluate(() => {
+    const el = document.getElementById('editor-a')
+    return { attr: el.getAttribute('title'), api: el.getTitle() }
+  })
+  record('宿主标签上的 title 属性读完即摘（去掉原生灰 tips）', titleAttr.attr === null, `title=${titleAttr.attr}`)
+  record('标题值仍然进到文档（getTitle 可读）', titleAttr.api === '属性驱动的文档', `getTitle=${titleAttr.api}`)
+
   // 5. API 代理 + 实际输入
   await page.locator('#editor-a .ProseMirror').first().click()
   await page.keyboard.type('Hello Web Component')
@@ -72,7 +81,7 @@ async function main() {
 
   // 6. 事件：change 冒泡到 document（跨框架监听）
   const logged = await page.evaluate(() => document.getElementById('log').textContent.includes('change'))
-  record('feishu-change 事件冒泡到宿主', logged)
+  record('lark-doc-change 事件冒泡到宿主', logged)
 
   // 7. 属性热更新：readonly
   await page.evaluate(() => document.querySelector('[data-action="toggle-readonly"]').click())

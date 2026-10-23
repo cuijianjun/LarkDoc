@@ -7,9 +7,9 @@
  * 2. SSR 安全：Node 环境没有 customElements，import 本模块不得炸服务端渲染。
  */
 
-import { FeishuDocumentElement } from './FeishuDocumentElement'
+import { LarkDocElement } from './LarkDocElement'
 
-export const DEFAULT_TAG = 'feishu-document'
+export const DEFAULT_TAG = 'lark-doc'
 
 function getRegistry() {
   return typeof window !== 'undefined' && window.customElements ? window.customElements : null
@@ -18,13 +18,13 @@ function getRegistry() {
 /**
  * 注册自定义元素。
  * @param {string} [tagName=DEFAULT_TAG]
- * @param {{ elementClass?: typeof FeishuDocumentElement, force?: boolean }} [options]
+ * @param {{ elementClass?: typeof LarkDocElement, force?: boolean }} [options]
  * @returns {boolean} 是否真正注册成功（false 表示该标签已被注册）
  */
-export function registerFeishuDocument(tagName = DEFAULT_TAG, options = {}) {
+export function registerLarkDoc(tagName = DEFAULT_TAG, options = {}) {
   const registry = getRegistry()
   if (!registry) return false
-  const elementClass = options.elementClass || FeishuDocumentElement
+  const elementClass = options.elementClass || LarkDocElement
   if (!options.force && registry.get(tagName)) return false
   registry.define(tagName, elementClass)
   return true
@@ -37,20 +37,20 @@ export function isRegistered(tagName = DEFAULT_TAG) {
 }
 
 /**
- * 责问式升级：宿主把 <feishu-document> 放在模板里但没 import 本模块时，
+ * 责问式升级：宿主把 <lark-doc> 放在模板里但没 import 本模块时，
  * 调这个方法可以补齐注册并把已存在的元素 upgrade（可选）。
  */
-export function upgradeFeishuDocument(root = null) {
+export function upgradeLarkDoc(root = null) {
   const registry = getRegistry()
   if (!registry) return 0
   const scope = root && root.querySelectorAll ? root : typeof document !== 'undefined' ? document : null
   if (!scope) return 0
   const nodes = scope.querySelectorAll(DEFAULT_TAG)
   nodes.forEach((node) => {
-    if (!(node instanceof FeishuDocumentElement) && registry.upgrade) registry.upgrade(node)
+    if (!(node instanceof LarkDocElement) && registry.upgrade) registry.upgrade(node)
   })
   return nodes.length
 }
 
-export { FeishuDocumentElement }
-export default registerFeishuDocument
+export { LarkDocElement }
+export default registerLarkDoc

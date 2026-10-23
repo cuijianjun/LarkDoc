@@ -1,13 +1,13 @@
 /**
  * mount/vueRenderer — Vue 2 渲染适配器。
  *
- * 用运行时 render 函数挂载 FeishuDocumentWorkspace（不用模板编译器），
+ * 用运行时 render 函数挂载 LarkDocWorkspace（不用模板编译器），
  * 这是包体积与兼容性之间的既有取舍。对外只暴露 mount/update/destroy/getInstance
  * 四个动作，所有 Vue 细节（$refs、$mount、$destroy）都关在这一个文件里，
  * 门面与 Web Component 外壳不需要知道底层是 Vue。
  */
 import Vue from 'vue'
-import FeishuDocumentWorkspace from '../components/feishu/FeishuDocumentWorkspace.vue'
+import LarkDocWorkspace from '../components/lark-doc/LarkDocWorkspace.vue'
 
 /**
  * @typedef {Object} MountRequest
@@ -31,8 +31,8 @@ export function createVue2Renderer() {
      */
     mount({ element, props, on }) {
       const vm = new Vue({
-        name: 'FeishuDocumentHost',
-        render: (h) => h(FeishuDocumentWorkspace, dataSplat(props, on)),
+        name: 'LarkDocHost',
+        render: (h) => h(LarkDocWorkspace, dataSplat(props, on)),
       })
       vm.$mount()
       if (vm.$el && element && typeof element.appendChild === 'function') element.appendChild(vm.$el)

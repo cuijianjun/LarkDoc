@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * 构建 ES Module 产物（dist/feishu-document.esm.js + 若干逻辑区块）。
+ * 构建 ES Module 产物（dist/lark-doc.esm.js + 若干逻辑区块）。
  *
  * 为什么单独一个构建：vue-cli 的 lib 模式只支持 commonjs / umd，而这两种格式里的
  * `import()` 会被编译成「运行时按 URL 注入 <script>」，宿主打包器无法接管 ——
@@ -11,10 +11,10 @@
  * 重新做一次代码分割，宿主按自己的 publicPath 输出 chunk。这就是 AiEditor 之类
  * 现代编辑器包「主文件小、功能按需加载」的做法。
  *
- * 运行：npm run build:esm（FEISHU_TARGET=esm 会让 vue.config.js 走拆包分支）
+ * 运行：npm run build:esm（LARK_DOC_TARGET=esm 会让 vue.config.js 走拆包分支）
  */
 
-process.env.FEISHU_TARGET = 'esm'
+process.env.LARK_DOC_TARGET = 'esm'
 process.env.VUE_CLI_MODE = 'production'
 process.env.NODE_ENV = 'production'
 
@@ -27,11 +27,11 @@ const dist = path.resolve(root, 'dist')
 const service = new Service(root)
 service.init('production')
 
-// resolveWebpackConfig 会应用 vue.config.js（含 FEISHU_TARGET=esm 的拆包配置），
+// resolveWebpackConfig 会应用 vue.config.js（含 LARK_DOC_TARGET=esm 的拆包配置），
 // 这里只覆盖「产物形态」相关的几项，编译规则全部复用 vue-cli。
 const config = service.resolveWebpackConfig()
-// 具名入口：产物主文件叫 feishu-document.esm.js，而不是默认的 main.esm.js。
-config.entry = { 'feishu-document': path.resolve(root, 'src/index.js') }
+// 具名入口：产物主文件叫 lark-doc.esm.js，而不是默认的 main.esm.js。
+config.entry = { 'lark-doc': path.resolve(root, 'src/index.js') }
 config.experiments = Object.assign({}, config.experiments, { outputModule: true })
 config.output = Object.assign({}, config.output, {
   module: true,
@@ -40,7 +40,7 @@ config.output = Object.assign({}, config.output, {
   // "The target environment doesn't support EcmaScriptModule syntax"。
   environment: Object.assign({}, config.output.environment, { module: true, dynamicImport: true }),
   path: dist,
-  // 初始区块也走 filename，必须带 [name]：入口 → feishu-document.esm.js，
+  // 初始区块也走 filename，必须带 [name]：入口 → lark-doc.esm.js，
   // 逻辑区块 → vue.esm.js / tiptap.esm.js / vendor.esm.js，按需区块 → math.esm.js 等。
   filename: '[name].esm.js',
   chunkFilename: '[name].esm.js',

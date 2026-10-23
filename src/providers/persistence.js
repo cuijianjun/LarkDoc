@@ -1,4 +1,4 @@
-import { createWorkspace } from '../components/feishu/workspace'
+import { createWorkspace } from '../components/lark-doc/workspace'
 
 /**
  * 持久化 Provider 保持现有 Demo 的 load/save/snapshots/snapshot/restore 契约。

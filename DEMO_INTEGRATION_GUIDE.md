@@ -1,15 +1,15 @@
-# Feishu Document 包接入与架构指南
+# LarkDoc 包接入与架构指南
 
 ## 1. 包的职责
 
-`feishu-document` 把 `/feishu-document` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
+`lark-doc` 把 `/lark-doc` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
 
 包公开两个稳定的 Vue 2 组件入口：
 
 | 入口 | 职责 | 适用场景 |
 | --- | --- | --- |
-| `FeishuDocumentEditor` | Tiptap 实例、工具栏、块操作、表格、图片、公式、目录、搜索替换、命令菜单和 AI/审阅交互 | 只需要编辑器，页面状态由宿主自己管理 |
-| `FeishuDocumentWorkspace` | 编辑器之上的标题、模板、草稿、快照、导入导出、Mock AI 预览和持久化接入 | 需要完整文档工作台，或希望以后接协同/版本/评论 |
+| `LarkDocEditor` | Tiptap 实例、工具栏、块操作、表格、图片、公式、目录、搜索替换、命令菜单和 AI/审阅交互 | 只需要编辑器，页面状态由宿主自己管理 |
+| `LarkDocWorkspace` | 编辑器之上的标题、模板、草稿、快照、导入导出、Mock AI 预览和持久化接入 | 需要完整文档工作台，或希望以后接协同/版本/评论 |
 
 当前默认是本地模式：不会自动创建 Yjs、WebSocket 或后台请求。协同、版本、评论和权限只有在宿主显式传入对应 Provider 后才会启用。
 
@@ -18,16 +18,16 @@
 发布后，Vue 2.7 应用可以直接安装：
 
 ```bash
-npm i feishu-document
+npm i lark-doc
 ```
 
 ### 2.1 命令式入口（推荐）
 
 ```js
-import { FeishuDocument } from 'feishu-document'
-import 'feishu-document/style.css'
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
 
-const doc = new FeishuDocument({
+const doc = new LarkDoc({
   element: '#editor',
   title: '未命名文档',
   content: '<p>开始编辑。</p>',
@@ -37,23 +37,23 @@ doc.on('update', ({ html, json }) => { /* 自动保存 */ })
 doc.destroy()
 ```
 
-`src/FeishuDocument.js` 只做四件事：把 AiEditor 风格配置翻译成 `createFeishuConfig` 结构、用 Vue 渲染函数挂载 Workspace、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
+`src/LarkDoc.js` 只做四件事：把 AiEditor 风格配置翻译成 `createLarkDocConfig` 结构、用 Vue 渲染函数挂载 Workspace、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
 
 ### 2.2 组件式（原有方式）
 
 ```js
 import Vue from 'vue'
 import {
-  FeishuDocumentEditor,
-  FeishuDocumentWorkspace,
-} from 'feishu-document'
-import 'feishu-document/style.css'
+  LarkDocEditor,
+  LarkDocWorkspace,
+} from 'lark-doc'
+import 'lark-doc/style.css'
 
-Vue.component('FeishuDocumentEditor', FeishuDocumentEditor)
-Vue.component('FeishuDocumentWorkspace', FeishuDocumentWorkspace)
+Vue.component('LarkDocEditor', LarkDocEditor)
+Vue.component('LarkDocWorkspace', LarkDocWorkspace)
 ```
 
-`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和本地 KaTeX 样式，`src/components/feishu/feishu.css` 不应由宿主应用直接引用。
+`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和本地 KaTeX 样式，`src/components/lark-doc/lark-doc.css` 不应由宿主应用直接引用。
 
 ### 2.3 离线承诺
 
@@ -61,22 +61,22 @@ Vue.component('FeishuDocumentWorkspace', FeishuDocumentWorkspace)
 - KaTeX 样式与字体收在 `src/styles/vendor/katex.css` 与 `src/assets/fonts/katex/`，构建产物带 `dist/fonts/`。
 - `npm run check:offline` 会扫描 `src`、`dist` 的远程地址并校验字体完整性。
 
-本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费 `feishu-document` 包，入口只有 `src/views/FeishuDocumentView.vue`（内部 `new FeishuDocument(...)`）；这保证 Demo 的调用方式和 npm 使用方一致。
+本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费 `lark-doc` 包，入口只有 `src/views/LarkDocView.vue`（内部 `new LarkDoc(...)`）；这保证 Demo 的调用方式和 npm 使用方一致。
 
 标题栏布局可以按宿主页面选择是否固定：
 
 ```vue
-<FeishuDocumentWorkspace :config="{ layout: { titleBarFixed: true } }" />
+<LarkDocWorkspace :config="{ layout: { titleBarFixed: true } }" />
 ```
 
-`layout.titleBarFixed` 默认值为 `false`。开启后只有顶部标题栏吸附到窗口顶端，编辑工具栏保持原有文档流位置；`FeishuDocumentEditor` 与 `FeishuDocumentWorkspace` 均支持该配置。
+`layout.titleBarFixed` 默认值为 `false`。开启后只有顶部标题栏吸附到窗口顶端，编辑工具栏保持原有文档流位置；`LarkDocEditor` 与 `LarkDocWorkspace` 均支持该配置。
 
 ## 3. 目录结构
 
 ```text
 src/
-  index.js                         公共导出：默认 FeishuDocument，具名保留组件与工具
-  FeishuDocument.js                命令式入口：配置翻译、挂载、方法转发、销毁
+  index.js                         公共导出：默认 LarkDoc，具名保留组件与工具
+  LarkDoc.js                命令式入口：配置翻译、挂载、方法转发、销毁
   toolbarKeys.js                   toolbarKeys / toolbarExcludes 到内部工具栏的映射
   networkPolicy.js                 出网策略：offline / allowlist / open 与图片拦截
   styles/vendor/katex.css          收编的 KaTeX 样式，字体为相对路径
@@ -94,9 +94,9 @@ src/
     persistence.js                 草稿/本地快照 Provider 兼容层
     versioning.js                  不可变版本 Provider 最小接口校验
     index.js                       Provider 统一导出
-  components/feishu/
-    FeishuDocumentEditor.vue       编辑器 UI 和 Tiptap 生命周期
-    FeishuDocumentWorkspace.vue    工作台 UI、持久化和 Session 接入
+  components/lark-doc/
+    LarkDocEditor.vue       编辑器 UI 和 Tiptap 生命周期
+    LarkDocWorkspace.vue    工作台 UI、持久化和 Session 接入
     CommandMenu.vue                `/` 命令菜单
     CodeNode.vue                   代码块 NodeView 和高亮加载
     ImageNode.vue                  图片 NodeView、附件和裁剪
@@ -104,19 +104,19 @@ src/
     documentOperations.js          文档级操作和块移动/复制/删除
     ecsImages.js                   ECS 图片上传适配器
     extensions.js                  Tiptap 扩展集合
-    feishuConfig.js                默认配置和能力开关
+    larkDocConfig.js                默认配置和能力开关
     mockAI.js                      确定性 AI 预览、审阅和提案
     templates.js                   内置模板
     workspace.js                   本地草稿和快照存储
-    feishu.css                     组件样式，使用 `.feishu-document` 命名空间
+    lark-doc.css                     组件样式，使用 `.lark-doc` 命名空间
   utils/
     importExport.js                HTML/Markdown/DOCX/JSON 转换
     logger.js                      脱敏日志
     safety.js                      文档、评论和名称校验
 scripts/
   check-architecture.js            Schema、Session、能力和 Provider 契约检查
-  check-feishu-core.js             编辑器核心行为检查
-  check-feishu-workspace.js        工作区和本地持久化检查
+  check-lark-doc-core.js             编辑器核心行为检查
+  check-lark-doc-workspace.js        工作区和本地持久化检查
   check-ecs-images.js              ECS 图片适配器检查
 ```
 
@@ -191,7 +191,7 @@ AI 预览和提案也应沿用同一套 transaction metadata：生成结果先�
 ```bash
 npm ci
 npm run check:architecture
-npm run check:feishu
+npm run check:lark-doc
 npm run lint
 npm run build
 ```
