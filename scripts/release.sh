@@ -133,6 +133,24 @@ step "预检"
 need_cmd git
 need_cmd node
 need_cmd curl
+
+# 发布锁：防两个 ship 进程并发（踩过一次：旧进程还在等 registry 读侧时又起了一个，
+# 新进程把 package.json 改成下一版，旧进程随后 commit/tag 就把错的版本号钉进了 tag）。
+# 用 mkdir 而不是 [ -f ]，因为 mkdir 在文件系统层是原子的。
+LOCK_DIR="$STATE_DIR/lock"
+if mkdir "$LOCK_DIR" 2>/dev/null; then
+  ok "发布锁已获取（PID $$）"
+else
+  LOCK_PID="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+    die "另一个发布进程正在运行（PID ${LOCK_PID}）。等它跑完再发；确认是残留锁就 rm -rf ${LOCK_DIR}"
+  fi
+  warn "发现残留锁（PID ${LOCK_PID:-未知} 已不存在），接管"
+  printf '%s' "$$" >"$LOCK_DIR/pid"
+fi
+printf '%s' "$$" >"$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
+
 [ -x "$NODE14_DIR/node" ] || die "Node 14 不存在：$NODE14_DIR/node"
 [ -x "$NODE24_DIR/npm" ] || die "Node 24 的 npm 不存在：$NODE24_DIR/npm"
 ok "Node 14 = $("$NODE14_DIR/node" -v) / npm $("$NODE14_DIR/npm" -v)"
