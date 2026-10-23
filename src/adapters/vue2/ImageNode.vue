@@ -239,7 +239,7 @@
 
 <script>
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-2'
-import { safeUrl } from './documentOperations'
+import { safeUrl } from '../../components/lark-doc/documentOperations'
 import { BLOCKED_IMAGE_PLACEHOLDER } from '../../networkPolicy'
 
 export default {

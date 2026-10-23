@@ -1785,14 +1785,15 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CommandMenu from './CommandMenu.vue'
-import ImageNode from './ImageNode.vue'
-import CodeNode from './CodeNode.vue'
 import LarkDocSelect from './LarkDocSelect.vue'
 import LarkDocHeadingMenu from './LarkDocHeadingMenu.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
+// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，由它自己注册进 core 的
+// NodeView 注册表；这里只负责把适配层拉起来，core 与 Vue 之间不再有静态绑定。
+import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
 import commandMenuMixin from './editor/commandMenuMixin'
 import tableToolsMixin from './editor/tableToolsMixin'
@@ -1809,6 +1810,10 @@ import { createNetworkPolicy } from '../../networkPolicy'
 import { normalizeVditorHtml } from '../../legacy'
 // lark-doc.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让
 // 同一份样式在模块图里出现两次，改成单一归属，避免以后 CSS 被静默写两份。
+
+// 把 Vue 2 专属 NodeView 注册进 core 的注册表：本模块一加载就可用，等价于过去的静态
+// 注入；extensions.js 装配 schema 时按节点名查表，不再静态依赖任何 UI 框架。
+registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
@@ -1887,7 +1892,7 @@ export default {
       }
       this.editor = new Editor({
         content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ imageView: ImageNode, codeView: CodeNode, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
+        extensions: createLarkDocExtensions({ maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)

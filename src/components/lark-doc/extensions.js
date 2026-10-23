@@ -24,12 +24,13 @@ import TaskItem from '@tiptap/extension-task-item'
 import TextAlign from '@tiptap/extension-text-align'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import Typography from '@tiptap/extension-typography'
-import { VueNodeViewRenderer } from '@tiptap/vue-2'
 import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { BLOCK_ID_PATTERN, BLOCK_ID_TYPES, INDENT_STEP_PX, MAX_BLOCK_INDENT, TEXT_FOLD_TYPES, blockIdAt, clampBlockIndent, clampHeadingNumberStart, collectBlockIdFixes, collectIndentFixes, computeHeadingNumbers, computeOrderedListNumbers, computeBulletItems, canContinueListNumber, previousSiblingOrderedList, findTextMatches, foldedRange, getSlashMatch, foldableIdPositions, isFoldableBlock, mapHeadingFoldKeys, nodeAtSafe, resolveHeadingHighlightSection, safeAttachmentId, safeColor, safeUrl, sanitizeHTML, stepBlockIndent } from './documentOperations'
 import { createNetworkPolicy } from '../../networkPolicy'
+// NodeView 由适配层注册进注册表；这里只查表，静态依赖里不许再出现 UI 框架。
+import { getNodeView } from '../../registry/nodeviews'
 
 let katexPromise
 /**
@@ -391,7 +392,7 @@ const Formatting = Extension.create({
 })
 
 /** 图片扩展：figure/img 双层契约，所有 src 与附件 id 入 schema 前先做安全校验。 */
-function imageExtension(view, resolveImageFile) {
+function imageExtension(resolveImageFile) {
   return Image.extend({
     addAttributes() {
       return {
@@ -424,12 +425,13 @@ function imageExtension(view, resolveImageFile) {
       if (attrs.width) image.width = Math.max(40, Math.min(2400, Number(attrs.width) || 640))
       return ['figure', figure, ['img', image], ['figcaption', {}, attrs.caption || '']]
     },
-    ...(view ? { addNodeView() { return VueNodeViewRenderer(view) } } : {}),
+    // 图片 NodeView 查注册表：没注册就走上面的 renderHTML 默认渲染。
+    addNodeView() { const view = getNodeView('image'); if (view) return view },
   }).configure({ allowBase64: true, resolveImageFile })
 }
 
 /** 代码块扩展：语言标记进 data-language，并透传图表/高亮性能配置。 */
-function codeExtension(view, config) {
+function codeExtension(config) {
   return CodeBlock.extend({
     addAttributes() {
       return {
@@ -442,7 +444,8 @@ function codeExtension(view, config) {
         },
       }
     },
-    ...(view ? { addNodeView() { return VueNodeViewRenderer(view) } } : {}),
+    // 代码块 NodeView（语言下拉 / 高亮 / 图表）查注册表。
+    addNodeView() { const view = getNodeView('codeBlock'); if (view) return view },
   }).configure({
     syntaxHighlight: config?.performance?.syntaxHighlight !== false,
     diagram: config?.features?.diagram !== false,
@@ -942,7 +945,7 @@ export function createLarkDocExtensions(options = {}) {
   const enabled = (name) => options.config?.features?.[name] !== false
   return [
     StarterKit.configure({ heading: false, codeBlock: false, orderedList: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
-    LarkDocHeading, LarkDocOrderedList, codeExtension(options.codeView, options.config), imageExtension(options.imageView, options.resolveImageFile),
+    LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile),
     Details.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),

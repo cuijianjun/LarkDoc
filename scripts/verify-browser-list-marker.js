@@ -179,7 +179,10 @@ async function main() {
   record('[列表] 层级格式 1. / a. / i.', JSON.stringify(markers.labels) === JSON.stringify(['1.', '2.', 'a.', 'b.', 'i.', '5.', '6.']), markers.labels.join(' '))
   record('[列表] 深度写进 data-depth', JSON.stringify(markers.depths) === JSON.stringify(['1', '1', '2', '2', '3', '1', '1']), markers.depths.join(','))
   record('[列表] ol start=5 从 5 起算', markers.labels.slice(-2).join(' ') === '5. 6.', markers.labels.slice(-2).join(' '))
-  record('[列表] 关掉浏览器原生 marker', markers.listStyle === 'none' && markers.listPadding === '24px' && markers.bulletListStyle === 'none',
+  // 飞书口径：顶层列表不加 UA 那套缩进，序号顶格对齐正文行首。lark-doc.css:150 的
+  // `padding: 0` 是既定口径而非缺陷，所以这条断言从「必须是 24px」改成「不许有残留原生缩进」。
+  // 改动只动断言、不许动 CSS。
+  record('[列表] 关掉浏览器原生 marker', markers.listStyle === 'none' && markers.listPadding === '0px' && markers.bulletListStyle === 'none',
     `ol=${markers.listStyle}/${markers.listPadding} ul=${markers.bulletListStyle}`)
   record('[列表] 序号用飞书主色 #1456f0', markers.colors.every((color) => color === LARK_DOC_PRIMARY), markers.colors[0])
   record('[列表] 序号字号跟随正文', markers.fontSizes.every((size) => size === markers.bodyFontSize), `${markers.fontSizes[0]} / ${markers.bodyFontSize}`)

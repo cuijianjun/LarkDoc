@@ -21,8 +21,10 @@
 - **门禁**：`npm run check` 必须 **EXIT=0 且 0 warning**。链内已含 `check:architecture`。
 - **断言**：10 套，跑前需先起 demo（`apps/vue2-webpack-node14`，端口 8080，路由 `/lark-doc`，暴露 `window.__larkDoc`）并 **run_in_background**：
   `node scripts/verify-browser-{highlight-fold,heading-number,heading-menu,icon-align,list-marker,list-number-menu,element,mermaid,colors}.js` + `npm run check:vditor`
-  基线数：highlight-fold **74** / heading-number **38** / heading-menu **16** / icon-align **7** / list-marker **23** / list-number-menu **30** / element **14** / mermaid **12** / vditor **91** / colors **14**。
-  （colors 的 14 由 Task 1 Step 3 实测回填：开工前跑 `node scripts/verify-browser-colors.js`，14/14 全 PASS。）
+  基线数：highlight-fold **74** / heading-number **38** / heading-menu **16** / icon-align **7** / list-marker **23** / list-number-menu **30** / element **14** / mermaid **18** / vditor **93** / colors **14**。
+  （colors 的 14、mermaid 的 18、vditor 的 93 均为 Task 1 实测：脚本比早期记录更完善，
+   故按实跑数订正；list-marker 的 23 也由同批实测确认 —— 那条 grep 断言原本按 24px 写，
+   与既定飞书口径（顶层列表序号顶格）冲突，Task 1 已把断言改成按口径判断，未改 CSS。）
 - **原则**：只搬不改行为。任何一步结束后 10 套断言不得回退。
 - **分支**：`next/0.12`（主题切换另用独立 `feat/theme`，不进本分支）。
 - **发布**：走 `npm run ship`，不手工摸索。

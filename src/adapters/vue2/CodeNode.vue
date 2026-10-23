@@ -96,9 +96,9 @@
 
 <script>
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
-import { isDiagramLanguage, renderDiagram } from './diagram'
-import { INDENT_STEP_PX, clampBlockIndent } from './documentOperations'
-import LarkDocSelect from './LarkDocSelect.vue'
+import { isDiagramLanguage, renderDiagram } from '../../components/lark-doc/diagram'
+import { INDENT_STEP_PX, clampBlockIndent } from '../../components/lark-doc/documentOperations'
+import LarkDocSelect from '../../components/lark-doc/LarkDocSelect.vue'
 
 // Code blocks are uncommon on the document's first paint. Keep both the
 // highlighter core and grammars out of the route chunk until one is rendered.

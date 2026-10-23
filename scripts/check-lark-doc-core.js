@@ -4,6 +4,8 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 const root = path.resolve(__dirname, '../src/components/lark-doc')
+// Vue 2 专属 NodeView（图片 / 代码块）已搬到 src/adapters/vue2/，不再是 core 的一部分。
+const vueNodeRoot = path.resolve(__dirname, '../src/adapters/vue2')
 const sourceRoot = path.resolve(__dirname, '../src')
 const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
@@ -23,18 +25,20 @@ const { getSchema, getExtensionField } = require('@tiptap/core')
 const { EditorState, TextSelection } = require('@tiptap/pm/state')
 const { history, undo } = require('@tiptap/pm/history')
 const schema = getSchema(createLarkDocExtensions())
-function loadComponent(name) {
+function loadComponent(name, base = root) {
   const { parseComponent } = require('vue-template-compiler')
-  const filename = path.join(root, name)
+  const filename = path.join(base, name)
   const Module = require('module')
   const module = new Module(filename)
   module.filename = filename
-  module.paths = Module._nodeModulePaths(root)
+  module.paths = Module._nodeModulePaths(base)
   const sfc = parseComponent(fs.readFileSync(filename, 'utf8'))
   const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
   const originalVueLoader = require.extensions['.vue']
   const originalCssLoader = require.extensions['.css']
-  require.extensions['.vue'] = (child, childPath) => { child.exports = loadComponent(path.basename(childPath)) }
+  // SFC 里的相对 import 已被 require 解成绝对路径，按它自己的目录回装载，
+  // 这样跨目录（如 ../../adapters/vue2/*.vue）也能命中。
+  require.extensions['.vue'] = (child, childPath) => { child.exports = loadComponent(path.basename(childPath), path.dirname(childPath)) }
   require.extensions['.css'] = () => {}
   try {
     module._compile(code, filename)
@@ -1066,14 +1070,16 @@ check('Moving a sole column paragraph leaves a valid empty block and undoes once
   assert(editor.state.doc.eq(original))
 })
 check('Image resize/caption changes use document attributes and honor readonly', () => {
-  assert(fs.existsSync(path.join(root, 'ImageNode.vue')), 'Missing image NodeView: resize/crop/preview/caption are not implemented')
+  assert(fs.existsSync(path.join(vueNodeRoot, 'ImageNode.vue')), 'Missing image NodeView: resize/crop/preview/caption are not implemented')
   const { parseComponent } = require('vue-template-compiler')
-  const sfc = parseComponent(fs.readFileSync(path.join(root, 'ImageNode.vue'), 'utf8'))
+  const sfc = parseComponent(fs.readFileSync(path.join(vueNodeRoot, 'ImageNode.vue'), 'utf8'))
   const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
   const Module = require('module')
-  const module = new Module(path.join(root, 'ImageNode.vue'))
-  module.paths = Module._nodeModulePaths(root)
-  module._compile(code, path.join(root, 'ImageNode.vue'))
+  const module = new Module(path.join(vueNodeRoot, 'ImageNode.vue'))
+  // filename 必须在 _compile 之前设好：相对导入按它解析（Node 只用 parent.paths 兜不住相对路径）。
+  module.filename = path.join(vueNodeRoot, 'ImageNode.vue')
+  module.paths = Module._nodeModulePaths(vueNodeRoot)
+  module._compile(code, path.join(vueNodeRoot, 'ImageNode.vue'))
   const component = module.exports.default
   const editor = editorFor(doc([{ type: 'image', attrs: { src: 'data:image/png;base64,aGVsbG8=', width: 200 } }]))
   const vm = {
@@ -1091,7 +1097,7 @@ check('Image resize/caption changes use document attributes and honor readonly',
   assert.strictEqual(editor.state.doc.firstChild.attrs.caption, '说明')
 })
 check('Resetting a cropped ECS image restores the attachment matching the original URL', () => {
-  const component = loadComponent('ImageNode.vue')
+  const component = loadComponent('ImageNode.vue', vueNodeRoot)
   const editor = editorFor(doc([{ type: 'image', attrs: { src: 'https://example.com/cropped.png', attchId: 'cropped', originalSrc: 'https://example.com/original.png', originalAttchId: 'original' } }]))
   const vm = { editor, node: editor.state.doc.firstChild, updateAttributes: (attrs) => editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { ...editor.state.doc.firstChild.attrs, ...attrs })) }
   component.methods.resetImage.call(vm)
@@ -1263,14 +1269,15 @@ check('Indent keyboard shortcuts follow the same previous-block ceiling', () => 
 })
 
 check('Code language changes preserve code and highlighting escapes HTML', () => {
-  assert(fs.existsSync(path.join(root, 'CodeNode.vue')), 'Missing code NodeView: language/highlight/copy are not implemented')
+  assert(fs.existsSync(path.join(vueNodeRoot, 'CodeNode.vue')), 'Missing code NodeView: language/highlight/copy are not implemented')
   const { parseComponent } = require('vue-template-compiler')
-  const sfc = parseComponent(fs.readFileSync(path.join(root, 'CodeNode.vue'), 'utf8'))
+  const sfc = parseComponent(fs.readFileSync(path.join(vueNodeRoot, 'CodeNode.vue'), 'utf8'))
   const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
   const Module = require('module')
-  const module = new Module(path.join(root, 'CodeNode.vue'))
-  module.paths = Module._nodeModulePaths(root)
-  module._compile(code, path.join(root, 'CodeNode.vue'))
+  const module = new Module(path.join(vueNodeRoot, 'CodeNode.vue'))
+  module.filename = path.join(vueNodeRoot, 'CodeNode.vue')
+  module.paths = Module._nodeModulePaths(vueNodeRoot)
+  module._compile(code, path.join(vueNodeRoot, 'CodeNode.vue'))
   const component = module.exports.default
   const document = doc([{ type: 'codeBlock', content: [text('const value = "<script>"')] }])
   const editor = editorFor(document)
@@ -1286,7 +1293,7 @@ check('Code language changes preserve code and highlighting escapes HTML', () =>
   assert.strictEqual(editor.state.doc.firstChild.attrs.language, 'javascript')
 })
 async function checkCodeHighlightLazy() {
-  const component = loadComponent('CodeNode.vue')
+  const component = loadComponent('CodeNode.vue', vueNodeRoot)
   const document = doc([{ type: 'codeBlock', content: [text('const value = "<script>"')] }])
   const editor = editorFor(document)
   editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { language: 'javascript' }))
@@ -1328,7 +1335,7 @@ async function checkEcsUploadBoundary() {
 }
 
 async function checkEcsCropBoundary() {
-  const component = loadComponent('ImageNode.vue')
+  const component = loadComponent('ImageNode.vue', vueNodeRoot)
   const editor = editorFor(doc([{ type: 'image', attrs: { src: 'https://example.com/original.png', attchId: 'original' } }]))
   const originalGlobals = { Image: global.Image, File: global.File, document: global.document }
   // Node 核心测试仅替代解码/canvas I/O；正文、schema 与裁剪后元数据更新均运行实际代码。
