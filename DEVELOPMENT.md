@@ -297,3 +297,40 @@ const doc = new LarkDoc({ element: host })
 - **Rspack/Rslib 已否决**：全部版本要求 Node ≥16（最新 ≥20.19），与本包 Node 14.21.3 硬约束冲突；且实测全量构建仅 53s，5-10x 加速省 43s，不值当。
 - **starter-kit 扩展「瘦身」不可行**：`@tiptap/starter-kit` 顶层无条件 import 全部 21 项，`configure({ xxx: false })` 省不了体积（已进 bundle）。逐一排查确认 blockquote/horizontalRule/underline/strike/hardBreak 等均在工具栏/气泡条/导入导出被真实使用，dropcursor/gapcursor/trailingNode/undoRedo 来自 `@tiptap/extensions` 合并包（单扩展仅 226B，删了省不到 1KB 却损失撤销/光标体验）。`tiptap.esm.js` 135KB gzip 实为 prosemirror-view/core/model/state 内核，不可优化。
 - **tiptap 3.32.0 升级**：20 个 `@tiptap/*` 统一版本，补齐 heading/ordered-list/code-block 三个隐式传递依赖为显式声明；`@tiptap/extensions` 仅合并 8 个杂项扩展（character-count/drop-cursor/focus/gap-cursor/placeholder/selection/trailing-node/undo-redo），heading/table/image 等核心扩展仍独立发布，不可迁移。
+
+---
+
+## 7. 发布（一键脚本）
+
+**日常只需要一条命令，不要再手工分步做**：
+
+```bash
+cd apps/lark-doc
+bash scripts/release.sh            # = npm run release，0.11.2 → 0.11.3
+bash scripts/release.sh --minor    # 0.11.2 → 0.12.0
+bash scripts/release.sh --version 1.0.0
+bash scripts/release.sh --dry-run  # 只看计划，不动任何东西
+```
+
+脚本按序执行 7 步，任一步失败立即中止（退出码非 0），已 bump 的版本号记在 `.release/pending-version`，修好后 `--resume` 从断点继续：
+
+| 步骤 | 做了什么 | 失败常见原因 |
+|---|---|---|
+| 1 预检 | Node14/Node24 存在、git remote、`npm whoami`（剥代理） | npm 未登录 |
+| 2 版本号 | patch/minor/major 自增；查 registry 该版本是否已存在；查同名 tag | 版本已被占用 / tag 已存在 |
+| 3 写入 | 只改 `package.json` 的 `version` 一行（保留原格式），不建 git commit | — |
+| 4 校验 | `PATH=node14 ... npm run check`（日志 `.release/check-<版本>.log`） | 任何一项红 |
+| 5 打包 | `npm pack --ignore-scripts`（跳过 prepack 重复构建），记 sha1，并断言 tarball 里四产物 + css 齐备 | `files` 配错 / 漏构建 |
+| 6 发布 | `npm publish --ignore-scripts`，然后 **GET tarball 比对 sha1** + 读 `dist-tags` | 见下方「发布三坑」 |
+| 7 Git | `git add -u`（未跟踪文件默认不入库，要带就 `--include-new`）→ commit → `tag v<版本>` → push 分支和 tag | 认证失败 / 非快进 |
+
+开关：`--skip-check`（dist 已最新，省 40s）、`--skip-publish`（只提 GitHub）、`--skip-git`（只发 npm）、`--no-wait`（不等读侧同步）、`--include-new`、`--resume`、`-m "说明"`。
+
+### 发布三坑（脚本已内建处理，改脚本时别退回去）
+
+1. **必须剥代理**：本机 `HTTP(S)_PROXY=127.0.0.1:51253` 会让 registry 访问失败/超时。脚本里所有网络调用走 `net()`（`env -u HTTP_PROXY -u HTTPS_PROXY …`），curl 一律 `--noproxy '*'`。
+2. **构建用 Node 14，发布用 npm 11**：`engines` 卡 14.21.3，构建链只在 Node 14 验过；而 publish 用 `~/.nvm/versions/node/v24.22.0/bin/npm`（11.x）实测最稳。两者都写死在脚本头部常量里。
+3. **不能拿 `npm view` 的即时结果判成败**：publish 返回 0 后 `dist-tags` 会立刻更新，但 **tarball HEAD 会持续 404 约 5 分钟**，此时 **GET 已直接 200**。所以判定标准是「GET 200 + sha1 与本地 pack 一致」，最长等 40×8s；`--no-wait` 时只试 3 次。
+   （另：`npm pack` / `npm publish` 都带 `--ignore-scripts`，因为 `prepack` 会把四份产物再构建一遍 —— check 已经建好了，重复构建纯浪费时间。）
+
+

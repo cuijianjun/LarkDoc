@@ -8,3 +8,4 @@ npm-debug.log*
 .superpowers/
 .history/
 .verify-shots/
+.release/

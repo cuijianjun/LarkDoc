@@ -18,7 +18,10 @@
     "check:architecture": "node scripts/check-architecture.js",
     "prepack": "npm run build && npm run build:umd && npm run build:esm && npm run build:element && npm run size",
     "build:element": "LARK_DOC_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc-element --formats umd-min src/web-component/index.js",
-    "size": "size-limit"
+    "size": "size-limit",
+    "release": "bash scripts/release.sh",
+    "release:patch": "bash scripts/release.sh --patch",
+    "release:minor": "bash scripts/release.sh --minor"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
