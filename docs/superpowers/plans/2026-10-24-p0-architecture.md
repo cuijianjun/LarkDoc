@@ -21,8 +21,8 @@
 - **门禁**：`npm run check` 必须 **EXIT=0 且 0 warning**。链内已含 `check:architecture`。
 - **断言**：10 套，跑前需先起 demo（`apps/vue2-webpack-node14`，端口 8080，路由 `/lark-doc`，暴露 `window.__larkDoc`）并 **run_in_background**：
   `node scripts/verify-browser-{highlight-fold,heading-number,heading-menu,icon-align,list-marker,list-number-menu,element,mermaid,colors}.js` + `npm run check:vditor`
-  基线数：highlight-fold **74** / heading-number **38** / heading-menu **16** / icon-align **7** / list-marker **23** / list-number-menu **30** / element **14** / mermaid **12** / vditor **91**。
-  ⚠️ `colors` 套的基线数**未在既存记录中**，Task 1 开工前先跑一次实测并回填本文档；在此之前它的"不回退"判据是「与开工前数字相同」而非固定值。
+  基线数：highlight-fold **74** / heading-number **38** / heading-menu **16** / icon-align **7** / list-marker **23** / list-number-menu **30** / element **14** / mermaid **12** / vditor **91** / colors **14**。
+  （colors 的 14 由 Task 1 Step 3 实测回填：开工前跑 `node scripts/verify-browser-colors.js`，14/14 全 PASS。）
 - **原则**：只搬不改行为。任何一步结束后 10 套断言不得回退。
 - **分支**：`next/0.12`（主题切换另用独立 `feat/theme`，不进本分支）。
 - **发布**：走 `npm run ship`，不手工摸索。

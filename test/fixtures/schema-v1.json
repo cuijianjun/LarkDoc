@@ -1,0 +1,453 @@
+{
+  "$comment": "P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。",
+  "topNode": "doc",
+  "nodes": {
+    "blockMath": {
+      "group": "block",
+      "inline": false,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "latex": {
+          "default": ""
+        }
+      }
+    },
+    "blockquote": {
+      "content": "block+",
+      "group": "block",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "bulletList": {
+      "content": "listItem+",
+      "group": "block list",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "callout": {
+      "content": "block+",
+      "group": "block",
+      "defining": true,
+      "attrs": {
+        "backgroundColor": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "borderColor": {
+          "default": null
+        },
+        "color": {
+          "default": null
+        },
+        "emoji": {
+          "default": "💡"
+        }
+      }
+    },
+    "codeBlock": {
+      "content": "text*",
+      "group": "block",
+      "code": true,
+      "defining": true,
+      "marks": "",
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "indent": {
+          "default": 0
+        },
+        "language": {
+          "default": "plaintext"
+        }
+      }
+    },
+    "column": {
+      "content": "block+",
+      "isolating": true,
+      "attrs": {
+        "width": {
+          "default": 50
+        }
+      }
+    },
+    "columns": {
+      "content": "column{2,5}",
+      "group": "block",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "details": {
+      "content": "detailsSummary detailsContent",
+      "group": "block",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "open": {
+          "default": false
+        }
+      }
+    },
+    "detailsContent": {
+      "content": "block+",
+      "selectable": false,
+      "defining": true,
+      "attrs": {}
+    },
+    "detailsSummary": {
+      "content": "text*",
+      "selectable": false,
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "doc": {
+      "content": "block+",
+      "attrs": {}
+    },
+    "emoji": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "name": {
+          "default": "smile"
+        }
+      }
+    },
+    "hardBreak": {
+      "group": "inline",
+      "inline": true,
+      "selectable": false,
+      "linebreakReplacement": true,
+      "attrs": {}
+    },
+    "heading": {
+      "content": "inline*",
+      "group": "block",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "indent": {
+          "default": 0
+        },
+        "level": {
+          "default": 1
+        },
+        "lineHeight": {
+          "default": null
+        },
+        "numbering": {
+          "default": false
+        },
+        "numberingStart": {
+          "default": null
+        },
+        "textAlign": {
+          "default": null
+        }
+      }
+    },
+    "horizontalRule": {
+      "group": "block",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "image": {
+      "group": "block",
+      "inline": false,
+      "draggable": true,
+      "attrs": {
+        "align": {
+          "default": "center"
+        },
+        "alt": {
+          "default": null
+        },
+        "attchId": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "caption": {
+          "default": ""
+        },
+        "height": {
+          "default": null
+        },
+        "originalAttchId": {
+          "default": null
+        },
+        "originalSrc": {
+          "default": null
+        },
+        "src": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "width": {
+          "default": null
+        }
+      }
+    },
+    "inlineMath": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "latex": {
+          "default": ""
+        }
+      }
+    },
+    "listItem": {
+      "content": "paragraph block*",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "numberStart": {
+          "default": null
+        }
+      }
+    },
+    "orderedList": {
+      "content": "listItem+",
+      "group": "block list",
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "continueFrom": {
+          "default": false
+        },
+        "start": {
+          "default": 1
+        },
+        "type": {
+          "default": null
+        }
+      }
+    },
+    "paragraph": {
+      "content": "inline*",
+      "group": "block",
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "indent": {
+          "default": 0
+        },
+        "lineHeight": {
+          "default": null
+        },
+        "textAlign": {
+          "default": null
+        }
+      }
+    },
+    "table": {
+      "content": "tableRow+",
+      "group": "block",
+      "isolating": true,
+      "tableRole": "table",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "tableCell": {
+      "content": "block+",
+      "isolating": true,
+      "tableRole": "cell",
+      "attrs": {
+        "align": {
+          "default": null
+        },
+        "backgroundColor": {
+          "default": null
+        },
+        "colspan": {
+          "default": 1
+        },
+        "colwidth": {
+          "default": null
+        },
+        "rowspan": {
+          "default": 1
+        },
+        "textAlign": {
+          "default": null
+        },
+        "verticalAlign": {
+          "default": null
+        }
+      }
+    },
+    "tableHeader": {
+      "content": "block+",
+      "isolating": true,
+      "tableRole": "header_cell",
+      "attrs": {
+        "align": {
+          "default": null
+        },
+        "backgroundColor": {
+          "default": null
+        },
+        "colspan": {
+          "default": 1
+        },
+        "colwidth": {
+          "default": null
+        },
+        "rowspan": {
+          "default": 1
+        },
+        "textAlign": {
+          "default": null
+        },
+        "verticalAlign": {
+          "default": null
+        }
+      }
+    },
+    "tableRow": {
+      "content": "(tableCell | tableHeader)*",
+      "tableRole": "row",
+      "attrs": {}
+    },
+    "taskItem": {
+      "content": "paragraph block*",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "checked": {
+          "default": false
+        }
+      }
+    },
+    "taskList": {
+      "content": "taskItem+",
+      "group": "block list",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "text": {
+      "group": "inline",
+      "attrs": {}
+    }
+  },
+  "marks": {
+    "bold": {
+      "attrs": {}
+    },
+    "code": {
+      "code": true,
+      "attrs": {}
+    },
+    "highlight": {
+      "attrs": {
+        "color": {
+          "default": null
+        }
+      }
+    },
+    "italic": {
+      "attrs": {}
+    },
+    "link": {
+      "attrs": {
+        "class": {
+          "default": null
+        },
+        "href": {
+          "default": null
+        },
+        "rel": {
+          "default": "noopener noreferrer"
+        },
+        "target": {
+          "default": "_blank"
+        },
+        "title": {
+          "default": null
+        }
+      }
+    },
+    "strike": {
+      "attrs": {}
+    },
+    "subscript": {
+      "attrs": {}
+    },
+    "superscript": {
+      "attrs": {}
+    },
+    "textStyle": {
+      "attrs": {
+        "backgroundColor": {
+          "default": null
+        },
+        "color": {
+          "default": null
+        },
+        "fontFamily": {
+          "default": null
+        },
+        "fontSize": {
+          "default": null
+        },
+        "lineHeight": {
+          "default": null
+        }
+      }
+    },
+    "underline": {
+      "attrs": {}
+    }
+  }
+}

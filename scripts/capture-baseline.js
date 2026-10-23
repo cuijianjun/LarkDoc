@@ -1,0 +1,253 @@
+'use strict'
+
+/**
+ * 抓取 P0「重构前」基线 —— 三个后续任务各自要比对的原点。
+ *
+ *   node scripts/capture-baseline.js schema   # test/fixtures/schema-v1.json
+ *   node scripts/capture-baseline.js legacy   # test/fixtures/legacy/document-v1.json
+ *   NODE_PATH=<playwright-core 所在 node_modules> \
+ *     node scripts/capture-baseline.js dom    # test/fixtures/editor-dom-before.html
+ *
+ * 三条都走真实运行：schema 由 getSchema() 序列化，legacy 正文由 schema 往返
+ * 校验后落盘，DOM 由真实浏览器渲染后抓 outerHTML。禁止手填任何数字。
+ */
+
+const fs = require('fs')
+const path = require('path')
+
+const root = path.resolve(__dirname, '..')
+const sourceRoot = path.join(root, 'src')
+const fixtures = path.join(root, 'test', 'fixtures')
+
+/**
+ * src 是 ESM，Node 直接 require 不了。这里复用既存 check 脚本的装法：
+ * 只对 src 下的文件挂 babel CJS 变换，其余一律走原生 loader。
+ */
+function loadSource() {
+  const { transformSync } = require(path.join(root, 'node_modules/@babel/core'))
+  const originalLoader = require.extensions['.js']
+  require.extensions['.js'] = (module, filename) => {
+    if (!filename.startsWith(sourceRoot + path.sep)) return originalLoader(module, filename)
+    const { code } = transformSync(fs.readFileSync(filename, 'utf8'), {
+      babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'],
+    })
+    module._compile(code, filename)
+  }
+  return require(path.join(sourceRoot, 'components/lark-doc/extensions.js'))
+}
+
+function openSchema() {
+  const { createLarkDocExtensions } = loadSource()
+  const { getSchema } = require(path.join(root, 'node_modules/@tiptap/core'))
+  return getSchema(createLarkDocExtensions())
+}
+
+const jsonSafe = (value) => {
+  try { JSON.parse(JSON.stringify(value === undefined ? null : value)); return true } catch (_) { return false }
+}
+
+/**
+ * 只序列化"决定某种 JSON 能不能解析回来"的那部分契约。
+ * parseHTML / renderHTML / validate 是函数，序列化进快照只会让每次比对产生噪声。
+ */
+function serializeAttrs(attrs) {
+  const out = {}
+  for (const name of Object.keys(attrs || {}).sort()) {
+    const spec = attrs[name]
+    out[name] = { default: jsonSafe(spec.default) ? spec.default : `<${typeof spec.default}>` }
+  }
+  return out
+}
+
+const SPEC_KEYS = ['content', 'group', 'inline', 'atom', 'selectable', 'draggable', 'code', 'whitespace', 'defining', 'isolating', 'linebreakReplacement', 'tableRole']
+
+function serializeSpec(spec) {
+  const out = {}
+  for (const key of SPEC_KEYS) {
+    if (spec[key] === undefined) continue
+    const value = Array.isArray(spec[key]) ? [...spec[key]].sort() : spec[key]
+    out[key] = jsonSafe(value) ? value : `<${typeof value}>`
+  }
+  if (spec.marks !== undefined) out.marks = Array.isArray(spec.marks) ? [...spec.marks].sort() : spec.marks
+  out.attrs = serializeAttrs(spec.attrs)
+  return out
+}
+
+// 按名字排序再写：OrderedMap 的插入顺序没有语义，重排不该被算成回归。
+function serializeMap(map) {
+  const acc = {}
+  map.forEach((name, spec) => { acc[name] = serializeSpec(spec) })
+  const sorted = {}
+  for (const name of Object.keys(acc).sort()) sorted[name] = acc[name]
+  return sorted
+}
+
+function captureSchema() {
+  const schema = openSchema()
+  const payload = {
+    $comment: 'P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。',
+    topNode: schema.spec.topNode,
+    nodes: serializeMap(schema.spec.nodes),
+    marks: serializeMap(schema.spec.marks),
+  }
+  const target = path.join(fixtures, 'schema-v1.json')
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, `${JSON.stringify(payload, null, 2)}\n`)
+  console.log(`写入 ${path.relative(root, target)}：${Object.keys(payload.nodes).length} 节点 / ${Object.keys(payload.marks).length} mark`)
+}
+
+/**
+ * 手工构造的 v1 正文候选：覆盖老文档最常见的五类块。
+ * 写盘前先过一遍真实 schema（nodeFromJSON → toJSON），因此产物天然 round-trip 无损，
+ * 且是"浏览器里 getJSON() 出来的样子"（全部 attrs 显式）。
+ */
+function legacyCandidate() {
+  const t = (text, marks) => (marks ? { type: 'text', text, marks } : { type: 'text', text })
+  const p = (text, attrs) => ({ type: 'paragraph', attrs: { indent: 0, ...(attrs || {}) }, content: text ? [t(text)] : [] })
+  return {
+    type: 'doc',
+    content: [
+      { type: 'heading', attrs: { level: 1, indent: 0, numbering: true, numberingStart: 1 }, content: [t('P0 架构缝回归样例')] },
+      {
+        type: 'paragraph', attrs: { indent: 0 }, content: [
+          t('普通正文，后面依次叠加行内样式：'),
+          t('加粗', [{ type: 'bold' }]),
+          t('斜体', [{ type: 'italic' }]),
+          t('下划线', [{ type: 'underline' }]),
+          t('删除线', [{ type: 'strike' }]),
+          t('行内代码', [{ type: 'code' }]),
+          t('上标', [{ type: 'superscript' }]),
+          t('下标', [{ type: 'subscript' }]),
+          t('黄色高亮', [{ type: 'highlight', attrs: { color: '#ffdd00' } }]),
+          t('红色前景', [{ type: 'textStyle', attrs: { color: '#d83931' } }]),
+          t('链接', [{ type: 'link', attrs: { href: 'https://example.com/lark-doc', title: '示例标题' } }]),
+        ],
+      },
+      { type: 'paragraph', attrs: { indent: 2 }, content: [t('缩进两级的一段。')] },
+      { type: 'heading', attrs: { level: 2 }, content: [t('列表')] },
+      {
+        type: 'bulletList', attrs: {}, content: [
+          { type: 'listItem', attrs: {}, content: [p('无序列表第一项')] },
+          { type: 'listItem', attrs: {}, content: [p('无序列表第二项'), { type: 'bulletList', attrs: {}, content: [{ type: 'listItem', attrs: {}, content: [p('嵌套无序项')] }] }] },
+        ],
+      },
+      {
+        type: 'orderedList', attrs: { start: 1, continueFrom: false }, content: [
+          { type: 'listItem', attrs: {}, content: [p('有序列表第一项')] },
+          { type: 'listItem', attrs: {}, content: [p('有序列表第二项')] },
+          { type: 'listItem', attrs: { numberStart: 1 }, content: [p('有序列表：从这里重新开局'), { type: 'orderedList', attrs: { start: 1 }, content: [{ type: 'listItem', attrs: {}, content: [p('嵌套有序项')] }] }] },
+        ],
+      },
+      {
+        type: 'taskList', attrs: {}, content: [
+          { type: 'taskItem', attrs: { checked: true }, content: [p('已完成的任务')] },
+          { type: 'taskItem', attrs: { checked: false }, content: [p('未完成的任务')] },
+        ],
+      },
+      { type: 'heading', attrs: { level: 2 }, content: [t('表格')] },
+      {
+        type: 'table', attrs: {}, content: [
+          {
+            type: 'tableRow', attrs: {}, content: [
+              { type: 'tableHeader', attrs: { colspan: 1, rowspan: 1, colwidth: [160, 160, 160] }, content: [p('列一')] },
+              { type: 'tableHeader', attrs: { colspan: 1, rowspan: 1 }, content: [p('列二')] },
+              { type: 'tableHeader', attrs: { colspan: 1, rowspan: 1 }, content: [p('列三')] },
+            ],
+          },
+          {
+            type: 'tableRow', attrs: {}, content: [
+              { type: 'tableCell', attrs: { colspan: 1, rowspan: 1 }, content: [p('A1')] },
+              { type: 'tableCell', attrs: { colspan: 1, rowspan: 1, textAlign: 'center' }, content: [p('B1')] },
+              { type: 'tableCell', attrs: { colspan: 1, rowspan: 1, backgroundColor: '#f0f2f5' }, content: [p('C1'), { type: 'paragraph', attrs: { indent: 0 }, content: [t('带'), t('加粗', [{ type: 'bold' }])] }] },
+            ],
+          },
+        ],
+      },
+      { type: 'heading', attrs: { level: 2 }, content: [t('折叠')] },
+      {
+        type: 'details', attrs: { open: true }, content: [
+          { type: 'detailsSummary', attrs: {}, content: [t('折叠块标题（点标题收起/展开）')] },
+          { type: 'detailsContent', attrs: {}, content: [p('折叠内容第一段。'), p('折叠内容第二段。')] },
+        ],
+      },
+      {
+        type: 'details', attrs: { open: false }, content: [
+          { type: 'detailsSummary', attrs: {}, content: [t('默认收起的折叠块')] },
+          { type: 'detailsContent', attrs: {}, content: [p('收起时正文仍在 JSON 里，不能丢。')] },
+        ],
+      },
+    ],
+  }
+}
+
+function captureLegacy() {
+  const schema = openSchema()
+  const json = schema.nodeFromJSON(legacyCandidate()).toJSON()
+  // 自检：round-trip 必须逐字节稳定，否则后面 Task 4 的比对没有意义。
+  const roundTrip = schema.nodeFromJSON(JSON.parse(JSON.stringify(json))).toJSON()
+  if (JSON.stringify(roundTrip) !== JSON.stringify(json)) throw new Error('legacy 正文 round-trip 不稳定')
+  const kinds = new Set()
+  const walk = (node) => { kinds.add(node.type); (node.content || []).forEach(walk) }
+  walk(json)
+  const target = path.join(fixtures, 'legacy', 'document-v1.json')
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, `${JSON.stringify(json, null, 2)}\n`)
+  console.log(`写入 ${path.relative(root, target)}：${Array.from(kinds).sort().join(' ')}`)
+}
+
+/**
+ * DOM 快照必须剔除动态 id，否则每次渲染都不同、比对必然失败。
+ * 实测两次挂载的差异只有两类：
+ *   ① 每次重新分配的块 id（data-block-id）——留属性、清掉值，结构仍要比；
+ *   ② mermaid 每次渲染的实例 id（及其派生 id）——整体替换成同一个占位符。
+ */
+function normalizeDom(html) {
+  return html
+    .replace(/\sdata-block-id="[^"]*"/g, ' data-block-id=""')
+    .replace(/lark-doc-diagram-[A-Za-z0-9]+-[A-Za-z0-9]+/g, 'lark-doc-diagram-ID')
+}
+
+function findChromium() {
+  const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
+  if (!fs.existsSync(cache)) return null
+  const dirs = fs.readdirSync(cache)
+    .filter((name) => /^chromium-\d+$/.test(name))
+    .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
+  for (const dir of dirs) {
+    for (const candidate of [
+      path.join(cache, dir, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+      path.join(cache, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+    ]) if (fs.existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+async function captureDom() {
+  const { chromium } = require('playwright-core')
+  const executablePath = findChromium()
+  if (!executablePath) throw new Error('未找到本机 chromium 缓存')
+  const browser = await chromium.launch({ headless: true, executablePath })
+  const page = await browser.newPage({ viewport: { width: 1700, height: 1000 } })
+  try {
+    await page.goto(process.argv[3] || 'http://localhost:8080/lark-doc', { waitUntil: 'networkidle', timeout: 60000 })
+    await page.waitForSelector('.ProseMirror', { timeout: 30000 })
+    await page.waitForSelector('.lark-doc-toolbar', { timeout: 30000 })
+    // 图表/ KaTeX 是异步渲染的，等一拍再抓，否则快照里会出现半成品 SVG。
+    await page.waitForTimeout(1500)
+    const html = normalizeDom(await page.evaluate(() => document.querySelector('.lark-doc-host').innerHTML))
+    const target = path.join(fixtures, 'editor-dom-before.html')
+    fs.writeFileSync(target, `${html}\n`)
+    console.log(`写入 ${path.relative(root, target)}：${html.length} 字符`)
+  } finally {
+    await browser.close()
+  }
+}
+
+const command = process.argv[2]
+const commands = { schema: captureSchema, legacy: captureLegacy, dom: captureDom }
+if (!commands[command]) {
+  console.error('用法：node scripts/capture-baseline.js schema|legacy|dom')
+  process.exit(1)
+}
+const result = commands[command]()
+Promise.resolve(result).catch((error) => { console.error(error); process.exit(1) })
