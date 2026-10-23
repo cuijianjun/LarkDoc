@@ -324,7 +324,12 @@ bash scripts/release.sh --dry-run  # 只看计划，不动任何东西
 | 6 发布 | `npm publish --ignore-scripts`，然后 **GET tarball 比对 sha1** + 读 `dist-tags` | 见下方「发布三坑」 |
 | 7 Git | `git add -u`（未跟踪文件默认不入库，要带就 `--include-new`）→ commit → `tag v<版本>` → push 分支和 tag | 认证失败 / 非快进 |
 
-开关：`--skip-check`（dist 已最新，省 40s）、`--skip-publish`（只提 GitHub）、`--skip-git`（只发 npm）、`--no-wait`（不等读侧同步）、`--include-new`、`--resume`、`-m "说明"`。
+开关：`--git-only`（**只提交推 GitHub，不动版本号 / 不发 npm / 不打 tag**，日常改代码用这个）、`--skip-check`（dist 已最新，省 40s）、`--skip-publish`（只提 GitHub）、`--skip-git`（只发 npm）、`--no-wait`（不等读侧同步）、`--include-new`、`--resume`、`-m "说明"`。
+
+```bash
+# 只同步代码到 GitHub（不发版）
+bash scripts/release.sh --git-only -m "fix: 某某问题"
+```
 
 ### 发布三坑（脚本已内建处理，改脚本时别退回去）
 

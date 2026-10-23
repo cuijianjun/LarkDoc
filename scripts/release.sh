@@ -10,6 +10,7 @@
 #   bash scripts/release.sh --version 1.0.0
 #
 # 常用开关：
+#   --git-only       只提交推 GitHub：不动版本号、不发 npm、不打 tag
 #   --skip-check     跳过 npm run check（dist 已是最新时用，省 ~40s）
 #   --skip-publish   只提交 GitHub，不发 npm
 #   --skip-git       只发 npm，不提交 GitHub
@@ -48,6 +49,7 @@ DO_WAIT=1
 DRY_RUN=0
 RESUME=0
 INCLUDE_NEW=0
+GIT_ONLY=0
 COMMIT_MSG=""
 
 usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
@@ -62,6 +64,7 @@ while [ $# -gt 0 ]; do
     --skip-git) DO_GIT=0; shift ;;
     --no-wait) DO_WAIT=0; shift ;;
     --include-new) INCLUDE_NEW=1; shift ;;
+    --git-only) GIT_ONLY=1; shift ;;
     --resume) RESUME=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -m | --message) COMMIT_MSG="${2:-}"; shift 2 ;;
@@ -90,6 +93,30 @@ net() { env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PRO
 registry() { net curl -s --noproxy '*' --max-time 30 "$@"; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"; }
 
+# 提交 + 推送。$1 = tag | notag，$2 = 默认 commit message
+git_ship() {
+  local want_tag="$1" default_msg="$2" msg
+  if [ "$INCLUDE_NEW" = 1 ]; then git add -A; else git add -u; fi
+  if git diff --cached --quiet; then
+    info "无内容可提交，跳过 commit"
+  else
+    msg="${COMMIT_MSG:-$default_msg}"
+    git commit -q -m "$msg"
+    ok "$(git log --oneline -1)"
+    git diff-tree --no-commit-id --name-only -r HEAD | sed 's/^/        /'
+  fi
+  if [ "$want_tag" = "tag" ] && ! git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+    git tag -a "v$VERSION" -m "v$VERSION"
+    ok "tag v$VERSION"
+  fi
+  git push -q origin "$BRANCH" || die "git push $BRANCH 失败"
+  ok "push $BRANCH"
+  if [ "$want_tag" = "tag" ]; then
+    git push -q origin "v$VERSION" || die "git push tag 失败"
+    ok "push tag v$VERSION"
+  fi
+}
+
 [ -d "$STATE_DIR" ] || mkdir -p "$STATE_DIR"
 
 echo "lark-doc 发布 $(basename "$PKG_DIR") · 当前 $NAME@$CURRENT · 分支 $BRANCH"
@@ -117,13 +144,25 @@ if [ "$DO_GIT" = 1 ]; then
     warn "有未跟踪文件，默认不入库（需一并提交加 --include-new）："
     printf '%s\n' "$NEWFILES" | sed 's/^/        /'
   fi
-  [ -n "$DIRTY" ] || info "工作区无已跟踪改动，本次只有版本号变更"
+  [ "$GIT_ONLY" = 0 ] && [ -z "$DIRTY" ] && info "工作区无已跟踪改动，本次只有版本号变更"
 fi
 
-if [ "$DO_PUBLISH" = 1 ]; then
+if [ "$DO_PUBLISH" = 1 ] && [ "$GIT_ONLY" = 0 ]; then
   WHO="$(net "$NODE24_DIR/npm" whoami --registry="$REGISTRY" 2>/dev/null || true)"
   [ -n "$WHO" ] || die "npm 未登录（${REGISTRY}）。先 npm login"
   ok "npm 身份：$WHO"
+fi
+
+# ---------- 只提交 GitHub 的快路径 ----------
+if [ "$GIT_ONLY" = 1 ]; then
+  step "只提交 GitHub（版本不动、不发 npm、不打 tag）"
+  if [ "$DRY_RUN" = 1 ]; then
+    info "dry-run：将提交 $(git status --porcelain --untracked-files=no | wc -l | tr -d ' ') 个已跟踪改动"
+    exit 0
+  fi
+  git_ship notag "chore: 同步改动"
+  printf '\n✓ 已提交并推送（%s）\n' "$(elapsed)"
+  exit 0
 fi
 
 # ---------- 2. 版本号 ----------
@@ -296,33 +335,10 @@ fi
 # ---------- 7. git ----------
 if [ "$DO_GIT" = 1 ]; then
   step "提交 GitHub"
-  if [ "$INCLUDE_NEW" = 1 ]; then
-    git add -A
-  else
-    git add -u
-  fi
-  if git diff --cached --quiet; then
-    info "无内容可提交，跳过 commit"
-  else
-    MSG="${COMMIT_MSG:-release: v$VERSION}"
-    MSG="$MSG
+  git_ship tag "release: v$VERSION
 
 npm: $NAME@$VERSION
 check: $([ "$DO_CHECK" = 1 ] && echo 'npm run check ✓' || echo 'skipped')"
-    git commit -q -m "$MSG"
-    ok "$(git log --oneline -1)"
-    git diff-tree --no-commit-id --name-only -r HEAD | sed 's/^/        /'
-  fi
-
-  if ! git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-    git tag -a "v$VERSION" -m "v$VERSION"
-    ok "tag v$VERSION"
-  fi
-
-  git push -q origin "$BRANCH" || die "git push $BRANCH 失败"
-  ok "push $BRANCH"
-  git push -q origin "v$VERSION" || die "git push tag 失败"
-  ok "push tag v$VERSION"
 else
   step "跳过 git"
 fi
