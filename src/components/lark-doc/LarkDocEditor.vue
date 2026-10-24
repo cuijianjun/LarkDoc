@@ -1793,6 +1793,9 @@ import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldabl
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
 // Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，由它自己注册进 core 的
 // NodeView 注册表；这里只负责把适配层拉起来，core 与 Vue 之间不再有静态绑定。
+// 注意：core → adapters 这条 import 是刻意的临时反向依赖（P0-01 只做到「注册表缝」，
+// 装配动作仍由 Vue 2 宿主触发），Task 6 拆三端适配时会把 registerVue2NodeViews()
+// 的调用点从 core 移到真正的宿主入口，届时删除本行。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
 import commandMenuMixin from './editor/commandMenuMixin'

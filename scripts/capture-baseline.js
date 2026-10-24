@@ -85,7 +85,13 @@ function serializeMap(map) {
 function captureSchema() {
   const schema = openSchema()
   const payload = {
-    $comment: 'P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。',
+    $comment: [
+      'P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。',
+      '盲区声明（比对的是结构契约，不是行为契约）：① parseHTML / renderHTML / addNodeView /',
+      'parse LaTeX 等函数行为不进快照——两份 schema 即使 JSON 相同，函数仍可能不同；',
+      '② attrs default 为函数或不可 JSON 化的值时，这里只落 `<type>` 占位符；',
+      '③ marks 谓词只存名字数组，谓词语义不校验。若 Task 4 需要比对这些，另行加行为级用例。',
+    ].join('\n   '),
     topNode: schema.spec.topNode,
     nodes: serializeMap(schema.spec.nodes),
     marks: serializeMap(schema.spec.marks),
@@ -196,15 +202,21 @@ function captureLegacy() {
 }
 
 /**
- * DOM 快照必须剔除动态 id，否则每次渲染都不同、比对必然失败。
- * 实测两次挂载的差异只有两类：
+ * DOM 快照必须剔除动态值，否则每次渲染都不同、比对必然失败。
+ * 实测两次挂载的差异共三类：
  *   ① 每次重新分配的块 id（data-block-id）——留属性、清掉值，结构仍要比；
- *   ② mermaid 每次渲染的实例 id（及其派生 id）——整体替换成同一个占位符。
+ *   ② mermaid 每次渲染的实例 id（及其派生 id）——整体替换成同一个占位符；
+ *   ③ mermaid 按内容实测出来的几何（viewBox 宽高、svg 的自适应 max-width）——
+ *     这些数字依赖字体度量，跨机/跨版本会漂，只保留"它们存在"这一事实。
+ *     归一化只针对 mermaid 特征：viewBox 负偏移起点（图标都是 0 0 起）、
+ *     非整数 px 的 max-width（设计值都是整数）。
  */
 function normalizeDom(html) {
   return html
     .replace(/\sdata-block-id="[^"]*"/g, ' data-block-id=""')
     .replace(/lark-doc-diagram-[A-Za-z0-9]+-[A-Za-z0-9]+/g, 'lark-doc-diagram-ID')
+    .replace(/viewBox="-8 -8 [0-9.]+ [0-9.]+"/g, 'viewBox="-8 -8 MERMAID_W MERMAID_H"')
+    .replace(/max-width:\s*\d+\.\d+px/g, 'max-width:MERMAID_Wpx')
 }
 
 function findChromium() {

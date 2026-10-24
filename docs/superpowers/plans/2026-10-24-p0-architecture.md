@@ -18,7 +18,9 @@
 ## Global Constraints
 
 - **Node**：构建用 Node 14.21.3；浏览器断言用 Node 22 且 `NODE_PATH=/Users/cjjxw/.workbuddy/binaries/node/workspace/node_modules`。
-- **门禁**：`npm run check` 必须 **EXIT=0 且 0 warning**。链内已含 `check:architecture`。
+- **门禁**：`npm run check` 必须 **EXIT=0 且「不新增 warning」**（**不是绝对 0 warning** —— 见 R13）。链内已含 `check:architecture`。
+
+  > **R13（controller 裁定，binding）**：基线 HEAD（`7cf8059`）客观带 **15 条与本任务无关的告警**，本期不许也不必清零，判据 = **不新增**。构成：vendored mermaid 的 `arguments.callee`（不动 vendor）、Node 22 的 punycode DeprecationWarning（不动运行时）、`ImageNode.vue`/`CodeNode.vue` 的 `style0` ×8。同一批告警在 `.release/check-0.11.5.log` 里有同款，属既存。任何任务若声称达成"0 warning"而实际只是没看到这 15 条，视为误报。
 - **断言**：10 套，跑前需先起 demo（`apps/vue2-webpack-node14`，端口 8080，路由 `/lark-doc`，暴露 `window.__larkDoc`）并 **run_in_background**：
   `node scripts/verify-browser-{highlight-fold,heading-number,heading-menu,icon-align,list-marker,list-number-menu,element,mermaid,colors}.js` + `npm run check:vditor`
   基线数：highlight-fold **74** / heading-number **38** / heading-menu **16** / icon-align **7** / list-marker **23** / list-number-menu **30** / element **14** / mermaid **18** / vditor **93** / colors **14**。
@@ -271,7 +273,7 @@
 
 ## 出口标准（P0 全部完成后）
 
-- [ ] `npm run check` EXIT=0 且 **0 warning**
+- [ ] `npm run check` EXIT=0 且**不新增 warning**（判据见上文 R13，非绝对 0）
 - [ ] 10 套断言全绿（74/38/16/7/23/30/14/12/91）
 - [ ] `getSchema()` 序列化快照与 0.11.5 **完全一致**
 - [ ] 三端冒烟通过

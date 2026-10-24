@@ -1,5 +1,7 @@
 'use strict'
 
+const path = require('path')
+
 /**
  * 单元测试门禁配置。
  *
@@ -14,7 +16,26 @@
  *
  * @type {import('vitest/config').UserConfig}
  */
+/**
+ * 显式拒载 src/ 下的 .vue：core 的依赖闭包不允许出现 Vue 组件，Node 单测
+ * 永远不该 import 到 .vue。若未来某个测试真的踩进来，宁可在这里给出一句
+ * 可读的门禁报错，也不要让 vite 抛「Unexpected token <」这种无法定位的错。
+ */
+function forbidVueImports() {
+  return {
+    name: 'forbid-vue-imports',
+    load(id) {
+      if (id.endsWith('.vue') && id.includes(`${path.sep}src${path.sep}`)) {
+        throw new Error(`[P0 门禁] 单测闭包引用了 ${id}\n` +
+          'core 不得依赖 .vue 组件；请让测试只 import core 模块（extensions/registry/documentOperations 等）。')
+      }
+      return null
+    },
+  }
+}
+
 module.exports = {
+  plugins: [forbidVueImports()],
   test: {
     environment: 'node',
     setupFiles: ['./test/bootstrap.js'],

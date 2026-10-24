@@ -15,4 +15,22 @@ describe('scaffold', () => {
     expect(Object.keys(schema.nodes)).toContain('paragraph')
     expect(Object.keys(schema.marks)).toContain('bold')
   })
+
+  it('lark-doc 自有节点全部在位（防「装配悄悄退化成裸 tiptap」）', () => {
+    // 不只探针三个通用名，把 lark-doc 特有的块/标记各抽代表：
+    // 行内（highlight/textStyle/link）、列表（taskItem/numberStart）、
+    // 块（details 三件套、table 三件套）、媒体（image/codeBlock）。
+    const schema = getSchema(createLarkDocExtensions())
+    const nodes = Object.keys(schema.nodes)
+    for (const name of [
+      'heading', 'bulletList', 'orderedList', 'taskList', 'taskItem',
+      'table', 'tableRow', 'tableCell', 'tableHeader',
+      'details', 'detailsSummary', 'detailsContent',
+      'image', 'codeBlock',
+    ]) expect(nodes, `node: ${name}`).toContain(name)
+    const marks = Object.keys(schema.marks)
+    for (const name of ['highlight', 'textStyle', 'link', 'underline', 'strike', 'code']) {
+      expect(marks, `mark: ${name}`).toContain(name)
+    }
+  })
 })
