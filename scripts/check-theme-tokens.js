@@ -50,7 +50,11 @@ function walk(dir, files) {
 function countViolations(content) {
   const hits = []
   content.split('\n').forEach((line, index) => {
-    if (HEX_RE.test(line) || WHITE_RE.test(line)) {
+    // 自定义属性声明（--ld-text: #1F2329）是 token 的**定义处**，不是使用处：
+    // 规则禁止的是组件里写字面色，token 声明本身必须允许写 hex，
+    // 否则每加一个 token 都要放宽基线，基线就失去「只进不退」的意义。
+    const checked = line.replace(/--[\w-]+\s*:\s*[^;{}]+/g, '')
+    if (HEX_RE.test(checked) || WHITE_RE.test(checked)) {
       hits.push({ line: index + 1, snippet: line.trim().slice(0, 120) })
     }
   })

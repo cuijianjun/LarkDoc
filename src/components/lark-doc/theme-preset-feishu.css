@@ -41,6 +41,14 @@
   --ld-border-cell: #DEE0E3;
   --ld-divider: #DEE0E3;
   --ld-border-accent: transparent;   /* 飞书生效态无边框 */
+  /* ---- 轮廓栏 / 纸张（B3：按 06 实测 L2 角色映射，未新增色值） ---- */
+  --ld-text-outline: #646A73;           /* = text-secondary */
+  --ld-text-outline-heading: #1F2329;   /* = text（正文主文字） */
+  --ld-text-outline-icon: #8F959E;      /* = text-tertiary */
+  --ld-text-outline-active: #1456F0;    /* = brand */
+  --ld-bg-outline-hover: #E1EAFF;       /* = brand-subtle */
+  --ld-border-paper: #DEE0E3;           /* = border */
+  --ld-shadow-paper: rgba(31, 35, 41, 0.04) 0 8px 36px; /* 几何不变，色相转中性（06 §3 阴影口径） */
   /* ---- L2 品牌 / 功能（11 §3.4） ---- */
   --ld-brand-chrome: #1456F0;
   --ld-brand-content: #1456F0;
