@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>sample 导出（临时页面，导出后删除）</title>
+<script src="./vendor/vue.min.js"></script>
+<script src="./vendor/lark-doc.umd.min.js"></script>
+<style>body{margin:0}#host{height:900px}</style>
+</head>
+<body>
+<div id="host"></div>
+<script>
+var SAMPLE_HTML = [
+  '<h1>lark-doc 在线预览</h1>',
+  '<p>这是一份用来试手的示例文档：正文可以<strong>直接编辑</strong>，块可以拖动，选中文字会出现浮动工具条。改下面的初始化配置，预览会重建，但正文会保留。</p>',
+  '<div data-type="callout" data-emoji="💡"><p>下面覆盖了常用块类型：标题、列表、待办、引用、分栏、表格、代码、公式、折叠、图片。</p></div>',
+  '<h2>一、文字与行内格式</h2>',
+  '<p><strong>加粗</strong>、<em>斜体</em>、<u>下划线</u>、<s>删除线</s>、<code>行内代码</code>、<mark data-color="#fff3c4">高亮</mark>、<span style="color:#f54a45">彩色文字</span>、<a href="https://tiptap.dev">链接</a>，还有行内公式 <span data-type="inline-math" data-latex="E = mc^2"></span>。</p>',
+  '<h2>二、块类型</h2>',
+  '<h3>列表</h3>',
+  '<ul><li><p>无序列表第一项</p></li><li><p>无序列表第二项</p><ul><li><p>嵌套一项</p></li></ul></li></ul>',
+  '<ol><li><p>有序列表第一项</p></li><li><p>有序列表第二项</p></li></ol>',
+  '<h3>待办</h3>',
+  '<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p>引入 npm 包并挂载</p></li><li data-type="taskItem" data-checked="false"><p>把主题色换成自己的品牌色</p></li></ul>',
+  '<h3>引用</h3>',
+  '<blockquote><p>减少 DOM 层级、把装饰从正文里剥离，通常比换一套渲染引擎更有效。</p></blockquote>',
+  '<h3>分栏</h3>',
+  '<div data-type="columns"><div data-type="column" data-width="50"><p>左栏：命令式挂载</p><p><code>new LarkDoc({ element, content })</code></p></div><div data-type="column" data-width="50"><p>右栏：Web Component</p><p><code>&lt;lark-doc&gt;</code></p></div></div>',
+  '<h3>表格</h3>',
+  '<table><tbody><tr><th><p>能力</p></th><th><p>默认</p></th><th><p>怎么关掉</p></th></tr><tr><td><p>AI 入口</p></td><td><p>开启</p></td><td><p>features.ai = false</p></td></tr><tr><td><p>顶部标题栏</p></td><td><p>显示</p></td><td><p>layout.headerVisible = false</p></td></tr><tr><td><p>正文字数上限</p></td><td><p>不限</p></td><td><p>limits.maxLength = 5000</p></td></tr></tbody></table>',
+  '<h3>代码块</h3>',
+  '<pre><code class="language-js">const doc = new LarkDoc({ element: "#editor", content: "" })\ndoc.on("change", ({ json }) => console.log(json))</code></pre>',
+  '<h3>公式</h3>',
+  '<div data-type="block-math" data-latex="\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}"></div>',
+  '<h3>分隔线</h3>',
+  '<hr>',
+  '<h3>图片</h3>',
+  '<p>支持本地图片，跟着文档一起保存，不依赖图床。</p>',
+  '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAIUlEQVR42mNg2NEORPq539AQAwGJ15/ew9H/Q75AREUJADolXv0Q9HhPAAAAAElFTkSuQmCC" alt="示例图片">',
+  '<h3>折叠块</h3>',
+  '<details data-type="details"><summary>点开看：折叠块的用途</summary><div data-type="detailsContent"><p>长文档里把「附录 / 参考 / 明细」收起来，读者只看关心的部分。</p></div></details>',
+  '<h2>三、把配置改成你要的样子</h2>',
+  '<p>把代码区里的 <code>theme</code> 改成 <code>"dark"</code>，或者把 <code>features.ai</code> 改成 <code>false</code>，预览会在 400 毫秒内重建。你刚才敲进去的正文不会丢 —— 页面在销毁前会把正文取出来。</p>'
+].join('\n')
+
+var NS = window['lark-doc'] || window.larkDoc || {}
+var LarkDocCtor = NS.LarkDoc || NS.default
+var doc = new LarkDocCtor({
+  element: '#host',
+  content: SAMPLE_HTML,
+  theme: 'light',
+  readonly: true,
+  storage: 'none'
+})
+
+window.__result = null
+window.__errors = []
+doc.on('ready', function () {
+  setTimeout(function () {
+    var json = doc.getJSON()
+    window.__result = json
+    window.__done = true
+  }, 300)
+})
+setTimeout(function () { if (!window.__done) { window.__result = doc.getJSON(); window.__done = true; window.__late = true } }, 6000)
+window.onerror = function (msg) { window.__errors.push(String(msg)) }
+</script>
+</body>
+</html>

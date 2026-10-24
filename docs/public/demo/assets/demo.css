@@ -1,0 +1,353 @@
+/* =============================================================
+   lark-doc Playground · 页面自身的样式
+   只负责「预览区 + 代码区」这层外壳，编辑器内部样式由
+   vendor/lark-doc.css 提供，这里除少量宿主适配外不做覆盖。
+   ============================================================= */
+
+:root {
+  --ink: #1f2d28;
+  --muted: #6b7b75;
+  --line: #e3e9e6;
+  --soft: #f5f8f7;
+  --brand: #00b887;
+  --brand-ink: #0c7a58;
+  --code-bg: #0f1b18;
+  --code-bar: #14231f;
+  --code-line: #22332d;
+  --code-ink: #cfe3db;
+  --code-dim: #6f8b81;
+  --danger: #ff6b60;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #fff;
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--muted);
+  font: 500 11px/16px var(--mono);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------- 骨架 */
+
+.pg {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.pg-preview {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 120px;
+  background: var(--soft);
+}
+
+.pg-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--soft);
+}
+
+/* 包内 .lark-doc 以 min-height:100vh 铺满整屏，这里嵌在半个屏里，
+   必须取消，否则预览区永远带一条空滚动。 */
+.pg-host .lark-doc { min-height: 0; }
+
+/* ------------------------------------------------------------- 顶栏 */
+
+.pg-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pg-bar::-webkit-scrollbar { display: none; }
+
+.pg-brand {
+  flex: 0 0 auto;
+  color: var(--brand);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+}
+
+.pg-ver {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eaf8f3;
+  color: var(--brand-ink);
+  font: 600 11px/16px var(--mono);
+}
+
+.pg-note,
+.pg-hint {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pg-grow { flex: 1 1 auto; min-width: 4px; }
+
+.pg-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #34463f;
+  font-size: 12.5px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.pg-btn:hover { border-color: #cfe0d9; background: var(--soft); color: var(--ink); }
+.pg-btn:active { transform: translateY(1px); }
+.pg-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.pg-btn-ghost { border-color: transparent; background: transparent; color: var(--brand-ink); }
+.pg-btn-ghost:hover { background: #eaf8f3; border-color: transparent; }
+
+/* ------------------------------------------------------------- 分割条 */
+
+.pg-split {
+  position: relative;
+  flex: 0 0 auto;
+  height: 10px;
+  background: #fff;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  cursor: row-resize;
+  touch-action: none;
+}
+.pg-split::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 3px;
+  margin: -1.5px 0 0 -22px;
+  border-radius: 2px;
+  background: #d8e3de;
+  transition: background .15s;
+}
+.pg-split:hover::after,
+.pg-split:focus-visible::after,
+.pg.is-dragging .pg-split::after { background: var(--brand); }
+.pg-split:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.pg.is-dragging { cursor: row-resize; user-select: none; }
+.pg.is-dragging iframe,
+.pg.is-dragging .pg-host { pointer-events: none; }
+
+/* ------------------------------------------------------------- 代码区 */
+
+.pg-code {
+  display: flex;
+  flex: 0 0 var(--code-h, 42vh);
+  flex-direction: column;
+  min-height: 0;
+  background: var(--code-bg);
+}
+
+.pg-bar-code {
+  min-height: 34px;
+  padding: 4px 10px 4px 8px;
+  border-bottom: 1px solid var(--code-line);
+  background: var(--code-bar);
+  color: var(--code-dim);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 代码块折叠 / 展开按钮 */
+.pg-fold {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #7f9a90;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.pg-fold:hover { background: rgba(255, 255, 255, .08); color: #cfe3db; }
+.pg-fold:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.pg-fold-chev {
+  transition: transform .18s ease;
+}
+.pg.is-collapsed .pg-fold-chev { transform: rotate(180deg); }
+
+/* 折叠态：代码区收成一条可点的细条，整条都是「展开」热区 */
+.pg.is-collapsed .pg-bar-code { cursor: pointer; }
+
+.pg-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 3px rgba(0, 184, 135, .15);
+}
+
+.pg-file {
+  flex: 0 0 auto;
+  color: #9db8ae;
+  font: 600 12px/18px var(--mono);
+}
+
+.pg-status {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .06);
+  color: #9db8ae;
+  font: 500 11px/16px var(--mono);
+  white-space: nowrap;
+}
+.pg-status.is-ok { background: rgba(0, 184, 135, .16); color: #55dcb0; }
+.pg-status.is-err { background: rgba(255, 107, 96, .16); color: #ff9a92; }
+.pg-status.is-busy { background: rgba(255, 255, 255, .1); color: #d7e6e0; }
+
+.pg-bar-code kbd {
+  border-color: #2c433b;
+  background: #1b2c26;
+  color: #7f9a90;
+}
+
+/* 双层：底层 <pre> 上色，上层 <textarea> 透明文字，光标和选区仍在。 */
+.pg-editor {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pg-hl,
+#pgTa {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 14px 18px;
+  border: 0;
+  font: 500 12.5px/20px var(--mono);
+  letter-spacing: 0;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.pg-hl {
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--code-ink);
+}
+.pg-hl code { font: inherit; }
+
+#pgTa {
+  z-index: 1;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: #8ef0cd;
+  resize: none;
+  outline: none;
+}
+#pgTa::selection { background: rgba(0, 184, 135, .32); }
+
+/* token 颜色 */
+.tk-com { color: #5d7a70; font-style: italic; }
+.tk-str { color: #a8e6a3; }
+.tk-num { color: #f0c987; }
+.tk-kw  { color: #7fb8ff; }
+.tk-fn  { color: #ffd479; }
+.tk-pun { color: #8aa7a0; }
+
+/* ------------------------------------------------------------- 报错条 */
+
+.pg-error {
+  flex: 0 0 auto;
+  max-height: 34%;
+  overflow: auto;
+  padding: 9px 18px 11px;
+  border-top: 1px solid rgba(255, 107, 96, .35);
+  background: rgba(255, 107, 96, .1);
+  color: #ffc9c4;
+  font: 500 12px/18px var(--mono);
+  white-space: pre-wrap;
+}
+.pg-error b { color: var(--danger); font-weight: 700; }
+
+/* ------------------------------------------------------------- 折叠态 */
+
+.pg.is-collapsed .pg-split,
+.pg.is-collapsed .pg-editor,
+.pg.is-collapsed .pg-error { display: none; }
+.pg.is-collapsed .pg-code { flex: 0 0 auto; }
+
+/* 折叠后代码顶栏变成一条「展开」提示条：隐藏细节，只留文件名 + 状态 + 箭头 */
+.pg.is-collapsed .pg-bar-code .pg-dot,
+.pg.is-collapsed .pg-bar-code .pg-hint { display: none; }
+.pg.is-collapsed .pg-bar-code {
+  border-top: 1px solid var(--code-line);
+  border-bottom: 0;
+  background: var(--code-bar);
+}
+
+/* ------------------------------------------------------------- 窄屏 */
+
+@media (max-width: 820px) {
+  .pg-note, .pg-hint { display: none; }
+  .pg-bar { padding: 6px 10px; gap: 8px; }
+  .pg-hl, #pgTa { padding: 10px 12px; font: 500 12px/18px var(--mono); }
+}
+
+/* 预览区滚动条（Chrome）细化，避免和编辑器内部滚动条打架 */
+.pg-host::-webkit-scrollbar { width: 10px; height: 10px; }
+.pg-host::-webkit-scrollbar-thumb {
+  border: 3px solid var(--soft);
+  border-radius: 6px;
+  background: #cbd8d3;
+}
+.pg-host::-webkit-scrollbar-thumb:hover { background: #b4c6bf; }

@@ -58,6 +58,9 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'colwidth') valid = Array.isArray(value) && value.every((width) => Number.isInteger(width) && width > 0 && width <= 2400)
     else if (key === 'colspan' || key === 'rowspan' || key === 'start') valid = Number.isInteger(value) && value > 0 && value <= 10000
     else if (key === 'open' || key === 'checked') valid = typeof value === 'boolean'
+    // 有序列表「继续编号」标记：布尔，schema 默认 false。
+    // 缺这一支会让规范化后的文档（toJSON 已补上默认值）二次校验失败，整篇内容被拒。
+    else if (key === 'continueFrom') valid = typeof value === 'boolean'
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
     // 标题编号：开关是布尔，起点是 1..999 的整数或不设（null = 继续）。
     else if (key === 'numbering') valid = typeof value === 'boolean'
