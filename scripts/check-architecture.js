@@ -65,4 +65,24 @@ for (const file of fs.readdirSync(blocksDir).filter((name) => name.endsWith('.js
   assert(lines < 250, `core/blocks/${file} 应保持 <250 行（P0-04 拆块注册表），当前 ${lines} 行`)
 }
 
+// P0-05：命令表拆进 core/commands 后，单文件 <250 行，且命令 id 集合与顺序、tier 完整性不得漂移。
+const commandsDir = path.resolve(sourceRoot, 'core/commands')
+for (const file of fs.readdirSync(commandsDir).filter((name) => name.endsWith('.js')).sort()) {
+  const lines = fs.readFileSync(path.join(commandsDir, file), 'utf8').split('\n').length
+  assert(lines < 250, `core/commands/${file} 应保持 <250 行（P0-05 拆命令表），当前 ${lines} 行`)
+}
+// 走旧路径 shim require，连带验证转发链可用；id 清单与拆分前 commands.js 逐项一致。
+const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/commands.js'))
+const expectedCommandIds = [
+  'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
+  'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
+]
+assert.deepStrictEqual(COMMANDS.map((item) => item.id), expectedCommandIds, '命令 id 集合与顺序必须与拆分前逐项一致（P0-05 验收：命令 id 集合不变）')
+for (const item of COMMANDS) {
+  assert(['required', 'skeleton', 'skip'].includes(item.tier), `命令 ${item.id} 缺少合法 tier 字段（P0-05：CommandDef 带 tier）`)
+  assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 12 组之一）`)
+}
+
 console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts')

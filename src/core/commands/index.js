@@ -1,0 +1,79 @@
+/**
+ * 命令表注册表（P0-05）：slash 菜单与「+」菜单共用的数据源，拆分自 components/lark-doc/commands.js。
+ *
+ * 结构：12 个组文件（basic/common/data/media/embed/collab/widget/button/pim/advanced/docmanage/inline，
+ * 对齐需求 03 §3.4 的 12 分类口径）各导出本组 CommandDef；本文件做三件事——
+ *   1. 按 id 汇总（重复 id 直接抛错，防止各组悄悄打架）；
+ *   2. 用显式 COMMAND_ORDER 重建数组：菜单渲染按 category 分组、组内按数组序（CommandMenu.vue
+ *      categories computed），所以顺序必须与拆分前逐项一致，不能按组拼接；
+ *   3. filterCommands 按 features 开关、commands.disabled/allow 与关键词过滤（逻辑原样保留）。
+ * CommandDef 契约见 requirements/09 §3.2：tier = required | skeleton | skip。
+ */
+import { basicCommands } from './basic'
+import { commonCommands } from './common'
+import { dataCommands } from './data'
+import { mediaCommands } from './media'
+import { embedCommands } from './embed'
+import { collabCommands } from './collab'
+import { widgetCommands } from './widget'
+import { buttonCommands } from './button'
+import { pimCommands } from './pim'
+import { advancedCommands } from './advanced'
+import { docmanageCommands } from './docmanage'
+import { inlineCommands } from './inline'
+
+const GROUPS = [
+  basicCommands, commonCommands, dataCommands, mediaCommands, embedCommands, collabCommands,
+  widgetCommands, buttonCommands, pimCommands, advancedCommands, docmanageCommands, inlineCommands,
+]
+
+const COMMANDS_BY_ID = new Map()
+for (const group of GROUPS) {
+  for (const item of group) {
+    if (COMMANDS_BY_ID.has(item.id)) throw new Error(`duplicate command id: ${item.id}`)
+    COMMANDS_BY_ID.set(item.id, item)
+  }
+}
+
+// 与拆分前 commands.js 逐项一致（22 条显式定义 + 9 个生成标题 = 31 个 id）。
+const COMMAND_ORDER = [
+  'paragraph',
+  ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
+  'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
+]
+
+if (COMMANDS_BY_ID.size !== COMMAND_ORDER.length) {
+  const missing = [...COMMANDS_BY_ID.keys()].filter((id) => !COMMAND_ORDER.includes(id))
+  throw new Error(`command defs missing from COMMAND_ORDER: ${missing.join(', ')}`)
+}
+
+export const COMMANDS = COMMAND_ORDER.map((id) => {
+  const item = COMMANDS_BY_ID.get(id)
+  if (!item) throw new Error(`unknown command id in COMMAND_ORDER: ${id}`)
+  return item
+})
+
+const COMMAND_FEATURES = {
+  table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
+  image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', emoji: 'emoji', template: 'templates',
+  callout: 'callouts', ai: 'ai',
+}
+
+export function filterCommands(query, kind = 'slash', config = null) {
+  const needle = String(query || '').trim().toLocaleLowerCase()
+  // LarkDoc keeps the column count picker behind the single “分栏” entry.
+  // The count options are implementation ids for the secondary picker, not
+  // independent slash commands.
+  const candidates = COMMANDS.filter((item) => {
+    if (/^columns[2-5]$/.test(item.id)) return false
+    const feature = COMMAND_FEATURES[item.id]
+    if (feature && config?.features?.[feature] === false) return false
+    if (Array.isArray(config?.commands?.disabled) && config.commands.disabled.includes(item.id)) return false
+    if (Array.isArray(config?.commands?.allow) && config.commands.allow.length && !config.commands.allow.includes(item.id)) return false
+    return kind !== 'plus' || item.plus !== false
+  })
+  const filtered = !needle ? candidates : candidates.filter((item) => `${item.label} ${item.id} ${item.keywords}`.toLocaleLowerCase().includes(needle))
+  return filtered.map((item) => ({ ...item, category: kind === 'plus' ? (item.plusCategory || item.category) : item.category }))
+}
