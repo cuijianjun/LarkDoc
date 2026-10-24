@@ -85,4 +85,38 @@ for (const item of COMMANDS) {
   assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 12 组之一）`)
 }
 
+// P0-09：契约骨架——嵌入 preset 空壳、卡片 schema、协同客户端签名只做类型与数据，零实现。
+const embedTypes = require(path.resolve(sourceRoot, 'core/embed/types'))
+assert.strictEqual(embedTypes.EMBED_PRESETS.length, 15, '内嵌网页 preset 必须 15 条（requirements/03 §内嵌网页清单）')
+assert.deepStrictEqual(
+  new Set(embedTypes.EMBED_PRESETS.map((item) => item.id)).size, 15, 'EmbedDef preset id 不得重复')
+for (const item of embedTypes.EMBED_PRESETS) {
+  assert(['iframe', 'card'].includes(item.kind), `EmbedDef ${item.id} kind 非法`)
+  assert(['required', 'skeleton', 'skip'].includes(item.tier), `EmbedDef ${item.id} 缺少合法 tier`)
+}
+const embedCard = require(path.resolve(sourceRoot, 'core/embed/card'))
+assert.strictEqual(embedCard.cardSchema.cardVersion, 1, 'cardSchema 契约版本必须为 1')
+const collab = require(path.resolve(sourceRoot, 'collab'))
+assert.strictEqual(collab.COLLAB_PROTOCOL_VERSION, 1, '协同契约版本必须为 1')
+for (const factory of ['createCollabExtensions', 'createHocuspocusBridge', 'createCommentAnchors']) {
+  assert.throws(() => collab[factory]({}), /not implemented/, `${factory} 在 P6a 前必须保持未实现签名`)
+}
+
+// 决策 5 硬边界：本仓库不含任何自有服务端代码——hocuspocus 只准出现在 test/（e2e 内存实例）。
+function walkJsFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    return entry.isDirectory() ? walkJsFiles(full) : (entry.name.endsWith('.js') || entry.name.endsWith('.vue') ? [full] : [])
+  })
+}
+// 只拦真实引入（import ... from / import '@...' / require('@...')）；注释与函数名（如 createHocuspocusBridge，09 §3.3 规格原文）提及不算违规。
+for (const file of walkJsFiles(sourceRoot)) {
+  const content = fs.readFileSync(file, 'utf8')
+  const hocuspocusImport = /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*)['"][^'"]*hocuspocus/i.test(content)
+  assert(!hocuspocusImport, `src/ 下禁止引入 hocuspocus（服务端代码不进本仓库）：${path.relative(sourceRoot, file)}`)
+  if (file.includes(`${path.sep}core${path.sep}embed${path.sep}`)) {
+    assert(!/\bfetch\s*\(|XMLHttpRequest|axios/.test(content), `core/embed/ 零网络（硬规则 9）：${path.relative(sourceRoot, file)}`)
+  }
+}
+
 console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts')

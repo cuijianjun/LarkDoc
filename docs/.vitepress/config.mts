@@ -50,6 +50,7 @@ export default defineConfig({
             { text: '工具栏配置', link: '/guide/toolbar' },
             { text: 'View 层接入', link: '/guide/view-integration' },
             { text: '协同与权限', link: '/guide/collaboration' },
+            { text: '协同服务端契约', link: '/guide/collab-server' },
             { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
             { text: 'Web Component（跨框架）', link: '/guide/web-component' },
             { text: '背景与免责声明', link: '/guide/about' },
