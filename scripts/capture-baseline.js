@@ -202,57 +202,16 @@ function captureLegacy() {
 }
 
 /**
- * DOM 快照必须剔除动态值，否则每次渲染都不同、比对必然失败。
- * 实测两次挂载的差异共三类：
- *   ① 每次重新分配的块 id（data-block-id）——留属性、清掉值，结构仍要比；
- *   ② mermaid 每次渲染的实例 id（及其派生 id）——整体替换成同一个占位符；
- *   ③ mermaid 按内容实测出来的几何（viewBox 宽高、svg 的自适应 max-width）——
- *     这些数字依赖字体度量，跨机/跨版本会漂，只保留"它们存在"这一事实。
- *     归一化只针对 mermaid 特征：viewBox 负偏移起点（图标都是 0 0 起）、
- *     非整数 px 的 max-width（设计值都是整数）。
+ * DOM 快照的抓取与归一化实现在 scripts/lib/dom-capture.js
+ * （与只读快照 scripts/snapshot-dom.js 共用同一套，保证比对口径一致）。
  */
-function normalizeDom(html) {
-  return html
-    .replace(/\sdata-block-id="[^"]*"/g, ' data-block-id=""')
-    .replace(/lark-doc-diagram-[A-Za-z0-9]+-[A-Za-z0-9]+/g, 'lark-doc-diagram-ID')
-    .replace(/viewBox="-8 -8 [0-9.]+ [0-9.]+"/g, 'viewBox="-8 -8 MERMAID_W MERMAID_H"')
-    .replace(/max-width:\s*\d+\.\d+px/g, 'max-width:MERMAID_Wpx')
-}
-
-function findChromium() {
-  const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
-  if (!fs.existsSync(cache)) return null
-  const dirs = fs.readdirSync(cache)
-    .filter((name) => /^chromium-\d+$/.test(name))
-    .sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  for (const dir of dirs) {
-    for (const candidate of [
-      path.join(cache, dir, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
-      path.join(cache, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
-    ]) if (fs.existsSync(candidate)) return candidate
-  }
-  return null
-}
-
-async function captureDom() {
-  const { chromium } = require('playwright-core')
-  const executablePath = findChromium()
-  if (!executablePath) throw new Error('未找到本机 chromium 缓存')
-  const browser = await chromium.launch({ headless: true, executablePath })
-  const page = await browser.newPage({ viewport: { width: 1700, height: 1000 } })
-  try {
-    await page.goto(process.argv[3] || 'http://localhost:8080/lark-doc', { waitUntil: 'networkidle', timeout: 60000 })
-    await page.waitForSelector('.ProseMirror', { timeout: 30000 })
-    await page.waitForSelector('.lark-doc-toolbar', { timeout: 30000 })
-    // 图表/ KaTeX 是异步渲染的，等一拍再抓，否则快照里会出现半成品 SVG。
-    await page.waitForTimeout(1500)
-    const html = normalizeDom(await page.evaluate(() => document.querySelector('.lark-doc-host').innerHTML))
+function captureDom() {
+  const { captureNormalizedDom } = require('./lib/dom-capture')
+  return captureNormalizedDom(process.argv[3] || 'http://localhost:8080/lark-doc').then((html) => {
     const target = path.join(fixtures, 'editor-dom-before.html')
     fs.writeFileSync(target, `${html}\n`)
     console.log(`写入 ${path.relative(root, target)}：${html.length} 字符`)
-  } finally {
-    await browser.close()
-  }
+  })
 }
 
 const command = process.argv[2]
