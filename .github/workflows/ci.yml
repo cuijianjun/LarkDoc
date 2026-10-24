@@ -1,0 +1,51 @@
+name: CI
+
+# requirements/09 P0-08：lint + 单测 + 四产物 build + size-limit。
+# 浏览器行为断言在 e2e.yml；demo 宿主（vue2/vue3/react）不在本仓库，CI 只跑仓库内可复现的部分。
+
+on:
+  push:
+    branches: [master, 'next/**']
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-unit-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (vitest)
+        run: npm run check:unit
+
+      - name: Build (commonjs)
+        run: npm run build
+
+      - name: Build (umd-min)
+        run: npm run build:umd
+
+      - name: Build (esm)
+        run: npm run build:esm
+
+      - name: Build (element umd)
+        run: npm run build:element
+
+      - name: Size limit
+        run: npm run size

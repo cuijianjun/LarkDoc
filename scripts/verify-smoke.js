@@ -17,18 +17,36 @@
  */
 
 const fs = require('fs')
-const { chromium } = require('playwright-core')
 
-/** 与 verify-browser-* 同款：优先复用本机已缓存的 chromium，避免重复下载。 */
+/** 本机走 NODE_PATH 下的 playwright-core；CI 走临时安装的完整 playwright 包（带 install 命令）。 */
+function loadChromiumDriver() {
+  try {
+    return require('playwright-core').chromium
+  } catch (err) {
+    return require('playwright').chromium
+  }
+}
+const chromium = loadChromiumDriver()
+
+/** 与 verify-browser-* 同款：优先复用本机已缓存的 chromium，避免重复下载。
+ *  查找顺序：环境变量 LARK_DOC_CHROMIUM（CI 显式指定）→ macOS 缓存 → Linux 缓存（CI）。 */
 function findChromium() {
-  const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
-  if (!fs.existsSync(cache)) return null
-  const dirs = fs.readdirSync(cache).filter((dir) => /^chromium-\d+$/.test(dir)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-  for (const dir of dirs) {
-    for (const candidate of [
-      `${cache}/${dir}/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
-      `${cache}/${dir}/chrome-mac/Chromium.app/Contents/MacOS/Chromium`,
-    ]) if (fs.existsSync(candidate)) return candidate
+  if (process.env.LARK_DOC_CHROMIUM && fs.existsSync(process.env.LARK_DOC_CHROMIUM)) {
+    return process.env.LARK_DOC_CHROMIUM
+  }
+  for (const cache of [
+    `${process.env.HOME}/Library/Caches/ms-playwright`, // macOS
+    `${process.env.HOME}/.cache/ms-playwright`, // Linux（GitHub Actions）
+  ]) {
+    if (!fs.existsSync(cache)) continue
+    const dirs = fs.readdirSync(cache).filter((dir) => /^chromium-\d+$/.test(dir)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
+    for (const dir of dirs) {
+      for (const candidate of [
+        `${cache}/${dir}/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+        `${cache}/${dir}/chrome-mac/Chromium.app/Contents/MacOS/Chromium`,
+        `${cache}/${dir}/chrome-linux/chrome`,
+      ]) if (fs.existsSync(candidate)) return candidate
+    }
   }
   return null
 }

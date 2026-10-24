@@ -159,6 +159,11 @@ ok "Node 24 = $("$NODE24_DIR/node" -v) / npm $("$NODE24_DIR/npm" -v)"
 if ! git rev-parse --git-dir >/dev/null 2>&1; then die "当前目录不是 git 仓库"; fi
 git remote get-url origin >/dev/null 2>&1 || die "缺少 git remote origin"
 ok "git remote: $(git remote get-url origin)"
+# 发布安全阀（requirements/09 P0-08）：npm publish 只允许在 master 上执行，
+# 防止 next 分支上的 beta 版本抢占 latest。分支收口走 --skip-publish / --git-only（都不发 npm）。
+if [ "$BRANCH" != "master" ] && [ "$DO_PUBLISH" = 1 ] && [ "$GIT_ONLY" = 0 ]; then
+  die "发布安全阀：当前不在 master（${BRANCH}），npm publish 被拦截（防止分支版本抢占 latest）。分支上收口请加 --skip-publish 或 --git-only，正式发版请切回 master。"
+fi
 [ "$BRANCH" = "master" ] || warn "当前不在 master（${BRANCH}），将直接推送到 $BRANCH"
 
 if [ "$DO_GIT" = 1 ]; then
