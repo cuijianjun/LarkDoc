@@ -22,22 +22,15 @@
 
 import { LarkDoc } from '../LarkDoc'
 import { OBSERVED_ATTRIBUTES, readOptionsFromElement, applyAttributeChange } from './attributes'
+import { EVENT_MAP } from './events'
 
 /**
- * 对外事件名（全部冒泡 + composed，方便宿主在任意祖先节点委托监听）。
- * payload 一律是纯数据（不含 Vue 实例 / ProseMirror 对象），避免跨框架时
- * Proxy 包装导致的结构化克隆失败。
+ * 对外事件名单维护在 ./events（零依赖模块，P0-06 抽出）：
+ * adapters/{vue3,react} 只引名单、不引元素类——元素类依赖链会拉进
+ * Vue 2 渲染层，React / Vue 3 宿主没有 Vue 2 插件，引了就编译失败。
+ * 这里 re-export 保持原导入路径（`from './LarkDocElement'`）可用。
  */
-const EVENT_MAP = Object.freeze({
-  ready: 'lark-doc-ready',
-  update: 'lark-doc-update',
-  change: 'lark-doc-change',
-  save: 'lark-doc-save',
-  error: 'lark-doc-error',
-  destroy: 'lark-doc-destroy',
-  'import-report': 'lark-doc-import-report',
-  'title-change': 'lark-doc-title-change',
-})
+export { EVENT_MAP } from './events'
 
 /** 需要从宿主实例转发到元素上的快捷方法（只读 + 幂等命令，写操作走 getInstance()）。 */
 const PROXIED_METHODS = Object.freeze([
