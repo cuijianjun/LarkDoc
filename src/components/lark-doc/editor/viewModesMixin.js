@@ -103,5 +103,7 @@ export default {
     async toggleFullscreen() { if (!this.fullscreen) { try { await this.$refs.root.requestFullscreen() } catch (_) { this.fullscreen = true } } else if (document.fullscreenElement) await document.exitFullscreen(); else this.fullscreen = false },
     onFullscreenChange() { this.fullscreen = document.fullscreenElement === this.$refs.root },
     toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },
+    prevSlide() { this.slideIndex -= 1 },
+    nextSlide() { this.slideIndex += 1 },
   },
 }

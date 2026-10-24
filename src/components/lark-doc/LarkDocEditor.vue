@@ -40,34 +40,8 @@
       </button>
       <OutlinePanel :ed="self" />
       <main class="lark-doc-main">
+        <PaperStage :ed="self" />
         <div
-          v-if="slides"
-          class="lark-doc-slide-stage"
-          aria-label="幻灯片演示"
-        >
-          <p class="lark-doc-slide-counter">
-            {{ slideIndex + 1 }} / {{ slideChapters.length }}
-          </p><h1>{{ slideChapters[slideIndex].title }}</h1><p>{{ slideChapters[slideIndex].text }}</p><div>
-            <button
-              type="button"
-              :disabled="slideIndex === 0"
-              @click="slideIndex -= 1"
-            >
-              上一页
-            </button><button
-              type="button"
-              :disabled="slideIndex === slideChapters.length - 1"
-              @click="slideIndex += 1"
-            >
-              下一页
-            </button><button
-              type="button"
-              @click="toggleSlides"
-            >
-              退出演示
-            </button>
-          </div>
-        </div><div
           v-show="!slides"
           class="lark-doc-paper"
           @pointermove="onPaperPointerMove"
@@ -1256,6 +1230,7 @@ import ToolbarBar from './editor/ToolbarBar.vue'
 import SearchPanel from './editor/SearchPanel.vue'
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
+import PaperStage from './editor/PaperStage.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -1288,7 +1263,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel },
+  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
