@@ -89,185 +89,10 @@
       @close="closeCommandMenu(true)"
     />
     <ColorPalette :ed="self" />
-    <div
-      v-if="tablePicker"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="插入表格"
-      >
-        <header>
-          <strong>插入表格</strong><span class="lark-doc-table-grid-size">{{ tablePickerHover.cols }} × {{ tablePickerHover.rows }}</span><button
-            type="button"
-            aria-label="关闭表格选择"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header><p>插入支持富文本的表格</p><div class="lark-doc-table-grid">
-          <button
-            v-for="n in 81"
-            :key="n"
-            type="button"
-            :class="{ 'is-preview': Math.floor((n - 1) / 9) + 1 <= tablePickerHover.rows && ((n - 1) % 9) + 1 <= tablePickerHover.cols }"
-            :aria-label="`${((n - 1) % 9) + 1}行${Math.floor((n - 1) / 9) + 1}列`"
-            @mouseenter="previewTableSize(Math.floor((n - 1) / 9) + 1, ((n - 1) % 9) + 1)"
-            @focus="previewTableSize(Math.floor((n - 1) / 9) + 1, ((n - 1) % 9) + 1)"
-            @click="insertTable(Math.floor((n - 1) / 9) + 1, ((n - 1) % 9) + 1)"
-          >
-            ▦
-          </button>
-        </div>
-      </section>
-    </div>
-    <div
-      v-if="mathDialog || emojiDialog"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="mathDialog ? '插入公式' : '插入表情'"
-        @keydown.esc.stop.prevent="closeOverlay"
-      >
-        <header>
-          <strong>{{ mathDialog ? '插入公式' : '插入表情' }}</strong><button
-            type="button"
-            aria-label="关闭对话框"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header><template v-if="mathDialog">
-          <label>LaTeX <input
-            ref="mathInput"
-            v-model="mathValue"
-            aria-label="LaTeX 公式"
-            placeholder="例如 x^2 + y^2"
-            @keydown.enter.prevent="insertMath"
-          ></label><p
-            v-if="mathError"
-            role="alert"
-            class="lark-doc-error"
-          >
-            {{ mathError }}
-          </p><button
-            type="button"
-            @click="insertMath"
-          >
-            插入
-          </button>
-        </template><div
-          v-else
-          class="lark-doc-emoji-grid"
-        >
-          <button
-            v-for="item in emojiItems"
-            :key="item.value"
-            type="button"
-            :aria-label="item.label"
-            @click="insertEmoji(item.value)"
-          >
-            {{ item.glyph }}
-          </button>
-        </div>
-      </section>
-    </div>
-    <div
-      v-if="linkDialog"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="设置链接"
-        @keydown.esc.stop.prevent="closeOverlay"
-      >
-        <header>
-          <strong>设置链接</strong><button
-            type="button"
-            aria-label="关闭链接设置"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header>
-        <label v-if="linkInsertMode">链接文本 <input
-          ref="linkTextInput"
-          v-model="linkText"
-          aria-label="链接文本"
-          placeholder="输入链接显示文字"
-          @keydown.enter.prevent="applyLink"
-        ></label>
-        <label>链接地址 <input
-          ref="linkInput"
-          v-model="linkValue"
-          aria-label="链接地址"
-          placeholder="https://example.com"
-          @keydown.enter.prevent="applyLink"
-        ></label>
-        <p v-if="linkInsertMode">
-          输入显示文字和地址后插入本地链接；
-        </p><p>
-          仅允许 http、https、mailto、tel 或 # 锚点链接；取消不会改变选区。
-        </p>
-        <button
-          type="button"
-          :disabled="!linkValue || (linkInsertMode && !linkText.trim())"
-          @click="applyLink"
-        >
-          应用链接
-        </button><button
-          type="button"
-          :disabled="linkInsertMode || !isActive('link')"
-          @click="removeLink"
-        >
-          解除链接
-        </button>
-      </section>
-    </div>
-    <div
-      v-if="helpOpen"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="快捷键帮助"
-      >
-        <header>
-          <strong>快捷键</strong><button
-            type="button"
-            aria-label="关闭快捷键帮助"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header><p>⌘/Ctrl+B 加粗 · ⌘/Ctrl+I 斜体 · ⌘/Ctrl+Z 撤销</p><p>行首或空格后输入 / 插入内容；Tab 调整列表层级或段落缩进，Shift+Tab 减少缩进。</p>
-      </section>
-    </div>
+    <TablePickerDialog :ed="self" />
+    <MathEmojiDialog :ed="self" />
+    <LinkDialog :ed="self" />
+    <HelpDialog :ed="self" />
     <input
       ref="imageInput"
       type="file"
@@ -293,71 +118,7 @@
       </button>
     </p>
     <!-- 标题编号菜单：点编号按钮弹出，三项与飞书一致（继续/重新开始/设置值） -->
-    <div
-      v-if="headingNumberMenu.open"
-      class="lark-doc-heading-number-menu"
-      :class="{ 'is-editing': headingNumberEditing }"
-      :style="headingNumberMenuStyle"
-      role="menu"
-      aria-label="编号设置"
-      @mousedown.prevent
-    >
-      <template v-if="!headingNumberEditing">
-        <button
-          v-for="action in headingNumberActions"
-          :key="action.id"
-          type="button"
-          class="lark-doc-heading-number-item"
-          :class="{ 'is-disabled': headingNumberMenuDisabled(action.id) }"
-          role="menuitem"
-          :aria-disabled="headingNumberMenuDisabled(action.id) ? 'true' : 'false'"
-          :data-menu-id="action.id"
-          :disabled="headingNumberMenuDisabled(action.id)"
-          @click="headingNumberAction(action.id)"
-        >
-          <span
-            class="lark-doc-heading-number-icon"
-            aria-hidden="true"
-          ><lark-doc-icon
-            :size="18"
-            :name="action.icon"
-          /></span><span class="lark-doc-heading-number-text">{{ action.label }}</span>
-        </button>
-      </template>
-      <label
-        v-else
-        class="lark-doc-heading-number-editor"
-      >
-        <input
-          v-model="headingNumberDraft"
-          class="lark-doc-heading-number-input"
-          type="text"
-          inputmode="numeric"
-          aria-label="编号值"
-          @keydown="onHeadingNumberInputKeydown"
-          @blur="applyHeadingNumberValue()"
-        ><span
-          class="lark-doc-heading-number-spinner"
-          aria-hidden="true"
-        ><button
-          type="button"
-          tabindex="-1"
-          aria-label="增加编号"
-          @click="headingNumberDraft = String(Math.min(999, (Number(headingNumberDraft) || 1) + 1))"
-        ><lark-doc-icon
-          :size="10"
-          name="chevronUp"
-        /></button><button
-          type="button"
-          tabindex="-1"
-          aria-label="减少编号"
-          @click="headingNumberDraft = String(Math.max(1, (Number(headingNumberDraft) || 1) - 1))"
-        ><lark-doc-icon
-          :size="10"
-          name="chevronDown"
-        /></button></span>
-      </label>
-    </div>
+    <HeadingNumberMenu :ed="self" />
   </section>
 </template>
 
@@ -382,6 +143,11 @@ import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import BubbleBar from './editor/BubbleBar.vue'
 import ColorPalette from './editor/ColorPalette.vue'
+import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
+import MathEmojiDialog from './editor/dialogs/MathEmojiDialog.vue'
+import LinkDialog from './editor/dialogs/LinkDialog.vue'
+import HelpDialog from './editor/dialogs/HelpDialog.vue'
+import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -414,7 +180,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette },
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, HeadingNumberMenu },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
@@ -479,7 +245,7 @@ export default {
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
     emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
-    linkDialog(value) { if (value) this.$nextTick(() => (this.linkInsertMode ? this.$refs.linkTextInput : this.$refs.linkInput)?.focus()) },
+    linkDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector(this.linkInsertMode ? '[aria-label="链接文本"]' : '[aria-label="链接地址"]')?.focus()) },
   },
   mounted() {
     try {

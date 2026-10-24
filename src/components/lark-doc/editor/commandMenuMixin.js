@@ -181,7 +181,7 @@ export default {
       else if (/^columns[2-5]$/.test(id)) { const count = Number(id.slice(-1)); this.run('insertContent', { type: 'columns', content: Array.from({ length: count }, () => ({ type: 'column', attrs: { width: Math.round(100 / count) }, content: [{ type: 'paragraph' }] })) }) }
       else if (id === 'table') this.tablePicker = true
       else if (id === 'image') this.$refs.imageInput.click()
-      else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.mathInput?.focus()) }
+      else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'emoji') this.emojiDialog = true
       else if (id === 'link') this.openLinkDialog(true)
       else if (id === 'template') {

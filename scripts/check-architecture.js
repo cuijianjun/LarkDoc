@@ -54,4 +54,8 @@ assert.throws(() => createDocumentSession({ mode: 'collaborative' }), /collabora
 assert.throws(() => createCollaborationProvider({ connect() {} }), /disconnect/)
 assert.throws(() => createCommentsProvider({ list() {} }), /createThread/)
 
+// P0-03：门面组件只做装配——模板拆成子组件后 LarkDocEditor.vue 必须持续瘦身（<700 行）。
+const editorFacadeLines = fs.readFileSync(path.resolve(sourceRoot, 'components/lark-doc/LarkDocEditor.vue'), 'utf8').split('\n').length
+assert(editorFacadeLines < 700, `LarkDocEditor.vue 应保持 <700 行（P0-03 模板拆分），当前 ${editorFacadeLines} 行`)
+
 console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts')

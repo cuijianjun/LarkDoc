@@ -163,6 +163,10 @@ export default {
       } catch (_) { this.mathError = '公式无法解析，请检查 LaTeX 语法' }
     },
     insertEmoji(name) { if (!this.writable() || !this.featureEnabled('emoji')) return; if (!this.run('setEmoji', name)) this.error = '无法插入该表情'; this.emojiDialog = false },
+    // P0-03：弹窗输入框的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    setMathValue(value) { this.mathValue = value },
+    setLinkText(value) { this.linkText = value },
+    setLinkValue(value) { this.linkValue = value },
   },
   beforeDestroy() { if (this.hoverCloseTimer) clearTimeout(this.hoverCloseTimer) },
 }

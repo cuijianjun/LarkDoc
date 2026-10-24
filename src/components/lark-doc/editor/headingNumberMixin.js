@@ -153,6 +153,9 @@ export default {
         this.headingNumberDraft = String(Math.max(1, Math.min(NUMBER_MAX, (Number(this.headingNumberDraft) || 1) + step)))
       }
     },
+    // P0-03：编号草稿的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    setHeadingNumberDraft(value) { this.headingNumberDraft = value },
+    stepHeadingNumberDraft(step) { this.headingNumberDraft = String(Math.max(1, Math.min(NUMBER_MAX, (Number(this.headingNumberDraft) || 1) + step))) },
     /** 给标题开启/关闭编号（块菜单、工具栏、快捷键共用）。 */
     toggleHeadingNumbering() {
       if (!this.writable() || !this.editor) return false

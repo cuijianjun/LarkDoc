@@ -206,7 +206,11 @@ check('Changing the active handle target closes a stale block menu', () => {
 
 check('Empty block plus opens the insert menu while six-dot handles open block actions', () => {
   const component = loadComponent('LarkDocEditor.vue')
-  const source = fs.readFileSync(path.join(root, 'LarkDocEditor.vue'), 'utf8')
+  // P0-03 拆分后空段落加号与六点句柄的模板绑定迁入 BlockHandleMenu.vue，静态断言随之扩源；
+  // 子组件模板事件绑定带 ed. 前缀，这里统一归一化后再做字符串断言。
+  const source = ['LarkDocEditor.vue', 'editor/BlockHandleMenu.vue']
+    .map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n')
+    .replace(/@([\w.]+=")ed\./g, '@$1')
   let insertCalls = 0
   let blockMenuCloses = 0
   let repositionCalls = 0
