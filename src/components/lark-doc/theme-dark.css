@@ -209,6 +209,20 @@
   --ld-bg-th: rgba(207, 207, 207, 0.08);  /* B */
   --ld-border-hr: rgba(207, 207, 207, 0.15); /* A：同 divider */
 
+  /* ---- 图表（mermaid）themeVariables 取值（T3-01）----
+     mermaid 只吃字面色，JS 侧按 token 名读取再下发；色值只在这里定义，
+     预设档 / 宿主写同名变量即可覆盖。**全部取自已实测中性档**
+     （底 #292929、文字 #F0F0F0、描边 #434343/#757575、α 层 0.04/0.08/0.12），
+     不新造色值；浅色档不读这组（走 mermaid 内置 default，外观零变化）。 */
+  --ld-diagram-bg: #292929;                    /* A：与正文纸张同层，图形画在本底上 */
+  --ld-diagram-node: rgba(207, 207, 207, 0.08);/* B：节点填充 = 深色 hover 层 */
+  --ld-diagram-node-soft: rgba(207, 207, 207, 0.12); /* B：次级填充 */
+  --ld-diagram-node-border: #434343;           /* A：#292929 上唯一可见的描边档 */
+  --ld-diagram-text: #F0F0F0;                  /* A */
+  --ld-diagram-line: #757575;                  /* A：连线用中性第三档，弱于文字 */
+  --ld-diagram-cluster: rgba(207, 207, 207, 0.04); /* B：subgraph 底 */
+  --ld-diagram-note: rgba(207, 207, 207, 0.12);    /* B：备注块底 */
+
   /* ---- 通知条 / 搜索 / AI 面板 / 模板 ---- */
   --ld-border-notice: #5F5F5F;                   /* B */
   --ld-bg-notice: rgba(207, 207, 207, 0.06);     /* B */

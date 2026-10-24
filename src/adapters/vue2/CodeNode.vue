@@ -97,6 +97,7 @@
 <script>
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
 import { isDiagramLanguage, renderDiagram } from '../../components/lark-doc/diagram'
+import { readContentTheme, subscribeContentTheme } from '../../components/lark-doc/themeSignal'
 import { INDENT_STEP_PX, clampBlockIndent } from '../../components/lark-doc/documentOperations'
 import LarkDocSelect from '../../components/lark-doc/LarkDocSelect.vue'
 
@@ -170,6 +171,8 @@ export default {
       diagramState: 'idle', // idle | loading | ok | error
       diagramSvg: '',
       diagramError: '',
+      // 渲染用的正文轨主题：mermaid 的 SVG 是固化色，换档必须重渲染（12 T3-01）。
+      contentTheme: readContentTheme(),
       // 图表块（mermaid）直接渲染预览，与 Vditor 行为一致；「编辑源码」可切回编辑。
       previewShown: isDiagramLanguage(this.node?.attrs?.language) && this.extension?.options?.diagram !== false,
     }
@@ -212,15 +215,30 @@ export default {
     this.editor.on('update', this.syncEditable)
     this.editor.on('transaction', this.syncEditable)
     this.refreshHighlighted()
+    // 主题广播全库只挂一个观察器（themeSignal），这里只订阅「本块要不要重画」。
+    this.unsubscribeTheme = subscribeContentTheme(this.handleContentTheme)
     if (this.showPreview) this.scheduleDiagramRender()
   },
   beforeDestroy() {
     this.editor.off('update', this.syncEditable)
     this.editor.off('transaction', this.syncEditable)
+    if (this.unsubscribeTheme) { this.unsubscribeTheme(); this.unsubscribeTheme = null }
     if (this.diagramTimer) clearTimeout(this.diagramTimer)
     this.diagramVersion = -1
   },
   methods: {
+    /**
+     * 正文轨换档：只有图表块需要重画（代码块的颜色全在 CSS 里）。
+     * 降级（图数 > 20，themeSignal 判定）：只让**新渲染**用新配色，
+     * 已渲染的图不再重排 —— 一次切换几十个 mermaid 会明显卡顿。
+     */
+    handleContentTheme({ theme, degraded }) {
+      if (theme === this.contentTheme) return
+      this.contentTheme = theme
+      if (degraded || !this.showPreview) return
+      this.scheduleDiagramRender()
+    },
+
     refreshHighlighted() {
       const text = this.node.textContent
       const language = this.node.attrs.language
@@ -258,7 +276,10 @@ export default {
         return
       }
       this.diagramState = 'loading'
-      renderDiagram(source, { scriptUrl: this.extension?.options?.diagramScriptUrl || undefined }).then((svg) => {
+      renderDiagram(source, {
+        scriptUrl: this.extension?.options?.diagramScriptUrl || undefined,
+        theme: this.contentTheme,
+      }).then((svg) => {
         if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
         this.diagramSvg = svg
         this.diagramState = 'ok'
@@ -333,4 +354,14 @@ export default {
 .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight { color: #24352d; }
 .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-keyword, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-string, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-attr, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-number, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-comment, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-title, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-built_in { color: inherit; }
 .lark-doc .lark-doc-code-diagram .lark-doc-diagram { border-top: 1px solid #eef3f0; }
+
+/* ---- 深色档（T3-01）：图表卡片是「纸张上的白卡」，跟着正文纸张走 ----
+   代码卡片不在此列 —— 它本来就是「常暗对象」，颜色另见 T3-02。 */
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram { background: var(--ld-bg-content); border-color: var(--ld-border-content); }
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram .lark-doc-code-toolbar { background: var(--ld-bg-hover-content); color: var(--ld-text-content); }
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram .lark-doc-code-body { background: var(--ld-bg-content); }
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram .lark-doc-code-body pre { color: var(--ld-text-content); caret-color: var(--ld-text-content); }
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram .lark-doc-code-highlight { color: var(--ld-text-content); }
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram .lark-doc-diagram { border-top-color: var(--ld-divider); }
+.lark-doc[data-content-theme="dark"] .lark-doc-code-diagram .lark-doc-diagram-status { color: var(--ld-text-secondary); }
 </style>

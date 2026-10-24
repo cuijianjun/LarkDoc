@@ -17,6 +17,8 @@
  *  6. 「编辑源码 / 预览图表」双向切换
  *  7. 门面 insert() 追加第二个 mermaid 块后同样自动渲染
  *  8. 编辑器 executeCommand('diagram') 图表按钮命令可用
+ *  9. 工具栏「图表」按钮的类型下拉（流程图/时序图/甘特图/饼图）插入
+ * 10. 主题切换后已渲染图表重渲染（T3-01：深色一组 themeVariables + 卡片跟随纸张）
  */
 
 const path = require('path')
@@ -189,6 +191,42 @@ async function main() {
     record('时序图块自动渲染 SVG', true)
 
     await page.screenshot({ path: path.join(SHOT_DIR, '02-after-inserts.png'), fullPage: true })
+
+    // ---- 10. 主题切换：已渲染图表必须重渲染（T3-01） ----
+    // mermaid 的 SVG 是固化色，只换 CSS 变量不会变色，所以这里读节点填充色验重画。
+    const readDiagramPaint = () => page.evaluate(() => {
+      const svg = document.querySelector('.lark-doc-diagram-svg svg')
+      const card = document.querySelector('.lark-doc-code-diagram')
+      if (!svg) return null
+      const shape = svg.querySelector('.node rect, .node polygon, .node path, rect.actor')
+      return {
+        fill: shape ? getComputedStyle(shape).fill : null,
+        cardBg: card ? getComputedStyle(card).backgroundColor : null,
+      }
+    })
+
+    const lightPaint = await readDiagramPaint()
+    record('浅色档图表已着色', Boolean(lightPaint && lightPaint.fill), JSON.stringify(lightPaint))
+
+    await page.evaluate(() => { window.__larkDoc.setTheme('dark', 'dark') })
+    await page.waitForTimeout(1500)
+    const darkPaint = await readDiagramPaint()
+    record(
+      '切深色后图表重渲染（节点填充 = 深色 α 层，不是滤镜/不变量）',
+      Boolean(darkPaint && darkPaint.fill === 'rgba(207, 207, 207, 0.08)'),
+      `fill=${darkPaint && darkPaint.fill}`
+    )
+    record('深色下图表卡片跟随正文纸张 #292929', Boolean(darkPaint && darkPaint.cardBg === 'rgb(41, 41, 41)'), `cardBg=${darkPaint && darkPaint.cardBg}`)
+    await page.screenshot({ path: path.join(SHOT_DIR, '03-dark-mermaid.png'), fullPage: true })
+
+    await page.evaluate(() => { window.__larkDoc.setTheme('light', 'light') })
+    await page.waitForTimeout(1500)
+    const backPaint = await readDiagramPaint()
+    record(
+      '切回浅色后图表恢复浅色渲染',
+      Boolean(backPaint && backPaint.fill && backPaint.fill === lightPaint.fill),
+      `fill=${backPaint && backPaint.fill}（原 ${lightPaint && lightPaint.fill}）`
+    )
 
     // ---- 内网可用性：全程无外网请求（懒 chunk 走本地 origin） ----
     record('全页无外网请求（内网可用）', externalRequests.length === 0, externalRequests.slice(0, 3).join(' | '))
