@@ -61,188 +61,7 @@
             @pointermove.native="onEditorPointerMove"
             @dragover.native="onBlockDragOver"
             @drop.native="onBlockDrop"
-          /><div
-            v-if="activeCalloutVisible && featureEnabled('callouts')"
-            class="lark-doc-callout-tools"
-            :style="calloutToolsStyle"
-            role="toolbar"
-            aria-label="高亮块工具"
-            @mousedown.prevent
-          >
-            <label
-              title="高亮块文字颜色"
-              aria-haspopup="menu"
-              @click.prevent="toggleColorPalette('calloutColor', $event)"
-            ><span aria-hidden="true">A</span><input
-              type="color"
-              aria-label="高亮块文字颜色"
-              :value="calloutColor('color', '#263830')"
-              @input="setCalloutColor('color', $event.target.value)"
-            ></label><label
-              title="高亮块背景颜色"
-              aria-haspopup="menu"
-              @click.prevent="toggleColorPalette('calloutBackground', $event)"
-            ><span aria-hidden="true">◉</span><input
-              type="color"
-              aria-label="高亮块背景颜色"
-              :value="calloutColor('backgroundColor', '#eff9f4')"
-              @input="setCalloutColor('backgroundColor', $event.target.value)"
-            ></label><label
-              title="高亮块边框颜色"
-              aria-haspopup="menu"
-              @click.prevent="toggleColorPalette('calloutBorder', $event)"
-            ><span aria-hidden="true">▔</span><input
-              type="color"
-              aria-label="高亮块边框颜色"
-              :value="calloutColor('borderColor', '#00b887')"
-              @input="setCalloutColor('borderColor', $event.target.value)"
-            ></label><button
-              type="button"
-              aria-label="更换高亮块图标"
-              @click="toggleCalloutEmoji"
-            >
-              ☺
-            </button><button
-              type="button"
-              aria-label="恢复高亮块默认样式"
-              @click="resetCalloutStyle"
-            >
-              ↺
-            </button><button
-              type="button"
-              aria-label="删除高亮块"
-              @click="deleteActiveCallout"
-            >
-              ⌫
-            </button><div
-              v-if="calloutEmojiOpen"
-              class="lark-doc-callout-emoji-picker"
-              role="menu"
-              aria-label="高亮块图标"
-            >
-              <label class="lark-doc-callout-emoji-search"><span class="sr-only">搜索表情</span><input
-                v-model="calloutEmojiQuery"
-                type="search"
-                aria-label="搜索高亮块图标"
-                placeholder="搜索"
-              ></label><button
-                type="button"
-                aria-label="随机高亮块图标"
-                title="随机高亮块图标"
-                @click="setCalloutEmoji(pickRandomCalloutEmoji())"
-              >
-                ↺
-              </button><div
-                class="lark-doc-callout-emoji-tabs"
-                role="tablist"
-                aria-label="高亮块图标分类"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-label="最近使用"
-                  :aria-selected="String(calloutEmojiCategory === 'recent')"
-                  @click="calloutEmojiCategory = 'recent'"
-                >
-                  最近
-                </button><button
-                  type="button"
-                  role="tab"
-                  aria-label="全部"
-                  :aria-selected="String(calloutEmojiCategory === 'all')"
-                  @click="calloutEmojiCategory = 'all'"
-                >
-                  全部
-                </button><button
-                  v-for="category in calloutEmojiCategories"
-                  :key="category"
-                  type="button"
-                  role="tab"
-                  :aria-label="category"
-                  :aria-selected="String(calloutEmojiCategory === category)"
-                  @click="calloutEmojiCategory = category"
-                >
-                  {{ category }}
-                </button>
-              </div><p
-                v-if="calloutEmojiCategory === 'recent' && !filteredCalloutEmojiItems.length"
-                class="lark-doc-callout-emoji-empty"
-              >
-                暂无最近使用
-              </p><button
-                v-for="item in filteredCalloutEmojiItems"
-                :key="item.value"
-                type="button"
-                role="menuitem"
-                :aria-label="item.label"
-                @click="setCalloutEmoji(item.glyph)"
-              >
-                {{ item.glyph }}
-              </button>
-            </div>
-          </div><div
-            v-if="featureEnabled('tables') && tableBoundary.visible && tableBoundary.hover && !effectiveReadonly"
-            class="lark-doc-table-boundary-tools"
-            :class="{ 'is-column': tableBoundary.hover === 'column', 'is-row': tableBoundary.hover === 'row' }"
-            :style="{ ...tableBoundary.style, '--lark-doc-column-line-left': `${tableBoundary.columnLineLeft}px`, '--lark-doc-row-line-top': `${tableBoundary.rowLineTop}px` }"
-            role="toolbar"
-            aria-label="表格边界操作"
-            @pointerenter="keepTableBoundaryHover"
-            @pointerleave="clearTableBoundaryHover"
-          >
-            <span
-              v-if="tableBoundary.hover === 'column'"
-              class="lark-doc-table-boundary-line is-column-line"
-              :style="{ left: `${tableBoundary.columnLineLeft}px` }"
-              aria-hidden="true"
-            /><span
-              v-if="tableBoundary.hover === 'row'"
-              class="lark-doc-table-boundary-line is-row-line"
-              :style="{ top: `${tableBoundary.rowLineTop}px` }"
-              aria-hidden="true"
-            />
-            <button
-              v-if="tableBoundary.hover === 'column'"
-              type="button"
-              class="is-column-before"
-              aria-label="在左侧插入列"
-              title="在左侧插入列"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addColumnBefore')"
-            >
-              ＋
-            </button><button
-              v-if="tableBoundary.hover === 'column'"
-              type="button"
-              class="is-column-after"
-              aria-label="在右侧插入列"
-              title="在右侧插入列"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addColumnAfter')"
-            >
-              ＋
-            </button><button
-              v-if="tableBoundary.hover === 'row'"
-              type="button"
-              class="is-row-before"
-              aria-label="在上方插入行"
-              title="在上方插入行"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addRowBefore')"
-            >
-              ＋
-            </button><button
-              v-if="tableBoundary.hover === 'row'"
-              type="button"
-              class="is-row-after"
-              aria-label="在下方插入行"
-              title="在下方插入行"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addRowAfter')"
-            >
-              ＋
-            </button>
-          </div>
+          /><CalloutTools :ed="self" /><TableBoundaryTools :ed="self" />
         </div><footer class="lark-doc-status">
           <span>{{ wordCount }}{{ effectiveMaxLength > 0 ? ` / ${effectiveMaxLength}` : '' }} 字 · {{ outline.length }} 个标题</span><span>{{ effectiveReadonly ? '仅阅读' : '输入 / 快速插入' }}</span>
         </footer>
@@ -885,6 +704,8 @@ import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
 import BlockHandleMenu from './editor/BlockHandleMenu.vue'
+import CalloutTools from './editor/CalloutTools.vue'
+import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -917,7 +738,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu },
+  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },

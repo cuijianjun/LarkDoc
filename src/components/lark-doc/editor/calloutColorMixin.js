@@ -111,6 +111,9 @@ export default {
     calloutColor(name, fallback) { return this.editor?.getAttributes('callout')?.[name] || fallback },
     setCalloutColor(name, value) { if (this.writable() && /^#[0-9a-f]{6}$/i.test(value)) this.run('updateAttributes', 'callout', { [name]: value }) },
     pickRandomCalloutEmoji() { return this.emojiItems[Math.floor(Math.random() * this.emojiItems.length)]?.glyph || '💡' },
+    // P0-03：表情搜索/分类的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    setCalloutEmojiQuery(value) { this.calloutEmojiQuery = value },
+    setCalloutEmojiCategory(category) { this.calloutEmojiCategory = category },
     toggleCalloutEmoji() { if (!this.writable()) return; this.calloutEmojiOpen = !this.calloutEmojiOpen; if (this.calloutEmojiOpen) this.calloutEmojiCategory = 'all'; else { this.calloutEmojiQuery = ''; this.calloutEmojiCategory = 'all' } },
     setCalloutEmoji(emoji) {
       if (!this.writable()) return
