@@ -405,6 +405,9 @@ export default {
       this.clearTableBoundaryHover()
     },
     onHandlePointerUp() { this.handlePressed = false; this.refreshHandleHighlight() },
+    // P0-03：句柄按下/拖拽结束的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    pressHandle() { this.handlePressed = true },
+    endBlockDrag() { this.handlePressed = false; this.dragging = null; this.dropPosition = null; this.refreshHandleHighlight() },
     // Callout handles sit outside the NodeView, but pointer positions resolve
     // into its contentDOM paragraph; dragging must preserve the outer module.
     blockDragRange(range) {
