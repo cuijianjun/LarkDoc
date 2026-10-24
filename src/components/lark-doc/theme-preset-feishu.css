@@ -138,4 +138,48 @@
   --ld-text-number-spinner: #8F959E;   /* = text-tertiary（06 §1.1） */
   --ld-text-number-hover: #1456F0;     /* 编号本体即品牌蓝，hover 靠下划线 + 浅蓝底表达，不另造加深蓝 */
   --ld-bg-number-item-hover: rgba(31, 35, 41, 0.1); /* 06 §7.1：控件类菜单项 hover 恒为主文字色 10% */
+
+  /* ================================================================
+     B4：正文 ProseMirror 块 + AI 面板（12 §3.1 批次 121–197）
+     口径 = 06 §1（文字/边框/背景实测）+ §6（表格）。06 只覆盖正文主文字、
+     标题、二三级文字、--border / --border-cell / --bg-code / --bg-hover /
+     表格单元格恒透明、引用竖线；其余是编辑器自有扩展（分栏虚线 / 折叠块 /
+     搜索命中 / 通知条 / AI 面板 / 模板面板），06 无实测条目 →
+     「只映射不新造」，一律归并到上面已有的中性或品牌 token。
+     ================================================================ */
+  /* ---- 正文文字（06 §1.1） ---- */
+  --ld-text-content: #1F2329;           /* = text-primary */
+  --ld-text-heading: #1F2329;           /* 飞书标题与正文同为主文字色，层级靠字号/字重 */
+  --ld-text-quote: #646A73;             /* = text-secondary */
+  --ld-text-bullet: #1F2329;            /* 无序列表圆点与正文同色 */
+  --ld-text-summary: #1F2329;           /* 折叠块标题 */
+  --ld-text-fold-toggle: #646A73;       /* 折叠三角 = 图标灰 */
+  --ld-text-fold-toggle-hover: #1456F0; /* = brand */
+  /* ---- 正文背景 / 边框（06 §1.3 / §1.4） ---- */
+  --ld-bg-quote: transparent;           /* 06 §525：引用底恒透明，只留左侧竖线 */
+  --ld-border-column: #DEE0E3;          /* = border（分栏虚线） */
+  --ld-border-column-hover: #C2D4FF;    /* 品牌浅蓝，本文件已用于 --ld-focus-ring-picker */
+  --ld-bg-details: #F5F6F7;             /* = bg-code / bg-page */
+  --ld-border-details: #DEE0E3;         /* = border */
+  --ld-border-table: #DEE0E3;           /* = border-cell */
+  --ld-bg-th: transparent;              /* 06 §131：--bg-table-cell 恒透明，表头同 */
+  --ld-border-hr: #DEE0E3;              /* = divider */
+  --ld-bg-fold-toggle-hover: #E1EAFF;   /* = brand-subtle */
+  --ld-bg-hover-segment: rgba(100, 106, 115, 0.05); /* 06 §130：块 hover 底 */
+  /* ---- 通知条 / 侧栏卡片 / AI 面板（06 无实测，按中性角色归并） ---- */
+  --ld-border-notice: #DEE0E3;
+  --ld-bg-notice: #F5F6F7;
+  --ld-text-notice: #1F2329;
+  --ld-shadow-notice: rgba(31, 35, 41, 0.08) 0 6px 12px 0;  /* = --shadow-fab */
+  --ld-shadow-panel: rgba(31, 35, 41, 0.1) 0 4px 8px 0;     /* = --shadow-popover */
+  --ld-bg-ai-context: #F5F6F7;
+  --ld-bg-ai-review: #F5F6F7;
+  --ld-bg-ai-proposal: #E1EAFF;         /* = brand-subtle（AI 建议需与评审条目区分） */
+  --ld-border-template-hover: #C2D4FF;
+  /* ---- 本档不覆盖（继承默认档）----
+     ★ --ld-bg-callout / --ld-border-callout：高亮块色由 calloutColorMixin 色板
+       写 inline style 驱动（同 --ld-cat-* 的「用户内容色」口径，不随主题变），
+       CSS 两值仅兜底，本档覆盖会造成「面板色板显示绿、实际渲染橙」的错位。
+     ★ --ld-bg-search-hit / --ld-border-search-active：搜索命中是功能高亮色，
+       两档同值（黄底橙框是语义色，不参与主题化）。 */
 }
