@@ -15,6 +15,9 @@ hero:
     - theme: alt
       text: 实例与事件
       link: /guide/instance
+    - theme: alt
+      text: 在线演示
+      link: /demo/
 
 features:
   - icon: 📝
