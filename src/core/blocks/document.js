@@ -12,6 +12,7 @@ import {
   sanitizeHTML,
 } from '../documentOperations'
 import { createNetworkPolicy } from '../policy/network'
+import { createDerivedIndex } from '../derive/index'
 import { applyBlockIdFixes } from './block-fixes'
 import { documentKey } from './document-key'
 import { applyLineStartMarker, verticalBoundarySelection } from './document-helpers'
@@ -44,6 +45,18 @@ export function documentExtension(options) {
     addProseMirrorPlugins() {
       const storage = this.storage
       const editor = this.editor
+      // P0-11（09 §3.7）：派生计算收拢进 DerivedIndex。兜底实现 = 任何事务标脏、
+      // 下次 decorations() 全量重建 —— 行为与收拢前逐字节一致（搜索词/折叠集合/
+      // 把手悬停都走 tr meta，所以纯 meta 事务也要标脏）；P7-01 只换 update(tr)
+      // 的实现（mapping 区间局部重扫 + oldSet.map 打底），这里一行不改。
+      const derivedIndex = createDerivedIndex({
+        // 编辑器宿主与测试桩可能没有 state/schema（check-lark-doc-core 的 mock
+        // 只有 { isEditable }）：初始 doc 允许为 null，首次 update/decorations
+        // 会用真实事务补上；查询方法对 null doc 有护栏。
+        doc: editor.state?.doc ?? null,
+        schema: editor.schema,
+        rebuild: (state) => createDocumentDecorations({ state, storage, editor, enabled, options }),
+      })
       let lastSlash = ''
       let dismissed = false
       const reportSlash = (view) => {
@@ -56,6 +69,8 @@ export function documentExtension(options) {
         state: {
           init: () => null,
           apply: (tr) => {
+            // 派生索引先行：任何事务（含纯 meta）都标脏，本插件其余逻辑照旧。
+            derivedIndex.update(tr)
             if (tr.docChanged) { dismissed = false; storage.handleHover = null }
             const action = tr.getMeta(documentKey)
             if (action?.resetFolds) storage.folded.clear()
@@ -146,7 +161,9 @@ export function documentExtension(options) {
           },
           // 新块（回车分段、粘贴、拖入、AI 插入）和重复块（复制粘贴）在这里补 blockId：
           // 已有 id 的块一字不动，只有缺失/重号的块在事务末尾被重新编号。
-          decorations: (state) => createDocumentDecorations({ state, storage, editor, enabled, options }),
+          // 派生计算一律走 DerivedIndex（硬规则 13：不许在 props.decorations
+          // 里直接全量重扫文档）——具体计算在 document-decorations.js。
+          decorations: (state) => derivedIndex.decorations(state),
         },
         view: (view) => { reportSlash(view); return { update: reportSlash, destroy: () => { if (options.onSlash) options.onSlash(null) } } },
       })]

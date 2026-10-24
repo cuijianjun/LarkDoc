@@ -102,6 +102,31 @@ for (const factory of ['createCollabExtensions', 'createHocuspocusBridge', 'crea
   assert.throws(() => collab[factory]({}), /not implemented/, `${factory} 在 P6a 前必须保持未实现签名`)
 }
 
+// P0-11：DerivedIndex 骨架——六方法签名（09 §3.7.1）+ 兜底行为探针 + 装饰接线校验。
+const derive = require(path.resolve(sourceRoot, 'core/derive/index'))
+assert.strictEqual(typeof derive.createDerivedIndex, 'function', 'core/derive 必须导出 createDerivedIndex（09 §3.7 契约）')
+assert.strictEqual(typeof derive.mergeRanges, 'function', 'core/derive 必须导出 mergeRanges（§3.7 纪律 1 的区间合并）')
+assert.deepStrictEqual(
+  derive.mergeRanges([{ from: 5, to: 9 }, { from: 0, to: 4 }, { from: 4, to: 12 }, { from: 20, to: 30 }]),
+  [{ from: 0, to: 12 }, { from: 20, to: 30 }],
+  'mergeRanges 必须把重叠/贴边区间收敛为互不重叠的升序区间（(0,4)+(4,12) 贴边可并；间隔 ≥1 的不并）',
+)
+// 最小探针验证六方法签名与 update 的兜底语义：区间来自 mapping.maps 并合并，返回 { changed, index }。
+const probeIndex = derive.createDerivedIndex({ doc: {}, schema: null, rebuild: (state) => ({ probed: state }) })
+for (const method of ['update', 'decorations', 'headingNumbers', 'outline', 'foldRanges', 'invalidate']) {
+  assert.strictEqual(typeof probeIndex[method], 'function', `DerivedIndex 缺少 ${method} 方法（09 §3.7.1 契约）`)
+}
+const probeMap = { forEach: (fn) => { fn(2, 6); fn(10, 11); fn(4, 8) } }
+const probeResult = probeIndex.update({ mapping: { maps: [probeMap] }, doc: { version: 2 } })
+// (2,6)+(4,8) 相邻重叠并成 (2,8)；(10,11) 与前段有间隙保留为独立区间。
+assert.deepStrictEqual(probeResult.changed, [{ from: 2, to: 8 }, { from: 10, to: 11 }], 'update 必须把 mapping 各段合并成互不重叠区间')
+assert.strictEqual(probeResult.index, probeIndex, 'update 返回值必须携带 index 自身（09 §3.7.1 契约）')
+// 装饰接线：props.decorations 必须委托 DerivedIndex，且接线文件不得直接全量重扫文档
+// （硬规则 13 —— 具体计算在 document-decorations.js，P7-01 只换 update 实现）。
+const documentExtensionSource = fs.readFileSync(path.resolve(sourceRoot, 'core/blocks/document.js'), 'utf8')
+assert(/derivedIndex\.decorations\(state\)/.test(documentExtensionSource), 'props.decorations 必须走 DerivedIndex（09 §3.7 / 硬规则 13）')
+assert(!/\bdoc\.descendants\b/.test(documentExtensionSource), '装饰接线文件不得直接全量重扫文档（硬规则 13），派生计算一律进 DerivedIndex')
+
 // 决策 5 硬边界：本仓库不含任何自有服务端代码——hocuspocus 只准出现在 test/（e2e 内存实例）。
 function walkJsFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
