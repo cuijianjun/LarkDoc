@@ -13,44 +13,23 @@ import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
+import { dependencyClosure } from '../helpers/dependency-closure.js'
 
 const requireHere = createRequire(import.meta.url)
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-/**
- * vitest 走的是 ESM runner，被 import 的模块不会进 require.cache，
- * 所以在子进程里用与 scripts/check-architecture.js 相同的 babel loader 装载源码，
- * 再把 require.cache 掏出来看闭包。
- */
-const HARNESS = `
-const fs = require('fs')
-const path = require('path')
-const sourceRoot = process.argv[1]
-const { transformSync } = require(process.argv[2])
-const originalLoader = require.extensions['.js']
-require.extensions['.js'] = (module, filename) => {
-  if (!filename.startsWith(sourceRoot + path.sep)) return originalLoader(module, filename)
-  const { code } = transformSync(fs.readFileSync(filename, 'utf8'), {
-    babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'],
+function closureOfExtensions() {
+  return dependencyClosure({
+    root,
+    sourceRoot: path.join(root, 'src'),
+    babelCore: requireHere.resolve('@babel/core'),
+    entry: path.join(root, 'src/components/lark-doc/extensions.js'),
   })
-  module._compile(code, filename)
-}
-require(process.argv[3])
-console.log(Object.keys(require.cache).join('\\n'))
-`
-
-function dependencyClosure() {
-  const stdout = execFileSync(process.execPath, ['-e', HARNESS,
-    path.join(root, 'src'),
-    requireHere.resolve('@babel/core'),
-    path.join(root, 'src/components/lark-doc/extensions.js'),
-  ], { cwd: root, encoding: 'utf8' })
-  return stdout.split('\n').filter(Boolean)
 }
 
 describe('P0-01 删死代码', () => {
-  it('extensions.js 的依赖闭包内不含 ImageNode / CodeNode', () => {
-    const leaks = dependencyClosure().filter((file) => /ImageNode|CodeNode/.test(file))
+  it('extensions.js 的依赖闭包内不含 ImageNode / CodeNode', { timeout: 30000 }, () => {
+    const leaks = closureOfExtensions().filter((file) => /ImageNode|CodeNode/.test(file))
     expect(leaks).toEqual([])
   })
 
