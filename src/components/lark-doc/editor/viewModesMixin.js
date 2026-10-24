@@ -93,6 +93,13 @@ export default {
     },
     closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.editor?.commands.setLarkDocSearch(''); this.focus() },
     toggleReading() { this.reading = !this.reading },
+    // P0-03：模板级赋值收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    toggleSearchOpen() { this.searchOpen = !this.searchOpen },
+    toggleOutlineOpen() { this.outlineOpen = !this.outlineOpen },
+    toggleHelpOpen() { this.helpOpen = !this.helpOpen },
+    setWidthMode(v) { this.widthMode = v },
+    setSearchQuery(v) { this.searchQuery = v },
+    setReplacement(v) { this.replacement = v },
     async toggleFullscreen() { if (!this.fullscreen) { try { await this.$refs.root.requestFullscreen() } catch (_) { this.fullscreen = true } } else if (document.fullscreenElement) await document.exitFullscreen(); else this.fullscreen = false },
     onFullscreenChange() { this.fullscreen = document.fullscreenElement === this.$refs.root },
     toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },

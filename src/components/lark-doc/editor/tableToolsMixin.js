@@ -30,6 +30,8 @@ export default {
     },
   },
   methods: {
+    // P0-03：工具栏表格按钮的三态行为收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    onTableToolbarClick() { if (this.isActive('table')) this.tableToolsOpen = !this.tableToolsOpen; else this.tablePicker = true },
     previewTableSize(rows, cols) { if (!this.tablePicker) return; this.tablePickerHover = { rows, cols } },
     insertTable(rows, cols) { if (!this.writable() || !this.featureEnabled('tables')) return; this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 }; this.run('insertTable', { rows, cols, withHeaderRow: false }); this.$nextTick(() => this.updateTableBoundary()) },
     activeTableElement() {
