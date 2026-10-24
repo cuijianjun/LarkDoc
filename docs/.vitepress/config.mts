@@ -19,7 +19,7 @@ export default defineConfig({
       { text: '指南', link: '/guide/getting-started' },
       { text: '功能配置', link: '/blocks/heading' },
       { text: '实例与事件', link: '/guide/instance' },
-      { text: '在线演示', link: '/demo/' },
+      { text: '在线演示', link: '/demo/', target: '_blank' },
       { text: '关于', link: '/guide/about' },
     ],
 

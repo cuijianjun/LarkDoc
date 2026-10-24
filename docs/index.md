@@ -18,6 +18,7 @@ hero:
     - theme: alt
       text: 在线演示
       link: /demo/
+      target: _blank
 
 features:
   - icon: 📝
