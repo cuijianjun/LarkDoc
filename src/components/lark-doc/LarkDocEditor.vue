@@ -9,31 +9,11 @@
       class="lark-doc-skip"
       href="#lark-doc-editor"
     >跳到正文</a>
-    <!-- 顶部标题栏：layout.headerVisible=false 时整行隐藏，操作入口移入工具栏「⋯」下拉 -->
-    <header
-      v-if="larkDocConfig.layout.headerVisible"
-      class="lark-doc-topbar"
-    >
-      <div
-        class="lark-doc-brand"
-        aria-label="文档"
-      >
-        ✦ <span>文档</span>
-      </div>
-      <div class="lark-doc-title-wrap">
-        <input
-          :value="localTitle"
-          aria-label="文档标题"
-          :maxlength="titleLength"
-          placeholder="未命名文档"
-          :readonly="effectiveReadonly"
-          @input="updateTitle($event.target.value)"
-        ><span class="lark-doc-title-sub">{{ effectiveReadonly ? '阅读中' : '单人编辑' }}</span>
-      </div>
-      <div class="lark-doc-header-actions">
+    <TopBar :ed="self">
+      <template #header-actions>
         <slot name="header-actions" />
-      </div>
-    </header>
+      </template>
+    </TopBar>
 
     <div
       class="lark-doc-toolbar"
@@ -1788,6 +1768,7 @@ import CommandMenu from './CommandMenu.vue'
 import LarkDocSelect from './LarkDocSelect.vue'
 import LarkDocHeadingMenu from './LarkDocHeadingMenu.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
+import TopBar from './editor/TopBar.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -1820,7 +1801,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocSelect, LarkDocHeadingMenu, LarkDocIcon },
+  components: { EditorContent, CommandMenu, LarkDocSelect, LarkDocHeadingMenu, LarkDocIcon, TopBar },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
@@ -1842,6 +1823,8 @@ export default {
     pendingStateFrame: null, pendingChangeTimer: null,
   } },
   computed: {
+    // 拆分出的子组件（editor/*.vue）经实例 prop 引用本组件：模板里写 :ed="self"。
+    self() { return this },
     // ECS 的 ref.html 与新页面 v-model 使用同一正文，保留原调用方的读写契约。
     larkDocConfig() { return mergeLegacyConfig(this.config, { maxLength: this.maxLength, imageMaxSize: this.imageMaxSize }) },
     maxBlockIndent() { return clampBlockIndent(this.larkDocConfig.limits.maxIndent) },
