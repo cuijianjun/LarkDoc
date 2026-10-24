@@ -18,6 +18,7 @@
     "check:node14": "node scripts/check-node14.js",
     "check:architecture": "node scripts/check-architecture.js",
     "check:unit": "vitest run",
+    "check:perf": "npm run build:element && node scripts/perf/measure.mjs && node scripts/perf/report.mjs",
     "prepack": "npm run build && npm run build:umd && npm run build:esm && npm run build:element && npm run size",
     "build:element": "LARK_DOC_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc-element --formats umd-min src/web-component/index.js",
     "size": "size-limit",
