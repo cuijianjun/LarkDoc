@@ -6,6 +6,10 @@
  * 没有公式的文档因此不会为这份样式付费。 */
 @import './src/components/lark-doc/lark-doc.css';
 @import './src/components/lark-doc/theme-preset-feishu.css';
+/* 宿主对齐档（pcvue 墨绿 #1d3d39 系，13 §4.3）—— 宿主加 data-theme-preset="pcvue" 启用。
+   同样放在 theme-dark.css 之前：本档的 [data-theme-preset][data-theme="dark"]
+   特异性更高，天然压在深色档之上。 */
+@import './src/components/lark-doc/theme-preset-pcvue.css';
 /* 深色档色板（默认档中性灰 / 正文双轨）。放在 preset 之后：
  * 将来 preset 要出深色档时，其 `[data-theme-preset=...][data-theme="dark"]`
  * 特异性更高，天然压在本文件之上，无需调整顺序。 */

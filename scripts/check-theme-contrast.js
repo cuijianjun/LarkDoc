@@ -5,8 +5,9 @@
  * 两套色板各跑一遍：**正文（content 轨）≥ 4.5:1、UI（chrome 轨 / 描边 / 表线 / 图表）≥ 3:1**。
  *
  * 做法（不引第三方色库，Node 14 可跑）：
- *   1. 解析 lark-doc.css 的 `.lark-doc {}` token 区（浅色档）+ theme-dark.css 的
- *      `[data-theme="dark"]` / `[data-content-theme="dark"]` 两个块（深色档）；
+ *   1. 解析 lark-doc.css 的 `.lark-doc {}` token 区（浅色档）、theme-preset-pcvue.css 的
+ *      `[data-theme-preset="pcvue"]` / `[data-theme="dark"]` / `[data-content-theme="dark"]`
+ *      三块（宿主对齐档）、theme-dark.css 的两个深色块（默认深色档）；
  *   2. `var()` 转发一层一层解析（如 --ld-border-chrome → --ld-border）；
  *   3. 带 alpha 的 token 按其所在**轨道的底**先合成：浅色 #FFFFFF、
  *      深色外壳 #17181A / 深色内容 #292929 —— 否则 `rgba(207,207,207,.08)`
@@ -23,11 +24,17 @@ const path = require('path')
 const root = path.resolve(__dirname, '..')
 const LIGHT_FILE = path.join(root, 'src/components/lark-doc/lark-doc.css')
 const DARK_FILE = path.join(root, 'src/components/lark-doc/theme-dark.css')
+const PCVUE_FILE = path.join(root, 'src/components/lark-doc/theme-preset-pcvue.css')
 
-/** 轨道底：alpha token 先合成到它上面，再参与对比。 */
+/**
+ * 轨道底：alpha token 先合成到它上面，再参与对比。
+ * pcvue 档按 13 §4.3：外壳轨页面底 #1d3d39、正文轨纸张 = 页面底（11 §4.8 结论②）。
+ */
 const TRACK_BASE = {
   light: { chrome: '#FFFFFF', content: '#FFFFFF' },
   dark: { chrome: '#17181A', content: '#292929' },
+  pcvue: { chrome: '#FFFFFF', content: '#FFFFFF' },
+  'pcvue-dark': { chrome: '#1d3d39', content: '#1d3d39' },
 }
 
 /**
@@ -204,18 +211,39 @@ function contrast(a, b) {
 
 const lightBlocks = parseBlocks(stripComments(fs.readFileSync(LIGHT_FILE, 'utf8')))
 const darkBlocks = parseBlocks(stripComments(fs.readFileSync(DARK_FILE, 'utf8')))
+const pcvueBlocks = parseBlocks(stripComments(fs.readFileSync(PCVUE_FILE, 'utf8')))
+
+/** 默认档浅色 token（所有档位的地基）。 */
+const BASE_LIGHT = collectTokens(lightBlocks, '.lark-doc')
+/** 默认档深色 token（两份深色块合并，pcvue 深色的下一层）。 */
+const BASE_DARK = Object.assign(
+  {},
+  collectTokens(darkBlocks, '[data-theme="dark"]'),
+  collectTokens(darkBlocks, '[data-content-theme="dark"]')
+)
+/** pcvue 浅色覆盖层。 */
+const PCVUE_LIGHT = collectTokens(pcvueBlocks, '[data-theme-preset="pcvue"]')
+/** pcvue 深色覆盖层（特异性 0,3,0，压在默认深色之上）。 */
+const PCVUE_DARK = Object.assign(
+  {},
+  collectTokens(pcvueBlocks, '[data-theme="dark"]'),
+  collectTokens(pcvueBlocks, '[data-content-theme="dark"]')
+)
 
 const THEMES = {
   light: {
-    tokens: collectTokens(lightBlocks, '.lark-doc'),
+    tokens: BASE_LIGHT,
   },
   dark: {
-    tokens: Object.assign(
-      {},
-      collectTokens(lightBlocks, '.lark-doc'),
-      collectTokens(darkBlocks, '[data-theme="dark"]'),
-      collectTokens(darkBlocks, '[data-content-theme="dark"]')
-    ),
+    tokens: Object.assign({}, BASE_LIGHT, BASE_DARK),
+  },
+  // 宿主对齐档（13 §4.3）。层叠顺序严格照 CSS：.lark-doc → preset 浅色块
+  // → 默认深色块（同特异性、theme-dark.css 在其后）→ preset 深色块（特异性更高）。
+  pcvue: {
+    tokens: Object.assign({}, BASE_LIGHT, PCVUE_LIGHT),
+  },
+  'pcvue-dark': {
+    tokens: Object.assign({}, BASE_LIGHT, PCVUE_LIGHT, BASE_DARK, PCVUE_DARK),
   },
 }
 
@@ -236,6 +264,13 @@ const KNOWN_DEVIATIONS = {
   'light|弱态图标 / 浮起表面':
     '默认档（绿系）图标色 #8ba197 是现状视觉基线，2.75:1 差 0.25 —— 改亮即默认档视觉变化，' +
     '须先跑截图 diff 基线并获授权（12 §8 Q5）。飞书 preset 档同角色 #646A73 为 5.9:1，不受影响。',
+
+  'pcvue-dark|次级文字 / 浮起表面':
+    '宿主 dark 皮肤自身就是「次字 #999999 压在浮起面 #425756 上」（13 §4.3 实测），2.70:1。' +
+    '这是**保真优先**的取舍：要过 4.5:1，浮动面 #425756 上至少得 #C6C6C6 —— 那是 06/11/13 都' +
+    '没有的新造色值，属硬闸门②，须授权。中间档 #A6A6A6（11 §4.2 实测）也只有 3.16:1，' +
+    '提亮到它能少欠 0.46 但依旧不达标，故维持宿主原值。引用文字等**非外壳**位置的次级文字' +
+    '已退回 #A6A6A6 达标，只有这一处（外壳浮层次级文字）保留宿主色。',
 }
 const isKnown = (item) => Boolean(KNOWN_DEVIATIONS[`${item.theme}|${item.pair.label}`])
 const results = []
@@ -243,7 +278,7 @@ const results = []
 Object.keys(THEMES).forEach((themeName) => {
   const theme = THEMES[themeName]
   PAIRS.forEach((pair) => {
-    if (pair.darkOnly && themeName !== 'dark') return
+    if (pair.darkOnly && !/dark$/.test(themeName)) return
     const baseColor = parseColor(TRACK_BASE[themeName][pair.track])
     const bgRaw = pair.bg ? resolve(pair.bg, theme.tokens) : null
     const bgBase = pair.over ? parseColor(resolve(pair.over, theme.tokens)) : baseColor
@@ -264,14 +299,14 @@ const exempted = results.filter((item) => isKnown(item) && (item.ratio == null |
 
 const pad = (text, width) => String(text) + ' '.repeat(Math.max(0, width - String(text).length))
 console.log('主题对比度核对（12 T4-01：正文 ≥4.5:1，UI ≥3:1）\n')
-console.log(`${pad('档位', 6)}${pad('分组', 4)}${pad('对比项', 30)}${pad('对比度', 8)}${pad('阈值', 6)}结果`)
-console.log('-'.repeat(74))
+console.log(`${pad('档位', 12)}${pad('分组', 4)}${pad('对比项', 30)}${pad('对比度', 8)}${pad('阈值', 6)}结果`)
+console.log('-'.repeat(80))
 results.forEach((item) => {
   const ok = item.ratio != null && item.ratio >= item.min
   const ratioText = item.ratio == null ? '—' : `${item.ratio.toFixed(2)}:1`
   const status = ok ? 'OK' : (isKnown(item) ? '豁免' : 'FAIL')
   console.log(
-    `${pad(item.theme, 6)}${pad(item.pair.kind, 6)}${pad(item.pair.label, 30)}${pad(ratioText, 8)}${pad('≥' + item.min, 6)}${status}${item.note ? ` (${item.note})` : ''}`
+    `${pad(item.theme, 12)}${pad(item.pair.kind, 6)}${pad(item.pair.label, 30)}${pad(ratioText, 8)}${pad('≥' + item.min, 6)}${status}${item.note ? ` (${item.note})` : ''}`
   )
 })
 
