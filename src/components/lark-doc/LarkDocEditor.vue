@@ -38,58 +38,7 @@
       >
         ☰
       </button>
-      <aside
-        v-if="outlineOpen && featureEnabled('outline')"
-        class="lark-doc-outline"
-        aria-label="文档目录"
-      >
-        <div class="lark-doc-outline-heading">
-          <strong>目录</strong><button
-            type="button"
-            aria-label="关闭目录"
-            @click="outlineOpen = false"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </div><p v-if="!outline.length">
-          添加标题后自动生成目录
-        </p><div
-          v-for="item in outlineItems"
-          :key="item.pos"
-          class="lark-doc-outline-item"
-          :style="{ paddingLeft: `${Math.min(item.level - 1, 5) * 10}px` }"
-        >
-          <button
-            v-if="item.hasChildren"
-            type="button"
-            :class="{ active: item.pos === activeHeading }"
-            :aria-label="`${item.collapsed ? '展开' : '收起'}目录：${item.text || '标题'}`"
-            :aria-expanded="String(!item.collapsed)"
-            :title="item.collapsed ? '展开目录' : '收起目录'"
-            @click="toggleOutline(item.pos)"
-          >
-            <span
-              class="lark-doc-outline-arrow"
-              :class="{ 'is-collapsed': item.collapsed }"
-              aria-hidden="true"
-            />
-          </button><span
-            v-else
-            class="lark-doc-outline-toggle-placeholder"
-            aria-hidden="true"
-          />
-          <button
-            type="button"
-            :class="{ active: item.pos === activeHeading }"
-            @click="jumpHeading(item.pos)"
-          >
-            {{ item.text || '无标题' }}
-          </button>
-        </div>
-      </aside>
+      <OutlinePanel :ed="self" />
       <main class="lark-doc-main">
         <div
           v-if="slides"
@@ -1306,6 +1255,7 @@ import TopBar from './editor/TopBar.vue'
 import ToolbarBar from './editor/ToolbarBar.vue'
 import SearchPanel from './editor/SearchPanel.vue'
 import TableTools from './editor/TableTools.vue'
+import OutlinePanel from './editor/OutlinePanel.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -1338,7 +1288,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools },
+  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
