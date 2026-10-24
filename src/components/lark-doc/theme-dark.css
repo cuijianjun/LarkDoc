@@ -128,6 +128,13 @@
   --ld-bg-columns-cell-active: rgba(76, 136, 255, 0.40); /* C */
   --ld-bg-columns-cell-preview: #4C88FF;               /* A */
 
+  /* ---- 分类图标（命令菜单类型标识，浮层属 chrome 轨） ----
+     7 个类型色实测对比度（#292929 底）：green 5.8 / orange 5.6 / teal 5.9 /
+     yellow 8.1 达标，保持浅色值；下列 3 个不达标，按用户口径只修这 3 个。 */
+  --ld-cat-gray: #A6A6A6;                 /* B：复用中性阶梯；原 #4a4e56 仅 1.76:1 不可读 */
+  --ld-cat-blue: #4C88FF;                 /* A：复用品牌提亮档；原 #416cf2 3.26:1 → 4.37:1 */
+  --ld-cat-indigo: #7A8BFF;               /* C：同色相提亮（唯一新造值）；原 #586bff 3.47:1 → 4.85:1 */
+
   /* ---- 标题编号块 UI（B6 收编组） ---- */
   --ld-text-number-menu: #F0F0F0;                  /* B */
   --ld-text-number-spinner: #A6A6A6;               /* B */
@@ -235,7 +242,7 @@
    ④ L1 基础层（1 组）—— 规格只有命名没有值，深色档不越级覆盖：
         --ld-c-gray-*
 
-   ★ 待补：--ld-cat-blue|indigo|green|orange|teal|yellow|gray（命令菜单类型图标）
-     实测对比度：gray 1.76:1 / blue 3.26:1 / indigo 3.47:1 均不达标，
-     其余 4 个 5.6–8.1:1 达标。06/11 无深色实测值，待定口径。
+   ★ --ld-cat-*（命令菜单类型图标）：green / orange / teal / yellow 实测
+     5.6–8.1:1 达标，沿用浅色值；gray / blue / indigo 已在上面修掉。
+     口径见 requirements/10，待飞书深色实测后回归。
    ------------------------------------------------------------------ */
