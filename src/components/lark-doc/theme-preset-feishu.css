@@ -1,0 +1,53 @@
+/* ==================================================================
+   飞书灰浅色主题档（0.12 T0-03）—— requirements/11 §3.4 + 06 实测口径。
+   - 默认档（无属性）= 现状绿系自研主题（见 lark-doc.css 顶部 token 区）；
+   - 启用本档：宿主在 .lark-doc 根容器上加 data-theme-preset="feishu"；
+   - 只覆盖 L2 基础 token；跨界 var 转发（--ld-border-chrome 等）会自动
+     解析到本档灰值，无需重写（12 §4 D2）；
+   - 深色档（[data-theme="dark"] 配套值）在 T2 落地，见 11 §4。
+   ================================================================== */
+.lark-doc[data-theme-preset="feishu"] {
+  /* ---- L2 文字（06 §1.1 实测） ---- */
+  --ld-text: #1F2329;
+  --ld-text-secondary: #646A73;
+  --ld-text-tertiary: #8F959E;
+  --ld-text-disabled: #BBBFC4;
+  --ld-text-on-brand: #FFFFFF;
+  --ld-text-link: #245BDB;
+  --ld-text-accent: #1456F0;         /* 激活强调 = 主品牌蓝 */
+  --ld-text-accent-hover: #336DF4;   /* 06 §2：生效态 icon fill #336DF4 */
+  --ld-text-icon: #646A73;           /* 图标按钮（.ud__button--icon） */
+  --ld-text-icon-tertiary: #8F959E;  /* 拖拽手柄等弱图标（06 §6.6） */
+  --ld-text-brand-sub: #646A73;
+  --ld-text-check: #1456F0;
+  /* ---- L2 背景（06 §1.4 实测） ---- */
+  --ld-bg-page: transparent;
+  --ld-bg-shell: #FFFFFF;
+  --ld-bg-surface: #FFFFFF;
+  --ld-bg-surface-raised: #FFFFFF;
+  --ld-bg-content: #FFFFFF;
+  --ld-bg-hover: rgba(100, 106, 115, 0.05);
+  --ld-bg-hover-strong: rgba(100, 106, 115, 0.05);
+  --ld-bg-hover-select: rgba(100, 106, 115, 0.05);
+  --ld-bg-hover-menu: rgba(100, 106, 115, 0.05);
+  --ld-bg-active: rgba(31, 35, 41, 0.10);
+  --ld-bg-accent: #E0E9FF;           /* 06 batch255 A2：--bg-selected */
+  --ld-bg-accent-active: #E0E9FF;
+  --ld-bg-selected: #E0E9FF;
+  --ld-bg-code: #F5F6F7;
+  /* ---- L2 边框（06 §1.3 实测） ---- */
+  --ld-border: #DEE0E3;
+  --ld-border-strong: #BBBFC4;
+  --ld-border-cell: #DEE0E3;
+  --ld-divider: #DEE0E3;
+  --ld-border-accent: transparent;   /* 飞书生效态无边框 */
+  /* ---- L2 品牌 / 功能（11 §3.4） ---- */
+  --ld-brand-chrome: #1456F0;
+  --ld-brand-content: #1456F0;
+  --ld-brand-subtle: #E1EAFF;
+  --ld-danger: #D83931;
+  --ld-warning: #DE7802;
+  --ld-success: #2EA121;
+  /* ---- L2 效果（06 §3：普通下拉双层阴影） ---- */
+  --ld-shadow-menu: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0;
+}

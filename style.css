@@ -5,3 +5,4 @@
  * 连同 katex 一起按需加载（src/components/lark-doc/extensions.js 的 loadKatex）。
  * 没有公式的文档因此不会为这份样式付费。 */
 @import './src/components/lark-doc/lark-doc.css';
+@import './src/components/lark-doc/theme-preset-feishu.css';

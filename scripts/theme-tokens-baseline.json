@@ -6,6 +6,7 @@
   "src/components/lark-doc/editor/calloutColorMixin.js": 12,
   "src/components/lark-doc/editor/icons.js": 1,
   "src/components/lark-doc/editor/toolbarMenusMixin.js": 1,
-  "src/components/lark-doc/lark-doc.css": 119,
-  "src/components/lark-doc/templates.js": 1
+  "src/components/lark-doc/lark-doc.css": 106,
+  "src/components/lark-doc/templates.js": 1,
+  "src/components/lark-doc/theme-preset-feishu.css": 18
 }

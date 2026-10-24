@@ -1,43 +1,61 @@
 /* ==================================================================
-   主题 Token 骨架（0.12 机制层，T0/T1）—— 只声明，组件 CSS 暂不引用。
-   - L2 语义层浅色值来自 requirements/11 §3.4 + 06 实测；
+   主题 Token（0.12 T0-03 双浅色主题）
+   - 默认档 = 现状绿系自研主题：值 = 收编前 CSS 实际色，保证零视觉回归；
+   - 飞书灰档 = theme-preset-feishu.css（11 §3.4 + 06 实测），宿主在
+     根容器加 data-theme-preset="feishu" 启用，本档无该属性即默认绿档；
    - L1 基础色板（--ld-c-gray-* 等）规格只有命名没有值，待实测后补，不捏造；
-   - 跨界 token 按 12 §4 D2 强制拆 -chrome / -content，机制层浅色两值相同
-     （var 转发），深色分档在 T2 才分化；
-   - 机制层「零视觉回归」基线：本区块任何值变动都会改变断言基线，收编期
-     逐批把字面色改写为 var(--ld-*) 之前，此处的值一律不动。
+   - 跨界 token 按 12 §4 D2 拆 -chrome / -content（绿档两值即现状各自值，
+     飞书档聚拢），下方 var 转发在 preset 档会自动解析到灰值，preset 不重写；
+   - 组件 CSS 禁止新增字面 hex / white（check-theme-tokens 止血），
+     收编批次逐批把字面色改写为 var(--ld-*)，改值会破坏截图 diff 基线。
    ================================================================== */
 .lark-doc {
   /* ---- L2 文字 ---- */
-  --ld-text: #1F2329;
-  --ld-text-secondary: #646A73;
-  --ld-text-tertiary: #8F959E;
-  --ld-text-disabled: #BBBFC4;
-  --ld-text-on-brand: #FFFFFF;
-  --ld-text-link: #245BDB;
+  --ld-text: #25352f;               /* 根/正文 chrome 主文字（旧 --lark-doc-ink） */
+  --ld-text-secondary: #3f5149;     /* 工具栏/颜色按钮文字（06 --text-secondary 口径） */
+  --ld-text-tertiary: #72817c;      /* 次级说明文字（旧 --lark-doc-muted） */
+  --ld-text-disabled: #BBBFC4;      /* 禁用（两档同，06 实测） */
+  --ld-text-on-brand: #FFFFFF;      /* 品牌色底上的文字 */
+  --ld-text-link: #245BDB;          /* 链接（值待 B4 收编时对现状核定） */
+  --ld-text-accent: #087f60;        /* 激活强调文字（button.active 等生效态） */
+  --ld-text-accent-hover: #0c7a58;  /* hover/菜单选中强调文字 */
+  --ld-text-icon: #8ba197;          /* 弱态图标文字（关闭按钮/标题级别 glyph） */
+  --ld-text-icon-tertiary: #86909c; /* 下拉箭头/chevron 图标（飞书灰，两档同） */
+  --ld-text-brand-sub: #24493c;     /* logo 副标题 */
+  --ld-text-check: #2f9e6e;         /* 选中勾（select-menu check） */
   /* ---- L2 背景 ---- */
-  --ld-bg-page: transparent;
-  --ld-bg-surface: #FFFFFF;
-  --ld-bg-surface-raised: #FFFFFF;
-  --ld-bg-content: #FFFFFF;
-  --ld-bg-hover: rgba(100, 106, 115, 0.05);
-  --ld-bg-active: rgba(31, 35, 41, 0.10);
-  --ld-bg-selected: #E0E9FF;      /* 06 batch255 A2：「格式已生效」开关按钮底 */
-  --ld-bg-code: #F5F6F7;          /* 06 §6.5：代码块色层 */
+  --ld-bg-page: transparent;        /* 页面底（继承宿主） */
+  --ld-bg-shell: #f6f8f7;           /* 编辑器外壳底（根容器） */
+  --ld-bg-surface: #FFFFFF;         /* 浮层/顶栏/工具栏/输入底 */
+  --ld-bg-surface-raised: #FFFFFF;  /* 高一级浮层（未引用，规格保留） */
+  --ld-bg-content: #FFFFFF;         /* 正文纸张 */
+  --ld-bg-hover: #f2f6f4;           /* 按钮/菜单项 hover 底 */
+  --ld-bg-hover-strong: #e6efe9;    /* select 触发器 hover 底（略深一档） */
+  --ld-bg-hover-select: #eef5f0;    /* select 菜单选项 hover/高亮底 */
+  --ld-bg-hover-menu: #f1f2f4;      /* 浮层菜单项 hover 底（中性灰，两档近似同） */
+  --ld-bg-active: rgba(31, 35, 41, 0.10); /* 飞书口径，绿档暂无引用 */
+  --ld-bg-accent: #eaf8f3;          /* 激活底（button.active / aria-pressed） */
+  --ld-bg-accent-active: #e3f2ea;   /* 展开态底（工具栏 aria-expanded / 气泡 pressed） */
+  --ld-bg-selected: #E0E9FF;        /* 飞书口径：格式已生效开关底（绿档暂无引用） */
+  --ld-bg-code: #F5F6F7;            /* 06 §6.5：代码块色层（绿档待 B4 核定） */
   /* ---- L2 边框 ---- */
-  --ld-border: #DEE0E3;
-  --ld-border-strong: #BBBFC4;
-  --ld-border-cell: #DEE0E3;
-  --ld-divider: #DEE0E3;
-  /* ---- L2 品牌 / 功能 ---- */
-  --ld-brand: #1456F0;
-  --ld-brand-subtle: #E1EAFF;
+  --ld-border: #e2e9e6;             /* 常规边框（旧 --lark-doc-line） */
+  --ld-border-strong: #BBBFC4;      /* 强边框（两档同） */
+  --ld-border-cell: #DEE0E3;        /* 表格线（绿档待 B4 核定） */
+  --ld-divider: #DEE0E3;            /* 分隔线（绿档待 B5 核定） */
+  --ld-border-accent: #d8eee5;      /* 激活态边框 */
+  /* ---- L2 品牌 / 功能（D2 跨界拆分） ---- */
+  --ld-brand-chrome: #00b887;       /* 外壳品牌色（logo/focus outline/开关；旧 green） */
+  --ld-brand-content: #1456f0;      /* 正文品牌色（编号/列表序号，两档同飞书蓝） */
+  --ld-brand-subtle: #E1EAFF;       /* 飞书口径：品牌浅底（绿档暂无引用） */
   --ld-danger: #D83931;
   --ld-warning: #DE7802;
   --ld-success: #2EA121;
+  /* 过渡别名：收编期保留 --ld-brand 指向 chrome 档，新代码请直接用拆分后的两个 */
+  --ld-brand: var(--ld-brand-chrome);
   /* ---- L2 效果 ---- */
-  --ld-shadow-menu: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0; /* 06 §3：普通下拉双层 */
-  /* ---- 跨界 token（D2）：chrome = 编辑器外壳 UI，content = 正文画布 ---- */
+  --ld-shadow-menu: 0 12px 35px #1c43311c; /* 普通下拉/菜单阴影（绿档现状；飞书档见 06 §3） */
+  /* 跨界转发（D2）：chrome = 编辑器外壳 UI，content = 正文画布 */
   --ld-border-chrome: var(--ld-border);
   --ld-border-content: var(--ld-border);
   --ld-bg-hover-chrome: var(--ld-bg-hover);
@@ -47,37 +65,39 @@
   --ld-shadow-chrome: var(--ld-shadow-menu);
   --ld-shadow-content: var(--ld-shadow-menu);
 }
-.lark-doc { --lark-doc-green: #00b887; --lark-doc-ink: #25352f; --lark-doc-muted: #72817c; --lark-doc-line: #e2e9e6; --lark-doc-soft: #f5f8f7; min-height: 100vh; width: 100%; max-width: 100%; overflow-x: clip; background: #f6f8f7; color: var(--lark-doc-ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; }
+/* 旧五件套（--lark-doc-*）转为废弃别名，指向新 token，下个大版本移除（12 §9）。
+   --lark-doc-soft 暂留字面值，AI 面板区（B5）收编时别名化。 */
+.lark-doc { --lark-doc-green: var(--ld-brand-chrome); --lark-doc-ink: var(--ld-text); --lark-doc-muted: var(--ld-text-tertiary); --lark-doc-line: var(--ld-border); --lark-doc-soft: #f5f8f7; min-height: 100vh; width: 100%; max-width: 100%; overflow-x: clip; background: var(--ld-bg-shell); color: var(--lark-doc-ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; }
 .lark-doc *, .lark-doc *::before, .lark-doc *::after { box-sizing: border-box; }
 .lark-doc button, .lark-doc input, .lark-doc select { font: inherit; }
 .lark-doc button { min-height: 30px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; padding: 4px 8px; cursor: pointer; white-space: nowrap; }
-.lark-doc button:hover:not(:disabled), .lark-doc button.active, .lark-doc button[aria-pressed="true"] { background: #eaf8f3; border-color: #d8eee5; color: #087f60; }
+.lark-doc button:hover:not(:disabled), .lark-doc button.active, .lark-doc button[aria-pressed="true"] { background: var(--ld-bg-accent); border-color: var(--ld-border-accent); color: var(--ld-text-accent); }
 .lark-doc button:disabled { opacity: .43; cursor: not-allowed; }
-.lark-doc button:focus-visible, .lark-doc input:focus-visible, .lark-doc select:focus-visible { outline: 2px solid var(--lark-doc-green); outline-offset: 1px; }
-.lark-doc input, .lark-doc select { min-width: 0; border: 1px solid var(--lark-doc-line); border-radius: 5px; background: white; color: var(--lark-doc-ink); padding: 5px 8px; }
-.lark-doc .lark-doc-skip { position: fixed; left: -999px; top: 8px; z-index: 100; padding: 8px; background: white; }
+.lark-doc button:focus-visible, .lark-doc input:focus-visible, .lark-doc select:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: 1px; }
+.lark-doc input, .lark-doc select { min-width: 0; border: 1px solid var(--lark-doc-line); border-radius: 5px; background: var(--ld-bg-surface); color: var(--lark-doc-ink); padding: 5px 8px; }
+.lark-doc .lark-doc-skip { position: fixed; left: -999px; top: 8px; z-index: 100; padding: 8px; background: var(--ld-bg-surface); }
 .lark-doc .lark-doc-skip:focus { left: 8px; }
-.lark-doc .lark-doc-topbar { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 7px clamp(12px, 2vw, 30px); background: white; border-bottom: 1px solid var(--lark-doc-line); }
+.lark-doc .lark-doc-topbar { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 7px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface); border-bottom: 1px solid var(--lark-doc-line); }
 .lark-doc.lark-doc-titlebar-fixed .lark-doc-topbar { position: sticky; z-index: 35; top: 0; }
 /* 工具栏吸附：独立开启时贴视口顶；与标题栏同开时贴在标题栏（min-height 58px + 1px 下边框）之下。 */
 .lark-doc.lark-doc-toolbar-fixed .lark-doc-toolbar { position: sticky; z-index: 34; top: 0; }
 .lark-doc.lark-doc-titlebar-fixed.lark-doc-toolbar-fixed .lark-doc-toolbar { top: 59px; }
 .lark-doc .lark-doc-brand { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; color: var(--lark-doc-green); font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
-.lark-doc .lark-doc-brand span { color: #24493c; font-size: 14px; letter-spacing: 0; }
+.lark-doc .lark-doc-brand span { color: var(--ld-text-brand-sub); font-size: 14px; letter-spacing: 0; }
 .lark-doc .lark-doc-title-wrap { display: flex; flex-direction: column; min-width: 140px; width: min(370px, 30vw); }
 .lark-doc .lark-doc-title-wrap input { border: 0; padding: 2px 4px; font-size: 16px; font-weight: 700; text-overflow: ellipsis; }
 .lark-doc .lark-doc-title-sub { padding-left: 5px; color: var(--lark-doc-muted); font-size: 11px; }
 .lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--lark-doc-line); }
-.lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: white; border-bottom: 1px solid var(--lark-doc-line); scrollbar-width: none; -ms-overflow-style: none; }
+.lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface); border-bottom: 1px solid var(--lark-doc-line); scrollbar-width: none; -ms-overflow-style: none; }
 .lark-doc .lark-doc-toolbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .lark-doc .lark-doc-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 7px; border-right: 1px solid var(--lark-doc-line); }
 .lark-doc .lark-doc-tools-end { margin-left: auto; border-right: 0; }
 .lark-doc .lark-doc-tools select { max-width: 115px; height: 30px; border-color: transparent; background: transparent; padding: 3px 5px; }
-.lark-doc .lark-doc-tools button { min-width: 29px; height: 30px; padding: 3px 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 12.5px; color: #3f5149; }
+.lark-doc .lark-doc-tools button { min-width: 29px; height: 30px; padding: 3px 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 12.5px; color: var(--ld-text-secondary); }
 /* 扁平化（对齐飞书）：hover 仅浅灰底无边框；展开（aria-expanded）/激活（aria-pressed）浅绿底 + 主色图标。 */
-.lark-doc .lark-doc-tools button:hover:not(:disabled), .lark-doc .lark-doc-select-trigger:hover:not(:disabled) { background: #f2f6f4; border-color: transparent; color: var(--lark-doc-ink); }
-.lark-doc .lark-doc-tools button[aria-pressed="true"], .lark-doc .lark-doc-tools button[aria-expanded="true"], .lark-doc .lark-doc-select-open .lark-doc-select-trigger { background: #e3f2ea; border-color: transparent; color: #0c7a58; }
+.lark-doc .lark-doc-tools button:hover:not(:disabled), .lark-doc .lark-doc-select-trigger:hover:not(:disabled) { background: var(--ld-bg-hover); border-color: transparent; color: var(--lark-doc-ink); }
+.lark-doc .lark-doc-tools button[aria-pressed="true"], .lark-doc .lark-doc-tools button[aria-expanded="true"], .lark-doc .lark-doc-select-open .lark-doc-select-trigger { background: var(--ld-bg-accent-active); border-color: transparent; color: var(--ld-text-accent-hover); }
 /* 格式字母按钮（B/I/U/S 等）：用排版本身当图标，飞书同款做法。 */
 .lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] { font-size: 13px; font-weight: 700; }
 .lark-doc .lark-doc-mark-bold { font-weight: 800; }
@@ -87,31 +107,31 @@
 .lark-doc .lark-doc-mark-code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; font-weight: 600; }
 /* 颜色按钮：字色 = A + 底部色条；背景色 = A 带下半高亮（飞书同款语义）。 */
 .lark-doc .lark-doc-color { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
-.lark-doc .lark-doc-color:hover { background: #f2f6f4; }
-.lark-doc .lark-doc-color-letter { font-size: 16px; font-weight: 700; line-height: 1; color: #3f5149; padding: 0 1px; }
+.lark-doc .lark-doc-color:hover { background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-color-letter { font-size: 16px; font-weight: 700; line-height: 1; color: var(--ld-text-secondary); padding: 0 1px; }
 /* 颜色触发器箭头：与「字号 / 行高」等下拉箭头同轴（30px 触发区里 12px 图标 → 上下各 9px），不再用 margin 微调。 */
-.lark-doc .lark-doc-color-arrow { flex: 0 0 12px; width: 12px; height: 12px; color: #86909c; transition: transform 0.18s ease; }
+.lark-doc .lark-doc-color-arrow { flex: 0 0 12px; width: 12px; height: 12px; color: var(--ld-text-icon-tertiary); transition: transform 0.18s ease; }
 .lark-doc .lark-doc-color[aria-expanded="true"] .lark-doc-color-arrow { transform: rotate(180deg); }
 .lark-doc .lark-doc-color input { width: 0; height: 0; min-width: 0; padding: 0; border: 0; opacity: 0; }
 /* 所有关闭按钮（aria-label 以「关闭」开头）：26px 方圆热区 + close 图标，hover 浅灰。 */
-.lark-doc button[aria-label^="关闭"] { width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: #8ba197; }
-.lark-doc button[aria-label^="关闭"]:hover:not(:disabled) { background: #f2f6f4; border-color: transparent; color: var(--lark-doc-ink); }
+.lark-doc button[aria-label^="关闭"] { width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--ld-text-icon); }
+.lark-doc button[aria-label^="关闭"]:hover:not(:disabled) { background: var(--ld-bg-hover); border-color: transparent; color: var(--lark-doc-ink); }
 /* SVG 图标与下拉箭头。 */
 .lark-doc .lark-doc-icon { display: inline-flex; align-items: center; justify-content: center; }
 .lark-doc .lark-doc-icon svg { width: 100%; height: 100%; display: block; }
-.lark-doc .lark-doc-caret { color: #86909c; transition: transform 0.18s ease; }
+.lark-doc .lark-doc-caret { color: var(--ld-text-icon-tertiary); transition: transform 0.18s ease; }
 .lark-doc [aria-expanded="true"] .lark-doc-caret { transform: rotate(180deg); }
-.lark-doc .lark-doc-select-caret { color: #86909c; transition: transform 0.18s ease; }
+.lark-doc .lark-doc-select-caret { color: var(--ld-text-icon-tertiary); transition: transform 0.18s ease; }
 .lark-doc .lark-doc-select-open .lark-doc-select-caret { transform: rotate(180deg); }
 .lark-doc .lark-doc-heading-tool { position: relative; }
-.lark-doc .lark-doc-dropdown { position: fixed; z-index: 65; display: grid; width: 155px; max-height: 70vh; overflow-y: auto; margin-top: 33px; padding: 5px; background: white; border: 1px solid var(--lark-doc-line); border-radius: 9px; box-shadow: 0 12px 35px #1c43311c; }
+.lark-doc .lark-doc-dropdown { position: fixed; z-index: 65; display: grid; width: 155px; max-height: 70vh; overflow-y: auto; margin-top: 33px; padding: 5px; background: var(--ld-bg-surface); border: 1px solid var(--lark-doc-line); border-radius: 9px; box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-dropdown button { text-align: left; }
 /* 下拉菜单项：flex 行布局 + 左侧级别图标列（标题菜单 T/H1..H9）。 */
 .lark-doc .lark-doc-dropdown button[role="menuitem"] { display: flex; align-items: center; gap: 8px; border-radius: 6px; }
-.lark-doc .lark-doc-dropdown button[role="menuitem"]:hover:not(:disabled) { background: #f2f6f4; border-color: transparent; color: var(--lark-doc-ink); }
-.lark-doc .lark-doc-heading-glyph { flex: 0 0 30px; width: 30px; text-align: center; font-size: 11.5px; font-weight: 700; color: #8ba197; letter-spacing: -.02em; }
-.lark-doc .lark-doc-menu-active { background: #e3f2ea; color: #0c7a58; }
-.lark-doc .lark-doc-menu-active .lark-doc-heading-glyph { color: #0c7a58; }
+.lark-doc .lark-doc-dropdown button[role="menuitem"]:hover:not(:disabled) { background: var(--ld-bg-hover); border-color: transparent; color: var(--lark-doc-ink); }
+.lark-doc .lark-doc-heading-glyph { flex: 0 0 30px; width: 30px; text-align: center; font-size: 11.5px; font-weight: 700; color: var(--ld-text-icon); letter-spacing: -.02em; }
+.lark-doc .lark-doc-menu-active { background: var(--ld-bg-accent-active); color: var(--ld-text-accent-hover); }
+.lark-doc .lark-doc-menu-active .lark-doc-heading-glyph { color: var(--ld-text-accent-hover); }
 /* 标题级别下拉：工具栏与划词气泡条共用同一份实现（LarkDocHeadingMenu）。
    这里只补「共用之外」的差异：宽度 / 内边距 / 圆角 / 阴影 / 行高全部继承 .lark-doc-dropdown，
    别在两处各写一套尺寸——以前就是这么分叉出 152px/32px/蓝字 的。 */
@@ -119,24 +139,24 @@
 /* 菜单项左对齐（工具栏按钮的 justify-content:center 会漏进来把项内容居中，飞书是左对齐）。 */
 .lark-doc .lark-doc-heading-menu button[role="menuitem"] { padding: 3px 6px; justify-content: flex-start; gap: 8px; }
 .lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active,
-.lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active:hover:not(:disabled) { background: #e3f2ea; border-color: transparent; color: #0c7a58; }
-.lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active .lark-doc-heading-glyph { color: #0c7a58; }
+.lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active:hover:not(:disabled) { background: var(--ld-bg-accent-active); border-color: transparent; color: var(--ld-text-accent-hover); }
+.lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active .lark-doc-heading-glyph { color: var(--ld-text-accent-hover); }
 .lark-doc .lark-doc-menu-check { margin-left: auto; padding-left: 8px; color: currentColor; font-size: 12px; line-height: 1; }
 /* 共享下拉原语（LarkDocSelect）：触发按钮沿用工具栏按钮观感，选项列表为 fixed 自绘弹层。 */
 .lark-doc .lark-doc-select { position: relative; display: inline-flex; }
 .lark-doc .lark-doc-select-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 29px; height: 30px; padding: 3px 6px; font-size: 12px; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-.lark-doc .lark-doc-tools .lark-doc-select-trigger:hover { background: #e6efe9; }
+.lark-doc .lark-doc-tools .lark-doc-select-trigger:hover { background: var(--ld-bg-hover-strong); }
 .lark-doc .lark-doc-select-trigger:disabled { opacity: 0.45; cursor: default; }
 .lark-doc .lark-doc-select-caret { font-size: 10px; color: var(--lark-doc-muted); }
-.lark-doc .lark-doc-select-menu { position: fixed; z-index: 70; display: grid; padding: 5px; background: white; border: 1px solid var(--lark-doc-line); border-radius: 9px; box-shadow: 0 12px 35px #1c43311c; max-height: 60vh; overflow-y: auto; }
+.lark-doc .lark-doc-select-menu { position: fixed; z-index: 70; display: grid; padding: 5px; background: var(--ld-bg-surface); border: 1px solid var(--lark-doc-line); border-radius: 9px; box-shadow: var(--ld-shadow-menu); max-height: 60vh; overflow-y: auto; }
 .lark-doc .lark-doc-select-menu button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; text-align: left; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-.lark-doc .lark-doc-select-menu button:hover, .lark-doc .lark-doc-select-menu button.is-highlight { background: #eef5f0; }
-.lark-doc .lark-doc-select-menu .lark-doc-select-check { width: 14px; flex: 0 0 14px; color: #2f9e6e; }
+.lark-doc .lark-doc-select-menu button:hover, .lark-doc .lark-doc-select-menu button.is-highlight { background: var(--ld-bg-hover-select); }
+.lark-doc .lark-doc-select-menu .lark-doc-select-check { width: 14px; flex: 0 0 14px; color: var(--ld-text-check); }
 /* 工具栏自适应折叠：tools-end 内层容器 + 「更多」弹层分节样式。 */
 .lark-doc .lark-doc-tools-end-inner { display: flex; align-items: center; gap: 1px; }
 .lark-doc .lark-doc-more-title { padding: 7px 10px 3px; font-size: 11px; color: var(--lark-doc-muted); border-bottom: 1px solid var(--lark-doc-line); }
 .lark-doc .lark-doc-more-menu button[role="menuitem"] { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 10px; font-size: 13px; text-align: left; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
-.lark-doc .lark-doc-more-menu button[role="menuitem"]:hover { background: #eef5f0; }
+.lark-doc .lark-doc-more-menu button[role="menuitem"]:hover { background: var(--ld-bg-hover-select); }
 .lark-doc .lark-doc-more-menu button[role="menuitem"]:disabled { opacity: 0.45; cursor: default; }
 .lark-doc .lark-doc-more-menu .lark-doc-select-check { width: 14px; flex: 0 0 14px; color: #2f9e6e; }
 /* 顶栏隐藏时工具栏「⋯」下拉：纵向菜单承接原 header-actions 插槽内容 */
