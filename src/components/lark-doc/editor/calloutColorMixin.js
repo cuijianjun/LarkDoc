@@ -12,8 +12,11 @@ import {
   TEXT_COLOR_OPTIONS,
   TEXT_BACKGROUND_ROWS,
   DEFAULT_TEXT_COLOR,
-  DEFAULT_CALLOUT_COLORS,
+  calloutColorOptions,
+  calloutDefaults,
 } from './palette'
+// 正文轨主题广播（T3-01）：色板是整组替换的两套色，必须跟着档位重算。
+import { readContentTheme, subscribeContentTheme } from '../themeSignal'
 
 // 需求文档 13.4.4：颜色选择器有默认色、最近使用色和恢复默认色；最近使用跨会话保留。
 const RECENT_COLORS_STORAGE_KEY = 'lark-doc:recent-colors'
@@ -36,7 +39,9 @@ const writeRecentColors = (colors) => writeColorList(RECENT_COLORS_STORAGE_KEY, 
 export default {
   data() { return {
     calloutEmojiOpen: false, calloutEmojiQuery: '', calloutEmojiCategory: 'all', calloutEmojiRecent: [], calloutToolsPosition: { top: 0, left: 0 },
-    colorPaletteOpen: '', colorPalettePosition: { top: 0, left: 0 }, colorPaletteRecent: readRecentColors(), textColorRecent: readColorList(RECENT_TEXT_COLORS_STORAGE_KEY), colorPaletteOptions: CALLOUT_COLOR_OPTIONS,
+    // 色板是两套色整组替换，所以只存档位、具体色值由 computed 现算（T3-03）。
+    contentTheme: readContentTheme(),
+    colorPaletteOpen: '', colorPalettePosition: { top: 0, left: 0 }, colorPaletteRecent: readRecentColors(), textColorRecent: readColorList(RECENT_TEXT_COLORS_STORAGE_KEY),
     emojiItems: [
       { value: 'smile', label: '微笑', glyph: '😄', category: '常用' }, { value: 'heart', label: '爱心', glyph: '❤️', category: '常用' },
       { value: 'thumbsup', label: '点赞', glyph: '👍', category: '常用' }, { value: 'tada', label: '庆祝', glyph: '🎉', category: '常用' },
@@ -47,6 +52,9 @@ export default {
     ],
   } },
   computed: {
+    // 色板随正文轨档位整组替换（06 §1.5.1：深纸上是独立一套去饱和暗色）。
+    colorPaletteOptions() { return calloutColorOptions(this.contentTheme) },
+    calloutDefaultColors() { return calloutDefaults(this.contentTheme) },
     calloutEmojiCategories() { return [...new Set(this.emojiItems.map(item => item.category).filter(Boolean))] },
     filteredCalloutEmojiItems() {
       const query = this.calloutEmojiQuery.toLocaleLowerCase()
@@ -69,6 +77,14 @@ export default {
     activeCalloutVisible() { return this.writable() && !!this.activeCalloutElement() },
     calloutToolsStyle() { return { top: `${this.calloutToolsPosition.top}px`, left: `${this.calloutToolsPosition.left}px` } },
   },
+  // mixin 的 created/beforeDestroy 与主组件的钩子合并执行（Vue 2 选项合并），
+  // 这里只负责色板的档位订阅；主题广播的观察器全库只有一个（themeSignal）。
+  created() {
+    this._unsubscribeTheme = subscribeContentTheme(({ theme }) => { this.contentTheme = theme })
+  },
+  beforeDestroy() {
+    if (this._unsubscribeTheme) { this._unsubscribeTheme(); this._unsubscribeTheme = null }
+  },
   methods: {
     activeCalloutElement() {
       if (!this.editor) return null
@@ -89,7 +105,7 @@ export default {
       this.calloutToolsPosition = { top: Math.max(4, rect.top - paperRect.top - 44), left: Math.max(8, Math.min(paper.clientWidth - 190, rect.right - paperRect.left - 190)) }
     },
     // 未设置属性时回落到默认三色（色值集中在 palette.js，模板里不再写字面 hex）。
-    calloutColor(name, fallback) { return this.editor?.getAttributes('callout')?.[name] || fallback || DEFAULT_CALLOUT_COLORS[name] },
+    calloutColor(name, fallback) { return this.editor?.getAttributes('callout')?.[name] || fallback || this.calloutDefaultColors[name] },
     setCalloutColor(name, value) { if (this.writable() && /^#[0-9a-f]{6}$/i.test(value)) this.run('updateAttributes', 'callout', { [name]: value }) },
     pickRandomCalloutEmoji() { return this.emojiItems[Math.floor(Math.random() * this.emojiItems.length)]?.glyph || '💡' },
     // P0-03：表情搜索/分类的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
