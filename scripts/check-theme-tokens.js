@@ -46,9 +46,18 @@ function walk(dir, files) {
   return files
 }
 
+/**
+ * 去掉块注释（/* ... *\/），把注释内容替换成空格、保留换行，行号不漂移。
+ * 注释里的 hex 只是文档说明（如「= --text-primary #1F2329」），不是着色处。
+ */
+function stripBlockComments(content) {
+  return content.replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+}
+
 /** 数一个文件的违例，返回 [{ line, snippet }]。 */
-function countViolations(content) {
+function countViolations(rawContent) {
   const hits = []
+  const content = stripBlockComments(rawContent)
   content.split('\n').forEach((line, index) => {
     // 自定义属性声明（--ld-text: #1F2329）是 token 的**定义处**，不是使用处：
     // 规则禁止的是组件里写字面色，token 声明本身必须允许写 hex，

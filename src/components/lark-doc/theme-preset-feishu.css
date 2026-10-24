@@ -58,4 +58,73 @@
   --ld-success: #2EA121;
   /* ---- L2 效果（06 §3：普通下拉双层阴影） ---- */
   --ld-shadow-menu: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0;
+
+  /* ================================================================
+     B5：块菜单 / 气泡条 / 命令菜单 / 颜色盘 / 对话框 / toast / 块句柄
+     口径 = 06 §1（实测色）+ §3（阴影四档 0.04/0.06/0.08/0.1，色恒为 #1F2329）。
+     默认档的 11 个不同阴影值在本档**聚拢**到 06 的 5 个档位；
+     分类图标色 / 反白文字 / 开关圆点为主题无关值，本文档不重述（继承默认档）。
+     ================================================================ */
+  /* ---- 菜单 / 浮层文字（06 §7.1：菜单项 #1F2329，图标 #646A73） ---- */
+  --ld-text-menu: #1F2329;
+  --ld-text-menu-icon: #646A73;
+  --ld-text-menu-active: #1456F0;
+  --ld-text-bubble: #1F2329;
+  --ld-text-handle: #8F959E;          /* 块句柄拖拽点 = text-tertiary */
+  --ld-text-handle-icon: #8F959E;
+  --ld-text-submenu-arrow: #8F959E;
+  --ld-text-align-glyph: #646A73;
+  --ld-text-help: #8F959E;
+  --ld-text-error: #D83931;           /* = --danger */
+  --ld-text-toast: #DE7802;           /* = --warning */
+  --ld-text-badge: #2EA121;           /* = --success */
+  --ld-text-slide-title: #1F2329;
+  /* ---- 菜单 / 浮层背景（06 §1.4：hover = #1F2329 低透明，选中 = #E0E9FF） ---- */
+  --ld-bg-tooltip: #1F2329;           /* 飞书 tooltip 底色 = 主文字色 */
+  --ld-bg-soft: #F5F6F7;              /* = --bg-code / --bg-page */
+  --ld-bg-switch-off: #BBBFC4;
+  --ld-bg-handle-hover: rgba(31, 35, 41, 0.05);
+  --ld-bg-menu-item-active: #E0E9FF;  /* = --bg-selected */
+  --ld-bg-brand-hover: #336DF4;
+  --ld-bg-toast: rgba(222, 120, 2, 0.1);
+  --ld-bg-badge: rgba(46, 161, 33, 0.1);
+  --ld-bg-grid-table: #F5F6F7;
+  --ld-bg-grid-table-active: rgba(20, 86, 240, 0.35);
+  --ld-bg-grid-submenu: #FFFFFF;
+  --ld-bg-columns-preview: #F5F6F7;
+  --ld-bg-columns-picker: rgba(20, 86, 240, 0.25);
+  --ld-bg-columns-cell: rgba(20, 86, 240, 0.12);
+  --ld-bg-columns-cell-active: rgba(20, 86, 240, 0.2);
+  --ld-bg-columns-cell-preview: rgba(20, 86, 240, 0.35);
+  --ld-mask: rgba(31, 35, 41, 0.5);
+  /* ---- 菜单 / 浮层边框（06 §1.3 + hover 边框 #C2D4FF） ---- */
+  --ld-border-control: #DEE0E3;
+  --ld-border-handle-hover: #C2D4FF;
+  --ld-border-bubble-divider: #DEE0E3;
+  --ld-border-help: #BBBFC4;
+  --ld-border-swatch: #DEE0E3;
+  --ld-border-swatch-palette: #DEE0E3;
+  --ld-border-columns-picker: #DEE0E3;
+  --ld-border-grid-table: #DEE0E3;
+  --ld-border-grid-table-active: #1456F0;
+  --ld-border-toast: rgba(222, 120, 2, 0.3);
+  --ld-stroke-swatch-empty: #BBBFC4;
+  --ld-stroke-swatch-clear: #D83931;
+  /* ---- 焦点 / 强调 ---- */
+  --ld-accent-control: #1456F0;
+  --ld-focus-ring: rgba(20, 86, 240, 0.4);
+  --ld-focus-ring-picker: #C2D4FF;
+  --ld-icon-callout: #646A73;         /* 飞书块句柄图标统一中性灰，无彩色类型图标 */
+  /* ---- B5 阴影：聚拢到 06 §3 的 5 个档位 ---- */
+  --ld-shadow-menu-sm: rgba(31, 35, 41, 0.1) 0 4px 8px 0;       /* = --shadow-popover */
+  --ld-shadow-float: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0, rgba(31, 35, 41, 0.06) 0 4px 8px -8px; /* = --shadow-megamenu */
+  --ld-shadow-colorpanel: rgba(31, 35, 41, 0.1) 0 6px 24px 0;   /* = --shadow-colorpanel */
+  --ld-shadow-tools: rgba(31, 35, 41, 0.1) 0 4px 8px 0;         /* = --shadow-blockbar */
+  --ld-shadow-tooltip: rgba(31, 35, 41, 0.08) 0 6px 12px 0;     /* = --shadow-fab */
+  --ld-shadow-bubble: rgba(31, 35, 41, 0.1) 0 4px 8px 0;        /* = --shadow-blockbar */
+  --ld-shadow-toast: rgba(31, 35, 41, 0.08) 0 6px 12px 0;       /* = --shadow-fab */
+  --ld-shadow-boundary: rgba(31, 35, 41, 0.1) 0 4px 8px 0;      /* = --shadow-popover */
+  --ld-shadow-dialog: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0, rgba(31, 35, 41, 0.06) 0 4px 8px -8px; /* = --shadow-megamenu */
+  --ld-shadow-thumb: rgba(31, 35, 41, 0.1) 0 1px 2px 0;         /* 几何不变，色相转中性 */
+  --ld-shadow-drawer: rgba(31, 35, 41, 0.1) 8px 10px 20px 0;    /* 几何不变，色相转中性 */
 }
