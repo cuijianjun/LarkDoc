@@ -1,3 +1,52 @@
+/* ==================================================================
+   主题 Token 骨架（0.12 机制层，T0/T1）—— 只声明，组件 CSS 暂不引用。
+   - L2 语义层浅色值来自 requirements/11 §3.4 + 06 实测；
+   - L1 基础色板（--ld-c-gray-* 等）规格只有命名没有值，待实测后补，不捏造；
+   - 跨界 token 按 12 §4 D2 强制拆 -chrome / -content，机制层浅色两值相同
+     （var 转发），深色分档在 T2 才分化；
+   - 机制层「零视觉回归」基线：本区块任何值变动都会改变断言基线，收编期
+     逐批把字面色改写为 var(--ld-*) 之前，此处的值一律不动。
+   ================================================================== */
+.lark-doc {
+  /* ---- L2 文字 ---- */
+  --ld-text: #1F2329;
+  --ld-text-secondary: #646A73;
+  --ld-text-tertiary: #8F959E;
+  --ld-text-disabled: #BBBFC4;
+  --ld-text-on-brand: #FFFFFF;
+  --ld-text-link: #245BDB;
+  /* ---- L2 背景 ---- */
+  --ld-bg-page: transparent;
+  --ld-bg-surface: #FFFFFF;
+  --ld-bg-surface-raised: #FFFFFF;
+  --ld-bg-content: #FFFFFF;
+  --ld-bg-hover: rgba(100, 106, 115, 0.05);
+  --ld-bg-active: rgba(31, 35, 41, 0.10);
+  --ld-bg-selected: #E0E9FF;      /* 06 batch255 A2：「格式已生效」开关按钮底 */
+  --ld-bg-code: #F5F6F7;          /* 06 §6.5：代码块色层 */
+  /* ---- L2 边框 ---- */
+  --ld-border: #DEE0E3;
+  --ld-border-strong: #BBBFC4;
+  --ld-border-cell: #DEE0E3;
+  --ld-divider: #DEE0E3;
+  /* ---- L2 品牌 / 功能 ---- */
+  --ld-brand: #1456F0;
+  --ld-brand-subtle: #E1EAFF;
+  --ld-danger: #D83931;
+  --ld-warning: #DE7802;
+  --ld-success: #2EA121;
+  /* ---- L2 效果 ---- */
+  --ld-shadow-menu: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0; /* 06 §3：普通下拉双层 */
+  /* ---- 跨界 token（D2）：chrome = 编辑器外壳 UI，content = 正文画布 ---- */
+  --ld-border-chrome: var(--ld-border);
+  --ld-border-content: var(--ld-border);
+  --ld-bg-hover-chrome: var(--ld-bg-hover);
+  --ld-bg-hover-content: var(--ld-bg-hover);
+  --ld-bg-active-chrome: var(--ld-bg-active);
+  --ld-bg-active-content: var(--ld-bg-active);
+  --ld-shadow-chrome: var(--ld-shadow-menu);
+  --ld-shadow-content: var(--ld-shadow-menu);
+}
 .lark-doc { --lark-doc-green: #00b887; --lark-doc-ink: #25352f; --lark-doc-muted: #72817c; --lark-doc-line: #e2e9e6; --lark-doc-soft: #f5f8f7; min-height: 100vh; width: 100%; max-width: 100%; overflow-x: clip; background: #f6f8f7; color: var(--lark-doc-ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; }
 .lark-doc *, .lark-doc *::before, .lark-doc *::after { box-sizing: border-box; }
 .lark-doc button, .lark-doc input, .lark-doc select { font: inherit; }

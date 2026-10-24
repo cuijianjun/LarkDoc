@@ -35,6 +35,7 @@ export { EVENT_MAP } from './events'
 /** 需要从宿主实例转发到元素上的快捷方法（只读 + 幂等命令，写操作走 getInstance()）。 */
 const PROXIED_METHODS = Object.freeze([
   'getHTML', 'getJSON', 'getText', 'getTitle', 'setTitle', 'getConfig', 'getSession', 'can',
+  'setTheme', 'getTheme',
   'setReadonly', 'isReadonly', 'focus', 'undo', 'redo', 'setContent', 'importVditor', 'insert',
   'insertText', 'getImportReport', 'save', 'connectCollaboration', 'disconnectCollaboration',
 ])
@@ -107,7 +108,7 @@ export class LarkDocElement extends HTMLElement {
     if (result.options && Object.keys(result.options).length && this.document && this.document.options) {
       Object.assign(this.document.options, result.options)
     }
-    if (name === 'theme') this._applyTheme()
+    if (name === 'theme' || name === 'content-theme') this._applyTheme()
   }
 
   /**
@@ -284,10 +285,21 @@ export class LarkDocElement extends HTMLElement {
     return html
   }
 
+  /**
+   * 主题应用统一入口（0.12 四态化）：读标签上的 theme / content-theme 属性后
+   * 走门面 setTheme —— 校验、system/host 解析、data-theme-source 标记与
+   * themeChange 事件都在 controller 一处收口。
+   * 两个属性都缺省时不臆造值：交回门面按 options（默认 light/auto）解析。
+   */
   _applyTheme() {
-    const theme = this.getAttribute('theme') === 'dark' ? 'dark' : 'light'
-    if (this.document && this.document.options) this.document.options.theme = theme
-    if (typeof this.document?._applyHostAttributes === 'function') this.document._applyHostAttributes()
+    if (!this.document) return
+    const theme = this.getAttribute('theme')
+    const contentTheme = this.getAttribute('content-theme')
+    if (theme != null || contentTheme != null) {
+      this.document.setTheme(theme == null ? undefined : theme, contentTheme == null ? undefined : contentTheme)
+    } else if (typeof this.document._applyHostAttributes === 'function') {
+      this.document._applyHostAttributes()
+    }
   }
 
   _safePatch(props) {

@@ -21,4 +21,5 @@ export const EVENT_MAP = Object.freeze({
   destroy: 'lark-doc-destroy',
   'import-report': 'lark-doc-import-report',
   'title-change': 'lark-doc-title-change',
+  themeChange: 'lark-doc-theme-change',
 })

@@ -13,8 +13,9 @@ import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
 import { resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy } from './networkPolicy'
 import { createDocumentSession } from './session/DocumentSession'
+import { createThemeController } from './theme'
 
-const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report'])
+const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report', 'themeChange'])
 
 const DEFAULTS = Object.freeze({
   title: '',
@@ -22,6 +23,10 @@ const DEFAULTS = Object.freeze({
   placeholder: '输入正文，或输入 / 插入内容',
   readonly: false,
   theme: 'light',
+  // 正文双轨：auto = 跟随 theme 解析结果；不接受 'system'（11 §3.2）。
+  contentTheme: 'auto',
+  // 'local' 才读写 localStorage（键 lark-doc:theme / lark-doc:content-theme）。
+  themeStorage: 'none',
   storage: 'none',
   autofocus: false,
   // 'auto' 按指纹识别 Vditor getHTML() 产物；'vditor' 强制归一化；'html' 跳过归一化。
@@ -68,6 +73,11 @@ export class LarkDoc {
     this._destroyed = false
     this._handlers = Object.create(null)
     EVENT_NAMES.forEach((name) => { this._handlers[name] = [] })
+    // 主题控制器：首次 _applyHostAttributes() 时懒创建（需要挂载后的根容器）。
+    // _themeEventsReady 闸门：构造期首次应用不算变更，不向宿主派发 themeChange。
+    this._themeController = null
+    this._themeEventsReady = false
+    this._hostSkin = source.hostSkin && typeof source.hostSkin === 'object' ? source.hostSkin : null
 
     const documentInput = normalizeDocumentInput(source.content)
     this.config = this._buildConfig(source)
@@ -115,6 +125,7 @@ export class LarkDoc {
     })
     this._lastTitle = this.options.title || ''
     this._applyHostAttributes()
+    this._themeEventsReady = true
   }
 
   /* ------------------------------------------------------------------ */
@@ -190,13 +201,25 @@ export class LarkDoc {
     return null
   }
 
+  /**
+   * 主题落盘入口：懒创建 theme controller 并把解析结果写到根容器。
+   * 历史上这里是「theme 两态 + data-theme」的直写实现，0.12 起全部转调
+   * src/theme.js（四态 × contentTheme 双轨），DOM 契约见 requirements/11 §3.3。
+   */
   _applyHostAttributes() {
-    const theme = this.options.theme === 'dark' ? 'dark' : 'light'
-    const root = this._renderer && this._handle ? this._renderer.getRoot(this._handle) : null
-    if (root && root.setAttribute) {
-      root.setAttribute('data-theme', theme)
-      root.classList.toggle('lark-doc-dark', theme === 'dark')
+    if (!this._themeController) {
+      this._themeController = createThemeController({
+        theme: this.options.theme,
+        contentTheme: this.options.contentTheme,
+        hostSkin: this._hostSkin,
+        themeStorage: this.options.themeStorage,
+        getRoot: () => (this._renderer && this._handle ? this._renderer.getRoot(this._handle) : null),
+        onChange: (state) => {
+          if (this._themeEventsReady && !this._destroyed) this._emit('themeChange', state)
+        },
+      })
     }
+    this._themeController.applyToRoot()
   }
 
   /* ------------------------------------------------------------------ */
@@ -228,6 +251,7 @@ export class LarkDoc {
     if (name === 'error' && this.options.onError) this._safeCall(this.options.onError, payload)
     if (name === 'save' && this.options.onSave) this._safeCall(this.options.onSave, payload)
     if (name === 'destroy' && this.options.onDestroy) this._safeCall(this.options.onDestroy, payload)
+    if (name === 'themeChange' && this.options.onThemeChange) this._safeCall(this.options.onThemeChange, payload)
   }
 
   _safeCall(fn, payload) {
@@ -365,6 +389,27 @@ export class LarkDoc {
     return workspace ? workspace.isReadonly() : Boolean(this.options.readonly)
   }
 
+  /**
+   * 设置主题：theme ∈ light/dark/system/host；contentTheme ∈ auto/light/dark（省略 = 保持现值）。
+   * 变更生效后派发 themeChange 事件（含 onThemeChange 选项回调）；
+   * options 同步更新，宿主重建实例或读 options 时拿到的都是最新值。
+   */
+  setTheme(theme, contentTheme) {
+    if (this._destroyed) return this
+    this._applyHostAttributes()
+    const snapshot = this._themeController.setTheme(theme, contentTheme)
+    this.options.theme = snapshot.theme
+    this.options.contentTheme = snapshot.contentTheme
+    return this
+  }
+
+  /** 返回 { theme, contentTheme, resolved: { theme, contentTheme }, source }；resolved 为已解析生效值。 */
+  getTheme() {
+    if (this._destroyed) return null
+    this._applyHostAttributes()
+    return this._themeController.getTheme()
+  }
+
   undo() {
     const workspace = this.getWorkspace()
     return workspace ? workspace.undo() : false
@@ -396,6 +441,11 @@ export class LarkDoc {
       })
     }
     this._session = null
+    // 主题监听器（matchMedia / MutationObserver / storage）随实例释放。
+    if (this._themeController) {
+      this._themeController.destroy()
+      this._themeController = null
+    }
     if (this._renderer && this._handle) this._renderer.destroy(this._handle)
     this._handle = null
     this._renderer = null
