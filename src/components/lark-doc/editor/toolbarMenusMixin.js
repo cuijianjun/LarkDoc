@@ -9,6 +9,7 @@ import {
   marks, fontFamilyOptions, fontSizeOptions, lineHeightOptions,
   widthModeOptions, cellTextAlignOptions, cellVerticalAlignOptions,
 } from './constants'
+import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from './palette'
 
 export default {
   data() { return {
@@ -20,7 +21,7 @@ export default {
     // 自绘下拉（LarkDocSelect）选项清单与最近一次应用的值（替代原生 select 的非受控展示）。
     fontFamilyOptions, fontSizeOptions, lineHeightOptions, widthModeOptions,
     cellTextAlignOptions, cellVerticalAlignOptions,
-    appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: '#263b35', backgroundColor: '#fff2a8' },
+    appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: DEFAULT_TEXT_COLOR, backgroundColor: DEFAULT_TEXT_BACKGROUND },
     cellAlignState: { textAlign: '', verticalAlign: '' },
     // 飞书式 hover 弹窗：鼠标离开触发器/弹层后延迟关闭（跨过 6px 间隙时不误关）。
     hoverCloseTimer: null,

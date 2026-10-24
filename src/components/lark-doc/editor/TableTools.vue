@@ -18,7 +18,7 @@
     </button><label title="单元格背景">单元格背景 <input
       type="color"
       aria-label="单元格背景"
-      value="#f2faf6"
+      :value="defaultCellBackground"
       @change="ed.cellAttribute('backgroundColor', $event.target.value)"
     ></label><lark-doc-select
       aria-label="单元格水平对齐"
@@ -38,6 +38,7 @@
 // TableTools —— 从 LarkDocEditor.vue 拆出的表格工具条（P0-03 段 2/8 附属根）。
 // 选中表格时出现在正文上方；状态与动作全部住在 tableToolsMixin，经实例 prop `ed` 引用。
 import LarkDocSelect from '../LarkDocSelect.vue'
+import { DEFAULT_CELL_BACKGROUND } from './palette'
 
 export default {
   name: 'LarkDocTableTools',
@@ -45,5 +46,6 @@ export default {
   props: {
     ed: { type: Object, required: true },
   },
+  data() { return { defaultCellBackground: DEFAULT_CELL_BACKGROUND } },
 }
 </script>

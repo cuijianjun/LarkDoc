@@ -14,7 +14,7 @@
     ><span aria-hidden="true">A</span><input
       type="color"
       aria-label="高亮块文字颜色"
-      :value="ed.calloutColor('color', '#263830')"
+      :value="ed.calloutColor('color')"
       @input="ed.setCalloutColor('color', $event.target.value)"
     ></label><label
       title="高亮块背景颜色"
@@ -23,7 +23,7 @@
     ><span aria-hidden="true">◉</span><input
       type="color"
       aria-label="高亮块背景颜色"
-      :value="ed.calloutColor('backgroundColor', '#eff9f4')"
+      :value="ed.calloutColor('backgroundColor')"
       @input="ed.setCalloutColor('backgroundColor', $event.target.value)"
     ></label><label
       title="高亮块边框颜色"
@@ -32,7 +32,7 @@
     ><span aria-hidden="true">▔</span><input
       type="color"
       aria-label="高亮块边框颜色"
-      :value="ed.calloutColor('borderColor', '#00b887')"
+      :value="ed.calloutColor('borderColor')"
       @input="ed.setCalloutColor('borderColor', $event.target.value)"
     ></label><button
       type="button"

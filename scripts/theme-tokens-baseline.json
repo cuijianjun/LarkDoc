@@ -1,10 +1,4 @@
 {
   "src/adapters/vue2/CodeNode.vue": 13,
-  "src/adapters/vue2/ImageNode.vue": 11,
-  "src/components/lark-doc/editor/CalloutTools.vue": 3,
-  "src/components/lark-doc/editor/TableTools.vue": 1,
-  "src/components/lark-doc/editor/calloutColorMixin.js": 12,
-  "src/components/lark-doc/editor/icons.js": 1,
-  "src/components/lark-doc/editor/toolbarMenusMixin.js": 1,
-  "src/components/lark-doc/templates.js": 1
+  "src/adapters/vue2/ImageNode.vue": 11
 }

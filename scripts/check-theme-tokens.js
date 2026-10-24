@@ -11,7 +11,11 @@
  * 收编期每完成一批字面色 → var(--ld-*) 改写，用 `node scripts/check-theme-tokens.js --update`
  * 收紧基线（数量只会下降），保证指针只进不退。
  *
- * 白名单：vendor 目录（第三方源码不做要求）。
+ * 白名单：
+ *   1. vendor 目录（第三方源码不做要求）；
+ *   2. 色板常量表 `editor/palette.js` —— 全库唯一允许写字面 hex 的文件。
+ *      色板值属「用户内容色」（写进文档 inline style，随文档走，不随主题变）
+ *      与「多色图标资源」，不是 UI 皮肤色，收不进 CSS 变量（11 §V4 / 12 T0-05）。
  */
 const fs = require('fs')
 const path = require('path')
@@ -23,6 +27,8 @@ const shouldUpdate = process.argv.includes('--update')
 
 const EXTS = ['.js', '.vue', '.css', '.scss']
 const WHITELIST_PARTS = [`${path.sep}vendor${path.sep}`]
+// 色板常量表：字面 hex 的唯一合法居所（见文件头白名单说明）。
+const PALETTE_FILES = [`${path.sep}editor${path.sep}palette.js`]
 
 // #RGB / #RGBA / #RRGGBB / #RRGGBBAA；后面跟字母数字的不算（如 #ifdef、URL 锚点后跟 / 或引号可命中，由白名单与人工复核兜底）。
 const HEX_RE = /#[0-9a-fA-F]{3,8}\b/g
@@ -30,7 +36,7 @@ const HEX_RE = /#[0-9a-fA-F]{3,8}\b/g
 const WHITE_RE = /(^|[^\w-])white(?![\w-])/g
 
 function isWhitelisted(file) {
-  return WHITELIST_PARTS.some((part) => file.includes(part))
+  return WHITELIST_PARTS.some((part) => file.includes(part)) || PALETTE_FILES.some((part) => file.includes(part))
 }
 
 function walk(dir, files) {
