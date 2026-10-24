@@ -1,0 +1,195 @@
+/**
+ * 文档级 decorations：搜索高亮、块把手悬停、折叠箭头、标题编号、列表序号/圆点、折叠隐藏。
+ *
+ * 从 documentExtension 的 decorations props 抽出的纯函数：输入当前 state 与
+ * 插件 storage / 编辑器实例 / 功能开关 / 宿主回调，输出 DecorationSet。
+ */
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import {
+  canContinueListNumber,
+  computeBulletItems,
+  computeHeadingNumbers,
+  computeOrderedListNumbers,
+  findTextMatches,
+  foldableIdPositions,
+  foldedRange,
+  isFoldableBlock,
+  nodeAtSafe,
+  resolveHeadingHighlightSection,
+  TEXT_FOLD_TYPES,
+} from '../documentOperations'
+
+export function createDocumentDecorations({ state, storage, editor, enabled, options }) {
+  const decorations = []
+  // 折叠集合存 blockId，装饰需要位置：一次扫描建索引，两处循环共用。
+  const foldIndex = foldableIdPositions(state.doc)
+  const hits = findTextMatches(state.doc, storage.query).map(({ from, to }, index) => Decoration.inline(from, to, { class: index === storage.activeIndex ? 'lark-doc-search-hit lark-doc-search-active' : 'lark-doc-search-hit' }))
+  decorations.push(...hits)
+  const hover = storage.handleHover
+  if (hover && hover.from >= 0 && hover.to > hover.from && hover.to <= state.doc.content.size) {
+    const section = hover.section ? resolveHeadingHighlightSection(state.doc, hover.from) : null
+    const blocks = section?.blocks || [{ from: hover.from, to: hover.to, node: state.doc.nodeAt(hover.from) }]
+    blocks.forEach((block) => {
+      if (!block.node?.isBlock || block.to <= block.from || block.to > state.doc.content.size) return
+      decorations.push(Decoration.node(block.from, block.to, { class: `lark-doc-block-handle-hovered${hover.section ? ' lark-doc-heading-section-hovered' : ''}` }))
+    })
+  }
+  state.doc.descendants((node, pos) => {
+    // 折叠箭头挂在「有缩进子树的文本块」上：段落和标题都能折（飞书的
+    // can-fold / fold-handler 也是按块给的，不限于标题）。
+    if (!TEXT_FOLD_TYPES.has(node.type.name) || !isFoldableBlock(state.doc, pos)) return
+    const range = foldedRange(state.doc, pos)
+    if (!range || range.from >= range.to) return
+    const foldId = node.attrs.blockId
+    const collapsed = typeof foldId === 'string' && storage.folded.has(foldId)
+    // 列表项的箭头要放进首个子段落里（item 内部第一个行内位置），
+    // 文字块则在块内容起点 pos+1。
+    const isItem = node.type.name === 'listItem' || node.type.name === 'taskItem'
+    if (isItem && (!node.childCount || node.child(0).type.name !== 'paragraph')) return
+    const widgetPos = isItem ? pos + 2 : pos + 1
+    decorations.push(Decoration.widget(widgetPos, () => {
+      const button = document.createElement('button')
+      const label = collapsed ? '展开' : '收起'
+      button.type = 'button'
+      button.className = 'lark-doc-heading-fold-toggle'
+      button.setAttribute('aria-label', label)
+      button.setAttribute('aria-expanded', String(!collapsed))
+      button.setAttribute('data-tooltip', label)
+      button.setAttribute('data-glyph', collapsed ? '▸' : '▾')
+      // 不要再设 title：浏览器原生 tooltip 会和 data-tooltip 的黑色气泡
+      // 同时出现，变成「收起」重影（截图里上下两个）。读屏靠 aria-label。
+      button.contentEditable = 'false'
+      button.addEventListener('mousedown', (event) => event.preventDefault())
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+        event.preventDefault()
+        event.stopPropagation()
+        button.click()
+      })
+      button.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
+        const foldRange = foldedRange(editor.state.doc, pos)
+        // 光标落在即将隐藏的章节正文里：折叠后把焦点移回调用的标题，
+        // 避免选区留在 display:none 的后代中（13.6.1 焦点迁移规则）。
+        const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
+        if (enabled('folding')) editor.commands.toggleLarkDocFold(pos)
+        if (caretInBody) editor.commands.setTextSelection(pos + 1)
+        editor.view.focus()
+        // 视口锚定：当前滚动位置落入被折叠内容时，把标题带回可视区。
+        if (!wasFolded) {
+          const dom = editor.view.nodeDOM(pos)
+          if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
+        }
+      })
+      return button
+    }, { key: `lark-doc-heading-fold-${pos}-${collapsed ? 'closed' : 'open'}`, side: -1, ignoreSelection: true }))
+  })
+  // 标题编号：和折叠箭头落在同一个行内位置（pos+1）。push 顺序决定 DOM 顺序，
+  // 箭头先 push、编号后 push，渲染出来才是飞书的「▾ 2. 标题」。
+  // 编号是块级 UI，contenteditable=false，不进正文文本。
+  computeHeadingNumbers(state.doc).forEach((info, pos) => {
+    if (!state.doc.nodeAt(pos)) return
+    decorations.push(Decoration.widget(pos + 1, () => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'lark-doc-heading-number'
+      button.contentEditable = 'false'
+      button.textContent = info.label
+      button.setAttribute('data-number', info.label)
+      button.setAttribute('data-level', String(info.level))
+      button.setAttribute('aria-label', `标题编号 ${info.label}，点击设置编号`)
+      button.setAttribute('data-tooltip', '设置编号')
+      button.addEventListener('mousedown', (event) => event.preventDefault())
+      button.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!enabled('headings') || !editor.isEditable) return
+        const rect = button.getBoundingClientRect()
+        if (options.onHeadingNumberMenu) {
+          options.onHeadingNumberMenu({
+            pos,
+            label: info.label,
+            level: info.level,
+            // 「继续」在已经处于继续态时禁用 —— 与飞书菜单一致。
+            // 必须读**当前**编辑器状态：同标签的编号会复用同一个 widget DOM，
+            // 闭包里捕获的 state 是建 DOM 那一帧的旧状态（设过起点后仍判成连续态，
+            // 于是「继续编号」被误禁用、点了没反应）。
+            canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, pos)?.attrs?.numberingStart),
+            rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+          })
+        }
+      })
+      return button
+    }, { key: `lark-doc-heading-number-${pos}-${info.label}`, side: -1, ignoreSelection: true }))
+  })
+  // 列表序号 / 圆点：飞书把标记画在正文流里（序号是蓝色、contentEditable=false），
+  // 不是浏览器的 ::marker —— 所以这里也走装饰层：箭头 → 标记 → 正文。
+  // 标记进流之后，句柄和折叠箭头都以它为锚点往左让位，三者不会再互相压住。
+  //
+  // 有序序号在飞书里是**可点**的块级 UI（点它弹出编号菜单，和标题编号共用一套），
+  // 所以这里渲染成 button；无序圆点保持纯展示的 span。
+  const markerRect = (el) => {
+    const rect = el.getBoundingClientRect()
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
+  }
+  const pushListMarker = (pos, label, depth, className, value) => {
+    const item = state.doc.nodeAt(pos)
+    if (!item || item.firstChild?.type.name !== 'paragraph') return
+    const interactive = className === 'lark-doc-list-number'
+    decorations.push(Decoration.widget(pos + 2, () => {
+      const marker = document.createElement(interactive ? 'button' : 'span')
+      marker.className = className
+      marker.contentEditable = 'false'
+      marker.textContent = label
+      marker.setAttribute('data-number', label)
+      marker.setAttribute('data-depth', String(depth))
+      if (!interactive) {
+        // 圆点是纯展示层：读屏按 <ul>/<li> 语义读，不重复念一遍。
+        marker.setAttribute('aria-hidden', 'true')
+        return marker
+      }
+      marker.type = 'button'
+      marker.setAttribute('aria-label', `列表编号 ${label}，点击设置编号`)
+      marker.addEventListener('mousedown', (event) => event.preventDefault())
+      marker.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!editor.isEditable || !options.onListNumberMenu) return
+        const current = nodeAtSafe(editor.state.doc, pos)
+        if (!current || current.type.name !== 'listItem') return
+        options.onListNumberMenu({
+          pos,
+          label,
+          depth,
+          // 编号实际值（a./i. 这类格式拿不回数字，菜单预填要用它）。
+          value,
+          // 「继续编号」只在这个 item 有显式起点时可点，与标题编号同款判断。
+          canContinue: canContinueListNumber(editor.state.doc, pos),
+          rect: markerRect(marker),
+        })
+      })
+      return marker
+    }, { key: `${className}-${pos}-${label}`, side: -1, ignoreSelection: true }))
+  }
+  computeOrderedListNumbers(state.doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index))
+  computeBulletItems(state.doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet'))
+  storage.folded.forEach((foldId) => {
+    const pos = foldIndex.get(foldId)
+    if (pos === undefined) return
+    const range = foldedRange(state.doc, pos)
+    if (!range) return
+    const heading = state.doc.nodeAt(pos)
+    decorations.push(Decoration.node(pos, pos + heading.nodeSize, { class: 'lark-doc-heading-folded' }))
+    state.doc.nodesBetween(range.from, range.to, (node, at) => {
+      // display:none 已退出布局与 Tab 顺序；aria-hidden 让屏幕阅读器
+      // 同样认为被折叠的后代不可读（需求 13.6.1）。
+      if (node.isBlock && at >= range.from && at + node.nodeSize <= range.to) {
+        decorations.push(Decoration.node(at, at + node.nodeSize, { class: 'lark-doc-fold-hidden', style: 'display: none', 'aria-hidden': 'true' }))
+        return false
+      }
+    })
+  })
+  return DecorationSet.create(state.doc, decorations)
+}

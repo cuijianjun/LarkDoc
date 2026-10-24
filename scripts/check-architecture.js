@@ -58,4 +58,11 @@ assert.throws(() => createCommentsProvider({ list() {} }), /createThread/)
 const editorFacadeLines = fs.readFileSync(path.resolve(sourceRoot, 'components/lark-doc/LarkDocEditor.vue'), 'utf8').split('\n').length
 assert(editorFacadeLines < 700, `LarkDocEditor.vue 应保持 <700 行（P0-03 模板拆分），当前 ${editorFacadeLines} 行`)
 
+// P0-04：块定义拆进 core/blocks 后，单文件必须保持 <250 行——防止新块把逻辑重新堆回单文件。
+const blocksDir = path.resolve(sourceRoot, 'core/blocks')
+for (const file of fs.readdirSync(blocksDir).filter((name) => name.endsWith('.js')).sort()) {
+  const lines = fs.readFileSync(path.join(blocksDir, file), 'utf8').split('\n').length
+  assert(lines < 250, `core/blocks/${file} 应保持 <250 行（P0-04 拆块注册表），当前 ${lines} 行`)
+}
+
 console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts')
