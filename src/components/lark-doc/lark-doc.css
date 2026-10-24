@@ -472,7 +472,7 @@
 @media (max-width: 1050px) { .lark-doc .lark-doc-outline { flex-basis: 165px; width: 165px; }.lark-doc .lark-doc-external-panel { flex-basis: 220px; width: 220px; }.lark-doc .lark-doc-paper { padding-left: 45px; padding-right: 35px; } }
 @media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: fixed; z-index: 45; top: 112px; left: 0; width: min(260px, 85vw); max-height: calc(100vh - 112px); padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
 @media (max-width: 380px) { .lark-doc .lark-doc-topbar { gap: 5px; }.lark-doc .lark-doc-brand span { display: none; }.lark-doc .lark-doc-paper { padding-left: 58px; padding-right: 12px; }.lark-doc .lark-doc-main { padding: 7px; } }
-@media (prefers-reduced-motion: reduce) { .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) { .lark-doc, .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 @media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-search, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
 .lark-doc .lark-doc-block-submenu-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lark-doc .lark-doc-block-submenu-trigger > span:last-child { color: var(--ld-text-submenu-arrow); font-size: 18px; }
@@ -591,4 +591,77 @@
   width: 0;
   height: 0;
   display: none;
+}
+
+/* ==================================================================
+   T4 · 主题切换的无障碍与动效（12 T4-02 / T4-03 / T4-04）
+   ================================================================== */
+
+/* T4-02：换档补色缓动。class 由 src/themeTransition 在**属性生效后的下一帧**挂上、
+   300ms 后摘 —— ① 首帧不挂（否则属性变更本身被纳入过渡，看到的是旧色慢慢挪到新色的
+   拖影）；② 不常驻（常驻会让每次 hover 都多拖 200ms 尾巴）。
+   只过渡颜色类属性：把布局类属性（width/top/transform…）也放进来会让整页抖一下。 */
+.lark-doc.ld-theme-transition,
+.lark-doc.ld-theme-transition * {
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease,
+    fill 200ms ease,
+    stroke 200ms ease,
+    box-shadow 200ms ease;
+}
+
+/* T4-03：View Transitions 圆形 bloom（能力检测，不支持直切，不 polyfill）。
+   old 快照静止（animation: none + 关掉默认的 cross-fade 混合），只让新快照从圆心
+   扩散 —— 两帧交叉淡入在换色场景会糊成一片灰。
+   圆心默认取根容器中心，由 themeTransition 在开拍前写 --ld-theme-bloom-x/y。 */
+::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  animation: ld-theme-bloom 400ms ease-out;
+  mix-blend-mode: normal;
+  z-index: 1;
+}
+@keyframes ld-theme-bloom {
+  from {
+    clip-path: circle(0% at var(--ld-theme-bloom-x, 50%) var(--ld-theme-bloom-y, 50%));
+  }
+  to {
+    clip-path: circle(150% at var(--ld-theme-bloom-x, 50%) var(--ld-theme-bloom-y, 50%));
+  }
+}
+
+/* T4-04：Windows 高对比度（forced-colors）。系统色接管，本库色板整体让位 ——
+   forced-colors 下浏览器会强制覆盖 color/background，不主动交出就会出现
+   「文字和底都被强制成同一色」的不可读状态。
+   只做三件事：底色交 Canvas、文字交 CanvasText、链接交 LinkText，
+   不用 -ms-high-contrast（已废弃），不动边框之外的装饰。 */
+@media (forced-colors: active) {
+  .lark-doc {
+    background: Canvas;
+    color: CanvasText;
+  }
+  .lark-doc a,
+  .lark-doc .lark-doc-link {
+    color: LinkText;
+  }
+  /* 强制模式不认 box-shadow（会被整体抹掉），用系统色描边把浮层边界补回来，
+     否则菜单/弹窗会糊在正文里分不出层次。 */
+  .lark-doc .lark-doc-block-menu,
+  .lark-doc .lark-doc-block-submenu,
+  .lark-doc .lark-doc-dialog,
+  .lark-doc .lark-doc-bubble-toolbar,
+  .lark-doc .lark-doc-select-menu,
+  .lark-doc .lark-doc-callout-emoji-picker {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+  /* 主题切换动效在强制模式下没有意义（颜色由系统决定），直接停掉。 */
+  .lark-doc.ld-theme-transition,
+  .lark-doc.ld-theme-transition * {
+    transition: none;
+  }
 }

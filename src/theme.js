@@ -15,6 +15,8 @@
  * SSR / 无 DOM 环境：getRoot() 返回 null 时 applyToRoot 是安全空操作，不抛错。
  */
 
+import { runThemeTransition, cancelThemeTransition } from './themeTransition'
+
 export const THEME_STATES = Object.freeze(['light', 'dark', 'system', 'host'])
 export const CONTENT_THEME_STATES = Object.freeze(['auto', 'light', 'dark'])
 
@@ -74,6 +76,8 @@ export function resolveUiTheme(theme, hostSkin) {
  * @param {object}   [options.hostSkin]             host 态皮肤探测配置（11 §3.9）。
  * @param {string}   [options.themeStorage='none']  'local' 才读写 localStorage。
  * @param {function} [options.getRoot]              返回根容器（.lark-doc）；返回 null 时只算不写。
+ *   写 DOM 时自动走 src/themeTransition（T4-02 / T4-03）：支持 View Transitions
+ *   就做整页快照过渡，不支持就短窗口挂 .ld-theme-transition 补 200ms 缓动。
  * @param {function} [options.onChange]             任一来源的变更回调，入参为 getTheme() 快照。
  * @returns {{ setTheme, getTheme, applyToRoot, destroy }}
  */
@@ -146,7 +150,9 @@ export function createThemeController(options = {}) {
 
   /** 变更统一出口：落 DOM + 回调（回调由 setTheme 判定 changed 后触发，这里不重复判）。 */
   function emit() {
-    applyToRoot()
+    // 写 DOM 这一步交给动效编排：支持 View Transitions 时属性变更发生在快照回调里
+    // （浏览器自动拍 old/new 两帧做圆形 bloom），不支持就补一段 class 缓动。
+    runThemeTransition(getRoot(), applyToRoot)
     if (onChange) onChange(getTheme())
   }
 
@@ -216,14 +222,15 @@ export function createThemeController(options = {}) {
     stopListeners()
     startListeners()
     persist()
-    applyToRoot()
-    const snapshot = getTheme()
-    if (changed && onChange) onChange(snapshot)
-    return snapshot
+    // 只有真的换档才走动效；同值重复 set 是一次幂等写，不该闪一下。
+    if (changed) emit()
+    else applyToRoot()
+    return getTheme()
   }
 
   function destroy() {
     stopListeners()
+    cancelThemeTransition()
   }
 
   return { setTheme, getTheme, applyToRoot, destroy }
