@@ -8,7 +8,6 @@
 import { closeHistory } from '@tiptap/pm/history'
 // 色板常量表（T0-04）：字面色只允许住在 palette.js，组件内一律引用常量。
 import {
-  CALLOUT_COLOR_OPTIONS,
   TEXT_COLOR_OPTIONS,
   TEXT_BACKGROUND_ROWS,
   DEFAULT_TEXT_COLOR,
