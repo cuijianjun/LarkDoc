@@ -74,217 +74,7 @@
       </aside>
     </div>
 
-    <div
-      v-if="bubbleVisible && !effectiveReadonly"
-      class="lark-doc-bubble"
-      :style="bubbleStyle"
-      role="toolbar"
-      aria-label="划词工具栏"
-      @mousedown.prevent
-    >
-      <button
-        v-if="featureEnabled('ai')"
-        type="button"
-        class="lark-doc-bubble-ai"
-        title="问问 AI"
-        aria-label="问问 AI"
-        @click="$emit('ai-request', 'rewrite')"
-      >
-        <lark-doc-icon
-          name="block-quote"
-          :size="16"
-        /><span>问问 AI</span>
-      </button>
-      <span
-        v-if="featureEnabled('ai')"
-        class="lark-doc-bubble-divider"
-        aria-hidden="true"
-      />
-      <div
-        v-if="featureEnabled('blockStyle')"
-        class="lark-doc-bubble-heading"
-        @mouseleave="scheduleBubbleHeadingClose"
-      >
-        <button
-          type="button"
-          class="lark-doc-bubble-heading-trigger"
-          title="标题级别"
-          aria-label="标题级别"
-          aria-haspopup="menu"
-          :aria-expanded="bubbleHeadingOpen ? 'true' : 'false'"
-          @mouseenter="openBubbleHeadingMenu"
-          @focus="openBubbleHeadingMenu"
-          @click.prevent="openBubbleHeadingMenu"
-        >
-          <span aria-hidden="true">{{ bubbleHeadingValue() }}</span><lark-doc-icon
-            class="lark-doc-bubble-caret lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button>
-        <lark-doc-heading-menu
-          v-if="bubbleHeadingOpen"
-          :active-level="bubbleHeadingLevel()"
-          :style="bubbleHeadingMenuStyle"
-          aria-label="划词标题级别"
-          @keep-open="cancelBubbleHoverClose"
-          @schedule-close="scheduleBubbleHeadingClose"
-          @choose="bubbleHeadingAction"
-        />
-      </div>
-      <div
-        class="lark-doc-bubble-align"
-        @mouseenter="openBubbleAlignMenu"
-        @mouseleave="scheduleBubbleAlignClose"
-      >
-        <button
-          type="button"
-          class="lark-doc-bubble-align-trigger"
-          aria-label="缩进和对齐"
-          title="缩进和对齐"
-          aria-haspopup="menu"
-          :aria-expanded="bubbleAlignOpen ? 'true' : 'false'"
-          @focus="openBubbleAlignMenu"
-          @click.prevent="openBubbleAlignMenu"
-        >
-          <lark-doc-icon
-            :name="`align-${bubbleAlignValue()}`"
-            :size="16"
-          /><lark-doc-icon
-            class="lark-doc-bubble-caret lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button>
-        <div
-          v-if="bubbleAlignOpen"
-          class="lark-doc-bubble-align-menu"
-          role="menu"
-          aria-label="划词缩进和对齐"
-          :style="bubbleAlignMenuStyle"
-          @mouseenter="cancelBubbleHoverClose"
-          @mouseleave="scheduleBubbleAlignClose"
-        >
-          <button
-            v-for="align in ['left', 'center', 'right', 'justify']"
-            :key="`bubble-align-${align}`"
-            type="button"
-            role="menuitem"
-            :aria-pressed="String(bubbleAlignValue() === align)"
-            :class="{ active: bubbleAlignValue() === align }"
-            :data-tooltip="bubbleAlignTooltip(align)"
-            :title="bubbleAlignTooltip(align)"
-            @mousedown.prevent
-            @click="bubbleAlignAction(align)"
-          >
-            <span
-              class="lark-doc-block-align-glyph"
-              aria-hidden="true"
-            >{{ alignGlyphs[align] }}</span><span>{{ alignNames[align] }}对齐</span><span
-              v-if="bubbleAlignValue() === align"
-              class="lark-doc-block-align-check"
-              aria-hidden="true"
-            >✓</span>
-          </button>
-          <div
-            class="lark-doc-block-submenu-divider"
-            role="separator"
-          />
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!bubbleAlignCanIncrease()"
-            :data-tooltip="bubbleAlignTooltip('increaseIndent')"
-            :title="bubbleAlignTooltip('increaseIndent')"
-            @mousedown.prevent
-            @click="bubbleAlignAction('increaseIndent')"
-          >
-            <span
-              class="lark-doc-block-align-glyph"
-              aria-hidden="true"
-            >⇥</span><span>增加缩进</span><span
-              v-if="!bubbleAlignCanIncrease()"
-              class="lark-doc-block-align-help"
-              aria-label="已达到最大缩进"
-            >?</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="bubbleAlignIndent() <= 0"
-            :data-tooltip="bubbleAlignTooltip('decreaseIndent')"
-            :title="bubbleAlignTooltip('decreaseIndent')"
-            @mousedown.prevent
-            @click="bubbleAlignAction('decreaseIndent')"
-          >
-            <span
-              class="lark-doc-block-align-glyph"
-              aria-hidden="true"
-            >⇤</span><span>减少缩进</span>
-          </button>
-        </div>
-      </div>
-      <span
-        class="lark-doc-bubble-divider"
-        aria-hidden="true"
-      />
-      <button
-        v-for="item in bubbleMarkItems"
-        :key="`bubble-mark-${item.id}`"
-        type="button"
-        :aria-label="item.label"
-        :title="item.label"
-        :aria-pressed="String(isActive(item.id))"
-        @click="toggleMark(item.id)"
-      >
-        <lark-doc-icon
-          :name="item.icon"
-          :size="16"
-        />
-      </button>
-      <template v-if="bubbleHighlightAllowed">
-        <button
-          type="button"
-          class="lark-doc-bubble-mark-highlight"
-          aria-label="高亮"
-          title="高亮"
-          :aria-pressed="String(isActive('highlight'))"
-          @click="toggleMark('highlight')"
-        >
-          <lark-doc-icon
-            name="mark-highlight"
-            :size="16"
-          />
-        </button><button
-          type="button"
-          class="lark-doc-bubble-caret-button"
-          aria-label="选择高亮颜色"
-          title="选择高亮颜色"
-          @click.prevent="toggleColorPalette('textBackground', $event)"
-        >
-          <lark-doc-icon
-            class="lark-doc-bubble-caret lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button>
-      </template>
-      <span
-        class="lark-doc-bubble-divider"
-        aria-hidden="true"
-      />
-      <button
-        type="button"
-        aria-label="复制选中文字"
-        title="复制选中文字"
-        @click="bubbleCopy"
-      >
-        <lark-doc-icon
-          name="copy"
-          :size="16"
-        />
-      </button>
-    </div>
+    <BubbleBar :ed="self" />
     <command-menu
       v-if="menuOpen && !effectiveReadonly"
       :items="filteredCommands"
@@ -298,122 +88,7 @@
       @choose="chooseCommand"
       @close="closeCommandMenu(true)"
     />
-    <div
-      v-if="colorPaletteOpen && !effectiveReadonly"
-      class="lark-doc-color-palette"
-      :class="{ 'lark-doc-color-palette-text': colorPaletteIsText }"
-      role="menu"
-      :aria-label="`${colorPaletteTitle}面板`"
-      :style="colorPaletteStyle"
-      @mousedown.prevent
-      @mouseenter="cancelPopupHoverClose"
-      @mouseleave="scheduleColorPaletteClose"
-    >
-      <template v-if="colorPaletteIsText">
-        <div class="lark-doc-color-palette-text-section">
-          <small>字体颜色</small>
-          <div class="lark-doc-color-letters">
-            <button
-              v-for="color in textColorOptions"
-              :key="`tc-${color.value}`"
-              type="button"
-              role="menuitem"
-              :aria-label="`字体颜色 ${color.label}`"
-              :title="color.label"
-              :style="{ color: color.value }"
-              :class="{ 'is-active': activeTextColor && activeTextColor.toLowerCase() === color.value.toLowerCase() }"
-              @click="applyColorPalette(color.value, 'textColor')"
-            >
-              A
-            </button>
-          </div>
-        </div>
-        <div class="lark-doc-color-palette-text-section">
-          <small>背景颜色</small>
-          <div
-            v-for="(row, rowIndex) in textBackgroundRows"
-            :key="`row-${rowIndex}`"
-            class="lark-doc-color-grid"
-          >
-            <button
-              v-for="color in row"
-              :key="`bg-${color.label}`"
-              type="button"
-              role="menuitem"
-              :aria-label="`背景颜色 ${color.label}`"
-              :title="color.label"
-              :class="{ 'is-transparent': !color.value, 'is-active': color.value ? (activeTextBackground && activeTextBackground.toLowerCase() === color.value.toLowerCase()) : !activeTextBackground }"
-              :style="color.value ? { backgroundColor: color.value } : {}"
-              @click="applyColorPalette(color.value, 'textBackground')"
-            />
-          </div>
-        </div>
-        <div
-          v-if="textColorRecent.length"
-          class="lark-doc-color-palette-section lark-doc-color-palette-text-recent"
-        >
-          <small>最近</small><button
-            v-for="color in textColorRecent"
-            :key="`recent-text-${color}`"
-            type="button"
-            role="menuitem"
-            :aria-label="`最近颜色 ${color}`"
-            :title="color"
-            :style="{ backgroundColor: color }"
-            @click="applyColorPalette(color, 'textBackground')"
-          />
-        </div>
-        <button
-          type="button"
-          role="menuitem"
-          class="lark-doc-color-palette-reset"
-          aria-label="恢复默认颜色"
-          @click="resetTextColors"
-        >
-          恢复默认
-        </button>
-      </template>
-      <template v-else>
-        <strong>{{ colorPaletteTitle }}</strong>
-        <div
-          v-if="colorPaletteRecent.length"
-          class="lark-doc-color-palette-section"
-        >
-          <small>最近</small><button
-            v-for="color in colorPaletteRecent"
-            :key="`recent-${color}`"
-            type="button"
-            role="menuitem"
-            :aria-label="`最近颜色 ${color}`"
-            :title="color"
-            :style="{ backgroundColor: color }"
-            @click="applyColorPalette(color)"
-          />
-        </div>
-        <div class="lark-doc-color-palette-section">
-          <small>推荐</small><button
-            v-for="color in colorPaletteOptions"
-            :key="color.value || 'default'"
-            type="button"
-            role="menuitem"
-            :aria-label="color.label"
-            :title="color.label"
-            :class="{ 'is-transparent': !color.value }"
-            :style="color.value ? { backgroundColor: color.value } : {}"
-            @click="applyColorPalette(color.value)"
-          />
-        </div>
-        <button
-          type="button"
-          role="menuitem"
-          class="lark-doc-color-palette-reset"
-          aria-label="恢复默认颜色"
-          @click="resetColorPalette"
-        >
-          恢复默认
-        </button>
-      </template>
-    </div>
+    <ColorPalette :ed="self" />
     <div
       v-if="tablePicker"
       class="lark-doc-dialog-backdrop"
@@ -695,7 +370,6 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CommandMenu from './CommandMenu.vue'
-import LarkDocHeadingMenu from './LarkDocHeadingMenu.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
 import TopBar from './editor/TopBar.vue'
 import ToolbarBar from './editor/ToolbarBar.vue'
@@ -706,6 +380,8 @@ import PaperStage from './editor/PaperStage.vue'
 import BlockHandleMenu from './editor/BlockHandleMenu.vue'
 import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
+import BubbleBar from './editor/BubbleBar.vue'
+import ColorPalette from './editor/ColorPalette.vue'
 import { createLarkDocExtensions } from './extensions'
 import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -738,7 +414,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocHeadingMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools },
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
