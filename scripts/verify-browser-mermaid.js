@@ -197,16 +197,37 @@ async function main() {
     const readDiagramPaint = () => page.evaluate(() => {
       const svg = document.querySelector('.lark-doc-diagram-svg svg')
       const card = document.querySelector('.lark-doc-code-diagram')
+      const code = document.querySelector('.lark-doc-code:not(.lark-doc-code-diagram)')
+      const read = (root, sel) => {
+        const el = root && root.querySelector(sel)
+        if (!el) return null
+        const cs = getComputedStyle(el)
+        return { bg: cs.backgroundColor, color: cs.color, borderTop: cs.borderTopColor }
+      }
       if (!svg) return null
       const shape = svg.querySelector('.node rect, .node polygon, .node path, rect.actor')
       return {
         fill: shape ? getComputedStyle(shape).fill : null,
         cardBg: card ? getComputedStyle(card).backgroundColor : null,
+        // 代码块 chrome（T3-02）+ 语法 token 色（M6：两档必须相同）
+        code: code ? getComputedStyle(code) : null,
+        codeToolbar: read(code, '.lark-doc-code-toolbar'),
+        codeHighlight: read(code, '.lark-doc-code-highlight'),
       }
     })
 
+    // 补一个普通代码块：语法色 + 卡片 chrome 都要验。
+    await page.evaluate(() => {
+      window.__larkDoc.insert({
+        type: 'codeBlock',
+        attrs: { language: 'javascript' },
+        content: [{ type: 'text', text: 'const answer = 42 // note\nfunction greet(n) { return "hi" }' }],
+      })
+    })
+    await page.waitForTimeout(1200)
+
     const lightPaint = await readDiagramPaint()
-    record('浅色档图表已着色', Boolean(lightPaint && lightPaint.fill), JSON.stringify(lightPaint))
+    record('浅色档图表已着色', Boolean(lightPaint && lightPaint.fill), JSON.stringify({ fill: lightPaint.fill, cardBg: lightPaint.cardBg }))
 
     await page.evaluate(() => { window.__larkDoc.setTheme('dark', 'dark') })
     await page.waitForTimeout(1500)
@@ -217,6 +238,19 @@ async function main() {
       `fill=${darkPaint && darkPaint.fill}`
     )
     record('深色下图表卡片跟随正文纸张 #292929', Boolean(darkPaint && darkPaint.cardBg === 'rgb(41, 41, 41)'), `cardBg=${darkPaint && darkPaint.cardBg}`)
+    record(
+      '深色下代码块 chrome 中性化（卡底 #17181A / 描边 #5F5F5F / 头部条白字）',
+      Boolean(darkPaint && darkPaint.code && darkPaint.code.backgroundColor === 'rgb(23, 24, 26)' &&
+        darkPaint.code.borderTopColor === 'rgb(95, 95, 95)' &&
+        darkPaint.codeToolbar && darkPaint.codeToolbar.color === 'rgb(240, 240, 240)'),
+      JSON.stringify(darkPaint && { bg: darkPaint.code && darkPaint.code.backgroundColor, border: darkPaint.code && darkPaint.code.borderTopColor, toolbar: darkPaint.codeToolbar })
+    )
+    record(
+      'M6：语法 token 色两档不变（keyword 仍 #c9a2ee / 默认文字仍 #e3eee7）',
+      Boolean(lightPaint && darkPaint && darkPaint.codeHighlight && lightPaint.codeHighlight &&
+        darkPaint.codeHighlight.color === lightPaint.codeHighlight.color),
+      `浅=${lightPaint && lightPaint.codeHighlight && lightPaint.codeHighlight.color} 深=${darkPaint && darkPaint.codeHighlight && darkPaint.codeHighlight.color}`
+    )
     await page.screenshot({ path: path.join(SHOT_DIR, '03-dark-mermaid.png'), fullPage: true })
 
     await page.evaluate(() => { window.__larkDoc.setTheme('light', 'light') })

@@ -209,6 +209,16 @@
   --ld-bg-th: rgba(207, 207, 207, 0.08);  /* B */
   --ld-border-hr: rgba(207, 207, 207, 0.15); /* A：同 divider */
 
+  /* ---- 代码块 / 图表块（T3-02）----
+     代码块是「常暗对象」：语法配色按 M6（06 §6.5.2 实测 token 色两档不变）不动，
+     这里只把「与外部世界接触」的 chrome（卡底 / 描边 / 头部条）换成深色中性档 ——
+     卡底去绿转中性，免得深灰文档里冒出一坨墨绿。 */
+  --ld-code-bg: #17181A;                       /* A：11 §4.1 外壳底，比纸张 #292929 暗一档 */
+  --ld-code-border: #5F5F5F;                   /* A：11 §4.3 content 描边档 */
+  --ld-code-toolbar-bg: rgba(207, 207, 207, 0.08); /* B */
+  --ld-code-toolbar-text: #F0F0F0;             /* A */
+  /* --ld-code-text / caret / selection 不覆盖：深底浅字的两档语义一致。 */
+
   /* ---- 图表（mermaid）themeVariables 取值（T3-01）----
      mermaid 只吃字面色，JS 侧按 token 名读取再下发；色值只在这里定义，
      预设档 / 宿主写同名变量即可覆盖。**全部取自已实测中性档**
@@ -222,6 +232,19 @@
   --ld-diagram-line: #757575;                  /* A：连线用中性第三档，弱于文字 */
   --ld-diagram-cluster: rgba(207, 207, 207, 0.04); /* B：subgraph 底 */
   --ld-diagram-note: rgba(207, 207, 207, 0.12);    /* B：备注块底 */
+
+  /* ---- 图表卡片外壳（T3-02）：跟着正文纸张走 ---- */
+  --ld-diagram-card-bg: var(--ld-bg-content);      /* 转发：改动只留 --ld-bg-content 一处真相 */
+  --ld-diagram-preview-bg: var(--ld-bg-content);
+  --ld-diagram-source-bg: var(--ld-bg-content);
+  --ld-diagram-border: #5F5F5F;                    /* A */
+  --ld-diagram-preview-border: var(--ld-divider);  /* 转发 */
+  --ld-diagram-toolbar-bg: rgba(207, 207, 207, 0.08); /* B */
+  --ld-diagram-toolbar-text: #F0F0F0;              /* A */
+  --ld-diagram-source-text: #F0F0F0;               /* A */
+  --ld-diagram-source-caret: #F0F0F0;              /* A */
+  --ld-diagram-status-text: #A6A6A6;               /* A：11 §4.2 次级文字 */
+  --ld-diagram-error: #D83931;                     /* A：11 §4.4 danger 深色值 */
 
   /* ---- 通知条 / 搜索 / AI 面板 / 模板 ---- */
   --ld-border-notice: #5F5F5F;                   /* B */

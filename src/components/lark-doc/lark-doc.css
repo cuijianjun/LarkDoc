@@ -38,6 +38,27 @@
   --ld-bg-accent-active: #e3f2ea;   /* 展开态底（工具栏 aria-expanded / 气泡 pressed） */
   --ld-bg-selected: #E0E9FF;        /* 飞书口径：格式已生效开关底（绿档暂无引用） */
   --ld-bg-code: #F5F6F7;            /* 06 §6.5：代码块色层（绿档待 B4 核定） */
+  /* ---- L2 代码块 / 图表块（T3-02：组件只引 token，深色值见 theme-dark.css） ----
+     代码块是「常暗卡片」：语法配色按 M6（06 §6.5.2）两档不变，token 只管卡片外观。 */
+  --ld-code-bg: #17251f;                       /* 卡片底（深绿） */
+  --ld-code-border: #dce5e1;                   /* 卡片描边 */
+  --ld-code-toolbar-bg: #edf3ef;               /* 头部条底 */
+  --ld-code-toolbar-text: #3f5149;             /* 头部条文字 */
+  --ld-code-text: #e3eee7;                     /* 代码默认文字（深底浅字） */
+  --ld-code-caret: #ffffff;                    /* 光标 */
+  --ld-code-selection: #62897688;              /* 选区 */
+  /* 图表块是「纸张上的白卡」，浅色即纸张白。 */
+  --ld-diagram-card-bg: #ffffff;
+  --ld-diagram-border: #e3ebe6;
+  --ld-diagram-toolbar-bg: #f6faf7;
+  --ld-diagram-toolbar-text: #3f5149;
+  --ld-diagram-source-bg: #fbfdfc;             /* 源码区底 */
+  --ld-diagram-source-text: #24352d;
+  --ld-diagram-source-caret: #1f2d26;
+  --ld-diagram-preview-bg: #ffffff;            /* 预览区底（SVG 画在上面） */
+  --ld-diagram-preview-border: #eef3f0;
+  --ld-diagram-status-text: #66756e;           /* 「渲染中…」 */
+  --ld-diagram-error: #c0392b;                 /* 渲染失败文案 */
   /* ---- L2 边框 ---- */
   --ld-border: #e2e9e6;             /* 常规边框（旧 --lark-doc-line） */
   --ld-border-strong: #BBBFC4;      /* 强边框（两档同） */
