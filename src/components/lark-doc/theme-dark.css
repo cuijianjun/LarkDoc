@@ -283,3 +283,34 @@
      5.6–8.1:1 达标，沿用浅色值；gray / blue / indigo 已在上面修掉。
      口径见 requirements/10，待飞书深色实测后回归。
    ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------
+   四、打印 / 导出 PDF 强制浅稿（T3-07，12 §6 R7）
+   深色录入的文档也要打印出白底黑字。覆盖点在 token 层，正文结构规则一行不改。
+   为什么写在本文件而不是 lark-doc.css：媒体查询**不增加特异性**，
+   而 style.css 里本文件排在 lark-doc.css 之后 —— 同样的
+   `.lark-doc[data-content-theme="dark"]`，谁在后谁生效。
+   ⚠️ 下列值必须与 lark-doc.css「L2 正文块」的浅色值保持一致（改那边这里要跟着改）。
+   ⚠️ 已知限制：mermaid 已渲染 SVG 的色是固化属性，改变量改不动它 —— 深色稿打印时
+      图表仍保留深色填充，见 requirements/10 待办。
+   ------------------------------------------------------------------ */
+@media print {
+  .lark-doc[data-content-theme="dark"] {
+    --ld-bg-content: #FFFFFF;
+    --ld-text-content: #263830;
+    --ld-text-heading: #213c31;
+    --ld-bg-quote: #f5faf7;
+    --ld-text-quote: #4c6459;
+    --ld-border-callout: #9ad9bd;
+    --ld-bg-callout: #eff9f4;
+    --ld-text-bullet: #4e5969;
+    --ld-border-column: #dbe7e0;
+    --ld-bg-details: #f7faf9;
+    --ld-border-details: #d9e9e1;
+    --ld-text-summary: #276149;
+    --ld-border-table: #d4e0d9;
+    --ld-bg-th: #edf6f0;
+    --ld-border-hr: #dce8e1;
+    --ld-divider: #DEE0E3;
+  }
+}

@@ -420,7 +420,10 @@ export default {
 <style>
 .lark-doc .lark-doc-image { position: relative; margin: 18px 0; max-width: 100%; }
 .lark-doc .lark-doc-image-frame { position: relative; max-width: 100%; }
-.lark-doc .lark-doc-image-frame img { display: block; max-width: 100%; width: 100%; height: auto; border-radius: 6px; }
+.lark-doc .lark-doc-image-frame img { display: block; max-width: 100%; width: 100%; height: auto; border-radius: 6px; filter: brightness(var(--ld-media-dim)); }
+/* 深色下的图片压暗开关（T3-05）：默认 --ld-media-dim: 1 = 一个像素都不改；
+   宿主觉得深纸上媒体太亮时自己设 0.8~0.9。hover 一律恢复原亮度（读图场景）。 */
+.lark-doc .lark-doc-image-frame img:hover { filter: none; }
 .lark-doc .lark-doc-image.is-selected .lark-doc-image-frame { outline: 2px solid #2f6df6; outline-offset: -1px; }
 /* 离线策略拦截的外链图片：不渲染 img，避免浏览器发起外部请求。 */
 .lark-doc .lark-doc-image-blocked { display: grid; gap: 4px; justify-items: start; padding: 18px 20px; border: 1px dashed #c9d4cf; border-radius: 8px; background: #f7faf8; color: #5a6b63; font-size: 12px; }

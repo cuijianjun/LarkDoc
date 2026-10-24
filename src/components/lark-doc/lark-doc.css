@@ -37,6 +37,15 @@
   --ld-bg-accent: #eaf8f3;          /* 激活底（button.active / aria-pressed） */
   --ld-bg-accent-active: #e3f2ea;   /* 展开态底（工具栏 aria-expanded / 气泡 pressed） */
   --ld-bg-selected: #E0E9FF;        /* 飞书口径：格式已生效开关底（绿档暂无引用） */
+  /* ---- T3-05 / T3-06：两个「宿主开关」型 token ---- */
+  /* 深色下图片过亮时的压暗系数。**默认 1 = 不改任何像素**，深色档也不预置 ——
+     要压暗由宿主自己写 `--ld-media-dim: .85`（写在 [data-content-theme="dark"] 上），
+     不改库。hover 一律恢复原亮度（12 T3-05）。 */
+  --ld-media-dim: 1;
+  /* 滚动条滑块色（11 §3.4 L2 契约项）。本库当前不自定义滚动条：组件面板一律隐藏，
+     主区走原生滚动条 + `color-scheme`（随主题自动变深，M9 口径）。这个 token 是给
+     宿主在自己 DOM 里画 ::-webkit-scrollbar-thumb 用的取值入口。 */
+  --ld-scrollbar-thumb: #BBBFC4;         /* = --ld-border-strong */
   --ld-bg-code: #F5F6F7;            /* 06 §6.5：代码块色层（绿档待 B4 核定） */
   /* ---- L2 代码块 / 图表块（T3-02：组件只引 token，深色值见 theme-dark.css） ----
      代码块是「常暗卡片」：语法配色按 M6（06 §6.5.2）两档不变，token 只管卡片外观。 */
