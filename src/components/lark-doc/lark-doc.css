@@ -134,6 +134,18 @@
   --ld-shadow-dialog: 0 20px 60px #0d281d42;      /* 对话框 */
   --ld-shadow-thumb: 0 1px 2px #00000033;         /* 开关圆点 */
   --ld-shadow-drawer: 8px 10px 20px #1c43311c;    /* 窄屏（≤760px）轮廓栏抽屉 */
+  /* ---- L2 标题编号块 UI（B6；值 = 收编前字面值，飞书档按 06 §1/§3/§7.1 映射） ----
+     编号是块级装饰 widget，不在正文文本里；文字色复用 --ld-brand-content，
+     菜单底复用 --ld-bg-surface，tooltip 复用 B5 的三个 token。 */
+  --ld-text-number-menu: #1F2329;                 /* 编号菜单项 / 输入框文字 */
+  --ld-text-number-spinner: #8b959e;              /* 编号步进器上下箭头 */
+  --ld-text-number-hover: #0f47c9;                /* 编号自身 hover / 聚焦文字（品牌蓝加深） */
+  --ld-bg-number-hover: rgba(20, 86, 240, 0.1);   /* 编号自身 hover / 聚焦底 */
+  --ld-bg-number-hover-subtle: rgba(20, 86, 240, 0.08); /* 悬停整个标题块时的编号底 */
+  --ld-bg-number-item-hover: #f2f3f5;             /* 编号菜单项 hover 底（中性灰） */
+  --ld-border-number-focus: #1456f0;              /* 编号输入框描边 */
+  --ld-focus-ring-number: #1456f01f;              /* 编号输入框聚焦外环 */
+  --ld-shadow-megamenu: rgba(31, 35, 41, .04) 0 8px 24px 8px, rgba(31, 35, 41, .04) 0 6px 12px 0, rgba(31, 35, 41, .06) 0 4px 8px -8px; /* 编号菜单；= 06 §3 megamenu 三层 */
   /* 跨界转发（D2）：chrome = 编辑器外壳 UI，content = 正文画布 */
   --ld-border-chrome: var(--ld-border);
   --ld-border-content: var(--ld-border);
@@ -450,29 +462,31 @@
 /* 背景块用左右 2px 的 padding 撑出，margin 负值抵消，编号文字位置与旧版完全一致。
    必须 position: relative —— tooltip（::after）是 absolute，不定位的话会挂到 .ProseMirror 上，
    气泡永远画在正文左上角（「设置编号」tips 不跟数字）。 */
-.lark-doc .ProseMirror .lark-doc-heading-number { position: relative; display: inline; margin: 0 4px 0 -2px; padding: 0 2px; border: 0; border-radius: 3px; background: transparent; color: #1456f0; font: inherit; font-weight: inherit; line-height: inherit; letter-spacing: inherit; text-align: inherit; vertical-align: baseline; cursor: pointer; user-select: none; text-decoration: none; }
+.lark-doc .ProseMirror .lark-doc-heading-number { position: relative; display: inline; margin: 0 4px 0 -2px; padding: 0 2px; border: 0; border-radius: 3px; background: transparent; color: var(--ld-brand-content); font: inherit; font-weight: inherit; line-height: inherit; letter-spacing: inherit; text-align: inherit; vertical-align: baseline; cursor: pointer; user-select: none; text-decoration: none; }
 /* 飞书 hover 态：浅蓝背景块 + 蓝色下划线（下划线粗一点，贴着数字）。 */
-.lark-doc .ProseMirror .lark-doc-heading-number:hover, .lark-doc .ProseMirror .lark-doc-heading-number:focus-visible { background: rgba(20, 86, 240, .1); color: #0f47c9; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; outline: 0; }
+.lark-doc .ProseMirror .lark-doc-heading-number:hover, .lark-doc .ProseMirror .lark-doc-heading-number:focus-visible { background: var(--ld-bg-number-hover); color: var(--ld-text-number-hover); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; outline: 0; }
 /* 飞书同款：鼠标悬在标题块上（不必精确压住编号）时，编号亮出浅蓝背景。 */
-.lark-doc .ProseMirror :is(h1, h2, h3, h4, h5, h6):hover .lark-doc-heading-number { background: rgba(20, 86, 240, .08); }
-.lark-doc .ProseMirror .lark-doc-heading-number[data-tooltip]:hover::after { content: attr(data-tooltip); position: absolute; z-index: 30; bottom: calc(100% + 4px); left: 0; min-width: max-content; padding: 7px 10px; border-radius: 8px; background: #24282c; color: white; box-shadow: 0 6px 18px #1d242b2b; font-size: 12px; font-weight: 400; line-height: 1.35; white-space: nowrap; pointer-events: none; }
-.lark-doc .lark-doc-heading-number-menu { position: fixed; z-index: 80; display: grid; width: 192px; padding: 2px 0; border-radius: 6px; background: #fff; box-shadow: rgba(31, 35, 41, .04) 0 8px 24px 8px, rgba(31, 35, 41, .04) 0 6px 12px 0, rgba(31, 35, 41, .06) 0 4px 8px -8px; box-sizing: border-box; }
-.lark-doc .lark-doc-heading-number-item { display: flex; width: 100%; height: 32px; align-items: center; gap: 10px; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: #1f2329; font-size: 14px; line-height: 1; text-align: left; white-space: nowrap; cursor: pointer; box-sizing: border-box; }
-.lark-doc .lark-doc-heading-number-item:hover:not(:disabled), .lark-doc .lark-doc-heading-number-item:focus-visible:not(:disabled) { background: #f2f3f5; outline: 0; }
-.lark-doc .lark-doc-heading-number-item.is-disabled, .lark-doc .lark-doc-heading-number-item:disabled { color: #bbbfc4; cursor: default; }
+.lark-doc .ProseMirror :is(h1, h2, h3, h4, h5, h6):hover .lark-doc-heading-number { background: var(--ld-bg-number-hover-subtle); }
+.lark-doc .ProseMirror .lark-doc-heading-number[data-tooltip]:hover::after { content: attr(data-tooltip); position: absolute; z-index: 30; bottom: calc(100% + 4px); left: 0; min-width: max-content; padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; font-weight: 400; line-height: 1.35; white-space: nowrap; pointer-events: none; }
+.lark-doc .lark-doc-heading-number-menu { position: fixed; z-index: 80; display: grid; width: 192px; padding: 2px 0; border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-megamenu); box-sizing: border-box; }
+.lark-doc .lark-doc-heading-number-item { display: flex; width: 100%; height: 32px; align-items: center; gap: 10px; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--ld-text-number-menu); font-size: 14px; line-height: 1; text-align: left; white-space: nowrap; cursor: pointer; box-sizing: border-box; }
+/* 注意：必须显式声明 color —— 通用规则 `.lark-doc button:hover:not(:disabled)`（165 行，权重 0,3,1）
+   会把菜单项文字刷成强调色；本条权重 0,4,1 才能压住。同块菜单 362/368 行的写法。 */
+.lark-doc .lark-doc-heading-number-item:hover:not(:disabled), .lark-doc .lark-doc-heading-number-item:focus-visible:not(:disabled) { background: var(--ld-bg-number-item-hover); color: var(--ld-text-number-menu); outline: 0; }
+.lark-doc .lark-doc-heading-number-item.is-disabled, .lark-doc .lark-doc-heading-number-item:disabled { color: var(--ld-text-disabled); cursor: default; }
 .lark-doc .lark-doc-heading-number-icon { display: inline-flex; width: 18px; min-width: 18px; height: 18px; align-items: center; justify-content: center; color: currentColor; }
 .lark-doc .lark-doc-heading-number-icon svg { width: 18px; height: 18px; }
 .lark-doc .lark-doc-heading-number-text { flex: 1; }
 .lark-doc .lark-doc-heading-number-menu.is-editing { width: auto; padding: 6px; }
 .lark-doc .lark-doc-heading-number-editor { display: flex; align-items: center; gap: 4px; }
-.lark-doc .lark-doc-heading-number-input { width: 56px; height: 28px; padding: 0 7px; border: 1px solid #1456f0; border-radius: 4px; background: #fff; color: #1f2329; font-size: 14px; line-height: 1; text-align: left; box-sizing: border-box; }
-.lark-doc .lark-doc-heading-number-input:focus { outline: 0; box-shadow: 0 0 0 3px #1456f01f; }
+.lark-doc .lark-doc-heading-number-input { width: 56px; height: 28px; padding: 0 7px; border: 1px solid var(--ld-border-number-focus); border-radius: 4px; background: var(--ld-bg-surface); color: var(--ld-text-number-menu); font-size: 14px; line-height: 1; text-align: left; box-sizing: border-box; }
+.lark-doc .lark-doc-heading-number-input:focus { outline: 0; box-shadow: 0 0 0 3px var(--ld-focus-ring-number); }
 .lark-doc .lark-doc-heading-number-spinner { display: inline-grid; width: 16px; height: 28px; grid-template-rows: 14px 14px; }
-.lark-doc .lark-doc-heading-number-spinner button { display: grid; width: 16px; height: 14px; min-height: 0; padding: 0; place-items: center; border: 1px solid #d9e2dd; background: #fff; color: #8b959e; line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-heading-number-spinner button { display: grid; width: 16px; height: 14px; min-height: 0; padding: 0; place-items: center; border: 1px solid var(--ld-border-control); background: var(--ld-bg-surface); color: var(--ld-text-number-spinner); line-height: 1; cursor: pointer; }
 .lark-doc .lark-doc-heading-number-spinner button .lark-doc-icon { display: inline-flex; width: 10px; height: 10px; }
 .lark-doc .lark-doc-heading-number-spinner button:first-child { border-radius: 3px 3px 0 0; border-bottom: 0; }
 .lark-doc .lark-doc-heading-number-spinner button:last-child { border-radius: 0 0 3px 3px; }
-.lark-doc .lark-doc-heading-number-spinner button:hover { background: #f2f6f4; color: #0c7a58; }
+.lark-doc .lark-doc-heading-number-spinner button:hover { background: var(--ld-bg-hover); color: var(--ld-text-accent-hover); }
 
 /* —— 弹窗统一去掉滚动条（飞书同款：菜单不出滚动条，靠条数与分组控制高度）——
    覆盖所有浮层：下拉 / 选择菜单 / 块菜单与子菜单 / 命令菜单与子菜单 / 模板列表 /
