@@ -25,6 +25,10 @@ export default {
     onDocumentPointerDown(event) {
       const target = event.target
       if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target)) this.closeCommandMenu()
+      // P4-01：`@` 面板的常规关闭由选区变化驱动（document.js 回调 onMention(null)），
+      // 这里只补那种「不换选区」的点击：工具栏 / 页眉 / 页边空白。点回正文不拦，
+      // 否则「点正文某处落光标」会先被收掉面板、再靠重算开回来，闪一下。
+      if (this.mentionOpen && !target.closest?.('.lark-doc-mention-panel') && !target.closest?.('.ProseMirror')) this.closeMentionPanel()
       if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
       if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
       if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
@@ -67,6 +71,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

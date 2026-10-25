@@ -1,5 +1,6 @@
 import { Fragment } from '@tiptap/pm/model'
 import { moveDepthAllowed } from './blocks/container-depth'
+import { MENTION_KINDS } from './blocks/mention'
 
 const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
 
@@ -68,6 +69,14 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'colwidth') valid = Array.isArray(value) && value.every((width) => Number.isInteger(width) && width > 0 && width <= 2400)
     else if (key === 'colspan' || key === 'rowspan' || key === 'start') valid = Number.isInteger(value) && value > 0 && value <= 10000
     else if (key === 'open' || key === 'checked') valid = typeof value === 'boolean'
+    // 提及（P4-01）：`notify` 是**布尔**且默认 true，`kind` 是枚举 —— 兜底分支只收字符串，
+    // 落进来必被判非法，症状与 P3-07 的 `aspect` 完全同型：「存一次盘再打开就炸」。
+    // 只对 mention 生效，不用 `key === 'notify'` 全局放行，避免别的块借同名 key 钻空子。
+    else if (type === 'mention' && key === 'notify') valid = typeof value === 'boolean'
+    else if (type === 'mention' && key === 'kind') valid = MENTION_KINDS.indexOf(value) !== -1
+    // mentionId 是文档内实例 UUID；`id` 是实体 id（open_id / chat_id / doc token）。
+    else if (type === 'mention' && key === 'mentionId') valid = typeof value === 'string' && /^[\w-]{1,64}$/.test(value)
+    else if (type === 'mention' && key === 'id') valid = typeof value === 'string' && value.length <= 256 && !value.includes('\u0000')
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
     // 标题编号：开关是布尔，起点是 1..999 的整数或不设（null = 继续）。
     else if (key === 'numbering') valid = typeof value === 'boolean'
@@ -239,7 +248,7 @@ export function sanitizeHTML(html) {
   container.innerHTML = html
   const tags = new Set(['P', 'DIV', 'SPAN', 'MARK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'PRE', 'SUB', 'SUP', 'BLOCKQUOTE', 'HR', 'UL', 'OL', 'LI', 'A', 'IMG', 'FIGURE', 'FIGCAPTION', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'DETAILS', 'SUMMARY', 'LABEL', 'INPUT'])
   const dangerous = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META', 'BASE', 'FRAME', 'FRAMESET'])
-  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'class'])
+  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'class'])
   Array.from(container.querySelectorAll('*')).forEach((element) => {
     if (!container.contains(element)) return
     const tag = element.tagName.toUpperCase()
@@ -274,6 +283,12 @@ export function sanitizeHTML(html) {
       else if ((name === 'data-attch-id' || name === 'data-original-attch-id') && (!['IMG', 'FIGURE'].includes(tag) || !safeAttachmentId(attribute.value))) element.removeAttribute(name)
       else if (name === 'class' && !/^(language-[\w+-]+|tiptap-mathematics-render)$/.test(attribute.value)) element.removeAttribute(name)
       else if (name === 'data-align' && !['left', 'center', 'right'].includes(attribute.value)) element.removeAttribute(name)
+      // 提及（P4-01）：身份属性必须落进 schema 认识的形态 —— 放行一个畸形值，
+      // 结果是「粘贴一段带 @ 的富文本 → 整篇 setContent 抛错」，比丢掉 attr 严重得多。
+      else if (name === 'data-notify' && !['true', 'false'].includes(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-mention-kind' && MENTION_KINDS.indexOf(attribute.value) === -1) element.removeAttribute(name)
+      else if (name === 'data-mention-id' && !/^[\w-]{1,64}$/.test(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-token' && (attribute.value.length > 256 || attribute.value.includes('\u0000'))) element.removeAttribute(name)
     })
     if (element.tagName === 'INPUT') {
       if (element.getAttribute('type') !== 'checkbox') element.remove()
@@ -293,6 +308,34 @@ export function getSlashMatch(state) {
   if (!match) return null
   let inCode = false
   $from.parent.nodesBetween($from.parentOffset - match[1].length - 1, $from.parentOffset, (node) => { if (node.marks.some((mark) => mark.type.name === 'code')) inCode = true })
+  return inCode ? null : { from: $from.pos - match[1].length - 1, to: $from.pos, query: match[1] }
+}
+
+/**
+ * 检测文本块里未完成的 `@` 输入；返回 `{ from, to, query }` 或 null。
+ *
+ * 与 `getSlashMatch` 的三处差异都是 02 §19.3 的行为差异，不是随手放松：
+ *   1. **标题 / 列表项里也能 @**（飞书支持），所以只排除代码块，不限定 paragraph；
+ *   2. `@` 前必须是词边界（行首或空白）—— 否则 `a@b.com` 一敲就弹面板；
+ *   3. `@` 后不吞空白：查询串只到下一个空白/`@` 为止（飞书输入「@张 三」时
+ *      面板会关掉，不存在「带空格查询」）。
+ *
+ * IME 组字期间**不在这里挡**：`document.js` 的 `view.composing` 与
+ * `compositionstart/end` 已经在触发链路上双重拦截（见该文件）。
+ */
+export function getMentionMatch(state) {
+  const { $from, empty } = state.selection
+  if (!empty) return null
+  const parent = $from.parent
+  if (!parent.isTextblock || parent.type.name === 'codeBlock') return null
+  const before = parent.textBetween(0, $from.parentOffset, '\n', '\ufffc')
+  const match = /(?:^|\s)@([^@\s]*)$/.exec(before)
+  if (!match) return null
+  let inCode = false
+  const start = $from.parentOffset - match[1].length - 1
+  parent.nodesBetween(start, $from.parentOffset, (node) => {
+    if (node.marks.some((mark) => mark.type.name === 'code')) inCode = true
+  })
   return inCode ? null : { from: $from.pos - match[1].length - 1, to: $from.pos, query: match[1] }
 }
 

@@ -37,6 +37,18 @@ export {
 } from '../core/blocks/bookmark'
 export { codeExtension } from '../core/blocks/code-block'
 export { EMOJI_GLYPHS, LarkDocEmoji } from '../core/blocks/emoji'
+// P4-01：行内提及（人员 / 群名片 / 云文档共用同一个 atom）。契约层（kind 枚举 /
+// 字段上限 / 规范化 / 纯文本形态）同源再导出，宿主造 chip 只从这里取 `normalizeMention`。
+export {
+  LarkDocMention, MENTION_KINDS, MENTION_KIND_LABELS, MENTION_LIMITS,
+  MENTION_UNKNOWN_NAME, MENTION_EMPTY_TEXT, createMentionId, normalizeMention,
+  readMention, mentionPlainText,
+} from '../core/blocks/mention'
+// P4-01：提及候选源（本地名单过滤 + 可选 provider）—— 纯逻辑，无 DOM。
+export {
+  MENTION_SEARCH_LIMIT, MENTION_RESOLVE_LIMIT, DEFAULT_MENTION_TIMEOUT,
+  normalizeMentionEntry, normalizeMentionDirectory, searchMentionDirectory, createMentionProvider,
+} from '../core/mention/directory'
 export { UnknownBlock } from '../core/blocks/unknown-block'
 export { loadKatex, mathExtension } from '../core/blocks/math'
 export { documentKey } from '../core/blocks/document-key'

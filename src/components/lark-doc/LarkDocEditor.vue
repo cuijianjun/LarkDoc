@@ -25,6 +25,8 @@
       :ed="self"
     />
     <TableTools :ed="self" />
+    <!-- `@` 提及面板：锚在光标处，与斜杠菜单互斥（同时只会开一个） -->
+    <MentionPanel :ed="self" />
 
 
     <div class="lark-doc-body">
@@ -146,6 +148,7 @@ import LarkDocIcon from './LarkDocIcon.vue'
 import TopBar from './editor/TopBar.vue'
 import ToolbarBar from './editor/ToolbarBar.vue'
 import SearchPanel from './editor/SearchPanel.vue'
+import MentionPanel from './editor/MentionPanel.vue'
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
@@ -181,6 +184,9 @@ import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
+// P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
+// 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
+import mentionMixin from './editor/mentionMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
@@ -200,8 +206,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin],
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -229,6 +235,10 @@ export default {
     // iframe 的 sandbox / allow 覆盖通道：不传即安全基线（无 allow-same-origin）。
     embedSandbox: { type: String, default: null },
     embedAllow: { type: String, default: null },
+    // P4-01：提及候选来源。数组 = 静态名单；函数 = `(keyword, kind) => Promise<item[]>`
+    // （宿主自己查通讯录 / 云文档）；对象 = `{ user: [...], chat: [...], page: [...] }`。
+    // 不传即用 core 内置的演示目录（core/mention/directory.js），保证开箱可用。
+    mentionSource: { type: [Array, Function, Object], default: null },
   },
   data() { return {
     editor: null, localTitle: this.title,
@@ -287,7 +297,7 @@ export default {
       if (this.editor) this.editor.storage.characterCount.setLimit(this.effectiveMaxLength)
       this.$nextTick(() => this.refreshDocumentState())
     } },
-    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
+    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
     emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
@@ -304,7 +314,7 @@ export default {
       }
       this.editor = new Editor({
         content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ ...this.embedOptions, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
+        extensions: createLarkDocExtensions({ ...this.embedOptions, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)

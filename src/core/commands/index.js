@@ -38,15 +38,21 @@ for (const group of GROUPS) {
 
 // 与拆分前 commands.js 逐项一致（22 条显式定义 + 9 个生成标题 = 31 个 id）。
 // P2-04 起多一条 `file`（视频或文件），紧跟在图片后面：两者都是「插入媒体」的直觉位置。
-// P3-07 起末尾挂 15 项内嵌网页（派生自 EMBED_MENU_ITEMS，共 47 个 id）：它们构成
+// P3-07 起末尾挂 15 项内嵌网页（派生自 EMBED_MENU_ITEMS，共 50 个 id）：它们构成
 // 第 12 个分类「内嵌网页」，必须是整段连续贴尾——`CommandMenu.categories` 按首次出现
 // 顺序出组标题，插在中间会把「内嵌网页」顶到别的分类前面。
+//
+// P4-01 起在「智能」与「内嵌网页」之间插入 3 条 mention（团队协作分类）：真飞书的组序是
+// 基础 → 常用 → 按钮 → 数据 → 多维表格 → 绘图 → **团队协作** → 文档管理 → …，我们只复刻到
+// 绘图为止，所以「团队协作」插在已复刻分类的最后一段（智能之后）最接近真值；
+// 唯一硬约束是**不能越过内嵌网页那 15 条的尾巴**。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
+  'mentionUser', 'mentionChat', 'mentionPage',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
 
@@ -65,6 +71,9 @@ const COMMAND_FEATURES = {
   table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
   image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', emoji: 'emoji', template: 'templates',
   callout: 'callouts', ai: 'ai', file: 'files',
+  // P4-01：三条 mention 与「`@` 快捷输入」共用一个开关（document.js 的 reportMention
+  // 读的也是 `insert`）。不这么写就落进兜底的 blockStyle，出现「关掉插入还能 @」。
+  mentionUser: 'insert', mentionChat: 'insert', mentionPage: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

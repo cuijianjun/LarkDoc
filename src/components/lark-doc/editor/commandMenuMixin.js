@@ -117,7 +117,13 @@ export default {
       }
     },
     moveCommand(step) { const length = this.filteredCommands.length; if (length) this.activeCommandIndex = (this.activeCommandIndex + step + length) % length },
-    onEditorKeydown(event) { if (event.isComposing || this.editor?.view.composing || !this.menuOpen) return; if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) } else if (event.key === 'Enter') { event.preventDefault(); this.chooseCommand(this.filteredCommands[this.activeCommandIndex]) } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() } },
+    onEditorKeydown(event) {
+      // P4-01：`@` 面板先接管。两者互斥（onMention 打开时会关掉斜杠菜单），
+      // 所以顺序只影响「同一帧谁先看到 ↑↓/Enter」，交给面板就够了。
+      if (typeof this.onMentionKeydown === 'function' && this.onMentionKeydown(event)) return
+      if (event.isComposing || this.editor?.view.composing || !this.menuOpen) return
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) } else if (event.key === 'Enter') { event.preventDefault(); this.chooseCommand(this.filteredCommands[this.activeCommandIndex]) } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
+    },
     chooseCommand(item) {
       if (!item || !this.writable()) return
       const isSlashTable = this.menuKind === 'slash' && item.id === 'table'
@@ -126,6 +132,9 @@ export default {
       // 开浮层 / 开选择器型命令不抢焦点（浮层自己要聚焦输入框）。
       // 🔴 内嵌网页 15 条走 commandFeatureOf 派生，**别**把 15 个 id 手抄进数组：
       // 那会和 EMBED_MENU_ITEMS 形成第二份清单，改一条就漂。
+      // 🔴 P4-01 的 mentionUser/mentionChat/mentionPage **故意不**进排除名单：`@` 面板
+      // 没有输入框（查询串就是正文里 `@` 后面那截），焦点必须留在正文，用户接着敲字
+      // 才能筛候选。放进名单反而会把焦点丢给 body，面板开着却打不进字。
       const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
@@ -209,6 +218,9 @@ export default {
         else this.error = '模板不可用，请重新打开模板列表'
       }
       else if (id === 'ai') this.$emit('ai-request', 'rewrite')
+      // P4-01：三条 mention 只决定面板默认 tab，正文里补 `@` 之后由插件回调接上
+      // （与手敲 `@` 走同一条路，不另造开面板逻辑）。
+      else if (id === 'mentionUser' || id === 'mentionChat' || id === 'mentionPage') this.startMention(id)
       if (id === 'details') {
         let detailsPos = null
         this.editor.state.doc.descendants((node, pos) => { if (detailsPos === null && node.type.name === 'details') detailsPos = pos })

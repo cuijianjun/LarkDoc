@@ -220,6 +220,9 @@
   --ld-border-bookmark: #d0d3d6;         /* 卡片描边 */
   --ld-bg-bookmark-skeleton: #eff0f1;    /* 骨架条底色（渐变 25% / 70% 停点） */
   --ld-bg-bookmark-shimmer: rgba(222, 224, 227, .65); /* 骨架条高光（40% 停点） */
+  /* 人员提及 chip（P4-01，02 §19.3 ④-bis：底色是**带透明度**的浅蓝，深色档会自然变深，
+     所以飞书没为它出深色值，这里也不进 theme-dark —— 别改成实色）。 */
+  --ld-mention-chip-bg: rgba(148, 180, 255, .18); /* chip 视觉壳底（#94B4FF @18%） */
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -1064,6 +1067,178 @@
     clip-path: circle(150% at var(--ld-theme-bloom-x, 50%) var(--ld-theme-bloom-y, 50%));
   }
 }
+
+/* ===== P4-01 人员提及 chip + 面板（02 §19.3 ④-bis / ④-quinquies 实测） =====
+   三层结构与飞书对齐，但只用两层 span：
+     span.lark-doc-mention          → 只负责 chip 前后各 5px 间隙（飞书挂在 <a> 上）
+     span.lark-doc-mention-chip     → 视觉壳：79×22 浅蓝底 / radius 11 / padding 1px 6px 1px 1px
+     span.lark-doc-mention-avatar   → 头像位，尺寸跟字号走 calc(1em + 4px)（16px → 20px）
+     span.lark-doc-mention-name     → 名字，lh 20（≠ 行 lh 26，否则 flex 居中会偏）
+   🔴 圆角 11px 是飞书写死的值，不随字号变，别写成 50% / 9999px。 */
+.lark-doc .lark-doc-mention {
+  display: inline;
+  margin: 0 5px;
+  color: var(--ld-text-content);
+  font-size: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lark-doc .lark-doc-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  height: calc(1em + 6px);
+  padding: 1px 6px 1px 1px;
+  border-radius: 11px;
+  background: var(--ld-mention-chip-bg);
+  color: var(--ld-text-content);
+  font-size: inherit;
+  line-height: 1;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lark-doc .lark-doc-mention-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: calc(1em + 4px);
+  height: calc(1em + 4px);
+  border-radius: 50%;
+  background: var(--ld-brand-content);
+  color: var(--ld-text-on-brand);
+  font-size: calc(.62em);
+  line-height: 1;
+  overflow: hidden;
+}
+
+.lark-doc .lark-doc-mention-name {
+  margin-left: 4px;
+  line-height: 20px;
+}
+
+/* 面板：362 = 内容 360 + 左右各 1px 描边；高度 = tab 37 + 8 + 48n + 8 + footer 44。
+   tab 项宽度**按汉字数收紧**（「人」12 /「云文档」36），靠间距拉开，绝不能 flex:1。 */
+.lark-doc .lark-doc-mention-panel {
+  position: fixed;
+  z-index: 44;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  min-height: 168px;
+  max-height: min(420px, calc(100vh - 24px));
+  border: 1px solid var(--ld-border-chrome);
+  border-radius: 6px;
+  background: var(--ld-bg-surface-chrome);
+  box-shadow: var(--ld-shadow-float);
+  color: var(--ld-text);
+  font-size: 14px;
+}
+
+.lark-doc .lark-doc-mention-tabs {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  gap: 30px;
+  height: 37px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--ld-border-chrome);
+}
+
+.lark-doc .lark-doc-mention-tab {
+  min-height: 0;
+  padding: 0 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ld-text-tertiary);
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-mention-tab:hover:not(:disabled) { background: transparent; border-color: transparent; color: var(--ld-text); }
+
+.lark-doc .lark-doc-mention-tab.is-active {
+  color: var(--ld-text);
+  font-weight: 500;
+  box-shadow: inset 0 -2px 0 var(--ld-brand-content);
+}
+
+.lark-doc .lark-doc-mention-list {
+  flex: 1 1 auto;
+  min-height: 83px;
+  padding: 8px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lark-doc .lark-doc-mention-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 48px;
+  margin-bottom: 2px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-mention-row:hover:not(:disabled) { background: var(--ld-bg-hover-menu); border-color: transparent; color: var(--ld-text); }
+.lark-doc .lark-doc-mention-row.is-active { background: var(--ld-bg-hover-menu); color: var(--ld-text); }
+.lark-doc .lark-doc-mention-row-name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-mention-row-dept { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ld-text-tertiary); font-size: 13px; }
+
+.lark-doc .lark-doc-mention-empty {
+  padding: 16px 12px;
+  color: var(--ld-text-tertiary);
+  font-size: 13px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.lark-doc .lark-doc-mention-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  height: 44px;
+  padding: 0 12px;
+  border-top: 1px solid var(--ld-border-chrome);
+}
+
+.lark-doc .lark-doc-mention-notify {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ld-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-mention-notify input { margin: 0; }
+
+.lark-doc .lark-doc-mention-confirm {
+  min-height: 26px;
+  padding: 2px 12px;
+  border: 1px solid var(--ld-brand-content);
+  border-radius: 4px;
+  background: var(--ld-brand-content);
+  color: var(--ld-text-on-brand);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-mention-confirm:disabled { opacity: .43; cursor: not-allowed; }
 
 /* T4-04：Windows 高对比度（forced-colors）。系统色接管，本库色板整体让位 ——
    forced-colors 下浏览器会强制覆盖 color/background，不主动交出就会出现

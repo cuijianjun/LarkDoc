@@ -29,10 +29,10 @@ const EMBED_IDS = EMBED_MENU_ITEMS.map((item) => item.id)
 const isEmbed = (item) => commandFeatureOf(item.id) === 'embed'
 
 describe('P3-07 内嵌网页命令接线', () => {
-  it('COMMANDS 共 47 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
-    // 47 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页。
+  it('COMMANDS 共 50 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
+    // 50 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）。
     // 这个字面量是「有人动了命令表」的显式提醒：加命令时请同时确认 order / 架构断言。
-    expect(COMMANDS).toHaveLength(47)
+    expect(COMMANDS).toHaveLength(50)
     expect(COMMANDS.slice(-15).map((item) => item.id)).toEqual(EMBED_IDS)
   })
 

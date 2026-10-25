@@ -316,6 +316,32 @@
         }
       }
     },
+    "mention": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "department": {
+          "default": ""
+        },
+        "id": {
+          "default": ""
+        },
+        "kind": {
+          "default": "user"
+        },
+        "mentionId": {
+          "default": ""
+        },
+        "name": {
+          "default": ""
+        },
+        "notify": {
+          "default": true
+        }
+      }
+    },
     "orderedList": {
       "content": "listItem+",
       "group": "block list",

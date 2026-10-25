@@ -30,7 +30,7 @@ import { wrapContainerAllowed } from '../../core/blocks/container-depth'
 import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
-  LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
+  LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
   FileBlock, WebEmbed, CardEmbed, Bookmark,
 } from '../../registry/blocks'
@@ -113,7 +113,7 @@ export function createLarkDocExtensions(options = {}) {
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),
-    TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, UnknownBlock,
+    TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, LarkDocMention, UnknownBlock,
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
     FileHandler.configure({
       allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,

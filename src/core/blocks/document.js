@@ -7,6 +7,7 @@ import {
   collectBlockIdFixes,
   foldableIdPositions,
   foldedRange,
+  getMentionMatch,
   getSlashMatch,
   mapHeadingFoldKeys,
   sanitizeHTML,
@@ -66,11 +67,33 @@ export function documentExtension(options, injected) {
         rebuild: (state) => createDocumentDecorations({ state, storage, editor, enabled, options }),
       })
       let lastSlash = ''
+      let lastMention = ''
+      // `dismissed` 由 Esc 置起、下一次文档变更清掉：两个锚定在光标处的浮层
+      // （斜杠菜单 / `@` 面板）共用它 —— 一次 Esc 只收当前层，别让另一个趁同帧重开。
       let dismissed = false
+      // 面板此刻是否真的开着（Esc、组字、切到只读都会让它变 false）。`handleKeyDown`
+      // 靠它决定要不要把 ↑↓/Enter/Tab 的默认行为挡掉。
+      let mentionActive = false
       const reportSlash = (view) => {
         const match = enabled('insert') && editor.isEditable && !view.composing && !dismissed ? getSlashMatch(view.state) : null
         const serialized = JSON.stringify(match)
         if (lastSlash !== serialized) { lastSlash = serialized; if (options.onSlash) options.onSlash(match) }
+      }
+      // P4-01：`@` 提及面板的驱动源，形状与 reportSlash 逐行对齐（JSON 去重 + 同一批
+      // 闸门），差别只有「关掉面板时回调收到的是 null」，正文一个字符都不动。
+      const reportMention = (view) => {
+        const match = enabled('insert') && editor.isEditable && !view.composing && !dismissed ? getMentionMatch(view.state) : null
+        mentionActive = !!match
+        const serialized = JSON.stringify(match)
+        if (lastMention !== serialized) { lastMention = serialized; if (options.onMention) options.onMention(match) }
+      }
+      const reportFloats = (view) => { reportSlash(view); reportMention(view) }
+      const clearFloats = () => {
+        if (options.onSlash) options.onSlash(null)
+        if (options.onMention) options.onMention(null)
+        lastSlash = 'null'
+        lastMention = 'null'
+        mentionActive = false
       }
       return [new Plugin({
         key: documentKey,
@@ -148,6 +171,19 @@ export function documentExtension(options, injected) {
               event.preventDefault()
               return true
             }
+            // P4-01：`@` 面板开着时，↑↓/Enter/Tab 归面板用 —— 这里只挡默认行为
+            // （preventDefault），事件照旧冒泡到组件层由 onMentionKeydown 真正消费。
+            // 放在 Backspace 之后：否则退格删不掉刚敲的 `@`；放在跨块保列之前：否则
+            // ArrowUp/ArrowDown 会先被 verticalBoundarySelection 吃掉。
+            if (mentionActive && !view.composing && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+              if (event.key === 'Escape') {
+                dismissed = true
+                reportFloats(view)
+                event.preventDefault()
+                return true
+              }
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Enter' || event.key === 'Tab') return true
+            }
             // At a block boundary, keep the caret's horizontal goal when
             // crossing to the adjacent block. This makes ArrowUp and
             // ArrowDown symmetric instead of landing on the previous block's
@@ -160,12 +196,12 @@ export function documentExtension(options, injected) {
                 return true
               }
             }
-            if (event.key === 'Escape') { dismissed = true; reportSlash(view) }
+            if (event.key === 'Escape') { dismissed = true; reportFloats(view) }
             return false
           },
           handleDOMEvents: {
-            compositionstart: () => { if (options.onSlash) options.onSlash(null); lastSlash = 'null'; return false },
-            compositionend: (view) => { reportSlash(view); return false },
+            compositionstart: () => { clearFloats(); return false },
+            compositionend: (view) => { reportFloats(view); return false },
           },
           // 新块（回车分段、粘贴、拖入、AI 插入）和重复块（复制粘贴）在这里补 blockId：
           // 已有 id 的块一字不动，只有缺失/重号的块在事务末尾被重新编号。
@@ -173,7 +209,7 @@ export function documentExtension(options, injected) {
           // 里直接全量重扫文档）——具体计算在 document-decorations.js。
           decorations: (state) => derivedIndex.decorations(state),
         },
-        view: (view) => { reportSlash(view); return { update: reportSlash, destroy: () => { if (options.onSlash) options.onSlash(null) } } },
+        view: (view) => { reportFloats(view); return { update: reportFloats, destroy: clearFloats } },
       })]
     },
   })
