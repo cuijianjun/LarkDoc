@@ -407,9 +407,13 @@
 .lark-doc .ProseMirror table { max-width: 100%; table-layout: fixed; border-collapse: collapse; }.lark-doc .ProseMirror .tableWrapper { max-width: 100%; overflow-x: auto; }
 .lark-doc .ProseMirror td, .lark-doc .ProseMirror th { min-width: 70px; border: 1px solid var(--ld-border-table); padding: 7px; overflow-wrap: anywhere; }.lark-doc .ProseMirror th { background: var(--ld-bg-th); }
 .lark-doc .ProseMirror img { max-width: 100%; height: auto; }.lark-doc .ProseMirror hr { border: 0; border-top: 1px solid var(--ld-border-hr); margin: 23px 0; }
-.lark-doc .ProseMirror .lark-doc-heading-fold-toggle { position: relative; z-index: 15; display: inline-grid; width: 16px; min-width: 16px; height: 16px; min-height: 16px; margin-left: -20px; margin-right: 4px; padding: 0; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--ld-text-fold-toggle); font-size: 0; line-height: 0; vertical-align: middle; transform: translateY(-1px); }
-.lark-doc .ProseMirror .lark-doc-heading-fold-toggle::before { content: ''; width: 0; height: 0; border-top: 6px solid currentColor; border-right: 5px solid transparent; border-left: 5px solid transparent; }
-.lark-doc .ProseMirror .lark-doc-heading-fold-toggle[data-glyph='▸']::before { border-top: 5px solid transparent; border-right: 0; border-bottom: 5px solid transparent; border-left: 6px solid currentColor; }
+.lark-doc .ProseMirror .lark-doc-heading-fold-toggle { position: relative; z-index: 15; display: inline-grid; width: 16px; min-width: 16px; height: 16px; min-height: 16px; margin-left: -18px; margin-right: 6px; padding: 0; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--ld-text-fold-toggle); font-size: 0; line-height: 0; vertical-align: middle; transform: translateY(-1px); }
+/* 把手图标 = 02 §2 ③-1 实测 SVG（16×16，绘制区 9×6）；折叠态 rotate(-90deg)
+   （下三角→右三角，path 不变只转容器，对应实测 matrix(0,-1,1,0,0,0)）。
+   margin -18 + 16 + 6 = 净占位 0，把手悬在行首左侧不吃正文空间，
+   x=块左−18 与实测命中区一致。 */
+.lark-doc .ProseMirror .lark-doc-heading-fold-toggle svg { display: block; width: 16px; height: 16px; transition: transform .2s; }
+.lark-doc .ProseMirror .lark-doc-heading-fold-toggle[aria-expanded='false'] svg { transform: rotate(-90deg); }
 .lark-doc .ProseMirror .lark-doc-heading-fold-toggle { opacity: 0; pointer-events: auto; }
 .lark-doc .ProseMirror h1:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h2:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h3:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h4:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h5:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h6:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror [data-type="heading"]:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror p:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror li:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:hover, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:focus-visible, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle[aria-expanded="false"] { opacity: 1; }
 .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:hover, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:focus-visible { background: var(--ld-bg-fold-toggle-hover); color: var(--ld-text-fold-toggle-hover); outline: 0; }

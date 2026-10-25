@@ -55,7 +55,12 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
       button.setAttribute('aria-label', label)
       button.setAttribute('aria-expanded', String(!collapsed))
       button.setAttribute('data-tooltip', label)
-      button.setAttribute('data-glyph', collapsed ? '▸' : '▾')
+      // 图标 = 02 §2 ③-1 实测的下三角 path（16×16 viewBox，绘制区 9×6），
+      // fill 走 currentColor 让主题 token 继续控色。折叠态不换图标，
+      // 由 CSS 对 [aria-expanded="false"] 里的 svg 做 rotate(-90deg)。
+      button.innerHTML =
+        '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">' +
+        '<path d="M7.712 11.351L3.34 5.9a.45.45 0 010-.538.278.278 0 01.215-.112h8.89c.168 0 .305.17.305.381a.432.432 0 01-.09.269l-4.372 5.451c-.159.199-.417.199-.576 0z" fill="currentColor"/></svg>'
       // 不要再设 title：浏览器原生 tooltip 会和 data-tooltip 的黑色气泡
       // 同时出现，变成「收起」重影（截图里上下两个）。读屏靠 aria-label。
       button.contentEditable = 'false'
