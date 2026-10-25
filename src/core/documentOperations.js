@@ -71,8 +71,39 @@ function validateAttrs(type, attrs, definition) {
   })
 }
 
+/**
+ * 标题容器读取兼容（P1-02 第一步「先读兼容」）。
+ *
+ * 飞书标题块是容器：`heading-children` 把「直到下一同级标题之间的内容」收进
+ * 标题内部（02 §2）。容器形态的 JSON 允许 heading 节点携带 `children` 数组；
+ * 本包写入侧目前仍是 v1 扁平模型，因此读入口在这里把容器展平为等价扁平
+ * JSON：子块按原顺序拼接到标题之后，嵌套标题递归展开。
+ *
+ * - 纯函数：不修改入参；结果继续过 validateDocument 常规全量校验，安全性不放宽。
+ * - 非 heading 节点上的 `children` 原样保留，仍由 validateDocument 拒绝（不放宽白名单）。
+ * - heading 的 `children` 非数组视为容器语义不成立，丢弃该字段按普通标题处理。
+ */
+export function flattenHeadingContainers(json) {
+  if (!json || typeof json !== 'object') return json
+  const walk = (node) => {
+    if (Array.isArray(node)) return node.flatMap(walk)
+    if (!node || typeof node !== 'object') return node
+    const next = { ...node }
+    if (Array.isArray(next.content)) next.content = next.content.flatMap(walk)
+    if (next.type !== 'heading') return next
+    delete next.children
+    if (!Array.isArray(node.children)) return next
+    const flat = node.children.flatMap(walk).filter((child) => child && typeof child === 'object')
+    return flat.length ? [next, ...flat] : [next]
+  }
+  const result = walk(json)
+  return Array.isArray(result) ? result[0] : result
+}
+
 /** 全量校验 Tiptap JSON（节点/属性/深度/规模白名单）并返回规范化 JSON，导入与快照恢复的必经入口。 */
 export function validateDocument(json, schema) {
+  // 标题容器形态（heading.children）先展平成扁平模型再校验（P1-02 读取兼容）。
+  json = flattenHeadingContainers(json)
   if (!json || json.type !== 'doc') throw new Error('请输入有效的 Tiptap 文档 JSON')
   let count = 0
   function visit(item, depth) {
