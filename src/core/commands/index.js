@@ -54,7 +54,7 @@ const COMMAND_ORDER = [
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
-  'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
+  'inlineMath', 'blockMath', 'template', 'ai',
   'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
@@ -72,7 +72,7 @@ export const COMMANDS = COMMAND_ORDER.map((id) => {
 
 const COMMAND_FEATURES = {
   table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
-  image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', emoji: 'emoji', template: 'templates',
+  image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', template: 'templates',
   callout: 'callouts', ai: 'ai', file: 'files',
   // P4-01：三条 mention 与「`@` 快捷输入」共用一个开关（document.js 的 reportMention
   // 读的也是 `insert`）。不这么写就落进兜底的 blockStyle，出现「关掉插入还能 @」。

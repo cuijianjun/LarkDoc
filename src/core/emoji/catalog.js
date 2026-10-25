@@ -50,7 +50,7 @@ function normalizeEmojiGlyph(value) {
 }
 
 // 面板要的扁平列表：`{ value(英文主名), label(中文名), glyph, category(组中文名) }`，
-// 字段形状沿用 0.11 的 `emojiItems`，避免下游（如斜杠「插入表情」弹窗）跟着改。
+// 唯一的消费方是高亮块的 emoji 面板（02 §16：飞书没有别的表情入口）。
 const emojiItems = []
 const emojiByGlyph = Object.create(null)
 const emojiByName = Object.create(null)

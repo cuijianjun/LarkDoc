@@ -80,7 +80,7 @@ const expectedCommandIds = [
   'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
-  'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
+  'inlineMath', 'blockMath', 'template', 'ai',
   'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',
   'canva', 'jcode', 'codepen', 'feishu_survey', 'jinshuju', 'airtable', 'baidumap', 'autonavi',
 ]

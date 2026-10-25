@@ -142,7 +142,7 @@ export default {
       // 「mention 的面板要正文焦点才能筛候选，reminder 的浮层自己就是交互面」。
       // 🔴 P4-02b 的 calendar_event 同 reminder：点了要开「插入日程」搜索面板（540×360），
       // 面板里的输入框要自己拿焦点，这里 focus() 一次会把它顶掉。
-      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai', 'reminder', 'calendar_event'].includes(item.id))
+      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -214,7 +214,6 @@ export default {
       // P2-04：视频与文件同一个入口，accept 不限类型（02 L4168：斜杠 file 的 accept 为 null）。
       else if (id === 'file') this.$refs.fileInput.click()
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
-      else if (id === 'emoji') this.emojiDialog = true
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。
       // 菜单项只决定浮层里的**文案**；落 iframe 块还是书签卡由粘贴链接的 host 决定（04 §4.3 ⑤.1）。

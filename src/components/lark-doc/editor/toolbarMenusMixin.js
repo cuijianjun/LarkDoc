@@ -1,7 +1,7 @@
 /**
- * toolbarMenusMixin — 顶部工具栏下拉：标题级别菜单、链接对话框、公式对话框、表情对话框。
+ * toolbarMenusMixin — 顶部工具栏下拉：标题级别菜单、链接对话框、公式对话框。
  * 通过 this.editor、this.writable()、this.rememberSelection()/this.restoreSelection()/this.run()
- * （主组件方法）协作；commandMenuMixin 的 executeCommand 会打开这里的 mathDialog/emojiDialog/linkDialog。
+ * （主组件方法）协作；commandMenuMixin 的 executeCommand 会打开这里的 mathDialog/linkDialog。
  * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
 import { safeUrl } from '../documentOperations'
@@ -22,7 +22,7 @@ export default {
     // P3-07：内嵌网页「粘贴链接」浮层。embedDialog 存的是**菜单项 id**（null = 关闭），
     // 文案与 placeholder 由 EMBED_MENU_ITEMS 现查，不另存一份字符串（否则 15 份文案会漂移）。
     embedDialog: null, embedValue: '', embedDialogRejected: false, embedDialogPos: { left: '0px', top: '0px' },
-    mathDialog: '', mathValue: '', mathError: '', emojiDialog: false, marks,
+    mathDialog: '', mathValue: '', mathError: '', marks,
     // 自绘下拉（LarkDocSelect）选项清单与最近一次应用的值（替代原生 select 的非受控展示）。
     fontFamilyOptions, fontSizeOptions, lineHeightOptions, widthModeOptions,
     cellTextAlignOptions, cellVerticalAlignOptions,
@@ -175,7 +175,6 @@ export default {
         this.mathDialog = ''
       } catch (_) { this.mathError = '公式无法解析，请检查 LaTeX 语法' }
     },
-    insertEmoji(name) { if (!this.writable() || !this.featureEnabled('emoji')) return; if (!this.run('setEmoji', name)) this.error = '无法插入该表情'; this.emojiDialog = false },
     // P0-03：弹窗输入框的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
     setMathValue(value) { this.mathValue = value },
     setLinkText(value) { this.linkText = value },

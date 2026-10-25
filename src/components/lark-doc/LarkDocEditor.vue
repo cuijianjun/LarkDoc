@@ -97,7 +97,7 @@
     />
     <ColorPalette :ed="self" />
     <TablePickerDialog :ed="self" />
-    <MathEmojiDialog :ed="self" />
+    <MathDialog :ed="self" />
     <LinkDialog :ed="self" />
     <HelpDialog :ed="self" />
     <EmbedLinkDialog :ed="self" />
@@ -167,7 +167,7 @@ import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import BubbleBar from './editor/BubbleBar.vue'
 import ColorPalette from './editor/ColorPalette.vue'
 import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
-import MathEmojiDialog from './editor/dialogs/MathEmojiDialog.vue'
+import MathDialog from './editor/dialogs/MathDialog.vue'
 import LinkDialog from './editor/dialogs/LinkDialog.vue'
 import HelpDialog from './editor/dialogs/HelpDialog.vue'
 import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
@@ -221,7 +221,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
@@ -326,7 +326,6 @@ export default {
     } },
     effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
-    emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
     linkDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector(this.linkInsertMode ? '[aria-label="链接文本"]' : '[aria-label="链接地址"]')?.focus()) },
     embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
