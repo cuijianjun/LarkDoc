@@ -24,6 +24,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import Typography from '@tiptap/extension-typography'
 import { safeUrl } from '../../core/documentOperations'
+import { wrapContainerAllowed } from '../../core/blocks/container-depth'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
@@ -38,6 +39,20 @@ const LarkDocCharacterCount = CharacterCount.extend({
   },
 })
 
+// P1-05：setDetails 命令层深度守卫——折叠块套在已达上限的容器链里时拒绝（纯 wrap 语义，无拆引用分支）。
+const LarkDocDetails = Details.extend({
+  addCommands() {
+    const parentCommands = this.parent?.() ?? {}
+    return {
+      setDetails: (...args) => (props) => {
+        const { from, to } = props.state.selection
+        if (!wrapContainerAllowed(props.state, from, to, 1)) return false
+        return parentCommands.setDetails?.(...args)?.(props) ?? false
+      },
+    }
+  },
+})
+
 // 工厂不加载 Vue 单文件组件，可在无 DOM 的 Node 14 中检查 schema。
 export function createLarkDocExtensions(options = {}) {
   const enabled = (name) => options.config?.features?.[name] !== false
@@ -48,7 +63,7 @@ export function createLarkDocExtensions(options = {}) {
     StarterKit.configure({ heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
     LarkDocBlockquote,
     LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile),
-    Details.configure({ persist: true }), DetailsSummary, DetailsContent,
+    LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),
     TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, UnknownBlock,

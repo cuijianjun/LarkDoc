@@ -1,4 +1,5 @@
 import { Fragment } from '@tiptap/pm/model'
+import { moveDepthAllowed } from './blocks/container-depth'
 
 const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
 
@@ -331,6 +332,8 @@ export function replaceText(editor, query, replacement, all = false) {
 export function moveBlockRange(editor, from, to, target) {
   const { doc } = editor.state
   if (!editor.isEditable || ![from, to, target].every(Number.isInteger) || from < 0 || from >= to || to > doc.content.size || target < 0 || target > doc.content.size || (target >= from && target <= to)) return false
+  // P1-05：容器嵌套深度兜底判定（拖拽 / 上移下移共用入口）。
+  if (!moveDepthAllowed(editor, from, to, target)) return false
   const start = doc.resolve(from)
   const end = doc.resolve(to)
   const dest = doc.resolve(target)

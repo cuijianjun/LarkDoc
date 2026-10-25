@@ -9,6 +9,7 @@
  *   新写入一律归一为 blockquote（JSON 层迁移在 P1-04 落地）。
  */
 import Blockquote from '@tiptap/extension-blockquote'
+import { selectionTouchesContainer, wrapContainerAllowed } from './container-depth'
 
 export const LarkDocBlockquote = Blockquote.extend({
   parseHTML() {
@@ -16,5 +17,19 @@ export const LarkDocBlockquote = Blockquote.extend({
       { tag: 'blockquote' },
       { tag: 'div[data-type="quote_container"]' },
     ]
+  },
+  // P1-05：toggleBlockquote 命令层深度守卫（覆盖快捷键 Mod-Shift-B 与全部菜单入口）。
+  // toggle 语义下选区已触及引用 = 本次多半是拆引用（只减深度），放行；
+  // 纯非引用区 = 套引用，按容器嵌套上限判定。
+  addCommands() {
+    const parentCommands = this.parent?.() ?? {}
+    return {
+      toggleBlockquote: (...args) => (props) => {
+        const { state } = props
+        const { from, to } = state.selection
+        if (!selectionTouchesContainer(state, 'blockquote') && !wrapContainerAllowed(state, from, to, 1)) return false
+        return parentCommands.toggleBlockquote?.(...args)?.(props) ?? false
+      },
+    }
   },
 })

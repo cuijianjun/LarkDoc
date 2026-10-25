@@ -5,6 +5,7 @@
  * 采用 mixin 而非子组件：菜单模板留在主 SFC，命令执行复用主组件的 run/featureEnabled 管线。
  */
 import { TextSelection } from '@tiptap/pm/state'
+import { wrapContainerAllowed } from '../../../core/blocks/container-depth'
 import { filterCommands } from '../commands'
 import { isCommandEnabled } from '../larkDocConfig'
 import { diagramTypes } from './constants'
@@ -176,9 +177,19 @@ export default {
       else if (id === 'details') this.run('setDetails')
       else if (id === 'code') this.run('setCodeBlock')
       else if (id === 'diagram') this.insertDiagramType('flowchart')
-      else if (id === 'callout') this.run('insertContent', { type: 'callout', content: [{ type: 'paragraph' }] })
+      else if (id === 'callout') {
+        // P1-05：容器嵌套上限守卫（命令层守卫覆盖不到 insertContent 型入口）。
+        const { from, to } = this.editor.state.selection
+        if (!wrapContainerAllowed(this.editor.state, from, to, 1)) { this.error = '容器嵌套最多 5 层'; return }
+        this.run('insertContent', { type: 'callout', content: [{ type: 'paragraph' }] })
+      }
       else if (id === 'columns') this.executeCommand('columns2')
-      else if (/^columns[2-5]$/.test(id)) { const count = Number(id.slice(-1)); this.run('insertContent', { type: 'columns', content: Array.from({ length: count }, () => ({ type: 'column', attrs: { width: Math.round(100 / count) }, content: [{ type: 'paragraph' }] })) }) }
+      else if (/^columns[2-5]$/.test(id)) {
+        const count = Number(id.slice(-1))
+        const { from, to } = this.editor.state.selection
+        if (!wrapContainerAllowed(this.editor.state, from, to, 1)) { this.error = '容器嵌套最多 5 层'; return }
+        this.run('insertContent', { type: 'columns', content: Array.from({ length: count }, () => ({ type: 'column', attrs: { width: Math.round(100 / count) }, content: [{ type: 'paragraph' }] })) })
+      }
       else if (id === 'table') this.tablePicker = true
       else if (id === 'image') this.$refs.imageInput.click()
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
