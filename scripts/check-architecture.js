@@ -81,6 +81,8 @@ const expectedCommandIds = [
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'template', 'ai',
+  // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
+  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
   'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',
   'canva', 'jcode', 'codepen', 'feishu_survey', 'jinshuju', 'airtable', 'baidumap', 'autonavi',
 ]

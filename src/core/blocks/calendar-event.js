@@ -27,12 +27,12 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { BLOCK_ID_PATTERN } from '../documentOperations'
-import { validateAttribute } from './shared'
+import { calendarEventAttributes, safeMinutes, safeRsvp, safeTime } from './calendar-event-attrs'
 import { getNodeView } from '../nodeviews/registry'
 import { createCalendarEventNodeView } from '../nodeviews/calendar-event'
 import {
-  CALENDAR_EVENT_ID_PATTERN, CALENDAR_EVENT_LIMITS, CALENDAR_EVENT_RSVP,
-  normalizeCalendarEvent, readCalendarEvent, readCalendarTime, renderCalendarEventCard,
+  CALENDAR_EVENT_ID_PATTERN, CALENDAR_EVENT_RSVP,
+  normalizeCalendarEvent, readCalendarEvent, renderCalendarEventCard,
 } from '../embed/calendar-event'
 
 /**
@@ -48,46 +48,12 @@ export {
   renderCalendarEventCard,
 } from '../embed/calendar-event'
 
-const safeText = (limit) => (value) => value === null || value === undefined
-  || (typeof value === 'string' && Array.from(value).length <= limit && !value.includes('\u0000'))
-
-const safeEventId = (value) => value === null || value === undefined || value === ''
-  || (typeof value === 'string' && CALENDAR_EVENT_ID_PATTERN.test(value))
-
-/** 时间属性：`null` / 空串放行（schema 默认值），其余必须能解析出字面分量。 */
-const safeTime = (value) => value === null || value === undefined || value === ''
-  || (typeof value === 'string' && readCalendarTime(value) !== null)
-
-const safeRsvp = (value) => value === null || value === undefined
-  || CALENDAR_EVENT_RSVP[value] !== undefined
-
-const safeMinutes = (value) => value === null || value === undefined
-  || (Array.isArray(value) && value.every((item) => Number.isFinite(Number(item)) && Number(item) >= 0))
-
-const safeNames = (value) => value === null || value === undefined
-  || (Array.isArray(value) && value.every((item) => typeof item === 'string'))
-
-const readAttr = (name) => (el) => {
-  const value = el.getAttribute(name)
-  return value === null || value === '' ? null : value
-}
-
 /**
- * JSON 属性读取（`reminders` / `attendees` 是数组，HTML 属性只能放字符串）。
- *
- * 读路径**永不抛**：脏 JSON 一律退化成空数组 —— 卡片少一行提醒，比打开文档白屏好。
+ * 属性层（11 个字段的 default/validate/parseHTML）搬在 `./calendar-event-attrs.js` ——
+ * 它是本文件最长的一段、且自成一体，留下会把块文件顶过 250 行（P0-04 硬规则）。
+ * 同一文件里导出的 `safeTime` / `safeMinutes` / `safeRsvp` 给下面的刷新命令复用，
+ * 属性校验与回写判定共用一套口径。
  */
-const readJsonAttr = (name, fallback) => (el) => {
-  const raw = el.getAttribute(name)
-  if (raw === null || raw === '') return fallback
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : fallback
-  } catch (_) {
-    return fallback
-  }
-}
-
 const CalendarEvent = Node.create({
   name: 'calendar_event',
   group: 'block',
@@ -114,79 +80,7 @@ const CalendarEvent = Node.create({
   },
 
   addAttributes() {
-    return {
-      // 引用主键：一切刷新的锚点。缺了它就是一张永远过期的死卡（写路径已拦）。
-      eventId: {
-        default: null,
-        validate: validateAttribute('calendar_event.eventId', safeEventId),
-        parseHTML: readAttr('data-event-id'),
-        rendered: false,
-      },
-      title: {
-        default: null,
-        validate: validateAttribute('calendar_event.title', safeText(CALENDAR_EVENT_LIMITS.title)),
-        parseHTML: readAttr('data-title'),
-        rendered: false,
-      },
-      // 起止时间存**原始 ISO 串**（带时区），不存时间戳：导出成 HTML 后肉眼可读，
-      // 导回来也不用担心精度/时区来回转。排版时分量由 `readCalendarTime` 现取。
-      start: {
-        default: null,
-        validate: validateAttribute('calendar_event.start', safeTime),
-        parseHTML: readAttr('data-start'),
-        rendered: false,
-      },
-      end: {
-        default: null,
-        validate: validateAttribute('calendar_event.end', safeTime),
-        parseHTML: readAttr('data-end'),
-        rendered: false,
-      },
-      // 时区标识（IANA 名或偏移串）。**只透传，不参与显示** —— 卡片上的 `(GMT+8)`
-      // 一律从 `start` 的偏移派生，避免「tz 与串内偏移打架时无人可裁」。
-      tz: {
-        default: null,
-        validate: validateAttribute('calendar_event.tz', safeText(64)),
-        parseHTML: readAttr('data-tz'),
-        rendered: false,
-      },
-      organizer: {
-        default: null,
-        validate: validateAttribute('calendar_event.organizer', safeText(CALENDAR_EVENT_LIMITS.organizer)),
-        parseHTML: readAttr('data-organizer'),
-        rendered: false,
-      },
-      // 提醒偏移（分钟数数组，0 = 日程开始时）。数组存 JSON 属性，读路径永不抛。
-      reminders: {
-        default: null,
-        validate: validateAttribute('calendar_event.reminders', safeMinutes),
-        parseHTML: readJsonAttr('data-reminders', []),
-        rendered: false,
-      },
-      rsvp: {
-        default: 'none',
-        validate: validateAttribute('calendar_event.rsvp', safeRsvp),
-        parseHTML: (el) => {
-          const value = el.getAttribute('data-rsvp')
-          return CALENDAR_EVENT_RSVP[value] ? value : CALENDAR_EVENT_RSVP.none
-        },
-        rendered: false,
-      },
-      // 参与人只存名字数组：卡片上**不渲染**（实测 3 行 info 里只有组织者行），
-      // 留着是为了宿主做「参与人」侧栏/导出时不至于没有数据。
-      attendees: {
-        default: null,
-        validate: validateAttribute('calendar_event.attendees', safeNames),
-        parseHTML: readJsonAttr('data-attendees', []),
-        rendered: false,
-      },
-      location: {
-        default: null,
-        validate: validateAttribute('calendar_event.location', safeText(CALENDAR_EVENT_LIMITS.location)),
-        parseHTML: readAttr('data-location'),
-        rendered: false,
-      },
-    }
+    return calendarEventAttributes()
   },
 
   // 只认自带标记；没有合法 `data-event-id` 的 DOM 一律拒收，让文档层退化成 unknown-block

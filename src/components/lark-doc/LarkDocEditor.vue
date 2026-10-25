@@ -173,7 +173,7 @@ import HelpDialog from './editor/dialogs/HelpDialog.vue'
 import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
-import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
 // Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，由它自己注册进 core 的
 // NodeView 注册表；这里只负责把适配层拉起来，core 与 Vue 之间不再有静态绑定。
@@ -202,6 +202,8 @@ import reminderMixin from './editor/reminderMixin'
 // P4-02b：日程搜索面板的状态与动作（开/关、候选、落块）。与 reminder 的差别在于
 // 「插入 ≠ 新建」—— 面板只把**已有日程**引用成块，所有字段都不在面板里编辑。
 import calendarMixin from './editor/calendarMixin'
+// 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
+import foldPersistMixin from './editor/foldPersistMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
@@ -222,7 +224,7 @@ registerVue2NodeViews()
 export default {
   name: 'LarkDocEditor',
   components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin],
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, foldPersistMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -438,44 +440,6 @@ export default {
       return true
     },
     updateTitle(value) { if (this.effectiveReadonly) return; this.localTitle = value; this.$emit('update:title', value) },
-    // —— 章节折叠偏好持久化：按 (foldPersistKey, 标题 blockId) 存本设备 localStorage ——
-    // 存的是块的稳定 id，不是位置也不是「文本+序号」：同名标题、删除靠前标题、
-    // 重命名、移动块都不会让折叠状态串到别的标题上。
-    foldStorageKey() { return this.foldPersistKey ? `lark-doc:folds:${this.foldPersistKey}` : '' },
-    persistFolds() {
-      const key = this.foldStorageKey()
-      // _foldsReady 之前不写回：编辑器初始化/内容替换会先清空折叠位，
-      // 若此时写盘会把已保存的偏好覆盖成空数组，刷新后就永远恢复不出来。
-      if (!key || !this.editor || !this._foldsReady) return
-      // 宿主异步灌入正文时，编辑器会先处于「空文档」状态：此时没有任何可折叠块，
-      // 写盘只会把上一次会话的偏好覆盖成空数组（刷新恢复失效的直接原因）。
-      // 判定条件用「可折叠块」而不是「有标题」：段落/列表项挂了缩进子块也能折叠，
-      // 没有标题的文档同样需要恢复折叠位。
-      if (foldableIdPositions(this.editor.state.doc).size === 0) return
-      const next = JSON.stringify(Array.from(this.editor.storage.larkDoc?.folded || []))
-      if (next === this._persistedFolds) return
-      this._persistedFolds = next
-      try { window.localStorage.setItem(key, next) } catch (_) { /* 隐私模式等存储不可用时静默降级为会话内状态 */ }
-    },
-    restoreFolds() {
-      const key = this.foldStorageKey()
-      if (!key || !this.editor) { this._foldsReady = true; return }
-      let saved = []
-      try { saved = JSON.parse(window.localStorage.getItem(key) || '[]') } catch (_) { saved = [] }
-      const values = Array.isArray(saved) ? saved.filter((value) => typeof value === 'string' && value) : []
-      // 旧版本存的是 `层级\u0001文本\u0001同名序号` 派生键，新版本存 blockId。
-      // 两批一起应用；成功恢复后 persistFolds 会把它们统一写成 id 完成迁移。
-      const legacyKeys = values.filter((value) => value.includes('\u0001'))
-      const blockIds = values.filter((value) => !value.includes('\u0001'))
-      if (blockIds.length && typeof this.editor.commands.foldLarkDocByIds === 'function') this.editor.commands.foldLarkDocByIds(blockIds)
-      if (legacyKeys.length && typeof this.editor.commands.foldLarkDocByKeys === 'function') this.editor.commands.foldLarkDocByKeys(legacyKeys)
-      const applied = this.editor.storage.larkDoc?.folded?.size || 0
-      this._foldsReady = true
-      // 有偏好却一条都没命中，说明当前正文还不是最终内容（宿主挂载后会再灌一次
-      // setContent）。此时绝不能写盘：写成空数组会让后面那次恢复也读不到偏好。
-      if (values.length && !applied) return
-      this.persistFolds()
-    },
     onUpdate(transaction) {
       this.scheduleDocumentState()
       // 补 blockId 的事务只改属性、不改正文：不能当成一次内容修改冒泡给宿主，
@@ -531,19 +495,7 @@ export default {
       else if (this.error.startsWith('正文不能超过 ')) this.error = ''
       if (this.searchQuery) this.updateSearch()
     },
-    syncFoldState() {
-      if (!this.editor) return
-      const current = this.editor.storage.larkDoc?.folded || new Set()
-      const next = new Set(current)
-      if (next.size === this.folded.size && [...next].every((pos) => this.folded.has(pos))) return
-      this.folded = next
-    },
-    syncOutlineCollapseState() {
-      const positions = new Set(this.outline.map((item) => item.pos))
-      const next = new Set([...this.outlineCollapsed].filter((pos) => positions.has(pos)))
-      if (next.size === this.outlineCollapsed.size && [...next].every((pos) => this.outlineCollapsed.has(pos))) return
-      this.outlineCollapsed = next
-    },
+    // syncFoldState / syncOutlineCollapseState 在 viewModesMixin（视图级状态的那一支）。
     onSelectionUpdate() {
       if (!this.editor) return
       const { selection } = this.editor.state

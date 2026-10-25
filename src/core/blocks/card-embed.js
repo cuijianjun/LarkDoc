@@ -16,7 +16,7 @@
  *     真正的点击语义由 NodeView 转成 `onAction` 冒泡给宿主（编辑器不持 token）。
  */
 import { Node, mergeAttributes } from '@tiptap/core'
-import { BLOCK_ID_PATTERN, nodeAtSafe } from '../documentOperations'
+import { BLOCK_ID_PATTERN } from '../documentOperations'
 import { validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createCardEmbedNodeView } from '../nodeviews/card-embed'
@@ -46,105 +46,11 @@ export {
 const safeCard = (value) => value === null || value === undefined
   || (typeof value === 'string' && utf8Bytes(value) <= CARD_MAX_BYTES && readCard(value) !== null)
 
-/** 字段/动作的读取上限与 `core/embed/card.js` 的 LIMITS 一致，这里只管渲染期防御。 */
-const RENDER_LIMITS = Object.freeze({ title: 300, desc: 2000, fieldLabel: 40, fieldValue: 200, actionLabel: 40 })
-
-function renderText(value, limit) {
-  return typeof value === 'string' && value ? Array.from(value).slice(0, limit).join('') : ''
-}
-
-function renderFields(payload) {
-  const fields = payload && Array.isArray(payload.fields) ? payload.fields : []
-  return fields.reduce((acc, field) => {
-    if (!field || typeof field !== 'object') return acc
-    const label = renderText(field.label, RENDER_LIMITS.fieldLabel)
-    const value = renderText(field.value, RENDER_LIMITS.fieldValue)
-    if (!label || !value) return acc
-    // ⚠️ renderSpec 只认「展平的 children」：`['div', attrs, childA, childB]`。
-    // 把子 spec 收成一个数组当第三位会被递归当成单个 spec，然后因为
-    // `structure[0]` 不是字符串抛 `RangeError: Invalid array passed to renderSpec`。
-    acc.push(['div', { class: 'lark-doc-card-field' },
-      ['dt', { class: 'lark-doc-card-field-label' }, label],
-      ['dd', { class: 'lark-doc-card-field-value' }, value]])
-    return acc
-  }, [])
-}
-
-function renderActions(actions) {
-  const list = Array.isArray(actions) ? actions : []
-  return list.reduce((acc, action, index) => {
-    if (!action || typeof action !== 'object') return acc
-    const id = typeof action.id === 'string' ? action.id : ''
-    const label = renderText(action.label, RENDER_LIMITS.actionLabel)
-    if (!id || !label) return acc
-    acc.push(['span', {
-      class: index === 0 ? 'lark-doc-card-action is-primary' : 'lark-doc-card-action',
-      role: 'button',
-      tabindex: '0',
-      'data-card-action': id,
-      'data-card-action-kind': action.kind === 'open' ? 'open' : 'command',
-    }, label])
-    return acc
-  }, [])
-}
-
-/** 封面用 `background-image` 而不是 `img`：图挂了不会破图标（同 bookmark favicon 口径）。 */
-function renderCover(cover) {
-  if (typeof cover !== 'string' || !cover) return null
-  return ['div', {
-    class: 'lark-doc-card-cover',
-    role: 'img',
-    'aria-label': '卡片封面',
-    style: `background-image: url("${cover.replace(/"/g, '%22')}")`,
-  }]
-}
-
-/** 无数据 / 未知来源共用的占位卡：复用 `unknown-block` 的 chrome，不新造一套令牌。 */
-function placeholder(title, sub) {
-  return ['div', { class: 'lark-doc-unknown-card' },
-    ['span', { class: 'lark-doc-unknown-card-icon', 'aria-hidden': 'true' }],
-    ['span', { class: 'lark-doc-unknown-card-text' },
-      ['span', { class: 'lark-doc-unknown-card-title' }, title],
-      ['span', { class: 'lark-doc-unknown-card-sub' }, sub]],
-  ]
-}
-
-/**
- * 找命令要改的那张引用卡。两个入口：显式 `pos`（宿主同步时手里有位置），
- * 或当前选中的卡（用户点了卡上的「重新绑定」）。
- *
- * **不往上找祖先**：`cardEmbed` 是 atom，选区不可能落在卡片内部 —— 真落进去了
- * 说明命中的是别的东西，硬改一张不是目标的卡比返回 false 更糟。
- */
-function referenceTarget(state, pos) {
-  const doc = state && state.doc
-  if (!doc) return null
-  if (Number.isInteger(pos)) {
-    const node = nodeAtSafe(doc, pos)
-    return node && node.type && node.type.name === 'cardEmbed' ? { node, pos } : null
-  }
-  const selection = state && state.selection
-  const node = selection && selection.node
-  return node && node.type && node.type.name === 'cardEmbed' ? { node, pos: selection.from } : null
-}
-
-/**
- * 三条引用命令共用的落库步骤：读旧卡 → 纯函数算新卡 → `setNodeMarkup`。
- *
- * 为什么统一走 `setNodeMarkup` 而不是替换节点：替换会让卡片「重造」，选区、块 id、
- * 协同里的节点身份都会断；改 attrs 才是「同一张卡换了状态」。NodeView 的 `update()`
- * 见到 `card` 变了返回 false → 重画 DOM，所以画面上看不出差别。
- */
-function applyReference(state, tr, pos, mutate) {
-  const target = referenceTarget(state, pos)
-  if (!target || typeof mutate !== 'function') return false
-  const next = mutate(readCard((target.node.attrs || {}).card))
-  if (!next) return false
-  let encoded
-  try { encoded = encodeCard(next) } catch (_) { return false }
-  tr.setNodeMarkup(target.pos, undefined, { ...(target.node.attrs || {}), card: encoded })
-  return true
-}
+/** 字段/动作/封面/占位卡的渲染器在 `./card-embed-render.js`（纯函数，可单测）。 */
+import {
+  RENDER_LIMITS, placeholder, renderActions, renderCover, renderFields, renderText,
+} from './card-embed-render'
+import { applyReference } from './card-embed-reference'
 
 const CardEmbed = Node.create({
   name: 'cardEmbed',
