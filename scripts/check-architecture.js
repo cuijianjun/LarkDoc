@@ -58,11 +58,13 @@ assert.throws(() => createCommentsProvider({ list() {} }), /createThread/)
 const editorFacadeLines = fs.readFileSync(path.resolve(sourceRoot, 'components/lark-doc/LarkDocEditor.vue'), 'utf8').split('\n').length
 assert(editorFacadeLines < 700, `LarkDocEditor.vue 应保持 <700 行（P0-03 模板拆分），当前 ${editorFacadeLines} 行`)
 
-// P0-04：块定义拆进 core/blocks 后，单文件必须保持 <250 行——防止新块把逻辑重新堆回单文件。
+// P0-04：块定义拆进 core/blocks 后，单文件必须保持 <400 行——防止新块把逻辑重新堆回单文件。
+// 阈值从 250 上调到 400（2026-10-26，用户拍板）：原 250 让每个新块都要「写完再拆文件」
+// 返工一轮（calendar-event 306→200、card-embed 306→211 均由此产生），收益低于成本。
 const blocksDir = path.resolve(sourceRoot, 'core/blocks')
 for (const file of fs.readdirSync(blocksDir).filter((name) => name.endsWith('.js')).sort()) {
   const lines = fs.readFileSync(path.join(blocksDir, file), 'utf8').split('\n').length
-  assert(lines < 250, `core/blocks/${file} 应保持 <250 行（P0-04 拆块注册表），当前 ${lines} 行`)
+  assert(lines < 400, `core/blocks/${file} 应保持 <400 行（P0-04 拆块注册表），当前 ${lines} 行`)
 }
 
 // P0-05：命令表拆进 core/commands 后，单文件 <250 行，且命令 id 集合与顺序、tier 完整性不得漂移。
@@ -81,8 +83,12 @@ const expectedCommandIds = [
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'template', 'ai',
+  // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
+  'open_link', 'duplicate_page', 'follow_page',
   // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
   'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
+  // P4-04：目录导航接在日程之后（文档小组件 2252 晚于 团队协作 1516、早于 内嵌网页 2444）。
+  'catalogue',
   'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',
   'canva', 'jcode', 'codepen', 'feishu_survey', 'jinshuju', 'airtable', 'baidumap', 'autonavi',
 ]

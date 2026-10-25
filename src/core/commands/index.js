@@ -49,13 +49,19 @@ for (const group of GROUPS) {
 // P4-02a 再补一条 `reminder`（日期提醒），紧跟三条 mention —— 同属「团队协作」，
 // 且都是行内物件，放一起读起来是一段。
 // P4-02b 再补一条 `calendar_event`（日程），接在 `reminder` 之后（03 §3.4 ⑦ 就是这个顺序）。
+// P4-04 起补 4 条：**3 个按钮**（打开超链接 / 创建副本 / 关注文档更新）+ **目录导航**。
+// 位置照抄 03 §3.4 ④-4 的组序 —— 按钮（y 972）早于 团队协作（1516）早于 文档小组件（2252），
+// 所以 3 个按钮插到三条 mention **之前**，目录导航插到 `calendar_event` **之后**；
+// 硬约束仍是**不许越过内嵌网页那 15 条的尾巴**。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'template', 'ai',
+  'open_link', 'duplicate_page', 'follow_page',
   'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
+  'catalogue',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
 
@@ -82,6 +88,9 @@ const COMMAND_FEATURES = {
   // P4-02b：日程卡片也落在正文里（块级 atom，但插入动作在正文）。不写这条就会落进
   // 兜底的 `blockStyle`，出现「关掉插入还能插日程」。
   calendar_event: 'insert',
+  // P4-04：3 个按钮与目录导航同理 —— 都 `isv` 节点落在正文里（尽管按钮要先弹配置面板，
+  // 面板只是取参，动作本身仍是插入块）。缺一条就会出现「关掉插入还能插按钮」。
+  open_link: 'insert', duplicate_page: 'insert', follow_page: 'insert', catalogue: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

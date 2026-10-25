@@ -245,6 +245,20 @@
   --ld-calendar-button-border: #d0d3d6;   /* 「加入日程」按钮 1px 描边（= bookmark 卡片描边同值，但语义不同，单列） */
   --ld-calendar-search-bg: #eff0f1;       /* 搜索框底（与 bookmark 骨架条同值，语义不同，单列） */
   --ld-calendar-row-hover: rgba(31, 35, 41, .08); /* 结果行 hover / 键盘 active 底（飞书两者同色，别区分） */
+  /* P4-04：ISV 块（02 §22 实测）—— 按钮 / 目录导航共用一族。
+     复用的对口 token（不再建平行色板，深色档自动跟随）：
+       rgb(224,233,255)→--ld-bg-selected     按钮 idle 底
+       rgb(20,86,240)  →--ld-brand-content   按钮文字
+       rgb(31,35,41)   →--ld-text            目录项文字
+       rgb(187,191,196)→--ld-text-disabled   重置钮禁用灰
+     🔴 按钮 **idle 底 #E0E9FF ≠ 色板默认项 #E1EAFF**：色板是「16 个可选底色」的清单
+       （--ld-brand-subtle），按钮绘制用实测的 light-blue 变体值；真飞书这两值也不相等，
+       别为了「一致」把其中一个改掉。目录卡同理：用实测 RGB 值另建 token，不复用 --ld-bg-code */
+  --ld-isv-button-hover: #c2d4ff;              /* 按钮 hover 底（实测 rgb(194,212,255)） */
+  --ld-isv-catalog-bg: #f5f6f7;               /* 目录卡底（实测 rgb(245,246,247)） */
+  --ld-isv-catalog-hover: rgba(31, 35, 41, .08); /* 目录行 hover 底（实测，与日历行底同值） */
+  --ld-isv-catalog-icon: #646a73;             /* 工具条图标（实测 rgb(100,106,115)） */
+  --ld-isv-error: #f54a45;                    /* URL 校验红框与报错文案（06 文字色板「红色」同值） */
   /* P4-03：高亮块表情面板的 emoji 项 hover 底。飞书实测 #DEE0E3（02 §16 ④）——
      token 落在 theme-preset-feishu.css；此处给三档共用口径：跟本档 hover 语言，
      默认档/青灰档即 --ld-bg-hover，深色档由 dark 覆写的同名变量自动接管。 */
@@ -1874,4 +1888,136 @@
   .lark-doc.ld-theme-transition * {
     transition: none;
   }
+}
+
+/* ==================================================================
+   P4-04 ISV 块（第三方小组件）—— requirements/02 §22 实测
+   四段，边界按「DOM 在不在 ProseMirror 里」划分（与 P3-05 bookmark 同口径）：
+     A 13 层壳（④-1）      ← 正文内的块，一律 `.ProseMirror` 前缀
+     B 目录导航内层（④-5）  ← 同上
+     C 按钮（⑤-3）          ← 同上
+     D 按钮配置面板（⑤-1~⑤-3）← ProseMirror 外的 fixed 浮层，**不带**前缀
+
+   🔴 四条实测负结论，别顺手「补全」：
+     1. 圆角 8px **只在 layout / container / iframe 三层**，其余层没有圆角；
+     2. 重置钮**默认就是禁用灰**（rgb(187,191,196)），不是 hover 才变；
+     3. 目录 hover **不高亮当前标题**（点进去也不高亮），只上底色；
+     4. 面板**没有 backdrop**，面板是 270×386 一块板浮在页面上。
+   ================================================================== */
+
+/* ---- A 13 层壳（④-1）：块 margin 16px 0，533/534 宽是飞书 534 纸宽下的产物，
+       本库纸宽随宿主变，所以一律 `width: 100%`，不写死 534 ---- */
+.lark-doc .ProseMirror .docx-isv-block { box-sizing: border-box; width: 100%; margin: 16px 0; }
+.lark-doc .ProseMirror .docx-isv-block .docx-block-loading-container,
+.lark-doc .ProseMirror .docx-isv-block .block-comment,
+.lark-doc .ProseMirror .docx-isv-block .block-content-container,
+.lark-doc .ProseMirror .docx-isv-block .isv-container,
+.lark-doc .ProseMirror .docx-isv-block .resizable-wrapper,
+.lark-doc .ProseMirror .docx-isv-block .isv-block-body { box-sizing: border-box; width: 100%; }
+
+/* 对齐层：`left` 是真机默认值（④-1）。用 align-items 而不是 text-align ——
+   内层是块级盒子，text-align 管不到它的盒宽。 */
+.lark-doc .ProseMirror .docx-isv-block .isv-alignable-container { display: flex; box-sizing: border-box; width: 100%; flex-direction: column; align-items: flex-start; }
+.lark-doc .ProseMirror .docx-isv-block .isv-alignable-container.center { align-items: center; }
+.lark-doc .ProseMirror .docx-isv-block .isv-alignable-container.right { align-items: flex-end; }
+
+/* 圆角只在这两层（iframe 那层将来接真 iframe 时再加同级规则） */
+.lark-doc .ProseMirror .docx-isv-block .isv-block-layout,
+.lark-doc .ProseMirror .docx-isv-block .isv-block-container { box-sizing: border-box; width: 100%; border-radius: 8px; }
+
+/* 高度：目录按实测 335（异步 iframe 自报前也是这个数量级）；
+   按钮**不套 222** —— 222 是「iframe 还没自报高度」的加载态值，
+   ⑤-3 实测的按钮块就是那颗 26px 的宿主 span，套 222 会得到一个空盒子。 */
+.lark-doc .ProseMirror .docx-isv-block[data-isv-kind="catalog"] .isv-block-layout { height: var(--lark-doc-isv-height, 335px); overflow: hidden; }
+.lark-doc .ProseMirror .docx-isv-block[data-isv-kind="button"] .isv-block-layout { height: auto; }
+
+/* 0×29 空占位（④-1 第 2 层）：撑出块后的换行选区，压掉会点不到块尾 */
+.lark-doc .ProseMirror .docx-isv-block .docx-block-zero-space { box-sizing: border-box; width: 0; height: 29px; }
+/* 选中态沿用图片/文件/网页卡同一支描边（④-1 未采，按库内原子块口径补最小反馈） */
+.lark-doc .ProseMirror .docx-isv-block.is-selected .isv-block-container { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
+/* 数据缺失态：与 calendar_event 同口径 —— 画「没数据」而不是假装是小组件坏了 */
+.lark-doc .ProseMirror .docx-isv-block .isv-missing { padding: 8px 0; color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; }
+
+/* ---- B 目录导航内层（④-5）：灰底卡片 + 绝对定位工具条 + 真嵌套树 ---- */
+.lark-doc .ProseMirror .docx-isv-block .wrap-catalog-container,
+.lark-doc .ProseMirror .docx-isv-block .catalog-container { box-sizing: border-box; width: 100%; border-radius: 8px; background: var(--ld-isv-catalog-bg); }
+/* padding 25/26/20 实测；工具条要绝对定位到这张卡上，所以它是定位父级 */
+.lark-doc .ProseMirror .docx-isv-block .catalog-container { position: relative; padding: 25px 26px 20px; }
+
+/* 工具条 96×24 @(426,8)：532 内容宽下左缘 426 ⇒ 右留 10（532−426−96），
+   纸宽变了跟着右缘走 —— 写死 left:426 在别的纸宽下会飘出去。
+   三个子件 24 + 40 + 24 = 88，余 8 平分 ⇒ space-between 天然对齐。 */
+.lark-doc .ProseMirror .docx-isv-block .top-tool-container { position: absolute; top: 8px; right: 10px; display: flex; box-sizing: border-box; width: 96px; height: 24px; align-items: center; justify-content: space-between; }
+.lark-doc .ProseMirror .docx-isv-block .catalog-tool-icon,
+.lark-doc .ProseMirror .docx-isv-block .switch-view { display: inline-flex; align-items: center; justify-content: center; color: var(--ld-isv-catalog-icon); cursor: pointer; }
+.lark-doc .ProseMirror .docx-isv-block .catalog-tool-icon { width: 24px; height: 24px; }
+.lark-doc .ProseMirror .docx-isv-block .switch-view { width: 40px; height: 24px; gap: 2px; }
+/* 重置钮禁用是**静态态**：实测初始就灰，别做成 hover/interaction 态 */
+.lark-doc .ProseMirror .docx-isv-block .catalog-tool-icon.is-disabled { color: var(--ld-text-disabled); cursor: default; }
+
+/* 树：扁平画不出「父 item 高 = 32 + 后代之和」，所以 NodeView 建的是真 ul 嵌套 */
+.lark-doc .ProseMirror .docx-isv-block .catalog-list { margin: 0; padding: 0; list-style: none; }
+.lark-doc .ProseMirror .docx-isv-block .catalog-item { box-sizing: border-box; width: 100%; min-height: 32px; border-radius: 6px; }
+/* 高度 30 = 4 上 + 22 行 + 4 下；左右 padding 由 NodeView 按层级写 inline
+   （缩进 6+16×(level−1)、右恒 6），CSS 只兜收盘不到的情况 */
+.lark-doc .ProseMirror .docx-isv-block .catalog-text { display: flex; box-sizing: border-box; width: 100%; height: 30px; align-items: center; justify-content: space-between; padding: 4px 6px; border-radius: 6px; color: var(--ld-text); font-size: 14px; line-height: 22px; cursor: pointer; }
+.lark-doc .ProseMirror .docx-isv-block .catalog-text:hover { background: var(--ld-isv-catalog-hover); }
+/* 删除钮 20×18 只在 hover 时显形；「点了会发生什么」实测未采，所以没有 :active 样式 */
+.lark-doc .ProseMirror .docx-isv-block .delete-icon-container { display: none; box-sizing: border-box; width: 20px; height: 18px; }
+.lark-doc .ProseMirror .docx-isv-block .catalog-text:hover + .delete-icon-container,
+.lark-doc .ProseMirror .docx-isv-block .delete-icon-container:hover { display: block; }
+
+/* ---- C 按钮（⑤-3 实测）：真机是宿主 span.docx-button-component，不是 iframe ----
+   宽不写 72 —— 那是「测试按钮」四字的结果，按钮随文字长。 */
+.lark-doc .ProseMirror .docx-isv-block .docx-button-component { display: inline-flex; box-sizing: border-box; max-width: 100%; height: 26px; align-items: center; justify-content: center; padding: 0 8px; border: 0; border-radius: 6px; background: var(--ld-bg-selected); color: var(--ld-brand-content); font-family: inherit; font-size: 14px; font-weight: 400; line-height: 26px; cursor: pointer; box-shadow: 0 1px 2px rgba(31, 35, 41, .02), 0 2px 4px rgba(31, 35, 41, .02), 0 4px 8px rgba(31, 35, 41, .02); }
+/* hover 只换底色 + 阴影加深（实测 alpha .02×3 → .04/.04/.06），文字与几何不变。
+   🔴 这条 hover 只对默认浅蓝成立：用户在色板里选了别的底色时走 inline background，
+   那条边没有 hover 色（真机未采），所以只继承这里的阴影升级，底色保持所选值。 */
+.lark-doc .ProseMirror .docx-isv-block .docx-button-component:hover { background: var(--ld-isv-button-hover); box-shadow: 0 1px 2px rgba(31, 35, 41, .04), 0 2px 4px rgba(31, 35, 41, .04), 0 4px 8px rgba(31, 35, 41, .06); }
+
+/* ---- D 按钮配置面板（⑤-1 ~ ⑤-3）：270×386 @z600、无 backdrop、跟随选区 ---- */
+.lark-doc .lark-doc-isv-overlay { position: fixed; z-index: 600; box-sizing: border-box; width: 270px; /* 高度由 action / 是否报错决定（386 / 308 / 424），写在内联 style */ }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-button-panel { display: flex; box-sizing: border-box; width: 100%; height: 100%; flex-direction: column; border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-float); /* 面板投影未采，取库内浮层口径 */ overflow: hidden; }
+/* content 268×324（padding 12 12 0）+ footer 268×60（padding 16 12 12）= 386 */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-panel-content { box-sizing: border-box; flex: 1 1 auto; min-height: 0; padding: 12px 12px 0; overflow: hidden; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-panel-footer { display: flex; box-sizing: border-box; flex: 0 0 60px; height: 60px; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 12px 12px; }
+
+/* 表单行：文字 62 / 颜色 80 / 操作 60 / 链接 62；行距 16 */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field { display: flex; box-sizing: border-box; width: 100%; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field.is-color { margin-bottom: 16px; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field:last-child { margin-bottom: 0; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field-label { color: var(--ld-text); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field-label .is-required { margin-left: 2px; color: var(--ld-isv-error); }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field-control { position: relative; box-sizing: border-box; width: 100%; }
+
+/* 输入框 244×32、r6；`:focus` 没有蓝框（飞书实测聚焦零视觉变化，别补） */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-input { display: block; box-sizing: border-box; width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font-family: inherit; font-size: 14px; line-height: 30px; outline: 0; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-input::placeholder { color: var(--ld-text-tertiary); }
+/* 校验失败：红框 + 下方一行红字（文案「超链接不合法，请重新输入」由 mixin 给） */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-input.is-error { border-color: var(--ld-isv-error); }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-field-explain { margin: 4px 0 0; color: var(--ld-isv-error); font-size: 12px; line-height: 20px; }
+
+/* 色板 16 色常驻（2 行 × 8）：23×23 r5，列距 8、行距 6，整块 52 不带 padding */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-color-picker { box-sizing: border-box; width: 100%; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-color-row { display: flex; box-sizing: border-box; gap: 8px; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-color-row + .lark-doc-isv-color-row { margin-top: 6px; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-color-item { flex: 0 0 23px; box-sizing: border-box; width: 23px; height: 23px; min-width: 0; padding: 0; border: 0; border-radius: 5px; cursor: pointer; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-color-item.is-active { box-shadow: inset 0 0 0 1px var(--ld-border-strong); }
+
+/* 「执行操作」触发器 244×32 + 下拉 244×102（3 项 × 32 + 上下 3），z1050 */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-select { display: flex; box-sizing: border-box; width: 100%; height: 32px; align-items: center; justify-content: space-between; padding: 0 8px; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font-family: inherit; font-size: 14px; cursor: pointer; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-arrow { width: 0; height: 0; border-top: 4px solid var(--ld-text-icon-tertiary); border-right: 4px solid transparent; border-left: 4px solid transparent; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-menu { position: absolute; z-index: 1050; top: calc(100% + 2px); left: 0; box-sizing: border-box; width: 100%; padding: 3px 0; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-option { display: block; box-sizing: border-box; width: 100%; height: 32px; padding: 0 8px; border: 0; background: transparent; color: var(--ld-text); font-family: inherit; font-size: 14px; line-height: 32px; text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-option:hover,
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-option[aria-selected="true"] { background: var(--ld-calendar-row-hover); }
+
+/* 取消 / 确定：确定是主按钮，取消是次按钮（② §22 ⑤-1 footer 右对齐） */
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-button { box-sizing: border-box; height: 32px; padding: 0 12px; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font-family: inherit; font-size: 14px; cursor: pointer; }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-button.is-primary { border-color: var(--ld-brand-content); background: var(--ld-brand-content); color: var(--ld-text-on-brand); }
+
+/* Windows 高对比度：强制模式抹掉 box-shadow，用系统色描边把边界补回来 */
+@media (forced-colors: active) {
+  .lark-doc .lark-doc-isv-overlay .lark-doc-isv-button-panel,
+  .lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-menu { border: 1px solid CanvasText; background: Canvas; }
 }

@@ -31,6 +31,9 @@
     <ReminderPopover :ed="self" />
     <!-- 日程搜索面板：斜杠「日程」打开，点结果行即插卡片（Esc 刻意不关，02 §26 ⑦） -->
     <CalendarSearchPanel :ed="self" />
+    <!-- ISV 按钮配置面板：斜杠三条按钮命令打开（270×386，z600，无 backdrop）。
+         与日程面板相反：Esc/取消/点外部都关，关了不建块（02 §22 ⑤-3）。 -->
+    <IsvButtonPanel :ed="self" />
 
 
     <div class="lark-doc-body">
@@ -158,6 +161,8 @@ import MentionPanel from './editor/MentionPanel.vue'
 import ReminderPopover from './editor/ReminderPopover.vue'
 // P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
 import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
+// P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
+import IsvButtonPanel from './editor/IsvButtonPanel.vue'
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
@@ -202,6 +207,9 @@ import reminderMixin from './editor/reminderMixin'
 // P4-02b：日程搜索面板的状态与动作（开/关、候选、落块）。与 reminder 的差别在于
 // 「插入 ≠ 新建」—— 面板只把**已有日程**引用成块，所有字段都不在面板里编辑。
 import calendarMixin from './editor/calendarMixin'
+// P4-04：ISV 块（按钮 / 目录导航）的状态机。按钮走「先弹面板 → 校验 → 落块」，
+// 目录导航不弹面板、就地插块，两者共用同一个 isv 节点、靠 kind 分叉。
+import isvMixin from './editor/isvMixin'
 // 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
 import foldPersistMixin from './editor/foldPersistMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
@@ -223,8 +231,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, foldPersistMixin],
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, foldPersistMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },

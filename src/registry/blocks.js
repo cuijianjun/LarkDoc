@@ -71,6 +71,19 @@ export {
   calendarEventSearchMatch, calendarTimezoneLabel, normalizeCalendarEvent,
   readCalendarEvent, readCalendarTime, renderCalendarEventCard,
 } from '../core/blocks/calendar-event'
+// P4-04：第三方文档小组件块（目录导航 / 按钮）。一个节点类型、两种形态 —— 判定层
+// （实例键 / 高度 / 面板几何 / 目录树 / 按钮校验）同源再导出，宿主、NodeView、按钮
+// 配置面板三点共用一份，谁都不许自己维护常量副本。
+export {
+  Isv, ISV_APP_ID, ISV_BUILD_TS, ISV_BUILD_HASH, ISV_CDN_ORIGIN, ISV_KINDS, ISV_ALIGNS,
+  ISV_DEFAULT_HEIGHT, ISV_BUTTON_HEIGHT, ISV_MIN_HEIGHT, ISV_MAX_HEIGHT,
+  ISV_INSTANCE_PATTERN, ISV_BUTTON_ACTIONS, BUTTON_ACTION_DEFAULT, BUTTON_TEXT_DEFAULT,
+  BUTTON_TEXT_MAX, ISV_VALIDATION_MESSAGE, ISV_REQUIRED_FIELDS, ISV_PANEL,
+  isvInstanceId, isvEmbedUrl, isvPanelHeight, catalogIndent, catalogFontWeight,
+  readIsv, resolveIsvHeight, readIsvAlign, normalizeIsv, validateIsvButton,
+  isButtonLinkValid, normalizeButtonLink, safeIsvLink,
+  buildCatalogTree, flattenCatalogTree,
+} from '../core/blocks/isv'
 // P4-01：提及候选源（本地名单过滤 + 可选 provider）—— 纯逻辑，无 DOM。
 export {
   MENTION_SEARCH_LIMIT, MENTION_RESOLVE_LIMIT, DEFAULT_MENTION_TIMEOUT,

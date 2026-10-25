@@ -342,6 +342,44 @@
         }
       }
     },
+    "isv": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "action": {
+          "default": null
+        },
+        "align": {
+          "default": "left"
+        },
+        "appId": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "buttonColor": {
+          "default": null
+        },
+        "buttonText": {
+          "default": null
+        },
+        "height": {
+          "default": null
+        },
+        "instanceId": {
+          "default": null
+        },
+        "kind": {
+          "default": "catalog"
+        },
+        "linkUrl": {
+          "default": null
+        }
+      }
+    },
     "listItem": {
       "content": "paragraph block*",
       "defining": true,

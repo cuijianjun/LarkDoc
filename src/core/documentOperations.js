@@ -987,6 +987,9 @@ export const BLOCK_ID_TYPES = new Set([
   // 文件 / 视频块（P2-04）是原子块，但它自己就是「用户能当作一个块操作」的单位，
   // 折叠与锚点都要能指向它，所以进 id 集合。
   'fileBlock',
+  // 小组件块（P4-04）：原子块，但折叠与锚点都要能指向它 —— 不进集合就没有 blockId，
+  // 导出再导回时实例键与块 id 会一起漂。
+  'isv',
 ])
 export const BLOCK_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 

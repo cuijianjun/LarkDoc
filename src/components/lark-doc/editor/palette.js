@@ -59,6 +59,27 @@ export const TEXT_BACKGROUND_ROWS = [
   ],
 ]
 
+/* ---- 小组件按钮色板：两行 × 8（02 §22 ④-4a 实测） ----
+   浅组 / 深组各一行，不叫「背景/前景」——两组是同权重的 16 个可选底色，
+   深组不是浅组的深色档（深纸按钮也用深组，浅纸按钮也能选深组）。
+   `__item` 23×23 r5、列距 31（=23+8）、行距 29（=23+6），整块 52 = 23+6+23 不带 padding ——
+   这些是面板几何，写在 .lark-doc 的 CSS 里；本表只负责色值本身。
+   默认选中的是浅组第 5 个 `#E1EAFF`（浅蓝），与飞书初值一致。 */
+export const BUTTON_COLOR_ROWS = [
+  [
+    { label: '浅红', value: '#fde2e2' }, { label: '浅橙', value: '#feead2' },
+    { label: '浅绿', value: '#d9f5d6' }, { label: '浅青', value: '#d9f3fd' },
+    { label: '浅蓝', value: '#e1eaff' }, { label: '浅粉', value: '#fdddef' },
+    { label: '浅紫', value: '#ece2fe' }, { label: '浅灰', value: '#eff0f1' },
+  ],
+  [
+    { label: '红', value: '#f76964' }, { label: '橙', value: '#ffa53d' },
+    { label: '绿', value: '#62d256' }, { label: '青', value: '#14c0ff' },
+    { label: '蓝', value: '#3370ff' }, { label: '粉', value: '#f14ba9' },
+    { label: '紫', value: '#935af6' }, { label: '黑', value: '#2b2f36' },
+  ],
+]
+
 /* ---- 组件默认值（原生 color input 的初值 / 未应用状态的回填） ---- */
 /** 行内文字默认色 = 正文主文字（与 --ld-text-content 同值，但用于写 inline style，不能取 var） */
 export const DEFAULT_TEXT_COLOR = '#263b35'
@@ -71,6 +92,8 @@ export const DEFAULT_CALLOUT_COLORS = { color: '#263830', backgroundColor: '#eff
 export const DEFAULT_CALLOUT_COLORS_DARK = { color: '#F0F0F0', backgroundColor: '#292929', borderColor: '#5F5F5F' }
 /** 表格单元格背景的初值（表格工具条 color input） */
 export const DEFAULT_CELL_BACKGROUND = '#f2faf6'
+/** 小组件按钮块默认底色 = 色板浅蓝（02 §22 ④-4a「默认选中」） */
+export const DEFAULT_BUTTON_COLOR = '#e1eaff'
 
 /* ---- 多色图标资源 ---- */
 /** 高亮笔图标：黄色色块打底 + 深褐 A（其余图标一律 currentColor） */
@@ -97,11 +120,13 @@ export default {
   CALLOUT_COLOR_OPTIONS_DARK,
   TEXT_COLOR_OPTIONS,
   TEXT_BACKGROUND_ROWS,
+  BUTTON_COLOR_ROWS,
   DEFAULT_TEXT_COLOR,
   DEFAULT_TEXT_BACKGROUND,
   DEFAULT_CALLOUT_COLORS,
   DEFAULT_CALLOUT_COLORS_DARK,
   DEFAULT_CELL_BACKGROUND,
+  DEFAULT_BUTTON_COLOR,
   ICON_PALETTE,
   SAMPLE_CONTENT_BRAND,
   calloutColorOptions,

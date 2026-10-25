@@ -142,7 +142,10 @@ export default {
       // 「mention 的面板要正文焦点才能筛候选，reminder 的浮层自己就是交互面」。
       // 🔴 P4-02b 的 calendar_event 同 reminder：点了要开「插入日程」搜索面板（540×360），
       // 面板里的输入框要自己拿焦点，这里 focus() 一次会把它顶掉。
-      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event'].includes(item.id))
+      // 🔴 P4-04 的 3 个按钮同 calendar_event：点了要开 270×386 的按钮配置面板，
+      // 里面「按钮文字」输入框要自己拿焦点。目录导航（`catalogue`）**故意不**进名单 ——
+      // 它不弹面板，选完就地插块，焦点该还给编辑器。
+      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -233,6 +236,12 @@ export default {
       // 「插入 ≠ 新建」—— 面板里刻意没有「新建日程」入口（02 §26 ⑨），这里也就不能
       // 像 reminder 那样直接往正文塞一个默认块：没有 eventId 的日程卡片是空壳。
       else if (id === 'calendar_event') this.startCalendarEvent()
+      // P4-04：3 个按钮共用同一个 `isv` 节点（`kind: 'button'`），命令 id 直接就是 action ——
+      // 差异只在面板里「执行操作」那一项的初值，落块后由 NodeView 按 `action` 决定点击行为。
+      // 「先弹窗后落块」（02 §22 ⑤-1）：这里只开面板，取消 / Esc 连块都不建。
+      else if (id === 'open_link' || id === 'duplicate_page' || id === 'follow_page') this.startIsvButton(id)
+      // P4-04：目录导航**不弹面板**，选完就地插目录块（标题树由 NodeView 现算）。
+      else if (id === 'catalogue') this.startCatalogue()
       if (id === 'details') {
         let detailsPos = null
         this.editor.state.doc.descendants((node, pos) => { if (detailsPos === null && node.type.name === 'details') detailsPos = pos })

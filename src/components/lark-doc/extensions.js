@@ -32,7 +32,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -117,6 +117,14 @@ export function createLarkDocExtensions(options = {}) {
     CalendarEvent.configure({
       onJoin: options.onCalendarEventJoin || null,
       refetch: options.calendarEventRefetch || null,
+    }),
+    // P4-04：文档小组件紧跟日程卡片 —— 同为「外部对象引用」的同层原子块，区别在它一个
+    // 节点背两种形态（目录导航 / 按钮，`kind` 分叉）。两个回调都是**宿主能力通道**：
+    // `onIsvButtonAction` 管「创建副本 / 关注文档更新」（core 不认文档系统，不自己发明）；
+    // `onIsvCatalogJump` 管目录项跳转（不传就自己 scrollIntoView，④-5 实测行为）。
+    Isv.configure({
+      onButtonAction: options.onIsvButtonAction || null,
+      onCatalogJump: options.onIsvCatalogJump || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
