@@ -218,6 +218,17 @@ export default {
     // 折叠偏好持久化键（通常传 documentId）：非空时章节折叠状态按标题稳定键
     // 存入本设备 localStorage，刷新后恢复（需求文档 13.6.1 V1 本地偏好）。
     foldPersistKey: { type: String, default: '' },
+    // P3-07：内嵌内容的宿主回调。六项全部可选，缺省即退回 core 默认行为
+    // （标题不同步 / iframe 存盘只回 ok / 卡片动作自己 window.open / URL 卡只显示域名）。
+    onEmbedTitle: { type: Function, default: null },
+    onEmbedSave: { type: Function, default: null },
+    onEmbedCardAction: { type: Function, default: null },
+    embedProviders: { type: Array, default: null },
+    onBookmarkOpen: { type: Function, default: null },
+    unfurlProvider: { type: Function, default: null },
+    // iframe 的 sandbox / allow 覆盖通道：不传即安全基线（无 allow-same-origin）。
+    embedSandbox: { type: String, default: null },
+    embedAllow: { type: String, default: null },
   },
   data() { return {
     editor: null, localTitle: this.title,
@@ -258,6 +269,15 @@ export default {
     },
     effectiveReadonly() { return this.readonly || this.reading || this.slides || (this.session && typeof this.session.can === 'function' && !this.session.can('canEdit')) },
     hasTextSelection() { return !!this.editor && !this.editor.state.selection.empty },
+    // P3-07：内嵌内容的宿主回调整包转发给扩展装配。这些回调只在建编辑器时读一次
+    // （NodeView 建好后再换函数不会重挂），所以不需要 watch，也不该进响应式依赖。
+    embedOptions() {
+      return {
+        onEmbedTitle: this.onEmbedTitle, onEmbedSave: this.onEmbedSave, onEmbedCardAction: this.onEmbedCardAction,
+        embedProviders: this.embedProviders, onBookmarkOpen: this.onBookmarkOpen, unfurlProvider: this.unfurlProvider,
+        embedSandbox: this.embedSandbox, embedAllow: this.embedAllow,
+      }
+    },
   },
   watch: {
     title(value) { if (value !== this.localTitle) this.localTitle = value },
@@ -284,7 +304,7 @@ export default {
       }
       this.editor = new Editor({
         content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
+        extensions: createLarkDocExtensions({ ...this.embedOptions, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)

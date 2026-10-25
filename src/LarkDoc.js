@@ -104,6 +104,8 @@ export class LarkDoc {
         resolveFileUrl: this._resolveFileUrlResolver(source),
         aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
         session: this._session,
+        // P3-07：内嵌内容的宿主回调与 iframe 覆盖通道（iframe 桥 / 卡片动作 / URL 卡抓取）。
+        ...this._resolveEmbedOptions(source),
       },
       on: {
         ready: () => {
@@ -254,6 +256,40 @@ export class LarkDoc {
     if (typeof source.resolveFileUrl === 'function') return source.resolveFileUrl
     if (source.file && typeof source.file.resolveUrl === 'function') return source.file.resolveUrl.bind(source.file)
     return null
+  }
+
+  /**
+   * 内嵌内容的宿主接线点（0.12 P3 三个出口，P3-07 补齐）。
+   *
+   * 前六项是回调，全部**可选**，不传就退回 core 的默认行为：标题不同步、
+   * iframe 存盘只回 `{ ok: true }`、卡片动作按钮自己 `window.open`、URL 卡只显示域名。
+   * core 不认识宿主，所有「要不要发请求 / 存到哪」的判断都留在这一层之外。
+   *
+   * 之所以逐项校验而不是整包透传：宿主最容易把 `onSave`（文档 save 事件）当成
+   * `onEmbedSave`（iframe 内的存盘）传进来 —— 那会把「每次敲字都存盘」挂到
+   * iframe 的 save 帧上。非函数一律丢弃，宁可退回默认行为。
+   *
+   * 后两项 `embedSandbox` / `embedAllow` 是 iframe 的**覆盖通道**，不是新默认值：
+   * 不传仍是 `core/embed/web-embed.js` 的安全基线（无 `allow-same-origin`）。
+   * 但基线同时意味着 iframe 是**不透明源**，`event.origin` 恒为 `"null"`，
+   * 桥的 origin 严格校验（09 §3.4.2 规则①）会全部拒收 —— 想让桥真正握手，
+   * 宿主必须对自己**信任的自有页面**显式声明含 `allow-same-origin` 的组合。
+   * 第三方站点不要开这一项：同源 + 脚本 = 沙箱可被自己摘掉。
+   */
+  _resolveEmbedOptions(source) {
+    const fn = (name) => (typeof source[name] === 'function' ? source[name] : null)
+    const str = (name) => (typeof source[name] === 'string' && source[name] ? source[name] : null)
+    return {
+      onEmbedTitle: fn('onEmbedTitle'),
+      onEmbedSave: fn('onEmbedSave'),
+      onEmbedCardAction: fn('onEmbedCardAction'),
+      // `providers` 是 providerId 白名单数组，null = 全认（`core/embed/card.js`）。
+      embedProviders: Array.isArray(source.embedProviders) ? source.embedProviders.slice() : null,
+      onBookmarkOpen: fn('onBookmarkOpen'),
+      unfurlProvider: fn('unfurlProvider'),
+      embedSandbox: str('embedSandbox'),
+      embedAllow: str('embedAllow'),
+    }
   }
 
   /**

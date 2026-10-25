@@ -10,6 +10,14 @@
     :content-format="contentFormat"
     :fold-persist-key="String(documentId || 'local')"
     :upload-image="uploadImage"
+    :on-embed-title="onEmbedTitle"
+    :on-embed-save="onEmbedSave"
+    :on-embed-card-action="onEmbedCardAction"
+    :embed-providers="embedProviders"
+    :on-bookmark-open="onBookmarkOpen"
+    :unfurl-provider="unfurlProvider"
+    :embed-sandbox="embedSandbox"
+    :embed-allow="embedAllow"
     @change="onChange"
     @import-report="onImportReport"
     @ready="onReady"
@@ -461,6 +469,17 @@ export default {
     // 宿主侧能力注入：图片上传钩子与 AI 流式生成钩子。
     uploadImage: { type: Function, default: null },
     aiProvider: { type: Object, default: null },
+    // P3-07：内嵌内容（iframe 桥 / 卡片动作 / URL 卡抓取）的宿主回调。
+    // 本层只做透传，不认识 `lark-embed/1` 协议；判定全在 LarkDoc 门面与扩展装配里。
+    onEmbedTitle: { type: Function, default: null },
+    onEmbedSave: { type: Function, default: null },
+    onEmbedCardAction: { type: Function, default: null },
+    embedProviders: { type: Array, default: null },
+    onBookmarkOpen: { type: Function, default: null },
+    unfurlProvider: { type: Function, default: null },
+    // iframe 的 sandbox / allow 覆盖（默认走安全基线；桥要真 origin 时宿主显式放开）。
+    embedSandbox: { type: String, default: null },
+    embedAllow: { type: String, default: null },
   },
   data() {
     const templateItems = Array.isArray(this.templates) ? this.templates : TEMPLATES
