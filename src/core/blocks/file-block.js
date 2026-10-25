@@ -139,10 +139,14 @@ const FileBlock = Node.create({
 
   addCommands() {
     return {
-      setFileBlock: (attrs) => ({ commands }) => {
+      setFileBlock: (attrs) => ({ state, commands }) => {
         const token = attrs && attrs.token
         const src = attrs && attrs.src
         if (!safeAttachmentId(token) && !safeUrl(src, true)) return false
+        // 属性合不合法交给 schema 的 validator 判：`validator` 抛错才算拒，
+        // 而 `insertContent` 遇到非法属性只会打一条 warning 然后**照常返回 true**
+        // —— 不自己兜这一层就会出现「命令说成功、正文里什么都没有」。
+        try { state.schema.nodes[this.name].create(attrs) } catch (_) { return false }
         return commands.insertContent({ type: this.name, attrs })
       },
     }
