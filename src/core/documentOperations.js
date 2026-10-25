@@ -100,6 +100,43 @@ export function flattenHeadingContainers(json) {
   return Array.isArray(result) ? result[0] : result
 }
 
+/**
+ * 扁平 → 容器聚合（flattenHeadingContainers 的逆；P1-02 第二步切写入 + P1-04 迁移 v1→v2）。
+ *
+ * 02 §2 口径：标题分节 =「直到下一同级（或更浅）标题之间的内容」收进该标题的
+ * children；分节内更深的标题递归聚合自己的分节（嵌套分节永远不会越过父分节
+ * 边界——父边界标题层级更浅，必然同时终结子分节）；缩进块保留 attrs.indent
+ * 原样作为子块，不额外嵌套。
+ *
+ * - 纯函数：不修改入参；对已是容器形态的输入幂等（既有 children 原样保留）。
+ * - 非 doc 顶层 JSON 直通返回；聚合结果继续由 validateDocument 全量校验。
+ */
+export function aggregateHeadingContainers(json) {
+  if (!json || typeof json !== 'object' || json.type !== 'doc' || !Array.isArray(json.content)) return json
+  const headingLevel = (node) => (node && node.type === 'heading' ? Number(node.attrs && node.attrs.level) || 1 : Infinity)
+  const build = (blocks) => {
+    const result = []
+    let index = 0
+    while (index < blocks.length) {
+      const block = blocks[index]
+      if (!block || block.type !== 'heading') { result.push(block); index += 1; continue }
+      const level = headingLevel(block)
+      // 已聚合输入的既有 children 原样保留在前（幂等）；分节内的后续块递归聚合后追加。
+      const children = Array.isArray(block.children) ? block.children.slice() : []
+      let end = index + 1
+      while (end < blocks.length && headingLevel(blocks[end]) > level) end += 1
+      if (end > index + 1) children.push(...build(blocks.slice(index + 1, end)))
+      const next = { ...block }
+      if (children.length) next.children = children
+      else delete next.children
+      result.push(next)
+      index = end
+    }
+    return result
+  }
+  return { ...json, content: build(json.content) }
+}
+
 /** 全量校验 Tiptap JSON（节点/属性/深度/规模白名单）并返回规范化 JSON，导入与快照恢复的必经入口。 */
 export function validateDocument(json, schema) {
   // 标题容器形态（heading.children）先展平成扁平模型再校验（P1-02 读取兼容）。

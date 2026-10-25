@@ -430,6 +430,8 @@ import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createRevie
 import { TEMPLATES } from './templates'
 import { createLarkDocConfig } from './larkDocConfig'
 import { sanitizeHTML, validateDocument } from './documentOperations'
+import { migrateRecordContent } from '../../core/migrations'
+import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
 import { createDocumentSession } from '../../session/DocumentSession'
 import LarkDocSelect from './LarkDocSelect.vue'
@@ -602,7 +604,8 @@ export default {
           const draft = await this.callWorkspace('load')
           if (this._disposed) return
           if (draft) {
-            this.$refs.document.setContent(validateDocument(draft.json, this.getEditor().schema))
+            // 老草稿（v1 扁平 / 无版本号）先迁移到当前版本再校验载入（P1-04）。
+            this.$refs.document.setContent(validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), this.getEditor().schema))
             this.title = draft.title
           }
           this.saveStatus = draft ? `已恢复${this.persistenceLabel()}草稿` : (this.persistence ? '宿主适配器 · 尚未保存' : '本地示例 · 尚未保存')
@@ -701,7 +704,7 @@ export default {
       if (!this.featureEnabled('history') || !this.writable()) return
       try {
         const entry = await this.callWorkspace('restore', id)
-        const json = validateDocument(entry.json, this.getEditor().schema)
+        const json = validateDocument(migrateRecordContent(entry.json, entry.schemaVersion), this.getEditor().schema)
         if (!window.confirm('恢复此快照并替换当前正文？恢复后可撤销正文。')) return
         this.closeAI()
         this.$refs.document.setContent(json)
@@ -728,7 +731,7 @@ export default {
           const text = await file.text()
           if (format === 'json') {
             const value = JSON.parse(text)
-            content = validateDocument(value.document || value, this.getEditor().schema)
+            content = validateDocument(migrateRecordContent(value.document || value, value.schemaVersion), this.getEditor().schema)
             if (typeof value.title === 'string') importedTitle = value.title
           } else if (format === 'html' || format === 'htm') content = sanitizeHTML(text)
           else if (format === 'md' || format === 'markdown') {
@@ -765,7 +768,7 @@ export default {
         const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../../utils/importExport')
         const filename = safeFileName(this.title)
         if (format === 'html') downloadText(component.getHTML(), `${filename}.html`, 'text/html;charset=utf-8')
-        else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: 1, title: this.title, document: component.getJSON() }, null, 2), `${filename}.json`, 'application/json')
+        else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.title, document: component.getJSON() }, null, 2), `${filename}.json`, 'application/json')
         else if (format === 'txt') downloadText(component.getText(), `${filename}.txt`, 'text/plain;charset=utf-8')
         else if (format === 'md') {
           downloadText(htmlToMarkdown(component.getHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')

@@ -5,7 +5,12 @@
  * revision、评论线程或在线状态混入编辑器正文。后续协同 Provider 可以把
  * 同一份 JSON 投影到 Y.Doc，而本地 Provider 仍可直接保存它。
  */
-export const DOCUMENT_SCHEMA_VERSION = 1
+/**
+ * v2（P1-02/P1-04）：标题改容器——heading 可选携带 children（02 §2 heading-children
+ * 语义）；写入侧（getJSON / 文档记录 / JSON 导出）输出容器形态，读取侧经
+ * flattenHeadingContainers 兼容两种形态。v1 为扁平模型（0.11 历史格式）。
+ */
+export const DOCUMENT_SCHEMA_VERSION = 2
 
 /** 创建可保存的文档信封；content 始终是 Tiptap doc 节点。 */
 export function createDocumentRecord(options = {}) {

@@ -1,4 +1,5 @@
 import { createDocumentRecord } from '../core/documentSchema'
+import { aggregateHeadingContainers } from '../core/documentOperations'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
 import { createAuthorizationProvider, normalizeCapabilities } from '../providers/authorization'
 import { createCollaborationProvider } from '../providers/collaboration'
@@ -107,7 +108,9 @@ export class DocumentSession {
     const editor = this._editor
     return createDocumentRecord({
       documentId: this.documentId,
-      content: extra.content || (editor && editor.getJSON ? editor.getJSON() : undefined),
+      // 内部 ProseMirror 文档恒为扁平模型；记录出口统一聚合为 v2 容器形态
+      // （与组件 getJSON 同口径，避免「标 v2 写 v1」）。
+      content: extra.content || (editor && editor.getJSON ? aggregateHeadingContainers(editor.getJSON()) : undefined),
       title: extra.title,
       revisionId: extra.revisionId,
       schemaVersion: extra.schemaVersion,

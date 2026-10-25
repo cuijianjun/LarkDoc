@@ -27,6 +27,8 @@ function createWorkspace(storage, options = {}) {
 
   function record(value) {
     const result = { title: value.title, json: value.json, updatedAt: Date.now() }
+    // schemaVersion 透传：载入侧据此触发迁移链（P1-04）；缺失按 v1 处理。
+    if (value.schemaVersion != null) result.schemaVersion = value.schemaVersion
     // 可选：透传 HTML 派生副本（saveHtml 开启时由 Workspace 注入）。
     if (value.html != null) result.html = value.html
     if (!validRecord(result)) throw new Error('文档结构无效，未保存')

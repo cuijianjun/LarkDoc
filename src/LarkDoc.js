@@ -13,6 +13,7 @@ import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
 import { resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy } from './networkPolicy'
 import { createDocumentSession } from './session/DocumentSession'
+import { migrateRecordContent } from './core/migrations'
 import { createThemeController } from './theme'
 
 const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report', 'themeChange'])
@@ -59,7 +60,8 @@ function normalizeDocumentInput(input) {
   if (typeof input === 'string') return { title: null, content: input }
   if (typeof input !== 'object') return { title: null, content: null }
   if (input.content && typeof input.content === 'object' && (input.schemaVersion || input.documentId)) {
-    return { title: input.title == null ? null : String(input.title), content: input.content }
+    // 版本化信封：老版本正文（v1 扁平）先迁移到当前版本再进编辑器（P1-04）。
+    return { title: input.title == null ? null : String(input.title), content: migrateRecordContent(input.content, input.schemaVersion) }
   }
   if (input.type === 'doc') return { title: null, content: input }
   return { title: input.title == null ? null : String(input.title), content: null }

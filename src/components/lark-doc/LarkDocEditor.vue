@@ -149,7 +149,7 @@ import LinkDialog from './editor/dialogs/LinkDialog.vue'
 import HelpDialog from './editor/dialogs/HelpDialog.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
-import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { aggregateHeadingContainers, clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
 // Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，由它自己注册进 core 的
 // NodeView 注册表；这里只负责把适配层拉起来，core 与 Vue 之间不再有静态绑定。
@@ -290,7 +290,7 @@ export default {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
     toolbarEnabled(name) { return this.larkDocConfig.toolbar[name] !== false && this.featureEnabled(name) },
     isBlockActionEnabled(id) { return isBlockActionEnabled(this.larkDocConfig, id) },
-    getEditor() { return this.editor }, getHTML() { return this.editor?.getHTML() || '' }, getJSON() { return this.editor?.getJSON() || null }, getText() { return this.editor?.getText() || '' },
+    getEditor() { return this.editor }, getHTML() { return this.editor?.getHTML() || '' }, getJSON() { return this.editor ? aggregateHeadingContainers(this.editor.getJSON()) : null }, getText() { return this.editor?.getText() || '' },
     focus() { this.editor?.commands.focus() },
     /**
      * 统一内容准备：旧数据（Vditor HTML）归一化 + 安全清洗。
