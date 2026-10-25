@@ -93,6 +93,7 @@
     <MathEmojiDialog :ed="self" />
     <LinkDialog :ed="self" />
     <HelpDialog :ed="self" />
+    <EmbedLinkDialog :ed="self" />
     <input
       ref="imageInput"
       type="file"
@@ -157,9 +158,10 @@ import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
 import MathEmojiDialog from './editor/dialogs/MathEmojiDialog.vue'
 import LinkDialog from './editor/dialogs/LinkDialog.vue'
 import HelpDialog from './editor/dialogs/HelpDialog.vue'
+import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
-import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
 // Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，由它自己注册进 core 的
 // NodeView 注册表；这里只负责把适配层拉起来，core 与 Vue 之间不再有静态绑定。
@@ -173,6 +175,8 @@ import tableToolsMixin from './editor/tableToolsMixin'
 import toolbarCollapseMixin from './editor/toolbarCollapseMixin'
 import blockHandleMixin from './editor/blockHandleMixin'
 import blockMenuMixin from './editor/blockMenuMixin'
+import blockIndentMixin from './editor/blockIndentMixin'
+import overlayDismissMixin from './editor/overlayDismissMixin'
 import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
@@ -196,8 +200,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, HeadingNumberMenu },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -263,11 +267,12 @@ export default {
       if (this.editor) this.editor.storage.characterCount.setLimit(this.effectiveMaxLength)
       this.$nextTick(() => this.refreshDocumentState())
     } },
-    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
+    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
     emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
     linkDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector(this.linkInsertMode ? '[aria-label="链接文本"]' : '[aria-label="链接地址"]')?.focus()) },
+    embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
   },
   mounted() {
     try {
@@ -544,27 +549,6 @@ export default {
     applyTextBackground(value) { this.setTextStyle('backgroundColor', value); this.appliedTextStyle.backgroundColor = value },
     applyLineHeight(value) { this.setBlockAttribute('lineHeight', value); this.appliedTextStyle.lineHeight = value },
     applyCellAlign(key, value) { this.cellAttribute(key, value); this.cellAlignState[key] = value },
-    openLinkDialog(allowEmpty = false) {
-      if (!this.writable() || (!allowEmpty && this.editor.state.selection.empty)) return
-      this.rememberSelection(allowEmpty)
-      this.linkInsertMode = this.editor.state.selection.empty
-      this.linkText = ''
-      this.linkValue = this.editor.getAttributes('link').href || ''
-      this.linkDialog = true
-    },
-    applyLink() {
-      if (!this.writable() || !this.linkValue || !safeUrl(this.linkValue)) { this.error = '链接地址无效，仅支持 http、https、mailto、tel 或 # 锚点'; return }
-      const attrs = { href: this.linkValue, target: '_blank', rel: 'noopener noreferrer' }
-      if (this.linkInsertMode) {
-        if (!this.linkText.trim()) { this.error = '请输入链接显示文字'; return }
-        this.restoreSelection(true)
-        this.editor.chain().focus().insertContent({ type: 'text', text: this.linkText.trim(), marks: [{ type: 'link', attrs }] }).run()
-      } else this.run('setLink', attrs)
-      this.linkDialog = false
-      this.linkInsertMode = false
-      this.linkText = ''
-    },
-    removeLink() { if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
     setBlockAttribute(name, value, type) {
       if (!this.writable() || value === null || value === undefined || value === '') return
       this.restoreSelection()
@@ -573,44 +557,9 @@ export default {
       const next = name === 'indent' ? clampBlockIndent(value, this.maxBlockIndent) : value
       this.editor.chain().focus().updateAttributes(block, { [name]: next }).run()
     },
-    // 当前块的缩进载体（段落/标题/代码块都带 indent 属性），菜单与工具栏据此判断上限。
-    blockIndentLevel() { return Number(this.blockIndentNode()?.attrs?.indent) || 0 },
-    blockIndentNode() {
-      if (!this.editor) return null
-      const { $from } = this.editor.state.selection
-      for (let depth = $from.depth; depth > 0; depth -= 1) {
-        const node = $from.node(depth)
-        if (Number.isInteger(node.attrs?.indent)) return node
-      }
-      return null
-    },
-    blockIndentPos() {
-      if (!this.editor) return -1
-      const { $from } = this.editor.state.selection
-      for (let depth = $from.depth; depth > 0; depth -= 1) {
-        if (Number.isInteger($from.node(depth).attrs?.indent)) return $from.before(depth)
-      }
-      return -1
-    },
-    // 增加缩进的上限由「前一个块」决定：飞书的缩进就是成为上一个块的子块，
-    // 所以第一个块一级都缩不了（真飞书菜单里也是灰的）。
-    blockIndentLimit() {
-      if (!this.editor) return 0
-      return maxIndentAt(this.editor.state.doc, this.blockIndentPos(), this.maxBlockIndent)
-    },
-    canIncreaseIndent() { return this.blockIndentLevel() < this.blockIndentLimit() },
+    // 缩进五连已下沉到 editor/blockIndentMixin.js：工具栏 / 气泡条 / 块菜单 / 快捷键
+    // 四个入口共用，不再是本组件的私有方法。
     setAlign(value) { this.run('setTextAlign', value) },
-    changeIndent(delta) {
-      if (!this.writable()) return
-      const node = this.blockIndentNode()
-      if (!node) return
-      const current = Number(node.attrs.indent) || 0
-      // 增加受「前一个块」限制，减少只受 0 下限（可以一路减回文档开头）。
-      const next = stepBlockIndent(this.editor.state.doc, this.blockIndentPos(), current, delta, this.maxBlockIndent)
-      // 到顶/到底时不再派发事务，避免产生「看起来能一直点」的空操作。
-      if (next === current) return
-      this.setBlockAttribute('indent', next, node.type.name)
-    },
     clearFormatting() { if (!this.writable()) return; this.restoreSelection(); this.editor.chain().focus().unsetAllMarks().clearNodes().run() },
     cellAttribute(name, value) { if (value) this.run('setCellAttribute', name, value) },
     onImageInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertImageFiles(files) },
@@ -710,40 +659,6 @@ export default {
       if (!root || root.contains(event.target)) return
       if (!event.target.closest?.('.lark-doc-block-handle, .lark-doc-callout-tools')) this.scheduleHandleHide()
     },
-    onDocumentPointerDown(event) {
-      const target = event.target
-      if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target)) this.closeCommandMenu()
-      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
-      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.bubbleAlignOpen && !target.closest?.('.lark-doc-bubble-align') && !target.closest?.('.lark-doc-bubble-align-menu')) this.closeBubbleAlignMenu()
-      if (this.bubbleHeadingOpen && !target.closest?.('.lark-doc-bubble-heading')) this.closeBubbleHeadingMenu()
-      if (this.calloutEmojiOpen && !target.closest?.('.lark-doc-callout-tools')) this.calloutEmojiOpen = false
-      if (this.colorPaletteOpen && !target.closest?.('.lark-doc-color-palette') && !target.closest?.('.lark-doc-color')) this.colorPaletteOpen = ''
-      if (this.headerMenuOpen && !target.closest?.('.lark-doc-header-menu') && !target.closest?.('button[aria-label="文档操作"]')) this.closeHeaderMenu()
-      if (this.diagramMenuOpen && !target.closest?.('.lark-doc-diagram-menu') && !target.closest?.('button[aria-label="图表"]')) this.closeDiagramMenu()
-      // 编号菜单点外部关闭；但点在编号按钮自己身上要留给它的 click 处理（重新定位/切换）。
-      // 标题编号和列表序号共用这套菜单，两个锚点都要排除。
-      // 正在输入编号值时，点外部按「提交」算（飞书同款），否则用户输完点开别处会丢值。
-      if (this.headingNumberMenu.open && !target.closest?.('.lark-doc-heading-number-menu') && !target.closest?.('.lark-doc-heading-number') && !target.closest?.('.lark-doc-list-number')) {
-        if (this.headingNumberEditing) this.applyHeadingNumberValue()
-        else this.closeHeadingNumberMenu()
-      }
-      if (!this.$refs.root?.contains(target)) {
-        this.headingOpen = false
-        this.headingStyle = {}
-        this.tableToolsOpen = false
-      }
-    },
-    onWindowKeydown(event) {
-      if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
-      else if (event.key === 'Escape' && this.slides) this.toggleSlides()
-      else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
-      else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1)
-      else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1)
-    },
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }
 </script>

@@ -88,6 +88,12 @@
   --ld-bg-handle-hover: rgba(31, 35, 41, 0.05);
   --ld-bg-menu-item-active: #E0E9FF;  /* = --bg-selected */
   --ld-bg-brand-hover: #336DF4;
+  /* P3-07：内嵌网页浮层按钮（requirements/04 §4.3 ⑤ 逐个像素实测）
+     solid = rgb(51,109,244) → #336DF4（主按钮底 + 「如何获取链接」文字）
+     pressed = rgb(80,131,251) → #5083FB（hover 态，也是「确认」填空/非法时的唯一反馈色）
+     实测值只此一份；四档原表里没有 #5083FB，故在此新建。 */
+  --ld-bg-brand-solid: #336DF4;
+  --ld-bg-brand-pressed: #5083FB;
   --ld-bg-toast: rgba(222, 120, 2, 0.1);
   --ld-bg-badge: rgba(46, 161, 33, 0.1);
   --ld-bg-grid-table: #F5F6F7;

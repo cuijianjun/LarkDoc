@@ -6,7 +6,7 @@
  */
 import { TextSelection } from '@tiptap/pm/state'
 import { wrapContainerAllowed } from '../../../core/blocks/container-depth'
-import { filterCommands } from '../commands'
+import { filterCommands, commandFeatureOf } from '../commands'
 import { isCommandEnabled } from '../larkDocConfig'
 import { diagramTypes } from './constants'
 
@@ -123,7 +123,10 @@ export default {
       const isSlashTable = this.menuKind === 'slash' && item.id === 'table'
       const isTableSize = item.id === 'table' && item.tableSize
       const isTemplateSelection = item.id === 'template' && !!item.templateId
-      const focusAfter = isTemplateSelection || !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai'].includes(item.id)
+      // 开浮层 / 开选择器型命令不抢焦点（浮层自己要聚焦输入框）。
+      // 🔴 内嵌网页 15 条走 commandFeatureOf 派生，**别**把 15 个 id 手抄进数组：
+      // 那会和 EMBED_MENU_ITEMS 形成第二份清单，改一条就漂。
+      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -165,7 +168,7 @@ export default {
     },
     executeCommand(id, templateId = '') {
       if (!this.writable()) return
-      const feature = id === 'table' ? 'tables' : id === 'image' ? 'images' : id === 'file' ? 'files' : id === 'code' ? 'codeBlocks' : id === 'diagram' ? 'diagram' : id === 'callout' ? 'callouts' : id === 'columns' || /^columns[2-5]$/.test(id) ? 'columns' : id === 'inlineMath' || id === 'blockMath' ? 'math' : id === 'emoji' ? 'emoji' : id === 'template' ? 'templates' : id === 'ai' ? 'ai' : 'blockStyle'
+      const feature = commandFeatureOf(id)
       if (!isCommandEnabled(this.larkDocConfig, id, feature)) return
       if (id === 'paragraph') this.run('setParagraph')
       else if (/^heading[1-9]$/.test(id)) this.run('setHeading', { level: Number(id.slice(-1)) })
@@ -197,6 +200,9 @@ export default {
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'emoji') this.emojiDialog = true
       else if (id === 'link') this.openLinkDialog(true)
+      // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。
+      // 菜单项只决定浮层里的**文案**；落 iframe 块还是书签卡由粘贴链接的 host 决定（04 §4.3 ⑤.1）。
+      else if (commandFeatureOf(id) === 'embed') this.openEmbedDialog(id)
       else if (id === 'template') {
         const template = this.templates.find(item => item.id === templateId)
         if (template) this.run('insertContent', template.html)

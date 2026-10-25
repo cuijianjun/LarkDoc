@@ -13,6 +13,8 @@ export const LARK_DOC_FEATURES = Object.freeze([
   'persistence', 'importExport', 'diagram',
   // 文件 / 视频块（P2-04）：视频与附件共用同一个 `file` 块，所以只有一个开关。
   'files',
+  // 内嵌网页 15 项（P3-07）：15 条命令共用这一个开关，关掉后斜杠菜单不再出现「内嵌网页」组。
+  'embed',
 ])
 
 export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
@@ -27,6 +29,8 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     diagram: true,
     // 文件 / 视频块：关闭后斜杠菜单不再出现「视频或文件」，粘贴与拖入也不落块。
     files: true,
+    // 内嵌网页 15 项：关闭后斜杠菜单不再出现「内嵌网页」组。
+    embed: true,
   },
   toolbar: {
     history: true, headings: true, marks: true, textStyle: true, blockStyle: true,

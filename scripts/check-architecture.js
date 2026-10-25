@@ -73,11 +73,16 @@ for (const file of fs.readdirSync(commandsDir).filter((name) => name.endsWith('.
 }
 // 走旧路径 shim require，连带验证转发链可用；id 清单与拆分前 commands.js 逐项一致。
 const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/commands.js'))
+// 🔴 内嵌网页 15 个 id 故意写成**字面量**而不是 `EMBED_MENU_ITEMS.map(...)`：
+// 派生会让这条断言变成自证（preset 改了、这里跟着改，永远绿）。这里要守的是
+// 「菜单顺序 == 03 §⑫ 的顺序」，所以必须与 presets.js 独立成两份，谁改都要对齐。
 const expectedCommandIds = [
   'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
+  'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',
+  'canva', 'jcode', 'codepen', 'feishu_survey', 'jinshuju', 'airtable', 'baidumap', 'autonavi',
 ]
 assert.deepStrictEqual(COMMANDS.map((item) => item.id), expectedCommandIds, '命令 id 集合与顺序必须与拆分前逐项一致（P0-05 验收：命令 id 集合不变）')
 for (const item of COMMANDS) {

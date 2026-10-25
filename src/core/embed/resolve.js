@@ -25,8 +25,13 @@ const PRESET_BY_ID = new Map(EMBED_PRESETS.map((preset) => [preset.id, preset]))
 /**
  * 取出 host（小写）。推不出 host 的输入（空串、相对路径、`javascript:`、坏 URL）
  * 一律返回 `null` —— 那就是「未命中」，走书签卡，不报错。
+ *
+ * P3-07 起对外导出：内嵌网页浮层的「确认」要用**同一个口径**判断「填的是不是一个链接」——
+ * 04 §4.3 ⑤ 实测「填 `abc` 静默无效、填 `https://example.com/foo/bar` 照样落块（书签卡）」，
+ * 这条分界线正好就是 readHost 返回 null 与否。别在浮层里另写一份 URL 校验，
+ * 否则两处口径会分叉（一个说 abc 合法、一个说不合法）。
  */
-function readHost(value) {
+export function readHost(value) {
   if (typeof value !== 'string') return null
   const raw = value.trim()
   if (!raw) return null

@@ -116,6 +116,11 @@
   --ld-bg-handle-hover: #f4faf7;          /* 块句柄 hover 底 */
   --ld-bg-menu-item-active: #eef3ff;      /* 块类型快捷项 hover / 选中底 */
   --ld-bg-brand-hover: #00a979;           /* 表格边界按钮 hover（绿档更深的绿） */
+  /* P3-07：内嵌网页浮层按钮专用实心品牌色（04 §4.3 ⑤ 飞书档实测 #336DF4 / 按下 #5083FB）。
+     🔴 不能复用 --ld-bg-brand-hover：那支在默认档是「更深的绿」，同名跨档含义不同。
+     绿档取本档主色 #00a979、按下压暗到 #00926a（自绘配平，非飞书实测值）。 */
+  --ld-bg-brand-solid: #00a979;
+  --ld-bg-brand-pressed: #00926a;
   --ld-bg-toast: #fff8eb;                 /* toast 底（琥珀） */
   --ld-bg-badge: #e8f8f1;                 /* 本地标记徽标底 */
   --ld-bg-grid-table: #f3f5f4;            /* 表格尺寸选择器空格 */
@@ -629,6 +634,33 @@
   height: 0;
   display: none;
 }
+
+/* ==================================================================
+   内嵌网页「粘贴链接」浮层（P3-07 / requirements/04 §4.3 ④⑤ 实测）
+   整体 540×164 / fixed / z-index 99 / 圆角 8；内容 522×146（内 padding 8）→ 内容宽 506。
+   竖直三段：标题 24 + 间距 12 + 输入 36 + 间距 26 + 按钮 32（footer 用 margin-top:auto 吃掉余量）。
+   🔴 不套 .lark-doc-dialog-backdrop：它不遮罩、不居中，落点由 ed.embedDialogPos 算出来贴插入位置。
+   🔴 颜色只走 token：--ld-bg-brand-solid = 主按钮 #336DF4（04 实测 rgb(51,109,244)）、
+      --ld-bg-brand-pressed = 拒绝/hover 态 #5083FB（04 实测 rgb(80,131,251)）。
+      别复用 --ld-bg-brand-hover —— 默认绿档那支是 #00a979，按钮会整颗变绿。
+   ================================================================== */
+.lark-doc .lark-doc-embed-dialog { position: fixed; z-index: 99; display: flex; flex-direction: column; box-sizing: border-box; width: 540px; height: 164px; padding: 17px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-dialog); }
+.lark-doc .lark-doc-embed-dialog header { display: flex; box-sizing: border-box; height: 24px; align-items: center; padding-right: 28px; }
+.lark-doc .lark-doc-embed-dialog header strong { overflow: hidden; color: var(--ld-text); font-size: 16px; font-weight: 400; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-embed-dialog-close { position: absolute; top: 12px; right: 12px; display: grid; width: 24px; height: 24px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-icon); cursor: pointer; }
+.lark-doc .lark-doc-embed-dialog-close:hover { background: var(--ld-bg-hover); color: var(--ld-text); }
+.lark-doc .lark-doc-embed-dialog-input { box-sizing: border-box; width: 100%; height: 36px; margin-top: 12px; padding: 0 8px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface); color: var(--ld-text); font-size: 14px; line-height: 18px; }
+.lark-doc .lark-doc-embed-dialog-input::placeholder { color: var(--ld-text-tertiary); }
+.lark-doc .lark-doc-embed-dialog-input:focus { border-color: var(--ld-focus-ring); outline: 0; }
+.lark-doc .lark-doc-embed-dialog footer { display: flex; height: 32px; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.lark-doc .lark-doc-embed-dialog-actions { display: flex; align-items: center; gap: 10px; }
+.lark-doc .lark-doc-embed-dialog-help { padding: 0; border: 0; background: transparent; color: var(--ld-bg-brand-solid); font-size: 14px; line-height: 26px; cursor: pointer; }
+.lark-doc .lark-doc-embed-dialog-sample { box-sizing: border-box; min-width: 64px; height: 26px; padding: 0 6px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface); color: var(--ld-text); font-size: 14px; line-height: 24px; cursor: pointer; }
+.lark-doc .lark-doc-embed-dialog-sample:hover { border-color: var(--ld-border-control); background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-embed-dialog-confirm { box-sizing: border-box; min-width: 64px; height: 32px; padding: 0 6px; border: 0; border-radius: 4px; background: var(--ld-bg-brand-solid); color: var(--ld-text-on-brand); font-size: 14px; line-height: 32px; cursor: pointer; }
+.lark-doc .lark-doc-embed-dialog-confirm:hover { background: var(--ld-bg-brand-pressed); }
+.lark-doc .lark-doc-embed-dialog-confirm.is-rejected,
+.lark-doc .lark-doc-embed-dialog-confirm.is-rejected:hover { background: var(--ld-bg-brand-pressed); }
 
 /* ==================================================================
    图片块（P2-01 / 02 §11 实测规格）

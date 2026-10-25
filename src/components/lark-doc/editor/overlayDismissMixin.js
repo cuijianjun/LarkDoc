@@ -1,0 +1,72 @@
+/**
+ * 全局浮层消解（P0-03 持续瘦身：从 LarkDocEditor.vue 原样下沉，逻辑零改动）。
+ *
+ * 一个界面上同时可能有 15 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
+ * 帮助 / 标题下拉 / 文档操作 / 图表 / 气泡对齐 / 气泡标题 / callout 表情 /
+ * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗），它们的关闭入口只有三个：
+ *   1. 点外部（`onDocumentPointerDown`，capture 阶段绑在 document 上）；
+ *   2. `Esc`（`onWindowKeydown`）；
+ *   3. 显式调 `closeOverlay()`（弹窗背板点击、Esc 键、宿主主动收起都走它）。
+ *
+ * 三个入口必须放在一处：历史上它们散在组件里时出现过「新增浮层只加了两处、
+ * Esc 关不掉」的问题（P3-07 的内嵌网页浮层正好是 Esc 故意不关的例外）。
+ *
+ * 🔴 `closeOverlay` 的 `else if` 链是**互斥**的：一次只收一层，末尾才 `focus()`。
+ * 改成并列 `if` 会让「关菜单」顺手把别的浮层也清掉，并且 focus 抢在弹窗之前。
+ */
+export default {
+  methods: {
+    /**
+     * 点外部关闭。用 `closest?.()` 而不是 `contains()`：浮层多挂在 body 上的
+     * teleport 容器里（不在 `$refs.root` 里），`contains` 判断会反过来把
+     * 点击浮层自身当成「点外部」。`?.` 是因为合成事件（测试里的 dispatchEvent）
+     * 可能没有 closest 方法。
+     */
+    onDocumentPointerDown(event) {
+      const target = event.target
+      if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target)) this.closeCommandMenu()
+      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
+      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
+      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
+      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
+      if (this.bubbleAlignOpen && !target.closest?.('.lark-doc-bubble-align') && !target.closest?.('.lark-doc-bubble-align-menu')) this.closeBubbleAlignMenu()
+      if (this.bubbleHeadingOpen && !target.closest?.('.lark-doc-bubble-heading')) this.closeBubbleHeadingMenu()
+      if (this.calloutEmojiOpen && !target.closest?.('.lark-doc-callout-tools')) this.calloutEmojiOpen = false
+      if (this.colorPaletteOpen && !target.closest?.('.lark-doc-color-palette') && !target.closest?.('.lark-doc-color')) this.colorPaletteOpen = ''
+      if (this.headerMenuOpen && !target.closest?.('.lark-doc-header-menu') && !target.closest?.('button[aria-label="文档操作"]')) this.closeHeaderMenu()
+      if (this.diagramMenuOpen && !target.closest?.('.lark-doc-diagram-menu') && !target.closest?.('button[aria-label="图表"]')) this.closeDiagramMenu()
+      // 编号菜单点外部关闭；但点在编号按钮自己身上要留给它的 click 处理（重新定位/切换）。
+      // 标题编号和列表序号共用这套菜单，两个锚点都要排除。
+      // 正在输入编号值时，点外部按「提交」算（飞书同款），否则用户输完点开别处会丢值。
+      if (this.headingNumberMenu.open && !target.closest?.('.lark-doc-heading-number-menu') && !target.closest?.('.lark-doc-heading-number') && !target.closest?.('.lark-doc-list-number')) {
+        if (this.headingNumberEditing) this.applyHeadingNumberValue()
+        else this.closeHeadingNumberMenu()
+      }
+      // P3-07 内嵌网页浮层：只认「点外部」和「点 ×」两个关闭入口 ——
+      // Esc 故意不管它（04 §4.3 ⑤ 实测 Esc ×1、×2 都关不掉），所以下面 onWindowKeydown
+      // 和 closeOverlay 里都没有它的分支，这里就是它唯一的全局关闭点。
+      if (this.embedDialog && !target.closest?.('.lark-doc-embed-dialog')) this.closeEmbedDialog()
+      if (!this.$refs.root?.contains(target)) {
+        this.headingOpen = false
+        this.headingStyle = {}
+        this.tableToolsOpen = false
+      }
+    },
+    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页。 */
+    onWindowKeydown(event) {
+      if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
+      else if (event.key === 'Escape' && this.slides) this.toggleSlides()
+      else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
+      else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1)
+      else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1)
+    },
+    /**
+     * 逐层收浮层（互斥链，一次只收一层），最后一律把焦点还给编辑器。
+     *
+     * 🔴 新增浮层时在这里**插一个 `else if`**，位置决定优先级：越靠前越先收。
+     * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
+     * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
+     */
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+  },
+}

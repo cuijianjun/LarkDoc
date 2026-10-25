@@ -67,6 +67,9 @@
   --ld-brand-content: #06A17D;
   --ld-accent-control: #06A17D;
   --ld-brand-subtle: rgba(6, 161, 125, 0.10);   /* C：主色 α（13 无实测，按主色派生） */
+  /* P3-07：内嵌网页浮层按钮专用实心品牌色（飞书档有 04 §4.3 实测值，本档无实测 → 按本档主色派生） */
+  --ld-bg-brand-solid: #06A17D;
+  --ld-bg-brand-pressed: #058C6C;      /* C：主色压暗一档，13 无实测 */
   --ld-focus-ring: rgba(6, 161, 125, 0.40);     /* C */
   --ld-danger: #ff4949;                /* $--color-danger */
   --ld-warning: #ffba00;               /* $--color-warning */
@@ -174,6 +177,9 @@
   --ld-border-number-focus: #1FD6A5;
   --ld-brand-subtle: rgba(31, 214, 165, 0.26);
   --ld-bg-brand-hover: #45E0B6;
+  /* P3-07：内嵌网页浮层按钮（本档无实测 → 提亮档用主色、按下用已有 hover 档） */
+  --ld-bg-brand-solid: #1FD6A5;
+  --ld-bg-brand-pressed: #45E0B6;
   --ld-bg-grid-table-active: #1FD6A5;
   --ld-bg-columns-picker: rgba(31, 214, 165, 0.45);
   --ld-bg-columns-cell: rgba(31, 214, 165, 0.30);
