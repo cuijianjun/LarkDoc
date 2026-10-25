@@ -3,8 +3,11 @@ import { nodeInputRule } from '@tiptap/core'
 import Image, { inputRegex as imageInputRegex } from '@tiptap/extension-image'
 import { BLOCK_ID_PATTERN, safeAttachmentId, safeUrl } from '../documentOperations'
 import { validateAttribute } from './shared'
-// NodeView 由适配层注册进注册表；这里只查表，静态依赖里不许再出现 UI 框架。
+// NodeView 优先由适配层注册进注册表（三端可各自覆盖）；没人注册就用 core 自带的
+// 纯 DOM 实现，element / 无框架宿主因此也能拿到完整图片交互。
+// 静态依赖里不许再出现任何 UI 框架。
 import { getNodeView } from '../nodeviews/registry'
+import { createImageNodeView } from '../nodeviews/image'
 
 function imageExtension(resolveImageFile) {
   return Image.extend({
@@ -27,20 +30,20 @@ function imageExtension(resolveImageFile) {
     addInputRules() { return [nodeInputRule({ find: imageInputRegex, type: this.type, getAttributes: (match) => safeUrl(match[3], true) ? { src: match[3], alt: match[2], title: match[4] } : false })] },
     renderHTML({ node }) {
       const attrs = node.attrs
-      const figure = { 'data-type': 'image', 'data-caption': attrs.caption || '', 'data-align': ['left', 'center', 'right'].includes(attrs.align) ? attrs.align : 'center' }
+      const figure = { class: 'lark-doc-image', 'data-type': 'image', 'data-caption': attrs.caption || '', 'data-align': ['left', 'center', 'right'].includes(attrs.align) ? attrs.align : 'center' }
       // 图片用自绘 renderHTML，全局属性不会自动合入外框，这里显式带上稳定块 id。
       if (typeof attrs.blockId === 'string' && BLOCK_ID_PATTERN.test(attrs.blockId)) figure['data-block-id'] = attrs.blockId
       if (safeUrl(attrs.originalSrc, true)) figure['data-original-src'] = attrs.originalSrc
       if (safeAttachmentId(attrs.attchId)) figure['data-attch-id'] = attrs.attchId
       if (safeAttachmentId(attrs.originalAttchId)) figure['data-original-attch-id'] = attrs.originalAttchId
       if (attrs.width) figure['data-width'] = attrs.width
-      const image = { src: safeUrl(attrs.src, true) ? attrs.src : '', alt: attrs.alt || '', title: attrs.title || '' }
+      const image = { class: 'lark-doc-image-img', src: safeUrl(attrs.src, true) ? attrs.src : '', alt: attrs.alt || '', title: attrs.title || '' }
       if (safeAttachmentId(attrs.attchId)) image['data-attch-id'] = attrs.attchId
       if (attrs.width) image.width = Math.max(40, Math.min(2400, Number(attrs.width) || 640))
-      return ['figure', figure, ['img', image], ['figcaption', {}, attrs.caption || '']]
+      return ['figure', figure, ['img', image], ['figcaption', { class: 'lark-doc-image-caption-text' }, attrs.caption || '']]
     },
-    // 图片 NodeView 查注册表：没注册就走上面的 renderHTML 默认渲染。
-    addNodeView() { const view = getNodeView('image'); if (view) return view },
+    // NodeView 先查注册表（适配层可覆盖），没有再落 core 的纯 DOM 实现；都没有才用上面的 renderHTML。
+    addNodeView() { return getNodeView('image') || createImageNodeView },
   }).configure({ allowBase64: true, resolveImageFile })
 }
 

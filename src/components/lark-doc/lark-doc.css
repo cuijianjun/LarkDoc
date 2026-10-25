@@ -623,6 +623,87 @@
 }
 
 /* ==================================================================
+   图片块（P2-01 / 02 §11 实测规格）
+   NodeView 与 renderHTML 共用同一套 class，双层契约：
+   figure.lark-doc-image > (frame > shell > img + 四角手柄) + figcaption。
+   renderHTML 退化路径没有 frame/shell，靠 `>` 直接子选择器单独兜底。
+   规格要点：块下间距 16、无圆角、宽度 = min(原图宽, 栏宽−20) 永不放大、
+   工具条 310×42、四角手柄 20×20、hover 挂载 / 离开卸载。
+   ================================================================== */
+.lark-doc .lark-doc-image { position: relative; margin: 0 0 16px; max-width: 100%; }
+/* shell 贴图宽：宽度上限写在这里，图片本身只写 max-width: 100%，
+   于是「原图比栏宽窄就按原图、比栏宽宽就压到栏宽−20」，两头都不放大。 */
+.lark-doc .lark-doc-image-shell { position: relative; display: inline-block; max-width: calc(100% - 20px); }
+/* 拦截态没有 img，shell 交给块级铺满，占位卡才能撑到栏宽。 */
+.lark-doc .lark-doc-image.is-blocked .lark-doc-image-shell { display: block; }
+.lark-doc .lark-doc-image-frame { display: flex; max-width: 100%; }
+.lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-frame { justify-content: flex-start; }
+.lark-doc .lark-doc-image[data-align="center"] .lark-doc-image-frame { justify-content: center; }
+.lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-frame { justify-content: flex-end; }
+.lark-doc .lark-doc-image-img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; filter: brightness(var(--ld-media-dim)); }
+/* renderHTML 退化路径（无 shell）：自己再兜一次「栏宽 − 20」，并按 align 摆位。 */
+.lark-doc .lark-doc-image > .lark-doc-image-img { max-width: calc(100% - 20px); margin-left: auto; margin-right: auto; }
+.lark-doc .lark-doc-image[data-align="left"] > .lark-doc-image-img { margin-left: 0; }
+.lark-doc .lark-doc-image[data-align="right"] > .lark-doc-image-img { margin-right: 0; }
+/* 深色下的图片压暗开关（T3-05）：默认 --ld-media-dim: 1 = 一个像素都不改；
+   宿主觉得深纸上媒体太亮时自己设 0.8~0.9。hover 一律恢复原亮度（读图场景）。 */
+.lark-doc .lark-doc-image-img:hover { filter: none; }
+.lark-doc .lark-doc-image.is-selected .lark-doc-image-shell,
+.lark-doc .lark-doc-image.is-selected > .lark-doc-image-img { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
+
+/* 离线策略拦截的外链图片：不渲染 img，避免浏览器发起外部请求。 */
+.lark-doc .lark-doc-image-blocked { display: grid; gap: 4px; justify-items: start; padding: 18px 20px; border: 1px dashed var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-soft); color: var(--ld-text-secondary); font-size: 12px; }
+.lark-doc .lark-doc-image-blocked strong { color: var(--ld-text); font-size: 13px; }
+.lark-doc .lark-doc-image-blocked code { max-width: 100%; overflow-wrap: anywhere; color: var(--ld-text-tertiary); font-size: 11px; }
+
+/* 悬浮工具条：hover 才挂载（真实增删节点），所以这里不做 display 切换。 */
+.lark-doc .lark-doc-image-toolbar { position: absolute; z-index: 86; bottom: calc(100% + 8px); left: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 310px; height: 42px; padding: 0 6px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); transform: translateX(-50%); white-space: nowrap; }
+.lark-doc .lark-doc-image-toolbar button { flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; font-size: 16px; line-height: 1; }
+.lark-doc .lark-doc-image-toolbar button:hover:not(:disabled),
+.lark-doc .lark-doc-image-toolbar button:focus-visible,
+.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
+.lark-doc .lark-doc-image-toolbar button:disabled { color: var(--ld-text-icon); cursor: not-allowed; }
+.lark-doc .lark-doc-image-toolbar-divider { flex: 0 0 1px; width: 1px; height: 22px; background: var(--ld-border-control); }
+
+/* 四角缩放手柄：可编辑态常驻，拖动只改文档属性，不回写 DOM 宽度。 */
+.lark-doc .lark-doc-image-resize { position: absolute; z-index: 2; box-sizing: border-box; width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 2px solid var(--ld-text-menu-active); border-radius: 50%; background: var(--ld-bg-surface); transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-image-resize.is-top-left { top: 0; left: 0; cursor: nwse-resize; }
+.lark-doc .lark-doc-image-resize.is-top-right { top: 0; left: 100%; cursor: nesw-resize; }
+.lark-doc .lark-doc-image-resize.is-bottom-left { top: 100%; left: 0; cursor: nesw-resize; }
+.lark-doc .lark-doc-image-resize.is-bottom-right { top: 100%; left: 100%; cursor: nwse-resize; }
+
+.lark-doc .lark-doc-image-replace-input { position: absolute; width: 1px; min-width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* 题注：展示态是图下一行灰字，编辑态换成同位置的输入框。 */
+.lark-doc .lark-doc-image-caption-text { margin-top: 6px; color: var(--ld-text-tertiary); font-size: 13px; line-height: 1.6; text-align: center; cursor: text; }
+.lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-caption-text { text-align: left; }
+.lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-caption-text { text-align: right; }
+.lark-doc .lark-doc-image-caption { display: block; box-sizing: border-box; width: 100%; margin: 6px 0 0; padding: 6px 0; border: 0; border-bottom: 1px solid var(--ld-border); border-radius: 0; background: transparent; color: var(--ld-text-tertiary); font-size: 13px; }
+
+.lark-doc .lark-doc-media-error { margin: 6px 0 0; color: var(--ld-text-error); font-size: 13px; }
+
+/* 本实现的显隐统一走工具类（手柄 / 题注 / 占位卡 / 报错行）。 */
+.lark-doc .lark-doc-image .is-hidden { display: none !important; }
+
+/* 双击全屏预览：挂在块内（见 nodeviews/image.js 注释），全屏靠 fixed。 */
+.lark-doc .lark-doc-image-viewer-shell { position: fixed; z-index: 1049; inset: 0; box-sizing: border-box; display: grid; place-items: center; padding: 24px; background: var(--ld-mask); }
+.lark-doc .lark-doc-image-viewer-shell img { max-width: 100%; max-height: calc(100vh - 120px); object-fit: contain; box-shadow: var(--ld-shadow-dialog); }
+.lark-doc .lark-doc-image-viewer-close { position: absolute; top: 16px; right: 16px; padding: 6px 14px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text-menu); }
+
+/* 裁剪对话框 */
+.lark-doc .lark-doc-media-backdrop { position: fixed; z-index: 2000; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--ld-mask); }
+.lark-doc .lark-doc-media-dialog { box-sizing: border-box; width: 760px; max-width: 100%; max-height: 90vh; overflow: auto; padding: 20px; border-radius: 12px; background: var(--ld-bg-surface-raised); color: var(--ld-text-menu); box-shadow: var(--ld-shadow-dialog); }
+.lark-doc .lark-doc-media-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.lark-doc .lark-doc-crop-preview { position: relative; width: fit-content; max-width: 100%; margin: auto; }
+.lark-doc .lark-doc-crop-preview img { display: block; max-width: 100%; max-height: 56vh; }
+/* 区域外压暗：用预览层自己的遮罩伪元素压住底图，选区再叠在它上面。
+   比 `box-shadow: 0 0 0 9999px <遮罩色>` 省一个硬编码色值，也不受对话框圆角裁切影响。 */
+.lark-doc .lark-doc-crop-preview::after { content: ""; position: absolute; z-index: 0; inset: 0; background: var(--ld-mask); pointer-events: none; }
+.lark-doc .lark-doc-crop-region { position: absolute; z-index: 1; outline: 2px solid var(--ld-text-menu-active); background: transparent; cursor: move; }
+.lark-doc .lark-doc-crop-fields { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.lark-doc .lark-doc-crop-fields input { width: 64px; }
+
+/* ==================================================================
    T4 · 主题切换的无障碍与动效（12 T4-02 / T4-03 / T4-04）
    ================================================================== */
 
