@@ -555,6 +555,19 @@
         }
       }
     },
+    "reminder": {
+      "attrs": {
+        "notify": {
+          "default": true
+        },
+        "remindAt": {
+          "default": ""
+        },
+        "repeat": {
+          "default": "none"
+        }
+      }
+    },
     "strike": {
       "attrs": {}
     },

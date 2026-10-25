@@ -16,4 +16,9 @@ export const collabCommands = [
   { id: 'mentionUser', label: '人员', category: '团队协作', plus: false, glyph: '@', tone: 'blue', keywords: 'mention at renyuan user tiji atuser', group: 'collab', tier: 'required' },
   { id: 'mentionChat', label: '群名片', category: '团队协作', plus: false, glyph: '#', tone: 'teal', keywords: 'mention qunmingpian chat group qun', group: 'collab', tier: 'skip' },
   { id: 'mentionPage', label: '云文档', category: '团队协作', plus: false, glyph: '▤', tone: 'indigo', keywords: 'mention yunwendang page doc docs wenjian', group: 'collab', tier: 'skip' },
+  // P4-02a 日期提醒：真飞书斜杠项文案正是「日期提醒」（`data-name="slash reminder"`，
+  // 不能猜 `reminder` / `date reminder`）。与 mention 同为**行内**物件 → `plus: false`。
+  // 插完 chip 会自动弹日历浮层（02 §19.4 ⑤「插入 → 立即弹浮层」），所以它还必须在
+  // `commandMenuMixin` 的 `focusAfter` 排除名单里，否则点完命令先 `focus()` 把浮层顶掉。
+  { id: 'reminder', label: '日期提醒', category: '团队协作', plus: false, glyph: '◷', tone: 'orange', keywords: 'reminder riqi tixing date alarm notify tixing', group: 'collab', tier: 'required' },
 ]

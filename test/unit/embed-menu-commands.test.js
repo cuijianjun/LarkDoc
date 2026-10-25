@@ -29,10 +29,11 @@ const EMBED_IDS = EMBED_MENU_ITEMS.map((item) => item.id)
 const isEmbed = (item) => commandFeatureOf(item.id) === 'embed'
 
 describe('P3-07 内嵌网页命令接线', () => {
-  it('COMMANDS 共 50 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
-    // 50 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）。
+  it('COMMANDS 共 51 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
+    // 51 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）
+    //      + 1 条 reminder（P4-02a）。
     // 这个字面量是「有人动了命令表」的显式提醒：加命令时请同时确认 order / 架构断言。
-    expect(COMMANDS).toHaveLength(50)
+    expect(COMMANDS).toHaveLength(51)
     expect(COMMANDS.slice(-15).map((item) => item.id)).toEqual(EMBED_IDS)
   })
 
@@ -110,6 +111,8 @@ describe('P3-07 commandFeatureOf', () => {
     expect(commandFeatureOf('heading1')).toBe('blockStyle')
     expect(commandFeatureOf('image')).toBe('images')
     expect(commandFeatureOf('file')).toBe('files')
+    // P4-02a：日期提醒与三条 mention 共用一个「插入」开关（落正文的行内物件）。
+    expect(commandFeatureOf('reminder')).toBe('insert')
     // 未知 id 不该炸，也不该被当成 embed。
     expect(commandFeatureOf('no_such_command')).toBe('blockStyle')
   })

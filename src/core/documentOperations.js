@@ -1,6 +1,7 @@
 import { Fragment } from '@tiptap/pm/model'
 import { moveDepthAllowed } from './blocks/container-depth'
 import { MENTION_KINDS } from './blocks/mention'
+import { REMINDER_REPEATS, REMINDER_AT_PATTERN } from './blocks/reminder'
 
 const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
 
@@ -77,6 +78,12 @@ function validateAttrs(type, attrs, definition) {
     // mentionId 是文档内实例 UUID；`id` 是实体 id（open_id / chat_id / doc token）。
     else if (type === 'mention' && key === 'mentionId') valid = typeof value === 'string' && /^[\w-]{1,64}$/.test(value)
     else if (type === 'mention' && key === 'id') valid = typeof value === 'string' && value.length <= 256 && !value.includes('\u0000')
+    // 日期提醒（P4-02a）：`notify` 是布尔、`repeat` 是枚举、`remindAt` 是带时区的 ISO 串。
+    // 前两个落进兜底分支必被判非法（兜底只收字符串），`remindAt` 则相反 —— 兜底会
+    // 放行任意 10 万字串，这里收紧到 ISO 形状。空串放行：那是 mark 的 schema 默认值。
+    else if (type === 'reminder' && key === 'notify') valid = typeof value === 'boolean'
+    else if (type === 'reminder' && key === 'repeat') valid = REMINDER_REPEATS.indexOf(value) !== -1
+    else if (type === 'reminder' && key === 'remindAt') valid = value === '' || (typeof value === 'string' && REMINDER_AT_PATTERN.test(value))
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
     // 标题编号：开关是布尔，起点是 1..999 的整数或不设（null = 继续）。
     else if (key === 'numbering') valid = typeof value === 'boolean'

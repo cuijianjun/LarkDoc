@@ -196,5 +196,20 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
       }
     })
   })
+  // 日期提醒的**块级蒙层**（P4-02a，02 §19.4 ③④）：飞书在块上追加 `reminder-highlighted`
+  // 类并挂一个 `.reminder-highlighted-mask` 兄弟节点；这里不造兄弟节点 —— mark 本身就是
+  // 真相，给「含有 reminder mark 的文本块」打一个 node decoration 挂同一个类，CSS 出底色。
+  //
+  // 这样做了之后，「删 chip 蒙层还在」「撤销只回 chip 不回蒙层」这类飞书 bug 结构上不可能
+  // 出现（02 §19.4 ②-bis 的两条结论已经在同一处收口）。
+  state.doc.descendants((node, pos) => {
+    if (!node.isTextblock || !node.childCount) return
+    let hasReminder = false
+    node.forEach((child) => {
+      if (!hasReminder && child.isText && child.marks.some((mark) => mark.type.name === 'reminder')) hasReminder = true
+    })
+    if (!hasReminder) return
+    decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'lark-doc-reminder-highlighted' }))
+  })
   return DecorationSet.create(state.doc, decorations)
 }

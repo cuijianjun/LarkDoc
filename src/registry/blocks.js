@@ -44,6 +44,13 @@ export {
   MENTION_UNKNOWN_NAME, MENTION_EMPTY_TEXT, createMentionId, normalizeMention,
   readMention, mentionPlainText,
 } from '../core/blocks/mention'
+// P4-02a：行内日期提醒。它是 **mark**（挂在文本上），文案由 `remindAt` 派生 ——
+// 契约层（重复枚举 / ISO 形状 / 文案派生 / 规范化）同源再导出，宿主造 chip 只从这里取
+// `normalizeReminder`，不自己算「明天几点」。
+export {
+  LarkDocReminder, REMINDER_REPEATS, REMINDER_REPEAT_LABELS, REMINDER_AT_PATTERN,
+  createDefaultRemindAt, normalizeReminder, readReminder, reminderLabel, reminderText,
+} from '../core/blocks/reminder'
 // P4-01：提及候选源（本地名单过滤 + 可选 provider）—— 纯逻辑，无 DOM。
 export {
   MENTION_SEARCH_LIMIT, MENTION_RESOLVE_LIMIT, DEFAULT_MENTION_TIMEOUT,

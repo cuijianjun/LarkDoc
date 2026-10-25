@@ -223,6 +223,16 @@
   /* 人员提及 chip（P4-01，02 §19.3 ④-bis：底色是**带透明度**的浅蓝，深色档会自然变深，
      所以飞书没为它出深色值，这里也不进 theme-dark —— 别改成实色）。 */
   --ld-mention-chip-bg: rgba(148, 180, 255, .18); /* chip 视觉壳底（#94B4FF @18%） */
+  /* 日期提醒（P4-02a，02 §19.4 ④ / ④-bis / ④-quinquies 全部实测值）。
+     五值全在 06 表里没有对口 token，但也都不是新造色 —— `#dee0e3` / `#646a73` / `#8f959e`
+     已分别以 unknown-card 系列存在，这里按「一个组件一族 token」的惯例另建，
+     好处是将来深色档要校准时只动这一处。两档同值：飞书的这套 popover 是独立白浮层，
+     深色档未采，不猜。 */
+  --ld-reminder-text: #ed6d0c;           /* chip 文案（图标走 currentColor，不用另给） */
+  --ld-reminder-border: #dee0e3;         /* 浮层体 1px 描边 + 时间下拉描边 */
+  --ld-reminder-meta: #646a73;           /* 浮层底部「提醒：xxx」行 */
+  --ld-reminder-week: #8f959e;           /* 日历星期表头 日一二三四五六 */
+  --ld-reminder-option: rgba(31, 35, 41, .08); /* 时间下拉行底：选中与悬停**同色**（飞书没区分，别加高亮） */
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -1239,6 +1249,256 @@
 }
 
 .lark-doc .lark-doc-mention-confirm:disabled { opacity: .43; cursor: not-allowed; }
+
+/* ===== P4-02a 日期提醒 chip + 块级蒙层 + 日历浮层（02 §19.4 实测） =====
+   三层结构，与飞书的两处**有意偏差**都写在对应位置：
+     行内 span.lark-doc-reminder-chip      ← mark 的 renderHTML，文案就是 chip 文字
+     块级 .lark-doc-reminder-highlighted   ← Decoration.node 挂类（飞书挂的是兄弟 mask 节点）
+     浮层 .lark-doc-reminder-popover > -body > (calendar + options)
+
+   🔴 蒙层**不补 `padding: 0 2px`**：飞书块本体自带 2px 内边距（块 538 / 行 534），
+   我们所有块都是 0 —— 只给提醒块补会让它的文字比其他块右移 2px，比「蒙层少 2px 余量」更刺眼。 */
+
+.lark-doc .lark-doc-reminder-chip {
+  position: relative;
+  display: inline-block;
+  padding: 2px 4px 2px 18px; /* 左侧 18 = 2 边距 + 14 图标 + 2 间隙（飞书实测 99×23） */
+  color: var(--ld-reminder-text);
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 日历图标：mask + currentColor —— 抄 `.lark-doc-unknown-card-icon` 的双写手法，
+   换档只改 `color` 就跟着变色，不必再备一份彩色 SVG。 */
+.lark-doc .lark-doc-reminder-chip::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='3' width='12' height='11' rx='1.8' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M2 6.8h12M5.2 1.7v2.6M10.8 1.7v2.6' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='3' width='12' height='11' rx='1.8' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M2 6.8h12M5.2 1.7v2.6M10.8 1.7v2.6' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+}
+
+/* 块级蒙层：飞书 `.reminder-highlighted` + 兄弟 mask 节点；我们用 node decoration 挂类，
+   蒙层与 chip 同一个 mark 驱动 ⇒ 「删 chip 蒙层还在」「撤销只回 chip」两条飞书 bug 结构上不存在。 */
+.lark-doc .ProseMirror .lark-doc-reminder-highlighted {
+  border-radius: 8px;
+  background: var(--ld-bg-hover-segment);
+}
+
+/* 浮层壳 280 宽 = 体 280（含 1px 描边）→ 内容区 278，飞书实测 278×519 / 壳 280×534。
+   顶部 5px、底部 10px 的差就是壳与体的 15px。 */
+.lark-doc .lark-doc-reminder-popover {
+  position: fixed;
+  z-index: 46;
+  width: 280px;
+  padding: 5px 0 10px;
+  color: var(--ld-text);
+  font-size: 14px;
+}
+
+.lark-doc .lark-doc-reminder-body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ld-reminder-border);
+  border-radius: 3px; /* 🔴 3px 是这套 popover 的定值，不是菜单常见的 6/8，别「统一」掉 */
+  background: var(--ld-bg-surface-chrome);
+  box-shadow: var(--ld-shadow-float);
+  animation: lark-doc-reminder-slide .18s ease-out;
+}
+
+@keyframes lark-doc-reminder-slide {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 日历区：左右内边距 16（选项组是 24，飞书两处刻意不统一，别合并）→ 278 − 32 = 246。 */
+.lark-doc .lark-doc-reminder-calendar { padding: 16px; }
+
+.lark-doc .lark-doc-reminder-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.lark-doc .lark-doc-reminder-calendar-nav { display: inline-flex; gap: 2px; }
+
+.lark-doc .lark-doc-reminder-calendar-nav button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-reminder-calendar-nav button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--ld-reminder-option);
+  color: var(--ld-text);
+}
+
+/* 星期表头 + 日期格：7 列 1fr + 4px 间距（飞书列距 36 = 32 格 + 4 隙）。
+   用 1fr 而不是写死 32px：246 / 7 除不尽，写死会溢出 2px。 */
+.lark-doc .lark-doc-reminder-week,
+.lark-doc .lark-doc-reminder-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.lark-doc .lark-doc-reminder-week span {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  color: var(--ld-reminder-week);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.lark-doc .lark-doc-reminder-day {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-reminder-day:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--ld-reminder-option);
+  color: var(--ld-text);
+}
+
+/* 非本月补白格：飞书点它「连校验都不跑」（02 §19.4 ④-ter ②），V1 直接 disabled —— 
+   同样的「点了没反应」，但不会让人以为是程序卡住。 */
+.lark-doc .lark-doc-reminder-day.is-outside { color: var(--ld-text-tertiary); opacity: .45; cursor: default; }
+
+/* 选中态：飞书是 `date-picker_orange` 主题（橙色 accent），但选中格的具体像素未采 —— 
+   这里用同一支提醒橙兜底，实测替换时只改这一处。 */
+.lark-doc .lark-doc-reminder-day.is-selected {
+  background: var(--ld-reminder-text);
+  color: var(--ld-bg-surface-chrome);
+}
+
+.lark-doc .lark-doc-reminder-day.is-selected:hover:not(:disabled) {
+  background: var(--ld-reminder-text);
+  color: var(--ld-bg-surface-chrome);
+}
+
+/* 选项组：278×161，左右内边距 24（日历是 16）；与日历的分隔线在这一层。 */
+.lark-doc .lark-doc-reminder-options {
+  padding: 0 24px;
+  border-top: 1px solid var(--ld-reminder-border);
+}
+
+.lark-doc .lark-doc-reminder-row.is-time { margin-top: 20px; }
+.lark-doc .lark-doc-reminder-row.is-repeat { margin-top: 16px; } /* 比 set-time 少 4px，飞书如此 */
+
+.lark-doc .lark-doc-reminder-label {
+  display: block;
+  height: 22px;
+  color: var(--ld-text-secondary);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.lark-doc .lark-doc-reminder-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 32px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 1px solid var(--ld-reminder-border);
+  border-radius: 6px;
+  background: var(--ld-bg-surface-chrome);
+  color: var(--ld-text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-reminder-select:hover:not(:disabled) {
+  border-color: var(--ld-reminder-border);
+  background: var(--ld-bg-surface-chrome);
+  color: var(--ld-text);
+}
+
+.lark-doc .lark-doc-reminder-select:disabled { opacity: 1; cursor: default; } /* 「事件发生时」是只读展示，别灰掉 */
+
+.lark-doc .lark-doc-reminder-select-caret { color: var(--ld-text-tertiary); font-size: 10px; line-height: 1; }
+
+.lark-doc .lark-doc-reminder-user {
+  margin: 12px 24px 0;
+  color: var(--ld-reminder-meta);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 时间下拉：166×246、行 164×32、30 分钟粒度、视口 8 项。
+   🔴 选中与悬停**同底色**（飞书就是没区分）—— 别好心加一层更深的选中色。 */
+.lark-doc .lark-doc-reminder-times {
+  position: fixed;
+  z-index: 47;
+  display: flex;
+  flex-direction: column;
+  width: 166px;
+  height: 246px;
+  padding: 3px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--ld-reminder-border);
+  border-radius: 6px;
+  background: var(--ld-bg-surface-chrome);
+  box-shadow: var(--ld-shadow-float);
+}
+
+.lark-doc .lark-doc-reminder-time-row {
+  flex: 0 0 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ld-text);
+  font-size: 13px;
+  line-height: 32px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-reminder-time-row:hover:not(:disabled),
+.lark-doc .lark-doc-reminder-time-row.is-selected {
+  border-color: transparent;
+  background: var(--ld-reminder-option);
+  color: var(--ld-text);
+}
 
 /* T4-04：Windows 高对比度（forced-colors）。系统色接管，本库色板整体让位 ——
    forced-colors 下浏览器会强制覆盖 color/background，不主动交出就会出现

@@ -46,13 +46,15 @@ for (const group of GROUPS) {
 // 基础 → 常用 → 按钮 → 数据 → 多维表格 → 绘图 → **团队协作** → 文档管理 → …，我们只复刻到
 // 绘图为止，所以「团队协作」插在已复刻分类的最后一段（智能之后）最接近真值；
 // 唯一硬约束是**不能越过内嵌网页那 15 条的尾巴**。
+// P4-02a 再补一条 `reminder`（日期提醒），紧跟三条 mention —— 同属「团队协作」，
+// 且都是行内物件，放一起读起来是一段。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
-  'mentionUser', 'mentionChat', 'mentionPage',
+  'mentionUser', 'mentionChat', 'mentionPage', 'reminder',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
 
@@ -74,6 +76,8 @@ const COMMAND_FEATURES = {
   // P4-01：三条 mention 与「`@` 快捷输入」共用一个开关（document.js 的 reportMention
   // 读的也是 `insert`）。不这么写就落进兜底的 blockStyle，出现「关掉插入还能 @」。
   mentionUser: 'insert', mentionChat: 'insert', mentionPage: 'insert',
+  // P4-02a：日期提醒同理 —— 它就落在正文里（行内 mark），没有自己的插入开关。
+  reminder: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

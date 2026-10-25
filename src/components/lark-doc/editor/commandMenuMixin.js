@@ -121,6 +121,8 @@ export default {
       // P4-01：`@` 面板先接管。两者互斥（onMention 打开时会关掉斜杠菜单），
       // 所以顺序只影响「同一帧谁先看到 ↑↓/Enter」，交给面板就够了。
       if (typeof this.onMentionKeydown === 'function' && this.onMentionKeydown(event)) return
+      // P4-02a：日历浮层同样要接管 Esc / Enter（浮层会吃掉这两个键，别让它们穿透到正文）。
+      if (typeof this.onReminderKeydown === 'function' && this.onReminderKeydown(event)) return
       if (event.isComposing || this.editor?.view.composing || !this.menuOpen) return
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) } else if (event.key === 'Enter') { event.preventDefault(); this.chooseCommand(this.filteredCommands[this.activeCommandIndex]) } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
     },
@@ -135,7 +137,10 @@ export default {
       // 🔴 P4-01 的 mentionUser/mentionChat/mentionPage **故意不**进排除名单：`@` 面板
       // 没有输入框（查询串就是正文里 `@` 后面那截），焦点必须留在正文，用户接着敲字
       // 才能筛候选。放进名单反而会把焦点丢给 body，面板开着却打不进字。
-      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai'].includes(item.id))
+      // 🔴 P4-02a 的 reminder **要**进排除名单：插完 chip 立刻弹日历浮层（02 §19.4 ⑤），
+      // 这里若 focus() 一次，浮层会被顶掉。与上面三条 mention 恰好相反 —— 差别在
+      // 「mention 的面板要正文焦点才能筛候选，reminder 的浮层自己就是交互面」。
+      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai', 'reminder'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -221,6 +226,8 @@ export default {
       // P4-01：三条 mention 只决定面板默认 tab，正文里补 `@` 之后由插件回调接上
       // （与手敲 `@` 走同一条路，不另造开面板逻辑）。
       else if (id === 'mentionUser' || id === 'mentionChat' || id === 'mentionPage') this.startMention(id)
+      // P4-02a：插默认 chip（当前时刻 +24h、分钟归零 → 文案「明天 HH:00」）并立刻弹浮层。
+      else if (id === 'reminder') this.startReminder()
       if (id === 'details') {
         let detailsPos = null
         this.editor.state.doc.descendants((node, pos) => { if (detailsPos === null && node.type.name === 'details') detailsPos = pos })
