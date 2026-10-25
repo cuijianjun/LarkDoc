@@ -29,6 +29,8 @@
     <MentionPanel :ed="self" />
     <!-- 日期提醒日历浮层：点 chip 打开（入口是 DOM 事件，不走插件回调），与菜单/提及互斥 -->
     <ReminderPopover :ed="self" />
+    <!-- 日程搜索面板：斜杠「日程」打开，点结果行即插卡片（Esc 刻意不关，02 §26 ⑦） -->
+    <CalendarSearchPanel :ed="self" />
 
 
     <div class="lark-doc-body">
@@ -154,6 +156,8 @@ import SearchPanel from './editor/SearchPanel.vue'
 import MentionPanel from './editor/MentionPanel.vue'
 // P4-02a：日历浮层组件，只渲染；状态与定位全在 reminderMixin。
 import ReminderPopover from './editor/ReminderPopover.vue'
+// P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
+import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
@@ -195,6 +199,9 @@ import mentionMixin from './editor/mentionMixin'
 // P4-02a：日期提醒（行内 reminder mark + 日历浮层）。入口是「点 chip」这个 DOM 事件，
 // 不走 document.js 的插件回调 —— reminder 没有关键词，那条通道没人用。
 import reminderMixin from './editor/reminderMixin'
+// P4-02b：日程搜索面板的状态与动作（开/关、候选、落块）。与 reminder 的差别在于
+// 「插入 ≠ 新建」—— 面板只把**已有日程**引用成块，所有字段都不在面板里编辑。
+import calendarMixin from './editor/calendarMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
@@ -214,8 +221,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin],
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathEmojiDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -247,6 +254,16 @@ export default {
     // （宿主自己查通讯录 / 云文档）；对象 = `{ user: [...], chat: [...], page: [...] }`。
     // 不传即用 core 内置的演示目录（core/mention/directory.js），保证开箱可用。
     mentionSource: { type: [Array, Function, Object], default: null },
+    // P4-02b：日程候选来源。数组 = 静态「我参与的未来日程」；函数 = `(options) => Promise<item[]>`
+    // （`options` 恒为 `{ query: '', range: 'future' }`，关键词不往上游传 —— 只匹配标题是本地口径）；
+    // 对象 = `{ search(options) }`（对应 04 §4.7 ⑥ 的 `calendar.search`）。
+    // 不传即空列表：本库没有日历服务，不该编一份假日程来演示。
+    calendarSource: { type: [Array, Function, Object], default: null },
+    // 点卡片「加入日程」时回调（`{ eventId, title }`）；不传则按钮只做展示。
+    onCalendarEventJoin: { type: Function, default: null },
+    // 重新拉取某条日程的最新快照（`(eventId) => item | null`）。卡片字段允许过期，
+    // 但刷新时机由宿主决定（飞书是打开文档/重连时拉），本库不自动轮询。
+    calendarEventRefetch: { type: Function, default: null },
   },
   data() { return {
     editor: null, localTitle: this.title,
@@ -294,6 +311,8 @@ export default {
         onEmbedTitle: this.onEmbedTitle, onEmbedSave: this.onEmbedSave, onEmbedCardAction: this.onEmbedCardAction,
         embedProviders: this.embedProviders, onBookmarkOpen: this.onBookmarkOpen, unfurlProvider: this.unfurlProvider,
         embedSandbox: this.embedSandbox, embedAllow: this.embedAllow,
+        // P4-02b：日程块的两个宿主回调（与上面同一口径：NodeView 建好后再换不重挂）。
+        onCalendarEventJoin: this.onCalendarEventJoin, calendarEventRefetch: this.calendarEventRefetch,
       }
     },
   },
@@ -305,7 +324,7 @@ export default {
       if (this.editor) this.editor.storage.characterCount.setLimit(this.effectiveMaxLength)
       this.$nextTick(() => this.refreshDocumentState())
     } },
-    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
+    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
     emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },

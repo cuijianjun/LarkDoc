@@ -233,6 +233,18 @@
   --ld-reminder-meta: #646a73;           /* 浮层底部「提醒：xxx」行 */
   --ld-reminder-week: #8f959e;           /* 日历星期表头 日一二三四五六 */
   --ld-reminder-option: rgba(31, 35, 41, .08); /* 时间下拉行底：选中与悬停**同色**（飞书没区分，别加高亮） */
+  /* 日程块 + 「插入日程」搜索面板（P4-02b，02 §26 全部实测值）。
+     只新建 3 个值 —— 其余实测色在 06 表里已有**语义完全对口**的 token，直接复用，
+     不自造一套平行色板（复用的好处是深色档不用再校准一遍）：
+       rgb(31,35,41)   → --ld-text            （飞书档正好 #1F2329）
+       rgb(222,224,227)→ --ld-border          （飞书档正好 #DEE0E3）
+       rgb(100,106,115)→ --ld-text-secondary  （飞书档正好 #646A73）
+       rgb(143,149,158)→ --ld-text-tertiary   （飞书档正好 #8F959E）
+       rgb(20,86,240)  → --ld-brand-content   （飞书档正好 #1456F0）
+       #FFFFFF         → --ld-bg-surface */
+  --ld-calendar-button-border: #d0d3d6;   /* 「加入日程」按钮 1px 描边（= bookmark 卡片描边同值，但语义不同，单列） */
+  --ld-calendar-search-bg: #eff0f1;       /* 搜索框底（与 bookmark 骨架条同值，语义不同，单列） */
+  --ld-calendar-row-hover: rgba(31, 35, 41, .08); /* 结果行 hover / 键盘 active 底（飞书两者同色，别区分） */
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -1500,6 +1512,314 @@
   color: var(--ld-text);
 }
 
+/* ===== P4-02b 日程块 + 「插入日程」搜索面板（02 §26 实测） =====
+   与 reminder 的结构差异有两条，直接决定选择器写法：
+     1. 本块是 **atom 叶子块**（NodeView 画整张卡片），卡片 DOM 在正文里 ⇒
+        卡片这一段全部带 `.ProseMirror` 前缀（照 bookmark 的写法）。
+     2. 面板是 **fixed 独立浮层**，在 ProseMirror 之外 ⇒ 不带 `.ProseMirror`。
+
+   🔴 卡片**整段没有 `:hover`**：飞书实测 hover 后 bg / border / shadow 逐字节相同，
+   shadow 全程 `none`。别顺手补「浮起」——那是我们的设计，不是飞书的。
+   🔴 搜索输入框**没有 `:focus`**：飞书实测聚焦零视觉变化（无蓝框、无描边）。 */
+
+/* ---- 「插入日程」搜索面板：540×360 = 2 描边 + 538 内容 ---- */
+.lark-doc .lark-doc-calendar-search {
+  position: fixed;
+  z-index: 600;            /* 飞书实测 600，高于本库其它浮层（44~99），别改小 */
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+  width: 540px;
+  height: 360px;           /* 固定高：结果区是 250 固定槽，空态也不收缩 */
+  overflow: hidden;
+  border: 1px solid var(--ld-border);
+  border-radius: 8px;
+  background: var(--ld-bg-surface);
+  box-shadow: var(--ld-shadow-float); /* 投影值未采，取库内浮层口径 */
+}
+
+/* header 538×68，padding 24 / 16 / 20 */
+.lark-doc .lark-doc-calendar-search-head {
+  display: flex;
+  box-sizing: border-box;
+  flex: 0 0 68px;
+  height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 16px 20px;
+}
+
+.lark-doc .lark-doc-calendar-search-title {
+  color: var(--ld-text);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+/* 关闭钮 24×24、r4；内 icon 14×14（组件那边 `:size="14"`） */
+.lark-doc .lark-doc-calendar-search-close {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 24px !important;
+  min-width: 0 !important;
+  height: 24px !important;
+  min-height: 0 !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-text-secondary);
+  cursor: pointer;
+}
+
+/* 搜索框 506×32 = 538 - 16×2；r6 */
+.lark-doc .lark-doc-calendar-search-input {
+  display: block;
+  box-sizing: border-box;
+  flex: 0 0 32px;
+  width: calc(100% - 32px);
+  height: 32px;
+  margin: 0 16px 8px;
+  padding: 0 8px;          /* 文本左缘 = 面板左 + 1 描边 + 16 外边距 + 8 内边距 */
+  border: 0;
+  border-radius: 6px;
+  background: var(--ld-calendar-search-bg);
+  color: var(--ld-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 32px;
+  outline: 0;
+}
+
+.lark-doc .lark-doc-calendar-search-input::placeholder { color: var(--ld-text-tertiary); }
+
+/* 结果区：吃掉剩余 250 高（68 + 32 + 8 + 250 = 358，加 2 描边正好 360）。
+   列表可能很长（最多 50 行 × 42），必须能滚 —— 这是列表体，不是装饰性浮层。 */
+.lark-doc .lark-doc-calendar-search-result {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 结果行 538×42、r0、透明底无边框；hover 与键盘 active **同色**（飞书没区分） */
+.lark-doc .lark-doc-calendar-search-row {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 42px;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 20px;         /* 图标左内缩 20（实测） */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ld-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-calendar-search-row:hover,
+.lark-doc .lark-doc-calendar-search-row.is-active {
+  background: var(--ld-calendar-row-hover);
+  color: var(--ld-text);
+}
+
+.lark-doc .lark-doc-calendar-search-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 空态：fs12 / 次要字色 / 间距 8。居中未实测（实测只给了这三项），
+   但 250 高的空槽里贴左边会断，按居中处理。 */
+.lark-doc .lark-doc-calendar-search-empty {
+  margin: 8px 0 0;
+  color: var(--ld-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* ---- 日程卡片：块宽 468 → 卡片 400，右侧留 68（justify-left） ---- */
+.lark-doc .ProseMirror .lark-doc-calendar-event {
+  box-sizing: border-box;
+  margin: 16px 0 0;
+  line-height: 28.8px;
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-container {
+  display: flex;
+  box-sizing: border-box;
+  justify-content: flex-start;
+}
+
+/* 卡片 400×?：padding 12 + 1 描边 ⇒ 内容 374（= 头部 / info 行 / 按钮三者同宽） */
+.lark-doc .ProseMirror .lark-doc-calendar-card {
+  box-sizing: border-box;
+  flex: 0 0 400px;
+  width: 400px;
+  padding: 12px;
+  border: 1px solid var(--ld-border);
+  border-radius: 8px;
+  background: var(--ld-bg-surface);
+  box-shadow: none;
+}
+
+/* 头部 374×24。飞书这里有个 `padding-left: 24px` 的箭头槽，本库**不画箭头** ——
+   实测点标题既无跳转也无浮层（pages 1→1、popups=[]），画一个点不动的箭头是骗人。 */
+.lark-doc .ProseMirror .lark-doc-calendar-header {
+  display: flex;
+  box-sizing: border-box;
+  height: 24px;
+  align-items: center;
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-title {
+  overflow: hidden;
+  color: var(--ld-text);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 内容区 374×94 固定槽：三行 22 + 26 + 22 = 70，各带 8 上方间距 → 94。
+   超出直接裁掉（实测 maxScrollH = 94 且无内部滚动条）。 */
+.lark-doc .ProseMirror .lark-doc-calendar-scroller {
+  box-sizing: border-box;
+  height: 94px;
+  overflow: hidden;
+}
+
+/* info 行：374 宽、上方 8、fs14 */
+.lark-doc .ProseMirror .lark-doc-calendar-info {
+  display: flex;
+  box-sizing: border-box;
+  height: 22px;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  color: var(--ld-text);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-info.is-organizer { height: 26px; line-height: 26px; }
+
+.lark-doc .ProseMirror .lark-doc-calendar-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-organizer {
+  overflow: hidden;
+  max-width: 160px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* tag：组织者（蓝）与 rsvp（灰）同字号 fs10，只差颜色。
+   padding / 圆角未实测，取 ud__tag 的最小值；底色也不加（实测只采到字色）。 */
+.lark-doc .ProseMirror .lark-doc-calendar-tag {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--ld-text-secondary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-tag.is-organizer { color: var(--ld-brand-content); }
+
+/* 「加入日程」按钮：常驻（不是 hover 才出），374×32、r6、白底灰描边 */
+.lark-doc .ProseMirror .lark-doc-calendar-actions {
+  display: flex;
+  box-sizing: border-box;
+  margin: 8px 0 0;          /* 实测未给按钮上间距，沿用卡内 8px 节奏 */
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-join {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px !important;
+  min-height: 0 !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--ld-calendar-button-border);
+  border-radius: 6px;
+  background: var(--ld-bg-surface);
+  color: var(--ld-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 30px;
+  cursor: pointer;
+}
+
+/* ---- 图标：一律 mask + currentColor ----
+   本库 `editor/icons.js` 里没有 calendar / clock / user / bell，日历系图标全部走
+   CSS mask（P4-02a 的 `.lark-doc-reminder-chip::before` 是范本）。
+   行内 16×16；卡片 info 行是 16×22 的盒子装 16×16 的图（图标在 26 高的组织者行里居中）。 */
+.lark-doc .lark-doc-calendar-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+}
+
+.lark-doc .ProseMirror .lark-doc-calendar-info .lark-doc-calendar-icon {
+  height: 22px;
+  color: var(--ld-text-tertiary);
+}
+
+/* 行内图标跟随行文字色（搜索结果行是正文色，实测量到的是灰，取 info 行一致的灰） */
+.lark-doc .lark-doc-calendar-search-row .lark-doc-calendar-icon { color: var(--ld-text-tertiary); }
+
+.lark-doc .lark-doc-calendar-icon[data-icon="calendar"],
+.lark-doc .lark-doc-calendar-icon[data-icon="clock"],
+.lark-doc .lark-doc-calendar-icon[data-icon="user"],
+.lark-doc .lark-doc-calendar-icon[data-icon="bell"] {
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 16px 16px;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: 16px 16px;
+}
+
+.lark-doc .lark-doc-calendar-icon[data-icon="calendar"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='3' width='12' height='11' rx='1.8' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M2 6.8h12M5.2 1.7v2.6M10.8 1.7v2.6' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='3' width='12' height='11' rx='1.8' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M2 6.8h12M5.2 1.7v2.6M10.8 1.7v2.6' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.lark-doc .lark-doc-calendar-icon[data-icon="clock"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M8 4.4V8l2.6 1.6' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M8 4.4V8l2.6 1.6' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.lark-doc .lark-doc-calendar-icon[data-icon="user"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='5.4' r='2.6' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M2.9 13.4c.5-2.6 2.6-4.2 5.1-4.2s4.6 1.6 5.1 4.2' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='5.4' r='2.6' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M2.9 13.4c.5-2.6 2.6-4.2 5.1-4.2s4.6 1.6 5.1 4.2' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.lark-doc .lark-doc-calendar-icon[data-icon="bell"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 2.2a3.6 3.6 0 0 1 3.6 3.6c0 3 1.2 4.3 1.2 4.3H3.2s1.2-1.3 1.2-4.3A3.6 3.6 0 0 1 8 2.2z' fill='none' stroke='%23000' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M6.5 12.6a1.6 1.6 0 0 0 3 0' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 2.2a3.6 3.6 0 0 1 3.6 3.6c0 3 1.2 4.3 1.2 4.3H3.2s1.2-1.3 1.2-4.3A3.6 3.6 0 0 1 8 2.2z' fill='none' stroke='%23000' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M6.5 12.6a1.6 1.6 0 0 0 3 0' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
 /* T4-04：Windows 高对比度（forced-colors）。系统色接管，本库色板整体让位 ——
    forced-colors 下浏览器会强制覆盖 color/background，不主动交出就会出现
    「文字和底都被强制成同一色」的不可读状态。
@@ -1521,7 +1841,8 @@
   .lark-doc .lark-doc-dialog,
   .lark-doc .lark-doc-bubble-toolbar,
   .lark-doc .lark-doc-select-menu,
-  .lark-doc .lark-doc-callout-emoji-picker {
+  .lark-doc .lark-doc-callout-emoji-picker,
+  .lark-doc .lark-doc-calendar-search {
     border: 1px solid CanvasText;
     background: Canvas;
   }

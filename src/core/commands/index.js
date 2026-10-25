@@ -48,13 +48,14 @@ for (const group of GROUPS) {
 // 唯一硬约束是**不能越过内嵌网页那 15 条的尾巴**。
 // P4-02a 再补一条 `reminder`（日期提醒），紧跟三条 mention —— 同属「团队协作」，
 // 且都是行内物件，放一起读起来是一段。
+// P4-02b 再补一条 `calendar_event`（日程），接在 `reminder` 之后（03 §3.4 ⑦ 就是这个顺序）。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
-  'mentionUser', 'mentionChat', 'mentionPage', 'reminder',
+  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
 
@@ -78,6 +79,9 @@ const COMMAND_FEATURES = {
   mentionUser: 'insert', mentionChat: 'insert', mentionPage: 'insert',
   // P4-02a：日期提醒同理 —— 它就落在正文里（行内 mark），没有自己的插入开关。
   reminder: 'insert',
+  // P4-02b：日程卡片也落在正文里（块级 atom，但插入动作在正文）。不写这条就会落进
+  // 兜底的 `blockStyle`，出现「关掉插入还能插日程」。
+  calendar_event: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

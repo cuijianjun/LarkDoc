@@ -140,7 +140,9 @@ export default {
       // 🔴 P4-02a 的 reminder **要**进排除名单：插完 chip 立刻弹日历浮层（02 §19.4 ⑤），
       // 这里若 focus() 一次，浮层会被顶掉。与上面三条 mention 恰好相反 —— 差别在
       // 「mention 的面板要正文焦点才能筛候选，reminder 的浮层自己就是交互面」。
-      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai', 'reminder'].includes(item.id))
+      // 🔴 P4-02b 的 calendar_event 同 reminder：点了要开「插入日程」搜索面板（540×360），
+      // 面板里的输入框要自己拿焦点，这里 focus() 一次会把它顶掉。
+      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai', 'reminder', 'calendar_event'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -228,6 +230,10 @@ export default {
       else if (id === 'mentionUser' || id === 'mentionChat' || id === 'mentionPage') this.startMention(id)
       // P4-02a：插默认 chip（当前时刻 +24h、分钟归零 → 文案「明天 HH:00」）并立刻弹浮层。
       else if (id === 'reminder') this.startReminder()
+      // P4-02b：日程**先开「插入日程」搜索面板**（540×360），选一条才落卡片。
+      // 「插入 ≠ 新建」—— 面板里刻意没有「新建日程」入口（02 §26 ⑨），这里也就不能
+      // 像 reminder 那样直接往正文塞一个默认块：没有 eventId 的日程卡片是空壳。
+      else if (id === 'calendar_event') this.startCalendarEvent()
       if (id === 'details') {
         let detailsPos = null
         this.editor.state.doc.descendants((node, pos) => { if (detailsPos === null && node.type.name === 'details') detailsPos = pos })

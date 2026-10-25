@@ -21,4 +21,11 @@ export const collabCommands = [
   // 插完 chip 会自动弹日历浮层（02 §19.4 ⑤「插入 → 立即弹浮层」），所以它还必须在
   // `commandMenuMixin` 的 `focusAfter` 排除名单里，否则点完命令先 `focus()` 把浮层顶掉。
   { id: 'reminder', label: '日期提醒', category: '团队协作', plus: false, glyph: '◷', tone: 'orange', keywords: 'reminder riqi tixing date alarm notify tixing', group: 'collab', tier: 'required' },
+  // P4-02b 日程：真飞书斜杠项 label 是「日程」（`data-name="slash calendar_event"`，
+  // **带 `slash ` 前缀**），03 §3.4 ⑦ 里排在 `reminder` 之后 —— 位置别挪。
+  // 它是**块级**卡片，但 `plus: false`：`+` 菜单承诺的是「点一下就地插一个块」，而这条
+  // 命令会先弹**搜索面板**再去选一条已有日程，塞进 `+` 菜单等于承诺一个做不到的动线
+  // （同 reminder / mention 的理由）。也因为弹面板，它必须在 `commandMenuMixin` 的
+  // `focusAfter` 排除名单里，否则点完命令先 `focus()` 会把刚开的面板顶掉。
+  { id: 'calendar_event', label: '日程', category: '团队协作', plus: false, glyph: '▦', tone: 'blue', keywords: 'calendar_event richeng calendar schedule rili date event', group: 'collab', tier: 'required' },
 ]

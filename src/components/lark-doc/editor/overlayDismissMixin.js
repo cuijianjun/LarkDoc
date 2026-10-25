@@ -1,9 +1,9 @@
 /**
  * 全局浮层消解（P0-03 持续瘦身：从 LarkDocEditor.vue 原样下沉，逻辑零改动）。
  *
- * 一个界面上同时可能有 16 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
+ * 一个界面上同时可能有 17 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
  * 帮助 / 标题下拉 / 文档操作 / 图表 / 气泡对齐 / 气泡标题 / callout 表情 /
- * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗 / 日期提醒日历），它们的关闭入口只有三个：
+ * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗 / 日期提醒日历 / 日程搜索面板），它们的关闭入口只有三个：
  *   1. 点外部（`onDocumentPointerDown`，capture 阶段绑在 document 上）；
  *   2. `Esc`（`onWindowKeydown`）；
  *   3. 显式调 `closeOverlay()`（弹窗背板点击、Esc 键、宿主主动收起都走它）。
@@ -32,6 +32,11 @@ export default {
       // P4-02a：日期提醒浮层的常规关闭由「Esc / 打字 / 选日选时」驱动，这里只补「点外部」。
       // 点浮层自身、时间下拉、chip 都不拦 —— 点 chip 要留给 `onReminderChipClick` 重开/切换。
       if (this.reminderOpen && !target.closest?.('.lark-doc-reminder-popover') && !target.closest?.('.lark-doc-reminder-times') && !target.closest?.('.lark-doc-reminder-chip')) this.closeReminderPopover()
+      // P4-02b 日程搜索面板：02 §26 ⑦ 实测 `Esc` ×1、×2 全无效 ⇒ **不绑 Esc**，
+      // 所以下面 `onWindowKeydown` 和 `closeOverlay` 里都刻意没有它的分支
+      // （根元素那句 `@keydown.esc="closeOverlay"` 会冒泡上来，链里一加就等于给了 Esc 入口）。
+      // 点外部是它唯一的全局关闭点；另一半由输入框 `@blur` 兜（`calendarMixin.onCalendarBlur`）。
+      if (this.calendarOpen && !target.closest?.('.lark-doc-calendar-search')) this.closeCalendarSearch()
       if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
       if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
       if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()

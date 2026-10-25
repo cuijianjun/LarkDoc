@@ -58,6 +58,44 @@
         }
       }
     },
+    "calendar_event": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "attendees": {
+          "default": null
+        },
+        "end": {
+          "default": null
+        },
+        "eventId": {
+          "default": null
+        },
+        "location": {
+          "default": null
+        },
+        "organizer": {
+          "default": null
+        },
+        "reminders": {
+          "default": null
+        },
+        "rsvp": {
+          "default": "none"
+        },
+        "start": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "tz": {
+          "default": null
+        }
+      }
+    },
     "callout": {
       "content": "block+",
       "group": "block",

@@ -51,6 +51,17 @@ export {
   LarkDocReminder, REMINDER_REPEATS, REMINDER_REPEAT_LABELS, REMINDER_AT_PATTERN,
   createDefaultRemindAt, normalizeReminder, readReminder, reminderLabel, reminderText,
 } from '../core/blocks/reminder'
+// P4-02b：日程卡片块。本质是**引用**一条已有日程（不是自建表单），块里存 `eventId` +
+// 一份允许过期的展示快照。契约层（尺寸 / id 与时间闸门 / 日期行与提醒行派生 / 只匹配
+// 标题的搜索匹配 / 规范化 / markup）同源再导出，宿主与搜索面板都只从这里取。
+export {
+  CalendarEvent, CALENDAR_EVENT_ID_PATTERN, CALENDAR_EVENT_JOIN_LABEL,
+  CALENDAR_EVENT_LIMITS, CALENDAR_EVENT_ORGANIZER_LABEL, CALENDAR_EVENT_RSVP,
+  CALENDAR_EVENT_RSVP_LABELS, CALENDAR_EVENT_SIZES, CALENDAR_EVENT_VERSION,
+  calendarEventDateLine, calendarEventFromSearch, calendarEventReminderLine,
+  calendarEventSearchMatch, calendarTimezoneLabel, normalizeCalendarEvent,
+  readCalendarEvent, readCalendarTime, renderCalendarEventCard,
+} from '../core/blocks/calendar-event'
 // P4-01：提及候选源（本地名单过滤 + 可选 provider）—— 纯逻辑，无 DOM。
 export {
   MENTION_SEARCH_LIMIT, MENTION_RESOLVE_LIMIT, DEFAULT_MENTION_TIMEOUT,

@@ -32,7 +32,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -109,6 +109,14 @@ export function createLarkDocExtensions(options = {}) {
     Bookmark.configure({
       unfurl: gated ? withUnfurlGate(options.unfurlProvider, network.allows) : options.unfurlProvider || null,
       onOpen: options.onBookmarkOpen || null,
+    }),
+    // P4-02b：日程卡片紧跟网页卡片 —— 同为「引用外部对象」的同层原子块（一块只存
+    // `eventId` + 允许过期的快照）。`onJoin` 是「加入日程」按钮的通道：不传就是个
+    // 不响的按钮（飞书点下去也是零视觉变化，02 §26 ④ 主动留白）；`refetch` 只作为
+    // NodeView `refresh()` 的显式刷新通道，**不自动拉**（快照允许过期）。
+    CalendarEvent.configure({
+      onJoin: options.onCalendarEventJoin || null,
+      refetch: options.calendarEventRefetch || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
