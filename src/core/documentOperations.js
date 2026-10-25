@@ -50,6 +50,12 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'level') valid = Number.isInteger(value) && value >= 1 && value <= 9
     else if (key === 'indent') valid = Number.isInteger(value) && value >= 0 && value <= 8
     else if (key === 'width' || key === 'height') valid = Number.isFinite(value) && value >= (type === 'column' ? 10 : 40) && value <= (type === 'column' ? 90 : 2400)
+    // 内嵌网页（P3-07）的 `aspect` / `bridgeVersion` 都是**数字**，而本白名单的兜底分支
+    // 只收字符串 —— 落进来必被判非法，症状是带这两个字段的 webEmbed 一进 setContent
+    // 就整块抛错；`bridgeVersion` 有默认值 1，等于「存一次盘再打开就炸」。
+    // 这里的区间必须与 blocks/web-embed.js 各自的 validate 逐字一致。
+    else if (key === 'aspect') valid = Number.isFinite(value) && value > 0 && value <= 20
+    else if (key === 'bridgeVersion') valid = Number.isInteger(value) && value >= 1 && value <= 99
     else if (key === 'lineHeight') valid = /^(normal|[1-4](\.\d{1,2})?)$/.test(String(value))
     else if (key === 'backgroundColor' || key === 'borderColor' || key === 'color') valid = safeColor(value)
     else if (key === 'emoji') valid = safeCalloutEmojis.has(value)
