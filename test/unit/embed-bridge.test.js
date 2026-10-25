@@ -333,3 +333,66 @@ describe('宿主下行：setTheme / command / destroy', () => {
     expect(onReady).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * 回归：P3-07 首帧丢失。
+ *
+ * 症状：demo 里嵌入块高度恒为 attrs 的 520，内容真实高度 424 永远同步不上，
+ * 直到用户手点一次「加高」才对 —— 看着像「resize 不生效」。
+ *
+ * 根因不是节流、也不是 CSS，而是**桥的 message 监听挂得太晚**：nodeview 构造期
+ * 这块 DOM 还游离在 ProseMirror 之外，`iframe.contentWindow` 为 null，所以原实现
+ * 要等 iframe `load` 才建桥挂监听；可嵌入页在 `load` **同一刻**就把 `ready` 和
+ * 首帧 `resize` 发出来了（实测三帧同在 943ms 到达窗口）——帧到了，监听没在，永久丢。
+ *
+ * 修法：桥支持「先建桥（无 target）→ 收帧 → 后补 target」。下面三条锁住该契约。
+ */
+describe('target 后补：桥必须先于 iframe 上屏就位（P3-07 首帧丢失回归）', () => {
+  it('没有 target 也能收 ready / 首帧 resize，高度立刻上抛（不进节流窗口）', () => {
+    const onReady = vi.fn()
+    const onResize = vi.fn()
+    const bridge = createEmbedBridge({ src: SRC, onReady, onResize })
+
+    expect(bridge.origin).toBe(ORIGIN)
+    expect(bridge.handleMessage(makeEvent(ORIGIN, frame('ready', { bridgeVersion: 1 })))).toBe(true)
+    expect(onReady).toHaveBeenCalledTimes(1)
+
+    // 首帧 resizeHeight 基准为 null，必须直接 flush：拖后面等于让用户先看到错高度。
+    expect(bridge.handleMessage(makeEvent(ORIGIN, frame('resize', { height: 424 })))).toBe(true)
+    expect(onResize).toHaveBeenCalledWith(424)
+    expect(bridge.state().resizeHeight).toBe(424)
+  })
+
+  it('构造期不发 init：没有 target 时 start() 为 false，补 target 后才发', () => {
+    const bridge = createEmbedBridge({ src: SRC })
+    expect(bridge.start()).toBe(false)   // 游离期 iframe 没有 contentWindow，发不出去
+    expect(bridge.state().sentCount).toBe(0)
+
+    const target = makeTarget()
+    bridge.setTarget(target)
+    expect(bridge.start()).toBe(true)
+    expect(target.sent.map((item) => item.message.type)).toEqual(['init'])
+    expect(target.sent[0].targetOrigin).toBe(ORIGIN)
+  })
+
+  it('先收到 ready 再补 target：不重发 init、不误判超时（startBridge 幂等的前提）', () => {
+    vi.useFakeTimers()
+    const onTimeout = vi.fn()
+    const bridge = createEmbedBridge({ src: SRC, onTimeout })
+
+    bridge.handleMessage(makeEvent(ORIGIN, frame('ready', { bridgeVersion: 1 })))
+    expect(bridge.state().ready).toBe(true)
+
+    const target = makeTarget()
+    bridge.setTarget(target)
+    // 宿主侧就是这句守卫（web-embed.js 的 startBridge），ready 之后不再握手。
+    if (!bridge.state().ready) bridge.start()
+    expect(target.sent).toHaveLength(0)
+    // 即便守卫失效误调一次，start() 自己也返回 false —— 两道闸门。
+    expect(bridge.start()).toBe(false)
+    expect(target.sent).toHaveLength(0)
+
+    vi.advanceTimersByTime(BRIDGE_TIMEOUT_MS * 2)
+    expect(onTimeout).not.toHaveBeenCalled()
+  })
+})

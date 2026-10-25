@@ -205,13 +205,32 @@ export function createWebEmbedNodeView(props) {
     try { target.requestFullscreen() } catch (_) { /* 全屏被浏览器策略拒了就保持原样 */ }
   }
 
-  function startBridge() {
-    detachBridge()
-    if (destroyed || !iframe || !iframe.contentWindow || !embedSrc()) return
+  /**
+   * 造桥 + 挂 `message` 监听。**不依赖 iframe 存在，也不发 `init`**。
+   *
+   * 为什么不能等 iframe：nodeview 构造期这块 DOM 还是**游离**的（还没被 ProseMirror
+   * 插进文档），`iframe.contentWindow` 是 null、也不会有 browsing context —— 这时建桥
+   * 必然失败。等 `load` 再建桥又太晚：嵌入页在 `load` 同一刻就把 `ready` 和首帧
+   * `resize` 发出来了（`public/embed/drawing.html` 的 `handshake()` 就是这么跑的），
+   * 监听还没挂上，帧全丢。实测症状：块高永久停在 attrs 的 `height`（demo 里 520），
+   * 内容真实高度（424）永远同步不上，直到用户手点一次「加高」才对 —— 看着像
+   * 「resize 不生效」，其实是首帧丢了。
+   *
+   * 所以：**桥体 + 监听在构造期就位**（收帧只需要 `src` 推出的 origin，不需要 target），
+   * iframe 拿到 browsing context 之后再 `setTarget`（发帧才需要它）。
+   * 这不会放宽任何一条安全基线：origin 仍由 `src` 推、仍逐帧校验。
+   */
+  function ensureBridge() {
+    if (destroyed) return bridge
+    const src = embedSrc()
+    if (!src) return bridge
+    if (bridge) {
+      if (iframe && iframe.contentWindow) bridge.setTarget(iframe.contentWindow)
+      return bridge
+    }
     const timeout = Number(options.bridgeTimeout)
     bridge = createEmbedBridge({
-      src: embedSrc(),
-      target: iframe.contentWindow,
+      src,
       ...(Number.isFinite(timeout) && timeout > 0 ? { timeout } : {}),
       onReady() {
         if (destroyed) return
@@ -236,7 +255,21 @@ export function createWebEmbedNodeView(props) {
       },
     })
     attachListener()
-    bridge.start()
+    return bridge
+  }
+
+  /**
+   * iframe `load` 之后补握手段。
+   *
+   * `init` 必须等文档就绪才发（早发会被丢在空白文档里，09 §3.4.2）。但如果内容
+   * **先于** `load` 就发过 `ready` 了，这里不能再调 `start()` —— 桥见到 `ready`
+   * 会直接返回 false，握手就永远补不上；反过来也不该重发 `ready`，那会让宿主重算版本。
+   * 两种顺序都收敛到同一个结果：桥已就绪，什么都不做。
+   */
+  function startBridge() {
+    const active = ensureBridge()
+    if (!active) return
+    if (!active.state().ready) active.start()
   }
 
   function teardownIframe() {
@@ -279,12 +312,18 @@ export function createWebEmbedNodeView(props) {
     const blocked = !policyAllows()
     if (blocked) status = STATUS.BLOCKED
 
+    // 桥体 + `message` 监听必须在 iframe 上屏**之前**就位：构造期 DOM 还游离，
+    // 等 `load` 再建会漏掉「load 同一刻发出的 ready + 首帧 resize」（见 ensureBridge）。
+    if (status !== STATUS.BLOCKED) ensureBridge()
+
     if (status !== STATUS.BLOCKED && status !== STATUS.DEGRADED && !iframe && src) {
       // 只有真要加载时才建 iframe；被拦的块连 src 都不设（P3-06：offline 下不设 src）。
       // 造出来立刻进常驻层 —— 游离 iframe 不 load，这一步是「能不能出转圈」的关键。
       iframe = buildIframe(src)
       iframe.addEventListener('load', onFrameLoad)
       layer.appendChild(iframe)
+      // 立刻建桥（不握手）：接住「解析阶段就广播」的 ready / 首帧 resize，见 ensureBridge。
+      ensureBridge()
     }
 
     dom.setAttribute('data-embed-state', status)
