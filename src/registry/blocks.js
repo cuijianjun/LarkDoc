@@ -29,6 +29,12 @@ export {
   CardEmbed, CARD_MAX_BYTES, CARD_VERSION, cardSchema, encodeCard,
   isFutureCard, isKnownProvider, normalizeCard, readCard, utf8Bytes,
 } from '../core/blocks/card-embed'
+// P3-05：网页卡片块。`bookmark` 的契约（两档高度 / URL 闸门 / 元数据解析）同源再导出，
+// 宿主只从这里取 `readBookmark` / `normalizeBookmark`，不自己拼 attrs。
+export {
+  Bookmark, BOOKMARK_HEIGHTS, BOOKMARK_LIMITS, BOOKMARK_VARIANT, BOOKMARK_VERSION,
+  normalizeBookmark, readBookmark, readBookmarkHost, readBookmarkMeta, readBookmarkUrl,
+} from '../core/blocks/bookmark'
 export { codeExtension } from '../core/blocks/code-block'
 export { EMOJI_GLYPHS, LarkDocEmoji } from '../core/blocks/emoji'
 export { UnknownBlock } from '../core/blocks/unknown-block'

@@ -210,6 +210,11 @@
   /* 文件 / 视频块（P2-04，02 §19.5 实测值，同属中性灰，不衍生绿系） */
   --ld-bg-file-preview: #f2f3f5;         /* 预览区底：iframe / 卡片 / 失败态共用一个壳 */
   --ld-text-file: #1f2329;               /* 文件名与卡片主文字 */
+  /* 网页卡片（P3-05，02 §24 ②-a 实测描边 #D0D3D6 —— 比 --ld-border-cell 深一档，
+     飞书卡片确实用另一支灰。骨架两色取自 03-quater 的渐变停点，只在加载态出现） */
+  --ld-border-bookmark: #d0d3d6;         /* 卡片描边 */
+  --ld-bg-bookmark-skeleton: #eff0f1;    /* 骨架条底色（渐变 25% / 70% 停点） */
+  --ld-bg-bookmark-shimmer: rgba(222, 224, 227, .65); /* 骨架条高光（40% 停点） */
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -813,6 +818,153 @@
 .lark-doc .ProseMirror .lark-doc-card-action.is-primary[aria-disabled="true"]:hover { background: var(--ld-bg-accent); }
 /* 版本/摘要提示：灰字一行，不抢卡片主体。 */
 .lark-doc .ProseMirror .lark-doc-card-note { margin: 8px 0 0; color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.6; }
+
+/* ==================================================================
+   P3-05 · 网页卡片 bookmark（02 §24 实测 · 11 层链）
+   ------------------------------------------------------------------
+   几何契约（**逐像素闭合，别凭手感改**）：
+     简卡 74  = 12×2(pad) + 20(url) + 4 + 24(detail=title 1 行) + 2(border)
+     富卡 113 = 12×2(pad) + 20(url) + 4 + 63(detail=title + 2 行 summary) + 2
+     骨架 122 = 12×2(card 自带 pad) + 20(icon 行) + 8 + 20 + 4 + 20 + 4 + 20 + 2
+   所以 `-info` 的 padding 必须是 **左右不对称的 12 / 16**，`-url-wrapper` 必须锁 20，
+   `-detail` 的 margin-top 必须是 4 —— 这三处任一改动都会让两档高度同时崩。
+   ================================================================== */
+
+/* 块层：上下 16（不是卡片的 4/16 —— 网页卡片在文档里是「独立一屏内容」） */
+.lark-doc .ProseMirror .lark-doc-bookmark { box-sizing: border-box; margin: 16px 0; }
+
+/* 6 层纯套壳，全部同尺寸、无 padding/margin 增量（飞书如此，照抄不合并 ——
+   合并后宿主的自定义样式选择器会失效，且未来「块级工具条/卡片视图」要靠这层挂） */
+.lark-doc .ProseMirror .lark-doc-bookmark-container,
+.lark-doc .ProseMirror .lark-doc-bookmark-wrapper,
+.lark-doc .ProseMirror .lark-doc-bookmark-content,
+.lark-doc .ProseMirror .lark-doc-bookmark-card { box-sizing: border-box; }
+
+.lark-doc .ProseMirror .lark-doc-bookmark-wrapper { border-radius: 8px; background: var(--ld-bg-surface); }
+/* content 裁切：summary 两行之外的部分、骨架的扫光溢出都收在这里 */
+.lark-doc .ProseMirror .lark-doc-bookmark-content { overflow: hidden; }
+
+/* 卡身：描边用 --ld-border-bookmark（#D0D3D6，比 --ld-border-cell 深一档 —— 飞书这里确实
+   换了另一支灰）；底透明、hover **完全不变**（02 §24 ③ 实测：无 hover 类、无变色、无阴影），
+   只有 cursor/transition 常驻。别好心加 hover 底色。 */
+.lark-doc .ProseMirror .lark-doc-bookmark-card {
+  border: 1px solid var(--ld-border-bookmark);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0);
+  cursor: pointer;
+  transition: all;
+}
+/* 加载态：card **自带 padding: 12px**（骨架的纵向留白来自 card，不是 info 层） */
+.lark-doc .ProseMirror .lark-doc-bookmark-card[data-bookmark-variant="loading"] {
+  padding: 12px;
+  line-height: 20px;
+}
+
+/* info：左 12 右 16 **不对称**（内容区 504 = 534 − 2 − 12 − 16） */
+.lark-doc .ProseMirror .lark-doc-bookmark-info { padding: 12px 16px 12px 12px; }
+
+/* url 行：锁 20 高，icon + url 横向排 */
+.lark-doc .ProseMirror .lark-doc-bookmark-url-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+}
+
+/* favicon：**SPAN + inline background-image，不是 img**（用 img 还得补 object-fit 才对齐）；
+   16×16 r4、右侧硬间距 8（URL 起点 = 616 + 16 + 8 = 640）。
+   无 favicon 时这个 span 由 markup 层**根本不渲染**（不做空占位，URL 直接吃 616） */
+.lark-doc .ProseMirror .lark-doc-bookmark-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+/* 加载态的 icon 位是骨架块（shimmer 扫光），跟三条 skeleton-item 同一套渐变 */
+.lark-doc .ProseMirror .lark-doc-bookmark-icon.is-skeleton {
+  display: inline-block;
+  margin: 0 8px 0 0;
+  vertical-align: top;
+  background-image: linear-gradient(
+    90deg,
+    var(--ld-bg-bookmark-skeleton) 25%,
+    var(--ld-bg-bookmark-shimmer) 40%,
+    var(--ld-bg-bookmark-skeleton) 70%
+  );
+  animation: lark-doc-bookmark-skeleton 1.4s ease infinite;
+}
+
+/* URL：简卡 fs12 / 富卡 fs14，行高都锁 20（高度契约里的那一格），单行省略 */
+.lark-doc .ProseMirror .lark-doc-bookmark-url {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ld-text-accent);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lark-doc .ProseMirror .lark-doc-bookmark-card[data-bookmark-variant="rich"] .lark-doc-bookmark-url { font-size: 14px; }
+
+/* detail：距 url 行 4px，简卡正好一行 24；富卡 63 = 24(title) + 39(2 行 summary)。
+   整体再 overflow: hidden 兜一道 —— 长摘要超出 63 时**裁掉而不是撑高**（02 §24 实测飞书
+   自己也是溢出裁切，卡片高度不随文案长度走）。 */
+.lark-doc .ProseMirror .lark-doc-bookmark-detail { margin: 4px 0 0; overflow: hidden; }
+/* markup 里标题与摘要之间是**真 <br>**（不是 block 包裹，导出后别的渲染器也能正确断行）；
+   但它俩各自是块级盒子，br 会额外占一条空行盒（+24px）⇒ 布局上抹掉 */
+.lark-doc .ProseMirror .lark-doc-bookmark-detail > br { display: none; }
+
+.lark-doc .ProseMirror .lark-doc-bookmark-title {
+  display: block;
+  overflow: hidden;
+  color: var(--ld-text-content);
+  font-size: 16px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lark-doc .ProseMirror .lark-doc-bookmark-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ld-text-tertiary);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 骨架条：20 高、圆 4、三条统一 margin 4px 0 0（宽度由 markup 的 inline max-width 给
+   350 / 576 / 576）；首条上间距是 8（高度契约里的那一格） */
+.lark-doc .ProseMirror .lark-doc-bookmark-skeleton-item {
+  height: 20px;
+  margin: 4px 0 0;
+  border-radius: 4px;
+  background-image: linear-gradient(
+    90deg,
+    var(--ld-bg-bookmark-skeleton) 25%,
+    var(--ld-bg-bookmark-shimmer) 40%,
+    var(--ld-bg-bookmark-skeleton) 70%
+  );
+  animation: lark-doc-bookmark-skeleton 1.4s ease infinite;
+}
+.lark-doc .ProseMirror .lark-doc-bookmark-skeleton-item:first-of-type { margin-top: 8px; }
+
+/* 扫光位移：背景宽 200%，从 -100% 走到 +100%（与飞书 skeletonMoveAnimation 1.4s 同频） */
+@keyframes lark-doc-bookmark-skeleton {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* 键盘可达：markup 给了 role="link" + tabindex="0"（V1 补的无障碍入口，飞书实测没有），
+   所以必须给可见焦点环，否则键盘用户是「摸到但看不见」。鼠标点击不触发。 */
+.lark-doc .ProseMirror .lark-doc-bookmark-card:focus-visible {
+  outline: 2px solid var(--ld-brand-chrome);
+  outline-offset: 1px;
+}
 
 /* ==================================================================
    T4 · 主题切换的无障碍与动效（12 T4-02 / T4-03 / T4-04）

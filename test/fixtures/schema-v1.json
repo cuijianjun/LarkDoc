@@ -26,6 +26,29 @@
         }
       }
     },
+    "bookmark": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "desc": {
+          "default": null
+        },
+        "favicon": {
+          "default": null
+        },
+        "recordId": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "url": {
+          "default": null
+        }
+      }
+    },
     "bulletList": {
       "content": "listItem+",
       "group": "block list",

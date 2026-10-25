@@ -222,6 +222,13 @@
   --ld-bg-th: rgba(207, 207, 207, 0.08);  /* B */
   --ld-border-hr: rgba(207, 207, 207, 0.15); /* A：同 divider */
 
+  /* ---- 网页卡片（P3-05）----
+     描边复用表格的深档线 #434343（A）；骨架两色**不新造**，用已有的 α 白灰层 0.08 / 0.12
+     （B）—— 浅档的 #EFF0F1 落在 #17181A 上会亮成三根白条，而 α 层在任何深底上都自动跟底走。 */
+  --ld-border-bookmark: #434343;                      /* A */
+  --ld-bg-bookmark-skeleton: rgba(207, 207, 207, 0.08); /* B：同 --ld-bg-th 档 */
+  --ld-bg-bookmark-shimmer: rgba(207, 207, 207, 0.12);  /* B：同 diagram-node-soft 档 */
+
   /* ---- 代码块 / 图表块（T3-02）----
      代码块是「常暗对象」：语法配色按 M6（06 §6.5.2 实测 token 色两档不变）不动，
      这里只把「与外部世界接触」的 chrome（卡底 / 描边 / 头部条）换成深色中性档 ——
@@ -333,5 +340,9 @@
     --ld-unknown-card-icon: #8f959e;
     --ld-unknown-card-text: #1f2329;
     --ld-unknown-card-text-sub: #646a73;
+    /* 网页卡片打印回浅档（02 §24 实测描边 #D0D3D6 + 浅色骨架渐变） */
+    --ld-border-bookmark: #d0d3d6;
+    --ld-bg-bookmark-skeleton: #eff0f1;
+    --ld-bg-bookmark-shimmer: rgba(222, 224, 227, 0.65);
   }
 }

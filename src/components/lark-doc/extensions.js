@@ -30,7 +30,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed,
+  FileBlock, WebEmbed, CardEmbed, Bookmark,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -86,6 +86,13 @@ export function createLarkDocExtensions(options = {}) {
     CardEmbed.configure({
       onAction: options.onEmbedCardAction || null,
       providers: options.embedProviders || null,
+    }),
+    // P3-05：网页卡片紧跟卡片块——同样的 chrome，不同的事（一张固定的 URL 卡）。
+    // `unfurl` 是第 6 个可选 provider（09 §265）：不传就降级成「URL + 域名标题」，
+    // **不阻塞任何能力**；`onOpen` 交出「点了去哪」的决定权，不传就自己 `window.open`。
+    Bookmark.configure({
+      unfurl: options.unfurlProvider || null,
+      onOpen: options.onBookmarkOpen || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),

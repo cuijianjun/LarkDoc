@@ -59,6 +59,8 @@
   --ld-border: #dcdfe6;                /* input-border-color */
   --ld-border-strong: #7d8592;         /* 强化档取占位符色（同 feishu 档取 disabled 色的口径） */
   --ld-border-cell: #dfe6ec;           /* table-row-border-bottom */
+  /* 网页卡片（P3-05）：描边跟本档线色；骨架两色沿用 02 §24 实测（浅档唯一出处） */
+  --ld-border-bookmark: #dfe6ec;
   --ld-divider: #dfe6ec;
   /* ---- 品牌 / 功能 ---- */
   --ld-brand-chrome: #06A17D;          /* themeColor */
@@ -143,6 +145,10 @@
      #425756 上仅 1.08:1 → 继承默认档 #5F5F5F（11 §4.3 实测描边档，1.21:1）。 */
   --ld-border-strong: #4b5b5c;
   --ld-border-cell: #4b5b5c;
+  /* 网页卡片（P3-05）：描边跟本档强线 #4b5b5c；骨架用已有 α 白灰层，不新造色值。 */
+  --ld-border-bookmark: #4b5b5c;
+  --ld-bg-bookmark-skeleton: rgba(207, 207, 207, 0.08);
+  --ld-bg-bookmark-shimmer: rgba(207, 207, 207, 0.12);
   --ld-divider: #425756;
   --ld-border-accent: rgba(31, 214, 165, 0.40);
   --ld-border-control: #425756;
@@ -233,6 +239,10 @@
   --ld-border-column-hover: #1FD6A5;
   --ld-border-table: #425756;
   --ld-border-cell: #4b5b5c;
+  /* 网页卡片（P3-05）：与上面深档同口径（描边 #4b5b5c + α 骨架） */
+  --ld-border-bookmark: #4b5b5c;
+  --ld-bg-bookmark-skeleton: rgba(207, 207, 207, 0.08);
+  --ld-bg-bookmark-shimmer: rgba(207, 207, 207, 0.12);
   /* 代码块（T3-02）：只换与外部接触的 chrome，语法配色按 M6 两档不变 */
   --ld-code-bg: #425756;
   --ld-code-border: #4b5b5c;

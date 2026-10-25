@@ -39,6 +39,8 @@
   --ld-border: #DEE0E3;
   --ld-border-strong: #BBBFC4;
   --ld-border-cell: #DEE0E3;
+  /* 🔴 网页卡片描边**不是**上面这支灰，是更深一档的 #D0D3D6（02 §24 ② 实测）。别顺手归一。 */
+  --ld-border-bookmark: #D0D3D6;
   --ld-divider: #DEE0E3;
   --ld-border-accent: transparent;   /* 飞书生效态无边框 */
   /* ---- 轮廓栏 / 纸张（B3：按 06 实测 L2 角色映射，未新增色值） ---- */
