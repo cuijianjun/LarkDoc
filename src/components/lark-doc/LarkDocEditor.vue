@@ -168,6 +168,9 @@ import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
+// P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
+// 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
+import { IMAGE_REJECT, imageRejectMessage, isImageMime, nearestInsertPosition, sortImageFiles } from '../../core/media/image-insert'
 import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
@@ -598,8 +601,8 @@ export default {
         ? this.effectiveImageMaxSize
         : Math.max(1, Number(this.imageMaxSize) || 5 * 1024 * 1024)
       if (!this.writable() || !imagesEnabled) return null
-      if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error('只支持 PNG/JPEG/GIF/WebP 图片')
-      if (file.size > maxImageSize) throw new Error(`单张图片不能超过 ${maxImageSize / 1024 / 1024} MB`)
+      if (!isImageMime(file.type)) throw new Error(imageRejectMessage(IMAGE_REJECT.MIME))
+      if (file.size > maxImageSize) throw new Error(imageRejectMessage(IMAGE_REJECT.SIZE, { maxSize: maxImageSize }))
       if (this.uploadImage) {
         const uploaded = await this.uploadImage(file)
         if (!this.writable()) return null
@@ -619,15 +622,25 @@ export default {
     },
     async insertImageFiles(files, pos) {
       if (!this.writable() || !this.featureEnabled('images')) return
-      for (const file of files) {
+      // 一次拖拽 / 粘贴可能混进非图片（PDF 与 PNG 一起框选是常见操作）：
+      // 先分流，非图片只报一条错、不阻断，剩下的图片按原顺序逐张落块。
+      const { accepted, rejected } = sortImageFiles(files, { maxSize: this.effectiveImageMaxSize })
+      if (!accepted.length) { if (rejected.length) this.error = rejected[0].message; return }
+      this.error = rejected.length ? rejected[0].message : ''
+      // 拖拽给的 pos 可能落在块边界（拖到两块之间）或文档之外，先归一成能安全
+      // setTextSelection 的文本位置；没有 pos / 归一失败时按当前选区插入。
+      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
+      for (const file of accepted) {
         try {
           const image = await this.resolveImageFile(file)
-          if (!image || !this.writable()) return
-          if (Number.isInteger(pos)) this.editor.commands.setTextSelection(Math.max(0, Math.min(pos, this.editor.state.doc.content.size)))
+          // 上传期间文档可能被切只读或组件已卸载：停止后续插入，已完成的不回滚。
+          if (!this.writable()) return
+          if (!image) continue
+          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
           this.editor.chain().focus().setImage({ ...image, originalSrc: image.src, originalAttchId: image.attchId, alt: file.name }).run()
-          this.error = ''
-          if (Number.isInteger(pos)) pos = this.editor.state.selection.to
-        } catch (error) { if (this.writable()) this.error = error.message || '图片上传失败' }
+          // 下一张必须接在刚插入的这张之后，否则多张图会全堆在第一张的位置上。
+          if (anchor !== null) anchor = this.editor.state.selection.to
+        } catch (error) { this.error = error?.message || '图片上传失败' }
       }
     },
     onDocumentPointerMove(event) {
