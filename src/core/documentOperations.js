@@ -2,8 +2,7 @@ import { Fragment } from '@tiptap/pm/model'
 import { moveDepthAllowed } from './blocks/container-depth'
 import { MENTION_KINDS } from './blocks/mention'
 import { REMINDER_REPEATS, REMINDER_AT_PATTERN } from './blocks/reminder'
-
-const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
+import { isEmojiGlyph } from './emoji/catalog'
 
 // 未知块占位卡 payload 上限（P1-03）：payload 可能承载替代整个子树的原始块 JSON。
 export const UNKNOWN_PAYLOAD_MAX = 1000000
@@ -60,7 +59,8 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'bridgeVersion') valid = Number.isInteger(value) && value >= 1 && value <= 99
     else if (key === 'lineHeight') valid = /^(normal|[1-4](\.\d{1,2})?)$/.test(String(value))
     else if (key === 'backgroundColor' || key === 'borderColor' || key === 'color') valid = safeColor(value)
-    else if (key === 'emoji') valid = safeCalloutEmojis.has(value)
+    // 高亮块图标：P4-03 起是全量表情，与 blocks/callout.js 的 validate 共用同一次查表。
+    else if (key === 'emoji') valid = isEmojiGlyph(value)
     else if (key === 'align') valid = ['left', 'center', 'right'].includes(value)
     else if (key === 'textAlign') valid = ['left', 'center', 'right', 'justify'].includes(value)
     else if (key === 'verticalAlign') valid = ['top', 'middle', 'bottom'].includes(value)

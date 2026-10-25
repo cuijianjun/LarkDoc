@@ -55,23 +55,28 @@
     </button><div
       v-if="ed.calloutEmojiOpen"
       class="lark-doc-callout-emoji-picker"
+      :class="{ 'is-above': ed.calloutEmojiPlacement === 'above' }"
       role="menu"
       aria-label="高亮块图标"
     >
-      <label class="lark-doc-callout-emoji-search"><span class="sr-only">搜索表情</span><input
-        :value="ed.calloutEmojiQuery"
-        type="search"
-        aria-label="搜索高亮块图标"
-        placeholder="搜索"
-        @input="ed.setCalloutEmojiQuery($event.target.value)"
-      ></label><button
-        type="button"
-        aria-label="随机高亮块图标"
-        title="随机高亮块图标"
-        @click="ed.setCalloutEmoji(ed.pickRandomCalloutEmoji())"
-      >
-        ↺
-      </button><div
+      <div class="lark-doc-callout-emoji-head">
+        <label class="lark-doc-callout-emoji-search"><span class="sr-only">搜索表情</span><input
+          :value="ed.calloutEmojiQuery"
+          type="search"
+          aria-label="搜索高亮块图标"
+          placeholder="搜索表情名称"
+          @input="ed.setCalloutEmojiQuery($event.target.value)"
+        ></label><button
+          type="button"
+          class="lark-doc-callout-emoji-random"
+          aria-label="随机高亮块图标"
+          title="随机高亮块图标"
+          @click="ed.setCalloutEmoji(ed.pickRandomCalloutEmoji())"
+        >
+          ↻
+        </button>
+      </div>
+      <div
         class="lark-doc-callout-emoji-tabs"
         role="tablist"
         aria-label="高亮块图标分类"
@@ -103,21 +108,32 @@
         >
           {{ category }}
         </button>
-      </div><p
-        v-if="ed.calloutEmojiCategory === 'recent' && !ed.filteredCalloutEmojiItems.length"
-        class="lark-doc-callout-emoji-empty"
+      </div>
+      <div
+        class="lark-doc-callout-emoji-grid"
+        role="group"
+        aria-label="表情列表"
       >
-        暂无最近使用
-      </p><button
-        v-for="item in ed.filteredCalloutEmojiItems"
-        :key="item.value"
-        type="button"
-        role="menuitem"
-        :aria-label="item.label"
-        @click="ed.setCalloutEmoji(item.glyph)"
-      >
-        {{ item.glyph }}
-      </button>
+        <p
+          v-if="!ed.filteredCalloutEmojiItems.length"
+          class="lark-doc-callout-emoji-empty"
+        >
+          {{ ed.calloutEmojiQuery ? '没有匹配的表情' : '暂无最近使用' }}
+        </p><button
+          v-for="item in ed.filteredCalloutEmojiItems"
+          :key="item.value + ':' + item.glyph"
+          type="button"
+          role="menuitem"
+          :aria-label="item.label"
+          :title="item.label"
+          @click="ed.setCalloutEmoji(item.glyph)"
+        >
+          <span
+            class="lark-doc-callout-emoji-item"
+            aria-hidden="true"
+          >{{ item.glyph }}</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>

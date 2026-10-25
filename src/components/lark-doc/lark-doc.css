@@ -245,6 +245,10 @@
   --ld-calendar-button-border: #d0d3d6;   /* 「加入日程」按钮 1px 描边（= bookmark 卡片描边同值，但语义不同，单列） */
   --ld-calendar-search-bg: #eff0f1;       /* 搜索框底（与 bookmark 骨架条同值，语义不同，单列） */
   --ld-calendar-row-hover: rgba(31, 35, 41, .08); /* 结果行 hover / 键盘 active 底（飞书两者同色，别区分） */
+  /* P4-03：高亮块表情面板的 emoji 项 hover 底。飞书实测 #DEE0E3（02 §16 ④）——
+     token 落在 theme-preset-feishu.css；此处给三档共用口径：跟本档 hover 语言，
+     默认档/青灰档即 --ld-bg-hover，深色档由 dark 覆写的同名变量自动接管。 */
+  --ld-emoji-item-bg: var(--ld-bg-hover);
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -508,7 +512,7 @@
 .lark-doc .lark-doc-menu-switch.on { background: var(--ld-brand-content); }
 .lark-doc .lark-doc-menu-switch.on .lark-doc-menu-switch-dot { left: 14px; }
 .lark-doc .lark-doc-empty-block-insert { width: 28px; height: 28px; padding: 0; border: 1px solid var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-menu); font-size: 22px; line-height: 1; }
-.lark-doc .lark-doc-callout-tools { position: absolute; z-index: 24; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tools); }.lark-doc .lark-doc-callout-tools label { display: grid; place-items: center; width: 30px; height: 30px; color: var(--ld-text-menu-icon); cursor: pointer; }.lark-doc .lark-doc-callout-tools label span { grid-area: 1 / 1; pointer-events: none; }.lark-doc .lark-doc-callout-tools input[type="color"] { grid-area: 1 / 1; width: 30px; height: 30px; padding: 0; border: 0; opacity: 0; cursor: pointer; }.lark-doc .lark-doc-callout-tools > button { min-width: 30px; height: 30px; padding: 3px; }.lark-doc .lark-doc-callout-emoji-picker { position: absolute; top: calc(100% + 4px); right: 4px; display: flex; flex-wrap: wrap; gap: 2px; width: 190px; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tools); }.lark-doc .lark-doc-callout-emoji-picker button { min-width: 30px; padding: 2px; font-size: 18px; }.lark-doc .lark-doc-callout-emoji-search { display: block !important; width: 100% !important; height: auto !important; }.lark-doc .lark-doc-callout-emoji-search input { width: 100%; box-sizing: border-box; }
+.lark-doc .lark-doc-callout-tools { position: absolute; z-index: 24; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tools); }.lark-doc .lark-doc-callout-tools label { display: grid; place-items: center; width: 30px; height: 30px; color: var(--ld-text-menu-icon); cursor: pointer; }.lark-doc .lark-doc-callout-tools label span { grid-area: 1 / 1; pointer-events: none; }.lark-doc .lark-doc-callout-tools input[type="color"] { grid-area: 1 / 1; width: 30px; height: 30px; padding: 0; border: 0; opacity: 0; cursor: pointer; }.lark-doc .lark-doc-callout-tools > button { min-width: 30px; height: 30px; padding: 3px; }
 .lark-doc .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* —— 划词浮动工具条（对齐飞书：AI 入口 → 标题级别 ▾ → 对齐缩进 ▾ → 行内格式 → 高亮取色 → 复制）—— */
 .lark-doc .lark-doc-bubble { position: fixed; z-index: 70; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-bubble); }.lark-doc .lark-doc-bubble > button { display: inline-flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-bubble); }
@@ -557,10 +561,29 @@
 .lark-doc .lark-doc-block-color-submenu button { align-items: center; }
 .lark-doc .lark-doc-block-color-swatch { display: inline-block; width: 20px; height: 20px; flex: 0 0 20px; border: 1px solid var(--ld-border-swatch); border-radius: 4px; }
 .lark-doc .lark-doc-block-color-swatch.is-transparent { background: linear-gradient(135deg, transparent 46%, var(--ld-stroke-swatch-empty) 47%, var(--ld-stroke-swatch-empty) 53%, transparent 54%); }
-.lark-doc .lark-doc-callout-emoji-tabs { display: flex; width: 100%; gap: 2px; margin: 3px 0; border-bottom: 1px solid var(--ld-border-chrome); }
-.lark-doc .lark-doc-callout-emoji-tabs button { min-width: 0; flex: 1; padding: 4px 2px; color: var(--lark-doc-muted); font-size: 11px; }
+/* 高亮块表情面板（P4-03，02 §16 ④ 实测 456×392）：顶部搜索 + 随机钮、9 组分类 tab、
+   7 列图标网格。网格按列宽均分而不是按 24px 平铺 —— 24×24 是格子**内部**图标位的尺寸
+   （§16 ④ 原值），格子本身留白才是飞书的疏密；456 宽减去 32 内边距后每格约 60px。 */
+.lark-doc .lark-doc-callout-emoji-picker { position: absolute; top: calc(100% + 4px); right: 4px; z-index: 1030; display: flex; flex-direction: column; box-sizing: border-box; width: 456px; max-width: calc(100vw - 32px); height: 392px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tools); }
+/* 工具条下方放不下时翻到上方（mixin 的 toggleCalloutEmoji 判位），避免顶出可视区。 */
+.lark-doc .lark-doc-callout-emoji-picker.is-above { top: auto; bottom: calc(100% + 4px); }
+.lark-doc .lark-doc-callout-emoji-head { display: flex; flex: none; align-items: center; gap: 8px; padding-bottom: 8px; }
+/* 搜索框复用工具条 <label> 的格子样式会变成 30×30，这里按三元素选择器盖回来（不用 !important）。 */
+.lark-doc .lark-doc-callout-tools label.lark-doc-callout-emoji-search { display: block; flex: 1; width: auto; height: auto; min-width: 0; cursor: text; }
+.lark-doc .lark-doc-callout-emoji-search input { box-sizing: border-box; width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: transparent; color: var(--ld-text); font-size: 13px; }
+.lark-doc .lark-doc-callout-emoji-random { display: grid; flex: none; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: transparent; color: var(--ld-text-menu-icon); font-size: 18px; line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-callout-emoji-random:hover { background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-callout-emoji-tabs { display: flex; flex: none; gap: 2px; margin: 0 0 8px; border-bottom: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-callout-emoji-tabs button { min-width: 0; flex: 1; padding: 4px 0; border: 0; border-radius: 4px 4px 0 0; background: transparent; color: var(--ld-text-tertiary); font-size: 11px; line-height: 16px; white-space: nowrap; cursor: pointer; }
 .lark-doc .lark-doc-callout-emoji-tabs button[aria-selected="true"] { color: var(--ld-text-accent); background: var(--ld-bg-accent); }
-.lark-doc .lark-doc-callout-emoji-empty { width: 100%; margin: 6px 0; color: var(--lark-doc-muted); font-size: 12px; text-align: center; }
+.lark-doc .lark-doc-callout-emoji-grid { display: grid; flex: 1; min-height: 0; overflow-y: auto; grid-template-columns: repeat(7, minmax(0, 1fr)); align-content: start; overscroll-behavior: contain; }
+.lark-doc .lark-doc-callout-emoji-grid > button { display: grid; height: 36px; padding: 0; border: 0; background: transparent; place-items: center; cursor: pointer; }
+.lark-doc .lark-doc-callout-emoji-item { display: grid; width: 24px; height: 24px; border-radius: 4px; font-size: 20px; line-height: 1; place-items: center; }
+.lark-doc .lark-doc-callout-emoji-grid > button:hover .lark-doc-callout-emoji-item, .lark-doc .lark-doc-callout-emoji-grid > button:focus-visible .lark-doc-callout-emoji-item { background: var(--ld-emoji-item-bg); }
+.lark-doc .lark-doc-callout-emoji-empty { grid-column: 1 / -1; margin: 12px 0; color: var(--ld-text-tertiary); font-size: 12px; text-align: center; }
+/* 行内 emoji（02 §16 ⑤：与文字同基线、不抬行高）。彩色 emoji 字体的 ascent/descent
+   比正文大，不加这道锁行高，16px 正文的 26px 行盒会被顶到 30px 以上。 */
+.lark-doc .lark-doc-emoji { font-style: normal; line-height: 1; vertical-align: baseline; }
 .lark-doc .lark-doc-command-submenu-arrow { display: inline-grid; width: 28px; height: 28px; min-width: 28px; flex: 0 0 28px; margin-left: auto; place-items: center; border-radius: 5px; color: var(--lark-doc-muted); font-size: 18px; line-height: 1; cursor: pointer; }.lark-doc .lark-doc-command-submenu-arrow:hover, .lark-doc .lark-doc-command-submenu-arrow.is-open { background: var(--ld-bg-accent); color: var(--ld-text-accent); }.lark-doc .lark-doc-command-submenu-arrow:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; border-radius: 3px; }
 .lark-doc .lark-doc-command-submenu { position: fixed; z-index: 82; display: grid; width: 190px; gap: 2px; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 9px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); }
 .lark-doc .lark-doc-command-submenu strong { padding: 4px 7px; color: var(--lark-doc-muted); font-size: 12px; }

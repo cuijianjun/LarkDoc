@@ -8,7 +8,7 @@
 export { LarkDocBlockquote } from '../core/blocks/quote'
 export { levels, validateAttribute } from '../core/blocks/shared'
 export { LarkDocHeading } from '../core/blocks/heading'
-export { calloutEmojis, safeCalloutEmoji, Callout } from '../core/blocks/callout'
+export { CALLOUT_EMOJI_DEFAULT, safeCalloutEmoji, Callout } from '../core/blocks/callout'
 export { Columns, Column } from '../core/blocks/columns'
 export { LarkDocOrderedList } from '../core/blocks/ordered-list'
 export { LarkDocListItemNumber } from '../core/blocks/list-item-number'
@@ -36,7 +36,16 @@ export {
   normalizeBookmark, readBookmark, readBookmarkHost, readBookmarkMeta, readBookmarkUrl,
 } from '../core/blocks/bookmark'
 export { codeExtension } from '../core/blocks/code-block'
-export { EMOJI_GLYPHS, LarkDocEmoji } from '../core/blocks/emoji'
+// P4-03：行内 emoji 的形状从 11 条硬编码换成 emojibase 全量表（1898 条 / 9 组）。
+// 同源再导出查表与全量表元信息，宿主与面板都不许自己维护字形字典。
+export {
+  EMOJI_DEFAULT_NAME, emojiGlyph, LarkDocEmoji,
+} from '../core/blocks/emoji'
+export {
+  EMOJI_GROUP_META, EMOJI_NAME_MAX, emojiItems, emojiCategories, emojiGroupOf,
+  normalizeEmojiName, normalizeEmojiGlyph, findEmojiByName, findEmojiByGlyph,
+  isEmojiGlyph, searchEmoji,
+} from '../core/emoji/catalog'
 // P4-01：行内提及（人员 / 群名片 / 云文档共用同一个 atom）。契约层（kind 枚举 /
 // 字段上限 / 规范化 / 纯文本形态）同源再导出，宿主造 chip 只从这里取 `normalizeMention`。
 export {
