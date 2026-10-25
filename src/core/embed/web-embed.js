@@ -13,6 +13,15 @@ export const GENERIC_PROVIDER_ID = 'generic'
 /** 04 §4.3 实测默认块高（820×463，比例 1.771 ≈ 16:9）。 */
 export const WEB_EMBED_DEFAULT_HEIGHT = 463
 
+/**
+ * 默认宽高比 = 820 ÷ 463（04 §4.3 实测）。
+ *
+ * 与 `WEB_EMBED_DEFAULT_HEIGHT` 同一个规格的两个面：高度用在「宽度未知」的兜底，
+ * 比例用在「宽度会变」的场合（preset 把 aspect 写进 attrs，宽度一变高度跟着变，
+ * 不用再为每个站点存一个像素值）。两个数必须自洽：`round(820 / 1.771) === 463`。
+ */
+export const WEB_EMBED_DEFAULT_ASPECT = 1.771
+
 /** 高度上下界：下界防塌成一条线，上界防一条 JSON 把页面撑爆。 */
 export const WEB_EMBED_MIN_HEIGHT = 120
 export const WEB_EMBED_MAX_HEIGHT = 4000

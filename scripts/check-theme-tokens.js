@@ -6,6 +6,9 @@
  *   1. 字面 hex 颜色（#RGB/#RGBA/#RRGGBB/#RRGGBBAA）；
  *   2. `white` 颜色关键字（white-space / whitelisted 等由词边界排除，不算）。
  *
+ * 判定前会剥掉两类不可能承载 CSS 颜色的文本：块注释、http(s) URL（见 URL_RE 注释）。
+ * 前者是文档说明，后者是 query / 锚点里的同名子串（如金数据 src 的 `background=white`）。
+ *
  * 规则（基线计数法）：现存违例按「文件 → 数量」记在 baseline 里放行，
  * 只卡新增 —— 文件内违例数超过基线、或基线外文件出现违例即失败。
  * 收编期每完成一批字面色 → var(--ld-*) 改写，用 `node scripts/check-theme-tokens.js --update`
@@ -34,6 +37,13 @@ const PALETTE_FILES = [`${path.sep}editor${path.sep}palette.js`]
 const HEX_RE = /#[0-9a-fA-F]{3,8}\b/g
 // 独立 white 关键字：前后都不能是字母数字下划线或连字符（排除 white-space、--lark-doc-white）。
 const WHITE_RE = /(^|[^\w-])white(?![\w-])/g
+// http(s) URL 整段（到空白或引号为止）。
+// 规则只针对 CSS 颜色，而 URL 里不可能出现 CSS 颜色：query 参数和 `#` 锚点同样长成
+// `white` / `#fff` 的样子，纯文本扫描分不出来。实例：金数据内嵌 src 的
+// `?background=white&banner=show&...`（04 §4.3 ④.1 实测原值，必须原样保留）。
+// 因此判定前先把 URL 剥掉，而不是给那个文件开白名单——开白名单会连它以后
+// 真写的字面色一起放过。
+const URL_RE = /https?:\/\/[^\s'"`]+/g
 
 function isWhitelisted(file) {
   return WHITELIST_PARTS.some((part) => file.includes(part)) || PALETTE_FILES.some((part) => file.includes(part))
@@ -68,7 +78,10 @@ function countViolations(rawContent) {
     // 自定义属性声明（--ld-text: #1F2329）是 token 的**定义处**，不是使用处：
     // 规则禁止的是组件里写字面色，token 声明本身必须允许写 hex，
     // 否则每加一个 token 都要放宽基线，基线就失去「只进不退」的意义。
-    const checked = line.replace(/--[\w-]+\s*:\s*[^;{}]+/g, '')
+    const checked = line
+      .replace(/--[\w-]+\s*:\s*[^;{}]+/g, '')
+      // URL 段先剥掉再判（见 URL_RE 注释）：query / 锚点里的 white、#fff 不是颜色。
+      .replace(URL_RE, '')
     if (HEX_RE.test(checked) || WHITE_RE.test(checked)) {
       hits.push({ line: index + 1, snippet: line.trim().slice(0, 120) })
     }
