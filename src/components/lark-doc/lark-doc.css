@@ -71,6 +71,7 @@
   /* ---- L2 边框 ---- */
   --ld-border: #e2e9e6;             /* 常规边框（旧 --lark-doc-line） */
   --ld-border-strong: #BBBFC4;      /* 强边框（两档同） */
+  --ld-border-quote: #BBBFC4;       /* 引用块竖线（浅 #BBBFC4 / 深 #5F5F5F，11 §4.9.4 实测） */
   --ld-border-cell: #DEE0E3;        /* 表格线（绿档待 B4 核定） */
   --ld-divider: #DEE0E3;            /* 分隔线（绿档待 B5 核定） */
   --ld-border-accent: #d8eee5;      /* 激活态边框 */
@@ -182,8 +183,10 @@
      模板面板）按「只映射不新造」归并到既有中性 token。 */
   --ld-text-content: #263830;            /* 正文主文字（≠ --ld-text 外壳主文字，两值现状不同，不可合并） */
   --ld-text-heading: #213c31;            /* 正文标题 h1–h6 */
-  --ld-bg-quote: #f5faf7;                /* 引用底 */
-  --ld-text-quote: #4c6459;              /* 引用文字 */
+  /* P1-01：引用块按飞书规格改无底色 + ::before 竖线（见 360 行注释），
+     --ld-bg-quote 退役；--ld-text-quote 收编为次要文字色别名
+     （pcvue 深色的 #CFCFCF 刻意对比度校准仍走本 token 覆盖）。 */
+  --ld-text-quote: var(--ld-text-secondary);
   --ld-border-callout: #9ad9bd;          /* 高亮块默认描边（JS 色板 inline style 优先，此处仅兜底） */
   --ld-bg-callout: #eff9f4;              /* 高亮块默认底 */
   --ld-text-bullet: #4e5969;             /* 无序列表圆点 */
@@ -357,7 +360,16 @@
 /* H1 的下间距飞书实测是 10px，其余级别统一 8px（与正文块间距一致）。 */
 .lark-doc .ProseMirror h1 { font-size: 26px; margin-bottom: 10px; }.lark-doc .ProseMirror h2 { font-size: 22px; }.lark-doc .ProseMirror h3 { font-size: 20px; }.lark-doc .ProseMirror h4 { font-size: 18px; }.lark-doc .ProseMirror h5 { font-size: 16px; }.lark-doc .ProseMirror h6 { font-size: 14px; }
 .lark-doc .ProseMirror [data-type="heading"][data-level="7"] { font-size: 1em; font-weight: 700; }.lark-doc .ProseMirror [data-type="heading"][data-level="8"] { font-size: .96em; font-weight: 700; }.lark-doc .ProseMirror [data-type="heading"][data-level="9"] { font-size: .92em; font-weight: 700; }
-.lark-doc .ProseMirror p { margin: 0 0 8px; }.lark-doc .ProseMirror blockquote { border-left: 3px solid var(--lark-doc-green); background: var(--ld-bg-quote); margin: 15px 0; padding: 7px 16px; color: var(--ld-text-quote); }
+.lark-doc .ProseMirror p { margin: 0 0 8px; }
+/* 引用块按飞书规格重写（02 §8 + 11 §4.9.4 实测，P1-01）：
+   外层 margin 8px -2px 8px 0 / padding 0 2px 0 12px，无背景无边框；
+   竖线是内层 ::before 伪元素（2px 宽、随内容高、圆角 1px），
+   不是 border 也不是 box-shadow；正文用次要文字色。
+   旧样式（3px 绿边框 + 背景）作废；负右 margin 由 .lark-doc overflow-x: clip 兜底。
+   文字色走 --ld-text-quote（= --ld-text-secondary 别名，pcvue 深色有 #CFCFCF 校准覆盖）。 */
+.lark-doc .ProseMirror blockquote { position: relative; margin: 8px -2px 8px 0; padding: 0 2px 0 12px; color: var(--ld-text-quote); }
+.lark-doc .ProseMirror blockquote::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; border-radius: 1px; background: var(--ld-border-quote); }
+.lark-doc .ProseMirror blockquote > :first-child { margin-top: 0; }.lark-doc .ProseMirror blockquote > :last-child { margin-bottom: 0; }
 .lark-doc .ProseMirror div[data-type="callout"] { position: relative; margin: 16px 0; padding: 12px 16px 12px 48px; border: 1px solid var(--ld-border-callout); border-left: 4px solid var(--lark-doc-green); border-radius: 8px; background: var(--ld-bg-callout); }
 /* emoji 与首行文字居中对齐：行盒高对齐正文首行（1.8 × 16px = 28.8px），
    否则 1.2 的行高会让 emoji 比文字高 3px。 */

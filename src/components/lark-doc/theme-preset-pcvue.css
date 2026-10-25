@@ -214,9 +214,10 @@
   --ld-text-content: #FFFFFF;
   --ld-text-heading: #FFFFFF;
   --ld-text-slide-title: #FFFFFF;
-  /* ★2 同源：--ld-text-quote **不取**宿主次字 #999999（引用底上仅 3.67:1）；
-     默认档 #A6A6A6 也只有 4.42:1，差 0.08 → 用 11 §4.4 实测深档基色 #CFCFCF
-     （6.92:1，非新造），比主文字 #F0F0F0 暗一档，保留引用层级。 */
+  /* ★2 同源：--ld-text-quote（P1-01 起 = --ld-text-secondary 别名）**不取**
+     宿主次字 #999999（引用正文上仅 3.67:1）；默认档 #A6A6A6 也只有 4.42:1，
+     差 0.08 → 用 11 §4.4 实测深档基色 #CFCFCF（6.92:1，非新造），
+     比主文字 #F0F0F0 暗一档，保留引用层级。 */
   --ld-text-quote: #CFCFCF;
   --ld-text-bullet: #1FD6A5;           /* 列表符号用品牌提亮档（同默认档用主色口径） */
   --ld-text-summary: #FFFFFF;

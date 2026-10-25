@@ -5,6 +5,7 @@
  * 装配层与适配层只从这里拿块定义，不许绕过注册表直接深挖 core 内部路径。
  * core 不许反向 import 本目录或 components/。
  */
+export { LarkDocBlockquote } from '../core/blocks/quote'
 export { levels, validateAttribute } from '../core/blocks/shared'
 export { LarkDocHeading } from '../core/blocks/heading'
 export { calloutEmojis, safeCalloutEmoji, Callout } from '../core/blocks/callout'

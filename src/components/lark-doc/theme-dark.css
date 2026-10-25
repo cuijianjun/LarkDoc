@@ -190,9 +190,8 @@
   --ld-text-heading: #F0F0F0;             /* A */
   --ld-text-slide-title: #F0F0F0;         /* B：深绿 #214c37 在 #292929 上不可读，归主文字档 */
 
-  /* ---- 引用（A：11 §4.9 竖线 #5F5F5F、正文 #A6A6A6） ---- */
-  --ld-bg-quote: rgba(207, 207, 207, 0.04); /* B */
-  --ld-text-quote: #A6A6A6;               /* A */
+  /* ---- 引用（A：11 §4.9.4 竖线 #5F5F5F；正文 #A6A6A6 走 --ld-text-quote 别名） ---- */
+  --ld-border-quote: #5F5F5F;             /* A：P1-01 竖线独立 token（浅档 #BBBFC4 无单一现成 token 命中） */
   --ld-border-callout: #5F5F5F;           /* A */
   --ld-bg-callout: #292929;               /* A：11 §4.8 callout #F2F3F5 → #292929 */
 
@@ -308,8 +307,8 @@
     --ld-bg-content: #FFFFFF;
     --ld-text-content: #263830;
     --ld-text-heading: #213c31;
-    --ld-bg-quote: #f5faf7;
-    --ld-text-quote: #4c6459;
+    --ld-text-secondary: #3f5149;   /* P1-01：引用正文经 --ld-text-quote 别名跟随本值 */
+    --ld-border-quote: #BBBFC4;     /* P1-01：引用竖线回浅档 */
     --ld-border-callout: #9ad9bd;
     --ld-bg-callout: #eff9f4;
     --ld-text-bullet: #4e5969;

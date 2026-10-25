@@ -26,7 +26,7 @@ import Typography from '@tiptap/extension-typography'
 import { safeUrl } from '../../core/documentOperations'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
-  LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji,
+  LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
   codeExtension, imageExtension, mathExtension, documentExtension,
 } from '../../registry/blocks'
 
@@ -42,7 +42,11 @@ const LarkDocCharacterCount = CharacterCount.extend({
 export function createLarkDocExtensions(options = {}) {
   const enabled = (name) => options.config?.features?.[name] !== false
   return [
-    StarterKit.configure({ heading: false, codeBlock: false, orderedList: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
+    // schema 规格与 StarterKit 内置版逐字节一致（content: 'block+' 容器），
+    // 仅追加 parseHTML 规则；位置紧随 StarterKit，命令与 inputRule 原样继承。
+    StarterKit.configure({ heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    LarkDocBlockquote,
     LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile),
     Details.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
