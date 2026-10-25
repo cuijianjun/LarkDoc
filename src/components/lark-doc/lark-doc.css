@@ -747,6 +747,42 @@
 .lark-doc .lark-doc-file.is-selected { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
 
 /* ==================================================================
+   内嵌网页块（P3-01 / 04 §4.3 实测规格）
+   一个块壳四态：loading / ready / degraded / blocked，由 NodeView 写在
+   `data-embed-state` 上，这里只按状态翻面（不另立类名，避免两份列表漂移）。
+   壳 820×463 起（宽受正文 1041 约束，高由 height / aspect / 桥 resize 决定），
+   边框 1px `--ld-border-cell` + radius 9 —— 但**边框只在就绪后出现**：
+   04 §4.3 ⑥ 的时间线是「落块 250ms 无边框、只有转圈，≥1.5s 才有边框」，
+   所以基础态用 transparent 占位（几何不变、不跳动），就绪/降级再上色。
+   ================================================================== */
+.lark-doc .lark-doc-embed { display: block; box-sizing: border-box; width: 100%; margin: 0 0 16px; }
+/* 高由 NodeView 写 inline（`resolveEmbedHeight`），这里不设 height，免得跟桥上报打架。 */
+.lark-doc .lark-doc-embed-frame { position: relative; box-sizing: border-box; width: 100%; max-width: 1041px; border: 1px solid transparent; border-radius: 9px; background: var(--ld-bg-surface); overflow: hidden; }
+.lark-doc .lark-doc-embed[data-embed-state="ready"] .lark-doc-embed-frame,
+.lark-doc .lark-doc-embed[data-embed-state="degraded"] .lark-doc-embed-frame { border-color: var(--ld-border-cell); }
+/* 状态层（转圈 / 快照卡）与 iframe 层共用同一块区域，靠定位叠在一起。 */
+.lark-doc .lark-doc-embed-content { position: relative; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; overflow: hidden; }
+.lark-doc .lark-doc-embed-layer { position: absolute; inset: 0; display: block; }
+/* 常驻层的配套：iframe 一造出来就进 DOM（游离 iframe 不 load），loading 期靠这里藏。
+   缺了这条会看到「白 iframe」而不是转圈，与 04 §4.3 ⑥ 的 250ms 快照不符。 */
+.lark-doc .lark-doc-embed[data-embed-state="loading"] .lark-doc-embed-layer { visibility: hidden; }
+.lark-doc .lark-doc-embed-iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--ld-bg-surface); }
+
+.lark-doc .lark-doc-embed-loading { position: relative; z-index: 1; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 24px; }
+/* 36×36 转圈（04 §4.3 ⑥ `.docx-block-spin` 实测尺寸）。 */
+.lark-doc .lark-doc-embed-spin { display: block; box-sizing: border-box; width: 36px; height: 36px; border: 3px solid var(--ld-bg-soft); border-top-color: var(--ld-brand-content); border-radius: 50%; animation: lark-doc-embed-spin 800ms linear infinite; }
+@keyframes lark-doc-embed-spin { to { transform: rotate(360deg); } }
+
+/* 降级卡（桥 3s 未握手 + 有 poster）与被拦白块共用一套容器。 */
+.lark-doc .lark-doc-embed-fallback { position: relative; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; padding: 24px; text-align: center; }
+.lark-doc .lark-doc-embed-poster { flex: 1 1 auto; width: 100%; min-height: 0; background-position: center; background-repeat: no-repeat; background-size: contain; }
+.lark-doc .lark-doc-embed-fallback-text { margin: 0; color: var(--ld-text-tertiary); font-size: 14px; line-height: 1.6; }
+.lark-doc .lark-doc-embed-open { flex: 0 0 auto; color: var(--ld-brand-content); font-size: 14px; line-height: 1.6; text-decoration: none; cursor: pointer; }
+.lark-doc .lark-doc-embed-open:hover,
+.lark-doc .lark-doc-embed-open:focus-visible { text-decoration: underline; outline: 0; }
+.lark-doc .lark-doc-embed.is-selected { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
+
+/* ==================================================================
    T4 · 主题切换的无障碍与动效（12 T4-02 / T4-03 / T4-04）
    ================================================================== */
 

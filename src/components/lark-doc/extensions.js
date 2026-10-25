@@ -30,7 +30,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock,
+  FileBlock, WebEmbed,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -69,6 +69,17 @@ export function createLarkDocExtensions(options = {}) {
     // 「图片 → 文件」的落位直觉；关掉 features.files 只藏入口，节点仍在 schema 里，
     // 历史 JSON 照样解析（P0-04 约定）。
     FileBlock.configure({ resolveFileUrl: options.resolveFileUrl || null }),
+    // P3-01：内嵌网页紧跟文件块——同为「外部内容占位」的同层原子块。
+    // `canEmbed` 是出网策略闸门（P3-06 接线），现在传 null 表示不干预；
+    // 桥回调（标题回写 / 嵌入内容存盘）也走这里注入，core 不认识宿主。
+    WebEmbed.configure({
+      canEmbed: options.canEmbed || null,
+      sandbox: options.embedSandbox || null,
+      allow: options.embedAllow || null,
+      bridgeTimeout: options.embedBridgeTimeout,
+      onSetTitle: options.onEmbedTitle || null,
+      onSave: options.onEmbedSave || null,
+    }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),

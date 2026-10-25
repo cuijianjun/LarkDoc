@@ -427,6 +427,35 @@
           "default": "unknown"
         }
       }
+    },
+    "webEmbed": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "aspect": {
+          "default": null
+        },
+        "bridgeVersion": {
+          "default": 1
+        },
+        "height": {
+          "default": null
+        },
+        "poster": {
+          "default": null
+        },
+        "providerId": {
+          "default": "generic"
+        },
+        "src": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        }
+      }
     }
   },
   "marks": {

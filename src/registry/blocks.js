@@ -17,6 +17,12 @@ export { BLOCK_ID_META, INDENT_META, applyBlockIdFixes, applyIndentFixes } from 
 export { nextBlockIndent, Formatting } from '../core/blocks/formatting'
 export { imageExtension } from '../core/blocks/image'
 export { FileBlock, fileBlockKind, fileBlockNeedsPreview, canRenderFileBlock } from '../core/blocks/file-block'
+// P3-01：内嵌网页块。判定层（高度 / src 合法性 / sandbox 默认值）一并从这里出，
+// 上层装配与三端覆盖只用认识本注册表。
+export {
+  WebEmbed, canRenderWebEmbed, resolveEmbedHeight, safeEmbedSrc,
+  WEB_EMBED_DEFAULT_HEIGHT, WEB_EMBED_MIN_HEIGHT, WEB_EMBED_MAX_HEIGHT,
+} from '../core/blocks/web-embed'
 export { codeExtension } from '../core/blocks/code-block'
 export { EMOJI_GLYPHS, LarkDocEmoji } from '../core/blocks/emoji'
 export { UnknownBlock } from '../core/blocks/unknown-block'
