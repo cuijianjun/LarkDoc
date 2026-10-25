@@ -23,6 +23,12 @@ export {
   WebEmbed, canRenderWebEmbed, resolveEmbedHeight, safeEmbedSrc,
   WEB_EMBED_DEFAULT_HEIGHT, WEB_EMBED_MIN_HEIGHT, WEB_EMBED_MAX_HEIGHT,
 } from '../core/blocks/web-embed'
+// P3-04：卡片块。契约层（8 KB 上限 / 版本判定 / provider 闸门 / 编解码）同源再导出，
+// 宿主只从这里取 `encodeCard` 造卡片，不自己拼 JSON。
+export {
+  CardEmbed, CARD_MAX_BYTES, CARD_VERSION, cardSchema, encodeCard,
+  isFutureCard, isKnownProvider, normalizeCard, readCard, utf8Bytes,
+} from '../core/blocks/card-embed'
 export { codeExtension } from '../core/blocks/code-block'
 export { EMOJI_GLYPHS, LarkDocEmoji } from '../core/blocks/emoji'
 export { UnknownBlock } from '../core/blocks/unknown-block'

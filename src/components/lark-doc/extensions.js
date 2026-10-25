@@ -30,7 +30,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed,
+  FileBlock, WebEmbed, CardEmbed,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -79,6 +79,13 @@ export function createLarkDocExtensions(options = {}) {
       bridgeTimeout: options.embedBridgeTimeout,
       onSetTitle: options.onEmbedTitle || null,
       onSave: options.onEmbedSave || null,
+    }),
+    // P3-04：卡片块紧跟内嵌网页——同为「外部内容占位」，区别在渲染方式（DOM / iframe）。
+    // `onAction` 是动作冒泡通道（编辑器不持 token，跳转与提交都由宿主决定）；
+    // `providers` 为 null = 全认，宿主声明后未列出的 providerId 才降级成占位卡。
+    CardEmbed.configure({
+      onAction: options.onEmbedCardAction || null,
+      providers: options.embedProviders || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),

@@ -783,6 +783,38 @@
 .lark-doc .lark-doc-embed.is-selected { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
 
 /* ==================================================================
+   卡片块（P3-04 / 09 §3.5）
+   与内嵌网页块并列的「外部内容占位」，但内容渲染在 DOM（可搜索 / 可导出 /
+   可协同），所以样式是**正文语义**而不是 iframe 壳：卡片是正文的一部分，
+   宽度跟正文、不设上限（内嵌网页的 1041px 是 iframe 运行时才有的约束）。
+   配色全部复用既有中性 token，不新造色值：卡底 = 画布底、描边 = 单元格框线、
+   主文字 = 正文色、副文字 = 三级文字、主按钮 = accent 三件套。
+   ================================================================== */
+.lark-doc .ProseMirror .lark-doc-card { box-sizing: border-box; width: 100%; margin: 4px 0 16px; padding: 12px 16px; border: 1px solid var(--ld-border-cell); border-radius: 8px; background: var(--ld-bg-surface); }
+.lark-doc .ProseMirror .lark-doc-card[data-card-state="readonly"] { cursor: default; }
+/* 封面用 background-image（同 bookmark 的 favicon 口径）：图挂了不破图标、不留 alt 裂图。 */
+.lark-doc .ProseMirror .lark-doc-card-cover { height: 120px; margin: -4px -8px 12px; border-radius: 6px; background-color: var(--ld-bg-file-preview); background-position: center; background-repeat: no-repeat; background-size: cover; }
+.lark-doc .ProseMirror .lark-doc-card-title { margin: 0; color: var(--ld-text-content); font-size: 15px; font-weight: 600; line-height: 1.5; }
+.lark-doc .ProseMirror .lark-doc-card-desc { margin: 4px 0 0; color: var(--ld-text-tertiary); font-size: 13px; line-height: 1.6; }
+.lark-doc .ProseMirror .lark-doc-card-fields { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 0; }
+.lark-doc .ProseMirror .lark-doc-card-field { display: flex; gap: 8px; margin: 0; font-size: 13px; line-height: 1.6; }
+.lark-doc .ProseMirror .lark-doc-card-field-label { flex: none; margin: 0; color: var(--ld-text-tertiary); }
+.lark-doc .ProseMirror .lark-doc-card-field-value { margin: 0; color: var(--ld-text-content); overflow-wrap: anywhere; }
+/* 动作是 `span[role=button]`，不是 `a` / `button`：块内容不可编辑，点击语义由 NodeView
+   转成 onAction 冒泡给宿主（编辑器不持 token），所以这里只画形状。 */
+.lark-doc .ProseMirror .lark-doc-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+.lark-doc .ProseMirror .lark-doc-card-action { box-sizing: border-box; padding: 3px 12px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text-content); font-size: 13px; line-height: 1.6; cursor: pointer; user-select: none; }
+.lark-doc .ProseMirror .lark-doc-card-action:hover { background: var(--ld-bg-hover); }
+.lark-doc .ProseMirror .lark-doc-card-action:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: 1px; }
+/* 第一个动作是主操作（§3.5 的动作表按优先级排列，首个即默认动作）。 */
+.lark-doc .ProseMirror .lark-doc-card-action.is-primary { border-color: var(--ld-border-accent); background: var(--ld-bg-accent); color: var(--ld-text-accent); }
+.lark-doc .ProseMirror .lark-doc-card-action[aria-disabled="true"] { opacity: .55; cursor: default; }
+.lark-doc .ProseMirror .lark-doc-card-action[aria-disabled="true"]:hover { background: transparent; }
+.lark-doc .ProseMirror .lark-doc-card-action.is-primary[aria-disabled="true"]:hover { background: var(--ld-bg-accent); }
+/* 版本/摘要提示：灰字一行，不抢卡片主体。 */
+.lark-doc .ProseMirror .lark-doc-card-note { margin: 8px 0 0; color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.6; }
+
+/* ==================================================================
    T4 · 主题切换的无障碍与动效（12 T4-02 / T4-03 / T4-04）
    ================================================================== */
 

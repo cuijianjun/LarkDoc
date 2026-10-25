@@ -57,6 +57,17 @@
         }
       }
     },
+    "cardEmbed": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "card": {
+          "default": null
+        }
+      }
+    },
     "codeBlock": {
       "content": "text*",
       "group": "block",
