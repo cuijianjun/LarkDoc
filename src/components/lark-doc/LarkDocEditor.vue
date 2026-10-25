@@ -101,6 +101,16 @@
       aria-label="选择本地图片"
       @change="onImageInput"
     >
+    <!-- P2-04：视频与文件同一个入口。刻意不写 accept —— 02 L4168 实测飞书斜杠 `file`
+         的 accept 为 null（不限类型），任何附件都该能被选进来，由上传侧再兜限值。 -->
+    <input
+      ref="fileInput"
+      type="file"
+      multiple
+      class="lark-doc-file-input"
+      aria-label="选择视频或文件"
+      @change="onFileInput"
+    >
     <p
       v-if="error"
       class="lark-doc-toast"
@@ -171,6 +181,9 @@ import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transact
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
 import { IMAGE_REJECT, imageRejectMessage, isImageMime, nearestInsertPosition, sortImageFiles } from '../../core/media/image-insert'
+// P2-04：文件 / 视频块与图片共用「分流 → 归一落点 → 逐块插入」这套形状，
+// 差别只有「不限 MIME、必须走宿主上传」，判定全在 core/media/file-block.js。
+import { fileBlockAttrs, sortFileFiles } from '../../core/media/file-block'
 import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
@@ -190,6 +203,11 @@ export default {
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
     templates: { type: Array, default: () => [] },
     uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
+    // P2-04：文件 / 视频块必须走宿主上传（10 GB 的附件不可能内联成 data URI），
+    // 没传 uploadFile 时该入口只报错、不落半截块。
+    uploadFile: { type: Function, default: null },
+    // 只存附件 token、不存直链的宿主可注入这条换票函数（token → 可渲染地址）。
+    resolveFileUrl: { type: Function, default: null },
     session: { type: Object, default: null },
     // 'auto' 按指纹识别 Vditor HTML；'vditor' 强制归一化；'html' 明确跳过归一化。
     contentFormat: { type: String, default: 'auto' },
@@ -212,6 +230,7 @@ export default {
     maxBlockIndent() { return clampBlockIndent(this.larkDocConfig.limits.maxIndent) },
     effectiveMaxLength() { return Math.max(0, Number(this.larkDocConfig.limits.maxLength) || 0) },
     effectiveImageMaxSize() { return this.larkDocConfig.limits.maxImageSize },
+    effectiveFileMaxSize() { return this.larkDocConfig.limits.maxFileSize },
     titleLength() { return this.larkDocConfig.limits.titleLength },
     visibleBlockActions() { return this.blockActions.filter((item) => isBlockActionEnabled(this.larkDocConfig, item.id)) },
     visibleBlockTypeActions() {
@@ -260,7 +279,7 @@ export default {
       }
       this.editor = new Editor({
         content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
+        extensions: createLarkDocExtensions({ maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)
@@ -593,6 +612,7 @@ export default {
     clearFormatting() { if (!this.writable()) return; this.restoreSelection(); this.editor.chain().focus().unsetAllMarks().clearNodes().run() },
     cellAttribute(name, value) { if (value) this.run('setCellAttribute', name, value) },
     onImageInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertImageFiles(files) },
+    onFileInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertFileBlocks(files) },
     async resolveImageFile(file) {
       // Keep the imperative upload boundary compatible with older ECS hosts
       // that call the method with a small plain object instead of a Vue vm.
@@ -641,6 +661,46 @@ export default {
           // 下一张必须接在刚插入的这张之后，否则多张图会全堆在第一张的位置上。
           if (anchor !== null) anchor = this.editor.state.selection.to
         } catch (error) { this.error = error?.message || '图片上传失败' }
+      }
+    },
+    /**
+     * 文件 / 视频的上传边界（P2-04）。
+     *
+     * 与 resolveImageFile 的关键差异：**没有 FileReader 兜底**。10 GB 上限的附件
+     * 不可能内联成 data URI，所以没配 uploadFile 就直接报错——宁可不落块，
+     * 也不产生一个「有壳没内容」的半截块。
+     */
+    async resolveFile(file) {
+      const filesEnabled = typeof this.featureEnabled === 'function' ? this.featureEnabled('files') : true
+      if (!this.writable() || !filesEnabled) return null
+      const upload = this.uploadFile
+      if (typeof upload !== 'function') throw new Error('未配置文件上传：请通过 uploadFile 传入上传实现')
+      const uploaded = await upload(file)
+      if (!this.writable()) return null
+      const attrs = fileBlockAttrs(file, uploaded || {})
+      // token 与 src 至少有一个，块才渲染得出来（02 §19.5 ⑤ 的字段契约）。
+      if (!safeAttachmentId(attrs.token) && !(attrs.src && safeUrl(attrs.src, true))) {
+        throw new Error('文件上传未返回有效地址或附件 ID')
+      }
+      return attrs
+    },
+    async insertFileBlocks(files, pos) {
+      if (!this.writable() || !this.featureEnabled('files')) return
+      const { accepted, rejected } = sortFileFiles(files, { maxSize: this.effectiveFileMaxSize })
+      if (!accepted.length) { if (rejected.length) this.error = rejected[0].message; return }
+      // 有被拒的也照样插能插的：一条 toast 说清原因，不阻断其余文件。
+      this.error = rejected.length ? rejected[0].message : ''
+      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
+      for (const file of accepted) {
+        try {
+          const attrs = await this.resolveFile(file)
+          if (!this.writable()) return
+          if (!attrs) continue
+          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
+          this.editor.chain().focus().setFileBlock(attrs).run()
+          // 下一个必须接在刚落的块之后，否则多选的文件会全堆在同一个位置。
+          if (anchor !== null) anchor = this.editor.state.selection.to
+        } catch (error) { this.error = error?.message || '文件上传失败' }
       }
     },
     onDocumentPointerMove(event) {

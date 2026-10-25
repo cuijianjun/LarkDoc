@@ -30,6 +30,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
   UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
+  FileBlock,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -64,6 +65,10 @@ export function createLarkDocExtensions(options = {}) {
     StarterKit.configure({ heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
     LarkDocBlockquote,
     LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile),
+    // P2-04：文件 / 视频块紧跟在图片之后——两者是同层原子块，schema 顺序沿用
+    // 「图片 → 文件」的落位直觉；关掉 features.files 只藏入口，节点仍在 schema 里，
+    // 历史 JSON 照样解析（P0-04 约定）。
+    FileBlock.configure({ resolveFileUrl: options.resolveFileUrl || null }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),

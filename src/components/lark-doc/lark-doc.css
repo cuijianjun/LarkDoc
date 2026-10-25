@@ -207,6 +207,9 @@
   --ld-unknown-card-icon: #8f959e;       /* 左置 16×16 图标 */
   --ld-unknown-card-text: #1f2329;       /* 主文案 */
   --ld-unknown-card-text-sub: #646a73;   /* 副文案 */
+  /* 文件 / 视频块（P2-04，02 §19.5 实测值，同属中性灰，不衍生绿系） */
+  --ld-bg-file-preview: #f2f3f5;         /* 预览区底：iframe / 卡片 / 失败态共用一个壳 */
+  --ld-text-file: #1f2329;               /* 文件名与卡片主文字 */
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -702,6 +705,46 @@
 .lark-doc .lark-doc-crop-region { position: absolute; z-index: 1; outline: 2px solid var(--ld-text-menu-active); background: transparent; cursor: move; }
 .lark-doc .lark-doc-crop-fields { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
 .lark-doc .lark-doc-crop-fields input { width: 64px; }
+
+/* ==================================================================
+   文件 / 视频块（P2-04 / 02 §19.5 实测规格）
+   一个块壳三形态：video 播放器 / pdf iframe / 卡片，由 mimeType 分流，
+   `data-block-type` 恒为 `file`（不存在 video 节点类型）。
+   块壳 534×453 = preview 409 + footer 42 + border 2；容器 8 圆角，
+   iframe 只圆上方两角（下方接 footer，一起圆会漏出底色）。
+   NodeView 与 renderHTML 共用同一套 class，这里不依赖额外包层。
+   ================================================================== */
+.lark-doc .lark-doc-file { box-sizing: border-box; display: flex; flex-direction: column; width: 534px; max-width: 100%; margin: 0 0 16px; border: 1px solid var(--ld-border); border-radius: 8px; background: var(--ld-bg-file-preview); overflow: hidden; }
+/* 高恒 409：失败态与成功态同一个壳，所以「块高」不能当成败判据（③-ter）。 */
+.lark-doc .lark-doc-file-preview { position: relative; box-sizing: border-box; display: flex; align-items: center; justify-content: center; height: 409px; min-height: 409px; overflow: hidden; }
+.lark-doc .lark-doc-file-video { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; border: 0; object-fit: contain; }
+.lark-doc .lark-doc-file-frame { display: block; box-sizing: border-box; width: 100%; height: 100%; border: 0; border-radius: 8px 8px 0 0; background: var(--ld-bg-surface); }
+
+/* 卡片形态：不可内嵌预览的附件（zip / docx / 无 src）走这里。 */
+.lark-doc .lark-doc-file-card { box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 20px; border-radius: 8px; background: var(--ld-bg-surface); }
+.lark-doc .lark-doc-file-card-icon { flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 4px; background: var(--ld-bg-soft); color: var(--ld-text-icon); font-size: 16px; line-height: 1; }
+.lark-doc .lark-doc-file-card-icon::before { content: "▤"; }
+.lark-doc .lark-doc-file-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lark-doc .lark-doc-file-card-name { overflow: hidden; color: var(--ld-text-file); font-size: 14px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-file-card-sub { color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.5; }
+
+/* 失败态：文案两套（视频 / 其余），第二行 `<文件名> · <大小>`。 */
+.lark-doc .lark-doc-file-fallback { box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 24px; text-align: center; }
+.lark-doc .lark-doc-file-fallback .lark-doc-media-error { margin: 0; font-size: 14px; line-height: 1.6; }
+.lark-doc .lark-doc-file-fallback-meta { margin: 0; color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.6; }
+
+/* footer：文件名 · 大小 + 下载。42 含 1px 上边框（border-box），总高才是 453。 */
+.lark-doc .lark-doc-file-footer { box-sizing: border-box; display: flex; align-items: center; gap: 6px; height: 42px; min-height: 42px; padding: 0 16px; border-top: 1px solid var(--ld-border); background: var(--ld-bg-surface); font-size: 14px; }
+.lark-doc .lark-doc-file-name { min-width: 0; overflow: hidden; color: var(--ld-text-file); text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-file-sep,
+.lark-doc .lark-doc-file-size { flex: 0 0 auto; color: var(--ld-text-tertiary); }
+.lark-doc .lark-doc-file-sep[hidden] { display: none; }
+.lark-doc .lark-doc-file-download { flex: 0 0 auto; margin-left: auto; padding: 2px 8px; border-radius: 4px; color: var(--ld-brand-content); text-decoration: none; cursor: pointer; }
+.lark-doc .lark-doc-file-download:hover:not([aria-disabled="true"]),
+.lark-doc .lark-doc-file-download:focus-visible:not([aria-disabled="true"]) { background: var(--ld-bg-menu-item-active); outline: 0; }
+/* 没有可下载地址时链接退成灰字占位，不能变成「点了没反应」。 */
+.lark-doc .lark-doc-file-download[aria-disabled="true"] { color: var(--ld-text-icon); cursor: not-allowed; }
+.lark-doc .lark-doc-file.is-selected { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
 
 /* ==================================================================
    T4 · 主题切换的无障碍与动效（12 T4-02 / T4-03 / T4-04）

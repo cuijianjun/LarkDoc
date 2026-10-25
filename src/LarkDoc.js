@@ -100,6 +100,8 @@ export class LarkDoc {
         persistence: this._resolvePersistence(source),
         saveHtml: this.options.saveHtml === true,
         uploadImage: this._resolveUploader(source),
+        uploadFile: this._resolveFileUploader(source),
+        resolveFileUrl: this._resolveFileUrlResolver(source),
         aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
         session: this._session,
       },
@@ -222,6 +224,35 @@ export class LarkDoc {
     if (typeof source.uploadImage === 'function') {
       return createUploadProvider({ upload: source.uploadImage, limits: null, getDocumentId: () => (source.documentId == null ? null : String(source.documentId)) })
     }
+    return null
+  }
+
+  /**
+   * 文件上传通道归一（P2-04）。附件块和图片块**不共用**解析结果：
+   * 图片侧允许回落到 `uploader`，文件侧优先 `uploadFile`，其次 `uploader`，
+   * 但**绝不**回落到 `uploadImage`——图片上传实现普遍会按 MIME 白名单拒掉 mp4/pdf。
+   *
+   * 返回值刻意是裸函数而不是 upload provider：文件块需要的只是一张
+   * `(file) => ({ token?, url?, name?, size?, mimeType? })` 的票，进度/重试/分片
+   * 属于宿主自己的事（02 §19.5 没有上传中态）。
+   */
+  _resolveFileUploader(source) {
+    const explicit = source.uploadFile
+    if (typeof explicit === 'function') return explicit
+    if (explicit && typeof explicit.upload === 'function') return explicit.upload.bind(explicit)
+    const uploader = source.uploader
+    if (uploader && typeof uploader.upload === 'function') return uploader.upload.bind(uploader)
+    if (typeof uploader === 'function') return uploader
+    return null
+  }
+
+  /**
+   * token → 可播放/可预览 URL 的换票器。本仓库不带飞书预览 SDK，
+   * 只要宿主存了 token 而不是直链，就必须由宿主补这一层，否则文件块只能停在失败态。
+   */
+  _resolveFileUrlResolver(source) {
+    if (typeof source.resolveFileUrl === 'function') return source.resolveFileUrl
+    if (source.file && typeof source.file.resolveUrl === 'function') return source.file.resolveUrl.bind(source.file)
     return null
   }
 

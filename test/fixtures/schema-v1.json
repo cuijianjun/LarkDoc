@@ -141,6 +141,38 @@
         }
       }
     },
+    "fileBlock": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "coverUrl": {
+          "default": null
+        },
+        "mimeType": {
+          "default": null
+        },
+        "name": {
+          "default": null
+        },
+        "size": {
+          "default": null
+        },
+        "src": {
+          "default": null
+        },
+        "token": {
+          "default": null
+        },
+        "viewType": {
+          "default": "Card"
+        }
+      }
+    },
     "hardBreak": {
       "group": "inline",
       "inline": true,

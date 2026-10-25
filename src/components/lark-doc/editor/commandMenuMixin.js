@@ -123,7 +123,7 @@ export default {
       const isSlashTable = this.menuKind === 'slash' && item.id === 'table'
       const isTableSize = item.id === 'table' && item.tableSize
       const isTemplateSelection = item.id === 'template' && !!item.templateId
-      const focusAfter = isTemplateSelection || !['table', 'image', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai'].includes(item.id)
+      const focusAfter = isTemplateSelection || !['table', 'image', 'file', 'inlineMath', 'blockMath', 'emoji', 'link', 'template', 'ai'].includes(item.id)
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -165,7 +165,7 @@ export default {
     },
     executeCommand(id, templateId = '') {
       if (!this.writable()) return
-      const feature = id === 'table' ? 'tables' : id === 'image' ? 'images' : id === 'code' ? 'codeBlocks' : id === 'diagram' ? 'diagram' : id === 'callout' ? 'callouts' : id === 'columns' || /^columns[2-5]$/.test(id) ? 'columns' : id === 'inlineMath' || id === 'blockMath' ? 'math' : id === 'emoji' ? 'emoji' : id === 'template' ? 'templates' : id === 'ai' ? 'ai' : 'blockStyle'
+      const feature = id === 'table' ? 'tables' : id === 'image' ? 'images' : id === 'file' ? 'files' : id === 'code' ? 'codeBlocks' : id === 'diagram' ? 'diagram' : id === 'callout' ? 'callouts' : id === 'columns' || /^columns[2-5]$/.test(id) ? 'columns' : id === 'inlineMath' || id === 'blockMath' ? 'math' : id === 'emoji' ? 'emoji' : id === 'template' ? 'templates' : id === 'ai' ? 'ai' : 'blockStyle'
       if (!isCommandEnabled(this.larkDocConfig, id, feature)) return
       if (id === 'paragraph') this.run('setParagraph')
       else if (/^heading[1-9]$/.test(id)) this.run('setHeading', { level: Number(id.slice(-1)) })
@@ -192,6 +192,8 @@ export default {
       }
       else if (id === 'table') this.tablePicker = true
       else if (id === 'image') this.$refs.imageInput.click()
+      // P2-04：视频与文件同一个入口，accept 不限类型（02 L4168：斜杠 file 的 accept 为 null）。
+      else if (id === 'file') this.$refs.fileInput.click()
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'emoji') this.emojiDialog = true
       else if (id === 'link') this.openLinkDialog(true)

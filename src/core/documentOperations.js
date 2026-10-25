@@ -928,6 +928,9 @@ export const BLOCK_ID_TYPES = new Set([
   // 所以要给 item 自己的 blockId，折叠状态才存在它身上。
   'listItem', 'taskItem',
   'bulletList', 'orderedList', 'taskList', 'codeBlock', 'image', 'horizontalRule', 'blockMath', 'table',
+  // 文件 / 视频块（P2-04）是原子块，但它自己就是「用户能当作一个块操作」的单位，
+  // 折叠与锚点都要能指向它，所以进 id 集合。
+  'fileBlock',
 ])
 export const BLOCK_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 

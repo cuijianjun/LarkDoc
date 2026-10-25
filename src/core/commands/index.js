@@ -36,11 +36,12 @@ for (const group of GROUPS) {
 }
 
 // 与拆分前 commands.js 逐项一致（22 条显式定义 + 9 个生成标题 = 31 个 id）。
+// P2-04 起多一条 `file`（视频或文件），紧跟在图片后面：两者都是「插入媒体」的直觉位置。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'emoji', 'template', 'ai',
 ]
 
@@ -58,7 +59,7 @@ export const COMMANDS = COMMAND_ORDER.map((id) => {
 const COMMAND_FEATURES = {
   table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
   image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', emoji: 'emoji', template: 'templates',
-  callout: 'callouts', ai: 'ai',
+  callout: 'callouts', ai: 'ai', file: 'files',
 }
 
 export function filterCommands(query, kind = 'slash', config = null) {
