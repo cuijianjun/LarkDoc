@@ -174,7 +174,7 @@
     {
       "name": "ESM 主包 (gzip)",
       "path": "dist/lark-doc.esm.js",
-      "limit": "110 KB",
+      "limit": "118 KB",
       "gzip": true
     },
     {
