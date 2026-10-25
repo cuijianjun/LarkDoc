@@ -6,6 +6,12 @@
  * 而不是运行到保存/评论动作才失败。
  */
 export * from './authorization'
+export * from './ai'
+export * from './bitable'
+export * from './reference'
+export * from './jira'
+export * from './okr'
+export * from './security'
 export * from './collaboration'
 export * from './comments'
 export * from './persistence'
