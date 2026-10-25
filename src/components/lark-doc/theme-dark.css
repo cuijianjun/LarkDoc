@@ -209,6 +209,13 @@
   --ld-bg-fold-toggle-hover: rgba(76, 136, 255, 0.20); /* C */
   --ld-text-fold-toggle-hover: #4C88FF;        /* A */
 
+  /* 未知块占位卡（P1-03，11 §4.8 内容块色层）：icon 深色未实测，复用副文 #A6A6A6 */
+  --ld-unknown-card-bg: #292929;               /* A：04 §8.3 深色 bg */
+  --ld-unknown-card-border: #434343;           /* A：04 §8.3 深色描边 */
+  --ld-unknown-card-icon: #A6A6A6;             /* B：复用副文色（未实测，挂起项） */
+  --ld-unknown-card-text: #E8E8E8;             /* A：04 §8.3 深色主文 */
+  --ld-unknown-card-text-sub: #A6A6A6;         /* A：04 §8.3 深色副文 */
+
   /* ---- 表格（A：11 §4.8「只换线色」#DEE0E3 → #434343） ---- */
   --ld-border-table: #434343;             /* A */
   --ld-border-cell: #434343;              /* A */
@@ -320,5 +327,11 @@
     --ld-bg-th: #edf6f0;
     --ld-border-hr: #dce8e1;
     --ld-divider: #DEE0E3;
+    /* 未知块占位卡打印回浅档（04 §8.3 中性灰，与默认档同值） */
+    --ld-unknown-card-bg: #f5f6f7;
+    --ld-unknown-card-border: #dee0e3;
+    --ld-unknown-card-icon: #8f959e;
+    --ld-unknown-card-text: #1f2329;
+    --ld-unknown-card-text-sub: #646a73;
   }
 }

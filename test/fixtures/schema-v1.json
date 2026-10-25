@@ -379,6 +379,19 @@
     "text": {
       "group": "inline",
       "attrs": {}
+    },
+    "unknownBlock": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "payload": {
+          "default": ""
+        },
+        "unknownType": {
+          "default": "unknown"
+        }
+      }
     }
   },
   "marks": {

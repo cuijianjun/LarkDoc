@@ -163,6 +163,12 @@
   --ld-bg-th: transparent;              /* 06 §131：--bg-table-cell 恒透明，表头同 */
   --ld-border-hr: #DEE0E3;              /* = divider */
   --ld-bg-fold-toggle-hover: #E1EAFF;   /* = brand-subtle */
+  /* 未知块占位卡（P1-03）：04 §8.3 中性灰实测值，与本文件已有中性灰角色同源 */
+  --ld-unknown-card-bg: #F5F6F7;         /* = bg-code / bg-page */
+  --ld-unknown-card-border: #DEE0E3;     /* = border */
+  --ld-unknown-card-icon: #8F959E;       /* = text-tertiary */
+  --ld-unknown-card-text: #1F2329;       /* = text-primary */
+  --ld-unknown-card-text-sub: #646A73;   /* = text-secondary */
   --ld-bg-hover-segment: rgba(100, 106, 115, 0.05); /* 06 §130：块 hover 底 */
   /* ---- 通知条 / 侧栏卡片 / AI 面板（06 无实测，按中性角色归并） ---- */
   --ld-border-notice: #DEE0E3;

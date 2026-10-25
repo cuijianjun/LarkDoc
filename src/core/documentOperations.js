@@ -2,6 +2,9 @@ import { Fragment } from '@tiptap/pm/model'
 
 const safeCalloutEmojis = new Set(['💡', '📌', '⚠️', '✅', '💬', '🎯', '🔥', '🌟', '😄', '❤️', '👍', '🎉'])
 
+// 未知块占位卡 payload 上限（P1-03）：payload 可能承载替代整个子树的原始块 JSON。
+export const UNKNOWN_PAYLOAD_MAX = 1000000
+
 // HTML 是导入适配器；所有 JSON 在写入编辑器前必须通过完整 schema 校验。
 /** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image 与本地相对路径。返回 boolean。 */
 export function safeUrl(value, image = false) {
@@ -66,6 +69,9 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'numberStart') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= HEADING_NUMBER_MAX)
     else if (key === 'target') valid = ['_blank', '_self'].includes(value)
     else if (key === 'rel') valid = typeof value === 'string' && /^[a-z\s-]*$/i.test(value)
+    // 未知块占位卡（P1-03）：payload 承载原始块 JSON，可能替代整个子树，上限放宽到 1M 字符。
+    else if (type === 'unknownBlock' && key === 'payload') valid = typeof value === 'string' && value.length <= UNKNOWN_PAYLOAD_MAX && !value.includes('\u0000')
+    else if (type === 'unknownBlock' && key === 'unknownType') valid = typeof value === 'string' && value.length >= 1 && value.length <= 100 && !value.includes('\u0000')
     else valid = typeof value === 'string' && value.length <= 100000 && !value.includes('\u0000')
     if (!valid) throw new Error(`不安全或无效的属性：${type}.${key}`)
   })
@@ -137,6 +143,36 @@ export function aggregateHeadingContainers(json) {
   return { ...json, content: build(json.content) }
 }
 
+/**
+ * 未知块占位还原（P1-03）：unknownBlock → payload 内原始 JSON，导出侧保真出口。
+ *
+ * - 编辑器 getJSON 里未知块只以占位卡存在；导出 / 落库前经本函数还原为原始块
+ *   JSON（key 顺序逐字节保真，stringify/parse 幂等），再次载入时 validateDocument
+ *   会重新降级为占位卡——一来一回不丢字节。
+ * - payload 损坏（非字符串 / 空 / parse 失败 / 还原结果缺 type）时保留占位卡原样。
+ * - 还原结果可能仍含未知 type（正是原始形态），消费方不得再过 validateDocument。
+ * - 纯函数：不修改入参；heading.children 容器形态同步递归。
+ */
+export function restoreUnknownBlocks(json) {
+  if (!json || typeof json !== 'object') return json
+  const walk = (node) => {
+    if (Array.isArray(node)) return node.map(walk)
+    if (!node || typeof node !== 'object') return node
+    const next = { ...node }
+    if (Array.isArray(next.content)) next.content = next.content.map(walk)
+    if (Array.isArray(next.children)) next.children = next.children.map(walk)
+    if (next.type !== 'unknownBlock') return next
+    const payload = next.attrs && next.attrs.payload
+    if (typeof payload !== 'string' || !payload) return next
+    try {
+      const restored = JSON.parse(payload)
+      if (restored && typeof restored === 'object' && typeof restored.type === 'string' && restored.type !== 'unknownBlock') return restored
+    } catch (_) { /* payload 损坏 → 保留占位 */ }
+    return next
+  }
+  return walk(json)
+}
+
 /** 全量校验 Tiptap JSON（节点/属性/深度/规模白名单）并返回规范化 JSON，导入与快照恢复的必经入口。 */
 export function validateDocument(json, schema) {
   // 标题容器形态（heading.children）先展平成扁平模型再校验（P1-02 读取兼容）。
@@ -146,7 +182,19 @@ export function validateDocument(json, schema) {
   function visit(item, depth) {
     if (!item || typeof item !== 'object' || depth > 100 || ++count > 100000) throw new Error('文档结构过深或过大')
     const type = schema.nodes[item.type]
-    if (!type) throw new Error(`不支持的节点：${item.type}`)
+    if (!type) {
+      // P1-03：未知块就地降级为占位卡，原始 JSON 逐字节存进 payload
+      // （JSON.stringify 保 key 顺序，stringify/parse 幂等）。payload 超 1M 时
+      // 放弃保真只存占位（载入优先于还原）；unknownType 供副文案展示。
+      const payload = JSON.stringify(item)
+      return {
+        type: 'unknownBlock',
+        attrs: {
+          payload: payload.length <= UNKNOWN_PAYLOAD_MAX ? payload : '',
+          unknownType: String(item.type).split('\u0000').join('').slice(0, 100) || 'unknown',
+        },
+      }
+    }
     const unknown = Object.keys(item).find((key) => !['type', 'attrs', 'content', 'marks', 'text'].includes(key))
     if (unknown) throw new Error(`不支持的节点字段：${unknown}`)
     validateAttrs(item.type, item.attrs, type)
@@ -160,9 +208,15 @@ export function validateDocument(json, schema) {
       if (Object.keys(mark).some((key) => !['type', 'attrs'].includes(key))) throw new Error('不支持的格式字段')
       validateAttrs(mark.type, mark.attrs, markType)
     })
-    ;(item.content || []).forEach((child) => visit(child, depth + 1))
+    // content 逐个递归：子级若是未知块会被替换为占位卡，需用替换结果重组数组。
+    let next = item
+    if (Array.isArray(item.content)) {
+      const content = item.content.map((child) => visit(child, depth + 1))
+      if (content.some((child, index) => child !== item.content[index])) next = { ...item, content }
+    }
+    return next
   }
-  visit(json, 0)
+  json = visit(json, 0)
   const node = schema.nodeFromJSON(json)
   node.check()
   node.descendants((child) => {

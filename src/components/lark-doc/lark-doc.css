@@ -201,6 +201,12 @@
   --ld-text-fold-toggle: #2b2f36;        /* 标题折叠三角 */
   --ld-bg-fold-toggle-hover: #eef3ff;    /* 折叠三角 hover 底 */
   --ld-text-fold-toggle-hover: #2869f5;  /* 折叠三角 hover 色 */
+  /* 未知块占位卡（P1-03，04 §8.3 中性灰实测值，非绿系衍生） */
+  --ld-unknown-card-bg: #f5f6f7;         /* 卡底 */
+  --ld-unknown-card-border: #dee0e3;     /* 虚线描边（虚线区分「未就绪/就绪」） */
+  --ld-unknown-card-icon: #8f959e;       /* 左置 16×16 图标 */
+  --ld-unknown-card-text: #1f2329;       /* 主文案 */
+  --ld-unknown-card-text-sub: #646a73;   /* 副文案 */
   --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
   --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
@@ -404,6 +410,13 @@
 .lark-doc .ProseMirror div[data-type="column"]:not(:last-child) { cursor: text; }
 .lark-doc .lark-doc-drop-line { position: absolute; left: 30px; right: 30px; z-index: 12; height: 3px; border-radius: 3px; background: var(--lark-doc-green); pointer-events: none; }
 .lark-doc .ProseMirror details { background: var(--ld-bg-details); border-color: var(--ld-border-details); }.lark-doc .ProseMirror summary { color: var(--ld-text-summary); }
+/* 未知块占位卡（P1-03，04 §8.3 降级卡统一 chrome：min-height 56、圆角 6、虚线描边、
+   左置 16×16 图标 + 主/副两行文案；图片破损态不走本卡，另走 .image-block-error）。 */
+.lark-doc .ProseMirror div[data-type="unknown-block"] { display: flex; align-items: center; gap: 12px; box-sizing: border-box; min-height: 56px; margin: 4px 0 8px; padding: 10px 16px; border: 1px dashed var(--ld-unknown-card-border); border-radius: 6px; background: var(--ld-unknown-card-bg); }
+.lark-doc .ProseMirror .lark-doc-unknown-card-icon { flex: none; width: 16px; height: 16px; background-color: var(--ld-unknown-card-icon); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3Ccircle cx='8' cy='4.9' r='.95' fill='%23000'/%3E%3Cpath d='M8 7.1v3.3' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3Ccircle cx='8' cy='4.9' r='.95' fill='%23000'/%3E%3Cpath d='M8 7.1v3.3' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px 16px no-repeat; }
+.lark-doc .ProseMirror .lark-doc-unknown-card-text { display: flex; flex-direction: column; min-width: 0; }
+.lark-doc .ProseMirror .lark-doc-unknown-card-title { font-size: 14px; line-height: 22px; color: var(--ld-unknown-card-text); }
+.lark-doc .ProseMirror .lark-doc-unknown-card-sub { font-size: 12px; line-height: 20px; color: var(--ld-unknown-card-text-sub); }
 .lark-doc .ProseMirror table { max-width: 100%; table-layout: fixed; border-collapse: collapse; }.lark-doc .ProseMirror .tableWrapper { max-width: 100%; overflow-x: auto; }
 .lark-doc .ProseMirror td, .lark-doc .ProseMirror th { min-width: 70px; border: 1px solid var(--ld-border-table); padding: 7px; overflow-wrap: anywhere; }.lark-doc .ProseMirror th { background: var(--ld-bg-th); }
 .lark-doc .ProseMirror img { max-width: 100%; height: auto; }.lark-doc .ProseMirror hr { border: 0; border-top: 1px solid var(--ld-border-hr); margin: 23px 0; }

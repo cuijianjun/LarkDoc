@@ -27,7 +27,7 @@ import { safeUrl } from '../../core/documentOperations'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocBlockquote,
-  codeExtension, imageExtension, mathExtension, documentExtension,
+  UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -51,7 +51,7 @@ export function createLarkDocExtensions(options = {}) {
     Details.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),
-    TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji,
+    TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, UnknownBlock,
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
     FileHandler.configure({
       allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,
