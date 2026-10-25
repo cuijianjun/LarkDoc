@@ -390,15 +390,19 @@ check('H9 emits valid div HTML and round-trippable level attributes', () => {
   assert(schema.nodes.heading.spec.parseDOM.some((rule) => rule.tag === 'div[data-type="heading"][data-level="9"]'))
   assert.strictEqual(validateDocument({ type: 'doc', content: [h9.toJSON()] }, schema).content[0].attrs.level, 9)
 })
-check('JSON rejects unknown nodes, malformed structure and hostile attributes before replacement', () => {
+check('JSON rejects malformed structure and hostile attributes before replacement; unknown nodes degrade to placeholder (P1-03)', () => {
   for (const content of [
-    [{ type: 'unknown' }], [{ type: 'text', text: 'orphan' }],
+    [{ type: 'text', text: 'orphan' }],
     [{ type: 'image', attrs: { src: 'javascript:alert(1)' } }],
     [{ type: 'paragraph', attrs: { indent: -1 } }],
     [{ type: 'heading', attrs: { level: 10 } }],
     [{ type: 'paragraph', content: [text('x', [{ type: 'link', attrs: { href: 'data:text/html,bad' } }])] }],
     [{ type: 'columns', content: [{ type: 'column', content: [p('a')] }] }],
   ]) assert.throws(() => validateDocument({ type: 'doc', content }, schema))
+  // P1-03：未知节点不再硬拒绝，就地降级为 unknownBlock 占位卡（payload 保真）。
+  const degraded = validateDocument({ type: 'doc', content: [{ type: 'unknown' }] }, schema)
+  assert.strictEqual(degraded.content[0].type, 'unknownBlock')
+  assert.strictEqual(degraded.content[0].attrs.unknownType, 'unknown')
   const json = { type: 'doc', content: [p('preserved')] }
   assert.deepStrictEqual(validateDocument(json, schema).content[0].content[0].text, 'preserved')
   assert.deepStrictEqual(json, { type: 'doc', content: [p('preserved')] })
