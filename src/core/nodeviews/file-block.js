@@ -78,6 +78,12 @@ export function createFileBlockNodeView(props) {
   const attrs = () => currentNode.attrs || {}
   const kind = () => fileKindOf(attrs().mimeType)
 
+  /**
+   * 被出网策略拦下的块：`src` 空了但 `originalSrc` 有值（见 policy/network.js 的 applyDocument）。
+   * 这种块不许再走换票 —— 否则策略刚挡掉一个远端地址，换票又用一个远端地址补回来。
+   */
+  const blockedByPolicy = () => !safeFileUrl(attrs().src) && safeFileUrl(attrs().originalSrc)
+
   /* ---------- DOM 骨架 ----------
      figure.lark-doc-file.docx-file-block
        > div.lark-doc-file-preview   （409）
@@ -108,6 +114,9 @@ export function createFileBlockNodeView(props) {
       preload: 'metadata',
       src,
     }))
+    // 封面走 `coverUrl`（⑤ 的既有属性，此前没有任何消费者）。被出网策略拦下时
+    // 它已经是本地透明占位，不会发请求。
+    if (safeFileUrl(attrs().coverUrl)) video.setAttribute('poster', attrs().coverUrl)
     // 解码失败 = 视频兜底态（③-octies B 段：45MB mp4 落的块高 268、文案换掉、下载仍在）。
     video.addEventListener('loadeddata', () => { status = STATUS.READY; syncPreview() })
     video.addEventListener('error', () => { status = STATUS.ERROR; syncPreview() })
@@ -255,6 +264,7 @@ export function createFileBlockNodeView(props) {
   function maybeResolveToken() {
 
     const token = attrs().token
+    if (blockedByPolicy()) return
     if (safeFileUrl(attrs().src) || safeFileUrl(resolvedSrc) || !safeAttachmentId(token) || typeof resolveFileUrl !== 'function') return
     if (attemptedToken === token) return
     attemptedToken = token
@@ -282,6 +292,11 @@ export function createFileBlockNodeView(props) {
     else dom.removeAttribute('data-token')
     if (safeFileUrl(attrs().src)) dom.setAttribute('data-src', attrs().src)
     else dom.removeAttribute('data-src')
+    if (blockedByPolicy()) dom.setAttribute('data-network-blocked', 'true')
+    else dom.removeAttribute('data-network-blocked')
+    // 原地址留在 DOM 上，宿主做「重新上传替换」时能从这里取回被拦下的地址。
+    if (safeFileUrl(attrs().originalSrc)) dom.setAttribute('data-original-src', attrs().originalSrc)
+    else dom.removeAttribute('data-original-src')
     syncFooter()
     syncPreview()
   }

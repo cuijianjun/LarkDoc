@@ -63,14 +63,24 @@ export function createNetworkPolicy(options = {}) {
   /**
    * 过滤 HTML 中的远端资源引用。必须在 sanitizeHTML 之后调用：
    * sanitizeHTML 负责删危险标签和白名单属性，这里只改写允许保留的 media 地址。
+   *
+   * `poster` 单列：视频封面是一张图，但属性名不是 `src`，而且封面没了不影响布局，
+   * 所以直接摘掉，不塞透明占位（塞了会让播放器首帧被一张 1×1 图覆盖）。
    */
   function filterHtml(html) {
     if (typeof html !== 'string' || typeof document === 'undefined') return html
     const container = document.createElement('div')
     container.innerHTML = html
-    Array.from(container.querySelectorAll('img[src],source[src],video[src],audio[src]')).forEach((element) => {
-      const src = element.getAttribute('src')
+    Array.from(container.querySelectorAll('img[src],source[src],video[src],audio[src],iframe[src],video[poster]')).forEach((element) => {
+      const isPoster = element.hasAttribute('poster')
+      const attribute = isPoster ? 'poster' : 'src'
+      const src = element.getAttribute(attribute)
       if (allows(src)) return
+      if (isPoster) {
+        element.removeAttribute('poster')
+        element.setAttribute('data-network-blocked', 'true')
+        return
+      }
       // 保留原地址供宿主后续上传替换；图片换成透明占位，避免浏览器发起请求。
       if (element.tagName === 'IMG') {
         if (!element.getAttribute('data-original-src')) element.setAttribute('data-original-src', src)
@@ -78,13 +88,24 @@ export function createNetworkPolicy(options = {}) {
         element.setAttribute('src', BLOCKED_IMAGE_PLACEHOLDER)
         return
       }
+      // iframe / video / audio 不能用 1×1 GIF 顶替（会变成一张空白预览），直接摘 src。
+      if (src && !element.getAttribute('data-original-src')) element.setAttribute('data-original-src', src)
       element.removeAttribute('src')
       element.setAttribute('data-network-blocked', 'true')
     })
     return container.innerHTML
   }
 
-  /** 直接处理 Tiptap JSON：外链图片保留 originalSrc，src 换成透明占位。 */
+  /**
+   * 直接处理 Tiptap JSON：外链媒体保留原地址（`originalSrc` / 原 `coverUrl` 语义），
+   * 可渲染地址换成占位或清空，保证离线 / 白名单模式下打开文档不会发请求。
+   *
+   * - `image`：`src` 换 1×1 透明 GIF，块结构和裁剪逻辑保持不变；
+   * - `fileBlock`：`src` 清成 `null`（iframe / video 塞 GIF 会得到空白预览），
+   *   NodeView 会因此走兜底文案，下载入口变灰；原地址留在 `originalSrc`，
+   *   宿主后续上传替换后可用；
+   * - `fileBlock.coverUrl`：视频封面是图片，换占位即可。
+   */
   function applyDocument(json) {
     if (!json || typeof json !== 'object') return json
     const walk = (node) => {
@@ -92,6 +113,14 @@ export function createNetworkPolicy(options = {}) {
       if (node.type === 'image' && node.attrs && !allows(node.attrs.src)) {
         if (!node.attrs.originalSrc && node.attrs.src) node.attrs.originalSrc = node.attrs.src
         node.attrs.src = BLOCKED_IMAGE_PLACEHOLDER
+      }
+      if (node.type === 'fileBlock' && node.attrs) {
+        const attrs = node.attrs
+        if (attrs.src && !allows(attrs.src)) {
+          if (!attrs.originalSrc) attrs.originalSrc = attrs.src
+          attrs.src = null
+        }
+        if (attrs.coverUrl && !allows(attrs.coverUrl)) attrs.coverUrl = BLOCKED_IMAGE_PLACEHOLDER
       }
       if (Array.isArray(node.content)) node.content.forEach(walk)
       return node

@@ -6,8 +6,9 @@
  * （③-quater 第 1 条：「不要新增 video 块类型」）。
  *
  * attrs 对齐 ⑤（`token` / `name` / `size` / `mimeType` / `viewType` / `coverUrl`），
- * 另加一个可选 `src`：`token` 是飞书那套「附件 token 换预览地址」的稳定 id，本仓库
- * 没有那个 SDK，`src` 直接存宿主上传回来的直链，渲染不必每次异步换票。
+ * 另加两个可选字段：`src` —— `token` 是飞书那套「附件 token 换预览地址」的稳定 id，本仓库
+ * 没有那个 SDK，`src` 直接存宿主上传回来的直链，渲染不必每次异步换票；`originalSrc` ——
+ * 出网策略（P2-05）拦下远端地址时，`src` 清空、原地址留在这里，与 image 节点同构。
  * 两个都缺的块无法渲染，parseHTML 直接拒收（退化成 unknown-block，不静默丢内容）。
  *
  * 已知偏离（记入 09 §5.3 P2-04 注记）：
@@ -72,6 +73,17 @@ const FileBlock = Node.create({
         validate: validateAttribute('fileBlock.src', safeFileUrl),
         parseHTML: (el) => {
           const value = el.getAttribute('data-src')
+          return safeFileUrl(value) && value ? value : null
+        },
+        rendered: false,
+      },
+      // 出网策略拦下远端文件地址时，`src` 被清空、原地址存在这里（与 image 节点同构）：
+      // NodeView 据此判定「不是缺地址，是被策略挡住」，不再去换票，也方便宿主后补上传。
+      originalSrc: {
+        default: null,
+        validate: validateAttribute('fileBlock.originalSrc', safeFileUrl),
+        parseHTML: (el) => {
+          const value = el.getAttribute('data-original-src')
           return safeFileUrl(value) && value ? value : null
         },
         rendered: false,
@@ -147,6 +159,7 @@ const FileBlock = Node.create({
     if (typeof attrs.blockId === 'string' && BLOCK_ID_PATTERN.test(attrs.blockId)) figure['data-block-id'] = attrs.blockId
     if (safeAttachmentId(attrs.token)) figure['data-token'] = attrs.token
     if (attrs.src && safeFileUrl(attrs.src)) figure['data-src'] = attrs.src
+    if (attrs.originalSrc && safeFileUrl(attrs.originalSrc)) figure['data-original-src'] = attrs.originalSrc
     if (attrs.name) figure['data-name'] = attrs.name
     if (Number.isFinite(Number(attrs.size)) && Number(attrs.size) >= 0) figure['data-size'] = String(attrs.size)
     if (attrs.mimeType) figure['data-mime-type'] = attrs.mimeType

@@ -159,6 +159,9 @@
         "name": {
           "default": null
         },
+        "originalSrc": {
+          "default": null
+        },
         "size": {
           "default": null
         },

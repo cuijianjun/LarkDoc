@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
+import { BLOCKED_IMAGE_PLACEHOLDER, createNetworkPolicy } from '../../src/core/policy/network'
 import {
   DEFAULT_FILE_MAX_SIZE, FILE_KIND, FILE_REJECT, FILE_VIEW_TYPES, fileBlockAttrs,
   fileFallbackText, fileFooterText, fileKindOf, fileRejectMessage, formatFileSize,
@@ -354,6 +355,43 @@ describe('NodeView：一个块壳三形态', () => {
       const figure = editor.view.dom.querySelector('figure.lark-doc-file')
       expect(figure.querySelector('.lark-doc-file-fallback')).toBeTruthy()
       expect(figure.querySelector('iframe')).toBeNull()
+    } finally { editor.destroy() }
+  })
+
+  it('被出网策略拦下的块（src 空 + originalSrc 有值）不再换票，直接走兜底', async () => {
+    // 这是 `applyDocument` 在 offline / allowlist 下打出来的形态：src 清空、原地址留档。
+    let calls = 0
+    const editor = mountFileBlock(
+      { token: 'boxcn-token', src: null, originalSrc: 'https://cdn.example.com/a.pdf', name: 'a.pdf', size: 40016, mimeType: 'application/pdf', viewType: 'Preview' },
+      { resolveFileUrl: () => { calls += 1; return 'https://cdn.example.com/signed.pdf' } },
+    )
+    try {
+      await tick()
+      // 关键：策略刚挡掉一个远端地址，换票不能再用远端地址把它补回来。
+      expect(calls).toBe(0)
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      expect(figure.getAttribute('data-network-blocked')).toBe('true')
+      expect(figure.querySelector('iframe')).toBeNull()
+      expect(figure.querySelector('.lark-doc-file-fallback .lark-doc-media-error').textContent)
+        .toBe('文件因损坏或加密等原因无法预览，请下载到本地打开')
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('aria-disabled')).toBe('true')
+    } finally { editor.destroy() }
+  })
+
+  it('applyDocument 降级后的块能进编辑器，originalSrc 落 document 且不丢文件名', async () => {
+    const blocked = createNetworkPolicy({ mode: 'offline' })
+      .applyDocument({ type: 'doc', content: [{ type: 'fileBlock', attrs: { src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', size: 40016, mimeType: 'video/mp4', coverUrl: 'https://cdn.example.com/c.png' } }] })
+    const editor = new Editor({ extensions: createLarkDocExtensions(), content: blocked })
+    try {
+      await tick()
+      const attrs = editor.getJSON().content[0].attrs
+      expect(attrs.src).toBeNull()
+      expect(attrs.originalSrc).toBe('https://cdn.example.com/a.mp4')
+      expect(attrs.coverUrl).toBe(BLOCKED_IMAGE_PLACEHOLDER)
+      expect(attrs.name).toBe('a.mp4')
+      // 重新序列化到 HTML 也要带上原地址，否则存盘再打开就查不到被拦的原图。
+      expect(editor.view.dom.querySelector('figure.lark-doc-file').getAttribute('data-original-src'))
+        .toBe('https://cdn.example.com/a.mp4')
     } finally { editor.destroy() }
   })
 })
