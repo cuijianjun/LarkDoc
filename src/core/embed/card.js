@@ -44,6 +44,7 @@
  *   不是飞书契约字段。没有它，渲染层无法区分「这张卡本来就没有正文」和「正文被裁了」。
  */
 import { safeUrl } from '../documentOperations'
+import { isReferenceKind, toStoredReference } from './reference'
 
 /** 当前实现的卡片版本；读到的 cardVersion 比它大 = 只读（等宿主升级）。 */
 export const CARD_VERSION = 1
@@ -176,10 +177,11 @@ export function normalizeCard(input) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('无效卡片：payload')
   const title = cleanText(payload.title, LIMITS.title)
   if (!title) throw new Error('无效卡片：payload.title')
+  const resourceId = readId(input.resourceId, LIMITS.resourceId)
   return {
     cardVersion: version,
     providerId,
-    resourceId: readId(input.resourceId, LIMITS.resourceId),
+    resourceId,
     payload: {
       title,
       desc: cleanText(payload.desc, LIMITS.desc) || '',
@@ -187,6 +189,12 @@ export function normalizeCard(input) {
       cover: readCover(payload.cover),
     },
     actions: normalizeActions(input.actions),
+    // P3-08：引用卡的第四个键。八字段的卡形状装不下三态状态机，而状态**必须落库**
+    // （宿主才知道源还在不在，编辑器算不出来）。只在 providerId 是引用类型时才保留，
+    // 普通卡片不会因为宿主多塞了一个 `reference` 就多长出一个键。
+    ...(isReferenceKind(providerId) && input.reference !== undefined
+      ? { reference: toStoredReference(providerId, resourceId, input.reference) }
+      : {}),
     ...(input.truncated === true ? { truncated: true } : {}),
   }
 }
@@ -204,6 +212,9 @@ function shrinkCard(card) {
       cover: null,
     },
     actions: [],
+    // 引用状态不是「正文」，不能被摘要形态裁掉：裁了之后 readReference 只能靠
+    // resourceId 兜底判成 bound —— 一张超长的失效引用卡会突然「自愈」变有效。
+    ...(card.reference === undefined ? {} : { reference: card.reference }),
     truncated: true,
   }
 }

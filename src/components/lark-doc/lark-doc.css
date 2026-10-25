@@ -851,6 +851,32 @@
 /* 版本/摘要提示：灰字一行，不抢卡片主体。 */
 .lark-doc .ProseMirror .lark-doc-card-note { margin: 8px 0 0; color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.6; }
 
+/* ------------------------------------------------------------------
+   P3-08 · 引用卡三态（sub_page_list / source_synced / reference_synced）
+   ------------------------------------------------------------------
+   三态共用一张卡（见 core/embed/reference.js 文件头），所以这里只画「强度差」，
+   不动几何：布局、导出、动作冒泡与普通卡片完全一致。
+   - bound   ：原样（引用有效，卡面就是正常内容）
+   - stale   ：置灰 + 原因（desc 已被 markReferenceStale 写成失效原因）
+   - unbound ：置灰 + 空态文案（从没绑过）
+   **唯一不置灰的是动作按钮**：stale / unbound 上只剩「重新绑定」，它是唯一出路，
+   跟着置灰等于告诉用户「出问题了，而且你什么也做不了」。
+   卡片底用 `--ld-bg-hover`（三档都有定义：浅档 #f2f6f4 / 深档 8% 白 / 飞书档 5%
+   中性灰），不用 `--ld-bg-file-preview` —— 那个 token 只在浅档定义，深色档会落成
+   一块浅灰（骨架卡的老问题，别在新增样式里扩大它）。也不用 hover 底做**交互反馈**：
+   失效是状态，跟着鼠标变色会让人以为能点。
+   ------------------------------------------------------------------ */
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="stale"],
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="unbound"] { background: var(--ld-bg-hover); }
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="stale"] .lark-doc-card-title,
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="unbound"] .lark-doc-card-title { color: var(--ld-text-disabled); }
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="unbound"] .lark-doc-card-desc,
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="stale"] .lark-doc-card-field-label,
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="unbound"] .lark-doc-card-field-label { color: var(--ld-text-disabled); }
+/* 失效原因那行是「解释」，比空态文案更需要被读到：保持三级文字色，不跟着置灰
+   （置灰到 #BBBFC4 之后，那一行在浅色底上基本读不出来 —— 而它正是用户最需要的信息）。 */
+.lark-doc .ProseMirror .lark-doc-card[data-reference-state="stale"] .lark-doc-card-desc { color: var(--ld-text-tertiary); }
+
 /* ==================================================================
    P3-05 · 网页卡片 bookmark（02 §24 实测 · 11 层链）
    ------------------------------------------------------------------
