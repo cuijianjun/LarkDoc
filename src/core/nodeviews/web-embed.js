@@ -293,7 +293,10 @@ export function createWebEmbedNodeView(props) {
 
     if (status === STATUS.BLOCKED) {
       teardownIframe()
-      frame.removeAttribute('style')
+      // 被拦也要留住块高：poster 是 `flex: 1 1 auto` 画在 `.is-blocked` 里，壳没有
+      // 高度它就塌成 0（图看不见、块也点不到 = 正文里凭空消失一块）。所以跟降级态
+      // 用同一套写高 —— 09 §634 的验收是「offline 下不设 src、**显示 poster**」。
+      if (!frame.style.height) frame.style.height = `${resolveEmbedHeight(attrs(), dom.clientWidth || 820)}px`
       setOverlay(buildBlocked())
       return
     }

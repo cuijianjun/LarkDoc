@@ -31,6 +31,8 @@ export const UNFURL_ERROR = Object.freeze({
   TIMEOUT: 'timeout',
   /** 宿主没提供抓取实现（`createUnfurlProvider` 会直接返回 null）。 */
   UNAVAILABLE: 'unavailable',
+  /** 被出网策略拦下（P3-06）：这一条**根本没进宿主函数**，不是抓取失败。 */
+  BLOCKED: 'blocked',
 })
 
 export const DEFAULT_UNFURL_TIMEOUT = 8000
@@ -114,5 +116,41 @@ export function createUnfurlProvider(option) {
     /** 清缓存（宿主切换租户 / 换 endpoint 时调）。 */
     clear() { inflight.clear() },
     size() { return inflight.size },
+  }
+}
+
+/**
+ * 给宿主抓取器套一层出网策略闸门（P3-06）。
+ *
+ * 「卡片 provider 请求」是 core 里唯一会发外部请求的嵌入路径（iframe 靠 `canEmbed`，
+ * 其余卡片数据本来就在正文里）。装配层用 `network.allows` 包一层，于是：
+ *
+ *   - `offline` / `allowlist` 下**被拦的地址连宿主函数都不进** —— 策略要求「不发请求」，
+ *     而不是「发了再把结果丢掉」；
+ *   - 被拦的卡片走**和抓取失败完全相同**的降级路径（`ok: false` + 三个 null 字段）：
+ *     02 §24 ③-ter 的实测口径是「失败 = 一张只有 URL + 域名的正常简卡」，
+ *     所以这里**不能**给 UI 一个新错误码去分叉渲染。
+ *
+ * 为什么 gate 在 core 而不是 `import` 策略：core 不认识策略实现，三端想换一套判定
+ * 只需换传进来的谓词（同 `canEmbed` 的约定）。谓词缺失时**原样返回**，
+ * 保持 P3-05 的行为逐字节不变。
+ *
+ * @param {Function|{ unfurl: Function }|null} provider 宿主抓取器（裸函数或对象）
+ * @param {(url: string) => boolean} allows 策略谓词
+ * @returns {Function|{ unfurl: Function }|null} 同形状的抓取器，被拦即返回 blocked
+ */
+export function withUnfurlGate(provider, allows) {
+  if (!provider || typeof allows !== 'function') return provider
+  const blocked = (url) => Promise.resolve(settle(String(url || ''), null, UNFURL_ERROR.BLOCKED))
+  // 裸函数也是合法输入（`createUnfurlProvider(fn)` 等价形状），保持入参出参同形。
+  if (typeof provider === 'function') {
+    return (url, ctx) => (allows(url) ? provider(url, ctx) : blocked(url))
+  }
+  if (typeof provider.unfurl !== 'function') return provider
+  return {
+    ...provider,
+    unfurl(url, ctx) {
+      return allows(url) ? provider.unfurl(url, ctx) : blocked(url)
+    },
   }
 }

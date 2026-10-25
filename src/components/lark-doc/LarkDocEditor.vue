@@ -345,8 +345,10 @@ export default {
         json = ProseMirrorDOMParser.fromSchema(schema).parse(container).toJSON()
       } else json = validateDocument(content, schema)
       // 离线策略在这里统一生效：外链图片降级为占位，避免渲染时发起外部请求。
-      // 旧宿主会绕过 Vue 计算属性直接调用本方法，此时没有归一化配置，按默认策略处理。
-      json = createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null).applyDocument(json)
+      // 复用扩展里那一个实例（装配层创建，见 extensions.js）—— 旧宿主会绕过 Vue
+      // 计算属性直接调用本方法，没有扩展句柄时才按默认策略现造。
+      const network = this.editor.storage.larkDoc?.network || createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null)
+      json = network.applyDocument(json)
       const next = schema.nodeFromJSON(validateDocument(json, schema))
       // Keep this method usable by the legacy imperative API and small host-side
       // harnesses that call it without Vue's computed properties.

@@ -19,14 +19,22 @@ import { applyLineStartMarker, verticalBoundarySelection } from './document-help
 import { createDocumentCommands } from './document-commands'
 import { createDocumentDecorations } from './document-decorations'
 
-export function documentExtension(options) {
+/**
+ * @param {object} options 装配层传下来的全部选项（`config` / 各类回调）
+ * @param {object} [injected] 装配层已经造好的出网策略实例（P3-06）。
+ *   传进来就共用同一个 —— 粘贴过滤、嵌入闸门、载入降级必须是同一套判定；
+ *   单独调用（老宿主 / 测试）时按 `options.config.network` 现造一个。
+ */
+export function documentExtension(options, injected) {
   const enabled = (name) => options.config?.features?.[name] !== false
   // 粘贴/拖入的 HTML 先做安全清洗，再按离线策略拦截远端图片地址。
-  const network = createNetworkPolicy(options.config?.network)
+  const network = injected || createNetworkPolicy(options.config?.network)
   return Extension.create({
     name: 'larkDoc',
     priority: 1000,
-    addStorage() { return { folded: new Set(), query: '', activeIndex: 0, handleHover: null } },
+    // `network` 挂在 storage 上：`LarkDocEditor.setContent` 的载入降级要复用同一实例，
+    // 而不是再造一份（策略是纯函数，但两份实例会让「改了配置只生效一半」这种问题查不出来）。
+    addStorage() { return { folded: new Set(), query: '', activeIndex: 0, handleHover: null, network } },
     addCommands() {
       return createDocumentCommands()
     },

@@ -76,12 +76,13 @@ const WebEmbed = Node.create({
   addOptions() {
     return {
       /**
-       * 出网策略闸门（P3-06 接线）。
+       * 出网策略闸门（P3-06 已接线）。
        *
-       * `canEmbed(src) => boolean`：返回 false 表示「按策略不许加载」。
-       * 现在是 `null` = 不干预，保持 P3-01 之前的行为；P3-06 把
-       * `network.mode: 'offline' / 'allowlist'` 注进来即可，core 不 import policy
-       * （否则策略就成了 core 的硬依赖，三端想换一套策略得改 core）。
+       * `canEmbed(src) => boolean`：返回 false 表示「按策略不许加载」，NodeView 会走
+       * `STATUS.BLOCKED`（不造 iframe、不设 src，有 poster 只显示快照图）。
+       * 装配层（`components/lark-doc/extensions.js`）按 `network.mode` 注入：
+       * `offline` / `allowlist` 传谓词，`open` 传 `null`（不干预 = P3-01 原行为）。
+       * core 不 import policy —— 否则策略就成了 core 的硬依赖，三端想换一套得改 core。
        */
       canEmbed: null,
       /**

@@ -24,6 +24,8 @@ import TextAlign from '@tiptap/extension-text-align'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import Typography from '@tiptap/extension-typography'
 import { safeUrl } from '../../core/documentOperations'
+import { createNetworkPolicy } from '../../core/policy/network'
+import { withUnfurlGate } from '../../core/embed/unfurl'
 import { wrapContainerAllowed } from '../../core/blocks/container-depth'
 import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
 import {
@@ -58,6 +60,16 @@ const LarkDocDetails = Details.extend({
 // 工厂不加载 Vue 单文件组件，可在无 DOM 的 Node 14 中检查 schema。
 export function createLarkDocExtensions(options = {}) {
   const enabled = (name) => options.config?.features?.[name] !== false
+  /**
+   * 出网策略的**唯一实例**（P3-06）：粘贴过滤（`document.js` 的 `transformPastedHTML`）、
+   * 载入降级（`LarkDocEditor.setContent`）、内嵌网页闸门、卡片抓取闸门共用它。
+   *
+   * core 不 import 策略 —— 判定实现与「谁是策略」解耦，三端换一套只需换注入的东西：
+   * 这里做「策略 → 闸门」的转换，core 只收 `canEmbed` 谓词 / `allows` 谓词。
+   * 默认档是 `open`，两个闸门都**不接线**，行为与 P3-05 逐字节一致。
+   */
+  const network = createNetworkPolicy(options.config?.network)
+  const gated = network.mode !== 'open'
   return [
     // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
     // schema 规格与 StarterKit 内置版逐字节一致（content: 'block+' 容器），
@@ -70,10 +82,13 @@ export function createLarkDocExtensions(options = {}) {
     // 历史 JSON 照样解析（P0-04 约定）。
     FileBlock.configure({ resolveFileUrl: options.resolveFileUrl || null }),
     // P3-01：内嵌网页紧跟文件块——同为「外部内容占位」的同层原子块。
-    // `canEmbed` 是出网策略闸门（P3-06 接线），现在传 null 表示不干预；
+    // `canEmbed` 是出网策略闸门（P3-06 接线）：offline / allowlist 下返回 false 的
+    // src 连 iframe 都不造（`STATUS.BLOCKED`），有 poster 就只显示快照图。
+    // 宿主显式传 `canEmbed` 时以宿主为准（自备一套判定）；`open` 档不接线，
+    // 保持 P3-01 的「不干预」。
     // 桥回调（标题回写 / 嵌入内容存盘）也走这里注入，core 不认识宿主。
     WebEmbed.configure({
-      canEmbed: options.canEmbed || null,
+      canEmbed: options.canEmbed || (gated ? (src) => network.allows(src) : null),
       sandbox: options.embedSandbox || null,
       allow: options.embedAllow || null,
       bridgeTimeout: options.embedBridgeTimeout,
@@ -90,8 +105,9 @@ export function createLarkDocExtensions(options = {}) {
     // P3-05：网页卡片紧跟卡片块——同样的 chrome，不同的事（一张固定的 URL 卡）。
     // `unfurl` 是第 6 个可选 provider（09 §265）：不传就降级成「URL + 域名标题」，
     // **不阻塞任何能力**；`onOpen` 交出「点了去哪」的决定权，不传就自己 `window.open`。
+    // P3-06：抓取同样过出网闸门 —— 被拦的地址不进宿主函数（offline 下零外部请求）。
     Bookmark.configure({
-      unfurl: options.unfurlProvider || null,
+      unfurl: gated ? withUnfurlGate(options.unfurlProvider, network.allows) : options.unfurlProvider || null,
       onOpen: options.onBookmarkOpen || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
@@ -108,7 +124,7 @@ export function createLarkDocExtensions(options = {}) {
     imageUrlPasteExtension({ enabled: () => enabled('images') }),
     mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
     Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
-    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension(options),
+    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension(options, network),
   ]
 }
 

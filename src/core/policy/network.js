@@ -105,6 +105,12 @@ export function createNetworkPolicy(options = {}) {
    *   NodeView 会因此走兜底文案，下载入口变灰；原地址留在 `originalSrc`，
    *   宿主后续上传替换后可用；
    * - `fileBlock.coverUrl`：视频封面是图片，换占位即可。
+   * - `bookmark.favicon`：卡片图标，清成 `null`（卡片用「域名」兜标题，图标缺失
+   *   不影响几何 —— 图挂了本来也是这样，所以这里不留占位）。
+   *
+   * 内嵌网页块（`webEmbed`）**不在这里动**：它的 `src` 要留给白名单/联网后重放，
+   * 拦不拦由 NodeView 的 `canEmbed` 闸门在渲染时判（见 `core/nodeviews/web-embed.js`），
+   * 落盘的数据保持原样。
    */
   function applyDocument(json) {
     if (!json || typeof json !== 'object') return json
@@ -113,6 +119,9 @@ export function createNetworkPolicy(options = {}) {
       if (node.type === 'image' && node.attrs && !allows(node.attrs.src)) {
         if (!node.attrs.originalSrc && node.attrs.src) node.attrs.originalSrc = node.attrs.src
         node.attrs.src = BLOCKED_IMAGE_PLACEHOLDER
+      }
+      if (node.type === 'bookmark' && node.attrs && node.attrs.favicon && !allows(node.attrs.favicon)) {
+        node.attrs.favicon = null
       }
       if (node.type === 'fileBlock' && node.attrs) {
         const attrs = node.attrs
