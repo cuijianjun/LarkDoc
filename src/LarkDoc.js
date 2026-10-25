@@ -15,6 +15,7 @@ import { createNetworkPolicy } from './networkPolicy'
 import { createDocumentSession } from './session/DocumentSession'
 import { migrateRecordContent } from './core/migrations'
 import { createThemeController } from './theme'
+import { createUploadProvider } from './core/media/upload'
 
 const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report', 'themeChange'])
 
@@ -196,10 +197,31 @@ export class LarkDoc {
     })
   }
 
+  /**
+   * 上传通道归一（P2-02）。三种宿主写法 → 同一个 `(file, ctx?) => Promise<result>`：
+   *   `uploader: { upload, limits?, retry?, chunked?, chunkSize? }` / `uploader: fn` / `uploadImage: fn`。
+   *
+   * 注意 `limits` 默认是 null（= 不在 provider 层拦）：图片块自己已有 imageMaxSize
+   * 这道校验，两处都设上限容易出现「宿主放宽到 30 MB 却被门面按 20 MB 拒掉」。
+   * 想统一口径就显式传 `uploader.limits`。
+   */
   _resolveUploader(source) {
     const uploader = source.uploader
-    if (uploader && typeof uploader.upload === 'function') return uploader.upload
-    if (typeof source.uploadImage === 'function') return source.uploadImage
+    const isObject = uploader && typeof uploader.upload === 'function'
+    const upload = isObject ? uploader.upload.bind(uploader) : typeof uploader === 'function' ? uploader : null
+    if (upload) {
+      return createUploadProvider({
+        upload,
+        limits: uploader.limits === undefined ? null : uploader.limits,
+        retry: uploader.retry,
+        chunked: uploader.chunked,
+        chunkSize: uploader.chunkSize,
+        getDocumentId: () => (source.documentId == null ? null : String(source.documentId)),
+      })
+    }
+    if (typeof source.uploadImage === 'function') {
+      return createUploadProvider({ upload: source.uploadImage, limits: null, getDocumentId: () => (source.documentId == null ? null : String(source.documentId)) })
+    }
     return null
   }
 

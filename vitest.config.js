@@ -43,5 +43,14 @@ module.exports = {
     // 这条链要进 npm run check，必须输出稳定：失败时立刻退出，避免 watch 卡住 CI。
     watch: false,
     reporters: ['dot'],
+    /**
+     * 并发上界：默认按 CPU 数起 fork，每个 fork 都要重新 init 环境并 import
+     * 全部依赖（jsdom 用例单个 ~7s 启动）。文件数一多就会把机器打满，
+     * 出现「Timeout waiting for worker to respond」——不是用例失败，是
+     * worker 起不来，表现成整个门禁假红。限制到 4 个后总时长仍在 1 分钟内，
+     * 但不会再因为并发数随测试文件增长而抖。
+     */
+    maxWorkers: 4,
+    minWorkers: 1,
   },
 }
