@@ -27,14 +27,17 @@ const UnknownBlock = Node.create({
   },
   parseHTML() { return [{ tag: 'div[data-type="unknown-block"]' }] },
   // atom 节点：整个卡片 DOM 由 renderHTML 一次给出，无 contentDOM。
+  // ⚠️ 子 spec 必须**展平**成 `['div', attrs, childA, childB]`。把 children 收成
+  // 一个数组当第三位时，prosemirror 会把它当单个 spec 递归，然后因为
+  // `structure[0]` 不是字符串抛 `RangeError: Invalid array passed to renderSpec`
+  // —— 而这一步只在序列化时发生（`getHTML()` / 导出 PDF、DOCX），编辑器里看不出来。
   renderHTML({ node }) {
-    return ['div', mergeAttributes({ 'data-type': 'unknown-block', class: 'lark-doc-unknown-card' }), [
+    return ['div', mergeAttributes({ 'data-type': 'unknown-block', class: 'lark-doc-unknown-card' }),
       ['span', { class: 'lark-doc-unknown-card-icon', 'aria-hidden': 'true' }],
-      ['span', { class: 'lark-doc-unknown-card-text' }, [
+      ['span', { class: 'lark-doc-unknown-card-text' },
         ['span', { class: 'lark-doc-unknown-card-title' }, '暂不支持显示的内容块'],
-        ['span', { class: 'lark-doc-unknown-card-sub' }, `原始类型：${String(node.attrs.unknownType || 'unknown')}`],
-      ]],
-    ]]
+        ['span', { class: 'lark-doc-unknown-card-sub' }, `原始类型：${String(node.attrs.unknownType || 'unknown')}`]],
+    ]
   },
 })
 

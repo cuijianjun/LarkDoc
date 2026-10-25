@@ -12,6 +12,7 @@ import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getSchema } from '@tiptap/core'
+import { DOMSerializer } from '@tiptap/pm/model'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { validateDocument, restoreUnknownBlocks, UNKNOWN_PAYLOAD_MAX } from '../../src/core/documentOperations'
 
@@ -120,5 +121,23 @@ describe('unknownBlock 还原（restoreUnknownBlocks）', () => {
     expect(serializeMap(schema.spec.nodes)).toEqual(fixture.nodes)
     expect(serializeMap(schema.spec.marks)).toEqual(fixture.marks)
     expect(Object.keys(fixture.nodes)).toContain('unknownBlock')
+  })
+})
+
+/**
+ * 回归守卫：renderHTML 的子 spec 必须展平。
+ *
+ * 嵌套写法（`['div', attrs, [child, child]]`）在编辑器里看不出问题——只在
+ * **序列化**时炸（`getHTML()` / 导出 PDF、DOCX 全走这条路），报
+ * `RangeError: Invalid array passed to renderSpec`。原来那条路径没有测试覆盖，
+ * 所以这个 bug 一直躺着。
+ */
+describe('unknownBlock 序列化（导出侧回归）', () => {
+  it('serializeNode 不抛错，占位卡结构与 renderHTML 一致', () => {
+    const node = schema.nodes.unknownBlock.create({ payload: '{"type":"knightBlock"}', unknownType: 'knightBlock' })
+    const el = DOMSerializer.fromSchema(schema).serializeNode(node)
+    expect(el.classList.contains('lark-doc-unknown-card')).toBe(true)
+    expect(el.querySelector('.lark-doc-unknown-card-title').textContent).toBe('暂不支持显示的内容块')
+    expect(el.querySelector('.lark-doc-unknown-card-sub').textContent).toContain('knightBlock')
   })
 })
