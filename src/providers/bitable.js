@@ -9,6 +9,7 @@
 
 const OPERATIONS = Object.freeze([
   'createBase', 'getBase', 'updateBase', 'deleteBase', 'restoreBase',
+  'getBaseAcl', 'updateBaseAcl', 'requestBaseAcl', 'approveBaseAcl', 'rejectBaseAcl', 'getVersion',
   'createTable', 'getTable', 'listTables', 'updateTable', 'deleteTable',
   'createView', 'getView', 'listViews', 'updateView', 'deleteView',
   'createField', 'getField', 'listFields', 'updateField', 'deleteField',

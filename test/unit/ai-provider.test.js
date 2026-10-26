@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOpenAICompatibleProvider, parseSseEvents } from '../../src/providers/ai'
+import { createOpenAICompatibleProvider, parseSseEvents, validateAIWriteback } from '../../src/providers/ai'
 
 describe('OpenAI-compatible AI provider', () => {
   it('normalizes a base URL and builds a bearer-auth chat request', async () => {
@@ -60,5 +60,26 @@ describe('OpenAI-compatible AI provider', () => {
     try { await provider.generate({ text: 'source', action: 'rewrite' }) } catch (caught) { error = caught }
     expect(error).toMatchObject({ code: 'UPSTREAM' })
     expect(error.message).not.toContain('secret-key')
+  })
+
+  it('supports citations, feedback and revision-guarded writeback', async () => {
+    const calls = []
+    const provider = createOpenAICompatibleProvider({
+      baseUrl: 'https://llm.example.test/v1',
+      apiKey: 'secret-key',
+      request: async (url, init) => {
+        calls.push({ url, init })
+        return { ok: true, status: 200, json: async () => ({ ok: true, citations: [{ title: 'Source' }] }) }
+      },
+    })
+    await provider.citations({ text: 'source', sourceRevisionId: 'r1' })
+    await provider.feedback({ taskId: 'task-1', value: 'helpful' })
+    await provider.writeback({ sourceRevisionId: 'r1', currentRevisionId: 'r1', text: 'result' })
+    expect(calls.map(call => call.url)).toEqual([
+      'https://llm.example.test/v1/citations',
+      'https://llm.example.test/v1/feedback',
+      'https://llm.example.test/v1/writeback',
+    ])
+    expect(() => validateAIWriteback({ sourceRevisionId: 'r1', currentRevisionId: 'r2', text: 'stale' })).toThrow(/revision/i)
   })
 })

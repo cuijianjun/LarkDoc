@@ -28,5 +28,6 @@ describe('Bitable provider adapter', () => {
     await provider.listRecords({ actorId: 'u1', tenantId: 't1' }, { baseToken: 'app-1', tableId: 'tbl-1', viewId: 'vew-1', cursor: 'c1', limit: 20 })
     expect(calls[0]).toMatchObject({ operation: 'updateRecord', input: { version: 'v2', actorId: 'u1', tenantId: 't1' } })
     expect(calls[1]).toMatchObject({ operation: 'listRecords', input: { cursor: 'c1', limit: 20, actorId: 'u1', tenantId: 't1' } })
+    expect(provider.capabilities.operations).toEqual(expect.arrayContaining(['getBaseAcl', 'requestBaseAcl', 'approveBaseAcl', 'rejectBaseAcl', 'getVersion']))
   })
 })

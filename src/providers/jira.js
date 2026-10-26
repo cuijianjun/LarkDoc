@@ -6,6 +6,7 @@
 
 const OPERATIONS = Object.freeze([
   'getConnection', 'listProjects', 'getProject', 'listIssues', 'getIssue',
+  'getProjectPermissions', 'getIssuePermissions',
   'createIssue', 'updateIssue', 'deleteIssue', 'listComments', 'addComment', 'deleteComment', 'transition',
 ])
 

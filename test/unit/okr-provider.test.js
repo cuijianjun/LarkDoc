@@ -16,6 +16,7 @@ describe('OKR provider adapter', () => {
     expect(calls.map(call => call.operation)).toEqual(['createCycle', 'activateCycle', 'createObjective', 'createKeyResult', 'checkIn', 'closeCycle'])
     expect(calls[0].input).toMatchObject({ actorId: 'admin', lengthMonths: 3, firstEffectiveCycle: '2026-Q4' })
     expect(calls[4].input).toMatchObject({ keyResultId: 'kr-1', progress: 25 })
+    expect(provider.capabilities.operations).toEqual(expect.arrayContaining(['getCyclePermissions', 'getObjectivePermissions']))
   })
 
   it('requires a host request', () => {

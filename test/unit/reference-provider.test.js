@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createReferenceProvider } from '../../src/providers/reference'
+import { createReferenceProvider, normalizeReference } from '../../src/providers/reference'
 
 describe('sheet reference provider adapter', () => {
   it('exposes reference lifecycle operations through a host request', async () => {
@@ -27,5 +27,12 @@ describe('sheet reference provider adapter', () => {
     expect(() => createReferenceProvider()).toThrow(/host request/i)
     const provider = createReferenceProvider({ request: () => null })
     expect(provider.capabilities.operations).toContain('reject')
+  })
+
+  it('normalizes source metadata and lifecycle states without hiding invalidity', () => {
+    expect(normalizeReference({ sourceToken: 'sht-1', sourceRange: 'Sheet1!A1:B2', state: 'approved' })).toMatchObject({
+      sourceType: 'sheet', sourceToken: 'sht-1', sourceRange: 'Sheet1!A1:B2', state: 'approved', permissions: {},
+    })
+    expect(normalizeReference({ state: 'unknown', sourceType: 'chart' }).state).toBe('unavailable')
   })
 })

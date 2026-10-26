@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSecurityProvider } from '../../src/providers/security'
+import { createSecurityProvider, normalizeAuditRecord, normalizeSecurityDecision, normalizeSecurityPolicy } from '../../src/providers/security'
 
 describe('workspace security provider adapter', () => {
   it('separates policy decisions from audit-record queries', async () => {
@@ -19,5 +19,15 @@ describe('workspace security provider adapter', () => {
 
   it('requires a host request', () => {
     expect(() => createSecurityProvider()).toThrow(/host request/i)
+  })
+
+  it('normalizes Feishu-style policy, decision and audit states', () => {
+    expect(normalizeSecurityPolicy({ canCopy: false, watermark: 'visible' })).toMatchObject({
+      canCopy: false, canDownload: true, canPrint: true, watermark: 'visible', allowScreenshot: true,
+    })
+    expect(normalizeSecurityDecision({ status: 'approval_required', auditId: 'a1' })).toMatchObject({
+      status: 'approval_required', allowed: false, auditId: 'a1',
+    })
+    expect(normalizeAuditRecord({ auditId: 'a1', kind: 'download', actorId: 'u1' })).toMatchObject({ auditId: 'a1', kind: 'download', actorId: 'u1' })
   })
 })

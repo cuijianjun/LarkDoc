@@ -10,6 +10,8 @@ const OPERATIONS = Object.freeze([
   'create', 'get', 'list', 'request', 'approve', 'reject', 'refresh', 'update', 'disconnect', 'delete',
 ])
 
+const REFERENCE_STATES = Object.freeze(['idle', 'pending', 'approved', 'rejected', 'invalid', 'unavailable'])
+
 function requireRequest(request) {
   if (typeof request !== 'function') throw new TypeError('sheet-reference provider requires a host request function')
   return request
@@ -20,6 +22,18 @@ function withContext(ctx = {}, input = {}) {
   if (ctx.actorId !== undefined && value.actorId === undefined) value.actorId = ctx.actorId
   if (ctx.tenantId !== undefined && value.tenantId === undefined) value.tenantId = ctx.tenantId
   return value
+}
+
+export function normalizeReference(input = {}) {
+  return {
+    ...input,
+    sourceType: input.sourceType || (input.chartToken ? 'chart' : 'sheet'),
+    sourceToken: input.sourceToken || input.sourceSpreadsheetToken || '',
+    sourceRange: input.sourceRange || '',
+    chartToken: input.chartToken,
+    state: REFERENCE_STATES.includes(input.state) ? input.state : 'unavailable',
+    permissions: input.permissions && typeof input.permissions === 'object' ? input.permissions : {},
+  }
 }
 
 export function createReferenceProvider(options = {}) {
@@ -35,3 +49,4 @@ export function createReferenceProvider(options = {}) {
 }
 
 export { OPERATIONS as REFERENCE_OPERATIONS }
+export { REFERENCE_STATES }

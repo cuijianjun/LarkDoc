@@ -17,6 +17,7 @@ describe('Jira provider adapter', () => {
     expect(calls.map(call => call.operation)).toEqual(['getConnection', 'listProjects', 'createIssue', 'updateIssue', 'addComment', 'transition', 'deleteIssue'])
     expect(calls[2].input).toMatchObject({ actorId: 'u1', projectId: 'PRJ', idempotencyKey: 'i1' })
     expect(calls[5].input).toMatchObject({ issueId: 'PRJ-1', transitionId: 'done', version: 3 })
+    expect(provider.capabilities.operations).toEqual(expect.arrayContaining(['getProjectPermissions', 'getIssuePermissions']))
   })
 
   it('does not construct a network client without a host request', () => {

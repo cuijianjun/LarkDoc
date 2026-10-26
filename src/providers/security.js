@@ -7,6 +7,9 @@ const OPERATIONS = Object.freeze([
   'getPolicy', 'updatePolicy', 'requestDecision', 'resolveDecision', 'listAuditRecords',
 ])
 
+const SECURITY_DECISION_STATUSES = Object.freeze(['permit', 'deny', 'approval_required', 'unavailable'])
+const WATERMARKS = Object.freeze(['none', 'visible', 'invisible'])
+
 function requireRequest(request) {
   if (typeof request !== 'function') throw new TypeError('security provider requires a host request function')
   return request
@@ -17,6 +20,37 @@ function withContext(ctx = {}, input = {}) {
   if (ctx.actorId !== undefined && value.actorId === undefined) value.actorId = ctx.actorId
   if (ctx.tenantId !== undefined && value.tenantId === undefined) value.tenantId = ctx.tenantId
   return value
+}
+
+export function normalizeSecurityPolicy(input = {}) {
+  return {
+    canCopy: input.canCopy !== false,
+    canDownload: input.canDownload !== false,
+    canPrint: input.canPrint !== false,
+    watermark: WATERMARKS.includes(input.watermark) ? input.watermark : 'none',
+    watermarkScopes: Array.isArray(input.watermarkScopes) ? input.watermarkScopes : [],
+    allowScreenshot: input.allowScreenshot !== false,
+    allowScreenRecord: input.allowScreenRecord !== false,
+    mobileCopyBlocked: Boolean(input.mobileCopyBlocked),
+    expiresAt: input.expiresAt,
+    ...input,
+  }
+}
+
+export function normalizeSecurityDecision(input = {}) {
+  const status = SECURITY_DECISION_STATUSES.includes(input.status)
+    ? input.status
+    : (input.allowed ? 'permit' : 'unavailable')
+  return { ...input, status, allowed: status === 'permit' }
+}
+
+export function normalizeAuditRecord(input = {}) {
+  return {
+    ...input,
+    auditId: input.auditId || '',
+    actorType: input.actorType || 'user',
+    metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+  }
 }
 
 export function createSecurityProvider(options = {}) {
@@ -32,3 +66,4 @@ export function createSecurityProvider(options = {}) {
 }
 
 export { OPERATIONS as SECURITY_OPERATIONS }
+export { SECURITY_DECISION_STATUSES, WATERMARKS }

@@ -94,12 +94,40 @@ function contentFromEvent(event) {
   return event?.choices?.[0]?.delta?.content || event?.choices?.[0]?.text || ''
 }
 
+export function validateAIWriteback(input = {}) {
+  if (!input.sourceRevisionId || !input.currentRevisionId || input.sourceRevisionId !== input.currentRevisionId) {
+    const error = new Error('AI 结果对应的 source revision 已过期')
+    error.code = 'AI_STALE_SOURCE'
+    throw error
+  }
+  if (typeof input.text !== 'string') {
+    const error = new Error('AI 写回内容必须是文本')
+    error.code = 'AI_WRITEBACK_INVALID'
+    throw error
+  }
+  return { sourceRevisionId: input.sourceRevisionId, text: input.text }
+}
+
 export function createOpenAICompatibleProvider(options = {}) {
   const baseUrl = normalizeBaseUrl(options.baseUrl)
   const apiKey = String(options.apiKey || '')
   const model = String(options.model || 'gpt-4o-mini')
   const request = options.request || ((url, init) => fetch(url, init))
   const endpoint = options.endpoint || '/chat/completions'
+
+  async function postJson(path, input = {}) {
+    const response = await request(`${baseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+      body: JSON.stringify(input),
+    })
+    if (!response?.ok) {
+      const error = new Error(`AI 请求失败（HTTP ${response?.status || 0}）`)
+      error.status = response?.status
+      throw safeError(error, 'AI 请求失败', apiKey)
+    }
+    return typeof response.json === 'function' ? response.json() : response
+  }
 
   function createPayload(input = {}) {
     const action = input.action || 'rewrite'
@@ -184,6 +212,15 @@ export function createOpenAICompatibleProvider(options = {}) {
     model,
     stream,
     async generate(input = {}) { return stream(input).done },
+    async citations(input = {}) {
+      return postJson(options.citationsEndpoint || '/citations', input)
+    },
+    async feedback(input = {}) {
+      return postJson(options.feedbackEndpoint || '/feedback', input)
+    },
+    async writeback(input = {}) {
+      return postJson(options.writebackEndpoint || '/writeback', validateAIWriteback(input))
+    },
   }
 }
 

@@ -5,6 +5,7 @@
 
 const OPERATIONS = Object.freeze([
   'listCycles', 'getCycle', 'createCycle', 'activateCycle', 'closeCycle',
+  'getCyclePermissions', 'getObjectivePermissions',
   'listObjectives', 'getObjective', 'createObjective', 'updateObjective', 'deleteObjective',
   'listKeyResults', 'getKeyResult', 'createKeyResult', 'updateKeyResult', 'deleteKeyResult', 'checkIn',
 ])
