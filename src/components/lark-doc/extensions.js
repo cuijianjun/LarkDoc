@@ -32,7 +32,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
   LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -133,6 +133,14 @@ export function createLarkDocExtensions(options = {}) {
     Sheet.configure({
       onMenu: options.onSheetMenu || null,
       onScroll: options.onSheetScroll || null,
+    }),
+    // P5-03：投票块紧跟电子表格 —— 同为「落在正文里的独立块」，区别在它自己持有本地
+    // 状态机（标题 / 选项 / 三开关 / 发布 / 投票）并把结果写回 `attrs.poll`。
+    // 两个回调都是可选宿主通道：`onMenu` 管 header 标签行的点击（V1 不自己开菜单）；
+    // `onVote` 管投票落地后的通知（不传 = 票数只存本地，不发请求）。
+    Poll.configure({
+      onMenu: options.onPollMenu || null,
+      onVote: options.onPollVote || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),

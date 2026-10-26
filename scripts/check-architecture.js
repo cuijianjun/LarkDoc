@@ -88,7 +88,8 @@ const expectedCommandIds = [
   // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
   'open_link', 'duplicate_page', 'follow_page',
   // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
-  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
+  // P5-03：`poll` 插在 mentionPage 与 reminder 之间（组内 y 1644 → 1676 → 1708）。
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
   // P4-04：目录导航接在日程之后（文档小组件 2252 晚于 团队协作 1516、早于 内嵌网页 2444）。
   'catalogue',
   'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',

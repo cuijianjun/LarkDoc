@@ -993,6 +993,9 @@ export const BLOCK_ID_TYPES = new Set([
   // 电子表格块（P5-02）：同上。悬停手柄把 `blockId` 转交给宿主开块菜单，
   // 不给 id 就永远只能传 `null`；折叠/评论锚点也缺一个落点。
   'sheet',
+  // 投票块（P5-03）：同上。header 标签行把 `blockId` 转交给宿主，`onVote` 也带着它，
+  // 不给 id 就永远只能传 `null`；结果条要按块对账时同样缺一个落点。
+  'poll',
 ])
 export const BLOCK_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 

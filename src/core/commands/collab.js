@@ -16,6 +16,13 @@ export const collabCommands = [
   { id: 'mentionUser', label: '人员', category: '团队协作', plus: false, glyph: '@', tone: 'blue', keywords: 'mention at renyuan user tiji atuser', group: 'collab', tier: 'required' },
   { id: 'mentionChat', label: '群名片', category: '团队协作', plus: false, glyph: '#', tone: 'teal', keywords: 'mention qunmingpian chat group qun', group: 'collab', tier: 'skip' },
   { id: 'mentionPage', label: '云文档', category: '团队协作', plus: false, glyph: '▤', tone: 'indigo', keywords: 'mention yunwendang page doc docs wenjian', group: 'collab', tier: 'skip' },
+  // P5-03 投票（03 §3.4 ⑦ 团队协作组第 4 位，y 1676：`1644 + 32` 步进正好落在
+  // `mentionPage` 之后、`reminder` 之前；`data-name="poll block"`，**没有** `slash ` 前缀）。
+  // 与上面几条的区别：它是**块级卡片**且插入后不弹任何面板 → `plus` 保持 true
+  // （03 §4.2 的 `+` 列表里确实有「投票」这一项），归到「常用」组。
+  // 插入后光标落在标题输入框（02 §23 ⑤），所以要进 `commandMenuMixin` 的 `focusAfter`
+  // 排除名单，由 NodeView 自己 `focus()` 到 textarea。
+  { id: 'poll', label: '投票', category: '团队协作', plus: true, plusCategory: '常用', glyph: '☑', tone: 'blue', keywords: 'poll toupiao vote piao voting', group: 'collab', tier: 'required' },
   // P4-02a 日期提醒：真飞书斜杠项文案正是「日期提醒」（`data-name="slash reminder"`，
   // 不能猜 `reminder` / `date reminder`）。与 mention 同为**行内**物件 → `plus: false`。
   // 插完 chip 会自动弹日历浮层（02 §19.4 ⑤「插入 → 立即弹浮层」），所以它还必须在

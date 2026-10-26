@@ -145,7 +145,9 @@ export default {
       // 🔴 P4-04 的 3 个按钮同 calendar_event：点了要开 270×386 的按钮配置面板，
       // 里面「按钮文字」输入框要自己拿焦点。目录导航（`catalogue`）**故意不**进名单 ——
       // 它不弹面板，选完就地插块，焦点该还给编辑器。
-      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page'].includes(item.id))
+      // 🔴 P5-03 的 poll 进名单：它也不弹面板，但焦点要落在**块内**标题 textarea
+      // （02 §23 ⑤），交给 `focusPollTitle()` 自己处理；这里若 focus() 一次就前功尽弃。
+      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page', 'poll'].includes(item.id))
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
@@ -219,6 +221,10 @@ export default {
       // P5-02：电子表格**无对话框**（02 §25 ①），直接落默认空表（20 × 8）。
       // 没有 `sheetDialog` / 行列数选择 —— 真飞书也是插完再在块内改，V1 更是只读。
       else if (id === 'sheet') this.run('setSheet')
+      // P5-03：投票块同样**无对话框**（02 §23 ⑤「插入 → 不再弹配置面板」），落一张空投票卡，
+      // 然后把焦点交给标题 textarea —— 真飞书插完就能直接打字，不用再点一次标题。
+      // 它必须同时在 `focusAfter` 排除名单里，否则上面那句 `this.focus()` 会把焦点抢回正文。
+      else if (id === 'poll') { this.run('setPoll'); this.focusPollTitle() }
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。
@@ -253,6 +259,23 @@ export default {
           this.editor.commands.focus()
         }
       }
+    },
+    /**
+     * P5-03：把焦点交给刚插入的投票块标题输入框（02 §23 ⑤「插入 → 光标落在标题」）。
+     *
+     * 不走 `focusAfter` 的原因：那条路只会 `editor.commands.focus()` 把焦点还给**正文**，
+     * 而这里要落在一个 NodeView 内部的原生 textarea 上。优先挑 `is-selected` 的那张卡
+     * （`selectNode` 会打这个类，插入后正好是选中态），退化取第一张；都没有就静默跳过 ——
+     * 焦点抢不到不值得报错。
+     */
+    focusPollTitle() {
+      this.$nextTick(() => {
+        const root = this.$refs.root
+        if (!root || typeof root.querySelector !== 'function') return
+        const box = root.querySelector('.lark-doc-poll.is-selected') || root.querySelector('.lark-doc-poll')
+        const input = box && box.querySelector('.lark-doc-poll-title-input')
+        if (input && typeof input.focus === 'function') input.focus()
+      })
     },
   },
 }

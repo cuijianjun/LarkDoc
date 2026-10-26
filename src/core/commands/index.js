@@ -57,6 +57,8 @@ for (const group of GROUPS) {
 // 03 §3.4 ④）。落点按真值 y 序排：数据 685 < 绘图 749 < 团队协作 909 < 文档小组件
 // 1549，所以它必须排在「智能 / 按钮 / 团队协作」**之前**、`file`（常用族）**之后**。
 // 别顺手挪到尾段 —— 那会把「数据」组顶到「内嵌网页」旁边，与真值差 4 个组位。
+// P5-03 再加一条 `poll`（投票，仍属「团队协作」）：落点按 03 §3.4 ⑦ 的组内 y 序，
+// 在 `mentionPage` 与 `reminder` **之间**（1644 → 1676 → 1708，恰好一个 32 步进）。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
@@ -65,7 +67,7 @@ const COMMAND_ORDER = [
   'sheet',
   'inlineMath', 'blockMath', 'template', 'ai',
   'open_link', 'duplicate_page', 'follow_page',
-  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
   'catalogue',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
@@ -99,6 +101,8 @@ const COMMAND_FEATURES = {
   // P5-02：电子表格也是正文里的块级 atom。不写这条会落进兜底的 `blockStyle`，
   // 出现「关掉插入还能插电子表格」（同 calendar_event / catalogue 的口径）。
   sheet: 'insert',
+  // P5-03：投票块与电子表格同型（正文里的块级 atom，落 `attrs.poll`），口径一致。
+  poll: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

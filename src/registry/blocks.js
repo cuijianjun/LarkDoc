@@ -127,3 +127,12 @@ export {
   fitText, maxOffset, normalizeSheet, paintSheet, readSheet, rowBoundaries, scrollThumb,
   staticRows, visibleColumns, visibleRows,
 } from '../core/blocks/sheet'
+// P5-03：投票块。几何常量 / 归一化 / 编解码 / 本地状态机（`pollReducer`）全部同源再导出 ——
+// NodeView 与单测只从这里取「534×480 / 78 / 44 步进 / 三态块高」这套数字与状态转移，
+// 别处不许出现第二份。
+export {
+  Poll, POLL_GEOMETRY, POLL_HEIGHT, POLL_LIMITS, POLL_STATUS, POLL_VERSION,
+  blockHeight, byteLength, canVote, cleanText, deadlineLabel, defaultPoll, encodePoll,
+  formatPercent, headerLabels, normalizePoll, optionLabel, pollReducer, pollStatus,
+  publishHint, publishReady, readPoll, tally, tomorrowDeadline,
+} from '../core/blocks/poll'
