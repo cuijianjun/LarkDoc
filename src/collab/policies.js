@@ -10,8 +10,9 @@
  *   · capability → 握手与打开文档两处取交集（B24）
  */
 import { COLLAB_PROTOCOL_VERSION } from './protocol'
-// 字节数只算一次实现：卡片摘要与离线快照用的是同一个尺子（core/embed/card）。
-import { utf8Bytes } from '../core/embed/card'
+// 字节数只算一次实现：卡片摘要与离线快照用的是同一个尺子（core/text-bytes 是叶子模块，
+// 不从 `core/embed/card` 取 —— 那会把整个 core 拖进协同子入口的产物）。
+import { utf8Bytes } from '../core/text-bytes'
 
 export { utf8Bytes }
 

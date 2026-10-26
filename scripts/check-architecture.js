@@ -183,4 +183,34 @@ for (const file of walkJsFiles(sourceRoot)) {
   }
 }
 
-console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts')
+/**
+ * 09 §5.7.3 那条边界怎么守（规格原话：「CI 里加一条断言」）：
+ * **`hocuspocus/server` 只准出现在 `test/` 下**。
+ *
+ * 为什么用「全仓扫」而不是「只看 src」：临时加个开发服务器永远是从一个 script 开始的 ——
+ * `scripts/` 里放个 `dev-collab-server.js` 同样是把服务端塞进本仓库，只是换了目录。
+ * 判据是「有没有自有服务端代码」，不是「在哪个文件夹」，所以 src / scripts / test 一起扫。
+ */
+const repoRoot = path.resolve(__dirname, '..')
+const SERVER_OWNED_DIRS = ['src', 'scripts', 'test']
+let serverRefs = 0
+for (const dir of SERVER_OWNED_DIRS) {
+  const full = path.join(repoRoot, dir)
+  if (!fs.existsSync(full)) continue
+  for (const file of walkJsFiles(full)) {
+    // 本文件自己带着匹配模式（正则里的 `hocuspocus/server` 字面量），会自匹配 —— 跳过。
+    if (file === __filename) continue
+    const relative = path.relative(repoRoot, file)
+    // 只看**真实的模块说明符**（`from '@hocuspocus/server'` / `require('@hocuspocus/server')`）。
+    // 注释里提到它（比如 collab/index.js 说明"服务端不在本仓库，e2e 用第三方起内存实例"）
+    // 不算违规 —— 否则这条断言会逼着人把边界说明删掉，正好搞反。
+    const specifier = /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*)['"][^'"]*hocuspocus\/server['"]/i
+    if (specifier.test(fs.readFileSync(file, 'utf8'))) {
+      serverRefs += 1
+      assert(relative.startsWith(`test${path.sep}`), `只允许 test/ 引用 @hocuspocus/server（服务端是独立 package）：${relative}`)
+    }
+  }
+}
+assert(serverRefs > 0, 'test/ 下应当有真线 e2e 引用 @hocuspocus/server（09 §5.7.4 C1/C4），否则这条断言在空跑')
+
+console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts, collab server boundary')

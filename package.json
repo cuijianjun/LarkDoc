@@ -11,7 +11,7 @@
     "build:esm": "node scripts/build-esm.js",
     "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:umd && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
     "lint": "eslint --ext .js,.vue src scripts",
-    "check": "npm run check:node14 && npm run check:offline && npm run check:lark-doc && npm run check:architecture && npm run check:unit && npm run check:theme-tokens && npm run check:theme-contrast && npm run lint && npm run build && npm run build:umd && npm run build:esm && npm run build:element && npm run check:vditor && npm run size",
+    "check": "npm run check:node14 && npm run check:offline && npm run check:lark-doc && npm run check:architecture && npm run check:unit && npm run check:theme-tokens && npm run check:theme-contrast && npm run lint && npm run build && npm run build:umd && npm run build:esm && npm run build:collab && npm run build:element && npm run check:vditor && npm run size",
     "check:theme-tokens": "node scripts/check-theme-tokens.js",
     "check:theme-contrast": "node scripts/check-theme-contrast.js",
     "check:vditor": "node scripts/check-vditor-html.js",
@@ -21,7 +21,7 @@
     "check:architecture": "node scripts/check-architecture.js",
     "check:unit": "vitest run",
     "check:perf": "npm run build:element && node scripts/perf/measure.mjs && node scripts/perf/report.mjs",
-    "prepack": "npm run build && npm run build:umd && npm run build:esm && npm run build:element && npm run size",
+    "prepack": "npm run build && npm run build:umd && npm run build:esm && npm run build:collab && npm run build:element && npm run size",
     "build:element": "LARK_DOC_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc-element --formats umd-min src/web-component/index.js",
     "size": "size-limit",
     "ship": "bash scripts/release.sh",
@@ -29,7 +29,8 @@
     "sync": "bash scripts/release.sh --git-only",
     "release": "bash scripts/release.sh",
     "release:patch": "bash scripts/release.sh --patch",
-    "release:minor": "bash scripts/release.sh --minor"
+    "release:minor": "bash scripts/release.sh --minor",
+    "build:collab": "node scripts/build-collab.js"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -189,6 +190,10 @@
       "default": "./dist/lark-doc.common.js"
     },
     "./element": "./dist/lark-doc-element.umd.min.js",
+    "./collab": {
+      "import": "./dist/lark-doc-collab.esm.js",
+      "default": "./dist/lark-doc-collab.esm.js"
+    },
     "./style.css": "./dist/lark-doc.css",
     "./dist/*": "./dist/*",
     "./package.json": "./package.json"
@@ -216,6 +221,12 @@
       "name": "CJS 全量产物（内联 mermaid，gzip）",
       "path": "dist/lark-doc.common.js",
       "limit": "2330 KB",
+      "gzip": true
+    },
+    {
+      "name": "协同子入口 (gzip)",
+      "path": "dist/lark-doc-collab.esm.js",
+      "limit": "90 KB",
       "gzip": true
     }
   ]

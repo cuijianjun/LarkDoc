@@ -226,6 +226,7 @@ import isvMixin from './editor/isvMixin'
 import revisionMixin from './editor/revisionMixin' // P4-06 ③：接受 / 拒绝无二次确认、无 toast。
 // 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
 import foldPersistMixin from './editor/foldPersistMixin'
+import collabMixin from './editor/collabMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
@@ -246,7 +247,7 @@ registerVue2NodeViews()
 export default {
   name: 'LarkDocEditor',
   components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin],
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -366,8 +367,8 @@ export default {
         try { const cached = localStorage.getItem(String(this.msgId)); if (cached) initialHTML = cached } catch (_) { this.error = '浏览器阻止读取公告缓存' }
       }
       this.editor = new Editor({
-        content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ ...this.embedOptions, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
+        content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
+        extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)

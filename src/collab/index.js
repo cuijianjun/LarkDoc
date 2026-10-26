@@ -16,9 +16,14 @@ import * as Y from 'yjs'
 import { Collaboration, isChangeOrigin } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { HocuspocusProvider } from '@hocuspocus/provider'
-import { COLLAB_PROTOCOL_VERSION } from './protocol'
+import { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD } from './protocol'
 
-export { COLLAB_PROTOCOL_VERSION }
+export { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD }
+/**
+ * 运行策略一并导出（B22 UI 状态 / B23 离线快照 / B24 capability 交集 / 首次播种 / 协议校验）。
+ * 宿主从这里拿到的是纯函数与纯状态机：不 import yjs、不碰 DOM、不建连接。
+ */
+export * from './policies'
 
 /**
  * 这笔事务是不是「远端来的」。
@@ -43,7 +48,7 @@ export function createCollabExtensions(options = {}) {
   if (!ydoc || typeof ydoc.get !== 'function') {
     throw new TypeError('createCollabExtensions 需要真实的 Y.Doc（宿主 new Y.Doc({ gc: false }) 后传进来）')
   }
-  const extensions = [Collaboration.configure({ document: ydoc })]
+  const extensions = [Collaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
   if (provider && provider.awareness && user && user.name) {
     extensions.push(CollaborationCaret.configure({ provider, user }))
   }
@@ -116,7 +121,9 @@ export function createCommentAnchors(options = {}) {
   if (!ydoc || typeof ydoc.get !== 'function') {
     throw new TypeError('createCommentAnchors 需要真实的 Y.Doc')
   }
-  const type = options.type || ydoc.getXmlFragment('content')
+  // 默认必须是编辑器真正写库的那个 fragment（COLLAB_CONTENT_FIELD），
+  // 不是听起来更自然的 'content' —— 见 protocol.js 的说明。
+  const type = options.type || ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
   return {
     /** 绝对 index → 可编码的相对位置（落库的是它，不是数字）。 */
     encode(index) {

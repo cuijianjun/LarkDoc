@@ -45,6 +45,7 @@
  */
 import { safeUrl } from '../documentOperations'
 import { isReferenceKind, toStoredReference } from './reference'
+import { utf8Bytes } from '../text-bytes'
 
 /** 当前实现的卡片版本；读到的 cardVersion 比它大 = 只读（等宿主升级）。 */
 export const CARD_VERSION = 1
@@ -81,16 +82,11 @@ const SUMMARY_TITLE = 120
 // eslint-disable-next-line no-control-regex -- 这里的控制字符区间就是规则要拦的那批字符
 const CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/
 
-/** UTF-8 字节数。不用 TextEncoder：Node 14 与老浏览器上它不总是全局可用。 */
-export function utf8Bytes(text) {
-  if (typeof text !== 'string' || !text) return 0
-  let bytes = 0
-  for (const char of text) {
-    const code = char.codePointAt(0)
-    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
-  }
-  return bytes
-}
+/**
+ * UTF-8 字节数：实现搬到了叶子模块 `core/text-bytes`（协同子入口也要用它，
+ * 而从 `card` 取会把整个 core 拖进产物）。这里原样重导出，老 import 路径不变。
+ */
+export { utf8Bytes }
 
 /** 按字符（不是码元）截断，避免把 emoji 的代理对劈成半个。 */
 function clip(text, limit) {
