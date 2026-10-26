@@ -615,7 +615,7 @@
 @media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: fixed; z-index: 45; top: 112px; left: 0; width: min(260px, 85vw); max-height: calc(100vh - 112px); padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
 @media (max-width: 380px) { .lark-doc .lark-doc-topbar { gap: 5px; }.lark-doc .lark-doc-brand span { display: none; }.lark-doc .lark-doc-paper { padding-left: 58px; padding-right: 12px; }.lark-doc .lark-doc-main { padding: 7px; } }
 @media (prefers-reduced-motion: reduce) { .lark-doc, .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
-@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-drawer-mask, .lark-doc .lark-doc-help-fab-wrap, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
+@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-drawer-mask, .lark-doc .lark-doc-help-fab-wrap, .lark-doc .lark-doc-mode-toast, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
 .lark-doc .lark-doc-block-submenu-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lark-doc .lark-doc-block-submenu-trigger > span:last-child { color: var(--ld-text-submenu-arrow); font-size: 18px; }
 .lark-doc .lark-doc-block-submenu { position: fixed; z-index: 42; display: grid; width: 230px; gap: 1px; max-height: min(620px, calc(100vh - 16px)); overflow-y: auto; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); }
@@ -2109,3 +2109,32 @@
 .lark-doc .lark-doc-help-menu-item { display: flex; box-sizing: border-box; width: 112px; height: 30px; align-items: center; gap: 8px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 12px; line-height: 1; text-align: left; white-space: nowrap; cursor: pointer; }
 .lark-doc .lark-doc-help-menu-item:hover:not(:disabled), .lark-doc .lark-doc-help-menu-item:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); color: inherit; outline: 0; }
 .lark-doc .lark-doc-help-menu-item .lark-doc-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; }
+
+/* ==================================================================
+   P4-06 · 文档三态模式（编辑 / 修订 / 阅读）
+   - 顶栏按钮 84×32：03 只采集到 bg 为白底（不是主色）、文字为深灰、radius 6；
+     白底即 --ld-bg-surface-chrome，文字即 --ld-text，都复用现有 token（不另造文档色值）。
+     内部三个位置框（03 实测）：图标 16×22 @x+9、文字 28×22 @x+29、下拉箭头 26×20 @x+57。
+     所以 padding-left 9 + gap 4 正好把文字推到 x+29，箭头字形 12 落在那个 26 宽的位置框里。
+   - 下拉 180×160：三项各 170×50 ⇒ 四周各 5px；**不描边**（160 是含上下 5px 的整高，
+     再加 1px 边框会把三项挤出 2px）。fixed 由 toggleModeMenu 给坐标 —— 按钮在
+     `.lark-doc-header-actions` 里，那个容器 `overflow-x: auto`，absolute 会被裁。
+   - 提示条 = 顶部中性条：1512×16 @y=32 / z 9999 / fixed 全部照抄 06 §6.2 的
+     `.ud__msg-manager--top`，配色只取 --ld-bg-surface-chrome / --ld-text / --ld-shadow-menu。
+     🔴 不复用右下角 `.lark-doc-toast`：那是琥珀 error 语义，切换成功用它会像报错。
+   ================================================================== */
+.lark-doc .lark-doc-mode-switch { flex: 0 0 auto; }
+.lark-doc .lark-doc-mode-btn { display: flex; box-sizing: border-box; width: 84px; height: 32px; min-width: 84px; align-items: center; gap: 4px; padding: 0 0 0 9px; border: 0; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-family: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-mode-btn:hover:not(:disabled), .lark-doc .lark-doc-mode-btn:focus-visible:not(:disabled), .lark-doc .lark-doc-mode-btn[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text); outline: 0; }
+.lark-doc .lark-doc-mode-btn-icon { flex: 0 0 auto; }
+.lark-doc .lark-doc-mode-btn-label { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
+.lark-doc .lark-doc-mode-btn-caret { flex: 0 0 auto; color: var(--ld-text-icon-tertiary); }
+.lark-doc .lark-doc-mode-menu { position: fixed; z-index: 1050; display: grid; box-sizing: border-box; width: 180px; height: 160px; padding: 5px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+/* 必须显式写 color —— 通用规则 `.lark-doc button:hover:not(:disabled)` 会把菜单文字刷成强调色（同帮助菜单写法）。 */
+.lark-doc .lark-doc-mode-item { display: flex; flex-direction: column; box-sizing: border-box; width: 170px; height: 50px; align-items: flex-start; justify-content: center; gap: 2px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text); font-family: inherit; text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-mode-item:hover:not(:disabled), .lark-doc .lark-doc-mode-item:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text); outline: 0; }
+.lark-doc .lark-doc-mode-item.is-active { background: var(--ld-bg-selected); }
+.lark-doc .lark-doc-mode-item.is-active .lark-doc-mode-item-label { color: var(--ld-brand-content); }
+.lark-doc .lark-doc-mode-item-label { color: inherit; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }

@@ -71,6 +71,11 @@ export const ICONS = {
   'mark-highlight': wrap(`<rect x="3" y="3" width="10" height="10" rx="2" fill="${ICON_PALETTE.highlightSwatch}" stroke="none"/><text x="8" y="11.4" fill="${ICON_PALETTE.highlightGlyph}" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="600" text-anchor="middle">A</text>`),
   // 块菜单「颜色」行的调色盘（飞书同款语义：调色盘 + 一笔）。
   palette: wrap('<path d="M8 2.6a5.4 5.4 0 1 0 0 10.8c1 0 1.4-.5 1.4-1.1 0-.9-.7-1.2-.7-2 0-.7.5-1.2 1.3-1.2h1.2c1.6 0 2.4-1 2.4-2.3C13.6 4.5 11.1 2.6 8 2.6z"/><circle cx="5.4" cy="6.4" r=".9" fill="currentColor" stroke="none"/><circle cx="8.2" cy="5" r=".9" fill="currentColor" stroke="none"/><circle cx="10.9" cy="6.6" r=".9" fill="currentColor" stroke="none"/>'),
+  // —— P4-06 顶栏模式切换按钮（03 §顶栏右侧按钮组 #2：图标位 16×22）——
+  // 只有尺寸是实测值，字形飞书未采集 → 取与语义最贴的线性符号：编辑 = 铅笔、修订 = 对话气泡；
+  // 阅读直接复用上面的 reading（书本），不另画一个。
+  'mode-edit': wrap('<path d="M11.3 2.7a1.6 1.6 0 0 1 2.3 0l.6.6a1.6 1.6 0 0 1 0 2.3l-8 8L3 14.3l.7-3.2z"/><path d="m10.2 3.8 2.3 2.3"/>'),
+  'mode-comment': wrap('<path d="M13.4 9.4a1.8 1.8 0 0 1-1.8 1.8H4.8L2.6 13.4V4.4a1.8 1.8 0 0 1 1.8-1.8h7.2a1.8 1.8 0 0 1 1.8 1.8z"/><path d="M5.4 6.4h5.2"/><path d="M5.4 9h3.2"/>'),
   // —— P4-06 右下角帮助菜单 5 项（04 §3.5；图标区实测 16×16）——
   // 上传日志：纸面 + 向上箭头（对齐「导出/上报」语义）
   'help-log': wrap('<path d="M9.2 2.8H4.6a1.6 1.6 0 0 0-1.6 1.6v6.4a1.6 1.6 0 0 0 1.6 1.6h6.8a1.6 1.6 0 0 0 1.6-1.6V6.4z"/><path d="M9 2.8v3.6h3.4"/><path d="M8 12.4V8.4"/><path d="m6.4 9.9 1.6-1.6 1.6 1.6"/>'),

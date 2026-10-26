@@ -62,14 +62,21 @@ export default {
       // Esc 故意不管它（04 §4.3 ⑤ 实测 Esc ×1、×2 都关不掉），所以下面 onWindowKeydown
       // 和 closeOverlay 里都没有它的分支，这里就是它唯一的全局关闭点。
       if (this.embedDialog && !target.closest?.('.lark-doc-embed-dialog')) this.closeEmbedDialog()
+      // P4-06 模式下拉：按钮与菜单都在 `.lark-doc-mode-switch` 里（菜单是 fixed，
+      // 因为顶栏 header-actions 有 `overflow-x: auto`，absolute 会被裁掉）。
+      if (this.modeMenuOpen && !target.closest?.('.lark-doc-mode-switch')) this.closeModeMenu()
       if (!this.$refs.root?.contains(target)) {
         this.headingOpen = false
         this.headingStyle = {}
         this.tableToolsOpen = false
       }
     },
-    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页；另外接管 ⌘+F / ⌘+Shift+H / ⌘+/。 */
+    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页；另外接管 ⌘+F / ⌘+Shift+H / ⌘+/ 与模式键位。 */
     onWindowKeydown(event) {
+      // P4-06：模式键位（⌘/Ctrl+⌥+E·X·V 与裸 E，07 §12.1）先过一遍。放在最前面是因为
+      // 它们**带 alt**，下面的 ⌘+F 分支明确排斥 alt，两组不会互相抢键；
+      // 裸 E 的「焦点不在输入区」闸门由 applyModeShortcut 内部判（否则正文打 e 会切模式）。
+      if (this.applyModeShortcut(event)) return
       // P4-05：⌘+F 开「查找」、⌘+Shift+H 开「替换」（04 §3.2 实测键位）。必须 preventDefault，
       // 否则浏览器原生查找条会压在浮层上。Ctrl 一并认（Windows/Linux 同键位）。
       if ((event.metaKey || event.ctrlKey) && !event.altKey) {
@@ -95,6 +102,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.modeMenuOpen) this.closeModeMenu(); else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

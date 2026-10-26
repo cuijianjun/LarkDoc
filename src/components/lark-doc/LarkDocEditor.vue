@@ -2,7 +2,7 @@
   <section
     ref="root"
     class="lark-doc"
-    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
+    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-mode-suggest': mode === 'suggest', 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
     @keydown.esc="closeOverlay"
   >
     <a
@@ -14,6 +14,17 @@
         <slot name="header-actions" />
       </template>
     </TopBar>
+    <!-- P4-06：「已切换为 X 模式」提示。载体是**顶部中性条**（07 §1.1 文案 + 06 §6.2
+         `.ud__msg-manager--top` 的 1512×16 @y=32 / z 9999 / fixed），
+         刻意不复用右下角 `.lark-doc-toast` —— 那是琥珀 error 语义，两者混用会让人以为切换失败。 -->
+    <div
+      v-if="modeToast"
+      class="lark-doc-mode-toast"
+      role="status"
+      aria-live="polite"
+    >
+      {{ modeToast }}
+    </div>
 
     <ToolbarBar :ed="self">
       <template #header-actions>
@@ -343,6 +354,9 @@ export default {
     embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
   },
   mounted() {
+    // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
+    // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
+    this.restoreMode()
     try {
       let initialHTML = this.pendingHTML === null ? this.value || '<p></p>' : this.pendingHTML
       const hasInitialValue = Object.prototype.hasOwnProperty.call(this.$options.propsData || {}, 'value')

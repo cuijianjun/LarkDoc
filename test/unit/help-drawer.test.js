@@ -18,6 +18,7 @@ import {
   SHORTCUT_GROUPS, MARKDOWN_GROUPS, DRAWER_GROUPS, HELP_MENU_ITEMS,
 } from '../../src/components/lark-doc/editor/shortcutGroups'
 import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
+import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
@@ -165,6 +166,10 @@ function createEd() {
     focus() { ed.focusCalls += 1 },
   }
   Object.assign(ed, overlayDismissMixin.methods)
+  // onWindowKeydown 现在开头就派发三态模式键（P4-06 第 2 条），宿主必须真挂
+  // viewModesMixin，否则 applyModeShortcut 未定义直接抛 TypeError。
+  Object.assign(ed, viewModesMixin.methods)
+  ed.mode = 'edit'
   // toggleHelpOpen 真实体在 viewModesMixin（一行翻转），这里只需记调用次数。
   ed.toggleHelpOpen = () => { ed.toggleCalls += 1; ed.helpOpen = !ed.helpOpen }
   return ed
