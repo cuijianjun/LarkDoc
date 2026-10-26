@@ -129,9 +129,12 @@ const embedCard = require(path.resolve(sourceRoot, 'core/embed/card'))
 assert.strictEqual(embedCard.cardSchema.cardVersion, 1, 'cardSchema 契约版本必须为 1')
 const collab = require(path.resolve(sourceRoot, 'collab'))
 assert.strictEqual(collab.COLLAB_PROTOCOL_VERSION, 1, '协同契约版本必须为 1')
+// P6a 已落地：三个工厂都必须能调用，且**参数不合法时立刻抛 TypeError**（不半初始化）。
 for (const factory of ['createCollabExtensions', 'createHocuspocusBridge', 'createCommentAnchors']) {
-  assert.throws(() => collab[factory]({}), /not implemented/, `${factory} 在 P6a 前必须保持未实现签名`)
+  assert.strictEqual(typeof collab[factory], 'function', `缺少协同工厂 ${factory}（09 §3.3 契约）`)
+  assert.throws(() => collab[factory]({}), TypeError, `${factory} 参数不合法时必须抛 TypeError`)
 }
+assert.strictEqual(typeof collab.isRemoteTransaction, 'function', 'collab 必须导出 isRemoteTransaction（§5.7.2-1 的 core 缝）')
 
 // P0-11：DerivedIndex 骨架——六方法签名（09 §3.7.1）+ 兜底行为探针 + 装饰接线校验。
 const derive = require(path.resolve(sourceRoot, 'core/derive/index'))
@@ -166,10 +169,15 @@ function walkJsFiles(dir) {
   })
 }
 // 只拦真实引入（import ... from / import '@...' / require('@...')）；注释与函数名（如 createHocuspocusBridge，09 §3.3 规格原文）提及不算违规。
+// P6a 起唯一的例外：`src/collab/` 可以引 **客户端** `@hocuspocus/provider`（协同客户端就在那儿）；
+// `@hocuspocus/server` 与任何其它 hocuspocus 子包在 src/ 下一律禁止 —— 服务端不进本仓库。
 for (const file of walkJsFiles(sourceRoot)) {
   const content = fs.readFileSync(file, 'utf8')
-  const hocuspocusImport = /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*)['"][^'"]*hocuspocus/i.test(content)
-  assert(!hocuspocusImport, `src/ 下禁止引入 hocuspocus（服务端代码不进本仓库）：${path.relative(sourceRoot, file)}`)
+  const relative = path.relative(sourceRoot, file)
+  const collabClient = relative.startsWith(`collab${path.sep}`)
+  const imports = Array.from(content.matchAll(/(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*)['"]([^'"]*hocuspocus[^'"]*)['"]/gi)).map((match) => match[1])
+  const illegal = imports.filter((spec) => !(collabClient && spec === '@hocuspocus/provider'))
+  assert(illegal.length === 0, `src/ 下禁止引入 hocuspocus（服务端代码不进本仓库）：${relative} → ${illegal.join(', ')}`)
   if (file.includes(`${path.sep}core${path.sep}embed${path.sep}`)) {
     assert(!/\bfetch\s*\(|XMLHttpRequest|axios/.test(content), `core/embed/ 零网络（硬规则 9）：${path.relative(sourceRoot, file)}`)
   }

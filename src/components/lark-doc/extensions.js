@@ -70,11 +70,24 @@ export function createLarkDocExtensions(options = {}) {
    */
   const network = createNetworkPolicy(options.config?.network)
   const gated = network.mode !== 'open'
+  /**
+   * 协同模式（P6a）：宿主传 `collab = { extensions, isRemoteTransaction }`，
+   * 两处行为因此改变 —— 别的什么都不动：
+   *   ① `undoRedo` 关掉。协同下撤销必须只看自己（§5.7.2-2），
+   *      由 `Y.UndoManager(trackedOrigins: [本地 origin])` 接管，两套栈并存会互相打架；
+   *   ② 远端事务不补 blockId（§5.7.2-1，实现在 core/blocks/document.js）。
+   * 非协同宿主（绝大多数）拿到的是 `null`，行为与 P5 逐字节一致。
+   */
+  const collab = options.collab && typeof options.collab === 'object' ? options.collab : null
+  const collabExtensions = collab && Array.isArray(collab.extensions) ? collab.extensions : []
   return [
     // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
     // schema 规格与 StarterKit 内置版逐字节一致（content: 'block+' 容器），
     // 仅追加 parseHTML 规则；位置紧随 StarterKit，命令与 inputRule 原样继承。
-    StarterKit.configure({ heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    StarterKit.configure({ undoRedo: !collab, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    // 协同扩展紧跟 StarterKit：`Collaboration` 要接管 doc 的 transaction 过滤，
+    // 排在业务块之前才能先看到远端 update。空数组时展开为「没有变化」。
+    ...collabExtensions,
     LarkDocBlockquote,
     LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile),
     // P2-04：文件 / 视频块紧跟在图片之后——两者是同层原子块，schema 顺序沿用
@@ -175,7 +188,7 @@ export function createLarkDocExtensions(options = {}) {
     imageUrlPasteExtension({ enabled: () => enabled('images') }),
     mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
     Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
-    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension(options, network),
+    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension({ ...options, isRemoteTransaction: collab && collab.isRemoteTransaction }, network),
   ]
 }
 

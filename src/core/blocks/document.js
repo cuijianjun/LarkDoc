@@ -30,6 +30,12 @@ export function documentExtension(options, injected) {
   const enabled = (name) => options.config?.features?.[name] !== false
   // 粘贴/拖入的 HTML 先做安全清洗，再按离线策略拦截远端图片地址。
   const network = injected || createNetworkPolicy(options.config?.network)
+  /**
+   * 「这笔事务是不是远端同步来的」——**只有协同模式才注入**（P6a / 09 §5.7.2-1）。
+   * core 不 import yjs：宿主从 `lark-doc/collab` 拿 `isRemoteTransaction` 塞进来，
+   * 不装协同的宿主这里是 null，行为与 P5 逐字节一致。
+   */
+  const isRemoteTransaction = typeof options.isRemoteTransaction === 'function' ? options.isRemoteTransaction : null
   return Extension.create({
     name: 'larkDoc',
     priority: 1000,
@@ -144,6 +150,11 @@ export function documentExtension(options, injected) {
         // 注意它必须挂在 plugin spec 顶层，放进 props 里 ProseMirror 不会调用。
         appendTransaction: (transactions, oldState, newState) => {
           if (!transactions.some((transaction) => transaction.docChanged)) return null
+          // 协同（P6a / 09 §5.7.2-1）：**远端事务一律不补 blockId**。
+          // 补 ID 是随机的，两端各补一次就会"同一块两个 ID"，折叠与评论锚点立刻错位。
+          // 判据由 collab 子入口注入（core 不知道 yjs 存在）：任一事务来自远端就整体跳过，
+          // 本地那段改动会在本端被补上，再随同步传播给对方。
+          if (isRemoteTransaction && transactions.some((transaction) => isRemoteTransaction(transaction))) return null
           // 注意 appendMapping 返回 undefined，不能写成 reduce 的累加器。
           const mapping = new Mapping()
           transactions.forEach((transaction) => mapping.appendMapping(transaction.mapping))
