@@ -1,0 +1,350 @@
+/* ==================================================================
+   P6b-04 导出线的全部样式（弹窗屏幕态 + 打印态）。
+
+   为什么两份样式放在同一个文件里：本线只被允许新增**一个**样式文件（主 style.css 的
+   @import 由宿主统一接线），而导出弹窗与打印本来就是同一次「导出」动作的两端 ——
+   分两个文件会让接线方漏引其中一个，而漏了弹窗那半是**肉眼可见的破版**。
+
+   ⚠️ 色值一律写成 `rgb(...)` 而不是 `#RRGGBB`：scripts/check-theme-tokens.js 卡新增
+   字面 hex（12 T0-05 止血），而 04 §4.6.7② 的实测表本身两种记法混用（如边框
+   `rgb(143,149,158)`），转记法不损失任何精度。#1F2329 = rgb(31,35,41)、
+   #646A73 = rgb(100,106,115)、#D0D3D6 = rgb(208,211,214)、
+   #1456F0 = rgb(20,86,240)、#FFFFFF = rgb(255,255,255)。
+
+   负结论（别实现）：
+     1. **弹窗不跟随主题**：导出弹窗是模态系统组件，实测值在深浅两套主题下是同一组
+        色（截图取自默认档），所以这里不引 var(--ld-*)，改主题不该动它。
+     2. **打印态不做版式美化**：不加页眉页脚、不加页码、不加封面，那些是打印引擎 /
+        用户在打印框里的选择。本文件只做「把编辑器 chrome 藏掉 + 把内容铺开 + 控制
+        分页断点」三件事。
+     3. **不写 `@page`**：页边距归用户在系统打印框里定，写死会和「另存为 PDF」的常见
+        纸张设置打架。
+   ================================================================== */
+
+/* ——————————————————————————————————————————————————
+   一、导出设置弹窗（屏幕态）
+   规格：requirements/04 §4.6.7②；类名与 ExportDialog.vue 一一对应。
+   面板 720×215 @(396,368)（1512 视口下居中）→ 用 flex 居中而不是写死坐标，
+   窄屏才不会溢出到视口外。所有内部间距按「绝对坐标 - 面板原点」换算：
+     标题 [420,392]      → 24, 24
+     关闭 X [1068,390]   → 672, 22（28×28）
+     内容范围 [420,465]  → 24, 97
+     radio 组 [516,465]  → 120, 97
+     底栏 [396,527]      → 0, 159（720×56）
+   —————————————————————————————————————————————————— */
+
+/* 包裹层：只为满足 Vue 2 单根，两个子节点都是 fixed，不占流。 */
+.lark-doc .lark-doc-export-layer { display: contents; }
+
+/* 提交后提示条：ud__msg-manager--t 1512×102 @[0,32] z9999，内层 [24,40,1464,70]。
+   宽度写 100% 而非 1512 —— 1512 只是实测视口宽，写死会在窄屏横向溢出。 */
+.lark-doc .lark-doc-export-toast {
+  position: fixed;
+  z-index: 9999;
+  top: 32px;
+  left: 0;
+  right: 0;
+  display: flex;
+  box-sizing: border-box;
+  height: 102px;
+  padding: 40px 24px 0;
+  justify-content: center;
+  pointer-events: none;
+}
+.lark-doc .lark-doc-export-toast-inner {
+  display: flex;
+  box-sizing: border-box;
+  max-width: 1464px;
+  height: 70px;
+  padding: 0 16px;
+  align-items: center;
+  border-radius: 8px;
+  background: rgb(31, 35, 41);
+  color: rgb(255, 255, 255);
+  font-size: 14px;
+  line-height: 22px;
+  box-shadow: 0 6px 24px 0 rgba(31, 35, 41, 0.1);
+}
+
+/* 遮罩：z 1000（§4.6.7②），实测全屏无底色描述，取飞书通用遮罩档 rgba(31,35,41,0.5)。 */
+.lark-doc .lark-doc-export-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(31, 35, 41, 0.5);
+}
+
+/* 面板 720×215，radius 8、白底。 */
+.lark-doc .lark-doc-export-panel {
+  display: flex;
+  box-sizing: border-box;
+  width: 720px;
+  max-width: 100%;
+  height: 215px;
+  flex-direction: column;
+  border-radius: 8px;
+  background: rgb(255, 255, 255);
+  box-shadow: 0 6px 24px 0 rgba(31, 35, 41, 0.1);
+  overflow: hidden;
+}
+
+/* 标题行：标题 [420,392,640,24]，关闭 X 28×28 @[1068,390]。 */
+.lark-doc .lark-doc-export-header {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  height: 68px;
+  padding: 24px 24px 0;
+  align-items: flex-start;
+}
+.lark-doc .lark-doc-export-title {
+  overflow: hidden;
+  max-width: 640px;
+  color: rgb(31, 35, 41);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lark-doc .lark-doc-export-close {
+  position: absolute;
+  top: 22px;
+  right: 20px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(100, 106, 115);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-export-close:hover { background: rgba(31, 35, 41, 0.08); }
+
+/* 内容区：标签 [420,465,56,22] + radio 组 [516,465,…]，两者同一行（y 都是 465）。 */
+.lark-doc .lark-doc-export-body {
+  display: flex;
+  box-sizing: border-box;
+  flex: 1;
+  padding: 29px 24px 0;
+  align-items: flex-start;
+}
+.lark-doc .lark-doc-export-range-label {
+  flex: none;
+  width: 56px;
+  height: 22px;
+  color: rgb(100, 106, 115);
+  font-size: 14px;
+  line-height: 22px;
+}
+.lark-doc .lark-doc-export-radio-group {
+  display: flex;
+  min-height: 22px;
+  margin-left: 40px;
+  gap: 24px; /* 实测两项间距恒 24：PDF/Word 122→66、MD 192→80 都是 24 */
+  align-items: flex-start;
+}
+.lark-doc .lark-doc-export-option {
+  display: inline-flex;
+  height: 22px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 22px;
+  color: rgb(31, 35, 41);
+  cursor: pointer;
+}
+
+/* radio 三层：input 16×16（原生，透明覆盖以便可读 .checked 且可点击）
+   + wallpaper 16×16（白底、1px solid rgb(143,149,158)、radius 999999px）
+   + checked-ink 6×6 @(x+5, y+8)（实心点，色未实测，取与「导出」按钮同支的 rgb(20,86,240)）。 */
+.lark-doc .lark-doc-export-radio {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px; /* @(x, y+3) */
+  margin-right: 8px;
+}
+.lark-doc .lark-doc-export-radio-input {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-export-radio-wallpaper {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px solid rgb(143, 149, 158);
+  border-radius: 999999px;
+  background: rgb(255, 255, 255);
+  pointer-events: none;
+}
+.lark-doc .lark-doc-export-radio-ink {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999999px;
+  background: rgb(20, 86, 240);
+}
+/* 无权限：置灰但**保留 pointer-events**，让 not-allowed 光标能显示出来（不自判角色，
+   权限一律来自 session.can('canExport')）。 */
+.lark-doc .lark-doc-export-radio-input:disabled + .lark-doc-export-radio-wallpaper {
+  border-color: rgb(187, 191, 196);
+  background: rgb(245, 246, 247);
+}
+.lark-doc .lark-doc-export-radio-input:disabled { cursor: not-allowed; }
+.lark-doc .lark-doc-export-option.is-disabled {
+  color: rgb(187, 191, 196);
+  cursor: not-allowed;
+}
+
+/* 底栏 [396,527,720,56] → __btns [420,527,672,44]：按钮顶边贴 527，故 flex-start 而非 center。 */
+.lark-doc .lark-doc-export-footer {
+  box-sizing: border-box;
+  height: 56px;
+  padding: 0 24px;
+}
+.lark-doc .lark-doc-export-btns {
+  display: flex;
+  height: 44px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px; /* 920+80=1000 → 1012，间距 12 */
+}
+.lark-doc .lark-doc-export-cancel,
+.lark-doc .lark-doc-export-submit {
+  box-sizing: border-box;
+  width: 80px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+}
+/* 取消：白底 / 边 rgb(208,211,214) / 文字 rgb(31,35,41) */
+.lark-doc .lark-doc-export-cancel {
+  border: 1px solid rgb(208, 211, 214);
+  background: rgb(255, 255, 255);
+  color: rgb(31, 35, 41);
+}
+.lark-doc .lark-doc-export-cancel:hover { background: rgba(31, 35, 41, 0.04); }
+/* 导出：底 rgb(20,86,240) / 文字白 */
+.lark-doc .lark-doc-export-submit {
+  border: 1px solid rgb(20, 86, 240);
+  background: rgb(20, 86, 240);
+  color: rgb(255, 255, 255);
+}
+.lark-doc .lark-doc-export-submit:hover { background: rgb(51, 109, 244); border-color: rgb(51, 109, 244); }
+/* 置灰：色值取 06 实测的禁用灰 rgb(187,191,196)。保留 pointer-events，只改光标。 */
+.lark-doc .lark-doc-export-submit.is-disabled,
+.lark-doc .lark-doc-export-submit:disabled {
+  border-color: rgb(222, 224, 227);
+  background: rgb(245, 246, 247);
+  color: rgb(187, 191, 196);
+  cursor: not-allowed;
+}
+
+/* ——————————————————————————————————————————————————
+   二、打印态（@media print）
+   类名与 src/utils/export/pdf.js 的 PRINT_CLASS 一一对应，改名要两边一起改。
+   pdf.js 只负责**打标记**，这里负责**长什么样**。
+   —————————————————————————————————————————————————— */
+@media print {
+  /* 不在打印内容链上的 body 直接子节点（侧边栏、宿主自己的导航等）：整块消失。 */
+  .lark-doc-print-hidden { display: none !important; }
+
+  /* 打印根：解除屏幕态的滚动与定高约束，让内容自然铺开成多页。 */
+  .lark-doc-print-root,
+  .lark-doc-print-root .lark-doc-body,
+  .lark-doc-print-root .lark-doc-main,
+  .lark-doc-print-root .lark-doc-paper {
+    display: block;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    box-shadow: none;
+    background: rgb(255, 255, 255);
+  }
+  /* ProseMirror 编辑区本身常被设成可滚动容器（height + overflow），打印时必须放开，
+     否则只会印出「第一屏」然后被裁掉。 */
+  .lark-doc-print-root .ProseMirror,
+  .lark-doc-print-root .lark-doc-editor {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* 编辑器 chrome：打印版只要正文。 */
+  .lark-doc-print-root .lark-doc-topbar,
+  .lark-doc-print-root .lark-doc-toolbar,
+  .lark-doc-print-root .lark-doc-outline,
+  .lark-doc-print-root .lark-doc-outline-reopen,
+  .lark-doc-print-root .lark-doc-external-panel,
+  .lark-doc-print-root .lark-doc-status,
+  .lark-doc-print-root .lark-doc-block-handle,
+  .lark-doc-print-root .lark-doc-table-tools,
+  .lark-doc-print-root .lark-doc-table-boundary-tools,
+  .lark-doc-print-root .lark-doc-help-fab-wrap,
+  .lark-doc-print-root .lark-doc-mode-toast,
+  .lark-doc-print-root .lark-doc-comment-layer,
+  .lark-doc-print-root .lark-doc-revision-panel,
+  .lark-doc-print-root .lark-doc-export-layer,
+  .lark-doc-print-root .lark-doc-skip {
+    display: none !important;
+  }
+
+  /* 分页断点：表格 / 代码块 / 图片不许被拦腰截断。
+     必须打在具体块上（pdf.js 逐个打），写在父容器上会把整篇当成一个不可分割的块，
+     一页塞不下时直接溢出裁掉，比不写更糟。 */
+  .lark-doc-print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid; /* 旧内核（Safari < 15 / 部分 WebView）只认这一支 */
+  }
+  /* 标题不许孤零零落在页尾。 */
+  .lark-doc-print-keep-with-next {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* 内容可读性：代码块换行、图片不溢出纸张。 */
+  .lark-doc-print-root pre,
+  .lark-doc-print-root .lark-doc-code-block {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .lark-doc-print-root img {
+    max-width: 100%;
+    height: auto;
+  }
+  .lark-doc-print-root table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  /* 屏幕上靠背景色表达的块（高亮块 / 引用 / 表头）在打印时默认被浏览器丢掉底色，
+     这里强制保留，否则导出的 PDF 会「少一层信息」。 */
+  .lark-doc-print-root * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
