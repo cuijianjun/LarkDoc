@@ -123,6 +123,9 @@ export default {
       this.modeMenuOpen = false
       this.persistMode(id)
       this.notifyMode(id)
+      // 修订态开关**不重建编辑器**：只翻 tracker 的 `storage.active`。重建会丢选区、
+      // 折叠与 undo 栈；guard 一下是为了让单测能单独挂本 mixin（没有 revisionMixin 时跳过）。
+      if (typeof this.syncRevisionTracking === 'function') this.syncRevisionTracking()
     },
     // 下拉开合 + 定位。按钮右缘对齐菜单右缘（菜单 180 宽），top = 按钮底边 + 2
     // （+2 沿用 headingNumberMixin 的菜单贴合口径），左右夹在视口内防溢出。

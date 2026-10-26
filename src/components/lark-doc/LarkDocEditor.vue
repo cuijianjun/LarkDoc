@@ -45,8 +45,7 @@
     <!-- ISV 按钮配置面板：斜杠三条按钮命令打开（270×386，z600，无 backdrop）。
          与日程面板相反：Esc/取消/点外部都关，关了不建块（02 §22 ⑤-3）。 -->
     <IsvButtonPanel :ed="self" />
-
-
+    <RevisionPanel :ed="self" />
     <div class="lark-doc-body">
       <button
         v-if="!outlineOpen && featureEnabled('outline')"
@@ -175,6 +174,7 @@ import ReminderPopover from './editor/ReminderPopover.vue'
 import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
 // P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
 import IsvButtonPanel from './editor/IsvButtonPanel.vue'
+import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，状态与定位全在 revisionMixin。
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
@@ -223,6 +223,7 @@ import calendarMixin from './editor/calendarMixin'
 // P4-04：ISV 块（按钮 / 目录导航）的状态机。按钮走「先弹面板 → 校验 → 落块」，
 // 目录导航不弹面板、就地插块，两者共用同一个 isv 节点、靠 kind 分叉。
 import isvMixin from './editor/isvMixin'
+import revisionMixin from './editor/revisionMixin' // P4-06 ③：接受 / 拒绝无二次确认、无 toast。
 // 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
 import foldPersistMixin from './editor/foldPersistMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
@@ -244,8 +245,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, foldPersistMixin],
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -367,7 +368,7 @@ export default {
       this.editor = new Editor({
         content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
         extensions: createLarkDocExtensions({ ...this.embedOptions, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null

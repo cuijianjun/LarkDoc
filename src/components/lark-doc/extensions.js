@@ -31,7 +31,7 @@ import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
-  UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
+  LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
   FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv,
 } from '../../registry/blocks'
 
@@ -132,7 +132,15 @@ export function createLarkDocExtensions(options = {}) {
     // P4-02a：日期提醒紧跟提及之后 —— 同为「行内小物件」，但它是 **mark**（挂在文本上，
     // 文案即 chip 文字），不是 atom。位置放这里只为可读性：mark 注册在 schema.marks 里，
     // 顺序只影响 fixture 字节，不影响行为。
-    TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, LarkDocMention, LarkDocReminder, UnknownBlock,
+    // P4-06：修订建议紧跟日期提醒 —— 同为 **mark**。挂上它只改 DOM 外观（两层 span +
+    // 下划线 / 删除线），不拦截任何命令；真正「键入即落标记」的跟踪在
+    // core/revision/tracker.js（suggest 模式才接线），「接受 / 拒绝」在
+    // core/revision/commands.js，这里只管注册。
+    TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, LarkDocMention, LarkDocReminder,
+    LarkDocRevision, UnknownBlock,
+    // 修订的运行时：`tracker` 只在宿主把 storage.active 打开（suggest 模式）后拦截键入 /
+    // 退格并补 mark，其余模式零行为；`highlight` 只画激活态那一条的底色。
+    LarkDocRevisionTracker, LarkDocRevisionHighlight,
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
     FileHandler.configure({
       allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,

@@ -89,6 +89,29 @@ export {
   MENTION_SEARCH_LIMIT, MENTION_RESOLVE_LIMIT, DEFAULT_MENTION_TIMEOUT,
   normalizeMentionEntry, normalizeMentionDirectory, searchMentionDirectory, createMentionProvider,
 } from '../core/mention/directory'
+// P4-06：修订建议。它是 **mark**（挂在文本上，容器套内层两层 span），契约层
+// （kind 枚举 / 面板几何 / 三态高度 / 六按钮 / 建议收集与定位 / 决定语义）同源再导出，
+// 面板与事务跟踪都只从这里取，谁都不许自己维护常量副本。
+export {
+  LarkDocRevision, REVISION_ACTIONS, REVISION_BUTTONS, REVISION_BUTTON_IDS, REVISION_HEIGHTS,
+  REVISION_KINDS, REVISION_LABELS, REVISION_PANEL, REVISION_PANEL_TITLE,
+  collectRevisions, createRevisionId, normalizeRevision, readRevision, revisionAt,
+  revisionDecision, revisionMarkOf, revisionPanelHeight, revisionRanges, revisionSummary,
+} from '../core/blocks/revision'
+// P4-06：修订的运行时三层 —— 事务跟踪（键入即落标记）/ 装饰（激活高亮）/ 判定命令
+// （接受、拒绝、前后跳、复制锚点）。同样只从这里出，装配层不直接摸 core/revision 内部。
+export {
+  LarkDocRevisionTracker, REVISION_SKIP_META, REVISION_TRACK_META,
+  adjacentRevisionId, buildRevisionMarkTr, deleteDecision, deletionRange,
+  insertedRanges, isBulkReplace, mergeRanges, revisionSpans,
+} from '../core/revision/tracker'
+export {
+  LarkDocRevisionHighlight, buildRevisionActiveTr, buildRevisionDecorations,
+  revisionActiveKey, revisionHighlightPlugin,
+} from '../core/revision/decorations'
+export {
+  adjacentRevision, buildRevisionDecisionTr, revisionAnchor, revisionJumps, revisionTarget,
+} from '../core/revision/commands'
 export { UnknownBlock } from '../core/blocks/unknown-block'
 export { loadKatex, mathExtension } from '../core/blocks/math'
 export { documentKey } from '../core/blocks/document-key'

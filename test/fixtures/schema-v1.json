@@ -644,6 +644,19 @@
         }
       }
     },
+    "revision": {
+      "attrs": {
+        "author": {
+          "default": ""
+        },
+        "kind": {
+          "default": "insert"
+        },
+        "revisionId": {
+          "default": ""
+        }
+      }
+    },
     "strike": {
       "attrs": {}
     },

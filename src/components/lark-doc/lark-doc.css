@@ -305,6 +305,18 @@
   --ld-bg-active-content: var(--ld-bg-active);
   --ld-shadow-chrome: var(--ld-shadow-menu);
   --ld-shadow-content: var(--ld-shadow-menu);
+  /* 修订建议（P4-06，07 §12.2 实测值）。**直接写死蓝色**，不复用 --B700 那类
+     可能缺省的中间变量 —— 实测真飞书此处装饰规则引用了作用域不稳的自定义属性，
+     换成 rgba() 后整条声明失效，标记只剩删除线没有颜色。
+     两档同值：修订标记是正文画布上的增量色，深色档未采，不猜。 */
+  --ld-revision: #0442d2;                    /* 新增文字 / 下划线 / 删除线 */
+  --ld-revision-halo: rgba(4, 66, 210, .1);  /* 删除常驻浅底 / 新增 hover 底 */
+  /* 面板控件区的三枚（07 §12.4 实测）。红/绿**不复用 --ld-danger / --ld-success**：
+     那两个是文字语义色（飞书档 #D83931 / #2EA121），而这套按钮图标实测是「亮红／亮绿」
+     （#F54A45 / #35BD4B），两者色差肉眼可见，混用会让「拒绝」看着像危险警告。 */
+  --ld-revision-reject: #f54a45;             /* 拒绝修订（左、红叉） */
+  --ld-revision-accept: #35bd4b;             /* 接受修订（右、绿勾） */
+  --ld-revision-btn-hover: rgba(31, 35, 41, .08); /* 六按钮 hover 底（与日历行/提醒下拉同值，语义不同单列） */
 }
 /* 旧五件套（--lark-doc-*）转为废弃别名，指向新 token，下个大版本移除（12 §9）。
    --lark-doc-soft 已别名化到 --ld-bg-soft（B5）；AI 面板其余局部色留 B4 收编。 */
@@ -2138,3 +2150,71 @@
 .lark-doc .lark-doc-mode-item-label { color: inherit; font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
 .lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
+
+/* ==================================================================
+   P4-06 · 修订模式：行内标记 + 右侧建议面板
+   出处：07 §12.2（标记 DOM 与配色）/ §12.3（面板几何）/ §12.4（六按钮）/ §12.5（闭环）。
+
+   标记（两层 span，见 core/blocks/revision.js 的 renderHTML）：
+     外层 span.revision-container[data-inline-wrapper][data-revision-id/kind/author]
+     内层 span.text-revision.revision-id-* .author-*（删除态多一个 .revision-linethrough）
+   - 容器恒有 2px 下边框：新增态画修订蓝、**删除态画正文色**（实测 DOM 把
+     `--revision-border-bottom-color` 改成正文色，所以删除标记也是「划线 + 删除线」两条，
+     不是只有一条；别为了看着干净把删除态的边框去掉）。
+   - 新增态文字染色，**删除态文字保持正文原色**（07 §12.2「保持原色，不变灰」）。
+   - 底色：新增态仅 hover 出现，删除态常驻（都是同一枚 10% 蓝）。
+   - 容器高 27 / 内层行高 19 是实测结果值，**不写固定 height** —— 行内盒高由字体
+     度量与行高决定，硬写 height 会把行盒撑歪。这里只钉线宽与行高两个可控量。
+
+   面板：壳 270 宽 / radius 6 / 白底 / 浮层投影；三态高度由 JS 传入
+   （insert 137 / delete 115 / active 169，见 REVISION_HEIGHTS），这里只负责
+   把头部钉死 32、让回复卡吸收剩余高度，避免出现 22px 的真空隙。
+   六按钮顺序固定：下一个 → 上一个 → 分割条 → 复制链接 → 拒绝（红）→ 接受（绿）。
+   🔴 按钮不写 title 属性 —— 气泡由宿主 tip 层负责（07 §12.4）。
+   ================================================================== */
+.lark-doc .revision-container { padding: 0; border-radius: 0; border-bottom: 2px solid var(--ld-text); }
+.lark-doc .revision-container[data-revision-kind="insert"] { border-bottom-color: var(--ld-revision); }
+.lark-doc .revision-container[data-revision-kind="insert"]:hover { background: var(--ld-revision-halo); }
+.lark-doc .revision-container[data-revision-kind="insert"] > .text-revision { color: var(--ld-revision); line-height: 19px; }
+.lark-doc .revision-container[data-revision-kind="delete"] { background: var(--ld-revision-halo); }
+.lark-doc .revision-container[data-revision-kind="delete"] > .text-revision { color: inherit; line-height: 19px; }
+.lark-doc .text-revision.revision-linethrough { text-decoration: line-through; text-decoration-color: var(--ld-revision); text-decoration-thickness: 2px; }
+/* 激活高亮由装饰层下发类名，只能落在文字那一层（装饰触达不到外层容器的类名）→
+   用 box-shadow 造一圈 2px 的浅底，视觉上把整段包住。 */
+.lark-doc .text-revision.is-revision-active { background: var(--ld-revision-halo); box-shadow: 0 0 0 2px var(--ld-revision-halo); }
+
+/* 面板是 `position: fixed`，挂在页面右侧固定列。包一层只为「多实例 v-for 有共同父节
+   点」，用 `display: contents` 让它彻底退出布局 —— 换成 absolute/0×0 反而要再给面板补
+   `pointer-events: auto`。 */
+.lark-doc .lark-doc-revision-layer { display: contents; }
+.lark-doc .lark-doc-revision-panel { position: fixed; z-index: 1040; display: flex; flex-direction: column; box-sizing: border-box; width: 270px; border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); overflow: hidden; }
+.lark-doc .lark-doc-revision-head { display: flex; box-sizing: border-box; height: 32px; min-height: 32px; align-items: center; justify-content: space-between; padding: 8px 12px 0; }
+.lark-doc .lark-doc-revision-label { display: inline-flex; box-sizing: border-box; max-width: 244px; height: 21px; align-items: center; color: var(--ld-text-secondary); font-size: 12px; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lark-doc .lark-doc-revision-controls { display: flex; box-sizing: border-box; width: 115px; height: 26px; align-items: center; padding: 3px 5px; gap: 4px; }
+.lark-doc .lark-doc-revision-btn { display: grid; box-sizing: border-box; width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-revision-btn:hover:not(:disabled), .lark-doc .lark-doc-revision-btn:focus-visible:not(:disabled) { background: var(--ld-revision-btn-hover); color: var(--ld-text-secondary); outline: 0; }
+.lark-doc .lark-doc-revision-btn:disabled { color: var(--ld-text-disabled); cursor: not-allowed; opacity: 1; }
+.lark-doc .lark-doc-revision-btn.is-reject { color: var(--ld-revision-reject); }
+.lark-doc .lark-doc-revision-btn.is-accept { color: var(--ld-revision-accept); }
+.lark-doc .lark-doc-revision-btn.is-reject:hover:not(:disabled), .lark-doc .lark-doc-revision-btn.is-reject:focus-visible:not(:disabled) { color: var(--ld-revision-reject); }
+.lark-doc .lark-doc-revision-btn.is-accept:hover:not(:disabled), .lark-doc .lark-doc-revision-btn.is-accept:focus-visible:not(:disabled) { color: var(--ld-revision-accept); }
+.lark-doc .lark-doc-revision-split { width: 1px; min-width: 1px; height: 16px; flex: 0 0 1px; background: var(--ld-border); }
+.lark-doc .lark-doc-revision-reply { display: flex; box-sizing: border-box; min-height: 83px; flex: 1 1 auto; align-items: flex-start; gap: 12px; padding: 6px 12px; }
+.lark-doc .lark-doc-revision-avatar { display: grid; width: 32px; min-width: 32px; height: 32px; place-items: center; border-radius: 50%; background: var(--ld-text-disabled); color: var(--ld-bg-surface-chrome); font-size: 12px; line-height: 1; overflow: hidden; }
+.lark-doc .lark-doc-revision-main { display: flex; flex-direction: column; width: 200px; min-width: 0; }
+.lark-doc .lark-doc-revision-meta { display: flex; height: 17px; align-items: center; gap: 6px; font-size: 12px; line-height: 17px; }
+.lark-doc .lark-doc-revision-author { color: var(--ld-text); font-size: 12px; line-height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lark-doc .lark-doc-revision-time { color: var(--ld-text-tertiary); font-size: 12px; line-height: 17px; white-space: nowrap; }
+.lark-doc .lark-doc-revision-body { min-height: 50px; margin-top: 4px; color: var(--ld-text); font-size: 14px; line-height: 22px; word-break: break-word; }
+.lark-doc .lark-doc-revision-body b { font-weight: 700; }
+.lark-doc .lark-doc-revision-input { display: flex; box-sizing: border-box; height: 32px; min-height: 32px; align-items: center; gap: 8px; padding: 0 12px 6px; }
+.lark-doc .lark-doc-revision-input-zone { display: flex; box-sizing: border-box; height: 22px; min-width: 0; flex: 1 1 auto; align-items: center; padding: 0 6px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-tertiary); font-size: 12px; line-height: 22px; cursor: text; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lark-doc .lark-doc-revision-input-zone:focus-visible { border-color: var(--ld-brand-chrome); outline: 0; }
+.lark-doc .lark-doc-revision-input-btn { display: grid; width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-tertiary); cursor: pointer; }
+.lark-doc .lark-doc-revision-input-btn:hover:not(:disabled) { background: var(--ld-revision-btn-hover); color: var(--ld-text-secondary); }
+
+@media print {
+  .lark-doc .revision-container { border-bottom: 0; background: none; }
+  .lark-doc .text-revision { color: inherit; text-decoration: none; box-shadow: none; }
+  .lark-doc .lark-doc-revision-panel { display: none !important; }
+}
