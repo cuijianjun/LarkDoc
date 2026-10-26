@@ -538,7 +538,19 @@
 .lark-doc .ProseMirror .lark-doc-unknown-card-text { display: flex; flex-direction: column; min-width: 0; }
 .lark-doc .ProseMirror .lark-doc-unknown-card-title { font-size: 14px; line-height: 22px; color: var(--ld-unknown-card-text); }
 .lark-doc .ProseMirror .lark-doc-unknown-card-sub { font-size: 12px; line-height: 20px; color: var(--ld-unknown-card-text-sub); }
-.lark-doc .ProseMirror table { max-width: 100%; table-layout: fixed; border-collapse: collapse; }.lark-doc .ProseMirror .tableWrapper { max-width: 100%; overflow-x: auto; }
+.lark-doc .ProseMirror table { max-width: 100%; table-layout: fixed; border-collapse: collapse; }
+/* P5-01 · 表格超宽 = **裁切不滚**（02 §10 ⑦-5 实测「全链没有一个 overflow-x: auto/scroll」，
+   A20 定判）。改判要点：飞书超宽时右侧 71px 直接看不见，用户没有横向滚动条可拖。
+   做法 = `overflow-x: hidden` 裁掉 + 右端叠一层渐隐，视觉上暗示「还有内容」。
+   ⚠️ 渐隐的**宽度与色值都没有实测**（飞书那层由组件内联计算，`--scroll-left` 只用于
+   同步「滚到右端就去掉渐隐」）。这里取 24px + 纸面底色兜底，等真机采到再校准。
+   渐隐起点**必须**写成同色透明（即那个零透明度白的 rgba），不能图省事写 `transparent`
+   —— 后者语义是「黑色透明」，过渡中途会泛一层灰雾。
+   渐隐只在**真的溢出**时才挂 —— `is-clipped` 由 tableToolsMixin.syncTableClip() 量
+   `scrollWidth > clientWidth` 打上（hidden 下 scrollWidth 仍然反映内容宽）。不做这个判定
+   的话，不溢出的表格右边缘也会被淡掉 24px，看着像描边缺了一段。 */
+.lark-doc .ProseMirror .tableWrapper { position: relative; max-width: 100%; overflow-x: hidden; }
+.lark-doc .ProseMirror .tableWrapper.is-clipped::after { content: ''; position: absolute; z-index: 2; top: 0; right: 0; bottom: 0; width: 24px; background: linear-gradient(to right, rgba(255, 255, 255, 0), var(--ld-bg-content)); pointer-events: none; }
 .lark-doc .ProseMirror td, .lark-doc .ProseMirror th { min-width: 70px; border: 1px solid var(--ld-border-table); padding: 7px; overflow-wrap: anywhere; }.lark-doc .ProseMirror th { background: var(--ld-bg-th); }
 .lark-doc .ProseMirror img { max-width: 100%; height: auto; }.lark-doc .ProseMirror hr { border: 0; border-top: 1px solid var(--ld-border-hr); margin: 23px 0; }
 .lark-doc .ProseMirror .lark-doc-heading-fold-toggle { position: relative; z-index: 15; display: inline-grid; width: 16px; min-width: 16px; height: 16px; min-height: 16px; margin-left: -18px; margin-right: 6px; padding: 0; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--ld-text-fold-toggle); font-size: 0; line-height: 0; vertical-align: middle; transform: translateY(-1px); }

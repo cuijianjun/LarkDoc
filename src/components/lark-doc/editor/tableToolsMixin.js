@@ -29,6 +29,16 @@ export default {
       return { row: rowHeader, column: columnHeader }
     },
   },
+  mounted() {
+    // 首屏没有事务，溢出态得自己量一次（rAF 那一发兜「字体晚到导致宽了一帧」）。
+    this.$nextTick(() => {
+      this.syncTableClip()
+      requestAnimationFrame(() => this.syncTableClip())
+    })
+    // 窗口变宽后原本溢出的表格不再溢出，得把 is-clipped 摘掉。
+    window.addEventListener('resize', this.syncTableClip)
+  },
+  beforeDestroy() { window.removeEventListener('resize', this.syncTableClip) },
   methods: {
     // P0-03：工具栏表格按钮的三态行为收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
     onTableToolbarClick() { if (this.isActive('table')) this.tableToolsOpen = !this.tableToolsOpen; else this.tablePicker = true },
@@ -165,6 +175,22 @@ export default {
       const { $from } = this.editor.state.selection
       for (let depth = $from.depth; depth > 0; depth -= 1) if ($from.node(depth).type.name === 'table') return $from.node(depth)
       return null
+    },
+    /**
+     * P5-01：表格超宽是**裁切**不是滚动（02 §10 ⑦-5 / A20 定判），右端渐隐由 CSS 画。
+     * 渐隐只在真溢出时才挂：`overflow-x: hidden` 下 CSS 无从判断溢出，必须量
+     * `scrollWidth > clientWidth`（hidden 不影响 scrollWidth 反映内容宽）。
+     * 直接改 wrapper 的 class 而不进文档 —— 这是纯视觉态，落进 JSON 就是脏数据。
+     * 列宽拖拽结束会 dispatch 事务，所以挂 onTransaction 就够，不用另监听 pointerup。
+     */
+    syncTableClip() {
+      const editorDom = this.editor && this.editor.view && this.editor.view.dom
+      if (!editorDom || typeof editorDom.querySelectorAll !== 'function') return
+      editorDom.querySelectorAll('.tableWrapper').forEach((wrapper) => {
+        const clipped = wrapper.scrollWidth > wrapper.clientWidth + 1
+        if (clipped === wrapper.classList.contains('is-clipped')) return
+        wrapper.classList.toggle('is-clipped', clipped)
+      })
     },
     deleteActiveTable() {
       if (!this.writable() || !this.editor.isActive('table')) return false
