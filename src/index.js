@@ -10,6 +10,10 @@ import 'core-js/features/structured-clone'
 import '../style.css'
 import LarkDocEditor from './components/lark-doc/LarkDocEditor.vue'
 import LarkDocWorkspace from './components/lark-doc/LarkDocWorkspace.vue'
+// 模板库是**宿主侧**弹窗：飞书编辑器页内零模板入口（02 §28.1），所以它不属于
+// LarkDocEditor，单独导出给宿主挂在自己的「新建」入口里。
+import LarkDocTemplateLibrary from './components/lark-doc/TemplateLibrary.vue'
+import * as templateLibrary from './core/templates/library'
 import LarkDoc, { createLarkDoc } from './LarkDoc'
 import { createWorkspace } from './components/lark-doc/workspace'
 import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
@@ -31,6 +35,7 @@ export {
   createLarkDoc,
   LarkDocEditor,
   LarkDocWorkspace,
+  LarkDocTemplateLibrary,
   createWorkspace,
   createLarkDocConfig,
   createEcsImageUpload,
@@ -45,6 +50,7 @@ export {
   isVditorHtml,
   normalizeVditorHtml,
   TEMPLATES,
+  templateLibrary,
   documentOperations,
   mockAI,
   DocumentSession,

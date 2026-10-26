@@ -5,6 +5,7 @@
  * 连同 katex 一起按需加载（src/components/lark-doc/extensions.js 的 loadKatex）。
  * 没有公式的文档因此不会为这份样式付费。 */
 @import './src/components/lark-doc/lark-doc.css';
+@import './src/components/lark-doc/template-library.css';
 @import './src/components/lark-doc/theme-preset-feishu.css';
 /* 宿主对齐档（pcvue 墨绿 #1d3d39 系，13 §4.3）—— 宿主加 data-theme-preset="pcvue" 启用。
    同样放在 theme-dark.css 之前：本档的 [data-theme-preset][data-theme="dark"]
