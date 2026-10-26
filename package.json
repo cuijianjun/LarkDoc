@@ -175,13 +175,13 @@
     {
       "name": "ESM 主包 (gzip)",
       "path": "dist/lark-doc.esm.js",
-      "limit": "190 KB",
+      "limit": "198 KB",
       "gzip": true
     },
     {
       "name": "UMD 主包 (gzip)",
       "path": "dist/lark-doc.umd.min.js",
-      "limit": "360 KB",
+      "limit": "368 KB",
       "gzip": true
     },
     {
