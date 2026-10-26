@@ -263,8 +263,25 @@
      token 落在 theme-preset-feishu.css；此处给三档共用口径：跟本档 hover 语言，
      默认档/青灰档即 --ld-bg-hover，深色档由 dark 覆写的同名变量自动接管。 */
   --ld-emoji-item-bg: var(--ld-bg-hover);
-  --ld-bg-search-hit: #fff0a1;           /* 搜索命中高亮（功能色，两档同值） */
-  --ld-border-search-active: #e9a840;    /* 当前命中描边（功能色，两档同值） */
+  /* P4-05 查找替换命中双色（04 §3.2 ④-4 实测）：当前项红 + 其余项黄。
+     老口径是「黄底命中 + 橙描边标当前」，飞书实际是**两个底色**且当前项换红，
+     描边那条规则作废（--ld-border-search-active 一并移除，全库仅一处引用）。
+     用 α 半透而不是实色：命中块会压在行内文字上，实色会把字盖掉。 */
+  --ld-bg-search-hit: rgba(255, 198, 10, .5);        /* 其余命中：黄 */
+  --ld-bg-search-hit-active: rgba(245, 74, 69, .5);  /* 当前命中：红 */
+  /* P4-05 查找替换面板（04 §3.2 ④-2 / ④-5：406 宽可拖拽浮层，查找 186 / 替换 286 高）。
+     单开 --ld-fr-* 专线而不复用 --ld-border-control 之类：飞书这套控件是**两个边框值**
+     （常态 #DEE0E3、禁用 #D0D3D6），现有 token 只表达一个值，混用会让「调面板边框」
+     连带改掉全局输入框。分隔线复用 --ld-divider（浅 #DEE0E3 与实测
+     rgba(31,35,41,.15) 在白底上合成差 ΔE<2，不值得为它再开一个 token）。 */
+  --ld-fr-shadow: rgba(31, 35, 41, .1) 0 3px 12px 2px; /* 面板投影（实测值，≠ --ld-shadow-float 三档） */
+  --ld-fr-border: #dee0e3;                           /* 面板描边 */
+  --ld-fr-border-control: #dee0e3;                   /* 输入框 / 次要按钮常态描边 */
+  --ld-fr-border-disabled: #d0d3d6;                  /* 禁用态描边（≠ 常态） */
+  --ld-fr-text: #1f2329;                             /* Tab 未激活 / 次要按钮文字 */
+  --ld-fr-text-muted: #646a73;                       /* 关闭图标 / 命中计数器 */
+  --ld-fr-text-disabled: #bbbfc4;                    /* 禁用态文字 */
+  --ld-fr-primary-bg: #1456f0;                       /* 「全部替换」主按钮填充 */
   --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
   --ld-border-notice: #a9d8c2;           /* 通知条描边 */
   --ld-bg-notice: #edf9f2;               /* 通知条底 */
@@ -388,9 +405,45 @@
 .lark-doc .lark-doc-header-menu > * { min-width: 0; }
 .lark-doc .lark-doc-header-menu button, .lark-doc .lark-doc-header-menu select { width: 100%; min-height: 32px; border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-header-menu .lark-doc-save-status { padding: 2px 4px; }
-.lark-doc .lark-doc-search, .lark-doc .lark-doc-table-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 8px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); }
-.lark-doc .lark-doc-search input { width: min(185px, 42vw); }
-.lark-doc .lark-doc-search span { color: var(--ld-text-tertiary); font-size: 12px; min-width: 50px; }
+.lark-doc .lark-doc-table-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 8px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); }
+/* P4-05 查找替换浮层（04 §3.2 实测）：替换 Tab 406×286、查找 Tab 406×186（高度由内联 style 给），
+   z-index 100、radius 8、默认右上角（右 16 / 顶 72），Tab 行即拖拽把手（拖后 left/top 走内联）。
+   🔴 描边/文字一律走 --ld-fr-* 专线：常态描边 #DEE0E3 与禁用描边 #D0D3D6 是实测的两档，
+   全局 --ld-border-control 是第三档，复用会把别处输入框一起改掉。禁用态底色仍是白（不降底）。 */
+.lark-doc .lark-doc-fr { position: fixed; z-index: 100; right: 16px; top: 72px; box-sizing: border-box; display: flex; flex-direction: column; width: 406px; max-width: calc(100vw - 32px); padding: 0 24px; border: 1px solid var(--ld-fr-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; box-shadow: var(--ld-fr-shadow); }
+.lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 28px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
+/* Tab 32×48 / fs16：激活用 --ld-brand-content（浅 #1456F0 / 深 #4C88FF），未激活是正文色。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-tab { width: 32px; min-width: 32px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 16px; line-height: 48px; cursor: pointer; }
+.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active { color: var(--ld-brand-content); }
+/* 激活下划线 ink：容器 32×3，::before 32×6 溢出一半被裁 —— 得到上圆角 3px 的实心条。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-ink { position: absolute; bottom: 0; left: 0; z-index: 1; overflow: hidden; width: 32px; height: 3px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-ink::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 6px; border-radius: 3px; background: var(--ld-brand-content); }
+.lark-doc .lark-doc-fr.is-replace .lark-doc-fr-ink { transform: translateX(60px); }
+.lark-doc .lark-doc-fr .lark-doc-fr-pane { padding-top: 16px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-field { display: flex; flex-direction: column; }
+/* 查找 Tab 的行只有输入框（40 = 8 + 32）；替换 Tab 两行各带 LABEL（3 + 17 + 10 + 32 = 62）。 */
+.lark-doc .lark-doc-fr:not(.is-replace) .lark-doc-fr-field { padding-top: 8px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-field + .lark-doc-fr-field { margin-top: 16px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-label { padding-top: 3px; margin-bottom: 10px; color: var(--ld-fr-text); font-size: 14px; line-height: 17px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-input { box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 5px 9px 5px 12px; border: 1px solid var(--ld-fr-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-fr .lark-doc-fr-input input { flex: 1 1 auto; min-width: 0; height: 22px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-input input::placeholder { color: var(--ld-text-tertiary); }
+.lark-doc .lark-doc-fr .lark-doc-fr-counter { flex: 0 0 auto; color: var(--ld-fr-text-muted); font-size: 14px; line-height: 22px; white-space: nowrap; }
+/* 按钮行 356×32、按钮 80×32、间距 12：查找 Tab 两个（右对齐），替换 Tab 四个（正好铺满）。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+.lark-doc .lark-doc-fr.is-replace .lark-doc-fr-actions { justify-content: flex-start; }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn { box-sizing: border-box; width: 80px; min-width: 80px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--ld-fr-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; line-height: 30px; }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: var(--ld-fr-border-control); color: var(--ld-fr-text); }
+/* 禁用：文字 #BBBFC4 + 描边 #D0D3D6 + 底仍白（④-2）。这里把通用 `button:disabled{opacity:.43}` 顶掉。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-btn:disabled { opacity: 1; border-color: var(--ld-fr-border-disabled); background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text-disabled); cursor: not-allowed; }
+/* 主按钮「全部替换」：填充 --ld-fr-primary-bg（浅 #1456F0 / 深 #3370EB，深档实测就是这个值，
+   不是品牌蓝 #4C88FF），禁用沿用仓库既有做法 —— 降不透明度，不另造一档灰蓝。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary { border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-text-inverse); }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:hover:not(:disabled) { background: var(--ld-fr-primary-bg); border-color: transparent; color: var(--ld-text-inverse); }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:disabled { opacity: .43; border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-text-inverse); cursor: not-allowed; }
+/* 关闭按钮 28×28 @(1447,82)：图标盒 20×20，色 --ld-fr-text-muted（浅 #646A73 / 深 #A6A6A6）。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-close { position: absolute; z-index: 10; top: 10px; right: 21px; display: grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ld-fr-text-muted); }
+.lark-doc .lark-doc-fr .lark-doc-fr-close:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--ld-fr-text-muted); }
 .lark-doc .lark-doc-table-tools label { display: flex; align-items: center; gap: 4px; }
 .lark-doc .lark-doc-table-tools input[type="color"] { width: 31px; height: 27px; padding: 1px; }
 .lark-doc .lark-doc-body { display: flex; align-items: flex-start; min-height: calc(100vh - 105px); width: 100%; max-width: 100%; }
@@ -487,7 +540,11 @@
 .lark-doc .ProseMirror h1:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h2:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h3:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h4:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h5:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror h6:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror [data-type="heading"]:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror p:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror li:hover .lark-doc-heading-fold-toggle, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:hover, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:focus-visible, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle[aria-expanded="false"] { opacity: 1; }
 .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:hover, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle:focus-visible { background: var(--ld-bg-fold-toggle-hover); color: var(--ld-text-fold-toggle-hover); outline: 0; }
 .lark-doc .ProseMirror .lark-doc-heading-fold-toggle[data-tooltip]:hover::after, .lark-doc .ProseMirror .lark-doc-heading-fold-toggle[data-tooltip]:focus-visible::after { content: attr(data-tooltip); position: absolute; z-index: 30; bottom: calc(100% + 8px); left: 50%; min-width: max-content; padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; font-weight: 400; line-height: 1.35; transform: translateX(-50%); white-space: nowrap; pointer-events: none; }
-.lark-doc .ProseMirror .lark-doc-search-hit { background: var(--ld-bg-search-hit); }.lark-doc .ProseMirror .lark-doc-search-active { outline: 2px solid var(--ld-border-search-active); }
+/* P4-05：命中双色（04 §3.2 ④-4）。当前项 `.lark-doc-search-active` 是**换底色**不是加描边 ——
+   描边会把行高撑开、且飞书实测就是红底。两条规则特异性相同，
+   靠**书写顺序**让 active 压过 hit（document-decorations.js 给当前项同时挂两个 class），
+   换位会整屏变黄。 */
+.lark-doc .ProseMirror .lark-doc-search-hit { background: var(--ld-bg-search-hit); }.lark-doc .ProseMirror .lark-doc-search-active { background: var(--ld-bg-search-hit-active); }
 .lark-doc .ProseMirror .lark-doc-block-handle-hovered:not([data-type="callout"]) { position: relative; background: transparent; }
 .lark-doc .ProseMirror .lark-doc-heading-section-hovered { position: relative; z-index: 1; background: transparent; }
 /* 高亮 overlay 挂在 .lark-doc-editor-content 下（是 .ProseMirror 的兄弟节点，
@@ -558,7 +615,7 @@
 @media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: fixed; z-index: 45; top: 112px; left: 0; width: min(260px, 85vw); max-height: calc(100vh - 112px); padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
 @media (max-width: 380px) { .lark-doc .lark-doc-topbar { gap: 5px; }.lark-doc .lark-doc-brand span { display: none; }.lark-doc .lark-doc-paper { padding-left: 58px; padding-right: 12px; }.lark-doc .lark-doc-main { padding: 7px; } }
 @media (prefers-reduced-motion: reduce) { .lark-doc, .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
-@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-search, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
+@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
 .lark-doc .lark-doc-block-submenu-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lark-doc .lark-doc-block-submenu-trigger > span:last-child { color: var(--ld-text-submenu-arrow); font-size: 18px; }
 .lark-doc .lark-doc-block-submenu { position: fixed; z-index: 42; display: grid; width: 230px; gap: 1px; max-height: min(620px, calc(100vh - 16px)); overflow-y: auto; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); }

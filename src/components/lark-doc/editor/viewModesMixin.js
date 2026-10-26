@@ -11,6 +11,9 @@ export default {
     reading: false, slides: false, fullscreen: false, widthMode: 'standard',
     outlineOpen: window.innerWidth > 760, outline: [], outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
     searchOpen: false, searchQuery: '', replacement: '', searchMatches: [], searchIndex: 0, slideIndex: 0,
+    // P4-05 查找替换浮层：tab 决定面板高度（find 186 / replace 286，04 §3.2）；
+    // pos 是拖拽后的 fixed 坐标，null 表示用 CSS 默认位（右上角）。
+    searchTab: 'find', searchPanelPos: null,
   } },
   computed: {
     outlineItems() {
@@ -91,10 +94,21 @@ export default {
       }
       this.updateSearch()
     },
-    closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.editor?.commands.setLarkDocSearch(''); this.focus() },
+    // P4-05：关闭时把 tab 归位到「查找」（下次打开不带上次痕迹），拖拽位置刻意保留。
+    closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.searchTab = 'find'; this.editor?.commands.setLarkDocSearch(''); this.focus() },
     toggleReading() { this.reading = !this.reading },
     // P0-03：模板级赋值收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
     toggleSearchOpen() { this.searchOpen = !this.searchOpen },
+    // P4-05：⌘+F / ⌘+Shift+H / 工具栏入口统一走这里。已开时只切 tab 并回焦输入框
+    // （面板是常驻浮层，不销毁重建，所以 mounted 的聚焦不会再来一次）。
+    openSearch(tab) {
+      if (!this.featureEnabled('search')) return
+      this.searchTab = tab === 'replace' ? 'replace' : 'find'
+      if (!this.searchOpen) { this.searchOpen = true; return }
+      this.$nextTick(() => { const panel = this.$refs.searchInput; if (panel && panel.focus) panel.focus() })
+    },
+    setSearchTab(tab) { this.searchTab = tab === 'replace' ? 'replace' : 'find' },
+    setSearchPanelPos(pos) { this.searchPanelPos = pos },
     toggleOutlineOpen() { this.outlineOpen = !this.outlineOpen },
     toggleHelpOpen() { this.helpOpen = !this.helpOpen },
     setWidthMode(v) { this.widthMode = v },

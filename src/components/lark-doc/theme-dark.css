@@ -166,6 +166,18 @@
   --ld-shadow-panel: 0 4px 8px rgba(0, 0, 0, 0.28);
   --ld-shadow-notice: 0 10px 28px rgba(0, 0, 0, 0.28);
   --ld-shadow-megamenu: 0 8px 16px rgba(0, 0, 0, 0.28);
+
+  /* ---- 查找替换面板（P4-05，04 §3.2 ④-5 A/B 实测：几何尺寸与浅色档完全一致，只换色） ----
+     ★ 主按钮填充深档是 #3370EB，**不要**写成 --ld-brand-content 的 #4C88FF：
+       飞书深档「实心主按钮」比「文字/描边品牌蓝」暗一档，两者是真飞书里的两个值。 */
+  --ld-fr-shadow: rgba(0, 0, 0, 0.28) 0 3px 12px 2px;  /* E：同其余深色阴影色，几何沿用实测 */
+  --ld-fr-border: #5F5F5F;            /* A：面板描边 */
+  --ld-fr-border-control: #505050;    /* A：输入框 / 次要按钮常态描边 */
+  --ld-fr-border-disabled: #505050;   /* A：禁用描边与常态同值（深档只有一个控件描边档） */
+  --ld-fr-text: #F0F0F0;              /* A：Tab 未激活 / 次要按钮文字 */
+  --ld-fr-text-muted: #A6A6A6;        /* A：关闭图标 / 命中计数器 */
+  --ld-fr-text-disabled: #5F5F5F;     /* A：禁用态文字（≠ --ld-text-disabled 的 #757575） */
+  --ld-fr-primary-bg: #3370EB;        /* A：主按钮填充 */
 }
 
 /* ------------------------------------------------------------------
@@ -277,8 +289,12 @@
   --ld-bg-ai-review: #292929;                    /* A */
   --ld-bg-ai-proposal: rgba(76, 136, 255, 0.18); /* C */
   --ld-border-template-hover: #4C88FF;           /* A */
-  /* --ld-bg-search-hit / --ld-border-search-active 不覆盖：
-     功能高亮色，两档同值（preset 同口径）。 */
+  /* ---- 查找替换命中双色（P4-05，04 §3.2 ④-5C 实测：深色取同色相降亮度档）----
+     命中装饰画在正文里（ProseMirror），所以跟 **content 轨**走，
+     「UI 深 + 正文浅」时它仍然是浅色的黄/红。此前这里写的是「功能色两档同值、不覆盖」，
+     实测推翻了那条口径：深档确实换值（黄更暗一点、红从 #F54A45 降到 #F05B56）。 */
+  --ld-bg-search-hit: rgba(240, 182, 34, 0.5);        /* A：其余命中黄 */
+  --ld-bg-search-hit-active: rgba(240, 91, 86, 0.5);  /* A：当前命中红 */
 }
 
 /* ------------------------------------------------------------------
@@ -334,6 +350,9 @@
     --ld-bg-th: #edf6f0;
     --ld-border-hr: #dce8e1;
     --ld-divider: #DEE0E3;
+    /* P4-05 查找替换命中：深色值会印成一坨糊斑，回浅档（同默认档实测值） */
+    --ld-bg-search-hit: rgba(255, 198, 10, 0.5);
+    --ld-bg-search-hit-active: rgba(245, 74, 69, 0.5);
     /* 未知块占位卡打印回浅档（04 §8.3 中性灰，与默认档同值） */
     --ld-unknown-card-bg: #f5f6f7;
     --ld-unknown-card-border: #dee0e3;
