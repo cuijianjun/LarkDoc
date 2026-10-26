@@ -96,7 +96,16 @@ const expectedCommandIds = [
   // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
   // P5-03：`poll` 插在 mentionPage 与 reminder 之间（组内 y 1644 → 1676 → 1708）。
   'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
-  // P4-04：目录导航接在日程之后（文档小组件 2252 晚于 团队协作 1516、早于 内嵌网页 2444）。
+  // P5-06：`agenda` 是 ⑦ 团队协作第 10 项（y 1836，紧跟日程 1804）。
+  'agenda',
+  // P5-06：⑧ 文档管理 2 项（y 1900 / 1932）。
+  'folderManager', 'wikiRecent',
+  // P5-06：⑨ 项目管理 4 项（y 1996 / 2028 / 2060 / 2092）。
+  'jiraIssue', 'jiraFilter', 'meegoView', 'meegoDetail',
+  // P5-06：⑩ 进阶里的订阅号文章（y 2188；同组的网页卡片走 `bookmark`、倒计时不做）。
+  'subscribeArticle',
+  // P4-04：目录导航（文档小组件 2316）。P5-06 补齐中间三组后，它从「日程之后」
+  // 后移到真值位置 —— 晚于 进阶 2136、早于 内嵌网页 2444。
   'catalogue',
   'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',
   'canva', 'jcode', 'codepen', 'feishu_survey', 'jinshuju', 'airtable', 'baidumap', 'autonavi',

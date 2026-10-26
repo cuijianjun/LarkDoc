@@ -12,6 +12,8 @@
  *
  * CommandDef 契约见 requirements/09 §3.2。
  */
+import { enterpriseCommandOf } from '../embed/enterprise'
+
 export const collabCommands = [
   { id: 'mentionUser', label: '人员', category: '团队协作', plus: false, glyph: '@', tone: 'blue', keywords: 'mention at renyuan user tiji atuser', group: 'collab', tier: 'required' },
   { id: 'mentionChat', label: '群名片', category: '团队协作', plus: false, glyph: '#', tone: 'teal', keywords: 'mention qunmingpian chat group qun', group: 'collab', tier: 'skip' },
@@ -35,4 +37,8 @@ export const collabCommands = [
   // （同 reminder / mention 的理由）。也因为弹面板，它必须在 `commandMenuMixin` 的
   // `focusAfter` 排除名单里，否则点完命令先 `focus()` 会把刚开的面板顶掉。
   { id: 'calendar_event', label: '日程', category: '团队协作', plus: false, glyph: '▦', tone: 'blue', keywords: 'calendar_event richeng calendar schedule rili date event', group: 'collab', tier: 'required' },
+  // P5-06 会议议程：03 §3.4 ⑦ 团队协作组第 10 位（y 1836，紧跟 `calendar_event` 1804）。
+  // `tier: 'skip'` —— 议程要连日历/会议室服务，V1 不接；文案与图标取自
+  // `core/embed/enterprise.js` 的 9 项真值表（`providerId = 'agenda'`，17 §17.4.2）。
+  enterpriseCommandOf('agenda', 'collab'),
 ]

@@ -29,15 +29,16 @@ const EMBED_IDS = EMBED_MENU_ITEMS.map((item) => item.id)
 const isEmbed = (item) => commandFeatureOf(item.id) === 'embed'
 
 describe('P3-07 内嵌网页命令接线', () => {
-  it('COMMANDS 共 65 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
-    // 65 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）
+  it('COMMANDS 共 73 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
+    // 73 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）
     //      + 1 条 reminder（P4-02a）+ 1 条 calendar_event（P4-02b）
     //      + 3 条按钮 + 1 条 catalogue（P4-04）+ 1 条 sheet（P5-02）+ 1 条 poll（P5-03）
-    //      + 5 条多维表格（P5-04）+ 3 条绘图（P5-05）
+    //      + 5 条多维表格（P5-04）+ 3 条绘图（P5-05）+ 8 条 skip 项（P5-06：
+    //      文档管理 2 + 项目管理 4 + 会议议程 + 订阅号文章；`okr` 无菜单入口，只在渲染层）
     //      − 1 条 emoji。
     // emoji 不是飞书斜杠的入口（02 §16 定判：唯一入口是高亮块图标位），0.12 起从命令表摘掉。
     // 这个字面量是「有人动了命令表」的显式提醒：加命令时请同时确认 order / 架构断言。
-    expect(COMMANDS).toHaveLength(65)
+    expect(COMMANDS).toHaveLength(73)
     expect(COMMANDS.slice(-15).map((item) => item.id)).toEqual(EMBED_IDS)
   })
 

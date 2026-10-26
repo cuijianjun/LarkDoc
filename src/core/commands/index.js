@@ -70,6 +70,11 @@ for (const group of GROUPS) {
 // P5-05 再加 3 条绘图（思维导图 / 流程图 / UML 图，新增第 14 个分类「绘图」）：
 // 真值组标题 y 1356，夹在 多维表格 1164 与 团队协作 1516 之间（03 §3.4 ⑥），
 // 所以紧跟在 `bitableRefer` 之后。同上，必须连续成段。
+// P5-06 补齐 skip 档 8 条（文档管理 2 / 项目管理 4 / 会议议程 / 订阅号文章）：
+// 真值组序是 团队协作 1516 → 文档管理 1884 → 项目管理 1964 → 进阶 2136 →
+// 文档小组件 2268，所以 `catalogue`（目录导航，小组件 2316）从原来的
+// 「`calendar_event` 之后」**后移到 `subscribeArticle` 之后** —— 中间这几组补齐后，
+// 它才落回真值位置。别改回去（改了会把「文档小组件」顶到「进阶」前面）。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
@@ -80,7 +85,10 @@ const COMMAND_ORDER = [
   'mindMap', 'flowChart', 'umlDiagram',
   'inlineMath', 'blockMath', 'template', 'ai',
   'open_link', 'duplicate_page', 'follow_page',
-  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event', 'agenda',
+  'folderManager', 'wikiRecent',
+  'jiraIssue', 'jiraFilter', 'meegoView', 'meegoDetail',
+  'subscribeArticle',
   'catalogue',
   ...EMBED_MENU_ITEMS.map((item) => item.id),
 ]
@@ -129,6 +137,16 @@ const COMMAND_FEATURES = {
   mindMap: 'insert',
   flowChart: 'insert',
   umlDiagram: 'insert',
+  // P5-06：8 条 skip 项同样归 `insert`。它们点了不执行（`tier: 'skip'` 由菜单拦截），
+  // 但仍属「插入入口」—— 关掉插入能力时这几项也该从菜单里消失，不能留在原地当摆设。
+  folderManager: 'insert',
+  wikiRecent: 'insert',
+  jiraIssue: 'insert',
+  jiraFilter: 'insert',
+  meegoView: 'insert',
+  meegoDetail: 'insert',
+  agenda: 'insert',
+  subscribeArticle: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

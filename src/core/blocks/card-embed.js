@@ -27,6 +27,7 @@ import {
   buildReferenceCard, markReferenceStale as staleCard, rebindReference,
   readReference, withReference,
 } from '../embed/reference'
+import { ENTERPRISE_TOOLTIP, enterpriseItemOf } from '../embed/enterprise'
 
 /**
  * 判定层与块定义同源：常量与纯函数都在 `core/embed/card.js`，这里原样再导一次，
@@ -166,28 +167,47 @@ const CardEmbed = Node.create({
     const reference = readReference(card)
     if (reference) wrapper['data-reference-state'] = reference.state
 
+    /**
+     * P5-06：企业授权类 9 项（Jira / Meego / 知识库 / 订阅号 / 会议 / OKR / 子页面列表）。
+     *
+     * 它们是**块**（17 §17.4.2 各有独立配置档），但都要连外部服务，V1 不接。
+     * 渲染口径（09 §245）：置灰只读卡 + 「需要企业版接入」；**payload 一个字节都不动**
+     * —— 宿主同步下来的 title / desc / fields 全部照画，只是动作不可点、卡面压暗。
+     * 这跟「不支持的卡片来源」是两件事：那是**我们不认识**，这是**我们认识但没接**。
+     */
+    const enterprise = enterpriseItemOf(card.providerId)
+    if (enterprise) {
+      wrapper['data-enterprise'] = 'true'
+      wrapper['data-enterprise-provider'] = enterprise.id
+    }
+
     // 未知来源（宿主声明了 providers 且这张卡不在其中）：画占位卡，但 `data-card` 里
     // 原 payload 一个字节都不动 —— §3.5「不做 schema 迁移、不丢数据」。导出侧同一条
     // 逻辑：`this` 是 Tiptap 绑定的扩展上下文，`options` 与 NodeView 读到的是同一份。
     //
-    // 引用卡**不参与**这道闸门：它们是内核块（`sub_page_list` / `source_synced` /
-    // `reference_synced` 在文档里本来就是块类型），宿主声明 providers 时列的是自己的
-    // 业务卡，不该顺手把内核块做成「不支持的卡片来源」。
+    // 引用卡与企业卡**不参与**这道闸门：前者是内核块（`sub_page_list` / `source_synced`
+    // / `reference_synced` 在文档里本来就是块类型），后者是我们明确认识的 9 项；
+    // 宿主声明 providers 时列的是自己的业务卡，不该把这两类做成「不支持的来源」。
     const providers = this && this.options ? this.options.providers : null
-    if (!reference && !isKnownProvider(card.providerId, providers)) {
+    if (!reference && !enterprise && !isKnownProvider(card.providerId, providers)) {
       return ['div', mergeAttributes(wrapper), placeholder('不支持的卡片来源', String(card.providerId || '未知来源'))]
     }
 
     const payload = card.payload && typeof card.payload === 'object' ? card.payload : {}
-    const title = renderText(payload.title, RENDER_LIMITS.title)
+    // 企业卡的 payload.title 可能为空（宿主只同步了 resourceId）：用真值表的中文名兜底，
+    // 比落到「未命名卡片」诚实 —— 用户至少知道这块是什么。
+    const title = renderText(payload.title, RENDER_LIMITS.title) || (enterprise ? enterprise.label : '')
     const desc = renderText(payload.desc, RENDER_LIMITS.desc)
     const fields = renderFields(payload)
-    const actions = renderActions(card.actions)
+    // 置灰 = 动作不可点。这里直接不画按钮，而不是画了再 `pointer-events: none`：
+    // 后者在导出/读屏里仍是个可聚焦按钮，等于承诺了一个点不动的交互。
+    const actions = enterprise ? [] : renderActions(card.actions)
     const cover = renderCover(payload.cover)
 
     // 版本比我们新：内容照画，但加一行「只读」说明 —— 动作按钮由 NodeView 关掉点击，
     // 导出侧保留文字（导出产物只是快照，不需要可点）。
     const notes = []
+    if (enterprise) notes.push(['p', { class: 'lark-doc-card-note' }, ENTERPRISE_TOOLTIP])
     if (isFutureCard(card)) notes.push(['p', { class: 'lark-doc-card-note' }, '该卡片由更高版本创建，当前仅可查看'])
     if (card.truncated === true) notes.push(['p', { class: 'lark-doc-card-note' }, '内容较大，此处只保留摘要'])
 

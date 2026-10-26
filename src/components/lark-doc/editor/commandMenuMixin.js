@@ -8,6 +8,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import { wrapContainerAllowed } from '../../../core/blocks/container-depth'
 import { filterCommands, commandFeatureOf } from '../commands'
 import { boardProviderOf } from '../../../core/embed/board-diagram'
+import { ENTERPRISE_TOOLTIP } from '../../../core/embed/enterprise'
 import { isCommandEnabled } from '../larkDocConfig'
 import { diagramTypes } from './constants'
 
@@ -117,7 +118,24 @@ export default {
         this.$nextTick(() => this.focus())
       }
     },
-    moveCommand(step) { const length = this.filteredCommands.length; if (length) this.activeCommandIndex = (this.activeCommandIndex + step + length) % length },
+    /**
+     * 上下键移动。
+     *
+     * P5-06：`tier: 'skip'` 的 8 项在菜单里可见（09 §245「没做是可见的取舍」），
+     * 但它们不可执行 ⇒ 高亮必须**跳过**它们，否则 Enter 会落在一条永远不动手的项上。
+     * 全表都是 skip 时（例如搜「jira」只命中一条）停在原地，交给 `chooseCommand` 出提示。
+     */
+    moveCommand(step) {
+      const items = this.filteredCommands
+      const length = items.length
+      if (!length) return
+      let index = this.activeCommandIndex
+      for (let hop = 0; hop < length; hop += 1) {
+        index = (index + step + length) % length
+        if (items[index].tier !== 'skip') break
+      }
+      this.activeCommandIndex = index
+    },
     onEditorKeydown(event) {
       // P4-01：`@` 面板先接管。两者互斥（onMention 打开时会关掉斜杠菜单），
       // 所以顺序只影响「同一帧谁先看到 ↑↓/Enter」，交给面板就够了。
@@ -129,6 +147,17 @@ export default {
     },
     chooseCommand(item) {
       if (!item || !this.writable()) return
+      /**
+       * P5-06：skip 项不可执行。菜单里它们本来就 `disabled`（鼠标点不动），
+       * 这条拦的是**键盘 Enter**（`CommandMenu` 自己也会挡住，但两条路径都走
+       * `chooseCommand`，所以拦在这里才是唯一的关卡）。
+       * 出提示而不是静默返回：09 §245 要的是「可见的取舍」，静默等于「点了没反应」。
+       */
+      if (item.tier === 'skip') {
+        this.closeCommandMenu(false)
+        this.error = ENTERPRISE_TOOLTIP
+        return
+      }
       const isSlashTable = this.menuKind === 'slash' && item.id === 'table'
       const isTableSize = item.id === 'table' && item.tableSize
       const isTemplateSelection = item.id === 'template' && !!item.templateId
