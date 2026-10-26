@@ -56,4 +56,21 @@ describe('P6a · 编辑器侧的协同通道', () => {
     expect(entry).not.toContain("from './collab")
     expect(entry).not.toContain('createCollabExtensions')
   })
+
+  /**
+   * 09 §3.6 的第四个入口（`dist/lark-doc-collab.umd.min.js`）**决定不发**，理由见
+   * `docs/guide/collab-server.md`：UMD 协同会自带一份 prosemirror/tiptap，与 element 产物
+   * 混用即两个实例（instanceof 失效、ySyncPluginKey 不同对象 → 连上了但不同步）。
+   * 这条断言就是那个决定的看门人 —— 有人回来把它加回 exports，先让这里红一次。
+   */
+  it('不发 UMD 协同产物（只发 ESM 子入口）', () => {
+    const pkg = JSON.parse(read('package.json'))
+    expect(pkg.exports['./collab']).toBeTruthy()
+    const paths = JSON.stringify(pkg.exports)
+    expect(paths).not.toMatch(/collab[^"']*umd/i)
+    // size 预算只有一条（ESM），没有第二条给 UMD 的
+    const collabBudgets = pkg['size-limit'].filter((item) => /collab/i.test(item.path))
+    expect(collabBudgets).toHaveLength(1)
+    expect(collabBudgets[0].path).toBe('dist/lark-doc-collab.esm.js')
+  })
 })

@@ -4,6 +4,27 @@ lark-doc 的协同服务端是**独立 package `@lark-doc/collab-server`**（独
 
 本仓库只保留三样：① 客户端入口 `lark-doc/collab`（`src/collab/index.js`）；② 本契约文档；③ e2e 里用第三方 `@hocuspocus/server` 起内存实例。
 
+## 产物矩阵：只发 ESM 子入口（UMD 刻意不发）
+
+`09 §3.6` 原本列了四个入口，第四个 `dist/lark-doc-collab.umd.min.js`（CDN 协同）
+**决定不实现**，原因只有一条：
+
+> UMD 协同产物按「只 external `yjs`、其余内联」做出来，会自带一份 `@tiptap/core`
+> 与 `prosemirror-*`。而 CDN 用户手里已经有一份 `lark-doc-element.umd.min.js`（它也内联了
+> 同一批包）。两份共存时：`Node`/`Slice` 的 `instanceof` 失效，`ySyncPluginKey` 也不是
+> 同一个对象 —— 现象是「连上了、peer 数正常、正文永不同步」，且只在生产环境出现。
+
+协同的本质是「把扩展注册进**宿主已有的那个编辑器**」，所以协同产物必须是**引用**
+宿主实例的薄层，而不是自带一份实现。ESM 子入口天然满足（外置全部依赖，由宿主打包器去重），
+UMD 做不到 —— tiptap 家族不发 UMD 包，没有全局对象可引用。
+
+因此：
+
+| 场景 | 用什么 |
+| --- | --- |
+| 有打包器的宿主（Vue2/Vue3/React/vite/webpack） | `import ... from 'lark-doc/collab'`（ESM 子入口，唯一推荐） |
+| 纯 CDN `<script>` + `lark-doc-element` | 暂不支持协同；要做的话正确形态是「element 产物内建协同」，属新 API，另行决策 |
+
 ## 协议版本
 
 - 契约版本常量：`COLLAB_PROTOCOL_VERSION = 1`（`import { COLLAB_PROTOCOL_VERSION } from 'lark-doc/collab'`）。
