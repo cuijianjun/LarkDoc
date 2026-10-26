@@ -1,0 +1,426 @@
+/* ==================================================================
+   评论（P6b-01 / requirements 04 §3.1、05 §5.5）
+   几何全部照 04 §3.1④ 的实测值：**宽 270、x 常驻 1214、radius 6**；引用头 268×35、
+   头部控件组 97×26（按钮 16×16、分隔 1×16、更多 18×20）、回复卡 268×61（main 244×49
+   = 头像 32 + 右列 200；信息行 17、正文 28/单行 22）、输入区 268×58（输入中 98）、
+   底部按钮 48×28 间距 8。改任何一条前先对一遍这几条自校验式。
+
+   色值只在本文件顶部的 `--ld-comment-*` 声明处写字面 hex（自定义属性声明不计入
+   `scripts/check-theme-tokens.js` 的止血），规则里一律 `var(...)`。两条原因：
+   ① 逻辑层用不到颜色（同 `revision.js` 的取舍，`core/blocks/comment.js` 只留尺寸）；
+   ② 「面板底 #FFFFFF / 引用 #646A73 / 名字 #1F2329 / 时间 #8F959E / 开关关 #D0D3D6
+   开 #1456F0」是 04 实测原值，写进 token 才能既保住原值又不触发止血。
+
+   三处刻意不做，别「补全」：
+     1. 不给 `.lark-doc-comment-panel` 加 `overflow: hidden` —— 面板头「更多」下拉是
+        278 宽（比卡片 270 还宽），裁掉就只剩半截开关。
+     2. 不给无权限按钮加 `pointer-events: none` —— 铁律要求置灰后仍可点（点了由
+        mixin 的闸门 return），禁掉事件会让 tooltip / 读屏都碰不到它。
+     3. 不给 textarea 绑任何提交快捷键 —— 04 §3.1⑤ 实测 `⌘+Enter` **不**提交。
+   ================================================================== */
+.lark-doc {
+  --ld-comment-surface: #FFFFFF;             /* 04 §3.1④ 卡片 bg */
+  --ld-comment-border: #DEE0E3;              /* 卡片描边（规格未测，取同族描边色） */
+  --ld-comment-quote: #646A73;               /* 引用原文 */
+  --ld-comment-name: #1F2329;                /* 作者名 */
+  --ld-comment-time: #8F959E;                /* 时间 / 说明文字 */
+  --ld-comment-switch-off: #D0D3D6;          /* ❶私有评论 关 */
+  --ld-comment-switch-on: #1456F0;           /* 私有评论 开 */
+  --ld-comment-handler: #FFFFFF;              /* 开关滑块 */
+  --ld-comment-halo: var(--ld-bg-selected);  /* 正文高亮底：04 未测原值，复用既有 token 不新造 */
+  --ld-comment-halo-resolved: var(--ld-bg-hover-menu); /* 已解决：④「高亮转灰」 */
+}
+
+/* 层壳只为「多实例 v-for 有共同父节点」，用 display: contents 彻底退出布局
+   （同修订面板，换成 absolute/0×0 反而要再给面板补 pointer-events: auto）。 */
+.lark-doc .lark-doc-comment-layer { display: contents; }
+
+.lark-doc .lark-doc-comment-panel {
+  position: fixed;
+  z-index: 1040;
+  box-sizing: border-box;
+  display: flex;
+  width: 270px;
+  flex-direction: column;
+  border: 1px solid var(--ld-comment-border);
+  border-radius: 6px;
+  background: var(--ld-comment-surface);
+  box-shadow: var(--ld-shadow-float);
+}
+
+/* —— 引用头 268 × 35 —— */
+.lark-doc .lark-doc-comment-head {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 35px;
+  min-height: 35px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+.lark-doc .lark-doc-comment-quote {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--ld-comment-quote);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 控件组 97 × 26：六格 = 16+16+1+16+16+18 = 83，余量做间隙。 */
+.lark-doc .lark-doc-comment-controls {
+  box-sizing: border-box;
+  display: flex;
+  width: 97px;
+  min-width: 97px;
+  height: 26px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 5px;
+  gap: 2px;
+}
+.lark-doc .lark-doc-comment-cell { display: inline-flex; min-width: 0; }
+.lark-doc .lark-doc-comment-split {
+  width: 1px;
+  min-width: 1px;
+  height: 16px;
+  flex: 0 0 1px;
+  background: var(--ld-border);
+}
+.lark-doc .lark-doc-comment-btn {
+  box-sizing: border-box;
+  display: grid;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-text-secondary);
+  line-height: 1;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment-btn:hover:not(:disabled),
+.lark-doc .lark-doc-comment-btn:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); outline: 0; }
+/* 解决按钮是头部的主色项（04 §3.1④ 单独列了 icon 14×14 @13×13）。 */
+.lark-doc .lark-doc-comment-btn.is-primary { color: var(--ld-text-accent); }
+/* 无权限 / 到头：置灰但**保留 pointer-events**，点下去由 mixin 的闸门直接 return。 */
+.lark-doc .lark-doc-comment-btn.is-disabled { color: var(--ld-text-disabled); cursor: not-allowed; }
+/* 「更多」的三点省略号：图标库没有该字形，用径向渐变画三粒 1px 点（同 sheet-handle 的六点做法）。 */
+.lark-doc .lark-doc-comment-dots {
+  width: 12px;
+  height: 12px;
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1.1px);
+  background-size: 4px 12px;
+}
+
+/* —— 回复流：每条 268 × 61 —— */
+.lark-doc .lark-doc-comment-replies { box-sizing: border-box; width: 100%; }
+.lark-doc .lark-doc-comment-reply {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-height: 61px;
+  align-items: flex-start;
+  padding: 6px 12px;
+}
+/* main 244 × 49 = 头像 32 + gap 12 + 右列 200。 */
+.lark-doc .lark-doc-comment-reply-main {
+  box-sizing: border-box;
+  display: flex;
+  width: 244px;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+.lark-doc .lark-doc-comment-avatar {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ld-text-disabled);
+  color: var(--ld-comment-surface);
+  overflow: hidden;
+}
+.lark-doc .lark-doc-comment-reply-right {
+  display: flex;
+  width: 200px;
+  min-width: 0;
+  flex-direction: column;
+}
+.lark-doc .lark-doc-comment-info {
+  display: flex;
+  height: 17px;
+  align-items: center;
+  gap: 6px;
+}
+.lark-doc .lark-doc-comment-name {
+  color: var(--ld-comment-name);
+  font-size: 12px;
+  line-height: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lark-doc .lark-doc-comment-time {
+  color: var(--ld-comment-time);
+  font-size: 12px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+/* 正文 200 × 28（单行 22）：17 + 4 + 28 = 49。 */
+.lark-doc .lark-doc-comment-body {
+  min-height: 28px;
+  margin-top: 4px;
+  color: var(--ld-text);
+  font-size: 14px;
+  line-height: 22px;
+  word-break: break-word;
+}
+/* hover 三按钮 14×14、步进 25（= 14 + 间隙 11），紧贴信息行右端。 */
+.lark-doc .lark-doc-comment-reply-controls {
+  position: absolute;
+  top: 7px;
+  right: 12px;
+  display: flex;
+  gap: 11px;
+  opacity: 0;
+  transition: opacity .12s linear;
+}
+.lark-doc .lark-doc-comment-reply:hover .lark-doc-comment-reply-controls,
+.lark-doc .lark-doc-comment-reply-controls:focus-within { opacity: 1; }
+.lark-doc .lark-doc-comment-icon-btn {
+  box-sizing: border-box;
+  display: grid;
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-comment-time);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment-icon-btn:hover:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text-secondary); }
+
+/* —— B 套「更多」：152 × 134，项 144 × 30 × 4 —— */
+.lark-doc .lark-doc-comment-reply-menu {
+  position: absolute;
+  top: 34px;
+  right: 4px;
+  z-index: 1041;
+  box-sizing: border-box;
+  width: 152px;
+  height: 134px;
+  padding: 7px 4px;
+  border: 1px solid var(--ld-comment-border);
+  border-radius: 6px;
+  background: var(--ld-comment-surface);
+  box-shadow: var(--ld-shadow-float);
+}
+.lark-doc .lark-doc-comment-menu-list { margin: 0; padding: 0; list-style: none; }
+.lark-doc .lark-doc-comment-menu-item {
+  box-sizing: border-box;
+  display: flex;
+  width: 144px;
+  height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--ld-text);
+  font-size: 14px;
+  line-height: 30px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment-menu-item:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-comment-menu-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lark-doc .lark-doc-comment-menu-arrow { transform: rotate(-90deg); color: var(--ld-text-icon-tertiary); }
+
+/* —— 输入区 268 × 58（输入中 98）= 输入行 26 + gap 4 + 按钮行 28 —— */
+.lark-doc .lark-doc-comment-textarea {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  flex-direction: column;
+  padding: 0 12px;
+  gap: 4px;
+}
+/* 输入行：外壳 193 × 26 + 配图按钮 27 × 16，两端对齐吃掉余下的 24。 */
+.lark-doc .lark-doc-comment-input {
+  display: flex;
+  width: 100%;
+  min-height: 26px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+}
+.lark-doc .lark-doc-comment-input-zone {
+  box-sizing: border-box;
+  width: 193px;
+  height: 100%;
+  min-height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--ld-border);
+  border-radius: 4px;
+  background: var(--ld-comment-surface);
+  color: var(--ld-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  resize: none;
+}
+.lark-doc .lark-doc-comment-input-zone:focus-visible { border-color: var(--ld-brand-chrome); outline: 0; }
+/* 无 canComment：照挂、置灰、可读（readonly 而非 disabled —— 后者会把焦点整个摘掉）。 */
+.lark-doc .lark-doc-comment-input-zone:read-only { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-operation {
+  box-sizing: border-box;
+  display: grid;
+  width: 27px;
+  min-width: 27px;
+  height: 16px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ld-comment-time);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment-operation:hover:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text-secondary); }
+/* 底部按钮组 96 × 28 = 48 + 8 + 48。 */
+.lark-doc .lark-doc-comment-actions {
+  display: flex;
+  height: 28px;
+  min-height: 28px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.lark-doc .lark-doc-comment-action {
+  box-sizing: border-box;
+  width: 48px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment-action.is-outlined {
+  border: 1px solid var(--ld-border);
+  background: transparent;
+  color: var(--ld-text-secondary);
+}
+.lark-doc .lark-doc-comment-action.is-filled {
+  border: 1px solid var(--ld-brand-chrome);
+  background: var(--ld-brand-chrome);
+  color: var(--ld-text-on-brand);
+}
+.lark-doc .lark-doc-comment-action.is-disabled { color: var(--ld-text-disabled); cursor: not-allowed; }
+
+/* —— A 套「更多」：278 × 112 / z 1050，只有「私有评论」一个开关项 —— */
+.lark-doc .lark-doc-comment-more-menu {
+  position: absolute;
+  top: 35px;
+  right: -4px;
+  z-index: 1050;
+  box-sizing: border-box;
+  width: 278px;
+  height: 112px;
+  padding: 2px 0;
+  border: 1px solid var(--ld-comment-border);
+  border-radius: 6px;
+  background: var(--ld-comment-surface);
+  box-shadow: var(--ld-shadow-float);
+}
+/* 开关行 276 × 32：图标 20 + 标题 192（pad-left 12）+ 开关 40 × 22。 */
+.lark-doc .lark-doc-comment-more-row {
+  box-sizing: border-box;
+  display: flex;
+  width: 276px;
+  height: 32px;
+  align-items: center;
+  padding: 10px 10px 0 14px;
+}
+.lark-doc .lark-doc-comment-more-icon {
+  display: grid;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  color: var(--ld-comment-time);
+}
+.lark-doc .lark-doc-comment-more-title {
+  width: 192px;
+  min-width: 0;
+  margin-left: 12px;
+  color: var(--ld-comment-name);
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lark-doc .lark-doc-comment-switch {
+  box-sizing: border-box;
+  display: flex;
+  width: 40px;
+  min-width: 40px;
+  height: 22px;
+  align-items: center;
+  padding: 1px 2px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--ld-comment-switch-off);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment-switch.is-on { background: var(--ld-comment-switch-on); }
+/* handler 18 × 18，滑程 18（关 x=1422 → 开 x=1440）。 */
+.lark-doc .lark-doc-comment-switch-handler {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ld-comment-handler);
+  transition: transform .12s linear;
+}
+.lark-doc .lark-doc-comment-switch.is-on .lark-doc-comment-switch-handler { transform: translateX(18px); }
+/* 说明文字 276 × 74：pad-left 46 = 图标 20 + 12 + 14，与标题对齐。 */
+.lark-doc .lark-doc-comment-more-hint {
+  box-sizing: border-box;
+  width: 276px;
+  height: 74px;
+  margin: 0;
+  padding: 6px 10px 8px 46px;
+  color: var(--ld-comment-time);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* —— 正文高亮（mark 的外层 span）—— */
+.lark-doc .lark-doc-comment {
+  border-radius: 2px;
+  background: var(--ld-comment-halo);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-comment[data-resolved="true"] {
+  background: var(--ld-comment-halo-resolved);
+  color: var(--ld-text-disabled);
+}
