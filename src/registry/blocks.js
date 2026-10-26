@@ -136,3 +136,16 @@ export {
   formatPercent, headerLabels, normalizePoll, optionLabel, pollReducer, pollStatus,
   publishHint, publishReady, readPoll, tally, tomorrowDeadline,
 } from '../core/blocks/poll'
+// P5-04：多维表格块。5 视图几何 / 归一化 / 编解码 / 投影（gridRows / kanbanColumns /
+// ganttBars / galleryItems）全部同源再导出 —— NodeView 与单测只从这里取
+// 「534 宽 / 820 高 / 5 视图」这套数字与投影规则，别处不许出现第二份。
+// 🔴 `blockHeight` / `byteLength` / `cleanText` 与上面的 poll 同名，这里**不能再导一次**
+// （ESM 重复导出是语法错，不是后写覆盖）。需要它们请直接从 `../core/blocks/poll` 或
+// `../core/blocks/bitable` 取名，别经 registry 中转。
+export {
+  Bitable, BITABLE_GEOMETRY, BITABLE_LIMITS, BITABLE_VERSION, BITABLE_VIEWS, BITABLE_VIEW_IDS,
+  FIELD_KINDS, defaultBitable, encodeBitable, fieldKind, fieldList, galleryItems, ganttBars,
+  ganttScale, gridRows, gridWidths, groupField, isRelationReady, kanbanColumns, normalizeBitable,
+  readBitable, recordCountText, recordList, relationHint, viewLabel, viewMenu, viewOf,
+  viewOfCommand, withView,
+} from '../core/blocks/bitable'

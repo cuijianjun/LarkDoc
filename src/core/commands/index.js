@@ -1,8 +1,8 @@
 /**
  * 命令表注册表（P0-05）：slash 菜单与「+」菜单共用的数据源，拆分自 components/lark-doc/commands.js。
  *
- * 结构：12 个组文件（basic/common/data/media/embed/collab/widget/button/pim/advanced/docmanage/inline，
- * 对齐需求 03 §3.4 的 12 分类口径）各导出本组 CommandDef；本文件做三件事——
+ * 结构：13 个组文件（basic/common/data/media/embed/collab/widget/button/pim/advanced/docmanage/
+ * inline/bitable，对齐需求 03 §3.4 的分类口径）各导出本组 CommandDef；本文件做三件事——
  *   1. 按 id 汇总（重复 id 直接抛错，防止各组悄悄打架）；
  *   2. 用显式 COMMAND_ORDER 重建数组：菜单渲染按 category 分组、组内按数组序（CommandMenu.vue
  *      categories computed），所以顺序必须与拆分前逐项一致，不能按组拼接；
@@ -21,11 +21,13 @@ import { pimCommands } from './pim'
 import { advancedCommands } from './advanced'
 import { docmanageCommands } from './docmanage'
 import { inlineCommands } from './inline'
+import { bitableCommands } from './bitable'
 import { EMBED_MENU_ITEMS } from '../embed/presets'
 
 const GROUPS = [
   basicCommands, commonCommands, dataCommands, mediaCommands, embedCommands, collabCommands,
   widgetCommands, buttonCommands, pimCommands, advancedCommands, docmanageCommands, inlineCommands,
+  bitableCommands,
 ]
 
 const COMMANDS_BY_ID = new Map()
@@ -59,12 +61,18 @@ for (const group of GROUPS) {
 // 别顺手挪到尾段 —— 那会把「数据」组顶到「内嵌网页」旁边，与真值差 4 个组位。
 // P5-03 再加一条 `poll`（投票，仍属「团队协作」）：落点按 03 §3.4 ⑦ 的组内 y 序，
 // 在 `mentionPage` 与 `reminder` **之间**（1644 → 1676 → 1708，恰好一个 32 步进）。
+// P5-04 再加 5 条多维表格（表格 / 看板 / 甘特图 / 画册 / 关联，新增第 13 个分类
+// 「多维表格」）：真飞书这 5 项是一整组、组标题 y 1164，夹在 数据（1100）与 绘图（1356）
+// 之间（03 §3.4 ⑤）。我们的分类顺序是 基础 → 常用 → 按钮 → 数据 → 绘图 → …，
+// 而 `CommandMenu.categories` 按首次出现顺序出组标题 ⇒ 这 5 条必须**连续成段**地
+// 紧跟 `sheet`（数据组）之后、`inlineMath`（智能组）之前，不许拆开也别挪到尾段。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'sheet',
+  'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
   'inlineMath', 'blockMath', 'template', 'ai',
   'open_link', 'duplicate_page', 'follow_page',
   'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
@@ -103,6 +111,13 @@ const COMMAND_FEATURES = {
   sheet: 'insert',
   // P5-03：投票块与电子表格同型（正文里的块级 atom，落 `attrs.poll`），口径一致。
   poll: 'insert',
+  // P5-04：多维表格 5 项同型（正文里的块级 atom，落 `attrs.bitable`），口径一致。
+  // 5 条都要写 —— 缺一条就会出现「关掉插入还能插看板 / 甘特图 / 画册 / 关联」。
+  bitable: 'insert',
+  bitableKanban: 'insert',
+  bitableGantt: 'insert',
+  bitableGallery: 'insert',
+  bitableRefer: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

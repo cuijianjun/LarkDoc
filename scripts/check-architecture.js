@@ -84,6 +84,9 @@ const expectedCommandIds = [
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   // P5-02：电子表格落在「数据」分类（03 §3.4 真值 y 685，在 绘图 749 之前），紧跟 file。
   'sheet',
+  // P5-04：多维表格 5 项（03 §3.4 ⑤ y 1196 / 1228 / 1260 / 1292 / 1324，组标题 1164），
+  // 紧跟 sheet —— 分类顺序 数据 → 多维表格 → 绘图，必须连续成段。
+  'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
   'inlineMath', 'blockMath', 'template', 'ai',
   // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
   'open_link', 'duplicate_page', 'follow_page',

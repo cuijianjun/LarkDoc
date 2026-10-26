@@ -225,6 +225,11 @@ export default {
       // 然后把焦点交给标题 textarea —— 真飞书插完就能直接打字，不用再点一次标题。
       // 它必须同时在 `focusAfter` 排除名单里，否则上面那句 `this.focus()` 会把焦点抢回正文。
       else if (id === 'poll') { this.run('setPoll'); this.focusPollTitle() }
+      // P5-04：多维表格 5 项**共用一个块类型**，只有默认视图不同（03 §3.4 ⑤：表格 / 看板 /
+      // 甘特图 / 画册 / 关联各插一块，块内能自由切）。命令 id 自己就是视图线索，交给
+      // `setBitable` 内部的 `viewOfCommand` 映射，这里不另抄一张表。
+      // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单，焦点照常回正文（同 sheet）。
+      else if (id === 'bitable' || id === 'bitableKanban' || id === 'bitableGantt' || id === 'bitableGallery' || id === 'bitableRefer') this.run('setBitable', id)
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。

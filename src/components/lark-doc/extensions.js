@@ -32,7 +32,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
   LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll, Bitable,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -141,6 +141,14 @@ export function createLarkDocExtensions(options = {}) {
     Poll.configure({
       onMenu: options.onPollMenu || null,
       onVote: options.onPollVote || null,
+    }),
+    // P5-04：多维表格紧跟投票块 —— 同为「落在正文里的独立块」，区别在它自己持有 5 种视图
+    // （表格 / 看板 / 甘特图 / 画册 / 关联），切视图写回 `attrs.bitable.view`。
+    // 两个回调都是可选宿主通道：`onMenu` 管悬停手柄 / footer 菜单的点击（V1 只转交，
+    // 编辑器不认识宿主的块菜单面板）；`onChange` 管切视图后的通知（不传 = 视图只存本地）。
+    Bitable.configure({
+      onMenu: options.onBitableMenu || null,
+      onChange: options.onBitableChange || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
