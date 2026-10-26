@@ -1,8 +1,8 @@
 /**
  * 命令表注册表（P0-05）：slash 菜单与「+」菜单共用的数据源，拆分自 components/lark-doc/commands.js。
  *
- * 结构：13 个组文件（basic/common/data/media/embed/collab/widget/button/pim/advanced/docmanage/
- * inline/bitable，对齐需求 03 §3.4 的分类口径）各导出本组 CommandDef；本文件做三件事——
+ * 结构：14 个组文件（basic/common/data/media/embed/collab/widget/button/pim/advanced/docmanage/
+ * inline/bitable/draw，对齐需求 03 §3.4 的分类口径）各导出本组 CommandDef；本文件做三件事——
  *   1. 按 id 汇总（重复 id 直接抛错，防止各组悄悄打架）；
  *   2. 用显式 COMMAND_ORDER 重建数组：菜单渲染按 category 分组、组内按数组序（CommandMenu.vue
  *      categories computed），所以顺序必须与拆分前逐项一致，不能按组拼接；
@@ -22,12 +22,13 @@ import { advancedCommands } from './advanced'
 import { docmanageCommands } from './docmanage'
 import { inlineCommands } from './inline'
 import { bitableCommands } from './bitable'
+import { drawCommands } from './draw'
 import { EMBED_MENU_ITEMS } from '../embed/presets'
 
 const GROUPS = [
   basicCommands, commonCommands, dataCommands, mediaCommands, embedCommands, collabCommands,
   widgetCommands, buttonCommands, pimCommands, advancedCommands, docmanageCommands, inlineCommands,
-  bitableCommands,
+  bitableCommands, drawCommands,
 ]
 
 const COMMANDS_BY_ID = new Map()
@@ -66,6 +67,9 @@ for (const group of GROUPS) {
 // 之间（03 §3.4 ⑤）。我们的分类顺序是 基础 → 常用 → 按钮 → 数据 → 绘图 → …，
 // 而 `CommandMenu.categories` 按首次出现顺序出组标题 ⇒ 这 5 条必须**连续成段**地
 // 紧跟 `sheet`（数据组）之后、`inlineMath`（智能组）之前，不许拆开也别挪到尾段。
+// P5-05 再加 3 条绘图（思维导图 / 流程图 / UML 图，新增第 14 个分类「绘图」）：
+// 真值组标题 y 1356，夹在 多维表格 1164 与 团队协作 1516 之间（03 §3.4 ⑥），
+// 所以紧跟在 `bitableRefer` 之后。同上，必须连续成段。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
@@ -73,6 +77,7 @@ const COMMAND_ORDER = [
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'sheet',
   'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
+  'mindMap', 'flowChart', 'umlDiagram',
   'inlineMath', 'blockMath', 'template', 'ai',
   'open_link', 'duplicate_page', 'follow_page',
   'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
@@ -118,6 +123,12 @@ const COMMAND_FEATURES = {
   bitableGantt: 'insert',
   bitableGallery: 'insert',
   bitableRefer: 'insert',
+  // P5-05：绘图 3 项也落在正文里（cardEmbed 空态卡）。tier 是 skeleton 只表示
+  // 「没有编辑引擎」，插入动作本身仍是「往正文插块」，所以照样归 `insert` ——
+  // 不写就会落进兜底的 `blockStyle`，出现「关掉插入还能插思维导图」。
+  mindMap: 'insert',
+  flowChart: 'insert',
+  umlDiagram: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：

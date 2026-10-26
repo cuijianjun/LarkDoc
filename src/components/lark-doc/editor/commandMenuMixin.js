@@ -7,6 +7,7 @@
 import { TextSelection } from '@tiptap/pm/state'
 import { wrapContainerAllowed } from '../../../core/blocks/container-depth'
 import { filterCommands, commandFeatureOf } from '../commands'
+import { boardProviderOf } from '../../../core/embed/board-diagram'
 import { isCommandEnabled } from '../larkDocConfig'
 import { diagramTypes } from './constants'
 
@@ -230,6 +231,12 @@ export default {
       // `setBitable` 内部的 `viewOfCommand` 映射，这里不另抄一张表。
       // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单，焦点照常回正文（同 sheet）。
       else if (id === 'bitable' || id === 'bitableKanban' || id === 'bitableGantt' || id === 'bitableGallery' || id === 'bitableRefer') this.run('setBitable', id)
+      // P5-05：绘图 3 项共用 `cardEmbed` 的**空态引用卡**（V1 没有绘图引擎，见
+      // `core/embed/board-diagram.js` 文件头）。只给 `kind` ⇒ 状态自动落 `unbound`，
+      // 卡面只剩「绑定」一个动作 —— 这就是验收项「可插入、可绑定 resourceId」。
+      // providerId 由 `board-diagram.js` 唯一给出，这里不抄第二张 id 表。
+      // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单（同 sheet / bitable）。
+      else if (boardProviderOf(id)) this.run('setReferenceCard', { kind: boardProviderOf(id) })
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。

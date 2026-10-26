@@ -87,6 +87,9 @@ const expectedCommandIds = [
   // P5-04：多维表格 5 项（03 §3.4 ⑤ y 1196 / 1228 / 1260 / 1292 / 1324，组标题 1164），
   // 紧跟 sheet —— 分类顺序 数据 → 多维表格 → 绘图，必须连续成段。
   'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
+  // P5-05：绘图 3 项（03 §3.4 ⑥ y 1420 / 1452 / 1484，组标题 1356）。真值第 1 项
+  // 「画板」走 webEmbed（P3-07），不进本组，所以这里只有 3 条。
+  'mindMap', 'flowChart', 'umlDiagram',
   'inlineMath', 'blockMath', 'template', 'ai',
   // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
   'open_link', 'duplicate_page', 'follow_page',

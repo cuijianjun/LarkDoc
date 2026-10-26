@@ -1032,9 +1032,12 @@
 
 /* ------------------------------------------------------------------
    P3-08 · 引用卡三态（sub_page_list / source_synced / reference_synced）
+   + P5-05 · 绘图板三态（board_mindmap / board_flowchart / board_uml）
    ------------------------------------------------------------------
    三态共用一张卡（见 core/embed/reference.js 文件头），所以这里只画「强度差」，
    不动几何：布局、导出、动作冒泡与普通卡片完全一致。
+   P5-05 的三张空态绘图卡**直接复用本段、零新增样式**：选择器只认
+   `data-reference-state`，与 providerId 无关（加一种带引用态的卡不该动 CSS）。
    - bound   ：原样（引用有效，卡面就是正常内容）
    - stale   ：置灰 + 原因（desc 已被 markReferenceStale 写成失效原因）
    - unbound ：置灰 + 空态文案（从没绑过）

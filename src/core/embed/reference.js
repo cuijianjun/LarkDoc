@@ -26,10 +26,29 @@
  * 这张表就是验收项「引用失效 → 置灰卡 + 可重新绑定」的全部实现依据：
  * 置灰由 `referenceState` 驱动（`blocks/card-embed.js` 写 `data-reference-state`，
  * CSS 按它上色），重新绑定是 `REFERENCE_COMMAND.REBIND` 一条命令动作。
+ *
+ * P5-05 起这张表也装下绘图板三件（`board_mindmap` / `board_flowchart` /
+ * `board_uml`）：它们的三态与引用卡完全同形，见 `REFERENCE_KINDS` 的注释。
  */
+import { boardLabelOf } from './board-diagram'
 
-/** 三种引用块。值即飞书块类型名，也是卡片 `providerId` —— 一份清单，别在别处再拼。 */
-export const REFERENCE_KINDS = Object.freeze(['sub_page_list', 'source_synced', 'reference_synced'])
+/**
+ * 所有「卡片带引用态」的 providerId —— **一份清单，别在别处再拼**。分两组：
+ *
+ *   1. 文档内引用 3 种（P3-08）：`sub_page_list` / `source_synced` /
+ *      `reference_synced`，值即飞书块类型名，也是卡片 `providerId`；
+ *   2. 绘图板 3 种（P5-05）：`board_mindmap` / `board_flowchart` / `board_uml`。
+ *      🔴 这三个值**不是**飞书块类型名：飞书 API 层这四种绘图共用**一个** `board`
+ *      块类型（17 §17.4.1），所以它们是本仓库的卡片契约键 —— `board_` 前缀标明
+ *      块类型归属，后缀对应 03 §3.4 ⑥ data-name 的末段。完整说明见 `./board-diagram.js`。
+ *
+ * 两组共用同一套三态机（`bound` / `stale` / `unbound`）：绘图卡同样是「可能还没绑
+ * 画板」「画板可能被删或无权」，与引用卡的一模一样，没有理由造第二套状态机。
+ */
+export const REFERENCE_KINDS = Object.freeze([
+  'sub_page_list', 'source_synced', 'reference_synced',
+  'board_mindmap', 'board_flowchart', 'board_uml',
+])
 
 /** 三态。字符串落库，不能改值（改了等于让老文档的引用全部变「未绑定」）。 */
 export const REFERENCE_STATE = Object.freeze({
@@ -85,6 +104,37 @@ const KIND_SPEC = Object.freeze({
     rebind: '重新绑定同步源',
     create: '',
     stale: '源同步块已不可用，副本停止更新',
+  },
+  /**
+   * P5-05 绘图板三件。**标题不在这里重写**：直接取 `./board-diagram.js` 的 `label`，
+   * 否则菜单里叫「UML图」、卡面叫「UML 图」，改一处必漏一处。
+   *
+   * `empty` 的措辞是「还没绑定画板」而不是「加载中」：V1 没有引擎，也没有任何
+   * 异步加载，写「加载中」等于承诺一个永远不会到来的状态。
+   */
+  board_mindmap: {
+    title: boardLabelOf('board_mindmap'),
+    empty: '尚未绑定思维导图，绑定后在这张卡里打开',
+    open: '打开思维导图',
+    rebind: '绑定思维导图',
+    create: '',
+    stale: '关联的画板已被删除，或当前账号无权访问',
+  },
+  board_flowchart: {
+    title: boardLabelOf('board_flowchart'),
+    empty: '尚未绑定流程图，绑定后在这张卡里打开',
+    open: '打开流程图',
+    rebind: '绑定流程图',
+    create: '',
+    stale: '关联的画板已被删除，或当前账号无权访问',
+  },
+  board_uml: {
+    title: boardLabelOf('board_uml'),
+    empty: '尚未绑定 UML 图，绑定后在这张卡里打开',
+    open: '打开 UML 图',
+    rebind: '绑定 UML 图',
+    create: '',
+    stale: '关联的画板已被删除，或当前账号无权访问',
   },
 })
 
