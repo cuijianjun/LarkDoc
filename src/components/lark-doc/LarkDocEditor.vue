@@ -103,6 +103,7 @@
     <MathDialog :ed="self" />
     <LinkDialog :ed="self" />
     <HelpDialog :ed="self" />
+    <HelpFab :ed="self" />
     <EmbedLinkDialog :ed="self" />
     <input
       ref="imageInput"
@@ -175,6 +176,7 @@ import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
 import MathDialog from './editor/dialogs/MathDialog.vue'
 import LinkDialog from './editor/dialogs/LinkDialog.vue'
 import HelpDialog from './editor/dialogs/HelpDialog.vue'
+import HelpFab from './editor/HelpFab.vue'
 import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
@@ -231,7 +233,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu },
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
   mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, foldPersistMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },

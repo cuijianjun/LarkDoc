@@ -68,7 +68,7 @@ export default {
         this.tableToolsOpen = false
       }
     },
-    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页；另外接管 ⌘+F / ⌘+Shift+H。 */
+    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页；另外接管 ⌘+F / ⌘+Shift+H / ⌘+/。 */
     onWindowKeydown(event) {
       // P4-05：⌘+F 开「查找」、⌘+Shift+H 开「替换」（04 §3.2 实测键位）。必须 preventDefault，
       // 否则浏览器原生查找条会压在浮层上。Ctrl 一并认（Windows/Linux 同键位）。
@@ -76,6 +76,9 @@ export default {
         const key = (event.key || '').toLowerCase()
         if (key === 'f' && !event.shiftKey) { event.preventDefault(); this.openSearch('find'); return }
         if (key === 'h' && event.shiftKey) { event.preventDefault(); this.openSearch('replace'); return }
+        // P4-06：⌘+/ 开快捷键抽屉（04 §3.5 入口 2、07 §7 键位表）。同样要 preventDefault，
+        // 否则 Firefox 会弹「快速查找」、部分输入法会把 / 打进正文。
+        if (key === '/') { event.preventDefault(); this.toggleHelpOpen(); return }
       }
       if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
       // P4-04：按钮配置面板 Esc 可关（02 §22 ⑤-1），关了就不建块 —— 与「日程面板 Esc 无效」相反。

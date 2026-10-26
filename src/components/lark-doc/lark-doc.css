@@ -615,7 +615,7 @@
 @media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: fixed; z-index: 45; top: 112px; left: 0; width: min(260px, 85vw); max-height: calc(100vh - 112px); padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
 @media (max-width: 380px) { .lark-doc .lark-doc-topbar { gap: 5px; }.lark-doc .lark-doc-brand span { display: none; }.lark-doc .lark-doc-paper { padding-left: 58px; padding-right: 12px; }.lark-doc .lark-doc-main { padding: 7px; } }
 @media (prefers-reduced-motion: reduce) { .lark-doc, .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
-@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
+@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-drawer-mask, .lark-doc .lark-doc-help-fab-wrap, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
 .lark-doc .lark-doc-block-submenu-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lark-doc .lark-doc-block-submenu-trigger > span:last-child { color: var(--ld-text-submenu-arrow); font-size: 18px; }
 .lark-doc .lark-doc-block-submenu { position: fixed; z-index: 42; display: grid; width: 230px; gap: 1px; max-height: min(620px, calc(100vh - 16px)); overflow-y: auto; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); }
@@ -2078,3 +2078,34 @@
   .lark-doc .lark-doc-isv-overlay .lark-doc-isv-button-panel,
   .lark-doc .lark-doc-isv-overlay .lark-doc-isv-select-menu { border: 1px solid CanvasText; background: Canvas; }
 }
+
+/* ==================================================================
+   P4-06 · 快捷键抽屉 + 右下角帮助圆钮（requirements/04 §3.5 实测）
+   - 抽屉 .lark-doc-drawer：宽 314 / 全高 / 贴右，对应 ud__drawer-right；
+     关闭按钮 24×24；内容区可滚动（ud__scrollArea）。
+   - 圆钮 36×36 / radius 50% / shadow = --shadow-fab（06 §3 第 266 行，即 --ld-shadow-tooltip）。
+   - hover 菜单 120×166、项 112×30、图标 16×16；层级 60（06 六档体系第 1 档「常驻微浮层」）。
+   - 04 未写遮罩：遮罩层**透明**，只用来接「点外部关闭」，不画飞书没有的暗色蒙版。
+   ================================================================== */
+.lark-doc .lark-doc-drawer-mask { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: flex-end; }
+.lark-doc .lark-doc-drawer { display: flex; flex-direction: column; box-sizing: border-box; width: 314px; max-width: 92vw; height: 100%; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }
+.lark-doc .lark-doc-drawer-head { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 12px 6px 16px; }
+.lark-doc .lark-doc-drawer-head strong { font-size: 16px; font-weight: 600; }
+.lark-doc .lark-doc-drawer-close { display: grid; box-sizing: border-box; width: 24px; height: 24px; min-width: 24px; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--lark-doc-muted); line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-drawer-close:hover:not(:disabled), .lark-doc .lark-doc-drawer-close:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); outline: 0; }
+.lark-doc .lark-doc-drawer-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 16px 24px; scrollbar-width: none; -ms-overflow-style: none; }
+.lark-doc .lark-doc-drawer-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.lark-doc .lark-doc-kbd-group { padding-top: 14px; }
+.lark-doc .lark-doc-kbd-group:first-child { padding-top: 4px; }
+.lark-doc .lark-doc-kbd-title { margin: 0 0 2px; color: var(--lark-doc-muted); font-size: 12px; font-weight: 500; line-height: 1.7; }
+.lark-doc .lark-doc-kbd-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 14px; line-height: 1.6; }
+.lark-doc .lark-doc-kbd-name { min-width: 0; }
+.lark-doc .lark-doc-kbd-key { flex: 0 0 auto; color: var(--lark-doc-muted); font-family: inherit; font-size: 12px; line-height: 1.87; white-space: nowrap; }
+.lark-doc .lark-doc-help-fab-wrap { position: fixed; z-index: 60; right: 19px; bottom: 30px; }
+.lark-doc .lark-doc-help-fab { display: grid; box-sizing: border-box; width: 36px; height: 36px; padding: 0; place-items: center; border: 0; border-radius: 50%; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tooltip); color: var(--lark-doc-muted); font-size: 16px; font-weight: 500; line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-help-fab:hover, .lark-doc .lark-doc-help-fab:focus-visible { color: var(--ld-text-accent-hover); outline: 0; }
+.lark-doc .lark-doc-help-menu { position: absolute; right: 14px; bottom: calc(100% + 12px); display: grid; box-sizing: border-box; width: 120px; padding: 8px 4px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+/* 必须显式写 color —— 通用规则 `.lark-doc button:hover:not(:disabled)` 会把菜单文字刷成强调色（同块菜单写法）。 */
+.lark-doc .lark-doc-help-menu-item { display: flex; box-sizing: border-box; width: 112px; height: 30px; align-items: center; gap: 8px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 12px; line-height: 1; text-align: left; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-help-menu-item:hover:not(:disabled), .lark-doc .lark-doc-help-menu-item:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); color: inherit; outline: 0; }
+.lark-doc .lark-doc-help-menu-item .lark-doc-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; }
