@@ -454,6 +454,20 @@
         }
       }
     },
+    "sheet": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "sheet": {
+          "default": null
+        }
+      }
+    },
     "table": {
       "content": "tableRow+",
       "group": "block",

@@ -990,6 +990,9 @@ export const BLOCK_ID_TYPES = new Set([
   // 小组件块（P4-04）：原子块，但折叠与锚点都要能指向它 —— 不进集合就没有 blockId，
   // 导出再导回时实例键与块 id 会一起漂。
   'isv',
+  // 电子表格块（P5-02）：同上。悬停手柄把 `blockId` 转交给宿主开块菜单，
+  // 不给 id 就永远只能传 `null`；折叠/评论锚点也缺一个落点。
+  'sheet',
 ])
 export const BLOCK_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 

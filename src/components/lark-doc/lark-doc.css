@@ -317,6 +317,20 @@
   --ld-revision-reject: #f54a45;             /* 拒绝修订（左、红叉） */
   --ld-revision-accept: #35bd4b;             /* 接受修订（右、绿勾） */
   --ld-revision-btn-hover: rgba(31, 35, 41, .08); /* 六按钮 hover 底（与日历行/提醒下拉同值，语义不同单列） */
+  /* 电子表格块（P5-02，02 §25 ④ 的 canvas 像素直方图）。三个是直方图直接给出的：
+     单元底 #FFFFFF（56.3%）、表头底 #E8E9E9（1.5%）、网格线 #DEDFDF（2.6%）。
+     文字色直方图只统计到抗锯齿像素（#272727 / 13% 不透明），反推不出字形色 ——
+     所以**不新造**，取 06 表已有的正文色与三级文字色兜底，真机补测后只改这两行。
+     ⚠️ canvas 是自绘层，深色档**不会**自动跟随：将来做深色必须在这里再给一组值，
+     否则深色正文里会出现一块白纸。 */
+  --ld-sheet-cell: #ffffff;                  /* 单元格底（直方图 56.3%） */
+  --ld-sheet-head: #e8e9e9;                  /* 列标行 / 行号列底（1.5%） */
+  --ld-sheet-grid: #dedfdf;                  /* 网格线 1px（2.6%） */
+  --ld-sheet-text: #1f2329;                  /* 单元格文字（未实测，取 06 正文色） */
+  --ld-sheet-head-text: #646a73;             /* 列标 / 行号文字（未实测，取 06 三级文字色） */
+  --ld-sheet-thumb: rgba(31, 35, 41, .3);    /* 滚动条滑块（§25 ② 实测值，逐字照抄） */
+  --ld-sheet-handle-dot: #8f959e;            /* 悬停手柄六点（未实测，取 06 图标灰） */
+  --ld-sheet-font-size: 12px;                /* 画布字号（未实测，见 sheet-render.js 的 ⚠️ 第 1 条） */
 }
 /* 旧五件套（--lark-doc-*）转为废弃别名，指向新 token，下个大版本移除（12 §9）。
    --lark-doc-soft 已别名化到 --ld-bg-soft（B5）；AI 面板其余局部色留 B4 收编。 */
@@ -2224,6 +2238,58 @@
 .lark-doc .lark-doc-revision-input-zone:focus-visible { border-color: var(--ld-brand-chrome); outline: 0; }
 .lark-doc .lark-doc-revision-input-btn { display: grid; width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-tertiary); cursor: pointer; }
 .lark-doc .lark-doc-revision-input-btn:hover:not(:disabled) { background: var(--ld-revision-btn-hover); color: var(--ld-text-secondary); }
+
+/* ==================================================================
+   电子表格块（P5-02 / 02 §25 ②④⑤）
+   实测几何，个数全是 §25 ③ 自校验里那几条，别改成「看着差不多」：
+     块 534 × 85；画布 344 × 83，由 346 × 85 的外框减掉 2px 边框得来
+     （`85 = 83 + 2`、`344 = 346 − 2`）；
+     外框整体左移 25（`578 − 603 = −25`），canvas 在框内再右移那 1px 边框，
+     于是 canvas 落在 −24 —— 行号列 24px 悬在块左沿外面，这是飞书的实际排版，
+     不是算错；
+     滑块 324 × 9（**不是 346**）距块底 26（`975 − 949 = 26`）。
+   飞书那 19 层链这里只留三层（外框 / canvas / 滑块）：faster-wrapper、
+   embed-spreadsheet-fixed-canvas-wrapper、tips-pop__hidden 是它渲染器的内部结构，
+   V1 不照抄（§25 ④ 明说 canvas 是唯一绘制层，§25 ⑤ 明说 V1 不做编辑）。
+   ================================================================== */
+.lark-doc .lark-doc-sheet { box-sizing: border-box; position: relative; width: 534px; max-width: 100%; margin: 0 0 16px; }
+/* 外框就是那 346 × 85（含 1px 边框）。**不能**给块加 overflow: hidden —— 会把左移 25 的外框裁掉。 */
+.lark-doc .lark-doc-sheet-view { position: relative; box-sizing: border-box; width: 346px; height: 85px; margin-left: -25px; border: 1px solid var(--ld-sheet-grid); background: var(--ld-sheet-cell); }
+.lark-doc .lark-doc-sheet-canvas { display: block; width: 344px; height: 83px; }
+
+/* 静态表：导出产物（getHTML / PDF / DOCX 走 renderHTML，不带 data-sheet-view）。
+   编辑器态 NodeView 给根打上 data-sheet-view="canvas"，这里把它藏掉，只看 canvas。 */
+.lark-doc .lark-doc-sheet[data-sheet-view="canvas"] .lark-doc-sheet-static { display: none; }
+.lark-doc .lark-doc-sheet-static { box-sizing: border-box; max-width: 100%; border: 1px solid var(--ld-sheet-grid); }
+.lark-doc .lark-doc-sheet-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.5; }
+.lark-doc .lark-doc-sheet-table th,
+.lark-doc .lark-doc-sheet-table td { box-sizing: border-box; height: 27px; padding: 0 4px; border: 1px solid var(--ld-sheet-grid); color: var(--ld-sheet-text); font-weight: 400; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 列标行 24 高、数据行 27 高（§25 ④ 的 `headerHeight` / `rowHeight`），与 canvas 一致。 */
+.lark-doc .lark-doc-sheet-table thead th { height: 24px; text-align: center; }
+.lark-doc .lark-doc-sheet-table thead th,
+.lark-doc .lark-doc-sheet-table tbody th { background: var(--ld-sheet-head); color: var(--ld-sheet-head-text); }
+.lark-doc .lark-doc-sheet-table tbody th { text-align: center; }
+/* 数据缺失（attrs.sheet 为 null）的占位：一块白比一句说明更难定位问题。 */
+.lark-doc .lark-doc-sheet-empty { margin: 0; padding: 12px 16px; border: 1px dashed var(--ld-border-cell); border-radius: 4px; color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.5; }
+
+/* 横向滚动条：`top: 50px` 与「距块底 26」是同一条（50 + 9 + 26 = 85）。
+   `left: 0` 是**块**左沿（603），不是画布左沿（579）—— 324 长也从块左沿量。 */
+.lark-doc .lark-doc-sheet-scroll { position: absolute; left: 0; top: 50px; width: 324px; height: 9px; border-radius: 4.5px; }
+.lark-doc .lark-doc-sheet-scroll[data-visible="false"] { display: none; }
+.lark-doc .lark-doc-sheet-thumb { position: absolute; top: 0; height: 9px; border-radius: 4.5px; background: var(--ld-sheet-thumb); cursor: pointer; }
+
+/* 悬停手柄 42 × 26（§25 ⑤ 实测 `42×26 @(531,420)`，531 = 603 − 72），块左上外侧。
+   刻意**不用** pointer-events: none —— 那样「鼠标移到手柄上 → 不在块内 → 手柄消失」会闪；
+   留热区意味着这块 42×26 也会吃掉点击，与飞书一致（它也是实心热区）。 */
+.lark-doc .lark-doc-sheet-handle { position: absolute; left: -72px; top: 0; box-sizing: border-box; width: 42px; height: 26px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); opacity: 0; cursor: pointer; transition: opacity .12s linear; }
+.lark-doc .lark-doc-sheet:hover .lark-doc-sheet-handle,
+.lark-doc .lark-doc-sheet-handle:hover,
+.lark-doc .lark-doc-sheet-handle:focus-visible { opacity: 1; }
+/* 六点：2 列 × 3 行，点位 3px × 4px（8 × 14 的图标区居中）。 */
+.lark-doc .lark-doc-sheet-handle::after { content: ""; position: absolute; top: 50%; left: 50%; width: 6px; height: 12px; margin: -6px 0 0 -3px; background-image: radial-gradient(circle, var(--ld-sheet-handle-dot) 1px, transparent 1.1px); background-size: 3px 4px; }
+
+/* 选中态：同 file / web-embed / isv 的 is-selected 约定（NodeView 的 selectNode 里加）。 */
+.lark-doc .lark-doc-sheet.is-selected { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
 
 @media print {
   .lark-doc .revision-container { border-bottom: 0; background: none; }

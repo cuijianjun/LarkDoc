@@ -32,7 +32,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
   LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -125,6 +125,14 @@ export function createLarkDocExtensions(options = {}) {
     Isv.configure({
       onButtonAction: options.onIsvButtonAction || null,
       onCatalogJump: options.onIsvCatalogJump || null,
+    }),
+    // P5-02：电子表格紧跟文档小组件 —— 同为「落在正文里的独立块」，区别在它画 canvas
+    // （§25 ④ 的像素直方图就是它的绘制契约）。两个回调都是可选宿主通道：
+    // `onMenu` 管悬停手柄点击（不传 = 手柄只有视觉，点了不响，同飞书 §26 ④ 的留白口径）；
+    // `onScroll` 管横向滚动通知（不传 = 滚动纯本地，不进文档、不产生 transaction）。
+    Sheet.configure({
+      onMenu: options.onSheetMenu || null,
+      onScroll: options.onSheetScroll || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
     Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),

@@ -119,3 +119,11 @@ export { LINE_START_MARKER, applyLineStartMarker, verticalBoundarySelection } fr
 export { createDocumentCommands } from '../core/blocks/document-commands'
 export { createDocumentDecorations } from '../core/blocks/document-decorations'
 export { documentExtension } from '../core/blocks/document'
+// P5-02：电子表格块。几何常量 / 归一化 / 编解码 / canvas 绘制全部同源再导出 ——
+// NodeView 与单测只从这里取「105 / 27 / 344×83 / 324×9」这套数字，别处不许出现第二份。
+export {
+  Sheet, SHEET_DEFAULT, SHEET_GEOMETRY, SHEET_LIMITS, SHEET_SCROLLBAR, SHEET_VERSION, SHEET_VIEWPORT,
+  cellKey, cellText, clampOffsetX, columnBoundaries, columnLabel, contentSize, encodeSheet,
+  fitText, maxOffset, normalizeSheet, paintSheet, readSheet, rowBoundaries, scrollThumb,
+  staticRows, visibleColumns, visibleRows,
+} from '../core/blocks/sheet'

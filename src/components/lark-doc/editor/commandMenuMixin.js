@@ -216,6 +216,9 @@ export default {
       else if (id === 'image') this.$refs.imageInput.click()
       // P2-04：视频与文件同一个入口，accept 不限类型（02 L4168：斜杠 file 的 accept 为 null）。
       else if (id === 'file') this.$refs.fileInput.click()
+      // P5-02：电子表格**无对话框**（02 §25 ①），直接落默认空表（20 × 8）。
+      // 没有 `sheetDialog` / 行列数选择 —— 真飞书也是插完再在块内改，V1 更是只读。
+      else if (id === 'sheet') this.run('setSheet')
       else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。

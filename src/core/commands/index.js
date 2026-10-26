@@ -53,11 +53,16 @@ for (const group of GROUPS) {
 // 位置照抄 03 §3.4 ④-4 的组序 —— 按钮（y 972）早于 团队协作（1516）早于 文档小组件（2252），
 // 所以 3 个按钮插到三条 mention **之前**，目录导航插到 `calendar_event` **之后**；
 // 硬约束仍是**不许越过内嵌网页那 15 条的尾巴**。
+// P5-02 再加一条 `sheet`（电子表格，新增「数据」分类 —— 真飞书该组就它一项，见
+// 03 §3.4 ④）。落点按真值 y 序排：数据 685 < 绘图 749 < 团队协作 909 < 文档小组件
+// 1549，所以它必须排在「智能 / 按钮 / 团队协作」**之前**、`file`（常用族）**之后**。
+// 别顺手挪到尾段 —— 那会把「数据」组顶到「内嵌网页」旁边，与真值差 4 个组位。
 const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
+  'sheet',
   'inlineMath', 'blockMath', 'template', 'ai',
   'open_link', 'duplicate_page', 'follow_page',
   'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
@@ -91,6 +96,9 @@ const COMMAND_FEATURES = {
   // P4-04：3 个按钮与目录导航同理 —— 都 `isv` 节点落在正文里（尽管按钮要先弹配置面板，
   // 面板只是取参，动作本身仍是插入块）。缺一条就会出现「关掉插入还能插按钮」。
   open_link: 'insert', duplicate_page: 'insert', follow_page: 'insert', catalogue: 'insert',
+  // P5-02：电子表格也是正文里的块级 atom。不写这条会落进兜底的 `blockStyle`，
+  // 出现「关掉插入还能插电子表格」（同 calendar_event / catalogue 的口径）。
+  sheet: 'insert',
 }
 
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：
