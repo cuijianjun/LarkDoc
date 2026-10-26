@@ -7,6 +7,7 @@
       v-for="item in ed.revisionPanels"
       :key="item.revisionId"
       class="lark-doc-revision-panel"
+      :class="{ 'is-readonly': ed.revisionReadonly }"
       role="dialog"
       :aria-label="ed.revisionPanelTitle"
       :style="[ed.revisionPanelStyle(item), { height: `${ed.revisionPanelBoxHeight(item)}px` }]"
@@ -65,9 +66,10 @@
           </div>
         </div>
       </div>
-      <!-- 激活态多 32px：输入占位 + 配图按钮（07 §12.3 三态高度 169）。 -->
+      <!-- 激活态多 32px：输入占位 + 配图按钮（07 §12.3 三态高度 169）。
+           P6b-05：read 态不展开 —— 面板是只读展示，不能给一个提交不了的输入框。 -->
       <div
-        v-if="ed.revisionPanelActive(item)"
+        v-if="ed.revisionPanelActive(item) && !ed.revisionReadonly"
         class="lark-doc-revision-input"
       >
         <div
@@ -103,6 +105,10 @@
 //      浏览器原生 title 会多出一层灰底气泡，位置还错。
 //   3. 顺序**不可颠倒**：拒绝（红叉）在左、接受（绿勾）在右。
 //   4. 头部标签文案恒为「修订建议」，不随新增 / 删除变（只有正文区前缀变）。
+//
+// P6b-05：read 态（阅读 / 演示 / 协同只读）下面板**只读展示** —— 面板本身不隐藏，
+// 接受 / 拒绝靠既有 `:disabled` 通路置灰（色走 `--ld-text-disabled`），输入区不展开。
+// 判断一律读 `ed.revisionReadonly`（= `interactionMode === 'read'`），本组件不自判权限。
 //
 // 行一律 `@mousedown.prevent`：点面板不能把焦点让给 body，否则编辑器选区掉了，
 // 紧跟着的「接受 / 拒绝」就没有上下文可操作。

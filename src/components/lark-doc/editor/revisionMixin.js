@@ -18,6 +18,13 @@
  *
  * 几何算在 `$nextTick` 后才跑：`onTransaction` 触发时 DOM 还是上一帧的，
  * 当场量 `coordsAtPos` 会拿到旧行高，面板会在「敲字 → 重排」时跳一下。
+ *
+ * P6b-05：read 态（阅读模式 / 演示态 / 协同只读）下面板**只读展示** —— 面板不隐藏
+ * （要能读建议），但接受 / 拒绝置灰（色 `#BBBFC4` = `--ld-text-disabled`，见
+ * `styles/reading.css`），且不展开输入区。口径统一走 `interactionMode`
+ * （`editor/readingModeMixin.js` 提供），本 mixin 只读它、不自己拼 `||`。
+ * readingModeMixin 未挂载时 `interactionMode` 是 undefined，`revisionReadonly`
+ * 自然为 false —— 旧口径照旧生效，不会把编辑态的按钮误置灰。
  */
 import {
   REVISION_AUTHOR_FALLBACK,
@@ -57,6 +64,13 @@ export default {
     }
   },
   computed: {
+    /**
+     * 是否处于 read 态（P6b-05）。`interactionMode` 由 readingModeMixin 提供；
+     * 那个 mixin 没挂载时它是 undefined，这里恒 false —— 保持旧行为，不误伤编辑态。
+     */
+    revisionReadonly() {
+      return this.interactionMode === 'read'
+    },
     revisionPanelTitle() {
       return REVISION_PANEL_TITLE
     },
@@ -94,7 +108,12 @@ export default {
     syncRevisionTracking() {
       const storage = this.editor && this.editor.storage ? this.editor.storage.larkDocRevisionTracker : null
       if (!storage) return
-      storage.active = this.mode === 'suggest'
+      // P6b-05：开关跟着**派生结果**走，不再只看 `mode`。协同只读（canEdit 为 false）时
+      // 即使 mode 还停在 suggest 也不能再产出建议 —— 那是「能产出建议但正文不可写」
+      // 的怪态（§12.1：有编辑权限的用户才可进入 / 处理修订）。
+      // `interactionMode` 缺席（readingModeMixin 未挂载）时退回旧口径。
+      const suggest = this.interactionMode ? this.interactionMode === 'suggest' : this.mode === 'suggest'
+      storage.active = suggest
       if (!storage.active) {
         this.revisionActiveId = ''
         this.revisionHoverId = ''
@@ -183,14 +202,22 @@ export default {
       if (!value || value === REVISION_AUTHOR_FALLBACK) return REVISION_AUTHOR_NAME_FALLBACK
       return value
     },
-    /** 上一条只在「不是首条」时可点；首条 / 末条置灰（07 §12.4 #2 的 disabled）。 */
+    /**
+     * 上一条 / 下一条只在「首尾」置灰（07 §12.4 #2）；read 态额外把**接受 / 拒绝**
+     * 置灰 —— §12.1「有编辑权限的用户可接受/拒绝建议」，只读生态下这两颗要看得见
+     * 但点不动（面板是只读展示，不是隐藏，见 `styles/reading.css`）。
+     * 跳转与复制链接是只读操作，不受影响。
+     */
     revisionButtonDisabled(id, revisionId) {
+      if (this.revisionReadonly && (id === 'accept' || id === 'reject')) return true
       if (id !== 'go-next' && id !== 'go-previous') return false
       if (!this.editor) return true
       const direction = id === 'go-next' ? 1 : -1
       return !adjacentRevision(this.editor.state.doc, revisionId, direction)
     },
     enterRevisionPanel(revisionId) {
+      // read 态不展开输入区：面板只读展示，给一个不能提交的输入框是误导。
+      if (this.revisionReadonly) return
       this.revisionHoverId = revisionId
     },
     leaveRevisionPanel() {
@@ -233,7 +260,9 @@ export default {
     },
     /** 接受 / 拒绝：**无二次确认、无 toast**（07 §12.5），进 undo 栈可撤。 */
     decideRevision(revisionId, action) {
-      if (!this.editor || !this.writable()) return
+      // `writable()` 是宿主既有的口径（含销毁态判定），保留；再加一道 read 态闸门 ——
+      // 协同只读时宿主可能还没把 `effectiveReadonly` 接过来，这里先自己守住。
+      if (!this.editor || !this.writable() || this.revisionReadonly) return
       const tr = buildRevisionDecisionTr(this.editor.state, revisionId, action)
       if (!tr) return
       this.editor.view.dispatch(tr)
