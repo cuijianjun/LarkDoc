@@ -1,6 +1,14 @@
 node_modules/
 dist/
 *.tgz
+
+# pack-intranet.sh 的产物目录：tgz/zip/md 都是给内网机器的一次性交付物，
+# 体积大且可由脚本重现，不入库
+dist-intranet/
+# pack-offline.sh 的产物目录（含全量 node_modules），39MB 级一次性交付物，不入库
+dist-offline/
+# 本机临时探查脚本与抓取物，不入库
+_codex/
 .env.local
 .DS_Store
 npm-debug.log*

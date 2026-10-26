@@ -24,6 +24,10 @@ export { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD }
  * 宿主从这里拿到的是纯函数与纯状态机：不 import yjs、不碰 DOM、不建连接。
  */
 export * from './policies'
+/**
+ * 评论锚点：编解码器 + 接进 `core/comments` 的那个 codec（P6b 才真正用上）。
+ */
+export * from './anchors'
 
 /**
  * 这笔事务是不是「远端来的」。
@@ -113,27 +117,6 @@ export function createHocuspocusBridge(options = {}) {
 /**
  * 评论锚点编解码（§5.7.2-8；UI 到 P6b 才接）。
  *
- * 用 `Y.RelativePosition` 而不是瞬时 from/to：并发插入时相对位置跟着内容走，
- * 绝对位置会指到别人刚敲的字中间。`gc: false` 是它能工作的前提。
+ * 实现已搬到 `./anchors.js` —— 那里还要放接进 `core/comments` 的 codec，
+ * 两件事共用一个坐标系，分开写迟早走样。
  */
-export function createCommentAnchors(options = {}) {
-  const { ydoc } = options
-  if (!ydoc || typeof ydoc.get !== 'function') {
-    throw new TypeError('createCommentAnchors 需要真实的 Y.Doc')
-  }
-  // 默认必须是编辑器真正写库的那个 fragment（COLLAB_CONTENT_FIELD），
-  // 不是听起来更自然的 'content' —— 见 protocol.js 的说明。
-  const type = options.type || ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
-  return {
-    /** 绝对 index → 可编码的相对位置（落库的是它，不是数字）。 */
-    encode(index) {
-      return Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(type, index))
-    },
-    /** 相对位置 → 当前绝对 index；`null` = 锚点所在内容已被删除。 */
-    decode(encoded) {
-      if (!encoded) return null
-      const absolute = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(encoded), ydoc)
-      return absolute ? absolute.index : null
-    },
-  }
-}

@@ -1,4 +1,4 @@
-# 06 · 视觉规格 Token（飞书实测）
+﻿# 06 · 视觉规格 Token（飞书实测）
 
 > 全部数值来自飞书文档网页 `getComputedStyle` / `getBoundingClientRect` 真实读取【实测】。
 > 采集环境：Chrome 1512×950，飞书 wiki 文档页（`docx-in-wiki`）。
@@ -131,8 +131,11 @@
 | `--bg-table-cell` | **表格单元格底色** | **恒透明 `rgba(0,0,0,0)`** 【✅ 修正 2026-10-24 · batch90/91 两主题复测均为透明】——旧值 `#F2F3F5` 系早期 hover/选中态误读，**作废**，见 §4.8 结论③ |
 | `--bg-page` | 侧栏 / wiki 树底 | `rgb(245, 246, 247)` → **#F5F6F7** 【实测 `.vmok-sidebar-container` `z90`】 |
 | `--bg-code` | 代码块色层 | `#F5F6F7` + border `1px #DEE0E3`，radius 8 【见 6.5】 |
-| `--bg-active-weak` | 气泡条激活态热区 | `rgba(31, 35, 41, 0.05)` 【实测 `.panel-submenu-item.hot-area-unique` 44×24】 |
-| `--bg-active` | 气泡条激活态图标位 | `rgba(31, 35, 41, 0.15)` 【实测 `.menu-icon` 24×24】 |
+| `--bg-active-weak` | 气泡条热区项 hover 底 | `rgba(31, 35, 41, 0.05)` 【实测 `.panel-submenu-item.hot-area-unique` 44×24。**300/700/1300/2200ms 四点采样恒为 `0.05`** → 是稳定值，**不是过渡中间帧**（旧记作废）】 |
+| `--bg-active` | 气泡条普通项 hover 底 | `rgba(31, 35, 41, 0.1)` 【实测 `.panel-menu-item`。旧 Token 名为 `--bg-active` 且与上行混用，此处拆开】 |
+| `--bg-icon-hot` | 气泡条激活态图标位 | `rgba(31, 35, 41, 0.15)` 【实测 `.menu-icon` 24×24】 |
+| `--bg-selected` | **「格式已生效」开关型按钮底**（Bold/Italic/Underline/Strikethrough/inlinecode 生效时） | **`rgb(224, 233, 255)` = `#E0E9FF`** 【实测 batch255 A2：`.panel-menu-item.menu-item-hovered.menu-item-actived`，**优先级高于 hover**，同时带 hovered 类仍取此值】 |
+| `--icon-selected` | 上述状态下 svg `path` 的 `fill` | **`rgb(51, 109, 244)` = `#336DF4`** 【同上。🔴 只加在 `path` 上，`svg` 的 `color` 仍 `rgb(43,47,54)` → 必须写 `svg path { fill: #336DF4 }`，只改 `color` 无效】 |
 
 ### 1.5 语义色板（高亮块取色面板三档·8 色 × 3）【实测】
 
@@ -159,13 +162,30 @@
 
 | 元素 | 类名 | 尺寸 | 样式 |
 | --- | --- | --- | --- |
-| 面板容器 | `.callout-highlight-panel` | **230×262**，位于 841,472 | bg `#FFFFFF`，radius **4px**（不是 6），border `1px #DEE0E3`，padding `4px 10px 12px`，shadow `rgba(31,35,41,0.1) 0 6px 24px 0` |
+| 面板容器 | `.callout-highlight-panel` | **230×262**，位于 841,472 | bg `#FFFFFF`，**radius `4px`**（🔴 见下方裁决修正），border `1px #DEE0E3`，padding `4px 10px 12px`，shadow `rgba(31,35,41,0.1) 0 6px 24px 0` |
 | 分组标题 | `.group-title`（`<p>`） | 206×14 | 「字体颜色」「边框颜色」「填充颜色」，位于 854,y486/546/606 |
 | 色块按钮 | `.callout-highlight-btn` | **26×26** | radius **4px**，border **2px**；未选中 `#FFFFFF`、选中 **`rgb(20,86,240)` #1456F0** |
 | 色块内芯 | `.highlight-bg` | **22×22** | radius **2px** |
 | 字体色块图形 | `.callout-highlight-btn.text > svg > path` | 10×11 | 颜色在 **`fill`** 上（不是 `color`），取 `getComputedStyle(path).fill` |
 | 随机 | `.random` | 43×17，位于 1017,484 | color **`rgb(51,109,244)` #336DF4**，fs **12px**，含 15×12 universe-icon |
 | 恢复默认 | `.callout-clear-highlight`（`<button>`） | **204×24**，位于 854,697 | bg 透明，radius **4px**，color **#1F2329**，fs **12px** |
+
+> 🔴 **radius 口径二次裁决（2026-10-25 · batch353/354 直接实测，推翻上一次的「推理裁决」）**
+> **结论：`border-radius: 4px`。**
+> 上一次（batch264 B3）把本面板判为 **6px**，但那是**推理**不是实测 —— 依据是「同族 `.toolbar-highlight-panel` 是 6px，除尺寸外逐项一致，故取 6px」，且当时自己就注明了「**仍未做高亮块本体的直接实测**」（见下方保留的旧注）。
+> 本次 batch353 递归 dump + batch354 专项复验，**两次独立实测**均得到：
+> - `getComputedStyle(panel).borderRadius` = **`4px`**
+> - `getComputedStyle(panel).borderTopLeftRadius` = **`4px`**
+> - 全页 `.callout-highlight-panel` **`count: 1`**（不存在第二个隐藏实例干扰）
+> - 祖先链 6 层（`.overlay-container` / `.overlay-wrapper` / `.overlay-root` / 块工具条 overlay）radius **全 `0px`**，不存在「外层 6px 圆角透出来」的可能
+> ⇒ **「同族组件同套样式」的类比推理在本例失效**，两个面板确实用了不同半径。**本文档一律按 `4px`**；`02 §6 ④-3` / `03` / `04 §1.2` 已同步。
+> ✅ **另一条附带修正**：面板自身 `position: relative` / `z-index: auto`，**z600 在祖先 `.overlay-container` 上**，不是面板自己的属性（旧记「面板 z 600」表述不准）。
+> ⚠️ 仍未做的是「高亮块本体 `.callout-block` 圆角」的直接实测，但那是**另一件事**（本表只讲面板外框），不影响本裁决。
+
+> ~~🔴 radius 口径裁决（2026-10-24 · batch264 B3）：本表旧写「radius 4px（不是 6）」与 `02 §6 ④-3` / `03` / `04 §1.2` 的 6 冲突，现统一为 6px。~~
+> ~~依据：同族「文本选区高亮色板」`.toolbar-highlight-panel` 实测 = `radius 6px` …属同一组件同一套样式，故 callout 面板取 6px。~~
+> ~~⚠️ 仍未做的是「高亮块本体」的直接实测（本文档无 callout 块，batch264 A0 为 `null`），但半径只影响面板外框，6px 已可定案。~~
+> 🔺 **以上三条已作废**，原因见上一条（类比推理 ≠ 实测）。
 
 #### 1.5.1 深色模式下的同一色板【实测 2026-10-24 · batch90 · 切 `data-theme=dark` 后同法采集】
 
@@ -405,6 +425,8 @@
 | └ 白色容器 | `.docx-menu-wrapper` | 164×42，bg #FFF，radius **6px**，border 1px #DEE0E3，z 999 |
 | └ 菜单项 | `.panel-menu-item` | **24×24**，radius 4，hover `rgba(31,35,41,0.1)` |
 | **选区气泡条** | `.overlay-container`（z87） | **594×42**（13 项） |
+| └ 气泡条白色容器【batch247 实测】 | `.docx-menu-wrapper.docx-menu-wrapper-animation.ud-scrollbar.text-toolbar.menu-align-vertical` | **594×42 @(335,448)**，bg **#FFFFFF**，radius **6px**，shadow **`rgba(31,35,41,0.1) 0 4px 8px 0`**，内层 z **999** |
+| **★ 文本选区遮罩**【batch246 实测】 | `.selected-mask` | bg **`rgba(20,86,240,0.18)`** = 品牌蓝 18%，z **10**，absolute；跨块时**整块高亮**（选区跨 3 块 → 遮罩 534×178） |
 | 高亮块取色面板 | `.callout-highlight-panel` | **230×262** |
 | 色块按钮 / 内芯 | `.callout-highlight-btn` / `.highlight-bg` | **26×26** / **22×22** |
 | 对齐子菜单 | `.docx-menu-wrapper` | **232×187**（5 项） |
@@ -929,6 +951,139 @@ DOM 结构链（7 层）：
 
 ---
 
+### 7.5.4 四个行内 mark 的**精确 style 串**（直接可抄）【实测 2026-10-25 · batch274 / batch275 · 气泡条逐项点击后读 `span[style]`】
+
+> 这一节解决一个实现层的高频坑：**`text-decoration` 的写法不是只有 `underline` 一个词**。飞书对下划线和删除线都带了「避让 / 偏移」参数，少写就会和飞书差 1~2px。
+
+| mark | 气泡条 `data-name` | 写入 `style` 的**完整串** | 附加 `class` | 备注 |
+| --- | --- | --- | --- | --- |
+| 加粗 | `Bold` | `font-weight:bold;` | — | **字面量是 `bold`，不是 `700`**（`getComputedStyle` 读回 `700`，但属性串里必须是 `bold`） |
+| 斜体 | `Italic` | `font-style:italic;` | — | 无附加 |
+| 下划线 | `Underline` | `text-decoration-skip-ink:none;text-underline-offset:0.2em;text-decoration: underline;` | **`underline`** | **三件套缺一不可**：`skip-ink:none` 让线穿过 `g/y/p` 降部；`offset:0.2em` 控线距基线距离 |
+| 删除线 | `Strikethrough` | `text-decoration: line-through;` | **`strike-through`** | 注意 `line-through` 前**有空格** |
+
+**叠加规则（batch274 三步实测）**：
+
+| 状态 | `style` 串 | `spanCount` |
+| --- | --- | --- |
+| 仅 Bold | `font-weight:bold;` | **3** |
+| + Italic | `font-style:italic;font-weight:bold;`（新 mark 插最前） | **3** |
+| + Underline | `text-decoration-skip-ink:none;text-underline-offset:0.2em;text-decoration: underline;font-style:italic;font-weight:bold;` | **3** |
+| **重载后（服务端规范化）** | `font-weight:bold;font-style:italic;text-decoration-skip-ink:none;text-underline-offset:0.2em;text-decoration: underline;` | **3** |
+
+> 🔑 **两个必守点**：
+> 1. **多 mark 必须合并到同一个 span** —— `spanCount` 恒 3（选中段 / 未选中段 / 行尾 `U+200B`），不随 mark 数增长。Tiptap 默认输出嵌套或兄弟节点，**必须自己实现合并序列化**（详见 [02 §15 ④-4](./02-块类型规格总表.md)）。
+> 2. **序列化顺序按「服务端规范序」写**：`bold → italic → strike → underline`。编辑中瞬时 DOM 是「后加在前」，但落库/重载后飞书会归到规范序 —— **断言只认规范序**。
+
+---
+
+### 7.6 焦点环 Token【自定 · 飞书未暴露，属我方补全】
+
+> **为什么单列**：`15 §9.3` 把 D9 定为 P2，理由是「焦点环会直接影响像素」。但实测结论是**飞书 web 端没有可复用的焦点环样式**——`§7.2 focus` 已证明块级 `.focused` 与常态五项全同（`outline: 3px none`）。也就是说**飞书把键盘焦点视觉交给了浏览器默认值**。
+>
+> 复刻时**不能也交给浏览器默认值**：浏览器默认 `outline` 是 `-webkit-focus-ring-color auto 1px`（Safari 是蓝色描边、Chrome 是黑色双环），跨端不一致且常被 CSS reset 掉（`outline: none`）。所以这里给一组**自定 Token**，明确标注「不是实测值」。
+
+#### 7.6.1 Token 定义
+
+```css
+:root {
+  /* 焦点环 —— 自定，非飞书实测 */
+  --ld-focus-ring-color:   #1456F0;   /* 用品牌主色，不用 #336DF4（那是"当前值"语义） */
+  --ld-focus-ring-width:   2px;
+  --ld-focus-ring-offset:  2px;
+  --ld-focus-ring-style:   solid;
+
+  /* 兼容值：贴近宿主已有设计系统时覆盖这两项即可 */
+  --ld-focus-ring-shadow:  0 0 0 var(--ld-focus-ring-width) var(--ld-focus-ring-color);
+}
+
+/* 唯一入口，全库只写这一条规则 */
+.ld-focusable:focus-visible {
+  outline: var(--ld-focus-ring-width) var(--ld-focus-ring-style) var(--ld-focus-ring-color);
+  outline-offset: var(--ld-focus-ring-offset);
+  border-radius: inherit;          /* 描边跟随控件圆角（4px / 6px），不额外造不规则 */
+}
+```
+
+#### 7.6.2 三条硬约束
+
+| # | 约束 | 原因 |
+| --- | --- | --- |
+| 1 | 一律用 **`:focus-visible`**，不用 `:focus` | `:focus` 会在**鼠标点击**后也画环 —— 飞书点击工具栏按钮没有任何环，用 `:focus` 会多出视觉噪声。`:focus-visible` 只在键盘导航时生效，与飞书观感一致 |
+| 2 | **禁止全局 `outline: none`** | 代码里若出现 `*:focus { outline: none }` 又没补 `:focus-visible` 替代，等于把键盘可访问性彻底关掉。若必须 reset，只能写 `:focus:not(:focus-visible) { outline: none }` |
+| 3 | 焦点环**不占布局** | 用 `outline` 而非 `box-shadow` / `border`。后两者会改变盒模型（哪怕 2px）导致悬停抖动；`outline-offset` 让它画在盒子外侧且不推挤邻居 |
+
+#### 7.6.3 需要挂 `.ld-focusable` 的控件清单
+
+| 区域 | 控件 | 备注 |
+| --- | --- | --- |
+| 气泡条 | 13 个项（含 4 个 submenu） | 项高 24，圆角 4 → 环也 4 |
+| 子菜单 | `turninto` 12 项 / `align` 5 项 / `more` 7 项 / `highlight` 色块 | 项高 32，圆角 4 |
+| 顶栏 | 标题输入 / 分享 / 更多 等按钮 | — |
+| 工具栏 | 全部图标按钮 + 下拉触发器 | — |
+| 正文 | **编辑器本体本身不挂** | 正文光标由 ProseMirror 自绘，不要抢 |
+
+> ⚠️ **`highlight` 面板的色块是 26×26 / 22×22**：环 + offset 共 4px，色块间距若小于 4px 会互相压住。实测组内间距足够（§3.2.4 ④-4），但复刻时**改色板尺寸要同步验算间距**。
+
+---
+
+### 7.7 `prefers-reduced-motion` Token【自定 · 必须实现】
+
+> **为什么必须做**：`15 §9.3` D9 的另一半。飞书 web 端**没有**处理这个媒体查询（实测 `matchMedia('(prefers-reduced-motion: reduce)')` 在飞书页面为 false 时无从验证其分支），所以这不是「复刻飞书」，而是「别让复刻品在无障碍设置下变成闪烁灾难」。
+>
+> **风险点是真实存在的**：气泡条与 4 个子菜单都是 `position: fixed` + 淡入/缩放，用户开着「减少动态效果」时连续展开会持续触发动画。
+
+#### 7.7.1 Token 定义
+
+```css
+:root {
+  --ld-motion-fast:    120ms;
+  --ld-motion-normal:  200ms;
+  --ld-motion-ease:    cubic-bezier(0.33, 0, 0.2, 1);   /* 弹出类统一曲线 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ld-motion-fast:   0ms;
+    --ld-motion-normal: 0ms;
+  }
+  /* 兜底：任何漏用 Token 的过渡/动画也一并关掉 */
+  *, *::before, *::after {
+    animation-duration:        0.01ms !important;
+    animation-iteration-count: 1    !important;
+    transition-duration:       0.01ms !important;
+    scroll-behavior:           auto  !important;
+  }
+}
+```
+
+> 🔴 **用 `0.01ms` 而不是 `0ms`**：部分浏览器（旧版 Safari）对 `transition-duration: 0ms` 会**跳过 `transitionend` 事件**，导致依赖该事件关闭浮层的逻辑永久挂住。`0.01ms` 能被判定为「有过渡」从而正常触发事件，但人眼不可见。
+
+#### 7.7.2 必须走 Token 的 9 处浮层
+
+| # | 浮层 | 默认动画 | reduced 后 |
+| --- | --- | --- | --- |
+| 1 | 选区气泡条 | 淡入 + 4px 上移 | 直接出现 |
+| 2 | `turninto` 面板 | 淡入 + 缩放 0.96→1 | 直接出现 |
+| 3 | `align` 面板 | 同上 | 直接出现 |
+| 4 | `more` 面板 | 同上 | 直接出现 |
+| 5 | `highlight` 色板 | 同上（阴影更大，感知更强） | 直接出现 |
+| 6 | 斜杠菜单 | 淡入 + 上移 | 直接出现 |
+| 7 | 块菜单（拖拽手柄） | 淡入 | 直接出现 |
+| 8 | 链接编辑卡 | 淡入 | 直接出现 |
+| 9 | 全局 toast / 提示气泡 | 淡入 + 位移 | 直接出现 |
+
+#### 7.7.3 唯一允许保留的动画
+
+| 动画 | 为什么保留 |
+| --- | --- |
+| **协同光标移动** | 关掉会让远端光标「瞬移」，反而更难追踪；它是**位置指示**不是装饰。若实现成本高，可降级为「淡出后再出现在新位置」 |
+| **折叠/展开箭头旋转** | 只旋转 90°，无位移，无闪烁风险。建议保 `--ld-motion-fast` 原值（120ms） |
+
+> ⚠️ **其余一律 0**：包括 hover 背景色过渡。飞书 hover 本身几乎无过渡（`0.1` 是瞬时到位，`§7.1` 里「过渡中间帧」是子菜单展开动画外溢），所以关掉不影响还原度。
+
+---
+
 ## 8. 待验证清单（更新至 2026-10-24）
 
 ### 8.1 ✅ 本轮已实测解决
@@ -950,7 +1105,7 @@ DOM 结构链（7 层）：
 | 目录项配色 | ✅ 已采（标题 `rgb(100,106,115)` 14px/22px；`.catalogue__item-collapse` 16×29 pad `6px 3px`；level≥2 `padding-left:14px`） | 见 6.2 |
 | **目录项 `active` 态配色** | ✅ **反直觉：active 无任何视觉差异**。四次采样对比 color/bg/伪元素/border 全同（均 `#646A73` + 透明）；视觉层级只由 `heading-0/1/2` 决定（fs 15 vs 14、fw 500 vs 400、padding-left 0 vs 14）。`.active` class **仅供滚动跟随逻辑** | 见 [04 §3.3 ⑤](../04-浮层与弹窗.md)；复刻时不要凭空加高亮 |
 | **分享「弹窗」** | ✅ **实为 popover 非 Dialog**：480×331，**z99**，无遮罩；主按钮 80×32 `#1456F0` radius 6；输入框外壳 448×36 **聚焦描边 `1px #1456F0`**；权限标签 58×16 `rgba(20,86,240,0.2)` / `#1456F0` / fs10；头像 26×26 radius 50% | 见 [04 §4.1 ④-2](../04-浮层与弹窗.md) |
-| **顶部「更多」菜单** | ✅ 外壳 175×820 **z1030**；根菜单 175×816 radius 6 border `#DEE0E3` pad `2px 0` **三层阴影**；普通项 **167×32** radius 4 pad `4px 8px` 图标 16×16 `#646A73`；子菜单项 173×32/34；**一级 22 项**（原记 27 含子菜单项） | 见 [04 §4.2 ④-2](../04-浮层与弹窗.md) |
+| **顶部「更多」菜单** | ✅ 外壳 175×820 **z1030**；根菜单 175×816 radius 6 border `#DEE0E3` pad `2px 0` **三层阴影**；普通项 **167×32** radius 4 pad `4px 8px` 图标 16×16 `#646A73`；子菜单项 173×32/34；**一级 23 项（当前租户；含「查看已存版本」）** | 见 [04 §4.2.1](../04-浮层与弹窗.md) |
 | **分栏（grid）块** | ✅ 已采（slash `slash grid`，键盘选中插入） | 见 [02 §分栏](../02-块类型规格总表.md) |
 | **「更多」4 个子菜单面板** | ✅ **3 个有面板**（下载为 120×108 / 文档权限 121×115 / 更多 198×142），**「翻译为英语」无面板**（是命令项，click 直接进入翻译模式）；hover **≥2000ms** 才展开，z **1050** | 见 [04 §4.2 ④-3](../04-浮层与弹窗.md) 与本文件 6.2 |
 | **翻译模式改写「更多」菜单** | ✅ 160×344 / 项 152×32 / 分隔线 158×1，**9 项**；整体比普通态窄 **15px** → 菜单宽度**自适应，不可硬编码** | 见 [04 §4.2](../04-浮层与弹窗.md) |
@@ -973,24 +1128,26 @@ DOM 结构链（7 层）：
 | **行内字体色板 / 背景色板** | ✅ **8 字体色 + 16 背景色全采**（batch134）：面板 **230×202** z600 radius6 border `1px #DEE0E3`；字体色块 **26×26** radius4 步进 26、`path.fill` 即色值；背景色块 **22×22** radius2 两行 rely 0/30；组标题 **206×14 fs12**；「恢复默认」**204×24** radius6 fs12；hover 边框 `#C2D4FF`；**点选后不自动关闭** | 见 **§7.2.1** + [03 §3.2.4 ④-4](../03-工具栏与菜单.md) |
 | **`textHighlight` mark 结构** | ✅ 单 span 双通道：`<span class="textHighlight textHighlight-{name}-text textHighlight-ccmtoken" data-string data-leaf>`，字体色 → `color`、背景色 → `backgroundColor`、**可叠加**；恢复默认 = 移除 `textHighlight*` 类 | 见 **§7.2.1** |
 
-### 8.2 ⏳ 仍未采到（后续专项）
+### 8.2 已定判 / 无需再采（原「仍未采到」清单 → **全部收口**）
+
+> ✅ **本表 14 行已 100% 收口**：11 行「已采全」、3 行「已定判不做 / 属设计决策（非采集能解）」。**没有一项仍待采集**。
 
 | 项 | 现状 | 采集建议 |
 | --- | --- | --- |
-| **顶部工具栏 `bear-web-toolbar` 按钮清单** | wiki 页（`docx-in-wiki`）**二次确认不渲染**。页面根类实测 `bear-web-x-container catalogue-opened docx-in-wiki width-transition keyboard-mode`，全文档 0 个 `.bear-web-toolbar` | **换普通 docx 文档（非 wiki）**复采；wiki 页只渲染 `code-block-header-toolbar`（代码块内嵌工具条 **270×22**，见 6.5） |
-| **折叠块** | slash **一级菜单 24 项中不存在**「折叠块」 | 在 slash「更多/全部」分页中查找，或确认飞书网页版无此块类型 |
-| **图片块 / 视频块默认宽与圆角** | 本文无图片块；slash 搜「图片」显示**「未能找到相关结果」**（32 高），键盘遍历也未被命中选择器 | 换**普通 docx**（非 wiki），或走顶栏「插入」入口 / 块手柄「转换为」 |
+| **顶部工具栏 `bear-web-toolbar` 按钮清单** | ✅ **已定判：不存在**（batch287 复核 `.bear-web-toolbar` 恒 0；页面根类 `bear-web-x-container catalogue-opened docx-in-wiki …`）。格式入口只有**气泡条 + 块工具条**，**V1 不做固定顶部工具栏** → [10 A13](./10-缺口与待补清单.md) | 无需再采 |
+| **折叠块** | ✅ **已确认不存在**：slash **全量 84 节点（12 分类 + 72 项）**中无此块（旧记「90 节点 / 24 项 / 21 项」已作废）。折叠是标题/列表的**能力**，不是块类型 | 无需再采；`02 §12` 的 `details` 属 lark-doc 自有扩展 |
+| **图片块 / 视频块默认宽与圆角** | ✅ **已收口**（batch313，走 `filechooser` 上传成功造块）：宽 = **`min(原图宽, 栏宽−20)`**（**不是固定 800**），圆角 0，`object-fit: fill`，小图（<3 KB）内联成 `data:image/png;base64,…`。13 层链 + 四角 `draggable-btn` 20×20 常驻 + `.image-area-container` 是点击热区 → [02 §11 ④-bis](./02-块类型规格总表.md) | 无需再采 |
 | **highlight 色板面板真实尺寸** | ✅ **已采**（230×262），见 8.1 与 §1.5 | ~~需在选中带高亮文本时触发~~ 已解决：点 `callout-highlight` 按钮 |
-| **引用 / 分割线 / 任务 / 无序 / 有序 五类块深浅规格** | ⏳ 采集中（batch93，slash 插入法） | 该 wiki 文档原本未插入这些块；`data-name` 需用实测值 `slash quote` / `slash divider` / `slash todo` / `slash bullet` / `slash ordered` |
-| **右键菜单（块上下文菜单）** | ⏳ 多次尝试未采到 | wiki 内嵌文档疑似禁用自定义右键；换普通 docx 复采 |
-| **查找替换「More」三选项**（区分大小写 / 全字匹配 / 正则） | ⏳ 未采 | `Ctrl+F` 打开查找条后点「更多/…」图标 |
-| **高亮块色板面板内部 DOM 层级** | ⏳ 待补（该文档 ace-line `data-name` 恒 0，锚点定位失败） | 改用坐标区域递归 dump |
-| **折叠块** | ⏳ slash 一级 21 项中**不存在**「折叠块」 | 需在 slash「更多/全部」分页中查找，或确认飞书网页版无此块类型 |
+| **引用 / 分割线 / 任务 / 无序 / 有序 五类块深浅规格** | ✅ **已收口**：五类块 light + dark 全采（主色双值 `#1456F0` / `#4C88FF`），逐类见 `02` 各节 ④ 与 [11 §4.9](./11-主题切换.md) | ~~batch93 采集中~~ 已完成 |
+| **右键菜单（块上下文菜单）** | ✅ **已定判：飞书不做**（batch287 A1/A2/A3 三种块 `contextmenu` 的 `defaultPrevented` **恒 false**，浏览器原生菜单接管）⇒ **V1 不实现自定义右键菜单**，见 [03 §3.1 ⑥](./03-工具栏与菜单.md) | 无需再采 |
+| **查找替换「More」三选项**（区分大小写 / 全字匹配 / 正则） | ✅ **已定判：飞书没有这三项**。`ud__tabs__tab-bar-more` 点开是**全局帮助菜单**（见 [04 §3.2 ④-3](./04-浮层与弹窗.md)），不是查找选项 ⇒ **V1 查找条不做这三个开关** | 无需再采 |
+| **高亮块色板面板内部 DOM 层级** | ✅ **已收口（batch353/354 递归实测）**：完整 12 层树 + 32 色精确值 + 盒模型 26=22+2×2 + 选中/默认类名 + hover 三态 → [04 §1.2.1 ~ §1.2.6](./04-浮层与弹窗.md) | 无需再采 |
+| ~~折叠块~~ | ✅ **已收口**：全量 84 节点中不存在，见上一行 | — |
 | 行内「字体颜色」入口 | ✅ **已采**：唯一入口是气泡条 `highlight submenu`（44×24），**不在 `more` 内** | 见 **§7.2.1** + [03 §3.2.4](./03-工具栏与菜单.md) |
-| 评论面板「更多」菜单 / 查找替换三选项 | 未采（封面 popover 已收口，见 8.1） | 评论气泡「…」展开、`Ctrl+F` 后逐个按钮 |
+| 评论面板「更多」菜单 | ✅ 已采（见 [04 §7.3](./04-浮层与弹窗.md) 评论卡片六段式与「…」菜单）；**查找替换三选项已定判不存在**（同上） | — |
 | **链接四种视图二级菜单** | ✅ 已采全：容器 **232×146** @z600（内层 999 / bg `#FFF` / radius 6），四选一「链接视图 / 标题视图 / 卡片视图 / 预览视图」，每项 **214×32** pad 4，勾选 `.item-checked` **16×16 色 `#336DF4`**，hover 底 `rgba(31,35,41,.1)` | 见 **7.5.2** |
 | B22–B25 四项**定义缺口**（协同存储位置 / 快照配额 / capability 映射 / poster 生成） | 采集解决不了，属**设计决策** | 见 [10-缺口与待补清单.md](./10-缺口与待补清单.md)，需产品定夺 |
 
-> **slash 一级菜单实测清单（24 项，按序）**：文本 / 一级标题 / 二级标题 / 三级标题 / 四级标题 / 五级标题 / 有序列表 / 无序列表 / 代码块 / 引用 / 分隔线 / 任务 / 图片 / 视频或文件 / **分栏** / **高亮块** / 公式 / 电子表格 / 人员 / 群名片 / 云文档 / 日期提醒 / 日程 / 会议议程。
+> **slash 菜单实测清单**（旧「一级 24 项」为**滚动可见部分**，非全量；以 [03 §3.4](./03-工具栏与菜单.md) 的 **84 节点 = 12 分类 + 72 项**为准）：文本 / 一级–三级标题（菜单内仅 H1–H3）/ 有序列表 / 无序列表 / 任务 / 代码块 / 引用 / 分隔线 / 分栏 / 高亮块 / 公式 / 表格 / 图片 / 视频或文件 / 电子表格 / 人员 / 群名片 / 云文档 / 日期提醒 / 日程 / 会议议程 …（完整 72 项见 03 §3.4）。
 
 ---
