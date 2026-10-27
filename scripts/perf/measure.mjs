@@ -34,6 +34,8 @@ const BLOCKS = Number(process.env.PERF_BLOCKS || 2000)
 const KEYSTROKE_SAMPLES = BLOCKS >= 1500 ? 8 : 30
 const DECORATION_SAMPLES = BLOCKS >= 1500 ? 5 : 20
 const SCROLL_SECONDS = 3
+// 滚动要预热：首轮是首次布局/合成，不是滚动帧率（见第 4 段注释）。取 3 轮中位数。
+const SCROLL_ROUNDS = 3
 
 function loadChromiumDriver() {
   const names = ['playwright-core', 'playwright']
@@ -186,8 +188,13 @@ async function main() {
     }, DECORATION_SAMPLES)
 
     // 4. 滚动帧率：文档中段连续滚动 3s，rAF 计帧
-    console.log(`[measure] 4/6 滚动帧率（${SCROLL_SECONDS}s）...`)
-    const scrollFps = await page.evaluate((seconds) => {
+    //
+    // 第一轮必须丢弃：它测到的是「这批块第一次进入视口」的首次布局与图层合成，
+    // 是冷启动值而不是滚动帧率。2,000 块实测同一会话连续 7 轮为
+    // 3 / 23.7 / 59.3 / 60.3 / 60.3 / 60.3 / 60.3 —— 首轮比稳态低 16~20 倍，
+    // 单轮采样会让门禁在 1.7~3.7 之间随机摆动（±95%），完全无法判定退化。
+    console.log(`[measure] 4/6 滚动帧率（${SCROLL_SECONDS}s，预热 1 轮后取 ${SCROLL_ROUNDS} 轮中位数）...`)
+    const runScroll = () => page.evaluate((seconds) => {
       return new Promise((resolve) => {
         const candidates = [document.scrollingElement, ...document.querySelectorAll('lark-doc, lark-doc *')]
         let scroller = document.scrollingElement
@@ -209,6 +216,12 @@ async function main() {
         requestAnimationFrame(tick)
       })
     }, SCROLL_SECONDS)
+    const scrollSamples = []
+    for (let round = 0; round < SCROLL_ROUNDS + 1; round += 1) {
+      const value = await runScroll()
+      if (round > 0) scrollSamples.push(value)
+    }
+    const scrollFps = median(scrollSamples)
 
     // 5. 整篇保存代理：全篇 getJSON 序列化 10 次中位数
     console.log('[measure] 5/6 全篇序列化...')
