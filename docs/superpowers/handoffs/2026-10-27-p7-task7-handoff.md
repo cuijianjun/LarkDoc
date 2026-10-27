@@ -167,10 +167,13 @@
 | `saveProxyMs` | 24.6 | 22.8 | −7% | ✓ |
 | `heapMB` | 107.8 | 107.8 | 0% | ✓ |
 
-**注意**：`check:perf` 里 `npm run build:element` 会重写 `dist/lark-doc-element.umd.min.js`，
-所以「先 `check:artifacts` 量体积、后 `check:perf` 重建 element」这个顺序下，体积表里量到的
-Element 是**上一次**构建。本次顺序即如此；两者同为 470.34 vs 460.76 KiB gzip，都在 480 预算内，
-结论不受影响 —— 但真要拿体积当发布凭据时，应在 `check:perf` **之后**再跑一次 `npm run size`。
+**测量顺序已复核（2026-10-27T17:21Z）**：`check:perf` 里 `npm run build:element` 会重写
+`dist/lark-doc-element.umd.min.js`（本次重建于 `17:12Z`），而 `npm run size` 只读 `dist/`、
+不带构建，所以「先 artifacts 后 perf」确实存在量到旧 Element 的可能。补跑一次 `npm run size`
+（在 `check:perf` 之后）验证：**五项数字与 `check:artifacts` 里的完全一致** ——
+ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB，说明本次 element 构建
+体积是确定的、顺序没有引入偏差。这条原先写了个「460.76」的对比值，实跑后查无此数，已订正。
+（顺序依赖本身仍在：换机器或换构建参数时，体积凭据应取 `check:perf` **之后**的 `npm run size`。）
 
 **中途踩到的一次返工**：给 `document-decorations.js` 补机制注释后该文件到 411 行，顶破
 `P0-04` 的 `<400 行` 断言，`check:architecture` 挂住 → 整个 `check:gate` 停摆（`check:unit`

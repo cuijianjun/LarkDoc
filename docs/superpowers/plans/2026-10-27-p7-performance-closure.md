@@ -279,6 +279,7 @@
   | 单测 + lint + 主题 + 部署 + 架构 | `npm run check:gate` | **EXIT=0**（71 个测试文件 / **1664** 条用例全绿） |
   | 五产物 + Vditor + 体积预算 | `npm run check:artifacts` | EXIT=0（ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB，均在预算内；Vditor 兼容 93 项通过） |
   | 性能门禁 | `npm run check:perf` | EXIT=0，7 项指标**无一退化 >20%** |
+  | 体积（在 `check:perf` **之后**复跑） | `npm run size` | 五项与 `check:artifacts` 完全一致：ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB —— 本次 element 构建体积确定，测量顺序未引入偏差 |
   | 本地块契约（非 CI 环节） | `npm run contract:check` | `_codex/contract/document-decorations.json` 因本轮改了源文件而过期 → 重新生成后 EXIT=0 |
 
 - **`check:perf` 实测（`2026-10-27T17:12Z` 采集，非 `--update`，基线仍是 `15:45:16Z` 那一份）**：
