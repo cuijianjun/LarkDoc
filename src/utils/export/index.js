@@ -184,7 +184,12 @@ export async function exportDocx(doc, options) {
     images = collected.images
     failedImages = collected.failed
   }
-  const { buildDocx } = await import('./docx.js')
+  // webpackChunkName 必须是 **"office"**：`utils/importExport.js` 里那条 `await import('docx')`
+  // 已经占了这个名字，vue.config.js 的 `office` cache group 也按这个名字把 docx 收成一个
+  // 按需区块。这里不标（或标别的名字）webpack 会另开一个自动命名的 async chunk 装 docx，
+  // 于是 LARK_DOC_TARGET=umd 直接编译失败：
+  //   Cache group "office" conflicts with existing chunk.（选中模块的父 chunk 不是它）
+  const { buildDocx } = await import(/* webpackChunkName: "office" */ './docx.js')
   const blob = await buildDocx(doc, { images, title: settings.title || settings.fileName })
   downloadBlob(blob, fileName)
   return { fileName, blob, failedImages, scope }

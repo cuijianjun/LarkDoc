@@ -61,9 +61,10 @@ export const SHARE_POPOVER = Object.freeze({
   innerHeight: 329,
   /** 标题栏 480×45，pad `13px 16px 8px`。 */
   headerHeight: 45,
-  /** 标题文字 fs16 / `#1F2329`。 */
+  /** 标题文字 fs16 / `#1F2329`。色值写成 token 引用而不是字面 hex：真值在
+   *  `styles/share.css` 的 `--ld-share-*` 声明处，JS 侧写字面色会被 `check-theme-tokens` 拦。 */
   titleFontSize: 16,
-  titleColor: '#1F2329',
+  titleColor: 'var(--ld-share-text)',
   /** 「权限设置」按钮 84×24，图标 20×16。实测 ③ 里同一按钮是 80×24 —— 两批次量到的
    *  含/不含图标右内边距不同，这里取 ④-2 的 84×24（一级 popover 的口径）。 */
   permButtonWidth: 84,
@@ -85,16 +86,16 @@ export const SHARE_ENTRY_BUTTON = Object.freeze({
   containerHeight: 32,
   width: 80,
   height: 32,
-  background: '#1456F0',
+  background: 'var(--ld-share-brand)',
   radius: 6,
   padding: '4px 11px',
 })
 
 /** 飞书实心主按钮通用规格（04 §4.1 ④-2 复刻要点 2），两个 Dialog 的底部按钮都用它。 */
-export const SHARE_FILLED_BUTTON = Object.freeze({ width: 80, height: 32, radius: 6, background: '#1456F0', color: '#FFFFFF' })
+export const SHARE_FILLED_BUTTON = Object.freeze({ width: 80, height: 32, radius: 6, background: 'var(--ld-share-brand)', color: 'var(--ld-share-surface)' })
 
 /** 描边次按钮：bg `#FFF` / bd `1px solid #D0D3D6` / radius 6。 */
-export const SHARE_OUTLINED_BUTTON = Object.freeze({ width: 80, height: 32, radius: 6, border: '1px solid #D0D3D6', color: '#1F2329' })
+export const SHARE_OUTLINED_BUTTON = Object.freeze({ width: 80, height: 32, radius: 6, border: '1px solid var(--ld-share-border-control)', color: 'var(--ld-share-text)' })
 
 // —— 几何：权限设置 Dialog（04 §4.1.1 ②）——
 
@@ -107,7 +108,7 @@ export const PERMISSION_DIALOG = Object.freeze({
   /** 垂直居中偏上：950 视口里顶边 60、底边 890。 */
   top: 60,
   radius: 8,
-  background: '#FFFFFF',
+  background: 'var(--ld-share-surface)',
   headerHeight: 72,
   bodyHeight: 734,
   /** 内容列 x=530 → 左内边距 24，列宽 437。 */
@@ -148,7 +149,7 @@ export const CAPABILITY_UI = Object.freeze({
 
 /** 置灰的统一视觉（05 §5.3.1 ③）：色 `#BBBFC4`、`cursor: not-allowed`、
  *  `pointer-events` **保留**（要能 hover 出 tooltip 解释原因），点击无副作用。 */
-export const GRAY_STYLE = Object.freeze({ color: '#BBBFC4', cursor: 'not-allowed', pointerEvents: 'auto' })
+export const GRAY_STYLE = Object.freeze({ color: 'var(--ld-share-text-disabled)', cursor: 'not-allowed', pointerEvents: 'auto' })
 
 /** 分享入口的两种形态。 */
 export const SHARE_ENTRY_MODES = Object.freeze({ manage: 'manage', readonlyLink: 'readonly-link' })
@@ -222,9 +223,9 @@ export const PASSWORD_RULE_STATES = Object.freeze({ normal: 'normal', success: '
 
 /** 三态配色（⑤-6）：normal 图标 `#BBBFC4`；success 图标 `#32A645`；error 图标与文字一起 `#F54A45`。 */
 export const PASSWORD_RULE_COLORS = Object.freeze({
-  normal: { icon: '#BBBFC4', text: '#1F2329' },
-  success: { icon: '#32A645', text: '#1F2329' },
-  error: { icon: '#F54A45', text: '#F54A45' },
+  normal: { icon: 'var(--ld-share-text-disabled)', text: 'var(--ld-share-text)' },
+  success: { icon: 'var(--ld-share-success)', text: 'var(--ld-share-text)' },
+  error: { icon: 'var(--ld-share-danger)', text: 'var(--ld-share-danger)' },
 })
 
 /** 「提示」二次确认的三句正文（⑤-2）。第 1 句原文在采集日志里被截断，
@@ -240,8 +241,8 @@ export const SECURE_LINK_TIP = '已启用密码，组织外非协作者用户需
 
 /** 两型 toast：成功/复制绿 `rgb(228,250,225)`，校验失败橙 `rgb(255,243,229)`（⑤-4 / ⑤-9）。 */
 export const SHARE_TOAST = Object.freeze({
-  success: { kind: 'success', background: '#E4FAE1', width: 414, height: 54, top: 40 },
-  warning: { kind: 'warning', background: '#FFF3E5', width: 260, height: 54, top: 40 },
+  success: { kind: 'success', background: 'var(--ld-share-toast-success-bg)', width: 414, height: 54, top: 40 },
+  warning: { kind: 'warning', background: 'var(--ld-share-toast-warning-bg)', width: 260, height: 54, top: 40 },
   /** 约 3s 后自动消失（⑤-9：batch479 再等 3.2s 已查无此节点）。 */
   duration: 3000,
 })

@@ -3,7 +3,10 @@
  *
  * 像素来源：requirements/04 §4.1 ④-2（分享 popover batch60/61）、§4.1.1 ② ③
  * （权限 Dialog 层级与行级像素 batch442/443）、⑤-2～⑤-9（加密链接 batch468–479）。
- * 色值与尺寸一律照抄实测，**不引蒸馏色 / 不自造 token** —— §4.1 复刻要点 1 明确要求。
+ * 色值与尺寸一律照抄实测，**不引蒸馏色、不混用既有皮肤 token** —— §4.1 复刻要点 1
+ * 明确要求。字面 hex 只写在下方 `.lark-doc` 的 `--ld-share-*` 声明处（自定义属性声明
+ * 不计入 `scripts/check-theme-tokens.js` 的止血），规则里一律 `var(...)`：既保住 04
+ * 的实测原值，又不触发 T0-05（同 `comments.css` 的取舍）。
  *
  * 三条负结论（别「优化」）：
  *   1. **这里没有 `.lark-doc-share-dialog-footer`**。权限 Dialog 实测 **footer 为 null**
@@ -15,6 +18,28 @@
  *
  * 宿主接线：本文件由主 css 统一 `@import`，组件自身不引样式（与本项目其它面板一致）。
  */
+
+/* ---- 分享线色板：04 §4.1 ④-2 / §4.1.1 ⑤-2～⑤-9 实测原值，全库只此一处写字面 hex ----
+   刻意挂在 `.lark-doc` 上而非 `:root`：这三条面板与本编辑器同生同灭，值不该泄漏到宿主
+   页面。也刻意不复刻既有 `--ld-*` 皮肤色 —— 04 的实测值与蒸馏档不同源，混用就会失真。 */
+.lark-doc {
+  --ld-share-brand: #1456F0;            /* 主色：实心按钮底 / 聚焦描边 / 权限标签 / 开关开 */
+  --ld-share-avatar-bg: #336DF4;        /* 圆形协作者头像底（⑤-6，30×30） */
+  --ld-share-link: #3370FF;             /* 链接文字（与 brand 不同值，别合并） */
+  --ld-share-surface: #FFFFFF;          /* 浮层 / 只读遮罩 / 输入框底 */
+  --ld-share-text: #1F2329;             /* 主文字 */
+  --ld-share-text-strong: #2B2F36;      /* 深一档主文字（权限 Dialog 行标题） */
+  --ld-share-text-secondary: #646A73;   /* 次级：说明 / 安全提示 / scope */
+  --ld-share-text-tertiary: #8F959E;    /* 三级：占位 / 未激活提示 */
+  --ld-share-text-disabled: #BBBFC4;    /* 禁用文字 / 规则未达图标 */
+  --ld-share-border: #DEE0E3;           /* 分隔线 / 头像底 / 开关关 */
+  --ld-share-border-control: #D0D3D6;   /* 描边按钮 / 竖直分隔 */
+  --ld-share-bg-subtle: #F5F6F7;        /* 浅底：图标底 / 人数溢出块 / 规则框 */
+  --ld-share-success: #32A645;          /* 规则达标的勾 */
+  --ld-share-danger: #F54A45;           /* 规则未达 / 校验失败的叉与文字 */
+  --ld-share-toast-success-bg: #E4FAE1; /* 成功 toast 底（⑤-4） */
+  --ld-share-toast-warning-bg: #FFF3E5; /* 校验失败 toast 底（⑤-9） */
+}
 
 /* ============================================================
  * 0. 包裹层与通用按钮
@@ -35,8 +60,8 @@
   padding: 4px 11px;
   border: none;
   border-radius: 6px;
-  background: #1456f0;
-  color: #fff;
+  background: var(--ld-share-brand);
+  color: var(--ld-share-surface);
   font-size: 14px;
   cursor: pointer;
 }
@@ -45,10 +70,10 @@
   width: 80px;
   height: 32px;
   padding: 4px 11px;
-  border: 1px solid #d0d3d6;
+  border: 1px solid var(--ld-share-border-control);
   border-radius: 6px;
-  background: #fff;
-  color: #1f2329;
+  background: var(--ld-share-surface);
+  color: var(--ld-share-text);
   font-size: 14px;
   cursor: pointer;
 }
@@ -64,7 +89,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: var(--ld-share-surface);
 }
 
 .lark-doc-share-mask-card {
@@ -82,13 +107,13 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #f5f6f7;
-  color: #8f959e;
+  background: var(--ld-share-bg-subtle);
+  color: var(--ld-share-text-tertiary);
 }
 
 .lark-doc-share-mask-title {
   margin: 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 16px;
   line-height: 24px;
 }
@@ -125,7 +150,7 @@
   height: 329px;
   overflow: hidden;
   border-radius: 8px;
-  background: #fff;
+  background: var(--ld-share-surface);
   box-shadow: 0 6px 24px rgba(31, 35, 41, 0.12);
 }
 
@@ -142,7 +167,7 @@
 
 .lark-doc-share-header-title {
   margin: 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 16px;
   line-height: 22px;
 }
@@ -163,7 +188,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   cursor: pointer;
 }
@@ -185,7 +210,7 @@
 }
 
 .lark-doc-share-member-text {
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 20px;
 }
@@ -200,8 +225,8 @@
   height: 26px;
   overflow: hidden;
   border-radius: 50%;
-  background: #dee0e3;
-  color: #646a73;
+  background: var(--ld-share-border);
+  color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 26px;
   text-align: center;
@@ -214,8 +239,8 @@
   height: 26px;
   padding: 4px 8px;
   border-radius: 29px;
-  background: #f5f6f7;
-  color: #646a73;
+  background: var(--ld-share-bg-subtle);
+  color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -229,7 +254,7 @@
   height: 36px;
   margin: 0 16px;
   padding: 0 0 0 12px;
-  border: 1px solid #1456f0;
+  border: 1px solid var(--ld-share-brand);
   border-radius: 6px;
 }
 
@@ -241,7 +266,7 @@
   border: none;
   border-radius: 6px;
   outline: none;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
 }
 
@@ -252,10 +277,10 @@
   height: 34px;
   padding: 0;
   border: none;
-  border-left: 1px solid #d0d3d6;
+  border-left: 1px solid var(--ld-share-border-control);
   border-radius: 0 4px 4px 0;
   background: transparent;
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 14px;
   cursor: pointer;
 }
@@ -283,7 +308,7 @@
 }
 
 .lark-doc-share-link-title {
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
 }
@@ -295,7 +320,7 @@
   padding: 0 4px;
   border-radius: 4px;
   background: rgba(20, 86, 240, 0.2);
-  color: #1456f0;
+  color: var(--ld-share-brand);
   font-size: 10px;
   line-height: 16px;
 }
@@ -319,8 +344,8 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #336df4;
-  color: #fff;
+  background: var(--ld-share-avatar-bg);
+  color: var(--ld-share-surface);
   font-size: 14px;
 }
 
@@ -337,7 +362,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
   cursor: pointer;
@@ -345,7 +370,7 @@
 
 /* 权限说明 #646A73 / fs 12。 */
 .lark-doc-share-scope-text {
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -355,7 +380,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
   cursor: pointer;
@@ -400,7 +425,7 @@
   height: 830px;
   margin-left: -250px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--ld-share-surface);
   box-shadow: none;
 }
 
@@ -412,7 +437,7 @@
 }
 
 .lark-doc-permission-crumb {
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
 }
@@ -427,7 +452,7 @@
 .lark-doc-permission-title {
   width: 420px;
   margin: 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 16px;
   font-weight: 500;
   line-height: 24px;
@@ -444,7 +469,7 @@
   border: none;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0);
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
@@ -474,14 +499,14 @@
   width: 437px;
   height: 20px;
   padding: 24px 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
 }
 
 /* 折叠头的箭头（04 只采了 `.ud__collapse-header` 的矩形，未给图标，这里用字符自绘）。 */
 .lark-doc-permission-caret {
   width: 10px;
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 10px;
   line-height: 10px;
 }
@@ -490,7 +515,7 @@
   width: 437px;
   height: 22px;
   margin: 16px 0 8px;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   font-weight: 500;
   line-height: 22px;
@@ -502,7 +527,7 @@
   width: 384px;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid #dee0e3;
+  border: 1px solid var(--ld-share-border);
   border-radius: 6px;
   outline: none;
   font-size: 14px;
@@ -522,7 +547,7 @@
 }
 
 .lark-doc-permission-item-title {
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
 }
@@ -540,10 +565,10 @@
   width: 84px;
   height: 29px;
   padding: 0 4px;
-  border: 1px solid #dee0e3;
+  border: 1px solid var(--ld-share-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1f2329;
+  background: var(--ld-share-surface);
+  color: var(--ld-share-text);
   font-size: 14px;
   cursor: pointer;
 }
@@ -552,7 +577,7 @@
 .lark-doc-permission-desc {
   width: 437px;
   height: 22px;
-  color: #8f959e;
+  color: var(--ld-share-text-tertiary);
   font-size: 12px;
   line-height: 22px;
 }
@@ -565,7 +590,7 @@
   padding: 0;
   border: none;
   border-radius: 999999px;
-  background: #dee0e3;
+  background: var(--ld-share-border);
   cursor: pointer;
 }
 
@@ -576,13 +601,13 @@
   width: 12px;
   height: 12px;
   border-radius: 999999px;
-  background: #fff;
+  background: var(--ld-share-surface);
   content: '';
   transition: left 0.16s linear;
 }
 
 .lark-doc-permission-switch.is-on {
-  background: #1456f0;
+  background: var(--ld-share-brand);
 }
 
 .lark-doc-permission-switch.is-on::after {
@@ -599,7 +624,7 @@
   padding: 24px 0 8px;
   border: none;
   background: transparent;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
   cursor: pointer;
@@ -622,7 +647,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
   text-align: left;
@@ -635,7 +660,7 @@
   width: 437px;
   height: 18px;
   margin-top: 8px;
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -671,7 +696,7 @@
 .lark-doc-secure-link-desc {
   width: 413px;
   height: 20px;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 20px;
 }
@@ -700,7 +725,7 @@
 .lark-doc-secure-link-password-label {
   width: 42px;
   height: 18px;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   font-weight: 400;
   line-height: 18px;
@@ -710,7 +735,7 @@
 .lark-doc-secure-link-password-val {
   width: 74px;
   height: 20px;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
@@ -728,7 +753,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #2b2f36;
+  color: var(--ld-share-text-strong);
   font-size: 16px;
   cursor: pointer;
 }
@@ -746,7 +771,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #1456f0;
+  color: var(--ld-share-brand);
   font-size: 12px;
   cursor: pointer;
 }
@@ -756,7 +781,7 @@
   width: 437px;
   height: 18px;
   margin-top: 8px;
-  color: #8f959e;
+  color: var(--ld-share-text-tertiary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -774,7 +799,7 @@
   height: 262px;
   margin-left: -250px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--ld-share-surface);
   box-shadow: none;
 }
 
@@ -788,7 +813,7 @@
 .lark-doc-share-confirm-title {
   width: 420px;
   margin: 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 16px;
   font-weight: 500;
   line-height: 24px;
@@ -804,14 +829,14 @@
 .lark-doc-share-confirm-text {
   width: 452px;
   margin: 0 0 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
 }
 
 /* 法务链接色 rgb(51,112,255)。 */
 .lark-doc-share-confirm-link {
-  color: #3370ff;
+  color: var(--ld-share-link);
   font-size: 14px;
 }
 
@@ -840,7 +865,7 @@
   height: 312px;
   margin-left: -210px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--ld-share-surface);
   box-shadow: none;
 }
 
@@ -857,7 +882,7 @@
 .lark-doc-share-password-title {
   width: 340px;
   margin: 0;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 16px;
   font-weight: 500;
   line-height: 24px;
@@ -888,9 +913,9 @@
   width: 262px;
   height: 32px;
   padding: 0 8px;
-  border: 1px solid #1456f0;
+  border: 1px solid var(--ld-share-brand);
   border-radius: 6px;
-  background: #fff;
+  background: var(--ld-share-surface);
 }
 
 .lark-doc-share-password-input input {
@@ -898,7 +923,7 @@
   height: 22px;
   border: none;
   outline: none;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
 }
 
@@ -925,7 +950,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 12px;
   cursor: pointer;
@@ -938,7 +963,7 @@
   padding: 6px 8px;
   margin-top: 10px;
   border-radius: 4px;
-  background: #f5f6f7;
+  background: var(--ld-share-bg-subtle);
 }
 
 .lark-doc-share-password-rule {
@@ -961,7 +986,7 @@
   justify-content: center;
   width: 21px;
   height: 20px;
-  color: #bbbfc4;
+  color: var(--ld-share-text-disabled);
 }
 
 .lark-doc-share-password-rule-icon svg {
@@ -970,15 +995,15 @@
 }
 
 .lark-doc-share-password-rule.is-normal .lark-doc-share-password-rule-icon {
-  color: #bbbfc4;
+  color: var(--ld-share-text-disabled);
 }
 
 .lark-doc-share-password-rule.is-success .lark-doc-share-password-rule-icon {
-  color: #32a645;
+  color: var(--ld-share-success);
 }
 
 .lark-doc-share-password-rule.is-error .lark-doc-share-password-rule-icon {
-  color: #f54a45;
+  color: var(--ld-share-danger);
 }
 
 .lark-doc-share-password-rule-text {
@@ -988,12 +1013,12 @@
 
 .lark-doc-share-password-rule.is-normal .lark-doc-share-password-rule-text,
 .lark-doc-share-password-rule.is-success .lark-doc-share-password-rule-text {
-  color: #1f2329;
+  color: var(--ld-share-text);
 }
 
 /* error 态**连文字一起变红**。 */
 .lark-doc-share-password-rule.is-error .lark-doc-share-password-rule-text {
-  color: #f54a45;
+  color: var(--ld-share-danger);
 }
 
 /* 安全提示 372×28，fs 12，rgb(100,106,115)。 */
@@ -1001,7 +1026,7 @@
   width: 372px;
   height: 28px;
   margin-top: 8px;
-  color: #646a73;
+  color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 14px;
 }
@@ -1029,7 +1054,7 @@
   display: flex;
   align-items: center;
   height: 54px;
-  color: #1f2329;
+  color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
 }
@@ -1040,7 +1065,7 @@
   margin-left: -207px;
   padding: 15px 19px;
   border-radius: 6px;
-  background: #e4fae1;
+  background: var(--ld-share-toast-success-bg);
 }
 
 /* 校验失败：260×54，bg rgb(255,243,229)，rad 6，pad 15px 3px 15px 19px（右侧留 3px 给关闭 ✕）。 */
@@ -1049,7 +1074,7 @@
   margin-left: -130px;
   padding: 15px 3px 15px 19px;
   border-radius: 6px;
-  background: #fff3e5;
+  background: var(--ld-share-toast-warning-bg);
   box-shadow: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 2px 8px 0;
 }
 

@@ -112,6 +112,18 @@ export {
 export {
   adjacentRevision, buildRevisionDecisionTr, revisionAnchor, revisionJumps, revisionTarget,
 } from '../core/revision/commands'
+// P6b-01：评论。与修订同类是 **mark**（挂在文本上，容器套 span），差别是它**只带
+// threadId 不带位置**（05 §5.5⑥ 锚点是块内相对偏移，不用 ProseMirror from/to）。
+// 契约层（mark 名 / 高亮类名 / 面板几何 / 三态高度 / 收集与定位）同源再导出，
+// 面板（`CommentPanel.vue`）与状态机（`editor/commentsMixin.js`）都只从这里取。
+export {
+  LarkDocComment, COMMENT_AUTHOR_NAME_FALLBACK, COMMENT_CONTROL_IDS, COMMENT_CONTROLS,
+  COMMENT_ENTRANCE, COMMENT_HEIGHTS, COMMENT_HIGHLIGHT_CLASS, COMMENT_MARK_NAME,
+  COMMENT_MORE_MENU, COMMENT_PANEL, COMMENT_PRIVATE_SWITCH, COMMENT_REPLY_CONTROLS,
+  COMMENT_REPLY_CONTROL_IDS, COMMENT_REPLY_MENU, COMMENT_REPLY_MENU_IDS,
+  COMMENT_REPLY_MENU_ITEMS, collectComments, commentAt, commentMarkOf, commentPanelHeight,
+  commentRanges, createCommentThreadId, normalizeComment, partitionCommentThreads, readComment,
+} from '../core/blocks/comment'
 export { UnknownBlock } from '../core/blocks/unknown-block'
 export { loadKatex, mathExtension } from '../core/blocks/math'
 export { documentKey } from '../core/blocks/document-key'

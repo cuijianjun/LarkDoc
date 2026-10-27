@@ -31,7 +31,7 @@ import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
-  LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
+  LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, LarkDocComment, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
   FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll, Bitable,
 } from '../../registry/blocks'
 
@@ -174,7 +174,10 @@ export function createLarkDocExtensions(options = {}) {
     // core/revision/tracker.js（suggest 模式才接线），「接受 / 拒绝」在
     // core/revision/commands.js，这里只管注册。
     TextStyleKit, Subscript, Superscript, Typography, LarkDocEmoji, LarkDocMention, LarkDocReminder,
-    LarkDocRevision, UnknownBlock,
+    // P6b-01：评论 mark 与修订同层注册（两者都是「挂在文本上的标记」）。它只带
+    // `threadId`，不落位置 —— 位置是块内相对偏移，由 `core/comments/anchor.js` 管。
+    // 注册进 schema 才有 `setComment` 命令，正文高亮与面板连线才成立。
+    LarkDocRevision, LarkDocComment, UnknownBlock,
     // 修订的运行时：`tracker` 只在宿主把 storage.active 打开（suggest 模式）后拦截键入 /
     // 退格并补 mark，其余模式零行为；`highlight` 只画激活态那一条的底色。
     LarkDocRevisionTracker, LarkDocRevisionHighlight,

@@ -31,9 +31,9 @@
         :aria-label="ed.exportPanelTitle"
       >
         <header class="lark-doc-export-header">
-          <!-- ud__modal__titleContent [420,392,640,24]：16px / 500 / #1F2329 -->
+          <!-- ud__modal__titleContent [420,392,640,24]：16px / 500 / var(--ld-share-text) -->
           <strong class="lark-doc-export-title">{{ ed.exportPanelTitle }}</strong>
-          <!-- ud__modal__close 28×28 @[1068,390]：radius 6、色 #646A73 -->
+          <!-- ud__modal__close 28×28 @[1068,390]：radius 6、色 var(--ld-share-text-secondary) -->
           <button
             type="button"
             class="lark-doc-export-close"
@@ -47,7 +47,7 @@
           </button>
         </header>
         <div class="lark-doc-export-body">
-          <!-- range-context [420,465,56,22]：14px / #646A73 -->
+          <!-- range-context [420,465,56,22]：14px / var(--ld-share-text-secondary) -->
           <span class="lark-doc-export-range-label">内容范围</span>
           <!-- ud__radio-group--mode-solid [516,465,212|296,22]：14px，两项间距实测 24 -->
           <div
@@ -84,7 +84,7 @@
         <!-- ud__modal__footer [396,527,720,56] → __btns [420,527,672,44] -->
         <footer class="lark-doc-export-footer">
           <div class="lark-doc-export-btns">
-            <!-- 取消 80×32 @[920,527]：白底 / 边 #D0D3D6 / 文字 #1F2329 / rad 6 -->
+            <!-- 取消 80×32 @[920,527]：白底 / 边 var(--ld-share-border-control) / 文字 var(--ld-share-text) / rad 6 -->
             <button
               type="button"
               class="lark-doc-export-cancel"
@@ -92,7 +92,7 @@
             >
               取消
             </button>
-            <!-- 导出 80×32 @[1012,527]：底 #1456F0 / 文字 #FFFFFF / rad 6。
+            <!-- 导出 80×32 @[1012,527]：底 var(--ld-share-brand) / 文字 var(--ld-share-surface) / rad 6。
                  无权限时置灰但不隐藏，且保留 pointer-events，让 not-allowed 光标能显示出来。 -->
             <button
               type="button"

@@ -301,10 +301,12 @@ describe('P6a · 协同子入口的契约（不联网）', () => {
     const anchors = createCommentAnchors({ ydoc, type: text })
     const encoded = anchors.encode(2)
     expect(encoded).toBeInstanceOf(Uint8Array)
-    expect(anchors.decode(encoded)).toBe(2)
+    // P6b：`decode` 回 `{ type, index }` —— 协同下「同一个 index」在不同 type 里没有意义，
+    // `createYjsAnchorCodec` 要靠 `type` 判断起点/终点是否还在同一个文本里。
+    expect(anchors.decode(encoded)).toMatchObject({ index: 2 })
     // 前面插两个字，锚点应该右移两位而不是原地不动 —— 这就是不用绝对偏移的理由。
     text.insert(0, '前前')
-    expect(anchors.decode(encoded)).toBe(4)
+    expect(anchors.decode(encoded)).toMatchObject({ index: 4 })
     expect(anchors.decode(null)).toBeNull()
   })
 })

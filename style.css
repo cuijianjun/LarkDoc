@@ -15,3 +15,15 @@
  * 将来 preset 要出深色档时，其 `[data-theme-preset=...][data-theme="dark"]`
  * 特异性更高，天然压在本文件之上，无需调整顺序。 */
 @import './src/components/lark-doc/theme-dark.css';
+/* ---- P6b：评论 / 历史版本 / 分享 + 权限 三条线各自的样式单独立文件，由本入口统一接线 ----
+   （组件自身不引样式，与本项目其它面板一致）。放在主题档**之后**：三条线的实测色值
+   来自 04 / 05 的截图口径，不参与主题蒸馏，晚引才能让面板在任何主题档下都长一样。
+   代价是深色档下它们是亮的 —— 深色的评论/版本面板口径 04 未采，等采到再补 token 覆盖。 */
+@import './src/styles/comments.css';
+@import './src/styles/versioning.css';
+@import './src/styles/share.css';
+/* read 态（阅读 / 演示 / 协同只读）只收编辑控件，不碰评论与修订面板（07 §1）。 */
+@import './src/styles/reading.css';
+/* 打印态放在最后：@media print 与主屏规则不在同一个媒体，但要压在前面所有打印期
+   失效的 chrome 之上（导出 PDF 走的是浏览器打印通道）。 */
+@import './src/styles/print.css';

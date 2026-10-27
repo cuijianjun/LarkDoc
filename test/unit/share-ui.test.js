@@ -134,8 +134,9 @@ describe('05 §5.3.1 B24 capability → UI 映射（8 项逐一对照）', () =>
     }
   })
 
-  it('置灰样式：色 #BBBFC4、cursor not-allowed，但 pointer-events 必须保留（还要能 hover 出原因）', () => {
-    expect(GRAY_STYLE.color).toBe('#BBBFC4')
+  it('置灰样式：色 var(--ld-share-text-disabled)、cursor not-allowed，但 pointer-events 必须保留（还要能 hover 出原因）', () => {
+    // 写 token 引用而非字面 hex：真值只在 styles/share.css 的 --ld-share-* 声明处（T0-05）。
+    expect(GRAY_STYLE.color).toBe('var(--ld-share-text-disabled)')
     expect(GRAY_STYLE.cursor).toBe('not-allowed')
     expect(GRAY_STYLE.pointerEvents).toBe('auto')
   })
@@ -342,9 +343,10 @@ describe('加密链接状态机（⑤-1 / ⑤-3 / ⑤-10）', () => {
 
 describe('密码校验三态（⑤-6 三态配色 + ⑤-8 实证表）', () => {
   it('三态配色：normal 灰 / success 绿 / error 且**文字一起变红**', () => {
-    expect(PASSWORD_RULE_COLORS.normal).toEqual({ icon: '#BBBFC4', text: '#1F2329' })
-    expect(PASSWORD_RULE_COLORS.success).toEqual({ icon: '#32A645', text: '#1F2329' })
-    expect(PASSWORD_RULE_COLORS.error).toEqual({ icon: '#F54A45', text: '#F54A45' })
+    // 断言 token 引用而非字面 hex：真值只在 styles/share.css 的 --ld-share-* 声明处（T0-05）。
+    expect(PASSWORD_RULE_COLORS.normal).toEqual({ icon: 'var(--ld-share-text-disabled)', text: 'var(--ld-share-text)' })
+    expect(PASSWORD_RULE_COLORS.success).toEqual({ icon: 'var(--ld-share-success)', text: 'var(--ld-share-text)' })
+    expect(PASSWORD_RULE_COLORS.error).toEqual({ icon: 'var(--ld-share-danger)', text: 'var(--ld-share-danger)' })
     // success 与 normal 只差 icon 色（⑤-7：同一段 SVG 只换 color）。
     expect(PASSWORD_RULE_COLORS.success.text).toBe(PASSWORD_RULE_COLORS.normal.text)
   })
@@ -469,8 +471,8 @@ describe('修改密码弹窗：保存恒可点 + 静默拦截（⑤-9）', () =>
   })
 
   it('warning toast 是橙的不是绿的（⑤-9 两型对照）', () => {
-    expect(SHARE_TOAST.warning.background).toBe('#FFF3E5')
-    expect(SHARE_TOAST.success.background).toBe('#E4FAE1')
+    expect(SHARE_TOAST.warning.background).toBe('var(--ld-share-toast-warning-bg)')
+    expect(SHARE_TOAST.success.background).toBe('var(--ld-share-toast-success-bg)')
     expect(SHARE_TOAST.success.background).not.toBe(SHARE_TOAST.warning.background)
     expect(SHARE_TOAST.warning.width).toBe(260)
     expect(SHARE_TOAST.success.width).toBe(414)
@@ -508,10 +510,10 @@ describe('几何与按钮口径', () => {
       + SHARE_POPOVER.inviteHeight + SHARE_POPOVER.lowerHeight).toBe(SHARE_POPOVER.innerHeight)
   })
 
-  it('主按钮 80×32 / #1456F0 / radius 6', () => {
+  it('主按钮 80×32 / var(--ld-share-brand) / radius 6', () => {
     expect(SHARE_ENTRY_BUTTON.width).toBe(80)
     expect(SHARE_ENTRY_BUTTON.height).toBe(32)
-    expect(SHARE_ENTRY_BUTTON.background).toBe('#1456F0')
+    expect(SHARE_ENTRY_BUTTON.background).toBe('var(--ld-share-brand)')
     expect(SHARE_ENTRY_BUTTON.radius).toBe(6)
     expect(SHARE_ENTRY_BUTTON.padding).toBe('4px 11px')
   })

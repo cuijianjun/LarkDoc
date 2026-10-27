@@ -149,8 +149,8 @@
         />
       </button>
     </p>
-    <!-- 标题编号菜单：点编号按钮弹出，三项与飞书一致（继续/重新开始/设置值） -->
-    <HeadingNumberMenu :ed="self" />
+    <!-- 标题编号菜单（继续/重新开始/设置值）+ P6b 浮层组（评论/版本/分享/导出，五条线收在一个容器里只占一个模板位 —— 本文件有 <700 行门禁） -->
+    <HeadingNumberMenu :ed="self" /><LarkDocOverlays :ed="self" />
   </section>
 </template>
 
@@ -193,11 +193,9 @@ import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
-// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，由它自己注册进 core 的
-// NodeView 注册表；这里只负责把适配层拉起来，core 与 Vue 之间不再有静态绑定。
-// 注意：core → adapters 这条 import 是刻意的临时反向依赖（P0-01 只做到「注册表缝」，
-// 装配动作仍由 Vue 2 宿主触发），Task 6 拆三端适配时会把 registerVue2NodeViews()
-// 的调用点从 core 移到真正的宿主入口，届时删除本行。
+// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，自己注册进 core 的注册表，
+// 这里只负责把适配层拉起来。core → adapters 这条反向依赖是刻意的临时缝（P0-01 只做到
+// 「注册表缝」），Task 6 拆三端适配时会把 registerVue2NodeViews() 的调用点挪到宿主入口。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
 import commandMenuMixin from './editor/commandMenuMixin'
@@ -227,6 +225,8 @@ import revisionMixin from './editor/revisionMixin' // P4-06 ③：接受 / 拒�
 // 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
 import foldPersistMixin from './editor/foldPersistMixin'
 import collabMixin from './editor/collabMixin'
+// P6b：评论 / 历史版本 / 分享 / 导出 / 三态统一五条线的聚合挂载点（含浮层容器）。
+import p6bMixin from './editor/p6bMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
@@ -237,17 +237,15 @@ import { fileBlockAttrs, sortFileFiles } from '../../core/media/file-block'
 import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
-// lark-doc.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让
-// 同一份样式在模块图里出现两次，改成单一归属，避免以后 CSS 被静默写两份。
+// lark-doc.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让同一份样式在模块图里出现两次。
 
-// 把 Vue 2 专属 NodeView 注册进 core 的注册表：本模块一加载就可用，等价于过去的静态
-// 注入；extensions.js 装配 schema 时按节点名查表，不再静态依赖任何 UI 框架。
+// 模块一加载就把 Vue 2 NodeView 注册进 core 注册表，等价于过去的静态注入；extensions.js 按节点名查表。
 registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
   components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin],
+  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -572,7 +570,8 @@ export default {
     },
     rememberSelection(includeCursor = false) { if (!this.editor) return; const { from, to } = this.editor.state.selection; if (from !== to || includeCursor) this.savedSelection = { from, to } },
     restoreSelection(includeCursor = false) { if (!this.editor || !this.savedSelection || !(this.editor.state.selection instanceof TextSelection)) return; const { from, to } = this.savedSelection; const size = this.editor.state.doc.content.size; if ((from !== to || includeCursor) && from <= size && to <= size) this.editor.view.dispatch(this.editor.state.tr.setSelection(TextSelection.create(this.editor.state.doc, from, to))) },
-    writable() { return !this._isBeingDestroyed && !this._isDestroyed && this.editor?.isEditable && !this.editor.isDestroyed && !this.effectiveReadonly },
+    // `writable()` 退役了 —— 可写判定统一归 `editor/readingModeMixin.js`（P6b-05 三态口径）。
+    // 这里不能留同名实现：Vue 2 里组件自身的 methods 会覆盖 mixin 的同名方法。
     run(command, ...args) { if (!this.writable()) return false; this.restoreSelection(); const chain = this.editor.chain().focus(); const method = chain[command]; return typeof method === 'function' ? method(...args).run() : false },
     isActive(name) { return !!this.editor?.isActive(name) },
     toggleMark(name) { if (!this.featureEnabled('marks')) return; const command = `toggle${name[0].toUpperCase()}${name.slice(1)}`; this.run(command); this.bubbleVisible = false; this.closeBubbleAlignMenu() },

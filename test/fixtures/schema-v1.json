@@ -644,6 +644,13 @@
       "code": true,
       "attrs": {}
     },
+    "comment": {
+      "attrs": {
+        "threadId": {
+          "default": ""
+        }
+      }
+    },
     "highlight": {
       "attrs": {
         "color": {

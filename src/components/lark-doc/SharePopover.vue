@@ -55,7 +55,7 @@
       </div>
     </div>
     <!-- 顶栏入口（宿主挂在 TopBar 的 header-actions slot 里）。按钮同干线 Ceditable：
-         容器 100×32、本体 80×32 / #1456F0 / radius 6 / pad 4px 11px（04 §4.1 ④-2）。
+         容器 100×32、本体 80×32 / var(--ld-share-brand) / radius 6 / pad 4px 11px（04 §4.1 ④-2）。
          降级形态（`canManagePermission:false`）时文案变成「分享只读链接」，但**不置灰**
          （B24 末行是「降级」不是「置灰」，点了要能复制）。 -->
     <div
@@ -80,7 +80,7 @@
       :style="ed.sharePopoverStyle()"
     >
       <div class="lark-doc-share-popover-inner">
-        <!-- 标题栏 480×45（pad 13px 16px 8px）：左「分享文档」64×22 fs16 #1F2329，
+        <!-- 标题栏 480×45（pad 13px 16px 8px）：左「分享文档」64×22 fs16 var(--ld-share-text)，
              右「权限设置」84×24（图标 20×16）。 -->
         <div class="lark-doc-share-header">
           <h3 class="lark-doc-share-header-title">
@@ -126,7 +126,7 @@
             <span class="lark-doc-share-avatar-more">+2</span>
           </div>
         </div>
-        <!-- 邀请输入框：聚焦态是**外壳描边**（448×36 radius6 border 1px #1456F0），
+        <!-- 邀请输入框：聚焦态是**外壳描边**（448×36 radius6 border 1px var(--ld-share-brand)），
              内部 input 393×26 无边框；右侧组织入口 36×34 靠 border-left 分割。 -->
         <div class="lark-doc-share-invite">
           <input
@@ -149,12 +149,12 @@
           <div class="lark-doc-share-link-card">
             <div class="lark-doc-share-link-head">
               <span class="lark-doc-share-link-title">链接分享</span>
-              <!-- 权限标签 bg rgba(20,86,240,0.2) / color #1456F0 / fs10（内容 span 12px）/ radius 4。
+              <!-- 权限标签 bg rgba(20,86,240,0.2) / color var(--ld-share-brand) / fs10（内容 span 12px）/ radius 4。
                    文案取下拉同值的「可编辑」：③ 只认证了下拉取值与 scope 文案，标签文本未采。 -->
               <span class="lark-doc-share-link-tag"><span>{{ ed.shareLinkPermLabel }}</span></span>
             </div>
             <div class="lark-doc-share-link-body">
-              <!-- 圆形图标 30×30 / bg #336DF4 / radius 50%。 -->
+              <!-- 圆形图标 30×30 / bg var(--ld-share-avatar-bg) / radius 50%。 -->
               <span class="lark-doc-share-link-icon">
                 <lark-doc-icon
                   name="link"
@@ -168,7 +168,7 @@
                 >
                   {{ ed.shareOrgName }}
                 </button>
-                <!-- 权限说明 #646A73 / fs 12。文案由 mixin 拼装（一级口径：跟着上面那个下拉变）。 -->
+                <!-- 权限说明 var(--ld-share-text-secondary) / fs 12。文案由 mixin 拼装（一级口径：跟着上面那个下拉变）。 -->
                 <span class="lark-doc-share-scope-text">{{ ed.shareScopeText }}</span>
               </div>
               <select

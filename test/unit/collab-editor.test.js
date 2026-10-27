@@ -48,7 +48,10 @@ describe('P6a · 编辑器侧的协同通道', () => {
 
   it('mixin 已注册（否则 prop 收不到，宿主传了也白传）', () => {
     expect(sfc).toContain("import collabMixin from './editor/collabMixin'")
-    expect(sfc).toContain('collabMixin]')
+    // 只认 mixins 数组那一行、且断言「在数组里」而不是「在数组末尾」：P6b 之后末尾
+    // 换成了 p6bMixin，写死 `collabMixin]` 会让以后每加一个 mixin 就红一次。
+    const mixinsLine = sfc.split('\n').find((line) => line.trim().startsWith('mixins: ['))
+    expect(mixinsLine).toContain('collabMixin')
   })
 
   it('主入口不导出 collab（协同走 lark-doc/collab 子入口，不装协同的宿主不加字节）', () => {
