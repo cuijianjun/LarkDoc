@@ -71,6 +71,17 @@ export function isIndexedDbAvailable(factory) {
 }
 
 /**
+ * `open()` 的兜底超时。
+ *
+ * 规范里 open 请求**没有超时**：`blocked` 只在「另一个标签页还占着旧版本的连接」时出现，
+ * 而它可能永不解除（用户就是不关那个标签页）。没有这道闸门，Promise 会一直 pending，
+ * `IDB_UNAVAILABLE` 永远不 reject —— 三级降级（IndexedDB → localStorage → 内存）
+ * 于是完全不触发，界面停在「加载中」，用户还会以为文章丢了。
+ * 5 s 是「正常情况绝对够、异常情况别让用户干等」的折中；测试传 `openTimeoutMs` 收窄。
+ */
+const DEFAULT_OPEN_TIMEOUT_MS = 5000
+
+/**
  * 打开（必要时建库并升级到）数据库。`onupgradeneeded` 里只做「缺哪个建哪个」，
  * 不做数据搬迁 —— 未来的迁移写成 `oldVersion` 分支，不要在这里顺手改数据。
  */
@@ -80,12 +91,26 @@ export function openIndexedDbDatabase(options = {}) {
   const name = options.name || DB_NAME
   const version = Number.isFinite(options.version) ? options.version : DB_VERSION
   const stores = Array.isArray(options.stores) && options.stores.length ? options.stores : DATABASE_STORES
+  const openTimeoutMs = Number.isFinite(options.openTimeoutMs) ? options.openTimeoutMs : DEFAULT_OPEN_TIMEOUT_MS
   return new Promise((resolve, reject) => {
+    // 三个出口（success / error / 超时）里只认第一个：`blocked` 之后仍可能 success，
+    // 超时之后也可能（对方终于关了标签页），后到的一律丢弃，避免 Promise 二次结算。
+    let settled = false
+    let timer = null
+    const settle = (fn, value) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      fn(value)
+    }
+    timer = setTimeout(() => {
+      settle(reject, unavailable(failure('打开本地数据库超时（可能另一个标签页占着旧版本连接）')))
+    }, openTimeoutMs)
     let request
     try {
       request = factory.open(name, version)
     } catch (error) {
-      reject(unavailable(error))
+      settle(reject, unavailable(error))
       return
     }
     request.onupgradeneeded = () => {
@@ -94,9 +119,10 @@ export function openIndexedDbDatabase(options = {}) {
         if (!database.objectStoreNames.contains(store)) database.createObjectStore(store)
       }
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(unavailable(request.error))
-    // 另一个标签页还占着旧版本连接：不 reject，等它释放；上层超时由调用方处理。
+    request.onsuccess = () => settle(resolve, request.result)
+    request.onerror = () => settle(reject, unavailable(request.error))
+    // 不在这里 reject：对方关掉标签页后本次 open 会继续走 onsuccess。
+    // 真正兜底的是上面那道超时闸门 —— 没有它这个回调就是个空壳。
     request.onblocked = () => {}
   })
 }

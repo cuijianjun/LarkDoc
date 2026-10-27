@@ -89,6 +89,44 @@ describe('建库与 schema', () => {
     expect(error.message).toBe(READ_ERROR)
     expect(error.code).toBe(IDB_UNAVAILABLE)
   })
+
+  /**
+   * 规范里 open 请求**没有超时**：`blocked` 只在「另一个标签页还占着旧版本连接」时出现，
+   * 而它可能永不解除。没有兜底闸门，Promise 永久 pending → `IDB_UNAVAILABLE` 永远不
+   * reject → 三级降级完全不触发，界面停在「加载中」。下面三条钉住「一定会结算」。
+   */
+  it('打开被 blocked 且对方一直不释放时，超时后以可降级错误拒绝', async () => {
+    const blockedFactory = {
+      open() {
+        const request = { result: null, error: null }
+        // 只发 blocked，之后再无任何事件（= 对方标签页一直不关）
+        setTimeout(() => request.onblocked && request.onblocked(), 0)
+        return request
+      },
+    }
+    const error = await rejection(openIndexedDbDatabase({ factory: blockedFactory, openTimeoutMs: 20 }))
+    expect(error.code).toBe(IDB_UNAVAILABLE)
+    expect(error.message).toBe(READ_ERROR)
+    expect(String(error.cause && error.cause.message)).toContain('超时')
+  })
+
+  it('打开请求一个事件都不回时同样超时拒绝，不把调用方挂死', async () => {
+    const silentFactory = { open: () => ({ result: null, error: null }) }
+    const error = await rejection(openIndexedDbDatabase({ factory: silentFactory, openTimeoutMs: 20 }))
+    expect(error.code).toBe(IDB_UNAVAILABLE)
+  })
+
+  it('慢一点但成功的打开不会被超时误杀', async () => {
+    const slowFactory = {
+      open() {
+        const request = { result: { name: 'slow-db' }, error: null }
+        setTimeout(() => request.onsuccess && request.onsuccess(), 5)
+        return request
+      },
+    }
+    const database = await openIndexedDbDatabase({ factory: slowFactory, openTimeoutMs: 100 })
+    expect(database.name).toBe('slow-db')
+  })
 })
 
 /* ---------------- 2. 草稿存读 ---------------- */
