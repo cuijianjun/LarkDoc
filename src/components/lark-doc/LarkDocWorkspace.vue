@@ -166,7 +166,7 @@
             />
           </button>
         </div>
-        <p>仅保存在{{ persistenceLabel() }}，最多 {{ editorConfig.limits.maxSnapshots }} 份。</p>
+        <p>仅保存在{{ persistenceLabel() }}{{ persistenceCaveat() }}，最多 {{ editorConfig.limits.maxSnapshots }} 份。</p>
         <button
           type="button"
           :disabled="effectiveReadonly"
@@ -433,7 +433,7 @@
 <script>
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import LarkDocEditor from './LarkDocEditor.vue'
-import { createWorkspace } from './workspace'
+import { createPersistenceWorkspace, detectBrowserStorage } from '../../providers/persistence'
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from './mockAI'
 import { TEMPLATES } from './templates'
 import { createLarkDocConfig } from './larkDocConfig'
@@ -491,7 +491,7 @@ export default {
       forcedReadonly: false,
       editorConfig: createLarkDocConfig(this.config),
       effectiveReadonly: false, importing: false, initialized: false,
-      saveStatus: '初始化…', storageError: false, notice: '',
+      saveStatus: '初始化…', storageError: false, storageKind: '', notice: '',
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
       aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
       templateOpen: false, templateQuery: '',
@@ -577,11 +577,23 @@ export default {
       if (this.saveHtml) base.html = this.getHTML()
       return base
     },
-    persistenceLabel() { return this.persistence ? '宿主' : '本浏览器' },
+    persistenceLabel() {
+      if (this.persistence) return '宿主'
+      return this.storageKind === 'memory' ? '内存' : '本浏览器'
+    },
+    // 落不到盘就得说出来：否则状态栏的「已保存」会让人以为刷新之后还在。
+    persistenceCaveat() {
+      if (this.persistence) return ''
+      return this.storageKind === 'memory' ? '（刷新即丢失，请先导出）' : ''
+    },
     // —— 持久化：草稿防抖保存，失败即关闸（storageError）避免反复报错 ——
     getWorkspace() {
       if (!this._workspace) {
-        this._workspace = this.getSession()?.getProvider('persistence') || this.persistence || createWorkspace(window.localStorage, { maxSnapshots: this.editorConfig.limits.maxSnapshots })
+        // 三级降级：IndexedDB → localStorage → 内存。`storageKind` 记录实际选中
+        // 的那条腿，供状态栏如实说明「是否真的落盘」。
+        this._workspace = this.getSession()?.getProvider('persistence') || this.persistence ||
+          createPersistenceWorkspace({ ...detectBrowserStorage(window), maxSnapshots: this.editorConfig.limits.maxSnapshots })
+        this.storageKind = this._workspace.kind || ''
         if (!this.getSession()?.getProvider('persistence')) this.getSession()?.setProvider('persistence', this._workspace)
       }
       return this._workspace
@@ -664,10 +676,13 @@ export default {
       try {
         await this.callWorkspace('save', this.record())
         if (generation !== this._saveGeneration || this._disposed) return
+        // 「已保存」只在 Promise 落定后出现：IndexedDB 腿要等事务 oncomplete 才 resolve，
+        // 所以这里看到的成功一定已经落盘，不存在「先报成功、后写失败」的窗口。
         this.storageError = false
-        this.saveStatus = `已保存到${this.persistenceLabel()} ${new Date().toLocaleTimeString()}`
-        logger.info('storage', 'lark-doc.draft.saved', { status: this.persistence ? 'host' : 'local' })
-        this.$emit('save', { status: 'saved', manual, target: this.persistenceLabel(), savedAt: Date.now() })
+        this.storageKind = this._workspace?.kind || this.storageKind
+        this.saveStatus = `已保存到${this.persistenceLabel()}${this.persistenceCaveat()} ${new Date().toLocaleTimeString()}`
+        logger.info('storage', 'lark-doc.draft.saved', { status: this.persistence ? 'host' : 'local', kind: this.storageKind })
+        this.$emit('save', { status: 'saved', manual, target: this.persistenceLabel(), kind: this.storageKind, savedAt: Date.now() })
       } catch (error) { if (generation === this._saveGeneration && !this._disposed) this.storageFailure(error) }
     },
     storageFailure(error) {
