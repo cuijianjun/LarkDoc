@@ -7,6 +7,8 @@
 
 > 面向**使用方**的环境接入说明（编译工具配置 / 工具栏配置 / 可运行 demo）在 `docs/guide/environments.md`，本文只讲本包自身的开发约束。
 
+**开工前先读什么（省上下文）**：① `_codex/CONTEXT-CARD.md`（约 3k token，稳定事实：现状 / 九期进度 / 待办 / 铁律）；② 要做哪一块，就读 `_codex/req/<编号>/INDEX.md` 定位，再 `Read` 命中的那一片（单片 3–7k token）。**不要裸读 `requirements/*.md` 全文**（6,000 行的 `02-块类型规格总表.md` 一次约 10 万 token）。切片由 `node _codex/split-req.mjs` 生成，源文件是唯一真源。
+
 ---
 
 ## 1. 环境与校验链

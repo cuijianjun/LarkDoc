@@ -1,3 +1,6 @@
+# 带斜杠只匹配「目录」；worktree 里的 node_modules 常是软链（git 视作文件），
+# 只写 node_modules/ 会漏掉它、被误提交。两条都要。
+node_modules
 node_modules/
 dist/
 *.tgz
