@@ -174,18 +174,30 @@ async function main() {
       return samples
     }, KEYSTROKE_SAMPLES)
 
-    // 3. 单次全量装饰重建：updateState(同状态) 强制重算，取中位数
+    // 3. 单次全量装饰重建：发一个**只带 meta** 的事务把派生索引标脏，取中位数。
+    //
+    // 为什么不再用 `view.updateState(view.state)`：P7-01 给 `decorations(state)` 加了
+    // `dirty || state.doc !== cachedDoc` 的缓存闸门，同一份 state 重放只会命中缓存
+    // （本机实测 1 ms）。那个数**不是**重建耗时，和基线（旧实现每次都真重算）不同口径，
+    // 摆在一起就是「−100%」的假结论。
+    // 纯 meta 事务：`doc` 引用不变 → 不产生 DOM 补丁（不会把 2,000 块的差分/绘制混进来），
+    // 但插件的 `apply` 照旧调 `derivedIndex.update(tr)` 把 `dirty` 置起 → 下一次
+    // `decorations()` 必然整份重算。既恢复与基线同口径，又只量重建本身。
+    // 顺带把「同 state 重放」的缓存命中值打出来，避免下次有人误把它当重建。
     console.log('[measure] 3/6 装饰重建耗时...')
-    const decorationsSamples = await page.evaluate((count) => {
+    const { samples: decorationsSamples, cacheHitMs } = await page.evaluate((count) => {
       const editor = window.__larkDoc.getEditor()
       const samples = []
       for (let i = 0; i < count; i += 1) {
         const start = performance.now()
-        editor.view.updateState(editor.view.state)
+        editor.view.dispatch(editor.view.state.tr.setMeta('perfDecorationProbe', i))
         samples.push(performance.now() - start)
       }
-      return samples
+      const cacheStart = performance.now()
+      for (let i = 0; i < count; i += 1) editor.view.updateState(editor.view.state)
+      return { samples, cacheHitMs: (performance.now() - cacheStart) / count }
     }, DECORATION_SAMPLES)
+    console.log(`[measure]    同 state 重放（缓存命中，非重建）= ${cacheHitMs.toFixed(1)} ms`)
 
     // 4. 滚动帧率：文档中段连续滚动 3s，rAF 计帧
     //

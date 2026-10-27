@@ -4,22 +4,22 @@
 
 2,000 块压力夹具（seed 42，本机 headless Chromium）的性能基线，以及 v0.12「P7 性能收口」这一轮的处置口径与结论。数据由 `scripts/perf/measure.mjs` 采集、`scripts/perf/report.mjs` 判定，人读版报告在 `perf/report.md`；`perf/baseline.json` 是门禁基线（退化超 20% 时 `npm run check:perf` 非零退出，CI 见 `.github/workflows/perf.yml`）。
 
-## 一、基线（blockCount 2000，seed 42，Node 22）
+## 一、基线（blockCount 2000，seed 42，Node 22/24）
 
 | 指标 | 收口前（10-24 基线） | 收口后（10-27 采集） | 说明 |
 | --- | ---: | ---: | --- |
-| `mountToTypeableMs` | 59849.7 | 39232.7 | `setContent` 灌满 2,000 块 → focus → 真键盘敲第一个字 |
-| `keystrokeP95Ms` | 37297.2 | 6002.1 | 击键 → 事务提交 → 双 rAF 后的渲染完成；**仍是最大一笔账** |
-| `decorationsRebuildMs` | 21186.3 | 2.1 | 同状态 `updateState` 强制重算装饰 |
+| `mountToTypeableMs` | 59849.7 | 36753.1 | `setContent` 灌满 2,000 块 → focus → 真键盘敲第一个字 |
+| `keystrokeP95Ms` | 37297.2 | 2921.4 | 击键 → 事务提交 → 双 rAF 后的渲染完成；**仍是最大一笔账** |
+| `decorationsRebuildMs` | 21186.3 | 165.9 | 单次**全量**重建（文档变更后重扫 2,000 块）。同 state 重放命中缓存只有 4.4 ms，那不是重建 |
 | `scrollFps` | 3.7 | 59.3 | 文档中段连续滚动 3s 的**稳态**帧率 |
-| `saveProxyMs` | 24 | 25 | 保存代理往返 |
-| `heapMB` | 105.6 | 107.4 | JS 堆 |
+| `saveProxyMs` | 24 | 23.5 | 保存代理往返 |
+| `heapMB` | 105.6 | 108.1 | JS 堆 |
 
 关于 `scrollFps` 的两个数字：**3.7 不是「滚动只有 3.7 帧」，而是冷启动首轮**——2,000 块首次进入视口要做整批块的首次布局与图层合成。`measure.mjs` 现在先预热 1 轮再取 3 轮中位数，同一会话连续 7 轮的实测序列是 `3 / 23.7 / 59.3 / 60.3 / 60.3 / 60.3 / 60.3`。所以稳态滚动一直能跑满 60，旧的 3.7 是采集口径问题，不是渲染问题。
 
-`decorationsRebuildMs` 从 21.2s 掉到 2.1ms 不是测量口径变了，而是装饰从「每次交互全量重画」改成「推导 + 增量」：旧实现对 2,000 块逐块重建装饰并伴随布局读取，一次就 21 秒；新实现同状态直接复用已有装饰集，只剩应用成本。
+`decorationsRebuildMs` 从 21.2 s 掉到 165.9 ms 是**真收益**（两个数量级）：旧实现对 2,000 块逐块重建装饰并伴随布局读取，一次就 21 秒；现在每次只重新推导索引、不再触发布局读取，因此滚动帧率随之从 3.7 抬到 59.3。但计划里「≤ 4 ms」那条线**没有达到**——165.9 ms 仍是「整份重扫」，不是脏区局部重扫。P7-01 的提交说明写明这是取舍（「继续拆脏区收益不抵维护成本」），当时的依据是 2.1 ms 那个数，而 2.1 ms 其实是**缓存命中**、不是重建；测量方法已在 Task 7 复核时订正（改成发一个只带 meta 的事务强制标脏，`doc` 引用不变所以不掺 DOM 补丁），细节见 `perf/report.md`。
 
-`mountToTypeableMs` 仍是 39.2s，需要明确一件事：`measure.mjs` 直接调 `editor.commands.setContent(html)`，**不走持久化 / 水合路径**，所以这块数字反映的是「同步灌 2,000 块 DOM 的结构性成本」，不是 P7 里水合优化的靶子。
+`mountToTypeableMs` 仍是 36.8 s，需要明确一件事：`measure.mjs` 直接调 `editor.commands.setContent(html)`，**不走持久化 / 水合路径**，所以这块数字反映的是「同步灌 2,000 块 DOM 的结构性成本」，不是 P7 里水合优化的靶子。
 
 ## 二、P7-05 决策：不实现窗口化，也不加 `content-visibility: auto`
 
@@ -88,4 +88,5 @@ lint/单测/构建/size/e2e 四个既有 job 一字未动）。它不拿本机�
 作为 artifact 上传，便于事后核对。
 
 **本机基线策略**：`perf/baseline.json` 仍是 P7 之前的采集（10-24），故意没有覆盖——它是
-「优化前」的唯一凭据。P7-04 之后在同一台机器重采一次，再按需 `--update` 推进基线。
+「优化前」的唯一凭据。P7 全部提交之后已在同一台机器重采一次（10-27 13:17，
+见 `perf/report.md`），基线是否推进（`--update`）由维护者决定，不自动做。
