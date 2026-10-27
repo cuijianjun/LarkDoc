@@ -439,11 +439,22 @@ import { TEMPLATES } from './templates'
 import { createLarkDocConfig } from './larkDocConfig'
 import { sanitizeHTML, validateDocument } from './documentOperations'
 import { migrateRecordContent } from '../../core/migrations'
+import { createDerivedSnapshot, validateDerivedSnapshot } from '../../core/derive/snapshot'
 import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
 import { createDocumentSession } from '../../session/DocumentSession'
 import LarkDocSelect from './LarkDocSelect.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
+
+/**
+ * 让浏览器先把「目录已经挂上」画出来一帧，再进 `setContent` 的长任务（2,000 块几十秒）。
+ * 不加这一帧的话，Vue 的 DOM 更新和 ProseMirror 建 DOM 排在同一条长任务里，
+ * 水合出来的目录根本不会被看到 —— 那就白算了。
+ * 无 rAF 的环境（SSR / 单测）直接放行，不阻塞。
+ */
+const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
+  ? new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  : Promise.resolve())
 
 export default {
   name: 'LarkDocWorkspace',
@@ -570,11 +581,22 @@ export default {
     record() {
       const session = this.getSession()
       const record = session ? session.getDocumentRecord({ title: this.title }) : null
+      // 本地分支必须**显式**盖版本号：`getJSON()` 吐的就是当前版本形态，缺了版本号
+      // 会被载入侧当成 v1 白跑一遍迁移链，早期水合的门槛也会永远判否。
       const base = record
         ? { title: record.title, json: record.content, documentId: record.documentId, schemaVersion: record.schemaVersion, revisionId: record.revisionId, updatedAt: record.updatedAt }
-        : { title: this.title, json: this.$refs.document.getJSON() }
+        : { title: this.title, json: this.$refs.document.getJSON(), schemaVersion: DOCUMENT_SCHEMA_VERSION }
       // 可选：附带 HTML 派生副本（宿主后端需要直接渲染、不做 Tiptap 还原时开启）。
       if (this.saveHtml) base.html = this.getHTML()
+      // 可选：附带目录快照（P7-03）。载入时正文还没灌进编辑器，就能先用它把目录挂上，
+      // 不必等 2,000 块逐块建 DOM 跑完。只做一次纯遍历（不碰 DOM、不碰装饰集），
+      // 且只占 meta 里几百字节到几十 KB —— 换 `saveProxyMs` 基线 25ms 是划得来的。
+      const editor = this.getEditor()
+      const doc = editor && editor.state && editor.state.doc
+      if (doc) {
+        const derived = createDerivedSnapshot(doc)
+        if (derived) base.derived = derived
+      }
       return base
     },
     persistenceLabel() {
@@ -636,7 +658,17 @@ export default {
           if (this._disposed) return
           if (draft) {
             // 老草稿（v1 扁平 / 无版本号）先迁移到当前版本再校验载入（P1-04）。
-            this.$refs.document.setContent(validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), this.getEditor().schema))
+            const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), this.getEditor().schema)
+            // 早期水合（P7-03）：正文灌进去之前先把目录挂上。
+            // 比对基准必须是 `content`（迁移+展平+校验之后的**扁平**文档），不能是 `draft.json`：
+            // 落库 JSON 是 `getJSON()` 的聚合容器形态（标题把后续块收进 children），
+            // 而快照是按编辑器里的扁平文档算的 —— 拿聚合形态去比，带标题的文档全部被判伪。
+            // 版本号不另设门槛：迁移过的正文一旦结构变了，指纹自己对不上就整份作废。
+            if (this.$refs.document.hydrateOutline(
+              validateDerivedSnapshot(draft.derived, content)?.outline,
+            )) await nextPaintFrame()
+            if (this._disposed) return
+            this.$refs.document.setContent(content)
             this.title = draft.title
           }
           this.saveStatus = draft ? `已恢复${this.persistenceLabel()}草稿` : (this.persistence ? '宿主适配器 · 尚未保存' : '本地示例 · 尚未保存')
@@ -740,6 +772,12 @@ export default {
         const entry = await this.callWorkspace('restore', id)
         const json = validateDocument(migrateRecordContent(entry.json, entry.schemaVersion), this.getEditor().schema)
         if (!window.confirm('恢复此快照并替换当前正文？恢复后可撤销正文。')) return
+        // 与 onReady 同一套早期水合：恢复一份大文档同样要等 setContent 建 DOM。
+        // 比对基准同样是展平后的 `json`，不是落库的聚合容器形态（理由见 onReady）。
+        if (this.$refs.document.hydrateOutline(
+          validateDerivedSnapshot(entry.derived, json)?.outline,
+        )) await nextPaintFrame()
+        if (this._disposed) return
         this.closeAI()
         this.$refs.document.setContent(json)
         this.title = entry.title

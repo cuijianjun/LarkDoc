@@ -68,6 +68,20 @@ export default {
       if (next.size === this.outlineCollapsed.size && [...next].every((pos) => this.outlineCollapsed.has(pos))) return
       this.outlineCollapsed = next
     },
+    /**
+     * 早期水合（P7-03）：正文还没灌进编辑器的时候（2,000 块要几十秒），先用落库时算好的
+     * 目录把目录面板填上，用户不必对着空面板等。
+     *
+     * 只有 `validateDerivedSnapshot` 判过「这份快照确实是这份正文的」才会走到这里，
+     * 所以 `pos` 直接可用；正文一到位，`refreshDocumentState()` 立刻用实测值覆盖。
+     * 这里**不做**「已经实测过就拒绝」的闸门 —— 恢复快照时正文本来就在，拒绝会让那条路
+     * 永远享受不到。判伪的责任在校验器，不在这里。
+     */
+    hydrateOutline(outline) {
+      if (!Array.isArray(outline) || !outline.length) return false
+      this.outline = outline.map((item) => ({ pos: item.pos, level: item.level, text: item.text }))
+      return true
+    },
     toggleOutline(pos) {
       if (!this.featureEnabled('outline')) return
       const next = new Set(this.outlineCollapsed)

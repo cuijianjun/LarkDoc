@@ -17,6 +17,7 @@
  * 降级：本文件不做选型，工厂不可用时直接 reject；IndexedDB → localStorage →
  * 内存 的三级降级在 `src/providers/persistence.js`。
  */
+import { isValidDerivedSnapshot } from '../derive/snapshot'
 
 export const DB_NAME = 'tiptap-vue2:lark-doc'
 export const DB_VERSION = 1
@@ -165,13 +166,20 @@ function normalizeRecord(value) {
   if (value && value.schemaVersion != null) result.schemaVersion = value.schemaVersion
   if (value && value.html != null) result.html = value.html
   if (!isValidDocumentRecord(result)) throw failure(INVALID_RECORD_ERROR)
+  // 目录快照是**可选的加速件**：形状不对就丢掉这个字段，别让整篇文档存不进去。
+  // 读回来还会再判伪一次（`validateDerivedSnapshot` 对不上正文就作废）。
+  if (value && isValidDerivedSnapshot(value.derived)) result.derived = value.derived
   return result
 }
 
-/** 拆成 meta / content 两份：`meta` 只留能快速读出来的小字段。 */
+/**
+ * 拆成 meta / content 两份：`meta` 只留能快速读出来的小字段。
+ * `derived` 放 meta —— 它只有几百字节到几十 KB，却正是「只读 meta 就能先挂目录」的依据。
+ */
 function splitDraft(record) {
   const meta = { title: record.title, updatedAt: record.updatedAt }
   if (record.schemaVersion != null) meta.schemaVersion = record.schemaVersion
+  if (record.derived != null) meta.derived = record.derived
   const content = { json: record.json }
   if (record.html != null) content.html = record.html
   return { meta, content }
@@ -180,6 +188,7 @@ function splitDraft(record) {
 function mergeDraft(meta, content) {
   const record = { title: meta.title, json: content.json, updatedAt: meta.updatedAt }
   if (meta.schemaVersion != null) record.schemaVersion = meta.schemaVersion
+  if (meta.derived != null) record.derived = meta.derived
   if (content.html != null) record.html = content.html
   return record
 }
