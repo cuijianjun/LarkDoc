@@ -22,6 +22,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildDocHtml } from './build-doc.mjs'
+import { median, percentile } from './stats.mjs'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -29,10 +30,18 @@ const repoRoot = path.resolve(__dirname, '../..')
 
 const SEED = Number(process.env.PERF_SEED || 42)
 const BLOCKS = Number(process.env.PERF_BLOCKS || 2000)
-// 大文档下单次重建可达秒级，采样次数自适应下调（中位数/分位口径不变，数字仍真实）：
-// 2000 块时击键 8 次。装饰增量探针只发便宜的文字事务，但每次仍会触发一次整篇 view
-// 更新（DOM 补丁 + 排版），2,000 块时压到 20 次即可（亚毫秒量级，中位数足够稳）。
-const KEYSTROKE_SAMPLES = BLOCKS >= 1500 ? 8 : 30
+// 击键采样数：统一 30 次，不再随块数下调。
+//
+// 早先「2,000 块降到 8 次」是为了压总耗时，代价是分位数失去意义 —— 8 个样本下
+// `percentile(v, 0.95)` 取到的就是最大值（见下面 `percentile` 的注释），于是 p95 与 p99
+// 恒等、单次抖动直接决定基线，同机重复采集实测极差 2.65 倍（2578 / 4343.9 / 6837.7）。
+// 30 个样本足够让 p95 的秩落在 27.55（有序第 28 与第 29 个之间），最坏耗时约 30 × 2.6s ≈ 1 分钟，仍在
+// `check:perf` 的预算里。本地想快跑可用 `PERF_KEYSTROKE_SAMPLES` 覆盖。
+const KEYSTROKE_SAMPLES = Number(process.env.PERF_KEYSTROKE_SAMPLES || 30)
+// 装饰增量探针只发便宜的文字事务，但每次仍会触发一次整篇 view
+// 更新（DOM 补丁 + 排版，2,000 块实测整段 dispatch 约 196 ms、抖动 < 3%），
+// 2,000 块时 20 次即可 —— 这里的样本是 `derive` 层打点（2,000 块约 79 ms），
+// 不是整段 dispatch，别把两个量级混着读。
 const DECORATION_SAMPLES = 20
 const SCROLL_SECONDS = 3
 // 滚动要预热：首轮是首次布局/合成，不是滚动帧率（见第 4 段注释）。取 3 轮中位数。
@@ -95,15 +104,11 @@ function serveStatic(dir) {
   })
 }
 
-const median = (samples) => {
-  const sorted = [...samples].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
-}
-const percentile = (samples, p) => {
-  const sorted = [...samples].sort((a, b) => a - b)
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * sorted.length) - 1))]
-}
+// 统计口径单独放 scripts/perf/stats.mjs：本文件在模块顶层就 `main()` 起浏览器，
+// 单元测试没法 import 它，而分位数恰恰是最需要被用例钉住的一段逻辑。
+//
+// `percentile` 曾经用 `sorted[round(p*n)-1]`，8 个样本下 p95 恒等于最大值、与 p99 同值，
+// 现在改成线性插值。详见 stats.mjs 的注释与 test/unit/perf-stats.test.js。
 const round1 = (value) => Math.round(value * 10) / 10
 
 async function main() {
@@ -218,8 +223,9 @@ async function main() {
       throw new Error(`装饰探针没拿到增量样本（${decorationSamples.length} 次全部退回全量）—— 判据可能把文字改动也挡住了`)
     }
     console.log(`[measure]    增量 ${incrementalSamples.length} 次 / 退回全量 ${rebuildCount} 次；整段 dispatch 中位数 ${median(dispatchMs).toFixed(1)} ms`)
-    // 分位诊断：这一层已经从「秒级」降到亚毫秒~几十毫秒量级，只看中位数会掩盖长尾
-    // （GC、首次 map、窗口跨块的偶发），所以把 p95/max 一并打出来，便于判断抖动而不是靠猜。
+    // 分位诊断：只看中位数会掩盖长尾（GC、首次 map、窗口跨块的偶发），
+    // 所以把 p95/max 一并打出来，便于判断抖动而不是靠猜。增量与整段 dispatch 相差约 2.5 倍，
+    // 两行必须分开打 —— 混着打会让人以为「装饰只要 80 ms，那整篇重排不值一提」。
     const decorationStats = (values) => {
       const sorted = [...values].sort((a, b) => a - b)
       return `p50 ${median(sorted).toFixed(2)} / p95 ${percentile(sorted, 0.95).toFixed(2)} / max ${sorted[sorted.length - 1].toFixed(2)}`

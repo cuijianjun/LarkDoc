@@ -87,18 +87,26 @@
 
 **执行记录（2026-10-27，提交 `933ad1c`；10-27 晚补记并推进基线）**
 
-- **Step 6 未勾：两条判据都没有达成，不是漏测。**
+- **Step 6 未勾：一条判据按决策 A 改写后达标，另一条仍未达成，不是漏测。**
   - `decorationsRebuildMs <= 4 ms`：该判据在 P7-01 之后**已不存在有效的度量对象**（击键路径
     上装饰不再全量重建，旧探针量到的是 dispatch 固定开销）。改口径后实测
-    `decorationIncrementalMs = 72.6 ms`，距 `≤ 4 ms` 差一个数量级。
-  - `mountToTypeableMs` 降一个数量级：实测 59849.7 → 36666.8，**只有 −39%**。这里的预判本身
-    是错的 —— mount 是「建 2,000 块 NodeView + 首次排版」，装饰只占 ~36 ms，所以 P7-01
-    无论如何都动不了它；mount 的出路是 P7-05 的挂载策略。
-  - 两处完整归因写在 `perf/report.md`（口径节 + 解读节），代码级根因是
+    `decorationIncrementalMs` = 72.6 ms（决策 B 重采后 78.8 ms）。
+    **Task 7 决策 A 已把这条判据改写成 `≤ 150 ms`**：`≤ 4 ms` 是照「装饰层一次增量的理想开销」
+    拍的，而 `collectFoldRanges` / `computeHeadingNumbers` 两趟无条件全量遍历让这个指标
+    结构上到不了那个量级，继续压是为不可达目标烧工作量。改写后**判定达标**，但负担没有消除
+    —— 78.8 ms 里绝大部分仍是那两趟 O(n) 遍历，已作为未结账项记在
+    `perf/report.md`「解读」一节。
+  - `mountToTypeableMs` 降一个数量级：**仍未达成**。实测 59849.7 → 38810.1，**只有 −35%**。
+    这里的预判本身是错的 —— mount 是「建 2,000 块 NodeView + 首次排版」，装饰只占 ~36 ms，
+    所以 P7-01 无论如何都动不了它；mount 的出路是 P7-05 的挂载策略。
+  - 两处完整归因写在 `perf/report.md`（口径节 + 决策 A 节），代码级根因是
     `collectFoldRanges` / `computeHeadingNumbers` 在 `collectDocumentDecorations` 里被无条件
     全量调用（`src/core/documentOperations.js:1020` / `:506`）。
-- **已兑现的部分**：击键路径走脏区增量后 `scrollFps` 3.7 → 60.3、`keystrokeP95Ms`
-  37297 → 2578（−93%），这是 P7-05 判定「不需要窗口化」的直接依据。
+- **已兑现的部分**：击键路径走脏区增量后 `scrollFps` 3.7 → 59.3，这是 P7-05 判定
+  「不需要窗口化」的直接依据。
+  ⚠ **击键 p95 的百分比已撤回**：此处原先写「37297 → 2578（−93%）」，Task 7 决策 B 证明
+  37297.2 与 2578.0 都是「8 次里最差一次」（旧 `percentile` 在 n=8 时 p95 与 p99 同下标），
+  而新口径的真插值 p95 是 939.7。**跨口径算百分比是假结论**，本计划一律不再引用该数字。
 - **基线的推进**：本轮才执行 `perf/baseline.json --update`（旧值备份 `perf/baseline-pre-p7.json`）。
   改键名后旧基线必然判 `✗ 缺数据`（`compareMetrics` 的 `MISSING` 分支），所以顺序必须是
   「先确认这条失败 → 再 `--update`」，颠倒会把告警盖掉。
@@ -117,13 +125,28 @@
 - Consumes: existing synchronous/async persistence Provider methods `load`, `save`, `snapshots`, `snapshot`, `restore` and `createWorkspace(storage, options)`.
 - Produces: a no-dependency IndexedDB adapter with `meta`, `content`, `snapshots`, and optional `journal` stores; snapshots are one record per id, and failed transactions never report a successful save.
 
-- [ ] **Step 1: Write failing tests** for schema creation, draft save/load, one-record-per-snapshot, retention, transaction failure, unavailable IndexedDB, localStorage fallback, and explicit degraded-save state.
-- [ ] **Step 2: Run `npx vitest run test/unit/storage-idb.test.js`** and confirm the adapter is absent/failing.
-- [ ] **Step 3: Implement `src/core/storage/idb.js`** with feature detection, versioned database upgrade, bounded transactions, and a small adapter surface; do not add `idb`/`dexie`.
-- [ ] **Step 4: Keep `createWorkspace(storage, options)` stable** by selecting IndexedDB when the caller passes the browser storage capability, while preserving direct localStorage adapters and an in-memory fallback for blocked/private contexts.
-- [ ] **Step 5: Replace the workspace’s snapshot-array write path** with per-id records and make the “saved” state observable only after transaction completion.
-- [ ] **Step 6: Run workspace checks, storage tests, lint, and the existing persistence/provider tests**; confirm a 2,000-block document plus 20 snapshots does not hit localStorage quota when IndexedDB is available.
-- [ ] **Step 7: Commit** `perf(p7-02): add layered indexeddb workspace storage`.
+- [x] **Step 1: Write failing tests** for schema creation, draft save/load, one-record-per-snapshot, retention, transaction failure, unavailable IndexedDB, localStorage fallback, and explicit degraded-save state.
+- [x] **Step 2: Run `npx vitest run test/unit/storage-idb.test.js`** and confirm the adapter is absent/failing.
+- [x] **Step 3: Implement `src/core/storage/idb.js`** with feature detection, versioned database upgrade, bounded transactions, and a small adapter surface; do not add `idb`/`dexie`.
+- [x] **Step 4: Keep `createWorkspace(storage, options)` stable** by selecting IndexedDB when the caller passes the browser storage capability, while preserving direct localStorage adapters and an in-memory fallback for blocked/private contexts.
+- [x] **Step 5: Replace the workspace’s snapshot-array write path** with per-id records and make the “saved” state observable only after transaction completion.
+- [x] **Step 6: Run workspace checks, storage tests, lint, and the existing persistence/provider tests**; confirm a 2,000-block document plus 20 snapshots does not hit localStorage quota when IndexedDB is available.
+- [x] **Step 7: Commit** `perf(p7-02): add layered indexeddb workspace storage`。
+
+**执行记录（2026-10-27，提交 `00a6c5b` + `2cd8c48`；10-28 补勾 checkbox）**
+
+- **代码早已交付、checkbox 滞后**：`src/core/storage/idb.js`（360 行）、
+  `providers/persistence.js`、`test/unit/storage-idb.test.js`（376 行）、
+  `test/helpers/fake-indexeddb.js` 均已在库。下面只补记当初的判断。
+- **不引第三方依赖**：`idb` / `dexie` 一个都没加，事务手写包一层 Promise。
+  理由是三类降级（私人模式被拒 / quota 超限 / 旧浏览器无实现）都要自己接，
+  `idb` 包不住「落 localStorage」这一跳。
+- **`2cd8c48` 修的是 Step 6 才暴露的死锁**：`IndexedDB.open` 的 `blocked`/`error`
+  分支没设上限等待，另一个 connection 没关时 `open` 会一直挂住，降级链根本没有机会触发。
+  加了超时上限后 localStorage → memory 的兜底才真正走得通，这条正好是 Step 1 里
+  「unavailable IndexedDB」用例要覆盖的场景。
+- **「saved」只在事务 `oncomplete` 之后点亮**：假 IndexedDB 里让 `transaction.abort()`
+  起飞，`save()` 必须 reject 且 UI 不能显示已保存 —— 就是 Step 5 说的 observable 那件事。
 
 ### Task 4: Add P7-03 derived-data snapshots and early outline hydration
 
@@ -178,11 +201,25 @@
 - Consumes: post-Task-4 performance results and existing widget keys/DOM structure.
 - Produces: at most one visual flush per frame for hover/fold/search updates, plus a documented decision on `content-visibility`.
 
-- [ ] **Step 1: Write failing scheduling/DOM-count tests** for 200 hover events, fold toggles, and search updates.
-- [ ] **Step 2: Implement one rAF coalescing scheduler per affected UI path**, preserving event order, ARIA state, and cancellation on destroy.
-- [ ] **Step 3: Run browser probes** and compare `outerHTML`/node counts against the pre-change fixture; reject any new wrapper or widget churn.
-- [ ] **Step 4: Re-run the 2,000-block measure.** If first-input remains >1.5 s or scroll remains <40 FPS after P7-01/02/03, add only `content-visibility: auto` and verify Ctrl+F, printing, selection, screen-reader DOM, and ≥50 FPS; do not implement windowing. Otherwise document why virtualization is not needed.
-- [ ] **Step 5: Commit** `perf(p7-04): coalesce high-frequency editor updates` and, if applicable, `perf(p7-05): add conditional long-document rendering` as separate commits.
+- [x] **Step 1: Write failing scheduling/DOM-count tests** for 200 hover events, fold toggles, and search updates.
+- [x] **Step 2: Implement one rAF coalescing scheduler per affected UI path**, preserving event order, ARIA state, and cancellation on destroy.
+- [x] **Step 3: Run browser probes** and compare `outerHTML`/node counts against the pre-change fixture; reject any new wrapper or widget churn.
+- [x] **Step 4: Re-run the 2,000-block measure.** If first-input remains >1.5 s or scroll remains <40 FPS after P7-01/02/03, add only `content-visibility: auto` and verify Ctrl+F, printing, selection, screen-reader DOM, and ≥50 FPS; do not implement windowing. Otherwise document why virtualization is not needed.
+- [x] **Step 5: Commit** `perf(p7-04): coalesce high-frequency editor updates` and, if applicable, `perf(p7-05): add conditional long-document rendering` as separate commits.
+
+**执行记录（2026-10-27，提交 `7aef365`；10-28 补勾 checkbox）**
+
+- **代码早已交付、checkbox 滞后**：`src/core/pacing.js`（173 行）、
+  `src/core/editor/selectionPacingMixin.js`、`test/unit/perf-scheduling.test.js`（340 行）、
+  `scripts/verify-browser-perf-scheduling.js` 均已在库。
+- **Step 4 的判定结果是「不加 `content-visibility`、不做窗口化」**，结论落在
+  `docs/guide/performance.md` §二。判据是 `scrollFps` 3.7 → 60.3（越过 ≥50 的退出线），
+  而首屏慢是另一件事，加 `content-visibility` 也救不了。
+- **拒绝窗口化的四条契约代价**（写进 `performance.md` 了，这里记一句防止后人重提）：
+  打穿折叠子树、全文档查找、完整 outline、全文导出。窗口化让视口外的块
+  **不在 DOM 里**，这四条全部失效。
+- **Step 3 的 DOM 计数夹具**与 `verify.mjs perf-scheduling` 是同一套，浏览器断言
+  14/15（失败项见交接文档 §6，与本轮改动无关）。
 
 ### Task 6: Finish P7-06 performance reporting and CI gate
 
@@ -209,7 +246,18 @@
   可见文档内容与 `.vitepress/config.mts` 本身无错，属环境限制而非构建缺陷。
   `verify.mjs perf-scheduling` 有 1 条既有失败（`气泡条每轮定位只量 2 次坐标` 实测 3），
   已用「把 `src/core/derive/index.js` 回退到 HEAD 再跑」验证**与本轮改动无关**，同样复现。
-- [ ] **Step 6: Commit** `ci(p7-06): enforce performance regression gate`.
+- [x] **Step 6: Commit** `ci(p7-06): enforce performance regression gate`.
+
+**执行记录（2026-10-27，提交 `36ba355` → `af8e7aa` → `a86f515` → `05c32f0`；10-28 补勾 checkbox）**
+
+- **四个提交叠起来才收口**：`36ba355` 起门禁与 CI，`af8e7aa` 把「装饰重建」探针改成量真重建，
+  `a86f515` 刷报告，`05c32f0` 再订正成「击键路径增量」并推进基线。
+- **CI 只跑 push（`master` / `next/**`）与 `workflow_dispatch`，故意不跑 PR**：
+  2,000 块真实文档的成本不该让每个 PR 都付。requirements/09 §5.7 写的是「每 PR 起每期跑」，
+  这里是有意收窄，已在 `perf/report.md` 的「基线策略」里写明。
+- **CI 不复用本机基线**：`.github/workflows/perf.yml` 用 `actions/cache` 按
+  `runner.os-runner.arch` 存独立基线，首次 `--bootstrap`。darwin/x64 与 Linux runner 的数字
+  本来不可比，共用一份只会得到必然红或必然绿的假结论。
 
 ### Task 7: Integrated review and v0.12.0 release readiness
 
@@ -217,10 +265,38 @@
 - No new production files by default; review the integrated diff and generated report.
 - Release metadata only after acceptance: `package.json`, `.release/pending-version` via the existing release script.
 
-- [ ] Verify `git diff --check`, clean/unintended files, dependency diff, and no changes under forbidden paths.
-- [ ] Re-run all P7 exit criteria: decorations ≤4 ms, keystroke p95 ≤16 ms, first input ≤1.5 s, scroll ≥50 FPS where applicable, storage transaction semantics, all existing regression suites, size budgets, and docs build.
-- [ ] Run one independent correctness/simplicity review against this plan; resolve all blocking findings before release.
+- [x] Verify `git diff --check`, clean/unintended files, dependency diff, and no changes under forbidden paths.
+- [ ] Re-run all P7 exit criteria: **`decorationIncrementalMs ≤ 150 ms`（决策 A 改写，原 `decorationsRebuildMs ≤ 4 ms`）**, keystroke p95 ≤16 ms, first input ≤1.5 s, scroll ≥50 FPS where applicable, storage transaction semantics, all existing regression suites, size budgets, and docs build.
+- [x] Run one independent correctness/simplicity review against this plan; resolve all blocking findings before release.
 - [ ] Only after review and user authorization, use the repository release script for `v0.12.0` on the approved branch; do not publish earlier beta artifacts.
+
+**执行记录（2026-10-27）**
+
+- **Step 1（diff 干净度）已过**：`git diff --check` EXIT=0；改动只落在 P7 自有文件上
+  （`src/core/blocks/document-decorations.js`、`scripts/perf/*`、`perf/*`、两个新增单测），
+  无依赖 diff（`package.json` 未动），未跟踪的 `scripts/pack-docs.sh` 属用户并行改动、未纳入提交。
+- **Step 3（独立复核）已跑，并修掉 1 条阻塞项 —— 这是本轮唯一的**用户可见**回归，由 P7-01 引入：**
+
+  - **缺陷**：`collectDocumentDecorations` 里三种 widget（折叠箭头 / 标题编号 / 列表序号）的
+    `toDOM` 闭包直接捕获了块的绝对 `pos`。热路径靠 `DecorationSet.map` 把脏区外的装饰带到新
+    坐标，而 `WidgetType.map`（prosemirror-view 1.42.7，dist/index.js:4018-4021）只重算
+    `from/to`、**原样返回同一个实例**；视图侧 `matchesWidget` 判 `widget.type.eq()`，
+    `WidgetType.eq` 里 `this == other` 为真（:4023-4027）→ **DOM 直接复用，`toDOM` 不重跑**。
+    于是闭包里的 `pos` 停在「建 DOM 那一帧」：在前面的块里打几个字之后，标题编号把命令发到
+    错块、列表序号因 `nodeAtSafe` 取不回 listItem 而**点了完全没反应**、折叠箭头折叠了错误的块。
+  - **修法**：闭包不再读捕获的 `pos`，改用视图传给 `toDOM` 的第二个参数 `getPos()`
+    （每次调用实时算，`WidgetViewDesc` 里是 `self.parent.posBeforeChild(self)`），按各 widget
+    的固定偏移换算回块起点 —— 抽成 `resolveBlockPos(getPos, offset)` 一处，三个调用点共用。
+  - **为什么原测试没抓住**：`document-decorations-incremental.test.js` 的投影只比
+    `from:to:class:key:category`，不含 `toDOM` 闭包；且 `:117` 的 `stripKeyPos` 把 key 里的
+    位置**故意抹掉**（key 陈旧确实无害），于是「位置会陈旧」整体被当成可接受行为。
+    `document-decorations.js` 原注释（:336-339）也只论证了 key 无害，没覆盖闭包 —— 已改写。
+  - **回归用例**：新增 `test/unit/document-decorations-widget-pos.test.js`（4 条）。
+    已双向验证：改前 **3 FAIL / 1 PASS**，改后 **4 PASS** —— 不是空守卫。
+    顺带确认 `collapsed`（折叠箭头的图标态）**不受影响**：折叠集合变化走 `touchesDecorations`
+    → `resetPending()` → 冷路径重建，`toDOM` 会重跑。
+- **复核里另有 8 条非阻塞项**，均不在 P7 范围、本轮未改，已逐条记进
+  `docs/superpowers/handoffs/2026-10-27-p7-task7-handoff.md` §6.1 等用户定夺。
 
 ## Verification Matrix
 

@@ -46,6 +46,26 @@ export const DECORATION_CATEGORY = {
 }
 
 /**
+ * 把 widget 的**当前**挂载位置换算回它所属块的起点。
+ *
+ * 为什么 toDOM 闭包里不能直接用外层捕获的块 `pos`：热路径靠 `DecorationSet.map`
+ * 把脏区外的装饰带到新坐标，而 `WidgetType.map`（prosemirror-view 1.42.7）只重算
+ * `from/to`、**原样返回同一个实例**；视图侧 `matchesWidget` 判 `widget.type.eq()`，
+ * `WidgetType.eq` 里 `this == other` 为真 → **DOM 直接复用，`toDOM` 不重跑**。
+ * 闭包里那个 `pos` 因此永远停在「建 DOM 那一帧」的位置：在前面的块里打几个字之后，
+ * 标题编号把命令发到错块、列表序号因 `nodeAt` 取不到 listItem 而静默不弹菜单、
+ * 折叠箭头折叠了错误的块。
+ *
+ * 正解是视图传给 `toDOM` 的第二个参数 `getPos()`：它每次调用都实时算当前位置
+ * （`WidgetViewDesc` 构造里是 `self.parent.posBeforeChild(self)`），DOM 复用也照样准。
+ *
+ * @param {() => number} getPos `toDOM(view, getPos)` 的第二个参数
+ * @param {number} offset 挂载位置到块起点的距离（= 建装饰时的 widget 位置 − 块 pos）
+ * @returns {number} 块起点
+ */
+const resolveBlockPos = (getPos, offset) => getPos() - offset
+
+/**
  * 收集装饰（不建 Set）。
  *
  * `ranges` 为 null → 全文；否则只产出与这些区间相交的装饰。区间由 DerivedIndex 按
@@ -94,7 +114,8 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
     const isItem = node.type.name === 'listItem' || node.type.name === 'taskItem'
     if (isItem && (!node.childCount || node.child(0).type.name !== 'paragraph')) return
     const widgetPos = isItem ? pos + 2 : pos + 1
-    decorations.push(Decoration.widget(widgetPos, () => {
+    const blockOffset = widgetPos - pos
+    decorations.push(Decoration.widget(widgetPos, (view, getPos) => {
       const button = document.createElement('button')
       const label = collapsed ? '展开' : '收起'
       button.type = 'button'
@@ -121,17 +142,19 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
       button.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
+        // 点击发生时的块起点，不是建这个按钮那一帧的块起点（见 resolveBlockPos）。
+        const at = resolveBlockPos(getPos, blockOffset)
         const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
-        const foldRange = foldedRange(editor.state.doc, pos)
+        const foldRange = foldedRange(editor.state.doc, at)
         // 光标落在即将隐藏的章节正文里：折叠后把焦点移回调用的标题，
         // 避免选区留在 display:none 的后代中（13.6.1 焦点迁移规则）。
         const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
-        if (enabled('folding')) editor.commands.toggleLarkDocFold(pos)
-        if (caretInBody) editor.commands.setTextSelection(pos + 1)
+        if (enabled('folding')) editor.commands.toggleLarkDocFold(at)
+        if (caretInBody) editor.commands.setTextSelection(at + 1)
         editor.view.focus()
         // 视口锚定：当前滚动位置落入被折叠内容时，把标题带回可视区。
         if (!wasFolded) {
-          const dom = editor.view.nodeDOM(pos)
+          const dom = editor.view.nodeDOM(at)
           if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
         }
       })
@@ -146,7 +169,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
     // 不要再 doc.nodeAt(pos) —— 那是 O(子节点数) 的随机访问。
     if (!Number.isInteger(pos) || pos < 0 || pos >= doc.content.size) return
     if (!inWindow(pos)) return
-    decorations.push(Decoration.widget(pos + 1, () => {
+    decorations.push(Decoration.widget(pos + 1, (view, getPos) => {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'lark-doc-heading-number'
@@ -161,17 +184,20 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
         event.preventDefault()
         event.stopPropagation()
         if (!enabled('headings') || !editor.isEditable) return
+        // 两处都必须读**点击这一刻**的值，不能用闭包捕获的：
+        // ① pos —— 同标签的编号会复用同一个 widget DOM，`toDOM` 不重跑，
+        //   捕获的 pos 停在编辑前，命令会发到错块上（见 resolveBlockPos）；
+        // ② state —— 设过起点后若仍按建 DOM 那一帧的状态判，会把「继续编号」
+        //   误判成已连续而禁用，点了没反应。
+        const at = resolveBlockPos(getPos, 1)
         const rect = button.getBoundingClientRect()
         if (options.onHeadingNumberMenu) {
           options.onHeadingNumberMenu({
-            pos,
+            pos: at,
             label: info.label,
             level: info.level,
             // 「继续」在已经处于继续态时禁用 —— 与飞书菜单一致。
-            // 必须读**当前**编辑器状态：同标签的编号会复用同一个 widget DOM，
-            // 闭包里捕获的 state 是建 DOM 那一帧的旧状态（设过起点后仍判成连续态，
-            // 于是「继续编号」被误禁用、点了没反应）。
-            canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, pos)?.attrs?.numberingStart),
+            canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, at)?.attrs?.numberingStart),
             rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
           })
         }
@@ -195,7 +221,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
     if (!firstChildIsParagraph) return
     if (!inWindow(pos)) return
     const interactive = className === 'lark-doc-list-number'
-    decorations.push(Decoration.widget(pos + 2, () => {
+    decorations.push(Decoration.widget(pos + 2, (view, getPos) => {
       const marker = document.createElement(interactive ? 'button' : 'span')
       marker.className = className
       marker.contentEditable = 'false'
@@ -214,16 +240,19 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
         event.preventDefault()
         event.stopPropagation()
         if (!editor.isEditable || !options.onListNumberMenu) return
-        const current = nodeAtSafe(editor.state.doc, pos)
+        // 同样不能读闭包捕获的 pos：复用 DOM 后它停在编辑前，`nodeAt` 拿回来的
+        // 不是 listItem（通常是个文本节点）→ 下面的守卫直接 return，点了没反应。
+        const at = resolveBlockPos(getPos, 2)
+        const current = nodeAtSafe(editor.state.doc, at)
         if (!current || current.type.name !== 'listItem') return
         options.onListNumberMenu({
-          pos,
+          pos: at,
           label,
           depth,
           // 编号实际值（a./i. 这类格式拿不回数字，菜单预填要用它）。
           value,
           // 「继续编号」只在这个 item 有显式起点时可点，与标题编号同款判断。
-          canContinue: canContinueListNumber(editor.state.doc, pos),
+          canContinue: canContinueListNumber(editor.state.doc, at),
           rect: markerRect(marker),
         })
       })
@@ -337,6 +366,11 @@ function expandFoldWindows(doc, storage, ranges) {
  * `DecorationSet.map` 只搬 `from/to`、不重写 key，所以脏区外的 key 会保留编辑前的
  * 位置。key 在视图里只当**身份令牌**（同位置新旧 widget 比 key 决定是否复用 DOM），
  * 没人解析里面的数字，唯一真值是 `from/to`。别为了「key 干净」去全量重建。
+ *
+ * ⚠️ 但「`from/to` 是最新的」不等于「widget 的行为是最新的」：复用 DOM 的同时
+ * `toDOM` 不会重跑，闭包捕获的变量一并停在建 DOM 那一帧。凡是**点击时要用的坐标**
+ * 都不能走闭包，必须现取 —— 见 `resolveBlockPos`。这条踩过一次：
+ * `test/unit/document-decorations-widget-pos.test.js`。
  *
  * @returns {import('@tiptap/pm/view').DecorationSet|null} 返回 null = 「这帧不适合增量」，
  *   调用方退回全量重建。
