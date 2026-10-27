@@ -46,22 +46,16 @@ export const DECORATION_CATEGORY = {
 }
 
 /**
- * 把 widget 的**当前**挂载位置换算回它所属块的起点。
- *
- * 为什么 toDOM 闭包里不能直接用外层捕获的块 `pos`：热路径靠 `DecorationSet.map`
- * 把脏区外的装饰带到新坐标，而 `WidgetType.map`（prosemirror-view 1.42.7）只重算
- * `from/to`、**原样返回同一个实例**；视图侧 `matchesWidget` 判 `widget.type.eq()`，
- * `WidgetType.eq` 里 `this == other` 为真 → **DOM 直接复用，`toDOM` 不重跑**。
- * 闭包里那个 `pos` 因此永远停在「建 DOM 那一帧」的位置：在前面的块里打几个字之后，
- * 标题编号把命令发到错块、列表序号因 `nodeAt` 取不到 listItem 而静默不弹菜单、
- * 折叠箭头折叠了错误的块。
- *
- * 正解是视图传给 `toDOM` 的第二个参数 `getPos()`：它每次调用都实时算当前位置
- * （`WidgetViewDesc` 构造里是 `self.parent.posBeforeChild(self)`），DOM 复用也照样准。
- *
+ * 把 widget 的**当前**挂载位置换算回所属块的起点。
+ * toDOM 闭包里不能直接用外层捕获的块 `pos`：热路径靠 `DecorationSet.map` 把脏区外的装饰带到
+ * 新坐标，而 `WidgetType.map`（prosemirror-view 1.42.7）只重算 `from/to`、**原样返回同一实例**，
+ * 视图侧 `matchesWidget` 判的 `WidgetType.eq` 里 `this == other` 为真 → **DOM 直接复用、`toDOM`
+ * 不重跑**，那个 `pos` 因此停在「建 DOM 那一帧」：在前面的块里打几个字之后，标题编号把命令发
+ * 到错块、列表序号因 `nodeAt` 取不到 listItem 而静默不弹菜单、折叠箭头折叠错块。正解是视图传
+ * 给 `toDOM` 的第二个参数 `getPos()` —— 每次调用实时算当前位置（`WidgetViewDesc` 里是
+ * `self.parent.posBeforeChild(self)`），DOM 复用也照样准。
  * @param {() => number} getPos `toDOM(view, getPos)` 的第二个参数
  * @param {number} offset 挂载位置到块起点的距离（= 建装饰时的 widget 位置 − 块 pos）
- * @returns {number} 块起点
  */
 const resolveBlockPos = (getPos, offset) => getPos() - offset
 
@@ -142,7 +136,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
       button.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
-        // 点击发生时的块起点，不是建这个按钮那一帧的块起点（见 resolveBlockPos）。
+        // 块起点按点击那一刻算，不是建这个按钮那一帧（见 resolveBlockPos）。
         const at = resolveBlockPos(getPos, blockOffset)
         const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
         const foldRange = foldedRange(editor.state.doc, at)
@@ -184,11 +178,8 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
         event.preventDefault()
         event.stopPropagation()
         if (!enabled('headings') || !editor.isEditable) return
-        // 两处都必须读**点击这一刻**的值，不能用闭包捕获的：
-        // ① pos —— 同标签的编号会复用同一个 widget DOM，`toDOM` 不重跑，
-        //   捕获的 pos 停在编辑前，命令会发到错块上（见 resolveBlockPos）；
-        // ② state —— 设过起点后若仍按建 DOM 那一帧的状态判，会把「继续编号」
-        //   误判成已连续而禁用，点了没反应。
+        // 两处都必须读点击那一刻的值：① pos（见 resolveBlockPos）；
+        // ② state —— 按建 DOM 那一帧的状态判，会把「继续编号」误判成已连续而禁用。
         const at = resolveBlockPos(getPos, 1)
         const rect = button.getBoundingClientRect()
         if (options.onHeadingNumberMenu) {
@@ -240,8 +231,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
         event.preventDefault()
         event.stopPropagation()
         if (!editor.isEditable || !options.onListNumberMenu) return
-        // 同样不能读闭包捕获的 pos：复用 DOM 后它停在编辑前，`nodeAt` 拿回来的
-        // 不是 listItem（通常是个文本节点）→ 下面的守卫直接 return，点了没反应。
+        // 同样不能读捕获的 pos：它停在编辑前，`nodeAt` 拿不回 listItem → 下面直接 return，点了没反应。
         const at = resolveBlockPos(getPos, 2)
         const current = nodeAtSafe(editor.state.doc, at)
         if (!current || current.type.name !== 'listItem') return
@@ -367,10 +357,8 @@ function expandFoldWindows(doc, storage, ranges) {
  * 位置。key 在视图里只当**身份令牌**（同位置新旧 widget 比 key 决定是否复用 DOM），
  * 没人解析里面的数字，唯一真值是 `from/to`。别为了「key 干净」去全量重建。
  *
- * ⚠️ 但「`from/to` 是最新的」不等于「widget 的行为是最新的」：复用 DOM 的同时
- * `toDOM` 不会重跑，闭包捕获的变量一并停在建 DOM 那一帧。凡是**点击时要用的坐标**
- * 都不能走闭包，必须现取 —— 见 `resolveBlockPos`。这条踩过一次：
- * `test/unit/document-decorations-widget-pos.test.js`。
+ * ⚠️ 但「`from/to` 最新」不等于「widget 行为最新」：复用 DOM 时 `toDOM` 不重跑，闭包捕获的变量
+ * 停在建 DOM 那一帧。凡是**点击时要用的坐标**都不能走闭包 —— 见 `resolveBlockPos`，回归用例 `test/unit/document-decorations-widget-pos.test.js`。
  *
  * @returns {import('@tiptap/pm/view').DecorationSet|null} 返回 null = 「这帧不适合增量」，
  *   调用方退回全量重建。
