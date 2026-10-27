@@ -3,12 +3,13 @@
  * （requirements/09 §3.7 契约：P0-11 定签名 + 「全量重建」兜底实现，P7-01 填脏区实现。）
  *
  * 两条装饰路径（P7-01 起）：
- * - **热路径**（`docChanged` 的事务）：`update(tr)` 按 §3.7 纪律 1 从 `tr.mapping.maps`
+ * - **热路径**（文本块内的纯文字改动）：`update(tr)` 按 §3.7 纪律 1 从 `tr.mapping.maps`
  *   收集**全部**改动区间，并按「块 + 一层父块」扩张、标题改动向后传播到下一个更高级标题；
  *   `decorations()` 用 `oldSet.map` 打底 + 只重算这些区间。
- * - **冷路径**（纯 meta 事务 / 换文档 / `invalidate()`）：整份重建。
- *   搜索词、折叠集合、把手悬停都走 tr meta，它们改的是 UI 状态而不是正文，
- *   整份重建比局部推断更稳（点击级操作，不在击键路径上）。
+ * - **冷路径**（结构变更 / 纯 meta 事务 / 换文档 / `invalidate()`）：整份重建。
+ *   节点增删、attrs 变更（缩进、级别、起编号）会让窗口外的序号与折叠变样，搜索词、
+ *   折叠集合、把手悬停改的是 UI 状态而不是正文，两者都整份重建更稳 ——
+ *   它们都是点击 / 回车级操作，不在击键路径上。
  */
 import {
   collectOutline,
@@ -142,6 +143,50 @@ function expandDirtyRanges(doc, ranges) {
   return mergeRanges(ranges.map((range) => extendHeadingRange(doc, expandBlockRange(doc, range))))
 }
 
+/** `from..to` 是否落在**同一个文本块内部**（不跨块边界）。 */
+function insideOneTextblock(doc, from, to) {
+  if (!doc?.resolve) return false
+  const size = doc.content.size
+  const start = Math.max(0, Math.min(size, from))
+  const end = Math.max(start, Math.min(size, to))
+  try {
+    const $from = doc.resolve(start)
+    const $to = doc.resolve(end)
+    if (!$from.parent?.isTextblock || !$to.parent?.isTextblock) return false
+    return $from.parent === $to.parent && start >= $from.start($from.depth) && end <= $from.end($from.depth)
+  } catch (_) {
+    return false
+  }
+}
+
+/**
+ * 「这一笔事务只改了某个文本块里的文字」——热路径唯一的准入条件。
+ *
+ * 为什么门槛放在 step 上：列表序号在同列表内累进、标题编号向后传播、折叠资格由
+ * 「有没有缩进子树」决定、折叠段边界随标题/后代变化 —— 这四类都是**结构派生**的，
+ * 一次节点增删或 attrs 变更就能让窗口外的装饰变样（插入一个列表项会让其后所有序号 +1，
+ * 改 indent 会让父块的折叠箭头出现或消失），而窗口只覆盖被改块本身。
+ *
+ * 判断方式：
+ * - 插入切片必须全是文字（含一个段落就说明在拆块，属结构变更）；
+ * - 替换范围（含纯删除）必须落在同一文本块内部：删整段、合并段落、跨块选区都算结构变更。
+ *
+ * 非 ReplaceStep（`setNodeMarkup` / `addMark` / 结构替换）没有 `slice`，一律算结构变更。
+ * 结构变更由调用方退回全量重建 —— 那是回车 / 粘贴 / 缩进 / 列表增删级操作，
+ * 不在击键路径上，2,000 块约 36 ms，换取「绝不出现错号或漏折叠」。
+ */
+function isTextOnlyChange(doc, steps) {
+  if (!Array.isArray(steps) || !steps.length) return false
+  return steps.every((step) => {
+    const slice = step && step.slice
+    if (!slice || !slice.content) return false
+    let textOnly = true
+    slice.content.forEach((node) => { if (!node.isText) textOnly = false })
+    if (!textOnly) return false
+    return insideOneTextblock(doc, step.from, step.to)
+  })
+}
+
 /**
  * @param {object} options
  * @param {import('@tiptap/pm/model').Node} options.doc 首次构建时的文档（骨架期仅作初始 doc 引用）
@@ -208,11 +253,17 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
       const docChanged = tr.docChanged || rawChanged.length > 0
       const expanded = docChanged ? expandDirtyRanges(currentDoc, rawChanged) : []
       if (docChanged) {
-        pendingRanges = mergeRanges([
-          ...mapForward(tr.mapping, pendingRanges),
-          ...mapForward(tr.mapping, expanded),
-        ])
-        pendingSteps.push({ mapping: tr.mapping, doc: tr.doc })
+        // 只有「文本块内的纯文字改动」才值得脏区重扫；节点增删 / attrs 变更会让
+        // 窗口外的编号与折叠变样，直接整份重建（判据见 isTextOnlyChange）。
+        if (isTextOnlyChange(currentDoc, tr.steps)) {
+          pendingRanges = mergeRanges([
+            ...mapForward(tr.mapping, pendingRanges),
+            ...mapForward(tr.mapping, expanded),
+          ])
+          pendingSteps.push({ mapping: tr.mapping, doc: tr.doc })
+        } else {
+          resetPending()
+        }
         dirty = true
       } else if (touchesDecorations) {
         // 纯 UI 事务（搜索词 / 折叠集合 / 把手悬停）：改的是装饰输入，整份重建比

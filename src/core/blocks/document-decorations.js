@@ -244,9 +244,10 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
       if (!folded) return
       const { from, to, node: heading } = folded
       // 脏区模式：整段折叠区都不在脏区里就一条都不给（脏区外的旧装饰原地不动）。
-      // 判据用整段 from..to：窗口已被 updateDocumentDecorations 扩到「包含整段折叠区」，
-      // 所以这里的 from/to 要么全在窗口内、要么完全不相交，不会出现半段重复。
-      if (!overlaps(from, to)) return
+      // 判据用 `[pos, to)`（**含标题**）：折叠装饰本身覆盖标题，只用后代段 from..to
+      // 判断时「脏区正好落在标题上」会判成不相交，于是摘掉又不补，折叠整体消失。
+      // updateDocumentDecorations 的窗口也是同一个口径（起点取 pos），两边必须一致。
+      if (!overlaps(pos, to)) return
       decorations.push(Decoration.node(pos, pos + heading.nodeSize, { class: 'lark-doc-heading-folded' }, { category: DECORATION_CATEGORY.FOLD_HIDDEN }))
       doc.nodesBetween(from, to, (node, at) => {
         // display:none 已退出布局与 Tab 顺序；aria-hidden 让屏幕阅读器
@@ -298,6 +299,12 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
  * 折叠隐藏的装饰是**一段**（标题 + 全部后代块），一条 node decoration 就跨过整段。
  * 如果只按原始脏区摘除，会把一段折叠区摘掉半截、其余仍留在旧集合里；因此摘除窗口
  * 与新建窗口必须同为「含整段」。折叠区通常就是一两屏，代价可以忽略。
+ *
+ * 折叠集合非空时**无条件**把每一段都并入窗口，不做「与脏区相交才扩」的剪裁：
+ * 折叠装饰的范围是 `[标题起点, 段末)`，而脏区右缘常常正好落在标题起点上
+ * （编辑上一个块 → 窗口右端 = 本块起点 = 标题起点），相交判定在边界上会漏掉这一段：
+ * `find` 的闭区间把装饰摘掉，收集侧却因为不相交一条都不补 —— 折叠整体消失。
+ * 折叠集合是个位数，全量并入的代价可以忽略（这是「宁可多算几个块」的地方）。
  */
 function expandFoldWindows(doc, storage, ranges) {
   const windows = ranges.map((range) => ({ from: range.from, to: range.to }))
@@ -308,9 +315,8 @@ function expandFoldWindows(doc, storage, ranges) {
     if (pos === undefined) return
     const range = foldedRange(doc, pos)
     if (!range) return
-    const touched = windows.some((window) => window.from < range.to && window.to > range.from)
-    if (!touched) return
-    windows.push({ from: range.from, to: range.to })
+    // 起点用标题自身的 pos，不是后代段起点 —— `lark-doc-heading-folded` 覆盖标题。
+    windows.push({ from: pos, to: range.to })
   })
   return windows
 }
@@ -346,9 +352,15 @@ export function updateDocumentDecorations({ state, storage, editor, enabled, opt
   // 未编号标题不传播 —— 理由见 derive/index.js 的 extendHeadingRange。
   const expanded = mergeRanges(ranges.map((range) => extendHeadingRange(doc, range)))
   const windows = expandFoldWindows(doc, storage, expanded)
+  // 口径差必须在这里抹平：窗口是半开 `[from, to)`（收集侧的 `inWindow`/`nodesBetween`
+  // 都是这个口径），而 `DecorationSet.find(start, end)` 是**闭区间**。直接用 `to` 作上界
+  // 会把「起点正好等于 to」的装饰摘掉 —— 脏区右缘落在下一个块起点上是常态
+  // （拖整块 + 向右 map），于是下一个块的提醒蒙层 / 折叠装饰被摘掉却不会被重新收集。
+  // 上界取 `to - 1` 才是 `[from, to)`；位置是整数，不会误伤 `to` 之前的装饰。
   const stale = []
   windows.forEach((window) => {
-    previous.find(window.from, window.to, (spec) => spec && spec.category !== DECORATION_CATEGORY.HOVER).forEach((decoration) => stale.push(decoration))
+    const upper = Math.max(window.from, window.to - 1)
+    previous.find(window.from, upper, (spec) => spec && spec.category !== DECORATION_CATEGORY.HOVER).forEach((decoration) => stale.push(decoration))
   })
   // 悬停不属于文档内容：docChanged 时 plugin 已把 handleHover 清成 null，
   // 旧悬停装饰必须摘掉（编辑后鼠标早已不在原块上）。平时没有悬停装饰，
@@ -356,7 +368,9 @@ export function updateDocumentDecorations({ state, storage, editor, enabled, opt
   if (!storage.handleHover) {
     previous.find(0, doc.content.size, (spec) => spec && spec.category === DECORATION_CATEGORY.HOVER).forEach((decoration) => stale.push(decoration))
   }
-  const stripped = stale.length ? previous.remove(stale) : previous
+  // 窗口可能相邻/重叠（折叠窗口是无条件并入的），同一条装饰会被多次 push；
+  // 按对象身份去重，`remove` 内部是线性查找，重复项会让它退化成平方级。
+  const stripped = stale.length ? previous.remove([...new Set(stale)]) : previous
   const fresh = collectDocumentDecorations({ state, storage, editor, enabled, options, ranges: windows, includeHover: !!storage.handleHover })
   return fresh.length ? stripped.add(doc, fresh) : stripped
 }
