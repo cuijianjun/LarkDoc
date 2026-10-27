@@ -10,15 +10,16 @@
 ## 0. 一句话状态
 
 **P7-01 ~ P7-06 的代码全部落地、已提交、已推 `origin/next/0.12`。** `Task 7`（集成复核 + 发布就绪）
-的两个决策**已由用户拍板并执行**（§3），复核三件事里「diff 干净度」与「独立复核」**已过**，
-独立复核中揪出的 1 条**用户可见回归已修**（§6.0）。**剩最后一件：全量退出判据复跑**
-（`check:gate` + `check:artifacts` + `check:perf`）。
-发布三件（`v0.12.0` tag / `npm publish` / 合 `master`）**一律未授权、保持悬停**。
+**四件事里三件已完成**：决策 A/B 已由用户拍板并执行（§3），diff 干净度 ✓、独立复核 ✓、
+**全量退出判据复跑 ✓（`check:gate` + `check:artifacts` + `check:perf` 全 EXIT=0，见 §4.3）**。
+独立复核揪出的 1 条用户可见回归已修（§6.0），8 条非阻塞项挂账等用户定夺（§6.1）。
+**剩下的只有发布**：`v0.12.0` tag / `npm publish` / 合 `master` —— **一律未授权、保持悬停**。
 
 ## 1. 仓库与状态
 
 - 仓库根：`/Users/cjjxw/codex/tiptap-integration-demos/apps/lark-doc`（**不是** `apps/`，所有命令先 cd 进去）
-- 分支：`next/0.12`，HEAD = `05c32f0 perf(p7): 把装饰探针改成量击键路径增量，并推进性能基线`，与 `origin/next/0.12` 同步
+- 分支：`next/0.12`，HEAD = `5ee6f10 chore(p7): 压缩 document-decorations.js 注释至 398 行，满足 P0-04 <400 断言`
+  （上一个功能提交是 `fa2226e fix(p7): widget 点击目标改读 getPos，并落地决策 A/B 结论`）
 - 版本：`package.json` = `0.12.0-beta.8`（**本轮未改版本号**，未打 tag，未发布）
 - 计划原文：`docs/superpowers/plans/2026-10-27-p7-performance-closure.md`
 
@@ -34,7 +35,7 @@
 | Task 4（P7-03 快照水合） | 已勾 | done：`src/core/derive/snapshot.js` + `derived-snapshot.test.js` | `5e3bbe0` |
 | Task 5（P7-04 rAF 合并 / P7-05 决策） | **全未勾（滞后）** | **done**：`src/core/pacing.js`（173 行）+ `editor/selectionPacingMixin.js` + `perf-scheduling.test.js`（340 行）+ `verify-browser-perf-scheduling.js`；P7-05 结论「不窗口化」已落 `docs/guide/performance.md` §二 | `7aef365` |
 | Task 6（P7-06 报告 + CI 门禁） | Step 1-5 勾，Step 6 未勾 | **done**：`scripts/perf/gate.mjs` + `perf-gate.test.js` + `perf/report.md` + **`.github/workflows/perf.yml` 已存在** | `36ba355` / `af8e7aa` / `a86f515` / `05c32f0` |
-| Task 7（集成复核 + 发布就绪） | 前 3 条里 1、3 已勾 | **进行中**：diff 干净度 ✓、独立复核 ✓（并修掉 1 条阻塞回归），**剩退出判据复跑** | 本轮未提交 |
+| Task 7（集成复核 + 发布就绪） | 第 4 条未勾 | **复核 3/3 全过**：diff 干净度 ✓、退出判据复跑 ✓、独立复核 ✓（并修掉 1 条阻塞回归）；**只剩发布未授权** | `fa2226e` + `5ee6f10` |
 
 补勾计划文档是可选的收尾动作（属于同一批文件、不涉及用户并行改动），但**先别急着改文档**，先看 §3 的决策。
 
@@ -126,7 +127,7 @@
 ## 4. Task 7 要做的（计划 214–223 行）
 
 - [x] `git diff --check`、检查干净度 / 未预期文件 / 依赖 diff / 是否碰了禁改路径 —— **已过**（见下面 §4.2）
-- [ ] 重跑全部 P7 退出判据（现状见 §4.1）—— **剩这条**，即 `check:gate` + `check:artifacts` + `check:perf`
+- [x] 重跑全部 P7 退出判据（现状见 §4.1）—— **已过**：`check:gate` + `check:artifacts` + `check:perf` 全 EXIT=0，明细见 §4.3
 - [x] 一次独立的 correctness/simplicity 复核（对着计划逐条挑）—— **已过**：8 条非阻塞 + 1 条阻塞，
       阻塞项已修并补了双向验证过的回归用例（见 §6.1）
 - [ ] 只有复核通过且**用户明确授权**后，才走仓库发布脚本发 `v0.12.0`；不得提前发 beta 产物 —— **仍悬停**
@@ -140,9 +141,41 @@
 | `mountToTypeableMs` | ≤ 1500 | **38810.1** | ✗ 差一个数量级以上 |
 | `scrollFps` | ≥ 50 | **59.3** | ✓ |
 | 存储事务语义 | 用例全绿 | `storage-idb` 通过 | ✓ |
-| 回归套件 | `check:gate` EXIT=0 | 待 §4 第 2 条复跑 | 上次 EXIT=0 |
-| 体积预算（4 + 1） | 不涨 | 待 `check:artifacts` 复跑 | 上次 ✓ |
+| 回归套件 | `check:gate` EXIT=0 | **EXIT=0（71 文件 / 1664 用例全绿）** | ✓ 已复跑 |
+| 体积预算（4 + 1） | 不涨 | ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB | ✓ 已复跑 |
+| 性能门禁 | 无一指标退化 >20% | 7/7 ✓（见 §4.3） | ✓ 已复跑 |
 | docs build | EXIT=0 | 原地构建被环境垫片拦，换 outDir 后 EXIT=0 | ⚠ 环境限制 |
+
+### 4.3 全量复跑结果（2026-10-27T17:0x–17:14 UTC，HEAD `5ee6f10`）
+
+| 环节 | 命令 | 结果 |
+| --- | --- | --- |
+| 单测 + lint + 主题 + 部署 + 架构 | `npm run check:gate` | **EXIT=0**，71 个测试文件 / **1664** 条用例全绿 |
+| 五产物 + Vditor + 体积 | `npm run check:artifacts` | EXIT=0；`artifacts:check` 复验 EXIT=0（5/5 产物就绪） |
+| 性能门禁 | `npm run check:perf` | EXIT=0；`node scripts/perf/gate.mjs` 复验 EXIT=0 |
+| 本地块契约（**非 CI 环节**） | `npm run contract:check` | 初次 EXIT=1：`_codex/contract/document-decorations.json` 因本轮改了源文件而过期 → 重新生成后 EXIT=0。`_codex/` 未被 git 跟踪，不影响仓库 |
+
+`check:perf` 实测（17:12Z 采集，**没有** `--update`，基线仍是 `15:45:16Z` 那一份）：
+
+| 指标 | 基线 | 本次 | Δ | 判定 |
+| --- | ---: | ---: | ---: | --- |
+| `mountToTypeableMs` | 38810.1 | 34692.3 | −11% | ✓ |
+| `keystrokeP95Ms` | 939.7 | 814.9 | −13% | ✓ |
+| `keystrokeP99Ms` | 2372.1 | 1949.9 | −18% | ✓ |
+| `decorationIncrementalMs` | 78.8 | 73.9 | −6% | ✓ |
+| `scrollFps` | 59.3 | 58.7 | −1% | ✓ |
+| `saveProxyMs` | 24.6 | 22.8 | −7% | ✓ |
+| `heapMB` | 107.8 | 107.8 | 0% | ✓ |
+
+**注意**：`check:perf` 里 `npm run build:element` 会重写 `dist/lark-doc-element.umd.min.js`，
+所以「先 `check:artifacts` 量体积、后 `check:perf` 重建 element」这个顺序下，体积表里量到的
+Element 是**上一次**构建。本次顺序即如此；两者同为 470.34 vs 460.76 KiB gzip，都在 480 预算内，
+结论不受影响 —— 但真要拿体积当发布凭据时，应在 `check:perf` **之后**再跑一次 `npm run size`。
+
+**中途踩到的一次返工**：给 `document-decorations.js` 补机制注释后该文件到 411 行，顶破
+`P0-04` 的 `<400 行` 断言，`check:architecture` 挂住 → 整个 `check:gate` 停摆（`check:unit`
+压根没跑到）。压实注释到 **398 行**（提交 `5ee6f10`）后才全绿。教训：给 `src/core/blocks/`
+下的文件加长注释前先数行数。
 
 ### 4.2 Step 1 diff 干净度结论
 
@@ -226,7 +259,12 @@ widget 装饰的 `toDOM` 闭包捕获块的绝对 `pos`，而脏区外的 widget
   `npx vitepress build . --outDir /tmp/vp-dist-check`。
 - `globalThis` 在 `.eslintrc` 里**未声明**（只开 `env:{node:true}`，ecmaVersion 停在 2018）→
   `no-undef` 报错。用文件级 `/* global globalThis */` 解决，**别去改 `.eslintrc` 加 `es2020:true`**（会连带放宽 ecmaVersion）。
-- **不要主动跑全量单测 / `npm run build*` / `size-limit`** —— 用户明确要求等他的命令。
+- ~~不要主动跑全量单测 / `npm run build*` / `size-limit` —— 用户明确要求等他的命令~~
+  **已解除（2026-10-27）**：用户拍板「P7 完全开发完成后一次跑，中途不跑」→ 收口后已跑完，
+  结果见 §4.3。此后如需重跑仍需用户命令，但不必再等一个固定的解锁信号。
+- **这个 shell 是 zsh，`$PIPESTATUS` 拿不到** → `cmd | tail -n; echo ${PIPESTATUS[0]}` 会打出**空串**，
+  看起来像「没失败」其实是没取到。要退出码就别接管道（`cmd > /tmp/x 2>&1; echo $?`），
+  或单独再跑一次 `--check` 形态的命令复验。
 - 后台服务与长命令一律 `run_in_background`；demo（`apps/vue2-webpack-node14`，8080，`/lark-doc`）
   必须用 Node14 启动，且它**软链加载 dist，改源码后要 rebuild**。
 - vitest 强制 `environment: 'node'`（无 DOM、无 rAF），console 输出需去 ANSI 才能看清。
@@ -258,8 +296,12 @@ node scripts/verify.mjs element perf-scheduling
 
 ## 9. 开工顺序建议
 
-1. **先问用户 §3 的两个决策**（A：72.6 ms 压不压；B：基线要不要空闲重采）。这两条不定，Task 7 复核写不出结论。
-2. 决策定了再动手补计划文档的 checkbox（Task 3 / Task 5 / Task 6 Step 6），让它和代码对齐 —— 这是纯文档动作，不碰用户并行改动。
-3. 然后做 Task 7 的复核三件事：diff 干净度 → 退出判据复跑 → 独立 correctness/simplicity 复核。
-4. 复核结论要**诚实**：门禁与滚动达标，三条绝对耗时线带着 §4.1 的根因进发布，不粉饰。
-5. 发布必须**等用户明确下命令**，别自己起念。
+> **1–4 已全部完成（2026-10-27）**，下面保留原顺序作记录。新会话从 5 开始。
+
+1. ~~先问用户 §3 的两个决策~~ **已拍板**（A：改写判据 + 报告写实；B：提升采样数后重采）。
+2. ~~补计划文档的 checkbox~~ **已补**（Task 7 第 2 条）。
+3. ~~Task 7 的复核三件事~~ **3/3 全过**（§4）。
+4. ~~复核结论要诚实~~ **已写实**（§4.1 / §4.3）：门禁与滚动达标，三条绝对耗时线带着已定位的根因进发布，未粉饰。
+5. **发布必须等用户明确下命令，别自己起念。** 这是当前**唯一**未完成项：
+   `bash scripts/release.sh`（打 `v0.12.0` tag）→ `npm publish` → 合 `master`，
+   三件各自都要单独授权，且**禁止合并 `master`** 的硬约束只在用户明确改口后才解除。

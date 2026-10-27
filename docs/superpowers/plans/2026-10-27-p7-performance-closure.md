@@ -266,11 +266,40 @@
 - Release metadata only after acceptance: `package.json`, `.release/pending-version` via the existing release script.
 
 - [x] Verify `git diff --check`, clean/unintended files, dependency diff, and no changes under forbidden paths.
-- [ ] Re-run all P7 exit criteria: **`decorationIncrementalMs ≤ 150 ms`（决策 A 改写，原 `decorationsRebuildMs ≤ 4 ms`）**, keystroke p95 ≤16 ms, first input ≤1.5 s, scroll ≥50 FPS where applicable, storage transaction semantics, all existing regression suites, size budgets, and docs build.
+- [x] Re-run all P7 exit criteria: **`decorationIncrementalMs ≤ 150 ms`（决策 A 改写，原 `decorationsRebuildMs ≤ 4 ms`）**, keystroke p95 ≤16 ms, first input ≤1.5 s, scroll ≥50 FPS where applicable, storage transaction semantics, all existing regression suites, size budgets, and docs build.
 - [x] Run one independent correctness/simplicity review against this plan; resolve all blocking findings before release.
 - [ ] Only after review and user authorization, use the repository release script for `v0.12.0` on the approved branch; do not publish earlier beta artifacts.
 
 **执行记录（2026-10-27）**
+
+- **Step 2（退出判据全量复跑）已跑，结果见表 —— 结论是「门禁全绿，三条绝对耗时线仍不达标」：**
+
+  | 环节 | 命令 | 结果 |
+  | --- | --- | --- |
+  | 单测 + lint + 主题 + 部署 + 架构 | `npm run check:gate` | **EXIT=0**（71 个测试文件 / **1664** 条用例全绿） |
+  | 五产物 + Vditor + 体积预算 | `npm run check:artifacts` | EXIT=0（ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB，均在预算内；Vditor 兼容 93 项通过） |
+  | 性能门禁 | `npm run check:perf` | EXIT=0，7 项指标**无一退化 >20%** |
+  | 本地块契约（非 CI 环节） | `npm run contract:check` | `_codex/contract/document-decorations.json` 因本轮改了源文件而过期 → 重新生成后 EXIT=0 |
+
+- **`check:perf` 实测（`2026-10-27T17:12Z` 采集，非 `--update`，基线仍是 `15:45:16Z` 那一份）**：
+
+  | 指标 | 基线 | 本次 | Δ | 判定 |
+  | --- | ---: | ---: | ---: | --- |
+  | `mountToTypeableMs` | 38810.1 | 34692.3 | −11% | ✓ |
+  | `keystrokeP95Ms` | 939.7 | 814.9 | −13% | ✓ |
+  | `keystrokeP99Ms` | 2372.1 | 1949.9 | −18% | ✓ |
+  | `decorationIncrementalMs` | 78.8 | 73.9 | −6% | ✓ |
+  | `scrollFps` | 59.3 | 58.7 | −1% | ✓ |
+  | `saveProxyMs` | 24.6 | 22.8 | −7% | ✓ |
+  | `heapMB` | 107.8 | 107.8 | 0% | ✓ |
+
+  `keystroke` / `mount` 两条绝对线**仍未达标也不瞄着达标**（目标 ≤16 ms / ≤1500 ms）。
+  决策 A 已经定过：这是 ProseMirror DOM 创建与排版的成本，P7-01 证明「拆装饰」动不了它
+  （装饰只占 mount 的 ~36 ms），真要推得动需要 P7-05 已明确拒绝的挂载策略改造。
+- **`document-decorations.js` 一度顶破 P0-04**（`<400 行`）：加机制注释后到 411 行，
+  `check:architecture` 挂住连带整个 `check:gate` 停摆。压实注释到 **398 行**后通过
+  （提交 `5ee6f10`）。**这是本轮唯一一次「文档性改动反噬代码闸门」**，记一笔：
+  给 `src/core/blocks/` 下文件加长注释前先数行数。
 
 - **Step 1（diff 干净度）已过**：`git diff --check` EXIT=0；改动只落在 P7 自有文件上
   （`src/core/blocks/document-decorations.js`、`scripts/perf/*`、`perf/*`、两个新增单测），
