@@ -1,102 +1,111 @@
 /**
- * report.mjs — P0-10 门禁：当前采集结果对比 perf/baseline.json，退化 > 20% 非零退出
+ * report.mjs — P0-10/P7-06 门禁：当前采集结果对比基线，任一指标退化 > 20% 非零退出
  * （requirements/09 §2.4.3「这张表是门禁，不是愿望」、§5.7 check:perf 每 PR 起每期跑）。
  *
- * 用法：
- *   node scripts/perf/report.mjs            // 对比（无基线 → 提示先 --update）
- *   node scripts/perf/report.mjs --update   // 把本次 .perf-result.json 写成新基线
+ * 判定逻辑全在 perf/gate.mjs（纯函数，单测覆盖）；这里只做参数、IO 与退出码。
  *
- * 基线只能由真实运行生成（--update 复制采集结果），不许手填。
- * 方向口径：时间/内存类越高越差；scrollFps 越低越差。
+ * 用法：
+ *   node scripts/perf/report.mjs                       // 对比 perf/baseline.json
+ *   node scripts/perf/report.mjs --update              // 把本次 .perf-result.json 写成基线
+ *   node scripts/perf/report.mjs --baseline <path>     // 换一份基线（CI 按运行器分基线）
+ *   node scripts/perf/report.mjs --bootstrap           // 基线不存在时用本次采集建立它（不判定）
+ *
+ * 退出码：0 通过 / 1 有指标退化 > 20% / 2 不可比（缺采集、缺基线、工作负载不一致）。
+ * 基线只能由真实运行生成（--update 或 --bootstrap 复制采集结果），不许手填。
  */
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {
+  REGRESSION_LIMIT,
+  baselineMetaOf,
+  buildBaseline,
+  checkWorkload,
+  compareMetrics,
+  renderTable,
+} from './gate.mjs'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../..')
 const perfDir = path.join(repoRoot, 'perf')
 const resultPath = path.join(perfDir, '.perf-result.json')
-const baselinePath = path.join(perfDir, 'baseline.json')
 
-const REGRESSION_LIMIT = 0.2
-/** 指标方向：true = 升高是退化（时间/内存），false = 降低是退化（帧率）。 */
-const METRICS = {
-  mountToTypeableMs: true,
-  keystrokeP95Ms: true,
-  keystrokeP99Ms: true,
-  decorationsRebuildMs: true,
-  scrollFps: false,
-  saveProxyMs: true,
-  heapMB: true,
+const EXIT_OK = 0
+const EXIT_REGRESSED = 1
+const EXIT_INCOMPARABLE = 2
+
+function argValue(argv, flag) {
+  const index = argv.indexOf(flag)
+  if (index < 0) return null
+  const value = argv[index + 1]
+  if (!value || value.startsWith('--')) {
+    console.error(`${flag} 需要一个路径参数`)
+    process.exit(EXIT_INCOMPARABLE)
+  }
+  return value
 }
 
-const pct = (value) => `${value >= 0 ? '+' : ''}${Math.round(value * 100)}%`
+function writeBaseline(targetPath, baseline) {
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+  fs.writeFileSync(targetPath, `${JSON.stringify(baseline, null, 2)}\n`)
+}
+
+/** 仓库内的路径显示成相对路径；仓库外（CI 临时目录 / cache）照原样显示。 */
+function displayPath(targetPath) {
+  const relative = path.relative(repoRoot, targetPath)
+  return !relative || relative.startsWith('..') ? targetPath : relative
+}
 
 function main() {
+  const argv = process.argv.slice(2)
+  const baselinePath = path.resolve(repoRoot, argValue(argv, '--baseline') || 'perf/baseline.json')
+  const relativeBaseline = displayPath(baselinePath)
+  const update = argv.includes('--update')
+  const bootstrap = argv.includes('--bootstrap')
+
   if (!fs.existsSync(resultPath)) {
     console.error('缺少 perf/.perf-result.json —— 先跑 node scripts/perf/measure.mjs')
-    process.exit(2)
+    process.exit(EXIT_INCOMPARABLE)
   }
   const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'))
 
-  if (process.argv.includes('--update')) {
-    const baseline = {
-      _meta: {
-        comment: '性能基线（requirements/09 §2.4.3 门禁）。只能由 report.mjs --update 从真实运行生成，禁止手填。',
-        seed: result.seed,
-        blockCount: result.blockCount,
-        node: result.node,
-        capturedAt: result.capturedAt,
-        note: '机器相关基线：换机器或换 seed 请重采。check:perf 退化超 20% 非零退出。',
-      },
-      metrics: result.metrics,
-    }
-    fs.mkdirSync(perfDir, { recursive: true })
-    fs.writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`)
-    console.log('基线已更新 → perf/baseline.json')
-    for (const [key, value] of Object.entries(result.metrics)) console.log(`  ${key} = ${value}`)
-    return
+  if (update || (bootstrap && !fs.existsSync(baselinePath))) {
+    const baseline = buildBaseline(result)
+    writeBaseline(baselinePath, baseline)
+    console.log(`${bootstrap && !update ? '本运行器基线已建立' : '基线已更新'} → ${relativeBaseline}`)
+    for (const [key, value] of Object.entries(baseline.metrics)) console.log(`  ${key} = ${value}`)
+    if (bootstrap && !update) console.log('（--bootstrap：本次仅建立基线、不判定；下一次运行开始拦截）')
+    return EXIT_OK
   }
 
   if (!fs.existsSync(baselinePath)) {
-    console.error('perf/baseline.json 不存在 —— 首次建基线：node scripts/perf/report.mjs --update')
-    process.exit(2)
+    console.error(`${relativeBaseline} 不存在 —— 首次建基线：node scripts/perf/report.mjs --update`)
+    process.exit(EXIT_INCOMPARABLE)
   }
   const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
-  const baselineMeta = baseline._meta || baseline
-  if (baselineMeta.seed !== result.seed || baselineMeta.blockCount !== result.blockCount) {
-    console.error(`工作负载不一致（基线 seed=${baselineMeta.seed}/blocks=${baselineMeta.blockCount}，本次 seed=${result.seed}/blocks=${result.blockCount}）—— 不可比，拒绝判定`)
-    process.exit(2)
+  const baselineMeta = baselineMetaOf(baseline)
+
+  const workload = checkWorkload(baselineMeta, result)
+  if (!workload.comparable) {
+    console.error(`${workload.reason} —— 不可比，拒绝判定`)
+    process.exit(EXIT_INCOMPARABLE)
   }
 
-  const rows = []
-  let failed = false
-  for (const [key, higherIsWorse] of Object.entries(METRICS)) {
-    const base = baseline.metrics[key]
-    const now = result.metrics[key]
-    if (base == null || now == null) {
-      rows.push([key, base, now, '—', '缺数据'])
-      failed = true
-      continue
-    }
-    const delta = base === 0 ? 0 : (now - base) / base
-    const regressed = higherIsWorse ? delta > REGRESSION_LIMIT : delta < -REGRESSION_LIMIT
-    if (regressed) failed = true
-    rows.push([key, base, now, pct(delta), regressed ? '✗ 退化' : '✓'])
-  }
+  const { rows, failures, failed } = compareMetrics(baseline, result)
+  const where = [baselineMeta.platform, baselineMeta.arch].filter(Boolean).join('-') || '未标注平台'
 
-  console.log(`\n指标（seed=${result.seed}, blocks=${result.blockCount}, 预算口径见 requirements/09 §2.4.3，退化阈值 20%）：`)
-  console.log('  指标                     基线      本次      Δ      判定')
-  for (const [key, base, now, delta, verdict] of rows) {
-    console.log(`  ${key.padEnd(24)} ${String(base).padStart(8)} ${String(now).padStart(8)} ${delta.padStart(7)}  ${verdict}`)
-  }
+  console.log(`\n指标（seed=${result.seed}, blocks=${result.blockCount}, 基线 ${where} @ ${baselineMeta.capturedAt || '未知时间'}，退化阈值 ${Math.round(REGRESSION_LIMIT * 100)}%）：`)
+  console.log(renderTable(rows))
+  console.log(`\n基线：${relativeBaseline}（node ${baselineMeta.node || '未知'}）`)
+
   if (failed) {
-    console.error('\ncheck:perf 失败：存在退化 > 20% 的指标')
-    process.exit(1)
+    console.error(`\ncheck:perf 失败：${failures.length} 项退化 > ${Math.round(REGRESSION_LIMIT * 100)}%（${failures.map((failure) => failure.key).join(', ')}）`)
+    process.exit(EXIT_REGRESSED)
   }
   console.log('\ncheck:perf 通过')
+  return EXIT_OK
 }
 
-main()
+process.exitCode = main()

@@ -2,7 +2,7 @@
 
 ## 概述
 
-2,000 块压力夹具（seed 42，本机 headless Chromium）的性能基线，以及 v0.12「P7 性能收口」这一轮的处置口径与结论。数据由 `scripts/perf/measure.mjs` 采集、`scripts/perf/report.mjs` 落盘，`perf/baseline.json` 是门禁基线（退化超 20% 时 `npm run check:perf` 非零退出）。
+2,000 块压力夹具（seed 42，本机 headless Chromium）的性能基线，以及 v0.12「P7 性能收口」这一轮的处置口径与结论。数据由 `scripts/perf/measure.mjs` 采集、`scripts/perf/report.mjs` 判定，人读版报告在 `perf/report.md`；`perf/baseline.json` 是门禁基线（退化超 20% 时 `npm run check:perf` 非零退出，CI 见 `.github/workflows/perf.yml`）。
 
 ## 一、基线（blockCount 2000，seed 42，Node 22）
 
@@ -53,10 +53,39 @@
 ## 四、复测方式
 
 ```bash
-npm run check:perf                     # 构建 element 产物 → 采集 → 与 perf/baseline.json 比对
-node scripts/perf/measure.mjs           # 只采集，写 perf/.perf-result.json
-node scripts/perf/report.mjs            # 只比对 + 打表
-node scripts/perf/report.mjs --update   # 重写 perf/baseline.json（会丢掉 before 数，别在收口前手动跑）
+npm run check:perf                                    # 构建 element 产物 → 采集 → 与 perf/baseline.json 比对
+node scripts/perf/measure.mjs                          # 只采集，写 perf/.perf-result.json
+node scripts/perf/report.mjs                           # 只比对 + 打表
+node scripts/perf/report.mjs --baseline <path>          # 换一份基线（CI 按运行器分基线时用）
+node scripts/perf/report.mjs --bootstrap                # 基线不存在时用本次采集建立它（不判定）
+node scripts/perf/report.mjs --update                   # 重写基线（从这一版起会记录 platform/arch）
 ```
 
 浏览器侧的高频合并回归由 `node scripts/verify.mjs perf-scheduling` 守（`scripts/verify-browser-perf-scheduling.js`）：它断言 200 次连续选区变化只做一轮定位、内容区 DOM 逐字节不变、查找去抖只重算一次、关面板后无残留高亮。
+
+## 五、门禁：怎么判、在哪跑、基线放哪
+
+**判定**在 `scripts/perf/gate.mjs`（纯函数，无 IO，`test/unit/perf-gate.test.js` 用合成数据覆盖），
+CLI 只负责参数与退出码：
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 全部指标退化 ≤ 20% |
+| 1 | 存在指标退化 > 20%（打表列出全部命中的指标名） |
+| 2 | 不可比：缺 `.perf-result.json`、缺基线、seed/块数不一致 |
+
+方向：时间/内存类越高越差，`scrollFps` 越低越差。判据是「**> 20%**」，恰好 20% 不算超阈
+（比较时带 1e-9 容差，避免 `base * 1.2` 的浮点误差把边界判反）。
+
+**人读报告**在 `perf/report.md`：记录 seed、块数、运行器、采集时间、前后对照、阈值与解读，
+随每次真实采集更新。数字只能来自 `perf/.perf-result.json`，不进基线就没人手填。
+
+**CI** 在 `.github/workflows/perf.yml`（独立 workflow，push 到 `master`/`next/**` 或手动触发；
+lint/单测/构建/size/e2e 四个既有 job 一字未动）。它不拿本机基线去比 Linux runner ——性能数字
+机器相关，那样比只会得到必然红或必然绿的假结论。做法是按 `runner.os + runner.arch` 用
+`actions/cache` 存一份独立基线：首次运行 `--bootstrap` 只采集建基线、不判定，之后每次比上一次；
+要丢弃旧基线，手动触发时把 `baseline_generation` 从 `v1` 改成 `v2` 即可。采集结果与基线
+作为 artifact 上传，便于事后核对。
+
+**本机基线策略**：`perf/baseline.json` 仍是 P7 之前的采集（10-24），故意没有覆盖——它是
+「优化前」的唯一凭据。P7-04 之后在同一台机器重采一次，再按需 `--update` 推进基线。
