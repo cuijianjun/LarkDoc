@@ -58,7 +58,8 @@ const doc = new LarkDoc({
 
   // ── 宿主注入 ──
   uploader: { upload: (file) => uploadToOss(file) },
-  ai: { stream: myStreamFn },
+  // 三档任选其一：地址字符串 / { protocol:'openai', baseURL, apiKey, model } / { stream: myStreamFn }
+  ai: { endpoint: '/api/ai' },
   persistence: myPersistenceAdapter,
 
   // ── 生命周期 ──

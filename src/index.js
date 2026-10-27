@@ -17,6 +17,7 @@ import { TEMPLATES } from './components/lark-doc/templates'
 import { createEcsImageUpload } from './components/lark-doc/ecsImages'
 import * as documentOperations from './components/lark-doc/documentOperations'
 import * as mockAI from './components/lark-doc/mockAI'
+import * as ai from './components/lark-doc/ai'
 import { DocumentSession, createDocumentSession } from './session/DocumentSession'
 import * as documentSchema from './core/documentSchema'
 import * as transactionMetadata from './core/transactionMetadata'
@@ -47,6 +48,7 @@ export {
   TEMPLATES,
   documentOperations,
   mockAI,
+  ai,
   DocumentSession,
   createDocumentSession,
   documentSchema,

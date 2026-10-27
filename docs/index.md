@@ -32,7 +32,7 @@ features:
     details: 样式与 KaTeX 字体随包发布；正文媒体默认直连（含 http），可按需切 offline / allowlist。
   - icon: 🤖
     title: AI 可插拔
-    details: 内置 11 种 AI 动作 Mock，可通过 ai.stream 接管为真实模型服务。
+    details: 内置 11 种 AI 动作；填一个接口地址即可接真实模型，也可直连 OpenAI 协议或自管传输。
   - icon: 🧩
     title: Provider 契约
     details: 持久化 / 协作 / 版本 / 评论 / 授权五大扩展点，全部显式注入。
