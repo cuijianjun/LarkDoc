@@ -12,12 +12,13 @@
 ## 1. 环境与校验链
 
 ```bash
-export PATH=$HOME/.nvm/versions/node/v14.21.3/bin:$PATH
 cd apps/lark-doc
-env -u NODE_OPTIONS npm run check     # 全量：offline → lark-doc → architecture → lint → build×4 → vditor
-env -u NODE_OPTIONS npm run build     # 只构建
+env -u NODE_OPTIONS npm run check              # 全量 = check:gate + check:artifacts
+env -u NODE_OPTIONS npm run check:gate         # 门禁段：offline → lark-doc → architecture → unit → theme-tokens → theme-contrast → lint
+env -u NODE_OPTIONS npm run check:artifacts    # 产物段：build / umd / esm / collab / element → vditor → size
 ```
 
+- **`check` 拆两段，各用各的 Node（2026-10-27 起）**：门禁段必须现代 Node —— `vitest@5` 的 `engines.node` 是 `^22.12||^24||>=26`，Node 14 起不来；`yjs → lib0/webcrypto` 在 Node 14 下取 `crypto.webcrypto` 为 `undefined` 直接崩（`TypeError: Cannot read property 'subtle' of undefined`）。产物段（四个 `build*` + 体积门禁）仍按 `engines` 卡 Node 14。`scripts/release.sh` 第 4 步据此用 `NODE24_DIR` 跑门禁、 `NODE14_DIR` 跑产物。
 - **开发/构建环境只需 Node `>= 14.21.3` + npm `>= 8.19.4`**（`check-node14.js` 只做最低版本门禁，Node 20 等更高版本同样合法）；接入方运行时同样 `>=14.21.3`（`engines` 已放宽，ES2022+ API 由入口 core-js polyfill 补齐）。`env -u NODE_OPTIONS` 不能省（WorkBuddy 的 NODE_OPTIONS shim 会让 webpack 报错）。
 - `npm run check` 必须 **EXIT=0 且 0 error**（warning 也要清掉）。
 - demo 在 `apps/vue2-webpack-node14`（Node14 `npm run dev`，端口 8080，路由 `/lark-doc` 走源码 alias、`/lark-doc-wc` 走预构建 element 产物），**通过软链加载 dist**，改源码后必须 `npm run build` 才能看到效果；只改 element 产物相关（WC 路径）还要 `npm run build:element`。
@@ -324,7 +325,7 @@ npm run ship -- --dry-run          # 只看计划，不动任何东西
 | 1 预检 | Node14/Node24 存在、git remote、`npm whoami`（剥代理） | npm 未登录 |
 | 2 版本号 | patch/minor/major 自增；查 registry 该版本是否已存在；查同名 tag | 版本已被占用 / tag 已存在 |
 | 3 写入 | 只改 `package.json` 的 `version` 一行（保留原格式），不建 git commit | — |
-| 4 校验 | `PATH=node14 ... npm run check`（日志 `.release/check-<版本>.log`） | 任何一项红 |
+| 4 校验 | 两段：`PATH=node24 ... check:gate` + `PATH=node14 ... check:artifacts`（日志 `.release/check-<版本>.log`） | 任何一项红 |
 | 5 打包 | `npm pack --ignore-scripts`（跳过 prepack 重复构建），记 sha1，并断言 tarball 里四产物 + css 齐备 | `files` 配错 / 漏构建 |
 | 6 发布 | `npm publish --ignore-scripts`，然后 **GET tarball 比对 sha1** + 读 `dist-tags` | 见下方「发布三坑」 |
 | 7 Git | `git add -u`（未跟踪文件默认不入库，要带就 `--include-new`）→ commit → `tag v<版本>` → push 分支和 tag | 认证失败 / 非快进 |

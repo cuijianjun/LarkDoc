@@ -254,13 +254,28 @@ ok "package.json version = ${VERSION}（断点已记录，失败可 --resume）"
 
 # ---------- 4. 全链校验 ----------
 if [ "$DO_CHECK" = 1 ]; then
-  step "全链校验 npm run check（Node 14，约 40s）"
+  # npm run check 拆两段跑，各用各的 Node：
+  #   门禁段必须现代 Node —— vitest@5 engines 要 ^22.12||^24||>=26，Node 14 起不来；
+  #   yjs→lib0/webcrypto 在 Node 14 下取 crypto.webcrypto 为 undefined 直接崩。
+  #   产物段（build*）仍按 package.json engines 卡 Node 14。
+  #   注：scripts/check-node14.js 只卡版本下限（Node 20+ 构建合法），并非全链都要 14。
   LOGFILE="$STATE_DIR/check-$VERSION.log"
-  if ! PATH="$NODE14_DIR:$PATH" env -u NODE_OPTIONS npm run check >"$LOGFILE" 2>&1; then
+  : >"$LOGFILE"
+
+  step "门禁校验 check:gate（Node 24，含 vitest / yjs，约 30s）"
+  if ! PATH="$NODE24_DIR:$PATH" env -u NODE_OPTIONS npm run check:gate >>"$LOGFILE" 2>&1; then
     tail -30 "$LOGFILE" >&2
-    die "npm run check 未通过（见 ${LOGFILE}）"
+    die "check:gate 未通过（见 ${LOGFILE}）"
   fi
-  ok "check EXIT=0"
+  ok "check:gate EXIT=0"
+
+  step "产物校验 check:artifacts（Node 14，含 build* 与体积门禁，约 3min）"
+  if ! PATH="$NODE14_DIR:$PATH" env -u NODE_OPTIONS npm run check:artifacts >>"$LOGFILE" 2>&1; then
+    tail -30 "$LOGFILE" >&2
+    die "check:artifacts 未通过（见 ${LOGFILE}）"
+  fi
+  ok "check:artifacts EXIT=0"
+
   grep -E '✓ Vditor|ESM .*kB|CJS .*kB' "$LOGFILE" | sed 's/^/        /' || true
 else
   step "跳过全链校验"
