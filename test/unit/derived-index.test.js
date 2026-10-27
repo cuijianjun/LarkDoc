@@ -101,13 +101,14 @@ describe('P7-01 DerivedIndex seams', () => {
   })
 
   it('rebuilds exactly once per edit and serves the cached set in between', () => {
-    // 契约（现状）：装饰仍是全量重建，但重建次数必须与「编辑次数」成正比，
-    // 不能与「取用次数」成正比 —— 同一份文档连取十次也只算一次。
+    // 契约：装饰重建次数必须与「编辑次数」成正比，不能与「取用次数」成正比 ——
+    // 同一份文档连取十次也只算一次。
     //
-    // 为什么不是「只重扫脏区」：列表序号（同列表内累进）、标题编号（向后传播）、
-    // 折叠范围（缩进子树）三类装饰都跨块，局部重扫必须为每种维护可增量接续的前缀
-    // 状态才算得对值；而派生计算的耗时已经压到重建总开销的零头（2,000 块实测
-    // 47.6 ms 里 DOM 之外的常数项占大头），继续拆脏区的收益远小于维护成本。
+    // 这条用例不传 `incremental`（且 doc 是没有 `resolve` 的桩），所以走的是**冷路径**：
+    // 每笔 docChanged 事务后第一次取用会全量重建一次。真实装配下会传 incremental，
+    // 装好增量实现后只重扫脏区（见 document-decorations-incremental.test.js 的逐条
+    // 等价性验证）；这里的断言保持原样，是为了守住「不传增量实现就退回全量」这条兜底
+    // —— 增量回调返回 null、换文档、invalidate 都必须还能正常出装饰。
     const scans = { count: 0 }
     const initialDoc = documentWithScanCounter('before', scans)
     const nextDoc = documentWithScanCounter('after', scans)

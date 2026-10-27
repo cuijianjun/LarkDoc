@@ -346,13 +346,17 @@ export function getMentionMatch(state) {
   return inCode ? null : { from: $from.pos - match[1].length - 1, to: $from.pos, query: match[1] }
 }
 
-/** 全文查找字符串（按字面量转义，跨块不误配）；返回 [{ from, to }] 位置数组。 */
-export function findTextMatches(doc, query) {
+/**
+ * 查找字符串（按字面量转义，跨块不误配）；返回 [{ from, to }] 位置数组。
+ *
+ * `ranges` 非空时只扫与这些区间相交的文本块（P7-01 脏区重扫用）：命中结果与全文扫描
+ * 在**脏区内部**逐项相同，脏区外的命中留在旧的 DecorationSet 里不动，不需要重复给。
+ */
+export function findTextMatches(doc, query, ranges = null) {
   if (typeof query !== 'string' || !query) return []
   const matches = []
   const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-  doc.descendants((node, pos) => {
-    if (!node.isTextblock) return
+  const scan = (node, pos) => {
     // 文本 Mark 不改变位置；叶节点占位防止跨公式/Emoji 错配。
     const value = node.textBetween(0, node.content.size, '', '\ufffc')
     pattern.lastIndex = 0
@@ -361,6 +365,21 @@ export function findTextMatches(doc, query) {
       matches.push({ from: pos + 1 + match.index, to: pos + 1 + match.index + match[0].length })
       match = pattern.exec(value)
     }
+  }
+  if (Array.isArray(ranges) && ranges.length) {
+    // nodesBetween 会带出与区间相交的**整个**文本块，边界半截的块也在内 —— 与脏区
+    // 已经扩张到块边界的前提一致，不会漏算半块里的命中。
+    ranges.forEach((range) => {
+      doc.nodesBetween(range.from, range.to, (node, pos) => {
+        if (node.isTextblock) { scan(node, pos); return false }
+        return true
+      })
+    })
+    return matches
+  }
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return
+    scan(node, pos)
   })
   return matches
 }

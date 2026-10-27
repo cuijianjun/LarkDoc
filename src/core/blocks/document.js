@@ -18,7 +18,7 @@ import { applyBlockIdFixes } from './block-fixes'
 import { documentKey } from './document-key'
 import { applyLineStartMarker, verticalBoundarySelection } from './document-helpers'
 import { createDocumentCommands } from './document-commands'
-import { createDocumentDecorations } from './document-decorations'
+import { createDocumentDecorations, updateDocumentDecorations } from './document-decorations'
 
 /**
  * @param {object} options 装配层传下来的全部选项（`config` / 各类回调）
@@ -60,10 +60,10 @@ export function documentExtension(options, injected) {
     addProseMirrorPlugins() {
       const storage = this.storage
       const editor = this.editor
-      // P0-11（09 §3.7）：派生计算收拢进 DerivedIndex。兜底实现 = 任何事务标脏、
-      // 下次 decorations() 全量重建 —— 行为与收拢前逐字节一致（搜索词/折叠集合/
-      // 把手悬停都走 tr meta，所以纯 meta 事务也要标脏）；P7-01 只换 update(tr)
-      // 的实现（mapping 区间局部重扫 + oldSet.map 打底），这里一行不改。
+      // P0-11（09 §3.7）：派生计算收拢进 DerivedIndex。
+      // P7-01 起它是双路径的：`update(tr)` 收集脏区，`decorations()` 有脏区就只重扫脏区
+      // （incremental），没有就整份重建（rebuild）—— 搜索词/折叠集合/把手悬停都走 tr meta，
+      // 改的是装饰输入，走冷路径更稳；击键路径上是 pure-docChanged，永远走热路径。
       const derivedIndex = createDerivedIndex({
         // 编辑器宿主与测试桩可能没有 state/schema（check-lark-doc-core 的 mock
         // 只有 { isEditable }）：初始 doc 允许为 null，首次 update/decorations
@@ -71,6 +71,7 @@ export function documentExtension(options, injected) {
         doc: editor.state?.doc ?? null,
         schema: editor.schema,
         rebuild: (state) => createDocumentDecorations({ state, storage, editor, enabled, options }),
+        incremental: ({ state, previous, ranges }) => updateDocumentDecorations({ state, storage, editor, enabled, options, previous, ranges }),
       })
       let lastSlash = ''
       let lastMention = ''
@@ -106,10 +107,12 @@ export function documentExtension(options, injected) {
         state: {
           init: () => null,
           apply: (tr) => {
-            // 派生索引先行：任何事务（含纯 meta）都标脏，本插件其余逻辑照旧。
-            derivedIndex.update(tr)
-            if (tr.docChanged) { dismissed = false; storage.handleHover = null }
             const action = tr.getMeta(documentKey)
+            // 派生索引先行。只有「正文变了」或「本插件的 UI 状态变了」才可能改动装饰的
+            // 输入（doc / query / activeIndex / folded / handleHover）：纯选区事务（点击、
+            // 方向键、跨块保列）和别家插件的 meta 一律复用缓存，否则每个方向键都要全量重建。
+            derivedIndex.update(tr, { touchesDecorations: tr.docChanged || !!action })
+            if (tr.docChanged) { dismissed = false; storage.handleHover = null }
             if (action?.resetFolds) storage.folded.clear()
             if (action?.search !== undefined) { storage.query = action.search; storage.activeIndex = action.activeIndex }
             if (action?.handleHover !== undefined) storage.handleHover = action.handleHover
