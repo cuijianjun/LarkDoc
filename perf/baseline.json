@@ -1,19 +1,20 @@
 {
   "_meta": {
-    "comment": "性能基线（requirements/09 §2.4.3 门禁）。只能由 report.mjs --update 从真实运行生成，禁止手填。",
+    "comment": "性能基线（requirements/09 §2.4.3 门禁）。只能由 report.mjs 从真实运行生成，禁止手填。",
     "seed": 42,
     "blockCount": 2000,
     "node": "v22.22.2",
-    "capturedAt": "2026-10-24T10:08:21.136Z",
-    "note": "机器相关基线：换机器或换 seed 请重采。check:perf 退化超 20% 非零退出。"
+    "platform": "darwin",
+    "arch": "x64",
+    "capturedAt": "2026-10-27T14:43:12.186Z"
   },
   "metrics": {
-    "mountToTypeableMs": 59849.7,
-    "keystrokeP95Ms": 37297.2,
-    "keystrokeP99Ms": 37297.2,
-    "decorationsRebuildMs": 21186.3,
-    "scrollFps": 3.7,
-    "saveProxyMs": 24,
-    "heapMB": 105.6
+    "mountToTypeableMs": 36666.8,
+    "keystrokeP95Ms": 2578,
+    "keystrokeP99Ms": 2578,
+    "decorationIncrementalMs": 72.6,
+    "scrollFps": 60.3,
+    "saveProxyMs": 21.6,
+    "heapMB": 107.9
   }
 }

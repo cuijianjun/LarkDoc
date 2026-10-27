@@ -11,6 +11,10 @@
  *   折叠集合、把手悬停改的是 UI 状态而不是正文，两者都整份重建更稳 ——
  *   它们都是点击 / 回车级操作，不在击键路径上。
  */
+/* global globalThis */
+// 上面这行是给 eslint 的：`globalThis` 是 ES2020 标准全局，但本仓库 `.eslintrc` 只开了
+// `env: { node: true }`（ecmaVersion 停在 2018），`no-undef` 认不出来。这里不改成
+// `es2020: true`，是因为那会连带放宽 ecmaVersion，影响面比一个全局声明大。
 import {
   collectOutline,
   computeHeadingNumbers,
@@ -188,6 +192,22 @@ function isTextOnlyChange(doc, steps) {
 }
 
 /**
+ * 性能探针接收器（只给 `scripts/perf/measure.mjs` 用）。
+ *
+ * 宿主页挂上 `globalThis.__larkDocPerf = { samples: [] }` 才记账；没挂时这里只是一次属性
+ * 读取，热路径代价可忽略。挂上后每次 `decorations()` 压入 `{ path, ms }`，`path` 区分
+ * 走了增量分支还是退回全量重建 —— 采集侧只统计 `path === 'incremental'` 的那些。
+ *
+ * 为什么计时必须放在这一层：装饰增量那一段（`previous.map` + 窗口重扫）夹在
+ * `view.dispatch` 内部，外面只能量到「dispatch → 下一次绘制」的整段，混着 DOM 补丁、
+ * 排版与合成，量不出装饰层自己的开销。
+ */
+function perfSink() {
+  const sink = typeof globalThis === 'undefined' ? null : globalThis.__larkDocPerf
+  return sink && Array.isArray(sink.samples) ? sink : null
+}
+
+/**
  * @param {object} options
  * @param {import('@tiptap/pm/model').Node} options.doc 首次构建时的文档（骨架期仅作初始 doc 引用）
  * @param {import('@tiptap/pm/model').Schema} options.schema 局部重扫时按节点类型判断折叠资格与编号传播边界
@@ -285,6 +305,9 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
     decorations(state) {
       if (!dirty && state.doc === cachedDoc) return cachedSet
       const doc = state.doc
+      const sink = perfSink()
+      const startedAt = sink ? performance.now() : 0
+      let path = 'rebuild'
       // 待消费批次必须正好落在当前文档上；对不上（例如有人直接换了文档）就走冷路径。
       const pendingDoc = pendingSteps.length ? pendingSteps[pendingSteps.length - 1].doc : null
       const canIncremental = !!incremental && !!cachedSet && pendingDoc === doc && pendingRanges.length > 0
@@ -293,13 +316,20 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
         pendingSteps.forEach((step) => { previous = previous.map(step.mapping, step.doc) })
         // incremental 返回 null = 「这帧不适合增量」（例如搜索高亮开着，全局命中序号
         // 在脏区里拼不回来）：退回全量，绝不拿半个结果当结果。
-        cachedSet = incremental({ state, previous, ranges: pendingRanges.slice() }) || rebuild(state)
+        const next = incremental({ state, previous, ranges: pendingRanges.slice() })
+        if (next) {
+          cachedSet = next
+          path = 'incremental'
+        } else {
+          cachedSet = rebuild(state)
+        }
       } else {
         cachedSet = rebuild(state)
       }
       cachedDoc = doc
       dirty = false
       resetPending()
+      if (sink) sink.samples.push({ path, ms: performance.now() - startedAt })
       return cachedSet
     },
 

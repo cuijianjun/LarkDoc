@@ -23,7 +23,9 @@ export const PERF_METRICS = Object.freeze({
   mountToTypeableMs: true,
   keystrokeP95Ms: true,
   keystrokeP99Ms: true,
-  decorationsRebuildMs: true,
+  // 键名在 P7 收口时从 `decorationsRebuildMs` 改来：P7-01 之后击键路径上装饰走脏区增量，
+  // 全量重建不再发生在这条路径上，旧名字量到的其实不是重建（详见 perf/report.md 口径节）。
+  decorationIncrementalMs: true,
   scrollFps: false,
   saveProxyMs: true,
   heapMB: true,

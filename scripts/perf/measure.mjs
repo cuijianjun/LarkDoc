@@ -5,8 +5,8 @@
  * 7 指标中 6 项在此采集，主包 gzip 由 `npm run size`（size-limit）已在 check 链覆盖：
  *   1. mountToTypeableMs   首屏可输入：setContent(2000 块) → focus → 首次键入事务提交（浏览器时钟打点）
  *   2. keystrokeP95Ms/P99  击键 → 下一帧渲染：insertContent + 双 rAF，30 次采样取分位
- *   3. decorationsRebuildMs 单次全量装饰重建：view.updateState(view.state) 强制重算，20 次 中位数
- *      （现实现每次 update 全量重建装饰 —— extensions.js，P7-01 脏区更新的优化对象）
+ *   3. decorationIncrementalMs 击键路径上的装饰耗时：发文本块内纯文字改动，取 derive 层打点中位数
+ *      （P7-01 之后装饰走脏区增量；全量重建只在首次装配/换文档/invalidate 时发生）
  *   4. scrollFps           中段连续滚动 3s 的 rAF 帧率
  *   5. saveProxyMs         整篇保存代理：全篇 getJSON() 序列化 10 次中位数
  *      （element 宿主无 workspace.save；落库口径就是 JSON 序列化，见 workspace 落库 json）
@@ -30,9 +30,10 @@ const repoRoot = path.resolve(__dirname, '../..')
 const SEED = Number(process.env.PERF_SEED || 42)
 const BLOCKS = Number(process.env.PERF_BLOCKS || 2000)
 // 大文档下单次重建可达秒级，采样次数自适应下调（中位数/分位口径不变，数字仍真实）：
-// 2000 块时击键 8 次、装饰重建 5 次；小文档足量采样。
+// 2000 块时击键 8 次。装饰增量探针只发便宜的文字事务，但每次仍会触发一次整篇 view
+// 更新（DOM 补丁 + 排版），2,000 块时压到 20 次即可（亚毫秒量级，中位数足够稳）。
 const KEYSTROKE_SAMPLES = BLOCKS >= 1500 ? 8 : 30
-const DECORATION_SAMPLES = BLOCKS >= 1500 ? 5 : 20
+const DECORATION_SAMPLES = 20
 const SCROLL_SECONDS = 3
 // 滚动要预热：首轮是首次布局/合成，不是滚动帧率（见第 4 段注释）。取 3 轮中位数。
 const SCROLL_ROUNDS = 3
@@ -174,30 +175,57 @@ async function main() {
       return samples
     }, KEYSTROKE_SAMPLES)
 
-    // 3. 单次全量装饰重建：发一个**只带 meta** 的事务把派生索引标脏，取中位数。
+    // 3. 击键路径的装饰增量耗时：发一笔**文本块内的纯文字改动**，只量装饰那一层。
     //
-    // 为什么不再用 `view.updateState(view.state)`：P7-01 给 `decorations(state)` 加了
-    // `dirty || state.doc !== cachedDoc` 的缓存闸门，同一份 state 重放只会命中缓存
-    // （本机实测 1 ms）。那个数**不是**重建耗时，和基线（旧实现每次都真重算）不同口径，
-    // 摆在一起就是「−100%」的假结论。
-    // 纯 meta 事务：`doc` 引用不变 → 不产生 DOM 补丁（不会把 2,000 块的差分/绘制混进来），
-    // 但插件的 `apply` 照旧调 `derivedIndex.update(tr)` 把 `dirty` 置起 → 下一次
-    // `decorations()` 必然整份重算。既恢复与基线同口径，又只量重建本身。
-    // 顺带把「同 state 重放」的缓存命中值打出来，避免下次有人误把它当重建。
-    console.log('[measure] 3/6 装饰重建耗时...')
-    const { samples: decorationsSamples, cacheHitMs } = await page.evaluate((count) => {
-      const editor = window.__larkDoc.getEditor()
+    // 口径变更史（三段数字不可互换，任何两段拼成「−100%」都是假结论）：
+    //   ① P7 前：每次 update 都全量重扫 2,000 块，`view.updateState(view.state)` 量到 21186.3；
+    //   ② P7-01 落地后：同一 state 重放只命中缓存，于是改发纯 meta 事务 —— 但那笔事务被插件
+    //      判成「不动装饰」，量到的 35.1 是 dispatch 固定开销，装饰根本没重建；
+    //   ③ 现在：量**击键路径本身**。derive 层在 `decorations()` 里自带打点（`__larkDocPerf`），
+    //      只统计走增量分支的那一段（`previous.map` + 脏区重扫），不含 DOM 补丁、排版与合成。
+    //
+    // 采样动作是插一个字符（纯文字改动 → isTextOnlyChange 通过 → 走增量），结束后一次删净。
+    // 万一判据把它挡住了，会退回全量：宁可在这里大声失败，也不写一个「没有增量样本」的指标。
+    console.log('[measure] 3/6 装饰增量耗时（击键路径）...')
+    const { samples: decorationSamples, dispatchMs } = await page.evaluate((count) => {
+      const view = window.__larkDoc.getEditor().view
+      const sink = { samples: [] }
+      window.__larkDocPerf = sink
+      let pos = -1
+      view.state.doc.descendants((node, p) => {
+        if (pos >= 0) return false
+        if (node.isTextblock && node.textContent.length > 16) pos = p + 1
+        return pos < 0
+      })
+      if (pos < 0) throw new Error('找不到长度 > 16 的文本块，无法采集装饰增量')
       const samples = []
+      const dispatch = []
       for (let i = 0; i < count; i += 1) {
+        sink.samples.length = 0
         const start = performance.now()
-        editor.view.dispatch(editor.view.state.tr.setMeta('perfDecorationProbe', i))
-        samples.push(performance.now() - start)
+        view.dispatch(view.state.tr.insertText('x', pos))
+        dispatch.push(performance.now() - start)
+        for (const sample of sink.samples) samples.push(sample)
       }
-      const cacheStart = performance.now()
-      for (let i = 0; i < count; i += 1) editor.view.updateState(editor.view.state)
-      return { samples, cacheHitMs: (performance.now() - cacheStart) / count }
+      // 收尾：把插进去的字符一次删净（同样是纯文字改动），别让后面的滚动/序列化背这笔账。
+      view.dispatch(view.state.tr.delete(pos, pos + count))
+      window.__larkDocPerf = null
+      return { samples, dispatchMs: dispatch }
     }, DECORATION_SAMPLES)
-    console.log(`[measure]    同 state 重放（缓存命中，非重建）= ${cacheHitMs.toFixed(1)} ms`)
+    const incrementalSamples = decorationSamples.filter((sample) => sample.path === 'incremental').map((sample) => sample.ms)
+    const rebuildCount = decorationSamples.filter((sample) => sample.path === 'rebuild').length
+    if (!incrementalSamples.length) {
+      throw new Error(`装饰探针没拿到增量样本（${decorationSamples.length} 次全部退回全量）—— 判据可能把文字改动也挡住了`)
+    }
+    console.log(`[measure]    增量 ${incrementalSamples.length} 次 / 退回全量 ${rebuildCount} 次；整段 dispatch 中位数 ${median(dispatchMs).toFixed(1)} ms`)
+    // 分位诊断：这一层已经从「秒级」降到亚毫秒~几十毫秒量级，只看中位数会掩盖长尾
+    // （GC、首次 map、窗口跨块的偶发），所以把 p95/max 一并打出来，便于判断抖动而不是靠猜。
+    const decorationStats = (values) => {
+      const sorted = [...values].sort((a, b) => a - b)
+      return `p50 ${median(sorted).toFixed(2)} / p95 ${percentile(sorted, 0.95).toFixed(2)} / max ${sorted[sorted.length - 1].toFixed(2)}`
+    }
+    console.log(`[measure]    装饰增量 ${decorationStats(incrementalSamples)} ms`)
+    console.log(`[measure]    整段 dispatch ${decorationStats(dispatchMs)} ms`)
 
     // 4. 滚动帧率：文档中段连续滚动 3s，rAF 计帧
     //
@@ -267,7 +295,7 @@ async function main() {
         mountToTypeableMs: round1(mountToTypeableMs),
         keystrokeP95Ms: round1(percentile(keystrokeSamples, 0.95)),
         keystrokeP99Ms: round1(percentile(keystrokeSamples, 0.99)),
-        decorationsRebuildMs: round1(median(decorationsSamples)),
+        decorationIncrementalMs: round1(median(incrementalSamples)),
         scrollFps: round1(scrollFps),
         saveProxyMs: round1(median(saveSamples)),
         heapMB: round1(heapBytes / 1048576),

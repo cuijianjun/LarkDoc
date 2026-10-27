@@ -23,7 +23,7 @@ const BASE_METRICS = {
   mountToTypeableMs: 39232.7,
   keystrokeP95Ms: 6002.1,
   keystrokeP99Ms: 6002.1,
-  decorationsRebuildMs: 2.1,
+  decorationIncrementalMs: 0.8,
   scrollFps: 59.3,
   saveProxyMs: 25,
   heapMB: 107.4,
@@ -77,7 +77,7 @@ describe('perf gate: 合成 >20% 退化必须失败', () => {
     ['mountToTypeableMs', BASE_METRICS.mountToTypeableMs * 1.21],
     ['keystrokeP95Ms', BASE_METRICS.keystrokeP95Ms * 1.21],
     ['keystrokeP99Ms', BASE_METRICS.keystrokeP99Ms * 1.21],
-    ['decorationsRebuildMs', BASE_METRICS.decorationsRebuildMs * 1.21],
+    ['decorationIncrementalMs', BASE_METRICS.decorationIncrementalMs * 1.21],
     ['saveProxyMs', BASE_METRICS.saveProxyMs * 1.21],
     ['heapMB', BASE_METRICS.heapMB * 1.21],
   ])('时间/内存指标 %s 升高 21% 判退化', (key, value) => {
