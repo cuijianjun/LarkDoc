@@ -25,6 +25,7 @@ import {
   createMentionId, mentionPlainText, normalizeMention, readMention,
 } from '../../src/core/blocks/mention'
 import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../src/core/mention/directory'
+import mentionMixin from '../../src/components/lark-doc/editor/mentionMixin'
 
 const mounted = []
 afterEach(() => {
@@ -242,5 +243,22 @@ describe('createMentionProvider', () => {
 
     const slow = createMentionProvider({ search: () => new Promise(() => {}), timeout: 5 })
     await expect(slow.search('x')).resolves.toEqual([])
+  })
+})
+
+/**
+ * 面板文案的来源必须与定义处一致。
+ *
+ * 曾经 `mentionMixin.js` 把 `MENTION_EMPTY_TEXT` 和三个 directory 函数写在同一行 import 里，
+ * 而 `core/mention/directory` 并不导出它 —— 打包器只吐一句
+ * 「export 'MENTION_EMPTY_TEXT' was not found」，运行期拿到 `undefined`，
+ * 面板空态（`{{ mentionLoading ? '搜索中…' : mentionEmptyText }}`）渲染成**空白**。
+ * 没有任何断言看得见这件事，所以在这里钉住：mixin 暴露的文案必须是那句真话。
+ */
+describe('mention 面板文案 × mixin', () => {
+  it('mixin 的 mentionEmptyText 是真实文案，不是 undefined', () => {
+    expect(mentionMixin.data().mentionEmptyText).toBe(MENTION_EMPTY_TEXT)
+    expect(typeof mentionMixin.data().mentionEmptyText).toBe('string')
+    expect(mentionMixin.data().mentionEmptyText.length).toBeGreaterThan(0)
   })
 })

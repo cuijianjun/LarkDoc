@@ -10,7 +10,12 @@
  * 候选源两条路：宿主给了 `mentionSource`（数组或 `{ search }`）就走 provider，
  * 没给就用本地名单纯函数过滤 —— 与 unfurl 的「可选 provider」口径一致。
  */
-import { MENTION_EMPTY_TEXT, MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../../core/mention/directory'
+import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../../core/mention/directory'
+// `MENTION_EMPTY_TEXT` 住在 block 侧（与 `MENTION_LIMITS` / `MENTION_UNKNOWN_NAME` 同一处文案表），
+// `core/mention/directory` 不导出它。早前一行里连它一起从 directory 导入，打包器只报
+// 「export 'MENTION_EMPTY_TEXT' was not found」，运行期拿到 `undefined` —— 面板空态于是
+// 渲染成空白（`{{ mentionLoading ? '搜索中…' : mentionEmptyText }}`），且没有任何断言看得见。
+import { MENTION_EMPTY_TEXT } from '../../../core/blocks/mention'
 
 /** 面板 tab：飞书是「全部 / 人 / 云文档 / 群名片」四个（任务清单不单列 tab）。 */
 export const MENTION_TABS = Object.freeze([
