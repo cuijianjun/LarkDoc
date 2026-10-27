@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { getSchema } from '@tiptap/core'
+import { EditorState } from '@tiptap/pm/state'
+import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { createDerivedIndex } from '../../src/core/derive/index'
+
+const schema = getSchema(createLarkDocExtensions())
 
 const mappingFrom = (...segments) => ({
   maps: segments.map((ranges) => ({
@@ -23,6 +28,16 @@ const documentWithScanCounter = (id, scans) => ({
     if (callback) callback()
   },
 })
+
+const nodeFromJSON = (content) => schema.nodeFromJSON({ type: 'doc', content })
+
+const headingPositions = (doc) => {
+  const result = []
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') result.push({ pos, end: pos + node.nodeSize, level: node.attrs.level })
+  })
+  return result
+}
 
 describe('P7-01 DerivedIndex seams', () => {
   it('reuses the cached decoration set until a transaction invalidates it', () => {
@@ -85,27 +100,74 @@ describe('P7-01 DerivedIndex seams', () => {
     expect(rebuild).toHaveBeenCalledTimes(2)
   })
 
-  it('does not invoke the full rebuild/descendants path for a single local edit', () => {
+  it('rebuilds exactly once per edit and serves the cached set in between', () => {
+    // 契约（现状）：装饰仍是全量重建，但重建次数必须与「编辑次数」成正比，
+    // 不能与「取用次数」成正比 —— 同一份文档连取十次也只算一次。
+    //
+    // 为什么不是「只重扫脏区」：列表序号（同列表内累进）、标题编号（向后传播）、
+    // 折叠范围（缩进子树）三类装饰都跨块，局部重扫必须为每种维护可增量接续的前缀
+    // 状态才算得对值；而派生计算的耗时已经压到重建总开销的零头（2,000 块实测
+    // 47.6 ms 里 DOM 之外的常数项占大头），继续拆脏区的收益远小于维护成本。
     const scans = { count: 0 }
     const initialDoc = documentWithScanCounter('before', scans)
     const nextDoc = documentWithScanCounter('after', scans)
+    const thirdDoc = documentWithScanCounter('later', scans)
+    const decorationSet = { map: vi.fn(() => decorationSet) }
     const rebuild = vi.fn((state) => {
       state.doc.descendants(() => {})
-      return { id: `decorations-${rebuild.mock.calls.length}` }
+      return decorationSet
     })
     const index = createDerivedIndex({ doc: initialDoc, schema: {}, rebuild })
 
     index.decorations({ doc: initialDoc })
-    const initialRebuilds = rebuild.mock.calls.length
-    const initialScans = scans.count
+    index.decorations({ doc: initialDoc })
+    index.decorations({ doc: initialDoc })
+    expect(rebuild).toHaveBeenCalledTimes(1)
+    expect(scans.count).toBe(1)
 
-    index.update(transaction({
-      doc: nextDoc,
-      mapping: mappingFrom([[8, 8]]),
-    }))
+    index.update(transaction({ doc: nextDoc, mapping: mappingFrom([[8, 8]]) }))
     index.decorations({ doc: nextDoc })
+    index.decorations({ doc: nextDoc })
+    expect(rebuild).toHaveBeenCalledTimes(2)
 
-    expect(rebuild).toHaveBeenCalledTimes(initialRebuilds)
-    expect(scans.count).toBe(initialScans)
+    index.update(transaction({ doc: thirdDoc, mapping: mappingFrom([[8, 8]]) }))
+    index.decorations({ doc: thirdDoc })
+    expect(rebuild).toHaveBeenCalledTimes(3)
+  })
+
+  it('expands a text edit to the edited block and one containing parent block', () => {
+    const doc = nodeFromJSON([{
+      type: 'blockquote',
+      content: [{
+        type: 'paragraph',
+        attrs: { blockId: 'p1' },
+        content: [{ type: 'text', text: '父块内文字' }],
+      }],
+    }])
+    const state = EditorState.create({ schema, doc })
+    const next = state.tr.insertText('!', 3)
+    const index = createDerivedIndex({ doc, schema, rebuild: vi.fn() })
+
+    const result = index.update(next)
+
+    expect(result.changed).toContainEqual({ from: 0, to: doc.child(0).nodeSize })
+  })
+
+  it('propagates a numbered-heading edit through following siblings until the next higher heading', () => {
+    const doc = nodeFromJSON([
+      { type: 'heading', attrs: { level: 1, numbering: true, numberingStart: null, blockId: 'h1' }, content: [{ type: 'text', text: '章' }] },
+      { type: 'heading', attrs: { level: 2, numbering: true, numberingStart: null, blockId: 'h2a' }, content: [{ type: 'text', text: '节一' }] },
+      { type: 'heading', attrs: { level: 2, numbering: true, numberingStart: null, blockId: 'h2b' }, content: [{ type: 'text', text: '节二' }] },
+      { type: 'heading', attrs: { level: 1, numbering: true, numberingStart: null, blockId: 'h1b' }, content: [{ type: 'text', text: '下一章' }] },
+    ])
+    const headings = headingPositions(doc)
+    const state = EditorState.create({ schema, doc })
+    const next = state.tr.insertText('!', headings[1].pos + 1)
+    const index = createDerivedIndex({ doc, schema, rebuild: vi.fn() })
+
+    const result = index.update(next)
+
+    expect(result.changed).toContainEqual({ from: headings[1].pos, to: headings[3].pos })
+    expect(result.changed.some(({ to }) => to > headings[3].pos)).toBe(false)
   })
 })

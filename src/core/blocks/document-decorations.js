@@ -7,13 +7,13 @@
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {
   canContinueListNumber,
+  collectFoldRanges,
   computeBulletItems,
   computeHeadingNumbers,
   computeOrderedListNumbers,
   findTextMatches,
   foldableIdPositions,
   foldedRange,
-  isFoldableBlock,
   nodeAtSafe,
   resolveHeadingHighlightSection,
   TEXT_FOLD_TYPES,
@@ -34,12 +34,16 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
       decorations.push(Decoration.node(block.from, block.to, { class: `lark-doc-block-handle-hovered${hover.section ? ' lark-doc-heading-section-hovered' : ''}` }))
     })
   }
-  state.doc.descendants((node, pos) => {
-    // 折叠箭头挂在「有缩进子树的文本块」上：段落和标题都能折（飞书的
-    // can-fold / fold-handler 也是按块给的，不限于标题）。
-    if (!TEXT_FOLD_TYPES.has(node.type.name) || !isFoldableBlock(state.doc, pos)) return
-    const range = foldedRange(state.doc, pos)
-    if (!range || range.from >= range.to) return
+  // 折叠箭头挂在「有缩进子树的文本块」上：段落和标题都能折（飞书的
+  // can-fold / fold-handler 也是按块给的，不限于标题）。
+  //
+  // 范围一次算全：逐块调 foldedRange 等于逐块 doc.resolve，扁平文档里就是 O(n²)
+  // （2,000 块实测 275 ms）。collectFoldRanges 用一趟结构化遍历给同样的结果。
+  // 结果留在 foldRanges 里给下面「折叠隐藏」的循环复用 —— 它需要同一份
+  // {from,to,node}，再调一次 foldedRange / nodeAt 又是两次 O(n) 随机访问。
+  const foldRanges = collectFoldRanges(state.doc)
+  foldRanges.forEach(({ node }, pos) => {
+    if (!TEXT_FOLD_TYPES.has(node.type.name)) return
     const foldId = node.attrs.blockId
     const collapsed = typeof foldId === 'string' && storage.folded.has(foldId)
     // 列表项的箭头要放进首个子段落里（item 内部第一个行内位置），
@@ -95,7 +99,9 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
   // 箭头先 push、编号后 push，渲染出来才是飞书的「▾ 2. 标题」。
   // 编号是块级 UI，contenteditable=false，不进正文文本。
   computeHeadingNumbers(state.doc).forEach((info, pos) => {
-    if (!state.doc.nodeAt(pos)) return
+    // 位置来自 descendants 遍历，必然是一个块起点；这里只做 O(1) 的越界兜底，
+    // 不要再 doc.nodeAt(pos) —— 那是 O(子节点数) 的随机访问。
+    if (!Number.isInteger(pos) || pos < 0 || pos >= state.doc.content.size) return
     decorations.push(Decoration.widget(pos + 1, () => {
       const button = document.createElement('button')
       button.type = 'button'
@@ -139,9 +145,10 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
     const rect = el.getBoundingClientRect()
     return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
   }
-  const pushListMarker = (pos, label, depth, className, value) => {
-    const item = state.doc.nodeAt(pos)
-    if (!item || item.firstChild?.type.name !== 'paragraph') return
+  const pushListMarker = (pos, label, depth, className, value, firstChildIsParagraph) => {
+    // 判定所需的 node 由编号计算顺带给出（见 computeOrderedListNumbers），
+    // 不再 doc.nodeAt(pos) —— 946 个标记 × O(子节点数) 是最贵的一笔随机访问。
+    if (!firstChildIsParagraph) return
     const interactive = className === 'lark-doc-list-number'
     decorations.push(Decoration.widget(pos + 2, () => {
       const marker = document.createElement(interactive ? 'button' : 'span')
@@ -178,19 +185,19 @@ export function createDocumentDecorations({ state, storage, editor, enabled, opt
       return marker
     }, { key: `${className}-${pos}-${label}`, side: -1, ignoreSelection: true }))
   }
-  computeOrderedListNumbers(state.doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index))
-  computeBulletItems(state.doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet'))
+  computeOrderedListNumbers(state.doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index, info.firstChildIsParagraph))
+  computeBulletItems(state.doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))
   storage.folded.forEach((foldId) => {
     const pos = foldIndex.get(foldId)
     if (pos === undefined) return
-    const range = foldedRange(state.doc, pos)
-    if (!range) return
-    const heading = state.doc.nodeAt(pos)
+    const folded = foldRanges.get(pos)
+    if (!folded) return
+    const { from, to, node: heading } = folded
     decorations.push(Decoration.node(pos, pos + heading.nodeSize, { class: 'lark-doc-heading-folded' }))
-    state.doc.nodesBetween(range.from, range.to, (node, at) => {
+    state.doc.nodesBetween(from, to, (node, at) => {
       // display:none 已退出布局与 Tab 顺序；aria-hidden 让屏幕阅读器
       // 同样认为被折叠的后代不可读（需求 13.6.1）。
-      if (node.isBlock && at >= range.from && at + node.nodeSize <= range.to) {
+      if (node.isBlock && at >= from && at + node.nodeSize <= to) {
         decorations.push(Decoration.node(at, at + node.nodeSize, { class: 'lark-doc-fold-hidden', style: 'display: none', 'aria-hidden': 'true' }))
         return false
       }

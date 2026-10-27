@@ -2,10 +2,13 @@
  * 派生索引 DerivedIndex —— 折叠 / 编号 / 大纲 / 装饰的统一派生计算入口。
  * （requirements/09 §3.7 契约：P0-11 定签名 + 「全量重建」兜底实现，P7-01 填脏区实现。）
  *
- * P0-11 的兜底语义：任何事务都只「标记 dirty」，下一次 decorations() 调用时全量重建
- * —— 行为与收拢前逐字节一致（每次 view update 都重算一遍）。这一步没有任何优化，
- * 目的只有一个：把派生计算收拢到一个可替换的入口；P7-01 只换 update(tr) 的实现
- * （按 mapping 区间做局部重扫 + oldSet.map 打底），六个调用方一行不改。
+ * 现状：`update(tr)` 已按 §3.7 纪律 1 从 `tr.mapping.maps` 收集**全部**改动区间，
+ * 并按「块 + 一层父块」扩张、标题改动向后传播到下一个更高级标题，
+ * 作为 `changed` 返回给调用方；`decorations()` 仍是全量重建。
+ *
+ * 为什么装饰仍然全量重算：列表序号（同列表内累进）、标题编号（向后传播）、
+ * 折叠范围（缩进子树）三种装饰都跨块，局部重扫必须为每种维护可增量接续的前缀状态，
+ * 否则会输出错值。真正的局部重扫在确认收益口径后再接（见 P7 收口计划）。
  */
 import {
   collectOutline,
@@ -33,6 +36,102 @@ export function mergeRanges(ranges) {
   return merged
 }
 
+const isHeading = (node) => node?.type?.name === 'heading'
+
+/**
+ * Expand a mapping range to the smallest block context whose decorations can
+ * change.  A text edit needs its text block plus one containing block so fold
+ * and section decorations keep the same boundary semantics as a full scan.
+ */
+function expandBlockRange(doc, range) {
+  if (!doc?.resolve || !Number.isFinite(doc.content?.size)) return { ...range }
+  const size = doc.content.size
+  const from = Math.max(0, Math.min(size, range.from))
+  const to = Math.max(from, Math.min(size, range.to))
+  let resolved
+  try {
+    resolved = doc.resolve(from)
+  } catch (_) {
+    return { from, to }
+  }
+  let blocks = 0
+  let expandedFrom = from
+  let expandedTo = to
+  for (let depth = resolved.depth; depth > 0 && blocks < 2; depth -= 1) {
+    const node = resolved.node(depth)
+    if (!node?.isBlock) continue
+    try {
+      expandedFrom = Math.min(expandedFrom, resolved.before(depth))
+      expandedTo = Math.max(expandedTo, resolved.after(depth))
+      blocks += 1
+    } catch (_) { /* malformed test doubles fall back to the mapped range */ }
+  }
+  // A range at a block boundary can resolve above the edited block.  Probe the
+  // right edge as well so an insertion/deletion still expands to its block.
+  if (blocks === 0 && to > from) {
+    try {
+      const right = doc.resolve(Math.max(from, to - 1))
+      for (let depth = right.depth; depth > 0 && blocks < 2; depth -= 1) {
+        const node = right.node(depth)
+        if (!node?.isBlock) continue
+        expandedFrom = Math.min(expandedFrom, right.before(depth))
+        expandedTo = Math.max(expandedTo, right.after(depth))
+        blocks += 1
+      }
+    } catch (_) { /* keep mapped range */ }
+  }
+  return { from: expandedFrom, to: expandedTo }
+}
+
+/** 找出 pos 所属的标题块及其直接父容器与父内容起点。 */
+function headingAt(doc, pos) {
+  if (!doc?.resolve) return null
+  let resolved
+  try { resolved = doc.resolve(pos) } catch (_) { return null }
+  for (let depth = resolved.depth; depth > 0; depth -= 1) {
+    const node = resolved.node(depth)
+    if (!isHeading(node)) continue
+    const parentDepth = depth - 1
+    return { node, parent: resolved.node(parentDepth), parentStart: resolved.start(parentDepth) }
+  }
+  // pos 正好落在块起点时 resolve 停在父容器上（不会自动进入该块），块本身在 nodeAfter。
+  // 区间的 from 就是 expandBlockRange 给的块边界，大多数编辑都走这一支。
+  if (isHeading(resolved.nodeAfter)) {
+    return { node: resolved.nodeAfter, parent: resolved.parent, parentStart: resolved.start(resolved.depth) }
+  }
+  return null
+}
+
+/**
+ * Extend a changed heading range to the next heading with a shallower level.
+ *
+ * 标题编号是向后传播的（改一个 H2 会重排它后面所有同级 H2），所以脏区必须
+ * 延伸到「下一个更高级标题之前」，否则局部重扫会留下错号。
+ */
+function extendHeadingRange(doc, range) {
+  const found = headingAt(doc, range.from)
+  if (!found || !found.parent) return range
+  const level = Number(found.node.attrs?.level) || 1
+  let end = range.to
+  let started = false
+  let pos = found.parentStart
+  for (let i = 0; i < found.parent.childCount; i += 1) {
+    const child = found.parent.child(i)
+    if (!started) {
+      if (child === found.node) started = true
+    } else if (isHeading(child)) {
+      if ((Number(child.attrs?.level) || 1) < level) return { from: range.from, to: Math.max(end, pos) }
+      end = Math.max(end, pos + child.nodeSize)
+    }
+    pos += child.nodeSize
+  }
+  return { from: range.from, to: end }
+}
+
+function expandDirtyRanges(doc, ranges) {
+  return mergeRanges(ranges.map((range) => extendHeadingRange(doc, expandBlockRange(doc, range))))
+}
+
 /**
  * @param {object} options
  * @param {import('@tiptap/pm/model').Node} options.doc 首次构建时的文档（骨架期仅作初始 doc 引用）
@@ -49,8 +148,13 @@ export function createDerivedIndex({ doc, schema, rebuild }) {
     schema,
 
     /**
-     * 事务后更新。P0-11 兜底：收集 mapping 区间后整单标脏（含纯 meta 事务——
-     * 搜索词 / 折叠集合 / 把手悬停都走 tr meta，不标脏会让装饰读到旧 UI 状态）。
+     * 事务后更新：收集 mapping 区间、按块扩张后整单标脏。
+     *
+     * 标脏是**必须**的（不是保守）：列表序号、标题编号、折叠范围都是跨块的，
+     * 一次文本编辑就可能改掉后面一整串值；纯 meta 事务（搜索词 / 折叠集合 /
+     * 把手悬停）同样走 tr meta，不标脏会让装饰读到旧 UI 状态。
+     *
+     * 返回的 changed 是「装饰可能变化的区间」，供局部重扫使用。
      * @returns {{ changed: Array<{from: number, to: number}>, index: object }}
      */
     update(tr) {
@@ -60,12 +164,15 @@ export function createDerivedIndex({ doc, schema, rebuild }) {
       tr.mapping.maps.forEach((map) => {
         map.forEach((oldStart, oldEnd) => changed.push({ from: oldStart, to: oldEnd }))
       })
+      const rawChanged = mergeRanges(changed)
+      const docChanged = tr.docChanged || rawChanged.length > 0
+      const expanded = docChanged ? expandDirtyRanges(currentDoc, rawChanged) : []
       currentDoc = tr.doc
       dirty = true
-      return { changed: mergeRanges(changed), index }
+      return { changed: expanded, index }
     },
 
-    /** 装饰集：dirty 或换文档时全量重建，否则返回缓存。 */
+    /** 装饰集：脏了就重建（全量），否则直接给缓存。 */
     decorations(state) {
       if (dirty || state.doc !== cachedDoc) {
         cachedSet = rebuild(state)

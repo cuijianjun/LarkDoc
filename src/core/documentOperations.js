@@ -461,6 +461,24 @@ export function formatHeadingNumber(numbers) {
 }
 
 /**
+ * 推进一个编号标题对计数器的影响，返回该标题的编号信息。
+ *
+ * 这是「编号怎么长」的**唯一**实现：全文扫描（computeHeadingNumbers）与
+ * P7-01 的局部重扫（按脏区续算）都调它，避免两套规则各自漂移。
+ * `counters[0]` 不使用（层级从 1 起），长度固定 10。
+ */
+export function advanceHeadingCounters(counters, node) {
+  const level = Math.max(1, Math.min(9, Number(node.attrs?.level) || 1))
+  // 更深层的计数归零：出现 H2 之后，之前的 H3 序列不再影响新的 H3。
+  for (let deeper = level + 1; deeper <= 9; deeper += 1) counters[deeper] = 0
+  const start = node.attrs?.numberingStart
+  if (Number.isInteger(start) && start > 0) counters[level] = Math.min(HEADING_NUMBER_MAX, start) - 1
+  counters[level] += 1
+  const numbers = counters.slice(1, level + 1)
+  return { label: formatHeadingNumber(numbers), level, counters: numbers.slice() }
+}
+
+/**
  * 扫描整篇文档，返回 `Map<pos, { label, level, counters }>`。
  *
  * 只统计「带编号的标题」：正文有序列表由浏览器 list-style 自己排，两者互不干扰。
@@ -472,14 +490,7 @@ export function computeHeadingNumbers(doc) {
   const counters = new Array(10).fill(0)
   doc.descendants((node, pos) => {
     if (node.type.name !== 'heading' || !node.attrs || !node.attrs.numbering) return true
-    const level = Math.max(1, Math.min(9, Number(node.attrs.level) || 1))
-    // 更深层的计数归零：出现 H2 之后，之前的 H3 序列不再影响新的 H3。
-    for (let deeper = level + 1; deeper <= 9; deeper += 1) counters[deeper] = 0
-    const start = node.attrs.numberingStart
-    if (Number.isInteger(start) && start > 0) counters[level] = Math.min(HEADING_NUMBER_MAX, start) - 1
-    counters[level] += 1
-    const numbers = counters.slice(1, level + 1)
-    result.set(pos, { label: formatHeadingNumber(numbers), level, counters: numbers.slice() })
+    result.set(pos, advanceHeadingCounters(counters, node))
     return true
   })
   return result
@@ -546,18 +557,28 @@ export function formatOrderedIndex(value, depth = 1) {
   return `${index}.`
 }
 
-/** 这个有序列表在第几层（外层每套一个 orderedList 记一层）。 */
-function orderedListDepth(doc, pos) {
+/** 这个列表在第几层（外层每套一个同类列表记一层）。 */
+function listDepth(doc, pos, typeName) {
   try {
     const $pos = doc.resolve(pos)
     let depth = 1
     for (let level = $pos.depth; level > 0; level -= 1) {
-      if ($pos.node(level).type.name === 'orderedList') depth += 1
+      if ($pos.node(level).type.name === typeName) depth += 1
     }
     return depth
   } catch (_) {
     return 1
   }
+}
+
+/** 有序列表在第几层（第 1 层 `1.`、第 2 层 `a.`、第 3 层 `i.`）。 */
+export function orderedListDepth(doc, pos) {
+  return listDepth(doc, pos, 'orderedList')
+}
+
+/** 无序列表在第几层（只影响圆点的缩进层级）。 */
+export function bulletListDepth(doc, pos) {
+  return listDepth(doc, pos, 'bulletList')
 }
 
 /**
@@ -619,30 +640,58 @@ export function canContinueListNumber(doc, pos) {
  * 列表上的 `continueFrom`（「继续编号」写下的标记）让这个列表接着**前面紧邻**
  * 有序列表的最后一项继续排；前一个列表增删条目时跟着变，不落死数字。
  */
+/**
+ * 一趟结构化遍历所有「同类型列表」，顺路带下嵌套层数与前一个兄弟。
+ *
+ * 原实现每个列表都调 `listDepth(doc, pos)` → `doc.resolve(pos)`，扁平文档上是
+ * O(块数) 的随机访问，几百个列表叠起来就是 O(n²)（2,000 块实测 30 ms 级）。
+ * 前兄弟也不再 resolve：递归时手上就有 parent / index。
+ *
+ * 语义与 `listDepth` 一致：层数 = 祖先里同类列表容器的个数 + 1。
+ */
+function eachList(doc, typeName, visit) {
+  const walk = (parent, parentStart, depth) => {
+    let pos = parentStart
+    for (let index = 0; index < parent.childCount; index += 1) {
+      const child = parent.child(index)
+      const isSame = child.type.name === typeName
+      if (isSame) visit(child, pos, depth + 1, parent, index)
+      if (child.content.size) walk(child, pos + 1, isSame ? depth + 1 : depth)
+      pos += child.nodeSize
+    }
+  }
+  walk(doc, 0, 0)
+}
+
 export function computeOrderedListNumbers(doc) {
   const result = new Map()
   if (!doc) return result
   // 每个列表排到第几号（ol 起始 pos → 最后一项的序号），供后面的「继续编号」接号。
   const totals = new Map()
-  doc.descendants((node, pos) => {
-    if (node.type.name !== 'orderedList') return true
-    const depth = orderedListDepth(doc, pos)
+  eachList(doc, 'orderedList', (node, pos, depth, parent, index) => {
     let start = Number(node.attrs?.start) > 0 ? Number(node.attrs.start) : 1
     if (node.attrs && node.attrs.continueFrom) {
-      const prev = previousSiblingOrderedList(doc, pos)
-      const prevTotal = prev ? totals.get(prev.pos) : undefined
+      const prev = index > 0 ? parent.child(index - 1) : null
+      const prevTotal = prev && prev.type.name === 'orderedList' ? totals.get(pos - prev.nodeSize) : undefined
       if (Number.isFinite(prevTotal)) start = prevTotal + 1
     }
-    let index = start
+    let current = start
     node.forEach((item, offset) => {
       if (item.type.name !== 'listItem') return
       const explicit = Number(item.attrs?.numberStart)
-      if (Number.isFinite(explicit) && explicit > 0) index = Math.round(explicit)
-      result.set(pos + 1 + offset, { label: formatOrderedIndex(index, depth), depth, index, numberStart: item.attrs?.numberStart ?? null })
-      index += 1
+      if (Number.isFinite(explicit) && explicit > 0) current = Math.round(explicit)
+      // `firstChildIsParagraph` 给装饰层直接用：列表标记只挂在「首子是段落」的 item 上，
+      // 判定所需的 node 这里本来就有，调用方再 doc.nodeAt(pos) 一次就是 O(n) 随机访问。
+      result.set(pos + 1 + offset, {
+        label: formatOrderedIndex(current, depth),
+        depth,
+        index: current,
+        numberStart: item.attrs?.numberStart ?? null,
+        firstChildIsParagraph: item.firstChild?.type.name === 'paragraph',
+      })
+      current += 1
     })
-    totals.set(pos, index - 1)
-    return true
+    totals.set(pos, current - 1)
   })
   return result
 }
@@ -651,19 +700,12 @@ export function computeOrderedListNumbers(doc) {
 export function computeBulletItems(doc) {
   const result = new Map()
   if (!doc) return result
-  doc.descendants((node, pos) => {
-    if (node.type.name !== 'bulletList') return true
-    let depth = 1
-    try {
-      const $pos = doc.resolve(pos)
-      for (let level = $pos.depth; level > 0; level -= 1) {
-        if ($pos.node(level).type.name === 'bulletList') depth += 1
-      }
-    } catch (_) { depth = 1 }
+  eachList(doc, 'bulletList', (node, pos, depth) => {
     node.forEach((item, offset) => {
-      if (item.type.name === 'listItem') result.set(pos + 1 + offset, { depth })
+      if (item.type.name === 'listItem') {
+        result.set(pos + 1 + offset, { depth, firstChildIsParagraph: item.firstChild?.type.name === 'paragraph' })
+      }
     })
-    return true
   })
   return result
 }
@@ -806,24 +848,31 @@ export function resolveHeadingSection(doc, pos) {
  * 不会带走它们；反过来缩进更深的普通段落、代码块、列表都属于 H2 的子树。
  * 目录（collectOutline）仍然按标题级别排，那是另一套语义。
  */
-export function resolveHeadingSectionMode(doc, pos) {
-  if (pos < 0 || pos > doc.content.size) return null
-  const heading = doc.nodeAt(pos)
-  // 飞书的章节不属于标题：段落、列表、代码块只要下面挂了子块，折叠与悬停高亮
-  // 都按同一套「缩进子树」处理（用户实测：段落 + 缩进代码块也是一个整体）。
-  if (!heading || !heading.isBlock) return null
-  const resolved = doc.resolve(pos)
-  const parent = resolved.parent
-  const baseIndent = nodeIndent(heading)
+/**
+ * 从宿主块的**下一个兄弟**开始向后扫，找出一段「缩进子树」的边界。
+ *
+ * 这是章节边界的唯一实现：单点解析（resolveHeadingSectionMode）与全量折叠范围
+ * （collectFoldRanges）都调它。
+ *
+ * 入参全部来自调用方手上已有的结构（父节点、子序号、子起点、父内容终点），
+ * 所以这里**不做任何 `doc.resolve` / `doc.nodeAt`** —— 扁平文档里两者都是
+ * O(子节点数)，逐块调用会把整趟扫描拖成 O(n²)（P7-01 实测 2,000 块全量重建
+ * 574 ms 的主因就是这两个随机访问）。
+ *
+ * @returns {{ end: number, hasDescendantHeading: boolean, blocks: Array }}
+ *   `end` 是第一个**不属于**该子树的兄弟起点；扫到父内容结尾仍未截断时等于 `parentEnd`。
+ */
+function scanSectionSiblings(parent, startIndex, startChildPos, baseIndent, hostNode, parentEnd) {
   // 老文档里代码块/表格还没有 indent 属性，沿用前一个兄弟块的层级，
   // 否则子树的连续性会被一个缺属性的块截断。
   let previousIndent = baseIndent
   let hasDescendantHeading = false
-  let end = resolved.end()
-  const blocks = [sectionBlock(heading, pos, 'heading')]
-  for (let index = resolved.index() + 1; index < resolved.parent.childCount; index += 1) {
-    const sibling = resolved.parent.child(index)
-    const siblingPos = resolved.posAtIndex(index)
+  let end = parentEnd
+  const blocks = []
+  const hostIsText = hostNode.type.name === 'paragraph' || hostNode.type.name === 'heading'
+  let siblingPos = startChildPos
+  for (let index = startIndex; index < parent.childCount; index += 1) {
+    const sibling = parent.child(index)
     const indent = sectionIndent(sibling, previousIndent)
     // 列表在视觉上天然缩进（序号/圆点画在正文列之外），飞书里标题/段落下面
     // 直接跟一个没有显式缩进的列表时，列表就是它的子块（折叠 + 高亮都算进去）。
@@ -831,8 +880,7 @@ export function resolveHeadingSectionMode(doc, pos) {
     const ownIndent = Number.isInteger(sibling.attrs?.indent) ? sibling.attrs.indent : null
     // 只有段落/标题做宿主时，未缩进列表才算隐式子块（列表符号画在正文列之外，
     // 视觉上天然挂在文字块下面）；代码块等容器盒子后面的列表仍是顶层兄弟。
-    const implicitList = (heading.type.name === 'paragraph' || heading.type.name === 'heading')
-      && LIST_SECTION_TYPES.has(sibling.type.name) && !(ownIndent > 0)
+    const implicitList = hostIsText && LIST_SECTION_TYPES.has(sibling.type.name) && !(ownIndent > 0)
     const effective = implicitList ? Math.max(indent, baseIndent + 1) : indent
     if (effective <= baseIndent) { end = siblingPos; break }
     // 继承基准仍用原始缩进：列表的「隐式 +1」只决定它自己算不算子块，
@@ -841,11 +889,34 @@ export function resolveHeadingSectionMode(doc, pos) {
     const isHeading = sibling.type.name === 'heading'
     if (isHeading) hasDescendantHeading = true
     if (sibling.isBlock) blocks.push(sectionBlock(sibling, siblingPos, isHeading ? 'descendant-heading' : 'body'))
+    siblingPos += sibling.nodeSize
   }
+  return { end, hasDescendantHeading, blocks }
+}
+
+export function resolveHeadingSectionMode(doc, pos) {
+  if (pos < 0 || pos > doc.content.size) return null
+  const resolved = doc.resolve(pos)
+  // 块位置是「子节点起点」，nodeAfter 就是要解析的块；nodeAt 在这里是白跑一次
+  // 线性查找（见 scanSectionSiblings 的注释）。
+  const heading = resolved.nodeAfter
+  // 飞书的章节不属于标题：段落、列表、代码块只要下面挂了子块，折叠与悬停高亮
+  // 都按同一套「缩进子树」处理（用户实测：段落 + 缩进代码块也是一个整体）。
+  if (!heading || !heading.isBlock) return null
+  const parent = resolved.parent
+  const scan = scanSectionSiblings(
+    parent,
+    resolved.index() + 1,
+    pos + heading.nodeSize,
+    nodeIndent(heading),
+    heading,
+    resolved.end(),
+  )
+  const blocks = [sectionBlock(heading, pos, 'heading'), ...scan.blocks]
   // hasContent 的语义是「标题下面还有块」——只挂子标题也算有内容，
   // 悬停时整段高亮成一块（飞书的遮罩就是一个矩形）。
   const hasContent = blocks.length > 1
-  return { from: pos, to: end, headingPos: pos, heading, parent, blocks, hasContent, hasDescendantHeading }
+  return { from: pos, to: scan.end, headingPos: pos, heading, parent, blocks, hasContent, hasDescendantHeading: scan.hasDescendantHeading }
 }
 
 /** resolveHeadingSectionMode 的 highlight 模式别名，供旧调用方与高亮逻辑使用。 */
@@ -859,27 +930,51 @@ export function resolveHeadingHighlightSection(doc, pos) {
  * 折叠偏好按 blockId 存，所以没有 id 的块（结构性容器）不参与；
  * 有没有「可折叠内容」由 foldedRange 判断，这里只管资格。
  */
+function isFoldableNodeAt($pos, node) {
+  if (!node || !node.isBlock || !BLOCK_ID_TYPES.has(node.type.name)) return false
+  for (let depth = 1; depth <= $pos.depth; depth += 1) {
+    if (isolatedHeadingContainers.has($pos.node(depth).type.name)) return false
+  }
+  return true
+}
+
 export function isFoldableBlock(doc, pos) {
   if (!doc || !Number.isInteger(pos) || pos < 0 || pos >= doc.content.size) return false
-  const node = doc.nodeAt(pos)
-  if (!node || !node.isBlock || !BLOCK_ID_TYPES.has(node.type.name)) return false
   const resolved = doc.resolve(pos)
+  return isFoldableNodeAt(resolved, resolved.nodeAfter)
+}
+
+/** 判断标题是否属于页面大纲（不在 callout/表格等隔离容器内）。 */
+export function isPageHeading(doc, pos) {
+  if (!doc || pos < 0 || pos > doc.content.size) return false
+  const resolved = doc.resolve(pos)
+  if (!resolved.nodeAfter || resolved.nodeAfter.type.name !== 'heading') return false
   for (let depth = 1; depth <= resolved.depth; depth += 1) {
     if (isolatedHeadingContainers.has(resolved.node(depth).type.name)) return false
   }
   return true
 }
 
-/** 判断标题是否属于页面大纲（不在 callout/表格等隔离容器内）。 */
-export function isPageHeading(doc, pos) {
-  if (!doc || pos < 0 || pos > doc.content.size) return false
-  const heading = doc.nodeAt(pos)
-  if (!heading || heading.type.name !== 'heading') return false
-  const resolved = doc.resolve(pos)
-  for (let depth = 1; depth <= resolved.depth; depth += 1) {
-    if (isolatedHeadingContainers.has(resolved.node(depth).type.name)) return false
+/**
+ * 折叠范围核心：入参是结构遍历已有的「节点 + 位置 + 父节点 + 子序号 + 父内容终点」，
+ * 不做随机访问，供单点 foldedRange 与全量 collectFoldRanges 共用一份规则。
+ */
+function foldRangeOf(node, pos, parent, index, parentEnd) {
+  // 列表项的子树在自己内部：首个子段落之后的内容（嵌套子列表、代码块…）才是可折叠部分。
+  if (node.type.name === 'listItem' || node.type.name === 'taskItem') {
+    if (node.childCount < 2) return null
+    const from = pos + 1 + node.child(0).nodeSize
+    const to = pos + node.nodeSize - 1
+    return to > from ? { from, to } : null
   }
-  return true
+  // item 的「标题行」（首个子段落）不单独折叠：折叠入口归 item 自己。
+  // 否则同一段内容会同时挂上 item 的箭头和首段落的箭头（两个 widget 落在同一个
+  // 行内位置、互相盖住），点其中一个等于把另一个刚设的状态又切回去。
+  if ((parent.type.name === 'listItem' || parent.type.name === 'taskItem') && index === 0) return null
+  const scan = scanSectionSiblings(parent, index + 1, pos + node.nodeSize, nodeIndent(node), node, parentEnd)
+  const from = pos + node.nodeSize
+  // 空范围等于「没有子块」：折叠箭头不该出现，调用方也无事可做。
+  return scan.end > from ? { from, to: scan.end } : null
 }
 
 /** 计算某个块的折叠范围 [{ from, to }]；没有缩进子树（无处可折叠）返回 null。
@@ -889,26 +984,52 @@ export function isPageHeading(doc, pos) {
  * - 列表项：子树在自己内部，从首个子段落之后到 item 结尾。
  */
 export function foldedRange(doc, pos) {
-  if (!isFoldableBlock(doc, pos)) return null
-  const node = doc.nodeAt(pos)
-  // 列表项的子树在自己内部：首个子段落之后的内容（嵌套子列表、代码块…）才是可折叠部分。
-  if (node && (node.type.name === 'listItem' || node.type.name === 'taskItem')) {
-    if (node.childCount < 2) return null
-    const from = pos + 1 + node.child(0).nodeSize
-    const to = pos + node.nodeSize - 1
-    return to > from ? { from, to } : null
-  }
-  // item 的「标题行」（首个子段落）不单独折叠：折叠入口归 item 自己。
-  // 否则同一段内容会同时挂上 item 的箭头和首段落的箭头（两个 widget 落在同一个
-  // 行内位置、互相盖住），点其中一个等于把另一个刚设的状态又切回去。
+  if (!doc || !Number.isInteger(pos) || pos < 0 || pos >= doc.content.size) return null
   const resolved = doc.resolve(pos)
-  const parentName = resolved.parent.type.name
-  if ((parentName === 'listItem' || parentName === 'taskItem') && resolved.index() === 0) return null
-  const section = resolveHeadingSectionMode(doc, pos)
-  if (!section) return null
-  const from = pos + section.heading.nodeSize
-  // 空范围等于「没有子块」：折叠箭头不该出现，调用方也无事可做。
-  return section.to > from ? { from, to: section.to } : null
+  const node = resolved.nodeAfter
+  if (!isFoldableNodeAt(resolved, node)) return null
+  return foldRangeOf(node, pos, resolved.parent, resolved.index(), resolved.end())
+}
+
+/**
+ * 全文档的折叠范围：`Map<块起点, { from, to, node }>`。
+ *
+ * 与逐块 `foldedRange(doc, pos)` 结果逐项相同，区别只在于**一趟结构化遍历**：
+ * 父节点、子序号、子起点、父内容终点都在遍历里现成，不出现任何
+ * `doc.nodeAt` / `doc.resolve`。装饰层建折叠箭头用它（2,000 块从 275 ms 降到个位数）。
+ */
+export function collectFoldRanges(doc) {
+  const ranges = new Map()
+  if (!doc) return ranges
+  walkBlocks(doc, 0, false, (node, pos, index, isolated, parent, parentEnd) => {
+    if (isolated || !node.isBlock || !BLOCK_ID_TYPES.has(node.type.name)) return
+    const range = foldRangeOf(node, pos, parent, index, parentEnd)
+    if (range) ranges.set(pos, { from: range.from, to: range.to, node })
+  })
+  return ranges
+}
+
+/**
+ * 结构化块遍历：一次走完整棵树。
+ *
+ * `descendants` 只给 (node, pos)，拿不到父节点、子序号、父内容终点 —— 而章节扫描
+ * 需要这三样，于是每个调用点都用 `doc.resolve(pos)` 反查，逐个 O(子节点数)。
+ * 这里自己走，需要的结构全部顺路带下去。
+ *
+ * `isolated` = 「自己或任一祖先在隔离容器里」（表格单元格、callout…），
+ * 等价于原先每块重算 `doc.resolve(pos)` 再逐层查祖先。
+ */
+function walkBlocks(parent, parentStart, isolated, visit) {
+  const parentEnd = parentStart + parent.content.size
+  let pos = parentStart
+  for (let index = 0; index < parent.childCount; index += 1) {
+    const child = parent.child(index)
+    const childPos = pos
+    pos += child.nodeSize
+    const childIsolated = isolated || isolatedHeadingContainers.has(child.type.name)
+    visit(child, childPos, index, childIsolated, parent, parentEnd)
+    if (child.content.size) walkBlocks(child, childPos + 1, childIsolated, visit)
+  }
 }
 
 /**
@@ -1064,8 +1185,9 @@ export function collectBlockIdFixes(doc, previous) {
 export function foldableIdPositions(doc) {
   const index = new Map()
   if (!doc) return index
-  doc.descendants((node, pos) => {
-    if (!isFoldableBlock(doc, pos)) return
+  // 结构遍历：隔离容器由遍历自己标记，不再逐块 doc.nodeAt + doc.resolve。
+  walkBlocks(doc, 0, false, (node, pos, _index, isolated) => {
+    if (isolated || !node.isBlock || !BLOCK_ID_TYPES.has(node.type.name)) return
     const id = node.attrs && node.attrs.blockId
     if (typeof id === 'string' && id) index.set(id, pos)
   })
