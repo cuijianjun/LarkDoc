@@ -10,6 +10,7 @@
  */
 import { createRenderer } from './mount'
 import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
+import { normalizeAIProvider } from './components/lark-doc/ai'
 import { resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy } from './networkPolicy'
 import { createDocumentSession } from './session/DocumentSession'
@@ -87,7 +88,9 @@ export class LarkDoc {
         persistence: this._resolvePersistence(source),
         saveHtml: this.options.saveHtml === true,
         uploadImage: this._resolveUploader(source),
-        aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
+        // `ai` 支持四种写法：地址字符串、{endpoint}、{protocol:'openai',baseURL}、
+        // 以及旧的 {stream(args){}} 钩子。这里统一收敛成标准 provider，Workspace 只认一种契约。
+        aiProvider: normalizeAIProvider(source.ai),
         session: this._session,
       },
       on: {

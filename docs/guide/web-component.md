@@ -86,10 +86,14 @@ function Editor() {
 const el = document.querySelector('lark-doc')
 el.options = {
   uploader: { upload: async (file) => url },
-  ai: { enabled: true },
+  ai: { endpoint: '/api/ai' },        // 只给地址；也可传 { protocol:'openai', baseURL, apiKey, model }
   persistence: myPersistenceAdapter,
 }
 ```
+
+::: tip AI 配置不是开关
+`ai` 只负责「怎么生成」，`features.ai` 才是显不显示入口。`ai: { enabled: true }` 这类没有地址也没有钩子的写法会被判为无效并回退本地 Mock。三档写法见 [AI 组件](/blocks/ai)。
+:::
 
 ::: warning 时序
 `connectedCallback` 延迟到宏任务执行，因此**命令式调用必须等 `lark-doc-ready`**；`el.options = {...}` 要在挂载完成前或重建前设置。同步脚本阶段直接调 `el.getJSON()` 会得到 null。
