@@ -1,7 +1,7 @@
 /**
  * calloutColorMixin — 高亮块（callout）工具条、表情选择器、颜色盘，以及通用区块删除辅助。
  * 通过 this.editor、this.writable()、this.run()、this.$refs.root、this.handleRange 与主组件协作；
- * 主组件的 onSelectionUpdate/onDocumentScroll 会调用 updateCalloutTools；deleteBlockRange 也被
+ * selectionPacingMixin 的 onSelectionUpdate 与主组件的 onDocumentScroll 会调用 updateCalloutTools；deleteBlockRange 也被
  * tableToolsMixin（删表）与 blockMenuMixin（删除区块/剪切）复用。
  * 采用 mixin 而非子组件：工具条与颜色盘模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */

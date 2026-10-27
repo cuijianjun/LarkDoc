@@ -1,7 +1,7 @@
 /**
  * tableToolsMixin — 表格工具条、表格边界高亮、行列插入/删除等表格操作与列宽拖拽。
  * 通过 this.editor、this.writable()、this.run()、this.$refs.root 与主组件协作；
- * 主组件的 onSelectionUpdate/onDocumentScroll 会调用 updateTableBoundary/clearTableBoundaryHover。
+ * selectionPacingMixin 的 onSelectionUpdate 与主组件的 onDocumentScroll 会调用 updateTableBoundary/clearTableBoundaryHover。
  * 采用 mixin 而非子组件：表格边界 overlay 与工具条模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
 import { closeHistory } from '@tiptap/pm/history'

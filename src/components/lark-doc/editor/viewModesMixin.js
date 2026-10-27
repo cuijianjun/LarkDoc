@@ -5,6 +5,7 @@
  * 采用 mixin 而非子组件：模板结构保持不变，依赖 Vue 2 的 data/computed/methods 合并语义。
  */
 import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../documentOperations'
+import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
 import { DOC_MODES, MODE_ICONS, MODE_MENU_WIDTH, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText } from './docModes'
 
 export default {
@@ -111,8 +112,57 @@ export default {
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       this.activeHeading = pos
     },
-    updateSearch() { if (!this.editor || !this.featureEnabled('search')) return; this.searchMatches = findTextMatches(this.editor.state.doc, this.searchQuery); this.searchIndex = Math.min(this.searchIndex, Math.max(0, this.searchMatches.length - 1)); if (this.searchMatches.length) { const match = this.searchMatches[this.searchIndex]; this.editor.commands.revealLarkDocMatch(match.from, match.to) } this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex) },
-    nextMatch(step) { if (!this.searchMatches.length) return; this.searchIndex = (this.searchIndex + step + this.searchMatches.length) % this.searchMatches.length; const match = this.searchMatches[this.searchIndex]; this.editor.commands.revealLarkDocMatch(match.from, match.to); this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex); this.editor.commands.setTextSelection(match); this.editor.view.domAtPos(match.from).node.parentElement?.scrollIntoView({ block: 'center' }) },
+    /**
+     * 重算命中并刷新高亮（P7-04）。
+     *
+     * 三个入口（输入框逐字符、编辑后重搜、替换后）都汇到这里，但**逐字符与编辑后
+     * 重搜必须先走 `scheduleSearchUpdate()` 去抖** —— 一次 `updateSearch` 是
+     * 「全量扫文档 + 两次 transaction」，2,000 块正文上单次就是几十毫秒，
+     * 而每个字符、每次按键都会触发它。
+     *
+     * 幂等短路：文档对象与查询词都没变时直接返回。`setLarkDocSearch` /
+     * `revealLarkDocMatch` 各发一个 transaction，而每个 transaction 都会连带
+     * 折叠同步、句柄遮罩、表格裁剪整圈重测 —— 不值得为一个「什么都没变」重跑。
+     */
+    updateSearch() {
+      if (!this.editor || !this.featureEnabled('search')) return
+      const doc = this.editor.state.doc
+      const signature = `${this.searchQuery}\u0000${this.searchIndex}`
+      if (this._searchDoc === doc && this._searchSignature === signature) return
+      this.searchMatches = findTextMatches(doc, this.searchQuery)
+      // clamp 之后再落签名：否则签名记的是 clamp 前的 index，下一次同样输入的
+      // updateSearch 会被判成「变了」而白跑一轮全量扫描。
+      this.searchIndex = Math.min(this.searchIndex, Math.max(0, this.searchMatches.length - 1))
+      this._searchDoc = doc
+      this._searchSignature = `${this.searchQuery}\u0000${this.searchIndex}`
+      if (this.searchMatches.length) {
+        const match = this.searchMatches[this.searchIndex]
+        this.editor.commands.revealLarkDocMatch(match.from, match.to)
+      }
+      this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex)
+    },
+    /** 去抖入口：连续输入 / 连续编辑只留最后一次。`$timers` 是单测注入的假时钟。 */
+    scheduleSearchUpdate() {
+      if (!this.editor || !this.featureEnabled('search')) return
+      if (!this._searchDebounce) {
+        this._searchDebounce = createTrailingDebounce({ delay: SEARCH_DEBOUNCE_MS, timers: this.$timers })
+      }
+      this._searchDebounce.schedule(() => this.updateSearch())
+    },
+    /** 需要「当前输入的命中」时先落地待办（输入后立刻按 Enter 就是这种场景）。 */
+    flushSearchUpdate() { if (this._searchDebounce) this._searchDebounce.flush() },
+    nextMatch(step) {
+      // 输入框刚改完、去抖还没到点就按了 Enter：先把待办 flush 掉，
+      // 否则跳的是上一轮命中的位置。
+      this.flushSearchUpdate()
+      if (!this.searchMatches.length) return
+      this.searchIndex = (this.searchIndex + step + this.searchMatches.length) % this.searchMatches.length
+      const match = this.searchMatches[this.searchIndex]
+      this.editor.commands.revealLarkDocMatch(match.from, match.to)
+      this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex)
+      this.editor.commands.setTextSelection(match)
+      this.editor.view.domAtPos(match.from).node.parentElement?.scrollIntoView({ block: 'center' })
+    },
     replace(all) {
       if (!this.writable() || !this.searchQuery) return
       if (all) { replaceText(this.editor, this.searchQuery, this.replacement, true) } else {
@@ -127,7 +177,14 @@ export default {
       this.updateSearch()
     },
     // P4-05：关闭时把 tab 归位到「查找」（下次打开不带上次痕迹），拖拽位置刻意保留。
-    closeSearch() { this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.searchTab = 'find'; this.editor?.commands.setLarkDocSearch(''); this.focus() },
+    closeSearch() {
+      this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.searchTab = 'find'
+      // 挂起的去抖必须取消：否则关面板 120ms 后还会拿空查询再全量扫一遍文档。
+      if (this._searchDebounce) this._searchDebounce.cancel()
+      this._searchDoc = null; this._searchSignature = ''
+      this.editor?.commands.setLarkDocSearch('')
+      this.focus()
+    },
     // P4-06 第 2 条：三态模式切换（07 §1 / §1.1 / §12.1）。入口只有两个 ——
     // 顶栏「编辑」下拉与下面的键位；「更多」菜单里**刻意没有**修订入口（07 §12.1 实测）。
     // 修订态的标记 DOM / 建议面板属于第 3 条，本节只负责把状态切对。
@@ -209,5 +266,7 @@ export default {
   // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。
   beforeDestroy() {
     if (this.modeToastTimer) { clearTimeout(this.modeToastTimer); this.modeToastTimer = null }
+    // 查找去抖同理：卸载后不许再有回调去摸 editor。
+    if (this._searchDebounce) { this._searchDebounce.dispose(); this._searchDebounce = null }
   },
 }

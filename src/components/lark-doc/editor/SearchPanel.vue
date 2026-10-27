@@ -52,7 +52,7 @@
             :value="ed.searchQuery"
             aria-label="查找内容"
             placeholder="在文档内查找"
-            @input="ed.setSearchQuery($event.target.value); ed.updateSearch()"
+            @input="ed.setSearchQuery($event.target.value); ed.scheduleSearchUpdate()"
             @keydown.enter.prevent="ed.nextMatch(1)"
           ><span class="lark-doc-fr-counter">{{ counterText }}</span>
         </div>

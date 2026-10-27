@@ -198,6 +198,9 @@ import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './lark
 // 「注册表缝」），Task 6 拆三端适配时会把 registerVue2NodeViews() 的调用点挪到宿主入口。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
+// P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
+// 主组件连 onSelectionUpdate 都不再持有 —— 否则组件自身的同名方法会盖掉 mixin。
+import selectionPacingMixin from './editor/selectionPacingMixin'
 import commandMenuMixin from './editor/commandMenuMixin'
 import tableToolsMixin from './editor/tableToolsMixin'
 import toolbarCollapseMixin from './editor/toolbarCollapseMixin'
@@ -245,7 +248,7 @@ registerVue2NodeViews()
 export default {
   name: 'LarkDocEditor',
   components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -517,35 +520,10 @@ export default {
       this.wordCount = this.editor.storage.characterCount.characters()
       if (this.effectiveMaxLength > 0 && this.wordCount > this.effectiveMaxLength) this.error = `正文不能超过 ${this.effectiveMaxLength} 字，请缩短正文`
       else if (this.error.startsWith('正文不能超过 ')) this.error = ''
-      if (this.searchQuery) this.updateSearch()
+      if (this.searchQuery) this.scheduleSearchUpdate()
     },
     // syncFoldState / syncOutlineCollapseState 在 viewModesMixin（视图级状态的那一支）。
-    onSelectionUpdate() {
-      if (!this.editor) return
-      const { selection } = this.editor.state
-      if (this.editor.isFocused) this.savedSelection = { from: selection.from, to: selection.to }
-      this.activeHeading = [...this.outline].reverse().find((item) => item.pos <= selection.from)?.pos ?? -1
-      const coords = this.editor.view.coordsAtPos(selection.from)
-      if (!this.handlePressed && !this.blockMenuOpen && !this.blockTypeMenuOpen) this.positionBlockHandle(this.currentBlockRange())
-      if (this.editor.isActive('table') && this.writable()) this.tableToolsOpen = true
-      this.clearTableBoundaryHover()
-      this.updateTableBoundary()
-      this.$nextTick(() => this.updateTableBoundary())
-      this.updateCalloutTools()
-      this.bubbleVisible = !selection.empty && !selection.node && !this.effectiveReadonly && this.editor.isFocused
-      if (this.bubbleVisible) {
-        // 顶部避让：选区贴近视口顶部时，气泡条不能钻进吸顶工具栏（飞书同样会把浮条翻到选区下方）。
-        const safeTop = this.bubbleSafeTop()
-        const endCoords = this.editor.view.coordsAtPos(selection.to)
-        const naturalTop = coords.top - 50
-        const top = naturalTop >= safeTop ? naturalTop : endCoords.bottom + 10
-        this.bubblePosition = {
-          left: Math.max(8, Math.min(window.innerWidth - 270, coords.left)),
-          top: Math.max(safeTop, Math.min(top, window.innerHeight - 60)),
-        }
-      }
-      else { this.closeBubbleAlignMenu(); this.closeBubbleHeadingMenu() }
-    },
+    // onSelectionUpdate 已下沉到 editor/selectionPacingMixin.js（P7-04 帧级合并）。
     onDocumentScroll() {
       if (this._outlineFrame || !this.editor) return
       this._outlineFrame = requestAnimationFrame(() => {
