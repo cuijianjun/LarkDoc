@@ -18,6 +18,7 @@ import {
   createDerivedSnapshot,
   documentBlockCount,
   documentFingerprint,
+  documentMetrics,
   isValidDerivedSnapshot,
   validateDerivedSnapshot,
 } from '../../src/core/derive/snapshot'
@@ -87,6 +88,20 @@ describe('P7-03 derived snapshot: fingerprint', () => {
     expect(documentFingerprint(edited.toJSON())).not.toBe(before)
   })
 
+  it('agrees between the editor node and the persisted JSON when blocks are empty', () => {
+    // 空段落是常态（新块、列表项首行还没填字），而 `Node.toJSON()` 在
+    // `content.size === 0` 时**不写** `content` 字段。若按「有没有 content」区分
+    // 叶子，保存侧（PM 节点）记 2、校验侧（JSON）记 1，指纹与尺寸必然不等，
+    // 含空段落的文档会 100% 判伪 —— P7-03 的早期水合等于没做。
+    const doc = nodeFromJSON([
+      { type: 'heading', attrs: { level: 1, blockId: 'blk-a' }, content: [{ type: 'text', text: '总则' }] },
+      { type: 'paragraph', attrs: { blockId: 'blk-empty' } },
+      { type: 'paragraph', attrs: { blockId: 'blk-b' }, content: [{ type: 'text', text: '正文一' }] },
+    ])
+    expect(documentMetrics(doc.toJSON())).toEqual(documentMetrics(doc))
+    expect(documentFingerprint(doc.toJSON())).toBe(documentFingerprint(doc))
+  })
+
   it('is order sensitive: two blocks swapping places is a different document', () => {
     const swapped = nodeFromJSON([
       { type: 'paragraph', attrs: { blockId: 'blk-d' }, content: [{ type: 'text', text: '正文二' }] },
@@ -112,6 +127,19 @@ describe('P7-03 derived snapshot: validation', () => {
     const result = validateDerivedSnapshot(persisted(createDerivedSnapshot(sampleDoc())), json)
     expect(result).not.toBeNull()
     expect(result.outline.map((item) => item.text)).toEqual(['总则', '细则'])
+  })
+
+  it('accepts a snapshot whose document contains empty blocks (storage round trip)', () => {
+    // 真实草稿里几乎必然有空段落（末尾空行、列表项首行），所以「保存侧喂 PM 节点、
+    // 校验侧喂 JSON」这条链必须在有空块的文档上也能对上号。
+    const doc = nodeFromJSON([
+      { type: 'heading', attrs: { level: 1, blockId: 'blk-a' }, content: [{ type: 'text', text: '总则' }] },
+      { type: 'paragraph', attrs: { blockId: 'blk-empty' } },
+      { type: 'heading', attrs: { level: 2, blockId: 'blk-c' } },
+    ])
+    const result = validateDerivedSnapshot(persisted(createDerivedSnapshot(doc)), doc.toJSON())
+    expect(result).not.toBeNull()
+    expect(result.outline.map((item) => item.text)).toEqual(['总则', ''])
   })
 
   it('rejects a stale snapshot whose block count no longer matches', () => {

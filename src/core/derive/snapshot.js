@@ -53,8 +53,9 @@ function childrenOf(node) {
 /**
  * 一次遍历同时算出块数、文档尺寸与指纹。
  *
- * `size` 与 ProseMirror 的 `doc.content.size` 逐位相同（元素 2 + 子内容，文本取长度，
- * 原子节点计 1），所以可以用它给大纲 `pos` 兜上界，不必先把正文解析成节点。
+ * `size` 是 ProseMirror `doc.content.size` 的**上界**（元素 2 + 子内容，文本取长度；
+ * 原子叶子同样按 2 计，比实际多 1），所以可以用它给大纲 `pos` 兜上界，不必先把正文
+ * 解析成节点。多算 1 只会让上界更松，不会漏判。
  *
  * @returns {{ blockCount: number, size: number, fingerprint: number } | null}
  */
@@ -96,12 +97,16 @@ export function documentMetrics(node) {
     // `text.length` —— 同一份正文两条腿就撞不上。所以文本必须先按长度返回。
     if (text !== null) return text.length
     const children = childrenOf(current)
-    // 非文本节点没有 content：JSON 里这就是叶子原子节点（hardBreak / image），
-    // nodeSize 记 1；根节点已在上面拦掉，不会走到这里。
-    if (!children) return 1
+    // 非文本节点「没有 content」与「content 是空容器」是同一件事，两条腿必须同判：
+    // PM 的空 Fragment（`.content` 是 `[]`）与 JSON 省略 `content`（`Node.toJSON()`
+    // 在 `content.size === 0` 时直接不写这个字段）都表示空容器。
+    // 只按「有没有 content」区分叶子会让**含空段落的文档永远判伪** —— 空段落
+    // PM 记 2、JSON 记 1，指纹必然不等，P7-03 的早期水合于是静默失效。
+    // 代价：原子叶子（image / hardBreak）也按 2 计，`size` 因此是上界而非等值；
+    // 这里只用它给 outline `pos` 兜上界，上界更安全。
     mix('\u0001')
     let inner = 0
-    for (const child of children) inner += walk(child)
+    if (children) for (const child of children) inner += walk(child)
     return 2 + inner
   }
   // `doc.content.size` 不含 doc 自身的 2，所以尺寸按子节点求和算，别用 walk 的返回值。
