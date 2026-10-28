@@ -60,15 +60,23 @@ for (const [from, to] of RENAMES) {
   renamed += hits
 }
 
-// 外部依赖调用必须原样保留：它就是留给使用方去改写的入口。
-const externalKept = /module\.exports = require\("vue\/dist\/vue\.runtime\.common\.js"\)/.test(code)
-
-if (!externalKept) {
-  console.error('[fix-lib-require-scope] 没找到 vue 外部依赖调用，产物形态可能已变，请人工确认')
-  process.exit(1)
-}
+// Vue 这条外部依赖调用必须原样保留：它就是留给使用方去改写的入口。
+// 形态会随 webpack 对 vue 的导入方式变化 —— 阶段 2 摘掉 `@tiptap/vue-2` 后由
+// `module.exports = require("vue/...")` 变成 `var ns = require("vue/...")`
+// （namespace 导入），所以这里只认「vue 的 external require 调用」本身，不认赋值形式。
+// 阶段 3 起 esm/cjs 会 `--inline-vue`，那时产物里根本没有这条调用，守卫自然让位。
+const VUE_EXTERNAL = /require\("vue\/dist\/vue\.runtime\.common\.js"\)/
+const hadExternalVue = VUE_EXTERNAL.test(code)
 
 fs.writeFileSync(TARGET, code)
+
+if (hadExternalVue && !VUE_EXTERNAL.test(code)) {
+  console.error('[fix-lib-require-scope] vue 外部依赖调用被改名破坏，产物形态可能已变，请人工确认')
+  process.exit(1)
+}
+if (!hadExternalVue) {
+  console.log('[fix-lib-require-scope] 产物未外置 vue（已内联），跳过 external 守卫')
+}
 
 // 改完必须保证内层不再残留旧标识符，否则等于没修。
 const leftover = RENAMES.filter(([from]) => code.includes(from)).map(([from]) => from)

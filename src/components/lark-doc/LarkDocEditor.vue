@@ -71,16 +71,15 @@
             class="lark-doc-drop-line"
             :style="{ top: `${dropLineTop}px` }"
             aria-hidden="true"
-          /><editor-content
-            v-if="editor"
+          /><div
             id="lark-doc-editor"
-            :editor="editor"
+            ref="editorEl"
             class="lark-doc-editor-content"
-            @keydown.native="onEditorKeydown"
-            @pointerdown.native="onColumnPointerDown"
-            @pointermove.native="onEditorPointerMove"
-            @dragover.native="onBlockDragOver"
-            @drop.native="onBlockDrop"
+            @keydown="onEditorKeydown"
+            @pointerdown="onColumnPointerDown"
+            @pointermove="onEditorPointerMove"
+            @dragover="onBlockDragOver"
+            @drop="onBlockDrop"
           /><CalloutTools :ed="self" /><TableBoundaryTools :ed="self" />
         </div><footer class="lark-doc-status">
           <span>{{ wordCount }}{{ effectiveMaxLength > 0 ? ` / ${effectiveMaxLength}` : '' }} 字 · {{ outline.length }} 个标题</span><span>{{ effectiveReadonly ? '仅阅读' : '输入 / 快速插入' }}</span>
@@ -158,7 +157,10 @@
 // LarkDocEditor.vue —— 编辑器视图层：模板、props、生命周期与内容管理核心方法。
 // 各 UI 子域拆分到 ./editor/ 下的 mixin（视图模式/命令菜单/表格工具/区块句柄/区块菜单/
 // 气泡菜单/高亮块与颜色盘/工具栏菜单），经 Vue 2 选项合并后仍以 this.xxx 供模板与生命周期调用。
-import { Editor, EditorContent } from '@tiptap/vue-2'
+// 阶段 2：直接用 core 的 Editor —— `@tiptap/vue-2` 的 Editor 只多一个 contentComponent
+// 字段（仅 Vue NodeView 读取），代码块改成 core 原生 NodeView 后已无人使用；
+// 挂载也不再走 <editor-content>，改为把容器元素直接交给 core（`element` 选项）。
+import { Editor } from '@tiptap/core'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
@@ -193,9 +195,10 @@ import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
-// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，自己注册进 core 的注册表，
-// 这里只负责把适配层拉起来。core → adapters 这条反向依赖是刻意的临时缝（P0-01 只做到
-// 「注册表缝」），Task 6 拆三端适配时会把 registerVue2NodeViews() 的调用点挪到宿主入口。
+// 阶段 2：图片 / 代码块 NodeView 都已下沉为 core 的纯 DOM 实现（`core/nodeviews/*.js`），
+// Vue 2 适配层不再注册任何 NodeView。这行 import 保留是为了把**注册表缝**拉起来 ——
+// 宿主仍可用 setNodeView(name, renderer) 覆盖 core 默认实现；Task 6 拆三端适配时会把
+// registerVue2NodeViews() 的调用点挪到宿主入口。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
 // P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
@@ -247,7 +250,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  components: { CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
   mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
@@ -367,7 +370,10 @@ export default {
         // 未提供初始正文才只读兼容旧缓存；显式空 value 也是宿主的正文选择。
         try { const cached = localStorage.getItem(String(this.msgId)); if (cached) initialHTML = cached } catch (_) { this.error = '浏览器阻止读取公告缓存' }
       }
+      // 原生挂载（阶段 2）：容器 div 由模板常驻，core 的 Editor 收到 element 后
+      // 自己在该容器里建 EditorView —— 不再需要 <editor-content> 这层 Vue 包装。
       this.editor = new Editor({
+        element: this.$refs.editorEl,
         content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
         extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
@@ -392,12 +398,13 @@ export default {
       window.addEventListener('pointermove', this.onDocumentPointerMove, true)
     } catch (error) { this.error = error.message }
   },
-  beforeDestroy() { document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null },
-  destroyed() {
+  beforeDestroy() {
+    // 原生挂载后 ProseMirror 的 DOM 挂在 Vue 容器里：必须先于 Vue 卸载子树销毁编辑器
+    // （EditorContent 时代的 beforeDestroy 做的就是这件事——把 PM 的 DOM 搬出去再销毁）。
     if (this.session && this.editor) this.session.detachEditor(this.editor)
     this.editor?.destroy()
     this.editor = null
-  },
+    document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
     toolbarEnabled(name) { return this.larkDocConfig.toolbar[name] !== false && this.featureEnabled(name) },

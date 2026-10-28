@@ -94,12 +94,14 @@ src/
     persistence.js                 草稿/本地快照 Provider 兼容层
     versioning.js                  不可变版本 Provider 最小接口校验
     index.js                       Provider 统一导出
+  core/nodeviews/
+    code-block.js           代码块 NodeView：语言下拉、懒加载高亮、Mermaid 图表（三端共用）
+    image.js                图片 NodeView、附件和裁剪（三端共用）
+    ...                     其余块类型 NodeView 同样是纯 DOM 实现
   components/lark-doc/
     LarkDocEditor.vue       编辑器 UI 和 Tiptap 生命周期
     LarkDocWorkspace.vue    工作台 UI、持久化和 Session 接入
     CommandMenu.vue                `/` 命令菜单
-    CodeNode.vue                   代码块 NodeView 和高亮加载
-    ImageNode.vue                  图片 NodeView、附件和裁剪
     commands.js                    块级命令实现
     documentOperations.js          文档级操作和块移动/复制/删除
     ecsImages.js                   ECS 图片上传适配器

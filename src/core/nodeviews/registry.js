@@ -5,8 +5,11 @@
  * 不关心它是 Vue 写的、React 写的还是原生 DOM 写的。注册动作由三端
  * 适配层在各自模块加载时完成（Vue 2 端见 `src/adapters/vue2/`）。
  *
- * 查不到就返回 undefined：`extensions.js` 里 `addNodeView()` 收到 undefined
- * 时，Tiptap 会退回 renderHTML 的默认渲染，节点照样能用，只是没有富 NodeView。
+ * 阶段 2 起，所有块类型（`image` / `codeBlock` / `sheet` / `bitable` …）都自带
+ * core 的**纯 DOM** NodeView，`addNodeView()` 写成
+ * `getNodeView(name) || createXxxNodeView()` —— 注册表从此是**宿主覆盖缝**：
+ * 不注册就用 core 默认实现，注册了就用宿主的。Vue 2 端（`src/adapters/vue2/`）
+ * 目前一个都不注册。
  */
 const registry = new Map()
 

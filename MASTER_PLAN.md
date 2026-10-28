@@ -792,6 +792,19 @@ import { LarkDoc } from 'lark-doc/lite'
 
 **判据**：`npm run verify` 全绿；浏览器断言全绿；代码块的语言切换与增删仍能用；`code_block` 相关装饰行为不变。
 
+**执行结果（2026-10-29 已落地，tag `stage/2`）**
+
+| 动作 | 落地方式 | 备注 |
+|---|---|---|
+| ① 原生挂载 | `LarkDocEditor.vue` 改 `import { Editor } from '@tiptap/core'`，模板去掉 `<editor-content>`，改为把 `<div ref="editorEl">` 交给 `new Editor({ element })`；`beforeDestroy` 前移销毁编辑器（PM 的 DOM 现在挂在 Vue 容器里，必须先于 Vue 卸载子树） | 事件修饰符去掉 `.native`（直接挂在原生 div 上） |
+| ② 代码块 NodeView | 新增 `src/core/nodeviews/code-block.js`（431 行纯 DOM），由 `CodeNode.vue`（323 行）全量平移；`core/blocks/code-block.js` 的 `addNodeView()` 改为 `getNodeView('codeBlock') \|\| createCodeBlockNodeView`（与 image 同构） | 语言下拉改原生 `<select>`（R1 禁引 `.vue`；`code-block.css` 早有该选择器）；图表分支**不渲染下拉** |
+| ③ R2 白名单 | `CodeNode.vue` 删除 → 基线 38 → **37** | `architecture-baseline.json` 同步删条目 |
+| ④ core 下沉 | `diagram.js` / `themeSignal.js` 由 `components/lark-doc/` 迁入 `core/`（R1 不允许 NodeView 反向引 UI 层），原路径留 5 行 `export *` shim | 与既有 `documentOperations.js` shim 同构 |
+| ⑤ 适配层 | `adapters/vue2/nodeviews.js` 清空（不再注册任何 NodeView），保留 `registerVue2NodeViews()` 作为宿主覆盖用的注册表缝 | |
+
+`scripts/check-lark-doc-core.js` 里两条原本直接 parse `CodeNode.vue` 源码的断言，改写为打在 core NodeView 上
+（新增 `codeNodeViewFor()` 装配 helper，与 `imageNodeViewFor()` 同构）。
+
 ---
 
 ### 阶段 3 · 三产物 + 统一门面
@@ -914,8 +927,8 @@ import { LarkDoc } from 'lark-doc/lite'
 | 文件 | 引用 | 换法 |
 |---|---|---|
 | `components/lark-doc/LarkDocEditor.vue` | `Editor, EditorContent` | `Editor` 本来就来自 core（框架无关），`EditorContent` 只是组件壳 → 自己 append DOM |
-| `adapters/vue2/nodeviews.js` | `VueNodeViewRenderer` | core 原生 NodeView |
-| `adapters/vue2/CodeNode.vue` | `NodeViewWrapper/Content/nodeViewProps` | 原生 NodeView；此文件可顺势不再是 SFC |
+| ~~`adapters/vue2/nodeviews.js`~~ | ~~`VueNodeViewRenderer`~~ | ✅ 阶段 2：已清空，core 原生 NodeView |
+| ~~`adapters/vue2/CodeNode.vue`~~ | ~~`NodeViewWrapper/Content/nodeViewProps`~~ | ✅ 阶段 2：已删除，逻辑平移进 `core/nodeviews/code-block.js` |
 
 #### ③ 「脱离 Vue」有三个等级 —— 终局已定为最严的一级（V2/V3）
 
@@ -951,7 +964,7 @@ import { LarkDoc } from 'lark-doc/lite'
 **只要还剩一个 `.vue` 文件，Vue 就不能从 `peerDependencies` 删掉。**
 这与其它阶段不同 —— 1-A / 3 / 4 每做一步都有收益，**阶段 5 只有做到 100% 才有收益**。
 
-- 现状：**38 个 SFC / 7221 行 / 376 KB** —— `editor/` 18、`components/lark-doc` 13、`dialogs/` 6、`adapters/vue2` 1；
+- 现状：**37 个 SFC**（阶段 2 删掉 `adapters/vue2/CodeNode.vue` 后） —— `editor/` 18、`components/lark-doc` 13、`dialogs/` 6；
 - `editor/` 下 31 个 `.js`（26 个 `*Mixin.js` + 5 个纯数据文件）共 **7655 行**。
 
 **7221 行的构成**（这是判断「重写」真实工作量的依据）：

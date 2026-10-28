@@ -1,18 +1,15 @@
 /**
  * Vue 2 端 NodeView 注册入口。
  *
- * 图片块已改为 core 自带的纯 DOM NodeView（`src/core/nodeviews/image.js`），三端共用，
- * 不在这里注册；如果某个宿主想用 Vue 组件覆盖图片，在这里补一行 setNodeView 即可。
- * 代码块仍是 Vue 2 专属实现，所以住在这一层。
+ * 阶段 2 之后这里**不再注册任何 NodeView**：图片块与代码块都已下沉为 core 自带的
+ * 纯 DOM 实现（`core/nodeviews/image.js`、`core/nodeviews/code-block.js`），
+ * 三端共用，静态依赖里不再出现 UI 框架。
  *
- * 注册只做一件事：把「节点名 → NodeView renderer」写进 core 的注册表，
- * core 装配 schema 时按名字查表，静态依赖里因此不再出现 UI 框架。
- * 将来 vue3 / react 适配层各自在这里注册同名节点的自己的实现即可。
+ * 函数保留是宿主覆盖用的「注册表缝」：某个端想用自己的组件替换某个节点的渲染，
+ * 在 `new LarkDoc(options)` 之前调用 `setNodeView(name, renderer)` 即可 ——
+ * 装配 schema 时 core 按名字查表，注册优先于 core 默认实现。
  */
-import { VueNodeViewRenderer } from '@tiptap/vue-2'
-import { setNodeView } from '../../registry/nodeviews'
-import CodeNode from './CodeNode.vue'
-
 export function registerVue2NodeViews() {
-  setNodeView('codeBlock', VueNodeViewRenderer(CodeNode))
+  // 历史实现（CodeNode.vue）已由 core/nodeviews/code-block.js 取代。
+  return []
 }

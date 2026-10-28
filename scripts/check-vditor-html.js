@@ -237,14 +237,14 @@ async function main() {
   check('图表块出现「编辑源码」按钮', blockButtons().indexOf('编辑源码') !== -1)
   check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
   check('图表块携带独立外观类', firstBlock.className.indexOf('lark-doc-code-diagram') !== -1)
-  // 代码块语言下拉已换自绘组件（LarkDocSelect）：点击展开后校验选项清单。
-  const langSelect = Array.from(host.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select'))
-    .find((node) => node.querySelector('[aria-label="代码语言"]'))
-  check('代码块使用自绘语言下拉', Boolean(langSelect))
-  const langTrigger = langSelect && langSelect.querySelector('.lark-doc-select-trigger')
-  if (langTrigger) langTrigger.click()
-  await delay(60)
-  const langMenuItems = Array.from(host.querySelectorAll('.lark-doc-select-menu button')).map((button) => button.textContent.trim())
+  // 代码块语言下拉：阶段 2 起由 core 的纯 DOM NodeView 自绘，形态是**原生 <select>**
+  // （R1 禁止 core 引 `.vue`，原来的 `LarkDocSelect.vue` 换成原生 select，样式由
+  // `code-block.css` 里早已存在的 select 规则承接），所以这里直接读 options 清单。
+  const langSelect = host.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
+  check('代码块使用原生语言下拉', Boolean(langSelect))
+  const langMenuItems = langSelect
+    ? Array.from(langSelect.options).map((option) => option.textContent.trim())
+    : []
   check('语言下拉含 Mermaid 图表项', langMenuItems.some((text) => text.indexOf('Mermaid 图表') !== -1))
   let blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '编辑源码')
   if (blockButton) blockButton.click()

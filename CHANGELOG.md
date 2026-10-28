@@ -84,3 +84,19 @@ resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } }
 代价：宿主必须显式引样式（`import 'lark-doc/dist/lark-doc.css'`）——CJS 档是 CSS 抽取产物，不像 UMD 那样随 JS 注入。
 这条本来就是硬要求，见 README「样式」一行。
 
+### 阶段 2 · 摘掉 `@tiptap/vue-2`
+
+**对外无变化**（Vue 仍在 `peerDependencies` 里，阶段 3 才摘）。三处 `@tiptap/vue-2` 引用全部清零：
+
+| 位置 | 改法 |
+|---|---|
+| `LarkDocEditor.vue` | `Editor` 改从 `@tiptap/core` 引入；`<editor-content>` 换成把容器元素交给 `new Editor({ element })` 原生挂载 |
+| `adapters/vue2/nodeviews.js` | 清空 —— 不再注册任何 NodeView，仅保留 `registerVue2NodeViews()` 作为宿主覆盖用的注册表缝 |
+| `adapters/vue2/CodeNode.vue` | **删除**（323 行），逻辑全量平移进新增的 `src/core/nodeviews/code-block.js`（431 行纯 DOM，三端共用） |
+
+**源码结构调整**
+
+- `diagram.js` / `themeSignal.js` 由 `src/components/lark-doc/` 下沉到 `src/core/`（R1 不允许 core 的 NodeView 反向引 UI 层）；原路径保留 5 行 `export *` shim，旧导入路径继续可用。
+- R2 基线随之由 38 条收紧到 **37 条**。
+
+**代码块行为逐条对齐原 Vue 实现**：懒加载 highlight.js（chunk `highlight`）、Mermaid 图表 300ms 防抖 + 版本号丢弃过期结果、正文轨换档只对图表块重画。唯一的可视差异是**语言下拉由 `LarkDocSelect.vue` 换成原生 `<select>`** —— core 不许引 `.vue`，而 `code-block.css` 里本就有 `.lark-doc-code-toolbar select` 这条规则，样式已经就位。

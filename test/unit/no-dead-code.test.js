@@ -34,7 +34,9 @@ describe('P0-01 删死代码', () => {
   })
 
   it('core 目录（components/lark-doc）里搜不到 ImageNode / CodeNode', () => {
-    // 这两个 NodeView 是 Vue 2 专属实现，P0-01 把它们搬到了 src/adapters/vue2/。
+    // 这两个 NodeView 一度是 Vue 2 专属实现（P0-01 搬到 src/adapters/vue2/）；
+    // 阶段 2 起它们连 SFC 都不是了 —— 图片与代码块都下沉为 core 的纯 DOM NodeView
+    // （src/core/nodeviews/{image,code-block}.js），适配层只留注册表缝。
     // 搜索范围因此限定在 core 所在的 components/lark-doc/：要守的是"它们不再是 core 的
     // 一部分"，而不是"这两个名字在 src 下消失"（后者会误伤合法的适配层位置）。
     // 「core 依赖闭包里不能有它们」这件事，由上面那条闭包断言守。

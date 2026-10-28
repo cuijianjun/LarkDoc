@@ -5,7 +5,6 @@
     "要收紧基线请用 scripts/check-architecture.js 报错信息里给出的命令，不要手改本文件。"
   ],
   ".vue": [
-    "adapters/vue2/CodeNode.vue",
     "components/lark-doc/CommandMenu.vue",
     "components/lark-doc/CommentPanel.vue",
     "components/lark-doc/editor/BlockHandleMenu.vue",

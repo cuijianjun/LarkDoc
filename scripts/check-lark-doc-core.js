@@ -4,8 +4,8 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 const root = path.resolve(__dirname, '../src/components/lark-doc')
-// Vue 2 专属 NodeView（图片 / 代码块）已搬到 src/adapters/vue2/，不再是 core 的一部分。
-const vueNodeRoot = path.resolve(__dirname, '../src/adapters/vue2')
+// 阶段 2：图片 / 代码块 NodeView 都已下沉为 core 的纯 DOM 实现
+// （src/core/nodeviews/{image,code-block}.js），三端共用；Vue2 端只留注册表缝。
 const sourceRoot = path.resolve(__dirname, '../src')
 const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
@@ -1324,46 +1324,69 @@ check('Indent keyboard shortcuts follow the same previous-block ceiling', () => 
   assert.deepStrictEqual(calls.map(([, attrs]) => attrs.indent), [0], '减少缩进到 0 后停住')
 })
 
+/**
+ * 按 tiptap 的装配签名构造代码块 NodeView。阶段 2 起代码块与图片一样是 core 的
+ * 纯 DOM 实现（src/core/nodeviews/code-block.js），不再是 Vue SFC —— 这里照
+ * imageNodeViewFor 的方式装配，断言打在 EditorState 与 NodeView 自己画的 DOM 上。
+ */
+function codeNodeViewFor(attrs, options = {}) {
+  const { createCodeBlockNodeView } = require(path.join(sourceRoot, 'core/nodeviews/code-block.js'))
+  const source = options.text != null ? options.text : 'const value = "<script>"'
+  const editor = editorFor(doc([{ type: 'codeBlock', attrs, content: [text(source)] }]))
+  editor.isEditable = options.editable !== false
+  const listeners = { transaction: [], update: [] }
+  editor.on = (name, fn) => { listeners[name].push(fn); return editor }
+  editor.off = (name, fn) => { listeners[name] = listeners[name].filter((item) => item !== fn); return editor }
+  const emit = (name) => listeners[name].slice().forEach((fn) => fn())
+  let nodeView = null
+  const view = {
+    get state() { return editor.state },
+    dispatch(tr) {
+      editor.state = editor.state.apply(tr)
+      if (nodeView) nodeView.update(editor.state.doc.firstChild)
+      emit('transaction')
+      emit('update')
+    },
+  }
+  nodeView = createCodeBlockNodeView({
+    editor, view, node: editor.state.doc.firstChild, getPos: () => 0,
+    extension: { options: options.extensionOptions || {} },
+  })
+  return { editor, nodeView, view, emit }
+}
+const codeHighlightHtml = (nodeView) => nodeView.dom.querySelector('.lark-doc-code-highlight code').innerHTML
+
 check('Code language changes preserve code and highlighting escapes HTML', () => {
-  assert(fs.existsSync(path.join(vueNodeRoot, 'CodeNode.vue')), 'Missing code NodeView: language/highlight/copy are not implemented')
-  const { parseComponent } = require('vue-template-compiler')
-  const sfc = parseComponent(fs.readFileSync(path.join(vueNodeRoot, 'CodeNode.vue'), 'utf8'))
-  const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
-  const Module = require('module')
-  const module = new Module(path.join(vueNodeRoot, 'CodeNode.vue'))
-  module.filename = path.join(vueNodeRoot, 'CodeNode.vue')
-  module.paths = Module._nodeModulePaths(vueNodeRoot)
-  module._compile(code, path.join(vueNodeRoot, 'CodeNode.vue'))
-  const component = module.exports.default
-  const document = doc([{ type: 'codeBlock', content: [text('const value = "<script>"')] }])
-  const editor = editorFor(document)
-  const vm = { editor, node: editor.state.doc.firstChild, message: '', updateAttributes: (attrs) => editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, attrs)) }
-  component.methods.setLanguage.call(vm, 'javascript')
-  vm.node = editor.state.doc.firstChild
-  assert.strictEqual(vm.node.attrs.language, 'javascript')
-  assert.strictEqual(vm.node.textContent, 'const value = "<script>"')
-  const html = component.computed.highlighted.call(vm)
-  assert(!html.includes('<script>'), 'Before the lazy highlighter resolves, code must remain escaped')
-  editor.isEditable = false
-  component.methods.setLanguage.call(vm, 'python')
-  assert.strictEqual(editor.state.doc.firstChild.attrs.language, 'javascript')
+  withDom(() => {
+    const { editor, nodeView, emit } = codeNodeViewFor({})
+    // 懒加载未落地前：高亮层必须是转义后的文本，绝不能出现可执行标签。
+    assert(!codeHighlightHtml(nodeView).includes('<script>'), 'Before the lazy highlighter resolves, code must remain escaped')
+    assert.strictEqual(nodeView.setLanguage('javascript'), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.language, 'javascript')
+    assert.strictEqual(editor.state.doc.firstChild.textContent, 'const value = "<script>"')
+    assert(!codeHighlightHtml(nodeView).includes('<script>'))
+    // 语言清单之外的值一律拒绝，别把脏语言写进文档。
+    assert.strictEqual(nodeView.setLanguage('rm -rf'), false)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.language, 'javascript')
+    // 只读态：NodeView 经 transaction 同步 editable 后，改语言必须被挡住。
+    editor.isEditable = false
+    emit('transaction')
+    assert.strictEqual(nodeView.getState().editable, false)
+    assert.strictEqual(nodeView.setLanguage('python'), false)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.language, 'javascript')
+    nodeView.destroy()
+  })
 })
 async function checkCodeHighlightLazy() {
-  const component = loadComponent('CodeNode.vue', vueNodeRoot)
-  const document = doc([{ type: 'codeBlock', content: [text('const value = "<script>"')] }])
-  const editor = editorFor(document)
-  editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { language: 'javascript' }))
-  const vm = {
-    editor, node: editor.state.doc.firstChild, message: '', highlightedCode: '',
-    extension: { options: { syntaxHighlight: true } },
-    updateAttributes: (attrs) => editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, attrs)),
-  }
-  vm.refreshHighlighted = () => component.methods.refreshHighlighted.call(vm)
-  component.methods.refreshHighlighted.call(vm)
-  await new Promise(resolve => setTimeout(resolve, 40))
-  const html = component.computed.highlighted.call(vm)
-  assert(html.includes('hljs-keyword'), 'The highlighter should load after a code block is rendered')
-  assert(!html.includes('<script>'))
+  const close = openDom()
+  try {
+    const { nodeView } = codeNodeViewFor({ language: 'javascript' })
+    await new Promise(resolve => setTimeout(resolve, 40))
+    const html = codeHighlightHtml(nodeView)
+    assert(html.includes('hljs-keyword'), 'The highlighter should load after a code block is rendered')
+    assert(!html.includes('<script>'))
+    nodeView.destroy()
+  } finally { close() }
   console.log('PASS CodeNode lazy-loads highlight.js core and escapes the fallback')
 }
 async function checkEcsUploadBoundary() {
