@@ -1,9 +1,10 @@
 /**
  * 全局浮层消解（P0-03 持续瘦身：从 LarkDocEditor.vue 原样下沉，逻辑零改动）。
  *
- * 一个界面上同时可能有 17 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
+ * 一个界面上同时可能有 21 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
  * 帮助 / 标题下拉 / 文档操作 / 图表 / 气泡对齐 / 气泡标题 / callout 表情 /
- * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗 / 日期提醒日历 / 日程搜索面板），它们的关闭入口只有三个：
+ * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗 / 日期提醒日历 / 日程搜索面板 /
+ * 顶栏「更多」/ 链接悬浮卡 / 封面面板 / 代码语言选择器），它们的关闭入口只有三个：
  *   1. 点外部（`onDocumentPointerDown`，capture 阶段绑在 document 上）；
  *   2. `Esc`（`onWindowKeydown`）；
  *   3. 显式调 `closeOverlay()`（弹窗背板点击、Esc 键、宿主主动收起都走它）。
@@ -65,6 +66,14 @@ export default {
       // P4-06 模式下拉：按钮与菜单都在 `.lark-doc-mode-switch` 里（菜单是 fixed，
       // 因为顶栏 header-actions 有 `overflow-x: auto`，absolute 会被裁掉）。
       if (this.modeMenuOpen && !target.closest?.('.lark-doc-mode-switch')) this.closeModeMenu()
+      // —— UI 补齐线四浮层 ——
+      // ⚠️ 这四个走各自的 `xxxContains()` 而不是在这里再抄一遍选择器：命中判定要与
+      // 浮层自己的 DOM 类名同源，抄一份就会出现「改了组件忘了改这里」的静默失效。
+      // 内含的可选调用（`node.closest &&`）由对方方法内部兜住。
+      if (this.topbarMoreOpen && !this.topbarMoreContains(target)) this.closeTopbarMore()
+      if (this.linkHoverOpen && !this.linkHoverContains(target)) this.closeLinkHover()
+      if (this.coverPanelOpen && !this.coverContains(target)) this.closeCoverPanel()
+      if (this.codeLangOpen && !this.codeLangContains(target)) this.closeCodeLangPicker()
       if (!this.$refs.root?.contains(target)) {
         this.headingOpen = false
         this.headingStyle = {}
@@ -87,7 +96,13 @@ export default {
         // 否则 Firefox 会弹「快速查找」、部分输入法会把 / 打进正文。
         if (key === '/') { event.preventDefault(); this.toggleHelpOpen(); return }
       }
-      if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
+      // UI 补齐线四浮层的 Esc 入口。四个都给了 —— 只有「日程搜索面板」和「内嵌网页浮层」
+      // 是实测 Esc 无效才故意不进这条链（见它们各自的注释）。
+      if (event.key === 'Escape' && this.topbarMoreOpen) this.closeTopbarMore()
+      else if (event.key === 'Escape' && this.linkHoverOpen) this.closeLinkHover()
+      else if (event.key === 'Escape' && this.coverPanelOpen) this.closeCoverPanel()
+      else if (event.key === 'Escape' && this.codeLangOpen) this.closeCodeLangPicker()
+      else if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
       // P4-04：按钮配置面板 Esc 可关（02 §22 ⑤-1），关了就不建块 —— 与「日程面板 Esc 无效」相反。
       else if (event.key === 'Escape' && this.isvPanelOpen) this.closeIsvPanel()
       else if (event.key === 'Escape' && this.slides) this.toggleSlides()
@@ -102,6 +117,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.modeMenuOpen) this.closeModeMenu(); else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.modeMenuOpen) this.closeModeMenu(); else if (this.topbarMoreOpen) this.closeTopbarMore(); else if (this.codeLangOpen) this.closeCodeLangPicker(); else if (this.coverPanelOpen) this.closeCoverPanel(); else if (this.linkHoverOpen) this.closeLinkHover(); else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

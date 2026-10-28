@@ -99,6 +99,21 @@ export const ICONS = {
   // 回复卡头像兜底（07 §12.3：灰底人形 SVG）。用半身剪影，别做成「两个圆」——
   // 32px 圆内头肩要留白，否则缩到 18px 就看不出是人。
   'rev-avatar': wrap('<circle cx="8" cy="5.5" r="2.7"/><path d="M3.1 13.7c0-2.6 2.2-4.4 4.9-4.4s4.9 1.8 4.9 4.4"/>'),
+  // —— 链接悬浮卡 / 封面面板（04 §1.6 / §1.4）——
+  // 这三颗规格里只有热区尺寸（链接卡 24×24 / 封面项图标到文字 20px），字形未采集，
+  // 所以一律取语义最贴的线性符号与前两条线保持同一支线宽。
+  // 编辑链接：铅笔（与「修订插入」区分开 —— 修订是勾/叉，编辑必须是笔）
+  edit: wrap('<path d="M11.3 2.7a1.6 1.6 0 0 1 2.3 0l.6.6a1.6 1.6 0 0 1 0 2.3l-8 8L3 14.3l.7-3.2z"/><path d="m10.2 3.8 2.3 2.3"/>'),
+  // 更多：横向三点（飞书 24×24 更多按钮的标准字形）
+  more: wrap('<circle cx="3.6" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="12.4" cy="8" r="1.15" fill="currentColor" stroke="none"/>'),
+  // 勾（04 §1.6.1：path 13×9）：不复用 rev-accept —— 那条虽然路径相同，
+  // 但语义绑在「接受修订」上，改口径会让勾的确切用途失真。
+  // 描边色不写死：用方由 currentColor 决定（当前主要挂在 --ld-brand-content 上）。
+  check: wrap('<path d="m3.4 8.4 3.2 3.2 6-7.2"/>'),
+  // 封面面板「选择图片」：与 rev-image 同款相框（同一件事不画两种图）
+  image: wrap('<rect x="2.6" y="3.4" width="10.8" height="9.2" rx="1.6"/><circle cx="6" cy="6.6" r="1"/><path d="m3.4 11 3.2-3.2 2.4 2.4 1.8-1.8 1.8 1.8"/>'),
+  // 封面面板「调整图片位置」：左右夹住图的两侧并双向拖动
+  'cover-position': wrap('<path d="M2.6 3.4h10.8v9.2H2.6z" opacity=".35"/><path d="M8 5.2v5.6"/><path d="m6.2 6.9 1.8-1.8 1.8 1.8"/><path d="m6.2 9.1 1.8 1.8 1.8-1.8"/>'),
 }
 
 export default ICONS

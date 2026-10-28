@@ -66,7 +66,9 @@
           @pointermove="onPaperPointerMove"
           @pointerdown="onReminderChipClick"
         >
-          <BlockHandleMenu :ed="self" /><div
+          <!-- 封面槽（04 §1.4）：文档流内元素，在纸张之上、正文之前；
+               「编辑封面」面板是 fixed 浮层，挂在 LarkDocOverlays.vue。 -->
+          <CoverSlot :ed="self" /><BlockHandleMenu :ed="self" /><div
             v-if="dropPosition !== null"
             class="lark-doc-drop-line"
             :style="{ top: `${dropLineTop}px` }"
@@ -190,6 +192,9 @@ import HelpDialog from './editor/dialogs/HelpDialog.vue'
 import HelpFab from './editor/HelpFab.vue'
 import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
+// 封面**槽**是文档流元素（在纸张之上、正文之前），与 fixed 的「编辑封面」面板不是一回事；
+// 组件注册也因此只能落在门面 —— coverMixin 一旦 import .vue，单测就再也无法 import 它。
+import CoverSlot from './editor/CoverSlot.vue'
 import { createLarkDocExtensions } from './extensions'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -247,7 +252,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab, CoverSlot },
   mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
