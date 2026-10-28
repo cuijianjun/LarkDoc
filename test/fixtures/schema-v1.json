@@ -1,0 +1,741 @@
+{
+  "$comment": "P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。\n   盲区声明（比对的是结构契约，不是行为契约）：① parseHTML / renderHTML / addNodeView /\n   parse LaTeX 等函数行为不进快照——两份 schema 即使 JSON 相同，函数仍可能不同；\n   ② attrs default 为函数或不可 JSON 化的值时，这里只落 `<type>` 占位符；\n   ③ marks 谓词只存名字数组，谓词语义不校验。若 Task 4 需要比对这些，另行加行为级用例。",
+  "topNode": "doc",
+  "nodes": {
+    "bitable": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "bitable": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "blockMath": {
+      "group": "block",
+      "inline": false,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "latex": {
+          "default": ""
+        }
+      }
+    },
+    "blockquote": {
+      "content": "block+",
+      "group": "block",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "bookmark": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "desc": {
+          "default": null
+        },
+        "favicon": {
+          "default": null
+        },
+        "recordId": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "url": {
+          "default": null
+        }
+      }
+    },
+    "bulletList": {
+      "content": "listItem+",
+      "group": "block list",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "calendar_event": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "attendees": {
+          "default": null
+        },
+        "end": {
+          "default": null
+        },
+        "eventId": {
+          "default": null
+        },
+        "location": {
+          "default": null
+        },
+        "organizer": {
+          "default": null
+        },
+        "reminders": {
+          "default": null
+        },
+        "rsvp": {
+          "default": "none"
+        },
+        "start": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "tz": {
+          "default": null
+        }
+      }
+    },
+    "callout": {
+      "content": "block+",
+      "group": "block",
+      "defining": true,
+      "attrs": {
+        "backgroundColor": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "borderColor": {
+          "default": null
+        },
+        "color": {
+          "default": null
+        },
+        "emoji": {
+          "default": "💡"
+        }
+      }
+    },
+    "cardEmbed": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "card": {
+          "default": null
+        }
+      }
+    },
+    "codeBlock": {
+      "content": "text*",
+      "group": "block",
+      "code": true,
+      "defining": true,
+      "marks": "",
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "indent": {
+          "default": 0
+        },
+        "language": {
+          "default": "plaintext"
+        }
+      }
+    },
+    "column": {
+      "content": "block+",
+      "isolating": true,
+      "attrs": {
+        "width": {
+          "default": 50
+        }
+      }
+    },
+    "columns": {
+      "content": "column{2,5}",
+      "group": "block",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "details": {
+      "content": "detailsSummary detailsContent",
+      "group": "block",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "open": {
+          "default": false
+        }
+      }
+    },
+    "detailsContent": {
+      "content": "block+",
+      "selectable": false,
+      "defining": true,
+      "attrs": {}
+    },
+    "detailsSummary": {
+      "content": "text*",
+      "selectable": false,
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "doc": {
+      "content": "block+",
+      "attrs": {}
+    },
+    "emoji": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "name": {
+          "default": "smile"
+        }
+      }
+    },
+    "fileBlock": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "coverUrl": {
+          "default": null
+        },
+        "mimeType": {
+          "default": null
+        },
+        "name": {
+          "default": null
+        },
+        "originalSrc": {
+          "default": null
+        },
+        "size": {
+          "default": null
+        },
+        "src": {
+          "default": null
+        },
+        "token": {
+          "default": null
+        },
+        "viewType": {
+          "default": "Card"
+        }
+      }
+    },
+    "hardBreak": {
+      "group": "inline",
+      "inline": true,
+      "selectable": false,
+      "linebreakReplacement": true,
+      "attrs": {}
+    },
+    "heading": {
+      "content": "inline*",
+      "group": "block",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "indent": {
+          "default": 0
+        },
+        "level": {
+          "default": 1
+        },
+        "lineHeight": {
+          "default": null
+        },
+        "numbering": {
+          "default": false
+        },
+        "numberingStart": {
+          "default": null
+        },
+        "textAlign": {
+          "default": null
+        }
+      }
+    },
+    "horizontalRule": {
+      "group": "block",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "image": {
+      "group": "block",
+      "inline": false,
+      "draggable": true,
+      "attrs": {
+        "align": {
+          "default": "center"
+        },
+        "alt": {
+          "default": null
+        },
+        "attchId": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "caption": {
+          "default": ""
+        },
+        "height": {
+          "default": null
+        },
+        "originalAttchId": {
+          "default": null
+        },
+        "originalSrc": {
+          "default": null
+        },
+        "src": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "width": {
+          "default": null
+        }
+      }
+    },
+    "inlineMath": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "latex": {
+          "default": ""
+        }
+      }
+    },
+    "isv": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "action": {
+          "default": null
+        },
+        "align": {
+          "default": "left"
+        },
+        "appId": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "buttonColor": {
+          "default": null
+        },
+        "buttonText": {
+          "default": null
+        },
+        "height": {
+          "default": null
+        },
+        "instanceId": {
+          "default": null
+        },
+        "kind": {
+          "default": "catalog"
+        },
+        "linkUrl": {
+          "default": null
+        }
+      }
+    },
+    "listItem": {
+      "content": "paragraph block*",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "numberStart": {
+          "default": null
+        }
+      }
+    },
+    "mention": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "department": {
+          "default": ""
+        },
+        "id": {
+          "default": ""
+        },
+        "kind": {
+          "default": "user"
+        },
+        "mentionId": {
+          "default": ""
+        },
+        "name": {
+          "default": ""
+        },
+        "notify": {
+          "default": true
+        }
+      }
+    },
+    "orderedList": {
+      "content": "listItem+",
+      "group": "block list",
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "continueFrom": {
+          "default": false
+        },
+        "start": {
+          "default": 1
+        },
+        "type": {
+          "default": null
+        }
+      }
+    },
+    "paragraph": {
+      "content": "inline*",
+      "group": "block",
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "indent": {
+          "default": 0
+        },
+        "lineHeight": {
+          "default": null
+        },
+        "textAlign": {
+          "default": null
+        }
+      }
+    },
+    "poll": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "poll": {
+          "default": null
+        }
+      }
+    },
+    "sheet": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "sheet": {
+          "default": null
+        }
+      }
+    },
+    "table": {
+      "content": "tableRow+",
+      "group": "block",
+      "isolating": true,
+      "tableRole": "table",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "tableCell": {
+      "content": "block+",
+      "isolating": true,
+      "tableRole": "cell",
+      "attrs": {
+        "align": {
+          "default": null
+        },
+        "backgroundColor": {
+          "default": null
+        },
+        "colspan": {
+          "default": 1
+        },
+        "colwidth": {
+          "default": null
+        },
+        "rowspan": {
+          "default": 1
+        },
+        "textAlign": {
+          "default": null
+        },
+        "verticalAlign": {
+          "default": null
+        }
+      }
+    },
+    "tableHeader": {
+      "content": "block+",
+      "isolating": true,
+      "tableRole": "header_cell",
+      "attrs": {
+        "align": {
+          "default": null
+        },
+        "backgroundColor": {
+          "default": null
+        },
+        "colspan": {
+          "default": 1
+        },
+        "colwidth": {
+          "default": null
+        },
+        "rowspan": {
+          "default": 1
+        },
+        "textAlign": {
+          "default": null
+        },
+        "verticalAlign": {
+          "default": null
+        }
+      }
+    },
+    "tableRow": {
+      "content": "(tableCell | tableHeader)*",
+      "tableRole": "row",
+      "attrs": {}
+    },
+    "taskItem": {
+      "content": "paragraph block*",
+      "defining": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "checked": {
+          "default": false
+        }
+      }
+    },
+    "taskList": {
+      "content": "taskItem+",
+      "group": "block list",
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "text": {
+      "group": "inline",
+      "attrs": {}
+    },
+    "unknownBlock": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "payload": {
+          "default": ""
+        },
+        "unknownType": {
+          "default": "unknown"
+        }
+      }
+    },
+    "webEmbed": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "aspect": {
+          "default": null
+        },
+        "bridgeVersion": {
+          "default": 1
+        },
+        "height": {
+          "default": null
+        },
+        "poster": {
+          "default": null
+        },
+        "providerId": {
+          "default": "generic"
+        },
+        "src": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        }
+      }
+    }
+  },
+  "marks": {
+    "bold": {
+      "attrs": {}
+    },
+    "code": {
+      "code": true,
+      "attrs": {}
+    },
+    "comment": {
+      "attrs": {
+        "threadId": {
+          "default": ""
+        }
+      }
+    },
+    "highlight": {
+      "attrs": {
+        "color": {
+          "default": null
+        }
+      }
+    },
+    "italic": {
+      "attrs": {}
+    },
+    "link": {
+      "attrs": {
+        "class": {
+          "default": null
+        },
+        "href": {
+          "default": null
+        },
+        "rel": {
+          "default": "noopener noreferrer"
+        },
+        "target": {
+          "default": "_blank"
+        },
+        "title": {
+          "default": null
+        }
+      }
+    },
+    "reminder": {
+      "attrs": {
+        "notify": {
+          "default": true
+        },
+        "remindAt": {
+          "default": ""
+        },
+        "repeat": {
+          "default": "none"
+        }
+      }
+    },
+    "revision": {
+      "attrs": {
+        "author": {
+          "default": ""
+        },
+        "kind": {
+          "default": "insert"
+        },
+        "revisionId": {
+          "default": ""
+        }
+      }
+    },
+    "strike": {
+      "attrs": {}
+    },
+    "subscript": {
+      "attrs": {}
+    },
+    "superscript": {
+      "attrs": {}
+    },
+    "textStyle": {
+      "attrs": {
+        "backgroundColor": {
+          "default": null
+        },
+        "color": {
+          "default": null
+        },
+        "fontFamily": {
+          "default": null
+        },
+        "fontSize": {
+          "default": null
+        },
+        "lineHeight": {
+          "default": null
+        }
+      }
+    },
+    "underline": {
+      "attrs": {}
+    }
+  }
+}

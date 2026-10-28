@@ -12,6 +12,10 @@
 
 > **开发/改代码前必读**：[DEVELOPMENT.md](./DEVELOPMENT.md) —— 踩坑清单与回归防护（折叠高亮、blockId、缩进、编号、弹窗、排版实测值、Vditor 兼容）。
 
+> **长期路线两份**
+> - [MULTI_ENV_PLAN.md](./MULTI_ENV_PLAN.md) —— **宿主怎么引入**：产物格式、`exports` 路由、webpack4/5/Vite/内网 的配置收敛。
+> - [FRAMEWORK_AGNOSTIC_PLAN.md](./FRAMEWORK_AGNOSTIC_PLAN.md) —— **包内部怎么写**：分层、UI 去 Vue 的演进节奏（S0~S4）与验收口径。
+
 ## 环境要求
 
 - **运行时（接入方）**：Node `>= 14.21.3`（`engines.node` 已放宽；Tiptap 3 依赖的 ES2022+ API 已由入口 core-js polyfill 补齐，Node 14 可正常运行）。无需固定某个版本。

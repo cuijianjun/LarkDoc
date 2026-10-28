@@ -1,0 +1,63 @@
+/* ==================================================================
+   模板库样式（P5-07 / 02 §28）—— **宿主侧**，不属于编辑器外壳。
+   ------------------------------------------------------------------
+   为什么单独一个文件、不塞进 lark-doc.css（别合并回去）：
+     · lark-doc.css 里每条规则都挂 `.lark-doc` 作用域，这一段**故意不挂**；
+     · 它是「云盘首页」的弹窗，宿主可以在编辑器之外单独渲染；
+     · mode-switch.test 用「从三态段到文件末尾」界定 P4-06 段并断言零 rgba，
+       混进 lark-doc.css 会连带误伤那条守卫。
+   注意与 `.lark-doc-template-panel`（斜杠菜单里的「模板」面板，插模板**内容**）
+   不是一回事：那个在编辑器内、本轮新增的是整篇文档 Copy（§28.7）。
+   颜色是 02 §28 的**实测值**（rgb/rgba），故意不走 `--ld-*`：
+   模板库固定飞书云盘外观，不随编辑器三档主题变色。
+   几何数字只在 core/templates/library.js 写一次，这里全部读 `--tpl-*`。
+   由 style.css `@import` 引进来，与其余四份样式同一条构建链。
+   ================================================================== */
+.lark-doc-template-library { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; box-sizing: border-box; }
+.lark-doc-template-library-mask { position: absolute; inset: 0; background: var(--tpl-mask); }
+.lark-doc-template-library-modal { position: relative; box-sizing: border-box; display: flex; width: calc(100% - var(--tpl-width-inset)); height: calc(100% - var(--tpl-height-inset)); flex-direction: column; overflow: hidden; border-radius: var(--tpl-modal-radius); background: var(--tpl-body-bg); }
+.lark-doc-template-library-header { position: relative; display: flex; box-sizing: border-box; height: var(--tpl-header-height); flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: rgb(255, 255, 255); }
+.lark-doc-template-target { margin: 0; color: rgb(31, 35, 41); font-size: 14px; line-height: 22px; }
+.lark-doc-template-target strong { margin-left: 4px; font-weight: 500; }
+/* 搜索框在 header **正中**（§28.3：586+340/2 = 视口中心），不是右对齐。 */
+.lark-doc-template-search { position: absolute; top: 50%; left: 50%; width: var(--tpl-search-width); transform: translate(-50%, -50%); }
+.lark-doc-template-search input { box-sizing: border-box; width: 100%; height: var(--tpl-search-height); padding: 4px 11px; border: var(--tpl-search-border); border-radius: var(--tpl-search-radius); background: var(--tpl-search-bg); color: rgb(31, 35, 41); font-size: 14px; line-height: 20px; outline: 0; }
+.lark-doc-template-search input::placeholder { color: rgb(100, 106, 115); }
+.lark-doc-template-search input:focus { border-color: rgb(51, 109, 244); }
+.lark-doc-template-search input::-webkit-search-cancel-button { appearance: none; }
+.lark-doc-template-header-right { display: flex; align-items: center; gap: 10px; }
+.lark-doc-template-type { color: rgb(100, 106, 115); font-size: 14px; line-height: 22px; }
+.lark-doc-template-close { display: grid; width: var(--tpl-close-size); height: var(--tpl-close-size); place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: rgb(100, 106, 115); font-size: 20px; line-height: 1; cursor: pointer; }
+.lark-doc-template-close:hover { background: rgba(31, 35, 41, 0.06); color: rgb(31, 35, 41); }
+.lark-doc-template-library-body { display: flex; min-height: 0; flex: 1 1 auto; }
+/* 左栏 196 固定宽：纵向滚动、横向裁切（§28.4）。 */
+.lark-doc-template-categories { box-sizing: border-box; display: block; width: var(--tpl-sidebar-width); flex: 0 0 var(--tpl-sidebar-width); overflow-x: hidden; overflow-y: auto; padding: var(--tpl-sidebar-pad-top) 0 var(--tpl-sidebar-pad-bottom); }
+.lark-doc-template-categories button { display: block; box-sizing: border-box; width: calc(100% - 16px); height: var(--tpl-item-height); margin: var(--tpl-item-margin); padding: 0 16px; overflow: hidden; border: 0; border-radius: var(--tpl-item-radius); background: transparent; color: rgb(31, 35, 41); font-size: 14px; font-weight: 500; line-height: var(--tpl-item-height); text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.lark-doc-template-categories button:hover { background: rgba(31, 35, 41, 0.06); }
+.lark-doc-template-categories button.is-active { background: var(--tpl-item-active-bg); color: var(--tpl-item-active-color); }
+.lark-doc-template-scroll { box-sizing: border-box; flex: 1 1 auto; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: var(--tpl-grid-pad); }
+/* 网格 226×256、4 列、间距 24（§28.5）。 */
+.lark-doc-template-grid { display: grid; grid-template-columns: repeat(var(--tpl-columns), var(--tpl-card-width)); column-gap: var(--tpl-gap); row-gap: var(--tpl-row-gap); align-content: start; }
+.lark-doc-template-card { position: relative; display: flex; box-sizing: border-box; width: var(--tpl-card-width); height: var(--tpl-card-height); flex-direction: column; overflow: hidden; border: 0; border-radius: var(--tpl-card-radius); background: rgb(255, 255, 255); box-shadow: var(--tpl-shadow); cursor: pointer; transition: var(--tpl-transition); outline: 0; }
+/* hover 两段同步：卡上浮 8px + 阴影加重（§28.6 ①）。 */
+.lark-doc-template-card:hover,
+.lark-doc-template-card:focus,
+.lark-doc-template-card:focus-within { transform: translateY(var(--tpl-hover-lift)); box-shadow: var(--tpl-shadow-hover); }
+.lark-doc-template-card-head { display: flex; box-sizing: border-box; height: var(--tpl-head-height); flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 12px; }
+.lark-doc-template-card-icon { color: var(--tpl-item-active-color); font-size: 15px; line-height: 1; }
+.lark-doc-template-card-name { overflow: hidden; color: var(--tpl-name-color); font-size: var(--tpl-name-size); font-weight: var(--tpl-name-weight); line-height: 24px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc-template-card-thumb { box-sizing: border-box; height: var(--tpl-thumb-height); flex: 0 0 auto; overflow: hidden; margin: 0 12px; border-radius: var(--tpl-thumb-radius); background: rgb(248, 249, 250); }
+.lark-doc-template-card-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lark-doc-template-card-foot { display: flex; box-sizing: border-box; height: var(--tpl-foot-height); flex: 0 0 auto; align-items: center; padding: 0 12px; }
+.lark-doc-template-card-meta { overflow: hidden; color: var(--tpl-meta-color); font-size: var(--tpl-meta-size); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+/* 操作条：静态 opacity 0 + translateY(10px)，hover 时滑入（§28.6 ②）。 */
+.lark-doc-template-card-actions { position: absolute; right: 0; bottom: 0; left: 0; display: flex; box-sizing: border-box; height: 70px; align-items: flex-end; justify-content: flex-start; gap: var(--tpl-action-btn-gap); padding: 22px 12px 16px; background: linear-gradient(360deg, rgb(255, 255, 255) 76.56%, rgba(255, 255, 255, 0) 100%); opacity: 0; transform: translateY(var(--tpl-action-slide)); transition: opacity 0.15s linear, transform 0.15s linear; }
+.lark-doc-template-card:hover .lark-doc-template-card-actions,
+.lark-doc-template-card:focus .lark-doc-template-card-actions,
+.lark-doc-template-card:focus-within .lark-doc-template-card-actions { opacity: 1; transform: translateY(0); }
+.lark-doc-template-card-actions button { box-sizing: border-box; width: var(--tpl-action-btn-width); height: var(--tpl-action-btn-height); padding: 4px 11px; border-radius: 6px; font-size: 14px; line-height: 22px; cursor: pointer; }
+.lark-doc-template-preview { border: 1px solid rgb(20, 86, 240); background: rgb(255, 255, 255); color: rgb(20, 86, 240); }
+.lark-doc-template-preview:hover { background: rgba(20, 86, 240, 0.08); }
+.lark-doc-template-use { border: 1px solid rgb(20, 86, 240); background: rgb(20, 86, 240); color: rgb(255, 255, 255); }
+.lark-doc-template-use:hover { background: rgb(51, 109, 244); border-color: rgb(51, 109, 244); }
+.lark-doc-template-empty { margin: 0; padding: 48px 0; color: rgb(100, 106, 115); font-size: 14px; text-align: center; }

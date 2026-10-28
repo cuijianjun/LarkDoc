@@ -22,26 +22,20 @@
 
 import { LarkDoc } from '../LarkDoc'
 import { OBSERVED_ATTRIBUTES, readOptionsFromElement, applyAttributeChange } from './attributes'
+import { EVENT_MAP } from './events'
 
 /**
- * 对外事件名（全部冒泡 + composed，方便宿主在任意祖先节点委托监听）。
- * payload 一律是纯数据（不含 Vue 实例 / ProseMirror 对象），避免跨框架时
- * Proxy 包装导致的结构化克隆失败。
+ * 对外事件名单维护在 ./events（零依赖模块，P0-06 抽出）：
+ * adapters/{vue3,react} 只引名单、不引元素类——元素类依赖链会拉进
+ * Vue 2 渲染层，React / Vue 3 宿主没有 Vue 2 插件，引了就编译失败。
+ * 这里 re-export 保持原导入路径（`from './LarkDocElement'`）可用。
  */
-const EVENT_MAP = Object.freeze({
-  ready: 'lark-doc-ready',
-  update: 'lark-doc-update',
-  change: 'lark-doc-change',
-  save: 'lark-doc-save',
-  error: 'lark-doc-error',
-  destroy: 'lark-doc-destroy',
-  'import-report': 'lark-doc-import-report',
-  'title-change': 'lark-doc-title-change',
-})
+export { EVENT_MAP } from './events'
 
 /** 需要从宿主实例转发到元素上的快捷方法（只读 + 幂等命令，写操作走 getInstance()）。 */
 const PROXIED_METHODS = Object.freeze([
   'getHTML', 'getJSON', 'getText', 'getTitle', 'setTitle', 'getConfig', 'getSession', 'can',
+  'setTheme', 'getTheme',
   'setReadonly', 'isReadonly', 'focus', 'undo', 'redo', 'setContent', 'importVditor', 'insert',
   'insertText', 'getImportReport', 'save', 'connectCollaboration', 'disconnectCollaboration',
 ])
@@ -114,7 +108,7 @@ export class LarkDocElement extends HTMLElement {
     if (result.options && Object.keys(result.options).length && this.document && this.document.options) {
       Object.assign(this.document.options, result.options)
     }
-    if (name === 'theme') this._applyTheme()
+    if (name === 'theme' || name === 'content-theme') this._applyTheme()
   }
 
   /**
@@ -291,10 +285,21 @@ export class LarkDocElement extends HTMLElement {
     return html
   }
 
+  /**
+   * 主题应用统一入口（0.12 四态化）：读标签上的 theme / content-theme 属性后
+   * 走门面 setTheme —— 校验、system/host 解析、data-theme-source 标记与
+   * themeChange 事件都在 controller 一处收口。
+   * 两个属性都缺省时不臆造值：交回门面按 options（默认 light/auto）解析。
+   */
   _applyTheme() {
-    const theme = this.getAttribute('theme') === 'dark' ? 'dark' : 'light'
-    if (this.document && this.document.options) this.document.options.theme = theme
-    if (typeof this.document?._applyHostAttributes === 'function') this.document._applyHostAttributes()
+    if (!this.document) return
+    const theme = this.getAttribute('theme')
+    const contentTheme = this.getAttribute('content-theme')
+    if (theme != null || contentTheme != null) {
+      this.document.setTheme(theme == null ? undefined : theme, contentTheme == null ? undefined : contentTheme)
+    } else if (typeof this.document._applyHostAttributes === 'function') {
+      this.document._applyHostAttributes()
+    }
   }
 
   _safePatch(props) {

@@ -1,0 +1,793 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "heading",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": null,
+        "textAlign": null,
+        "level": 1,
+        "numbering": true,
+        "numberingStart": 1
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "P0 架构缝回归样例"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": null,
+        "textAlign": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "普通正文，后面依次叠加行内样式："
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "bold"
+            }
+          ],
+          "text": "加粗"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "italic"
+            }
+          ],
+          "text": "斜体"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "underline"
+            }
+          ],
+          "text": "下划线"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "strike"
+            }
+          ],
+          "text": "删除线"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ],
+          "text": "行内代码"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "superscript"
+            }
+          ],
+          "text": "上标"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "subscript"
+            }
+          ],
+          "text": "下标"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "highlight",
+              "attrs": {
+                "color": "#ffdd00"
+              }
+            }
+          ],
+          "text": "黄色高亮"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "textStyle",
+              "attrs": {
+                "backgroundColor": null,
+                "color": "#d83931",
+                "fontFamily": null,
+                "fontSize": null,
+                "lineHeight": null
+              }
+            }
+          ],
+          "text": "红色前景"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "link",
+              "attrs": {
+                "href": "https://example.com/lark-doc",
+                "target": "_blank",
+                "rel": "noopener noreferrer",
+                "class": null,
+                "title": "示例标题"
+              }
+            }
+          ],
+          "text": "链接"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "attrs": {
+        "indent": 2,
+        "lineHeight": null,
+        "blockId": null,
+        "textAlign": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "缩进两级的一段。"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": null,
+        "textAlign": null,
+        "level": 2,
+        "numbering": false,
+        "numberingStart": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "列表"
+        }
+      ]
+    },
+    {
+      "type": "bulletList",
+      "attrs": {
+        "blockId": null
+      },
+      "content": [
+        {
+          "type": "listItem",
+          "attrs": {
+            "blockId": null,
+            "numberStart": null
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "无序列表第一项"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "listItem",
+          "attrs": {
+            "blockId": null,
+            "numberStart": null
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "无序列表第二项"
+                }
+              ]
+            },
+            {
+              "type": "bulletList",
+              "attrs": {
+                "blockId": null
+              },
+              "content": [
+                {
+                  "type": "listItem",
+                  "attrs": {
+                    "blockId": null,
+                    "numberStart": null
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {
+                        "indent": 0,
+                        "lineHeight": null,
+                        "blockId": null,
+                        "textAlign": null
+                      },
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "嵌套无序项"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "orderedList",
+      "attrs": {
+        "blockId": null,
+        "start": 1,
+        "type": null,
+        "continueFrom": false
+      },
+      "content": [
+        {
+          "type": "listItem",
+          "attrs": {
+            "blockId": null,
+            "numberStart": null
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "有序列表第一项"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "listItem",
+          "attrs": {
+            "blockId": null,
+            "numberStart": null
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "有序列表第二项"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "listItem",
+          "attrs": {
+            "blockId": null,
+            "numberStart": 1
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "有序列表：从这里重新开局"
+                }
+              ]
+            },
+            {
+              "type": "orderedList",
+              "attrs": {
+                "blockId": null,
+                "start": 1,
+                "type": null,
+                "continueFrom": false
+              },
+              "content": [
+                {
+                  "type": "listItem",
+                  "attrs": {
+                    "blockId": null,
+                    "numberStart": null
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {
+                        "indent": 0,
+                        "lineHeight": null,
+                        "blockId": null,
+                        "textAlign": null
+                      },
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "嵌套有序项"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "blockId": null
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "blockId": null,
+            "checked": true
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "已完成的任务"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "blockId": null,
+            "checked": false
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "未完成的任务"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": null,
+        "textAlign": null,
+        "level": 2,
+        "numbering": false,
+        "numberingStart": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "表格"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "attrs": {
+        "blockId": null
+      },
+      "content": [
+        {
+          "type": "tableRow",
+          "content": [
+            {
+              "type": "tableHeader",
+              "attrs": {
+                "backgroundColor": null,
+                "textAlign": null,
+                "verticalAlign": null,
+                "colspan": 1,
+                "rowspan": 1,
+                "colwidth": [
+                  160,
+                  160,
+                  160
+                ],
+                "align": null
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "列一"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tableHeader",
+              "attrs": {
+                "backgroundColor": null,
+                "textAlign": null,
+                "verticalAlign": null,
+                "colspan": 1,
+                "rowspan": 1,
+                "colwidth": null,
+                "align": null
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "列二"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tableHeader",
+              "attrs": {
+                "backgroundColor": null,
+                "textAlign": null,
+                "verticalAlign": null,
+                "colspan": 1,
+                "rowspan": 1,
+                "colwidth": null,
+                "align": null
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "列三"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tableRow",
+          "content": [
+            {
+              "type": "tableCell",
+              "attrs": {
+                "backgroundColor": null,
+                "textAlign": null,
+                "verticalAlign": null,
+                "colspan": 1,
+                "rowspan": 1,
+                "colwidth": null,
+                "align": null
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "A1"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "attrs": {
+                "backgroundColor": null,
+                "textAlign": "center",
+                "verticalAlign": null,
+                "colspan": 1,
+                "rowspan": 1,
+                "colwidth": null,
+                "align": null
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "B1"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tableCell",
+              "attrs": {
+                "backgroundColor": "#f0f2f5",
+                "textAlign": null,
+                "verticalAlign": null,
+                "colspan": 1,
+                "rowspan": 1,
+                "colwidth": null,
+                "align": null
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "C1"
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "attrs": {
+                    "indent": 0,
+                    "lineHeight": null,
+                    "blockId": null,
+                    "textAlign": null
+                  },
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "带"
+                    },
+                    {
+                      "type": "text",
+                      "marks": [
+                        {
+                          "type": "bold"
+                        }
+                      ],
+                      "text": "加粗"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": null,
+        "textAlign": null,
+        "level": 2,
+        "numbering": false,
+        "numberingStart": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "折叠"
+        }
+      ]
+    },
+    {
+      "type": "details",
+      "attrs": {
+        "blockId": null,
+        "open": true
+      },
+      "content": [
+        {
+          "type": "detailsSummary",
+          "attrs": {
+            "blockId": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "折叠块标题（点标题收起/展开）"
+            }
+          ]
+        },
+        {
+          "type": "detailsContent",
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "折叠内容第一段。"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "折叠内容第二段。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "details",
+      "attrs": {
+        "blockId": null,
+        "open": false
+      },
+      "content": [
+        {
+          "type": "detailsSummary",
+          "attrs": {
+            "blockId": null
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "默认收起的折叠块"
+            }
+          ]
+        },
+        {
+          "type": "detailsContent",
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {
+                "indent": 0,
+                "lineHeight": null,
+                "blockId": null,
+                "textAlign": null
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "收起时正文仍在 JSON 里，不能丢。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

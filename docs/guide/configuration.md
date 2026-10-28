@@ -1,10 +1,8 @@
 # 配置总览
 
-## 概述
-
 `new LarkDoc(options)` 的扁平配置会被翻译成编辑器内部的 `createLarkDocConfig` 结构。配置分为 9 个分组：`features` / `toolbar` / `commands` / `blockMenu` / `layout` / `text` / `network` / `limits` / `performance`。关闭某个能力只隐藏入口并阻止新操作，历史 JSON 仍可读取。
 
-## 配置内容
+## 完整配置示例
 
 ```ts
 new LarkDoc({
@@ -46,7 +44,7 @@ new LarkDoc({
 })
 ```
 
-## 配置说明
+## 分组详解
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |

@@ -6,6 +6,7 @@
  */
 import { closeHistory } from '@tiptap/pm/history'
 import { headingActionRange, moveBlockRange, nodeAtSafe, resolveBlockTargetRange, resolveHeadingHighlightSection } from '../documentOperations'
+import { moveDepthAllowed } from '../../../core/blocks/container-depth'
 
 // 整框高亮的块：容器与原子对象对完整外框高亮，不给内部每行重复叠加背景。
 // tableWrapper 是 ProseMirror 表格节点的实际 DOM（nodeDOM 返回包装层），必须一起识别。
@@ -405,6 +406,9 @@ export default {
       this.clearTableBoundaryHover()
     },
     onHandlePointerUp() { this.handlePressed = false; this.refreshHandleHighlight() },
+    // P0-03：句柄按下/拖拽结束的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    pressHandle() { this.handlePressed = true },
+    endBlockDrag() { this.handlePressed = false; this.dragging = null; this.dropPosition = null; this.refreshHandleHighlight() },
     // Callout handles sit outside the NodeView, but pointer positions resolve
     // into its contentDOM paragraph; dragging must preserve the outer module.
     blockDragRange(range) {
@@ -462,7 +466,7 @@ export default {
       this.dropPosition = null
       if (!Number.isInteger(pos)) return
       this.editor.view.dispatch(closeHistory(this.editor.state.tr))
-      if (!moveBlockRange(this.editor, source.from, source.to, pos)) this.error = '当前区块不能移动到这里'
+      if (!moveBlockRange(this.editor, source.from, source.to, pos)) this.error = moveDepthAllowed(this.editor, source.from, source.to, pos) ? '当前区块不能移动到这里' : '容器嵌套最多 5 层，不能移动到这里'
     },
   },
 }

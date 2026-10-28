@@ -2,6 +2,12 @@
 
 lark-doc 的协同、权限、版本、评论能力都收敛在 `DocumentSession` 会话层。编辑器组件只依赖会话，宿主通过替换 Provider 接入自己的后端，UI 代码零改动。
 
+> **两条链路的分工**：本页讲的是**会话层抽象**（`providers.collaboration` 的 `connect/disconnect`，宿主接自己的后端）。
+> P6a 起另有一条**基于 Yjs 的实时链路**——`lark-doc/collab` 子入口 + `@hocuspocus/provider`，
+> 编辑器侧通过 `<LarkDocEditor :collab="...">` 接入。它不经过 `providers.collaboration`，
+> 服务端契约见 [collab-server.md](./collab-server.md)。两条链路可以并存：前者管「连接态/在线人数」，
+> 后者管「正文收敛」。
+
 ## 架构分层
 
 ```

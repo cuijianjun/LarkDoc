@@ -27,8 +27,14 @@ function createWorkspace(storage, options = {}) {
 
   function record(value) {
     const result = { title: value.title, json: value.json, updatedAt: Date.now() }
+    // schemaVersion 透传：载入侧据此触发迁移链（P1-04）；缺失按 v1 处理。
+    if (value.schemaVersion != null) result.schemaVersion = value.schemaVersion
     // 可选：透传 HTML 派生副本（saveHtml 开启时由 Workspace 注入）。
     if (value.html != null) result.html = value.html
+    // 可选：透传目录快照（P7-03）。这里**只当不透明载荷**搬运，不判形状 ——
+    // 本文件是 CJS，引不到 ESM 那份校验器；而且「多一个坏字段」绝不能升级成
+    // 「整篇文档存不进去」。判伪统一在读取侧由 validateDerivedSnapshot 做。
+    if (value.derived && typeof value.derived === 'object') result.derived = value.derived
     if (!validRecord(result)) throw new Error('文档结构无效，未保存')
     return result
   }

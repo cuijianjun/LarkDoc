@@ -8,8 +8,8 @@
  */
 
 import { LarkDocElement } from './LarkDocElement'
-
-export const DEFAULT_TAG = 'lark-doc'
+// 常量下沉到零依赖的 tag.js：adapters 也需要它，但不能顺带拉进 Vue 2 渲染层。
+import { DEFAULT_TAG } from './tag'
 
 function getRegistry() {
   return typeof window !== 'undefined' && window.customElements ? window.customElements : null
@@ -52,5 +52,5 @@ export function upgradeLarkDoc(root = null) {
   return nodes.length
 }
 
-export { LarkDocElement }
+export { LarkDocElement, DEFAULT_TAG }
 export default registerLarkDoc

@@ -3,6 +3,9 @@
  * 圆角线帽，风格对齐飞书扁平线性图标。经 LarkDocIcon 组件渲染，禁止直接内嵌
  * 到模板字符串里拼 HTML。
  */
+// 多色图标资源（唯一不用 currentColor 的地方）走色板常量表，见 palette.js（T0-04）。
+import { ICON_PALETTE } from './palette'
+
 const S = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"'
 const wrap = (inner, extra = '') => `<svg ${S} ${extra}>${inner}</svg>`
 
@@ -65,9 +68,37 @@ export const ICONS = {
   'mark-italic': wrap('<text x="8" y="12" fill="currentColor" stroke="none" font-family="Georgia, \'Times New Roman\', serif" font-size="11.5" font-style="italic" text-anchor="middle">I</text>'),
   'mark-underline': wrap('<text x="8" y="11" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="10.5" text-anchor="middle">U</text><path d="M4.6 13.2h6.8"/>'),
   // 高亮按钮：黄色小色块打底（飞书的高亮 icon 自带黄色），A 随 currentColor。
-  'mark-highlight': wrap('<rect x="3" y="3" width="10" height="10" rx="2" fill="#ffd50a" stroke="none"/><text x="8" y="11.4" fill="#4a3b06" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="600" text-anchor="middle">A</text>'),
+  'mark-highlight': wrap(`<rect x="3" y="3" width="10" height="10" rx="2" fill="${ICON_PALETTE.highlightSwatch}" stroke="none"/><text x="8" y="11.4" fill="${ICON_PALETTE.highlightGlyph}" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="600" text-anchor="middle">A</text>`),
   // 块菜单「颜色」行的调色盘（飞书同款语义：调色盘 + 一笔）。
   palette: wrap('<path d="M8 2.6a5.4 5.4 0 1 0 0 10.8c1 0 1.4-.5 1.4-1.1 0-.9-.7-1.2-.7-2 0-.7.5-1.2 1.3-1.2h1.2c1.6 0 2.4-1 2.4-2.3C13.6 4.5 11.1 2.6 8 2.6z"/><circle cx="5.4" cy="6.4" r=".9" fill="currentColor" stroke="none"/><circle cx="8.2" cy="5" r=".9" fill="currentColor" stroke="none"/><circle cx="10.9" cy="6.6" r=".9" fill="currentColor" stroke="none"/>'),
+  // —— P4-06 顶栏模式切换按钮（03 §顶栏右侧按钮组 #2：图标位 16×22）——
+  // 只有尺寸是实测值，字形飞书未采集 → 取与语义最贴的线性符号：编辑 = 铅笔、修订 = 对话气泡；
+  // 阅读直接复用上面的 reading（书本），不另画一个。
+  'mode-edit': wrap('<path d="M11.3 2.7a1.6 1.6 0 0 1 2.3 0l.6.6a1.6 1.6 0 0 1 0 2.3l-8 8L3 14.3l.7-3.2z"/><path d="m10.2 3.8 2.3 2.3"/>'),
+  'mode-comment': wrap('<path d="M13.4 9.4a1.8 1.8 0 0 1-1.8 1.8H4.8L2.6 13.4V4.4a1.8 1.8 0 0 1 1.8-1.8h7.2a1.8 1.8 0 0 1 1.8 1.8z"/><path d="M5.4 6.4h5.2"/><path d="M5.4 9h3.2"/>'),
+  // —— P4-06 右下角帮助菜单 5 项（04 §3.5；图标区实测 16×16）——
+  // 上传日志：纸面 + 向上箭头（对齐「导出/上报」语义）
+  'help-log': wrap('<path d="M9.2 2.8H4.6a1.6 1.6 0 0 0-1.6 1.6v6.4a1.6 1.6 0 0 0 1.6 1.6h6.8a1.6 1.6 0 0 0 1.6-1.6V6.4z"/><path d="M9 2.8v3.6h3.4"/><path d="M8 12.4V8.4"/><path d="m6.4 9.9 1.6-1.6 1.6 1.6"/>'),
+  // 联系客服：耳机 + 麦克风臂
+  'help-support': wrap('<path d="M3.4 9.2V7.6a4.6 4.6 0 0 1 9.2 0v1.6"/><rect x="2.2" y="8.8" width="2.4" height="3.6" rx="1.2"/><rect x="11.4" y="8.8" width="2.4" height="3.6" rx="1.2"/><path d="M12.6 12.4v.4a1.8 1.8 0 0 1-1.8 1.8H9"/>'),
+  // 功能更新：礼盒（飞书「功能更新」用礼盒/喇叭语义，取礼盒更好认）
+  'help-whatsnew': wrap('<rect x="2.6" y="6" width="10.8" height="7.2" rx="1.4"/><path d="M2.6 9.2h10.8"/><path d="M8 6v7.2"/><path d="M8 6C7.2 4 5.9 3 4.9 3.6c-.9.6-.4 1.8 1.1 2.4"/><path d="M8 6c.8-2 2.1-3 3.1-2.4.9.6.4 1.8-1.1 2.4"/>'),
+  // 帮助中心：问号圆环
+  'help-center': wrap('<circle cx="8" cy="8" r="5.4"/><path d="M6.4 6.2a1.7 1.7 0 1 1 2.4 1.6c-.5.3-.8.7-.8 1.3v.3"/><path d="M8 11.6h.01" stroke-width="1.9"/>'),
+  // 快捷键：键盘外形 + 三粒按键
+  'help-keyboard': wrap('<rect x="2.2" y="4.4" width="11.6" height="7.2" rx="1.6"/><path d="M4.8 7h.01M7 7h.01M9.2 7h.01M11.4 7h.01" stroke-width="1.9"/><path d="M5.4 9.6h5.2"/>'),
+  // —— P4-06 修订建议面板（07 §12.4：热区统一 16×16，图标本体 12/14 两档）——
+  // 上下箭头 = 下一条 / 上一条建议；勾 = 接受修订。叉与链条直接复用 close / link，
+  // 不重画（飞书那两颗的路径与通用叉/链一致，没必要为了「一物一图」多存两份）。
+  // 字形未采集（07 只给了尺寸与色值）→ 取最通用的线性箭头/勾，与工具栏风格一致。
+  'rev-next': wrap('<path d="M8 3.6v8.8"/><path d="m4.4 9 3.6 3.6L11.6 9"/>'),
+  'rev-prev': wrap('<path d="M8 12.4V3.6"/><path d="m4.4 7 3.6-3.6L11.6 7"/>'),
+  'rev-accept': wrap('<path d="m3.4 8.4 3.2 3.2 6-7.2"/>'),
+  // 输入区右侧配图按钮（实测 16×16 占位，字形未采集）：取相框 + 山形，和飞书的图片语义一致。
+  'rev-image': wrap('<rect x="2.6" y="3.4" width="10.8" height="9.2" rx="1.6"/><circle cx="6" cy="6.6" r="1"/><path d="m3.4 11 3.2-3.2 2.4 2.4 1.8-1.8 1.8 1.8"/>'),
+  // 回复卡头像兜底（07 §12.3：灰底人形 SVG）。用半身剪影，别做成「两个圆」——
+  // 32px 圆内头肩要留白，否则缩到 18px 就看不出是人。
+  'rev-avatar': wrap('<circle cx="8" cy="5.5" r="2.7"/><path d="M3.1 13.7c0-2.6 2.2-4.4 4.9-4.4s4.9 1.8 4.9 4.4"/>'),
 }
 
 export default ICONS

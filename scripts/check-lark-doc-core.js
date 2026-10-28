@@ -4,6 +4,8 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 const root = path.resolve(__dirname, '../src/components/lark-doc')
+// Vue 2 专属 NodeView（图片 / 代码块）已搬到 src/adapters/vue2/，不再是 core 的一部分。
+const vueNodeRoot = path.resolve(__dirname, '../src/adapters/vue2')
 const sourceRoot = path.resolve(__dirname, '../src')
 const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
@@ -23,18 +25,20 @@ const { getSchema, getExtensionField } = require('@tiptap/core')
 const { EditorState, TextSelection } = require('@tiptap/pm/state')
 const { history, undo } = require('@tiptap/pm/history')
 const schema = getSchema(createLarkDocExtensions())
-function loadComponent(name) {
+function loadComponent(name, base = root) {
   const { parseComponent } = require('vue-template-compiler')
-  const filename = path.join(root, name)
+  const filename = path.join(base, name)
   const Module = require('module')
   const module = new Module(filename)
   module.filename = filename
-  module.paths = Module._nodeModulePaths(root)
+  module.paths = Module._nodeModulePaths(base)
   const sfc = parseComponent(fs.readFileSync(filename, 'utf8'))
   const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
   const originalVueLoader = require.extensions['.vue']
   const originalCssLoader = require.extensions['.css']
-  require.extensions['.vue'] = (child, childPath) => { child.exports = loadComponent(path.basename(childPath)) }
+  // SFC 里的相对 import 已被 require 解成绝对路径，按它自己的目录回装载，
+  // 这样跨目录（如 ../../adapters/vue2/*.vue）也能命中。
+  require.extensions['.vue'] = (child, childPath) => { child.exports = loadComponent(path.basename(childPath), path.dirname(childPath)) }
   require.extensions['.css'] = () => {}
   try {
     module._compile(code, filename)
@@ -64,6 +68,47 @@ function editorFor(document, selection) {
   return editor
 }
 function check(name, fn) { fn(); console.log(`PASS ${name}`) }
+// 图片 NodeView 已是 core 的纯 DOM 实现（src/core/nodeviews/image.js），构造它需要
+// 真实元素/事件语义。这里只借用 jsdom 的 DOM 表面，断言仍打在 EditorState 上。
+function openDom() {
+  const { JSDOM } = require('jsdom')
+  const dom = new JSDOM('<!doctype html><html><body></body></html>')
+  const previous = { window: global.window, document: global.document }
+  global.window = dom.window
+  global.document = dom.window.document
+  return () => { global.window = previous.window; global.document = previous.document; dom.window.close() }
+}
+function withDom(fn) {
+  const close = openDom()
+  try { return fn() } finally { close() }
+}
+/**
+ * 按 tiptap 的装配签名构造图片 NodeView。props 里没有现成的 updateAttributes，
+ * 且 dispatch 之后 ProseMirror 会回调 update(node)；少了这一步，后续方法会拿
+ * 旧 attrs 覆盖上一次写入。
+ */
+function imageNodeViewFor(attrs, options = {}) {
+  const { createImageNodeView } = require(path.join(sourceRoot, 'core/nodeviews/image.js'))
+  const editor = editorFor(doc([{ type: 'image', attrs }]))
+  editor.isEditable = options.editable !== false
+  const listeners = { transaction: [], update: [] }
+  editor.on = (name, fn) => { listeners[name].push(fn); return editor }
+  editor.off = (name, fn) => { listeners[name] = listeners[name].filter((item) => item !== fn); return editor }
+  const emit = (name) => listeners[name].slice().forEach((fn) => fn())
+  let nodeView = null
+  const view = {
+    get state() { return editor.state },
+    dispatch(tr) {
+      editor.state = editor.state.apply(tr)
+      if (nodeView) nodeView.update(editor.state.doc.firstChild)
+      emit('transaction')
+      emit('update')
+    },
+  }
+  const extension = { options: options.resolveImageFile ? { resolveImageFile: options.resolveImageFile } : {} }
+  nodeView = createImageNodeView({ editor, view, node: editor.state.doc.firstChild, getPos: () => 0, extension })
+  return { editor, nodeView, view, emit }
+}
 
 check('Public LarkDoc config gates features, commands, block actions and limits', () => {
   const config = createLarkDocConfig({
@@ -202,7 +247,11 @@ check('Changing the active handle target closes a stale block menu', () => {
 
 check('Empty block plus opens the insert menu while six-dot handles open block actions', () => {
   const component = loadComponent('LarkDocEditor.vue')
-  const source = fs.readFileSync(path.join(root, 'LarkDocEditor.vue'), 'utf8')
+  // P0-03 拆分后空段落加号与六点句柄的模板绑定迁入 BlockHandleMenu.vue，静态断言随之扩源；
+  // 子组件模板事件绑定带 ed. 前缀，这里统一归一化后再做字符串断言。
+  const source = ['LarkDocEditor.vue', 'editor/BlockHandleMenu.vue']
+    .map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n')
+    .replace(/@([\w.]+=")ed\./g, '@$1')
   let insertCalls = 0
   let blockMenuCloses = 0
   let repositionCalls = 0
@@ -382,15 +431,19 @@ check('H9 emits valid div HTML and round-trippable level attributes', () => {
   assert(schema.nodes.heading.spec.parseDOM.some((rule) => rule.tag === 'div[data-type="heading"][data-level="9"]'))
   assert.strictEqual(validateDocument({ type: 'doc', content: [h9.toJSON()] }, schema).content[0].attrs.level, 9)
 })
-check('JSON rejects unknown nodes, malformed structure and hostile attributes before replacement', () => {
+check('JSON rejects malformed structure and hostile attributes before replacement; unknown nodes degrade to placeholder (P1-03)', () => {
   for (const content of [
-    [{ type: 'unknown' }], [{ type: 'text', text: 'orphan' }],
+    [{ type: 'text', text: 'orphan' }],
     [{ type: 'image', attrs: { src: 'javascript:alert(1)' } }],
     [{ type: 'paragraph', attrs: { indent: -1 } }],
     [{ type: 'heading', attrs: { level: 10 } }],
     [{ type: 'paragraph', content: [text('x', [{ type: 'link', attrs: { href: 'data:text/html,bad' } }])] }],
     [{ type: 'columns', content: [{ type: 'column', content: [p('a')] }] }],
   ]) assert.throws(() => validateDocument({ type: 'doc', content }, schema))
+  // P1-03：未知节点不再硬拒绝，就地降级为 unknownBlock 占位卡（payload 保真）。
+  const degraded = validateDocument({ type: 'doc', content: [{ type: 'unknown' }] }, schema)
+  assert.strictEqual(degraded.content[0].type, 'unknownBlock')
+  assert.strictEqual(degraded.content[0].attrs.unknownType, 'unknown')
   const json = { type: 'doc', content: [p('preserved')] }
   assert.deepStrictEqual(validateDocument(json, schema).content[0].content[0].text, 'preserved')
   assert.deepStrictEqual(json, { type: 'doc', content: [p('preserved')] })
@@ -1066,37 +1119,46 @@ check('Moving a sole column paragraph leaves a valid empty block and undoes once
   assert(editor.state.doc.eq(original))
 })
 check('Image resize/caption changes use document attributes and honor readonly', () => {
-  assert(fs.existsSync(path.join(root, 'ImageNode.vue')), 'Missing image NodeView: resize/crop/preview/caption are not implemented')
-  const { parseComponent } = require('vue-template-compiler')
-  const sfc = parseComponent(fs.readFileSync(path.join(root, 'ImageNode.vue'), 'utf8'))
-  const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
-  const Module = require('module')
-  const module = new Module(path.join(root, 'ImageNode.vue'))
-  module.paths = Module._nodeModulePaths(root)
-  module._compile(code, path.join(root, 'ImageNode.vue'))
-  const component = module.exports.default
-  const editor = editorFor(doc([{ type: 'image', attrs: { src: 'data:image/png;base64,aGVsbG8=', width: 200 } }]))
-  const vm = {
-    editor, node: editor.state.doc.firstChild, error: '',
-    updateAttributes: (attrs) => { editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { ...editor.state.doc.firstChild.attrs, ...attrs })) },
-  }
-  component.methods.setWidth.call(vm, 320)
-  assert.strictEqual(editor.state.doc.firstChild.attrs.width, 320)
-  component.methods.setCaption.call(vm, '说明')
-  assert.strictEqual(editor.state.doc.firstChild.attrs.caption, '说明')
-  editor.isEditable = false
-  component.methods.setWidth.call(vm, 500)
-  component.methods.setCaption.call(vm, 'bad')
-  assert.strictEqual(editor.state.doc.firstChild.attrs.width, 320)
-  assert.strictEqual(editor.state.doc.firstChild.attrs.caption, '说明')
+  withDom(() => {
+    const { clampImageWidth } = require(path.join(sourceRoot, 'core/nodeviews/image.js'))
+    assert.strictEqual(clampImageWidth(40), 40, '手柄拖到最窄时仍要成立')
+    assert.strictEqual(clampImageWidth(2400), 2400)
+    assert.strictEqual(clampImageWidth(39), null)
+    assert.strictEqual(clampImageWidth(2401), null)
+    assert.strictEqual(clampImageWidth('600px'), null, '带单位的裸值必须先剥单位再校验')
+
+    const { editor, nodeView, emit } = imageNodeViewFor({ src: 'data:image/png;base64,aGVsbG8=', width: 200 })
+    assert.strictEqual(nodeView.setWidth(320), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.width, 320)
+    assert.strictEqual(nodeView.setCaption('说明'), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.caption, '说明')
+    assert.strictEqual(nodeView.setAlign('right'), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.align, 'right')
+    // 越界/非法宽度只反馈错误，不写文档。
+    assert.strictEqual(nodeView.setWidth(10), false)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.width, 320)
+    editor.isEditable = false
+    emit('transaction')
+    nodeView.mountToolbar()
+    assert.strictEqual(nodeView.dom.querySelector('.lark-doc-image-toolbar'), null, '只读态不得挂载工具条')
+    assert.strictEqual(nodeView.setWidth(500), false)
+    assert.strictEqual(nodeView.setCaption('bad'), false)
+    assert.strictEqual(nodeView.reset(), false)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.width, 320)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.caption, '说明')
+  })
 })
 check('Resetting a cropped ECS image restores the attachment matching the original URL', () => {
-  const component = loadComponent('ImageNode.vue')
-  const editor = editorFor(doc([{ type: 'image', attrs: { src: 'https://example.com/cropped.png', attchId: 'cropped', originalSrc: 'https://example.com/original.png', originalAttchId: 'original' } }]))
-  const vm = { editor, node: editor.state.doc.firstChild, updateAttributes: (attrs) => editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { ...editor.state.doc.firstChild.attrs, ...attrs })) }
-  component.methods.resetImage.call(vm)
-  assert.strictEqual(editor.state.doc.firstChild.attrs.src, 'https://example.com/original.png')
-  assert.strictEqual(editor.state.doc.firstChild.attrs.attchId, 'original')
+  withDom(() => {
+    const { editor, nodeView } = imageNodeViewFor({ src: 'https://example.com/cropped.png', attchId: 'cropped', originalSrc: 'https://example.com/original.png', originalAttchId: 'original' })
+    assert.strictEqual(nodeView.reset(), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.src, 'https://example.com/original.png')
+    assert.strictEqual(editor.state.doc.firstChild.attrs.attchId, 'original')
+    // 没有原始映射时重置按钮与入口都必须失效。
+    const plain = imageNodeViewFor({ src: 'https://example.com/only.png', attchId: 'only' })
+    assert.strictEqual(plain.nodeView.reset(), false)
+    assert.strictEqual(plain.editor.state.doc.firstChild.attrs.src, 'https://example.com/only.png')
+  })
 })
 check('Code blocks indent as a box, capped at the LarkDoc nesting limit', () => {
   const component = loadComponent('LarkDocEditor.vue')
@@ -1263,14 +1325,15 @@ check('Indent keyboard shortcuts follow the same previous-block ceiling', () => 
 })
 
 check('Code language changes preserve code and highlighting escapes HTML', () => {
-  assert(fs.existsSync(path.join(root, 'CodeNode.vue')), 'Missing code NodeView: language/highlight/copy are not implemented')
+  assert(fs.existsSync(path.join(vueNodeRoot, 'CodeNode.vue')), 'Missing code NodeView: language/highlight/copy are not implemented')
   const { parseComponent } = require('vue-template-compiler')
-  const sfc = parseComponent(fs.readFileSync(path.join(root, 'CodeNode.vue'), 'utf8'))
+  const sfc = parseComponent(fs.readFileSync(path.join(vueNodeRoot, 'CodeNode.vue'), 'utf8'))
   const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
   const Module = require('module')
-  const module = new Module(path.join(root, 'CodeNode.vue'))
-  module.paths = Module._nodeModulePaths(root)
-  module._compile(code, path.join(root, 'CodeNode.vue'))
+  const module = new Module(path.join(vueNodeRoot, 'CodeNode.vue'))
+  module.filename = path.join(vueNodeRoot, 'CodeNode.vue')
+  module.paths = Module._nodeModulePaths(vueNodeRoot)
+  module._compile(code, path.join(vueNodeRoot, 'CodeNode.vue'))
   const component = module.exports.default
   const document = doc([{ type: 'codeBlock', content: [text('const value = "<script>"')] }])
   const editor = editorFor(document)
@@ -1286,7 +1349,7 @@ check('Code language changes preserve code and highlighting escapes HTML', () =>
   assert.strictEqual(editor.state.doc.firstChild.attrs.language, 'javascript')
 })
 async function checkCodeHighlightLazy() {
-  const component = loadComponent('CodeNode.vue')
+  const component = loadComponent('CodeNode.vue', vueNodeRoot)
   const document = doc([{ type: 'codeBlock', content: [text('const value = "<script>"')] }])
   const editor = editorFor(document)
   editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { language: 'javascript' }))
@@ -1328,26 +1391,42 @@ async function checkEcsUploadBoundary() {
 }
 
 async function checkEcsCropBoundary() {
-  const component = loadComponent('ImageNode.vue')
-  const editor = editorFor(doc([{ type: 'image', attrs: { src: 'https://example.com/original.png', attchId: 'original' } }]))
-  const originalGlobals = { Image: global.Image, File: global.File, document: global.document }
-  // Node 核心测试仅替代解码/canvas I/O；正文、schema 与裁剪后元数据更新均运行实际代码。
-  global.Image = class { constructor() { this.naturalWidth = 100; this.naturalHeight = 100 } set src(value) { this.onload() } }
-  global.File = class { constructor(parts, name, options) { this.size = parts[0].size; this.name = name; this.type = options.type } }
-  global.document = { createElement: () => ({ getContext: () => ({ drawImage() {} }), toDataURL: () => 'data:image/png;base64,aGVsbG8=', toBlob: (callback) => callback({ size: 10, type: 'image/png' }) }) }
-  const vm = {
-    editor, node: editor.state.doc.firstChild, busy: false, dialog: 'crop', cropGeneration: 0, crop: { x: 0, y: 0, width: 50, height: 50 },
-    extension: { options: { resolveImageFile: async () => ({ src: 'https://example.com/crop.png', attchId: 'crop-42' }) } },
-    updateAttributes: (attrs) => editor.view.dispatch(editor.state.tr.setNodeMarkup(0, null, { ...editor.state.doc.firstChild.attrs, ...attrs })),
-    closeDialog() { this.dialog = ''; this.cropGeneration += 1; this.busy = false },
+  const close = openDom()
+  const { window: domWindow } = global
+  // Node 核心测试仅替代解码 / canvas I/O；正文、schema、裁剪区域校验与裁剪后
+  // 元数据更新全部跑实际代码（src/core/nodeviews/image.js）。
+  domWindow.Image = class {
+    constructor() { this.naturalWidth = 100; this.naturalHeight = 100 }
+    set src(value) { this.currentSrc = value; if (this.onload) this.onload() }
   }
+  domWindow.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} })
+  domWindow.HTMLCanvasElement.prototype.toBlob = (callback) => callback(new domWindow.Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+  let uploaded = 0
+  const { editor, nodeView } = imageNodeViewFor(
+    { src: 'https://example.com/original.png', attchId: 'original' },
+    { resolveImageFile: async (file) => { uploaded += 1; assert(file && file.type === 'image/png', '裁剪结果必须以 PNG 走宿主上传'); return { src: 'https://example.com/crop.png', attchId: 'crop-42' } } },
+  )
   try {
-    await component.methods.applyCrop.call(vm)
+    assert.strictEqual(nodeView.openCrop(), true, '可编辑态下裁剪入口必须能打开对话框')
+    // 越界区域不产生裁剪、也不得发起上传。
+    nodeView.setCropArea({ x: 60, y: 0, width: 60, height: 50 })
+    assert.strictEqual(await nodeView.applyCrop(), false)
+    assert.strictEqual(uploaded, 0, '非法裁剪区域不得走到上传')
+    nodeView.setCropArea({ x: 10, y: 10, width: 50, height: 50 })
+    assert.strictEqual(await nodeView.applyCrop(), true)
+    assert.strictEqual(uploaded, 1)
     assert.strictEqual(editor.state.doc.firstChild.attrs.src, 'https://example.com/crop.png')
     assert.strictEqual(editor.state.doc.firstChild.attrs.attchId, 'crop-42')
     assert.strictEqual(editor.state.doc.firstChild.attrs.originalSrc, 'https://example.com/original.png')
     assert.strictEqual(editor.state.doc.firstChild.attrs.originalAttchId, 'original')
-  } finally { Object.assign(global, originalGlobals) }
+    // 裁剪后可重置回原图，原映射跟着回到原附件。
+    assert.strictEqual(nodeView.reset(), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.src, 'https://example.com/original.png')
+    assert.strictEqual(editor.state.doc.firstChild.attrs.attchId, 'original')
+  } finally {
+    nodeView.destroy()
+    close()
+  }
   console.log('PASS ECS crop updates the URL and attachment together and retains the original mapping')
 }
 

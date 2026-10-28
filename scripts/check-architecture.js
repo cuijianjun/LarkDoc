@@ -54,4 +54,163 @@ assert.throws(() => createDocumentSession({ mode: 'collaborative' }), /collabora
 assert.throws(() => createCollaborationProvider({ connect() {} }), /disconnect/)
 assert.throws(() => createCommentsProvider({ list() {} }), /createThread/)
 
-console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts')
+// P0-03：门面组件只做装配——模板拆成子组件后 LarkDocEditor.vue 必须持续瘦身（<700 行）。
+const editorFacadeLines = fs.readFileSync(path.resolve(sourceRoot, 'components/lark-doc/LarkDocEditor.vue'), 'utf8').split('\n').length
+assert(editorFacadeLines < 700, `LarkDocEditor.vue 应保持 <700 行（P0-03 模板拆分），当前 ${editorFacadeLines} 行`)
+
+// P0-04：块定义拆进 core/blocks 后，单文件必须保持 <400 行——防止新块把逻辑重新堆回单文件。
+// 阈值从 250 上调到 400（2026-10-26，用户拍板）：原 250 让每个新块都要「写完再拆文件」
+// 返工一轮（calendar-event 306→200、card-embed 306→211 均由此产生），收益低于成本。
+const blocksDir = path.resolve(sourceRoot, 'core/blocks')
+for (const file of fs.readdirSync(blocksDir).filter((name) => name.endsWith('.js')).sort()) {
+  const lines = fs.readFileSync(path.join(blocksDir, file), 'utf8').split('\n').length
+  assert(lines < 400, `core/blocks/${file} 应保持 <400 行（P0-04 拆块注册表），当前 ${lines} 行`)
+}
+
+// P0-05：命令表拆进 core/commands 后，单文件 <250 行，且命令 id 集合与顺序、tier 完整性不得漂移。
+const commandsDir = path.resolve(sourceRoot, 'core/commands')
+for (const file of fs.readdirSync(commandsDir).filter((name) => name.endsWith('.js')).sort()) {
+  const lines = fs.readFileSync(path.join(commandsDir, file), 'utf8').split('\n').length
+  assert(lines < 250, `core/commands/${file} 应保持 <250 行（P0-05 拆命令表），当前 ${lines} 行`)
+}
+// 走旧路径 shim require，连带验证转发链可用；id 清单与拆分前 commands.js 逐项一致。
+const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/commands.js'))
+// 🔴 内嵌网页 15 个 id 故意写成**字面量**而不是 `EMBED_MENU_ITEMS.map(...)`：
+// 派生会让这条断言变成自证（preset 改了、这里跟着改，永远绿）。这里要守的是
+// 「菜单顺序 == 03 §⑫ 的顺序」，所以必须与 presets.js 独立成两份，谁改都要对齐。
+const expectedCommandIds = [
+  'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
+  'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
+  // P5-02：电子表格落在「数据」分类（03 §3.4 真值 y 685，在 绘图 749 之前），紧跟 file。
+  'sheet',
+  // P5-04：多维表格 5 项（03 §3.4 ⑤ y 1196 / 1228 / 1260 / 1292 / 1324，组标题 1164），
+  // 紧跟 sheet —— 分类顺序 数据 → 多维表格 → 绘图，必须连续成段。
+  'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
+  // P5-05：绘图 3 项（03 §3.4 ⑥ y 1420 / 1452 / 1484，组标题 1356）。真值第 1 项
+  // 「画板」走 webEmbed（P3-07），不进本组，所以这里只有 3 条。
+  'mindMap', 'flowChart', 'umlDiagram',
+  'inlineMath', 'blockMath', 'template', 'ai',
+  // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
+  'open_link', 'duplicate_page', 'follow_page',
+  // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
+  // P5-03：`poll` 插在 mentionPage 与 reminder 之间（组内 y 1644 → 1676 → 1708）。
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
+  // P5-06：`agenda` 是 ⑦ 团队协作第 10 项（y 1836，紧跟日程 1804）。
+  'agenda',
+  // P5-06：⑧ 文档管理 2 项（y 1900 / 1932）。
+  'folderManager', 'wikiRecent',
+  // P5-06：⑨ 项目管理 4 项（y 1996 / 2028 / 2060 / 2092）。
+  'jiraIssue', 'jiraFilter', 'meegoView', 'meegoDetail',
+  // P5-06：⑩ 进阶里的订阅号文章（y 2188；同组的网页卡片走 `bookmark`、倒计时不做）。
+  'subscribeArticle',
+  // P4-04：目录导航（文档小组件 2316）。P5-06 补齐中间三组后，它从「日程之后」
+  // 后移到真值位置 —— 晚于 进阶 2136、早于 内嵌网页 2444。
+  'catalogue',
+  'douyin_embed_video', 'bilibili', 'youku', 'iqiyi_video', 'byte_jimeng', 'figma', 'modao',
+  'canva', 'jcode', 'codepen', 'feishu_survey', 'jinshuju', 'airtable', 'baidumap', 'autonavi',
+]
+assert.deepStrictEqual(COMMANDS.map((item) => item.id), expectedCommandIds, '命令 id 集合与顺序必须与拆分前逐项一致（P0-05 验收：命令 id 集合不变）')
+for (const item of COMMANDS) {
+  assert(['required', 'skeleton', 'skip'].includes(item.tier), `命令 ${item.id} 缺少合法 tier 字段（P0-05：CommandDef 带 tier）`)
+  assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 12 组之一）`)
+}
+
+// P0-09：契约骨架——嵌入 preset 空壳、卡片 schema、协同客户端签名只做类型与数据，零实现。
+const embedTypes = require(path.resolve(sourceRoot, 'core/embed/types'))
+assert.strictEqual(embedTypes.EMBED_PRESETS.length, 15, '内嵌网页 preset 必须 15 条（requirements/03 §内嵌网页清单）')
+assert.deepStrictEqual(
+  new Set(embedTypes.EMBED_PRESETS.map((item) => item.id)).size, 15, 'EmbedDef preset id 不得重复')
+for (const item of embedTypes.EMBED_PRESETS) {
+  assert(['iframe', 'card'].includes(item.kind), `EmbedDef ${item.id} kind 非法`)
+  assert(['required', 'skeleton', 'skip'].includes(item.tier), `EmbedDef ${item.id} 缺少合法 tier`)
+}
+const embedCard = require(path.resolve(sourceRoot, 'core/embed/card'))
+assert.strictEqual(embedCard.cardSchema.cardVersion, 1, 'cardSchema 契约版本必须为 1')
+const collab = require(path.resolve(sourceRoot, 'collab'))
+assert.strictEqual(collab.COLLAB_PROTOCOL_VERSION, 1, '协同契约版本必须为 1')
+// P6a 已落地：三个工厂都必须能调用，且**参数不合法时立刻抛 TypeError**（不半初始化）。
+for (const factory of ['createCollabExtensions', 'createHocuspocusBridge', 'createCommentAnchors']) {
+  assert.strictEqual(typeof collab[factory], 'function', `缺少协同工厂 ${factory}（09 §3.3 契约）`)
+  assert.throws(() => collab[factory]({}), TypeError, `${factory} 参数不合法时必须抛 TypeError`)
+}
+assert.strictEqual(typeof collab.isRemoteTransaction, 'function', 'collab 必须导出 isRemoteTransaction（§5.7.2-1 的 core 缝）')
+
+// P0-11：DerivedIndex 骨架——六方法签名（09 §3.7.1）+ 兜底行为探针 + 装饰接线校验。
+const derive = require(path.resolve(sourceRoot, 'core/derive/index'))
+assert.strictEqual(typeof derive.createDerivedIndex, 'function', 'core/derive 必须导出 createDerivedIndex（09 §3.7 契约）')
+assert.strictEqual(typeof derive.mergeRanges, 'function', 'core/derive 必须导出 mergeRanges（§3.7 纪律 1 的区间合并）')
+assert.deepStrictEqual(
+  derive.mergeRanges([{ from: 5, to: 9 }, { from: 0, to: 4 }, { from: 4, to: 12 }, { from: 20, to: 30 }]),
+  [{ from: 0, to: 12 }, { from: 20, to: 30 }],
+  'mergeRanges 必须把重叠/贴边区间收敛为互不重叠的升序区间（(0,4)+(4,12) 贴边可并；间隔 ≥1 的不并）',
+)
+// 最小探针验证六方法签名与 update 的兜底语义：区间来自 mapping.maps 并合并，返回 { changed, index }。
+const probeIndex = derive.createDerivedIndex({ doc: {}, schema: null, rebuild: (state) => ({ probed: state }) })
+for (const method of ['update', 'decorations', 'headingNumbers', 'outline', 'foldRanges', 'invalidate']) {
+  assert.strictEqual(typeof probeIndex[method], 'function', `DerivedIndex 缺少 ${method} 方法（09 §3.7.1 契约）`)
+}
+const probeMap = { forEach: (fn) => { fn(2, 6); fn(10, 11); fn(4, 8) } }
+const probeResult = probeIndex.update({ mapping: { maps: [probeMap] }, doc: { version: 2 } })
+// (2,6)+(4,8) 相邻重叠并成 (2,8)；(10,11) 与前段有间隙保留为独立区间。
+assert.deepStrictEqual(probeResult.changed, [{ from: 2, to: 8 }, { from: 10, to: 11 }], 'update 必须把 mapping 各段合并成互不重叠区间')
+assert.strictEqual(probeResult.index, probeIndex, 'update 返回值必须携带 index 自身（09 §3.7.1 契约）')
+// 装饰接线：props.decorations 必须委托 DerivedIndex，且接线文件不得直接全量重扫文档
+// （硬规则 13 —— 具体计算在 document-decorations.js，P7-01 只换 update 实现）。
+const documentExtensionSource = fs.readFileSync(path.resolve(sourceRoot, 'core/blocks/document.js'), 'utf8')
+assert(/derivedIndex\.decorations\(state\)/.test(documentExtensionSource), 'props.decorations 必须走 DerivedIndex（09 §3.7 / 硬规则 13）')
+assert(!/\bdoc\.descendants\b/.test(documentExtensionSource), '装饰接线文件不得直接全量重扫文档（硬规则 13），派生计算一律进 DerivedIndex')
+
+// 决策 5 硬边界：本仓库不含任何自有服务端代码——hocuspocus 只准出现在 test/（e2e 内存实例）。
+function walkJsFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    return entry.isDirectory() ? walkJsFiles(full) : (entry.name.endsWith('.js') || entry.name.endsWith('.vue') ? [full] : [])
+  })
+}
+// 只拦真实引入（import ... from / import '@...' / require('@...')）；注释与函数名（如 createHocuspocusBridge，09 §3.3 规格原文）提及不算违规。
+// P6a 起唯一的例外：`src/collab/` 可以引 **客户端** `@hocuspocus/provider`（协同客户端就在那儿）；
+// `@hocuspocus/server` 与任何其它 hocuspocus 子包在 src/ 下一律禁止 —— 服务端不进本仓库。
+for (const file of walkJsFiles(sourceRoot)) {
+  const content = fs.readFileSync(file, 'utf8')
+  const relative = path.relative(sourceRoot, file)
+  const collabClient = relative.startsWith(`collab${path.sep}`)
+  const imports = Array.from(content.matchAll(/(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*)['"]([^'"]*hocuspocus[^'"]*)['"]/gi)).map((match) => match[1])
+  const illegal = imports.filter((spec) => !(collabClient && spec === '@hocuspocus/provider'))
+  assert(illegal.length === 0, `src/ 下禁止引入 hocuspocus（服务端代码不进本仓库）：${relative} → ${illegal.join(', ')}`)
+  if (file.includes(`${path.sep}core${path.sep}embed${path.sep}`)) {
+    assert(!/\bfetch\s*\(|XMLHttpRequest|axios/.test(content), `core/embed/ 零网络（硬规则 9）：${path.relative(sourceRoot, file)}`)
+  }
+}
+
+/**
+ * 09 §5.7.3 那条边界怎么守（规格原话：「CI 里加一条断言」）：
+ * **`hocuspocus/server` 只准出现在 `test/` 下**。
+ *
+ * 为什么用「全仓扫」而不是「只看 src」：临时加个开发服务器永远是从一个 script 开始的 ——
+ * `scripts/` 里放个 `dev-collab-server.js` 同样是把服务端塞进本仓库，只是换了目录。
+ * 判据是「有没有自有服务端代码」，不是「在哪个文件夹」，所以 src / scripts / test 一起扫。
+ */
+const repoRoot = path.resolve(__dirname, '..')
+const SERVER_OWNED_DIRS = ['src', 'scripts', 'test']
+let serverRefs = 0
+for (const dir of SERVER_OWNED_DIRS) {
+  const full = path.join(repoRoot, dir)
+  if (!fs.existsSync(full)) continue
+  for (const file of walkJsFiles(full)) {
+    // 本文件自己带着匹配模式（正则里的 `hocuspocus/server` 字面量），会自匹配 —— 跳过。
+    if (file === __filename) continue
+    const relative = path.relative(repoRoot, file)
+    // 只看**真实的模块说明符**（`from '@hocuspocus/server'` / `require('@hocuspocus/server')`）。
+    // 注释里提到它（比如 collab/index.js 说明"服务端不在本仓库，e2e 用第三方起内存实例"）
+    // 不算违规 —— 否则这条断言会逼着人把边界说明删掉，正好搞反。
+    const specifier = /(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*)['"][^'"]*hocuspocus\/server['"]/i
+    if (specifier.test(fs.readFileSync(file, 'utf8'))) {
+      serverRefs += 1
+      assert(relative.startsWith(`test${path.sep}`), `只允许 test/ 引用 @hocuspocus/server（服务端是独立 package）：${relative}`)
+    }
+  }
+}
+assert(serverRefs > 0, 'test/ 下应当有真线 e2e 引用 @hocuspocus/server（09 §5.7.4 C1/C4），否则这条断言在空跑')
+
+console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts, collab server boundary')

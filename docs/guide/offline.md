@@ -1,12 +1,10 @@
 # 离线与资源本地化
 
-## 概述
-
 包默认**静态资源完全本地化**：KaTeX 样式与全部字体随包发布（`src/assets/fonts/katex/`），构建产物 `dist/fonts/` 自带字体文件；代码高亮为本地动态 chunk；emoji 是内置字符表——任何模式下都不会请求外部 CDN。CI 侧有 `scripts/check-offline-assets.js` 守卫，产物里出现硬编码远程地址或字体缺失即构建失败。
 
 **正文媒体**由 `network.mode` 控制，默认 `open`：图片按原地址加载，老系统的 http 图床可直接显示；需要完全断网时显式设 `offline`。
 
-## 配置内容
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -21,7 +19,7 @@ new LarkDoc({
 })
 ```
 
-## 配置说明
+## 模式与接线点
 
 ### network.mode
 

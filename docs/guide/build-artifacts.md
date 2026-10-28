@@ -1,27 +1,36 @@
 # 打包产物与按需加载
 
-## 概述
-
 包一次构建产出四份产物，按「宿主怎么用」而不是「我们怎么编译」来分：
 
-| 产物 | 入口 | 适用宿主 | 首屏 JS（体积同 `npm run size` 口径） |
+| 产物 | 入口 | 适用宿主 | 首屏 JS（gzip 实测，2026-10-28 / v0.12.1） |
 | --- | --- | --- | --- |
-| `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 381 kB → gzip 98 kB；连带 `tiptap.esm.js` 467 kB（gzip 139 kB）与 `vendor.esm.js` 106 kB（gzip 39 kB）并行，合计 **gzip 276 kB** |
-| `dist/lark-doc.common.js` | `src/index.js` | Node / CJS / 老打包器（`main` 字段） | 单文件 7.5 MB → gzip 1.99 MB（内联 mermaid 与全部按需区块，不拆） |
-| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` 字段） | 955 kB → gzip 275 kB |
-| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联） | 1.04 MB → gzip 304 kB |
+| `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 1.00 MB → gzip 273 kB；连带 `tiptap.esm.js` 446 kB（gzip 136 kB）与 `vendor.esm.js` 101 kB（gzip 38 kB）并行，合计 **gzip 446 kB** |
+| `dist/lark-doc.common.js` | `src/index.js` | Node / SSR / 只读 `main` 的老打包器（`main` 字段） | 单文件 8.6 MB → gzip 2.34 MB（内联 mermaid 与全部按需区块，不拆） |
+| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` / `jsdelivr` 字段）、**webpack 4 主入口（`browser` 字段）** | 1.56 MB → gzip 447 kB |
+| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联）；Vue 3 / React 走它 + 薄壳 | 1.60 MB → gzip 464 kB |
 
-改造前只有「一个巨大的单文件」：UMD 1.91 MB（gzip 548 kB）、element 2.16 MB（gzip 658 kB），
-公式、Word 导入导出、代码高亮全部塞在首屏里。改造后首屏分别少掉约 **50%** 与 **52%**（gzip 同比例）。
+跑一次 `npm run size` 就能看到同样这些数：它为每份产物定了上限（ESM 285 kB、UMD 465 kB、element 480 kB、CJS 2500 kB），超出即失败。
 
-CJS 那份是**唯一反其道而行**的：它把 mermaid 与全部按需区块都内联进单文件（gzip 1.99 MB）。
+UMD 与 element 两份已整体降到 **ES2018 语法**，`browser` 字段直指 UMD，所以 webpack 4 宿主
+`import { LarkDoc } from 'lark-doc'` 零配置可用（0.13 起，不再需要 alias 到 `common.js` + 降语法插件）；
+两份产物都会自行注入样式，不用另引 css。webpack 4 唯一要留意的是**按需区块的基址**——
+主文件被宿主打包器 import 时 `document.currentScript` 指向宿主自己的 bundle，需要显式给
+`window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'`（详见 [多环境接入](./environments.md#env-vue2-wp4)）。
+子路径（`lark-doc/element` 等）在 webpack 4 下要写全 `dist/` 路径，因为老版本读不到 `exports`。
+
+改造前每份产物都是「一个巨大的单文件」：UMD 1.91 MB（gzip 548 kB）、element 2.16 MB（gzip 658 kB），
+公式、Word 导入导出、代码高亮全部塞在首屏里。改造把这些重依赖从首屏挪走；上表的 gzip 数是 **v0.12.1 实测**，
+比刚改造时大了一截（后续版本又加了 AI、Markdown 导入导出等能力），所以别拿「少掉一半」那种老口径来算收益——
+拆分真正的收益是「这些能力不占首屏」，普通文档的常态是几乎 0 额外流量。
+
+CJS 那份是**唯一反其道而行**的：它把 mermaid 与全部按需区块都内联进单文件（gzip 2.34 MB）。
 原因是 `require('lark-doc')` 可能跑在 Node / jsdom / 任意老打包器里，运行时根本没法可靠地解析
 chunk 地址，宁可体积换「拿走就能用」。嫌大的宿主走 ESM 入口即可。
 
 重依赖（KaTeX、docx、mammoth、marked、turndown、highlight.js、mermaid）**都不在首屏**：
 它们被拆成按需区块，只有用户真的插入公式、导出 Word、导入 .docx / Markdown、渲染代码块、插入图表时才下载。
 
-## 配置内容
+## 产物构成
 
 ### 按需区块（四种产物都一样）
 
@@ -52,7 +61,7 @@ UMD / element 产物的首屏**永远只有一个文件**：它们的 `output.fi
 - `umd` / `esm` / `element`：样式随 JS 注入 `<style>`，宿主不需要额外引 CSS；
   KaTeX 那条 118 KB 的样式跟着 `math` 区块走，没有公式的文档不为它付费。
 
-## 配置说明
+## 构建与部署
 
 ### 构建命令
 

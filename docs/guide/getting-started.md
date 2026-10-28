@@ -30,7 +30,7 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 | 宿主环境 | 引入写法 | 初始化 | 备注 |
 | --- | --- | --- | --- |
 | Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({...})` | 命中 `exports.import` → ESM；懒区块由宿主打包器接管，内外网零配置 |
-| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | webpack4 不读 `exports`，CSS 必须写 `dist/` 全路径；样式不可省略 |
+| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` | 同上 | 0.13 起零配置：`browser` 指向 ES2018 的 UMD 产物，样式随产物注入；用到公式 / Word 导出时设 `window.__LARK_DOC_PUBLIC_PATH__` |
 | Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
 | Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物内置 Vue；对象型能力（uploader / persistence / ai）只能 `setProperty` |
 | CDN / 静态托管 / 内网 | `<script src="…/dist/lark-doc-element.umd.min.js">` | `<lark-doc>` | **`dist/` 整目录**同位部署（主文件 + `*.math.js`、`*.mermaid.js` 等按需区块 + `fonts/`） |
@@ -38,7 +38,8 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 
 ::: tip 编译工具要点
 - webpack5 / vite / rollup：认 `exports`，两条入口零配置；
-- **webpack4 只认 `main` / `module`**：`import 'lark-doc/element'` 会报「找不到模块」，要写 `lark-doc/dist/lark-doc-element.umd.min.js`，或 `<script>` 直引；
+- **webpack4（0.13+）**：主入口零配置（`browser` → ES2018 的 UMD），但**子路径**读不到 `exports`：`import 'lark-doc/element'` 会报「找不到模块」，要写 `lark-doc/dist/lark-doc-element.umd.min.js`，或 `<script>` 直引；
+- **webpack4（0.12 及更早）**：只认 `main` / `module`，还要 alias 到 `dist/lark-doc.common.js` + babel 降 `?.` / `??`，见[老写法](/guide/environments#env-vue2-wp4)；
 - browserslist 为 `> 0.5% / last 2 versions / not dead`，**不含 IE11**：IE11 宿主需自己把 `node_modules/lark-doc` 加进 babel `include`；
 - 默认假设宿主有 `Promise` / `fetch` 等运行环境能力；老浏览器请自行在入口加 polyfill。
 :::

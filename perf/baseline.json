@@ -1,0 +1,20 @@
+{
+  "_meta": {
+    "comment": "性能基线（requirements/09 §2.4.3 门禁）。只能由 report.mjs 从真实运行生成，禁止手填。",
+    "seed": 42,
+    "blockCount": 2000,
+    "node": "v22.22.2",
+    "platform": "darwin",
+    "arch": "x64",
+    "capturedAt": "2026-10-28T11:54:20.799Z"
+  },
+  "metrics": {
+    "mountToTypeableMs": 1124,
+    "keystrokeP95Ms": 901.6,
+    "keystrokeP99Ms": 2101.1,
+    "decorationIncrementalMs": 78,
+    "scrollFps": 59,
+    "saveProxyMs": 23.6,
+    "heapMB": 95.6
+  }
+}

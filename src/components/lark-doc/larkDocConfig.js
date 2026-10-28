@@ -11,6 +11,10 @@ export const LARK_DOC_FEATURES = Object.freeze([
   'codeBlocks', 'math', 'emoji', 'templates', 'callouts', 'columns', 'search',
   'outline', 'folding', 'blockHandle', 'blockDrag', 'ai', 'viewModes', 'shortcuts', 'insert',
   'persistence', 'importExport', 'diagram',
+  // 文件 / 视频块（P2-04）：视频与附件共用同一个 `file` 块，所以只有一个开关。
+  'files',
+  // 内嵌网页 15 项（P3-07）：15 条命令共用这一个开关，关掉后斜杠菜单不再出现「内嵌网页」组。
+  'embed',
 ])
 
 export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
@@ -23,6 +27,10 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     persistence: true, importExport: true,
     // 图表预览（mermaid）：关闭后代码块保持纯源码形态，渲染器不会加载。
     diagram: true,
+    // 文件 / 视频块：关闭后斜杠菜单不再出现「视频或文件」，粘贴与拖入也不落块。
+    files: true,
+    // 内嵌网页 15 项：关闭后斜杠菜单不再出现「内嵌网页」组。
+    embed: true,
   },
   toolbar: {
     history: true, headings: true, marks: true, textStyle: true, blockStyle: true,
@@ -62,6 +70,9 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     titleLength: 120,
     maxLength: 0,
     maxImageSize: 5 * 1024 * 1024,
+    // 附件上限：02 L4188 实测飞书斜杠 `file` 的报错是「文件大小为 0 MB 或者大于 10 GB」，
+    // 上下限同一句，下限是开区间 0（0 字节直接拒）。
+    maxFileSize: 10 * 1024 * 1024 * 1024,
     maxTableRows: 9,
     maxTableColumns: 9,
     maxIndent: 5,
@@ -121,6 +132,8 @@ export function createLarkDocConfig(overrides = {}) {
   config.limits.titleLength = Math.max(1, Number(config.limits.titleLength) || DEFAULT_LARK_DOC_CONFIG.limits.titleLength)
   config.limits.maxLength = Math.max(0, Number(config.limits.maxLength) || 0)
   config.limits.maxImageSize = Math.max(1, Number(config.limits.maxImageSize) || DEFAULT_LARK_DOC_CONFIG.limits.maxImageSize)
+  // 文件上限允许调到 10 GB 以上（宿主可能有自己的配额），只挡非正数。
+  config.limits.maxFileSize = Math.max(1, Number(config.limits.maxFileSize) || DEFAULT_LARK_DOC_CONFIG.limits.maxFileSize)
   config.limits.maxTableRows = Math.max(1, Math.min(9, Number(config.limits.maxTableRows) || 9))
   config.limits.maxTableColumns = Math.max(1, Math.min(9, Number(config.limits.maxTableColumns) || 9))
   config.limits.maxIndent = Math.max(0, Math.min(MAX_BLOCK_INDENT, Number(config.limits.maxIndent) || MAX_BLOCK_INDENT))

@@ -61,6 +61,11 @@ export const ATTRIBUTE_SCHEMA = Object.freeze([
   { attr: 'content-format', key: 'contentFormat', target: 'prop', type: 'string', live: true, toProp: true },
   { attr: 'placeholder', key: 'placeholder', target: 'options', type: 'string' },
   { attr: 'theme', key: 'theme', target: 'options', type: 'string', live: true },
+  // content-theme：正文双轨（auto/light/dark），live —— 变更走 setTheme 热更，不重建实例。
+  { attr: 'content-theme', key: 'contentTheme', target: 'options', type: 'string', live: true },
+  // theme-storage：'local' 才启用主题持久化；低频配置，非 live（变更重建实例）。
+  // hostSkin 含函数型 target，只能走 property，不进属性表。
+  { attr: 'theme-storage', key: 'themeStorage', target: 'options', type: 'string' },
   { attr: 'readonly', key: 'readonly', target: 'prop', type: 'boolean', live: true, toProp: true },
   { attr: 'save-html', key: 'saveHtml', target: 'prop', type: 'boolean', live: true, toProp: true },
   { attr: 'autofocus', key: 'autofocus', target: 'options', type: 'boolean' },

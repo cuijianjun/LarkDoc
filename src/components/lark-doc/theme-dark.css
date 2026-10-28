@@ -1,0 +1,367 @@
+/* ==================================================================
+   深色档 token（0.12 T2-02）—— 默认档中性灰（12 §4 D8）
+   - 底色 #17181A（D8 指定）；浮起表面 / 内容层 #292929、文字 #F0F0F0 与
+     #A6A6A6、中性描边 #5F5F5F / #434343 / #757575、阴影加强（不是减弱）
+     全部取自 requirements/11 §4.1–§4.9 与 06 §1.5.1 实测；
+   - 双轨：外壳 UI 走 [data-theme="dark"]，正文画布走
+     [data-content-theme="dark"]，两轨可独立开关（飞书「UI 深 + 正文浅」）；
+   - 跨界 token 不重写：--ld-border-chrome / --ld-bg-surface-chrome /
+     --ld-bg-hover-chrome / --ld-shadow-chrome 在 .lark-doc 上转发到基础
+     token，本档改基础值即自动生效；只有 content 轨因为基础值可能仍是
+     浅色，必须直写 --ld-border-content / --ld-bg-surface-content；
+   - 不写 !important（T2-02 要求）：本档选择器 = 类 + 属性，特异性 0,2,0，
+     高于 token 声明区 .lark-doc（0,1,0），宿主后续注入仍可覆盖（T2-05）；
+   - 不用 color-mix()/light-dark()：目标含老 Chromium 宿主（UOS），
+     提亮值直接落字面量并标注来源。
+
+   ★ 取值四规则（本文件每条声明都标了规则号，便于验收追溯）
+     A 实测直取：11/06 有实测同角色值，直接采用
+     B 实测中性阶梯：#434343（弱线）/#5F5F5F（常规）/#757575（强）/
+       #A6A6A6（次级文字）/#F0F0F0（主文字）/rgba(207,207,207,0.04|0.08|0.12)
+       —— 数值均出自 11 §4.3、§4.4、§4.9 实测
+     C 派生：品牌色提亮、品牌浅底用 alpha —— 关系照搬实测的
+       #1456F0 → #4C88FF（同色相 +12% 亮度、饱和度略降），绿档品牌
+       #00b887 → #1FD6A5（H164 S75% L48%），非实测值，待视觉验收
+     D 暂不覆盖：06/11 无对应实测且风险低（toast 琥珀族），保留浅色，
+       记入 requirements/10 缺口清单待实测
+     E 阴影：色值统一 rgba(0,0,0,0.28)（11 §4.3 实测「变深加大」），
+       几何沿用各档原位（12 §3 T2-04 的「减弱」措辞已被实测推翻）
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   一、外壳轨（chrome）：顶栏 / 工具栏 / 菜单 / 浮层 / 对话框 / 输入底
+   ------------------------------------------------------------------ */
+.lark-doc[data-theme="dark"] {
+  /* ---- L2 文字（A：11 §4.2 两级文字 #F0F0F0 / #A6A6A6） ---- */
+  --ld-text: #F0F0F0;
+  --ld-text-secondary: #A6A6A6;
+  --ld-text-tertiary: #A6A6A6;
+  --ld-text-disabled: #757575;            /* B */
+  --ld-text-link: #4C88FF;                /* A：主色提亮档 */
+  --ld-text-accent: #1FD6A5;              /* C：绿档品牌提亮 */
+  --ld-text-accent-hover: #45E0B6;        /* C */
+  --ld-text-icon: #A6A6A6;                /* B */
+  --ld-text-icon-tertiary: #A6A6A6;       /* B */
+  --ld-text-brand-sub: #A6A6A6;           /* B */
+  --ld-text-check: #1FD6A5;               /* C */
+
+  /* ---- L2 背景（A/B） ---- */
+  --ld-bg-shell: #17181A;                 /* D8 默认档底色 */
+  /* 滚动条滑块（11 §3.4 契约项）：本库自己不画滚动条，这是给宿主 DOM 的取值入口。
+     深色滑块必须比底 #292929 亮一档才看得见 → 用描边档 #5F5F5F（A）。 */
+  --ld-scrollbar-thumb: #5F5F5F;
+  --ld-bg-surface: #292929;               /* A：11 §4.1 浮起表面（四级 elevation 作废，只有两级） */
+  --ld-bg-surface-raised: #292929;        /* 规格对齐（未引用） */
+  --ld-bg-hover: rgba(207, 207, 207, 0.08);        /* B */
+  --ld-bg-hover-strong: rgba(207, 207, 207, 0.12); /* B：加深一档 */
+  --ld-bg-hover-select: rgba(207, 207, 207, 0.08); /* B */
+  --ld-bg-hover-menu: rgba(207, 207, 207, 0.08);   /* B */
+  --ld-bg-active: rgba(207, 207, 207, 0.12);       /* B */
+  --ld-bg-accent: rgba(31, 214, 165, 0.14);        /* C：品牌浅底 */
+  --ld-bg-accent-active: rgba(31, 214, 165, 0.20); /* C */
+  --ld-bg-selected: rgba(51, 112, 235, 0.26);      /* A：11 §4.6 深色选区蓝 */
+  --ld-bg-soft: rgba(207, 207, 207, 0.04);         /* B */
+
+  /* ---- L2 边框（B：三级中性描边） ---- */
+  --ld-border: #5F5F5F;                   /* A：11 §4.3 块描边 / 引用竖线 */
+  --ld-border-strong: #757575;            /* A：11 §4.9 未勾选框描边档 */
+  --ld-border-accent: rgba(31, 214, 165, 0.40);    /* C */
+
+  /* ---- 轮廓栏 / 纸张 ---- */
+  --ld-text-outline: #A6A6A6;                      /* B */
+  --ld-text-outline-heading: #F0F0F0;              /* B */
+  --ld-text-outline-icon: #A6A6A6;                 /* B */
+  --ld-text-outline-active: #4C88FF;               /* A */
+  --ld-bg-outline-hover: rgba(76, 136, 255, 0.18); /* C */
+  --ld-border-paper: #434343;                      /* B：弱线档 */
+  --ld-shadow-paper: 0 8px 36px rgba(0, 0, 0, 0.28); /* E：11 §4.3 深色阴影变深加大 */
+
+  /* ---- 品牌 / 功能（C：品牌提亮；语义色照 11 §4.4 不变） ---- */
+  --ld-brand-chrome: #1FD6A5;             /* C：H164 S75% L48%，原 #00b887 */
+  --ld-brand-content: #4C88FF;            /* A：正文品牌色提亮档 */
+  --ld-brand-subtle: rgba(76, 136, 255, 0.26);     /* A：选区蓝档 */
+  --ld-bg-brand-hover: #45E0B6;           /* C */
+  --ld-accent-control: #4C88FF;           /* A */
+  --ld-focus-ring: rgba(76, 136, 255, 0.40);       /* C */
+  --ld-focus-ring-picker: #4C88FF;                 /* A */
+  /* --ld-danger / --ld-warning 不覆盖：11 §4.4 实测 R600/G600 深色不变 */
+  --ld-text-error: #E26A64;               /* C：#D83931 +25% 白（深底需够对比） */
+  --ld-stroke-swatch-clear: #E26A64;      /* C：同 error */
+
+  /* ---- 浮层 UI（B5 收编组） ---- */
+  --ld-text-menu: #F0F0F0;                /* B */
+  --ld-text-menu-icon: #A6A6A6;           /* B */
+  --ld-text-menu-active: #4C88FF;         /* A */
+  --ld-text-bubble: #F0F0F0;              /* B */
+  --ld-text-handle: #A6A6A6;              /* B */
+  --ld-text-handle-icon: #A6A6A6;         /* B */
+  --ld-text-submenu-arrow: #A6A6A6;       /* B */
+  --ld-text-align-glyph: #A6A6A6;         /* B */
+  --ld-text-help: #A6A6A6;                /* B */
+  --ld-text-badge: #1FD6A5;               /* C */
+  --ld-bg-tooltip: #434343;               /* B：深底浮层在深色档上浮一档 */
+  --ld-bg-handle-hover: rgba(207, 207, 207, 0.08); /* B */
+  --ld-bg-menu-item-active: rgba(76, 136, 255, 0.20); /* C */
+  --ld-bg-toast: #FFF8EB;                 /* D：toast 琥珀族无实测，保留浅色 */
+  --ld-text-toast: #89541A;               /* D */
+  --ld-border-toast: #EDCF9F;             /* D */
+  --ld-bg-badge: rgba(31, 214, 165, 0.16);/* C */
+  --ld-mask: rgba(0, 0, 0, 0.55);         /* C：深色遮罩加深（浅色档 #17271c73） */
+
+  /* ---- 控件 / 选择器 ---- */
+  --ld-border-control: #5F5F5F;           /* B */
+  --ld-border-handle-hover: #757575;      /* B */
+  --ld-border-bubble-divider: #434343;    /* B */
+  --ld-border-help: #757575;              /* B */
+  --ld-border-swatch: #5F5F5F;            /* B */
+  --ld-border-swatch-palette: #5F5F5F;    /* B */
+  --ld-border-color-grid: rgba(207, 207, 207, 0.12); /* B */
+  --ld-border-columns-picker: #434343;    /* B */
+  --ld-border-grid-table: #434343;        /* B */
+  --ld-border-grid-table-active: #4C88FF; /* A */
+  --ld-stroke-swatch-empty: #757575;      /* B */
+  --ld-bg-switch-off: #5F5F5F;            /* B */
+  --ld-bg-switch-thumb: #F0F0F0;          /* B */
+  --ld-bg-grid-table: rgba(207, 207, 207, 0.08);       /* B */
+  --ld-bg-grid-table-active: #4C88FF;                  /* A */
+  --ld-bg-grid-submenu: #292929;                       /* A：浮起表面 */
+  --ld-bg-columns-preview: rgba(207, 207, 207, 0.08);  /* B */
+  --ld-bg-columns-picker: rgba(76, 136, 255, 0.45);    /* C */
+  --ld-bg-columns-cell: rgba(76, 136, 255, 0.30);      /* C */
+  --ld-bg-columns-cell-active: rgba(76, 136, 255, 0.40); /* C */
+  --ld-bg-columns-cell-preview: #4C88FF;               /* A */
+
+  /* ---- 分类图标（命令菜单类型标识，浮层属 chrome 轨） ----
+     7 个类型色实测对比度（#292929 底）：green 5.8 / orange 5.6 / teal 5.9 /
+     yellow 8.1 达标，保持浅色值；下列 3 个不达标，按用户口径只修这 3 个。 */
+  --ld-cat-gray: #A6A6A6;                 /* B：复用中性阶梯；原 #4a4e56 仅 1.76:1 不可读 */
+  --ld-cat-blue: #4C88FF;                 /* A：复用品牌提亮档；原 #416cf2 3.26:1 → 4.37:1 */
+  --ld-cat-indigo: #7A8BFF;               /* C：同色相提亮（唯一新造值）；原 #586bff 3.47:1 → 4.85:1 */
+
+  /* ---- 标题编号块 UI（B6 收编组） ---- */
+  --ld-text-number-menu: #F0F0F0;                  /* B */
+  --ld-text-number-spinner: #A6A6A6;               /* B */
+  --ld-text-number-hover: #4C88FF;                 /* A */
+  --ld-bg-number-hover: rgba(76, 136, 255, 0.18);  /* C */
+  --ld-bg-number-hover-subtle: rgba(76, 136, 255, 0.14); /* C */
+  --ld-bg-number-item-hover: rgba(207, 207, 207, 0.08);  /* B */
+  --ld-border-number-focus: #4C88FF;               /* A */
+  --ld-focus-ring-number: rgba(76, 136, 255, 0.20);/* C */
+
+  /* ---- 阴影（E：11 §4.3 实测「变深加大」= rgba(0,0,0,0.28)，几何沿用原档位）
+     注：12 §3 T2-04 原文写「阴影减弱 + inset 描边替代」已被 11 §4.3 推翻，
+     以实现口径为准。06 §1.5.1 面板阴影 0 6px 24px 亦为同色。 ---- */
+  --ld-shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.28);
+  --ld-shadow-menu-sm: 0 8px 16px rgba(0, 0, 0, 0.28);
+  --ld-shadow-float: 0 8px 16px rgba(0, 0, 0, 0.28);
+  --ld-shadow-colorpanel: 0 6px 24px rgba(0, 0, 0, 0.28);  /* 06 §1.5.1 */
+  --ld-shadow-tools: 0 8px 16px rgba(0, 0, 0, 0.28);
+  --ld-shadow-tooltip: 0 6px 18px rgba(0, 0, 0, 0.28);
+  --ld-shadow-bubble: 0 8px 16px rgba(0, 0, 0, 0.28);
+  --ld-shadow-toast: 0 8px 16px rgba(0, 0, 0, 0.28);
+  --ld-shadow-boundary: 0 2px 7px rgba(0, 0, 0, 0.28);
+  --ld-shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.28);
+  --ld-shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --ld-shadow-drawer: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --ld-shadow-panel: 0 4px 8px rgba(0, 0, 0, 0.28);
+  --ld-shadow-notice: 0 10px 28px rgba(0, 0, 0, 0.28);
+  --ld-shadow-megamenu: 0 8px 16px rgba(0, 0, 0, 0.28);
+
+  /* ---- 查找替换面板（P4-05，04 §3.2 ④-5 A/B 实测：几何尺寸与浅色档完全一致，只换色） ----
+     ★ 主按钮填充深档是 #3370EB，**不要**写成 --ld-brand-content 的 #4C88FF：
+       飞书深档「实心主按钮」比「文字/描边品牌蓝」暗一档，两者是真飞书里的两个值。 */
+  --ld-fr-shadow: rgba(0, 0, 0, 0.28) 0 3px 12px 2px;  /* E：同其余深色阴影色，几何沿用实测 */
+  --ld-fr-border: #5F5F5F;            /* A：面板描边 */
+  --ld-fr-border-control: #505050;    /* A：输入框 / 次要按钮常态描边 */
+  --ld-fr-border-disabled: #505050;   /* A：禁用描边与常态同值（深档只有一个控件描边档） */
+  --ld-fr-text: #F0F0F0;              /* A：Tab 未激活 / 次要按钮文字 */
+  --ld-fr-text-muted: #A6A6A6;        /* A：关闭图标 / 命中计数器 */
+  --ld-fr-text-disabled: #5F5F5F;     /* A：禁用态文字（≠ --ld-text-disabled 的 #757575） */
+  --ld-fr-primary-bg: #3370EB;        /* A：主按钮填充 */
+}
+
+/* ------------------------------------------------------------------
+   二、正文轨（content）：纸张 / 正文块 / 表格 / 引用 / 折叠 / 代码
+   只写「内容语义」token —— 这些在 .lark-doc 上不转发，必须直写，
+   否则「UI 浅 + 正文深」时会被基础 token 的浅色顶住。
+   ------------------------------------------------------------------ */
+.lark-doc[data-content-theme="dark"] {
+  /* ---- 画布与文字（A：11 §4.1 内容色层 + §4.2 文字） ---- */
+  /* 只写 --ld-bg-content：它是 content 轨的源头。
+     .lark-doc 上 --ld-bg-surface-content: var(--ld-bg-content) 是惰性转发，
+     本行生效后幻灯片舞台（lark-doc.css:440）自动跟随；
+     .lark-doc-paper 直接引 --ld-bg-content（:316），也一并修好。
+     ★ 纸张 = 页面底，**不是**浮起层：11 §4.1 实测「正文块透明、继承 #1A1A1A」，
+     §4.8 结论②「深色块色层 #292929 比页面底亮一档」。此前误取 #292929（浮起层），
+     导致链接 #4C88FF 在纸上只有 4.35:1（<4.5）。改回页面底后：
+     默认档跟外壳同值 #17181A（D8，与实测 #1A1A1A ΔE<2，链接对比度 5.31:1 ✅）。 */
+  --ld-bg-content: #17181A;               /* A+D8：11 §4.1 页面底（默认档取 D8 中性灰） */
+  --ld-border-content: #5F5F5F;           /* 11 §4.3 content 描边档 */
+  --ld-bg-code: #292929;                  /* A：11 §4.8 代码块 #F5F6F7 → #292929 */
+  --ld-text-content: #F0F0F0;             /* A */
+  --ld-text-heading: #F0F0F0;             /* A */
+  --ld-text-slide-title: #F0F0F0;         /* B：深绿 #214c37 在 #292929 上不可读，归主文字档 */
+
+  /* ---- 引用（A：11 §4.9.4 竖线 #5F5F5F；正文 #A6A6A6 走 --ld-text-quote 别名） ---- */
+  --ld-border-quote: #5F5F5F;             /* A：P1-01 竖线独立 token（浅档 #BBBFC4 无单一现成 token 命中） */
+  --ld-border-callout: #5F5F5F;           /* A */
+  --ld-bg-callout: #292929;               /* A：11 §4.8 callout #F2F3F5 → #292929 */
+
+  /* ---- 列表 / 任务 / 分割线（A：11 §4.9） ---- */
+  --ld-text-bullet: #4C88FF;              /* A：列表符号/序号用主色（深色档 #4C88FF） */
+  --ld-divider: rgba(207, 207, 207, 0.15);/* A：分割线 = 正文基色 α0.15，深档基色 #CFCFCF */
+
+  /* ---- 分栏 / 折叠 ---- */
+  --ld-border-column: #5F5F5F;            /* B */
+  --ld-border-column-hover: #4C88FF;      /* A */
+  --ld-bg-details: rgba(207, 207, 207, 0.04);  /* B */
+  --ld-border-details: #5F5F5F;                /* B */
+  --ld-text-summary: #F0F0F0;                  /* B */
+  --ld-text-fold-toggle: #A6A6A6;              /* B */
+  --ld-bg-fold-toggle-hover: rgba(76, 136, 255, 0.20); /* C */
+  --ld-text-fold-toggle-hover: #4C88FF;        /* A */
+
+  /* 未知块占位卡（P1-03，11 §4.8 内容块色层）：icon 深色未实测，复用副文 #A6A6A6 */
+  --ld-unknown-card-bg: #292929;               /* A：04 §8.3 深色 bg */
+  --ld-unknown-card-border: #434343;           /* A：04 §8.3 深色描边 */
+  --ld-unknown-card-icon: #A6A6A6;             /* B：复用副文色（未实测，挂起项） */
+  --ld-unknown-card-text: #E8E8E8;             /* A：04 §8.3 深色主文 */
+  --ld-unknown-card-text-sub: #A6A6A6;         /* A：04 §8.3 深色副文 */
+
+  /* ---- 表格（A：11 §4.8「只换线色」#DEE0E3 → #434343） ---- */
+  --ld-border-table: #434343;             /* A */
+  --ld-border-cell: #434343;              /* A */
+  --ld-bg-th: rgba(207, 207, 207, 0.08);  /* B */
+  --ld-border-hr: rgba(207, 207, 207, 0.15); /* A：同 divider */
+
+  /* ---- 网页卡片（P3-05）----
+     描边复用表格的深档线 #434343（A）；骨架两色**不新造**，用已有的 α 白灰层 0.08 / 0.12
+     （B）—— 浅档的 #EFF0F1 落在 #17181A 上会亮成三根白条，而 α 层在任何深底上都自动跟底走。 */
+  --ld-border-bookmark: #434343;                      /* A */
+  --ld-bg-bookmark-skeleton: rgba(207, 207, 207, 0.08); /* B：同 --ld-bg-th 档 */
+  --ld-bg-bookmark-shimmer: rgba(207, 207, 207, 0.12);  /* B：同 diagram-node-soft 档 */
+
+  /* ---- 代码块 / 图表块（T3-02）----
+     代码块是「常暗对象」：语法配色按 M6（06 §6.5.2 实测 token 色两档不变）不动，
+     这里只把「与外部世界接触」的 chrome（卡底 / 描边 / 头部条）换成深色中性档 ——
+     卡底去绿转中性，免得深灰文档里冒出一坨墨绿。 */
+  /* ★ 块色层必须比页面底**亮**一档（11 §4.8 结论②）：纸张已是 #17181A，
+     代码块取 #292929（同 callout / 图表块），此前 #17181A 与纸同色、块边界消失。 */
+  --ld-code-bg: #292929;                       /* A：11 §4.8 代码块 #F5F6F7 → #292929 */
+  --ld-code-border: #5F5F5F;                   /* A：11 §4.3 content 描边档 */
+  --ld-code-toolbar-bg: rgba(207, 207, 207, 0.08); /* B */
+  --ld-code-toolbar-text: #F0F0F0;             /* A */
+  /* --ld-code-text / caret / selection 不覆盖：深底浅字的两档语义一致。 */
+
+  /* ---- 图表（mermaid）themeVariables 取值（T3-01）----
+     mermaid 只吃字面色，JS 侧按 token 名读取再下发；色值只在这里定义，
+     预设档 / 宿主写同名变量即可覆盖。**全部取自已实测中性档**
+     （底 #292929、文字 #F0F0F0、描边 #434343/#757575、α 层 0.04/0.08/0.12），
+     不新造色值；浅色档不读这组（走 mermaid 内置 default，外观零变化）。 */
+  --ld-diagram-bg: #292929;                    /* A：与正文纸张同层，图形画在本底上 */
+  --ld-diagram-node: rgba(207, 207, 207, 0.08);/* B：节点填充 = 深色 hover 层 */
+  --ld-diagram-node-soft: rgba(207, 207, 207, 0.12); /* B：次级填充 */
+  --ld-diagram-node-border: #434343;           /* A：#292929 上唯一可见的描边档 */
+  --ld-diagram-text: #F0F0F0;                  /* A */
+  --ld-diagram-line: #757575;                  /* A：连线用中性第三档，弱于文字 */
+  --ld-diagram-cluster: rgba(207, 207, 207, 0.04); /* B：subgraph 底 */
+  --ld-diagram-note: rgba(207, 207, 207, 0.12);    /* B：备注块底 */
+
+  /* ---- 图表卡片外壳（T3-02）：跟着正文纸张走 ---- */
+  --ld-diagram-card-bg: var(--ld-bg-content);      /* 转发：改动只留 --ld-bg-content 一处真相 */
+  --ld-diagram-preview-bg: var(--ld-bg-content);
+  --ld-diagram-source-bg: var(--ld-bg-content);
+  --ld-diagram-border: #5F5F5F;                    /* A */
+  --ld-diagram-preview-border: var(--ld-divider);  /* 转发 */
+  --ld-diagram-toolbar-bg: rgba(207, 207, 207, 0.08); /* B */
+  --ld-diagram-toolbar-text: #F0F0F0;              /* A */
+  --ld-diagram-source-text: #F0F0F0;               /* A */
+  --ld-diagram-source-caret: #F0F0F0;              /* A */
+  --ld-diagram-status-text: #A6A6A6;               /* A：11 §4.2 次级文字 */
+  --ld-diagram-error: #D83931;                     /* A：11 §4.4 danger 深色值 */
+
+  /* ---- 通知条 / 搜索 / AI 面板 / 模板 ---- */
+  --ld-border-notice: #5F5F5F;                   /* B */
+  --ld-bg-notice: rgba(207, 207, 207, 0.06);     /* B */
+  --ld-text-notice: #F0F0F0;                     /* B */
+  --ld-bg-hover-segment: rgba(76, 136, 255, 0.18); /* C */
+  --ld-bg-ai-context: #292929;                   /* A：浮起表面 */
+  --ld-bg-ai-review: #292929;                    /* A */
+  --ld-bg-ai-proposal: rgba(76, 136, 255, 0.18); /* C */
+  --ld-border-template-hover: #4C88FF;           /* A */
+  /* ---- 查找替换命中双色（P4-05，04 §3.2 ④-5C 实测：深色取同色相降亮度档）----
+     命中装饰画在正文里（ProseMirror），所以跟 **content 轨**走，
+     「UI 深 + 正文浅」时它仍然是浅色的黄/红。此前这里写的是「功能色两档同值、不覆盖」，
+     实测推翻了那条口径：深档确实换值（黄更暗一点、红从 #F54A45 降到 #F05B56）。 */
+  --ld-bg-search-hit: rgba(240, 182, 34, 0.5);        /* A：其余命中黄 */
+  --ld-bg-search-hit-active: rgba(240, 91, 86, 0.5);  /* A：当前命中红 */
+}
+
+/* ------------------------------------------------------------------
+   三、本档刻意不覆盖的 token（覆盖密度核对：164 个引用 token 全覆盖或
+   落入下列四类之一，逐条可追溯，避免"以为写了其实漏了"）
+   ------------------------------------------------------------------
+   ① 跨界转发组（9 个）—— 在 .lark-doc 上 var() 转发到基础 token，
+      改基础值即自动跟随，重写会造成两处真相：
+        --ld-bg-surface-chrome / --ld-border-chrome / --ld-bg-hover-chrome /
+        --ld-bg-hover-content / --ld-bg-active-chrome / --ld-bg-active-content /
+        --ld-shadow-chrome / --ld-shadow-content / --ld-brand（过渡别名）
+   ② 语义恒等组（5 个）—— 语义就是"不随主题变"：
+        --ld-danger / --ld-warning / --ld-success  11 §4.4 实测 R600/G600 深色不变
+        --ld-bg-print                            打印纸面两档恒定 #FFFFFF
+        --ld-bg-page                             transparent，继承宿主
+   ③ 反白/继承组（3 个）—— 深底浅字的角色没变，白字仍正确：
+        --ld-text-inverse   浮在 --ld-bg-tooltip(#434343) 与品牌绿底上，白字对比 8:1+
+        --ld-text-on-brand  品牌色底文字，当前无组件引用
+        --ld-icon-callout   橙色 #ff7a1a 在 #292929 上对比 5.6:1，达标
+   ④ L1 基础层（1 组）—— 规格只有命名没有值，深色档不越级覆盖：
+        --ld-c-gray-*
+
+   ★ --ld-cat-*（命令菜单类型图标）：green / orange / teal / yellow 实测
+     5.6–8.1:1 达标，沿用浅色值；gray / blue / indigo 已在上面修掉。
+     口径见 requirements/10，待飞书深色实测后回归。
+   ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------
+   四、打印 / 导出 PDF 强制浅稿（T3-07，12 §6 R7）
+   深色录入的文档也要打印出白底黑字。覆盖点在 token 层，正文结构规则一行不改。
+   为什么写在本文件而不是 lark-doc.css：媒体查询**不增加特异性**，
+   而 style.css 里本文件排在 lark-doc.css 之后 —— 同样的
+   `.lark-doc[data-content-theme="dark"]`，谁在后谁生效。
+   ⚠️ 下列值必须与 lark-doc.css「L2 正文块」的浅色值保持一致（改那边这里要跟着改）。
+   ⚠️ 已知限制：mermaid 已渲染 SVG 的色是固化属性，改变量改不动它 —— 深色稿打印时
+      图表仍保留深色填充，见 requirements/10 待办。
+   ------------------------------------------------------------------ */
+@media print {
+  .lark-doc[data-content-theme="dark"] {
+    --ld-bg-content: #FFFFFF;
+    --ld-text-content: #263830;
+    --ld-text-heading: #213c31;
+    --ld-text-secondary: #3f5149;   /* P1-01：引用正文经 --ld-text-quote 别名跟随本值 */
+    --ld-border-quote: #BBBFC4;     /* P1-01：引用竖线回浅档 */
+    --ld-border-callout: #9ad9bd;
+    --ld-bg-callout: #eff9f4;
+    --ld-text-bullet: #4e5969;
+    --ld-border-column: #dbe7e0;
+    --ld-bg-details: #f7faf9;
+    --ld-border-details: #d9e9e1;
+    --ld-text-summary: #276149;
+    --ld-border-table: #d4e0d9;
+    --ld-bg-th: #edf6f0;
+    --ld-border-hr: #dce8e1;
+    --ld-divider: #DEE0E3;
+    /* P4-05 查找替换命中：深色值会印成一坨糊斑，回浅档（同默认档实测值） */
+    --ld-bg-search-hit: rgba(255, 198, 10, 0.5);
+    --ld-bg-search-hit-active: rgba(245, 74, 69, 0.5);
+    /* 未知块占位卡打印回浅档（04 §8.3 中性灰，与默认档同值） */
+    --ld-unknown-card-bg: #f5f6f7;
+    --ld-unknown-card-border: #dee0e3;
+    --ld-unknown-card-icon: #8f959e;
+    --ld-unknown-card-text: #1f2329;
+    --ld-unknown-card-text-sub: #646a73;
+    /* 网页卡片打印回浅档（02 §24 实测描边 #D0D3D6 + 浅色骨架渐变） */
+    --ld-border-bookmark: #d0d3d6;
+    --ld-bg-bookmark-skeleton: #eff0f1;
+    --ld-bg-bookmark-shimmer: rgba(222, 224, 227, 0.65);
+  }
+}

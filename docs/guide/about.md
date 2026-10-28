@@ -14,7 +14,7 @@
 - Vue 2.7 渲染层与编辑器状态的边界（`EditorContent`、装饰 widget、浮层定位）
 - 具体问题：块级结构、折叠与高亮、标题自动编号、列表缩进与序号、气泡菜单、表格交互、导入导出归一化
 
-仓库里的大量代码注释，以及 [`DEVELOPMENT.md`](https://github.com/cuijianjun/LarkDoc) 中的踩坑清单，
+仓库里的大量代码注释，以及 [`dev/` 开发手册](https://github.com/cuijianjun/LarkDoc/tree/master/dev) 中的踩坑清单，
 本质上是学习笔记，不是产品交付物。
 
 ### 为什么长这样

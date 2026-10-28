@@ -2,516 +2,50 @@
   <section
     ref="root"
     class="lark-doc"
-    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
+    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-mode-suggest': mode === 'suggest', 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
     @keydown.esc="closeOverlay"
   >
     <a
       class="lark-doc-skip"
       href="#lark-doc-editor"
     >跳到正文</a>
-    <!-- 顶部标题栏：layout.headerVisible=false 时整行隐藏，操作入口移入工具栏「⋯」下拉 -->
-    <header
-      v-if="larkDocConfig.layout.headerVisible"
-      class="lark-doc-topbar"
-    >
-      <div
-        class="lark-doc-brand"
-        aria-label="文档"
-      >
-        ✦ <span>文档</span>
-      </div>
-      <div class="lark-doc-title-wrap">
-        <input
-          :value="localTitle"
-          aria-label="文档标题"
-          :maxlength="titleLength"
-          placeholder="未命名文档"
-          :readonly="effectiveReadonly"
-          @input="updateTitle($event.target.value)"
-        ><span class="lark-doc-title-sub">{{ effectiveReadonly ? '阅读中' : '单人编辑' }}</span>
-      </div>
-      <div class="lark-doc-header-actions">
+    <TopBar :ed="self">
+      <template #header-actions>
         <slot name="header-actions" />
-      </div>
-    </header>
-
+      </template>
+    </TopBar>
+    <!-- P4-06：「已切换为 X 模式」提示。载体是**顶部中性条**（07 §1.1 文案 + 06 §6.2
+         `.ud__msg-manager--top` 的 1512×16 @y=32 / z 9999 / fixed），
+         刻意不复用右下角 `.lark-doc-toast` —— 那是琥珀 error 语义，两者混用会让人以为切换失败。 -->
     <div
-      class="lark-doc-toolbar"
-      role="toolbar"
-      aria-label="文档工具栏"
-      @mousedown="rememberSelection"
+      v-if="modeToast"
+      class="lark-doc-mode-toast"
+      role="status"
+      aria-live="polite"
     >
-      <div
-        v-if="toolbarEnabled('history')"
-        v-show="!isGroupCollapsed('history')"
-        class="lark-doc-tools"
-      >
-        <button
-          type="button"
-          aria-label="撤销"
-          title="撤销"
-          :disabled="effectiveReadonly"
-          @click="run('undo')"
-        >
-          <lark-doc-icon name="undo" />
-        </button><button
-          type="button"
-          aria-label="重做"
-          title="重做"
-          :disabled="effectiveReadonly"
-          @click="run('redo')"
-        >
-          <lark-doc-icon name="redo" />
-        </button>
-      </div>
-      <div
-        v-if="toolbarEnabled('headings')"
-        v-show="!isGroupCollapsed('headings')"
-        class="lark-doc-tools lark-doc-heading-tool"
-      >
-        <button
-          type="button"
-          aria-label="标题级别"
-          title="标题级别"
-          :disabled="effectiveReadonly"
-          :aria-expanded="headingOpen ? 'true' : 'false'"
-          @mouseenter="openHeadingMenuOnHover"
-          @mouseleave="scheduleHeadingMenuClose"
-          @click="toggleHeadingMenu"
-        >
-          {{ currentBlockLabel }}<lark-doc-icon
-            class="lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button><lark-doc-heading-menu
-          v-if="headingOpen"
-          :active-level="headingActiveLevel"
-          :style="headingStyle"
-          aria-label="标题级别"
-          @keep-open="cancelPopupHoverClose"
-          @schedule-close="scheduleHeadingMenuClose"
-          @choose="setHeading"
-        />
-      </div>
-      <div
-        v-if="toolbarEnabled('marks')"
-        v-show="!isGroupCollapsed('marks')"
-        class="lark-doc-tools"
-      >
-        <button
-          v-for="item in visibleMarks"
-          :key="item.id"
-          type="button"
-          :class="`lark-doc-mark-${item.id}`"
-          :aria-label="item.label"
-          :title="item.label"
-          :aria-pressed="String(isActive(item.id))"
-          :disabled="effectiveReadonly"
-          @mousedown.prevent
-          @click="toggleMark(item.id)"
-        >
-          {{ item.glyph }}
-        </button>
-      </div>
-      <div
-        v-if="toolbarEnabled('textStyle')"
-        v-show="!isGroupCollapsed('textStyle')"
-        class="lark-doc-tools"
-      >
-        <button
-          type="button"
-          aria-label="设置链接"
-          title="设置链接"
-          :aria-pressed="String(isActive('link'))"
-          :disabled="effectiveReadonly || !hasTextSelection"
-          @mousedown.prevent
-          @click="openLinkDialog"
-        >
-          <lark-doc-icon name="link" />
-        </button>
-        <lark-doc-select
-          aria-label="字体"
-          :options="fontFamilyOptions"
-          :value="appliedTextStyle.fontFamily"
-          :disabled="effectiveReadonly"
-          @change="applyTextStyle('fontFamily', $event)"
-        />
-        <lark-doc-select
-          aria-label="字号"
-          :options="fontSizeOptions"
-          :value="appliedTextStyle.fontSize"
-          :disabled="effectiveReadonly"
-          @change="applyTextStyle('fontSize', $event)"
-        />        <label
-          class="lark-doc-color"
-          title="颜色"
-          aria-haspopup="menu"
-          :aria-expanded="colorPaletteOpen === 'textColor' ? 'true' : 'false'"
-          @mouseenter="openColorPaletteOnHover"
-          @mouseleave="scheduleColorPaletteClose"
-          @click.prevent="toggleColorPalette('textColor', $event)"
-        ><span
-          class="lark-doc-color-letter lark-doc-color-letter-hl"
-          aria-hidden="true"
-          :style="{ color: appliedTextStyle.textColor, background: `linear-gradient(transparent 52%, ${appliedTextStyle.backgroundColor} 52%)` }"
-        >A</span><lark-doc-icon
-          :size="12"
-          name="chevronDown"
-          class="lark-doc-caret lark-doc-color-arrow"
-        /><input
-          type="color"
-          aria-label="文字颜色"
-          :disabled="effectiveReadonly"
-          :value="appliedTextStyle.textColor"
-          @focus="rememberSelection"
-          @input="applyTextColor($event.target.value)"
-        ><input
-          type="color"
-          aria-label="背景颜色"
-          :disabled="effectiveReadonly"
-          :value="appliedTextStyle.backgroundColor"
-          @focus="rememberSelection"
-          @input="applyTextBackground($event.target.value)"
-        ></label>
-      </div>
-      <div
-        v-if="toolbarEnabled('blockStyle')"
-        v-show="!isGroupCollapsed('blockStyle')"
-        class="lark-doc-tools"
-      >
-        <lark-doc-select
-          aria-label="行高"
-          :options="lineHeightOptions"
-          :value="appliedTextStyle.lineHeight"
-          :disabled="effectiveReadonly"
-          @change="applyLineHeight($event)"
-        /><button
-          v-for="align in ['left', 'center', 'right', 'justify']"
-          :key="align"
-          type="button"
-          :aria-label="`对齐${alignNames[align]}`"
-          :title="`对齐${alignNames[align]}`"
-          :disabled="effectiveReadonly"
-          @mousedown.prevent
-          @click="setAlign(align)"
-        >
-          <lark-doc-icon :name="`align-${align}`" />
-        </button><button
-          type="button"
-          aria-label="减少缩进"
-          :title="blockIndentLevel() <= 0 ? '已在最外层' : '减少缩进'"
-          :disabled="effectiveReadonly || blockIndentLevel() <= 0"
-          @mousedown.prevent
-          @click="changeIndent(-1)"
-        >
-          <lark-doc-icon name="indent-dec" />
-        </button><button
-          type="button"
-          aria-label="增加缩进"
-          :title="canIncreaseIndent() ? '增加缩进' : '当前内容块已达最大缩进层级'"
-          :disabled="effectiveReadonly || !canIncreaseIndent()"
-          @mousedown.prevent
-          @click="changeIndent(1)"
-        >
-          <lark-doc-icon name="indent-inc" />
-        </button><button
-          type="button"
-          aria-label="清除格式"
-          title="清除格式"
-          :disabled="effectiveReadonly"
-          @mousedown.prevent
-          @click="clearFormatting"
-        >
-          <lark-doc-icon name="clear" />
-        </button>
-      </div>
-      <div
-        v-if="toolbarEnabled('insert') || toolbarEnabled('tables') || toolbarEnabled('ai')"
-        v-show="!isGroupCollapsed('insert')"
-        class="lark-doc-tools"
-      >
-        <button
-          v-if="toolbarEnabled('insert')"
-          type="button"
-          aria-label="插入"
-          title="插入内容"
-          :disabled="effectiveReadonly"
-          @click="openCommandMenu('plus', $event)"
-        >
-          <lark-doc-icon name="plus" />插入
-        </button><button
-          v-if="toolbarEnabled('tables')"
-          type="button"
-          :aria-label="isActive('table') ? '表格工具' : '插入表格'"
-          :title="isActive('table') ? '表格工具' : '插入表格'"
-          :disabled="effectiveReadonly"
-          @mousedown.prevent
-          @click="isActive('table') ? tableToolsOpen = !tableToolsOpen : tablePicker = true"
-        >
-          <lark-doc-icon name="table" />
-        </button><button
-          v-if="toolbarEnabled('insert') && larkDocConfig.features.diagram"
-          type="button"
-          aria-label="图表"
-          title="插入图表"
-          :disabled="effectiveReadonly"
-          :aria-expanded="String(diagramMenuOpen)"
-          @click="toggleDiagramMenu"
-        >
-          <lark-doc-icon name="chart" />
-        </button><button
-          v-if="toolbarEnabled('ai')"
-          type="button"
-          aria-label="AI 助手"
-          title="AI 助手"
-          :disabled="effectiveReadonly"
-          @click="$emit('ai-request', 'rewrite')"
-        >
-          <lark-doc-icon name="sparkle" />AI
-        </button>
-        <!-- 图表类型下拉：流程图/时序图/甘特图等，承接图表插入的全部功能 -->
-        <div
-          v-if="diagramMenuOpen"
-          class="lark-doc-dropdown lark-doc-diagram-menu"
-          :style="diagramMenuStyle"
-          role="menu"
-          aria-label="图表类型"
-        >
-          <button
-            v-for="item in diagramTypes"
-            :key="item.id"
-            type="button"
-            role="menuitem"
-            @mousedown.prevent
-            @click="insertDiagramType(item.id)"
-          >
-            {{ item.label }}
-          </button>
-        </div>
-      </div>
-      <div class="lark-doc-tools lark-doc-tools-end">
-        <span
-          v-show="!isGroupCollapsed('toolsEnd')"
-          class="lark-doc-tools-end-inner"
-        >        <button
-          v-if="toolbarEnabled('search')"
-          type="button"
-          aria-label="查找"
-          title="查找"
-          @click="searchOpen = !searchOpen; $nextTick(() => $refs.searchInput?.focus())"
-        >
-          <lark-doc-icon name="search" />
-        </button><button
-          v-if="toolbarEnabled('outline')"
-          type="button"
-          aria-label="目录"
-          title="目录"
-          :aria-expanded="String(outlineOpen)"
-          @click="outlineOpen = !outlineOpen"
-        >
-          <lark-doc-icon name="outline" />
-        </button>        <lark-doc-select
-          v-if="toolbarEnabled('viewModes')"
-          aria-label="页面宽度"
-          :options="widthModeOptions"
-          :value="widthMode"
-          @change="widthMode = $event"
-        /><button
-          v-if="toolbarEnabled('viewModes')"
-          type="button"
-          :aria-label="reading ? '退出阅读' : '阅读模式'"
-          :title="reading ? '退出阅读' : '阅读模式'"
-          :aria-pressed="String(reading)"
-          @click="toggleReading"
-        >
-          <lark-doc-icon name="reading" />
-        </button><button
-          v-if="toolbarEnabled('viewModes')"
-          type="button"
-          :aria-label="fullscreen ? '退出全屏' : '全屏'"
-          :title="fullscreen ? '退出全屏' : '全屏'"
-          :aria-pressed="String(fullscreen)"
-          @click="toggleFullscreen"
-        >
-          <lark-doc-icon name="fullscreen" />
-        </button><button
-          v-if="toolbarEnabled('viewModes')"
-          type="button"
-          :aria-label="slides ? '退出演示' : '演示模式'"
-          :title="slides ? '退出演示' : '演示模式'"
-          :aria-pressed="String(slides)"
-          @click="toggleSlides"
-        >
-          <lark-doc-icon name="slides" />
-        </button>        <button
-          v-if="toolbarEnabled('shortcuts')"
-          type="button"
-          aria-label="快捷键帮助"
-          title="快捷键帮助"
-          @click="helpOpen = !helpOpen"
-        >
-          ?
-        </button><button
-          v-if="!larkDocConfig.layout.headerVisible && $slots['header-actions']"
-          type="button"
-          aria-label="文档操作"
-          title="文档操作"
-          :aria-expanded="String(headerMenuOpen)"
-          @click="toggleHeaderMenu"
-        >
-          ⋯
-        </button></span>
-        <!-- header-menu 弹层放在 span 外：tools-end 被收纳隐藏时弹层仍可由「更多」打开 -->
-        <div
-          v-if="!larkDocConfig.layout.headerVisible && headerMenuOpen"
-          class="lark-doc-dropdown lark-doc-header-menu"
-          :style="headerMenuStyle"
-          role="menu"
-          aria-label="文档操作"
-        >
-          <!-- 顶栏隐藏时承接 header-actions 插槽（字数/保存/模板/导入导出/快照） -->
-          <slot name="header-actions" />
-        </div>
-        <!-- 工具栏自适应折叠：「更多 ▾」承接被收纳分组的全部功能（按组分节） -->
-        <button
-          v-if="collapsedGroups.length"
-          type="button"
-          aria-label="更多"
-          title="更多工具"
-          :aria-expanded="String(moreMenuOpen)"
-          @mouseenter="openMoreMenuOnHover"
-          @mouseleave="scheduleMoreMenuClose"
-          @click="toggleMoreMenuGuarded"
-        >
-          更多<lark-doc-icon
-            class="lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button><div
-          v-if="moreMenuOpen"
-          class="lark-doc-dropdown lark-doc-more-menu"
-          :style="moreMenuStyle"
-          role="menu"
-          aria-label="更多工具"
-          @mouseenter="cancelPopupHoverClose"
-          @mouseleave="scheduleMoreMenuClose"
-        >
-          <template v-for="section in visibleToolbarSections">
-            <div
-              :key="section.id"
-              class="lark-doc-more-title"
-            >
-              {{ section.title }}
-            </div>
-            <button
-              v-for="item in section.items"
-              :key="section.id + item.label"
-              type="button"
-              role="menuitem"
-              :disabled="item.disabled"
-              :class="{ 'lark-doc-more-active': item.checked }"
-              @mousedown.prevent
-              @click="runMoreItem(item, $event)"
-            >
-              <span
-                class="lark-doc-select-check"
-                aria-hidden="true"
-              >{{ item.checked ? '✓' : '' }}</span>{{ item.label }}
-            </button>
-          </template>
-        </div>
-      </div>
+      {{ modeToast }}
     </div>
 
-    <div
-      v-if="searchOpen && featureEnabled('search')"
-      class="lark-doc-search"
-      role="search"
-    >
-      <input
-        ref="searchInput"
-        v-model="searchQuery"
-        aria-label="查找内容"
-        placeholder="查找文档"
-        @input="updateSearch"
-        @keydown.enter.prevent="nextMatch(1)"
-      ><span>{{ searchMatches.length ? `${searchIndex + 1}/${searchMatches.length}` : (searchQuery ? '无结果' : '输入关键词') }}</span><button
-        type="button"
-        aria-label="上一处"
-        :disabled="!searchMatches.length"
-        @click="nextMatch(-1)"
-      >
-        ↑
-      </button><button
-        type="button"
-        aria-label="下一处"
-        :disabled="!searchMatches.length"
-        @click="nextMatch(1)"
-      >
-        ↓
-      </button><input
-        v-model="replacement"
-        aria-label="替换为"
-        placeholder="替换为"
-      ><button
-        type="button"
-        :disabled="effectiveReadonly || !searchMatches.length"
-        @click="replace(false)"
-      >
-        替换
-      </button><button
-        type="button"
-        :disabled="effectiveReadonly || !searchMatches.length"
-        @click="replace(true)"
-      >
-        全部替换
-      </button><button
-        type="button"
-        aria-label="关闭查找"
-        @click="closeSearch"
-      >
-        <lark-doc-icon
-          :size="14"
-          name="close"
-        />
-      </button>
-    </div>
-    <div
-      v-if="!effectiveReadonly && featureEnabled('tables') && isActive('table')"
-      class="lark-doc-table-tools"
-      role="toolbar"
-      aria-label="表格工具"
-    >
-      <button
-        v-for="item in visibleTableActions"
-        :key="item.id"
-        type="button"
-        :aria-pressed="item.id === 'toggleHeaderRow' ? String(tableHeaderState.row) : item.id === 'toggleHeaderColumn' ? String(tableHeaderState.column) : undefined"
-        :title="item.label"
-        @mousedown.prevent
-        @click="tableAction(item.id)"
-      >
-        {{ item.label }}
-      </button><label title="单元格背景">单元格背景 <input
-        type="color"
-        aria-label="单元格背景"
-        value="#f2faf6"
-        @change="cellAttribute('backgroundColor', $event.target.value)"
-      ></label><lark-doc-select
-        aria-label="单元格水平对齐"
-        :options="cellTextAlignOptions"
-        :value="cellAlignState.textAlign"
-        @change="applyCellAlign('textAlign', $event)"
-      /><lark-doc-select
-        aria-label="单元格垂直对齐"
-        :options="cellVerticalAlignOptions"
-        :value="cellAlignState.verticalAlign"
-        @change="applyCellAlign('verticalAlign', $event)"
-      />
-    </div>
-
+    <ToolbarBar :ed="self">
+      <template #header-actions>
+        <slot name="header-actions" />
+      </template>
+    </ToolbarBar>
+    <SearchPanel
+      ref="searchInput"
+      :ed="self"
+    />
+    <TableTools :ed="self" />
+    <!-- `@` 提及面板：锚在光标处，与斜杠菜单互斥（同时只会开一个） -->
+    <MentionPanel :ed="self" />
+    <!-- 日期提醒日历浮层：点 chip 打开（入口是 DOM 事件，不走插件回调），与菜单/提及互斥 -->
+    <ReminderPopover :ed="self" />
+    <!-- 日程搜索面板：斜杠「日程」打开，点结果行即插卡片（Esc 刻意不关，02 §26 ⑦） -->
+    <CalendarSearchPanel :ed="self" />
+    <!-- ISV 按钮配置面板：斜杠三条按钮命令打开（270×386，z600，无 backdrop）。
+         与日程面板相反：Esc/取消/点外部都关，关了不建块（02 §22 ⑤-3）。 -->
+    <IsvButtonPanel :ed="self" />
+    <RevisionPanel :ed="self" />
     <div class="lark-doc-body">
       <button
         v-if="!outlineOpen && featureEnabled('outline')"
@@ -523,439 +57,16 @@
       >
         ☰
       </button>
-      <aside
-        v-if="outlineOpen && featureEnabled('outline')"
-        class="lark-doc-outline"
-        aria-label="文档目录"
-      >
-        <div class="lark-doc-outline-heading">
-          <strong>目录</strong><button
-            type="button"
-            aria-label="关闭目录"
-            @click="outlineOpen = false"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </div><p v-if="!outline.length">
-          添加标题后自动生成目录
-        </p><div
-          v-for="item in outlineItems"
-          :key="item.pos"
-          class="lark-doc-outline-item"
-          :style="{ paddingLeft: `${Math.min(item.level - 1, 5) * 10}px` }"
-        >
-          <button
-            v-if="item.hasChildren"
-            type="button"
-            :class="{ active: item.pos === activeHeading }"
-            :aria-label="`${item.collapsed ? '展开' : '收起'}目录：${item.text || '标题'}`"
-            :aria-expanded="String(!item.collapsed)"
-            :title="item.collapsed ? '展开目录' : '收起目录'"
-            @click="toggleOutline(item.pos)"
-          >
-            <span
-              class="lark-doc-outline-arrow"
-              :class="{ 'is-collapsed': item.collapsed }"
-              aria-hidden="true"
-            />
-          </button><span
-            v-else
-            class="lark-doc-outline-toggle-placeholder"
-            aria-hidden="true"
-          />
-          <button
-            type="button"
-            :class="{ active: item.pos === activeHeading }"
-            @click="jumpHeading(item.pos)"
-          >
-            {{ item.text || '无标题' }}
-          </button>
-        </div>
-      </aside>
+      <OutlinePanel :ed="self" />
       <main class="lark-doc-main">
+        <PaperStage :ed="self" />
         <div
-          v-if="slides"
-          class="lark-doc-slide-stage"
-          aria-label="幻灯片演示"
-        >
-          <p class="lark-doc-slide-counter">
-            {{ slideIndex + 1 }} / {{ slideChapters.length }}
-          </p><h1>{{ slideChapters[slideIndex].title }}</h1><p>{{ slideChapters[slideIndex].text }}</p><div>
-            <button
-              type="button"
-              :disabled="slideIndex === 0"
-              @click="slideIndex -= 1"
-            >
-              上一页
-            </button><button
-              type="button"
-              :disabled="slideIndex === slideChapters.length - 1"
-              @click="slideIndex += 1"
-            >
-              下一页
-            </button><button
-              type="button"
-              @click="toggleSlides"
-            >
-              退出演示
-            </button>
-          </div>
-        </div><div
           v-show="!slides"
           class="lark-doc-paper"
           @pointermove="onPaperPointerMove"
+          @pointerdown="onReminderChipClick"
         >
-          <div
-            v-if="editor && !effectiveReadonly && featureEnabled('blockHandle') && handleRange"
-            class="lark-doc-block-handle"
-            :class="{ 'is-menu-open': blockMenuOpen }"
-            :style="blockHandleStyle"
-            @mouseenter="onBlockHandleEnter"
-            @mouseleave="onBlockHandleLeave"
-          >
-            <button
-              v-if="handleIsEmptyParagraph"
-              type="button"
-              class="lark-doc-empty-block-insert"
-              aria-label="插入内容"
-              title="插入内容"
-              @mousedown.prevent
-              @mouseenter="openEmptyBlockInsertMenu"
-              @click="openEmptyBlockInsertMenu"
-            >
-              ＋
-            </button><button
-              v-else-if="!handleIsTaskList"
-              type="button"
-              class="lark-doc-block-handle-main"
-              :class="{ 'is-callout': handleBlockNode()?.type?.name === 'callout' }"
-              aria-label="块操作"
-              title="块操作与拖动"
-              :draggable="featureEnabled('blockDrag')"
-              @mouseenter="openBlockMenuOnHover"
-              @focus="openBlockMenuOnHover"
-              @click="openBlockMenu"
-              @pointerdown="handlePressed = true"
-              @dragstart="startBlockDrag"
-              @dragend="handlePressed = false; dragging = null; dropPosition = null; refreshHandleHighlight()"
-            >
-              <span class="lark-doc-block-handle-type">{{ handleGlyph }}</span><span
-                class="lark-doc-block-handle-dots"
-                aria-hidden="true"
-              >⠿</span>
-            </button><div
-              v-if="blockMenuOpen"
-              class="lark-doc-block-menu"
-              role="menu"
-              aria-label="块操作"
-              :style="blockMenuStyle"
-              @mouseenter="onBlockMenuEnter"
-              @mouseleave="onBlockMenuLeave"
-              @focusin="onBlockMenuFocusIn"
-              @focusout="onBlockMenuFocusOut"
-            >
-              <button
-                v-if="featureEnabled('ai')"
-                type="button"
-                role="menuitem"
-                class="lark-doc-block-menu-ai"
-                title="问问 AI"
-                @mousedown.prevent
-                @click="$emit('ai-request', 'rewrite')"
-              >
-                <lark-doc-icon
-                  class="lark-doc-block-menu-icon"
-                  name="sparkle"
-                  :size="16"
-                /><span>问问 AI</span>
-              </button>
-              <div
-                v-if="featureEnabled('ai')"
-                class="lark-doc-block-menu-divider"
-                role="separator"
-              />
-              <div
-                v-if="visibleBlockTypeActions.length && !handleIsTable"
-                class="lark-doc-block-menu-section lark-doc-block-type-actions"
-                role="group"
-                aria-label="类型转换"
-              >
-                <button
-                  v-for="item in visibleBlockTypeActions"
-                  :key="item.id"
-                  type="button"
-                  role="menuitem"
-                  :aria-label="item.label"
-                  :class="{ active: blockTypeActive(item.id) }"
-                  :title="item.label"
-                  @mousedown.prevent
-                  @click="blockTypeAction(item.id)"
-                >
-                  <lark-doc-icon
-                    class="lark-doc-block-type-icon"
-                    :name="item.icon"
-                    :size="18"
-                  /><span class="sr-only">{{ item.label }}</span>
-                </button>
-              </div>
-              <button
-                v-if="isBlockActionEnabled('duplicate') && !handleIsTable"
-                type="button"
-                role="menuitem"
-                class="lark-doc-block-menu-duplicate"
-                title="创建副本"
-                aria-label="创建副本"
-                @mousedown.prevent
-                @click="blockAction('duplicate')"
-              >
-                <lark-doc-icon
-                  name="copy"
-                  :size="16"
-                />
-              </button>
-              <div
-                v-if="!handleIsTable"
-                class="lark-doc-block-menu-divider"
-                role="separator"
-              />
-              <button
-                v-if="featureEnabled('blockStyle') && !handleIsTable"
-                type="button"
-                role="menuitem"
-                class="lark-doc-block-submenu-trigger"
-                aria-haspopup="menu"
-                :aria-expanded="blockAlignMenuOpen ? 'true' : 'false'"
-                title="缩进和对齐"
-                @mousedown.prevent
-                @mouseenter="openBlockAlignMenuOnHover"
-                @focus="openBlockAlignMenuOnHover"
-                @click.stop="openBlockAlignMenuOnHover"
-              >
-                <lark-doc-icon
-                  class="lark-doc-block-menu-icon"
-                  name="align-left"
-                  :size="16"
-                /><span>缩进和对齐</span><span
-                  class="lark-doc-block-menu-arrow"
-                  aria-hidden="true"
-                >›</span>
-              </button><button
-                v-if="featureEnabled('blockStyle') && !handleIsTable"
-                type="button"
-                role="menuitem"
-                class="lark-doc-block-submenu-trigger"
-                aria-haspopup="menu"
-                :aria-expanded="blockColorMenuOpen ? 'true' : 'false'"
-                title="颜色"
-                @mousedown.prevent
-                @mouseenter="openBlockColorMenuOnHover"
-                @focus="openBlockColorMenuOnHover"
-                @click.stop="openBlockColorMenuOnHover"
-              >
-                <lark-doc-icon
-                  class="lark-doc-block-menu-icon"
-                  name="palette"
-                  :size="16"
-                /><span>颜色</span><span
-                  class="lark-doc-block-menu-arrow"
-                  aria-hidden="true"
-                >›</span>
-              </button><div
-                v-if="blockColorMenuOpen && featureEnabled('blockStyle')"
-                class="lark-doc-block-submenu lark-doc-block-color-submenu"
-                role="menu"
-                aria-label="颜色"
-                :style="blockColorMenuStyle"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="恢复默认颜色"
-                  @mousedown.prevent
-                  @click="blockColorAction('')"
-                >
-                  <span
-                    class="lark-doc-block-color-swatch is-transparent"
-                    aria-hidden="true"
-                  /><span>恢复默认</span>
-                </button><button
-                  v-for="color in colorPaletteOptions"
-                  :key="`block-color-${color.value || 'default'}`"
-                  type="button"
-                  role="menuitem"
-                  :aria-label="color.label"
-                  @mousedown.prevent
-                  @click="blockColorAction(color.value)"
-                >
-                  <span
-                    class="lark-doc-block-color-swatch"
-                    :style="{ backgroundColor: color.value }"
-                    aria-hidden="true"
-                  /><span>{{ color.label }}</span>
-                </button>
-              </div>
-              <div
-                v-if="handleIsTable && featureEnabled('tables')"
-                class="lark-doc-block-menu-table"
-                role="group"
-                aria-label="表格设置"
-              >
-                <button
-                  type="button"
-                  role="menuitemcheckbox"
-                  class="lark-doc-block-menu-row"
-                  :aria-checked="String(handleTableHeaderState().row)"
-                  title="标题行"
-                  @mousedown.prevent
-                  @click="tableHandleAction('toggleHeaderRow')"
-                >
-                  <lark-doc-icon
-                    class="lark-doc-block-menu-icon"
-                    name="table-header-row"
-                    :size="16"
-                  /><span>标题行</span><span
-                    class="lark-doc-menu-switch"
-                    :class="{ on: handleTableHeaderState().row }"
-                    aria-hidden="true"
-                  ><span class="lark-doc-menu-switch-dot" /></span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitemcheckbox"
-                  class="lark-doc-block-menu-row"
-                  :aria-checked="String(handleTableHeaderState().column)"
-                  title="标题列"
-                  @mousedown.prevent
-                  @click="tableHandleAction('toggleHeaderColumn')"
-                >
-                  <lark-doc-icon
-                    class="lark-doc-block-menu-icon"
-                    name="table-header-col"
-                    :size="16"
-                  /><span>标题列</span><span
-                    class="lark-doc-menu-switch"
-                    :class="{ on: handleTableHeaderState().column }"
-                    aria-hidden="true"
-                  ><span class="lark-doc-menu-switch-dot" /></span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="lark-doc-block-menu-row"
-                  title="均分列宽"
-                  @mousedown.prevent
-                  @click="tableHandleAction('distributeColumns')"
-                >
-                  <lark-doc-icon
-                    class="lark-doc-block-menu-icon"
-                    name="distribute-cols"
-                    :size="16"
-                  /><span>均分列宽</span>
-                </button>
-              </div>
-              <div
-                v-if="visibleBlockListActions.length"
-                class="lark-doc-block-menu-divider"
-                role="separator"
-              />
-              <button
-                v-for="item in visibleBlockListActions"
-                :key="item.id"
-                type="button"
-                role="menuitem"
-                class="lark-doc-block-menu-row"
-                :title="item.label"
-                @mousedown.prevent
-                @click="blockAction(item.id)"
-              >
-                <lark-doc-icon
-                  class="lark-doc-block-menu-icon"
-                  :name="item.icon"
-                  :size="16"
-                /><span>{{ item.label }}</span>
-              </button>
-              <div
-                v-if="featureEnabled('blockStyle')"
-                class="lark-doc-block-menu-divider"
-                role="separator"
-              />
-              <button
-                v-if="isBlockActionEnabled('addBelow')"
-                type="button"
-                role="menuitem"
-                class="lark-doc-block-menu-row"
-                title="在下方添加正文"
-                @mousedown.prevent
-                @click="blockAction('addBelow')"
-              >
-                <lark-doc-icon
-                  class="lark-doc-block-menu-icon"
-                  name="plus"
-                  :size="16"
-                /><span>在下方添加正文</span>
-              </button>
-            </div><div
-              v-if="blockAlignMenuOpen && featureEnabled('blockStyle')"
-              class="lark-doc-block-submenu"
-              role="menu"
-              aria-label="缩进和对齐"
-              :style="blockAlignMenuStyle"
-            >
-              <button
-                v-for="align in ['left', 'center', 'right', 'justify']"
-                :key="`block-align-${align}`"
-                type="button"
-                role="menuitem"
-                :aria-pressed="String(blockAlignValue() === align)"
-                :class="{ active: blockAlignValue() === align }"
-                @mousedown.prevent
-                @click="blockAlignAction(align)"
-              >
-                <span
-                  class="lark-doc-block-align-glyph"
-                  aria-hidden="true"
-                >{{ alignGlyphs[align] }}</span><span>{{ alignNames[align] }}对齐</span><span
-                  v-if="blockAlignValue() === align"
-                  class="lark-doc-block-align-check"
-                  aria-hidden="true"
-                >✓</span>
-              </button>
-              <div
-                class="lark-doc-block-submenu-divider"
-                role="separator"
-              />
-              <button
-                type="button"
-                role="menuitem"
-                :disabled="!blockAlignCanIncrease()"
-                @mousedown.prevent
-                @click="blockAlignAction('increaseIndent')"
-              >
-                <span
-                  class="lark-doc-block-align-glyph"
-                  aria-hidden="true"
-                >⇥</span><span>增加缩进</span><span
-                  v-if="!blockAlignCanIncrease()"
-                  class="lark-doc-block-align-help"
-                  aria-label="已达到最大缩进"
-                >?</span>
-              </button><button
-                type="button"
-                role="menuitem"
-                :disabled="blockAlignIndent() <= 0"
-                @mousedown.prevent
-                @click="blockAlignAction('decreaseIndent')"
-              >
-                <span
-                  class="lark-doc-block-align-glyph"
-                  aria-hidden="true"
-                >⇤</span><span>减少缩进</span>
-              </button>
-            </div>
-          </div><div
+          <BlockHandleMenu :ed="self" /><div
             v-if="dropPosition !== null"
             class="lark-doc-drop-line"
             :style="{ top: `${dropLineTop}px` }"
@@ -970,188 +81,7 @@
             @pointermove.native="onEditorPointerMove"
             @dragover.native="onBlockDragOver"
             @drop.native="onBlockDrop"
-          /><div
-            v-if="activeCalloutVisible && featureEnabled('callouts')"
-            class="lark-doc-callout-tools"
-            :style="calloutToolsStyle"
-            role="toolbar"
-            aria-label="高亮块工具"
-            @mousedown.prevent
-          >
-            <label
-              title="高亮块文字颜色"
-              aria-haspopup="menu"
-              @click.prevent="toggleColorPalette('calloutColor', $event)"
-            ><span aria-hidden="true">A</span><input
-              type="color"
-              aria-label="高亮块文字颜色"
-              :value="calloutColor('color', '#263830')"
-              @input="setCalloutColor('color', $event.target.value)"
-            ></label><label
-              title="高亮块背景颜色"
-              aria-haspopup="menu"
-              @click.prevent="toggleColorPalette('calloutBackground', $event)"
-            ><span aria-hidden="true">◉</span><input
-              type="color"
-              aria-label="高亮块背景颜色"
-              :value="calloutColor('backgroundColor', '#eff9f4')"
-              @input="setCalloutColor('backgroundColor', $event.target.value)"
-            ></label><label
-              title="高亮块边框颜色"
-              aria-haspopup="menu"
-              @click.prevent="toggleColorPalette('calloutBorder', $event)"
-            ><span aria-hidden="true">▔</span><input
-              type="color"
-              aria-label="高亮块边框颜色"
-              :value="calloutColor('borderColor', '#00b887')"
-              @input="setCalloutColor('borderColor', $event.target.value)"
-            ></label><button
-              type="button"
-              aria-label="更换高亮块图标"
-              @click="toggleCalloutEmoji"
-            >
-              ☺
-            </button><button
-              type="button"
-              aria-label="恢复高亮块默认样式"
-              @click="resetCalloutStyle"
-            >
-              ↺
-            </button><button
-              type="button"
-              aria-label="删除高亮块"
-              @click="deleteActiveCallout"
-            >
-              ⌫
-            </button><div
-              v-if="calloutEmojiOpen"
-              class="lark-doc-callout-emoji-picker"
-              role="menu"
-              aria-label="高亮块图标"
-            >
-              <label class="lark-doc-callout-emoji-search"><span class="sr-only">搜索表情</span><input
-                v-model="calloutEmojiQuery"
-                type="search"
-                aria-label="搜索高亮块图标"
-                placeholder="搜索"
-              ></label><button
-                type="button"
-                aria-label="随机高亮块图标"
-                title="随机高亮块图标"
-                @click="setCalloutEmoji(pickRandomCalloutEmoji())"
-              >
-                ↺
-              </button><div
-                class="lark-doc-callout-emoji-tabs"
-                role="tablist"
-                aria-label="高亮块图标分类"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-label="最近使用"
-                  :aria-selected="String(calloutEmojiCategory === 'recent')"
-                  @click="calloutEmojiCategory = 'recent'"
-                >
-                  最近
-                </button><button
-                  type="button"
-                  role="tab"
-                  aria-label="全部"
-                  :aria-selected="String(calloutEmojiCategory === 'all')"
-                  @click="calloutEmojiCategory = 'all'"
-                >
-                  全部
-                </button><button
-                  v-for="category in calloutEmojiCategories"
-                  :key="category"
-                  type="button"
-                  role="tab"
-                  :aria-label="category"
-                  :aria-selected="String(calloutEmojiCategory === category)"
-                  @click="calloutEmojiCategory = category"
-                >
-                  {{ category }}
-                </button>
-              </div><p
-                v-if="calloutEmojiCategory === 'recent' && !filteredCalloutEmojiItems.length"
-                class="lark-doc-callout-emoji-empty"
-              >
-                暂无最近使用
-              </p><button
-                v-for="item in filteredCalloutEmojiItems"
-                :key="item.value"
-                type="button"
-                role="menuitem"
-                :aria-label="item.label"
-                @click="setCalloutEmoji(item.glyph)"
-              >
-                {{ item.glyph }}
-              </button>
-            </div>
-          </div><div
-            v-if="featureEnabled('tables') && tableBoundary.visible && tableBoundary.hover && !effectiveReadonly"
-            class="lark-doc-table-boundary-tools"
-            :class="{ 'is-column': tableBoundary.hover === 'column', 'is-row': tableBoundary.hover === 'row' }"
-            :style="{ ...tableBoundary.style, '--lark-doc-column-line-left': `${tableBoundary.columnLineLeft}px`, '--lark-doc-row-line-top': `${tableBoundary.rowLineTop}px` }"
-            role="toolbar"
-            aria-label="表格边界操作"
-            @pointerenter="keepTableBoundaryHover"
-            @pointerleave="clearTableBoundaryHover"
-          >
-            <span
-              v-if="tableBoundary.hover === 'column'"
-              class="lark-doc-table-boundary-line is-column-line"
-              :style="{ left: `${tableBoundary.columnLineLeft}px` }"
-              aria-hidden="true"
-            /><span
-              v-if="tableBoundary.hover === 'row'"
-              class="lark-doc-table-boundary-line is-row-line"
-              :style="{ top: `${tableBoundary.rowLineTop}px` }"
-              aria-hidden="true"
-            />
-            <button
-              v-if="tableBoundary.hover === 'column'"
-              type="button"
-              class="is-column-before"
-              aria-label="在左侧插入列"
-              title="在左侧插入列"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addColumnBefore')"
-            >
-              ＋
-            </button><button
-              v-if="tableBoundary.hover === 'column'"
-              type="button"
-              class="is-column-after"
-              aria-label="在右侧插入列"
-              title="在右侧插入列"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addColumnAfter')"
-            >
-              ＋
-            </button><button
-              v-if="tableBoundary.hover === 'row'"
-              type="button"
-              class="is-row-before"
-              aria-label="在上方插入行"
-              title="在上方插入行"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addRowBefore')"
-            >
-              ＋
-            </button><button
-              v-if="tableBoundary.hover === 'row'"
-              type="button"
-              class="is-row-after"
-              aria-label="在下方插入行"
-              title="在下方插入行"
-              @mousedown.prevent
-              @click="tableBoundaryAction('addRowAfter')"
-            >
-              ＋
-            </button>
-          </div>
+          /><CalloutTools :ed="self" /><TableBoundaryTools :ed="self" />
         </div><footer class="lark-doc-status">
           <span>{{ wordCount }}{{ effectiveMaxLength > 0 ? ` / ${effectiveMaxLength}` : '' }} 字 · {{ outline.length }} 个标题</span><span>{{ effectiveReadonly ? '仅阅读' : '输入 / 快速插入' }}</span>
         </footer>
@@ -1164,217 +94,7 @@
       </aside>
     </div>
 
-    <div
-      v-if="bubbleVisible && !effectiveReadonly"
-      class="lark-doc-bubble"
-      :style="bubbleStyle"
-      role="toolbar"
-      aria-label="划词工具栏"
-      @mousedown.prevent
-    >
-      <button
-        v-if="featureEnabled('ai')"
-        type="button"
-        class="lark-doc-bubble-ai"
-        title="问问 AI"
-        aria-label="问问 AI"
-        @click="$emit('ai-request', 'rewrite')"
-      >
-        <lark-doc-icon
-          name="block-quote"
-          :size="16"
-        /><span>问问 AI</span>
-      </button>
-      <span
-        v-if="featureEnabled('ai')"
-        class="lark-doc-bubble-divider"
-        aria-hidden="true"
-      />
-      <div
-        v-if="featureEnabled('blockStyle')"
-        class="lark-doc-bubble-heading"
-        @mouseleave="scheduleBubbleHeadingClose"
-      >
-        <button
-          type="button"
-          class="lark-doc-bubble-heading-trigger"
-          title="标题级别"
-          aria-label="标题级别"
-          aria-haspopup="menu"
-          :aria-expanded="bubbleHeadingOpen ? 'true' : 'false'"
-          @mouseenter="openBubbleHeadingMenu"
-          @focus="openBubbleHeadingMenu"
-          @click.prevent="openBubbleHeadingMenu"
-        >
-          <span aria-hidden="true">{{ bubbleHeadingValue() }}</span><lark-doc-icon
-            class="lark-doc-bubble-caret lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button>
-        <lark-doc-heading-menu
-          v-if="bubbleHeadingOpen"
-          :active-level="bubbleHeadingLevel()"
-          :style="bubbleHeadingMenuStyle"
-          aria-label="划词标题级别"
-          @keep-open="cancelBubbleHoverClose"
-          @schedule-close="scheduleBubbleHeadingClose"
-          @choose="bubbleHeadingAction"
-        />
-      </div>
-      <div
-        class="lark-doc-bubble-align"
-        @mouseenter="openBubbleAlignMenu"
-        @mouseleave="scheduleBubbleAlignClose"
-      >
-        <button
-          type="button"
-          class="lark-doc-bubble-align-trigger"
-          aria-label="缩进和对齐"
-          title="缩进和对齐"
-          aria-haspopup="menu"
-          :aria-expanded="bubbleAlignOpen ? 'true' : 'false'"
-          @focus="openBubbleAlignMenu"
-          @click.prevent="openBubbleAlignMenu"
-        >
-          <lark-doc-icon
-            :name="`align-${bubbleAlignValue()}`"
-            :size="16"
-          /><lark-doc-icon
-            class="lark-doc-bubble-caret lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button>
-        <div
-          v-if="bubbleAlignOpen"
-          class="lark-doc-bubble-align-menu"
-          role="menu"
-          aria-label="划词缩进和对齐"
-          :style="bubbleAlignMenuStyle"
-          @mouseenter="cancelBubbleHoverClose"
-          @mouseleave="scheduleBubbleAlignClose"
-        >
-          <button
-            v-for="align in ['left', 'center', 'right', 'justify']"
-            :key="`bubble-align-${align}`"
-            type="button"
-            role="menuitem"
-            :aria-pressed="String(bubbleAlignValue() === align)"
-            :class="{ active: bubbleAlignValue() === align }"
-            :data-tooltip="bubbleAlignTooltip(align)"
-            :title="bubbleAlignTooltip(align)"
-            @mousedown.prevent
-            @click="bubbleAlignAction(align)"
-          >
-            <span
-              class="lark-doc-block-align-glyph"
-              aria-hidden="true"
-            >{{ alignGlyphs[align] }}</span><span>{{ alignNames[align] }}对齐</span><span
-              v-if="bubbleAlignValue() === align"
-              class="lark-doc-block-align-check"
-              aria-hidden="true"
-            >✓</span>
-          </button>
-          <div
-            class="lark-doc-block-submenu-divider"
-            role="separator"
-          />
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!bubbleAlignCanIncrease()"
-            :data-tooltip="bubbleAlignTooltip('increaseIndent')"
-            :title="bubbleAlignTooltip('increaseIndent')"
-            @mousedown.prevent
-            @click="bubbleAlignAction('increaseIndent')"
-          >
-            <span
-              class="lark-doc-block-align-glyph"
-              aria-hidden="true"
-            >⇥</span><span>增加缩进</span><span
-              v-if="!bubbleAlignCanIncrease()"
-              class="lark-doc-block-align-help"
-              aria-label="已达到最大缩进"
-            >?</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="bubbleAlignIndent() <= 0"
-            :data-tooltip="bubbleAlignTooltip('decreaseIndent')"
-            :title="bubbleAlignTooltip('decreaseIndent')"
-            @mousedown.prevent
-            @click="bubbleAlignAction('decreaseIndent')"
-          >
-            <span
-              class="lark-doc-block-align-glyph"
-              aria-hidden="true"
-            >⇤</span><span>减少缩进</span>
-          </button>
-        </div>
-      </div>
-      <span
-        class="lark-doc-bubble-divider"
-        aria-hidden="true"
-      />
-      <button
-        v-for="item in bubbleMarkItems"
-        :key="`bubble-mark-${item.id}`"
-        type="button"
-        :aria-label="item.label"
-        :title="item.label"
-        :aria-pressed="String(isActive(item.id))"
-        @click="toggleMark(item.id)"
-      >
-        <lark-doc-icon
-          :name="item.icon"
-          :size="16"
-        />
-      </button>
-      <template v-if="bubbleHighlightAllowed">
-        <button
-          type="button"
-          class="lark-doc-bubble-mark-highlight"
-          aria-label="高亮"
-          title="高亮"
-          :aria-pressed="String(isActive('highlight'))"
-          @click="toggleMark('highlight')"
-        >
-          <lark-doc-icon
-            name="mark-highlight"
-            :size="16"
-          />
-        </button><button
-          type="button"
-          class="lark-doc-bubble-caret-button"
-          aria-label="选择高亮颜色"
-          title="选择高亮颜色"
-          @click.prevent="toggleColorPalette('textBackground', $event)"
-        >
-          <lark-doc-icon
-            class="lark-doc-bubble-caret lark-doc-caret"
-            :size="12"
-            name="chevronDown"
-          />
-        </button>
-      </template>
-      <span
-        class="lark-doc-bubble-divider"
-        aria-hidden="true"
-      />
-      <button
-        type="button"
-        aria-label="复制选中文字"
-        title="复制选中文字"
-        @click="bubbleCopy"
-      >
-        <lark-doc-icon
-          name="copy"
-          :size="16"
-        />
-      </button>
-    </div>
+    <BubbleBar :ed="self" />
     <command-menu
       v-if="menuOpen && !effectiveReadonly"
       :items="filteredCommands"
@@ -1388,301 +108,13 @@
       @choose="chooseCommand"
       @close="closeCommandMenu(true)"
     />
-    <div
-      v-if="colorPaletteOpen && !effectiveReadonly"
-      class="lark-doc-color-palette"
-      :class="{ 'lark-doc-color-palette-text': colorPaletteIsText }"
-      role="menu"
-      :aria-label="`${colorPaletteTitle}面板`"
-      :style="colorPaletteStyle"
-      @mousedown.prevent
-      @mouseenter="cancelPopupHoverClose"
-      @mouseleave="scheduleColorPaletteClose"
-    >
-      <template v-if="colorPaletteIsText">
-        <div class="lark-doc-color-palette-text-section">
-          <small>字体颜色</small>
-          <div class="lark-doc-color-letters">
-            <button
-              v-for="color in textColorOptions"
-              :key="`tc-${color.value}`"
-              type="button"
-              role="menuitem"
-              :aria-label="`字体颜色 ${color.label}`"
-              :title="color.label"
-              :style="{ color: color.value }"
-              :class="{ 'is-active': activeTextColor && activeTextColor.toLowerCase() === color.value.toLowerCase() }"
-              @click="applyColorPalette(color.value, 'textColor')"
-            >
-              A
-            </button>
-          </div>
-        </div>
-        <div class="lark-doc-color-palette-text-section">
-          <small>背景颜色</small>
-          <div
-            v-for="(row, rowIndex) in textBackgroundRows"
-            :key="`row-${rowIndex}`"
-            class="lark-doc-color-grid"
-          >
-            <button
-              v-for="color in row"
-              :key="`bg-${color.label}`"
-              type="button"
-              role="menuitem"
-              :aria-label="`背景颜色 ${color.label}`"
-              :title="color.label"
-              :class="{ 'is-transparent': !color.value, 'is-active': color.value ? (activeTextBackground && activeTextBackground.toLowerCase() === color.value.toLowerCase()) : !activeTextBackground }"
-              :style="color.value ? { backgroundColor: color.value } : {}"
-              @click="applyColorPalette(color.value, 'textBackground')"
-            />
-          </div>
-        </div>
-        <div
-          v-if="textColorRecent.length"
-          class="lark-doc-color-palette-section lark-doc-color-palette-text-recent"
-        >
-          <small>最近</small><button
-            v-for="color in textColorRecent"
-            :key="`recent-text-${color}`"
-            type="button"
-            role="menuitem"
-            :aria-label="`最近颜色 ${color}`"
-            :title="color"
-            :style="{ backgroundColor: color }"
-            @click="applyColorPalette(color, 'textBackground')"
-          />
-        </div>
-        <button
-          type="button"
-          role="menuitem"
-          class="lark-doc-color-palette-reset"
-          aria-label="恢复默认颜色"
-          @click="resetTextColors"
-        >
-          恢复默认
-        </button>
-      </template>
-      <template v-else>
-        <strong>{{ colorPaletteTitle }}</strong>
-        <div
-          v-if="colorPaletteRecent.length"
-          class="lark-doc-color-palette-section"
-        >
-          <small>最近</small><button
-            v-for="color in colorPaletteRecent"
-            :key="`recent-${color}`"
-            type="button"
-            role="menuitem"
-            :aria-label="`最近颜色 ${color}`"
-            :title="color"
-            :style="{ backgroundColor: color }"
-            @click="applyColorPalette(color)"
-          />
-        </div>
-        <div class="lark-doc-color-palette-section">
-          <small>推荐</small><button
-            v-for="color in colorPaletteOptions"
-            :key="color.value || 'default'"
-            type="button"
-            role="menuitem"
-            :aria-label="color.label"
-            :title="color.label"
-            :class="{ 'is-transparent': !color.value }"
-            :style="color.value ? { backgroundColor: color.value } : {}"
-            @click="applyColorPalette(color.value)"
-          />
-        </div>
-        <button
-          type="button"
-          role="menuitem"
-          class="lark-doc-color-palette-reset"
-          aria-label="恢复默认颜色"
-          @click="resetColorPalette"
-        >
-          恢复默认
-        </button>
-      </template>
-    </div>
-    <div
-      v-if="tablePicker"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="插入表格"
-      >
-        <header>
-          <strong>插入表格</strong><span class="lark-doc-table-grid-size">{{ tablePickerHover.cols }} × {{ tablePickerHover.rows }}</span><button
-            type="button"
-            aria-label="关闭表格选择"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header><p>插入支持富文本的表格</p><div class="lark-doc-table-grid">
-          <button
-            v-for="n in 81"
-            :key="n"
-            type="button"
-            :class="{ 'is-preview': Math.floor((n - 1) / 9) + 1 <= tablePickerHover.rows && ((n - 1) % 9) + 1 <= tablePickerHover.cols }"
-            :aria-label="`${((n - 1) % 9) + 1}行${Math.floor((n - 1) / 9) + 1}列`"
-            @mouseenter="previewTableSize(Math.floor((n - 1) / 9) + 1, ((n - 1) % 9) + 1)"
-            @focus="previewTableSize(Math.floor((n - 1) / 9) + 1, ((n - 1) % 9) + 1)"
-            @click="insertTable(Math.floor((n - 1) / 9) + 1, ((n - 1) % 9) + 1)"
-          >
-            ▦
-          </button>
-        </div>
-      </section>
-    </div>
-    <div
-      v-if="mathDialog || emojiDialog"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="mathDialog ? '插入公式' : '插入表情'"
-        @keydown.esc.stop.prevent="closeOverlay"
-      >
-        <header>
-          <strong>{{ mathDialog ? '插入公式' : '插入表情' }}</strong><button
-            type="button"
-            aria-label="关闭对话框"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header><template v-if="mathDialog">
-          <label>LaTeX <input
-            ref="mathInput"
-            v-model="mathValue"
-            aria-label="LaTeX 公式"
-            placeholder="例如 x^2 + y^2"
-            @keydown.enter.prevent="insertMath"
-          ></label><p
-            v-if="mathError"
-            role="alert"
-            class="lark-doc-error"
-          >
-            {{ mathError }}
-          </p><button
-            type="button"
-            @click="insertMath"
-          >
-            插入
-          </button>
-        </template><div
-          v-else
-          class="lark-doc-emoji-grid"
-        >
-          <button
-            v-for="item in emojiItems"
-            :key="item.value"
-            type="button"
-            :aria-label="item.label"
-            @click="insertEmoji(item.value)"
-          >
-            {{ item.glyph }}
-          </button>
-        </div>
-      </section>
-    </div>
-    <div
-      v-if="linkDialog"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="设置链接"
-        @keydown.esc.stop.prevent="closeOverlay"
-      >
-        <header>
-          <strong>设置链接</strong><button
-            type="button"
-            aria-label="关闭链接设置"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header>
-        <label v-if="linkInsertMode">链接文本 <input
-          ref="linkTextInput"
-          v-model="linkText"
-          aria-label="链接文本"
-          placeholder="输入链接显示文字"
-          @keydown.enter.prevent="applyLink"
-        ></label>
-        <label>链接地址 <input
-          ref="linkInput"
-          v-model="linkValue"
-          aria-label="链接地址"
-          placeholder="https://example.com"
-          @keydown.enter.prevent="applyLink"
-        ></label>
-        <p v-if="linkInsertMode">
-          输入显示文字和地址后插入本地链接；
-        </p><p>
-          仅允许 http、https、mailto、tel 或 # 锚点链接；取消不会改变选区。
-        </p>
-        <button
-          type="button"
-          :disabled="!linkValue || (linkInsertMode && !linkText.trim())"
-          @click="applyLink"
-        >
-          应用链接
-        </button><button
-          type="button"
-          :disabled="linkInsertMode || !isActive('link')"
-          @click="removeLink"
-        >
-          解除链接
-        </button>
-      </section>
-    </div>
-    <div
-      v-if="helpOpen"
-      class="lark-doc-dialog-backdrop"
-      @click.self="closeOverlay"
-    >
-      <section
-        class="lark-doc-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="快捷键帮助"
-      >
-        <header>
-          <strong>快捷键</strong><button
-            type="button"
-            aria-label="关闭快捷键帮助"
-            @click="closeOverlay"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </header><p>⌘/Ctrl+B 加粗 · ⌘/Ctrl+I 斜体 · ⌘/Ctrl+Z 撤销</p><p>行首或空格后输入 / 插入内容；Tab 调整列表层级或段落缩进，Shift+Tab 减少缩进。</p>
-      </section>
-    </div>
+    <ColorPalette :ed="self" />
+    <TablePickerDialog :ed="self" />
+    <MathDialog :ed="self" />
+    <LinkDialog :ed="self" />
+    <HelpDialog :ed="self" />
+    <HelpFab :ed="self" />
+    <EmbedLinkDialog :ed="self" />
     <input
       ref="imageInput"
       type="file"
@@ -1690,6 +122,16 @@
       class="lark-doc-file-input"
       aria-label="选择本地图片"
       @change="onImageInput"
+    >
+    <!-- P2-04：视频与文件同一个入口。刻意不写 accept —— 02 L4168 实测飞书斜杠 `file`
+         的 accept 为 null（不限类型），任何附件都该能被选进来，由上传侧再兜限值。 -->
+    <input
+      ref="fileInput"
+      type="file"
+      multiple
+      class="lark-doc-file-input"
+      aria-label="选择视频或文件"
+      @change="onFileInput"
     >
     <p
       v-if="error"
@@ -1707,72 +149,8 @@
         />
       </button>
     </p>
-    <!-- 标题编号菜单：点编号按钮弹出，三项与飞书一致（继续/重新开始/设置值） -->
-    <div
-      v-if="headingNumberMenu.open"
-      class="lark-doc-heading-number-menu"
-      :class="{ 'is-editing': headingNumberEditing }"
-      :style="headingNumberMenuStyle"
-      role="menu"
-      aria-label="编号设置"
-      @mousedown.prevent
-    >
-      <template v-if="!headingNumberEditing">
-        <button
-          v-for="action in headingNumberActions"
-          :key="action.id"
-          type="button"
-          class="lark-doc-heading-number-item"
-          :class="{ 'is-disabled': headingNumberMenuDisabled(action.id) }"
-          role="menuitem"
-          :aria-disabled="headingNumberMenuDisabled(action.id) ? 'true' : 'false'"
-          :data-menu-id="action.id"
-          :disabled="headingNumberMenuDisabled(action.id)"
-          @click="headingNumberAction(action.id)"
-        >
-          <span
-            class="lark-doc-heading-number-icon"
-            aria-hidden="true"
-          ><lark-doc-icon
-            :size="18"
-            :name="action.icon"
-          /></span><span class="lark-doc-heading-number-text">{{ action.label }}</span>
-        </button>
-      </template>
-      <label
-        v-else
-        class="lark-doc-heading-number-editor"
-      >
-        <input
-          v-model="headingNumberDraft"
-          class="lark-doc-heading-number-input"
-          type="text"
-          inputmode="numeric"
-          aria-label="编号值"
-          @keydown="onHeadingNumberInputKeydown"
-          @blur="applyHeadingNumberValue()"
-        ><span
-          class="lark-doc-heading-number-spinner"
-          aria-hidden="true"
-        ><button
-          type="button"
-          tabindex="-1"
-          aria-label="增加编号"
-          @click="headingNumberDraft = String(Math.min(999, (Number(headingNumberDraft) || 1) + 1))"
-        ><lark-doc-icon
-          :size="10"
-          name="chevronUp"
-        /></button><button
-          type="button"
-          tabindex="-1"
-          aria-label="减少编号"
-          @click="headingNumberDraft = String(Math.max(1, (Number(headingNumberDraft) || 1) - 1))"
-        ><lark-doc-icon
-          :size="10"
-          name="chevronDown"
-        /></button></span>
-      </label>
-    </div>
+    <!-- 标题编号菜单（继续/重新开始/设置值）+ P6b 浮层组（评论/版本/分享/导出，五条线收在一个容器里只占一个模板位 —— 本文件有 <700 行门禁） -->
+    <HeadingNumberMenu :ed="self" /><LarkDocOverlays :ed="self" />
   </section>
 </template>
 
@@ -1785,46 +163,133 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CommandMenu from './CommandMenu.vue'
-import ImageNode from './ImageNode.vue'
-import CodeNode from './CodeNode.vue'
-import LarkDocSelect from './LarkDocSelect.vue'
-import LarkDocHeadingMenu from './LarkDocHeadingMenu.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
+import TopBar from './editor/TopBar.vue'
+import ToolbarBar from './editor/ToolbarBar.vue'
+import SearchPanel from './editor/SearchPanel.vue'
+import MentionPanel from './editor/MentionPanel.vue'
+// P4-02a：日历浮层组件，只渲染；状态与定位全在 reminderMixin。
+import ReminderPopover from './editor/ReminderPopover.vue'
+// P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
+import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
+// P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
+import IsvButtonPanel from './editor/IsvButtonPanel.vue'
+import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，状态与定位全在 revisionMixin。
+import TableTools from './editor/TableTools.vue'
+import OutlinePanel from './editor/OutlinePanel.vue'
+import PaperStage from './editor/PaperStage.vue'
+import BlockHandleMenu from './editor/BlockHandleMenu.vue'
+import CalloutTools from './editor/CalloutTools.vue'
+import TableBoundaryTools from './editor/TableBoundaryTools.vue'
+import BubbleBar from './editor/BubbleBar.vue'
+import ColorPalette from './editor/ColorPalette.vue'
+import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
+import MathDialog from './editor/dialogs/MathDialog.vue'
+import LinkDialog from './editor/dialogs/LinkDialog.vue'
+import HelpDialog from './editor/dialogs/HelpDialog.vue'
+import HelpFab from './editor/HelpFab.vue'
+import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
+import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
-import { clampBlockIndent, maxIndentAt, stepBlockIndent, collectOutline, foldableIdPositions, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
+// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，自己注册进 core 的注册表，
+// 这里只负责把适配层拉起来。core → adapters 这条反向依赖是刻意的临时缝（P0-01 只做到
+// 「注册表缝」），Task 6 拆三端适配时会把 registerVue2NodeViews() 的调用点挪到宿主入口。
+import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
+// P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
+// 主组件连 onSelectionUpdate 都不再持有 —— 否则组件自身的同名方法会盖掉 mixin。
+import selectionPacingMixin from './editor/selectionPacingMixin'
 import commandMenuMixin from './editor/commandMenuMixin'
 import tableToolsMixin from './editor/tableToolsMixin'
 import toolbarCollapseMixin from './editor/toolbarCollapseMixin'
 import blockHandleMixin from './editor/blockHandleMixin'
 import blockMenuMixin from './editor/blockMenuMixin'
+import blockIndentMixin from './editor/blockIndentMixin'
+import overlayDismissMixin from './editor/overlayDismissMixin'
 import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
+// P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
+// 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
+import mentionMixin from './editor/mentionMixin'
+// P4-02a：日期提醒（行内 reminder mark + 日历浮层）。入口是「点 chip」这个 DOM 事件，
+// 不走 document.js 的插件回调 —— reminder 没有关键词，那条通道没人用。
+import reminderMixin from './editor/reminderMixin'
+// P4-02b：日程搜索面板的状态与动作（开/关、候选、落块）。与 reminder 的差别在于
+// 「插入 ≠ 新建」—— 面板只把**已有日程**引用成块，所有字段都不在面板里编辑。
+import calendarMixin from './editor/calendarMixin'
+// P4-04：ISV 块（按钮 / 目录导航）的状态机。按钮走「先弹面板 → 校验 → 落块」，
+// 目录导航不弹面板、就地插块，两者共用同一个 isv 节点、靠 kind 分叉。
+import isvMixin from './editor/isvMixin'
+import revisionMixin from './editor/revisionMixin' // P4-06 ③：接受 / 拒绝无二次确认、无 toast。
+// 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
+import foldPersistMixin from './editor/foldPersistMixin'
+import collabMixin from './editor/collabMixin'
+// P6b：评论 / 历史版本 / 分享 / 导出 / 三态统一五条线的聚合挂载点（含浮层容器）。
+import p6bMixin from './editor/p6bMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
+// P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
+// 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
+import { IMAGE_REJECT, imageRejectMessage, isImageMime, nearestInsertPosition, sortImageFiles } from '../../core/media/image-insert'
+// P2-04：文件 / 视频块与图片共用「分流 → 归一落点 → 逐块插入」这套形状，
+// 差别只有「不限 MIME、必须走宿主上传」，判定全在 core/media/file-block.js。
+import { fileBlockAttrs, sortFileFiles } from '../../core/media/file-block'
 import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
-// lark-doc.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让
-// 同一份样式在模块图里出现两次，改成单一归属，避免以后 CSS 被静默写两份。
+// lark-doc.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让同一份样式在模块图里出现两次。
+
+// 模块一加载就把 Vue 2 NodeView 注册进 core 注册表，等价于过去的静态注入；extensions.js 按节点名查表。
+registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocSelect, LarkDocHeadingMenu, LarkDocIcon },
-  mixins: [viewModesMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin],
+  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
     templates: { type: Array, default: () => [] },
     uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
+    // P2-04：文件 / 视频块必须走宿主上传（10 GB 的附件不可能内联成 data URI），
+    // 没传 uploadFile 时该入口只报错、不落半截块。
+    uploadFile: { type: Function, default: null },
+    // 只存附件 token、不存直链的宿主可注入这条换票函数（token → 可渲染地址）。
+    resolveFileUrl: { type: Function, default: null },
     session: { type: Object, default: null },
     // 'auto' 按指纹识别 Vditor HTML；'vditor' 强制归一化；'html' 明确跳过归一化。
     contentFormat: { type: String, default: 'auto' },
     // 折叠偏好持久化键（通常传 documentId）：非空时章节折叠状态按标题稳定键
     // 存入本设备 localStorage，刷新后恢复（需求文档 13.6.1 V1 本地偏好）。
     foldPersistKey: { type: String, default: '' },
+    // P3-07：内嵌内容的宿主回调。六项全部可选，缺省即退回 core 默认行为
+    // （标题不同步 / iframe 存盘只回 ok / 卡片动作自己 window.open / URL 卡只显示域名）。
+    onEmbedTitle: { type: Function, default: null },
+    onEmbedSave: { type: Function, default: null },
+    onEmbedCardAction: { type: Function, default: null },
+    embedProviders: { type: Array, default: null },
+    onBookmarkOpen: { type: Function, default: null },
+    unfurlProvider: { type: Function, default: null },
+    // iframe 的 sandbox / allow 覆盖通道：不传即安全基线（无 allow-same-origin）。
+    embedSandbox: { type: String, default: null },
+    embedAllow: { type: String, default: null },
+    // P4-01：提及候选来源。数组 = 静态名单；函数 = `(keyword, kind) => Promise<item[]>`
+    // （宿主自己查通讯录 / 云文档）；对象 = `{ user: [...], chat: [...], page: [...] }`。
+    // 不传即用 core 内置的演示目录（core/mention/directory.js），保证开箱可用。
+    mentionSource: { type: [Array, Function, Object], default: null },
+    // P4-02b：日程候选来源。数组 = 静态「我参与的未来日程」；函数 = `(options) => Promise<item[]>`
+    // （`options` 恒为 `{ query: '', range: 'future' }`，关键词不往上游传 —— 只匹配标题是本地口径）；
+    // 对象 = `{ search(options) }`（对应 04 §4.7 ⑥ 的 `calendar.search`）。
+    // 不传即空列表：本库没有日历服务，不该编一份假日程来演示。
+    calendarSource: { type: [Array, Function, Object], default: null },
+    // 点卡片「加入日程」时回调（`{ eventId, title }`）；不传则按钮只做展示。
+    onCalendarEventJoin: { type: Function, default: null },
+    // 重新拉取某条日程的最新快照（`(eventId) => item | null`）。卡片字段允许过期，
+    // 但刷新时机由宿主决定（飞书是打开文档/重连时拉），本库不自动轮询。
+    calendarEventRefetch: { type: Function, default: null },
   },
   data() { return {
     editor: null, localTitle: this.title,
@@ -1834,11 +299,14 @@ export default {
     pendingStateFrame: null, pendingChangeTimer: null,
   } },
   computed: {
+    // 拆分出的子组件（editor/*.vue）经实例 prop 引用本组件：模板里写 :ed="self"。
+    self() { return this },
     // ECS 的 ref.html 与新页面 v-model 使用同一正文，保留原调用方的读写契约。
     larkDocConfig() { return mergeLegacyConfig(this.config, { maxLength: this.maxLength, imageMaxSize: this.imageMaxSize }) },
     maxBlockIndent() { return clampBlockIndent(this.larkDocConfig.limits.maxIndent) },
     effectiveMaxLength() { return Math.max(0, Number(this.larkDocConfig.limits.maxLength) || 0) },
     effectiveImageMaxSize() { return this.larkDocConfig.limits.maxImageSize },
+    effectiveFileMaxSize() { return this.larkDocConfig.limits.maxFileSize },
     titleLength() { return this.larkDocConfig.limits.titleLength },
     visibleBlockActions() { return this.blockActions.filter((item) => isBlockActionEnabled(this.larkDocConfig, item.id)) },
     visibleBlockTypeActions() {
@@ -1862,6 +330,17 @@ export default {
     },
     effectiveReadonly() { return this.readonly || this.reading || this.slides || (this.session && typeof this.session.can === 'function' && !this.session.can('canEdit')) },
     hasTextSelection() { return !!this.editor && !this.editor.state.selection.empty },
+    // P3-07：内嵌内容的宿主回调整包转发给扩展装配。这些回调只在建编辑器时读一次
+    // （NodeView 建好后再换函数不会重挂），所以不需要 watch，也不该进响应式依赖。
+    embedOptions() {
+      return {
+        onEmbedTitle: this.onEmbedTitle, onEmbedSave: this.onEmbedSave, onEmbedCardAction: this.onEmbedCardAction,
+        embedProviders: this.embedProviders, onBookmarkOpen: this.onBookmarkOpen, unfurlProvider: this.unfurlProvider,
+        embedSandbox: this.embedSandbox, embedAllow: this.embedAllow,
+        // P4-02b：日程块的两个宿主回调（与上面同一口径：NodeView 建好后再换不重挂）。
+        onCalendarEventJoin: this.onCalendarEventJoin, calendarEventRefetch: this.calendarEventRefetch,
+      }
+    },
   },
   watch: {
     title(value) { if (value !== this.localTitle) this.localTitle = value },
@@ -1871,13 +350,16 @@ export default {
       if (this.editor) this.editor.storage.characterCount.setLimit(this.effectiveMaxLength)
       this.$nextTick(() => this.refreshDocumentState())
     } },
-    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
+    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
-    emojiDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-emoji-grid button')?.focus()) },
     helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
-    linkDialog(value) { if (value) this.$nextTick(() => (this.linkInsertMode ? this.$refs.linkTextInput : this.$refs.linkInput)?.focus()) },
+    linkDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector(this.linkInsertMode ? '[aria-label="链接文本"]' : '[aria-label="链接地址"]')?.focus()) },
+    embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
   },
   mounted() {
+    // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
+    // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
+    this.restoreMode()
     try {
       let initialHTML = this.pendingHTML === null ? this.value || '<p></p>' : this.pendingHTML
       const hasInitialValue = Object.prototype.hasOwnProperty.call(this.$options.propsData || {}, 'value')
@@ -1886,9 +368,9 @@ export default {
         try { const cached = localStorage.getItem(String(this.msgId)); if (cached) initialHTML = cached } catch (_) { this.error = '浏览器阻止读取公告缓存' }
       }
       this.editor = new Editor({
-        content: this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ imageView: ImageNode, codeView: CodeNode, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, onSlash: this.onSlash, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.$nextTick(() => this.syncHandleHighlightBackdrop()) }, onSelectionUpdate: () => this.onSelectionUpdate(),
+        content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
+        extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
@@ -1920,7 +402,7 @@ export default {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
     toolbarEnabled(name) { return this.larkDocConfig.toolbar[name] !== false && this.featureEnabled(name) },
     isBlockActionEnabled(id) { return isBlockActionEnabled(this.larkDocConfig, id) },
-    getEditor() { return this.editor }, getHTML() { return this.editor?.getHTML() || '' }, getJSON() { return this.editor?.getJSON() || null }, getText() { return this.editor?.getText() || '' },
+    getEditor() { return this.editor }, getHTML() { return this.editor?.getHTML() || '' }, getJSON() { return this.editor ? aggregateHeadingContainers(restoreUnknownBlocks(this.editor.getJSON())) : null }, getText() { return this.editor?.getText() || '' },
     focus() { this.editor?.commands.focus() },
     /**
      * 统一内容准备：旧数据（Vditor HTML）归一化 + 安全清洗。
@@ -1953,8 +435,10 @@ export default {
         json = ProseMirrorDOMParser.fromSchema(schema).parse(container).toJSON()
       } else json = validateDocument(content, schema)
       // 离线策略在这里统一生效：外链图片降级为占位，避免渲染时发起外部请求。
-      // 旧宿主会绕过 Vue 计算属性直接调用本方法，此时没有归一化配置，按默认策略处理。
-      json = createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null).applyDocument(json)
+      // 复用扩展里那一个实例（装配层创建，见 extensions.js）—— 旧宿主会绕过 Vue
+      // 计算属性直接调用本方法，没有扩展句柄时才按默认策略现造。
+      const network = this.editor.storage.larkDoc?.network || createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null)
+      json = network.applyDocument(json)
       const next = schema.nodeFromJSON(validateDocument(json, schema))
       // Keep this method usable by the legacy imperative API and small host-side
       // harnesses that call it without Vue's computed properties.
@@ -1983,44 +467,6 @@ export default {
       return true
     },
     updateTitle(value) { if (this.effectiveReadonly) return; this.localTitle = value; this.$emit('update:title', value) },
-    // —— 章节折叠偏好持久化：按 (foldPersistKey, 标题 blockId) 存本设备 localStorage ——
-    // 存的是块的稳定 id，不是位置也不是「文本+序号」：同名标题、删除靠前标题、
-    // 重命名、移动块都不会让折叠状态串到别的标题上。
-    foldStorageKey() { return this.foldPersistKey ? `lark-doc:folds:${this.foldPersistKey}` : '' },
-    persistFolds() {
-      const key = this.foldStorageKey()
-      // _foldsReady 之前不写回：编辑器初始化/内容替换会先清空折叠位，
-      // 若此时写盘会把已保存的偏好覆盖成空数组，刷新后就永远恢复不出来。
-      if (!key || !this.editor || !this._foldsReady) return
-      // 宿主异步灌入正文时，编辑器会先处于「空文档」状态：此时没有任何可折叠块，
-      // 写盘只会把上一次会话的偏好覆盖成空数组（刷新恢复失效的直接原因）。
-      // 判定条件用「可折叠块」而不是「有标题」：段落/列表项挂了缩进子块也能折叠，
-      // 没有标题的文档同样需要恢复折叠位。
-      if (foldableIdPositions(this.editor.state.doc).size === 0) return
-      const next = JSON.stringify(Array.from(this.editor.storage.larkDoc?.folded || []))
-      if (next === this._persistedFolds) return
-      this._persistedFolds = next
-      try { window.localStorage.setItem(key, next) } catch (_) { /* 隐私模式等存储不可用时静默降级为会话内状态 */ }
-    },
-    restoreFolds() {
-      const key = this.foldStorageKey()
-      if (!key || !this.editor) { this._foldsReady = true; return }
-      let saved = []
-      try { saved = JSON.parse(window.localStorage.getItem(key) || '[]') } catch (_) { saved = [] }
-      const values = Array.isArray(saved) ? saved.filter((value) => typeof value === 'string' && value) : []
-      // 旧版本存的是 `层级\u0001文本\u0001同名序号` 派生键，新版本存 blockId。
-      // 两批一起应用；成功恢复后 persistFolds 会把它们统一写成 id 完成迁移。
-      const legacyKeys = values.filter((value) => value.includes('\u0001'))
-      const blockIds = values.filter((value) => !value.includes('\u0001'))
-      if (blockIds.length && typeof this.editor.commands.foldLarkDocByIds === 'function') this.editor.commands.foldLarkDocByIds(blockIds)
-      if (legacyKeys.length && typeof this.editor.commands.foldLarkDocByKeys === 'function') this.editor.commands.foldLarkDocByKeys(legacyKeys)
-      const applied = this.editor.storage.larkDoc?.folded?.size || 0
-      this._foldsReady = true
-      // 有偏好却一条都没命中，说明当前正文还不是最终内容（宿主挂载后会再灌一次
-      // setContent）。此时绝不能写盘：写成空数组会让后面那次恢复也读不到偏好。
-      if (values.length && !applied) return
-      this.persistFolds()
-    },
     onUpdate(transaction) {
       this.scheduleDocumentState()
       // 补 blockId 的事务只改属性、不改正文：不能当成一次内容修改冒泡给宿主，
@@ -2068,53 +514,19 @@ export default {
     },
     refreshDocumentState() {
       if (!this.editor) return
+      // 实测目录覆盖上去的同一时刻落下水合闸门（P7-03 早期目录的 `outlinePending`）：
+      // 此后 `outline` 里的 pos 就是当前正文算出来的，按下去不会落空。
+      this.outlinePending = false
       this.outline = collectOutline(this.editor.state.doc)
       this.syncOutlineCollapseState()
       this.syncFoldState()
       this.wordCount = this.editor.storage.characterCount.characters()
       if (this.effectiveMaxLength > 0 && this.wordCount > this.effectiveMaxLength) this.error = `正文不能超过 ${this.effectiveMaxLength} 字，请缩短正文`
       else if (this.error.startsWith('正文不能超过 ')) this.error = ''
-      if (this.searchQuery) this.updateSearch()
+      if (this.searchQuery) this.scheduleSearchUpdate()
     },
-    syncFoldState() {
-      if (!this.editor) return
-      const current = this.editor.storage.larkDoc?.folded || new Set()
-      const next = new Set(current)
-      if (next.size === this.folded.size && [...next].every((pos) => this.folded.has(pos))) return
-      this.folded = next
-    },
-    syncOutlineCollapseState() {
-      const positions = new Set(this.outline.map((item) => item.pos))
-      const next = new Set([...this.outlineCollapsed].filter((pos) => positions.has(pos)))
-      if (next.size === this.outlineCollapsed.size && [...next].every((pos) => this.outlineCollapsed.has(pos))) return
-      this.outlineCollapsed = next
-    },
-    onSelectionUpdate() {
-      if (!this.editor) return
-      const { selection } = this.editor.state
-      if (this.editor.isFocused) this.savedSelection = { from: selection.from, to: selection.to }
-      this.activeHeading = [...this.outline].reverse().find((item) => item.pos <= selection.from)?.pos ?? -1
-      const coords = this.editor.view.coordsAtPos(selection.from)
-      if (!this.handlePressed && !this.blockMenuOpen && !this.blockTypeMenuOpen) this.positionBlockHandle(this.currentBlockRange())
-      if (this.editor.isActive('table') && this.writable()) this.tableToolsOpen = true
-      this.clearTableBoundaryHover()
-      this.updateTableBoundary()
-      this.$nextTick(() => this.updateTableBoundary())
-      this.updateCalloutTools()
-      this.bubbleVisible = !selection.empty && !selection.node && !this.effectiveReadonly && this.editor.isFocused
-      if (this.bubbleVisible) {
-        // 顶部避让：选区贴近视口顶部时，气泡条不能钻进吸顶工具栏（飞书同样会把浮条翻到选区下方）。
-        const safeTop = this.bubbleSafeTop()
-        const endCoords = this.editor.view.coordsAtPos(selection.to)
-        const naturalTop = coords.top - 50
-        const top = naturalTop >= safeTop ? naturalTop : endCoords.bottom + 10
-        this.bubblePosition = {
-          left: Math.max(8, Math.min(window.innerWidth - 270, coords.left)),
-          top: Math.max(safeTop, Math.min(top, window.innerHeight - 60)),
-        }
-      }
-      else { this.closeBubbleAlignMenu(); this.closeBubbleHeadingMenu() }
-    },
+    // syncFoldState / syncOutlineCollapseState 在 viewModesMixin（视图级状态的那一支）。
+    // onSelectionUpdate 已下沉到 editor/selectionPacingMixin.js（P7-04 帧级合并）。
     onDocumentScroll() {
       if (this._outlineFrame || !this.editor) return
       this._outlineFrame = requestAnimationFrame(() => {
@@ -2139,7 +551,8 @@ export default {
     },
     rememberSelection(includeCursor = false) { if (!this.editor) return; const { from, to } = this.editor.state.selection; if (from !== to || includeCursor) this.savedSelection = { from, to } },
     restoreSelection(includeCursor = false) { if (!this.editor || !this.savedSelection || !(this.editor.state.selection instanceof TextSelection)) return; const { from, to } = this.savedSelection; const size = this.editor.state.doc.content.size; if ((from !== to || includeCursor) && from <= size && to <= size) this.editor.view.dispatch(this.editor.state.tr.setSelection(TextSelection.create(this.editor.state.doc, from, to))) },
-    writable() { return !this._isBeingDestroyed && !this._isDestroyed && this.editor?.isEditable && !this.editor.isDestroyed && !this.effectiveReadonly },
+    // `writable()` 退役了 —— 可写判定统一归 `editor/readingModeMixin.js`（P6b-05 三态口径）。
+    // 这里不能留同名实现：Vue 2 里组件自身的 methods 会覆盖 mixin 的同名方法。
     run(command, ...args) { if (!this.writable()) return false; this.restoreSelection(); const chain = this.editor.chain().focus(); const method = chain[command]; return typeof method === 'function' ? method(...args).run() : false },
     isActive(name) { return !!this.editor?.isActive(name) },
     toggleMark(name) { if (!this.featureEnabled('marks')) return; const command = `toggle${name[0].toUpperCase()}${name.slice(1)}`; this.run(command); this.bubbleVisible = false; this.closeBubbleAlignMenu() },
@@ -2150,27 +563,6 @@ export default {
     applyTextBackground(value) { this.setTextStyle('backgroundColor', value); this.appliedTextStyle.backgroundColor = value },
     applyLineHeight(value) { this.setBlockAttribute('lineHeight', value); this.appliedTextStyle.lineHeight = value },
     applyCellAlign(key, value) { this.cellAttribute(key, value); this.cellAlignState[key] = value },
-    openLinkDialog(allowEmpty = false) {
-      if (!this.writable() || (!allowEmpty && this.editor.state.selection.empty)) return
-      this.rememberSelection(allowEmpty)
-      this.linkInsertMode = this.editor.state.selection.empty
-      this.linkText = ''
-      this.linkValue = this.editor.getAttributes('link').href || ''
-      this.linkDialog = true
-    },
-    applyLink() {
-      if (!this.writable() || !this.linkValue || !safeUrl(this.linkValue)) { this.error = '链接地址无效，仅支持 http、https、mailto、tel 或 # 锚点'; return }
-      const attrs = { href: this.linkValue, target: '_blank', rel: 'noopener noreferrer' }
-      if (this.linkInsertMode) {
-        if (!this.linkText.trim()) { this.error = '请输入链接显示文字'; return }
-        this.restoreSelection(true)
-        this.editor.chain().focus().insertContent({ type: 'text', text: this.linkText.trim(), marks: [{ type: 'link', attrs }] }).run()
-      } else this.run('setLink', attrs)
-      this.linkDialog = false
-      this.linkInsertMode = false
-      this.linkText = ''
-    },
-    removeLink() { if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
     setBlockAttribute(name, value, type) {
       if (!this.writable() || value === null || value === undefined || value === '') return
       this.restoreSelection()
@@ -2179,47 +571,13 @@ export default {
       const next = name === 'indent' ? clampBlockIndent(value, this.maxBlockIndent) : value
       this.editor.chain().focus().updateAttributes(block, { [name]: next }).run()
     },
-    // 当前块的缩进载体（段落/标题/代码块都带 indent 属性），菜单与工具栏据此判断上限。
-    blockIndentLevel() { return Number(this.blockIndentNode()?.attrs?.indent) || 0 },
-    blockIndentNode() {
-      if (!this.editor) return null
-      const { $from } = this.editor.state.selection
-      for (let depth = $from.depth; depth > 0; depth -= 1) {
-        const node = $from.node(depth)
-        if (Number.isInteger(node.attrs?.indent)) return node
-      }
-      return null
-    },
-    blockIndentPos() {
-      if (!this.editor) return -1
-      const { $from } = this.editor.state.selection
-      for (let depth = $from.depth; depth > 0; depth -= 1) {
-        if (Number.isInteger($from.node(depth).attrs?.indent)) return $from.before(depth)
-      }
-      return -1
-    },
-    // 增加缩进的上限由「前一个块」决定：飞书的缩进就是成为上一个块的子块，
-    // 所以第一个块一级都缩不了（真飞书菜单里也是灰的）。
-    blockIndentLimit() {
-      if (!this.editor) return 0
-      return maxIndentAt(this.editor.state.doc, this.blockIndentPos(), this.maxBlockIndent)
-    },
-    canIncreaseIndent() { return this.blockIndentLevel() < this.blockIndentLimit() },
+    // 缩进五连已下沉到 editor/blockIndentMixin.js：工具栏 / 气泡条 / 块菜单 / 快捷键
+    // 四个入口共用，不再是本组件的私有方法。
     setAlign(value) { this.run('setTextAlign', value) },
-    changeIndent(delta) {
-      if (!this.writable()) return
-      const node = this.blockIndentNode()
-      if (!node) return
-      const current = Number(node.attrs.indent) || 0
-      // 增加受「前一个块」限制，减少只受 0 下限（可以一路减回文档开头）。
-      const next = stepBlockIndent(this.editor.state.doc, this.blockIndentPos(), current, delta, this.maxBlockIndent)
-      // 到顶/到底时不再派发事务，避免产生「看起来能一直点」的空操作。
-      if (next === current) return
-      this.setBlockAttribute('indent', next, node.type.name)
-    },
     clearFormatting() { if (!this.writable()) return; this.restoreSelection(); this.editor.chain().focus().unsetAllMarks().clearNodes().run() },
     cellAttribute(name, value) { if (value) this.run('setCellAttribute', name, value) },
     onImageInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertImageFiles(files) },
+    onFileInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertFileBlocks(files) },
     async resolveImageFile(file) {
       // Keep the imperative upload boundary compatible with older ECS hosts
       // that call the method with a small plain object instead of a Vue vm.
@@ -2228,8 +586,8 @@ export default {
         ? this.effectiveImageMaxSize
         : Math.max(1, Number(this.imageMaxSize) || 5 * 1024 * 1024)
       if (!this.writable() || !imagesEnabled) return null
-      if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error('只支持 PNG/JPEG/GIF/WebP 图片')
-      if (file.size > maxImageSize) throw new Error(`单张图片不能超过 ${maxImageSize / 1024 / 1024} MB`)
+      if (!isImageMime(file.type)) throw new Error(imageRejectMessage(IMAGE_REJECT.MIME))
+      if (file.size > maxImageSize) throw new Error(imageRejectMessage(IMAGE_REJECT.SIZE, { maxSize: maxImageSize }))
       if (this.uploadImage) {
         const uploaded = await this.uploadImage(file)
         if (!this.writable()) return null
@@ -2249,15 +607,65 @@ export default {
     },
     async insertImageFiles(files, pos) {
       if (!this.writable() || !this.featureEnabled('images')) return
-      for (const file of files) {
+      // 一次拖拽 / 粘贴可能混进非图片（PDF 与 PNG 一起框选是常见操作）：
+      // 先分流，非图片只报一条错、不阻断，剩下的图片按原顺序逐张落块。
+      const { accepted, rejected } = sortImageFiles(files, { maxSize: this.effectiveImageMaxSize })
+      if (!accepted.length) { if (rejected.length) this.error = rejected[0].message; return }
+      this.error = rejected.length ? rejected[0].message : ''
+      // 拖拽给的 pos 可能落在块边界（拖到两块之间）或文档之外，先归一成能安全
+      // setTextSelection 的文本位置；没有 pos / 归一失败时按当前选区插入。
+      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
+      for (const file of accepted) {
         try {
           const image = await this.resolveImageFile(file)
-          if (!image || !this.writable()) return
-          if (Number.isInteger(pos)) this.editor.commands.setTextSelection(Math.max(0, Math.min(pos, this.editor.state.doc.content.size)))
+          // 上传期间文档可能被切只读或组件已卸载：停止后续插入，已完成的不回滚。
+          if (!this.writable()) return
+          if (!image) continue
+          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
           this.editor.chain().focus().setImage({ ...image, originalSrc: image.src, originalAttchId: image.attchId, alt: file.name }).run()
-          this.error = ''
-          if (Number.isInteger(pos)) pos = this.editor.state.selection.to
-        } catch (error) { if (this.writable()) this.error = error.message || '图片上传失败' }
+          // 下一张必须接在刚插入的这张之后，否则多张图会全堆在第一张的位置上。
+          if (anchor !== null) anchor = this.editor.state.selection.to
+        } catch (error) { this.error = error?.message || '图片上传失败' }
+      }
+    },
+    /**
+     * 文件 / 视频的上传边界（P2-04）。
+     *
+     * 与 resolveImageFile 的关键差异：**没有 FileReader 兜底**。10 GB 上限的附件
+     * 不可能内联成 data URI，所以没配 uploadFile 就直接报错——宁可不落块，
+     * 也不产生一个「有壳没内容」的半截块。
+     */
+    async resolveFile(file) {
+      const filesEnabled = typeof this.featureEnabled === 'function' ? this.featureEnabled('files') : true
+      if (!this.writable() || !filesEnabled) return null
+      const upload = this.uploadFile
+      if (typeof upload !== 'function') throw new Error('未配置文件上传：请通过 uploadFile 传入上传实现')
+      const uploaded = await upload(file)
+      if (!this.writable()) return null
+      const attrs = fileBlockAttrs(file, uploaded || {})
+      // token 与 src 至少有一个，块才渲染得出来（02 §19.5 ⑤ 的字段契约）。
+      if (!safeAttachmentId(attrs.token) && !(attrs.src && safeUrl(attrs.src, true))) {
+        throw new Error('文件上传未返回有效地址或附件 ID')
+      }
+      return attrs
+    },
+    async insertFileBlocks(files, pos) {
+      if (!this.writable() || !this.featureEnabled('files')) return
+      const { accepted, rejected } = sortFileFiles(files, { maxSize: this.effectiveFileMaxSize })
+      if (!accepted.length) { if (rejected.length) this.error = rejected[0].message; return }
+      // 有被拒的也照样插能插的：一条 toast 说清原因，不阻断其余文件。
+      this.error = rejected.length ? rejected[0].message : ''
+      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
+      for (const file of accepted) {
+        try {
+          const attrs = await this.resolveFile(file)
+          if (!this.writable()) return
+          if (!attrs) continue
+          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
+          this.editor.chain().focus().setFileBlock(attrs).run()
+          // 下一个必须接在刚落的块之后，否则多选的文件会全堆在同一个位置。
+          if (anchor !== null) anchor = this.editor.state.selection.to
+        } catch (error) { this.error = error?.message || '文件上传失败' }
       }
     },
     onDocumentPointerMove(event) {
@@ -2265,40 +673,6 @@ export default {
       if (!root || root.contains(event.target)) return
       if (!event.target.closest?.('.lark-doc-block-handle, .lark-doc-callout-tools')) this.scheduleHandleHide()
     },
-    onDocumentPointerDown(event) {
-      const target = event.target
-      if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target)) this.closeCommandMenu()
-      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
-      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.bubbleAlignOpen && !target.closest?.('.lark-doc-bubble-align') && !target.closest?.('.lark-doc-bubble-align-menu')) this.closeBubbleAlignMenu()
-      if (this.bubbleHeadingOpen && !target.closest?.('.lark-doc-bubble-heading')) this.closeBubbleHeadingMenu()
-      if (this.calloutEmojiOpen && !target.closest?.('.lark-doc-callout-tools')) this.calloutEmojiOpen = false
-      if (this.colorPaletteOpen && !target.closest?.('.lark-doc-color-palette') && !target.closest?.('.lark-doc-color')) this.colorPaletteOpen = ''
-      if (this.headerMenuOpen && !target.closest?.('.lark-doc-header-menu') && !target.closest?.('button[aria-label="文档操作"]')) this.closeHeaderMenu()
-      if (this.diagramMenuOpen && !target.closest?.('.lark-doc-diagram-menu') && !target.closest?.('button[aria-label="图表"]')) this.closeDiagramMenu()
-      // 编号菜单点外部关闭；但点在编号按钮自己身上要留给它的 click 处理（重新定位/切换）。
-      // 标题编号和列表序号共用这套菜单，两个锚点都要排除。
-      // 正在输入编号值时，点外部按「提交」算（飞书同款），否则用户输完点开别处会丢值。
-      if (this.headingNumberMenu.open && !target.closest?.('.lark-doc-heading-number-menu') && !target.closest?.('.lark-doc-heading-number') && !target.closest?.('.lark-doc-list-number')) {
-        if (this.headingNumberEditing) this.applyHeadingNumberValue()
-        else this.closeHeadingNumberMenu()
-      }
-      if (!this.$refs.root?.contains(target)) {
-        this.headingOpen = false
-        this.headingStyle = {}
-        this.tableToolsOpen = false
-      }
-    },
-    onWindowKeydown(event) {
-      if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
-      else if (event.key === 'Escape' && this.slides) this.toggleSlides()
-      else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
-      else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1)
-      else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1)
-    },
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.emojiDialog) this.emojiDialog = false; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.calloutEmojiOpen = false; else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }
 </script>

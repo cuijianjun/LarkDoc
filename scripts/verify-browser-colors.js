@@ -18,6 +18,7 @@
  *  7. 点击浅红背景格 → backgroundColor 生效
  *  8. 点击默认斜杠格 → 背景清除
  *  9. 高亮块（callout）颜色面板仍是旧版圆形色块结构，功能不受影响
+ * 10. callout 色板随正文轨整组替换浅/深两套（T3-03 / M5）
  */
 
 const path = require('path')
@@ -144,6 +145,34 @@ async function main() {
       const roundCells = oldVisible ? await oldPanel.locator('.lark-doc-color-palette-section button').count() : 0
       record('callout 颜色面板为旧版圆形色块结构', oldVisible && roundCells >= 9, `可见=${oldVisible} 色块=${roundCells}`)
       await page.screenshot({ path: path.join(SHOT_DIR, 'colors-03-callout.png') })
+
+      // ---- 10. T3-03：色板随正文轨整组替换（不是给浅色值套亮度） ----
+      const readRecommended = () => page.evaluate(() => {
+        const panel = document.querySelector('.lark-doc-color-palette:not(.lark-doc-color-palette-text)')
+        if (!panel) return null
+        const section = [...panel.querySelectorAll('.lark-doc-color-palette-section')]
+          .find((node) => node.querySelector('small')?.textContent === '推荐')
+        return section ? [...section.querySelectorAll('button')].map((b) => getComputedStyle(b).backgroundColor) : null
+      })
+      const hexToRgb = (list) => list.map((hex) => {
+        const v = hex.replace('#', '')
+        return `rgb(${parseInt(v.slice(0, 2), 16)}, ${parseInt(v.slice(2, 4), 16)}, ${parseInt(v.slice(4, 6), 16)})`
+      })
+      // 与 editor/palette.js 两套表严格对齐；顺序 = 墨绿/薄荷绿/青绿/天空蓝/靛蓝/暖黄/橙色/珊瑚红/淡紫。
+      const LIGHT = hexToRgb(['#263b35', '#d8f3e5', '#00b887', '#dbeafe', '#586bff', '#fff2a8', '#ffb35c', '#f58a8a', '#eadcff'])
+      const DARK = hexToRgb(['#1F471B', '#296B22', '#339428', '#203E78', '#2851A3', '#877B10', '#845117', '#6B2827', '#4D2691'])
+
+      const lightSwatches = await readRecommended()
+      record('色板浅色一组 = palette.js 浅色表', JSON.stringify(lightSwatches) === JSON.stringify(LIGHT), JSON.stringify(lightSwatches?.slice(0, 3)))
+      await page.evaluate(() => { window.__larkDoc.setTheme('dark', 'dark') })
+      await page.waitForTimeout(600)
+      const darkSwatches = await readRecommended()
+      record('切深色后色板整组替换 = palette.js 深色一组（实测去饱和暗色，非亮度推导）',
+        JSON.stringify(darkSwatches) === JSON.stringify(DARK), JSON.stringify(darkSwatches?.slice(0, 3)))
+      await page.screenshot({ path: path.join(SHOT_DIR, 'colors-04-callout-dark.png') })
+      await page.evaluate(() => { window.__larkDoc.setTheme('light', 'light') })
+      await page.waitForTimeout(600)
+      record('切回浅色色板恢复', JSON.stringify(await readRecommended()) === JSON.stringify(LIGHT))
     } else {
       record('callout 颜色面板为旧版圆形色块结构', false, '未找到 callout 颜色触发按钮')
     }

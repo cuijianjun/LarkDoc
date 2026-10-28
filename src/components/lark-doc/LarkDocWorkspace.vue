@@ -10,6 +10,14 @@
     :content-format="contentFormat"
     :fold-persist-key="String(documentId || 'local')"
     :upload-image="uploadImage"
+    :on-embed-title="onEmbedTitle"
+    :on-embed-save="onEmbedSave"
+    :on-embed-card-action="onEmbedCardAction"
+    :embed-providers="embedProviders"
+    :on-bookmark-open="onBookmarkOpen"
+    :unfurl-provider="unfurlProvider"
+    :embed-sandbox="embedSandbox"
+    :embed-allow="embedAllow"
     @change="onChange"
     @import-report="onImportReport"
     @ready="onReady"
@@ -158,7 +166,7 @@
             />
           </button>
         </div>
-        <p>仅保存在{{ persistenceLabel() }}，最多 {{ editorConfig.limits.maxSnapshots }} 份。</p>
+        <p>仅保存在{{ persistenceLabel() }}{{ persistenceCaveat() }}，最多 {{ editorConfig.limits.maxSnapshots }} 份。</p>
         <button
           type="button"
           :disabled="effectiveReadonly"
@@ -435,16 +443,29 @@
 <script>
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import LarkDocEditor from './LarkDocEditor.vue'
-import { createWorkspace } from './workspace'
+import { createPersistenceWorkspace, detectBrowserStorage } from '../../providers/persistence'
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from './mockAI'
 import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMarkdown } from './ai'
 import { TEMPLATES } from './templates'
 import { createLarkDocConfig } from './larkDocConfig'
 import { sanitizeHTML, validateDocument } from './documentOperations'
+import { migrateRecordContent } from '../../core/migrations'
+import { createDerivedSnapshot, validateDerivedSnapshot } from '../../core/derive/snapshot'
+import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
 import { createDocumentSession } from '../../session/DocumentSession'
 import LarkDocSelect from './LarkDocSelect.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
+
+/**
+ * 让浏览器先把「目录已经挂上」画出来一帧，再进 `setContent` 的长任务（2,000 块几十秒）。
+ * 不加这一帧的话，Vue 的 DOM 更新和 ProseMirror 建 DOM 排在同一条长任务里，
+ * 水合出来的目录根本不会被看到 —— 那就白算了。
+ * 无 rAF 的环境（SSR / 单测）直接放行，不阻塞。
+ */
+const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
+  ? new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  : Promise.resolve())
 
 export default {
   name: 'LarkDocWorkspace',
@@ -472,6 +493,17 @@ export default {
     // 字符串地址 / { endpoint } / { protocol:'openai', baseURL } / { stream(args) } 都接受，
     // 统一在 aiAdapter 里收敛；识别不出来就回退本地 Mock。
     aiProvider: { type: [Object, String, Function], default: null },
+    // P3-07：内嵌内容（iframe 桥 / 卡片动作 / URL 卡抓取）的宿主回调。
+    // 本层只做透传，不认识 `lark-embed/1` 协议；判定全在 LarkDoc 门面与扩展装配里。
+    onEmbedTitle: { type: Function, default: null },
+    onEmbedSave: { type: Function, default: null },
+    onEmbedCardAction: { type: Function, default: null },
+    embedProviders: { type: Array, default: null },
+    onBookmarkOpen: { type: Function, default: null },
+    unfurlProvider: { type: Function, default: null },
+    // iframe 的 sandbox / allow 覆盖（默认走安全基线；桥要真 origin 时宿主显式放开）。
+    embedSandbox: { type: String, default: null },
+    embedAllow: { type: String, default: null },
   },
   data() {
     const templateItems = Array.isArray(this.templates) ? this.templates : TEMPLATES
@@ -483,7 +515,7 @@ export default {
       forcedReadonly: false,
       editorConfig: createLarkDocConfig(this.config),
       effectiveReadonly: false, importing: false, initialized: false,
-      saveStatus: '初始化…', storageError: false, notice: '',
+      saveStatus: '初始化…', storageError: false, storageKind: '', notice: '',
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
       aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
       // 预览与落正文用哪种格式渲染：auto / markdown / html / text。
@@ -576,18 +608,41 @@ export default {
     record() {
       const session = this.getSession()
       const record = session ? session.getDocumentRecord({ title: this.title }) : null
+      // 本地分支必须**显式**盖版本号：`getJSON()` 吐的就是当前版本形态，缺了版本号
+      // 会被载入侧当成 v1 白跑一遍迁移链，早期水合的门槛也会永远判否。
       const base = record
         ? { title: record.title, json: record.content, documentId: record.documentId, schemaVersion: record.schemaVersion, revisionId: record.revisionId, updatedAt: record.updatedAt }
-        : { title: this.title, json: this.$refs.document.getJSON() }
+        : { title: this.title, json: this.$refs.document.getJSON(), schemaVersion: DOCUMENT_SCHEMA_VERSION }
       // 可选：附带 HTML 派生副本（宿主后端需要直接渲染、不做 Tiptap 还原时开启）。
       if (this.saveHtml) base.html = this.getHTML()
+      // 可选：附带目录快照（P7-03）。载入时正文还没灌进编辑器，就能先用它把目录挂上，
+      // 不必等 2,000 块逐块建 DOM 跑完。只做一次纯遍历（不碰 DOM、不碰装饰集），
+      // 且只占 meta 里几百字节到几十 KB —— 换 `saveProxyMs` 基线 25ms 是划得来的。
+      const editor = this.getEditor()
+      const doc = editor && editor.state && editor.state.doc
+      if (doc) {
+        const derived = createDerivedSnapshot(doc)
+        if (derived) base.derived = derived
+      }
       return base
     },
-    persistenceLabel() { return this.persistence ? '宿主' : '本浏览器' },
+    persistenceLabel() {
+      if (this.persistence) return '宿主'
+      return this.storageKind === 'memory' ? '内存' : '本浏览器'
+    },
+    // 落不到盘就得说出来：否则状态栏的「已保存」会让人以为刷新之后还在。
+    persistenceCaveat() {
+      if (this.persistence) return ''
+      return this.storageKind === 'memory' ? '（刷新即丢失，请先导出）' : ''
+    },
     // —— 持久化：草稿防抖保存，失败即关闸（storageError）避免反复报错 ——
     getWorkspace() {
       if (!this._workspace) {
-        this._workspace = this.getSession()?.getProvider('persistence') || this.persistence || createWorkspace(window.localStorage, { maxSnapshots: this.editorConfig.limits.maxSnapshots })
+        // 三级降级：IndexedDB → localStorage → 内存。`storageKind` 记录实际选中
+        // 的那条腿，供状态栏如实说明「是否真的落盘」。
+        this._workspace = this.getSession()?.getProvider('persistence') || this.persistence ||
+          createPersistenceWorkspace({ ...detectBrowserStorage(window), maxSnapshots: this.editorConfig.limits.maxSnapshots })
+        this.storageKind = this._workspace.kind || ''
         if (!this.getSession()?.getProvider('persistence')) this.getSession()?.setProvider('persistence', this._workspace)
       }
       return this._workspace
@@ -629,7 +684,18 @@ export default {
           const draft = await this.callWorkspace('load')
           if (this._disposed) return
           if (draft) {
-            this.$refs.document.setContent(validateDocument(draft.json, this.getEditor().schema))
+            // 老草稿（v1 扁平 / 无版本号）先迁移到当前版本再校验载入（P1-04）。
+            const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), this.getEditor().schema)
+            // 早期水合（P7-03）：正文灌进去之前先把目录挂上。
+            // 比对基准必须是 `content`（迁移+展平+校验之后的**扁平**文档），不能是 `draft.json`：
+            // 落库 JSON 是 `getJSON()` 的聚合容器形态（标题把后续块收进 children），
+            // 而快照是按编辑器里的扁平文档算的 —— 拿聚合形态去比，带标题的文档全部被判伪。
+            // 版本号不另设门槛：迁移过的正文一旦结构变了，指纹自己对不上就整份作废。
+            if (this.$refs.document.hydrateOutline(
+              validateDerivedSnapshot(draft.derived, content)?.outline,
+            )) await nextPaintFrame()
+            if (this._disposed) return
+            this.$refs.document.setContent(content)
             this.title = draft.title
           }
           this.saveStatus = draft ? `已恢复${this.persistenceLabel()}草稿` : (this.persistence ? '宿主适配器 · 尚未保存' : '本地示例 · 尚未保存')
@@ -669,10 +735,13 @@ export default {
       try {
         await this.callWorkspace('save', this.record())
         if (generation !== this._saveGeneration || this._disposed) return
+        // 「已保存」只在 Promise 落定后出现：IndexedDB 腿要等事务 oncomplete 才 resolve，
+        // 所以这里看到的成功一定已经落盘，不存在「先报成功、后写失败」的窗口。
         this.storageError = false
-        this.saveStatus = `已保存到${this.persistenceLabel()} ${new Date().toLocaleTimeString()}`
-        logger.info('storage', 'lark-doc.draft.saved', { status: this.persistence ? 'host' : 'local' })
-        this.$emit('save', { status: 'saved', manual, target: this.persistenceLabel(), savedAt: Date.now() })
+        this.storageKind = this._workspace?.kind || this.storageKind
+        this.saveStatus = `已保存到${this.persistenceLabel()}${this.persistenceCaveat()} ${new Date().toLocaleTimeString()}`
+        logger.info('storage', 'lark-doc.draft.saved', { status: this.persistence ? 'host' : 'local', kind: this.storageKind })
+        this.$emit('save', { status: 'saved', manual, target: this.persistenceLabel(), kind: this.storageKind, savedAt: Date.now() })
       } catch (error) { if (generation === this._saveGeneration && !this._disposed) this.storageFailure(error) }
     },
     storageFailure(error) {
@@ -728,8 +797,14 @@ export default {
       if (!this.featureEnabled('history') || !this.writable()) return
       try {
         const entry = await this.callWorkspace('restore', id)
-        const json = validateDocument(entry.json, this.getEditor().schema)
+        const json = validateDocument(migrateRecordContent(entry.json, entry.schemaVersion), this.getEditor().schema)
         if (!window.confirm('恢复此快照并替换当前正文？恢复后可撤销正文。')) return
+        // 与 onReady 同一套早期水合：恢复一份大文档同样要等 setContent 建 DOM。
+        // 比对基准同样是展平后的 `json`，不是落库的聚合容器形态（理由见 onReady）。
+        if (this.$refs.document.hydrateOutline(
+          validateDerivedSnapshot(entry.derived, json)?.outline,
+        )) await nextPaintFrame()
+        if (this._disposed) return
         this.closeAI()
         this.$refs.document.setContent(json)
         this.title = entry.title
@@ -755,7 +830,7 @@ export default {
           const text = await file.text()
           if (format === 'json') {
             const value = JSON.parse(text)
-            content = validateDocument(value.document || value, this.getEditor().schema)
+            content = validateDocument(migrateRecordContent(value.document || value, value.schemaVersion), this.getEditor().schema)
             if (typeof value.title === 'string') importedTitle = value.title
           } else if (format === 'html' || format === 'htm') content = sanitizeHTML(text)
           else if (format === 'md' || format === 'markdown') {
@@ -792,7 +867,7 @@ export default {
         const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../../utils/importExport')
         const filename = safeFileName(this.title)
         if (format === 'html') downloadText(component.getHTML(), `${filename}.html`, 'text/html;charset=utf-8')
-        else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: 1, title: this.title, document: component.getJSON() }, null, 2), `${filename}.json`, 'application/json')
+        else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.title, document: component.getJSON() }, null, 2), `${filename}.json`, 'application/json')
         else if (format === 'txt') downloadText(component.getText(), `${filename}.txt`, 'text/plain;charset=utf-8')
         else if (format === 'md') {
           downloadText(htmlToMarkdown(component.getHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')

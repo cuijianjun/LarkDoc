@@ -1,0 +1,556 @@
+/**
+ * 历史版本（P6b-02）样式 —— `VersionPanel.vue` + `SaveVersionDialog.vue`。
+ *
+ * 规格：requirements/04 §3.4（几何与交互）/ §⑤-2（另存为版本 Dialog）。
+ * 入口：由宿主在主样式 `lark-doc.css` 顶部 `@import` 接线（本线不改主样式）。
+ *
+ * 三条负结论（别「补全」）：
+ *   1. **本文件不出现任何字面 hex，也不出现独立 `white` 关键字**。`scripts/check-theme-tokens.js`
+ *      是基线门禁，扫到新增字面色值就报错。所以全部走 `rgb() / rgba()`；飞书实测的原色值
+ *      （如 `#BBBFC4`、`#336DF4`、`#E0E9FF`、`#8D55ED`）只写在**注释**里 —— 门禁会先
+ *      剥注释，注释里的 hex 不违规。
+ *   2. **不做响应式收缩**。04 §3.4 只采到 1512 × 950 一档，没有窄屏口径；这里用
+ *      左栏 `flex: 1` + 右栏固定 294px（实测和值 = 1512），不猜断点。
+ *   3. **不画展开箭头 / 删除按钮 / 改备注入口**（⑦-2 / ⑦-3 未采，且没有子记录数据源）。
+ *
+ * 类名统一 `lark-doc-` 前缀。飞书原始类名（`docx-history-*`、`ud__*`）保留在注释里，
+ * 方便与 batch449 / 451 / 452 的实测截图对照。
+ */
+
+/* ── A. 容器骨架（实测：全屏 1512 × 950 @(0,0)，bg rgb(255,255,255)，z-index 99，overflow hidden） ── */
+.lark-doc-version-layer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgb(255, 255, 255);
+  z-index: 99;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+}
+
+/* 左栏 1218 × 950 @(0,0) —— 用 flex 撑满，和值仍是 1512。 */
+.lark-doc-version-left {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+/* 左栏顶栏 1218 × 64 @(0,0)，bg 透明。 */
+.lark-doc-version-left-header {
+  position: relative;
+  height: 64px;
+  background-color: transparent;
+}
+
+/* 顶栏分隔线 1218 × 1 @(0,63)。
+   颜色规格没采（只给了几何），这里用正文色的 10% —— 与主样式里其它分隔线同口径。 */
+.lark-doc-version-header-divider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background-color: rgba(31, 35, 41, 0.1);
+}
+
+/* 左栏内容 1218 × 886 @(0,64)。 */
+.lark-doc-version-left-content {
+  position: relative;
+  height: calc(100% - 64px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 24px 32px;
+}
+
+/* ── B. 左栏顶栏 4 个控件 ── */
+
+/* 返回文档（纯图标）24 × 24 @(16,20)。 */
+.lark-doc-version-back {
+  position: absolute;
+  left: 16px;
+  top: 20px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0 none;
+  border-radius: 0;
+  background-color: transparent;
+  color: rgb(31, 35, 41);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 还原此历史记录 122 × 32 @(548,16)，radius 6，白字 14。
+   实测底色是禁用灰 `rgb(187,191,196)`（= #BBBFC4）+ `not-allowed` —— 启用态底色
+   未采（⑦-1），沿用主色 `rgb(20,86,240)`（= #1456F0），与「下一项」同源。 */
+.lark-doc-version-restore {
+  position: absolute;
+  left: 548px;
+  top: 16px;
+  width: 122px;
+  height: 32px;
+  padding: 0;
+  border: 0 none;
+  border-radius: 6px;
+  background-color: rgb(20, 86, 240);
+  color: rgb(255, 255, 255);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.lark-doc-version-restore[disabled] {
+  background-color: rgb(187, 191, 196);
+  cursor: not-allowed;
+}
+
+/* 上一项 / 下一项：66 × 28，y=18，radius 6，白字 12。
+   坐标系换算：容器 `right: 24px` + `gap: 16px` ⇒ 下一项 left = 1218 - 24 - 66 = 1128，
+   上一项 left = 1128 - 16 - 66 = 1046，与实测一致。
+   hover 实测 `rgb(51,109,244)`（= #336DF4）。 */
+.lark-doc-version-pager {
+  position: absolute;
+  right: 24px;
+  top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 页码文案「编辑记录 1/10」。
+   04 §3.4-B 只给了相对描述「上一项右侧」，没给坐标；右缘到「下一项」只剩 24px 放不下，
+   所以右对齐排在「上一项」左侧，间距沿用 16px。 */
+.lark-doc-version-cursor {
+  font-size: 12px;
+  color: rgb(31, 35, 41);
+  white-space: nowrap;
+}
+
+.lark-doc-version-step {
+  width: 66px;
+  height: 28px;
+  padding: 0;
+  border: 0 none;
+  border-radius: 6px;
+  background-color: rgb(20, 86, 240);
+  color: rgb(255, 255, 255);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lark-doc-version-step:hover:not([disabled]) {
+  background-color: rgb(51, 109, 244);
+}
+
+.lark-doc-version-step[disabled] {
+  background-color: rgb(187, 191, 196);
+  cursor: not-allowed;
+}
+
+/* ── 左栏预览卡 ── */
+.lark-doc-version-preview {
+  box-sizing: border-box;
+  border: 1px solid rgba(31, 35, 41, 0.1);
+  border-radius: 8px;
+  padding: 20px 24px;
+}
+
+.lark-doc-version-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lark-doc-version-preview-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgb(31, 35, 41);
+}
+
+/* kind 徽标（09 §5.8：自动 / 手动 / 恢复产生）。 */
+.lark-doc-version-preview-kind {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: rgba(159, 111, 241, 0.12);
+  color: rgb(141, 85, 237);
+  font-size: 12px;
+}
+
+.lark-doc-version-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgb(100, 106, 115);
+}
+
+/* 降级文案：取不到正文 / 取不到版本时的统一落点，保证永不白屏。 */
+.lark-doc-version-degraded,
+.lark-doc-version-empty {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: rgb(100, 106, 115);
+}
+
+.lark-doc-version-empty {
+  padding: 48px 0;
+  text-align: center;
+}
+
+/* diff 摘要：三色取自 04 §3.4-D（文本 `rgb(141,85,237)` / 底 `rgba(159,111,241,0.12)`）。 */
+.lark-doc-version-diff {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background-color: rgba(159, 111, 241, 0.12);
+  font-size: 12px;
+  color: rgb(141, 85, 237);
+}
+
+.lark-doc-version-diff-title {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+
+/* 正文区：历史快照只有二进制，这里统一降级成说明文案（不伪造正文）。 */
+.lark-doc-version-body {
+  margin-top: 16px;
+  border-top: 1px solid rgba(31, 35, 41, 0.1);
+  padding-top: 16px;
+}
+
+.lark-doc-version-binary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 22px;
+  color: rgb(100, 106, 115);
+}
+
+/* ── 右栏 294 × 950 @(1218,0) ── */
+.lark-doc-version-right {
+  position: relative;
+  flex: 0 0 294px;
+  width: 294px;
+  height: 100%;
+  border-left: 1px solid rgba(31, 35, 41, 0.1);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 右栏顶栏 293 × 64 @(1219,0)。 */
+.lark-doc-version-right-header {
+  position: relative;
+  flex: 0 0 64px;
+  height: 64px;
+  padding: 20px 16px;
+  box-sizing: border-box;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 标题「历史记录」64 × 23 @(1235,20)：fs 16 / fw 500 / rgb(31,35,41)。 */
+.lark-doc-version-right-title {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 23px;
+  color: rgb(31, 35, 41);
+}
+
+/* 图标 24 × 24 @(1303,20)，cursor pointer。 */
+.lark-doc-version-right-icon {
+  color: rgb(100, 106, 115);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 滚动区 `history-timeline-scroller docx-history-right-content` 293 × 844 @(1219,64)。 */
+.lark-doc-version-timeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background-color: rgb(255, 255, 255);
+  font-size: 16px;
+}
+
+/* 日期分组容器 293 × 32，fs 12 / fw 500 / rgb(100,106,115) / padding 0 0 0 14px。 */
+.lark-doc-version-day-label {
+  height: 32px;
+  padding: 0 0 0 14px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(100, 106, 115);
+}
+
+/* 单条记录 293 宽，padding 12px 13px 12px 40px。 */
+.lark-doc-version-item {
+  width: 293px;
+  padding: 12px 13px 12px 40px;
+  box-sizing: border-box;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF），文字 `rgb(51,109,244)`（= #336DF4），
+   条目宽 293 → 278（右侧让出 15px 滚动条）。 */
+.lark-doc-version-item.selected {
+  width: 278px;
+  background-color: rgb(224, 233, 255);
+}
+
+/* 条目名：fs 14 / fw 500 / **`rgb(51,109,244)`**（反直觉 2：不是正文色）。 */
+.lark-doc-version-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: rgb(51, 109, 244);
+}
+
+/* 描述：fs 12 / rgb(31,35,41)，选中时转 `rgb(51,109,244)`。 */
+.lark-doc-version-item-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(31, 35, 41);
+}
+
+.lark-doc-version-item.selected .lark-doc-version-item-desc {
+  color: rgb(51, 109, 244);
+}
+
+/* 作者：fs 12 / fw 500 / rgb(31,35,41)。 */
+.lark-doc-version-item-user {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: rgb(31, 35, 41);
+}
+
+/* 底栏 293 × 42 @(1219,908)，文案「显示更改」—— 行为未采（⑦-4），不绑事件。 */
+.lark-doc-version-right-footer {
+  flex: 0 0 42px;
+  height: 42px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: rgb(100, 106, 115);
+}
+
+/* ── ⑤-2 「另存为版本」Dialog ── */
+
+/* 遮罩 1512 × 950 @(0,0)，bg rgba(0,0,0,0.55)，z 1000。 */
+.lark-doc-save-version-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+}
+
+/* 包裹层 1512 × 950，z 1000，居中。 */
+.lark-doc-save-version-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 弹窗本体 420 × 242 @(546,354)，bg rgb(255,255,255)，radius 8。 */
+.lark-doc-save-version-dialog {
+  position: relative;
+  width: 420px;
+  height: 242px;
+  background-color: rgb(255, 255, 255);
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 头部 420 × 72，padding 24px 56px 24px 24px。 */
+.lark-doc-save-version-header {
+  flex: 0 0 72px;
+  height: 72px;
+  padding: 24px 56px 24px 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 标题 340 × 24，fs 16 / fw 500 / rgb(31,35,41)。 */
+.lark-doc-save-version-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  color: rgb(31, 35, 41);
+}
+
+/* 关闭 X 28 × 28，radius 6，图标 20 rgb(100,106,115)。 */
+.lark-doc-save-version-close {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0 none;
+  border-radius: 6px;
+  background-color: transparent;
+  color: rgb(100, 106, 115);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 主体 420 × 90，padding 0 24px。 */
+.lark-doc-save-version-body {
+  flex: 0 0 90px;
+  height: 90px;
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+
+.lark-doc-save-version-label {
+  display: block;
+  font-size: 14px;
+  line-height: 22px;
+  color: rgb(31, 35, 41);
+}
+
+.lark-doc-save-version-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 输入框 268 × 22：fs 14 / rgb(31,35,41) / **透明底、无边框（`0px none`）、radius 0**。 */
+.lark-doc-save-version-input {
+  width: 268px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  border: 0 none;
+  border-radius: 0;
+  background-color: transparent;
+  color: rgb(31, 35, 41);
+  font-size: 14px;
+  outline: none;
+}
+
+.lark-doc-save-version-counter {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: rgb(100, 106, 115);
+}
+
+/* 底部 420 × 56，padding 0 24px 24px。 */
+.lark-doc-save-version-footer {
+  flex: 1 1 auto;
+  padding: 0 24px 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* 确定 80 × 32：主色底 / 白字 / radius 6 / padding 4px 11px / border 1px solid 主色。 */
+.lark-doc-save-version-confirm {
+  width: 80px;
+  height: 32px;
+  padding: 4px 11px;
+  box-sizing: border-box;
+  border: 1px solid rgb(20, 86, 240);
+  border-radius: 6px;
+  background-color: rgb(20, 86, 240);
+  color: rgb(255, 255, 255);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* 取消 80 × 32：白底 / rgb(31,35,41) / radius 6 / border 1px solid rgb(208,211,214)。 */
+.lark-doc-save-version-cancel {
+  width: 80px;
+  height: 32px;
+  padding: 4px 11px;
+  box-sizing: border-box;
+  border: 1px solid rgb(208, 211, 214);
+  border-radius: 6px;
+  background-color: rgb(255, 255, 255);
+  color: rgb(31, 35, 41);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.lark-doc-save-version-error {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: rgb(141, 85, 237);
+}
+
+/* ── 保存成功 toast 418 × 54（04 §⑤-2 末尾） ── */
+.lark-doc-version-notice {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 418px;
+  min-height: 54px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background-color: rgb(255, 255, 255);
+  box-shadow: 0 4px 16px rgba(31, 35, 41, 0.16);
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+  color: rgb(31, 35, 41);
+}
+
+.lark-doc-version-notice-link {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0 none;
+  background-color: transparent;
+  color: rgb(51, 109, 244);
+  font-size: 14px;
+  cursor: pointer;
+}

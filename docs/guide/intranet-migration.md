@@ -17,7 +17,8 @@
 
 | 宿主 | 走哪个入口 | 联网侧要改的文件 | 内网侧要额外带什么 |
 | --- | --- | --- | --- |
-| **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli） | `main` → `dist/lark-doc.common.js` | `vue.config.js`（alias + babel 规则）、业务组件的 `import` 写全路径 | `lark-doc` tgz、`vue` tgz、**2 个 babel 插件 tgz** |
+| **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>0.13 起 | `browser` → `dist/lark-doc.umd.min.js` | **不用改配置**；子路径写全、需要公式时设 `__LARK_DOC_PUBLIC_PATH__` | `lark-doc` tgz、`vue` tgz |
+| **Vue 2.7 + webpack 4**（0.12 及更早） | `main` → `dist/lark-doc.common.js` | `vue.config.js`（alias + babel 规则）、业务组件的 `import` 写全路径 | `lark-doc` tgz、`vue` tgz、**2 个 babel 插件 tgz** |
 | **Vue 2.7 + webpack 5**（vue-cli 5 / 原生 webpack5） | `module` → `dist/lark-doc.esm.js` | **不用改配置**，只改业务代码的 `import` | `lark-doc` tgz、`vue` tgz |
 | **Vue 3 + Vite** | `lark-doc/element`（UMD，自带 Vue 2 运行时与样式） | `vite.config.js`（`isCustomElement`）、`index.html` 加一行 `<script>` | **只要 `dist/` 目录，不用装 npm 包** |
 
@@ -79,7 +80,23 @@ cd dist-intranet && sha256sum -c sha256.txt
 
 ## 2. 方案 A：Vue 2.7 + webpack 4（vue-cli 4）{#mig-vue2-wp4}
 
-这是唯一「联网侧就要动配置」的宿主。**关键顺序：先在联网机上改好、跑通，再把改好的项目搬进去**——在内网排编译错，成本是联网时的十倍。
+::: tip 0.13 起本节大幅简化：不用改 `vue.config.js`
+`package.json` 的 `browser` 已指向 UMD 产物（ES2018 语法、无 `import.meta`、样式随产物注入），webpack 4 会先命中它。所以：
+
+- **不用** alias 到 `dist/lark-doc.common.js`
+- **不用** 装那两个 babel 插件（`@babel/plugin-proposal-optional-chaining` / `-nullish-coalescing-operator`），也就不用为它们打 tgz
+- 只剩两件事：子路径写全（`lark-doc/dist/lark-doc-element.umd.min.js`），以及用到公式 / Word 导出时设 `window.__LARK_DOC_PUBLIC_PATH__`
+
+```js
+// src/main.js —— 0.13+ 的全部配置
+window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'   // 与 dist 托管前缀一致；不用公式可不设
+import { LarkDoc } from 'lark-doc'
+```
+
+**下面 2.1~2.7 是 0.12 及更早版本的完整流程**，版本锁在旧版时照抄；已升到 0.13 可以只读 2.6（vendor 打包）与 2.7（验收），跳过配置与插件部分。
+:::
+
+**关键顺序：先在联网机上改好、跑通，再把改好的项目搬进去**——在内网排编译错，成本是联网时的十倍。
 
 ### 2.1 联网机 · 第 1 步：确认宿主版本
 
@@ -311,11 +328,11 @@ npm run build
 
 ### 3.4 方案 A 与 B 的差别，只记三行
 
-| | webpack 4 | webpack 5 |
-| --- | --- | --- |
-| 入口 | `main`（CJS，7.5 MB） | `module`（ESM，首屏 gzip ≈ 276 KB） |
-| 宿主配置 | alias + babel 规则，两处 | 无 |
-| 额外依赖 | 2 个 babel 插件 | 无 |
+| | webpack 4（0.13+） | webpack 4（0.12-） | webpack 5 |
+| --- | --- | --- | --- |
+| 入口 | `browser`（UMD，gzip 447 KB） | `main`（CJS，8.6 MB） | `module`（ESM，首屏 gzip ≈ 446 KB） |
+| 宿主配置 | 无（只设 `__LARK_DOC_PUBLIC_PATH__`） | alias + babel 规则，两处 | 无 |
+| 额外依赖 | 无 | 2 个 babel 插件 | 无 |
 
 ---
 
@@ -459,7 +476,8 @@ import 'lark-doc/element'   // 自动注册 <lark-doc>
 
 | 宿主 | 联网侧改的文件 | 内网侧新增的文件 |
 | --- | --- | --- |
-| Vue 2.7 + webpack 4 | `vue.config.js`、业务组件 `import` | `vendor/*.tgz`、`package.json` 的 `file:` |
+| Vue 2.7 + webpack 4（0.13+） | 业务组件 `import`（要公式/Word 再加一行 `__LARK_DOC_PUBLIC_PATH__`） | `vendor/*.tgz`、`package.json` 的 `file:` |
+| Vue 2.7 + webpack 4（0.12-） | `vue.config.js`、业务组件 `import` | `vendor/*.tgz`、`package.json` 的 `file:`、2 个 babel 插件 tgz |
 | Vue 2.7 + webpack 5 | 业务组件 `import`（用了 element 再加 `vue.config.js`） | `vendor/*.tgz`、`package.json` 的 `file:` |
 | Vue 3 + Vite | `vite.config.js`、`index.html` | `public/vendor/lark-doc/`（整目录） |
 

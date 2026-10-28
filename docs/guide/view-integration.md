@@ -1,10 +1,8 @@
 # View 层接入
 
-## 概述
-
 lark-doc 与宿主的边界是显式的：编辑器只负责文档交互，**数据存哪里、AI 用什么模型、图片传到哪**都由宿主通过 Provider 契约注入。本页覆盖三种接入形态：原生页面、Vue2 组件、以及持久化 / 协作扩展点。
 
-## 配置内容
+## 三种接入形态
 
 ### 原生页面
 
@@ -92,7 +90,7 @@ const session = createDocumentSession({
 const doc = new LarkDoc({ element: '#editor', session })
 ```
 
-## 配置说明
+## 形态对照与权限
 
 | 接入形态 | 说明 |
 | --- | --- |

@@ -3,7 +3,7 @@
  * 行内格式 → 高亮取色 → 复制）。
  *
  * 通过 this.editor、this.writable()、this.changeIndent()/this.setAlign()/this.toggleMark()
- * （主组件方法）协作；主组件的 onSelectionUpdate 会读写 bubbleVisible 并调用
+ * （主组件方法）协作；selectionPacingMixin 的 onSelectionUpdate 会读写 bubbleVisible 并调用
  * closeBubbleAlignMenu / closeBubbleHeadingMenu。
  * 采用 mixin 而非子组件：气泡与子菜单模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */

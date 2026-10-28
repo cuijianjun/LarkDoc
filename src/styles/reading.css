@@ -1,0 +1,59 @@
+/* ==================================================================
+   read 态（阅读 / 演示 / 协同只读）样式 —— P6b-05，规格 requirements/07 §1。
+
+   §1 三态表只有「阅读」行的气泡条 / 块手柄 / 拖拽是 ❌，修订行是 ✅/⚠️ —— 所以本文件
+   只处理 **read 态**，不碰修订态（修订态的视觉在 lark-doc.css 的 `.lark-doc-mode-suggest`）。
+
+   作用域依赖根容器的 `.lark-doc-reading`：那个类现在由 `LarkDocEditor.vue` 的
+   `effectiveReadonly` 挂上（四源 `||`）。P6b-05 接线后把 `effectiveReadonly` 换成
+   `interactionMode === 'read'`，本文件一行都不用改 —— 类口径不变，只是来源统一了。
+
+   三条负结论（别实现）：
+     1. **别隐藏编辑器 / 正文**：read 态要保留滚动、**选中与复制**，隐藏的是编辑**控件**
+        （块手柄 / 气泡条 / 斜杠菜单 / 拖拽手柄），不是内容本身。
+     2. **别隐藏修订面板**：read 态下面板**只读展示**（§12.1「有阅读权限的用户可看到
+        修订建议」），只把接受 / 拒绝置灰。藏掉等于把建议一起藏了。
+     3. **别隐藏评论入口**：三档「可评论」列全是 ✅（§1 表 + §1.1「仅查看或评论文档」）。
+        本文件不写任何 `.lark-doc-comment*` 规则 —— 那不是我们要关的东西。
+
+   值一律走 var(--ld-*)，不写字面 hex（scripts/check-theme-tokens 止血）。
+   置灰色 = `--ld-text-disabled`（06 实测 #BBBFC4，两档同）。
+   ================================================================== */
+
+/* ---- 1. 编辑态浮层卸载（§1 表「阅读」行：气泡条 ❌ 块手柄 ❌ 拖拽 ❌） -----------
+   `!important` 不是偷懒：这三个浮层的显示位可能带内联 style（块手柄跟随块定位时会
+   写 left/top，个别宿主还会写 display），组件自己的 `display: flex` 又在
+   `.lark-doc` 作用域里 —— 用 !important 才能保证「进了 read 态就一定不出现」。 */
+.lark-doc.lark-doc-reading .lark-doc-block-handle,
+.lark-doc.lark-doc-reading .lark-doc-bubble,
+.lark-doc.lark-doc-reading .lark-doc-command-menu {
+  display: none !important;
+}
+
+/* ---- 2. 只读光标 -------------------------------------------------------------
+   read 态编辑器是 `editable: false`，本来就没有插入点；这里显式藏掉光标，
+   防止宿主主题或浏览器在 `contenteditable=false` 上仍画出竖线。
+   `user-select: text` 是并列的关键半句：read 态**必须还能选中复制**。 */
+.lark-doc.lark-doc-reading .ProseMirror {
+  caret-color: transparent;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ---- 3. 修订按钮只读展示 -----------------------------------------------------
+   必须带 `.is-reject` / `.is-accept`：lark-doc.css 里那两条同特异性（两个类）且写在
+   后面，会盖掉 `.lark-doc-revision-btn:disabled` 的置灰 —— 那样接受/拒绝在 read 态
+   会继续显示绿/红，看着还能点。这里加一个伪类把特异性抬上去。
+   色值按题给的是 #BBBFC4，本库对应 token 即 --ld-text-disabled。 */
+.lark-doc .lark-doc-revision-btn.is-reject:disabled,
+.lark-doc .lark-doc-revision-btn.is-accept:disabled {
+  color: var(--ld-text-disabled);
+  cursor: not-allowed;
+}
+
+/* ---- 4. 修订面板 read 态 -----------------------------------------------------
+   面板保留（负结论第 2 条），只是不再暗示「这里能输入」：输入区由模板 `v-if` 直接
+   不渲染，这里只把回复卡的文本光标归位。 */
+.lark-doc .lark-doc-revision-panel.is-readonly .lark-doc-revision-reply {
+  cursor: default;
+}

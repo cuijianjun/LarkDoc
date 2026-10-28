@@ -72,7 +72,9 @@ function check(name, condition, detail) {
 function walk(node, visit) {
   if (!node || typeof node !== 'object') return
   visit(node)
+  // P1-02/P1-04 起标题容器化：getJSON 为聚合形态，块可挂在 heading 的 children 下。
   if (Array.isArray(node.content)) node.content.forEach((child) => walk(child, visit))
+  if (Array.isArray(node.children)) node.children.forEach((child) => walk(child, visit))
 }
 function collect(json, type) {
   const found = []

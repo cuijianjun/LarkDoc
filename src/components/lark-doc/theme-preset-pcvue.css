@@ -1,0 +1,269 @@
+/* ==================================================================
+   宿主对齐档 · pcvue（0.12 T5-06）—— requirements/13 实测口径。
+   - 启用本档：宿主在 .lark-doc 根容器上加 data-theme-preset="pcvue"
+     （配合 theme: 'host' + hostSkin 映射，见 13 §4.1）；
+   - 本档**不改默认档**：默认绿系（lark-doc.css）与飞书灰档（feishu）零影响；
+   - 色值池全部取自 13 §2.1/§2.2/§2.3 宿主 SCSS 实测表与 §4.3 对照表：
+       default 皮肤：主色 #06A17D、页面/侧栏/输入/表格底 #ffffff、
+         标题 #222B4A、容器字 #606266、存储字 #666666、占位符 #7d8592、
+         菜单 hover #F3F4F6、菜单 active #DFE5EE、输入边框 #dcdfe6、
+         表格行线 #dfe6ec、浅灰底 #F3F5F9、语义色 #ff4949/#ffba00/#13ce66
+       dark 皮肤：底 #1d3d39、浮起/hover/表头 #425756、强线 #4b5b5c、
+         主文字 #ffffff、次字 #999999、次色 #06A17D、无阴影
+   - 13 §4.3 表里没有的 token 一律**不写**，继承默认档（不新造色值）；
+   - 13 §4.3 表有、但落到 lark-doc 会失效/不达标的，按下文 ★ 注明偏离理由与
+     实测对比度（同源口径见 requirements/10 §8）。共 5 处：
+       ★1 链接/强调/品牌 → #1FD6A5（宿主 #06A17D 在 #1d3d39 上仅 3.60:1 < 4.5）
+       ★2 外壳次级文字 → 保留宿主 #999999（#425756 上 2.70:1，已登记豁免：
+          达标需 ≥#C6C6C6 的新造值，属硬闸门②，须授权）
+       ★3 图表连线 → #A6A6A6（宿主 #999999 在 #425756 上 2.70:1 < 3）
+       ★4 图表节点描边 → #5F5F5F（宿主 #4b5b5c 在 #425756 上 1.08:1 < 1.2）
+       ★5 常规线 --ld-border 不写 → 继承 #5F5F5F（13 §4.3 无常规线值；
+          宿主强线 #4b5b5c 叠在浮起面 #425756 上 1.08:1，等于看不见）
+       ★6 引用文字 → #CFCFCF（默认档 #A6A6A6 在引用底上 4.42:1，差 0.08）
+   - α 叠层一律**不写**，沿用默认档既有机制 rgba(207,207,207, α)（11 §4.4 实测
+     基色 #CFCFCF）；品牌 α 沿用 theme-dark.css 已有系数，只把基色换 #1FD6A5。
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   一、浅色档 = 宿主 default 皮肤（主色对齐 06A17D，解决 13 §3 三方主色冲突）
+   ------------------------------------------------------------------ */
+.lark-doc[data-theme-preset="pcvue"] {
+  /* ---- 文字 ---- */
+  --ld-text: #222B4A;                  /* titleColor */
+  --ld-text-secondary: #606266;        /* container-font-color / list-text-color 系 */
+  --ld-text-tertiary: #666666;         /* storageTextColor（不用 #7d8592：白底仅 3.74:1） */
+  --ld-text-on-brand: #FFFFFF;         /* tagsView active 底 #06A17D 上白字 */
+  --ld-text-accent: #06A17D;           /* menu-font-activeColor */
+  --ld-text-icon: #606266;
+  --ld-text-icon-tertiary: #7d8592;    /* inputPlace-font-color（占位符口径） */
+  --ld-text-brand-sub: #606266;
+  --ld-text-check: #06A17D;
+  /* ---- 面 ---- */
+  --ld-bg-shell: #FFFFFF;              /* themeBackgroundColor */
+  --ld-bg-surface: #FFFFFF;            /* sidebar-background-color */
+  --ld-bg-surface-raised: #FFFFFF;
+  --ld-bg-content: #FFFFFF;
+  --ld-bg-hover: #F3F4F6;              /* menu-background-hoverColor / list-hover-bgcolor */
+  --ld-bg-hover-strong: #F3F4F6;
+  --ld-bg-hover-select: #F3F4F6;
+  --ld-bg-hover-menu: #F3F4F6;
+  --ld-bg-active: #DFE5EE;             /* menu-background-activeColor */
+  --ld-bg-accent: #DFE5EE;             /* 同宿主 active 底（飞书档是蓝浅底，本档随宿主走灰） */
+  --ld-bg-accent-active: #DFE5EE;
+  --ld-bg-selected: #DFE5EE;
+  --ld-bg-menu-item-active: #DFE5EE;
+  --ld-bg-code: #F3F5F9;               /* $--color-hui 浅灰底 */
+  --ld-bg-soft: #F3F5F9;
+  /* ---- 线 ---- */
+  --ld-border: #dcdfe6;                /* input-border-color */
+  --ld-border-strong: #7d8592;         /* 强化档取占位符色（同 feishu 档取 disabled 色的口径） */
+  --ld-border-cell: #dfe6ec;           /* table-row-border-bottom */
+  /* 网页卡片（P3-05）：描边跟本档线色；骨架两色沿用 02 §24 实测（浅档唯一出处） */
+  --ld-border-bookmark: #dfe6ec;
+  --ld-divider: #dfe6ec;
+  /* ---- 品牌 / 功能 ---- */
+  --ld-brand-chrome: #06A17D;          /* themeColor */
+  --ld-brand-content: #06A17D;
+  --ld-accent-control: #06A17D;
+  --ld-brand-subtle: rgba(6, 161, 125, 0.10);   /* C：主色 α（13 无实测，按主色派生） */
+  /* P3-07：内嵌网页浮层按钮专用实心品牌色（飞书档有 04 §4.3 实测值，本档无实测 → 按本档主色派生） */
+  --ld-bg-brand-solid: #06A17D;
+  --ld-bg-brand-pressed: #058C6C;      /* C：主色压暗一档，13 无实测 */
+  --ld-focus-ring: rgba(6, 161, 125, 0.40);     /* C */
+  --ld-danger: #ff4949;                /* $--color-danger */
+  --ld-warning: #ffba00;               /* $--color-warning */
+  --ld-success: #13ce66;               /* $--color-success */
+  /* ---- 菜单 / 浮层文字 ---- */
+  --ld-text-menu: #222B4A;
+  --ld-text-menu-icon: #606266;
+  --ld-text-menu-active: #06A17D;
+  --ld-text-outline-active: #06A17D;
+  --ld-text-fold-toggle-hover: #06A17D;
+  --ld-bg-outline-hover: rgba(6, 161, 125, 0.10); /* C：同 --ld-brand-subtle */
+}
+
+/* ------------------------------------------------------------------
+   二、深色外壳轨 = 宿主 dark 皮肤（墨绿 #1d3d39 系）
+   选择器带 [data-theme-preset]，特异性高于 theme-dark.css ——
+   style.css 里本文件排在 theme-dark.css 之前也不影响（style.css 注释已说明）。
+   ------------------------------------------------------------------ */
+.lark-doc[data-theme-preset="pcvue"][data-theme="dark"] {
+  /* ---- 文字（13 §4.3：主文字 #ffffff、次级 #999999） ---- */
+  --ld-text: #FFFFFF;
+  --ld-text-secondary: #999999;        /* bread-posi-font-color（★ 白字口径 4.15:1，见文件头注） */
+  --ld-text-tertiary: #999999;
+  --ld-text-on-brand: #FFFFFF;
+  /* ★ 链接/强调：13 §4.3 表未列。宿主主色 #06A17D 在 #1d3d39 上仅 3.60:1（正文需 4.5），
+     复用默认档绿系提亮档 #1FD6A5（6.31:1，theme-dark.css 规则 C 已有此值，非新造）。 */
+  --ld-text-link: #1FD6A5;
+  --ld-text-accent: #1FD6A5;
+  --ld-text-accent-hover: #45E0B6;     /* C：默认档 hover 提亮档，复用 */
+  --ld-text-check: #1FD6A5;
+  --ld-text-icon: #FFFFFF;             /* menu-icon-color */
+  --ld-text-icon-tertiary: #999999;
+  --ld-text-brand-sub: #999999;
+  --ld-text-menu: #FFFFFF;
+  --ld-text-menu-icon: #FFFFFF;
+  --ld-text-menu-active: #FFFFFF;      /* 宿主 dark 的 themeColor 就是 #ffffff */
+  --ld-text-bubble: #FFFFFF;
+  --ld-text-handle: #999999;
+  --ld-text-handle-icon: #999999;
+  --ld-text-submenu-arrow: #999999;
+  --ld-text-align-glyph: #999999;
+  --ld-text-help: #999999;
+  --ld-text-outline: #999999;
+  --ld-text-outline-heading: #FFFFFF;
+  --ld-text-outline-icon: #999999;
+  --ld-text-outline-active: #1FD6A5;
+  --ld-text-number-menu: #FFFFFF;
+  --ld-text-number-spinner: #999999;
+  --ld-text-number-hover: #1FD6A5;
+
+  /* ---- 面（13 §4.3：底 #1d3d39、浮起 #425756、raised #4b5b5c） ---- */
+  --ld-bg-shell: #1d3d39;
+  --ld-bg-surface: #425756;
+  --ld-bg-surface-raised: #4b5b5c;
+  --ld-bg-content: #1d3d39;            /* 纸张 = 页面底（11 §4.8 结论②） */
+  --ld-scrollbar-thumb: #4b5b5c;       /* 滑块须比底亮一档；池内唯一可用值 */
+  /* hover / active / soft 等 α 叠层**不写**：13 §4.3 给的实色 #425756 叠在同为
+     #425756 的浮起面（菜单）上等于没有，而换成白 α 又属新造色值 →
+     直接继承默认档 rgba(207,207,207, α)（11 §4.4 实测基色），两档底上都可见。 */
+  /* 选中 / 强调态用品牌 α：系数沿用 theme-dark.css 已有值，基色换 #1FD6A5 */
+  --ld-bg-accent: rgba(31, 214, 165, 0.14);
+  --ld-bg-accent-active: rgba(31, 214, 165, 0.20);
+  --ld-bg-selected: rgba(31, 214, 165, 0.26);
+  --ld-bg-menu-item-active: rgba(31, 214, 165, 0.20);
+  --ld-bg-outline-hover: rgba(31, 214, 165, 0.18);
+  --ld-bg-number-hover: rgba(31, 214, 165, 0.18);
+  --ld-bg-number-hover-subtle: rgba(31, 214, 165, 0.14);
+  --ld-bg-code: #425756;               /* 块色层比页面底亮一档（11 §4.8 ②） */
+  --ld-bg-tooltip: #4b5b5c;            /* 浮层 tip 比浮起面再亮一档 */
+  --ld-bg-grid-submenu: #4b5b5c;
+  --ld-bg-switch-thumb: #FFFFFF;
+  --ld-mask: rgba(0, 0, 0, 0.55);      /* 沿用默认档深色（宿主无遮罩实测） */
+
+  /* ---- 线（13 §4.3：raised/强线 #4b5b5c） ----
+     ★5 --ld-border 不写：13 §4.3 未给常规线值，且宿主强线 #4b5b5c 在浮起面
+     #425756 上仅 1.08:1 → 继承默认档 #5F5F5F（11 §4.3 实测描边档，1.21:1）。 */
+  --ld-border-strong: #4b5b5c;
+  --ld-border-cell: #4b5b5c;
+  /* 网页卡片（P3-05）：描边跟本档强线 #4b5b5c；骨架用已有 α 白灰层，不新造色值。 */
+  --ld-border-bookmark: #4b5b5c;
+  --ld-bg-bookmark-skeleton: rgba(207, 207, 207, 0.08);
+  --ld-bg-bookmark-shimmer: rgba(207, 207, 207, 0.12);
+  --ld-divider: #425756;
+  --ld-border-accent: rgba(31, 214, 165, 0.40);
+  --ld-border-control: #425756;
+  --ld-border-handle-hover: #4b5b5c;
+  --ld-border-bubble-divider: #425756;
+  --ld-border-help: #4b5b5c;
+  --ld-border-swatch: #425756;
+  --ld-border-swatch-palette: #425756;
+  --ld-border-columns-picker: #4b5b5c;
+  --ld-border-grid-table: #425756;
+  --ld-border-grid-table-active: #1FD6A5;
+  --ld-border-paper: #425756;
+  --ld-stroke-swatch-empty: #4b5b5c;
+
+  /* ---- 品牌（★ 同 --ld-text-link 的理由：#06A17D 在浮起底 #425756 上仅 2.34:1，
+     UI 口径需 3:1 → 两轨统一用提亮档 #1FD6A5（4.11:1）） ---- */
+  --ld-brand-chrome: #1FD6A5;
+  --ld-brand-content: #1FD6A5;
+  --ld-accent-control: #1FD6A5;
+  --ld-focus-ring: rgba(31, 214, 165, 0.40);
+  --ld-focus-ring-picker: #1FD6A5;
+  --ld-focus-ring-number: rgba(31, 214, 165, 0.20);
+  --ld-border-number-focus: #1FD6A5;
+  --ld-brand-subtle: rgba(31, 214, 165, 0.26);
+  --ld-bg-brand-hover: #45E0B6;
+  /* P3-07：内嵌网页浮层按钮（本档无实测 → 提亮档用主色、按下用已有 hover 档） */
+  --ld-bg-brand-solid: #1FD6A5;
+  --ld-bg-brand-pressed: #45E0B6;
+  --ld-bg-grid-table-active: #1FD6A5;
+  --ld-bg-columns-picker: rgba(31, 214, 165, 0.45);
+  --ld-bg-columns-cell: rgba(31, 214, 165, 0.30);
+  --ld-bg-columns-cell-active: rgba(31, 214, 165, 0.40);
+  --ld-bg-columns-cell-preview: #1FD6A5;
+  --ld-text-badge: #1FD6A5;
+  --ld-bg-badge: rgba(31, 214, 165, 0.16);
+  /* 语义色不覆盖：11 §4.4 实测深色不变（#ff4949 / #ffba00 / #13ce66 两档同值） */
+
+  /* ---- 分类图标（浮层属 chrome 轨；口径同 theme-dark.css「只修不达标的」） ---- */
+  --ld-cat-gray: #999999;              /* 墨绿底上的中性次文字档 */
+  --ld-cat-blue: #1FD6A5;              /* 复用绿系提亮档（非新造） */
+  --ld-cat-indigo: #45E0B6;            /* 复用绿系 hover 档（非新造） */
+
+  /* ---- 阴影：宿主 dark 关闭阴影（13 §2.3 header/sidebar box-shadow: none） ---- */
+  --ld-shadow-chrome: none;
+  --ld-shadow-menu: none;
+  --ld-shadow-menu-sm: none;
+  --ld-shadow-float: none;
+  --ld-shadow-colorpanel: none;
+  --ld-shadow-tools: none;
+  --ld-shadow-tooltip: none;
+  --ld-shadow-bubble: none;
+  --ld-shadow-toast: none;
+  --ld-shadow-boundary: none;
+  --ld-shadow-dialog: none;
+  --ld-shadow-thumb: none;
+  --ld-shadow-drawer: none;
+  --ld-shadow-panel: none;
+  --ld-shadow-notice: none;
+  --ld-shadow-megamenu: none;
+  --ld-shadow-paper: none;
+}
+
+/* ------------------------------------------------------------------
+   三、深色正文轨 = 宿主 dark 皮肤下的内容画布
+   只写 content 语义 token（.lark-doc 上不转发，必须直写，
+   否则「UI 深 + 正文浅」时会被基础 token 顶住）。
+   ------------------------------------------------------------------ */
+.lark-doc[data-theme-preset="pcvue"][data-content-theme="dark"] {
+  --ld-bg-content: #1d3d39;
+  --ld-border-content: #4b5b5c;
+  --ld-bg-code: #425756;               /* 块色层比纸亮一档 */
+  --ld-text-content: #FFFFFF;
+  --ld-text-heading: #FFFFFF;
+  --ld-text-slide-title: #FFFFFF;
+  /* ★2 同源：--ld-text-quote（P1-01 起 = --ld-text-secondary 别名）**不取**
+     宿主次字 #999999（引用正文上仅 3.67:1）；默认档 #A6A6A6 也只有 4.42:1，
+     差 0.08 → 用 11 §4.4 实测深档基色 #CFCFCF（6.92:1，非新造），
+     比主文字 #F0F0F0 暗一档，保留引用层级。 */
+  --ld-text-quote: #CFCFCF;
+  --ld-text-bullet: #1FD6A5;           /* 列表符号用品牌提亮档（同默认档用主色口径） */
+  --ld-text-summary: #FFFFFF;
+  --ld-text-fold-toggle: #999999;
+  --ld-text-fold-toggle-hover: #1FD6A5;
+  --ld-bg-fold-toggle-hover: rgba(31, 214, 165, 0.20);
+  /* 以下 α 叠层（引用底 / 折叠底 / 分割线 / 表头 / 代码头部条 / 图表节点填充）
+     全部继承默认档 rgba(207,207,207, α)，理由同外壳轨：不新造色值。 */
+  --ld-bg-callout: #425756;            /* callout 同「块色层」口径 */
+  --ld-border-callout: #4b5b5c;
+  --ld-border-details: #425756;
+  --ld-border-column: #425756;
+  --ld-border-column-hover: #1FD6A5;
+  --ld-border-table: #425756;
+  --ld-border-cell: #4b5b5c;
+  /* 网页卡片（P3-05）：与上面深档同口径（描边 #4b5b5c + α 骨架） */
+  --ld-border-bookmark: #4b5b5c;
+  --ld-bg-bookmark-skeleton: rgba(207, 207, 207, 0.08);
+  --ld-bg-bookmark-shimmer: rgba(207, 207, 207, 0.12);
+  /* 代码块（T3-02）：只换与外部接触的 chrome，语法配色按 M6 两档不变 */
+  --ld-code-bg: #425756;
+  --ld-code-border: #4b5b5c;
+  --ld-code-toolbar-text: #FFFFFF;
+  /* 图表（mermaid 只吃字面色，按 token 名读取下发） */
+  --ld-diagram-bg: #425756;
+  --ld-diagram-node-border: #5F5F5F;   /* ★4 宿主 #4b5b5c 在 #425756 上 1.08:1 → #5F5F5F（1.21:1） */
+  --ld-diagram-text: #FFFFFF;
+  --ld-diagram-line: #A6A6A6;          /* ★3 宿主 #999999 在 #425756 上 2.70:1 → #A6A6A6（3.16:1） */
+  --ld-diagram-border: #425756;
+  --ld-diagram-toolbar-text: #FFFFFF;
+  --ld-diagram-source-text: #FFFFFF;
+  --ld-diagram-source-caret: #FFFFFF;
+  --ld-diagram-status-text: #999999;
+  --ld-diagram-error: #ff4949;         /* 宿主 danger（11 §4.4 深色不变） */
+  --ld-border-notice: #425756;
+  --ld-shadow-paper: none;
+}

@@ -1,0 +1,200 @@
+/* ==================================================================
+   飞书灰浅色主题档（0.12 T0-03）—— requirements/11 §3.4 + 06 实测口径。
+   - 默认档（无属性）= 现状绿系自研主题（见 lark-doc.css 顶部 token 区）；
+   - 启用本档：宿主在 .lark-doc 根容器上加 data-theme-preset="feishu"；
+   - 只覆盖 L2 基础 token；跨界 var 转发（--ld-border-chrome 等）会自动
+     解析到本档灰值，无需重写（12 §4 D2）；
+   - 深色档（[data-theme="dark"] 配套值）在 T2 落地，见 11 §4。
+   ================================================================== */
+.lark-doc[data-theme-preset="feishu"] {
+  /* ---- L2 文字（06 §1.1 实测） ---- */
+  --ld-text: #1F2329;
+  --ld-text-secondary: #646A73;
+  --ld-text-tertiary: #8F959E;
+  --ld-text-disabled: #BBBFC4;
+  --ld-text-on-brand: #FFFFFF;
+  --ld-text-link: #245BDB;
+  --ld-text-accent: #1456F0;         /* 激活强调 = 主品牌蓝 */
+  --ld-text-accent-hover: #336DF4;   /* 06 §2：生效态 icon fill #336DF4 */
+  --ld-text-icon: #646A73;           /* 图标按钮（.ud__button--icon） */
+  --ld-text-icon-tertiary: #8F959E;  /* 拖拽手柄等弱图标（06 §6.6） */
+  --ld-text-brand-sub: #646A73;
+  --ld-text-check: #1456F0;
+  /* ---- L2 背景（06 §1.4 实测） ---- */
+  --ld-bg-page: transparent;
+  --ld-bg-shell: #FFFFFF;
+  --ld-bg-surface: #FFFFFF;
+  --ld-bg-surface-raised: #FFFFFF;
+  --ld-bg-content: #FFFFFF;
+  --ld-bg-hover: rgba(100, 106, 115, 0.05);
+  --ld-bg-hover-strong: rgba(100, 106, 115, 0.05);
+  --ld-bg-hover-select: rgba(100, 106, 115, 0.05);
+  --ld-bg-hover-menu: rgba(100, 106, 115, 0.05);
+  --ld-bg-active: rgba(31, 35, 41, 0.10);
+  --ld-bg-accent: #E0E9FF;           /* 06 batch255 A2：--bg-selected */
+  --ld-bg-accent-active: #E0E9FF;
+  --ld-bg-selected: #E0E9FF;
+  --ld-bg-code: #F5F6F7;
+  /* ---- L2 边框（06 §1.3 实测） ---- */
+  --ld-border: #DEE0E3;
+  /* P4-03：高亮块表情面板 emoji 项 hover 底（02 §16 ④ 实测）。与上一支描边同值，
+     但一个是「框线」一个是「hover 底」，语义不同 → 单列，别合并。 */
+  --ld-emoji-item-bg: #DEE0E3;
+  --ld-border-strong: #BBBFC4;
+  --ld-border-cell: #DEE0E3;
+  /* 🔴 网页卡片描边**不是**上面这支灰，是更深一档的 #D0D3D6（02 §24 ② 实测）。别顺手归一。 */
+  --ld-border-bookmark: #D0D3D6;
+  --ld-divider: #DEE0E3;
+  --ld-border-accent: transparent;   /* 飞书生效态无边框 */
+  /* ---- 轮廓栏 / 纸张（B3：按 06 实测 L2 角色映射，未新增色值） ---- */
+  --ld-text-outline: #646A73;           /* = text-secondary */
+  --ld-text-outline-heading: #1F2329;   /* = text（正文主文字） */
+  --ld-text-outline-icon: #8F959E;      /* = text-tertiary */
+  --ld-text-outline-active: #1456F0;    /* = brand */
+  --ld-bg-outline-hover: #E1EAFF;       /* = brand-subtle */
+  --ld-border-paper: #DEE0E3;           /* = border */
+  --ld-shadow-paper: rgba(31, 35, 41, 0.04) 0 8px 36px; /* 几何不变，色相转中性（06 §3 阴影口径） */
+  /* ---- L2 品牌 / 功能（11 §3.4） ---- */
+  --ld-brand-chrome: #1456F0;
+  --ld-brand-content: #1456F0;
+  --ld-brand-subtle: #E1EAFF;
+  --ld-danger: #D83931;
+  --ld-warning: #DE7802;
+  --ld-success: #2EA121;
+  /* ---- L2 效果（06 §3：普通下拉双层阴影） ---- */
+  --ld-shadow-menu: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0;
+
+  /* ================================================================
+     B5：块菜单 / 气泡条 / 命令菜单 / 颜色盘 / 对话框 / toast / 块句柄
+     口径 = 06 §1（实测色）+ §3（阴影四档 0.04/0.06/0.08/0.1，色恒为 #1F2329）。
+     默认档的 11 个不同阴影值在本档**聚拢**到 06 的 5 个档位；
+     分类图标色 / 反白文字 / 开关圆点为主题无关值，本文档不重述（继承默认档）。
+     ================================================================ */
+  /* ---- 菜单 / 浮层文字（06 §7.1：菜单项 #1F2329，图标 #646A73） ---- */
+  --ld-text-menu: #1F2329;
+  --ld-text-menu-icon: #646A73;
+  --ld-text-menu-active: #1456F0;
+  --ld-text-bubble: #1F2329;
+  --ld-text-handle: #8F959E;          /* 块句柄拖拽点 = text-tertiary */
+  --ld-text-handle-icon: #8F959E;
+  --ld-text-submenu-arrow: #8F959E;
+  --ld-text-align-glyph: #646A73;
+  --ld-text-help: #8F959E;
+  --ld-text-error: #D83931;           /* = --danger */
+  --ld-text-toast: #DE7802;           /* = --warning */
+  --ld-text-badge: #2EA121;           /* = --success */
+  --ld-text-slide-title: #1F2329;
+  /* ---- 菜单 / 浮层背景（06 §1.4：hover = #1F2329 低透明，选中 = #E0E9FF） ---- */
+  --ld-bg-tooltip: #1F2329;           /* 飞书 tooltip 底色 = 主文字色 */
+  --ld-bg-soft: #F5F6F7;              /* = --bg-code / --bg-page */
+  --ld-bg-switch-off: #BBBFC4;
+  --ld-bg-handle-hover: rgba(31, 35, 41, 0.05);
+  --ld-bg-menu-item-active: #E0E9FF;  /* = --bg-selected */
+  --ld-bg-brand-hover: #336DF4;
+  /* P3-07：内嵌网页浮层按钮（requirements/04 §4.3 ⑤ 逐个像素实测）
+     solid = rgb(51,109,244) → #336DF4（主按钮底 + 「如何获取链接」文字）
+     pressed = rgb(80,131,251) → #5083FB（hover 态，也是「确认」填空/非法时的唯一反馈色）
+     实测值只此一份；四档原表里没有 #5083FB，故在此新建。 */
+  --ld-bg-brand-solid: #336DF4;
+  --ld-bg-brand-pressed: #5083FB;
+  --ld-bg-toast: rgba(222, 120, 2, 0.1);
+  --ld-bg-badge: rgba(46, 161, 33, 0.1);
+  --ld-bg-grid-table: #F5F6F7;
+  --ld-bg-grid-table-active: rgba(20, 86, 240, 0.35);
+  --ld-bg-grid-submenu: #FFFFFF;
+  --ld-bg-columns-preview: #F5F6F7;
+  --ld-bg-columns-picker: rgba(20, 86, 240, 0.25);
+  --ld-bg-columns-cell: rgba(20, 86, 240, 0.12);
+  --ld-bg-columns-cell-active: rgba(20, 86, 240, 0.2);
+  --ld-bg-columns-cell-preview: rgba(20, 86, 240, 0.35);
+  --ld-mask: rgba(31, 35, 41, 0.5);
+  /* ---- 菜单 / 浮层边框（06 §1.3 + hover 边框 #C2D4FF） ---- */
+  --ld-border-control: #DEE0E3;
+  --ld-border-handle-hover: #C2D4FF;
+  --ld-border-bubble-divider: #DEE0E3;
+  --ld-border-help: #BBBFC4;
+  --ld-border-swatch: #DEE0E3;
+  --ld-border-swatch-palette: #DEE0E3;
+  --ld-border-columns-picker: #DEE0E3;
+  --ld-border-grid-table: #DEE0E3;
+  --ld-border-grid-table-active: #1456F0;
+  --ld-border-toast: rgba(222, 120, 2, 0.3);
+  --ld-stroke-swatch-empty: #BBBFC4;
+  --ld-stroke-swatch-clear: #D83931;
+  /* ---- 焦点 / 强调 ---- */
+  --ld-accent-control: #1456F0;
+  --ld-focus-ring: rgba(20, 86, 240, 0.4);
+  --ld-focus-ring-picker: #C2D4FF;
+  --ld-icon-callout: #646A73;         /* 飞书块句柄图标统一中性灰，无彩色类型图标 */
+  /* ---- B5 阴影：聚拢到 06 §3 的 5 个档位 ---- */
+  --ld-shadow-menu-sm: rgba(31, 35, 41, 0.1) 0 4px 8px 0;       /* = --shadow-popover */
+  --ld-shadow-float: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0, rgba(31, 35, 41, 0.06) 0 4px 8px -8px; /* = --shadow-megamenu */
+  --ld-shadow-colorpanel: rgba(31, 35, 41, 0.1) 0 6px 24px 0;   /* = --shadow-colorpanel */
+  --ld-shadow-tools: rgba(31, 35, 41, 0.1) 0 4px 8px 0;         /* = --shadow-blockbar */
+  --ld-shadow-tooltip: rgba(31, 35, 41, 0.08) 0 6px 12px 0;     /* = --shadow-fab */
+  --ld-shadow-bubble: rgba(31, 35, 41, 0.1) 0 4px 8px 0;        /* = --shadow-blockbar */
+  --ld-shadow-toast: rgba(31, 35, 41, 0.08) 0 6px 12px 0;       /* = --shadow-fab */
+  --ld-shadow-boundary: rgba(31, 35, 41, 0.1) 0 4px 8px 0;      /* = --shadow-popover */
+  --ld-shadow-dialog: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0, rgba(31, 35, 41, 0.06) 0 4px 8px -8px; /* = --shadow-megamenu */
+  --ld-shadow-thumb: rgba(31, 35, 41, 0.1) 0 1px 2px 0;         /* 几何不变，色相转中性 */
+  --ld-shadow-drawer: rgba(31, 35, 41, 0.1) 8px 10px 20px 0;    /* 几何不变，色相转中性 */
+
+  /* ================================================================
+     B6：标题编号块 UI（编号色 / hover 底 / 编号菜单 / 输入框 / 步进器）
+     06 无「编号」专属实测条目 → 不新造色值，只按 06 既有口径映射；
+     默认档值本身就等于 06 口径的（#1456F0 编号色 / #1F2329 菜单文字 /
+     #FFFFFF 菜单底 / 三层 megamenu 阴影 / 品牌蓝 10% 与 8% hover 底），
+     本文档不重述，继承默认档。
+     ================================================================ */
+  --ld-text-number-spinner: #8F959E;   /* = text-tertiary（06 §1.1） */
+  --ld-text-number-hover: #1456F0;     /* 编号本体即品牌蓝，hover 靠下划线 + 浅蓝底表达，不另造加深蓝 */
+  --ld-bg-number-item-hover: rgba(31, 35, 41, 0.1); /* 06 §7.1：控件类菜单项 hover 恒为主文字色 10% */
+
+  /* ================================================================
+     B4：正文 ProseMirror 块 + AI 面板（12 §3.1 批次 121–197）
+     口径 = 06 §1（文字/边框/背景实测）+ §6（表格）。06 只覆盖正文主文字、
+     标题、二三级文字、--border / --border-cell / --bg-code / --bg-hover /
+     表格单元格恒透明、引用竖线；其余是编辑器自有扩展（分栏虚线 / 折叠块 /
+     搜索命中 / 通知条 / AI 面板 / 模板面板），06 无实测条目 →
+     「只映射不新造」，一律归并到上面已有的中性或品牌 token。
+     ================================================================ */
+  /* ---- 正文文字（06 §1.1） ---- */
+  --ld-text-content: #1F2329;           /* = text-primary */
+  --ld-text-heading: #1F2329;           /* 飞书标题与正文同为主文字色，层级靠字号/字重 */
+  --ld-text-bullet: #1F2329;            /* 无序列表圆点与正文同色 */
+  --ld-text-summary: #1F2329;           /* 折叠块标题 */
+  --ld-text-fold-toggle: #646A73;       /* 折叠三角 = 图标灰 */
+  --ld-text-fold-toggle-hover: #1456F0; /* = brand */
+  /* ---- 正文背景 / 边框（06 §1.3 / §1.4） ---- */
+  --ld-border-column: #DEE0E3;          /* = border（分栏虚线） */
+  --ld-border-column-hover: #C2D4FF;    /* 品牌浅蓝，本文件已用于 --ld-focus-ring-picker */
+  --ld-bg-details: #F5F6F7;             /* = bg-code / bg-page */
+  --ld-border-details: #DEE0E3;         /* = border */
+  --ld-border-table: #DEE0E3;           /* = border-cell */
+  --ld-bg-th: transparent;              /* 06 §131：--bg-table-cell 恒透明，表头同 */
+  --ld-border-hr: #DEE0E3;              /* = divider */
+  --ld-bg-fold-toggle-hover: #E1EAFF;   /* = brand-subtle */
+  /* 未知块占位卡（P1-03）：04 §8.3 中性灰实测值，与本文件已有中性灰角色同源 */
+  --ld-unknown-card-bg: #F5F6F7;         /* = bg-code / bg-page */
+  --ld-unknown-card-border: #DEE0E3;     /* = border */
+  --ld-unknown-card-icon: #8F959E;       /* = text-tertiary */
+  --ld-unknown-card-text: #1F2329;       /* = text-primary */
+  --ld-unknown-card-text-sub: #646A73;   /* = text-secondary */
+  --ld-bg-hover-segment: rgba(100, 106, 115, 0.05); /* 06 §130：块 hover 底 */
+  /* ---- 通知条 / 侧栏卡片 / AI 面板（06 无实测，按中性角色归并） ---- */
+  --ld-border-notice: #DEE0E3;
+  --ld-bg-notice: #F5F6F7;
+  --ld-text-notice: #1F2329;
+  --ld-shadow-notice: rgba(31, 35, 41, 0.08) 0 6px 12px 0;  /* = --shadow-fab */
+  --ld-shadow-panel: rgba(31, 35, 41, 0.1) 0 4px 8px 0;     /* = --shadow-popover */
+  --ld-bg-ai-context: #F5F6F7;
+  --ld-bg-ai-review: #F5F6F7;
+  --ld-bg-ai-proposal: #E1EAFF;         /* = brand-subtle（AI 建议需与评审条目区分） */
+  --ld-border-template-hover: #C2D4FF;
+  /* ---- 本档不覆盖（继承默认档）----
+     ★ --ld-bg-callout / --ld-border-callout：高亮块色由 calloutColorMixin 色板
+       写 inline style 驱动（同 --ld-cat-* 的「用户内容色」口径，不随主题变），
+       CSS 两值仅兜底，本档覆盖会造成「面板色板显示绿、实际渲染橙」的错位。
+     ★ --ld-bg-search-hit / --ld-border-search-active：搜索命中是功能高亮色，
+       两档同值（黄底橙框是语义色，不参与主题化）。 */
+}

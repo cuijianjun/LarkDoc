@@ -96,9 +96,10 @@
 
 <script>
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
-import { isDiagramLanguage, renderDiagram } from './diagram'
-import { INDENT_STEP_PX, clampBlockIndent } from './documentOperations'
-import LarkDocSelect from './LarkDocSelect.vue'
+import { isDiagramLanguage, renderDiagram } from '../../components/lark-doc/diagram'
+import { readContentTheme, subscribeContentTheme } from '../../components/lark-doc/themeSignal'
+import { INDENT_STEP_PX, clampBlockIndent } from '../../components/lark-doc/documentOperations'
+import LarkDocSelect from '../../components/lark-doc/LarkDocSelect.vue'
 
 // Code blocks are uncommon on the document's first paint. Keep both the
 // highlighter core and grammars out of the route chunk until one is rendered.
@@ -170,6 +171,8 @@ export default {
       diagramState: 'idle', // idle | loading | ok | error
       diagramSvg: '',
       diagramError: '',
+      // 渲染用的正文轨主题：mermaid 的 SVG 是固化色，换档必须重渲染（12 T3-01）。
+      contentTheme: readContentTheme(),
       // 图表块（mermaid）直接渲染预览，与 Vditor 行为一致；「编辑源码」可切回编辑。
       previewShown: isDiagramLanguage(this.node?.attrs?.language) && this.extension?.options?.diagram !== false,
     }
@@ -212,15 +215,30 @@ export default {
     this.editor.on('update', this.syncEditable)
     this.editor.on('transaction', this.syncEditable)
     this.refreshHighlighted()
+    // 主题广播全库只挂一个观察器（themeSignal），这里只订阅「本块要不要重画」。
+    this.unsubscribeTheme = subscribeContentTheme(this.handleContentTheme)
     if (this.showPreview) this.scheduleDiagramRender()
   },
   beforeDestroy() {
     this.editor.off('update', this.syncEditable)
     this.editor.off('transaction', this.syncEditable)
+    if (this.unsubscribeTheme) { this.unsubscribeTheme(); this.unsubscribeTheme = null }
     if (this.diagramTimer) clearTimeout(this.diagramTimer)
     this.diagramVersion = -1
   },
   methods: {
+    /**
+     * 正文轨换档：只有图表块需要重画（代码块的颜色全在 CSS 里）。
+     * 降级（图数 > 20，themeSignal 判定）：只让**新渲染**用新配色，
+     * 已渲染的图不再重排 —— 一次切换几十个 mermaid 会明显卡顿。
+     */
+    handleContentTheme({ theme, degraded }) {
+      if (theme === this.contentTheme) return
+      this.contentTheme = theme
+      if (degraded || !this.showPreview) return
+      this.scheduleDiagramRender()
+    },
+
     refreshHighlighted() {
       const text = this.node.textContent
       const language = this.node.attrs.language
@@ -258,7 +276,10 @@ export default {
         return
       }
       this.diagramState = 'loading'
-      renderDiagram(source, { scriptUrl: this.extension?.options?.diagramScriptUrl || undefined }).then((svg) => {
+      renderDiagram(source, {
+        scriptUrl: this.extension?.options?.diagramScriptUrl || undefined,
+        theme: this.contentTheme,
+      }).then((svg) => {
         if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
         this.diagramSvg = svg
         this.diagramState = 'ok'
@@ -302,35 +323,40 @@ export default {
 </script>
 
 <style>
-.lark-doc .lark-doc-code { border: 1px solid #dce5e1; border-radius: 8px; overflow: hidden; margin: 16px 0; max-width: 100%; background: #17251f; }
-.lark-doc .lark-doc-code-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; font-size: 12px; color: #3f5149; background: #edf3ef; }
+/* 代码块 / 图表块的颜色全部走 --ld-code-* / --ld-diagram-* token（T3-02）：
+   - 代码块是「常暗卡片」：语法配色按 M6（06 §6.5.2 实测 token 色两档不变）写死，
+     换主题只动卡片 chrome 与卡底；
+   - 图表块是「纸张上的白卡」：跟着正文纸张走；
+   - 深色值统一写在 theme-dark.css 的 content 轨，本文件不再出现 [data-content-theme]。 */
+.lark-doc .lark-doc-code { border: 1px solid var(--ld-code-border); border-radius: 8px; overflow: hidden; margin: 16px 0; max-width: 100%; background: var(--ld-code-bg); }
+.lark-doc .lark-doc-code-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; font-size: 12px; color: var(--ld-code-toolbar-text); background: var(--ld-code-toolbar-bg); }
 .lark-doc .lark-doc-code-toolbar select { max-width: 140px; }
 .lark-doc .lark-doc-code-body { position: relative; overflow-x: auto; }
 .lark-doc .lark-doc-code-body pre { margin: 0; padding: 16px; border: 0; border-radius: 0; background: transparent; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; min-height: 52px; box-sizing: border-box; }
 .lark-doc .lark-doc-code-body code { font: inherit; padding: 0; background: transparent; border: 0; border-radius: 0; }
-.lark-doc .lark-doc-code-highlight { position: absolute; inset: 0; color: #e3eee7; pointer-events: none; }
-.lark-doc .lark-doc-code-input { position: relative; color: transparent; caret-color: #ffffff; }
+.lark-doc .lark-doc-code-highlight { position: absolute; inset: 0; color: var(--ld-code-text); pointer-events: none; }
+.lark-doc .lark-doc-code-input { position: relative; color: transparent; caret-color: var(--ld-code-caret); }
 .lark-doc .lark-doc-code-input code { color: transparent; }
-.lark-doc .lark-doc-code-input ::selection { background: #62897688; }
+.lark-doc .lark-doc-code-input ::selection { background: var(--ld-code-selection); }
+/* 语法配色：06 §6.5.2 实测「token 色不随主题变」，刻意写死，不落 token。 */
 .lark-doc .lark-doc-code .hljs-keyword, .lark-doc .lark-doc-code .hljs-selector-tag { color: #c9a2ee; }
 .lark-doc .lark-doc-code .hljs-string, .lark-doc .lark-doc-code .hljs-attr { color: #b5da91; }
 .lark-doc .lark-doc-code .hljs-number, .lark-doc .lark-doc-code .hljs-literal { color: #ecb783; }
 .lark-doc .lark-doc-code .hljs-comment { color: #8caa97; font-style: italic; }
 .lark-doc .lark-doc-code .hljs-title, .lark-doc .lark-doc-code .hljs-built_in { color: #7ccce5; }
-.lark-doc .lark-doc-diagram { border-top: 1px solid #dce5e1; background: #ffffff; padding: 16px; display: flex; justify-content: center; overflow: auto; }
-.lark-doc .lark-doc-diagram-status { color: #66756e; font-size: 13px; padding: 8px; }
-.lark-doc .lark-doc-diagram-error { color: #c0392b; }
+.lark-doc .lark-doc-diagram { border-top: 1px solid var(--ld-diagram-preview-border); background: var(--ld-diagram-preview-bg); padding: 16px; display: flex; justify-content: center; overflow: auto; }
+.lark-doc .lark-doc-diagram-status { color: var(--ld-diagram-status-text); font-size: 13px; padding: 8px; }
+.lark-doc .lark-doc-diagram-error { color: var(--ld-diagram-error); }
 .lark-doc .lark-doc-diagram-svg { max-width: 100%; }
 .lark-doc .lark-doc-diagram-svg svg { max-width: 100%; height: auto; user-select: none; }
 /* 图表标签为 SVG 原生 <text>（diagram.js 关闭 htmlLabels），不经过 foreignObject，
    天然不受宿主 CSS 继承影响；overflow 放开只为边标签的测量误差兜底。 */
 .lark-doc .lark-doc-diagram-svg svg { overflow: visible; }
 /* 图表块独立外观：白底卡片，去掉代码框的深色 chrome 与高亮配色。 */
-.lark-doc .lark-doc-code-diagram { background: #ffffff; border-color: #e3ebe6; }
-.lark-doc .lark-doc-code-diagram .lark-doc-code-toolbar { background: #f6faf7; color: #3f5149; }
-.lark-doc .lark-doc-code-diagram .lark-doc-code-body { background: #fbfdfc; }
-.lark-doc .lark-doc-code-diagram .lark-doc-code-body pre { color: #24352d; caret-color: #1f2d26; }
-.lark-doc .lark-doc-code-diagram .lark-doc-code-highlight { color: #24352d; }
+.lark-doc .lark-doc-code-diagram { background: var(--ld-diagram-card-bg); border-color: var(--ld-diagram-border); }
+.lark-doc .lark-doc-code-diagram .lark-doc-code-toolbar { background: var(--ld-diagram-toolbar-bg); color: var(--ld-diagram-toolbar-text); }
+.lark-doc .lark-doc-code-diagram .lark-doc-code-body { background: var(--ld-diagram-source-bg); }
+.lark-doc .lark-doc-code-diagram .lark-doc-code-body pre { color: var(--ld-diagram-source-text); caret-color: var(--ld-diagram-source-caret); }
+.lark-doc .lark-doc-code-diagram .lark-doc-code-highlight { color: var(--ld-diagram-source-text); }
 .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-keyword, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-string, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-attr, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-number, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-comment, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-title, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-built_in { color: inherit; }
-.lark-doc .lark-doc-code-diagram .lark-doc-diagram { border-top: 1px solid #eef3f0; }
 </style>

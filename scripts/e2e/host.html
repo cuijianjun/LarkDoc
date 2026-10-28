@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>lark-doc element CI 冒烟</title>
+</head>
+<body>
+  <lark-doc id="doc"></lark-doc>
+  <!-- element UMD 产物由 CI（或本地模拟）拷贝到本文件同目录 -->
+  <script src="./lark-doc-element.umd.min.js"></script>
+  <script>
+    // 与 vue3 冒烟同口径：先等自定义元素升级（脚本按顺序执行时 UMD 已 define 完毕），
+    // 再设 content（data-indent 缩进 = 折叠范围前提，见 verify-smoke.js 口径注释），
+    // 最后暴露 window.__larkDoc 供 verify-smoke.js 统一驱动。
+    var el = document.getElementById('doc')
+    el.setAttribute('content', '<h1>冒烟标题</h1><p data-indent="1">冒烟正文段落。</p>')
+    el.setAttribute('content-format', 'html')
+    window.__larkDoc = el
+  </script>
+</body>
+</html>

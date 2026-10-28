@@ -1,0 +1,83 @@
+name: Perf Gate
+
+# P7-06：把 check:perf 接进 CI，任一指标退化 > 20% 让 job 失败。
+#
+# 为什么单独一个 workflow 而不是塞进 ci.yml / e2e.yml：
+#   1. 门禁要 build:element + 起 Chromium 跑 2,000 块真实文档，成本比 lint/单测高一个量级，
+#      不该让每个 PR 都付这笔钱；
+#   2. 它是「性能」这条独立契约（requirements/09 §2.4.3），红/绿的含义和前两个 workflow 不同，
+#      分开展示才不会被当成同一次构建的噪音。
+# 现有 lint/unit/build/size/e2e 四个 job 保持原样，未做任何改动。
+#
+# 为什么基线要按运行器分开：
+#   性能数字是机器相关的。本机基线（darwin/x64）拿到 ubuntu runner 上比，只会得到
+#   必然红或必然绿的假结论。这里用 actions/cache 给「同一 OS+架构」存一份独立基线：
+#   首次运行 --bootstrap 只采集并建立基线（不判定），之后每次比上一次，超阈才失败。
+#   需要重置基线时，用 workflow_dispatch 把 baseline_generation 从 v1 改成 v2。
+
+on:
+  push:
+    branches: [master, 'next/**']
+  workflow_dispatch:
+    inputs:
+      baseline_generation:
+        description: '基线代次：改一个值即可丢弃旧的运行器基线，从本次重新建立'
+        required: false
+        default: 'v1'
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  perf-gate:
+    runs-on: ubuntu-latest
+    # 采集本身约 2 分钟（首屏 40s + 击键 + 滚动 3 轮），大头是 build:element 与 npm ci。
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore runner perf baseline
+        uses: actions/cache@v4
+        with:
+          path: perf/baseline.ci.json
+          # key 带 sha 是为了让每次运行都能把新基线存下来（同 key 会跳过保存）；
+          # restore-keys 前缀保证总能拿到该运行器上一次的基线。
+          key: perf-baseline-${{ runner.os }}-${{ runner.arch }}-${{ github.event.inputs.baseline_generation || 'v1' }}-${{ github.sha }}
+          restore-keys: |
+            perf-baseline-${{ runner.os }}-${{ runner.arch }}-${{ github.event.inputs.baseline_generation || 'v1' }}-
+
+      - name: Install Playwright Chromium
+        run: |
+          npm i --no-save playwright@1.49.0
+          npx playwright install --with-deps chromium
+
+      - name: Build element umd
+        run: npm run build:element
+
+      - name: Measure (2,000 blocks, seed 42)
+        run: node scripts/perf/measure.mjs
+
+      - name: Gate (regression > 20% fails)
+        run: node scripts/perf/report.mjs --baseline perf/baseline.ci.json --bootstrap
+
+      - name: Upload perf artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-result-${{ github.run_id }}
+          path: |
+            perf/.perf-result.json
+            perf/baseline.ci.json
+          if-no-files-found: ignore
+          retention-days: 30
