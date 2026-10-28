@@ -6,15 +6,15 @@
     "node": "v22.22.2",
     "platform": "darwin",
     "arch": "x64",
-    "capturedAt": "2026-10-27T15:45:16.188Z"
+    "capturedAt": "2026-10-28T11:54:20.799Z"
   },
   "metrics": {
-    "mountToTypeableMs": 38810.1,
-    "keystrokeP95Ms": 939.7,
-    "keystrokeP99Ms": 2372.1,
-    "decorationIncrementalMs": 78.8,
-    "scrollFps": 59.3,
-    "saveProxyMs": 24.6,
-    "heapMB": 107.8
+    "mountToTypeableMs": 1124,
+    "keystrokeP95Ms": 901.6,
+    "keystrokeP99Ms": 2101.1,
+    "decorationIncrementalMs": 78,
+    "scrollFps": 59,
+    "saveProxyMs": 23.6,
+    "heapMB": 95.6
   }
 }
