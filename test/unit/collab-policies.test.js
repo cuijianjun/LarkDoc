@@ -13,6 +13,18 @@ import {
   normalizeUiState, offlineKey, resolveCapabilities, shouldSeed, toggleCollapsed, uiStateKey, utf8Bytes,
 } from '../../src/collab/policies.js'
 import { COLLAB_PROTOCOL_VERSION } from '../../src/collab/protocol.js'
+/**
+ * `src/collab/index.js` 会连带拉进 Tiptap 与 Yjs，是这个文件里最重的一次模块加载。
+ *
+ * 必须用**静态** import。原来这五处写法是 `await import(...)`，于是加载成本落在某条用例
+ * 内部 —— 而每条用例只有 5 s 预算。全量跑（73 个 worker 并发、单 worker 起环境约 19.4 s）时
+ * 第一个 await 它的用例必然超时：单独跑 30 条 2.76 s 全绿，并发跑就红。
+ * P8-02 的全量门禁连着三轮撞在这里，故改成静态 import：加载发生在文件导入阶段，
+ * 不吃用例超时，判据不再随机器负载翻转。（纯策略用例多加载一个模块，代价可忽略。）
+ */
+import {
+  createCollabExtensions, createCommentAnchors, createHocuspocusBridge, isRemoteTransaction,
+} from '../../src/collab/index.js'
 
 /** 最小 storage 替身：只实现 get/set/remove，足够跑三个仓库。 */
 function memoryStorage(initial) {
@@ -260,14 +272,12 @@ describe('P6a · 首次播种（C7）与协议校验', () => {
 
 describe('P6a · 协同子入口的契约（不联网）', () => {
   it('isRemoteTransaction 认 y-sync meta，本地事务为 false', async () => {
-    const { isRemoteTransaction } = await import('../../src/collab/index.js')
     expect(isRemoteTransaction({ getMeta: () => undefined })).toBeFalsy()
     expect(isRemoteTransaction({ getMeta: () => ({ isChangeOrigin: true }) })).toBe(true)
   })
 
   it('createCollabExtensions 只给 ydoc 时只有一个扩展（不画光标）', async () => {
     const Y = await import('yjs')
-    const { createCollabExtensions } = await import('../../src/collab/index.js')
     const list = createCollabExtensions({ ydoc: new Y.Doc({ gc: false }) })
     expect(list).toHaveLength(1)
     expect(list[0].name).toBe('collaboration')
@@ -275,7 +285,6 @@ describe('P6a · 协同子入口的契约（不联网）', () => {
 
   it('provider + user 齐了才装 CollaborationCaret', async () => {
     const Y = await import('yjs')
-    const { createCollabExtensions } = await import('../../src/collab/index.js')
     const ydoc = new Y.Doc({ gc: false })
     const provider = { awareness: {} }
     expect(createCollabExtensions({ ydoc, provider, user: { name: '甲', color: '#1456f0' } })).toHaveLength(2)
@@ -283,7 +292,6 @@ describe('P6a · 协同子入口的契约（不联网）', () => {
   })
 
   it('没有真实 Y.Doc 时立刻抛类型错误，不半初始化', async () => {
-    const { createCollabExtensions, createHocuspocusBridge, createCommentAnchors } = await import('../../src/collab/index.js')
     expect(() => createCollabExtensions({})).toThrow(TypeError)
     expect(() => createHocuspocusBridge({ documentId: 'x' })).toThrow(TypeError)
     expect(() => createHocuspocusBridge({ url: 'ws://x' })).toThrow(TypeError)
@@ -292,7 +300,6 @@ describe('P6a · 协同子入口的契约（不联网）', () => {
 
   it('评论锚点能编解码；并发插入后跟着内容走', async () => {
     const Y = await import('yjs')
-    const { createCommentAnchors } = await import('../../src/collab/index.js')
     const ydoc = new Y.Doc({ gc: false })
     // 用 Y.Text 而不是 XmlFragment：fragment 的 index 指的是子节点序号，
     // 文本偏移要落在文本类型上才有意义（真实场景是 `content` 里的 XmlText）。
