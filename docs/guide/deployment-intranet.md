@@ -2,7 +2,9 @@
 
 本文面向「把 lark-doc 部署到一台无外网出口的内网服务器」这个场景，覆盖从出包、分发、静态托管、nginx 反向代理、协同服务转发，到校验和回滚的完整链路。
 
-> 文中所有命令、nginx 片段、体积数字都来自本仓库已实测的脚本与文档（`scripts/pack-intranet.sh`、`dist-intranet/INSTALL-内网.md`、`docs/guide/environments.md`、`docs/guide/collab-server.md`、`docs/guide/offline.md`），可直接抄用。需要替换的地方用 `<尖括号>` 标出。
+> 文中所有命令、nginx 片段、体积数字都来自本仓库已实测的脚本与文档（`scripts/pack-intranet.sh`、`dist-intranet/INSTALL-内网.md`、`docs/guide/environments.md`、`docs/guide/intranet-migration.md`、`docs/guide/collab-server.md`、`docs/guide/offline.md`），可直接抄用。需要替换的地方用 `<尖括号>` 标出。
+>
+> 分工：**本文讲服务器侧**（出包 → 分发 → 托管 → nginx → 校验 → 回滚）；**宿主工程怎么改代码才能在内网编译通过**见[内网迁移实战（Vue2/3）](/guide/intranet-migration)。
 
 ## 0. 先明确：部署的是什么
 
@@ -225,7 +227,7 @@ npm install lark-doc --registry=http://<私服>:4873/
 
 `deps-manifest.txt` 是 21 项的依赖清单（包名@版本，标注根/传递），给运维核对私服有没有。
 
-### 3.4 npm 6 的三个致命坑（已在脚本里修掉，但要知道症状）
+### 3.4 npm 6 的三个致命坑（已在脚本里修掉，但要知道症状） {#deploy-npm6}
 
 这三条是踩过现场的记录，如果内网报错长得像，直接对号入座：
 
@@ -620,6 +622,8 @@ import 'lark-doc/dist/lark-doc-element.umd.min.js'
 }
 ```
 
+> 这两个 babel 插件在内网也得装 —— 它们同样打不进 `node_modules.zip`。完整分步（出包、`vendor/` 目录、插件 tgz、验收）见[内网迁移实战 · 方案 A](/guide/intranet-migration#mig-vue2-wp4)。
+
 ### 5.5 `<script>` 直挂（无打包器）
 
 ```html
@@ -924,3 +928,12 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 - [ ] `VUE_APP_COLLAB_URL` 是 `wss://`
 - [ ] `network.mode` 为 `offline` 或 `allowlist`
 - [ ] 第 8.4 节 12 条浏览器验收全过
+
+宿主工程（Vue 2 / Vue 3，逐条见[内网迁移实战](/guide/intranet-migration)）：
+
+- [ ] `package.json` 里 `lark-doc` / `vue` 都指向 `file:./vendor/*.tgz`，没有 `^` 或 `latest`
+- [ ] `node_modules` 是在**内网机**上装出来的（不是从联网机整包拷的）
+- [ ] webpack4 宿主：`alias 'lark-doc$'` + 单文件 babel 规则 + 两个 babel 插件 tgz 都已就位
+- [ ] webpack5 宿主：没有误加 `transpileDependencies: ['lark-doc']`
+- [ ] Vue 3 宿主：没装 `lark-doc` 主入口，`public/vendor/lark-doc/` 下是 `dist/` 整目录
+- [ ] 内网首启 `npm run build` 零报错，产物里能搜到 `lark-doc`

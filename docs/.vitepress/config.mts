@@ -75,6 +75,7 @@ export default defineConfig({
             { text: '离线与资源本地化', link: '/guide/offline' },
             { text: '性能基线与收口', link: '/guide/performance' },
             { text: '内网服务器部署', link: '/guide/deployment-intranet' },
+            { text: '内网迁移实战（Vue2/3）', link: '/guide/intranet-migration' },
             { text: '文档站内网部署', link: '/guide/deployment-docs-site' },
           ],
         },

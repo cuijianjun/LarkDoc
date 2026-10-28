@@ -117,6 +117,8 @@ new LarkDoc({ element: '#editor', readonly: true, toolbarKeys: [] })
 
 ### 1. Vue 2.7 + webpack5 / vue-cli 5 {#env-vue2-wp5}
 
+> 进内网的分步操作（出包 → vendor 目录 → 改 `package.json` → 验收）见[内网迁移实战 · 方案 B](/guide/intranet-migration#mig-vue2-wp5)。
+
 **编译工具：不用配。** 宿主认 `exports`，`import` 命中 `dist/lark-doc.esm.js`，懒区块（公式 / Word / Markdown / 代码高亮 / mermaid）由宿主自己的 `import()` 分割并输出。
 
 lark-doc 没有专属配置，所以这里给的是**一份明确「不配什么」的 `vue.config.js`**：
@@ -288,6 +290,8 @@ export default {
 ```
 
 ### 3. Vue 2.7 + webpack4（vue-cli 4）★ 唯一需要动手的宿主 {#env-vue2-wp4}
+
+> 进内网最麻烦的一档，分步操作（含 babel 插件也得打成 tgz 带进去）见[内网迁移实战 · 方案 A](/guide/intranet-migration#mig-vue2-wp4)。
 
 **编译工具：两处配置，缺一不可。** 这不是"优化项"，不配就编译不过或白屏：
 
@@ -553,6 +557,8 @@ export default {
 | `templates` / `max-length` / `image-max-size` / `fold-persist-key` | - | 见 [配置总览](/guide/configuration) |
 
 ### 5. Vue 3 {#env-vue3}
+
+> Vue 3 宿主**不要**装 `lark-doc` 主入口（peer 强制 `vue ^2.7.14`），内网做法是「拷 `dist/` + `<script>` 直挂」，见[内网迁移实战 · 方案 C](/guide/intranet-migration#mig-vue3-vite)。
 
 **编译工具：告诉 Vue 编译器 `<lark-doc>` 是自定义元素**，否则会报 `Failed to resolve component: lark-doc`。
 
@@ -1021,6 +1027,7 @@ const Editor = dynamic(() => import('../components/Editor'), { ssr: false })
 
 ## 下一步
 
+- [内网迁移实战](/guide/intranet-migration)：webpack4 / webpack5 / Vue3+Vite 三套宿主从联网机搬进内网的分步操作
 - [打包产物与按需加载](/guide/build-artifacts)：四份产物分别给谁用、`dist/` 里哪些文件必须部署
 - [配置总览](/guide/configuration)：全部配置项与默认值
 - [工具栏配置](/guide/toolbar)：12 个分组 + 8 个 mark + 别名全表
