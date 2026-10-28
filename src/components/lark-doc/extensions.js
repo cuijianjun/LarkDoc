@@ -32,7 +32,7 @@ import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
   LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, LarkDocComment, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll, Bitable,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll, Bitable, ExternalBlock,
 } from '../../registry/blocks'
 
 const LarkDocCharacterCount = CharacterCount.extend({
@@ -178,6 +178,11 @@ export function createLarkDocExtensions(options = {}) {
     // `threadId`，不落位置 —— 位置是块内相对偏移，由 `core/comments/anchor.js` 管。
     // 注册进 schema 才有 `setComment` 命令，正文高亮与面板连线才成立。
     LarkDocRevision, LarkDocComment, UnknownBlock,
+    // 17 §17.5 的 tier C / P3 批次（11 块族 / 22 个官方 type）紧跟未知块 —— 同为
+    // 「认不出或接不上的外部内容」的降级形态：unknownBlock = 认不出，
+    // externalBlock = 认得出但没接服务。目录与能力判定在 core/embed/external-block.js，
+    // 载入降级映射在 core/documentOperations.js，这里只管注册进 schema。
+    ExternalBlock,
     // 修订的运行时：`tracker` 只在宿主把 storage.active 打开（suggest 模式）后拦截键入 /
     // 退格并补 mark，其余模式零行为；`highlight` 只画激活态那一条的底色。
     LarkDocRevisionTracker, LarkDocRevisionHighlight,

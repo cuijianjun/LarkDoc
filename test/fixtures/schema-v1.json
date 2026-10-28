@@ -227,6 +227,38 @@
         }
       }
     },
+    "externalBlock": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "kind": {
+          "default": ""
+        },
+        "payload": {
+          "default": ""
+        },
+        "provider": {
+          "default": ""
+        },
+        "reason": {
+          "default": ""
+        },
+        "sourceUrl": {
+          "default": ""
+        },
+        "status": {
+          "default": "unavailable"
+        },
+        "title": {
+          "default": ""
+        }
+      }
+    },
     "fileBlock": {
       "group": "block",
       "atom": true,

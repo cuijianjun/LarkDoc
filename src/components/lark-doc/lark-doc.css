@@ -611,6 +611,20 @@
 .lark-doc .ProseMirror .lark-doc-unknown-card-text { display: flex; flex-direction: column; min-width: 0; }
 .lark-doc .ProseMirror .lark-doc-unknown-card-title { font-size: 14px; line-height: 22px; color: var(--ld-unknown-card-text); }
 .lark-doc .ProseMirror .lark-doc-unknown-card-sub { font-size: 12px; line-height: 20px; color: var(--ld-unknown-card-text-sub); }
+/* 外部服务块（17 §17.5 的 tier C / P3 批次：chat_card / mindnote / task / okr* /
+   jira_issue / agenda* / board / whiteboard / view / diagram / synced）。
+   与未知块同族占位卡，差别只在右上角角标：用户要能一眼分清「这块认得出来、只是没接
+   服务」和「编辑器不认识这块」。已接入（status=ready）时描边由虚线转实线 —— 这是卡片
+   唯一的「可用 / 不可用」视觉开关，别再发明第二种。
+   色值一律复用 unknown-card 系列 token（不新增字面色值，主题门禁）。 */
+.lark-doc .ProseMirror div[data-type="external-block"] { display: flex; align-items: center; gap: 12px; box-sizing: border-box; min-height: 56px; margin: 4px 0 8px; padding: 10px 16px; border: 1px dashed var(--ld-unknown-card-border); border-radius: 6px; background: var(--ld-unknown-card-bg); }
+.lark-doc .ProseMirror div[data-type="external-block"][data-external-status="ready"] { border-style: solid; }
+.lark-doc .ProseMirror .lark-doc-external-card-icon { flex: none; width: 16px; height: 16px; background-color: var(--ld-unknown-card-icon); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 2.6h3.1' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M12.7 9.5v3.1a1.2 1.2 0 0 1-1.2 1.2H4.3a1.2 1.2 0 0 1-1.2-1.2V5.4a1.2 1.2 0 0 1 1.2-1.2h3.1' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M9.4 2.6h4v4' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M13.4 2.6 9.1 6.9' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 2.6h3.1' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M12.7 9.5v3.1a1.2 1.2 0 0 1-1.2 1.2H4.3a1.2 1.2 0 0 1-1.2-1.2V5.4a1.2 1.2 0 0 1 1.2-1.2h3.1' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M9.4 2.6h4v4' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M13.4 2.6 9.1 6.9' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px 16px no-repeat; }
+.lark-doc .ProseMirror .lark-doc-external-card-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.lark-doc .ProseMirror .lark-doc-external-card-title { font-size: 14px; line-height: 22px; color: var(--ld-unknown-card-text); }
+.lark-doc .ProseMirror .lark-doc-external-card-sub { font-size: 12px; line-height: 20px; color: var(--ld-unknown-card-text-sub); }
+.lark-doc .ProseMirror .lark-doc-external-card-kind { flex: none; font-size: 12px; line-height: 20px; color: var(--ld-unknown-card-text-sub); }
+.lark-doc .ProseMirror .lark-doc-external-card-badge { flex: none; box-sizing: border-box; height: 20px; padding: 0 8px; border-radius: 10px; background: var(--ld-bg-file-preview); font-size: 12px; line-height: 20px; color: var(--ld-unknown-card-text-sub); }
 .lark-doc .ProseMirror table { max-width: 100%; table-layout: fixed; border-collapse: collapse; }
 /* P5-01 · 表格超宽 = **裁切不滚**（02 §10 ⑦-5 实测「全链没有一个 overflow-x: auto/scroll」，
    A20 定判）。改判要点：飞书超宽时右侧 71px 直接看不见，用户没有横向滚动条可拖。
