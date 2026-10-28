@@ -48,12 +48,19 @@ function table(rng, rowIndex) {
 }
 
 /**
- * 生成混合文档 HTML。块计数口径：每个顶层元素计 1 块（缩进子块/列表项不计入，
- * 与「2,000 块文档」的直觉口径一致，总量由循环次数保证）。
+ * 按「块」生成 HTML 片段数组，一块对应一个（或一组同属一个逻辑块的）顶层元素。
+ *
+ * 为什么要把数组暴露出来：P8-01 需要按**顶层块边界**把文档切成若干段做分段灌入验证，
+ * 而 `buildDocHtml` 返回的是 `parts.join('')` 的整串，没有分隔符 —— 想从字符串上切
+ * 只能靠正则猜顶层标签，而表格里的 `<td><p>` 会被误判成顶层段落，切出来的 HTML 直接坏掉。
+ * 所以切分点必须在**生成时**就保留下来。
+ *
+ * 输出与改动前逐字节一致（`buildDocHtml` 仍是 `join('')`），不影响已采集数字的可比性。
+ *
  * @param {{ seed?: number, blocks?: number }} options
- * @returns {string} HTML 字符串（直接可喂 editor.commands.setContent）
+ * @returns {string[]} 每个元素是一个逻辑块对应的 HTML 片段
  */
-export function buildDocHtml({ seed = 42, blocks = 2000 } = {}) {
+export function buildDocBlocks({ seed = 42, blocks = 2000 } = {}) {
   const rng = createRng(seed)
   const parts = []
   for (let index = 0; index < blocks; index += 1) {
@@ -61,7 +68,8 @@ export function buildDocHtml({ seed = 42, blocks = 2000 } = {}) {
     if (roll < 0.42) {
       parts.push(`<p>${index} 号段落：${sentence(rng, 24)}</p>`)
     } else if (roll < 0.54) {
-      // 标题 + 缩进子块：覆盖折叠/编号装饰的真实工作负载
+      // 标题 + 缩进子块：覆盖折叠/编号装饰的真实工作负载。两块同属一个逻辑块，
+      // 但分段灌入时可以落在同一段里，也不会改变语义 —— 这里按元素切，不按逻辑块切。
       parts.push(`<h2>${index} 号标题：${sentence(rng, 10)}</h2>`)
       parts.push(`<p data-indent="1">${sentence(rng, 20)}</p>`)
     } else if (roll < 0.66) {
@@ -80,7 +88,17 @@ export function buildDocHtml({ seed = 42, blocks = 2000 } = {}) {
       parts.push(`<blockquote><p>${index} 号引用：${sentence(rng, 14)}</p></blockquote>`)
     }
   }
-  return parts.join('')
+  return parts
+}
+
+/**
+ * 生成混合文档 HTML。块计数口径：每个顶层元素计 1 块（缩进子块/列表项不计入，
+ * 与「2,000 块文档」的直觉口径一致，总量由循环次数保证）。
+ * @param {{ seed?: number, blocks?: number }} options
+ * @returns {string} HTML 字符串（直接可喂 editor.commands.setContent）
+ */
+export function buildDocHtml(options = {}) {
+  return buildDocBlocks(options).join('')
 }
 
 const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href

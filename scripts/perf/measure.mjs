@@ -31,19 +31,15 @@
  */
 
 import { execSync } from 'node:child_process'
-import { createRequire } from 'module'
 import fs from 'node:fs'
-import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { buildDocHtml } from './build-doc.mjs'
+// 浏览器/静态服务/宿主页三件事与 attribute.mjs 共用：两边量的必须是同一个页面，
+// 各抄一份的话宿主页契约一变只会改到一处，另一处继续量着另一个页面。
+import { findChromium, loadChromiumDriver, prepareHostPage, REPO_ROOT as repoRoot, serveStatic, waitForHostReady } from './browser.mjs'
 import { evaluateLoad } from './preflight.mjs'
 import { median, percentile } from './stats.mjs'
-
-const require = createRequire(import.meta.url)
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const repoRoot = path.resolve(__dirname, '../..')
 
 const SEED = Number(process.env.PERF_SEED || 42)
 const BLOCKS = Number(process.env.PERF_BLOCKS || 2000)
@@ -158,63 +154,6 @@ function installTeardownHandlers() {
   })
 }
 
-function loadChromiumDriver() {
-  const names = ['playwright-core', 'playwright']
-  for (const name of names) {
-    try {
-      return require(name).chromium
-    } catch (err) { /* 继续尝试 */ }
-  }
-  // npm run 环境没有 NODE_PATH：本机全局工作区目录显式回退（与 verify-smoke 的 NODE_PATH 用法同源）。
-  const localModules = `${process.env.HOME}/.workbuddy/binaries/node/workspace/node_modules`
-  for (const name of names) {
-    try {
-      return require(path.join(localModules, name)).chromium
-    } catch (err) { /* 继续尝试 */ }
-  }
-  throw new Error('未找到 playwright-core / playwright —— 请 export NODE_PATH=... 或 npm i --no-save playwright')
-}
-
-/** 与 scripts/verify-smoke.js 同款查找顺序（env 覆盖 → macOS 缓存 → Linux 缓存）。 */
-function findChromium() {
-  if (process.env.LARK_DOC_CHROMIUM && fs.existsSync(process.env.LARK_DOC_CHROMIUM)) {
-    return process.env.LARK_DOC_CHROMIUM
-  }
-  for (const cache of [
-    `${process.env.HOME}/Library/Caches/ms-playwright`,
-    `${process.env.HOME}/.cache/ms-playwright`,
-  ]) {
-    if (!fs.existsSync(cache)) continue
-    const dirs = fs.readdirSync(cache).filter((dir) => /^chromium-\d+$/.test(dir)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
-    for (const dir of dirs) {
-      for (const candidate of [
-        `${cache}/${dir}/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
-        `${cache}/${dir}/chrome-mac/Chromium.app/Contents/MacOS/Chromium`,
-        `${cache}/${dir}/chrome-linux/chrome`,
-      ]) if (fs.existsSync(candidate)) return candidate
-    }
-  }
-  return null
-}
-
-/** 起静态服务（复用 e2e 冒烟的 element UMD 宿主方案），随机端口。 */
-function serveStatic(dir) {
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      const urlPath = req.url.split('?')[0]
-      const file = path.join(dir, urlPath === '/' ? 'index.html' : urlPath)
-      try {
-        res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : 'text/html; charset=utf-8')
-        res.end(fs.readFileSync(file))
-      } catch (err) {
-        res.statusCode = 404
-        res.end('not found')
-      }
-    })
-    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }))
-  })
-}
-
 // 统计口径单独放 scripts/perf/stats.mjs：本文件在模块顶层就 `main()` 起浏览器，
 // 单元测试没法 import 它，而分位数恰恰是最需要被用例钉住的一段逻辑。
 //
@@ -226,17 +165,7 @@ async function main() {
   installTeardownHandlers()
 
   const html = buildDocHtml({ seed: SEED, blocks: BLOCKS })
-  const runDir = path.join(repoRoot, 'perf', '.run')
-  fs.mkdirSync(runDir, { recursive: true })
-  fs.writeFileSync(path.join(runDir, 'index.html'), [
-    '<!doctype html><html><head><meta charset="utf-8">',
-    '<style>lark-doc{display:block;width:960px;height:860px;margin:12px auto}</style></head>',
-    '<body><lark-doc id="doc"></lark-doc>',
-    '<script src="./lark-doc-element.umd.min.js"></script>',
-    '<script>window.__larkDoc = document.getElementById("doc")</script>',
-    '</body></html>',
-  ].join('\n'))
-  fs.copyFileSync(path.join(repoRoot, 'dist', 'lark-doc-element.umd.min.js'), path.join(runDir, 'lark-doc-element.umd.min.js'))
+  const runDir = prepareHostPage(path.join(repoRoot, 'perf', '.run'))
 
   // 起浏览器前的两道自检。先报孤儿（原因）再等负载（结果），否则用户只看到「一直在等」。
   const orphans = countOrphanChromium()
@@ -256,10 +185,7 @@ async function main() {
     const page = await (await browser.newContext()).newPage()
 
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    await page.waitForFunction(
-      () => window.__larkDoc && typeof window.__larkDoc.getEditor === 'function' && window.__larkDoc.getEditor(),
-      { timeout: 60000 },
-    )
+    await waitForHostReady(page)
 
     // 1. 首屏可输入：灌 2000 块 → focus → 真键盘敲第一个字 → 事务提交（浏览器时钟 mark 对 mark）
     console.log(`[measure] 1/6 首屏灌入 ${BLOCKS} 块（${Math.round(html.length / 1024)} KB）...`)
