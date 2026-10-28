@@ -17,7 +17,7 @@
 
 | 宿主 | 走哪个入口 | 联网侧要改的文件 | 内网侧要额外带什么 |
 | --- | --- | --- | --- |
-| **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>0.13 起 | `browser` → `dist/lark-doc.umd.min.js` | **不用改配置**；子路径写全、需要公式时设 `__LARK_DOC_PUBLIC_PATH__` | `lark-doc` tgz、`vue` tgz |
+| **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>0.13 起 | 一行 alias → `dist/lark-doc.common.js` | **只改 `vue.config.js` 一处**（alias）；子路径与样式写全 `dist/` 路径 | `lark-doc` tgz、`vue` tgz |
 | **Vue 2.7 + webpack 4**（0.12 及更早） | `main` → `dist/lark-doc.common.js` | `vue.config.js`（alias + babel 规则）、业务组件的 `import` 写全路径 | `lark-doc` tgz、`vue` tgz、**2 个 babel 插件 tgz** |
 | **Vue 2.7 + webpack 5**（vue-cli 5 / 原生 webpack5） | `module` → `dist/lark-doc.esm.js` | **不用改配置**，只改业务代码的 `import` | `lark-doc` tgz、`vue` tgz |
 | **Vue 3 + Vite** | `lark-doc/element`（UMD，自带 Vue 2 运行时与样式） | `vite.config.js`（`isCustomElement`）、`index.html` 加一行 `<script>` | **只要 `dist/` 目录，不用装 npm 包** |
@@ -80,17 +80,28 @@ cd dist-intranet && sha256sum -c sha256.txt
 
 ## 2. 方案 A：Vue 2.7 + webpack 4（vue-cli 4）{#mig-vue2-wp4}
 
-::: tip 0.13 起本节大幅简化：不用改 `vue.config.js`
-`package.json` 的 `browser` 已指向 UMD 产物（ES2018 语法、无 `import.meta`、样式随产物注入），webpack 4 会先命中它。所以：
+::: tip 0.13 起本节只剩一处配置：一行 alias
+webpack 4 不读 `exports`，且 0.13 起包里**不再有 `browser` 字段**，所以它会落到 `module` →
+`esm.js`（含 `import.meta`，解析失败）。在 `vue.config.js` 里把主入口显式指到 CJS 档即可；
+CJS 档已随 UMD / element 一起降到 **ES2018**，所以：
 
-- **不用** alias 到 `dist/lark-doc.common.js`
 - **不用** 装那两个 babel 插件（`@babel/plugin-proposal-optional-chaining` / `-nullish-coalescing-operator`），也就不用为它们打 tgz
-- 只剩两件事：子路径写全（`lark-doc/dist/lark-doc-element.umd.min.js`），以及用到公式 / Word 导出时设 `window.__LARK_DOC_PUBLIC_PATH__`
+- **不用** 设 `window.__LARK_DOC_PUBLIC_PATH__` —— CJS 是单文件、区块全内联，没有懒加载请求
+- 只剩两件事：alias 一行，以及子路径 / 样式写全（`lark-doc/dist/lark-doc-element.umd.min.js`、`lark-doc/dist/lark-doc.css`）
 
 ```js
-// src/main.js —— 0.13+ 的全部配置
-window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'   // 与 dist 托管前缀一致；不用公式可不设
+// vue.config.js —— 0.13+ 联网侧唯一的改动
+module.exports = {
+  configureWebpack: {
+    resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } },
+  },
+}
+```
+
+```js
+// src/main.js —— 0.13+ 的引入写法；样式与子路径都要写全 dist 路径
 import { LarkDoc } from 'lark-doc'
+import 'lark-doc/dist/lark-doc.css'
 ```
 
 **下面 2.1~2.7 是 0.12 及更早版本的完整流程**，版本锁在旧版时照抄；已升到 0.13 可以只读 2.6（vendor 打包）与 2.7（验收），跳过配置与插件部分。
@@ -330,8 +341,8 @@ npm run build
 
 | | webpack 4（0.13+） | webpack 4（0.12-） | webpack 5 |
 | --- | --- | --- | --- |
-| 入口 | `browser`（UMD，gzip 447 KB） | `main`（CJS，8.6 MB） | `module`（ESM，首屏 gzip ≈ 446 KB） |
-| 宿主配置 | 无（只设 `__LARK_DOC_PUBLIC_PATH__`） | alias + babel 规则，两处 | 无 |
+| 入口 | 一行 alias → `main`（CJS，8.6 MB 单文件，区块全内联） | `main`（CJS，8.6 MB）+ babel 降级 | `module`（ESM，首屏 gzip ≈ 446 KB） |
+| 宿主配置 | **1 处**（alias）；子路径与样式写全 `dist/` | alias + babel 规则，两处 | 无 |
 | 额外依赖 | 无 | 2 个 babel 插件 | 无 |
 
 ---

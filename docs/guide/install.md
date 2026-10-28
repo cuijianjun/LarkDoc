@@ -8,10 +8,11 @@
 npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network 看 200
 ```
 
-> **0.13 起「配」这一步基本消失了。** 包自己的 `browser` 字段指向 ES2018 的 UMD 产物、
-> `peerDependencies` 全部标成可选、样式随 JS 注入，webpack 4/5、Vite、Rollup 都能直接
-> `import { LarkDoc } from 'lark-doc'`，不再需要 alias、也不再需要给 `node_modules` 挂
-> babel-loader。旧版本的兼容写法保留在[各环境引入对照](/guide/environments#env-vue2-wp4)。
+> **0.13 起「配」这一步几乎消失了。** 包的 `exports` 覆盖了全部入口、`peerDependencies` 全部标成可选，
+> webpack 5 / Vite / Rollup / Node 都能直接 `import { LarkDoc } from 'lark-doc'`，不再需要 alias、也不再
+> 需要给 `node_modules` 挂 babel-loader。只有 **webpack 4** 这一档要一行 alias（它不读 `exports`，
+> 且 0.13 起没有 `browser` 字段兜底）；样式在任何「打包器消费」的场景都要显式引一行
+> （`import 'lark-doc/style.css'`）。旧版本的兼容写法保留在[各环境引入对照](/guide/environments#env-vue2-wp4)。
 
 > 本文是**索引 + 最短路径**：每一步给出可照抄的命令，配置细节挂在《各环境引入对照》对应锚点上。
 > 内网想直接看「分宿主的一步步操作」，跳到[内网迁移实战](/guide/intranet-migration)；服务器侧 nginx 看[内网服务器部署](/guide/deployment-intranet)。
@@ -41,10 +42,17 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 :::
 
 ::: tip webpack 4 读不到 `exports` 字段
-webpack 4 不看 `exports`，只能靠 `main` / `module` / `browser` 三个字段。`lark-doc` 的
-`browser` 已指向 **ES2018 的 UMD 产物**（样式随 JS 注入），所以 `import { LarkDoc } from 'lark-doc'`
-在 webpack 4 里同样能直接编译通过。但 `lark-doc/element`、`lark-doc/vue3` 这类**子路径**在
-webpack 4 里解析不到，要写全：`lark-doc/dist/lark-doc-element.umd.min.js`。
+webpack 4 不看 `exports`，只能靠 `main` / `module` 两个字段。`lark-doc` 的 `module` 指向 ESM 产物，
+里面含 `import.meta`，webpack 4 自带的 acorn 解析不了 —— 所以主入口要**一行 alias** 指到 CJS 档
+（`dist/lark-doc.common.js`，已降到 ES2018 语法，不用再挂 babel）：
+
+```js
+// vue.config.js
+configureWebpack: { resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } } }
+```
+
+`lark-doc/element`、`lark-doc/style.css` 这类**子路径**在 webpack 4 里同样解析不到，要写全：
+`lark-doc/dist/lark-doc-element.umd.min.js`、`lark-doc/dist/lark-doc.css`。
 :::
 
 ## 第 1 步 · 装（外网） {#do-install-online}
@@ -171,7 +179,7 @@ node -e "console.log(require('lark-doc/package.json').version)"
 | --- | --- | --- |
 | Vue 2.7 + webpack 5 | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({ element })` |
 | Vue 2.7 + Vite | 同上（装 `@vitejs/plugin-vue2`） | 同上 |
-| Vue 2.7 + webpack 4 | 同上（**样式随 JS 注入，不用另引 CSS**） | 同上 |
+| Vue 2.7 + webpack 4 | 同上 + `import 'lark-doc/dist/lark-doc.css'` + 一行 alias（见下表） | 同上 |
 | Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc'` | `<lark-doc-editor v-model="html" />` |
 | **Vue 3** | `import 'lark-doc/element'` + `import { resolveVue3Attrs } from 'lark-doc/vue3'` | `<lark-doc v-bind="resolveVue3Attrs(props)" @lark-doc-change="onChange">` |
 | **React 18** | `import 'lark-doc/element'` + `import { createReactLarkDoc } from 'lark-doc/react'` | `const LarkDoc = createReactLarkDoc(React)` → `<LarkDoc content={html} onChange={fn} ref={docRef} />` |
@@ -205,25 +213,27 @@ import { createReactLarkDoc } from 'lark-doc/react'
 | 环境 | 要改的配置 | 一行结论 |
 | --- | --- | --- |
 | webpack 5 / vue-cli 5 | **什么都不用改** | `vue.config.js` 只放你自己的业务配置 |
-| webpack 4 / vue-cli 4 | **主入口也不用改** | `browser` 字段已指向 ES2018 产物 |
+| webpack 4 / vue-cli 4 | **一行 alias** | `alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' }`；子路径与样式写全 `dist/` 路径 |
 | Vite（Vue 2） | 装 `@vitejs/plugin-vue2` | 与 lark-doc 无关，是 Vue 2 + Vite 的通用前置 |
 | Vite（Vue 3 / React） | `compilerOptions.isCustomElement` 放行 `lark-doc` | 不放行会报「未知标签」的编译警告 |
 | 静态页 / SSR | 无打包器配置 | 静态页靠 `<script>`；SSR 靠 client-only |
 
-**webpack 4 为什么现在不用配了**：0.12 的产物是 ES2020+ 语法，webpack 4 自带的 acorn
-读不了 `?.` / `??`，所以以前要 alias 到 `common.js` 再挂一条 babel-loader。0.13 把
-UMD 与 element 两个产物降到了 **ES2018**，同时补上 `browser` 字段——webpack 4 的
-`resolve.mainFields` 默认 `['browser','module','main']`，会直接命中 UMD，语法规避、
-样式自动注入，全程零配置。
+**webpack 4 为什么现在只剩一行**：0.12 的产物是 ES2020+ 语法，webpack 4 自带的 acorn
+读不了 `?.` / `??`，所以以前要 alias 到 `common.js` **再挂一条 babel-loader**。0.13 把
+CJS 也跟随 UMD / element 一起降到了 **ES2018**，于是 alias 之后就不需要 babel 了。
 
-### webpack 4 唯一还要留意的一件事：按需区块的路径
+0.13 同时**摘掉了 `browser` 字段**：它一存在，webpack 就会跳过 ESM 直落「浏览器直挂档」，
+SSR 与浏览器吃到两份不同产物。摘掉之后环境差异一律走 `exports` 的 condition，代价就是
+webpack 4 少了 `browser` 兜底、必须显式 alias 到 `main`。这是一行换一致性，值得。
 
-UMD 产物把公式 / 导出 Word / mermaid / 代码高亮拆成了 `.umd.min.*.js` 旁挂区块，运行时
-按「当前 script 的地址」推导目录。静态 `<script src>` 直挂时推导天然正确；被**打包器**
-`import` 时，当前 script 指向的是宿主自己的 bundle，会去 `/js/math.js` 这种错误位置找 →
-**首屏正常，一插公式就 404**。
+### webpack 4 还要留意的两件小事
 
-宿主两行搞定（把 `dist/` 整目录放进静态目录，再告诉它基址）：
+**① 按需区块基址 —— 走 CJS 就不用管了。** 只有 UMD / element 旁挂了 `.umd.min.*.js`
+懒区块，运行时按「当前 script 的地址」推导目录；静态 `<script src>` 直挂时推导天然正确，
+被**打包器** `import` 时当前 script 指向宿主自己的 bundle，会去 `/js/math.js` 这种错误
+位置找 → **首屏正常，一插公式就 404**。而 CJS 档是**单文件、所有区块内联**，
+webpack 4 走 alias 拿到它，压根没有懒加载请求，所以不用设 `__LARK_DOC_PUBLIC_PATH__`。
+UMD / element 的宿主两行搞定（把 `dist/` 整目录放进静态目录，再告诉它基址）：
 
 ```js
 // ① 把 node_modules/lark-doc/dist/* 拷到 public/vendor/lark-doc/
@@ -232,6 +242,9 @@ window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'
 ```
 
 不用公式 / 导出 Word / mermaid 的项目可以不设，也不会报错——那几个区块根本不会被请求。
+
+**② 公式字体。** 走 CJS 时样式是从 `lark-doc/dist/lark-doc.css` 引的，`url()` 指向同目录的
+`fonts/*.woff2`。webpack 4 能处理 CSS 里的 `url()`，会自动 emit 字体，不用手动拷。
 
 ::: tip 老版本（0.12 及以前）的写法
 alias + babel-loader 那一套仍然有效，留在[各环境引入对照 · webpack4](/guide/environments#env-vue2-wp4)，

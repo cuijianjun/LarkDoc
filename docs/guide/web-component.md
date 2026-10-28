@@ -31,7 +31,9 @@ import 'lark-doc/element' // 自动注册 <lark-doc>
 // 样式已随产物注入；若在 lib 模式下使用请另行 import 'lark-doc/style.css'
 ```
 
-> **webpack 4 宿主**：`exports` 字段读不到，上面这行要写全 `lark-doc/dist/lark-doc-element.umd.min.js`。主入口 `lark-doc` 从 0.13 起不用写全（`browser` 已指向 ES2018 产物），只有子路径需要。
+> **webpack 4 宿主**：`exports` 字段读不到，所有 `lark-doc/...` 形式的引入都要写全 `dist/` 路径 ——
+> 上面这行写 `lark-doc/dist/lark-doc-element.umd.min.js`，主入口也要一行 alias
+> （`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`，0.13 起没有 `browser` 字段兜底了）。
 
 ```vue
 <template>

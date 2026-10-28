@@ -46,7 +46,7 @@ doc.destroy()
 | 宿主环境 | 引入写法 | 说明 |
 |---|---|---|
 | Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | 宿主统一编译：懒区块（公式 / Word / 高亮 / mermaid）由宿主输出，内网外网零配置 |
-| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 0.11.0 起主入口可直接引入；CSS 需显式写 dist 路径（webpack4 不读 `exports`） |
+| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 主入口要**一行 alias**（`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`）：webpack4 不读 `exports`，会落到含 `import.meta` 的 esm 档，acorn 6.4.2 解析不了；CJS 档已降到 ES2018 所以**不用 babel**。子路径与样式要写全 `dist/` 路径 |
 | Vue 3 / React | `import { mountLarkDoc } from 'lark-doc/element'` | 预打包产物，自带内联 Vue；`dist/` 整目录拷入静态目录 |
 | 原生 / CDN / 静态托管 | `<script src=".../lark-doc-element.umd.min.js">` | `<lark-doc>` 标签直接可用，`dist/` 整目录拷贝（按需区块同目录寻址） |
 | Nuxt / Next（SSR） | `process.client` / `dynamic(..., { ssr: false })` 内动态 `import('lark-doc/element')` | 仅客户端挂载 |

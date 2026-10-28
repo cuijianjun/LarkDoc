@@ -49,7 +49,7 @@ lark-doc 是一个**前端库**（Vue 2.7 + Tiptap 3 的 npm 包），不是独�
 | **ESM**（推荐） | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js`（`module`） | webpack 5 / Vite / Rollup | 是 |
 | **CJS** | `require('lark-doc')` | `dist/lark-doc.common.js`（`main`） | Node / SSR / 只读 `main` 的老打包器 | 是 |
 | **Web Component** | `<lark-doc>` 自定义元素 | `dist/lark-doc-element.umd.min.js`（`./element`） | 任意框架 / 无框架，**Vue 运行时与样式内联** | 否（可直接 `<script>`） |
-| **UMD** | `<script src>` + `window.LarkDoc`，或 `browser` 字段命中 | `dist/lark-doc.umd.min.js`（`browser` / `unpkg`） | 纯 CDN；**webpack 4 主入口** | 否 |
+| **UMD** | `<script src>` + `window.LarkDoc`，或 **webpack 4** 一行 alias 指到它 | `dist/lark-doc.umd.min.js`（`unpkg` / `jsdelivr`） | 纯 CDN；**webpack 4 的备选**（推荐先走 CJS） | 否 |
 
 体积参考（实测，详见[打包产物与按需加载](/guide/build-artifacts)）：
 

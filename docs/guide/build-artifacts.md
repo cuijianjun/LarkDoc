@@ -5,17 +5,20 @@
 | 产物 | 入口 | 适用宿主 | 首屏 JS（gzip 实测，2026-10-28 / v0.12.1） |
 | --- | --- | --- | --- |
 | `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 1.00 MB → gzip 273 kB；连带 `tiptap.esm.js` 446 kB（gzip 136 kB）与 `vendor.esm.js` 101 kB（gzip 38 kB）并行，合计 **gzip 446 kB** |
-| `dist/lark-doc.common.js` | `src/index.js` | Node / SSR / 只读 `main` 的老打包器（`main` 字段） | 单文件 8.6 MB → gzip 2.34 MB（内联 mermaid 与全部按需区块，不拆） |
-| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` / `jsdelivr` 字段）、**webpack 4 主入口（`browser` 字段）** | 1.56 MB → gzip 447 kB |
+| `dist/lark-doc.common.js` | `src/index.js` | Node / SSR / 只读 `main` 的老打包器（`main` 字段）；**webpack 4 的唯一入口** | 单文件 8.6 MB → gzip 2.34 MB（内联 mermaid 与全部按需区块，不拆） |
+| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` / `jsdelivr` 字段） | 1.56 MB → gzip 447 kB |
 | `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联）；Vue 3 / React 走它 + 薄壳 | 1.60 MB → gzip 464 kB |
 
 跑一次 `npm run size` 就能看到同样这些数：它为每份产物定了上限（ESM 285 kB、UMD 465 kB、element 480 kB、CJS 2500 kB），超出即失败。
 
-UMD 与 element 两份已整体降到 **ES2018 语法**，`browser` 字段直指 UMD，所以 webpack 4 宿主
-`import { LarkDoc } from 'lark-doc'` 零配置可用（0.13 起，不再需要 alias 到 `common.js` + 降语法插件）；
-两份产物都会自行注入样式，不用另引 css。webpack 4 唯一要留意的是**按需区块的基址**——
-主文件被宿主打包器 import 时 `document.currentScript` 指向宿主自己的 bundle，需要显式给
-`window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'`（详见 [多环境接入](./environments.md#env-vue2-wp4)）。
+**除了 ESM，其余三份（CJS / UMD / element）都已整体降到 ES2018 语法。**
+0.13 起包里**没有 `browser` 字段**（有它 webpack 会跳过 ESM 直落「浏览器直挂档」，SSR 与浏览器就吃到
+两份不同产物了），所以 webpack 4 的 `resolve.mainFields` 会落到 `module` → `esm.js` 而解析失败 ——
+ webpack 4 宿主改一行 alias 指到 CJS 档即可，**不用再挂降语法 babel**（CJS 自身已是 ES2018）。
+UMD / element 两份会自行注入样式；**打包器消费 ESM / CJS 时必须显式引样式**
+（`import 'lark-doc/style.css'`，webpack 4 下写 `lark-doc/dist/lark-doc.css`）。
+`__LARK_DOC_PUBLIC_PATH__` 只服务 UMD / element 那两份**旁挂懒区块**的产物 ——
+CJS 是单文件全内联，走 CJS 的宿主不用设（详见 [多环境接入](./environments.md#env-vue2-wp4)）。
 子路径（`lark-doc/element` 等）在 webpack 4 下要写全 `dist/` 路径，因为老版本读不到 `exports`。
 
 改造前每份产物都是「一个巨大的单文件」：UMD 1.91 MB（gzip 548 kB）、element 2.16 MB（gzip 658 kB），

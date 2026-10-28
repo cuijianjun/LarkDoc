@@ -10,7 +10,7 @@
 
 | 项 | 变化 | 是否 BREAKING |
 |---|---|---|
-| `browser` 字段 | **删除** | 否（0.12 及以前指向 UMD，是 bug 不是特性；删掉后 webpack4/5 与 vite 才走 ESM） |
+| `browser` 字段 | **删除** | 否（0.12 及以前指向 UMD，是 bug 不是特性；删掉后 webpack4/5 与 vite 才不会被拖进 UMD 档。webpack4 宿主改用**一行 alias** 到 CJS 档，见阶段 1-C） |
 | `unpkg` / `jsdelivr` | 由 `dist/lark-doc.umd.min.js` 改指 **`dist/lark-doc-element.umd.min.js`** | 否（CDN 直挂本来就该挂元素档：自带内联 Vue、`<lark-doc>` 开箱可用） |
 | `sideEffects` | 由 `["**/*.css","**/*.scss","dist/*"]` 收窄为 **CSS/SCSS + UMD/CJS 档** | **是**（见下） |
 | `exports` | 新增 `./lite`、`./features/*`、`./plugin`；保留 `./dist/*` 逃生口 | 否（新增；三个子入口的产物分别在阶段 7 / 4 / 6 落地） |
@@ -54,3 +54,33 @@ import 'lark-doc/style.css'        // 样式 —— 保留
 | R3 | 挂载器契约恰好五个动作：`mount` / `update` / `destroy` / `getInstance` / `getRoot`，不多不少 |
 
 顺手修正：`src/mount/vueRenderer.js` 头部注释写「四个动作」，实际导出五个（`getRoot` 是第五个）。
+
+### 阶段 1-C · webpack 4 只留一行 alias
+
+删掉 `browser` 字段的副作用是：webpack4 顺着 `resolve.mainFields`（默认 `['browser','module','main']`）会落到
+`module` → `esm.js`，而 esm 档里有 `new URL('./fonts/x.woff2', import.meta.url)`，acorn 6.4.2 解析不了 →
+`Module parse failed`。
+
+解决办法不是把 `browser` 加回来（那等于把这份 SD 的老毛病恢复），而是**把 webpack4 唯一还会吃的那一档
+——CJS——也降到 ES2018**，然后让宿主用一行 alias 明确指过去：
+
+```js
+// vue.config.js —— 唯一的编译工具配置
+resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } }
+```
+
+**内部改动**
+
+| 项 | 变化 |
+|---|---|
+| `npm run build` | 加 `LARK_DOC_LEGACY=1`：CJS 档与 UMD / element 同享 `legacy-syntax.js` 的语法降级（可选链 / 空值合并 / 逻辑赋值 / 数字分隔符 / 省略绑定 catch / class 字段） |
+| 产物 | `dist/lark-doc.common.js` 现在是 ES2018（此前含 454 处 `?.` / 300 处 `??`，webpack4 直接拒编译） |
+| `npm run check:legacy` | **新增闸门**（已挂进 `check:artifacts`）：用 acorn 以 `ecmaVersion 2018` 真实解析 `common.js` / `umd.min.js` / `element.umd.min.js`，任一份降级失效立刻 EXIT=1 |
+| size-limit | ESM 285 → **290 kB**、CJS 2500 → **2600 KB**：阶段 2 把代码块 NodeView 下沉进 core 后主包真实增重 2.4 kB，降级又给 CJS 加了 ~1%。两档都会在阶段 3（CJS 拆块）/ 阶段 4（`features/*` 子路径）回落 |
+
+顺带的收益：webpack4 走 CJS 档后拿到的是**单文件、区块全内联**的形态，所以不再出现「首屏正常、一插公式就 404」，
+`window.__LARK_DOC_PUBLIC_PATH__` 对它也不再需要（只有继续用 UMD / element 旁挂懒区块档时才设）。
+
+代价：宿主必须显式引样式（`import 'lark-doc/dist/lark-doc.css'`）——CJS 档是 CSS 抽取产物，不像 UMD 那样随 JS 注入。
+这条本来就是硬要求，见 README「样式」一行。
+
