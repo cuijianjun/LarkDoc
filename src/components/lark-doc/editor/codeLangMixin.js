@@ -2,9 +2,9 @@
  * 代码语言选择器（requirements/04 §2.2）。
  *
  * 为什么「触发」要走模块信号而不是 props：
- *   `CodeNode.vue` 是 Tiptap 的 NodeView，它在 ProseMirror 的渲染树里，**拿不到**
+ *   codeBlock 的 NodeView 在 ProseMirror 渲染树里，**拿不到**
  *   LarkDocEditor 实例（也拿不到上层 ref）—— `adapters/vue2/nodeviews.js` 只把它注册成
- *   节点渲染器。而真正的浮层必须挂在 `LarkDocOverlays.vue`（`LarkDocEditor.vue` 有
+ *   节点渲染器（Vue 2 专属实现，不在 core 目录内）。而真正的浮层必须挂在 `LarkDocOverlays.vue`（`LarkDocEditor.vue` 有
  *   <700 行门禁，且 fixed 元素要兄弟层）。两端之间因此用一条**模块级信号**连线，
  *   与 `themeSignal.js` 同为「订阅式、无实例引用」的通道。
  *

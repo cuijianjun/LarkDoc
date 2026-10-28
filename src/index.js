@@ -26,6 +26,7 @@ import { DocumentSession, createDocumentSession } from './session/DocumentSessio
 import * as documentSchema from './core/documentSchema'
 import * as transactionMetadata from './core/transactionMetadata'
 import * as migrations from './core/migrations'
+import * as blockApi from './core/blockApi'
 // P6b：评论与历史版本的**数据层**。两侧的有状态面板留给宿主写 ——
 // 这里给的是线程模型、锚点判定、快照/保留/恢复运算，以及一份可以直接跑的内存实现。
 // 宿主照着内存实现的形状去接自己的服务即可，不必反推字段口径。
@@ -65,6 +66,7 @@ export {
   documentSchema,
   transactionMetadata,
   migrations,
+  blockApi,
   comments,
   versioning,
   providers,

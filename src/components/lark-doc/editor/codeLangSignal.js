@@ -1,7 +1,7 @@
 /**
  * 代码语言选择器的**触发信号**（04 §2.2）。
  *
- * 为什么要有这一条线：`CodeNode.vue` 是 Tiptap NodeView，拿不到 LarkDocEditor 实例；
+ * 为什么要有这一条线：codeBlock 的 NodeView（Vue 2 适配层提供）拿不到 LarkDocEditor 实例；
  * 而浮层必须挂在 `LarkDocOverlays.vue`。两端不在同一棵组件树上，所以走模块级订阅，
  * 与 `themeSignal.js` 同一套「无实例引用的通道」写法。
  *
