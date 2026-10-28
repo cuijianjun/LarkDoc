@@ -76,7 +76,11 @@ for (const f of CONFIG_FILES) {
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 for (const k of PKG_FIELDS) hash.update(k + '=' + JSON.stringify(pkg[k] ?? null) + '\n')
 // 4) 跑构建用的 npm 版本（Node14 的 npm 与 Node22 的 npm 排布可能不同）
-hash.update('npm=' + (process.env.npm_config_user_agent || '') + '\n')
+// 注意：这一项让「怎么调本脚本」也成了指纹输入 —— 裸 `node scripts/ensure-artifacts.mjs
+// --check` 取不到该变量，算出的指纹与 `npm run artifacts:check` 口径必然不同。
+// 判定保持保守（不同就报需重建），但报错时会点明口径，免得被误读成「源码有变动」。
+const npmAgent = process.env.npm_config_user_agent || ''
+hash.update('npm=' + npmAgent + '\n')
 
 const fingerprint = hash.digest('hex')
 
@@ -111,6 +115,11 @@ else if (stamp.fingerprint !== fingerprint) reasons.push('源码/依赖/构建�
 
 if (CHECK_ONLY) {
   console.log(`✗ 需要重建产物：${reasons.join('；')}（当前指纹 ${fingerprint}）`)
+  // 指纹含 npm 用户代理，绕过 npm 直调时这一项为空 —— 这时「源码有变动」是误报，
+  // 会把人引去重建那 3 分钟的产物。点明口径，省一次白跑。
+  if (!npmAgent) {
+    console.log('  提示：本次未经 npm 调用（用户代理为空），指纹与 npm 口径不同；复验请用 `npm run artifacts:check`')
+  }
   process.exit(1)
 }
 
