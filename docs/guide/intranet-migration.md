@@ -6,13 +6,12 @@
 
 | 文档 | 管什么 |
 | --- | --- |
+| [安装与引用总表](/guide/install) | 内外网各怎么装、怎么写 import、`dist/` 怎么拷，一张表速查 |
 | [各环境引入对照](/guide/environments) | 联网环境下，你的框架该写什么配置、贴什么代码 |
 | **本文** | 从「本地能跑」到「内网能跑」，每个宿主一套按顺序的步骤 |
-| 内网服务器部署（仓库 `docs/guide/deployment-intranet.md`） | 服务器侧：nginx、静态资源、协同、校验、回滚 |
+| [内网服务器部署](/guide/deployment-intranet) | 服务器侧：nginx、静态资源、协同、校验、回滚 |
 
-三者是叠加关系：**本文只做「让项目在内网编译通过」这件事**，部署上线看第三篇。
-
-> 第三篇目前只在 `next/0.12` 分支，尚未合入 master，所以本站暂时没有对应页面。需要的话直接看仓库里的 `docs/guide/deployment-intranet.md`。
+四者是叠加关系：**总表用来查、本文用来走流程**，本文只做「让项目在内网编译通过」这一件事，部署上线看第四篇。
 
 ## 0. 三套宿主的差异，先看一眼 {#mig-host-matrix}
 
@@ -38,7 +37,7 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 
 内网连不上 registry，`npm install lark-doc` 会直接失败。而 lark-doc 的 `dist` 在运行时还要从自身 `node_modules` 取 28 个运行时依赖（`vue`、`@tiptap/*`、`katex`、`mammoth` 等），所以不能只拷 `dist/` 了事——**必须打成自带依赖闭包的 tgz**。
 
-`scripts/pack-intranet.sh` 就是干这个的，它顺手修掉三类只有老 npm / Windows 才暴露的坑（详见仓库内 `docs/guide/deployment-intranet.md` 第 3.4 节，症状见本文第 5 节）。
+`scripts/pack-intranet.sh` 就是干这个的，它顺手修掉三类只有老 npm / Windows 才暴露的坑（详见[内网服务器部署 · 3.4](/guide/deployment-intranet#deploy-npm6)）。
 
 ### 1.2 三条命令
 
@@ -224,7 +223,7 @@ node -p "require('@babel/plugin-proposal-optional-chaining/package.json').versio
 npm run build
 ```
 
-打开产物页面，控制台应该满足：无 `Unexpected token`、无 `Cannot read properties of undefined`、编辑区能输入、工具栏图标正常。缓存与字体的验收清单见仓库内 `docs/guide/deployment-intranet.md` 第 8.4 节。
+打开产物页面，控制台应该满足：无 `Unexpected token`、无 `Cannot read properties of undefined`、编辑区能输入、工具栏图标正常。缓存与字体的验收清单见[内网服务器部署 · 8.4](/guide/deployment-intranet)。
 
 ### 2.9 方案 A 报错对照
 
@@ -468,4 +467,4 @@ import 'lark-doc/element'   // 自动注册 <lark-doc>
 
 ## 7. 下一步
 
-编译通过只说明包能在内网用。上线还差三件事：**静态资源托管（`dist/` 整目录同位）、nginx 路由与 MIME、验收与回滚**，这部分写在仓库内 `docs/guide/deployment-intranet.md`（随 `next/0.12` 发布）；断网后的运行时行为（图片外链、AI 请求）见[离线与资源本地化](/guide/offline)。
+编译通过只说明包能在内网用。上线还差三件事：**静态资源托管（`dist/` 整目录同位）、nginx 路由与 MIME、验收与回滚**，全部在[内网服务器部署](/guide/deployment-intranet)；断网后的运行时行为（图片外链、AI 请求）见[离线与资源本地化](/guide/offline)。
