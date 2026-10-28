@@ -7,11 +7,18 @@
  * 这里把「挂载 / 更新 / 卸载」收敛成一个可替换的 renderer 契约：
  *
  *   createRenderer() -> {
- *     mount({ element, props, on }) -> instance   // 插入 DOM，返回适配器自有句柄
- *     update(instance, props)                     // 增量更新变更的 props
- *     destroy(instance)                           // 卸载并移除 DOM
- *     getInstance(instance) -> workspace 组件实例  // 供门面转发实例方法
+ *     name                                        // 'vue2' 等，便于诊断
+ *     mount({ element, props, on }) -> handle     // 插入 DOM，返回适配器自有句柄
+ *     update(handle, props)                       // 增量更新变更的 props
+ *     destroy(handle)                             // 卸载并移除 DOM
+ *     getInstance(handle) -> workspace 实例        // 供门面转发实例方法
+ *     getRoot(handle) -> Element                  // 渲染出的根节点（宿主打主题属性用）
  *   }
+ *
+ * **五个动作，不多不少**。多出来的动作基本都是框架细节漏出这一层（`$forceUpdate`、
+ * `$refs`、`$el` 之类），阶段 5 换成原生 DOM 渲染器时会直接断。
+ * 契约由 `npm run check:architecture` 的 R3 规则运行时锁死：缺一个动作、或多一个
+ * 函数型成员，校验链立刻红。
  *
  * 目前只提供 Vue 2 实现（vueRenderer）；将来换成原生 DOM 渲染器时，只要实现同一份
  * 契约并在 createRenderer 里切换，LarkDoc 与 Web Component 外壳都无需改动。

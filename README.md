@@ -55,6 +55,20 @@ mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管
 
 > 每个环境的**编译工具配置、工具栏（编辑工具）配置、可直接粘贴运行的完整 demo** 见文档站「各环境引入对照」：<https://cuijianjun.github.io/LarkDoc/guide/environments.html>（源文件 `docs/guide/environments.md`）。
 
+### 包契约（v0.13 起）
+
+对外只承诺一份契约，宿主不需要为环境写任何特判：
+
+| 契约项 | 口径 | 为什么 |
+|---|---|---|
+| **`browser` 字段** | **已删除** | 它会让 webpack4/5 与部分工具跳过 ESM、直接落到 UMD「浏览器直挂档」，宿主拿到的就不是可 tree-shaking 的模块产物。SSR 与浏览器吃**同一份产物**；需要环境差异一律走 `exports` 的 condition。 |
+| **`sideEffects`** | 只列 `**/*.css`、`**/*.scss` 与 UMD / element 自注册档、CJS 档 | UMD 档确实有顶层副作用（自定义元素注册、`__webpack_public_path__`），不能谎报为纯；ESM 档是唯一需要被 tree-shake 的路径，已排除在名单外。 |
+| **`exports` 子入口** | `.` / `./element` / `./vue3` / `./react` / `./adapters/*` / `./collab` / `./style.css` / `./dist/*`（逃生口）/ `./package.json`，另预留 `./lite`、`./features/*`、`./plugin` | 后三个是**终点契约**，提前声明好让宿主今天就能照着写；实际产物分别在阶段 7 / 4 / 6 落地产出（`npm run check:pkg` 会在它们产出后自动提醒把待产出标记摘掉）。 |
+| **样式** | 必须显式 `import 'lark-doc/style.css'`（webpack4 写 `lark-doc/dist/lark-doc.css`） | 所有产物都是 **CSS 抽取**产物，JS 里不带注入逻辑 —— 这一条**从 0.11 起就一直是硬要求**，v0.13 只是把它写进契约。 |
+
+> `sideEffects` 收窄的实测收益（webpack 5，入口只 `import { LarkDoc } from 'lark-doc'` 但**从不使用**）：
+> 收窄前 `1,922,452 B` → 收窄后 **`151 B`**；而副作用型入口 `import 'lark-doc/element'` 仍完整保留 `1,695,666 B`，不会被误删。
+
 ## 旧数据兼容（Vditor）
 
 Vditor `getHTML()` 导出的 HTML 可直接喂给 `content`，命中 `vditor-*` / `language-math` / 图表 `language-*` 等指纹时自动归一化公式、任务列表、图表代码块、脚注与表格列宽：

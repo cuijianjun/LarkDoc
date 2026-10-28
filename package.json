@@ -17,7 +17,8 @@
     "check:quick": "npm run check:architecture && npm run contract:check && npm run lint",
     "check:code": "npm run check:lark-doc && npm run check:ai && npm run check:architecture && npm run check:unit",
     "check:ui": "npm run check:theme-tokens && npm run check:theme-contrast",
-    "check:deploy": "npm run check:node14 && npm run check:offline && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
+    "check:deploy": "npm run check:node14 && npm run check:offline && npm run check:pkg && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
+    "check:pkg": "node scripts/check-package-exports.js",
     "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:vditor && npm run size",
     "check:theme-tokens": "node scripts/check-theme-tokens.js",
     "check:theme-contrast": "node scripts/check-theme-contrast.js",
@@ -165,14 +166,17 @@
   ],
   "main": "dist/lark-doc.common.js",
   "module": "dist/lark-doc.esm.js",
-  "browser": "dist/lark-doc.umd.min.js",
-  "unpkg": "dist/lark-doc.umd.min.js",
-  "jsdelivr": "dist/lark-doc.umd.min.js",
+  "unpkg": "dist/lark-doc-element.umd.min.js",
+  "jsdelivr": "dist/lark-doc-element.umd.min.js",
   "style": "style.css",
   "sideEffects": [
     "**/*.css",
     "**/*.scss",
-    "dist/*"
+    "dist/lark-doc.common.js",
+    "dist/lark-doc.umd.min.js",
+    "dist/lark-doc.umd.min.*.js",
+    "dist/lark-doc-element.umd.min.js",
+    "dist/lark-doc-element.umd.min.*.js"
   ],
   "files": [
     "dist",
@@ -239,6 +243,19 @@
     "./collab": {
       "import": "./dist/lark-doc-collab.esm.js",
       "default": "./dist/lark-doc-collab.esm.js"
+    },
+    "./lite": {
+      "import": "./dist/lark-doc-lite.esm.js",
+      "default": "./dist/lark-doc-lite.esm.js"
+    },
+    "./features/*": {
+      "import": "./dist/features/*.js",
+      "default": "./dist/features/*.js"
+    },
+    "./plugin": {
+      "import": "./dist/plugin.mjs",
+      "require": "./dist/plugin.cjs",
+      "default": "./dist/plugin.mjs"
     },
     "./style.css": "./dist/lark-doc.css",
     "./dist/*": "./dist/*",

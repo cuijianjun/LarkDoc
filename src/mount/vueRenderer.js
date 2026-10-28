@@ -2,9 +2,14 @@
  * mount/vueRenderer — Vue 2 渲染适配器。
  *
  * 用运行时 render 函数挂载 LarkDocWorkspace（不用模板编译器），
- * 这是包体积与兼容性之间的既有取舍。对外只暴露 mount/update/destroy/getInstance
- * 四个动作，所有 Vue 细节（$refs、$mount、$destroy）都关在这一个文件里，
- * 门面与 Web Component 外壳不需要知道底层是 Vue。
+ * 这是包体积与兼容性之间的既有取舍。对外只暴露 mount/update/destroy/getInstance/getRoot
+ * 五个动作（五个都要有，缺一不可 —— 少了 getRoot 宿主就没法给根节点打主题属性，
+ * 于是有人会绕过契约去摸 vm.$el），所有 Vue 细节（$refs、$mount、$destroy）
+ * 都关在这一个文件里，门面与 Web Component 外壳不需要知道底层是 Vue。
+ *
+ * 这五个动作是阶段 5 换原生渲染器的替换面：新渲染器只要实现同一份契约，
+ * LarkDoc 与 Web Component 外壳都不用改。契约本身由
+ * `npm run check:architecture` 的 R3 规则运行时锁死。
  */
 import Vue from 'vue'
 import LarkDocWorkspace from '../components/lark-doc/LarkDocWorkspace.vue'
