@@ -27,7 +27,9 @@ new LarkDoc({
 
   // ── 上传 / AI / 网络 ──
   uploader: { upload: (file) => uploadToServer(file) },
-  ai: { stream: myStreamFn },
+  // 三档任选其一：'https://…/ai'（只给地址） / { protocol: 'openai', baseURL, apiKey, model }（直连模型）
+  // / { stream: myStreamFn }（自管传输）。详见 AI 组件。
+  ai: { endpoint: '/api/ai' },
   network: { mode: 'open', allowlist: [], imageProxy: async (url) => uploadByUrl(url) },
 
   // ── 协同 / 权限 ──

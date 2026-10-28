@@ -8,6 +8,8 @@
 
 完整文档：[VitePress 使用手册](https://cuijianjun.github.io/LarkDoc/)（源码在 `docs/` 目录，随仓库自动部署到 GitHub Pages）。
 
+在线演示：[https://cuijianjun.github.io/LarkDoc/demo/](https://cuijianjun.github.io/LarkDoc/demo/)（上方编辑器预览 + 下方可折叠代码预览，可在页面直接改初始化配置实时生效）。
+
 > **开发/改代码前必读**：[DEVELOPMENT.md](./DEVELOPMENT.md) —— 踩坑清单与回归防护（折叠高亮、blockId、缩进、编号、弹窗、排版实测值、Vditor 兼容）。
 
 ## 环境要求

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>lark-doc 在线预览 · Playground</title>
+  <meta name="description" content="lark-doc 编辑器的在线预览：上半部分是真实编辑器，下半部分是它的初始化代码，改代码即时生效。" />
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./assets/demo.css" />
+  <link rel="stylesheet" href="./vendor/lark-doc.css" />
+</head>
+<body>
+  <div class="pg" id="pg">
+
+    <!-- ============ 预览区 ============ -->
+    <section class="pg-preview" aria-label="编辑器预览">
+      <div class="pg-bar">
+        <span class="pg-brand">lark-doc</span>
+        <span class="pg-ver" id="pgVer">v—</span>
+        <span class="pg-note">真实编辑器，可以直接点、直接敲</span>
+        <span class="pg-grow"></span>
+        <a class="pg-btn pg-btn-ghost" href="../guide/getting-started.html">接入文档</a>
+        <button type="button" class="pg-btn" id="pgReset" title="把下面的代码恢复成初始状态">重置代码</button>
+        <button type="button" class="pg-btn" id="pgToggle" aria-expanded="true" aria-controls="pgCodePane">
+          收起代码 <kbd>⌘</kbd><kbd>J</kbd>
+        </button>
+      </div>
+      <div class="pg-host" id="pgHost"></div>
+    </section>
+
+    <!-- ============ 拖拽分割条 ============ -->
+    <div class="pg-split" id="pgSplit" role="separator" aria-orientation="horizontal"
+         tabindex="0" aria-label="拖动调整预览与代码区高度"></div>
+
+    <!-- ============ 代码区 ============ -->
+    <section class="pg-code" id="pgCodePane" aria-label="初始化代码">
+      <div class="pg-bar pg-bar-code">
+        <button type="button" class="pg-fold" id="pgFold" aria-expanded="true" aria-controls="pgEditor pgError"
+                title="折叠 / 展开代码块">
+          <svg class="pg-fold-chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <span class="pg-dot" aria-hidden="true"></span>
+        <span class="pg-file">playground.js</span>
+        <span class="pg-status" id="pgStatus">就绪</span>
+        <span class="pg-grow"></span>
+        <span class="pg-hint">改完 400ms 自动生效 · <kbd>⌘</kbd><kbd>↵</kbd> 立即运行</span>
+      </div>
+      <div class="pg-editor" id="pgEditor">
+        <pre class="pg-hl" id="pgHl" aria-hidden="true"><code id="pgHlCode"></code></pre>
+        <textarea id="pgTa" spellcheck="false" autocapitalize="off" autocomplete="off"
+                  autocorrect="off" wrap="soft" aria-label="初始化代码编辑器"></textarea>
+      </div>
+      <div class="pg-error" id="pgError" role="alert" hidden></div>
+    </section>
+
+  </div>
+
+  <script src="./vendor/vue.min.js"></script>
+  <script src="./vendor/lark-doc.umd.min.js"></script>
+  <script src="./assets/sample.js"></script>
+  <script src="./assets/highlight.js"></script>
+  <script src="./assets/playground.js"></script>
+</body>
+</html>

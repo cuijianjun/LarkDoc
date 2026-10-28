@@ -298,9 +298,19 @@
           {{ aiStatus }}
         </p>
         <pre
+          v-if="!aiPreviewHtml"
           class="lark-doc-ai-result"
           aria-live="polite"
         >{{ aiPreview || '选择正文或将光标放入段落，再生成预览。' }}</pre>
+        <!-- eslint-disable vue/no-v-html -->
+        <!-- 预览内容由 markdown.js 生成，已做 HTML 逃生与 URL 白名单，不接受外部注入。 -->
+        <div
+          v-else
+          class="lark-doc-ai-result lark-doc-ai-result--rich"
+          aria-live="polite"
+          v-html="aiPreviewHtml"
+        />
+        <!-- eslint-enable vue/no-v-html -->
         <ul
           v-if="aiReviewIssues.length"
           class="lark-doc-ai-review-list"
@@ -435,6 +445,7 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import LarkDocEditor from './LarkDocEditor.vue'
 import { createPersistenceWorkspace, detectBrowserStorage } from '../../providers/persistence'
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from './mockAI'
+import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMarkdown } from './ai'
 import { TEMPLATES } from './templates'
 import { createLarkDocConfig } from './larkDocConfig'
 import { sanitizeHTML, validateDocument } from './documentOperations'
@@ -479,7 +490,9 @@ export default {
     readonly: { type: Boolean, default: false },
     // 宿主侧能力注入：图片上传钩子与 AI 流式生成钩子。
     uploadImage: { type: Function, default: null },
-    aiProvider: { type: Object, default: null },
+    // 字符串地址 / { endpoint } / { protocol:'openai', baseURL } / { stream(args) } 都接受，
+    // 统一在 aiAdapter 里收敛；识别不出来就回退本地 Mock。
+    aiProvider: { type: [Object, String, Function], default: null },
     // P3-07：内嵌内容（iframe 桥 / 卡片动作 / URL 卡抓取）的宿主回调。
     // 本层只做透传，不认识 `lark-embed/1` 协议；判定全在 LarkDoc 门面与扩展装配里。
     onEmbedTitle: { type: Function, default: null },
@@ -505,6 +518,8 @@ export default {
       saveStatus: '初始化…', storageError: false, storageKind: '', notice: '',
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
       aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
+      // 预览与落正文用哪种格式渲染：auto / markdown / html / text。
+      aiContentFormat: 'text',
       templateOpen: false, templateQuery: '',
       importReport: null,
       sessionInstance: null,
@@ -541,6 +556,18 @@ export default {
       return this.templateItems.filter((item) => `${item.label} ${item.title} ${item.id}`.toLocaleLowerCase().includes(query))
     },
     aiReplaceDisabled() { return Boolean(this.aiBudgetExceeded && this.aiGeneratedAction !== 'title') },
+    // 归一化后的 AI 适配器：{kind, protocol, contentFormat, stream(args)} 或 null。
+    // computed 缓存住实例，避免每次生成都重建（auto 协议要跨帧保留判定状态）。
+    aiAdapter() { return normalizeAIProvider(this.aiProvider) },
+    // 预览区渲染：宿主声明了 markdown/html 或内容本身带 md 语法时按富文本显示，
+    // 否则维持原来的纯文本 <pre>，避免把普通文本的换行和空格吃掉。
+    aiPreviewHtml() {
+      if (!this.aiPreview) return ''
+      const format = this.aiContentFormat || 'auto'
+      if (format === 'text') return ''
+      if (format === 'auto' && !looksLikeMarkdown(this.aiPreview)) return ''
+      return previewToHtml(this.aiPreview, format)
+    },
   },
   watch: {
     title() { this.queueSave() },
@@ -911,15 +938,19 @@ export default {
         onCancelled: () => { if (generation === this._aiGeneration) this.aiStatus = '已停止' },
         onError: error => { if (generation === this._aiGeneration) { this.aiRunning = false; this.aiError = error.message || 'AI 生成失败'; this.aiStatus = '失败' } },
       }
-      // 宿主提供 stream 钩子时完全接管生成；否则退回本地 Mock，保证 Demo 与离线可用。
-      if (this.aiProvider && typeof this.aiProvider.stream === 'function') {
+      // 宿主注入了 AI 接入（地址 / 协议配置 / 旧 stream 钩子）时接管生成；
+      // 否则退回本地 Mock，保证 Demo 与离线可用。
+      const adapter = this.aiAdapter
+      this.aiContentFormat = adapter ? adapter.contentFormat : 'text'
+      if (adapter) {
         try {
-          const handle = this.aiProvider.stream({
+          const handle = adapter.stream({
             action: this._aiPreviewAction,
             text: context.text,
             prompt: options.prompt || this.aiPrompt,
             language: this.aiLanguage,
             range: { from: context.from, to: context.to, source: context.source },
+            context,
             ...callbacks,
           })
           this._aiStream = typeof handle === 'function' ? { cancel: handle } : (handle || { cancel() {} })
@@ -986,15 +1017,31 @@ export default {
         logger.info('ai', 'lark-doc.mock.rejected', { status: 'stale' })
         return
       }
-      if (this._aiPreviewAction === 'title') this.title = this.aiPreview
+      if (this._aiPreviewAction === 'title') this.title = this.aiPreview.trim()
       else {
         const { from, to } = this._aiAnchor
         const insertFrom = mode === 'insert' ? editor.state.selection.from : (this._aiPreviewAction === 'continue' ? to : from)
         const insertTo = mode === 'insert' ? editor.state.selection.from : to
-        editor.view.dispatch(editor.state.tr.insertText(this.aiPreview, insertFrom, insertTo).scrollIntoView())
+        this.insertAIResult(editor, insertFrom, insertTo)
       }
       this.closeAI()
       logger.info('ai', 'lark-doc.mock.accepted', { status: 'accepted' })
+    },
+    // AI 结果落正文。markdown 结果渲染成真实格式（标题 / 列表 / 粗体），
+    // 纯文本仍走 insertText；单段落内容按 inline 插入，避免把光标所在段落切断。
+    insertAIResult(editor, from, to) {
+      const fallback = () => editor.view.dispatch(editor.state.tr.insertText(this.aiPreview, from, to).scrollIntoView())
+      const format = this.aiContentFormat || 'auto'
+      if (format !== 'html' && format !== 'markdown' && !looksLikeMarkdown(this.aiPreview)) { fallback(); return }
+      const html = previewToHtml(this.aiPreview, format)
+      if (!html) { fallback(); return }
+      const inline = singleParagraphInner(html)
+      try {
+        editor.chain().focus().insertContentAt({ from, to }, inline === null ? html : inline, { updateSelection: true }).scrollIntoView().run()
+      } catch (error) {
+        // 结构过于复杂导致 schema 解析失败时退回纯文本，保证内容不丢。
+        fallback()
+      }
     },
     acceptReviewIssue(issue) {
       if (!issue || !this.writable() || this.aiRunning || !this._aiAnchor) return
