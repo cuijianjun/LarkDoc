@@ -31,11 +31,44 @@ export default defineConfig({
     siteTitle: 'lark-doc Docs',
     logo: '/logo.svg',
 
+    // 顶部导航按「读者此刻想干什么」分，不按页面目录分：
+    // 上手 → 功能 → 部署（外网/内网）→ 关于。侧栏再做一次更细的分组。
     nav: [
       { text: '首页', link: '/' },
-      { text: '指南', link: '/guide/getting-started' },
-      { text: '功能配置', link: '/blocks/heading' },
-      { text: '实例与事件', link: '/guide/instance' },
+      {
+        text: '开始上手',
+        activeMatch: '/guide/(getting-started|install|environments|instance)',
+        items: [
+          { text: '快速开始', link: '/guide/getting-started' },
+          { text: '安装与引用总表（内外网）', link: '/guide/install' },
+          { text: '各环境引入对照', link: '/guide/environments' },
+          { text: '实例与事件', link: '/guide/instance' },
+        ],
+      },
+      {
+        text: '功能配置',
+        activeMatch: '/guide/(configuration|toolbar|view-integration|collaboration|collab-server|vditor-import|web-component)',
+        items: [
+          { text: '配置总览', link: '/guide/configuration' },
+          { text: '工具栏配置', link: '/guide/toolbar' },
+          { text: '内容块（标题 / 列表 / 表格 …）', link: '/blocks/heading' },
+          { text: 'View 层接入', link: '/guide/view-integration' },
+          { text: '协同与权限', link: '/guide/collaboration' },
+          { text: 'Web Component（跨框架）', link: '/guide/web-component' },
+        ],
+      },
+      {
+        text: '内网与部署',
+        activeMatch: '/guide/(intranet-migration|deployment-intranet|deployment-docs-site|offline|build-artifacts)',
+        items: [
+          { text: '安装与引用总表（内外网）', link: '/guide/install' },
+          { text: '内网迁移实战（Vue2 / Vue3）', link: '/guide/intranet-migration' },
+          { text: '内网服务器部署（nginx）', link: '/guide/deployment-intranet' },
+          { text: '文档站内网部署', link: '/guide/deployment-docs-site' },
+          { text: '离线与资源本地化', link: '/guide/offline' },
+          { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
+        ],
+      },
       { text: '关于', link: '/guide/about' },
     ],
 
@@ -56,27 +89,46 @@ export default defineConfig({
     },
 
     sidebar: {
+      // 侧栏分四组，按「读文档的顺序」排，不按页面创建顺序排：
+      // 上手（我要装/要跑起来） → 功能（我要配某个能力） → 部署（我要上线/进内网） → 参考。
+      // 新增页面时先想清楚它属于哪一组，别继续往第一组里塞。
       '/guide/': [
         {
-          text: '指南',
+          text: '开始上手',
           items: [
             { text: '快速开始', link: '/guide/getting-started' },
+            { text: '安装与引用总表（内外网）', link: '/guide/install' },
             { text: '各环境引入对照', link: '/guide/environments' },
-            { text: '配置总览', link: '/guide/configuration' },
             { text: '实例与事件', link: '/guide/instance' },
+          ],
+        },
+        {
+          text: '功能与配置',
+          items: [
+            { text: '配置总览', link: '/guide/configuration' },
             { text: '工具栏配置', link: '/guide/toolbar' },
             { text: 'View 层接入', link: '/guide/view-integration' },
             { text: '协同与权限', link: '/guide/collaboration' },
             { text: '协同服务端契约', link: '/guide/collab-server' },
             { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
             { text: 'Web Component（跨框架）', link: '/guide/web-component' },
-            { text: '背景与免责声明', link: '/guide/about' },
+          ],
+        },
+        {
+          text: '打包与内网部署',
+          items: [
             { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
             { text: '离线与资源本地化', link: '/guide/offline' },
-            { text: '性能基线与收口', link: '/guide/performance' },
-            { text: '内网服务器部署', link: '/guide/deployment-intranet' },
-            { text: '内网迁移实战（Vue2/3）', link: '/guide/intranet-migration' },
+            { text: '内网迁移实战（Vue2 / Vue3）', link: '/guide/intranet-migration' },
+            { text: '内网服务器部署（nginx）', link: '/guide/deployment-intranet' },
             { text: '文档站内网部署', link: '/guide/deployment-docs-site' },
+          ],
+        },
+        {
+          text: '参考',
+          items: [
+            { text: '性能基线与收口', link: '/guide/performance' },
+            { text: '背景与免责声明', link: '/guide/about' },
           ],
         },
       ],

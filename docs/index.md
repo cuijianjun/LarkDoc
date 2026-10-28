@@ -10,11 +10,14 @@ hero:
       text: 快速开始
       link: /guide/getting-started
     - theme: alt
+      text: 安装与引用
+      link: /guide/install
+    - theme: alt
       text: 功能配置
       link: /blocks/heading
     - theme: alt
-      text: 实例与事件
-      link: /guide/instance
+      text: 内网部署
+      link: /guide/intranet-migration
 
 features:
   - icon: 📝

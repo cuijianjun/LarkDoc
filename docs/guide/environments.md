@@ -9,10 +9,14 @@
 | 渲染在哪一端 | 浏览器 → 直接挂载；Node / SSR → `require()` 单文件或 client-only 动态 `import()` |
 
 > 本文给出**每个环境的编译工具配置 + 可直接粘贴运行的代码 demo**。改代码前要看的踩坑清单在仓库 [`dev/02-多环境接入.md`](https://github.com/cuijianjun/LarkDoc/tree/master/dev)，两者结论一致、面向对象不同（本文面向使用方，手册面向改代码的人）。
+>
+> 只想先跑起来？[安装与引用总表](/guide/install) 用一张表给出「怎么装 / 怎么引 / 内网怎么搬」，配置细节再回到本文对应小节。
 
 ## 一张表看全
 
 **在「宿主环境」列里找到你的那一行，点进去就是完整配置和可运行代码。**
+
+> 这张表只管「怎么配、怎么引」。**怎么装包、内网怎么搬、`dist/` 怎么拷**在[安装与引用总表](/guide/install)，两页配合看：先按总表装好，再回本文贴配置。
 
 | 宿主环境 | 引入写法 | 编译工具配置 | 编辑器初始化 |
 | --- | --- | --- | --- |
@@ -175,7 +179,7 @@ module.exports = {
 ```jsonc
 // package.json 片段：Vue 2 要求 vue 与 vue-template-compiler 严格同版本
 {
-  "dependencies": { "vue": "2.7.16", "lark-doc": "^0.11.3" },
+  "dependencies": { "vue": "2.7.16", "lark-doc": "^0.11.6" },
   "devDependencies": {
     "vue-template-compiler": "2.7.16",
     "vue-loader": "^15.11.1",
@@ -258,7 +262,7 @@ export default defineConfig({ plugins: [createVuePlugin()] })
 ```jsonc
 // package.json 片段
 {
-  "dependencies": { "vue": "2.7.16", "lark-doc": "^0.11.3" },
+  "dependencies": { "vue": "2.7.16", "lark-doc": "^0.11.6" },
   "devDependencies": {
     "vite": "^5.4.0",
     "@vitejs/plugin-vue2": "^2.3.3",
@@ -340,7 +344,7 @@ module.exports = {
 
 ```bash
 npm i -D @babel/plugin-proposal-optional-chaining@7 @babel/plugin-proposal-nullish-coalescing-operator@7
-npm i lark-doc@^0.11.3
+npm i lark-doc          # 版本号锁死就写 npm i lark-doc@<你锁的版本> -E
 ```
 
 不用 vue-cli 的原生 webpack4 宿主，同一套规则搬到 `webpack.config.js`（**顺序也是 rules 在最前**）：
@@ -635,7 +639,7 @@ onBeforeUnmount(() => el.value && el.value.destroy())
 ```jsonc
 // package.json 片段：CRA 5（webpack5）—— 没有任何 lark-doc 专属配置
 {
-  "dependencies": { "lark-doc": "^0.11.3", "react": "^18.3.1", "react-dom": "^18.3.1" },
+  "dependencies": { "lark-doc": "^0.11.6", "react": "^18.3.1", "react-dom": "^18.3.1" },
   "devDependencies": { "react-scripts": "^5.0.1" }
 }
 ```
@@ -760,18 +764,18 @@ export default function Doc() {
 ```bash
 # ① 从 node_modules 里把整目录拷进静态资源目录（CDN / 内网 nginx / 后端 public）
 mkdir -p public/vendor/lark-doc
-cp -r node_modules/lark-doc/dist public/vendor/lark-doc/dist
+cp -r node_modules/lark-doc/dist/* public/vendor/lark-doc/
 #   dist 里至少要有：lark-doc-element.umd.min.js、*.math.js / *.mermaid.js 等懒区块、fonts/
 #   漏掉懒区块 → 公式 / 图表 / Word 导入 404，但编辑器本身能打开
 
 # ② 只想要单文件离线副本时（不装 npm 包）
-npm pack lark-doc@0.11.3 && tar -xzf lark-doc-0.11.3.tgz && cp -r package/dist public/vendor/lark-doc/
+npm pack lark-doc && tar -xzf lark-doc-*.tgz && cp -r package/dist/* public/vendor/lark-doc/
 ```
 
 ```js
 // vite 宿主：把上面拷好的目录当静态资源，publicDir 内的文件原样输出
 export default {
-  publicDir: 'public',       // public/vendor/lark-doc/dist/... → 站点根 /vendor/lark-doc/dist/...
+  publicDir: 'public',       // public/vendor/lark-doc/... → 站点根 /vendor/lark-doc/...
 }
 ```
 
@@ -793,7 +797,7 @@ location /vendor/lark-doc/ {
 <head>
   <meta charset="utf-8" />
   <!-- 产物自带 Vue 运行时与样式，不需要再引 css -->
-  <script src="/static/lark-doc/dist/lark-doc-element.umd.min.js"></script>
+  <script src="/vendor/lark-doc/lark-doc-element.umd.min.js"></script>
 </head>
 <body>
   <lark-doc
@@ -1004,7 +1008,7 @@ const Editor = dynamic(() => import('../components/Editor'), { ssr: false })
 用 `require('lark-doc')` 的 CJS 单文件在 Node 侧跑一次 `getHTML()` 做快照即可，别在服务端引 element 产物。
 :::
 
-## 排错对照
+## 排错对照 {#env-troubleshoot}
 
 | 报错 / 现象 | 大概率原因 | 处理 |
 | --- | --- | --- |

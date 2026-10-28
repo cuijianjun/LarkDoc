@@ -103,6 +103,8 @@ export default {
 
 ## 下一步
 
+- **装包、内网搬运、`dist/` 拷贝**：[安装与引用总表](/guide/install)（一张表覆盖外网 / 内网 × 9 种宿主）
+- 你的框架到底要贴哪些配置：[各环境引入对照](/guide/environments)
 - 查看全部[配置总览](/guide/configuration)与[实例方法](/guide/instance)
 - 按[功能配置](/blocks/heading)逐项了解每个内容块
 - 需要接入真实 AI、上传或持久化，参考 [View 层接入](/guide/view-integration)
