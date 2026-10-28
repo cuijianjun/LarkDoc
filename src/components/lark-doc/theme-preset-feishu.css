@@ -191,6 +191,14 @@
   --ld-bg-ai-review: #F5F6F7;
   --ld-bg-ai-proposal: #E1EAFF;         /* = brand-subtle（AI 建议需与评审条目区分） */
   --ld-border-template-hover: #C2D4FF;
+  /* ---- AI 预览富文本（飞书预设档：06 无实测，按中性角色归并）---- */
+  --ld-ai-rich-text: #1F2329;
+  --ld-ai-rich-code-bg: #F2F3F5;
+  --ld-ai-rich-pre-bg: #F5F6F7;
+  --ld-ai-rich-quote-border: #DEE0E3;
+  --ld-ai-rich-quote-text: #646A73;
+  --ld-ai-rich-divider: #DEE0E3;
+  --ld-ai-rich-link: #1456F0;
   /* ---- 本档不覆盖（继承默认档）----
      ★ --ld-bg-callout / --ld-border-callout：高亮块色由 calloutColorMixin 色板
        写 inline style 驱动（同 --ld-cat-* 的「用户内容色」口径，不随主题变），

@@ -289,6 +289,14 @@
   --ld-bg-ai-review: #292929;                    /* A */
   --ld-bg-ai-proposal: rgba(76, 136, 255, 0.18); /* C */
   --ld-border-template-hover: #4C88FF;           /* A */
+  /* ---- AI 预览富文本（浅色档见 lark-doc.css；深色按角色取同档值）---- */
+  --ld-ai-rich-text: #F0F0F0;                    /* A：= --ld-text */
+  --ld-ai-rich-code-bg: rgba(255, 255, 255, 0.1);   /* C */
+  --ld-ai-rich-pre-bg: rgba(255, 255, 255, 0.06);   /* C */
+  --ld-ai-rich-quote-border: #4A4A4A;            /* B */
+  --ld-ai-rich-quote-text: #A6A6A6;              /* B：= --ld-text-secondary */
+  --ld-ai-rich-divider: #3A3A3A;                 /* B */
+  --ld-ai-rich-link: #4C88FF;                    /* A：= --ld-text-link */
   /* ---- 查找替换命中双色（P4-05，04 §3.2 ④-5C 实测：深色取同色相降亮度档）----
      命中装饰画在正文里（ProseMirror），所以跟 **content 轨**走，
      「UI 深 + 正文浅」时它仍然是浅色的黄/红。此前这里写的是「功能色两档同值、不覆盖」，

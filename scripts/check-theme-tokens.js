@@ -19,6 +19,8 @@
  *   2. 色板常量表 `editor/palette.js` —— 全库唯一允许写字面 hex 的文件。
  *      色板值属「用户内容色」（写进文档 inline style，随文档走，不随主题变）
  *      与「多色图标资源」，不是 UI 皮肤色，收不进 CSS 变量（11 §V4 / 12 T0-05）。
+ *   3. 语法配色表 `styles/code-block.css` —— 代码高亮的 hljs-* token 色，
+ *      同为「内容色」：06 §6.5.2 实测换主题时代码 token 色两档不变，刻意写死。
  */
 const fs = require('fs')
 const path = require('path')
@@ -32,11 +34,18 @@ const EXTS = ['.js', '.vue', '.css', '.scss']
 const WHITELIST_PARTS = [`${path.sep}vendor${path.sep}`]
 // 色板常量表：字面 hex 的唯一合法居所（见文件头白名单说明）。
 const PALETTE_FILES = [`${path.sep}editor${path.sep}palette.js`]
+// 语法配色表：代码高亮的 token 色（hljs-*）。与色板同理属「内容色」而非「UI 皮肤色」——
+// 06 §6.5.2 实测「代码块是常暗卡片，换主题只动卡片 chrome 与卡底、token 色两档不变」，
+// 因此刻意写死、不落 CSS 变量（落变量反而会让「换肤不换码色」的实测口径失效）。
+const SYNTAX_FILES = [`${path.sep}styles${path.sep}code-block.css`]
 
 // #RGB / #RGBA / #RRGGBB / #RRGGBBAA；后面跟字母数字的不算（如 #ifdef、URL 锚点后跟 / 或引号可命中，由白名单与人工复核兜底）。
-const HEX_RE = /#[0-9a-fA-F]{3,8}\b/g
+// 注意：这里**不能带 g 标志**。带 g 的正则在 `RegExp.prototype.test` 上会读写 lastIndex，
+// 而 lastIndex 是正则对象的持久状态、跨行复用 —— 于是「上一行命中后 lastIndex 停在中途，
+// 下一行从半截开始扫」造成隔行漏报（实测 code-block.css 连续 5 行语法配色只报出 3 行）。
+const HEX_RE = /#[0-9a-fA-F]{3,8}\b/
 // 独立 white 关键字：前后都不能是字母数字下划线或连字符（排除 white-space、--lark-doc-white）。
-const WHITE_RE = /(^|[^\w-])white(?![\w-])/g
+const WHITE_RE = /(^|[^\w-])white(?![\w-])/
 // http(s) URL 整段（到空白或引号为止）。
 // 规则只针对 CSS 颜色，而 URL 里不可能出现 CSS 颜色：query 参数和 `#` 锚点同样长成
 // `white` / `#fff` 的样子，纯文本扫描分不出来。实例：金数据内嵌 src 的
@@ -46,7 +55,11 @@ const WHITE_RE = /(^|[^\w-])white(?![\w-])/g
 const URL_RE = /https?:\/\/[^\s'"`]+/g
 
 function isWhitelisted(file) {
-  return WHITELIST_PARTS.some((part) => file.includes(part)) || PALETTE_FILES.some((part) => file.includes(part))
+  return (
+    WHITELIST_PARTS.some((part) => file.includes(part)) ||
+    PALETTE_FILES.some((part) => file.includes(part)) ||
+    SYNTAX_FILES.some((part) => file.includes(part))
+  )
 }
 
 function walk(dir, files) {
