@@ -514,6 +514,9 @@ export default {
     },
     refreshDocumentState() {
       if (!this.editor) return
+      // 实测目录覆盖上去的同一时刻落下水合闸门（P7-03 早期目录的 `outlinePending`）：
+      // 此后 `outline` 里的 pos 就是当前正文算出来的，按下去不会落空。
+      this.outlinePending = false
       this.outline = collectOutline(this.editor.state.doc)
       this.syncOutlineCollapseState()
       this.syncFoldState()

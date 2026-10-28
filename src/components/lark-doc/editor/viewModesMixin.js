@@ -14,7 +14,9 @@ export default {
     // （见 computed.reading），否则「顶栏切到阅读」和「工具栏点阅读模式」会有两个真相。
     mode: 'edit', modeMenuOpen: false, modeMenuPos: null, modeToast: '', modeToastTimer: null,
     slides: false, fullscreen: false, widthMode: 'standard',
-    outlineOpen: window.innerWidth > 760, outline: [], outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
+    // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
+    // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
+    outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
     searchOpen: false, searchQuery: '', replacement: '', searchMatches: [], searchIndex: 0, slideIndex: 0,
     // P4-05 查找替换浮层：tab 决定面板高度（find 186 / replace 286，04 §3.2）；
     // pos 是拖拽后的 fixed 坐标，null 表示用 CSS 默认位（右上角）。
@@ -77,10 +79,15 @@ export default {
      * 所以 `pos` 直接可用；正文一到位，`refreshDocumentState()` 立刻用实测值覆盖。
      * 这里**不做**「已经实测过就拒绝」的闸门 —— 恢复快照时正文本来就在，拒绝会让那条路
      * 永远享受不到。判伪的责任在校验器，不在这里。
+     *
+     * 水合期间 `outlinePending` 置 true：面板能看、不能跳（跳转会作用在还没有正文的编辑器上，
+     * 轻则跳到文末、重则 `domAtPos` 越界抛错）。正文一到位 `refreshDocumentState()`
+     * 用实测目录覆盖，闸门随之落下 —— 清除点就放在那里，不再需要调用方记得回调。
      */
     hydrateOutline(outline) {
       if (!Array.isArray(outline) || !outline.length) return false
       this.outline = outline.map((item) => ({ pos: item.pos, level: item.level, text: item.text }))
+      this.outlinePending = true
       return true
     },
     toggleOutline(pos) {
@@ -91,7 +98,10 @@ export default {
       this.outlineCollapsed = next
     },
     jumpHeading(pos) {
-      if (!this.editor) return
+      // 占位目录（水合期）+ 越界 pos 都不跳：这两种情况下 doc 里根本没有那个标题，
+      // 往下走会把选区丢到文末，还可能让 `domAtPos` 抛 RangeError。
+      if (!this.editor || this.outlinePending) return
+      if (!Number.isFinite(pos) || pos < 0 || pos >= this.editor.state.doc.content.size) return
       // 13.6.1：目标标题被祖先章节折叠时，先展开所有正文祖先再定位；
       // 目标自身的折叠位不动（不自动展开它的子章节）。
       const state = this.editor.state

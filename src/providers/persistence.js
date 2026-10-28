@@ -77,6 +77,10 @@ export function createPersistenceWorkspace(options = {}) {
   const state = { kind: '', leg: null, degraded: false, reason: '' }
 
   function degradeBecause(reason) {
+    // 换腿之前先关掉旧腿：IndexedDB 腿可能已经连上了库（或在飞行途中即将连上），
+    // 丢下不管那条连接会一直占着版本锁，别的标签页要升级版本就被 blocked ——
+    // 明明自己已经不写 IndexedDB 了，却还挡着别人。
+    if (state.leg && typeof state.leg.close === 'function') state.leg.close()
     if (storage && typeof storage.setItem === 'function') {
       state.kind = 'localstorage'
       state.leg = createWorkspace(storage, { maxSnapshots })

@@ -45,8 +45,13 @@ const isHeading = (node) => node?.type?.name === 'heading'
 
 /**
  * Expand a mapping range to the smallest block context whose decorations can
- * change.  A text edit needs its text block plus one containing block so fold
- * and section decorations keep the same boundary semantics as a full scan.
+ * change: the touched text block plus one containing block.
+ *
+ * 口径收口（原注释写成 "keep the same boundary semantics as a full scan"，属夸大）：
+ * 这里只是把区间**放大到局部重扫需要的块边界**，并不等于增量路径与全量扫描同效 ——
+ * 编号向后传播由 `extendHeadingRange` 另行补，节点增删 / attrs 变更 / 多步事务由
+ * `isTextOnlyChange` 判掉后退回整份重建。增量路径换来的是「击键路径上少扫一部分」，
+ * 不是「不再全量扫描」。
  */
 function expandBlockRange(doc, range) {
   if (!doc?.resolve || !Number.isFinite(doc.content?.size)) return { ...range }

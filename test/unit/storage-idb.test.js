@@ -127,6 +127,72 @@ describe('建库与 schema', () => {
     const database = await openIndexedDbDatabase({ factory: slowFactory, openTimeoutMs: 100 })
     expect(database.name).toBe('slow-db')
   })
+
+  /**
+   * 下面三条是 #5 的收口：**闸门落下后迟到的连接必须自己放手**。
+   *
+   * open 请求没有 abort —— 超时只是让 Promise 先 reject，请求本身仍在跑。对方终于
+   * 关掉标签页之后 `onsuccess` 照样会到，那是一条**没人会用**的连接，却继续占着版本锁：
+   * 别的标签页想升级就被 blocked，而本标签页早已经因为超时降级走了。
+   */
+  it('超时之后才到的成功连接会被关掉，不再占着版本锁', async () => {
+    let closed = 0
+    const lateFactory = {
+      open() {
+        const request = { result: null, error: null }
+        // 比超时（20 ms）晚得多才回：这时 Promise 早已以 IDB_UNAVAILABLE reject。
+        setTimeout(() => {
+          request.result = { name: 'late-db', close: () => { closed += 1 } }
+          if (request.onsuccess) request.onsuccess()
+        }, 60)
+        return request
+      },
+    }
+    const error = await rejection(openIndexedDbDatabase({ factory: lateFactory, openTimeoutMs: 20 }))
+    expect(error.code).toBe(IDB_UNAVAILABLE)
+    expect(closed).toBe(0)
+    await new Promise((resolve) => { setTimeout(resolve, 80) })
+    expect(closed).toBe(1)
+  })
+
+  it('正常成功的连接不会被关（闸门只在「已经结算过」时才收口）', async () => {
+    let closed = 0
+    const okFactory = {
+      open() {
+        const request = { result: { name: 'ok-db', close: () => { closed += 1 } }, error: null }
+        setTimeout(() => request.onsuccess && request.onsuccess(), 5)
+        return request
+      },
+    }
+    const database = await openIndexedDbDatabase({ factory: okFactory, openTimeoutMs: 200 })
+    expect(database.name).toBe('ok-db')
+    await new Promise((resolve) => { setTimeout(resolve, 20) })
+    expect(closed).toBe(0)
+  })
+
+  it('迟到连接已经关过时，close 抛的 InvalidStateError 不冒出去', async () => {
+    const collected = []
+    const collect = (error) => { collected.push(error) }
+    process.on('uncaughtException', collect)
+    const lateFactory = {
+      open() {
+        const request = { result: null, error: null }
+        setTimeout(() => {
+          request.result = {
+            name: 'late-db',
+            close: () => { const error = new Error('InvalidStateError'); error.name = 'InvalidStateError'; throw error },
+          }
+          if (request.onsuccess) request.onsuccess()
+        }, 60)
+        return request
+      },
+    }
+    await rejection(openIndexedDbDatabase({ factory: lateFactory, openTimeoutMs: 20 }))
+    await new Promise((resolve) => { setTimeout(resolve, 80) })
+    process.off('uncaughtException', collect)
+    // 走得到这一行就说明那条迟到连接没把自己关出个未捕获异常来。
+    expect(collected).toEqual([])
+  })
 })
 
 /* ---------------- 2. 草稿存读 ---------------- */

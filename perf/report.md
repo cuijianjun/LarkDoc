@@ -163,23 +163,34 @@ dispatch」两行），上一版实测整段 dispatch 是 **p50 195.9 / p95 197.
 `≤ 4 ms` 当初是照着「装饰层一次增量的理想开销」拍的，而实测证明这个指标**结构上到不了
 那个量级**，继续为它做优化是在为一个不可达的目标烧工作量（决策 A 选项一：改写判据 + 报告写实）。
 
-根因已定位，不是增量算法本身：`collectDocumentDecorations` 里有两趟是**无条件全量遍历**，
+根因已定位，不是增量算法本身：`collectDocumentDecorations` 里有**四趟无条件全量遍历**，
 不受脏区窗口限制 ——
 
 - `collectFoldRanges(doc)`（`src/core/documentOperations.js:1020`）
 - `computeHeadingNumbers(doc)`（`src/core/documentOperations.js:506`）
+- `computeOrderedListNumbers(doc)`（同文件，列表序号）
+- `computeBulletItems(doc)`（同文件，无序圆点）
+
+（另有 `findTextMatches` 与一次 `previous.find(0, content.size)` 的全文悬停趟，量级可忽略。）
+
+> **订正（Task 7 复核 #8）**：本节原先只记了「两趟」，漏了列表那两趟。四趟在
+> `scripts/perf/build-doc.mjs` 的同一份 2,000 块 fixture（seed 42，`decorations=1424`）
+> 上 Node 侧实测：1.51 + 0.51 + 0.60 + 0.64 = **3.26 ms**，占热路径端到端
+> （map + `updateDocumentDecorations`，**3.77 ms**）的 **86%**。所以「遍历是主体」这个
+> **比例**成立；但绝对量级与本文的 78.8 ms 差约 20×，而 78.8 从未做过分项归因 ——
+> 下文「78.8 ms 里绝大部分是这两趟」只能算方向性推测，不是实测结论。
 
 两处注释自己写着「逐块调 foldedRange 等于逐块 doc.resolve，扁平文档里就是 O(n²)（2,000 块
 实测 275 ms）」。脏区增量只省掉了「逐块建 Decoration 对象」那一部分，这两趟 O(n) 省不掉
 —— **一次击键至少要付这两趟全量遍历的钱**，`≤ 4 ms` 与这个事实直接冲突。
 
 新判据 `≤ 150 ms` 的定法：取「本轮实测 78.8 ms」为锚，留出约 2 倍余量做退化空间。它不是
-一个「理想值」，是**当前实现的结构性下界的门禁线** —— 后面任何一处把这两趟挪进窗口剪裁，
+一个「理想值」，是**当前实现的结构性下界的门禁线** —— 后面任何一处把这几趟挪进窗口剪裁，
 这个数会掉，届时把线一起往下调；反过来，若有人再引入一趟无条件全量遍历，这条线会拦住。
 
-**这条线达标不等于装饰层已经最优**：78.8 ms 里绝大部分是上面两趟 O(n) 遍历，装饰增量本身
-只占小头。要再往下走必须把这两趟也纳入窗口剪裁 —— 那是新工作量，不在本轮范围内，
-已作为未结账项记在下面。
+**这条线达标不等于装饰层已经最优**：78.8 ms 里「绝大部分是上面的全量遍历」是有结构依据的
+判断（Node 侧同 fixture 占比 86%），但具体构成没有逐段归因。要再往下走必须把那几趟也纳入
+窗口剪裁 —— 那是新工作量，不在本轮范围内，已作为未结账项记在下面。
 
 顺带一个反面证据：同一支探针量到的整段 dispatch 中位数是 195.9 ms（上一版实测，
 p95 197.4 / max 201.6，抖动 < 3%），装饰增量 78.8 ms 只占其中约 40%，其余是 DOM 补丁与
@@ -207,8 +218,10 @@ p95 197.4 / max 201.6，抖动 < 3%），装饰增量 78.8 ms 只占其中约 40
   1. `mountToTypeableMs` / `keystrokeP95Ms` 两条绝对线（≤1500 / ≤16）仍是已知未达标项，
      出路是 P7-05 的挂载策略，不是继续拆装饰。
   2. `decorationIncrementalMs` 在新判据 `≤ 150 ms` 下**判定达标，但负担没有消除**：
-     78.8 ms 的绝大部分是 `collectFoldRanges` / `computeHeadingNumbers` 的无条件全量遍历
-     （代码位置见上一节）。决策 A 的结论是「不为不可达的 `≤ 4 ms` 烧工作量」，
+     78.8 ms 的主体是 `collectFoldRanges` / `computeHeadingNumbers` /
+     `computeOrderedListNumbers` / `computeBulletItems` 这四趟无条件全量遍历
+     （代码位置见上一节；Node 侧同 fixture 实测四趟合计 3.26 ms、占端到端 86%）。
+     决策 A 的结论是「不为不可达的 `≤ 4 ms` 烧工作量」，
      不是「这一层已经最优」。真要把它压下来得单开一项，届时连同新判据一起下调。
   3. ~~采样口径缺陷~~ **已在本轮结账（决策 B）**：采样数 8 → 30、分位数改线性插值，
      `keystrokeP95Ms` 与 `keystrokeP99Ms` 不再相等，并且由

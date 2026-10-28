@@ -239,20 +239,116 @@ widget 装饰的 `toDOM` 闭包捕获块的绝对 `pos`，而脏区外的 widget
 顺带修正了 `document-decorations.js:336-339` 那条已被证伪的注释（它只论证了 key 无害，
 没覆盖闭包）。
 
-### 6.1 Task 7 独立复核的 8 条非阻塞项（**本轮未修，等用户定夺**）
+### 6.1 Task 7 独立复核的 8 条非阻塞项（**#2/#5/#6 已修，#8 已复核；#1/#3/#4/#7 仍挂账**）
 
 都不是 P7 引入、也不阻塞发布，但别让它们随会话消失。逐条：
 
-| # | 位置 | 问题 |
-| --- | --- | --- |
-| 1 | `src/core/storage/idb.js:236-241` | 一条坏记录会把整份数据判成 `CORRUPT`，且**没有自愈路径**（不像单条失败可以跳过重试）。需要决定是「坏记录丢弃 + 其余照常恢复」还是维持整份失败 |
-| 2 | `src/components/lark-doc/LarkDocWorkspace.vue:667-671` | 水合出来的目录在 `setContent` **之前**就可点，点了会作用在无内容的编辑器上。加个 ready 门闩即可 |
-| 3 | `src/core/pacing.js:98-117` | 四个成员**没有任何调用点**（导出后无人用）。要么删，要么补用例说明为什么留着 |
-| 4 | `src/core/derive/snapshot.js:120-129` | 两个字段**只有测试在读**，生产代码不用。同上，删或说明 |
-| 5 | `src/core/storage/idb.js:106-108`、`providers/persistence.js:104` | `open` 超时路径下 `request` 未 `close`，请求仍在跑。资源泄漏，量级小 |
-| 6 | `src/core/derive/index.js:46-50` | 英文注释措辞**夸大**（把「减少全量扫描」写成「消除」）。改注释即可 |
-| 7 | 同上复核中「推测未实跑」的两条 | 复核子代理自陈：① 阻塞项触发链当时未在浏览器里实跑复现、② 多步事务退回全量是在 `/tmp` 最小 schema 上跑的。**① 已由本会话用回归用例实跑验证（见 §6.0）**，② 仍只是最小 schema 证据 |
-| 8 | `src/core/documentOperations.js` | 子代理**未逐行复核**（文件过大）。`collectFoldRanges` / `computeHeadingNumbers` 两处被 P7 报告点名是热路径结构性成本，值得单开一轮、只审这两处 |
+| # | 位置 | 问题 | 状态 |
+| --- | --- | --- | --- |
+| 1 | `src/core/storage/idb.js:236-241` | 一条坏记录会把整份数据判成 `CORRUPT`，且**没有自愈路径**（不像单条失败可以跳过重试）。需要决定是「坏记录丢弃 + 其余照常恢复」还是维持整份失败 | 挂账（要产品决策） |
+| 2 | `src/components/lark-doc/LarkDocWorkspace.vue:667-671` | 水合出来的目录在 `setContent` **之前**就可点，点了会作用在无内容的编辑器上。加个 ready 门闩即可 | **已修（见 6.1.1）** |
+| 3 | `src/core/pacing.js:98-117` | 四个成员**没有任何调用点**（导出后无人用）。要么删，要么补用例说明为什么留着 | 挂账 |
+| 4 | `src/core/derive/snapshot.js:120-129` | 两个字段**只有测试在读**，生产代码不用。同上，删或说明 | 挂账 |
+| 5 | `src/core/storage/idb.js:106-108`、`providers/persistence.js:104` | `open` 超时路径下 `request` 未 `close`，请求仍在跑。资源泄漏，量级小 | **已修（见 6.1.2）** |
+| 6 | `src/core/derive/index.js:46-50` | 英文注释措辞**夸大**（把「减少全量扫描」写成「消除」）。改注释即可 | **已修（见 6.1.3）** |
+| 7 | 同上复核中「推测未实跑」的两条 | 复核子代理自陈：① 阻塞项触发链当时未在浏览器里实跑复现、② 多步事务退回全量是在 `/tmp` 最小 schema 上跑的。**① 已由本会话用回归用例实跑验证（见 §6.0）**，② 仍只是最小 schema 证据 | 挂账（② 仍需实测） |
+| 8 | `src/core/documentOperations.js` | 子代理**未逐行复核**（文件过大）。`collectFoldRanges` / `computeHeadingNumbers` 两处被 P7 报告点名是热路径结构性成本，值得单开一轮、只审这两处 | **已复核（见 6.1.4）** |
+
+#### 6.1.1 #2 水合目录在 `setContent` 前可点 —— 已修
+
+根因：`LarkDocWorkspace.onReady` / `restoreSnapshot` 先 `hydrateOutline(...)` 再 `setContent(...)`，
+水合期目录里的 `pos` 指向「正文还没灌进去的编辑器」，按下去轻则选区落到文末，重则
+`domAtPos` 抛 `RangeError`。
+
+收口成一道闸门（四个面）：
+
+- `viewModesMixin.js` 新增 `data.outlinePending`（默认 `false`）；`hydrateOutline()` 末尾置 `true`；
+- `jumpHeading(pos)` 开头双守卫：`outlinePending` 为真、或 `pos` 不是 `[0, doc.content.size)`
+  内的整数，都直接 `return`；
+- `OutlinePanel.vue` 的跳转按钮 `:disabled="ed.outlinePending"`，并给 `title` 提示文案；
+- `LarkDocEditor.refreshDocumentState()` 用实测目录覆盖 `outline` 的**同一刻**置 `false` ——
+  闸门只在水合期存在，正文一到位就落下。
+
+回归用例加在 `test/unit/derived-hydration.test.js`（原 5 条 → 现 9 条）：闸门置位、
+覆盖后落下、`jumpHeading` 在 `outlinePending` / 越界 / 无 editor 时都不动作。
+
+#### 6.1.2 #5 `open` 超时 / 换腿未 `close` —— 已修
+
+两处，同一个病根：**丢下不管的连接会一直占着 IndexedDB 的版本锁**，别的标签页要升级就被
+`blocked`。
+
+- `idb.js`：`openIndexedDbDatabase` 的三出口只认第一个 `settled`。超时先 `reject` 之后，
+  迟到的 `onsuccess` 只被 `settled` 拦住、**连接没关**。现在 `onsuccess` 里
+  `if (settled) { closeDatabase(request.result); return }`。`closeDatabase` 收口了
+  「重复 `close()` 抛 `InvalidStateError`」这件事（重复关不关第二次）。
+- `persistence.js`：`degradeBecause` 换腿（IndexedDB → localStorage → 内存）前先
+  `state.leg.close()` —— 自己已经不写 IndexedDB 了，不该还挡着别人。
+
+回归用例加在 `test/unit/storage-idb.test.js`：超时后迟到的 `onsuccess` 必须调用 `close`；
+慢但成功的打开**不能**被误关（既有用例「慢一点但成功的打开不会被超时误杀」保住）。
+
+#### 6.1.3 #6 注释措辞夸大 —— 已修
+
+`src/core/derive/index.js` 里 `expandBlockRange` 的英文 JSDoc 原文把「局部重扫够用」写成了
+「与全量扫描等价」（`keep the same boundary semantics as a full scan`），而实际只是
+「多扩一层父块、让窗口覆盖到边界可能变化的范围」，并不等价。已改为准确表述：
+局部扩张**只为不漏边界**，不承诺与全量扫描同结果。
+
+> 记一笔：§6.1 原表写的措辞是「把『减少全量扫描』写成『消除』」，但当前文件里并无
+> `eliminat` / `消除` / `全量扫描` 字样 —— 那处措辞在此前的提交里已漂移，实际夸大的是
+> 上面这句 `as a full scan`。行号仍在 46-50，位置没变。
+
+#### 6.1.4 #8 `documentOperations.js` 热路径逐行复核 —— 已复核，**结论：不动代码**
+
+复核范围：`collectFoldRanges`、`computeHeadingNumbers`、`computeOrderedListNumbers`、
+`computeBulletItems`、`collectOutline`、`walkBlocks`、`scanSectionSiblings`、`foldRangeOf`、
+`foldableIdPositions`，以及调用侧 `document-decorations.js:collectDocumentDecorations` /
+`updateDocumentDecorations`。
+
+**逐行结论：没有逻辑缺陷。** 三处此前已做对的优化值得留在注释里：
+
+1. `foldRanges` 的 `{from,to,node}` 在「折叠隐藏」循环里**复用同一份**，没有二次
+   `foldedRange` / `nodeAt`；
+2. `computeOrderedListNumbers` 顺带给出 `firstChildIsParagraph`，让标记侧免掉 946 次
+   `doc.nodeAt(pos)`（这是最贵的一笔随机访问）；
+3. `foldableIdPositions` 只在 `storage.folded.size > 0` 时才跑（`folded` 为空是常态）。
+
+**但 P7 报告里那句归因不准确，已实测证伪（部分）**：`perf/report.md` 写「有两趟是
+**无条件全量遍历**」，实际是 **4 趟**（漏了 `computeOrderedListNumbers` 与
+`computeBulletItems`），另加 `findTextMatches` 与一次 `previous.find(0, content.size)`。
+
+用 `scripts/perf/build-doc.mjs` 的**同一份 2,000 块 fixture**（seed 42，jsdom 解析成真实
+ProseMirror doc，`decorations=1424` / 可折叠块 `478`）在 Node 侧分项实测（11 次取中位数）：
+
+| 分项 | 实测 |
+| --- | --- |
+| 冷路径全量重建 | 21.48 ms |
+| `previous.map` | 0.09 ms |
+| `extendHeadingRange` + `mergeRanges` | 0.01 ms |
+| **`collectFoldRanges`** | **1.51 ms** |
+| **`computeHeadingNumbers`** | **0.51 ms** |
+| **`computeOrderedListNumbers`** | **0.60 ms** |
+| **`computeBulletItems`** | **0.64 ms** |
+| `findTextMatches(窗口)` | 0.00 ms |
+| `foldableIdPositions` | 1.15 ms |
+| `find(窗口)` / `find(0..size)` 悬停趟 | 0.03 / 0.09 ms |
+| `collectDocumentDecorations(窗口)` | 3.06 ms |
+| **map + `updateDocumentDecorations` 端到端** | **3.77 ms** |
+
+即：**4 趟遍历合计 3.26 ms，占端到端 3.77 ms 的 86%** —— 「遍历是热路径主体」这个**比例**
+成立，但 Node 侧绝对量级是 3.8 ms，与报告里浏览器探针的 78.8 ms 差约 20×。这 20× 的差额
+没有分项归因（报告也没分项测过），所以报告里「78.8 ms 里绝大部分是这两趟」是一句
+**未经测量的断言**，只能算方向性推测。
+
+**建议（都属文档修正，不改代码）：**
+
+1. `perf/report.md` 的「两趟」改成「四趟」并列出函数名 —— 否则后续按「把这两趟挪进窗口
+   剪裁」去做，会漏掉一半工作量；
+2. 78.8 ms 那句补一句限定：「构成未逐段归因；Node 侧同 fixture 的 4 趟遍历合计 3.3 ms」；
+3. **不要**为了这个数动代码：把编号/折叠纳入窗口剪裁需要「前缀计数器」和「结构预扫索引」，
+   属新工作量、非零风险；且决策 A 已判定「不为不可达的 `≤ 4 ms` 烧工作量」。真正该盯的是
+   `keystrokeP95Ms`（939.7），它的出路在 P7-05 挂载策略，不在装饰层 —— 报告里已有这条
+   反面证据（整段 dispatch 195.9 ms，装饰只占约 40%）。
 
 ## 7. 环境坑（这个 shell 特有的）
 

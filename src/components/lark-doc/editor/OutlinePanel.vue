@@ -45,6 +45,8 @@
       <button
         type="button"
         :class="{ active: item.pos === ed.activeHeading }"
+        :disabled="ed.outlinePending"
+        :title="ed.outlinePending ? '正文还在载入，稍后可跳转' : undefined"
         @click="ed.jumpHeading(item.pos)"
       >
         {{ item.text || '无标题' }}

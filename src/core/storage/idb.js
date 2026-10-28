@@ -81,6 +81,11 @@ export function isIndexedDbAvailable(factory) {
  */
 const DEFAULT_OPEN_TIMEOUT_MS = 5000
 
+/** `close()` 在连接已被自己关掉时会抛 InvalidStateError，收口在这一处就够了。 */
+function closeDatabase(database) {
+  try { database?.close?.() } catch (_) { /* 已经关了就不关第二次 */ }
+}
+
 /**
  * 打开（必要时建库并升级到）数据库。`onupgradeneeded` 里只做「缺哪个建哪个」，
  * 不做数据搬迁 —— 未来的迁移写成 `oldVersion` 分支，不要在这里顺手改数据。
@@ -119,7 +124,13 @@ export function openIndexedDbDatabase(options = {}) {
         if (!database.objectStoreNames.contains(store)) database.createObjectStore(store)
       }
     }
-    request.onsuccess = () => settle(resolve, request.result)
+    request.onsuccess = () => {
+      // 闸门已经落下（超时先 reject 了）才到的连接必须自己关掉：open 请求没有 abort，
+      // 这条建好的连接没人会用，留着会一直占着版本锁 —— 别的标签页要升级就被 blocked，
+      // 而它本该因为那句超时文案知道自己该放手。
+      if (settled) { closeDatabase(request.result); return }
+      settle(resolve, request.result)
+    }
     request.onerror = () => settle(reject, unavailable(request.error))
     // 不在这里 reject：对方关掉标签页后本次 open 会继续走 onsuccess。
     // 真正兜底的是上面那道超时闸门 —— 没有它这个回调就是个空壳。
