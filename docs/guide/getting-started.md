@@ -1,7 +1,5 @@
 # 快速开始
 
-## 概述
-
 lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 + Tiptap 3），提供两种使用方式：
 
 - **命令式入口** `new LarkDoc()`：像 AiEditor 一样用构造函数驱动完整工作台，适合任何宿主（原生页面、Vue2 路由、微前端）。
@@ -9,17 +7,25 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 
 推荐统一使用命令式入口，组件式入口保留为兼容导出。
 
-## 安装
+## 第一步：先判断你属于哪一类
 
-```bash
-npm i lark-doc
-```
+**只问一句：你的项目现在装的是不是 `vue@2.7`？**
 
-要求：Node 14.21.3 及以上；样式与 KaTeX 字体随包发布，无需额外引入字体文件。
+| 你的情况 | 用哪个入口 | 装法 | 往下读 |
+| --- | --- | --- | --- |
+| **是** Vue 2.7（webpack 4/5、vite 都算） | 主入口 `lark-doc`，`new LarkDoc()` 或 `<lark-doc-editor>` | `npm i lark-doc` | 本文 [最小示例](#最小示例) |
+| **否**：Vue 3 / React 18 | `lark-doc/element`（`<lark-doc>` 自定义元素） | `npm i lark-doc --legacy-peer-deps`，或**不装包**直接拷 `dist/` | [Web Component](/guide/web-component) |
+| **没有打包器**：纯 HTML / 老系统 / 内网静态页 | `<script>` 引 UMD | 拷 `dist/` 整目录，不用 npm | [原生 / CDN](/guide/environments#env-static) |
 
-## 各环境引入对照
+为什么 Vue 3 / React 要绕一下：包的 `peerDependencies` 里 `vue ^2.7.14` 和 `@tiptap/vue-2` 都是**强制**的，Vue 3 项目直接 `npm i lark-doc` 会 `ERESOLVE` 失败；硬装上去再用主入口，会在 `new LarkDoc()` 时报 `Vue.extend is not a function`（Vue 3 已移除该 API）。
 
-包只有**两条入口**，差异只在「宿主有没有 Vue 2.7」和「打包器认不认 `exports`」：
+`lark-doc/element` 这条路是安全的：Vue 2 运行时、Tiptap、样式**全部内联在产物里**，宿主不需要装任何 Vue 2 相关依赖。
+
+环境要求：Node 14.21.3 及以上，宿主有 `Promise` / `fetch`。样式与 KaTeX 字体随包发布，不需要另找字体文件。
+
+## 引入写法速查
+
+上面决定了走哪条路之后，这张表只回答一件事：**`import` 那一行怎么写**。
 
 | 宿主环境 | 引入写法 | 初始化 | 备注 |
 | --- | --- | --- | --- |
@@ -40,6 +46,8 @@ npm i lark-doc
 > 每个环境的**编译工具配置 + 可粘贴运行的完整 demo + 工具栏配置**见[各环境引入对照](/guide/environments)。
 
 ## 最小示例
+
+下面这段只适用于 **Vue 2.7 宿主**。Vue 3 / React 走的是自定义元素，写法完全不同，见 [Web Component](/guide/web-component)。
 
 ```ts
 import 'lark-doc/style.css'

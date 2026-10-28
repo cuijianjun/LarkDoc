@@ -152,12 +152,24 @@ npm run build:element   # dist/lark-doc-element.umd.min.js + 若干按需区块
 - 部署时把 **`dist/` 整目录**同位托管（主文件 + `lark-doc-element.umd.min.*.js` 各按需区块 + `fonts/`）：`publicPath:'auto'` 按主文件自身 URL 推导区块地址，放在任意子目录都成立，无需任何配置；
 - 想复用宿主自己的一份 mermaid 时，挂载前置 `window.mermaid` 即可（检测到就不再加载内置副本），或给元素设 `options.performance.diagramScriptUrl` 走 `<script>` 注入分支。
 
-## 演示
+## 亲手跑一遍
 
-`examples/element-demo.html` 是一个零框架宿主演示（属性配置、能力注入、事件日志、卸载重建）。本地预览：
+**最快验证（1 分钟，不用 clone 仓库）**。在任意目录建一个 `demo.html`：
+
+```html
+<script src="./node_modules/lark-doc/dist/lark-doc-element.umd.min.js"></script>
+<lark-doc title="演示" style="display:block;height:420px"></lark-doc>
+```
+
+然后在该目录起个静态服务（`python3 -m http.server 8765`）打开它。看到带工具栏的编辑器就算成功。
+
+> 别只拷那一个 `.js`——`dist/` 里的按需区块（`math` / `office` / `markdown` / `highlight` / `mermaid`）是靠主文件自身 URL 推导地址的，整个目录一起放才行。
+
+**完整示例**：`examples/element-demo.html` 覆盖属性配置、能力注入、事件日志、卸载重建，是最接近真实接入的一份：
 
 ```bash
-cd apps/lark-doc && npm run build:element
+cd apps/lark-doc && npm run build:element   # 先从源码打包出 dist/
 python3 -m http.server 8765
 # 打开 http://localhost:8765/examples/element-demo.html
 ```
+
