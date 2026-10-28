@@ -16,7 +16,7 @@ const listeners = []
 
 /**
  * 订阅「打开语言选择器」请求。
- * @param {(payload: {editor:object, pos:number, language:string, rect:DOMRect}) => void} handler
+ * @param {(payload: {editor:object, pos:number, language:string, diagramEnabled:boolean, rect:DOMRect}) => void} handler
  * @returns {() => void} 退订函数
  */
 export function subscribeCodeLangPicker(handler) {

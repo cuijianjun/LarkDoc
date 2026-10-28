@@ -15,6 +15,8 @@ import {
   CODE_LANGUAGE_BY_ID,
   CODE_LANG_PICKER_SIZE,
   CODE_LANG_PICKER_TOP_OFFSET,
+  MERMAID_CODE_LANGUAGE,
+  codeLanguageEntries,
   codeLanguageId,
   codeLanguageLabel,
   codeLangPickerStyle,
@@ -387,5 +389,52 @@ describe('代码语言 · mixin 行为', () => {
     expect(ctx.codeLangContains(node('.lark-doc-code-lang-trigger'))).toBe(true)
     expect(ctx.codeLangContains(node('.other'))).toBe(false)
     expect(ctx.codeLangContains(null)).toBe(false)
+  })
+})
+
+describe('代码语言 · 图表项（Mermaid 图表不是 71 项语言之一）', () => {
+  it('04 §2.2 ⑤ 的 71 项里没有 mermaid —— 它是本库追加的图表入口', () => {
+    expect(CODE_LANGUAGES.filter((item) => item.id === 'mermaid')).toHaveLength(0)
+    expect(CODE_LANGUAGE_BY_ID.mermaid).toBeUndefined()
+    expect(MERMAID_CODE_LANGUAGE).toEqual({ id: 'mermaid', label: 'Mermaid 图表', grammar: null })
+  })
+
+  it('图表开启 → 72 项且 Mermaid 图表在末尾；关闭 → 精确回到 71 项', () => {
+    const on = codeLanguageEntries({ diagram: true })
+    expect(on).toHaveLength(72)
+    expect(on[71]).toEqual(MERMAID_CODE_LANGUAGE)
+    expect(on.slice(0, 71)).toEqual(CODE_LANGUAGES)
+    expect(codeLanguageEntries({ diagram: false })).toHaveLength(71)
+    // 缺省（载荷没带开关）按「图表开着」处理，与 CodeBlock 扩展默认值一致。
+    expect(codeLanguageEntries()).toHaveLength(72)
+    expect(codeLanguageEntries(undefined)).toHaveLength(72)
+  })
+
+  it('mermaid 走同一套双轨：显示名 / 反查都通，且不污染 71 项表', () => {
+    expect(codeLanguageLabel('mermaid')).toBe('Mermaid 图表')
+    expect(codeLanguageId('Mermaid 图表')).toBe('mermaid')
+    expect(codeLanguageId('Plain Text')).toBe('plaintext')
+  })
+
+  it('mixin 认 `diagramEnabled`：关掉图表后列表只剩 71 项', () => {
+    const editor = fakeEditor(null)
+    const rect = { left: 0, top: 0, right: 1, bottom: 1 }
+    const off = mixinCtx({ editor })
+    off.onCodeLangRequest({ editor, pos: 1, language: 'go', diagramEnabled: false, rect })
+    expect(off.codeLangDiagram).toBe(false)
+    expect(off.codeLangItems).toHaveLength(71)
+    expect(off.codeLangItems.map((item) => item.id)).not.toContain('mermaid')
+
+    const on = mixinCtx({ editor })
+    on.onCodeLangRequest({ editor, pos: 1, language: 'go', rect })
+    expect(on.codeLangDiagram).toBe(true)
+    expect(on.codeLangItems).toHaveLength(72)
+    expect(on.codeLangItems[71].id).toBe('mermaid')
+  })
+
+  it('搜索时图表项也参与过滤（输入 `jav` 不该冒出 Mermaid 图表）', () => {
+    const hit = filterCodeLanguages('jav', codeLanguageEntries({ diagram: true }))
+    expect(hit.map((item) => item.id)).toEqual(['java', 'javascript'])
+    expect(filterCodeLanguages('mer', codeLanguageEntries({ diagram: true })).map((item) => item.id)).toEqual(['mermaid'])
   })
 })

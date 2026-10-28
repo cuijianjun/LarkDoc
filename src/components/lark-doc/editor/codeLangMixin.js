@@ -19,6 +19,7 @@
 import {
   CODE_LANG_PICKER_SIZE,
   codeLangPickerStyle,
+  codeLanguageEntries,
   codeLanguageLabel,
   filterCodeLanguages,
 } from './codeLanguages'
@@ -33,6 +34,12 @@ export default {
       codeLangValue: 'Plain Text',
       codeLangQuery: '',
       codeLangStyle: { left: 0, top: 0 },
+      /**
+       * 图表开关（`features.diagram`）：开着才追加「Mermaid 图表」项（见 `codeLanguages.js`
+       * 里 `MERMAID_CODE_LANGUAGE` 的取舍）。默认 `true` 与 CodeBlock 扩展默认值一致，
+       * 载荷没带这个字段时按「开着」处理。
+       */
+      codeLangDiagram: true,
       /** 信号退订器（beforeDestroy 里要用）。 */
       _codeLangOff: null,
     }
@@ -46,15 +53,16 @@ export default {
   computed: {
     /** 搜索过滤后的列表（子串、大小写不敏感、保持原序）。 */
     codeLangItems() {
-      return filterCodeLanguages(this.codeLangQuery)
+      return filterCodeLanguages(this.codeLangQuery, codeLanguageEntries({ diagram: this.codeLangDiagram }))
     },
   },
   methods: {
-    /** NodeView → 宿主：`{ editor, pos, language, rect }`。 */
+    /** NodeView → 宿主：`{ editor, pos, language, rect, diagramEnabled }`。 */
     onCodeLangRequest(payload) {
       if (!payload || payload.editor !== this.editor) return
       if (!this.writable()) return
       this.codeLangPos = typeof payload.pos === 'number' ? payload.pos : null
+      this.codeLangDiagram = payload.diagramEnabled !== false
       this.codeLangValue = codeLanguageLabel(payload.language)
       this.codeLangQuery = ''
       this.codeLangOpen = true

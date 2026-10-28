@@ -179,6 +179,9 @@ export default {
       contentTheme: readContentTheme(),
       // 图表块（mermaid）直接渲染预览，与 Vditor 行为一致；「编辑源码」可切回编辑。
       previewShown: isDiagramLanguage(this.node?.attrs?.language) && this.extension?.options?.diagram !== false,
+      // 上一次见到的语言（`syncDiagramAfterLanguageChange` 靠它判断「是不是刚切成图表」）。
+      // ⚠️ 别用 `_` 前缀：Vue 2 不代理 `_` / `$` 开头的 data key，`this._x` 恒为 undefined。
+      lastLanguageSeen: this.node?.attrs?.language || '',
     }
   },
   computed: {
@@ -216,7 +219,7 @@ export default {
   watch: {
     node: {
       deep: true,
-      handler() { this.refreshHighlighted(); this.scheduleDiagramRender() },
+      handler() { this.syncDiagramAfterLanguageChange(); this.refreshHighlighted(); this.scheduleDiagramRender() },
     },
   },
   created() {
@@ -245,6 +248,24 @@ export default {
       this.contentTheme = theme
       if (degraded || !this.showPreview) return
       this.scheduleDiagramRender()
+    },
+
+    /**
+     * 语言被改成 mermaid（语言浮层里选「Mermaid 图表」）时**立刻给预览**。
+     *
+     * 为什么只看语言变化、不看 `isDiagram`：代码块是**已存在**的节点，`previewShown`
+     * 只在 `data()` 里按初始语言算过一次；而「编辑源码」是用户主动切的状态，
+     * 任何一次无关 transaction 都把它翻回预览会让人切不回源码。
+     * 反面也一样：从 mermaid 切回普通语言要丢掉已渲染的图，否则旧 SVG 会赖在 DOM 里。
+     */
+    syncDiagramAfterLanguageChange() {
+      const language = this.node?.attrs?.language || ''
+      if (language === this.lastLanguageSeen) return
+      const wasDiagram = isDiagramLanguage(this.lastLanguageSeen)
+      const nextIsDiagram = isDiagramLanguage(language)
+      this.lastLanguageSeen = language
+      if (nextIsDiagram && !wasDiagram) this.previewShown = true
+      if (!nextIsDiagram && wasDiagram) { this.diagramState = 'idle'; this.diagramSvg = ''; this.diagramError = '' }
     },
 
     refreshHighlighted() {
@@ -324,6 +345,8 @@ export default {
         editor: this.editor,
         pos: typeof this.getPos === 'function' ? this.getPos() : null,
         language: this.node?.attrs?.language || 'plaintext',
+        // 图表关掉时下拉不该出现「Mermaid 图表」（`docs/blocks/code-block.md`）。
+        diagramEnabled: this.diagramEnabled,
         rect: el.getBoundingClientRect(),
       })
     },

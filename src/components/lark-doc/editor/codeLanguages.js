@@ -109,14 +109,38 @@ export const CODE_LANG_PICKER_SIZE = Object.freeze({ width: 219, height: 317 })
 /** 定位口径（§2.2 ③）：左缘对齐按钮左缘、**顶 = 按钮底 + 3**。 */
 export const CODE_LANG_PICKER_TOP_OFFSET = 3
 
+/**
+ * 「Mermaid 图表」——**图表块的入口，不是 71 项语言之一**（§2.2 ⑤ 那张表里没有它）。
+ *
+ * 为什么不并进 `CODE_LANGUAGES`：那张表是 04 §2.2 ⑤ 的逐字快照，多一项就与真机不一致
+ * （`test/unit/code-lang-ui.test.js` 直接断言 `toHaveLength(71)`）。但把 mermaid 从下拉里
+ * 拿掉等于砍掉「代码块 → 图表块」这条既有路径（`docs/blocks/code-block.md`：
+ * `features.diagram` 关闭后语言下拉不再提供 Mermaid 图表），所以按开关**动态追加** ——
+ * 开着 72 项、关掉回到 71 项，与 `scripts/check-vditor-html.js` 的两条断言同一口径。
+ */
+export const MERMAID_CODE_LANGUAGE = Object.freeze({ id: 'mermaid', label: 'Mermaid 图表', grammar: null })
+
+/**
+ * 下拉实际渲染的清单：71 项语言 +（图表开启时）Mermaid 图表。
+ *
+ * @param {{diagram?: boolean}} [options]
+ * @returns {ReadonlyArray<CodeLanguage>}
+ */
+export function codeLanguageEntries(options) {
+  const diagram = !options || options.diagram !== false
+  return diagram ? CODE_LANGUAGES.concat([MERMAID_CODE_LANGUAGE]) : CODE_LANGUAGES
+}
+
 /** id → 显示名；未知 id 原样返回（历史文档里可能有自定义值）。 */
 export function codeLanguageLabel(id) {
+  if (id === MERMAID_CODE_LANGUAGE.id) return MERMAID_CODE_LANGUAGE.label
   const hit = CODE_LANGUAGE_BY_ID[id]
   return hit ? hit.label : id
 }
 
 /** 显示名 → id；未命中返回 `null`（调用方决定兜底）。 */
 export function codeLanguageId(label) {
+  if (label === MERMAID_CODE_LANGUAGE.label) return MERMAID_CODE_LANGUAGE.id
   const hit = CODE_LANGUAGES.filter((item) => item.label === label)[0]
   return hit ? hit.id : null
 }
