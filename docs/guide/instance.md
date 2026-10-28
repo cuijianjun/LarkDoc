@@ -1,10 +1,8 @@
 # 实例与事件
 
-## 概述
-
 `new LarkDoc()` 返回一个无框架控制器，方法覆盖内容读写、选区操作、只读切换与销毁；事件既支持 `onReady/onUpdate` 这类构造参数，也支持 `doc.on('save', fn)` 这类订阅式写法。销毁顺序固定为：停止 AI → 触发事件 → 销毁编辑器 → `$destroy` → 移除 DOM。
 
-## 配置内容
+## 方法速览
 
 ```ts
 const doc = new LarkDoc({ element: '#editor', content: '<p>hi</p>' })
@@ -40,7 +38,7 @@ doc.off('update', handler)
 doc.destroy()
 ```
 
-## 配置说明
+## 方法与事件
 
 ### 实例方法
 

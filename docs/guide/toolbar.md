@@ -1,10 +1,8 @@
 # 工具栏配置
 
-## 概述
-
 工具栏用 `toolbarKeys` 白名单 / `toolbarExcludes` 黑名单裁剪，key 对齐 AiEditor 的写法。分组粒度对应工具栏的 12 个按钮区，行内格式额外支持按 mark 单独裁剪；常用别名（`heading`、`table`、`undo`）会自动落到正确分组，未知 key 记录在 `instance.unknownToolbarKeys`，不会导致初始化失败。
 
-## 配置内容
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -16,7 +14,7 @@ new LarkDoc({
 })
 ```
 
-## 配置说明
+## key 表与规则
 
 ### 分组 key（12 个）
 

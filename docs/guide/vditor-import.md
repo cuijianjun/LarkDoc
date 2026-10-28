@@ -1,7 +1,5 @@
 # 旧数据导入（Vditor）
 
-## 概述
-
 Vditor 的主存储格式是 Markdown，但对外的 HTML 导出（`getHTML()`）里保留了它自己的扩展语义，这些结构不是标准 HTML，直接塞进 Tiptap 会丢内容或错语义：
 
 | 旧结构 | Vditor 产物 | 直接解析的结果 |
@@ -19,7 +17,7 @@ Vditor 的主存储格式是 Markdown，但对外的 HTML 导出（`getHTML()`�
 只支持 `getHTML()` 导出的 HTML。Markdown（`getValue()`）与 Lute AST（`exportJSON()`）不在范围内——如果手里是 Markdown，先调 `vditor.getHTML()` 再导入。
 :::
 
-## 配置内容
+## 三种用法
 
 ```ts
 import { LarkDoc, isVditorHtml, normalizeVditorHtml } from 'lark-doc'
@@ -44,7 +42,7 @@ if (isVditorHtml(html)) {
 }
 ```
 
-## 配置说明
+## 转换细节与校验
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |

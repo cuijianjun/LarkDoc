@@ -1,10 +1,8 @@
 # 导入导出
 
-## 概述
-
 导入导出组件覆盖 HTML、Markdown、JSON、纯文本、DOCX、打印 / PDF 六种导出目标，导入侧支持 HTML、JSON、Markdown、DOCX。Markdown 转换基于 marked / Turndown 本地完成，DOCX 按需动态加载 `docx` 依赖（不进入编辑器首包）。
 
-## 配置内容
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -15,7 +13,7 @@ new LarkDoc({
 
 > 转换工具函数（`markdownToHtml` / `htmlToMarkdown` / `exportDocx`）是包内部实现，**未从入口具名导出**；宿主接入导入导出走 `features.importExport` 开关即可，无需直接调用。
 
-## 配置说明
+## 配置与用法
 
 | 能力 | 方向 | 依赖 | 说明 |
 | --- | --- | --- | --- |
