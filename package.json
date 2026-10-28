@@ -7,8 +7,9 @@
   "packageManager": "npm@8.19.4",
   "scripts": {
     "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
-    "build:umd": "LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
+    "build:umd": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
     "build:esm": "node scripts/build-esm.js",
+    "build:adapters": "node scripts/build-adapters.js",
     "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:umd && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
     "lint": "eslint --ext .js,.vue src scripts",
     "check": "npm run check:gate && npm run check:artifacts",
@@ -35,7 +36,7 @@
     "verify": "node scripts/verify.mjs",
     "verify:all": "node scripts/verify.mjs --all",
     "verify:list": "node scripts/verify.mjs --list",
-    "build:element": "LARK_DOC_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc-element --formats umd-min src/web-component/index.js",
+    "build:element": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc-element --formats umd-min src/web-component/index.js",
     "size": "size-limit",
     "ship": "bash scripts/release.sh",
     "ship:minor": "bash scripts/release.sh --minor",
@@ -163,8 +164,15 @@
   ],
   "main": "dist/lark-doc.common.js",
   "module": "dist/lark-doc.esm.js",
+  "browser": "dist/lark-doc.umd.min.js",
   "unpkg": "dist/lark-doc.umd.min.js",
+  "jsdelivr": "dist/lark-doc.umd.min.js",
   "style": "style.css",
+  "sideEffects": [
+    "**/*.css",
+    "**/*.scss",
+    "dist/*"
+  ],
   "files": [
     "dist",
     "src",
@@ -172,6 +180,7 @@
     "README.md",
     "DEMO_INTEGRATION_GUIDE.md",
     "babel.config.js",
+    "legacy-syntax.js",
     "vue.config.js"
   ],
   "peerDependencies": {
@@ -192,17 +201,40 @@
     "@tiptap/extension-collaboration-caret": {
       "optional": true
     },
+    "@tiptap/vue-2": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    },
     "yjs": {
       "optional": true
     }
   },
   "exports": {
     ".": {
+      "node": "./dist/lark-doc.common.js",
       "import": "./dist/lark-doc.esm.js",
       "require": "./dist/lark-doc.common.js",
       "default": "./dist/lark-doc.common.js"
     },
     "./element": "./dist/lark-doc-element.umd.min.js",
+    "./vue3": {
+      "import": "./dist/lark-doc-vue3.mjs",
+      "default": "./dist/lark-doc-vue3.mjs"
+    },
+    "./react": {
+      "import": "./dist/lark-doc-react.mjs",
+      "default": "./dist/lark-doc-react.mjs"
+    },
+    "./adapters/vue3": {
+      "import": "./dist/lark-doc-vue3.mjs",
+      "default": "./dist/lark-doc-vue3.mjs"
+    },
+    "./adapters/react": {
+      "import": "./dist/lark-doc-react.mjs",
+      "default": "./dist/lark-doc-react.mjs"
+    },
     "./collab": {
       "import": "./dist/lark-doc-collab.esm.js",
       "default": "./dist/lark-doc-collab.esm.js"

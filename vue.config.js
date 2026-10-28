@@ -13,6 +13,8 @@ const webpack = require('webpack')
  *   publicPath:'auto' 能可靠推导出 chunk 地址 → 同上只拆按需区块。
  * - esm（scripts/build-esm.js）：ES Module 产物，`module` 字段指向它。宿主打包器会接管
  *   原生 import() 重新做代码分割 → 初始区块也能拆，是体积与首屏收益最大的产物。
+ * - adapters（scripts/build-adapters.js）：跨框架薄壳，dist/lark-doc-{vue3,react}.mjs。
+ *   两个入口必须**各自自包含**，所以这一档既不拆包也不抽 CSS。
  *
  * 拆包策略：首屏只需要「编辑器内核 + 工具栏」，所以按依赖性质分组——
  *   tiptap / vue / vendor 属于初始区块（并行下载、长期缓存，仅 esm 可拆）；
@@ -20,11 +22,17 @@ const webpack = require('webpack')
  *   真正用到时才下载（按需区块），主包因此小一半。
  */
 const target = process.env.LARK_DOC_TARGET || 'lib'
+/** UMD / element 两档降级到 ES2018，让 webpack 4 宿主能直接解析（见 babel.config.js）。 */
+const isLegacy = process.env.LARK_DOC_LEGACY === '1'
 const isElement = target === 'element'
 const isUmd = target === 'umd'
 const isEsm = target === 'esm'
-const isLib = !isElement && !isUmd && !isEsm
-const split = !isLib
+/** 薄壳档：build-adapters.js 自己配 output / splitChunks，这里只需不套用 lib 的单文件闸门。 */
+const isAdapters = target === 'adapters'
+/** 薄壳关掉 polyfill 注入（见 babel.config.js），同样影响 babel 输出，缓存必须分流。 */
+const noPolyfill = process.env.LARK_DOC_NO_POLYFILL === '1'
+const isLib = !isElement && !isUmd && !isEsm && !isAdapters
+const split = !isLib && !isAdapters
 /** 只有 esm 能安全拆初始区块（它的 output.filename 带 [name]）。 */
 const initialChunks = isEsm ? 'all' : 'async'
 
@@ -94,6 +102,30 @@ module.exports = defineConfig({
     // core-js 注入会往文件头加 require()，file-loader 落盘后在浏览器里
     // 直接 ReferenceError: require is not defined。源码资产按原样落盘。
     config.module.rule('js').exclude.add(path.resolve(__dirname, 'src/assets'))
+
+    // 但「不进 babel」不等于「可以带着新语法出门」：vendored mermaid 是别人压好的
+    // 产物，里面有 `??` / `?.`，webpack 4 的 acorn 一样读不了。于是单独挂一条
+    // 只做语法降级的 loader —— 不带 preset、不带 targets、不带 core-js，
+    // 因此不会注入 require()，不会破坏 UMD 形态。
+    if (isLegacy) {
+      config.module
+        .rule('legacy-vendor-syntax')
+        .enforce('pre')
+        .test(/[\\/]src[\\/]assets[\\/]vendor[\\/].*\.js$/)
+        .use('babel-loader')
+        .loader(require.resolve('babel-loader'))
+        .options({
+          configFile: false,
+          babelrc: false,
+          sourceType: 'script',
+          presets: [],
+          plugins: require('./legacy-syntax'),
+          // 源文件本来就是压缩过的，别让 generator 再排版一遍。
+          compact: true,
+          minified: true,
+          comments: false,
+        })
+    }
   },
   css: {
     // element / umd / esm 都是「直挂即用」的产物：样式随 JS 注入 <style>，宿主不需要
@@ -107,8 +139,10 @@ module.exports = defineConfig({
     // 共用一份缓存会让模块级别的结果串味（external vue 的 ESM/CJS 形态就是典型）。
     cache: {
       type: 'filesystem',
-      name: `lark-doc-${target}`,
-      buildDependencies: { config: [__filename] },
+      // LARK_DOC_LEGACY 会改变 babel 输出（降语法），必须换一份缓存，否则同一个
+      // target 在两种口径间来回构建会命中对方的 babel 结果。
+      name: `lark-doc-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}`,
+      buildDependencies: { config: [__filename, path.resolve(__dirname, 'babel.config.js')] },
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。
     performance: { hints: false },
