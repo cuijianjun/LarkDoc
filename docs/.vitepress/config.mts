@@ -56,6 +56,7 @@ export default defineConfig({
             { text: '背景与免责声明', link: '/guide/about' },
             { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
             { text: '离线与资源本地化', link: '/guide/offline' },
+            { text: '内网迁移实战（Vue2/3）', link: '/guide/intranet-migration' },
           ],
         },
       ],

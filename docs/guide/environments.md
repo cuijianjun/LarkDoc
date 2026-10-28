@@ -1041,6 +1041,7 @@ const Editor = dynamic(() => import('../components/Editor'), { ssr: false })
 ## 下一步
 
 - [打包产物与按需加载](/guide/build-artifacts)：四份产物分别给谁用、`dist/` 里哪些文件必须部署
+- [内网迁移实战](/guide/intranet-migration)：webpack4 / webpack5 / Vue3+Vite 三套宿主搬进内网的分步操作
 - [配置总览](/guide/configuration)：全部配置项与默认值
 - [工具栏配置](/guide/toolbar)：12 个分组 + 8 个 mark + 别名全表
 - [Web Component（跨框架）](/guide/web-component)：属性、事件、方法与生命周期
