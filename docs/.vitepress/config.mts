@@ -2,13 +2,30 @@ import { defineConfig } from 'vitepress'
 
 // 版式对齐 AiEditor Docs：
 // 上：全局导航 + 搜索框；左：功能点清单（每个功能一页）；
-// 中：概述 → 配置内容 → 配置说明；右：本页目录（outline）。
+// 中：正文（每页小标题按内容命名，不再套「概述 / 配置内容 / 配置说明」）；右：本页目录（outline）。
+// 部署路径可注入：
+//   GitHub Pages 项目页 → 默认 '/LarkDoc/'（cuijianjun.github.io/LarkDoc/）
+//   内网根路径          → DOCS_BASE=/ npm run docs:build
+//   内网子路径          → DOCS_BASE=/lark-doc/ npm run docs:build
+// base 必须写首尾斜杠，且会渗透进资源 URL、路由与本地搜索索引，构建后不可 sed 替换。
+const BASE = (() => {
+  const raw = process.env.DOCS_BASE || '/LarkDoc/'
+  const withLead = raw.startsWith('/') ? raw : '/' + raw
+  return withLead.endsWith('/') ? withLead : withLead + '/'
+})()
+
 export default defineConfig({
-  base: '/LarkDoc/',
+  base: BASE,
   lang: 'zh-CN',
   title: 'lark-doc',
   description: 'LarkDoc 风格 Tiptap 文档编辑器 · 开发文档',
-  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/LarkDoc/logo.svg' }]],
+  // head 里是裸 HTML，不会自动套 base，必须手动拼 BASE。
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: BASE + 'logo.svg' }]],
+
+  // VitePress 会把 srcDir 下所有 .md 都编译成页面。docs/superpowers/ 放的是内部
+  // 实施计划与设计规格（不是对外文档），不排除就会被打进产物、并混进本地搜索索引。
+  // 注意：srcExclude 一旦显式设置会覆盖默认值，所以默认的三条要一并写回。
+  srcExclude: ['superpowers/**', '**/README.md', '**/CHANGELOG.md', '**/CONTRIBUTING.md'],
 
   themeConfig: {
     siteTitle: 'lark-doc Docs',
@@ -56,6 +73,9 @@ export default defineConfig({
             { text: '背景与免责声明', link: '/guide/about' },
             { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
             { text: '离线与资源本地化', link: '/guide/offline' },
+            { text: '性能基线与收口', link: '/guide/performance' },
+            { text: '内网服务器部署', link: '/guide/deployment-intranet' },
+            { text: '文档站内网部署', link: '/guide/deployment-docs-site' },
           ],
         },
       ],
