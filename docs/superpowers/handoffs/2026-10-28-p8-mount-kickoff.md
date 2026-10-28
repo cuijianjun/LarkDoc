@@ -1,6 +1,7 @@
 # P8 立项：首屏可交互（`mountToTypeableMs`）
 
-> **状态：立项待批。** 本文件只定问题、判据与路线，不含实现，也不改任何代码。
+> **状态：P8-00（测量可信度）已落地，P8-01（归因）待启动。**
+> 本文件只定问题、判据与路线，不含实现细节；实现记录见 §10。
 > 上游：`2026-10-27-p7-task7-handoff.md`（P7 收口，三条绝对耗时线未达标）
 > 依据：`docs/guide/performance.md` §二（P7-05「不窗口化」的决策仍有效）、`perf/report.md`
 
@@ -103,6 +104,7 @@ P7 已经因为「把推测当结论」返工过一次（`perf/report.md` 的订
 
 | 编号 | 内容 | 依赖 |
 | --- | --- | --- |
+| P8-00 | 采集环境可信度：负载门 + 孤儿浏览器收口 + 分位数口径 | — |
 | P8-01 | `setContent` 全链分项打点，产出归因表（补进 `perf/report.md`） | — |
 | P8-02 | `hydrationComplete` 闸门 + 首屏 N 块灌入 | P8-01 判定走 A |
 | P8-03 | 四条契约的补齐语义（保存/导出强制补齐、查找明示、目录跳转、装饰重算） | P8-02 |
@@ -114,3 +116,42 @@ P7 已经因为「把推测当结论」返工过一次（`perf/report.md` 的订
 - `keystrokeP95Ms` 的根因（同样未分项归因，另立任务；出路在 DOM 补丁与排版侧）。
 - `decorationIncrementalMs` 78.8 ms 的分项归因（P7 已决定接受现状，见交接 §6.1.4）。
 - 挂账 #7② 多步事务退回全量的真实 fixture 实测。
+
+## 10. 实现记录
+
+### P8-00 采集环境可信度（已完成，未发布）
+
+**为什么先做这个而不是直接冲 `mountToTypeableMs`**：P7 收口前后有 5 次假红，指标一次涨
+20%~124%，代码零改动。根因是采集环境，不是产品。归因打点（P8-01）要读的是 ms 级分项，
+在一台被 16 worker 构建尾流和孤儿 Chromium 压着的机器上做，等于把噪声当信号。
+**先修尺子，再量东西。**
+
+**改动（全部在 `scripts/perf/` 与测试，`src/` 一行未动）：**
+
+| 文件 | 性质 | 内容 |
+| --- | --- | --- |
+| `scripts/perf/preflight.mjs` | 新增，约 95 行 | 纯函数 `loadLimit({cores,factor,floor})` / `evaluateLoad({load1,...})`，无 IO 无浏览器 |
+| `scripts/perf/measure.mjs` | 修改 | ① 采集前 `waitForIdleMachine()` 轮询负载门；② `countOrphanChromium()` 计数告警；③ 模块级 `activeBrowser`/`activeServer` + 幂等 `teardown()`；④ `SIGINT/SIGTERM/SIGHUP` → 关浏览器、退出码 130；⑤ `interruptedBySignal` 守卫阻止 `main().catch` 抢先 `exit(1)` |
+| `test/unit/perf-preflight.test.js` | 新增，14 条 | 用事故现场数字钉判据（`15.78` 必红、`5.95` 必绿、边界取等号、非法入参回退） |
+| `perf/report.md` | 新增小节 | 「P8-00：尺子的第三处缺口」，含本轮实测表与复现命令 |
+
+**判据**：`load1 ≤ max(4, floor(cores × 0.5))`。16 核 → 上限 8；4 核 → 下限 4 生效。
+等待上限 180 s（`PERF_LOAD_WAIT_MS`），超时**抛错退出 1 且不启动浏览器**。
+
+**实测四条：**
+
+1. **正路径**：`load 6.35 ≤ 8` 直接采，无等待。
+2. **负路径**：`PERF_LOAD_MAX=1` 连等两次后超时抛错，`EXIT=1`，全程未启动浏览器。
+3. **信号路径**：`spawn` 采集 + 25 s 后 `SIGTERM` → 打印「收到 SIGTERM，正在关闭浏览器」→
+   `gracefully close` → `forcefully close` → `kill` → **`code=130 signal=null`** →
+   `pgrep` 无残留。修复前这里是 `exit(1)`（被误报成采集失败）。
+4. **完整采集复核**（`2026-10-28T08:43:34Z`，代码零改动）：负载门 **5.87 ≤ 8** 放行、
+   采完残留 **0**、`report.mjs` **7/7 全绿 EXIT=0**。七项 Δ 均在 ±13% 内（有正有负），
+   即「尺子不再随机报红」，不是「性能变好」。
+
+**未做（有意）**：`report.mjs --update` 未执行 —— 基线要等 P8 真出收益、或一次「刚重启、load < 2」
+的采集再推，否则等于把噪声写成标准。
+
+**下一步 P8-01 的入口条件已满足**：起点数字为 `mountToTypeableMs = 35565.8`
+（`keystrokeP95Ms = 902.2` / `decorationIncrementalMs = 74.3` 作为连带指标）。
+

@@ -63,6 +63,70 @@ P7 前的 37297.2 与上一版的 2578.0 都是「8 次里最差一次」，本�
 10% 这个量级里有多少是噪声、有多少是真实波动，仍然要在空闲机器上再采一次才能分开。
 **跨量级的变化才有意义，十几个百分点不要拿来下结论。**
 
+## P8-00：尺子的第三处缺口 —— 采集环境本身（负载门 + 孤儿浏览器收口）
+
+决策 B 修的是「**样本怎么算**」。这一节修的是「**什么时候能采**」——
+它比统计口径更早出问题，而且症状是**假红**：P7 收口前后连着 5 次 `check:perf` 报退化，
+指标一次性涨 20%~124%，但代码一行没改。
+
+根因两条，都不是产品代码：
+
+1. **`check:perf` 是串跑**：`build:element && measure && report`。vue-cli 的 16 worker
+   构建尾流（构建进程退出后 worker 仍在回收）把 `loadavg[0]` 从 7.38 推到 **15.78**，
+   measure 紧跟其后采在热机上 → 4 项直接命中 >20% 判退化。等机器静下来（5.95）
+   **单独跑同一份 `dist`**，7/7 全绿。**同一份产物、同一段代码，只差采集时机。**
+2. **孤儿 headless Chromium**：`measure.mjs` 被 kill / 超时打断时，`finally` 里的
+   `browser.close()` 不执行，被中断退出就没机会走到那儿。残留进程（profile 目录名含
+   `playwright_chromiumdev_profile`）逐轮叠加，把机器一路压到满核 ——
+   **下一次采集更慢 → 更容易超时 → 再叠一个**，是个正反馈。
+
+改法分三层，全部不碰 `src/`：
+
+| 层 | 文件 | 做什么 |
+| --- | --- | --- |
+| 负载门 | `scripts/perf/preflight.mjs`（新，纯函数）+ `measure.mjs` | 采集前轮询 `os.loadavg()`，`load1 ≤ max(4, floor(cores × 0.5))` 才放行（16 核 → 上限 8）；超时抛错、退出码 1，**且不启动浏览器** |
+| 孤儿守卫 | `measure.mjs` | 采集前 `pgrep` 计数并 warn（**不自动杀**，避免误伤并行采集）；等待超时时提示清理命令 |
+| 信号收口 | `measure.mjs` | `SIGINT` / `SIGTERM` / `SIGHUP` → 幂等 `teardown()` 关浏览器，退出码统一 **130** |
+
+判据被抽成纯函数是老问题复发：`measure.mjs` 在模块顶层就 `main()` 起浏览器，用例 import 不了，
+所以负载判定必须独立成无 IO 模块（与 `gate.mjs` / `stats.mjs` 同一套分层）。
+`test/unit/perf-preflight.test.js` 14 条，直接用事故现场的数字钉住 ——
+`load1=15.78, cores=16` 必须 `idle:false`，`load1=5.95` 必须 `idle:true`，退回去就变红。
+
+**信号路径实测**（`spawn` 一个 2000 块采集，25 s 后发 `SIGTERM`）：
+
+```
+[measure] 收到 SIGTERM，正在关闭浏览器以免留下孤儿 Chromium...
+<gracefully close start> → <forcefully close> → <kill>
+子进程退出 code=130 signal=null
+OK: 无残留 headless Chromium
+```
+
+退出码这里踩过一次：`main().catch` 会抢在 signal handler 前面 `exit(1)`，把「被信号打断」
+误报成「采集失败」。加 `interruptedBySignal` 标志守卫后才拿到 130。
+
+**P8-00 之后的第一轮完整采集**（`2026-10-28T08:43:34Z`，代码零改动，与基线仍可比）：
+
+- 负载门实测 **5.87 ≤ 8** 放行（16 核）；采集结束 `pgrep` 计数 **0**；
+- `node scripts/perf/report.mjs` → **7/7 全绿、EXIT=0**。
+
+| 指标 | 基线（10-27T15:45Z） | 本次（10-28T08:43Z） | Δ |
+| --- | ---: | ---: | ---: |
+| `mountToTypeableMs` | 38810.1 | 35565.8 | −8% |
+| `keystrokeP95Ms` | 939.7 | 902.2 | −4% |
+| `keystrokeP99Ms` | 2372.1 | 2458.3 | +4% |
+| `decorationIncrementalMs` | 78.8 | 74.3 | −6% |
+| `scrollFps` | 59.3 | 59 | −1% |
+| `saveProxyMs` | 24.6 | 21.3 | −13% |
+| `heapMB` | 107.8 | 107.9 | 0% |
+
+**这张表证明的不是「性能变好了」，是「尺子不再随机报红」**：所有 Δ 都在 ±13% 内，
+方向有正有负，和上一节「十几个百分点不要拿来下结论」一致。它唯一的用处是
+**给 P8-01 的归因提供一个不再被外生扰动污染的起点**。
+
+**本轮没有推进基线**（`report.mjs --update` 未执行）：基线要等 P8 真正改出收益、
+或至少等一次「机器刚重启、load < 2」的采集再推，否则等于把噪声写成标准。
+
 ## 结果
 
 | 指标 | P7 前（10-24 基线） | 上一版（10-27 14:43Z） | 本次（10-27 15:44Z） | 退出目标 | 判定 |
@@ -288,4 +352,15 @@ node scripts/perf/report.mjs
 
 # 门禁自身的回归夹具（合成数据，不起浏览器）
 npx vitest run test/unit/perf-gate.test.js
+
+# 采集环境自检（负载判定 + 分位数口径，纯函数，不起浏览器）
+npx vitest run test/unit/perf-preflight.test.js test/unit/perf-stats.test.js
+```
+
+采集前若想绕开/收紧负载门（默认 `load1 ≤ max(4, cores/2)`，等待上限 180 s）：
+
+```bash
+PERF_SKIP_LOAD_WAIT=1 node scripts/perf/measure.mjs   # 跳过等待（会 warn，结果不可比）
+PERF_LOAD_MAX=2       node scripts/perf/measure.mjs   # 手动指定上限，在共享机器上用
+PERF_LOAD_WAIT_MS=0   node scripts/perf/measure.mjs   # 只判一次，不等待
 ```
