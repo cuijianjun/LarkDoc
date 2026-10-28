@@ -27,7 +27,7 @@ lark-doc 的协同、权限、版本、评论能力都收敛在 `DocumentSession
 ### 方式一：直接传会话实例
 
 ```ts
-import { createLarkDoc, createDocumentSession } from 'lark-doc'
+import { LarkDoc, createDocumentSession } from 'lark-doc'
 
 const session = createDocumentSession({
   documentId: 'doc-1',
@@ -39,13 +39,13 @@ const session = createDocumentSession({
   mode: 'collaborative',
 })
 
-const doc = createLarkDoc({ element: '#editor', session })
+const doc = new LarkDoc({ element: '#editor', session })
 ```
 
 ### 方式二：散配置快捷项（门面代建会话）
 
 ```ts
-const doc = createLarkDoc({
+const doc = new LarkDoc({
   element: '#editor',
   documentId: 'doc-1',
   user: { id: 'u-1', name: '张三' },

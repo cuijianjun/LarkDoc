@@ -15,7 +15,6 @@
  * mount/ 渲染适配层与 Web Component 产物内部，外层宿主不需要安装 Vue。
  */
 
-/* global __webpack_public_path__ */
 // 按需区块（math / office / mermaid / highlight）的基址，口径见 src/index.js 同名注释。
 // 静态 <script src> 引 lark-doc-element.umd.min.js 时无需设置；被宿主打包器 import
 // （webpack4 需写全 dist 路径）时用 window.__LARK_DOC_PUBLIC_PATH__ 指定 dist 所在目录。

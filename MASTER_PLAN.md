@@ -21,7 +21,7 @@
         对内：core(零框架) → components(38 个 Vue2 SFC) → mount/vueRenderer
 
 终局    对外：esm / cjs / element 三套运行时 + N 个零成本子入口
-              <lark-doc> 元素 ｜ createLarkDoc(el, opts) ｜ 可选 vue3/react 薄壳
+              <lark-doc> 元素 ｜ new LarkDoc({ element: el, ...opts }) ｜ 可选 vue3/react 薄壳
               宿主配置 0 行，内网可离线
         对内：core(零框架) → ui(原生 DOM)          → mount/domRenderer
                   ↑ 已达标        ↑ 唯一要干的活           ↑ 接缝早已存在
@@ -145,7 +145,7 @@
 | 资产          | 位置                                                                     | 作用                                           |
 | ----------- | ---------------------------------------------------------------------- | -------------------------------------------- |
 | renderer 契约 | `src/mount/index.js`（`createRenderer` / `setRenderer`）                 | 阶段 7 只差一份 DOM renderer，**不用改内核**             |
-| 命令式门面       | `src/LarkDoc.js` 的 `createLarkDoc` + `src/index.js` 已导出                | 阶段 3 的统一入口**已存在**，只差文档化与其他两端对齐               |
+| 命令式门面       | `src/LarkDoc.js` 的 `new LarkDoc(...)` + `src/index.js` 已导出                | 阶段 3 的统一入口**已存在**，只差文档化与其他两端对齐               |
 | 元素门面        | `src/web-component/index.js` 的 `mountLarkDoc` / `createLarkDocElement` | 元素档已支持 `<script src>` 直挂（源码注释明写），可作为唯一 CDN 档 |
 | 单一 CSS      | `dist/lark-doc.css` 474.6 KB，`./style.css` 已在 exports                  | 规律 5 的一半已达标                                  |
 | 离线门禁        | `scripts/check-offline-assets.js`（`npm run check:offline`）             | 阶段 4 直接扩展，不必新造                               |
@@ -184,9 +184,9 @@
 三种宿主写法收敛成一句：
 
 ```js
-import { createLarkDoc } from 'lark-doc'
+import { LarkDoc } from 'lark-doc'
 import 'lark-doc/style.css'
-const doc = createLarkDoc(el, { content, readonly })
+const doc = new LarkDoc({ element: el, content, readonly })
 doc.on('change', fn); doc.destroy()
 ```
 
@@ -239,17 +239,17 @@ L6  发布面      <lark-doc> Web Component + vue3 / react 薄壳
 
 **一致性判定：分两级达成，不是一次到位。**
 
-- **L1 写法一致（阶段 3 达成）**：六个环境都写 `createLarkDoc(el, opts)`，API 面 `{ on, destroy, getJSON, setJSON }` 完全相同。
+- **L1 写法一致（阶段 3 达成）**：六个环境都写 `new LarkDoc({ element: el, ...opts })`，API 面 `{ on, destroy, getJSON, setJSON }` 完全相同。
 - **L2 路径一致（阶段 7 达成）**：连 `from 'lark-doc'` 这个路径都统一 —— 阶段 7 前 Vue3 / React 必须走 `lark-doc/element`（源码入口含 Vue 2 SFC，这是硬约束），阶段 7 删掉 Vue 后自然消失。
 
 | # | 环境 | 安装 | 引入 | 宿主配置 | 生效阶段 |
 |---|---|---|---|---|---|
-| 1 | **Vue 2**（webpack4 / vue-cli，我们的主战场） | `npm i lark-doc` | ```import { createLarkDoc } from 'lark-doc'```<br>```import 'lark-doc/style.css'``` | **1 行** `larkDoc()`（webpack4 是唯一必装 plugin 的环境，见 §4.8 #1；现在手写 ~19 行） | 3 |
+| 1 | **Vue 2**（webpack4 / vue-cli，我们的主战场） | `npm i lark-doc` | ```import { LarkDoc } from 'lark-doc'```<br>```import 'lark-doc/style.css'``` | **1 行** `larkDoc()`（webpack4 是唯一必装 plugin 的环境，见 §4.8 #1；现在手写 ~19 行） | 3 |
 | 2 | **Vue 3**（vite） | 同上 | 阶段 7 前 `from 'lark-doc/element'`；<br>阶段 7 后同 #1。<br>想用组件糖衣走 `lark-doc/vue3`（3 KB） | **0 行** | 3 → 7 |
 | 3 | **React**（vite / webpack） | 同上 | 阶段 7 前 `from 'lark-doc/element'`；<br>阶段 7 后同 #1。<br>糖衣 `lark-doc/react`（4 KB） | **0 行**（现 ~10 行：2 个 alias 直指 `dist/`、`src/` + optimizeDeps） | 3 → 7 |
 | 4 | **无框架 + 构建**（vite / rollup） | 同上 | 同 #1 | **0 行** | 3 |
 | 5 | **无构建 / 纯 HTML** | 拷 element 文件进内网静态目录 | ```<script src="./lark-doc.element.js"></script>```<br>```<lark-doc readonly theme="light"></lark-doc>``` | **0 行**，且**不设 publicPath** | 3 |
-| 6 | **Node / SSR / 测试** | 同上 | `const { createLarkDoc } = require('lark-doc')`<br>（或直接调 JSON 转换 API，不建编辑器） | **0 行** | 3 |
+| 6 | **Node / SSR / 测试** | 同上 | `const { LarkDoc } = require('lark-doc')`<br>（或直接调 JSON 转换 API，不建编辑器） | **0 行** | 3 |
 
 **唯一的不一致只有 #5**，而且它是物理限制不是设计分裂：没有打包器的 HTML 页无法 `import`，只能 `<script>`。这一档同时兼作 CDN 档，`unpkg` 字段指向它，`browser` 字段直接删掉。
 
@@ -265,7 +265,7 @@ const DocView = () => import('./views/Doc.vue')
 // ② 交互级（重特性，阶段 4 后）
 const { renderMermaid } = await import('lark-doc/features/mermaid')
 // ③ 轻档（不需要重特性时，阶段 4 后）
-import { createLarkDoc } from 'lark-doc/lite'   // ~300 KB，无 mermaid/office/katex
+import { LarkDoc } from 'lark-doc/lite'   // ~300 KB，无 mermaid/office/katex
 ```
 
 ---
@@ -383,7 +383,7 @@ larkDoc({ basePath: '/vendor/lark-doc/current/' })
 源码里照常写：
 
 ```js
-import { createLarkDoc } from 'lark-doc'
+import { LarkDoc } from 'lark-doc'
 import 'lark-doc/style.css'
 ```
 
@@ -506,12 +506,12 @@ npm i lark-doc --save-exact      # 不需要装 vue / @tiptap/vue-2
 **引入**（与应用代码其他 import 毫无区别）
 
 ```js
-import { createLarkDoc } from 'lark-doc'
+import { LarkDoc } from 'lark-doc'
 import 'lark-doc/style.css'
 
 export default {
   mounted() {
-    this.doc = createLarkDoc(this.$refs.el, { content: '<p>hi</p>', readonly: false })
+    this.doc = new LarkDoc({ element: this.$refs.el, content: '<p>hi</p>', readonly: false })
     this.doc.on('change', this.onChange)
   },
   beforeDestroy() { this.doc?.destroy() },
@@ -550,17 +550,17 @@ module.exports = defineConfig({
 ```vue
 <script setup>
 import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { createLarkDoc } from 'lark-doc'      // 阶段 7 前必须写成 'lark-doc/element'
+import { LarkDoc } from 'lark-doc'      // 阶段 7 前必须写成 'lark-doc/element'
 import 'lark-doc/style.css'
 
 const el = ref(null)
 let doc
-onMounted(() => { doc = createLarkDoc(el.value, { content }) })
+onMounted(() => { doc = new LarkDoc({ element: el.value, content }) })
 onBeforeUnmount(() => doc?.destroy())
 </script>
 ```
 
-想要 `<LarkDoc>` 组件糖衣就换成 `import { LarkDoc } from 'lark-doc/vue3'`（3 KB 薄壳，**不内置第二套 UI**）。
+想要 `<LarkDoc>` 组件糖衣就换成 `import { LarkDocVue3 } from 'lark-doc/vue3'`（3 KB 薄壳，**不内置第二套 UI**）。
 
 **构建配置**：**0 行**。`vite.config.js` 只剩框架自己的 `vue()`：
 
@@ -585,20 +585,20 @@ export default defineConfig({ plugins: [vue()] })
 
 ```jsx
 import { useEffect, useRef } from 'react'
-import { createLarkDoc } from 'lark-doc'      // 阶段 7 前写成 'lark-doc/element'
+import { LarkDoc } from 'lark-doc'      // 阶段 7 前写成 'lark-doc/element'
 import 'lark-doc/style.css'
 
 export function Doc({ content }) {
   const ref = useRef(null)
   useEffect(() => {
-    const doc = createLarkDoc(ref.current, { content })
+    const doc = new LarkDoc({ element: ref.current, content })
     return () => doc.destroy()
   }, [])
   return <div ref={ref} />
 }
 ```
 
-组件糖衣：`import { LarkDoc } from 'lark-doc/react'`（4 KB）。
+组件糖衣：`import { LarkDocReact } from 'lark-doc/react'`（4 KB）。
 
 **构建配置**：**0 行**，`vite.config.js` 只剩 `react()`。**现在是 10 行**（同上，纯为绕开 Vue 2 SFC）。
 
@@ -613,9 +613,9 @@ export function Doc({ content }) {
 **引入**：与 #1 完全同一份代码。
 
 ```js
-import { createLarkDoc } from 'lark-doc'
+import { LarkDoc } from 'lark-doc'
 import 'lark-doc/style.css'
-const doc = createLarkDoc(document.querySelector('#app'), { content })
+const doc = new LarkDoc({ element: document.querySelector('#app'), content })
 ```
 
 **构建配置**
@@ -669,8 +669,8 @@ const { htmlToJSON, jsonToHTML } = require('lark-doc')
 const json = htmlToJSON('<h1>标题</h1>')
 
 // ② 要建编辑器（SSR hydrate / jsdom 测试）
-const { createLarkDoc } = require('lark-doc')
-const doc = createLarkDoc(el, { content })
+const { LarkDoc } = require('lark-doc')
+const doc = new LarkDoc({ element: el, content })
 ```
 
 **构建配置**：**0 行**。SSR 与浏览器吃**同一份产物**（阶段 1-A 删掉 `browser` 字段就是为了这一条，Tiptap 同款做法）。
@@ -710,7 +710,7 @@ const DocView = () => import('./views/Doc.vue')
 const { renderMermaid } = await import('lark-doc/features/mermaid')
 
 // ③ 轻档 —— 不需要重特性时换这个入口（~300 KB，无 mermaid/office/katex）
-import { createLarkDoc } from 'lark-doc/lite'
+import { LarkDoc } from 'lark-doc/lite'
 ```
 
 库**不提供运行时 chunk loader**（§4.4 明确「不做」的第三条）：#5 走 `<script>` 的需求由 element 档自身解决，
@@ -731,7 +731,7 @@ import { createLarkDoc } from 'lark-doc/lite'
 | **1-A** | 契约收敛：`sideEffects` 去掉 `dist/*`、`browser` 删除、`exports` 补 `./lite` `./features/*` `./plugin` | 低 | tree-shaking 生效 | 待开（**必做**） |
 | **1-B** | R1/R2/R3 三条闸门 + 渲染接缝契约文档化；**不动任何 UI** | 极低 | 无 | 待开（**必做**） |
 | **2** | 摘 `@tiptap/vue-2`：原生 Editor 挂载 + 原生 NodeView（3 个文件） | 中 | Vue 降级为「仅 UI 渲染器」 | 待开（**必做**） |
-| **3** | 三产物收敛 + 统一门面 `createLarkDoc`；CJS 放开拆块；顺手带出 **V1 过渡态** | 中 | 运行时产物 4 套 → 3 套 | 待开（**必做**） |
+| **3** | 三产物收敛 + 统一门面 `new LarkDoc(...)`；CJS 放开拆块；顺手带出 **V1 过渡态** | 中 | 运行时产物 4 套 → 3 套 | 待开（**必做**） |
 | **4** | 特性子路径 + 资源本地化（**内网命门**） | 中 | `lite` 档、`features/*`、零外链 | 待开（**必做**） |
 | **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | 待开（**必做**） |
 | **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | 待开（**必做**） |
@@ -764,7 +764,7 @@ import { createLarkDoc } from 'lark-doc/lite'
 
 **判据**
 - `npm run check` EXIT=0 且 0 warning；
-- 新建空 vite 项目 `import { createLarkDoc } from 'lark-doc'`，只引一个导出，产物体积显著小于全量（证明 tree-shaking 生效）；
+- 新建空 vite 项目 `import { LarkDoc } from 'lark-doc'`，只引一个导出，产物体积显著小于全量（证明 tree-shaking 生效）；
 - 三个现有 demo（vue2 / vue3 / react）构建不报错。
 
 **风险**：`sideEffects` 收窄会让「仅靠 import 触发样式注入」失效 → 样式必须显式 `import 'lark-doc/style.css'`（这本来就是目标，需在 changelog 里写明为 BREAKING）。
@@ -800,14 +800,14 @@ import { createLarkDoc } from 'lark-doc/lite'
 1. 产物收敛为 `esm` / `cjs` / `element`（元素档兼任 CDN `<script>` 直挂，UMD 档退场）；
    `vue3` / `react` / `collab` 作为零成本子入口保留。
 2. CJS 放开 `LimitChunkCountPlugin` → 8757 KB 拆成主 ~1.5 MB + 按需块；
-3. 统一门面 `createLarkDoc(el, opts)` → 返回 `{ on, destroy, getJSON, setJSON }`，三端同一句；
+3. 统一门面 `new LarkDoc({ element: el, ...opts })` → 返回 `{ on, destroy, getJSON, setJSON }`，三端同一句；
 4. `size-limit` 那条「CJS 全量 2500 KB」改为「拆后主文件」口径。
 5. **带出 V1 过渡态（不是终局，别在这里停）** —— esm / cjs 两档加 `--inline-vue`；
    宿主从此刻起不用装 Vue 2.7；`peerDependencies` 删除 `vue` 项。
    成本约等于 0（复用 element 档 `--inline-vue` 已有能力），收益 = 六个环境的引入/安装写法提前统一。
    ⚠️ V1 只是把 Vue 封进产物，源码里 Vue 仍在；阶段 5 + 7 全部走完才够到 V2/V3（见 5 小节 ③）。
 
-**判据**：三份产物各自 `npm run size` 绿；三个 demo 的引入写法全部替换为 `createLarkDoc` / `<lark-doc>` 后功能断言不回退。
+**判据**：三份产物各自 `npm run size` 绿；三个 demo 的引入写法全部替换为 `new LarkDoc(...)` / `<lark-doc>` 后功能断言不回退。
 第 5 条追加判据（必查）：`npm i lark-doc` 后**不装 vue** 仍能跑通 esm 路径。
 
 ---
@@ -1055,9 +1055,9 @@ import { createLarkDoc } from 'lark-doc/lite'
    若走阶段 6 插件：vite / webpack config 加一行 larkDoc() 即可
 
 ④ 引（目标：1 种写法）
-   import { createLarkDoc } from 'lark-doc'
+   import { LarkDoc } from 'lark-doc'
    import 'lark-doc/style.css'
-   const doc = createLarkDoc(el, { content, readonly })
+   const doc = new LarkDoc({ element: el, content, readonly })
    // 无构建场景： <script src="./lark-doc.element.js"> + <lark-doc>
 
 ⑤ 验（四道门禁，全绿才算迁移完成）
@@ -1091,7 +1091,7 @@ import { createLarkDoc } from 'lark-doc/lite'
 | 1-A | `check` 绿 + 新 vite 项目 tree-shaking 生效 | `sideEffects` 收窄、webpack4 走 ESM |
 | 1-B | `check` 绿 + R2 白名单固化 38 条 | 清单只减不增 |
 | 2 | `verify` 全绿 + 浏览器断言全绿 | 代码块语言切换/增删正常 |
-| 3 | 三产物 `size` 绿 + 三 demo 统一 `createLarkDoc` | CJS 主文件 ≤ 1.5 MB |
+| 3 | 三产物 `size` 绿 + 三 demo 统一 `new LarkDoc(...)` | CJS 主文件 ≤ 1.5 MB |
 | 4 | `check:offline` 绿 + 断网渲染 mermaid | `lite` ≤ 300 KB |
 | 5 | 每批次回归断言全绿 + `check:perf` 不倒退 | 每批次后采样一次性能 |
 | 6 | 宿主接入零 copy 配置 | demo 手写 copy 全部删除 |

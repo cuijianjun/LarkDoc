@@ -1,4 +1,3 @@
-/* global __webpack_public_path__ */
 // 按需区块（math / office / mermaid / highlight）的基址。
 // UMD / element 是「预打包直挂」产物：默认用 document.currentScript 推导 chunk 目录，
 // 静态 <script src> 引主文件时推导正确。但被宿主**打包器** import 时（webpack4 读不到

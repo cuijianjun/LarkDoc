@@ -6,7 +6,7 @@ lark-doc 与宿主的边界是显式的：编辑器只负责文档交互，**数
 
 ### 原生页面
 
-UMD 产物把 Vue 当 peer 依赖（`externals.root = 'Vue'`），宿主必须先加载全局 `Vue`；样式随 JS 注入，无需单独引 CSS。全局暴露的是**命名空间对象** `window['lark-doc']`（含 `LarkDoc` / `createLarkDoc` / `TOOLBAR_GROUPS` 等全部具名导出，以及 `default` 指向同一个类）：
+UMD 产物把 Vue 当 peer 依赖（`externals.root = 'Vue'`），宿主必须先加载全局 `Vue`；样式随 JS 注入，无需单独引 CSS。全局暴露的是**命名空间对象** `window['lark-doc']`（含 `LarkDoc` / `createDocumentSession` / `TOOLBAR_GROUPS` 等具名导出，以及 `default` 指向 `LarkDoc` 类）：
 
 ```html
 <script src="https://unpkg.com/vue@2.7.14/dist/vue.runtime.min.js"></script>
@@ -112,5 +112,5 @@ new LarkDoc({ element: '#editor', session })
 ```
 
 ::: tip 按需裁剪
-只要编辑器不要工作台：`new LarkDoc()` 加 `features: { templates: false, importExport: false, persistence: false }`，标题栏、模板、快照入口全部隐藏。
+只要编辑器不要工作台：`new LarkDoc({ element })` 加 `features: { templates: false, importExport: false, persistence: false }`，标题栏、模板、快照入口全部隐藏。
 :::
