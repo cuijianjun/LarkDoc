@@ -133,6 +133,12 @@ module.exports = defineConfig({
     // 只有 lib（CJS）抽成 dist/lark-doc.css —— 保持既有接入方式不变。
     extract: isLib,
   },
+  // 默认 true（vue-cli 按 CPU 核数推导）：babel-loader 走 thread-loader 并行。
+  // 多核机器上冷启动一批 worker 时偶发 `Broker request timed out`（本机实测 3 次里
+  // 撞到 1 次，重跑才过），一次失败要白等 5 分钟重跑全量校验。
+  // 串行构建的稳定性对这个仓库更值钱，所以提供开关：本机 / 高负载 CI 设
+  // LARK_DOC_NO_PARALLEL=1 关掉 thread-loader，默认口径不变、CI 不受影响。
+  parallel: process.env.LARK_DOC_NO_PARALLEL === '1' ? false : undefined,
   configureWebpack: {
     // 构建加速：跨进程复用编译缓存（babel / vue-loader 结果），二次构建提速明显。
     // 每个 target 独立 cache.name：三种产物的 output / externals 不同，
