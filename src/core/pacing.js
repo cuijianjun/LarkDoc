@@ -50,7 +50,7 @@ function defaultFrameApi() {
  *   全部无效 —— 组件卸载后不该再有回调摸 editor。
  *
  * @param {{ frame?: { requestFrame: Function, cancelFrame: Function }, onError?: (error: Error) => void }} [options]
- * @returns {{ schedule: Function, has: Function, pending: Function, flush: Function, cancel: Function, dispose: Function }}
+ * @returns {{ schedule: Function, pending: Function, flush: Function, dispose: Function, disposed: boolean }}
  */
 export function createFrameBatcher(options = {}) {
   const frame = options.frame && typeof options.frame.requestFrame === 'function' && typeof options.frame.cancelFrame === 'function'
@@ -95,7 +95,6 @@ export function createFrameBatcher(options = {}) {
       if (handle === null) handle = frame.requestFrame(run)
       return true
     },
-    has(key) { return queue.has(key) },
     /** 还没执行的条数（同 key 只算一条）。 */
     pending() { return queue.size },
     /** 立即执行本帧队列（测试 / 需要同步结果的调用点用），返回执行条数。 */
@@ -103,12 +102,7 @@ export function createFrameBatcher(options = {}) {
       if (handle !== null) { frame.cancelFrame(handle); handle = null }
       return run()
     },
-    /** 丢掉某个 key 的待办（不影响同帧其它 key）。 */
-    cancel(key) {
-      const had = queue.delete(key)
-      if (had && !queue.size && handle !== null) { frame.cancelFrame(handle); handle = null }
-      return had
-    },
+    /** 销毁即取消：之后排队的、已排队未执行的、以及后续 schedule 全部无效。 */
     dispose() {
       disposed = true
       queue.clear()
@@ -165,9 +159,6 @@ export function createTrailingDebounce(options = {}) {
       return true
     },
     cancel() { clear(); task = null },
-    pending() { return task !== null },
     dispose() { disposed = true; clear(); task = null },
-    get delay() { return delay },
-    get disposed() { return disposed },
   }
 }

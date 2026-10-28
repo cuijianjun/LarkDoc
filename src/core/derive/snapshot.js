@@ -116,18 +116,6 @@ export function documentMetrics(node) {
   return { blockCount: rootChildren.length, size, fingerprint: hash >>> 0 }
 }
 
-/** 顶层块数；结构不合法返回 -1（调用方据此判伪，不要当成 0）。 */
-export function documentBlockCount(json) {
-  const metrics = documentMetrics(json)
-  return metrics ? metrics.blockCount : -1
-}
-
-/** 文档指纹；结构不合法返回 null。 */
-export function documentFingerprint(json) {
-  const metrics = documentMetrics(json)
-  return metrics ? metrics.fingerprint : null
-}
-
 function hasExactKeys(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const actual = Object.keys(value).sort()

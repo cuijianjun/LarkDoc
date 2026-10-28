@@ -243,12 +243,39 @@ function sortSnapshots(list) {
   })
 }
 
-/** 读宽容、写严格：读回来的东西只要形状不对就整份判损坏，绝不返回半条列表。 */
-function assertSnapshots(list) {
-  if (!Array.isArray(list) || list.some((item) => !isValidDocumentRecord(item) || typeof item.id !== 'string')) {
-    throw failure(SNAPSHOT_CORRUPT_ERROR)
+/**
+ * 快照列表的读闸门：**单条坏记录只丢这一条，其余照常恢复**（决策见交接 §6.1 #1）。
+ *
+ * 旧实现是「有一条形状不对就整份抛 SNAPSHOT_CORRUPT_ERROR」，代价是：一条几百字节的
+ * 坏记录会让 20 份完好快照全部打不开，连**新建快照**都失败（`snapshot()` 要先读全量校验）。
+ * 快照本就是冗余副本，丢一条的代价远小于丢全部，所以这里改成过滤。
+ *
+ * 只有「读回来的根本不是数组」才整份失败：那是存储层出了问题、不是某一条坏了，
+ * 硬当空列表返回会把用户的快照悄悄变成「0 份」，比报错更糟。
+ */
+function pickValidSnapshots(list) {
+  if (!Array.isArray(list)) throw failure(SNAPSHOT_CORRUPT_ERROR)
+  const valid = []
+  const corruptIds = []
+  for (const item of list) {
+    if (item && isValidDocumentRecord(item) && typeof item.id === 'string') valid.push(item)
+    // 连 id 都没有的坏记录没法按 key 删，只能过滤掉：它读一次坏一次，但不会再挡住别人。
+    else if (item && typeof item.id === 'string') corruptIds.push(item.id)
   }
-  return sortSnapshots(list)
+  return { list: sortSnapshots(valid), corruptIds }
+}
+
+/** 读到坏记录后顺手清掉：不清的话每次读都要再过滤一遍，而它永远不会自己变好。 */
+async function purgeCorruptSnapshots(db, ids) {
+  if (!ids.length) return
+  try {
+    await runTransaction(db, [SNAPSHOT_STORE], 'readwrite', (stores) => {
+      for (const id of ids) stores.snapshots.delete(id)
+      return null
+    })
+  } catch (ignored) {
+    // 清理失败不影响本次结果：坏记录仍会被过滤，功能照常。
+  }
 }
 
 /**
@@ -291,7 +318,9 @@ export function createIndexedDbWorkspace(options = {}) {
       stores.snapshots.getAll((values) => { read.rows = values })
       return read
     })
-    return assertSnapshots(box.rows || [])
+    const { list, corruptIds } = pickValidSnapshots(box.rows || [])
+    await purgeCorruptSnapshots(db, corruptIds)
+    return list
   }
 
   return {
@@ -314,6 +343,8 @@ export function createIndexedDbWorkspace(options = {}) {
       })
       if (box.meta === undefined && box.content === undefined) return null
       // 只写了一半（meta 有、content 没有，或反过来）一律判损坏，不返回半截记录。
+      // 与快照不同：草稿是**唯一副本**，没有第二份可退，静默丢掉一半等于丢正文，
+      // 所以这里仍然整份失败（上层据此提示「数据损坏，未覆盖现有文档」）。
       if (!box.meta || !box.content) throw failure(CORRUPT_ERROR)
       const record = mergeDraft(box.meta, box.content)
       if (!isValidDocumentRecord(record)) throw failure(CORRUPT_ERROR)
@@ -340,8 +371,8 @@ export function createIndexedDbWorkspace(options = {}) {
     async snapshot(value) {
       const record = normalizeRecord(value)
       const db = await open()
-      // 先读全量并校验：损坏在这一步就抛 SNAPSHOT_CORRUPT_ERROR，不会被事务错误文案盖掉；
-      // 也保证下面删哪些 id 是算好的，不在事务里做校验。
+      // 先读全量再写：单条坏记录在 `readSnapshots` 里已被过滤并按 id 清掉，
+      // 这里算出的淘汰名单是干净的，不必在事务里做校验。
       const full = await readSnapshots(db)
       const entry = { ...record, id: nextSnapshotId(sequence++) }
       const kept = sortSnapshots([entry, ...full]).slice(0, maxSnapshots)

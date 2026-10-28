@@ -283,20 +283,35 @@ describe('快照：一份一条记录', () => {
     expect(deletes).toBe(2)
   })
 
-  it('损坏的快照集合读不回来，也不会被静默截断成可用的样子', async () => {
-    const { fake, workspace } = setup()
-    await workspace.load()
+  /** 绕过 workspace 的写入校验，直接往 snapshots store 塞一条裸记录。 */
+  const putRawSnapshot = async (fake, value, key) => {
     const database = await openIndexedDbDatabase({ factory: fake })
     await new Promise((resolve, reject) => {
       const transaction = database.transaction([SNAPSHOT_STORE], 'readwrite')
-      transaction.objectStore(SNAPSHOT_STORE).put({ id: 'x', title: 'x', json: { type: 'script' }, updatedAt: 1 }, 'x')
+      transaction.objectStore(SNAPSHOT_STORE).put(value, key)
       transaction.oncomplete = resolve
       transaction.onerror = reject
     })
     database.close()
-    expect((await rejection(workspace.snapshots())).message).toBe(SNAPSHOT_CORRUPT_ERROR)
-    // 新建快照前先校验，损坏文案不会被事务错误盖掉。
-    expect((await rejection(workspace.snapshot({ title: '新', json: JSON_ONE_BLOCK }))).message).toBe(SNAPSHOT_CORRUPT_ERROR)
+  }
+
+  it('单条坏快照只丢这一条，其余照常恢复，并把坏记录清掉', async () => {
+    const { fake, workspace } = setup()
+    await workspace.snapshot({ title: '好一', json: JSON_ONE_BLOCK })
+    await workspace.snapshot({ title: '好二', json: JSON_ONE_BLOCK })
+    await putRawSnapshot(fake, { id: 'x', title: 'x', json: { type: 'script' }, updatedAt: 1 }, 'x')
+    // 一条坏记录（json.type 不是 doc）不该让两份完好快照一起打不开。
+    expect((await workspace.snapshots()).map((item) => item.title)).toEqual(['好二', '好一'])
+    // 自愈：坏记录按 id 被顺手删掉，不再每次读都过滤一遍。
+    expect(fake.keysOf(DB_NAME, SNAPSHOT_STORE)).not.toContain('x')
+    // 新建快照也不再被这一条卡死（旧实现里 snapshot() 会先整份校验并抛错）。
+    expect((await workspace.snapshot({ title: '新', json: JSON_ONE_BLOCK })).title).toBe('新')
+  })
+
+  it('按 id 取到一条坏快照时仍然报损坏，不把它当正文恢复', async () => {
+    const { fake, workspace } = setup()
+    await putRawSnapshot(fake, { id: 'x', title: 'x', json: { type: 'script' }, updatedAt: 1 }, 'x')
+    expect((await rejection(workspace.restore('x'))).message).toBe(SNAPSHOT_CORRUPT_ERROR)
   })
 })
 

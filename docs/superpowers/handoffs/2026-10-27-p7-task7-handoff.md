@@ -1,28 +1,32 @@
-# 交接：Task 7 开发已收尾 → 全量复跑全绿 + 4 条挂账项待定夺
+# 交接：Task 7 开发已收尾 → 全量复跑全绿 + 仅剩打 tag（已授权）
 
 > 这份文档是给**新会话**用的，贴进去就能直接接手，不需要再读计划全文或 `requirements/`。
 > 上一份交接是 `docs/superpowers/handoffs/2026-10-27-p7-04-05.md`（HEAD `5e3bbe0` 时写的），
 > **其内容已过期**：里面说 P7-04 未开工、`decorationsRebuildMs = 2.1`、基线失真 —— 这三条现在都不成立。
 > 生成时间：2026-10-27 23:10，基线 HEAD `05c32f0`。
+> **最近一次更新：2026-10-28**（8 条非阻塞项收口 + 版本号提到 `0.12.0` + P8 立项，见 §4.5 / §6.1.5~6.1.7 / §10）。
 
 ---
 
 ## 0. 一句话状态
 
 **P7-01 ~ P7-06 的代码全部落地、已提交、已推 `origin/next/0.12`。** `Task 7`（集成复核 + 发布就绪）
-的**开发部分已全部结束**（HEAD `85e984f`）：决策 A/B 已由用户拍板并执行（§3）；diff 干净度 ✓；
-独立复核 ✓（1 条用户可见回归已修，见 §6.0）；8 条非阻塞项里 **#2/#5/#6 已修、#8 已复核**（§6.1）；
-**开发收尾后按用户口径跑了唯一一次全量复跑，七项环节全绿（§4.4）**。
-仍挂账的是 #1/#3/#4/#7 四条，等用户定夺。
-**剩下的只有发布**：`v0.12.0` tag / `npm publish` / 合 `master` —— **一律未授权、保持悬停**。
+的**开发部分已全部结束**：决策 A/B 已由用户拍板并执行（§3）；diff 干净度 ✓；
+独立复核 ✓（1 条用户可见回归已修，见 §6.0）；8 条非阻塞项里 **#1/#2/#3/#4/#5/#6 全部已修、
+#8 已复核，只剩 #7② 一条挂账**（§6.1）；开发收尾后按用户口径跑了两次全量复跑，两次均全绿
+（§4.4 收口那次 1674 条、§4.5 非阻塞项收口后 1675 条）。
+**剩下的只有发布，且只授权了一件事**：打 `v0.12.0` tag。`npm publish` 与合 `master` **仍未授权、
+保持悬停**。
 
 ## 1. 仓库与状态
 
 - 仓库根：`/Users/cjjxw/codex/tiptap-integration-demos/apps/lark-doc`（**不是** `apps/`，所有命令先 cd 进去）
-- 分支：`next/0.12`，HEAD = `85e984f fix(p7): 水合目录加 ready 闸门 + IDB 连接收口 + 注释/报告写实`
-  （上一提交 `5655c17 docs(p7): 订正体积测量顺序备注，补 check:perf 之后复跑 size 的证据`；
+- 分支：`next/0.12`，HEAD = 本提交（父 `82ea5fa docs(p7): 回填开发收尾后的全量复跑，并点明 artifacts:check 的指纹口径`）
+  （`82ea5fa` 的父 `85e984f fix(p7): 水合目录加 ready 闸门 + IDB 连接收口 + 注释/报告写实`；
+  `85e984f` 的父 `5655c17 docs(p7): 订正体积测量顺序备注，补 check:perf 之后复跑 size 的证据`；
   上一个功能提交是 `fa2226e fix(p7): widget 点击目标改读 getPos，并落地决策 A/B 结论`）
-- 版本：`package.json` = `0.12.0-beta.8`（**本轮未改版本号**，未打 tag，未发布）
+- 版本：`package.json` = `0.12.0`（**tail 从 `-beta.8` 提到正式版**，为打 tag 准备；产物指纹不含
+  `version` 字段，故这次提升不影响 `artifacts:check` 判定）。**tag 已授权但尚未打**，未发布、未合 `master`
 - 计划原文：`docs/superpowers/plans/2026-10-27-p7-performance-closure.md`
 
 ### 1.1 ⚠️ 计划文档的 checkbox 落后于代码 —— 别信勾选，信下表
@@ -155,7 +159,7 @@
 | --- | --- | --- |
 | 单测 + lint + 主题 + 部署 + 架构 | `npm run check:gate` | **EXIT=0**，71 个测试文件 / **1664** 条用例全绿 |
 | 五产物 + Vditor + 体积 | `npm run check:artifacts` | EXIT=0；`artifacts:check` 复验 EXIT=0（5/5 产物就绪） |
-| 性能门禁 | `npm run check:perf` | EXIT=0；`node scripts/perf/gate.mjs` 复验 EXIT=0 |
+| 性能门禁 | `npm run check:perf` | EXIT=0 |
 | 本地块契约（**非 CI 环节**） | `npm run contract:check` | 初次 EXIT=1：`_codex/contract/document-decorations.json` 因本轮改了源文件而过期 → 重新生成后 EXIT=0。`_codex/` 未被 git 跟踪，不影响仓库 |
 
 `check:perf` 实测（17:12Z 采集，**没有** `--update`，基线仍是 `15:45:16Z` 那一份）：
@@ -195,7 +199,7 @@ ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB，说明
 | 五产物 + Vditor + 体积 | `npm run check:artifacts` | **EXIT=0**（3m11s）；5/5 产物就绪，Vditor 93 项通过 |
 | 性能门禁 | `npm run check:perf` | **EXIT=0**（2m19s）；7 项指标无一退化 >20% |
 | 产物指纹复验 | `npm run artifacts:check` | **EXIT=0**（`✓ 构建输入未变`，指纹 `886d02cd`）—— 口径坑见 §4.4.1 |
-| 性能门禁复验 | `node scripts/perf/gate.mjs` | EXIT=0 |
+| 性能门禁复验 | `node scripts/perf/report.mjs` | EXIT=0（⚠️ **不是** `gate.mjs`，见下方订正） |
 | 体积复验 | `npm run size`（跑在 `check:perf` **之后**） | EXIT=0；五项与 `check:artifacts` 逐项一致 |
 | 本地块契约（**非 CI 环节**） | `npm run contract:check` | EXIT=0（42 个块，契约最新） |
 
@@ -243,6 +247,90 @@ ESM 279.24 / UMD 453.82 / Element 470.34 / CJS 2.46 MB / 协同 2.92 kB，说明
 不带构建，所以换机器或换构建参数时体积凭据要取 `check:perf` **之后**的 `size`。但本次的
 EXIT=1 与它无关，纯粹是**怎么调脚本**的问题。
 
+#### 4.4.2 订正：`node scripts/perf/gate.mjs` **不是**门禁命令
+
+上一版这张表里我把「性能门禁复验」写成 `node scripts/perf/gate.mjs` → EXIT=0，**这是错的**：
+`gate.mjs` 是**纯函数模块**（只 `export` `compareMetrics` / `renderTable` 等，第 1-9 行注释写明
+「无 IO」「文件读写与进程退出码留在 report.mjs」），**没有 CLI 入口**。`node scripts/perf/gate.mjs`
+什么也不做、也不输出，退出码恒为 0 —— 它通过**不能证明任何事**，是个假绿灯。
+
+真正的门禁 CLI 是：
+
+```bash
+node scripts/perf/report.mjs            # 读 perf/.perf-result.json 比 perf/baseline.json
+                                        # 退出码 0 通过 / 1 有指标退化 >20% / 2 不可比
+```
+
+`npm run check:perf` = `build:element` + `measure.mjs` + `report.mjs`，所以它本身就是完整门禁；
+单独复验判定结果用上面这条，别用 `gate.mjs`。
+
+### 4.5 非阻塞项收口后的**第二次**全量复跑（2026-10-28T02:04–03:25Z，HEAD `82ea5fa` + 本轮未提交改动）
+
+本轮又动了 3 个源文件（§6.1.5~6.1.7 的 #1/#3/#4）、2 个测试、`package.json` 的版本号 ——
+所以 §4.4 那句「全量已过」按自己的规矩作废，重跑一遍。**七个环节全绿。**
+
+| 环节 | 命令 | 结果 |
+| --- | --- | --- |
+| 单测（改动后先单跑一次） | `./node_modules/.bin/vitest run` | **EXIT=0**（5m23s）；71 个文件 / **1675** 条（§4.4 是 1674：删 1 旧 + 加 2 新） |
+| 五产物 + Vditor + 体积 | `npm run check:artifacts` | **EXIT=0**（22m39s，机时异常见 §4.5.1）；5/5 产物就绪、Vditor 93 项通过 |
+| lint | `npm run lint` | EXIT=0（`eslint --ext .js,.vue src scripts`） |
+| 单测 + lint + 主题 + 部署 + 架构 | `npm run check:gate` | **EXIT=0**（6m10s）；主题对比度 70 组 / 通过 68 / 豁免 2 / 失败 0 |
+| 性能门禁**判定** | `node scripts/perf/report.mjs` | **EXIT=0**，7/7 ✓（⚠️ 不是 `gate.mjs`，见 §4.4.2） |
+| 产物指纹复验 | `npm run artifacts:check` | **EXIT=0**，指纹 **`de3aa548`**（`src/` 变了，指纹随之变，属预期） |
+| 体积复验（在构建之后） | `npm run size` | **EXIT=0**；279.41 / 454.02 / 470.55 / 2.46 MB / 2.92 kB，与 `check:artifacts` 逐项一致 |
+
+正式那一份性能采集（`03:23:32Z` 起采，`vm.loadavg` 1 分钟值 **5.95**，bundle 为 `03:12` 构建）：
+
+| 指标 | 基线 | 本次 | Δ | 判定 |
+| --- | ---: | ---: | ---: | --- |
+| `mountToTypeableMs` | 38810.1 | 39929.9 | +3% | ✓ |
+| `keystrokeP95Ms` | 939.7 | 1013.6 | +8% | ✓ |
+| `keystrokeP99Ms` | 2372.1 | 2751.8 | +16% | ✓ |
+| `decorationIncrementalMs` | 78.8 | 85 | +8% | ✓ |
+| `scrollFps` | 59.3 | 56 | −6% | ✓ |
+| `saveProxyMs` | 24.6 | 28.5 | +16% | ✓ |
+| `heapMB` | 107.8 | 107.9 | 0% | ✓ |
+
+体积相对 §4.4 的 279.35 / 453.96 / 470.34 各 +0.06 kB / +0.06 kB / +0.21 kB，预算内。
+
+#### 4.5.1 一次「假红灯」的完整归因：**我自己的孤儿 headless Chromium**
+
+这是本轮最该记住的一课 —— 它差点让 4 项指标被写成「退化」，而根因在我自己留下的进程。
+
+时间线（全部是同一份 bundle）：
+
+1. 第一轮 `npm run check:perf`：`keystrokeP95` **+42%** / `P99` **+103%**，其余 ✓；
+2. 同 bundle 连测 3 次：P95 = 1168 / 1129.7 / 2103.9 —— **噪声 1.86×**，远超 20% 的判定阈；
+3. 再测 2 次：1334.8 / 1283.9。5 次没有一次接近基线 939.7；
+4. `pgrep -f playwright_chromiumdev_profile` → **3 个孤儿 headless Chromium**（前几轮被中断的 run
+   留下的），各自带着 2000 块文档持续吃 CPU。同期 `vm.loadavg` 1 分钟值在 9~39（本机 16 核），
+   `check:artifacts` 也从 3m11s 涨到 **22m39s**；
+5. 全部 `kill -9`、等 1 分钟值回落 → 同 bundle 立刻回到 **899.8 ms（−4%）**；
+6. 清干净后连测 3 次，**七项每次都过**（P95 = 931.3 / 957.1 / 1026）。
+
+`measure.mjs:314-316` 的 `finally` 里确实有 `await browser.close()`，但**被 kill / 超时的 run
+不会执行 finally**，孤儿就此留下，而且会**叠加**：新 run 被上一个拖慢，数字一轮比一轮差。
+所以跑性能前的第一步固定检查（已写进 §7）：`pgrep -f playwright_chromiumdev_profile`，
+不是 0 就清；清完还要等 `vm.loadavg` 的 1 分钟值降下来（它有滞后）。
+
+#### 4.5.2 还没解的方法论问题：`check:perf` 把「构建」和「采集」串在同一个窗口里
+
+`npm run check:perf` = `build:element && measure.mjs && report.mjs`。构建（vue-cli 16 worker）
+跑完 CPU 还在尾流上，`measure` 紧跟着开始 → 采到的是**热机状态**。本轮实测对比：
+
+| 跑法 | load 起 → 止 | `keystrokeP95` | 结果 |
+| --- | --- | ---: | --- |
+| `npm run check:perf`（构建＋采集连跑） | 7.38 → **15.78** | 1249（+33%） | **4 项红** |
+| `measure` 单独跑（bundle 已构建、负载落定） | 5.95 → — | 1013.6（+8%） | **7 项全绿** |
+
+**同一份源码、同一个 bundle，差别只在「测量前有没有等构建的尾流散掉」。** 这不是代码问题，
+是采集口径问题。本轮**不动 `scripts/`**（属门禁自身，改动要单独立项并重采基线），只把结论写下来：
+
+- 日常判定用 `node scripts/perf/report.mjs`（只比对、不构建）配**已构建好的** bundle；
+- 想让 `check:perf` 一次跑绿，需要「构建后等负载回落」这一步 —— 建议后续给 `check:perf` 加
+  `--wait-load`，或把 build 与 measure 拆成两个 CI step 并留冷却时间；
+- 无论哪种，**基线（`perf/baseline.json`，`15:45:16Z` 那份）绝不要在本机负载高时用 `--update` 覆盖**。
+
 ### 4.2 Step 1 diff 干净度结论
 
 - `git diff --check` EXIT=0（无空白错误、无冲突残留）。
@@ -264,7 +352,8 @@ P7-01 已经证明「拆装饰」动不了它们（装饰只占 mount 的 ~36 ms
 ## 5. 硬约束（踩了就返工）
 
 - **禁止合并 `master`**，分支一直停在 `next/0.12` 连续开发。
-- **发布三件未授权**：不发 `v0.12.0` tag、不 `npm publish`、不并 `master`。
+- **发布三件里只授权了一件**（2026-10-28 用户拍板）：**可以**打 `v0.12.0` tag；
+  **仍不允许** `npm publish`、**仍不允许**合 `master`。别把「打 tag」当成「发布」的通行证。
 - `LarkDocEditor.vue` **必须 < 700 行**（当前 **675**），`scripts/check-architecture.js` 会断言。新方法进 `editor/*.mixin.js`。
 - `lint` 只覆盖 `src scripts`，**不覆盖 `test/`** —— 测试文件风格问题抓不到，自己保证。
 - 产物预算不涨：ESM 285 KB、UMD 465 KB、Element 480 KB、CJS 2500 KB；协同子入口 90 KB。
@@ -302,16 +391,16 @@ widget 装饰的 `toDOM` 闭包捕获块的绝对 `pos`，而脏区外的 widget
 顺带修正了 `document-decorations.js:336-339` 那条已被证伪的注释（它只论证了 key 无害，
 没覆盖闭包）。
 
-### 6.1 Task 7 独立复核的 8 条非阻塞项（**#2/#5/#6 已修，#8 已复核；#1/#3/#4/#7 仍挂账**）
+### 6.1 Task 7 独立复核的 8 条非阻塞项（**#1/#2/#3/#4/#5/#6 已修，#8 已复核；仅 #7② 仍挂账**）
 
 都不是 P7 引入、也不阻塞发布，但别让它们随会话消失。逐条：
 
 | # | 位置 | 问题 | 状态 |
 | --- | --- | --- | --- |
-| 1 | `src/core/storage/idb.js:236-241` | 一条坏记录会把整份数据判成 `CORRUPT`，且**没有自愈路径**（不像单条失败可以跳过重试）。需要决定是「坏记录丢弃 + 其余照常恢复」还是维持整份失败 | 挂账（要产品决策） |
+| 1 | `src/core/storage/idb.js:236-241` | 一条坏记录会把整份数据判成 `CORRUPT`，且**没有自愈路径**（不像单条失败可以跳过重试）。需要决定是「坏记录丢弃 + 其余照常恢复」还是维持整份失败 | **已修（判「坏记录丢弃」，见 6.1.5）** |
 | 2 | `src/components/lark-doc/LarkDocWorkspace.vue:667-671` | 水合出来的目录在 `setContent` **之前**就可点，点了会作用在无内容的编辑器上。加个 ready 门闩即可 | **已修（见 6.1.1）** |
-| 3 | `src/core/pacing.js:98-117` | 四个成员**没有任何调用点**（导出后无人用）。要么删，要么补用例说明为什么留着 | 挂账 |
-| 4 | `src/core/derive/snapshot.js:120-129` | 两个字段**只有测试在读**，生产代码不用。同上，删或说明 | 挂账 |
+| 3 | `src/core/pacing.js:98-117` | 四个成员**没有任何调用点**（导出后无人用）。要么删，要么补用例说明为什么留着 | **已修（删无调用点成员，见 6.1.6）** |
+| 4 | `src/core/derive/snapshot.js:120-129` | 两个字段**只有测试在读**，生产代码不用。同上，删或说明 | **已修（删两个导出，见 6.1.7）** |
 | 5 | `src/core/storage/idb.js:106-108`、`providers/persistence.js:104` | `open` 超时路径下 `request` 未 `close`，请求仍在跑。资源泄漏，量级小 | **已修（见 6.1.2）** |
 | 6 | `src/core/derive/index.js:46-50` | 英文注释措辞**夸大**（把「减少全量扫描」写成「消除」）。改注释即可 | **已修（见 6.1.3）** |
 | 7 | 同上复核中「推测未实跑」的两条 | 复核子代理自陈：① 阻塞项触发链当时未在浏览器里实跑复现、② 多步事务退回全量是在 `/tmp` 最小 schema 上跑的。**① 已由本会话用回归用例实跑验证（见 §6.0）**，② 仍只是最小 schema 证据 | 挂账（② 仍需实测） |
@@ -432,8 +521,79 @@ ProseMirror doc，`decorations=1424` / 可折叠块 `478`）在 Node 侧分项�
    `keystrokeP95Ms`（939.7），它的出路在 P7-05 挂载策略，不在装饰层 —— 报告里已有这条
    反面证据（整段 dispatch 195.9 ms，装饰只占约 40%）。
 
+#### 6.1.5 #1 快照读闸门：判「单条坏记录丢弃」，并顺手自愈
+
+**产品决策**（本会话拍板）：快照是**可再生的历史副本**，一条坏记录不该把用户其余几十条
+历史一起废掉；而**草稿（draft）是唯一副本**，读不回来就是数据丢失，必须整份报错、绝不能
+「安静地给一份少了东西的文档」。所以两条路径故意取相反的取舍。
+
+`src/core/storage/idb.js` 相应改动：
+
+- 删掉原 `assertSnapshots(list)`（一条不合规就整份 `SNAPSHOT_CORRUPT_ERROR`），换成
+  `pickValidSnapshots(list)`：逐条过 `isValidDocumentRecord` + `typeof item.id === 'string'`，
+  合规的进 `valid`，不合规但有 id 的记进 `corruptIds`。**只有「读回来的根本不是数组」才整份失败**
+  —— 那说明库/游标层面已经坏了，不是单条的问题。
+- 新增 `purgeCorruptSnapshots(db, ids)`：一次 `readwrite` 事务把坏 id 直接 `delete` 掉，
+  外面套 `try/catch` 忽略失败（清理失败不该影响本次恢复结果）。这就是原表里说的
+  「没有自愈路径」——现在有了：坏记录读一次就被清掉，不会每次都拖慢/污染列表。
+- `readSnapshots()` 改为 `const { list, corruptIds } = pickValidSnapshots(box.rows || [])` →
+  `await purgeCorruptSnapshots(db, corruptIds)` → 返回 `list`（仍是 `sortSnapshots` 后的顺序）。
+- `snapshot()` 的注释同步改成「单条坏记录在 `readSnapshots` 里已被过滤并按 id 清掉」。
+- `load()`（草稿）**保持整份失败**，并在注释里写明理由，避免后来人「统一一下」把这里也改成丢弃。
+
+回归用例（`test/unit/storage-idb.test.js`，删 1 加 2，净 +1 —— 全量用例数 1674 → **1675**）：
+
+- 旧用例「损坏的快照集合读不回来」删除（行为已变）；
+- 新增「单条坏快照只丢这一条，其余照常恢复，并把坏记录清掉」——两条好记录 + 一条
+  `json.type='script'` 的裸记录（用 `putRawSnapshot` 绕过校验直接塞），断言 `snapshots()`
+  只回两条好的、`fake.keysOf(...)` 里坏 id 已消失（自愈）、且之后还能正常新建快照；
+- 新增「按 id 取到一条坏快照时仍然报损坏，不把它当正文恢复」—— 即**列表里丢弃 ≠ 单条读取
+  时也丢弃**：用户明确点了这一条，就不能拿半截正文糊弄。
+
+#### 6.1.6 #3 `pacing.js` 删掉无调用点的成员
+
+先确认「真的没人用」，不是「我没找到」：
+
+- `createFrameBatcher` 的 `has(key)` / `cancel(key)`：`git grep` 全仓零调用；
+  唯一使用方 `selectionPacingMixin.js` 只碰 `schedule` / `dispose`；`viewModesMixin.flushSearchUpdate`
+  路径与测试用的是 `flush`。
+- `createTrailingDebounce` 的 `pending()` / `get delay()` / `get disposed`：同样零调用。
+  注意 `createFrameBatcher` 的 `pending()` 和 `disposed` **是有人在读的**（
+  `test/unit/perf-scheduling.test.js` 用 `batcher.pending()`、`batcher.disposed`），所以只删
+  debounce 侧那两个 getter，两个工厂的形态有意不对称——别为了「对称」把 batcher 的也删了。
+
+改完的公开面：
+
+- `createFrameBatcher` → `{ schedule, pending, flush, dispose, disposed }`；
+- `createTrailingDebounce` → `{ schedule, flush, cancel, dispose }`。
+
+`flush()` 的 JSDoc 保留（`viewModesMixin` 的搜索路径仍要它）。
+
+#### 6.1.7 #4 `snapshot.js` 删掉只有测试在用的两个导出
+
+`documentBlockCount(json)` / `documentFingerprint(json)` 在生产代码零引用（`git grep` 只剩
+测试的 import），本质是 `documentMetrics(json)` 的单字段取值函数。已删掉这两个导出，
+`test/unit/derived-snapshot.test.js` 改为直接读 `documentMetrics(x).blockCount` /
+`.fingerprint` / 对空值断言 `toBeNull()`，断言覆盖范围不变、少两个中间层。
+
+> 这一条和 6.1.6 的做法一致：**「只有测试在用」不是留着的理由**。留着等于给生产 API 加
+> 一个永不使用的表面，后来人会以为有调用方而不敢删。
+
 ## 7. 环境坑（这个 shell 特有的）
 
+- 🔴 **跑性能前必须先查遗留的 headless Chromium**（2026-10-28 踩到，代价是 5 次假退化）：
+
+  ```bash
+  pgrep -f playwright_chromiumdev_profile | wc -l   # 不是 0 就先清干净再测
+  pgrep -f playwright_chromiumdev_profile | xargs kill -9
+  sysctl -n vm.loadavg                              # macOS 没有 loadavg 命令，用这个
+  ```
+
+  `measure.mjs:314-316` 的 `finally` 里其实有 `await browser.close()`，但**被 kill / 超时的 run
+  会留下孤儿浏览器**（user-data-dir 在 `/var/folders/.../playwright_chromiumdev_profile-*`），
+  它带着 2000 块文档持续吃 CPU，把后续每一次采集都抬高——而且是**逐轮叠加**的（每次新 run 又被
+  前一个拖慢）。本轮实测：清之前 5 连测里 `keystrokeP95Ms` 一路 +20%…+124%；清掉 3 个孤儿浏览器后
+  同一个 bundle 立刻回到 **899.8 ms（−4%）**。清完还要等 `vm.loadavg` 的 1 分钟值降下来（它有滞后）。
 - **`grep -rn` 递归、以及管道里的 `grep` 会返回空** —— 用 Grep 工具、`git grep`、`awk` 代替。
 - `docs:build` **原地构建会被运行环境的 safe-delete 垫片拦住**（VitePress 清 `.vitepress/dist/assets`
   时 104 项 > 50 阈值）。这不是构建错误，换 outDir 即可：
@@ -486,8 +646,29 @@ node scripts/verify.mjs element perf-scheduling
 2. ~~补计划文档的 checkbox~~ **已补**（Task 7 第 2 条）。
 3. ~~Task 7 的复核三件事~~ **3/3 全过**（§4）。
 4. ~~复核结论要诚实~~ **已写实**（§4.1 / §4.3）：门禁与滚动达标，三条绝对耗时线带着已定位的根因进发布，未粉饰。
-5. **发布必须等用户明确下命令，别自己起念。** 这是当前**唯一**未完成项：
-   `bash scripts/release.sh`（打 `v0.12.0` tag）→ `npm publish` → 合 `master`，
-   三件各自都要单独授权，且**禁止合并 `master`** 的硬约束只在用户明确改口后才解除。
-6. ~~开发结束后的全量测试~~ **已执行**（2026-10-28T01:04–01:15Z，HEAD `85e984f`）：七项环节全绿，
-   明细与两个口径坑见 §4.4 / §4.4.1。此后**不要**再动 `src/`，否则「全量已过」这句话就作废。
+5. **发布必须等用户明确下命令，别自己起念。** 当前只剩三件，且**只授权了第一件**（2026-10-28 拍板）：
+   ① 打 `v0.12.0` tag —— **已授权**；② `npm publish` —— **未授权**；③ 合 `master` —— **未授权**。
+   三件各自都要单独授权，**禁止合并 `master`** 的硬约束只在用户明确改口后才解除。
+   另注意 `scripts/release.sh` 的两个坑：`--skip-publish` 仍会自己 `git add -u`（与「禁 `git add -A`、
+   必须按 pathspec 提交」冲突），且 `git_ship()` 推送**不带 IPv4 参数**。所以本轮不打脚本，手工两步：
+   `git tag -a v0.12.0 -m "v0.12.0"` + `git -c core.sshCommand="ssh -4" push origin v0.12.0`。
+6. ~~开发结束后的全量测试~~ **已执行两次**：§4.4（HEAD `85e984f`，1674 条）与 §4.5
+   （非阻塞项收口后，1675 条），两次七项环节全绿。此后**不要**再动 `src/`，否则「全量已过」这句话就作废。
+7. **P8 已立项**（`mountToTypeableMs` 是 24.6× 未达标的那条线），入口见 §10。P8 **不推翻** P7-05 的
+   「不窗口化」结论，且必须先做 Phase 0 归因再动手 —— P7 已经因为「把推测当结论」返工过一次。
+
+## 10. 下一步：P8（挂载性能）已立项，别在 P7 里继续磨
+
+三条绝对耗时线里，`keystrokeP95Ms` 与 `decorationIncrementalMs` 本轮按用户拍板「接受现状」
+（前者出路在挂载策略、后者未做逐段归因，都不该在装饰层硬凑）；真正还剩一个大缺口是
+**`mountToTypeableMs`：36,958 ms vs target ≤ 1,500 ms = 24.6 倍**。
+
+立项文档：**`docs/superpowers/handoffs/2026-10-28-p8-mount-kickoff.md`**（9 节，可直接开工）。要点：
+
+- **不推翻 P7-05**：窗口化仍是不做（滚动 60.3 FPS 已达标、`content-visibility` 治绘制不治建 DOM、
+  会打穿折叠子树/全文档查找/完整 outline/全文导出四条契约）。
+- **Phase 0 归因先行**（P8-01）：先回答「36.9 s 里 DOM 创建 / 排版 / 装饰 / 水合各占多少」，
+  再决定方案。候选首选是「分段渐进灌入」（A），而 B/C/D 三个候选在文档里已给出「不做」的理由。
+- **验收**：`mountToTypeableMs ≤ 1500`、1,675 条用例零回退、三门禁 EXIT=0；风险用 feature flag 兜。
+
+一句话：**P7 到此为止（除打 tag），别再往装饰层加工作量。**

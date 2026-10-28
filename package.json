@@ -1,6 +1,6 @@
 {
   "name": "lark-doc",
-  "version": "0.12.0-beta.8",
+  "version": "0.12.0",
   "private": false,
   "license": "MIT",
   "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",

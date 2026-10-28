@@ -16,8 +16,6 @@ import { aggregateHeadingContainers, collectOutline, validateDocument } from '..
 import {
   DERIVED_SNAPSHOT_VERSION,
   createDerivedSnapshot,
-  documentBlockCount,
-  documentFingerprint,
   documentMetrics,
   isValidDerivedSnapshot,
   validateDerivedSnapshot,
@@ -67,16 +65,17 @@ describe('P7-03 derived snapshot: creation', () => {
 
   it('counts blocks the same way the persisted JSON does', () => {
     const doc = sampleDoc()
-    expect(documentBlockCount(doc.toJSON())).toBe(createDerivedSnapshot(doc).blockCount)
-    expect(documentBlockCount(null)).toBe(-1)
-    expect(documentBlockCount({ type: 'doc' })).toBe(-1)
+    expect(documentMetrics(doc.toJSON()).blockCount).toBe(createDerivedSnapshot(doc).blockCount)
+    // 结构不合法时没有「块数」可言，返回 null（原先由 `documentBlockCount` 包装成 -1，已删）
+    expect(documentMetrics(null)).toBeNull()
+    expect(documentMetrics({ type: 'doc' })).toBeNull()
   })
 })
 
 describe('P7-03 derived snapshot: fingerprint', () => {
   it('is stable for structurally identical JSON and differs once body text changes', () => {
-    const before = documentFingerprint(sampleDoc().toJSON())
-    const same = documentFingerprint(sampleDoc().toJSON())
+    const before = documentMetrics(sampleDoc().toJSON()).fingerprint
+    const same = documentMetrics(sampleDoc().toJSON()).fingerprint
     expect(same).toBe(before)
 
     const edited = nodeFromJSON([
@@ -85,7 +84,7 @@ describe('P7-03 derived snapshot: fingerprint', () => {
       { type: 'heading', attrs: { level: 2, blockId: 'blk-c' }, content: [{ type: 'text', text: '细则' }] },
       { type: 'paragraph', attrs: { blockId: 'blk-d' }, content: [{ type: 'text', text: '正文二' }] },
     ])
-    expect(documentFingerprint(edited.toJSON())).not.toBe(before)
+    expect(documentMetrics(edited.toJSON()).fingerprint).not.toBe(before)
   })
 
   it('agrees between the editor node and the persisted JSON when blocks are empty', () => {
@@ -99,7 +98,7 @@ describe('P7-03 derived snapshot: fingerprint', () => {
       { type: 'paragraph', attrs: { blockId: 'blk-b' }, content: [{ type: 'text', text: '正文一' }] },
     ])
     expect(documentMetrics(doc.toJSON())).toEqual(documentMetrics(doc))
-    expect(documentFingerprint(doc.toJSON())).toBe(documentFingerprint(doc))
+    expect(documentMetrics(doc.toJSON()).fingerprint).toBe(documentMetrics(doc).fingerprint)
   })
 
   it('is order sensitive: two blocks swapping places is a different document', () => {
@@ -111,13 +110,13 @@ describe('P7-03 derived snapshot: fingerprint', () => {
       { type: 'paragraph', attrs: { blockId: 'blk-b' }, content: [{ type: 'text', text: '正文一' }] },
       { type: 'paragraph', attrs: { blockId: 'blk-d' }, content: [{ type: 'text', text: '正文二' }] },
     ])
-    expect(documentFingerprint(swapped.toJSON())).not.toBe(documentFingerprint(ordered.toJSON()))
+    expect(documentMetrics(swapped.toJSON()).fingerprint).not.toBe(documentMetrics(ordered.toJSON()).fingerprint)
   })
 
   it('returns null rather than a made-up number for malformed input', () => {
-    expect(documentFingerprint(null)).toBeNull()
-    expect(documentFingerprint({ type: 'doc' })).toBeNull()
-    expect(documentFingerprint({ type: 'doc', content: [{ text: '缺 type' }] })).toBeNull()
+    expect(documentMetrics(null)).toBeNull()
+    expect(documentMetrics({ type: 'doc' })).toBeNull()
+    expect(documentMetrics({ type: 'doc', content: [{ text: '缺 type' }] })).toBeNull()
   })
 })
 
