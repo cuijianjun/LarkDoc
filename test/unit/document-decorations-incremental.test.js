@@ -12,6 +12,9 @@
  * - 折叠段内部编辑 + **折叠标题自身**编辑（折叠装饰覆盖标题，窗口起点要用标题 pos）
  * - 窗口右缘正好落在下一个块起点（`find` 闭区间 vs 窗口半开区间的口径差）
  * - 结构变更（插入编号标题 / 插入列表项 / 改缩进 / 粘贴多块）一律退回全量重建
+ * - **多步事务**（一个 tr 里 ≥2 条 step）：纯文本仍走增量、混入结构变更则退回全量
+ *   —— 补 P7 挂账 #7②「多步事务退回全量只在 /tmp 最小 schema 上跑过」
+ * - **多笔事务**连续更新（`pendingSteps` 叠两段 mapping）：脏区不得残留旧坐标
  * - 搜索高亮开着时主动退回全量（active 期按全文序号判定，脏区里拼不回来）
  * - 纯选区事务不重算（装饰输入没变）
  */
@@ -155,7 +158,14 @@ const posOf = (doc, blockId) => {
  * `mode` 是**期望走哪条路**：
  * - `incremental`（默认）：文本块内的纯文字改动，必须只重扫脏区；
  * - `rebuild`：结构变更（节点增删 / attrs 变更），必须整份重建 —— 这类变更会让
- *   窗口外的序号、折叠资格变样，脏区重扫在原理上算不对，退回全量才是正确答案。
+ *   窗口外的序号、折叠资格变样，脏区重扫在原理上算不对，退回全量才是正确答案；
+ * - `either`：只断言「结果与冷路径逐条等价」，不钉死走哪条路。
+ *
+ * 什么时候用 `either`：**多步事务**。`step.from/to` 记的是「该步应用时」的坐标，而
+ * `isTextOnlyChange` 拿 `currentDoc`（本笔事务之前）去判是否落在同一文本块内 ——
+ * 前一步插/删过大段文字时，后一步的坐标与原始文档错位，判定最多**偏保守**（该走增量
+ * 却退回全量），不会偏危险（把结构变更当文本改动）。偏保守是性能问题不是正确性问题，
+ * 钉死路径等于把实现的保守程度写成契约，改一次实现就要改一次用例。
  */
 const expectEquivalentAfter = (mutate, { mode = 'incremental' } = {}) => {
   const storage = fakeStorage()
@@ -173,7 +183,7 @@ const expectEquivalentAfter = (mutate, { mode = 'incremental' } = {}) => {
   if (mode === 'incremental') {
     expect(rebuild).toHaveBeenCalledTimes(1) // 热路径没有退回全量
     expect(incremental).toHaveBeenCalledTimes(1)
-  } else {
+  } else if (mode === 'rebuild') {
     expect(incremental).not.toHaveBeenCalled()
     expect(rebuild).toHaveBeenCalledTimes(2)
   }
@@ -351,5 +361,140 @@ describe('P7-01 脏区增量重扫与全量重建等价', () => {
     expect(incremental).not.toHaveBeenCalled()
     expect(rebuild).toHaveBeenCalledTimes(1)
     expect(second).toBe(first)
+  })
+})
+
+/**
+ * 多步事务：一个 tr 里 ≥2 条 step。
+ *
+ * 补的是 P7 挂账 #7② —— 复核子代理当时只用 `/tmp` 上的最小 schema 跑过「多步事务退回
+ * 全量」，没在真实 schema + 真实文档 fixture 上验。这里全部沿用本文件的
+ * `getSchema(createLarkDocExtensions())` 与 `documentFixture()`，走真实装配路径
+ * （`createDerivedIndex` + `createDocumentDecorations` / `updateDocumentDecorations`）。
+ *
+ * 为什么值得单独测：`isTextOnlyChange` 是 `steps.every(...)`，多步时**每一步**都要过
+ * 「slice 全文字 + 落在一个文本块内」两道关。任一步不过就 `resetPending()`，本帧整份重建。
+ * 而脏区的坐标记账是另一套（`mapForward` 逐步前移）——两条路径在多步下同时被使用，
+ * 任一处算错都会让「窗口外的装饰」缺席或重影，且单步用例永远照不出来。
+ */
+describe('多步事务：增量准入与退回全量的真实 fixture 实测', () => {
+  it('同一 tr 两步插入、都落在同一文本块内：仍走增量', () => {
+    expectEquivalentAfter((state) => {
+      const tr = state.tr.insertText('甲', posOf(state.doc, 'p1') + 2)
+      // 第二处要用映射后的坐标：第一步在它之前插了 1 个字。
+      tr.insertText('乙', tr.mapping.map(posOf(state.doc, 'p1') + 4))
+      expect(tr.steps.length).toBe(2)
+      return tr
+    })
+  })
+
+  it('同一 tr 两步插入、分属两个文本块：仍走增量，两段脏区各自扩张后合并', () => {
+    expectEquivalentAfter((state) => {
+      const tr = state.tr.insertText('甲', posOf(state.doc, 'p1') + 2)
+      tr.insertText('乙', tr.mapping.map(posOf(state.doc, 'p2') + 2))
+      expect(tr.steps.length).toBe(2)
+      return tr
+    })
+  })
+
+  it('同一 tr 文本编辑 + 改缩进（多步）：结构变更，退回全量重建', () => {
+    expectEquivalentAfter((state) => {
+      const tr = state.tr.insertText('甲', posOf(state.doc, 'p1') + 2)
+      const at = tr.mapping.map(posOf(state.doc, 'p2'))
+      tr.setNodeMarkup(at, null, { ...tr.doc.nodeAt(at).attrs, indent: 2 })
+      expect(tr.steps.length).toBe(2)
+      return tr
+    }, { mode: 'rebuild' })
+  })
+
+  it('同一 tr 文本编辑 + 整段替换（多步）：slice 含段落，退回全量重建', () => {
+    expectEquivalentAfter((state) => {
+      const tr = state.tr.insertText('甲', posOf(state.doc, 'p1') + 2)
+      const at = tr.mapping.map(posOf(state.doc, 'p1a'))
+      const node = tr.doc.nodeAt(at)
+      tr.replaceWith(at, at + node.nodeSize, schema.nodes.paragraph.create(
+        { blockId: 'p1a', indent: 1 },
+        schema.text('整段换掉'),
+      ))
+      expect(tr.steps.length).toBe(2)
+      return tr
+    }, { mode: 'rebuild' })
+  })
+
+  it('同一 tr 里前一步插入大段文字、后一步仍属同块：结果必须与冷路径等价', () => {
+    // 后一步的 from/to 是「第一步应用后」的坐标，而判定用的是本笔事务之前的 currentDoc，
+    // 两者相差第一步的长度。错位只可能让判定偏保守（该增量却退回全量），
+    // 所以这里只断言等价，不钉死路径 —— 见 expectEquivalentAfter 的 `either` 说明。
+    expectEquivalentAfter((state) => {
+      const tr = state.tr.insertText('很长一段填充文字', posOf(state.doc, 'p1') + 2)
+      tr.insertText('乙', tr.mapping.map(posOf(state.doc, 'p1') + 6))
+      expect(tr.steps.length).toBe(2)
+      return tr
+    }, { mode: 'either' })
+  })
+})
+
+/**
+ * 多笔事务：一次 `dispatch` 里可能有两笔（用户那笔 + `appendTransaction` 追加的
+ * blockId 补号）。`index.update` 对每笔都调一次，`pendingSteps` 必须能叠多段 mapping
+ * —— 只留最后一笔的话，前一笔的偏移会丢，脏区落到错位置。
+ */
+describe('多笔事务：pending 批次按出现顺序叠加', () => {
+  it('两笔纯文本事务连续更新：仍走增量，脏区不残留旧坐标', () => {
+    const storage = fakeStorage()
+    const base = EditorState.create({ schema, doc: documentFixture() })
+    const { index, rebuild, incremental } = buildIndex(base, storage)
+    index.decorations(base)
+
+    const tr1 = base.tr.insertText('甲', posOf(base.doc, 'p1') + 2)
+    const s1 = base.apply(tr1)
+    index.update(tr1)
+
+    const tr2 = s1.tr.insertText('乙', posOf(s1.doc, 'p2') + 2)
+    const s2 = s1.apply(tr2)
+    index.update(tr2)
+
+    const hot = index.decorations(s2)
+    expect(rebuild).toHaveBeenCalledTimes(1) // 只有最初那次冷路径
+    expect(incremental).toHaveBeenCalledTimes(1)
+    expect(project(hot)).toEqual(project(createDocumentDecorations({ state: s2, ...buildContext(storage) })))
+  })
+
+  it('两笔事务各含结构变更（拆块 + 补 blockId）：退回全量且编号正确', () => {
+    const storage = fakeStorage()
+    const base = EditorState.create({ schema, doc: documentFixture() })
+    const { index, rebuild, incremental } = buildIndex(base, storage)
+    index.decorations(base)
+
+    // 第一笔：在 p1 中间拆块（结构变更）
+    const split = base.tr.split(posOf(base.doc, 'p1') + 3)
+    const s1 = base.apply(split)
+    index.update(split)
+    index.decorations(s1) // 真实装配里每帧都会取装饰集，退回全量发生在这里
+
+    // 第二笔：给新块补 blockId —— 真实装配里这笔由 appendTransaction 追加，
+    // 形状就是一条 setNodeMarkup（非文本 step）。
+    // split 会把 attrs 复制给两半，所以拆完有**两个** blockId 为 'p1' 的段落，
+    // 补号要补的是右半那个（这也正是 collectBlockIdFixes 要处理的重号）。
+    const p1Positions = []
+    s1.doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.attrs.blockId === 'p1') p1Positions.push(pos)
+      return true
+    })
+    expect(p1Positions).toHaveLength(2)
+    const freshPos = p1Positions[1]
+    const fix = s1.tr.setNodeMarkup(freshPos, null, { ...s1.doc.nodeAt(freshPos).attrs, blockId: 'p1split' })
+    const s2 = s1.apply(fix)
+    index.update(fix)
+
+    const hot = index.decorations(s2)
+    expect(incremental).not.toHaveBeenCalled()
+    expect(rebuild).toHaveBeenCalledTimes(3) // 初始 + 两笔各一次
+    expect(project(hot)).toEqual(project(createDocumentDecorations({ state: s2, ...buildContext(storage) })))
+    // 编号没被拆块打乱：仍然只有「1.」「2.」两个列表序号。
+    const numbers = hot.find()
+      .filter((decoration) => String(decoration.type.spec?.key || '').startsWith('lark-doc-list-number'))
+      .map(labelOf)
+    expect(numbers).toEqual(['1.', '2.'])
   })
 })
