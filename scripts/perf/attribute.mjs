@@ -21,6 +21,9 @@
  *    决定「先修大块」是否比「先改节奏」划算。
  * 4. **分段灌入验证**（同一篇文档切 1 / 5 / 10 / 25 段）：决策点判「是」之后，
  *    实测方案 A 到底能把平方项砍掉多少 —— 这是收益，不是推算。
+ *    每一段再按「解析 / 事务 / updateState」逐刀记账（P8-01b）：单篇文档只有一条总曲线，
+ *    切段则给了**同一份成本在不同文档大小上被重复支付**的 k 个样本 —— 这是唯一能用
+ *    一次运行就看清楚「随文档变大而上升的成本到底落在哪一段」的实验。
  *
  * ## 分项是怎么拆出来的（重要，别当成黑箱）
  *
@@ -62,7 +65,10 @@
  * 沿用（结果里用 `measuredSections` / `carriedSections` 记明哪个数是哪次采的）。
  *
  * 环境变量：`PERF_SEED` / `PERF_BLOCKS` / `PERF_ATTRIBUTE_REPS` / `PERF_ATTRIBUTE_ONLY`
- * / `PERF_SKIP_LOAD_WAIT` / `PERF_LOAD_WAIT_MS` / `PERF_LOAD_MAX` / `LARK_DOC_CHROMIUM`
+ * / `PERF_CHUNKS`（切段数列表，默认 `1,5,10,25`）/ `PERF_DISABLE_APPEND`（屏蔽哪些插件的
+ * `appendTransaction`，`larkDoc` / `autolink` / `all`，逗号分隔；**只用于验证平方项归属，
+ * 量出来的数不是产品口径**）/ `PERF_SKIP_LOAD_WAIT` / `PERF_LOAD_WAIT_MS`
+ * / `PERF_LOAD_MAX` / `LARK_DOC_CHROMIUM`
  *
  * 原始结果写 `perf/.run/attribute-result.json`（该目录已在 .gitignore 里）。
  * **门禁不读它**：归因是信息，不是判据 —— 只有 `measure.mjs` 的 7 项指标进 gate。
@@ -89,6 +95,21 @@ const LOAD_MAX = Number(process.env.PERF_LOAD_MAX || 0)
 const SCALE_POINTS = [125, 250, 500, 1000, 2000]
 // 按类型测量时每种类型铺多少块。200 足够让单块成本稳定，又不会让表格那组跑成分钟级。
 const TYPE_BLOCKS = 200
+// 分段灌入的切段数。`PERF_CHUNKS=1,10,25` 可覆盖 —— 拆平方项时用少数几个点数就够，
+// 不必为一张好看的曲线付满 4 次灌入的钱。
+const CHUNK_COUNTS = (process.env.PERF_CHUNKS || '1,5,10,25')
+  .split(',')
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isFinite(value) && value >= 1)
+
+// 屏蔽实验（P8-01b 的第三刀）。拍板顺序是「先量出谁贵，再验证它是不是平方项本体」：
+// 计时只证明 `appendTransaction` 花了 31 s，不证明「它花的钱随文档变大而增长」。
+// 唯一能证伪的做法是把它摘掉重跑 —— 若平方项（`k ≈ 1.8`）跟着消失，因果就成立。
+// 值匹配的是插件 key 的**前缀**（`larkDoc$` / `autolink$`），`all` 表示全摘。
+const DISABLE_APPEND = (process.env.PERF_DISABLE_APPEND || '')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean)
 
 const round1 = (value) => Math.round(value * 10) / 10
 const round2 = (value) => Math.round(value * 100) / 100
@@ -189,22 +210,220 @@ function probe({ content, decompose, wantJson }) {
  * 必须同时校验**最终文档没被切坏**（块数 / 节点数与整篇一致），否则「变快」可能只是
  * 悄悄丢内容 —— 这类假收益在 P7 里已经出现过一次。
  */
-function probeChunked({ chunks }) {
+/**
+ * 给每个插件的 `state.apply` / `appendTransaction` 挂计时（P8-01b 的第二刀）。
+ *
+ * 为什么能这样挂：`EditorState.apply()` 遍历的是 `config.fields`，里面存的就是
+ * 各插件 `spec.state` **对象本身**（不是拷贝、不是 bound 副本），所以改
+ * `spec.state.apply` 会被立即生效；`appendTransaction` 更是每次事务现读 `plugin.spec`。
+ *
+ * 为什么必须挂：`applyTransaction` 的总时长只说明「事务贵」，不说明**谁**贵。
+ * 上一轮已经排除了 updateState（整篇只占 1.8%）与装饰重建（0.3%），
+ * 剩下的只能是「某个插件在每笔事务里做全文档工作」或「step 应用本身」。
+ * 这两者一个能修、一个只能认命，必须先分清。
+ *
+ * 匿名插件用 `props` / `spec` 的键集合标识 —— Tiptap 自建的插件多数没有 key，
+ * 但「有 decorations 无 state」这类指纹足以定位到具体扩展。
+ */
+function instrumentPlugins(view) {
+  const entries = []
+  const restores = []
+  const plugins = view.state.plugins || []
+  for (let index = 0; index < plugins.length; index += 1) {
+    const plugin = plugins[index]
+    const spec = plugin.spec || {}
+    const entry = {
+      key: plugin.key || `#${index}`,
+      props: Object.keys(plugin.props || {}).join('+'),
+      specKeys: Object.keys(spec).join('+'),
+      applyMs: 0,
+      applyCalls: 0,
+      appendMs: 0,
+      appendCalls: 0,
+    }
+    const fields = Array.isArray(spec.state) ? spec.state : spec.state ? [spec.state] : []
+    for (const field of fields) {
+      if (!field || typeof field.apply !== 'function') continue
+      const originalApply = field.apply
+      field.apply = function timedApply(...args) {
+        const start = performance.now()
+        try {
+          return originalApply.apply(this, args)
+        } finally {
+          entry.applyMs += performance.now() - start
+          entry.applyCalls += 1
+        }
+      }
+      restores.push(() => {
+        field.apply = originalApply
+      })
+    }
+    if (typeof spec.appendTransaction === 'function') {
+      const originalAppend = spec.appendTransaction
+      spec.appendTransaction = function timedAppend(...args) {
+        const start = performance.now()
+        try {
+          return originalAppend.apply(this, args)
+        } finally {
+          entry.appendMs += performance.now() - start
+          entry.appendCalls += 1
+        }
+      }
+      restores.push(() => {
+        spec.appendTransaction = originalAppend
+      })
+    }
+    entries.push(entry)
+  }
+  return {
+    entries,
+    restore() {
+      for (const restore of restores) restore()
+    },
+  }
+}
+
+function probeChunked({ chunks, disableAppend }) {
   const editor = window.__larkDoc.getEditor()
   const view = editor.view
   const host = document.getElementById('doc')
   const t = () => performance.now()
-  const out = { perChunkMs: [] }
+  const r1 = (value) => Math.round(value * 10) / 10
+  const out = { perChunkMs: [], detail: [], disabledPlugins: [] }
 
-  const mark = t()
-  editor.commands.setContent(chunks[0])
-  out.perChunkMs.push(t() - mark)
-  for (let i = 1; i < chunks.length; i += 1) {
-    const chunkMark = t()
-    editor.commands.insertContentAt(view.state.doc.content.size, chunks[i])
-    out.perChunkMs.push(t() - chunkMark)
+  // 屏蔽实验：把匹配到的插件 `spec.appendTransaction` 置 `null`。
+  // ProseMirror 的 `EditorState.applyTransaction` 里是 `if (plugin.spec.appendTransaction)`
+  // 的裸真值判断（`prosemirror-state` 的 `applyTransaction`），所以置 `null` 等价于「这个插件
+  // 没有 appendTransaction」，不需要重建编辑器、也不需要改 `src/`。
+  // 必须在挂计时**之前**做：否则被摘掉的插件还会在表里留一行 0 ms，读的人会以为它便宜。
+  const disableRestores = []
+  if (Array.isArray(disableAppend) && disableAppend.length) {
+    const plugins = view.state.plugins || []
+    for (const plugin of plugins) {
+      const key = String(plugin.key || '')
+      if (!key) continue
+      const hit = disableAppend.some((pattern) => pattern === 'all' || key.toLowerCase().startsWith(pattern))
+      if (!hit || typeof plugin.spec?.appendTransaction !== 'function') continue
+      const original = plugin.spec.appendTransaction
+      plugin.spec.appendTransaction = null
+      out.disabledPlugins.push(key)
+      disableRestores.push(() => {
+        plugin.spec.appendTransaction = original
+      })
+    }
   }
+
+  // 两条钩子都必须按「每次调用」增量记账，而不是只记总和：
+  // 只有把第 k 次的耗时和「那一刻文档多大」对齐，才看得出成本是不是随文档变大而上升。
+  const sink = { samples: [] }
+  let updateMs = 0
+  let updateCalls = 0
+  let applyMs = 0
+  let applyCalls = 0
+  // 事务的「步数」是这一轮唯一能硬证的机制指标：`applyBlockIdFixes` 是「每缺一个 id 建一个
+  // `setNodeMarkup`」，若 fix 事务真的带着 ~块数 条 step，那 `larkDoc$` 与它引起的
+  // `combineTransactionSteps` 重放就都是 O(步数) 起步 —— 不必再靠推测。
+  // 注意要读 `applyTransaction` 的**返回值**：追加事务走 `applyInner`，不经过这个钩子。
+  const transactions = []
+
+  const originalUpdate = view.updateState
+  view.updateState = function patchedUpdateState(state) {
+    const start = performance.now()
+    try {
+      return originalUpdate.call(this, state)
+    } finally {
+      updateMs += performance.now() - start
+      updateCalls += 1
+    }
+  }
+
+  // 第三刀：`applyTransaction`。Tiptap 的 `dispatchTransaction` 走的是
+  // `view.state.applyTransaction(tr)` → `view.updateState(state)`，**不经过 `view.dispatch`**，
+  // 所以钩 `view.dispatch` 会一点都量不到。这里钩 `EditorState` 原型上的 `applyTransaction`，
+  // 它同时包住「应用 step（重建文档树）」与「插件 state.apply（含 derive 层装饰重建）」。
+  const stateProto = Object.getPrototypeOf(editor.state)
+  const originalApply = stateProto.applyTransaction
+  stateProto.applyTransaction = function patchedApplyTransaction(tr) {
+    const start = performance.now()
+    try {
+      const result = originalApply.call(this, tr)
+      // `result.transactions` 是「根事务 + 各插件 append 出来的事务」，按应用顺序排列。
+      // 只留步数这种整数，不留事务对象 —— 后者会拖住文档树，把 GC 压力带进下一段测量。
+      transactions.push({ steps: tr.steps.length, appended: result.transactions.slice(1).map((item) => item.steps.length) })
+      return result
+    } finally {
+      applyMs += performance.now() - start
+      applyCalls += 1
+    }
+  }
+
+  const runChunk = (index, insert) => {
+    const blocksBefore = view.state.doc.childCount
+    const sizeBefore = view.state.doc.content.size
+    const applyBefore = applyMs
+    const updateBefore = updateMs
+    const callsBefore = updateCalls
+    const txBefore = transactions.length
+    sink.samples = []
+    window.__larkDocPerf = sink
+    const mark = t()
+    insert()
+    const totalMs = t() - mark
+    window.__larkDocPerf = null
+    const chunkApply = applyMs - applyBefore
+    const chunkUpdate = updateMs - updateBefore
+    const rebuild = sink.samples.filter((sample) => sample.path === 'rebuild')
+    const decoration = rebuild.reduce((sum, sample) => sum + sample.ms, 0)
+    out.perChunkMs.push(totalMs)
+    out.detail.push({
+      index,
+      blocksBefore,
+      sizeBefore,
+      totalMs: r1(totalMs),
+      // 事务净额 = applyTransaction − 装饰重建。装饰重建本身就发生在插件 state.apply 里，
+      // 属于事务，不属于 view.updateState —— 这一点是 P8-01b 在切段数据上确认的，
+      // 分项表早期把它记在 updateState 底下是标错了位置（数值只占 0.3%，结论不变）。
+      applyNetMs: r1(chunkApply - decoration),
+      decorationMs: r1(decoration),
+      decorationRebuilds: rebuild.length,
+      updateMs: r1(chunkUpdate),
+      updateCalls: updateCalls - callsBefore,
+      // 解析 = 本段总耗时 − 事务 − 状态重建。它同时收下了 `insertContentAt` 里的其余开销
+      // （HTML → Slice、emit('transaction') / emit('update')），所以只能当**上界**读。
+      parseMs: r1(totalMs - chunkApply - chunkUpdate),
+      // 这一段里发生的事务：`steps` 是根事务，`appended` 是各插件追加事务的步数。
+      // 有了它，「块 id 补全是一块一步」这种机制判断就不用再靠读源码猜。
+      transactions: transactions.slice(txBefore),
+    })
+  }
+
+  // 页内拿不到 Node 侧的辅助函数（`page.evaluate` 只序列化被调的那一个），
+  // 所以 `instrumentPlugins` 由 `runChunkedProbe` 先用源码注入到 `globalThis` 上。
+  const makeInstrument = globalThis.__larkDocInstrumentPlugins
+  const pluginProbe = typeof makeInstrument === 'function' ? makeInstrument(view) : { entries: [], restore() {} }
+  try {
+    // 首段用 setContent（与产品挂载同构），其余追加到文末 —— 段数=1 时退化成整篇。
+    runChunk(0, () => editor.commands.setContent(chunks[0]))
+    for (let i = 1; i < chunks.length; i += 1) {
+      runChunk(i, () => editor.commands.insertContentAt(view.state.doc.content.size, chunks[i]))
+    }
+  } finally {
+    // 三条钩子都改在**原型/实例/spec**上，漏还原会污染同页后续所有测量（切段数是顺序跑的）。
+    pluginProbe.restore()
+    // 屏蔽实验的还原排在插件计时之后：计时钩子包的是「原来那个函数」，先把外壳脱掉、
+    // 再把本体装回去，顺序反了会把被摘掉的插件永久留在 null 上。
+    for (const restore of disableRestores) restore()
+    view.updateState = originalUpdate
+    stateProto.applyTransaction = originalApply
+  }
+  out.plugins = pluginProbe.entries
+    .filter((entry) => entry.applyCalls || entry.appendCalls)
+    .sort((a, b) => b.applyMs + b.appendMs - (a.applyMs + a.appendMs))
   out.setContentMs = out.perChunkMs.reduce((sum, ms) => sum + ms, 0)
+  out.applyMs = applyMs
+  out.applyCalls = applyCalls
+  out.updateMs = updateMs
+  out.updateCalls = updateCalls
 
   const layoutMark = t()
   void host.offsetHeight
@@ -298,12 +517,17 @@ function splitIntoChunks(parts, k) {
 }
 
 /** 分段灌入也走全新 page：首段若在热乎的页面上会少付一次布局，量出来的「首屏」偏乐观。 */
-async function runChunkedProbe(browser, url, chunks) {
+async function runChunkedProbe(browser, url, chunks, disableAppend) {
   const page = await (await browser.newContext()).newPage()
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
     await waitForHostReady(page)
-    return await page.evaluate(probeChunked, { chunks })
+    // 把插件钩子装进页内。传源码而不是传函数：`instrumentPlugins` 要被 `probeChunked`
+    // 在页内直接调用，而 `evaluate` 只序列化它收到的那个函数本身。
+    await page.evaluate((source) => {
+      globalThis.__larkDocInstrumentPlugins = new Function(`return (${source})`)()
+    }, instrumentPlugins.toString())
+    return await page.evaluate(probeChunked, { chunks, disableAppend: disableAppend || [] })
   } finally {
     await page.close().catch(() => {})
   }
@@ -446,6 +670,139 @@ function printChunking(rows) {
   console.log('  注意「首段」列：它才是用户真正等待的「能看见内容」的时间，合计快不等于首屏快。')
 }
 
+/**
+ * 对「段序号 > 0」的纯插入段做最小二乘，返回 `ms / 100 块`。
+ *
+ * 为什么只取 index > 0：第 0 段是 `setContent`，它同时付了「换掉旧文档」的钱，量纲和其他段不同；
+ * 混进去会把斜率拉偏。而 index > 0 的每一段做的是**同一件事**（在文末追加一小段 HTML），
+ * 唯一的变量就是「此刻文档多大」—— 这正是我们要的那条曲线。
+ */
+function slopePer100Blocks(detail, key) {
+  const rows = detail.filter((row) => row.index > 0 && Number.isFinite(row[key]))
+  if (rows.length < 2) return NaN
+  const xs = rows.map((row) => row.blocksBefore)
+  const ys = rows.map((row) => row[key])
+  const meanX = xs.reduce((sum, value) => sum + value, 0) / xs.length
+  const meanY = ys.reduce((sum, value) => sum + value, 0) / ys.length
+  let numerator = 0
+  let denominator = 0
+  for (let i = 0; i < xs.length; i += 1) {
+    numerator += (xs[i] - meanX) * (ys[i] - meanY)
+    denominator += (xs[i] - meanX) ** 2
+  }
+  return denominator ? (numerator / denominator) * 100 : NaN
+}
+
+/**
+ * 插件级事务开销表（P8-01b 的第二刀）。
+ *
+ * 读法：`applyTransaction` 的钱只可能落在三处 —— 各插件 `state.apply`、各插件
+ * `appendTransaction`、以及**应用 step 本身**（`step.apply(doc)` 重建文档树）。
+ * 前两者这里逐项列出，减完剩下的差额就是第三者。若差额为负，说明装饰重建被算进了
+ * 某个插件的 `state.apply`（derive 层的 `decorations()` 确实是在插件 state 里被调的），
+ * 这时两列只当作重叠的上下界读，不要相加。
+ */
+function printPlugins(row) {
+  const entries = row?.plugins || []
+  if (!entries.length) {
+    console.log('\n  插件级事务开销：本次窗口内没有任何插件 apply（异常，检查钩子是否生效）')
+    return null
+  }
+  const decorationMs = (row.detail || []).reduce((sum, item) => sum + item.decorationMs, 0)
+  const applyNet = row.applyMs - decorationMs
+  const pluginTotal = entries.reduce((sum, entry) => sum + entry.applyMs + entry.appendMs, 0)
+
+  console.log(`\n插件级事务开销（${row.chunks} 段，按 state.apply + appendTransaction 合计排序；单位 ms）`)
+  console.log('   插件 key / 指纹                                    state.apply      调用   append     调用')
+  for (const entry of entries.slice(0, 12)) {
+    const label = `${entry.key}${entry.props ? ` [${entry.props}]` : ''}${entry.specKeys ? ` {${entry.specKeys}}` : ''}`
+    console.log(`  ${label.slice(0, 50).padEnd(50)}  ${String(round1(entry.applyMs)).padStart(12)}  ${String(entry.applyCalls).padStart(6)}  ${String(round1(entry.appendMs)).padStart(7)}  ${String(entry.appendCalls).padStart(6)}`)
+  }
+  const residualMs = applyNet - pluginTotal
+  console.log(`\n  事务净额 ${round1(applyNet)} ms = 插件合计 ${round1(pluginTotal)} ms + step 应用（残差）${round1(residualMs)} ms`)
+  if (residualMs < 0) {
+    console.warn(`[attribute] ⚠ 插件合计超过事务净额 ${round1(-residualMs)} ms：装饰重建落在某个插件的 state.apply 里，两列重叠，只读比例不读绝对`)
+  }
+  const top = entries[0]
+  if (top) console.log(`  最大单项：${top.key} ${round1(top.applyMs + top.appendMs)} ms（占事务净额 ${applyNet > 0 ? ((top.applyMs + top.appendMs) / applyNet * 100).toFixed(0) : '—'}%）`)
+  return { applyNet: round1(applyNet), pluginTotal: round1(pluginTotal), residualMs: round1(residualMs), entries: entries.slice(0, 12).map((entry) => ({ key: entry.key, props: entry.props, specKeys: entry.specKeys, ms: round1(entry.applyMs + entry.appendMs) })) }
+}
+
+/**
+ * 逐次记账表（P8-01b）。
+ *
+ * 单篇文档只给一条「总耗时 vs 块数」的曲线，从中分不清「每节点更贵了」和
+ * 「有某笔整篇级的开销被多付了几次」。切段把这个歧义消掉：段数 k 时，同一笔
+ * 每事务开销被付了 k 次，而每次付款时的文档大小是已知的 —— 于是
+ * **「第 k 次插入花了多久」对「那一刻文档多大」回归**，斜率就是那笔开销的规模特征：
+ *
+ * - 斜率 ≈ 0：每事务开销与文档大小无关 → 多付的钱只来自「次数」，分段不会更贵；
+ * - 斜率 > 0：每次事务随文档变大而变贵 → 这就是二次项的来源，且能指出落在哪一段。
+ */
+function printChunkDetail(rows) {
+  const target = rows.reduce((best, row) => (row.detail && row.detail.length > (best.detail?.length ?? 0) ? row : best), rows[0])
+  if (!target?.detail?.length) return null
+  const detail = target.detail
+  console.log(`\n逐次记账（${target.chunks} 段；「起始」是这一次插入之前的文档规模）`)
+  console.log('   段   起始块   起始 size      合计      解析    事务净      装饰  updateState  调用')
+  for (const row of detail) {
+    console.log(`  ${String(row.index).padStart(3)}  ${String(row.blocksBefore).padStart(7)}  ${String(row.sizeBefore).padStart(10)}  ${String(row.totalMs).padStart(9)}  ${String(row.parseMs).padStart(8)}  ${String(row.applyNetMs).padStart(8)}  ${String(row.decorationMs).padStart(8)}  ${String(row.updateMs).padStart(11)}  ${String(row.updateCalls).padStart(4)}`)
+  }
+
+  const keys = [
+    ['合计', 'totalMs'],
+    ['解析', 'parseMs'],
+    ['事务净', 'applyNetMs'],
+    ['装饰', 'decorationMs'],
+    ['updateState', 'updateMs'],
+  ]
+  const slopes = keys.map(([label, key]) => ({ label, key, slope: slopePer100Blocks(detail, key) }))
+  const totalSlope = slopes.find((entry) => entry.key === 'totalMs')?.slope
+  console.log('\n  随文档变大的增量成本（对起始块数最小二乘，只取纯插入段；单位 ms / 100 块）')
+  for (const entry of slopes) {
+    const share = Number.isFinite(totalSlope) && totalSlope > 0 ? `  占增量的 ${((entry.slope / totalSlope) * 100).toFixed(0)}%` : ''
+    console.log(`    ${entry.label.padEnd(12)} ${(Number.isFinite(entry.slope) ? `${entry.slope >= 0 ? '+' : ''}${round1(entry.slope)}` : '—').padStart(10)}${share}`)
+  }
+  return {
+    chunks: target.chunks,
+    slopes: Object.fromEntries(slopes.map((entry) => [entry.key, round1(entry.slope)])),
+  }
+}
+
+/**
+ * 事务结构表（P8-01b 的硬证据）。
+ *
+ * 「块 id 补全」是这轮唯一的嫌疑犯，而它的代价完全取决于**它自己产生多少条 step**：
+ * `applyBlockIdFixes` 是 `fixes.forEach(fix => tr.setNodeMarkup(...))`，一块一条。
+ * 所以只要把每次 `applyTransaction` 的步数打出来，「一块一步」这个判断就从读码变成了实测；
+ * 若追加事务的步数与块数同量级，那么两个插件里所有 O(步数) 的重放（autolink 的
+ * `combineTransactionSteps` 就是）都会跟着变成 O(块数) —— 这就是二次项的入口。
+ */
+function printTransactions(rows) {
+  const target = rows.reduce((best, row) => (row.chunks > best.chunks ? row : best), rows[0])
+  const detail = target?.detail || []
+  const withTx = detail.filter((row) => Array.isArray(row.transactions) && row.transactions.length)
+  if (!withTx.length) return null
+  console.log(`\n事务结构（${target.chunks} 段；步数 = 该事务里的 step 条数，追加事务由插件 appendTransaction 产生）`)
+  console.log('   段   起始块   根事务步数   追加事务步数')
+  for (const row of withTx) {
+    const roots = row.transactions.map((item) => item.steps)
+    const appended = row.transactions.flatMap((item) => item.appended)
+    console.log(`  ${String(row.index).padStart(3)}  ${String(row.blocksBefore).padStart(7)}  ${String(roots.join('+')).padStart(11)}   ${appended.length ? appended.join('+') : '—'}`)
+  }
+  const last = withTx[withTx.length - 1]
+  const appended = last.transactions.flatMap((item) => item.appended)
+  const biggest = appended.length ? Math.max(...appended) : 0
+  if (biggest) {
+    console.log(`\n  末段（起始 ${last.blocksBefore} 块）追加事务最大 ${biggest} 步 —— 与「一块一条 setNodeMarkup」一致则说明 blockId 补全是逐块提交的`)
+  }
+  return {
+    chunks: target.chunks,
+    appendedMaxSteps: biggest,
+    rows: withTx.map((row) => ({ index: row.index, blocksBefore: row.blocksBefore, roots: row.transactions.map((item) => item.steps), appended: row.transactions.flatMap((item) => item.appended) })),
+  }
+}
+
 async function main() {
   const startedAt = Date.now()
   const html = buildDocHtml({ seed: SEED, blocks: BLOCKS })
@@ -470,6 +827,7 @@ async function main() {
     node: process.version,
     reps: REPS,
     load1AtStart: round2(os.loadavg()[0]),
+    disableAppend: DISABLE_APPEND,
   }
 
   try {
@@ -551,16 +909,19 @@ async function main() {
       printTypes(rows)
     }
 
-    // ── 4. 分段灌入（收益验证）────────────────────────────────────────────
+    // ── 4. 分段灌入（收益验证 + P8-01b 逐次归因）────────────────────────────
     if (ONLY === 'all' || ONLY === 'chunk') {
       const parts = buildDocBlocks({ seed: SEED, blocks: BLOCKS })
-      const chunkCounts = [1, 5, 10, 25]
+      const chunkCounts = CHUNK_COUNTS
+      if (DISABLE_APPEND.length) {
+        console.warn(`[attribute] ⚠ PERF_DISABLE_APPEND=${DISABLE_APPEND.join(',')}：本次是**归因实验**，摘掉了插件的 appendTransaction，文档缺 blockId / 缺 autolink，数不可与正式口径比较`)
+      }
       console.log(`\n[attribute] 4/4 分段灌入（${parts.length} 个顶层元素，切 ${chunkCounts.join(' / ')} 段）...`)
       const rows = []
       for (const count of chunkCounts) {
         const chunks = splitIntoChunks(parts, count)
         console.log(`[attribute]     ${chunks.length} 段...`)
-        const run = await runChunkedProbe(browser, url, chunks)
+        const run = await runChunkedProbe(browser, url, chunks, DISABLE_APPEND)
         rows.push({
           chunks: chunks.length,
           setContentMs: round1(run.setContentMs),
@@ -569,6 +930,11 @@ async function main() {
           firstChunkMs: round1(run.perChunkMs[0]),
           blocks: run.blocks,
           domNodes: run.domNodes,
+          // 逐次明细单独存，不混进 `chunking` 表的对齐 —— 那张表是「收益」，这份是「归因」。
+          detail: run.detail,
+          applyMs: round1(run.applyMs),
+          plugins: run.plugins,
+          disabledPlugins: run.disabledPlugins,
         })
       }
       // 切段不能改变文档本身。理想情况是块数 / DOM 节点数与「一段到底」逐项相等，
@@ -589,19 +955,46 @@ async function main() {
       }
       result.chunking = rows
       result.chunkingDrift = drifted.length
-      result.chunking = rows
       printChunking(rows)
+      const attribution = printChunkDetail(rows)
+      if (attribution) result.chunkSlopes = attribution
+      const txSummary = printTransactions(rows)
+      if (txSummary) result.chunkTransactions = txSummary
+      // 插件表取「段数最多」那一次：事务次数最多，单项信噪比最好。
+      // 注意不能按「插件条数」挑 —— 每次都一样多，会挑成第一组（段数=1，只有一次事务）。
+      const pluginTarget = rows.reduce((best, row) => (row.chunks > best.chunks ? row : best), rows[0])
+      const pluginSummary = printPlugins(pluginTarget)
+      if (pluginSummary) result.chunkPlugins = pluginSummary
+      if (DISABLE_APPEND.length) {
+        const disabled = rows[0]?.disabledPlugins || []
+        // 匹配为空必须炸：屏蔽实验的结论完全建立在「确实摘掉了」上，
+        // 若 key 前缀写错（比如插件改名），跑出来的不过是又一次正常测量，
+        // 却会被读成「摘掉也没变快」。这类静默空转在 P7 里踩过，这里直接拦死。
+        if (!disabled.length) {
+          throw new Error(`PERF_DISABLE_APPEND=${DISABLE_APPEND.join(',')} 没有匹配到任何插件（现有 key 见上一张插件表）`)
+        }
+        console.log(`\n  屏蔽实验：已摘掉 appendTransaction —— ${disabled.join(' / ')}（本表仅供归因，非产品口径）`)
+        result.chunkDisabledAppend = disabled
+      }
     }
 
     result.durationMs = Date.now() - startedAt
-    const outPath = path.join(runDir, 'attribute-result.json')
+    // `PERF_OUT` 让「换块数复测」不必占用正式那份结果：300 块的口径与 2,000 块不可混放，
+    // 混在一起会让 `carriedSections` 把两种规模的数拼成一张表。
+    // 屏蔽实验同理，而且更危险：它的数看着像「优化后的收益」，落到正式文件里会被当成产品口径。
+    // 所以 `PERF_DISABLE_APPEND` 且没显式给 `PERF_OUT` 时，默认换成独立文件名。
+    const disableSuffix = DISABLE_APPEND.length ? `.no-${DISABLE_APPEND.join('+')}` : ''
+    const defaultName = `attribute-result${disableSuffix}.json`
+    const outPath = process.env.PERF_OUT
+      ? path.resolve(REPO_ROOT, process.env.PERF_OUT)
+      : path.join(runDir, defaultName)
     // 分段跑（`ONLY=phase` / `scaling` / `types`）时，把这次没量的那几段从上一次结果里带过来。
     // 之前这里是直接覆盖 —— 跑完规模曲线就把花 90 s 才拿到的分项表冲掉了，只能重跑。
     // 代价是同一个文件里可能混着两次采样的数，所以下面显式记下「这次量的」和「沿用的」。
-    const measureSections = ['phase', 'scaling', 'types', 'chunking'].filter((name) => result[name] !== undefined)
+    const measureSections = ['phase', 'scaling', 'types', 'chunking', 'chunkSlopes', 'chunkTransactions'].filter((name) => result[name] !== undefined)
     const previous = fs.existsSync(outPath) ? JSON.parse(fs.readFileSync(outPath, 'utf8')) : {}
     const carriedSections = []
-    for (const name of ['phase', 'scaling', 'types', 'chunking']) {
+    for (const name of ['phase', 'scaling', 'types', 'chunking', 'chunkSlopes', 'chunkTransactions']) {
       if (result[name] === undefined && previous[name] !== undefined) {
         result[name] = previous[name]
         carriedSections.push(name)
