@@ -4,8 +4,9 @@
  * 结构：14 个组文件（basic/common/data/media/embed/collab/widget/button/pim/advanced/docmanage/
  * inline/bitable/draw，对齐需求 03 §3.4 的分类口径）各导出本组 CommandDef；本文件做三件事——
  *   1. 按 id 汇总（重复 id 直接抛错，防止各组悄悄打架）；
- *   2. 用显式 COMMAND_ORDER 重建数组：菜单渲染按 category 分组、组内按数组序（CommandMenu.vue
- *      categories computed），所以顺序必须与拆分前逐项一致，不能按组拼接；
+ *   2. 用显式 COMMAND_ORDER 重建数组：菜单渲染按 category 分组、组内按数组序（分段在
+ *      `src/ui/commandMenu.js` 的 `categoriesOf`/`sectionList`），所以顺序必须与拆分前
+ *      逐项一致，不能按组拼接；
  *   3. filterCommands 按 features 开关、commands.disabled/allow 与关键词过滤（逻辑原样保留）。
  * CommandDef 契约见 requirements/09 §3.2：tier = required | skeleton | skip。
  */

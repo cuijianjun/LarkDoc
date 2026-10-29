@@ -42,7 +42,10 @@ export default {
       this.closeBlockMenu()
       this.$nextTick(() => {
         this.positionCommandMenu()
-        if (kind === 'plus') this.$children.find((child) => child.$options.name === 'LarkDocCommandMenu')?.focusSearch()
+        // plus 菜单打开即可打字：焦点交给搜索框。
+        // 阶段 5 批次 3：菜单 DOM 已由 `src/ui/commandMenu.js` 建（不再有子组件实例），
+        // 原来靠 `$children.find(name === 'LarkDocCommandMenu')` 摸子组件，现在直接问原生层。
+        if (kind === 'plus') this._commandMenuUi?.focusSearch()
       })
     },
     openEmptyBlockInsertMenu(event) {
@@ -86,6 +89,8 @@ export default {
         const coords = this.editor.view.coordsAtPos(this.slashMatch.from)
         this.menuAnchor = { left: coords.left, top: coords.top, bottom: coords.bottom }
       }
+      // 阶段 5 批次 3：菜单 DOM 由 `src/ui/commandMenu.js` 建、挂在 `commandMenuHost` 里，
+      // 仍是 `.lark-doc` 的后代 ⇒ 从根节点查得到（定位只看真实尺寸，不认谁建的节点）。
       const menu = this.$refs.root?.querySelector('.lark-doc-command-menu')
       if (!menu) return
       const margin = 8

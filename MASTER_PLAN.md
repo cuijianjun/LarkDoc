@@ -858,11 +858,15 @@ import { LarkDoc } from 'lark-doc/lite'
 |---|---|---|---|---|
 | 1 Tooltip / 气泡条 | ✅ 完成 | `scripts/verify-browser-bubble.js` 44/44、`verify-browser-heading-menu.js` 16/16 | `src/ui/bubbleBar.js`、`src/ui/headingMenu.js`、`src/ui/icon.js`、`src/ui/menuLayout.js`；`editor/BubbleBar.vue` 已删，`bubbleMenuMixin.js` 退化为「算 state → `_bubbleUi.update()`」 | 见 `git log --grep '阶段 5 批次 1'` |
 | 2 工具栏 | ✅ 完成 | `scripts/verify-browser-toolbar.js` 51/51 | `src/ui/toolbar.js`、`src/ui/topBar.js`、`src/ui/select.js`、`src/ui/dom.js`；`editor/ToolbarBar.vue`、`editor/TopBar.vue` 已删，`editor/toolbarUiMixin.js` 退化为「算 state → `update()`」 | `ff4f7aa`（断言 `d4c1b07`），tag `stage/5-B` |
-| 3 各级菜单 | 🟡 进行中（1/3 模块） | `scripts/verify-browser-block-menu.js` 37/37（原样复跑，一条未放宽） | `src/ui/blockHandle.js` 533 行 + `editor/blockHandleUiMixin.js`（接线，两段式刷新）；`editor/BlockHandleMenu.vue` 已删，R2 34→33 | `f1f3b8c`，tag `stage/5-C` |
+| 3 各级菜单 | 🟡 进行中（2/3 模块） | `scripts/verify-browser-block-menu.js` 37/37、`scripts/verify-browser-command-menu.js` 48/48（均为改前先绿、改后原样复跑，一条未放宽） | `src/ui/blockHandle.js` 533 行 + `editor/blockHandleUiMixin.js`（两段式刷新）；`src/ui/commandMenu.js` 约 540 行 + `editor/commandMenuUiMixin.js`；`editor/BlockHandleMenu.vue`、`CommandMenu.vue` 已删，R2 34→32 | 见 `git log --grep '阶段 5 批次 3'`，tag `stage/5-C` |
 | 4 弹窗 / 面板 | ⬜ 未开始 | 待补 | — | — |
 | 5 主壳 | ⬜ 未开始 | 待补 | — | — |
 
-批次 3 剩余两个模块：`CommandMenu.vue` → `src/ui/commandMenu.js`（需先补 `scripts/verify-browser-command-menu.js`）；`LarkDocHeadingMenu.vue`（55 行）全仓无 import，是孤儿文件，直接删 + 减基线即可。
+批次 3 只剩一个模块：`LarkDocHeadingMenu.vue`（55 行）全仓无 import，是孤儿文件，直接删 + 减基线即可（R2 32→31）。
+
+批次 3 的两条新经验（后续批次会再撞上）：
+① **键盘要挡住原生默认行为**：斜杠菜单的 ↑↓/Enter 若不 `preventDefault()`，浏览器原生移光标 → 选区变化 → slash match 消失 → 菜单先自关，组件层永远收不到键。`core/blocks/document.js` 因此加了 `slashActive` 闸门（与 `mentionActive` 同源）。
+② **宿主可以是占位 div 本身**：命令菜单挂在 `commandMenuHost` 里（同 `bubbleHost`），不学块句柄插兄弟位 —— 往 Vue 管的子节点列表里塞节点，父级重渲染时容易被顺手挪走；菜单 `position: fixed`，父级是谁都不影响定位。
 
 批次 1 的经验（批次 2~5 直接复用）：① 原生化把 3 处 `$nextTick(定位)` 全部消掉了——原生节点同步插入即可同步 `getBoundingClientRect()`，这正是那 53 个时序点的解法；② 断言锁的「结构即契约」（段序、`role`、`aria-label`、`data-tooltip`）必须逐字段复刻，条件段要**真的不在 DOM 里**而不是 `hidden`；③ 事件要用**原事件**透传（`toggleColorPalette` 靠 `event.currentTarget` 定位），自造事件对象会静默退回默认坐标；④ 一次建好节点、之后只改属性，重建会丢焦点并让 160ms 悬停链断开。
 

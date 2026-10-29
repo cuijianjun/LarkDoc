@@ -1,9 +1,10 @@
 'use strict'
 /**
- * 浏览器级验证：命令菜单（`CommandMenu.vue`、`commandMenuMixin.js`）。
+ * 浏览器级验证：命令菜单（`src/ui/commandMenu.js` + `editor/commandMenuMixin.js`）。
  *
- * 阶段 5 批次 3 要把这块从 Vue SFC 换成原生 DOM 片段（`src/ui/commandMenu.js`），
- * 本套断言就是那批改动的**回归闸门**：改前先跑绿，改完必须仍然全绿，一条都不许「调松」。
+ * 阶段 5 批次 3 要把这块从 Vue SFC（`CommandMenu.vue`，已删）换成原生 DOM 片段
+ * （`src/ui/commandMenu.js`），本套断言就是那批改动的**回归闸门**：改前先跑绿，改完必须
+ * 仍然全绿，一条都不许「调松」。
  *
  * 为什么这块值得单独一套断言：
  * - 它有两个入口（正文 `/` 斜杠、空段落「＋」），两者**结构不同**：斜杠是 15 段纵向列表

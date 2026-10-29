@@ -101,7 +101,6 @@ src/
   components/lark-doc/
     LarkDocEditor.vue       编辑器 UI 和 Tiptap 生命周期
     LarkDocWorkspace.vue    工作台 UI、持久化和 Session 接入
-    CommandMenu.vue                `/` 命令菜单
     commands.js                    块级命令实现
     documentOperations.js          文档级操作和块移动/复制/删除
     ecsImages.js                   ECS 图片上传适配器

@@ -100,19 +100,9 @@
          必须是 .lark-doc 里的空容器 —— 气泡条样式全带 `.lark-doc ` 前缀；
          自身 position: fixed，这个空 div 不占布局。 -->
     <div ref="bubbleHost" />
-    <command-menu
-      v-if="menuOpen && !effectiveReadonly"
-      :items="filteredCommands"
-      :templates="templates"
-      :query="menuQuery"
-      :position-style="menuStyle"
-      :active-id="activeCommandId"
-      :kind="menuKind"
-      @query="menuQuery = $event; activeCommandIndex = 0"
-      @move="moveCommand"
-      @choose="chooseCommand"
-      @close="closeCommandMenu(true)"
-    />
+    <!-- 命令菜单的挂载点（阶段 5 批次 3 原生化）：DOM 由 src/ui/commandMenu.js 建，
+         自身 position: fixed，这个空 div 不占布局。 -->
+    <div ref="commandMenuHost" />
     <ColorPalette :ed="self" />
     <TablePickerDialog :ed="self" />
     <MathDialog :ed="self" />
@@ -170,7 +160,7 @@ import { Editor } from '@tiptap/core'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
-import CommandMenu from './CommandMenu.vue'
+import commandMenuUiMixin from './editor/commandMenuUiMixin' // 阶段 5 批次 3：命令菜单渲染层在 src/ui/commandMenu.js
 import LarkDocIcon from './LarkDocIcon.vue'
 import SearchPanel from './editor/SearchPanel.vue'
 import MentionPanel from './editor/MentionPanel.vue'
@@ -253,8 +243,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { CommandMenu, LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -391,6 +381,7 @@ export default {
       // 阶段 5 批次 2：工具栏已原生化（`src/ui/toolbar.js`），同样在编辑器就绪后挂一次。
       this.mountToolbarBar()
       this.mountBlockHandle() // 阶段 5 批次 3：块句柄/块菜单原生化，依赖 editor 判可见性。
+      this.mountCommandMenu() // 阶段 5 批次 3：命令菜单原生化（`src/ui/commandMenu.js`）。
       // 首次挂载先补齐块的稳定 id：折叠偏好、锚点都按 id 引用块；没 id 就恢复不出折叠位。
       if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
       // 老数据或外部 JSON 的缩进可能超过飞书上限（5 级），挂载/替换正文后一次性压回。
@@ -416,7 +407,7 @@ export default {
     this.editor?.destroy()
     this.editor = null
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar(); this.destroyBlockHandle()
+    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
