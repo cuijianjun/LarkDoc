@@ -70,6 +70,10 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'colwidth') valid = Array.isArray(value) && value.every((width) => Number.isInteger(width) && width > 0 && width <= 2400)
     else if (key === 'colspan' || key === 'rowspan' || key === 'start') valid = Number.isInteger(value) && value > 0 && value <= 10000
     else if (key === 'open' || key === 'checked') valid = typeof value === 'boolean'
+    // 「继续编号」标记（ordered-list.js 的布尔属性，默认 false）：`toJSON` 会把默认值
+    // 一并写出，落进兜底分支（只收字符串）→ 任何带有序列表的文档存一次盘再打开就整篇
+    // 抛错。只对 orderedList 放行，避免别的块借同名 key 钻空子。
+    else if (type === 'orderedList' && key === 'continueFrom') valid = typeof value === 'boolean'
     // 提及（P4-01）：`notify` 是**布尔**且默认 true，`kind` 是枚举 —— 兜底分支只收字符串，
     // 落进来必被判非法，症状与 P3-07 的 `aspect` 完全同型：「存一次盘再打开就炸」。
     // 只对 mention 生效，不用 `key === 'notify'` 全局放行，避免别的块借同名 key 钻空子。
