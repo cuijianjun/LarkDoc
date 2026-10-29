@@ -185,13 +185,15 @@ import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import BubbleBar from './editor/BubbleBar.vue'
 import ColorPalette from './editor/ColorPalette.vue'
-import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
-import MathDialog from './editor/dialogs/MathDialog.vue'
-import LinkDialog from './editor/dialogs/LinkDialog.vue'
-import HelpDialog from './editor/dialogs/HelpDialog.vue'
+// 低频对话框按需加载：初始编辑器只保留工具栏与正文渲染，打开对应入口时再请求 chunk。
+// 组件名与同步公开组件契约不变；Vue 2 会在首次渲染 v-if 分支时解析异步组件。
+const TablePickerDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/TablePickerDialog.vue')
+const MathDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/MathDialog.vue')
+const LinkDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/LinkDialog.vue')
+const HelpDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/HelpDialog.vue')
 import HelpFab from './editor/HelpFab.vue'
-import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
-import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
+const EmbedLinkDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/EmbedLinkDialog.vue')
+const HeadingNumberMenu = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/HeadingNumberMenu.vue')
 // 封面**槽**是文档流元素（在纸张之上、正文之前），与 fixed 的「编辑封面」面板不是一回事；
 // 组件注册也因此只能落在门面 —— coverMixin 一旦 import .vue，单测就再也无法 import 它。
 import CoverSlot from './editor/CoverSlot.vue'

@@ -106,8 +106,8 @@ module.exports = defineConfig({
   // **不碰** 的三类：
   //   1. `pure_getters` / `unsafe*` / `assume*`：靠「假设取属性无副作用」删代码。Vue 2 的响应式
   //      靠 getter 里的 `depend()` 收依赖，把属性读取当纯函数删掉是真会出问题的；
-  //   2. `mangle.toplevel`：产物的公开面靠 `export` / `module.exports` 上的属性名承载，
-  //      改名收益小、宿主排查成本高；
+  //   2. `mangle.properties`：不改对象属性名，产物公开面与宿主契约保持稳定；
+  //      顶层局部绑定则允许改名，以压缩 webpack runtime 与依赖包装器；
   //   3. `drop_console: true`：只按纯函数删 `log/debug/info`（宿主控制台不该被我们的调试输出污染），
   //      `warn`/`error` 必须留 —— 那是宿主排查问题的唯一线索。
   terser: {
@@ -133,6 +133,7 @@ module.exports = defineConfig({
         pure_funcs: ['console.log', 'console.debug', 'console.info'],
       },
       format: { comments: false },
+      mangle: { toplevel: true },
     },
   },
   transpileDependencies: true,
