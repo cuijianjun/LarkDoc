@@ -6,7 +6,6 @@
   ],
   ".vue": [
     "components/lark-doc/editor/dialogs/HeadingNumberMenu.vue",
-    "components/lark-doc/editor/IsvButtonPanel.vue",
     "components/lark-doc/editor/LarkDocOverlays.vue",
     "components/lark-doc/editor/ReminderPopover.vue",
     "components/lark-doc/editor/SearchPanel.vue",
