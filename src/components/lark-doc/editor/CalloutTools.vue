@@ -10,7 +10,7 @@
     <label
       title="高亮块文字颜色"
       aria-haspopup="menu"
-      @click.prevent="ed.toggleColorPalette('ed.calloutColor', $event)"
+      @click.prevent="ed.toggleColorPalette('calloutColor', $event)"
     ><span aria-hidden="true">A</span><input
       type="color"
       aria-label="高亮块文字颜色"
