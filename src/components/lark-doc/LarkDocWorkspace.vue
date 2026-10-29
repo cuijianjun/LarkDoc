@@ -453,6 +453,7 @@ import { migrateRecordContent } from '../../core/migrations'
 import { createDerivedSnapshot, validateDerivedSnapshot } from '../../core/derive/snapshot'
 import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
+import { loadFeature } from '../../core/features/registry'
 import { createDocumentSession } from '../../session/DocumentSession'
 import LarkDocSelect from './LarkDocSelect.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
@@ -823,7 +824,10 @@ export default {
         let content
         let importedTitle
         if (format === 'docx') {
-          const mammoth = await import(/* webpackChunkName: "office" */ 'mammoth/mammoth.browser')
+          // 阶段 4：mammoth 走特性注册表 —— lite 构建下 alias 到 stub → reject →
+          // 下方 catch 给「导入失败，原正文未替换」；宿主加载 features/office.js 后恢复。
+          const mammoth = await loadFeature('office.mammoth', () =>
+            import(/* webpackChunkName: "office" */ 'mammoth/mammoth.browser'))
           const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() })
           content = sanitizeHTML(result.value)
         } else {
@@ -835,7 +839,7 @@ export default {
           } else if (format === 'html' || format === 'htm') content = sanitizeHTML(text)
           else if (format === 'md' || format === 'markdown') {
             const { markdownToHtml } = await import(/* webpackChunkName: "import-export" */ '../../utils/importExport')
-            content = sanitizeHTML(markdownToHtml(text))
+            content = sanitizeHTML(await markdownToHtml(text))
           }
           else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
         }
@@ -870,7 +874,7 @@ export default {
         else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.title, document: component.getJSON() }, null, 2), `${filename}.json`, 'application/json')
         else if (format === 'txt') downloadText(component.getText(), `${filename}.txt`, 'text/plain;charset=utf-8')
         else if (format === 'md') {
-          downloadText(htmlToMarkdown(component.getHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
+          downloadText(await htmlToMarkdown(component.getHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
           this.notice = 'Markdown 为简化导出，字体、分栏、公式和图片裁剪布局可能降级；JSON 可保留完整正文'
         } else if (format === 'docx') {
           await exportDocx(this.title, component.getText())

@@ -1,0 +1,2 @@
+/* lite 构建占位样式：公式样式的真实文件是 src/styles/vendor/katex.css，
+   lite 主产物的 fallback 通道不需要样式（渲染器本身已被 stub 掐断）。 */

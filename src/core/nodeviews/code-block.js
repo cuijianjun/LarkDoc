@@ -16,6 +16,7 @@
 import { INDENT_STEP_PX, clampBlockIndent } from '../documentOperations'
 import { isDiagramLanguage, renderDiagram } from '../diagram'
 import { readContentTheme, subscribeContentTheme } from '../themeSignal'
+import { loadFeature } from '../features/registry'
 
 /** 标记「属于 NodeView 自己的交互元素」：事件停在这里，不进 ProseMirror。 */
 const UI_ATTR = 'data-lark-doc-code-ui'
@@ -23,17 +24,25 @@ const UI_ATTR = 'data-lark-doc-code-ui'
 const DIAGRAM_DEBOUNCE = 300
 
 /* ---------- highlight.js 懒加载：代码块不在首屏，语法包不进主包 ---------- */
+/* 阶段 4：接入特性注册表 —— 宿主加载 lark-doc/features/highlight.js（注册好
+   全部语言的 hljs 实例）时优先用注册实例；否则走内置通道（core + javascript，
+   其余语言再按需补）。 */
 let hljs = null
 let highlighterPromise
 function loadHighlighter() {
   if (!highlighterPromise) {
-    highlighterPromise = Promise.all([
-      import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/core.js'),
-      import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/javascript.js'),
-    ]).then(([coreModule, javascriptModule]) => {
-      hljs = coreModule.default || coreModule
-      hljs.registerLanguage('javascript', javascriptModule.default || javascriptModule)
-      return hljs
+    highlighterPromise = loadFeature('highlight', () =>
+      Promise.all([
+        import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/core.js'),
+        import(/* webpackChunkName: "highlight" */ 'highlight.js/lib/languages/javascript.js'),
+      ]).then(([coreModule, javascriptModule]) => {
+        const core = coreModule.default || coreModule
+        core.registerLanguage('javascript', javascriptModule.default || javascriptModule)
+        return core
+      }),
+    ).then((highlighter) => {
+      hljs = highlighter
+      return highlighter
     }).catch(() => null)
   }
   return highlighterPromise

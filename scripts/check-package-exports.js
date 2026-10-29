@@ -44,8 +44,6 @@ const notes = []
  * 见文件头的「关于 PENDING」。**只减不增。**
  */
 const PENDING = {
-  './dist/lark-doc-lite.esm.js': '阶段 7',
-  './dist/features/*.js': '阶段 4',
   './dist/plugin.mjs': '阶段 6',
   './dist/plugin.cjs': '阶段 6',
 }

@@ -67,7 +67,9 @@ else {
 // 但仍必须是包内 vendored 文件、仍必须被源码引用——P0-04 拆块后引用点在 core/blocks/math.js。
 {
   const source = read('src/core/blocks/math.js')
-  if (!/styles\/vendor\/katex\.css/.test(source)) {
+  // 阶段 4 起引用点是构建期 alias 指定符 'lark-doc/katex.css'
+  // （vue.config.js / build-features.js → vendored 真文件，build-lite.js → 空 CSS）。
+  if (!/(styles\/vendor\/katex\.css|lark-doc\/katex\.css)/.test(source)) {
     fail('KaTeX 样式必须由 src/core/blocks/math.js 引入（按需加载）')
   }
   const entry = read('style.css')
@@ -133,6 +135,16 @@ if (exists('dist')) {
       if (js.indexOf(host) !== -1) fail(`${file}：产物 JS 引用 ${host}`)
     })
     if (/fetch\(\s*["']https:\/\//.test(js)) fail(`${file}：产物内含远程 fetch`)
+    // 阶段 4：dist 里的 https URL 大多是注释/文档链接（prosemirror.net 等，合法），
+    // 真正要禁的是「运行时加载」模式 —— 命中即意味着包会在宿主页面发起外网请求。
+    const RUNTIME_LOAD_RULES = [
+      { rule: /import\s*\(\s*["']https?:\/\//i, label: '运行时动态导入远程模块' },
+      { rule: /\.src\s*=\s*["']https?:\/\//i, label: '运行时注入远程脚本/媒体' },
+      { rule: /\.href\s*=\s*["']https?:\/\//i, label: '运行时注入远程样式表' },
+    ]
+    RUNTIME_LOAD_RULES.forEach(({ rule, label }) => {
+      if (rule.test(js)) fail(`${file}：产物内含${label}`)
+    })
   })
   const bundledFonts = distFiles.filter((file) => file.indexOf('fonts/') !== -1)
   if (!bundledFonts.length) fail('dist 未输出字体目录，宿主将无法离线渲染公式')

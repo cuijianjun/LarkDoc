@@ -14,6 +14,7 @@
  */
 
 import { readContentTheme } from './themeSignal'
+import { loadFeature } from './features/registry'
 
 const DIAGRAM_LANGUAGES = Object.freeze(['mermaid'])
 
@@ -30,21 +31,26 @@ export function listDiagramLanguages() {
 }
 
 /**
- * 默认加载通道：动态 import() 懒 chunk。
- * vendored 产物是 UMD（`module.exports = factory()`），webpack 以 CJS 互操作
- * 处理后完整接口挂在 namespace.default 上；页面已自行加载 mermaid 时直接复用
- * 全局实例，避免双份运行时。
+ * 默认加载通道：特性注册表 + 动态 import() 懒 chunk。
+ * 宿主加载 lark-doc/features/mermaid.js（或自带实现注册 'mermaid'）时优先用
+ * 注册实例；否则走内置通道 —— vendored UMD 通过动态 import() 拆成懒 chunk，
+ * 寻址由构建工具统一接管（'lark-doc/mermaid-vendor' 是构建期 alias 指定符，
+ * 见 vue.config.js / build-features.js / build-lite.js），宿主从源码编译时由
+ * 宿主输出 chunk（内网/外网零配置），直接消费预构建 dist 时按同目录 chunk
+ * 加载（整目录静态托管即可）。页面已自行加载 mermaid 时直接复用全局实例，
+ * 避免双份运行时。
  */
 function loadMermaidModule() {
   if (typeof window !== 'undefined' && window.mermaid && typeof window.mermaid.initialize === 'function') {
     return Promise.resolve(window.mermaid)
   }
-  return import(/* webpackChunkName: "mermaid" */ '../assets/vendor/mermaid/mermaid.min.js')
-    .then((m) => {
-      const mermaid = (m && m.default) || m
-      if (mermaid && typeof mermaid.initialize === 'function') return mermaid
-      throw new Error('mermaid 模块缺失 initialize 接口')
-    })
+  return loadFeature('mermaid', () =>
+    import(/* webpackChunkName: "mermaid" */ 'lark-doc/mermaid-vendor'),
+  ).then((m) => {
+    const mermaid = (m && m.default) || m
+    if (mermaid && typeof mermaid.initialize === 'function') return mermaid
+    throw new Error('mermaid 模块缺失 initialize 接口')
+  })
 }
 
 /**

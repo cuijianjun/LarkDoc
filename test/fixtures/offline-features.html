@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!--
+  断网特性包验证页（手工/脚本共用）。
+  场景：lite 主产物 + features/mermaid 特性包，页面不含任何远程资源。
+  断言目标：mermaid 代码块仍能渲染出 SVG（阶段 4 判据）。
+  用法：本地静态服务指向仓库根目录后访问本页；scripts/verify-offline-mermaid.mjs
+  会自动拦截一切非本机请求并在 30s 内等待渲染结果。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>lark-doc offline features: mermaid</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #editor { max-width: 860px; margin: 40px auto; padding: 24px; border: 1px solid #e5e6eb; border-radius: 8px; }
+    #status { max-width: 860px; margin: 0 auto; color: #86909c; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="status">offline features fixture — mermaid via lark-doc/features/mermaid</div>
+  <div id="editor"></div>
+  <script type="module">
+    import { LarkDoc } from '/dist/lark-doc-lite.esm.js'
+    import '/dist/features/mermaid.js'
+
+    window.__offlineFixture = { created: false, error: null }
+    try {
+      window.__doc = new LarkDoc({
+        element: '#editor',
+        title: 'offline mermaid',
+        content: {
+          type: 'doc',
+          content: [{
+            type: 'codeBlock',
+            attrs: { language: 'mermaid' },
+            content: [{ type: 'text', text: 'graph TD\n  A[开始] --> B[结束]' }],
+          }],
+        },
+      })
+      window.__offlineFixture.created = true
+    } catch (error) {
+      window.__offlineFixture.error = String((error && error.stack) || error)
+    }
+  </script>
+</body>
+</html>

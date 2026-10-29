@@ -36,6 +36,13 @@ const ARTIFACTS = [
   { file: 'dist/lark-doc.esm.js', script: 'build:esm' },
   { file: 'dist/lark-doc-collab.esm.js', script: 'build:collab' },
   { file: 'dist/lark-doc-element.umd.min.js', script: 'build:element' },
+  // 阶段 4：lite 主产物（重依赖 stub 化）+ 五个特性包；build:features 一次出齐。
+  { file: 'dist/lark-doc-lite.esm.js', script: 'build:lite' },
+  { file: 'dist/features/math.js', script: 'build:features' },
+  { file: 'dist/features/mermaid.js', script: 'build:features' },
+  { file: 'dist/features/highlight.js', script: 'build:features' },
+  { file: 'dist/features/markdown.js', script: 'build:features' },
+  { file: 'dist/features/office.js', script: 'build:features' },
   // 一个脚本出两个薄壳产物：构建时按 script 去重，存在性校验仍逐文件算。
   { file: 'dist/lark-doc-vue3.mjs', script: 'build:adapters' },
   { file: 'dist/lark-doc-react.mjs', script: 'build:adapters' }

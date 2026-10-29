@@ -166,6 +166,42 @@ npm run build:analyze  # 以上三份 + 体积诊断输出
 首屏 JS：CJS 3.85 MB（gzip 1.04，Vue 已内联）、element 930 KB（gzip 275）、ESM 848 KB（gzip 248，三块并行）。
 部署时按需区块要与主文件同目录，详见文档站「打包产物与按需加载」。
 
+### lite 主产物与可选特性包
+
+体积敏感的宿主可以走 `lark-doc/lite`（`dist/lark-doc-lite.esm.js`）：它把六个重依赖
+（KaTeX / docx / mammoth / marked / turndown / highlight.js，以及 vendored mermaid）
+从主产物里整体掐断，首屏进一步变小。被掐断的能力不消失——改走**特性注册表**：
+
+- 主产物未注册特性时，对应功能沿内置 catch 降级（公式留 LaTeX 纯文本、代码块纯文本、
+  Markdown/Word 导入导出给可读提示）；
+- 宿主按需加载 `lark-doc/features/<name>`（`<script>` 或 import）后，对应能力即刻恢复，
+  主产物不用换、不重发。
+
+| 特性包 | 注册名 | 恢复的能力 |
+|---|---|---|
+| `lark-doc/features/math` | `math` | 公式渲染（KaTeX 样式随包注入，字体同目录发布） |
+| `lark-doc/features/mermaid` | `mermaid` | 图表渲染（自带 vendored mermaid） |
+| `lark-doc/features/highlight` | `highlight` | 代码语法高亮（全语言） |
+| `lark-doc/features/markdown` | `markdown` | Markdown 导入 / 导出 |
+| `lark-doc/features/office` | `office.buildDocx` / `office.docx` / `office.mammoth` | Word 导入导出 |
+
+接入示例：
+
+```html
+<script type="module">
+  import { LarkDoc } from './dist/lark-doc-lite.esm.js'
+  // 部署时 features/ 目录整体拷入（math.js 的 KaTeX 字体按同目录相对路径解析）
+  import './dist/features/math.js'
+  import './dist/features/highlight.js'
+
+  new LarkDoc({ element: '#editor', content: '<p>开始编辑。</p>' })
+</script>
+```
+
+自定义宿主也可以用同一注册表接入自己的实现（`registerFeature(name, loader)`，
+见 `src/core/features/registry.js`）。全量产物不受影响：未注册特性时走内置按需区块，
+行为与 0.12 完全一致。
+
 ## 边界
 
 包默认不创建 Yjs、WebSocket 或后台连接。`DocumentSession` 统一文档身份、事务来源、能力判断和 Provider 生命周期；协同、版本、评论、权限都通过显式 Provider 接入。数据模型与 Provider 契约见 [DEMO_INTEGRATION_GUIDE.md](DEMO_INTEGRATION_GUIDE.md)。

@@ -5,6 +5,7 @@
  * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
 import { safeUrl } from '../documentOperations'
+import { loadKatex } from '../../../core/blocks/math'
 import { EMBED_MENU_ITEMS, EMBED_HELP_URL } from '../../../core/embed/presets'
 import { readHost, resolveEmbed } from '../../../core/embed/resolve'
 import {
@@ -166,9 +167,11 @@ export default {
     async insertMath() {
       if (!this.writable() || !this.featureEnabled('math')) return
       try {
-        const module = await import(/* webpackChunkName: "math" */ 'katex')
+        // 阶段 4：复用 core/blocks/math.js 的 loadKatex（含特性注册通道），不再
+        // 自开一条 import('katex') 接缝 —— 两处各写一条会让 lite 的 stub / 特性包
+        // 注册只覆盖其一。
+        const katex = await loadKatex()
         if (!this.writable() || !this.mathDialog) return
-        const katex = module.default || module
         katex.renderToString(this.mathValue, { throwOnError: true, trust: false })
         this.mathError = ''
         this.run('insertContent', { type: this.mathDialog, attrs: { latex: this.mathValue } })

@@ -172,6 +172,17 @@ module.exports = defineConfig({
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。
     performance: { hints: false },
+    // 阶段 4 的构建期 alias 指定符：源码里 math / mermaid 的可选依赖用
+    // 'lark-doc/katex.css' / 'lark-doc/mermaid-vendor' 这样的稳定指定符引用，
+    // 三条构建链各自映射 —— 全量构建映射到 vendored 真文件（下面这两条），
+    // lite 构建映射到 stub（build-lite.js），特性包构建同样映射真文件
+    // （build-features.js）。这样 lite 不用动源码，改 alias 就能掐断依赖。
+    resolve: {
+      alias: {
+        'lark-doc/katex.css$': path.resolve(__dirname, 'src/styles/vendor/katex.css'),
+        'lark-doc/mermaid-vendor$': path.resolve(__dirname, 'src/assets/vendor/mermaid/mermaid.min.js'),
+      },
+    },
     // The library is consumed as an npm package.
     // V1（阶段 3）起 esm / cjs / element 三档都不再外部化 Vue —— 宿主不装 Vue 也能跑，
     // peerDependencies 因此不再声明 vue。真正的 V2/V3 是把 Vue 从源码树摘掉（阶段 5 + 7），

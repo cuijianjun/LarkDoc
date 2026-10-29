@@ -20,6 +20,7 @@
 import { serializeMarkdown } from './markdown.js'
 import { printDocument } from './pdf.js'
 import { downloadBlob, downloadText } from '../importExport.js'
+import { loadFeature } from '../../core/features/registry'
 
 /** 文件名里的非法字符（Windows 最严，顺带堵住路径分隔符）。 */
 const UNSAFE_FILE_NAME_CHARS = /[\\/:*?"<>|]/g
@@ -189,7 +190,11 @@ export async function exportDocx(doc, options) {
   // 按需区块。这里不标（或标别的名字）webpack 会另开一个自动命名的 async chunk 装 docx，
   // 于是 LARK_DOC_TARGET=umd 直接编译失败：
   //   Cache group "office" conflicts with existing chunk.（选中模块的父 chunk 不是它）
-  const { buildDocx } = await import(/* webpackChunkName: "office" */ './docx.js')
+  // 阶段 4：外面包一层特性注册表（'office.buildDocx'）—— lite 构建里 docx 依赖被
+  // alias 成 stub，./docx.js 求值即抛错 → reject → 调用方 catch 给可读提示；
+  // 宿主加载 lark-doc/features/office.js（自带 buildDocx）后恢复 rich Word 导出。
+  const { buildDocx } = await loadFeature('office.buildDocx', () =>
+    import(/* webpackChunkName: "office" */ './docx.js'))
   const blob = await buildDocx(doc, { images, title: settings.title || settings.fileName })
   downloadBlob(blob, fileName)
   return { fileName, blob, failedImages, scope }
