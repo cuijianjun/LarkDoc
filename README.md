@@ -19,7 +19,9 @@
 ## 环境要求
 
 - **运行时（接入方）**：Node `>= 14.21.3`（`engines.node` 已放宽；Tiptap 3 依赖的 ES2022+ API 已由入口 core-js polyfill 补齐，Node 14 可正常运行）。无需固定某个版本。
-- **peerDependencies**：`vue ^2.7.14` + `@tiptap/vue-2 ^3.32.0`（Vue 2.7 项目专属）。
+- **peerDependencies**：`@tiptap/vue-2 ^3.32.0`（可选，协同/标注类能力用到）。
+  **不再需要装 Vue** —— 阶段 3 起 Vue 被打进 esm / cjs / element 三档产物（V1 契约脱离），
+  `peerDependencies` 里的 `vue` 一项已删除；源码树里的 Vue 会在阶段 5 + 7 摘掉（V2/V3）。
 - **从源码构建/跑 check**：Node `>= 14.21.3` + npm `>= 8.19.4` 即可（`check-node14.js` 只做最低版本门禁，Node 20 等更高版本同样合法）。
 
 ## 接入方式
@@ -151,19 +153,17 @@ npm run build
 
 ## 产物与按需加载
 
-四份产物按「宿主怎么用」划分，重依赖（KaTeX / docx / mammoth / marked / turndown / highlight.js / mermaid）
+三份产物按「宿主怎么用」划分，重依赖（KaTeX / docx / mammoth / marked / turndown / highlight.js / mermaid）
 全部拆成按需区块，首屏不下载：
 
 ```bash
-npm run build          # dist/lark-doc.common.js        CJS 单文件（main）
-npm run build:umd      # dist/lark-doc.umd.min.js       <script> / CDN（unpkg）
+npm run build          # dist/lark-doc.common.js        CJS 单文件（main，Vue 已内联）
 npm run build:esm      # dist/lark-doc.esm.js           ES Module（module，拆包最彻底）
-npm run build:element  # dist/lark-doc-element.umd.min.js  Web Component（Vue 内联）
-npm run build:analyze  # 以上四份 + 体积诊断输出
+npm run build:element  # dist/lark-doc-element.umd.min.js  Web Component，兼职 CDN <script> 直挂（unpkg / jsdelivr）
+npm run build:analyze  # 以上三份 + 体积诊断输出
 ```
 
-首屏 JS：UMD 847 KB（gzip 246）、element 930 KB（gzip 275）、ESM 848 KB（gzip 248，三块并行），
-改造前分别是 1.91 MB（gzip 548）与 2.16 MB（gzip 658）。
+首屏 JS：CJS 3.85 MB（gzip 1.04，Vue 已内联）、element 930 KB（gzip 275）、ESM 848 KB（gzip 248，三块并行）。
 部署时按需区块要与主文件同目录，详见文档站「打包产物与按需加载」。
 
 ## 边界

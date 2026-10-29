@@ -261,8 +261,12 @@ async function main() {
   check('渲染走动态 import（无 script 注入）', !document.querySelector('script[data-lark-doc-diagram="mermaid"]'))
 
   /* ---------- 4.5 「图表」插入命令 ---------- */
+  // 阶段 3 起 CJS 拆块：mermaid 不再内联进主文件，而是独立成 `lark-doc.common.mermaid.js`
+  // 兄弟区块（由产物内 require() 寻址加载）。「内网零外链」的语义 = 本地区块文件存在、
+  // 内容完整，主文件不再背 mermaid 的体积。
   const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.js'), 'utf8')
-  check('mermaid 内联进 common 包（内网零外链）', bundle.indexOf('flowchart-v2') !== -1)
+  const mermaidChunk = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.mermaid.js'), 'utf8')
+  check('mermaid 拆出独立区块且内容完整（内网零外链）', mermaidChunk.indexOf('flowchart-v2') !== -1 && bundle.indexOf('flowchart-v2') === -1)
   check('命令清单含「图表」插入项', /id:\s*'diagram'/.test(bundle))
   check('插入命令携带 mermaid 示例源码', bundle.indexOf('A[开始]') !== -1)
 

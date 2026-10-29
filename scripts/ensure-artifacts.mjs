@@ -32,7 +32,7 @@ const STAMP = process.env.LARK_DOC_ARTIFACTS_STAMP || join(ROOT, '_codex', 'arti
 /** 产物 → 构建脚本。顺序与原 prepack 一致，不能换（后一步可能依赖前一步产物）。 */
 const ARTIFACTS = [
   { file: 'dist/lark-doc.common.js', script: 'build' },
-  { file: 'dist/lark-doc.umd.min.js', script: 'build:umd' },
+  // 阶段 3 起不再单出 UMD 档：CDN / <script> 直挂由 element 产物兼任（unpkg / jsdelivr 已指向它）。
   { file: 'dist/lark-doc.esm.js', script: 'build:esm' },
   { file: 'dist/lark-doc-collab.esm.js', script: 'build:collab' },
   { file: 'dist/lark-doc-element.umd.min.js', script: 'build:element' },

@@ -11,10 +11,10 @@
  * 这条承诺成立的前提是：**CJS 档本身也得是 ES2018 语法**。否则 alias 过去照样
  * `Module parse failed`，宿主还得回头挂 babel，文档的「一行配置」就成空话了。
  *
- * 所以这里用 acorn 以 ecmaVersion 2018 真实解析三份「给老打包器吃」的产物：
- *   - dist/lark-doc.common.js            （webpack4 主入口：alias 指到这里）
- *   - dist/lark-doc.umd.min.js           （<script> 直挂 / CDN）
- *   - dist/lark-doc-element.umd.min.js   （无 Vue 宿主的 UMD）
+ * 所以这里用 acorn 以 ecmaVersion 2018 真实解析两份「给老打包器吃」的产物：
+ *   - dist/lark-doc.common.js            （webpack4 主入口：alias 指到这里；Node 也是它）
+ *   - dist/lark-doc-element.umd.min.js   （`<script>` 直挂 / CDN / 无 Vue 宿主；
+ *                                          阶段 3 起兼任原 UMD 档职责，UMD 单档已退场）
  *
  * esm.js 不在这里 —— 它面向认 `exports` 的现代打包器，保留 ES2020+ 是刻意的。
  *
@@ -28,9 +28,8 @@ const ROOT = path.resolve(__dirname, '..')
 
 /** ecmaVersion 2018 + script：等价于 webpack 4（acorn 6.4.x）的解析能力。 */
 const TARGETS = [
-  { file: 'dist/lark-doc.common.js', label: 'CJS（webpack4 alias 目标）' },
-  { file: 'dist/lark-doc.umd.min.js', label: 'UMD（CDN / script 直挂）' },
-  { file: 'dist/lark-doc-element.umd.min.js', label: 'Element UMD（无 Vue 宿主）' }
+  { file: 'dist/lark-doc.common.js', label: 'CJS（webpack4 alias 目标 / Node require）' },
+  { file: 'dist/lark-doc-element.umd.min.js', label: 'Element UMD（无 Vue 宿主 / CDN 直挂）' }
 ]
 
 let acorn

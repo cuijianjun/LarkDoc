@@ -1,9 +1,10 @@
 // 按需区块（math / office / mermaid / highlight）的基址。
-// UMD / element 是「预打包直挂」产物：默认用 document.currentScript 推导 chunk 目录，
-// 静态 <script src> 引主文件时推导正确。但被宿主**打包器** import 时（webpack4 读不到
-// exports，只能靠 browser 字段落到 UMD），currentScript 指向的是宿主自己的脚本，
-// 于是 `__webpack_require__.e('math')` 会去请求 /js/math.js 之类的错误位置 —— 首屏正常，
-// 一插公式 / 导出 Word 就 404，且极难排查。
+// **只对 element 产物有意义**（阶段 3 起只有它还旁挂懒区块，CJS 档改成用 require()
+// 加载兄弟文件，不需要任何基址推导）。element 是「预打包直挂」产物：默认用
+// document.currentScript 推导 chunk 目录，静态 <script src> 引主文件时推导正确。
+// 但被宿主**打包器** import 时，currentScript 指向的是宿主自己的脚本，
+// 于是 `__webpack_require__.e('math')` 会去请求 /js/math.js 之类的错误位置 ——
+// 首屏正常，一插公式 / 导出 Word 就 404，且极难排查。
 // 宿主显式给一个基址即可：window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'。
 // 不设则完全走原行为；非 webpack 环境（Node / vitest）因为先判空而不会执行赋值。
 if (typeof window !== 'undefined' && window.__LARK_DOC_PUBLIC_PATH__) {

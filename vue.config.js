@@ -1,16 +1,16 @@
 const { defineConfig } = require('@vue/cli-service')
 const path = require('path')
-const webpack = require('webpack')
 
 /**
  * 四种构建目标（LARK_DOC_TARGET）：
- * - lib（默认，src/index.js）：**单文件** CJS 产物。宿主可能是任意打包器、任意版本，
- *   运行时按 URL 去加载 chunk 不可靠，所以动态 import 全部内联，保持「拿走就能用」；
+ * - lib（默认，src/index.js）：CJS 产物（`main` 字段）。Node / SSR / webpack4 alias 这一条路
+ *   吃它。动态 import 保留，按需区块（math / office / mermaid / highlight）落成
+ *   `lark-doc.common.<name>.js` 兄弟文件，并用 `require()` 加载 —— Node 与打包器两种宿主
+ *   都能拿到它们，不必担心「运行时按 URL 注入 script」在 Node 里不成立。
  *   样式抽成 dist/lark-doc.css，宿主显式 import。
- * - umd（同入口）：CDN / <script> 直挂产物。只拆按需区块，首屏永远不依赖 chunk 加载；
- *   样式随 JS 注入，宿主不需要额外引 CSS。
  * - element（src/web-component/index.js）：自定义元素产物，Vue 内联 + CSS 由 JS 注入，
- *   publicPath:'auto' 能可靠推导出 chunk 地址 → 同上只拆按需区块。
+ *   publicPath:'auto' 能可靠推导出 chunk 地址 → 只拆按需区块。它同时兼职 CDN `<script>` 直挂
+ *   （`unpkg` / `jsdelivr` 都指向它），所以**不再单独出 UMD 档**（阶段 3）。
  * - esm（scripts/build-esm.js）：ES Module 产物，`module` 字段指向它。宿主打包器会接管
  *   原生 import() 重新做代码分割 → 初始区块也能拆，是体积与首屏收益最大的产物。
  * - adapters（scripts/build-adapters.js）：跨框架薄壳，dist/lark-doc-{vue3,react}.mjs。
@@ -22,18 +22,27 @@ const webpack = require('webpack')
  *   真正用到时才下载（按需区块），主包因此小一半。
  */
 const target = process.env.LARK_DOC_TARGET || 'lib'
-/** UMD / element 两档降级到 ES2018，让 webpack 4 宿主能直接解析（见 babel.config.js）。 */
+/** lib（CJS）/ element 两档降级到 ES2018，让 webpack 4 宿主能直接解析（见 babel.config.js）；
+ *  esm 留给认 `exports` 的现代打包器，保留 ES2020+。 */
 const isLegacy = process.env.LARK_DOC_LEGACY === '1'
 const isElement = target === 'element'
-const isUmd = target === 'umd'
 const isEsm = target === 'esm'
-/** 薄壳档：build-adapters.js 自己配 output / splitChunks，这里只需不套用 lib 的单文件闸门。 */
+/** 薄壳档：build-adapters.js 自己配 output / splitChunks，这里只需不套用统一的产出形态。 */
 const isAdapters = target === 'adapters'
+/**
+ * V1 过渡态（阶段 3）：esm / cjs 两档把 Vue 打进产物，宿主不必再装 Vue 2.7，
+ * `peerDependencies` 里也删掉 vue。真正的收尾（源码树摘 Vue）在阶段 5 + 7。
+ * element 档本来就内联 Vue，所以走的是同一个开关。
+ */
+const inlineVue = process.env.LARK_DOC_INLINE_VUE === '1'
 /** 薄壳关掉 polyfill 注入（见 babel.config.js），同样影响 babel 输出，缓存必须分流。 */
 const noPolyfill = process.env.LARK_DOC_NO_POLYFILL === '1'
-const isLib = !isElement && !isUmd && !isEsm && !isAdapters
-const split = !isLib && !isAdapters
-/** 只有 esm 能安全拆初始区块（它的 output.filename 带 [name]）。 */
+const isLib = !isElement && !isEsm && !isAdapters
+// 只有 adapters 不拆（两个薄壳必须各自自包含）；lib / element / esm 都拆按需区块。
+const split = !isAdapters
+/** 只有 esm 能安全拆初始区块（它的 output.filename 带 [name]）。lib 拆初始区块会与
+ *  vue-cli 的 `${entryName}.js` / `${entryName}.[name].js` 模板撞名（两个 chunk 落到
+ *  同一文件名），且 Vue 内联主文件是 V1 既定契约（阶段 5/7 摘 Vue 后自然回落），不折腾。 */
 const initialChunks = isEsm ? 'all' : 'async'
 
 /**
@@ -128,10 +137,21 @@ module.exports = defineConfig({
     }
   },
   css: {
-    // element / umd / esm 都是「直挂即用」的产物：样式随 JS 注入 <style>，宿主不需要
+    // element / esm 是「直挂即用」的产物：样式随 JS 注入 <style>，宿主不需要
     // 再引 CSS，按需区块（如 KaTeX 样式）也跟着自己的 chunk 走。
     // 只有 lib（CJS）抽成 dist/lark-doc.css —— 保持既有接入方式不变。
     extract: isLib,
+  },
+  chainWebpack: (config) => {
+    if (!isLib) return
+    // lib 档按需区块的 CSS（如 math 的 KaTeX 样式）默认落 dist/css/[name].css，
+    // 而字体在 dist/fonts/ —— CSS 里的 `url(./fonts/…)` 会指向不存在的 dist/css/fonts/。
+    // 把区块 CSS 提到 dist 根目录，`./fonts/…` 与主文件 lark-doc.css 一样命中 dist/fonts/，
+    // 宿主（Node require / 打包器二次处理 css-loader）都能解析到。
+    config.plugin('extract-css').tap((args) => {
+      args[0].chunkFilename = '[name].[contenthash:8].css'
+      return args
+    })
   },
   // 默认 true（vue-cli 按 CPU 核数推导）：babel-loader 走 thread-loader 并行。
   // 多核机器上冷启动一批 worker 时偶发 `Broker request timed out`（本机实测 3 次里
@@ -152,14 +172,11 @@ module.exports = defineConfig({
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。
     performance: { hints: false },
-    // The library is consumed as an npm package. In lib mode Vue must resolve to the
-    // CommonJS constructor so Tiptap's Vue 2 node-view runtime receives the
-    // same constructor shape as a normal Vue 2 application.
-    // In element mode Vue is bundled instead: the custom element must work in
-    // hosts that are not Vue at all.
-    // element 必须内联 Vue（宿主可能不是 Vue 应用），esm 由 scripts/build-esm.js 自己配
-    // externals（externalsType: 'module'）；只有 lib / umd 把 Vue 留给宿主。
-    externals: isElement || isEsm ? {} : {
+    // The library is consumed as an npm package.
+    // V1（阶段 3）起 esm / cjs / element 三档都不再外部化 Vue —— 宿主不装 Vue 也能跑，
+    // peerDependencies 因此不再声明 vue。真正的 V2/V3 是把 Vue 从源码树摘掉（阶段 5 + 7），
+    // 到时候再回头把这里的 inlineVue 收掉。
+    externals: isElement || isEsm || inlineVue ? {} : {
       vue: {
         commonjs: 'vue/dist/vue.runtime.common.js',
         commonjs2: 'vue/dist/vue.runtime.common.js',
@@ -167,6 +184,16 @@ module.exports = defineConfig({
         root: 'Vue',
       },
     },
+    output: isLib
+      ? {
+        // CJS 档要把按需区块落成兄弟文件，并且**用 require() 去加载**：
+        // 默认是 web 口径（JSONP 注入 <script>），Node 里 `document` 不存在会直接炸，
+        // 而这条路的典型宿主恰恰是 Node / SSR。改成 commonjs + require 后，
+        // Node 与 webpack 宿主两种环境都能拿到按需区块。
+        chunkFormat: 'commonjs',
+        chunkLoading: 'require',
+      }
+      : {},
     optimization: split
       ? {
         // 按逻辑拆分：初始区块（首屏并行下载）+ 按需区块（用到才下载）。
@@ -191,10 +218,6 @@ module.exports = defineConfig({
         },
       }
       : {},
-    plugins: [
-      // lib 产物保持单文件：动态 import 全部内联，宿主不需要复制/解析任何 chunk。
-      ...(isLib ? [new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 })] : []),
-      ...(process.env.LARK_DOC_ANALYZE ? [new BundleAnalyzePlugin()] : []),
-    ],
+    plugins: [...(process.env.LARK_DOC_ANALYZE ? [new BundleAnalyzePlugin()] : [])],
   },
 })

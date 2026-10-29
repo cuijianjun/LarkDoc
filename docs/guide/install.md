@@ -69,7 +69,9 @@ npm i lark-doc@<ver> -E
 
 > 0.12 及更早版本把 `vue ^2.7`、`@tiptap/vue-2` 写成强制 peer，Vue 3 / React 项目
 > `npm i` 会报 `ERESOLVE`，需要加 `--legacy-peer-deps`。0.13 起这些 peer 全部标成了
-> optional，**不再需要**那个参数。
+> optional，**不再需要**那个参数；而且 **Vue 这一项已经从 `peerDependencies` 里删掉**
+> （阶段 3 起 Vue 被打进 esm / cjs / element 三档产物），所以「要不要装 vue」这个问题本身没有了 ——
+> 装了不冲突，不装也能跑。剩下的 `@tiptap/vue-2` 留给协同/标注类可选能力，阶段 7 一并清理。
 
 装完立刻验一遍，输出应该是**一个**版本号：
 

@@ -54,9 +54,11 @@ config.output = Object.assign({}, config.output, {
 // （`export { r as __webpack_require__ }`），`import { LarkDoc } from 'lark-doc'`
 // 会得到 undefined —— 0.11.0 / 0.11.1 的 esm 产物就缺这一行。
 config.output.library = { type: 'module' }
-// Vue 仍是 peer 依赖：产物里保留 `import ... from 'vue'`，交给宿主去重。
-config.externalsType = 'module'
-config.externals = { vue: 'vue' }
+// V1（阶段 3）：**不再外部化 Vue**，把 vue 打进产物 —— 宿主不装 Vue 2.7 也能跑，
+// peerDependencies 因此不再声明 vue。真正的 V2/V3（源码树摘 Vue）在阶段 5 + 7。
+// 当初这一行是「让宿主去重」：external + externalsType:'module' → 产物里留 `import 'vue'`。
+// 代价是每个宿主都必须在自己那儿装一份 Vue 2.7（且版本要落在我们声明的区间），
+// 与「六个环境安装写法统一」直接冲突，所以先内联。
 // app 模式自带的 html / preload / prefetch 对库产物没有意义，还会多生成 index.html。
 config.plugins = (config.plugins || []).filter((plugin) => {
   const name = plugin && plugin.constructor && plugin.constructor.name

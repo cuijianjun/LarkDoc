@@ -76,7 +76,6 @@ echo "[2/4] 校验产物齐备"
 NEED=(
   "dist/lark-doc.common.js"
   "dist/lark-doc.esm.js"
-  "dist/lark-doc.umd.min.js"
   "dist/lark-doc-element.umd.min.js"
   "dist/lark-doc.css"
 )

@@ -6,11 +6,10 @@
   "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "LARK_DOC_LEGACY=1 vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
-    "build:umd": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
+    "build": "LARK_DOC_LEGACY=1 LARK_DOC_INLINE_VUE=1 vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs --inline-vue src/index.js && node scripts/fix-lib-require-scope.js",
     "build:esm": "node scripts/build-esm.js",
     "build:adapters": "node scripts/build-adapters.js",
-    "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:umd && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
+    "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
     "lint": "eslint --ext .js,.vue src scripts",
     "check": "npm run check:gate && npm run check:artifacts",
     "check:gate": "npm run check:deploy && npm run check:code && npm run check:ui && npm run lint",
@@ -174,8 +173,6 @@
     "**/*.css",
     "**/*.scss",
     "dist/lark-doc.common.js",
-    "dist/lark-doc.umd.min.js",
-    "dist/lark-doc.umd.min.*.js",
     "dist/lark-doc-element.umd.min.js",
     "dist/lark-doc-element.umd.min.*.js"
   ],
@@ -194,7 +191,6 @@
     "@tiptap/extension-collaboration": "^3.32.0",
     "@tiptap/extension-collaboration-caret": "^3.32.0",
     "@tiptap/vue-2": "^3.32.0",
-    "vue": "^2.7.14",
     "yjs": "^13.6.33"
   },
   "peerDependenciesMeta": {
@@ -208,9 +204,6 @@
       "optional": true
     },
     "@tiptap/vue-2": {
-      "optional": true
-    },
-    "vue": {
       "optional": true
     },
     "yjs": {
@@ -270,22 +263,16 @@
       "gzip": true
     },
     {
-      "name": "UMD 主包 (gzip)",
-      "path": "dist/lark-doc.umd.min.js",
-      "limit": "465 KB",
-      "gzip": true
-    },
-    {
       "name": "Element 产物 (gzip)",
       "path": "dist/lark-doc-element.umd.min.js",
       "limit": "480 KB",
       "gzip": true
     },
     {
-      "name": "CJS 全量产物（内联 mermaid，gzip）",
       "path": "dist/lark-doc.common.js",
-      "limit": "2600 KB",
-      "gzip": true
+      "limit": "1150 KB",
+      "gzip": true,
+      "name": "CJS 主文件（Vue 已内联，按需区块已拆出，gzip）"
     },
     {
       "name": "协同子入口 (gzip)",
