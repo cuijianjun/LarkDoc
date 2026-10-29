@@ -11,7 +11,6 @@
     "components/lark-doc/editor/LarkDocOverlays.vue",
     "components/lark-doc/editor/MentionPanel.vue",
     "components/lark-doc/editor/ReminderPopover.vue",
-    "components/lark-doc/editor/RevisionPanel.vue",
     "components/lark-doc/editor/SearchPanel.vue",
     "components/lark-doc/ExportDialog.vue",
     "components/lark-doc/LarkDocEditor.vue",
