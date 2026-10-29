@@ -9,7 +9,6 @@
     "components/lark-doc/editor/CalloutTools.vue",
     "components/lark-doc/editor/ColorPalette.vue",
     "components/lark-doc/editor/dialogs/HeadingNumberMenu.vue",
-    "components/lark-doc/editor/HelpFab.vue",
     "components/lark-doc/editor/IsvButtonPanel.vue",
     "components/lark-doc/editor/LarkDocOverlays.vue",
     "components/lark-doc/editor/MentionPanel.vue",
