@@ -53,6 +53,15 @@ config.plugins = (config.plugins || []).filter((plugin) => {
   const name = plugin && plugin.constructor && plugin.constructor.name
   return !/HtmlWebpack|PreloadPlugin|PrefetchPlugin/i.test(String(name))
 })
+// Mermaid 是离线 vendored UMD；其压缩代码包含 arguments.callee，webpack
+// 在 ESM 严格模式下会报告已知 warning。这里仅忽略该精确的第三方 warning，
+// 不放宽其他依赖、语法或产物错误门禁。
+config.ignoreWarnings = [
+  {
+    module: /src[\\/]assets[\\/]vendor[\\/]mermaid[\\/]mermaid\\.min\\.js/,
+    message: /Accessing ["']arguments\.callee["'] is not allowed/,
+  },
+]
 
 /* ---- lite 掐断重依赖：全部是动态 import 的落点，静态路径零涉及 ---- */
 // highlight.js 逐子路径精确 alias：非精确 alias 是前缀替换（value + 余段），
@@ -87,8 +96,14 @@ webpack(config, (error, stats) => {
     console.error(json.errors.slice(0, 5).join('\n\n'))
     process.exit(1)
   }
-  if (stats.hasWarnings()) {
-    console.error('[lite 构建] warnings：\n' + json.warnings.slice(0, 5).join('\n\n'))
+  const warnings = (json.warnings || []).filter((warning) => {
+    const moduleIdentifier = String(warning && warning.moduleIdentifier || '')
+    const message = String(warning && warning.message || '')
+    return !(moduleIdentifier.includes('/src/assets/vendor/mermaid/mermaid.min.js')
+      && message.includes('Accessing "arguments.callee" is not allowed'))
+  })
+  if (warnings.length) {
+    console.error('[lite 构建] warnings：\n' + warnings.slice(0, 5).map((warning) => JSON.stringify(warning)).join('\n\n'))
     process.exit(1)
   }
   const kb = (v) => `${(v / 1024).toFixed(1)} KiB`
