@@ -11,7 +11,7 @@
        ⚠️ 封面**槽**（`CoverSlot.vue`）不在这里 —— 它是文档流内元素（纸张之上、标题之前），
        塞进 fixed 层会脱离流。这里注册的 `CoverPanel` 只是它的操作面板。
 
-       九个子节点**全部自管理显隐**（各自根节点或首个子节点带 v-if），所以这里**不写 v-if**
+       十三个子节点**全部自管理显隐**（各自根节点或首个子节点带 v-if），所以这里**不写 v-if**
        —— 尤其 `ExportDialog`：04 §4.6.7③ 的顺序是「弹窗关闭 → toast」，父级 v-if 会把
        还没消失的 toast 一起摘掉。 -->
   <div class="lark-doc-p6b-layer">
@@ -33,6 +33,22 @@
     <CoverPanel :ed="ed" />
     <!-- 代码语言选择器（04 §2.2，219×317，71 语言 + 搜索，z 1030）。 -->
     <CodeLangPicker :ed="ed" />
+    <!-- 浮层矩阵补齐线四件（`docs/blocks/overlays.md` 的四个 ⬜）。
+         同样全部自管理显隐，这里**不写 v-if**：
+           · `ConfirmDialog` 的显隐由 `ed.confirmOpen` 驱动，但它要活在
+             `confirmDialog()` 返回的 Promise 生命周期里 —— 父级 v-if 会把
+             「关掉动画/遮罩」一起摘掉；
+           · `CreateMenu` / `NotifyPopover` 是锚定 popover，显隐即 `createMenuOpen` /
+             `notifyOpen`，留着空节点供 `measure*` 量尺寸（`closeCreateMenu` 后
+             `measure` 还要能读到 ref）。 -->
+    <!-- 通用二次确认框（04 §4.9，420×180，z 1000）。全库唯一的破坏性操作确认层。 -->
+    <ConfirmDialog :ed="ed" />
+    <!-- 顶栏「新建」13 行菜单（04 §4.6.5，182×509，z 1030）。 -->
+    <CreateMenu :ed="ed" />
+    <!-- 当前文档通知 popover（04 §4.6.4，402×555，z 999）。 -->
+    <NotifyPopover :ed="ed" />
+    <!-- 关联已有多维表格（04 §4.5，1080×676，z 1000）。 -->
+    <RelationBitableDialog :ed="ed" />
   </div>
 </template>
 
@@ -52,6 +68,10 @@ import TopbarMoreMenu from './TopbarMoreMenu.vue'
 import LinkHoverCard from './LinkHoverCard.vue'
 import CoverPanel from './CoverPanel.vue'
 import CodeLangPicker from './CodeLangPicker.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
+import CreateMenu from './CreateMenu.vue'
+import NotifyPopover from './NotifyPopover.vue'
+import RelationBitableDialog from './RelationBitableDialog.vue'
 
 export default {
   name: 'LarkDocP6bOverlays',
@@ -65,6 +85,10 @@ export default {
     LinkHoverCard,
     CoverPanel,
     CodeLangPicker,
+    ConfirmDialog,
+    CreateMenu,
+    NotifyPopover,
+    RelationBitableDialog,
   },
   props: {
     ed: { type: Object, required: true },

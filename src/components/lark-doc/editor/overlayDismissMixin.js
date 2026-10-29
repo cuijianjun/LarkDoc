@@ -74,6 +74,16 @@ export default {
       if (this.linkHoverOpen && !this.linkHoverContains(target)) this.closeLinkHover()
       if (this.coverPanelOpen && !this.coverContains(target)) this.closeCoverPanel()
       if (this.codeLangOpen && !this.codeLangContains(target)) this.closeCodeLangPicker()
+      // —— 浮层矩阵补齐线四浮层 ——
+      // 同一套 `xxxContains()` 纪律。两处「刻意不关」：
+      //   · 确认框点遮罩会关（`closeConfirm` 返回 false）—— 遮罩点击本身就是 04 §4.9
+      //     的取消通路之一，但这里**不再兜一遍**：确认框自己绑了 `@mousedown.prevent`
+      //     的遮罩关闭，document 上再关一次会抢在它的 `resolve` 之前把 Promise 结掉。
+      //     所以确认框不在这里出现，只由组件自身 + Esc 关。
+      //   · 关联多维表格同理，遮罩点击在组件里绑死。
+      if (this.createMenuOpen && !this.createMenuContains(target)) this.closeCreateMenu()
+      if (this.notifyOpen && !this.notifyContains(target)) this.closeNotify()
+      if (this.relationOpen && !this.relationContains(target)) this.closeRelationBitable()
       if (!this.$refs.root?.contains(target)) {
         this.headingOpen = false
         this.headingStyle = {}
@@ -98,7 +108,13 @@ export default {
       }
       // UI 补齐线四浮层的 Esc 入口。四个都给了 —— 只有「日程搜索面板」和「内嵌网页浮层」
       // 是实测 Esc 无效才故意不进这条链（见它们各自的注释）。
-      if (event.key === 'Escape' && this.topbarMoreOpen) this.closeTopbarMore()
+      // 浮层矩阵补齐线：确认框放**最前**（04 §4.9 是模态，Esc 必须先关它，不能让
+      // 底层菜单跟着一起收）；关联多维表格同为模态，紧随其后。
+      if (event.key === 'Escape' && this.confirmOpen) this.closeConfirm()
+      else if (event.key === 'Escape' && this.relationOpen) this.closeRelationBitable()
+      else if (event.key === 'Escape' && this.createMenuOpen) this.closeCreateMenu()
+      else if (event.key === 'Escape' && this.notifyOpen) this.closeNotify()
+      else if (event.key === 'Escape' && this.topbarMoreOpen) this.closeTopbarMore()
       else if (event.key === 'Escape' && this.linkHoverOpen) this.closeLinkHover()
       else if (event.key === 'Escape' && this.coverPanelOpen) this.closeCoverPanel()
       else if (event.key === 'Escape' && this.codeLangOpen) this.closeCodeLangPicker()
@@ -117,6 +133,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.modeMenuOpen) this.closeModeMenu(); else if (this.topbarMoreOpen) this.closeTopbarMore(); else if (this.codeLangOpen) this.closeCodeLangPicker(); else if (this.coverPanelOpen) this.closeCoverPanel(); else if (this.linkHoverOpen) this.closeLinkHover(); else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.confirmOpen) this.closeConfirm(); else if (this.relationOpen) this.closeRelationBitable(); else if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.modeMenuOpen) this.closeModeMenu(); else if (this.createMenuOpen) this.closeCreateMenu(); else if (this.notifyOpen) this.closeNotify(); else if (this.topbarMoreOpen) this.closeTopbarMore(); else if (this.codeLangOpen) this.closeCodeLangPicker(); else if (this.coverPanelOpen) this.closeCoverPanel(); else if (this.linkHoverOpen) this.closeLinkHover(); else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

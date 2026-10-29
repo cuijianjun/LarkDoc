@@ -114,6 +114,19 @@ export const ICONS = {
   image: wrap('<rect x="2.6" y="3.4" width="10.8" height="9.2" rx="1.6"/><circle cx="6" cy="6.6" r="1"/><path d="m3.4 11 3.2-3.2 2.4 2.4 1.8-1.8 1.8 1.8"/>'),
   // 封面面板「调整图片位置」：左右夹住图的两侧并双向拖动
   'cover-position': wrap('<path d="M2.6 3.4h10.8v9.2H2.6z" opacity=".35"/><path d="M8 5.2v5.6"/><path d="m6.2 6.9 1.8-1.8 1.8 1.8"/><path d="m6.2 9.1 1.8 1.8 1.8-1.8"/>'),
+  // —— 顶栏「新建」菜单与「通知」popover 专用（04 §4.6.3 / §4.6.4）——
+  // 11 项里前 6 项与「知识库」是单色 `--ld-text-menu` 线框图标，后 4 项（画板/思维导图/流程图/
+  // 上传及导入）是彩色图形 —— 颜色由项的 `iconColor` 走 `style.color` 覆盖，图标本身仍用
+  // currentColor，这样彩色/单色两态共用同一份路径，不用画两套。
+  'chevron-right': wrap('<path d="m6.2 4.2 3.8 3.8-3.8 3.8"/>'),
+  bell: wrap('<path d="M8 2.2a4 4 0 0 0-4 4v2.6L2.9 11h10.2L12 8.8V6.2a4 4 0 0 0-4-4z"/><path d="M6.4 13.2a1.7 1.7 0 0 0 3.2 0"/>'),
+  doc: wrap('<path d="M4.2 2.4h4.6l3 3v8.2H4.2z"/><path d="M8.6 2.4v3.2h3.2"/><path d="M6.2 8.6h3.6"/><path d="M6.2 11h3.6"/>'),
+  'doc-grid': wrap('<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6"/><path d="M2.6 6.4h10.8"/><path d="M2.6 10.2h10.8"/><path d="M6.4 2.6v10.8"/>'),
+  form: wrap('<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6"/><path d="M5.4 6.2h5.2"/><path d="M5.4 8.6h5.2"/><path d="M5.4 11h2.6"/>'),
+  board: wrap('<rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1.6"/><path d="M5.6 6.2v3.8" stroke-width="1.8"/><path d="m8.6 4.8 2.6 2.2-2.6 2.2z"/>'),
+  mindmap: wrap('<circle cx="3.4" cy="8" r="1.5"/><circle cx="12.2" cy="4.4" r="1.3"/><circle cx="12.2" cy="11.6" r="1.3"/><path d="M4.9 8h3.2c1 0 1.4-.6 1.9-1.4"/><path d="M4.9 8h3.2c1 0 1.4.6 1.9 1.4"/>'),
+  flow: wrap('<rect x="2.4" y="2.4" width="5" height="4" rx="1"/><rect x="8.6" y="9.6" width="5" height="4" rx="1"/><path d="M4.9 6.4v3.2h6.2"/>'),
+  upload: wrap('<path d="M8 10.4V3.2"/><path d="m5.4 5.8 2.6-2.6 2.6 2.6"/><path d="M3 11.2v1.6h10v-1.6"/>'),
 }
 
 export default ICONS
