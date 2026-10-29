@@ -29,14 +29,14 @@
         <span role="status">{{ message }}</span>
       </template>
       <template v-else>
-        <label>代码语言 <lark-doc-select
+        <label>代码语言 <button
+          type="button"
+          class="lark-doc-code-lang-trigger"
           aria-label="代码语言"
-          :options="languageOptions"
-          :value="node.attrs.language || 'plaintext'"
-          :placeholder="node.attrs.language || '纯文本'"
+          aria-haspopup="listbox"
           :disabled="!editable"
-          @change="setLanguage"
-        /></label>
+          @click="openLanguagePicker"
+        >{{ languageLabel }}</button></label>
         <button
           type="button"
           @click="copyCode"
@@ -99,7 +99,8 @@ import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
 import { isDiagramLanguage, renderDiagram } from '../../components/lark-doc/diagram'
 import { readContentTheme, subscribeContentTheme } from '../../components/lark-doc/themeSignal'
 import { INDENT_STEP_PX, clampBlockIndent } from '../../components/lark-doc/documentOperations'
-import LarkDocSelect from '../../components/lark-doc/LarkDocSelect.vue'
+import { CODE_LANGUAGES, codeLanguageLabel } from '../../components/lark-doc/editor/codeLanguages'
+import { requestCodeLangPicker } from '../../components/lark-doc/editor/codeLangSignal'
 
 // Code blocks are uncommon on the document's first paint. Keep both the
 // highlighter core and grammars out of the route chunk until one is rendered.
@@ -151,20 +152,23 @@ function renderHighlighted(text, language, syntaxHighlight = true) {
   return hljs.highlight(text, { language, ignoreIllegals: true }).value
 }
 
-const languages = [
-  { value: 'plaintext', label: '纯文本' }, { value: 'javascript', label: 'JavaScript' },
-  { value: 'typescript', label: 'TypeScript' }, { value: 'json', label: 'JSON' },
-  { value: 'css', label: 'CSS' }, { value: 'xml', label: 'HTML/XML' },
-  { value: 'python', label: 'Python' }, { value: 'bash', label: 'Shell' }, { value: 'sql', label: 'SQL' },
-]
+/**
+ * 语言可选项（04 §2.2 ⑤ 的 71 项，**严格原序**）。
+ *
+ * ⚠️ `value` 是**内部 id**（`javascript`）不是显示名（`JavaScript`）：`renderHTML` 只放行
+ * `/^[\w+-]{0,32}$/`，`C#` / `Plain Text` 这类会被兜成 `plaintext`，导出 Markdown 时也会
+ * 写成非法 fence。显示名只在 UI 层出现 —— 详见 `editor/codeLanguages.js` 头部口径 ②。
+ */
+const languageOptions = CODE_LANGUAGES.map((item) => ({ value: item.id, label: item.label }))
+/** 图表语言是**本库扩展**，不在飞书 71 项里，只在图表功能开启时追加到末尾。 */
+const mermaidOption = { value: 'mermaid', label: 'Mermaid 图表' }
 
 export default {
   name: 'LarkDocCodeNode',
-  components: { NodeViewWrapper, NodeViewContent, LarkDocSelect },
+  components: { NodeViewWrapper, NodeViewContent },
   props: nodeViewProps,
   data() {
     return {
-      languages,
       message: '',
       editable: this.editor.isEditable,
       highlightedCode: '',
@@ -175,6 +179,9 @@ export default {
       contentTheme: readContentTheme(),
       // 图表块（mermaid）直接渲染预览，与 Vditor 行为一致；「编辑源码」可切回编辑。
       previewShown: isDiagramLanguage(this.node?.attrs?.language) && this.extension?.options?.diagram !== false,
+      // 上一次见到的语言（`syncDiagramAfterLanguageChange` 靠它判断「是不是刚切成图表」）。
+      // ⚠️ 别用 `_` 前缀：Vue 2 不代理 `_` / `$` 开头的 data key，`this._x` 恒为 undefined。
+      lastLanguageSeen: this.node?.attrs?.language || '',
     }
   },
   computed: {
@@ -192,9 +199,13 @@ export default {
       return this.isDiagram && this.previewShown
     },
     languageOptions() {
-      // 图表功能开启时才把 mermaid 放进语言下拉，关闭后保持原有清单。
-      if (!this.diagramEnabled) return this.languages
-      return this.languages.concat([{ value: 'mermaid', label: 'Mermaid 图表' }])
+      // 图表功能开启时才把 mermaid 放进语言下拉，关闭后保持 71 项。
+      if (!this.diagramEnabled) return languageOptions
+      return languageOptions.concat([mermaidOption])
+    },
+    /** 头部按钮的文案：显示名（飞书口径），不是 id。 */
+    languageLabel() {
+      return codeLanguageLabel(this.node?.attrs?.language || 'plaintext')
     },
     // 块级缩进缩的是整个代码框（飞书行为），所以用 margin 而不是内边距。
     blockIndent() {
@@ -208,7 +219,7 @@ export default {
   watch: {
     node: {
       deep: true,
-      handler() { this.refreshHighlighted(); this.scheduleDiagramRender() },
+      handler() { this.syncDiagramAfterLanguageChange(); this.refreshHighlighted(); this.scheduleDiagramRender() },
     },
   },
   created() {
@@ -237,6 +248,24 @@ export default {
       this.contentTheme = theme
       if (degraded || !this.showPreview) return
       this.scheduleDiagramRender()
+    },
+
+    /**
+     * 语言被改成 mermaid（语言浮层里选「Mermaid 图表」）时**立刻给预览**。
+     *
+     * 为什么只看语言变化、不看 `isDiagram`：代码块是**已存在**的节点，`previewShown`
+     * 只在 `data()` 里按初始语言算过一次；而「编辑源码」是用户主动切的状态，
+     * 任何一次无关 transaction 都把它翻回预览会让人切不回源码。
+     * 反面也一样：从 mermaid 切回普通语言要丢掉已渲染的图，否则旧 SVG 会赖在 DOM 里。
+     */
+    syncDiagramAfterLanguageChange() {
+      const language = this.node?.attrs?.language || ''
+      if (language === this.lastLanguageSeen) return
+      const wasDiagram = isDiagramLanguage(this.lastLanguageSeen)
+      const nextIsDiagram = isDiagramLanguage(language)
+      this.lastLanguageSeen = language
+      if (nextIsDiagram && !wasDiagram) this.previewShown = true
+      if (!nextIsDiagram && wasDiagram) { this.diagramState = 'idle'; this.diagramSvg = ''; this.diagramError = '' }
     },
 
     refreshHighlighted() {
@@ -293,13 +322,33 @@ export default {
     },
     setLanguage(language) {
       // check 脚本会在脱离 Vue 上下文时调用这里，computed 可能不可用，回退到模块常量。
-      const options = this.languageOptions || this.languages || languages
+      const options = this.languageOptions || languageOptions
       if (!this.editor.isEditable || !options.some((item) => item.value === language)) return
       this.updateAttributes({ language })
       this.message = ''
       // 切成图表语言时立即给出预览；切走则丢弃渲染结果。
       if (isDiagramLanguage(language)) { this.previewShown = true; this.renderDiagramNow() }
       else { this.diagramState = 'idle'; this.diagramSvg = '' }
+    },
+    /**
+     * 打开语言选择器。
+     *
+     * 走模块信号而不是 props：NodeView 拿不到 LarkDocEditor 实例，而浮层要挂在
+     * `LarkDocOverlays.vue`（`editor/codeLangSignal.js` 头部写了这条连线的取舍）。
+     * 载荷带 `editor` + `pos` + 锚点 rect —— 宿主持 `pos` 直接改 attrs，
+     * 避免 NodeView 与浮层之间再传一份节点引用（期间节点可能已被替换）。
+     */
+    openLanguagePicker(event) {
+      const el = event && event.currentTarget
+      if (!el || !el.getBoundingClientRect || !this.editor.isEditable) return
+      requestCodeLangPicker({
+        editor: this.editor,
+        pos: typeof this.getPos === 'function' ? this.getPos() : null,
+        language: this.node?.attrs?.language || 'plaintext',
+        // 图表关掉时下拉不该出现「Mermaid 图表」（`docs/blocks/code-block.md`）。
+        diagramEnabled: this.diagramEnabled,
+        rect: el.getBoundingClientRect(),
+      })
     },
     async copyCode() {
       try {

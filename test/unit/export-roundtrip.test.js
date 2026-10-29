@@ -345,9 +345,10 @@ describe('P6b-04 已知取舍：没能严格往返的块', () => {
     expect(serializeMarkdown(doc([table]))).toBe('| 甲<br>乙 |\n| --- |')
   })
 
-  it('[取舍] BLOCK_SKIP 的 11 类块不落任何 Markdown（含 blockMath）', () => {
-    expect(BLOCK_SKIP.length).toBe(11)
+  it('[取舍] BLOCK_SKIP 的 12 类块不落任何 Markdown（含 blockMath / externalBlock）', () => {
+    expect(BLOCK_SKIP.length).toBe(12)
     expect(BLOCK_SKIP).toContain('blockMath')
+    expect(BLOCK_SKIP).toContain('externalBlock')
     const nodes = BLOCK_SKIP.map((type) => ({ type, attrs: {} }))
     const serialized = serializeMarkdown(doc([para(text('前')), ...nodes, para(text('后'))]))
     expect(serialized).toBe('前\n\n后')

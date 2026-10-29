@@ -79,6 +79,8 @@ export const DOCX_LEVEL_FORMATS = Object.freeze({
 export const DOCX_BLOCK_SKIP = Object.freeze([
   'fileBlock', 'webEmbed', 'cardEmbed', 'bookmark', 'calendar_event',
   'isv', 'sheet', 'poll', 'bitable', 'unknownBlock', 'blockMath',
+  // 17 §17.5 的外部服务块：与 markdown.js 的 BLOCK_SKIP 同步新增（两处必须一致）。
+  'externalBlock',
 ])
 
 // —— 小工具（风格照 core/blocks/revision.js：Object.freeze 常量 + for 循环）——

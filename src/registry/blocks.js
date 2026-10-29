@@ -124,6 +124,19 @@ export {
   COMMENT_REPLY_MENU_ITEMS, collectComments, commentAt, commentMarkOf, commentPanelHeight,
   commentRanges, createCommentThreadId, normalizeComment, partitionCommentThreads, readComment,
 } from '../core/blocks/comment'
+// 17 §17.5 的 tier C / P3 批次（chat_card / mindnote / task / okr* / jira_issue /
+// agenda* / board / whiteboard / view / diagram / synced）：一个节点背 22 个官方 type、
+// 归 11 个块族。目录（kind 表 / CRUD 档 / 能力判定）是宿主唯一该认识的入口 ——
+// 判定层在 core/embed/external-block.js，这里同源再导出，别处不许自己判字符串。
+export {
+  ExternalBlock,
+  EXTERNAL_BLOCK_FAMILIES, EXTERNAL_BLOCK_GENERIC, EXTERNAL_BLOCK_KINDS,
+  EXTERNAL_PROVIDER_LABELS, EXTERNAL_PAYLOAD_MAX, EXTERNAL_STATUS, EXTERNAL_STATUS_LABELS,
+  EXTERNAL_STATUSES, ERR_PROVIDER_REQUIRED, ERR_UNSUPPORTED_OPERATION,
+  externalBlockCapabilities, externalBlockCapability, externalBlockMeta,
+  externalBlockPreview, externalBlockReason, isExternalBlockType, isExternalKind,
+  normalizeExternalBlock,
+} from '../core/blocks/external-block'
 export { UnknownBlock } from '../core/blocks/unknown-block'
 export { loadKatex, mathExtension } from '../core/blocks/math'
 export { documentKey } from '../core/blocks/document-key'

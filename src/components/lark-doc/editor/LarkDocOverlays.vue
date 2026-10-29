@@ -8,7 +8,10 @@
        ⚠️ 包裹层自身**不许**加 transform / filter / overflow / 非 static 定位。
        它也不带任何类名以外的样式：闭合态下五个子节点都不渲染或高度为 0，此处只是一个空 div。
 
-       五个子节点**全部自管理显隐**（各自根节点或首个子节点带 v-if），所以这里**不写 v-if**
+       ⚠️ 封面**槽**（`CoverSlot.vue`）不在这里 —— 它是文档流内元素（纸张之上、标题之前），
+       塞进 fixed 层会脱离流。这里注册的 `CoverPanel` 只是它的操作面板。
+
+       九个子节点**全部自管理显隐**（各自根节点或首个子节点带 v-if），所以这里**不写 v-if**
        —— 尤其 `ExportDialog`：04 §4.6.7③ 的顺序是「弹窗关闭 → toast」，父级 v-if 会把
        还没消失的 toast 一起摘掉。 -->
   <div class="lark-doc-p6b-layer">
@@ -22,6 +25,14 @@
     <SharePopover :ed="ed" />
     <!-- P6b-04 导出：设置弹窗 + 导出 toast（04 §4.6.7）。 -->
     <ExportDialog :ed="ed" />
+    <!-- 顶栏「更多」23 项菜单 + 二级子面板（04 §4.2.1 / §4.2，z 1030 / 1050）。 -->
+    <TopbarMoreMenu :ed="ed" />
+    <!-- 链接悬浮卡（04 §1.6，hover ≥1.2s，z 600 / 999）。 -->
+    <LinkHoverCard :ed="ed" />
+    <!-- 文档封面：空态槽 + 已添加槽 + 「编辑封面」面板（04 §1.4，z 78 / 80）。 -->
+    <CoverPanel :ed="ed" />
+    <!-- 代码语言选择器（04 §2.2，219×317，71 语言 + 搜索，z 1030）。 -->
+    <CodeLangPicker :ed="ed" />
   </div>
 </template>
 
@@ -36,10 +47,25 @@ import VersionPanel from '../VersionPanel.vue'
 import SaveVersionDialog from '../SaveVersionDialog.vue'
 import SharePopover from '../SharePopover.vue'
 import ExportDialog from '../ExportDialog.vue'
+// UI 补齐线四个浮层：全部 `position: fixed`，同样必须是兄弟节点。
+import TopbarMoreMenu from './TopbarMoreMenu.vue'
+import LinkHoverCard from './LinkHoverCard.vue'
+import CoverPanel from './CoverPanel.vue'
+import CodeLangPicker from './CodeLangPicker.vue'
 
 export default {
   name: 'LarkDocP6bOverlays',
-  components: { CommentPanel, VersionPanel, SaveVersionDialog, SharePopover, ExportDialog },
+  components: {
+    CommentPanel,
+    VersionPanel,
+    SaveVersionDialog,
+    SharePopover,
+    ExportDialog,
+    TopbarMoreMenu,
+    LinkHoverCard,
+    CoverPanel,
+    CodeLangPicker,
+  },
   props: {
     ed: { type: Object, required: true },
   },

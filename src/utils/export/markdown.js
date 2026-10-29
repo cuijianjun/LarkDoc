@@ -97,6 +97,9 @@ export const INLINE_FALLBACK = Object.freeze({
 export const BLOCK_SKIP = Object.freeze([
   'fileBlock', 'webEmbed', 'cardEmbed', 'bookmark', 'calendar_event',
   'isv', 'sheet', 'poll', 'bitable', 'unknownBlock', 'blockMath',
+  // 17 §17.5 的外部服务块：未接入时是一张钥匙卡，落 Markdown 只会得到一行乱码式文案，
+  // 与 unknownBlock 同口径跳过（保真走 JSON 通道，不走文本导出）。
+  'externalBlock',
 ])
 
 /** HTML 里「不产生节点、直接下钻」的容器（marked 的 thead/tbody 就是这种）。 */

@@ -69,6 +69,22 @@
         </div>
       </div>
       <slot name="header-actions" />
+      <!-- 顶栏「更多」入口（04 §4.2.1：23 项菜单）。
+           菜单位置在 `LarkDocOverlays.vue` 的 fixed 兄弟层里 —— 顶栏 header-actions 有
+           `overflow-x: auto`，用 absolute 会被裁掉（与 `.lark-doc-mode-menu` 同一条纪律）。 -->
+      <button
+        type="button"
+        class="lark-doc-more-btn"
+        aria-label="更多"
+        aria-haspopup="menu"
+        :aria-expanded="String(ed.topbarMoreOpen)"
+        @click="ed.toggleTopbarMore($event)"
+      >
+        <lark-doc-icon
+          name="more"
+          :size="16"
+        />
+      </button>
     </div>
   </header>
 </template>

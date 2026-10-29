@@ -23,7 +23,13 @@ const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
 const overlays = read('src/components/lark-doc/editor/LarkDocOverlays.vue')
 
 const mixinsLine = sfc.split('\n').find((line) => line.trim().startsWith('mixins: ['))
-const aggregatorMixins = aggregator.split('\n').find((line) => line.trim().startsWith('mixins: ['))
+// 聚合层的 mixins 数组是**多行**的（九个 mixin 一行放不下），所以整段取到 `],` 为止。
+const aggregatorMixins = (() => {
+  const lines = aggregator.split('\n')
+  const start = lines.findIndex((line) => line.trim().startsWith('mixins: ['))
+  const end = lines.findIndex((line, i) => i > start && line.trim() === '],')
+  return lines.slice(start, end + 1).join('\n')
+})()
 
 // 「不许出现」类断言必须先看**代码**而不是注释：本文件的头注释里就把 transform /
 // filter 这些禁词当说明写了，不剥注释会自己把自己判红。
@@ -42,22 +48,33 @@ describe('P6b · 门面接线', () => {
     expect(sfc.split('\n').length).toBeLessThan(700)
   })
 
-  it('五个子 mixin 全在聚合层里，且 readingModeMixin 排最后', () => {
-    const names = ['commentsMixin', 'versioningMixin', 'shareMixin', 'exportMixin', 'readingModeMixin']
+  it('九个子 mixin 全在聚合层里，且 readingModeMixin 排最后', () => {
+    const names = [
+      'commentsMixin', 'versioningMixin', 'shareMixin', 'exportMixin',
+      // UI 补齐线四浮层：顶栏「更多」/ 链接悬浮卡 / 封面 / 代码语言选择器。
+      'topbarMoreMixin', 'linkHoverMixin', 'coverMixin', 'codeLangMixin',
+      'readingModeMixin',
+    ]
     for (const name of names) {
       expect(aggregator).toContain(`import ${name} from './${name}'`)
       expect(aggregatorMixins).toContain(name)
     }
-    expect(aggregatorMixins.trim().endsWith('readingModeMixin],')).toBe(true)
+    // 末项必须是 readingModeMixin：它的 writable() 是另八条线的判据上游。
+    expect(aggregatorMixins.trim().replace(/\s+/g, ' ').endsWith('readingModeMixin, ],')).toBe(true)
   })
 })
 
 describe('P6b · 浮层容器', () => {
-  it('五条线的面板都是兄弟节点（fixed 定位的祖先不能有 transform/非 static）', () => {
-    for (const tag of ['CommentPanel', 'VersionPanel', 'SaveVersionDialog', 'SharePopover', 'ExportDialog']) {
+  it('九条线的面板都是兄弟节点（fixed 定位的祖先不能有 transform/非 static）', () => {
+    for (const tag of [
+      'CommentPanel', 'VersionPanel', 'SaveVersionDialog', 'SharePopover', 'ExportDialog',
+      // UI 补齐线四浮层也挂在兄弟层：它们在 DOM 里离顶栏/代码块很远，只有这里能
+      // 保证 fixed 祖先链干净（封面**槽**是文档流元素，不在这里）。
+      'TopbarMoreMenu', 'LinkHoverCard', 'CoverPanel', 'CodeLangPicker',
+    ]) {
       expect(overlays).toContain(`<${tag} :ed="ed" />`)
     }
-    // 五个子节点同一个根 div 的直系孩子：不含第二层包裹容器。
+    // 九个子节点同为一个根 div 的直系孩子：不含第二层包裹容器。
     expect(overlays).toContain('<div class="lark-doc-p6b-layer">')
   })
 

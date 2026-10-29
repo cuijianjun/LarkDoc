@@ -24,13 +24,36 @@ import commentsMixin from './commentsMixin'
 import versioningMixin from './versioningMixin'
 import shareMixin from './shareMixin'
 import exportMixin from './exportMixin'
+// UI 补齐线四浮层（顶栏「更多」/ 链接悬浮卡 / 封面 / 代码语言选择器）。
+//
+// 挂在**这里**而不是再开一个 `p6cMixin` 让门面多 import 一行：它们与 P6b 同为「文档级
+// UI 能力」，`LarkDocEditor.vue` 的 <700 行预算按 RT/批次算已经在临界值 678/700 上，
+// 每多一个入口都在吃同一份预算。聚合在这，门面的行数一分不涨。
+//
+import topbarMoreMixin from './topbarMoreMixin'
+import linkHoverMixin from './linkHoverMixin'
+import coverMixin from './coverMixin'
+import codeLangMixin from './codeLangMixin'
 // 三态统一放最后：它的 `writable()` / `interactionMode` 是另四条线的判据上游
 // （「能不能评论」「能不能另存版本」最终都落到 `canEditContent(interactionMode)`），
 // 靠后放才能在有同名键时压住前面的旧口径。
+// UI 线同样只在**运行时**读它：`codeLangMixin.onCodeLangRequest` / `linkHoverMixin
+// .removeHoveredLink` 都以 `writable()` 为闸门 —— 方法在合并完成后才被调用，
+// 所以彼此先后不影响结果；这里统一放最后是为了「谁提供判据、谁消费判据」一眼可读。
 import readingModeMixin from './readingModeMixin'
 import LarkDocOverlays from './LarkDocOverlays.vue'
 
 export default {
-  mixins: [commentsMixin, versioningMixin, shareMixin, exportMixin, readingModeMixin],
+  mixins: [
+    commentsMixin,
+    versioningMixin,
+    shareMixin,
+    exportMixin,
+    topbarMoreMixin,
+    linkHoverMixin,
+    coverMixin,
+    codeLangMixin,
+    readingModeMixin,
+  ],
   components: { LarkDocOverlays },
 }

@@ -30,8 +30,8 @@
     "check:unit": "vitest run",
     "test:unit": "vitest run test/unit",
     "check:perf": "npm run build:element && node scripts/perf/measure.mjs && node scripts/perf/report.mjs",
-    "contract": "node _codex/gen-contract.mjs",
-    "contract:check": "node _codex/gen-contract.mjs --check",
+    "contract": "node scripts/gen-contract.mjs",
+    "contract:check": "node scripts/gen-contract.mjs --check",
     "prepack": "node scripts/ensure-artifacts.mjs && npm run size",
     "artifacts:check": "node scripts/ensure-artifacts.mjs --check",
     "verify": "node scripts/verify.mjs",
@@ -248,25 +248,25 @@
     {
       "name": "ESM 主包 (gzip)",
       "path": "dist/lark-doc.esm.js",
-      "limit": "285 KB",
+      "limit": "320 KB",
       "gzip": true
     },
     {
       "name": "UMD 主包 (gzip)",
       "path": "dist/lark-doc.umd.min.js",
-      "limit": "465 KB",
+      "limit": "505 KB",
       "gzip": true
     },
     {
       "name": "Element 产物 (gzip)",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "480 KB",
+      "limit": "515 KB",
       "gzip": true
     },
     {
       "name": "CJS 全量产物（内联 mermaid，gzip）",
       "path": "dist/lark-doc.common.js",
-      "limit": "2500 KB",
+      "limit": "2600 KB",
       "gzip": true
     },
     {

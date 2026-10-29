@@ -7,7 +7,7 @@
 ## 从这里开始
 
 - **总导航（先看这张）**：[`dev/00-INDEX.md`](./dev/00-INDEX.md) —— 「我要做什么 → 读哪一册」的对照表。
-- **改块类型**：`_codex/contract/INDEX.md`（约 950 token，一屏列出所有块的 attrs / 关键常量 / 02 证据锚点 / 源码位置）。它是从 `src/core/blocks/*.js` 生成的，**代码是真源**，不会漂移；改完代码跑 `node _codex/gen-contract.mjs` 重新生成，`node _codex/gen-contract.mjs --check` 可判定是否过期。
+- **改块类型**：`_codex/contract/INDEX.md`（约 950 token，一屏列出所有块的 attrs / 关键常量 / 02 证据锚点 / 源码位置）。它是从 `src/core/blocks/*.js` 生成的，**代码是真源**，不会漂移；改完代码跑 `node scripts/gen-contract.mjs` 重新生成，`node scripts/gen-contract.mjs --check` 可判定是否过期。
 - **稳定事实 / 进度**：`_codex/CONTEXT-CARD.md`。
 - **查需求细节**：`_codex/req/<编号>/INDEX.md` 定位 → 只读命中的那一片。**不要裸读 `requirements/*.md`**（`02` 一篇约 10 万 token）。切片由 `node _codex/split-req.mjs` 生成，`requirements/` 是唯一真源。
 - **使用方**接入说明（编译工具配置 / 工具栏配置 / 可运行 demo）：`docs/guide/environments.md`。

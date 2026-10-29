@@ -13,7 +13,9 @@ dist-offline/
 # pack-docs.sh 的产物目录：文档站静态包（site/ + site.tar.gz + nginx 配置），
 # 由脚本从 docs/ 重建，不入库
 dist-docs-intranet/
-# 本机临时探查脚本与抓取物，不入库
+# 本机临时探查脚本与抓取物，不入库。
+# 注意：被 npm scripts 依赖的生成器不能放这里（曾放过 gen-contract.mjs，导致
+# 新 clone 的 `npm run contract:check` 直接 Cannot find module）。已迁入 scripts/。
 _codex/
 .env.local
 .DS_Store

@@ -3,6 +3,12 @@ import { moveDepthAllowed } from './blocks/container-depth'
 import { MENTION_KINDS } from './blocks/mention'
 import { REMINDER_REPEATS, REMINDER_AT_PATTERN } from './blocks/reminder'
 import { isEmojiGlyph } from './emoji/catalog'
+// 外部服务块目录（17 §17.5 tier C / P3 批次）：载入降级要靠它认「这是哪一类外部块」。
+// 判定层不 import 本文件（无环），与 mention / reminder 的常量引入同口径。
+import {
+  EXTERNAL_BLOCK_KINDS, EXTERNAL_PAYLOAD_MAX, EXTERNAL_STATUS,
+  externalBlockPreview, isExternalBlockType, safeExternalTitle,
+} from './embed/external-block'
 
 // 未知块占位卡 payload 上限（P1-03）：payload 可能承载替代整个子树的原始块 JSON。
 export const UNKNOWN_PAYLOAD_MAX = 1000000
@@ -95,6 +101,16 @@ function validateAttrs(type, attrs, definition) {
     // 未知块占位卡（P1-03）：payload 承载原始块 JSON，可能替代整个子树，上限放宽到 1M 字符。
     else if (type === 'unknownBlock' && key === 'payload') valid = typeof value === 'string' && value.length <= UNKNOWN_PAYLOAD_MAX && !value.includes('\u0000')
     else if (type === 'unknownBlock' && key === 'unknownType') valid = typeof value === 'string' && value.length >= 1 && value.length <= 100 && !value.includes('\u0000')
+    // 外部服务块（17 §17.5）：与 unknownBlock 同款保真卡，多出来的五个字段是「可解释的
+    // disabled 状态」所需。`status` 是枚举（落兜底分支会被当普通字符串放过任意值），
+    // `sourceUrl` 走 `safeUrl`（与 href / src 同闸门），`kind` 只认目录内登记的。
+    else if (type === 'externalBlock' && key === 'payload') valid = typeof value === 'string' && value.length <= EXTERNAL_PAYLOAD_MAX && !value.includes('\u0000')
+    else if (type === 'externalBlock' && key === 'kind') valid = typeof value === 'string' && value.length <= 64 && !value.includes('\u0000') && (value === '' || isExternalBlockType(value))
+    else if (type === 'externalBlock' && key === 'title') valid = safeExternalTitle(value)
+    else if (type === 'externalBlock' && key === 'reason') valid = safeExternalTitle(value)
+    else if (type === 'externalBlock' && key === 'sourceUrl') valid = value === '' || safeUrl(value)
+    else if (type === 'externalBlock' && key === 'provider') valid = typeof value === 'string' && value.length <= 64 && /^[a-z][a-z0-9_.-]*$/.test(value)
+    else if (type === 'externalBlock' && key === 'status') valid = [EXTERNAL_STATUS.UNAVAILABLE, EXTERNAL_STATUS.READONLY, EXTERNAL_STATUS.READY].indexOf(value) !== -1
     else valid = typeof value === 'string' && value.length <= 100000 && !value.includes('\u0000')
     if (!valid) throw new Error(`不安全或无效的属性：${type}.${key}`)
   })
@@ -167,7 +183,12 @@ export function aggregateHeadingContainers(json) {
 }
 
 /**
- * 未知块占位还原（P1-03）：unknownBlock → payload 内原始 JSON，导出侧保真出口。
+ * 占位块还原（P1-03 / 17 §17.5）：`unknownBlock` / `externalBlock` → payload 内原始 JSON，
+ * 导出侧保真出口。
+ *
+ * 两类占位卡共用一条通道：两者的 `payload` 都是原始块 JSON 的逐字节副本，区别只在
+ * 显示层（认不出 vs 认得出没接服务），还原时对导出侧没有差别 —— 且 §17.5 明确要求
+ * `unsupported` / `provider` 块「不能在导入/保存时丢字段」。
  *
  * - 编辑器 getJSON 里未知块只以占位卡存在；导出 / 落库前经本函数还原为原始块
  *   JSON（key 顺序逐字节保真，stringify/parse 幂等），再次载入时 validateDocument
@@ -184,12 +205,13 @@ export function restoreUnknownBlocks(json) {
     const next = { ...node }
     if (Array.isArray(next.content)) next.content = next.content.map(walk)
     if (Array.isArray(next.children)) next.children = next.children.map(walk)
-    if (next.type !== 'unknownBlock') return next
+    if (next.type !== 'unknownBlock' && next.type !== 'externalBlock') return next
     const payload = next.attrs && next.attrs.payload
     if (typeof payload !== 'string' || !payload) return next
     try {
       const restored = JSON.parse(payload)
-      if (restored && typeof restored === 'object' && typeof restored.type === 'string' && restored.type !== 'unknownBlock') return restored
+      if (restored && typeof restored === 'object' && typeof restored.type === 'string'
+        && restored.type !== 'unknownBlock' && restored.type !== 'externalBlock') return restored
     } catch (_) { /* payload 损坏 → 保留占位 */ }
     return next
   }
@@ -206,6 +228,26 @@ export function validateDocument(json, schema) {
     if (!item || typeof item !== 'object' || depth > 100 || ++count > 100000) throw new Error('文档结构过深或过大')
     const type = schema.nodes[item.type]
     if (!type) {
+      // 17 §17.5：登记过但本地没实现的官方块（chat_card / jira_issue / okr* …）降级为
+      // `externalBlock` —— 认得出是哪一类，卡片就能给出「未接入 Jira」这种可解释的
+      // disabled 文案，而不是一句「暂不支持」。保真口径与下面的 unknownBlock 完全一致。
+      if (isExternalBlockType(item.type)) {
+        const meta = EXTERNAL_BLOCK_KINDS[item.type]
+        const preview = externalBlockPreview(item)
+        const payload = JSON.stringify(item)
+        return {
+          type: 'externalBlock',
+          attrs: {
+            kind: item.type,
+            payload: payload.length <= EXTERNAL_PAYLOAD_MAX ? payload : '',
+            title: preview.title,
+            sourceUrl: safeUrl(preview.sourceUrl) ? preview.sourceUrl : '',
+            provider: meta.provider || '',
+            status: EXTERNAL_STATUS.UNAVAILABLE,
+            reason: '',
+          },
+        }
+      }
       // P1-03：未知块就地降级为占位卡，原始 JSON 逐字节存进 payload
       // （JSON.stringify 保 key 顺序，stringify/parse 幂等）。payload 超 1M 时
       // 放弃保真只存占位（载入优先于还原）；unknownType 供副文案展示。
@@ -1136,6 +1178,10 @@ export const BLOCK_ID_TYPES = new Set([
   // 投票块（P5-03）：同上。header 标签行把 `blockId` 转交给宿主，`onVote` 也带着它，
   // 不给 id 就永远只能传 `null`；结果条要按块对账时同样缺一个落点。
   'poll',
+  // 外部服务块（17 §17.5）：原子块，但它是「用户能当作一个块操作」的单位 —— 不进集合
+  // 就没有 blockId，删除 / 折叠 / 评论锚点全都没有落点，而 §17.5 明确要求这些块
+  // 「必须可读、可删、可保真」。
+  'externalBlock',
   // 多维表格块（P5-04）：同上。悬停手柄与 footer 菜单把 `blockId` 转交给宿主，
   // `onChange`（切视图）也带着它；不给 id 就永远只能传 `null`。
   'bitable',

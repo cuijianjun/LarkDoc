@@ -175,6 +175,7 @@ export default defineConfig({
             { text: 'AI 组件', link: '/blocks/ai' },
             { text: '上传器', link: '/blocks/uploader' },
             { text: '网络策略', link: '/blocks/network' },
+            { text: '外部服务块', link: '/blocks/external-blocks' },
           ],
         },
       ],
