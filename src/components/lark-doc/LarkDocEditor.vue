@@ -91,7 +91,7 @@
             @pointermove="onEditorPointerMove"
             @dragover="onBlockDragOver"
             @drop="onBlockDrop"
-          /><!-- 表格边界条的宿主（5G）：DOM 由 src/ui/tableTools.js 建，条本身 `position:absolute`，空壳不占位。 --><div ref="tableBoundaryHost" /><CalloutTools :ed="self" />
+          /><!-- 表格边界条的宿主（5G）：DOM 由 src/ui/tableTools.js 建，条本身 `position:absolute`，空壳不占位。 --><div ref="tableBoundaryHost" /><div ref="calloutToolsHost" />
         </div><footer class="lark-doc-status">
           <span>{{ wordCount }}{{ effectiveMaxLength > 0 ? ` / ${effectiveMaxLength}` : '' }} 字 · {{ outline.length }} 个标题</span><span>{{ effectiveReadonly ? '仅阅读' : '输入 / 快速插入' }}</span>
         </footer>
@@ -178,7 +178,6 @@ import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
 // P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
 import IsvButtonPanel from './editor/IsvButtonPanel.vue'
 import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，状态与定位全在 revisionMixin。
-import CalloutTools from './editor/CalloutTools.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
@@ -193,6 +192,7 @@ import tableToolsUiMixin from './editor/tableToolsUiMixin'
 import helpFabUiMixin from './editor/helpFabUiMixin'
 // 5G：颜色面板（字色 / 高亮块两态）渲染层在 src/ui/colorPalette.js。
 import colorPaletteUiMixin from './editor/colorPaletteUiMixin'
+import calloutToolsUiMixin from './editor/calloutToolsUiMixin'
 // P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
 // 主组件连 onSelectionUpdate 都不再持有 —— 否则组件自身的同名方法会盖掉 mixin。
 import selectionPacingMixin from './editor/selectionPacingMixin'
@@ -247,8 +247,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, CalloutTools, HeadingNumberMenu },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, HeadingNumberMenu },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, calloutToolsUiMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -364,7 +364,7 @@ export default {
     // 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板已原生化（`src/ui/panels.js`）。
     // 同样不依赖编辑器实例 —— 目录宿主在 `.lark-doc-body` 里，评论卡等的宿主与根同层。
     this.mountPanels()
-    this.mountStage(); this.mountTableTools(); this.mountHelpFab(); this.mountColorPalette()
+    this.mountStage(); this.mountTableTools(); this.mountHelpFab(); this.mountColorPalette(); this.mountCalloutTools()
     // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
     // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
     this.restoreMode()
@@ -381,7 +381,7 @@ export default {
         element: this.$refs.editorEl,
         content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
         extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.refreshToolbar(); this.refreshTableTools(); this.refreshColorPalette(); if (this.blockMenuOpen) this.refreshBlockMenu(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => { this.onSelectionUpdate(); this.refreshToolbar(); this.refreshTableTools(); this.refreshColorPalette() },
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.refreshToolbar(); this.refreshTableTools(); this.refreshColorPalette(); this.refreshCalloutTools(); if (this.blockMenuOpen) this.refreshBlockMenu(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => { this.onSelectionUpdate(); this.refreshToolbar(); this.refreshTableTools(); this.refreshColorPalette(); this.refreshCalloutTools() },
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
@@ -416,7 +416,7 @@ export default {
     this.editor?.destroy()
     this.editor = null
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette()
+    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette(); this.destroyCalloutTools()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
