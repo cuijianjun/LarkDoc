@@ -370,7 +370,7 @@ larkDoc({ basePath: '/vendor/lark-doc/current/' })
 | `features` | `'auto'` | 扫描宿主实际会用到的特性，只拷对应区块；不想全拷就写 `['math', 'mermaid']` |
 | `basePath` | 宿主 `publicPath` + `lark-doc/` | 运行时资源基址 —— **取代 `window.__LARK_DOC_PUBLIC_PATH__`** |
 | `fonts` | `true` | 是否拷 KaTeX 字体；已有自管字体时关掉 |
-| `injectStyles` | `false` | 为 true 时等价于自动补一行 `import 'lark-doc/style.css'` |
+| `injectStyles` | `false` | 为 true 时在构建产物中发射命名为 `lark-doc.css` 的 CSS asset；不会改写源码 import，也不注入运行时 `<style>` |
 | `copyAs` | `'build'` | `'none'` 用于纯 CDN 直挂场景（资源全由 CDN 提供时跳过拷贝） |
 
 #### 终局效果

@@ -5,6 +5,7 @@ import { normalizePluginOptions } from './options'
 import { discoverAssets } from './assets'
 
 const PLUGIN_NAME = 'lark-doc-assets'
+const STYLE_FILE_NAME = 'lark-doc.css'
 const MODULE_DIR = typeof __dirname === 'string'
   ? __dirname
   : path.dirname(fileURLToPath(import.meta.url))
@@ -43,10 +44,11 @@ function readAssetEntries(options) {
     ...entry,
     source: fs.readFileSync(entry.source),
   }))
+  // injectStyles 的契约是构建期发射 lark-doc.css，不改写宿主源码或注入运行时 style。
   if (options.injectStyles) {
     entries.push({
       source: path.join(PACKAGE_ROOT, 'style.css'),
-      fileName: 'lark-doc.css',
+      fileName: STYLE_FILE_NAME,
     })
     entries[entries.length - 1].source = fs.readFileSync(entries[entries.length - 1].source)
   }
@@ -56,7 +58,14 @@ function readAssetEntries(options) {
 function applyWebpackOutput(options, compiler) {
   if (options.basePath === undefined) return
   compiler.options.output = compiler.options.output || {}
-  compiler.options.output.publicPath = options.basePath
+  const existing = compiler.options.output.publicPath
+  if (existing !== undefined && existing !== options.basePath) {
+    throw new Error(
+      `[lark-doc] basePath ${options.basePath} 与 webpack output.publicPath ${existing} 冲突；` +
+        '请只配置一个值'
+    )
+  }
+  if (existing === undefined) compiler.options.output.publicPath = options.basePath
 }
 
 function emitWebpackAssets(options, compilation) {

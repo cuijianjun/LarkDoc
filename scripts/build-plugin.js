@@ -16,7 +16,7 @@ const root = path.resolve(__dirname, '..')
 const dist = path.join(root, 'dist')
 const entry = path.join(root, 'src/plugin/index.js')
 
-function config(filename, libraryType, libraryExport) {
+function config(filename, libraryType) {
   return {
     mode: 'production',
     context: root,
@@ -26,7 +26,7 @@ function config(filename, libraryType, libraryExport) {
     output: {
       path: dist,
       filename,
-      library: { type: libraryType, export: libraryExport },
+      library: { type: libraryType },
       clean: false,
       devtoolModuleFilenameTemplate: '[resource-path]',
     },
@@ -50,10 +50,22 @@ function runWebpack(configuration) {
   })
 }
 
+function preserveCommonjsDefaultCompatibility() {
+  const file = path.join(dist, 'plugin.cjs')
+  const source = fs.readFileSync(file, 'utf8')
+  const marker = 'module.exports = __webpack_exports__;'
+  if (!source.includes(marker)) throw new Error('插件 CommonJS 产物缺少 webpack exports 标记')
+  fs.writeFileSync(
+    file,
+    source.replace(marker, `${marker}\nmodule.exports = Object.assign(__webpack_exports__.default, __webpack_exports__);`)
+  )
+}
+
 async function main() {
   fs.mkdirSync(dist, { recursive: true })
-  await runWebpack(config('plugin.mjs', 'module', 'default'))
-  await runWebpack(config('plugin.cjs', 'commonjs2', 'default'))
+  await runWebpack(config('plugin.mjs', 'module'))
+  await runWebpack(config('plugin.cjs', 'commonjs2'))
+  preserveCommonjsDefaultCompatibility()
   for (const filename of ['plugin.mjs', 'plugin.cjs']) {
     const file = path.join(dist, filename)
     if (!fs.existsSync(file) || fs.statSync(file).size === 0) {

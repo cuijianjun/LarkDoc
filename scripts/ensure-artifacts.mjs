@@ -84,10 +84,12 @@ for (const f of CONFIG_FILES) {
   const p = join(ROOT, f)
   if (existsSync(p)) feedFile(p)
 }
-// 3) 依赖与目标环境声明
+// 3) 产物构建脚本
+feedFile(join(ROOT, 'scripts/build-plugin.js'))
+// 4) 依赖与目标环境声明
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 for (const k of PKG_FIELDS) hash.update(k + '=' + JSON.stringify(pkg[k] ?? null) + '\n')
-// 4) 跑构建用的 npm 版本（Node14 的 npm 与 Node22 的 npm 排布可能不同）
+// 5) 跑构建用的 npm 版本（Node14 的 npm 与 Node22 的 npm 排布可能不同）
 // 注意：这一项让「怎么调本脚本」也成了指纹输入 —— 裸 `node scripts/ensure-artifacts.mjs
 // --check` 取不到该变量，算出的指纹与 `npm run artifacts:check` 口径必然不同。
 // 判定保持保守（不同就报需重建），但报错时会点明口径，免得被误读成「源码有变动」。
