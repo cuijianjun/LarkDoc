@@ -19,7 +19,11 @@
  */
 import { serializeMarkdown } from './markdown.js'
 import { printDocument } from './pdf.js'
-import { downloadBlob, downloadText } from '../importExport.js'
+// 落盘从 utils/download.js 取，**不走** utils/importExport.js：
+// 那条静态边会把 turndown + marked（两个 Markdown 引擎，合计 140 KiB raw）拖进编辑器首屏，
+// 而导出 Markdown 只需要「把字符串写成文件」。importExport.js 现在只剩 `await import()`
+// 一条入口，老老实实待在 import-export 按需区块里。
+import { downloadBlob, downloadText } from '../download.js'
 
 /** 文件名里的非法字符（Windows 最严，顺带堵住路径分隔符）。 */
 const UNSAFE_FILE_NAME_CHARS = /[\\/:*?"<>|]/g
