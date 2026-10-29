@@ -25,6 +25,14 @@ const CAPTION_MAX = 100000
 const CROP_PIXEL_LIMIT = 24000000
 /** 鼠标离开块后延时卸载工具条，跨「块顶与工具条之间 8px」的间隙不闪。 */
 const TOOLBAR_HIDE_DELAY = 160
+/** 工具条外层 310×42（`04 §1.3` 实测）。外层是 `position: fixed`，所以坐标由
+ *  `positionToolbar()` 按图片矩形自己算，CSS 里只留尺寸/层序。 */
+const TOOLBAR_W = 310
+const TOOLBAR_H = 42
+/** 工具条底边与块顶之间的间隙：正好是 `TOOLBAR_HIDE_DELAY` 要兜住的那 8px。 */
+const TOOLBAR_GAP = 8
+/** 工具条离视口左右缘的最小留白（窄屏时不贴边）。 */
+const TOOLBAR_MARGIN = 8
 /** 标记「属于 NodeView 自己的交互元素」：事件停在这里，不进 ProseMirror。 */
 const UI_ATTR = 'data-lark-doc-image-ui'
 const ALIGNMENTS = ['left', 'center', 'right']
@@ -37,17 +45,44 @@ const CROP_FIELDS = [
   { key: 'height', label: '裁剪高度' },
 ]
 /** 工具条 8 项（02 §11：310×42 / 8 项）：裁剪 / 替换 / 说明 / 重置 / 对齐×3 / 预览。 */
+/**
+ * 工具条 8 项（`04 §1.3` 实测，顺序与 `data-name` 逐字照抄 —— e2e 拿 `data-name` 对锚）。
+ * 图标走 24×24 SVG（同一条 `currentColor`，深浅主题自动跟随），不再用文字 glyph。
+ * `align: true` 的项参与「当前对齐 → `.menu-item-actived`」同步。
+ */
 const TOOLBAR_ITEMS = [
-  { action: 'crop', label: '裁剪', glyph: '⌗' },
-  { action: 'replace', label: '替换图片', glyph: '▧' },
-  { action: 'caption', label: '编辑图片说明', glyph: '▤' },
-  { action: 'reset', label: '重置裁剪', glyph: '↶', role: 'reset' },
+  { action: 'crop', name: 'Crop', label: '裁剪', icon: 'crop' },
+  { action: 'caption', name: 'caption', label: '编辑图片说明', icon: 'caption' },
+  { action: 'left', name: 'align left', label: '左对齐', icon: 'align-left', align: true },
+  { action: 'center', name: 'align center', label: '居中对齐', icon: 'align-center', align: true },
+  { action: 'right', name: 'align right', label: '右对齐', icon: 'align-right', align: true },
+  { action: 'copyAnchorLink', name: 'copyAnchorLink', label: '复制锚点链接', icon: 'link' },
+  { action: 'shareTextLink', name: 'shareTextLink', label: '分享图片链接', icon: 'share' },
+  { action: 'comment', name: 'comment', label: '评论', icon: 'comment' },
 ]
-const TOOLBAR_ALIGN_ITEMS = [
-  { action: 'left', value: 'left', label: '左对齐', glyph: '⇤' },
-  { action: 'center', value: 'center', label: '居中对齐', glyph: '≡' },
-  { action: 'right', value: 'right', label: '右对齐', glyph: '⇥' },
-]
+/** 分隔线插在「对齐三连」与「链接三连」之间（`04 §1.3`：5→6 步距 49，此处有分隔线）。 */
+const TOOLBAR_DIVIDER_BEFORE = 'copyAnchorLink'
+
+/**
+ * 9 个 24×24 图标（`viewBox="0 0 24 24"`，描边式，`stroke="currentColor"`）。
+ * core 里不引 Vue 图标组件，所以这里只存 path 数据，由 `iconEl()` 建 SVG。
+ * 比例来自飞书同族线性图标：线宽 1.5、端点圆角、不填充。
+ */
+const ICON_PATHS = {
+  crop: ['M7 3v14h14', 'M3 7h14v14'],
+  caption: ['M4 5.5h16v9.5H4z', 'M8 19h8'],
+  'align-left': ['M4 6h16', 'M4 10.5h9', 'M4 15h16', 'M4 19.5h9'],
+  'align-center': ['M4 6h16', 'M7.5 10.5h9', 'M4 15h16', 'M7.5 19.5h9'],
+  'align-right': ['M4 6h16', 'M11 10.5h9', 'M4 15h16', 'M11 19.5h9'],
+  link: ['M10.5 13.5a4.2 4.2 0 0 0 6 0l2.2-2.2a4.2 4.2 0 0 0-6-6l-1.2 1.2', 'M13.5 10.5a4.2 4.2 0 0 0-6 0l-2.2 2.2a4.2 4.2 0 0 0 6 6l1.2-1.2'],
+  share: ['M12 15.5V4', 'm8 8 4-4 4 4', 'M5 14v6h14v-6'],
+  comment: ['M4 5.5h16v10.5H9.5L5 20z'],
+  'chevron-left': ['m14.5 5.5-6.5 6.5 6.5 6.5'],
+  'chevron-right': ['m9.5 5.5 6.5 6.5-6.5 6.5'],
+  dots: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
+  close: ['m6 6 12 12', 'm18 6-12 12'],
+}
+
 
 /** 宽度校验：合法返回四舍五入值，非法返回 null（手柄提交与对外 setWidth 共用）。 */
 export function clampImageWidth(value) {
@@ -71,6 +106,28 @@ function el(tag, className, attrs = {}) {
 function markUi(element) {
   element.setAttribute(UI_ATTR, '')
   return element
+}
+
+/** 24×24 描边图标（`svg` 必须走命名空间创建，`createElement('svg')` 不认）。 */
+function iconEl(name) {
+  const paths = ICON_PATHS[name] || []
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '24')
+  svg.setAttribute('height', '24')
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('stroke', 'currentColor')
+  svg.setAttribute('stroke-width', '1.5')
+  svg.setAttribute('stroke-linecap', 'round')
+  svg.setAttribute('stroke-linejoin', 'round')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+  paths.forEach((d) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.setAttribute('d', d)
+    svg.appendChild(path)
+  })
+  return svg
 }
 
 function isBlockedSrc(src) {
@@ -111,6 +168,12 @@ export function createImageNodeView(props) {
   blockedCard.appendChild(blockedTitle)
   blockedCard.appendChild(blockedUrl)
   blockedCard.appendChild(blockedHint)
+  // 工具条 8 项按 `04 §1.3` 不含「替换」（飞书靠删除重插）；被拦截的图必须留一条
+  // 可点的替换路径，否则占位卡是死路。
+  const blockedReplace = markUi(el('button', 'lark-doc-image-blocked-replace', { type: 'button', 'aria-label': '替换被拦截的图片' }))
+  blockedReplace.textContent = '替换图片'
+  blockedReplace.addEventListener('click', (event) => { event.stopPropagation(); openReplace() })
+  blockedCard.appendChild(blockedReplace)
 
   const img = el('img', 'lark-doc-image-img', { draggable: 'false' })
   shell.appendChild(blockedCard)
@@ -138,35 +201,47 @@ export function createImageNodeView(props) {
   const replaceInput = markUi(el('input', 'lark-doc-image-replace-input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', 'aria-label': '替换图片文件' }))
   replaceInput.addEventListener('change', onReplaceFile)
   const errorLine = el('p', 'lark-doc-media-error', { role: 'alert' })
+  // 工具条提示行：复制/分享/评论这类「动作已完成」的反馈不进 `role="alert"`
+  // （alert 是错误通道，读屏会打断当前朗读），用 status + aria-live=polite。
+  const hintBox = el('p', 'lark-doc-media-hint is-hidden', { role: 'status', 'aria-live': 'polite' })
 
   dom.appendChild(frame)
   dom.appendChild(captionText)
   dom.appendChild(captionInput)
   dom.appendChild(replaceInput)
   dom.appendChild(errorLine)
+  dom.appendChild(hintBox)
 
   /* ---------- 工具条：hover 挂载 / 离开卸载 ---------- */
   let toolbar = null
   let dialogEl = null
 
+  /**
+   * 工具条 = **双层**（`04 §1.3`）：外层 `.overlay-container` z86（只管定位、透明）
+   * 套内层面板 z999（白底 / r6 / 阴影 / 8 项）。两层都得建 —— 只建一层时
+   * 块手柄（z79）与图片预览（z1049）之间的层序会塌，且阴影会被父级裁掉。
+   */
   function buildToolbar() {
     const bar = markUi(el('div', 'lark-doc-image-toolbar', { role: 'toolbar', 'aria-label': '图片工具' }))
     bar.addEventListener('mousedown', (event) => event.preventDefault())
     bar.addEventListener('mouseenter', cancelHide)
-    const mountButton = (item, extra = {}) => {
-      const button = el('button', null, { type: 'button', 'aria-label': item.label, title: item.label, ...extra })
-      button.textContent = item.glyph
+    const panel = el('div', 'lark-doc-image-toolbar-panel')
+    bar.appendChild(panel)
+
+    TOOLBAR_ITEMS.forEach((item) => {
+      if (item.name === TOOLBAR_DIVIDER_BEFORE) panel.appendChild(el('span', 'lark-doc-image-toolbar-divider', { 'aria-hidden': 'true' }))
+      const button = el('button', null, {
+        type: 'button',
+        'aria-label': item.label,
+        title: item.label,
+        'data-name': item.name,
+        'data-role': item.align ? `align-${item.action}` : item.action,
+      })
+      if (item.align) button.setAttribute('data-align-value', item.action)
+      button.appendChild(iconEl(item.icon))
       button.addEventListener('click', (event) => { event.stopPropagation(); runToolbarAction(item.action) })
-      bar.appendChild(button)
-      return button
-    }
-    TOOLBAR_ITEMS.forEach((item) => mountButton(item, item.role ? { 'data-role': item.role } : {}))
-    bar.appendChild(el('span', 'lark-doc-image-toolbar-divider', { 'aria-hidden': 'true' }))
-    TOOLBAR_ALIGN_ITEMS.forEach((item) => {
-      mountButton({ ...item, label: item.label }, { 'data-role': `align-${item.value}`, 'data-align-value': item.value })
+      panel.appendChild(button)
     })
-    bar.appendChild(el('span', 'lark-doc-image-toolbar-divider', { 'aria-hidden': 'true' }))
-    mountButton({ action: 'preview', label: '预览图片', glyph: '◉' })
     return bar
   }
 
@@ -176,7 +251,105 @@ export function createImageNodeView(props) {
     else if (action === 'caption') { enterCaptionEdit() }
     else if (action === 'reset') resetImage()
     else if (action === 'preview') openPreview()
+    else if (action === 'copyAnchorLink') copyAnchorLink()
+    else if (action === 'shareTextLink') shareImageLink()
+    else if (action === 'comment') requestComment()
     else if (ALIGNMENTS.includes(action)) setAlign(action)
+  }
+
+  /** 元素定位用的 deep link：`origin + pathname + #blockId`（无 blockId 时退化为当前 URL）。 */
+  function blockLink() {
+    const loc = typeof window !== 'undefined' ? window.location : null
+    const base = loc ? `${loc.origin}${loc.pathname}` : ''
+    const blockId = typeof currentNode.attrs.blockId === 'string' ? currentNode.attrs.blockId : ''
+    return { base, blockId, url: blockId ? `${base}#${blockId}` : base }
+  }
+
+  /** 复制文本：优先异步剪贴板，非安全上下文退回隐藏 textarea + execCommand（宿主老 WebView）。 */
+  function writeClipboard(text) {
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null
+    if (clipboard && typeof clipboard.writeText === 'function') {
+      return clipboard.writeText(text).catch(() => fallbackCopy(text))
+    }
+    return Promise.resolve(fallbackCopy(text))
+  }
+
+  function fallbackCopy(text) {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.position = 'fixed'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.select()
+    let ok = false
+    try { ok = document.execCommand('copy') } catch (copyError) { ok = false }
+    area.remove()
+    return ok
+  }
+
+  function copyAnchorLink() {
+    const { url, blockId } = blockLink()
+    if (!blockId) { flashHint('图片块还没有 blockId，暂时无法生成锚点链接'); return }
+    Promise.resolve(writeClipboard(url)).then((result) => {
+      flashHint(result === false ? '复制失败，请手动复制地址栏链接' : '已复制锚点链接')
+    })
+    // 宿主可监听该事件做「已复制」埋点；没有监听者也不影响上面的可见反馈。
+    if (editor && typeof editor.emit === 'function') editor.emit('blockAnchorLinkCopied', { blockId, url })
+  }
+
+  /**
+   * 分享 = 复制可外部打开的图片直链（本库没有宿主分享面板时这就是完整闭环），
+   * 同时 `emit('shareBlock')` 让有分享面板的宿主接管（收到后自行 popover）。
+   */
+  function shareImageLink() {
+    const src = currentNode.attrs.originalSrc || currentNode.attrs.src || ''
+    const safe = safeUrl(src, true)
+    if (!safe) { flashHint('当前图片地址不允许分享（离线策略拦截）'); return }
+    Promise.resolve(writeClipboard(safe)).then((result) => {
+      flashHint(result === false ? '复制失败，请手动右键复制图片地址' : '已复制图片链接，可粘贴分享')
+    })
+    if (editor && typeof editor.emit === 'function') editor.emit('shareBlock', { blockId: blockLink().blockId, src: safe })
+  }
+
+  /** 评论：先选中图片块再抛事件，宿主接评论面板后按 blockId 建 thread。 */
+  function requestComment() {
+    const { blockId } = blockLink()
+    if (editor && typeof editor.emit === 'function') editor.emit('commentBlock', { blockId, type: 'image' })
+    flashHint(blockId ? '已请求宿主打开评论区' : '图片块还没有 blockId，无法定位评论')
+  }
+
+  /** 工具条底部临时提示（1.8s 自动消失，不占文档流、不进 aria 的 alert 通道）。 */
+  let hintTimer = null
+  function flashHint(text) {
+    if (!hintBox) return
+    hintBox.textContent = text
+    hintBox.classList.remove('is-hidden')
+    if (hintTimer !== null) clearTimeout(hintTimer)
+    hintTimer = setTimeout(() => {
+      hintTimer = null
+      if (hintBox) hintBox.classList.add('is-hidden')
+    }, 1800)
+  }
+
+  /**
+   * 工具条落位（`04 §1.3`：**块上方 8px、水平居中**）。
+   *
+   * 外层是 `position: fixed`（层序稳、不被父级 overflow / border-radius 裁），
+   * 但 fixed 不认「相对父级」的百分比几何，所以坐标必须按图片矩形算一遍。
+   * 贴视口顶（首屏图）时上方没有 8px 余量，翻到块下方，别被裁掉。
+   */
+  function positionToolbar() {
+    if (!toolbar) return
+    const rect = img.getBoundingClientRect()
+    if (!rect || !rect.width || !rect.height) return
+    const viewportWidth = window.innerWidth || 0
+    const centered = rect.left + rect.width / 2 - TOOLBAR_W / 2
+    const maxLeft = Math.max(TOOLBAR_MARGIN, viewportWidth - TOOLBAR_W - TOOLBAR_MARGIN)
+    const left = Math.min(maxLeft, Math.max(TOOLBAR_MARGIN, centered))
+    const above = rect.top - TOOLBAR_H - TOOLBAR_GAP
+    toolbar.style.left = `${Math.round(left)}px`
+    toolbar.style.top = `${Math.round(above >= TOOLBAR_MARGIN ? above : rect.bottom + TOOLBAR_GAP)}px`
   }
 
   function mountToolbar() {
@@ -185,11 +358,19 @@ export function createImageNodeView(props) {
     toolbar = buildToolbar()
     dom.appendChild(toolbar)
     syncToolbarState()
+    positionToolbar()
+    // fixed 层不跟滚动走：滚轮 / 改窗口大小都得重算，否则工具条会留在原地。
+    window.addEventListener('scroll', positionToolbar, true)
+    window.addEventListener('resize', positionToolbar)
   }
 
   function unmountToolbar() {
     cancelHide()
+    if (hintTimer !== null) { clearTimeout(hintTimer); hintTimer = null }
+    if (hintBox) hintBox.classList.add('is-hidden')
     if (!toolbar) return
+    window.removeEventListener('scroll', positionToolbar, true)
+    window.removeEventListener('resize', positionToolbar)
     toolbar.remove()
     toolbar = null
   }
@@ -212,12 +393,15 @@ export function createImageNodeView(props) {
   function syncToolbarState() {
     if (!toolbar) return
     const align = ALIGNMENTS.includes(currentNode.attrs.align) ? currentNode.attrs.align : 'center'
+    // 飞书同类浮层用 `.menu-item-actived` 表「当前值」（不是只有蓝底就算数）——
+    // 两个属性都打，样式吃 class、a11y 吃 aria-pressed。
     toolbar.querySelectorAll('button[data-align-value]').forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.getAttribute('data-align-value') === align))
+      const active = button.getAttribute('data-align-value') === align
+      button.setAttribute('aria-pressed', String(active))
+      button.classList.toggle('menu-item-actived', active)
     })
-    const reset = toolbar.querySelector('button[data-role="reset"]')
-    // 只有「裁剪过的图」才谈得上重置：originalSrc 存在且与当前 src 不同。
-    if (reset) reset.disabled = !safeUrl(currentNode.attrs.originalSrc, true) || currentNode.attrs.originalSrc === currentNode.attrs.src
+    const comment = toolbar.querySelector('button[data-role="comment"]')
+    if (comment) comment.hidden = !blockLink().blockId
   }
 
   function syncDom() {
@@ -392,27 +576,157 @@ export function createImageNodeView(props) {
   }
 
   let viewerShell = null
+  let viewerTimer = null
+
+  /** 同一编辑器里所有可预览的图（上一张 / 下一张按文档顺序走，与飞书一致）。 */
+  function gallery() {
+    const viewDom = editor && editor.view ? editor.view.dom : null
+    if (!viewDom) return []
+    return Array.from(viewDom.querySelectorAll('figure.lark-doc-image .lark-doc-image-img'))
+      .filter((node) => !isBlockedSrc(node.getAttribute('src')))
+      .map((node) => ({ src: node.getAttribute('src'), alt: node.getAttribute('alt') || '文档图片' }))
+  }
+
+  /** 预览层皮肤固定（`04 §1.5.1`：深/浅两态八层逐字节相同，只有继承色变）—— 只做一套深色。 */
   function openPreview() {
     if (isBlockedSrc(currentNode.attrs.src)) { openReplace(); return false }
     if (viewerShell) viewerShell.remove()
-    const shellEl = markUi(el('div', 'lark-doc-image-viewer-shell', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '图片预览' }))
-    const viewerImg = el('img', null, { alt: currentNode.attrs.caption || '文档图片' })
+    const shellEl = markUi(el('div', 'lark-doc-image-viewer-shell', {
+      role: 'dialog', 'aria-modal': 'true', 'aria-label': '图片预览', tabindex: '-1',
+    }))
+    const mask = el('div', 'lark-doc-image-viewer-mask', { 'aria-hidden': 'true' })
+    const content = el('div', 'lark-doc-image-viewer-content')
+    const viewerImg = el('img', 'lark-doc-image-viewer-img', { alt: currentNode.attrs.caption || '文档图片' })
     viewerImg.setAttribute('src', currentNode.attrs.src)
-    const closeBtn = el('button', 'lark-doc-image-viewer-close', { type: 'button', 'aria-label': '关闭预览' })
-    closeBtn.textContent = '关闭'
-    closeBtn.addEventListener('click', closePreview)
-    shellEl.appendChild(viewerImg)
-    shellEl.appendChild(closeBtn)
-    shellEl.addEventListener('click', (event) => { if (event.target === shellEl) closePreview() })
+    content.appendChild(viewerImg)
+
+    const toolbar = el('div', 'lark-doc-image-viewer-toolbar', { role: 'toolbar', 'aria-label': '图片预览工具' })
+    const list = el('div', 'lark-doc-image-viewer-toolbar-list')
+    toolbar.appendChild(list)
+
+    const shots = gallery()
+    let index = Math.max(0, shots.findIndex((item) => item.src === currentNode.attrs.src))
+
+    const prevButton = el('button', 'lark-doc-image-viewer-btn', { type: 'button', 'aria-label': '上一张', 'data-role': 'prev' })
+    prevButton.appendChild(iconEl('chevron-left'))
+    const pageInfo = el('span', 'lark-doc-image-viewer-page', { 'aria-live': 'polite' })
+    const nextButton = el('button', 'lark-doc-image-viewer-btn', { type: 'button', 'aria-label': '下一张', 'data-role': 'next' })
+    nextButton.appendChild(iconEl('chevron-right'))
+    const divider = el('span', 'lark-doc-image-viewer-divider', { 'aria-hidden': 'true' })
+    const moreButton = el('button', 'lark-doc-image-viewer-btn', { type: 'button', 'aria-label': '更多操作', 'aria-haspopup': 'menu', 'data-role': 'more' })
+    moreButton.appendChild(iconEl('dots'))
+    const scaleInfo = el('span', 'lark-doc-image-viewer-scale', { 'aria-live': 'off' })
+
+    // 「更多」的子菜单：两项都是本库能独立闭环的动作，不需要宿主。
+    const moreMenu = el('div', 'lark-doc-image-viewer-menu', { role: 'menu', 'aria-label': '更多操作' })
+    moreMenu.hidden = true
+    const copyItem = el('button', null, { type: 'button', role: 'menuitem' })
+    copyItem.textContent = '复制图片地址'
+    copyItem.addEventListener('click', () => {
+      const src = viewerImg.getAttribute('src') || ''
+      Promise.resolve(writeClipboard(src)).then((result) => {
+        copyItem.textContent = result === false ? '复制失败' : '已复制'
+        setTimeout(() => { copyItem.textContent = '复制图片地址' }, 1200)
+      })
+      closeMenu()
+    })
+    const openItem = el('button', null, { type: 'button', role: 'menuitem' })
+    openItem.textContent = '在新标签页打开'
+    openItem.addEventListener('click', () => {
+      const src = safeUrl(viewerImg.getAttribute('src') || '', true)
+      if (src) window.open(src, '_blank', 'noopener,noreferrer')
+      closeMenu()
+    })
+    moreMenu.appendChild(copyItem)
+    moreMenu.appendChild(openItem)
+
+    list.appendChild(prevButton)
+    list.appendChild(pageInfo)
+    list.appendChild(nextButton)
+    list.appendChild(divider)
+    list.appendChild(moreButton)
+    list.appendChild(scaleInfo)
+    list.appendChild(moreMenu)
+
+    function closeMenu() { moreMenu.hidden = true }
+
+    function syncViewer() {
+      const shot = shots[index]
+      if (shot) {
+        viewerImg.setAttribute('src', shot.src)
+        viewerImg.setAttribute('alt', shot.alt)
+      }
+      pageInfo.textContent = shots.length > 1 ? `${index + 1} / ${shots.length}` : ''
+      prevButton.disabled = index <= 0
+      nextButton.disabled = index >= shots.length - 1
+    }
+
+    /** 缩放百分比 = 实际渲染高度 ÷ 原图高度（字号 12、白色，飞书同款读数）。 */
+    function syncScale() {
+      const naturalWidth = viewerImg.naturalWidth || 0
+      const naturalHeight = viewerImg.naturalHeight || 0
+      if (!naturalWidth || !naturalHeight) { scaleInfo.textContent = ''; return }
+      const limit = Math.max(120, window.innerHeight - 95)
+      const percent = Math.round(Math.min(1, limit / naturalHeight) * 100)
+      scaleInfo.textContent = `${percent}%`
+      viewerImg.style.width = `${Math.round(naturalWidth * percent / 100)}px`
+      viewerImg.style.height = `${Math.round(naturalHeight * percent / 100)}px`
+    }
+
+    function step(delta) {
+      const next = index + delta
+      if (next < 0 || next >= shots.length) return
+      index = next
+      syncViewer()
+    }
+
+    function showToolbar() {
+      toolbar.classList.remove('is-hidden')
+      if (viewerTimer !== null) clearTimeout(viewerTimer)
+      // auto-hide：鼠标静止 2.5s 后淡出（`04 §1.5` 的 `toolbar-hide` 语义）。
+      viewerTimer = setTimeout(() => { viewerTimer = null; toolbar.classList.add('is-hidden') }, 2500)
+    }
+
+    prevButton.addEventListener('click', () => step(-1))
+    nextButton.addEventListener('click', () => step(1))
+    moreButton.addEventListener('click', (event) => { event.stopPropagation(); moreMenu.hidden = !moreMenu.hidden })
+    viewerImg.addEventListener('load', syncScale)
+    // 点图（不是点工具条）关闭；工具条与「更多」菜单里的点击不冒到壳上。
+    content.addEventListener('click', (event) => { if (event.target === content) closePreview() })
+    mask.addEventListener('click', closePreview)
+    toolbar.addEventListener('click', (event) => event.stopPropagation())
+    shellEl.addEventListener('mousemove', showToolbar)
+    shellEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePreview() }
+      else if (event.key === 'ArrowLeft') { event.preventDefault(); step(-1) }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); step(1) }
+    })
+
+    // 关闭钮 =「看得见的 Esc」：键位已在 keydown 里处理，但鼠标/触屏用户需要可见出口。
+    const closeButton = el('button', 'lark-doc-image-viewer-close', { type: 'button', 'aria-label': '关闭预览', title: '关闭预览' })
+    closeButton.appendChild(iconEl('close'))
+    closeButton.addEventListener('click', closePreview)
+
+    shellEl.appendChild(mask)
+    shellEl.appendChild(content)
+    shellEl.appendChild(toolbar)
+    shellEl.appendChild(closeButton)
     // 挂在块内而不是 document.body：① 自定义元素版把样式注入 shadow root，
     // 挂到 body 上的节点会完全丢样式；② 主题 token 定义在 .lark-doc 上，挂 body 读不到。
     // 全屏靠 position: fixed；.ProseMirror 只有 position: relative（z-index auto），不构成层叠上下文。
     dom.appendChild(shellEl)
     viewerShell = shellEl
+    syncViewer()
+    syncScale()
+    // 首帧就带 is-hidden（鼠标未动就自动隐藏），移动鼠标才显示。
+    toolbar.classList.add('is-hidden')
+    showToolbar()
+    shellEl.focus({ preventScroll: true })
     return true
   }
 
   function closePreview() {
+    if (viewerTimer !== null) { clearTimeout(viewerTimer); viewerTimer = null }
     if (!viewerShell) return
     viewerShell.remove()
     viewerShell = null
@@ -483,6 +797,14 @@ export function createImageNodeView(props) {
     applyButton.textContent = '应用裁剪'
     applyButton.addEventListener('click', () => { applyCrop() })
     section.appendChild(applyButton)
+    // 「重置裁剪」从工具条挪到这里（工具条 8 项按 `04 §1.3` 不含它）：
+    // 只有裁过的图才谈得上重置 —— originalSrc 存在且与当前 src 不同。
+    const cropped = safeUrl(currentNode.attrs.originalSrc, true) && currentNode.attrs.originalSrc !== currentNode.attrs.src
+    const resetButton = el('button', 'lark-doc-crop-reset', { type: 'button', 'aria-label': '恢复原图' })
+    resetButton.textContent = '恢复原图'
+    resetButton.hidden = !cropped
+    resetButton.addEventListener('click', () => { closeDialog(); resetImage() })
+    section.appendChild(resetButton)
     const dialogError = el('p', 'lark-doc-media-error', { role: 'alert' })
     section.appendChild(dialogError)
     backdrop.appendChild(section)
@@ -607,6 +929,8 @@ export function createImageNodeView(props) {
   }
 
   /* ---------- 双击全屏预览（可编辑态；离线拦截时转替换） ---------- */
+  // 解码完尺寸才定：hover 早于 load 时工具条算出来的是 0 高矩形，补一次重算。
+  img.addEventListener('load', positionToolbar)
   img.addEventListener('dblclick', (event) => {
     if (!editable) return
     event.preventDefault()
@@ -668,7 +992,8 @@ export function createImageNodeView(props) {
       cropGeneration += 1
       replaceGeneration += 1
       if (dialogEl) { dialogEl.backdrop.remove(); dialogEl = null }
-      if (toolbar) { toolbar.remove(); toolbar = null }
+      // 走 unmount：顺带摘掉 scroll/resize 两个 window 监听，别把死 NodeView 留在监听表里。
+      unmountToolbar()
     },
     // 测试与宿主联调通道：等价于工具条各按钮。
     setWidth,

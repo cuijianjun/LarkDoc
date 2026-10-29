@@ -222,33 +222,95 @@ describe('P2-01 图片属性写入走文档', () => {
 })
 
 describe('P2-01 图片工具条', () => {
-  it('8 项按钮 + 2 个分隔符，重置按钮只在裁剪过之后可点', () => {
+  it('8 项按钮按 04 §1.3 顺序落 data-name，分隔线只有 1 条且插在对齐三连之后', () => {
     const { nodeView } = mount({ src: SRC, originalSrc: ORIGINAL, width: 320 })
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
     expect(toolbar.getAttribute('role')).toBe('toolbar')
-    expect(toolbar.querySelectorAll('button')).toHaveLength(8)
-    expect(toolbar.querySelectorAll('.lark-doc-image-toolbar-divider')).toHaveLength(2)
+    // 双层：外层只管定位（fixed 310×42 / z86 / 透明），白底 + 阴影在内层面板
+    const panel = toolbar.querySelector(':scope > .lark-doc-image-toolbar-panel')
+    expect(panel).not.toBeNull()
 
-    const pressed = Array.from(toolbar.querySelectorAll('button[data-align-value]'))
-      .filter((button) => button.getAttribute('aria-pressed') === 'true')
-      .map((button) => button.getAttribute('data-align-value'))
-    expect(pressed).toEqual(['center'])
+    const buttons = Array.from(toolbar.querySelectorAll('button'))
+    expect(buttons).toHaveLength(8)
+    // 顺序与 data-name 逐字照抄 `04 §1.3`（e2e 拿 data-name 对锚，改字等于改契约）
+    expect(buttons.map((button) => button.getAttribute('data-name'))).toEqual([
+      'Crop', 'caption',
+      'align left', 'align center', 'align right',
+      'copyAnchorLink', 'shareTextLink', 'comment',
+    ])
+    // 图标走 24×24 SVG（不靠文字 glyph），aria-label / title 同源
+    expect(buttons[0].querySelector('svg')).not.toBeNull()
+    expect(buttons[0].getAttribute('aria-label')).toBe('裁剪')
+    expect(buttons[0].getAttribute('title')).toBe('裁剪')
 
-    // 还没裁剪过：src 与 originalSrc 不同说明裁剪过 —— 这里已设 originalSrc，
-    // 所以重置可点；把它当成「裁剪过」的反向用例需要原图缺失，见下一条。
-    expect(toolbar.querySelector('button[data-role="reset"]').disabled).toBe(false)
+    // 分隔线只有 1 条，位置在 align right 与 copyAnchorLink 之间（5→6 步距 49 的来源）
+    const dividers = Array.from(panel.children)
+      .filter((child) => child.classList.contains('lark-doc-image-toolbar-divider'))
+    expect(dividers).toHaveLength(1)
+    expect(dividers[0].previousElementSibling.getAttribute('data-name')).toBe('align right')
+    expect(dividers[0].nextElementSibling.getAttribute('data-name')).toBe('copyAnchorLink')
   })
 
-  it('没有原图映射时重置按钮禁用，工具条交互元素被 stopEvent 拦住', () => {
+  it('当前对齐态同时挂 .menu-item-actived 与 aria-pressed（视觉一条、读屏一条）', () => {
+    const { nodeView } = mount({ src: SRC })
+    nodeView.mountToolbar()
+    const aligned = () => Array.from(nodeView.dom.querySelectorAll('.lark-doc-image-toolbar button[data-align-value]'))
+    expect(aligned()).toHaveLength(3)
+    expect(aligned().filter((button) => button.classList.contains('menu-item-actived'))
+      .map((button) => button.getAttribute('data-align-value'))).toEqual(['center'])
+    expect(aligned().filter((button) => button.getAttribute('aria-pressed') === 'true')).toHaveLength(1)
+
+    // 换对齐：class 与 aria 一起跟着走
+    expect(nodeView.setAlign('right')).toBe(true)
+    expect(aligned().filter((button) => button.classList.contains('menu-item-actived'))
+      .map((button) => button.getAttribute('data-align-value'))).toEqual(['right'])
+    expect(aligned().filter((button) => button.getAttribute('aria-pressed') === 'true')
+      .map((button) => button.getAttribute('data-align-value'))).toEqual(['right'])
+  })
+
+  it('fixed 外层按图片矩形落位：块上方 8px、水平居中，贴顶时翻到块下方', () => {
+    const { nodeView } = mount({ src: SRC })
+    const img = nodeView.dom.querySelector('.lark-doc-image-img')
+    // jsdom 的 getBoundingClientRect 恒为 0，这里给一段真实几何
+    img.getBoundingClientRect = () => ({ left: 400, top: 300, width: 320, height: 200, right: 720, bottom: 500 })
+    nodeView.mountToolbar()
+    const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
+    // 居中：400 + 320/2 − 310/2 = 405；上方：300 − 42 − 8 = 250
+    expect(toolbar.style.left).toBe('405px')
+    expect(toolbar.style.top).toBe('250px')
+
+    // 贴视口顶（上方不足 8px）时翻到块下方，别被裁掉
+    img.getBoundingClientRect = () => ({ left: 0, top: 20, width: 320, height: 200, right: 320, bottom: 220 })
+    nodeView.unmountToolbar()
+    nodeView.mountToolbar()
+    const again = nodeView.dom.querySelector('.lark-doc-image-toolbar')
+    expect(again.style.left).toBe('8px')
+    expect(again.style.top).toBe('228px')
+  })
+
+  it('工具条交互元素被 stopEvent 拦住；没有 blockId 时评论项隐藏', () => {
     const { nodeView } = mount()
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
-    expect(toolbar.querySelector('button[data-role="reset"]').disabled).toBe(true)
+    // 评论要有 blockId 才能定位 thread，没有就整项隐藏（不是禁用）
+    expect(toolbar.querySelector('button[data-name="comment"]').hidden).toBe(true)
     // 工具条自己的事件不能漏进 ProseMirror 的 keymap。
     expect(nodeView.stopEvent({ target: toolbar.querySelector('button') })).toBe(true)
     expect(nodeView.stopEvent({ target: nodeView.dom.querySelector('.lark-doc-image-img') })).toBe(false)
     expect(nodeView.stopEvent(null)).toBe(false)
+  })
+
+  it('有 blockId 时评论项显示并抛出带 blockId 的事件', () => {
+    const { nodeView, editor } = mount({ src: SRC, blockId: 'blk-image-1' })
+    nodeView.mountToolbar()
+    const comment = nodeView.dom.querySelector('.lark-doc-image-toolbar button[data-name="comment"]')
+    expect(comment.hidden).toBe(false)
+    const received = []
+    editor.on('commentBlock', (payload) => received.push(payload))
+    comment.click()
+    expect(received).toHaveLength(1)
+    expect(received[0]).toMatchObject({ blockId: 'blk-image-1', type: 'image' })
   })
 
   it('hover 挂载、离开 160ms 后卸载（真实增删节点）', () => {
@@ -375,6 +437,19 @@ describe('P2-01 图片预览与销毁', () => {
     expect(shell.getAttribute('role')).toBe('dialog')
     expect(shell.querySelector('img').getAttribute('src')).toBe(SRC)
     expect(nodeView.dom.querySelector('.lark-doc-image-viewer-close')).not.toBeNull()
+
+    // 八层结构：遮罩 / 内容区 / 图片 / 工具条（prev · page · next · divider · more · scale · 菜单）
+    expect(shell.querySelector('.lark-doc-image-viewer-mask')).not.toBeNull()
+    expect(shell.querySelector('.lark-doc-image-viewer-content')).not.toBeNull()
+    const toolbar = shell.querySelector('.lark-doc-image-viewer-toolbar')
+    expect(toolbar.classList.contains('is-hidden')).toBe(false)
+    expect(toolbar.querySelector('.lark-doc-image-viewer-toolbar-list')).not.toBeNull()
+    expect(toolbar.querySelectorAll('.lark-doc-image-viewer-btn')).toHaveLength(3)
+    expect(toolbar.querySelector('.lark-doc-image-viewer-page')).not.toBeNull()
+    expect(toolbar.querySelector('.lark-doc-image-viewer-divider')).not.toBeNull()
+    expect(toolbar.querySelector('.lark-doc-image-viewer-scale')).not.toBeNull()
+    expect(toolbar.querySelector('.lark-doc-image-viewer-menu').hidden).toBe(true)
+
     nodeView.closePreview()
     expect(nodeView.dom.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
   })
