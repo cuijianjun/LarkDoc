@@ -22,6 +22,8 @@ export default {
     shareInviteQuery() { this.refreshOverlays() },
     shareLinkPerm() { this.refreshOverlays() },
     shareOrgName() { this.refreshOverlays() },
+    shareCollaborators: { deep: true, handler() { this.refreshOverlays() } },
+    shareDialogLinkPerm() { this.refreshOverlays() },
     session() { this.refreshOverlays() },
     exportOpen() { this.refreshOverlays() },
     exportFormat() { this.refreshOverlays() },

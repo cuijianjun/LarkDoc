@@ -7,8 +7,6 @@
   ".vue": [
     "components/lark-doc/LarkDocEditor.vue",
     "components/lark-doc/LarkDocWorkspace.vue",
-    "components/lark-doc/PermissionDialog.vue",
-    "components/lark-doc/SharePopover.vue",
     "components/lark-doc/TemplateLibrary.vue"
   ]
 }
