@@ -161,14 +161,12 @@
 // LarkDocEditor.vue：编辑器视图层；各 UI 子域由 mixin + 原生 DOM renderer 装配。
 // 阶段 2：直接使用 core Editor，Vue 仅保留宿主生命周期与业务状态。
 import { Editor } from '@tiptap/core'
-import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
-import { closeHistory } from '@tiptap/pm/history'
 import commandMenuUiMixin from './editor/commandMenuUiMixin' // 阶段 5 批次 3：命令菜单渲染层在 src/ui/commandMenu.js
 import reminderUiMixin from './editor/reminderUiMixin'
 import calendarSearchUiMixin from './editor/calendarSearchUiMixin'
 import { createLarkDocExtensions } from './extensions'
-import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
 // 阶段 2：图片 / 代码块 NodeView 都已下沉为 core 的纯 DOM 实现（`core/nodeviews/*.js`），
 // Vue 2 适配层不再注册任何 NodeView。这行 import 保留是为了把**注册表缝**拉起来 ——
@@ -221,7 +219,7 @@ import foldPersistMixin from './editor/foldPersistMixin'
 import collabMixin from './editor/collabMixin'
 // P6b：评论 / 历史版本 / 分享 / 导出 / 三态统一五条线的聚合挂载点（含浮层容器）。
 import p6bMixin from './editor/p6bMixin'
-import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
+import { createEditorController } from '../../editor/EditorController'
 // P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
 // 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
 import { IMAGE_REJECT, imageRejectMessage, isImageMime, nearestInsertPosition, sortImageFiles } from '../../core/media/image-insert'
@@ -282,7 +280,7 @@ export default {
     calendarEventRefetch: { type: Function, default: null },
   },
   data() { return {
-    editor: null, localTitle: this.title,
+    editor: null, editorController: null, localTitle: this.title,
     alignNames: { left: '左', center: '居中', right: '右', justify: '两端' }, alignGlyphs: { left: '≡', center: '☷', right: '≣', justify: '▤' },
     helpOpen: false, savedSelection: null,
     error: '', pendingHTML: null, htmlSeeded: false,
@@ -315,8 +313,8 @@ export default {
       return list
     },
     html: {
-      get() { return this.editor?.getHTML() || this.pendingHTML || this.value || '<p></p>' },
-      set(value) { this.htmlSeeded = true; if (this.editor) this.setContent(value); else this.pendingHTML = value },
+      get() { return this.editorController?.getHTML() || this.pendingHTML || this.value || '<p></p>' },
+      set(value) { this.htmlSeeded = true; if (this.editorController?.getEditor()) this.setContent(value); else this.pendingHTML = value },
     },
     effectiveReadonly() { return this.readonly || this.reading || this.slides || (this.session && typeof this.session.can === 'function' && !this.session.can('canEdit')) },
     hasTextSelection() { return !!this.editor && !this.editor.state.selection.empty },
@@ -333,14 +331,14 @@ export default {
     },
   },
   watch: {
-    title(value) { if (value !== this.localTitle) this.localTitle = value },
+    title(value) { if (value !== this.localTitle) { this.localTitle = value; this.editorController?.setTitle(value) } },
     value(value) { if (this.editor && value !== this.editor.getHTML()) { try { this.setContent(value) } catch (error) { this.error = error.message } } },
     maxLength() { if (this.editor) { this.editor.storage.characterCount.setLimit(this.effectiveMaxLength); this.refreshDocumentState() } },
     config: { deep: true, handler() {
       if (this.editor) this.editor.storage.characterCount.setLimit(this.effectiveMaxLength)
       this.$nextTick(() => this.refreshDocumentState())
     } },
-    effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
+    effectiveReadonly(value) { if (this.editor) { this.editorController?.setReadonly(value); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     // 弹层开合 / 打开即聚焦的 watch 已随原生化迁到 `dialogsUiMixin`（阶段 5 批次 4）：
     // 原生层渲染是同步的，不再需要 `$nextTick` + `querySelector` 那一拍。
   },
@@ -375,6 +373,23 @@ export default {
         extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
         onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.refreshToolbar(); this.refreshTableTools(); this.refreshColorPalette(); this.refreshCalloutTools(); this.refreshRevisionPanels(); this.refreshCalendarSearch(); this.refreshMentionPanel(); this.refreshIsvPanel(); if (this.blockMenuOpen) this.refreshBlockMenu(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => { this.onSelectionUpdate(); this.refreshToolbar(); this.refreshTableTools(); this.refreshColorPalette(); this.refreshCalloutTools(); this.refreshRevisionPanels(); this.refreshCalendarSearch(); this.refreshMentionPanel(); this.refreshIsvPanel() },
       })
+      this.editorController = createEditorController({
+        editor: this.editor,
+        session: this.session,
+        title: this.localTitle,
+        prepareHTML: (content, format) => this.prepareHTML(content, format),
+        getMaxLength: () => this.effectiveMaxLength,
+        getNetwork: () => createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null),
+        onBeforeContentReplace: () => {
+          if (typeof this.closeBlockMenu === 'function') this.closeBlockMenu()
+          this.handleRange = null
+          this._foldsReady = false
+        },
+        onAfterContentReplace: () => {
+          if (typeof this.restoreFolds === 'function') this.restoreFolds()
+          this.savedSelection = null
+        },
+      })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
       // 阶段 5 批次 1：气泡条已原生化（`src/ui/bubbleBar.js`），编辑器就绪后挂一次。
@@ -406,9 +421,16 @@ export default {
   beforeDestroy() {
     // 原生挂载后 ProseMirror 的 DOM 挂在 Vue 容器里：必须先于 Vue 卸载子树销毁编辑器
     // （EditorContent 时代的 beforeDestroy 做的就是这件事——把 PM 的 DOM 搬出去再销毁）。
-    if (this.session && this.editor) this.session.detachEditor(this.editor)
-    this.editor?.destroy()
-    this.editor = null
+    if (this.editorController) {
+      this.editorController.destroy(() => {
+        this.editor = null
+      })
+      this.editorController = null
+    } else {
+      if (this.session && this.editor) this.session.detachEditor(this.editor)
+      this.editor?.destroy()
+      this.editor = null
+    }
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
     this.destroyBubbleBar(); this.destroyHeadingNumberMenu(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyOverlays(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette(); this.destroyCalloutTools(); this.destroyRevisionPanels(); this.destroyCalendarSearch(); this.destroyMentionPanel(); this.destroyIsvPanel(); this.destroySearchPanel(); this.destroyReminder()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
@@ -416,8 +438,8 @@ export default {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
     toolbarEnabled(name) { return this.larkDocConfig.toolbar[name] !== false && this.featureEnabled(name) },
     isBlockActionEnabled(id) { return isBlockActionEnabled(this.larkDocConfig, id) },
-    getEditor() { return this.editor }, getHTML() { return this.editor?.getHTML() || '' }, getJSON() { return this.editor ? aggregateHeadingContainers(restoreUnknownBlocks(this.editor.getJSON())) : null }, getText() { return this.editor?.getText() || '' },
-    focus() { this.editor?.commands.focus() },
+    getEditor() { return this.editor }, getHTML() { return this.editorController ? this.editorController.getHTML() : '' }, getJSON() { return this.editorController?.getJSON() || null }, getText() { return this.editorController ? this.editorController.getText() : '' },
+    focus() { if (this.editorController) this.editorController.focus() },
     /**
      * 统一内容准备：旧数据（Vditor HTML）归一化 + 安全清洗。
      * 初始内容与 setContent 都走这里，避免两条路径行为不一致。
@@ -440,47 +462,9 @@ export default {
       return sanitizeHTML(legacy.html)
     },
     setContent(content, options = {}) {
-      if (!this.editor) return false
-      const schema = this.editor.schema
-      let json
-      if (typeof content === 'string') {
-        const safe = this.prepareHTML(content, options.format)
-        const container = document.createElement('div'); container.innerHTML = safe
-        json = ProseMirrorDOMParser.fromSchema(schema).parse(container).toJSON()
-      } else json = validateDocument(content, schema)
-      // 离线策略在这里统一生效：外链图片降级为占位，避免渲染时发起外部请求。
-      // 复用扩展里那一个实例（装配层创建，见 extensions.js）—— 旧宿主会绕过 Vue
-      // 计算属性直接调用本方法，没有扩展句柄时才按默认策略现造。
-      const network = this.editor.storage.larkDoc?.network || createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null)
-      json = network.applyDocument(json)
-      const next = schema.nodeFromJSON(validateDocument(json, schema))
-      // Keep this method usable by the legacy imperative API and small host-side
-      // harnesses that call it without Vue's computed properties.
-      const maxLength = this.effectiveMaxLength !== undefined
-        ? this.effectiveMaxLength
-        : Math.max(0, Number(this.maxLength) || 0)
-      if (maxLength > 0 && this.editor.storage.characterCount.characters({ node: next }) > maxLength) throw new Error(`正文不能超过 ${maxLength} 字`)
-      if (next.eq(this.editor.state.doc)) return false
-      // Content replacement invalidates the transient handle/menu target.
-      if (typeof this.closeBlockMenu === 'function') this.closeBlockMenu()
-      this.handleRange = null
-      // 内容替换期间先关闭折叠写回：reset → 恢复之间不能把偏好写成空数组。
-      this._foldsReady = false
-      // 使用普通事务替换正文，让本地历史可撤销模板、导入与快照恢复。
-      const tr = this.editor.state.tr.replaceWith(0, this.editor.state.doc.content.size, next.content)
-      this.editor.view.dispatch(setTransactionMetadata(tr, { origin: TRANSACTION_ORIGINS.HOST }))
-      if (this.editor.commands && typeof this.editor.commands.resetLarkDocFolds === 'function') this.editor.commands.resetLarkDocFolds()
-      // 老文档（或外部 JSON）可能没有 blockId：先补号再按 id 恢复折叠偏好。
-      if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
-      // 老数据或外部 JSON 的缩进可能超过飞书上限（5 级），挂载/替换正文后一次性压回。
-      if (this.editor.commands && typeof this.editor.commands.normalizeLarkDocIndents === 'function') this.editor.commands.normalizeLarkDocIndents()
-      // 内容替换后按持久化键恢复折叠偏好（加载草稿 / 恢复快照共用此路径）。
-      if (typeof this.restoreFolds === 'function') this.restoreFolds()
-      this.savedSelection = null
-      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
-      return true
+      return this.editorController ? this.editorController.setContent(content, options) : false
     },
-    updateTitle(value) { if (this.effectiveReadonly) return; this.localTitle = value; this.$emit('update:title', value) },
+    updateTitle(value) { if (this.effectiveReadonly) return; this.localTitle = value; this.editorController?.setTitle(value); this.$emit('update:title', value) },
     onUpdate(transaction) {
       this.scheduleDocumentState()
       // 补 blockId 的事务只改属性、不改正文：不能当成一次内容修改冒泡给宿主，
