@@ -224,10 +224,10 @@ export class LarkDoc {
         chunked: uploader.chunked,
         chunkSize: uploader.chunkSize,
         getDocumentId: () => (source.documentId == null ? null : String(source.documentId)),
-      })
+      }).upload
     }
     if (typeof source.uploadImage === 'function') {
-      return createUploadProvider({ upload: source.uploadImage, limits: null, getDocumentId: () => (source.documentId == null ? null : String(source.documentId)) })
+      return createUploadProvider({ upload: source.uploadImage, limits: null, getDocumentId: () => (source.documentId == null ? null : String(source.documentId)) }).upload
     }
     return null
   }
