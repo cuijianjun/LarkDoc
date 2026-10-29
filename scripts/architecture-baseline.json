@@ -7,7 +7,6 @@
   ".vue": [
     "components/lark-doc/CommandMenu.vue",
     "components/lark-doc/CommentPanel.vue",
-    "components/lark-doc/editor/BlockHandleMenu.vue",
     "components/lark-doc/editor/CalendarSearchPanel.vue",
     "components/lark-doc/editor/CalloutTools.vue",
     "components/lark-doc/editor/ColorPalette.vue",

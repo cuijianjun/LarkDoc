@@ -1,7 +1,7 @@
 /**
  * 区块句柄 + 块菜单 —— 原生 DOM 版（`src/ui/` 积木 · 阶段 5 批次 3）。
  *
- * 与 `editor/BlockHandleMenu.vue` 是同一个 UI 的两套渲染（并存期结束后 SFC 删除）。
+ * 原 SFC `editor/BlockHandleMenu.vue` 已在阶段 5 批次 3 删除，这里是唯一实现。
  * **结构即契约**：`scripts/verify-browser-block-menu.js` 37 条断言在逐字段量这里
  * 产出的 DOM —— 句柄盒模型与垂直对齐、遮罩（不在本模块）、块菜单段序、
  * 子菜单几何、表格分支、空段落分支，全都不能凭手感改。
@@ -66,6 +66,11 @@ export function createBlockHandle(options = {}) {
     canDuplicate: false,
     canAddBelow: false,
     colors: [],
+    // 三个菜单容器的定位 style（`position: absolute` 的块菜单 + 两个 `fixed` 子菜单）。
+    // 不进 state 就会永远停在 (0,0)：它们是 data 赋值，原生层不感知。
+    menuStyle: {},
+    alignMenuStyle: {},
+    colorMenuStyle: {},
     align: { value: 'left', indent: 0, canIncrease: false },
     alignGlyphs: {},
     alignNames: {},
@@ -446,6 +451,9 @@ export function createBlockHandle(options = {}) {
   function renderMenu() {
     const features = state.features || {}
     const blockStyle = features.blockStyle !== false
+    applyStyle(menuEl, state.menuStyle)
+    applyStyle(alignMenu, state.alignMenuStyle)
+    applyStyle(colorMenu, state.colorMenuStyle)
     setAttr(alignTrigger, 'aria-expanded', state.alignOpen ? 'true' : 'false')
     setAttr(colorTrigger, 'aria-expanded', state.colorOpen ? 'true' : 'false')
 

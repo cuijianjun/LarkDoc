@@ -247,11 +247,9 @@ check('Changing the active handle target closes a stale block menu', () => {
 
 check('Empty block plus opens the insert menu while six-dot handles open block actions', () => {
   const component = loadComponent('LarkDocEditor.vue')
-  // P0-03 拆分后空段落加号与六点句柄的模板绑定迁入 BlockHandleMenu.vue，静态断言随之扩源；
-  // 子组件模板事件绑定带 ed. 前缀，这里统一归一化后再做字符串断言。
-  const source = ['LarkDocEditor.vue', 'editor/BlockHandleMenu.vue']
-    .map((name) => fs.readFileSync(path.join(root, name), 'utf8')).join('\n')
-    .replace(/@([\w.]+=")ed\./g, '@$1')
+  // 阶段 5 批次 3：句柄/块菜单的渲染层已搬到 `src/ui/blockHandle.js`（纯 DOM），
+  // Vue 模板绑定不复存在 —— 静态断言改为核对「监听器接线」这一等价形式。
+  const handleSource = fs.readFileSync(path.join(root, '../../ui/blockHandle.js'), 'utf8')
   let insertCalls = 0
   let blockMenuCloses = 0
   let repositionCalls = 0
@@ -287,8 +285,9 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   assert.deepStrictEqual(emptyParagraphPlus.menuAnchor, { left: 50, top: 60, bottom: 80 }, 'the insert menu anchor follows the active empty paragraph')
   assert.strictEqual(repositionCalls, 1, 'retargeting the insert menu recalculates its position')
   assert.strictEqual(blockMenuCloses, 2, 'reusing the insertion menu also clears any stale block menu')
-  assert(source.includes('@mouseenter="openEmptyBlockInsertMenu"') && source.includes('@click="openEmptyBlockInsertMenu"'), 'the empty plus must route hover and click to the insertion menu')
-  assert(source.includes('@mouseenter="openBlockMenuOnHover"') && source.includes('@focus="openBlockMenuOnHover"'), 'the six-dot handle opens its separate block menu on hover or keyboard focus')
+  const listensTo = (eventName, method) => new RegExp(`addEventListener\\('${eventName}',[^\\n]*call\\('${method}'`).test(handleSource)
+  assert(listensTo('mouseenter', 'openEmptyBlockInsertMenu') && listensTo('click', 'openEmptyBlockInsertMenu'), 'the empty plus must route hover and click to the insertion menu')
+  assert(listensTo('mouseenter', 'openBlockMenuOnHover') && listensTo('focus', 'openBlockMenuOnHover'), 'the six-dot handle opens its separate block menu on hover or keyboard focus')
 
   let hoverMenuCalls = 0
   const wrapperHandle = {

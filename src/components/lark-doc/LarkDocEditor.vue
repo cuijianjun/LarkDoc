@@ -69,7 +69,7 @@
           @pointermove="onPaperPointerMove"
           @pointerdown="onReminderChipClick"
         >
-          <BlockHandleMenu :ed="self" /><div
+          <div ref="blockHandleHost" /><div
             v-if="dropPosition !== null"
             class="lark-doc-drop-line"
             :style="{ top: `${dropLineTop}px` }"
@@ -184,7 +184,6 @@ import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，�
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
-import BlockHandleMenu from './editor/BlockHandleMenu.vue'
 import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import ColorPalette from './editor/ColorPalette.vue'
@@ -200,8 +199,7 @@ import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, col
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
 // 阶段 2：图片 / 代码块 NodeView 都已下沉为 core 的纯 DOM 实现（`core/nodeviews/*.js`），
 // Vue 2 适配层不再注册任何 NodeView。这行 import 保留是为了把**注册表缝**拉起来 ——
-// 宿主仍可用 setNodeView(name, renderer) 覆盖 core 默认实现；Task 6 拆三端适配时会把
-// registerVue2NodeViews() 的调用点挪到宿主入口。
+// 宿主仍可用 setNodeView(name, renderer) 覆盖 core 默认实现；Task 6 拆三端适配时会挪到宿主入口。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
 // P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
@@ -213,6 +211,7 @@ import toolbarCollapseMixin from './editor/toolbarCollapseMixin'
 import toolbarUiMixin from './editor/toolbarUiMixin'
 import blockHandleMixin from './editor/blockHandleMixin'
 import blockMenuMixin from './editor/blockMenuMixin'
+import blockHandleUiMixin from './editor/blockHandleUiMixin' // 阶段 5 批次 3：句柄/块菜单渲染层在 src/ui/blockHandle.js
 import blockIndentMixin from './editor/blockIndentMixin'
 import overlayDismissMixin from './editor/overlayDismissMixin'
 import bubbleMenuMixin from './editor/bubbleMenuMixin'
@@ -254,8 +253,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { CommandMenu, LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { CommandMenu, LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -383,7 +382,7 @@ export default {
         element: this.$refs.editorEl,
         content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
         extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.refreshToolbar(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => { this.onSelectionUpdate(); this.refreshToolbar() },
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.refreshToolbar(); if (this.blockMenuOpen) this.refreshBlockMenu(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => { this.onSelectionUpdate(); this.refreshToolbar() },
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
@@ -391,6 +390,7 @@ export default {
       this.mountBubbleBar()
       // 阶段 5 批次 2：工具栏已原生化（`src/ui/toolbar.js`），同样在编辑器就绪后挂一次。
       this.mountToolbarBar()
+      this.mountBlockHandle() // 阶段 5 批次 3：块句柄/块菜单原生化，依赖 editor 判可见性。
       // 首次挂载先补齐块的稳定 id：折叠偏好、锚点都按 id 引用块；没 id 就恢复不出折叠位。
       if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
       // 老数据或外部 JSON 的缩进可能超过飞书上限（5 级），挂载/替换正文后一次性压回。
@@ -415,8 +415,8 @@ export default {
     if (this.session && this.editor) this.session.detachEditor(this.editor)
     this.editor?.destroy()
     this.editor = null
-    // 原生气泡条持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 里会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar()
+    // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
+    this.destroyBubbleBar(); this.destroyBlockHandle()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },

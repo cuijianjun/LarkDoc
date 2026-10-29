@@ -27,6 +27,17 @@ export default {
     contentTheme() { this.refreshBlockMenu() },
     alignNames: { deep: true, handler() { this.refreshBlockMenu() } },
     alignGlyphs: { deep: true, handler() { this.refreshBlockMenu() } },
+    // —— 开合与定位：SFC 时代这些是模板插值，Vue 渲染 watcher 自动跟进；原生层必须显式推。
+    // 时序也与 SFC 等价：watcher 在 DOM flush 前跑（菜单因此入 DOM），mixin 里
+    // `positionBlockMenu` 包的 `$nextTick` 回调晚于 flush，量的就是已布局好的盒子。
+    blockMenuOpen() { this.refreshBlockMenu() },
+    blockAlignMenuOpen() { this.refreshBlockMenu() },
+    blockColorMenuOpen() { this.refreshBlockMenu() },
+    blockMenuStyle() { this.refreshBlockMenu() },
+    blockAlignMenuStyle() { this.refreshBlockMenu() },
+    blockColorMenuStyle() { this.refreshBlockMenu() },
+    // 句柄坐标：`blockHandleStyle` 是 computed，只有 `blockHandlePosition` 会变。
+    blockHandlePosition: { deep: true, handler() { this.refreshBlockHandle() } },
   },
   methods: {
     /**
@@ -132,6 +143,9 @@ export default {
         tableHeader: this.handleTableHeaderState(),
         canDuplicate: this.isBlockActionEnabled('duplicate'),
         canAddBelow: this.isBlockActionEnabled('addBelow'),
+        menuStyle: this.blockMenuStyle,
+        alignMenuStyle: this.blockAlignMenuStyle,
+        colorMenuStyle: this.blockColorMenuStyle,
         colors: this.colorPaletteOptions.map((color) => ({ value: color.value, label: color.label })),
         align: {
           value: this.blockAlignValue(),
