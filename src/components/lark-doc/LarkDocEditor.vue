@@ -148,31 +148,23 @@
         />
       </button>
     </p>
-    <!-- 标题编号菜单（阶段 5 原生化）：DOM 由 src/ui/headingNumberMenu.js 建。 -->
     <div ref="headingNumberMenuHost" />
     <div ref="overlayHost" />
-    <!-- 面板 / 宿主弹窗挂载点（4b）：DOM 由 src/ui/panels.js 建。与原生浮层同层是硬要求（都是 fixed）。 -->
     <div ref="panelHost" />
   </section>
 </template>
 
 <script>
-// LarkDocEditor.vue —— 编辑器视图层：模板、props、生命周期与内容管理核心方法。
-// 各 UI 子域拆分到 ./editor/ 下的 mixin（视图模式/命令菜单/表格工具/区块句柄/区块菜单/
-// 气泡菜单/高亮块与颜色盘/工具栏菜单），经 Vue 2 选项合并后仍以 this.xxx 供模板与生命周期调用。
-// 阶段 2：直接用 core 的 Editor —— `@tiptap/vue-2` 的 Editor 只多一个 contentComponent
-// 字段（仅 Vue NodeView 读取），代码块改成 core 原生 NodeView 后已无人使用；挂载改为把容器元素直接交给 core。
+// LarkDocEditor.vue：编辑器视图层；各 UI 子域由 mixin + 原生 DOM renderer 装配。
+// 阶段 2：直接使用 core Editor，Vue 仅保留宿主生命周期与业务状态。
 import { Editor } from '@tiptap/core'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import commandMenuUiMixin from './editor/commandMenuUiMixin' // 阶段 5 批次 3：命令菜单渲染层在 src/ui/commandMenu.js
 import LarkDocIcon from './LarkDocIcon.vue'
-// P4-02a：日期提醒 DOM 渲染层在 src/ui/reminder.js。
 import reminderUiMixin from './editor/reminderUiMixin'
-// P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
 import calendarSearchUiMixin from './editor/calendarSearchUiMixin'
-// P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
 import { createLarkDocExtensions } from './extensions'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
@@ -184,7 +176,6 @@ import viewModesMixin from './editor/viewModesMixin'
 import stageUiMixin from './editor/stageUiMixin'
 import tableToolsUiMixin from './editor/tableToolsUiMixin'
 import helpFabUiMixin from './editor/helpFabUiMixin'
-// 5G：颜色面板（字色 / 高亮块两态）渲染层在 src/ui/colorPalette.js。
 import colorPaletteUiMixin from './editor/colorPaletteUiMixin'
 import calloutToolsUiMixin from './editor/calloutToolsUiMixin'
 import revisionUiMixin from './editor/revisionUiMixin'
@@ -197,20 +188,18 @@ import toolbarCollapseMixin from './editor/toolbarCollapseMixin'
 import toolbarUiMixin from './editor/toolbarUiMixin'
 import blockHandleMixin from './editor/blockHandleMixin'
 import blockMenuMixin from './editor/blockMenuMixin'
-import blockHandleUiMixin from './editor/blockHandleUiMixin' // 阶段 5 批次 3：句柄/块菜单渲染层在 src/ui/blockHandle.js
+import blockHandleUiMixin from './editor/blockHandleUiMixin'
 import blockIndentMixin from './editor/blockIndentMixin'
 import overlayDismissMixin from './editor/overlayDismissMixin'
 import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
-import dialogsUiMixin from './editor/dialogsUiMixin' // 阶段 5 批次 4：弹窗/抽屉/内嵌浮层渲染层在 src/ui/dialogs.js
-// 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板渲染层在 src/ui/panels.js。
+import dialogsUiMixin from './editor/dialogsUiMixin'
 import panelsUiMixin from './editor/panelsUiMixin'
 import overlaysUiMixin from './editor/overlaysUiMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
 import headingNumberMenuUiMixin from './editor/headingNumberMenuUiMixin'
-// P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
-// 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
+// 提及面板的状态与动作全在 mixin，原生层只负责渲染。
 import mentionMixin from './editor/mentionMixin'
 import mentionUiMixin from './editor/mentionUiMixin'
 import isvPanelUiMixin from './editor/isvPanelUiMixin'
