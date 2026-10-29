@@ -967,7 +967,7 @@
 .lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-frame { justify-content: flex-start; }
 .lark-doc .lark-doc-image[data-align="center"] .lark-doc-image-frame { justify-content: center; }
 .lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-frame { justify-content: flex-end; }
-.lark-doc .lark-doc-image-img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; filter: brightness(var(--ld-media-dim)); }
+.lark-doc .lark-doc-image-img, .lark-doc .lark-doc-image-frame img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; filter: brightness(var(--ld-media-dim)); }
 /* renderHTML 退化路径（无 shell）：自己再兜一次「栏宽 − 20」，并按 align 摆位。 */
 .lark-doc .lark-doc-image > .lark-doc-image-img { max-width: calc(100% - 20px); margin-left: auto; margin-right: auto; }
 .lark-doc .lark-doc-image[data-align="left"] > .lark-doc-image-img { margin-left: 0; }

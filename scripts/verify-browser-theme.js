@@ -64,7 +64,7 @@ const READ_PAGE = `(() => {
     tdBorder: cs('.ProseMirror td', 'borderTopColor'),
     thBg: cs('.ProseMirror th', 'backgroundColor'),
     tdBg: cs('.ProseMirror td', 'backgroundColor'),
-    imgFilter: cs('.lark-doc-image-frame img', 'filter'),
+    imgFilter: cs('.lark-doc-image-frame img, .lark-doc-image-img', 'filter'),
     paperBg: cs('.lark-doc-paper', 'backgroundColor'),
     textColor: cs('.ProseMirror p', 'color'),
     mediaDim: root ? getComputedStyle(root).getPropertyValue('--ld-media-dim').trim() : null,
@@ -138,7 +138,7 @@ async function main() {
     await page.evaluate(() => {
       document.querySelector('.lark-doc-paper').insertAdjacentHTML('beforeend',
         '<figure class="lark-doc-image" data-align="center"><div class="lark-doc-image-frame">' +
-        '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="t"></div></figure>')
+        '<img class="lark-doc-image-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="t"></div></figure>')
       const editor = window.__larkDoc.getEditor()
       if (editor.commands.insertTable) editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: true })
     })

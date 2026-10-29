@@ -247,7 +247,7 @@
      卡底去绿转中性，免得深灰文档里冒出一坨墨绿。 */
   /* ★ 块色层必须比页面底**亮**一档（11 §4.8 结论②）：纸张已是 #17181A，
      代码块取 #292929（同 callout / 图表块），此前 #17181A 与纸同色、块边界消失。 */
-  --ld-code-bg: #292929;                       /* A：11 §4.8 代码块 #F5F6F7 → #292929 */
+  --ld-code-bg: #292929;                       /* A：11 §4.8 代码块卡片比正文纸张亮一档 */
   --ld-code-border: #5F5F5F;                   /* A：11 §4.3 content 描边档 */
   --ld-code-toolbar-bg: rgba(207, 207, 207, 0.08); /* B */
   --ld-code-toolbar-text: #F0F0F0;             /* A */
@@ -268,7 +268,7 @@
   --ld-diagram-note: rgba(207, 207, 207, 0.12);    /* B：备注块底 */
 
   /* ---- 图表卡片外壳（T3-02）：跟着正文纸张走 ---- */
-  --ld-diagram-card-bg: var(--ld-bg-content);      /* 转发：改动只留 --ld-bg-content 一处真相 */
+  --ld-diagram-card-bg: var(--ld-bg-content);      /* 转发：图表卡片跟随正文纸张 */
   --ld-diagram-preview-bg: var(--ld-bg-content);
   --ld-diagram-source-bg: var(--ld-bg-content);
   --ld-diagram-border: #5F5F5F;                    /* A */
