@@ -45,12 +45,19 @@ module.exports = {
     reporters: ['dot'],
     /**
      * 并发上界：默认按 CPU 数起 fork，每个 fork 都要重新 init 环境并 import
-     * 全部依赖（jsdom 用例单个 ~7s 启动）。文件数一多就会把机器打满，
-     * 出现「Timeout waiting for worker to respond」——不是用例失败，是
-     * worker 起不来，表现成整个门禁假红。限制到 4 个后总时长仍在 1 分钟内，
-     * 但不会再因为并发数随测试文件增长而抖。
+     * 全部依赖。文件数一多就会把机器打满，出现「Timeout waiting for worker to respond」
+     * ——不是用例失败，是 **worker 起不来，那批测试文件根本没被执行**。
+     *
+     * 这不是理论风险，实测过：16 核 / load≈11 的机器上 `maxWorkers: 4` 跑一次，
+     * 结果是「57 个文件通过 + 25 个 worker 启动超时」，而这 25 个文件**一条用例都没跑**，
+     * vitest 仍打印「Test Files 57 passed」，只在末尾记 25 条 unhandled error 并以 1 退出。
+     * 换成 2 之后同一份代码 82 个文件 / 1983 条用例全过、0 error、退出码 0。
+     *
+     * 也就是说 2 不是「为了变绿而降并发」，是唯一能让整套用例真的跑完的并发数；
+     * 4 看上去更快（717s vs 838s），但那 717s 里少了 30% 的文件。
+     * 调大之前请先确认整套 82 个文件都在输出里 —— 少跑比跑得慢危险得多。
      */
-    maxWorkers: 4,
+    maxWorkers: 2,
     minWorkers: 1,
   },
 }
