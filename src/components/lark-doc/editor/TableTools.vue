@@ -38,7 +38,7 @@
 // TableTools —— 从 LarkDocEditor.vue 拆出的表格工具条（P0-03 段 2/8 附属根）。
 // 选中表格时出现在正文上方；状态与动作全部住在 tableToolsMixin，经实例 prop `ed` 引用。
 import LarkDocSelect from '../LarkDocSelect.vue'
-import { DEFAULT_CELL_BACKGROUND } from './palette'
+import { DEFAULT_CELL_BACKGROUND } from '../../../ui/palette'
 
 export default {
   name: 'LarkDocTableTools',

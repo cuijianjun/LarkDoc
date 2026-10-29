@@ -16,7 +16,7 @@
  *
  * 白名单：
  *   1. vendor 目录（第三方源码不做要求）；
- *   2. 色板常量表 `editor/palette.js` —— 全库唯一允许写字面 hex 的文件。
+ *   2. 色板常量表 `ui/palette.js` —— 全库唯一允许写字面 hex 的文件。
  *      色板值属「用户内容色」（写进文档 inline style，随文档走，不随主题变）
  *      与「多色图标资源」，不是 UI 皮肤色，收不进 CSS 变量（11 §V4 / 12 T0-05）。
  *   3. 语法配色表 `styles/code-block.css` —— 代码高亮的 hljs-* token 色，
@@ -33,7 +33,7 @@ const shouldUpdate = process.argv.includes('--update')
 const EXTS = ['.js', '.vue', '.css', '.scss']
 const WHITELIST_PARTS = [`${path.sep}vendor${path.sep}`]
 // 色板常量表：字面 hex 的唯一合法居所（见文件头白名单说明）。
-const PALETTE_FILES = [`${path.sep}editor${path.sep}palette.js`]
+const PALETTE_FILES = [`${path.sep}ui${path.sep}palette.js`]
 // 语法配色表：代码高亮的 token 色（hljs-*）。与色板同理属「内容色」而非「UI 皮肤色」——
 // 06 §6.5.2 实测「代码块是常暗卡片，换主题只动卡片 chrome 与卡底、token 色两档不变」，
 // 因此刻意写死、不落 CSS 变量（落变量反而会让「换肤不换码色」的实测口径失效）。

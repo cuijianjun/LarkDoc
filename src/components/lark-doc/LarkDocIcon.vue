@@ -4,7 +4,7 @@
  * 从 ./icons.js 取 SVG 字符串渲染为 inline span，颜色由 CSS currentColor 控制，
  * 激活态（aria-pressed / aria-expanded）自动跟随按钮变色，无需多套图标。
  */
-import { ICONS } from './editor/icons'
+import { ICONS } from '../../ui/icons'
 
 export default {
   name: 'LarkDocIcon',

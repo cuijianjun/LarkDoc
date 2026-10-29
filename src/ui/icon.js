@@ -12,7 +12,7 @@
  * 等菜单那一批也原生化之后，把这两个文件整体挪进 `src/ui/`，本模块的
  * 相对路径就能改成同目录引用。
  */
-import { ICONS } from '../components/lark-doc/editor/icons'
+import { ICONS } from './icons'
 
 /**
  * @param {string} name `icons.js` 里的图标键

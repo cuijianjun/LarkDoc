@@ -1,5 +1,5 @@
 // 使用真实 HTML 验证旧公告加载；示例图片为内嵌数据，不依赖外部资源或后端。
-import { SAMPLE_CONTENT_BRAND } from './editor/palette'
+import { SAMPLE_CONTENT_BRAND } from '../../ui/palette'
 
 const sampleImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAIUlEQVR42mNg2NEORPq539AQAwGJ15/ew9H/Q75AREUJADolXv0Q9HhPAAAAAElFTkSuQmCC'
 

@@ -12,7 +12,7 @@ import {
   marks, fontFamilyOptions, fontSizeOptions, lineHeightOptions,
   widthModeOptions, cellTextAlignOptions, cellVerticalAlignOptions,
 } from './constants'
-import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from './palette'
+import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from '../../../ui/palette'
 
 export default {
   data() { return {

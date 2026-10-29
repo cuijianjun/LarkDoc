@@ -13,7 +13,7 @@ import {
   DEFAULT_TEXT_COLOR,
   calloutColorOptions,
   calloutDefaults,
-} from './palette'
+} from '../../../ui/palette'
 // 正文轨主题广播（T3-01）：色板是整组替换的两套色，必须跟着档位重算。
 import { readContentTheme, subscribeContentTheme } from '../themeSignal'
 // 表情面板全量（P4-03）：字形 / 中文名 / 9 组分类 / 搜索全部来自 core 的 catalog，

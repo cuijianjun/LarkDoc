@@ -857,7 +857,7 @@ import { LarkDoc } from 'lark-doc/lite'
 | 批次 | 状态 | 断言 | 原生实现落点 | commit |
 |---|---|---|---|---|
 | 1 Tooltip / 气泡条 | ✅ 完成 | `scripts/verify-browser-bubble.js` 44/44、`verify-browser-heading-menu.js` 16/16 | `src/ui/bubbleBar.js`、`src/ui/headingMenu.js`、`src/ui/icon.js`、`src/ui/menuLayout.js`；`editor/BubbleBar.vue` 已删，`bubbleMenuMixin.js` 退化为「算 state → `_bubbleUi.update()`」 | 见 `git log --grep '阶段 5 批次 1'` |
-| 2 工具栏 | ⬜ 未开始 | 待补（现有工具栏断言分散在 icon-align / heading-menu 等套件） | — | — |
+| 2 工具栏 | ✅ 完成 | `scripts/verify-browser-toolbar.js` 51/51 | `src/ui/toolbar.js`、`src/ui/topBar.js`、`src/ui/select.js`、`src/ui/dom.js`；`editor/ToolbarBar.vue`、`editor/TopBar.vue` 已删，`editor/toolbarUiMixin.js` 退化为「算 state → `update()`」 | `ff4f7aa`（断言 `d4c1b07`），tag `stage/5-B` |
 | 3 各级菜单 | ⬜ 未开始 | 待补 | — | — |
 | 4 弹窗 / 面板 | ⬜ 未开始 | 待补 | — | — |
 | 5 主壳 | ⬜ 未开始 | 待补 | — | — |
