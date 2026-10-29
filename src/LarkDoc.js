@@ -3,7 +3,7 @@
  *
  * 这一层不实现任何编辑器逻辑，只做五件事：
  * 1. 把 AiEditor 风格的扁平配置翻译成内部的 `createLarkDocConfig` 结构；
- * 2. 通过 mount/ 渲染适配层挂载 Workspace（默认 Vue 2，可替换），本文件不 import 任何 UI 框架；
+ * 2. 通过 mount/ 渲染适配层挂载 Workspace（默认 Vue 2；传 renderer: 'dom' 可选择迁移期 DOM renderer），本文件不 import 任何 UI 框架；
  * 3. 把实例方法转发给 Workspace / Editor；
  * 4. 解析并透传协同 / 权限会话（session 或 providers 快捷项）；
  * 5. 按固定顺序销毁，保证 AI 流、会话和监听器都被释放。
@@ -89,7 +89,7 @@ export class LarkDoc {
     this._ownsSession = false
     this._session = this._resolveSession(source)
 
-    this._renderer = createRenderer()
+    this._renderer = createRenderer({ renderer: source.renderer })
     this._handle = this._renderer.mount({
       element: this.element,
       props: {

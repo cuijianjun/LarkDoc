@@ -20,17 +20,20 @@
  * 契约由 `npm run check:architecture` 的 R3 规则运行时锁死：缺一个动作、或多一个
  * 函数型成员，校验链立刻红。
  *
- * 目前只提供 Vue 2 实现（vueRenderer）；将来换成原生 DOM 渲染器时，只要实现同一份
- * 契约并在 createRenderer 里切换，LarkDoc 与 Web Component 外壳都无需改动。
+ * 目前默认仍是 Vue 2 实现（vueRenderer）；另有显式 opt-in 的迁移期 DOM 实现
+ *（domRenderer）。DOM 实现尚未覆盖 Vue 编辑器的全部 UI 状态机，因此不会切默认。
  * 上层（LarkDoc / web-component）禁止 import 任何框架，只能 import 本目录。
  */
 import { createVue2Renderer } from './vueRenderer'
+import { createDomRenderer } from './domRenderer'
 
 let override = null
 
-/** 当前生效的渲染适配器。默认 Vue 2；可通过 setRenderer 替换以实现去框架化。 */
-export function createRenderer() {
-  return override ? override() : createVue2Renderer()
+/** 当前生效的渲染适配器。默认 Vue 2；DOM 版必须显式 opt-in。 */
+export function createRenderer(options = {}) {
+  if (override) return override()
+  if (options && options.renderer === 'dom') return createDomRenderer()
+  return createVue2Renderer()
 }
 
 /**
@@ -41,5 +44,5 @@ export function setRenderer(factory) {
   override = typeof factory === 'function' ? factory : null
 }
 
-export { createVue2Renderer }
+export { createVue2Renderer, createDomRenderer }
 export default createRenderer
