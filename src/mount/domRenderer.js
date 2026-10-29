@@ -7,7 +7,7 @@
  * 下创建等价的 `.lark-doc` / 正文纸张 / Tiptap 编辑器根节点，并复用两个 controller
  * 的文档、会话、持久化与 AI 业务入口。完整工具栏、浮层和模式状态尚未迁移到本文件。
  *
- * 只有显式选择 `renderer: 'dom'` 时才会使用本实现；默认 renderer 仍是 Vue 2。
+ * 只有宿主显式注入本实现时才会使用；默认 renderer 仍是 Vue 2。
  */
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../components/lark-doc/extensions'
