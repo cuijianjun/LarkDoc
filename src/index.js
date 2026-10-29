@@ -27,6 +27,7 @@ import LarkDocWorkspace from './components/lark-doc/LarkDocWorkspace.vue'
 // LarkDocEditor，单独导出给宿主挂在自己的「新建」入口里。
 import LarkDocTemplateLibrary from './components/lark-doc/TemplateLibrary.vue'
 import * as templateLibrary from './core/templates/library'
+import { createTemplateLibrary } from './ui/templateLibrary'
 import LarkDoc, { createLarkDoc } from './LarkDoc'
 import { createWorkspace } from './components/lark-doc/workspace'
 import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
@@ -70,6 +71,7 @@ export {
   normalizeVditorHtml,
   TEMPLATES,
   templateLibrary,
+  createTemplateLibrary,
   documentOperations,
   mockAI,
   ai,

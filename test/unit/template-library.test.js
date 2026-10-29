@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 /**
  * P5-07 文档模板库（02 §28）。
  *
@@ -23,6 +25,7 @@ import {
   TEMPLATE_SIDEBAR, TEMPLATE_STABLE_CATEGORIES, TEMPLATE_TEXT,
   buildCategoryList, normalizeTemplate, searchTemplates, templatesOf,
 } from '../../src/core/templates/library.js'
+import { createTemplateLibrary, templateLibraryRootStyle } from '../../src/ui/templateLibrary.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8')
@@ -297,6 +300,74 @@ describe('P5-07 筛选（templatesOf / searchTemplates）', () => {
   })
 })
 
+describe('P5-07 原生 renderer 宿主契约', () => {
+  const templates = [
+    { id: 'weekly', name: '团队周报', meta: '每周填写', thumb: 'weekly.png', categories: ['recommend', 'office'] },
+    { id: 'meeting', name: '会议纪要', meta: 'Weekly Sync', categories: ['meeting'] },
+    { id: 'plain', name: '通用笔记', meta: '' },
+  ]
+
+  it('与 Vue 组件共享完整 CSS 变量映射', () => {
+    const style = templateLibraryRootStyle()
+    expect(style['--tpl-width-inset']).toBe('284px')
+    expect(style['--tpl-sidebar-width']).toBe('196px')
+    expect(style['--tpl-card-width']).toBe('226px')
+    expect(style['--tpl-transition']).toBe(TEMPLATE_GRID.transition)
+  })
+
+  it('支持 open/close、分类、搜索，并保持真 v-if 节点语义', () => {
+    const host = document.createElement('div')
+    const library = createTemplateLibrary({ host })
+    library.update({ open: true, target: '我的文档库 / 产品', templates })
+    expect(host.querySelector('.lark-doc-template-library')).not.toBeNull()
+    expect(host.querySelectorAll('[role="tab"]').length).toBe(31)
+    expect(host.querySelector('[data-category-id="recommend"]').getAttribute('aria-selected')).toBe('true')
+    expect(host.querySelectorAll('.lark-doc-template-card')).toHaveLength(2)
+    expect(host.querySelector('.lark-doc-template-target strong').textContent).toBe('我的文档库 / 产品')
+
+    host.querySelector('[data-category-id="meeting"]').click()
+    expect(host.querySelectorAll('.lark-doc-template-card')).toHaveLength(2)
+    expect(host.querySelector('[data-category-id="meeting"]').classList.contains('is-active')).toBe(true)
+
+    const input = host.querySelector('.lark-doc-template-search input')
+    input.value = 'Weekly'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(host.querySelectorAll('.lark-doc-template-card')).toHaveLength(1)
+    expect(host.querySelector('[data-template-id="meeting"]')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-template-grid')).not.toBeNull()
+
+    library.close()
+    expect(host.querySelector('.lark-doc-template-library')).toBeNull()
+    library.open()
+    expect(host.querySelector('.lark-doc-template-library')).not.toBeNull()
+    library.destroy()
+  })
+
+  it('preview/use/close 事件返回归一化模板，并不自行执行复制', () => {
+    const host = document.createElement('div')
+    const events = []
+    const library = createTemplateLibrary({
+      host,
+      handlers: {
+        onPreview: (template) => events.push(['preview', template]),
+        onUse: (template) => events.push(['use', template]),
+        onClose: () => events.push(['close']),
+      },
+    })
+    library.update({ open: true, templates })
+    const card = host.querySelector('[data-template-id="weekly"]')
+    card.querySelector('.lark-doc-template-preview').click()
+    card.querySelector('.lark-doc-template-use').click()
+    host.querySelector('.lark-doc-template-library-mask').click()
+    expect(events).toEqual([
+      ['preview', { id: 'weekly', name: '团队周报', thumb: 'weekly.png', meta: '每周填写' }],
+      ['use', { id: 'weekly', name: '团队周报', thumb: 'weekly.png', meta: '每周填写' }],
+      ['close'],
+    ])
+    expect(host.querySelector('.lark-doc-template-library')).not.toBeNull()
+  })
+})
+
 describe('P5-07 语义守卫：模板库在宿主侧、使用=复制文档', () => {
   const sfc = read('src/components/lark-doc/TemplateLibrary.vue')
   // 样式单独立一个文件：lark-doc.css 里每条规则都挂 `.lark-doc`，这一段故意不挂。
@@ -304,11 +375,15 @@ describe('P5-07 语义守卫：模板库在宿主侧、使用=复制文档', () 
   // 注释里会提到 `.ProseMirror` / `--tpl-*`（说明为什么这么写），断言只看真样式。
   const block = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
-  it('组件只 emit，不在内部灌内容（「使用」是服务端 create_node 复制整篇）', () => {
+  it('组件与原生 renderer 都只通知宿主，不在内部灌内容', () => {
+    const renderer = read('src/ui/templateLibrary.js')
     expect(sfc).toContain("$emit('use'")
     expect(sfc).toContain("$emit('preview'")
+    expect(renderer).toContain("'onUse'")
+    expect(renderer).toContain("'onPreview'")
     // 注释里写的是「不允许出现 insertContent」这类说明，断言只看真代码。
     expect(sfc.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/insertContent|create_node/)
+    expect(renderer.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/insertContent|create_node/)
   })
 
   it('组件不被 LarkDocEditor 引用（编辑器页内零模板入口）', () => {
@@ -317,6 +392,7 @@ describe('P5-07 语义守卫：模板库在宿主侧、使用=复制文档', () 
 
   it('模板库从入口单独导出，宿主自己挂', () => {
     expect(read('src/index.js')).toContain('LarkDocTemplateLibrary')
+    expect(read('src/index.js')).toContain('createTemplateLibrary')
   })
 
   it('样式单独立文件并由 style.css @import 进来（与其他四份同一条构建链）', () => {
