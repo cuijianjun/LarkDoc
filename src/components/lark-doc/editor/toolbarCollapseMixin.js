@@ -82,7 +82,7 @@ export default {
       if (this.toolbarEnabled('ai')) insertItems.push({ label: 'AI 助手', disabled: ro, run: () => this.$emit('ai-request', 'rewrite') })
       if (insertItems.length) sections.push({ id: 'insert', title: '插入', items: insertItems })
       const toolItems = []
-      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', run: () => { this.searchOpen = !this.searchOpen; this.$nextTick(() => this.$refs.searchInput?.focus()) } })
+      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', run: () => { this.searchOpen = !this.searchOpen; this.$nextTick(() => this.focusSearchPanel()) } })
       if (this.toolbarEnabled('outline')) toolItems.push({ label: '目录', checked: this.outlineOpen, run: () => { this.outlineOpen = !this.outlineOpen } })
       if (this.toolbarEnabled('viewModes')) {
         this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, checked: this.widthMode === option.value, run: () => { this.widthMode = option.value } }))

@@ -257,7 +257,7 @@ export default {
       if (!this.featureEnabled('search')) return
       this.searchTab = tab === 'replace' ? 'replace' : 'find'
       if (!this.searchOpen) { this.searchOpen = true; return }
-      this.$nextTick(() => { const panel = this.$refs.searchInput; if (panel && panel.focus) panel.focus() })
+      this.$nextTick(() => this.focusSearchPanel())
     },
     setSearchTab(tab) { this.searchTab = tab === 'replace' ? 'replace' : 'find' },
     setSearchPanelPos(pos) { this.searchPanelPos = pos },

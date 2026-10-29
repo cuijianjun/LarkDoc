@@ -171,7 +171,7 @@ export default {
         // 这条内联表达式 —— 两件事都要做，不能只留一件。
         openSearchPanel: () => {
           this.toggleSearchOpen()
-          this.$nextTick(() => this.$refs.searchInput?.focus())
+          this.$nextTick(() => this.focusSearchPanel())
         },
         toggleOutlineOpen: () => this.toggleOutlineOpen(),
         setWidthMode: (value) => this.setWidthMode(value),

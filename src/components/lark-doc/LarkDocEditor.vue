@@ -34,10 +34,8 @@
 
     <!-- 工具栏（阶段 5 批次 2 原生化）：DOM 由 src/ui/toolbar.js 建，这里是挂载点。 -->
     <div ref="toolbarHost" />
-    <SearchPanel
-      ref="searchInput"
-      :ed="self"
-    />
+    <!-- 查找替换面板的宿主（阶段 5 批次 5H）：DOM 由 src/ui/searchPanel.js 建。 -->
+    <div ref="searchPanelHost" />
     <!-- 表格工具条的宿主（阶段 5 批次 5G）：DOM 由 src/ui/tableTools.js 建，普通块流即可（与 toolbarHost 同理，条本身是块级撑满）。 -->
     <div ref="tableToolsHost" />
     <!-- `@` 提及面板：锚在光标处，与斜杠菜单互斥（同时只会开一个） -->
@@ -169,7 +167,6 @@ import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import commandMenuUiMixin from './editor/commandMenuUiMixin' // 阶段 5 批次 3：命令菜单渲染层在 src/ui/commandMenu.js
 import LarkDocIcon from './LarkDocIcon.vue'
-import SearchPanel from './editor/SearchPanel.vue'
 // P4-02a：日历浮层组件，只渲染；状态与定位全在 reminderMixin。
 import ReminderPopover from './editor/ReminderPopover.vue'
 // P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
@@ -215,6 +212,7 @@ import headingNumberMixin from './editor/headingNumberMixin'
 import mentionMixin from './editor/mentionMixin'
 import mentionUiMixin from './editor/mentionUiMixin'
 import isvPanelUiMixin from './editor/isvPanelUiMixin'
+import searchPanelUiMixin from './editor/searchPanelUiMixin'
 // P4-02a：日期提醒（行内 reminder mark + 日历浮层）。入口是「点 chip」这个 DOM 事件，
 // 不走 document.js 的插件回调 —— reminder 没有关键词，那条通道没人用。
 import reminderMixin from './editor/reminderMixin'
@@ -247,8 +245,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { LarkDocIcon, SearchPanel, ReminderPopover, HeadingNumberMenu },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin, mentionUiMixin, isvPanelUiMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { LarkDocIcon, ReminderPopover, HeadingNumberMenu },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin, mentionUiMixin, isvPanelUiMixin, searchPanelUiMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -364,7 +362,7 @@ export default {
     // 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板已原生化（`src/ui/panels.js`）。
     // 同样不依赖编辑器实例 —— 目录宿主在 `.lark-doc-body` 里，评论卡等的宿主与根同层。
     this.mountPanels()
-    this.mountStage(); this.mountTableTools(); this.mountHelpFab(); this.mountColorPalette(); this.mountCalloutTools(); this.mountRevisionPanels(); this.mountCalendarSearch(); this.mountMentionPanel(); this.mountIsvPanel()
+    this.mountStage(); this.mountTableTools(); this.mountHelpFab(); this.mountColorPalette(); this.mountCalloutTools(); this.mountRevisionPanels(); this.mountCalendarSearch(); this.mountMentionPanel(); this.mountIsvPanel(); this.mountSearchPanel()
     // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
     // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
     this.restoreMode()
@@ -416,7 +414,7 @@ export default {
     this.editor?.destroy()
     this.editor = null
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette(); this.destroyCalloutTools(); this.destroyRevisionPanels(); this.destroyCalendarSearch(); this.destroyMentionPanel(); this.destroyIsvPanel()
+    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette(); this.destroyCalloutTools(); this.destroyRevisionPanels(); this.destroyCalendarSearch(); this.destroyMentionPanel(); this.destroyIsvPanel(); this.destroySearchPanel()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
