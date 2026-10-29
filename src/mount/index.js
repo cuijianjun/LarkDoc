@@ -25,14 +25,19 @@
  * 上层（LarkDoc / web-component）禁止 import 任何框架，只能 import 本目录。
  */
 import { createVue2Renderer } from './vueRenderer'
-import { createDomRenderer } from './domRenderer'
 
 let override = null
 
-/** 当前生效的渲染适配器。默认 Vue 2；DOM 版必须显式 opt-in。 */
+/**
+ * 当前生效的渲染适配器。
+ * 迁移期 DOM renderer 通过 rendererFactory 注入，避免默认入口静态携带完整 DOM 编辑器实现。
+ */
 export function createRenderer(options = {}) {
   if (override) return override()
-  if (options && options.renderer === 'dom') return createDomRenderer()
+  if (options && typeof options.rendererFactory === 'function') return options.rendererFactory()
+  if (options && options.renderer === 'dom') {
+    throw new Error('DOM renderer 是迁移期独立入口，请通过 rendererFactory 注入 renderer 工厂')
+  }
   return createVue2Renderer()
 }
 
@@ -44,5 +49,5 @@ export function setRenderer(factory) {
   override = typeof factory === 'function' ? factory : null
 }
 
-export { createVue2Renderer, createDomRenderer }
+export { createVue2Renderer }
 export default createRenderer

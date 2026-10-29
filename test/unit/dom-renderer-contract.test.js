@@ -43,7 +43,7 @@ vi.mock('../../src/mount/vueRenderer', () => ({
 }))
 
 import { createDomRenderer } from '../../src/mount/domRenderer'
-import { createRenderer } from '../../src/mount'
+import { createRenderer, setRenderer } from '../../src/mount'
 
 const ACTIONS = ['mount', 'update', 'destroy', 'getInstance', 'getRoot']
 
@@ -90,8 +90,11 @@ describe('迁移期 DOM renderer 契约', () => {
     expect(host.firstElementChild).toBeNull()
   })
 
-  it('mount/index 默认保持 Vue，DOM renderer 只在显式 opt-in 时启用', () => {
+  it('mount/index 默认保持 Vue，DOM renderer 必须由宿主显式注入', () => {
     expect(createRenderer().name).toBe('vue2')
-    expect(createRenderer({ renderer: 'dom' }).name).toBe('dom-migration')
+    expect(() => createRenderer({ renderer: 'dom' })).toThrow(/独立入口/)
+    expect(createRenderer({ rendererFactory: createDomRenderer }).name).toBe('dom-migration')
+    expect(typeof setRenderer).toBe('function')
+    setRenderer(null)
   })
 })
