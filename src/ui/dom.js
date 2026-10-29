@@ -5,8 +5,8 @@
  * 实现，否则每个积木各写一遍就会分叉：样式键残留（`:style` 写成合并语义）、
  * `null` 输出成字符串 `"null"` 这类事故都是这么来的。
  *
- * 没有 `mount()`：条件节点的增删一律走各积木自己的「按期望序列整体对齐」
- * （`toolbar.js` 的 `syncChildren`），逐个 append 会把摘掉再挂的节点排到队尾。
+ * 没有 `mount()`：条件节点的增删一律走 `syncChildren`（本文件），逐个 append 会把
+ * 摘掉再挂的节点排到队尾。
  */
 
 /**
@@ -36,6 +36,32 @@ export function applyStyle(node, style) {
     if (nextKeys.indexOf(key) === -1) node.style[key] = ''
   })
   node.__ldStyleKeys = nextKeys
+}
+
+/**
+ * `v-if` 的「有序增删」语义 —— 按期望序列整体对齐 `parent` 的子节点。
+ *
+ * 不能逐个 `appendChild`：条件为假的节点被摘掉后再置真会被排到队尾
+ * （工具栏「查找」关掉再开就跑到「文档操作」后面去了）。
+ *
+ * 而且**已在正确位置的节点一律不动**。这是硬要求，不只是性能：`appendChild`
+ * 会把节点重新插入，若它恰好正在鼠标下，浏览器会补发一次 `mouseenter` ——
+ * 于是刚被 Esc 关掉的弹层又被自己的 hover 重新打开（批次 2 踩过）。
+ *
+ * @param {HTMLElement|null} parent
+ * @param {Array<{node: HTMLElement, on: boolean}>} slots 期望序列（未过滤）
+ */
+export function syncChildren(parent, slots) {
+  if (!parent) return
+  const desired = slots.filter((slot) => slot.on).map((slot) => slot.node)
+  const current = [].slice.call(parent.children)
+  if (current.length === desired.length && current.every((node, index) => node === desired[index])) return
+  desired.forEach((node, index) => {
+    if (parent.children[index] !== node) parent.insertBefore(node, parent.children[index] || null)
+  })
+  ;[].slice.call(parent.children).forEach((node) => {
+    if (desired.indexOf(node) === -1) parent.removeChild(node)
+  })
 }
 
 /**

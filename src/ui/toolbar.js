@@ -24,7 +24,7 @@
 import { iconNode } from './icon'
 import { createHeadingMenu } from './headingMenu'
 import { createSelect } from './select'
-import { applyStyle, setAttr, setVisible } from './dom'
+import { applyStyle, setAttr, setVisible, syncChildren } from './dom'
 
 /** 分组定义：id / 类名 / 是否受 `toolbarEnabled()` 管。顺序即 DOM 顺序。 */
 const GROUPS = [
@@ -314,36 +314,9 @@ export function createToolbar(options = {}) {
 
   // ————————————————— 组装 —————————————————
 
-  /**
-   * 按「期望序列」对齐子节点 —— `v-if` 的位置语义。
-   *
-   * 不能直接用 `mount()` 逐个 append：条件为假的节点被摘掉后再置真，会被排到
-   * 队尾（例如「查找」按钮关掉再开就跑到「文档操作」后面去了）。这里先算期望
-   * 序列，与现状逐位比对，只有不一致才整体重排；一致时一次 DOM 操作都不做。
-   */
-  /**
-   * 按期望序列整体对齐 `parent` 的子节点（`v-if` 的「有序增删」语义）。
-   *
-   * 不能直接逐个 `appendChild`：条件为假的节点被摘掉后再置真会被排到队尾
-   * （例如「查找」按钮关掉再开就跑到「文档操作」后面去了）。
-   *
-   * 而且**已在正确位置的节点一律不动**。这一点是硬要求，不只是性能：
-   * `appendChild` 会把节点重新插入，若它恰好正在鼠标下，浏览器会补发一次
-   * `mouseenter` —— 于是「更多」弹层刚被 Esc 关掉、又被自己的 hover 重新打开
-   * （批次 2 踩过，表现为「Esc 关不掉弹层」）。
-   */
-  function syncChildren(parent, slots) {
-    const desired = slots.filter((slot) => slot.on).map((slot) => slot.node)
-    const current = [].slice.call(parent.children)
-    if (current.length === desired.length && current.every((node, index) => node === desired[index])) return
-    desired.forEach((node, index) => {
-      if (parent.children[index] !== node) parent.insertBefore(node, parent.children[index] || null)
-    })
-    const leftover = [].slice.call(parent.children)
-    leftover.forEach((node) => {
-      if (desired.indexOf(node) === -1) parent.removeChild(node)
-    })
-  }
+  // 子节点的「有序增删」语义（`v-if`）由 `dom.js` 的 `syncChildren` 统一提供：
+  // 已在正确位置的节点一律不动 —— 重新 `appendChild` 会在鼠标下补发 `mouseenter`，
+  // 把刚被 Esc 关掉的「更多」弹层又打开（批次 2 踩过）。
 
   // 「更多」弹层内容：完全动态，按签名重建（它整段本来就在 `v-if` 里）。
   let moreSignature = ''
