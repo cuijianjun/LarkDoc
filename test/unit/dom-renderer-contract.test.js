@@ -72,8 +72,16 @@ describe('迁移期 DOM renderer 契约', () => {
     expect(renderer.getRoot(handle).dataset.renderer).toBe('dom-migration')
     expect(renderer.getRoot(handle).querySelector('#lark-doc-editor')).not.toBeNull()
     expect(renderer.getInstance(handle)).toBe(handle.instance)
-    expect(renderer.getInstance(handle).getTitle()).toBe('迁移期文档')
-    expect(renderer.getInstance(handle).getText()).toContain('正文')
+    const instance = renderer.getInstance(handle)
+    expect(instance.getTitle()).toBe('迁移期文档')
+    expect(instance.getText()).toContain('正文')
+    ;[
+      'getWorkspace', 'callWorkspace', 'record', 'onReady', 'queueSave', 'flushOnLeave', 'saveNow',
+      'storageFailure', 'toggleHistory', 'createSnapshot', 'restoreSnapshot', 'importDocument',
+      'exportDocument', 'currentAIContext', 'resetAIPreview', 'startAI', 'sendAIChat', 'regenerateAI',
+      'stopAI', 'closeAI', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
+      'ignoreReviewIssue', 'applyAIProposal',
+    ].forEach((method) => expect(typeof instance[method]).toBe('function'))
     await Promise.resolve()
     expect(ready).toHaveBeenCalled()
 
