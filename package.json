@@ -6,7 +6,7 @@
   "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
+    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js && node scripts/minify-lib-cjs.js",
     "build:umd": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
     "build:esm": "node scripts/build-esm.js",
     "build:adapters": "node scripts/build-adapters.js",
