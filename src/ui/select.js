@@ -2,7 +2,7 @@
  * 共享下拉原语 —— 原生 DOM 版（`src/ui/` 积木 · 阶段 5 批次 2）。
  *
  * 与 `LarkDocSelect.vue` 是**同一份功能的两套渲染**（并存期）：
- * 工具栏这一支从本批起走这里；`LarkDocWorkspace.vue` 与 `editor/TableTools.vue`
+ * 工具栏、表格工具条这两支走这里；`LarkDocWorkspace.vue`（阶段 5 批次 5G 收尾时原生化）
  * 仍在用 SFC，所以 `LarkDocSelect.vue` 保留、暂不删。
  *
  * ⚠️ 结构即契约（`scripts/verify-browser-toolbar.js` 与
