@@ -35,10 +35,10 @@
 </template>
 
 <script>
-import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import LarkDocEditor from './LarkDocEditor.vue'
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { createPersistenceWorkspace, detectBrowserStorage } from '../../providers/persistence'
-import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from './mockAI'
+import { AI_ACTIONS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from './mockAI'
 import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMarkdown } from './ai'
 import { TEMPLATES } from './templates'
 import { createLarkDocConfig } from './larkDocConfig'
@@ -48,7 +48,7 @@ import { createDerivedSnapshot, validateDerivedSnapshot } from '../../core/deriv
 import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
 import { loadFeature } from '../../core/features/registry'
-import { createDocumentSession } from '../../session/DocumentSession'
+import { createWorkspaceState, createWorkspaceController } from '../../workspace/WorkspaceController'
 import { createWorkspace } from '../../ui/workspace'
 
 /**
@@ -100,43 +100,7 @@ export default {
     embedAllow: { type: String, default: null },
   },
   data() {
-    const templateItems = Array.isArray(this.templates) ? this.templates : TEMPLATES
-    const firstTemplate = templateItems[0] || { html: '<p></p>', title: '未命名文档' }
-    return {
-      html: typeof this.initialContent === 'string' ? this.initialContent : firstTemplate.html,
-      title: this.initialTitle != null ? this.initialTitle : firstTemplate.title,
-      templateItems,
-      forcedReadonly: false,
-      editorConfig: createLarkDocConfig(this.config),
-      effectiveReadonly: false, importing: false, initialized: false,
-      saveStatus: '初始化…', storageError: false, storageKind: '', notice: '',
-      historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
-      aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
-      // 预览与落正文用哪种格式渲染：auto / markdown / html / text。
-      aiContentFormat: 'text',
-      templateOpen: false, templateQuery: '',
-      importReport: null,
-      sessionInstance: null,
-      // 工作台原生下拉的选项清单。
-      maxLengthOptions: [
-        { value: 0, label: '不限字数' },
-        { value: 200, label: '200 字（ECS）' },
-      ],
-      exportOptions: [
-        { value: '', label: '导出' },
-        { value: 'html', label: 'HTML' },
-        { value: 'json', label: 'JSON（完整正文）' },
-        { value: 'md', label: 'Markdown（简化）' },
-        { value: 'txt', label: '纯文本' },
-        { value: 'docx', label: 'Word（简化）' },
-        { value: 'print', label: '打印 / PDF' },
-      ],
-      aiLanguageOptions: [
-        { value: 'en', label: '英语' },
-        { value: 'zh', label: '中文' },
-        { value: 'ja', label: '日语' },
-      ],
-    }
+    return createWorkspaceState(this)
   },
   computed: {
     templateOptions() {
@@ -196,14 +160,39 @@ export default {
     },
   },
   created() {
-    // 宿主传入 Session 时由宿主管理生命周期；否则工作台创建本地会话。
-    this.sessionInstance = this.session || createDocumentSession({
-      documentId: this.documentId || 'local',
-      mode: 'local',
-      user: this.user,
-      capabilities: this.capabilities || {},
-      persistence: this.persistence,
+    this._controller = createWorkspaceController({
+      state: this,
+      props: this,
+      host: {
+        getEditor: () => this.getEditor(),
+        getHTML: () => this.$refs.document ? this.$refs.document.getHTML() : '',
+        getJSON: () => this.$refs.document ? this.$refs.document.getJSON() : null,
+        getText: () => this.$refs.document ? this.$refs.document.getText() : '',
+        setContent: (content, options) => this.$refs.document ? this.$refs.document.setContent(content, options) : false,
+        focus: () => { if (this.$refs.document) this.$refs.document.focus() },
+        writable: () => { const editor = this.$refs.document && this.$refs.document.getEditor(); return editor && editor.isEditable && !this.importing },
+        emit: (event, payload) => this.$emit(event, payload),
+        confirm: message => window.confirm(message),
+        getWindow: () => window,
+        getNavigator: () => navigator,
+        getAIProvider: () => this.aiProvider,
+        hydrateOutline: outline => this.$refs.document.hydrateOutline(outline),
+        bindAITransaction: handler => this.getEditor().on('transaction', handler),
+        unbindAITransaction: handler => this.getEditor().off('transaction', handler),
+        addBeforeUnload: handler => window.addEventListener('beforeunload', handler),
+        removeBeforeUnload: handler => window.removeEventListener('beforeunload', handler),
+        nextTick: callback => this.$nextTick().then(callback),
+        documentApi: this,
+      },
     })
+    this.sessionInstance = this._controller.initializeSession()
+    ;[
+      'getSession', 'onReady', 'record', 'getWorkspace', 'callWorkspace', 'queueSave', 'flushOnLeave',
+      'saveNow', 'storageFailure', 'toggleHistory', 'createSnapshot', 'restoreSnapshot', 'importDocument',
+      'exportDocument', 'mapAI', 'currentAIContext', 'resetAIPreview', 'startAI', 'sendAIChat',
+      'regenerateAI', 'stopAI', 'closeAI', 'copyAIPreview', 'acceptAI', 'insertAIResult',
+      'acceptReviewIssue', 'ignoreReviewIssue', 'applyAIProposal',
+    ].forEach(name => { this[name] = this._controller[name].bind(this._controller) })
   },
   mounted() {
     this.mountWorkspaceUI()
@@ -211,14 +200,8 @@ export default {
   beforeDestroy() {
     this._workspaceUi?.destroy()
     this._workspaceUi = null
+    this._controller?.dispose()
     this._disposed = true
-    this.stopAI()
-    void this.saveNow()
-    clearTimeout(this._saveTimer)
-    window.removeEventListener('beforeunload', this.flushOnLeave)
-    const editor = this.getEditor()
-    if (editor) editor.off('transaction', this.mapAI)
-    if (!this.session) void this.sessionInstance?.dispose()
   },
   methods: {
     workspaceState() {
