@@ -156,10 +156,13 @@
             <div class="lark-doc-share-link-body">
               <!-- 圆形图标 30×30 / bg var(--ld-share-avatar-bg) / radius 50%。 -->
               <span class="lark-doc-share-link-icon">
-                <lark-doc-icon
-                  name="link"
-                  :size="14"
-                />
+                <span
+                  class="lark-doc-icon"
+                  aria-hidden="true"
+                >
+                  <!-- eslint-disable-next-line vue/max-attributes-per-line -->
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5l3-3" /><path d="M4.8 7.7 3.2 9.3a2.6 2.6 0 0 0 3.7 3.7l1.6-1.6" /><path d="M11.2 8.3l1.6-1.6a2.6 2.6 0 0 0-3.7-3.7L7.5 4.6" /></svg>
+                </span>
               </span>
               <div class="lark-doc-share-link-main">
                 <button
@@ -229,12 +232,11 @@
  *   3. **成员列表 / 组织范围不做真实 CRUD**。04 §4.1 ② 只采到「+2 头像聚合」与一个邀请
  *      输入框；组织列表属于宿主数据，本库只留 `shareOrgName` 一个字符串位。
  */
-import LarkDocIcon from './LarkDocIcon.vue'
 import PermissionDialog from './PermissionDialog.vue'
 
 export default {
   name: 'LarkDocSharePopover',
-  components: { LarkDocIcon, PermissionDialog },
+  components: { PermissionDialog },
   props: {
     ed: { type: Object, required: true },
   },

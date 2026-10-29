@@ -117,7 +117,7 @@ export default {
       templateOpen: false, templateQuery: '',
       importReport: null,
       sessionInstance: null,
-      // 自绘下拉（LarkDocSelect）的选项清单。
+      // 工作台原生下拉的选项清单。
       maxLengthOptions: [
         { value: 0, label: '不限字数' },
         { value: 200, label: '200 字（ECS）' },

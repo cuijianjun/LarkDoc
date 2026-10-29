@@ -142,10 +142,13 @@
         aria-label="关闭错误"
         @click="error = ''"
       >
-        <lark-doc-icon
-          :size="14"
-          name="close"
-        />
+        <span
+          class="lark-doc-error-close-icon lark-doc-icon"
+          aria-hidden="true"
+        >
+          <!-- eslint-disable-next-line vue/max-attributes-per-line -->
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m4.6 4.6 6.8 6.8" /><path d="m11.4 4.6-6.8 6.8" /></svg>
+        </span>
       </button>
     </p>
     <div ref="headingNumberMenuHost" />
@@ -162,7 +165,6 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import commandMenuUiMixin from './editor/commandMenuUiMixin' // 阶段 5 批次 3：命令菜单渲染层在 src/ui/commandMenu.js
-import LarkDocIcon from './LarkDocIcon.vue'
 import reminderUiMixin from './editor/reminderUiMixin'
 import calendarSearchUiMixin from './editor/calendarSearchUiMixin'
 import { createLarkDocExtensions } from './extensions'
@@ -236,7 +238,6 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { LarkDocIcon },
   mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, headingNumberMenuUiMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin, mentionUiMixin, isvPanelUiMixin, searchPanelUiMixin, reminderMixin, reminderUiMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin, overlaysUiMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
@@ -570,7 +571,7 @@ export default {
     isActive(name) { return !!this.editor?.isActive(name) },
     toggleMark(name) { if (!this.featureEnabled('marks')) return; const command = `toggle${name[0].toUpperCase()}${name.slice(1)}`; this.run(command); this.bubbleVisible = false; this.closeBubbleAlignMenu() },
     setTextStyle(attribute, value) { if (!value) return; const command = `set${attribute[0].toUpperCase()}${attribute.slice(1)}`; this.run(command, value) },
-    // 自绘下拉（LarkDocSelect）的回调：应用样式并记住最近值，供触发按钮回显。
+    // 原生下拉的回调：应用样式并记住最近值，供触发按钮回显。
     applyTextStyle(key, value) { this.setTextStyle(key, value); this.appliedTextStyle[key] = value },
     applyTextColor(value) { this.setTextStyle('color', value); this.appliedTextStyle.textColor = value },
     applyTextBackground(value) { this.setTextStyle('backgroundColor', value); this.appliedTextStyle.backgroundColor = value },

@@ -1,6 +1,6 @@
 /**
  * 工具栏 SVG 图标库：16×16、stroke 使用 currentColor（自动跟随激活态变色）、
- * 圆角线帽，风格对齐飞书扁平线性图标。经 LarkDocIcon 组件渲染，禁止直接内嵌
+ * 圆角线帽，风格对齐飞书扁平线性图标。由 `src/ui/icon.js` 统一渲染，禁止直接内嵌
  * 到模板字符串里拼 HTML。
  */
 // 多色图标资源（唯一不用 currentColor 的地方）走色板常量表，见 palette.js（T0-04）。

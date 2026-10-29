@@ -2,12 +2,12 @@
  * P4-06 三态模式切换（编辑 / 修订 / 阅读）单测 —— Node 环境、无 DOM。
  * 规格出处：07 §1 / §1.1 / §12.1；尺寸与层级出处：03 顶栏按钮组 #2、06 §6.2、06 §6.3。
  *
- * 顶栏按钮与下拉都是 .vue（本仓库单测禁止 import .vue），所以照 help-drawer.test.js 的老三层守：
+ * 顶栏按钮与下拉已经由原生 renderer 接管，所以照 help-drawer.test.js 的三层守：
  *  1. 数据层：import docModes.js，锁三项文案 / 顺序 / 提示语 / 键位判定；
  *  2. 行为层：import viewModesMixin + overlayDismissMixin，用假宿主直测
  *     切换幂等、持久化降级、下拉定位、提示条定时器、三套键位派发；
- *  3. 规格层：读 css / TopBar.vue / LarkDocEditor.vue 文本，锁 84×32 / 180×160 / 170×50 /
- *     顶部条 16 高 @y32 / z 9999，以及「slot 必须还在」「没给『更多』菜单加修订入口」这两条回归点。
+ *  3. 规格层：读 css / src/ui/topBar.js / LarkDocEditor.vue 文本，锁 84×32 / 180×160 / 170×50 /
+ *     顶部条 16 高 @y32 / z 9999，以及「原生动作宿主仍在」「没给『更多』菜单加修订入口」这两条回归点。
  *
  * 🔴 这批像素或文案一变就要同步改这里 —— 它们是「飞书实测值」的唯一守卫。
  */
@@ -26,7 +26,7 @@ import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDis
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
-const topbar = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/TopBar.vue'), 'utf8')
+const topbar = fs.readFileSync(path.join(root, 'src/ui/topBar.js'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
 const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
 const collapseMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/toolbarCollapseMixin.js'), 'utf8')
@@ -90,7 +90,7 @@ describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
   it('图标映射：阅读复用既有 reading，另两个是新画的', () => {
     expect(MODE_ICONS).toEqual({ edit: 'mode-edit', suggest: 'mode-comment', read: 'reading' })
     // 三个 key 都必须真的在 ICONS 表里（键名带连字符的加了引号，reading 是裸标识符），
-    // 否则 LarkDocIcon 查不到会静默渲染空 span —— 按钮上就只剩文字。
+    // 否则原生 icon renderer 查不到会静默渲染空 span —— 按钮上就只剩文字。
     expect(icons).toContain("'mode-edit': wrap(")
     expect(icons).toContain("'mode-comment': wrap(")
     expect(icons).toContain('reading: wrap(')
@@ -511,14 +511,12 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
     expect(modeCssSection).not.toMatch(/:\s*white\b/)
   })
 
-  it('TopBar 里模式按钮插在 slot 之前，宿主控件（slot）必须仍然存在', () => {
-    expect(topbar).toContain('<slot name="header-actions" />')
-    const btnIndex = topbar.indexOf('lark-doc-mode-btn')
-    const slotIndex = topbar.indexOf('<slot name="header-actions" />')
-    expect(btnIndex).toBeGreaterThan(-1)
-    expect(btnIndex).toBeLessThan(slotIndex)
-    // 图标组件要在子组件里注册，否则模板里的 <lark-doc-icon> 不会渲染。
-    expect(topbar).toMatch(/components:\s*\{[^}]*\bLarkDocIcon\b/)
+  it('原生顶栏保留模式按钮与宿主动作节点', () => {
+    expect(topbar).toContain("import { iconNode, setIcon } from './icon'")
+    expect(topbar).toContain('actionsHost')
+    expect(topbar).toContain('headerActions.appendChild(actionsHost)')
+    expect(topbar.indexOf('lark-doc-mode-btn')).toBeGreaterThan(-1)
+    expect(topbar.indexOf('headerActions.appendChild(actionsHost)')).toBeGreaterThan(topbar.indexOf('lark-doc-mode-btn'))
   })
 
   it('主组件挂提示条、根 class 带修订态、mounted 里先 restoreMode', () => {

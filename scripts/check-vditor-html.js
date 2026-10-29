@@ -238,7 +238,7 @@ async function main() {
   check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
   check('图表块携带独立外观类', firstBlock.className.indexOf('lark-doc-code-diagram') !== -1)
   // 代码块语言下拉：阶段 2 起由 core 的纯 DOM NodeView 自绘，形态是**原生 <select>**
-  // （R1 禁止 core 引 `.vue`，原来的 `LarkDocSelect.vue` 换成原生 select，样式由
+  // （R1 禁止 core 引 `.vue`，代码块语言下拉使用原生 select，样式由
   // `code-block.css` 里早已存在的 select 规则承接），所以这里直接读 options 清单。
   const langSelect = host.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
   check('代码块使用原生语言下拉', Boolean(langSelect))

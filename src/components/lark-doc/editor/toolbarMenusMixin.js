@@ -24,7 +24,7 @@ export default {
     // 文案与 placeholder 由 EMBED_MENU_ITEMS 现查，不另存一份字符串（否则 15 份文案会漂移）。
     embedDialog: null, embedValue: '', embedDialogRejected: false, embedDialogPos: { left: '0px', top: '0px' },
     mathDialog: '', mathValue: '', mathError: '', marks,
-    // 自绘下拉（LarkDocSelect）选项清单与最近一次应用的值（替代原生 select 的非受控展示）。
+    // 下拉选项清单与最近一次应用的值，供原生 UI renderer 展示。
     fontFamilyOptions, fontSizeOptions, lineHeightOptions, widthModeOptions,
     cellTextAlignOptions, cellVerticalAlignOptions,
     appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: DEFAULT_TEXT_COLOR, backgroundColor: DEFAULT_TEXT_BACKGROUND },
