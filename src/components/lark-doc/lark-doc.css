@@ -386,6 +386,10 @@
 .lark-doc .lark-doc-title-wrap { display: flex; flex-direction: column; min-width: 140px; width: min(370px, 30vw); }
 .lark-doc .lark-doc-title-wrap input { border: 0; padding: 2px 4px; font-size: 16px; font-weight: 700; text-overflow: ellipsis; }
 .lark-doc .lark-doc-title-sub { padding-left: 5px; color: var(--lark-doc-muted); font-size: 11px; }
+/* `header-actions` 插槽宿主的停泊位（阶段 5 批次 2）：顶栏隐藏且「⋯」菜单没开时宿主停在这里。
+   隐藏的是**容器**而不是宿主本身 —— 宿主的显隐靠整节点搬迁（搬走后本容器里什么也不剩），
+   若给宿主自己加 display:none，搬进浮层后会带着一起隐藏。 */
+.lark-doc .lark-doc-actions-park { display: none; }
 .lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; -ms-overflow-style: none; }

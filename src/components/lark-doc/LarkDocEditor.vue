@@ -9,14 +9,20 @@
       class="lark-doc-skip"
       href="#lark-doc-editor"
     >跳到正文</a>
-    <TopBar :ed="self">
-      <template #header-actions>
+    <!-- 顶栏 / 工具栏挂载点（阶段 5 批次 2 原生化）：DOM 由 src/ui/topBar.js、src/ui/toolbar.js 建。 -->
+    <div ref="topBarHost" />
+    <!-- `header-actions` 宿主的停泊位：插槽内容始终由 Vue 渲染，原生层只搬节点（顶栏右侧 / 「⋯」下拉）。 -->
+    <div
+      ref="actionsPark"
+      class="lark-doc-actions-park"
+    >
+      <div ref="actionsHost">
         <slot name="header-actions" />
-      </template>
-    </TopBar>
+      </div>
+    </div>
     <!-- P4-06：「已切换为 X 模式」提示。载体是**顶部中性条**（07 §1.1 文案 + 06 §6.2
-         `.ud__msg-manager--top` 的 1512×16 @y=32 / z 9999 / fixed），
-         刻意不复用右下角 `.lark-doc-toast` —— 那是琥珀 error 语义，两者混用会让人以为切换失败。 -->
+         `.ud__msg-manager--top` 的 1512×16 @y=32 / z 9999 / fixed），刻意不复用右下角
+         `.lark-doc-toast` —— 那是琥珀 error 语义，混用会让人以为切换失败。 -->
     <div
       v-if="modeToast"
       class="lark-doc-mode-toast"
@@ -26,11 +32,8 @@
       {{ modeToast }}
     </div>
 
-    <ToolbarBar :ed="self">
-      <template #header-actions>
-        <slot name="header-actions" />
-      </template>
-    </ToolbarBar>
+    <!-- 工具栏（阶段 5 批次 2 原生化）：DOM 由 src/ui/toolbar.js 建，这里是挂载点。 -->
+    <div ref="toolbarHost" />
     <SearchPanel
       ref="searchInput"
       :ed="self"
@@ -169,8 +172,6 @@ import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CommandMenu from './CommandMenu.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
-import TopBar from './editor/TopBar.vue'
-import ToolbarBar from './editor/ToolbarBar.vue'
 import SearchPanel from './editor/SearchPanel.vue'
 import MentionPanel from './editor/MentionPanel.vue'
 // P4-02a：日历浮层组件，只渲染；状态与定位全在 reminderMixin。
@@ -209,6 +210,7 @@ import selectionPacingMixin from './editor/selectionPacingMixin'
 import commandMenuMixin from './editor/commandMenuMixin'
 import tableToolsMixin from './editor/tableToolsMixin'
 import toolbarCollapseMixin from './editor/toolbarCollapseMixin'
+import toolbarUiMixin from './editor/toolbarUiMixin'
 import blockHandleMixin from './editor/blockHandleMixin'
 import blockMenuMixin from './editor/blockMenuMixin'
 import blockIndentMixin from './editor/blockIndentMixin'
@@ -252,8 +254,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { CommandMenu, LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -362,6 +364,9 @@ export default {
     embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
   },
   mounted() {
+    // 阶段 5 批次 2：顶栏已原生化（`src/ui/topBar.js`）。先挂它 —— 它不依赖编辑器实例，
+    // 放在最前面可以保证「编辑器创建失败」时页头仍然是完整的。
+    this.mountTopBar()
     // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
     // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
     this.restoreMode()
@@ -378,12 +383,14 @@ export default {
         element: this.$refs.editorEl,
         content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
         extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.refreshToolbar(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => { this.onSelectionUpdate(); this.refreshToolbar() },
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
       // 阶段 5 批次 1：气泡条已原生化（`src/ui/bubbleBar.js`），编辑器就绪后挂一次。
       this.mountBubbleBar()
+      // 阶段 5 批次 2：工具栏已原生化（`src/ui/toolbar.js`），同样在编辑器就绪后挂一次。
+      this.mountToolbarBar()
       // 首次挂载先补齐块的稳定 id：折叠偏好、锚点都按 id 引用块；没 id 就恢复不出折叠位。
       if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
       // 老数据或外部 JSON 的缩进可能超过飞书上限（5 级），挂载/替换正文后一次性压回。

@@ -103,12 +103,10 @@ export default {
     },
   },
   mounted() {
-    const bar = this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
-    if (bar && typeof ResizeObserver !== 'undefined') {
-      this._toolbarRO = new ResizeObserver(() => this.scheduleToolbarFit())
-      this._toolbarRO.observe(bar)
-    }
-    this.$nextTick(() => this.evaluateToolbarFit())
+    // 阶段 5 批次 2 起工具栏 DOM 由 `toolbarUiMixin.mountToolbarBar()` 在**组件自身的**
+    // `mounted` 里创建，而 mixin 的 `mounted` 早于它 —— 这里直接查节点一定是 null。
+    // 所以推一帧：那时工具栏已在 DOM 里（`mountToolbarBar` 也会再调一次本方法，幂等）。
+    this.$nextTick(() => { this.attachToolbarResizeObserver(); this.evaluateToolbarFit() })
   },
   beforeDestroy() {
     if (this._toolbarRO) { this._toolbarRO.disconnect(); this._toolbarRO = null }
@@ -117,6 +115,14 @@ export default {
   },
   methods: {
     isGroupCollapsed(id) { return this.collapsedGroups.includes(id) },
+    /** 给工具栏节点挂 ResizeObserver（幂等：已挂过就直接返回）。 */
+    attachToolbarResizeObserver() {
+      if (this._toolbarRO) return
+      const bar = this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
+      if (!bar || typeof ResizeObserver === 'undefined') return
+      this._toolbarRO = new ResizeObserver(() => this.scheduleToolbarFit())
+      this._toolbarRO.observe(bar)
+    },
     scheduleToolbarFit() {
       if (this._fitRaf) cancelAnimationFrame(this._fitRaf)
       this._fitRaf = requestAnimationFrame(() => { this._fitRaf = null; this.evaluateToolbarFit() })

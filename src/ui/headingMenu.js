@@ -2,8 +2,8 @@
  * 标题级别下拉（正文 + 一~九级标题）—— 原生 DOM 版。
  *
  * 与 `LarkDocHeadingMenu.vue` 是**同一份功能的两套渲染**（并存期）：
- * 工具栏那一支仍是 Vue 组件，气泡条这一支从阶段 5 批次 1 起走这里。
- * 两边共用下面这份 `HEADING_MENU_OPTIONS`（SFC 也 import 它），
+ * 气泡条自阶段 5 批次 1、工具栏自阶段 5 批次 2 起都走这里（那之后 SFC 只剩
+ * 块级下拉等残余调用方）。下面这份 `HEADING_MENU_OPTIONS` 两边共用，
  * 所以「152px / 32px / 蓝字」那类分叉不会再出现第二次。
  *
  * 飞书观感（断言已锁，见 `scripts/verify-browser-bubble.js` 与
