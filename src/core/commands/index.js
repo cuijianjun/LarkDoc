@@ -24,6 +24,7 @@ import { inlineCommands } from './inline'
 import { bitableCommands } from './bitable'
 import { drawCommands } from './draw'
 import { EMBED_MENU_ITEMS } from '../embed/presets'
+import { withSkipReasons } from '../embed/enterprise'
 
 const GROUPS = [
   basicCommands, commonCommands, dataCommands, mediaCommands, embedCommands, collabCommands,
@@ -178,5 +179,7 @@ export function filterCommands(query, kind = 'slash', config = null) {
     return kind !== 'plus' || item.plus !== false
   })
   const filtered = !needle ? candidates : candidates.filter((item) => `${item.label} ${item.id} ${item.keywords}`.toLocaleLowerCase().includes(needle))
-  return filtered.map((item) => ({ ...item, category: kind === 'plus' ? (item.plusCategory || item.category) : item.category }))
+  // `skip` 项的置灰原因在这里补：菜单每打开一次就重算一次接入状态（provider 是运行时
+  // 注册的，冻在模块初始化里会一直说「未接入」）。见 `core/embed/enterprise.js`。
+  return withSkipReasons(filtered.map((item) => ({ ...item, category: kind === 'plus' ? (item.plusCategory || item.category) : item.category })))
 }

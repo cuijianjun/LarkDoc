@@ -28,6 +28,7 @@ import { createNetworkPolicy } from '../../core/policy/network'
 import { withUnfurlGate } from '../../core/embed/unfurl'
 import { wrapContainerAllowed } from '../../core/blocks/container-depth'
 import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
+import { LarkDocExternalDelete } from '../../core/blocks/external-delete'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
@@ -183,6 +184,10 @@ export function createLarkDocExtensions(options = {}) {
     // externalBlock = 认得出但没接服务。目录与能力判定在 core/embed/external-block.js，
     // 载入降级映射在 core/documentOperations.js，这里只管注册进 schema。
     ExternalBlock,
+    // 17 §17.5：删除 externalBlock 的键位收口到 `BlockModuleAPI.remove`（优先级 1001，
+    // 抢在 baseKeymap 的 deleteSelection / joinBackward 之前）。它不产生节点、不改 schema，
+    // 只加一组键盘处理，所以放在 schema 相关的节点之后不影响快照。
+    LarkDocExternalDelete,
     // 修订的运行时：`tracker` 只在宿主把 storage.active 打开（suggest 模式）后拦截键入 /
     // 退格并补 mark，其余模式零行为；`highlight` 只画激活态那一条的底色。
     LarkDocRevisionTracker, LarkDocRevisionHighlight,

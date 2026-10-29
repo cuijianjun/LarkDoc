@@ -17,6 +17,7 @@
  */
 import { closeHistory } from '@tiptap/pm/history'
 import { TRANSACTION_ORIGINS } from '../transactionMetadata'
+import { assertExternalOperation, externalOperationState } from '../embed/provider-registry'
 import {
   BLOCK_LIST_TYPES, blockEntry, blockTree, isContainerType, posAtId, snapshotOf,
 } from './tree'
@@ -27,6 +28,32 @@ import {
 } from './nodes'
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+
+/**
+ * 外部服务块的闸门（17 §17.5 表下说明 + §17.13）。
+ *
+ * 为什么闸门放在 BlockAPI 而不是各调用点：
+ *   §17.5 的 CRUD 四栏是「这个块能不能这么动」的**唯一出处**，而 BlockAPI 是「动块的唯一
+ *   通道」（本文件头第 1 条）。放在这里 = 一处判、全局生效，宿主写自己的块菜单 / AI 提案
+ *   时不会因为忘了查表而伪造出一个本地成功。
+ *
+ * 三条边界（想清楚再改）：
+ *   - **删**一律放行：§17.5 表头写明「Delete 对块统一允许通过 `BlockModuleAPI.remove`」；
+ *   - **搬 / 复制 / 批删**不放闸：它们是本地结构操作，钥匙卡本身没变，拦下来只会让用户
+ *     在未接入状态下连「挪个位置」都做不到；
+ *   - **纯本地字段的 update 放行**：`status` / `reason` / `provider` 是宿主同步接入状态用的
+ *     记账字段，不是 provider 数据。若这三个也要接入才能改，卡片角标就永远停在「未接入」。
+ */
+const EXTERNAL_BLOCK_TYPE = 'externalBlock'
+/** 只属于本地记账、不需要 provider 的 attrs（见上面第三条边界）。 */
+const EXTERNAL_LOCAL_ATTRS = new Set(['status', 'reason', 'provider'])
+
+/** payload（文档 JSON）里是不是一个外部服务块；是则返回它的 kind，否则 null。 */
+function payloadExternalKind(json) {
+  if (!json || json.type !== EXTERNAL_BLOCK_TYPE) return null
+  const attrs = json.attrs && typeof json.attrs === 'object' ? json.attrs : {}
+  return typeof attrs.kind === 'string' ? attrs.kind : ''
+}
 
 /**
  * 解析 `BlockAnchor`（§5.12.2 三种形态，按优先级 resolve）。
@@ -187,6 +214,10 @@ export function createBlockApi(options = {}) {
     for (const payload of list) {
       const raw = normalizePayload(schema, payload)
       if (!raw) continue
+      // 外部服务块被「新建」时先过闸门：未接入 provider 的 kind 一律抛
+      // ERR_PROVIDER_REQUIRED，而不是插一张点不动的卡（§17.5 不允许伪造本地成功）。
+      const externalKind = payloadExternalKind(raw)
+      if (externalKind !== null) assertExternalOperation(externalKind, 'create')
       const taken = collectIds(tr.doc)
       const assigned = assignIds(raw, taken)
       const fitted = fitToParent(schema, assigned.json, target.parentType, taken)
@@ -279,6 +310,21 @@ export function createBlockApi(options = {}) {
       const entry = blockEntry(currentDoc(), blockId)
       return entry ? isContainerType(entry.node.type.name) : false
     },
+    /**
+     * 某个块对某动作的能力判定 —— UI 置灰与「为什么点不动」文案都从这里取。
+     *
+     * 非外部服务块一律 `allowed: true`：本仓库其余块没有 provider 档位
+     * （`isv` / `bitable` 的关联视图另有自己的 provider 判定，不在这条链上）。
+     */
+    capability(blockId, action = 'update') {
+      const entry = blockEntry(currentDoc(), blockId)
+      if (!entry) return { allowed: false, code: null, reason: '块不存在', mode: 'missing' }
+      if (entry.node.type.name !== EXTERNAL_BLOCK_TYPE) {
+        return { allowed: true, code: null, reason: '', mode: 'local' }
+      }
+      const kind = typeof entry.node.attrs.kind === 'string' ? entry.node.attrs.kind : ''
+      return externalOperationState(kind, action)
+    },
 
     // ── 写 ────────────────────────────────────────
     insert(payload, at) {
@@ -290,14 +336,22 @@ export function createBlockApi(options = {}) {
       const spec = entry.node.type.spec.attrs || {}
       const attrs = { ...entry.node.attrs }
       let changed = false
+      let touchesProviderField = false
       Object.keys(patch).forEach((key) => {
         // `blockId` 是锚点，不接受外部改写。
         if (key === 'blockId' || !(key in spec)) return
         if (attrs[key] === patch[key]) return
         attrs[key] = patch[key]
         changed = true
+        if (!EXTERNAL_LOCAL_ATTRS.has(key)) touchesProviderField = true
       })
       if (!changed) return
+      // 外部服务块：只有「纯记账字段」能无条件改；改到内容字段就要 provider。
+      // 判据用 `externalOperationState` 而不是自己拼 if —— 与 UI 置灰同源。
+      if (entry.node.type.name === EXTERNAL_BLOCK_TYPE && touchesProviderField) {
+        const kind = typeof entry.node.attrs.kind === 'string' ? entry.node.attrs.kind : ''
+        assertExternalOperation(kind, 'update')
+      }
       const tr = newTr()
       tr.setNodeMarkup(entry.pos, null, attrs)
       commit(tr)
@@ -379,6 +433,9 @@ export function createBlockApi(options = {}) {
       const taken = collectIds(doc)
       const json = convertBlock(schema, entry.node, toType, attrs, taken)
       if (!json) return
+      // 转成外部服务块等于「新建一张钥匙卡」，同样要 provider（§17.5）。
+      const externalKind = payloadExternalKind(json)
+      if (externalKind !== null) assertExternalOperation(externalKind, 'create')
       const node = nodeFromJson(schema, json)
       if (!node) return
       const tr = newTr()
