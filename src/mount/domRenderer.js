@@ -224,8 +224,8 @@ export function createDomRenderer() {
         content: props.initialContent && typeof props.initialContent === 'object' ? undefined : initialContent,
         editable: !getEffectiveReadonly(),
         extensions: createLarkDocExtensions({
-          config: props.config,
-          maxLength: props.config?.limits?.maxLength,
+          config: state.editorConfig,
+          maxLength: state.editorConfig.limits.maxLength,
           resolveImageFile,
           resolveFileUrl: props.resolveFileUrl,
           onEmbedTitle: props.onEmbedTitle,
