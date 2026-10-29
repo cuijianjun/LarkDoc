@@ -859,7 +859,7 @@ import { LarkDoc } from 'lark-doc/lite'
 | 1 Tooltip / 气泡条 | ✅ 完成 | `scripts/verify-browser-bubble.js` 44/44、`verify-browser-heading-menu.js` 16/16 | `src/ui/bubbleBar.js`、`src/ui/headingMenu.js`、`src/ui/icon.js`、`src/ui/menuLayout.js`；`editor/BubbleBar.vue` 已删，`bubbleMenuMixin.js` 退化为「算 state → `_bubbleUi.update()`」 | 见 `git log --grep '阶段 5 批次 1'` |
 | 2 工具栏 | ✅ 完成 | `scripts/verify-browser-toolbar.js` 51/51 | `src/ui/toolbar.js`、`src/ui/topBar.js`、`src/ui/select.js`、`src/ui/dom.js`；`editor/ToolbarBar.vue`、`editor/TopBar.vue` 已删，`editor/toolbarUiMixin.js` 退化为「算 state → `update()`」 | `ff4f7aa`（断言 `d4c1b07`），tag `stage/5-B` |
 | 3 各级菜单 | ✅ 完成（3/3 模块） | `scripts/verify-browser-block-menu.js` 37/37、`scripts/verify-browser-command-menu.js` 48/48、`verify-browser-heading-menu.js` 16/16（均为改前先绿、改后原样复跑，一条未放宽） | `src/ui/blockHandle.js` 533 行 + `editor/blockHandleUiMixin.js`（两段式刷新）；`src/ui/commandMenu.js` 约 540 行 + `editor/commandMenuUiMixin.js`；`editor/BlockHandleMenu.vue`、`CommandMenu.vue`、孤儿 `LarkDocHeadingMenu.vue` 已删，R2 34→31 | 见 `git log --grep '阶段 5 批次 3'`，tag `stage/5-C` |
-| 4 弹窗 / 面板 | ⬜ 未开始 | 待补 | — | — |
+| 4 弹窗 / 面板 | ✅ 完成（4a 五弹窗 + 4b 四面板） | `scripts/verify-browser-dialogs.js` 52/52（4a，改前先绿、改后原样复跑）；`scripts/verify-browser-panels.js` 87/87（4b，目录 17 + 版本 26 + 评论 22 + 另存为 12 + 模板库 9 + 无脚本错误 1） | `src/ui/dialogs.js` + `editor/dialogsUiMixin.js`（4a，表格选择器/公式/链接/快捷键抽屉/内嵌浮层）；`src/ui/panels.js` 1029 行 + `editor/panelsUiMixin.js`（4b，目录/历史/评论/另存为）；`editor/OutlinePanel.vue`、`CommentPanel.vue`、`VersionPanel.vue`、`SaveVersionDialog.vue` 已删，R2 26→22。`TemplateLibrary.vue` 是宿主侧组件（`src/index.js` 对外导出、独立路由），留到阶段 7 | `a583fa7`（4a）、`git log --grep '阶段 5 批次 4b'`（4b），tag `stage/5-D` / `stage/5-E` |
 | 5 主壳 | ⬜ 未开始 | 待补 | — | — |
 
 批次 3 已收尾。`LarkDocHeadingMenu.vue`（55 行）全仓无 import（只有注释在提它），是批次 1 把标题下拉换成 `src/ui/headingMenu.js` 之后留下的孤儿，直接删 + 减基线（R2 32→31），无断言影响 —— 那条路早就在 `verify-browser-heading-menu.js` 16/16 的覆盖下了。
@@ -867,6 +867,9 @@ import { LarkDoc } from 'lark-doc/lite'
 批次 3 的两条新经验（后续批次会再撞上）：
 ① **键盘要挡住原生默认行为**：斜杠菜单的 ↑↓/Enter 若不 `preventDefault()`，浏览器原生移光标 → 选区变化 → slash match 消失 → 菜单先自关，组件层永远收不到键。`core/blocks/document.js` 因此加了 `slashActive` 闸门（与 `mentionActive` 同源）。
 ② **宿主可以是占位 div 本身**：命令菜单挂在 `commandMenuHost` 里（同 `bubbleHost`），不学块句柄插兄弟位 —— 往 Vue 管的子节点列表里塞节点，父级重渲染时容易被顺手挪走；菜单 `position: fixed`，父级是谁都不影响定位。
+
+批次 4b 的一条新经验（阶段 5 批次 5 主壳会再撞上）：
+**共用宿主的多个积木只能用「只增删自己这一棵」的挂载方式，不能用 `syncChildren(host, …)`**。`syncChildren` 的语义是「把 parent 的子节点整体对齐到期望序列」，不在序列里的一律 `removeChild`；而历史层 / 另存为 / 评论层三块面板都和 `dialogs.js` 一样共用一个 `panelHost`（它们都 `position: fixed`，父级是谁不影响定位）。各自 update 一次就会互相摘掉，症状是「只有最后更新的那个活着」—— 本轮的表现是目录（独占宿主）全绿、版本面板整块 `没渲染`。解法与 `dialogs.js` 逐字同款：`mountNode(host, el, on)` = 开则 `host.appendChild`、关则 `el.parentNode.removeChild`。**`syncChildren` 只用于自己独占的子树内部**。
 
 批次 1 的经验（批次 2~5 直接复用）：① 原生化把 3 处 `$nextTick(定位)` 全部消掉了——原生节点同步插入即可同步 `getBoundingClientRect()`，这正是那 53 个时序点的解法；② 断言锁的「结构即契约」（段序、`role`、`aria-label`、`data-tooltip`）必须逐字段复刻，条件段要**真的不在 DOM 里**而不是 `hidden`；③ 事件要用**原事件**透传（`toggleColorPalette` 靠 `event.currentTarget` 定位），自造事件对象会静默退回默认坐标；④ 一次建好节点、之后只改属性，重建会丢焦点并让 160ms 悬停链断开。
 

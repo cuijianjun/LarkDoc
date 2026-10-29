@@ -53,12 +53,19 @@ describe('P6b · 门面接线', () => {
 })
 
 describe('P6b · 浮层容器', () => {
-  it('五条线的面板都是兄弟节点（fixed 定位的祖先不能有 transform/非 static）', () => {
-    for (const tag of ['CommentPanel', 'VersionPanel', 'SaveVersionDialog', 'SharePopover', 'ExportDialog']) {
+  it('面板节点仍是兄弟（fixed 定位的祖先不能有 transform/非 static）', () => {
+    // 4b 之后浮层组只剩分享 / 导出两条 Vue 线；评论卡 / 历史层 / 另存为已原生化，
+    // 宿主换成了门面模板里的 `<div ref="panelHost" />`。判据不缩水，只是搬个落点。
+    for (const tag of ['SharePopover', 'ExportDialog']) {
       expect(overlays).toContain(`<${tag} :ed="ed" />`)
     }
-    // 五个子节点同一个根 div 的直系孩子：不含第二层包裹容器。
+    // 子节点同一个根 div 的直系孩子：不含第二层包裹容器。
     expect(overlays).toContain('<div class="lark-doc-p6b-layer">')
+    // 迁走的三块面板宿主必须与 `<LarkDocOverlays>` **同层**：套进浮层组会多一层包裹，
+    // 套进 `.lark-doc-main` 则被 `overflow: auto` 变成 fixed 的包含块。
+    expect(sfc).toContain('<div ref="panelHost" />')
+    const panelHostAt = sfc.indexOf('<div ref="panelHost" />')
+    expect(sfc.lastIndexOf('<LarkDocOverlays :ed="self" />', panelHostAt)).toBeGreaterThan(-1)
   })
 
   it('包裹层不带 v-if / transform / filter / overflow（会改写 fixed 包含块或提前摘 toast）', () => {

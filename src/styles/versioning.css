@@ -1,5 +1,6 @@
 /**
- * 历史版本（P6b-02）样式 —— `VersionPanel.vue` + `SaveVersionDialog.vue`。
+ * 历史版本（P6b-02）样式 —— `src/ui/panels.js` 的 `createVersionPanel` +
+ * `createSaveVersionDialog`（原 `VersionPanel.vue` / `SaveVersionDialog.vue`，阶段 5 批次 4b 已原生化）。
  *
  * 规格：requirements/04 §3.4（几何与交互）/ §⑤-2（另存为版本 Dialog）。
  * 入口：由宿主在主样式 `lark-doc.css` 顶部 `@import` 接线（本线不改主样式）。

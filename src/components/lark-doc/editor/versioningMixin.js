@@ -9,7 +9,8 @@
  *
  * 八条负结论（别「补全」）—— 全部来自 04 §3.4 实测与 ⑦「仍未采」清单：
  *   1. **`Esc` 关不掉历史面板**（§3.4 ⑤ `stillOpenAfterEsc=true`）。只有点左栏顶栏返回
- *      图标才关。这里的 `@keydown.esc` 交给 VersionPanel 根节点 `.stop.prevent`，目的是
+ *      图标才关。这里的 `@keydown.esc` 交给面板根节点（`src/ui/panels.js` 的
+ *      `createVersionPanel`）`.stop.prevent`，目的是
  *      **不让 Esc 冒泡到 `overlayDismissMixin.closeOverlay()`** —— 那条互斥 else-if 链
  *      里没有版本面板分支，Esc 传过去只会误关别的浮层。
  *   2. **「还原此历史记录」默认 `disabled`**（§3.4 ⑤ 反直觉 1，底色 `#BBBFC4`、

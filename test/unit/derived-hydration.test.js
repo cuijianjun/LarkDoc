@@ -163,9 +163,15 @@ describe('P7-03 derived snapshot: gate wiring on both sides', () => {
     expect(outlineAt).toBeGreaterThan(clearAt)
   })
 
-  it('OutlinePanel disables the jump button while the gate is up', () => {
-    const panel = read('src/components/lark-doc/editor/OutlinePanel.vue')
-    expect(panel).toContain(':disabled="ed.outlinePending"')
-    expect(panel).toContain('@click="ed.jumpHeading(item.pos)"')
+  it('目录面板的跳转钮在闸门抬起时禁用（阶段 5 批次 4b 后落点改为 src/ui/panels.js）', () => {
+    // 原判据读 OutlinePanel.vue 的 `:disabled="ed.outlinePending"` + `@click="ed.jumpHeading(...)"`。
+    // 4b 把目录面板原生化后，同样的两件事变成属性赋值与 handler 回调 —— 判据跟着搬，
+    // 语义不变：闸门抬起（pending）则禁用 + 挂提示，点击走后仍直连 jumpHeading。
+    const panel = read('src/ui/panels.js')
+    expect(panel).toContain('jump.disabled = !!state.pending')
+    expect(panel).toContain("setAttr(jump, 'title', state.pending ? '正文还在载入，稍后可跳转' : null)")
+    expect(panel).toContain("call('onJump', pos)")
+    const wiring = read('src/components/lark-doc/editor/panelsUiMixin.js')
+    expect(wiring).toContain('onJump: (pos) => this.jumpHeading(pos)')
   })
 })

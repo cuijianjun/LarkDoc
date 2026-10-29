@@ -115,7 +115,7 @@ export {
 // P6b-01：评论。与修订同类是 **mark**（挂在文本上，容器套 span），差别是它**只带
 // threadId 不带位置**（05 §5.5⑥ 锚点是块内相对偏移，不用 ProseMirror from/to）。
 // 契约层（mark 名 / 高亮类名 / 面板几何 / 三态高度 / 收集与定位）同源再导出，
-// 面板（`CommentPanel.vue`）与状态机（`editor/commentsMixin.js`）都只从这里取。
+// 面板（`src/ui/panels.js` 的 `createCommentPanel`）与状态机（`editor/commentsMixin.js`）都只从这里取。
 export {
   LarkDocComment, COMMENT_AUTHOR_NAME_FALLBACK, COMMENT_CONTROL_IDS, COMMENT_CONTROLS,
   COMMENT_ENTRANCE, COMMENT_HEIGHTS, COMMENT_HIGHLIGHT_CLASS, COMMENT_MARK_NAME,

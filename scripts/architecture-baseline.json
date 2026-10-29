@@ -5,7 +5,6 @@
     "要收紧基线请用 scripts/check-architecture.js 报错信息里给出的命令，不要手改本文件。"
   ],
   ".vue": [
-    "components/lark-doc/CommentPanel.vue",
     "components/lark-doc/editor/CalendarSearchPanel.vue",
     "components/lark-doc/editor/CalloutTools.vue",
     "components/lark-doc/editor/ColorPalette.vue",
@@ -14,7 +13,6 @@
     "components/lark-doc/editor/IsvButtonPanel.vue",
     "components/lark-doc/editor/LarkDocOverlays.vue",
     "components/lark-doc/editor/MentionPanel.vue",
-    "components/lark-doc/editor/OutlinePanel.vue",
     "components/lark-doc/editor/PaperStage.vue",
     "components/lark-doc/editor/ReminderPopover.vue",
     "components/lark-doc/editor/RevisionPanel.vue",
@@ -27,9 +25,7 @@
     "components/lark-doc/LarkDocSelect.vue",
     "components/lark-doc/LarkDocWorkspace.vue",
     "components/lark-doc/PermissionDialog.vue",
-    "components/lark-doc/SaveVersionDialog.vue",
     "components/lark-doc/SharePopover.vue",
-    "components/lark-doc/TemplateLibrary.vue",
-    "components/lark-doc/VersionPanel.vue"
+    "components/lark-doc/TemplateLibrary.vue"
   ]
 }

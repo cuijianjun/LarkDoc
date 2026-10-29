@@ -60,7 +60,12 @@
       >
         ☰
       </button>
-      <OutlinePanel :ed="self" />
+      <!-- 目录侧栏的宿主（阶段 5 批次 4b）：DOM 由 src/ui/panels.js 建。`display: contents`
+           是硬要求 —— `aside` 是 `flex: 0 0 210px` + `sticky`，必须是这层 flex 的直接子项。 -->
+      <div
+        ref="outlineHost"
+        style="display: contents"
+      />
       <main class="lark-doc-main">
         <PaperStage :ed="self" />
         <div
@@ -142,8 +147,11 @@
         />
       </button>
     </p>
-    <!-- 标题编号菜单（继续/重新开始/设置值）+ P6b 浮层组（评论/版本/分享/导出，五条线收在一个容器里只占一个模板位 —— 本文件有 <700 行门禁） -->
+    <!-- 标题编号菜单 + 浮层组（分享 / 导出；评论 / 历史 / 另存为已在 4b 迁到 src/ui/panels.js） -->
     <HeadingNumberMenu :ed="self" /><LarkDocOverlays :ed="self" />
+    <!-- 面板 / 宿主弹窗的挂载点（阶段 5 批次 4b）：DOM 由 src/ui/panels.js 建。与
+         `<LarkDocOverlays>` 同层是硬要求 —— 评论卡 / 历史层 / 另存为全是 `fixed`。 -->
+    <div ref="panelHost" />
   </section>
 </template>
 
@@ -170,7 +178,6 @@ import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
 import IsvButtonPanel from './editor/IsvButtonPanel.vue'
 import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，状态与定位全在 revisionMixin。
 import TableTools from './editor/TableTools.vue'
-import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
 import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
@@ -201,6 +208,8 @@ import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import dialogsUiMixin from './editor/dialogsUiMixin' // 阶段 5 批次 4：弹窗/抽屉/内嵌浮层渲染层在 src/ui/dialogs.js
+// 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板渲染层在 src/ui/panels.js。
+import panelsUiMixin from './editor/panelsUiMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
 // P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
 // 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
@@ -237,8 +246,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -351,6 +360,9 @@ export default {
     // 阶段 5 批次 4：弹窗 / 抽屉 / 内嵌浮层已原生化（`src/ui/dialogs.js`）。它不依赖编辑器
     // 实例，连同顶栏一起先挂 —— 即使编辑器创建失败，关闭错误提示的那一层也仍然在。
     this.mountDialogs()
+    // 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板已原生化（`src/ui/panels.js`）。
+    // 同样不依赖编辑器实例 —— 目录宿主在 `.lark-doc-body` 里，评论卡等的宿主与根同层。
+    this.mountPanels()
     // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
     // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
     this.restoreMode()
@@ -402,7 +414,7 @@ export default {
     this.editor?.destroy()
     this.editor = null
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs()
+    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyPanels()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
