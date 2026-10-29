@@ -851,6 +851,18 @@ import { LarkDoc } from 'lark-doc/lite'
 
 **混合期怎么过渡**：`src/mount/index.js` 的 `setRenderer()` 是换整渲染器的钩子，粒度不够；实际做法是在 Vue 主壳里**逐个把子组件替换成原生 DOM 片段**。一个批次做完即可发一个 MINOR，随时可停。
 
+**进度**（逐批更新，别只写在 commit 里）
+
+| 批次 | 状态 | 断言 | 原生实现落点 | commit |
+|---|---|---|---|---|
+| 1 Tooltip / 气泡条 | ✅ 完成 | `scripts/verify-browser-bubble.js` 44/44、`verify-browser-heading-menu.js` 16/16 | `src/ui/bubbleBar.js`、`src/ui/headingMenu.js`、`src/ui/icon.js`、`src/ui/menuLayout.js`；`editor/BubbleBar.vue` 已删，`bubbleMenuMixin.js` 退化为「算 state → `_bubbleUi.update()`」 | 见 `git log --grep '阶段 5 批次 1'` |
+| 2 工具栏 | ⬜ 未开始 | 待补（现有工具栏断言分散在 icon-align / heading-menu 等套件） | — | — |
+| 3 各级菜单 | ⬜ 未开始 | 待补 | — | — |
+| 4 弹窗 / 面板 | ⬜ 未开始 | 待补 | — | — |
+| 5 主壳 | ⬜ 未开始 | 待补 | — | — |
+
+批次 1 的经验（批次 2~5 直接复用）：① 原生化把 3 处 `$nextTick(定位)` 全部消掉了——原生节点同步插入即可同步 `getBoundingClientRect()`，这正是那 53 个时序点的解法；② 断言锁的「结构即契约」（段序、`role`、`aria-label`、`data-tooltip`）必须逐字段复刻，条件段要**真的不在 DOM 里**而不是 `hidden`；③ 事件要用**原事件**透传（`toggleColorPalette` 靠 `event.currentTarget` 定位），自造事件对象会静默退回默认坐标；④ 一次建好节点、之后只改属性，重建会丢焦点并让 160ms 悬停链断开。
+
 **工作量修正**：mixin 里的逻辑大部分能留。`editor/` 下 31 个 mixin + 24 个 SFC（2968 行）中——
 - **零改动可直接搬**：`icons.js` 104、`palette.js` 134、`constants.js` 70、`docModes.js` 107、`shortcutGroups.js` 125 → 共 **546 行**；
 - **逻辑可搬、语法要改**：命令执行、列宽计算、折叠范围判定、标题编号计算 → 改写成普通函数即可；

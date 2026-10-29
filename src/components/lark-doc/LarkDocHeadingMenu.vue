@@ -37,15 +37,11 @@
  * 两边只负责「打开/定位/选中后干什么」，避免像以前那样各写一套 152px/32px/蓝色
  * 的私有样式再慢慢分叉。
  *
- * 纯受控组件：开关与定位由父级决定（工具栏用 headingOpen/headingStyle，
- * 气泡条用 bubbleHeadingOpen/bubbleHeadingMenuStyle），本组件只渲染与透传事件。
+ * 纯受控组件：开关与定位由父级决定（工具栏用 headingOpen/<dropdown 定位>，
+ * 气泡条那一支已原生化到 `src/ui/headingMenu.js`），本组件只渲染与透传事件。
+ * 两边**共用同一份选项表** `HEADING_MENU_OPTIONS` —— 菜单项文字/级别只写一次。
  */
-const HEADING_NAMES = ['一', '二', '三', '四', '五', '六', '七', '八', '九']
-
-const HEADING_MENU_OPTIONS = [
-  { level: null, glyph: 'T', label: '正文' },
-  ...HEADING_NAMES.map((name, index) => ({ level: index + 1, glyph: `H${index + 1}`, label: `${name}级标题` })),
-]
+import { HEADING_MENU_OPTIONS } from '../../ui/headingMenu'
 
 export default {
   name: 'LarkDocHeadingMenu',

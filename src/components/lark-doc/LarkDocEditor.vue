@@ -93,7 +93,10 @@
       </aside>
     </div>
 
-    <BubbleBar :ed="self" />
+    <!-- 划词气泡条的挂载点（阶段 5 批次 1 原生化）：DOM 由 src/ui/bubbleBar.js 建，
+         必须是 .lark-doc 里的空容器 —— 气泡条样式全带 `.lark-doc ` 前缀；
+         自身 position: fixed，这个空 div 不占布局。 -->
+    <div ref="bubbleHost" />
     <command-menu
       v-if="menuOpen && !effectiveReadonly"
       :items="filteredCommands"
@@ -183,7 +186,6 @@ import PaperStage from './editor/PaperStage.vue'
 import BlockHandleMenu from './editor/BlockHandleMenu.vue'
 import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
-import BubbleBar from './editor/BubbleBar.vue'
 import ColorPalette from './editor/ColorPalette.vue'
 import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
 import MathDialog from './editor/dialogs/MathDialog.vue'
@@ -250,7 +252,7 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  components: { CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
   mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
@@ -380,6 +382,8 @@ export default {
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
+      // 阶段 5 批次 1：气泡条已原生化（`src/ui/bubbleBar.js`），编辑器就绪后挂一次。
+      this.mountBubbleBar()
       // 首次挂载先补齐块的稳定 id：折叠偏好、锚点都按 id 引用块；没 id 就恢复不出折叠位。
       if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
       // 老数据或外部 JSON 的缩进可能超过飞书上限（5 级），挂载/替换正文后一次性压回。
@@ -404,6 +408,8 @@ export default {
     if (this.session && this.editor) this.session.detachEditor(this.editor)
     this.editor?.destroy()
     this.editor = null
+    // 原生气泡条持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 里会读到 _bubbleUi 为 null）。
+    this.destroyBubbleBar()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
