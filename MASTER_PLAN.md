@@ -727,15 +727,16 @@ import { LarkDoc } from 'lark-doc/lite'
 
 | 阶段 | 内容 | 风险 | 产物影响 | 状态 |
 |---|---|---|---|---|
-| **0** | 0.13 打包收口：`browser` 字段、UMD 降 ES2018、vue3/react 薄壳、`__LARK_DOC_PUBLIC_PATH__` | 低 | 发布面收口 | **代码已写，未提交未发版** |
-| **1-A** | 契约收敛：`sideEffects` 去掉 `dist/*`、`browser` 删除、`exports` 补 `./lite` `./features/*` `./plugin` | 低 | tree-shaking 生效 | 待开（**必做**） |
-| **1-B** | R1/R2/R3 三条闸门 + 渲染接缝契约文档化；**不动任何 UI** | 极低 | 无 | 待开（**必做**） |
-| **2** | 摘 `@tiptap/vue-2`：原生 Editor 挂载 + 原生 NodeView（3 个文件） | 中 | Vue 降级为「仅 UI 渲染器」 | 待开（**必做**） |
-| **3** | 三产物收敛 + 统一门面 `new LarkDoc(...)`；CJS 放开拆块；顺手带出 **V1 过渡态** | 中 | 运行时产物 4 套 → 3 套 | 待开（**必做**） |
-| **4** | 特性子路径 + 资源本地化（**内网命门**） | 中 | `lite` 档、`features/*`、零外链 | 待开（**必做**） |
-| **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | 待开（**必做**） |
-| **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | 待开（**必做**） |
-| **7** | 删 vue2 renderer + element 去 `--inline-vue` + 删 vue peerDeps → **V2/V3 终局达成** | 低（阶段 5 完成后） | element gzip 约降到 447 KiB | 待开（**必做**） |
+| **0** | 0.13 打包收口：`browser` 字段、UMD 降 ES2018、vue3/react 薄壳、`__LARK_DOC_PUBLIC_PATH__` | 低 | 发布面收口 | ✅ **已完成**（tag `stage/0`；尚未发 0.13，`version` 仍 0.12.1） |
+| **1-A** | 契约收敛：`sideEffects` 去掉 `dist/*`、`browser` 删除、`exports` 补 `./lite` `./features/*` `./plugin` | 低 | tree-shaking 生效 | ✅ **已完成**（tag `stage/1-A`） |
+| **1-B** | R1/R2/R3 三条闸门 + 渲染接缝契约文档化；**不动任何 UI** | 极低 | 无 | ✅ **已完成**（与 1-A 同批，同 tag） |
+| **1-C** | webpack 4 收敛为一行 alias + ES2018 产物闸门 | 低 | 老宿主接入成本归零 | ✅ **已完成**（tag `stage/1-C`，1-A 之后追加） |
+| **2** | 摘 `@tiptap/vue-2`：原生 Editor 挂载 + 原生 NodeView（3 个文件） | 中 | Vue 降级为「仅 UI 渲染器」 | ✅ **已完成**（tag `stage/2`） |
+| **3** | 三产物收敛 + 统一门面 `new LarkDoc(...)`；CJS 放开拆块；顺手带出 **V1 过渡态** | 中 | 运行时产物 4 套 → 3 套 | ✅ **已完成**（tag `stage/3`） |
+| **4** | 特性子路径 + 资源本地化（**内网命门**） | 中 | `lite` 档、`features/*`、零外链 | ✅ **已完成**（tag `stage/4`） |
+| **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | 🟡 **1/5 批**（批次 1 完成，tag `stage/5-A`；批次 2~5 未开） |
+| **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | ⬜ 待开（**必做**） |
+| **7** | 删 vue2 renderer + element 去 `--inline-vue` + 删 vue peerDeps → **V2/V3 终局达成** | 低（阶段 5 完成后） | element gzip 约降到 447 KiB | ⬜ 待开（**必做**，前置阶段 5 全量） |
 
 **阶段表没有可选项**。阶段 5 是唯一高风险项，靠「每批先补断言再重写 + 批次一重估排期」控住（见 §5 小节 ④），
 不靠「降级为可选」规避 —— 一旦停在 V1，Vue 2.7（2023-12-31 起 EOL）将永久封产物内，且阶段 7 的收尾永远无法执行。
