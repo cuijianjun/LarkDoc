@@ -3,9 +3,8 @@
  *
  * 这里守的是四件**一眼看不见、错了也不报错**的事：
  *   1. `p6bMixin` 真的挂在门面的 mixins 数组里 —— 漏了不会崩，只会所有能力静默失效；
- *   2. `LarkDocOverlays` 真的出现在模板里（Vue 2 `components` 走 mergeAssets，
- *      光 import 不写标签就是「注册了但没用」）；
- *   3. 浮层包裹层**不带 v-if**（04 §4.6.7③「弹窗关闭 → toast」会被父级提前摘掉）；
+ *   2. 原生 overlays 宿主真的出现在模板里，并由 overlaysUiMixin 接线；
+ *   3. 原生浮层各自按状态真实插入 / 移除，不能由 Vue 父级提前摘掉 toast；
  *   4. `readingModeMixin` 排在最后 —— 它的 `writable()` 是另四条线的判据上游，
  *      靠后才能压住前面的旧口径（Vue 2 同层后写胜）。
  *
@@ -20,22 +19,23 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
 
 const sfc = read('src/components/lark-doc/LarkDocEditor.vue')
 const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
-const overlays = read('src/components/lark-doc/editor/LarkDocOverlays.vue')
+const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
+const overlaysRenderer = read('src/ui/overlays.js')
 
 const mixinsLine = sfc.split('\n').find((line) => line.trim().startsWith('mixins: ['))
 const aggregatorMixins = aggregator.split('\n').find((line) => line.trim().startsWith('mixins: ['))
 
 // 「不许出现」类断言必须先看**代码**而不是注释：本文件的头注释里就把 transform /
 // filter 这些禁词当说明写了，不剥注释会自己把自己判红。
-const overlaysCode = overlays
-  .replace(/<!--[\s\S]*?-->/g, '')
-  .replace(/^[^\n\S]*\/\/.*$/gm, '')
 
 describe('P6b · 门面接线', () => {
-  it('p6bMixin 已注册 + 模板挂载浮层组（缺一即全线静默失效）', () => {
+  it('p6bMixin 与 overlaysUiMixin 已注册 + 模板挂载原生浮层宿主', () => {
     expect(sfc).toContain("import p6bMixin from './editor/p6bMixin'")
+    expect(sfc).toContain("import overlaysUiMixin from './editor/overlaysUiMixin'")
     expect(mixinsLine).toContain('p6bMixin')
-    expect(sfc).toContain('<LarkDocOverlays :ed="self" />')
+    expect(mixinsLine).toContain('overlaysUiMixin')
+    expect(sfc).toContain('<div ref="overlayHost" />')
+    expect(overlaysUi).toContain('createOverlays')
   })
 
   it('门面仍守 P0-03 的 <700 行门禁（含 P6b 全部接线）', () => {
@@ -53,33 +53,20 @@ describe('P6b · 门面接线', () => {
 })
 
 describe('P6b · 浮层容器', () => {
-  it('面板节点仍是兄弟（fixed 定位的祖先不能有 transform/非 static）', () => {
-    // 4b 之后浮层组只剩分享 / 导出两条 Vue 线；评论卡 / 历史层 / 另存为已原生化，
-    // 宿主换成了门面模板里的 `<div ref="panelHost" />`。判据不缩水，只是搬个落点。
-    for (const tag of ['SharePopover', 'ExportDialog']) {
-      expect(overlays).toContain(`<${tag} :ed="ed" />`)
-    }
-    // 子节点同一个根 div 的直系孩子：不含第二层包裹容器。
-    expect(overlays).toContain('<div class="lark-doc-p6b-layer">')
-    // 迁走的三块面板宿主必须与 `<LarkDocOverlays>` **同层**：套进浮层组会多一层包裹，
-    // 套进 `.lark-doc-main` 则被 `overflow: auto` 变成 fixed 的包含块。
-    expect(sfc).toContain('<div ref="panelHost" />')
-    const panelHostAt = sfc.indexOf('<div ref="panelHost" />')
-    expect(sfc.lastIndexOf('<LarkDocOverlays :ed="self" />', panelHostAt)).toBeGreaterThan(-1)
+  it('原生渲染器保留分享 / 权限 / 导出完整结构与语义属性', () => {
+    for (const className of [
+      'lark-doc-share-mask', 'lark-doc-share-popover', 'lark-doc-permission-layer',
+      'lark-doc-share-confirm', 'lark-doc-share-password', 'lark-doc-export-backdrop',
+      'lark-doc-export-panel',
+    ]) expect(overlaysRenderer).toContain(className)
+    expect(overlaysRenderer).toContain("role', 'dialog'")
+    expect(overlaysRenderer).toContain("aria-modal",)
+    expect(overlaysRenderer).toContain("aria-label",)
   })
 
-  it('包裹层不带 v-if / transform / filter / overflow（会改写 fixed 包含块或提前摘 toast）', () => {
-    const wrapper = '<div class="lark-doc-p6b-layer">'
-    expect(overlaysCode).toContain(wrapper)
-    expect(overlaysCode).not.toContain('v-if')
-    // 五子节点自管理显隐，容器自身永不参与定位：连 <style> 都没有。
-    expect(overlaysCode).not.toContain('<style')
-    for (const forbidden of ['transform', 'filter', 'overflow', 'position']) {
-      expect(overlaysCode).not.toContain(forbidden)
-    }
-  })
-
-  it('ed 是 LarkDocEditor 实例本身，原样下传（面板直接读 ed.editor / ed.session）', () => {
-    expect(overlays).toContain('ed: { type: Object, required: true }')
+  it('原生浮层使用真实插入 / 移除，并保留遮罩、Esc 业务出口', () => {
+    expect(overlaysRenderer).toContain('mountNode(host, el, true)')
+    expect(overlaysRenderer).toContain("event.target === backdrop")
+    expect(overlaysUi).toContain('destroyOverlays()')
   })
 })

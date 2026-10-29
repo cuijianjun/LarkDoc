@@ -149,8 +149,9 @@
       </button>
     </p>
     <!-- 标题编号菜单（阶段 5 原生化）：DOM 由 src/ui/headingNumberMenu.js 建。 -->
-    <div ref="headingNumberMenuHost" /><LarkDocOverlays :ed="self" />
-    <!-- 面板 / 宿主弹窗挂载点（4b）：DOM 由 src/ui/panels.js 建。与 LarkDocOverlays 同层是硬要求（都是 fixed）。 -->
+    <div ref="headingNumberMenuHost" />
+    <div ref="overlayHost" />
+    <!-- 面板 / 宿主弹窗挂载点（4b）：DOM 由 src/ui/panels.js 建。与原生浮层同层是硬要求（都是 fixed）。 -->
     <div ref="panelHost" />
   </section>
 </template>
@@ -205,6 +206,7 @@ import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import dialogsUiMixin from './editor/dialogsUiMixin' // 阶段 5 批次 4：弹窗/抽屉/内嵌浮层渲染层在 src/ui/dialogs.js
 // 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板渲染层在 src/ui/panels.js。
 import panelsUiMixin from './editor/panelsUiMixin'
+import overlaysUiMixin from './editor/overlaysUiMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
 import headingNumberMenuUiMixin from './editor/headingNumberMenuUiMixin'
 // P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
@@ -246,7 +248,7 @@ registerVue2NodeViews()
 export default {
   name: 'LarkDocEditor',
   components: { LarkDocIcon },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, headingNumberMenuUiMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin, mentionUiMixin, isvPanelUiMixin, searchPanelUiMixin, reminderMixin, reminderUiMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, headingNumberMenuUiMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin, calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin, mentionUiMixin, isvPanelUiMixin, searchPanelUiMixin, reminderMixin, reminderUiMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin, overlaysUiMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -359,6 +361,8 @@ export default {
     // 阶段 5 批次 4：弹窗 / 抽屉 / 内嵌浮层已原生化（`src/ui/dialogs.js`）。它不依赖编辑器
     // 实例，连同顶栏一起先挂 —— 即使编辑器创建失败，关闭错误提示的那一层也仍然在。
     this.mountDialogs()
+    // 阶段 5 批次 5：分享 / 导出浮层已原生化（src/ui/overlays.js）。
+    this.mountOverlays()
     // 阶段 5 批次 4b：目录 / 历史记录 / 另存为 / 评论四个面板已原生化（`src/ui/panels.js`）。
     // 同样不依赖编辑器实例 —— 目录宿主在 `.lark-doc-body` 里，评论卡等的宿主与根同层。
     this.mountPanels()
@@ -416,7 +420,7 @@ export default {
     this.editor?.destroy()
     this.editor = null
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar(); this.destroyHeadingNumberMenu(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette(); this.destroyCalloutTools(); this.destroyRevisionPanels(); this.destroyCalendarSearch(); this.destroyMentionPanel(); this.destroyIsvPanel(); this.destroySearchPanel(); this.destroyReminder()
+    this.destroyBubbleBar(); this.destroyHeadingNumberMenu(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs(); this.destroyOverlays(); this.destroyPanels(); this.destroyStage(); this.destroyTableTools(); this.destroyHelpFab(); this.destroyColorPalette(); this.destroyCalloutTools(); this.destroyRevisionPanels(); this.destroyCalendarSearch(); this.destroyMentionPanel(); this.destroyIsvPanel(); this.destroySearchPanel(); this.destroyReminder()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },

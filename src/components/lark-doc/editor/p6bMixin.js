@@ -28,9 +28,7 @@ import exportMixin from './exportMixin'
 // （「能不能评论」「能不能另存版本」最终都落到 `canEditContent(interactionMode)`），
 // 靠后放才能在有同名键时压住前面的旧口径。
 import readingModeMixin from './readingModeMixin'
-import LarkDocOverlays from './LarkDocOverlays.vue'
 
 export default {
   mixins: [commentsMixin, versioningMixin, shareMixin, exportMixin, readingModeMixin],
-  components: { LarkDocOverlays },
 }
