@@ -28,7 +28,6 @@
     "components/lark-doc/editor/TableTools.vue",
     "components/lark-doc/ExportDialog.vue",
     "components/lark-doc/LarkDocEditor.vue",
-    "components/lark-doc/LarkDocHeadingMenu.vue",
     "components/lark-doc/LarkDocIcon.vue",
     "components/lark-doc/LarkDocSelect.vue",
     "components/lark-doc/LarkDocWorkspace.vue",
