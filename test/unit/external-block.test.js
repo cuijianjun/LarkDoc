@@ -64,6 +64,17 @@ describe('外部块目录（17 §17.5 全量登记）', () => {
     }
   })
 
+  it('capability 五档齐全：provider / bridge / editor / web.slash / unsupported 都有真实 kind 落到', () => {
+    const modes = new Set()
+    for (const kind of kinds) {
+      for (const action of ACTIONS) modes.add(externalBlockCapability(kind, action).mode)
+    }
+    for (const mode of ['provider', 'bridge', 'editor', 'web.slash', 'unsupported']) {
+      expect(modes, mode).toContain(mode)
+    }
+  })
+
+
   it('moduleId 唯一（宿主按 moduleId 挂 provider，重名会串台）', () => {
     const ids = kinds.map((kind) => EXTERNAL_BLOCK_KINDS[kind].moduleId)
     expect(new Set(ids).size).toBe(ids.length)
@@ -231,7 +242,30 @@ describe('externalBlock 序列化（导出侧回归）', () => {
     expect(el.getAttribute('data-external-status')).toBe('unavailable')
     expect(el.querySelector('.lark-doc-external-card-title').textContent).toBe('DOC-7 导入丢字段')
     expect(el.querySelector('.lark-doc-external-card-sub').textContent).toContain('Jira')
-    expect(el.querySelector('.lark-doc-external-card-badge').textContent).toBe('未接入')
+
+    // 角标：短标给眼睛，整句进 title / aria-label（窄卡片塞不下 provider 名）
+    const badge = el.querySelector('.lark-doc-external-card-badge')
+    expect(badge.textContent).toBe('未接入 · 去接入')
+    expect(badge.getAttribute('data-external-badge')).toBe('unavailable')
+    expect(badge.getAttribute('title')).toContain('Jira')
+    expect(badge.getAttribute('title')).toContain('未接入')
+    expect(badge.getAttribute('aria-label')).toBe(badge.getAttribute('title'))
+  })
+
+  it('fallback 语义：未接入态不可选中、不可编辑（只读态见 provider-registry 渲染用例）', () => {
+    const el = DOMSerializer.fromSchema(schema).serializeNode(schema.nodes.externalBlock.create({ kind: 'jira_issue', title: 't' }))
+    // contenteditable 显式写出来才会跟着 getHTML / 复制 / 导出走（PM 只给 ViewDesc 补）
+    expect(el.getAttribute('contenteditable')).toBe('false')
+    expect(el.getAttribute('data-external-locked')).toBe('unavailable')
+    // 不可选中 + aria-disabled，避免读屏把它当成可操作内容
+    expect(el.getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('节点上的 status attr 不决定视觉（本机没注册 provider 就得诚实显示未接入）', () => {
+    const node = schema.nodes.externalBlock.create({ kind: 'jira_issue', title: 't', status: 'ready' })
+    const el = DOMSerializer.fromSchema(schema).serializeNode(node)
+    expect(el.getAttribute('data-external-status')).toBe('unavailable')
+    expect(el.querySelector('.lark-doc-external-card-badge').textContent).toBe('未接入 · 去接入')
   })
 
   it('超长 payload 不落 DOM（保真走 JSON，属性挂 1M 会拖死渲染）', () => {

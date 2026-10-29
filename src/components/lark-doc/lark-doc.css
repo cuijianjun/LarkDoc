@@ -90,6 +90,16 @@
   --ld-danger: #D83931;
   --ld-warning: #DE7802;
   --ld-success: #2EA121;
+  /* 顶栏「新建」菜单 4 个**产品标识色**（04 §4.6.3 实测）：画板 / 思维导图 / 流程图 /
+     上传及导入。它们不是 UI 皮肤色，但同样收成 token —— 否则只能以字面 hex 写在
+     `createMenuMixin` 的行数据里，`check-theme-tokens` 会直接拦下。
+     深色档**不另设值**（与 `--ld-danger` 同族口径）：06/11 没有这四色的深色实测，
+     且它们本来就是高饱和标识色，在 #17181A 底上对比度足够（最低的 #35BD4B 对
+     #17181A 约 7.4:1）。真机验收若发现偏暗，再在这里加 `theme-dark.css` 覆盖。 */
+  --ld-icon-board: #35BD4B;
+  --ld-icon-mindmap: #25B0E7;
+  --ld-icon-flow: #FF811A;
+  --ld-icon-upload: #336DF4;
   /* 过渡别名：收编期保留 --ld-brand 指向 chrome 档，新代码请直接用拆分后的两个 */
   --ld-brand: var(--ld-brand-chrome);
   /* ---- L2 效果 ---- */
@@ -132,6 +142,7 @@
   --ld-bg-columns-cell-active: #dce5fa;   /* 分栏预览格（hover） */
   --ld-bg-columns-cell-preview: #91adf2;  /* 分栏预览格（选中） */
   --ld-mask: #17271c73;                   /* 对话框遮罩 */
+  --ld-mask-solid: rgba(0, 0, 0, 0.55);   /* 卡片内遮罩（关联层 / 确认框），压住内容但不吃点击 */
   --ld-bg-print: #FFFFFF;                 /* 打印纸面（两档恒定，不随主题变化） */
   --ld-border-control: #d9e2dd;           /* 控件描边（块句柄 / 空格插入钮） */
   --ld-border-handle-hover: #b9d3c6;      /* 块句柄 hover 描边 */
@@ -619,6 +630,15 @@
    色值一律复用 unknown-card 系列 token（不新增字面色值，主题门禁）。 */
 .lark-doc .ProseMirror div[data-type="external-block"] { display: flex; align-items: center; gap: 12px; box-sizing: border-box; min-height: 56px; margin: 4px 0 8px; padding: 10px 16px; border: 1px dashed var(--ld-unknown-card-border); border-radius: 6px; background: var(--ld-unknown-card-bg); }
 .lark-doc .ProseMirror div[data-type="external-block"][data-external-status="ready"] { border-style: solid; }
+/* `fallback` 语义（17 §17.5）：readonly = 可选中、可复制、不可编辑；unavailable = 连输入都
+   不该发生。文案（「只读」/「未接入 · 去接入」）与 `aria` 由 registry 出，这里只管命中区：
+   - readonly 只钉 `cursor`（文字仍可选中复制）；
+   - unavailable 挂 `pointer-events: none`（点击穿透给编辑器，卡片内部不再吃事件）+ 
+     `user-select: none`。
+   ⚠️ 于是「点卡片选中整块」在未接入态用不了 —— 删除仍可从下一行按 Backspace（见
+   `core/blocks/external-delete.js` 的收口），别为了能点而摘掉 pointer-events。 */
+.lark-doc .ProseMirror div[data-type="external-block"][data-external-locked="readonly"] { cursor: default; }
+.lark-doc .ProseMirror div[data-type="external-block"][data-external-locked="unavailable"] { pointer-events: none; user-select: none; }
 .lark-doc .ProseMirror .lark-doc-external-card-icon { flex: none; width: 16px; height: 16px; background-color: var(--ld-unknown-card-icon); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 2.6h3.1' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M12.7 9.5v3.1a1.2 1.2 0 0 1-1.2 1.2H4.3a1.2 1.2 0 0 1-1.2-1.2V5.4a1.2 1.2 0 0 1 1.2-1.2h3.1' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M9.4 2.6h4v4' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M13.4 2.6 9.1 6.9' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.2 2.6h3.1' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M12.7 9.5v3.1a1.2 1.2 0 0 1-1.2 1.2H4.3a1.2 1.2 0 0 1-1.2-1.2V5.4a1.2 1.2 0 0 1 1.2-1.2h3.1' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3Cpath d='M9.4 2.6h4v4' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3Cpath d='M13.4 2.6 9.1 6.9' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px 16px no-repeat; }
 .lark-doc .ProseMirror .lark-doc-external-card-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .lark-doc .ProseMirror .lark-doc-external-card-title { font-size: 14px; line-height: 22px; color: var(--ld-unknown-card-text); }
@@ -963,14 +983,35 @@
 .lark-doc .lark-doc-image-blocked strong { color: var(--ld-text); font-size: 13px; }
 .lark-doc .lark-doc-image-blocked code { max-width: 100%; overflow-wrap: anywhere; color: var(--ld-text-tertiary); font-size: 11px; }
 
-/* 悬浮工具条：hover 才挂载（真实增删节点），所以这里不做 display 切换。 */
-.lark-doc .lark-doc-image-toolbar { position: absolute; z-index: 86; bottom: calc(100% + 8px); left: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 310px; height: 42px; padding: 0 6px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); transform: translateX(-50%); white-space: nowrap; }
-.lark-doc .lark-doc-image-toolbar button { flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; font-size: 16px; line-height: 1; }
-.lark-doc .lark-doc-image-toolbar button:hover:not(:disabled),
-.lark-doc .lark-doc-image-toolbar button:focus-visible,
-.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
-.lark-doc .lark-doc-image-toolbar button:disabled { color: var(--ld-text-icon); cursor: not-allowed; }
-.lark-doc .lark-doc-image-toolbar-divider { flex: 0 0 1px; width: 1px; height: 22px; background: var(--ld-border-control); }
+/* 浮层「当前值」的**统一钩子**：飞书原名 `.menu-item-actived`（**少个 e**，不是 `.is-active`）。
+   图片工具条的对齐三连、链接视图菜单的当前项都挂这个类；各自再做几何/底色微调，
+   但「蓝底 + 主色图标」这个语义只有这一处定义，别再各写一套。 */
+.lark-doc .menu-item-actived { background: var(--ld-bg-selected); color: var(--ld-brand-content); }
+
+/* 悬浮工具条（04 §1.3 实测）：**双层**——外层 310×42 / z86 / 全透明只管定位（坐标由
+   `nodeviews/image.js#positionToolbar` 按图片矩形算），内层面板 310×42 / z999 才是
+   白底 + r6 + 阴影。只建一层时阴影会被父级裁掉、层序也会塌到块手柄（z79）下面。
+   hover 才挂载（真实增删节点），所以这里不做 display 切换。 */
+.lark-doc .lark-doc-image-toolbar { position: fixed; z-index: 86; box-sizing: border-box; width: 310px; height: 42px; background: transparent; pointer-events: none; }
+.lark-doc .lark-doc-image-toolbar-panel { position: relative; z-index: 999; box-sizing: border-box; display: flex; align-items: center; width: 310px; height: 42px; padding: 0 9px; border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); pointer-events: auto; }
+/* 项 24×24，y 恒为「面板顶 +9」（42 − 24 = 18，上下各 9，align-items:center 自然得到）。
+   x 步进按实测 753/794/835/867/899/948/980/1021 反推：
+     普通项 41 = 24 + 17；对齐三连 32 = 24 + 8；分隔线处 49 = 24 + 24 + 1(线)；
+     末项后不留右距，由面板 9px padding 收口。
+   自洽：8×24 + (17+17+8+8+24+1+8+17) = 192 + 100 = 292 = 310 − 2×9 ✓ */
+.lark-doc .lark-doc-image-toolbar-panel button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; min-width: 24px; height: 24px; min-height: 24px; margin: 0 17px 0 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; }
+.lark-doc .lark-doc-image-toolbar-panel button:nth-of-type(3), .lark-doc .lark-doc-image-toolbar-panel button:nth-of-type(4) { margin-right: 8px; }
+.lark-doc .lark-doc-image-toolbar-panel button:nth-of-type(5) { margin-right: 24px; }
+.lark-doc .lark-doc-image-toolbar-panel button:nth-of-type(6) { margin-right: 8px; }
+.lark-doc .lark-doc-image-toolbar-panel button:nth-of-type(8) { margin-right: 0; }
+.lark-doc .lark-doc-image-toolbar-panel button:hover:not(:disabled),
+.lark-doc .lark-doc-image-toolbar-panel button:focus-visible,
+.lark-doc .lark-doc-image-toolbar-panel button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
+/* 当前对齐态：class 管视觉、`aria-pressed` 管读屏，两条并存（04 §1.3 红字）——
+   `.menu-item-actived` 是飞书原名（少个 e），与链接视图菜单共用同一条基础规则。 */
+.lark-doc .lark-doc-image-toolbar-panel button.menu-item-actived { background: var(--ld-bg-selected); color: var(--ld-brand-content); }
+.lark-doc .lark-doc-image-toolbar-panel button:disabled { color: var(--ld-text-icon); cursor: not-allowed; }
+.lark-doc .lark-doc-image-toolbar-divider { flex: 0 0 1px; width: 1px; height: 20px; background: var(--ld-border-chrome); }
 
 /* 四角缩放手柄：可编辑态常驻，拖动只改文档属性，不回写 DOM 宽度。 */
 .lark-doc .lark-doc-image-resize { position: absolute; z-index: 2; box-sizing: border-box; width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 2px solid var(--ld-text-menu-active); border-radius: 50%; background: var(--ld-bg-surface); transform: translate(-50%, -50%); }
@@ -989,13 +1030,40 @@
 
 .lark-doc .lark-doc-media-error { margin: 6px 0 0; color: var(--ld-text-error); font-size: 13px; }
 
-/* 本实现的显隐统一走工具类（手柄 / 题注 / 占位卡 / 报错行）。 */
-.lark-doc .lark-doc-image .is-hidden { display: none !important; }
+/* 本实现的显隐统一走工具类（手柄 / 题注 / 占位卡 / 报错行）。
+   唯一例外是预览工具条的 `.is-hidden`：它要的是 `opacity` 过渡（04 §1.5 的 toolbar-hide），
+   `display: none !important` 会把过渡直接跳掉，所以在这里先用 `:not()` 摘出去。 */
+.lark-doc .lark-doc-image .is-hidden:not(.lark-doc-image-viewer-toolbar) { display: none !important; }
 
-/* 双击全屏预览：挂在块内（见 nodeviews/image.js 注释），全屏靠 fixed。 */
-.lark-doc .lark-doc-image-viewer-shell { position: fixed; z-index: 1049; inset: 0; box-sizing: border-box; display: grid; place-items: center; padding: 24px; background: var(--ld-mask); }
-.lark-doc .lark-doc-image-viewer-shell img { max-width: 100%; max-height: calc(100vh - 120px); object-fit: contain; box-shadow: var(--ld-shadow-dialog); }
-.lark-doc .lark-doc-image-viewer-close { position: absolute; top: 16px; right: 16px; padding: 6px 14px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text-menu); }
+/* 双击全屏预览（`04 §1.5`）：挂在块内（见 nodeviews/image.js 注释），全屏靠 fixed。
+   **皮肤固定深色**：§1.5.1 实测深浅两态八层逐字节相同、只有继承色变，所以这一层
+   不引 `--ld-*` 底色 token，遮罩与深色卡直接写 rgba（`check-theme-tokens` 的 HEX_RE
+   不抓 rgba，先例见 versioning.css 的 rgba(0,0,0,.55)）。 */
+.lark-doc .lark-doc-image-viewer-shell { position: fixed; z-index: 1049; inset: 0; box-sizing: border-box; background: transparent; }
+.lark-doc .lark-doc-image-viewer-mask { position: absolute; z-index: 1000; inset: 0; background: rgba(0, 0, 0, 0.8); }
+/* 可用高 = 视口高 − 95（42 工具条 + 24 底距 + 29 呼吸），与 `syncScale()` 里
+   `Math.max(120, innerHeight - 95)` 是**同一个口径**：改任何一边都要同步另一边。
+   padding 横向 32×2 = 64，正好等于 img 的 `calc(100vw - 64px)`。 */
+.lark-doc .lark-doc-image-viewer-content { position: relative; z-index: 1001; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 0 32px 95px; }
+/* 显示尺寸由 syncScale() 按原图像素写死（百分比读数才自洽）；这里只兜上限与缩放策略。 */
+.lark-doc .lark-doc-image-viewer-img { display: block; max-width: calc(100vw - 64px); max-height: 100%; object-fit: contain; box-shadow: var(--ld-shadow-dialog); }
+.lark-doc .lark-doc-image-viewer-close { position: absolute; z-index: 1002; top: 16px; right: 16px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 6px; background: rgba(0, 0, 0, 0.45); color: rgba(255, 255, 255, 0.8); cursor: pointer; }
+.lark-doc .lark-doc-image-viewer-close:hover, .lark-doc .lark-doc-image-viewer-close:focus-visible { background: rgba(0, 0, 0, 0.65); color: rgba(255, 255, 255, 1); outline: 0; }
+/* 工具条悬浮在底部居中，auto-hide 只动 opacity —— 不能用 display，过渡会丢。 */
+.lark-doc .lark-doc-image-viewer-toolbar { position: fixed; z-index: 1001; left: 50%; bottom: 24px; transform: translateX(-50%); opacity: 1; transition: opacity 0.18s ease; }
+.lark-doc .lark-doc-image-viewer-toolbar.is-hidden { opacity: 0; pointer-events: none; }
+.lark-doc .lark-doc-image-viewer-toolbar-list { position: relative; display: flex; align-items: center; gap: 4px; box-sizing: border-box; height: 42px; padding: 0 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.7); }
+.lark-doc .lark-doc-image-viewer-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; box-sizing: border-box; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: rgba(255, 255, 255, 0.9); cursor: pointer; }
+.lark-doc .lark-doc-image-viewer-btn:hover:not(:disabled), .lark-doc .lark-doc-image-viewer-btn:focus-visible { background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 1); outline: 0; }
+.lark-doc .lark-doc-image-viewer-btn:disabled { color: rgba(255, 255, 255, 0.3); cursor: not-allowed; }
+.lark-doc .lark-doc-image-viewer-divider { flex: 0 0 1px; width: 1px; height: 20px; margin: 0 2px; background: rgba(255, 255, 255, 0.24); }
+/* 页码与缩放读数：12px / 白色 60%，等宽数字避免「1 / 12」跳宽。 */
+.lark-doc .lark-doc-image-viewer-page, .lark-doc .lark-doc-image-viewer-scale { flex: 0 0 auto; padding: 0 4px; color: rgba(255, 255, 255, 0.6); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; }
+/* 「更多」子菜单：往上弹（工具条贴底），z 与工具栏同级靠后出现压住按钮。 */
+.lark-doc .lark-doc-image-viewer-menu { position: absolute; z-index: 1002; right: 0; bottom: calc(100% + 8px); box-sizing: border-box; min-width: 168px; padding: 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.85); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-image-viewer-menu[hidden] { display: none; }
+.lark-doc .lark-doc-image-viewer-menu button { display: block; box-sizing: border-box; width: 100%; padding: 7px 10px; border: 0; border-radius: 4px; background: transparent; color: rgba(255, 255, 255, 0.9); font-size: 13px; line-height: 18px; text-align: left; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-image-viewer-menu button:hover, .lark-doc .lark-doc-image-viewer-menu button:focus-visible { background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 1); outline: 0; }
 
 /* 裁剪对话框 */
 .lark-doc .lark-doc-media-backdrop { position: fixed; z-index: 2000; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--ld-mask); }
@@ -2665,13 +2733,19 @@
 .lark-doc .lark-doc-link-hover-view:hover:not(:disabled), .lark-doc .lark-doc-link-hover-view:focus-visible, .lark-doc .lark-doc-link-hover-view[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
 .lark-doc .lark-doc-link-hover-view-text { line-height: 1; }
 .lark-doc .lark-doc-link-hover-view-arrow { flex: 0 0 auto; color: var(--ld-text-icon-tertiary); }
-/* 四种视图菜单：宽 232、四项各 214×32 ⇒ 4×32 + 上下 8 + 描边 2 = 146（§1.6.1）。 */
-.lark-doc .lark-doc-link-view-menu { position: absolute; z-index: 999; top: calc(100% + 4px); right: 0; box-sizing: border-box; width: 232px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+/* 四种视图菜单（§1.6.1 实测 batch128/129）：外壳 232×146 / 内壳 230×144 / 项 214×32。
+   146 = 2×1(border) + 2×8(padding) + 4×32；232 = 2×1 + 2×8 + 214 ⇒ 所以 padding 是 **8**，
+   写成 4 会把项撑到 222、总高变 138（旧值就是这个错）。 */
+.lark-doc .lark-doc-link-view-menu { position: absolute; z-index: 999; top: calc(100% + 4px); right: 0; box-sizing: border-box; width: 232px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-link-view-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); font-size: 13px; line-height: 1; text-align: left; }
 /* 当前项：**只有文字变蓝**，没有底色也没有勾选框（§2.2 ④ 同款「轻选中」），别加背景。 */
 .lark-doc .lark-doc-link-view-item:hover:not(:disabled), .lark-doc .lark-doc-link-view-item:focus-visible { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); outline: 0; }
-.lark-doc .lark-doc-link-view-item.is-active { background: transparent; color: var(--ld-brand-content); }
-.lark-doc .lark-doc-link-view-check { flex: 0 0 auto; color: var(--ld-brand-content); }
+/* 当前值统一走 `.menu-item-actived`（飞书原名，**少个 e**，别写成 `.is-active`）。
+   基础规则与图片工具条共用（见「图片块」分区的同名规则）；这里只把底色收回透明，
+   因为 §1.6.1 的菜单当前项是「轻选中」——文字变蓝、不铺底。 */
+.lark-doc .lark-doc-link-view-item.menu-item-actived { background: transparent; color: var(--ld-brand-content); }
+/* 勾 16×16 `.item-checked`，色随 `--ld-brand-content`（不写字面色）。 */
+.lark-doc .lark-doc-link-view-check { flex: 0 0 auto; width: 16px; height: 16px; color: var(--ld-brand-content); }
 
 /* —— 封面槽（04 §1.4.1：已添加 283 高、空态 0 高）——
    这是文档流内元素（在纸张之上、标题之前），**不是**浮层：写成 fixed 会脱离流飘到页尾。 */
@@ -2748,6 +2822,137 @@
    这与色板那种「2px 边框」的选中态是两套语言，不要混用。 */
 .lark-doc .lark-doc-code-lang-item.is-active { background: transparent; color: var(--ld-brand-content); }
 .lark-doc .lark-doc-code-lang-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* —— 顶栏「新建」/「通知」触发按钮（04 §4.6.3 / §4.6.4）——
+   与 `.lark-doc-more-btn` 同一档：28×28 热区、透明底、`aria-expanded="true"` 时常驻底色
+   （浮层开着但鼠标移开了，按钮不能变回无色，否则看不出「这个浮层是它开的」）。 */
+.lark-doc .lark-doc-create-btn, .lark-doc .lark-doc-notify-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; min-width: 28px; min-height: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ld-text-icon-tertiary); }
+.lark-doc .lark-doc-create-btn:hover:not(:disabled), .lark-doc .lark-doc-create-btn:focus-visible, .lark-doc .lark-doc-create-btn[aria-expanded="true"],
+.lark-doc .lark-doc-notify-btn:hover:not(:disabled), .lark-doc .lark-doc-notify-btn:focus-visible, .lark-doc .lark-doc-notify-btn[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--ld-text-secondary); outline: 0; }
+/* 未读角标：18 高红底白字，压住按钮右上角。数字位数变化靠 min-width 撑，
+   不用固定宽度 —— 「99+」是三位，固定 18 会溢出。 */
+.lark-doc .lark-doc-notify-dot { position: absolute; top: -2px; right: -2px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--ld-danger); color: var(--ld-text-inverse); font-size: 11px; font-weight: 500; line-height: 1; }
+
+/* —— 顶栏「新建」菜单（04 §4.6.3：外壳 182×509、内层 180×503、z 1030）——
+   高度**写死**：这份规格的 509 是「11 项 × 40 + 分隔线 + 分组标题 + 上下留白」的
+   整数结果，内容比预期高时走内部滚动（`overflow-y: auto`），而不是让浮层自己长高
+   —— 长高会把下缘顶出视口，而定位是只算一次的上沿锚定。 */
+.lark-doc .lark-doc-create-menu { position: fixed; z-index: 1030; display: flex; flex-direction: column; box-sizing: border-box; width: 182px; height: 509px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); overflow: hidden; }
+.lark-doc .lark-doc-create-menu-list { flex: 1 1 auto; min-height: 0; margin: 0; padding: 2px 4px; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
+/* 项 172×40 = 182 − 2×1 描边 − 2×4 左右内距；文案列撑满，右箭头不参与伸缩。 */
+.lark-doc .lark-doc-create-menu-item { display: flex; align-items: center; box-sizing: border-box; height: 40px; padding: 0 8px; border-radius: 4px; color: var(--ld-text-menu); font-size: 14px; line-height: 1; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-create-menu-item:hover, .lark-doc .lark-doc-create-menu-item:focus-visible { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); outline: 0; }
+/* 图标外框 19×21：颜色由行数据 `iconColor` 走 inline style（见 icons.js 头注），
+   这层只负责居中和不吃宽度。 */
+.lark-doc .lark-doc-create-menu-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 19px; height: 21px; margin-right: 10px; }
+.lark-doc .lark-doc-create-menu-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* 「上传及导入」独有的右箭头：**品牌蓝**，不是灰 —— 它标的是「这里还有一级」。 */
+.lark-doc .lark-doc-create-menu-arrow { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 13px; height: 13px; margin-left: 8px; color: var(--ld-brand-content); }
+.lark-doc .lark-doc-create-menu-divider { height: 1px; margin: 4px 8px; background: var(--ld-border-chrome); }
+/* 分组标题（「文档应用」）180×20：它嵌在 11 项之间，不是独立分节 ——
+   高度给死 20 且不带下边距，多出来的 1px 会把后面几项整体推歪。 */
+.lark-doc .lark-doc-create-menu-group { box-sizing: border-box; height: 20px; padding: 0 8px; color: var(--ld-text-tertiary); font-size: 12px; font-weight: 500; line-height: 20px; }
+
+/* —— 顶栏「通知」popover（04 §4.6.4：外壳 402×555、z 999）——
+   外壳透明 + `padding: 3px 0 0`，白底与描边在内层 content：规格里这三件事分属
+   两个节点，合并会让 555 与白底高度对不上。 */
+.lark-doc .lark-doc-notify-popover { position: fixed; z-index: 999; display: flex; flex-direction: column; box-sizing: border-box; width: 402px; height: 555px; padding: 3px 0 0; }
+/* 双层 loading 容器：原样保留（`04 §4.6.4` 🔴）。外层只做透传，内层必须
+   `position: relative` —— 骨架屏/指示器就是挂在这一层上的绝对定位子节点。 */
+.lark-doc .lark-doc-notify-loading-nested { display: flex; flex: 1 1 auto; min-height: 0; }
+.lark-doc .lark-doc-notify-loading-container { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); overflow: hidden; }
+.lark-doc .lark-doc-notify-content { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+/* 头部四件套一行：标题 + 铃铛紧随，右侧「关闭通知 / 全部已读」靠 `margin-left: auto`
+   推到末端 —— 402 − 2×12 = 378 可用宽，四件套刚好铺满。 */
+.lark-doc .lark-doc-notify-header { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; box-sizing: border-box; padding: 12px; border-bottom: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-notify-header-desc { flex: 0 0 auto; margin: 0; color: var(--ld-text); font-size: 14px; font-weight: 700; line-height: 17px; white-space: nowrap; }
+.lark-doc .lark-doc-notify-header-bell { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 14px; height: 14px; color: var(--ld-text-tertiary); }
+.lark-doc .lark-doc-notify-mute, .lark-doc .lark-doc-notify-readall { flex: 0 0 auto; min-height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; white-space: nowrap; }
+/* 「关闭通知」是第一个右侧项 ⇒ 由它推间隙；「全部已读」紧跟其后。 */
+.lark-doc .lark-doc-notify-mute { margin-left: auto; }
+.lark-doc .lark-doc-notify-mute:hover:not(:disabled), .lark-doc .lark-doc-notify-mute:focus-visible, .lark-doc .lark-doc-notify-readall:hover:not(:disabled), .lark-doc .lark-doc-notify-readall:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
+/* 0 条未读时「全部已读」转灰（§4.6.4 的 disable-text 档 = `--ld-text-disabled`）。 */
+.lark-doc .lark-doc-notify-readall:disabled, .lark-doc .lark-doc-notify-readall.is-disabled { background: transparent; color: var(--ld-text-disabled); cursor: default; }
+/* 空态三件套垂直居中：120 插图 + 16/24 主文案 + 14/22 副文案。 */
+.lark-doc .lark-doc-notify-empty { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; min-height: 0; padding: 0 24px; text-align: center; }
+.lark-doc .lark-doc-notify-empty-img { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 120px; height: 120px; color: var(--ld-border-strong); }
+.lark-doc .lark-doc-notify-empty-title { margin: 16px 0 0; color: var(--ld-text); font-size: 16px; font-weight: 500; line-height: 24px; }
+.lark-doc .lark-doc-notify-empty-sub { max-width: 250px; margin: 8px 0 0; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; }
+/* 列表态：与空态互斥占同一块位置，内部滚动。 */
+.lark-doc .lark-doc-notify-list { flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
+.lark-doc .lark-doc-notify-item { display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; }
+.lark-doc .lark-doc-notify-item.is-unread { background: var(--ld-bg-soft); }
+.lark-doc .lark-doc-notify-item-title { color: var(--ld-text); font-size: 14px; font-weight: 500; line-height: 20px; }
+.lark-doc .lark-doc-notify-item-body { color: var(--ld-text-tertiary); font-size: 12px; line-height: 18px; }
+
+/* —— 关联已有多维表格（04 §4.5：内容 1080×676、header 72 / body 525 / footer 80）——
+   🔴 居中靠 flex，不写 top/left：`(1512−1080)/2 = 216` 那套绝对偏移一旦遇到 1512
+   以外的视口就失效，而这里要的是「视觉居中」这个语义。
+   窄屏用 `max-width / max-height` 兜住，超出走 body 内部滚动。 */
+.lark-doc .lark-doc-relation-layer { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; }
+.lark-doc .lark-doc-relation-mask { position: absolute; inset: 0; background-color: var(--ld-mask-solid); }
+.lark-doc .lark-doc-relation-content { position: relative; z-index: 1; display: flex; flex-direction: column; box-sizing: border-box; width: 1080px; max-width: calc(100vw - 32px); height: 676px; max-height: calc(100vh - 32px); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); overflow: hidden; }
+/* Header 1032×72 = 1080 − 24×2。**刻意没有关闭 X**（§4.5 实测）：模态的出口是
+   「取消 / Esc / 点遮罩」三条，加 X 会让人以为有第四条「关掉但不取消」的路。 */
+.lark-doc .lark-doc-relation-header { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; box-sizing: border-box; height: 72px; padding: 0 24px; }
+.lark-doc .lark-doc-relation-back { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-relation-back:hover, .lark-doc .lark-doc-relation-back:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
+.lark-doc .lark-doc-relation-title { flex: 0 0 auto; margin: 0; color: var(--ld-text); font-size: 16px; font-weight: 500; line-height: 24px; }
+/* 面包屑（当前 base 名）：与标题同排、更淡，用于「我在哪一层」的定位。 */
+.lark-doc .lark-doc-relation-crumb { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-relation-body { flex: 1 1 auto; min-height: 0; box-sizing: border-box; padding: 0 24px; overflow-y: auto; overscroll-behavior: contain; }
+/* 两列自适应：1032 − 12 间隙 = 2×510，视口窄到单列时自动退一格。 */
+.lark-doc .lark-doc-relation-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.lark-doc .lark-doc-relation-item { display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; padding: 12px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; cursor: pointer; }
+.lark-doc .lark-doc-relation-item:hover, .lark-doc .lark-doc-relation-item:focus-visible { border-color: var(--ld-border-strong); background: var(--ld-bg-hover-chrome); outline: 0; }
+/* 选中项：描边转品牌蓝 + 浅蓝底。两种信号都给 —— 只有描边时浅色屏上 1px 蓝线
+   几乎看不出来（链接视图菜单那套「只变文字色」是另一档，这里是有卡片的列表项）。 */
+.lark-doc .lark-doc-relation-item.is-active { border-color: var(--ld-brand-content); background: var(--ld-bg-selected); }
+.lark-doc .lark-doc-relation-item-name { overflow: hidden; color: var(--ld-text); font-size: 14px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-relation-item-owner { overflow: hidden; color: var(--ld-text-tertiary); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+/* 空态 / 加载 / 报错共用一个位置：三态都要能**解释**为什么没东西可选，
+   所以这里只做居中与配色，文案由 mixin 的 `relationHint` 给。 */
+.lark-doc .lark-doc-relation-empty { display: flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: 240px; padding: 24px; color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; text-align: center; }
+.lark-doc .lark-doc-relation-empty.is-error { color: var(--ld-text-error); }
+/* Footer 1032×80：左摘要（可省略）+ 右「取消 / 确认」。 */
+.lark-doc .lark-doc-relation-footer { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; box-sizing: border-box; height: 80px; padding: 0 24px; border-top: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-relation-selection { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--ld-text-tertiary); font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-relation-btn { box-sizing: border-box; min-width: 80px; height: 32px; padding: 0 16px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-size: 14px; line-height: 1; }
+.lark-doc .lark-doc-relation-btn:hover:not(:disabled), .lark-doc .lark-doc-relation-btn:focus-visible { border-color: var(--ld-border-strong); background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
+.lark-doc .lark-doc-relation-btn.is-plain { box-shadow: none; }
+.lark-doc .lark-doc-relation-btn.is-primary { border-color: var(--ld-brand-content); background: var(--ld-brand-content); color: var(--ld-text-inverse); }
+.lark-doc .lark-doc-relation-btn.is-primary:hover:not(:disabled), .lark-doc .lark-doc-relation-btn.is-primary:focus-visible { border-color: var(--ld-brand-content); background: var(--ld-brand-content); color: var(--ld-text-inverse); filter: brightness(.94); }
+/* 置灰但不是 `display:none`：不可用原因写在 `title` 上，悬停可读 ——
+   这是「点了没反应」之外唯一能自解释的形态。 */
+.lark-doc .lark-doc-relation-btn:disabled { border-color: var(--ld-border-control); background: var(--ld-bg-soft); color: var(--ld-text-disabled); cursor: not-allowed; }
+
+/* —— 通用二次确认框（04 §4.9：420×180、z 1000）——
+   规格给的 180 是「24 上内距 + 24 标题 + 44 正文 + 24 间隙 + 32 按钮 + 24 下内距」的
+   合成值；这里**不写死 height**，让 header 自然撑开 —— 写死会把带「不再提示」行的
+   变体顶到 180 之外（那行多 22px），而 §4.9 只给了基础形态的 180。 */
+.lark-doc .lark-doc-confirm-layer { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; }
+.lark-doc .lark-doc-confirm-mask { position: absolute; inset: 0; background-color: var(--ld-mask-solid); }
+/* 卡面 r8 **无投影**（§4.9 实测）：有遮罩的模态不再叠阴影，否则边缘会糊出一圈灰。 */
+.lark-doc .lark-doc-confirm { position: relative; z-index: 1; box-sizing: border-box; width: 420px; max-width: calc(100vw - 32px); border-radius: 8px; background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-confirm-content { display: flex; flex-direction: column; }
+.lark-doc .lark-doc-confirm-header { display: flex; align-items: flex-start; gap: 16px; padding: 24px 24px 0; }
+/* 24×24 圆底感叹号：用文字「!」+ CSS 圆底画，不进 icons.js —— 它是一颗
+   「有底色有字号」的图形，塞进 stroke 图标表反而要多传几个参数。 */
+.lark-doc .lark-doc-confirm-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; background: var(--ld-brand-content); color: var(--ld-text-inverse); font-size: 16px; font-weight: 700; line-height: 1; }
+.lark-doc .lark-doc-confirm-title { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--ld-text); font-size: 16px; font-weight: 500; line-height: 24px; }
+/* body 左缩进 64 = 24 内距 + 24 图标 + 16 间隙 ⇒ 与标题左缘对齐，不是贴卡片左边。 */
+.lark-doc .lark-doc-confirm-body { padding: 8px 24px 0 64px; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-confirm-extra { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin: 8px 0 0 64px; padding: 0; border: 0; background: transparent; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-confirm-checkbox { position: relative; box-sizing: border-box; flex: 0 0 auto; width: 16px; height: 16px; border: 1px solid var(--ld-border-strong); border-radius: 3px; background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-confirm-checkbox.is-on { border-color: var(--ld-brand-content); background: var(--ld-brand-content); }
+/* 勾用两条边框旋转 45° 画：省一颗 check 图标，也省一次颜色传递。 */
+.lark-doc .lark-doc-confirm-checkbox.is-on::after { position: absolute; top: 1px; left: 4px; width: 4px; height: 8px; border: solid var(--ld-text-inverse); border-width: 0 2px 2px 0; content: ''; transform: rotate(45deg); }
+.lark-doc .lark-doc-confirm-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 24px; }
+.lark-doc .lark-doc-confirm-btn { box-sizing: border-box; min-width: 80px; height: 32px; padding: 0 16px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-size: 14px; line-height: 1; }
+.lark-doc .lark-doc-confirm-btn:hover:not(:disabled), .lark-doc .lark-doc-confirm-btn:focus-visible { border-color: var(--ld-border-strong); background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
+.lark-doc .lark-doc-confirm-btn.is-primary { border-color: var(--ld-brand-content); background: var(--ld-brand-content); color: var(--ld-text-inverse); }
+.lark-doc .lark-doc-confirm-btn.is-primary:hover:not(:disabled), .lark-doc .lark-doc-confirm-btn.is-primary:focus-visible { border-color: var(--ld-brand-content); background: var(--ld-brand-content); color: var(--ld-text-inverse); filter: brightness(.94); }
+.lark-doc .lark-doc-confirm-btn:disabled { border-color: var(--ld-border-control); background: var(--ld-bg-soft); color: var(--ld-text-disabled); cursor: not-allowed; }
 
 @media print {
   .lark-doc .revision-container { border-bottom: 0; background: none; }

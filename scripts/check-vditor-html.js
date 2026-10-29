@@ -268,7 +268,9 @@ async function main() {
   /* ---------- 4.5 「图表」插入命令 ---------- */
   const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.js'), 'utf8')
   check('mermaid 内联进 common 包（内网零外链）', bundle.indexOf('flowchart-v2') !== -1)
-  check('命令清单含「图表」插入项', /id:\s*'diagram'/.test(bundle))
+  // 引号风格不参与判定：产物经 terser 压缩后字符串字面量可能被统一引号（详见
+  // scripts/minify-lib-cjs.js 的 quote_style 说明），这里只认「命令 id 是 diagram」。
+  check('命令清单含「图表」插入项', /id:\s*['"]diagram['"]/.test(bundle))
   check('插入命令携带 mermaid 示例源码', bundle.indexOf('A[开始]') !== -1)
 
   /* ---------- 5. importVditor 强制归一化 + 普通内容回归 ---------- */

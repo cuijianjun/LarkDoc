@@ -31,6 +31,9 @@
  * 把 tier 改成 `required` 并接 `AgendaAPI`，卡面与菜单数据一行都不用动。
  */
 
+import { isExternalKind } from './external-block'
+import { externalOperationState } from './provider-registry'
+
 /** 09 §245 的原文措辞。菜单 tooltip 与卡面提示**共用这一条**，别写两版。 */
 export const ENTERPRISE_TOOLTIP = '需要企业版接入'
 
@@ -107,6 +110,35 @@ export function toEnterpriseCommand(item, group) {
     group,
     tier: 'skip',
   }
+}
+
+/**
+ * 单项的置灰原因（17 §17.5）：能对上 externalBlock 目录的菜单项（`jira_issue` / `agenda`）
+ * 直接用 registry 的闸门文案 —— 「Jira 问题需接入Jira后才能新建」/「只读快照…」，
+ * 与 `blockApi` 抛的错**同一句话**；对不上目录的（`folder_manager` 这类没有本地目录项的）
+ * 返回空串，由调用方回落到 `ENTERPRISE_TOOLTIP`。
+ */
+export function enterpriseSkipReason(menuId) {
+  const item = BY_MENU.get(menuId)
+  if (!item || !isExternalKind(item.id)) return ''
+  const state = externalOperationState(item.id, 'create')
+  return state.allowed ? '' : state.reason
+}
+
+/**
+ * 给 `tier: 'skip'` 的项补运行时 `reason`（菜单每次打开重算一次）。
+ *
+ * 🔴 为什么不写进 `toEnterpriseCommand()`：那一层在**模块初始化**时就把表建好了，而
+ * provider 是运行时注册的 —— 把状态冻在 import 那一刻，接好服务后菜单仍会一直说「未接入」。
+ * 已经在项上写了 `reason` 的不覆盖（宿主可以自己给文案）。
+ */
+export function withSkipReasons(items) {
+  if (!Array.isArray(items)) return []
+  return items.map((item) => {
+    if (!item || item.tier !== 'skip' || item.reason) return item
+    const reason = enterpriseSkipReason(item.id)
+    return reason ? { ...item, reason } : item
+  })
 }
 
 /** 单项版：`collab` / `advanced` 这种「组里只有一条企业项」的用法。 */

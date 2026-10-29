@@ -15,14 +15,18 @@
  * 需要真 iframe / canvas 时再挂 NodeView —— 节点与 JSON 形状不变，不用迁移数据。
  */
 import { Node, mergeAttributes } from '@tiptap/core'
+import { Plugin } from '@tiptap/pm/state'
 import { safeUrl } from '../documentOperations'
 import { validateAttribute } from './shared'
 import {
-  EXTERNAL_STATUS, EXTERNAL_STATUS_LABELS,
+  EXTERNAL_STATUS,
   externalBlockMeta, externalBlockReason,
   safeExternalKind, safeExternalProvider, safeExternalStatus,
   safeExternalTitle, safeExternalPayload,
 } from '../embed/external-block'
+import {
+  externalBlockStatus, externalBlockStatusHint, externalBlockStatusLabel,
+} from '../embed/provider-registry'
 
 /**
  * 目录层常量与判定函数原样再导一次（先例 `core/blocks/isv.js`）：上层只认识
@@ -131,8 +135,12 @@ const ExternalBlock = Node.create({
   renderHTML({ node, HTMLAttributes }) {
     const attrs = node.attrs || {}
     const meta = externalBlockMeta(attrs.kind)
-    const status = attrs.status || EXTERNAL_STATUS.UNAVAILABLE
+    // 有效状态取**运行时**（registry），不取节点上的 `status` attr：文档可能从别的机器带来
+    // `status: 'ready'`，但本机没注册 provider 时它其实点不动 —— 挂「已接入」角标比诚实地说
+    // 未接入更糟（`externalBlockStatus()` 的注释）。`status` attr 仍原样留在 JSON 里（保真）。
+    const status = externalBlockStatus(attrs.kind)
     const reason = attrs.reason || externalBlockReason(attrs.kind, status)
+    const badge = externalBlockStatusLabel(attrs.kind)
     const children = [
       ['span', { class: 'lark-doc-external-card-icon', 'aria-hidden': 'true' }],
       ['span', { class: 'lark-doc-external-card-text' },
@@ -142,14 +150,67 @@ const ExternalBlock = Node.create({
     if (attrs.title) {
       children.push(['span', { class: 'lark-doc-external-card-kind' }, meta.label])
     }
-    children.push(['span', { class: 'lark-doc-external-card-badge' }, EXTERNAL_STATUS_LABELS[status]])
-    return ['div', mergeAttributes(HTMLAttributes, {
+    // `ready` 时 `externalBlockStatusLabel()` 返回空串 —— 服务正常就不该有角标占住右上角。
+    if (badge) {
+      // 短标给人扫，完整句子给悬浮与读屏（「哪个服务、现在怎么了」）。两句话都出自
+      // registry，组件这边不许再判一次状态，否则文案会跟闸门漂。
+      const hint = externalBlockStatusHint(attrs.kind)
+      children.push(['span', {
+        class: 'lark-doc-external-card-badge',
+        'data-external-badge': status,
+        title: hint,
+        'aria-label': hint,
+      }, badge])
+    }
+    const root = mergeAttributes(HTMLAttributes, {
       'data-type': 'external-block',
       class: 'lark-doc-external-card',
       // 供宿主 CSS 按族定制图标 / 配色；不在 core 里内联样式（主题 token 门禁）。
       'data-external-family': meta.family,
-    }), ...children]
+      // 这一个属性就是卡片「可用 / 不可用」的**唯一**视觉开关（lark-doc.css 里由它把
+      // 虚线描边转实线），所以写运行时状态而不是 attr 里的声明。
+      'data-external-status': status,
+    })
+    // fallback 语义（§17.5）：`readonly` 可选中可复制不可编辑；`unavailable` 连输入都不该有。
+    // 两档都钉 `contenteditable="false"` —— PM 对非文本节点本来就会补这一句，但显式写出来
+    // 它才会跟着 getHTML / 复制 / 导出一路走下去（复制出去的 HTML 也不该是可编辑的错觉）。
+    if (status !== EXTERNAL_STATUS.READY) {
+      root.contenteditable = 'false'
+      root['data-external-locked'] = status
+      if (status === EXTERNAL_STATUS.UNAVAILABLE) root['aria-disabled'] = 'true'
+    }
+    return ['div', root, ...children]
+  },
+
+  /**
+   * 「只读 = 改不动」不能只靠 `contenteditable`：中文输入法、移动端长按、拖放都会绕过它
+   * 直接派发 `beforeinput`。这里在卡片内部把事件吃掉，正文一个字符都不动。
+   *
+   * 注意与 `Delete` 的关系：本插件只挡**输入**，不挡删除。删除走
+   * `external-delete.js` 的键盘收口（§17.5：Delete 对块一律放行，统一走
+   * `BlockModuleAPI.remove`）—— 未接入的卡片也必须能删掉。
+   */
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      props: {
+        handleDOMEvents: {
+          beforeinput: (view, event) => {
+            const locked = lockedCardOf(event.target)
+            if (!locked) return false
+            event.preventDefault()
+            return true
+          },
+        },
+      },
+    })]
   },
 })
+
+/** 事件目标是否落在只读 / 未接入的卡片里；返回那张卡片（没有则 null）。 */
+function lockedCardOf(target) {
+  if (!target || target.nodeType !== 1) return null
+  const card = target.closest?.('[data-type="external-block"][data-external-locked]')
+  return card || null
+}
 
 export { ExternalBlock }

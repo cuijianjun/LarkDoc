@@ -21,6 +21,45 @@
       ><span class="lark-doc-title-sub">{{ ed.effectiveReadonly ? '阅读中' : '单人编辑' }}</span>
     </div>
     <div class="lark-doc-header-actions">
+      <!-- 顶栏「新建」（04 §4.6.5，182×509 菜单，z 1030）。
+           菜单本体在 `LarkDocOverlays.vue` 的 fixed 兄弟层里：`.lark-doc-header-actions`
+           带 `overflow-x: auto`，把 absolute 菜单挂在这里会被裁掉（与「更多」「模式」
+           同一条纪律，也是这个按钮只做 `@click` 传锚点的原因）。
+           `aria-haspopup="menu"` + `aria-expanded` 与「更多」保持同一套语义。 -->
+      <button
+        type="button"
+        class="lark-doc-create-btn"
+        aria-label="新建"
+        aria-haspopup="menu"
+        :aria-expanded="String(ed.createMenuOpen)"
+        @click="ed.toggleCreateMenu($event)"
+      >
+        <lark-doc-icon
+          name="plus"
+          :size="16"
+        />
+      </button>
+      <!-- 顶栏「通知」（04 §4.6.4，402×555 popover，z 999）。
+           z 比「新建/更多」低一档是 04 §0.3 总表口径，不是笔误。 -->
+      <button
+        type="button"
+        class="lark-doc-notify-btn"
+        aria-label="当前文档通知"
+        aria-haspopup="dialog"
+        :aria-expanded="String(ed.notifyOpen)"
+        @click="ed.toggleNotify($event)"
+      >
+        <lark-doc-icon
+          name="bell"
+          :size="16"
+        />
+        <!-- 未读红点：条数由 `notifyUnreadCount` 算，0 条不渲染（不做「0」占位，
+             飞书的空态是纯铃铛）。 -->
+        <span
+          v-if="ed.notifyUnreadCount > 0"
+          class="lark-doc-notify-dot"
+        >{{ ed.notifyUnreadCount > 99 ? '99+' : ed.notifyUnreadCount }}</span>
+      </button>
       <!-- P4-06 三态模式入口（03 顶栏右侧按钮组 #2：84×32、白底、深灰文字、radius 6）。
            必须与下面的 slot **并存**：slot 里是宿主塞进来的控件（LarkDocWorkspace 有 6+ 个），
            历史上「替换掉 slot」的一个改法会让宿主控件全部消失。 -->

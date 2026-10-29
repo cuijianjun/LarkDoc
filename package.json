@@ -6,7 +6,7 @@
   "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
+    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js && node scripts/minify-lib-cjs.js",
     "build:umd": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
     "build:esm": "node scripts/build-esm.js",
     "build:adapters": "node scripts/build-adapters.js",
@@ -248,25 +248,25 @@
     {
       "name": "ESM 主包 (gzip)",
       "path": "dist/lark-doc.esm.js",
-      "limit": "320 KB",
+      "limit": "285 KB",
       "gzip": true
     },
     {
       "name": "UMD 主包 (gzip)",
       "path": "dist/lark-doc.umd.min.js",
-      "limit": "505 KB",
+      "limit": "465 KB",
       "gzip": true
     },
     {
       "name": "Element 产物 (gzip)",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "515 KB",
+      "limit": "480 KB",
       "gzip": true
     },
     {
       "name": "CJS 全量产物（内联 mermaid，gzip）",
       "path": "dist/lark-doc.common.js",
-      "limit": "2600 KB",
+      "limit": "2500 KB",
       "gzip": true
     },
     {

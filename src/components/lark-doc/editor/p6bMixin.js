@@ -34,6 +34,14 @@ import topbarMoreMixin from './topbarMoreMixin'
 import linkHoverMixin from './linkHoverMixin'
 import coverMixin from './coverMixin'
 import codeLangMixin from './codeLangMixin'
+// 浮层矩阵补齐线（`docs/blocks/overlays.md` 里 4 个 ⬜ → ✅）。
+//   通用确认框 420×180（04 §4.9）/ 顶栏「新建」182×509（04 §4.6.5）/
+//   通知 popover 402×555（04 §4.6.4）/ 关联多维表格 1080×676（04 §4.5）。
+// 同样收在这里而不是让门面多 import 四行 —— 门面的 <700 行预算不因这条线涨。
+import confirmMixin from './confirmMixin'
+import createMenuMixin from './createMenuMixin'
+import notifyMixin from './notifyMixin'
+import relationBitableMixin from './relationBitableMixin'
 // 三态统一放最后：它的 `writable()` / `interactionMode` 是另四条线的判据上游
 // （「能不能评论」「能不能另存版本」最终都落到 `canEditContent(interactionMode)`），
 // 靠后放才能在有同名键时压住前面的旧口径。
@@ -53,6 +61,10 @@ export default {
     linkHoverMixin,
     coverMixin,
     codeLangMixin,
+    confirmMixin,
+    createMenuMixin,
+    notifyMixin,
+    relationBitableMixin,
     readingModeMixin,
   ],
   components: { LarkDocOverlays },

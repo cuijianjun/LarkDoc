@@ -167,6 +167,7 @@ export default defineConfig({
             { text: '块句柄与拖拽', link: '/blocks/block-handle' },
             { text: '视图模式', link: '/blocks/view-modes' },
             { text: '模板', link: '/blocks/templates' },
+            { text: '浮层矩阵', link: '/blocks/overlays' },
           ],
         },
         {

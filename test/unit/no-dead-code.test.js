@@ -28,7 +28,12 @@ function closureOfExtensions() {
 }
 
 describe('P0-01 删死代码', () => {
-  it('extensions.js 的依赖闭包内不含 ImageNode / CodeNode', { timeout: 30000 }, () => {
+  // 超时口径跟着 `test/helpers/dependency-closure.js` 走：那条 helper 在子进程里用 babel
+  // 装载**整个 extensions 依赖闭包**（几百个文件），自己的 execFileSync timeout 就是 60s。
+  // 外层若只给 30s，单个空闲运行约 12s 够用，但 4 个 worker 并行抢 CPU 时会先撞外层超时
+  // ——2026-10-29 全量门禁就是这么假红了一次（单跑 11.9s 通过）。外层必须大于内层预算，
+  // 断言本身一个字没改，所以这条仍然是「闭包里出现 ImageNode/CodeNode 就红」。
+  it('extensions.js 的依赖闭包内不含 ImageNode / CodeNode', { timeout: 90000 }, () => {
     const leaks = closureOfExtensions().filter((file) => /ImageNode|CodeNode/.test(file))
     expect(leaks).toEqual([])
   })

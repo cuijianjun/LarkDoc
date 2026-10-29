@@ -2,7 +2,7 @@
  * 链接悬浮卡（requirements/04 §1.6 A 态 + §1.6.1）。
  *
  * 这里守的是三条**错了也不报错**的实测口径：
- *   1. 触发是 hover ≥ 1.2s，不是即展 —— 定时器被取消就永远不该弹；
+ *   1. 触发是 hover ≥ 2.7s，不是即展 —— 定时器被取消就永远不该弹；
  *   2. 卡片 440×42 恒定、URL 再长也不撑宽（URL 在文本项内单行省略）；
  *   3. 水平严格以链接为中心、垂直 `链接 top − 50`。
  *
@@ -57,8 +57,8 @@ afterEach(() => {
 })
 
 describe('链接悬浮卡 · 实测常量', () => {
-  it('延迟 1200ms、卡片 440×42、顶部偏移 50', () => {
-    expect(LINK_HOVER_DELAY).toBe(1200)
+  it('延迟 2700ms、卡片 440×42、顶部偏移 50', () => {
+    expect(LINK_HOVER_DELAY).toBe(2700)
     expect(LINK_HOVER_CARD_SIZE).toEqual({ width: 440, height: 42 })
     expect(LINK_HOVER_TOP_OFFSET).toBe(50)
   })

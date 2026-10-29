@@ -1,6 +1,11 @@
 import TurndownService from 'turndown'
 import { marked } from 'marked'
-import { logger } from './logger'
+import { downloadBlob } from './download'
+
+// 落盘实现搬去了 utils/download.js（见那边的文件头：这两个函数不该背 turndown 的体积）。
+// 这里**转出**一份，是为了不破坏既有调用契约 ——
+// LarkDocWorkspace.vue 的 `await import('../../utils/importExport')` 仍在解构 downloadText。
+export { downloadBlob, downloadText } from './download'
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 
@@ -10,20 +15,6 @@ export function markdownToHtml(markdown) {
 
 export function htmlToMarkdown(html) {
   return turndown.turndown(html)
-}
-
-export function downloadBlob(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  anchor.click()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
-  logger.info('export', 'file.downloaded', { format: fileName.split('.').pop() || 'unknown' })
-}
-
-export function downloadText(value, fileName, type) {
-  downloadBlob(new Blob([value], { type }), fileName)
 }
 
 export async function exportDocx(title, plainText) {

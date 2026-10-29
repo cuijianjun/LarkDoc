@@ -24,14 +24,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   serializeMarkdown,
-  parseMarkdown,
-  htmlToDoc,
   escapeText,
   MD_ESCAPE_CHARS,
   MD_HARD_BREAK,
   BLOCK_SKIP,
   INLINE_FALLBACK,
 } from '../../src/utils/export/markdown.js'
+// 解析半边单独一个文件（它引 marked，不进库产物）；往返测试两边都要，所以分开 import。
+import { parseMarkdown, htmlToDoc } from '../../src/utils/export/markdown-parse.js'
 import {
   buildDocxElements,
   buildDocxDocument,

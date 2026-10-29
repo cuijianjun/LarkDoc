@@ -37,8 +37,8 @@
         :key="item.id"
         type="button"
         role="menuitem"
-        :aria-label="item.label"
-        :title="item.tier === 'skip' ? '需要企业版接入' : item.label"
+        :aria-label="item.tier === 'skip' ? skipTip(item) : item.label"
+        :title="item.tier === 'skip' ? skipTip(item) : item.label"
         :disabled="item.tier === 'skip'"
         :aria-disabled="item.tier === 'skip' ? 'true' : undefined"
         :data-tier="item.tier || undefined"
@@ -202,6 +202,14 @@ export default {
       else this.move(key === 'ArrowDown' ? 1 : -1)
     },
     move(step) { this.$emit('move', step) },
+    /**
+     * skip 项的提示 / 读屏文案（09 §245：可见的取舍，不许静默失败）。
+     *
+     * 优先用命令自带的 `reason` —— 企业项在 `core/embed/enterprise.js` 里按 externalBlock
+     * 的闸门口径算好了（「Jira 问题需接入Jira后才能新建」/「只读」），与 `blockApi` 抛的错
+     * 同一句话；对不上目录的项才回落到笼统的「需要企业版接入」。
+     */
+    skipTip(item) { return (item && item.reason) || '需要企业版接入' },
     columnsChoiceStyle(index) {
       const left = index === 0 ? 0 : 40 + ((index - 1) * 20)
       return { left: `${left}%`, width: `${index === 0 ? 40 : 20}%` }

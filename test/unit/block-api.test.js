@@ -22,6 +22,7 @@ import {
   BLOCK_CONTAINER_TYPES, assignIds, blockTree, collectIds, collectJsonIds, createBlockApi,
   expandDeletion, fitToParent, nodeFromJson, posAtId,
 } from '../../src/core/blockApi'
+import { registerExternalProvider, resetExternalProviders } from '../../src/core/embed/provider-registry'
 
 // ── 夹具 ────────────────────────────────────────────────────────────────
 /** 纯文本段落。id 显式写死 —— 断言里要按 id 找回。 */
@@ -317,6 +318,97 @@ describe('BlockAPI · update', () => {
     api.update('a', null)
     api.update('不在', { indent: 1 })
     expect(ed.state.doc.toJSON()).toEqual(before)
+  })
+})
+
+/**
+ * 17 §17.5 —— 外部服务块的能力闸门。
+ *
+ * blockApi 是全库唯一 throw 的地方，UI 只读 `capability()` 做置灰。这里的用例守两件事：
+ *
+ * 1. **闸门按字段判定，不按块判定** —— `status|reason|provider` 是本地记账字段（机器换了、
+ *    provider 没注册也要能如实记下），写它们不该抛；写内容字段才需要 provider；
+ * 2. **删恒放行** —— §17.5 表头写明 Delete 统一走 `BlockModuleAPI.remove`，
+ *    否则用户会把一块未接入的卡片永远留在文档里。
+ */
+describe('BlockAPI · 外部服务块闸门（§17.5）', () => {
+  afterEach(() => resetExternalProviders())
+
+  const externalOf = (id, kind = 'jira_issue') => ({
+    type: 'externalBlock',
+    attrs: { blockId: id, kind, title: 'DOC-7', provider: 'jira', status: 'unavailable', reason: '' },
+  })
+  const codeOf = (fn) => { try { fn(); return '' } catch (error) { return error.code } }
+
+  it('本地三属性（status / reason / provider）不触发闸门', () => {
+    const { api } = setup([externalOf('x')])
+    expect(codeOf(() => api.update('x', { status: 'readonly' }))).toBe('')
+    expect(codeOf(() => api.update('x', { reason: '等管理员接入' }))).toBe('')
+    expect(codeOf(() => api.update('x', { provider: 'notion' }))).toBe('')
+    expect(api.get('x').attrs.status).toBe('readonly')
+    expect(api.get('x').attrs.reason).toBe('等管理员接入')
+    expect(api.get('x').attrs.provider).toBe('notion')
+  })
+
+  it('写内容字段 → ERR_PROVIDER_REQUIRED，且带 kind / action / status', () => {
+    const { api } = setup([externalOf('x')])
+    let error = null
+    try { api.update('x', { title: '改个名' }) } catch (e) { error = e }
+    expect(error).toBeTruthy()
+    expect(error.code).toBe('ERR_PROVIDER_REQUIRED')
+    expect(error.kind).toBe('jira_issue')
+    expect(error.action).toBe('update')
+    expect(error.status).toBe('unavailable')
+    expect(error.message).toContain('接入')
+    expect(error.message).toContain('Jira')
+  })
+
+  it('混着写：本地字段 + 内容字段，整笔被拦，文档不动', () => {
+    const { api, editor: ed } = setup([externalOf('x')])
+    const before = ed.state.doc.toJSON()
+    expect(codeOf(() => api.update('x', { status: 'readonly', title: '改个名' }))).toBe('ERR_PROVIDER_REQUIRED')
+    expect(ed.state.doc.toJSON()).toEqual(before)
+  })
+
+  it('只读档：内容字段仍拦，但 reason 说「只读」而不是「未接入」', () => {
+    registerExternalProvider({ name: 'jira', label: 'Jira', readonly: true, kinds: ['jira_issue'] })
+    const { api } = setup([externalOf('x')])
+    let error = null
+    try { api.update('x', { title: '改个名' }) } catch (e) { error = e }
+    expect(error.code).toBe('ERR_PROVIDER_REQUIRED')
+    expect(error.status).toBe('readonly')
+    expect(error.message).toContain('只读')
+    // 本地记账字段在只读档照样能写
+    expect(codeOf(() => api.update('x', { status: 'readonly' }))).toBe('')
+  })
+
+  it('接入后放行；删恒放行（未接入也能删）', () => {
+    registerExternalProvider({ name: 'jira', label: 'Jira', kinds: ['jira_issue'] })
+    const { api } = setup([externalOf('x'), para('p', 'P')])
+    expect(codeOf(() => api.update('x', { title: '改个名' }))).toBe('')
+    expect(api.get('x').attrs.title).toBe('改个名')
+    api.remove('x')
+    expect(api.get('x')).toBeNull()
+
+    // 未接入态：不能改内容，但必须能删（先把上一步注册的 provider 摘掉）
+    resetExternalProviders()
+    const { api: api2 } = setup([externalOf('y')])
+    expect(codeOf(() => api2.update('y', { title: '改个名' }))).toBe('ERR_PROVIDER_REQUIRED')
+    api2.remove('y')
+    expect(api2.get('y')).toBeNull()
+  })
+
+  it('capability() 与闸门同源：UI 置灰文案就是抛错文案', () => {
+    const { api } = setup([externalOf('x'), para('p', 'P')])
+    const verdict = api.capability('x', 'update')
+    expect(verdict.allowed).toBe(false)
+    expect(verdict.code).toBe('ERR_PROVIDER_REQUIRED')
+    let error = null
+    try { api.update('x', { title: '改个名' }) } catch (e) { error = e }
+    expect(error.message).toBe(verdict.reason)
+    // 非外部块一律放行（本仓库其余块没有 provider 档位）；不存在的块不算「放行」而是 missing
+    expect(api.capability('p', 'update')).toMatchObject({ allowed: true, mode: 'local' })
+    expect(api.capability('missing', 'update').mode).toBe('missing')
   })
 })
 

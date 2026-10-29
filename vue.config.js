@@ -43,7 +43,7 @@ const initialChunks = isEsm ? 'all' : 'async'
 class BundleAnalyzePlugin {
   apply(compiler) {
     compiler.hooks.done.tap('lark-doc-bundle-analyze', (stats) => {
-      const json = stats.toJson({ modules: true, assets: true, chunks: true, reasons: false, source: false })
+      const json = stats.toJson({ modules: true, assets: true, chunks: true, chunkModules: false, reasons: false, source: false })
       const groups = new Map()
       for (const mod of json.modules || []) {
         const name = mod.nameForCondition || mod.name || mod.identifier || ''
@@ -91,6 +91,50 @@ const ON_DEMAND = 'katex|docx|mammoth|marked|turndown|highlight\\.js'
 const vendorModule = new RegExp(`[\\\\/]node_modules[\\\\/](?!${ON_DEMAND}[\\\\/])`)
 
 module.exports = defineConfig({
+  // 体积：vue-cli 的默认 terser 只跑 1 pass，并且**主动关掉**一批标准 compress 标志
+  // （见 @vue/cli-service/lib/config/terserOptions.js 里那串 `false`）—— 关它们的理由是
+  // 「收益小 / 耗时长」，不是「不安全」。这里把其中语义保持的一批重新打开：
+  //   - passes: 3           多重放几遍，让上面的折叠收敛；
+  //   - reduce_vars / collapse_vars / reduce_funcs / inline / hoist_funs / hoist_props /
+  //     properties / comparisons / sequences / negate_iife / loops / switches / arrows /
+  //     computed_props / typeofs
+  //                         terser 的常规常量传播、函数内联与逗号表达式合并，只改写法不改语义；
+  //   - compress.toplevel  丢弃顶层无人引用的声明（webpack 的模块包装会留一批中间变量）。
+  //                         ESM 产物里 `export` 的绑定 terser 自己会保，不会被误删；
+  //   - format.comments    false —— 注释一律丢弃，`extractComments` 本来就是关的。
+  //
+  // **不碰** 的三类：
+  //   1. `pure_getters` / `unsafe*` / `assume*`：靠「假设取属性无副作用」删代码。Vue 2 的响应式
+  //      靠 getter 里的 `depend()` 收依赖，把属性读取当纯函数删掉是真会出问题的；
+  //   2. `mangle.toplevel`：产物的公开面靠 `export` / `module.exports` 上的属性名承载，
+  //      改名收益小、宿主排查成本高；
+  //   3. `drop_console: true`：只按纯函数删 `log/debug/info`（宿主控制台不该被我们的调试输出污染），
+  //      `warn`/`error` 必须留 —— 那是宿主排查问题的唯一线索。
+  terser: {
+    terserOptions: {
+      compress: {
+        passes: 3,
+        toplevel: true,
+        reduce_vars: true,
+        collapse_vars: true,
+        reduce_funcs: true,
+        inline: 2,
+        hoist_funs: true,
+        hoist_props: true,
+        properties: true,
+        comparisons: true,
+        sequences: true,
+        negate_iife: true,
+        loops: true,
+        switches: true,
+        arrows: true,
+        computed_props: true,
+        typeofs: true,
+        pure_funcs: ['console.log', 'console.debug', 'console.info'],
+      },
+      format: { comments: false },
+    },
+  },
   transpileDependencies: true,
   productionSourceMap: false,
   // lib：相对路径，保证产物 CSS 里的 KaTeX 字体能从包自身 dist/fonts 解析。

@@ -1,5 +1,5 @@
 <template>
-  <!-- 链接悬浮卡（04 §1.6 A 态：440×42，hover ≥1.2s；04 §1.6.1 四种视图二级菜单 232×146）。
+  <!-- 链接悬浮卡（04 §1.6 A 态：440×42，hover ≥2.7s；04 §1.6.1 四种视图二级菜单 232×146）。
        外层 overlay-container z600 / 内层 docx-menu-wrapper z999 —— 两层缺一不可，
        这也是 §1.6.1 红字强调的「外层 600 / 内层 999」。 -->
   <div
@@ -100,7 +100,7 @@
         type="button"
         role="menuitemradio"
         class="lark-doc-link-view-item"
-        :class="{ 'is-active': mode.active }"
+        :class="{ 'menu-item-actived': mode.active }"
         :aria-checked="String(mode.active)"
         @click="ed.setLinkHoverView(mode.id)"
       >

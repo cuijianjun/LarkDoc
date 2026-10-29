@@ -155,7 +155,9 @@ export default {
        */
       if (item.tier === 'skip') {
         this.closeCommandMenu(false)
-        this.error = ENTERPRISE_TOOLTIP
+        // `reason` 来自 `core/embed/enterprise.js`（与 blockApi 闸门同一句话），
+        // 比笼统的「需要企业版接入」更能解释「为什么这块我今天插不进去」。
+        this.error = item.reason || ENTERPRISE_TOOLTIP
         return
       }
       const isSlashTable = this.menuKind === 'slash' && item.id === 'table'
@@ -259,7 +261,16 @@ export default {
       // 甘特图 / 画册 / 关联各插一块，块内能自由切）。命令 id 自己就是视图线索，交给
       // `setBitable` 内部的 `viewOfCommand` 映射，这里不另抄一张表。
       // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单，焦点照常回正文（同 sheet）。
-      else if (id === 'bitable' || id === 'bitableKanban' || id === 'bitableGantt' || id === 'bitableGallery' || id === 'bitableRefer') this.run('setBitable', id)
+      else if (id === 'bitable' || id === 'bitableKanban' || id === 'bitableGantt' || id === 'bitableGallery') this.run('setBitable', id)
+      // 「关联」是 5 项里的例外：飞书它插的不是空表，而是**先选一个已有多维表格**
+      // （04 §4.5，1080×676 模态，两段式「选 base → 选 table」）。所以它不走
+      // `setBitable`，走 `relationBitableMixin.openRelationBitable()`。
+      //
+      // 宿主没注册 `bitable` provider 时**照开面板**（不置灰、不静默失败）：列表空态
+      // 里直接写「未接入多维表格（provider: bitable）」，确认按钮置灰并带原因 title。
+      // 理由写在 `relationBitableMixin.js` 文件头 —— 「点了没反应」是最差的可解释性，
+      // 而这个入口的不可用原因是宿主侧配置，用户没法自己猜出来。
+      else if (id === 'bitableRefer') this.openRelationBitable()
       // P5-05：绘图 3 项共用 `cardEmbed` 的**空态引用卡**（V1 没有绘图引擎，见
       // `core/embed/board-diagram.js` 文件头）。只给 `kind` ⇒ 状态自动落 `unbound`，
       // 卡面只剩「绑定」一个动作 —— 这就是验收项「可插入、可绑定 resourceId」。
