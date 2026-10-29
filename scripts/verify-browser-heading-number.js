@@ -105,18 +105,36 @@ const clickNumber = async (page, index = 0) => {
 
 const menuState = (page) => page.evaluate(() => {
   const menu = document.querySelector('.lark-doc-heading-number-menu')
-  if (!menu) return { open: false }
+  if (!menu) return { open: false, inDom: false }
   const items = Array.from(menu.querySelectorAll('.lark-doc-heading-number-item'))
   const rect = menu.getBoundingClientRect()
   return {
     open: true,
+    inDom: menu.isConnected,
+    role: menu.getAttribute('role'),
+    ariaLabel: menu.getAttribute('aria-label'),
+    mousedownPrevented: (() => {
+      let prevented = false
+      const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      menu.addEventListener('mousedown', (current) => { prevented = current.defaultPrevented }, { once: true })
+      menu.dispatchEvent(event)
+      return prevented
+    })(),
     ids: items.map((el) => el.getAttribute('data-menu-id')),
     labels: items.map((el) => (el.querySelector('.lark-doc-heading-number-text')?.textContent || '').trim()),
     disabled: items.map((el) => el.disabled === true || el.getAttribute('aria-disabled') === 'true'),
-    hasIcons: items.every((el) => !!el.querySelector('.lark-doc-heading-number-icon svg')),
+    hasIcons: items.every((el) => !!el.querySelector('.lark-doc-heading-number-icon .lark-doc-icon svg')),
+    itemRoles: items.map((el) => el.getAttribute('role')),
     width: Math.round(rect.width),
     editing: menu.classList.contains('is-editing'),
+    editorLabel: menu.querySelector('.lark-doc-heading-number-editor')?.tagName || null,
     inputValue: menu.querySelector('.lark-doc-heading-number-input')?.value ?? null,
+    inputMode: menu.querySelector('.lark-doc-heading-number-input')?.getAttribute('inputmode') || null,
+    inputAriaLabel: menu.querySelector('.lark-doc-heading-number-input')?.getAttribute('aria-label') || null,
+    spinnerAriaHidden: menu.querySelector('.lark-doc-heading-number-spinner')?.getAttribute('aria-hidden') || null,
+    spinnerButtons: Array.from(menu.querySelectorAll('.lark-doc-heading-number-spinner button')).map((el) => ({
+      label: el.getAttribute('aria-label'), tabindex: el.getAttribute('tabindex'),
+    })),
   }
 })
 
@@ -155,10 +173,12 @@ async function main() {
   // 2. 点编号弹菜单：三项、顺序、图标、「继续」初始禁用
   await clickNumber(page, 0)
   const menu = await menuState(page)
-  record('[菜单] 点编号弹出三项菜单', menu.open === true && menu.ids.length === 3, `open=${menu.open} 项=${(menu.ids || []).join(',')}`)
+  record('[菜单] 点编号弹出三项菜单', menu.open === true && menu.inDom === true && menu.ids.length === 3, `open=${menu.open} 项=${(menu.ids || []).join(',')}`)
+  record('[菜单] 根结构与 ARIA 一致', menu.role === 'menu' && menu.ariaLabel === '编号设置', `${menu.role}/${menu.ariaLabel}`)
+  record('[菜单] mousedown.prevent 保留', menu.mousedownPrevented === true)
   record('[菜单] 项顺序与飞书一致', JSON.stringify(menu.ids) === JSON.stringify(['continue', 'restart', 'renumber']), (menu.ids || []).join(','))
   record('[菜单] 文案与飞书一致', JSON.stringify(menu.labels) === JSON.stringify(['继续编号', '重新开始编号', '设置编号的值']), (menu.labels || []).join(' | '))
-  record('[菜单] 每项都带图标', menu.hasIcons === true)
+  record('[菜单] 每项都带图标与 menuitem role', menu.hasIcons === true && menu.itemRoles.every((role) => role === 'menuitem'))
   record('[菜单] 未重开编号时「继续标题编号」禁用', menu.disabled?.[0] === true && menu.disabled?.[1] === false && menu.disabled?.[2] === false,
     (menu.disabled || []).join(','))
   record('[菜单] 菜单宽度贴飞书 192px', menu.width === 192, `${menu.width}px`)
@@ -185,7 +205,9 @@ async function main() {
   // 3. 设置编号的值 → 就地输入框 → 从该值起算
   await clickMenuItem(page, 'renumber')
   const editing = await menuState(page)
-  record('[设置值] 就地变成数字输入框', editing.open === true && editing.editing === true && editing.inputValue !== null, `value=${editing.inputValue}`)
+  record('[设置值] 就地变成数字输入框', editing.open === true && editing.editing === true && editing.editorLabel === 'LABEL' && editing.inputValue !== null, `value=${editing.inputValue}`)
+  record('[设置值] 输入框 ARIA 与 numeric 模式一致', editing.inputMode === 'numeric' && editing.inputAriaLabel === '编号值', `${editing.inputMode}/${editing.inputAriaLabel}`)
+  record('[设置值] spinner ARIA 与 tabindex 一致', editing.spinnerAriaHidden === 'true' && JSON.stringify(editing.spinnerButtons) === JSON.stringify([{ label: '增加编号', tabindex: '-1' }, { label: '减少编号', tabindex: '-1' }]))
   record('[设置值] 输入框预填当前编号末位', editing.inputValue === '1', `value=${editing.inputValue}`)
   await page.fill('.lark-doc-heading-number-input', '7')
   await page.waitForTimeout(150)
@@ -193,7 +215,9 @@ async function main() {
   await page.waitForTimeout(500)
   const afterValue = await readNumbers(page)
   record('[设置值] 提交后本级从 7 起算', JSON.stringify(afterValue.labels) === JSON.stringify(['7.', '7.1', '7.2', '8.']), afterValue.labels.join(' '))
-  record('[设置值] 提交后菜单关闭', (await menuState(page)).open === false)
+  const afterValueMenu = await menuState(page)
+  const menuRemoved = await page.evaluate(() => !document.querySelector('.lark-doc-heading-number-menu'))
+  record('[设置值] 提交后菜单真实摘除', afterValueMenu.open === false && afterValueMenu.inDom === false && menuRemoved)
   record('[HTML] 起点落进 data-numbering-start', /data-numbering-start="7"/.test(afterValue.html), afterValue.html.slice(0, 60))
 
   // 4. 重新开始编号 → 该层从 1 重开；再「继续」回到跟随上文
