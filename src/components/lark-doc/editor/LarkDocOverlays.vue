@@ -58,20 +58,22 @@
 //
 // `ed` 是 **LarkDocEditor 实例本身**（不是本组件）：父级传的是 `:ed="self"`，
 // 这里再原样往下传，面板因此能直接读到 `ed.editor` / `ed.session` / 各 mixin 的 data。
-import CommentPanel from '../CommentPanel.vue'
-import VersionPanel from '../VersionPanel.vue'
-import SaveVersionDialog from '../SaveVersionDialog.vue'
-import SharePopover from '../SharePopover.vue'
-import ExportDialog from '../ExportDialog.vue'
+// 浮层本身按需加载：它们都自管理显隐，但初始编辑器不需要把评论/版本/分享等低频 UI
+// 编译进首屏。统一 chunk 保持一次请求，组件名和父级模板契约不变。
+const CommentPanel = () => import(/* webpackChunkName: "editor-overlays" */ '../CommentPanel.vue')
+const VersionPanel = () => import(/* webpackChunkName: "editor-overlays" */ '../VersionPanel.vue')
+const SaveVersionDialog = () => import(/* webpackChunkName: "editor-overlays" */ '../SaveVersionDialog.vue')
+const SharePopover = () => import(/* webpackChunkName: "editor-overlays" */ '../SharePopover.vue')
+const ExportDialog = () => import(/* webpackChunkName: "editor-overlays" */ '../ExportDialog.vue')
 // UI 补齐线四个浮层：全部 `position: fixed`，同样必须是兄弟节点。
-import TopbarMoreMenu from './TopbarMoreMenu.vue'
-import LinkHoverCard from './LinkHoverCard.vue'
-import CoverPanel from './CoverPanel.vue'
-import CodeLangPicker from './CodeLangPicker.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
-import CreateMenu from './CreateMenu.vue'
-import NotifyPopover from './NotifyPopover.vue'
-import RelationBitableDialog from './RelationBitableDialog.vue'
+const TopbarMoreMenu = () => import(/* webpackChunkName: "editor-overlays" */ './TopbarMoreMenu.vue')
+const LinkHoverCard = () => import(/* webpackChunkName: "editor-overlays" */ './LinkHoverCard.vue')
+const CoverPanel = () => import(/* webpackChunkName: "editor-overlays" */ './CoverPanel.vue')
+const CodeLangPicker = () => import(/* webpackChunkName: "editor-overlays" */ './CodeLangPicker.vue')
+const ConfirmDialog = () => import(/* webpackChunkName: "editor-overlays" */ './ConfirmDialog.vue')
+const CreateMenu = () => import(/* webpackChunkName: "editor-overlays" */ './CreateMenu.vue')
+const NotifyPopover = () => import(/* webpackChunkName: "editor-overlays" */ './NotifyPopover.vue')
+const RelationBitableDialog = () => import(/* webpackChunkName: "editor-overlays" */ './RelationBitableDialog.vue')
 
 export default {
   name: 'LarkDocP6bOverlays',
