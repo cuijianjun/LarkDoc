@@ -10,6 +10,10 @@ hero:
       text: 快速开始
       link: /guide/getting-started
     - theme: alt
+      text: 在线演示
+      link: /demo/
+      target: _blank
+    - theme: alt
       text: 安装与引用
       link: /guide/install
     - theme: alt
