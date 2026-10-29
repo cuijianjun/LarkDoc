@@ -24,418 +24,12 @@
     @mode-change="effectiveReadonly = $event.readonly"
     @ai-request="startAI"
   >
-    <!-- 标题栏操作区：字数上限、保存状态、模板 / 导入导出 / 本地快照入口 -->
+    <!-- 阶段 5 批次 5G：工作台操作区与侧栏由 src/ui/workspace.js 原生渲染。 -->
     <template #header-actions>
-      <span class="lark-doc-local-badge">本地 Demo</span>
-      <lark-doc-select
-        v-model.number="editorConfig.limits.maxLength"
-        aria-label="字数上限"
-        :options="maxLengthOptions"
-      />
-      <span
-        class="lark-doc-save-status"
-        :class="{ 'is-error': storageError }"
-        role="status"
-      >{{ saveStatus }}</span>
-      <button
-        v-if="featureEnabled('persistence')"
-        type="button"
-        :title="`保存到${persistenceLabel()}`"
-        :disabled="effectiveReadonly || importing"
-        @click="saveNow(true)"
-      >
-        保存
-      </button>
-      <lark-doc-select
-        v-if="featureEnabled('templates')"
-        ref="templateSelect"
-        aria-label="选择文档模板"
-        title="选择本地模板"
-        :disabled="effectiveReadonly || importing"
-        :options="templateOptions"
-        :value="''"
-        placeholder="模板"
-        @change="applyTemplate($event)"
-      />
-      <button
-        v-if="featureEnabled('importExport')"
-        type="button"
-        :title="importing ? '导入中' : '导入文档'"
-        :disabled="effectiveReadonly || importing"
-        @click="$refs.importFile.click()"
-      >
-        {{ importing ? '导入中…' : '导入' }}
-      </button>
-      <input
-        v-if="featureEnabled('importExport')"
-        ref="importFile"
-        class="lark-doc-file-input"
-        type="file"
-        accept=".html,.htm,.json,.md,.markdown,.docx"
-        aria-label="导入文档"
-        @change="importDocument"
-      >
-      <lark-doc-select
-        v-if="featureEnabled('importExport')"
-        aria-label="导出文档格式"
-        title="导出文档"
-        :options="exportOptions"
-        :value="''"
-        placeholder="导出"
-        @change="exportDocument($event)"
-      />
-      <button
-        v-if="featureEnabled('history')"
-        type="button"
-        :aria-expanded="historyOpen ? 'true' : 'false'"
-        title="本地快照"
-        @click="toggleHistory"
-      >
-        本地快照
-      </button>
+      <div ref="workspaceHeaderHost" />
     </template>
-    <!-- 侧边面板：模板选择、本地快照、AI 模拟预览与全局提示 -->
     <template #side-panel>
-      <!-- 模板面板：搜索并应用本地模板 -->
-      <section
-        v-if="templateOpen && featureEnabled('templates')"
-        class="lark-doc-side-panel lark-doc-template-panel"
-        role="dialog"
-        aria-label="模板"
-        @keydown.esc="closeTemplatePicker"
-      >
-        <div class="lark-doc-panel-heading">
-          <h2>模板</h2>
-          <button
-            type="button"
-            aria-label="关闭模板"
-            @click="closeTemplatePicker"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </div>
-        <input
-          ref="templateSearch"
-          v-model="templateQuery"
-          type="search"
-          aria-label="搜索模板"
-          placeholder="搜索模板"
-        >
-        <p v-if="!filteredTemplates.length">
-          没有匹配的模板
-        </p>
-        <div
-          v-else
-          class="lark-doc-template-list"
-          role="listbox"
-          aria-label="模板列表"
-        >
-          <button
-            v-for="item in filteredTemplates"
-            :key="item.id"
-            type="button"
-            role="option"
-            :aria-label="item.label"
-            @click="chooseTemplate(item.id)"
-          >
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.title }}</small>
-          </button>
-        </div>
-      </section>
-      <!-- 快照面板：列出 / 保存 / 恢复本地快照 -->
-      <section
-        v-if="historyOpen && featureEnabled('history')"
-        class="lark-doc-side-panel"
-        aria-label="本地快照"
-        @keydown.esc="historyOpen = false"
-      >
-        <div class="lark-doc-panel-heading">
-          <h2>本地快照</h2>
-          <button
-            type="button"
-            aria-label="关闭本地快照"
-            @click="historyOpen = false; $refs.document.focus()"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </div>
-        <p>仅保存在{{ persistenceLabel() }}{{ persistenceCaveat() }}，最多 {{ editorConfig.limits.maxSnapshots }} 份。</p>
-        <button
-          type="button"
-          :disabled="effectiveReadonly"
-          @click="createSnapshot"
-        >
-          保存当前快照
-        </button>
-        <p v-if="!snapshots.length">
-          暂无本地快照
-        </p>
-        <ul class="lark-doc-snapshot-list">
-          <li
-            v-for="item in snapshots"
-            :key="item.id"
-          >
-            <span>{{ item.title || '未命名文档' }}</span>
-            <small>{{ new Date(item.updatedAt).toLocaleString() }}</small>
-            <button
-              type="button"
-              :disabled="effectiveReadonly"
-              @click="restoreSnapshot(item.id)"
-            >
-              恢复
-            </button>
-          </li>
-        </ul>
-      </section>
-      <!-- AI 面板：本地 Mock 流式预览、审阅建议与修改提案，确认后才落盘正文 -->
-      <section
-        v-if="aiOpen && featureEnabled('ai')"
-        class="lark-doc-side-panel lark-doc-ai-panel"
-        aria-label="AI 模拟预览"
-        @keydown.esc="closeAI"
-      >
-        <div class="lark-doc-panel-heading">
-          <h2>AI 助手 <small>本地 Mock</small></h2>
-          <button
-            type="button"
-            aria-label="关闭 AI 预览"
-            @click="closeAI"
-          >
-            <lark-doc-icon
-              :size="14"
-              name="close"
-            />
-          </button>
-        </div>
-        <p>单人本地工作区，不调用模型；只有明确接受、插入或替换才修改正文。</p>
-        <div class="lark-doc-ai-context">
-          <label>上下文范围</label>
-          <lark-doc-select
-            aria-label="上下文范围"
-            :options="aiContextOptions"
-            :value="aiContextScope"
-            :disabled="aiRunning || effectiveReadonly"
-            @change="aiContextScope = $event; resetAIPreview()"
-          />
-          <small class="lark-doc-ai-context-summary">{{ aiContextSummary }}</small>
-        </div>
-        <label>操作</label>
-        <lark-doc-select
-          aria-label="AI 操作"
-          :options="aiActions"
-          :value="aiAction"
-          :disabled="effectiveReadonly"
-          @change="aiAction = $event"
-        />
-        <label
-          v-if="aiAction === 'translate'"
-        >目标语言</label>
-        <lark-doc-select
-          v-if="aiAction === 'translate'"
-          aria-label="目标语言"
-          :options="aiLanguageOptions"
-          :value="aiLanguage"
-          :disabled="aiRunning || effectiveReadonly"
-          @change="aiLanguage = $event"
-        />
-        <label for="lark-doc-ai-prompt">给 AI 的要求（可选）</label>
-        <textarea
-          id="lark-doc-ai-prompt"
-          v-model="aiPrompt"
-          rows="2"
-          :disabled="aiRunning || effectiveReadonly"
-          placeholder="例如：请用更简洁的语气重写"
-        />
-        <ul
-          v-if="aiMessages.length"
-          class="lark-doc-ai-messages"
-          aria-label="AI 对话记录"
-        >
-          <li
-            v-for="(message, index) in aiMessages"
-            :key="`${message.id}-${index}`"
-            :class="`is-${message.role}`"
-          >
-            <strong>{{ message.role === 'user' ? '你' : 'AI' }}</strong>
-            <span>{{ message.text }}</span>
-          </li>
-        </ul>
-        <div class="lark-doc-panel-buttons">
-          <button
-            type="button"
-            :disabled="effectiveReadonly || aiRunning"
-            @click="startAI(aiAction)"
-          >
-            {{ aiRunning ? '重新生成' : '生成预览' }}
-          </button>
-          <button
-            v-if="aiRunning"
-            type="button"
-            @click="stopAI"
-          >
-            停止
-          </button>
-          <button
-            type="button"
-            :disabled="effectiveReadonly || aiRunning || !aiPrompt.trim()"
-            @click="sendAIChat"
-          >
-            发送对话
-          </button>
-        </div>
-        <p
-          v-if="aiStatus"
-          class="lark-doc-ai-status"
-          role="status"
-        >
-          {{ aiStatus }}
-        </p>
-        <pre
-          v-if="!aiPreviewHtml"
-          class="lark-doc-ai-result"
-          aria-live="polite"
-        >{{ aiPreview || '选择正文或将光标放入段落，再生成预览。' }}</pre>
-        <!-- eslint-disable vue/no-v-html -->
-        <!-- 预览内容由 markdown.js 生成，已做 HTML 逃生与 URL 白名单，不接受外部注入。 -->
-        <div
-          v-else
-          class="lark-doc-ai-result lark-doc-ai-result--rich"
-          aria-live="polite"
-          v-html="aiPreviewHtml"
-        />
-        <!-- eslint-enable vue/no-v-html -->
-        <ul
-          v-if="aiReviewIssues.length"
-          class="lark-doc-ai-review-list"
-          aria-label="AI 审阅建议"
-        >
-          <li
-            v-for="issue in aiReviewIssues"
-            :key="issue.id"
-          >
-            <strong>{{ issue.kind }} · {{ issue.severity }}</strong>
-            <span>{{ issue.message }}</span>
-            <small>建议：{{ issue.suggestion }}</small>
-            <button
-              type="button"
-              :disabled="effectiveReadonly || aiRunning"
-              @click="acceptReviewIssue(issue)"
-            >
-              接受建议
-            </button>
-            <button
-              type="button"
-              :disabled="aiRunning"
-              @click="ignoreReviewIssue(issue.id)"
-            >
-              忽略
-            </button>
-          </li>
-        </ul>
-        <div
-          v-if="aiProposal"
-          class="lark-doc-ai-proposal"
-          role="region"
-          aria-label="AI 修改提案"
-        >
-          <strong>{{ aiProposal.title }}</strong>
-          <p>{{ aiProposal.summary }}</p>
-          <pre>{{ aiProposal.operations[0].content }}</pre>
-          <div class="lark-doc-panel-buttons">
-            <button
-              type="button"
-              class="lark-doc-primary"
-              :disabled="effectiveReadonly || aiRunning"
-              @click="applyAIProposal"
-            >
-              确认提案
-            </button>
-            <button
-              type="button"
-              :disabled="aiRunning"
-              @click="aiProposal = null"
-            >
-              取消提案
-            </button>
-          </div>
-        </div>
-        <p
-          v-if="aiError"
-          class="lark-doc-error"
-          role="alert"
-        >
-          {{ aiError }}
-        </p>
-        <div class="lark-doc-panel-buttons">
-          <button
-            type="button"
-            :disabled="!aiPreview || aiRunning"
-            @click="copyAIPreview"
-          >
-            复制
-          </button>
-          <button
-            type="button"
-            :disabled="!aiPreview || aiRunning || effectiveReadonly"
-            @click="acceptAI('insert')"
-          >
-            插入到光标
-          </button>
-          <button
-            type="button"
-            :disabled="!aiPreview || aiRunning || effectiveReadonly || aiReplaceDisabled"
-            :title="aiReplaceDisabled ? '上下文超预算时只能插入到光标' : '替换生成时的上下文范围'"
-            @click="acceptAI('replace')"
-          >
-            替换范围
-          </button>
-          <button
-            type="button"
-            :disabled="effectiveReadonly || aiRunning"
-            @click="regenerateAI"
-          >
-            重新生成
-          </button>
-          <button
-            type="button"
-            class="lark-doc-primary"
-            :disabled="!aiPreview || aiRunning || effectiveReadonly || aiReplaceDisabled"
-            @click="acceptAI"
-          >
-            接受结果
-          </button>
-          <button
-            type="button"
-            @click="closeAI"
-          >
-            拒绝
-          </button>
-        </div>
-      </section>
-      <div
-        v-if="notice"
-        class="lark-doc-notice"
-        role="status"
-      >
-        <span>{{ notice }}</span>
-        <button
-          type="button"
-          aria-label="关闭提示"
-          @click="notice = ''"
-        >
-          <lark-doc-icon
-            :size="14"
-            name="close"
-          />
-        </button>
-      </div>
+      <div ref="workspacePanelHost" />
     </template>
   </lark-doc-editor>
 </template>
@@ -455,8 +49,7 @@ import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
 import { loadFeature } from '../../core/features/registry'
 import { createDocumentSession } from '../../session/DocumentSession'
-import LarkDocSelect from './LarkDocSelect.vue'
-import LarkDocIcon from './LarkDocIcon.vue'
+import { createWorkspace } from '../../ui/workspace'
 
 /**
  * 让浏览器先把「目录已经挂上」画出来一帧，再进 `setContent` 的长任务（2,000 块几十秒）。
@@ -470,7 +63,7 @@ const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
 
 export default {
   name: 'LarkDocWorkspace',
-  components: { LarkDocEditor, LarkDocSelect, LarkDocIcon },
+  components: { LarkDocEditor },
   props: {
     // The route keeps the local Demo defaults, while hosts may reuse this
     // shell with the same editor strategy and their own data sources.
@@ -572,6 +165,28 @@ export default {
   },
   watch: {
     title() { this.queueSave() },
+    editorConfig: { deep: true, handler() { this.refreshWorkspaceUI() } },
+    effectiveReadonly() { this.refreshWorkspaceUI() },
+    importing() { this.refreshWorkspaceUI() },
+    saveStatus() { this.refreshWorkspaceUI() },
+    storageError() { this.refreshWorkspaceUI() },
+    notice() { this.refreshWorkspaceUI() },
+    historyOpen() { this.refreshWorkspaceUI() },
+    snapshots: { deep: true, handler() { this.refreshWorkspaceUI() } },
+    templateOpen() { this.refreshWorkspaceUI() },
+    templateQuery() { this.refreshWorkspaceUI() },
+    aiOpen() { this.refreshWorkspaceUI() },
+    aiRunning() { this.refreshWorkspaceUI() },
+    aiPreview() { this.refreshWorkspaceUI() },
+    aiError() { this.refreshWorkspaceUI() },
+    aiStatus() { this.refreshWorkspaceUI() },
+    aiReviewIssues: { deep: true, handler() { this.refreshWorkspaceUI() } },
+    aiProposal: { deep: true, handler() { this.refreshWorkspaceUI() } },
+    aiContextScope() { this.refreshWorkspaceUI() },
+    aiAction() { this.refreshWorkspaceUI() },
+    aiLanguage() { this.refreshWorkspaceUI() },
+    aiPrompt() { this.refreshWorkspaceUI() },
+    aiMessages: { deep: true, handler() { this.refreshWorkspaceUI() } },
     config: { deep: true, handler(value) { this.editorConfig = createLarkDocConfig(value) } },
     templates(value) { this.templateItems = Array.isArray(value) ? value : TEMPLATES },
     // user 只在 created() 进 session 一次；Web Component 的 user 属性热更
@@ -590,7 +205,12 @@ export default {
       persistence: this.persistence,
     })
   },
+  mounted() {
+    this.mountWorkspaceUI()
+  },
   beforeDestroy() {
+    this._workspaceUi?.destroy()
+    this._workspaceUi = null
     this._disposed = true
     this.stopAI()
     void this.saveNow()
@@ -601,6 +221,92 @@ export default {
     if (!this.session) void this.sessionInstance?.dispose()
   },
   methods: {
+    workspaceState() {
+      return {
+        maxLength: this.editorConfig.limits.maxLength,
+        maxLengthOptions: this.maxLengthOptions,
+        persistenceEnabled: this.featureEnabled('persistence'),
+        importExportEnabled: this.featureEnabled('importExport'),
+        exportOptions: this.exportOptions,
+        saveStatus: this.saveStatus,
+        storageError: this.storageError,
+        readonly: this.effectiveReadonly,
+        importing: this.importing,
+        persistenceLabel: this.persistenceLabel(),
+        persistenceCaveat: this.persistenceCaveat(),
+        maxSnapshots: this.editorConfig.limits.maxSnapshots,
+        templateOptions: this.templateOptions,
+        templateOpen: this.templateOpen,
+        templatesEnabled: this.featureEnabled('templates'),
+        templateQuery: this.templateQuery,
+        filteredTemplates: this.filteredTemplates,
+        historyOpen: this.historyOpen,
+        historyEnabled: this.featureEnabled('history'),
+        snapshots: this.snapshots,
+        aiOpen: this.aiOpen,
+        aiEnabled: this.featureEnabled('ai'),
+        aiActions: this.aiActions,
+        aiContextOptions: this.aiContextOptions,
+        aiContextScope: this.aiContextScope,
+        aiContextSummary: this.aiContextSummary,
+        aiRunning: this.aiRunning,
+        aiAction: this.aiAction,
+        aiLanguageOptions: this.aiLanguageOptions,
+        aiLanguage: this.aiLanguage,
+        aiPrompt: this.aiPrompt,
+        aiMessages: this.aiMessages,
+        aiStatus: this.aiStatus,
+        aiPreview: this.aiPreview,
+        aiPreviewHtml: this.aiPreviewHtml,
+        aiReviewIssues: this.aiReviewIssues,
+        aiProposal: this.aiProposal,
+        aiError: this.aiError,
+        aiReplaceDisabled: this.aiReplaceDisabled,
+      }
+    },
+    workspaceHandlers() {
+      return {
+        setMaxLength: value => { this.editorConfig.limits.maxLength = value },
+        save: () => this.saveNow(true),
+        applyTemplate: value => this.applyTemplate(value),
+        importDocument: event => this.importDocument(event),
+        exportDocument: value => this.exportDocument(value),
+        toggleHistory: () => this.toggleHistory(),
+        closeTemplate: () => this.closeTemplatePicker(),
+        setTemplateQuery: value => { this.templateQuery = value },
+        chooseTemplate: id => this.chooseTemplate(id),
+        closeHistory: () => { this.historyOpen = false; this.$refs.document?.focus() },
+        createSnapshot: () => this.createSnapshot(),
+        restoreSnapshot: id => this.restoreSnapshot(id),
+        closeAI: () => this.closeAI(),
+        setAIContext: value => { this.aiContextScope = value; this.resetAIPreview() },
+        setAIAction: value => { this.aiAction = value },
+        setAILanguage: value => { this.aiLanguage = value },
+        setAIPrompt: value => { this.aiPrompt = value },
+        startAI: () => this.startAI(this.aiAction),
+        stopAI: () => this.stopAI(),
+        sendAIChat: () => this.sendAIChat(),
+        copyAIPreview: () => this.copyAIPreview(),
+        acceptAI: mode => this.acceptAI(mode),
+        regenerateAI: () => this.regenerateAI(),
+        acceptReviewIssue: issue => this.acceptReviewIssue(issue),
+        ignoreReviewIssue: id => this.ignoreReviewIssue(id),
+        applyAIProposal: () => this.applyAIProposal(),
+        cancelAIProposal: () => { this.aiProposal = null },
+        clearNotice: () => { this.notice = '' },
+      }
+    },
+    mountWorkspaceUI() {
+      if (this._workspaceUi) return
+      const headerHost = this.$refs.workspaceHeaderHost
+      const panelHost = this.$refs.workspacePanelHost
+      if (!headerHost || !panelHost) return
+      this._workspaceUi = createWorkspace({ headerHost, panelHost, handlers: this.workspaceHandlers() })
+      this.refreshWorkspaceUI()
+    },
+    refreshWorkspaceUI() {
+      if (this._workspaceUi) this._workspaceUi.update(this.workspaceState())
+    },
     featureEnabled(name) { return !this.editorConfig?.features || this.editorConfig.features[name] !== false },
     // 公式样式随包样式入口一次性引入，运行时不再动态加载任何样式资源。
     getEditor() { return this.$refs.document && this.$refs.document.getEditor() },
@@ -769,7 +475,7 @@ export default {
       this.aiOpen = false
       this.templateQuery = ''
       this.templateOpen = true
-      this.$nextTick(() => this.$refs.templateSearch?.focus())
+      this.$nextTick(() => this._workspaceUi?.focusTemplateSearch())
     },
     closeTemplatePicker() {
       this.templateOpen = false
