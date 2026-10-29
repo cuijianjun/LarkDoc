@@ -44,7 +44,7 @@
 
 <script>
 import LarkDocIcon from '../LarkDocIcon.vue'
-import { HELP_MENU_ITEMS } from './shortcutGroups'
+import { HELP_MENU_ITEMS } from '../../../ui/shortcutGroups'
 
 export default {
   name: 'HelpFab',

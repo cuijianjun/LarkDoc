@@ -271,7 +271,9 @@ export default {
       // providerId 由 `board-diagram.js` 唯一给出，这里不抄第二张 id 表。
       // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单（同 sheet / bitable）。
       else if (boardProviderOf(id)) this.run('setReferenceCard', { kind: boardProviderOf(id) })
-      else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = ''; this.$nextTick(() => this.$refs.root?.querySelector('input[aria-label="LaTeX 公式"]')?.focus()) }
+      // 阶段 5 批次 4：弹窗已原生化，「打开即聚焦」由 `dialogsUiMixin` 的 `mathDialog`
+      // watcher 同步完成 —— 这里不再 `$nextTick` + `querySelector` 找一次输入框。
+      else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = '' }
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。
       // 菜单项只决定浮层里的**文案**；落 iframe 块还是书签卡由粘贴链接的 host 决定（04 §4.3 ⑤.1）。

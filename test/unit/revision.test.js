@@ -38,7 +38,7 @@ import {
   insertedRanges, isBulkReplace, mergeRanges, revisionSpans,
 } from '../../src/core/revision/tracker'
 import { adjacentRevision, buildRevisionDecisionTr, revisionAnchor, revisionJumps, revisionTarget } from '../../src/core/revision/commands'
-import { ICONS } from '../../src/components/lark-doc/editor/icons'
+import { ICONS } from '../../src/ui/icons'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')

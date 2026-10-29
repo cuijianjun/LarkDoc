@@ -103,13 +103,11 @@
     <!-- 命令菜单的挂载点（阶段 5 批次 3 原生化）：DOM 由 src/ui/commandMenu.js 建，
          自身 position: fixed，这个空 div 不占布局。 -->
     <div ref="commandMenuHost" />
+    <!-- 弹窗 / 抽屉 / 内嵌浮层的挂载点（阶段 5 批次 4 原生化）：DOM 由 src/ui/dialogs.js 建，
+         五个弹层共用这一个空容器 —— 它们各自 position: fixed，空 div 不占布局。 -->
+    <div ref="dialogHost" />
     <ColorPalette :ed="self" />
-    <TablePickerDialog :ed="self" />
-    <MathDialog :ed="self" />
-    <LinkDialog :ed="self" />
-    <HelpDialog :ed="self" />
     <HelpFab :ed="self" />
-    <EmbedLinkDialog :ed="self" />
     <input
       ref="imageInput"
       type="file"
@@ -177,12 +175,7 @@ import PaperStage from './editor/PaperStage.vue'
 import CalloutTools from './editor/CalloutTools.vue'
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import ColorPalette from './editor/ColorPalette.vue'
-import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
-import MathDialog from './editor/dialogs/MathDialog.vue'
-import LinkDialog from './editor/dialogs/LinkDialog.vue'
-import HelpDialog from './editor/dialogs/HelpDialog.vue'
 import HelpFab from './editor/HelpFab.vue'
-import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
 import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
 import { createLarkDocExtensions } from './extensions'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
@@ -207,6 +200,7 @@ import overlayDismissMixin from './editor/overlayDismissMixin'
 import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
+import dialogsUiMixin from './editor/dialogsUiMixin' // 阶段 5 批次 4：弹窗/抽屉/内嵌浮层渲染层在 src/ui/dialogs.js
 import headingNumberMixin from './editor/headingNumberMixin'
 // P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
 // 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
@@ -243,8 +237,8 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { LarkDocIcon, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, CalloutTools, TableBoundaryTools, ColorPalette, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, dialogsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
@@ -347,15 +341,16 @@ export default {
       this.$nextTick(() => this.refreshDocumentState())
     } },
     effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
-    tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
-    helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
-    linkDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector(this.linkInsertMode ? '[aria-label="链接文本"]' : '[aria-label="链接地址"]')?.focus()) },
-    embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
+    // 弹层开合 / 打开即聚焦的 watch 已随原生化迁到 `dialogsUiMixin`（阶段 5 批次 4）：
+    // 原生层渲染是同步的，不再需要 `$nextTick` + `querySelector` 那一拍。
   },
   mounted() {
     // 阶段 5 批次 2：顶栏已原生化（`src/ui/topBar.js`）。先挂它 —— 它不依赖编辑器实例，
     // 放在最前面可以保证「编辑器创建失败」时页头仍然是完整的。
     this.mountTopBar()
+    // 阶段 5 批次 4：弹窗 / 抽屉 / 内嵌浮层已原生化（`src/ui/dialogs.js`）。它不依赖编辑器
+    // 实例，连同顶栏一起先挂 —— 即使编辑器创建失败，关闭错误提示的那一层也仍然在。
+    this.mountDialogs()
     // P4-06：模式是当前用户维度的状态，刷新/重开后保持（07 §1.1）。
     // 在编辑器创建前恢复，`editable: !this.effectiveReadonly` 第一次就是对的。
     this.restoreMode()
@@ -407,7 +402,7 @@ export default {
     this.editor?.destroy()
     this.editor = null
     // 原生气泡条 / 块句柄都持有 DOM 与定时器，先拆掉再走后面的收尾（watcher 会读到 _bubbleUi 为 null）。
-    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu()
+    this.destroyBubbleBar(); this.destroyBlockHandle(); this.destroyCommandMenu(); this.destroyDialogs()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange); window.removeEventListener('keydown', this.onWindowKeydown); window.removeEventListener('scroll', this.onDocumentScroll, true); window.removeEventListener('resize', this.onDocumentScroll); window.removeEventListener('pointerup', this.onHandlePointerUp); window.removeEventListener('pointermove', this.onColumnPointerMove); window.removeEventListener('pointerup', this.onColumnPointerUp); document.removeEventListener('pointerdown', this.onDocumentPointerDown, true); window.removeEventListener('pointermove', this.onDocumentPointerMove, true); this._sessionCapabilitiesOff?.(); clearTimeout(this.handleHideTimer); clearTimeout(this.blockMenuCloseTimer); clearTimeout(this.pendingChangeTimer); if (this.pendingStateFrame) cancelAnimationFrame(this.pendingStateFrame); this.clearHandleHighlight(); this.closeBubbleAlignMenu(); if (this._outlineFrame) cancelAnimationFrame(this._outlineFrame); this.closeCommandMenu(); this.dragging = null   },
   methods: {
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },

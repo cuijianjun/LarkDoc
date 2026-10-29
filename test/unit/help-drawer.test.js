@@ -5,8 +5,8 @@
  *  1. 数据层：直接 import shortcutGroups.js，锁五组快捷键与 Markdown 表的条数、顺序、
  *     关键键位，以及「飞书不生效的键位不得进表」这条容易被人好心加回去的口径；
  *  2. 行为层：真 import overlayDismissMixin，用假 this 直测 ⌘+/ 派发与 Esc 收层；
- *  3. 规格层：读 lark-doc.css / 两个 .vue / 宿主文本，锁 04 §3.5 实测像素
- *     （314 宽、关闭 24×24、圆钮 36×36、菜单 120 / 项 112×30、层级 60）。
+ *  3. 规格层：读 lark-doc.css / 抽屉原生积木（`src/ui/dialogs.js`）/ 宿主文本，锁 04 §3.5
+ *     实测像素（314 宽、关闭 24×24、圆钮 36×36、菜单 120 / 项 112×30、层级 60）。
  * 像素或键位改了要同步改这里，避免悄悄漂。
  */
 
@@ -16,17 +16,23 @@ import { fileURLToPath } from 'url'
 import { describe, expect, it } from 'vitest'
 import {
   SHORTCUT_GROUPS, MARKDOWN_GROUPS, DRAWER_GROUPS, HELP_MENU_ITEMS,
-} from '../../src/components/lark-doc/editor/shortcutGroups'
+} from '../../src/ui/shortcutGroups'
 import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
 import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
-const dialog = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/dialogs/HelpDialog.vue'), 'utf8')
+// 阶段 5 批次 4：`HelpDialog.vue` 已删除，抽屉 DOM 由 `src/ui/dialogs.js` 的
+// `createHelpDrawer` 产出；这里守的是同一批结构口径（盒子仍是抽屉外壳、仍是 314 宽右贴边）。
+const dialog = fs.readFileSync(path.join(root, 'src/ui/dialogs.js'), 'utf8')
 const fab = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/HelpFab.vue'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
-const icons = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/icons.js'), 'utf8')
+const dialogsMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/dialogsUiMixin.js'), 'utf8')
+// `icons.js` 在阶段 5 批次 3 已随图标积木迁到 `src/ui/`（原路径读不到会直接抛 ENOENT）。
+const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
 
+/** 抽屉工厂那一段源码（`createEmbedDialog` 之后是另一个积木，不参与本组断言）。 */
+const drawerSource = dialog.slice(dialog.indexOf('export function createHelpDrawer'), dialog.indexOf('export function createEmbedDialog'))
 /** 取一条单行 CSS 规则（本仓库 CSS 一律一行一条，读整行即可）。 */
 function ruleFor(selector) {
   return css.split('\n').find((line) => line.startsWith(`${selector} {`)) || ''
@@ -319,15 +325,18 @@ describe('P4-06 抽屉与圆钮规格（04 §3.5 实测像素）', () => {
 
 describe('P4-06 组件契约（宿主接线与交互细节）', () => {
   it('HelpDialog 已是抽屉，不再复用居中弹窗背板', () => {
-    expect(dialog).toContain('lark-doc-drawer')
-    expect(dialog).not.toContain('lark-doc-dialog-backdrop')
-    expect(dialog).toContain('aria-label="关闭快捷键帮助"')
-    expect(dialog).toContain('@click.self="ed.closeOverlay"')
+    expect(drawerSource).toContain('lark-doc-drawer-mask')
+    expect(drawerSource).toContain('lark-doc-drawer lark-doc-help-drawer')
+    // 抽屉工厂里**不许**出现居中弹窗的背板类名（另外三个弹窗用，抽屉不用）。
+    expect(drawerSource).not.toContain('lark-doc-dialog-backdrop')
+    expect(drawerSource).toContain('关闭快捷键帮助')
+    // `@click.self` 的原生等价物：只有点在遮罩本身才关。
+    expect(drawerSource).toContain('event.target === el')
   })
 
   it('HelpDialog 数据直接来自 shortcutGroups（文案不外飘）', () => {
-    expect(dialog).toContain("import { DRAWER_GROUPS } from '../shortcutGroups'")
-    expect(dialog).toContain('groups: DRAWER_GROUPS')
+    expect(dialog).toContain("import { DRAWER_GROUPS } from './shortcutGroups'")
+    expect(drawerSource).toContain('DRAWER_GROUPS.forEach')
   })
 
   it('圆钮 hover 展开、移开 160ms 延时关闭（07 §9 同口径）', () => {
@@ -344,16 +353,21 @@ describe('P4-06 组件契约（宿主接线与交互细节）', () => {
     expect(fab).toContain('role="menuitem"')
   })
 
-  it('宿主挂着 HelpFab，且 HelpDialog 仍在（同一 helpOpen 驱动）', () => {
+  it('宿主挂着 HelpFab，抽屉挂在原生弹层宿主上（同一 helpOpen 驱动）', () => {
     expect(editorVue).toContain('<HelpFab :ed="self" />')
     expect(editorVue).toContain("import HelpFab from './editor/HelpFab.vue'")
     // 注册表是一整行，末尾就是 `HelpFab }`，不能用 `HelpFab,` 匹配。
     expect(editorVue).toMatch(/components:\s*\{[^}]*\bHelpFab\b/)
-    expect(editorVue).toContain('<HelpDialog :ed="self" />')
+    // 阶段 5 批次 4：`<HelpDialog :ed="self" />` 换成空宿主 div，DOM 由原生层建。
+    expect(editorVue).toContain('<div ref="dialogHost" />')
+    expect(editorVue).toContain('this.mountDialogs()')
   })
 
   it('宿主仍然在 helpOpen 变化时把焦点送到关闭按钮（watch 未断）', () => {
-    expect(editorVue).toContain('[aria-label="关闭快捷键帮助"]')
+    // 原 `$nextTick` + `querySelector('[aria-label="关闭快捷键帮助"]')` 已改成原生层同步 focus()。
+    expect(dialogsMixin).toContain('helpOpen(value)')
+    expect(dialogsMixin).toContain('help.focusClose()')
+    expect(drawerSource).toContain("closeButtonNode('关闭快捷键帮助', 16)")
   })
 
   it('工具栏的「快捷键帮助」按钮仍是第二入口（未删）', () => {

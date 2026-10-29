@@ -28,7 +28,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
 const topbar = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/TopBar.vue'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
-const icons = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/icons.js'), 'utf8')
+const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
 const collapseMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/toolbarCollapseMixin.js'), 'utf8')
 
 /** 取一条单行 CSS 规则（本仓库 CSS 一律一行一条，读整行即可）。 */
