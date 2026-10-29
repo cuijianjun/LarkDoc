@@ -40,7 +40,7 @@
  *   `display: contents`，不占一格 flex。
  */
 
-import { applyStyle, setAttr, syncChildren } from './dom'
+import { applyStyle, mountNode, setAttr, setText, syncChildren } from './dom'
 import { iconNode } from './icon'
 
 /** 统一取 handler：缺项静默（与 `dialogs.js` 同口径，漏接线不该炸在渲染里）。 */
@@ -49,13 +49,6 @@ function handlerCaller(handlers) {
     const fn = handlers[name]
     return typeof fn === 'function' ? fn(...args) : undefined
   }
-}
-
-/** 只在文案真的变了才写 —— 无脑赋值会把子节点全换成新 Text，丢掉选区与测量缓存。 */
-function setText(node, text) {
-  if (!node) return
-  const target = text === null || text === undefined ? '' : String(text)
-  if (node.textContent !== target) node.textContent = target
 }
 
 /** `:value` —— 走 DOM property，且只在真的变了才写（否则光标被踢到末尾）。 */
@@ -73,23 +66,8 @@ function onMouseDownPrevent(node, run) {
   })
 }
 
-/**
- * 面板开合 = 「只增删自己这一棵」，**不能用 `syncChildren`**。
- *
- * 历史层 / 另存为 / 评论层三者共用同一个宿主（与 `dialogs.js` 的 `dialogHost` 同款：
- * 它们都 `position: fixed`，父级是谁不影响定位）。而 `syncChildren(host, …)` 会把
- * 「不在期望序列里」的子节点一律 `removeChild` —— 三个面板各自 update 一次就会
- * 互相把对方摘掉，最后只有最后更新的那个活着。
- *
- * 与 `dialogs.js` 逐字同款，别在这里换成 `syncChildren`。
- */
-function mountNode(host, node, on) {
-  if (!on) {
-    if (node.parentNode) node.parentNode.removeChild(node)
-    return
-  }
-  if (host && node.parentNode !== host) host.appendChild(node)
-}
+// 面板开合走 `mountNode(host, el, on)`（只增删自己这一棵，`dom.js`），**不是
+// `syncChildren`** —— 历史层 / 另存为 / 评论层共用同一个 `panelHost`，用后者会互相摘除。
 
 /* ═══════════════════════════ ① 目录侧栏 ═══════════════════════════ */
 

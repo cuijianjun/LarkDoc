@@ -102,8 +102,11 @@ const measureStage = () => {
       marginRight: Math.round(parseFloat(cs.marginRight)),
     },
     viewportHeight: window.innerHeight,
-    // ③ 舞台是正文流的首个子元素
-    isMainFirstChild: !!main && main.firstElementChild === el,
+    // ③ 舞台是正文流的首个子元素。宿主是 `display:contents` 空壳（不参与布局），
+    // 所以量的是「宿主是 main 的首个子元素 + 宿主不占盒 + 舞台在 DOM 顺序上先于纸张」。
+    hostIsMainFirst: !!main && !!el.parentNode && main.firstElementChild === el.parentNode,
+    hostDisplay: el.parentNode ? getComputedStyle(el.parentNode).display : null,
+    beforePaper: !!(paper && (el.compareDocumentPosition(paper) & Node.DOCUMENT_POSITION_FOLLOWING)),
     // ② 二选一：演示态下纸张容器还在 DOM 里、但 display:none（v-show 语义）
     paperDisplay: paper ? getComputedStyle(paper).display : null,
     rootClasses: document.querySelector('.lark-doc') ? [...document.querySelector('.lark-doc').classList] : [],
@@ -179,9 +182,11 @@ const CHAPTERS = '<h1>第一章</h1><p>段一正文</p><h2>第一节</h2><p>不�
 
   await enterSlides(page)
   const snap = await page.evaluate(measureStage)
-  record('[开合] 点工具栏「演示模式」→ 舞台真进 DOM，且是 `.lark-doc-main` 的**首个子元素**',
-    !!snap && snap.isMainFirstChild === true,
-    snap ? `first=${snap.isMainFirstChild}` : '没渲染')
+  // 宿主带 `display:contents` → 宿主自己不生成盒子，舞台在布局上就是 main 的直接子元素。
+  // 三条一起断：宿主位置、宿主不占盒、DOM 顺序在纸张之前。
+  record('[开合] 点工具栏「演示模式」→ 舞台真进 DOM，落在 `.lark-doc-main` 的首位（宿主 `display:contents` 不占盒）',
+    !!snap && snap.hostIsMainFirst === true && snap.hostDisplay === 'contents' && snap.beforePaper === true,
+    snap ? `hostFirst=${snap.hostIsMainFirst} display=${snap.hostDisplay} beforePaper=${snap.beforePaper}` : '没渲染')
   record('[开合] 演示态：纸张容器仍在 DOM 里但 `display:none`（v-show 语义，跟舞台的 v-if 相反）',
     !!snap && snap.paperDisplay === 'none',
     snap ? `paper=${snap.paperDisplay}` : '没渲染')

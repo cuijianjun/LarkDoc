@@ -5,8 +5,12 @@
  * 实现，否则每个积木各写一遍就会分叉：样式键残留（`:style` 写成合并语义）、
  * `null` 输出成字符串 `"null"` 这类事故都是这么来的。
  *
- * 没有 `mount()`：条件节点的增删一律走 `syncChildren`（本文件），逐个 append 会把
- * 摘掉再挂的节点排到队尾。
+ * 条件节点的增删有**两套**语义，选错就是事故，别混用：
+ * - `syncChildren(parent, slots)` —— 自己**独占**的子树用它（整体对齐，不在序列里的
+ *   一律摘掉）。
+ * - `mountNode(host, node, on)` —— **多个积木共用**一个宿主时必须用它（只增删自己这
+ *   一棵，别人的节点一概不碰）。阶段 5 批次 4b 的「版本面板整块没渲染」就是拿
+ *   `syncChildren` 挂共用宿主导致的：三个面板互相摘除，只剩最后更新的那个活着。
  */
 
 /**
@@ -97,4 +101,42 @@ export function setAttr(node, name, value) {
   }
   const text = String(value)
   if (node.getAttribute(name) !== text) node.setAttribute(name, text)
+}
+
+/**
+ * 文本插值 —— **只在文案真的变了才写**。
+ *
+ * 无脑 `node.textContent = x` 每次都把子节点全换成新 Text 节点，代价不只是慢：
+ * 正在被 `Range` / 选区引用的 Text 一换，测量结果和光标位置就都对不上了。
+ *
+ * @param {Node|null} node
+ * @param {string|number|null|undefined} text `null` / `undefined` 等价于空串（与模板插值一致）
+ */
+export function setText(node, text) {
+  if (!node) return
+  const target = text === null || text === undefined ? '' : String(text)
+  if (node.textContent !== target) node.textContent = target
+}
+
+/**
+ * `v-if` 的「只增删自己这一棵」版 —— **共用宿主**的开合一律走它。
+ *
+ * 与 `syncChildren` 的分工在文件头写了：`syncChildren` 会清掉「不在期望序列里」的
+ * 兄弟节点，只适用于自己独占的子树；一个宿主上挂了多个积木（各面板共用 `panelHost`、
+ * 各弹窗共用 `dialogHost`）时用它就会互相摘除。
+ *
+ * 反过来，**独占**宿主但需要**固定顺序**（比如「舞台必须是 `.lark-doc-main` 的首个
+ * 子元素」）也别用它 —— 它是 `appendChild`，只能挂在队尾，那时在宿主里留一个
+ * `display: contents` 的空壳容器更省事。
+ *
+ * @param {HTMLElement|null} host
+ * @param {HTMLElement} node
+ * @param {boolean} on 期望是否在 DOM 里（对应 `v-if` 的条件）
+ */
+export function mountNode(host, node, on) {
+  if (!on) {
+    if (node.parentNode) node.parentNode.removeChild(node)
+    return
+  }
+  if (host && node.parentNode !== host) host.appendChild(node)
 }
