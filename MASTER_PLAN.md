@@ -734,7 +734,7 @@ import { LarkDoc } from 'lark-doc/lite'
 | **2** | 摘 `@tiptap/vue-2`：原生 Editor 挂载 + 原生 NodeView（3 个文件） | 中 | Vue 降级为「仅 UI 渲染器」 | ✅ **已完成**（tag `stage/2`） |
 | **3** | 三产物收敛 + 统一门面 `new LarkDoc(...)`；CJS 放开拆块；顺手带出 **V1 过渡态** | 中 | 运行时产物 4 套 → 3 套 | ✅ **已完成**（tag `stage/3`） |
 | **4** | 特性子路径 + 资源本地化（**内网命门**） | 中 | `lite` 档、`features/*`、零外链 | ✅ **已完成**（tag `stage/4`） |
-| **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | 🟡 **1/5 批**（批次 1 完成，tag `stage/5-A`；批次 2~5 未开） |
+| **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | 🟡 **2/5 批完成 + 批次 3 进行中**（tag `stage/5-A`/`5-B`/`5-C`；批次 3 还剩 CommandMenu、HeadingMenu 两个模块） |
 | **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | ⬜ 待开（**必做**） |
 | **7** | 删 vue2 renderer + element 去 `--inline-vue` + 删 vue peerDeps → **V2/V3 终局达成** | 低（阶段 5 完成后） | element gzip 约降到 447 KiB | ⬜ 待开（**必做**，前置阶段 5 全量） |
 
@@ -858,9 +858,11 @@ import { LarkDoc } from 'lark-doc/lite'
 |---|---|---|---|---|
 | 1 Tooltip / 气泡条 | ✅ 完成 | `scripts/verify-browser-bubble.js` 44/44、`verify-browser-heading-menu.js` 16/16 | `src/ui/bubbleBar.js`、`src/ui/headingMenu.js`、`src/ui/icon.js`、`src/ui/menuLayout.js`；`editor/BubbleBar.vue` 已删，`bubbleMenuMixin.js` 退化为「算 state → `_bubbleUi.update()`」 | 见 `git log --grep '阶段 5 批次 1'` |
 | 2 工具栏 | ✅ 完成 | `scripts/verify-browser-toolbar.js` 51/51 | `src/ui/toolbar.js`、`src/ui/topBar.js`、`src/ui/select.js`、`src/ui/dom.js`；`editor/ToolbarBar.vue`、`editor/TopBar.vue` 已删，`editor/toolbarUiMixin.js` 退化为「算 state → `update()`」 | `ff4f7aa`（断言 `d4c1b07`），tag `stage/5-B` |
-| 3 各级菜单 | ⬜ 未开始 | 待补 | — | — |
+| 3 各级菜单 | 🟡 进行中（1/3 模块） | `scripts/verify-browser-block-menu.js` 37/37（原样复跑，一条未放宽） | `src/ui/blockHandle.js` 533 行 + `editor/blockHandleUiMixin.js`（接线，两段式刷新）；`editor/BlockHandleMenu.vue` 已删，R2 34→33 | `f1f3b8c`，tag `stage/5-C` |
 | 4 弹窗 / 面板 | ⬜ 未开始 | 待补 | — | — |
 | 5 主壳 | ⬜ 未开始 | 待补 | — | — |
+
+批次 3 剩余两个模块：`CommandMenu.vue` → `src/ui/commandMenu.js`（需先补 `scripts/verify-browser-command-menu.js`）；`LarkDocHeadingMenu.vue`（55 行）全仓无 import，是孤儿文件，直接删 + 减基线即可。
 
 批次 1 的经验（批次 2~5 直接复用）：① 原生化把 3 处 `$nextTick(定位)` 全部消掉了——原生节点同步插入即可同步 `getBoundingClientRect()`，这正是那 53 个时序点的解法；② 断言锁的「结构即契约」（段序、`role`、`aria-label`、`data-tooltip`）必须逐字段复刻，条件段要**真的不在 DOM 里**而不是 `hidden`；③ 事件要用**原事件**透传（`toggleColorPalette` 靠 `event.currentTarget` 定位），自造事件对象会静默退回默认坐标；④ 一次建好节点、之后只改属性，重建会丢焦点并让 160ms 悬停链断开。
 
