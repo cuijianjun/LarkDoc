@@ -317,7 +317,11 @@ export default {
         if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
         this.diagramState = 'error'
         this.diagramError = ''
-        if (this.extension?.options?.onDiagramError) this.extension.options.onDiagramError(error)
+        const onDiagramError = this.extension?.options?.onDiagramError
+        if (onDiagramError) { onDiagramError(error); return }
+        // 静默失败最难查：宿主没注册 onDiagramError 时至少留一条控制台线索
+        // （用 warn 不用 error —— 这是内容渲染失败，不是宿主脚本异常）。
+        if (typeof console !== 'undefined' && console.warn) console.warn('[lark-doc] 图表渲染失败：', error)
       })
     },
     setLanguage(language) {

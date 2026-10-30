@@ -194,6 +194,11 @@ async function main() {
 
     // ---- 10. 主题切换：已渲染图表必须重渲染（T3-01） ----
     // mermaid 的 SVG 是固化色，只换 CSS 变量不会变色，所以这里读节点填充色验重画。
+    //
+    // 深色色值**不在本脚本里写死**：曾经把 #292929/#17181A 硬编码成断言，T4 把
+    // 「纸张回到页面底 #17181A、代码块升为块色层 #292929」改完后，这两条断言就反向
+    // 假红了一次。改为从 content 轨的 CSS 自定义属性取已解析 token 再比对，
+    // token 以后再怎么改，转发关系仍然被验住，只有基线值需要同步一处。
     const readDiagramPaint = () => page.evaluate(() => {
       const svg = document.querySelector('.lark-doc-diagram-svg svg')
       const card = document.querySelector('.lark-doc-code-diagram')
@@ -206,6 +211,9 @@ async function main() {
       }
       if (!svg) return null
       const shape = svg.querySelector('.node rect, .node polygon, .node path, rect.actor')
+      // content 轨的根：token 定义在这里，computed 自定义属性已被 var() 展开。
+      const root = document.querySelector('.lark-doc[data-content-theme]')
+      const tokenOf = (name) => (root ? String(getComputedStyle(root).getPropertyValue(name) || '').trim() : '')
       return {
         fill: shape ? getComputedStyle(shape).fill : null,
         cardBg: card ? getComputedStyle(card).backgroundColor : null,
@@ -213,8 +221,22 @@ async function main() {
         code: code ? getComputedStyle(code) : null,
         codeToolbar: read(code, '.lark-doc-code-toolbar'),
         codeHighlight: read(code, '.lark-doc-code-highlight'),
+        tokens: root ? {
+          content: tokenOf('--ld-bg-content'),
+          code: tokenOf('--ld-code-bg'),
+          card: tokenOf('--ld-diagram-card-bg'),
+          codeBorder: tokenOf('--ld-code-border'),
+          codeToolbarText: tokenOf('--ld-code-toolbar-text'),
+        } : null,
       }
     })
+    // #rrggbb → css rgb() 串；非实心十六进制（如 transparent / rgb()）返回 null。
+    const hexToCssRgb = (hex) => {
+      const m = /^#([0-9a-f]{6})$/i.exec(String(hex || '').trim())
+      if (!m) return null
+      const n = parseInt(m[1], 16)
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+    }
 
     // 补一个普通代码块：语法色 + 卡片 chrome 都要验。
     await page.evaluate(() => {
@@ -237,13 +259,36 @@ async function main() {
       Boolean(darkPaint && darkPaint.fill === 'rgba(207, 207, 207, 0.08)'),
       `fill=${darkPaint && darkPaint.fill}`
     )
-    record('深色下图表卡片跟随正文纸张 #292929', Boolean(darkPaint && darkPaint.cardBg === 'rgb(41, 41, 41)'), `cardBg=${darkPaint && darkPaint.cardBg}`)
+    const t = (darkPaint && darkPaint.tokens) || {}
+    const paperRgb = hexToCssRgb(t.content)
+    const blockRgb = hexToCssRgb(t.code)
+    const borderRgb = hexToCssRgb(t.codeBorder)
+    const toolbarRgb = hexToCssRgb(t.codeToolbarText)
     record(
-      '深色下代码块 chrome 中性化（卡底 #17181A / 描边 #5F5F5F / 头部条白字）',
-      Boolean(darkPaint && darkPaint.code && darkPaint.code.backgroundColor === 'rgb(23, 24, 26)' &&
-        darkPaint.code.borderTopColor === 'rgb(95, 95, 95)' &&
-        darkPaint.codeToolbar && darkPaint.codeToolbar.color === 'rgb(240, 240, 240)'),
+      '深色下图表卡片跟随正文纸张（background = --ld-diagram-card-bg = --ld-bg-content）',
+      Boolean(darkPaint && darkPaint.cardBg && paperRgb && darkPaint.cardBg === paperRgb && darkPaint.cardBg === hexToCssRgb(t.card)),
+      `cardBg=${darkPaint && darkPaint.cardBg} 纸张token=${t.content} 卡片token=${t.card}`
+    )
+    record(
+      '深色下代码块卡底 = 块色层 --ld-code-bg（比纸张亮一档，块边界不被纸张吞掉）',
+      Boolean(darkPaint && darkPaint.code && blockRgb && paperRgb &&
+        darkPaint.code.backgroundColor === blockRgb && blockRgb !== paperRgb),
+      `代码卡底=${darkPaint && darkPaint.code && darkPaint.code.backgroundColor} 块色层token=${t.code} 纸张token=${t.content}`
+    )
+    record(
+      '深色下代码块 chrome 中性化（描边 --ld-code-border / 头部条 --ld-code-toolbar-text）',
+      Boolean(darkPaint && darkPaint.code && borderRgb && toolbarRgb &&
+        darkPaint.code.borderTopColor === borderRgb &&
+        darkPaint.codeToolbar && darkPaint.codeToolbar.color === toolbarRgb),
       JSON.stringify(darkPaint && { bg: darkPaint.code && darkPaint.code.backgroundColor, border: darkPaint.code && darkPaint.code.borderTopColor, toolbar: darkPaint.codeToolbar })
+    )
+    // 基线钉住：以后 T-series 再改色，只改这一条（和 verify-browser-theme.js 的
+    // PAPER_DARK/CHROME_DARK 保持一致），上面的转发关系断言不用跟着动。
+    record(
+      'T4 基线：纸张 #17181A / 块色层 #292929 / 描边 #5F5F5F / 头部条 #F0F0F0',
+      paperRgb === 'rgb(23, 24, 26)' && blockRgb === 'rgb(41, 41, 41)' &&
+        borderRgb === 'rgb(95, 95, 95)' && toolbarRgb === 'rgb(240, 240, 240)',
+      `纸张=${paperRgb} 块色层=${blockRgb} 描边=${borderRgb} 头部条=${toolbarRgb}`
     )
     record(
       'M6：语法 token 色两档不变（keyword 仍 #c9a2ee / 默认文字仍 #e3eee7）',
