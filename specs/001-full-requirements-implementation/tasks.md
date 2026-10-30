@@ -106,7 +106,7 @@
 - [x] T038 [P] [US5] 在 `test/unit/survey-provider.test.js`、`test/unit/import-provider.test.js` 和 `test/unit/ai-provider.test.js` 验证幂等 key、进度、部分成功、重试、提交、回滚和刷新回读（survey/import/AI 宿主边界、导入批次状态机、失败项重试/提交/回滚、AI 流式取消与 revision guard 已覆盖；13 项通过）
 - [x] T039 [P] [US5] 在 `test/unit/embedded-provider.test.js` 与 `test/unit/export-roundtrip.test.js` 验证 docx/Markdown/web 导入和宿主拒绝不假成功（embedded Provider 宿主上下文、资源状态/移动能力 fail-closed，并将 deny/approval_required/ok:false/非零 code 转为稳定异常；Markdown/docx/web 往返、结构签名、范围闸门、文件名安全化、下载/打印出口共 101 项通过；真实宿主租户验收仍待环境证据）
 - [x] T040 [P] [US5] 新增 `test/unit/output-policy.test.js`，验证复制、打印、下载、截图、水印、敏感字段和审计事件（新增统一 output policy：四类输出动作 fail-closed、可见/不可见水印属性、文本凭据脱敏和 AuditEvent；并修正 security Provider 对普通策略回执的误拒绝；输出/审计/安全/导出回归 100 项通过）
-- [ ] T041 [US5] 在 `test/unit/versioning-core.test.js`、`test/unit/versioning-ui.test.js` 验证回收站删除/恢复/彻底删除和 stale/unavailable 状态
+- [x] T041 [US5] 在 `test/unit/versioning-core.test.js`、`test/unit/versioning-ui.test.js` 验证回收站删除/恢复/彻底删除和 stale/unavailable 状态（内存 Provider 新增 remove/listDeleted/restoreDeleted/purge，区分 E_VERSION_DELETED/E_VERSION_GONE/E_VERSION_EVICTED/E_VERSION_NOT_FOUND；版本 UI 新增 deleted/stale/unavailable 状态投影与稳定文案；版本核心/UI 回归 84 项通过）
 
 ### Implementation
 

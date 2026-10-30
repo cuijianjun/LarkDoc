@@ -33,6 +33,9 @@ import {
   VERSIONING_DAY_LABELS,
   VERSIONING_ERROR_TEXT,
   VERSION_KIND_LABELS,
+  VERSION_RECORD_STATES,
+  VERSION_RECORD_STATE_TEXT,
+  versionRecordState,
   currentProjection,
   defaultVersionLabel,
   describeVersionDiff,
@@ -303,6 +306,16 @@ describe('差异摘要投影', () => {
 })
 
 /* ---------------- 4. 错误码 → 降级文案 ---------------- */
+
+describe('版本状态投影', () => {
+  it('deleted/stale/unavailable 各自保留稳定状态，未知状态默认可用', () => {
+    expect(versionRecordState({ deleted: true })).toBe(VERSION_RECORD_STATES.DELETED)
+    expect(versionRecordState({ status: 'stale' })).toBe(VERSION_RECORD_STATES.STALE)
+    expect(versionRecordState({}, false)).toBe(VERSION_RECORD_STATES.UNAVAILABLE)
+    expect(versionRecordState({ status: 'unknown' }, true)).toBe(VERSION_RECORD_STATES.AVAILABLE)
+    expect(VERSION_RECORD_STATE_TEXT[VERSION_RECORD_STATES.DELETED]).toContain('回收站')
+  })
+})
 
 describe('错误码 → 面板文案', () => {
   it('两个「找不到」必须分开：不存在可重试，已淘汰回不去', () => {

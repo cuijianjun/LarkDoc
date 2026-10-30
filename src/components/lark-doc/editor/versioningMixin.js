@@ -41,7 +41,9 @@ import {
   E_SNAPSHOT_AUTHOR,
   E_SNAPSHOT_JSON_NOT_ALLOWED,
   E_SNAPSHOT_PAYLOAD_MISSING,
+  E_VERSION_DELETED,
   E_VERSION_EVICTED,
+  E_VERSION_GONE,
   E_VERSION_NOT_FOUND,
   SNAPSHOT_KIND,
   SNAPSHOT_LABEL_MAX,
@@ -68,6 +70,8 @@ export const VERSIONING_DAY_LABELS = Object.freeze({
  */
 export const VERSIONING_ERROR_TEXT = Object.freeze({
   [E_VERSION_NOT_FOUND]: '该版本不存在或已被移除，请刷新历史记录后重试',
+  [E_VERSION_DELETED]: '该版本已进入回收站，请先恢复后再预览或恢复',
+  [E_VERSION_GONE]: '该版本已彻底删除，无法恢复',
   [E_VERSION_EVICTED]: '该版本已被保留策略淘汰，无法预览或恢复',
   [E_SNAPSHOT_PAYLOAD_MISSING]: '该版本的正文快照缺失，只能查看元信息',
   [E_SNAPSHOT_AUTHOR]: '无法确定操作者：宿主未向 versioning Provider 传入当前作者',
@@ -86,6 +90,35 @@ export const VERSION_KIND_LABELS = Object.freeze({
   [SNAPSHOT_KIND.MANUAL]: '手动保存',
   [SNAPSHOT_KIND.RESTORE]: '恢复产生',
 })
+
+export const VERSION_RECORD_STATES = Object.freeze({
+  AVAILABLE: 'available',
+  DELETED: 'deleted',
+  STALE: 'stale',
+  UNAVAILABLE: 'unavailable',
+})
+
+export const VERSION_RECORD_STATE_TEXT = Object.freeze({
+  [VERSION_RECORD_STATES.AVAILABLE]: '可用',
+  [VERSION_RECORD_STATES.DELETED]: '已在回收站',
+  [VERSION_RECORD_STATES.STALE]: '内容已过期',
+  [VERSION_RECORD_STATES.UNAVAILABLE]: '暂不可用',
+})
+
+/** 将 Provider/宿主返回的状态归一化，未知状态默认按可用处理，避免误禁用历史记录。 */
+export function versionRecordState(record, providerAvailable) {
+  const input = record && typeof record === 'object' ? record : {}
+  if (input.deleted === true || input.status === VERSION_RECORD_STATES.DELETED) {
+    return VERSION_RECORD_STATES.DELETED
+  }
+  if (providerAvailable === false || input.status === VERSION_RECORD_STATES.UNAVAILABLE) {
+    return VERSION_RECORD_STATES.UNAVAILABLE
+  }
+  if (input.stale === true || input.status === VERSION_RECORD_STATES.STALE) {
+    return VERSION_RECORD_STATES.STALE
+  }
+  return VERSION_RECORD_STATES.AVAILABLE
+}
 
 /** 无能力（权限 / 未配 Provider）时的置灰色 —— 04 §3.4-B 实测 `rgb(187,191,196)`。 */
 const DISABLED_FILL = 'rgb(187, 191, 196)'
