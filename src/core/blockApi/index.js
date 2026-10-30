@@ -467,9 +467,11 @@ export function createBlockApi(options = {}) {
 
     // ── 批量 ──────────────────────────────────────
     insertMany(payloads, at) {
+      assertCapability('insert')
       return insertAll(payloads, at)
     },
     removeMany(blockIds) {
+      assertCapability('remove')
       const list = Array.isArray(blockIds) ? blockIds.filter(id => typeof id === 'string') : []
       if (!list.length) return
       const tr = newTr()
