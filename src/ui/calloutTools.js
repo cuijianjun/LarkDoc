@@ -5,8 +5,11 @@
  * visible / emojiOpen 都是真挂载语义；业务状态与 ProseMirror 操作由 mixin 负责。
  */
 import { applyStyle, mountNode, setAttr, syncChildren } from './dom'
+import { CALLOUT_COLOR_OPTIONS } from './palette'
 
 const SEP = '\u0001'
+const DEFAULT_CALLOUT_COLOR = CALLOUT_COLOR_OPTIONS[0].value
+const DEFAULT_CALLOUT_BACKGROUND = CALLOUT_COLOR_OPTIONS[1].value
 
 function button(label, title, onClick) {
   const node = document.createElement('button')
@@ -159,9 +162,9 @@ export function createCalloutTools({ host, handlers = {} } = {}) {
 
   function paint(next) {
     applyStyle(root, next.style)
-    labels[0].__ldInput.value = next.color || '#000000'
-    labels[1].__ldInput.value = next.backgroundColor || '#ffffff'
-    labels[2].__ldInput.value = next.borderColor || '#000000'
+    labels[0].__ldInput.value = next.color || DEFAULT_CALLOUT_COLOR
+    labels[1].__ldInput.value = next.backgroundColor || DEFAULT_CALLOUT_BACKGROUND
+    labels[2].__ldInput.value = next.borderColor || DEFAULT_CALLOUT_COLOR
     setAttr(picker, 'class', `lark-doc-callout-emoji-picker${next.placement === 'above' ? ' is-above' : ''}`)
     if (picker.__ld.search.value !== (next.query || '')) picker.__ld.search.value = next.query || ''
     updateTabs(next)
