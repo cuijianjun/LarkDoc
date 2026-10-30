@@ -128,6 +128,7 @@ export default defineConfig({
           text: '参考',
           items: [
             { text: '性能基线与收口', link: '/guide/performance' },
+            { text: '浏览器验证（verify.mjs）', link: '/guide/browser-verification' },
             { text: '背景与免责声明', link: '/guide/about' },
           ],
         },

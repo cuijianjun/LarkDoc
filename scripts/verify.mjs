@@ -18,10 +18,11 @@
  *     要细节读文件，不要把 stdout 直接灌进上下文。
  *
  * 环境要求：Node >= 18（浏览器脚本实际用 Node 22 + playwright-core）；
- * dev server 需先在 8080 起来（本脚本只探活提示，不负责拉起）。
+ * 页面依赖的服务需先起好 —— 本脚本开跑前会按目标真正 goto 的端口逐个探活，
+ * 不通常量：新增目标 / 改端口都自动覆盖。它只提示，不负责拉起。
  */
 import { spawn } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +31,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPTS = join(ROOT, 'scripts')
 const LOG_DIR = join(ROOT, '_codex', 'verify-logs')
 const PREFIX = 'verify-browser-'
-const DEV_PORT = 8080
 const DEFAULT_TIMEOUT = 240 // 秒
 
 /** 本机 playwright-core 的默认位置（可用 NODE_PATH 覆盖） */
@@ -78,10 +78,20 @@ if (!env.NODE_PATH) {
   else console.warn('⚠ NODE_PATH 未设置，playwright-core 可能找不到')
 }
 
-/** 探活 dev server：不通只警告，不阻塞（有的目标不需要页面） */
-function probeDevServer() {
+/** 从每个目标脚本自身的 goto 地址提取端口，避免新增目标时漏改探活清单。 */
+function requiredPorts() {
+  const ports = new Set()
+  for (const target of selected) {
+    const source = readFileSync(join(SCRIPTS, PREFIX + target + '.js'), 'utf8')
+    for (const match of source.matchAll(/https?:\/\/localhost:(\d+)/g)) ports.add(Number(match[1]))
+  }
+  return [...ports].sort((a, b) => a - b)
+}
+
+/** 探活页面依赖的服务：不通只警告，不阻塞（验证脚本会给出真正的 goto 错误）。 */
+function probePort(port) {
   return new Promise((resolve) => {
-    const sock = net.connect({ port: DEV_PORT, host: '127.0.0.1' })
+    const sock = net.connect({ port, host: '127.0.0.1' })
     const done = (ok) => {
       sock.destroy()
       resolve(ok)
@@ -169,10 +179,14 @@ const fmt = (ms) => (ms / 1000).toFixed(1) + 's'
 async function main() {
   mkdirSync(LOG_DIR, { recursive: true })
 
-  const alive = await probeDevServer()
-  if (!alive) {
-    console.warn(`⚠ 127.0.0.1:${DEV_PORT} 没响应 —— 需要页面的目标会失败`)
-    console.warn('  Node14 起服务：PATH=$HOME/.nvm/versions/node/v14.21.3/bin:$PATH npm run dev')
+  const ports = requiredPorts()
+  for (const port of ports) {
+    const alive = await probePort(port)
+    if (!alive) {
+      console.warn(`⚠ 127.0.0.1:${port} 没响应 —— 使用该地址的目标会失败`)
+      if (port === 8080) console.warn('  Node14 起服务：PATH=$HOME/.nvm/versions/node/v14.21.3/bin:$PATH npm run dev')
+      if (port === 8765) console.warn('  包根目录起静态服务：python3 -m http.server 8765')
+    }
   }
 
   console.log(`跑 ${selected.length} 个目标：${selected.join(', ')}\n`)
