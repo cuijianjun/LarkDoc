@@ -18,6 +18,7 @@ import {
   createIndexedDbWorkspace, isIndexedDbAvailable, openIndexedDbDatabase,
 } from '../../src/core/storage/idb'
 import { createPersistenceWorkspace } from '../../src/providers/persistence'
+import { createOfflineSnapshot, OFFLINE_MAX_BYTES } from '../../src/collab/policies'
 import { createFakeIndexedDB } from '../helpers/fake-indexeddb'
 
 /* ---------------- 脚手架 ---------------- */
@@ -63,6 +64,32 @@ function createMemoryStorage(initial) {
 }
 
 /* ---------------- 1. schema ---------------- */
+
+describe('离线快照 512KB 边界', () => {
+  function storage() {
+    const values = new Map()
+    return {
+      getItem: (key) => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key),
+      values,
+    }
+  }
+
+  it('恰好不超过 512KB 时保存，超过 UTF-8 字节上限时拒绝且不截断', () => {
+    const exact = storage()
+    const exactSnapshot = createOfflineSnapshot({ documentId: 'exact', storage: exact, snapshot: () => ({ value: 'x'.repeat(OFFLINE_MAX_BYTES - 14) }), schedule: () => 1, cancel: () => {} })
+    exactSnapshot.start()
+    expect(exactSnapshot.skipped).toBe(false)
+    expect(exact.values.size).toBe(1)
+
+    const tooLarge = storage()
+    const largeSnapshot = createOfflineSnapshot({ documentId: 'large', storage: tooLarge, snapshot: () => ({ value: '中'.repeat(Math.ceil(OFFLINE_MAX_BYTES / 3)) }), schedule: () => 1, cancel: () => {} })
+    largeSnapshot.start()
+    expect(largeSnapshot.skipped).toBe(true)
+    expect(tooLarge.values.size).toBe(0)
+  })
+})
 
 describe('建库与 schema', () => {
   it('首次打开创建 meta / content / snapshots 三个 store', async () => {
