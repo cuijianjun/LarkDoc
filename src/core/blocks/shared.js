@@ -53,3 +53,27 @@ export function transitionAsyncBlockState(current, state, patch = {}) {
     attempt: state === 'loading' ? previous.attempt + 1 : previous.attempt,
   })
 }
+
+export function asyncBlockDomAttributes(asyncState, className = '') {
+  if (asyncState === null || asyncState === undefined || asyncState === '') return { class: className }
+  const state = normalizeAsyncBlockState(typeof asyncState === 'string' ? (() => {
+    try { return JSON.parse(asyncState) } catch (_) { return {} }
+  })() : asyncState)
+  const classes = [className, `is-async-${state.state}`].filter(Boolean).join(' ')
+  return {
+    class: classes,
+    'data-async-state': JSON.stringify(state),
+  }
+}
+
+export function syncAsyncBlockDomState(element, asyncState) {
+  if (!element) return
+  const attrs = asyncBlockDomAttributes(asyncState)
+  Array.from(element.classList || []).forEach((name) => {
+    if (name.indexOf('is-async-') === 0) element.classList.remove(name)
+  })
+  element.classList.add(`is-async-${normalizeAsyncBlockState(typeof asyncState === 'string' ? (() => {
+    try { return JSON.parse(asyncState) } catch (_) { return {} }
+  })() : asyncState).state}`)
+  element.setAttribute('data-async-state', attrs['data-async-state'])
+}

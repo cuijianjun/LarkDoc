@@ -24,6 +24,7 @@ import { DOMSerializer } from '@tiptap/pm/model'
 import {
   SHEET_SCROLLBAR, SHEET_VIEWPORT, clampOffsetX, maxOffset, paintSheet, readSheet, scrollThumb,
 } from '../blocks/sheet-render'
+import { syncAsyncBlockDomState } from '../blocks/shared'
 
 /**
  * token 名表：`paintSheet` 的 `palette` 键 → CSS 自定义属性。
@@ -153,6 +154,7 @@ export function createSheetNodeView(props) {
   }
 
   function paint() {
+    syncAsyncBlockDomState(dom, (currentNode.attrs || {}).asyncState)
     const sheet = currentSheet()
     if (context) {
       if (!sheet) {

@@ -66,14 +66,14 @@
 ### Tests
 
 - [x] T024 [P] [US3] 新增 `test/unit/async-state-matrix.test.js`，以注入 provider 覆盖五态、重试幂等、保留旧内容和超限
-- [ ] T025 [P] [US3] 在 `test/unit/file-block.test.js`、`test/unit/image-nodeview.test.js`、`test/unit/sheet.test.js`、`test/unit/web-embed.test.js` 和 `test/unit/unknown-block.test.js` 验证各异步块统一投影
+- [x] T025 [P] [US3] 在 `test/unit/file-block.test.js`、`test/unit/image-nodeview.test.js`、`test/unit/sheet.test.js`、`test/unit/web-embed.test.js` 和 `test/unit/unknown-block.test.js` 验证各异步块统一投影（新增跨块投影测试；相关回归测试 184 项通过）
 - [x] T026 [US3] 在 `test/unit/security-provider.test.js` 验证可写降级只读、删除/恢复/评论拒绝和 token 不进入 editor/core
 
 ### Implementation
 
 - [x] T027 [US3] 在 `src/core/blocks/shared.js`、`src/core/blocks/unknown-block.js` 和异步块 schema 中统一 `AsyncBlockState` 与恢复动作
 - [ ] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影
-- [ ] T029 [US3] 在 `src/core/blocks/file-block.js`、`src/core/blocks/image.js`、`src/core/blocks/sheet.js`、`src/core/blocks/web-embed.js`、`src/core/blocks/bookmark.js` 接入状态矩阵和无覆盖失败语义（已完成共享 asyncState 持久化，块级 NodeView 状态语义待补）
+- [x] T029 [US3] 在 `src/core/blocks/file-block.js`、`src/core/blocks/image.js`、`src/core/blocks/sheet.js`、`src/core/blocks/web-embed.js`、`src/core/blocks/bookmark.js` 接入状态矩阵和无覆盖失败语义（共享 asyncState 持久化、统一 DOM class/data 属性和 NodeView 同步已完成；更高层失败文案仍由各块既有实现负责）
 
 ## Phase 6: User Story 4 - 协同、评论、版本与跨端恢复 (Priority: P2)
 

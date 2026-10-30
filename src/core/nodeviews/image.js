@@ -17,6 +17,7 @@
  * 阶段），本轮以 替换 / 重置 / 预览 三项替代，仍是 8 项。
  */
 import { safeUrl } from '../documentOperations'
+import { syncAsyncBlockDomState } from '../blocks/shared'
 import { BLOCKED_IMAGE_PLACEHOLDER } from '../policy/network'
 
 const WIDTH_MIN = 40
@@ -406,6 +407,7 @@ export function createImageNodeView(props) {
 
   function syncDom() {
     const attrs = currentNode.attrs
+    syncAsyncBlockDomState(dom, attrs.asyncState)
     const blocked = isBlockedSrc(attrs.src)
     dom.setAttribute('data-align', ALIGNMENTS.includes(attrs.align) ? attrs.align : 'center')
     if (typeof attrs.blockId === 'string' && attrs.blockId) dom.setAttribute('data-block-id', attrs.blockId)

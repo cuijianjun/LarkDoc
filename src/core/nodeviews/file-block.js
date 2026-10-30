@@ -16,6 +16,7 @@
  * loading 容器」那类误判。
  */
 import { safeAttachmentId, safeUrl } from '../documentOperations'
+import { syncAsyncBlockDomState } from '../blocks/shared'
 import { FILE_KIND, fileFallbackText, fileFooterText, fileKindOf, isPreviewableKind } from '../media/file-block'
 
 /** 标记「属于 NodeView 自己的交互元素」：事件停在这里，不进 ProseMirror。 */
@@ -287,6 +288,7 @@ export function createFileBlockNodeView(props) {
 
   function syncAll() {
     dom.setAttribute('data-block-type', 'file')
+    syncAsyncBlockDomState(dom, attrs().asyncState)
     dom.setAttribute('data-view-type', attrs().viewType || 'Card')
     if (safeAttachmentId(attrs().token)) dom.setAttribute('data-token', attrs().token)
     else dom.removeAttribute('data-token')

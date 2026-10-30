@@ -18,6 +18,7 @@
  */
 import { DOMSerializer } from '@tiptap/pm/model'
 import { BOOKMARK_VARIANT, readBookmark, renderBookmarkCard } from '../embed/bookmark'
+import { syncAsyncBlockDomState } from '../blocks/shared'
 
 /** 卡身（可点的区域）；root 的 16px 外边距是「不跳转的死区」，留给选中与拖拽。 */
 const CARD_SELECTOR = '.lark-doc-bookmark-card'
@@ -128,6 +129,7 @@ export function createBookmarkNodeView(props) {
 
   function showReady() {
     pending = false
+    syncAsyncBlockDomState(dom, currentNode.attrs && currentNode.attrs.asyncState)
     if (!dom) return
     const container = containerOf(dom)
     const next = renderElement()
@@ -205,6 +207,7 @@ export function createBookmarkNodeView(props) {
   }
 
   const dom = renderElement() || document.createElement('div')
+  syncAsyncBlockDomState(dom, currentNode.attrs && currentNode.attrs.asyncState)
   if (dom && typeof dom.addEventListener === 'function') {
     dom.addEventListener('click', onClick)
     dom.addEventListener('keydown', onKeyDown)

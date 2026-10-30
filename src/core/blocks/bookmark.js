@@ -20,7 +20,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { BLOCK_ID_PATTERN } from '../documentOperations'
-import { validateAttribute } from './shared'
+import { asyncBlockDomAttributes, validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createBookmarkNodeView } from '../nodeviews/bookmark'
 import {
@@ -188,7 +188,7 @@ const Bookmark = Node.create({
     const attrs = node.attrs || {}
     const bookmark = readBookmark(attrs)
     const root = {
-      class: 'lark-doc-bookmark docx-bookmark-block',
+      ...asyncBlockDomAttributes(attrs.asyncState, 'lark-doc-bookmark docx-bookmark-block'),
       'data-type': 'bookmark',
       'data-block-type': 'bookmark',
       contenteditable: 'false',
