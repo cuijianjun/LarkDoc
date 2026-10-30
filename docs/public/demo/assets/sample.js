@@ -1221,7 +1221,7 @@ window.__LARK_DOC_SAMPLE__ = {
       "content": [
         {
           "type": "text",
-          "text": "支持本地图片，跟着文档一起保存，不依赖图床。"
+          "text": "支持两种图片地址：上传的图片转成 data URI 跟着文档走，不依赖图床；也可以直接写 https:// 开头的远程地址，按原地址引用、不转存。点右上角「HTML 输出」看两种媒体写法的差别。"
         }
       ]
     },
@@ -1239,6 +1239,22 @@ window.__LARK_DOC_SAMPLE__ = {
         "originalAttchId": null,
         "align": "center",
         "caption": ""
+      }
+    },
+    {
+      "type": "image",
+      "attrs": {
+        "blockId": "b32vnmh02n",
+        "src": "https://cuijianjun.github.io/LarkDoc/logo.svg",
+        "alt": "远程地址图片",
+        "title": null,
+        "width": null,
+        "height": null,
+        "originalSrc": null,
+        "attchId": null,
+        "originalAttchId": null,
+        "align": "center",
+        "caption": "这张图的 src 是 https:// 远程地址，inline 档原样输出 <img src=\"https://…\">，link 档只剩一条地址链接"
       }
     },
     {

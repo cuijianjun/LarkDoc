@@ -86,21 +86,16 @@ const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/comma
 const expectedCommandIds = [
   'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
-  // P5-02：电子表格落在「数据」分类（03 §3.4 真值 y 685，在 绘图 749 之前），紧跟 file。
-  'sheet',
-  // P5-04：多维表格 5 项（03 §3.4 ⑤ y 1196 / 1228 / 1260 / 1292 / 1324，组标题 1164），
-  // 紧跟 sheet —— 分类顺序 数据 → 多维表格 → 绘图，必须连续成段。
-  'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
-  // P5-05：绘图 3 项（03 §3.4 ⑥ y 1420 / 1452 / 1484，组标题 1356）。真值第 1 项
-  // 「画板」走 webEmbed（P3-07），不进本组，所以这里只有 3 条。
-  'mindMap', 'flowChart', 'umlDiagram',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  // 🔴 这里只列**菜单里真的能用**的项。视频或文件 `file`、电子表格 `sheet`、
+  // 多维表格 5 条、绘图 3 条（思维导图 / 流程图 / UML 图）、投票 `poll` 共 11 条
+  // 在 master 上只有块定义、没有插入链路，已从命令表摘掉；块类型本身仍在，
+  // 老文档正文照旧渲染（见 core/commands/index.js 文件头）。
   'inlineMath', 'blockMath', 'template', 'ai',
   // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
   'open_link', 'duplicate_page', 'follow_page',
   // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
-  // P5-03：`poll` 插在 mentionPage 与 reminder 之间（组内 y 1644 → 1676 → 1708）。
-  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
+  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
   // P5-06：`agenda` 是 ⑦ 团队协作第 10 项（y 1836，紧跟日程 1804）。
   'agenda',
   // P5-06：⑧ 文档管理 2 项（y 1900 / 1932）。
@@ -118,7 +113,7 @@ const expectedCommandIds = [
 assert.deepStrictEqual(COMMANDS.map((item) => item.id), expectedCommandIds, '命令 id 集合与顺序必须与拆分前逐项一致（P0-05 验收：命令 id 集合不变）')
 for (const item of COMMANDS) {
   assert(['required', 'skeleton', 'skip'].includes(item.tier), `命令 ${item.id} 缺少合法 tier 字段（P0-05：CommandDef 带 tier）`)
-  assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 12 组之一）`)
+  assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 10 组之一）`)
 }
 
 // P0-09：契约骨架——嵌入 preset 空壳、卡片 schema、协同客户端签名只做类型与数据，零实现。

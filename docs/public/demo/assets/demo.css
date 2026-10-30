@@ -79,19 +79,20 @@ kbd {
 
 /* ------------------------------------------------------------- 顶栏 */
 
+/* 按钮（28px）比原来的 44px 栏高只留 4px 余量，加浏览器缩放 / 系统字号后
+   就会被上沿切掉一截。这里把栏高提到 52px、上下留 10px，并允许换行 ——
+   窗口窄到放不下一行时按钮落到第二行，而不是被 overflow 推到看不见的地方。 */
 .pg-bar {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 6px 14px;
+  gap: 6px 10px;
+  min-height: 52px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
   background: #fff;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.pg-bar::-webkit-scrollbar { display: none; }
 
 .pg-brand {
   flex: 0 0 auto;
@@ -450,7 +451,9 @@ kbd {
 
 @media (max-width: 820px) {
   .pg-note, .pg-hint { display: none; }
-  .pg-bar { padding: 6px 10px; gap: 8px; }
+  .pg-bar { padding: 10px; gap: 6px 8px; }
+  /* 窄屏一行放不下 4 个按钮，让它们均分第二行，别留下半截 */
+  .pg-bar .pg-btn { flex: 1 1 auto; justify-content: center; }
   .pg-hl, #pgTa { padding: 10px 12px; font: 500 12px/18px var(--mono); }
 }
 

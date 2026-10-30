@@ -105,7 +105,7 @@ importExport: {
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `htmlMode` | `'inline'` | `inline` = 直出 `<figure><img>`，正文能直接看到图；`link` = 只留一条媒体地址链接。 |
+| `htmlMode` | `'inline'` | `inline` = 直出 `<figure><img>`，正文能直接看到图；`link` = 只留一条媒体地址链接。两种档位都**原样保留** `src` 是 `https://…` 的远程地址，不转存、不转 base64。 |
 | `linkText` | `''` | `link` 档的链接文案，支持 `{name}` / `{url}` / `{type}` 占位；留空用地址本身。 |
 | `newTab` | `true` | `link` 档是否新窗口打开。 |
 

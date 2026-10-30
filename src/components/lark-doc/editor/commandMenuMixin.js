@@ -222,6 +222,14 @@ export default {
       this.closeDiagramMenu()
       this.run('insertContent', { type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: item.source }] })
     },
+    /**
+     * 执行一条菜单命令。
+     *
+     * 注意：`file / sheet / poll / bitable*` 这 11 条已从命令表摘掉（master 上只有块定义、
+     * 没有可用的插入链路），所以下面这几个分支从菜单已经走不到 —— 保留是因为块类型本身
+     * 还在（老文档正文照旧渲染），走 `doc.commands.setSheet/setPoll/setBitable` 的程序化
+     * 调用依然要落块。别再往菜单里加回来，除非把插入链路补完。
+     */
     executeCommand(id, templateId = '') {
       if (!this.writable()) return
       const feature = commandFeatureOf(id)

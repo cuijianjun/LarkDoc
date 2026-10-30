@@ -16,7 +16,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { COMMANDS } from '../../src/core/commands'
 import {
   BOARD_DIAGRAM_ITEMS, BOARD_TEMPLATES, boardLabelOf, boardProviderOf, boardTemplateOf,
 } from '../../src/core/embed/board-diagram'
@@ -138,31 +137,6 @@ describe('三态：空态可绑、绑定后可开、失效后置灰且只能重�
     expect(next.resourceId).toBe('brd_new')
     expect(readReference(next).reason).toBe('')
     expect(next.actions.map((action) => action.id)).toEqual(['open'])
-  })
-})
-
-describe('命令表接线', () => {
-  const at = (id) => COMMANDS.findIndex((item) => item.id === id)
-
-  it('3 条在表里，category / group / tier 都合规', () => {
-    for (const item of BOARD_DIAGRAM_ITEMS) {
-      const command = COMMANDS[at(item.id)]
-      expect(command).toBeTruthy()
-      expect(command.label).toBe(item.label)
-      expect(command.category).toBe('绘图')
-      expect(command.group).toBe('draw')
-      // 能插入但没有引擎 —— 别因为「验收过了」就写成 required
-      expect(command.tier).toBe('skeleton')
-      expect(command.plus).not.toBe(false)
-    }
-  })
-
-  it('🔴 连续成段，且夹在 bitableRefer 与 inlineMath 之间（组序 1164 → 1356 → 1516）', () => {
-    const start = at('mindMap')
-    expect(start).toBeGreaterThan(at('bitableRefer'))
-    expect(at('flowChart')).toBe(start + 1)
-    expect(at('umlDiagram')).toBe(start + 2)
-    expect(at('inlineMath')).toBe(start + 3)
   })
 })
 

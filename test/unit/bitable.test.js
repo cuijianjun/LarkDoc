@@ -20,7 +20,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { COMMANDS, commandFeatureOf, filterCommands } from '../../src/core/commands/index'
 import {
   BITABLE_GEOMETRY, BITABLE_LIMITS, BITABLE_VERSION, BITABLE_VIEWS, BITABLE_VIEW_IDS, FIELD_KINDS,
   defaultBitable, encodeBitable, fieldKind, fieldList, galleryItems, ganttBars, ganttScale, gridRows,
@@ -372,11 +371,6 @@ describe('viewOf / viewLabel / viewOfCommand / viewMenu', () => {
     expect(viewOfCommand('ghost')).toBe('grid')
   })
 
-  it('viewOfCommand 与命令定义表的 slash 一一对上（漂移即红）', () => {
-    const ids = COMMANDS.filter((item) => item.group === 'bitable').map((item) => item.id)
-    expect(ids).toEqual(BITABLE_VIEWS.map((view) => view.slash))
-  })
-
   it('withView 返回新对象、不改入参', () => {
     const source = defaultBitable()
     const snapshot = JSON.stringify(source)
@@ -564,41 +558,6 @@ describe('galleryItems / relationHint（画册 / 关联视图）', () => {
     expect(recordList(null)).toEqual([])
     expect(fieldList({ fields: '不是数组' })).toEqual([])
     expect(recordList(defaultBitable())).toHaveLength(2)
-  })
-})
-
-/* ------------------------------------------------------------------ *
- * ⑤ 命令层
- * ------------------------------------------------------------------ */
-
-describe('命令表：5 条同型，只有「表格」进 + 菜单', () => {
-  it('id / 顺序 / 分组 / 层级', () => {
-    const defs = COMMANDS.filter((item) => item.group === 'bitable')
-    expect(defs.map((item) => item.id)).toEqual([
-      'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
-    ])
-    defs.forEach((def) => {
-      expect(def.category).toBe('多维表格')
-      expect(def.tone).toBe('indigo')
-      expect(def.tier).toBe('required')
-      expect(commandFeatureOf(def.id)).toBe('insert')
-    })
-  })
-
-  it('只有「表格」在 + 菜单里（其余 4 项 plus:false）', () => {
-    const plus = filterCommands('', 'plus').filter((item) => item.group === 'bitable')
-    expect(plus.map((item) => item.id)).toEqual(['bitable'])
-    const grid = COMMANDS.find((item) => item.id === 'bitable')
-    expect(grid.plusCategory).toBe('常用')
-    COMMANDS.filter((item) => item.group === 'bitable' && item.id !== 'bitable')
-      .forEach((def) => expect(def.plus).toBe(false))
-  })
-
-  it('斜杠可搜：中文名 / 拼音 / 组关键字', () => {
-    expect(filterCommands('看板').some((item) => item.id === 'bitableKanban')).toBe(true)
-    expect(filterCommands('gantetu').some((item) => item.id === 'bitableGantt')).toBe(true)
-    expect(filterCommands('duoweibiaoge').filter((item) => item.group === 'bitable')).toHaveLength(5)
-    expect(filterCommands('画册', 'plus').some((item) => item.id === 'bitableGallery')).toBe(false)
   })
 })
 

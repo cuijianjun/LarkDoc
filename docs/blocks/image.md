@@ -40,6 +40,20 @@ new LarkDoc({
 
 数据契约：`<img src alt width data-attch-id>`；JSON 为 `{ type: 'image', attrs: { src, alt, width, attchId? } }`。被网络策略拦下的外链图 `src` 为空、原地址留在 `data-original-src`。
 
+`src` 有两种来源，写法完全一样：
+
+| 来源 | `src` 长什么样 | 说明 |
+| --- | --- | --- |
+| 上传 | `data:image/png;base64,…` | 图片跟着文档走，不依赖图床，适合离线 / 单文件分发。 |
+| 远程地址 | `https://www.a.com/a.img` | 按原地址引用，**不转存、不转 base64**；随时能换图（换的是服务端文件）。 |
+
+```js
+// 直接写远程地址也是合法图片块
+editor.commands.setImage({ src: 'https://www.a.com/a.img', alt: '远程图' })
+```
+
+远程地址受[网络策略](/blocks/network)影响：默认 `open` 照常加载；配成 `allowlist` / `offline` 时被拦下的图会降级成占位卡，原地址保留在 `data-original-src`，导出 HTML 时仍按原地址写出。
+
 ## 导出 HTML 时的两种媒体写法
 
 图片、视频、音频、附件在 HTML 产物里有两种呈现，由 `media.htmlMode` 决定。JSON 永远不受影响。
@@ -63,7 +77,7 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 | `'inline'`（默认） | 保留 `<img>` / `<video>` 等本体，正文能直接渲染出图 | 正文阅读页 |
 | `'link'` | 换成 `<a href>` 一条地址，块级媒体再包一层 `<p class="lark-doc-media-link-block">` | 贴到邮件 / IM / 只接受文字和链接的系统 |
 
-`linkText` 支持 `{name}` / `{url}` / `{type}` 占位。`link` 档输出长这样：
+`linkText` 支持 `{name}` / `{url}` / `{type}` 占位。两种档位都**原样保留** `src` 里的远程 `https://` 地址（不转存、不转 base64），所以正文用外链图时，`inline` 出 `<img src="https://www.a.com/a.img">`，`link` 出指向同一地址的 `<a href>`。`link` 档输出长这样：
 
 ```html
 <p class="lark-doc-media-link-block" data-media-type="image">

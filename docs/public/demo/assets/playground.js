@@ -63,8 +63,8 @@
     "      exportFormats: ['html', 'json', 'md', 'txt', 'docx', 'print'],",
     '    },',
     '',
-    '    // 媒体在 HTML 里的写法：inline 原样内嵌；link 只留地址',
-    "    // 改完点右上角「HTML 输出」按钮，能直接看到两种写法的差别",
+    '    // 媒体在 HTML 里的写法：inline 原样内嵌（data URI 和 https:// 远程地址都保留）；link 只留地址',
+    '    // 改完点右上角「HTML 输出」按钮，能直接看到两种写法的差别',
     "    media: { htmlMode: 'inline', linkText: '', newTab: true },",
     '',
     "    // toolbar: { marksAllow: ['bold', 'italic'] },",
@@ -389,7 +389,7 @@
   // 这个面板只做一件事：把「同一份正文、两种媒体写法」摆在一起看。
   // inline = 图片本体嵌在 HTML 里；link = 图片只剩一条地址链接。
   var MODE_HINT = {
-    inline: '媒体本体直接嵌在 HTML 里（<figure><img>），正文能直接渲染出图。默认档。',
+    inline: '媒体本体直接嵌在 HTML 里（<figure><img>），正文能直接渲染出图。data URI 与 https:// 远程地址都原样保留。默认档。',
     link: '媒体只留一条地址链接，正文里不出现媒体本体。JSON 不受影响，换回来还是图片。',
   }
 

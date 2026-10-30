@@ -80,7 +80,7 @@ new LarkDoc({
   autosave: { enabled: true, delay: 650 },           // 自动保存（默认开）
 
   importExport: { exportFormats: ['html', 'md'] },   // 只留两项导出
-  media: { htmlMode: 'inline' },                      // 'link' = 导出 HTML 时图片只留地址
+  media: { htmlMode: 'inline' },                      // 'link' = 导出 HTML 时图片只留地址；远程 https 地址两档都原样保留
 
   onReady: ({ editor }) => console.log('ready', editor),
   onUpdate: ({ html }) => console.log('change'),

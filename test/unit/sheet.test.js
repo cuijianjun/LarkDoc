@@ -18,7 +18,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { COMMANDS, commandFeatureOf, filterCommands } from '../../src/core/commands/index'
 import {
   SHEET_DEFAULT, SHEET_GEOMETRY, SHEET_LIMITS, SHEET_SCROLLBAR, SHEET_VERSION, SHEET_VIEWPORT,
   cellKey, cellText, clampOffsetX, columnBoundaries, columnLabel, contentSize, encodeSheet,
@@ -657,31 +656,5 @@ describe('NodeView', () => {
     )
     expect(() => nodeView.scrollTo(100)).not.toThrow()
     expect(events).toEqual([{ blockId: null, offsetX: 100 }])
-  })
-})
-
-/* ------------------------------------------------------------------ *
- * ⑩ 斜杠菜单接线（03 §3.4 / §3.5）
- * ------------------------------------------------------------------ */
-
-describe('斜杠菜单接线', () => {
-  const sheetCommand = COMMANDS.filter((item) => item.id === 'sheet')[0]
-
-  it('落在「数据」分类，紧跟 file（真值 y 序：数据 685 < 绘图 749 < 团队协作 909）', () => {
-    expect(sheetCommand.category).toBe('数据')
-    expect(COMMANDS.indexOf(sheetCommand)).toBe(COMMANDS.findIndex((item) => item.id === 'file') + 1)
-  })
-
-  it('拼音与中文都能命中（03 §3.5：biaoge 命中 12 项且含电子表格）', () => {
-    expect(filterCommands('biaoge').map((item) => item.id)).toContain('sheet')
-    expect(filterCommands('电子表格').map((item) => item.id)).toContain('sheet')
-  })
-
-  it('受 insert 开关管，不落兜底的 blockStyle', () => {
-    expect(commandFeatureOf('sheet')).toBe('insert')
-  })
-
-  it('「+」菜单归到常用', () => {
-    expect(filterCommands('', 'plus').filter((item) => item.id === 'sheet')[0].category).toBe('常用')
   })
 })
