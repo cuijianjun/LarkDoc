@@ -49,6 +49,52 @@ new LarkDoc({
 - JSON：`{ type: 'image', attrs: { src, alt, width, attchId? } }`。
 - 被网络策略拦截的外链图片：`src` 置空、原地址保留在 `data-original-src`，并带 `data-network-blocked` 标记。
 
+## 导出 HTML 时的两种媒体写法
+
+`doc.getHTML()` / 导出 HTML 时，图片、视频、音频、附件既可以原样内联在文中，也可以只留一条可点击的地址。由 `media.htmlMode` 控制：
+
+```ts
+new LarkDoc({
+  element: '#editor',
+  media: {
+    htmlMode: 'inline',   // 'inline' | 'link'（默认 inline）
+    linkText: '',         // link 档的链接文字，留空用默认文案
+    newTab: true,         // link 档是否 target="_blank"
+  },
+})
+```
+
+| 取值 | 输出 | 适用 |
+| --- | --- | --- |
+| `'inline'`（默认） | 保留 `<img>` / `<video>` / `<audio>` 等原生标签 | 正文直读、需要图片可见的页面 |
+| `'link'` | 换成 `<a href="原地址">文字</a>`；块级媒体包一层 `<p class="lark-doc-media-link-block">` | 正文以文字为主、媒体只需留地址（省流量，也规避外链防盗链） |
+
+`linkText` 支持 `{name}` / `{url}` / `{type}` 占位，留空时直接用地址本身作文案：
+
+```ts
+// 全局配置
+const doc = new LarkDoc({ element: '#editor', media: { htmlMode: 'link', linkText: '[{type}] {name}' } })
+
+// 单次导出临时覆盖，不影响实例配置
+const html = doc.getHTML({ media: { mode: 'link' } })
+```
+
+`link` 档的输出示例（默认文案就是地址）：
+
+```html
+<p class="lark-doc-media-link-block" data-media-type="image">
+  <a class="lark-doc-media-link" data-media-type="image"
+     href="https://cdn.example.com/a.png"
+     target="_blank" rel="noopener noreferrer">https://cdn.example.com/a.png</a>
+</p>
+```
+
+没有地址的媒体（被网络策略拦下、上传未完成）保持原样不动，便于排查。
+
+::: warning link 档是单向的
+`link` 只影响 HTML 输出，不改文档 JSON —— 编辑器里仍是完整媒体节点，`getJSON()` / 保存的数据不受影响。但**把 `link` 档的 HTML 重新粘回编辑器时，媒体已经变成普通链接**，不会被识别回图片。需要往返编辑的场景请用 `inline`，或用 JSON / DOCX 作为交换格式。
+:::
+
 ::: tip 上传失败
 `upload` 抛错时图片节点回退为本地 base64 预览并提示，不会丢用户刚选的图。
 :::

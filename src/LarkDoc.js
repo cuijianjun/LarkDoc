@@ -9,7 +9,8 @@
  * 5. 按固定顺序销毁，保证 AI 流、会话和监听器都被释放。
  */
 import { createRenderer } from './mount'
-import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
+import { createLarkDocConfig, resolveMediaOptions } from './components/lark-doc/larkDocConfig'
+import { applyMediaHtmlMode } from './core/media/htmlMode'
 import { normalizeAIProvider } from './components/lark-doc/ai'
 import { resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy } from './networkPolicy'
@@ -30,7 +31,14 @@ const DEFAULTS = Object.freeze({
   contentTheme: 'auto',
   // 'local' 才读写 localStorage（键 lark-doc:theme / lark-doc:content-theme）。
   themeStorage: 'none',
-  storage: 'none',
+  /**
+   * 本地草稿落点：
+   * - 'local'（默认）读写浏览器存储（IndexedDB → localStorage → 内存 三级降级），
+   *   配合 `config.autosave` 就是「开箱即有的自动保存」；
+   * - 'none' 完全不落盘，正文只由宿主自己保存。
+   * 需要后端/自管存储的宿主通常传 `persistence` 适配器并保持 'none'。
+   */
+  storage: 'local',
   autofocus: false,
   // 'auto' 按指纹识别 Vditor getHTML() 产物；'vditor' 强制归一化；'html' 跳过归一化。
   contentFormat: 'auto',
@@ -153,6 +161,10 @@ export class LarkDoc {
     if (source.layout && typeof source.layout === 'object') raw.layout = { ...(raw.layout || {}), ...source.layout }
     if (source.limits && typeof source.limits === 'object') raw.limits = { ...(raw.limits || {}), ...source.limits }
     if (source.network && typeof source.network === 'object') raw.network = { ...(raw.network || {}), ...source.network }
+    // 三段新配置同样支持扁平入口：new LarkDoc({ media: { htmlMode: 'link' } })
+    if (source.autosave && typeof source.autosave === 'object') raw.autosave = { ...(raw.autosave || {}), ...source.autosave }
+    if (source.importExport && typeof source.importExport === 'object') raw.importExport = { ...(raw.importExport || {}), ...source.importExport }
+    if (source.media && typeof source.media === 'object') raw.media = { ...(raw.media || {}), ...source.media }
 
     // 工具栏：toolbarKeys / toolbarExcludes 为权威；未传时保留 config.toolbar。
     if (source.toolbarKeys || source.toolbarExcludes) {
@@ -161,8 +173,10 @@ export class LarkDoc {
       this.unknownToolbarKeys = resolved.unknown
     }
 
-    // 控制器默认不写 localStorage：宿主明确给 storage: 'local' 才开启本地草稿。
-    if (this.options.storage !== 'local') {
+    // 持久化总闸：只有显式 `storage: 'none'` 才整套下线（不读草稿、不显示保存状态）。
+    // `autosave.enabled: false` 只关「自动」这一层，手动保存 / save() 仍然可用，
+    // 所以不能在这里落 features —— 否则关自动保存会把保存按钮一起关掉。
+    if (this.options.storage === 'none') {
       raw.features = { ...(raw.features || {}) }
       if (raw.features.persistence === undefined) raw.features.persistence = false
     }
@@ -394,9 +408,18 @@ export class LarkDoc {
     if (session) await session.disconnect()
   }
 
-  getHTML() {
+  /**
+   * 取正文 HTML。
+   *
+   * 媒体呈现方式跟随 `config.media`：默认 `htmlMode: 'inline'` 直出图片/文件本体；
+   * 配成 `'link'` 后图片等媒体只输出地址链接（`linkText` / `newTab` 可调）。
+   * 传 `{ media: { mode: 'inline' } }` 可单次强制直出。
+   */
+  getHTML(options = {}) {
     const workspace = this.getWorkspace()
-    return workspace ? workspace.getHTML() : ''
+    if (!workspace) return ''
+    const media = (options && options.media) || resolveMediaOptions(this.config)
+    return applyMediaHtmlMode(workspace.getHTML(), media)
   }
 
   getJSON() {

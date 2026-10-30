@@ -1075,6 +1075,79 @@ window.__LARK_DOC_SAMPLE__ = {
       "attrs": {
         "indent": 0,
         "lineHeight": null,
+        "blockId": "bdgmhead01",
+        "textAlign": null,
+        "level": 3,
+        "numbering": false,
+        "numberingStart": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "图表（Mermaid）"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": "bdgmpara01",
+        "textAlign": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "图表就是语言为 "
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ],
+          "text": "mermaid"
+        },
+        {
+          "type": "text",
+          "text": " 的代码块，渲染发生在 NodeView、数据仍是 codeBlock。渲染器是懒 chunk（"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ],
+          "text": "lark-doc.umd.min.mermaid.js"
+        },
+        {
+          "type": "text",
+          "text": "），所以部署时这个文件必须和主文件同目录，否则这里只会剩一段源码。"
+        }
+      ]
+    },
+    {
+      "type": "codeBlock",
+      "attrs": {
+        "blockId": "bdgrmmd001",
+        "language": "mermaid",
+        "indent": 0
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "graph TD\n  A[输入 mermaid 代码] --> B{语言判定}\n  B -->|mermaid| C[懒加载 mermaid chunk]\n  C --> D[本地渲染成 SVG]\n  B -->|其他| E[highlight.js 高亮]\n  D --> F[主题切换时按新配色重画]"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
         "blockId": "bsa0w4ey1h",
         "textAlign": null,
         "level": 3,

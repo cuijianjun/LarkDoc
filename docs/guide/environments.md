@@ -45,7 +45,8 @@ const doc = new LarkDoc({
   // ── 编辑状态 ──
   readonly: false,
   theme: 'light',                     // 'light' | 'dark'
-  storage: 'none',                    // 'none' 不写本地草稿；'local' 才开浏览器草稿
+  storage: 'local',                   // 默认 'local'：自动存浏览器草稿；'none' 关掉持久化
+  autosave: { enabled: true, delay: 650 },  // 自动保存（默认开，delay 毫秒）
   autofocus: false,
   contentFormat: 'auto',              // 'auto' | 'vditor' | 'html'，老数据归一化策略
   saveHtml: false,                    // true 时持久化 record 额外带 html 派生副本
@@ -77,7 +78,7 @@ const doc = new LarkDoc({
 
 | 容易搞错 | 正确做法 |
 | --- | --- |
-| 以为 `storage: 'local'` 是默认 | 命令式入口**默认 `'none'`**，多文档场景不配就不写草稿，避免互相覆盖 |
+| 以为还要自己开自动保存 | `storage` 默认 `'local'`、`autosave.enabled` 默认 `true`，**开箱即存**；不想要就显式写 `storage: 'none'`（关持久化）或 `autosave: { enabled: false }`（只停自动、保留落点，手动 `doc.save()` 仍可写） |
 | 用 `toolbarKeys` 想"禁用"能力 | 它只隐藏入口；要真正禁用改 `features`，历史 JSON 仍可读 |
 | 传 `uploadImage` 还是 `uploader` | 两者都收：`uploader.upload` 优先，`uploadImage` 作兼容别名；SFC 里只有 `upload-image` 一个 prop |
 
@@ -1010,7 +1011,7 @@ test('round trip', async () => {
 ```
 
 ::: tip 为什么单测要关 network
-默认 `network.mode = 'open'`，粘贴外链图片 / 加载 mermaid 会走真实请求，CI 里既慢又偶发失败。直接设 `'offline'` 最省心（该模式下外链图片降级为占位，公式仍本地渲染）。另外 `storage: 'none'` 是默认值，但显式写出来能防止别人后来改成 `'local'` 污染测试。
+默认 `network.mode = 'open'`，粘贴外链图片 / 加载 mermaid 会走真实请求，CI 里既慢又偶发失败。直接设 `'offline'` 最省心（该模式下外链图片降级为占位，公式仍本地渲染）。另外 `storage` 默认已是 `'local'`，单测必须显式写 `'none'`（或 `test/setup` 里清 `localStorage` / `indexedDB`），否则用例之间会互相串草稿。
 :::
 
 ### 9. SSR（Nuxt 2 / Next 13 App Router） {#env-ssr}

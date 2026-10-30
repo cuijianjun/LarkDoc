@@ -2,6 +2,7 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { aggregateHeadingContainers, restoreUnknownBlocks, validateDocument } from '../components/lark-doc/documentOperations'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
+import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createNetworkPolicy } from '../networkPolicy'
 
 export function createEditorController(options = {}) {
@@ -27,7 +28,19 @@ export class EditorController {
   }
 
   getEditor() { return this.editor }
-  getHTML() { return this.editor?.getHTML() || '' }
+  /**
+   * 序列化正文。
+   *
+   * 默认返回 schema 原生产物（媒体直出本体），`options.media.mode === 'link'` 时额外把
+   * 图片 / 文件 / 音视频改写成纯地址链接（`config.media.htmlMode`，见 core/media/htmlMode）。
+   * **默认不读全局配置**：v-model 往返靠「字符串是否等于 `editor.getHTML()`」判定是否回灌，
+   * 在这里默认改写会让每次赋值都把媒体冲成链接。要按配置输出请显式传 `media`。
+   */
+  getHTML(options = {}) {
+    const html = this.editor?.getHTML() || ''
+    const media = options && options.media
+    return media && media.mode === 'link' ? applyMediaHtmlMode(html, media) : html
+  }
   getJSON() { return this.editor ? aggregateHeadingContainers(restoreUnknownBlocks(this.editor.getJSON())) : null }
   getText() { return this.editor ? (this.editor.getText() || '') : '' }
   focus() { this.editor?.commands.focus() }

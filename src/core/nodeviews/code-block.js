@@ -43,9 +43,35 @@ function loadHighlighter() {
     ).then((highlighter) => {
       hljs = highlighter
       return highlighter
-    }).catch(() => null)
+    }).catch(() => {
+      // 分块没取到（离线包漏拷 chunk、CDN 404）时**不要把失败结果缓存一辈子**：
+      // 下次渲染重新试一次，宿主补上文件后无需刷新页面就能恢复高亮。
+      highlighterPromise = null
+      return null
+    })
   }
   return highlighterPromise
+}
+
+/**
+ * 语言别名表：外部来源（飞书 / Vditor / 用户自己写的数据）常用简写，
+ * 而 `highlight.js` 的懒加载器按**规范名**索引 —— `js` 这种简写会直接
+ * 落进「不支持」分支，连 chunk 都不会去请求，表现就是「代码块一直没颜色」。
+ * 这里只做「简写 → 规范名」，规范名本身不在表里也照样透传。
+ */
+const LANGUAGE_ALIASES = Object.freeze({
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', node: 'javascript',
+  ts: 'typescript', tsx: 'typescript',
+  sh: 'bash', shell: 'bash', zsh: 'bash', console: 'bash', shellscript: 'bash',
+  html: 'xml', htm: 'xml', vue: 'xml', svg: 'xml', xhtml: 'xml',
+  py: 'python', python3: 'python',
+})
+
+/** 把语言名归一化成 highlight.js 的规范名；空值 / `text` 一律归到 `plaintext`。 */
+export function normalizeCodeLanguage(value) {
+  const raw = String(value == null ? '' : value).trim().toLowerCase()
+  if (!raw || raw === 'text' || raw === 'plain' || raw === 'none') return 'plaintext'
+  return LANGUAGE_ALIASES[raw] || raw
 }
 
 const languageLoaders = {
@@ -59,27 +85,29 @@ const languageLoaders = {
 }
 const languagePromises = Object.create(null)
 function ensureLanguage(name) {
-  if (hljs && hljs.getLanguage(name)) return Promise.resolve(true)
-  if (!languageLoaders[name] && name !== 'javascript') return Promise.resolve(false)
-  if (!languagePromises[name]) {
-    languagePromises[name] = loadHighlighter().then((highlighter) => {
+  const language = normalizeCodeLanguage(name)
+  if (hljs && hljs.getLanguage(language)) return Promise.resolve(true)
+  if (!languageLoaders[language] && language !== 'javascript') return Promise.resolve(false)
+  if (!languagePromises[language]) {
+    languagePromises[language] = loadHighlighter().then((highlighter) => {
       if (!highlighter) return false
-      if (highlighter.getLanguage(name)) return true
-      return languageLoaders[name]().then((module) => {
-        highlighter.registerLanguage(name, module.default || module)
+      if (highlighter.getLanguage(language)) return true
+      return languageLoaders[language]().then((module) => {
+        highlighter.registerLanguage(language, module.default || module)
         return true
       })
     }).catch(() => false)
   }
-  return languagePromises[name]
+  return languagePromises[language]
 }
 
 function escapeHTML(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 function renderHighlighted(text, language, syntaxHighlight = true) {
-  if (!syntaxHighlight || !language || !hljs || !hljs.getLanguage(language)) return escapeHTML(text)
-  return hljs.highlight(text, { language, ignoreIllegals: true }).value
+  const normalized = normalizeCodeLanguage(language)
+  if (!syntaxHighlight || normalized === 'plaintext' || !hljs || !hljs.getLanguage(normalized)) return escapeHTML(text)
+  return hljs.highlight(text, { language: normalized, ignoreIllegals: true }).value
 }
 
 /** 语言下拉清单；图表功能关闭时不给 mermaid 这一项。 */
@@ -230,9 +258,12 @@ export function createCodeBlockNodeView(props) {
       copyButton.textContent = '复制源码'
     } else {
       copyButton.textContent = '复制代码'
-      // 语言不在清单里（历史数据）时回落到第一项，别让原生 select 变成空选。
-      const hasOption = Array.prototype.some.call(select.options, (item) => item.value === language)
-      select.value = hasOption ? language : select.options[0].value
+      // 下拉要按**归一化后**的语言回填：数据里存的可能是 `js` / `html` / `py` 这类简写，
+      // 清单里没有同名项就会掉到「纯文本」，于是出现「代码明明有颜色、下拉却显示纯文本」
+      // 的自相矛盾。回填只动 select，不回写 attrs —— 用户不改就保留原始写法。
+      const displayLanguage = normalizeCodeLanguage(language)
+      const hasOption = Array.prototype.some.call(select.options, (item) => item.value === displayLanguage)
+      select.value = hasOption ? displayLanguage : select.options[0].value
       select.disabled = !editable
     }
     statusNode.textContent = message
@@ -248,9 +279,12 @@ export function createCodeBlockNodeView(props) {
   /* ---------- 高亮 ---------- */
   function refreshHighlighted() {
     const text = currentNode.textContent
-    const language = currentNode.attrs.language
+    // 统一走别名归一化：`js` 这类简写既不能让 `hljs.getLanguage` 判成功，
+    // 也不该因为查不到就放弃 —— 否则每次渲染都停在「转义纯文本」上，
+    // 连 highlight 分块都不会被请求。
+    const language = normalizeCodeLanguage(currentNode.attrs.language)
     if (!syntaxHighlight()) { highlightedCode = escapeHTML(text); return }
-    if (language && !(hljs && hljs.getLanguage(language))) {
+    if (language !== 'plaintext' && !(hljs && hljs.getLanguage(language))) {
       highlightedCode = escapeHTML(text)
       ensureLanguage(language).then((loaded) => {
         if (!loaded || destroyed) return

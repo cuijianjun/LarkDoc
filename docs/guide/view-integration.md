@@ -6,16 +6,29 @@ lark-doc 与宿主的边界是显式的：编辑器只负责文档交互，**数
 
 ### 原生页面
 
-UMD 产物把 Vue 当 peer 依赖（`externals.root = 'Vue'`），宿主必须先加载全局 `Vue`；样式随 JS 注入，无需单独引 CSS。全局暴露的是**命名空间对象** `window['lark-doc']`（含 `LarkDoc` / `createDocumentSession` / `TOOLBAR_GROUPS` 等具名导出，以及 `default` 指向 `LarkDoc` 类）：
+无构建链时用 `dist/lark-doc.umd.min.js`：Vue 已内联，**不需要先挂全局 `Vue`**，样式也随 JS 注入。全局暴露的是**命名空间对象** `window['lark-doc']`（含 `LarkDoc` / `createDocumentSession` / `TOOLBAR_GROUPS` 等具名导出，以及 `default` 指向 `LarkDoc` 类）：
 
 ```html
-<script src="https://unpkg.com/vue@2.7.14/dist/vue.runtime.min.js"></script>
-<script src="https://unpkg.com/lark-doc/dist/lark-doc.umd.min.js"></script>
+<script src="./vendor/lark-doc.umd.min.js"></script>
 <div id="editor"></div>
 <script>
   const { LarkDoc } = window['lark-doc']
   const doc = new LarkDoc({ element: '#editor', title: '未命名文档' })
 </script>
+```
+
+::: warning UMD 档不随 npm 发布
+0.13 起 npm 包里只有 ESM / CJS / element 三份产物（`unpkg` / `jsdelivr` 指向 **element**）。
+需要 JS API 的 `<script>` 直挂时，从本仓库 `npm run build:umd` 的产物或在线 Demo 的
+`docs/public/demo/vendor/` 取 `lark-doc.umd.min.js` —— **必须连按需 chunk 一起拷到同目录**
+（`lark-doc.umd.min.mermaid.js` 等），否则图表渲染取不到渲染器。
+:::
+
+走 CDN 且只需要 `new LarkDoc()` 之外的能力时，用 element 产物 + `<lark-doc>` 标签更省事：
+
+```html
+<script src="https://unpkg.com/lark-doc/dist/lark-doc-element.umd.min.js"></script>
+<lark-doc id="doc" title="未命名文档" theme="light"></lark-doc>
 ```
 
 ### Vue2 路由薄壳（本仓库 Demo 的接法）
@@ -35,7 +48,7 @@ export default {
     this.doc = new LarkDoc({
       element: this.$refs.host,
       title: '未命名文档',
-      storage: 'none',
+      storage: 'none',   // 只读视图不写本地草稿（默认 'local' 会自动存草稿，这里显式关掉）
       onError: (error) => console.error('[lark-doc]', error),
     })
   },
@@ -94,7 +107,7 @@ const doc = new LarkDoc({ element: '#editor', session })
 
 | 接入形态 | 说明 |
 | --- | --- |
-| 原生页面 | UMD 产物 + 样式链接；适合无构建链的宿主。 |
+| 原生页面 | UMD 产物（Vue 内联、样式随 JS 注入）+ 同目录按需 chunk；适合无构建链的宿主。 |
 | Vue2 薄壳 | `mounted` 创建、`beforeDestroy` 销毁；dev 用 alias 指向包源码，生产走 dist，两条路径都验证。 |
 | 组件式 | `LarkDocEditor`（纯编辑器）与 `LarkDocWorkspace`（完整工作台）仍是具名导出，老宿主不受影响。 |
 | 持久化 Provider | 实现即插即用（方法名 `load/save/snapshots/snapshot/restore`）；缺省为浏览器 localStorage 草稿。 |

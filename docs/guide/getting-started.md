@@ -63,7 +63,8 @@ const doc = new LarkDoc({
   placeholder: '输入正文，或输入 / 插入内容',
   theme: 'light',
   readonly: false,
-  storage: 'none',                 // 'none' 不写本地草稿；'local' 使用浏览器草稿
+  storage: 'local',                // 默认 'local'：自动写浏览器草稿；'none' 关掉持久化
+  autosave: { enabled: true, delay: 650 },  // 自动保存（默认开）；enabled:false 只停自动、保留落点
   onReady: (payload) => console.log('ready', payload.editor),
   onUpdate: (payload) => console.log('update', payload.html),
   onError: (error) => console.error(error),

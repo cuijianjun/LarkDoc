@@ -66,6 +66,8 @@ export function createWorkspace(options = {}) {
     placeholder: '模板',
     onChange: value => call(handlers, 'applyTemplate', value),
   })
+  // 导入 / 导出是两个独立入口：显隐各由 config.importExport.importEnabled /
+  // exportEnabled 决定，文案与 accept 也跟着配置走（默认值仍是不传配置时的老样子）。
   const importButton = button('导入', () => importInput.click())
   const importInput = document.createElement('input')
   importInput.className = 'lark-doc-file-input'
@@ -87,9 +89,9 @@ export function createWorkspace(options = {}) {
       { node: saveStatus, on: true },
       { node: saveButton, on: !!state.persistenceEnabled },
       { node: templateSelect.el, on: !!state.templatesEnabled },
-      { node: importButton, on: !!state.importExportEnabled },
-      { node: importInput, on: !!state.importExportEnabled },
-      { node: exportSelect.el, on: !!state.importExportEnabled },
+      { node: importButton, on: !!state.importEnabled },
+      { node: importInput, on: !!state.importEnabled },
+      { node: exportSelect.el, on: !!state.exportEnabled },
       { node: historyButton, on: !!state.historyEnabled },
     ])
   }
@@ -428,8 +430,9 @@ export function createWorkspace(options = {}) {
     setAttr(saveButton, 'title', state.persistenceLabel ? `保存到${state.persistenceLabel}` : null)
     templateSelect.update({ options: state.templateOptions, value: '', disabled: state.readonly || state.importing })
     setDisabled(importButton, state.readonly || state.importing)
-    setAttr(importButton, 'title', state.importing ? '导入中' : '导入文档')
-    setText(importButton, state.importing ? '导入中…' : '导入')
+    setAttr(importButton, 'title', state.importing ? '导入中' : (state.importLabel || '导入'))
+    setText(importButton, state.importing ? '导入中…' : (state.importLabel || '导入'))
+    if (state.importAccept) importInput.accept = state.importAccept
     exportSelect.update({ options: state.exportOptions, value: '' })
     setAttr(historyButton, 'aria-expanded', state.historyOpen ? 'true' : 'false')
     setAttr(historyButton, 'title', '本地快照')

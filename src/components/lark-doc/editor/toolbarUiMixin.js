@@ -115,6 +115,13 @@ export default {
         actionsHost: this.$refs.actionsHost || null,
       })
       this.refreshTopBar()
+      // 首次 `mounted` 时顶栏**可能还没插进文档**（Vue 的插入钩子晚于本方法），
+      // 这时 `refreshTopBar()` 里的 `parkActionsHost()` 会把 `header-actions` 宿主
+      // 判成「已游离」搬回停泊位（`.lark-doc-actions-park` 是 `display:none`），
+      // 之后再没有 update 把它搬回来 —— 表现就是顶栏右侧的「导入 / 导出 / 模板」
+      // 整块消失，而顶栏本身（标题 + 模式按钮）看起来完全正常。
+      // 插入完成后再补一次（幂等：位置正确时 update 什么都不做）。
+      this.$nextTick(() => { if (this._topBarUi) this.refreshTopBar() })
     },
     destroyTopBar() {
       if (!this._topBarUi) return
@@ -216,6 +223,10 @@ export default {
       const park = this.$refs.actionsPark
       if (!park) return
       if (host.parentNode === park) return
+      // 顶栏自己持有时一律不动 —— 哪怕这一刻整棵顶栏还没插进文档
+      // （首次挂载的插入钩子晚于 `mounted`）。判据用「归属」而不是「是否在文档里」，
+      // 否则会在挂载瞬间把宿主搬进停泊位，顶栏就永远拿不到它。
+      if (this._topBarUi && this._topBarUi.el && this._topBarUi.el.contains(host)) return
       if (typeof document === 'undefined' || !document.contains(host)) park.appendChild(host)
     },
 

@@ -2,6 +2,20 @@
 
 本文件按 `MASTER_PLAN.md` 的阶段推进记录**对外契约**变化。语义化版本：宿主接入写法变了才动 minor/major。
 
+## 未发布（master 上的 bugfix 批次）
+
+> 不改变接入写法（仍是 `new LarkDoc({ element, ... })`），只修行为、加配置项。npm 尚未发布。
+
+| 项 | 变化 |
+|---|---|
+| 图表 / 公式 / 代码高亮 | **UMD 档补回按需区块的 JSONP 装载器**：此前 UMD 借用了 CJS 的 `chunkLoading: 'require'`，webpack 不生成 jsonp 装载器，`import()` 只等 CSS 就返回 → 区块永不请求（表现：图表、公式、高亮全不出来，网络面板里连请求都没有）。同时失败 Promise 不再永久缓存，宿主补上文件后无需刷新即可恢复。 |
+| 代码块语言 | 加语言别名归一（`js → javascript`、`ts → typescript`、`sh/zsh/console → bash`、`html/vue → xml`、`py → python`；`text/plain/none → plaintext`）。此前正文里写 `js` 会静默不高亮 —— 连 `highlight` 区块都不请求。 |
+| 自动保存 | 新增 `config.autosave = { enabled: true, delay: 650 }`，**默认开启**。`enabled: false` 只关「自动」这一层，保存按钮 / `save()` 仍可用；要整套持久化下线仍用 `storage: 'none'`。修掉离页保存的 `this` 丢失（`this.saveNow is not a function`，最后一段改动不落盘）。 |
+| 导入 / 导出 | 新增 `config.importExport`：`importEnabled` / `exportEnabled` 分开控制入口，`importFormats` / `exportFormats` 白名单控制格式与菜单顺序，`importLabel` / `exportLabel` 可改文案。 |
+| 媒体 HTML | 新增 `config.media.htmlMode`：`inline`（默认，`<figure><img>` 直接嵌在 HTML 里）/ `link`（只留媒体地址的 `<a href>`）。`getHTML({ media })` 可按次覆盖。只影响 HTML 产物，JSON 不变。 |
+| 在线 Demo | 新增 `npm run demo:sync` / `demo:check` / `demo:build` 与 `scripts/demo-sync-vendor.mjs`：把 UMD 主文件 + 全部按需分块 + 公式样式 + 字体一次性校验并拷进 `docs/public/demo/vendor/`，不会再出现「主文件跟上了、懒加载区块没跟上」。顶栏导入 / 导出按钮首次挂载被搬进停泊位的问题一并修掉。 |
+| size-limit | element 490 KB → 512 KB：master 实测已是 ≈500.5 KB（旧上限在 `c55a089` 提到 490 时就不够），本次改动 +2 KB。其余四档未动。 |
+
 ## 0.13.0（2026-10-30）
 
 > 七阶段「框架无关改造」的 **V1 过渡态**：对外契约已脱离 Vue（门面、子入口、按需特性、构建插件），

@@ -3,7 +3,18 @@ import { createPersistenceWorkspace, detectBrowserStorage } from '../providers/p
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from '../components/lark-doc/mockAI'
 import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMarkdown } from '../components/lark-doc/ai'
 import { TEMPLATES } from '../components/lark-doc/templates'
-import { createLarkDocConfig } from '../components/lark-doc/larkDocConfig'
+import {
+  createLarkDocConfig,
+  resolveExportOptions,
+  isImportEnabled,
+  isExportEnabled,
+  resolveImportAccept,
+  resolveImportFormatId,
+  isAutoSaveEnabled,
+  resolveAutoSaveDelay,
+  resolveMediaOptions,
+} from '../components/lark-doc/larkDocConfig'
+import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { sanitizeHTML, validateDocument } from '../components/lark-doc/documentOperations'
 import { migrateRecordContent } from '../core/migrations'
 import { createDerivedSnapshot, validateDerivedSnapshot } from '../core/derive/snapshot'
@@ -19,12 +30,13 @@ const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
 export function createWorkspaceState({ initialContent, initialTitle, templates, config }) {
   const templateItems = Array.isArray(templates) ? templates : TEMPLATES
   const firstTemplate = templateItems[0] || { html: '<p></p>', title: '未命名文档' }
+  const editorConfig = createLarkDocConfig(config)
   return {
     html: typeof initialContent === 'string' ? initialContent : firstTemplate.html,
     title: initialTitle != null ? initialTitle : firstTemplate.title,
     templateItems,
     forcedReadonly: false,
-    editorConfig: createLarkDocConfig(config),
+    editorConfig,
     effectiveReadonly: false,
     importing: false,
     initialized: false,
@@ -60,15 +72,14 @@ export function createWorkspaceState({ initialContent, initialTitle, templates, 
       { value: 0, label: '不限字数' },
       { value: 200, label: '200 字（ECS）' },
     ],
-    exportOptions: [
-      { value: '', label: '导出' },
-      { value: 'html', label: 'HTML' },
-      { value: 'json', label: 'JSON（完整正文）' },
-      { value: 'md', label: 'Markdown（简化）' },
-      { value: 'txt', label: '纯文本' },
-      { value: 'docx', label: 'Word（简化）' },
-      { value: 'print', label: '打印 / PDF' },
-    ],
+    exportOptions: resolveExportOptions(editorConfig),
+    // 导入 / 导出两个入口分开配置：总闸（features.importExport）之下还有各自的分区开关。
+    // UI 层读这三个字段决定显隐与 accept，不再自己判 features。
+    importEnabled: isImportEnabled(editorConfig),
+    exportEnabled: isExportEnabled(editorConfig),
+    importAccept: resolveImportAccept(editorConfig),
+    importLabel: editorConfig.importExport.importLabel,
+    exportLabel: editorConfig.importExport.exportLabel,
     aiLanguageOptions: [
       { value: 'en', label: '英语' },
       { value: 'zh', label: '中文' },
@@ -108,6 +119,8 @@ class WorkspaceController {
   setContent(content, options) { return this.host.setContent ? this.host.setContent(content, options) : false }
   focus() { if (this.host.focus) this.host.focus() }
   getHTML() { return this.host.getHTML ? this.host.getHTML() : '' }
+  /** 导出用 HTML：按 `config.media.htmlMode` 决定媒体直出还是只留地址。 */
+  getExportHTML() { return applyMediaHtmlMode(this.getHTML(), resolveMediaOptions(this.state.editorConfig)) }
   getJSON() { return this.host.getJSON ? this.host.getJSON() : null }
   getText() { return this.host.getText ? this.host.getText() : '' }
   getWindow() { return this.host.getWindow ? this.host.getWindow() : (typeof window !== 'undefined' ? window : {}) }
@@ -153,7 +166,9 @@ class WorkspaceController {
     this.state.initialized = true
     const editor = this.getEditor()
     if (editor && this.host.bindAITransaction) this.host.bindAITransaction(this.mapAI)
-    if (this.host.addBeforeUnload) this.host.addBeforeUnload(this.flushOnLeave)
+    // 同 LarkDocWorkspace.vue：一定要包一层箭头函数，别把裸方法引用交给宿主 ——
+    // 宿主直接 addEventListener 的话 this 是 window，离页保存会静默失效。
+    if (this.host.addBeforeUnload) this.host.addBeforeUnload(() => this.flushOnLeave())
     logger.info('lifecycle', 'lark-doc.workspace.ready', { status: this.props.persistence ? 'host' : 'local' })
     this.emit('ready', { editor, document: this.host.documentApi || this })
   }
@@ -203,8 +218,10 @@ class WorkspaceController {
   queueSave() {
     if (!this.featureEnabled('persistence') || !this.state.initialized || this.state.storageError || this._disposed) return
     clearTimeout(this._saveTimer)
+    // config.autosave.enabled = false 时仍保留手动保存 / 离开页面时保存的路径，只是不再自动落盘。
+    if (!isAutoSaveEnabled(this.state.editorConfig)) { this.state.saveStatus = '自动保存已关闭'; return }
     this.state.saveStatus = '等待本地保存…'
-    this._saveTimer = setTimeout(() => { void this.saveNow() }, 650)
+    this._saveTimer = setTimeout(() => { void this.saveNow() }, resolveAutoSaveDelay(this.state.editorConfig))
   }
 
   flushOnLeave() { void this.saveNow() }
@@ -267,14 +284,19 @@ class WorkspaceController {
   }
 
   async importDocument(event) {
-    if (!this.featureEnabled('importExport')) return
+    if (!isImportEnabled(this.state.editorConfig)) return
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
     if (!file || !this.writable()) return
     if (file.size > 10 * 1024 * 1024) { this.state.notice = '导入文件不能超过 10 MB'; return }
+    // 格式白名单（config.importExport.importFormats）：不在清单里的扩展名直接拒绝。
+    const format = resolveImportFormatId(this.state.editorConfig, file.name.split('.').pop())
+    if (!format) {
+      this.state.notice = `不支持的文件格式，可导入：${this.state.editorConfig.importExport.importFormats.join(' / ').toUpperCase()}`
+      return
+    }
     this.state.importing = true
     try {
-      const format = file.name.split('.').pop().toLowerCase()
       let content
       let importedTitle
       if (format === 'docx') {
@@ -287,8 +309,8 @@ class WorkspaceController {
           const value = JSON.parse(text)
           content = validateDocument(migrateRecordContent(value.document || value, value.schemaVersion), this.getEditor().schema)
           if (typeof value.title === 'string') importedTitle = value.title
-        } else if (format === 'html' || format === 'htm') content = sanitizeHTML(text)
-        else if (format === 'md' || format === 'markdown') {
+        } else if (format === 'html') content = sanitizeHTML(text)
+        else if (format === 'md') {
           const { markdownToHtml } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
           content = sanitizeHTML(await markdownToHtml(text))
         } else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
@@ -307,7 +329,7 @@ class WorkspaceController {
       this.closeAI()
       this.setContent(content)
       if (importedTitle !== undefined) this.state.title = importedTitle
-      this.state.notice = format === 'docx' || format === 'md' || format === 'markdown' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
+      this.state.notice = format === 'docx' || format === 'md' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
       logger.info('import', 'lark-doc.document.imported', { format, status: 'success' })
     } catch (error) {
       if (!this._disposed) this.state.notice = `导入失败，原正文未替换：${error.message}`
@@ -316,15 +338,16 @@ class WorkspaceController {
   }
 
   async exportDocument(format) {
-    if (!this.featureEnabled('importExport') || !format) return
+    if (!isExportEnabled(this.state.editorConfig) || !format) return
+    if (!this.state.editorConfig.importExport.exportFormats.includes(format)) return
     try {
       const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
       const filename = safeFileName(this.state.title)
-      if (format === 'html') downloadText(this.getHTML(), `${filename}.html`, 'text/html;charset=utf-8')
+      if (format === 'html') downloadText(this.getExportHTML(), `${filename}.html`, 'text/html;charset=utf-8')
       else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.state.title, document: this.getJSON() }, null, 2), `${filename}.json`, 'application/json')
       else if (format === 'txt') downloadText(this.getText(), `${filename}.txt`, 'text/plain;charset=utf-8')
       else if (format === 'md') {
-        downloadText(await htmlToMarkdown(this.getHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
+        downloadText(await htmlToMarkdown(this.getExportHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
         this.state.notice = 'Markdown 为简化导出，字体、分栏、公式和图片裁剪布局可能降级；JSON 可保留完整正文'
       } else if (format === 'docx') {
         await exportDocx(this.state.title, this.getText())

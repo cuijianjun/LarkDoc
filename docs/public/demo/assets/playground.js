@@ -32,10 +32,12 @@
   }
 
   // 无后端 Demo：这些入参一律剔除（不是 lark-doc 不认，是这个页面没有对应服务）。
+  // persistence 不在列表里 —— 它是纯本地能力（IndexedDB / localStorage），
+  // 这个页面本身用 storage: 'none' 关掉，但用户代码里写它应该照原样被接受。
   var OFFLINE_BLOCKED = [
     'session', 'providers', 'collaboration', 'authorization', 'versioning',
     'comments', 'documentId', 'user', 'capabilities', 'mode',
-    'uploader', 'uploadImage', 'persistence',
+    'uploader', 'uploadImage',
   ]
 
   var DEFAULT_CODE = [
@@ -45,15 +47,32 @@
     'const doc = new LarkDoc({',
     "  element: '#editor',                // 本页面实际的挂载点是 " + HOST_SELECTOR,
     '  content: sampleDoc,                // 示例正文来自 assets/sample.js',
+    "  storage: 'local',                  // 'none' = 关掉本地草稿；'local' = 草稿落盘，刷新还在",
     '  config: {',
     '    layout: { headerVisible: true },     // 改成 false：顶部标题栏整行收起',
     '    features: { ai: true },              // 改成 false：工具栏 AI 入口消失',
+    '',
+    '    // 自动保存：默认就是开的，delay 单位毫秒（0 = 每次改动立刻存）',
+    '    autosave: { enabled: true, delay: 650 },',
+    '',
+    '    // 导入 / 导出各自独立开关，格式也是逐项配置的',
+    '    importExport: {',
+    "      importEnabled: true,               // false：顶部「导入」按钮整颗消失",
+    "      exportEnabled: true,               // false：顶部「导出」下拉整颗消失",
+    "      importFormats: ['html', 'json', 'md', 'docx'],",
+    "      exportFormats: ['html', 'json', 'md', 'txt', 'docx', 'print'],",
+    '    },',
+    '',
+    '    // 媒体在 HTML 里的写法：inline 原样内嵌；link 只留地址',
+    "    media: { htmlMode: 'inline', linkText: '', newTab: true },",
+    '',
     "    // toolbar: { marksAllow: ['bold', 'italic'] },",
     '    // limits: { maxLength: 500 },',
     '  },',
     '})',
     '',
     '// 实例方法：doc.getJSON() / getHTML() / setReadonly(true) / patchProps({}) / undo()',
+    "// 顶栏右侧的「本地保存」会显示自动保存的落盘时间；想从空白开始就点右上角「重置」。",
   ].join('\n')
 
   /* --------------------------------------------------------- DOM */
@@ -77,6 +96,24 @@
 
   var instance = null      // 真实 LarkDoc 实例
   var keep = null          // { json, title } 上一次成功取到的正文
+
+  // 本地草稿的两个落点，与 lark-doc 的持久化实现保持一致：
+  //   localStorage 腿 = 前缀 + 'draft' / 'snapshots'；IndexedDB 腿 = 同名库。
+  // 「重置」要真正回到示例正文，就得把两边都清掉 —— 只清一边，另一边的草稿还会被读回来。
+  var DRAFT_PREFIX = 'tiptap-vue2:lark-doc:'
+  var DRAFT_DB = 'tiptap-vue2:lark-doc'
+  function clearLocalDraft() {
+    try {
+      var keys = []
+      for (var i = 0; i < window.localStorage.length; i++) {
+        var key = window.localStorage.key(i)
+        if (key && key.indexOf(DRAFT_PREFIX) === 0) keys.push(key)
+      }
+      keys.forEach(function (key) { window.localStorage.removeItem(key) })
+    } catch (e) { /* 隐私模式拿不到 localStorage：跳过，不影响页面上继续编辑 */ }
+    // 必须在实例销毁之后调，否则删库会被那条打开的连接挂住。
+    try { if (window.indexedDB) window.indexedDB.deleteDatabase(DRAFT_DB) } catch (e) { /* 同上 */ }
+  }
   var timer = 0
   var renderTimer = 0
 
@@ -165,7 +202,11 @@
     return stub
   }
 
-  /** 剔掉离线场景下没有意义的入参，并固定 storage。 */
+  /**
+   * 剔掉离线场景下没有意义的入参。
+   * `storage` 照用户的写法来（默认代码里是 'local'，自动保存会真的落盘）。
+   * 改代码重建时正文由 `keep` 带过去，不会被旧草稿顶掉；`重置` 才会清草稿。
+   */
   function sanitize(options) {
     var out = {}
     var dropped = []
@@ -173,7 +214,6 @@
       if (OFFLINE_BLOCKED.indexOf(key) >= 0) { dropped.push(key); return }
       out[key] = options[key]
     })
-    out.storage = 'none' // 本 Demo 不写本地草稿，保证「改代码 = 干净重建」
     return { options: out, dropped: dropped }
   }
 
@@ -202,7 +242,7 @@
     var opts = {}
     Object.keys(options || {}).forEach(function (key) { opts[key] = options[key] })
     opts.element = HOST_SELECTOR // 用户代码里写什么挂载点都落到预览区
-    opts.storage = 'none'
+    if (opts.storage == null) opts.storage = 'local' // 用户没写才兜底，写了就照他的来
 
     if (keep && keep.json) {
       opts.content = keep.json // 重建：用编辑后的正文覆盖代码里的 content
@@ -446,6 +486,9 @@
     resetBtn.addEventListener('click', function () {
       ta.value = DEFAULT_CODE
       renderHighlight()
+      teardown()        // 先断开旧实例，IndexedDB 才删得掉
+      keep = null       // 别把编辑过的正文带进新实例，否则「重置」等于没重置
+      clearLocalDraft() // 清掉自动保存落下的草稿，示例正文才会真的回来
       schedule()
       ta.focus()
     })

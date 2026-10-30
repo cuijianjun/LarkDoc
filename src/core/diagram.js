@@ -187,6 +187,10 @@ function loadRenderer(scriptUrl, theme) {
       applyConfig(mermaid, theme)
       return mermaid
     })
+    // 加载失败**不进永久缓存**：早先的实现会把失败的 Promise 一直留在 rendererPromise 上，
+    // 于是「预构建产物少一个 mermaid chunk（404）」这种一次性事故会变成「本页之后的每个
+    // 图表都报渲染失败，只能刷新」—— 清掉缓存，下一次渲染重新尝试，chunk 补齐后即时恢复。
+    rendererPromise.catch(() => { rendererPromise = null })
   }
   // 每次渲染前对齐主题：同档位是常数时间（只比字符串），换档时才真正 re-initialize。
   return rendererPromise.then((mermaid) => {

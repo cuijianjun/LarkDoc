@@ -1,6 +1,6 @@
 # 配置总览
 
-`new LarkDoc(options)` 的扁平配置会被翻译成编辑器内部的 `createLarkDocConfig` 结构。配置分为 9 个分组：`features` / `toolbar` / `commands` / `blockMenu` / `layout` / `text` / `network` / `limits` / `performance`。关闭某个能力只隐藏入口并阻止新操作，历史 JSON 仍可读取。
+`new LarkDoc(options)` 的扁平配置会被翻译成编辑器内部的 `createLarkDocConfig` 结构。配置分为 12 个分组：`features` / `toolbar` / `commands` / `blockMenu` / `layout` / `text` / `autosave` / `importExport` / `media` / `network` / `limits` / `performance`。关闭某个能力只隐藏入口并阻止新操作，历史 JSON 仍可读取。
 
 ## 完整配置示例
 
@@ -14,7 +14,7 @@ new LarkDoc({
   placeholder: '输入正文…',     // → text.placeholder
   readonly: false,              // → readonly
   theme: 'light',               // 'light' | 'dark'（当前默认浅色）
-  storage: 'none',              // 'none' | 'local'
+  storage: 'local',             // 'none' | 'local'（默认 local：开箱即自动保存）
   autofocus: false,             // 挂载后自动聚焦（只读态不聚焦）
   contentFormat: 'auto',        // 'auto' | 'vditor' | 'html'（旧数据归一化策略）
 
@@ -24,6 +24,21 @@ new LarkDoc({
 
   // ── 能力开关 ──
   features: { ai: false, folding: true, importExport: true, diagram: true },
+
+  // ── 自动保存 ──
+  autosave: { enabled: true, delay: 650 },
+
+  // ── 导入 / 导出：入口与格式各自独立 ──
+  importExport: {
+    importEnabled: true,               // false = 顶部「导入」按钮整颗消失
+    exportEnabled: true,               // false = 顶部「导出」下拉整颗消失
+    importLabel: '导入', exportLabel: '导出',
+    importFormats: ['html', 'json', 'md', 'docx'],
+    exportFormats: ['html', 'json', 'md', 'txt', 'docx', 'print'],
+  },
+
+  // ── 媒体在 HTML 产物里的写法 ──
+  media: { htmlMode: 'inline', linkText: '', newTab: true },
 
   // ── 上传 / AI / 网络 ──
   uploader: { upload: (file) => uploadToServer(file) },
@@ -54,7 +69,7 @@ new LarkDoc({
 | `placeholder` | `string` | `'输入正文，或输入 / 插入内容'` | 正文为空时的占位提示。 |
 | `theme` | `'light' \| 'dark'` | `'light'` | 主题。 |
 | `readonly` | `boolean` | `false` | 只读模式。 |
-| `storage` | `'none' \| 'local'` | `'none'` | 控制器默认不写浏览器草稿；显式 `'local'` 才开启。 |
+| `storage` | `'none' \| 'local'` | `'local'` | 草稿落点。默认 `'local'`（IndexedDB → localStorage → 内存三级降级），配合 `autosave` 开箱即自动保存；显式 `'none'` 则完全不落盘。 |
 | `autofocus` | `boolean` | `false` | 挂载后自动聚焦（只读态不聚焦）。 |
 | `contentFormat` | `'auto' \| 'vditor' \| 'html'` | `'auto'` | 旧数据归一化策略，详见[旧数据导入](/guide/vditor-import)。 |
 | `toolbarKeys` | `string[]` | - | 工具栏白名单，详见[工具栏配置](/guide/toolbar)。 |
@@ -93,6 +108,60 @@ new LarkDoc({
 | `templates` | 模板 | `importExport` | 导入导出 |
 | `callouts` | 高亮块 | `diagram` | 图表渲染（mermaid） |
 | `columns` | 分栏 | | |
+
+### autosave 自动保存
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `true` | 默认开启。改正文后 `delay` 毫秒自动落一次草稿。 |
+| `delay` | `650` | 防抖毫秒；`0` = 每次改动立刻落盘。非法值（负数 / NaN）回落到 650。 |
+
+关掉有两条**互不相同**的路，别混用：
+
+- `features.persistence: false` → 整套持久化下线（不读草稿、不显示保存状态、`save()` 也不落盘）；
+- `autosave.enabled: false` → 只关「自动」这一层，手动保存按钮 / `save()` 仍然可用。
+
+`storage: 'none'` 等价于关掉 persistence，因此**要自动保存就必须给它一个落点**（默认已经是 `'local'`）。
+
+### importExport 导入 / 导出
+
+两个入口各自独立显隐，格式也是逐项白名单；`features.importExport` 仍是它们共同的总闸。
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `importEnabled` | `true` | `false` = 顶部「导入」按钮整颗消失（不影响导出）。 |
+| `exportEnabled` | `true` | `false` = 顶部「导出」下拉整颗消失（不影响导入）。 |
+| `importLabel` / `exportLabel` | `'导入'` / `'导出'` | 按钮文案，可整体改写（多语言 / 业务口径）。 |
+| `importFormats` | `['html','json','md','docx']` | 允许导入的格式；同时决定文件选择框的 `accept`，不在列表里的扩展名会被直接挡下并提示。 |
+| `exportFormats` | `['html','json','md','txt','docx','print']` | 导出下拉里出现哪些项，**数组顺序即菜单顺序**。 |
+
+可用的格式 id 见 [导入 / 导出](/blocks/import-export)。数组会按内置目录顺序去重；传空数组或全部非法值会回落到默认列表（避免配错后两个入口都空着）。
+
+### media 媒体在 HTML 里的写法
+
+只影响 **HTML 产物**（`getHTML()`、导出 HTML、`saveHtml`）；JSON 产物永远是结构化块，可无损再导入。
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `htmlMode` | `'inline'` | `'inline'` = 直出 `<figure><img>` 等媒体本体，正文可直接渲染；`'link'` = 只留媒体地址（`<a href>` 链接），正文里不出现媒体本体。 |
+| `linkText` | `''` | `link` 档的链接文案模板，支持 `{name}` / `{url}` / `{type}` 占位；空串 = 用默认文案（图片地址 / 附件名 / 视频地址）。 |
+| `newTab` | `true` | `link` 档是否 `target="_blank"`。 |
+
+```ts
+// 全文内嵌（默认）
+new LarkDoc({ element: '#editor', media: { htmlMode: 'inline' } })
+
+// 只留地址：图片变 <a href="https://…">，适合贴到 IM / 邮件 / 工单系统
+new LarkDoc({
+  element: '#editor',
+  media: { htmlMode: 'link', linkText: '{name}', newTab: true },
+})
+
+// 临时覆盖一次（不影响全局配置）
+const html = doc.getHTML({ media: { mode: 'link', linkText: '查看原图' } })
+```
+
+`link` 档是**单向**的：链接态 HTML 再导回编辑器会变成普通超链接文本，媒体本体不会复原。要可逆请用 JSON。
 
 ### 内部分组直传
 

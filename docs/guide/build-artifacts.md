@@ -1,15 +1,16 @@
 # 打包产物与按需加载
 
-包一次构建产出四份产物，按「宿主怎么用」而不是「我们怎么编译」来分：
+发布包一次构建产出三份产物，另有第四份（UMD）只服务在线 Demo 与离线包，按「宿主怎么用」而不是「我们怎么编译」来分：
 
 | 产物 | 入口 | 适用宿主 | 首屏 JS（gzip 实测，2026-10-28 / v0.12.1） |
 | --- | --- | --- | --- |
 | `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 1.00 MB → gzip 273 kB；连带 `tiptap.esm.js` 446 kB（gzip 136 kB）与 `vendor.esm.js` 101 kB（gzip 38 kB）并行，合计 **gzip 446 kB** |
 | `dist/lark-doc.common.js` | `src/index.js` | Node / SSR / 只读 `main` 的老打包器（`main` 字段）；**webpack 4 的唯一入口** | 单文件 8.6 MB → gzip 2.34 MB（内联 mermaid 与全部按需区块，不拆） |
-| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` / `jsdelivr` 字段） | 1.56 MB → gzip 447 kB |
-| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联）；Vue 3 / React 走它 + 薄壳 | 1.60 MB → gzip 464 kB |
+| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联）；**`unpkg` / `jsdelivr` 指向它**，兼 CDN 直挂 | ≈1.67 MB → gzip ≈500 kB |
+| `dist/lark-doc.umd.min.js` | `src/index.js` | **不随包发布**：在线 Demo（`window.LarkDoc` 全局）与离线包用 | ≈1.51 MB → gzip ≈467 kB |
 
-跑一次 `npm run size` 就能看到同样这些数：它为每份产物定了上限（ESM 285 kB、UMD 465 kB、element 480 kB、CJS 2500 kB），超出即失败。
+跑一次 `npm run size` 就能看到同样这些数：它为每份产物定了上限（ESM 320 kB、element 512 kB、CJS 1170 kB、collab 90 kB、lite 308 kB，全 gzip），超出即失败。UMD 档不在 size-limit 里（不发布）。
+element 这一档余量最薄（实测 ≈500 kB / 上限 512 kB）：它把 Vue 内联进来，又比 UMD 多一层自定义元素壳，**别再把重依赖往首屏堆**。
 
 **除了 ESM，其余三份（CJS / UMD / element）都已整体降到 ES2018 语法。**
 0.13 起包里**没有 `browser` 字段**（有它 webpack 会跳过 ESM 直落「浏览器直挂档」，SSR 与浏览器就吃到
@@ -43,7 +44,7 @@ chunk 地址，宁可体积换「拿走就能用」。嫌大的宿主走 ESM 入
 | `office` | docx（导出）、mammoth（导入 .docx） | 导出 Word、导入 .docx |
 | `markdown` | marked、turndown | 导入 / 导出 Markdown |
 | `highlight` | highlight.js 内核与语言包 | 文档里出现代码块 |
-| `import-export` | 导入导出的编排代码 | 同上 |
+| `import-export` | 导入导出的编排代码 | 同上（**只有 element 产物单独成块**，CJS / UMD / ESM 并进主文件） |
 | `mermaid` | 图表渲染器（`import()` 懒 chunk，不是外置运行时文件） | 文档里出现 mermaid 图表块 |
 
 ### 初始区块（仅 ESM 产物拆分）
@@ -70,13 +71,15 @@ UMD / element 产物的首屏**永远只有一个文件**：它们的 `output.fi
 
 ```bash
 npm run build          # CJS 单文件（main）
-npm run build:umd      # UMD 压缩版 + 按需区块（unpkg）
+npm run build:umd      # UMD 压缩版 + 按需区块（在线 Demo / 离线包用；CDN 直挂由 element 兼任）
 npm run build:esm      # ES Module + 完整拆包（module）
 npm run build:element  # Web Component（Vue 内联 + CSS 注入）
 npm run build:analyze  # 以上四份 + 体积诊断输出（按依赖聚合 + 产物清单）
 ```
 
-`npm run check` 会依次跑完四份构建，再跑 Vditor 兼容回归。
+`npm run check` 会按 `scripts/ensure-artifacts.mjs` 的清单补齐缺失产物（CJS / ESM / collab /
+element / lite / 五特性包 / adapters），再跑 Vditor 兼容回归与 size-limit。UMD 档不在发布产物里，
+只服务 Demo 与离线包，所以不参与 `check`。
 
 ### 部署注意
 
@@ -89,7 +92,22 @@ npm run build:analyze  # 以上四份 + 体积诊断输出（按依赖聚合 + �
 - 想改用自己托管的 mermaid（例如复用宿主的 CDN 镜像）才需要两种做法之一：挂载前置 `window.mermaid`，
   或传 `performance.diagramScriptUrl`（走 `<script data-lark-doc-diagram="mermaid">` 注入分支）；
 - 二次打包（把 element 产物再打进自己的 bundle）时，chunk 地址会按**你自己的 chunk 目录**推导，
-  把它们拷到对应目录即可（本仓库 Demo 的 `copy-lark-doc-vendor` 就是干这个的）。
+  把它们拷到对应目录即可（本仓库 Demo 用 `node scripts/demo-sync-vendor.mjs` 做这件事）。
+
+### 在线 Demo 的 vendor 同步
+
+`docs/public/demo/vendor/` 是 `dist/` 的镜像，**必须整目录同步**：UMD / element 运行时按
+`document.currentScript.src` 推导 publicPath，只拷主文件的话 `lark-doc.umd.min.mermaid.js`
+会被请求成 404，表现就是「图表 / 公式 / 代码高亮全不出来」。
+
+```bash
+npm run demo:sync    # dist/ → docs/public/demo/vendor/（含按需 chunk、math.*.css、fonts/、VERSION）
+npm run demo:check   # 只校验，版本或大小不一致退出码 1（CI / 提交前用）
+npm run demo:build   # build + build:umd + build:element，最后自动同步
+```
+
+同步脚本会从 UMD 主文件里反向解析 `.u`（chunk 表）与 `.miniCssF`（按需 CSS），
+所以只要构建产物里有的区块，vendor 里就不会漏。
 
 ### 构建加速
 

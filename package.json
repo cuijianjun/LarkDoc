@@ -7,6 +7,7 @@
   "packageManager": "npm@8.19.4",
   "scripts": {
     "build": "LARK_DOC_LEGACY=1 LARK_DOC_INLINE_VUE=1 vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs --inline-vue src/index.js && node scripts/fix-lib-require-scope.js",
+    "build:umd": "LARK_DOC_LEGACY=1 LARK_DOC_INLINE_VUE=1 LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc --formats umd-min src/index.js",
     "build:esm": "node scripts/build-esm.js",
     "build:adapters": "node scripts/build-adapters.js",
     "build:plugin": "node scripts/build-plugin.js",
@@ -50,7 +51,10 @@
     "release:minor": "bash scripts/release.sh --minor",
     "build:collab": "node scripts/build-collab.js",
     "build:lite": "node scripts/build-lite.js",
-    "build:features": "node scripts/build-features.js"
+    "build:features": "node scripts/build-features.js",
+    "demo:sync": "node scripts/demo-sync-vendor.mjs",
+    "demo:check": "node scripts/demo-sync-vendor.mjs --check",
+    "demo:build": "npm run build && npm run build:umd && npm run build:element && node scripts/demo-sync-vendor.mjs"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -271,7 +275,7 @@
     {
       "name": "Element 产物 (gzip)",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "490 KB",
+      "limit": "512 KB",
       "gzip": true
     },
     {

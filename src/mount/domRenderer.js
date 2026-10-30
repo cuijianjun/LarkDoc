@@ -14,7 +14,8 @@ import { createLarkDocExtensions } from '../components/lark-doc/extensions'
 import { sanitizeHTML } from '../components/lark-doc/documentOperations'
 import { normalizeVditorHtml } from '../legacy'
 import { createEditorController } from '../editor/EditorController'
-import { createLarkDocConfig } from '../components/lark-doc/larkDocConfig'
+import { createLarkDocConfig, resolveMediaOptions } from '../components/lark-doc/larkDocConfig'
+import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createWorkspaceState, createWorkspaceController } from '../workspace/WorkspaceController'
 
 function prepareHTML(content, format) {
@@ -173,7 +174,9 @@ export function createDomRenderer() {
       const getEffectiveReadonly = () => Boolean(props.readonly || state.forcedReadonly)
       const refreshChange = () => {
         if (!editorController || destroyed) return
-        const payload = { html: editorController.getHTML(), json: editorController.getJSON(), text: editorController.getText() }
+        // 对外的 HTML 与 `LarkDoc#getHTML()` 同口径：跟随 config.media.htmlMode。
+        const html = applyMediaHtmlMode(editorController.getHTML(), resolveMediaOptions(state.editorConfig))
+        const payload = { html, json: editorController.getJSON(), text: editorController.getText() }
         state.html = payload.html
         workspaceController.queueSave()
         emit('update', payload)

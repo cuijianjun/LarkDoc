@@ -27,6 +27,15 @@ const target = process.env.LARK_DOC_TARGET || 'lib'
 const isLegacy = process.env.LARK_DOC_LEGACY === '1'
 const isElement = target === 'element'
 const isEsm = target === 'esm'
+/**
+ * UMD 档（`npm run build:umd`，只服务在线 Demo / 离线包，不随 npm 发布）。
+ * 它与 CJS 档同为 lib 构建，但**按需区块的加载方式必须不同**：CJS 走 `require`
+ * （Node / SSR 宿主没有 document），UMD 走 JSONP 注入 `<script>`。
+ * 早先 UMD 直接借用 CJS 的 `chunkLoading:'require'`，webpack 于是**不生成 jsonp
+ * 装载器**，`.e()` 只等 CSS 就返回 —— 表现就是「图表 / 公式 / 代码高亮全不出来，
+ * 且网络面板里连 chunk 请求都没有」（见 docs/guide/build-artifacts.md）。
+ */
+const isUmd = target === 'umd'
 /** 薄壳档：build-adapters.js 自己配 output / splitChunks，这里只需不套用统一的产出形态。 */
 const isAdapters = target === 'adapters'
 /**
@@ -201,12 +210,16 @@ module.exports = defineConfig({
         root: 'Vue',
       },
     },
-    output: isLib
+    output: isLib && !isUmd
       ? {
         // CJS 档要把按需区块落成兄弟文件，并且**用 require() 去加载**：
         // 默认是 web 口径（JSONP 注入 <script>），Node 里 `document` 不存在会直接炸，
         // 而这条路的典型宿主恰恰是 Node / SSR。改成 commonjs + require 后，
         // Node 与 webpack 宿主两种环境都能拿到按需区块。
+        //
+        // UMD 档（isUmd）反过来：它只活在被 `<script>` 直挂的浏览器里，必须保留
+        // webpack 默认的 JSONP 装载器，否则按需区块（math / mermaid / office /
+        // markdown / highlight）根本不会被请求。
         chunkFormat: 'commonjs',
         chunkLoading: 'require',
       }
