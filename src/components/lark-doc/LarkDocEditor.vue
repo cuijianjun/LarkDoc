@@ -378,7 +378,9 @@ export default {
         session: this.session,
         title: this.localTitle,
         prepareHTML: (content, format) => this.prepareHTML(content, format),
-        getMaxLength: () => this.effectiveMaxLength,
+        getMaxLength: () => this.effectiveMaxLength !== undefined
+          ? this.effectiveMaxLength
+          : Math.max(0, Number(this.maxLength) || 0),
         getNetwork: () => createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null),
         onBeforeContentReplace: () => {
           if (typeof this.closeBlockMenu === 'function') this.closeBlockMenu()
@@ -462,7 +464,19 @@ export default {
       return sanitizeHTML(legacy.html)
     },
     setContent(content, options = {}) {
-      return this.editorController ? this.editorController.setContent(content, options) : false
+      if (this.editorController) return this.editorController.setContent(content, options)
+      // 保留旧版命令式宿主 / 最小测试 harness 的调用契约：它们可能只提供
+      // editor + maxLength，而没有走 mounted 阶段创建 controller。
+      const controller = createEditorController({
+        editor: this.editor,
+        prepareHTML: (value, format) => this.prepareHTML(value, format),
+        getMaxLength: () => this.effectiveMaxLength !== undefined
+          ? this.effectiveMaxLength
+          : Math.max(0, Number(this.maxLength) || 0),
+        getNetwork: () => createNetworkPolicy(this.larkDocConfig ? this.larkDocConfig.network : null),
+        onAfterContentReplace: () => { this.savedSelection = null },
+      })
+      return controller.setContent(content, options)
     },
     updateTitle(value) { if (this.effectiveReadonly) return; this.localTitle = value; this.editorController?.setTitle(value); this.$emit('update:title', value) },
     onUpdate(transaction) {
