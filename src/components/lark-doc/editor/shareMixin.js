@@ -51,6 +51,7 @@ import {
   CAPABILITY_GRAY_STYLE,
   projectCapabilityUi,
   projectCapabilityUiStates,
+  readCapability as readPolicyCapability,
 } from '../../../core/policy/capability'
 
 // —— 几何：分享 popover（04 §4.1 ④-2 实测 batch60/61）——
@@ -294,8 +295,7 @@ export function buildShareClipboardText(link, password) {
  * 用 `!== false` 而不是 `=== true`：Session 的语义就是「只有显式 false 才禁用」。
  */
 export function readCapability(session, key) {
-  if (!session || typeof session.can !== 'function') return true
-  return session.can(key) !== false
+  return readPolicyCapability(session, key)
 }
 
 /** 无权限时这项 UI 怎么处置：见 `CAPABILITY_TREATMENTS`。未知 key 按 `allow`。 */

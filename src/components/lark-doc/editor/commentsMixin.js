@@ -37,6 +37,7 @@ import {
 import { unreadCount } from '../../../core/comments/index'
 import { bindThreads, resolveAnchorCodec } from '../../../core/comments/binding'
 import { normalizeAuthor } from '../../../core/comments/thread'
+import { projectCapabilityUi } from '../../../core/policy/capability'
 
 /** 面板与正文右缘的间距（实测 1214 - 1202，与修订面板同口径）。 */
 const COMMENT_ANCHOR_GUTTER = 12
@@ -209,9 +210,7 @@ export default {
     // —— 闸门与 Provider ——
     /** 单一判定入口：没配 session 时按 DEFAULT_CAPABILITIES（八项默认 true）放行。 */
     commentCan(capability) {
-      const session = this.session
-      if (!session || typeof session.can !== 'function') return true
-      return session.can(capability)
+      return projectCapabilityUi(this.session, capability).allowed
     },
     /** 写操作的统一闸门；返回 false 时调用方直接 return（UI 侧同步置灰）。 */
     commentAllowed(action) {

@@ -36,6 +36,7 @@
  * 下的 `.vue`，单测只能在 Node 里 import 纯 JS。所以与时间、分组、错误码、闸门有关的计算
  * 全部做成模块级纯函数并导出，`test/unit/versioning-ui.test.js` 直接 import 它们。
  */
+import { projectCapabilityUi } from '../../../core/policy/capability'
 import {
   E_SNAPSHOT_AUTHOR,
   E_SNAPSHOT_JSON_NOT_ALLOWED,
@@ -179,7 +180,7 @@ export function versionCapabilityGate(session, capability) {
   if (!session || typeof session.can !== 'function') {
     return { allowed: false, reason: '未配置 DocumentSession', missingProvider: true }
   }
-  if (!session.can(capability)) {
+  if (!projectCapabilityUi(session, capability).allowed) {
     return { allowed: false, reason: '当前用户没有该操作的权限', missingProvider: false }
   }
   const missingProvider = typeof session.getProvider === 'function' && !session.getProvider('versioning')

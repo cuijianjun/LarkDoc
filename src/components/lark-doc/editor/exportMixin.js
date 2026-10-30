@@ -24,6 +24,7 @@
  *   一张表，打开弹窗时**按档重设默认值**，从不继承上一次的选择。
  */
 import { exportDocx, exportMarkdown, exportPdf, safeFileName } from '../../../utils/export/index.js'
+import { projectCapabilityUi } from '../../../core/policy/capability'
 
 /**
  * 三档定义。顺序 = 「更多 → 下载为」二级菜单的实测顺序（Word / PDF / Markdown，
@@ -98,8 +99,7 @@ export default {
      * 而不是一律置灰 —— 编辑器在纯展示 demo 里经常没有 session。
      */
     exportCanExport() {
-      if (!this.session || typeof this.session.can !== 'function') return true
-      return !!this.session.can('canExport')
+      return projectCapabilityUi(this.session, 'canExport').allowed
     },
     /** 当前档位定义；未开 / 未知档返回 null，模板靠它整块 v-if。 */
     exportFormatDef() {

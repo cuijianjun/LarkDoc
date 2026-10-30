@@ -26,7 +26,7 @@ export const CAPABILITY_GRAY_STYLE = Object.freeze({
 
 export function readCapability(session, key) {
   if (!session || typeof session.can !== 'function') return true
-  return session.can(key) !== false
+  return session.can(key) !== false && (key === 'canView' || session.can('canView') !== false)
 }
 
 export function capabilityTreatment(key) {

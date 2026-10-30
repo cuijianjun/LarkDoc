@@ -21,7 +21,7 @@
 | T03 | P0 | TODO | 落地块级剪贴板与多块多选 | T01、T02 |
 | T04 | P1 | TODO | 收口引用/标题容器调用链 | T01、T03 |
 | T05 | P1 | TODO | 完成 A4 按钮块两 action 与刷新回读 | T00 |
-| T06 | P1 | DOING | 建立异步块异常与权限矩阵：五态契约、跨块 DOM/NodeView 状态投影、安全脱敏、共享 asyncState 持久化、统一 capability policy、浮层权限闸门与块菜单动作闸门已落地，跨账号/Provider 运行时验收仍待完成 | T01 |
+| T06 | P1 | DOING | 建立异步块异常与权限矩阵：五态契约、跨块 DOM/NodeView 状态投影、安全脱敏、共享 asyncState 持久化、统一 capability policy、浮层权限闸门与块菜单动作闸门已接线，跨账号/Provider 请求级拒绝与浏览器验收仍待完成 | T01 |
 | T07 | P1 | TODO | 完成跨账号、Safari 和无权限验收 | T06 |
 | T08 | P2 | TODO | 完成移动端 runtime 与离线同步 | T06、T07 |
 | T09 | P2 | TODO | 完成 survey/import/provider 写入闭环 | T01、T06 |
