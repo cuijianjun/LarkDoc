@@ -455,6 +455,10 @@
 .lark-doc .lark-doc-select-menu button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; text-align: left; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .lark-doc .lark-doc-select-menu button:hover, .lark-doc .lark-doc-select-menu button.is-highlight { background: var(--ld-bg-hover-select); }
 .lark-doc .lark-doc-select-menu .lark-doc-select-check { width: 14px; flex: 0 0 14px; color: var(--ld-text-check); }
+/* 选项文本：单行 = 一行文字；带 `hint` 的两行式（顶栏模式下拉）自动纵向排。 */
+.lark-doc .lark-doc-select-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lark-doc .lark-doc-select-item-label { font-size: inherit; line-height: inherit; }
+.lark-doc .lark-doc-select-item-hint { font-size: 12px; line-height: 18px; color: var(--ld-text-secondary); }
 /* 工具栏自适应折叠：tools-end 内层容器 + 「更多」弹层分节样式。 */
 .lark-doc .lark-doc-tools-end-inner { display: flex; align-items: center; gap: 1px; }
 .lark-doc .lark-doc-more-title { padding: 7px 10px 3px; font-size: 11px; color: var(--lark-doc-muted); border-bottom: 1px solid var(--ld-border-chrome); }
@@ -2226,31 +2230,47 @@
 
 /* ==================================================================
    P4-06 · 文档三态模式（编辑 / 修订 / 阅读）
-   - 顶栏按钮 84×32：03 只采集到 bg 为白底（不是主色）、文字为深灰、radius 6；
-     白底即 --ld-bg-surface-chrome，文字即 --ld-text，都复用现有 token（不另造文档色值）。
-     内部三个位置框（03 实测）：图标 16×22 @x+9、文字 28×22 @x+29、下拉箭头 26×20 @x+57。
-     所以 padding-left 9 + gap 4 正好把文字推到 x+29，箭头字形 12 落在那个 26 宽的位置框里。
-   - 下拉 180×160：三项各 170×50 ⇒ 四周各 5px；**不描边**（160 是含上下 5px 的整高，
-     再加 1px 边框会把三项挤出 2px）。fixed 由 toggleModeMenu 给坐标 —— 按钮在
-     `.lark-doc-header-actions` 里，那个容器 `overflow-x: auto`，absolute 会被裁。
+   **下拉完全复用共享原语**（`ui/select.js`，与工具栏「字号」同一套交互与弹层 UI）：
+   - 顶栏按钮 84×32：白底（--ld-bg-surface-chrome，不是主色）、文字深灰、radius 6。
+     内部三个位置框（03 实测）：图标 16×22 @x+9、文字 28×22 @x+29、箭头 26×20 @x+57。
+     所以 padding-left 9 + gap 4 正好把文字推到 x+29。
+   - 弹层几何交给原语（fixed / 下方放不下翻转 / 贴右边界左移），这里只覆写：
+     最小宽 340（三项都是「主标题 + 副标题」两行，见 docModes.MODE_MENU_MIN_WIDTH）、
+     **无 ✓ 列**（飞书这份菜单不画勾选列，选中态靠整行底色表达）、行内两行左对齐。
+   - 选中行配色**只能走主题 token**（--ld-bg-accent-active / --ld-text-accent-hover，
+     与块菜单 `.lark-doc-menu-active` 同一套语义）。别写 `--ld-bg-selected` /
+     `--ld-brand-content`：那两枚是写死的飞书蓝字面量，默认绿档不会跟着解析，
+     拉进来就是「选中底色不符合当前主题」——飞书档自己会把 accent 解析成蓝，不必手写。
    - 提示条 = 顶部中性条：1512×16 @y=32 / z 9999 / fixed 全部照抄 06 §6.2 的
      `.ud__msg-manager--top`，配色只取 --ld-bg-surface-chrome / --ld-text / --ld-shadow-menu。
      🔴 不复用右下角 `.lark-doc-toast`：那是琥珀 error 语义，切换成功用它会像报错。
    ================================================================== */
-.lark-doc .lark-doc-mode-switch { flex: 0 0 auto; }
-.lark-doc .lark-doc-mode-btn { display: flex; box-sizing: border-box; width: 84px; height: 32px; min-width: 84px; align-items: center; gap: 4px; padding: 0 0 0 9px; border: 0; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-family: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
-.lark-doc .lark-doc-mode-btn:hover:not(:disabled), .lark-doc .lark-doc-mode-btn:focus-visible:not(:disabled), .lark-doc .lark-doc-mode-btn[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text); outline: 0; }
-.lark-doc .lark-doc-mode-btn-icon { flex: 0 0 auto; }
-.lark-doc .lark-doc-mode-btn-label { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
-.lark-doc .lark-doc-mode-btn-caret { flex: 0 0 auto; color: var(--ld-text-icon-tertiary); }
-.lark-doc .lark-doc-mode-menu { position: fixed; z-index: 1050; display: grid; box-sizing: border-box; width: 180px; height: 160px; padding: 5px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-mode-select { flex: 0 0 auto; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-trigger { width: 84px; min-width: 84px; height: 32px; gap: 4px; padding: 0 0 0 9px; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-size: 14px; line-height: 1; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-trigger:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-trigger:focus-visible:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-trigger[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text); outline: 0; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-icon { flex: 0 0 auto; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-label { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-caret { flex: 0 0 auto; color: var(--ld-text-icon-tertiary); }
+/* `modes.allow` 只剩一项：按钮退化成静态文字。语义上仍禁用（点了不弹菜单、无 haspopup），
+   但**不要 disabled 的 0.45 透明度** —— 它不是「不可用的控件」，只是没有别的选项。
+   视觉保持与可切换态一致，只去掉 caret。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-trigger:disabled { opacity: 1; cursor: default; }
+.lark-doc .lark-doc-mode-select.is-static .lark-doc-select-caret { display: none; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu { z-index: 1050; padding: 5px; border-radius: 9px; }
 /* 必须显式写 color —— 通用规则 `.lark-doc button:hover:not(:disabled)` 会把菜单文字刷成强调色（同帮助菜单写法）。 */
-.lark-doc .lark-doc-mode-item { display: flex; flex-direction: column; box-sizing: border-box; width: 170px; height: 50px; align-items: flex-start; justify-content: center; gap: 2px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text); font-family: inherit; text-align: left; cursor: pointer; }
-.lark-doc .lark-doc-mode-item:hover:not(:disabled), .lark-doc .lark-doc-mode-item:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text); outline: 0; }
-.lark-doc .lark-doc-mode-item.is-active { background: var(--ld-bg-selected); }
-.lark-doc .lark-doc-mode-item.is-active .lark-doc-mode-item-label { color: var(--ld-brand-content); }
-.lark-doc .lark-doc-mode-item-label { color: inherit; font-size: 14px; line-height: 22px; }
-.lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button { gap: 0; padding: 5px 10px; border-radius: 6px; color: var(--ld-text); }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-menu button.is-highlight { color: var(--ld-text); }
+/* 选中行 = 「已生效」语义：底与字都取本档激活 token，跟 `.lark-doc-menu-active`（块菜单）
+   完全同一套。绿档解析成浅绿底 + 深绿字，飞书档自动解析成浅蓝底 + 蓝字（与截图一致）。
+   本选择器 (0,4,1) 高于原语里 `button:hover` / `.is-highlight` 的 (0,3,1)，
+   所以鼠标扫过选中行时底色不会被冲淡成 --ld-bg-hover-select（实测已验证，别再加
+   一串 :hover 补丁）。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active { background: var(--ld-bg-accent-active); }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active .lark-doc-select-item-label { color: var(--ld-text-accent-hover); }
+/* 这份菜单不画勾选列（截图口径）：整行宽度全给文案，选中态靠底色；
+   副标题保持原语的 --ld-text-secondary，只给主标题上强调色。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-check { display: none; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-item-label { font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
 
 /* ==================================================================

@@ -56,9 +56,9 @@ export default {
     // 「文档操作」按钮（layout.headerVisible）全在它身上。
     larkDocConfig() { this.refreshToolbar(); this.refreshTopBar() },
     /* ---------- 顶栏 ---------- */
+    // 模式下拉的开合不在这里：它由 `ui/select.js` 自己管（hover/click/Esc/外部点击），
+    // 顶栏只在 mode / 标题变化时重推一次状态。
     mode() { this.refreshTopBar() },
-    modeMenuOpen() { this.refreshTopBar() },
-    modeMenuPos() { this.refreshTopBar() },
     localTitle() { this.refreshTopBar() },
   },
   methods: {
@@ -109,7 +109,6 @@ export default {
         anchor,
         handlers: {
           updateTitle: (value) => this.updateTitle(value),
-          toggleModeMenu: (anchorEl) => this.toggleModeMenu(anchorEl),
           setMode: (id) => this.setMode(id),
         },
         actionsHost: this.$refs.actionsHost || null,
@@ -242,9 +241,9 @@ export default {
         mode: this.mode,
         modeLabel: this.modeLabel,
         modeIcon: this.modeIcon,
-        modeMenuOpen: this.modeMenuOpen,
-        modeMenuStyle: this.modeMenuStyle,
         modeOptions: this.modeOptions,
+        // `modes.allow` 只剩一项时顶栏按钮退化成静态文字（不弹菜单、不显示 caret）。
+        modeSwitchable: this.modeSwitchable,
       }
     },
 
@@ -309,6 +308,8 @@ export default {
           search: this.toolbarEnabled('search'),
           outline: this.toolbarEnabled('outline'),
           viewModes: this.toolbarEnabled('viewModes'),
+          // `modes.allow` 不含 read 时，「阅读模式」按钮没有意义（点了也不会切）→ 一并隐藏。
+          read: this.modesConfig.allow.indexOf('read') >= 0,
           shortcuts: this.toolbarEnabled('shortcuts'),
           docOps,
         },

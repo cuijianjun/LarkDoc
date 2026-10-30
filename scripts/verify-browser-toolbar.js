@@ -490,7 +490,7 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     const cs = getComputedStyle(bar)
     const titleInput = bar.querySelector('input')
     const brand = bar.querySelector('.lark-doc-brand')
-    const modeBtn = bar.querySelector('.lark-doc-mode-btn')
+    const modeBtn = bar.querySelector('.lark-doc-mode-select .lark-doc-select-trigger')
     const toolbar = host.querySelector('.lark-doc-toolbar')
     // 顶栏可见时的安全线（只在本实例范围内算）
     let safe = 8
@@ -541,21 +541,53 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     topbar.toolbarTop === '59px' && topbar.toolbarRectTop === 59,
     `top=${topbar.toolbarTop} rectTop=${topbar.toolbarRectTop}`)
 
+  // 模式下拉走共享下拉原语（与工具栏「字号」同一套）：这里量的就是原语产出的结构，
+  // 不再有 .lark-doc-mode-btn / .lark-doc-mode-menu 这种手搓类名。
   const modeMenu = await topPage.evaluate(async () => {
     const host = document.getElementById('toolbar-probe-host')
-    const btn = host.querySelector('.lark-doc-mode-btn')
+    const btn = host.querySelector('.lark-doc-mode-select .lark-doc-select-trigger')
     btn.click()
     await new Promise((resolve) => setTimeout(resolve, 460))
-    const menu = host.querySelector('.lark-doc-mode-menu')
+    const menu = host.querySelector('.lark-doc-mode-select .lark-doc-select-menu')
     if (!menu) return null
     const rect = menu.getBoundingClientRect()
     const btnRect = btn.getBoundingClientRect()
+    const rows = [...menu.querySelectorAll('[role="option"]')]
+    // 选中行配色必须等于本档的激活 token。变量值（如 #e3f2ea）与 computed 的
+    // rgb() 写法不同，所以借一个临时元素把 token 解析成 computed 色再比。
+    // 必须挂在 `.lark-doc` 内部：token 定义在根容器上，挂到 host（根容器的父亲）
+    // 上取不到，会变成空串。
+    const tokenHost = menu.closest('.lark-doc') || menu
+    const probe = document.createElement('span')
+    tokenHost.appendChild(probe)
+    probe.style.backgroundColor = 'var(--ld-bg-accent-active)'
+    const expectedActiveBg = getComputedStyle(probe).backgroundColor
+    probe.style.backgroundColor = 'var(--ld-text-accent-hover)'
+    const expectedActiveLabel = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    const activeRow = rows.find((el) => el.classList.contains('lark-doc-select-active'))
     return {
+      expectedActiveBg,
+      expectedActiveLabel,
+      activeBg: activeRow ? getComputedStyle(activeRow).backgroundColor : '',
+      activeLabelColor: activeRow
+        ? getComputedStyle(activeRow.querySelector('.lark-doc-select-item-label')).color
+        : '',
       role: menu.getAttribute('role'),
       w: Math.round(rect.width),
       top: Math.round(rect.top),
       gap: Math.round(rect.top - btnRect.bottom),
-      options: [...menu.querySelectorAll('[role="option"]')].map((el) => el.textContent.trim()),
+      triggerLabel: btn.textContent.trim(),
+      options: rows.map((el) => el.textContent.trim()),
+      // 两行式：主标题 + 副标题同在一个 .lark-doc-select-text 里
+      hints: rows.map((el) => {
+        const hint = el.querySelector('.lark-doc-select-item-hint')
+        return hint ? hint.textContent.trim() : ''
+      }),
+      // 两行 = 行高 22 + 18 + gap 2 + 上下 padding 10
+      rowH: rows.length ? Math.round(rows[0].getBoundingClientRect().height) : 0,
+      active: rows.findIndex((el) => el.classList.contains('lark-doc-select-active')),
+      checkHidden: rows.length ? getComputedStyle(rows[0].querySelector('.lark-doc-select-check')).display : '',
       expanded: btn.getAttribute('aria-expanded'),
     }
   })
@@ -563,9 +595,24 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!modeMenu && modeMenu.role === 'listbox' && modeMenu.options.length === 3 && modeMenu.options[0].includes('编辑') && modeMenu.options[1].includes('修订') && modeMenu.options[2].includes('阅读'),
     modeMenu ? modeMenu.options.join(' | ') : '未展开')
 
-  record('[顶栏] 模式菜单贴按钮下沿 2px 展开且宽 180px',
-    !!modeMenu && modeMenu.gap >= 2 && modeMenu.gap <= 3 && modeMenu.w === 180 && modeMenu.expanded === 'true',
-    modeMenu ? `gap=${modeMenu.gap} w=${modeMenu.w} expanded=${modeMenu.expanded}` : '')
+  record('[顶栏] 模式菜单贴按钮下沿 4px 展开、宽不小于 340、当前项高亮',
+    !!modeMenu && modeMenu.gap === 4 && modeMenu.w >= 340 && modeMenu.expanded === 'true'
+      // 高亮项必须就是按钮上显示的那一项（不写死 index：localStorage 里可能记着上次的模式）。
+      && !!modeMenu.options[modeMenu.active] && modeMenu.options[modeMenu.active].startsWith(modeMenu.triggerLabel),
+    modeMenu ? `gap=${modeMenu.gap} w=${modeMenu.w} expanded=${modeMenu.expanded} active=${modeMenu.active}/${modeMenu.triggerLabel}` : '')
+
+  record('[顶栏] 模式项为两行（主标题 + 副标题），且不画 ✓ 勾选列',
+    !!modeMenu && modeMenu.hints.filter(Boolean).length === 3 && modeMenu.rowH >= 46 && modeMenu.checkHidden === 'none',
+    modeMenu ? `hints=${modeMenu.hints.join(' / ')} rowH=${modeMenu.rowH} check=${modeMenu.checkHidden}` : '')
+
+  // 选中底色/文字**必须跟着当前主题走**（与块菜单 .lark-doc-menu-active 同一套激活 token）。
+  // 曾经的坑：写死 --ld-bg-selected / --ld-brand-content，那两枚在默认绿档是飞书蓝字面量，
+  // 菜单底下半截就冒出两片外来蓝，用户实测反馈「选中的背景色不符合当前主题」。
+  record('[顶栏] 模式菜单选中行取本档激活 token（底色 / 主标题色都跟着主题变）',
+    !!modeMenu && !!modeMenu.activeBg
+      && modeMenu.activeBg === modeMenu.expectedActiveBg
+      && modeMenu.activeLabelColor === modeMenu.expectedActiveLabel,
+    modeMenu ? `bg=${modeMenu.activeBg}(期望 ${modeMenu.expectedActiveBg}) label=${modeMenu.activeLabelColor}(期望 ${modeMenu.expectedActiveLabel})` : '')
 
   record('[安全线] 顶栏可见时安全线 = 顶栏 sticky 底边 58 + 6 = 64', topbar.safeTop === 64, `实得 ${topbar.safeTop}`)
 

@@ -5,6 +5,7 @@
  * 入口并阻止新操作，历史 JSON 仍可读取。
  */
 import { MAX_BLOCK_INDENT } from './documentOperations'
+import { normalizeModesConfig } from './editor/docModes'
 
 export const LARK_DOC_FEATURES = Object.freeze([
   'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
@@ -80,6 +81,29 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     // 顶部标题栏可见性：置 false 时整行隐藏，原有 header-actions 插槽内容
     // 自动移入工具栏右侧「⋯」下拉弹窗，功能入口不丢失。
     headerVisible: true,
+  },
+  /**
+   * 文档三态（编辑 / 修订 / 阅读）—— 顶栏「编辑」下拉、工具栏「阅读模式」按钮、
+   * 四个模式快捷键共用这一份，是**唯一**的配置入口：
+   *
+   * - `default`：初始模式。不在 `allow` 里时自动回落 `allow[0]`。
+   * - `allow`：下拉里出现的项（白名单）；顺序恒按「编辑 → 修订 → 阅读」。
+   *   只剩一项时顶栏按钮变成静态文字（不再弹菜单），`read` 不在里面时工具栏
+   *   的「阅读模式」按钮一并隐藏。
+   * - `persist`：是否把用户的选择写进 localStorage（键 `lark-doc:mode`）。
+   *   `false` = 每次打开都回到 `default`（发布页 / 一次性预览用）。
+   * - `labels`：覆盖项文案，只写要改的项（如 `{ read: '预览' }`）。
+   * - `shortcuts`：`E` / `⌘⌥E` / `⌘⌥X` / `⌘⌥V` 四个模式键是否生效。
+   *
+   * 🔴 协同权限仍压过这一切：`session.can('canEdit')` 为假时 `suggest` 会被降级成
+   * `read`（见 `core/blocks/interaction-mode.js`），配置无法把修订态强开出来。
+   */
+  modes: {
+    default: 'edit',
+    allow: ['edit', 'suggest', 'read'],
+    persist: true,
+    labels: {},
+    shortcuts: true,
   },
   text: {
     // 正文为空时的占位提示，命令式入口的 placeholder 配置项落到这里。
@@ -181,6 +205,7 @@ export function createLarkDocConfig(overrides = {}) {
     commands: mergeSection(DEFAULT_LARK_DOC_CONFIG.commands, source.commands),
     blockMenu: mergeSection(DEFAULT_LARK_DOC_CONFIG.blockMenu, source.blockMenu),
     layout: mergeSection(DEFAULT_LARK_DOC_CONFIG.layout, source.layout),
+    modes: mergeSection(DEFAULT_LARK_DOC_CONFIG.modes, source.modes),
     text: mergeSection(DEFAULT_LARK_DOC_CONFIG.text, source.text),
     network: mergeSection(DEFAULT_LARK_DOC_CONFIG.network, source.network),
     limits: mergeSection(DEFAULT_LARK_DOC_CONFIG.limits, source.limits),
@@ -192,6 +217,9 @@ export function createLarkDocConfig(overrides = {}) {
 
   // Unknown feature names are ignored by the UI, while known names always have a boolean value.
   LARK_DOC_FEATURES.forEach((name) => { config.features[name] = config.features[name] !== false })
+  // `modes` 与其它段不同：`allow` 是白名单数组、`default` 要和 `allow` 对齐，
+  // 只做 merge 不够 —— 归一化的唯一实现在 `editor/docModes.js`（那也有单测）。
+  config.modes = normalizeModesConfig(config.modes)
   config.layout.titleBarFixed = config.layout.titleBarFixed === true
   config.layout.toolbarFixed = config.layout.toolbarFixed === true
   config.layout.headerVisible = config.layout.headerVisible !== false

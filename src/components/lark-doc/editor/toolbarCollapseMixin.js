@@ -86,8 +86,9 @@ export default {
       if (this.toolbarEnabled('outline')) toolItems.push({ label: '目录', checked: this.outlineOpen, run: () => { this.outlineOpen = !this.outlineOpen } })
       if (this.toolbarEnabled('viewModes')) {
         this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, checked: this.widthMode === option.value, run: () => { this.widthMode = option.value } }))
+        // `modes.allow` 摘掉 read 后这条没有意义（`setMode('read')` 会被拦），跟着隐藏。
+        if (this.modesConfig.allow.indexOf('read') >= 0) toolItems.push({ label: this.reading ? '退出阅读' : '阅读模式', run: () => this.toggleReading() })
         toolItems.push(
-          { label: this.reading ? '退出阅读' : '阅读模式', run: () => this.toggleReading() },
           { label: this.fullscreen ? '退出全屏' : '全屏', run: () => this.toggleFullscreen() },
           { label: this.slides ? '退出演示' : '演示模式', run: () => this.toggleSlides() },
         )

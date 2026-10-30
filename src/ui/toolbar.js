@@ -470,7 +470,8 @@ export function createToolbar(options = {}) {
       { node: searchButton, on: features.search !== false },
       { node: outlineButton, on: features.outline !== false },
       { node: widthSelect.el, on: features.viewModes !== false },
-      { node: readingButton, on: features.viewModes !== false },
+      // 「阅读模式」还要 `modes.allow` 含 read —— 配置摘掉这一项后按钮点了也不会切。
+      { node: readingButton, on: features.viewModes !== false && features.read !== false },
       { node: fullscreenButton, on: features.viewModes !== false },
       { node: slidesButton, on: features.viewModes !== false },
       { node: shortcutsButton, on: features.shortcuts !== false },

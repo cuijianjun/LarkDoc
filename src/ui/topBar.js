@@ -6,24 +6,29 @@
  *
  *   ① `div.lark-doc-brand[aria-label="文档"]` —— 文本 `'✦ '` + `<span>文档</span>`
  *   ② `div.lark-doc-title-wrap` —— `input[aria-label="文档标题"]` + `span.lark-doc-title-sub`
- *   ③ `div.lark-doc-header-actions` —— `div.lark-doc-mode-switch`（按钮 + 下拉）+ 插槽宿主
+ *   ③ `div.lark-doc-header-actions` —— 共享下拉 `span.lark-doc-select.lark-doc-mode-select` + 插槽宿主
  *
  * 三条规矩同 `toolbar.js`。这里额外两条：
  *
  * - **整行是 `v-if`**：`layout.headerVisible === false` 时 `<header>` 必须真的不在
  *   DOM 里（断言量顶栏隐藏时的安全线是 51 而非 64，多留一个空 header 就会改变
  *   `bubbleSafeTop()` 之外的每一处布局）。
- * - **模式菜单必须 `position: fixed`**：`.lark-doc-header-actions` 带
- *   `overflow-x: auto`，absolute 会被裁掉。坐标由 `toggleModeMenu(anchor)` 算，
- *   所以按钮 click **必须把 `event.currentTarget` 原样透传上去**。
+ * - **模式切换走共享下拉原语**（`ui/select.js`，与工具栏「字号」同一套交互与 UI）：
+ *   hover 即开 / 移开 150ms 关 / 键盘 ↑↓ Enter Esc / 外部点击关 / 下方放不下翻转，
+ *   弹层 `position: fixed`（`.lark-doc-header-actions` 是 `overflow-x: auto`，absolute
+ *   会被裁掉）。所以本模块**不再自己管开合与坐标**，只把选项表推给 select；
+ *   容器宽度靠 `menuMinWidth`（340）撑，贴右边界时由 select 自己夹取。
+ *   旧的手搓按钮 / 菜单（`toggleModeMenu(anchor)` + `modeMenuPos`）已删除 ——
+ *   别把「自己算 fixed 坐标」那套再加回来，那正是两套下拉观感不一致的根源。
  *
  * `header-actions` 是 Vue 插槽，原生层接不住：调用方把 Vue 持有的宿主节点
  * （`actionsHost`）传进来，本模块把它 append 在 mode-switch **之后**（两者并存，
  * 历史上有一次「用 slot 替换掉 mode-switch」的改法让宿主控件全消失）。
  */
 
-import { iconNode, setIcon } from './icon'
+import { createSelect } from './select'
 import { setAttr } from './dom'
+import { MODE_MENU_MIN_WIDTH } from '../components/lark-doc/editor/docModes'
 
 /** 缺省副标题（`effectiveReadonly` 为假时的文案）。 */
 const SUB_EDITABLE = '单人编辑'
@@ -36,9 +41,8 @@ const DEFAULT_TITLE_PLACEHOLDER = '未命名文档'
  * @param {HTMLElement} options.host 插入到哪个元素里（`.lark-doc` 的 `<section>`）
  * @param {HTMLElement} [options.anchor] 插在它前面；不给则 append 到末尾
  * @param {object} [options.handlers] 回调表
- * @param {(() => void)|null} [options.handlers.updateTitle] 入参是输入框的 `value`
- * @param {((anchor: HTMLElement) => void)|null} [options.handlers.toggleModeMenu] 入参必须是按钮元素
- * @param {((id: string) => void)|null} [options.handlers.setMode]
+ * @param {((id: string) => void)|null} [options.handlers.updateTitle] 入参是输入框的 `value`
+ * @param {((id: string) => void)|null} [options.handlers.setMode] 下拉里选中某个模式
  * @param {HTMLElement|null} [options.actionsHost] Vue 持有的 `header-actions` 宿主节点
  * @returns {{ el: HTMLElement, update(state: object): void, destroy(): void }}
  */
@@ -86,88 +90,33 @@ export function createTopBar(options = {}) {
   const headerActions = document.createElement('div')
   headerActions.className = 'lark-doc-header-actions'
 
-  const modeSwitch = document.createElement('div')
-  modeSwitch.className = 'lark-doc-mode-switch'
-  const modeButton = document.createElement('button')
-  modeButton.type = 'button'
-  modeButton.className = 'lark-doc-mode-btn'
-  setAttr(modeButton, 'aria-haspopup', 'listbox')
-  // 三子节点顺序即契约：icon → label → caret。
-  const modeIcon = iconNode('mode-edit', 16, 'lark-doc-mode-btn-icon')
-  const modeLabel = document.createElement('span')
-  modeLabel.className = 'lark-doc-mode-btn-label'
-  const modeCaret = iconNode('caretSolid', 12, 'lark-doc-mode-btn-caret')
-  modeButton.appendChild(modeIcon)
-  modeButton.appendChild(modeLabel)
-  modeButton.appendChild(modeCaret)
-  // 透传 currentTarget：`toggleModeMenu(anchor)` 靠它 getBoundingClientRect() 算 fixed 坐标。
-  modeButton.addEventListener('click', (event) => call('toggleModeMenu', event.currentTarget))
+  // 模式切换 = 共享下拉原语（与工具栏「字号」同一套交互 / 同一套弹层 UI）。
+  // 只传口径：`className` 给宿主换皮、`menuMinWidth` 让三项标题+副标题一行放得下、
+  // `icon` 由 update 推（编辑/修订/阅读三枚图标不同）。开合 / 定位 / Esc 全在 select 里。
+  const modeSelect = createSelect({
+    ariaLabel: '文档模式',
+    className: 'lark-doc-mode-select',
+    menuMinWidth: MODE_MENU_MIN_WIDTH,
+    onChange: (id) => call('setMode', id),
+  })
+  // 触发按钮本体：`update()` 只负责往里推选项，`aria-haspopup` 这类语义按「能否切换」摘挂，
+  // 所以在这里留一个引用（select 的第一个子节点恒为 trigger）。
+  const modeTrigger = modeSelect.el.firstElementChild
 
-  const modeMenu = document.createElement('div')
-  modeMenu.className = 'lark-doc-mode-menu'
-  setAttr(modeMenu, 'role', 'listbox')
-  setAttr(modeMenu, 'aria-label', '文档模式')
-
-  modeSwitch.appendChild(modeButton)
-  headerActions.appendChild(modeSwitch)
+  headerActions.appendChild(modeSelect.el)
 
   el.appendChild(brand)
   el.appendChild(titleWrap)
   el.appendChild(headerActions)
 
   // ——————————————————— 状态推入 ———————————————————
-  let menuMounted = false
-  let optionsSignature = ''
-
-  /** `v-for` 的等价物：按 `id` 序列的签名增量重建（选项表是静态的，通常只建一次）。 */
-  function syncModeItems(list) {
-    const items = Array.isArray(list) ? list : []
-    const signature = items.map((item) => item.id).join('|')
-    if (signature !== optionsSignature) {
-      optionsSignature = signature
-      while (modeMenu.firstChild) modeMenu.removeChild(modeMenu.firstChild)
-      items.forEach((item) => {
-        const row = document.createElement('button')
-        row.type = 'button'
-        row.className = 'lark-doc-mode-item'
-        setAttr(row, 'role', 'option')
-        row.dataset.modeId = item.id
-        const label = document.createElement('span')
-        label.className = 'lark-doc-mode-item-label'
-        label.textContent = item.label
-        const hint = document.createElement('span')
-        hint.className = 'lark-doc-mode-item-hint'
-        hint.textContent = item.hint
-        row.appendChild(label)
-        row.appendChild(hint)
-        row.addEventListener('click', () => call('setMode', item.id))
-        modeMenu.appendChild(row)
-      })
-    }
-  }
-
-  function paintModeItems(list, current) {
-    const items = Array.isArray(list) ? list : []
-    const rows = modeMenu.children
-    for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i]
-      const isActive = row.dataset.modeId === current
-      if (row.classList.contains('is-active') !== isActive) row.classList.toggle('is-active', isActive)
-      setAttr(row, 'aria-selected', isActive ? 'true' : 'false')
-      // 文案随快照走（DOC_MODES 目前是常量，但口径上不假设它不变）。
-      const item = items[i]
-      if (!item) continue
-      const label = row.firstChild
-      const hint = row.lastChild
-      if (label && label.textContent !== item.label) label.textContent = item.label
-      if (hint && hint.textContent !== item.hint) hint.textContent = item.hint
-    }
-  }
+  // `modes.allow` 是否给了不止一项。只有一项时：按钮退化成静态文字（禁用 + 藏 caret）。
+  let switchable = true
 
   /**
    * 唯一写入口。`state` 由 `toolbarUiMixin` 算好，字段与 `TopBar.vue` 里读的
    * `ed.xxx` 一一对应：`headerVisible` / `title` / `titleLength` / `readonly` /
-   * `mode` / `modeLabel` / `modeIcon` / `modeMenuOpen` / `modeMenuStyle` / `modeOptions`。
+   * `mode` / `modeLabel` / `modeIcon` / `modeSwitchable` / `modeOptions`。
    */
   function update(state = {}) {
     // ① 整行 v-if：挂/摘都按锚点定位，插在锚点之前（锚点始终留在原地）
@@ -190,33 +139,27 @@ export function createTopBar(options = {}) {
     const sub = readonly ? SUB_READONLY : SUB_EDITABLE
     if (titleSub.textContent !== sub) titleSub.textContent = sub
 
-    // ③ 模式按钮
+    // ③ 模式下拉：选项表 / 当前值 / 前导图标 / 禁用态一次推完，开合与坐标不归这里管。
     const label = state.modeLabel == null ? '' : String(state.modeLabel)
-    if (modeLabel.textContent !== label) modeLabel.textContent = label
-    setAttr(modeButton, 'aria-label', `切换文档模式，当前${label}`)
-    setAttr(modeButton, 'aria-expanded', state.modeMenuOpen ? 'true' : 'false')
-    if (state.modeIcon) setIcon(modeIcon, state.modeIcon, 16)
-
-    // ④ 模式菜单
-    syncModeItems(state.modeOptions)
-    paintModeItems(state.modeOptions, state.mode)
-    const menuOpen = Boolean(state.modeMenuOpen)
-    if (menuOpen !== menuMounted) {
-      menuMounted = menuOpen
-      if (menuOpen) modeSwitch.appendChild(modeMenu)
-      else if (modeMenu.parentNode) modeMenu.parentNode.removeChild(modeMenu)
-    }
-    if (menuOpen && state.modeMenuStyle) {
-      // `:style` 是替换语义：只给 left/top 时不残留上一次的键。
-      const style = state.modeMenuStyle
-      if (modeMenu.__ldLeft !== style.left) { modeMenu.style.left = style.left; modeMenu.__ldLeft = style.left }
-      if (modeMenu.__ldTop !== style.top) { modeMenu.style.top = style.top; modeMenu.__ldTop = style.top }
-    }
+    const items = Array.isArray(state.modeOptions) ? state.modeOptions : []
+    switchable = state.modeSwitchable !== false
+    modeSelect.update({
+      options: items.map((item) => ({ value: item.id, label: item.label, hint: item.hint })),
+      value: state.mode,
+      disabled: !switchable,
+      icon: state.modeIcon || '',
+      ariaLabel: `切换文档模式，当前${label}`,
+    })
+    // 只有一项可选：不给「可切换」的语义（aria-haspopup 摘掉 + 藏 caret），
+    // 但**不加 disabled 的灰**（.is-static 在 CSS 里把 opacity 拉回 1）。
+    setAttr(modeTrigger, 'aria-haspopup', switchable ? 'listbox' : null)
+    if (modeSelect.el.classList.contains('is-static') !== !switchable) modeSelect.el.classList.toggle('is-static', !switchable)
   }
 
   function destroy() {
     // 插槽宿主是调用方的财产：先交还，再摘自己（否则 Vue 更新时会找不到节点）。
     if (actionsHost && actionsHost.parentNode === headerActions) headerActions.removeChild(actionsHost)
+    modeSelect.destroy()
     if (el.parentNode) el.parentNode.removeChild(el)
   }
 

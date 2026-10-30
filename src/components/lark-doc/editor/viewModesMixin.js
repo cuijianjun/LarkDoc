@@ -6,13 +6,13 @@
  */
 import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../documentOperations'
 import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
-import { DOC_MODES, MODE_ICONS, MODE_MENU_WIDTH, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText } from './docModes'
+import { DEFAULT_MODES_CONFIG, MODE_ICONS, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
 
 export default {
   data() { return {
     // P4-06：三态模式（07 §1）。`reading` 不再单独存一个布尔 —— 它由 mode 派生
     // （见 computed.reading），否则「顶栏切到阅读」和「工具栏点阅读模式」会有两个真相。
-    mode: 'edit', modeMenuOpen: false, modeMenuPos: null, modeToast: '', modeToastTimer: null,
+    mode: 'edit', modeToast: '', modeToastTimer: null,
     slides: false, fullscreen: false, widthMode: 'standard',
     // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
     // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
@@ -26,17 +26,25 @@ export default {
     // 阅读态的唯一来源。工具栏「阅读模式」按钮、顶栏副标题、effectiveReadonly 都读它，
     // 所以三态切换后这三处自动一致，不用各自同步。
     reading() { return this.mode === 'read' },
-    // 顶栏按钮只读这三样：文案、图标、下拉选项。
-    modeLabel() { return modeMeta(this.mode).label },
-    modeIcon() { return MODE_ICONS[this.mode] || MODE_ICONS.edit },
-    modeOptions() { return DOC_MODES },
-    // 下拉必须 fixed：`.lark-doc-header-actions` 带 `overflow-x: auto`，
-    // absolute 会被裁成不可见（而且会撑出横向滚动条）。坐标由 toggleModeMenu 算。
-    modeMenuStyle() {
-      const pos = this.modeMenuPos
-      if (!pos) return null
-      return { left: `${pos.left}px`, top: `${pos.top}px` }
+    /**
+     * 三态配置（`config.modes`）。这里再归一化一次而不是信任上游：
+     * `LarkDoc` 命令式入口会过 `createLarkDocConfig`，但宿主也可能直接把 config
+     * 传给 Vue 组件（`LarkDocWorkspace`），那条路不过归一化。函数幂等，成本是 3 个 id。
+     */
+    modesConfig() {
+      const raw = this.larkDocConfig && this.larkDocConfig.modes
+      if (!raw) return DEFAULT_MODES_CONFIG
+      return normalizeModesConfig(raw)
     },
+    // 顶栏按钮只读这几样：文案、图标、下拉选项、能不能弹菜单。
+    modeLabel() {
+      const found = this.modeOptions.filter((item) => item.id === this.mode)[0]
+      return found ? found.label : modeMeta(this.mode).label
+    },
+    modeIcon() { return MODE_ICONS[this.mode] || MODE_ICONS.edit },
+    modeOptions() { return resolveModeOptions(this.modesConfig) },
+    // `allow` 只剩一项时按钮退化成静态文字：点它弹一个「只有当前项」的菜单没有意义。
+    modeSwitchable() { return this.modeOptions.length > 1 },
     outlineItems() {
       const hiddenLevels = []
       return this.outline.reduce((items, item, index) => {
@@ -198,51 +206,58 @@ export default {
     // P4-06 第 2 条：三态模式切换（07 §1 / §1.1 / §12.1）。入口只有两个 ——
     // 顶栏「编辑」下拉与下面的键位；「更多」菜单里**刻意没有**修订入口（07 §12.1 实测）。
     // 修订态的标记 DOM / 建议面板属于第 3 条，本节只负责把状态切对。
+    /**
+     * `modesConfig`（computed）的兜底读法。真实组件里 computed 恒有值，但本仓库的单测会
+     * 用「只挂 methods 的假宿主」直测 onWindowKeydown / setMode —— 那时 computed 不存在，
+     * 直接读 `this.modesConfig.allow` 会抛 TypeError。回落到缺省值，比让假宿主炸掉合理。
+     */
+    modeRules() { return this.modesConfig || DEFAULT_MODES_CONFIG },
     setMode(id) {
-      if (!isDocMode(id) || id === this.mode) { this.modeMenuOpen = false; return }
+      // 不在 `allow` 里 = 宿主没开放这一项。快捷键、外部调用、下拉都汇到这里，
+      // 统一在一个点上拦，别在三个入口各判一次。
+      if (!isDocMode(id) || this.modeRules().allow.indexOf(id) < 0 || id === this.mode) return
       this.mode = id
-      this.modeMenuOpen = false
       this.persistMode(id)
       this.notifyMode(id)
       // 修订态开关**不重建编辑器**：只翻 tracker 的 `storage.active`。重建会丢选区、
       // 折叠与 undo 栈；guard 一下是为了让单测能单独挂本 mixin（没有 revisionMixin 时跳过）。
       if (typeof this.syncRevisionTracking === 'function') this.syncRevisionTracking()
     },
-    // 下拉开合 + 定位。按钮右缘对齐菜单右缘（菜单 180 宽），top = 按钮底边 + 2
-    // （+2 沿用 headingNumberMixin 的菜单贴合口径），左右夹在视口内防溢出。
-    toggleModeMenu(anchor) {
-      if (this.modeMenuOpen) { this.modeMenuOpen = false; return }
-      const rect = anchor && typeof anchor.getBoundingClientRect === 'function' ? anchor.getBoundingClientRect() : null
-      if (rect) {
-        const gap = 8
-        const left = Math.min(Math.max(gap, rect.right - MODE_MENU_WIDTH), Math.max(gap, window.innerWidth - MODE_MENU_WIDTH - gap))
-        this.modeMenuPos = { left: Math.round(left), top: Math.round(rect.bottom + 2) }
-      }
-      this.modeMenuOpen = true
-    },
-    closeModeMenu() { this.modeMenuOpen = false },
+    // 下拉开合 / 定位 / Esc / 外部点击一律归 `ui/select.js`（与工具栏「字号」同一套），
+    // 顶栏只把选项表推过去。这里不再有 toggleModeMenu / closeModeMenu —— 别再手搓一套。
     // 刷新 / 重新打开后保持（07 §1.1）。三闸门写法同 foldPersistMixin：
     // 拿不到 window（Node 单测）、隐私模式禁写都静默降级成「本会话有效」，不打断初始化。
     persistMode(id) {
+      // `modes.persist: false` = 不记忆选择，每次打开回到 default（发布页 / 一次性预览）。
+      if (!this.modeRules().persist) return
       try { window.localStorage.setItem(MODE_STORAGE_KEY, id) } catch (_) { /* 静默降级：模式仅本会话有效 */ }
     },
     restoreMode() {
+      const modes = this.modeRules()
+      if (!modes.persist) { this.mode = modes.default; return }
       let saved = ''
       try { saved = window.localStorage.getItem(MODE_STORAGE_KEY) || '' } catch (_) { saved = '' }
-      if (isDocMode(saved)) this.mode = saved
+      // 上次存的模式可能已被这次的 `allow` 摘掉（宿主改了配置）→ 照样回落 default。
+      this.mode = modes.allow.indexOf(saved) >= 0 ? saved : modes.default
     },
     // 「已切换为 X 模式」走顶部中性提示条（07 §1.1 文案 + 06 §6.2 位置/层级），
-    // 存活时长取 07 §10 ② 实测 toast 的 3302ms。
+    // 存活时长取 07 §10 ② 实测 toast 的 3302ms。文案覆盖过时按覆盖后的 label 拼。
     notifyMode(id) {
-      this.modeToast = modeToastText(id)
+      const found = resolveModeOptions(this.modeRules()).filter((item) => item.id === id)[0]
+      const text = found && found.label !== modeMeta(id).label ? `已切换为${found.label}模式` : modeToastText(id)
+      this.modeToast = text
       if (this.modeToastTimer) clearTimeout(this.modeToastTimer)
       this.modeToastTimer = setTimeout(() => { this.modeToast = ''; this.modeToastTimer = null }, MODE_TOAST_MS)
     },
     // 键位入口：返回 true 表示已消费，调用方直接 return，不再进其它分支
     // （现有 ⌘+F / ⌘+Shift+H / ⌘+/ 那条分支排斥 alt，模式键带 alt，两者不交叉）。
     applyModeShortcut(event) {
+      // `modes.shortcuts: false` 时整组模式键下线（宿主可能拿这几个组合键做别的事）。
+      const modes = this.modeRules()
+      if (!modes.shortcuts) return false
       const id = modeFromShortcut(event, isEditableTarget(event && event.target))
-      if (!id) return false
+      // 命中但宿主没开放这一项时**不** preventDefault —— 否则白吞用户的组合键。
+      if (!id || modes.allow.indexOf(id) < 0) return false
       event.preventDefault()
       this.setMode(id)
       return true

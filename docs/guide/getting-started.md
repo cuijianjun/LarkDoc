@@ -81,6 +81,7 @@ new LarkDoc({
 
   importExport: { exportFormats: ['html', 'md'] },   // 只留两项导出
   media: { htmlMode: 'inline' },                      // 'link' = 导出 HTML 时图片只留地址；远程 https 地址两档都原样保留
+  modes: { allow: ['edit', 'read'], default: 'edit' }, // 顶栏三态：不要修订入口、首屏编辑态
 
   onReady: ({ editor }) => console.log('ready', editor),
   onUpdate: ({ html }) => console.log('change'),

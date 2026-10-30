@@ -165,6 +165,7 @@ export class LarkDoc {
     if (source.autosave && typeof source.autosave === 'object') raw.autosave = { ...(raw.autosave || {}), ...source.autosave }
     if (source.importExport && typeof source.importExport === 'object') raw.importExport = { ...(raw.importExport || {}), ...source.importExport }
     if (source.media && typeof source.media === 'object') raw.media = { ...(raw.media || {}), ...source.media }
+    if (source.modes && typeof source.modes === 'object') raw.modes = { ...(raw.modes || {}), ...source.modes }
 
     // 工具栏：toolbarKeys / toolbarExcludes 为权威；未传时保留 config.toolbar。
     if (source.toolbarKeys || source.toolbarExcludes) {

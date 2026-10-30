@@ -69,7 +69,7 @@ const doc = new LarkDoc({
 | `callouts` | 高亮块 | `diagram` | 图表（mermaid） |
 | `columns` | 分栏 | | |
 
-## 三组高频配置
+## 几组高频配置
 
 ### autosave 自动保存
 
@@ -119,6 +119,39 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 
 `link` 档是**单向**的：链接态 HTML 再导回编辑器会变成普通超链接，图片不会复原。要可逆请用 JSON。
 
+### modes 顶栏「编辑 / 修订 / 阅读」
+
+顶栏右上角那个按钮的三种状态。全部字段都可选，不传就是全开：
+
+```js
+modes: {
+  default: 'edit',                          // 首屏模式 'edit' | 'suggest' | 'read'
+  allow: ['edit', 'suggest', 'read'],       // 下拉里保留哪几项
+  persist: true,                            // 是否记住用户上次选的
+  labels: { read: '预览' },                  // 改某一项的叫法
+  shortcuts: true,                          // 要不要 ⌘⌥E / ⌘⌥X / ⌘⌥V
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `default` | `'edit'` | 初始模式。不在 `allow` 里就自动回落到 `allow[0]`。 |
+| `allow` | 三项全留 | 下拉裁剪。只剩一项时按钮变成静态文字（无箭头、点不动）。传空数组或非法值会回落成三项全留 —— 想关切换请写 `allow: ['edit']`。 |
+| `persist` | `true` | `false` = 不读写 `localStorage`，每次打开都从 `default` 开始。 |
+| `labels` | `{}` | 只认 `edit` / `suggest` / `read` 三个键，值是非空字符串；提示条跟着改写（`已切换为预览模式`）。 |
+| `shortcuts` | `true` | `false` = 三套键位全部不接管，也不会 `preventDefault`，宿主可以自己用这些组合键。 |
+
+```js
+// 只读站：不留修订入口，打开即阅读态，也不记住状态
+new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 'read', persist: false } })
+```
+
+::: tip 配置压不过协同权限
+会话里没有编辑权限时，`suggest` 会被服务端降级成 `read` —— 配 `allow: ['suggest']` 也强开不出修订态。详见[协同与权限](/guide/collaboration)。
+:::
+
+**已知边界**：`shortcuts: false` 只关实际按键，快捷键帮助面板（⌘/）里那三行仍是静态文案，不会跟着消失。
+
 ## 其余分组
 
 不想用扁平项、想直接传内部结构也可以：
@@ -128,5 +161,6 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 | `commands` | `disabled` / `allow` | 按命令 id 禁用或白名单。 |
 | `blockMenu` | `disabled` / `allow` | 块句柄菜单动作裁剪（`duplicate` / `delete` 等）。 |
 | `layout` | `headerVisible` / `titleBarFixed` / `toolbarFixed` | 顶栏显隐与吸附。`headerVisible: false` 时操作入口收进工具栏「⋯」。 |
+| `modes` | `default` / `allow` / `persist` / `labels` / `shortcuts` | 顶栏编辑 / 修订 / 阅读三态，见上一节。 |
 | `limits` | `titleLength` 120、`maxLength` 0、`maxImageSize` 5MB、`maxTableRows` 9、`maxIndent` 5、`maxSnapshots` 20 | 各项上限（`maxLength: 0` = 不限）。 |
 | `performance` | `changeDebounce` 16、`syntaxHighlight` true、`diagramScriptUrl` null | 通知防抖、代码高亮、图表脚本地址（默认走包内懒加载，内网不用配）。 |
