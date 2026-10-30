@@ -124,7 +124,7 @@
 ### Tests and implementation
 
 - [x] T046 [P] [US6] 在 `scripts/perf/measure.mjs`、`scripts/perf/report.mjs` 和 `test/unit/perf-gate.test.js` 建立首屏、击键、decorations、滚动 FPS、保存、堆内存、2,000 块和包体基线（空闲机器实测 seed=42、2,000 块：首屏 435.3ms、击键 p95/p99 558.5/1007.8ms、装饰增量 3.1ms、稳态滚动 60.7 FPS、保存 6.1ms、堆 14.7MB；性能门禁 65 项通过；Element gzip 372.76KB/480KB；完整 check:perf 因首次并发构建尾流触发 EPIPE，拆分 build:element 后独立 measure/report 通过）
-- [ ] T047 [P] [US6] 在 `test/unit/derived-index.test.js`、`test/unit/derived-hydration.test.js`、`test/unit/derived-snapshot.test.js` 和 `test/unit/storage-idb.test.js` 验证仅按基线证据启用的优化
+- [x] T047 [P] [US6] 在 `test/unit/derived-index.test.js`、`test/unit/derived-hydration.test.js`、`test/unit/derived-snapshot.test.js` 和 `test/unit/storage-idb.test.js` 验证仅按基线证据启用的优化（派生索引增量/冷路径、早期目录水合与 pending 闸门、快照指纹判伪、IndexedDB 分层与 512KB 边界共 66 项通过；T046 实测装饰增量 3.1ms、滚动 60.7 FPS，暂无证据支持新增窗口化或额外重构）
 - [ ] T048 [US6] 在 `src/core/derive/`、`src/core/storage/`、`src/components/lark-doc/extensions.js` 和 `src/components/lark-doc/workspace.js` 实施必要的脏区更新、DerivedIndex 或 IndexedDB 分层
 - [ ] T049 [US6] 在 `src/components/lark-doc/editor/`、`src/core/blocks/web-embed.js` 和相关需求文档中明确白板/画板是 webEmbed 骨架还是版本化延期，不在 core 自研 Canvas
 - [ ] T050 [US6] 运行 `npm run check:gate`、`npm run check:artifacts`、`npm run verify:all`，同步 `spec.md`、根 `tasks.md` 和 `requirements/` 状态，记录首个失败点和 BLOCKED 环境
