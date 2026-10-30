@@ -2,7 +2,7 @@
   <section
     ref="root"
     class="lark-doc"
-    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-mode-suggest': mode === 'suggest', 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
+    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-mode-suggest': mode === 'suggest', 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-narrow': isNarrowViewport, 'lark-doc-landscape': viewportOrientation === 'landscape', 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
     @keydown.esc="closeOverlay"
   >
     <a
