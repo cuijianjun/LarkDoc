@@ -110,6 +110,29 @@ describe('official embedded provider adapters', () => {
     expect(providers[6].capabilities.operations).toContain('insertCommentSuggestion')
   })
 
+  it.each([
+    { allowed: false, code: 'PERMISSION_DENIED' },
+    { status: 'deny', requestId: 'req-deny' },
+    { status: 'approval_required', permissionVersion: 7 },
+    { ok: false, reason: 'host rejected' },
+    { code: 403, message: 'forbidden' },
+  ])('rejects host business failure instead of resolving success: %j', async (result) => {
+    const provider = createPresentationProvider({ request: async () => result })
+    await expect(provider.publish({}, { presentationId: 'p1' })).rejects.toMatchObject({
+      code: typeof result.code === 'string' && result.code ? result.code : 'ERR_PROVIDER_REJECTED',
+      requestId: result.requestId || null,
+    })
+  })
+
+  it('preserves successful host payloads and transport errors', async () => {
+    const payload = { code: 0, resourceId: 'p1', status: 'ready' }
+    const provider = createPresentationProvider({ request: async () => payload })
+    await expect(provider.get({}, {})).resolves.toBe(payload)
+    const error = Object.assign(new Error('offline'), { code: 'NETWORK_ERROR' })
+    const failed = createPresentationProvider({ request: async () => { throw error } })
+    await expect(failed.get({}, {})).rejects.toBe(error)
+  })
+
   it('requires host transport for every factory', () => {
     expect(() => createMiajiProvider()).toThrow(/host request/i)
     expect(() => createSubscriptionProvider()).toThrow(/host request/i)
