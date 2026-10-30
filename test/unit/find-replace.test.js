@@ -19,7 +19,8 @@ import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDis
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
 const darkCss = fs.readFileSync(path.join(root, 'src/components/lark-doc/theme-dark.css'), 'utf8')
-const panel = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/SearchPanel.vue'), 'utf8')
+const panel = fs.readFileSync(path.join(root, 'src/ui/searchPanel.js'), 'utf8')
+const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/searchPanelUiMixin.js'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
 
 /** 取一条单行 CSS 规则（本仓库 CSS 一律一行一条，读整行即可）。 */
@@ -41,6 +42,7 @@ function createEd(overrides) {
     featureEnabled(name) { return ed.features[name] !== false },
     focus() { ed.focusCalls += 1 },
     $nextTick(fn) { fn() },
+    focusSearchPanel() { ed.panelFocusCalls += 1 },
     $refs: { searchInput: { focus: () => { ed.panelFocusCalls += 1 } } },
   }
   Object.assign(ed, viewModesMixin.methods, overrides || {})
@@ -205,24 +207,26 @@ describe('P4-05 查找替换 —— 面板规格（04 §3.2 实测像素）', ()
 
 describe('P4-05 查找替换 —— 组件契约与深档同步', () => {
   it('高度按 tab 分叉：查找 186 / 替换 286（04 §3.2）', () => {
-    expect(panel).toMatch(/isReplace \? 286 : 186/)
+    expect(panel).toContain('height: 186')
+    expect(panelMixin).toContain("this.searchTab === 'replace' ? 286 : 186")
   })
 
   it('保留 ref="searchInput" 与 focus() 转发 —— 父组件与 toolbarCollapseMixin 靠它聚焦', () => {
-    expect(panel).toMatch(/ref="searchInput"/)
-    expect(panel).toMatch(/focus\(\) \{ const input = this\.\$refs\.searchInput; if \(input\) input\.focus\(\) \}/)
-    expect(editorVue).toMatch(/<SearchPanel\n\s+ref="searchInput"/)
+    expect(panel).toContain('input = document.createElement')
+    expect(panel).toContain('focus() { if (input) input.focus() }')
+    expect(editorVue).toContain('<div ref="searchPanelHost" />')
+    expect(editorVue).toContain('this.mountSearchPanel()')
   })
 
   it('计数器 N / M：无匹配 0 / 0，有匹配是 1-based 当前序号', () => {
-    expect(panel).toMatch(/return `\$\{total \? this\.ed\.searchIndex \+ 1 : 0\} \/ \$\{total\}`/)
+    expect(panelMixin).toContain('counterText: `${total ? this.searchIndex + 1 : 0} / ${total}`')
   })
 
   it('刻意不做 More / 区分大小写 / 全字匹配 / 正则（④-3 实测不存在）：只有四个动作按钮、没有开关控件', () => {
-    // 按钮文案独占一行（eslint vue/multiline-html-element-content-newline），两侧要能吃空白。
-    const labels = [...panel.matchAll(/>\s*([^\s<>{}\n][^<>{}\n]*?)\s*<\/button>/g)].map((m) => m[1])
+    const labels = [...panel.matchAll(/setText\([^,]+, '([^']+)'\)/g)].map((m) => m[1])
+      .filter((label, index) => !(label === '查找' && index === 2) && label !== '替换为')
     expect(labels).toEqual(['查找', '替换', '全部替换', '替换', '上一处', '下一处'])
-    expect(panel).not.toMatch(/type="checkbox"/)
+    expect(panel).not.toContain('checkbox')
   })
 
   it('浅档每个 --ld-fr-* 都在深档有同名覆盖（少一个面板就透明）', () => {
