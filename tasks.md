@@ -293,7 +293,7 @@
 
 - **优先级**：P2
 - **状态**：DONE（T046–T050 已完成；T032 真实 Safari/移动端运行器仍 BLOCKED）
-- **T050 门禁收口**：`test:unit` 93 个文件 / 2056 项断言通过，但出现 8 个 forks worker 启动超时错误；`check:gate` 已修复首个 lint 代码错误（`viewModesMixin.js` 重复 `beforeDestroy`），当前仅剩 VersionPanel.vue 格式 warning；`verify:all` 12/12 未通过，主要为浏览器导航 60 秒和目标 240 秒超时；产物构建首个失败为 Thread Loader broker timeout。
+- **T050 门禁收口**：首次并发单测为 93 个文件 / 2056 项断言通过，但有 8 个 forks worker 启动超时；修复 `viewModesMixin.js` 重复 `beforeDestroy` 及不完整 `window` 兼容后，单 worker 重跑为 90 个文件 / 2028 项断言通过、0 failed（DOM 快照因 playwright-core 不可解析而 skip）。`check:gate` lint 已无 error，仅剩 VersionPanel.vue 格式 warning；`verify:all` 12/12 未通过，主要为浏览器导航 60 秒和目标 240 秒超时；产物构建首个失败为 Thread Loader broker timeout。
 - **需求来源**：`requirements/09 §2.4/§3.7/§5.9`
 - **目标**：先测真实基线，再按预算决定实现 DerivedIndex、脏区更新、IndexedDB 分层和条件性虚拟化。
 - **受影响源码**：

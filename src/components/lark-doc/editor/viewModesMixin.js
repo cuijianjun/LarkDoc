@@ -71,7 +71,7 @@ export default {
     }
   },
   beforeDestroy() {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
       window.removeEventListener('resize', this.syncViewportState)
       window.removeEventListener('orientationchange', this.syncViewportState)
     }

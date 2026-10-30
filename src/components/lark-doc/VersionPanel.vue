@@ -200,14 +200,42 @@
     >
       <header class="lark-doc-version-trash-header">
         <strong>版本回收站</strong>
-        <button type="button" @click="ed.closeVersionTrash()">关闭</button>
+        <button
+          type="button"
+          @click="ed.closeVersionTrash()"
+        >
+          关闭
+        </button>
       </header>
-      <p v-if="!ed.versionDeletedList.length" class="lark-doc-version-empty">回收站为空</p>
-      <ul v-else class="lark-doc-version-trash-list">
-        <li v-for="item in ed.versionDeletedList" :key="item.id">
+      <p
+        v-if="!ed.versionDeletedList.length"
+        class="lark-doc-version-empty"
+      >
+        回收站为空
+      </p>
+      <ul
+        v-else
+        class="lark-doc-version-trash-list"
+      >
+        <li
+          v-for="item in ed.versionDeletedList"
+          :key="item.id"
+        >
           <span>{{ ed.versionItemName(item) }} · {{ item.label || '未命名版本' }}</span>
-          <button type="button" :disabled="ed.versionTrashBusy" @click="ed.restoreDeletedVersion(item.id)">恢复</button>
-          <button type="button" :disabled="ed.versionTrashBusy" @click="ed.purgeDeletedVersion(item.id)">彻底删除</button>
+          <button
+            type="button"
+            :disabled="ed.versionTrashBusy"
+            @click="ed.restoreDeletedVersion(item.id)"
+          >
+            恢复
+          </button>
+          <button
+            type="button"
+            :disabled="ed.versionTrashBusy"
+            @click="ed.purgeDeletedVersion(item.id)"
+          >
+            彻底删除
+          </button>
         </li>
       </ul>
     </section>
