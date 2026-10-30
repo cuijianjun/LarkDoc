@@ -32,11 +32,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # 先构建、后单测。原因：test/unit/plugin-contract.test.js 校验的是**真实产物**
-      # （dist/plugin.mjs、dist/lark-doc-element.umd.min*.js、dist/lark-doc.css），
-      # 干净仓库上「先单测」会直接抛 `[lark-doc] 找不到 dist 目录` 送 4 条红。
-      # 本地之所以看不出：npm run check 走 check:gate（deploy/code/ui/lint），本来就不含单测，
-      # 单测只在 CI 跑，于是这个顺序缺陷一直只在线上暴露。
+      # 先构建、后单测 + size。原因：单测（plugin-contract）和 size-limit（collab / lite 两档）
+      # 读的都是**真实产物**，旧顺序在干净仓库上必红两处：
+      #   1. 先单测 → `[lark-doc] 找不到 dist 目录`（CI #15/#16 红在这里）；
+      #   2. 只跑 4 个 target 就测 size → `Size Limit can't find files at
+      #      dist/lark-doc-collab.esm.js` / `dist/lark-doc-lite.esm.js`。
+      # 所以下面这份构建清单必须与 package.json 的 check:artifacts（scripts/ensure-artifacts.mjs）
+      # 的 ARTIFACTS 对齐 —— 那边是发布链路唯一真源，漏一个这里就会红。
+      # 本地看不出的原因：npm run check 走 check:gate（deploy/code/ui/lint），本就不含单测。
       - name: Build (commonjs)
         run: npm run build
 
@@ -48,6 +51,21 @@ jobs:
 
       - name: Build (element umd)
         run: npm run build:element
+
+      - name: Build (collab)
+        run: npm run build:collab
+
+      - name: Build (lite)
+        run: npm run build:lite
+
+      - name: Build (features)
+        run: npm run build:features
+
+      - name: Build (adapters)
+        run: npm run build:adapters
+
+      - name: Build (plugin)
+        run: npm run build:plugin
 
       - name: Unit tests (vitest)
         run: npm run check:unit
