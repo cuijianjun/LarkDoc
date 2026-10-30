@@ -72,7 +72,7 @@
 ### Implementation
 
 - [x] T027 [US3] 在 `src/core/blocks/shared.js`、`src/core/blocks/unknown-block.js` 和异步块 schema 中统一 `AsyncBlockState` 与恢复动作
-- [x] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影（统一 policy 已成为分享/顶栏、评论/版本/导出既有权限闸门和块菜单动作入口的共同真源；security Provider 保持服务端最终拒绝边界）
+- [ ] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影（统一 policy 已接入 shareMixin 和块菜单 session/异步状态交集；评论/版本/导出仍有独立权限读取，security 运行时拒绝和跨浮层统一接线待补，不能以现有回归通过认定完成）
 - [x] T029 [US3] 在 `src/core/blocks/file-block.js`、`src/core/blocks/image.js`、`src/core/blocks/sheet.js`、`src/core/blocks/web-embed.js`、`src/core/blocks/bookmark.js` 接入状态矩阵和无覆盖失败语义（共享 asyncState 持久化、统一 DOM class/data 属性和 NodeView 同步已完成；更高层失败文案仍由各块既有实现负责）
 
 ## Phase 6: User Story 4 - 协同、评论、版本与跨端恢复 (Priority: P2)
@@ -83,7 +83,7 @@
 
 ### Tests
 
-- [ ] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试
+- [ ] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已补评论乱序回读、切文档/账号、销毁后旧响应与无阅读权限场景；相关三文件 84 项通过；mention 实体降级与跨会话回读仍待补）
 - [ ] T031 [P] [US4] 在 `test/unit/versioning-ui.test.js`、`test/unit/mode-switch.test.js` 和 `test/unit/storage-idb.test.js` 验证只读版本、窄屏/横屏和 512KB 离线快照边界
 - [ ] T032 [P] [US4] 新增 `test/browser/safari-comments.test.js` 与移动端浏览器场景；运行器不可用时将真实验证标记 BLOCKED，并保留单元替代证据
 - [ ] T033 [US4] 在 `test/collab/converge.test.js` 和 `test/collab/hocuspocus-wire.test.js` 验证离线恢复、重复回调、冲突合并和远端不覆盖

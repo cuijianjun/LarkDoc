@@ -198,6 +198,7 @@ export default {
     window.addEventListener('resize', this.onCommentViewportChange)
   },
   beforeDestroy() {
+    this._commentLoadToken = null
     window.removeEventListener('scroll', this.onCommentViewportChange, true)
     window.removeEventListener('resize', this.onCommentViewportChange)
     if (this.editor && this.editor.view && this.editor.view.dom) {
@@ -226,14 +227,31 @@ export default {
 
     // —— 读取与绑定 ——
     async loadComments() {
+      const token = {}
+      this._commentLoadToken = token
+      const session = this.session
       const provider = this.commentProvider()
-      if (!provider) {
+      if (!provider || !this.commentCan('canView')) {
         this.commentThreads = []
         this.commentPanels = []
         return []
       }
-      const documentId = this.session && this.session.documentId ? this.session.documentId : ''
-      const threads = await provider.list({ documentId })
+      const documentId = session && session.documentId ? session.documentId : ''
+      const user = session && session.user
+      const current = () => this._commentLoadToken === token
+        && this.session === session
+        && (session && session.documentId ? session.documentId : '') === documentId
+        && (session && session.user) === user
+        && this.commentProvider() === provider
+        && this.commentCan('canView')
+      let threads
+      try {
+        threads = await provider.list({ documentId })
+      } catch (error) {
+        if (!current()) return []
+        throw error
+      }
+      if (!current()) return []
       this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, threads, this.commentAnchorCodec)
       this.updateCommentPanels()
       return this.commentThreads
