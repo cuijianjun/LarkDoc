@@ -8,6 +8,7 @@ import { closeHistory } from '@tiptap/pm/history'
 import { clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, stepBlockIndent } from '../documentOperations'
 import { isBlockActionEnabled } from '../larkDocConfig'
 import { blockActions, blockTypeActions } from './constants'
+import { asyncBlockActionCapability } from '../../../core/policy/capability'
 
 export default {
   data() { return {
@@ -239,7 +240,7 @@ export default {
       this.blockColorMenuStyle = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
     },
     blockAlignAction(id) {
-      if (!this.writable() || !this.featureEnabled('blockStyle')) return
+      if (!this.writable() || !this.featureEnabled('blockStyle') || !this.blockActionAllowed('edit')) return
       const range = this.handleActionRange()
       if (!range) return
       this.closeBlockMenu()
@@ -257,7 +258,7 @@ export default {
       this.applyBlockAttribute(target, 'textAlign', id)
     },
     blockColorAction(value) {
-      if (!this.writable() || !this.featureEnabled('blockStyle')) return
+      if (!this.writable() || !this.featureEnabled('blockStyle') || !this.blockActionAllowed('edit')) return
       const range = this.handleActionRange()
       const target = this.blockTextblockTarget(range)
       if (!target) return
@@ -270,7 +271,7 @@ export default {
       this.editor.view.focus()
     },
     blockTypeAction(id) {
-      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
+      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id) || !this.blockActionAllowed('edit')) return
       const range = this.handleActionRange()
       const node = nodeAtSafe(this.editor?.state?.doc, range?.from)
       if (!range || !node || !['paragraph', 'heading'].includes(node.type.name)) return
@@ -319,7 +320,7 @@ export default {
       return { row: rowHeader, column: columnHeader }
     },
     tableHandleAction(id) {
-      if (!this.writable() || !this.featureEnabled('tables')) return
+      if (!this.writable() || !this.featureEnabled('tables') || !this.blockActionAllowed('edit')) return
       const range = this.handleRange
       if (!range) return
       // 表格命令都按当前选区定位：先把光标落进表格（isActive('table') 才成立）。
@@ -359,8 +360,14 @@ export default {
       this.closeBlockMenu()
       this.tableAction(id)
     },
+    blockActionAllowed(id) {
+      const node = this.handleBlockNode && this.handleBlockNode()
+      const state = node && node.attrs ? node.attrs.asyncState : null
+      const action = id === 'delete' ? 'delete' : (id === 'duplicate' ? 'duplicate' : (['moveUp', 'moveDown'].includes(id) ? 'move' : (['copy', 'cut'].includes(id) ? 'copy' : 'edit')))
+      return asyncBlockActionCapability(action, state, this.session).allowed
+    },
     blockAction(id) {
-      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
+      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id) || !this.blockActionAllowed(id)) return
       this.closeBlockMenu()
       const selectedRange = this.handleActionRange()
       const sectionRange = ['copy', 'cut', 'duplicate', 'moveUp', 'moveDown'].includes(id) ? this.headingActionRange(selectedRange) : null

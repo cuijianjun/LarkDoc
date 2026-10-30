@@ -73,3 +73,41 @@ export function projectCapabilityUiStates(session, asyncState = null) {
   })
   return result
 }
+
+/**
+ * 将块菜单动作投影到统一异步块状态矩阵。返回值同时供 UI 置灰和动作入口
+ * 使用，避免出现「按钮看起来可点、BlockAPI 才拒绝」的分叉口径。
+ */
+export function asyncBlockActionCapability(action, asyncState = null, session = null) {
+  const state = asyncState && typeof asyncState === 'object' ? asyncState.state : asyncState
+  const capabilities = state ? projectCapabilitiesForState(state) : projectCapabilitiesForState('empty')
+  const required = {
+    read: 'read',
+    copy: 'read',
+    edit: 'edit',
+    duplicate: 'edit',
+    move: 'edit',
+    delete: 'delete',
+    retry: 'retry',
+  }[action] || 'edit'
+  const sessionKey = {
+    read: 'canView',
+    copy: 'canView',
+    edit: 'canEdit',
+    duplicate: 'canEdit',
+    move: 'canEdit',
+    delete: 'canEdit',
+    retry: 'canEdit',
+  }[action] || 'canEdit'
+  const sessionAllowed = readCapability(session, sessionKey)
+  const stateAllowed = capabilities[required] !== false
+  return {
+    action,
+    state: state || 'empty',
+    capability: required,
+    sessionCapability: sessionKey,
+    sessionAllowed,
+    stateAllowed,
+    allowed: sessionAllowed && stateAllowed,
+  }
+}

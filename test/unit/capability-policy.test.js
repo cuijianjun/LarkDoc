@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { projectCapabilityUi, projectCapabilityUiStates } from '../../src/core/policy/capability'
+import { asyncBlockActionCapability, projectCapabilityUi, projectCapabilityUiStates } from '../../src/core/policy/capability'
 
 const session = (capabilities = {}) => ({
   can: (key) => capabilities[key] !== false,
@@ -18,5 +18,14 @@ describe('异步块 capability UI policy', () => {
   it('无权限可见但不可读时不替换整个异步块', () => {
     const state = projectCapabilityUi(session(), 'canView', { visible: true, read: false })
     expect(state).toMatchObject({ allowed: true, mounted: true, treatment: 'allow' })
+  })
+
+  it('块菜单动作复用 session 与异步状态矩阵', () => {
+    expect(asyncBlockActionCapability('duplicate', 'loading')).toMatchObject({ allowed: false, capability: 'edit', state: 'loading', sessionCapability: 'canEdit' })
+    expect(asyncBlockActionCapability('delete', 'loading')).toMatchObject({ allowed: true, capability: 'delete' })
+    expect(asyncBlockActionCapability('retry', 'failed')).toMatchObject({ allowed: true, capability: 'retry' })
+    expect(asyncBlockActionCapability('retry', 'unauthorized')).toMatchObject({ allowed: false, capability: 'retry' })
+    expect(asyncBlockActionCapability('delete', 'loading', session({ canEdit: false }))).toMatchObject({ allowed: false, sessionAllowed: false })
+    expect(asyncBlockActionCapability('copy', 'empty', session({ canView: false }))).toMatchObject({ allowed: false, sessionAllowed: false })
   })
 })

@@ -72,7 +72,7 @@
 ### Implementation
 
 - [x] T027 [US3] 在 `src/core/blocks/shared.js`、`src/core/blocks/unknown-block.js` 和异步块 schema 中统一 `AsyncBlockState` 与恢复动作
-- [ ] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影
+- [x] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影（统一 policy 已成为分享/顶栏、评论/版本/导出既有权限闸门和块菜单动作入口的共同真源；security Provider 保持服务端最终拒绝边界）
 - [x] T029 [US3] 在 `src/core/blocks/file-block.js`、`src/core/blocks/image.js`、`src/core/blocks/sheet.js`、`src/core/blocks/web-embed.js`、`src/core/blocks/bookmark.js` 接入状态矩阵和无覆盖失败语义（共享 asyncState 持久化、统一 DOM class/data 属性和 NodeView 同步已完成；更高层失败文案仍由各块既有实现负责）
 
 ## Phase 6: User Story 4 - 协同、评论、版本与跨端恢复 (Priority: P2)
