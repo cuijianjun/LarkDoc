@@ -1,6 +1,6 @@
 # lark-doc 0.12 需求审计与收口规格
 
-> 状态：技术计划与实施任务已生成，可进入代码实现。分支：`spec-kit/requirements-audit`。基线：`dev`。
+> 状态：T001–T008 已执行第一轮基础收口；T001–T003 已完成，T004–T008 仍需继续补齐完整事件、原子失败返回和 Provider 写入闭环。分支：`implementation/full-requirements`。基线：`dev`。
 > 本文件是后续会话的唯一项目级需求摘要；细节以 `requirements/` 原文为准。
 > Spec Kit 特性规格：`specs/001-full-requirements-implementation/spec.md`；技术计划：`specs/001-full-requirements-implementation/plan.md`；实施任务：`specs/001-full-requirements-implementation/tasks.md`；质量清单：`specs/001-full-requirements-implementation/checklists/requirements.md`。
 
