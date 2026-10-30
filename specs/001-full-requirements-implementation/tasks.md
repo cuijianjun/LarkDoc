@@ -103,7 +103,7 @@
 
 ### Tests
 
-- [ ] T038 [P] [US5] 在 `test/unit/survey-provider.test.js`、`test/unit/import-provider.test.js` 和 `test/unit/ai-provider.test.js` 验证幂等 key、进度、部分成功、重试、提交、回滚和刷新回读
+- [x] T038 [P] [US5] 在 `test/unit/survey-provider.test.js`、`test/unit/import-provider.test.js` 和 `test/unit/ai-provider.test.js` 验证幂等 key、进度、部分成功、重试、提交、回滚和刷新回读（survey/import/AI 宿主边界、导入批次状态机、失败项重试/提交/回滚、AI 流式取消与 revision guard 已覆盖；13 项通过）
 - [ ] T039 [P] [US5] 在 `test/unit/embedded-provider.test.js` 与 `test/unit/export-roundtrip.test.js` 验证 docx/Markdown/web 导入和宿主拒绝不假成功
 - [ ] T040 [P] [US5] 新增 `test/unit/output-policy.test.js`，验证复制、打印、下载、截图、水印、敏感字段和审计事件
 - [ ] T041 [US5] 在 `test/unit/versioning-core.test.js`、`test/unit/versioning-ui.test.js` 验证回收站删除/恢复/彻底删除和 stale/unavailable 状态
