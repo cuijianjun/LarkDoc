@@ -42,6 +42,42 @@ export function getProviderTask(taskIdOrKey) {
 export function clearProviderTasks() { tasks.clear() }
 export function providerTaskStatuses() { return STATUSES.slice() }
 
+export const PROVIDER_TASK_STATUSES = STATUSES
+
+/**
+ * 统一包裹 Provider 异步操作：保留原始响应，同时把 queued/running/partial/
+ * succeeded/failed/rolled_back 状态写入幂等任务存储。重复 key 只复用同一任务。
+ */
+export async function runProviderTask(input = {}, operation) {
+  const existing = input.idempotencyKey ? getProviderTask(input.idempotencyKey) : null
+  if (existing && ['succeeded', 'rolled_back'].includes(existing.status)
+    && Object.prototype.hasOwnProperty.call(existing.snapshot, 'result')) {
+    return existing.snapshot.result
+  }
+  const task = createProviderTask({ ...input, status: 'queued', progress: 0 })
+  updateProviderTask(task.taskId, { status: 'running', progress: 0 })
+  try {
+    const result = await operation(task)
+    const status = result && typeof result === 'object' && providerTaskStatuses().includes(result.status)
+      ? result.status
+      : 'succeeded'
+    const progress = status === 'succeeded' ? 100 : (Number(result && result.progress) || 0)
+    updateProviderTask(task.taskId, {
+      status,
+      progress,
+      snapshot: { result, ...(result && typeof result === 'object' ? result : {}) },
+    })
+    return result
+  } catch (error) {
+    updateProviderTask(task.taskId, {
+      status: error && error.status === 'rolled_back' ? 'rolled_back' : 'failed',
+      progress: 0,
+      snapshot: { code: error && error.code, message: error && error.message },
+    })
+    throw error
+  }
+}
+
 /**
  * 断线恢复队列：以宿主提供的幂等 key 去重，flush 后将成功项记为 acknowledged，
  * 后续重复回调只会被丢弃，不会再次触发远端写入。

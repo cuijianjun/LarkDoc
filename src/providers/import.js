@@ -6,6 +6,8 @@
  * asset handling stay in the host so the editor never hides a failed file.
  */
 
+import { runProviderTask } from './provider-task'
+
 const OPERATIONS = Object.freeze([
   'createBatch', 'getBatch', 'retry', 'cancel', 'commit', 'rollback', 'delete',
 ])
@@ -119,10 +121,16 @@ export function createImportBatchController(input = {}) {
 export function createImportProvider(options = {}) {
   const request = requireRequest(options.request)
   const routes = { ...(options.routes || {}) }
-  const invoke = (operation, ctx, input = {}) => request(operation, withContext(ctx, input), {
-    route: routes[operation] || operation,
-    provider: 'import',
-  })
+  const invoke = (operation, ctx, input = {}) => {
+    const payload = withContext(ctx, input)
+    return runProviderTask({
+      kind: `import.${operation}`,
+      idempotencyKey: payload.idempotencyKey || '',
+    }, () => request(operation, payload, {
+      route: routes[operation] || operation,
+      provider: 'import',
+    }))
+  }
   const provider = { capabilities: Object.freeze({ operations: OPERATIONS.slice(), requiresHostRequest: true }) }
   for (const operation of OPERATIONS) provider[operation] = (ctx, input) => invoke(operation, ctx, input)
   return provider

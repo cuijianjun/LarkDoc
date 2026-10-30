@@ -1,4 +1,5 @@
 import { createWorkspace } from '../components/lark-doc/workspace'
+import { runProviderTask } from './provider-task'
 import { IDB_UNAVAILABLE, createIndexedDbWorkspace, isIndexedDbAvailable } from '../core/storage/idb'
 
 /**
@@ -110,6 +111,18 @@ export function createPersistenceWorkspace(options = {}) {
   }
 
   function call(method, args) {
+    const key = args[0] && typeof args[0] === 'object' ? args[0].idempotencyKey : ''
+    const invoke = () => {
+      if (state.kind !== 'indexeddb') return state.leg[method](...args)
+      let pending
+      try {
+        pending = Promise.resolve(state.leg[method](...args))
+      } catch (error) {
+        return recover(error, method, args)
+      }
+      return pending.catch(error => recover(error, method, args))
+    }
+    if (key) return runProviderTask({ kind: `persistence.${method}`, idempotencyKey: key }, invoke)
     if (state.kind !== 'indexeddb') return state.leg[method](...args)
     let pending
     try {

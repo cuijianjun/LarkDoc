@@ -6,6 +6,8 @@
  * the returned resource or a structured provider error.
  */
 
+import { runProviderTask } from './provider-task'
+
 const FACTORY_OPERATIONS = Object.freeze({
   miaji: Object.freeze(['resolve', 'get', 'update', 'remove', 'delete', 'sync', 'requestPermission', 'healthCheck']),
   subscription: Object.freeze(['get', 'publish', 'update', 'unpublish', 'remove', 'delete', 'requestPermission', 'healthCheck']),
@@ -68,12 +70,18 @@ function createProvider(name, options = {}) {
   const routes = { ...(options.routes || {}) }
   const operations = FACTORY_OPERATIONS[name]
   const invoke = async (operation, ctx, input = {}) => {
-    const result = await request(operation, withContext(ctx, input), {
-      route: routes[operation] || operation,
-      provider: name,
+    const payload = withContext(ctx, input)
+    return runProviderTask({
+      kind: `${name}.${operation}`,
+      idempotencyKey: payload.idempotencyKey || '',
+    }, async () => {
+      const result = await request(operation, payload, {
+        route: routes[operation] || operation,
+        provider: name,
+      })
+      if (isRejectedResponse(result)) throw providerRejection(result, operation)
+      return result
     })
-    if (isRejectedResponse(result)) throw providerRejection(result, operation)
-    return result
   }
   const provider = {
     capabilities: Object.freeze({

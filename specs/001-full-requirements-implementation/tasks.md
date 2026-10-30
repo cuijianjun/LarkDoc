@@ -110,7 +110,7 @@
 
 ### Implementation
 
-- [ ] T042 [US5] 在 `src/providers/survey.js`、`src/providers/import.js`、`src/providers/ai.js`、`src/providers/embedded.js` 和 `src/providers/persistence.js` 统一 ProviderTask 状态机和幂等回读
+- [x] T042 [US5] 在 `src/providers/survey.js`、`src/providers/import.js`、`src/providers/ai.js`、`src/providers/embedded.js` 和 `src/providers/persistence.js` 统一 ProviderTask 状态机和幂等回读（新增 runProviderTask 与统一状态/结果快照；survey/import/embedded/AI writeback/feedback/persistence 均接入显式幂等 key 回读；相关 ProviderTask/Provider/持久化回归 59 项通过）
 - [ ] T043 [US5] 在 `src/utils/importExport.js`、`src/components/lark-doc/ExportDialog.vue` 和导入 UI 接入 docx/Markdown/web 任务进度、失败重试和回滚
 - [ ] T044 [US5] 在 `src/core/versioning/`、`src/components/lark-doc/VersionPanel.vue` 和文档操作入口补齐回收站 UI、复制文档和权限负向路径
 - [ ] T045 [US5] 在 `src/providers/security.js`、`src/components/lark-doc/editor/TopBar.vue`、`src/components/lark-doc/ExportDialog.vue`、`src/utils/download.js` 和 `src/styles/print.css` 实现输出策略、水印和 AuditEvent
