@@ -47,7 +47,11 @@
  *   无权限，浮层会在首屏闪一次置灰。另外 session 为空（宿主没传）时必须按「全允许」走，
  *   否则裸用编辑器会整页变只读遮罩。
  */
-import { DEFAULT_CAPABILITIES } from '../../../providers/authorization'
+import {
+  CAPABILITY_GRAY_STYLE,
+  projectCapabilityUi,
+  projectCapabilityUiStates,
+} from '../../../core/policy/capability'
 
 // —— 几何：分享 popover（04 §4.1 ④-2 实测 batch60/61）——
 
@@ -149,7 +153,7 @@ export const CAPABILITY_UI = Object.freeze({
 
 /** 置灰的统一视觉（05 §5.3.1 ③）：色 `#BBBFC4`、`cursor: not-allowed`、
  *  `pointer-events` **保留**（要能 hover 出 tooltip 解释原因），点击无副作用。 */
-export const GRAY_STYLE = Object.freeze({ color: 'var(--ld-share-text-disabled)', cursor: 'not-allowed', pointerEvents: 'auto' })
+export const GRAY_STYLE = CAPABILITY_GRAY_STYLE
 
 /** 分享入口的两种形态。 */
 export const SHARE_ENTRY_MODES = Object.freeze({ manage: 'manage', readonlyLink: 'readonly-link' })
@@ -306,28 +310,12 @@ export function capabilityTreatment(key) {
  *   `mounted` 为 false 只可能来自 `canView:false`（B24 交叉约束 3：其余 7 项一律挂载）。
  */
 export function capabilityUiState(session, key) {
-  const allowed = readCapability(session, key)
-  const treatment = allowed ? CAPABILITY_TREATMENTS.allow : capabilityTreatment(key)
-  const gray = treatment === CAPABILITY_TREATMENTS.gray
-  return {
-    key,
-    allowed,
-    treatment,
-    // 只有整页替换这一项可以不挂载；置灰与降级都要求「看得见」。
-    mounted: treatment !== CAPABILITY_TREATMENTS.replace,
-    hidden: false,
-    gray,
-    downgraded: treatment === CAPABILITY_TREATMENTS.downgrade,
-    style: gray ? GRAY_STYLE : null,
-  }
+  return projectCapabilityUi(session, key)
 }
 
 /** 全部 8 项的落值（键序与 `DEFAULT_CAPABILITIES` 一致），供宿主一次性取用。 */
 export function capabilityUiStates(session) {
-  const keys = Object.keys(DEFAULT_CAPABILITIES)
-  const result = {}
-  for (let i = 0; i < keys.length; i += 1) result[keys[i]] = capabilityUiState(session, keys[i])
-  return result
+  return projectCapabilityUiStates(session)
 }
 
 /** 分享入口形态：`canManagePermission` 为真 → 完整分享；否则降级为「分享只读链接」。 */
