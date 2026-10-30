@@ -64,6 +64,7 @@
     '    },',
     '',
     '    // 媒体在 HTML 里的写法：inline 原样内嵌；link 只留地址',
+    "    // 改完点右上角「HTML 输出」按钮，能直接看到两种写法的差别",
     "    media: { htmlMode: 'inline', linkText: '', newTab: true },",
     '',
     "    // toolbar: { marksAllow: ['bold', 'italic'] },",
@@ -72,7 +73,7 @@
     '})',
     '',
     '// 实例方法：doc.getJSON() / getHTML() / setReadonly(true) / patchProps({}) / undo()',
-    "// 顶栏右侧的「本地保存」会显示自动保存的落盘时间；想从空白开始就点右上角「重置」。",
+    "// 顶栏「本地保存」显示自动保存的落盘时间；想从空白开始就点右上角「重置」。",
   ].join('\n')
 
   /* --------------------------------------------------------- DOM */
@@ -91,6 +92,13 @@
   var codeBar = codePane.querySelector('.pg-bar-code')
   var resetBtn = document.getElementById('pgReset')
   var verEl = document.getElementById('pgVer')
+  var htmlBtn = document.getElementById('pgHtml')
+  var modal = document.getElementById('pgModal')
+  var modalCode = document.getElementById('pgHtmlCode')
+  var modalTip = document.getElementById('pgHtmlTip')
+  var modalCloseBtn = document.getElementById('pgModalClose')
+  var copyBtn = document.getElementById('pgCopy')
+  var modeGroup = document.getElementById('pgHtmlMode')
 
   /* --------------------------------------------------------- 状态 */
 
@@ -116,6 +124,8 @@
   }
   var timer = 0
   var renderTimer = 0
+  var htmlMode = 'inline'  // HTML 输出面板当前档位
+  var htmlCache = ''       // 最近一次 getHTML() 的全文，供「复制」用
 
   /* --------------------------------------------------------- 小工具 */
 
@@ -361,6 +371,9 @@
       if (typeof console !== 'undefined') console.info('[playground] ' + tip)
     }
     setStatus((reason === 'manual' ? '已运行 · ' : '已生效 · ') + ms + 'ms', 'ok', tip)
+
+    // 面板开着的时候重建了实例：输出要跟着刷新，否则看到的是上一份正文。
+    if (!modal.hidden) renderHtmlOutput()
   }
 
   function schedule() {
@@ -369,6 +382,83 @@
     window.clearTimeout(renderTimer)
     renderTimer = window.setTimeout(renderHighlight, 40) // 高亮跟着输入走，但别每键重排
     timer = window.setTimeout(function () { run('auto') }, DEBOUNCE)
+  }
+
+  /* --------------------------------------------- HTML 输出（media.htmlMode） */
+
+  // 这个面板只做一件事：把「同一份正文、两种媒体写法」摆在一起看。
+  // inline = 图片本体嵌在 HTML 里；link = 图片只剩一条地址链接。
+  var MODE_HINT = {
+    inline: '媒体本体直接嵌在 HTML 里（<figure><img>），正文能直接渲染出图。默认档。',
+    link: '媒体只留一条地址链接，正文里不出现媒体本体。JSON 不受影响，换回来还是图片。',
+  }
+
+  function renderHtmlOutput() {
+    if (!instance || typeof instance.getHTML !== 'function') {
+      htmlCache = ''
+      modalCode.textContent = '还没有可用的编辑器实例。先把下方代码跑通；改坏了就点「重置代码」。'
+      modalTip.textContent = ''
+      return
+    }
+
+    var html = ''
+    try {
+      // 单次覆盖：只影响这一次取值，页面配置不动。
+      html = instance.getHTML({ media: { mode: htmlMode } }) || ''
+    } catch (err) {
+      htmlCache = ''
+      modalCode.textContent = 'getHTML() 报错：' + ((err && err.message) || String(err))
+      return
+    }
+
+    htmlCache = html
+    var limit = 20000
+    var shown = html.length > limit
+      ? html.slice(0, limit) + '\n\n…（后面还有 ' + (html.length - limit) + ' 个字符，点「复制」取全文）'
+      : html
+    modalCode.textContent = shown || '（空正文）'
+
+    var hasImg = html.indexOf('<img') >= 0
+    var hasLink = html.indexOf('lark-doc-media-link') >= 0
+    modalTip.innerHTML = '<b>' + htmlMode + '</b> · ' + esc(MODE_HINT[htmlMode]) +
+      '　实际输出：<code>' + (hasImg ? '含 &lt;img&gt;' : '无 &lt;img&gt;') + '</code> ' +
+      '<code>' + (hasLink ? '含媒体链接' : '无媒体链接') + '</code>'
+  }
+
+  function openHtml() {
+    if (!modal.hidden) return
+    modal.hidden = false
+    renderHtmlOutput()
+    copyBtn.focus()
+  }
+
+  function closeHtml() {
+    if (modal.hidden) return
+    modal.hidden = true
+    htmlBtn.focus()
+  }
+
+  function copyHtml() {
+    if (!htmlCache) return
+    var flash = function (ok) {
+      copyBtn.textContent = ok ? '已复制' : '请手动选中'
+      window.setTimeout(function () { copyBtn.textContent = '复制' }, 1200)
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(htmlCache).then(
+        function () { flash(true) },
+        function () { flash(false) },
+      )
+      return
+    }
+    try {
+      var sel = window.getSelection()
+      var range = document.createRange()
+      range.selectNodeContents(modalCode)
+      sel.removeAllRanges()
+      sel.addRange(range)
+      flash(document.execCommand('copy'))
+    } catch (e) { flash(false) }
   }
 
   /* --------------------------------------------------------- 布局 */
@@ -468,10 +558,32 @@
     })
 
     document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !modal.hidden) {
+        closeHtml()
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'j' || e.key === 'J')) {
         e.preventDefault()
         setOpen(!isOpen())
       }
+    })
+
+    htmlBtn.addEventListener('click', openHtml)
+    modalCloseBtn.addEventListener('click', closeHtml)
+    copyBtn.addEventListener('click', copyHtml)
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeHtml() // 点遮罩关闭
+    })
+    modeGroup.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('button[data-mode]') : null
+      if (!btn) return
+      var mode = btn.getAttribute('data-mode')
+      if (mode === htmlMode) return
+      htmlMode = mode
+      Array.prototype.forEach.call(modeGroup.querySelectorAll('button'), function (b) {
+        b.setAttribute('aria-pressed', String(b === btn))
+      })
+      renderHtmlOutput()
     })
 
     toggleBtn.addEventListener('click', function () { setOpen(!isOpen()) })

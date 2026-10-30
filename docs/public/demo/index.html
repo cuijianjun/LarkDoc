@@ -20,6 +20,7 @@
         <span class="pg-note">真实编辑器，可以直接点、直接敲</span>
         <span class="pg-grow"></span>
         <a class="pg-btn pg-btn-ghost" href="../guide/getting-started.html">接入文档</a>
+        <button type="button" class="pg-btn" id="pgHtml" title="看当前正文导出成 HTML 是什么样（图片是内嵌还是只剩地址）">HTML 输出</button>
         <button type="button" class="pg-btn" id="pgReset" title="把下面的代码恢复成初始状态">重置代码</button>
         <button type="button" class="pg-btn" id="pgToggle" aria-expanded="true" aria-controls="pgCodePane">
           收起代码 <kbd>⌘</kbd><kbd>J</kbd>
@@ -56,6 +57,25 @@
       <div class="pg-error" id="pgError" role="alert" hidden></div>
     </section>
 
+  </div>
+
+  <!-- ============ HTML 输出查看器（media.htmlMode 的直观对照） ============ -->
+  <div class="pg-modal" id="pgModal" hidden>
+    <div class="pg-modal-panel" role="dialog" aria-modal="true" aria-labelledby="pgModalTitle">
+      <div class="pg-modal-bar">
+        <strong class="pg-modal-title" id="pgModalTitle">导出 HTML</strong>
+        <code class="pg-modal-api">getHTML({ media: { mode } })</code>
+        <span class="pg-grow"></span>
+        <div class="pg-seg" id="pgHtmlMode" role="group" aria-label="媒体写法">
+          <button type="button" data-mode="inline" aria-pressed="true">inline · 嵌入全文</button>
+          <button type="button" data-mode="link" aria-pressed="false">link · 只留地址</button>
+        </div>
+        <button type="button" class="pg-btn" id="pgCopy">复制</button>
+        <button type="button" class="pg-btn" id="pgModalClose">关闭</button>
+      </div>
+      <div class="pg-modal-tip" id="pgHtmlTip"></div>
+      <pre class="pg-modal-code"><code id="pgHtmlCode"></code></pre>
+    </div>
   </div>
 
   <script src="./vendor/vue.min.js"></script>

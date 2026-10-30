@@ -1,114 +1,105 @@
 # 快速开始
 
-lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 + Tiptap 3），提供两种使用方式：
+三步：**选入口 → 装包 → 贴代码**。Vue 2.7 项目五分钟能跑起来。
 
-- **命令式入口** `new LarkDoc()`：像 AiEditor 一样用构造函数驱动完整工作台，适合任何宿主（原生页面、Vue2 路由、微前端）。
-- **组件式入口** `LarkDocEditor` / `LarkDocWorkspace`：直接把 Vue 组件挂进模板，适合已经在用 Vue 2.7 的项目。
+> 想先看效果，直接开[在线演示](/demo/)：上半屏是真实编辑器，下半屏是它的初始化代码，改完即时生效。
 
-推荐统一使用命令式入口，组件式入口保留为兼容导出。
+## 一、先选入口
 
-> 💡 想先上手看看？直接打开<a href="../demo/" target="_blank" rel="noopener">在线演示</a>（上方编辑器预览 + 下方可折叠代码预览，可在页面直接改初始化配置实时生效）。
+只问一句：**你的项目是 Vue 2.7 吗？**
 
-## 第一步：先判断你属于哪一类
+| 你的情况 | 用哪个 | 装法 |
+| --- | --- | --- |
+| 是 Vue 2.7（webpack 4/5、vite 都算） | 主入口 `lark-doc` | `npm i lark-doc` |
+| Vue 3 / React / 无框架 | 子入口 `lark-doc/element`（`<lark-doc>` 元素） | `npm i lark-doc --legacy-peer-deps` |
+| 纯 HTML / 老系统 / 内网静态页 | UMD 脚本，不装包 | 拷 `dist/` 整目录 |
 
-**只问一句：你的项目现在装的是不是 `vue@2.7`？**
+Vue 3 / React 为什么要绕开主入口：包的 `peerDependencies` 强依赖 `vue@2.7`，直接装会 `ERESOLVE`；硬装后调 `new LarkDoc()` 会报 `Vue.extend is not a function`。`lark-doc/element` 把 Vue 2 运行时、Tiptap、样式全内联进了产物，宿主什么都不用装。
 
-| 你的情况 | 用哪个入口 | 装法 | 往下读 |
-| --- | --- | --- | --- |
-| **是** Vue 2.7（webpack 4/5、vite 都算） | 主入口 `lark-doc`，`new LarkDoc()` 或 `<lark-doc-editor>` | `npm i lark-doc` | 本文 [最小示例](#最小示例) |
-| **否**：Vue 3 / React 18 | `lark-doc/element`（`<lark-doc>` 自定义元素） | `npm i lark-doc --legacy-peer-deps`，或**不装包**直接拷 `dist/` | [Web Component](/guide/web-component) |
-| **没有打包器**：纯 HTML / 老系统 / 内网静态页 | `<script>` 引 UMD | 拷 `dist/` 整目录，不用 npm | [原生 / CDN](/guide/environments#env-static) |
+## 二、跑起来
 
-为什么 Vue 3 / React 要绕一下：包的 `peerDependencies` 里 `vue ^2.7.14` 和 `@tiptap/vue-2` 都是**强制**的，Vue 3 项目直接 `npm i lark-doc` 会 `ERESOLVE` 失败；硬装上去再用主入口，会在 `new LarkDoc()` 时报 `Vue.extend is not a function`（Vue 3 已移除该 API）。
+### Vue 2.7（最常见）
 
-`lark-doc/element` 这条路是安全的：Vue 2 运行时、Tiptap、样式**全部内联在产物里**，宿主不需要装任何 Vue 2 相关依赖。
-
-环境要求：Node 14.21.3 及以上，宿主有 `Promise` / `fetch`。样式与 KaTeX 字体随包发布，不需要另找字体文件。
-
-## 引入写法速查
-
-上面决定了走哪条路之后，这张表只回答一件事：**`import` 那一行怎么写**。
-
-| 宿主环境 | 引入写法 | 初始化 | 备注 |
-| --- | --- | --- | --- |
-| Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({...})` | 命中 `exports.import` → ESM；懒区块由宿主打包器接管，内外网零配置 |
-| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | 一行 alias：`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`（CJS 已降到 ES2018，不用 babel）；区块全内联，不用设 `__LARK_DOC_PUBLIC_PATH__` |
-| Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
-| Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物内置 Vue；对象型能力（uploader / persistence / ai）只能 `setProperty` |
-| CDN / 静态托管 / 内网 | `<script src="…/dist/lark-doc-element.umd.min.js">` | `<lark-doc>` | **`dist/` 整目录**同位部署（主文件 + `*.math.js`、`*.mermaid.js` 等按需区块 + `fonts/`） |
-| Node / jsdom / SSR | `require('lark-doc')`；SSR 用 `process.client` 内 `await import('lark-doc/element')` | `new LarkDoc({ element: host })` | CJS 单文件（内联全部区块）；element 产物模块求值即注册元素，Node 端 import 会炸 → 必须 client-only |
-
-::: tip 编译工具要点
-- webpack5 / vite / rollup：认 `exports`，两条入口零配置；
-- **webpack4（0.13+）**：主入口**一行 alias** 到 CJS 档（`alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' }`）—— 不是因为语法（CJS 已降到 ES2018，acorn 6.4.2 能解析），而是 webpack4 不读 `exports`、会顺 `mainFields` 落到含 `import.meta` 的 esm 档；**子路径**同样读不到：`import 'lark-doc/element'` 要写 `lark-doc/dist/lark-doc-element.umd.min.js`，或 `<script>` 直引；
-- **webpack4（0.12 及更早）**：只认 `main` / `module`，还要 alias 到 `dist/lark-doc.common.js` + babel 降 `?.` / `??`，见[老写法](/guide/environments#env-vue2-wp4)；
-- browserslist 为 `> 0.5% / last 2 versions / not dead`，**不含 IE11**：IE11 宿主需自己把 `node_modules/lark-doc` 加进 babel `include`；
-- 默认假设宿主有 `Promise` / `fetch` 等运行环境能力；老浏览器请自行在入口加 polyfill。
-:::
-
-> 每个环境的**编译工具配置 + 可粘贴运行的完整 demo + 工具栏配置**见[各环境引入对照](/guide/environments)。
-
-## 最小示例
-
-下面这段只适用于 **Vue 2.7 宿主**。Vue 3 / React 走的是自定义元素，写法完全不同，见 [Web Component](/guide/web-component)。
-
-```ts
+```js
 import 'lark-doc/style.css'
 import { LarkDoc } from 'lark-doc'
 
 const doc = new LarkDoc({
-  element: '#editor',              // CSS 选择器或 HTMLElement
-  title: '未命名文档',
-  content: '<p>hello lark-doc</p>',  // 支持 HTML / Tiptap JSON / DocumentRecord
-  placeholder: '输入正文，或输入 / 插入内容',
-  theme: 'light',
-  readonly: false,
-  storage: 'local',                // 默认 'local'：自动写浏览器草稿；'none' 关掉持久化
-  autosave: { enabled: true, delay: 650 },  // 自动保存（默认开）；enabled:false 只停自动、保留落点
-  onReady: (payload) => console.log('ready', payload.editor),
-  onUpdate: (payload) => console.log('update', payload.html),
-  onError: (error) => console.error(error),
+  element: '#editor',
+  content: '<p>hello lark-doc</p>',
 })
 
-// 实例方法
-doc.getHTML()
+// 常用方法
+doc.getHTML()                 // 取 HTML
+doc.getJSON()                 // 取结构化 JSON（要无损往返就用它）
 doc.setContent('<h1>新内容</h1>')
-doc.setReadonly(true)
-doc.destroy()
+doc.destroy()                 // 销毁：定时器、事件监听全清
 ```
 
-::: tip 样式入口
-`import 'lark-doc/style.css'`（`exports` 里的 `./style.css`，解析到 `dist/lark-doc.css`）是唯一的公开样式入口，包含正文样式与本地 KaTeX 字体。它只服务于 **CJS（`main`）产物**——只有 lib 构建会抽出 CSS。`umd` / `esm` / `element` 三种产物样式已随 JS 注入 `<style>`，宿主**不需要**再引 CSS（重复引入也无害，只是多一份文本）。
+```html
+<div id="editor"></div>
+```
+
+就这两段。**自动保存默认已开**（草稿写浏览器 IndexedDB，刷新还在），不用额外配。
+
+### Vue 3 / React / 无框架
+
+```js
+import 'lark-doc/element'   // 引入即注册 <lark-doc> 自定义元素
+```
+
+```html
+<lark-doc title="未命名文档"></lark-doc>
+```
+
+元素上能写字符串类配置（`title` / `content` / `theme` / `readonly`）；函数类能力（`uploader`、`ai`）用 `el.setProperty('uploader', {...})` 注入。详见 [Web Component](/guide/web-component)。
+
+### 纯 HTML / 内网静态页
+
+```html
+<link rel="stylesheet" href="./dist/lark-doc.css" />
+<script src="./dist/lark-doc-element.umd.min.js"></script>
+<lark-doc title="未命名文档"></lark-doc>
+```
+
+`dist/` 要**整目录**同位部署：主文件之外还有 `*.highlight.js`、`*.math.js`、`*.mermaid.js` 等按需区块和 `fonts/`，缺了对应功能就加载不出来。
+
+## 三、常用配置
+
+只列最常改的几项，全量见[配置总览](/guide/configuration)。
+
+```js
+new LarkDoc({
+  element: '#editor',
+  title: '未命名文档',
+  placeholder: '输入正文，或输入 / 插入内容',
+  readonly: false,
+  theme: 'light',
+
+  storage: 'local',                                  // 'none' = 完全不落盘
+  autosave: { enabled: true, delay: 650 },           // 自动保存（默认开）
+
+  importExport: { exportFormats: ['html', 'md'] },   // 只留两项导出
+  media: { htmlMode: 'inline' },                      // 'link' = 导出 HTML 时图片只留地址
+
+  onReady: ({ editor }) => console.log('ready', editor),
+  onUpdate: ({ html }) => console.log('change'),
+})
+```
+
+## 四、环境要求
+
+Node 14.21.3 及以上；运行环境需要有 `Promise` 与 `fetch`。样式与 KaTeX 字体随包发布，不用另找字体文件。browserslist 不含 IE11。
+
+::: tip 三个常见坑
+- **webpack 4** 不认 `exports` 字段：主入口加一行 alias `'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`（CJS 档已降到 ES2018，不用再过 babel）。
+- **样式只引一次**：CJS 档需要 `import 'lark-doc/style.css'`；UMD / ESM / element 产物样式已随 JS 注入，不用再引。
+- **Vue 2 路由里用完要 `destroy()`**，否则切页后定时器和事件监听会留着。
 :::
-
-## 在 Vue 2 路由中使用
-
-```vue
-<template>
-  <div ref="host" class="lark-doc-host" />
-</template>
-
-<script>
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-
-export default {
-  mounted() {
-    this.doc = new LarkDoc({ element: this.$refs.host, title: '未命名文档' })
-  },
-  beforeDestroy() {
-    if (this.doc) { this.doc.destroy(); this.doc = null }
-  },
-}
-</script>
-```
-
-路由切走时 `beforeDestroy` 会销毁实例，不会有残留定时器或事件监听。
 
 ## 下一步
 
-- **装包、内网搬运、`dist/` 拷贝**：[安装与引用总表](/guide/install)（一张表覆盖外网 / 内网 × 9 种宿主）
-- 你的框架到底要贴哪些配置：[各环境引入对照](/guide/environments)
-- 查看全部[配置总览](/guide/configuration)与[实例方法](/guide/instance)
-- 按[功能配置](/blocks/heading)逐项了解每个内容块
-- 需要接入真实 AI、上传或持久化，参考 [View 层接入](/guide/view-integration)
+- 装包 / 内网搬运 / `dist/` 拷贝：[安装与引用总表](/guide/install)
+- 每个环境的完整可运行 demo：[各环境引入对照](/guide/environments)
+- 实例方法与事件：[实例与事件](/guide/instance)
+- 每个内容块怎么配：[标题](/blocks/heading)、[图片](/blocks/image)、[导入导出](/blocks/import-export)
