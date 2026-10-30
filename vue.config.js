@@ -37,6 +37,8 @@ const isAdapters = target === 'adapters'
 const inlineVue = process.env.LARK_DOC_INLINE_VUE === '1'
 /** 薄壳关掉 polyfill 注入（见 babel.config.js），同样影响 babel 输出，缓存必须分流。 */
 const noPolyfill = process.env.LARK_DOC_NO_POLYFILL === '1'
+/** 同一 target 下的不同构建链（build-esm / build-lite）必须各占一份缓存，见 cache.name。 */
+const cacheFlavor = process.env.LARK_DOC_CACHE_FLAVOR ? `-${process.env.LARK_DOC_CACHE_FLAVOR}` : ''
 const isLib = !isElement && !isEsm && !isAdapters
 // 只有 adapters 不拆（两个薄壳必须各自自包含）；lib / element / esm 都拆按需区块。
 const split = !isAdapters
@@ -167,7 +169,11 @@ module.exports = defineConfig({
       type: 'filesystem',
       // LARK_DOC_LEGACY 会改变 babel 输出（降语法），必须换一份缓存，否则同一个
       // target 在两种口径间来回构建会命中对方的 babel 结果。
-      name: `lark-doc-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}`,
+      // LARK_DOC_CACHE_FLAVOR 是「同 target 不同构建链」的分流开关：build-esm.js
+      // 与 build-lite.js 都是 target=esm，但 lite 多了一套把重依赖 alias 成 stub
+      // 的 resolve 配置 —— 共用一份缓存会命中 esm 那条链的解析结果，stub 整套失效
+      // （表现：dist/lite.math.esm.js 与 dist/math.esm.js 逐字节相同）。
+      name: `lark-doc-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}${cacheFlavor}`,
       buildDependencies: { config: [__filename, path.resolve(__dirname, 'babel.config.js')] },
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。

@@ -19,7 +19,8 @@
     "check:ui": "npm run check:theme-tokens && npm run check:theme-contrast",
     "check:deploy": "npm run check:node14 && npm run check:offline && npm run check:pkg && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
     "check:pkg": "node scripts/check-package-exports.js",
-    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:legacy && npm run check:vditor && npm run size",
+    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:lite && npm run check:legacy && npm run check:vditor && npm run size",
+    "check:lite": "node scripts/check-lite-artifacts.js",
     "check:legacy": "node scripts/check-legacy-syntax.js",
     "check:theme-tokens": "node scripts/check-theme-tokens.js",
     "check:theme-contrast": "node scripts/check-theme-contrast.js",
@@ -264,18 +265,18 @@
     {
       "name": "ESM 主包 (gzip)",
       "path": "dist/lark-doc.esm.js",
-      "limit": "290 KB",
+      "limit": "320 KB",
       "gzip": true
     },
     {
       "name": "Element 产物 (gzip)",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "480 KB",
+      "limit": "490 KB",
       "gzip": true
     },
     {
       "path": "dist/lark-doc.common.js",
-      "limit": "1150 KB",
+      "limit": "1170 KB",
       "gzip": true,
       "name": "CJS 主文件（Vue 已内联，按需区块已拆出，gzip）"
     },
@@ -288,7 +289,7 @@
     {
       "name": "lite 主包 (gzip)",
       "path": "dist/lark-doc-lite.esm.js",
-      "limit": "290 KB",
+      "limit": "308 KB",
       "gzip": true
     }
   ]

@@ -14,14 +14,21 @@
  * dist 目录（exports 契约 ./lite 与 . 各指一路），互不能踩。
  * 初始区块（vue / tiptap / vendor）与全量 esm 同名：三者内容与全量构建
  * 逐字节一致（stub 只影响 async 路径），覆盖无副作用。
+ * 区块集合不是固定的：重依赖全部塌成同一个 stub 后，某些区块会被别的区块吸收
+ * （实测 markdown / highlight 就是这样消失的），构建收尾会清掉上一版同名的残留文件。
  *
  * 运行：npm run build:lite（Node14 兼容：与 build-esm.js 同口径）
  */
 
 process.env.LARK_DOC_TARGET = 'esm'
+// 与 build-esm.js 同为 target=esm，但本文件的 resolve.alias 把重依赖掐成 stub：
+// 两条链必须各占一份 webpack filesystem cache，否则会命中 esm 那条链的解析结果，
+// stub 整套失效（产物与全量 chunk 逐字节相同，lite 契约等于没兑现）。
+process.env.LARK_DOC_CACHE_FLAVOR = 'lite'
 process.env.VUE_CLI_MODE = 'production'
 process.env.NODE_ENV = 'production'
 
+const fs = require('fs')
 const path = require('path')
 const webpack = require('webpack')
 const Service = require('@vue/cli-service')
@@ -106,6 +113,18 @@ webpack(config, (error, stats) => {
     console.error('[lite 构建] warnings：\n' + warnings.slice(0, 5).map((warning) => JSON.stringify(warning)).join('\n\n'))
     process.exit(1)
   }
+  // 自清残留：dist 按全仓约定不清理（--no-clean），而 lite 的区块集合会随 stub 化变化
+  // —— 某些区块整块塌成同一个 stub 后被别的区块吸收，本轮就不再落文件了。上一版的同名
+  // 文件会带着真依赖继续躺在 dist 里，scripts/check-lite-artifacts.js 读到的就是旧内容
+  // （2026-10-30 实测：lite.markdown / lite.highlight 就是这么假失败的）。
+  // 所以收尾时把「本轮没产出的 lite.* 区块」删掉，dist 里只留本轮真的产出的。
+  const emitted = new Set((json.assets || []).map((asset) => asset.name))
+  for (const file of fs.readdirSync(dist)) {
+    if (!/^lite\..+\.esm\.js$/.test(file) || emitted.has(file)) continue
+    fs.unlinkSync(path.resolve(dist, file))
+    console.log(`[lite 构建] 清理上一版残留区块 ${file}（本轮不再产出）`)
+  }
+
   const kb = (v) => `${(v / 1024).toFixed(1)} KiB`
   console.log('\n[lite 产物]')
   for (const asset of (json.assets || [])

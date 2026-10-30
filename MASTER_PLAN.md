@@ -734,9 +734,13 @@ import { LarkDoc } from 'lark-doc/lite'
 | **2** | 摘 `@tiptap/vue-2`：原生 Editor 挂载 + 原生 NodeView（3 个文件） | 中 | Vue 降级为「仅 UI 渲染器」 | ✅ **已完成**（tag `stage/2`） |
 | **3** | 三产物收敛 + 统一门面 `new LarkDoc(...)`；CJS 放开拆块；顺手带出 **V1 过渡态** | 中 | 运行时产物 4 套 → 3 套 | ✅ **已完成**（tag `stage/3`） |
 | **4** | 特性子路径 + 资源本地化（**内网命门**） | 中 | `lite` 档、`features/*`、零外链 | ✅ **已完成**（tag `stage/4`） |
-| **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | 🟡 **2/5 批完成 + 批次 3 进行中**（tag `stage/5-A`/`5-B`/`5-C`；批次 3 还剩 CommandMenu、HeadingMenu 两个模块） |
-| **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | ⬜ 待开（**必做**） |
-| **7** | 删 vue2 renderer + element 去 `--inline-vue` + 删 vue peerDeps → **V2/V3 终局达成** | 低（阶段 5 完成后） | element gzip 约降到 447 KiB | ⬜ 待开（**必做**，前置阶段 5 全量） |
+| **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | ✅ **已完成**（tag `stage/5-A`/`5-B`/`5-C` → `stage-5-ui-native`；`src/ui/*.js` 30 个原生 DOM 工厂，`src/` 只剩 3 个 `.vue`） |
+| **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | ✅ **已完成**（tag `stage-6-plugin`；`dist/plugin.{mjs,cjs}` + `exports["./plugin"]`） |
+| **7** | 删 vue2 renderer + element 去 `--inline-vue` + 删 vue peerDeps → **V2/V3 终局达成** | 低（阶段 5 完成后） | element gzip 约降到 447 KiB | 🟡 **未完成（本轮唯一挂账）** —— 已落地：删 5 个 SFC、抽出 `WorkspaceController` / `EditorController` / `ui/templateLibrary`、新增 opt-in `domRenderer`（tag `stage-7-vue-closure`）。**未落地**：还剩 `LarkDocEditor.vue` / `LarkDocWorkspace.vue` / `TemplateLibrary.vue` 三个 SFC 与 `components/lark-doc/editor/` 下 46 个 mixin 依赖 Vue 响应式，因此 vue2 renderer 仍是默认、`--inline-vue` 未摘、vue peerDeps 未删 → **V2/V3 未达成** |
+
+> **2026-10-30 口径修正**：阶段 5 / 6 已按批次收口，阶段 7 **只完成了一半**（去 SFC、抽 controller、备好 DOM renderer），
+> 「删 vue2 renderer」这一刀必须等三个主壳 SFC + 46 个 mixin 全部原生化之后才能落，否则编辑器 UI 会整体失效。
+> 因此 0.13.0 发的是 **V1 过渡态**（Vue 仍随产物内联），V2/V3 顺延到 0.14。
 
 **阶段表没有可选项**。阶段 5 是唯一高风险项，靠「每批先补断言再重写 + 批次一重估排期」控住（见 §5 小节 ④），
 不靠「降级为可选」规避 —— 一旦停在 V1，Vue 2.7（2023-12-31 起 EOL）将永久封产物内，且阶段 7 的收尾永远无法执行。
@@ -836,7 +840,8 @@ import { LarkDoc } from 'lark-doc/lite'
 3. **静态资源零外部依赖**：mermaid 不再内联 UMD（这是 CJS 8.5 MB 的主因），katex 字体、highlight 主题全部随包分发，`assetsBase` 可由宿主指向自托管目录；
 4. 扩展 `scripts/check-offline-assets.js`：断言「产物中不含任何 `http(s)://` 外部资源引用」。
 
-**判据**：`npm run check:offline` 绿；断网环境下 `lark-doc/features/mermaid` 仍能渲染。
+**判据**：`npm run check:offline` 绿；断网环境下 `lark-doc/features/mermaid` 仍能渲染；
+`npm run check:lite` 绿（1 个主包 + N 个区块里，7 个重依赖的指纹**一条都不许出现**，且同一指纹必须能在全量产物里找到 —— 后者防的是「指纹失效导致闸门假通过」）。
 
 ---
 
@@ -1111,7 +1116,7 @@ import { LarkDoc } from 'lark-doc/lite'
 | 层 | 手段 | 命令 |
 |---|---|---|
 | 静态校验 | 架构闸门（含新增 R1/R2/R3）+ 契约 + lint | `npm run check` |
-| 产物校验 | 重建 dist + vditor HTML + size-limit 门禁 | `npm run check:artifacts` |
+| 产物校验 | 重建 dist + lite 契约（重依赖指纹）+ vditor HTML + size-limit 门禁 | `npm run check:artifacts` |
 | 端到端验收 | `verify.mjs` | `npm run verify` |
 | 视觉 / 交互断言 | 浏览器断言 9 组（基线见阶段 5） | 按 `DEVELOPMENT.md` 的 playwright 口径 |
 | 性能 | `perf/measure.mjs` | `npm run check:perf` |
@@ -1127,10 +1132,27 @@ import { LarkDoc } from 'lark-doc/lite'
 | 1-B | `check` 绿 + R2 白名单固化 38 条 | 清单只减不增 |
 | 2 | `verify` 全绿 + 浏览器断言全绿 | 代码块语言切换/增删正常 |
 | 3 | 三产物 `size` 绿 + 三 demo 统一 `new LarkDoc(...)` | CJS 主文件 ≤ 1.5 MB |
-| 4 | `check:offline` 绿 + 断网渲染 mermaid | `lite` ≤ 300 KB |
+| 4 | `check:offline` 绿 + 断网渲染 mermaid + `check:lite` 绿（7 个重依赖指纹不许出现在任何 lite 产物里） | lite 主包 gzip ≤ 308 KB |
 | 5 | 每批次回归断言全绿 + `check:perf` 不倒退 | 每批次后采样一次性能 |
 | 6 | 宿主接入零 copy 配置 | demo 手写 copy 全部删除 |
 | 7 | `setRenderer(domRenderer)` 无 Vue 运行 | element gzip ≈ 447 KiB |
+
+### 体积预算（`size-limit`，2026-10-30 实测）
+
+读数一律以 `npm run size` 的输出为准（它自己的 gzip 参数与手工 `gzip -9` 差 ~1 KB，别拿手工数去定预算 ——
+element / CJS 两档就是这么被定穿的）。
+
+| 产物 | 实测 gzip | 预算 | 余量 | 备注 |
+|---|---|---|---|---|
+| ESM 主包 | 312.15 kB | 320 KB | ~2.5% | stage-4 定的 290 KB 已被阶段 5/6/7 的加码顶穿：每抽出一个 `src/ui/*.js` DOM 工厂 / Controller，原来挂在 Vue `data`/`methods` 里的逻辑就变成独立顶层模块。**V2 删掉三个主壳 SFC 后必须重测并往回收。** |
+| lite 主包 | 300.12 kB | 308 KB | ~2.6% | 同上。注意 lite 只比全量小 ~12 KB gzip —— 主包里绝大部分体积是我们自己的源码，不是那七个可选依赖（它们本来就在按需区块里，lite 主包从来没装过）。「用了 lite 就小一半」是错觉。 |
+| element | 481.44 kB | 490 KB | ~1.8% | 旧预算 480 KB 实测超 1.44 kB（阶段 5~7 抽 `src/ui/*` DOM 工厂的真实增量，非泄漏 —— 已排查主包内无 katex/mermaid/docx 代码，4 处 `KaTeX` 全是注释）。五档里余量最薄，别再往上堆。 |
+| CJS 主文件 | 1,150,975 B | 1170 KB | ~1.7% | 旧预算 1150 KB 实测超 975 B，同上定性。 |
+| collab | 2.91 kB | 90 KB | 充裕 | 未动。 |
+
+**还没做的减重动作**（都不是预算问题，是行为取舍，需要浏览器实测后单独决定）：
+① ESM 档关掉 core-js polyfill（`LARK_DOC_NO_POLYFILL=1`）—— 分析结果显示 core-js 占 ~204 KiB 模块源码，但关掉等于放弃对老浏览器的运行时兜底，必须先实测 `dist/lark-doc.esm.js` 在目标浏览器的行为；
+② V2 删掉 `LarkDocEditor.vue` / `LarkDocWorkspace.vue` / `TemplateLibrary.vue` 后，新版 Controller 与旧 SFC 的双份逻辑消失，这是最干净的一次回落。
 
 ---
 
@@ -1146,6 +1168,7 @@ import { LarkDoc } from 'lark-doc/lite'
 | CJS 放开拆块后 Node 侧首 require 变慢 | Node/测试变慢 | 阶段 3 同步改 `size-limit` 口径，并给出「Node 侧建议走 `./lite`」的指引 |
 | Vue 2 在完工前爆出必须修的安全问题 | 中 | 阶段 2 完成后 Vue 只存在于 UI 层，届时可直接跳做阶段 5 的批次 4 / 5，不必等全量排期 |
 | 内网环境 Node 版本 / 打包器版本过旧 | 装不上、跑不动 | `check:node14` 门禁 + 产物 ES2018 语法地板（阶段 0 已铺） |
+| **lite 契约静默失效**（已发生两次：① esm/lite 共用 webpack filesystem cache，alias 被绕过；② `dist` 不清理，区块集合变化后旧产物留着真依赖） | 宿主以为拿到了 300 KB 的 lite，实际下 3.3 MB mermaid；构建与 size-limit 都不报错 | `scripts/check-lite-artifacts.js` 用「重依赖指纹」双向校验（lite 里不许有 + 全量里必须有，防止指纹失效后假通过）+ `build-lite.js` 收尾自清本轮未产出的 `lite.*` 残留；已并入 `check:artifacts` |
 | 摘掉 `browser` 后，`new URL("./fonts/*.woff2", import.meta.url)` **在 Rollup 与 webpack4 / CJS 输出下不被处理** | 公式字体 404（§4.7 档 A 的漏网点） | Rollup 宿主配 `@rollup/plugin-url` 或装 plugin；webpack4 宿主继续拷 `dist/fonts`；1-A 判据里逐个环境实测确认 |
 
 ---
