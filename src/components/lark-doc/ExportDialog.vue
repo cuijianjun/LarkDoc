@@ -26,6 +26,8 @@
       <!-- 面板 docx-export-panel 720×215 @(396,368)（1512 视口下居中），radius 8、白底 -->
       <section
         class="lark-doc-export-panel"
+        :data-watermark="ed.outputWatermarkAttributes['data-watermark'] || undefined"
+        :data-watermark-text="ed.outputWatermarkAttributes['data-watermark-text'] || undefined"
         role="dialog"
         aria-modal="true"
         :aria-label="ed.exportPanelTitle"

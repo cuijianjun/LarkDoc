@@ -25,6 +25,7 @@
  */
 import { exportDocx, exportMarkdown, exportPdf, safeFileName } from '../../../utils/export/index.js'
 import { projectCapabilityUi } from '../../../core/policy/capability'
+import { createOutputAuditEvent, evaluateOutputPolicy, watermarkAttributes } from '../../../core/policy/output'
 
 /**
  * 三档定义。顺序 = 「更多 → 下载为」二级菜单的实测顺序（Word / PDF / Markdown，
@@ -91,6 +92,8 @@ export default {
       exportToast: '',
       /** 派发中：只用于挡住重复点击，不用于显示进度（见负结论 4）。 */
       exportBusy: false,
+      outputWatermarkAttrs: {},
+      outputAuditEvents: [],
     }
   },
   computed: {
@@ -126,7 +129,7 @@ export default {
     },
     /** 置灰态：无权限或正在派发。渲染层只加 disabled 类，**不隐藏**（负结论 3）。 */
     exportSubmitDisabled() {
-      return !this.exportCanExport || this.exportBusy
+      return !this.exportCanExport || this.exportBusy || !this.outputPolicyFor(this.exportFormat === 'pdf' ? 'print' : 'download').allowed
     },
     /** 导出文件名（不含扩展名）：取编辑器标题，空标题回落到常量。 */
     exportFileBaseName() {
@@ -144,6 +147,12 @@ export default {
     window.removeEventListener('keydown', this.onExportKeydown, true)
   },
   methods: {
+    outputPolicyFor(action) {
+      const policy = this.session && typeof this.session.getProvider === 'function'
+        ? this.session.getProvider('security')?.policy || {}
+        : {}
+      return evaluateOutputPolicy({ ...policy, canDownload: this.exportCanExport }, action)
+    },
     // —— 开关 ——
     /** 打开某一档。无权限直接 return（置灰态的第二次保险）。 */
     openExportDialog(format) {
@@ -189,6 +198,16 @@ export default {
       this.closeExportDialog()
       this.exportBusy = true
       this.exportToast = EXPORT_TOAST_TEXT
+      const action = format === 'pdf' ? 'print' : 'download'
+      const policy = this.outputPolicyFor(action)
+      if (!policy.allowed) {
+        this.exportBusy = false
+        this.exportToast = ''
+        this.recordOutputAudit(action, policy)
+        return
+      }
+      this.outputWatermarkAttrs = watermarkAttributes(this.session?.getProvider?.('security')?.policy || {})
+      this.recordOutputAudit(action, policy)
       try {
         await this.dispatchExport(format, scope, fileName)
       } finally {
@@ -245,6 +264,19 @@ export default {
     currentDoc() {
       if (!this.editor || typeof this.editor.getJSON !== 'function') return null
       return this.editor.getJSON()
+    },
+    recordOutputAudit(action, policy) {
+      const event = createOutputAuditEvent({
+        actorId: this.session?.user?.id,
+        docId: this.session?.documentId,
+        action,
+        result: policy.allowed ? 'allowed' : 'denied',
+        reason: policy.reason,
+        metadata: { format: this.exportFormat, scope: this.exportScopeValue },
+      })
+      this.outputAuditEvents.push(event)
+      if (typeof this.$emit === 'function') this.$emit('output-audit', event)
+      return event
     },
     /** 关掉 toast（宿主想手动收时用；正常路径走「落盘后自行消失」）。 */
     hideExportToast() {
