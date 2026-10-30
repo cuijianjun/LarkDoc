@@ -25,14 +25,15 @@ const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.cs
 // 阶段 5 批次 4：`HelpDialog.vue` 已删除，抽屉 DOM 由 `src/ui/dialogs.js` 的
 // `createHelpDrawer` 产出；这里守的是同一批结构口径（盒子仍是抽屉外壳、仍是 314 宽右贴边）。
 const dialog = fs.readFileSync(path.join(root, 'src/ui/dialogs.js'), 'utf8')
-const fab = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/HelpFab.vue'), 'utf8')
+const fab = fs.readFileSync(path.join(root, 'src/ui/helpFab.js'), 'utf8')
+const fabMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/helpFabUiMixin.js'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
 const dialogsMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/dialogsUiMixin.js'), 'utf8')
 // `icons.js` 在阶段 5 批次 3 已随图标积木迁到 `src/ui/`（原路径读不到会直接抛 ENOENT）。
 const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
 
 /** 抽屉工厂那一段源码（`createEmbedDialog` 之后是另一个积木，不参与本组断言）。 */
-const drawerSource = dialog.slice(dialog.indexOf('export function createHelpDrawer'), dialog.indexOf('export function createEmbedDialog'))
+const drawerSource = dialog.slice(dialog.indexOf('export function createHelpDrawer'), dialog.indexOf('/**\n * 内嵌网页'))
 /** 取一条单行 CSS 规则（本仓库 CSS 一律一行一条，读整行即可）。 */
 function ruleFor(selector) {
   return css.split('\n').find((line) => line.startsWith(`${selector} {`)) || ''
@@ -151,7 +152,7 @@ describe('P4-06 快捷键数据（07 §7 五组 + §8 Markdown 表）', () => {
   it('只有「快捷键」一项在本项目有落点（其余是外部服务入口，不伪造跳转）', () => {
     const handled = HELP_MENU_ITEMS.filter((i) => i.id === 'shortcuts')
     expect(handled.length).toBe(1)
-    expect(fab).toContain("if (item.id === 'shortcuts') this.ed.toggleHelpOpen()")
+    expect(fabMixin).toContain("if (item && item.id === 'shortcuts') this.toggleHelpOpen()")
   })
 })
 
@@ -340,25 +341,23 @@ describe('P4-06 组件契约（宿主接线与交互细节）', () => {
   })
 
   it('圆钮 hover 展开、移开 160ms 延时关闭（07 §9 同口径）', () => {
-    expect(fab).toContain('@mouseenter="showMenu"')
-    expect(fab).toContain('@mouseleave="hideLater"')
+    expect(fab).toContain('el.addEventListener(\'mouseenter\', show)')
+    expect(fab).toContain('el.addEventListener(\'mouseleave\', hideLater)')
     expect(fab).toContain('160')
     expect(fab).toContain('clearTimeout')
   })
 
   it('圆钮有 aria-haspopup / aria-expanded，菜单 role="menu"', () => {
-    expect(fab).toContain('aria-haspopup="menu"')
-    expect(fab).toContain(':aria-expanded')
-    expect(fab).toContain('role="menu"')
-    expect(fab).toContain('role="menuitem"')
+    expect(fab).toContain("setAttribute('aria-haspopup', 'menu')")
+    expect(fab).toContain("setAttr(button, 'aria-expanded'")
+    expect(fab).toContain("setAttribute('role', 'menu')")
+    expect(fab).toContain("setAttribute('role', 'menuitem')")
   })
 
-  it('宿主挂着 HelpFab，抽屉挂在原生弹层宿主上（同一 helpOpen 驱动）', () => {
-    expect(editorVue).toContain('<HelpFab :ed="self" />')
-    expect(editorVue).toContain("import HelpFab from './editor/HelpFab.vue'")
-    // 注册表是一整行，末尾就是 `HelpFab }`，不能用 `HelpFab,` 匹配。
-    expect(editorVue).toMatch(/components:\s*\{[^}]*\bHelpFab\b/)
-    // 阶段 5 批次 4：`<HelpDialog :ed="self" />` 换成空宿主 div，DOM 由原生层建。
+  it('宿主挂着原生 HelpFab，抽屉挂在原生弹层宿主上（同一 helpOpen 驱动）', () => {
+    expect(editorVue).toContain('<div ref="helpFabHost" />')
+    expect(editorVue).toContain('this.mountHelpFab()')
+    expect(fabMixin).toContain("createHelpFab({")
     expect(editorVue).toContain('<div ref="dialogHost" />')
     expect(editorVue).toContain('this.mountDialogs()')
   })
@@ -371,7 +370,7 @@ describe('P4-06 组件契约（宿主接线与交互细节）', () => {
   })
 
   it('工具栏的「快捷键帮助」按钮仍是第二入口（未删）', () => {
-    const toolbar = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/ToolbarBar.vue'), 'utf8')
-    expect(toolbar).toContain('ed.toggleHelpOpen')
+    const toolbar = fs.readFileSync(path.join(root, 'src/ui/toolbar.js'), 'utf8')
+    expect(toolbar).toContain("onClick: () => call('toggleHelpOpen')")
   })
 })

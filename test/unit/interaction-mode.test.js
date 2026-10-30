@@ -29,7 +29,8 @@ import revisionMixin from '../../src/components/lark-doc/editor/revisionMixin'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const readingCss = fs.readFileSync(path.join(root, 'src/styles/reading.css'), 'utf8')
-const panelVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/RevisionPanel.vue'), 'utf8')
+const panelUi = fs.readFileSync(path.join(root, 'src/ui/revision.js'), 'utf8')
+const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionUiMixin.js'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
 const revisionMixinSrc = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionMixin.js'), 'utf8')
 
@@ -407,18 +408,17 @@ describe('规格层 · reading.css / 面板 / 接线点', () => {
   })
 
   it('面板只读展示：不隐藏，只加 is-readonly + 关输入区', () => {
-    expect(panelVue).toContain(":class=\"{ 'is-readonly': ed.revisionReadonly }\"")
-    expect(panelVue).toContain('v-if="ed.revisionPanelActive(item) && !ed.revisionReadonly"')
-    expect(panelVue).toContain(':disabled="ed.revisionButtonDisabled(btn.id, item.revisionId)"')
-    expect(panelVue).toContain('v-if="ed.revisionPanels.length"')
+    expect(panelUi).toContain("state.readonly ? ' is-readonly' : ''")
+    expect(panelUi).toContain('item.active && !state.readonly')
+    expect(panelMixin).toContain('this.revisionButtonDisabled(button.id, item.revisionId)')
+    expect(panelMixin).toContain('items: this.revisionPanels.map')
   })
 
   it('既有四条负结论没被改坏（无 title / tooltip / more-btn / 已解决）', () => {
-    expect(panelVue).not.toContain('title="')
-    expect(panelVue).not.toContain(':title=')
-    expect(panelVue).not.toContain('data-tooltip=')
-    expect(panelVue).not.toContain('more-btn"')
-    expect(panelVue).not.toContain('resolved')
+    expect(panelUi).not.toContain('title=')
+    expect(panelUi).not.toContain('data-tooltip=')
+    expect(panelUi).not.toContain('more-btn')
+    expect(panelUi).not.toContain('resolved')
   })
 
   it('revisionMixin 读 interactionMode，不自己拼 ||', () => {

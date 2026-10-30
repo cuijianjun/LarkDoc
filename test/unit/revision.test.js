@@ -42,7 +42,8 @@ import { ICONS } from '../../src/ui/icons'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
-const panelVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/RevisionPanel.vue'), 'utf8')
+const panelUi = fs.readFileSync(path.join(root, 'src/ui/revision.js'), 'utf8')
+const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionUiMixin.js'), 'utf8')
 const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
 const modeMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/viewModesMixin.js'), 'utf8')
 
@@ -446,28 +447,26 @@ describe('P4-06 规格层：CSS 与面板结构（07 §12.2 / §12.4 / §12.6）
   })
 
   it('面板模板：六个按钮按序、无 title、无 more-btn、头像走兜底图标', () => {
-    expect(panelVue).toContain('v-for="btn in ed.revisionButtons"')
-    expect(panelVue).toContain(':disabled="ed.revisionButtonDisabled(btn.id, item.revisionId)"')
-    expect(panelVue).toContain("btn.split")
-    expect(panelVue).toContain('ed.revisionPanelActive(item)')
-    expect(panelVue).toContain('回复...')
-    expect(panelVue).toContain('rev-avatar')
-    // 07 §12.4：不写 title / data-tooltip，气泡由宿主组件画。
-    // 只查属性写法（带 =），脚本注释里那句「不写 data-tooltip」不算违规。
-    expect(panelVue).not.toContain(':title=')
-    expect(panelVue).not.toContain('title="')
-    expect(panelVue).not.toContain('data-tooltip=')
+    expect(panelUi).toContain('buttons.map')
+    expect(panelUi).toContain('button.disabled')
+    expect(panelUi).toContain('button.split')
+    expect(panelUi).toContain('item.active')
+    expect(panelUi).toContain('回复...')
+    expect(panelUi).toContain("iconNode('rev-avatar', 18)")
+    // 07 §12.4：原生按钮只写 aria-label，不写 title / data-tooltip。
+    expect(panelUi).not.toContain('title=')
+    expect(panelUi).not.toContain('data-tooltip=')
     // 07 §12.6：没有评论那颗 more-btn，也没有「已解决」概念。
-    // 同样只查类名 / 属性（脚本注释里提到了这两件事，不算违规）。
-    expect(panelVue).not.toContain('comment-moremenu')
-    expect(panelVue).not.toContain('more-btn"')
-    expect(panelVue).not.toContain('resolved')
+    expect(panelUi).not.toContain('comment-moremenu')
+    expect(panelUi).not.toContain('more-btn')
+    expect(panelUi).not.toContain('resolved')
   })
 
   it('宿主接线：面板挂上、事务里刷新、模式切换同步 tracker', () => {
-    expect(editorVue).toContain('<RevisionPanel :ed="self" />')
-    expect(editorVue).toContain('this.updateRevisionPanels()')
-    expect(editorVue).toContain('revisionMixin')
+    expect(editorVue).toContain('<div ref="revisionHost" />')
+    expect(editorVue).toContain('this.mountRevisionPanels()')
+    expect(panelMixin).toContain('this.refreshRevisionPanels()')
+    expect(panelMixin).toContain('createRevisionPanels')
     expect(modeMixin).toContain('syncRevisionTracking')
     // 切模式不重建编辑器：只翻 storage.active。
     expect(modeMixin).not.toContain('new Editor')
