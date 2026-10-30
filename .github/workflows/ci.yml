@@ -32,9 +32,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests (vitest)
-        run: npm run check:unit
-
+      # 先构建、后单测。原因：test/unit/plugin-contract.test.js 校验的是**真实产物**
+      # （dist/plugin.mjs、dist/lark-doc-element.umd.min*.js、dist/lark-doc.css），
+      # 干净仓库上「先单测」会直接抛 `[lark-doc] 找不到 dist 目录` 送 4 条红。
+      # 本地之所以看不出：npm run check 走 check:gate（deploy/code/ui/lint），本来就不含单测，
+      # 单测只在 CI 跑，于是这个顺序缺陷一直只在线上暴露。
       - name: Build (commonjs)
         run: npm run build
 
@@ -46,6 +48,9 @@ jobs:
 
       - name: Build (element umd)
         run: npm run build:element
+
+      - name: Unit tests (vitest)
+        run: npm run check:unit
 
       - name: Size limit
         run: npm run size

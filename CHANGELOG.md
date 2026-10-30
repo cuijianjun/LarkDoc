@@ -15,6 +15,7 @@
 | 媒体 HTML | 新增 `config.media.htmlMode`：`inline`（默认，`<figure><img>` 直接嵌在 HTML 里）/ `link`（只留媒体地址的 `<a href>`）。`getHTML({ media })` 可按次覆盖。只影响 HTML 产物，JSON 不变。 |
 | 在线 Demo | 新增 `npm run demo:sync` / `demo:check` / `demo:build` 与 `scripts/demo-sync-vendor.mjs`：把 UMD 主文件 + 全部按需分块 + 公式样式 + 字体一次性校验并拷进 `docs/public/demo/vendor/`，不会再出现「主文件跟上了、懒加载区块没跟上」。顶栏导入 / 导出按钮首次挂载被搬进停泊位的问题一并修掉。 |
 | size-limit | element 490 KB → 512 KB：master 实测已是 ≈500.5 KB（旧上限在 `c55a089` 提到 490 时就不够），本次改动 +2 KB。其余四档未动。 |
+| CI 顺序 | `ci.yml` 改成**先构建、后单测**。`test/unit/plugin-contract.test.js` 校验的是真实产物（`dist/plugin.mjs`、`dist/lark-doc-element.umd.min*.js`、`dist/lark-doc.css`），旧顺序在干净仓库上必抛 `[lark-doc] 找不到 dist 目录` —— 这是 master 上 `CI #15/#16` 一直红的唯一原因，跟本批改动无关（本地 `npm run check` 不含单测，所以看不出来）。 |
 
 ## 0.13.0（2026-10-30）
 
