@@ -35,6 +35,26 @@ function normalizeError(error = {}) {
   }
 }
 
+export function importProgressSummary(input = {}) {
+  const state = normalizeImportJob(input)
+  const total = state.jobs.length || 1
+  const completed = state.jobs.filter(job => ['ready', 'failed', 'cancelled'].includes(job.stage)).length
+  const progress = Math.max(0, Math.min(100, Number.isFinite(state.progress)
+    ? state.progress
+    : Math.round(state.jobs.reduce((sum, job) => sum + Math.max(0, Math.min(100, job.progress || 0)), 0) / total)))
+  return {
+    stage: state.stage,
+    batchStatus: state.batchStatus,
+    progress,
+    total,
+    completed,
+    failed: state.failedAssetCount,
+    remaining: Math.max(0, total - completed),
+    canRetry: state.jobs.some(job => job.stage === 'failed' && job.errors.some(error => error.retryable)),
+    canRollback: Boolean(state.rollback.requested || state.batchStatus === 'partial' || state.batchStatus === 'completed'),
+  }
+}
+
 export function normalizeImportJob(input = {}) {
   const jobs = Array.isArray(input.jobs) ? input.jobs.map(job => ({
     ...job,
