@@ -85,7 +85,7 @@ export function createLarkDocExtensions(options = {}) {
     // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
     // schema 规格与 StarterKit 内置版逐字节一致（content: 'block+' 容器），
     // 仅追加 parseHTML 规则；位置紧随 StarterKit，命令与 inputRule 原样继承。
-    StarterKit.configure({ undoRedo: !collab, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    StarterKit.configure({ undoRedo: collab ? false : { depth: 100, newGroupDelay: 800 }, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
     // 协同扩展紧跟 StarterKit：`Collaboration` 要接管 doc 的 transaction 过滤，
     // 排在业务块之前才能先看到远端 update。空数组时展开为「没有变化」。
     ...collabExtensions,

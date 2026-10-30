@@ -27,6 +27,7 @@ import * as documentSchema from './core/documentSchema'
 import * as transactionMetadata from './core/transactionMetadata'
 import * as migrations from './core/migrations'
 import * as blockApi from './core/blockApi'
+import * as blockClipboard from './core/blocks/block-clipboard'
 // 17 §17.5 的外部服务块目录（chat_card / okr* / jira_issue / agenda* / board / synced…）：
 // 本地没有实现，宿主接了服务才能真用。目录与能力判定必须对外 —— 宿主置灰菜单、
 // 拦命令、给「去接入」提示都靠 `externalBlockCapability()`，不该自己判字符串。
@@ -72,6 +73,7 @@ export {
   transactionMetadata,
   migrations,
   blockApi,
+  blockClipboard,
   externalBlocks,
   comments,
   versioning,
