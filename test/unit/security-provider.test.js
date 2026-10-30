@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSecurityProvider, normalizeAuditRecord, normalizeSecurityDecision, normalizeSecurityPolicy } from '../../src/providers/security'
+import { projectCapabilitiesForState } from '../../src/providers/authorization'
+import { createAuditEvent } from '../../src/core/policy/audit'
 
 describe('workspace security provider adapter', () => {
   it('separates policy decisions from audit-record queries', async () => {
@@ -29,5 +31,18 @@ describe('workspace security provider adapter', () => {
       status: 'approval_required', allowed: false, auditId: 'a1',
     })
     expect(normalizeAuditRecord({ auditId: 'a1', kind: 'download', actorId: 'u1' })).toMatchObject({ auditId: 'a1', kind: 'download', actorId: 'u1' })
+  })
+
+  it('projects unauthorized and over-limit blocks as visible read-only cards', () => {
+    expect(projectCapabilitiesForState('unauthorized')).toMatchObject({ visible: true, read: false, edit: false, delete: true, comment: false, retry: false })
+    expect(projectCapabilitiesForState('over_limit')).toMatchObject({ visible: true, read: false, edit: false, delete: true, comment: false, retry: false })
+  })
+
+  it('redacts provider tokens before creating audit events', () => {
+    const event = createAuditEvent({
+      actorId: 'u1', action: 'load', result: 'failed',
+      metadata: { token: 'secret-token', nested: { accessToken: 'secret-access-token' } },
+    })
+    expect(event.metadata).toEqual({ token: '[redacted]', nested: { accessToken: '[redacted]' } })
   })
 })

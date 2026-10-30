@@ -67,7 +67,7 @@
 
 - [x] T024 [P] [US3] 新增 `test/unit/async-state-matrix.test.js`，以注入 provider 覆盖五态、重试幂等、保留旧内容和超限
 - [ ] T025 [P] [US3] 在 `test/unit/file-block.test.js`、`test/unit/image-nodeview.test.js`、`test/unit/sheet.test.js`、`test/unit/web-embed.test.js` 和 `test/unit/unknown-block.test.js` 验证各异步块统一投影
-- [ ] T026 [US3] 在 `test/unit/security-provider.test.js` 验证可写降级只读、删除/恢复/评论拒绝和 token 不进入 editor/core
+- [x] T026 [US3] 在 `test/unit/security-provider.test.js` 验证可写降级只读、删除/恢复/评论拒绝和 token 不进入 editor/core
 
 ### Implementation
 
