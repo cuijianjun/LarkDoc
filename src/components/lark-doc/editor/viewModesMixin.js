@@ -75,8 +75,15 @@ export default {
       window.removeEventListener('resize', this.syncViewportState)
       window.removeEventListener('orientationchange', this.syncViewportState)
     }
-    if (this.modeToastTimer) clearTimeout(this.modeToastTimer)
-    if (this._searchDebounce) this._searchDebounce.cancel()
+    if (this.modeToastTimer) {
+      clearTimeout(this.modeToastTimer)
+      this.modeToastTimer = null
+    }
+    if (this._searchDebounce) {
+      if (typeof this._searchDebounce.dispose === 'function') this._searchDebounce.dispose()
+      else this._searchDebounce.cancel()
+      this._searchDebounce = null
+    }
   },
   methods: {
     syncViewportState() {
@@ -300,12 +307,5 @@ export default {
     toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },
     prevSlide() { this.slideIndex -= 1 },
     nextSlide() { this.slideIndex += 1 },
-  },
-  // 提示条定时器必须在卸载前清掉：单页应用里反复挂载/卸载编辑器，
-  // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。
-  beforeDestroy() {
-    if (this.modeToastTimer) { clearTimeout(this.modeToastTimer); this.modeToastTimer = null }
-    // 查找去抖同理：卸载后不许再有回调去摸 editor。
-    if (this._searchDebounce) { this._searchDebounce.dispose(); this._searchDebounce = null }
   },
 }

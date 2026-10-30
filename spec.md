@@ -115,3 +115,4 @@
 - `.specify/`、`.codebuddy/commands/` 使用官方 Spec Kit CLI 1.2.6.dev0 刷新的官方资产；当前 CLI 已安装到用户级环境，但 CodeBuddy 本体未被 `specify check` 检测到，因此项目初始化使用 `--ignore-agent-tools` 完成。
 - 需求数字以最新章节为准：A 级规格审计 20 ✅ / 1 ◐ / 0 ⏳；B 级 27/27 收口；E 级可执行缺口 0。以上是“规格收口”统计，不等于代码完成率。
 - 所有旧的“顶部工具栏”“自定义右键菜单”“折叠块 slash”待办必须视为已作废。
+- T050 门禁收口证据（2026-10-30）：全量单测报告 93 个文件 / 2056 项断言通过，但同时有 8 个 forks worker 启动超时错误，不能视为无条件全绿；`check:gate` 首个代码失败为 `viewModesMixin.js` 重复 `beforeDestroy`，已删除重复生命周期并通过该文件 lint，随后仅保留 `VersionPanel.vue` 16 个格式 warning；`verify:all` 12 个目标均失败，主要是 `page.goto` 60 秒导航超时及单目标 240 秒超时；`check:artifacts` 首个失败点为 Thread Loader broker timeout。以上浏览器/构建并发问题记录为环境 BLOCKED，不伪报为代码通过。T032 真实 Safari/移动端运行器继续 BLOCKED。
