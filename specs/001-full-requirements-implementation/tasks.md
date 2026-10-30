@@ -83,7 +83,7 @@
 
 ### Tests
 
-- [ ] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已补评论乱序回读、切文档/账号、销毁后旧响应与无阅读权限场景；相关三文件 84 项通过；mention 实体降级与跨会话回读仍待补）
+- [ ] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已补评论乱序回读、切文档/账号、销毁后旧响应、无阅读权限、无编辑权限 mention 与离职候选过滤；相关回归通过；第二账号实体回读与锚点失效仍待补）
 - [ ] T031 [P] [US4] 在 `test/unit/versioning-ui.test.js`、`test/unit/mode-switch.test.js` 和 `test/unit/storage-idb.test.js` 验证只读版本、窄屏/横屏和 512KB 离线快照边界
 - [ ] T032 [P] [US4] 新增 `test/browser/safari-comments.test.js` 与移动端浏览器场景；运行器不可用时将真实验证标记 BLOCKED，并保留单元替代证据
 - [ ] T033 [US4] 在 `test/collab/converge.test.js` 和 `test/collab/hocuspocus-wire.test.js` 验证离线恢复、重复回调、冲突合并和远端不覆盖
