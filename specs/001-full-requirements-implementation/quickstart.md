@@ -3,7 +3,7 @@
 ## 前置
 
 ```bash
-cd /Users/cjjxw/codex/.wt-larkdoc/spec-kit-audit
+cd /Users/cjjxw/codex/.wt-larkdoc/full-requirements
 npm install
 ```
 
@@ -12,7 +12,7 @@ npm install
 ## MVP：Core 与编辑主环
 
 ```bash
-npm run test:unit -- test/unit/block-api.test.js test/unit/insert-atomicity.test.js test/unit/heading-container.test.js
+npm run test:unit -- test/unit/block-api.test.js test/unit/insert-atomicity.test.js test/unit/heading-container.test.js test/unit/container-depth.test.js
 npm run test:unit -- test/unit/versioning-core.test.js test/unit/revision.test.js test/unit/collab-editor.test.js
 npm run test:unit -- test/unit/table-clip.test.js test/unit/image-insert.test.js test/unit/export-roundtrip.test.js
 ```

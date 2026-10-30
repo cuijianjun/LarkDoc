@@ -18,7 +18,19 @@ export const DEFAULT_CAPABILITIES = Object.freeze({
 })
 
 export function normalizeCapabilities(value = {}) {
-  return { ...DEFAULT_CAPABILITIES, ...(value && typeof value === 'object' ? value : {}) }
+  const input = value && typeof value === 'object' ? value : {}
+  const normalized = { ...DEFAULT_CAPABILITIES, ...input }
+  return {
+    ...normalized,
+    visible: input.visible === undefined ? normalized.canView !== false : input.visible !== false,
+    read: input.read === undefined ? normalized.canView !== false : input.read !== false,
+    edit: input.edit === undefined ? normalized.canEdit !== false : input.edit !== false,
+    delete: input.delete === undefined ? normalized.canEdit !== false : input.delete !== false,
+    comment: input.comment === undefined ? normalized.canComment !== false : input.comment !== false,
+    restore: input.restore === undefined ? normalized.canRestoreVersion !== false : input.restore !== false,
+    duplicate: input.duplicate === undefined ? normalized.canEdit !== false : input.duplicate !== false,
+    export: input.export === undefined ? normalized.canExport !== false : input.export !== false,
+  }
 }
 
 /** 校验宿主授权适配器，避免 Session 运行到保存动作才发现接口错误。 */

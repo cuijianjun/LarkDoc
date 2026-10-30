@@ -1,6 +1,6 @@
 import { createDocumentRecord } from '../core/documentSchema'
 import { aggregateHeadingContainers, restoreUnknownBlocks } from '../core/documentOperations'
-import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
+import { createTransactionId, setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
 import { createAuthorizationProvider, normalizeCapabilities } from '../providers/authorization'
 import { createCollaborationProvider } from '../providers/collaboration'
 import { createCommentsProvider } from '../providers/comments'
@@ -98,8 +98,10 @@ export class DocumentSession {
   /** 给一次 ProseMirror dispatch 写入来源、请求和基线修订信息。 */
   dispatch(transaction, metadata = {}) {
     if (!this._editor || !this._editor.view) throw new Error('DocumentSession 尚未绑定编辑器')
-    const next = setTransactionMetadata(transaction, metadata)
+    const transactionId = metadata.transactionId || createTransactionId()
+    const next = setTransactionMetadata(transaction, { ...metadata, transactionId })
     this._editor.view.dispatch(next)
+    this.emit('transaction', { transactionId, metadata: next.getMeta('larkDocTransaction') })
     return next
   }
 

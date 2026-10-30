@@ -191,19 +191,21 @@ export function assignIds(json, taken, own = NO_OWNED_IDS) {
 }
 
 /** 整棵子树换号（`duplicate` 专用：子孙 id 一律重发，否则锚点会撞车）。 */
-export function reassignIds(json, taken) {
-  if (!json) return { json, id: null }
+export function reassignIds(json, taken, idMap = {}) {
+  if (!json) return { json, id: null, idMap }
   const copy = { ...json }
   let id = null
   if (BLOCK_ID_TYPES.has(copy.type)) {
+    const previousId = copy.attrs && copy.attrs.blockId
     id = createBlockId(taken)
     taken.add(id)
     copy.attrs = { ...(copy.attrs || {}), blockId: id }
+    if (typeof previousId === 'string' && previousId) idMap[previousId] = id
   }
   if (Array.isArray(copy.content)) {
-    copy.content = copy.content.map(child => reassignIds(child, taken).json)
+    copy.content = copy.content.map(child => reassignIds(child, taken, idMap).json)
   }
-  return { json: copy, id }
+  return { json: copy, id, idMap }
 }
 
 /** `deep: false` 的复制：只留壳，子块丢掉；容器补一个「刚好合法」的最小内容。 */
