@@ -6,17 +6,17 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] 建立基线记录目录并在 `specs/001-full-requirements-implementation/quickstart.md` 记录当前依赖、Node/npm 版本和环境阻塞规则
-- [ ] T002 [P] 对照 `requirements/00-README.md`、`requirements/10-缺口与待补清单.md`、`requirements/15-闭环审计与端到端流程.md` 建立 FR-001–FR-021 到源码/测试/命令的追踪表
-- [ ] T003 [P] 校验 `package.json` 中 `test:unit`、`check:gate`、`check:artifacts`、`verify:all`、`check:perf` 命令与 `quickstart.md` 一致
+- [x] T001 [P] 建立基线记录目录并在 `specs/001-full-requirements-implementation/quickstart.md` 记录当前依赖、Node/npm 版本和环境阻塞规则
+- [x] T002 [P] 对照 `requirements/00-README.md`、`requirements/10-缺口与待补清单.md`、`requirements/15-闭环审计与端到端流程.md` 建立 FR-001–FR-021 到源码/测试/命令的追踪表
+- [x] T003 [P] 校验 `package.json` 中 `test:unit`、`check:gate`、`check:artifacts`、`verify:all`、`check:perf` 命令与 `quickstart.md` 一致
 
 ## Phase 2: Foundational
 
-- [ ] T004 [P] 在 `src/core/blockApi/index.js`、`src/core/blockApi/nodes.js` 和 `src/core/blockApi/tree.js` 固化 BlockAPI 方法、稳定错误码、权限前置检查和原子回滚契约
-- [ ] T005 [P] 在 `src/core/transactionMetadata.js` 和 `src/session/DocumentSession.js` 固化 operation origin、transactionId、provider 拒绝和回读事件语义
-- [ ] T006 [P] 在 `src/core/blocks/block-id.js` 与 `src/core/blocks/document-helpers.js` 固化复制重建 ID、移动/撤销保持 ID、容器循环和深度校验
-- [ ] T007 [P] 在 `test/unit/block-api.test.js`、`test/unit/insert-atomicity.test.js` 和 `test/unit/container-depth.test.js` 增加 BlockAPI、非法父节点、权限拒绝、循环引用和事务回滚的失败优先测试
-- [ ] T008 在 `src/providers/` 和 `src/core/policy/` 统一 provider 错误、capability 投影、审计事件和敏感 token 隔离约束
+- [x] T004 [P] 在 `src/core/blockApi/index.js`、`src/core/blockApi/nodes.js` 和 `src/core/blockApi/tree.js` 固化 BlockAPI 方法、稳定错误码、权限前置检查和原子回滚契约
+- [x] T005 [P] 在 `src/core/transactionMetadata.js` 和 `src/session/DocumentSession.js` 固化 operation origin、transactionId、provider 拒绝和回读事件语义
+- [x] T006 [P] 在 `src/core/blocks/block-id.js` 与 `src/core/blocks/document-helpers.js` 固化复制重建 ID、移动/撤销保持 ID、容器循环和深度校验
+- [x] T007 [P] 在 `test/unit/block-api.test.js`、`test/unit/insert-atomicity.test.js` 和 `test/unit/container-depth.test.js` 增加 BlockAPI、非法父节点、权限拒绝、循环引用和事务回滚的失败优先测试
+- [x] T008 在 `src/providers/` 和 `src/core/policy/` 统一 provider 错误、capability 投影、审计事件和敏感 token 隔离约束
 
 ## Phase 3: User Story 1 - 基础文档编辑闭环 (Priority: P1) 🎯 MVP
 
