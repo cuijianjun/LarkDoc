@@ -21,7 +21,8 @@
 - **运行时（接入方）**：Node `>= 14.21.3`（`engines.node` 已放宽；Tiptap 3 依赖的 ES2022+ API 已由入口 core-js polyfill 补齐，Node 14 可正常运行）。无需固定某个版本。
 - **peerDependencies**：`@tiptap/vue-2 ^3.32.0`（可选，协同/标注类能力用到）。
   **不再需要装 Vue** —— 阶段 3 起 Vue 被打进 esm / cjs / element 三档产物（V1 契约脱离），
-  `peerDependencies` 里的 `vue` 一项已删除；源码树里的 Vue 会在阶段 5 + 7 摘掉（V2/V3）。
+  `peerDependencies` 里的 `vue` 一项已删除。**0.13.0 是 V1 过渡态**：源码树里仍剩 3 个 Vue 主壳 SFC，
+  真正的 V2/V3「源码完全不含 Vue」顺延 0.14（见 `CHANGELOG.md` 阶段 7「未完成」）。
 - **从源码构建/跑 check**：Node `>= 14.21.3` + npm `>= 8.19.4` 即可（`check-node14.js` 只做最低版本门禁，Node 20 等更高版本同样合法）。
 
 ## 接入方式
