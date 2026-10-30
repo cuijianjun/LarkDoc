@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSecurityProvider, normalizeAuditRecord, normalizeSecurityDecision, normalizeSecurityPolicy } from '../../src/providers/security'
+import { createSecurityProvider, normalizeAuditRecord, normalizeSecurityDecision, normalizeSecurityPolicy, requirePermittedDecision } from '../../src/providers/security'
 import { projectCapabilitiesForState } from '../../src/providers/authorization'
 import { createAuditEvent } from '../../src/core/policy/audit'
 
@@ -21,6 +21,16 @@ describe('workspace security provider adapter', () => {
 
   it('requires a host request', () => {
     expect(() => createSecurityProvider()).toThrow(/host request/i)
+  })
+
+  it('rejects business-denied security mutations with stable decision metadata', async () => {
+    const provider = createSecurityProvider({
+      request: async () => ({ status: 'deny', code: 'SECURITY_DENIED', reason: 'download blocked', requestId: 'req-1', permissionVersion: 7 }),
+    })
+    await expect(provider.requestDecision({ actorId: 'u1' }, { action: 'download' })).rejects.toMatchObject({
+      code: 'SECURITY_DENIED', status: 'deny', requestId: 'req-1', permissionVersion: 7, reason: 'download blocked',
+    })
+    expect(() => requirePermittedDecision({ status: 'approval_required', requestId: 'req-2' })).toThrow(/security request denied/i)
   })
 
   it('normalizes Feishu-style policy, decision and audit states', () => {

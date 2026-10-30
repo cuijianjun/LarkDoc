@@ -44,6 +44,28 @@ export function normalizeSecurityDecision(input = {}) {
   return { ...input, status, allowed: status === 'permit' }
 }
 
+export function securityDecisionError(decision, operation = 'security request') {
+  const normalized = normalizeSecurityDecision(decision)
+  const error = new Error(normalized.reason || `${operation} denied`)
+  error.code = normalized.code || 'ERR_SECURITY_DENIED'
+  error.status = normalized.status
+  error.requestId = normalized.requestId || null
+  error.permissionVersion = normalized.permissionVersion
+  error.reason = normalized.reason || ''
+  error.decision = normalized
+  return error
+}
+
+/**
+ * Host calls must preserve a business denial even when the transport succeeds
+ * (the Feishu security APIs commonly return HTTP 200 with code != 0).
+ */
+export function requirePermittedDecision(input, operation = 'security request') {
+  const decision = normalizeSecurityDecision(input)
+  if (!decision.allowed) throw securityDecisionError(decision, operation)
+  return decision
+}
+
 export function normalizeAuditRecord(input = {}) {
   return {
     ...input,
@@ -61,7 +83,17 @@ export function createSecurityProvider(options = {}) {
     provider: 'security',
   })
   const provider = { capabilities: Object.freeze({ operations: OPERATIONS.slice(), requiresHostRequest: true }) }
-  for (const operation of OPERATIONS) provider[operation] = (ctx, input) => invoke(operation, ctx, input)
+  for (const operation of OPERATIONS) {
+    provider[operation] = async (ctx, input) => {
+      const result = await invoke(operation, ctx, input)
+      // Reads return their normalized payload. Mutations/decisions must not
+      // turn a business deny into a successful-looking resolved Promise.
+      if (operation === 'requestDecision' || operation === 'resolveDecision' || operation === 'updatePolicy') {
+        return requirePermittedDecision(result, operation)
+      }
+      return result
+    }
+  }
   return provider
 }
 
