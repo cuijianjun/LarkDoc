@@ -7,8 +7,8 @@
  *
  * 这里改成「输入没变就不重建」：
  *   - 计算一份「构建输入指纹」（src/** 的路径+大小+mtime、构建配置、依赖声明）；
- *   - 指纹与上次构建后写的 stamp 一致，且 5 个产物都在 → 跳过构建；
- *   - 否则按顺序重建 5 项，成功后写回 stamp。
+ *   - 指纹与上次构建后写的 stamp 一致，且全部产物都在 → 跳过构建；
+ *   - 否则按顺序重建各产物组，成功后写回 stamp。
  *
  * 为什么不直接比 mtime：
  *   改 `package.json` 的 scripts、或改个 README，mtime 就变了，
@@ -29,17 +29,25 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const STAMP = process.env.LARK_DOC_ARTIFACTS_STAMP || join(ROOT, '_codex', 'artifacts-stamp.json') // _codex/ 已被 .gitignore
 
-/** 产物 → 构建脚本。顺序与原 prepack 一致，不能换（后一步可能依赖前一步产物）。 */
-const ARTIFACTS = [
-  { file: 'dist/lark-doc.common.js', script: 'build' },
-  { file: 'dist/lark-doc.umd.min.js', script: 'build:umd' },
-  { file: 'dist/lark-doc.esm.js', script: 'build:esm' },
-  { file: 'dist/lark-doc-collab.esm.js', script: 'build:collab' },
-  { file: 'dist/lark-doc-element.umd.min.js', script: 'build:element' }
+/**
+ * 产物 → 构建脚本。相同 script 的产物归为一组，避免 build:adapters 执行两次。
+ * 顺序与原 prepack 一致，不能换（后一步可能依赖前一步产物）。
+ */
+const ARTIFACT_GROUPS = [
+  { script: 'build', files: ['dist/lark-doc.common.js'] },
+  { script: 'build:umd', files: ['dist/lark-doc.umd.min.js'] },
+  { script: 'build:esm', files: ['dist/lark-doc.esm.js'] },
+  { script: 'build:collab', files: ['dist/lark-doc-collab.esm.js'] },
+  { script: 'build:element', files: ['dist/lark-doc-element.umd.min.js'] },
+  { script: 'build:adapters', files: ['dist/lark-doc-vue3.mjs', 'dist/lark-doc-react.mjs'] },
 ]
+const ARTIFACTS = ARTIFACT_GROUPS.flatMap(({ script, files }) => files.map((file) => ({ file, script })))
 
-/** 整文件参与指纹的构建配置 */
-const CONFIG_FILES = ['vue.config.js', 'babel.config.js', 'postcss.config.js', 'jsconfig.json']
+/** 整文件参与指纹的构建配置与构建脚本 */
+const CONFIG_FILES = [
+  'vue.config.js', 'babel.config.js', 'postcss.config.js', 'jsconfig.json',
+  'scripts/build-adapters.js', 'scripts/build-esm.js', 'scripts/build-collab.js',
+]
 
 /** package.json 里只取真正影响产物的字段 */
 const PKG_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects']
@@ -102,7 +110,7 @@ const sizeDrift = ARTIFACTS.filter((a) => {
 const upToDate = !FORCE && missing.length === 0 && sizeDrift.length === 0 && stamp?.fingerprint === fingerprint
 
 if (upToDate) {
-  console.log(`✓ 构建输入未变，5 个产物齐备 —— 跳过构建（指纹 ${fingerprint.slice(0, 8)}）`)
+  console.log(`✓ 构建输入未变，${ARTIFACTS.length} 个产物齐备 —— 跳过构建（指纹 ${fingerprint.slice(0, 8)}）`)
   process.exit(0)
 }
 
@@ -125,11 +133,11 @@ if (CHECK_ONLY) {
 
 console.log(`→ 重建产物（${reasons.join('；')}）`)
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-for (const a of ARTIFACTS) {
-  console.log(`\n$ npm run ${a.script}  →  ${a.file}`)
-  const r = spawnSync(npm, ['run', a.script], { cwd: ROOT, stdio: 'inherit', env: process.env })
+for (const group of ARTIFACT_GROUPS) {
+  console.log(`\n$ npm run ${group.script}  →  ${group.files.join(', ')}`)
+  const r = spawnSync(npm, ['run', group.script], { cwd: ROOT, stdio: 'inherit', env: process.env })
   if (r.status !== 0) {
-    console.error(`\n✗ 构建失败：${a.script}`)
+    console.error(`\n✗ 构建失败：${group.script}`)
     process.exit(1)
   }
 }
@@ -149,4 +157,4 @@ try {
 } catch {
   /* stamp 写不进去只影响下次复用，不影响本次产物 */
 }
-console.log(`\n✓ 产物就绪（5/5，指纹 ${fingerprint.slice(0, 8)}）`)
+console.log(`\n✓ 产物就绪（${ARTIFACTS.length}/${ARTIFACTS.length}，指纹 ${fingerprint.slice(0, 8)}）`)

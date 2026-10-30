@@ -106,9 +106,13 @@ export function createReactLarkDoc(React) {
       }
       attrs[attr] = entry.type === 'string'
         ? String(value)
-        : entry.type === 'object' || (entry.type === 'json' && typeof value === 'object')
-          ? JSON.stringify(value)
-          : String(value)
+        : entry.type === 'list'
+          ? Array.isArray(value) ? value.join(',') : String(value)
+          : entry.type === 'object' || (entry.type === 'json' && typeof value === 'object')
+            ? JSON.stringify(value)
+            : entry.type === 'boolean'
+              ? value === true ? '' : String(value)
+              : String(value)
     }
     return createElement('lark-doc', attrs)
   })

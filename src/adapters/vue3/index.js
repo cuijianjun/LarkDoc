@@ -52,6 +52,11 @@ export function resolveVue3Attrs(props = {}) {
       else attrs[attr] = String(value)
       continue
     }
+    if (entry.type === 'list') {
+      // 与 Web Component 的逗号解析器保持一致，避免 JSON 数组被拆成带引号的列表项。
+      attrs[attr] = Array.isArray(value) ? value.join(',') : String(value)
+      continue
+    }
     attrs[attr] = entry.type === 'string' ? String(value) : typeof value === 'object' ? JSON.stringify(value) : String(value)
   }
   return attrs
