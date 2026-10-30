@@ -1160,6 +1160,8 @@ export const TEXT_FOLD_TYPES = new Set(['paragraph', 'heading', 'listItem', 'tas
 /** 章节解析里「视觉上天然缩进」的列表容器：未显式缩进时算前一个文本块的子块。 */
 const LIST_SECTION_TYPES = new Set(['bulletList', 'orderedList', 'taskList'])
 
+export const ASYNC_BLOCK_TYPES = new Set(['fileBlock', 'image', 'sheet', 'webEmbed', 'bookmark', 'unknownBlock'])
+
 export const BLOCK_ID_TYPES = new Set([
   'paragraph', 'heading', 'blockquote', 'callout', 'columns', 'details', 'detailsSummary',
   // 列表项在飞书里是独立块（fold-block-id 就挂在 item 上），子块藏在 item 内部，
@@ -1168,7 +1170,7 @@ export const BLOCK_ID_TYPES = new Set([
   'bulletList', 'orderedList', 'taskList', 'codeBlock', 'image', 'horizontalRule', 'blockMath', 'table',
   // 文件 / 视频块（P2-04）是原子块，但它自己就是「用户能当作一个块操作」的单位，
   // 折叠与锚点都要能指向它，所以进 id 集合。
-  'fileBlock',
+  'fileBlock', 'webEmbed', 'bookmark', 'unknownBlock',
   // 小组件块（P4-04）：原子块，但折叠与锚点都要能指向它 —— 不进集合就没有 blockId，
   // 导出再导回时实例键与块 id 会一起漂。
   'isv',

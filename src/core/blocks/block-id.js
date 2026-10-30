@@ -7,6 +7,9 @@
  */
 import { Extension } from '@tiptap/core'
 import { BLOCK_ID_PATTERN, BLOCK_ID_TYPES } from '../documentOperations'
+import { normalizeAsyncBlockState } from './shared'
+
+const ASYNC_DOM_TYPES = new Set(['file', 'image', 'sheet', 'web-embed', 'bookmark', 'unknown-block'])
 
 const LarkDocBlockId = Extension.create({
   name: 'larkDocBlockId',
@@ -21,6 +24,21 @@ const LarkDocBlockId = Extension.create({
             return id && BLOCK_ID_PATTERN.test(id) ? id : null
           },
           renderHTML: ({ blockId }) => (typeof blockId === 'string' && BLOCK_ID_PATTERN.test(blockId) ? { 'data-block-id': blockId } : {}),
+        },
+        asyncState: {
+          default: null,
+          parseHTML: (element) => {
+            const domType = element.getAttribute('data-type')
+            const blockType = element.getAttribute('data-block-type')
+            if (!ASYNC_DOM_TYPES.has(domType) && !ASYNC_DOM_TYPES.has(blockType)) return null
+            const raw = element.getAttribute('data-async-state')
+            if (!raw) return null
+            try { return JSON.stringify(normalizeAsyncBlockState(JSON.parse(raw))) } catch (_) { return null }
+          },
+          renderHTML: ({ asyncState }) => {
+            if (!asyncState) return {}
+            try { return { 'data-async-state': JSON.stringify(normalizeAsyncBlockState(typeof asyncState === 'string' ? JSON.parse(asyncState) : asyncState)) } } catch (_) { return {} }
+          },
         },
       },
     }]
