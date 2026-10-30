@@ -17,6 +17,18 @@ export const DEFAULT_CAPABILITIES = Object.freeze({
   canManagePermission: false,
 })
 
+export const ASYNC_STATE_CAPABILITIES = Object.freeze({
+  empty: Object.freeze({ visible: true, read: true, edit: true, delete: true, comment: true, retry: true }),
+  loading: Object.freeze({ visible: true, read: false, edit: false, delete: true, comment: false, retry: false }),
+  failed: Object.freeze({ visible: true, read: false, edit: false, delete: true, comment: false, retry: true }),
+  unauthorized: Object.freeze({ visible: true, read: false, edit: false, delete: true, comment: false, retry: false }),
+  over_limit: Object.freeze({ visible: true, read: false, edit: false, delete: true, comment: false, retry: false }),
+})
+
+export function projectCapabilitiesForState(state) {
+  return { ...(ASYNC_STATE_CAPABILITIES[state] || ASYNC_STATE_CAPABILITIES.empty) }
+}
+
 export function normalizeCapabilities(value = {}) {
   const input = value && typeof value === 'object' ? value : {}
   const normalized = { ...DEFAULT_CAPABILITIES, ...input }
