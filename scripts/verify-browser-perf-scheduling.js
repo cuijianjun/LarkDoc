@@ -87,19 +87,34 @@ function buildContent() {
     const editor = facade.getEditor()
     const vm = facade.getWorkspace().$refs.document
     if (!vm || typeof vm.runSelectionLayout !== 'function' || typeof vm.updateSearch !== 'function') return false
-    const state = { layout: 0, coords: 0 }
+    // 计数点归属：`coords` 是 view.coordsAtPos 的全局次数，`layoutCoords` 只统计
+    // **发生在 runSelectionLayout 这一轮里**的次数。两者必须分开，否则会被宿主
+    // 侧无关测量污染 —— 例如 `editor.commands.focus()` 会走到 tiptap 的 scrollIntoView，
+    // ProseMirror 在 updateStateInner 里自己调一次 coordsAtPos 算滚动位置，
+    // 那一次既不是我们调度的、也省不掉（PM 内部行为）。
+    const state = { layout: 0, coords: 0, layoutCoords: 0 }
+    let inLayout = false
     // 方法在 Vue 2 里是实例自有属性（initMethods 会 bind 到 vm），所以直接改 vm 上的
     // 引用就能被 `scheduleSelectionLayout` 的闭包 `this.runSelectionLayout()` 看到。
     const originalLayout = vm.runSelectionLayout
-    vm.runSelectionLayout = function (...args) { state.layout += 1; return originalLayout.apply(this, args) }
+    vm.runSelectionLayout = function (...args) {
+      state.layout += 1
+      const previous = inLayout
+      inLayout = true
+      try { return originalLayout.apply(this, args) } finally { inLayout = previous }
+    }
     const view = editor.view
     const originalCoords = view.coordsAtPos
-    view.coordsAtPos = function (...args) { state.coords += 1; return originalCoords.apply(this, args) }
+    view.coordsAtPos = function (...args) {
+      state.coords += 1
+      if (inLayout) state.layoutCoords += 1
+      return originalCoords.apply(this, args)
+    }
     const positions = []
     editor.state.doc.descendants((node, pos) => { if (node.isTextblock) positions.push(pos + 1) })
     window.__p7 = {
       editor, vm, state, positions,
-      reset() { state.layout = 0; state.coords = 0 },
+      reset() { state.layout = 0; state.coords = 0; state.layoutCoords = 0 },
       snapshot() {
         const root = document.querySelector('.ProseMirror')
         return root ? { html: root.innerHTML, elements: root.querySelectorAll('*').length, skeleton: [...root.children].map((el) => `${el.tagName.toLowerCase()}:${el.getAttribute('data-type') || ''}`).join(',') } : null
@@ -121,7 +136,8 @@ function buildContent() {
   await page.waitForTimeout(200)
   const single = await page.evaluate(() => ({ ...window.__p7.state }))
   record('[调度] 单次选区更新只做一轮定位', single.layout === 1, `layout=${single.layout}`)
-  record('[调度] 气泡条每轮定位只量 2 次坐标（起止各一）', single.coords === 2, `coordsAtPos=${single.coords}`)
+  record('[调度] 气泡条每轮定位只量 2 次坐标（起止各一）', single.layoutCoords === 2,
+    `本轮定位内=${single.layoutCoords}，全局=${single.coords}（差值来自 focus()→scrollIntoView 的 PM 内部测量）`)
 
   // ---------- 200 次选区变化：同步段不干活，一帧只做一轮 ----------
   await page.evaluate(() => window.__p7.reset())
@@ -140,7 +156,8 @@ function buildContent() {
   await page.waitForTimeout(200)
   const settled = await page.evaluate(() => ({ ...window.__p7.state }))
   record('[调度] 200 次连续选区更新只做 1 轮定位', settled.layout === 1, `layout=${settled.layout}（合并前应为 ${BURST}）`)
-  record('[调度] 200 次连续选区更新只量 2 次坐标', settled.coords === 2, `coordsAtPos=${settled.coords}（合并前应为 ${BURST * 2}）`)
+  record('[调度] 200 次连续选区更新只量 2 次坐标', settled.layoutCoords === 2,
+    `本轮定位内=${settled.layoutCoords}，全局=${settled.coords}（合并前应为 ${BURST * 2}）`)
 
   // ---------- DOM 契约：无新增包裹层 ----------
   const afterBurst = await page.evaluate(() => window.__p7.snapshot())

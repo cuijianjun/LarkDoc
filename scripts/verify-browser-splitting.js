@@ -13,7 +13,8 @@
  *  1. 编辑器挂载，工具栏可用
  *  2. 首屏没有下载 office / markdown / highlight / import-export 区块
  *     （math 与 mermaid vendor 会因初始内容含公式 / 图表而加载 —— 这正是按需生效的证据）
- *  3. WC 路由：element 主文件 ≤ 1 MiB（改造前是 2.16 MiB 单文件）
+ *  3. WC 路由：element 主文件的**传输体积（gzip）**未超 size-limit 预算，且 raw
+ *     未退回改造前的 2.16 MiB 单文件（raw 只当回归护栏，真预算看 gzip）
  *  4. 插入代码块 → highlight 区块按需下载 + 高亮类渲染（Vue 路由，暴露 window.__larkDoc）
  *  5. mermaid 懒 chunk 按需请求（import()，不再是 file-loader 落盘 + 插 <script>）+ 预览层渲染出 SVG
  *  6. 无 404、无页面脚本错误
@@ -21,6 +22,7 @@
 
 const path = require('path')
 const fs = require('fs')
+const zlib = require('zlib')
 const { chromium } = require('playwright-core')
 
 const VUE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
@@ -52,6 +54,34 @@ function record(name, ok, detail) {
 const SHOULD_BE_LAZY = /(office|markdown|highlight|import-export)[^/]*\.js(\?|$)/i
 const ON_DEMAND_ALL = /(math|office|markdown|highlight|import-export|mermaid)[^/]*\.js(\?|$)/i
 const kb = (v) => `${(v / 1024).toFixed(0)} KiB`
+const mib = (v) => `${(v / 1024 / 1024).toFixed(2)} MiB`
+
+/**
+ * 拆包改造前的单文件基线：2.16 MiB（脚本清单注释里那条「改造前」）。
+ * raw 体积只拿来当**回归护栏** —— 断言「不会再退回我们当初拆掉的那个单体」，
+ * 真正的体积预算是 size-limit 的 gzip 口径（见 elementBudgetBytes）。
+ */
+const LEGACY_MONOLITH_BYTES = Math.round(2.16 * 1024 * 1024)
+
+/** 把 size-limit 写的 "480 KB" 解析成字节；单位与 size-limit 一致（1 KB = 1024 B）。 */
+function parseSizeLimit(value) {
+  const matched = /^([\d.]+)\s*(B|KB|MB)?$/i.exec(String(value || '').trim())
+  if (!matched) return 0
+  const unit = (matched[2] || 'B').toUpperCase()
+  const factor = unit === 'KB' ? 1024 : unit === 'MB' ? 1024 * 1024 : 1
+  return Math.round(Number(matched[1]) * factor)
+}
+
+/**
+ * element 产物的体积预算（字节，gzip 口径）。
+ * 真相源是 package.json 的 size-limit —— 脚本不复制数字，否则预算就有两份，
+ * 改一边忘另一边是迟早的事。
+ */
+function elementBudgetBytes() {
+  const entries = require('../package.json')['size-limit'] || []
+  const entry = entries.find((item) => /element/i.test(String((item && item.name) || '')))
+  return entry ? parseSizeLimit(entry.limit) : 0
+}
 
 async function runRoute(page, url, label, isWc) {
   console.log(`\n—— ${label}（${url}）——`)
@@ -93,13 +123,26 @@ async function runRoute(page, url, label, isWc) {
     record(`[${label}] element 按需区块按 publicPath:'auto' 正确寻址`, ok, detail)
     const mainUrl = new URL('/js/lark-doc-element.umd.min.js', url).toString()
     const mainResponse = await page.request.get(mainUrl)
-    const mainSize = mainResponse.status() === 200 ? (await mainResponse.body()).length : 0
-    record(`[${label}] element 主文件 ≤ 1 MiB`, mainSize > 0 && mainSize <= 1024 * 1024, `${mainResponse.status()} ${kb(mainSize)}`)
+    const mainBody = mainResponse.status() === 200 ? await mainResponse.body() : Buffer.alloc(0)
+    // 体积按**传输口径**判（gzip）：这才是用户真正下载的量，预算读自 size-limit。
+    // v0.6.1 时代写死在这里的「raw ≤ 1 MiB」是当时的产物体积，随功能增长早已失真
+    // （现 1.61 MiB raw / 465 KiB gzip），留着只会制造假红。
+    const budget = elementBudgetBytes()
+    const gzipSize = mainBody.length ? zlib.gzipSync(mainBody, { level: 9 }).length : 0
+    record(`[${label}] element 主文件 gzip 未超 size-limit 预算`, gzipSize > 0 && budget > 0 && gzipSize <= budget,
+      `${mainResponse.status()} gzip=${kb(gzipSize)} / 预算 ${kb(budget)}（raw ${mib(mainBody.length)}）`)
+    // raw 只做回归护栏：永远不许退回拆包前那个 2.16 MiB 单文件。
+    record(`[${label}] element 主文件未退回改造前 2.16 MiB 单文件`, mainBody.length > 0 && mainBody.length <= LEGACY_MONOLITH_BYTES,
+      `raw=${mib(mainBody.length)} / 护栏 ${mib(LEGACY_MONOLITH_BYTES)}`)
   }
 
   // 4. mermaid 懒 chunk 按需请求 + SVG（走初始内容里的图表块）
+  //    ⚠️ 取证必须**先等结果**：NodeView 挂载后 300ms 才起渲染，3 MB 的 mermaid
+  //    chunk 还要再等约 1.2s（实测）。直接在首屏快照上取证，拿到的是「chunk 还在路上」
+  //    这个中间态 —— 那是脚本取证太早，不是产物没做到。
   //    注意：webpack JSONP 加载完会移除 <script>，只能从 request 事件里取证。
-  const mermaidChunk = firstScreen.find((entry) => /mermaid[^/]*\.js(\?|$)/i.test(entry)) || ''
+  await page.waitForSelector('.lark-doc-diagram svg', { timeout: 20000 }).catch(() => {})
+  const mermaidChunk = scripts.find((entry) => /mermaid[^/]*\.js(\?|$)/i.test(entry)) || ''
   const diagram = await page.evaluate(() => ({
     injectedScript: !!document.querySelector('script[data-lark-doc-diagram="mermaid"]'),
     svg: document.querySelectorAll('.lark-doc-diagram svg').length,
