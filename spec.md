@@ -24,7 +24,7 @@
 | `src/` | 当前 dev 基线已有 core、session、providers、collab、Vue2 UI、React/Vue3 适配层、Web Component、导入导出、版本、评论、嵌入、主题等实现 |
 | `test/` | 约 80 个测试文件，包含单元、协同、Provider、适配器和门禁相关验证 |
 | `package.json` | 版本 `0.12.1`；提供 `check:gate`、`check:unit`、`check:artifacts`、`verify`、适配器构建等命令 |
-| Spec Kit | 已使用官方缓存资产初始化 `.specify/`、`.codebuddy/commands/` 和 `specs/`；因网络无法下载 Python 依赖，全局 `specify` CLI 未安装成功，但项目资产已完成初始化 |
+| Spec Kit | 已安装 `specify 1.2.6.dev0`；官方 CLI 已通过 `specify --version` 与 `specify check` 验证；项目资产已由 CLI 刷新并提交到 `.specify/`、`.codebuddy/commands/` 和 `specs/` |
 
 ### 2.2 现状证据
 
@@ -111,6 +111,6 @@
 
 - 本分支只做需求审计、规划和后续明确任务；当前本轮不实现业务功能。
 - `spec.md`/`tasks.md` 是根目录交接文件；`specs/` 保留 Spec Kit feature 目录，暂不复制两份内容造成漂移。
-- `.specify/`、`.codebuddy/commands/` 使用官方缓存资产；全局 CLI 因 PyPI 网络依赖失败未安装，不得声称已安装成功。
+- `.specify/`、`.codebuddy/commands/` 使用官方 Spec Kit CLI 1.2.6.dev0 刷新的官方资产；当前 CLI 已安装到用户级环境，但 CodeBuddy 本体未被 `specify check` 检测到，因此项目初始化使用 `--ignore-agent-tools` 完成。
 - 需求数字以最新章节为准：A 级规格审计 20 ✅ / 1 ◐ / 0 ⏳；B 级 27/27 收口；E 级可执行缺口 0。以上是“规格收口”统计，不等于代码完成率。
 - 所有旧的“顶部工具栏”“自定义右键菜单”“折叠块 slash”待办必须视为已作废。
