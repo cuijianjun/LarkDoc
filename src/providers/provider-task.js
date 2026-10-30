@@ -42,6 +42,38 @@ export function getProviderTask(taskIdOrKey) {
 export function clearProviderTasks() { tasks.clear() }
 export function providerTaskStatuses() { return STATUSES.slice() }
 
+/**
+ * 断线恢复队列：以宿主提供的幂等 key 去重，flush 后将成功项记为 acknowledged，
+ * 后续重复回调只会被丢弃，不会再次触发远端写入。
+ */
+export function createProviderRecoveryQueue(options = {}) {
+  const onRun = typeof options.onRun === 'function' ? options.onRun : (() => ({ status: 'succeeded' }))
+  const pending = new Map()
+  const acknowledged = new Set()
+
+  return {
+    enqueue(item = {}) {
+      const key = String(item.key || item.idempotencyKey || '')
+      if (!key || acknowledged.has(key)) return false
+      if (!pending.has(key)) pending.set(key, { ...item, key })
+      return true
+    },
+    pending() { return Array.from(pending.values()).map(item => ({ ...item })) },
+    flush() {
+      const results = []
+      for (const [key, item] of pending) {
+        const outcome = onRun({ ...item }) || {}
+        const status = outcome.status || 'succeeded'
+        results.push({ key, status })
+        pending.delete(key)
+        if (status === 'succeeded') acknowledged.add(key)
+      }
+      return results
+    },
+    acknowledged() { return Array.from(acknowledged) },
+  }
+}
+
 function cloneProviderTask(task) {
   return { ...task, items: task.items.map(item => ({ ...item })), snapshot: { ...task.snapshot } }
 }

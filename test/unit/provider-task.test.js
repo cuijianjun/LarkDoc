@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  clearProviderTasks, createProviderTask, getProviderTask, providerTaskStatuses, updateProviderTask,
+  clearProviderTasks, createProviderRecoveryQueue, createProviderTask, getProviderTask, providerTaskStatuses, updateProviderTask,
 } from '../../src/providers/provider-task'
 
 afterEach(() => clearProviderTasks())
@@ -23,5 +23,17 @@ describe('ProviderTask', () => {
     const task = createProviderTask({ kind: 'ai', idempotencyKey: 'ai-1' })
     expect(updateProviderTask(task.taskId, { status: 'failed', progress: 30 })).toMatchObject({ status: 'failed', progress: 30 })
     expect(providerTaskStatuses()).toEqual(['queued', 'running', 'partial', 'succeeded', 'failed', 'rolled_back'])
+  })
+
+  it('recovery queue deduplicates callbacks and does not replay acknowledged remote work', () => {
+    const calls = []
+    const queue = createProviderRecoveryQueue({ onRun: (item) => { calls.push(item.key); return { status: 'succeeded' } } })
+    queue.enqueue({ key: 'remote-1', source: 'remote', payload: { value: 1 } })
+    queue.enqueue({ key: 'remote-1', source: 'remote', payload: { value: 1 } })
+    expect(queue.pending()).toHaveLength(1)
+    expect(queue.flush()).toEqual([{ key: 'remote-1', status: 'succeeded' }])
+    expect(calls).toEqual(['remote-1'])
+    expect(queue.flush()).toEqual([])
+    expect(queue.acknowledged()).toEqual(['remote-1'])
   })
 })

@@ -23,7 +23,7 @@
 | T05 | P1 | TODO | 完成 A4 按钮块两 action 与刷新回读 | T00 |
 | T06 | P1 | DOING | 建立异步块异常与权限矩阵：五态契约、跨块 DOM/NodeView 状态投影、安全脱敏、共享 asyncState 持久化、统一 capability policy、浮层权限闸门与块菜单动作闸门已接线；Provider 业务拒绝已转换为稳定异常，浮层逐项视觉状态与浏览器验收仍待完成 | T01 |
 | T07 | P1 | TODO | 完成跨账号、Safari 和无权限验收 | T06 |
-| T08 | P2 | DOING | 移动端 viewport runtime 已完成，离线 Provider 幂等恢复和真实移动端浏览器验收仍待补 | T06、T07 |
+| T08 | P2 | DOING | 移动端 viewport runtime 已完成，真实移动端浏览器验收仍待补 | T06、T07 |
 | T09 | P2 | TODO | 完成 survey/import/provider 写入闭环 | T01、T06 |
 | T10 | P2 | TODO | 完成回收站、复制/打印/水印/审计 | T06、T09 |
 | T11 | P2 | TODO | 执行性能基线与存储/派生索引收口 | T00、T01 |

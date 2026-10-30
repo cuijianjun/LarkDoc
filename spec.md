@@ -110,7 +110,7 @@
 
 ## 7. 关键约束
 
-- 本开发分支按 Spec Kit 执行明确任务；基础契约和 US1/US2 已开始实现，US3 已完成统一异步块五态、跨块 DOM/NodeView 状态投影、schema 快照同步、统一 capability policy，以及评论/版本/导出/分享/块菜单权限闸门接线；security Provider 已将业务 deny/approval_required/updatePolicy 拒绝转换为稳定异常并保留 requestId、permissionVersion、reason；US4 T031 已补齐 viewport 宽高/横竖屏 runtime 生命周期与窄屏/横屏根节点投影，真实 Safari/移动端运行器缺失导致 T032 仍 BLOCKED，后续任务继续以源码、测试和验收命令为准。
+- 本开发分支按 Spec Kit 执行明确任务；基础契约和 US1/US2 已开始实现，US3 已完成统一异步块五态、跨块 DOM/NodeView 状态投影、schema 快照同步、统一 capability policy，以及评论/版本/导出/分享/块菜单权限闸门接线；security Provider 已将业务 deny/approval_required/updatePolicy 拒绝转换为稳定异常并保留 requestId、permissionVersion、reason；US4 T031 已补齐 viewport 宽高/横竖屏 runtime 生命周期与窄屏/横屏根节点投影，T033 已补齐 Provider 幂等恢复队列与协同离线回归，真实 Safari/移动端运行器缺失导致 T032 仍 BLOCKED，后续任务继续以源码、测试和验收命令为准。
 - `spec.md`/`tasks.md` 是根目录交接文件；`specs/` 保留 Spec Kit feature 目录，暂不复制两份内容造成漂移。
 - `.specify/`、`.codebuddy/commands/` 使用官方 Spec Kit CLI 1.2.6.dev0 刷新的官方资产；当前 CLI 已安装到用户级环境，但 CodeBuddy 本体未被 `specify check` 检测到，因此项目初始化使用 `--ignore-agent-tools` 完成。
 - 需求数字以最新章节为准：A 级规格审计 20 ✅ / 1 ◐ / 0 ⏳；B 级 27/27 收口；E 级可执行缺口 0。以上是“规格收口”统计，不等于代码完成率。
