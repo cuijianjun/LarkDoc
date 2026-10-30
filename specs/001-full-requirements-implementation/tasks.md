@@ -83,7 +83,7 @@
 
 ### Tests
 
-- [ ] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已补评论乱序回读、切文档/账号、销毁后旧响应、无阅读权限、无编辑权限 mention 与离职候选过滤；相关回归通过；第二账号实体回读与锚点失效仍待补）
+- [x] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已覆盖评论乱序回读、切文档/账号、销毁后旧响应、无阅读权限、第二账号线程/回复实体回读、锚点失效、无编辑权限 mention 与离职候选过滤；相关回归 78 项通过）
 - [ ] T031 [P] [US4] 在 `test/unit/versioning-ui.test.js`、`test/unit/mode-switch.test.js` 和 `test/unit/storage-idb.test.js` 验证只读版本、窄屏/横屏和 512KB 离线快照边界（版本 capability 与 IndexedDB/离线快照边界已有回归；窄屏/横屏 runtime 及版本只读组件渲染仍待补）
 - [ ] T032 [P] [US4] 新增 `test/browser/safari-comments.test.js` 与移动端浏览器场景；当前 worktree 未提供 Safari/移动端运行器，真实验证标记 BLOCKED；已保留 comments/mention 单元替代证据，待浏览器能力可用后执行
 - [ ] T033 [US4] 在 `test/collab/converge.test.js` 和 `test/collab/hocuspocus-wire.test.js` 验证离线恢复、重复回调、冲突合并和远端不覆盖（两套协同测试当前 20 项通过，覆盖断线重连、重复监听、撤销隔离、冲突收敛、真 WebSocket 与鉴权失败；完整离线快照与 Provider 幂等恢复仍待补）

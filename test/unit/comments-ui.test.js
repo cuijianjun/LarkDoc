@@ -390,6 +390,26 @@ describe('评论异步回读隔离', () => {
     expect(ctx.commentThreads).toEqual([])
     expect(calls).toBe(0)
   })
+  it('第二账号回读保留线程作者、回复和锚点失联状态', async () => {
+    const ctx = context({
+      list: async () => [{
+        id: 'thread-u2',
+        blockId: 'b-removed',
+        anchor: { blockId: 'b-removed', offset: 2, length: 5 },
+        author: { id: 'u-2', name: '第二账号' },
+        replies: [{ id: 'reply-u2', author: { id: 'u-2', name: '第二账号' }, content: '只读回复' }],
+      }],
+    })
+    ctx.editor = { state: { doc: { descendants: () => {} } } }
+    const result = await ctx.loadComments()
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      id: 'thread-u2', bound: false, anchorReason: 'missing-block',
+      author: { id: 'u-2', name: '第二账号' },
+      replies: [{ id: 'reply-u2', author: { id: 'u-2', name: '第二账号' }, content: '只读回复' }],
+    })
+    expect(ctx.commentUnboundThreads.map((thread) => thread.id)).toEqual(['thread-u2'])
+  })
   it('过期请求失败不干扰当前页面', async () => {
     const pending = deferred()
     const ctx = context({ list: () => pending.promise })
