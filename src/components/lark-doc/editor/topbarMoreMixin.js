@@ -330,6 +330,14 @@ export default {
           this.closeTopbarMore()
           this.openExportDialog(action.slice('export.'.length))
           return
+        case 'duplicate':
+          if (this.shareCan && !this.shareCan('canCopy')) return
+          this.closeTopbarMore()
+          this.$emit('duplicate-document', {
+            title: this.localTitle || this.title || '未命名文档',
+            document: this.editor && typeof this.editor.getJSON === 'function' ? this.editor.getJSON() : null,
+          })
+          return
         case 'save-version':
           this.closeTopbarMore()
           this.openSaveVersionDialog()

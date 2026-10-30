@@ -307,6 +307,27 @@ describe('差异摘要投影', () => {
 
 /* ---------------- 4. 错误码 → 降级文案 ---------------- */
 
+describe('版本回收站 UI 工作流', () => {
+  it('回收站管理在无权限时 fail-closed，并支持恢复/彻底删除', async () => {
+    const provider = createMemoryVersioningProvider({ author: 'u-1' })
+    const first = await provider.createSnapshot(snapshotInput({ id: 'trash-1' }))
+    await provider.remove(first.id)
+    const vm = mountMixin({ session: fakeSession({ provider }), localTitle: '文档' })
+    await vm.openVersionTrash()
+    expect(vm.versionDeletedList).toHaveLength(1)
+    await vm.restoreDeletedVersion(first.id)
+    expect(vm.versionDeletedList).toHaveLength(0)
+    await provider.remove(first.id)
+    await vm.loadDeletedVersions()
+    await vm.purgeDeletedVersion(first.id)
+    expect(vm.versionDeletedList).toHaveLength(0)
+
+    const denied = mountMixin({ session: fakeSession({ provider, capabilities: { canCreateVersion: false } }) })
+    await expect(denied.openVersionTrash()).resolves.toBe(false)
+    expect(denied.versionTrashOpen).toBe(false)
+  })
+})
+
 describe('版本状态投影', () => {
   it('deleted/stale/unavailable 各自保留稳定状态，未知状态默认可用', () => {
     expect(versionRecordState({ deleted: true })).toBe(VERSION_RECORD_STATES.DELETED)

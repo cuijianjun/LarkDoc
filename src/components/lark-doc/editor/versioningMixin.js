@@ -310,6 +310,9 @@ export default {
       versionPanelOpen: false,
       /** `provider.list()` 的原样结果，new → old；已经是 `normalizeSnapshot` 后的九个字段。 */
       versionList: [],
+      versionDeletedList: [],
+      versionTrashOpen: false,
+      versionTrashBusy: false,
       /**
        * 「编辑记录 N/M」的 N，从 1 起；翻的是**编辑记录**，不是版本（§3.4 ⑤ 反直觉 3）。
        *
@@ -400,6 +403,12 @@ export default {
     versionNextDisabled() {
       return this.versionTotal === 0 || this.versionIndex >= this.versionTotal
     },
+    versionCanManageTrash() {
+      return versionCapabilityGate(this.session, 'canCreateVersion').allowed
+    },
+    versionTrashReason() {
+      return versionCapabilityGate(this.session, 'canCreateVersion').reason
+    },
     /**
      * 选中版本与其**更早**版本的差异摘要。
      *
@@ -452,6 +461,64 @@ export default {
     },
 
     /** 拉列表；拉不动时右栏显示降级文案而不是空白（面板自己不抛、不白屏）。 */
+    async loadDeletedVersions() {
+      const provider = this.versionProvider
+      if (!provider || typeof provider.listDeleted !== 'function') {
+        this.versionDeletedList = []
+        return []
+      }
+      try {
+        const list = await provider.listDeleted({ documentId: this.session ? this.session.documentId : '' })
+        this.versionDeletedList = Array.isArray(list) ? list : []
+        return this.versionDeletedList
+      } catch (error) {
+        this.versionPreviewError = versioningErrorMessage(error)
+        return []
+      }
+    },
+
+    async openVersionTrash() {
+      if (!this.versionCanManageTrash) {
+        this.versionPreviewError = this.versionTrashReason
+        return false
+      }
+      this.versionTrashOpen = true
+      await this.loadDeletedVersions()
+      return true
+    },
+
+    closeVersionTrash() {
+      this.versionTrashOpen = false
+      this.versionDeletedList = []
+    },
+
+    async restoreDeletedVersion(versionId) {
+      if (!this.versionCanManageTrash || !this.versionProvider?.restoreDeleted) return null
+      this.versionTrashBusy = true
+      try {
+        const restored = await this.versionProvider.restoreDeleted(versionId)
+        await this.loadDeletedVersions()
+        await this.loadVersions()
+        return restored
+      } catch (error) {
+        this.versionPreviewError = versioningErrorMessage(error)
+        return null
+      } finally { this.versionTrashBusy = false }
+    },
+
+    async purgeDeletedVersion(versionId) {
+      if (!this.versionCanManageTrash || !this.versionProvider?.purge) return null
+      this.versionTrashBusy = true
+      try {
+        const purged = await this.versionProvider.purge(versionId)
+        await this.loadDeletedVersions()
+        return purged
+      } catch (error) {
+        this.versionPreviewError = versioningErrorMessage(error)
+        return null
+      } finally { this.versionTrashBusy = false }
+    },
+
     async loadVersions() {
       const provider = this.versionProvider
       if (!provider) {

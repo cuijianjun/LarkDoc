@@ -112,7 +112,7 @@
 
 - [x] T042 [US5] 在 `src/providers/survey.js`、`src/providers/import.js`、`src/providers/ai.js`、`src/providers/embedded.js` 和 `src/providers/persistence.js` 统一 ProviderTask 状态机和幂等回读（新增 runProviderTask 与统一状态/结果快照；survey/import/embedded/AI writeback/feedback/persistence 均接入显式幂等 key 回读；相关 ProviderTask/Provider/持久化回归 59 项通过）
 - [x] T043 [US5] 在 `src/utils/importExport.js`、`src/components/lark-doc/ExportDialog.vue` 和导入 UI 接入 docx/Markdown/web 任务进度、失败重试和回滚（导入控制器新增进度汇总/失败项重试/回滚投影；工作台显示进度、失败项重试与回滚入口；导入失败保留原正文并记录可重试错误；导入/ProviderTask/导出相关回归 99 项通过）
-- [ ] T044 [US5] 在 `src/core/versioning/`、`src/components/lark-doc/VersionPanel.vue` 和文档操作入口补齐回收站 UI、复制文档和权限负向路径
+- [x] T044 [US5] 在 `src/core/versioning/`、`src/components/lark-doc/VersionPanel.vue` 和文档操作入口补齐回收站 UI、复制文档和权限负向路径（VersionPanel 增加回收站列表/恢复/彻底删除入口；版本 mixin 对缺 Provider/无 canCreateVersion fail-closed；顶栏创建副本发出带标题和 JSON 的宿主事件；版本/顶栏回归 86 项通过）
 - [ ] T045 [US5] 在 `src/providers/security.js`、`src/components/lark-doc/editor/TopBar.vue`、`src/components/lark-doc/ExportDialog.vue`、`src/utils/download.js` 和 `src/styles/print.css` 实现输出策略、水印和 AuditEvent
 
 ## Phase 8: User Story 6 - 性能与交付收口 (Priority: P3)
