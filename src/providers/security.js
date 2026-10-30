@@ -89,7 +89,9 @@ export function createSecurityProvider(options = {}) {
       // Reads return their normalized payload. Mutations/decisions must not
       // turn a business deny into a successful-looking resolved Promise.
       if (operation === 'requestDecision' || operation === 'resolveDecision' || operation === 'updatePolicy') {
-        return requirePermittedDecision(result, operation)
+        const hasDecisionShape = result && typeof result === 'object'
+          && ['status', 'allowed', 'code', 'requestId', 'permissionVersion'].some(key => result[key] !== undefined)
+        return hasDecisionShape ? requirePermittedDecision(result, operation) : result
       }
       return result
     }
