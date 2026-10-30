@@ -89,6 +89,10 @@ function mixinCtx(extra) {
   Object.keys(methods).forEach((key) => {
     if (typeof ctx[key] !== 'function') ctx[key] = methods[key]
   })
+  Object.keys(commentsMixin.computed).forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(ctx, key)) return
+    Object.defineProperty(ctx, key, { configurable: true, get: () => commentsMixin.computed[key].call(ctx) })
+  })
   return ctx
 }
 

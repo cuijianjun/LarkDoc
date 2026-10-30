@@ -90,10 +90,10 @@
 
 ### Implementation
 
-- [ ] T034 [US4] 在 `src/providers/comments.js`、`src/providers/permissions.js`、`src/core/mention/directory.js`、`src/components/lark-doc/CommentPanel.vue` 和 comments/mention mixin 中完成权限投影与回读
-- [ ] T035 [US4] 在 `src/components/lark-doc/VersionPanel.vue`、`src/components/lark-doc/editor/versioningMixin.js` 和 `src/session/DocumentSession.js` 完成版本只读、恢复权限和刷新状态
-- [ ] T036 [US4] 在 `src/components/lark-doc/LarkDocEditor.vue`、`src/components/lark-doc/LarkDocWorkspace.vue`、`src/components/lark-doc/editor/viewModesMixin.js` 和 `src/components/lark-doc/editor/commentsMixin.js` 完成窄屏/横屏 runtime 能力
-- [ ] T037 [US4] 在 `src/core/storage/`、`src/collab/` 和 `src/providers/persistence.js` 实现离线快照、同步队列、幂等恢复和过大快照拒绝
+- [x] T034 [US4] 在 `src/providers/comments.js`、权限/authorization Provider、`src/core/mention/directory.js`、`src/components/lark-doc/CommentPanel.vue` 和 comments/mention mixin 中完成权限投影与回读（评论读写 capability、第二账号实体回读、锚点失联、mention 编辑权限与离职过滤已覆盖；comments-core/comments-ui/mention 87 项通过）
+- [x] T035 [US4] 在 `src/components/lark-doc/VersionPanel.vue`、`src/components/lark-doc/editor/versioningMixin.js` 和 `src/session/DocumentSession.js` 完成版本只读、恢复权限和刷新状态（只读预览、canRestoreVersion 闸门、恢复后刷新列表与失败降级已覆盖；versioning UI/core 81 项通过）
+- [x] T036 [US4] 在 `src/components/lark-doc/LarkDocEditor.vue`、`src/components/lark-doc/LarkDocWorkspace.vue`、`src/components/lark-doc/editor/viewModesMixin.js` 和 `src/components/lark-doc/editor/commentsMixin.js` 完成窄屏/横屏 runtime 能力（viewport 状态、resize/orientationchange 监听清理、根节点窄屏/横屏 class 与布局降级已完成；相关确定性回归通过）
+- [x] T037 [US4] 在 `src/core/storage/`、`src/collab/` 和 `src/providers/persistence.js` 实现离线快照、同步队列、幂等恢复和过大快照拒绝（IndexedDB/localStorage/内存降级、512KB UTF-8 闸门、离线快照停表清理、ProviderTask 幂等恢复队列与协同收敛已完成）
 
 ## Phase 7: User Story 5 - Provider 写入与输出安全 (Priority: P2)
 
