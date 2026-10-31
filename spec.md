@@ -53,7 +53,7 @@
 ### 3.2 当前真实缺口
 
 1. **A4 按钮宿主动作**：`DuplicatePage`、`FollowPage` 及删除后刷新回读仍缺真实租户证据。
-2. **真实跨端验收**：Safari/移动端运行器当前不可用；T032、真实移动端和浏览器矩阵继续 BLOCKED。
+2. **真实跨端验收**：已使用 Chrome iPhone 14 模拟器完成 Web Component 移动视口烟测（390×844、DPR 3、touch=true、挂载成功、ProseMirror 存在、无横向溢出、无页面异常）；但这不等同于真实 Safari/真实移动端设备，T032 的真实环境部分和完整浏览器矩阵继续 BLOCKED。
 3. **真实宿主写入**：survey/import/AI 等已有可注入 provider 和状态机，但真实租户写入、部分第三方对象回读仍待宿主证据。
 4. **完整交付门禁**：`check:artifacts` 在 VersionPanel.vue 模板编译阶段出现 Thread Loader broker timeout；`verify:all` 受导航和目标超时阻塞。
 5. **DOM 快照环境**：当前无法解析 `playwright-core`，相关快照只能按既有规则 skip。

@@ -85,7 +85,7 @@
 
 - [x] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已覆盖评论乱序回读、切文档/账号、销毁后旧响应、无阅读权限、第二账号线程/回复实体回读、锚点失效、无编辑权限 mention 与离职候选过滤；相关回归 78 项通过）
 - [x] T031 [P] [US4] 在 `test/unit/versioning-ui.test.js`、`test/unit/mode-switch.test.js` 和 `test/unit/storage-idb.test.js` 验证只读版本、窄屏/横屏和 512KB 离线快照边界（版本 capability/只读禁用、IndexedDB/512KB 边界已有回归；新增 viewport 宽高/横竖屏 runtime 生命周期与根节点 class 确定性验收；3 个文件 133 项通过）
-- [ ] T032 [P] [US4] 新增 `test/browser/safari-comments.test.js` 与移动端浏览器场景；当前 worktree 未提供 Safari/移动端运行器，真实验证标记 BLOCKED；已保留 comments/mention 单元替代证据，待浏览器能力可用后执行
+- [ ] T032 [P] [US4] 新增 `test/browser/safari-comments.test.js` 与移动端浏览器场景；已使用 Chrome iPhone 14 模拟器完成 390×844/DPR3/touch=true 的 Web Component 烟测（挂载、ProseMirror、无横向溢出、无页面异常），但模拟器不等同于真实 Safari/真实移动端设备；真实验证继续 BLOCKED，已保留 comments/mention 单元替代证据
 - [x] T033 [US4] 在 `test/collab/converge.test.js` 和 `test/collab/hocuspocus-wire.test.js` 验证离线恢复、重复回调、冲突合并和远端不覆盖（协同/离线策略与 ProviderTask 恢复队列共 54 项通过；新增幂等 key 去重、成功回调确认后不重复回放；真实浏览器端仍由 T032 单独阻塞）
 
 ### Implementation
