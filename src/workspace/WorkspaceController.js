@@ -24,6 +24,13 @@ export function createWorkspaceState({ initialContent, initialTitle, templates, 
     title: initialTitle != null ? initialTitle : firstTemplate.title,
     templateItems,
     forcedReadonly: false,
+    mode: 'edit',
+    modeMenuOpen: false,
+    modeToast: '',
+    headerMenuOpen: false,
+    searchOpen: false,
+    slides: false,
+    slideIndex: 0,
     editorConfig: createLarkDocConfig(config),
     effectiveReadonly: false,
     importing: false,
@@ -96,7 +103,11 @@ class WorkspaceController {
     this._aiPreviewAction = null
     this._aiContext = null
     this._contentSeeded = false
+    // Reports are public payloads: keep their identity outside reactive view state.
+    this._importReport = state.importReport || null
     this._disposed = false
+    this.flushOnLeave = this.flushOnLeave.bind(this)
+    this.mapAI = this.mapAI.bind(this)
   }
 
   isDisposed() { return this._disposed }
@@ -110,9 +121,37 @@ class WorkspaceController {
   getHTML() { return this.host.getHTML ? this.host.getHTML() : '' }
   getJSON() { return this.host.getJSON ? this.host.getJSON() : null }
   getText() { return this.host.getText ? this.host.getText() : '' }
+  getImportReport() { return this._importReport }
+  onImportReport(report) {
+    this._importReport = report || null
+    this.state.importReport = this._importReport
+    if (report) this.emit('import-report', report)
+  }
   getWindow() { return this.host.getWindow ? this.host.getWindow() : (typeof window !== 'undefined' ? window : {}) }
   getNavigator() { return this.host.getNavigator ? this.host.getNavigator() : (typeof navigator !== 'undefined' ? navigator : {}) }
   getAIAdapter() { return normalizeAIProvider(this.host.getAIProvider ? this.host.getAIProvider() : this.props.aiProvider) }
+  getTitle() { return this.state.title }
+  setTitle(value) {
+    if (this.isReadonly()) return false
+    this.state.title = value == null ? '' : String(value)
+    this.queueSave()
+    return true
+  }
+  setReadonly(value) {
+    this.state.forcedReadonly = value === true
+    if (this.host.setReadonly) return this.host.setReadonly(this.isReadonly())
+    return true
+  }
+  isReadonly() { return Boolean(this.props.readonly || this.state.forcedReadonly || this.state.effectiveReadonly) }
+  insertContent(content) {
+    const editor = this.getEditor()
+    if (!editor || !this.writable()) return false
+    return editor.chain().focus().insertContent(content).run()
+  }
+  insertText(text) { return this.insertContent(String(text == null ? '' : text)) }
+  undo() { const editor = this.getEditor(); return editor ? editor.chain().focus().undo().run() : false }
+  redo() { const editor = this.getEditor(); return editor ? editor.chain().focus().redo().run() : false }
+  save() { return this.saveNow(true) }
 
   initializeSession() {
     this.state.sessionInstance = this.props.session || createDocumentSession({
@@ -231,6 +270,36 @@ class WorkspaceController {
     logger.warn('storage', 'lark-doc.storage.failed', { status: 'failed' })
     this.emit('save', { status: 'failed', message: this.state.saveStatus })
     this.emit('error', error)
+  }
+
+  applyTemplate(id) {
+    if (!this.featureEnabled('templates') || !id || !this.writable()) return false
+    const template = this.state.templateItems.find(item => item.id === id)
+    if (!template || !this.confirm('替换当前正文？可用撤销恢复正文；建议先保存快照。')) return false
+    this.closeAI()
+    this.setContent(template.html)
+    this.state.title = template.title
+    this.queueSave()
+    return true
+  }
+
+  openTemplatePicker() {
+    if (!this.featureEnabled('templates') || !this.writable()) return
+    this.state.historyOpen = false
+    this.state.aiOpen = false
+    this.state.templateQuery = ''
+    this.state.templateOpen = true
+    if (this.host.nextTick) this.host.nextTick(() => this.host.focusTemplateSearch?.())
+  }
+
+  closeTemplatePicker() {
+    this.state.templateOpen = false
+    this.state.templateQuery = ''
+    this.focus()
+  }
+
+  chooseTemplate(id) {
+    if (this.applyTemplate(id)) this.closeTemplatePicker()
   }
 
   async toggleHistory() {

@@ -1,9 +1,9 @@
 # 快速开始
 
-lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 + Tiptap 3），提供两种使用方式：
+lark-doc 是基于 Tiptap 3 与原生 DOM 的文档编辑器。默认、Element、lite 和 legacy 入口都不依赖 Vue 运行时。新项目统一使用命令式入口，旧 Vue2 项目再使用兼容入口：
 
 - **命令式入口** `new LarkDoc()`：像 AiEditor 一样用构造函数驱动完整工作台，适合任何宿主（原生页面、Vue2 路由、微前端）。
-- **组件式入口** `LarkDocEditor` / `LarkDocWorkspace`：直接把 Vue 组件挂进模板，适合已经在用 Vue 2.7 的项目。
+- **兼容 options 入口** `lark-doc/legacy` 的 `LarkDocEditor` / `LarkDocWorkspace`：供已有 Vue2 宿主注册，实际 UI 仍由 DOM renderer 创建，适配器自身不导入 Vue。
 
 推荐统一使用命令式入口，组件式入口保留为兼容导出。
 
@@ -11,17 +11,15 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 
 ## 第一步：先判断你属于哪一类
 
-**只问一句：你的项目现在装的是不是 `vue@2.7`？**
+**按挂载方式选择，不再按宿主 Vue 版本选择。**
 
 | 你的情况 | 用哪个入口 | 装法 | 往下读 |
 | --- | --- | --- | --- |
-| **是** Vue 2.7（webpack 4/5、vite 都算） | 主入口 `lark-doc`，`new LarkDoc()` 或 `<lark-doc-editor>` | `npm i lark-doc` | 本文 [最小示例](#最小示例) |
-| **否**：Vue 3 / React 18 | `lark-doc/element`（`<lark-doc>` 自定义元素） | `npm i lark-doc --legacy-peer-deps`，或**不装包**直接拷 `dist/` | [Web Component](/guide/web-component) |
+| **命令式挂载**：任意框架或无框架 | 主入口 `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 本文 [最小示例](#最小示例) |
+| **自定义元素**：Vue 2 / Vue 3 / React / 原生页面 | `lark-doc/element`（`<lark-doc>`） | `npm i lark-doc`，或直接拷 `dist/` | [Web Component](/guide/web-component) |
 | **没有打包器**：纯 HTML / 老系统 / 内网静态页 | `<script>` 引 UMD | 拷 `dist/` 整目录，不用 npm | [原生 / CDN](/guide/environments#env-static) |
 
-为什么 Vue 3 / React 要绕一下：包的 `peerDependencies` 里 `vue ^2.7.14` 和 `@tiptap/vue-2` 都是**强制**的，Vue 3 项目直接 `npm i lark-doc` 会 `ERESOLVE` 失败；硬装上去再用主入口，会在 `new LarkDoc()` 时报 `Vue.extend is not a function`（Vue 3 已移除该 API）。
-
-`lark-doc/element` 这条路是安全的：Vue 2 运行时、Tiptap、样式**全部内联在产物里**，宿主不需要装任何 Vue 2 相关依赖。
+`vue`、`vue-template-compiler` 和 `@tiptap/vue-2` 已从顶层依赖移除；无需为了 lark-doc 安装 Vue2，也不需要 `--legacy-peer-deps`。默认与 Element 内部均为原生 DOM，不是把 Vue 隐藏在内联产物里。协同能力仅在显式使用协同子入口时需要相应 optional peer。
 
 环境要求：Node 14.21.3 及以上，宿主有 `Promise` / `fetch`。样式与 KaTeX 字体随包发布，不需要另找字体文件。
 
@@ -32,11 +30,11 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 | 宿主环境 | 引入写法 | 初始化 | 备注 |
 | --- | --- | --- | --- |
 | Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({...})` | 命中 `exports.import` → ESM；懒区块由宿主打包器接管，内外网零配置 |
-| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | 一行 alias：`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`（CJS 已降到 ES2018，不用 babel）；区块全内联，不用设 `__LARK_DOC_PUBLIC_PATH__` |
-| Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
-| Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物内置 Vue；对象型能力（uploader / persistence / ai）只能 `setProperty` |
+| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | 一行 alias：`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`（CJS 已降到 ES2018，不用 babel）；兄弟 chunk 通过 `require()` 加载，不用设 URL 基址 |
+| Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc/legacy'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
+| Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物不含 Vue；也可用主入口 `new LarkDoc()`；对象型能力（uploader / persistence / ai）只能 `setProperty` |
 | CDN / 静态托管 / 内网 | `<script src="…/dist/lark-doc-element.umd.min.js">` | `<lark-doc>` | **`dist/` 整目录**同位部署（主文件 + `*.math.js`、`*.mermaid.js` 等按需区块 + `fonts/`） |
-| Node / jsdom / SSR | `require('lark-doc')`；SSR 用 `process.client` 内 `await import('lark-doc/element')` | `new LarkDoc({ element: host })` | CJS 单文件（内联全部区块）；element 产物模块求值即注册元素，Node 端 import 会炸 → 必须 client-only |
+| Node / jsdom / SSR | `require('lark-doc')`；SSR 用 `process.client` 内 `await import('lark-doc/element')` | `new LarkDoc({ element: host })` | CJS 主文件与按需兄弟 chunk（require 加载）；element 产物模块求值即注册元素，Node 端 import 会炸 → 必须 client-only |
 
 ::: tip 编译工具要点
 - webpack5 / vite / rollup：认 `exports`，两条入口零配置；
@@ -50,7 +48,7 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 
 ## 最小示例
 
-下面这段只适用于 **Vue 2.7 宿主**。Vue 3 / React 走的是自定义元素，写法完全不同，见 [Web Component](/guide/web-component)。
+下面这段适用于任意浏览器宿主：框架只需提供一个挂载点并在卸载时调用 `destroy()`。使用标签的写法见 [Web Component](/guide/web-component)。
 
 ```ts
 import 'lark-doc/style.css'

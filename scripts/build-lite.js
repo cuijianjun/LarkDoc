@@ -12,8 +12,7 @@
  * chunk 命名空间：async 区块一律带 `lite.` 前缀（lite.math.esm.js…）。
  * 不加前缀 lite 构建会覆盖全量 esm 的同名 chunk —— 两份产物共存于同一
  * dist 目录（exports 契约 ./lite 与 . 各指一路），互不能踩。
- * 初始区块（vue / tiptap / vendor）与全量 esm 同名：三者内容与全量构建
- * 逐字节一致（stub 只影响 async 路径），覆盖无副作用。
+ * 初始区块（tiptap / vendor）使用 lark-doc-lite.initial. 前缀，与 lite.* 的按需 stub 区块区分。
  * 区块集合不是固定的：重依赖全部塌成同一个 stub 后，某些区块会被别的区块吸收
  * （实测 markdown / highlight 就是这样消失的），构建收尾会清掉上一版同名的残留文件。
  *
@@ -51,7 +50,7 @@ config.output = Object.assign({}, config.output, {
   environment: Object.assign({}, config.output.environment, { module: true, dynamicImport: true }),
   path: dist,
   // 入口主文件 + 初始区块走 filename；async 区块走 chunkFilename（带 lite. 前缀）。
-  filename: '[name].esm.js',
+  filename: (data) => data.chunk.name === 'lark-doc-lite' ? 'lark-doc-lite.esm.js' : 'lark-doc-lite.initial.[name].esm.js',
   chunkFilename: 'lite.[name].esm.js',
   publicPath: '',
 })
@@ -60,15 +59,6 @@ config.plugins = (config.plugins || []).filter((plugin) => {
   const name = plugin && plugin.constructor && plugin.constructor.name
   return !/HtmlWebpack|PreloadPlugin|PrefetchPlugin/i.test(String(name))
 })
-// Mermaid 是离线 vendored UMD；其压缩代码包含 arguments.callee，webpack
-// 在 ESM 严格模式下会报告已知 warning。这里仅忽略该精确的第三方 warning，
-// 不放宽其他依赖、语法或产物错误门禁。
-config.ignoreWarnings = [
-  {
-    module: /src[\\/]assets[\\/]vendor[\\/]mermaid[\\/]mermaid\\.min\\.js/,
-    message: /Accessing ["']arguments\.callee["'] is not allowed/,
-  },
-]
 
 /* ---- lite 掐断重依赖：全部是动态 import 的落点，静态路径零涉及 ---- */
 // highlight.js 逐子路径精确 alias：非精确 alias 是前缀替换（value + 余段），
@@ -103,12 +93,7 @@ webpack(config, (error, stats) => {
     console.error(json.errors.slice(0, 5).join('\n\n'))
     process.exit(1)
   }
-  const warnings = (json.warnings || []).filter((warning) => {
-    const moduleIdentifier = String(warning && warning.moduleIdentifier || '')
-    const message = String(warning && warning.message || '')
-    return !(moduleIdentifier.includes('/src/assets/vendor/mermaid/mermaid.min.js')
-      && message.includes('Accessing "arguments.callee" is not allowed'))
-  })
+  const warnings = json.warnings || []
   if (warnings.length) {
     console.error('[lite 构建] warnings：\n' + warnings.slice(0, 5).map((warning) => JSON.stringify(warning)).join('\n\n'))
     process.exit(1)
@@ -120,7 +105,7 @@ webpack(config, (error, stats) => {
   // 所以收尾时把「本轮没产出的 lite.* 区块」删掉，dist 里只留本轮真的产出的。
   const emitted = new Set((json.assets || []).map((asset) => asset.name))
   for (const file of fs.readdirSync(dist)) {
-    if (!/^lite\..+\.esm\.js$/.test(file) || emitted.has(file)) continue
+    if (!/^(?:lite\.|lark-doc-lite\.initial\.).+\.esm\.js$/.test(file) || emitted.has(file)) continue
     fs.unlinkSync(path.resolve(dist, file))
     console.log(`[lite 构建] 清理上一版残留区块 ${file}（本轮不再产出）`)
   }
@@ -128,7 +113,7 @@ webpack(config, (error, stats) => {
   const kb = (v) => `${(v / 1024).toFixed(1)} KiB`
   console.log('\n[lite 产物]')
   for (const asset of (json.assets || [])
-    .filter((item) => item && item.name && (item.name.startsWith('lite.') || item.name === 'lark-doc-lite.esm.js'))
+    .filter((item) => item && item.name && (item.name.startsWith('lite.') || item.name.startsWith('lark-doc-lite.')))
     .sort((a, b) => (b.size || 0) - (a.size || 0))) {
     console.log(`  ${asset.name.padEnd(48)}${kb(asset.size || 0).padStart(12)}`)
   }

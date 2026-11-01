@@ -23,6 +23,7 @@
  */
 
 process.env.NODE_ENV = 'production'
+process.env.LARK_DOC_LEGACY = '1'
 
 const path = require('path')
 const webpack = require('webpack')
@@ -56,11 +57,29 @@ const config = {
     },
   },
   module: {
+    noParse: /[\\/]src[\\/]assets[\\/]vendor[\\/]mermaid[\\/]mermaid\.min\.js$/,
     rules: [
       {
         test: /\.js$/,
         include: [path.resolve(root, 'src')],
+        exclude: [path.resolve(root, 'src/assets')],
         use: { loader: 'babel-loader', options: { cacheDirectory: false } },
+      },
+      {
+        test: /[\\/]src[\\/]assets[\\/]vendor[\\/].*\.js$/,
+        use: {
+          loader: 'babel-loader',
+          options: {
+            configFile: false,
+            babelrc: false,
+            sourceType: 'script',
+            presets: [],
+            plugins: require('../legacy-syntax'),
+            compact: true,
+            minified: true,
+            comments: false,
+          },
+        },
       },
       {
         test: /\.css$/,

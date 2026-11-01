@@ -42,7 +42,7 @@ function editorCall(page, source) {
       ;(node.$children || []).forEach(walk)
     }
     walk(anchor && anchor.__vue__ ? anchor.__vue__.$root : null)
-    const editor = all.find((node) => node.$options && node.$options.name === 'LarkDocEditor')
+    const editor = window.__larkDoc?._handle?.nativeHost?.host || all.find((node) => node.$options && node.$options.name === 'LarkDocEditor')
     // eslint-disable-next-line no-new-func
     return new Function('editor', `return (async () => { ${body} })()`)(editor)
   }, source)

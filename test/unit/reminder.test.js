@@ -18,7 +18,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { validateDocument } from '../../src/core/documentOperations'
+import { sanitizeHTML, validateDocument } from '../../src/core/documentOperations'
 import {
   REMINDER_AT_PATTERN, REMINDER_REPEATS, REMINDER_REPEAT_LABELS,
   createDefaultRemindAt, normalizeReminder, readReminder, reminderLabel, reminderText,
@@ -235,6 +235,28 @@ describe('编辑器往返（mark 形态，02 §19.4 ⑥）', () => {
     editor.commands.unsetReminder()
     const marks = (editor.getJSON().content[0].content || []).flatMap((node) => node.marks || [])
     expect(marks.some((mark) => mark.type === 'reminder')).toBe(false)
+  })
+})
+
+describe('提醒 HTML 清洗往返', () => {
+  it('导入保留原始日期、通知开关和重复规则，不回落成默认的明天', () => {
+    const iso = '2099-10-26T13:00:00Z'
+    const html = `<p><span data-type="reminder" data-remind-at="${iso}" data-notify="false" data-repeat="weekly">10月26日 13:00</span></p>`
+    const editor = mount(sanitizeHTML(html))
+    const mark = editor.getJSON().content[0].content[0].marks[0]
+    expect(mark.attrs).toEqual({ remindAt: iso, notify: false, repeat: 'weekly' })
+  })
+
+  it('清洗剔除非法日期、重复规则及事件属性，保留合法带时区日期', () => {
+    const html = sanitizeHTML('<p><span data-type="reminder" data-remind-at="2099-10-26T13:00" data-repeat="yearly" onclick="alert(1)">非法</span><span data-type="reminder" data-remind-at="2099-10-26T13:00:00+08:00" data-repeat="daily">合法</span></p>')
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const [invalid, valid] = container.querySelectorAll('span')
+    expect(invalid.hasAttribute('data-remind-at')).toBe(false)
+    expect(invalid.hasAttribute('data-repeat')).toBe(false)
+    expect(invalid.hasAttribute('onclick')).toBe(false)
+    expect(valid.getAttribute('data-remind-at')).toBe('2099-10-26T13:00:00+08:00')
+    expect(valid.getAttribute('data-repeat')).toBe('daily')
   })
 })
 

@@ -153,6 +153,12 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
     setDisabled(refs.replaceOne, state.readonly || !state.hasMatches)
     setDisabled(refs.previous, !state.hasMatches)
     setDisabled(refs.next, !state.hasMatches)
+    syncChildren(refs.actions, [
+      { node: refs.replaceAll, on: state.isReplace },
+      { node: refs.replaceOne, on: state.isReplace },
+      { node: refs.previous, on: true },
+      { node: refs.next, on: true },
+    ])
     syncChildren(refs.findField, [
       { node: refs.findLabel, on: state.isReplace },
       { node: refs.findInputWrap, on: true },

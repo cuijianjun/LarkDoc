@@ -79,6 +79,10 @@ webpack(config, (error, stats) => {
     console.error(json.errors.slice(0, 5).join('\n\n'))
     process.exit(1)
   }
+  if (stats.hasWarnings()) {
+    console.error('[collab 构建] warnings：\n' + json.warnings.map((item) => item.message || String(item)).join('\n\n'))
+    process.exit(1)
+  }
   const kb = (v) => `${(v / 1024).toFixed(1)} KiB`
   console.log('\n[collab 子入口产物]')
   for (const asset of (json.assets || []).filter((item) => item && item.name).sort((a, b) => (b.size || 0) - (a.size || 0))) {

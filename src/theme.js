@@ -230,7 +230,7 @@ export function createThemeController(options = {}) {
 
   function destroy() {
     stopListeners()
-    cancelThemeTransition()
+    cancelThemeTransition(getRoot())
   }
 
   return { setTheme, getTheme, applyToRoot, destroy }

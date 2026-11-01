@@ -4,7 +4,7 @@ layout: home
 hero:
   name: lark-doc
   text: LarkDoc 风格 Tiptap 文档编辑器
-  tagline: Vue 2.7 + Tiptap 3，支持 `new LarkDoc()` 一行接入；静态资源全本地化，媒体默认直连（含旧系统 http 图床）。
+  tagline: 原生 DOM + Tiptap 3，支持 `new LarkDoc()` 一行接入；静态资源全本地化，媒体默认直连。
   actions:
     - theme: brand
       text: 快速开始
@@ -40,8 +40,8 @@ features:
     title: Provider 契约
     details: 持久化 / 协作 / 版本 / 评论 / 授权五大扩展点，全部显式注入。
   - icon: 🏗
-    title: Node 14 兼容
-    details: 存量 Vue2/webpack4 宿主可直接使用，带完整 Node14 校验与 ES2023 polyfill。
+    title: 多环境兼容
+    details: webpack4/5、Vite、Vue、React、原生页面和 SSR 都有对应入口与示例。
 ---
 
 ::: warning 声明

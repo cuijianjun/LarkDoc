@@ -6,15 +6,15 @@ lark-doc 与宿主的边界是显式的：编辑器只负责文档交互，**数
 
 ### 原生页面
 
-UMD 产物把 Vue 当 peer 依赖（`externals.root = 'Vue'`），宿主必须先加载全局 `Vue`；样式随 JS 注入，无需单独引 CSS。全局暴露的是**命名空间对象** `window['lark-doc']`（含 `LarkDoc` / `createDocumentSession` / `TOOLBAR_GROUPS` 等具名导出，以及 `default` 指向 `LarkDoc` 类）：
+Element UMD 使用原生 DOM，不依赖全局 `Vue`；样式随 JS 注入，无需单独引 CSS。将 `dist/` 整目录同位部署后即可使用自定义元素：
 
 ```html
-<script src="https://unpkg.com/vue@2.7.14/dist/vue.runtime.min.js"></script>
-<script src="https://unpkg.com/lark-doc/dist/lark-doc.umd.min.js"></script>
-<div id="editor"></div>
+<script src="./dist/lark-doc-element.umd.min.js"></script>
+<lark-doc id="editor" title="未命名文档"></lark-doc>
 <script>
-  const { LarkDoc } = window['lark-doc']
-  const doc = new LarkDoc({ element: '#editor', title: '未命名文档' })
+  document.getElementById('editor').addEventListener('lark-doc-ready', (event) => {
+    console.log(event.target.getJSON())
+  })
 </script>
 ```
 
@@ -96,7 +96,7 @@ const doc = new LarkDoc({ element: '#editor', session })
 | --- | --- |
 | 原生页面 | UMD 产物 + 样式链接；适合无构建链的宿主。 |
 | Vue2 薄壳 | `mounted` 创建、`beforeDestroy` 销毁；dev 用 alias 指向包源码，生产走 dist，两条路径都验证。 |
-| 组件式 | `LarkDocEditor`（纯编辑器）与 `LarkDocWorkspace`（完整工作台）仍是具名导出，老宿主不受影响。 |
+| 组件式 | 从 `lark-doc/legacy` 引入 `LarkDocEditor` / `LarkDocWorkspace` options 对象供 Vue2 宿主注册；内部同样挂载原生 DOM，不导入 Vue。 |
 | 持久化 Provider | 实现即插即用（方法名 `load/save/snapshots/snapshot/restore`）；缺省为浏览器 localStorage 草稿。 |
 | 协作 Provider | 只暴露 `connect(options)/disconnect(options)` 最小边界；不传不建连接。评论、版本、授权同理，对应 providers/comments、versioning、authorization。 |
 

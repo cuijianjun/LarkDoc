@@ -30,7 +30,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPTS = join(ROOT, 'scripts')
 const LOG_DIR = join(ROOT, '_codex', 'verify-logs')
 const PREFIX = 'verify-browser-'
-const DEV_PORT = 8080
+const DEV_URL = new URL(process.env.LARK_DOC_VERIFY_URL || 'http://localhost:8080/lark-doc')
+const DEV_PORT = Number(DEV_URL.port || (DEV_URL.protocol === 'https:' ? 443 : 80))
 const DEFAULT_TIMEOUT = 240 // 秒
 
 /** 本机 playwright-core 的默认位置（可用 NODE_PATH 覆盖） */
@@ -81,7 +82,7 @@ if (!env.NODE_PATH) {
 /** 探活 dev server：不通只警告，不阻塞（有的目标不需要页面） */
 function probeDevServer() {
   return new Promise((resolve) => {
-    const sock = net.connect({ port: DEV_PORT, host: '127.0.0.1' })
+    const sock = net.connect({ port: DEV_PORT, host: DEV_URL.hostname })
     const done = (ok) => {
       sock.destroy()
       resolve(ok)
@@ -101,7 +102,12 @@ function runOne(target) {
   const started = Date.now()
 
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script], { cwd: ROOT, env })
+    const urls = target === 'element'
+      ? [process.env.LARK_DOC_VERIFY_ELEMENT_URL || 'http://localhost:8765/examples/element-demo.html']
+      : target === 'splitting'
+        ? [DEV_URL.href, process.env.LARK_DOC_VERIFY_WC_URL || new URL('/lark-doc-wc', DEV_URL).href]
+        : [DEV_URL.href]
+    const child = spawn(process.execPath, [script, ...urls], { cwd: ROOT, env })
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true

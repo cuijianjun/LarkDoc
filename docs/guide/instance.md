@@ -1,6 +1,6 @@
 # 实例与事件
 
-`new LarkDoc()` 返回一个无框架控制器，方法覆盖内容读写、选区操作、只读切换与销毁；事件既支持 `onReady/onUpdate` 这类构造参数，也支持 `doc.on('save', fn)` 这类订阅式写法。销毁顺序固定为：停止 AI → 触发事件 → 销毁编辑器 → `$destroy` → 移除 DOM。
+`new LarkDoc()` 返回一个无框架控制器，方法覆盖内容读写、选区操作、只读切换与销毁；事件既支持 `onReady/onUpdate` 这类构造参数，也支持 `doc.on('save', fn)` 这类订阅式写法。销毁顺序固定为：停止 AI → 触发事件 → 销毁编辑器 → 释放控制器与 UI 监听 → 移除 DOM。
 
 ## 方法速览
 
@@ -27,7 +27,7 @@ doc.isReadonly()
 doc.setReadonly(true)
 doc.save()               // 触发一次持久化
 doc.getEditor()          // Tiptap Editor 实例
-doc.getWorkspace()       // 工作台 Vue 组件实例
+doc.getWorkspace()       // 无框架工作台控制器
 doc.getConfig()          // 归一化后的配置
 
 // 事件
@@ -57,7 +57,7 @@ doc.destroy()
 | `setReadonly(v)` | `void` | 切换只读。 |
 | `save()` | `Promise` | 触发一次保存流程。 |
 | `getEditor()` | `Editor` | 底层 Tiptap 实例，用于高级扩展。 |
-| `getWorkspace()` | `Vue` | 工作台组件实例（含模板、快照、AI 面板）。 |
+| `getWorkspace()` | `WorkspaceController` | 无框架工作台控制器（含模板、快照、AI 状态）。 |
 | `getConfig()` | `object` | 归一化后的完整配置。 |
 | `on(event, fn)` / `off(event, fn)` | `void` | 事件订阅。 |
 | `destroy()` | `void` | 销毁实例并移除 DOM。 |

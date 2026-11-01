@@ -44,7 +44,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
 const panelUi = fs.readFileSync(path.join(root, 'src/ui/revision.js'), 'utf8')
 const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionUiMixin.js'), 'utf8')
-const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
+const nativeHost = fs.readFileSync(path.join(root, 'src/editor/nativeEditorHost.js'), 'utf8')
+const shell = fs.readFileSync(path.join(root, 'src/ui/workspaceShell.js'), 'utf8')
 const modeMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/viewModesMixin.js'), 'utf8')
 
 const schema = getSchema(createLarkDocExtensions())
@@ -320,7 +321,7 @@ describe('P4-06 面板几何与六按钮（07 §12.3 / §12.4）', () => {
   })
 
   it('面板要用的图标键都在图标库里', () => {
-    ;['rev-next', 'rev-prev', 'rev-accept', 'rev-image', 'rev-avatar', 'link', 'close'].forEach((name) => {
+    ['rev-next', 'rev-prev', 'rev-accept', 'rev-image', 'rev-avatar', 'link', 'close'].forEach((name) => {
       expect(ICONS[name], name).toBeTruthy()
       expect(ICONS[name].startsWith('<svg')).toBe(true)
     })
@@ -463,8 +464,10 @@ describe('P4-06 规格层：CSS 与面板结构（07 §12.2 / §12.4 / §12.6）
   })
 
   it('宿主接线：面板挂上、事务里刷新、模式切换同步 tracker', () => {
-    expect(editorVue).toContain('<div ref="revisionHost" />')
-    expect(editorVue).toContain('this.mountRevisionPanels()')
+    expect(shell).toContain("const revisionHost = ownerDocument.createElement('div')")
+    expect(nativeHost).toContain("['RevisionPanels', 'refreshRevisionPanels']")
+    expect(nativeHost).toContain('host[`mount${domain}`]()')
+    expect(nativeHost).toContain('host.updateRevisionPanels()')
     expect(panelMixin).toContain('this.refreshRevisionPanels()')
     expect(panelMixin).toContain('createRevisionPanels')
     expect(modeMixin).toContain('syncRevisionTracking')

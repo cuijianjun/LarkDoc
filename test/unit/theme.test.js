@@ -22,6 +22,8 @@ afterEach(() => {
   delete global.window
   delete global.MutationObserver
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('createThemeController — DOM 契约（11 §3.3）', () => {
@@ -56,6 +58,77 @@ describe('createThemeController — DOM 契约（11 §3.3）', () => {
     const controller = createThemeController({ getRoot: () => null })
     expect(() => controller.applyToRoot()).not.toThrow()
     expect(controller.getTheme().resolved.theme).toBe('light')
+  })
+})
+
+describe('createThemeController — View Transition 等待边界', () => {
+  function deferTransition() {
+    vi.useFakeTimers()
+    let update
+    const skipTransition = vi.fn()
+    vi.stubGlobal('document', {
+      startViewTransition: vi.fn((callback) => {
+        update = callback
+        return { skipTransition }
+      }),
+    })
+    const root = createRoot()
+    const controller = createThemeController({ getRoot: () => root })
+    controller.applyToRoot()
+    return { root, controller, skipTransition, update: () => update() }
+  }
+
+  it('快照回调迟迟不执行时，限时跳过动画并写入最新双轨主题', () => {
+    const { root, controller, skipTransition, update } = deferTransition()
+    controller.setTheme('dark', 'dark')
+    expect(root.attributes['data-theme']).toBe('light')
+    vi.advanceTimersByTime(300)
+    expect(skipTransition).toHaveBeenCalledTimes(1)
+    expect(root.attributes['data-theme']).toBe('dark')
+    expect(root.attributes['data-content-theme']).toBe('dark')
+    const write = vi.spyOn(root, 'setAttribute')
+    update()
+    expect(write).not.toHaveBeenCalled()
+    controller.destroy()
+  })
+
+  it('正常快照回调立即落盘并取消超时降级', () => {
+    const { root, controller, skipTransition, update } = deferTransition()
+    controller.setTheme('dark', 'light')
+    update()
+    expect(root.attributes['data-theme']).toBe('dark')
+    expect(root.attributes['data-content-theme']).toBe('light')
+    expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(1000)
+    expect(skipTransition).not.toHaveBeenCalled()
+    controller.destroy()
+  })
+
+  it('连续切换取消旧快照，迟到回调不能覆盖新一轮切换', () => {
+    const { root, controller, skipTransition, update } = deferTransition()
+    controller.setTheme('dark', 'dark')
+    const firstUpdate = document.startViewTransition.mock.calls[0][0]
+    controller.setTheme('light', 'dark')
+    expect(skipTransition).toHaveBeenCalledTimes(1)
+    const write = vi.spyOn(root, 'setAttribute')
+    firstUpdate()
+    expect(write).not.toHaveBeenCalled()
+    update()
+    expect(root.attributes['data-theme']).toBe('light')
+    expect(root.attributes['data-content-theme']).toBe('dark')
+    expect(vi.getTimerCount()).toBe(0)
+    controller.destroy()
+  })
+
+  it('销毁取消等待中的快照，迟到回调不能再写入根容器', () => {
+    const { root, controller, skipTransition, update } = deferTransition()
+    controller.setTheme('dark', 'dark')
+    controller.destroy()
+    expect(skipTransition).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+    update()
+    expect(root.attributes['data-theme']).toBe('light')
+    expect(root.attributes['data-content-theme']).toBe('light')
   })
 })
 

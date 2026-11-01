@@ -7,7 +7,7 @@
  * 这里把「挂载 / 更新 / 卸载」收敛成一个可替换的 renderer 契约：
  *
  *   createRenderer() -> {
- *     name                                        // 'vue2' 等，便于诊断
+ *     name                                        // 'dom-migration' 等，便于诊断
  *     mount({ element, props, on }) -> handle     // 插入 DOM，返回适配器自有句柄
  *     update(handle, props)                       // 增量更新变更的 props
  *     destroy(handle)                             // 卸载并移除 DOM
@@ -20,11 +20,10 @@
  * 契约由 `npm run check:architecture` 的 R3 规则运行时锁死：缺一个动作、或多一个
  * 函数型成员，校验链立刻红。
  *
- * 目前默认仍是 Vue 2 实现（vueRenderer）；另有显式 opt-in 的迁移期 DOM 实现
- *（domRenderer）。DOM 实现尚未覆盖 Vue 编辑器的全部 UI 状态机，因此不会切默认。
- * 上层（LarkDoc / web-component）禁止 import 任何框架，只能 import 本目录。
+ * 当前默认使用原生 DOM renderer；Vue 2 renderer 仅作为隔离的 legacy 适配器保留，
+ * 不由默认入口加载。上层（LarkDoc / web-component）禁止 import 任何框架，只能 import 本目录。
  */
-import { createVue2Renderer } from './vueRenderer'
+import createDomRenderer from './domRenderer'
 
 let override = null
 
@@ -35,19 +34,20 @@ let override = null
 export function createRenderer(options = {}) {
   if (override) return override()
   if (options && typeof options.rendererFactory === 'function') return options.rendererFactory()
-  if (options && options.renderer === 'dom') {
-    throw new Error('DOM renderer 是迁移期独立入口，请通过 rendererFactory 注入 renderer 工厂')
+  if (options && options.renderer === 'vue2') {
+    // legacy renderer 通过显式动态入口注入，避免默认依赖 Vue。
+    throw new Error('Vue 2 renderer 已从默认入口隔离，请通过 rendererFactory 注入 legacy renderer')
   }
-  return createVue2Renderer()
+  return createDomRenderer()
 }
 
 /**
- * 替换全局渲染适配器（测试或自研无框架渲染器使用）。
- * 传 null 恢复默认 Vue 2 实现。
+ * 替换全局渲染适配器（测试或自研渲染器使用）。
+ * 传 null 恢复默认 DOM renderer。
  */
 export function setRenderer(factory) {
   override = typeof factory === 'function' ? factory : null
 }
 
-export { createVue2Renderer }
+export { createDomRenderer }
 export default createRenderer

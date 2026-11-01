@@ -3,15 +3,15 @@
  *
  * 要修的问题
  * ----------
- * lib 产物是「自带一份 webpack runtime 的单文件 CJS」。它把 Vue 留给宿主，产物里因此有一条
- * 真实的外部依赖调用：
+ * lib 产物自带 webpack runtime，并通过真实 require() 加载兄弟区块。
+ * 宿主再次打包时会改写这些调用，例如：
  *
- *     module.exports = require("vue/dist/vue.runtime.common.js");
+ *     require("./lark-doc.common.math.js");
  *
  * 使用方（webpack4 / webpack5 / rollup commonjs 等）会把这条 require 改写成
  * 自己 runtime 的调用形式，webpack4 dev 下即：
  *
- *     __webpack_require__("./node_modules/vue/dist/vue.runtime.common.js")
+ *     __webpack_require__("./node_modules/lark-doc/dist/lark-doc.common.math.js")
  *
  * 改写是就地替换文本，而这段代码位于 lib 内部 IIFE 里。IIFE 内已经存在同名函数
  * `function __webpack_require__(moduleId)`，于是这个调用被内层 runtime 捕获，它去自己的
@@ -35,7 +35,7 @@ const fs = require('fs')
 const path = require('path')
 
 const DIST = path.resolve(__dirname, '../dist')
-const TARGET = path.join(DIST, 'lark-doc.common.js')
+const TARGET = path.join(DIST, process.argv[2] || 'lark-doc.common.js')
 
 // 只需要改 __webpack_require__：它就是使用方改写 require 时注入的那个名字。
 // __webpack_modules__ / __webpack_module_cache__ 只在 IIFE 内部被引用，不会被外部注入，
@@ -51,6 +51,8 @@ if (!fs.existsSync(TARGET)) {
 
 let code = fs.readFileSync(TARGET, 'utf8')
 const before = code.length
+const EXTERNAL_REQUIRE = /\brequire\s*\(\s*['"][^'"]+['"]\s*\)/g
+const externalRequires = code.match(EXTERNAL_REQUIRE) || []
 
 let renamed = 0
 for (const [from, to] of RENAMES) {
@@ -60,22 +62,10 @@ for (const [from, to] of RENAMES) {
   renamed += hits
 }
 
-// Vue 这条外部依赖调用必须原样保留：它就是留给使用方去改写的入口。
-// 形态会随 webpack 对 vue 的导入方式变化 —— 阶段 2 摘掉 `@tiptap/vue-2` 后由
-// `module.exports = require("vue/...")` 变成 `var ns = require("vue/...")`
-// （namespace 导入），所以这里只认「vue 的 external require 调用」本身，不认赋值形式。
-// 阶段 3 起 esm/cjs 会 `--inline-vue`，那时产物里根本没有这条调用，守卫自然让位。
-const VUE_EXTERNAL = /require\("vue\/dist\/vue\.runtime\.common\.js"\)/
-const hadExternalVue = VUE_EXTERNAL.test(code)
-
-fs.writeFileSync(TARGET, code)
-
-if (hadExternalVue && !VUE_EXTERNAL.test(code)) {
-  console.error('[fix-lib-require-scope] vue 外部依赖调用被改名破坏，产物形态可能已变，请人工确认')
+// 所有真实 require（包括兄弟 chunk）都留给宿主解析，不能被 runtime 改名破坏。
+if (JSON.stringify(externalRequires) !== JSON.stringify(code.match(EXTERNAL_REQUIRE) || [])) {
+  console.error('[fix-lib-require-scope] 外部 require 调用被破坏，产物形态可能已变')
   process.exit(1)
-}
-if (!hadExternalVue) {
-  console.log('[fix-lib-require-scope] 产物未外置 vue（已内联），跳过 external 守卫')
 }
 
 // 改完必须保证内层不再残留旧标识符，否则等于没修。
@@ -85,7 +75,8 @@ if (leftover.length) {
   process.exit(1)
 }
 
+fs.writeFileSync(TARGET, code)
 console.log(
-  '[fix-lib-require-scope] 内层 runtime 标识符改名 ' + renamed + ' 处，' +
+  `[fix-lib-require-scope] ${path.basename(TARGET)} 内层 runtime 标识符改名 ` + renamed + ' 处，' +
   (before / 1024 / 1024).toFixed(2) + ' MB 产物已就绪'
 )

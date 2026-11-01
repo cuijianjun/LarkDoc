@@ -229,6 +229,26 @@ async function main() {
     record('G2 浅 UI + 深正文：chrome 白 / 纸张 #17181A',
       t12.chrome === WHITE && t12.paper === PAPER_DARK, JSON.stringify(t12))
 
+    /* ---------------- G6：快照延迟不能阻塞换色 ---------------- */
+    await tracks('light', 'auto')
+    await page.evaluate(() => {
+      const start = document.startViewTransition
+      if (typeof start !== 'function') { window.__larkDoc.setTheme('dark', 'dark'); return }
+      // 模拟渲染繁忙时快照回调迟到；颜色断言仍使用原来的 1000ms 窗口。
+      document.startViewTransition = (update) => start.call(document, () => new Promise((resolve) => {
+        setTimeout(() => { update(); resolve() }, 1200)
+      }))
+      try { window.__larkDoc.setTheme('dark', 'dark') } finally { document.startViewTransition = start }
+    })
+    await page.waitForTimeout(1000)
+    const delayedDark = await page.evaluate(READ_PAGE)
+    const delayedContract = await page.evaluate(READ_CONTRACT)
+    record('G6 快照回调延迟时仍限时落盘深色双轨与正文颜色',
+      delayedContract.theme === 'dark' && delayedContract.contentTheme === 'dark'
+        && delayedDark.paperBg === PAPER_DARK && delayedDark.tdBorder === 'rgb(67, 67, 67)'
+        && delayedDark.thBg === 'rgba(207, 207, 207, 0.08)',
+      JSON.stringify({ contract: delayedContract, paper: delayedDark.paperBg, border: delayedDark.tdBorder, header: delayedDark.thBg }))
+
     /* ---------------- G6-1：首屏无闪烁 ---------------- */
     // 先让 localStorage 落 dark（themeStorage:'local'），再开新标签看首帧落在哪一档。
     await page.evaluate(() => { window.__larkDoc.setTheme('dark', 'dark') })

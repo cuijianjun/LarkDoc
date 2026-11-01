@@ -5,7 +5,7 @@
  *
  *   1. 🔴 **入口不在编辑器里**。编辑器页内 `nTpl=0` / `nBar=0`、侧栏也不给入口；
  *      唯一真入口是**云盘首页**「新建 / 上传 / 模板库」三卡里的第三张。
- *      ⇒ 本文件与 `TemplateLibrary.vue` 是**可嵌入宿主的独立组件**，
+ *      ⇒ 本文件与 `src/ui/templateLibrary.js` 是**可嵌入宿主的独立 UI 契约**，
  *      不挂进 `LarkDocEditor`，也不进斜杠菜单。编辑器里加任何模板入口都是错。
  *   2. 🔴 **「使用模板」= 复制一整篇文档**，不是「拿模板 JSON 逐块 insert」。
  *      实测请求是 `POST /space/api/wiki/v2/tree/create_node/`，落点 `/wiki/{nodeId}`，

@@ -27,7 +27,8 @@ import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDis
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
 const topbar = fs.readFileSync(path.join(root, 'src/ui/topBar.js'), 'utf8')
-const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
+const renderer = fs.readFileSync(path.join(root, 'src/mount/domRenderer.js'), 'utf8')
+const shell = fs.readFileSync(path.join(root, 'src/ui/workspaceShell.js'), 'utf8')
 const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
 const collapseMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/toolbarCollapseMixin.js'), 'utf8')
 
@@ -520,11 +521,11 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
   })
 
   it('主组件挂提示条、根 class 带修订态、mounted 里先 restoreMode', () => {
-    expect(editorVue).toContain('class="lark-doc-mode-toast"')
-    expect(editorVue).toContain("'lark-doc-mode-suggest': mode === 'suggest'")
-    expect(editorVue).toContain('this.restoreMode()')
-    // restoreMode 必须在 new Editor 之前 —— 否则首帧 editable 会按旧默认值建出来再回滚。
-    expect(editorVue.indexOf('this.restoreMode()')).toBeLessThan(editorVue.indexOf('new Editor('))
+    expect(shell).toContain("modeToast.className = 'lark-doc-mode-toast'")
+    expect(renderer).toContain("shell.root.classList.toggle('lark-doc-mode-suggest', state.mode === 'suggest')")
+    expect(renderer).toContain('documentHost.restoreMode()')
+    // restoreMode 必须在 new Editor 之前，保证首帧 editable 就正确。
+    expect(renderer.indexOf('documentHost.restoreMode()')).toBeLessThan(renderer.indexOf('new Editor('))
   })
 
   it('「更多」菜单里没有修订入口（07 §12.1 实测，别好心加回去）', () => {

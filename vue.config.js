@@ -8,7 +8,7 @@ const path = require('path')
  *   `lark-doc.common.<name>.js` 兄弟文件，并用 `require()` 加载 —— Node 与打包器两种宿主
  *   都能拿到它们，不必担心「运行时按 URL 注入 script」在 Node 里不成立。
  *   样式抽成 dist/lark-doc.css，宿主显式 import。
- * - element（src/web-component/index.js）：自定义元素产物，Vue 内联 + CSS 由 JS 注入，
+ * - element（src/web-component/index.js）：自定义元素产物，CSS 由 JS 注入，完全使用 DOM renderer，
  *   publicPath:'auto' 能可靠推导出 chunk 地址 → 只拆按需区块。它同时兼职 CDN `<script>` 直挂
  *   （`unpkg` / `jsdelivr` 都指向它），所以**不再单独出 UMD 档**（阶段 3）。
  * - esm（scripts/build-esm.js）：ES Module 产物，`module` 字段指向它。宿主打包器会接管
@@ -17,9 +17,9 @@ const path = require('path')
  *   两个入口必须**各自自包含**，所以这一档既不拆包也不抽 CSS。
  *
  * 拆包策略：首屏只需要「编辑器内核 + 工具栏」，所以按依赖性质分组——
- *   tiptap / vue / vendor 属于初始区块（并行下载、长期缓存，仅 esm 可拆）；
- *   math(katex) / office(docx+mammoth) / markdown(marked+turndown) / highlight 只在
- *   真正用到时才下载（按需区块），主包因此小一半。
+ *   tiptap / vendor 属于初始区块（并行下载、长期缓存，仅 esm 可拆）；
+ *   math(katex) / office(docx+mammoth) / highlight 等动态依赖按需下载；
+ *   marked 仍有静态 Markdown 导出引用，不保证完全移出主文件。
  */
 const target = process.env.LARK_DOC_TARGET || 'lib'
 /** lib（CJS）/ element 两档降级到 ES2018，让 webpack 4 宿主能直接解析（见 babel.config.js）；
@@ -29,12 +29,6 @@ const isElement = target === 'element'
 const isEsm = target === 'esm'
 /** 薄壳档：build-adapters.js 自己配 output / splitChunks，这里只需不套用统一的产出形态。 */
 const isAdapters = target === 'adapters'
-/**
- * V1 过渡态（阶段 3）：esm / cjs 两档把 Vue 打进产物，宿主不必再装 Vue 2.7，
- * `peerDependencies` 里也删掉 vue。真正的收尾（源码树摘 Vue）在阶段 5 + 7。
- * element 档本来就内联 Vue，所以走的是同一个开关。
- */
-const inlineVue = process.env.LARK_DOC_INLINE_VUE === '1'
 /** 薄壳关掉 polyfill 注入（见 babel.config.js），同样影响 babel 输出，缓存必须分流。 */
 const noPolyfill = process.env.LARK_DOC_NO_POLYFILL === '1'
 /** 同一 target 下的不同构建链（build-esm / build-lite）必须各占一份缓存，见 cache.name。 */
@@ -44,7 +38,7 @@ const isLib = !isElement && !isEsm && !isAdapters
 const split = !isAdapters
 /** 只有 esm 能安全拆初始区块（它的 output.filename 带 [name]）。lib 拆初始区块会与
  *  vue-cli 的 `${entryName}.js` / `${entryName}.[name].js` 模板撞名（两个 chunk 落到
- *  同一文件名），且 Vue 内联主文件是 V1 既定契约（阶段 5/7 摘 Vue 后自然回落），不折腾。 */
+ *  同一文件名），因此 lib / element 仅拆异步区块。 */
 const initialChunks = isEsm ? 'all' : 'async'
 
 /**
@@ -88,6 +82,37 @@ class BundleAnalyzePlugin {
       for (const asset of (json.assets || []).filter((a) => /\.js$/.test(a.name)).sort((a, b) => b.size - a.size)) {
         console.log(`  ${asset.name.padEnd(48)}${kb(asset.size).padStart(12)}`)
       }
+    })
+  }
+}
+
+/** legacy 源码入口只导出适配器，由构建入口补齐公共样式与运行时兼容层。 */
+class LegacyEntryAssetsPlugin {
+  apply(compiler) {
+    const assets = [
+      require.resolve('core-js/features/array/find-last'),
+      require.resolve('core-js/features/array/find-last-index'),
+      require.resolve('core-js/features/array/at'),
+      require.resolve('core-js/features/structured-clone'),
+      path.resolve(__dirname, 'style.css'),
+    ]
+    for (const entry of Object.values(compiler.options.entry)) entry.import.unshift(...assets)
+  }
+}
+
+/** 构建图守卫：Vue CLI 可以使用 Vue 工具，运行时模块图不能重新引入 Vue。 */
+class NoVueRuntimePlugin {
+  apply(compiler) {
+    compiler.hooks.compilation.tap('lark-doc-no-vue-runtime', (compilation) => {
+      compilation.hooks.finishModules.tap('lark-doc-no-vue-runtime', (modules) => {
+        const runtime = /[\\/]node_modules[\\/](?:vue[\\/]|@vue[\\/](?:runtime-core|runtime-dom|reactivity)[\\/]|@tiptap[\\/]vue-[^\\/]+[\\/])/
+        const external = /(?:^|["'\s])(?:vue(?:[\\/]|["'\s]|$)|@vue\/(?:runtime-core|runtime-dom|reactivity)|@tiptap\/vue-)/
+        for (const mod of modules) {
+          if (runtime.test(mod.resource || '') || (mod.constructor.name === 'ExternalModule' && external.test(JSON.stringify(mod.request)))) {
+            compilation.errors.push(new Error(`运行时模块图禁止 Vue：${mod.resource || JSON.stringify(mod.request)}`))
+          }
+        }
+      })
     })
   }
 }
@@ -137,23 +162,19 @@ module.exports = defineConfig({
           comments: false,
         })
     }
+    if (isLib) {
+      // 按需 CSS 与字体同在 dist 根目录，保持相对资源路径有效。
+      config.plugin('extract-css').tap((args) => {
+        args[0].chunkFilename = '[name].[contenthash:8].css'
+        return args
+      })
+    }
   },
   css: {
     // element / esm 是「直挂即用」的产物：样式随 JS 注入 <style>，宿主不需要
     // 再引 CSS，按需区块（如 KaTeX 样式）也跟着自己的 chunk 走。
     // 只有 lib（CJS）抽成 dist/lark-doc.css —— 保持既有接入方式不变。
     extract: isLib,
-  },
-  chainWebpack: (config) => {
-    if (!isLib) return
-    // lib 档按需区块的 CSS（如 math 的 KaTeX 样式）默认落 dist/css/[name].css，
-    // 而字体在 dist/fonts/ —— CSS 里的 `url(./fonts/…)` 会指向不存在的 dist/css/fonts/。
-    // 把区块 CSS 提到 dist 根目录，`./fonts/…` 与主文件 lark-doc.css 一样命中 dist/fonts/，
-    // 宿主（Node require / 打包器二次处理 css-loader）都能解析到。
-    config.plugin('extract-css').tap((args) => {
-      args[0].chunkFilename = '[name].[contenthash:8].css'
-      return args
-    })
   },
   // 默认 true（vue-cli 按 CPU 核数推导）：babel-loader 走 thread-loader 并行。
   // 多核机器上冷启动一批 worker 时偶发 `Broker request timed out`（本机实测 3 次里
@@ -162,18 +183,21 @@ module.exports = defineConfig({
   // LARK_DOC_NO_PARALLEL=1 关掉 thread-loader，默认口径不变、CI 不受影响。
   parallel: process.env.LARK_DOC_NO_PARALLEL === '1' ? false : undefined,
   configureWebpack: {
+    // Mermaid 为自包含 UMD，不解析其兼容分支（arguments.callee），保留 CommonJS 包装。
+    module: { noParse: /[\\/]src[\\/]assets[\\/]vendor[\\/]mermaid[\\/]mermaid\.min\.js$/ },
     // 构建加速：跨进程复用编译缓存（babel / vue-loader 结果），二次构建提速明显。
     // 每个 target 独立 cache.name：三种产物的 output / externals 不同，
     // 共用一份缓存会让模块级别的结果串味（external vue 的 ESM/CJS 形态就是典型）。
     cache: {
       type: 'filesystem',
+      // Node 主版本也隔离，避免 Node22 写入的 V8 序列化缓存被 Node14 读取。
       // LARK_DOC_LEGACY 会改变 babel 输出（降语法），必须换一份缓存，否则同一个
       // target 在两种口径间来回构建会命中对方的 babel 结果。
       // LARK_DOC_CACHE_FLAVOR 是「同 target 不同构建链」的分流开关：build-esm.js
       // 与 build-lite.js 都是 target=esm，但 lite 多了一套把重依赖 alias 成 stub
       // 的 resolve 配置 —— 共用一份缓存会命中 esm 那条链的解析结果，stub 整套失效
       // （表现：dist/lite.math.esm.js 与 dist/math.esm.js 逐字节相同）。
-      name: `lark-doc-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}${cacheFlavor}`,
+      name: `lark-doc-${process.versions.node.split('.')[0]}-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}${process.env.LARK_DOC_LEGACY_ENTRY === '1' ? '-options' : ''}${cacheFlavor}`,
       buildDependencies: { config: [__filename, path.resolve(__dirname, 'babel.config.js')] },
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。
@@ -189,18 +213,8 @@ module.exports = defineConfig({
         'lark-doc/mermaid-vendor$': path.resolve(__dirname, 'src/assets/vendor/mermaid/mermaid.min.js'),
       },
     },
-    // The library is consumed as an npm package.
-    // V1（阶段 3）起 esm / cjs / element 三档都不再外部化 Vue —— 宿主不装 Vue 也能跑，
-    // peerDependencies 因此不再声明 vue。真正的 V2/V3 是把 Vue 从源码树摘掉（阶段 5 + 7），
-    // 到时候再回头把这里的 inlineVue 收掉。
-    externals: isElement || isEsm || inlineVue ? {} : {
-      vue: {
-        commonjs: 'vue/dist/vue.runtime.common.js',
-        commonjs2: 'vue/dist/vue.runtime.common.js',
-        amd: 'vue',
-        root: 'Vue',
-      },
-    },
+    // legacy 也只是 options 适配器；所有运行时入口均不内联或外置 Vue。
+    externals: {},
     output: isLib
       ? {
         // CJS 档要把按需区块落成兄弟文件，并且**用 require() 去加载**：
@@ -223,18 +237,28 @@ module.exports = defineConfig({
           cacheGroups: {
             defaultVendors: false,
             default: false,
-            vue: { test: nodeModule('vue'), name: 'vue', chunks: initialChunks, priority: 50, reuseExistingChunk: true },
             tiptap: { test: nodeModule('@tiptap|prosemirror-[^/\\\\]+'), name: 'tiptap', chunks: initialChunks, priority: 40, reuseExistingChunk: true },
             vendor: { test: vendorModule, name: 'vendor', chunks: initialChunks, priority: 10, reuseExistingChunk: true },
             // 以下四组永远只服务按需区块：绝不能因为被 vendor 兜住而回到首屏。
             math: { test: nodeModule('katex'), name: 'math', chunks: 'async', priority: 35, reuseExistingChunk: true },
             office: { test: nodeModule('docx|mammoth'), name: 'office', chunks: 'async', priority: 35, reuseExistingChunk: true },
-            markdown: { test: nodeModule('marked|turndown'), name: 'markdown', chunks: 'async', priority: 35, reuseExistingChunk: true },
+            // Element 的 marked 仍由同步 Markdown API 引用，不与 editor 的按需依赖合组。
+            markdown: { test: nodeModule(isElement ? 'turndown' : 'marked|turndown'), name: 'markdown', chunks: 'async', priority: 35, reuseExistingChunk: true },
             highlight: { test: nodeModule('highlight\\.js'), name: 'highlight', chunks: 'async', priority: 35, reuseExistingChunk: true },
           },
         },
       }
       : {},
-    plugins: [...(process.env.LARK_DOC_ANALYZE ? [new BundleAnalyzePlugin()] : [])],
+    plugins: [
+      new NoVueRuntimePlugin(),
+      // 只替换 Element 的 renderer 构建接缝；源码、CJS 与 ESM 的同步契约不变。
+      ...(isElement ? [new (require('webpack').NormalModuleReplacementPlugin)(/^\.\/domRenderer$/, resource => {
+        if (resource.context === path.resolve(__dirname, 'src/mount')) {
+          resource.request = path.resolve(__dirname, 'scripts/element-renderer.js')
+        }
+      })] : []),
+      ...(process.env.LARK_DOC_LEGACY_ENTRY === '1' ? [new LegacyEntryAssetsPlugin()] : []),
+      ...(process.env.LARK_DOC_ANALYZE ? [new BundleAnalyzePlugin()] : []),
+    ],
   },
 })

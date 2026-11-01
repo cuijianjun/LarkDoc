@@ -17,12 +17,13 @@ import path from 'path'
 const root = path.resolve(__dirname, '../..')
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
 
-const sfc = read('src/components/lark-doc/LarkDocEditor.vue')
+const sfc = read('src/editor/nativeEditorHost.js')
+const shell = read('src/ui/workspaceShell.js')
 const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
 const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
 const overlaysRenderer = read('src/ui/overlays.js')
 
-const mixinsLine = sfc.split('\n').find((line) => line.trim().startsWith('mixins: ['))
+const mixinsLine = sfc.match(/mixins: \[([\s\S]*?)\]/)[1]
 const aggregatorMixins = aggregator.split('\n').find((line) => line.trim().startsWith('mixins: ['))
 
 // 「不许出现」类断言必须先看**代码**而不是注释：本文件的头注释里就把 transform /
@@ -30,11 +31,14 @@ const aggregatorMixins = aggregator.split('\n').find((line) => line.trim().start
 
 describe('P6b · 门面接线', () => {
   it('p6bMixin 与 overlaysUiMixin 已注册 + 模板挂载原生浮层宿主', () => {
-    expect(sfc).toContain("import p6bMixin from './editor/p6bMixin'")
-    expect(sfc).toContain("import overlaysUiMixin from './editor/overlaysUiMixin'")
+    expect(sfc).toContain("import p6bMixin from '../components/lark-doc/editor/p6bMixin'")
+    expect(sfc).toContain("import overlaysUiMixin from '../components/lark-doc/editor/overlaysUiMixin'")
     expect(mixinsLine).toContain('p6bMixin')
     expect(mixinsLine).toContain('overlaysUiMixin')
-    expect(sfc).toContain('<div ref="overlayHost" />')
+    expect(shell).toContain("const overlayHost = ownerDocument.createElement('div')")
+    expect(shell).toContain('headingNumberMenuHost, overlayHost)')
+    expect(sfc).toContain("['Overlays', 'refreshOverlays']")
+    expect(sfc).toContain('host[`mount${domain}`]()')
     expect(overlaysUi).toContain('createOverlays')
   })
 

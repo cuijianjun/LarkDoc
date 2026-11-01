@@ -363,7 +363,7 @@ const cellEdge = async (page, index) => page.evaluate((cellIndex) => {
   // ——————————————————— ⑧ 只读态 ———————————————————
   await page.evaluate(selectCell, 0)
   await page.waitForTimeout(220)
-  await page.evaluate(() => { document.querySelector('.lark-doc').__vue__.readonly = true })
+  await page.evaluate(() => { window.__larkDoc.setReadonly(true) })
   await page.waitForTimeout(320)
   record('[只读] 只读态下表格工具条不进 DOM（`!effectiveReadonly` 是硬条件）',
     (await page.evaluate(measureTableTools)) === null, '只读')

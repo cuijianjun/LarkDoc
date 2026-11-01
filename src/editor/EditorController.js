@@ -18,6 +18,8 @@ export class EditorController {
     this.getNetwork = typeof options.getNetwork === 'function' ? options.getNetwork : () => null
     this.onBeforeContentReplace = typeof options.onBeforeContentReplace === 'function' ? options.onBeforeContentReplace : null
     this.onAfterContentReplace = typeof options.onAfterContentReplace === 'function' ? options.onAfterContentReplace : null
+    this.onImportReport = typeof options.onImportReport === 'function' ? options.onImportReport : null
+    this.lastImportReport = null
     this._destroyed = false
   }
 
@@ -30,6 +32,11 @@ export class EditorController {
   getHTML() { return this.editor?.getHTML() || '' }
   getJSON() { return this.editor ? aggregateHeadingContainers(restoreUnknownBlocks(this.editor.getJSON())) : null }
   getText() { return this.editor ? (this.editor.getText() || '') : '' }
+  getImportReport() { return this.lastImportReport }
+  setImportReport(report) {
+    this.lastImportReport = report || null
+    if (this.onImportReport) this.onImportReport(this.lastImportReport)
+  }
   focus() { this.editor?.commands.focus() }
   getTitle() { return this.title }
   setTitle(value) { this.title = value; return this.title }
@@ -46,8 +53,11 @@ export class EditorController {
     if (!this.editor) return false
     const schema = this.editor.schema
     let json
+    let report = null
     if (typeof content === 'string') {
-      const safe = this.prepareHTML(content, options.format)
+      const prepared = this.prepareHTML(content, options.format)
+      const safe = typeof prepared === 'string' ? prepared : prepared.html
+      if (typeof prepared !== 'string' && prepared.converted) report = prepared.report
       const container = document.createElement('div')
       container.innerHTML = safe
       json = ProseMirrorDOMParser.fromSchema(schema).parse(container).toJSON()
@@ -57,7 +67,10 @@ export class EditorController {
     const next = schema.nodeFromJSON(validateDocument(json, schema))
     const maxLength = Number(this.getMaxLength()) || 0
     if (maxLength > 0 && this.editor.storage.characterCount.characters({ node: next }) > maxLength) throw new Error(`正文不能超过 ${maxLength} 字`)
-    if (next.eq(this.editor.state.doc)) return false
+    if (next.eq(this.editor.state.doc)) {
+      this.setImportReport(report)
+      return false
+    }
     if (this.onBeforeContentReplace) this.onBeforeContentReplace()
     const tr = this.editor.state.tr.replaceWith(0, this.editor.state.doc.content.size, next.content)
     this.editor.view.dispatch(setTransactionMetadata(tr, { origin: TRANSACTION_ORIGINS.HOST }))
@@ -66,6 +79,7 @@ export class EditorController {
     if (this.editor.commands && typeof this.editor.commands.normalizeLarkDocIndents === 'function') this.editor.commands.normalizeLarkDocIndents()
     if (this.onAfterContentReplace) this.onAfterContentReplace()
     this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+    this.setImportReport(report)
     return true
   }
 

@@ -365,7 +365,7 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 400))
     editor.commands.setTextSelection(1)
     editor.view.focus()
-    const vm = window.__larkDoc.getWorkspace().$refs.document
+    const vm = (window.__larkDoc._handle?.nativeHost?.host || window.__larkDoc.getWorkspace().$refs.document)
     const before = { level: vm.blockIndentLevel(), limit: vm.blockIndentLimit(), can: vm.canIncreaseIndent() }
     vm.changeIndent(1)
     await new Promise((resolve) => setTimeout(resolve, 250))
@@ -390,7 +390,7 @@ async function main() {
     const editor = window.__larkDoc.getEditor()
     editor.commands.setContent('<ol><li><p>b. 4</p><pre data-indent="1"><code>1</code></pre></li></ol>')
     await new Promise((resolve) => setTimeout(resolve, 400))
-    const vm = window.__larkDoc.getWorkspace().$refs.document
+    const vm = (window.__larkDoc._handle?.nativeHost?.host || window.__larkDoc.getWorkspace().$refs.document)
     // 句柄悬停在代码块上时，块目标其实是外层 listItem（item 自己没有 indent 属性），
     // 缩进目标要能落回 item 里的代码块，否则两个菜单项都会灰掉。
     let itemPos = -1
@@ -462,7 +462,7 @@ async function main() {
 
   // 11.2c 外部 JSON 里的超限缩进在 setContent 后被压回上限
   const legacyIndent = await page.evaluate(async () => {
-    const vm = window.__larkDoc.getWorkspace().$refs.document
+    const vm = (window.__larkDoc._handle?.nativeHost?.host || window.__larkDoc.getWorkspace().$refs.document)
     vm.setContent({ type: 'doc', content: [{ type: 'paragraph', attrs: { indent: 8 }, content: [{ type: 'text', text: 'legacy' }] }] })
     await new Promise((resolve) => setTimeout(resolve, 400))
     const editor = window.__larkDoc.getEditor()

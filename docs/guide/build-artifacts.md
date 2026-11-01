@@ -1,109 +1,57 @@
 # 打包产物与按需加载
 
-包一次构建产出四份产物，按「宿主怎么用」而不是「我们怎么编译」来分：
+当前源码使用 Tiptap 3 与原生 DOM UI。默认、Element、lite 和 legacy 兼容产物都不导入、内联或 external Vue；Vue CLI 仅保留为开发期构建工具。
 
-| 产物 | 入口 | 适用宿主 | 首屏 JS（gzip 实测，2026-10-28 / v0.12.1） |
+## 入口与样式
+
+| 产物 | 源码入口 | 用途 | 样式 |
 | --- | --- | --- | --- |
-| `dist/lark-doc.esm.js` | `src/index.js` | webpack / vite / rollup 等打包器（`module` 字段） | 1.00 MB → gzip 273 kB；连带 `tiptap.esm.js` 446 kB（gzip 136 kB）与 `vendor.esm.js` 101 kB（gzip 38 kB）并行，合计 **gzip 446 kB** |
-| `dist/lark-doc.common.js` | `src/index.js` | Node / SSR / 只读 `main` 的老打包器（`main` 字段）；**webpack 4 的唯一入口** | 单文件 8.6 MB → gzip 2.34 MB（内联 mermaid 与全部按需区块，不拆） |
-| `dist/lark-doc.umd.min.js` | `src/index.js` | `<script>` 直挂、CDN（`unpkg` / `jsdelivr` 字段） | 1.56 MB → gzip 447 kB |
-| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | 任意框架 / 无框架（`<lark-doc>`，Vue 内联）；Vue 3 / React 走它 + 薄壳 | 1.60 MB → gzip 464 kB |
+| `dist/lark-doc.esm.js` | `src/index.js` | webpack5 / Vite / Rollup，`module` 与 `exports.import` | 随 JS 注入 |
+| `dist/lark-doc.common.js` | `src/index.js` | Node / SSR，以及 webpack4 alias，`main` 与 `exports.require` | 显式引 `lark-doc/style.css` |
+| `dist/lark-doc-element.umd.min.js` | `src/web-component/index.js` | `<lark-doc>` 标签、CDN、静态页；`unpkg` / `jsdelivr` | 随 JS 注入 |
+| `dist/lark-doc-legacy.{common,esm}.js` | `src/legacy-vue/index.js` | Vue2 宿主注册普通 options 兼容对象；实际渲染仍为 DOM | CJS 引 `dist/lark-doc-legacy.css`；ESM 注入 |
+| `dist/lark-doc-lite.esm.js` | `src/index.js` + 重依赖 alias | 重依赖外置为可选特性包 | 随 JS 注入 |
+| `dist/lark-doc-{vue3,react}.mjs` | `src/adapters/*` | props / 事件 / 方法桥接；需先引 Element 本体 | 不含编辑器样式 |
+| `dist/lark-doc-collab.esm.js` | `src/collab/index.js` | 显式协同接入，第三方运行时保持 external | 无 |
+| `dist/features/*.js` / `dist/plugin.{mjs,cjs}` | `src/features/*` / `src/plugin/index.js` | 可选特性与宿主资源构建插件 | 特性包自行处理样式 |
 
-跑一次 `npm run size` 就能看到同样这些数：它为每份产物定了上限（ESM 285 kB、UMD 465 kB、element 480 kB、CJS 2500 kB），超出即失败。
+不再单独构建 `lark-doc.umd.min.js`，浏览器直挂统一走 Element。默认入口不再导出 `LarkDocEditor` / `LarkDocWorkspace`；旧宿主从 `lark-doc/legacy` 引入 options 对象。适配器不负责安装或加载 Vue。
 
-**除了 ESM，其余三份（CJS / UMD / element）都已整体降到 ES2018 语法。**
-0.13 起包里**没有 `browser` 字段**（有它 webpack 会跳过 ESM 直落「浏览器直挂档」，SSR 与浏览器就吃到
-两份不同产物了），所以 webpack 4 的 `resolve.mainFields` 会落到 `module` → `esm.js` 而解析失败 ——
- webpack 4 宿主改一行 alias 指到 CJS 档即可，**不用再挂降语法 babel**（CJS 自身已是 ES2018）。
-UMD / element 两份会自行注入样式；**打包器消费 ESM / CJS 时必须显式引样式**
-（`import 'lark-doc/style.css'`，webpack 4 下写 `lark-doc/dist/lark-doc.css`）。
-`__LARK_DOC_PUBLIC_PATH__` 只服务 UMD / element 那两份**旁挂懒区块**的产物 ——
-CJS 是单文件全内联，走 CJS 的宿主不用设（详见 [多环境接入](./environments.md#env-vue2-wp4)）。
-子路径（`lark-doc/element` 等）在 webpack 4 下要写全 `dist/` 路径，因为老版本读不到 `exports`。
+CJS / Element / adapters 使用 ES2018 语法降级；默认 ESM 保留现代语法。webpack4 不读 `exports`，应将 `lark-doc$` alias 到 `lark-doc/dist/lark-doc.common.js`，子路径写全 `dist/` 路径。
 
-改造前每份产物都是「一个巨大的单文件」：UMD 1.91 MB（gzip 548 kB）、element 2.16 MB（gzip 658 kB），
-公式、Word 导入导出、代码高亮全部塞在首屏里。改造把这些重依赖从首屏挪走；上表的 gzip 数是 **v0.12.1 实测**，
-比刚改造时大了一截（后续版本又加了 AI、Markdown 导入导出等能力），所以别拿「少掉一半」那种老口径来算收益——
-拆分真正的收益是「这些能力不占首屏」，普通文档的常态是几乎 0 额外流量。
+## chunk 与部署
 
-CJS 那份是**唯一反其道而行**的：它把 mermaid 与全部按需区块都内联进单文件（gzip 2.34 MB）。
-原因是 `require('lark-doc')` 可能跑在 Node / jsdom / 任意老打包器里，运行时根本没法可靠地解析
-chunk 地址，宁可体积换「拿走就能用」。嫌大的宿主走 ESM 入口即可。
+- ESM 初始区块包括 `lark-doc.esm.js`、`tiptap.esm.js`、`vendor.esm.js`，宿主打包器接管原生动态 import。
+- CJS **不是全内联单文件**：按需区块为 `lark-doc.common.<name>.js`，通过 `require()` 加载兄弟文件。无需 URL 基址，但不能只复制主文件。
+- Element 初始主文件不拆分，按需区块为 `lark-doc-element.umd.min.<name>.js`，默认按主脚本 URL 推导目录。
+- legacy ESM 的所有共享和异步 chunk 使用 `lark-doc-legacy.*.esm.js`；lite 初始共享区块使用 `lark-doc-lite.initial.*.esm.js`，按需 stub 区块使用 `lite.*.esm.js`。两者不覆盖默认 ESM chunk，构建顺序不会改变主包依赖。
+- math / office / markdown / highlight / mermaid 区块按需加载；marked 仍因静态 Markdown 导出引用进入全量主文件。lite 将这些依赖 alias 到 stub，宿主可再加载 `lark-doc/features/*` 注册实现。
+- 静态部署时保留完整 `dist/`（主文件、chunk、CSS、`fonts/`）；ESM 使用相对 import，CJS 使用相对 require，Element 使用脚本基址。
+- Element 被宿主再次打包时，应让资源插件复制其 chunk，必要时在挂载前设置 `window.__LARK_DOC_PUBLIC_PATH__`。直接 `<script src>` 同位托管无需设置。
 
-重依赖（KaTeX、docx、mammoth、marked、turndown、highlight.js、mermaid）**都不在首屏**：
-它们被拆成按需区块，只有用户真的插入公式、导出 Word、导入 .docx / Markdown、渲染代码块、插入图表时才下载。
+Mermaid 自包含 UMD 不进入常规 Babel polyfill 注入，也不由 webpack 解析其 `arguments.callee` 兼容分支；旧语法降级通过独立 loader 完成。此处理不修改源码、不屏蔽其他构建警告。
 
-## 产物构成
+## 构建与校验
 
-### 按需区块（四种产物都一样）
-
-| 区块 | 内容 | 触发时机 |
-| --- | --- | --- |
-| `math` | KaTeX + KaTeX 样式 | 文档里出现公式节点 / 打开公式弹窗 |
-| `office` | docx（导出）、mammoth（导入 .docx） | 导出 Word、导入 .docx |
-| `markdown` | marked、turndown | 导入 / 导出 Markdown |
-| `highlight` | highlight.js 内核与语言包 | 文档里出现代码块 |
-| `import-export` | 导入导出的编排代码 | 同上 |
-| `mermaid` | 图表渲染器（`import()` 懒 chunk，不是外置运行时文件） | 文档里出现 mermaid 图表块 |
-
-### 初始区块（仅 ESM 产物拆分）
-
-| 区块 | 内容 |
-| --- | --- |
-| `lark-doc.esm.js` | 编辑器内核、工具栏、工作区、会话与 Provider |
-| `tiptap.esm.js` | `@tiptap/*` 与 prosemirror |
-| `vendor.esm.js` | core-js、linkifyjs 等基础依赖 |
-
-UMD / element 产物的首屏**永远只有一个文件**：它们的 `output.filename` 由 vue-cli 固定，
-拆初始区块会互相覆盖，所以只拆按需区块——换来的是「首屏不依赖任何 chunk 加载」。
-
-### 样式
-
-- `lib`（CJS）：样式抽成 `dist/lark-doc.css`，宿主显式引 `import 'lark-doc/style.css'`
-  （webpack4 不认 `exports` 子路径，要写全 `lark-doc/dist/lark-doc.css`）；
-- `umd` / `esm` / `element`：样式随 JS 注入 `<style>`，宿主不需要额外引 CSS；
-  KaTeX 那条 118 KB 的样式跟着 `math` 区块走，没有公式的文档不为它付费。
-
-## 构建与部署
-
-### 构建命令
+完整开发依赖的安装需 Node `>=22`（Hocuspocus / Vitest 开发工具要求）。依赖已安装时，以下库构建可以使用 Node `14.21.3` / npm `8.19.4`：
 
 ```bash
-npm run build          # CJS 单文件（main）
-npm run build:umd      # UMD 压缩版 + 按需区块（unpkg）
-npm run build:esm      # ES Module + 完整拆包（module）
-npm run build:element  # Web Component（Vue 内联 + CSS 注入）
-npm run build:analyze  # 以上四份 + 体积诊断输出（按依赖聚合 + 产物清单）
+nvm use 14.21.3
+npm run build
+npm run build:esm
+npm run build:element
+npm run build:legacy
+npm run build:lite
+npm run build:features
+npm run build:adapters
+npm run build:collab
+npm run build:plugin
+npm run lint
+npm run size
 ```
 
-`npm run check` 会依次跑完四份构建，再跑 Vditor 兼容回归。
+也可将探测到的 Node14 `bin` 目录加入 `PATH` 后执行，避免子进程意外使用系统 Node。各构建脚本只读取源码并写入 `dist/` 与构建缓存，不改写 `src/`；`build-emoji-catalog.js` 是显式数据维护生成器，不属于产物构建链。
 
-### 部署注意
+`npm run check:artifacts` 按输入指纹去重构建并执行产物门禁；指纹包含源码、依赖锁、配置、公共 `style.css`、全部 `build*.js`、CJS 后处理与 `build:*` 命令，legacy 两个主文件也参与存在性校验。构建期间输入变动时拒绝写入成功 stamp，需停止修改后重新构建。legacy 构建通过入口插件补齐公共 CSS 与 Node14 polyfill，不向适配器源码写入临时 import。`npm run artifacts:check` 只检查，不重建；指纹含 npm 用户代理，构建与检查应使用同一 Node/npm 环境和 npm 入口，避免裸 `node` 调用造成口径差异。
 
-- 按需区块必须和主文件放在**同一个目录**：UMD / element 用 `publicPath:'auto'` 按主文件
-  （`<script>` 自身 URL）推导 chunk 地址；ESM 用相对 `import()` 串按文件自身 URL 解析。
-  所以只要把 **`dist/` 整目录同位托管**（主文件 + 各按需区块 `*.math.js` / `*.mermaid.js` … + `fonts/`），
-  放在任意子目录都成立，不需要配置任何 base path；
-- **不需要单独拷 `vendor/`**：0.11.0 起 mermaid 是普通按需区块，`dist/vendor/` 目录已不再产出
-  （老版本残留的 `dist/vendor/mermaid.min.<hash>.js` 可以直接删）；
-- 想改用自己托管的 mermaid（例如复用宿主的 CDN 镜像）才需要两种做法之一：挂载前置 `window.mermaid`，
-  或传 `performance.diagramScriptUrl`（走 `<script data-lark-doc-diagram="mermaid">` 注入分支）；
-- 二次打包（把 element 产物再打进自己的 bundle）时，chunk 地址会按**你自己的 chunk 目录**推导，
-  把它们拷到对应目录即可（本仓库 Demo 的 `copy-lark-doc-vendor` 就是干这个的）。
-
-### 构建加速
-
-- 开启 webpack `filesystem` 缓存：CJS 产物冷构建约 8 s、二次构建约 2 s（改造前跑一次三格式的
-  lib 构建要 47 s），四份产物全量暖构建约 10 s；
-- 每个 target 用独立的 `cache.name`（`lark-doc-lib` / `lark-doc-umd` / `lark-doc-esm` / `lark-doc-element`），
-  避免不同产物的 output / externals 互相串味；
-- 只构建真正要发布的格式：去掉没人引用的未压缩 UMD 与 element 的 CJS 产物，`dist` 从 23 MB 降到 14 MB。
-
-### 为什么拆包策略分两档
-
-拆包的收益来自「让首屏少下载」，但代价是运行时要能找到 chunk：
-
-- **ESM**：`import()` 是原生语法，宿主打包器接管并重新分割，最干净，所以初始区块也敢拆；
-- **UMD / element**：chunk 由 webpack 运行时按 URL 注入 `<script>`，只能保证「主文件同目录」这一条，
-  因此只拆按需区块——即便 chunk 加载失败，首屏编辑器依旧可用，只是公式 / 导入导出不可用；
-- **CJS**：宿主可能是任何打包器甚至 Node，运行时 chunk 加载完全不可控，坚持单文件。
+体积以 `npm run size` 为准，只统计指定主文件的 gzip，不等同于所有初始区块之和。阶段7重测后只收紧预算，不因新产物超限而放宽；确切读数与预算记录在现有 `MASTER_PLAN.md` 的体积预算表。

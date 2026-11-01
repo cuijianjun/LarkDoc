@@ -13,7 +13,7 @@
  * 为什么不直接比 mtime：
  *   改 `package.json` 的 scripts、或改个 README，mtime 就变了，
  *   一刀切会退化成「每次都全建」。指纹只吃真正影响产物的字段
- *   （deps / peerDeps / engines / browserslist），改 scripts 不会误伤。
+ *   （deps / peerDeps / engines / browserslist / 构建脚本），改无关 scripts 不会误伤。
  *
  * 用法：
  *   node scripts/ensure-artifacts.mjs            # 智能判断（prepack 用这个）
@@ -46,12 +46,14 @@ const ARTIFACTS = [
   // 一个脚本出两个薄壳产物：构建时按 script 去重，存在性校验仍逐文件算。
   { file: 'dist/lark-doc-vue3.mjs', script: 'build:adapters' },
   { file: 'dist/lark-doc-react.mjs', script: 'build:adapters' },
+  { file: 'dist/lark-doc-legacy.common.js', script: 'build:legacy' },
+  { file: 'dist/lark-doc-legacy.esm.js', script: 'build:legacy' },
   { file: 'dist/plugin.mjs', script: 'build:plugin' },
   { file: 'dist/plugin.cjs', script: 'build:plugin' }
 ]
 
 /** 整文件参与指纹的构建配置 */
-const CONFIG_FILES = ['vue.config.js', 'babel.config.js', 'postcss.config.js', 'jsconfig.json']
+const CONFIG_FILES = ['vue.config.js', 'babel.config.js', 'legacy-syntax.js', 'postcss.config.js', 'jsconfig.json', 'package-lock.json', 'style.css', 'scripts/element-renderer.js']
 
 /** package.json 里只取真正影响产物的字段 */
 const PKG_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects']
@@ -60,43 +62,49 @@ const argv = process.argv.slice(2)
 const FORCE = argv.includes('--force')
 const CHECK_ONLY = argv.includes('--check')
 
-const hash = createHash('sha1')
-
-function feedFile(abs) {
-  const st = statSync(abs)
-  hash.update(relative(ROOT, abs) + '\0' + st.size + '\0' + Math.round(st.mtimeMs) + '\n')
-}
-
-function walkSrc(dir) {
-  for (const name of readdirSync(dir).sort()) {
-    if (name === 'node_modules' || name === '.git') continue
-    const p = join(dir, name)
-    const st = statSync(p)
-    if (st.isDirectory()) walkSrc(p)
-    else feedFile(p)
-  }
-}
-
-// 1) 源码树
-walkSrc(join(ROOT, 'src'))
-// 2) 构建配置
-for (const f of CONFIG_FILES) {
-  const p = join(ROOT, f)
-  if (existsSync(p)) feedFile(p)
-}
-// 3) 产物构建脚本
-feedFile(join(ROOT, 'scripts/build-plugin.js'))
-// 4) 依赖与目标环境声明
-const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-for (const k of PKG_FIELDS) hash.update(k + '=' + JSON.stringify(pkg[k] ?? null) + '\n')
-// 5) 跑构建用的 npm 版本（Node14 的 npm 与 Node22 的 npm 排布可能不同）
-// 注意：这一项让「怎么调本脚本」也成了指纹输入 —— 裸 `node scripts/ensure-artifacts.mjs
-// --check` 取不到该变量，算出的指纹与 `npm run artifacts:check` 口径必然不同。
-// 判定保持保守（不同就报需重建），但报错时会点明口径，免得被误读成「源码有变动」。
 const npmAgent = process.env.npm_config_user_agent || ''
-hash.update('npm=' + npmAgent + '\n')
 
-const fingerprint = hash.digest('hex')
+function inputFingerprint() {
+  const hash = createHash('sha1')
+  function feedFile(abs) {
+    const st = statSync(abs)
+    hash.update(relative(ROOT, abs) + '\0' + st.size + '\0' + Math.round(st.mtimeMs) + '\n')
+  }
+  function walkSrc(dir) {
+    for (const name of readdirSync(dir).sort()) {
+      if (name === 'node_modules' || name === '.git') continue
+      const p = join(dir, name)
+      const st = statSync(p)
+      if (st.isDirectory()) walkSrc(p)
+      else feedFile(p)
+    }
+  }
+
+  // 1) 源码树
+  walkSrc(join(ROOT, 'src'))
+  // 2) 构建配置与公共样式
+  for (const f of CONFIG_FILES) {
+    const p = join(ROOT, f)
+    if (existsSync(p)) feedFile(p)
+  }
+  // 3) 全部产物构建器与 CJS 后处理；构建入口改变也必须重建。
+  for (const file of readdirSync(join(ROOT, 'scripts')).sort()) {
+    if (/^build.*\.js$/.test(file) || file === 'fix-lib-require-scope.js' || file === 'ensure-artifacts.mjs') {
+      feedFile(join(ROOT, 'scripts', file))
+    }
+  }
+  // 4) 依赖与目标环境声明
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  for (const k of PKG_FIELDS) hash.update(k + '=' + JSON.stringify(pkg[k] ?? null) + '\n')
+  for (const name of Object.keys(pkg.scripts).filter((name) => /^build(?::|$)/.test(name)).sort()) {
+    hash.update(name + '=' + pkg.scripts[name] + '\n')
+  }
+  // 5) npm 用户代理也是输入；裸 node 调用与 npm run 的口径不同，保持保守失效。
+  hash.update('npm=' + npmAgent + '\n')
+  return hash.digest('hex')
+}
+
+const fingerprint = inputFingerprint()
 
 let stamp = null
 try {
@@ -150,6 +158,12 @@ for (const a of ARTIFACTS) {
     console.error(`\n✗ 构建失败：${a.script}`)
     process.exit(1)
   }
+}
+
+// 构建期间输入变动时，产物可能来自不同快照，不能写入可复用的成功记录。
+if (inputFingerprint() !== fingerprint) {
+  console.error('✗ 构建期间输入发生变动，未更新产物记录；请停止修改后重新构建')
+  process.exit(1)
 }
 
 const after = {}
