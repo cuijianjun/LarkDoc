@@ -18,6 +18,16 @@ function createHarness(overrides = {}) {
     state: { doc: {}, selection: { from: 1 } },
     on() {},
     off() {},
+    chain() {
+      const chain = {
+        focus: () => chain,
+        insertContent: () => chain,
+        undo: () => chain,
+        redo: () => chain,
+        run: () => true,
+      }
+      return chain
+    },
   }
   const host = {
     getEditor: () => editor,
@@ -68,6 +78,21 @@ describe('WorkspaceController 阶段7主壳前置', () => {
     expect(state.storageError).toBe(true)
     expect(state.saveStatus).toBe('写入失败')
     expect(events.at(-1)[0]).toBe('error')
+  })
+
+  it('无 Vue 命令式 API 由 controller 统一处理标题、只读、撤销与正文写入', () => {
+    const { controller, state } = createHarness()
+    expect(controller.getTitle()).toBe('文档')
+    expect(controller.setTitle('新标题')).toBe(true)
+    expect(state.title).toBe('新标题')
+    expect(controller.setReadonly(true)).toBe(true)
+    expect(controller.isReadonly()).toBe(true)
+    expect(controller.setTitle('不应写入')).toBe(false)
+    expect(state.title).toBe('新标题')
+    expect(controller.setReadonly(false)).toBe(true)
+    expect(controller.insertText('追加')).toBe(true)
+    expect(controller.undo()).toBe(true)
+    expect(controller.redo()).toBe(true)
   })
 
   it('停止 AI 会使旧流失效并清理运行状态', () => {

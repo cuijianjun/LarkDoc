@@ -634,6 +634,7 @@
 .lark-doc .lark-doc-heading-hover-segment.is-first { border-top-left-radius: 6px; border-top-right-radius: 6px; }
 .lark-doc .lark-doc-heading-hover-segment.is-last { border-bottom-right-radius: 6px; border-bottom-left-radius: 6px; }
 .lark-doc .lark-doc-status { display: flex; justify-content: space-between; gap: 10px; width: min(100%, 870px); margin: 8px auto; padding: 0 4px; color: var(--ld-text-tertiary); font-size: 12px; }
+.lark-doc .lark-doc-mode-toast[hidden] { display: none; }
 .lark-doc .lark-doc-external-panel { position: fixed; z-index: 45; top: 125px; right: 12px; width: 270px; max-height: calc(100vh - 145px); overflow-y: auto; padding: 0; pointer-events: none; }
 .lark-doc .lark-doc-external-panel > * { pointer-events: auto; }
 .lark-doc .lark-doc-external-panel:empty { display: none; }
@@ -914,14 +915,17 @@
 .lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-frame { justify-content: flex-start; }
 .lark-doc .lark-doc-image[data-align="center"] .lark-doc-image-frame { justify-content: center; }
 .lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-frame { justify-content: flex-end; }
-.lark-doc .lark-doc-image-img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; filter: brightness(var(--ld-media-dim)); }
+.lark-doc .lark-doc-image-img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; }
+.lark-doc .lark-doc-image-img,
+.lark-doc .lark-doc-image-frame img { filter: brightness(var(--ld-media-dim)); }
 /* renderHTML 退化路径（无 shell）：自己再兜一次「栏宽 − 20」，并按 align 摆位。 */
 .lark-doc .lark-doc-image > .lark-doc-image-img { max-width: calc(100% - 20px); margin-left: auto; margin-right: auto; }
 .lark-doc .lark-doc-image[data-align="left"] > .lark-doc-image-img { margin-left: 0; }
 .lark-doc .lark-doc-image[data-align="right"] > .lark-doc-image-img { margin-right: 0; }
 /* 深色下的图片压暗开关（T3-05）：默认 --ld-media-dim: 1 = 一个像素都不改；
    宿主觉得深纸上媒体太亮时自己设 0.8~0.9。hover 一律恢复原亮度（读图场景）。 */
-.lark-doc .lark-doc-image-img:hover { filter: none; }
+.lark-doc .lark-doc-image-img:hover,
+.lark-doc .lark-doc-image-frame img:hover { filter: none; }
 .lark-doc .lark-doc-image.is-selected .lark-doc-image-shell,
 .lark-doc .lark-doc-image.is-selected > .lark-doc-image-img { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
 

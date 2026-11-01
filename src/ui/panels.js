@@ -7,8 +7,8 @@
  *   ③ `SaveVersionDialog.vue`     —— 另存为版本 Dialog + 恢复成功 toast
  *   ④ `CommentPanel.vue`          —— 评论面板层（`display:contents` 容器 + 每线程一张卡）
  *
- * `TemplateLibrary.vue` 是**宿主侧**组件（`src/index.js` 对外导出、独立路由），
- * 不在编辑器里，刻意留到阶段 7，不在本文件里。
+ * 模板库是**宿主侧**原生 UI（`src/ui/templateLibrary.js`，`src/index.js` 对外导出、独立路由），
+ * 不在编辑器里，不在本文件里。
  *
  * `scripts/verify-browser-panels.js` 的 87 条断言逐字段量这里产出的 DOM，改之前先跑一遍。
  *

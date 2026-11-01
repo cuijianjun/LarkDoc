@@ -162,7 +162,7 @@ async function main() {
     // ---- 8. 图表按钮命令（executeCommand('diagram')，与插入菜单「图表」同路径） ----
     const thirdOk = await page.evaluate(() => {
       const workspace = window.__larkDoc.getWorkspace()
-      const editorComponent = workspace && workspace.$refs && workspace.$refs.document
+      const editorComponent = window.__larkDoc._handle?.nativeHost?.host || (workspace && workspace.$refs && workspace.$refs.document)
       if (!editorComponent || typeof editorComponent.executeCommand !== 'function') return false
       editorComponent.executeCommand('diagram')
       return true
@@ -239,8 +239,8 @@ async function main() {
     )
     record('深色下图表卡片跟随正文纸张 #292929', Boolean(darkPaint && darkPaint.cardBg === 'rgb(41, 41, 41)'), `cardBg=${darkPaint && darkPaint.cardBg}`)
     record(
-      '深色下代码块 chrome 中性化（卡底 #17181A / 描边 #5F5F5F / 头部条白字）',
-      Boolean(darkPaint && darkPaint.code && darkPaint.code.backgroundColor === 'rgb(23, 24, 26)' &&
+      '深色下代码块 chrome 与 master 一致（卡底 #292929 / 描边 #5F5F5F / 头部条白字）',
+      Boolean(darkPaint && darkPaint.code && darkPaint.code.backgroundColor === 'rgb(41, 41, 41)' &&
         darkPaint.code.borderTopColor === 'rgb(95, 95, 95)' &&
         darkPaint.codeToolbar && darkPaint.codeToolbar.color === 'rgb(240, 240, 240)'),
       JSON.stringify(darkPaint && { bg: darkPaint.code && darkPaint.code.backgroundColor, border: darkPaint.code && darkPaint.code.borderTopColor, toolbar: darkPaint.codeToolbar })

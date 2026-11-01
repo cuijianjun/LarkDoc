@@ -11,8 +11,18 @@
  * 重新做一次代码分割，宿主按自己的 publicPath 输出 chunk。这就是 AiEditor 之类
  * 现代编辑器包「主文件小、功能按需加载」的做法。
  *
- * 运行：npm run build:esm（LARK_DOC_TARGET=esm 会让 vue.config.js 走拆包分支）
+ * 运行：npm run build:esm；也可通过 `--entry` 与 `--name` 构建隔离入口。
  */
+
+const args = process.argv.slice(2)
+function option(name, fallback) {
+  const index = args.indexOf(name)
+  return index >= 0 && args[index + 1] ? args[index + 1] : fallback
+}
+const entry = option('--entry', 'src/index.js')
+const name = option('--name', 'lark-doc')
+const chunkPrefix = name === 'lark-doc' ? '' : `${name}.`
+process.env.LARK_DOC_CACHE_FLAVOR = name
 
 process.env.LARK_DOC_TARGET = 'esm'
 process.env.VUE_CLI_MODE = 'production'
@@ -31,19 +41,17 @@ service.init('production')
 // 这里只覆盖「产物形态」相关的几项，编译规则全部复用 vue-cli。
 const config = service.resolveWebpackConfig()
 // 具名入口：产物主文件叫 lark-doc.esm.js，而不是默认的 main.esm.js。
-config.entry = { 'lark-doc': path.resolve(root, 'src/index.js') }
+config.entry = { [name]: path.resolve(root, entry) }
 config.experiments = Object.assign({}, config.experiments, { outputModule: true })
 config.output = Object.assign({}, config.output, {
   module: true,
-  // vue-cli 会按 browserslist 推导 output.environment；external vue 的 ESM 形态只看
-  // environment.module（而不是 output.module），所以这里必须显式打开，否则报
-  // "The target environment doesn't support EcmaScriptModule syntax"。
+  // vue-cli 按 browserslist 推导环境；库导出和原生异步 import 都显式使用 ESM。
   environment: Object.assign({}, config.output.environment, { module: true, dynamicImport: true }),
   path: dist,
   // 初始区块也走 filename，必须带 [name]：入口 → lark-doc.esm.js，
-  // 逻辑区块 → vue.esm.js / tiptap.esm.js / vendor.esm.js，按需区块 → math.esm.js 等。
-  filename: '[name].esm.js',
-  chunkFilename: '[name].esm.js',
+  // 默认逻辑区块 → tiptap.esm.js / vendor.esm.js；隔离入口的全部区块带自己的前缀。
+  filename: (data) => data.chunk.name === name ? `${name}.esm.js` : `${chunkPrefix}[name].esm.js`,
+  chunkFilename: `${chunkPrefix}[name].esm.js`,
   // ''：chunk 地址用相对 import() 串（按本文件自身 URL 解析），不再生成
   // import.meta.url —— webpack4 不支持该语法会直接 parse error，宿主统一编译
   // 与浏览器直用 ESM 都按 dist 目录相对寻址，放到任意目录不 404。
@@ -54,11 +62,7 @@ config.output = Object.assign({}, config.output, {
 // （`export { r as __webpack_require__ }`），`import { LarkDoc } from 'lark-doc'`
 // 会得到 undefined —— 0.11.0 / 0.11.1 的 esm 产物就缺这一行。
 config.output.library = { type: 'module' }
-// V1（阶段 3）：**不再外部化 Vue**，把 vue 打进产物 —— 宿主不装 Vue 2.7 也能跑，
-// peerDependencies 因此不再声明 vue。真正的 V2/V3（源码树摘 Vue）在阶段 5 + 7。
-// 当初这一行是「让宿主去重」：external + externalsType:'module' → 产物里留 `import 'vue'`。
-// 代价是每个宿主都必须在自己那儿装一份 Vue 2.7（且版本要落在我们声明的区间），
-// 与「六个环境安装写法统一」直接冲突，所以先内联。
+// 默认与 legacy ESM 都是 DOM-only，不内联或外置 Vue。
 // app 模式自带的 html / preload / prefetch 对库产物没有意义，还会多生成 index.html。
 config.plugins = (config.plugins || []).filter((plugin) => {
   const name = plugin && plugin.constructor && plugin.constructor.name
@@ -74,6 +78,10 @@ webpack(config, (error, stats) => {
   const json = stats.toJson({ all: false, errors: true, warnings: true, assets: true, timings: true })
   if (stats.hasErrors()) {
     console.error(json.errors.slice(0, 5).join('\n\n'))
+    process.exit(1)
+  }
+  if (stats.hasWarnings()) {
+    console.error('[esm 构建] warnings：\n' + json.warnings.map((item) => item.message || String(item)).join('\n\n'))
     process.exit(1)
   }
   const kb = (v) => `${(v / 1024).toFixed(1)} KiB`

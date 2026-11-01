@@ -27,7 +27,8 @@ const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.cs
 const dialog = fs.readFileSync(path.join(root, 'src/ui/dialogs.js'), 'utf8')
 const fab = fs.readFileSync(path.join(root, 'src/ui/helpFab.js'), 'utf8')
 const fabMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/helpFabUiMixin.js'), 'utf8')
-const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
+const nativeHost = fs.readFileSync(path.join(root, 'src/editor/nativeEditorHost.js'), 'utf8')
+const shell = fs.readFileSync(path.join(root, 'src/ui/workspaceShell.js'), 'utf8')
 const dialogsMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/dialogsUiMixin.js'), 'utf8')
 // `icons.js` 在阶段 5 批次 3 已随图标积木迁到 `src/ui/`（原路径读不到会直接抛 ENOENT）。
 const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
@@ -355,11 +356,12 @@ describe('P4-06 组件契约（宿主接线与交互细节）', () => {
   })
 
   it('宿主挂着原生 HelpFab，抽屉挂在原生弹层宿主上（同一 helpOpen 驱动）', () => {
-    expect(editorVue).toContain('<div ref="helpFabHost" />')
-    expect(editorVue).toContain('this.mountHelpFab()')
+    expect(shell).toContain("const helpFabHost = ownerDocument.createElement('div')")
+    expect(nativeHost).toContain("['HelpFab', 'refreshHelpFab']")
     expect(fabMixin).toContain("createHelpFab({")
-    expect(editorVue).toContain('<div ref="dialogHost" />')
-    expect(editorVue).toContain('this.mountDialogs()')
+    expect(shell).toContain("const dialogHost = ownerDocument.createElement('div')")
+    expect(nativeHost).toContain("['Dialogs', 'refreshDialogs']")
+    expect(nativeHost).toContain('host[`mount${domain}`]()')
   })
 
   it('宿主仍然在 helpOpen 变化时把焦点送到关闭按钮（watch 未断）', () => {

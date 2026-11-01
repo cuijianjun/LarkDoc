@@ -64,7 +64,13 @@ async function main() {
         days: days.length,
         outside: outside.length,
         selected: days.filter(el => el.getAttribute('aria-selected') === 'true').length,
-        dayLabels: days.every(el => /^\\d{4}年\\d{1,2}月\\d{1,2}日$/.test(el.getAttribute('aria-label') || '')),
+        dayLabels: days.every(el => el.getAttribute('role') === 'gridcell' && /^\d{4}年\d{1,2}月\d{1,2}日$/.test(el.getAttribute('aria-label') || '')),
+        selectedLabel: days.find(el => el.getAttribute('aria-selected') === 'true')?.getAttribute('aria-label'),
+        expectedLabel: (() => {
+          const date = new Date('2099-10-26T13:00:00Z')
+          return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+        })(),
+        remindAt: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt,
         layerChildren: layer ? Array.from(layer.children).map(el => el.className) : [],
         repeatDisabled: document.querySelector('[data-reminder="repeat"]')?.disabled === true,
         timeExpanded: document.querySelector('[data-reminder="time"]')?.getAttribute('aria-expanded'),
@@ -72,18 +78,26 @@ async function main() {
     })
     record('打开后 dialog 与日期提醒 ARIA 正确', open.popover && open.role === 'dialog' && open.ariaLabel === '日期提醒')
     record('日历严格渲染 42 格且补白格 disabled', open.days === 42 && open.outside > 0 && open.outside < 14, `格数=${open.days} disabled=${open.outside}`)
-    record('日期格保留 gridcell/selected/aria-label 语义', open.selected === 1 && open.dayLabels)
+    record('日期格保留 gridcell/selected/aria-label 语义', open.selected === 1 && open.dayLabels && open.selectedLabel === open.expectedLabel, `${open.selectedLabel} / 预期 ${open.expectedLabel}`)
+    record('HTML 导入保留原始提醒日期', open.remindAt === '2099-10-26T13:00:00Z', open.remindAt)
     record('提醒行保持 disabled 展示', open.repeatDisabled === true)
     record('时间下拉初始关闭且真实不在 DOM', open.timeExpanded === 'false' && !open.layerChildren.includes('lark-doc-reminder-times'))
 
-    const mousedownPrevented = await page.evaluate(() => {
+    const daySelection = await page.evaluate(() => {
       const button = document.querySelector('.lark-doc-reminder-day:not(:disabled)')
+      const expected = new Date('2099-10-26T13:00:00Z')
+      expected.setDate(Number(button.textContent))
       let prevented = false
       button.addEventListener('mousedown', event => { prevented = event.defaultPrevented }, { once: true })
       button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-      return prevented
+      return {
+        prevented,
+        expectedAt: expected.toISOString(),
+        remindAt: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt,
+      }
     })
-    record('日期选择保留 mousedown.prevent', mousedownPrevented)
+    record('日期选择保留 mousedown.prevent', daySelection.prevented)
+    record('日期选择写回所选日期并保留原始时间', daySelection.remindAt === daySelection.expectedAt, `${daySelection.remindAt} / 预期 ${daySelection.expectedAt}`)
 
     await page.locator('[data-reminder="time"]').dispatchEvent('mousedown')
     await page.waitForTimeout(100)
@@ -113,16 +127,26 @@ async function main() {
     record('时间下拉打开后真实挂载并声明 listbox/option', times.expanded === 'true' && times.list && times.role === 'listbox' && times.label === '提醒时间' && times.options === 48 && times.selected === 1)
     record('时间下拉与浮层是兄弟节点且顺序正确', times.siblings && times.order)
     record('时间选项保留 mousedown.prevent', times.mousedownPrevented)
+    await page.waitForFunction(() => document.querySelector('[data-reminder="time"]')?.getAttribute('aria-expanded') === 'false')
+    record('mousedown 探针选中首项后真实收起时间下拉', await page.locator('.lark-doc-reminder-times').count() === 0)
 
+    // 上面的探针也会执行选时；确认其关闭语义后重新打开，再选择末项。
+    await page.locator('[data-reminder="time"]').dispatchEvent('mousedown')
     await page.locator('.lark-doc-reminder-time-row').filter({ hasText: '23:30' }).dispatchEvent('mousedown')
     await page.waitForTimeout(200)
-    const afterTime = await page.evaluate(() => ({
+    const afterTime = await page.evaluate((selectedDay) => ({
       list: !!document.querySelector('.lark-doc-reminder-times'),
       selected: document.querySelector('[data-reminder="time"]')?.textContent.trim() || '',
       html: window.__larkDoc.getEditor().getHTML(),
-    }))
+      remindAt: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt,
+      expectedAt: (() => {
+        const date = new Date(selectedDay)
+        date.setHours(23, 30, 0, 0)
+        return date.toISOString()
+      })(),
+    }), daySelection.expectedAt)
     record('选择时间委托 reminderMixin 并收起下拉', !afterTime.list && afterTime.selected.includes('23:30'))
-    record('时间选择写回正文 mark 属性', /data-remind-at="/.test(afterTime.html) && /lark-doc-reminder-chip/.test(afterTime.html))
+    record('时间选择写回正文 mark 属性', /data-remind-at="/.test(afterTime.html) && /lark-doc-reminder-chip/.test(afterTime.html) && afterTime.remindAt === afterTime.expectedAt, `${afterTime.remindAt} / 预期 ${afterTime.expectedAt}`)
 
     await page.keyboard.press('Escape')
     await page.waitForTimeout(150)

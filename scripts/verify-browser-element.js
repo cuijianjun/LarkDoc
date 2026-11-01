@@ -34,8 +34,9 @@ async function main() {
     const url = (m.location && m.location().url) || ''
     if (m.type() === 'error' && !/favicon\.ico$/.test(url)) errors.push('console: ' + m.text() + ' @ ' + url)
   })
-  const SHOTS = '/Users/cjjxw/codex/tiptap-integration-demos/apps/lark-doc/.verify-shots'
-  await page.goto('http://localhost:8765/examples/element-demo.html', { waitUntil: 'networkidle', timeout: 60000 })
+  const SHOTS = path.join(__dirname, '..', '.verify-shots')
+  fs.mkdirSync(SHOTS, { recursive: true })
+  await page.goto(process.argv[2] || process.env.LARK_DOC_VERIFY_ELEMENT_URL || 'http://localhost:8765/examples/element-demo.html', { waitUntil: 'networkidle', timeout: 60000 })
   await page.waitForTimeout(2500)
 
   // 1. 自定义元素注册 + 挂载

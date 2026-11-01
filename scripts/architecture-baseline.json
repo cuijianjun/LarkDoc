@@ -1,12 +1,7 @@
 {
   "_readme": [
-    "阶段 1-B 的 R2 基线：src/ 下的 .vue 文件清单，只减不增。",
-    "去 Vue 化（阶段 5）每摘掉一个 SFC，就从这里删一行；新增 .vue 会被 npm run check:architecture 直接拦下。",
-    "要收紧基线请用 scripts/check-architecture.js 报错信息里给出的命令，不要手改本文件。"
+    "阶段7严格收口：src/ 下的 .vue 文件与 Vue 运行时引用均为零。",
+    "legacy 仅保留使用宿主 Vue2 API 的 JavaScript options 薄适配器；不得恢复 SFC 或运行时依赖。"
   ],
-  ".vue": [
-    "components/lark-doc/LarkDocEditor.vue",
-    "components/lark-doc/LarkDocWorkspace.vue",
-    "components/lark-doc/TemplateLibrary.vue"
-  ]
+  ".vue": []
 }

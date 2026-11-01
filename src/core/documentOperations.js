@@ -259,7 +259,7 @@ export function sanitizeHTML(html) {
   container.innerHTML = html
   const tags = new Set(['P', 'DIV', 'SPAN', 'MARK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'PRE', 'SUB', 'SUP', 'BLOCKQUOTE', 'HR', 'UL', 'OL', 'LI', 'A', 'IMG', 'FIGURE', 'FIGCAPTION', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'DETAILS', 'SUMMARY', 'LABEL', 'INPUT'])
   const dangerous = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META', 'BASE', 'FRAME', 'FRAMESET'])
-  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'class'])
+  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'class'])
   Array.from(container.querySelectorAll('*')).forEach((element) => {
     if (!container.contains(element)) return
     const tag = element.tagName.toUpperCase()
@@ -297,6 +297,8 @@ export function sanitizeHTML(html) {
       // 提及（P4-01）：身份属性必须落进 schema 认识的形态 —— 放行一个畸形值，
       // 结果是「粘贴一段带 @ 的富文本 → 整篇 setContent 抛错」，比丢掉 attr 严重得多。
       else if (name === 'data-notify' && !['true', 'false'].includes(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-remind-at' && !REMINDER_AT_PATTERN.test(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-repeat' && REMINDER_REPEATS.indexOf(attribute.value) === -1) element.removeAttribute(name)
       else if (name === 'data-mention-kind' && MENTION_KINDS.indexOf(attribute.value) === -1) element.removeAttribute(name)
       else if (name === 'data-mention-id' && !/^[\w-]{1,64}$/.test(attribute.value)) element.removeAttribute(name)
       else if (name === 'data-token' && (attribute.value.length > 256 || attribute.value.includes('\u0000'))) element.removeAttribute(name)

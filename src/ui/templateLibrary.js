@@ -1,11 +1,11 @@
 /**
  * 宿主侧模板库原生 DOM renderer。
  *
- * `TemplateLibrary.vue` 继续保留作为 Vue 兼容入口；本文件提供同一份宿主契约给
- * 无框架宿主：`open/close`、关键词搜索、分类切换，以及 `preview/use/close` 回调。
+ * 本文件提供模板库的无框架宿主入口：`open/close`、关键词搜索、分类切换，以及
+ * `preview/use/close` 回调；宿主不需要 Vue。
  * 「使用」只通知宿主复制整篇文档，不在 renderer 内修改编辑器内容。
  */
-import { applyStyle, mountNode, setAttr, setText, syncChildren } from './dom'
+import { mountNode, setAttr, setText, syncChildren } from './dom'
 import {
   TEMPLATE_GRID, TEMPLATE_HEADER, TEMPLATE_MODAL, TEMPLATE_SIDEBAR, TEMPLATE_TEXT,
   buildCategoryList, searchTemplates, templatesOf,
@@ -274,7 +274,8 @@ export function createTemplateLibrary(options = {}) {
     if (!root) build()
     setText(refs.targetStrong, state.target)
     setInputValue(refs.search, state.keyword)
-    applyStyle(root, templateLibraryRootStyle())
+    const style = templateLibraryRootStyle()
+    Object.keys(style).forEach((key) => root.style.setProperty(key, style[key]))
     renderCategories()
     renderCards()
     mountNode(host, root, !!state.open)

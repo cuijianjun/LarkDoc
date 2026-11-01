@@ -6,8 +6,8 @@ const root = path.resolve(__dirname, '../..')
 const source = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
 const exists = (relative) => fs.existsSync(path.join(root, relative))
 
-const editor = source('src/components/lark-doc/LarkDocEditor.vue')
-const workspace = source('src/components/lark-doc/LarkDocWorkspace.vue')
+const editor = source('src/editor/nativeEditorHost.js')
+const workspace = source('src/components/lark-doc/LarkDocWorkspace.js')
 const baseline = source('scripts/architecture-baseline.json')
 const overlays = source('src/ui/overlays.js')
 const overlaysUi = source('src/components/lark-doc/editor/overlaysUiMixin.js')
@@ -40,15 +40,18 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
     expect(baseline).not.toContain('components/lark-doc/PermissionDialog.vue')
   })
 
-  it('不改变指定范围外的门面、工作区和模板库', () => {
-    [
-      'src/components/lark-doc/TemplateLibrary.vue',
-      'src/components/lark-doc/LarkDocEditor.vue',
-      'src/components/lark-doc/LarkDocWorkspace.vue',
-    ].forEach((file) => expect(exists(file)).toBe(true))
-    expect(workspace).toContain("import LarkDocEditor from './LarkDocEditor.vue'")
+  it('模板库与两个主壳均已去SFC，兼容工作区仅挂原生适配器', () => {
+    expect(exists('src/components/lark-doc/TemplateLibrary.vue')).toBe(false)
+    expect(exists('src/components/lark-doc/LarkDocEditor.vue')).toBe(false)
+    expect(exists('src/components/lark-doc/LarkDocWorkspace.vue')).toBe(false)
+    expect(JSON.parse(baseline)['.vue']).toEqual([])
+    expect(workspace).toContain('export default createVue2Adapter({')
     expect(editor).toContain('import overlaysUiMixin from')
-    expect(index).toContain("import LarkDocEditor from './components/lark-doc/LarkDocEditor.vue'")
+    expect(editor).not.toContain("adapters/vue2/nodeviews")
+    expect(index).not.toContain("import LarkDocEditor from './components/lark-doc/LarkDocEditor.vue'")
+    expect(index).not.toContain("import LarkDocWorkspace from './components/lark-doc/LarkDocWorkspace.vue'")
+    expect(index).not.toContain("./components/lark-doc/TemplateLibrary.vue")
+    expect(index).toContain("import LarkDoc, { createLarkDoc } from './LarkDoc'")
   })
 
   it('移除真实 import/注册，不保留两个旧 SFC 的引用', () => {

@@ -31,7 +31,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const readingCss = fs.readFileSync(path.join(root, 'src/styles/reading.css'), 'utf8')
 const panelUi = fs.readFileSync(path.join(root, 'src/ui/revision.js'), 'utf8')
 const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionUiMixin.js'), 'utf8')
-const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
+const renderer = fs.readFileSync(path.join(root, 'src/mount/domRenderer.js'), 'utf8')
 const revisionMixinSrc = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionMixin.js'), 'utf8')
 
 /** 剥块注释后再找字面 hex —— 与 scripts/check-theme-tokens.js 同口径。 */
@@ -427,6 +427,7 @@ describe('规格层 · reading.css / 面板 / 接线点', () => {
   })
 
   it('根 class 仍由 effectiveReadonly 挂 lark-doc-reading（reading.css 的作用域依赖它）', () => {
-    expect(editorVue).toContain("'lark-doc-reading': effectiveReadonly")
+    expect(renderer).toContain('const readonly = documentHost.effectiveReadonly')
+    expect(renderer).toContain("shell.root.classList.toggle('lark-doc-reading', readonly)")
   })
 })

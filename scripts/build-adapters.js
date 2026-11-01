@@ -93,6 +93,10 @@ webpack(config, (error, stats) => {
     console.error(json.errors.slice(0, 5).join('\n\n'))
     process.exit(1)
   }
+  if (stats.hasWarnings()) {
+    console.error('[adapters 构建] warnings：\n' + json.warnings.map((item) => item.message || String(item)).join('\n\n'))
+    process.exit(1)
+  }
   const kb = (v) => `${(v / 1024).toFixed(1)} KiB`
   console.log('\n[adapters 产物]')
   for (const asset of (json.assets || [])

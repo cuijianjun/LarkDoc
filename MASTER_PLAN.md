@@ -736,11 +736,9 @@ import { LarkDoc } from 'lark-doc/lite'
 | **4** | 特性子路径 + 资源本地化（**内网命门**） | 中 | `lite` 档、`features/*`、零外链 | ✅ **已完成**（tag `stage/4`） |
 | **5** | UI 原生化（5 批，长线主作业，可与 4/6 穿插） | **高（视觉回归）** | 逐模块替换，**all-or-nothing** | ✅ **已完成**（tag `stage/5-A`/`5-B`/`5-C` → `stage-5-ui-native`；`src/ui/*.js` 30 个原生 DOM 工厂，`src/` 只剩 3 个 `.vue`） |
 | **6** | `lark-doc/plugin`（unplugin）替掉 demo 手写 copy | 低 | 宿主配置归零 | ✅ **已完成**（tag `stage-6-plugin`；`dist/plugin.{mjs,cjs}` + `exports["./plugin"]`） |
-| **7** | 删 vue2 renderer + element 去 `--inline-vue` + 删 vue peerDeps → **V2/V3 终局达成** | 低（阶段 5 完成后） | element gzip 约降到 447 KiB | 🟡 **未完成（本轮唯一挂账）** —— 已落地：删 5 个 SFC、抽出 `WorkspaceController` / `EditorController` / `ui/templateLibrary`、新增 opt-in `domRenderer`（tag `stage-7-vue-closure`）。**未落地**：还剩 `LarkDocEditor.vue` / `LarkDocWorkspace.vue` / `TemplateLibrary.vue` 三个 SFC 与 `components/lark-doc/editor/` 下 46 个 mixin 依赖 Vue 响应式，因此 vue2 renderer 仍是默认、`--inline-vue` 未摘、vue peerDeps 未删 → **V2/V3 未达成** |
+| **7** | 默认 DOM renderer + 无 Vue import 的 options 兼容入口 + 去 Vue 顶层依赖 | 低（阶段 5 完成后） | 按实际构建读数只下调预算 | **本工作区实施中（2026-10-31，未发布）**：三个主壳 SFC 已删除；`mount/vueRenderer` 仅为 DOM 别名；默认 / Element / legacy 都不导入 Vue。移除顶层 `vue` / `vue-template-compiler` / `@tiptap/vue-2`，保留 CLI 开发工具链。本轮仅执行构建、lint 与产物专项检查，不以此宣称全量测试或视觉验收通过。 |
 
-> **2026-10-30 口径修正**：阶段 5 / 6 已按批次收口，阶段 7 **只完成了一半**（去 SFC、抽 controller、备好 DOM renderer），
-> 「删 vue2 renderer」这一刀必须等三个主壳 SFC + 46 个 mixin 全部原生化之后才能落，否则编辑器 UI 会整体失效。
-> 因此 0.13.0 发的是 **V1 过渡态**（Vue 仍随产物内联），V2/V3 顺延到 0.14。
+> **2026-10-31 工作区口径**：源码现已使用 DOM renderer 与 options 兼容适配器，不能再写成「Vue 仍内联」或「Vue 是强 peer」。`package.json` 版本号不代表这些未提交工作已发布；以下旧阶段数字与重写量保留作历史基线，不代表当前仍有 SFC。
 
 **阶段表没有可选项**。阶段 5 是唯一高风险项，靠「每批先补断言再重写 + 批次一重估排期」控住（见 §5 小节 ④），
 不靠「降级为可选」规避 —— 一旦停在 V1，Vue 2.7（2023-12-31 起 EOL）将永久封产物内，且阶段 7 的收尾永远无法执行。
@@ -920,10 +918,11 @@ import { LarkDoc } from 'lark-doc/lite'
 > 阶段 3 带出的 **V1 只是过渡，不能替代本阶段** —— V1 把 Vue 封进产物，本阶段才把它从源码树移出去。
 
 **动作**
-1. 删除 `src/mount/vueRenderer.js`，`createRenderer()` 默认切到 `domRenderer`（这就是原 P4「补无框架 renderer」的落点）；
-2. `build:element` 去掉 `--inline-vue`，element gzip 预计从 462.7 KiB 降到约 447 KiB；
-3. `peerDependencies` 删除 `vue` 与 `@tiptap/vue-2` 两项（其中 `vue` 在阶段 3 的 V1 过渡态已删，此处删 `@tiptap/vue-2` 并做最终核对）；
-4. `size-limit` 门禁相应下调。
+1. `createRenderer()` 默认使用 DOM；旧 `mount/vueRenderer` 名称仅保留 DOM 别名，不保留 Vue 实现；
+2. 默认 / Element / legacy 构建不使用 `--inline-vue`，legacy 只打无 Vue import 的 options 适配器，所有 ESM chunk 独立命名，禁止覆盖默认产物；
+3. 删除顶层 `vue` / `vue-template-compiler` devDependency 与 `@tiptap/vue-2`，不声明 Vue peer；Vue CLI 的开发期传递依赖允许保留，不得进入运行时模块图；
+4. 合并重复 `chainWebpack`，Mermaid 排除常规 Babel / webpack 解析；构建只读取源码，产物指纹覆盖构建脚本与依赖锁；
+5. 依据 `npm run size` 实测只下调预算，超限必须定位，不能放宽。
 
 **判据**：`setRenderer(domRenderer)` 后可完全不依赖 Vue 运行；四个门禁全绿。
 
@@ -932,28 +931,23 @@ import { LarkDoc } from 'lark-doc/lite'
 **结论：能。阶段 7 完成后，`package.json` 里不会再出现 `vue` 或 `@tiptap/vue-2` 任何一项。**
 但下面三件事必须先说清楚，否则极易误判进度。
 
-#### ① Vue 现在是 `peerDependencies`，不是 `dependencies`
+#### ① 当前已无 Vue 顶层依赖或 peer
 
-```json
-"peerDependencies": { "vue": "^2.7.14", "@tiptap/vue-2": "^3.32.0", ... }
-```
+默认、Element、lite 与 legacy 都使用原生 DOM，不依赖宿主 Vue，也不内联 Vue。`lark-doc/legacy` 只暴露普通 options 对象，需由既有 Vue2 宿主注册；它自身不 import Vue，不能与运行时依赖混为一谈。
 
-`npm i lark-doc` **不会**自动装 Vue —— 这一条本来就是对的，框架不该进 `dependencies`。
-真正的问题不是「装了不该装的」，而是**宿主必须自己装 Vue 2.7**（因为 38 个 SFC 是 Vue 2 写的）。
+锁文件可能仍有 Vue CLI 引入的开发期 Vue / compiler 节点；保留工具链并不等于产物携带 Vue，判据应为实际运行时模块图与打包产物，不是对整个 lockfile 做字符串清零。
 
-唯一例外是 **element 档**：`build:element` 带 `--inline-vue`（`vue.config.js` 注释明写），Vue 被内联进产物，
-所以 `<lark-doc>` / `<script src>` 路径的宿主**现在就不需要装 Vue**。
-
-| 入口 | 宿主现在需要装 vue 吗 | 阶段 7 后 |
+| 入口 | 是否需要为 lark-doc 安装 Vue | 样式 |
 |---|---|---|
-| `lark-doc`（esm / cjs / umd） | **需要** 2.7.x | 不需要 |
-| `lark-doc/element`、element UMD 直挂 | 不需要（已内联） | 不需要 |
+| `lark-doc`（ESM / CJS） | 不需要 | ESM 注入；CJS 显式引 CSS |
+| `lark-doc/element`、Element UMD 直挂 | 不需要，也不内联 Vue | JS 注入 |
+| `lark-doc/legacy` | 不加载 Vue；options 对象由旧宿主注册 | ESM 注入；CJS 引 legacy CSS |
 
-#### ② 三处 `@tiptap/vue-2`，全仓库就这三个文件，阶段 2 一次摘完
+#### ② 历史 `@tiptap/vue-2` 引用与当前落点
 
 | 文件 | 引用 | 换法 |
 |---|---|---|
-| `components/lark-doc/LarkDocEditor.vue` | `Editor, EditorContent` | `Editor` 本来就来自 core（框架无关），`EditorContent` 只是组件壳 → 自己 append DOM |
+| ~~`components/lark-doc/LarkDocEditor.vue`~~ | ~~`Editor, EditorContent`~~ | 阶段7已删除，替换为无 Vue import 的 options 适配器；默认 DOM renderer 使用 `@tiptap/core` |
 | ~~`adapters/vue2/nodeviews.js`~~ | ~~`VueNodeViewRenderer`~~ | ✅ 阶段 2：已清空，core 原生 NodeView |
 | ~~`adapters/vue2/CodeNode.vue`~~ | ~~`NodeViewWrapper/Content/nodeViewProps`~~ | ✅ 阶段 2：已删除，逻辑平移进 `core/nodeviews/code-block.js` |
 
@@ -988,7 +982,7 @@ import { LarkDoc } from 'lark-doc/lite'
 
 #### ④ 阶段 5 一定会做：重写量拆解与 all-or-nothing 性质
 
-**只要还剩一个 `.vue` 文件，Vue 就不能从 `peerDependencies` 删掉。**
+**历史迁移前置：所有进入默认运行时依赖图的 SFC 必须移除，才能实现源码与运行时去 Vue。** 是否声明 peer 应由实际外部依赖决定，不能由仓库中某个文件扩展名决定；当前 SFC 已删除且 Vue peer 已移除。
 这与其它阶段不同 —— 1-A / 3 / 4 每做一步都有收益，**阶段 5 只有做到 100% 才有收益**。
 
 - 现状：**37 个 SFC**（阶段 2 删掉 `adapters/vue2/CodeNode.vue` 后） —— `editor/` 18、`components/lark-doc` 13、`dialogs/` 6；
@@ -1024,17 +1018,9 @@ import { LarkDoc } from 'lark-doc/lite'
 > `$nextTick` 是最大单点：**74 个时序点**（不是 53，原数字只统计了 mixin 层）要逐一重新验收。
 > 因此阶段 5 不能按「写完就发」推进，必须**每批先补断言再重写**，并用批次一的真实工时反推排期。
 
-#### 过渡态：已完成
+#### 当前依赖收口
 
-`vue` 与 `@tiptap/vue-2` **已经是 optional peer**，无需再改：
-
-```json
-"peerDependencies":     { "vue": "^2.7.14", "@tiptap/vue-2": "^3.32.0", ... }
-"peerDependenciesMeta": { "vue": { "optional": true }, "@tiptap/vue-2": { "optional": true }, ... }
-```
-
-含义：**走 element 路径的宿主不装 Vue 也不会报 peer 警告**（Vue 已内联）；走 esm / cjs 路径的宿主看到提示但可选择忽略
-—— 然而它实际运行时仍然需要 Vue 2.7，提示忽略会直接炸。阶段 7 是把这两项**整项删除**而非降级。
+`vue` 与 `@tiptap/vue-2` 已整项删除，不再标记 optional。现存 optional peer 仅用于显式协同能力（Yjs、Hocuspocus provider 与 Tiptap 协同扩展）。普通编辑、Element 与 legacy 兼容产物无需安装它们。完整开发依赖安装需 Node >=22；已有依赖的库构建使用探测到的 Node14.21.3 / npm8.19.4 验证。
 
 ---
 
@@ -1137,22 +1123,21 @@ import { LarkDoc } from 'lark-doc/lite'
 | 6 | 宿主接入零 copy 配置 | demo 手写 copy 全部删除 |
 | 7 | `setRenderer(domRenderer)` 无 Vue 运行 | element gzip ≈ 447 KiB |
 
-### 体积预算（`size-limit`，2026-10-30 实测）
+### 体积预算（`size-limit`，2026-10-31 阶段7工作区实测，未发布）
 
-读数一律以 `npm run size` 的输出为准（它自己的 gzip 参数与手工 `gzip -9` 差 ~1 KB，别拿手工数去定预算 ——
-element / CJS 两档就是这么被定穿的）。
+读数一律以 `npm run size` 的输出为准，当前 `size-limit` 使用 gzip level 9。预算按十进制 KB 计，精确字节数须采用相同压缩参数，不能混用默认 gzip 或 KiB 口径。
 
 | 产物 | 实测 gzip | 预算 | 余量 | 备注 |
 |---|---|---|---|---|
-| ESM 主包 | 312.15 kB | 320 KB | ~2.5% | stage-4 定的 290 KB 已被阶段 5/6/7 的加码顶穿：每抽出一个 `src/ui/*.js` DOM 工厂 / Controller，原来挂在 Vue `data`/`methods` 里的逻辑就变成独立顶层模块。**V2 删掉三个主壳 SFC 后必须重测并往回收。** |
-| lite 主包 | 300.12 kB | 308 KB | ~2.6% | 同上。注意 lite 只比全量小 ~12 KB gzip —— 主包里绝大部分体积是我们自己的源码，不是那七个可选依赖（它们本来就在按需区块里，lite 主包从来没装过）。「用了 lite 就小一半」是错觉。 |
-| element | 481.44 kB | 490 KB | ~1.8% | 旧预算 480 KB 实测超 1.44 kB（阶段 5~7 抽 `src/ui/*` DOM 工厂的真实增量，非泄漏 —— 已排查主包内无 katex/mermaid/docx 代码，4 处 `KaTeX` 全是注释）。五档里余量最薄，别再往上堆。 |
-| CJS 主文件 | 1,150,975 B | 1170 KB | ~1.7% | 旧预算 1150 KB 实测超 975 B，同上定性。 |
-| collab | 2.91 kB | 90 KB | 充裕 | 未动。 |
+| ESM 主包 | 306,217 B（306.22 kB） | 310 KB（原 320） | ~1.2% | 无 Vue runtime；初始共享区块未计入该单文件预算。 |
+| lite 主包 | 294,242 B（294.24 kB） | 300 KB（原 308） | ~1.9% | 七项重依赖指纹均不在主文件、初始共享区块或 stub 区块内。 |
+| element | 465,664 B（465.66 kB） | 475 KB（原 490） | ~2.0% | 原生 DOM，CSS 随 JS 注入；无 Vue 内联。 |
+| CJS 主文件 | 1,055,560 B | 1080 KB（原 1170） | ~2.3% | 保留相对 require 兄弟区块，不是全内联单文件。 |
+| collab | 2,915 B（2.92 kB） | 4 KB（原 90） | ~27.1% | 协同运行时保持 external，按本轮读数收紧。 |
 
-**还没做的减重动作**（都不是预算问题，是行为取舍，需要浏览器实测后单独决定）：
-① ESM 档关掉 core-js polyfill（`LARK_DOC_NO_POLYFILL=1`）—— 分析结果显示 core-js 占 ~204 KiB 模块源码，但关掉等于放弃对老浏览器的运行时兜底，必须先实测 `dist/lark-doc.esm.js` 在目标浏览器的行为；
-② V2 删掉 `LarkDocEditor.vue` / `LarkDocWorkspace.vue` / `TemplateLibrary.vue` 后，新版 Controller 与旧 SFC 的双份逻辑消失，这是最干净的一次回落。
+ESM 首屏三个初始文件 gzip 合计 **478,842 B**（主文件 306,217 + tiptap 135,479 + vendor 37,146），不得拿主文件读数冒充首屏总量。五档预算全部下调，没有放宽。
+
+主壳 SFC 已删除；本轮只完成构建、依赖、现有接入文档与专项验证，不据此宣称全量功能或视觉验收完成。保留 core-js 兼容层，未用关闭 polyfill 的方式压缩体积。
 
 ---
 

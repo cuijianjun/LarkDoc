@@ -20,7 +20,7 @@
 | **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>0.13 起 | 一行 alias → `dist/lark-doc.common.js` | **只改 `vue.config.js` 一处**（alias）；子路径与样式写全 `dist/` 路径 | `lark-doc` tgz、`vue` tgz |
 | **Vue 2.7 + webpack 4**（0.12 及更早） | `main` → `dist/lark-doc.common.js` | `vue.config.js`（alias + babel 规则）、业务组件的 `import` 写全路径 | `lark-doc` tgz、`vue` tgz、**2 个 babel 插件 tgz** |
 | **Vue 2.7 + webpack 5**（vue-cli 5 / 原生 webpack5） | `module` → `dist/lark-doc.esm.js` | **不用改配置**，只改业务代码的 `import` | `lark-doc` tgz、`vue` tgz |
-| **Vue 3 + Vite** | `lark-doc/element`（UMD，自带 Vue 2 运行时与样式） | `vite.config.js`（`isCustomElement`）、`index.html` 加一行 `<script>` | **只要 `dist/` 目录，不用装 npm 包** |
+| **Vue 3 + Vite** | `lark-doc/element`（UMD，原生 DOM + 注入样式，无 Vue） | `vite.config.js`（`isCustomElement`）、`index.html` 加一行 `<script>` | **只要 `dist/` 目录，不用装 npm 包** |
 
 判断自己是哪一档，只跑一条命令：
 
@@ -36,7 +36,7 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 
 ### 1.1 为什么必须单独出包
 
-内网连不上 registry，`npm install lark-doc` 会直接失败。而 lark-doc 的 `dist` 在运行时还要从自身 `node_modules` 取 28 个运行时依赖（`vue`、`@tiptap/*`、`katex`、`mammoth` 等），所以不能只拷 `dist/` 了事——**必须打成自带依赖闭包的 tgz**。
+内网连不上 registry，`npm install lark-doc` 会直接失败。npm/tgz 安装方式需要可解析的依赖闭包，内网可使用随依赖打包的 tgz；静态 Element 方式则直接部署完整 `dist/`，无需安装 npm 包。当前 lark-doc 不要求 Vue runtime；Vue2 宿主自身的框架依赖由宿主管理。
 
 `scripts/pack-intranet.sh` 就是干这个的，它顺手修掉三类只有老 npm / Windows 才暴露的坑（详见[内网服务器部署 · 3.4](/guide/deployment-intranet#deploy-npm6)）。
 
@@ -82,11 +82,11 @@ cd dist-intranet && sha256sum -c sha256.txt
 
 ::: tip 0.13 起本节只剩一处配置：一行 alias
 webpack 4 不读 `exports`，且 0.13 起包里**不再有 `browser` 字段**，所以它会落到 `module` →
-`esm.js`（含 `import.meta`，解析失败）。在 `vue.config.js` 里把主入口显式指到 CJS 档即可；
+`esm.js`（保留现代语法，不承诺 webpack4 可解析）。在 `vue.config.js` 里把主入口显式指到 CJS 档即可；
 CJS 档已随 UMD / element 一起降到 **ES2018**，所以：
 
 - **不用** 装那两个 babel 插件（`@babel/plugin-proposal-optional-chaining` / `-nullish-coalescing-operator`），也就不用为它们打 tgz
-- **不用** 设 `window.__LARK_DOC_PUBLIC_PATH__` —— CJS 是单文件、区块全内联，没有懒加载请求
+- **不用** 设 `window.__LARK_DOC_PUBLIC_PATH__` —— CJS 以相对 require 加载兄弟 chunk，不用 script URL 基址
 - 只剩两件事：alias 一行，以及子路径 / 样式写全（`lark-doc/dist/lark-doc-element.umd.min.js`、`lark-doc/dist/lark-doc.css`）
 
 ```js
@@ -341,7 +341,7 @@ npm run build
 
 | | webpack 4（0.13+） | webpack 4（0.12-） | webpack 5 |
 | --- | --- | --- | --- |
-| 入口 | 一行 alias → `main`（CJS，8.6 MB 单文件，区块全内联） | `main`（CJS，8.6 MB）+ babel 降级 | `module`（ESM，首屏 gzip ≈ 446 KB） |
+| 入口 | 一行 alias → `main`（CJS 主文件 + require 兄弟 chunk） | `main`（CJS，8.6 MB）+ babel 降级 | `module`（ESM，首屏 gzip ≈ 446 KB） |
 | 宿主配置 | **1 处**（alias）；子路径与样式写全 `dist/` | alias + babel 规则，两处 | 无 |
 | 额外依赖 | 无 | 2 个 babel 插件 | 无 |
 
@@ -349,14 +349,11 @@ npm run build
 
 ## 4. 方案 C：Vue 3 + Vite {#mig-vue3-vite}
 
-### 4.1 先搞清楚为什么不能照 Vue 2 那样装包
+### 4.1 Vue3 可以直接使用默认入口
 
-`lark-doc` 主入口的 peer 依赖是**强制**的：`vue ^2.7.14` 和 `@tiptap/vue-2 ^3.32.0`。在 Vue 3 项目里 `npm i lark-doc`：
+当前默认、Element 和 legacy 产物均无 Vue 运行时依赖，也没有 `vue` 或 `@tiptap/vue-2` peer。Vue3 / React / 原生宿主都可正常 `npm i lark-doc`，无需 `--force` 或 `--legacy-peer-deps`，随后在客户端挂载 `new LarkDoc()`。
 
-- npm 7+ → `ERESOLVE unable to resolve dependency tree`，装不上；
-- 硬装（`--force` / `--legacy-peer-deps`）→ 浏览器里 `Vue.extend is not a function`，白屏。
-
-Vue 3 能用的只有 **element 入口**：它是一份 UMD，**内联了自己的 Vue 2 运行时和全部样式**，和宿主的 Vue 3 互不干扰。
+下面保留的是另一条可选路线：静态托管 Element UMD，使用 `<lark-doc>` 标签。它使用同一份 DOM renderer，样式随 JS 注入，并非内联 Vue2 的避让方案。
 
 ### 4.2 推荐路线：不装包，把 `dist/` 当静态资源引
 

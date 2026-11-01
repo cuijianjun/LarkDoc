@@ -155,7 +155,7 @@ describe('P7-03 derived snapshot: the pending gate blocks navigation', () => {
  */
 describe('P7-03 derived snapshot: gate wiring on both sides', () => {
   it('refreshDocumentState() lowers the gate when the measured outline lands', () => {
-    const sfc = read('src/components/lark-doc/LarkDocEditor.vue')
+    const sfc = read('src/editor/nativeEditorHost.js')
     const body = sfc.slice(sfc.indexOf('refreshDocumentState()'))
     const clearAt = body.indexOf('outlinePending = false')
     const outlineAt = body.indexOf('this.outline = collectOutline(')

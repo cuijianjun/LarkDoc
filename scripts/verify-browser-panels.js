@@ -543,8 +543,10 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
 const vueCall = (page, body) => page.evaluate((source) => {
   // eslint-disable-next-line no-new-func
   const fn = new Function('vue', 'sleep', `return (async () => { ${source} })()`)
+  const nativeHost = window.__larkDoc?._handle?.nativeHost?.host
+  if (nativeHost) return fn(nativeHost, (ms) => new Promise((resolve) => setTimeout(resolve, ms)))
   const anchor = document.querySelector('.lark-doc')
-  if (!anchor || !anchor.__vue__) throw new Error('[vueCall] `.lark-doc` 上没有 Vue 实例')
+  if (!anchor || !anchor.__vue__) throw new Error('[vueCall] 未找到原生 handle 或 Vue 实例')
   const seen = new Set()
   const flat = []
   const walk = (node) => {

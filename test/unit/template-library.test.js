@@ -369,30 +369,29 @@ describe('P5-07 原生 renderer 宿主契约', () => {
 })
 
 describe('P5-07 语义守卫：模板库在宿主侧、使用=复制文档', () => {
-  const sfc = read('src/components/lark-doc/TemplateLibrary.vue')
+  const renderer = read('src/ui/templateLibrary.js')
   // 样式单独立一个文件：lark-doc.css 里每条规则都挂 `.lark-doc`，这一段故意不挂。
   const css = read('src/components/lark-doc/template-library.css')
   // 注释里会提到 `.ProseMirror` / `--tpl-*`（说明为什么这么写），断言只看真样式。
   const block = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
-  it('组件与原生 renderer 都只通知宿主，不在内部灌内容', () => {
-    const renderer = read('src/ui/templateLibrary.js')
-    expect(sfc).toContain("$emit('use'")
-    expect(sfc).toContain("$emit('preview'")
+  it('无 Vue renderer 只通知宿主，不在内部灌内容', () => {
     expect(renderer).toContain("'onUse'")
     expect(renderer).toContain("'onPreview'")
     // 注释里写的是「不允许出现 insertContent」这类说明，断言只看真代码。
-    expect(sfc.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/insertContent|create_node/)
     expect(renderer.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/insertContent|create_node/)
   })
 
   it('组件不被 LarkDocEditor 引用（编辑器页内零模板入口）', () => {
-    expect(read('src/components/lark-doc/LarkDocEditor.vue')).not.toContain('TemplateLibrary')
+    expect(read('src/editor/nativeEditorHost.js')).not.toContain('TemplateLibrary')
+    expect(read('src/components/lark-doc/LarkDocEditor.js')).not.toContain('TemplateLibrary')
   })
 
-  it('模板库从入口单独导出，宿主自己挂', () => {
-    expect(read('src/index.js')).toContain('LarkDocTemplateLibrary')
-    expect(read('src/index.js')).toContain('createTemplateLibrary')
+  it('模板库从入口单独导出无 Vue 工厂，并保留旧命名兼容导出', () => {
+    const index = read('src/index.js')
+    expect(index).toContain('createTemplateLibrary')
+    expect(index).toContain('const LarkDocTemplateLibrary = createTemplateLibrary')
+    expect(index).not.toContain("./components/lark-doc/TemplateLibrary.vue")
   })
 
   it('样式单独立文件并由 style.css @import 进来（与其他四份同一条构建链）', () => {

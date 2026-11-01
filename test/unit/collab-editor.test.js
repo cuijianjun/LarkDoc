@@ -16,7 +16,8 @@ import collabMixin from '../../src/components/lark-doc/editor/collabMixin'
 
 const root = path.resolve(__dirname, '../..')
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
-const sfc = read('src/components/lark-doc/LarkDocEditor.vue')
+const nativeHost = read('src/editor/nativeEditorHost.js')
+const renderer = read('src/mount/domRenderer.js')
 
 /** 用最小替身跑 mixin 的 computed（不建组件实例，避免把 Vue 拖进 Node 单测）。 */
 const optionsOf = (collab) => collabMixin.computed.collabOptions.call({ collab })
@@ -39,18 +40,16 @@ describe('P6a · 编辑器侧的协同通道', () => {
   })
 
   it('协同下不传 content（初始正文只播种一次）', () => {
-    expect(sfc).toContain('content: this.collabOptions ? undefined : this.prepareHTML(initialHTML)')
+    expect(renderer).toContain('content: documentHost.collabOptions ? undefined :')
   })
 
   it('collab 透传给 createLarkDocExtensions', () => {
-    expect(sfc).toContain('collab: this.collabOptions || undefined')
+    expect(renderer).toContain('collab: documentHost.collabOptions || undefined')
   })
 
   it('mixin 已注册（否则 prop 收不到，宿主传了也白传）', () => {
-    expect(sfc).toContain("import collabMixin from './editor/collabMixin'")
-    // 只认 mixins 数组那一行、且断言「在数组里」而不是「在数组末尾」：P6b 之后末尾
-    // 换成了 p6bMixin，写死 `collabMixin]` 会让以后每加一个 mixin 就红一次。
-    const mixinsLine = sfc.split('\n').find((line) => line.trim().startsWith('mixins: ['))
+    expect(nativeHost).toContain("import collabMixin from '../components/lark-doc/editor/collabMixin'")
+    const mixinsLine = nativeHost.match(/mixins: \[([\s\S]*?)\]/)[1]
     expect(mixinsLine).toContain('collabMixin')
   })
 

@@ -21,7 +21,8 @@ const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.cs
 const darkCss = fs.readFileSync(path.join(root, 'src/components/lark-doc/theme-dark.css'), 'utf8')
 const panel = fs.readFileSync(path.join(root, 'src/ui/searchPanel.js'), 'utf8')
 const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/searchPanelUiMixin.js'), 'utf8')
-const editorVue = fs.readFileSync(path.join(root, 'src/components/lark-doc/LarkDocEditor.vue'), 'utf8')
+const nativeHost = fs.readFileSync(path.join(root, 'src/editor/nativeEditorHost.js'), 'utf8')
+const shell = fs.readFileSync(path.join(root, 'src/ui/workspaceShell.js'), 'utf8')
 
 /** 取一条单行 CSS 规则（本仓库 CSS 一律一行一条，读整行即可）。 */
 function ruleFor(selector) {
@@ -214,8 +215,9 @@ describe('P4-05 查找替换 —— 组件契约与深档同步', () => {
   it('保留 ref="searchInput" 与 focus() 转发 —— 父组件与 toolbarCollapseMixin 靠它聚焦', () => {
     expect(panel).toContain('input = document.createElement')
     expect(panel).toContain('focus() { if (input) input.focus() }')
-    expect(editorVue).toContain('<div ref="searchPanelHost" />')
-    expect(editorVue).toContain('this.mountSearchPanel()')
+    expect(shell).toContain("const searchPanelHost = ownerDocument.createElement('div')")
+    expect(nativeHost).toContain("['SearchPanel', 'refreshSearchPanel']")
+    expect(nativeHost).toContain('host[`mount${domain}`]()')
   })
 
   it('计数器 N / M：无匹配 0 / 0，有匹配是 1-based 当前序号', () => {

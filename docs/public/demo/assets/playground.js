@@ -32,12 +32,10 @@
   }
 
   // 无后端 Demo：这些入参一律剔除（不是 lark-doc 不认，是这个页面没有对应服务）。
-  // persistence 不在列表里 —— 它是纯本地能力（IndexedDB / localStorage），
-  // 这个页面本身用 storage: 'none' 关掉，但用户代码里写它应该照原样被接受。
   var OFFLINE_BLOCKED = [
     'session', 'providers', 'collaboration', 'authorization', 'versioning',
     'comments', 'documentId', 'user', 'capabilities', 'mode',
-    'uploader', 'uploadImage',
+    'uploader', 'uploadImage', 'persistence',
   ]
 
   var DEFAULT_CODE = [
@@ -47,37 +45,13 @@
     'const doc = new LarkDoc({',
     "  element: '#editor',                // 本页面实际的挂载点是 " + HOST_SELECTOR,
     '  content: sampleDoc,                // 示例正文来自 assets/sample.js',
-    "  storage: 'local',                  // 'none' = 关掉本地草稿；'local' = 草稿落盘，刷新还在",
-    '  config: {',
-    '    layout: { headerVisible: true },     // 改成 false：顶部标题栏整行收起',
-    '    features: { ai: true },              // 改成 false：工具栏 AI 入口消失',
-    '',
-    '    // 自动保存：默认就是开的，delay 单位毫秒（0 = 每次改动立刻存）',
-    '    autosave: { enabled: true, delay: 650 },',
-    '',
-    '    // 导入 / 导出各自独立开关，格式也是逐项配置的',
-    '    importExport: {',
-    "      importEnabled: true,               // false：顶部「导入」按钮整颗消失",
-    "      exportEnabled: true,               // false：顶部「导出」下拉整颗消失",
-    "      importFormats: ['html', 'json', 'md', 'docx'],",
-    "      exportFormats: ['html', 'json', 'md', 'txt', 'docx', 'print'],",
-    '    },',
-    '',
-    '    // 媒体在 HTML 里的写法：inline 原样内嵌（data URI 和 https:// 远程地址都保留）；link 只留地址',
-    '    // 改完点右上角「HTML 输出」按钮，能直接看到两种写法的差别',
-    "    media: { htmlMode: 'inline', linkText: '', newTab: true },",
-    '',
-    '    // 顶栏「编辑 / 修订 / 阅读」三态：allow 裁剪下拉，default 定首屏，persist 管要不要记住',
-    "    // 试试 allow: ['edit', 'read'] —— 下拉少一项；改成 ['edit'] 按钮就变成静态文字",
-    "    modes: { default: 'edit', allow: ['edit', 'suggest', 'read'], persist: true, shortcuts: true },",
-    '',
-    "    // toolbar: { marksAllow: ['bold', 'italic'] },",
-    '    // limits: { maxLength: 500 },',
-    '  },',
+    '  layout: { headerVisible: true },     // 改成 false：顶部标题栏整行收起',
+    '  features: { ai: true },              // 改成 false：工具栏 AI 入口消失',
+    "  // toolbarKeys: ['history', 'headings', 'marks', 'insert'],",
+    '  // limits: { maxLength: 500 },',
     '})',
     '',
     '// 实例方法：doc.getJSON() / getHTML() / setReadonly(true) / patchProps({}) / undo()',
-    "// 顶栏「本地保存」显示自动保存的落盘时间；想从空白开始就点右上角「重置」。",
   ].join('\n')
 
   /* --------------------------------------------------------- DOM */
@@ -96,40 +70,13 @@
   var codeBar = codePane.querySelector('.pg-bar-code')
   var resetBtn = document.getElementById('pgReset')
   var verEl = document.getElementById('pgVer')
-  var htmlBtn = document.getElementById('pgHtml')
-  var modal = document.getElementById('pgModal')
-  var modalCode = document.getElementById('pgHtmlCode')
-  var modalTip = document.getElementById('pgHtmlTip')
-  var modalCloseBtn = document.getElementById('pgModalClose')
-  var copyBtn = document.getElementById('pgCopy')
-  var modeGroup = document.getElementById('pgHtmlMode')
 
   /* --------------------------------------------------------- 状态 */
 
   var instance = null      // 真实 LarkDoc 实例
   var keep = null          // { json, title } 上一次成功取到的正文
-
-  // 本地草稿的两个落点，与 lark-doc 的持久化实现保持一致：
-  //   localStorage 腿 = 前缀 + 'draft' / 'snapshots'；IndexedDB 腿 = 同名库。
-  // 「重置」要真正回到示例正文，就得把两边都清掉 —— 只清一边，另一边的草稿还会被读回来。
-  var DRAFT_PREFIX = 'tiptap-vue2:lark-doc:'
-  var DRAFT_DB = 'tiptap-vue2:lark-doc'
-  function clearLocalDraft() {
-    try {
-      var keys = []
-      for (var i = 0; i < window.localStorage.length; i++) {
-        var key = window.localStorage.key(i)
-        if (key && key.indexOf(DRAFT_PREFIX) === 0) keys.push(key)
-      }
-      keys.forEach(function (key) { window.localStorage.removeItem(key) })
-    } catch (e) { /* 隐私模式拿不到 localStorage：跳过，不影响页面上继续编辑 */ }
-    // 必须在实例销毁之后调，否则删库会被那条打开的连接挂住。
-    try { if (window.indexedDB) window.indexedDB.deleteDatabase(DRAFT_DB) } catch (e) { /* 同上 */ }
-  }
   var timer = 0
   var renderTimer = 0
-  var htmlMode = 'inline'  // HTML 输出面板当前档位
-  var htmlCache = ''       // 最近一次 getHTML() 的全文，供「复制」用
 
   /* --------------------------------------------------------- 小工具 */
 
@@ -216,11 +163,7 @@
     return stub
   }
 
-  /**
-   * 剔掉离线场景下没有意义的入参。
-   * `storage` 照用户的写法来（默认代码里是 'local'，自动保存会真的落盘）。
-   * 改代码重建时正文由 `keep` 带过去，不会被旧草稿顶掉；`重置` 才会清草稿。
-   */
+  /** 剔掉离线场景下没有意义的入参，并固定 storage。 */
   function sanitize(options) {
     var out = {}
     var dropped = []
@@ -228,6 +171,7 @@
       if (OFFLINE_BLOCKED.indexOf(key) >= 0) { dropped.push(key); return }
       out[key] = options[key]
     })
+    out.storage = 'none' // 本 Demo 不写本地草稿，保证「改代码 = 干净重建」
     return { options: out, dropped: dropped }
   }
 
@@ -256,7 +200,7 @@
     var opts = {}
     Object.keys(options || {}).forEach(function (key) { opts[key] = options[key] })
     opts.element = HOST_SELECTOR // 用户代码里写什么挂载点都落到预览区
-    if (opts.storage == null) opts.storage = 'local' // 用户没写才兜底，写了就照他的来
+    opts.storage = 'none'
 
     if (keep && keep.json) {
       opts.content = keep.json // 重建：用编辑后的正文覆盖代码里的 content
@@ -375,9 +319,6 @@
       if (typeof console !== 'undefined') console.info('[playground] ' + tip)
     }
     setStatus((reason === 'manual' ? '已运行 · ' : '已生效 · ') + ms + 'ms', 'ok', tip)
-
-    // 面板开着的时候重建了实例：输出要跟着刷新，否则看到的是上一份正文。
-    if (!modal.hidden) renderHtmlOutput()
   }
 
   function schedule() {
@@ -386,83 +327,6 @@
     window.clearTimeout(renderTimer)
     renderTimer = window.setTimeout(renderHighlight, 40) // 高亮跟着输入走，但别每键重排
     timer = window.setTimeout(function () { run('auto') }, DEBOUNCE)
-  }
-
-  /* --------------------------------------------- HTML 输出（media.htmlMode） */
-
-  // 这个面板只做一件事：把「同一份正文、两种媒体写法」摆在一起看。
-  // inline = 图片本体嵌在 HTML 里；link = 图片只剩一条地址链接。
-  var MODE_HINT = {
-    inline: '媒体本体直接嵌在 HTML 里（<figure><img>），正文能直接渲染出图。data URI 与 https:// 远程地址都原样保留。默认档。',
-    link: '媒体只留一条地址链接，正文里不出现媒体本体。JSON 不受影响，换回来还是图片。',
-  }
-
-  function renderHtmlOutput() {
-    if (!instance || typeof instance.getHTML !== 'function') {
-      htmlCache = ''
-      modalCode.textContent = '还没有可用的编辑器实例。先把下方代码跑通；改坏了就点「重置代码」。'
-      modalTip.textContent = ''
-      return
-    }
-
-    var html = ''
-    try {
-      // 单次覆盖：只影响这一次取值，页面配置不动。
-      html = instance.getHTML({ media: { mode: htmlMode } }) || ''
-    } catch (err) {
-      htmlCache = ''
-      modalCode.textContent = 'getHTML() 报错：' + ((err && err.message) || String(err))
-      return
-    }
-
-    htmlCache = html
-    var limit = 20000
-    var shown = html.length > limit
-      ? html.slice(0, limit) + '\n\n…（后面还有 ' + (html.length - limit) + ' 个字符，点「复制」取全文）'
-      : html
-    modalCode.textContent = shown || '（空正文）'
-
-    var hasImg = html.indexOf('<img') >= 0
-    var hasLink = html.indexOf('lark-doc-media-link') >= 0
-    modalTip.innerHTML = '<b>' + htmlMode + '</b> · ' + esc(MODE_HINT[htmlMode]) +
-      '　实际输出：<code>' + (hasImg ? '含 &lt;img&gt;' : '无 &lt;img&gt;') + '</code> ' +
-      '<code>' + (hasLink ? '含媒体链接' : '无媒体链接') + '</code>'
-  }
-
-  function openHtml() {
-    if (!modal.hidden) return
-    modal.hidden = false
-    renderHtmlOutput()
-    copyBtn.focus()
-  }
-
-  function closeHtml() {
-    if (modal.hidden) return
-    modal.hidden = true
-    htmlBtn.focus()
-  }
-
-  function copyHtml() {
-    if (!htmlCache) return
-    var flash = function (ok) {
-      copyBtn.textContent = ok ? '已复制' : '请手动选中'
-      window.setTimeout(function () { copyBtn.textContent = '复制' }, 1200)
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(htmlCache).then(
-        function () { flash(true) },
-        function () { flash(false) },
-      )
-      return
-    }
-    try {
-      var sel = window.getSelection()
-      var range = document.createRange()
-      range.selectNodeContents(modalCode)
-      sel.removeAllRanges()
-      sel.addRange(range)
-      flash(document.execCommand('copy'))
-    } catch (e) { flash(false) }
   }
 
   /* --------------------------------------------------------- 布局 */
@@ -562,32 +426,10 @@
     })
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !modal.hidden) {
-        closeHtml()
-        return
-      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'j' || e.key === 'J')) {
         e.preventDefault()
         setOpen(!isOpen())
       }
-    })
-
-    htmlBtn.addEventListener('click', openHtml)
-    modalCloseBtn.addEventListener('click', closeHtml)
-    copyBtn.addEventListener('click', copyHtml)
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeHtml() // 点遮罩关闭
-    })
-    modeGroup.addEventListener('click', function (e) {
-      var btn = e.target && e.target.closest ? e.target.closest('button[data-mode]') : null
-      if (!btn) return
-      var mode = btn.getAttribute('data-mode')
-      if (mode === htmlMode) return
-      htmlMode = mode
-      Array.prototype.forEach.call(modeGroup.querySelectorAll('button'), function (b) {
-        b.setAttribute('aria-pressed', String(b === btn))
-      })
-      renderHtmlOutput()
     })
 
     toggleBtn.addEventListener('click', function () { setOpen(!isOpen()) })
@@ -602,9 +444,6 @@
     resetBtn.addEventListener('click', function () {
       ta.value = DEFAULT_CODE
       renderHighlight()
-      teardown()        // 先断开旧实例，IndexedDB 才删得掉
-      keep = null       // 别把编辑过的正文带进新实例，否则「重置」等于没重置
-      clearLocalDraft() // 清掉自动保存落下的草稿，示例正文才会真的回来
       schedule()
       ta.focus()
     })

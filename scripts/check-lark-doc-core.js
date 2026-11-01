@@ -11,7 +11,7 @@ const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
   if (filename.startsWith(sourceRoot + path.sep)) {
     const { code } = require('@babel/core').transformSync(fs.readFileSync(filename, 'utf8'), {
-      babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'],
+      babelrc: false, configFile: false, plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')],
     })
     module._compile(code, filename)
   } else originalLoader(module, filename)
@@ -25,35 +25,27 @@ const { getSchema, getExtensionField } = require('@tiptap/core')
 const { EditorState, TextSelection } = require('@tiptap/pm/state')
 const { history, undo } = require('@tiptap/pm/history')
 const schema = getSchema(createLarkDocExtensions())
-function loadComponent(name, base = root) {
-  const { parseComponent } = require('vue-template-compiler')
-  const filename = path.join(base, name)
+// 仅为定向探针暴露模块私有实现；不改生产导出，不复制业务，不加载 Vue 编译器。
+function loadSourceExports(relative, names) {
+  const filename = path.join(sourceRoot, relative)
   const Module = require('module')
   const module = new Module(filename)
   module.filename = filename
-  module.paths = Module._nodeModulePaths(base)
-  const sfc = parseComponent(fs.readFileSync(filename, 'utf8'))
-  const { code } = require('@babel/core').transformSync(sfc.script.content, { babelrc: false, configFile: false, plugins: ['@babel/plugin-transform-modules-commonjs'] })
-  const originalVueLoader = require.extensions['.vue']
-  const originalCssLoader = require.extensions['.css']
-  // SFC 里的相对 import 已被 require 解成绝对路径，按它自己的目录回装载，
-  // 这样跨目录（如 ../../adapters/vue2/*.vue）也能命中。
-  require.extensions['.vue'] = (child, childPath) => { child.exports = loadComponent(path.basename(childPath), path.dirname(childPath)) }
-  require.extensions['.css'] = () => {}
-  try {
-    module._compile(code, filename)
-    const component = module.exports.default
-    // 编辑器拆分了 mixin（./editor/*）：这里模拟 Vue 2 的选项合并语义，
-    // 让 component.methods/computed 与运行时 this 上的可调用面保持一致。
-    const methods = { ...(component.methods || {}) }
-    const computed = { ...(component.computed || {}) }
-    for (const mixin of component.mixins || []) {
-      Object.assign(methods, mixin.methods || {})
-      Object.assign(computed, mixin.computed || {})
-    }
-    return { ...component, methods, computed }
+  module.paths = Module._nodeModulePaths(path.dirname(filename))
+  const source = `${fs.readFileSync(filename, 'utf8')}\nexport { ${names.join(', ')} }`
+  const { code } = require('@babel/core').transformSync(source, { babelrc: false, configFile: false, plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')] })
+  module._compile(code, filename)
+  return module.exports
+}
+function loadNativeHostOptions() {
+  const { options } = loadSourceExports('editor/nativeEditorHost.js', ['options'])
+  const layers = []
+  const visit = layer => { (layer.mixins || []).forEach(visit); layers.push(layer) }
+  visit(options)
+  return {
+    methods: Object.assign({}, ...layers.map(layer => layer.methods)),
+    computed: Object.assign({}, ...layers.map(layer => layer.computed)),
   }
-  finally { require.extensions['.vue'] = originalVueLoader; require.extensions['.css'] = originalCssLoader }
 }
 const text = (value, marks) => ({ type: 'text', text: value, ...(marks ? { marks } : {}) })
 const p = (value) => ({ type: 'paragraph', content: value ? [text(value)] : [] })
@@ -137,7 +129,7 @@ check('Public LarkDoc config gates features, commands, block actions and limits'
 })
 
 check('Handle hover bounds use text content rather than the full block row', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const bounds = component.methods.textContentBounds
   const startBounds = component.methods.highlightStartBounds
   const firstLineBounds = component.methods.firstTextLineBounds
@@ -170,7 +162,7 @@ check('Handle hover bounds use text content rather than the full block row', () 
 })
 
 check('Handle hover sections follow the indented subtree, not heading levels', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   // 飞书模型：章节 = 缩进更深的连续块。H2 后面未缩进的 H3/H4 是兄弟块，
   // 不属于 H2；缩进更深的普通段落、引用、代码块都属于它的子树。
   const document = doc([
@@ -201,7 +193,7 @@ check('Handle hover sections follow the indented subtree, not heading levels', (
 })
 
 check('Changing the active handle target closes a stale block menu', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const previousElement = global.Element
   class FakeElement {
     constructor(rect) { this.rect = rect; this.tagName = 'P' }
@@ -246,7 +238,7 @@ check('Changing the active handle target closes a stale block menu', () => {
 })
 
 check('Empty block plus opens the insert menu while six-dot handles open block actions', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   // 阶段 5 批次 3：句柄/块菜单的渲染层已搬到 `src/ui/blockHandle.js`（纯 DOM），
   // Vue 模板绑定不复存在 —— 静态断言改为核对「监听器接线」这一等价形式。
   const handleSource = fs.readFileSync(path.join(root, '../../ui/blockHandle.js'), 'utf8')
@@ -316,7 +308,7 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
 })
 
 check('Pointer movement over the editor can switch away from an open block menu', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const calls = []
   const context = {
     dragging: null,
@@ -394,14 +386,16 @@ check('ECS image attachment metadata survives JSON, HTML output and ordinary doc
   }
 })
 check('Explicit ECS content replacement rejects excessive Unicode text and preserves the existing body', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const editor = editorFor(doc([p('old')]))
   editor.schema = schema
   const extension = createLarkDocExtensions({ maxLength: 3 }).find((ext) => ext.name === 'characterCount')
   const context = { options: extension.options, storage: extension.config.addStorage() }
   extension.config.onBeforeCreate.call(context)
   editor.storage = { characterCount: context.storage }
-  const vm = { editor, maxLength: 3, savedSelection: { from: 1, to: 2 } }
+  const { createEditorController } = require(path.join(sourceRoot, 'editor/EditorController'))
+  const vm = { editor, savedSelection: { from: 1, to: 2 } }
+  vm.editorController = createEditorController({ editor, getMaxLength: () => 3, onAfterContentReplace: () => { vm.savedSelection = null } })
   assert.throws(() => component.methods.setContent.call(vm, { type: 'doc', content: [p('ab😀c')] }), /3/)
   assert.strictEqual(editor.state.doc.textContent, 'old')
   assert.strictEqual(component.methods.setContent.call(vm, { type: 'doc', content: [p('ab😀')] }), true)
@@ -952,7 +946,7 @@ check('Block ids are unique, reissued on duplicates, and survive JSON/HTML round
 check('Fold preference storage survives intermediate host content (no wipe on mismatch)', () => {
   // 宿主挂载后还会再灌一次正文：恢复时若当前文档还不是最终内容，一条键都匹配不上。
   // 此时必须保留本地偏好，否则「写成空数组 → 后面那次恢复也读不到」= 刷新后折叠全丢。
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const store = new Map()
   const previousWindow = global.window
   global.window = {
@@ -1160,7 +1154,7 @@ check('Resetting a cropped ECS image restores the attachment matching the origin
   })
 })
 check('Code blocks indent as a box, capped at the LarkDoc nesting limit', () => {
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const code = schema.nodes.codeBlock.create({ language: 'javascript' }, schema.text('x'))
   assert.strictEqual(code.attrs.indent, 0, 'code blocks default to the base level like LarkDoc')
   const indented = schema.nodes.codeBlock.create({ language: 'javascript', indent: 3 }, schema.text('x'))
@@ -1203,7 +1197,7 @@ check('Block indent stops at the LarkDoc cap on every entry point', () => {
   assert.strictEqual(ops.collectIndentFixes(doc([pi('ok', 5)])).length, 0)
 
   // 工具栏 / 气泡菜单共用 changeIndent：到顶后不再写事务（否则看起来能一直点）。
-  const component = loadComponent('LarkDocEditor.vue')
+  const component = loadNativeHostOptions()
   const editor = editorFor(doc([pi('a', 4)]))
   const writes = []
   const vm = {
@@ -1389,23 +1383,24 @@ async function checkCodeHighlightLazy() {
   console.log('PASS CodeNode lazy-loads highlight.js core and escapes the fallback')
 }
 async function checkEcsUploadBoundary() {
-  const component = loadComponent('LarkDocEditor.vue')
-  assert.strictEqual(typeof component.methods.resolveImageFile, 'function', 'Missing reusable ECS upload boundary')
+  const { createImageResolver } = loadSourceExports('mount/domRenderer.js', ['createImageResolver'])
+  assert.strictEqual(typeof createImageResolver, 'function', '原生 renderer 必须保留上传边界')
   const file = { type: 'image/png', size: 10, name: 'test.png' }
   let uploaded = 0
-  const vm = { imageMaxSize: 20, writable: () => true, uploadImage: async () => { uploaded += 1; return { url: 'https://example.com/upload.png', attchId: 42 } } }
-  const result = await component.methods.resolveImageFile.call(vm, file)
+  const vm = { effectiveImageMaxSize: 20, featureEnabled: () => true, writable: () => true, uploadImage: async () => { uploaded += 1; return { url: 'https://example.com/upload.png', attchId: 42 } } }
+  const resolveImageFile = createImageResolver(vm, () => vm, {})
+  const result = await resolveImageFile(file)
   assert.deepStrictEqual(result, { src: 'https://example.com/upload.png', attchId: '42' })
-  await assert.rejects(component.methods.resolveImageFile.call(vm, { ...file, size: 21 }))
+  await assert.rejects(resolveImageFile({ ...file, size: 21 }))
   assert.strictEqual(uploaded, 1, 'Oversized images must be rejected before calling ECS upload')
-  await assert.rejects(component.methods.resolveImageFile.call(vm, { ...file, type: 'image/svg+xml' }))
+  await assert.rejects(resolveImageFile({ ...file, type: 'image/svg+xml' }))
   vm.uploadImage = async () => { throw new Error('Upload failed') }
-  await assert.rejects(component.methods.resolveImageFile.call(vm, file), /Upload failed/)
+  await assert.rejects(resolveImageFile(file), /Upload failed/)
   vm.uploadImage = async () => ({ url: 'javascript:alert(1)', attchId: 'bad' })
-  await assert.rejects(component.methods.resolveImageFile.call(vm, file))
+  await assert.rejects(resolveImageFile(file))
   let complete
   vm.uploadImage = () => new Promise((resolve) => { complete = resolve })
-  const pending = component.methods.resolveImageFile.call(vm, file)
+  const pending = resolveImageFile(file)
   vm.writable = () => false
   complete({ url: 'https://example.com/late.png', attchId: 'late' })
   assert.strictEqual(await pending, null, 'Read mode or route teardown must discard late upload results')

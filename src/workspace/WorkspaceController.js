@@ -3,18 +3,7 @@ import { createPersistenceWorkspace, detectBrowserStorage } from '../providers/p
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from '../components/lark-doc/mockAI'
 import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMarkdown } from '../components/lark-doc/ai'
 import { TEMPLATES } from '../components/lark-doc/templates'
-import {
-  createLarkDocConfig,
-  resolveExportOptions,
-  isImportEnabled,
-  isExportEnabled,
-  resolveImportAccept,
-  resolveImportFormatId,
-  isAutoSaveEnabled,
-  resolveAutoSaveDelay,
-  resolveMediaOptions,
-} from '../components/lark-doc/larkDocConfig'
-import { applyMediaHtmlMode } from '../core/media/htmlMode'
+import { createLarkDocConfig } from '../components/lark-doc/larkDocConfig'
 import { sanitizeHTML, validateDocument } from '../components/lark-doc/documentOperations'
 import { migrateRecordContent } from '../core/migrations'
 import { createDerivedSnapshot, validateDerivedSnapshot } from '../core/derive/snapshot'
@@ -30,13 +19,19 @@ const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
 export function createWorkspaceState({ initialContent, initialTitle, templates, config }) {
   const templateItems = Array.isArray(templates) ? templates : TEMPLATES
   const firstTemplate = templateItems[0] || { html: '<p></p>', title: '未命名文档' }
-  const editorConfig = createLarkDocConfig(config)
   return {
     html: typeof initialContent === 'string' ? initialContent : firstTemplate.html,
     title: initialTitle != null ? initialTitle : firstTemplate.title,
     templateItems,
     forcedReadonly: false,
-    editorConfig,
+    mode: 'edit',
+    modeMenuOpen: false,
+    modeToast: '',
+    headerMenuOpen: false,
+    searchOpen: false,
+    slides: false,
+    slideIndex: 0,
+    editorConfig: createLarkDocConfig(config),
     effectiveReadonly: false,
     importing: false,
     initialized: false,
@@ -72,14 +67,15 @@ export function createWorkspaceState({ initialContent, initialTitle, templates, 
       { value: 0, label: '不限字数' },
       { value: 200, label: '200 字（ECS）' },
     ],
-    exportOptions: resolveExportOptions(editorConfig),
-    // 导入 / 导出两个入口分开配置：总闸（features.importExport）之下还有各自的分区开关。
-    // UI 层读这三个字段决定显隐与 accept，不再自己判 features。
-    importEnabled: isImportEnabled(editorConfig),
-    exportEnabled: isExportEnabled(editorConfig),
-    importAccept: resolveImportAccept(editorConfig),
-    importLabel: editorConfig.importExport.importLabel,
-    exportLabel: editorConfig.importExport.exportLabel,
+    exportOptions: [
+      { value: '', label: '导出' },
+      { value: 'html', label: 'HTML' },
+      { value: 'json', label: 'JSON（完整正文）' },
+      { value: 'md', label: 'Markdown（简化）' },
+      { value: 'txt', label: '纯文本' },
+      { value: 'docx', label: 'Word（简化）' },
+      { value: 'print', label: '打印 / PDF' },
+    ],
     aiLanguageOptions: [
       { value: 'en', label: '英语' },
       { value: 'zh', label: '中文' },
@@ -107,7 +103,11 @@ class WorkspaceController {
     this._aiPreviewAction = null
     this._aiContext = null
     this._contentSeeded = false
+    // Reports are public payloads: keep their identity outside reactive view state.
+    this._importReport = state.importReport || null
     this._disposed = false
+    this.flushOnLeave = this.flushOnLeave.bind(this)
+    this.mapAI = this.mapAI.bind(this)
   }
 
   isDisposed() { return this._disposed }
@@ -119,13 +119,39 @@ class WorkspaceController {
   setContent(content, options) { return this.host.setContent ? this.host.setContent(content, options) : false }
   focus() { if (this.host.focus) this.host.focus() }
   getHTML() { return this.host.getHTML ? this.host.getHTML() : '' }
-  /** 导出用 HTML：按 `config.media.htmlMode` 决定媒体直出还是只留地址。 */
-  getExportHTML() { return applyMediaHtmlMode(this.getHTML(), resolveMediaOptions(this.state.editorConfig)) }
   getJSON() { return this.host.getJSON ? this.host.getJSON() : null }
   getText() { return this.host.getText ? this.host.getText() : '' }
+  getImportReport() { return this._importReport }
+  onImportReport(report) {
+    this._importReport = report || null
+    this.state.importReport = this._importReport
+    if (report) this.emit('import-report', report)
+  }
   getWindow() { return this.host.getWindow ? this.host.getWindow() : (typeof window !== 'undefined' ? window : {}) }
   getNavigator() { return this.host.getNavigator ? this.host.getNavigator() : (typeof navigator !== 'undefined' ? navigator : {}) }
   getAIAdapter() { return normalizeAIProvider(this.host.getAIProvider ? this.host.getAIProvider() : this.props.aiProvider) }
+  getTitle() { return this.state.title }
+  setTitle(value) {
+    if (this.isReadonly()) return false
+    this.state.title = value == null ? '' : String(value)
+    this.queueSave()
+    return true
+  }
+  setReadonly(value) {
+    this.state.forcedReadonly = value === true
+    if (this.host.setReadonly) return this.host.setReadonly(this.isReadonly())
+    return true
+  }
+  isReadonly() { return Boolean(this.props.readonly || this.state.forcedReadonly || this.state.effectiveReadonly) }
+  insertContent(content) {
+    const editor = this.getEditor()
+    if (!editor || !this.writable()) return false
+    return editor.chain().focus().insertContent(content).run()
+  }
+  insertText(text) { return this.insertContent(String(text == null ? '' : text)) }
+  undo() { const editor = this.getEditor(); return editor ? editor.chain().focus().undo().run() : false }
+  redo() { const editor = this.getEditor(); return editor ? editor.chain().focus().redo().run() : false }
+  save() { return this.saveNow(true) }
 
   initializeSession() {
     this.state.sessionInstance = this.props.session || createDocumentSession({
@@ -166,9 +192,7 @@ class WorkspaceController {
     this.state.initialized = true
     const editor = this.getEditor()
     if (editor && this.host.bindAITransaction) this.host.bindAITransaction(this.mapAI)
-    // 同 LarkDocWorkspace.vue：一定要包一层箭头函数，别把裸方法引用交给宿主 ——
-    // 宿主直接 addEventListener 的话 this 是 window，离页保存会静默失效。
-    if (this.host.addBeforeUnload) this.host.addBeforeUnload(() => this.flushOnLeave())
+    if (this.host.addBeforeUnload) this.host.addBeforeUnload(this.flushOnLeave)
     logger.info('lifecycle', 'lark-doc.workspace.ready', { status: this.props.persistence ? 'host' : 'local' })
     this.emit('ready', { editor, document: this.host.documentApi || this })
   }
@@ -218,10 +242,8 @@ class WorkspaceController {
   queueSave() {
     if (!this.featureEnabled('persistence') || !this.state.initialized || this.state.storageError || this._disposed) return
     clearTimeout(this._saveTimer)
-    // config.autosave.enabled = false 时仍保留手动保存 / 离开页面时保存的路径，只是不再自动落盘。
-    if (!isAutoSaveEnabled(this.state.editorConfig)) { this.state.saveStatus = '自动保存已关闭'; return }
     this.state.saveStatus = '等待本地保存…'
-    this._saveTimer = setTimeout(() => { void this.saveNow() }, resolveAutoSaveDelay(this.state.editorConfig))
+    this._saveTimer = setTimeout(() => { void this.saveNow() }, 650)
   }
 
   flushOnLeave() { void this.saveNow() }
@@ -248,6 +270,36 @@ class WorkspaceController {
     logger.warn('storage', 'lark-doc.storage.failed', { status: 'failed' })
     this.emit('save', { status: 'failed', message: this.state.saveStatus })
     this.emit('error', error)
+  }
+
+  applyTemplate(id) {
+    if (!this.featureEnabled('templates') || !id || !this.writable()) return false
+    const template = this.state.templateItems.find(item => item.id === id)
+    if (!template || !this.confirm('替换当前正文？可用撤销恢复正文；建议先保存快照。')) return false
+    this.closeAI()
+    this.setContent(template.html)
+    this.state.title = template.title
+    this.queueSave()
+    return true
+  }
+
+  openTemplatePicker() {
+    if (!this.featureEnabled('templates') || !this.writable()) return
+    this.state.historyOpen = false
+    this.state.aiOpen = false
+    this.state.templateQuery = ''
+    this.state.templateOpen = true
+    if (this.host.nextTick) this.host.nextTick(() => this.host.focusTemplateSearch?.())
+  }
+
+  closeTemplatePicker() {
+    this.state.templateOpen = false
+    this.state.templateQuery = ''
+    this.focus()
+  }
+
+  chooseTemplate(id) {
+    if (this.applyTemplate(id)) this.closeTemplatePicker()
   }
 
   async toggleHistory() {
@@ -284,19 +336,14 @@ class WorkspaceController {
   }
 
   async importDocument(event) {
-    if (!isImportEnabled(this.state.editorConfig)) return
+    if (!this.featureEnabled('importExport')) return
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
     if (!file || !this.writable()) return
     if (file.size > 10 * 1024 * 1024) { this.state.notice = '导入文件不能超过 10 MB'; return }
-    // 格式白名单（config.importExport.importFormats）：不在清单里的扩展名直接拒绝。
-    const format = resolveImportFormatId(this.state.editorConfig, file.name.split('.').pop())
-    if (!format) {
-      this.state.notice = `不支持的文件格式，可导入：${this.state.editorConfig.importExport.importFormats.join(' / ').toUpperCase()}`
-      return
-    }
     this.state.importing = true
     try {
+      const format = file.name.split('.').pop().toLowerCase()
       let content
       let importedTitle
       if (format === 'docx') {
@@ -309,8 +356,8 @@ class WorkspaceController {
           const value = JSON.parse(text)
           content = validateDocument(migrateRecordContent(value.document || value, value.schemaVersion), this.getEditor().schema)
           if (typeof value.title === 'string') importedTitle = value.title
-        } else if (format === 'html') content = sanitizeHTML(text)
-        else if (format === 'md') {
+        } else if (format === 'html' || format === 'htm') content = sanitizeHTML(text)
+        else if (format === 'md' || format === 'markdown') {
           const { markdownToHtml } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
           content = sanitizeHTML(await markdownToHtml(text))
         } else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
@@ -329,7 +376,7 @@ class WorkspaceController {
       this.closeAI()
       this.setContent(content)
       if (importedTitle !== undefined) this.state.title = importedTitle
-      this.state.notice = format === 'docx' || format === 'md' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
+      this.state.notice = format === 'docx' || format === 'md' || format === 'markdown' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
       logger.info('import', 'lark-doc.document.imported', { format, status: 'success' })
     } catch (error) {
       if (!this._disposed) this.state.notice = `导入失败，原正文未替换：${error.message}`
@@ -338,16 +385,15 @@ class WorkspaceController {
   }
 
   async exportDocument(format) {
-    if (!isExportEnabled(this.state.editorConfig) || !format) return
-    if (!this.state.editorConfig.importExport.exportFormats.includes(format)) return
+    if (!this.featureEnabled('importExport') || !format) return
     try {
       const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
       const filename = safeFileName(this.state.title)
-      if (format === 'html') downloadText(this.getExportHTML(), `${filename}.html`, 'text/html;charset=utf-8')
+      if (format === 'html') downloadText(this.getHTML(), `${filename}.html`, 'text/html;charset=utf-8')
       else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.state.title, document: this.getJSON() }, null, 2), `${filename}.json`, 'application/json')
       else if (format === 'txt') downloadText(this.getText(), `${filename}.txt`, 'text/plain;charset=utf-8')
       else if (format === 'md') {
-        downloadText(await htmlToMarkdown(this.getExportHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
+        downloadText(await htmlToMarkdown(this.getHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
         this.state.notice = 'Markdown 为简化导出，字体、分栏、公式和图片裁剪布局可能降级；JSON 可保留完整正文'
       } else if (format === 'docx') {
         await exportDocx(this.state.title, this.getText())

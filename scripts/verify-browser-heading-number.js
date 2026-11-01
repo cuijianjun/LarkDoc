@@ -225,7 +225,7 @@ async function main() {
   await clickNumber(page, 0)
   const secondMenu = await menuState(page)
   record('[重开] 指定过起点后「继续标题编号」可点', secondMenu.open === true && secondMenu.disabled?.[0] === false, `disabled=${secondMenu.disabled?.[0]}`)
-  await page.evaluate(() => window.__larkDoc.getWorkspace().$refs.document.closeHeadingNumberMenu())
+  await page.evaluate(() => (window.__larkDoc._handle?.nativeHost?.host || window.__larkDoc.getWorkspace().$refs.document).closeHeadingNumberMenu())
   await setContent(page, CONTENT)
   await page.evaluate(() => {
     const editor = window.__larkDoc.getEditor()
@@ -263,7 +263,7 @@ async function main() {
     const editor = window.__larkDoc.getEditor()
     editor.commands.setContent('<h2>块菜单标题</h2><p>块菜单正文</p>')
     await new Promise((resolve) => setTimeout(resolve, 400))
-    const vm = window.__larkDoc.getWorkspace().$refs.document
+    const vm = (window.__larkDoc._handle?.nativeHost?.host || window.__larkDoc.getWorkspace().$refs.document)
     editor.commands.setTextSelection(1)
     vm.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }
     vm.blockTypeAction('orderedList')

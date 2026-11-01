@@ -21,13 +21,11 @@ import 'core-js/features/structured-clone'
 // 样式随入口一并进入构建，保证 dist/lark-doc.css 自带正文样式与
 // 本地 KaTeX 字体；宿主显式 import 'lark-doc/style.css' 也走同一份源。
 import '../style.css'
-import LarkDocEditor from './components/lark-doc/LarkDocEditor.vue'
-import LarkDocWorkspace from './components/lark-doc/LarkDocWorkspace.vue'
 // 模板库是**宿主侧**弹窗：飞书编辑器页内零模板入口（02 §28.1），所以它不属于
-// LarkDocEditor，单独导出给宿主挂在自己的「新建」入口里。
-import LarkDocTemplateLibrary from './components/lark-doc/TemplateLibrary.vue'
+// LarkDocEditor。原 `LarkDocTemplateLibrary` 命名保留为无 Vue 工厂别名，兼容旧导入。
 import * as templateLibrary from './core/templates/library'
 import { createTemplateLibrary } from './ui/templateLibrary'
+const LarkDocTemplateLibrary = createTemplateLibrary
 import LarkDoc, { createLarkDoc } from './LarkDoc'
 import { createWorkspace } from './components/lark-doc/workspace'
 import { createLarkDocConfig } from './components/lark-doc/larkDocConfig'
@@ -53,8 +51,6 @@ import { detectLegacyHtml, isVditorHtml, normalizeVditorHtml } from './legacy'
 export {
   LarkDoc,
   createLarkDoc,
-  LarkDocEditor,
-  LarkDocWorkspace,
   LarkDocTemplateLibrary,
   createWorkspace,
   createLarkDocConfig,
