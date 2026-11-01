@@ -2,8 +2,8 @@
  * 导出统一出口（P6b-04 导出线）。
  *
  * 规格出处：requirements/04 §4.6.7②——Word / PDF / Markdown 三档共用一个弹窗壳，点「导出」
- * 后的派发收在这里。editor/exportMixin.js 只认识这个文件里的三个函数，不直接碰
- * markdown.js / docx.js / pdf.js —— 换格式实现时不用改 UI 层。
+ * 后的导出入口收在这里。editor/exportMixin.js 在 Markdown/Word 派发时动态加载本文件，
+ * 文件名与 PDF 则走轻量模块，避免同步打印路径把其它格式拖回首屏。
  *
  * 四条负结论（别实现）：
  *   1. **不把下载逻辑写进各格式模块**：markdown.js 只产字符串、docx.js 只产 Blob、
@@ -18,47 +18,15 @@
  *      不参与 docx / pdf 的构建 —— 评论线不在本线范围，伪造一块评论节点比不导更糟。
  */
 import { serializeMarkdown } from './markdown.js'
-import { printDocument } from './pdf.js'
+import { withExtension } from './fileName.js'
 // 落盘从 utils/download.js 取，**不走** utils/importExport.js：
 // 那条静态边会把 turndown + marked（两个 Markdown 引擎，合计 140 KiB raw）拖进编辑器首屏，
 // 而导出 Markdown 只需要「把字符串写成文件」。importExport.js 现在只剩 `await import()`
 // 一条入口，老老实实待在 import-export 按需区块里。
 import { downloadBlob, downloadText } from '../download.js'
 
-/** 文件名里的非法字符（Windows 最严，顺带堵住路径分隔符）。 */
-const UNSAFE_FILE_NAME_CHARS = /[\\/:*?"<>|]/g
-
-/** 文件名最长 80 字符：超了在多数文件系统上会被截断，截出乱码不如自己截。 */
-const FILE_NAME_MAX_LENGTH = 80
-
-/** 拿不到标题时的兜底名。 */
-const DEFAULT_FILE_NAME = 'document'
-
-/**
- * 文件名安全化（本线自己实现，与 importExport.js 的同名函数**刻意不共享**，见负结论 2）。
- *
- * 相比那份实现多的两步：
- *   - 折叠连续空白：编辑器标题里常有换行 / 全角空格，直接做文件名会出现一串怪字符；
- *   - 去掉前导点：`.md` 在 Unix 下是隐藏文件，`..` 更是直接指向父目录。
- *
- * @param {string} value 原始标题
- * @returns {string} 安全文件名（已兜底，永远非空）
- */
-export function safeFileName(value) {
-  const cleaned = String(value === null || value === undefined ? '' : value)
-    .replace(UNSAFE_FILE_NAME_CHARS, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^[.\s]+/, '')
-    .slice(0, FILE_NAME_MAX_LENGTH)
-  return cleaned || DEFAULT_FILE_NAME
-}
-
-/** 文件名 + 扩展名。`safeFileName` 不含点，后缀在这里加，避免 `a.md` 被剪成 `a.m`。 */
-export function withExtension(value, extension) {
-  const base = safeFileName(value)
-  return `${base}.${String(extension || '').replace(/^\./, '')}`
-}
+export { safeFileName, withExtension } from './fileName.js'
+export { exportPdf } from './pdf.js'
 
 /** doc → 块数组：兼容 doc JSON、doc 节点实例与裸数组三种输入。 */
 function nodesOf(doc) {
@@ -197,23 +165,4 @@ export async function exportDocx(doc, options) {
   const blob = await buildDocx(doc, { images, title: settings.title || settings.fileName })
   downloadBlob(blob, fileName)
   return { fileName, blob, failedImages, scope }
-}
-
-/**
- * 导出 PDF（浏览器打印）。
- *
- * 文件名不在这里处理：打印出的 PDF 由用户在系统打印框里命名。
- *
- * @param {HTMLElement} [rootEl]
- * @param {object} [options]
- * @param {string} [options.title] 临时页眉标题
- * @param {string} [options.scope] 内容范围（见负结论 5：只记录，不影响打印）
- * @param {Function} [options.onPrinted]
- * @returns {{ ok: boolean, reason?: string, cleanup?: Function, scope: string }}
- */
-export function exportPdf(rootEl, options) {
-  const settings = options || {}
-  const scope = typeof settings.scope === 'string' ? settings.scope : ''
-  const result = printDocument(rootEl, { title: settings.title, onPrinted: settings.onPrinted })
-  return { ...result, scope }
 }

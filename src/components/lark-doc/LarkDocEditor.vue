@@ -25,7 +25,6 @@
     >
       {{ modeToast }}
     </div>
-
     <ToolbarBar :ed="self">
       <template #header-actions>
         <slot name="header-actions" />
@@ -44,8 +43,17 @@
     <CalendarSearchPanel :ed="self" />
     <!-- ISV 按钮配置面板：斜杠三条按钮命令打开（270×386，z600，无 backdrop）。
          与日程面板相反：Esc/取消/点外部都关，关了不建块（02 §22 ⑤-3）。 -->
-    <IsvButtonPanel :ed="self" />
-    <RevisionPanel :ed="self" />
+    <IsvButtonPanel
+      v-if="isvPanelOpen && !effectiveReadonly"
+      :key="isvPanelRevision"
+      ref="isvPanel"
+      :ed="self"
+      @mounted-ready="onIsvPanelReady"
+    />
+    <RevisionPanel
+      v-if="revisionPanels.length"
+      :ed="self"
+    />
     <div class="lark-doc-body">
       <button
         v-if="!outlineOpen && featureEnabled('outline')"
@@ -83,7 +91,10 @@
             @pointermove.native="onEditorPointerMove"
             @dragover.native="onBlockDragOver"
             @drop.native="onBlockDrop"
-          /><CalloutTools :ed="self" /><TableBoundaryTools :ed="self" />
+          /><CalloutTools
+            v-if="activeCalloutVisible && featureEnabled('callouts')"
+            :ed="self"
+          /><TableBoundaryTools :ed="self" />
         </div><footer class="lark-doc-status">
           <span>{{ wordCount }}{{ effectiveMaxLength > 0 ? ` / ${effectiveMaxLength}` : '' }} 字 · {{ outline.length }} 个标题</span><span>{{ effectiveReadonly ? '仅阅读' : '输入 / 快速插入' }}</span>
         </footer>
@@ -95,10 +106,10 @@
         <slot name="side-panel" />
       </aside>
     </div>
-
     <BubbleBar :ed="self" />
     <command-menu
       v-if="menuOpen && !effectiveReadonly"
+      ref="commandMenu"
       :items="filteredCommands"
       :templates="templates"
       :query="menuQuery"
@@ -109,8 +120,12 @@
       @move="moveCommand"
       @choose="chooseCommand"
       @close="closeCommandMenu(true)"
+      @mounted-ready="onCommandMenuReady"
     />
-    <ColorPalette :ed="self" />
+    <ColorPalette
+      v-if="colorPaletteOpen && !effectiveReadonly"
+      :ed="self"
+    />
     <TablePickerDialog :ed="self" />
     <MathDialog :ed="self" />
     <LinkDialog :ed="self" />
@@ -155,16 +170,14 @@
     <HeadingNumberMenu :ed="self" /><LarkDocOverlays :ed="self" />
   </section>
 </template>
-
 <script>
-// LarkDocEditor.vue —— 编辑器视图层：模板、props、生命周期与内容管理核心方法。
-// 各 UI 子域拆分到 ./editor/ 下的 mixin（视图模式/命令菜单/表格工具/区块句柄/区块菜单/
-// 气泡菜单/高亮块与颜色盘/工具栏菜单），经 Vue 2 选项合并后仍以 this.xxx 供模板与生命周期调用。
+// LarkDocEditor.vue —— 编辑器视图层：模板、props、生命周期与内容管理；./editor/ UI mixin 经 Vue 2 选项合并供模板与生命周期调用。
+import { markRaw } from 'vue'
 import { Editor, EditorContent } from '@tiptap/vue-2'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
-import CommandMenu from './CommandMenu.vue'
+const CommandMenu = () => import(/* webpackChunkName: "editor-command-menu" */ './CommandMenu.vue')
 import LarkDocIcon from './LarkDocIcon.vue'
 import TopBar from './editor/TopBar.vue'
 import ToolbarBar from './editor/ToolbarBar.vue'
@@ -175,18 +188,17 @@ import ReminderPopover from './editor/ReminderPopover.vue'
 // P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
 import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
 // P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
-import IsvButtonPanel from './editor/IsvButtonPanel.vue'
-import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，状态与定位全在 revisionMixin。
+const IsvButtonPanel = () => import(/* webpackChunkName: "editor-isv-panel" */ './editor/IsvButtonPanel.vue')
+const RevisionPanel = () => import(/* webpackChunkName: "editor-revision-panel" */ './editor/RevisionPanel.vue')
 import TableTools from './editor/TableTools.vue'
 import OutlinePanel from './editor/OutlinePanel.vue'
 import PaperStage from './editor/PaperStage.vue'
 import BlockHandleMenu from './editor/BlockHandleMenu.vue'
-import CalloutTools from './editor/CalloutTools.vue'
+const CalloutTools = () => import(/* webpackChunkName: "editor-callout-tools" */ './editor/CalloutTools.vue')
 import TableBoundaryTools from './editor/TableBoundaryTools.vue'
 import BubbleBar from './editor/BubbleBar.vue'
-import ColorPalette from './editor/ColorPalette.vue'
-// 低频对话框按需加载：初始编辑器只保留工具栏与正文渲染，打开对应入口时再请求 chunk。
-// 组件名与同步公开组件契约不变；Vue 2 会在首次渲染 v-if 分支时解析异步组件。
+const ColorPalette = () => import(/* webpackChunkName: "editor-color-palette" */ './editor/ColorPalette.vue')
+// 低频对话框按需加载，组件名与同步公开组件契约不变；Vue 2 首次渲染对应 v-if 分支时再请求 chunk。
 const TablePickerDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/TablePickerDialog.vue')
 const MathDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/MathDialog.vue')
 const LinkDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/LinkDialog.vue')
@@ -194,15 +206,13 @@ const HelpDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './edit
 import HelpFab from './editor/HelpFab.vue'
 const EmbedLinkDialog = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/EmbedLinkDialog.vue')
 const HeadingNumberMenu = () => import(/* webpackChunkName: "editor-dialogs" */ './editor/dialogs/HeadingNumberMenu.vue')
-// 封面**槽**是文档流元素（在纸张之上、正文之前），与 fixed 的「编辑封面」面板不是一回事；
-// 组件注册也因此只能落在门面 —— coverMixin 一旦 import .vue，单测就再也无法 import 它。
+// 封面槽是文档流元素，与 fixed 编辑面板不同；组件注册留在门面，避免 coverMixin 引入 .vue 影响单测。
 import CoverSlot from './editor/CoverSlot.vue'
 import { createLarkDocExtensions } from './extensions'
+import { evaluateOutputPolicy } from '../../core/policy/output'
 import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
-// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，自己注册进 core 的注册表，
-// 这里只负责把适配层拉起来。core → adapters 这条反向依赖是刻意的临时缝（P0-01 只做到
-// 「注册表缝」），Task 6 拆三端适配时会把 registerVue2NodeViews() 的调用点挪到宿主入口。
+// Vue 2 NodeView 在适配层实现，由门面注册到 core；三端迁移后改由宿主入口注册。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
 // P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
@@ -219,8 +229,7 @@ import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
-// P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
-// 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
+// P4-01：提及状态与动作全在 mixin，面板仅渲染，沿用 SearchPanel 的「父传 :ed="self"」范式。
 import mentionMixin from './editor/mentionMixin'
 // P4-02a：日期提醒（行内 reminder mark + 日历浮层）。入口是「点 chip」这个 DOM 事件，
 // 不走 document.js 的插件回调 —— reminder 没有关键词，那条通道没人用。
@@ -248,10 +257,7 @@ import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
 // lark-doc.css 由包样式入口（style.css ← src/index.js）统一引入：组件侧重复 import 会让同一份样式在模块图里出现两次。
-
-// 模块一加载就把 Vue 2 NodeView 注册进 core 注册表，等价于过去的静态注入；extensions.js 按节点名查表。
-registerVue2NodeViews()
-
+registerVue2NodeViews() // 加载时注册 Vue 2 NodeView，extensions.js 按节点名查表。
 export default {
   name: 'LarkDocEditor',
   components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab, CoverSlot },
@@ -299,13 +305,18 @@ export default {
     calendarEventRefetch: { type: Function, default: null },
   },
   data() { return {
-    editor: null, localTitle: this.title,
+    editorInstance: null, editorRevision: 0, localTitle: this.title,
     alignNames: { left: '左', center: '居中', right: '右', justify: '两端' }, alignGlyphs: { left: '≡', center: '☷', right: '≣', justify: '▤' },
     helpOpen: false, savedSelection: null,
     error: '', pendingHTML: null, htmlSeeded: false,
     pendingStateFrame: null, pendingChangeTimer: null,
   } },
   computed: {
+    // 实例保持原生可变；所有 this.editor / ed.editor 读取都订阅轻量事务版本，包含子组件与嵌套 computed。
+    editor: {
+      get() { void this.editorRevision; return this.editorInstance },
+      set(editor) { this.editorInstance = editor ? markRaw(editor) : null },
+    },
     // 拆分出的子组件（editor/*.vue）经实例 prop 引用本组件：模板里写 :ed="self"。
     self() { return this },
     // ECS 的 ref.html 与新页面 v-model 使用同一正文，保留原调用方的读写契约。
@@ -376,8 +387,8 @@ export default {
       }
       this.editor = new Editor({
         content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
-        extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
+        extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), canCopy: () => this.session?.can?.('canCopy') !== false && evaluateOutputPolicy(this.session?.getProvider?.('security')?.policy, 'copy').allowed, onError: (message) => { this.error = message } }),
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.editorRevision += 1; this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
       })
       this.session?.attachEditor(this.editor)
       this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
@@ -506,7 +517,7 @@ export default {
       })
     },
     updateHandleAndTable() {
-      if (!this.editor) return
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
       this.updateTableBoundary()
       if (!this.handleRange) return
       const { from, to } = this.handleRange
@@ -535,9 +546,10 @@ export default {
     // syncFoldState / syncOutlineCollapseState 在 viewModesMixin（视图级状态的那一支）。
     // onSelectionUpdate 已下沉到 editor/selectionPacingMixin.js（P7-04 帧级合并）。
     onDocumentScroll() {
-      if (this._outlineFrame || !this.editor) return
+      if (this._outlineFrame || !this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
       this._outlineFrame = requestAnimationFrame(() => {
         this._outlineFrame = null
+        if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
         if (!this.blockMenuOpen && !this.blockTypeMenuOpen && !this.handlePressed) this.positionBlockHandle(this.handleRange || this.currentBlockRange())
         this.syncHandleHighlightBackdrop()
         if (this.blockAlignMenuOpen) this.positionBlockAlignMenu()

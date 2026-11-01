@@ -14,7 +14,7 @@ import { diagramTypes } from './constants'
 
 export default {
   data() { return {
-    menuOpen: false, menuKind: '', menuQuery: '', menuPosition: { left: 20, top: 120 }, menuMaxHeight: '', menuAnchor: null, activeCommandIndex: 0, slashMatch: null, menuTrigger: null,
+    menuOpen: false, menuKind: '', menuQuery: '', menuPosition: { left: 20, top: 120 }, menuMaxHeight: '', menuAnchor: null, activeCommandIndex: 0, slashMatch: null, menuTrigger: null, menuRevision: 0,
     // 工具栏「图表」下拉：按类型插入 mermaid 图表块，承接图表的全部插入入口。
     diagramMenuOpen: false, diagramMenuStyle: {}, diagramTypes,
   } },
@@ -27,6 +27,7 @@ export default {
     openCommandMenu(kind, event) {
       if (!this.writable() || !this.featureEnabled('insert')) return
       if (this.menuOpen && this.menuKind === kind) { this.closeCommandMenu(true); return }
+      const revision = ++this.menuRevision
       this.rememberSelection(kind === 'plus')
       this.menuKind = kind
       this.menuTrigger = event?.currentTarget || null
@@ -41,8 +42,7 @@ export default {
       this.headingStyle = {}
       this.closeBlockMenu()
       this.$nextTick(() => {
-        this.positionCommandMenu()
-        if (kind === 'plus') this.$children.find((child) => child.$options.name === 'LarkDocCommandMenu')?.focusSearch()
+        if (revision === this.menuRevision) this.onCommandMenuReady(this.$refs.commandMenu)
       })
     },
     openEmptyBlockInsertMenu(event) {
@@ -67,6 +67,8 @@ export default {
       if (!this.featureEnabled('insert')) { this.closeCommandMenu(); return }
       this.slashMatch = match
       if (!match || !this.writable()) { if (this.menuKind === 'slash') this.closeCommandMenu(); return }
+      if (!this.menuOpen || this.menuKind !== 'slash') this.menuRevision += 1
+      this.menuTrigger = null
       const coords = this.editor.view.coordsAtPos(match.from)
       this.menuKind = 'slash'
       this.menuQuery = match.query
@@ -77,8 +79,18 @@ export default {
       this.menuOpen = true
       this.$nextTick(() => this.positionCommandMenu())
     },
+    onCommandMenuReady(menu) {
+      if (!menu) return
+      const revision = this.menuRevision
+      // mounted 时 ref 尚可能未登记；等父级完成 patch，再核对实例与本次打开批次。
+      this.$nextTick(() => {
+        if (this._isBeingDestroyed || this._isDestroyed || this.effectiveReadonly || !this.menuOpen || revision !== this.menuRevision || menu !== this.$refs.commandMenu) return
+        this.positionCommandMenu()
+        if (this.menuKind === 'plus') menu.focusSearch()
+      })
+    },
     positionCommandMenu() {
-      if (!this.menuOpen || !this.menuAnchor) return
+      if (this._isBeingDestroyed || this._isDestroyed || this.effectiveReadonly || !this.menuOpen || !this.menuAnchor) return
       if (this.menuTrigger?.getBoundingClientRect) {
         const triggerRect = this.menuTrigger.getBoundingClientRect()
         this.menuAnchor = { left: triggerRect.left, top: triggerRect.top, bottom: triggerRect.bottom }
@@ -106,6 +118,7 @@ export default {
       this.menuMaxHeight = Math.round(maxHeight)
     },
     closeCommandMenu(restoreFocus = false) {
+      const revision = ++this.menuRevision
       this.menuOpen = false
       this.menuKind = ''
       this.menuTrigger = null
@@ -115,7 +128,9 @@ export default {
       if (restoreFocus) {
         // 菜单按钮点击会先夺走焦点；结构命令提交前同步回到编辑器，避免紧接着输入落到 body。
         this.focus()
-        this.$nextTick(() => this.focus())
+        this.$nextTick(() => {
+          if (!this._isBeingDestroyed && !this._isDestroyed && !this.effectiveReadonly && !this.menuOpen && revision === this.menuRevision) this.focus()
+        })
       }
     },
     /**
@@ -183,12 +198,15 @@ export default {
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
+      const revision = this.menuRevision
       if (isSlashTable) this.insertTable(3, 3)
       else if (isTableSize) this.insertTable(item.tableSize.rows, item.tableSize.cols)
       else this.executeCommand(item.id, item.templateId)
       if (focusAfter) {
         this.focus()
-        this.$nextTick(() => this.focus())
+        this.$nextTick(() => {
+          if (!this._isBeingDestroyed && !this._isDestroyed && !this.effectiveReadonly && !this.menuOpen && revision === this.menuRevision) this.focus()
+        })
       }
     },
     /** 工具栏「图表」按钮：打开类型下拉（fixed 定位贴按钮下方）。 */

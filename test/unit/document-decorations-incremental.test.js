@@ -19,6 +19,8 @@
  * - 纯选区事务不重算（装饰输入没变）
  */
 import { describe, expect, it, vi } from 'vitest'
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import { getSchema } from '@tiptap/core'
 import { EditorState } from '@tiptap/pm/state'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
@@ -346,6 +348,24 @@ describe('P7-01 脏区增量重扫与全量重建等价', () => {
     const after = typeAt(hot, 'lark-doc-list-number')
     expect(before).toBeTruthy()
     expect(after).toBe(before)
+  })
+
+  it('保留 widget 不应额外持有创建它的旧文档', async () => {
+    setFlagsFromString('--expose-gc')
+    const gc = runInNewContext('gc')
+    const createRetainedWidgets = () => {
+      const doc = documentFixture()
+      const set = createDocumentDecorations({ state: { doc }, ...buildContext(fakeStorage()) })
+      return { set, oldDoc: new WeakRef(doc) }
+    }
+    const { set, oldDoc } = createRetainedWidgets()
+    // WeakRef 的目标在当前 job 结束前不可回收；跨 job 再收集，且不保留 state/事务/测试 spy。
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await new Promise((resolve) => setImmediate(resolve))
+      gc()
+    }
+    expect(set.find().some((item) => typeof item.type.toDOM === 'function')).toBe(true)
+    expect(oldDoc.deref() === undefined).toBe(true)
   })
 
   it('纯选区事务不重算装饰', () => {

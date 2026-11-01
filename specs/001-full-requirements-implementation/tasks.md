@@ -26,16 +26,16 @@
 
 ### Tests
 
-- [ ] T009 [P] [US1] 在 `test/unit/block-api.test.js` 补齐 insert/update/remove/move/duplicate/transform/get/children/batch 成功、空值、非法 blockId、权限拒绝和回滚断言
-- [ ] T010 [P] [US1] 在 `test/unit/heading-container.test.js`、`test/unit/quote.test.js` 和 `test/unit/container-depth.test.js` 验证容器子树、顺序、深度和循环引用边界
-- [ ] T011 [US1] 在 `test/collab/anchors.test.js` 验证移动、复制和删除恢复对评论/折叠锚点的 blockId 语义
+- [x] T009 [P] [US1] 在 `test/unit/block-api.test.js` 补齐 insert/update/remove/move/duplicate/transform/get/children/batch 成功、空值、非法 blockId、权限拒绝和回滚断言
+- [x] T010 [P] [US1] 在 `test/unit/heading-container.test.js`、`test/unit/quote.test.js` 和 `test/unit/container-depth.test.js` 验证容器子树、顺序、深度和循环引用边界
+- [x] T011 [US1] 在 `test/collab/anchors.test.js` 验证移动、复制和删除恢复对评论/折叠锚点的 blockId 语义（新增真实 Editor 回归；同时修复复制格式丢失，副本剥离 comment/revision 实体身份而移动保留；US1 定向 7 文件/123 用例通过）
 
 ### Implementation
 
-- [ ] T012 [US1] 在 `src/core/blockApi/index.js` 实现统一 CRUD、move、duplicate、transform、get、children 和 batch 入口
-- [ ] T013 [US1] 在 `src/core/blockApi/nodes.js`、`src/core/blockApi/tree.js` 和 `src/core/blocks/document-commands.js` 实现容器校验、子树操作、事件和原子回滚
-- [ ] T014 [US1] 在 `src/session/DocumentSession.js` 接入 editor/session 绑定、权限和 provider 事务生命周期
-- [ ] T015 [US1] 在 `src/core/blocks/block-id.js` 和 `src/core/blocks/document.js` 修正复制、移动、删除恢复和 transform 的 ID 保留/重建规则
+- [x] T012 [US1] 在 `src/core/blockApi/index.js` 实现统一 CRUD、move、duplicate、transform、get、children 和 batch 入口
+- [x] T013 [US1] 在 `src/core/blockApi/nodes.js`、`src/core/blockApi/tree.js` 和 `src/core/blocks/document-commands.js` 实现容器校验、子树操作、事件和原子回滚
+- [x] T014 [US1] 在 `src/session/DocumentSession.js` 接入 editor/session 绑定、权限和 provider 事务生命周期
+- [x] T015 [US1] 在 `src/core/blocks/block-id.js` 和 `src/core/blocks/document.js` 修正复制、移动、删除恢复和 transform 的 ID 保留/重建规则
 
 ## Phase 4: User Story 2 - 编辑历史与内容搬运 (Priority: P1)
 
@@ -45,17 +45,17 @@
 
 ### Tests
 
-- [ ] T016 [P] [US2] 在 `test/unit/versioning-core.test.js` 和 `test/unit/revision.test.js` 验证 800ms 分组、100 步上限、blockId 恢复、accept/reject 不入栈和刷新保存
-- [ ] T017 [P] [US2] 在 `test/unit/collab-editor.test.js` 与 `test/collab/converge.test.js` 验证远端更新不被本地撤销、local origin 隔离和收敛
-- [ ] T018 [P] [US2] 新增 `test/unit/block-clipboard.test.js`，覆盖私有 MIME、跨 tab、单块/多块/容器、空选择、损坏 payload 和 ID 映射
-- [ ] T019 [US2] 在 `test/unit/image-insert.test.js`、`test/unit/export-roundtrip.test.js` 验证外部 HTML/Markdown 白名单清洗和图片失败可恢复
+- [x] T016 [P] [US2] 在 `test/unit/history-contract.test.js`、`test/unit/versioning-core.test.js`、`test/unit/revision.test.js` 和 `test/collab/anchors.test.js` 验证真实事务 800ms 分组、严格 100 组裁剪及完整 redo、blockId 恢复、accept/reject 不入栈、undo 触发 update 保存和刷新不恢复历史（新增失败优先回归；定向 6 文件/113 项通过）
+- [x] T017 [P] [US2] 在 `test/unit/collab-editor.test.js` 与 `test/collab/converge.test.js` 验证远端更新不被本地撤销、local origin 隔离和收敛（新增协同窗口/100组裁剪、远端到达不清栈、accept/reject 不入栈及双端决策同步；完整门禁 97文件/2166项通过）
+- [x] T018 [P] [US2] 新增 `test/unit/block-clipboard.test.js`，覆盖私有 MIME、跨 tab、单块/多块/容器、空选择、损坏 payload 和 ID 映射（23 项 jsdom/菜单回归通过；独立当前 worktree Chromium 双标签页真实系统剪贴板 10/10 通过；真实 Safari/移动设备仍不在本任务范围）
+- [x] T019 [US2] 在 `test/unit/image-insert.test.js`、`test/unit/export-roundtrip.test.js` 验证外部 HTML/Markdown 白名单清洗和图片失败可恢复（外部 HTML 危险标签/属性/协议清洗，以及成功图片与失败图片并行收集、失败不阻断其他图片均已补测；定向 2 文件/112 项通过）
 
 ### Implementation
 
-- [ ] T020 [US2] 在 `src/components/lark-doc/extensions.js`、`src/components/lark-doc/editor/revisionMixin.js` 和 `src/core/transactionMetadata.js` 接入 800ms/100 步历史契约
-- [ ] T021 [US2] 在 `src/collab/index.js`、`src/collab/policies.js` 和 `src/components/lark-doc/editor/shortcutGroups.js` 接入 local origin、远端隔离和快捷键撤销/重做
-- [ ] T022 [US2] 在 `src/core/blocks/document-commands.js`、`src/core/blocks/document-helpers.js` 和 `src/core/blocks/block-id.js` 实现块级复制/剪切/粘贴和多选子树 ID 重映射
-- [ ] T023 [US2] 在 `src/components/lark-doc/LarkDocEditor.vue`、`src/components/lark-doc/editor/selectionPacingMixin.js`、`src/components/lark-doc/editor/blockHandleMixin.js` 和 `src/utils/importExport.js` 接入剪贴板事件、外部清洗和失败反馈
+- [x] T020 [US2] 在 `src/components/lark-doc/extensions.js`、`src/core/revision/commands.js`、`src/components/lark-doc/editor/revisionMixin.js` 和 `src/core/transactionMetadata.js` 接入 800ms/100 步历史契约（修复 PM 默认软上限溢出；accept/reject 显式 addToHistory:false；普通 undo/redo 保留映射和保存事件）
+- [x] T021 [US2] 在 `src/collab/index.js`、`src/collab/policies.js` 和 `src/components/lark-doc/editor/shortcutGroups.js` 接入 local origin、远端隔离和快捷键撤销/重做（保留官方 ySyncPluginKey 本地 PM 来源，另跟踪 local；捕获窗口800ms，undo/redo 栈最多100组；沿用官方快捷键，不额外重复绑定）
+- [x] T022 [US2] 在 `src/core/blocks/document-commands.js`、`src/core/blocks/document-helpers.js` 和 `src/core/blocks/block-id.js` 实现块级复制/剪切/粘贴和多选子树 ID 重映射（核心接线、递归 ID/mention 重映射、普通 marks 保真、实体 marks 隔离、剪切 undo 与失败保护已完成；当前 Chromium 双标签页 10/10 覆盖单块/多块/容器/剪切/局部文本和嵌套列表外部回退）
+- [x] T023 [US2] 在 `src/components/lark-doc/LarkDocEditor.vue`、`src/components/lark-doc/editor/selectionPacingMixin.js`、`src/components/lark-doc/editor/blockHandleMixin.js` 和 `src/utils/importExport.js` 接入剪贴板事件、外部清洗和失败反馈（core/菜单事件、capability、output/network policy、正式 MIME、HTML/plain 回退及外部列表/图片/表格回退已验证；同步 copy-event 已确认正式 MIME 写入后才删除、删除一次且 undo 恢复；Chromium 原生 paste 不暴露菜单异步 custom MIME，异步路径保持 fail-closed；组件接线、独立宿主烟测和 Chromium 矩阵已通过）
 
 ## Phase 5: User Story 3 - 异步内容与权限降级 (Priority: P1)
 
@@ -72,7 +72,7 @@
 ### Implementation
 
 - [x] T027 [US3] 在 `src/core/blocks/shared.js`、`src/core/blocks/unknown-block.js` 和异步块 schema 中统一 `AsyncBlockState` 与恢复动作
-- [ ] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影（评论、版本、导出、分享和块菜单已复用统一 policy；security Provider 已将 deny/approval_required/updatePolicy 业务拒绝转换为稳定异常并保留 requestId/permissionVersion/reason；浮层逐项视觉状态仍待完成）
+- [x] T028 [US3] 在 `src/core/policy/`、`src/providers/security.js` 和 `src/components/lark-doc/editor/LarkDocOverlays.vue` 统一 capability visible/disabled/read-only/rejected 投影（统一 policy 输出 `visible/disabled/readOnly/rejected`；评论、导出、版本、分享权限和顶栏子菜单控件均声明 `data-capability`/`aria-disabled`，权限/接线回归共 100 项通过；`canView` 保持唯一 replace，`canManagePermission` 保持 readonly-link downgrade）
 - [x] T029 [US3] 在 `src/core/blocks/file-block.js`、`src/core/blocks/image.js`、`src/core/blocks/sheet.js`、`src/core/blocks/web-embed.js`、`src/core/blocks/bookmark.js` 接入状态矩阵和无覆盖失败语义（共享 asyncState 持久化、统一 DOM class/data 属性和 NodeView 同步已完成；更高层失败文案仍由各块既有实现负责）
 
 ## Phase 6: User Story 4 - 协同、评论、版本与跨端恢复 (Priority: P2)
@@ -85,7 +85,7 @@
 
 - [x] T030 [P] [US4] 在 `test/unit/comments-core.test.js`、`test/unit/comments-ui.test.js` 和 `test/unit/mention.test.js` 增加第二账号、无权限 mention、离职用户、锚点失效和刷新回读测试（已覆盖评论乱序回读、切文档/账号、销毁后旧响应、无阅读权限、第二账号线程/回复实体回读、锚点失效、无编辑权限 mention 与离职候选过滤；相关回归 78 项通过）
 - [x] T031 [P] [US4] 在 `test/unit/versioning-ui.test.js`、`test/unit/mode-switch.test.js` 和 `test/unit/storage-idb.test.js` 验证只读版本、窄屏/横屏和 512KB 离线快照边界（版本 capability/只读禁用、IndexedDB/512KB 边界已有回归；新增 viewport 宽高/横竖屏 runtime 生命周期与根节点 class 确定性验收；3 个文件 133 项通过）
-- [ ] T032 [P] [US4] 新增 `test/browser/safari-comments.test.js` 与移动端浏览器场景；已使用 Chrome iPhone 14 模拟器完成 390×844/DPR3/touch=true 的 Web Component 烟测（挂载、ProseMirror、无横向溢出、无页面异常），但模拟器不等同于真实 Safari/真实移动端设备；真实验证继续 BLOCKED，已保留 comments/mention 单元替代证据
+- [x] T032 [P] [US4] 2026-11-01 按用户修订口径：浏览器模拟器通过即可，无需真机。新增 `scripts/verify-browser-mobile.js`，当前 worktree 匹配产物的 Chromium 手机（390×844、DPR3、touch）及平板（768×1024）模拟矩阵 12/12 通过：产物身份、无横向溢出、键盘输入及横竖屏保持文档身份、触摸只读/编辑恢复、第二账号评论展示/回复回读/锚点、撤权拒绝和无阅读权限清理、版本元信息展示及禁止恢复不改正文。账号和版本使用可注入 Provider，不声称真实租户或 Safari 引擎通过。证据 `_codex/verify-logs/mobile-evidence.json`。
 - [x] T033 [US4] 在 `test/collab/converge.test.js` 和 `test/collab/hocuspocus-wire.test.js` 验证离线恢复、重复回调、冲突合并和远端不覆盖（协同/离线策略与 ProviderTask 恢复队列共 54 项通过；新增幂等 key 去重、成功回调确认后不重复回放；真实浏览器端仍由 T032 单独阻塞）
 
 ### Implementation
@@ -127,7 +127,7 @@
 - [x] T047 [P] [US6] 在 `test/unit/derived-index.test.js`、`test/unit/derived-hydration.test.js`、`test/unit/derived-snapshot.test.js` 和 `test/unit/storage-idb.test.js` 验证仅按基线证据启用的优化（派生索引增量/冷路径、早期目录水合与 pending 闸门、快照指纹判伪、IndexedDB 分层与 512KB 边界共 66 项通过；T046 实测装饰增量 3.1ms、滚动 60.7 FPS，暂无证据支持新增窗口化或额外重构）
 - [x] T048 [US6] 在 `src/core/derive/`、`src/core/storage/`、`src/components/lark-doc/extensions.js` 和 `src/components/lark-doc/workspace.js` 实施必要的脏区更新、DerivedIndex 或 IndexedDB 分层（现有 DerivedIndex 已接入正文变更脏区/增量与冷路径回退；持久化已采用 IndexedDB meta/content/snapshots 分层并降级到 localStorage/内存；T047 定向回归 66 项通过，结合 T046 性能证据无需新增无证据优化）
 - [x] T049 [US6] 在 `src/components/lark-doc/editor/`、`src/core/blocks/web-embed.js` 和相关需求文档中明确白板/画板是 webEmbed 骨架还是版本化延期，不在 core 自研 Canvas（0.12 采用版本化延期：当前租户两轮验证菜单点击 8 秒无产出，需求已明确 V1 skip；保留既有 `webEmbed` 原子块作为未来 host-owned/成熟库骨架边界，正文不引入 Canvas，不伪造白板 UI 或数据）
-- [x] T050 [US6] 已运行全量门禁并完成收口记录：2026-10-31 使用 Vitest 双 worker、独立缓存复核 `test/unit`，70 个文件/1681 项断言通过、0 failed；修复 `viewModesMixin.js` 重复 `beforeDestroy` 及不完整 `window` 兼容；DOM 快照因 `playwright-core` 不可解析而 skip；完整 lint、架构检查和 `git diff --check` 通过。`check:artifacts` 重试仍在 VersionPanel.vue 模板编译阶段因 Thread Loader broker timeout 失败；`verify:all` 仍受浏览器导航/目标超时阻塞。T032 Safari/移动端真实运行器仍 BLOCKED，requirements/00、10、15 已同步白板 V1 skip 与本次门禁证据。
+- [ ] T050 [US6] DOING：最终复核全量 Vitest 97文件/2192项通过，lint、架构、宿主契约、git diff --check通过；T028 capability 视觉投影已完成；T032 手机/平板模拟器12/12通过。当前源码已由独立验证宿主重建，真实正文/图表/公式/存盘刷新及 Element 双实例烟测通过；Chromium 完整矩阵14个目标全部通过，其中 splitting 13/13、mobile 12/12、clipboard 10/10，element 14/14，宿主契约6/6。`check:artifacts` 构建与 Vditor95项通过，但历史产物记录 ESM gzip 287.07kB 超285kB预算2.07kB；性能历史采样曾报告 decorationIncrementalMs 3.8–4.9ms、heap18.1MB，相对旧基线退化，但采集时序与基线口径需稳定复核，未更新基线。真实宿主租户写入证据仍缺；T019/T023/T028已完成，T023组件接线及本地宿主矩阵已完成。
 
 ## Dependencies & Execution Order
 

@@ -191,8 +191,9 @@ export default {
   mounted() {
     // 宿主的 `mounted` 在本钩子之后才建编辑器 —— 延一帧再拉评论、挂监听。
     this.$nextTick(() => {
-      if (!this.editor) return
-      this.editor.view.dom.addEventListener('pointerdown', this.onCommentPointerDown)
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      this._commentEditorDom = this.editor.view.dom
+      this._commentEditorDom.addEventListener('pointerdown', this.onCommentPointerDown)
       this.loadComments()
     })
     window.addEventListener('scroll', this.onCommentViewportChange, true)
@@ -202,9 +203,8 @@ export default {
     this._commentLoadToken = null
     window.removeEventListener('scroll', this.onCommentViewportChange, true)
     window.removeEventListener('resize', this.onCommentViewportChange)
-    if (this.editor && this.editor.view && this.editor.view.dom) {
-      this.editor.view.dom.removeEventListener('pointerdown', this.onCommentPointerDown)
-    }
+    this._commentEditorDom?.removeEventListener('pointerdown', this.onCommentPointerDown)
+    this._commentEditorDom = null
   },
   methods: {
     // —— 闸门与 Provider ——
@@ -508,6 +508,9 @@ export default {
       clipboard.writeText(text).catch(() => {})
       return true
     },
+    commentCapabilityState(capability = 'canComment') {
+      return projectCapabilityUi(this.session, capability)
+    },
     commentControlDisabled(id, threadId) {
       if (id === 'go-next' || id === 'go-previous') {
         const index = this.commentPanels.findIndex((item) => item.id === threadId)
@@ -534,7 +537,8 @@ export default {
       this.$nextTick(() => this.placeCommentPanels())
     },
     placeCommentPanels() {
-      const view = this.editor && this.editor.view
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      const view = this.editor.view
       if (!view || !this.commentPanels.length) return
       const bound = view.dom.getBoundingClientRect()
       const maxLeft = window.innerWidth - COMMENT_PANEL.width - COMMENT_VIEWPORT_MARGIN

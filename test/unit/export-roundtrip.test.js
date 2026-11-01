@@ -21,7 +21,7 @@
  *      exportMixin，不用挂载组件。
  */
 // @vitest-environment jsdom
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   serializeMarkdown,
   escapeText,
@@ -39,13 +39,15 @@ import {
   buildNumberingConfig,
   DOCX_BLOCK_SKIP,
 } from '../../src/utils/export/docx.js'
-import { PRINT_CLASS, printDocument } from '../../src/utils/export/pdf.js'
+import { PRINT_CLASS, printDocument, exportPdf as directExportPdf } from '../../src/utils/export/pdf.js'
+import { safeFileName as directSafeFileName, withExtension as directWithExtension } from '../../src/utils/export/fileName.js'
 import {
   exportMarkdown,
   exportDocx,
   exportPdf,
   safeFileName,
   withExtension,
+  collectImages,
 } from '../../src/utils/export/index.js'
 import exportMixin, { EXPORT_FORMATS, EXPORT_TOAST_TEXT } from '../../src/components/lark-doc/editor/exportMixin.js'
 
@@ -400,6 +402,12 @@ afterAll(() => {
 })
 
 describe('P6b-04 统一出口：文件名与内容范围', () => {
+  it('统一出口保留轻量模块的同一同步函数引用', () => {
+    expect(safeFileName).toBe(directSafeFileName)
+    expect(withExtension).toBe(directWithExtension)
+    expect(exportPdf).toBe(directExportPdf)
+  })
+
   it('文件名安全化：非法字符、前导点、连续空白、空标题都兜得住', () => {
     expect(safeFileName('机密/会议:纪要')).toBe('机密-会议-纪要')
     expect(safeFileName('  ..周报  ')).toBe('周报')
@@ -407,11 +415,19 @@ describe('P6b-04 统一出口：文件名与内容范围', () => {
     expect(safeFileName('')).toBe('document')
     expect(withExtension('周报', 'md')).toBe('周报.md')
     expect(withExtension('  ..a  ', 'md')).toBe('a.md')
+    expect(safeFileName(null)).toBe('document')
+    expect(safeFileName(undefined)).toBe('document')
+    expect(safeFileName(' . \n\t')).toBe('document')
+    expect(safeFileName(123)).toBe('123')
+    expect(safeFileName('a\n\t\u3000b')).toBe('a b')
+    expect(safeFileName('a'.repeat(81))).toBe('a'.repeat(80))
+    expect(withExtension('a'.repeat(81), '.md')).toBe(`${'a'.repeat(80)}.md`)
   })
 
   it('导出 Markdown 会真的触发一次下载，并返回正文与文件名', () => {
     anchorClickCalls = 0
     const result = exportMarkdown(doc([para(text('正文'))]), { fileName: '周报' })
+    expect(result).not.toBeInstanceOf(Promise)
     expect(anchorClickCalls).toBe(1)
     expect(result.fileName).toBe('周报.md')
     expect(result.markdown).toBe('正文')
@@ -427,6 +443,22 @@ describe('P6b-04 统一出口：文件名与内容范围', () => {
     expect(textOnly.markdown).toBe('有图')
     // 丢图不能反过来改到调用方手上的 doc。
     expect(withImage.content.length).toBe(2)
+  })
+
+  it('收集图片时逐项记录 HTTP 失败，不阻断其他图片', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async src => {
+      if (src.includes('missing')) return { ok: false, status: 404 }
+      return { ok: true, arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer }
+    })
+    try {
+      const result = await collectImages(doc([para(
+        { type: 'image', attrs: { src: 'https://cdn.test/ok.png' } },
+        { type: 'image', attrs: { src: 'https://cdn.test/missing.png' } },
+      )]))
+      expect(result.images['https://cdn.test/ok.png']).toEqual(new Uint8Array([1, 2, 3]))
+      expect(result.failed).toEqual(['https://cdn.test/missing.png'])
+    } finally { globalThis.fetch = originalFetch }
   })
 
   it('导出 Word：返回 Blob 与文件名，没有图片时不产生失败清单', async () => {
@@ -450,7 +482,17 @@ describe('P6b-04 统一出口：文件名与内容范围', () => {
     window.document.body.appendChild(sibling)
     window.document.body.appendChild(root)
 
-    const result = exportPdf(root, { scope: 'contentOnly' })
+    let printCalls = 0
+    const previousPrint = window.print
+    window.print = () => { printCalls += 1 }
+    let result
+    try {
+      result = exportPdf(root, { scope: 'contentOnly' })
+      expect(printCalls).toBe(1)
+      expect(result).not.toBeInstanceOf(Promise)
+    } finally {
+      window.print = previousPrint
+    }
     expect(result.ok).toBe(true)
     expect(result.scope).toBe('contentOnly')
     expect(root.classList.contains(PRINT_CLASS.root)).toBe(true)
@@ -669,6 +711,24 @@ describe('P6b-04 exportMixin：canExport 闸门与派发', () => {
     expect(anchorClickCalls).toBe(1)
     expect(host.exportBusy).toBe(false)
     expect(host.exportToast).toBe('')
+  })
+
+  it.each(['markdown', 'word'])('%s 按需派发仍返回真实产物与原 scope，且只下载一次', async (format) => {
+    anchorClickCalls = 0
+    const host = createHost({ editor: { getJSON: () => doc([para(text('正文'))]) } })
+    const scope = format === 'markdown' ? 'all' : 'withComments'
+    const pending = host.dispatchExport(format, scope, '周报')
+    expect(pending).toBeInstanceOf(Promise)
+    const result = await pending
+    expect(anchorClickCalls).toBe(1)
+    expect(result.scope).toBe(scope)
+    if (format === 'markdown') {
+      expect(result).toEqual({ fileName: '周报.md', markdown: '正文', scope })
+    } else {
+      expect(result.fileName).toBe('周报.docx')
+      expect(result.blob.size).toBeGreaterThan(0)
+      expect(result.failedImages).toEqual([])
+    }
   })
 
   it('提交时把 UI 选中的 scope 原样透传，档位语义不在 UI 层解释', async () => {

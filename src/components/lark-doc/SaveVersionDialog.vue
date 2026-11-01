@@ -69,6 +69,8 @@
               :disabled="!ed.versionCanCreate || ed.saveVersionBusy"
               :title="ed.versionCanCreateReason"
               :style="ed.versionDisabledStyle(!ed.versionCanCreate || ed.saveVersionBusy)"
+              :data-capability="'canCreateVersion'"
+              :aria-disabled="String(!ed.versionCanCreate || ed.saveVersionBusy)"
               @mousedown.prevent="ed.confirmSaveVersion()"
             >
               确定

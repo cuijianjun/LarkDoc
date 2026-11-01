@@ -5,7 +5,7 @@
  *
  * 三条负结论（别「补全」）：
  *   1. **接受 / 拒绝都没有二次确认，也没有 toast**（§12.5 原文）。点了就落事务，靠
- *      undo 栈兜。给这两颗加「确定吗」是凭空造流程。
+ *      正文立即生效且不进 undo 栈（V1 定稿：15 §3.1）。不新增「确定吗」流程。
  *   2. **拒绝不恢复被删原文**（§12.5 两处原文）。所以删除态的两颗按钮结果同为「文字
  *      消失」，差异只在语义 —— 别为了「有区别」去实现片段级还原。
  *   3. **面板没有 more-btn、没有「已解决」**（§12.6）。修订建议不是评论，不建私有 /
@@ -91,8 +91,9 @@ export default {
     window.addEventListener('resize', this.onRevisionViewportChange)
     // 宿主的 `mounted` 在本钩子之后才建编辑器 —— 延一帧再挂 DOM 监听、补写模式。
     this.$nextTick(() => {
-      if (!this.editor) return
-      this.editor.view.dom.addEventListener('pointerdown', this.onRevisionPointerDown)
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      this._revisionEditorDom = this.editor.view.dom
+      this._revisionEditorDom.addEventListener('pointerdown', this.onRevisionPointerDown)
       this.syncRevisionTracking()
       this.updateRevisionPanels()
     })
@@ -100,7 +101,8 @@ export default {
   beforeDestroy() {
     window.removeEventListener('scroll', this.onRevisionViewportChange, true)
     window.removeEventListener('resize', this.onRevisionViewportChange)
-    if (this.editor && this.editor.view && this.editor.view.dom) this.editor.view.dom.removeEventListener('pointerdown', this.onRevisionPointerDown)
+    this._revisionEditorDom?.removeEventListener('pointerdown', this.onRevisionPointerDown)
+    this._revisionEditorDom = null
   },
   methods: {
     // —— 存储面 ——
@@ -156,7 +158,8 @@ export default {
       this.$nextTick(() => this.placeRevisionPanels())
     },
     placeRevisionPanels() {
-      const view = this.editor && this.editor.view
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      const view = this.editor.view
       if (!view || !this.revisionPanels.length) return
       const bound = view.dom.getBoundingClientRect()
       const maxLeft = window.innerWidth - REVISION_PANEL.width - REVISION_VIEWPORT_MARGIN
@@ -258,7 +261,7 @@ export default {
       this.editor.view.dispatch(buildRevisionActiveTr(this.editor.state, nextId))
       this.$nextTick(() => this.placeRevisionPanels())
     },
-    /** 接受 / 拒绝：**无二次确认、无 toast**（07 §12.5），进 undo 栈可撤。 */
+    /** 接受 / 拒绝：无二次确认、无 toast，按 V1 定稿不进 undo 栈。 */
     decideRevision(revisionId, action) {
       // `writable()` 是宿主既有的口径（含销毁态判定），保留；再加一道 read 态闸门 ——
       // 协同只读时宿主可能还没把 `effectiveReadonly` 接过来，这里先自己守住。

@@ -92,4 +92,30 @@ describe('P6b · 浮层容器', () => {
   it('ed 是 LarkDocEditor 实例本身，原样下传（面板直接读 ed.editor / ed.session）', () => {
     expect(overlays).toContain('ed: { type: Object, required: true }')
   })
+
+  it('核心浮层控件声明 capability 视觉投影字段', () => {
+    const sources = [
+      read('src/components/lark-doc/CommentPanel.vue'),
+      read('src/components/lark-doc/ExportDialog.vue'),
+      read('src/components/lark-doc/VersionPanel.vue'),
+      read('src/components/lark-doc/SaveVersionDialog.vue'),
+      read('src/components/lark-doc/SharePopover.vue'),
+      read('src/components/lark-doc/PermissionDialog.vue'),
+      read('src/components/lark-doc/editor/TopbarMoreMenu.vue'),
+    ]
+    expect(sources[0]).toContain(':data-capability=')
+    expect(sources[0]).toContain(':aria-disabled=')
+    expect(sources[1]).toContain(':data-capability=')
+    expect(sources[1]).toContain(':aria-disabled=')
+    expect(sources[2]).toContain(':data-capability=')
+    expect(sources[2]).toContain(':aria-disabled=')
+    expect(sources[3]).toContain(':data-capability=')
+    expect(sources[3]).toContain(':aria-disabled=')
+    expect(sources[4]).toContain('data-capability=')
+    expect(sources[4]).toContain(':aria-disabled=')
+    expect(sources[5]).toContain('data-capability=')
+    expect(sources[5]).toContain(':aria-disabled=')
+    expect(sources[6]).toContain(':data-capability=')
+    expect(sources[6]).toContain(':aria-disabled=')
+  })
 })

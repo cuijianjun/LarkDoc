@@ -5,6 +5,8 @@
  * 采用 mixin 而非子组件：菜单 DOM 挂在主模板的句柄内，依赖 Vue 2 选项合并语义，拆子组件会破坏定位逻辑。
  */
 import { closeHistory } from '@tiptap/pm/history'
+import { BLOCK_CLIPBOARD_MIME, serializeBlockClipboard } from '../../../core/blocks/block-clipboard'
+import { evaluateOutputPolicy } from '../../../core/policy/output'
 import { clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, stepBlockIndent } from '../documentOperations'
 import { isBlockActionEnabled } from '../larkDocConfig'
 import { blockActions, blockTypeActions } from './constants'
@@ -392,22 +394,60 @@ export default {
       }
     },
     async copyBlock(range, cut = false) {
-      if (!this.writable() || !range) return false
-      const text = this.editor.state.doc.textBetween(range.from, range.to, '\n')
-      const content = this.editor.state.doc.slice(range.from, range.to).content.toJSON()
-      const structured = JSON.stringify({ schemaVersion: 1, type: 'lark-doc-block', content })
+      const editor = this.editor
+      const allowed = () => this.session?.can?.('canCopy') !== false
+        && evaluateOutputPolicy(this.session?.getProvider?.('security')?.policy || {}, 'copy').allowed
+      if (!editor || editor.isDestroyed || !range || !allowed() || (cut && !this.writable())) return false
+      const doc = editor.state.doc
+      const snapshot = { from: range.from, to: range.to }
+      let values
+      try { values = serializeBlockClipboard(editor.view, doc.slice(snapshot.from, snapshot.to).content) }
+      catch (error) { this.error = `复制失败：${error.message}`; return false }
+      const text = values['text/plain']
       let copied = false
+      let structured = false
+      let synchronousStructured = false
+      // Cut must have a synchronous, browser-owned copy event before deletion. The
+      // async ClipboardItem write can resolve successfully while native paste still
+      // exposes only text/html/plain, so it is never sufficient proof for a cut.
+      if (cut && typeof document?.execCommand === 'function') {
+        let sawCopyEvent = false
+        let wroteStructured = false
+        const onCopy = (event) => {
+          const data = event.clipboardData
+          if (!data) return
+          try {
+            data.setData('text/html', values['text/html'])
+            data.setData('text/plain', values['text/plain'])
+            data.setData(BLOCK_CLIPBOARD_MIME, values[BLOCK_CLIPBOARD_MIME])
+            sawCopyEvent = true
+            wroteStructured = Array.from(data.types || []).includes(BLOCK_CLIPBOARD_MIME)
+          } catch (_) { /* browser denied the synchronous clipboard write */ }
+        }
+        document.addEventListener('copy', onCopy, true)
+        try {
+          editor.view.focus()
+          copied = document.execCommand('copy') === true && sawCopyEvent && wroteStructured
+          structured = copied
+          synchronousStructured = copied
+        } catch (_) { copied = false }
+        document.removeEventListener('copy', onCopy, true)
+      }
       try {
-        if (navigator.clipboard?.write && window.ClipboardItem) {
-          const item = new window.ClipboardItem({
-            'text/plain': new Blob([text], { type: 'text/plain' }),
-            'application/x-lark-doc-block+json': new Blob([structured], { type: 'application/json' }),
-          })
-          await navigator.clipboard.write([item])
+        if (!copied && navigator.clipboard?.write && window.ClipboardItem) {
+          const customType = `web ${BLOCK_CLIPBOARD_MIME}`
+          const supportsCustom = window.ClipboardItem.supports?.(customType) === true
+          const formats = { 'text/plain': new Blob([text], { type: 'text/plain' }),
+            'text/html': new Blob([values['text/html']], { type: 'text/html' }) }
+          if (supportsCustom) formats[customType] = new Blob([values[BLOCK_CLIPBOARD_MIME]], { type: BLOCK_CLIPBOARD_MIME })
+          // Plain/HTML fallbacks may lose editor-specific entities: never cut on them.
+          if (cut && !supportsCustom) throw new Error('浏览器不支持结构化剪切')
+          await navigator.clipboard.write([new window.ClipboardItem(formats)])
           copied = true
+          structured = supportsCustom
         }
       } catch (_) { copied = false }
-      if (!copied) {
+      if (!copied && !cut) {
         try {
           if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(text)
@@ -426,8 +466,21 @@ export default {
         } catch (_) { copied = false }
       }
       if (!copied) { this.error = '无法访问剪贴板，区块未被修改；可手动选择后复制'; return false }
-      if (cut && this.writable()) this.deleteBlockRange(range)
-      this.error = cut ? '已剪切区块' : '已复制区块'
+      if (cut) {
+        if (this.editor !== editor || editor.isDestroyed || editor.state.doc !== doc || !this.writable() || !allowed()) {
+          this.error = '已复制，但文档或权限已变化；未删除区块'
+          return false
+        }
+        if (!synchronousStructured) {
+          this.error = '已复制但未剪切：浏览器无法保证结构化回读，请选中区块使用键盘剪切'
+          return false
+        }
+        this.deleteBlockRange(snapshot)
+        this.error = '已剪切区块'
+        this.$nextTick(() => this.editor?.view.focus())
+        return true
+      }
+      this.error = cut ? '已剪切区块' : (structured ? '已复制区块' : '已复制（兼容格式，部分区块属性可能丢失）')
       this.$nextTick(() => this.editor?.view.focus())
       return true
     },

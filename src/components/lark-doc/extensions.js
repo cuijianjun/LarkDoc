@@ -10,7 +10,7 @@
  * 插件优先级，schema 快照（test/fixtures/schema-v1.json）必须逐字节相同。
  */
 import StarterKit from '@tiptap/starter-kit'
-import { CharacterCount } from '@tiptap/extensions'
+import { CharacterCount, UndoRedo } from '@tiptap/extensions'
 import FileHandler from '@tiptap/extension-file-handler'
 import { Details, DetailsSummary, DetailsContent } from '@tiptap/extension-details'
 import Highlight from '@tiptap/extension-highlight'
@@ -28,6 +28,7 @@ import { createNetworkPolicy } from '../../core/policy/network'
 import { withUnfurlGate } from '../../core/embed/unfurl'
 import { wrapContainerAllowed } from '../../core/blocks/container-depth'
 import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
+import { blockClipboardExtension } from '../../core/blocks/block-clipboard'
 import { LarkDocExternalDelete } from '../../core/blocks/external-delete'
 import {
   LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
@@ -35,6 +36,41 @@ import {
   LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, LarkDocComment, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
   FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll, Bitable, ExternalBlock,
 } from '../../registry/blocks'
+
+// prosemirror-history 的 depth 是软上限（额外容忍 20 组）。V1 要严格 100 组，
+// 包装原 state.apply，保留原历史映射/选择书签，不另建历史栈；升级依赖时由真实事务测试守住。
+const LarkDocUndoRedo = UndoRedo.extend({
+  addProseMirrorPlugins() {
+    return this.parent().map((plugin) => {
+      const apply = plugin.spec.state.apply
+      plugin.spec.state.apply = (tr, value, oldState, newState) => {
+        const next = apply(tr, value, oldState, newState)
+        const overflow = next.done.eventCount - 100
+        if (overflow <= 0) return next
+        let remaining = overflow
+        let cut = 0
+        next.done.items.forEach((item, index) => {
+          if (item.selection && remaining-- === 0) {
+            cut = index
+            return false
+          }
+          return undefined
+        })
+        const done = Object.assign(Object.create(Object.getPrototypeOf(next.done)), next.done, {
+          items: next.done.items.slice(cut), eventCount: 100,
+        })
+        return Object.assign(Object.create(Object.getPrototypeOf(next)), next, { done })
+      }
+      return plugin
+    })
+  },
+})
+const LarkDocStarterKit = StarterKit.extend({
+  addExtensions() {
+    return this.parent().map(extension => extension.name === 'undoRedo'
+      ? LarkDocUndoRedo.configure(this.options.undoRedo) : extension)
+  },
+})
 
 const LarkDocCharacterCount = CharacterCount.extend({
   addProseMirrorPlugins() {
@@ -85,7 +121,7 @@ export function createLarkDocExtensions(options = {}) {
     // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
     // schema 规格与 StarterKit 内置版逐字节一致（content: 'block+' 容器），
     // 仅追加 parseHTML 规则；位置紧随 StarterKit，命令与 inputRule 原样继承。
-    StarterKit.configure({ undoRedo: collab ? false : { depth: 100, newGroupDelay: 800 }, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    LarkDocStarterKit.configure({ undoRedo: collab ? false : { depth: 100, newGroupDelay: 800 }, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
     // 协同扩展紧跟 StarterKit：`Collaboration` 要接管 doc 的 transaction 过滤，
     // 排在业务块之前才能先看到远端 update。空数组时展开为「没有变化」。
     ...collabExtensions,
@@ -198,10 +234,12 @@ export function createLarkDocExtensions(options = {}) {
       onDrop: (editor, files, pos) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos) },
     }),
     // P2-03：没有文件、只有一个图片地址的粘贴走这里（见 core/blocks/image-paste.js）。
+    blockClipboardExtension({ canCopy: options.canCopy, onError: options.onError, filterDocument: network.applyDocument }),
     imageUrlPasteExtension({ enabled: () => enabled('images') }),
     mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
     Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
-    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension({ ...options, isRemoteTransaction: collab && collab.isRemoteTransaction }, network),
+    Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }),
+    documentExtension({ ...options, isRemoteTransaction: collab && collab.isRemoteTransaction }, network),
   ]
 }
 

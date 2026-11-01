@@ -35,6 +35,8 @@
                 'is-disabled': ed.commentControlDisabled(btn.id, item.id),
               }"
               :aria-label="btn.label"
+              :aria-disabled="String(ed.commentControlDisabled(btn.id, item.id))"
+              :data-capability="btn.id === 'resolve' ? 'canResolveComment' : 'canComment'"
               @mousedown.prevent="ed.runCommentControl(btn.id, item.id)"
             >
               <LarkDocIcon

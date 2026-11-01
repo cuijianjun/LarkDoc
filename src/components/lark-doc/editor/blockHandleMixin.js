@@ -319,7 +319,8 @@ export default {
      * （表现为高亮闪一下回到整行宽度）。overlay 由组件自己持有，不参与 PM 的 DOM 复用。
      */
     syncHandleHighlightBackdrop() {
-      const root = this.editor?.view?.dom
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      const root = this.editor.view.dom
       if (!root) return
       const overlayHost = root.parentElement || root
       overlayHost.querySelector('.lark-doc-heading-hover-overlay')?.remove()

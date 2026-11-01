@@ -310,6 +310,44 @@ describe('BlockAPI · permission', () => {
   })
 })
 
+describe('BlockAPI · 内联格式保真', () => {
+  it('复制不继承评论/修订实体，但移动保留原实体与格式', () => {
+    const { api, editor: ed } = setup([para('a', 'A'), para('tail', 'T')])
+    api.insert({ type: 'paragraph', attrs: { blockId: 'marked' }, content: [
+      { type: 'text', text: 'marked', marks: [
+        { type: 'bold' }, { type: 'comment', attrs: { threadId: 'thread-one' } },
+        { type: 'revision', attrs: { revisionId: 'revision-one', kind: 'insert' } },
+      ] },
+    ] }, { blockId: 'a' })
+    const marksOf = id => {
+      let marks = []
+      ed.state.doc.descendants(node => { if (node.attrs.blockId === id) marks = node.firstChild.marks.map(mark => mark.type.name) })
+      return marks
+    }
+    expect(marksOf('marked')).toEqual(expect.arrayContaining(['bold', 'comment', 'revision']))
+    const { rootId } = api.duplicate('marked')
+    expect(marksOf(rootId)).toEqual(['bold'])
+    api.move('marked', { blockId: 'tail', position: 'after' })
+    expect(marksOf('marked')).toEqual(expect.arrayContaining(['bold', 'comment', 'revision']))
+  })
+  it('insert 与 duplicate 保留粗体和安全链接 mark', () => {
+    const { api, editor: ed } = setup([para('a', 'A')])
+    api.insert({ type: 'paragraph', attrs: { blockId: 'formatted' }, content: [
+      { type: 'text', text: 'bold', marks: [{ type: 'bold' }] },
+      { type: 'text', text: 'link', marks: [{ type: 'link', attrs: { href: 'https://example.com' } }] },
+    ] }, { blockId: 'a' })
+    const marksOf = (id) => {
+      let result
+      ed.state.doc.descendants(node => { if (node.attrs.blockId === id) result = node.toJSON().content.map(child => child.marks || []) })
+      return result
+    }
+    expect(marksOf('formatted')[0]).toEqual([{ type: 'bold' }])
+    expect(marksOf('formatted')[1][0]).toMatchObject({ type: 'link', attrs: { href: 'https://example.com' } })
+    const { rootId } = api.duplicate('formatted')
+    expect(marksOf(rootId)).toEqual(marksOf('formatted'))
+  })
+})
+
 describe('BlockAPI · update', () => {
   it('改 attrs 生效；blockId 不接受改写；未声明的 attrs 忽略', () => {
     const { api } = setup([para('a', 'A')])

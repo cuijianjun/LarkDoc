@@ -28,6 +28,8 @@
           :disabled="ed.versionRestoreDisabled"
           :title="ed.versionCanRestoreReason"
           :style="ed.versionDisabledStyle(ed.versionRestoreDisabled)"
+          :data-capability="'canRestoreVersion'"
+          :aria-disabled="String(ed.versionRestoreDisabled)"
           @mousedown.prevent="ed.restoreSelectedVersion()"
         >
           还原此历史记录

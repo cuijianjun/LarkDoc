@@ -11,8 +11,8 @@
  * 三条硬口径：
  *   - **无二次确认、无 toast**（07 §12.5 逐字要求）。命令只返回事务，弹窗/提示由宿主
  *     自己加，本层不引 UI。
- *   - **进 undo 栈**（07 §13）：动作就是一次正常编辑，⌘Z 可撤回一次。只有「补 mark」
- *     那种跟踪期事务才 `addToHistory: false`。
+ *   - **不进 undo 栈**（V1 定稿：15 §3.1 / FR-003）：accept/reject 是确认动作，
+ *     使用 `addToHistory: false`；不影响原有正文编辑的历史映射。
  *   - **落 `REVISION_SKIP_META`**：删文字 / 摘 mark 都是「宿主动作」，跟踪器见到该 meta
  *     必须放手，否则拒绝一条新增会被再记成一条删除建议（自激）。
  */
@@ -51,6 +51,7 @@ export function buildRevisionDecisionTr(state, revisionId, action) {
   } else if (type) {
     target.ranges.forEach((range) => tr.removeMark(range.from, range.to, type))
   }
+  tr.setMeta('addToHistory', false)
   tr.setMeta(REVISION_SKIP_META, true)
   tr.setMeta('larkDocRevisionAction', action)
   return tr

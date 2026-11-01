@@ -220,6 +220,10 @@ export default {
         return { ...item, enabled }
       })
     },
+    /** 返回菜单项绑定的 capability，供模板统一投影 disabled/rejected 语义。 */
+    topbarMoreCapability(item) {
+      return item && TOPBAR_MORE_CAPABILITY[item.id] ? TOPBAR_MORE_CAPABILITY[item.id] : ''
+    },
     /** 渲染行（含分隔线）。 */
     topbarMoreRows() {
       return topbarMoreRows(this.topbarMoreItems)

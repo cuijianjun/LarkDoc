@@ -12,7 +12,37 @@ node scripts/verify.mjs --list       # 列出所有可用目标
 node scripts/verify.mjs --all --verbose     # 成功的也打印原始输出
 ```
 
-## 2. 三个前置（缺一个就会假红）
+## 2. 宿主与运行环境
+
+### 2.1 独立验证宿主（推荐）
+
+在需要验证的 worktree 根目录执行，使用 Node ≥ 18 和本机已有的 `playwright-core` / Chromium：
+
+```bash
+npm run verify:host -- --build --smoke   # 强制重建当前源码产物，三条页面烟测后退出
+PORT=8877 npm run verify:host -- --current  # 校验当前产物后常驻，过期则拒绝启动
+```
+
+- `--build` 调用本 worktree 的 `ensure-artifacts.mjs --force`，失败不启动；只重建产物，不执行 size / perf，也不修改预算或基线。
+- `--current` 使用现有构建记录核对源码、依赖与配置；请与构建时使用同一 Node/npm 环境（指纹包含 npm 用户代理）。匹配仅表示产物可用于源码验证，不表示完整验收通过。
+- 不带参数只托管现有 `dist`，允许过期，但会明确警告；不能据此认定当前源码通过。
+- 默认自动分配空闲回环端口，只监听 `127.0.0.1`，拒绝 `8080` / `8765`，不启动或改动外部 demo 的 webpack 服务。
+- 复用真实 Vue2 demo 的正文、配置、持久化适配器及生命周期；自动定位主工作树旁的 `vue2-webpack-node14`，可通过 `LARK_DOC_DEMO_HOST=/path/to/vue2-webpack-node14` 显式指定，只读该目录。
+- 同一服务提供 `/lark-doc`、`/lark-doc-wc`、`/examples/element-demo.html`；chunk、字体与主包均读取本 worktree 的 `dist`。
+- `/__verify__/status.json` 提供宿主/产物路径、SHA-256、构建检查和 `sourceArtifactsCurrent` 状态；`currentSourceVerified` 不因烟测通过而变为 `true`。
+- `--smoke` 检查真实正文、图表、公式、存盘刷新及 Element 双实例挂载，结果写入 `_codex/verify-logs/host-smoke.json`；不会自动跑完整矩阵。
+
+宿主常驻后，在另一个终端从同一 worktree 执行（自动分配端口时使用启动日志中的地址）：
+
+```bash
+BASE_URL=http://127.0.0.1:8877/lark-doc npm run verify -- element splitting
+BASE_URL=http://127.0.0.1:8877/lark-doc npm run verify:all  # 需要完整矩阵时手动执行
+node --test test/helpers/verify-host.test.mjs  # 只测宿主与 URL 转发，不构建产物
+```
+
+`BASE_URL` 会转成各目标的位置参数；WC 和 Element 保留各自页面路径，探活也使用实际目标主机和端口，不会回落到 `8080` / `8765`。
+
+### 2.2 原有外部 demo 方式
 
 | 前置 | 端口 | 谁需要 | 怎么起 |
 | --- | --- | --- | --- |
@@ -56,6 +86,16 @@ config.resolve.alias.set('lark-doc/element',    path.join(src, 'dist/lark-doc-el
 
 - **webpack 不监听 `node_modules` 软链内部的变动**：预构建 dist 已被编译进 chunk 时，改完必须**重启 dev server**，热更新不会生效。
 - Node 14 宿主在带文件代理的环境下会抛 `TypeError: Object.hasOwn is not a function`，用 `env -u NODE_OPTIONS node scripts/verify.mjs --all` 绕过。
+
+## T032：移动模拟器验收（2026-11-01）
+
+用户明确浏览器模拟器通过即可，不要求真机。独立宿主启动并确认当前产物后运行：
+
+```bash
+BASE_URL=http://127.0.0.1:54189/lark-doc npm run verify -- mobile
+```
+
+Chromium 手机（390×844、DPR3、touch）和平板（768×1024）模拟共 12 项：产物身份与溢出、旋转保持内容、触摸只读、第二账号评论及回复回读、权限降级、版本展示与恢复拒绝。账号/版本由可注入 Provider 提供，不表示真实租户或 Safari 引擎验证。机器可读证据位于 `_codex/verify-logs/mobile-evidence.json`。
 
 ## 6. 失败时先看什么
 

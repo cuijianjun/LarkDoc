@@ -14,8 +14,8 @@
  *      （authorization.js 的注释：能力集合是服务端最终判断）。
  *   4. **toast 不显示进度、不变「导出成功」**（§4.6.7④）：处理中保持同一文案
  *      「正在导出文档」，落盘后**自行消失**。所以这里没有「成功/失败」两种 toast。
- *   5. **不在这里做格式实现**：markdown/docx/pdf 三个产物全部由 utils/export/index.js
- *      产出，本 mixin 只负责「取文档 → 取文件名 → 派发 → 收 toast」。
+ *   5. **不在这里做格式实现**：三个格式由 utils/export 产出，Markdown/Word 派发时
+ *      按需加载，PDF 保持同步。本 mixin 只负责「取文档 → 取文件名 → 派发 → 收 toast」。
  *
  * 为什么三档共用一个 mixin 而不是三个：
  *   规格明写「三档共用同一个弹窗壳，只有标题与选项文案不同」，壳一分为三就会各自
@@ -23,7 +23,8 @@
  *   §4.6.7② 红字强调「默认不是全量」想避免的问题。所以档位定义收进 EXPORT_FORMATS
  *   一张表，打开弹窗时**按档重设默认值**，从不继承上一次的选择。
  */
-import { exportDocx, exportMarkdown, exportPdf, safeFileName } from '../../../utils/export/index.js'
+import { safeFileName } from '../../../utils/export/fileName.js'
+import { exportPdf } from '../../../utils/export/pdf.js'
 import { projectCapabilityUi } from '../../../core/policy/capability'
 import { createOutputAuditEvent, evaluateOutputPolicy, watermarkAttributes } from '../../../core/policy/output'
 
@@ -101,6 +102,9 @@ export default {
      * 权限闸门。与 `effectiveReadonly` 同口径：拿不到 session 时视为「无权可证」→ 放行，
      * 而不是一律置灰 —— 编辑器在纯展示 demo 里经常没有 session。
      */
+    exportCapabilityState() {
+      return projectCapabilityUi(this.session, 'canExport')
+    },
     exportCanExport() {
       return projectCapabilityUi(this.session, 'canExport').allowed
     },
@@ -234,13 +238,15 @@ export default {
     dispatchMarkdown(scope, fileName) {
       const doc = this.currentDoc()
       if (!doc) return Promise.resolve(null)
-      return Promise.resolve(exportMarkdown(doc, { fileName, scope }))
+      return import('../../../utils/export/index.js')
+        .then(({ exportMarkdown }) => exportMarkdown(doc, { fileName, scope }))
     },
     /** Word 档：`scope` 只透传，本线不附带评论内容（负结论 1）。 */
     dispatchDocx(scope, fileName) {
       const doc = this.currentDoc()
       if (!doc) return Promise.resolve(null)
-      return exportDocx(doc, { fileName, title: fileName, scope })
+      return import('../../../utils/export/index.js')
+        .then(({ exportDocx }) => exportDocx(doc, { fileName, title: fileName, scope }))
     },
     /**
      * PDF 档走浏览器打印，文件名由用户在系统打印框里定。

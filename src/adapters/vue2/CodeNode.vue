@@ -217,10 +217,8 @@ export default {
     },
   },
   watch: {
-    node: {
-      deep: true,
-      handler() { this.syncDiagramAfterLanguageChange(); this.refreshHighlighted(); this.scheduleDiagramRender() },
-    },
+    // ProseMirror Node 按引用替换；深遍历会进入未观察的 NodeType → Schema 循环。
+    node() { this.syncDiagramAfterLanguageChange(); this.refreshHighlighted(); this.scheduleDiagramRender() },
   },
   created() {
     this.editor.on('update', this.syncEditable)

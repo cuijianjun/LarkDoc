@@ -346,9 +346,16 @@ export default {
   },
 
   computed: {
+    /** 统一 capability 投影，供面板同时渲染 visible/disabled/read-only/rejected。 */
+    versionCreateCapabilityState() {
+      return projectCapabilityUi(this.session, 'canCreateVersion')
+    },
+    versionRestoreCapabilityState() {
+      return projectCapabilityUi(this.session, 'canRestoreVersion')
+    },
     /** 「另存为版本」闸门（05 §5.4 源码实测 `canCreateVersion`）。 */
     versionCanCreate() {
-      return versionCapabilityGate(this.session, 'canCreateVersion').allowed
+      return this.versionCreateCapabilityState.allowed
     },
     /** 「还原此历史记录」闸门（05 §5.4 源码实测 `canRestoreVersion`）。 */
     versionCanRestore() {

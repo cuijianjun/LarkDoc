@@ -9,8 +9,8 @@
  *      是基线门禁，扫到新增字面色值就报错。所以全部走 `rgb() / rgba()`；飞书实测的原色值
  *      （如 `#BBBFC4`、`#336DF4`、`#E0E9FF`、`#8D55ED`）只写在**注释**里 —— 门禁会先
  *      剥注释，注释里的 hex 不违规。
- *   2. **不做响应式收缩**。04 §3.4 只采到 1512 × 950 一档，没有窄屏口径；这里用
- *      左栏 `flex: 1` + 右栏固定 294px（实测和值 = 1512），不猜断点。
+ *   2. 桌面保持实测双栏几何；T032 移动模拟器验收补充窄屏上下布局，避免固定坐标
+ *      将恢复按钮和预览裁出视口，不将移动降级布局宣称为飞书实测像素。
  *   3. **不画展开箭头 / 删除按钮 / 改备注入口**（⑦-2 / ⑦-3 未采，且没有子记录数据源）。
  *
  * 类名统一 `lark-doc-` 前缀。飞书原始类名（`docx-history-*`、`ud__*`）保留在注释里，
@@ -356,6 +356,17 @@
   align-items: center;
   font-size: 12px;
   color: rgb(100, 106, 115);
+}
+
+/* T032：窄屏使用上下分区，保留触摸返回、恢复按钮和版本列表的可达性。 */
+@media (max-width: 1024px) {
+  .lark-doc-version-layer { flex-direction: column; }
+  .lark-doc-version-left { flex: 1 1 55%; min-height: 0; height: auto; }
+  .lark-doc-version-right { flex: 1 1 45%; width: 100%; min-height: 0; overflow: auto; }
+  .lark-doc-version-left-header { height: 104px; }
+  .lark-doc-version-left-content { height: calc(100% - 104px); padding: 16px; }
+  .lark-doc-version-restore { left: auto; right: 16px; }
+  .lark-doc-version-pager { top: 64px; right: 16px; gap: 8px; }
 }
 
 /* ── ⑤-2 「另存为版本」Dialog ── */

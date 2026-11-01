@@ -59,6 +59,115 @@ export const DECORATION_CATEGORY = {
  */
 const resolveBlockPos = (getPos, offset) => getPos() - offset
 
+// widget 会跨事务复用；工厂作用域只持有交互依赖与标量，不能捕获收集器的旧 doc/派生 Map。
+function foldWidget(editor, enabled, foldId, collapsed, blockOffset) {
+  return (view, getPos) => {
+    const button = document.createElement('button')
+    const label = collapsed ? '展开' : '收起'
+    button.type = 'button'
+    button.className = 'lark-doc-heading-fold-toggle'
+    button.setAttribute('aria-label', label)
+    button.setAttribute('aria-expanded', String(!collapsed))
+    button.setAttribute('data-tooltip', label)
+    button.innerHTML =
+      '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">' +
+      '<path d="M7.712 11.351L3.34 5.9a.45.45 0 010-.538.278.278 0 01.215-.112h8.89c.168 0 .305.17.305.381a.432.432 0 01-.09.269l-4.372 5.451c-.159.199-.417.199-.576 0z" fill="currentColor"/></svg>'
+    button.contentEditable = 'false'
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+      event.preventDefault()
+      event.stopPropagation()
+      button.click()
+    })
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const at = resolveBlockPos(getPos, blockOffset)
+      const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
+      const foldRange = foldedRange(editor.state.doc, at)
+      const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
+      if (enabled('folding')) editor.commands.toggleLarkDocFold(at)
+      if (caretInBody) editor.commands.setTextSelection(at + 1)
+      editor.view.focus()
+      if (!wasFolded) {
+        const dom = editor.view.nodeDOM(at)
+        if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
+      }
+    })
+    return button
+  }
+}
+
+function headingNumberWidget(editor, enabled, onHeadingNumberMenu, label, level) {
+  return (view, getPos) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'lark-doc-heading-number'
+    button.contentEditable = 'false'
+    button.textContent = label
+    button.setAttribute('data-number', label)
+    button.setAttribute('data-level', String(level))
+    button.setAttribute('aria-label', `标题编号 ${label}，点击设置编号`)
+    button.setAttribute('data-tooltip', '设置编号')
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!enabled('headings') || !editor.isEditable) return
+      const at = resolveBlockPos(getPos, 1)
+      const rect = button.getBoundingClientRect()
+      if (onHeadingNumberMenu) {
+        onHeadingNumberMenu({
+          pos: at,
+          label,
+          level,
+          canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, at)?.attrs?.numberingStart),
+          rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+        })
+      }
+    })
+    return button
+  }
+}
+
+function listMarkerWidget(editor, onListNumberMenu, label, depth, className, value) {
+  return (view, getPos) => {
+    const interactive = className === 'lark-doc-list-number'
+    const marker = document.createElement(interactive ? 'button' : 'span')
+    marker.className = className
+    marker.contentEditable = 'false'
+    marker.textContent = label
+    marker.setAttribute('data-number', label)
+    marker.setAttribute('data-depth', String(depth))
+    if (!interactive) {
+      marker.setAttribute('aria-hidden', 'true')
+      return marker
+    }
+    marker.type = 'button'
+    marker.setAttribute('aria-label', `列表编号 ${label}，点击设置编号`)
+    marker.addEventListener('mousedown', (event) => event.preventDefault())
+    marker.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!editor.isEditable || !onListNumberMenu) return
+      const at = resolveBlockPos(getPos, 2)
+      const current = nodeAtSafe(editor.state.doc, at)
+      if (!current || current.type.name !== 'listItem') return
+      const rect = marker.getBoundingClientRect()
+      onListNumberMenu({
+        pos: at,
+        label,
+        depth,
+        value,
+        canContinue: canContinueListNumber(editor.state.doc, at),
+        rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+      })
+    })
+    return marker
+  }
+}
+
 /**
  * 收集装饰（不建 Set）。
  *
@@ -109,51 +218,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
     if (isItem && (!node.childCount || node.child(0).type.name !== 'paragraph')) return
     const widgetPos = isItem ? pos + 2 : pos + 1
     const blockOffset = widgetPos - pos
-    decorations.push(Decoration.widget(widgetPos, (view, getPos) => {
-      const button = document.createElement('button')
-      const label = collapsed ? '展开' : '收起'
-      button.type = 'button'
-      button.className = 'lark-doc-heading-fold-toggle'
-      button.setAttribute('aria-label', label)
-      button.setAttribute('aria-expanded', String(!collapsed))
-      button.setAttribute('data-tooltip', label)
-      // 图标 = 02 §2 ③-1 实测的下三角 path（16×16 viewBox，绘制区 9×6），
-      // fill 走 currentColor 让主题 token 继续控色。折叠态不换图标，
-      // 由 CSS 对 [aria-expanded="false"] 里的 svg 做 rotate(-90deg)。
-      button.innerHTML =
-        '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">' +
-        '<path d="M7.712 11.351L3.34 5.9a.45.45 0 010-.538.278.278 0 01.215-.112h8.89c.168 0 .305.17.305.381a.432.432 0 01-.09.269l-4.372 5.451c-.159.199-.417.199-.576 0z" fill="currentColor"/></svg>'
-      // 不要再设 title：浏览器原生 tooltip 会和 data-tooltip 的黑色气泡
-      // 同时出现，变成「收起」重影（截图里上下两个）。读屏靠 aria-label。
-      button.contentEditable = 'false'
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
-        event.preventDefault()
-        event.stopPropagation()
-        button.click()
-      })
-      button.addEventListener('click', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        // 块起点按点击那一刻算，不是建这个按钮那一帧（见 resolveBlockPos）。
-        const at = resolveBlockPos(getPos, blockOffset)
-        const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
-        const foldRange = foldedRange(editor.state.doc, at)
-        // 光标落在即将隐藏的章节正文里：折叠后把焦点移回调用的标题，
-        // 避免选区留在 display:none 的后代中（13.6.1 焦点迁移规则）。
-        const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
-        if (enabled('folding')) editor.commands.toggleLarkDocFold(at)
-        if (caretInBody) editor.commands.setTextSelection(at + 1)
-        editor.view.focus()
-        // 视口锚定：当前滚动位置落入被折叠内容时，把标题带回可视区。
-        if (!wasFolded) {
-          const dom = editor.view.nodeDOM(at)
-          if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
-        }
-      })
-      return button
-    }, { key: `lark-doc-heading-fold-${pos}-${collapsed ? 'closed' : 'open'}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.FOLD_TOGGLE }))
+    decorations.push(Decoration.widget(widgetPos, foldWidget(editor, enabled, foldId, collapsed, blockOffset), { key: `lark-doc-heading-fold-${pos}-${collapsed ? 'closed' : 'open'}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.FOLD_TOGGLE }))
   })
   // 标题编号：和折叠箭头落在同一个行内位置（pos+1）。push 顺序决定 DOM 顺序，
   // 箭头先 push、编号后 push，渲染出来才是飞书的「▾ 2. 标题」。
@@ -163,38 +228,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
     // 不要再 doc.nodeAt(pos) —— 那是 O(子节点数) 的随机访问。
     if (!Number.isInteger(pos) || pos < 0 || pos >= doc.content.size) return
     if (!inWindow(pos)) return
-    decorations.push(Decoration.widget(pos + 1, (view, getPos) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'lark-doc-heading-number'
-      button.contentEditable = 'false'
-      button.textContent = info.label
-      button.setAttribute('data-number', info.label)
-      button.setAttribute('data-level', String(info.level))
-      button.setAttribute('aria-label', `标题编号 ${info.label}，点击设置编号`)
-      button.setAttribute('data-tooltip', '设置编号')
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        if (!enabled('headings') || !editor.isEditable) return
-        // 两处都必须读点击那一刻的值：① pos（见 resolveBlockPos）；
-        // ② state —— 按建 DOM 那一帧的状态判，会把「继续编号」误判成已连续而禁用。
-        const at = resolveBlockPos(getPos, 1)
-        const rect = button.getBoundingClientRect()
-        if (options.onHeadingNumberMenu) {
-          options.onHeadingNumberMenu({
-            pos: at,
-            label: info.label,
-            level: info.level,
-            // 「继续」在已经处于继续态时禁用 —— 与飞书菜单一致。
-            canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, at)?.attrs?.numberingStart),
-            rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
-          })
-        }
-      })
-      return button
-    }, { key: `lark-doc-heading-number-${pos}-${info.label}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.HEADING_NUMBER }))
+    decorations.push(Decoration.widget(pos + 1, headingNumberWidget(editor, enabled, options.onHeadingNumberMenu, info.label, info.level), { key: `lark-doc-heading-number-${pos}-${info.label}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.HEADING_NUMBER }))
   })
   // 列表序号 / 圆点：飞书把标记画在正文流里（序号是蓝色、contentEditable=false），
   // 不是浏览器的 ::marker —— 所以这里也走装饰层：箭头 → 标记 → 正文。
@@ -202,52 +236,10 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
   //
   // 有序序号在飞书里是**可点**的块级 UI（点它弹出编号菜单，和标题编号共用一套），
   // 所以这里渲染成 button；无序圆点保持纯展示的 span。
-  const markerRect = (el) => {
-    const rect = el.getBoundingClientRect()
-    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
-  }
   const pushListMarker = (pos, label, depth, className, value, firstChildIsParagraph) => {
-    // 判定所需的 node 由编号计算顺带给出（见 computeOrderedListNumbers），
-    // 不再 doc.nodeAt(pos) —— 946 个标记 × O(子节点数) 是最贵的一笔随机访问。
-    if (!firstChildIsParagraph) return
-    if (!inWindow(pos)) return
-    const interactive = className === 'lark-doc-list-number'
-    decorations.push(Decoration.widget(pos + 2, (view, getPos) => {
-      const marker = document.createElement(interactive ? 'button' : 'span')
-      marker.className = className
-      marker.contentEditable = 'false'
-      marker.textContent = label
-      marker.setAttribute('data-number', label)
-      marker.setAttribute('data-depth', String(depth))
-      if (!interactive) {
-        // 圆点是纯展示层：读屏按 <ul>/<li> 语义读，不重复念一遍。
-        marker.setAttribute('aria-hidden', 'true')
-        return marker
-      }
-      marker.type = 'button'
-      marker.setAttribute('aria-label', `列表编号 ${label}，点击设置编号`)
-      marker.addEventListener('mousedown', (event) => event.preventDefault())
-      marker.addEventListener('click', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        if (!editor.isEditable || !options.onListNumberMenu) return
-        // 同样不能读捕获的 pos：它停在编辑前，`nodeAt` 拿不回 listItem → 下面直接 return，点了没反应。
-        const at = resolveBlockPos(getPos, 2)
-        const current = nodeAtSafe(editor.state.doc, at)
-        if (!current || current.type.name !== 'listItem') return
-        options.onListNumberMenu({
-          pos: at,
-          label,
-          depth,
-          // 编号实际值（a./i. 这类格式拿不回数字，菜单预填要用它）。
-          value,
-          // 「继续编号」只在这个 item 有显式起点时可点，与标题编号同款判断。
-          canContinue: canContinueListNumber(editor.state.doc, at),
-          rect: markerRect(marker),
-        })
-      })
-      return marker
-    }, { key: `${className}-${pos}-${label}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.LIST_MARKER }))
+    // 判定所需的 node 由编号计算顺带给出，避免按位置再次随机访问。
+    if (!firstChildIsParagraph || !inWindow(pos)) return
+    decorations.push(Decoration.widget(pos + 2, listMarkerWidget(editor, options.onListNumberMenu, label, depth, className, value), { key: `${className}-${pos}-${label}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.LIST_MARKER }))
   }
   computeOrderedListNumbers(doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index, info.firstChildIsParagraph))
   computeBulletItems(doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))

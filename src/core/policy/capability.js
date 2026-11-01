@@ -51,15 +51,24 @@ export function projectCapabilityUi(session, key, stateCapabilities = null) {
   const stateAllowed = stateKey && state[stateKey] !== undefined ? state[stateKey] !== false : true
   const allowed = sessionAllowed && stateAllowed
   const treatment = allowed ? CAPABILITY_TREATMENTS.allow : capabilityTreatment(key)
+  const mounted = treatment !== CAPABILITY_TREATMENTS.replace
   const gray = treatment === CAPABILITY_TREATMENTS.gray
+  const downgraded = treatment === CAPABILITY_TREATMENTS.downgrade
   return {
     key,
     allowed,
     treatment,
-    mounted: treatment !== CAPABILITY_TREATMENTS.replace,
+    // These fields are the single UI projection contract consumed by overlays.
+    // `visible` is intentionally separate from `mounted`: a mounted, disabled
+    // control must remain discoverable so its explanation/tooltip is available.
+    mounted,
+    visible: mounted,
     hidden: false,
+    disabled: gray,
+    readOnly: downgraded || treatment === CAPABILITY_TREATMENTS.replace,
+    rejected: !allowed,
     gray,
-    downgraded: treatment === CAPABILITY_TREATMENTS.downgrade,
+    downgraded,
     style: gray ? CAPABILITY_GRAY_STYLE : null,
   }
 }
