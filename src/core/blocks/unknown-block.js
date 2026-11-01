@@ -6,6 +6,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { UNKNOWN_PAYLOAD_MAX } from '../documentOperations'
+import { asyncBlockDomAttributes } from './shared'
 
 const UnknownBlock = Node.create({
   name: 'unknownBlock', group: 'block', atom: true, selectable: true,
@@ -32,7 +33,7 @@ const UnknownBlock = Node.create({
   // `structure[0]` 不是字符串抛 `RangeError: Invalid array passed to renderSpec`
   // —— 而这一步只在序列化时发生（`getHTML()` / 导出 PDF、DOCX），编辑器里看不出来。
   renderHTML({ node }) {
-    return ['div', mergeAttributes({ 'data-type': 'unknown-block', class: 'lark-doc-unknown-card' }),
+    return ['div', mergeAttributes({ ...asyncBlockDomAttributes(node.attrs.asyncState, 'lark-doc-unknown-card'), 'data-type': 'unknown-block' }),
       ['span', { class: 'lark-doc-unknown-card-icon', 'aria-hidden': 'true' }],
       ['span', { class: 'lark-doc-unknown-card-text' },
         ['span', { class: 'lark-doc-unknown-card-title' }, '暂不支持显示的内容块'],

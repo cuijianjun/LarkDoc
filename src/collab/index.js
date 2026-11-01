@@ -47,12 +47,36 @@ export function isRemoteTransaction(transaction) {
  *   只给 ydoc = 纯同步、不画别人的光标（导出、服务端渲染、只读镜像）。
  * @returns {Array} Tiptap 扩展数组，交给 `createLarkDocExtensions({ collab })`
  */
+const LarkDocCollaboration = Collaboration.extend({
+  addProseMirrorPlugins() {
+    return this.parent().map((plugin) => {
+      if (!plugin.key.startsWith('y-undo$')) return plugin
+      const init = plugin.spec.state.init
+      plugin.spec.state.init = (config, state) => {
+        const value = init(config, state)
+        const manager = value.undoManager
+        manager.captureTimeout = 800
+        // PM 输入仍由官方 ySyncPluginKey 跟踪；宿主显式本地 Y 事务另用 local。
+        // 不替换默认 trackedOrigins/deleteFilter，避免破坏远端隔离和容器保护。
+        manager.trackedOrigins.add('local')
+        manager.on('stack-item-added', () => {
+          for (const stack of [manager.undoStack, manager.redoStack]) {
+            if (stack.length > 100) stack.splice(0, stack.length - 100)
+          }
+        })
+        return value
+      }
+      return plugin
+    })
+  },
+})
+
 export function createCollabExtensions(options = {}) {
   const { ydoc, provider, user } = options
   if (!ydoc || typeof ydoc.get !== 'function') {
     throw new TypeError('createCollabExtensions 需要真实的 Y.Doc（宿主 new Y.Doc({ gc: false }) 后传进来）')
   }
-  const extensions = [Collaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
+  const extensions = [LarkDocCollaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
   if (provider && provider.awareness && user && user.name) {
     extensions.push(CollaborationCaret.configure({ provider, user }))
   }

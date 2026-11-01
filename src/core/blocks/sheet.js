@@ -19,7 +19,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { BLOCK_ID_PATTERN } from '../documentOperations'
-import { validateAttribute } from './shared'
+import { asyncBlockDomAttributes, validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createSheetNodeView } from '../nodeviews/sheet'
 import { utf8Bytes } from '../embed/card'
@@ -164,7 +164,7 @@ const Sheet = Node.create({
     const attrs = node.attrs || {}
     const sheet = readSheet(attrs.sheet)
     const wrapper = {
-      class: 'lark-doc-sheet',
+      ...asyncBlockDomAttributes(attrs.asyncState, 'lark-doc-sheet'),
       'data-type': 'sheet',
       'data-block-type': 'sheet',
       contenteditable: 'false',

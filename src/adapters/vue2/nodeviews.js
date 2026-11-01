@@ -9,10 +9,23 @@
  * core 装配 schema 时按名字查表，静态依赖里因此不再出现 UI 框架。
  * 将来 vue3 / react 适配层各自在这里注册同名节点的自己的实现即可。
  */
+import { markRaw } from 'vue'
 import { VueNodeViewRenderer } from '@tiptap/vue-2'
 import { setNodeView } from '../../registry/nodeviews'
 import CodeNode from './CodeNode.vue'
 
 export function registerVue2NodeViews() {
-  setNodeView('codeBlock', VueNodeViewRenderer(CodeNode))
+  const render = VueNodeViewRenderer(CodeNode, {
+    update({ oldNode, newNode, updateProps }) {
+      if (oldNode.type !== newNode.type) return false
+      // VueRenderer 直接写 node prop，绕过父子组件的浅观察边界；先标记再发布新节点与装饰。
+      markRaw(newNode)
+      updateProps()
+      return true
+    },
+  })
+  setNodeView('codeBlock', (props) => {
+    markRaw(props.node)
+    return render(props)
+  })
 }

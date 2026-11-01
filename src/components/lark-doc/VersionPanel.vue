@@ -28,6 +28,8 @@
           :disabled="ed.versionRestoreDisabled"
           :title="ed.versionCanRestoreReason"
           :style="ed.versionDisabledStyle(ed.versionRestoreDisabled)"
+          :data-capability="'canRestoreVersion'"
+          :aria-disabled="String(ed.versionRestoreDisabled)"
           @mousedown.prevent="ed.restoreSelectedVersion()"
         >
           还原此历史记录
@@ -134,6 +136,15 @@
     <div class="lark-doc-version-right">
       <div class="lark-doc-version-right-header">
         <span class="lark-doc-version-right-title">历史记录</span>
+        <button
+          type="button"
+          class="lark-doc-version-trash-toggle"
+          :disabled="!ed.versionCanManageTrash"
+          :title="ed.versionTrashReason"
+          @click="ed.openVersionTrash()"
+        >
+          回收站
+        </button>
         <span class="lark-doc-version-right-icon">
           <LarkDocIcon
             name="chevronDown"
@@ -182,6 +193,54 @@
         显示更改
       </div>
     </div>
+
+    <section
+      v-if="ed.versionTrashOpen"
+      class="lark-doc-version-trash"
+      role="dialog"
+      aria-label="版本回收站"
+    >
+      <header class="lark-doc-version-trash-header">
+        <strong>版本回收站</strong>
+        <button
+          type="button"
+          @click="ed.closeVersionTrash()"
+        >
+          关闭
+        </button>
+      </header>
+      <p
+        v-if="!ed.versionDeletedList.length"
+        class="lark-doc-version-empty"
+      >
+        回收站为空
+      </p>
+      <ul
+        v-else
+        class="lark-doc-version-trash-list"
+      >
+        <li
+          v-for="item in ed.versionDeletedList"
+          :key="item.id"
+        >
+          <span>{{ ed.versionItemName(item) }} · {{ item.label || '未命名版本' }}</span>
+          <button
+            type="button"
+            :disabled="ed.versionTrashBusy"
+            @click="ed.restoreDeletedVersion(item.id)"
+          >
+            恢复
+          </button>
+          <button
+            type="button"
+            :disabled="ed.versionTrashBusy"
+            @click="ed.purgeDeletedVersion(item.id)"
+          >
+            彻底删除
+          </button>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>
 

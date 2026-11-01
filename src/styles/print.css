@@ -347,4 +347,21 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  .lark-doc-print-root[data-watermark="visible"]::after {
+    content: attr(data-watermark-text);
+    position: fixed;
+    inset: 45% 0 auto;
+    color: rgba(31, 35, 41, 0.18);
+    font-size: 28px;
+    text-align: center;
+    transform: rotate(-24deg);
+    pointer-events: none;
+  }
+  .lark-doc-print-root[data-watermark="invisible"]::after {
+    content: attr(data-watermark-text);
+    position: fixed;
+    inset: 0;
+    opacity: 0.001;
+    pointer-events: none;
+  }
 }

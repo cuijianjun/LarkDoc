@@ -33,6 +33,7 @@
           :aria-haspopup="row.item.kind === 'submenu' ? 'menu' : null"
           :aria-expanded="row.item.kind === 'submenu' ? String(ed.topbarMoreSubmenu === row.item.id) : null"
           :aria-disabled="String(row.item.enabled === false)"
+          :data-capability="ed.topbarMoreCapability(row.item) || undefined"
           @mouseenter="ed.hoverTopbarMoreItem(row.item)"
           @click="ed.onTopbarMoreItem(row.item)"
         >

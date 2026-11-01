@@ -18,6 +18,7 @@
 import { closeHistory } from '@tiptap/pm/history'
 import { TRANSACTION_ORIGINS } from '../transactionMetadata'
 import { assertExternalOperation, externalOperationState } from '../embed/provider-registry'
+import { BLOCK_API_ERRORS, blockApiError } from './errors'
 import {
   BLOCK_LIST_TYPES, blockEntry, blockTree, isContainerType, posAtId, snapshotOf,
 } from './tree'
@@ -190,15 +191,27 @@ export function createBlockApi(options = {}) {
   const currentDoc = () => (pending ? pending.tr.doc : baseState().doc)
   const newTr = () => (pending ? pending.tr : baseState().tr)
 
+  const capabilityFor = (action) => ({
+    insert: 'canEdit', update: 'canEdit', remove: 'canEdit', move: 'canEdit',
+    duplicate: 'canEdit', transform: 'canEdit', batch: 'canEdit',
+  }[action] || 'canEdit')
+  const assertCapability = (action) => {
+    if (!session || typeof session.can !== 'function') return
+    const capability = capabilityFor(action)
+    if (session.can(capability)) return
+    throw blockApiError(BLOCK_API_ERRORS.PERMISSION_DENIED, `当前用户没有${capability}权限`, { action, capability })
+  }
+
   const send = (tr) => {
     if (session) { session.dispatch(tr, { origin }); return }
     editor.view.dispatch(tr)
   }
   const commit = (tr) => {
-    if (pending) return
-    if (!tr || !tr.steps.length) return
+    if (pending) return { ok: true, committed: false }
+    if (!tr || !tr.steps.length) return { ok: false, committed: false }
     closeHistory(tr)
     send(tr)
+    return { ok: true, committed: true }
   }
 
   /** 把一批 payload 插到同一个落点，按文档顺序依次排开。 */
@@ -328,9 +341,11 @@ export function createBlockApi(options = {}) {
 
     // ── 写 ────────────────────────────────────────
     insert(payload, at) {
+      assertCapability('insert')
       return insertAll([payload], at)
     },
     update(blockId, patch) {
+      assertCapability('update')
       const entry = blockEntry(currentDoc(), blockId)
       if (!entry || !patch || typeof patch !== 'object') return
       const spec = entry.node.type.spec.attrs || {}
@@ -357,6 +372,7 @@ export function createBlockApi(options = {}) {
       commit(tr)
     },
     remove(blockId, opts) {
+      assertCapability('remove')
       const doc = currentDoc()
       const entry = blockEntry(doc, blockId)
       if (!entry || inTableContext(doc, entry)) return
@@ -380,6 +396,7 @@ export function createBlockApi(options = {}) {
       commit(tr)
     },
     move(blockId, to) {
+      assertCapability('move')
       const doc = currentDoc()
       const entry = blockEntry(doc, blockId)
       if (!entry || inTableContext(doc, entry)) return
@@ -407,6 +424,7 @@ export function createBlockApi(options = {}) {
       commit(tr)
     },
     duplicate(blockId, opts) {
+      assertCapability('duplicate')
       const doc = currentDoc()
       const entry = blockEntry(doc, blockId)
       if (!entry || inTableContext(doc, entry)) return null
@@ -423,9 +441,13 @@ export function createBlockApi(options = {}) {
       const tr = newTr()
       tr.insert(entry.end, node)
       commit(tr)
-      return next.id || (fitted && fitted.attrs ? fitted.attrs.blockId : null)
+      return {
+        rootId: next.id || (fitted && fitted.attrs ? fitted.attrs.blockId : null),
+        idMap: { ...next.idMap },
+      }
     },
     transform(blockId, toType, attrs) {
+      assertCapability('transform')
       const doc = currentDoc()
       const entry = blockEntry(doc, blockId)
       if (!entry || inTableContext(doc, entry)) return
@@ -445,9 +467,11 @@ export function createBlockApi(options = {}) {
 
     // ── 批量 ──────────────────────────────────────
     insertMany(payloads, at) {
+      assertCapability('insert')
       return insertAll(payloads, at)
     },
     removeMany(blockIds) {
+      assertCapability('remove')
       const list = Array.isArray(blockIds) ? blockIds.filter(id => typeof id === 'string') : []
       if (!list.length) return
       const tr = newTr()
@@ -462,6 +486,7 @@ export function createBlockApi(options = {}) {
     },
     /** 一次 dispatch 包住 `fn` 内所有写操作 → 整体一步可撤；`fn` 抛错则整批不落地。 */
     batch(fn) {
+      assertCapability('batch')
       if (typeof fn !== 'function') return
       if (pending) { fn(); return }
       pending = { tr: baseState().tr }
@@ -505,5 +530,6 @@ export {
   expandDeletion, fitToParent, inTableContext, isDescendantOf, isTableType, listItemTypeOf,
   listTypeOf, minChildrenOf, nodeFromJson, normalizePayload, pruneSubtree, reassignIds,
 } from './nodes'
+export { BLOCK_API_ERRORS, blockApiError } from './errors'
 
 export default createBlockApi

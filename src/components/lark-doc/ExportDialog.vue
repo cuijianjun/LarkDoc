@@ -26,6 +26,8 @@
       <!-- 面板 docx-export-panel 720×215 @(396,368)（1512 视口下居中），radius 8、白底 -->
       <section
         class="lark-doc-export-panel"
+        :data-watermark="ed.outputWatermarkAttributes['data-watermark'] || undefined"
+        :data-watermark-text="ed.outputWatermarkAttributes['data-watermark-text'] || undefined"
         role="dialog"
         aria-modal="true"
         :aria-label="ed.exportPanelTitle"
@@ -60,6 +62,8 @@
               :key="option.value"
               class="lark-doc-export-option"
               :class="{ 'is-disabled': !ed.exportCanExport }"
+              :data-capability="'canExport'"
+              :aria-disabled="String(!ed.exportCanExport)"
             >
               <!-- 三层：原生 input（16×16，可读 .checked）+ wallpaper（1px 描边圆）+ checked-ink（6×6 实心点） -->
               <span class="lark-doc-export-radio">

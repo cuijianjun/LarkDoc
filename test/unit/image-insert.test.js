@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { IMAGE_URL_PASTE_KEY } from '../../src/core/blocks/image-paste'
+import { sanitizeHTML } from '../../src/core/documentOperations'
 import { UPLOAD_MIME_ALLOWLIST } from '../../src/core/media/upload'
 import {
   IMAGE_MIME_ALLOWLIST, IMAGE_REJECT, formatImageSize, imageRejectMessage, imageUrlFromText,
@@ -141,6 +142,21 @@ describe('nearestInsertPosition', () => {
   it('doc 不可用时返回 null，调用方按当前选区插入', () => {
     expect(nearestInsertPosition(null, 3)).toBeNull()
     expect(nearestInsertPosition({}, 3)).toBeNull()
+  })
+})
+
+describe('外部 HTML 清洗与图片失败恢复', () => {
+  it('清掉脚本/危险协议/事件属性，只保留安全富文本和图片地址', () => {
+    const html = sanitizeHTML('<p onclick="alert(1)"><strong>正文</strong><script>bad()</script>'
+      + '<a href="javascript:alert(1)">危险</a><a href="https://safe.test/a">安全</a>'
+      + '<img src="javascript:bad" onerror="bad()"><img src="https://safe.test/a.png"></p>')
+    expect(html).toContain('<strong>正文</strong>')
+    expect(html).toContain('href="https://safe.test/a"')
+    expect(html).toContain('src="https://safe.test/a.png"')
+    expect(html).not.toContain('<script')
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('javascript:')
+    expect(html).not.toContain('onerror')
   })
 })
 

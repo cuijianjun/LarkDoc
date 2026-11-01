@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createImportBatchController, createImportProvider, normalizeImportJob } from '../../src/providers/import'
+import { createImportBatchController, createImportProvider, importProgressSummary, normalizeImportJob } from '../../src/providers/import'
 
 describe('import provider adapter', () => {
   it('exposes batch and per-job recovery operations', async () => {
@@ -58,6 +58,26 @@ describe('import provider adapter', () => {
     const next = controller.retryFailed()
     expect(next.jobs.find(job => job.jobId === 'j1')).toMatchObject({ stage: 'ready', progress: 100 })
     expect(next.jobs.find(job => job.jobId === 'j2')).toMatchObject({ stage: 'uploaded', progress: 0, errors: [] })
+  })
+
+  it('projects progress, retry and rollback affordances for the import UI', () => {
+    const state = normalizeImportJob({
+      stage: 'partial',
+      batchStatus: 'partial',
+      progress: 60,
+      jobs: [
+        { jobId: 'ok', stage: 'ready', progress: 100 },
+        { jobId: 'bad', stage: 'failed', progress: 20, errors: [{ retryable: true }] },
+      ],
+    })
+    expect(importProgressSummary(state)).toMatchObject({
+      progress: 60,
+      total: 2,
+      completed: 2,
+      failed: 1,
+      canRetry: true,
+      canRollback: true,
+    })
   })
 
   it('supports cancellation, commit and rollback as explicit batch transitions', () => {

@@ -149,5 +149,6 @@ export default {
   props: {
     ed: { type: Object, required: true },
   },
+  mounted() { this.$emit('mounted-ready', this) },
 }
 </script>

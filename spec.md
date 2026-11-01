@@ -1,6 +1,6 @@
 # lark-doc 0.12 需求审计与收口规格
 
-> 状态：技术计划与实施任务已生成，可进入代码实现。分支：`spec-kit/requirements-audit`。基线：`dev`。
+> 状态：T001–T008 已执行第一轮基础收口；T001–T003 已完成，T004–T008 仍需继续补齐完整事件、原子失败返回和 Provider 写入闭环。分支：`implementation/full-requirements`。基线：`dev`。
 > 本文件是后续会话的唯一项目级需求摘要；细节以 `requirements/` 原文为准。
 > Spec Kit 特性规格：`specs/001-full-requirements-implementation/spec.md`；技术计划：`specs/001-full-requirements-implementation/plan.md`；实施任务：`specs/001-full-requirements-implementation/tasks.md`；质量清单：`specs/001-full-requirements-implementation/checklists/requirements.md`。
 
@@ -33,11 +33,13 @@
 
 ## 3. 需求状态总览
 
+> **2026-11-01 最新口径与证据（优先于下方历史记录）**：用户明确 T032 以浏览器模拟器通过为通过，不要求真机。`scripts/verify-browser-mobile.js` 在当前 worktree 匹配产物上完成 Chromium 手机/平板模拟矩阵 **12/12**，T032 已 DONE，不再以 Safari/真机缺失阻塞 T07/T08/T13。验证覆盖触摸、DPR、视口与横竖屏、文档身份保持、只读、评论 Provider 回读/撤权、版本只读与恢复拒绝；不宣称 Safari 引擎、真实设备或真实租户通过。T019、T023、T028 已完成；T050 与真实宿主写入证据仍开放。
+
 | 状态 | 数量/口径 | 结论 |
 | --- | --- | --- |
 | 已完成 | 主体规格、核心编辑器、协同/评论/版本/分享/导出、主题基础、适配器、门禁与大部分块 | 可作为回归基线，不重复采集或重做 |
-| 已规格化但需代码验收 | 流程层、A4 按钮块、异常矩阵、部分宿主/跨账号能力 | 进入 `tasks.md`，必须有源码、测试和命令 |
-| 明确未完成 | 下表 11 个工作包，含若干关联子项 | 当前 0.12 的实际开发范围 |
+| 已规格化但需代码验收 | A4 按钮宿主动作、部分真实宿主/跨账号/浏览器能力 | 进入 `tasks.md`，必须有源码、测试和命令 |
+| 明确未完成/阻塞 | A4 真实动作、真实宿主写入、ESM体积余量与性能采样复核 | 确认是环境、宿主证据或待归因门禁缺口，不伪报代码失败或完成 |
 | 明确不做 | 飞书不存在的顶部固定格式工具栏、自定义右键菜单、折叠块 slash 项、Sheet/Slides/Wiki 兄弟产品线等 | 不得重新开工；若需求变更，先更新本文件 |
 | 历史过期 | `requirements/10` 与 `15` 中保留的旧采集记录、旧 skip 和已收口项 | 仅作证据，不得当作待办 |
 
@@ -52,17 +54,13 @@
 
 ### 3.2 当前真实缺口
 
-1. **A4 按钮块**：`DuplicatePage`、`FollowPage` 真实动作和删除后刷新回读。
-2. **流程层落地**：撤销/重做历史栈、块级剪贴板、多块多选和外部粘贴清洗；必须保持 blockId 语义。
-3. **BlockAPI 完整契约落地**：insert/update/remove/move/duplicate/transform/get/children/batch 的边界、容器节点和统一测试。
-4. **异常状态矩阵**：空、加载、失败、无权限、超限；统一降级卡和异步块状态。
-5. **移动端 runtime**：评论/回复、通知、锚点、版本只读、横屏、离线和移动端同步。
-6. **跨账号与浏览器验收**：第二账号权限降级、无权限提及/离职 chip、Safari 评论回读。
-7. **Provider 写入闭环**：`survey`、真实导入任务，以及 AI、妙记、跨表引用、订阅号、局部模板等 provider 的宿主写入边界。
-8. **回收站和版本外围 UI**：已存版本回收站入口、删除/恢复/刷新回读。
-9. **输出与安全策略**：复制、打印、水印、审计日志、安全策略和敏感字段边界。
-10. **性能与存储收口**：P0-10 基线、DerivedIndex、脏区更新、IndexedDB 分层和条件性性能优化。
-11. **白板/画板与骨架级嵌入**：若 0.12 必须交付，则走 webEmbed/成熟库边界；否则显式标记为骨架/延后，不能留下模糊待补。
+1. **A4 按钮宿主动作**：`DuplicatePage`、`FollowPage` 及删除后刷新回读仍缺真实租户证据。
+2. **真实跨端验收**：已按用户口径使用 Chromium 手机/平板模拟器完成 T032 12/12；不宣称真实 Safari/真实移动端设备通过，且不再将其作为本项目交付阻塞。桌面 Chromium 矩阵已独立通过。
+3. **真实宿主写入**：survey/import/AI 等已有可注入 provider 和状态机，但真实租户写入、部分第三方对象回读仍待宿主证据。
+4. **完整交付门禁**：本轮复核全量 Vitest 97 文件/2192 项、lint、架构检查、主题门禁与 diff 检查通过；独立验证宿主烟测和 Chromium 完整矩阵14/14通过（splitting13/13、mobile12/12、clipboard10/10、element14/14）。`check:artifacts` 的 7 个产物重建、Vditor95 项通过，但 size-limit 仍仅 ESM 超限2.07kB（287.07kB > 285kB），未放宽预算。最新 `check:perf` 采样 decorationIncrementalMs 3.8–4.9ms（相对3.1ms基线退化23%–58%）、heap18.1MB（相对14.7MB基线退化23%）而失败，其余指标通过，未更新基线。构建有既有 CodeNode 样式导出 warning，Vditor/jsdom 有 getBBox 日志但不影响对应检查退出码。
+5. **历史与剪贴板行为已收口**：T016/T017/T020/T021：真实事务800ms分组、严格100组及完整redo、blockId恢复、accept/reject不入栈、undo正常保存和刷新不恢复历史；协同保留官方PM本地origin并额外跟踪local，远端不入本地栈。T018/T022/T023 当前验收包含 24 项 jsdom/菜单回归、当前 worktree Chromium 双标签页系统剪贴板 10/10 通过，覆盖私有 MIME、单块/多块/容器、剪切撤销、局部文本、嵌套列表外部回退、图片/表格 HTML 不抢占。菜单同步 copy-event 已确认正式 MIME 写入后才删除并可 undo；Chromium 原生 paste 仍不暴露异步 custom MIME，因此异步路径保持 fail-closed；组件接线和独立宿主矩阵已通过。T032 按用户口径以手机/平板模拟器通过，不再等待真机。
+5. **DOM 快照环境**：当前无法解析 `playwright-core`，相关快照只能按既有规则 skip。
+6. **白板/画板**：0.12 采用版本化延期；保留 `webEmbed` 作为未来 host-owned/成熟库骨架边界，不在 core 自研 Canvas，不伪造未取得的白板 DOM/尺寸/交互规格。
 
 ## 4. 完成定义
 
@@ -95,7 +93,7 @@
 
 ### P4：性能与最终收口
 
-执行性能基线，按实测决定是否实施 DerivedIndex、脏区更新、IndexedDB 分层和条件性虚拟化；最后跑全门禁、适配器产物、浏览器验证并更新审计结论。
+执行性能基线，按实测决定是否实施 DerivedIndex、脏区更新、IndexedDB 分层和条件性虚拟化；T046 已完成可复现性能采集与门禁基线，当前未因滚动性能盲目引入窗口化；最后跑全门禁、适配器产物、浏览器验证并更新审计结论。
 
 ## 6. 新会话输入协议
 
@@ -110,8 +108,9 @@
 
 ## 7. 关键约束
 
-- 本分支只做需求审计、规划和后续明确任务；当前本轮不实现业务功能。
+- 本开发分支按 Spec Kit 执行明确任务；基础契约和 US1/US2 已开始实现，US3 已完成统一异步块五态、跨块 DOM/NodeView 状态投影、schema 快照同步和统一 capability policy；本轮 capability 投影新增 `visible/disabled/readOnly/rejected` 字段，评论/导出/版本/分享权限/顶栏子菜单控件已通过 `data-capability`/`aria-disabled` 暴露，`canView` 保持唯一 replace、`canManagePermission` 保持 readonly-link downgrade，T028 已完成。security Provider 已将业务 deny/approval_required/updatePolicy 拒绝转换为稳定异常并保留 requestId、permissionVersion、reason；US4 T031 已补齐 viewport 宽高/横竖屏 runtime 生命周期与窄屏/横屏根节点投影，T033 已补齐 Provider 幂等恢复队列与协同离线回归，T032 按用户口径以 Chromium 模拟器12/12通过，后续任务继续以源码、测试和验收命令为准。
 - `spec.md`/`tasks.md` 是根目录交接文件；`specs/` 保留 Spec Kit feature 目录，暂不复制两份内容造成漂移。
 - `.specify/`、`.codebuddy/commands/` 使用官方 Spec Kit CLI 1.2.6.dev0 刷新的官方资产；当前 CLI 已安装到用户级环境，但 CodeBuddy 本体未被 `specify check` 检测到，因此项目初始化使用 `--ignore-agent-tools` 完成。
 - 需求数字以最新章节为准：A 级规格审计 20 ✅ / 1 ◐ / 0 ⏳；B 级 27/27 收口；E 级可执行缺口 0。以上是“规格收口”统计，不等于代码完成率。
 - 所有旧的“顶部工具栏”“自定义右键菜单”“折叠块 slash”待办必须视为已作废。
+- T050 门禁收口证据（2026-11-01）：最终复核当前独立 worktree 全量 Vitest 97 文件/2192 项通过，lint、架构、宿主契约与 `git diff --check` 通过；T032 Chromium 手机/平板模拟器12/12通过。当前源码由独立验证宿主重建后，真实正文/图表/公式/存盘刷新、Element 双实例烟测通过；Chromium 完整矩阵14个目标全部通过，其中 splitting 13/13、mobile 12/12、clipboard 10/10、element 14/14。`check:artifacts` 构建和 Vditor95项通过，但 `npm run size` 的 ESM gzip 287.07kB 超285kB预算2.07kB；其余 UMD464.77kB、Element478.99kB、CJS1.71MB、Collab3.12kB通过。`check:perf` 的历史结果曾显示 heap18.1MB 相对14.7MB基线退化约23%，未更新基线；当前优先稳定复核性能采样。真实宿主租户写入证据仍缺；异步资源本地矩阵已通过，以上包体和性能问题保持 BLOCKED，不伪报为代码通过。

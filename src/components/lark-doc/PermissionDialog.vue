@@ -70,6 +70,9 @@
                 role="switch"
                 :aria-checked="ed.permissionValues.shareOutsideOrg ? 'true' : 'false'"
                 aria-label="允许内容被分享到组织外"
+                data-capability="canManagePermission"
+                :aria-disabled="String(!ed.shareCan('canManagePermission'))"
+                :disabled="!ed.shareCan('canManagePermission')"
                 @click="toggleValue('shareOutsideOrg')"
               />
             </div>

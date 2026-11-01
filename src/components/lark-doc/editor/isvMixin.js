@@ -32,6 +32,7 @@ export default {
   data() {
     return {
       isvPanelOpen: false,
+      isvPanelRevision: 0,
       /** 面板表单四项；`isvErrorField` 为空字符串 = 未校验失败。 */
       isvAction: BUTTON_ACTION_DEFAULT,
       isvButtonText: BUTTON_TEXT_DEFAULT,
@@ -104,8 +105,17 @@ export default {
       this.isvLinkUrl = ''
       this.isvErrorField = ''
       this.isvActionSelectOpen = false
+      this.isvPanelRevision += 1
       this.isvPanelOpen = true
       this.isvPanelStyle = this.isvStyleAt(this.editor.state.selection.from)
+    },
+    onIsvPanelReady(panel) {
+      const revision = this.isvPanelRevision
+      this.$nextTick(() => {
+        if (this._isBeingDestroyed || this._isDestroyed || this.effectiveReadonly || !this.isvPanelOpen || revision !== this.isvPanelRevision || panel !== this.$refs.isvPanel) return
+        this.positionIsvPanel()
+        panel.$el.querySelector('[aria-label="按钮文字"]')?.focus()
+      })
     },
     /**
      * 命令菜单「目录导航」入口：不弹面板，就地插块。
@@ -167,6 +177,7 @@ export default {
     },
     /** 取消 / Esc / 点外部：关面板，**不建块**。 */
     closeIsvPanel() {
+      this.isvPanelRevision += 1
       this.isvPanelOpen = false
       this.isvErrorField = ''
       this.isvActionSelectOpen = false

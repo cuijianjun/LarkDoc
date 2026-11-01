@@ -19,7 +19,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { BLOCK_ID_PATTERN, safeUrl } from '../documentOperations'
-import { validateAttribute } from './shared'
+import { asyncBlockDomAttributes, validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createWebEmbedNodeView } from '../nodeviews/web-embed'
 import {
@@ -190,7 +190,7 @@ const WebEmbed = Node.create({
   renderHTML({ node }) {
     const attrs = node.attrs || {}
     const figure = {
-      class: 'lark-doc-embed docx-iframe-block',
+      ...asyncBlockDomAttributes(attrs.asyncState, 'lark-doc-embed docx-iframe-block'),
       'data-type': 'web-embed',
       'data-block-type': 'iframe',
     }

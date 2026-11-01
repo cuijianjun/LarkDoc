@@ -47,6 +47,10 @@ export const E_POLICY_KEEP_AUTO = 'E_POLICY_KEEP_AUTO'
 export const E_VERSION_NOT_FOUND = 'E_VERSION_NOT_FOUND'
 /** 该 id 曾被保留策略淘汰：与「不存在」必须分开，否则用户永远不知道版本去哪了。 */
 export const E_VERSION_EVICTED = 'E_VERSION_EVICTED'
+/** 版本已进入可恢复回收站。 */
+export const E_VERSION_DELETED = 'E_VERSION_DELETED'
+/** 版本已彻底删除，不可恢复。 */
+export const E_VERSION_GONE = 'E_VERSION_GONE'
 
 /** 统一错误形状：`code` 供 UI 分支，`message` 给人看（与 collab/policies 同口径）。 */
 export function versioningError(code, message) {

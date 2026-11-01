@@ -14,6 +14,7 @@ import {
   blockIds, countOf, createNetwork, createPeer, insertBlock, typeAt,
 } from '../helpers/collab-harness'
 import { shouldSeed } from '../../src/collab/policies'
+import { buildRevisionDecisionTr } from '../../src/core/revision/commands'
 import { createUiStateStore, toggleCollapsed, defaultUiState } from '../../src/collab/policies'
 
 const peers = []
@@ -67,6 +68,47 @@ describe('C2 并发同位置插入', () => {
 })
 
 describe('C3 撤销隔离', () => {
+  it('协同历史捕获窗口为 800ms，跟踪本地 origin 且不跟踪远端', () => {
+    const [a] = pair()
+    const plugin = a.editor.state.plugins.find(item => item.key.startsWith('y-undo$'))
+    const manager = plugin.getState(a.editor.state).undoManager
+    expect(manager.captureTimeout).toBe(800)
+    expect(manager.trackedOrigins.has('local')).toBe(true)
+    expect(manager.trackedOrigins.has('collab-harness:remote')).toBe(false)
+  })
+
+  it.each(['accept', 'reject'])('协同 %s 不入栈，另一个客户端收到相同决策', (action) => {
+    const [a, b] = pair()
+    insertBlock(a, { type: 'paragraph', content: [{ type: 'text', text: '建议', marks: [
+      { type: 'revision', attrs: { revisionId: 'r1', kind: 'insert', author: 'a' } },
+    ] }] })
+    const manager = a.editor.state.plugins.find(item => item.key.startsWith('y-undo$')).getState(a.editor.state).undoManager
+    manager.clear()
+    a.editor.view.dispatch(buildRevisionDecisionTr(a.editor.state, 'r1', action))
+    expect(manager.undoStack).toHaveLength(0)
+    expect(a.editor.commands.undo()).toBe(false)
+    expect(b.text).toBe(a.text)
+    expect(a.text.includes('建议')).toBe(action === 'accept')
+  })
+
+  it('协同历史严格裁剪到 100 组，远端编辑不入本地栈', () => {
+    const [a, b] = pair()
+    insertBlock(a, { type: 'paragraph', content: [{ type: 'text', text: '已有' }] })
+    const manager = a.editor.state.plugins.find(item => item.key.startsWith('y-undo$')).getState(a.editor.state).undoManager
+    for (let index = 0; index < 105; index += 1) {
+      manager.stopCapturing()
+      typeAt(a, 1, 'x')
+    }
+    expect(manager.undoStack).toHaveLength(100)
+    typeAt(b, b.editor.state.doc.content.size - 1, '远端保留')
+    expect(manager.undoStack).toHaveLength(100)
+    for (let index = 0; index < 100; index += 1) expect(a.editor.commands.undo()).toBe(true)
+    expect(a.editor.commands.undo()).toBe(false)
+    expect(countOf(a, 'x')).toBe(5)
+    expect(a.text).toContain('远端保留')
+    expect(a.text).toBe(b.text)
+  })
+
   it('A 撤销只撤自己的输入，B 的不变', () => {
     const [a, b] = pair()
     // 先铺一段「服务端已有正文」：真实顺序是 sync 完成后再输入。

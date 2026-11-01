@@ -6,6 +6,8 @@
  * owns authentication, tenant permissions, publishing and result storage.
  */
 
+import { runProviderTask } from './provider-task'
+
 const OPERATIONS = Object.freeze([
   'create', 'get', 'list', 'update', 'publish', 'close', 'delete', 'restore',
   'submit', 'results', 'export', 'getPermissions', 'updatePermissions',
@@ -26,10 +28,16 @@ function withContext(ctx = {}, input = {}) {
 export function createSurveyProvider(options = {}) {
   const request = requireRequest(options.request)
   const routes = { ...(options.routes || {}) }
-  const invoke = (operation, ctx, input = {}) => request(operation, withContext(ctx, input), {
-    route: routes[operation] || operation,
-    provider: 'survey',
-  })
+  const invoke = (operation, ctx, input = {}) => {
+    const payload = withContext(ctx, input)
+    return runProviderTask({
+      kind: `survey.${operation}`,
+      idempotencyKey: payload.idempotencyKey || '',
+    }, () => request(operation, payload, {
+      route: routes[operation] || operation,
+      provider: 'survey',
+    }))
+  }
   const provider = { capabilities: Object.freeze({ operations: OPERATIONS.slice(), requiresHostRequest: true }) }
   for (const operation of OPERATIONS) provider[operation] = (ctx, input) => invoke(operation, ctx, input)
   return provider

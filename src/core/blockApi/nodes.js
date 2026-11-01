@@ -106,16 +106,17 @@ export function nodeFromJson(schema, json) {
   const type = schema.nodes[json.type]
   if (!type) return null
   // 文本节点不能用 `NodeType.create` 造（prosemirror-model 直接抛错），走 schema.text。
-  if (type.isText) return schema.text(String(json.text == null ? '' : json.text))
+  const marks = Array.isArray(json.marks) ? json.marks.map(mark => schema.markFromJSON(mark)) : undefined
+  if (type.isText) return schema.text(String(json.text == null ? '' : json.text), marks)
   const attrs = { ...(json.attrs || {}) }
-  if (type.isLeaf || type.isAtom || !Array.isArray(json.content)) return type.create(attrs)
+  if (type.isLeaf || type.isAtom || !Array.isArray(json.content)) return type.create(attrs, null, marks)
   const children = []
   for (const child of json.content) {
     const node = nodeFromJson(schema, child)
     if (!node) return null
     children.push(node)
   }
-  return type.create(attrs, children)
+  return type.create(attrs, children, marks)
 }
 
 const emptyParagraph = () => ({ type: 'paragraph' })
@@ -191,19 +192,23 @@ export function assignIds(json, taken, own = NO_OWNED_IDS) {
 }
 
 /** 整棵子树换号（`duplicate` 专用：子孙 id 一律重发，否则锚点会撞车）。 */
-export function reassignIds(json, taken) {
-  if (!json) return { json, id: null }
+export function reassignIds(json, taken, idMap = {}) {
+  if (!json) return { json, id: null, idMap }
   const copy = { ...json }
+  // 副本不属于原评论线程或修订实体；普通格式保留，移动不经过此复制路径。
+  if (Array.isArray(copy.marks)) copy.marks = copy.marks.filter(mark => !['comment', 'revision'].includes(mark.type))
   let id = null
   if (BLOCK_ID_TYPES.has(copy.type)) {
+    const previousId = copy.attrs && copy.attrs.blockId
     id = createBlockId(taken)
     taken.add(id)
     copy.attrs = { ...(copy.attrs || {}), blockId: id }
+    if (typeof previousId === 'string' && previousId) idMap[previousId] = id
   }
   if (Array.isArray(copy.content)) {
-    copy.content = copy.content.map(child => reassignIds(child, taken).json)
+    copy.content = copy.content.map(child => reassignIds(child, taken, idMap).json)
   }
-  return { json: copy, id }
+  return { json: copy, id, idMap }
 }
 
 /** `deep: false` 的复制：只留壳，子块丢掉；容器补一个「刚好合法」的最小内容。 */

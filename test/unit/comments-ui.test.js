@@ -89,6 +89,10 @@ function mixinCtx(extra) {
   Object.keys(methods).forEach((key) => {
     if (typeof ctx[key] !== 'function') ctx[key] = methods[key]
   })
+  Object.keys(commentsMixin.computed).forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(ctx, key)) return
+    Object.defineProperty(ctx, key, { configurable: true, get: () => commentsMixin.computed[key].call(ctx) })
+  })
   return ctx
 }
 
@@ -339,6 +343,84 @@ describe('capability 闸门（只走 capability，不自判角色）', () => {
     ctx.setCommentDraft('t-1', '文本')
     expect(ctx.commentDrafts['t-1']).toBeUndefined()
     expect(written['t-1']).toBeUndefined()
+  })
+})
+
+describe('评论异步回读隔离', () => {
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((ok, fail) => { resolve = ok; reject = fail })
+    return { promise, resolve, reject }
+  }
+  function context(provider) {
+    return mixinCtx({
+      session: { documentId: 'doc-1', user: { id: 'u-1' }, can: () => true, getProvider: () => provider },
+      editor: null, commentThreads: [], commentPanels: [], commentAnchorCodec: plainAnchorCodec,
+      updateCommentPanels() { this.updates = (this.updates || 0) + 1 },
+    })
+  }
+  it('较早请求后返回时不会覆盖最新回读', async () => {
+    const first = deferred()
+    const second = deferred()
+    let calls = 0
+    const ctx = context({ list: () => (++calls === 1 ? first.promise : second.promise) })
+    const oldLoad = ctx.loadComments()
+    const newLoad = ctx.loadComments()
+    second.resolve([])
+    await newLoad
+    first.resolve([{ id: 'stale' }])
+    expect(await oldLoad).toEqual([])
+    expect(ctx.commentThreads).toEqual([])
+    expect(ctx.updates).toBe(1)
+  })
+  it.each(['document', 'account', 'destroy'])('切换 %s 后忽略旧请求', async (change) => {
+    const pending = deferred()
+    const ctx = context({ list: () => pending.promise })
+    const loading = ctx.loadComments()
+    if (change === 'document') ctx.session.documentId = 'doc-2'
+    if (change === 'account') ctx.session.user = { id: 'u-2' }
+    if (change === 'destroy') ctx._commentLoadToken = null
+    pending.resolve([{ id: 'stale' }])
+    expect(await loading).toEqual([])
+    expect(ctx.updates).toBeUndefined()
+  })
+  it('无阅读权限不调用 Provider 并清空已加载内容', async () => {
+    let calls = 0
+    const ctx = context({ list: () => { calls += 1; return [] } })
+    ctx.session.can = () => false
+    ctx.commentThreads = [{ id: 'private' }]
+    expect(await ctx.loadComments()).toEqual([])
+    expect(ctx.commentThreads).toEqual([])
+    expect(calls).toBe(0)
+  })
+  it('第二账号回读保留线程作者、回复和锚点失联状态', async () => {
+    const ctx = context({
+      list: async () => [{
+        id: 'thread-u2',
+        blockId: 'b-removed',
+        anchor: { blockId: 'b-removed', offset: 2, length: 5 },
+        author: { id: 'u-2', name: '第二账号' },
+        replies: [{ id: 'reply-u2', author: { id: 'u-2', name: '第二账号' }, content: '只读回复' }],
+      }],
+    })
+    ctx.editor = { state: { doc: { descendants: () => {} } } }
+    const result = await ctx.loadComments()
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      id: 'thread-u2', bound: false, anchorReason: 'missing-block',
+      author: { id: 'u-2', name: '第二账号' },
+      replies: [{ id: 'reply-u2', author: { id: 'u-2', name: '第二账号' }, content: '只读回复' }],
+    })
+    expect(ctx.commentUnboundThreads.map((thread) => thread.id)).toEqual(['thread-u2'])
+  })
+  it('过期请求失败不干扰当前页面', async () => {
+    const pending = deferred()
+    const ctx = context({ list: () => pending.promise })
+    const loading = ctx.loadComments()
+    ctx.session.documentId = 'doc-2'
+    pending.reject(new Error('old request failed'))
+    expect(await loading).toEqual([])
   })
 })
 

@@ -54,9 +54,9 @@ afterEach(() => {
 })
 
 /** 起一个带定稿内容的编辑器，并挂上 BlockAPI。 */
-function setup(content) {
+function setup(content, options = {}) {
   editor = new Editor({ extensions: createLarkDocExtensions(), content: { type: 'doc', content } })
-  return { editor, api: createBlockApi({ editor }) }
+  return { editor, api: createBlockApi({ editor, ...options }) }
 }
 
 /** 文档里所有 blockId，按出现顺序。 */
@@ -296,6 +296,58 @@ describe('BlockAPI · insert：落点与自动包壳', () => {
   })
 })
 
+describe('BlockAPI · permission', () => {
+  it('session 明确禁止编辑时，所有写入口拒绝且文档不变', () => {
+    const session = { getEditor: () => editor, can: () => false, dispatch: tr => editor.view.dispatch(tr) }
+    const { api, editor: ed } = setup([para('a', 'A')], { session })
+    const before = ed.state.doc.toJSON()
+    expect(() => api.update('a', { textAlign: 'center' })).toThrowError(/没有canEdit权限/)
+    expect(() => api.insert(para('b', 'B'), { blockId: 'a' })).toThrowError(/没有canEdit权限/)
+    expect(() => api.insertMany([para('b', 'B')], { blockId: 'a' })).toThrowError(/没有canEdit权限/)
+    expect(() => api.removeMany(['a'])).toThrowError(/没有canEdit权限/)
+    expect(() => api.batch(() => {})).toThrowError(/没有canEdit权限/)
+    expect(ed.state.doc.toJSON()).toEqual(before)
+  })
+})
+
+describe('BlockAPI · 内联格式保真', () => {
+  it('复制不继承评论/修订实体，但移动保留原实体与格式', () => {
+    const { api, editor: ed } = setup([para('a', 'A'), para('tail', 'T')])
+    api.insert({ type: 'paragraph', attrs: { blockId: 'marked' }, content: [
+      { type: 'text', text: 'marked', marks: [
+        { type: 'bold' }, { type: 'comment', attrs: { threadId: 'thread-one' } },
+        { type: 'revision', attrs: { revisionId: 'revision-one', kind: 'insert' } },
+      ] },
+    ] }, { blockId: 'a' })
+    const marksOf = id => {
+      let marks = []
+      ed.state.doc.descendants(node => { if (node.attrs.blockId === id) marks = node.firstChild.marks.map(mark => mark.type.name) })
+      return marks
+    }
+    expect(marksOf('marked')).toEqual(expect.arrayContaining(['bold', 'comment', 'revision']))
+    const { rootId } = api.duplicate('marked')
+    expect(marksOf(rootId)).toEqual(['bold'])
+    api.move('marked', { blockId: 'tail', position: 'after' })
+    expect(marksOf('marked')).toEqual(expect.arrayContaining(['bold', 'comment', 'revision']))
+  })
+  it('insert 与 duplicate 保留粗体和安全链接 mark', () => {
+    const { api, editor: ed } = setup([para('a', 'A')])
+    api.insert({ type: 'paragraph', attrs: { blockId: 'formatted' }, content: [
+      { type: 'text', text: 'bold', marks: [{ type: 'bold' }] },
+      { type: 'text', text: 'link', marks: [{ type: 'link', attrs: { href: 'https://example.com' } }] },
+    ] }, { blockId: 'a' })
+    const marksOf = (id) => {
+      let result
+      ed.state.doc.descendants(node => { if (node.attrs.blockId === id) result = node.toJSON().content.map(child => child.marks || []) })
+      return result
+    }
+    expect(marksOf('formatted')[0]).toEqual([{ type: 'bold' }])
+    expect(marksOf('formatted')[1][0]).toMatchObject({ type: 'link', attrs: { href: 'https://example.com' } })
+    const { rootId } = api.duplicate('formatted')
+    expect(marksOf(rootId)).toEqual(marksOf('formatted'))
+  })
+})
+
 describe('BlockAPI · update', () => {
   it('改 attrs 生效；blockId 不接受改写；未声明的 attrs 忽略', () => {
     const { api } = setup([para('a', 'A')])
@@ -500,8 +552,11 @@ describe('BlockAPI · move', () => {
 describe('BlockAPI · duplicate', () => {
   it('deep 复制：返回新 id，整棵子树换号（不与原块共用锚点）', () => {
     const { api } = setup([calloutOf('k', [para('p1', 'x')]), para('b', 'B')])
-    const copyId = api.duplicate('k')
+    const copy = api.duplicate('k')
+    const copyId = copy.rootId
     expect(copyId).not.toBe('k')
+    expect(copy.idMap).toMatchObject({ k: copyId })
+    expect(copy.idMap.p1).toBeTruthy()
     expect(api.get(copyId).type).toBe('callout')
     expect(api.children(copyId)).not.toContain('p1')
     expect(api.children(copyId)).toHaveLength(1)
@@ -510,7 +565,7 @@ describe('BlockAPI · duplicate', () => {
 
   it('deep:false 只留壳：子块内容不复制，但容器 content 是 1* 得补一个空段落占位', () => {
     const { api } = setup([calloutOf('k', [para('p1', 'x'), para('p2', 'y')])])
-    const copyId = api.duplicate('k', { deep: false })
+    const copyId = api.duplicate('k', { deep: false }).rootId
     expect(api.get(copyId).type).toBe('callout')
     expect(api.children(copyId)).not.toContain('p1')
     expect(api.children(copyId)).toHaveLength(1)
@@ -519,7 +574,7 @@ describe('BlockAPI · duplicate', () => {
 
   it('复制列表项：自动包壳后返回的 id 仍能按图索骥', () => {
     const { api } = setup([bulletList('L', ['only'])])
-    const copyId = api.duplicate('L-0')
+    const copyId = api.duplicate('L-0').rootId
     expect(api.get(copyId)).not.toBeNull()
     expect(api.get(copyId).type).toBe('listItem')
     expect(api.children('L')).toHaveLength(2)

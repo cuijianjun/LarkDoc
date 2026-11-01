@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_POLICY, E_POLICY_KEEP_AUTO, E_SNAPSHOT_AUTHOR, E_SNAPSHOT_BLOCK_COUNT,
   E_SNAPSHOT_CREATED_AT, E_SNAPSHOT_JSON_NOT_ALLOWED, E_SNAPSHOT_KIND, E_SNAPSHOT_LABEL,
-  E_SNAPSHOT_PAYLOAD_MISSING, E_SNAPSHOT_SIZE_MISMATCH, E_VERSION_EVICTED, E_VERSION_NOT_FOUND,
+  E_SNAPSHOT_PAYLOAD_MISSING, E_SNAPSHOT_SIZE_MISMATCH, E_VERSION_DELETED, E_VERSION_EVICTED,
+  E_VERSION_GONE, E_VERSION_NOT_FOUND,
   SNAPSHOT_LABEL_MAX, createMemoryVersioningProvider, createRestoreRecord, createSnapshot,
   diffSummary, normalizeSnapshot, projectionMetrics, pruneSnapshots,
 } from '../../src/core/versioning/index'
@@ -395,5 +396,22 @@ describe('内存 versioning Provider', () => {
     const pruned = provider.prune({ keepAuto: 1 })
     expect(pruned.kept.map((item) => item.id).sort()).toEqual([latest.id, restored.id].sort())
     expect(pruned.dropped).toHaveLength(1)
+  })
+
+  it('支持删除进版本回收站、恢复和不可逆彻底删除', async () => {
+    const { provider } = makeProvider()
+    const first = await provider.createSnapshot({ documentId: 'doc-1', kind: 'manual', payload: bytes(2) })
+    const second = await provider.createSnapshot({ documentId: 'doc-1', kind: 'manual', payload: bytes(2) })
+    await expect(provider.remove(first.id)).resolves.toMatchObject({ id: first.id, deleted: true })
+    await expect(provider.get(first.id)).rejects.toMatchObject({ code: E_VERSION_DELETED })
+    await expect(provider.restore(first.id)).rejects.toMatchObject({ code: E_VERSION_DELETED })
+    await expect(provider.listDeleted({ documentId: 'doc-1' })).resolves.toMatchObject([{ id: first.id, deleted: true }])
+    await expect(provider.restoreDeleted(first.id)).resolves.toMatchObject({ id: first.id, deleted: false })
+    await expect(provider.get(first.id)).resolves.toMatchObject({ id: first.id })
+    await expect(provider.remove(second.id)).resolves.toMatchObject({ id: second.id, deleted: true })
+    await expect(provider.purge(second.id)).resolves.toMatchObject({ id: second.id, purged: true })
+    await expect(provider.listDeleted()).resolves.toEqual([])
+    await expect(provider.get(second.id)).rejects.toMatchObject({ code: E_VERSION_GONE })
+    await expect(provider.restore(second.id)).rejects.toMatchObject({ code: E_VERSION_GONE })
   })
 })

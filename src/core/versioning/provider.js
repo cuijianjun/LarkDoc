@@ -22,7 +22,10 @@
 import { normalizeSnapshot, createSnapshot } from './snapshot'
 import { createRestoreRecord } from './restore'
 import { pruneSnapshots } from './retention'
-import { E_SNAPSHOT_INVALID, E_VERSION_EVICTED, E_VERSION_NOT_FOUND, versioningError } from './types'
+import {
+  E_SNAPSHOT_INVALID, E_VERSION_DELETED, E_VERSION_EVICTED, E_VERSION_GONE,
+  E_VERSION_NOT_FOUND, versioningError,
+} from './types'
 
 export function createMemoryVersioningProvider(options) {
   const config = options && typeof options === 'object' ? options : {}
@@ -31,25 +34,51 @@ export function createMemoryVersioningProvider(options) {
 
   /** `{ seq, record }`：seq 只用于同毫秒排序，不对外暴露。 */
   const entries = []
+  const deleted = new Map()
+  const gone = new Set()
   const evicted = new Set()
   let seq = 0
 
-  function insert(record) {
+  function insert(record, existingSeq) {
     // id 一旦复用，`get` 就会静默返回另一份快照 —— 不可变版本最不该出的错，直接拒绝。
-    const clash = entries.some((entry) => entry.record.id === record.id) || evicted.has(record.id)
+    const clash = entries.some((entry) => entry.record.id === record.id)
+      || deleted.has(record.id)
+      || gone.has(record.id)
+      || evicted.has(record.id)
     if (clash) throw versioningError(E_SNAPSHOT_INVALID, `版本 id 重复：${record.id}`)
-    seq += 1
-    entries.push({ seq, record })
+    const entry = { seq: existingSeq === undefined ? seq + 1 : existingSeq, record }
+    seq = Math.max(seq, entry.seq)
+    entries.push(entry)
+    return entry
   }
 
-  /** 先查在库，再查墓碑：两者的错误必须分开（见文件头）。 */
+  /** 先查在库，再查回收站和墓碑：四类状态必须分开。 */
   function requireEntry(versionId) {
     const id = typeof versionId === 'string' ? versionId : ''
     if (!id) throw versioningError(E_VERSION_NOT_FOUND, 'versionId 必须是非空字符串')
     const hit = entries.find((entry) => entry.record.id === id)
     if (hit) return hit
+    if (deleted.has(id)) {
+      throw versioningError(E_VERSION_DELETED, `版本 ${id} 已进入回收站，请先恢复后再操作`)
+    }
+    if (gone.has(id)) {
+      throw versioningError(E_VERSION_GONE, `版本 ${id} 已彻底删除，无法恢复`)
+    }
     if (evicted.has(id)) {
       throw versioningError(E_VERSION_EVICTED, `版本 ${id} 已被保留策略淘汰，无法恢复；只能从仍存在的版本恢复`)
+    }
+    throw versioningError(E_VERSION_NOT_FOUND, `版本 ${id} 不存在`)
+  }
+
+  function requireDeleted(versionId) {
+    const id = typeof versionId === 'string' ? versionId : ''
+    if (!id) throw versioningError(E_VERSION_NOT_FOUND, 'versionId 必须是非空字符串')
+    const entry = deleted.get(id)
+    if (entry) return entry
+    if (gone.has(id)) throw versioningError(E_VERSION_GONE, `版本 ${id} 已彻底删除，无法恢复`)
+    if (evicted.has(id)) throw versioningError(E_VERSION_EVICTED, `版本 ${id} 已被保留策略淘汰，无法恢复`)
+    if (entries.some((item) => item.record.id === id)) {
+      throw versioningError(E_VERSION_DELETED, `版本 ${id} 尚未进入回收站`)
     }
     throw versioningError(E_VERSION_NOT_FOUND, `版本 ${id} 不存在`)
   }
@@ -68,6 +97,39 @@ export function createMemoryVersioningProvider(options) {
         .slice()
         .sort((a, b) => (b.record.createdAt - a.record.createdAt) || (b.seq - a.seq))
         .map((entry) => normalizeSnapshot(entry.record))
+    },
+
+    /** 将仍在链上的版本移入可恢复回收站；正文保留，列表默认隐藏。 */
+    async remove(versionId) {
+      const entry = requireEntry(versionId)
+      entries.splice(entries.indexOf(entry), 1)
+      deleted.set(entry.record.id, entry)
+      return Object.assign(normalizeSnapshot(entry.record), { deleted: true })
+    },
+
+    /** 列出回收站元信息，新→旧；不返回正文。 */
+    async listDeleted(ctx) {
+      const documentId = ctx && typeof ctx.documentId === 'string' ? ctx.documentId : ''
+      return Array.from(deleted.values())
+        .filter((entry) => !documentId || entry.record.documentId === documentId)
+        .sort((a, b) => (b.record.createdAt - a.record.createdAt) || (b.seq - a.seq))
+        .map((entry) => Object.assign(normalizeSnapshot(entry.record), { deleted: true }))
+    },
+
+    /** 从回收站恢复原版本，保留原 id 和写入顺序。 */
+    async restoreDeleted(versionId) {
+      const entry = requireDeleted(versionId)
+      deleted.delete(entry.record.id)
+      insert(entry.record, entry.seq)
+      return Object.assign(cloneRecord(entry.record), { deleted: false })
+    },
+
+    /** 永久删除回收站版本，留下不可恢复墓碑。 */
+    async purge(versionId) {
+      const entry = requireDeleted(versionId)
+      deleted.delete(entry.record.id)
+      gone.add(entry.record.id)
+      return { id: entry.record.id, purged: true }
     },
 
     /** 05 §5.4：建不可变快照。id 缺省由本实现生成（契约里 id 是服务端生成的）。 */
@@ -111,6 +173,8 @@ export function createMemoryVersioningProvider(options) {
       entries.forEach((entry) => {
         if (!kept.has(entry.record.id)) evicted.add(entry.record.id)
       })
+      // 回收站是用户明确删除的生命周期，不受自动保留策略影响；
+      // 彻底删除墓碑同样不能被 prune 覆盖。
       entries.length = 0
       Array.prototype.push.apply(entries, survivors)
       return {

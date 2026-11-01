@@ -6,6 +6,8 @@
  * the returned resource or a structured provider error.
  */
 
+import { runProviderTask } from './provider-task'
+
 const FACTORY_OPERATIONS = Object.freeze({
   miaji: Object.freeze(['resolve', 'get', 'update', 'remove', 'delete', 'sync', 'requestPermission', 'healthCheck']),
   subscription: Object.freeze(['get', 'publish', 'update', 'unpublish', 'remove', 'delete', 'requestPermission', 'healthCheck']),
@@ -41,14 +43,46 @@ function withContext(ctx = {}, input = {}) {
   return value
 }
 
+function isRejectedResponse(result) {
+  if (!result || typeof result !== 'object') return false
+  if (result.ok === false || result.allowed === false) return true
+  if (['deny', 'approval_required', 'failed', 'error', 'rejected'].includes(result.status)) return true
+  if (typeof result.code === 'number') return result.code !== 0
+  if (typeof result.code === 'string' && result.code !== '' && result.code !== '0') {
+    return !['OK', 'SUCCESS'].includes(result.code.toUpperCase())
+  }
+  return false
+}
+
+function providerRejection(result, operation) {
+  const error = new Error(result.reason || result.message || `${operation} rejected by host`)
+  error.code = typeof result.code === 'string' && result.code ? result.code : 'ERR_PROVIDER_REJECTED'
+  error.status = result.status
+  error.requestId = result.requestId || null
+  error.permissionVersion = result.permissionVersion
+  error.reason = result.reason || result.message || ''
+  error.providerResult = result
+  return error
+}
+
 function createProvider(name, options = {}) {
   const request = requireRequest(options.request, name)
   const routes = { ...(options.routes || {}) }
   const operations = FACTORY_OPERATIONS[name]
-  const invoke = (operation, ctx, input = {}) => request(operation, withContext(ctx, input), {
-    route: routes[operation] || operation,
-    provider: name,
-  })
+  const invoke = async (operation, ctx, input = {}) => {
+    const payload = withContext(ctx, input)
+    return runProviderTask({
+      kind: `${name}.${operation}`,
+      idempotencyKey: payload.idempotencyKey || '',
+    }, async () => {
+      const result = await request(operation, payload, {
+        route: routes[operation] || operation,
+        provider: name,
+      })
+      if (isRejectedResponse(result)) throw providerRejection(result, operation)
+      return result
+    })
+  }
   const provider = {
     capabilities: Object.freeze({
       provider: name,

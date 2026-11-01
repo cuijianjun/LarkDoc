@@ -91,6 +91,8 @@
               type="button"
               class="lark-doc-share-perm-btn"
               aria-label="权限设置"
+              data-capability="canManagePermission"
+              :aria-disabled="String(!ed.shareCan('canManagePermission'))"
               @click="ed.openPermissionDialog()"
             >
               <!-- 齿轮图标 20×16（本库自定，04 只量了尺寸没给 SVG）。 -->

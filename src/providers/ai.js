@@ -6,6 +6,8 @@
  * preserving the workspace's streaming, cancellation and error states.
  */
 
+import { runProviderTask } from './provider-task'
+
 function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '')
   if (!url) throw new Error('AI baseUrl 不能为空')
@@ -216,10 +218,11 @@ export function createOpenAICompatibleProvider(options = {}) {
       return postJson(options.citationsEndpoint || '/citations', input)
     },
     async feedback(input = {}) {
-      return postJson(options.feedbackEndpoint || '/feedback', input)
+      return runProviderTask({ kind: 'ai.feedback', idempotencyKey: input.idempotencyKey || `feedback:${input.taskId || ''}` }, () => postJson(options.feedbackEndpoint || '/feedback', input))
     },
     async writeback(input = {}) {
-      return postJson(options.writebackEndpoint || '/writeback', validateAIWriteback(input))
+      const payload = validateAIWriteback(input)
+      return runProviderTask({ kind: 'ai.writeback', idempotencyKey: input.idempotencyKey || `writeback:${input.sourceRevisionId || ''}` }, () => postJson(options.writebackEndpoint || '/writeback', payload))
     },
   }
 }

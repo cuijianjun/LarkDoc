@@ -64,7 +64,31 @@
         :disabled="effectiveReadonly || importing"
         @click="$refs.importFile.click()"
       >
-        {{ importing ? '导入中…' : '导入' }}
+        {{ importing ? `导入中 ${importProgress}%` : '导入' }}
+      </button>
+      <span
+        v-if="importProgressState"
+        class="lark-doc-import-progress"
+        role="status"
+        aria-live="polite"
+      >
+        {{ importProgressLabel }}
+      </span>
+      <button
+        v-if="importProgressState && importProgressState.canRetry"
+        type="button"
+        :disabled="importing"
+        @click="retryImport"
+      >
+        重试失败项
+      </button>
+      <button
+        v-if="importProgressState && importProgressState.canRollback"
+        type="button"
+        :disabled="importing"
+        @click="rollbackImport"
+      >
+        回滚导入
       </button>
       <input
         v-if="featureEnabled('importExport')"
@@ -454,6 +478,7 @@ import { createDerivedSnapshot, validateDerivedSnapshot } from '../../core/deriv
 import { DOCUMENT_SCHEMA_VERSION } from '../../core/documentSchema'
 import { logger } from '../../utils/logger'
 import { createDocumentSession } from '../../session/DocumentSession'
+import { createImportBatchController, importProgressSummary } from '../../providers/import'
 import LarkDocSelect from './LarkDocSelect.vue'
 import LarkDocIcon from './LarkDocIcon.vue'
 
@@ -515,6 +540,7 @@ export default {
       forcedReadonly: false,
       editorConfig: createLarkDocConfig(this.config),
       effectiveReadonly: false, importing: false, initialized: false,
+      importController: null, importProgressState: null,
       saveStatus: '初始化…', storageError: false, storageKind: '', notice: '',
       historyOpen: false, snapshots: [], aiActions: AI_ACTIONS, aiContextOptions: AI_CONTEXTS, aiAction: 'rewrite', aiContextScope: 'selection', aiLanguage: 'en', aiPrompt: '', aiMessages: [],
       aiOpen: false, aiRunning: false, aiPreview: '', aiError: '', aiStatus: '', aiReviewIssues: [], aiProposal: null, aiContextSummary: '当前选区 · 0 字', aiBudgetExceeded: false, aiGeneratedAction: null,
@@ -556,6 +582,13 @@ export default {
       return this.templateItems.filter((item) => `${item.label} ${item.title} ${item.id}`.toLocaleLowerCase().includes(query))
     },
     aiReplaceDisabled() { return Boolean(this.aiBudgetExceeded && this.aiGeneratedAction !== 'title') },
+    importProgress() { return this.importProgressState?.progress || 0 },
+    importProgressLabel() {
+      const state = this.importProgressState
+      if (!state) return ''
+      if (state.failed) return `导入 ${state.progress}% · 失败 ${state.failed} 项`
+      return `导入 ${state.progress}% · ${state.completed}/${state.total}`
+    },
     // 归一化后的 AI 适配器：{kind, protocol, contentFormat, stream(args)} 或 null。
     // computed 缓存住实例，避免每次生成都重建（auto 协议要跨帧保留判定状态）。
     aiAdapter() { return normalizeAIProvider(this.aiProvider) },
@@ -718,7 +751,25 @@ export default {
       this.importReport = report
       this.$emit('import-report', report)
     },
+    updateImportProgress(state) {
+      this.importProgressState = importProgressSummary(state)
+      this.importReport = state
+      this.$emit('import-progress', state)
+    },
+    retryImport() {
+      if (!this.importController || this.importing) return
+      const state = this.importController.retryFailed()
+      this.updateImportProgress(state)
+      this.notice = '已重新排队失败导入项'
+    },
+    rollbackImport() {
+      if (!this.importController || this.importing) return
+      const state = this.importController.rollback()
+      this.updateImportProgress(state)
+      this.notice = '导入已回滚，原正文未替换'
+    },
     getImportReport() { return this.importReport },
+
     queueSave() {
       if (!this.featureEnabled('persistence') || !this.initialized || this.storageError || this._disposed) return
       clearTimeout(this._saveTimer)
@@ -818,8 +869,15 @@ export default {
       if (!file || !this.writable()) return
       if (file.size > 10 * 1024 * 1024) { this.notice = '导入文件不能超过 10 MB'; return }
       this.importing = true
+      this.importController = createImportBatchController({
+        stage: 'uploaded',
+        batchStatus: 'running',
+        jobs: [{ jobId: file.name, filename: file.name, stage: 'uploaded', progress: 0 }],
+      })
+      this.updateImportProgress(this.importController.getState())
       try {
         const format = file.name.split('.').pop().toLowerCase()
+        this.updateImportProgress({ ...this.importController.getState(), stage: 'parsing', progress: 10, jobs: [{ jobId: file.name, filename: file.name, stage: 'parsing', progress: 10 }] })
         let content
         let importedTitle
         if (format === 'docx') {
@@ -851,11 +909,24 @@ export default {
         }
         if (!window.confirm('导入并替换当前正文？原正文可通过撤销恢复。')) return
         this.closeAI()
+        this.updateImportProgress({ ...this.importController.getState(), stage: 'ready', progress: 100, jobs: [{ jobId: file.name, filename: file.name, stage: 'ready', progress: 100 }] })
         this.$refs.document.setContent(content)
         if (importedTitle !== undefined) this.title = importedTitle
+        this.importController.commit()
+        this.updateImportProgress(this.importController.getState())
         this.notice = format === 'docx' || format === 'md' || format === 'markdown' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
         logger.info('import', 'lark-doc.document.imported', { format, status: 'success' })
       } catch (error) {
+        if (this.importController) {
+          const current = this.importController.getState()
+          this.importController = createImportBatchController({
+            ...current,
+            stage: 'failed',
+            batchStatus: 'partial',
+            jobs: [{ jobId: file.name, filename: file.name, stage: 'failed', progress: current.progress, errors: [{ code: error.code || 'IMPORT_FAILED', message: error.message, retryable: true }] }],
+          })
+          this.updateImportProgress(this.importController.getState())
+        }
         if (!this._disposed) this.notice = `导入失败，原正文未替换：${error.message}`
         logger.warn('import', 'lark-doc.document.rejected', { status: 'failed' })
       } finally { if (!this._disposed) this.importing = false }

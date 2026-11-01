@@ -2,7 +2,7 @@
 import { nodeInputRule } from '@tiptap/core'
 import Image, { inputRegex as imageInputRegex } from '@tiptap/extension-image'
 import { BLOCK_ID_PATTERN, safeAttachmentId, safeUrl } from '../documentOperations'
-import { validateAttribute } from './shared'
+import { asyncBlockDomAttributes, validateAttribute } from './shared'
 // NodeView 优先由适配层注册进注册表（三端可各自覆盖）；没人注册就用 core 自带的
 // 纯 DOM 实现，element / 无框架宿主因此也能拿到完整图片交互。
 // 静态依赖里不许再出现任何 UI 框架。
@@ -30,7 +30,7 @@ function imageExtension(resolveImageFile) {
     addInputRules() { return [nodeInputRule({ find: imageInputRegex, type: this.type, getAttributes: (match) => safeUrl(match[3], true) ? { src: match[3], alt: match[2], title: match[4] } : false })] },
     renderHTML({ node }) {
       const attrs = node.attrs
-      const figure = { class: 'lark-doc-image', 'data-type': 'image', 'data-caption': attrs.caption || '', 'data-align': ['left', 'center', 'right'].includes(attrs.align) ? attrs.align : 'center' }
+      const figure = { ...asyncBlockDomAttributes(attrs.asyncState, 'lark-doc-image'), 'data-type': 'image', 'data-caption': attrs.caption || '', 'data-align': ['left', 'center', 'right'].includes(attrs.align) ? attrs.align : 'center' }
       // 图片用自绘 renderHTML，全局属性不会自动合入外框，这里显式带上稳定块 id。
       if (typeof attrs.blockId === 'string' && BLOCK_ID_PATTERN.test(attrs.blockId)) figure['data-block-id'] = attrs.blockId
       if (safeUrl(attrs.originalSrc, true)) figure['data-original-src'] = attrs.originalSrc

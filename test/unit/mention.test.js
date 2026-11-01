@@ -24,7 +24,7 @@ import {
   MENTION_EMPTY_TEXT, MENTION_LIMITS, MENTION_UNKNOWN_NAME,
   createMentionId, mentionPlainText, normalizeMention, readMention,
 } from '../../src/core/blocks/mention'
-import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../src/core/mention/directory'
+import { MENTION_SEARCH_LIMIT, createMentionProvider, normalizeMentionEntry, searchMentionDirectory } from '../../src/core/mention/directory'
 import mentionMixin from '../../src/components/lark-doc/editor/mentionMixin'
 
 const mounted = []
@@ -255,6 +255,41 @@ describe('createMentionProvider', () => {
  * 面板空态（`{{ mentionLoading ? '搜索中…' : mentionEmptyText }}`）渲染成**空白**。
  * 没有任何断言看得见这件事，所以在这里钉住：mixin 暴露的文案必须是那句真话。
  */
+describe('mention 权限与离职用户降级', () => {
+  function vm(overrides = {}) {
+    return {
+      _isDestroyed: false,
+      mentionOpen: false,
+      mentionStyleAt: () => ({}),
+      refreshMentionItems() {},
+      mentionItems: [],
+      mentionQuery: '',
+      mentionKind: 'all',
+      mentionRange: null,
+      session: { can: (key) => key !== 'canEdit' },
+      writable: () => true,
+      effectiveReadonly: false,
+      closeMentionPanel() { this.mentionOpen = false },
+      ...overrides,
+    }
+  }
+
+  it('无编辑权限时不打开提及面板，也不保留旧面板', () => {
+    const value = vm({ mentionOpen: true })
+    mentionMixin.methods.onMention.call(value, { from: 1, to: 2, query: '张' })
+    expect(value.mentionOpen).toBe(false)
+  })
+
+  it('离职用户候选不进入可选列表，但保留原始姓名供历史渲染', () => {
+    const result = searchMentionDirectory([
+      { kind: 'user', id: 'u1', name: '在职用户', active: true },
+      { kind: 'user', id: 'u2', name: '离职用户', active: false },
+    ], '', 'user')
+    expect(result.map((item) => item.name)).toEqual(['在职用户'])
+    expect(normalizeMentionEntry({ kind: 'user', id: 'u2', name: '离职用户', active: false }).name).toBe('离职用户')
+  })
+})
+
 describe('mention 面板文案 × mixin', () => {
   it('mixin 的 mentionEmptyText 是真实文案，不是 undefined', () => {
     expect(mentionMixin.data().mentionEmptyText).toBe(MENTION_EMPTY_TEXT)

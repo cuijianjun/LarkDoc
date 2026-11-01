@@ -19,7 +19,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { BLOCK_ID_PATTERN, safeAttachmentId, safeUrl } from '../documentOperations'
-import { validateAttribute } from './shared'
+import { asyncBlockDomAttributes, validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createFileBlockNodeView } from '../nodeviews/file-block'
 import { FILE_VIEW_TYPES, fileKindOf, isPreviewableKind } from '../media/file-block'
@@ -155,7 +155,7 @@ const FileBlock = Node.create({
   renderHTML({ node }) {
     const attrs = node.attrs || {}
     const figure = {
-      class: 'lark-doc-file docx-file-block',
+      ...asyncBlockDomAttributes(attrs.asyncState, 'lark-doc-file docx-file-block'),
       'data-type': 'file',
       'data-block-type': 'file',
     }

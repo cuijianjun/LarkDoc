@@ -51,6 +51,7 @@ export function normalizeMentionDirectory(list) {
   const seen = new Set()
   const out = []
   list.forEach((item) => {
+    if (item && item.active === false) return
     const entry = normalizeMentionEntry(item)
     if (!entry.name) return
     const key = `${entry.kind}:${entry.id || entry.name}`

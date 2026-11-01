@@ -158,3 +158,20 @@ export function printDocument(rootEl, opts) {
   window.print()
   return { ok: true, cleanup }
 }
+
+/**
+ * 导出 PDF（浏览器打印）。从统一出口移到这里，让同步打印路径不依赖其它格式。
+ *
+ * @param {HTMLElement} [rootEl]
+ * @param {object} [options]
+ * @param {string} [options.title] 临时页眉标题
+ * @param {string} [options.scope] 内容范围：只记录，不影响打印
+ * @param {Function} [options.onPrinted]
+ * @returns {{ ok: boolean, reason?: string, cleanup?: Function, scope: string }}
+ */
+export function exportPdf(rootEl, options) {
+  const settings = options || {}
+  const scope = typeof settings.scope === 'string' ? settings.scope : ''
+  const result = printDocument(rootEl, { title: settings.title, onPrinted: settings.onPrinted })
+  return { ...result, scope }
+}

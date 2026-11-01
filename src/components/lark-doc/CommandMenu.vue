@@ -190,6 +190,7 @@ export default {
   props: { items: { type: Array, required: true }, templates: { type: Array, default: () => [] }, query: { type: String, default: '' }, positionStyle: { type: Object, default: () => ({}) }, activeId: { type: String, default: '' }, kind: { type: String, default: 'slash' } },
   data() { return { composing: false, submenuOpen: '', submenuType: '', submenuStyle: {}, columnsHover: null, tableHover: { rows: 3, cols: 3 } } },
   computed: { categories() { const order = this.kind === 'plus' ? ['基础', '常用', '其他标题'] : []; const categories = [...new Set(this.items.map((item) => item.category))]; return order.concat(categories.filter((category) => !order.includes(category))) } },
+  mounted() { this.$emit('mounted-ready', this) },
   methods: {
     onKeydown(event) {
       // 组合键保留默认候选行为，同时阻止祖先的 Esc 关闭菜单。

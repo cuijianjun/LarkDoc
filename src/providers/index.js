@@ -24,3 +24,4 @@ export * from './unfurl'
 export * from './versioning'
 
 export * from './embedded'
+export * from './provider-task'

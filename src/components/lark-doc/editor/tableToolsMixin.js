@@ -184,7 +184,8 @@ export default {
      * 列宽拖拽结束会 dispatch 事务，所以挂 onTransaction 就够，不用另监听 pointerup。
      */
     syncTableClip() {
-      const editorDom = this.editor && this.editor.view && this.editor.view.dom
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      const editorDom = this.editor.view.dom
       if (!editorDom || typeof editorDom.querySelectorAll !== 'function') return
       editorDom.querySelectorAll('.tableWrapper').forEach((wrapper) => {
         const clipped = wrapper.scrollWidth > wrapper.clientWidth + 1

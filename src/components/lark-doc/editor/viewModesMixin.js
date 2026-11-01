@@ -14,6 +14,11 @@ export default {
     // （见 computed.reading），否则「顶栏切到阅读」和「工具栏点阅读模式」会有两个真相。
     mode: 'edit', modeMenuOpen: false, modeMenuPos: null, modeToast: '', modeToastTimer: null,
     slides: false, fullscreen: false, widthMode: 'standard',
+    // US4：移动端窄屏/横屏是运行时状态，不能只靠首次 CSS media query；旋转后
+    // 需要让浮层、目录和宿主布局重新投影。默认值兼容 Node/SSR 单测。
+    viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
+    viewportHeight: typeof window !== 'undefined' ? window.innerHeight : 0,
+    viewportOrientation: typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait',
     // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
     // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
     outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
@@ -26,6 +31,7 @@ export default {
     // 阅读态的唯一来源。工具栏「阅读模式」按钮、顶栏副标题、effectiveReadonly 都读它，
     // 所以三态切换后这三处自动一致，不用各自同步。
     reading() { return this.mode === 'read' },
+    isNarrowViewport() { return this.viewportWidth > 0 && this.viewportWidth <= 760 },
     // 顶栏按钮只读这三样：文案、图标、下拉选项。
     modeLabel() { return modeMeta(this.mode).label },
     modeIcon() { return MODE_ICONS[this.mode] || MODE_ICONS.edit },
@@ -57,7 +63,37 @@ export default {
       return headings.map((item, index) => ({ title: item.text || '章节', text: this.editor.state.doc.textBetween(item.pos, headings[index + 1]?.pos || this.editor.state.doc.content.size).replace(item.text, '').trim() }))
     },
   },
+  mounted() {
+    this.syncViewportState()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.syncViewportState)
+      window.addEventListener('orientationchange', this.syncViewportState)
+    }
+  },
+  beforeDestroy() {
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('resize', this.syncViewportState)
+      window.removeEventListener('orientationchange', this.syncViewportState)
+    }
+    if (this.modeToastTimer) {
+      clearTimeout(this.modeToastTimer)
+      this.modeToastTimer = null
+    }
+    if (this._searchDebounce) {
+      if (typeof this._searchDebounce.dispose === 'function') this._searchDebounce.dispose()
+      else this._searchDebounce.cancel()
+      this._searchDebounce = null
+    }
+  },
   methods: {
+    syncViewportState() {
+      const width = typeof window !== 'undefined' ? Number(window.innerWidth) || 0 : 0
+      const height = typeof window !== 'undefined' ? Number(window.innerHeight) || 0 : 0
+      this.viewportWidth = width
+      this.viewportHeight = height
+      this.viewportOrientation = width > height ? 'landscape' : 'portrait'
+      return { width, height, orientation: this.viewportOrientation }
+    },
     syncFoldState() {
       if (!this.editor) return
       const current = this.editor.storage.larkDoc?.folded || new Set()
@@ -271,12 +307,5 @@ export default {
     toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },
     prevSlide() { this.slideIndex -= 1 },
     nextSlide() { this.slideIndex += 1 },
-  },
-  // 提示条定时器必须在卸载前清掉：单页应用里反复挂载/卸载编辑器，
-  // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。
-  beforeDestroy() {
-    if (this.modeToastTimer) { clearTimeout(this.modeToastTimer); this.modeToastTimer = null }
-    // 查找去抖同理：卸载后不许再有回调去摸 editor。
-    if (this._searchDebounce) { this._searchDebounce.dispose(); this._searchDebounce = null }
   },
 }

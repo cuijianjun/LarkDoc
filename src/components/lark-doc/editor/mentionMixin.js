@@ -11,6 +11,7 @@
  * 没给就用本地名单纯函数过滤 —— 与 unfurl 的「可选 provider」口径一致。
  */
 import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../../core/mention/directory'
+import { projectCapabilityUi } from '../../../core/policy/capability'
 // `MENTION_EMPTY_TEXT` 住在 block 侧（与 `MENTION_LIMITS` / `MENTION_UNKNOWN_NAME` 同一处文案表），
 // `core/mention/directory` 不导出它。早前一行里连它一起从 directory 导入，打包器只报
 // 「export 'MENTION_EMPTY_TEXT' was not found」，运行期拿到 `undefined` —— 面板空态于是
@@ -62,7 +63,7 @@ export default {
      */
     onMention(match) {
       if (this._isDestroyed) return
-      if (!match || !this.writable() || this.effectiveReadonly) {
+      if (!match || !this.writable() || this.effectiveReadonly || !projectCapabilityUi(this.session, 'canEdit').allowed) {
         if (this.mentionOpen) this.closeMentionPanel()
         return
       }
@@ -133,7 +134,7 @@ export default {
     chooseMention(item) {
       const entry = item || this.mentionItems[this.mentionActiveIndex]
       const range = this.mentionRange
-      if (!entry || !range || !this.editor || !this.writable()) return
+      if (!entry || !range || !this.editor || !this.writable() || !projectCapabilityUi(this.session, 'canEdit').allowed) return
       const attrs = {
         kind: entry.kind,
         id: entry.id,

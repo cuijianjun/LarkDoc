@@ -119,6 +119,22 @@ describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
   })
 })
 
+describe('跨端 viewport runtime', () => {
+  it('响应窄屏与横屏变化，并在销毁时移除监听', () => {
+    const source = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/viewModesMixin.js'), 'utf8')
+    expect(source).toContain('viewportWidth')
+    expect(source).toContain('viewportOrientation')
+    expect(source).toContain("window.addEventListener('orientationchange'")
+    expect(source).toContain("window.removeEventListener('orientationchange'")
+    expect(source).toContain("window.addEventListener('resize'")
+  })
+
+  it('根容器暴露窄屏与横屏 class，便于移动端 CSS 降级', () => {
+    expect(editorVue).toContain("'lark-doc-narrow': isNarrowViewport")
+    expect(editorVue).toContain("'lark-doc-landscape': viewportOrientation === 'landscape'")
+  })
+})
+
 describe('P4-06 键位判定（07 §12.1）', () => {
   /** 最小键盘事件：只带判定用到的字段。 */
   function keyEvent(key, mods) {

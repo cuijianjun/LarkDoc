@@ -17,6 +17,7 @@
  *     1:1 就是不画手柄；块高只由 `height` / `aspect` / 桥 `resize` 决定。
  */
 import { safeUrl } from '../documentOperations'
+import { syncAsyncBlockDomState } from '../blocks/shared'
 import { createEmbedBridge } from '../embed/bridge'
 import {
   GENERIC_PROVIDER_ID, safeEmbedSrc, resolveEmbedHeight,
@@ -299,6 +300,7 @@ export function createWebEmbedNodeView(props) {
 
   /* ---------- 唯一同步出口 ---------- */
   function syncAll() {
+    syncAsyncBlockDomState(dom, attrs().asyncState)
     const src = embedSrc()
     dom.setAttribute('data-provider-id', attrs().providerId || GENERIC_PROVIDER_ID)
     if (src) dom.setAttribute('data-src', src)

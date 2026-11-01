@@ -24,6 +24,7 @@
       class="lark-doc-block-handle-main"
       :class="{ 'is-callout': ed.handleBlockNode()?.type?.name === 'callout' }"
       aria-label="块操作"
+      :aria-disabled="ed.handleBlockNode()?.attrs?.asyncState && !ed.blockActionAllowed('edit') ? 'true' : 'false'"
       title="块操作与拖动"
       :draggable="ed.featureEnabled('blockDrag')"
       @mouseenter="ed.openBlockMenuOnHover"
@@ -80,8 +81,10 @@
           type="button"
           role="menuitem"
           :aria-label="item.label"
-          :class="{ active: ed.blockTypeActive(item.id) }"
+          :class="{ active: ed.blockTypeActive(item.id), 'is-disabled': !ed.blockActionAllowed('edit') }"
           :title="item.label"
+          :disabled="!ed.blockActionAllowed('edit')"
+          :aria-disabled="ed.blockActionAllowed('edit') ? 'false' : 'true'"
           @mousedown.prevent
           @click="ed.blockTypeAction(item.id)"
         >
@@ -99,6 +102,9 @@
         class="lark-doc-block-menu-duplicate"
         title="创建副本"
         aria-label="创建副本"
+        :class="{ 'is-disabled': !ed.blockActionAllowed('duplicate') }"
+        :disabled="!ed.blockActionAllowed('duplicate')"
+        :aria-disabled="ed.blockActionAllowed('duplicate') ? 'false' : 'true'"
         @mousedown.prevent
         @click="ed.blockAction('duplicate')"
       >
@@ -117,6 +123,8 @@
         type="button"
         role="menuitem"
         class="lark-doc-block-submenu-trigger"
+        :class="{ 'is-disabled': !ed.blockActionAllowed('edit') }"
+        :aria-disabled="ed.blockActionAllowed('edit') ? 'false' : 'true'"
         aria-haspopup="menu"
         :aria-expanded="ed.blockAlignMenuOpen ? 'true' : 'false'"
         title="缩进和对齐"
@@ -140,6 +148,8 @@
         class="lark-doc-block-submenu-trigger"
         aria-haspopup="menu"
         :aria-expanded="ed.blockColorMenuOpen ? 'true' : 'false'"
+        :class="{ 'is-disabled': !ed.blockActionAllowed('edit') }"
+        :aria-disabled="ed.blockActionAllowed('edit') ? 'false' : 'true'"
         title="颜色"
         @mousedown.prevent
         @mouseenter="ed.openBlockColorMenuOnHover"
@@ -258,7 +268,10 @@
         type="button"
         role="menuitem"
         class="lark-doc-block-menu-row"
+        :class="{ 'is-disabled': !ed.blockActionAllowed(item.id) }"
         :title="item.label"
+        :disabled="!ed.blockActionAllowed(item.id)"
+        :aria-disabled="ed.blockActionAllowed(item.id) ? 'false' : 'true'"
         @mousedown.prevent
         @click="ed.blockAction(item.id)"
       >

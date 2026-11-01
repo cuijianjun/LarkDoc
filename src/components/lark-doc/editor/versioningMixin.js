@@ -36,11 +36,14 @@
  * 下的 `.vue`，单测只能在 Node 里 import 纯 JS。所以与时间、分组、错误码、闸门有关的计算
  * 全部做成模块级纯函数并导出，`test/unit/versioning-ui.test.js` 直接 import 它们。
  */
+import { projectCapabilityUi } from '../../../core/policy/capability'
 import {
   E_SNAPSHOT_AUTHOR,
   E_SNAPSHOT_JSON_NOT_ALLOWED,
   E_SNAPSHOT_PAYLOAD_MISSING,
+  E_VERSION_DELETED,
   E_VERSION_EVICTED,
+  E_VERSION_GONE,
   E_VERSION_NOT_FOUND,
   SNAPSHOT_KIND,
   SNAPSHOT_LABEL_MAX,
@@ -67,6 +70,8 @@ export const VERSIONING_DAY_LABELS = Object.freeze({
  */
 export const VERSIONING_ERROR_TEXT = Object.freeze({
   [E_VERSION_NOT_FOUND]: '该版本不存在或已被移除，请刷新历史记录后重试',
+  [E_VERSION_DELETED]: '该版本已进入回收站，请先恢复后再预览或恢复',
+  [E_VERSION_GONE]: '该版本已彻底删除，无法恢复',
   [E_VERSION_EVICTED]: '该版本已被保留策略淘汰，无法预览或恢复',
   [E_SNAPSHOT_PAYLOAD_MISSING]: '该版本的正文快照缺失，只能查看元信息',
   [E_SNAPSHOT_AUTHOR]: '无法确定操作者：宿主未向 versioning Provider 传入当前作者',
@@ -85,6 +90,35 @@ export const VERSION_KIND_LABELS = Object.freeze({
   [SNAPSHOT_KIND.MANUAL]: '手动保存',
   [SNAPSHOT_KIND.RESTORE]: '恢复产生',
 })
+
+export const VERSION_RECORD_STATES = Object.freeze({
+  AVAILABLE: 'available',
+  DELETED: 'deleted',
+  STALE: 'stale',
+  UNAVAILABLE: 'unavailable',
+})
+
+export const VERSION_RECORD_STATE_TEXT = Object.freeze({
+  [VERSION_RECORD_STATES.AVAILABLE]: '可用',
+  [VERSION_RECORD_STATES.DELETED]: '已在回收站',
+  [VERSION_RECORD_STATES.STALE]: '内容已过期',
+  [VERSION_RECORD_STATES.UNAVAILABLE]: '暂不可用',
+})
+
+/** 将 Provider/宿主返回的状态归一化，未知状态默认按可用处理，避免误禁用历史记录。 */
+export function versionRecordState(record, providerAvailable) {
+  const input = record && typeof record === 'object' ? record : {}
+  if (input.deleted === true || input.status === VERSION_RECORD_STATES.DELETED) {
+    return VERSION_RECORD_STATES.DELETED
+  }
+  if (providerAvailable === false || input.status === VERSION_RECORD_STATES.UNAVAILABLE) {
+    return VERSION_RECORD_STATES.UNAVAILABLE
+  }
+  if (input.stale === true || input.status === VERSION_RECORD_STATES.STALE) {
+    return VERSION_RECORD_STATES.STALE
+  }
+  return VERSION_RECORD_STATES.AVAILABLE
+}
 
 /** 无能力（权限 / 未配 Provider）时的置灰色 —— 04 §3.4-B 实测 `rgb(187,191,196)`。 */
 const DISABLED_FILL = 'rgb(187, 191, 196)'
@@ -179,7 +213,7 @@ export function versionCapabilityGate(session, capability) {
   if (!session || typeof session.can !== 'function') {
     return { allowed: false, reason: '未配置 DocumentSession', missingProvider: true }
   }
-  if (!session.can(capability)) {
+  if (!projectCapabilityUi(session, capability).allowed) {
     return { allowed: false, reason: '当前用户没有该操作的权限', missingProvider: false }
   }
   const missingProvider = typeof session.getProvider === 'function' && !session.getProvider('versioning')
@@ -276,6 +310,9 @@ export default {
       versionPanelOpen: false,
       /** `provider.list()` 的原样结果，new → old；已经是 `normalizeSnapshot` 后的九个字段。 */
       versionList: [],
+      versionDeletedList: [],
+      versionTrashOpen: false,
+      versionTrashBusy: false,
       /**
        * 「编辑记录 N/M」的 N，从 1 起；翻的是**编辑记录**，不是版本（§3.4 ⑤ 反直觉 3）。
        *
@@ -309,9 +346,16 @@ export default {
   },
 
   computed: {
+    /** 统一 capability 投影，供面板同时渲染 visible/disabled/read-only/rejected。 */
+    versionCreateCapabilityState() {
+      return projectCapabilityUi(this.session, 'canCreateVersion')
+    },
+    versionRestoreCapabilityState() {
+      return projectCapabilityUi(this.session, 'canRestoreVersion')
+    },
     /** 「另存为版本」闸门（05 §5.4 源码实测 `canCreateVersion`）。 */
     versionCanCreate() {
-      return versionCapabilityGate(this.session, 'canCreateVersion').allowed
+      return this.versionCreateCapabilityState.allowed
     },
     /** 「还原此历史记录」闸门（05 §5.4 源码实测 `canRestoreVersion`）。 */
     versionCanRestore() {
@@ -366,6 +410,12 @@ export default {
     versionNextDisabled() {
       return this.versionTotal === 0 || this.versionIndex >= this.versionTotal
     },
+    versionCanManageTrash() {
+      return versionCapabilityGate(this.session, 'canCreateVersion').allowed
+    },
+    versionTrashReason() {
+      return versionCapabilityGate(this.session, 'canCreateVersion').reason
+    },
     /**
      * 选中版本与其**更早**版本的差异摘要。
      *
@@ -418,6 +468,64 @@ export default {
     },
 
     /** 拉列表；拉不动时右栏显示降级文案而不是空白（面板自己不抛、不白屏）。 */
+    async loadDeletedVersions() {
+      const provider = this.versionProvider
+      if (!provider || typeof provider.listDeleted !== 'function') {
+        this.versionDeletedList = []
+        return []
+      }
+      try {
+        const list = await provider.listDeleted({ documentId: this.session ? this.session.documentId : '' })
+        this.versionDeletedList = Array.isArray(list) ? list : []
+        return this.versionDeletedList
+      } catch (error) {
+        this.versionPreviewError = versioningErrorMessage(error)
+        return []
+      }
+    },
+
+    async openVersionTrash() {
+      if (!this.versionCanManageTrash) {
+        this.versionPreviewError = this.versionTrashReason
+        return false
+      }
+      this.versionTrashOpen = true
+      await this.loadDeletedVersions()
+      return true
+    },
+
+    closeVersionTrash() {
+      this.versionTrashOpen = false
+      this.versionDeletedList = []
+    },
+
+    async restoreDeletedVersion(versionId) {
+      if (!this.versionCanManageTrash || !this.versionProvider?.restoreDeleted) return null
+      this.versionTrashBusy = true
+      try {
+        const restored = await this.versionProvider.restoreDeleted(versionId)
+        await this.loadDeletedVersions()
+        await this.loadVersions()
+        return restored
+      } catch (error) {
+        this.versionPreviewError = versioningErrorMessage(error)
+        return null
+      } finally { this.versionTrashBusy = false }
+    },
+
+    async purgeDeletedVersion(versionId) {
+      if (!this.versionCanManageTrash || !this.versionProvider?.purge) return null
+      this.versionTrashBusy = true
+      try {
+        const purged = await this.versionProvider.purge(versionId)
+        await this.loadDeletedVersions()
+        return purged
+      } catch (error) {
+        this.versionPreviewError = versioningErrorMessage(error)
+        return null
+      } finally { this.versionTrashBusy = false }
+    },
+
     async loadVersions() {
       const provider = this.versionProvider
       if (!provider) {

@@ -13,6 +13,7 @@
 const path = require('path')
 const fs = require('fs')
 const { chromium } = require('playwright-core')
+const BASE_URL = process.argv[2] || 'http://localhost:8765/examples/element-demo.html'
 function findChromium() {
   const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
   const dirs = fs.readdirSync(cache).filter((n) => /^chromium-\d+$/.test(n)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -34,8 +35,9 @@ async function main() {
     const url = (m.location && m.location().url) || ''
     if (m.type() === 'error' && !/favicon\.ico$/.test(url)) errors.push('console: ' + m.text() + ' @ ' + url)
   })
-  const SHOTS = '/Users/cjjxw/codex/tiptap-integration-demos/apps/lark-doc/.verify-shots'
-  await page.goto('http://localhost:8765/examples/element-demo.html', { waitUntil: 'networkidle', timeout: 60000 })
+  const SHOTS = path.join(__dirname, '..', '.verify-shots')
+  fs.mkdirSync(SHOTS, { recursive: true })
+  await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 })
   await page.waitForTimeout(2500)
 
   // 1. 自定义元素注册 + 挂载

@@ -37,6 +37,7 @@ import {
 import { unreadCount } from '../../../core/comments/index'
 import { bindThreads, resolveAnchorCodec } from '../../../core/comments/binding'
 import { normalizeAuthor } from '../../../core/comments/thread'
+import { projectCapabilityUi } from '../../../core/policy/capability'
 
 /** 面板与正文右缘的间距（实测 1214 - 1202，与修订面板同口径）。 */
 const COMMENT_ANCHOR_GUTTER = 12
@@ -190,27 +191,26 @@ export default {
   mounted() {
     // 宿主的 `mounted` 在本钩子之后才建编辑器 —— 延一帧再拉评论、挂监听。
     this.$nextTick(() => {
-      if (!this.editor) return
-      this.editor.view.dom.addEventListener('pointerdown', this.onCommentPointerDown)
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      this._commentEditorDom = this.editor.view.dom
+      this._commentEditorDom.addEventListener('pointerdown', this.onCommentPointerDown)
       this.loadComments()
     })
     window.addEventListener('scroll', this.onCommentViewportChange, true)
     window.addEventListener('resize', this.onCommentViewportChange)
   },
   beforeDestroy() {
+    this._commentLoadToken = null
     window.removeEventListener('scroll', this.onCommentViewportChange, true)
     window.removeEventListener('resize', this.onCommentViewportChange)
-    if (this.editor && this.editor.view && this.editor.view.dom) {
-      this.editor.view.dom.removeEventListener('pointerdown', this.onCommentPointerDown)
-    }
+    this._commentEditorDom?.removeEventListener('pointerdown', this.onCommentPointerDown)
+    this._commentEditorDom = null
   },
   methods: {
     // —— 闸门与 Provider ——
     /** 单一判定入口：没配 session 时按 DEFAULT_CAPABILITIES（八项默认 true）放行。 */
     commentCan(capability) {
-      const session = this.session
-      if (!session || typeof session.can !== 'function') return true
-      return session.can(capability)
+      return projectCapabilityUi(this.session, capability).allowed
     },
     /** 写操作的统一闸门；返回 false 时调用方直接 return（UI 侧同步置灰）。 */
     commentAllowed(action) {
@@ -226,14 +226,31 @@ export default {
 
     // —— 读取与绑定 ——
     async loadComments() {
+      const token = {}
+      this._commentLoadToken = token
+      const session = this.session
       const provider = this.commentProvider()
-      if (!provider) {
+      if (!provider || !this.commentCan('canView')) {
         this.commentThreads = []
         this.commentPanels = []
         return []
       }
-      const documentId = this.session && this.session.documentId ? this.session.documentId : ''
-      const threads = await provider.list({ documentId })
+      const documentId = session && session.documentId ? session.documentId : ''
+      const user = session && session.user
+      const current = () => this._commentLoadToken === token
+        && this.session === session
+        && (session && session.documentId ? session.documentId : '') === documentId
+        && (session && session.user) === user
+        && this.commentProvider() === provider
+        && this.commentCan('canView')
+      let threads
+      try {
+        threads = await provider.list({ documentId })
+      } catch (error) {
+        if (!current()) return []
+        throw error
+      }
+      if (!current()) return []
       this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, threads, this.commentAnchorCodec)
       this.updateCommentPanels()
       return this.commentThreads
@@ -491,6 +508,9 @@ export default {
       clipboard.writeText(text).catch(() => {})
       return true
     },
+    commentCapabilityState(capability = 'canComment') {
+      return projectCapabilityUi(this.session, capability)
+    },
     commentControlDisabled(id, threadId) {
       if (id === 'go-next' || id === 'go-previous') {
         const index = this.commentPanels.findIndex((item) => item.id === threadId)
@@ -517,7 +537,8 @@ export default {
       this.$nextTick(() => this.placeCommentPanels())
     },
     placeCommentPanels() {
-      const view = this.editor && this.editor.view
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      const view = this.editor.view
       if (!view || !this.commentPanels.length) return
       const bound = view.dom.getBoundingClientRect()
       const maxLeft = window.innerWidth - COMMENT_PANEL.width - COMMENT_VIEWPORT_MARGIN

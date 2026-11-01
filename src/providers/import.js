@@ -6,6 +6,8 @@
  * asset handling stay in the host so the editor never hides a failed file.
  */
 
+import { runProviderTask } from './provider-task'
+
 const OPERATIONS = Object.freeze([
   'createBatch', 'getBatch', 'retry', 'cancel', 'commit', 'rollback', 'delete',
 ])
@@ -30,6 +32,26 @@ function normalizeError(error = {}) {
     path: error.path,
     message: error.message || '导入失败',
     retryable: Boolean(error.retryable),
+  }
+}
+
+export function importProgressSummary(input = {}) {
+  const state = normalizeImportJob(input)
+  const total = state.jobs.length || 1
+  const completed = state.jobs.filter(job => ['ready', 'failed', 'cancelled'].includes(job.stage)).length
+  const progress = Math.max(0, Math.min(100, Number.isFinite(state.progress)
+    ? state.progress
+    : Math.round(state.jobs.reduce((sum, job) => sum + Math.max(0, Math.min(100, job.progress || 0)), 0) / total)))
+  return {
+    stage: state.stage,
+    batchStatus: state.batchStatus,
+    progress,
+    total,
+    completed,
+    failed: state.failedAssetCount,
+    remaining: Math.max(0, total - completed),
+    canRetry: state.jobs.some(job => job.stage === 'failed' && job.errors.some(error => error.retryable)),
+    canRollback: Boolean(state.rollback.requested || state.batchStatus === 'partial' || state.batchStatus === 'completed'),
   }
 }
 
@@ -119,10 +141,16 @@ export function createImportBatchController(input = {}) {
 export function createImportProvider(options = {}) {
   const request = requireRequest(options.request)
   const routes = { ...(options.routes || {}) }
-  const invoke = (operation, ctx, input = {}) => request(operation, withContext(ctx, input), {
-    route: routes[operation] || operation,
-    provider: 'import',
-  })
+  const invoke = (operation, ctx, input = {}) => {
+    const payload = withContext(ctx, input)
+    return runProviderTask({
+      kind: `import.${operation}`,
+      idempotencyKey: payload.idempotencyKey || '',
+    }, () => request(operation, payload, {
+      route: routes[operation] || operation,
+      provider: 'import',
+    }))
+  }
   const provider = { capabilities: Object.freeze({ operations: OPERATIONS.slice(), requiresHostRequest: true }) }
   for (const operation of OPERATIONS) provider[operation] = (ctx, input) => invoke(operation, ctx, input)
   return provider

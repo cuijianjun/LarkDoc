@@ -10,6 +10,8 @@
  *   node scripts/verify.mjs highlight-fold list-marker   # 顺序跑多个
  *   node scripts/verify.mjs --all                        # 全跑
  *   node scripts/verify.mjs --list                       # 只列可用目标
+ *   BASE_URL=http://127.0.0.1:8877/lark-doc node scripts/verify.mjs --all
+ * BASE_URL 由统一入口转成各脚本的位置参数；WC / element 演示页保持各自路径。
  *
  * 输出规则（给 agent 看的部分必须短）：
  *   - 成功：一行 `PASS <target> <耗时> <摘要>`；
@@ -78,20 +80,45 @@ if (!env.NODE_PATH) {
   else console.warn('⚠ NODE_PATH 未设置，playwright-core 可能找不到')
 }
 
-/** 从每个目标脚本自身的 goto 地址提取端口，避免新增目标时漏改探活清单。 */
-function requiredPorts() {
-  const ports = new Set()
-  for (const target of selected) {
-    const source = readFileSync(join(SCRIPTS, PREFIX + target + '.js'), 'utf8')
-    for (const match of source.matchAll(/https?:\/\/localhost:(\d+)/g)) ports.add(Number(match[1]))
+const baseURL = process.env.BASE_URL ? new URL(process.env.BASE_URL) : null
+if (baseURL && (!['http:', 'https:'].includes(baseURL.protocol) || baseURL.username || baseURL.password)) {
+  throw new Error('BASE_URL 必须是不含凭据的 HTTP(S) 地址')
+}
+if (baseURL && baseURL.pathname === '/') baseURL.pathname = '/lark-doc'
+
+/** 从脚本的位置参数默认值生成实际 URL，探活与 spawn 共用同一份结果。 */
+function targetURLs(target) {
+  const source = readFileSync(join(SCRIPTS, PREFIX + target + '.js'), 'utf8')
+  const defaults = [...source.matchAll(/process\.argv\[(\d+)\]\s*\|\|\s*['"](https?:\/\/[^'"]+)['"]/g)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+  if (!defaults.length || defaults.some((match, index) => Number(match[1]) !== index + 2)) {
+    throw new Error(`${target} 的 URL 参数契约已变化，请同步统一运行器`)
   }
-  return [...ports].sort((a, b) => a - b)
+  return defaults.map((match) => {
+    const url = new URL(match[2])
+    if (!baseURL) return url.href
+    return url.pathname === '/lark-doc' ? baseURL.href : new URL(url.pathname + url.search + url.hash, baseURL.origin).href
+  })
+}
+const urlsByTarget = new Map(selected.map((target) => [target, targetURLs(target)]))
+
+function requiredServices() {
+  const services = new Map()
+  for (const urls of urlsByTarget.values()) {
+    for (const url of urls) {
+      const { hostname, port, protocol } = new URL(url)
+      const host = hostname.replace(/^\[|\]$/g, '')
+      const effectivePort = Number(port || (protocol === 'https:' ? 443 : 80))
+      services.set(`${host}:${effectivePort}`, { host, port: effectivePort })
+    }
+  }
+  return [...services.values()]
 }
 
-/** 探活页面依赖的服务：不通只警告，不阻塞（验证脚本会给出真正的 goto 错误）。 */
-function probePort(port) {
+/** 探活实际目标的主机与端口；不通只警告，断言仍由原脚本执行。 */
+function probePort({ host, port }) {
   return new Promise((resolve) => {
-    const sock = net.connect({ port, host: '127.0.0.1' })
+    const sock = net.connect({ port, host })
     const done = (ok) => {
       sock.destroy()
       resolve(ok)
@@ -111,7 +138,7 @@ function runOne(target) {
   const started = Date.now()
 
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script], { cwd: ROOT, env })
+    const child = spawn(process.execPath, [script, ...urlsByTarget.get(target)], { cwd: ROOT, env })
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
@@ -179,13 +206,12 @@ const fmt = (ms) => (ms / 1000).toFixed(1) + 's'
 async function main() {
   mkdirSync(LOG_DIR, { recursive: true })
 
-  const ports = requiredPorts()
-  for (const port of ports) {
-    const alive = await probePort(port)
+  for (const service of requiredServices()) {
+    const alive = await probePort(service)
     if (!alive) {
-      console.warn(`⚠ 127.0.0.1:${port} 没响应 —— 使用该地址的目标会失败`)
-      if (port === 8080) console.warn('  Node14 起服务：PATH=$HOME/.nvm/versions/node/v14.21.3/bin:$PATH npm run dev')
-      if (port === 8765) console.warn('  包根目录起静态服务：python3 -m http.server 8765')
+      console.warn(`⚠ ${service.host}:${service.port} 没响应 —— 使用该地址的目标会失败`)
+      if (!baseURL && service.port === 8080) console.warn('  Node14 起服务：PATH=$HOME/.nvm/versions/node/v14.21.3/bin:$PATH npm run dev')
+      if (!baseURL && service.port === 8765) console.warn('  包根目录起静态服务：python3 -m http.server 8765')
     }
   }
 

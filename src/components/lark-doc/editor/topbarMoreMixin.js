@@ -220,6 +220,10 @@ export default {
         return { ...item, enabled }
       })
     },
+    /** 返回菜单项绑定的 capability，供模板统一投影 disabled/rejected 语义。 */
+    topbarMoreCapability(item) {
+      return item && TOPBAR_MORE_CAPABILITY[item.id] ? TOPBAR_MORE_CAPABILITY[item.id] : ''
+    },
     /** 渲染行（含分隔线）。 */
     topbarMoreRows() {
       return topbarMoreRows(this.topbarMoreItems)
@@ -329,6 +333,14 @@ export default {
         case 'export.markdown':
           this.closeTopbarMore()
           this.openExportDialog(action.slice('export.'.length))
+          return
+        case 'duplicate':
+          if (this.shareCan && !this.shareCan('canCopy')) return
+          this.closeTopbarMore()
+          this.$emit('duplicate-document', {
+            title: this.localTitle || this.title || '未命名文档',
+            document: this.editor && typeof this.editor.getJSON === 'function' ? this.editor.getJSON() : null,
+          })
           return
         case 'save-version':
           this.closeTopbarMore()

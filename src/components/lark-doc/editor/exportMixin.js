@@ -14,8 +14,8 @@
  *      （authorization.js 的注释：能力集合是服务端最终判断）。
  *   4. **toast 不显示进度、不变「导出成功」**（§4.6.7④）：处理中保持同一文案
  *      「正在导出文档」，落盘后**自行消失**。所以这里没有「成功/失败」两种 toast。
- *   5. **不在这里做格式实现**：markdown/docx/pdf 三个产物全部由 utils/export/index.js
- *      产出，本 mixin 只负责「取文档 → 取文件名 → 派发 → 收 toast」。
+ *   5. **不在这里做格式实现**：三个格式由 utils/export 产出，Markdown/Word 派发时
+ *      按需加载，PDF 保持同步。本 mixin 只负责「取文档 → 取文件名 → 派发 → 收 toast」。
  *
  * 为什么三档共用一个 mixin 而不是三个：
  *   规格明写「三档共用同一个弹窗壳，只有标题与选项文案不同」，壳一分为三就会各自
@@ -23,7 +23,10 @@
  *   §4.6.7② 红字强调「默认不是全量」想避免的问题。所以档位定义收进 EXPORT_FORMATS
  *   一张表，打开弹窗时**按档重设默认值**，从不继承上一次的选择。
  */
-import { exportDocx, exportMarkdown, exportPdf, safeFileName } from '../../../utils/export/index.js'
+import { safeFileName } from '../../../utils/export/fileName.js'
+import { exportPdf } from '../../../utils/export/pdf.js'
+import { projectCapabilityUi } from '../../../core/policy/capability'
+import { createOutputAuditEvent, evaluateOutputPolicy, watermarkAttributes } from '../../../core/policy/output'
 
 /**
  * 三档定义。顺序 = 「更多 → 下载为」二级菜单的实测顺序（Word / PDF / Markdown，
@@ -90,6 +93,8 @@ export default {
       exportToast: '',
       /** 派发中：只用于挡住重复点击，不用于显示进度（见负结论 4）。 */
       exportBusy: false,
+      outputWatermarkAttrs: {},
+      outputAuditEvents: [],
     }
   },
   computed: {
@@ -97,9 +102,11 @@ export default {
      * 权限闸门。与 `effectiveReadonly` 同口径：拿不到 session 时视为「无权可证」→ 放行，
      * 而不是一律置灰 —— 编辑器在纯展示 demo 里经常没有 session。
      */
+    exportCapabilityState() {
+      return projectCapabilityUi(this.session, 'canExport')
+    },
     exportCanExport() {
-      if (!this.session || typeof this.session.can !== 'function') return true
-      return !!this.session.can('canExport')
+      return projectCapabilityUi(this.session, 'canExport').allowed
     },
     /** 当前档位定义；未开 / 未知档返回 null，模板靠它整块 v-if。 */
     exportFormatDef() {
@@ -126,7 +133,7 @@ export default {
     },
     /** 置灰态：无权限或正在派发。渲染层只加 disabled 类，**不隐藏**（负结论 3）。 */
     exportSubmitDisabled() {
-      return !this.exportCanExport || this.exportBusy
+      return !this.exportCanExport || this.exportBusy || !this.outputPolicyFor(this.exportFormat === 'pdf' ? 'print' : 'download').allowed
     },
     /** 导出文件名（不含扩展名）：取编辑器标题，空标题回落到常量。 */
     exportFileBaseName() {
@@ -144,6 +151,12 @@ export default {
     window.removeEventListener('keydown', this.onExportKeydown, true)
   },
   methods: {
+    outputPolicyFor(action) {
+      const policy = this.session && typeof this.session.getProvider === 'function'
+        ? this.session.getProvider('security')?.policy || {}
+        : {}
+      return evaluateOutputPolicy({ ...policy, canDownload: this.exportCanExport }, action)
+    },
     // —— 开关 ——
     /** 打开某一档。无权限直接 return（置灰态的第二次保险）。 */
     openExportDialog(format) {
@@ -189,6 +202,16 @@ export default {
       this.closeExportDialog()
       this.exportBusy = true
       this.exportToast = EXPORT_TOAST_TEXT
+      const action = format === 'pdf' ? 'print' : 'download'
+      const policy = this.outputPolicyFor(action)
+      if (!policy.allowed) {
+        this.exportBusy = false
+        this.exportToast = ''
+        this.recordOutputAudit(action, policy)
+        return
+      }
+      this.outputWatermarkAttrs = watermarkAttributes(this.session?.getProvider?.('security')?.policy || {})
+      this.recordOutputAudit(action, policy)
       try {
         await this.dispatchExport(format, scope, fileName)
       } finally {
@@ -215,13 +238,15 @@ export default {
     dispatchMarkdown(scope, fileName) {
       const doc = this.currentDoc()
       if (!doc) return Promise.resolve(null)
-      return Promise.resolve(exportMarkdown(doc, { fileName, scope }))
+      return import('../../../utils/export/index.js')
+        .then(({ exportMarkdown }) => exportMarkdown(doc, { fileName, scope }))
     },
     /** Word 档：`scope` 只透传，本线不附带评论内容（负结论 1）。 */
     dispatchDocx(scope, fileName) {
       const doc = this.currentDoc()
       if (!doc) return Promise.resolve(null)
-      return exportDocx(doc, { fileName, title: fileName, scope })
+      return import('../../../utils/export/index.js')
+        .then(({ exportDocx }) => exportDocx(doc, { fileName, title: fileName, scope }))
     },
     /**
      * PDF 档走浏览器打印，文件名由用户在系统打印框里定。
@@ -245,6 +270,19 @@ export default {
     currentDoc() {
       if (!this.editor || typeof this.editor.getJSON !== 'function') return null
       return this.editor.getJSON()
+    },
+    recordOutputAudit(action, policy) {
+      const event = createOutputAuditEvent({
+        actorId: this.session?.user?.id,
+        docId: this.session?.documentId,
+        action,
+        result: policy.allowed ? 'allowed' : 'denied',
+        reason: policy.reason,
+        metadata: { format: this.exportFormat, scope: this.exportScopeValue },
+      })
+      this.outputAuditEvents.push(event)
+      if (typeof this.$emit === 'function') this.$emit('output-audit', event)
+      return event
     },
     /** 关掉 toast（宿主想手动收时用；正常路径走「落盘后自行消失」）。 */
     hideExportToast() {

@@ -4,7 +4,12 @@
  * 只验一件事：**并发插入后锚点还指在原词上**。绝对坐标会在别人插字后指偏，
  * 相对位置不会 —— 这条如果退化，评论会静默挂到错误的词上，比报错难查得多。
  */
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
+import { Editor } from '@tiptap/core'
+import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
+import { createBlockApi } from '../../src/core/blockApi'
+import { anchorBinding } from '../../src/core/comments/anchor'
 import * as Y from 'yjs'
 import { createCommentAnchors, createYjsAnchorCodec } from '../../src/collab/anchors'
 import { createAnchorCodec, encodeAnchor, decodeAnchor } from '../../src/core/comments/anchor'
@@ -39,6 +44,41 @@ function createBody(blocks) {
   }
   return { ydoc, fragment, layout, resolve, locate }
 }
+
+describe('BlockAPI 结构操作的评论与折叠身份', () => {
+  it('移动保留绑定，复制不继承，删除失联，撤销恢复同一 blockId', () => {
+    const editor = new Editor({
+      extensions: createLarkDocExtensions(),
+      content: { type: 'doc', content: [
+        { type: 'heading', attrs: { blockId: 'heading', level: 1 }, content: [{ type: 'text', text: 'Section' }] },
+        { type: 'paragraph', attrs: { blockId: 'body', indent: 1 }, content: [{ type: 'text', text: 'Body' }] },
+        { type: 'paragraph', attrs: { blockId: 'tail' }, content: [{ type: 'text', text: 'Tail' }] },
+      ] },
+    })
+    try {
+      const api = createBlockApi({ editor })
+      const anchor = { blockId: 'heading', offset: 0, length: 7 }
+      const bound = () => anchorBinding(anchor, (id) => Boolean(api.get(id))).bound
+      editor.commands.toggleLarkDocFold(0)
+      expect(editor.storage.larkDoc.folded.has('heading')).toBe(true)
+      const { rootId: copyId } = api.duplicate('heading')
+      expect(copyId).not.toBe('heading')
+      expect(editor.storage.larkDoc.folded.has(copyId)).toBe(false)
+      expect(bound()).toBe(true)
+      api.move('heading', { blockId: 'tail', position: 'after' })
+      expect(bound()).toBe(true)
+      expect(api.get('heading').text).toBe('Section')
+      api.remove('heading')
+      expect(bound()).toBe(false)
+      expect(api.get(copyId)).not.toBeNull()
+      editor.commands.undo()
+      expect(bound()).toBe(true)
+      expect(api.get('heading').text).toBe('Section')
+    } finally {
+      editor.destroy()
+    }
+  })
+})
 
 describe('P6b 评论锚点 · Yjs 相对位置', () => {
   it('字符级 type 上，别人在前面插入后仍解回同一个词', () => {

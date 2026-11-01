@@ -465,7 +465,8 @@ describe('P4-06 规格层：CSS 与面板结构（07 §12.2 / §12.4 / §12.6）
   })
 
   it('宿主接线：面板挂上、事务里刷新、模式切换同步 tracker', () => {
-    expect(editorVue).toContain('<RevisionPanel :ed="self" />')
+    expect(editorVue).toMatch(/<RevisionPanel\s+v-if="revisionPanels\.length"\s+:ed="self"\s*\/>/)
+    expect(editorVue).toContain('webpackChunkName: "editor-revision-panel"')
     expect(editorVue).toContain('this.updateRevisionPanels()')
     expect(editorVue).toContain('revisionMixin')
     expect(modeMixin).toContain('syncRevisionTracking')

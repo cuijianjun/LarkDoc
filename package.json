@@ -34,6 +34,7 @@
     "contract:check": "node scripts/gen-contract.mjs --check",
     "prepack": "node scripts/ensure-artifacts.mjs && npm run size",
     "artifacts:check": "node scripts/ensure-artifacts.mjs --check",
+    "verify:host": "node scripts/verify-host.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:all": "node scripts/verify.mjs --all",
     "verify:list": "node scripts/verify.mjs --list",
