@@ -12,8 +12,8 @@
  *   registerVue2NodeViews()
  *   const doc = new LarkDoc({ element, title, content, ... })
  */
-import LarkDoc, { createLarkDoc } from '../../LarkDoc'
+import LarkDoc from '../../LarkDoc'
 import { registerVue2NodeViews } from './nodeviews'
 
-export { LarkDoc, createLarkDoc, registerVue2NodeViews }
+export { LarkDoc, registerVue2NodeViews }
 export default LarkDoc
