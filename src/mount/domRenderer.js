@@ -216,7 +216,7 @@ export function createDomRenderer() {
         shell.editorEl.setAttribute('contenteditable', readonly ? 'false' : 'true')
         shell.statusSummary.textContent = `${state.wordCount}${documentHost.effectiveMaxLength > 0 ? ` / ${documentHost.effectiveMaxLength}` : ''} 字 · ${state.outline.length} 个标题`
         shell.statusHint.textContent = readonly ? '仅阅读' : '输入 / 快速插入'
-        shell.modeToast.textContent = state.modeToast
+        shell.modeToastText.textContent = state.modeToast
         shell.modeToast.hidden = !state.modeToast
         errorText.textContent = state.error
         shell.error.hidden = !state.error

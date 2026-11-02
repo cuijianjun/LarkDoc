@@ -216,6 +216,7 @@ export default {
       // 不在 `allow` 里 = 宿主没开放这一项。快捷键、外部调用、下拉都汇到这里，
       // 统一在一个点上拦，别在三个入口各判一次。
       if (!isDocMode(id) || this.modeRules().allow.indexOf(id) < 0 || id === this.mode) return
+      // 模式切换立即生效，随后通过顶部 message 提示结果；不弹确认框，避免打断连续切换。
       this.mode = id
       this.persistMode(id)
       this.notifyMode(id)

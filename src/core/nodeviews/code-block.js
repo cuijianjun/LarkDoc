@@ -326,7 +326,9 @@ export function createCodeBlockNodeView(props) {
     }).catch((error) => {
       if (version !== diagramVersion || destroyed) return
       diagramState = 'error'
-      diagramError = ''
+      // 保留底层错误，避免动态 chunk、特性注册或 Mermaid 语法错误都被
+      // 压成同一条泛化提示，浏览器联调时无法判断真实根因。
+      diagramError = error && error.message ? String(error.message) : String(error || '图表渲染失败')
       if (typeof options.onDiagramError === 'function') options.onDiagramError(error)
       syncDom()
     })

@@ -24,7 +24,7 @@ export default {
      */
     onDocumentPointerDown(event) {
       const target = event.target
-      if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target)) this.closeCommandMenu()
+      if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target) && !target.closest?.('button[aria-label="插入"]')) this.closeCommandMenu()
       // P4-01：`@` 面板的常规关闭由选区变化驱动（document.js 回调 onMention(null)），
       // 这里只补那种「不换选区」的点击：工具栏 / 页眉 / 页边空白。点回正文不拦，
       // 否则「点正文某处落光标」会先被收掉面板、再靠重算开回来，闪一下。

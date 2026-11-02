@@ -169,6 +169,8 @@ export default {
         openCommandMenu: (kind, event) => this.openCommandMenu(kind, event),
         onTableToolbarClick: () => this.onTableToolbarClick(),
         toggleDiagramMenu: () => this.toggleDiagramMenu(),
+        openDiagramMenuOnHover: () => this.openDiagramMenuOnHover(),
+        scheduleDiagramMenuClose: () => this.scheduleDiagramMenuClose(),
         insertDiagramType: (id) => this.insertDiagramType(id),
         // SFC 是内联表达式 `ed.$emit('ai-request', 'rewrite')`，没有对应方法。
         emitAiRequest: (kind) => this.$emit('ai-request', kind),
