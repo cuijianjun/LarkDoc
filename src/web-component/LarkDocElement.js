@@ -134,6 +134,9 @@ export class LarkDocElement extends HTMLElement {
 
   _mount() {
     if (this.document || !this.isConnected) return
+    // 重建时先移除上一轮 renderer 留下的编辑器 DOM；否则属性读取会把
+    // ready 回调写入的正文误当成新的 slot 初始内容。原始 slot 已缓存，随后恢复。
+    if (this._slotHTML != null && this.innerHTML) this.innerHTML = ''
     const { options, props } = readOptionsFromElement(this)
     this._rendererProps = props
     // 标题值已经落到 props.title，标签上的 title 属性立刻摘掉（否则浏览器会画原生 tooltip）。
@@ -148,9 +151,14 @@ export class LarkDocElement extends HTMLElement {
     // 标签内的 HTML 兜底作为初始内容：长正文写进 attribute 既难转义也不可读，
     // 这是 Web Component 的通用惯例；content 属性存在时以属性为准。
     const slotHTML = this._consumeSlotHTML()
-    if (slotHTML && this._options.content == null && props.initialContent == null) {
+    if (slotHTML) {
+      // slot 是元素声明的初始正文，优先级高于上一轮实例可能残留的 content。
+      // 每次重建都重新灌入，保证 ready 回调写入不会成为下一轮初始正文。
       this._options.content = slotHTML
       props.initialContent = slotHTML
+      // 仅 Web Component slot 需要在实例重建时压过持久化正文；普通宿主显式
+      // initialContent 仍保留旧的 persistence 契约（正文和标题都可恢复）。
+      this._options.preserveInitialContent = true
     }
     this._options.element = this
     try {

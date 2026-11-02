@@ -172,7 +172,7 @@ export function createNativeOptionsHost({ options, state: initialState = {}, pro
     target[key] = (...args) => destroyed ? undefined : method.apply(host, args)
   })
   Object.entries(computed).forEach(([key, definition]) => {
-    computedEffects.set(key, { key, computed: true, dirty: true, dependencies: new Set(), get: typeof definition === 'function' ? definition : definition.get, set: definition.set })
+    computedEffects.set(key, { key, computed: true, dirty: true, dependencies: new Set(), get: typeof definition === 'function' ? definition : definition && definition.get, set: definition && definition.set })
   })
   const seeded = new Set(Object.keys(raw))
   layers.forEach(layer => {

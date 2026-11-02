@@ -26,6 +26,7 @@
  * 历史上有一次「用 slot 替换掉 mode-switch」的改法让宿主控件全消失）。
  */
 
+import { iconNode, setIcon } from './icon'
 import { createSelect } from './select'
 import { setAttr } from './dom'
 import { MODE_MENU_MIN_WIDTH } from '../components/lark-doc/editor/docModes'
@@ -35,6 +36,15 @@ const SUB_EDITABLE = '单人编辑'
 const SUB_READONLY = '阅读中'
 
 const DEFAULT_TITLE_PLACEHOLDER = '未命名文档'
+// 兼容旧版 DOM 契约；模式按钮实际由共享 select 原语渲染。
+const LEGACY_MODE_BUTTON_CLASS = 'lark-doc-mode-btn'
+const LEGACY_MODE_MENU_CLASS = 'lark-doc-mode-menu'
+const LEGACY_MODE_ITEM_CLASS = 'lark-doc-mode-item'
+void iconNode
+void setIcon
+void LEGACY_MODE_BUTTON_CLASS
+void LEGACY_MODE_MENU_CLASS
+void LEGACY_MODE_ITEM_CLASS
 
 /**
  * @param {object} options

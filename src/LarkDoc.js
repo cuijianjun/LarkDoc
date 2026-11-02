@@ -110,6 +110,7 @@ export class LarkDoc {
         contentFormat: this.options.contentFormat,
         readonly: Boolean(source.readonly),
         persistence: this._resolvePersistence(source),
+        preserveInitialContent: source.preserveInitialContent === true,
         saveHtml: this.options.saveHtml === true,
         uploadImage: this._resolveUploader(source),
         uploadFile: this._resolveFileUploader(source),

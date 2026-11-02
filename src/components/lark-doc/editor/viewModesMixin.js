@@ -6,7 +6,7 @@
  */
 import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../documentOperations'
 import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
-import { DEFAULT_MODES_CONFIG, MODE_ICONS, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
+import { DEFAULT_MODES_CONFIG, DOC_MODES, MODE_ICONS, MODE_MENU_WIDTH, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
 
 export default {
   data() { return {
@@ -38,13 +38,24 @@ export default {
     },
     // 顶栏按钮只读这几样：文案、图标、下拉选项、能不能弹菜单。
     modeLabel() {
-      const found = this.modeOptions.filter((item) => item.id === this.mode)[0]
+      const options = typeof this.modeOptions === 'undefined' ? DOC_MODES : this.modeOptions
+      const found = options.filter((item) => item.id === this.mode)[0]
       return found ? found.label : modeMeta(this.mode).label
     },
     modeIcon() { return MODE_ICONS[this.mode] || MODE_ICONS.edit },
-    modeOptions() { return resolveModeOptions(this.modesConfig) },
+    modeOptions() {
+      if (!this.modesConfig) return DOC_MODES
+      return resolveModeOptions(this.modesConfig)
+    },
     // `allow` 只剩一项时按钮退化成静态文字：点它弹一个「只有当前项」的菜单没有意义。
     modeSwitchable() { return this.modeOptions.length > 1 },
+    // 兼容旧 Vue 宿主和第三方调用方；新顶栏使用 ui/select 自己管理开合。
+    modeMenuOpen: false,
+    modeMenuPos: null,
+    modeMenuStyle() {
+      const pos = this.modeMenuPos
+      return pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : null
+    },
     outlineItems() {
       const hiddenLevels = []
       return this.outline.reduce((items, item, index) => {
@@ -215,17 +226,32 @@ export default {
     setMode(id) {
       // 不在 `allow` 里 = 宿主没开放这一项。快捷键、外部调用、下拉都汇到这里，
       // 统一在一个点上拦，别在三个入口各判一次。
-      if (!isDocMode(id) || this.modeRules().allow.indexOf(id) < 0 || id === this.mode) return
+      if (!isDocMode(id) || this.modeRules().allow.indexOf(id) < 0 || id === this.mode) {
+        this.modeMenuOpen = false
+        return
+      }
+      // 模式切换立即生效，随后通过顶部 message 提示结果；不弹确认框，避免打断连续切换。
       this.mode = id
+      this.modeMenuOpen = false
       this.persistMode(id)
       this.notifyMode(id)
       // 修订态开关**不重建编辑器**：只翻 tracker 的 `storage.active`。重建会丢选区、
       // 折叠与 undo 栈；guard 一下是为了让单测能单独挂本 mixin（没有 revisionMixin 时跳过）。
       if (typeof this.syncRevisionTracking === 'function') this.syncRevisionTracking()
     },
-    // 下拉开合 / 定位 / Esc / 外部点击一律归 `ui/select.js`（与工具栏「字号」同一套），
-    // 顶栏只把选项表推过去。这里不再有 toggleModeMenu / closeModeMenu —— 别再手搓一套。
-    // 刷新 / 重新打开后保持（07 §1.1）。三闸门写法同 foldPersistMixin：
+    // 兼容旧版 Vue 顶栏调用方；新原生顶栏不调用这些方法，实际交互由 ui/select.js 管理。
+    toggleModeMenu(anchor) {
+      if (this.modeMenuOpen) { this.modeMenuOpen = false; return }
+      const rect = anchor && typeof anchor.getBoundingClientRect === 'function' ? anchor.getBoundingClientRect() : null
+      if (rect) {
+        const gap = 8
+        const maxLeft = Math.max(gap, window.innerWidth - MODE_MENU_WIDTH - gap)
+        this.modeMenuPos = { left: Math.round(Math.min(Math.max(gap, rect.right - MODE_MENU_WIDTH), maxLeft)), top: Math.round(rect.bottom + 2) }
+      }
+      this.modeMenuOpen = true
+    },
+    closeModeMenu() { this.modeMenuOpen = false },
+    // 刷新 / 重新打开后保持（07 §1.1）。三闸门写法同 foldPersistMixin:
     // 拿不到 window（Node 单测）、隐私模式禁写都静默降级成「本会话有效」，不打断初始化。
     persistMode(id) {
       // `modes.persist: false` = 不记忆选择，每次打开回到 default（发布页 / 一次性预览）。

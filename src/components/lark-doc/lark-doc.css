@@ -718,6 +718,16 @@
 .lark-doc .lark-doc-command-section button.is-skip:hover,
 .lark-doc .lark-doc-command-section button.is-skip:focus-visible { background: transparent; color: var(--ld-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-command-section button.is-skip .lark-doc-command-icon { opacity: .6; }
+.lark-doc .lark-doc-diagram-icon,
+.lark-doc .lark-doc-diagram-menu-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; color: currentColor; }
+.lark-doc .lark-doc-diagram-menu-icon.is-teal { color: var(--ld-cat-teal); }
+.lark-doc .lark-doc-diagram-icon svg,
+.lark-doc .lark-doc-diagram-menu-icon svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.lark-doc .lark-doc-diagram-icon svg path[fill="none"],
+.lark-doc .lark-doc-diagram-menu-icon svg path[fill="none"] { fill: none; }
+.lark-doc .lark-doc-diagram-icon svg path[fill="currentColor"],
+.lark-doc .lark-doc-diagram-menu-icon svg path[fill="currentColor"] { fill: currentColor; stroke: none; }
+.lark-doc .lark-doc-diagram-menu button { display: flex; align-items: center; gap: 8px; }
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] { background: var(--ld-bg-hover); }
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] .lark-doc-card-title,
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] .lark-doc-card-field-label { color: var(--ld-text-disabled); }
@@ -2249,6 +2259,12 @@
      `.ud__msg-manager--top`，配色只取 --ld-bg-surface-chrome / --ld-text / --ld-shadow-menu。
      🔴 不复用右下角 `.lark-doc-toast`：那是琥珀 error 语义，切换成功用它会像报错。
    ================================================================== */
+.lark-doc .lark-doc-mode-switch { display: flex; align-items: center; }
+.lark-doc .lark-doc-mode-btn { width: 84px; min-width: 84px; height: 32px; border: 0; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); }
+.lark-doc .lark-doc-mode-menu { position: fixed; z-index: 1050; width: 180px; height: 160px; box-sizing: border-box; padding: 5px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-mode-item { display: flex; width: 170px; height: 50px; box-sizing: border-box; flex-direction: column; color: var(--ld-text); }
+.lark-doc .lark-doc-mode-item-label { color: var(--ld-text); line-height: 22px; }
+.lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); line-height: 18px; }
 .lark-doc .lark-doc-mode-select { flex: 0 0 auto; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-trigger { width: 84px; min-width: 84px; height: 32px; gap: 4px; padding: 0 0 0 9px; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-size: 14px; line-height: 1; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-trigger:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-trigger:focus-visible:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-trigger[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text); outline: 0; }
@@ -2275,7 +2291,10 @@
    副标题保持原语的 --ld-text-secondary，只给主标题上强调色。 */
 .lark-doc .lark-doc-mode-select .lark-doc-select-check { display: none; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-item-label { font-size: 14px; line-height: 22px; }
-.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
+.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; left: 0; right: 0; display: inline-flex; width: 100%; height: 16px; box-sizing: border-box; max-width: min(420px, calc(100vw - 32px)); align-items: center; gap: 8px; padding: 0 14px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text-secondary); font-size: 14px; line-height: 16px; pointer-events: none; transform: translateX(-50%); animation: lark-doc-message-in 160ms ease-out; }
+.lark-doc .lark-doc-mode-toast-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ld-status-success); color: var(--ld-text-on-accent); font-size: 11px; font-weight: 700; line-height: 16px; }
+.lark-doc .lark-doc-mode-toast-text { overflow: hidden; color: var(--ld-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+@keyframes lark-doc-message-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ==================================================================
    P4-06 · 修订模式：行内标记 + 右侧建议面板
