@@ -31,13 +31,6 @@ export function createWorkspaceShell(ownerDocument = document) {
   modeToast.className = 'lark-doc-mode-toast'
   modeToast.setAttribute('role', 'status')
   modeToast.setAttribute('aria-live', 'polite')
-  const modeToastIcon = ownerDocument.createElement('span')
-  modeToastIcon.className = 'lark-doc-mode-toast-icon'
-  modeToastIcon.setAttribute('aria-hidden', 'true')
-  modeToastIcon.textContent = '✓'
-  const modeToastText = ownerDocument.createElement('span')
-  modeToastText.className = 'lark-doc-mode-toast-text'
-  modeToast.append(modeToastIcon, modeToastText)
   const toolbarHost = ownerDocument.createElement('div')
   const searchPanelHost = ownerDocument.createElement('div')
   const tableToolsHost = ownerDocument.createElement('div')
@@ -111,8 +104,6 @@ export function createWorkspaceShell(ownerDocument = document) {
     actionsPark,
     actionsHost,
     modeToast,
-    modeToastIcon,
-    modeToastText,
     toolbarHost,
     searchPanelHost,
     tableToolsHost,

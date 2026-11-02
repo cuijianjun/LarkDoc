@@ -1,4 +1,4 @@
-import { createWorkspace } from './workspace'
+import { createWorkspace } from '../components/lark-doc/workspace'
 import { IDB_UNAVAILABLE, createIndexedDbWorkspace, isIndexedDbAvailable } from '../core/storage/idb'
 
 /**
