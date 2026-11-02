@@ -39,6 +39,15 @@ const Service = require('@vue/cli-service')
 
 const root = path.resolve(__dirname, '..')
 const dist = path.resolve(root, 'dist')
+
+// 数据层和模板库也是独立子入口：它们不应回到默认编辑器 bundle。
+const OPTIONAL_ENTRIES = {
+  'lark-doc-templates': path.resolve(root, 'src/templates.js'),
+  'lark-doc-comments': path.resolve(root, 'src/comments.js'),
+  'lark-doc-versioning': path.resolve(root, 'src/versioning.js'),
+  'lark-doc-providers': path.resolve(root, 'src/providers.js'),
+  'lark-doc-migrations': path.resolve(root, 'src/migrations.js'),
+}
 const service = new Service(root)
 service.init('production')
 
@@ -48,6 +57,7 @@ const config = service.resolveWebpackConfig()
 config.entry = {
   'lark-doc-vue3': path.resolve(root, 'src/adapters/vue3/index.js'),
   'lark-doc-react': path.resolve(root, 'src/adapters/react/index.js'),
+  ...OPTIONAL_ENTRIES,
 }
 
 config.experiments = Object.assign({}, config.experiments, { outputModule: true })
@@ -64,7 +74,7 @@ config.output = Object.assign({}, config.output, {
   library: { type: 'module' },
 })
 
-// 自包含：两个入口共用的 attributes/events 各自内联，不产出共享 chunk。
+// 自包含：各入口都可独立复制部署，不产出共享 chunk。
 config.optimization = Object.assign({}, config.optimization, {
   splitChunks: false,
   runtimeChunk: false,

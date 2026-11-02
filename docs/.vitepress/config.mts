@@ -102,6 +102,7 @@ export default defineConfig({
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '安装与引用总表（内外网）', link: '/guide/install' },
             { text: '各环境引入对照', link: '/guide/environments' },
+            { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
             { text: '实例与事件', link: '/guide/instance' },
           ],
         },

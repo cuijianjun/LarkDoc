@@ -51,7 +51,8 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
     expect(index).not.toContain("import LarkDocEditor from './components/lark-doc/LarkDocEditor.vue'")
     expect(index).not.toContain("import LarkDocWorkspace from './components/lark-doc/LarkDocWorkspace.vue'")
     expect(index).not.toContain("./components/lark-doc/TemplateLibrary.vue")
-    expect(index).toContain("import LarkDoc, { createLarkDoc } from './LarkDoc'")
+    expect(index).toContain("import LarkDoc from './LarkDoc'")
+    expect(index).not.toContain('createLarkDoc')
   })
 
   it('移除真实 import/注册，不保留两个旧 SFC 的引用', () => {
