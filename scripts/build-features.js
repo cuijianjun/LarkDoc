@@ -41,6 +41,7 @@ const config = {
     highlight: path.resolve(root, 'src/features/highlight.js'),
     markdown: path.resolve(root, 'src/features/markdown.js'),
     office: path.resolve(root, 'src/features/office.js'),
+    index: path.resolve(root, 'src/features/index.js'),
   },
   output: {
     path: dist,

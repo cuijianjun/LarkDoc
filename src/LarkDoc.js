@@ -431,6 +431,12 @@ export class LarkDoc {
     return workspace ? workspace.getJSON() : null
   }
 
+  /** 写入 Tiptap JSON；与 getJSON 配对，保持统一实例 API。 */
+  setJSON(json) {
+    if (!json || typeof json !== 'object' || json.type !== 'doc') return false
+    return this.setContent(json, { format: 'json' })
+  }
+
   getText() {
     const workspace = this.getWorkspace()
     return workspace ? workspace.getText() : ''
@@ -575,11 +581,6 @@ export class LarkDoc {
     this.networkPolicy = null
     this.element = null
   }
-}
-
-/** 支持不带 new 调用：LarkDoc({...})。 */
-export function createLarkDoc(options) {
-  return new LarkDoc(options)
 }
 
 export default LarkDoc

@@ -241,6 +241,26 @@
       "import": "./dist/lark-doc-react.mjs",
       "default": "./dist/lark-doc-react.mjs"
     },
+    "./templates": {
+      "import": "./dist/lark-doc-templates.mjs",
+      "default": "./dist/lark-doc-templates.mjs"
+    },
+    "./comments": {
+      "import": "./dist/lark-doc-comments.mjs",
+      "default": "./dist/lark-doc-comments.mjs"
+    },
+    "./versioning": {
+      "import": "./dist/lark-doc-versioning.mjs",
+      "default": "./dist/lark-doc-versioning.mjs"
+    },
+    "./providers": {
+      "import": "./dist/lark-doc-providers.mjs",
+      "default": "./dist/lark-doc-providers.mjs"
+    },
+    "./migrations": {
+      "import": "./dist/lark-doc-migrations.mjs",
+      "default": "./dist/lark-doc-migrations.mjs"
+    },
     "./collab": {
       "import": "./dist/lark-doc-collab.esm.js",
       "default": "./dist/lark-doc-collab.esm.js"
@@ -248,6 +268,10 @@
     "./lite": {
       "import": "./dist/lark-doc-lite.esm.js",
       "default": "./dist/lark-doc-lite.esm.js"
+    },
+    "./features": {
+      "import": "./dist/features/index.js",
+      "default": "./dist/features/index.js"
     },
     "./features/*": {
       "import": "./dist/features/*.js",
