@@ -2,7 +2,7 @@
 
 目录组件根据正文标题层级实时生成大纲，支持跳转定位、当前章节高亮、章节收起。面板默认在宽屏（>760px）自动展开，可整体收起为图标。
 
-## 配置示例
+## 基本用法
 
 ```ts
 new LarkDoc({
@@ -13,15 +13,7 @@ new LarkDoc({
 })
 ```
 
-## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.outline` | `boolean` | `true` | 关闭后目录面板与工具栏入口隐藏。 |
-| `features.headings` | `boolean` | `true` | 目录依赖标题；标题能力关闭时目录为空。 |
-| `commands.disabled: ['toggleOutline']` | `string[]` | `[]` | 禁用面板开关命令。 |
-
-### 使用方式
+## 使用方式
 
 | 入口 | 操作 |
 | --- | --- |
@@ -29,6 +21,14 @@ new LarkDoc({
 | 目录项 | 点击跳转到对应标题。 |
 | 章节箭头 | 收起 / 展开该章节的子级（独立于[折叠块](/blocks/folding)的正文折叠）。 |
 | 当前位置 | 滚动时高亮光标所在章节（`activeHeading`）。 |
+
+## 配置参考
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `features.outline` | `boolean` | `true` | 关闭后目录面板与工具栏入口隐藏。 |
+| `features.headings` | `boolean` | `true` | 目录依赖标题；标题能力关闭时目录为空。 |
+| `commands.disabled: ['toggleOutline']` | `string[]` | `[]` | 禁用面板开关命令。 |
 
 ### 状态说明
 

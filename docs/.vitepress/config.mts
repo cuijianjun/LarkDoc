@@ -49,15 +49,15 @@ export default defineConfig({
         ],
       },
       {
-        text: '功能配置',
-        activeMatch: '/guide/(configuration|toolbar|view-integration|collaboration|collab-server|vditor-import|web-component)',
+        text: '功能文档',
+        activeMatch: '/(blocks|guide/(configuration|toolbar|collaboration|collab-server))',
         items: [
-          { text: '配置总览', link: '/guide/configuration' },
-          { text: '工具栏配置', link: '/guide/toolbar' },
-          { text: '内容块（标题 / 列表 / 表格 …）', link: '/blocks/heading' },
-          { text: 'View 层接入', link: '/guide/view-integration' },
+          { text: '功能总览', link: '/blocks/' },
+          { text: '工具栏', link: '/guide/toolbar' },
+          { text: '内容块', link: '/blocks/' },
+          { text: '文档操作', link: '/blocks/folding' },
+          { text: '智能与扩展', link: '/blocks/ai' },
           { text: '协同与权限', link: '/guide/collaboration' },
-          { text: 'Web Component（跨框架）', link: '/guide/web-component' },
         ],
       },
       {
@@ -92,9 +92,7 @@ export default defineConfig({
     },
 
     sidebar: {
-      // 侧栏分四组，按「读文档的顺序」排，不按页面创建顺序排：
-      // 上手（我要装/要跑起来） → 功能（我要配某个能力） → 部署（我要上线/进内网） → 参考。
-      // 新增页面时先想清楚它属于哪一组，别继续往第一组里塞。
+      // 功能文档按用户目标分组；安装、部署和开发资料仍保留原有入口。
       '/guide/': [
         {
           text: '开始上手',
@@ -107,13 +105,19 @@ export default defineConfig({
           ],
         },
         {
-          text: '功能与配置',
+          text: '功能入口',
           items: [
+            { text: '功能总览', link: '/blocks/' },
             { text: '配置总览', link: '/guide/configuration' },
-            { text: '工具栏配置', link: '/guide/toolbar' },
-            { text: 'View 层接入', link: '/guide/view-integration' },
+            { text: '工具栏', link: '/guide/toolbar' },
             { text: '协同与权限', link: '/guide/collaboration' },
+          ],
+        },
+        {
+          text: '集成参考',
+          items: [
             { text: '协同服务端契约', link: '/guide/collab-server' },
+            { text: 'View 层接入', link: '/guide/view-integration' },
             { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
             { text: 'Web Component（跨框架）', link: '/guide/web-component' },
           ],
@@ -138,7 +142,13 @@ export default defineConfig({
       ],
       '/blocks/': [
         {
-          text: '内容块',
+          text: '功能总览',
+          items: [
+            { text: '功能总览', link: '/blocks/' },
+          ],
+        },
+        {
+          text: '基础编辑',
           items: [
             { text: '标题', link: '/blocks/heading' },
             { text: '文字格式', link: '/blocks/marks' },
@@ -174,7 +184,7 @@ export default defineConfig({
           ],
         },
         {
-          text: '扩展与集成',
+          text: '智能与扩展',
           items: [
             { text: 'AI 组件', link: '/blocks/ai' },
             { text: '上传器', link: '/blocks/uploader' },
