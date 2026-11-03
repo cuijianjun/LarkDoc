@@ -114,7 +114,6 @@ export function createBlockHandle(options = {}) {
   emptyButton.setAttribute('title', '插入内容')
   emptyButton.textContent = '＋'
   emptyButton.addEventListener('mouseenter', (event) => call('openEmptyBlockInsertMenu', event))
-  emptyButton.addEventListener('mouseleave', () => call('scheduleCommandMenuClose'))
   emptyButton.addEventListener('click', (event) => call('openEmptyBlockInsertMenu', event))
 
   const mainButton = document.createElement('button')

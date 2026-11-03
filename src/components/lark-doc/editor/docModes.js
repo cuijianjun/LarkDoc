@@ -40,11 +40,6 @@ export const MODE_ICONS = { edit: 'mode-edit', suggest: 'mode-comment', read: 'r
  * 配上 14px/12px 两行排版，340 刚好不折行。改这个值要同步看 `topBar.js` 的
  * `menuMinWidth`（它从这里取，不另写一份）。
  */
-/** 兼容旧版 Vue 菜单契约；原生 select renderer 仍使用 MODE_MENU_MIN_WIDTH。 */
-export const MODE_MENU_WIDTH = 180
-export const MODE_MENU_HEIGHT = 160
-export const MODE_MENU_ITEM_WIDTH = 170
-export const MODE_MENU_ITEM_HEIGHT = 50
 export const MODE_MENU_MIN_WIDTH = 340
 
 /** 切换成功后的提示文案（07 §1.1「页面出现『已切换为修订模式』提示」）。 */

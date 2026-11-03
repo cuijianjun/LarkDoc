@@ -21,7 +21,7 @@
  * 这只是节点搬运，插槽内容始终由 Vue 渲染与更新。
  */
 
-import { iconNode, diagramIconNode } from './icon'
+import { iconNode } from './icon'
 import { createHeadingMenu } from './headingMenu'
 import { createSelect } from './select'
 import { applyStyle, setAttr, setVisible, syncChildren } from './dom'
@@ -228,22 +228,15 @@ export function createToolbar(options = {}) {
     icon: 'plus',
     text: '插入',
     onClick: (event) => call('openCommandMenu', 'plus', event),
-    onMouseEnter: () => call('cancelPopupHoverClose'),
-    onMouseLeave: () => call('scheduleCommandMenuClose'),
   })
-  insertButton.setAttribute('aria-haspopup', 'menu')
   const tableButton = makeButton({ label: '插入表格', icon: 'table', preventDefault: true, onClick: () => call('onTableToolbarClick') })
-  const diagramButton = makeButton({ label: '图表', title: '插入图表', icon: 'chart', text: '图表', onClick: () => call('toggleDiagramMenu'), onMouseEnter: () => call('openDiagramMenuOnHover'), onMouseLeave: () => call('scheduleDiagramMenuClose') })
-  diagramButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
-  diagramButton.setAttribute('aria-haspopup', 'menu')
+  const diagramButton = makeButton({ label: '图表', title: '插入图表', icon: 'chart', onClick: () => call('toggleDiagramMenu') })
   const aiButton = makeButton({ label: 'AI 助手', icon: 'sparkle', text: 'AI', onClick: () => call('emitAiRequest', 'rewrite') })
 
   const diagramMenu = document.createElement('div')
   diagramMenu.className = 'lark-doc-dropdown lark-doc-diagram-menu'
   diagramMenu.setAttribute('role', 'menu')
   diagramMenu.setAttribute('aria-label', '图表类型')
-  diagramMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose'))
-  diagramMenu.addEventListener('mouseleave', () => call('scheduleDiagramMenuClose'))
   let diagramButtons = []
   let diagramSignature = ''
 
@@ -258,12 +251,7 @@ export function createToolbar(options = {}) {
       button.setAttribute('role', 'menuitem')
       button.addEventListener('mousedown', (event) => event.preventDefault())
       button.addEventListener('click', () => call('insertDiagramType', item.id))
-      const icon = diagramIconNode(item.id, 16, 'lark-doc-diagram-menu-icon is-teal')
-      icon.setAttribute('aria-hidden', 'true')
-      const label = document.createElement('span')
-      label.textContent = item.label
-      button.appendChild(icon)
-      button.appendChild(label)
+      button.textContent = item.label
       diagramMenu.appendChild(button)
       return button
     })

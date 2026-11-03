@@ -25,9 +25,6 @@ import LarkDoc from './LarkDoc'
 import { TOOLBAR_GROUPS, TOOLBAR_KEYS, MARK_KEYS, resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy, NETWORK_MODES, DEFAULT_NETWORK } from './networkPolicy'
 import { detectLegacyHtml, isVditorHtml, normalizeVditorHtml } from './legacy'
-import { createTemplateLibrary } from './ui/templateLibrary'
-
-const LarkDocTemplateLibrary = createTemplateLibrary
 
 /**
  * 默认入口只暴露编辑器核心和无重量的基础配置工具。
@@ -46,8 +43,6 @@ export {
   detectLegacyHtml,
   isVditorHtml,
   normalizeVditorHtml,
-  createTemplateLibrary,
-  LarkDocTemplateLibrary,
 }
 
 export default LarkDoc

@@ -18,28 +18,25 @@ npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network
 
 ## 先认宿主：30 秒决定三件事
 
-| 你的项目 | 推荐入口 | 安装方式 | 额外配置 |
+| 你的项目 | 走哪个入口 | 装不装 npm 包 | 编译工具要改吗 |
 | --- | --- | --- | --- |
-| **Vue 2.7**（webpack 5 / Vite） | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | webpack5/Vite 不需要 lark-doc 专属配置；Vite 需 Vue2 插件 |
-| **Vue 2.7 + webpack 4** | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 增加一行 alias 指向 `dist/lark-doc.common.js`；样式写全 `dist/` |
-| **Vue 2.7 旧 SFC** | `lark-doc/legacy` | `npm i lark-doc` | 仅旧项目使用；不是新项目首选 |
-| **Vue 3**（Vite / webpack5） | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 只把编辑器挂到普通 DOM 容器；不加载协同入口 |
-| **React 16.8+** | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | CRA5/Vite 不需要 lark-doc 专属配置 |
-| **纯静态页 / 老系统 / 没有打包器** | `dist/lark-doc-element.umd.min.js` | 不装 npm，只拷整套 `dist/` | 不需要编译配置 |
+| **Vue 2.7**（webpack 4/5、Vite） | `lark-doc`（`new LarkDoc()`）；旧组件用 `lark-doc/legacy` | 装 | webpack4 需 alias CJS；webpack5 / Vite 无需改 |
+| **Vue 3**（Vite / webpack5） | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/element` 薄壳 | 装 | 命令式无需专属配置；标签方式放行 `lark-doc` |
+| **React 16.8+** | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/react` 薄壳 | 装 | CRA5/Vite 无需专属配置；TSX 标签需补类型 |
+| **纯静态页 / 老系统 / 没有打包器** | `dist/lark-doc-element.umd.min.js`（`<script>` 直引） | **不装**，只拷 `dist/` | 不用 |
 
-Vue 版本只影响宿主自身的生命周期写法，不改变主入口 API。构建型项目统一使用：
+判断自己是哪一档：
 
-```js
-import { LarkDoc } from 'lark-doc'
-
-const doc = new LarkDoc({ element: host, ...options })
+```bash
+node -p "require('vue/package.json').version" 2>/dev/null || echo "没有 vue"
+node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --version
 ```
 
-只有需要在模板中直接写 `<lark-doc>`、或没有打包器时，才使用 `lark-doc/element`；Vue2 旧 SFC 才使用 `lark-doc/legacy`。
+Vue 版本只影响宿主自己的组件与薄壳写法，不限制默认入口；任意框架或无框架均可使用 `new LarkDoc()`。不使用打包器时选择静态 Element 方式。
 
 ::: warning 三个最容易走错的路
 - **把 legacy options 当跨框架组件** → `lark-doc/legacy` 仅供 Vue2 宿主注册；任意框架都可以用默认 `new LarkDoc()` 或 `lark-doc/element`，两者都不需要 Vue2。
-- **兼容薄壳只装了一半** → 使用 `lark-doc/vue3` / `lark-doc/react` 时组件渲染成空白、控制台报「`<lark-doc>` 尚未注册」。薄壳只做属性/事件桥接，**元素本体在 element 入口**，宿主入口要最先 `import 'lark-doc/element'`；新项目使用主入口 `LarkDoc` 则不需要这条链路。
+- **薄壳只装了一半** → 组件渲染成空白、控制台报「`<lark-doc>` 尚未注册」。薄壳只做属性/事件桥接，**元素本体在 element 入口**，宿主入口要最先 `import 'lark-doc/element'`。
 - **只拷了主文件、没拷 `*.math.js` 这些** → 编辑器能开，但插公式、导出 Word 时 404。`dist/` 要**整目录**同位放。
 :::
 
@@ -89,7 +86,7 @@ npm pack lark-doc@<ver>
 
 真正的内网包请用仓库脚本出，它会把 21 个运行时依赖一起打进去（见[第 2 步](#do-install-intranet)）。
 
-### C. 不装包，只拿 dist（仅静态页 / 无打包器）
+### C. 不装包，只拿 dist（Vue 3 / React / 静态页）
 
 ```bash
 # 从已装好的项目里拷
@@ -159,7 +156,7 @@ unzip lark-doc-<ver>-node-modules.zip -d /tmp/lark-doc-nm
 cp -r /tmp/lark-doc-nm/* node_modules/
 ```
 
-### 2.4 内网机安装 · C：只拷 dist（仅静态页 / 无打包器）
+### 2.4 内网机安装 · C：只拷 dist（Vue3 / React / 静态页）
 
 不装包，把 `dist/` 整目录放进宿主的静态目录即可，见[第 5 步](#do-copy)。
 
@@ -179,14 +176,25 @@ node -e "console.log(require('lark-doc/package.json').version)"
 | Vue 2.7 + Vite | 同上（装 `@vitejs/plugin-vue2`） | 同上 |
 | Vue 2.7 + webpack 4 | 同上 + `import 'lark-doc/dist/lark-doc.css'` + 一行 alias（见下表） | 同上 |
 | Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc/legacy'` | `<lark-doc-editor v-model="html" />` |
-| **Vue 3** | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({ element, ...options })` |
-| **React 18** | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({ element, ...options })` |
+| **Vue 3** | `import 'lark-doc/element'` + `import { resolveVue3Attrs } from 'lark-doc/vue3'` | `<lark-doc v-bind="resolveVue3Attrs(props)" @lark-doc-change="onChange">` |
+| **React 18** | `import 'lark-doc/element'` + `import { createReactLarkDoc } from 'lark-doc/react'` | `const LarkDoc = createReactLarkDoc(React)` → `<LarkDoc content={html} onChange={fn} ref={docRef} />` |
 | 原生 / CDN / 静态 | `<script src="…/lark-doc-element.umd.min.js">` | `<lark-doc>` 标签 |
 | Node / jsdom | `require('lark-doc')` | `new LarkDoc({ element: host })` |
-| SSR（Nuxt2 / Next13） | 主入口 `LarkDoc`，**只在客户端创建实例**；标签兼容模式才动态引 `lark-doc/element` | client-only 挂载；Nuxt2/webpack4 仍按 webpack4 规则处理 |
+| SSR（Nuxt2 / Next13） | `await import('lark-doc/element')`，**只在客户端** | client-only 挂载 |
 
-> `lark-doc/vue3` 与 `lark-doc/react` 仍保留为兼容适配器，但不是统一接入的默认路径。
-> 它们只在已有 Web Component / 标签式接入代码需要平滑迁移时使用；新建 Vue3、React 项目直接使用上面的主入口即可。
+薄壳很小（Vue3 3.0 KiB / React 4.2 KiB，且不含任何第三方依赖），它只做两件事：把框架的
+props / 事件翻成 Web Component 的属性 / 事件，以及在你忘记 `import 'lark-doc/element'` 时
+**明确报错**而不是静默渲染空白。
+
+```js
+// Vue 3
+import 'lark-doc/element'
+import { resolveVue3Attrs, VUE3_EVENTS } from 'lark-doc/vue3'
+
+// React 18
+import 'lark-doc/element'
+import { createReactLarkDoc } from 'lark-doc/react'
+```
 
 
 每个环境的完整可跑 demo（含 package.json、目录结构、业务代码）在：
@@ -195,20 +203,23 @@ node -e "console.log(require('lark-doc/package.json').version)"
 - [Vue 2.7 组件式](/guide/environments#env-vue2-sfc) · [Vue 3](/guide/environments#env-vue3) · [React 18](/guide/environments#env-react)
 - [原生 / CDN / 静态托管](/guide/environments#env-static) · [Node / jsdom](/guide/environments#env-node) · [SSR](/guide/environments#env-ssr)
 
-## 第 4 步 · 配：统一主入口基本不用改 {#do-config}
+## 第 4 步 · 配：0.13 起几乎不用改 {#do-config}
 
 | 环境 | 要改的配置 | 一行结论 |
 | --- | --- | --- |
 | webpack 5 / vue-cli 5 | **什么都不用改** | `vue.config.js` 只放你自己的业务配置 |
 | webpack 4 / vue-cli 4 | **一行 alias** | `alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' }`；子路径与样式写全 `dist/` 路径 |
 | Vite（Vue 2） | 装 `@vitejs/plugin-vue2` | 与 lark-doc 无关，是 Vue 2 + Vite 的通用前置 |
-| Vite（Vue 3 / React，主入口） | **不用配** | 主入口挂普通 DOM 容器，不涉及自定义元素编译 |
-| Vite（Vue 3，标签兼容模式） | `compilerOptions.isCustomElement` 放行 `lark-doc` | 仅在模板直接写 `<lark-doc>` 时需要 |
+| Vite（Vue 3 / React） | `compilerOptions.isCustomElement` 放行 `lark-doc` | 不放行会报「未知标签」的编译警告 |
 | 静态页 / SSR | 无打包器配置 | 静态页靠 `<script>`；SSR 靠 client-only |
 
-**webpack 4 为什么仍要一行 alias**：webpack 4 不读取 `exports`，而 `module` 指向的 ESM 产物包含它无法解析的现代模块语义；因此主入口显式 alias 到 `dist/lark-doc.common.js`。CJS 产物已降到 ES2018，不需要再挂 babel-loader。webpack 5、Vite、Rollup、Node 都直接按 `exports` 选择正确入口。
+**webpack 4 为什么现在只剩一行**：0.12 的产物是 ES2020+ 语法，webpack 4 自带的 acorn
+读不了 `?.` / `??`，所以以前要 alias 到 `common.js` **再挂一条 babel-loader**。0.13 把
+CJS 也跟随 UMD / element 一起降到了 **ES2018**，于是 alias 之后就不需要 babel 了。
 
-这是一处**打包器能力差异**，不是 Vue 2 / Vue 3 的 API 差异。统一主入口在各框架里的业务写法保持不变。
+0.13 同时**摘掉了 `browser` 字段**：它一存在，webpack 就会跳过 ESM 直落「浏览器直挂档」，
+SSR 与浏览器吃到两份不同产物。摘掉之后环境差异一律走 `exports` 的 condition，代价就是
+webpack 4 少了 `browser` 兜底、必须显式 alias 到 `main`。这是一行换一致性，值得。
 
 ### webpack 4 还要留意的两件小事
 

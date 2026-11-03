@@ -172,11 +172,6 @@ class WorkspaceController {
       this._contentSeeded = true
       try { this.setContent(this.props.initialContent) } catch (error) { this.storageFailure(error) }
     }
-    // 显式初始正文优先于本地草稿：否则 Web Component 重建时，ready 回调写入的旧正文
-    // 会被持久化层重新灌回，覆盖宿主声明的 slot / initialContent。
-    const hasExplicitInitialContent = this.props.preserveInitialContent === true && this.props.initialContent != null && (
-      typeof this.props.initialContent !== 'string' || this.props.initialContent.trim() !== ''
-    )
     if (this.featureEnabled('persistence')) {
       try {
         const draft = await this.callWorkspace('load')
@@ -184,13 +179,10 @@ class WorkspaceController {
         if (draft) {
           const editor = this.getEditor()
           const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), editor.schema)
-          // 显式 initialContent 只锁定正文来源；草稿标题仍属于独立的工作区元数据，应该恢复。
-          if (!hasExplicitInitialContent) {
-            if (this.host.hydrateOutline && this.host.hydrateOutline(validateDerivedSnapshot(draft.derived, content)?.outline)) await nextPaintFrame()
-            if (this._disposed) return
-            this.setContent(content)
-          }
-          if (draft.title != null) this.state.title = draft.title
+          if (this.host.hydrateOutline && this.host.hydrateOutline(validateDerivedSnapshot(draft.derived, content)?.outline)) await nextPaintFrame()
+          if (this._disposed) return
+          this.setContent(content)
+          this.state.title = draft.title
         }
         this.state.saveStatus = draft
           ? `已恢复${this.persistenceLabel()}草稿`

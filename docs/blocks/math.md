@@ -2,7 +2,7 @@
 
 数学公式组件提供行内公式（inlineMath）与块级公式（blockMath）两种节点，语法为 LaTeX，渲染引擎为 KaTeX。KaTeX 样式与字体随包本地发布，离线可用；公式 JSON 契约始终保留，即使渲染失败也不丢内容。
 
-## 基本用法
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -14,20 +14,20 @@ new LarkDoc({
 })
 ```
 
-## 使用方式
+## 配置与用法
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `features.math` | `boolean` | `true` | 关闭后公式入口隐藏（公式节点实际挂载时才加载 KaTeX 样式）。 |
+| `commands.disabled: ['setInlineMath', 'setBlockMath']` | `string[]` | `[]` | 按命令禁用。 |
+
+### 使用方式
 
 | 入口 | 操作 |
 | --- | --- |
 | 斜杠命令 / 插入菜单 | 选择「行内公式」或「公式」。 |
 | 编辑对话框 | 输入 LaTeX，实时预览，语法错误就地提示（不关闭对话框）。 |
 | 双击已有公式 | 重新打开编辑对话框。 |
-
-## 配置参考
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.math` | `boolean` | `true` | 关闭后公式入口隐藏（公式节点实际挂载时才加载 KaTeX 样式）。 |
-| `commands.disabled: ['setInlineMath', 'setBlockMath']` | `string[]` | `[]` | 按命令禁用。 |
 
 ### 数据契约
 

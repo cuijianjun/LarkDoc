@@ -82,7 +82,6 @@ export default {
         onHandleEnter: (event) => this.onBlockHandleEnter(event),
         onHandleLeave: (event) => this.onBlockHandleLeave(event),
         openEmptyBlockInsertMenu: (event) => this.openEmptyBlockInsertMenu(event),
-      scheduleCommandMenuClose: () => this.scheduleCommandMenuClose(),
         openBlockMenuOnHover: (event) => this.openBlockMenuOnHover(event),
         openBlockMenu: (event) => this.openBlockMenu(event),
         pressHandle: () => this.pressHandle(),

@@ -12,6 +12,6 @@
  * 分类，`+` 菜单的块级入口不承诺这块（目录要读全篇标题才有内容，空文档插了是个空灰底）。
  */
 export const widgetCommands = [
-  { id: 'diagram', label: '图表', category: '插入', plusCategory: '常用', glyph: '▥', tone: 'teal', submenu: '图表', submenuType: 'diagram', keywords: 'diagram mermaid chart tubiao flowchart liuchengtu 图', group: 'widget', tier: 'required' },
+  { id: 'diagram', label: '图表', category: '插入', plusCategory: '常用', glyph: '▥', tone: 'teal', keywords: 'diagram mermaid chart tubiao flowchart liuchengtu 图', group: 'widget', tier: 'required' },
   { id: 'catalogue', label: '目录导航', category: '文档小组件', plus: false, glyph: '☰', tone: 'gray', keywords: 'catalogue mulu daohang toc table of contents catalog outline widget', group: 'widget', tier: 'required' },
 ]

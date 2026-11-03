@@ -66,10 +66,7 @@ export default {
         onQuery: (value) => { this.menuQuery = value; this.activeCommandIndex = 0 },
         onMove: (step) => this.moveCommand(step),
         onChoose: (item) => this.chooseCommand(item),
-        onChooseDiagram: (typeId) => this.chooseCommand({ id: 'diagram', diagramType: typeId }),
         onClose: () => this.closeCommandMenu(true),
-        onMenuEnter: () => this.cancelPopupHoverClose(),
-        onMenuLeave: () => this.scheduleCommandMenuClose(),
       }
     },
 
@@ -84,7 +81,6 @@ export default {
         query: this.menuQuery,
         activeId: this.activeCommandId,
         positionStyle: this.menuStyle,
-        diagramTypes: this.diagramTypes,
       }
     },
 

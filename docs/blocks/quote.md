@@ -2,7 +2,7 @@
 
 引用组件渲染块级引文（`<blockquote>`），常用于摘录、风险提示。与[高亮块](/blocks/callout)的区别：引用是纯排版语义，不带图标与底色。
 
-## 基本用法
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -12,7 +12,14 @@ new LarkDoc({
 })
 ```
 
-## 使用方式
+## 配置与用法
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `features.insert` | `boolean` | `true` | 插入菜单总开关。 |
+| `blockMenu.disabled: ['blockquote']` | `string[]` | `[]` | 禁用块菜单「转为引用」。 |
+
+### 使用方式
 
 | 入口 | 操作 |
 | --- | --- |
@@ -24,10 +31,3 @@ new LarkDoc({
 ::: tip 结构
 引用内可包含段落、列表、标题等多块内容；引用内的引用继续嵌套。
 :::
-
-## 配置参考
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.insert` | `boolean` | `true` | 插入菜单总开关。 |
-| `blockMenu.disabled: ['blockquote']` | `string[]` | `[]` | 禁用块菜单「转为引用」。 |

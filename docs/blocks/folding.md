@@ -34,7 +34,7 @@
 
 折叠偏好按文档（`documentId`，无则 `local`）写入 `localStorage`，刷新 / 重新打开后自动恢复。
 
-## 基本用法
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -56,7 +56,14 @@ editor.commands.resetLarkDocFolds()            // 全部展开
 editor.commands.foldLarkDocByIds(['b1', 'b2']) // 按 id 批量折叠（宿主自建大纲 / 书签时用）
 ```
 
-## 使用方式
+## 配置与用法
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `features.folding` | `boolean` | `true` | 关闭后折叠箭头与菜单项隐藏，已有折叠状态保留在 storage 里。 |
+| `documentId` | `string` | `''` | 折叠偏好的分键依据；不传时落到 `local`，同一浏览器共用一个键。 |
+
+### 使用方式
 
 | 入口 | 操作 |
 | --- | --- |
@@ -64,16 +71,6 @@ editor.commands.foldLarkDocByIds(['b1', 'b2']) // 按 id 批量折叠（宿主�
 | 块句柄菜单 | 「折叠 / 展开」。 |
 | 查找替换 | 命中隐藏内容时自动展开所在块。 |
 | 大纲面板 | 跳转到被祖先块折叠的标题时，先展开祖先块。 |
-
-## 配置参考
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.folding` | `boolean` | `true` | 关闭后折叠箭头与菜单项隐藏，已有折叠状态保留在 storage 里。 |
-| `documentId` | `string` | `''` | 折叠偏好的分键依据；不传时落到 `local`，同一浏览器共用一个键。 |
-
-<details>
-<summary>高级：稳定标识、存储与实现约定</summary>
 
 ### 块标识（blockId）
 
@@ -125,5 +122,3 @@ editor.commands.foldLarkDocByIds(['b1', 'b2']) // 按 id 批量折叠（宿主�
 ::: tip 已知边界
 折叠偏好只存在本机 `localStorage`，**不进入文档 JSON**，`save()` 的 payload 里也没有折叠信息。换设备 / 换浏览器不同步；要跨端一致，需要把折叠状态随文档一起落库（例如 `doc.attrs.foldState`）。
 :::
-
-</details>
