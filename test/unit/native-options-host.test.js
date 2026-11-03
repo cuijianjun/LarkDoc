@@ -141,6 +141,18 @@ describe('nativeOptionsHost 深层响应', () => {
     expect(changed).toHaveBeenCalledExactlyOnceWith('更新', '初始')
   })
 
+  it('无效 alias/computed 定义不会在宿主读取时调用非函数', () => {
+    const { host } = createRuntime({
+      aliases: { broken: { get: { value: 'not a function' }, set: true } },
+      options: { computed: { alsoBroken: { get: { value: 'not a function' }, set: true } } },
+    })
+    expect(() => host.broken).not.toThrow()
+    expect(host.broken).toBeUndefined()
+    expect(() => host.alsoBroken).not.toThrow()
+    expect(host.alsoBroken).toBeUndefined()
+    expect(() => { host.broken = 'ignored'; host.alsoBroken = 'ignored' }).not.toThrow()
+  })
+
   it('updateProps 同步失效读取其他 prop 的 alias computed/watch', async () => {
     const aliasChanged = vi.fn()
     const props = { title: '初始' }

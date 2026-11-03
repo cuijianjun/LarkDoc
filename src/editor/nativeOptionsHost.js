@@ -144,13 +144,19 @@ export function createNativeOptionsHost({ options, state: initialState = {}, pro
       if (key === '_isBeingDestroyed') return destroying
       if (key === '_isDestroyed') return destroyed
       if (Object.prototype.hasOwnProperty.call(object, key)) return object[key]
-      if (aliases[key]) { track(`prop:${String(key)}`); return aliases[key].get(host, state, trackedProps) }
+      if (Object.prototype.hasOwnProperty.call(aliases, key)) {
+        track(`prop:${String(key)}`)
+        const alias = aliases[key]
+        // 外部宿主（尤其是 Vue 3 的响应式代理）可能把 alias 定义包成非预期对象。
+        // 不要盲目调用 `.get.call`，否则一次 pointerdown 会变成难以定位的运行时异常。
+        return typeof alias?.get === 'function' ? alias.get(host, state, trackedProps) : undefined
+      }
       if (computedEffects.has(key)) {
         syncSessionProviders()
         track(`computed:${key}`)
         const effect = computedEffects.get(key)
         if (effect.dirty) {
-          effect.value = evaluate(effect, () => effect.get.call(host))
+          effect.value = evaluate(effect, () => typeof effect.get === 'function' ? effect.get.call(host) : undefined)
           effect.dirty = false
         }
         return effect.value
@@ -161,8 +167,9 @@ export function createNativeOptionsHost({ options, state: initialState = {}, pro
     },
     set(object, key, value) {
       if (destroyed) return true
-      if (aliases[key]?.set) aliases[key].set(value, host, state, props)
-      else if (computedEffects.get(key)?.set) computedEffects.get(key).set.call(host, value)
+      const alias = Object.prototype.hasOwnProperty.call(aliases, key) ? aliases[key] : null
+      if (typeof alias?.set === 'function') alias.set(value, host, state, props)
+      else if (typeof computedEffects.get(key)?.set === 'function') computedEffects.get(key).set.call(host, value)
       else if (Object.prototype.hasOwnProperty.call(object, key) || (typeof key === 'string' && (key.startsWith('_') || key.startsWith('$')))) object[key] = value
       else state[key] = value
       return true
