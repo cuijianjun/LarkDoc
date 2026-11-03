@@ -6,7 +6,8 @@
   "description": "Framework-agnostic LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=lib vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
+    "build": "npm run clean:dist && LARK_DOC_LEGACY=1 LARK_DOC_TARGET=lib vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
+    "clean:dist": "node scripts/clean-dist.js",
     "build:esm": "node scripts/build-esm.js",
     "build:legacy": "node scripts/build-legacy.js",
     "build:legacy:cjs": "LARK_DOC_LEGACY=1 LARK_DOC_LEGACY_ENTRY=1 LARK_DOC_TARGET=lib vue-cli-service build --target lib --no-clean --name lark-doc-legacy --formats commonjs src/legacy-vue/index.js && node scripts/fix-lib-require-scope.js lark-doc-legacy.common.js",
@@ -39,6 +40,7 @@
     "contract:check": "node scripts/gen-contract.mjs --check",
     "prepack": "node scripts/ensure-artifacts.mjs && npm run size",
     "artifacts:check": "node scripts/ensure-artifacts.mjs --check",
+    "artifacts:record": "node scripts/ensure-artifacts.mjs --record",
     "verify": "node scripts/verify.mjs",
     "verify:all": "node scripts/verify.mjs --all",
     "verify:list": "node scripts/verify.mjs --list",
@@ -52,7 +54,8 @@
     "release:minor": "bash scripts/release.sh --minor",
     "build:collab": "node scripts/build-collab.js",
     "build:lite": "node scripts/build-lite.js",
-    "build:features": "node scripts/build-features.js"
+    "build:features": "node scripts/build-features.js",
+    "build:all": "npm run build && npm run build:esm && npm run build:legacy && npm run build:adapters && npm run build:plugin && npm run build:element && npm run build:collab && npm run build:lite && npm run build:features"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -171,7 +174,7 @@
   "module": "dist/lark-doc.esm.js",
   "unpkg": "dist/lark-doc-element.umd.min.js",
   "jsdelivr": "dist/lark-doc-element.umd.min.js",
-  "style": "style.css",
+  "style": "dist/lark-doc.css",
   "sideEffects": [
     "**/*.css",
     "**/*.scss",
@@ -183,13 +186,9 @@
   ],
   "files": [
     "dist",
-    "src",
-    "style.css",
     "README.md",
     "DEMO_INTEGRATION_GUIDE.md",
-    "babel.config.js",
-    "legacy-syntax.js",
-    "vue.config.js"
+    "LICENSE"
   ],
   "peerDependencies": {
     "@hocuspocus/provider": "^4.7.1",
@@ -213,17 +212,20 @@
   },
   "exports": {
     ".": {
-      "node": "./dist/lark-doc.common.js",
+      "webpack": "./dist/lark-doc.common.js",
       "import": "./dist/lark-doc.esm.js",
       "require": "./dist/lark-doc.common.js",
-      "default": "./dist/lark-doc.common.js"
+      "default": "./dist/lark-doc.esm.js"
     },
-    "./element": "./dist/lark-doc-element.umd.min.js",
+    "./element": {
+      "require": "./dist/lark-doc-element.umd.min.js",
+      "default": "./dist/lark-doc-element.umd.min.js"
+    },
     "./legacy": {
-      "node": "./dist/lark-doc-legacy.common.js",
+      "webpack": "./dist/lark-doc-legacy.common.js",
       "import": "./dist/lark-doc-legacy.esm.js",
       "require": "./dist/lark-doc-legacy.common.js",
-      "default": "./dist/lark-doc-legacy.common.js"
+      "default": "./dist/lark-doc-legacy.esm.js"
     },
     "./vue3": {
       "import": "./dist/lark-doc-vue3.mjs",
