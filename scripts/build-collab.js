@@ -55,11 +55,18 @@ config.externalsType = 'module'
  * 相对路径（`./protocol`）与绝对路径留给自己。产物里原样保留 `import ... from 'yjs'`，
  * 由宿主的解析器去重 —— 这正是"同一个实例"的实现方式。
  */
+const collabPeerModules = new Set([
+  'yjs',
+  '@tiptap/extension-collaboration',
+  '@tiptap/extension-collaboration-caret',
+  '@hocuspocus/provider',
+])
 config.externals = [
   ({ request }, callback) => {
     if (!request) return callback()
-    const bare = !request.startsWith('.') && !path.isAbsolute(request)
-    return bare ? callback(null, request) : callback()
+    // 只 external 协同运行时 peer。把 core-js 也 external 会让 Vue2/Webpack4
+    // 宿主被迫解析一批深层 polyfill 路径，并在缺少对应 core-js 版本时直接编译失败。
+    return collabPeerModules.has(request) ? callback(null, request) : callback()
   },
 ]
 

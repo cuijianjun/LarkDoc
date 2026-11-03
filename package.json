@@ -237,6 +237,10 @@
       "import": "./dist/lark-doc-vue3.mjs",
       "default": "./dist/lark-doc-vue3.mjs"
     },
+    "./adapters/vue2": {
+      "require": "./dist/lark-doc.common.js",
+      "default": "./dist/lark-doc.common.js"
+    },
     "./adapters/react": {
       "import": "./dist/lark-doc-react.mjs",
       "default": "./dist/lark-doc-react.mjs"

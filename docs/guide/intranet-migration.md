@@ -20,7 +20,7 @@
 | **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>0.13 起 | 一行 alias → `dist/lark-doc.common.js` | **只改 `vue.config.js` 一处**（alias）；子路径与样式写全 `dist/` 路径 | `lark-doc` tgz、`vue` tgz |
 | **Vue 2.7 + webpack 4**（0.12 及更早） | `main` → `dist/lark-doc.common.js` | `vue.config.js`（alias + babel 规则）、业务组件的 `import` 写全路径 | `lark-doc` tgz、`vue` tgz、**2 个 babel 插件 tgz** |
 | **Vue 2.7 + webpack 5**（vue-cli 5 / 原生 webpack5） | `module` → `dist/lark-doc.esm.js` | **不用改配置**，只改业务代码的 `import` | `lark-doc` tgz、`vue` tgz |
-| **Vue 3 + Vite** | `lark-doc/element`（UMD，原生 DOM + 注入样式，无 Vue） | `vite.config.js`（`isCustomElement`）、`index.html` 加一行 `<script>` | **只要 `dist/` 目录，不用装 npm 包** |
+| **Vue 3 + Vite** | `lark-doc`，`new LarkDoc({ element })` | 不需要 lark-doc 专属配置；宿主正常安装 Vue3/Vite | tgz 或 npm 包；使用 Element 标签时才需额外带整套 `dist/` |
 
 判断自己是哪一档，只跑一条命令：
 

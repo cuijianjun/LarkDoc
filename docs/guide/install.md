@@ -21,9 +21,9 @@ npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network
 | 你的项目 | 推荐入口 | 安装方式 | 额外配置 |
 | --- | --- | --- | --- |
 | **Vue 2.7**（webpack 5 / Vite） | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | webpack5/Vite 不需要 lark-doc 专属配置；Vite 需 Vue2 插件 |
-| **Vue 2.7 + webpack 4** | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 增加一行 alias 指向 `dist/lark-doc.common.js`；子路径写全 `dist/` |
-| **Vue 2.7 旧 SFC** | `lark-doc/legacy` | `npm i lark-doc` | 仅保留旧组件注册方式；不是新项目首选 |
-| **Vue 3**（Vite / webpack5） | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 不需要 `isCustomElement`；只把编辑器挂到普通 DOM 容器 |
+| **Vue 2.7 + webpack 4** | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 增加一行 alias 指向 `dist/lark-doc.common.js`；样式写全 `dist/` |
+| **Vue 2.7 旧 SFC** | `lark-doc/legacy` | `npm i lark-doc` | 仅旧项目使用；不是新项目首选 |
+| **Vue 3**（Vite / webpack5） | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | 只把编辑器挂到普通 DOM 容器；不加载协同入口 |
 | **React 16.8+** | `lark-doc`，`new LarkDoc()` | `npm i lark-doc` | CRA5/Vite 不需要 lark-doc 专属配置 |
 | **纯静态页 / 老系统 / 没有打包器** | `dist/lark-doc-element.umd.min.js` | 不装 npm，只拷整套 `dist/` | 不需要编译配置 |
 

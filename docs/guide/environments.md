@@ -24,7 +24,7 @@
 | [Vue 2.7 + Vite](#env-vue2-vite) | 同上 | **不用配**，装 `@vitejs/plugin-vue2` 即可 | 同上 |
 | [Vue 2.7 + **webpack4**](#env-vue2-wp4) | `import { LarkDoc } from 'lark-doc'` | **一行 alias**（`lark-doc$` → `lark-doc/dist/lark-doc.common.js`）＋样式写全路径；CJS 通过相对 require 加载兄弟区块 | 同上 |
 | [Vue 2.7 组件式（options 兼容）](#env-vue2-sfc) | `import { LarkDocEditor } from 'lark-doc/legacy'` | ESM 注入样式；CJS 引 `dist/lark-doc-legacy.css` 并保留字体资源 | `<lark-doc-editor v-model="html" />` |
-| [Vue 3](#env-vue3) | `import { LarkDoc } from 'lark-doc'` | **不用配**（纯命令式接入无自定义元素，无需 `isCustomElement`） | `new LarkDoc({ element })` |
+| [Vue 3](#env-vue3) | `import { LarkDoc } from 'lark-doc'` | **不用配**（普通模式不加载协同入口） | `new LarkDoc({ element })` |
 | [React 16.8+](#env-react) | `import { LarkDoc } from 'lark-doc'` | CRA5 / Vite **不用配** | `new LarkDoc({ element })`；Element 薄壳见小节备选 |
 | [原生 / CDN / 内网静态](#env-static) | `<script src="…/lark-doc-element.umd.min.js">` | **不用配**，`dist/` 整目录同位托管 | `<lark-doc>` 标签 |
 | [Node / jsdom（单测）](#env-node) | `require('lark-doc')` | `jest.config.js`：`testEnvironment: 'jsdom'`，CJS 无需转译 | `new LarkDoc({ element: host })` |
