@@ -55,12 +55,25 @@ UMD / element 产物的首屏**永远只有一个文件**：它们的 `output.fi
 ### 构建命令
 
 ```bash
-npm run build          # CJS 单文件（main）
+npm run build          # CJS 单文件（main，兼容 Node14 / Webpack4）
 npm run build:umd      # UMD 压缩版 + 按需区块（unpkg）
-npm run build:esm      # ES Module + 完整拆包（module）
+npm run build:esm      # 现行 Webpack ESM（module）
 npm run build:element  # Web Component（Vue 内联 + CSS 注入）
 npm run build:analyze  # 以上四份 + 体积诊断输出（按依赖聚合 + 产物清单）
 ```
+
+### Rollup 并行构建（迁移阶段）
+
+Rollup 是库产物的长期目标构建器，但迁移期间不替换现有稳定产物：
+
+```bash
+npm run build:rollup:adapters  # 构建 Vue3/React 纯适配薄壳
+npm run build:rollup:collab   # 构建协同入口，Yjs/Tiptap/Hocuspocus 保持 external
+npm run build:rollup           # 执行以上两组并行候选构建
+npm run check:rollup           # 检查格式、产物和协同 external 约束
+```
+
+这些命令只生成与现有 `dist/` 路径兼容的候选产物，不改变用户的安装、`import`、配置和运行方式。当前 `build`、`build:esm`、`build:umd`、`build:element` 仍保持原构建链，待 Node14、Webpack4、Vue3/Vite、React/Vite、原生浏览器和离线部署矩阵全部验证后再切换默认后端。
 
 `npm run check` 会依次跑完四份构建，再跑 Vditor 兼容回归。
 

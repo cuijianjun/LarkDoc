@@ -68,6 +68,8 @@
   var statusEl = document.getElementById('pgStatus')
   var errorEl = document.getElementById('pgError')
   var toggleBtn = document.getElementById('pgToggle')
+  var previewTab = document.getElementById('pgTabPreview')
+  var codeTab = document.getElementById('pgTabCode')
   var foldBtn = document.getElementById('pgFold')
   var codeBar = codePane.querySelector('.pg-bar-code')
   var resetBtn = document.getElementById('pgReset')
@@ -346,8 +348,13 @@
   }
 
   function setOpen(open) {
+    var narrow = window.innerWidth < 880
     pg.classList.toggle('is-collapsed', !open)
+    pg.classList.toggle('is-code-tab', narrow && open)
     toggleBtn.setAttribute('aria-expanded', String(open))
+    toggleBtn.hidden = narrow
+    previewTab.setAttribute('aria-selected', String(!open))
+    codeTab.setAttribute('aria-selected', String(open))
     toggleBtn.innerHTML = (open ? '收起代码' : '展开代码') + ' <kbd>' + MOD + '</kbd><kbd>J</kbd>'
     foldBtn.setAttribute('aria-expanded', String(open))
     writeStore(STORE.open, open ? '1' : '0')
@@ -402,6 +409,7 @@
 
     window.addEventListener('resize', function () {
       applyHeight(codePane.getBoundingClientRect().height || 0)
+      setOpen(pg.classList.contains('is-code-tab') || (window.innerWidth >= 880 && !pg.classList.contains('is-collapsed')))
     })
   }
 
@@ -435,6 +443,8 @@
     })
 
     toggleBtn.addEventListener('click', function () { setOpen(!isOpen()) })
+    previewTab.addEventListener('click', function () { setOpen(false) })
+    codeTab.addEventListener('click', function () { setOpen(true) })
 
     // 代码块自身的折叠入口：箭头按钮 + 折叠态的整条代码顶栏都能展开。
     foldBtn.addEventListener('click', function () { setOpen(!isOpen()) })

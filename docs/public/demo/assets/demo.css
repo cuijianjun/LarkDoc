@@ -120,6 +120,10 @@ kbd {
 
 .pg-grow { flex: 1 1 auto; min-width: 4px; }
 
+.pg-tabs { display: none; flex: 0 0 auto; gap: 2px; padding: 2px; border-radius: 6px; background: var(--soft); }
+.pg-tab { border: 0; border-radius: 4px; padding: 4px 8px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.pg-tab[aria-selected="true"] { background: #fff; color: var(--brand-ink); box-shadow: 0 1px 2px rgba(31, 45, 40, .12); }
+
 .pg-btn {
   flex: 0 0 auto;
   display: inline-flex;
@@ -174,6 +178,18 @@ kbd {
 .pg.is-dragging { cursor: row-resize; user-select: none; }
 .pg.is-dragging iframe,
 .pg.is-dragging .pg-host { pointer-events: none; }
+
+@media (max-width: 879px) {
+  .pg-tabs { display: inline-flex; order: 2; margin-left: auto; }
+  .pg-note, .pg-split, .pg.is-collapsed .pg-bar-code { display: none; }
+  .pg-bar .pg-grow { display: none; }
+  .pg-preview, .pg-code { flex: 1 1 auto; min-height: 0; }
+  .pg.is-code-tab .pg-host { display: none; }
+  .pg.is-code-tab .pg-code { display: flex; }
+  .pg:not(.is-code-tab) .pg-code { display: none; }
+  .pg.is-code-tab .pg-tabs { order: 2; }
+  .pg.is-code-tab .pg-tab[aria-selected="true"] { background: #fff; }
+}
 
 /* ------------------------------------------------------------- 代码区 */
 

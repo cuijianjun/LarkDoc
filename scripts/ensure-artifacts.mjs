@@ -47,6 +47,7 @@ const ARTIFACTS = ARTIFACT_GROUPS.flatMap(({ script, files }) => files.map((file
 const CONFIG_FILES = [
   'vue.config.js', 'babel.config.js', 'postcss.config.js', 'jsconfig.json',
   'scripts/build-adapters.js', 'scripts/build-esm.js', 'scripts/build-collab.js',
+  'rollup.config.mjs', 'scripts/build-rollup.mjs', 'scripts/check-rollup-artifacts.mjs',
 ]
 
 /** package.json 里只取真正影响产物的字段 */

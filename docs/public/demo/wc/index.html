@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>lark-doc Web Component 在线预览</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2329; background: #f5f6f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    header { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 18px; background: #fff; border-bottom: 1px solid #dee0e3; }
+    header strong { color: #1456f0; }
+    header a { margin-left: auto; color: #336df4; text-decoration: none; font-size: 13px; }
+    main { max-width: 1100px; margin: 20px auto; padding: 0 16px 32px; }
+    .card { overflow: hidden; border: 1px solid #dee0e3; border-radius: 10px; background: #fff; }
+    .editor { min-height: 520px; }
+    .source { margin-top: 16px; }
+    pre { margin: 0; overflow: auto; padding: 16px; background: #292929; color: #e8e9e9; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 640px) { header { padding-inline: 12px; } main { margin-top: 12px; padding-inline: 10px; } .editor { min-height: 460px; } }
+  </style>
+</head>
+<body>
+  <header><strong>lark-doc</strong><span>Web Component</span><a href="../">返回 Playground</a></header>
+  <main>
+    <section class="card editor" aria-label="Web Component 编辑器预览">
+      <lark-doc id="demoEditor" title="Web Component 示例" theme="light"></lark-doc>
+    </section>
+    <section class="card source" aria-label="Web Component 示例代码">
+      <pre>&lt;script src="./vendor/lark-doc-element.umd.min.js"&gt;&lt;/script&gt;
+&lt;lark-doc title="Web Component 示例" theme="light"&gt;&lt;/lark-doc&gt;</pre>
+    </section>
+  </main>
+  <script src="../vendor/lark-doc-element.umd.min.js"></script>
+  <script>
+    (function () {
+      var el = document.getElementById('demoEditor')
+      if (!el) return
+      el.addEventListener('lark-doc-change', function () {})
+    }())
+  </script>
+</body>
+</html>

@@ -21,6 +21,10 @@
         <span class="pg-grow"></span>
         <a class="pg-btn pg-btn-ghost" href="../guide/getting-started.html">接入文档</a>
         <button type="button" class="pg-btn" id="pgReset" title="把下面的代码恢复成初始状态">重置代码</button>
+        <div class="pg-tabs" role="tablist" aria-label="预览与代码">
+          <button type="button" class="pg-tab is-active" id="pgTabPreview" role="tab" aria-selected="true" aria-controls="pgHost">预览</button>
+          <button type="button" class="pg-tab" id="pgTabCode" role="tab" aria-selected="false" aria-controls="pgCodePane">代码</button>
+        </div>
         <button type="button" class="pg-btn" id="pgToggle" aria-expanded="true" aria-controls="pgCodePane">
           收起代码 <kbd>⌘</kbd><kbd>J</kbd>
         </button>

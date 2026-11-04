@@ -32,10 +32,11 @@
 | T10 | P2 | BLOCKED | 输出策略、版本回收站、导入任务/UI 已完成；真实浏览器和部分宿主回读仍缺证据 | T06、T09 |
 | T11 | P2 | DONE | 性能基线、DerivedIndex、脏区更新和 IndexedDB 分层已收口 | T00、T01 |
 | T12 | P3 | DONE | 白板/画板 0.12 版本化延期；保留 webEmbed/host-owned 骨架边界，不在 core 自研 Canvas | T01、T06 |
-| T13 | P3 | DOING | 全量 Vitest 97文件/2192项、lint、架构、宿主契约、git diff --check通过；T023/T028已完成，T032手机/平板模拟器12/12通过；独立宿主烟测及 Chromium 完整矩阵14/14通过（splitting 13/13、mobile 12/12、clipboard 10/10、element 14/14）。仍开放：ESM gzip 287.07kB 超预算2.07kB、性能采样需稳定复核、真实宿主租户写入证据缺失；未放宽预算或性能基线 | T02–T12 |
+| T13 | P3 | DOING | 全量 Vitest 97文件/2192项、lint、架构、宿主契约、git diff --check通过；T023/T028已完成，T032手机/平板模拟器12/12通过；独立宿主烟测及 Chromium 完整矩阵14/14通过（splitting 13/13、mobile 12/12、clipboard 10/10、element 14/14）。仍开放：ESM gzip 287.09kB 超预算2.09kB、最新稳定采样 heap 18.1MB 相对14.7MB基线退化约23%、真实宿主租户写入证据缺失；未放宽预算或性能基线 | T02–T12 |
 | T14 | P0 | WONT | 顶部固定格式工具栏 | 需求已证明不存在 |
 | T15 | P0 | WONT | 自定义右键菜单 | 需求已证明不存在 |
 | T16 | P0 | WONT | 折叠块 slash 项和兄弟产品线 | 明确不在当前范围 |
+| T051 | P2 | DONE | 在线 Demo 交付与隔离验收：已补齐 `/demo/wc/`、`/demo/vanilla/`、vendor 同步脚本和 UMD 异步分块；无 broker 环境重建 UMD 成功，vendor 版本同步至 0.12.1。Chromium 桌面/390×844 窄屏三页均加载成功，编辑器与 Web Component 均挂载，响应宽度无溢出，控制台无错误且资源无 404；Playground 配置重建后正文保全、storage 隔离通过，窄屏预览/代码 Tab 切换通过。 | T13 |
 
 ---
 

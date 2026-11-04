@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>lark-doc 原生静态预览</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2329; background: #f5f6f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    header { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 18px; background: #fff; border-bottom: 1px solid #dee0e3; }
+    header strong { color: #1456f0; }
+    header a { margin-left: auto; color: #336df4; text-decoration: none; font-size: 13px; }
+    main { max-width: 1100px; margin: 20px auto; padding: 0 16px 32px; }
+    .card { overflow: hidden; border: 1px solid #dee0e3; border-radius: 10px; background: #fff; }
+    #editor { min-height: 520px; }
+    pre { margin: 16px 0 0; overflow: auto; padding: 16px; background: #292929; color: #e8e9e9; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 640px) { header { padding-inline: 12px; } main { margin-top: 12px; padding-inline: 10px; } #editor { min-height: 460px; } }
+  </style>
+</head>
+<body>
+  <header><strong>lark-doc</strong><span>原生 UMD</span><a href="../">返回 Playground</a></header>
+  <main>
+    <section class="card"><div id="editor" aria-label="原生 UMD 编辑器预览"></div></section>
+    <pre>&lt;script src="./vendor/vue.min.js"&gt;&lt;/script&gt;
+&lt;script src="./vendor/lark-doc.umd.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;new LarkDoc({ element: '#editor', storage: 'none' })&lt;/script&gt;</pre>
+  </main>
+  <script src="../vendor/vue.min.js"></script>
+  <script src="../vendor/lark-doc.umd.min.js"></script>
+  <script>
+    (function () {
+      var ns = window['lark-doc'] || window.larkDoc || {}
+      var Ctor = ns.LarkDoc || ns.default
+      if (Ctor) new Ctor({ element: '#editor', title: '原生 UMD 示例', storage: 'none' })
+    }())
+  </script>
+</body>
+</html>
