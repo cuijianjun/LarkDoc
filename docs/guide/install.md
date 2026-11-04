@@ -20,7 +20,7 @@ npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network
 
 | 你的项目 | 走哪个入口 | 装不装 npm 包 | 编译工具要改吗 |
 | --- | --- | --- | --- |
-| **Vue 2.7**（webpack 4/5、Vite） | `lark-doc`（`new LarkDoc()`）；旧组件用 `lark-doc/legacy` | 装 | webpack4 需 alias CJS；webpack5 / Vite 无需改 |
+| **Vue 2.7**（webpack 4/5、Vite） | `lark-doc`（`new LarkDoc()`）；旧组件用 `lark-doc/vue2` | 装 | webpack4 需 alias CJS；webpack5 / Vite 无需改 |
 | **Vue 3**（Vite / webpack5） | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/element` 薄壳 | 装 | 命令式无需专属配置；标签方式放行 `lark-doc` |
 | **React 16.8+** | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/react` 薄壳 | 装 | CRA5/Vite 无需专属配置；TSX 标签需补类型 |
 | **纯静态页 / 老系统 / 没有打包器** | `dist/lark-doc-element.umd.min.js`（`<script>` 直引） | **不装**，只拷 `dist/` | 不用 |
@@ -35,7 +35,7 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 Vue 版本只影响宿主自己的组件与薄壳写法，不限制默认入口；任意框架或无框架均可使用 `new LarkDoc()`。不使用打包器时选择静态 Element 方式。
 
 ::: warning 三个最容易走错的路
-- **把 legacy options 当跨框架组件** → `lark-doc/legacy` 仅供 Vue2 宿主注册；任意框架都可以用默认 `new LarkDoc()` 或 `lark-doc/element`，两者都不需要 Vue2。
+- **把 legacy options 当跨框架组件** → `lark-doc/vue2` 仅供 Vue2 宿主注册；任意框架都可以用默认 `new LarkDoc()` 或 `lark-doc/element`，两者都不需要 Vue2。
 - **薄壳只装了一半** → 组件渲染成空白、控制台报「`<lark-doc>` 尚未注册」。薄壳只做属性/事件桥接，**元素本体在 element 入口**，宿主入口要最先 `import 'lark-doc/element'`。
 - **只拷了主文件、没拷 `*.math.js` 这些** → 编辑器能开，但插公式、导出 Word 时 404。`dist/` 要**整目录**同位放。
 :::
@@ -175,7 +175,7 @@ node -e "console.log(require('lark-doc/package.json').version)"
 | Vue 2.7 + webpack 5 | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({ element })` |
 | Vue 2.7 + Vite | 同上（装 `@vitejs/plugin-vue2`） | 同上 |
 | Vue 2.7 + webpack 4 | 同上 + `import 'lark-doc/dist/lark-doc.css'` + 一行 alias（见下表） | 同上 |
-| Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc/legacy'` | `<lark-doc-editor v-model="html" />` |
+| Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc/vue2'` | `<lark-doc-editor v-model="html" />` |
 | **Vue 3** | `import 'lark-doc/element'` + `import { resolveVue3Attrs } from 'lark-doc/vue3'` | `<lark-doc v-bind="resolveVue3Attrs(props)" @lark-doc-change="onChange">` |
 | **React 18** | `import 'lark-doc/element'` + `import { createReactLarkDoc } from 'lark-doc/react'` | `const LarkDoc = createReactLarkDoc(React)` → `<LarkDoc content={html} onChange={fn} ref={docRef} />` |
 | 原生 / CDN / 静态 | `<script src="…/lark-doc-element.umd.min.js">` | `<lark-doc>` 标签 |

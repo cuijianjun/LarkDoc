@@ -1,22 +1,10 @@
 'use strict'
 
 /**
- * 「webpack 4 只要一行 alias」的语法闸门。
+ * Rollup 生成的 CJS / UMD 产物语法闸门。
  *
- * 背景：0.13 删掉了 package.json 的 `browser` 字段（它一旦存在，webpack4/5 会跳过
- * ESM、直落 UMD 的「浏览器直挂档」，于是 SSR 与浏览器吃到两份不同产物）。删掉之后
- * webpack4 会顺着 mainFields 落到 `module` → `esm.js`，而 esm.js 里有 `import.meta`，
- * acorn 6.4.2 解析不了 —— 文档于是承诺「一行 alias 指到 CJS 档」。
- *
- * 这条承诺成立的前提是：**CJS 档本身也得是 ES2018 语法**。否则 alias 过去照样
- * `Module parse failed`，宿主还得回头挂 babel，文档的「一行配置」就成空话了。
- *
- * 所以这里用 acorn 以 ecmaVersion 2018 真实解析两份「给老打包器吃」的产物：
- *   - dist/lark-doc.common.js            （webpack4 主入口：alias 指到这里；Node 也是它）
- *   - dist/lark-doc-element.umd.min.js   （`<script>` 直挂 / CDN / 无 Vue 宿主；
- *                                          阶段 3 起兼任原 UMD 档职责，UMD 单档已退场）
- *
- * esm.js 不在这里 —— 它面向认 `exports` 的现代打包器，保留 ES2020+ 是刻意的。
+ * CJS 是传统打包器和 Node require 的兼容入口，UMD 是 CDN / 原生浏览器入口；
+ * 两者都必须保持 ES2018 语法，避免 Node14 或 webpack4 acorn 在消费阶段失败。
  *
  * 用法：node scripts/check-legacy-syntax.js
  */
@@ -68,8 +56,7 @@ if (failures.length) {
   console.error(`\n✗ 产物语法等级检查失败 ${failures.length}/${TARGETS.length}`)
   for (const line of failures) console.error(`  - ${line}`)
   console.error(
-    '\n修法：这三份产物的构建脚本要带 LARK_DOC_LEGACY=1（见 package.json 的 build / build:umd / build:element、' +
-      'babel.config.js 与 legacy-syntax.js），降级后才满足 webpack 4 的 acorn。'
+    '\n修法：检查 Rollup 的 legacy / element 输出配置，并确认 CJS / UMD 产物保持 ES2018 语法。'
   )
   process.exit(1)
 }

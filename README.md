@@ -64,8 +64,8 @@ mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管
 |---|---|---|
 | **`browser` 字段** | **已删除** | 它会让 webpack4/5 与部分工具跳过 ESM、直接落到 UMD「浏览器直挂档」，宿主拿到的就不是可 tree-shaking 的模块产物。SSR 与浏览器吃**同一份产物**；需要环境差异一律走 `exports` 的 condition。 |
 | **`sideEffects`** | 只列 `**/*.css`、`**/*.scss` 与 UMD / element 自注册档、CJS 档 | UMD 档确实有顶层副作用（自定义元素注册、`__webpack_public_path__`），不能谎报为纯；ESM 档是唯一需要被 tree-shake 的路径，已排除在名单外。 |
-| **`exports` 子入口** | `.` / `./element` / `./legacy` / `./vue3` / `./react` / `./adapters/*` / `./collab` / `./lite` / `./features/*` / `./plugin` / `./style.css` / `./dist/*` / `./package.json` | legacy 仅提供无 Vue import 的 options 适配器，Vue3/React 薄壳只桥接自定义元素。 |
-| **样式** | CJS 显式 `import 'lark-doc/style.css'`（webpack4 写 `lark-doc/dist/lark-doc.css`） | ESM / lite / Element 样式随 JS 注入；legacy CJS 使用自己的 `dist/lark-doc-legacy.css`。 |
+| **`exports` 子入口** | `.` / `./element` / `./vue2` / `./vue3` / `./react` / `./adapters/*` / `./collab` / `./lite` / `./features/*` / `./plugin` / `./style.css` / `./dist/*` / `./package.json` | legacy 仅提供无 Vue import 的 options 适配器，Vue3/React 薄壳只桥接自定义元素。 |
+| **样式** | CJS 显式 `import 'lark-doc/style.css'`（webpack4 写 `lark-doc/dist/lark-doc.css`） | ESM / lite / Element 样式随 JS 注入；legacy CJS 使用自己的 `dist/lark-doc-vue2.css`。 |
 
 > `sideEffects` 收窄的实测收益（webpack 5，入口只 `import { LarkDoc } from 'lark-doc'` 但**从不使用**）：
 > 收窄前 `1,922,452 B` → 收窄后 **`151 B`**；而副作用型入口 `import 'lark-doc/element'` 仍完整保留 `1,695,666 B`，不会被误删。
@@ -88,12 +88,12 @@ doc.getImportReport()             // { source, math, taskList, taskItem, diagram
 import {
   LarkDocEditor,
   LarkDocWorkspace,
-} from 'lark-doc/legacy'
+} from 'lark-doc'
 ```
 
-这些导出是交给 Vue2 宿主注册的普通 options 对象，内部仍挂载 DOM renderer，不导入 Vue。webpack4 兼容入口写 `lark-doc/dist/lark-doc-legacy.common.js`。
+这些导出是交给 Vue2 宿主注册的普通 options 对象，内部仍挂载 DOM renderer，不导入 Vue。webpack4 兼容入口写 `lark-doc/dist/lark-doc-vue2.common.js`。
 
-默认 CJS 的公开样式入口为 `lark-doc/style.css`，只需引入一次；legacy CJS 使用 `dist/lark-doc-legacy.css`。ESM / Element 已注入样式，不必重复引入；不要直接引 `src/components/lark-doc/lark-doc.css`。
+默认 CJS 的公开样式入口为 `lark-doc/style.css`，只需引入一次；legacy CJS 使用 `dist/lark-doc-vue2.css`。ESM / Element 已注入样式，不必重复引入；不要直接引 `src/components/lark-doc/lark-doc.css`。
 
 ## 资源本地化与网络策略
 

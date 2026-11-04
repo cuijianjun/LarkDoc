@@ -68,7 +68,7 @@ else {
 {
   const source = read('src/core/blocks/math.js')
   // 阶段 4 起引用点是构建期 alias 指定符 'lark-doc/katex.css'
-  // （vue.config.js / build-features.js → vendored 真文件，build-lite.js → 空 CSS）。
+  // （Rollup feature target → vendored 真文件，lite target → 空 CSS）。
   if (!/(styles\/vendor\/katex\.css|lark-doc\/katex\.css)/.test(source)) {
     fail('KaTeX 样式必须由 src/core/blocks/math.js 引入（按需加载）')
   }
@@ -85,7 +85,7 @@ else {
   if (/url\(\s*['"]?(?:https?:)?\/\//i.test(css)) fail(`${katex} 仍包含远程字体地址`)
   const remoteFonts = css.match(/url\(\s*['"]?[a-z]+:\/\//gi) || []
   if (remoteFonts.length) fail(`${katex} 出现 ${remoteFonts.length} 个非相对字体地址`)
-  if (!/url\(\.\.\/\.\.\/assets\/fonts\/katex\//.test(css)) fail(`${katex} 字体必须指向 ../../assets/fonts/katex/`)
+  if (!/url\(\.\/fonts\//.test(css)) fail(`${katex} 字体必须指向 ./fonts/`)
 }
 
 // 2. 字体资产

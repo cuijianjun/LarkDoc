@@ -5,19 +5,13 @@
  *   node scripts/demo-sync-vendor.mjs          # dist/ → docs/public/demo/vendor/
  *   node scripts/demo-sync-vendor.mjs --check  # 只校验，不一致退出码 1
  *
- * 为什么必须拷「全部」分块，而不是只拷主文件：
- *   两个 UMD 产物都带 `__webpack_public_path__` 推导 —— 运行时读
- *   `document.currentScript.src`，把目录部分当成 publicPath。所以只要主文件放在
- *   `docs/public/demo/vendor/`，懒加载的 `lark-doc.umd.min.mermaid.js` 就会被请求成
- *   `./vendor/lark-doc.umd.min.mermaid.js`。只拷主文件 = 图表 / 公式 / 代码高亮 /
- *   Word 导入 / 编辑器浮层全部 404（表现为「图表渲染不出来、且刷新也不恢复」）。
+ * Element UMD 是浏览器/CDN 的唯一发布入口；其 feature 变体使用
+ * `lark-doc-element.umd.min.<feature>.js` 命名。同步时必须把入口、feature 产物、样式和字体
+ * 一起带到静态 vendor 目录，避免离线页面只复制主文件后缺少按需能力。
  *
  * 因此本脚本做三件事：
- *   1. 从主 UMD 源码里解析出 webpack 的 chunk 映射表（`.u = function(e){ return "前缀" + {id:"名字"}[e] + ".js" }`），
- *      逐个断言 dist/ 里确实存在 —— 这样「产物新增了一个 chunk 而 vendor 没跟上」会在同步时就报错，
- *      而不是等到用户打开 demo 页看空图表。
- *   2. 把主文件 + 全部 chunk + 样式 + 字体全量拷过去，并清掉 dist 里已经不存在的旧 chunk
- *      （产物文件名不带 hash，旧 chunk 不删会一直躺着）。
+ *   1. 校验 dist/ 中的 Element 入口与 feature 产物。
+ *   2. 把入口、feature、样式、字体全量拷过去，并清掉已经不存在的旧产物。
  *   3. 写 `vendor/VERSION`，页面右上角用它显示版本号。
  *
  * 不挂在 prebuild / CI 上：改 package.json 或 workflow 都会影响发版链路，
@@ -35,8 +29,8 @@ const argv = new Set(process.argv.slice(2))
 const CHECK = argv.has('--check')
 const QUIET = argv.has('--quiet')
 
-/** 产物分块命名：lark-doc.umd.min.js / lark-doc.umd.min.mermaid.js / lark-doc-element.umd.min.office.js */
-const BUNDLE_RE = /^lark-doc(?:-element)?\.umd\.min(?:\.[a-z0-9-]+)?\.js$/
+/** Element 发布入口与 feature 产物命名。 */
+const BUNDLE_RE = /^lark-doc-element\.umd\.min(?:\.[a-z0-9-]+)?\.js$/
 /**
  * 按需区块自己还有样式（KaTeX）。webpack 的 `miniCssF` 会给它们取带 hash 的文件名，
  * 同样是「相对主文件」请求，漏拷就是公式变成裸字符。这里按 webpack 的命名习惯收：
@@ -44,7 +38,7 @@ const BUNDLE_RE = /^lark-doc(?:-element)?\.umd\.min(?:\.[a-z0-9-]+)?\.js$/
  */
 const CHUNK_CSS_RE = /^[a-z][a-z0-9-]*(?:\.[0-9a-f]{8,})?\.css$/
 /** 两个入口主文件，缺任何一个都不算构建完成 */
-const ENTRY_FILES = ['lark-doc.umd.min.js', 'lark-doc-element.umd.min.js']
+const ENTRY_FILES = ['lark-doc-element.umd.min.js']
 /** 非 JS 的配套资源 */
 const ASSET_FILES = ['lark-doc.css']
 /** Demo 页另需的运行时，不来自 dist，只在缺失时兜底拷一次 */
@@ -80,8 +74,7 @@ function statSize(file) {
 }
 
 /**
- * 从 UMD 产物里解析 webpack 的 chunk 映射。
- * 形如：.u=function(e){return"lark-doc.umd.min."+{21:"highlight",304:"mermaid"}[e]+".js"}
+ * 读取历史 UMD chunk 映射；当前 Rollup Element 产物为单文件时返回空列表。
  */
 function readChunkMap(source) {
   const matched = source.match(

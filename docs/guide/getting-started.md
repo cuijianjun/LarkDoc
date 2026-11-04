@@ -3,7 +3,7 @@
 lark-doc 是基于 Tiptap 3 与原生 DOM 的文档编辑器。默认、Element、lite 和 legacy 入口都不依赖 Vue 运行时。新项目统一使用命令式入口，旧 Vue2 项目再使用兼容入口：
 
 - **命令式入口** `new LarkDoc()`：像 AiEditor 一样用构造函数驱动完整工作台，适合任何宿主（原生页面、Vue2 路由、微前端）。
-- **兼容 options 入口** `lark-doc/legacy` 的 `LarkDocEditor` / `LarkDocWorkspace`：供已有 Vue2 宿主注册，实际 UI 仍由 DOM renderer 创建，适配器自身不导入 Vue。
+- **兼容 options 入口** `lark-doc/vue2` 的 `LarkDocEditor` / `LarkDocWorkspace`：供已有 Vue2 宿主注册，实际 UI 仍由 DOM renderer 创建，适配器自身不导入 Vue。
 
 推荐统一使用命令式入口，组件式入口保留为兼容导出。
 
@@ -31,7 +31,7 @@ lark-doc 是基于 Tiptap 3 与原生 DOM 的文档编辑器。默认、Element�
 | --- | --- | --- | --- |
 | Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({...})` | 命中 `exports.import` → ESM；懒区块由宿主打包器接管，内外网零配置 |
 | Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | 一行 alias：`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`（CJS 已降到 ES2018，不用 babel）；兄弟 chunk 通过 `require()` 加载，不用设 URL 基址 |
-| Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc/legacy'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
+| Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc/vue2'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
 | Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物不含 Vue；也可用主入口 `new LarkDoc()`；对象型能力（uploader / persistence / ai）只能 `setProperty` |
 | CDN / 静态托管 / 内网 | `<script src="…/dist/lark-doc-element.umd.min.js">` | `<lark-doc>` | **`dist/` 整目录**同位部署（主文件 + `*.math.js`、`*.mermaid.js` 等按需区块 + `fonts/`） |
 | Node / jsdom / SSR | `require('lark-doc')`；SSR 用 `process.client` 内 `await import('lark-doc/element')` | `new LarkDoc({ element: host })` | CJS 主文件与按需兄弟 chunk（require 加载）；element 产物模块求值即注册元素，Node 端 import 会炸 → 必须 client-only |

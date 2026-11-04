@@ -28,7 +28,7 @@ const doc = new LarkDoc({
 
 `lark-doc` 把 `/lark-doc` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
 
-默认入口提供无框架的 `LarkDoc` 门面；`lark-doc/legacy` 另提供两个普通 options 兼容对象（供 Vue2 宿主注册），内部仍挂载同一份原生 DOM UI，不导入 Vue：
+默认入口提供无框架的 `LarkDoc` 门面，Vue2 / Vue3 / React 宿主统一从 `lark-doc` 引入，内部挂载原生 DOM UI，不导入 Vue：
 
 | 入口 | 职责 | 适用场景 |
 | --- | --- | --- |
@@ -70,8 +70,8 @@ import Vue from 'vue'
 import {
   LarkDocEditor,
   LarkDocWorkspace,
-} from 'lark-doc/legacy'
-import 'lark-doc/dist/lark-doc-legacy.css'
+} from 'lark-doc'
+import 'lark-doc/dist/lark-doc-vue2.css'
 
 Vue.component('LarkDocEditor', LarkDocEditor)
 Vue.component('LarkDocWorkspace', LarkDocWorkspace)

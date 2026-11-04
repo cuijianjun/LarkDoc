@@ -15,12 +15,8 @@
  * mount/ 渲染适配层与 Web Component 产物内部，外层宿主不需要安装 Vue。
  */
 
-// 按需区块（math / office / mermaid / highlight）的基址，口径见 src/index.js 同名注释。
-// 静态 <script src> 引 lark-doc-element.umd.min.js 时无需设置；被宿主打包器 import
-// （webpack4 需写全 dist 路径）时用 window.__LARK_DOC_PUBLIC_PATH__ 指定 dist 所在目录。
-if (typeof window !== 'undefined' && window.__LARK_DOC_PUBLIC_PATH__) {
-  __webpack_public_path__ = window.__LARK_DOC_PUBLIC_PATH__
-}
+// Rollup 产物不依赖 Webpack runtime。按需能力通过 feature registry 和
+// 标准 dynamic import() 加载，宿主可在加载独立 feature 包后复用同一注册表。
 
 // Tiptap 3 与个别依赖使用 ES2022/ES2023 API（findLast / at / structuredClone）。
 // 必须在入口显式补齐，否则旧版 Safari/Chrome 与 Node 14 会在运行时抛 TypeError。
