@@ -37,10 +37,11 @@ export default defineConfig({
       { text: '首页', link: '/' },
       {
         text: '开始上手',
-        activeMatch: '/guide/(getting-started|install|environments|instance)',
+        activeMatch: '/guide/(getting-started|install|compatibility|environments|instance)',
         items: [
           { text: '快速开始', link: '/guide/getting-started' },
           { text: '安装与引用总表（内外网）', link: '/guide/install' },
+          { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
           { text: '各环境引入对照', link: '/guide/environments' },
           { text: '实例与事件', link: '/guide/instance' },
         ],
@@ -96,6 +97,7 @@ export default defineConfig({
           items: [
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '安装与引用总表（内外网）', link: '/guide/install' },
+            { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
             { text: '各环境引入对照', link: '/guide/environments' },
             { text: '实例与事件', link: '/guide/instance' },
           ],

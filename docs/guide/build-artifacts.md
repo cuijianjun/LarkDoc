@@ -90,6 +90,7 @@ npm run check:rollup           # 检查格式、产物和协同 external 约束
 
 ### 部署注意
 
+- 应用层的样式子路径、模板 / 评论 / 版本 / Provider / 迁移用法与页面级懒加载，见[安装、兼容与懒加载速查](./compatibility)。当前 dev 未提供 `lite` 或 `features/*` 子入口；完整入口内置重依赖加载，静态部署按本页保留当前构建实际生成的文件，不混入原生分支的 `dist/features/`。
 - 按需区块必须和主文件放在**同一个目录**：UMD / element 用 `publicPath:'auto'` 按主文件
   （`<script>` 自身 URL）推导 chunk 地址；ESM 用相对 `import()` 串按文件自身 URL 解析。
   所以只要把 **`dist/` 整目录同位托管**（主文件 + 各按需区块 `*.math.js` / `*.mermaid.js` … + `fonts/`），

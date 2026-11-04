@@ -55,6 +55,8 @@ mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管
 
 > 每个环境的**编译工具配置、工具栏（编辑工具）配置、可直接粘贴运行的完整 demo** 见文档站「各环境引入对照」：<https://cuijianjun.github.io/LarkDoc/guide/environments.html>（源文件 `docs/guide/environments.md`）。
 
+安装入口、样式子路径、模板 / 评论 / 版本 / Provider / 迁移用法与页面级懒加载，见[安装、兼容与懒加载速查](./docs/guide/compatibility.md)。当前这些数据层能力由主入口导出；除协同外，不应套用原生分支的独立子入口示例。
+
 ## 旧数据兼容（Vditor）
 
 Vditor `getHTML()` 导出的 HTML 可直接喂给 `content`，命中 `vditor-*` / `language-math` / 图表 `language-*` 等指纹时自动归一化公式、任务列表、图表代码块、脚注与表格列宽：
