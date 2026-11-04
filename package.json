@@ -227,6 +227,12 @@
       "default": "./dist/lark-doc.common.js"
     },
     "./element": "./dist/lark-doc-element.umd.min.js",
+    "./legacy": {
+      "node": "./dist/lark-doc.common.js",
+      "import": "./dist/lark-doc.esm.js",
+      "require": "./dist/lark-doc.common.js",
+      "default": "./dist/lark-doc.common.js"
+    },
     "./vue3": {
       "import": "./dist/lark-doc-vue3.mjs",
       "default": "./dist/lark-doc-vue3.mjs"

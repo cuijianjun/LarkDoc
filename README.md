@@ -12,6 +12,10 @@
 
 > **开发/改代码前必读**：[DEVELOPMENT.md](./DEVELOPMENT.md) —— 踩坑清单与回归防护（折叠高亮、blockId、缩进、编号、弹窗、排版实测值、Vditor 兼容）。
 
+> **长期路线两份**
+> - [MULTI_ENV_PLAN.md](./MULTI_ENV_PLAN.md) —— **宿主怎么引入**：产物格式、`exports` 路由、webpack4/5/Vite/内网 的配置收敛。
+> - [FRAMEWORK_AGNOSTIC_PLAN.md](./FRAMEWORK_AGNOSTIC_PLAN.md) —— **包内部怎么写**：分层、UI 去 Vue 的演进节奏（S0~S4）与验收口径。
+
 ## 环境要求
 
 - **运行时（接入方）**：Node `>= 14.21.3`（`engines.node` 已放宽；Tiptap 3 依赖的 ES2022+ API 已由入口 core-js polyfill 补齐，Node 14 可正常运行）。无需固定某个版本。
@@ -191,3 +195,18 @@ Demo 应用只负责路由与页面呈现；本仓库通过 `file:` 依赖以真
 
 [MIT](./LICENSE) —— 允许自由使用、复制、修改、合并、发布、分发、再许可，**但须保留版权声明与许可声明**，
 且**附加声明中的「禁止商用」为使用建议与风险提示**，请务必遵守。软件按「AS IS」提供，作者不承担任何责任。
+
+
+
+# TODOLIST
+1. 自动保存开启
+2. 安装 引入 webpack配置 适配vue2 vue3 react script
+3. ai模块适合接口和api_key两种形式
+4. ai模块交互形成各个选项配置 并且满足目前互联网的要求
+4. 移动端交互兼容设备范围（苹果8 9 10 11）图片 文字 媒体块的兼容
+5. mcp
+6. 包整体的格式化
+7. 导入导出按钮分开 格式可配
+8. 图片，等媒体在html中的展示方式
+9. 图表渲染不出来
+10. 编辑模式 编辑-修订-只读

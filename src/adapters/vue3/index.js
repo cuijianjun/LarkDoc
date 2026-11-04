@@ -15,7 +15,9 @@
  *
  * 用法（Vue 3 宿主）：
  *   import 'lark-doc/element'
- *   <lark-doc :content="html" :content-format="'html'" @lark-doc-change="onChange" />
+ *   import { resolveVue3Attrs, VUE3_EVENTS } from 'lark-doc/vue3'
+ *   <lark-doc v-bind="resolveVue3Attrs({ content: html, contentFormat: 'html' })"
+ *             @lark-doc-change="onChange" />
  *
  * 注意：lark-doc/element 是构建产物（dist/lark-doc-element.umd.min.js），
  * 源码内含 Vue 2 SFC，Vue 3 宿主不能直接引 lark-doc 源码入口。
@@ -23,6 +25,9 @@
 import { ATTRIBUTE_SCHEMA } from '../../web-component/attributes'
 // 只引零依赖的 events 名单，不引 LarkDocElement（其依赖链含 Vue 2 SFC）。
 import { EVENT_MAP } from '../../web-component/events'
+// 首次序列化属性时探一次「<lark-doc> 有没有注册」：漏 import 'lark-doc/element'
+// 时元素是 HTMLUnknownElement，静默不渲染 —— 必须报出来（内部有一次性缓存）。
+import { assertLarkDocElement } from '../../web-component/assert'
 
 /** <lark-doc> 派发的 CustomEvent 名单（camelCase 事件名 → DOM 事件名）。 */
 export const VUE3_EVENTS = Object.freeze({ ...EVENT_MAP })
@@ -33,6 +38,9 @@ export const VUE3_EVENTS = Object.freeze({ ...EVENT_MAP })
  * 避免 Vue 3 侧拼错属性名后静默失效。
  */
 export function resolveVue3Attrs(props = {}) {
+  // 探针放在这里而不是模块顶层：模块可能在 SSR 端被 import，浏览器端首次渲染才是
+  // 该判定的时机。assert 内部有一次性缓存，逐次渲染不产生额外开销。
+  assertLarkDocElement()
   const byAttr = new Map(ATTRIBUTE_SCHEMA.map((entry) => [entry.attr, entry]))
   const attrs = {}
   for (const [key, value] of Object.entries(props)) {
@@ -61,3 +69,5 @@ export function resolveVue3Attrs(props = {}) {
   }
   return attrs
 }
+
+export { assertLarkDocElement, isLarkDocElementReady } from '../../web-component/assert'

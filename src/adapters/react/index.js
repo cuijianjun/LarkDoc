@@ -15,7 +15,7 @@
  *
  * 用法（React 宿主）：
  *   import 'lark-doc/element'
- *   import { createReactLarkDoc } from 'lark-doc/adapters/react'
+ *   import { createReactLarkDoc } from 'lark-doc/react'
  *   const LarkDoc = createReactLarkDoc(React)
  *   <LarkDoc content={html} contentFormat="html" onChange={...} ref={docRef} />
  *
@@ -26,6 +26,9 @@ import { ATTRIBUTE_SCHEMA } from '../../web-component/attributes'
 // 只引零依赖的 events 名单，不引 LarkDocElement（其依赖链含 Vue 2 SFC，
 // React 宿主构建器没有 Vue 2 插件，引了就编译失败——P0-06 踩坑修正）。
 import { EVENT_MAP } from '../../web-component/events'
+// 挂载点探一次「<lark-doc> 有没有注册」：漏 import 'lark-doc/element' 时
+// 元素是 HTMLUnknownElement，ref 上方法全是 undefined 且控制台干净 —— 必须报出来。
+import { assertLarkDocElement } from '../../web-component/assert'
 
 /** 元素上可直接透传的快捷方法（与 web-component PROXIED_METHODS 的宿主常用子集保持一致）。 */
 const PROXY_METHODS = Object.freeze([
@@ -57,6 +60,8 @@ export function createReactLarkDoc(React) {
     useEffect(() => {
       const el = elRef.current
       if (!el) return undefined
+      // 只在挂载时探：SSR 下放过，浏览器端漏引 element 入口会打一条可行动的 error。
+      assertLarkDocElement()
       const unbinders = Object.entries(PROP_EVENTS).map(([prop, domEvent]) => {
         const handler = (event) => {
           const callback = handlersRef.current[prop]
@@ -122,3 +127,4 @@ export function createReactLarkDoc(React) {
 }
 
 export { EVENT_MAP as LARK_DOC_EVENTS }
+export { assertLarkDocElement, isLarkDocElementReady } from '../../web-component/assert'

@@ -31,6 +31,8 @@ import 'lark-doc/element' // 自动注册 <lark-doc>
 // 样式已随产物注入；若在 lib 模式下使用请另行 import 'lark-doc/style.css'
 ```
 
+> **webpack 4 宿主**：`exports` 字段读不到，上面这行要写全 `lark-doc/dist/lark-doc-element.umd.min.js`。主入口 `lark-doc` 从 0.13 起不用写全（`browser` 已指向 ES2018 产物），只有子路径需要。
+
 ```vue
 <template>
   <lark-doc :title="docTitle" @lark-doc-change="onChange" ref="editor" />
