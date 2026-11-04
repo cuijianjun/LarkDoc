@@ -47,6 +47,10 @@ const OPTIONAL_ENTRIES = {
   'lark-doc-versioning': path.resolve(root, 'src/versioning.js'),
   'lark-doc-providers': path.resolve(root, 'src/providers.js'),
   'lark-doc-migrations': path.resolve(root, 'src/migrations.js'),
+  // Full convenience bundle: one import registers every optional feature and
+  // exports all low-frequency public modules. Keep it separate from the core
+  // entry so the default package remains tree-shakeable and fast to start.
+  'lark-doc-full': path.resolve(root, 'src/full.js'),
 }
 const service = new Service(root)
 service.init('production')

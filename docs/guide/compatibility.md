@@ -60,38 +60,26 @@ new LarkDoc({
 | 环境 | 推荐入口 | 是否需要额外配置 |
 |---|---|---|
 | Vue 2.7 + webpack 5 / Vite | `import { LarkDoc } from 'lark-doc'` | 不需要 lark-doc 专用配置 |
-| Vue 2.7 + webpack 4 | 默认入口 + CJS alias | 需要一行 alias，子路径写 `dist/` 全路径 |
+| Vue 2.7 + webpack 4 | `import { LarkDoc } from 'lark-doc'` | 不需要 lark-doc 专用配置；样式引 `lark-doc/style.css` |
 | Vue 3 | `lark-doc/element` + `lark-doc/vue3`，或直接默认入口 | 自定义元素需放行 |
 | React | `lark-doc/element` + `lark-doc/react`，或直接默认入口 | CRA/Vite 通常不需要配置 |
 | 原生 HTML / CDN | `dist/lark-doc-element.umd.min.js` | `dist/` 整目录同位托管 |
 | Next / Nuxt SSR | 客户端动态 import | 不要在服务端创建编辑器 |
 | 协同编辑 | `lark-doc/collab` | 宿主自行安装并提供 Yjs / Provider |
 
-### webpack 4
+### Vue2 / webpack 4
 
-webpack 4 不读取 `exports`，主入口指向 CJS：
-
-```js
-// vue.config.js
-module.exports = {
-  configureWebpack: {
-    resolve: {
-      alias: {
-        'lark-doc$': 'lark-doc/dist/lark-doc.common.js',
-      },
-    },
-  },
-}
-```
-
-样式和其他子入口也写完整路径：
+当前包为 Vue2 提供可直接消费的 CJS `main`，应用层无需增加 alias、源码路径或专属 Babel 配置：
 
 ```js
-import 'lark-doc/dist/lark-doc.css'
-// Element：import 'lark-doc/dist/lark-doc-element.umd.min.js'
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+
+// mounted
+const editor = new LarkDoc({ element: this.$refs.editor })
 ```
 
-不要把 `lark-doc` 整包交给业务 Babel 重复转译；CJS 产物已经按 webpack 4 可解析语法构建。
+不要把 `lark-doc/dist` 交给业务 Babel 重复转译；发布产物已经按宿主兼容目标构建。Element 等标签入口只有在明确选择 Web Component 方案时才引入。
 
 ### Vue 3 / React
 
@@ -184,9 +172,36 @@ new LarkDoc({ element: '#editor', content: '<p>轻量入口</p>' })
 
 `lite` 会把低频依赖替换为可读错误或降级文本；加载对应 feature 后，注册表会恢复能力。不要同时把 `lark-doc` 和 `lark-doc/lite` 当作两个编辑器核心引入。
 
+### 一次性引入全部能力
+
+如果应用希望像 Element 的全量入口一样，用一次 import 获得 Mermaid、Office、KaTeX、Markdown、Highlight，以及 Templates、Comments、Versioning、Providers、Migrations，可以使用：
+
+```js
+import {
+  LarkDoc,
+  createCollabExtensions,
+  createTemplateLibrary,
+  createMemoryCommentsProvider,
+  createMemoryVersioningProvider,
+  createPersistenceProvider,
+  migrateRecordContent,
+} from 'lark-doc/full'
+import 'lark-doc/style.css'
+```
+
+`lark-doc/full` 是独立的全量产物：它静态注册五个可选 feature，并转出全部低频子入口；因此应用不需要再逐个 `import('lark-doc/features/*')`。代价是首屏 bundle 会包含这些能力及其依赖，适合功能覆盖完整、首屏体积不敏感的后台或桌面应用。它不是默认入口的别名，也不要与 `lark-doc/lite` 同时作为两个编辑器核心加载。
+
+Collab 不并入这个全量文件：它依赖宿主安装的 `yjs`、Tiptap 协同扩展和 Hocuspocus Provider，并且必须与宿主保持单例。全量应用若需要协同，再额外引入 `lark-doc/collab`，这是唯一需要补充的一行：
+
+```js
+import * as Collab from 'lark-doc/collab'
+const collabExtensions = Collab.createCollabExtensions({ ydoc, provider, user })
+```
+
 ### 何时选择哪一种
 
 - **普通项目**：直接用 `lark-doc`，功能最完整，按功能动态加载。
+- **全量后台/桌面应用**：用 `lark-doc/full`，一次性获得所有可选能力。
 - **首屏极敏感**：用 `lark-doc/lite`，再按页面需要加载 feature。
 - **页面级懒加载**：把编辑器所在页面和 feature 一起 `import()`，例如：
 

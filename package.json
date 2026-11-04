@@ -9,8 +9,6 @@
     "build": "npm run clean:dist && LARK_DOC_LEGACY=1 LARK_DOC_TARGET=lib vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js",
     "clean:dist": "node scripts/clean-dist.js",
     "build:esm": "node scripts/build-esm.js",
-    "build:legacy": "node scripts/build-legacy.js",
-    "build:legacy:cjs": "LARK_DOC_LEGACY=1 LARK_DOC_LEGACY_ENTRY=1 LARK_DOC_TARGET=lib vue-cli-service build --target lib --no-clean --name lark-doc-legacy --formats commonjs src/legacy-vue/index.js && node scripts/fix-lib-require-scope.js lark-doc-legacy.common.js",
     "build:adapters": "node scripts/build-adapters.js",
     "build:plugin": "node scripts/build-plugin.js",
     "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
@@ -22,9 +20,8 @@
     "check:ui": "npm run check:theme-tokens && npm run check:theme-contrast",
     "check:deploy": "npm run check:node14 && npm run check:offline && npm run check:pkg && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
     "check:pkg": "node scripts/check-package-exports.js",
-    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:lite && npm run check:legacy && npm run check:vditor && npm run size",
+    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:lite && npm run check:vditor && npm run size",
     "check:lite": "node scripts/check-lite-artifacts.js",
-    "check:legacy": "node scripts/check-legacy-syntax.js",
     "check:theme-tokens": "node scripts/check-theme-tokens.js",
     "check:theme-contrast": "node scripts/check-theme-contrast.js",
     "check:vditor": "node scripts/check-vditor-html.js",
@@ -55,7 +52,7 @@
     "build:collab": "node scripts/build-collab.js",
     "build:lite": "node scripts/build-lite.js",
     "build:features": "node scripts/build-features.js",
-    "build:all": "npm run build && npm run build:esm && npm run build:legacy && npm run build:adapters && npm run build:plugin && npm run build:element && npm run build:collab && npm run build:lite && npm run build:features"
+    "build:all": "npm run build && npm run build:esm && npm run build:adapters && npm run build:plugin && npm run build:element && npm run build:collab && npm run build:lite && npm run build:features"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -179,9 +176,11 @@
     "**/*.css",
     "**/*.scss",
     "dist/lark-doc.common.js",
+    "dist/lark-doc-full.mjs",
     "dist/lark-doc-element.umd.min.js",
     "dist/lark-doc-element.umd.min.*.js",
     "dist/features/*.js",
+    "dist/lark-doc-full.mjs",
     "dist/lark-doc-lite.esm.js"
   ],
   "files": [
@@ -221,12 +220,6 @@
       "require": "./dist/lark-doc-element.umd.min.js",
       "default": "./dist/lark-doc-element.umd.min.js"
     },
-    "./legacy": {
-      "webpack": "./dist/lark-doc-legacy.common.js",
-      "import": "./dist/lark-doc-legacy.esm.js",
-      "require": "./dist/lark-doc-legacy.common.js",
-      "default": "./dist/lark-doc-legacy.esm.js"
-    },
     "./vue3": {
       "import": "./dist/lark-doc-vue3.mjs",
       "default": "./dist/lark-doc-vue3.mjs"
@@ -238,10 +231,6 @@
     "./adapters/vue3": {
       "import": "./dist/lark-doc-vue3.mjs",
       "default": "./dist/lark-doc-vue3.mjs"
-    },
-    "./adapters/vue2": {
-      "require": "./dist/lark-doc.common.js",
-      "default": "./dist/lark-doc.common.js"
     },
     "./adapters/react": {
       "import": "./dist/lark-doc-react.mjs",
@@ -266,6 +255,10 @@
     "./migrations": {
       "import": "./dist/lark-doc-migrations.mjs",
       "default": "./dist/lark-doc-migrations.mjs"
+    },
+    "./full": {
+      "import": "./dist/lark-doc-full.mjs",
+      "default": "./dist/lark-doc-full.mjs"
     },
     "./collab": {
       "import": "./dist/lark-doc-collab.esm.js",

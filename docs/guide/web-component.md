@@ -32,8 +32,8 @@ import 'lark-doc/element' // 自动注册 <lark-doc>
 ```
 
 > **webpack 4 宿主**：`exports` 字段读不到，所有 `lark-doc/...` 形式的引入都要写全 `dist/` 路径 ——
-> 上面这行写 `lark-doc/dist/lark-doc-element.umd.min.js`，主入口也要一行 alias
-> （`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`，0.13 起没有 `browser` 字段兜底了）。
+> 如果使用 npm 包，直接 `import 'lark-doc/element'`；只有纯静态页才写 `lark-doc/dist/lark-doc-element.umd.min.js` 的 script 地址。主入口无需 alias
+> （`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`；当前包不提供 `browser` 字段兜底）。
 
 ```vue
 <template>
