@@ -1,7 +1,7 @@
 /**
  * 特性包：公式渲染（阶段 4）。
  *
- * 由 scripts/build-features.js 打成自包含的 dist/features/math.js：
+ * 由 scripts/build-rollup.mjs 的 feature:math target 打成自包含的 dist/features/math.js：
  * 宿主 `<script>` 引入后即完成 'math' 注册，lite 主产物的 loadKatex
  * 从此拿到宿主提供的 katex 实例。katex 样式随本包构建抽成同目录
  * math.css（css-loader 解析字体为相对路径，整目录托管即离线可用），

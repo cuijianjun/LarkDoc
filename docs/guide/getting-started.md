@@ -1,9 +1,11 @@
 # 快速开始
 
-lark-doc 是基于 Tiptap 3 与原生 DOM 的文档编辑器。默认、Element 和 lite 入口都不依赖 Vue 运行时。所有应用统一使用最新命令式入口；Vue2 也不再配置或引入旧的兼容入口：
+lark-doc 是基于 Tiptap 3 与原生 DOM 的文档编辑器。默认、Element、lite 和 legacy 入口都不依赖 Vue 运行时。新项目统一使用命令式入口，旧 Vue2 项目再使用兼容入口：
 
 - **命令式入口** `new LarkDoc()`：像 AiEditor 一样用构造函数驱动完整工作台，适合任何宿主（原生页面、Vue2 路由、微前端）。
-Vue2 宿主同样使用命令式入口，在组件 `mounted` 中挂载、`beforeDestroy` 中销毁实例；不再提供旧的 options 兼容入口。
+- **兼容 options 入口** `lark-doc/vue2` 的 `LarkDocEditor` / `LarkDocWorkspace`：供已有 Vue2 宿主注册，实际 UI 仍由 DOM renderer 创建，适配器自身不导入 Vue。
+
+推荐统一使用命令式入口，组件式入口保留为兼容导出。
 
 > 💡 想先上手看看？直接打开<a href="../demo/" target="_blank" rel="noopener">在线演示</a>（上方编辑器预览 + 下方可折叠代码预览，可在页面直接改初始化配置实时生效）。
 
@@ -28,16 +30,16 @@ Vue2 宿主同样使用命令式入口，在组件 `mounted` 中挂载、`before
 | 宿主环境 | 引入写法 | 初始化 | 备注 |
 | --- | --- | --- | --- |
 | Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({...})` | 命中 `exports.import` → ESM；懒区块由宿主打包器接管，内外网零配置 |
-| Vue 2.7 + webpack4 / vue-cli | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/style.css'` | `new LarkDoc({...})` | 直接使用包的 CJS `main`，不需要 alias 或专属 babel |
-| Vue 2.7 组件 | `import { LarkDoc } from 'lark-doc'` | `mounted` 中 `new LarkDoc({ element: this.$refs.editor })` | `beforeDestroy` 中调用 `destroy()` |
+| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | 一行 alias：`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`（CJS 已降到 ES2018，不用 babel）；兄弟 chunk 通过 `require()` 加载，不用设 URL 基址 |
+| Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc/vue2'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
 | Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物不含 Vue；也可用主入口 `new LarkDoc()`；对象型能力（uploader / persistence / ai）只能 `setProperty` |
 | CDN / 静态托管 / 内网 | `<script src="…/dist/lark-doc-element.umd.min.js">` | `<lark-doc>` | **`dist/` 整目录**同位部署（主文件 + `*.math.js`、`*.mermaid.js` 等按需区块 + `fonts/`） |
 | Node / jsdom / SSR | `require('lark-doc')`；SSR 用 `process.client` 内 `await import('lark-doc/element')` | `new LarkDoc({ element: host })` | CJS 主文件与按需兄弟 chunk（require 加载）；element 产物模块求值即注册元素，Node 端 import 会炸 → 必须 client-only |
 
 ::: tip 编译工具要点
-- webpack5 / vite / rollup：认 `exports`，直接使用 `lark-doc`；
-- webpack4 / vue-cli：默认解析包的 CJS `main`，直接使用 `lark-doc`；不要添加源码 alias 或 lark-doc 专属 babel；
-- 所有宿主都不应把 `node_modules/lark-doc/dist` 再交给 Babel，避免重复编译拖慢启动和构建；
+- webpack5 / vite / rollup：认 `exports`，两条入口零配置；
+- **webpack4（0.13+）**：主入口**一行 alias** 到 CJS 档（`alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' }`）—— 不是因为语法（CJS 已降到 ES2018，acorn 6.4.2 能解析），而是 webpack4 不读 `exports`、会顺 `mainFields` 落到含 `import.meta` 的 esm 档；**子路径**同样读不到：`import 'lark-doc/element'` 要写 `lark-doc/dist/lark-doc-element.umd.min.js`，或 `<script>` 直引；
+- **webpack4（0.12 及更早）**：只认 `main` / `module`，还要 alias 到 `dist/lark-doc.common.js` + babel 降 `?.` / `??`，见[老写法](/guide/environments#env-vue2-wp4)；
 - browserslist 为 `> 0.5% / last 2 versions / not dead`，**不含 IE11**：IE11 宿主需自己把 `node_modules/lark-doc` 加进 babel `include`；
 - 默认假设宿主有 `Promise` / `fetch` 等运行环境能力；老浏览器请自行在入口加 polyfill。
 :::

@@ -4,7 +4,7 @@
 > **与飞书、Lark、字节跳动无任何隶属、合作或授权关系，非官方产物，禁止用于任何商业用途**。
 > 使用产生的侵权等后果由使用者自行承担。详见 [背景](#背景) 与 [免责声明](#免责声明)。
 
-飞书风格富文本文档编辑器与工作台组件库 —— 基于 Tiptap 3 与原生 DOM UI，支持 Web Component、命令式 API、按需 features 和 full 全量入口；默认、Element 和 lite 产物均不依赖 Vue 运行时。
+飞书风格富文本文档编辑器与工作台组件库 —— 基于 Tiptap 3 与原生 DOM UI，支持 Web Component、命令式 API 和显式 options 兼容适配器；默认、Element 和 legacy 产物均不依赖 Vue 运行时。
 
 完整文档：[VitePress 使用手册](https://cuijianjun.github.io/LarkDoc/)（源码在 `docs/` 目录，随仓库自动部署到 GitHub Pages）。
 
@@ -56,7 +56,7 @@ mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管
 
 > 每个环境的**编译工具配置、工具栏（编辑工具）配置、可直接粘贴运行的完整 demo** 见文档站「各环境引入对照」：<https://cuijianjun.github.io/LarkDoc/guide/environments.html>（源文件 `docs/guide/environments.md`）。
 
-### 包契约
+### 包契约（v0.13 起）
 
 对外只承诺一份契约，宿主不需要为环境写任何特判：
 
@@ -64,8 +64,8 @@ mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管
 |---|---|---|
 | **`browser` 字段** | **已删除** | 它会让 webpack4/5 与部分工具跳过 ESM、直接落到 UMD「浏览器直挂档」，宿主拿到的就不是可 tree-shaking 的模块产物。SSR 与浏览器吃**同一份产物**；需要环境差异一律走 `exports` 的 condition。 |
 | **`sideEffects`** | 只列 `**/*.css`、`**/*.scss` 与 UMD / element 自注册档、CJS 档 | UMD 档确实有顶层副作用（自定义元素注册、`__webpack_public_path__`），不能谎报为纯；ESM 档是唯一需要被 tree-shake 的路径，已排除在名单外。 |
-| **`exports` 子入口** | `.` / `./full` / `./element` / `./vue3` / `./react` / `./adapters/*` / `./templates` / `./comments` / `./versioning` / `./providers` / `./migrations` / `./collab` / `./lite` / `./features/*` / `./plugin` / `./style.css` / `./dist/*` / `./package.json` | `.` 是基础入口，`./full` 是一次性全量入口；其余低频能力仍可独立引入。 |
-| **样式** | 显式 `import 'lark-doc/style.css'` | ESM / lite / Element 样式随 JS 注入；命令式入口不需要 Vue 专属配置。 |
+| **`exports` 子入口** | `.` / `./element` / `./vue2` / `./vue3` / `./react` / `./adapters/*` / `./collab` / `./lite` / `./features/*` / `./plugin` / `./style.css` / `./dist/*` / `./package.json` | legacy 仅提供无 Vue import 的 options 适配器，Vue3/React 薄壳只桥接自定义元素。 |
+| **样式** | CJS 显式 `import 'lark-doc/style.css'`（webpack4 写 `lark-doc/dist/lark-doc.css`） | ESM / lite / Element 样式随 JS 注入；legacy CJS 使用自己的 `dist/lark-doc-vue2.css`。 |
 
 > `sideEffects` 收窄的实测收益（webpack 5，入口只 `import { LarkDoc } from 'lark-doc'` 但**从不使用**）：
 > 收窄前 `1,922,452 B` → 收窄后 **`151 B`**；而副作用型入口 `import 'lark-doc/element'` 仍完整保留 `1,695,666 B`，不会被误删。
@@ -82,16 +82,18 @@ doc.getImportReport()             // { source, math, taskList, taskItem, diagram
 
 图片无需配置（默认 `open`，http 直连）。校验脚本 `npm run check:vditor`。
 
-Vue2 宿主统一使用命令式入口：
+旧调用方式仍然可用：
 
 ```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-
-const doc = new LarkDoc({ element: host })
+import {
+  LarkDocEditor,
+  LarkDocWorkspace,
+} from 'lark-doc'
 ```
 
-组件生命周期中创建和销毁 `new LarkDoc({ element })` 即可。Webpack4 / Vue CLI 直接解析包的 CJS `main`，不需要 alias、源码路径或 lark-doc 专属 Babel 配置。不要直接引 `src/components/lark-doc/lark-doc.css`。
+这些导出是交给 Vue2 宿主注册的普通 options 对象，内部仍挂载 DOM renderer，不导入 Vue。webpack4 兼容入口写 `lark-doc/dist/lark-doc-vue2.common.js`。
+
+默认 CJS 的公开样式入口为 `lark-doc/style.css`，只需引入一次；legacy CJS 使用 `dist/lark-doc-vue2.css`。ESM / Element 已注入样式，不必重复引入；不要直接引 `src/components/lark-doc/lark-doc.css`。
 
 ## 资源本地化与网络策略
 
@@ -144,6 +146,7 @@ npm run lint
 npm run build
 npm run build:esm
 npm run build:element
+npm run build:legacy
 ```
 
 单独跑：
@@ -156,12 +159,13 @@ npm run build
 
 ## 产物与按需加载
 
-默认三种产物按「宿主怎么用」划分；KaTeX / docx / mammoth / turndown / highlight.js / mermaid 拆成按需区块，marked 因 Markdown 导出静态引用仍可进入主文件。按需功能入口单独构建：
+默认三种产物按「宿主怎么用」划分；KaTeX / docx / mammoth / turndown / highlight.js / mermaid 拆成按需区块，marked 因 Markdown 导出静态引用仍可进入主文件。legacy options 入口单独构建：
 
 ```bash
 npm run build          # dist/lark-doc.common.js        CJS 主文件 + 按需兄弟 chunk（main，无 Vue）
 npm run build:esm      # dist/lark-doc.esm.js           ES Module（module，拆包最彻底）
 npm run build:element  # dist/lark-doc-element.umd.min.js  Web Component，兼职 CDN <script> 直挂（unpkg / jsdelivr）
+npm run build:legacy   # options 兼容入口，无 Vue import，chunk 与主 ESM 隔离
 npm run build:analyze  # 三种默认产物 + 体积诊断输出
 ```
 
@@ -201,23 +205,8 @@ npm run build:analyze  # 三种默认产物 + 体积诊断输出
 ```
 
 自定义宿主也可以用同一注册表接入自己的实现（`registerFeature(name, loader)`，
-见 `src/core/features/registry.js`）。如果不想逐个加载，可直接使用 `lark-doc/full`：
-
-```js
-import {
-  LarkDoc,
-  createCollabExtensions,
-  createTemplateLibrary,
-  createMemoryCommentsProvider,
-  createMemoryVersioningProvider,
-  createPersistenceProvider,
-  migrateRecordContent,
-} from 'lark-doc/full'
-import 'lark-doc/style.css'
-```
-
-该入口会静态注册 Mermaid、Office、KaTeX、Markdown、Highlight，并导出 Templates、Comments、Versioning、Providers、Migrations 的 API；Collab 仍需单独导入 `lark-doc/collab`，以保证宿主的 Yjs/Tiptap 单例。代价是这些依赖会进入首屏 bundle。未注册特性时走内置按需区块，
-行为与当前版本契约一致。
+见 `src/core/features/registry.js`）。全量产物不受影响：未注册特性时走内置按需区块，
+行为与 0.12 完全一致。
 
 ## 边界
 

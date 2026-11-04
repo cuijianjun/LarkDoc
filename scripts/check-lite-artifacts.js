@@ -4,19 +4,11 @@
  * `lark-doc/lite` 的契约闸门。
  *
  * 阶段 4 对外承诺：lite 产物**不含** katex / docx / mammoth / marked / turndown /
- * highlight.js / mermaid 这些重依赖 —— 它们被 build-lite.js alias 成「求值即抛错」的
+ * highlight.js / mermaid 这些重依赖 —— 它们被 Rollup lite target alias 成「求值即抛错」的
  * stub，宿主想要时再加载 `lark-doc/features/*` 恢复。
  *
- * 这个承诺已经**静默失效过两次**，两次都不是报错而是「没检查」：
- *   1. build-esm.js 与 build-lite.js 同为 `LARK_DOC_TARGET=esm`，共用同一个 webpack
- *      filesystem cache.name；webpack 命中 esm 链的解析结果，alias 整套被绕过 ——
- *      dist/lite.math.esm.js 与 dist/math.esm.js 逐字节相同（384,904 B）。
- *      修法：LARK_DOC_CACHE_FLAVOR=lite 拼进 cache.name（见 vue.config.js）。
- *   2. 修完之后 dist 里的旧产物没人删（`--no-clean` 是全仓约定）。区块集合随 stub
- *      化变化 —— markdown / highlight 两个区块因为整块塌成同一个 stub 被 office 区块
- *      吸收，不再单独落文件 —— 于是 `lite.markdown.esm.js`／`lite.highlight.esm.js`
- *      以「上一版的真依赖内容」继续躺在 dist 里，闸门读到的就是它们的旧内容。
- *      修法：build-lite.js 收尾时清掉自己命名空间里本轮没产出的文件。
+ * 该承诺由独立的 Rollup lite target 保证：重依赖通过 stub alias 从模块图中排除；
+ * 检查同时防止 dist 中残留旧的重依赖 chunk 造成误判。
  *
  * 所以闸门不能靠「某个区块的文件长什么样」来判断 —— 区块集合是会变的。判据改成
  * **重依赖指纹不许出现在任何 lite 产物里**（负向），并且每条指纹都要能在全量产物里

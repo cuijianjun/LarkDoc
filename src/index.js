@@ -1,15 +1,5 @@
-// 按需区块（math / office / mermaid / highlight）的基址。
-// **只对 element 产物有意义**（阶段 3 起只有它还旁挂懒区块，CJS 档改成用 require()
-// 加载兄弟文件，不需要任何基址推导）。element 是「预打包直挂」产物：默认用
-// document.currentScript 推导 chunk 目录，静态 <script src> 引主文件时推导正确。
-// 但被宿主**打包器** import 时，currentScript 指向的是宿主自己的脚本，
-// 于是 `__webpack_require__.e('math')` 会去请求 /js/math.js 之类的错误位置 ——
-// 首屏正常，一插公式 / 导出 Word 就 404，且极难排查。
-// 宿主显式给一个基址即可：window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'。
-// 不设则完全走原行为；非 webpack 环境（Node / vitest）因为先判空而不会执行赋值。
-if (typeof window !== 'undefined' && window.__LARK_DOC_PUBLIC_PATH__) {
-  __webpack_public_path__ = window.__LARK_DOC_PUBLIC_PATH__
-}
+// Rollup 产物不依赖 Webpack runtime。按需能力通过 feature registry 和
+// 标准 dynamic import() 加载，宿主可在加载独立 feature 包后复用同一注册表。
 
 // Tiptap 3 与个别依赖使用 ES2022/ES2023 API（findLast / at / structuredClone）。
 // 这些代码在 node_modules 里，babel 的按需 polyfill 扫描不到，必须在入口显式补齐，

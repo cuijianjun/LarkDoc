@@ -88,7 +88,11 @@ async function main() {
         route.abort()
       }
     })
-    page.on('pageerror', (error) => console.error('[pageerror]', error.message))
+    const pageErrors = []
+    page.on('pageerror', (error) => {
+      pageErrors.push(error.message)
+      console.error('[pageerror]', error.stack || error.message)
+    })
 
     await page.goto(`${BASE}/test/fixtures/offline-features.html`, { waitUntil: 'domcontentloaded' })
     await page.waitForFunction(
@@ -99,6 +103,9 @@ async function main() {
     const fixture = await page.evaluate(() => window.__offlineFixture)
     if (!fixture.created) {
       throw new Error(`编辑器创建失败：${fixture.error}`)
+    }
+    if (pageErrors.length > 0) {
+      throw new Error(`页面运行时错误：${pageErrors.join('; ')}`)
     }
     // 300ms 防抖 + mermaid 初始化，30s 上限足够
     await page.waitForSelector('.lark-doc-diagram-svg svg', { timeout: TIMEOUT_MS })

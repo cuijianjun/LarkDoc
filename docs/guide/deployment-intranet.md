@@ -42,14 +42,14 @@ lark-doc 是一个**前端库**（Tiptap 3 + 原生 DOM 的 npm 包），不是�
 
 ## 1. 形态选型
 
-默认 ESM / CJS 与 Element 按挂载方式选择；Vue2 也统一使用默认 `lark-doc` 命令式入口，不再分发旧 options 入口：
+默认 ESM / CJS 与 Element 按挂载方式选择；旧 options 组件另走 `lark-doc`，不要混用实例：
 
 | 形态 | 引入方式 | 入口产物 | 适用 | 需要 npm 包 |
 |---|---|---|---|---|
 | **ESM**（推荐） | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js`（`module`） | webpack 5 / Vite / Rollup | 是 |
 | **CJS** | `require('lark-doc')` | `dist/lark-doc.common.js`（`main`） | Node / SSR / 只读 `main` 的老打包器 | 是 |
 | **Web Component** | `<lark-doc>` 自定义元素 | `dist/lark-doc-element.umd.min.js`（`./element`） | 任意框架 / 无框架，**无 Vue 运行时，样式随 JS 注入** | 否（可直接 `<script>`） |
-| **Vue2 命令式** | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js` / `dist/lark-doc.common.js` | `mounted` 挂载，`beforeDestroy` 销毁；产物不 import Vue | 是 |
+| **legacy options** | `import { LarkDocEditor, LarkDocWorkspace } from 'lark-doc'` | `dist/lark-doc-vue2.esm.js` / `dist/lark-doc-vue2.common.js` | 既有 Vue2 宿主注册普通 options 对象；产物不 import Vue | 是 |
 
 > **选型建议**：现代打包器选 ESM；静态页选 Element；Node / webpack4 选 CJS。CJS 通过相对 `require()` 加载兄弟 chunk，不是内联所有重依赖的单文件；各入口均无 Vue runtime。当前不再独立生成 `lark-doc.umd.min.js`，`unpkg` / `jsdelivr` 指向 Element。体积与预算以 `npm run size` 和[产物说明](/guide/build-artifacts)为准；ESM 首屏还需计算 `tiptap` / `vendor` 初始区块，不能只报主文件。
 
@@ -77,7 +77,7 @@ bash scripts/pack-intranet.sh
 它会 `unset NODE_OPTIONS`（宿主 Node 的 shim 会让 Node 14 构建崩溃）、自己切 Node 14 构建 / Node 24 跑 npm，产出 `dist-intranet/` 目录。用 `package.json` 里的版本，或用 `--version` 指定：
 
 ```bash
-bash scripts/pack-intranet.sh --version <version>
+bash scripts/pack-intranet.sh --version 0.12.0
 bash scripts/pack-intranet.sh --skip-build      # dist 已是最新，跳过约 4 分钟的构建
 ```
 
@@ -96,11 +96,17 @@ bash scripts/pack-intranet.sh --skip-build      # dist 已是最新，跳过约 
 
 ### 2.3 手工构建（需要单独产物时）
 
+`npm run build` **只出 CJS 一份**，其余要单独跑：
+
 ```bash
-npm run build:all
+npm run build          # → dist/lark-doc.common.js + CJS 按需区块与 CSS
+npm run build:esm      # → dist/lark-doc.esm.js + 初始及按需区块
+npm run build:element  # → dist/lark-doc-element.umd.min.js + 按需区块
+npm run build:legacy   # → 隔离命名的 legacy CJS / ESM 及其区块
+npm run build:collab   # → dist/lark-doc-collab.esm.js
 ```
 
-构建完成后会生成基础、全量、Element、lite、features 和 collab 产物。
+filesystem cache 按 Node 主版本、target 与构建变体隔离；构建耗时以实际输出为准。
 
 ### 2.4 出包前必跑的闸门
 
@@ -111,7 +117,7 @@ npm run check            # = check:gate + check:artifacts，全绿才算能发
 展开：
 
 - `check:gate` = `check:deploy`（`check:node14` + `check:offline` + `check-ecs-images` + `check-session-providers`）+ `check:code`（核心契约 + 架构 + 单测）+ `check:ui`（主题 token + 对比度）+ `lint`
-- `check:artifacts` = `ensure-artifacts.mjs`（全部入口按构建脚本去重）+ `check:lite` + `check:vditor` + `size`
+- `check:artifacts` = `ensure-artifacts.mjs`（全部入口按构建脚本去重）+ `check:lite` + `check:legacy` + `check:vditor` + `size`
 
 **只查体积**：`npm run size`。ESM、Element、CJS、collab、lite 五项 gzip 上限以 `package.json` 的 `size-limit` 为唯一来源；测量后只收紧，不因超限放宽。
 
@@ -134,7 +140,7 @@ npm run check            # = check:gate + check:artifacts，全绿才算能发
 # 1. 把 dist-intranet/ 整个目录拷进内网（U 盘 / scp / 跳板机）
 # 2. 放到项目里
 mkdir -p vendor
-cp dist-intranet/lark-doc-<version>-intranet.tgz vendor/
+cp dist-intranet/lark-doc-0.12.0-intranet.tgz vendor/
 
 # 3. package.json 加依赖
 ```
@@ -142,7 +148,7 @@ cp dist-intranet/lark-doc-<version>-intranet.tgz vendor/
 ```json
 {
   "dependencies": {
-    "lark-doc": "file:./vendor/lark-doc-<version>-intranet.tgz"
+    "lark-doc": "file:./vendor/lark-doc-0.12.0-intranet.tgz"
   }
 }
 ```
@@ -164,7 +170,7 @@ npm install --no-audit --no-fund
 
 ```bash
 # 在项目根执行
-unzip -o dist-intranet/lark-doc-<version>-node-modules.zip
+unzip -o dist-intranet/lark-doc-0.12.0-node-modules.zip
 ```
 
 zip 里就是 `node_modules/lark-doc/...` 的完整结构，解压即用。
@@ -177,7 +183,7 @@ zip 里就是 `node_modules/lark-doc/...` 的完整结构，解压即用。
 
 ```bash
 # 在构建机上，从已有 tgz 就地生成
-bash scripts/pack-intranet.sh --from-tgz dist/lark-doc-<version>.tgz
+bash scripts/pack-intranet.sh --from-tgz dist/lark-doc-0.12.0.tgz
 ```
 
 然后在内网：
@@ -190,7 +196,7 @@ node check-deps.js --registry=http://<私服>:4873/
 for f in deps-tgz/*.tgz; do
   npm publish "$f" --registry=http://<私服>:4873/
 done
-npm publish lark-doc-<version>-thin.tgz --registry=http://<私服>:4873/
+npm publish lark-doc-0.12.0-thin.tgz --registry=http://<私服>:4873/
 
 # 3. 正常装
 npm install lark-doc --registry=http://<私服>:4873/
@@ -245,7 +251,7 @@ UMD / Element 产物用 `publicPath: 'auto'`，运行时**按 `<script>` 自身�
 
 - `dist/` 里的文件必须**全部**放在同一个目录下（不能只拷 `lark-doc-element.umd.min.js`）。
 - 这个目录可以是任意子路径（`/vendor/lark-doc/`、`/static/lib/ld/` 都行），只要整目录一致。
-- **不需要单独拷 `vendor/`**。当前版本 mermaid 是普通按需区块，`dist/vendor/` 已不产出，老残留可直接删。
+- **不需要单独拷 `vendor/`**。0.11.0 起 mermaid 是普通按需区块，`dist/vendor/` 已不产出，老残留可直接删。
 
 `dist/` 里必须一起走的文件：
 
@@ -271,18 +277,18 @@ lark-doc.css
 ```
 /srv/www/wiki/                          # 宿主应用（index.html + js/ + css/）
 /srv/static/vendor/lark-doc/
-├── <version>/
+├── 0.12.0/
 │   ├── lark-doc-element.umd.min.js
 │   ├── ...（dist 全部内容）
 │   └── fonts/
-└── current -> <version>                   # 软链，切版本只改它
+└── current -> 0.12.0                   # 软链，切版本只改它
 ```
 
 ```bash
 # 部署
-mkdir -p /srv/static/vendor/lark-doc/<version>
-cp -r dist/* /srv/static/vendor/lark-doc/<version>/
-ln -sfn /srv/static/vendor/lark-doc/<version> /srv/static/vendor/lark-doc/current
+mkdir -p /srv/static/vendor/lark-doc/0.12.0
+cp -r dist/* /srv/static/vendor/lark-doc/0.12.0/
+ln -sfn /srv/static/vendor/lark-doc/0.12.0 /srv/static/vendor/lark-doc/current
 ```
 
 nginx 用 `current` 提供服务，前端固定引用 `/vendor/lark-doc/current/...`。
@@ -291,8 +297,8 @@ nginx 用 `current` 提供服务，前端固定引用 `/vendor/lark-doc/current/
 
 **软链两个坑（实测踩过）：**
 
-1. **别写成相对路径的裸名字再跨目录用。** `ln -s <version> current` 看起来最简洁，但软链目标是相对**软链自身所在目录**解析的；一旦你在别的目录执行（比如 `ln -s static/lark-doc/<version> static/lark-doc/current`），就变成 `static/lark-doc/static/lark-doc/<version>` 这种断链，表现为**全部静态资源 404，但 `Cache-Control` 头还正常返回**（因为 location 命中了，只是文件找不到）——很容易误判成 nginx 配错。要么用绝对路径（上面给的写法），要么 `cd` 到该目录后再 `ln -s <version> current`。
-2. **`ln -sfn` 不会替换已存在的同名目录。** 如果 `current` 已经被误建成真实目录，`ln -sfn` 会在它**里面**建一个 `<version>`，于是请求变成 `/vendor/lark-doc/current/<version>/...`。先 `ls -ld current` 确认它是个 `l` 开头的软链，不是 `d`。
+1. **别写成相对路径的裸名字再跨目录用。** `ln -s 0.12.0 current` 看起来最简洁，但软链目标是相对**软链自身所在目录**解析的；一旦你在别的目录执行（比如 `ln -s static/lark-doc/0.12.0 static/lark-doc/current`），就变成 `static/lark-doc/static/lark-doc/0.12.0` 这种断链，表现为**全部静态资源 404，但 `Cache-Control` 头还正常返回**（因为 location 命中了，只是文件找不到）——很容易误判成 nginx 配错。要么用绝对路径（上面给的写法），要么 `cd` 到该目录后再 `ln -s 0.12.0 current`。
+2. **`ln -sfn` 不会替换已存在的同名目录。** 如果 `current` 已经被误建成真实目录，`ln -sfn` 会在它**里面**建一个 `0.12.0`，于是请求变成 `/vendor/lark-doc/current/0.12.0/...`。先 `ls -ld current` 确认它是个 `l` 开头的软链，不是 `d`。
 
 验证软链没断：
 
@@ -577,6 +583,42 @@ import 'lark-doc/dist/lark-doc.css'
 
 CJS 通过相对 `require()` 引用兄弟区块，由宿主打包器处理，不需要给它设置脚本 URL 基址。若选择 Element，子路径仍需写全 `lark-doc/dist/lark-doc-element.umd.min.js`，资源复制规则见 5.3。
 
+<details>
+<summary>0.12 及更早版本的老写法（alias 到 common.js + babel 降语法）</summary>
+
+旧版没有 `browser` 字段，webpack 4 会命中 `module` 的 ESM 产物（含 `import.meta`）或在 lib 单文件上撞到 `?.` / `??`。三处写全路径 + 一条 babel 规则：
+
+```js
+// 1. 主入口
+resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } }
+
+// 2. 样式
+import 'lark-doc/dist/lark-doc.css'
+
+// 3. Element
+import 'lark-doc/dist/lark-doc-element.umd.min.js'
+```
+
+外加：CJS 产物里有 `?.` / `??`，webpack 4 的默认 babel 不会降级它。要对这一个文件单独挂一条 babel 规则，且**必须**关掉配置文件继承：
+
+```js
+{
+  test: /lark-doc\.common\.js$/,
+  use: [{
+    loader: 'babel-loader',
+    options: {
+      configFile: false,     // ← 不关会用宿主 babel.config.js，把整个 lib 重编一遍
+      babelrc: false,
+      sourceType: 'script',
+      plugins: ['@babel/plugin-proposal-optional-chaining', '@babel/plugin-proposal-nullish-coalescing-operator'],
+    },
+  }],
+}
+```
+
+> 这两个 babel 插件在内网也得装 —— 它们同样打不进 `node_modules.zip`。完整分步（出包、`vendor/` 目录、插件 tgz、验收）见[内网迁移实战 · 方案 A](/guide/intranet-migration#mig-vue2-wp4)。
+
+</details>
 
 ### 5.5 `<script>` 直挂（无打包器）
 
@@ -792,10 +834,10 @@ done
 
 ```bash
 # 切回上一版
-ln -sfn /srv/static/vendor/lark-doc/0.14.2 /srv/static/vendor/lark-doc/current
+ln -sfn /srv/static/vendor/lark-doc/0.11.6 /srv/static/vendor/lark-doc/current
 ```
 
-前端页面引的是 `current` 路径，`Cache-Control: immutable` 只对**具体文件路径**生效，`current/xxx.js` 解析后的实际内容变了，但缓存键还是 `current/xxx.js` —— 所以回滚后要**让用户强刷**，或者更稳的做法是：index.html 里带版本号（`/vendor/lark-doc/<version>/...`），回滚时连 index.html 一起换。
+前端页面引的是 `current` 路径，`Cache-Control: immutable` 只对**具体文件路径**生效，`current/xxx.js` 解析后的实际内容变了，但缓存键还是 `current/xxx.js` —— 所以回滚后要**让用户强刷**，或者更稳的做法是：index.html 里带版本号（`/vendor/lark-doc/0.12.0/...`），回滚时连 index.html 一起换。
 
 推荐后者：目录布局保持 `/vendor/lark-doc/<ver>/`，nginx 里把 `current` 软链换成 `$lark_doc_version` 变量，或者干脆让宿主构建时写死版本路径。
 
@@ -805,8 +847,8 @@ ln -sfn /srv/static/vendor/lark-doc/0.14.2 /srv/static/vendor/lark-doc/current
 
 ```bash
 # 正确的回滚：把旧版本的 tgz 放进 vendor/，改 package.json 引用
-cp dist-intranet/lark-doc-0.14.2-intranet.tgz vendor/
-# package.json: "lark-doc": "file:./vendor/lark-doc-0.14.2-intranet.tgz"
+cp dist-intranet/lark-doc-0.11.6-intranet.tgz vendor/
+# package.json: "lark-doc": "file:./vendor/lark-doc-0.11.6-intranet.tgz"
 rm -rf node_modules/lark-doc
 npm install --no-audit --no-fund
 ```
@@ -888,7 +930,7 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 - [ ] `package.json` 里 `lark-doc` 指向实际离线包；宿主框架依赖单独管理，不为编辑器额外安装 Vue
 - [ ] `node_modules` 是在**内网机**上装出来的（不是从联网机整包拷的）
 - [ ] webpack4 宿主：`alias 'lark-doc$'` 指向 CJS，样式子路径写全；兄弟区块完整
-- [ ] 宿主只按当前版本文档配置，不要添加源码 alias 或 lark-doc 专属 Babel 规则
+- [ ] 仍使用旧版本时，按该版本实际语法需求配置 Babel，不把历史配置误当作当前契约
 - [ ] webpack5 宿主：没有误加 `transpileDependencies: ['lark-doc']`
 - [ ] 任意框架均可用默认入口；若选 Element 静态方式，`public/vendor/lark-doc/` 下是完整 `dist/`
 - [ ] 内网首启 `npm run build` 零报错，产物里能搜到 `lark-doc`

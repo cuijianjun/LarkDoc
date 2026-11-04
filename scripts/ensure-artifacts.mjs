@@ -19,7 +19,6 @@
  *   node scripts/ensure-artifacts.mjs            # 智能判断（prepack 用这个）
  *   node scripts/ensure-artifacts.mjs --force    # 无条件重建
  *   node scripts/ensure-artifacts.mjs --check    # 只判定，不构建（EXIT=1 = 需重建）
- *   node scripts/ensure-artifacts.mjs --record   # 已由外部流程构建，只写入成功指纹
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -32,31 +31,27 @@ const STAMP = process.env.LARK_DOC_ARTIFACTS_STAMP || join(ROOT, '_codex', 'arti
 
 /** 产物 → 构建脚本。顺序与原 prepack 一致，不能换（后一步可能依赖前一步产物）。 */
 const ARTIFACTS = [
-  { file: 'dist/lark-doc.common.js', script: 'build' },
-  { file: 'dist/lark-doc.css', script: 'build' },
-  { file: 'dist/fonts', script: 'build' },
-  { file: 'dist/features', script: 'build:features' },
-  // 阶段 3 起不再单出 UMD 档：CDN / <script> 直挂由 element 产物兼任（unpkg / jsdelivr 已指向它）。
-  { file: 'dist/lark-doc.esm.js', script: 'build:esm' },
-  { file: 'dist/lark-doc-collab.esm.js', script: 'build:collab' },
-  { file: 'dist/lark-doc-element.umd.min.js', script: 'build:element' },
-  // 阶段 4：lite 主产物（重依赖 stub 化）+ 五个特性包；build:features 一次出齐。
-  { file: 'dist/lark-doc-lite.esm.js', script: 'build:lite' },
-  { file: 'dist/features/math.js', script: 'build:features' },
-  { file: 'dist/features/mermaid.js', script: 'build:features' },
-  { file: 'dist/features/highlight.js', script: 'build:features' },
-  { file: 'dist/features/markdown.js', script: 'build:features' },
-  { file: 'dist/features/office.js', script: 'build:features' },
-  // 一个脚本出两个薄壳产物：构建时按 script 去重，存在性校验仍逐文件算。
-  { file: 'dist/lark-doc-vue3.mjs', script: 'build:adapters' },
-  { file: 'dist/lark-doc-full.mjs', script: 'build:adapters' },
-  { file: 'dist/lark-doc-react.mjs', script: 'build:adapters' },
-  { file: 'dist/plugin.mjs', script: 'build:plugin' },
-  { file: 'dist/plugin.cjs', script: 'build:plugin' }
+  { file: 'dist/lark-doc.common.js', script: 'build:all' },
+  { file: 'dist/lark-doc.esm.js', script: 'build:all' },
+  { file: 'dist/lark-doc-collab.esm.js', script: 'build:all' },
+  { file: 'dist/lark-doc-element.umd.min.js', script: 'build:all' },
+  { file: 'dist/lark-doc-lite.esm.js', script: 'build:all' },
+  { file: 'dist/features/math.js', script: 'build:all' },
+  { file: 'dist/features/mermaid.js', script: 'build:all' },
+  { file: 'dist/features/highlight.js', script: 'build:all' },
+  { file: 'dist/features/markdown.js', script: 'build:all' },
+  { file: 'dist/features/office.js', script: 'build:all' },
+  { file: 'dist/lark-doc-vue3.mjs', script: 'build:all' },
+  { file: 'dist/lark-doc-react.mjs', script: 'build:all' },
+  { file: 'dist/lark-doc-vue2.common.js', script: 'build:all' },
+  { file: 'dist/lark-doc-vue2.esm.js', script: 'build:all' },
+  { file: 'dist/plugin.mjs', script: 'build:all' },
+  { file: 'dist/plugin.cjs', script: 'build:all' },
+  { file: 'dist/lark-doc-manifest.json', script: 'build:all' }
 ]
 
 /** 整文件参与指纹的构建配置 */
-const CONFIG_FILES = ['vue.config.js', 'babel.config.js', 'postcss.config.js', 'jsconfig.json', 'package-lock.json', 'style.css', 'scripts/element-renderer.js']
+const CONFIG_FILES = ['rollup.config.mjs', 'package-lock.json', 'style.css', 'scripts/build-rollup.mjs', 'scripts/element-renderer.js', 'scripts/check-rollup-artifacts.mjs']
 
 /** package.json 里只取真正影响产物的字段 */
 const PKG_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects']
@@ -64,7 +59,6 @@ const PKG_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'engi
 const argv = process.argv.slice(2)
 const FORCE = argv.includes('--force')
 const CHECK_ONLY = argv.includes('--check')
-const RECORD_ONLY = argv.includes('--record')
 
 const npmAgent = process.env.npm_config_user_agent || ''
 
@@ -93,7 +87,7 @@ function inputFingerprint() {
   }
   // 3) 全部产物构建器与 CJS 后处理；构建入口改变也必须重建。
   for (const file of readdirSync(join(ROOT, 'scripts')).sort()) {
-    if (/^build.*\.js$/.test(file) || file === 'fix-lib-require-scope.js' || file === 'ensure-artifacts.mjs') {
+    if (/^build.*\.(js|mjs)$/.test(file) || file === 'ensure-artifacts.mjs') {
       feedFile(join(ROOT, 'scripts', file))
     }
   }
@@ -139,25 +133,6 @@ if (sizeDrift.length) reasons.push(`产物被改动 ${sizeDrift.map((m) => m.fil
 if (!stamp?.fingerprint) reasons.push('无构建记录')
 else if (stamp.fingerprint !== fingerprint) reasons.push('源码/依赖/构建配置有变动')
 
-function writeStamp() {
-  const after = {}
-  for (const a of ARTIFACTS) {
-    const p = join(ROOT, a.file)
-    if (!existsSync(p)) {
-      console.error(`✗ 构建结束但产物不存在：${a.file}`)
-      process.exit(1)
-    }
-    after[a.file] = statSync(p).size
-  }
-  try {
-    mkdirSync(dirname(STAMP), { recursive: true })
-    writeFileSync(STAMP, JSON.stringify({ fingerprint, artifacts: after, at: new Date().toISOString() }, null, 2))
-  } catch {
-    /* stamp 写不进去只影响下次复用，不影响本次产物 */
-  }
-  return after
-}
-
 if (CHECK_ONLY) {
   console.log(`✗ 需要重建产物：${reasons.join('；')}（当前指纹 ${fingerprint}）`)
   // 指纹含 npm 用户代理，绕过 npm 直调时这一项为空 —— 这时「源码有变动」是误报，
@@ -166,12 +141,6 @@ if (CHECK_ONLY) {
     console.log('  提示：本次未经 npm 调用（用户代理为空），指纹与 npm 口径不同；复验请用 `npm run artifacts:check`')
   }
   process.exit(1)
-}
-
-if (RECORD_ONLY) {
-  writeStamp()
-  console.log(`✓ 已记录外部构建产物（${ARTIFACTS.length}/${ARTIFACTS.length}，指纹 ${fingerprint.slice(0, 8)}）`)
-  process.exit(0)
 }
 
 console.log(`→ 重建产物（${reasons.join('；')}）`)
@@ -195,5 +164,19 @@ if (inputFingerprint() !== fingerprint) {
   process.exit(1)
 }
 
-writeStamp()
+const after = {}
+for (const a of ARTIFACTS) {
+  const p = join(ROOT, a.file)
+  if (!existsSync(p)) {
+    console.error(`✗ 构建结束但产物不存在：${a.file}`)
+    process.exit(1)
+  }
+  after[a.file] = statSync(p).size
+}
+try {
+  mkdirSync(dirname(STAMP), { recursive: true })
+  writeFileSync(STAMP, JSON.stringify({ fingerprint, artifacts: after, at: new Date().toISOString() }, null, 2))
+} catch {
+  /* stamp 写不进去只影响下次复用，不影响本次产物 */
+}
 console.log(`\n✓ 产物就绪（${ARTIFACTS.length}/${ARTIFACTS.length}，指纹 ${fingerprint.slice(0, 8)}）`)
