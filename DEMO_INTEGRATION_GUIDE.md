@@ -28,12 +28,12 @@ const doc = new LarkDoc({
 
 `lark-doc` 把 `/lark-doc` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
 
-默认入口提供无框架的 `LarkDoc` 门面；`lark-doc/legacy` 另提供两个普通 options 兼容对象（供 Vue2 宿主注册），内部仍挂载同一份原生 DOM UI，不导入 Vue：
+默认入口提供无框架的 `LarkDoc` 门面；应用通过命令式 API 创建和销毁编辑器，不再使用旧的 Vue options 组件入口：
 
 | 入口 | 职责 | 适用场景 |
 | --- | --- | --- |
-| `LarkDocEditor` | Tiptap 实例、工具栏、块操作、表格、图片、公式、目录、搜索替换、命令菜单和 AI/审阅交互 | 只需要编辑器，页面状态由宿主自己管理 |
-| `LarkDocWorkspace` | 编辑器之上的标题、模板、草稿、快照、导入导出、Mock AI 预览和持久化接入 | 需要完整文档工作台，或希望以后接协同/版本/评论 |
+| `LarkDoc` | Tiptap 实例、工具栏、块操作、表格、图片、公式、目录、搜索替换、命令菜单和 AI/审阅交互 | 所有框架和原生 DOM 宿主，页面状态由宿主自己管理 |
+| `lark-doc/element` | Web Component 元素注册和静态资源加载 | Vue3、React、原生 HTML 或不想使用命令式挂载的场景 |
 
 当前默认是本地模式：不会自动创建 Yjs、WebSocket 或后台请求。协同、版本、评论和权限只有在宿主显式传入对应 Provider 后才会启用。
 
@@ -63,21 +63,9 @@ doc.destroy()
 
 `src/LarkDoc.js` 只做四件事：把 AiEditor 风格配置翻译成 `createLarkDocConfig` 结构、通过 DOM renderer 挂载 WorkspaceController、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
 
-### 2.2 组件式（原有方式）
+### 2.2 样式入口
 
-```js
-import Vue from 'vue'
-import {
-  LarkDocEditor,
-  LarkDocWorkspace,
-} from 'lark-doc/legacy'
-import 'lark-doc/dist/lark-doc-legacy.css'
-
-Vue.component('LarkDocEditor', LarkDocEditor)
-Vue.component('LarkDocWorkspace', LarkDocWorkspace)
-```
-
-`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和本地 KaTeX 样式，`src/components/lark-doc/lark-doc.css` 不应由宿主应用直接引用。
+`style.css` 是包根目录的公开样式入口，CJS / 命令式宿主应用只引入一次；入口会加载包内命名空间样式和本地 KaTeX 样式。不要从包内 `src/` 路径直接引用样式。
 
 ### 2.3 离线承诺
 

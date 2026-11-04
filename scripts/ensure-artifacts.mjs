@@ -49,15 +49,14 @@ const ARTIFACTS = [
   { file: 'dist/features/office.js', script: 'build:features' },
   // 一个脚本出两个薄壳产物：构建时按 script 去重，存在性校验仍逐文件算。
   { file: 'dist/lark-doc-vue3.mjs', script: 'build:adapters' },
+  { file: 'dist/lark-doc-full.mjs', script: 'build:adapters' },
   { file: 'dist/lark-doc-react.mjs', script: 'build:adapters' },
-  { file: 'dist/lark-doc-legacy.common.js', script: 'build:legacy' },
-  { file: 'dist/lark-doc-legacy.esm.js', script: 'build:legacy' },
   { file: 'dist/plugin.mjs', script: 'build:plugin' },
   { file: 'dist/plugin.cjs', script: 'build:plugin' }
 ]
 
 /** 整文件参与指纹的构建配置 */
-const CONFIG_FILES = ['vue.config.js', 'babel.config.js', 'legacy-syntax.js', 'postcss.config.js', 'jsconfig.json', 'package-lock.json', 'style.css', 'scripts/element-renderer.js']
+const CONFIG_FILES = ['vue.config.js', 'babel.config.js', 'postcss.config.js', 'jsconfig.json', 'package-lock.json', 'style.css', 'scripts/element-renderer.js']
 
 /** package.json 里只取真正影响产物的字段 */
 const PKG_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects']

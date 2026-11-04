@@ -96,7 +96,7 @@ const doc = new LarkDoc({ element: '#editor', session })
 | --- | --- |
 | 原生页面 | UMD 产物 + 样式链接；适合无构建链的宿主。 |
 | Vue2 薄壳 | `mounted` 创建、`beforeDestroy` 销毁；dev 用 alias 指向包源码，生产走 dist，两条路径都验证。 |
-| 组件式 | 从 `lark-doc/legacy` 引入 `LarkDocEditor` / `LarkDocWorkspace` options 对象供 Vue2 宿主注册；内部同样挂载原生 DOM，不导入 Vue。 |
+| 组件式 | Vue2 组件中直接从 `lark-doc` 引入 `LarkDoc`，在 `mounted` 挂载、在 `beforeDestroy` 销毁；内部同样挂载原生 DOM。 |
 | 持久化 Provider | 实现即插即用（方法名 `load/save/snapshots/snapshot/restore`）；缺省为浏览器 localStorage 草稿。 |
 | 协作 Provider | 只暴露 `connect(options)/disconnect(options)` 最小边界；不传不建连接。评论、版本、授权同理，对应 providers/comments、versioning、authorization。 |
 

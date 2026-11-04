@@ -5,13 +5,10 @@
 ```
 装包  →  写 import  →  （配置）  →  拷 dist  →  验收
  ↑          ↑             ↑           ↑          ↑
-npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network 看 200
+npm/ tgz   一行代码      当前版本基本不用   静态托管才要   Network 看 200
 ```
 
-> **0.13 起「配」这一步几乎消失了。** 包的 `exports` 覆盖了全部入口、`peerDependencies` 全部标成可选，
-> webpack 5 / Vite / Rollup / Node 都能直接 `import { LarkDoc } from 'lark-doc'`，不再需要 alias、也不再
-> 需要给 `node_modules` 挂 babel-loader。只有 **webpack 4** 这一档要一行 alias（它不读 `exports`，
-> 且 0.13 起没有 `browser` 字段兜底）；CJS 需显式引 `lark-doc/style.css`，ESM / Element 样式随 JS 注入。旧版本的兼容写法保留在[各环境引入对照](/guide/environments#env-vue2-wp4)。
+> 当前版本统一走发布产物。包的 `exports`、`main` 和 `module` 已准备好，Vue2 / Vue3 / React 的应用层都直接从 `lark-doc` 引入，不再配置源码 alias、legacy 入口或 lark-doc 专属 Babel loader。CJS 入口显式引 `lark-doc/style.css`，ESM / Element 样式随 JS 注入。本文不再维护旧入口兼容写法。
 
 > 本文是**索引 + 最短路径**：每一步给出可照抄的命令，配置细节挂在《各环境引入对照》对应锚点上。
 > 内网想直接看「分宿主的一步步操作」，跳到[内网迁移实战](/guide/intranet-migration)；服务器侧 nginx 看[内网服务器部署](/guide/deployment-intranet)。
@@ -20,7 +17,7 @@ npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network
 
 | 你的项目 | 走哪个入口 | 装不装 npm 包 | 编译工具要改吗 |
 | --- | --- | --- | --- |
-| **Vue 2.7**（webpack 4/5、Vite） | `lark-doc`（`new LarkDoc()`）；旧组件用 `lark-doc/legacy` | 装 | webpack4 需 alias CJS；webpack5 / Vite 无需改 |
+| **Vue 2.7**（webpack 4/5、Vite） | `lark-doc`（`new LarkDoc()`） | 装 | 直接使用包的 CJS/ESM 入口，不需要 lark-doc 专属 alias |
 | **Vue 3**（Vite / webpack5） | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/element` 薄壳 | 装 | 命令式无需专属配置；标签方式放行 `lark-doc` |
 | **React 16.8+** | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/react` 薄壳 | 装 | CRA5/Vite 无需专属配置；TSX 标签需补类型 |
 | **纯静态页 / 老系统 / 没有打包器** | `dist/lark-doc-element.umd.min.js`（`<script>` 直引） | **不装**，只拷 `dist/` | 不用 |
@@ -35,23 +32,13 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 Vue 版本只影响宿主自己的组件与薄壳写法，不限制默认入口；任意框架或无框架均可使用 `new LarkDoc()`。不使用打包器时选择静态 Element 方式。
 
 ::: warning 三个最容易走错的路
-- **把 legacy options 当跨框架组件** → `lark-doc/legacy` 仅供 Vue2 宿主注册；任意框架都可以用默认 `new LarkDoc()` 或 `lark-doc/element`，两者都不需要 Vue2。
+- **把 Web Component 薄壳当作编辑器核心** → 任意框架优先使用默认 `new LarkDoc()`；标签方式才引入 `lark-doc/element`。两者都不需要额外 Vue2 适配入口。
 - **薄壳只装了一半** → 组件渲染成空白、控制台报「`<lark-doc>` 尚未注册」。薄壳只做属性/事件桥接，**元素本体在 element 入口**，宿主入口要最先 `import 'lark-doc/element'`。
 - **只拷了主文件、没拷 `*.math.js` 这些** → 编辑器能开，但插公式、导出 Word 时 404。`dist/` 要**整目录**同位放。
 :::
 
-::: tip webpack 4 读不到 `exports` 字段
-webpack 4 不看 `exports`，只能靠 `main` / `module` 两个字段。`lark-doc` 的 `module` 指向 ESM 产物，
-里面含 `import.meta`，webpack 4 自带的 acorn 解析不了 —— 所以主入口要**一行 alias** 指到 CJS 档
-（`dist/lark-doc.common.js`，已降到 ES2018 语法，不用再挂 babel）：
-
-```js
-// vue.config.js
-configureWebpack: { resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } } }
-```
-
-`lark-doc/element`、`lark-doc/style.css` 这类**子路径**在 webpack 4 里同样解析不到，要写全：
-`lark-doc/dist/lark-doc-element.umd.min.js`、`lark-doc/dist/lark-doc.css`。
+::: tip Vue2 / Webpack4 的最小配置
+当前包为 Vue2 应用提供 CJS `main`，应用层直接写 `import { LarkDoc } from 'lark-doc'` 即可，不再添加 alias、源码路径或专属 Babel 规则。只需显式引入一次 `import 'lark-doc/style.css'`。Webpack4 若项目本身已有通用 Babel / polyfill 配置，按项目规则维护，不要把 `lark-doc/dist` 再交给 Babel。
 :::
 
 ## 第 1 步 · 装（外网） {#do-install-online}
@@ -66,7 +53,7 @@ npm i lark-doc
 npm i lark-doc@<ver> -E
 ```
 
-> 阶段7源码中 `vue`、`vue-template-compiler`、`@tiptap/vue-2` 顶层依赖已移除；默认、Element、lite 与 legacy 均不内联或外置 Vue。不需要 `--legacy-peer-deps`。开发锁文件中若仍有 Vue 编译工具或 Vue 节点，它们属于 Vue CLI 的开发期传递依赖，不构成包的运行时依赖。
+> 当前源码中 `vue`、`vue-template-compiler`、`@tiptap/vue-2` 不属于 lark-doc 运行时依赖。默认、Element 与 lite 均不内联或外置 Vue。不需要 `--legacy-peer-deps`。宿主项目自己的 Vue 编译工具仍按宿主版本安装。
 
 装完立刻验一遍，输出应该是**一个**版本号：
 
@@ -174,8 +161,8 @@ node -e "console.log(require('lark-doc/package.json').version)"
 | --- | --- | --- |
 | Vue 2.7 + webpack 5 | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({ element })` |
 | Vue 2.7 + Vite | 同上（装 `@vitejs/plugin-vue2`） | 同上 |
-| Vue 2.7 + webpack 4 | 同上 + `import 'lark-doc/dist/lark-doc.css'` + 一行 alias（见下表） | 同上 |
-| Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc/legacy'` | `<lark-doc-editor v-model="html" />` |
+| Vue 2.7 + webpack 4 | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/style.css'` | 同上 |
+| Vue 2.7 组件式 | `import { LarkDoc } from 'lark-doc'` | 在 `mounted` 中 `new LarkDoc({ element: this.$refs.editor })` |
 | **Vue 3** | `import 'lark-doc/element'` + `import { resolveVue3Attrs } from 'lark-doc/vue3'` | `<lark-doc v-bind="resolveVue3Attrs(props)" @lark-doc-change="onChange">` |
 | **React 18** | `import 'lark-doc/element'` + `import { createReactLarkDoc } from 'lark-doc/react'` | `const LarkDoc = createReactLarkDoc(React)` → `<LarkDoc content={html} onChange={fn} ref={docRef} />` |
 | 原生 / CDN / 静态 | `<script src="…/lark-doc-element.umd.min.js">` | `<lark-doc>` 标签 |
@@ -203,24 +190,26 @@ import { createReactLarkDoc } from 'lark-doc/react'
 - [Vue 2.7 组件式](/guide/environments#env-vue2-sfc) · [Vue 3](/guide/environments#env-vue3) · [React 18](/guide/environments#env-react)
 - [原生 / CDN / 静态托管](/guide/environments#env-static) · [Node / jsdom](/guide/environments#env-node) · [SSR](/guide/environments#env-ssr)
 
-## 第 4 步 · 配：0.13 起几乎不用改 {#do-config}
+## 第 4 步 · 配：应用层尽可能不改 {#do-config}
 
 | 环境 | 要改的配置 | 一行结论 |
 | --- | --- | --- |
-| webpack 5 / vue-cli 5 | **什么都不用改** | `vue.config.js` 只放你自己的业务配置 |
-| webpack 4 / vue-cli 4 | **一行 alias** | `alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' }`；子路径与样式写全 `dist/` 路径 |
-| Vite（Vue 2） | 装 `@vitejs/plugin-vue2` | 与 lark-doc 无关，是 Vue 2 + Vite 的通用前置 |
-| Vite（Vue 3 / React） | `compilerOptions.isCustomElement` 放行 `lark-doc` | 不放行会报「未知标签」的编译警告 |
-| 静态页 / SSR | 无打包器配置 | 静态页靠 `<script>`；SSR 靠 client-only |
+| Vue2 / Vue CLI / Webpack4 或 5 | **不需要 lark-doc 专属配置** | 直接从 `lark-doc` 引入；不要添加 alias、源码路径或专属 Babel loader |
+| Vite（Vue2 / Vue3） | 只配置 Vue 插件 | 这是 Vue 工具链本身的配置，与 lark-doc 无关 |
+| Vite / React 使用 `<lark-doc>` 标签 | 按框架规则放行自定义元素 | 这是宿主编译器配置，不是 lark-doc alias |
+| 静态页 / SSR | 无 lark-doc 打包配置 | 静态页使用 Element，SSR 只在客户端挂载 |
 
-**webpack 4 为什么现在只剩一行**：0.12 的产物是 ES2020+ 语法，webpack 4 自带的 acorn
-读不了 `?.` / `??`，所以以前要 alias 到 `common.js` **再挂一条 babel-loader**。0.13 把
-CJS 也跟随 UMD / element 一起降到了 **ES2018**，于是 alias 之后就不需要 babel 了。
+Vue2 命令式接入的最小 `vue.config.js` 不包含任何 lark-doc alias：
 
-0.13 同时**摘掉了 `browser` 字段**：它一存在，webpack 就会跳过 ESM 直落「浏览器直挂档」，
-SSR 与浏览器吃到两份不同产物。摘掉之后环境差异一律走 `exports` 的 condition，代价就是
-webpack 4 少了 `browser` 兜底、必须显式 alias 到 `main`。这是一行换一致性，值得。
+```js
+const { defineConfig } = require('@vue/cli-service')
 
+module.exports = defineConfig({
+  // 只保留应用自己的配置；lark-doc 直接使用 npm 发布产物。
+})
+```
+
+如果项目已有 `transpileDependencies`，不要把 `lark-doc` 加进去；`dist` 已经是发布目标，重复交给 Babel 会增加启动和构建时间。Webpack4 的兼容逻辑由包的 CJS `main` 负责，应用无需复制一份入口映射。
 ### webpack 4 还要留意的两件小事
 
 **① 按需区块基址 —— 走 CJS 就不用管了。** 只有 UMD / element 旁挂了 `.umd.min.*.js`
@@ -240,10 +229,6 @@ window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'
 **② 公式字体。** 走 CJS 时样式是从 `lark-doc/dist/lark-doc.css` 引的，`url()` 指向同目录的
 `fonts/*.woff2`。webpack 4 能处理 CSS 里的 `url()`，会自动 emit 字体，不用手动拷。
 
-::: tip 老版本（0.12 及以前）的写法
-alias + babel-loader 那一套仍然有效，留在[各环境引入对照 · webpack4](/guide/environments#env-vue2-wp4)，
-只是 0.13 起不再需要。
-:::
 
 ## 第 5 步 · 拷：dist 怎么放 {#do-copy}
 
@@ -268,7 +253,7 @@ cp -r node_modules/lark-doc/dist/* public/vendor/lark-doc/
 | --- | --- |
 | `dist/` **整目录**同位放，不要只挑主文件 | 主文件用 `publicPath:'auto'` 按自身 URL 推 chunk 地址，`*.math.js` / `*.office.js` / `*.mermaid.js` 必须在同一目录 |
 | 放任意子路径都成立，不用配 base | 同上，地址是相对主文件推算的 |
-| 不用再拷 `vendor/` 目录 | 0.11.0 起 mermaid 已是普通按需区块，`dist/vendor/` 不再产出 |
+| 不用再拷 `vendor/` 目录 | 当前版本 mermaid 已是普通按需区块，`dist/vendor/` 不再产出 |
 
 子路径部署（例如 `https://intra.example.com/static/lark-doc/`）只需要改 `<script src>` 和 nginx 的 `location`，产物本身一个字节都不用动。
 
@@ -286,11 +271,11 @@ cp -r node_modules/lark-doc/dist/* public/vendor/lark-doc/
 
 | 现象 | 原因 | 解决 |
 | --- | --- | --- |
-| `npm i lark-doc` 报 `ERESOLVE` | 装的是 0.12 及更早版本（peer 里 `vue ^2.7` 是强制的） | 加 `--legacy-peer-deps`，或升到 0.13+ |
+| `npm i lark-doc` 报 `ERESOLVE` | 宿主锁文件中的 Tiptap / 协同依赖版本冲突 | 按当前版本的 peer 版本统一宿主依赖，不要使用旧入口或 `--legacy-peer-deps` 绕过 |
 | 运行时 `Vue.extend is not a function` | 仍在加载去 Vue 前的旧产物或源码 alias | 重建/升级完整产物并移除旧 alias；当前默认入口不调用 Vue.extend |
 | 控制台 `[lark-doc] <lark-doc> 尚未注册` | 薄壳引了，但漏了 `import 'lark-doc/element'` | 宿主入口最先 import 它（薄壳只桥接，元素本体在 element 入口） |
 | `Module not found: 'lark-doc/element'` | webpack 4 不读 `exports` 字段 | 写全 `lark-doc/dist/lark-doc-element.umd.min.js` |
-| `Module parse failed: Unexpected token` 指到 `?.` | 装了 0.12 及更早版本的产物 | 升到 0.13+（UMD/element 已降到 ES2018）；临时办法见[webpack4 老写法](/guide/environments#env-vue2-wp4) |
+| `Module parse failed: Unexpected token` 指到 `?.` | 宿主把未构建源码或未支持的依赖交给了 Babel/Webpack | 确认解析的是发布包 `lark-doc`，并不要把 `dist` 重复交给 Babel |
 | 插公式 / 导出 Word 没反应，Network 里 `*.math.js` 404 | 走打包器 import 时按需区块基址算错 | 设 `window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'`（见[第 4 步](#do-config)） |
 | 编辑器出来了但完全没样式 | CJS 样式未显式引入，或使用了不完整旧产物 | 当前 CJS 仍需 `import 'lark-doc/dist/lark-doc.css'`；ESM / Element 随 JS 注入 |
 | 公式显示成方框 | `fonts/` 没拷 | 连 `fonts/` 一起拷 |
