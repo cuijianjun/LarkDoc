@@ -201,6 +201,9 @@
         aria-label="插入"
         title="插入内容"
         :disabled="ed.effectiveReadonly"
+        aria-haspopup="menu"
+        @mouseenter="ed.cancelPopupHoverClose"
+        @mouseleave="ed.scheduleCommandMenuClose"
         @click="ed.openCommandMenu('plus', $event)"
       >
         <lark-doc-icon name="plus" />插入
@@ -221,9 +224,16 @@
         title="插入图表"
         :disabled="ed.effectiveReadonly"
         :aria-expanded="String(ed.diagramMenuOpen)"
+        aria-haspopup="menu"
+        @mouseenter="ed.openDiagramMenuOnHover"
+        @mouseleave="ed.scheduleDiagramMenuClose"
         @click="ed.toggleDiagramMenu"
       >
-        <lark-doc-icon name="chart" />
+        <lark-doc-icon name="chart" />图表<lark-doc-icon
+          class="lark-doc-caret"
+          :size="12"
+          name="chevronDown"
+        />
       </button><button
         v-if="ed.toolbarEnabled('ai')"
         type="button"
@@ -241,6 +251,8 @@
         :style="ed.diagramMenuStyle"
         role="menu"
         aria-label="图表类型"
+        @mouseenter="ed.cancelPopupHoverClose"
+        @mouseleave="ed.scheduleDiagramMenuClose"
       >
         <button
           v-for="item in ed.diagramTypes"
@@ -250,7 +262,10 @@
           @mousedown.prevent
           @click="ed.insertDiagramType(item.id)"
         >
-          {{ item.label }}
+          <lark-doc-icon
+            class="lark-doc-diagram-menu-icon"
+            :name="`diagram-${item.id}`"
+          />{{ item.label }}
         </button>
       </div>
     </div>

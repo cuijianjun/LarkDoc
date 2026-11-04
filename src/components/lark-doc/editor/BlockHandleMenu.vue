@@ -15,6 +15,7 @@
       title="插入内容"
       @mousedown.prevent
       @mouseenter="ed.openEmptyBlockInsertMenu"
+      @mouseleave="ed.scheduleCommandMenuClose"
       @click="ed.openEmptyBlockInsertMenu"
     >
       ＋

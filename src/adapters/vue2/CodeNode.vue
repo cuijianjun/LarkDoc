@@ -314,7 +314,7 @@ export default {
       }).catch((error) => {
         if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
         this.diagramState = 'error'
-        this.diagramError = ''
+        this.diagramError = error && error.message ? String(error.message) : String(error || '图表渲染失败')
         const onDiagramError = this.extension?.options?.onDiagramError
         if (onDiagramError) { onDiagramError(error); return }
         // 静默失败最难查：宿主没注册 onDiagramError 时至少留一条控制台线索

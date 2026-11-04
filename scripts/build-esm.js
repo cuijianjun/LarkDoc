@@ -44,10 +44,10 @@ config.output = Object.assign({}, config.output, {
   // 逻辑区块 → vue.esm.js / tiptap.esm.js / vendor.esm.js，按需区块 → math.esm.js 等。
   filename: '[name].esm.js',
   chunkFilename: '[name].esm.js',
-  // ''：chunk 地址用相对 import() 串（按本文件自身 URL 解析），不再生成
-  // import.meta.url —— webpack4 不支持该语法会直接 parse error，宿主统一编译
-  // 与浏览器直用 ESM 都按 dist 目录相对寻址，放到任意目录不 404。
-  publicPath: '',
+  // './'：chunk 地址必须以 ./ 开头，才能被浏览器/Vite 当作相对 import()
+  // 解析；空串会生成裸 specifier（例如 "mermaid.esm.js"），在浏览器中被当成
+  // 包名解析并失败。webpack4 不支持 import.meta.url，因此仍不使用它。
+  publicPath: './',
 })
 // library.type='module' 是「把入口的 export 变成产物 export」的开关。
 // 少了它 webpack 只把入口当 app 来打包：产物里只有 chunk 加载运行时

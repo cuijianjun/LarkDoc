@@ -1,4 +1,4 @@
-import { createWorkspace } from '../components/lark-doc/workspace'
+import { createWorkspace } from './workspace'
 import { runProviderTask } from './provider-task'
 import { IDB_UNAVAILABLE, createIndexedDbWorkspace, isIndexedDbAvailable } from '../core/storage/idb'
 

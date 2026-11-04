@@ -510,6 +510,7 @@ export default {
     // 命令式入口（new LarkDoc）通过这两个可选属性注入初始文档。
     initialTitle: { type: String, default: null },
     initialContent: { type: [String, Object], default: null },
+    preserveInitialContent: { type: Boolean, default: false },
     // 'auto' 按指纹识别 Vditor HTML；'vditor' 强制归一化；'html' 明确跳过归一化。
     contentFormat: { type: String, default: 'auto' },
     readonly: { type: Boolean, default: false },
@@ -717,19 +718,24 @@ export default {
           const draft = await this.callWorkspace('load')
           if (this._disposed) return
           if (draft) {
-            // 老草稿（v1 扁平 / 无版本号）先迁移到当前版本再校验载入（P1-04）。
-            const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), this.getEditor().schema)
-            // 早期水合（P7-03）：正文灌进去之前先把目录挂上。
-            // 比对基准必须是 `content`（迁移+展平+校验之后的**扁平**文档），不能是 `draft.json`：
-            // 落库 JSON 是 `getJSON()` 的聚合容器形态（标题把后续块收进 children），
-            // 而快照是按编辑器里的扁平文档算的 —— 拿聚合形态去比，带标题的文档全部被判伪。
-            // 版本号不另设门槛：迁移过的正文一旦结构变了，指纹自己对不上就整份作废。
-            if (this.$refs.document.hydrateOutline(
-              validateDerivedSnapshot(draft.derived, content)?.outline,
-            )) await nextPaintFrame()
-            if (this._disposed) return
-            this.$refs.document.setContent(content)
-            this.title = draft.title
+            const preserveContent = this.preserveInitialContent && this.initialContent != null && (
+              typeof this.initialContent !== 'string' || this.initialContent.trim() !== ''
+            )
+            if (!preserveContent) {
+              // 老草稿（v1 扁平 / 无版本号）先迁移到当前版本再校验载入（P1-04）。
+              const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), this.getEditor().schema)
+              // 早期水合（P7-03）：正文灌进去之前先把目录挂上。
+              // 比对基准必须是 `content`（迁移+展平+校验之后的**扁平**文档），不能是 `draft.json`：
+              // 落库 JSON 是 `getJSON()` 的聚合容器形态（标题把后续块收进 children），
+              // 而快照是按编辑器里的扁平文档算的 —— 拿聚合形态去比，带标题的文档全部被判伪。
+              // 版本号不另设门槛：迁移过的正文一旦结构变了，指纹自己对不上就整份作废。
+              if (this.$refs.document.hydrateOutline(
+                validateDerivedSnapshot(draft.derived, content)?.outline,
+              )) await nextPaintFrame()
+              if (this._disposed) return
+              this.$refs.document.setContent(content)
+            }
+            if (draft.title != null) this.title = draft.title
           }
           this.saveStatus = draft ? `已恢复${this.persistenceLabel()}草稿` : (this.persistence ? '宿主适配器 · 尚未保存' : '本地示例 · 尚未保存')
         } catch (error) { this.storageFailure(error) }

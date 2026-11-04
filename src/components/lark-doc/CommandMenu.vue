@@ -6,6 +6,8 @@
     aria-label="插入内容"
     :style="positionStyle"
     @keydown="onKeydown"
+    @mouseenter="$emit('menu-enter')"
+    @mouseleave="$emit('menu-leave')"
   >
     <div class="lark-doc-command-head">
       <strong>插入内容</strong>
@@ -49,7 +51,7 @@
         @mouseenter="item.submenu && openSubmenu(item, $event)"
         @focus="item.submenu && openSubmenu(item, $event)"
         @mousedown.prevent
-        @click="item.submenu && (kind === 'plus' || ['columns', 'templates'].includes(item.submenuType)) ? openSubmenu(item, $event) : $emit('choose', item)"
+        @click="item.submenu && (kind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType)) ? openSubmenu(item, $event) : $emit('choose', item)"
       >
         <span
           class="lark-doc-command-icon"
@@ -75,7 +77,8 @@
       role="menu"
       :aria-label="`${submenuOpen}子菜单`"
       :style="submenuStyle"
-      @mouseenter="submenuOpen = submenuOpen"
+      @mouseenter="$emit('menu-enter')"
+      @mouseleave="$emit('menu-leave')"
     >
       <template v-if="submenuType === 'templates'">
         <strong>选择模板插入文档</strong>
@@ -161,6 +164,23 @@
             @click="$emit('choose', { id: 'table', tableSize: { rows: Math.floor((cell - 1) / 6) + 1, cols: ((cell - 1) % 6) + 1 } })"
           />
         </div>
+      </template><template v-else-if="submenuType === 'diagram'">
+        <strong>选择图表类型</strong>
+        <button
+          v-for="item in diagramTypes"
+          :key="`diagram-${item.id}`"
+          type="button"
+          role="menuitem"
+          :aria-label="item.label"
+          @mousedown.prevent
+          @click="$emit('choose', { id: 'diagram', diagramType: item.id })"
+        >
+          <lark-doc-icon
+            class="lark-doc-command-icon is-teal"
+            :name="`diagram-${item.id}`"
+            :size="18"
+          /><span class="lark-doc-command-label">{{ item.label }}</span>
+        </button>
       </template><template v-else>
         <strong>{{ submenuOpen }}</strong><button
           v-for="item in items.filter(entry => entry.submenu === submenuOpen)"
@@ -185,10 +205,14 @@
 </template>
 
 <script>
+import LarkDocIcon from './LarkDocIcon.vue'
+import { diagramTypes } from './editor/constants'
+
 export default {
   name: 'LarkDocCommandMenu',
+  components: { LarkDocIcon },
   props: { items: { type: Array, required: true }, templates: { type: Array, default: () => [] }, query: { type: String, default: '' }, positionStyle: { type: Object, default: () => ({}) }, activeId: { type: String, default: '' }, kind: { type: String, default: 'slash' } },
-  data() { return { composing: false, submenuOpen: '', submenuType: '', submenuStyle: {}, columnsHover: null, tableHover: { rows: 3, cols: 3 } } },
+  data() { return { diagramTypes, composing: false, submenuOpen: '', submenuType: '', submenuStyle: {}, columnsHover: null, tableHover: { rows: 3, cols: 3 } } },
   computed: { categories() { const order = this.kind === 'plus' ? ['基础', '常用', '其他标题'] : []; const categories = [...new Set(this.items.map((item) => item.category))]; return order.concat(categories.filter((category) => !order.includes(category))) } },
   mounted() { this.$emit('mounted-ready', this) },
   methods: {
@@ -215,7 +239,7 @@ export default {
       const left = index === 0 ? 0 : 40 + ((index - 1) * 20)
       return { left: `${left}%`, width: `${index === 0 ? 40 : 20}%` }
     },
-    choose() { const item = this.items.find((entry) => entry.id === this.activeId) || this.items[0]; if (item) { if (item.submenu && (this.kind === 'plus' || ['columns', 'templates'].includes(item.submenuType))) this.openSubmenu(item); else this.$emit('choose', item) } },
+    choose() { const item = this.items.find((entry) => entry.id === this.activeId) || this.items[0]; if (item) { if (item.submenu && (this.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType))) this.openSubmenu(item); else this.$emit('choose', item) } },
     openSubmenu(item, event) {
       if (!item?.submenu) return
       this.submenuOpen = item.submenu
@@ -230,7 +254,7 @@ export default {
         const gap = 5
         const width = this.submenuType === 'templates' ? 250 : 190
         const options = this.items.filter((entry) => entry.submenu === item.submenu)
-        const estimatedHeight = this.submenuType === 'templates' ? Math.min(420, 42 + Math.max(1, this.templates.length) * 40) : this.submenuType === 'columns' ? 166 : this.submenuType === 'table' ? 304 : Math.min(420, 42 + options.length * 40)
+        const estimatedHeight = this.submenuType === 'templates' ? Math.min(420, 42 + Math.max(1, this.templates.length) * 40) : this.submenuType === 'columns' ? 166 : this.submenuType === 'table' ? 304 : this.submenuType === 'diagram' ? Math.min(420, 42 + this.diagramTypes.length * 40) : Math.min(420, 42 + options.length * 40)
         const right = triggerRect.right + gap
         const left = triggerRect.left - width - gap
         const leftPosition = right + width + margin <= window.innerWidth ? right : Math.max(margin, left)

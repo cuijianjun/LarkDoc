@@ -770,6 +770,8 @@
 .lark-doc .lark-doc-command-section button.is-skip:hover,
 .lark-doc .lark-doc-command-section button.is-skip:focus-visible { background: transparent; color: var(--ld-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-command-section button.is-skip .lark-doc-command-icon { opacity: .6; }
+.lark-doc .lark-doc-diagram-menu-icon { color: var(--ld-cat-teal); }
+.lark-doc .lark-doc-diagram-menu button { display: flex; align-items: center; gap: 8px; }
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] { background: var(--ld-bg-hover); }
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] .lark-doc-card-title,
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] .lark-doc-card-field-label { color: var(--ld-text-disabled); }
@@ -2359,7 +2361,10 @@
 .lark-doc .lark-doc-mode-item.is-active .lark-doc-mode-item-label { color: var(--ld-brand-content); }
 .lark-doc .lark-doc-mode-item-label { color: inherit; font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
-.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
+.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; left: 50%; display: inline-flex; box-sizing: border-box; max-width: min(420px, calc(100vw - 32px)); align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text-secondary); font-size: 14px; line-height: 16px; pointer-events: none; transform: translateX(-50%); animation: lark-doc-message-in 160ms ease-out; }
+.lark-doc .lark-doc-mode-toast-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; border-radius: 50%; background: var(--ld-success); color: var(--ld-text-on-brand); font-size: 11px; font-weight: 700; line-height: 16px; }
+.lark-doc .lark-doc-mode-toast-text { overflow: hidden; color: var(--ld-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+@keyframes lark-doc-message-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ==================================================================
    P4-06 · 修订模式：行内标记 + 右侧建议面板

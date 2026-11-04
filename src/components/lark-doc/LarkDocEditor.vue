@@ -14,16 +14,17 @@
         <slot name="header-actions" />
       </template>
     </TopBar>
-    <!-- P4-06：「已切换为 X 模式」提示。载体是**顶部中性条**（07 §1.1 文案 + 06 §6.2
-         `.ud__msg-manager--top` 的 1512×16 @y=32 / z 9999 / fixed），
-         刻意不复用右下角 `.lark-doc-toast` —— 那是琥珀 error 语义，两者混用会让人以为切换失败。 -->
+    <!-- 模式切换使用顶部居中成功提示，与右下角错误提示分开。 -->
     <div
       v-if="modeToast"
       class="lark-doc-mode-toast"
       role="status"
       aria-live="polite"
     >
-      {{ modeToast }}
+      <span
+        class="lark-doc-mode-toast-icon"
+        aria-hidden="true"
+      >✓</span><span class="lark-doc-mode-toast-text">{{ modeToast }}</span>
     </div>
     <ToolbarBar :ed="self">
       <template #header-actions>
@@ -121,6 +122,8 @@
       @choose="chooseCommand"
       @close="closeCommandMenu(true)"
       @mounted-ready="onCommandMenuReady"
+      @menu-enter="cancelPopupHoverClose"
+      @menu-leave="scheduleCommandMenuClose"
     />
     <ColorPalette
       v-if="colorPaletteOpen && !effectiveReadonly"

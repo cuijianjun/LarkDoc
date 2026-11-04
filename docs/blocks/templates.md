@@ -2,7 +2,9 @@
 
 模板组件在新建 / 清空文档时提供预置模板：空白文档、会议纪要、工作周报等。模板即一段 HTML，宿主可整体替换为自己业务的模板集。
 
-## 配置示例
+## 基本用法
+
+当前 dev 通过主入口导出 `LarkDocTemplateLibrary` Vue2 组件；模板集由下方工作台 prop 注入，不使用原生 DOM 版本的 `lark-doc/templates` 子入口。
 
 模板集是**工作台组件 `LarkDocWorkspace` 的 prop**（命令式门面 `new LarkDoc()` 不透传 `templates`，模板只在完整工作台的新建 / 清空入口出现）。
 
@@ -28,7 +30,7 @@ export default {
 </template>
 ```
 
-## 配置与用法
+## 配置参考
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
