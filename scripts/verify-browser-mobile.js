@@ -21,6 +21,8 @@ async function main() {
   const browser = await chromium.launch({ executablePath: executable(), headless: true })
   let passed = 0
   const results = []
+  const artifactFailures = []
+  const interactionFailures = []
   try {
     for (const [name, options] of [
       ['phone', { ...devices['iPhone 14'], viewport: { width: 390, height: 844 } }],
@@ -34,8 +36,16 @@ async function main() {
       await page.waitForFunction(() => window.__larkDoc?.getEditor?.())
       const status = await (await context.request.get(new URL('/__verify__/status.json', BASE).href)).json()
       assert.equal(status.root, ROOT)
-      assert.equal(status.sourceArtifactsCurrent, true)
+      try { assert.equal(status.sourceArtifactsCurrent, true) } catch (error) {
+        artifactFailures.push({ name, error: error.message, artifactCheck: status.artifactCheck })
+        console.error(`FAIL ${name}: 当前源码产物匹配断言失败；继续验证现有 dist 的交互`)
+      }
       await page.evaluate(() => {
+        const nativeHost = window.__larkDoc?._handle?.nativeHost?.host
+        if (nativeHost?.editor && typeof nativeHost.loadComments === 'function') {
+          window.__mobileEditor = nativeHost
+          return
+        }
         const queue = [document.querySelector('.lark-doc-editor')?.__vue__, window.__larkDoc.getWorkspace(), window.__verifyHostVm]
         const seen = new Set()
         while (queue.length) {
@@ -52,7 +62,7 @@ async function main() {
       assert.ok(dimensions.touch > 0)
       assert.equal(dimensions.dpr, options.deviceScaleFactor)
       assert.ok(dimensions.overflow <= 1, JSON.stringify(dimensions))
-      console.log(`PASS ${name}: current artifact, touch/DPR/viewport, no horizontal overflow`)
+      console.log(`PASS ${name}: 宿主路径、touch/DPR/viewport、无横向溢出；sourceArtifactsCurrent=${status.sourceArtifactsCurrent}`)
       passed++
       await page.evaluate(() => {
         const vm = window.__mobileEditor
@@ -111,7 +121,7 @@ async function main() {
         await vm.session.refreshCapabilities()
         await vm.$nextTick()
       })
-      assert.equal(await page.getByRole('textbox', { name: '回复', exact: true }).getAttribute('readonly'), 'readonly')
+      assert.equal(await page.getByRole('textbox', { name: '回复', exact: true }).evaluate(el => el.readOnly), true)
       const denied = await page.evaluate(async () => {
         const vm = window.__mobileEditor
         vm.setCommentDraft('mobile-thread', 'DENIED')
@@ -149,20 +159,30 @@ async function main() {
       assert.deepEqual(version, { preview: 'mobile-version', disabled: true, unchanged: true, denied: true })
       assert.equal(await page.evaluate(() => window.__mobileRestoreCalls), 0)
       const restoreBounds = await page.locator('.lark-doc-version-restore').boundingBox()
-      assert.ok(restoreBounds && restoreBounds.x >= 0 && restoreBounds.x + restoreBounds.width <= options.viewport.width, 'Version restore control must fit inside the emulated viewport')
+      try {
+        assert.ok(restoreBounds && restoreBounds.x >= 0 && restoreBounds.x + restoreBounds.width <= options.viewport.width, 'Version restore control must fit inside the emulated viewport')
+      } catch (error) {
+        const failure = { name, error: error.message, restoreBounds, viewport: options.viewport }
+        interactionFailures.push(failure)
+        const dir = path.join(ROOT, '_codex/verify-logs')
+        fs.mkdirSync(dir, { recursive: true })
+        await page.screenshot({ path: path.join(dir, `mobile-${name}-version-overflow.png`) })
+        console.error(`FAIL ${name}: 版本恢复控件越界 ${JSON.stringify(failure)}`)
+      }
       assert.ok(await page.getByText('Mobile saved version', { exact: true }).first().isVisible())
       await page.getByRole('button', { name: '返回文档', exact: true }).tap()
       await page.waitForFunction(() => !document.querySelector('.lark-doc-version-layer'))
-      console.log(`PASS ${name}: version panel and snapshot metadata render, forbidden restore cannot change document`)
-      passed++
+      console.log(`${interactionFailures.some(f => f.name === name) ? 'FAIL' : 'PASS'} ${name}: 版本面板、快照元数据及禁止恢复不改文档；恢复控件边界单独记录`)
+      if (!interactionFailures.some(f => f.name === name)) passed++
       assert.deepEqual(errors, [])
-      results.push({ name, dimensions, checks: 6, pageErrors: errors })
+      results.push({ name, dimensions, restoreBounds, checks: 6, pageErrors: errors })
       await context.close()
     }
     const dir = path.join(ROOT, '_codex/verify-logs')
     fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'mobile-evidence.json'), JSON.stringify({ browser: browser.version(), engine: 'Chromium', acceptance: 'device emulation; no physical device or Safari required by user', passed, results }, null, 2))
-    console.log(`PASS ${passed}/${passed}; T032 Chromium device emulation (not real Safari/device)`)
+    fs.writeFileSync(path.join(dir, 'mobile-evidence.json'), JSON.stringify({ browser: browser.version(), engine: 'Chromium', acceptance: 'Chromium 设备模拟；不代表真机、Safari 或真实跨账号验证', passed, results, artifactFailures, interactionFailures }, null, 2))
+    console.log(`${artifactFailures.length || interactionFailures.length ? 'FAIL' : 'PASS'} 交互 ${passed}/12；产物匹配失败 ${artifactFailures.length}；Chromium 设备模拟，非真机/Safari`)
+    if (artifactFailures.length || interactionFailures.length) process.exitCode = 1
   } finally { await browser.close() }
 }
 main().catch(error => { console.error('FAIL', error); process.exitCode = 1 })

@@ -17,6 +17,8 @@
  * 时区：`test/bootstrap.js` 固定 `TZ=UTC`，所以下面的日期全部用 `Date.UTC` 构造，
  * 「今天 / 昨天」的判定不会随跑测机器漂移。
  */
+import { readFileSync } from 'node:fs'
+import { JSDOM } from 'jsdom'
 import { describe, expect, it } from 'vitest'
 import {
   E_SNAPSHOT_AUTHOR,
@@ -49,6 +51,25 @@ import {
   versioningErrorMessage,
 } from '../../src/components/lark-doc/editor/versioningMixin'
 import versioningMixin from '../../src/components/lark-doc/editor/versioningMixin'
+
+describe('历史版本窄屏样式覆盖', () => {
+  it.each(['layer', 'left', 'right', 'left-header', 'left-content', 'restore', 'pager'])(
+    '%s 的窄屏规则与桌面规则使用相同作用域及优先级',
+    (part) => {
+      const css = readFileSync(new URL('../../src/styles/versioning.css', import.meta.url), 'utf8')
+      const dom = new JSDOM(`<style>${css}</style>`)
+      try {
+        const rules = Array.from(dom.window.document.styleSheets[0].cssRules)
+        const media = rules.find(rule => rule.media?.mediaText === '(max-width: 1024px)')
+        const selector = `.lark-doc .lark-doc-version-${part}`
+        expect(rules.some(rule => rule.selectorText === selector)).toBe(true)
+        expect(Array.from(media.cssRules).some(rule => rule.selectorText === selector)).toBe(true)
+      } finally {
+        dom.window.close()
+      }
+    },
+  )
+})
 
 /* ---------------- 脚手架 ---------------- */
 

@@ -367,13 +367,13 @@
 
 /* T032：窄屏使用上下分区，保留触摸返回、恢复按钮和版本列表的可达性。 */
 @media (max-width: 1024px) {
-  .lark-doc-version-layer { flex-direction: column; }
-  .lark-doc-version-left { flex: 1 1 55%; min-height: 0; height: auto; }
-  .lark-doc-version-right { flex: 1 1 45%; width: 100%; min-height: 0; overflow: auto; }
-  .lark-doc-version-left-header { height: 104px; }
-  .lark-doc-version-left-content { height: calc(100% - 104px); padding: 16px; }
-  .lark-doc-version-restore { left: auto; right: 16px; }
-  .lark-doc-version-pager { top: 64px; right: 16px; gap: 8px; }
+  .lark-doc .lark-doc-version-layer { flex-direction: column; }
+  .lark-doc .lark-doc-version-left { flex: 1 1 55%; min-height: 0; height: auto; }
+  .lark-doc .lark-doc-version-right { flex: 1 1 45%; width: 100%; min-height: 0; overflow: auto; }
+  .lark-doc .lark-doc-version-left-header { height: 104px; }
+  .lark-doc .lark-doc-version-left-content { height: calc(100% - 104px); padding: 16px; }
+  .lark-doc .lark-doc-version-restore { left: auto; right: 16px; }
+  .lark-doc .lark-doc-version-pager { top: 64px; right: 16px; gap: 8px; }
 }
 
 /* ── ⑤-2 「另存为版本」Dialog ── */

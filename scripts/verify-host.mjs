@@ -73,7 +73,7 @@ for (const [route, file, wc] of [
       document.head.appendChild(script)
     })`, file)
   } else {
-    script = replaceOnce(script, "import { LarkDoc } from 'lark-doc'", "const { LarkDoc } = window['lark-doc']", file)
+    script = replaceOnce(script, "import { LarkDoc } from 'lark-doc'", "const { LarkDoc } = window.LarkDoc", file)
     script = replaceOnce(script, "import 'lark-doc/style.css'", '', file)
   }
   script = replaceOnce(script, 'export default {', 'const HostView = {', file)
@@ -91,7 +91,7 @@ window.addEventListener('pagehide', () => window.__verifyHostVm.$destroy(), { on
   routes.set(route, { script, styles, wc })
 }
 
-const artifactFiles = ['dist/lark-doc.umd.min.js', 'dist/lark-doc-element.umd.min.js', 'dist/lark-doc.css']
+const artifactFiles = ['dist/lark-doc-element.umd.min.js', 'dist/lark-doc-element.umd.min.ui.js', 'dist/lark-doc.css']
 const describeFile = (base, file) => {
   const abs = join(base, file)
   const stat = statSync(abs)
@@ -150,7 +150,7 @@ const server = http.createServer((req, res) => {
 <title>独立验证宿主</title><link rel="stylesheet" href="/__verify__/app.css">
 ${host.wc ? '' : '<link rel="stylesheet" href="/js/lark-doc.css">'}<style>${host.styles}</style>
 </head><body><div id="app"><main><div id="route"></div></main></div>
-<script src="/__verify__/vue.js"></script>${host.wc ? '' : '<script src="/js/lark-doc.umd.min.js"></script>'}
+<script src="/__verify__/vue.js"></script>${host.wc ? '' : '<script src="/js/lark-doc-element.umd.min.js"></script>'}
 <script type="module" src="/__verify__${route}.js"></script></body></html>`)
     }
   }

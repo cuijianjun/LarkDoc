@@ -578,7 +578,7 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
       top: Math.round(rect.top),
       gap: Math.round(rect.top - btnRect.bottom),
       triggerLabel: btn.textContent.trim(),
-      options: rows.map((el) => el.textContent.trim()),
+      options: rows.map((el) => el.querySelector('.lark-doc-select-text').textContent.trim()),
       // 两行式：主标题 + 副标题同在一个 .lark-doc-select-text 里
       hints: rows.map((el) => {
         const hint = el.querySelector('.lark-doc-select-item-hint')
