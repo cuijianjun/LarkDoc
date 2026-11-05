@@ -241,6 +241,17 @@ The `dev` baseline already contains substantial document primitives:
 - A second native coordinate attempt for the Safari six-dot block drag returned the same `noWindowsAvailable` error. The earlier Safari WebDriver session creation timeout remains the browser-automation blocker; no drag or matched Safari geometry is claimed.
 - Chrome's address-bar/reload attempt emitted `The user changed '/Applications/Google Chrome.app'. Re-query the latest state with get_app_state before sending more actions.` and switched among existing tabs; it produced no trustworthy clean cross-account readback. T012, T015 and T018 therefore remain `PARTIAL`.
 
+## 合并后开发与验收记录 — 2026-11-06
+
+- master 0.14.5（`5526489`）已合入 dev，合并提交 `6117851`；以 Rollup 和原生 DOM UI 为主，保留 dev 通知生命周期、异步隔离、默认隐藏工具栏及菜单/图表交互。Markdown/Word 重复实现和低频 UI 通过独立特性加载隔离，未删除功能或放宽预算。
+- 修复提交 `55a3ca8`：`src/styles/versioning.css` 的窄屏规则补齐 `.lark-doc` 作用域，避免桌面规则优先级更高导致恢复按钮越界；增加 7 项样式回归断言。浏览器宿主和 mobile/toolbar 脚本适配原生架构，新增 `scripts/verify-browser-notify-mobile.js`。
+- 当前工具栏规则：显式布尔 `layout.toolbarVisible` 优先，否则跟随 `toolbarFixed`；两项均未指定时隐藏。原文中的 Vue 宿主路径及环境缺依赖描述均为当时的历史基线，不代表当前原生实现。
+- 最终全量单测 122 文件、2703 项通过、0 失败；架构、46 块契约、lint 通过。全量构建 27/27 就绪，五类体积预算通过；Element UMD 为 473106/475000 B gzip。
+- Chromium：mobile 12/12、toolbar 53/53、通知/窄屏专项 36/36 通过，源码与产物匹配。专项覆盖 320/375/420 竖屏、667×375 横屏和 1440×900 桌面；通知四边、头部按钮命中、Esc/外部点击关闭，以及 375px 工具栏显式展开、更多工具滚动可达。通知为本地空态夹具，不证明真实通知送达。
+- 性能真实采集于 `2026-11-05T21:49:00.511Z`（北京时间 11 月 6 日），seed=42、2000 块、30 次击键；首屏 392.9ms、P95/P99 270.1/279.4ms、装饰增量 2ms、60.3FPS、序列化代理 3.6ms、heap 15.8MiB。20 次装饰增量、0 次全量回退；相对 10 月 30 日基线的原 20% 门禁全部通过，未更新基线。机器负载 4.55/8 合规，探针报告已有 8 个 headless 进程，未擅自清理。
+- Safari 后续最小探针：`/status` 返回 `ready: true`，但创建会话 15 秒超时、无响应数据；已停止本次驱动。没有将 ready、Chromium 模拟或历史 Safari 观察计为当前 Safari 通过。T012/T015/T018 仍为 PARTIAL；真机、真实跨账号刷新回读和真实通知送达未验收。
+- 可复跑入口：`node scripts/verify-host.mjs --current`（需配置实际 demo 宿主及其依赖）、`node scripts/verify-browser-mobile.js <BASE_URL>`、`node scripts/verify-browser-toolbar.js <BASE_URL>`、`node scripts/verify-browser-notify-mobile.js <BASE_URL>`；性能为 `node scripts/perf/measure.mjs && node scripts/perf/report.mjs`。不要以历史日志替代当前源码产物匹配检查。
+
 ## Continuation audit — 2026-11-02
 
 - The requested continuation reused the existing clean parity worktree at HEAD `387430f`; no source-document or non-disposable Feishu document was opened for mutation.

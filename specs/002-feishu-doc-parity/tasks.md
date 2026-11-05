@@ -11,6 +11,18 @@ description: "Sequential implementation tasks for Feishu Docs document parity"
 
 **Execution rule**: complete tasks in numeric order. A task is complete only when its focused verification passes and the parity evidence/status is updated. Parallel markers identify read-only or independent work only; the primary implementation order remains sequential.
 
+## 当前交付检查点 — 2026-11-06
+
+以下为 master 0.14.5 合并和移动端修复后的最新结果；下方任务原有路径及数值保留为历史记录，不应将旧 Vue 文件路径或旧轮次的 final 当作当前验收。
+
+- 代码已推送 dev：合并 `6117851`，窄屏版本面板修复及验收脚本适配 `55a3ca8`；Rollup/原生 DOM 为主，未放宽预算。
+- T004：默认不显示工具栏，显式 `toolbarVisible` 优先、否则兼容 `toolbarFixed`；375px 显式展开、更多菜单完整性及滚动可达通过。
+- T017/T022：版本面板窄屏 CSS 优先级已修复并增加 7 项回归断言；Chromium 手机/平板 12/12、工具栏 53/53、通知窄屏专项 36/36 通过，源码产物匹配通过。模拟不代表真机或实际账号。
+- T025：seed42/2000 块/30 次击键，首屏392.9ms、P95/P99 270.1/279.4ms、装饰2ms、60.3FPS、序列化代理3.6ms、heap15.8MiB；20增量/0全量回退。相对10月30日基线，原20%门禁全通过，未改基线；采样环境存在其他headless进程，细节见 research。
+- T026：最终全量122文件2703单测通过；架构、46块契约、lint通过；27/27产物就绪及五类体积预算通过，Element 473106/475000 B gzip。没有声称本轮重新执行全部历史浏览器矩阵或协同集成测试。
+- T027：最新证据见 `research.md` 的2026-11-06记录及 `docs/guide/performance.md`。
+- T012/T015/T018 **保持 PARTIAL**：Safari最小会话创建15秒超时（驱动ready不等于通过）；移动真机、真实跨账号刷新回读及真实通知送达未验收。
+
 ## Phase 1: Setup and baseline
 
 - [X] T001 Install the locked dependencies in the isolated worktree with `npm ci`; run `npm run check:quick`, focused unit suites for `block-api`, `comments-core`, `versioning-core`, and `interaction-mode`; record the first failure and environment versions in `specs/002-feishu-doc-parity/research.md`.
