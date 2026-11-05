@@ -1,16 +1,18 @@
-# lark-doc 本地开发
+# lark-doc 开发入口
 
-第一次运行项目，请按 [本地开发与验证](./docs/guide/development.md) 操作。
-它包含安装、库构建、在线 demo 本地预览、测试和发布的完整顺序。
+**只想在应用里使用编辑器**：打开[统一示例中心](https://cuijianjun.github.io/LarkDoc/examples/)，选择一个环境。安装、引入、配置和可运行代码都在对应页面。
 
-日常修改时按 [开发导航](./dev/00-INDEX.md) 找对应规则，只读相关章节。
-面向应用开发者的安装与框架示例见 [各环境接入](./docs/guide/environments.md)，
-服务器上传与回调见 [上传器](./docs/blocks/uploader.md)。
+**准备修改本仓库源码**：按[本地开发与验证](./docs/guide/development.md)依次完成安装、库构建、六环境预览和检查。完整操作集中在这一页。
 
-- 库构建使用 Rollup，包中不携带 Vue 或 Webpack；应用保持原有工具链。
-- Node 14.21.3 验证兼容构建；完整测试用 Node 22.12+ 或 Node 24。
-- 按改动范围运行 [检查命令](./dev/01-环境与校验链.md)，发布流程见 [发布](./dev/07-发布.md)。
-- 数据结构与块定义以 `src/core/blocks/` 和 `src/registry/blocks.js` 为准。
-  依赖方向为 `components/ → registry/ → core/`，不要反向依赖。
+| 目录 | 内容 |
+| --- | --- |
+| `src/` | 编辑器、工作台、上传器和框架适配器 |
+| `docs/examples/` | 六个环境的说明页和真实最小应用源码 |
+| `docs/` | 使用手册与文档站 |
+| `dev/` | 修改各模块时需要遵守的开发约束 |
+| `test/`、`scripts/` | 测试、构建与发布工具 |
 
-当前版本以 `package.json` 为准。在线 demo 的依赖由部署流程从同一提交构建，不手工提交 vendor 生成文件。
+库兼容构建使用 Node 14.21.3；完整测试和 Vite 示例使用 Node 22.13.0+；文档站独立使用 Node 20。
+应用继续使用自己的工具链。具体命令与顺序见上面的开发页，不要直接用 Node 14 跑 Vitest 或 Vite 7。
+
+日常按[开发导航](./dev/00-INDEX.md)选择相关章节。发布规则见[发布说明](./dev/07-发布.md)，当前版本以 `package.json` 为准。

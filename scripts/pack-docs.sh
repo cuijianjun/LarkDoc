@@ -60,6 +60,10 @@ if ! ( cd "$ROOT" && node scripts/demo-sync-vendor.mjs --check ); then
   exit 1
 fi
 
+if ! ( cd "$ROOT" && node scripts/demo-build-examples.mjs --check ); then
+  echo "✗ 请先按 docs/guide/development.md 构建六个环境的示例，再打文档包。" >&2
+  exit 1
+fi
 
 # ---- 装依赖 ----
 if [ "$SKIP_INSTALL" -eq 0 ]; then

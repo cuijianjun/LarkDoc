@@ -7,7 +7,12 @@
   "scripts": {
     "docs:dev": "vitepress dev .",
     "docs:build": "vitepress build .",
-    "docs:preview": "vitepress preview ."
+    "docs:preview": "vitepress preview .",
+    "examples:install": "node ../scripts/demo-build-examples.mjs --install",
+    "examples:webpack": "node ../scripts/demo-build-examples.mjs --webpack",
+    "examples:vite": "node ../scripts/demo-build-examples.mjs --vite",
+    "examples:check": "node ../scripts/demo-build-examples.mjs --check",
+    "predocs:build": "node ../scripts/demo-sync-vendor.mjs --check && node ../scripts/demo-build-examples.mjs --check"
   },
   "devDependencies": {
     "vitepress": "^1.6.3"

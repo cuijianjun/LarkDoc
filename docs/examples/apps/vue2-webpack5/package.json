@@ -1,0 +1,32 @@
+{
+  "name": "lark-doc-example-vue2-webpack5",
+  "private": true,
+  "packageManager": "npm@8.19.4",
+  "engines": {
+    "node": ">=14.21.3",
+    "npm": ">=8.19.4"
+  },
+  "scripts": {
+    "predev": "npm run build",
+    "dev": "http-server . -p 4175 -c-1",
+    "build": "webpack --config webpack.config.cjs"
+  },
+  "dependencies": {
+    "lark-doc": "0.14.4",
+    "vue": "2.7.16",
+    "buffer": "5.7.1"
+  },
+  "devDependencies": {
+    "css-loader": "6.11.0",
+    "http-server": "14.1.1",
+    "style-loader": "3.3.4",
+    "vue-loader": "15.11.1",
+    "vue-template-compiler": "2.7.16",
+    "webpack": "5.109.2",
+    "webpack-cli": "4.10.0"
+  },
+  "overrides": {
+    "schema-utils@^4": "4.3.3",
+    "minimizer-webpack-plugin": "5.6.1"
+  }
+}

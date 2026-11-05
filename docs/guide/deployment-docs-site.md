@@ -11,18 +11,18 @@
 | 环节 | 取值 |
 | --- | --- |
 | 触发 | push 到 `master` 且文档、库源码、构建脚本或依赖变化；也可手动 `workflow_dispatch` |
-| Node | 库依赖安装 22，兼容构建 14.21.3，文档 20 |
+| Node | 安装与 Vite 示例 22，库与 Webpack 示例 14.21.3，文档 20 |
 | 依赖缓存 | 根及 `docs/package-lock.json` |
 | 工作目录 | 根目录构建编辑器，再进入 `docs` |
 | 安装 | `npm ci` |
-| 构建 | 根 `build:all` → `demo-sync-vendor.mjs` → `--check` → docs `docs:build` |
+| 构建 | 库构建与 vendor 同步 → Node14 Webpack 示例 → Node22 Vite/静态示例 → 全部资源检查 → Node20 文档构建 |
 | 产物 | `docs/.vitepress/dist` |
 | 发布 | `actions/upload-pages-artifact@v3` + `actions/deploy-pages@v4` |
 | 访问 | `https://<user>.github.io/LarkDoc/` |
 
 关键点：文档站是 `docs/` 下的**独立子包**（`name: lark-docs`、`private: true`、`vitepress ^1.6.3`），有独立的 `package.json` 与 `package-lock.json`。根 `package.json` 里没有任何 docs 脚本，别在根目录敲 `npm run docs:build`。
 
-在线 demo 的 vendor 资源由当前提交构建，不提交旧资源。首次本地构建、内网出包前，按 [本地开发与验证](./development) 先完成库构建与 `node scripts/demo-sync-vendor.mjs`、`--check`。随后再执行本文文档构建与静态托管步骤。
+在线 demo 的 vendor 资源由当前提交构建，不提交旧资源。首次本地构建、内网出包前，按 [本地开发与验证](./development) 先完成库构建与 `node scripts/demo-sync-vendor.mjs`、六环境构建和 `node scripts/demo-build-examples.mjs --check`。随后再执行本文文档构建与静态托管步骤。
 
 ## 二、前提改动：base 可注入（已完成，你只需知道怎么用）
 
@@ -42,9 +42,9 @@ DOCS_BASE=/lark-doc/ npm run docs:build # 内网子路径
 | | 路线 A · 构建机出静态包 | 路线 B · 内网自建 | 路线 C · 源码整体搬迁 |
 | --- | --- | --- | --- |
 | 内网需要什么 | 只要 nginx | Node ≥18 + npm 内网源 | 同 B，另加 git |
-| 搬进去的体积 | 以本次实际包为准（`site.tar.gz`） | 源码 19 MB + `node_modules` 100 MB | 再加 `.git` 21 MB |
+| 搬进去的体积 | 以本次实际包为准（`site.tar.gz`） | 完整仓库 + 构建依赖（大小以实际为准） | 同 B，另保留 Git 历史 |
 | 内网改内容 | 改不了，要回构建机重建 | 可以，改完自己 build | 可以 |
-| 首次准备 | 一条命令 | 配 npm 源 + 装 77 个包 | 同 B |
+| 首次准备 | 一条命令 | 配置 npm 镜像并按开发指南安装 | 同 B |
 | 适用 | 内网只读文档，内容由研发维护 | 内网要能独立出包 | 内网要能提 PR / 看历史 |
 
 **推荐路线 A。** 文档站的读者在内网，维护者在外网研发机，出包这件事天然应该在能上外网的那台机器做。内网只承担「解压 + nginx」，运维成本最低，也不会因为内网 npm 源不同步而构建失败。
@@ -57,7 +57,7 @@ DOCS_BASE=/lark-doc/ npm run docs:build # 内网子路径
 
 ```bash
 cd apps/lark-doc
-# 先按本地开发指南完成库构建、demo-sync-vendor 校验
+# 先按本地开发指南构建库、同步 vendor，并构建/检查六环境示例
 
 # 根路径部署（内网独立域名，如 docs.intra.example.com/）
 bash scripts/pack-docs.sh
@@ -81,20 +81,14 @@ bash scripts/pack-docs.sh --base /lark-doc/ --out /tmp/docs-out
 | `INSTALL-内网.md` | 内网侧操作手册（含真实文件名，不用现场 `ls`） |
 | `sha256.txt` | 校验值 |
 
-实测规模：46 个页面（含 `404.html`）/ 159 个文件 / 解压后 4.5 MB / 压缩后 1.3 MB。
+页面数量和体积随功能及示例变化，以脚本本次输出为准。
 
-### 4.2 Node 版本：必须 ≥18
+### 4.2 构建使用的 Node 版本
 
-这是最容易卡半天的一处。
-
-仓库根 `.nvmrc` 锁的是 `14.21.3`——那是给 lark-doc **包**构建用的。文档站是 VitePress 1.6，在 Node 14 下直接失败，而报错长得完全不像版本问题：
-
-```
-(node:50741) UnhandledPromiseRejectionWarning: SyntaxError: Unexpected token '??='
-    at Loader.moduleStrategy (internal/modules/esm/translators.js:149:18)
-```
-
-实测 Node **18.20.6**（34.7s）与 **22.22.2**（14~26s）都成功。`pack-docs.sh` 已内置闸门，Node < 18 会直接拦下并告诉你切哪个版本，不会让你对着 `??=` 猜。
+六个预览准备好之后，文档站与 `pack-docs.sh` 推荐使用 Node 20。
+库/旧 Webpack 的 Node14 和现代 Vite 的 Node22 步骤见[本地开发与验证](./development)。
+不要直接用仓库 `.nvmrc` 的 Node14 构建 VitePress。
+内网服务器只是托管已构建的静态文件，不需要安装 Node。
 
 ### 4.3 搬进内网
 
@@ -249,22 +243,19 @@ HTML 是 `no-cache`、assets 带 content hash，用户正常刷新就能拿到�
 
 要「秒回滚」的话，解压到带版本号的新目录（`/srv/www/releases/2026-10-27/`），再改 nginx `root` 指向 + `reload`，老目录留几天。
 
-## 五、路线 B / C 的差异点
+## 五、内网重新构建
 
-内网要自己出包时才走这条，除了 Node ≥18 之外，还需要：
-
-- **npm 内网源**：`docs/node_modules` 有 77 个顶层包 / 100 MB，离线装不了。要么配 Nexus / Verdaccio 代理，要么在有外网的机器上 `npm ci` 后把 `docs/node_modules` 一起搬进去。
-- **已有同步后的 demo 资源时，文档构建使用 `docs/` 里的这些**：`blocks/`、`guide/`、`index.md`、`public/`、`package.json`、`package-lock.json`、`.vitepress/config.mts`。`docs/superpowers/`（内部实施计划与设计规格）已在 `config.mts` 的 `srcExclude` 里排除，不会被构建成页面，也不必搬。
-- **可以不带 `.git`**：实测把上述文件拷到一个没有 `.git` 的目录，`npx vitepress build` 依然成功（26.5s，exit 0）。唯一降级是页脚「最后更新」日期不渲染——`lastUpdated` 从 git 历史取，没有就空着。可接受。
-- 路线 C 额外带上 `.git`（21 MB），换来内网能看历史、能提 PR。
-
-内网构建命令与路线 A 一致，只是手动：
+内网维护者需要重新编译页面时，保留完整仓库、四个最小应用的锁文件，并配置可提供全部依赖的 npm 镜像。
+按[本地开发与验证](./development)完成依赖安装、库和六环境预览构建后，再运行：
 
 ```bash
-cd docs
-npm ci
-DOCS_BASE=/lark-doc/ npx vitepress build . --outDir ./dist
+# 仓库根目录，Node20
+bash scripts/pack-docs.sh --base /lark-doc/
 ```
+
+不要只复制 Markdown 后直接调用 VitePress；页面会包含最小应用源码，还需要已构建的预览、字体和功能脚本。
+出包脚本会检查这些资源的一致性，避免站点打开后示例窗口为空。
+只读部署直接搬运路线 A 的 `site.tar.gz` 即可。
 
 ## 六、为什么这套站点能完全离线
 

@@ -4,59 +4,11 @@
 
 ## 快速开始
 
-### 方式一：`<script>` 直接引入（零构建）
+从[Web Component 完整示例](/examples/web-component)开始：同一页包含安装、完整 HTML、上传配置、事件读取、生命周期清理和运行预览。本页作为属性、事件与方法参考。
 
-```html
-<!-- 产物使用原生 DOM、样式随 JS 注入，无需再引 css -->
-<script src="node_modules/lark-doc/dist/lark-doc-element.umd.min.js"></script>
+无打包器时，完整托管 `dist/`，通过独立 script 加载 `lark-doc-element.umd.min.js`。现代 Vite / Webpack5 可用 `import 'lark-doc/element'`，它选择 Element ESM、注册标签并注入样式，重功能使用原生动态 import。
 
-<lark-doc title="会议纪要" theme="light">
-  <h1>标签内的 HTML 会成为初始内容</h1>
-  <p>长正文直接写在这里，不用往属性里塞转义字符串。</p>
-</lark-doc>
-
-<script>
-  const el = document.querySelector('lark-doc')
-  el.addEventListener('lark-doc-change', (event) => {
-    console.log(event.detail.payload.html)
-  })
-  el.getJSON() // 与命令式门面同名的方法都代理到了元素上
-</script>
-```
-
-### 方式二：npm + 打包器（Vue 2 / Vue 3 / React 通用）
-
-```js
-import 'lark-doc/element' // 自动注册 <lark-doc>
-// import 命中 Element ESM：样式随 JS 注入，重功能使用原生动态 import。
-```
-
-> **webpack4 宿主**：推荐根命令式 `LarkDoc` API，样式用 `lark-doc/dist/lark-doc.css`。webpack4 不读 exports，深子路径仍需实际文件；但新 Element ESM 用 import.meta.url 定位字体，只面向现代 Vite/webpack5。旧宿主标签方案应独立 script 加载 UMD，不把新 Element ESM 或 UMD 再交给 webpack4 打包。根 module ESM 不要求 alias，真实消费结果须以同版测试包夹具核验。
-
-```vue
-<template>
-  <lark-doc :title="docTitle" @lark-doc-change="onChange" ref="editor" />
-</template>
-<script>
-export default { // Vue 2 与 Vue 3 写法完全一致（事件用 addEventListener/@lark-doc-* 均可）
-  methods: { onChange(event) { this.$emit('save', event.detail.payload.json) } },
-}
-</script>
-```
-
-```jsx
-// React
-function Editor() {
-  const ref = useRef(null)
-  useEffect(() => {
-    const el = ref.current
-    const onChange = (e) => console.log(e.detail.payload.text)
-    el.addEventListener('lark-doc-change', onChange)
-    return () => el.removeEventListener('lark-doc-change', onChange)
-  }, [])
-  return <lark-doc ref={ref} theme="light" />
-}
-```
+Webpack4 推荐根命令式 `LarkDoc` API，样式使用 `lark-doc/dist/lark-doc.css`；标签方案则独立加载 UMD。新的 Element ESM 使用 `import.meta.url`，不交给 Webpack4 打包，也不要把静态 UMD 再打进应用 bundle。
 
 ## HTML 属性
 
@@ -166,25 +118,4 @@ npm run build:element
 - require/CDN 选择 `lark-doc-element.umd.min.js`，独立 script 直挂；配套 feature UMD 按主脚本同目录加载。不是 bundler 的默认 Element 格式。
 - 两种格式均无 Vue / Webpack runtime。静态部署保留完整 dist、features、CSS 和 fonts，不能只复制主文件。
 - 字体与 feature 均随包发布；Element ESM 通过 import.meta.url 定位字体，UMD 使用自身脚本目录。格式、语法降级与 runtime polyfill 的区别见[产物说明](/guide/build-artifacts)。
-
-## 亲手跑一遍
-
-**最快验证（1 分钟，不用 clone 仓库）**。在任意目录建一个 `demo.html`：
-
-```html
-<script src="./node_modules/lark-doc/dist/lark-doc-element.umd.min.js"></script>
-<lark-doc title="演示" style="display:block;height:420px"></lark-doc>
-```
-
-然后在该目录起个静态服务（`python3 -m http.server 8765`）打开它。看到带工具栏的编辑器就算成功。
-
-> 别只拷那一个 `.js`——`dist/` 里的按需区块（`math` / `office` / `markdown` / `highlight` / `mermaid`）是靠主文件自身 URL 推导地址的，整个目录一起放才行。
-
-**完整示例**：`examples/element-demo.html` 覆盖属性配置、能力注入、事件日志、卸载重建，是最接近真实接入的一份：
-
-```bash
-cd apps/lark-doc && npm run build:element   # 先从源码打包出 dist/
-python3 -m http.server 8765
-# 打开 http://localhost:8765/examples/element-demo.html
-```
 

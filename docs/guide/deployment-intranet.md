@@ -2,7 +2,7 @@
 
 本文面向「把 lark-doc 部署到一台无外网出口的内网服务器」这个场景，覆盖从出包、分发、静态托管、nginx 反向代理、协同服务转发，到校验和回滚的完整链路。
 
-> 应用接入按当前版本的[安装说明](/guide/install)和[多环境示例](/guide/environments)执行。下文 nginx、旧 npm6 出包与体积记录保留为历史部署参考，不代表本次发布重新验证了对应服务器与离线 helper；部署时仍需按目标环境验收。示例域名、路径和版本号请替换成实际值。
+> 应用接入按当前版本的[安装说明](/guide/install)和[环境示例中心](/examples/)执行。下文 nginx、旧 npm6 出包与体积记录保留为历史部署参考，不代表本次发布重新验证了对应服务器与离线 helper；部署时仍需按目标环境验收。示例域名、路径和版本号请替换成实际值。
 >
 > 分工：**本文讲服务器侧**（出包 → 分发 → 托管 → nginx → 校验 → 回滚）；**宿主工程怎么改代码才能在内网编译通过**见[内网迁移实战（Vue2/3）](/guide/intranet-migration)。
 
@@ -100,14 +100,14 @@ bash scripts/pack-intranet.sh --skip-build      # dist 已是最新，跳过约 
 
 ### 2.3 手工构建（需要单独产物时）
 
-`npm run build` **只出 CJS 一份**，其余要单独跑：
+`npm run build` 生成根入口的 ESM 与 CJS，其余入口按需要单独构建：
 
 ```bash
-npm run build          # → dist/lark-doc.common.js + CJS 按需区块与 CSS
+npm run build          # → dist/lark-doc.esm.js + dist/lark-doc.common.js，以及配套区块与 CSS
 npm run build:esm      # → dist/lark-doc.esm.js + 初始及按需区块
 npm run build:element  # → dist/lark-doc-element.umd.min.js + 按需区块
-npm run build:legacy   # → 隔离命名的 legacy CJS / ESM 及其区块
-npm run build:collab   # → dist/lark-doc-collab.esm.js
+npm run build:vue2     # → dist/lark-doc-vue2.common.js + dist/lark-doc-vue2.esm.js，以及配套区块
+npm run build:collab   # → dist/lark-doc-collab.esm.js + dist/lark-doc-collab.common.js
 ```
 
 filesystem cache 按 Node 主版本、target 与构建变体隔离；构建耗时以实际输出为准。
@@ -546,7 +546,7 @@ VUE_APP_DOCUMENT_NAME=demo-document
 
 静态 UMD 则完整复制 dist，通过独立 `<script src="…/lark-doc-element.umd.min.js">` 引用。主脚本按自身 URL 找同目录特性资源。不要把静态 UMD 再打入应用 bundle。
 
-资源 404 时先确认采用哪条路线：ESM 检查宿主构建输出及 base/publicPath；静态 UMD 检查主脚本目录、特性 JS、fonts 是否完整。可复制例子见[Web Component](/guide/web-component)。
+资源 404 时先确认采用哪条路线：ESM 检查宿主构建输出及 base/publicPath；静态 UMD 检查主脚本目录、特性 JS、fonts 是否完整。可复制例子见[Web Component 完整示例](/examples/web-component)。
 
 ### 5.4 webpack 4 宿主
 

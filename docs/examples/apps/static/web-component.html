@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Web Component：&lt;lark-doc&gt;</title>
+  <style>body { margin: 0; font: 14px system-ui, sans-serif; color: #243042; background: #f6f8fc; } main { padding: 16px; } button { padding: 7px 12px; cursor: pointer; } pre { max-height: 220px; overflow: auto; white-space: pre-wrap; } .status { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }</style>
+</head>
+<body>
+  <main>
+    <div class="status">
+      <strong>Web Component：&lt;lark-doc&gt;</strong>
+      <span id="updates">正文更新：0</span>
+      <span id="upload" role="status">图片：等待选图（本地 base64）</span>
+      <button id="read" disabled>读取 JSON</button>
+    </div>
+    <div id="host"></div>
+    <pre id="output" hidden></pre>
+  </main>
+  <!-- vendor 整体来自同一版本 dist，保留按需脚本和 fonts/ 的相对位置。 -->
+  <script src="./vendor/lark-doc-element.umd.min.js"></script>
+  <script>
+    const upload = document.getElementById('upload')
+    const read = document.getElementById('read')
+    const output = document.getElementById('output')
+    let updates = 0
+    const uploader = {
+      onStart: event => { upload.textContent = `图片：上传中（${event.mode}）` },
+      onSuccess: () => { upload.textContent = '图片：取得图片结果' },
+      onError: event => { upload.textContent = `图片：${event.error.message}` },
+      onSettled: event => { upload.textContent = `图片：${event.status}（${event.mode}）` },
+    }
+    const element = document.createElement('lark-doc')
+    // 对象和函数通过 property 设置；在连接 DOM 前完成配置及事件绑定。
+    element.options = {
+      title: 'Web Component',
+      content: '<p>开始编辑，也可以选图、粘贴或拖入图片。</p>',
+      storage: 'none',
+      uploader,
+    }
+    element.addEventListener('lark-doc-ready', () => { read.disabled = false })
+    element.addEventListener('lark-doc-update', event => {
+      document.getElementById('updates').textContent = `正文更新：${++updates}`
+      // 正文数据位于 event.detail.payload.json。
+    })
+    document.getElementById('host').appendChild(element)
+    read.onclick = () => {
+      output.hidden = false
+      output.textContent = JSON.stringify({ title: element.getTitle(), content: element.getJSON() }, null, 2)
+    }
+    // 移出 DOM 后，元素的 disconnectedCallback 自动释放编辑器。
+    window.addEventListener('pagehide', event => { if (!event.persisted) element.remove() })
+  </script>
+</body>
+</html>

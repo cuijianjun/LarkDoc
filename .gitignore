@@ -37,3 +37,6 @@ perf/.perf-result.json
 
 # Online demo assets are built from the current commit by deploy-docs.yml.
 /docs/public/demo/vendor/
+
+# Real framework previews are rebuilt from docs/examples/apps, never committed.
+/docs/public/examples-runtime/
