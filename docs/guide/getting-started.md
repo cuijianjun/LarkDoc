@@ -6,4 +6,4 @@
 
 已有 Vue/React 项目可以保留原来的工具链，按页面中的生命周期和初始化方式接入。想先体验编辑器，可直接运行页面内预览。
 
-跑通后再按需要查询[上传器参考](/blocks/uploader)、[功能配置](/guide/configuration)和[实例事件](/guide/instance)。准备修改库源码时阅读[本地开发与验证](/guide/development)。
+跑通后按需要查询[常用配置](/guide/configuration)、[实例与事件](/guide/instance)和[图片上传](/blocks/uploader)。源码维护资料从仓库的 [DEVELOPMENT.md](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md) 进入。

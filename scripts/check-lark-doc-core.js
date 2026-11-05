@@ -256,6 +256,8 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
     menuKind: '',
     menuTrigger: null,
     menuAnchor: null,
+    hoverCloseTimer: setTimeout(() => {}, 1000),
+    cancelPopupHoverClose: component.methods.cancelPopupHoverClose,
     $nextTick(callback) { callback() },
     positionCommandMenu() { repositionCalls += 1 },
     closeBlockMenu() { blockMenuCloses += 1 },
@@ -263,6 +265,7 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   }
   const event = { type: 'mouseenter', currentTarget: firstPlus }
   component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, event)
+  assert.strictEqual(emptyParagraphPlus.hoverCloseTimer, null, 'entering the empty plus cancels a pending hover close')
   assert.strictEqual(insertCalls, 1)
   assert.deepStrictEqual(emptyParagraphPlus.lastInsert, { kind: 'plus', event }, 'the empty paragraph plus opens the insertion command menu')
   assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 13, to: 13 }, 'insert commands target the empty paragraph even when the editor selection was elsewhere')
@@ -270,7 +273,9 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   emptyParagraphPlus.menuOpen = true
   emptyParagraphPlus.menuKind = 'plus'
   emptyParagraphPlus.handleRange = { from: 20, to: 22 }
+  emptyParagraphPlus.hoverCloseTimer = setTimeout(() => {}, 1000)
   component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, { type: 'click', currentTarget: secondPlus })
+  assert.strictEqual(emptyParagraphPlus.hoverCloseTimer, null, 'reusing the insertion menu also cancels a pending hover close')
   assert.strictEqual(insertCalls, 1, 'the click following hover must not close the insertion menu')
   assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 21, to: 21 }, 'a repeated plus event keeps the current empty paragraph as the insertion target')
   assert.strictEqual(emptyParagraphPlus.menuTrigger, secondPlus, 'moving to another empty paragraph retargets the existing insert menu')

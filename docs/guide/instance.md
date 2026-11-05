@@ -28,7 +28,7 @@ doc.setReadonly(true)
 doc.save()               // 触发一次持久化
 doc.getEditor()          // Tiptap Editor 实例
 doc.getWorkspace()       // 无框架工作台控制器
-doc.getConfig()          // 归一化后的配置
+doc.getConfig()          // 当前归一化后的配置
 
 // 事件
 doc.on('update', (payload) => {})
@@ -58,7 +58,7 @@ doc.destroy()
 | `save()` | `Promise` | 触发一次保存流程。 |
 | `getEditor()` | `Editor` | 底层 Tiptap 实例，用于高级扩展。 |
 | `getWorkspace()` | `WorkspaceController` | 无框架工作台控制器（含模板、快照、AI 状态）。 |
-| `getConfig()` | `object` | 归一化后的完整配置。 |
+| `getConfig()` | `object` | 当前归一化后的完整配置，包含工作台配置热更新。 |
 | `on(event, fn)` / `off(event, fn)` | `void` | 事件订阅。 |
 | `destroy()` | `void` | 销毁实例并移除 DOM。 |
 

@@ -5,6 +5,9 @@
  */
 import { previewToHtml } from '../../components/lark-doc/ai'
 import { canEditContent, deriveInteractionMode } from '../blocks/interaction-mode'
+import {
+  createLarkDocConfig, isImportEnabled, isExportEnabled, resolveImportAccept, resolveExportOptions,
+} from '../../components/lark-doc/larkDocConfig'
 
 export const WORKSPACE_FEATURES = Object.freeze([
   'persistence',
@@ -52,6 +55,7 @@ export function deriveNotice(state = {}) {
 
 export function createWorkspaceViewState(state = {}, props = {}) {
   const featureFlags = deriveWorkspaceFeatureFlags(state, props)
+  const config = createLarkDocConfig(sourceConfig(state, props))
   return {
     notice: deriveNotice(state),
     aiPreviewHtml: deriveAIPreviewHtml(state),
@@ -59,6 +63,11 @@ export function createWorkspaceViewState(state = {}, props = {}) {
     featureFlags,
     persistenceEnabled: featureFlags.persistence,
     importExportEnabled: featureFlags.importExport,
+    importEnabled: isImportEnabled(config),
+    exportEnabled: isExportEnabled(config),
+    importAccept: resolveImportAccept(config),
+    importLabel: config.importExport.importLabel,
+    exportOptions: resolveExportOptions(config),
     templatesEnabled: featureFlags.templates,
     historyEnabled: featureFlags.history,
     aiEnabled: featureFlags.ai,

@@ -6,7 +6,8 @@ import { isAbortError, normalizeUploader } from '../core/media/upload'
 import { normalizeVditorHtml } from '../legacy'
 import { createEditorController } from '../editor/EditorController'
 import { createNativeEditorHost } from '../editor/nativeEditorHost'
-import { createLarkDocConfig } from '../components/lark-doc/larkDocConfig'
+import { createLarkDocConfig, resolveMediaOptions } from '../components/lark-doc/larkDocConfig'
+import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createWorkspaceState, createWorkspaceController } from '../workspace/WorkspaceController'
 import { createWorkspace } from '../ui/workspace'
 import { createWorkspaceShell } from '../ui/workspaceShell'
@@ -189,7 +190,6 @@ export function createDomRenderer() {
           ...projected,
           maxLength: state.editorConfig.limits.maxLength,
           maxLengthOptions: state.maxLengthOptions,
-          exportOptions: state.exportOptions,
           saveStatus: state.saveStatus,
           storageError: state.storageError,
           readonly: documentHost.effectiveReadonly,
@@ -253,8 +253,9 @@ export function createDomRenderer() {
         clearTimeout(state.pendingChangeTimer)
         const publish = () => {
           if (destroyed || !editorController) return
-          const payload = { html: editorController.getHTML(), json: editorController.getJSON(), text: editorController.getText() }
-          state.html = payload.html
+          const html = editorController.getHTML()
+          const payload = { html: applyMediaHtmlMode(html, resolveMediaOptions(state.editorConfig)), json: editorController.getJSON(), text: editorController.getText() }
+          state.html = html
           workspaceController.queueSave()
           emit('update', payload)
           emit('change', payload)

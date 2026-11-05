@@ -108,6 +108,7 @@ export class LarkDoc {
         config: this.config,
         initialTitle: documentInput.title != null ? documentInput.title : String(this.options.title || ''),
         initialContent: documentInput.content,
+        _preserveRuntimeState: source._preserveRuntimeState,
         contentFormat: this.options.contentFormat,
         readonly: Boolean(source.readonly),
         persistence: this._resolvePersistence(source),
@@ -173,6 +174,7 @@ export class LarkDoc {
     if (source.importExport && typeof source.importExport === 'object') raw.importExport = { ...(raw.importExport || {}), ...source.importExport }
     if (source.media && typeof source.media === 'object') raw.media = { ...(raw.media || {}), ...source.media }
     if (source.modes && typeof source.modes === 'object') raw.modes = { ...(raw.modes || {}), ...source.modes }
+    if (source.help && typeof source.help === 'object') raw.help = { ...(raw.help || {}), ...source.help }
 
     // 工具栏：toolbarKeys / toolbarExcludes 为权威；未传时保留 config.toolbar。
     if (source.toolbarKeys || source.toolbarExcludes) {
@@ -364,7 +366,7 @@ export class LarkDoc {
     return workspace ? workspace.getEditor() : null
   }
 
-  getConfig() { return this.config }
+  getConfig() { return this.getWorkspace()?.state?.editorConfig || this.config }
 
   /** 返回会话（协同 / 权限 / 版本 / 评论 Provider 的宿主）；未配置时为内部默认会话或 null。 */
   getSession() {
@@ -402,7 +404,7 @@ export class LarkDoc {
   getHTML(options = {}) {
     const workspace = this.getWorkspace()
     if (!workspace) return ''
-    const media = (options && options.media) || resolveMediaOptions(this.config)
+    const media = (options && options.media) || resolveMediaOptions(this.getConfig())
     return applyMediaHtmlMode(workspace.getHTML(), media)
   }
 

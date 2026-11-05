@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createLarkDocConfig } from '../../src/components/lark-doc/larkDocConfig'
 import {
   createWorkspaceViewState,
   deriveAIPreviewHtml,
@@ -64,5 +65,36 @@ describe('workspace view state 纯函数', () => {
     const before = JSON.parse(JSON.stringify(state))
     createWorkspaceViewState(state)
     expect(state).toEqual(before)
+  })
+
+  it('默认投影提供可见的独立导入导出入口、accept与占位文案', () => {
+    const view = createWorkspaceViewState()
+    expect(view.importEnabled).toBe(true)
+    expect(view.exportEnabled).toBe(true)
+    expect(view.importAccept).toBe('.html,.htm,.json,.md,.markdown,.docx')
+    expect(view.importLabel).toBe('导入')
+    expect(view.exportOptions[0]).toEqual({ value: '', label: '导出' })
+    expect(view.exportOptions.map(item => item.value)).toEqual(['', 'html', 'json', 'md', 'txt', 'docx', 'print'])
+  })
+
+  it('从当前配置投影独立开关、格式与文案，配置变化后不保留旧菜单', () => {
+    const state = { editorConfig: createLarkDocConfig({ importExport: {
+      importEnabled: false, exportEnabled: true,
+      importLabel: '上传文档', exportLabel: '下载副本',
+      importFormats: ['json'], exportFormats: ['txt'],
+    } }) }
+    const first = createWorkspaceViewState(state)
+    expect(first).toMatchObject({ importEnabled: false, exportEnabled: true, importAccept: '.json', importLabel: '上传文档' })
+    expect(first.exportOptions[0]).toEqual({ value: '', label: '下载副本' })
+    expect(first.exportOptions.map(item => item.value)).toEqual(['', 'txt'])
+    state.editorConfig = createLarkDocConfig({ importExport: { importEnabled: true, exportEnabled: false, importFormats: ['html'], exportFormats: ['json'] } })
+    const next = createWorkspaceViewState(state)
+    expect(next).toMatchObject({ importEnabled: true, exportEnabled: false, importAccept: '.html,.htm' })
+    expect(next.exportOptions.map(item => item.value)).toEqual(['', 'json'])
+    expect(first.exportOptions.map(item => item.value)).toEqual(['', 'txt'])
+  })
+
+  it('持久化之外的导入导出总闸仍同时隐藏两个入口', () => {
+    expect(createWorkspaceViewState({ editorConfig: createLarkDocConfig({ features: { importExport: false } }) })).toMatchObject({ importEnabled: false, exportEnabled: false })
   })
 })

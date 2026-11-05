@@ -26,6 +26,7 @@ export default {
   methods: {
     openCommandMenu(kind, event) {
       if (!this.writable() || !this.featureEnabled('insert')) return
+      this.cancelPopupHoverClose()
       if (this.menuOpen && this.menuKind === kind) { this.closeCommandMenu(true); return }
       this.rememberSelection(kind === 'plus')
       this.menuKind = kind
@@ -50,6 +51,7 @@ export default {
     },
     openEmptyBlockInsertMenu(event) {
       if (!this.writable() || !this.handleIsEmptyParagraph) return
+      this.cancelPopupHoverClose()
       this.closeBlockMenu()
       const cursor = this.handleRange.from + 1
       // Hover opens this menu before the pointer click event; keep the same
@@ -110,7 +112,13 @@ export default {
       this.menuPosition = { left, top }
       this.menuMaxHeight = Math.round(maxHeight)
     },
+    scheduleCommandMenuClose() {
+      this.schedulePopupHoverClose(() => {
+        if (this.menuOpen && this.menuKind === 'plus') this.closeCommandMenu()
+      })
+    },
     closeCommandMenu(restoreFocus = false) {
+      this.cancelPopupHoverClose()
       this.menuOpen = false
       this.menuKind = ''
       this.menuTrigger = null
@@ -148,7 +156,12 @@ export default {
       // P4-02a：日历浮层同样要接管 Esc / Enter（浮层会吃掉这两个键，别让它们穿透到正文）。
       if (typeof this.onReminderKeydown === 'function' && this.onReminderKeydown(event)) return
       if (event.isComposing || this.editor?.view.composing || !this.menuOpen) return
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) } else if (event.key === 'Enter') { event.preventDefault(); this.chooseCommand(this.filteredCommands[this.activeCommandIndex]) } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) }
+      else if (event.key === 'Enter') {
+        event.preventDefault()
+        if (typeof this._commandMenuUi?.choose === 'function') this._commandMenuUi.choose()
+        else this.chooseCommand(this.filteredCommands[this.activeCommandIndex])
+      } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
     },
     chooseCommand(item) {
       if (!item || !this.writable()) return
@@ -188,20 +201,38 @@ export default {
       this.closeCommandMenu(focusAfter)
       if (isSlashTable) this.insertTable(3, 3)
       else if (isTableSize) this.insertTable(item.tableSize.rows, item.tableSize.cols)
-      else this.executeCommand(item.id, item.templateId)
+      else this.executeCommand(item.id, item.templateId, item.diagramType)
       if (focusAfter) {
         this.focus()
         this.$nextTick(() => this.focus())
       }
     },
     /** 工具栏「图表」按钮：打开类型下拉（fixed 定位贴按钮下方）。 */
+    openDiagramMenuOnHover() {
+      if (!this.writable() || !this.featureEnabled('diagram')) return
+      this.cancelPopupHoverClose()
+      if (this.diagramMenuOpen) return
+      this._diagramHoverOpened = true
+      this.diagramMenuOpen = true
+      this.diagramMenuStyle = {}
+      this.$nextTick(() => this.positionDiagramMenu())
+    },
+    scheduleDiagramMenuClose() {
+      this.schedulePopupHoverClose(() => {
+        this._diagramHoverOpened = false
+        if (this.diagramMenuOpen) this.closeDiagramMenu()
+      })
+    },
     toggleDiagramMenu() {
       if (!this.writable() || !this.featureEnabled('diagram')) return
+      if (this._diagramHoverOpened && this.diagramMenuOpen) return
+      this._diagramHoverOpened = false
+      this.cancelPopupHoverClose()
       this.diagramMenuOpen = !this.diagramMenuOpen
       this.diagramMenuStyle = {}
       if (this.diagramMenuOpen) this.$nextTick(() => this.positionDiagramMenu())
     },
-    closeDiagramMenu() { this.diagramMenuOpen = false; this.diagramMenuStyle = {} },
+    closeDiagramMenu() { this.cancelPopupHoverClose(); this._diagramHoverOpened = false; this.diagramMenuOpen = false; this.diagramMenuStyle = {} },
     positionDiagramMenu() {
       if (!this.diagramMenuOpen) return
       const root = this.$refs.root
@@ -211,9 +242,18 @@ export default {
       const margin = 8
       const triggerRect = trigger.getBoundingClientRect()
       const menuRect = menu.getBoundingClientRect()
-      const maxHeight = Math.max(120, window.innerHeight - triggerRect.bottom - margin * 2)
+      const naturalHeight = Math.max(menu.scrollHeight, menuRect.height)
+      const viewportSpace = Math.max(120, window.innerHeight - margin * 2)
+      const desiredHeight = Math.min(naturalHeight, viewportSpace)
+      const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin)
+      const above = Math.max(0, triggerRect.top - margin)
+      const useAbove = below < desiredHeight && above > below
+      const available = useAbove ? above : below
+      const maxHeight = Math.max(120, Math.min(desiredHeight, available || viewportSpace))
+      const rawTop = useAbove ? triggerRect.top - maxHeight - 6 : triggerRect.bottom + 6
+      const top = Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, rawTop))
       const left = Math.max(margin, Math.min(window.innerWidth - menuRect.width - margin, triggerRect.left))
-      this.diagramMenuStyle = { top: `${triggerRect.bottom + 6}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      this.diagramMenuStyle = { top: `${top}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
     },
     /** 按类型插入 mermaid 图表块；插入菜单「图表」命令也走这里（默认流程图）。 */
     insertDiagramType(typeId) {
@@ -230,7 +270,7 @@ export default {
      * 还在（老文档正文照旧渲染），走 `doc.commands.setSheet/setPoll/setBitable` 的程序化
      * 调用依然要落块。别再往菜单里加回来，除非把插入链路补完。
      */
-    executeCommand(id, templateId = '') {
+    executeCommand(id, templateId = '', diagramType = '') {
       if (!this.writable()) return
       const feature = commandFeatureOf(id)
       if (!isCommandEnabled(this.larkDocConfig, id, feature)) return
@@ -243,7 +283,7 @@ export default {
       else if (id === 'divider') this.run('setHorizontalRule')
       else if (id === 'details') this.run('setDetails')
       else if (id === 'code') this.run('setCodeBlock')
-      else if (id === 'diagram') this.insertDiagramType('flowchart')
+      else if (id === 'diagram') this.insertDiagramType(diagramType || 'flowchart')
       else if (id === 'callout') {
         // P1-05：容器嵌套上限守卫（命令层守卫覆盖不到 insertContent 型入口）。
         const { from, to } = this.editor.state.selection

@@ -19,7 +19,8 @@
 - `README.md`：项目介绍与统一入口。
 - `docs/examples/`：六个环境页，必需的安装与代码集中在各自页面。
 - `docs/examples/apps/`：页面直接引用的真实最小工程及独立锁文件。
-- `docs/guide/development.md`：库开发、示例构建、验证和部署的完整操作。
+- `docs/guide/development.md`：库开发、示例构建、验证和部署的完整操作，仅在仓库维护。
+- [历史性能验收](../docs/guide/performance.md)、[文档站部署](../docs/guide/deployment-docs-site.md)：维护者参考，源文件保留更新，不发布到使用手册。
 - `docs/blocks/` 与其它 `docs/guide/`：按需查询的功能/API/部署参考。
 
 不要在 README、快速开始与接入指南中再维护不同版本的相同完整示例。

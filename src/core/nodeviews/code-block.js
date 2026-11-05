@@ -96,7 +96,11 @@ function ensureLanguage(name) {
         highlighter.registerLanguage(language, module.default || module)
         return true
       })
-    }).catch(() => false)
+    }).catch(() => false).then((loaded) => {
+      // 失败只降级本次渲染；下次正文更新仍可加载同一语言。
+      if (!loaded) delete languagePromises[language]
+      return loaded
+    })
   }
   return languagePromises[language]
 }
@@ -326,7 +330,7 @@ export function createCodeBlockNodeView(props) {
     }).catch((error) => {
       if (version !== diagramVersion || destroyed) return
       diagramState = 'error'
-      diagramError = ''
+      diagramError = error && error.message ? String(error.message) : String(error || '图表渲染失败')
       if (typeof options.onDiagramError === 'function') options.onDiagramError(error)
       syncDom()
     })

@@ -8,6 +8,7 @@ import { createDomRenderer } from '../../src/mount/domRenderer'
 import { createRenderer, setRenderer } from '../../src/mount'
 import { LarkDoc } from '../../src/LarkDoc'
 import { createUploadProvider } from '../../src/core/media/upload'
+import { diagramTypes } from '../../src/components/lark-doc/editor/constants'
 
 const ACTIONS = ['mount', 'update', 'destroy', 'getInstance', 'getRoot']
 const mounted = []
@@ -121,6 +122,31 @@ describe('真实门面图片上传', () => {
       expect(upload).toHaveBeenCalledTimes(1)
       expect(error).toHaveBeenCalledTimes(2)
       expect(doc.getJSON().content[0].type).toBe('image')
+    } finally { doc.destroy(); element.remove() }
+  })
+
+  it('成功回调抛错时应用 onCallbackError 和门面 error 均收到原异常，图片仍成功插入', async () => {
+    const failure = new Error('success-notification')
+    const onCallbackError = vi.fn()
+    const onError = vi.fn()
+    const onSettled = vi.fn()
+    const handler = vi.fn()
+    const upload = vi.fn(async () => ({ url: '/ok.png' }))
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const doc = new LarkDoc({
+      element, content: '<p></p>', onError,
+      uploader: { upload, onCallbackError, onSettled, onSuccess: () => { throw failure } },
+    })
+    doc.on('error', handler)
+    try {
+      await doc._handle.nativeHost.host.insertImageFiles([new File(['png'], 'a.png', { type: 'image/png' })])
+      expect(onCallbackError).toHaveBeenCalledExactlyOnceWith(failure)
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure)
+      expect(handler).toHaveBeenCalledExactlyOnceWith(failure)
+      expect(onSettled).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'success' }))
+      expect(upload).toHaveBeenCalledTimes(1)
+      expect(doc.getJSON().content[0]).toMatchObject({ type: 'image', attrs: { src: '/ok.png' } })
     } finally { doc.destroy(); element.remove() }
   })
 
@@ -308,6 +334,170 @@ function mountRenderer(renderer, options) {
   mounted.push({ renderer, handle, host: options.element })
   return handle
 }
+
+describe('图表菜单交互', () => {
+  function fixture(props = {}) {
+    stubRangeLayout()
+    vi.stubGlobal('mermaid', { initialize: vi.fn(), render: vi.fn(async () => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' })) })
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p></p>', ...props } })
+    return { root: renderer.getRoot(handle), host: handle.nativeHost.host, editor: handle.editor }
+  }
+
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it('工具栏图表显示文字和箭头，六种菜单项各有不同的 SVG 图标', async () => {
+    const { root } = fixture()
+    const trigger = root.querySelector('button[aria-label="图表"]')
+    expect(trigger.textContent).toContain('图表')
+    expect(trigger.querySelector('.lark-doc-caret svg')).not.toBeNull()
+    trigger.click()
+    await Promise.resolve()
+    const items = [...root.querySelectorAll('.lark-doc-diagram-menu [role="menuitem"]')]
+    expect(items.map(item => item.textContent)).toEqual(diagramTypes.map(item => item.label))
+    const icons = items.map(item => item.querySelector('.lark-doc-diagram-menu-icon svg'))
+    expect(icons.every(Boolean)).toBe(true)
+    expect(new Set(icons.map(icon => icon.outerHTML)).size).toBe(diagramTypes.length)
+  })
+
+  it('图表 hover 后点击保持打开，跨入菜单保活，离开后延迟关闭', async () => {
+    const { root, host } = fixture()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const trigger = root.querySelector('button[aria-label="图表"]')
+    trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    await Promise.resolve()
+    expect(host.diagramMenuOpen).toBe(true)
+    trigger.click()
+    expect(host.diagramMenuOpen).toBe(true)
+    const menu = root.querySelector('.lark-doc-diagram-menu')
+    trigger.dispatchEvent(new MouseEvent('mouseleave'))
+    menu.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.diagramMenuOpen).toBe(true)
+    menu.dispatchEvent(new MouseEvent('mouseleave'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.diagramMenuOpen).toBe(false)
+  })
+
+  it.each(['toolbar', 'plus', 'slash'])('%s 入口选择六种类型均插入对应 Mermaid 源码', async kind => {
+    const { root, host, editor } = fixture()
+    for (const type of diagramTypes) {
+      editor.commands.setContent('<p></p>')
+      if (kind === 'toolbar') root.querySelector('button[aria-label="图表"]').click()
+      else if (kind === 'plus') root.querySelector('button[aria-label="插入"]').click()
+      else editor.commands.insertContent('/图表')
+      await Promise.resolve()
+      if (kind !== 'toolbar') {
+        const item = root.querySelector('.lark-doc-command-menu [aria-label="图表"]')
+        expect(item).not.toBeNull()
+        item.click()
+        await Promise.resolve()
+      }
+      const menu = root.querySelector(kind === 'toolbar' ? '.lark-doc-diagram-menu' : '.lark-doc-command-submenu.is-diagram')
+      expect(menu).not.toBeNull()
+      expect(menu.querySelectorAll('svg')).toHaveLength(diagramTypes.length)
+      const item = [...menu.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === type.label)
+      item.click()
+      await Promise.resolve()
+      const block = editor.getJSON().content.find(node => node.type === 'codeBlock')
+      expect(block).toMatchObject({ attrs: { language: 'mermaid' }, content: [{ type: 'text', text: type.source }] })
+      expect(host.diagramMenuOpen).toBe(false)
+      expect(host.menuOpen).toBe(false)
+    }
+  })
+
+  it('斜杠图表按 Enter 先打开类型菜单，选择后才插入相应源码', async () => {
+    const { root, editor } = fixture()
+    editor.commands.insertContent('/图表')
+    await Promise.resolve()
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await Promise.resolve()
+    const menu = root.querySelector('.lark-doc-command-submenu.is-diagram')
+    expect(menu).not.toBeNull()
+    expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(diagramTypes.length)
+    expect(editor.getJSON().content.some(node => node.type === 'codeBlock')).toBe(false)
+    expect(editor.getText()).toBe('/图表')
+    menu.querySelector('[aria-label="时序图"]').click()
+    await Promise.resolve()
+    const block = editor.getJSON().content.find(node => node.type === 'codeBlock')
+    expect(block).toMatchObject({ attrs: { language: 'mermaid' }, content: [{ type: 'text', text: diagramTypes.find(type => type.id === 'sequence').source }] })
+    expect(root.querySelector('.lark-doc-command-menu')).toBeNull()
+  })
+
+  it('斜杠普通叶命令按 Enter 仍直接执行', async () => {
+    const { root, editor } = fixture()
+    editor.commands.insertContent('/引用')
+    await Promise.resolve()
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await Promise.resolve()
+    expect(editor.getJSON().content[0].type).toBe('blockquote')
+    expect(root.querySelector('.lark-doc-command-menu')).toBeNull()
+  })
+
+  it.each([['分栏', 'columns'], ['模板', 'templates']])('斜杠 %s 按 Enter 复用已有二级菜单', async (label, kind) => {
+    const { root, editor } = fixture()
+    editor.commands.insertContent('/' + label)
+    await Promise.resolve()
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await Promise.resolve()
+    expect(root.querySelector('.lark-doc-command-submenu.is-' + kind)).not.toBeNull()
+    expect(editor.getText()).toBe('/' + label)
+  })
+
+  it('下方空间不足时图表菜单上翻，右侧不越过视口', async () => {
+    const { root, host } = fixture()
+    vi.stubGlobal('innerWidth', 360)
+    vi.stubGlobal('innerHeight', 600)
+    const trigger = root.querySelector('button[aria-label="图表"]')
+    trigger.click()
+    await Promise.resolve()
+    const menu = root.querySelector('.lark-doc-diagram-menu')
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ left: 320, right: 352, top: 560, bottom: 592, width: 32, height: 32 })
+    vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue({ left: 0, right: 180, top: 0, bottom: 246, width: 180, height: 246 })
+    host.positionDiagramMenu()
+    const { top, left, maxHeight } = host.diagramMenuStyle
+    expect(parseFloat(top)).toBeGreaterThanOrEqual(8)
+    expect(parseFloat(top) + parseFloat(maxHeight)).toBeLessThanOrEqual(560)
+    expect(parseFloat(left) + 180).toBeLessThanOrEqual(352)
+  })
+
+  it.each(['toolbar', 'empty'])('%s 插入入口到菜单和图表子菜单保活，移开后收起', async kind => {
+    const { root, host } = fixture()
+    host.handleRange = { from: 0, to: 2 }
+    await Promise.resolve()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const trigger = root.querySelector(kind === 'toolbar' ? 'button[aria-label="插入"]' : '.lark-doc-empty-block-insert')
+    if (kind === 'toolbar') trigger.click()
+    else trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    await Promise.resolve()
+    const menu = root.querySelector('.lark-doc-command-menu')
+    trigger.dispatchEvent(new MouseEvent('mouseleave'))
+    trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.menuOpen).toBe(true)
+    trigger.dispatchEvent(new MouseEvent('mouseleave'))
+    menu.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.menuOpen).toBe(true)
+    menu.querySelector('[aria-label="图表"]').click()
+    const submenu = root.querySelector('.lark-doc-command-submenu.is-diagram')
+    expect(submenu).not.toBeNull()
+    menu.dispatchEvent(new MouseEvent('mouseleave'))
+    submenu.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.menuOpen).toBe(true)
+    submenu.dispatchEvent(new MouseEvent('mouseleave'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.menuOpen).toBe(false)
+  })
+
+  it.each([{ readonly: true }, { config: { features: { diagram: false } } }])('只读或关闭图表时不打开图表菜单', props => {
+    const { root, host } = fixture(props)
+    root.querySelector('button[aria-label="图表"]')?.dispatchEvent(new MouseEvent('mouseenter'))
+    host.toggleDiagramMenu()
+    expect(host.diagramMenuOpen).toBe(false)
+  })
+})
 
 afterEach(() => {
   mounted.splice(0).reverse().forEach(({ renderer, handle, host }) => {
@@ -499,4 +689,146 @@ describe('迁移期 DOM renderer 契约', () => {
     expect(typeof setRenderer).toBe('function')
     setRenderer(null)
   })
+})
+
+
+describe('真实工作台导入导出配置', () => {
+  it('初始化与热更新均采用独立开关、格式白名单和文案，保持同一编辑器', async () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>保留正文</p>', config: {
+      importExport: { importFormats: ['json'], exportFormats: ['json'], importLabel: '读取 JSON', exportLabel: '保存 JSON' },
+    } })
+    try {
+      const editor = doc.getEditor()
+      await vi.waitFor(() => expect(element.querySelector('input[aria-label="导入文档"]')?.accept).toBe('.json'))
+      expect(element.querySelector('button[title="读取 JSON"]')?.textContent).toBe('读取 JSON')
+      const trigger = element.querySelector('[role="combobox"][aria-label="导出文档格式"]')
+      expect(trigger.textContent).toContain('保存 JSON')
+      trigger.click()
+      expect(Array.from(element.querySelectorAll('[role="listbox"][aria-label="导出文档格式"] .lark-doc-select-item-label')).map(item => item.textContent)).toEqual(['保存 JSON', 'JSON（完整正文）'])
+      doc.patchProps({ config: { importExport: { importEnabled: false, exportEnabled: false } } })
+      await vi.waitFor(() => {
+        expect(element.querySelector('input[aria-label="导入文档"]')).toBeNull()
+        expect(element.querySelector('[role="combobox"][aria-label="导出文档格式"]')).toBeNull()
+      })
+      expect(doc.getEditor()).toBe(editor)
+      expect(doc.getText()).toBe('保留正文')
+    } finally { doc.destroy(); element.remove() }
+  })
+})
+
+
+describe('真实门面媒体 HTML 回传', () => {
+  it.each(['inline', 'link'])('%s 的 update/change 与 getHTML 一致，编辑器内仍保留媒体节点', async htmlMode => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const doc = new LarkDoc({ element, storage: 'none',
+      content: '<p>正文</p><img src="data:image/png;base64,cG5n" alt="示例图片">',
+      config: { media: { htmlMode }, performance: { changeDebounce: 0 } },
+    })
+    const updates = []
+    const changes = []
+    doc.on('update', event => updates.push(event))
+    doc.on('change', event => changes.push(event))
+    try {
+      doc.getEditor().commands.insertContent('追加')
+      await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0))
+      for (const event of [updates[updates.length - 1], changes[changes.length - 1]]) {
+        expect(event.html).toBe(doc.getHTML())
+        expect(event.json).toEqual(doc.getJSON())
+        expect(event.html.includes('<img')).toBe(htmlMode === 'inline')
+      }
+      expect(doc.getEditor().getHTML()).toContain('<img')
+      expect(doc.getJSON().content.some(node => node.type === 'image')).toBe(true)
+    } finally { doc.destroy(); element.remove() }
+  })
+})
+
+
+it('两个真实编辑器之间点击插入按钮会关闭另一个编辑器的菜单', async () => {
+  const elements = [document.createElement('div'), document.createElement('div')]
+  elements.forEach(element => document.body.appendChild(element))
+  const docs = elements.map(element => new LarkDoc({ element, storage: 'none', content: '<p>正文</p>' }))
+  try {
+    const firstHost = docs[0]._handle.nativeHost.host
+    firstHost.openCommandMenu('plus')
+    await Promise.resolve()
+    expect(firstHost.menuOpen).toBe(true)
+    const own = elements[0].querySelector('button[aria-label="插入"] .lark-doc-icon')
+    own.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(firstHost.menuOpen).toBe(true)
+    const other = elements[1].querySelector('button[aria-label="插入"] .lark-doc-icon')
+    other.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(firstHost.menuOpen).toBe(false)
+  } finally { docs.forEach(doc => doc.destroy()); elements.forEach(element => element.remove()) }
+})
+
+
+it('斜杠菜单连续 ArrowDown 与 Enter 使用当前高亮项', async () => {
+  stubRangeLayout()
+  const element = document.createElement('div')
+  document.body.appendChild(element)
+  const doc = new LarkDoc({ element, storage: 'none', content: '<p></p>', config: { commands: { allow: ['blockquote', 'diagram'] } } })
+  try {
+    const editor = doc.getEditor()
+    editor.commands.insertContent('/')
+    const host = doc._handle.nativeHost.host
+    await vi.waitFor(() => expect(host.menuOpen).toBe(true))
+    expect(host.filteredCommands.map(item => item.id)).toEqual(['diagram', 'blockquote'])
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(doc.getJSON().content.some(node => node.type === 'blockquote')).toBe(true)
+    expect(doc.getJSON().content.some(node => node.type === 'codeBlock')).toBe(false)
+  } finally { doc.destroy(); element.remove() }
+})
+
+
+it('媒体配置热更新后 getConfig/getHTML 与实际 update/change 保持一致', async () => {
+  const element = document.createElement('div')
+  document.body.appendChild(element)
+  const doc = new LarkDoc({ element, storage: 'none', content: '<p>正文</p><img src="data:image/png;base64,cG5n" alt="原图">' })
+  const events = { update: [], change: [] }
+  Object.keys(events).forEach(name => doc.on(name, event => events[name].push(event)))
+  try {
+    const editor = doc.getEditor()
+    const before = doc.getJSON()
+    expect(doc.getConfig().media.htmlMode).toBe('inline')
+    for (const htmlMode of ['link', 'inline']) {
+      doc.patchProps({ config: { media: { htmlMode }, performance: { changeDebounce: 0 } } })
+      expect(doc.getConfig().media.htmlMode).toBe(htmlMode)
+      expect(doc.getJSON()).toEqual(before)
+      editor.commands.insertContent('继续编辑')
+      await vi.waitFor(() => {
+        for (const name of ['update', 'change']) {
+          const event = events[name][events[name].length - 1]
+          expect(event.html).toBe(doc.getHTML())
+          expect(event.json).toEqual(doc.getJSON())
+        }
+      })
+      expect(doc.getHTML().includes('<img')).toBe(htmlMode === 'inline')
+      expect(editor.getHTML()).toContain('<img')
+      editor.commands.undo()
+    }
+    expect(doc.getEditor()).toBe(editor)
+  } finally { doc.destroy(); element.remove() }
+})
+
+
+it('无工作台 state 的自注入 renderer 继续读取初始化配置，单次 HTML 覆盖仍优先', () => {
+  const element = document.createElement('div')
+  document.body.appendChild(element)
+  const html = '<img src="https://example.test/a.png" alt="原图">'
+  const workspace = { getHTML: () => html }
+  const rendererFactory = () => ({
+    mount: () => ({}), update() {}, destroy() {}, getInstance: () => workspace, getRoot: () => element,
+  })
+  const doc = new LarkDoc({ element, rendererFactory, storage: 'none', config: { media: { htmlMode: 'link' } } })
+  try {
+    expect(doc.getConfig()).toBe(doc.config)
+    expect(doc.getConfig().media.htmlMode).toBe('link')
+    expect(doc.getHTML()).toContain('<a href="https://example.test/a.png"')
+    expect(doc.getHTML()).not.toContain('<img')
+    expect(doc.getHTML({ media: { mode: 'inline' } })).toBe(html)
+  } finally { doc.destroy(); element.remove() }
 })

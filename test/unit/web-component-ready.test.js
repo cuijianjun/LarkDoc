@@ -176,4 +176,183 @@ describe('Web Component 的 ready 初始化边界', () => {
     expect(element.getText()).toBe('ready 后的宿主正文')
     expect(ready).toHaveBeenCalledTimes(1)
   })
+
+  it('配置重建保留未保存正文和标题，迟到草稿与慢保存不回退当前内容', async () => {
+    const draft = {
+      title: '服务器旧标题', schemaVersion: 1,
+      json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '服务器旧草稿' }] }] },
+    }
+    let resolveLoad
+    let completedSaves = 0
+    const persistence = {
+      load: vi.fn(() => persistence.load.mock.calls.length === 1
+        ? Promise.resolve(draft)
+        : new Promise(resolve => { resolveLoad = resolve })),
+      save: vi.fn(record => new Promise(resolve => setTimeout(() => { completedSaves++; resolve(record) }, 1500))),
+      snapshots: vi.fn(async () => []), snapshot: vi.fn(async () => null), restore: vi.fn(async () => null),
+    }
+    const options = { persistence, placeholder: '原占位文字' }
+    const element = createElement(options, '<p>slot 初始内容</p>')
+    const ready = vi.fn()
+    element.addEventListener('lark-doc-ready', ready)
+    document.body.appendChild(element)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(element.getText()).toBe('服务器旧草稿')
+    expect(element.getTitle()).toBe('服务器旧标题')
+    const firstInstance = element.getInstance()
+    element.setContent('<p>尚未自动保存的正文</p>')
+    element.setTitle('尚未自动保存的标题')
+    const latestJSON = element.getJSON()
+    expect(persistence.save).not.toHaveBeenCalled()
+
+    element.options = { ...options, placeholder: '新占位文字' }
+    await vi.advanceTimersByTimeAsync(31)
+    expect(element.getInstance()).not.toBe(firstInstance)
+    expect(persistence.load).toHaveBeenCalledTimes(2)
+    expect(element.getJSON()).toEqual(latestJSON)
+    expect(element.getTitle()).toBe('尚未自动保存的标题')
+    expect(persistence.save).toHaveBeenCalledTimes(1)
+    expect(completedSaves).toBe(0)
+    expect(ready).toHaveBeenCalledTimes(1)
+
+    resolveLoad(draft)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(ready).toHaveBeenCalledTimes(2)
+    expect(element.getJSON()).toEqual(latestJSON)
+    expect(element.getTitle()).toBe('尚未自动保存的标题')
+
+    element.setContent('<p>重建后继续编辑</p>')
+    element.setTitle('重建后标题')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(completedSaves).toBeGreaterThan(0)
+    expect(element.getText()).toBe('重建后继续编辑')
+    expect(element.getTitle()).toBe('重建后标题')
+    expect(ready).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['HTML', '<p>显式新正文</p>', '显式新正文'],
+    ['JSON', { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '显式新JSON正文' }] }] }, '显式新JSON正文'],
+  ])('活实例显式替换 %s content 时，不带入当前旧正文或迟到草稿', async (_, content, text) => {
+    const draft = {
+      title: '持久化旧标题', schemaVersion: 1,
+      json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '持久化旧正文' }] }] },
+    }
+    const persistence = {
+      load: vi.fn(async () => draft), save: vi.fn(async () => null),
+      snapshots: vi.fn(async () => []), snapshot: vi.fn(async () => null), restore: vi.fn(async () => null),
+    }
+    const options = { persistence, content: '<p>声明初始正文</p>', title: '声明初始标题' }
+    const element = createElement(options)
+    document.body.appendChild(element)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(element.getText()).toBe('持久化旧正文')
+    element.setContent('<p>当前编辑旧正文</p>')
+    element.setTitle('当前编辑旧标题')
+
+    element.options = { ...options, content, title: '显式新标题' }
+    await vi.advanceTimersByTimeAsync(100)
+    expect(persistence.load).toHaveBeenCalledTimes(2)
+    expect(element.getText()).toBe(text)
+    expect(element.getTitle()).toBe('显式新标题')
+  })
+
+  it('活实例仅更新 title 时，保留当前正文并使用显式新标题', async () => {
+    const draft = {
+      title: '持久化旧标题', schemaVersion: 1,
+      json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '持久化旧正文' }] }] },
+    }
+    const persistence = {
+      load: vi.fn(async () => draft), save: vi.fn(async () => null),
+      snapshots: vi.fn(async () => []), snapshot: vi.fn(async () => null), restore: vi.fn(async () => null),
+    }
+    const options = { persistence, title: '声明初始标题' }
+    const element = createElement(options)
+    document.body.appendChild(element)
+    await vi.advanceTimersByTimeAsync(100)
+    element.setContent('<p>保留当前编辑正文</p>')
+    element.setTitle('当前编辑标题')
+    const latestJSON = element.getJSON()
+
+    element.options = { ...options, title: '显式新标题' }
+    await vi.advanceTimersByTimeAsync(100)
+    expect(element.getJSON()).toEqual(latestJSON)
+    expect(element.getTitle()).toBe('显式新标题')
+  })
+
+  it.each([
+    ['仅修改占位文字', { placeholder: '新占位文字' }, '异步草稿正文', '异步草稿标题'],
+    ['仅指定新标题', { title: '明确新标题' }, '异步草稿正文', '明确新标题'],
+    ['指定新正文', { content: '<p>明确新正文</p>' }, '明确新正文', '声明初始标题'],
+    ['指定新正文和标题', { content: '<p>明确新正文</p>', title: '明确新标题' }, '明确新正文', '明确新标题'],
+  ])('首次草稿尚未加载时%s，仍按各字段的明确意图完成恢复', async (_, changes, text, title) => {
+    const loads = []
+    const draft = {
+      title: '异步草稿标题', schemaVersion: 1,
+      json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '异步草稿正文' }] }] },
+    }
+    const persistence = {
+      load: vi.fn(() => new Promise(resolve => { loads.push(resolve) })), save: vi.fn(async () => null),
+      snapshots: vi.fn(async () => []), snapshot: vi.fn(async () => null), restore: vi.fn(async () => null),
+    }
+    const options = { persistence, content: '<p>声明初始正文</p>', title: '声明初始标题' }
+    const element = createElement(options)
+    const ready = vi.fn()
+    element.addEventListener('lark-doc-ready', ready)
+    document.body.appendChild(element)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(persistence.load).toHaveBeenCalledTimes(1)
+    expect(ready).not.toHaveBeenCalled()
+
+    element.options = { ...options, ...changes }
+    await vi.advanceTimersByTimeAsync(31)
+    expect(persistence.load).toHaveBeenCalledTimes(2)
+    loads[0](draft)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(ready).not.toHaveBeenCalled()
+
+    loads[1](draft)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(ready).toHaveBeenCalledTimes(1)
+    expect(element.getText()).toBe(text)
+    expect(element.getTitle()).toBe(title)
+  })
+
+  it('已就绪文档连续配置重建时，前一次尚未完成的加载不撤销保留意图', async () => {
+    const loads = []
+    const draft = {
+      title: '旧标题', schemaVersion: 1,
+      json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '旧正文' }] }] },
+    }
+    const persistence = {
+      load: vi.fn(() => persistence.load.mock.calls.length === 1
+        ? Promise.resolve(draft)
+        : new Promise(resolve => { loads.push(resolve) })),
+      save: vi.fn(async () => null),
+      snapshots: vi.fn(async () => []), snapshot: vi.fn(async () => null), restore: vi.fn(async () => null),
+    }
+    const options = { persistence }
+    const element = createElement(options)
+    const ready = vi.fn()
+    element.addEventListener('lark-doc-ready', ready)
+    document.body.appendChild(element)
+    await vi.advanceTimersByTimeAsync(100)
+    element.setContent('<p>未保存正文</p>')
+    element.setTitle('未保存标题')
+    const latestJSON = element.getJSON()
+
+    element.options = { ...options, placeholder: '第一次配置变化' }
+    await vi.advanceTimersByTimeAsync(31)
+    element.options = { ...options, placeholder: '第二次配置变化' }
+    await vi.advanceTimersByTimeAsync(31)
+    expect(persistence.load).toHaveBeenCalledTimes(3)
+    loads[0](draft)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(ready).toHaveBeenCalledTimes(1)
+    loads[1](draft)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(ready).toHaveBeenCalledTimes(2)
+    expect(element.getJSON()).toEqual(latestJSON)
+    expect(element.getTitle()).toBe('未保存标题')
+  })
 })

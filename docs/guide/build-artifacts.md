@@ -38,30 +38,12 @@ full 会立即初始化包括 Mermaid 在内的浏览器特性；在 SSR 中将 
 
 语法降级、压缩和运行时 polyfill 是三件事：ES2018 语法检查验证解析能力；terser 压缩减小体积；入口 core-js 补齐已声明的运行时 API。它们不能互相替代，也不等于任意旧浏览器都已实测。
 
-## 构建与校验
+<span id="构建与校验"></span>
 
-完整开发依赖安装和 Vitest 使用 Node22.13.0 / npm8.19.4。依赖安装后，库保留 Node14.21.3 / npm8.19.4 的构建契约；不提高宿主 Node 下限来规避兼容问题。
+库的编译命令和发布检查由维护者执行，见[仓库开发指南](https://github.com/cuijianjun/LarkDoc/blob/master/docs/guide/development.md)。应用接入按[环境示例](/examples/)选择入口即可。
 
-```bash
-npm ci --no-audit --no-fund
-npm run build          # 默认 ESM + CJS
-npm run build:full     # full ESM + CJS
-npm run build:element  # Element ESM / UMD 及配套资源
-npm run build:vue2     # Vue2 options ESM + CJS
-npm run build:lite
-npm run build:features
-npm run build:all
-npm run check:pkg
-npm run check:rollup
-npm run check:lite
-npm run check:legacy
-npm run size
-```
+## 体积与加载 {#体积口径}
 
-上述命令描述构建与验收方式，不代表当前 worktree 的全部验收已经完成。`npm pack` 正常执行 prepack；不得跳过 prepack 或用手工 tar 代替发布链证据。
+默认入口按需加载公式、图表、Office 等能力；`full` 静态引入全部能力，`lite` 由应用自行注册需要的 feature。对比时同时关注入口与实际加载的依赖，不能只比较入口文件大小。
 
-构建复用按输入和产物完整性判断；`npm run artifacts:check` 只检查，不自动重建。保持子进程使用同一 Node/npm 入口，避免 PATH 中其他 npm 导致重复构建或环境漂移。
-
-## 体积口径
-
-`npm run size` 检查真实入口依赖图，分别报告入口文件、编辑器代码、Tiptap/core-js 运行时、完整静态初始图和 lazy 图。默认 ESM / lite 的 editor 预算与 total 初始图必须同时列出；几百字节的转发入口不能代表整个编辑器。Element / CJS / collab 保留各自的原有可比预算，不抬阈值掩盖回归。当前读数和历史运行时性能数据见[性能说明](/guide/performance)。
+历史构建耗时、完整依赖图和预算检查记录保留在仓库的[性能验收资料](https://github.com/cuijianjun/LarkDoc/blob/master/docs/guide/performance.md)。

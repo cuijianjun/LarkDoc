@@ -1,6 +1,6 @@
 # 本地开发与验证
 
-这页说明如何修改本仓库并运行文档和六环境示例。只想在业务应用使用编辑器，请到[示例中心](/examples/)选择一个环境。
+这页仅在仓库维护，说明如何修改源码并运行文档和六环境示例。应用接入请到[线上示例中心](https://cuijianjun.github.io/LarkDoc/examples/)选择一个环境。
 
 ## 1. 下载与安装
 
@@ -38,6 +38,31 @@ npm --prefix docs run examples:webpack
 `demo-sync-vendor.mjs` 将当前库产物同步给配置 Playground 和静态页面。
 两个 Vue2 工程分别使用真实 Webpack4、Webpack5 编译。
 
+### 按入口构建与检查
+
+
+完整开发依赖安装和 Vitest 使用 Node22.13.0 / npm8.19.4。依赖安装后，库保留 Node14.21.3 / npm8.19.4 的构建契约；不提高宿主 Node 下限来规避兼容问题。
+
+```bash
+npm ci --no-audit --no-fund
+npm run build          # 默认 ESM + CJS
+npm run build:full     # full ESM + CJS
+npm run build:element  # Element ESM / UMD 及配套资源
+npm run build:vue2     # Vue2 options ESM + CJS
+npm run build:lite
+npm run build:features
+npm run build:all
+npm run check:pkg
+npm run check:rollup
+npm run check:lite
+npm run check:legacy
+npm run size
+```
+
+上述命令描述构建与验收方式，不代表当前 worktree 的全部验收已经完成。`npm pack` 正常执行 prepack；不得跳过 prepack 或用手工 tar 代替发布链证据。
+
+构建复用按输入和产物完整性判断；`npm run artifacts:check` 只检查，不自动重建。保持子进程使用同一 Node/npm 入口，避免 PATH 中其他 npm 导致重复构建或环境漂移。
+
 ## 3. 构建 Vue3、React 与静态示例
 
 ```bash
@@ -46,7 +71,7 @@ npm --prefix docs run examples:vite
 npm --prefix docs run examples:check
 ```
 
-Vite 示例按各自锁定的 `lark-doc@0.14.4` 构建，和页面中的 npm 安装示例一致。
+Vite 示例按各自锁定的 `lark-doc@0.14.5` 构建，和页面中的 npm 安装示例一致。
 `examples:check` 会检查全部六个预览，缺文件、源码变化或产物被修改时会报错，避免发布旧预览。
 
 示例说明在 `docs/examples/`，可复制的最小工程在 `docs/examples/apps/`。

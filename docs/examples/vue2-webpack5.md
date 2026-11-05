@@ -4,7 +4,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 # Vue2 + Webpack5
 
-适合使用 Vue2 和 Webpack5（包括 Vue CLI5）的应用。本页最小工程使用 **Node 14.21.3、npm 8.19.4、lark-doc 0.14.4**；Vue 与模板编译器版本由下面的 `package.json` 配对固定。
+适合使用 Vue2 和 Webpack5（包括 Vue CLI5）的应用。本页最小工程使用 **Node 14.21.3、npm 8.19.4、lark-doc 0.14.5**；Vue 与模板编译器版本由下面的 `package.json` 配对固定。
 
 <EnvironmentPreview env="vue2-webpack5" title="Vue2 + Webpack5" />
 
@@ -15,7 +15,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 已有应用在项目根目录执行：
 
 ```bash
-npm install lark-doc@0.14.4 buffer@5.7.1 --save-exact
+npm install lark-doc@0.14.5 buffer@5.7.1 --save-exact
 ```
 
 Webpack5 不再自动补齐 Node 的 `Buffer`，Word 导入依赖会用到它，因此这里一并安装浏览器实现 `buffer@5.7.1`。

@@ -210,6 +210,67 @@ describe('完整上传生命周期', () => {
     expect(onCallbackError).toHaveBeenCalledWith(failure)
   })
 
+  it.each(['throw', 'reject'])('成功通知 %s 时，应用和任务错误通道各收到一次原异常', async kind => {
+    const failure = new Error('success-callback')
+    const onCallbackError = vi.fn()
+    const contextError = vi.fn()
+    const onSettled = vi.fn()
+    const upload = vi.fn(async () => ({ url: '/ok.png' }))
+    const provider = createUploadProvider({
+      upload, onCallbackError, onSettled,
+      onSuccess: () => { if (kind === 'throw') throw failure; return Promise.reject(failure) },
+    })
+    await expect(provider.upload(makeFile(), { onCallbackError: contextError })).resolves.toMatchObject({ url: '/ok.png' })
+    await Promise.resolve()
+    expect(onCallbackError).toHaveBeenCalledExactlyOnceWith(failure)
+    expect(contextError).toHaveBeenCalledExactlyOnceWith(failure)
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'success' }))
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(provider.pending()).toBe(0)
+  })
+
+  it('应用和任务共用同一个错误回调时只通知一次', async () => {
+    const failure = new Error('success-callback')
+    const onCallbackError = vi.fn()
+    const provider = createUploadProvider({
+      upload: async () => ({ url: '/ok.png' }), onCallbackError,
+      onSuccess: () => { throw failure },
+    })
+    await expect(provider.upload(makeFile(), { onCallbackError })).resolves.toMatchObject({ url: '/ok.png' })
+    expect(onCallbackError).toHaveBeenCalledExactlyOnceWith(failure)
+  })
+
+  it.each([[0, 'throw'], [0, 'reject'], [1, 'throw'], [1, 'reject']])('错误报告通道 %s 自身 %s 不阻塞另一通道或改变上传结果', async (channel, kind) => {
+    const failure = new Error('success-callback')
+    const reportFailure = new Error('report-callback')
+    const reports = [vi.fn(), vi.fn()]
+    reports[channel].mockImplementation(() => { if (kind === 'throw') throw reportFailure; return Promise.reject(reportFailure) })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onSettled = vi.fn()
+    const provider = createUploadProvider({
+      upload: async () => ({ url: '/ok.png' }), onCallbackError: reports[0], onSettled,
+      onSuccess: () => { throw failure },
+    })
+    try {
+      await expect(provider.upload(makeFile(), { onCallbackError: reports[1] })).resolves.toMatchObject({ url: '/ok.png' })
+      await Promise.resolve()
+      reports.forEach(report => expect(report).toHaveBeenCalledExactlyOnceWith(failure))
+      expect(log).toHaveBeenCalledExactlyOnceWith('[LarkDoc] 上传回调异常', reportFailure)
+      expect(onSettled).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'success' }))
+      expect(provider.pending()).toBe(0)
+    } finally { log.mockRestore() }
+  })
+
+  it('没有有效错误回调时仍向控制台报告原异常', async () => {
+    const failure = new Error('success-callback')
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const provider = createUploadProvider({ upload: async () => ({ url: '/ok.png' }), onSuccess: () => { throw failure } })
+    try {
+      await expect(provider.upload(makeFile(), { onCallbackError: 'invalid' })).resolves.toMatchObject({ url: '/ok.png' })
+      expect(log).toHaveBeenCalledExactlyOnceWith('[LarkDoc] 上传回调异常', failure)
+    } finally { log.mockRestore() }
+  })
+
   it('分片重试聚合进度单调且仅通知一次 start/success，retry 带分片身份', async () => {
     const progress = []
     let failed = false
