@@ -6,9 +6,10 @@
     v-if="ed.notifyOpen"
     ref="notifyPopover"
     class="lark-doc-notify-popover"
-    :style="ed.notifyStyle"
+    :style="{ left: `${ed.notifyStyle.left}px`, top: `${ed.notifyStyle.top}px` }"
     role="dialog"
     aria-label="当前文档通知"
+    :aria-busy="ed.notifyLoading || ed.notifyWriting ? 'true' : 'false'"
   >
     <!-- 双层 loading 壳：`ud__loading-nested-loading` → `ud__loading__container`。
          后者必须 `position: relative`（04 §4.6.4 🔴），骨架屏靠它定位。
@@ -35,6 +36,7 @@
             <button
               type="button"
               class="lark-doc-notify-mute"
+              :disabled="ed.notifyWriting || ed.notifyLoading"
               @mousedown.prevent="ed.toggleNotifyMute()"
             >
               {{ ed.notifyMuteLabel }}
@@ -50,10 +52,22 @@
             </button>
           </header>
 
+          <div
+            v-if="ed.notifyLoadError && !ed.notifyLoading && !ed.notifyItems.length"
+            class="lark-doc-notify-empty"
+            role="alert"
+          >
+            <p class="lark-doc-notify-empty-title">
+              通知读取失败
+            </p>
+            <p class="lark-doc-notify-empty-sub">
+              {{ ed.notifyLoadError }}
+            </p>
+          </div>
           <!-- 空态三件套：插图 120×120 / 主文案 64×24 16px/500 /
                副文案 250×66 14px var(--ld-text-secondary)。 -->
           <div
-            v-if="ed.notifyEmpty"
+            v-else-if="ed.notifyEmpty"
             class="lark-doc-notify-empty"
           >
             <!-- 插图：规格未采集到图片资源，用同尺寸的线性「铃铛静音」自绘占位。

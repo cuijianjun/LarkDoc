@@ -16,6 +16,7 @@ export * from './security'
 export * from './survey'
 export * from './collaboration'
 export * from './comments'
+export * from './notifications'
 export * from './persistence'
 export * from './upload'
 // P3-05：网页元数据抓取（09 §265）。**第 6 个可选 provider**，不进上面 5 类必选契约 ——

@@ -26,7 +26,8 @@ new LarkDoc({
 | `features.viewModes` | `boolean` | `true` | 关闭后视图切换入口隐藏。 |
 | `readonly` | `boolean` | `false` | 从构造参数或 `doc.setReadonly()` 传入。 |
 | `layout.titleBarFixed` | `boolean` | `false` | 标题栏是否吸附顶端（配合长文阅读）。 |
-| `layout.toolbarFixed` | `boolean` | `false` | 格式工具栏是否吸附顶端；与 `titleBarFixed` 同开时固定在标题栏下方。 |
+| `layout.toolbarVisible` | `boolean` | `false` | 格式工具栏默认隐藏，设为 `true` 显式显示；显式 `false` 优先于 `toolbarFixed`。 |
+| `layout.toolbarFixed` | `boolean` | `false` | 格式工具栏是否吸附顶端；未指定 `toolbarVisible` 时设为 `true` 兼容开启。与 `titleBarFixed` 同开时固定在标题栏下方。 |
 | `layout.headerVisible` | `boolean` | `true` | 是否显示顶部标题栏。置 `false` 时整行隐藏，原 `header-actions` 插槽内容（保存 / 模板 / 导入导出等）自动移入格式工具栏右侧「⋯」下拉弹窗。 |
 
 ::: tip 纯只读预览页

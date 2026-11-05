@@ -26,11 +26,8 @@
         aria-hidden="true"
       >✓</span><span class="lark-doc-mode-toast-text">{{ modeToast }}</span>
     </div>
-    <ToolbarBar :ed="self">
-      <template #header-actions>
-        <slot name="header-actions" />
-      </template>
-    </ToolbarBar>
+    <ToolbarBar v-if="larkDocConfig.layout.toolbarVisible" :ed="self"><template #header-actions><slot name="header-actions" /></template></ToolbarBar>
+    <div v-else-if="!larkDocConfig.layout.headerVisible && ($slots['header-actions'] || $scopedSlots['header-actions'])" class="lark-doc-header-actions"><slot name="header-actions" /></div>
     <SearchPanel
       ref="searchInput"
       :ed="self"
@@ -538,7 +535,8 @@ export default {
       // 实测目录覆盖上去的同一时刻落下水合闸门（P7-03 早期目录的 `outlinePending`）：
       // 此后 `outline` 里的 pos 就是当前正文算出来的，按下去不会落空。
       this.outlinePending = false
-      this.outline = collectOutline(this.editor.state.doc)
+      // 目录是整批替换的派生快照；跳过 Vue 2 深 observe，保留顶层赋值通知。
+      this.outline = Object.freeze(collectOutline(this.editor.state.doc))
       this.syncOutlineCollapseState()
       this.syncFoldState()
       this.wordCount = this.editor.storage.characterCount.characters()

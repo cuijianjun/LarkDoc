@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { createCommentsProvider } from '../../src/providers/comments'
+import { createDocumentSession } from '../../src/session/DocumentSession'
 import {
   ANONYMOUS_AUTHOR,
   anchorBinding,
@@ -281,6 +282,25 @@ describe('内存 Provider：五方法契约', () => {
     expect(() => createCommentsProvider(provider)).toThrow('comments Provider 缺少方法：reply')
   })
 
+  it('工厂及 Session 构造/替换保留可选 deleteReply 与方法接收者', async () => {
+    const provider = createMemoryCommentsProvider()
+    let receiver
+    let input
+    provider.deleteReply = async function (value) { receiver = this; input = value }
+    expect(createCommentsProvider(provider)).toBe(provider)
+    const session = createDocumentSession({ documentId: 'doc-1', providers: { comments: provider } })
+    expect(session.getProvider('comments')).toBe(provider)
+    const payload = { threadId: 't-1', commentId: 'r-1' }
+    await session.getProvider('comments').deleteReply(payload)
+    expect(receiver).toBe(provider)
+    expect(input).toBe(payload)
+    const legacy = createMemoryCommentsProvider()
+    delete legacy.deleteReply
+    expect(session.setProvider('comments', legacy)).toBe(legacy)
+    expect(session.getProvider('comments').deleteReply).toBeUndefined()
+    expect(session.setProvider('comments', provider).deleteReply).toBe(provider.deleteReply)
+  })
+
   it('增 / 回复 / 解决 / 重开闭环，list 顺序随状态变化', async () => {
     let tick = 0
     const provider = createMemoryCommentsProvider({ now: () => (tick += 100) })
@@ -315,6 +335,34 @@ describe('内存 Provider：五方法契约', () => {
     listed = await provider.list()
     expect(listed.map((thread) => thread.id)).toEqual([first.id, second.id])
     expect(listed[0].resolved).toBe(false)
+  })
+
+  it('删除回复写入内存存储、保留其他回复且不修改既有快照', async () => {
+    const provider = createMemoryCommentsProvider()
+    const thread = await provider.createThread({ blockId: 'b1', author: { id: 'u1' }, content: '首条' })
+    const reply = await provider.reply({ threadId: thread.id, author: { id: 'u1' }, content: '待删' })
+    const snapshot = await provider.list()
+    await provider.deleteReply({ threadId: thread.id, commentId: reply.id })
+    expect((await provider.list())[0].replies.map((item) => item.id)).toEqual([thread.replies[0].id])
+    expect(snapshot[0].replies).toHaveLength(2)
+    await provider.deleteReply({ threadId: thread.id, commentId: reply.id })
+    expect((await provider.list())[0].replies).toHaveLength(1)
+  })
+
+  it('删除最后一条评论后不留下空线程，也不影响其他线程', async () => {
+    const provider = createMemoryCommentsProvider()
+    const first = await provider.createThread({ blockId: 'b1', author: { id: 'u1' }, content: '首条' })
+    const other = await provider.createThread({ blockId: 'b2', author: { id: 'u1' }, content: '保留' })
+    await provider.deleteReply({ threadId: first.id, commentId: first.replies[0].id })
+    expect((await provider.list()).map((item) => item.id)).toEqual([other.id])
+  })
+
+  it('删除未知线程抛错，未知回复不误删现有评论', async () => {
+    const provider = createMemoryCommentsProvider()
+    await expect(provider.deleteReply({ threadId: 'nope', commentId: 'r1' })).rejects.toThrow('评论线程不存在：nope')
+    const thread = await provider.createThread({ blockId: 'b1', author: { id: 'u1' }, content: '保留' })
+    await provider.deleteReply({ threadId: thread.id, commentId: 'nope' })
+    expect((await provider.list())[0]).toEqual(thread)
   })
 
   it('list 顺序确定：同一 createdAt 也能稳定复现', async () => {

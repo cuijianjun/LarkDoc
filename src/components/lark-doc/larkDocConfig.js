@@ -51,10 +51,11 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
   layout: {
     // 标题栏默认跟随文档滚动，宿主可按页面场景开启顶端吸附。
     titleBarFixed: false,
-    // 工具栏吸附顶端：开启后滚动时格式工具栏固定在标题栏下方。
+    // spec002 默认只保留上下文格式入口；旧宿主可显式开启兼容工具栏。
+    toolbarVisible: false,
+    // 原有吸附开关仍兼作显示工具栏的兼容入口，显式 toolbarVisible 优先。
     toolbarFixed: false,
-    // 顶部标题栏可见性：置 false 时整行隐藏，原有 header-actions 插槽内容
-    // 自动移入工具栏右侧「⋯」下拉弹窗，功能入口不丢失。
+    // 标题栏隐藏时，header-actions 由兼容工具栏的「⋯」或独立操作行承接。
     headerVisible: true,
   },
   text: {
@@ -123,6 +124,9 @@ export function createLarkDocConfig(overrides = {}) {
   LARK_DOC_FEATURES.forEach((name) => { config.features[name] = config.features[name] !== false })
   config.layout.titleBarFixed = config.layout.titleBarFixed === true
   config.layout.toolbarFixed = config.layout.toolbarFixed === true
+  config.layout.toolbarVisible = source.layout && typeof source.layout.toolbarVisible === 'boolean'
+    ? source.layout.toolbarVisible
+    : config.layout.toolbarFixed
   config.layout.headerVisible = config.layout.headerVisible !== false
   config.toolbar.marksAllow = Array.isArray(config.toolbar.marksAllow) ? config.toolbar.marksAllow.filter((id) => typeof id === 'string') : null
   config.network.mode = ['offline', 'allowlist', 'open'].includes(config.network.mode) ? config.network.mode : DEFAULT_LARK_DOC_CONFIG.network.mode

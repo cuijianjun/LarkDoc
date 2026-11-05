@@ -1,7 +1,7 @@
 /**
  * 内存评论 Provider —— 09 §5.8（P6b-01）、契约见 `src/providers/comments.js`。
  *
- * 只实现 COMMENT_METHODS 的五件事；线程/回复的构造、校验、排序全部复用 core 层，
+ * 实现 COMMENT_METHODS 五方法及可选 deleteReply；线程/回复的构造、校验、排序复用 core 层，
  * 这样单测覆盖到的是与真实 Provider 同一条写路径，而不是另写一套容易走样的逻辑。
  *
  * 读写都做防御性拷贝：面板拿到数组后会排序、就地改局部状态，若直接交出内部引用，
@@ -83,6 +83,16 @@ export function createMemoryCommentsProvider(options) {
       const reply = buildReply(source, { id: nextId('r'), now: clock() })
       thread.replies = thread.replies.concat([reply])
       return cloneReply(reply)
+    },
+
+    /** 显式本地演示：删除写入当前 Provider 的内存存储，不代表跨刷新持久化。 */
+    async deleteReply(input) {
+      const source = input || {}
+      const thread = requireThread(store, source.threadId)
+      const replies = thread.replies.filter((reply) => reply.id !== source.commentId)
+      if (replies.length === thread.replies.length) return
+      if (replies.length) store.set(thread.id, { ...thread, replies })
+      else store.delete(thread.id)
     },
 
     /** 05 §5.5.1：同一 id 重放要幂等，所以这里直接复用 resolveThread 的判定。 */

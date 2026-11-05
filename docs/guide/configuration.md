@@ -102,7 +102,7 @@ new LarkDoc({
 | --- | --- | --- |
 | `commands` | `disabled: string[]`、`allow: string[] \| null` | 按命令 id 禁用或白名单（如 `setEmoji`）。 |
 | `blockMenu` | `disabled: string[]`、`allow: string[] \| null` | 块句柄菜单动作裁剪（`duplicate` / `moveUp` / `delete` 等）。 |
-| `layout` | `titleBarFixed: boolean`、`toolbarFixed: boolean`、`headerVisible: boolean` | 标题栏 / 格式工具栏是否吸附顶端；`headerVisible: false` 隐藏顶栏并把操作入口移入工具栏「⋯」下拉。 |
+| `layout` | `titleBarFixed: boolean`、`toolbarVisible: boolean`、`toolbarFixed: boolean`、`headerVisible: boolean` | 格式工具栏默认隐藏，`toolbarVisible: true` 开启；仅设 `toolbarFixed: true` 兼容开启并吸顶，显式隐藏优先。`titleBarFixed` 控制标题栏吸顶；`headerVisible: false` 隐藏顶栏，操作入口移入已开启的工具栏「⋯」下拉。 |
 | `limits` | 见下 | 上限控制。 |
 | `performance` | 见下 | 性能开关。 |
 

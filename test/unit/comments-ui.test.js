@@ -37,6 +37,7 @@ import {
   resolveAnchorCodec,
 } from '../../src/core/comments/binding'
 import { plainAnchorCodec } from '../../src/core/comments/anchor'
+import { createMemoryCommentsProvider } from '../../src/core/comments/memory-provider'
 import commentsMixin, {
   COMMENT_GATES,
   commentDraftText,
@@ -346,6 +347,190 @@ describe('capability 闸门（只走 capability，不自判角色）', () => {
   })
 })
 
+describe('删除回复的 Provider 回执与回读', () => {
+  function context(provider) {
+    return mixinCtx({
+      session: { documentId: 'doc-1', user: { id: 'u-1' }, can: () => true, getProvider: () => provider },
+      commentThreads: [{ id: 't-1', replies: [{ id: 'r-1', content: '保留原回复' }] }],
+      updateCommentPanels() { throw new Error('不得只改本地面板') },
+      async loadComments() { this.loads = (this.loads || 0) + 1 },
+    })
+  }
+
+  it.each([null, {}])('缺 Provider 或 deleteReply 时不删除、不报告成功', async (provider) => {
+    const ctx = context(provider)
+    const threads = ctx.commentThreads
+    expect(await ctx.deleteCommentReply('t-1', 'r-1')).toBeNull()
+    expect(ctx.commentThreads).toBe(threads)
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it('无评论权限时不调用删除 Provider', async () => {
+    let calls = 0
+    const ctx = context({ deleteReply: async () => { calls += 1 } })
+    ctx.session.can = () => false
+    expect(await ctx.deleteCommentReply('t-1', 'r-1')).toBeNull()
+    expect(calls).toBe(0)
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it.each(['component', 'editor'])('销毁 %s 后不再调用删除 Provider', async (target) => {
+    let calls = 0
+    const ctx = context({ deleteReply: async () => { calls += 1 } })
+    if (target === 'component') ctx._isBeingDestroyed = true
+    if (target === 'editor') ctx.editor = { isDestroyed: true }
+    expect(await ctx.deleteCommentReply('t-1', 'r-1')).toBeNull()
+    expect(calls).toBe(0)
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it.each([
+    false, { ok: false }, { allowed: false }, { status: 'deny' },
+    { status: 'approval_required' }, { status: 'failed' }, { status: 'error' },
+    { status: 'rejected' }, { code: 403 }, { code: 'E_DENIED' },
+  ])('明确拒绝回执 %j 不触发回读或本地删除', async (result) => {
+    const ctx = context({ deleteReply: async () => result })
+    const threads = ctx.commentThreads
+    await expect(ctx.deleteCommentReply('t-1', 'r-1')).rejects.toMatchObject({ code: 'E_COMMENT_DELETE_REJECTED' })
+    expect(ctx.commentThreads).toBe(threads)
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it('Provider 抛错保留原回复并向调用方传播错误', async () => {
+    const error = new Error('删除失败')
+    const ctx = context({ deleteReply: async () => { throw error } })
+    const threads = ctx.commentThreads
+    await expect(ctx.deleteCommentReply('t-1', 'r-1')).rejects.toBe(error)
+    expect(ctx.commentThreads).toBe(threads)
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it.each([undefined, true, { ok: true }, { code: 0 }, { code: '0' }, { code: 'OK' }, { code: 'SUCCESS' }])(
+    '兼容 Promise<void> 及成功回执 %j，回读后才报告成功', async (result) => {
+      let input
+      const ctx = context({ deleteReply: async (value) => { input = value; return result } })
+      expect(await ctx.deleteCommentReply('t-1', 'r-1')).toBe(true)
+      expect(input).toEqual({ threadId: 't-1', commentId: 'r-1' })
+      expect(ctx.loads).toBe(1)
+    },
+  )
+
+  it('删除已确认但回读失败时不伪报完整成功', async () => {
+    const ctx = context({ deleteReply: async () => {} })
+    ctx.loadComments = async () => { throw new Error('回读失败') }
+    await expect(ctx.deleteCommentReply('t-1', 'r-1')).rejects.toThrow('回读失败')
+    expect(ctx.commentThreads[0].replies).toHaveLength(1)
+  })
+
+  it.each(['session', 'document', 'account', 'provider', 'editor', 'destroy', 'permission'])(
+    '删除等待期间切换 %s 不触发当前页面回读或成功反馈', async (change) => {
+      let finish
+      const ctx = context({ deleteReply: () => new Promise((resolve) => { finish = resolve }) })
+      const deleting = ctx.deleteCommentReply('t-1', 'r-1')
+      if (change === 'session') ctx.session = { ...ctx.session }
+      if (change === 'document') ctx.session.documentId = 'doc-2'
+      if (change === 'account') ctx.session.user = { id: 'u-2' }
+      if (change === 'provider') ctx.session.getProvider = () => ({})
+      if (change === 'editor') ctx.editor = {}
+      if (change === 'destroy') ctx._isBeingDestroyed = true
+      if (change === 'permission') ctx.session.can = () => false
+      finish()
+      expect(await deleting).toBeNull()
+      expect(ctx.loads).toBeUndefined()
+      expect(ctx.commentThreads[0].replies).toHaveLength(1)
+    },
+  )
+
+  it('切文档后旧删除请求失败不向新页面传播错误', async () => {
+    let fail
+    const ctx = context({ deleteReply: () => new Promise((resolve, reject) => { fail = reject }) })
+    const deleting = ctx.deleteCommentReply('t-1', 'r-1')
+    ctx.session.documentId = 'doc-2'
+    fail(new Error('旧文档删除失败'))
+    expect(await deleting).toBeNull()
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it.each(['document', 'account', 'editor', 'destroy', 'permission'])(
+    '删除后的真实回读期间切换 %s 不覆盖当前线程和面板', async (change) => {
+      let finishRead
+      let requestedDocumentId
+      const ctx = context({
+        deleteReply: async () => {},
+        list: ({ documentId }) => {
+          requestedDocumentId = documentId
+          return new Promise((resolve) => { finishRead = resolve })
+        },
+      })
+      ctx.editor = null
+      ctx.loadComments = commentsMixin.methods.loadComments
+      const deleting = ctx.deleteCommentReply('t-1', 'r-1')
+      await Promise.resolve()
+      expect(requestedDocumentId).toBe('doc-1')
+      if (change === 'document') ctx.session.documentId = 'doc-2'
+      if (change === 'account') ctx.session.user = { id: 'u-2' }
+      if (change === 'editor') ctx.editor = { state: { doc: { descendants() {} } } }
+      if (change === 'destroy') ctx._isBeingDestroyed = true
+      if (change === 'permission') ctx.session.can = () => false
+      const threads = [{ id: 'current-thread', replies: [] }]
+      const panels = [{ id: 'current-panel' }]
+      ctx.commentThreads = threads
+      ctx.commentPanels = panels
+      finishRead([{ id: 'old-thread', blockId: 'b-old', replies: [] }])
+      expect(await deleting).toBeNull()
+      expect(ctx.commentThreads).toBe(threads)
+      expect(ctx.commentPanels).toBe(panels)
+    },
+  )
+
+  it('菜单消费删除拒绝并使用已有错误提示，底层删除仍可抛错', async () => {
+    const ctx = context({ deleteReply: async () => ({ ok: false }) })
+    const threads = ctx.commentThreads
+    ctx.error = ''
+    expect(await ctx.runCommentMenuItem('delete', 't-1', 'r-1')).toBeNull()
+    expect(ctx.error).toBe('评论删除或回读失败，请刷新后重试')
+    expect(ctx.commentThreads).toBe(threads)
+    expect(ctx.loads).toBeUndefined()
+  })
+
+  it('菜单消费回读失败，保留原回复和可重试提示', async () => {
+    const ctx = context({ deleteReply: async () => {} })
+    ctx.loadComments = async () => { throw new Error('回读失败') }
+    expect(await ctx.runCommentMenuItem('delete', 't-1', 'r-1')).toBeNull()
+    expect(ctx.error).toBe('评论删除或回读失败，请刷新后重试')
+    expect(ctx.commentThreads[0].replies).toHaveLength(1)
+  })
+
+  it('菜单等待回读期间切文档后旧失败不污染新页面错误提示', async () => {
+    let failRead
+    const ctx = context({ deleteReply: async () => {} })
+    ctx.loadComments = () => new Promise((resolve, reject) => { failRead = reject })
+    const deleting = ctx.runCommentMenuItem('delete', 't-1', 'r-1')
+    await Promise.resolve()
+    ctx.session.documentId = 'doc-2'
+    ctx.error = '新页面提示'
+    failRead(new Error('旧页面回读失败'))
+    expect(await deleting).toBeNull()
+    expect(ctx.error).toBe('新页面提示')
+  })
+
+  it('显式内存 Provider 删除后由 list 回读，重新加载不会复活回复', async () => {
+    const provider = createMemoryCommentsProvider()
+    const thread = await provider.createThread({ blockId: 'b-1', author: { id: 'u-1' }, content: '首条评论' })
+    const reply = await provider.reply({ threadId: thread.id, author: { id: 'u-1' }, content: '待删回复' })
+    const ctx = context(provider)
+    ctx.editor = null
+    ctx.updateCommentPanels = () => {}
+    ctx.loadComments = commentsMixin.methods.loadComments
+    await ctx.loadComments()
+    expect(ctx.commentThreads[0].replies).toHaveLength(2)
+    expect(await ctx.runCommentMenuItem('delete', thread.id, reply.id)).toBe(true)
+    expect(ctx.commentThreads[0].replies.map((item) => item.id)).toEqual([thread.replies[0].id])
+    await ctx.loadComments()
+    expect(ctx.commentThreads[0].replies).toHaveLength(1)
+  })
+})
+
 describe('评论异步回读隔离', () => {
   function deferred() {
     let resolve
@@ -382,6 +567,26 @@ describe('评论异步回读隔离', () => {
     if (change === 'account') ctx.session.user = { id: 'u-2' }
     if (change === 'destroy') ctx._commentLoadToken = null
     pending.resolve([{ id: 'stale' }])
+    expect(await loading).toEqual([])
+    expect(ctx.updates).toBeUndefined()
+  })
+  it.each(['component', 'editor'])('销毁 %s 后不再发起评论回读或清空页面', async (target) => {
+    let calls = 0
+    const ctx = context({ list: async () => { calls += 1; return [] } })
+    const threads = [{ id: 'preserved' }]
+    ctx.commentThreads = threads
+    if (target === 'component') ctx._isBeingDestroyed = true
+    if (target === 'editor') ctx.editor = { isDestroyed: true }
+    expect(await ctx.loadComments()).toEqual([])
+    expect(calls).toBe(0)
+    expect(ctx.commentThreads).toBe(threads)
+  })
+  it('编辑器替换后旧回读失败也不传播到新编辑器', async () => {
+    const pending = deferred()
+    const ctx = context({ list: () => pending.promise })
+    const loading = ctx.loadComments()
+    ctx.editor = { state: { doc: { descendants() {} } } }
+    pending.reject(new Error('旧编辑器请求失败'))
     expect(await loading).toEqual([])
     expect(ctx.updates).toBeUndefined()
   })

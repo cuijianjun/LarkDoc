@@ -226,6 +226,8 @@ export default {
 
     // —— 读取与绑定 ——
     async loadComments() {
+      if (this._isBeingDestroyed || this._isDestroyed || (this.editor && this.editor.isDestroyed)) return []
+      const editor = this.editor
       const token = {}
       this._commentLoadToken = token
       const session = this.session
@@ -242,6 +244,9 @@ export default {
         && (session && session.documentId ? session.documentId : '') === documentId
         && (session && session.user) === user
         && this.commentProvider() === provider
+        && this.editor === editor
+        && !this._isBeingDestroyed && !this._isDestroyed
+        && !(editor && editor.isDestroyed)
         && this.commentCan('canView')
       let threads
       try {
@@ -313,25 +318,50 @@ export default {
       await this.loadComments()
       return thread
     },
-    /**
-     * 删单条回复（**无二次确认**，04 §3.1④-3）。
-     * `deleteReply` 不在 `COMMENT_METHODS` 五方法里，Provider 没给就只清本地态 ——
-     * 面板不该因为 Provider 少一个可选项就报错。
-     */
+    /** 删除无二次确认；缺少可选 deleteReply 时保留原回复，不伪造持久化成功。 */
     async deleteCommentReply(threadId, commentId) {
       if (!this.commentAllowed('remove')) return null
       const provider = this.commentProvider()
-      if (provider && typeof provider.deleteReply === 'function') {
-        await provider.deleteReply({ threadId, commentId })
-        await this.loadComments()
-        return true
+      if (!provider || typeof provider.deleteReply !== 'function') return null
+      const session = this.session
+      const documentId = session && session.documentId
+      const user = session && session.user
+      const editor = this.editor
+      const current = () => this.session === session
+        && (session && session.documentId) === documentId
+        && (session && session.user) === user
+        && this.editor === editor
+        && this.commentProvider() === provider
+        && !this._isBeingDestroyed && !this._isDestroyed
+        && !(editor && editor.isDestroyed)
+        && this.commentCan('canView') && this.commentAllowed('remove')
+      if (!current()) return null
+      let result
+      try {
+        result = await provider.deleteReply({ threadId, commentId })
+      } catch (error) {
+        if (!current()) return null
+        throw error
       }
-      this.commentThreads = this.commentThreads.map((thread) => {
-        if (thread.id !== threadId) return thread
-        return { ...thread, replies: thread.replies.filter((reply) => reply.id !== commentId) }
-      })
-      this.updateCommentPanels()
-      return true
+      if (!current()) return null
+      const receipt = result && typeof result === 'object' ? result : {}
+      const code = receipt.code
+      const rejected = result === false || receipt.ok === false || receipt.allowed === false
+        || ['deny', 'approval_required', 'failed', 'error', 'rejected'].includes(receipt.status)
+        || (typeof code === 'number' && code !== 0)
+        || (typeof code === 'string' && code !== '' && !['0', 'OK', 'SUCCESS'].includes(code.toUpperCase()))
+      if (rejected) {
+        const error = new Error('评论删除被 Provider 拒绝')
+        error.code = 'E_COMMENT_DELETE_REJECTED'
+        throw error
+      }
+      try {
+        await this.loadComments()
+      } catch (error) {
+        if (!current()) return null
+        throw error
+      }
+      return current() ? true : null
     },
 
     // —— 选区 → 锚点 ——
@@ -469,7 +499,12 @@ export default {
     /** 回复行「更多」的四项派发：V1 只有「删除」有行为（见文件头负结论）。 */
     runCommentMenuItem(id, threadId, commentId) {
       this.closeCommentMenus()
-      if (id === 'delete') return this.deleteCommentReply(threadId, commentId)
+      if (id === 'delete') {
+        return this.deleteCommentReply(threadId, commentId).catch(() => {
+          this.error = '评论删除或回读失败，请刷新后重试'
+          return null
+        })
+      }
       return undefined
     },
     /**

@@ -91,6 +91,8 @@ const ON_DEMAND = 'katex|docx|mammoth|marked|turndown|highlight\\.js'
 const vendorModule = new RegExp(`[\\\\/]node_modules[\\\\/](?!${ON_DEMAND}[\\\\/])`)
 
 module.exports = defineConfig({
+  // 受限执行环境可单进程编译，避免 thread-loader 工作进程超时；不改变产物优化配置。
+  ...(process.env.LARK_DOC_BUILD_SERIAL === '1' ? { parallel: false } : {}),
   // 体积：vue-cli 的默认 terser 只跑 1 pass，并且**主动关掉**一批标准 compress 标志
   // （见 @vue/cli-service/lib/config/terserOptions.js 里那串 `false`）—— 关它们的理由是
   // 「收益小 / 耗时长」，不是「不安全」。这里把其中语义保持的一批重新打开：

@@ -122,7 +122,8 @@ export default {
      */
     hydrateOutline(outline) {
       if (!Array.isArray(outline) || !outline.length) return false
-      this.outline = outline.map((item) => ({ pos: item.pos, level: item.level, text: item.text }))
+      // 与正文刷新一致：目录仅整批替换，不为每条派生记录建立响应式订阅。
+      this.outline = Object.freeze(outline.map((item) => ({ pos: item.pos, level: item.level, text: item.text })))
       this.outlinePending = true
       return true
     },

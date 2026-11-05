@@ -717,7 +717,9 @@ function eachList(doc, typeName, visit) {
       const child = parent.child(index)
       const isSame = child.type.name === typeName
       if (isSame) visit(child, pos, depth + 1, parent, index)
-      if (child.content.size) walk(child, pos + 1, isSame ? depth + 1 : depth)
+      // 文本块只含行内内容，不可能藏有列表；跳过其正文，避免每次击键的
+      // 两遍列表扫描都访问全文文本/marks。块容器与嵌套列表仍按原深度遍历。
+      if (!child.isTextblock && child.content.size) walk(child, pos + 1, isSame ? depth + 1 : depth)
       pos += child.nodeSize
     }
   }

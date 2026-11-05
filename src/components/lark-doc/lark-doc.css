@@ -424,7 +424,9 @@
 .lark-doc .lark-doc-title-wrap { display: flex; flex-direction: column; min-width: 140px; width: min(370px, 30vw); }
 .lark-doc .lark-doc-title-wrap input { border: 0; padding: 2px 4px; font-size: 16px; font-weight: 700; text-overflow: ellipsis; }
 .lark-doc .lark-doc-title-sub { padding-left: 5px; color: var(--lark-doc-muted); font-size: 11px; }
-.lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-start; gap: 7px; flex: 1; min-width: 96px; overflow-x: auto; scrollbar-width: thin; }
+/* 自动外边距只消耗正向余量；溢出时从起点滚动，避免 flex-end 把前部按钮推到标题下。 */
+.lark-doc .lark-doc-header-actions > :first-child { margin-left: auto; }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; -ms-overflow-style: none; }
 .lark-doc .lark-doc-toolbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
@@ -2864,7 +2866,7 @@
 /* —— 顶栏「通知」popover（04 §4.6.4：外壳 402×555、z 999）——
    外壳透明 + `padding: 3px 0 0`，白底与描边在内层 content：规格里这三件事分属
    两个节点，合并会让 555 与白底高度对不上。 */
-.lark-doc .lark-doc-notify-popover { position: fixed; z-index: 999; display: flex; flex-direction: column; box-sizing: border-box; width: 402px; height: 555px; padding: 3px 0 0; }
+.lark-doc .lark-doc-notify-popover { position: fixed; z-index: 999; display: flex; flex-direction: column; box-sizing: border-box; width: 402px; max-width: calc(100vw - 16px); height: 555px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 3px 0 0; }
 /* 双层 loading 容器：原样保留（`04 §4.6.4` 🔴）。外层只做透传，内层必须
    `position: relative` —— 骨架屏/指示器就是挂在这一层上的绝对定位子节点。 */
 .lark-doc .lark-doc-notify-loading-nested { display: flex; flex: 1 1 auto; min-height: 0; }

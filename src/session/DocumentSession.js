@@ -4,6 +4,7 @@ import { createTransactionId, setTransactionMetadata, TRANSACTION_ORIGINS } from
 import { createAuthorizationProvider, normalizeCapabilities } from '../providers/authorization'
 import { createCollaborationProvider } from '../providers/collaboration'
 import { createCommentsProvider } from '../providers/comments'
+import { createNotificationsProvider } from '../providers/notifications'
 import { createPersistenceProvider } from '../providers/persistence'
 import { createVersioningProvider } from '../providers/versioning'
 
@@ -12,6 +13,7 @@ const PROVIDER_FACTORIES = {
   collaboration: createCollaborationProvider,
   versioning: createVersioningProvider,
   comments: createCommentsProvider,
+  notifications: createNotificationsProvider,
   authorization: createAuthorizationProvider,
 }
 

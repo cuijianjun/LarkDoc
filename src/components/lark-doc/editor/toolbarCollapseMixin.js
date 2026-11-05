@@ -102,31 +102,64 @@ export default {
       return this.toolbarSections.filter((section) => this.collapsedGroups.includes(section.id))
     },
   },
+  watch: {
+    'larkDocConfig.layout.toolbarVisible'() {
+      this.$nextTick(() => this.bindToolbarObserver())
+    },
+  },
   mounted() {
-    const bar = this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
-    if (bar && typeof ResizeObserver !== 'undefined') {
-      this._toolbarRO = new ResizeObserver(() => this.scheduleToolbarFit())
-      this._toolbarRO.observe(bar)
-    }
-    this.$nextTick(() => this.evaluateToolbarFit())
+    this.$nextTick(() => this.bindToolbarObserver())
   },
   beforeDestroy() {
+    this._toolbarDisposed = true
+    this._toolbarFitEpoch = (this._toolbarFitEpoch || 0) + 1
+    this._fitPending = false
     if (this._toolbarRO) { this._toolbarRO.disconnect(); this._toolbarRO = null }
-    if (this._fitRaf) cancelAnimationFrame(this._fitRaf)
+    if (this._fitRaf) { cancelAnimationFrame(this._fitRaf); this._fitRaf = null }
     this.teardownMoreMenu()
   },
   methods: {
+    bindToolbarObserver() {
+      // disconnect/cancelRAF 无法取消已经停在 nextTick 的布局任务。
+      this._toolbarFitEpoch = (this._toolbarFitEpoch || 0) + 1
+      this._fitPending = false
+      if (this._toolbarRO) { this._toolbarRO.disconnect(); this._toolbarRO = null }
+      if (this._fitRaf) { cancelAnimationFrame(this._fitRaf); this._fitRaf = null }
+      if (this._toolbarDisposed || this._isBeingDestroyed || this._isDestroyed) return
+      const bar = this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
+      if (!bar) {
+        this.closeMoreMenu()
+        this.collapsedGroups = []
+        return
+      }
+      if (typeof ResizeObserver !== 'undefined') {
+        this._toolbarRO = new ResizeObserver(() => this.scheduleToolbarFit())
+        this._toolbarRO.observe(bar)
+      }
+      this.evaluateToolbarFit()
+    },
     isGroupCollapsed(id) { return this.collapsedGroups.includes(id) },
     scheduleToolbarFit() {
+      if (this._toolbarDisposed || this._isBeingDestroyed || this._isDestroyed) return
       if (this._fitRaf) cancelAnimationFrame(this._fitRaf)
-      this._fitRaf = requestAnimationFrame(() => { this._fitRaf = null; this.evaluateToolbarFit() })
+      const epoch = this._toolbarFitEpoch
+      this._fitRaf = requestAnimationFrame(() => {
+        this._fitRaf = null
+        if (epoch === this._toolbarFitEpoch) this.evaluateToolbarFit()
+      })
     },
     async evaluateToolbarFit() {
+      if (this._toolbarDisposed || this._isBeingDestroyed || this._isDestroyed) return
       if (this._fitRunning) { this._fitPending = true; return }
       this._fitRunning = true
+      const epoch = this._toolbarFitEpoch
       try {
-        const bar = this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
+        const root = this.$refs.root
+        const bar = root && root.querySelector('.lark-doc-toolbar')
         if (!bar) return
+        const current = () => !this._toolbarDisposed && !this._isBeingDestroyed && !this._isDestroyed
+          && epoch === this._toolbarFitEpoch && this.$refs.root === root
+          && root.querySelector('.lark-doc-toolbar') === bar
         const overflow = () => bar.scrollWidth > bar.clientWidth + 1
         let guard = 0
         // 收纳：溢出时按优先序收组，直到放下或全收。
@@ -135,12 +168,14 @@ export default {
           if (!next) break
           this.collapsedGroups.push(next)
           await this.$nextTick()
+          if (!current()) return
         }
         // 展开：有余量时逆序还原一组试探，放不下即放回并停止。
         guard = 0
         while (this.collapsedGroups.length && !overflow() && guard++ < 12) {
           const last = this.collapsedGroups.pop()
           await this.$nextTick()
+          if (!current()) return
           if (overflow()) { this.collapsedGroups.push(last); await this.$nextTick(); break }
         }
       } finally {

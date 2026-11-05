@@ -2,11 +2,18 @@
 
 工具栏用 `toolbarKeys` 白名单 / `toolbarExcludes` 黑名单裁剪，key 对齐 AiEditor 的写法。分组粒度对应工具栏的 12 个按钮区，行内格式额外支持按 mark 单独裁剪；常用别名（`heading`、`table`、`undo`）会自动落到正确分组，未知 key 记录在 `instance.unknownToolbarKeys`，不会导致初始化失败。
 
+## 显示策略
+
+格式工具栏默认隐藏。设置 `layout.toolbarVisible: true` 显式显示；只设置 `layout.toolbarFixed: true` 时兼容显示并吸顶。显式 `toolbarVisible: false` 优先，即使 `toolbarFixed: true` 也不显示。`toolbarKeys` 和 `toolbarExcludes` 只裁剪按钮，不负责开启工具栏。
+
+动态切换可见性时，尺寸观察器随工具栏重新绑定或释放；隐藏时关闭「更多」菜单。
+
 ## 配置示例
 
 ```ts
 new LarkDoc({
   element: '#editor',
+  layout: { toolbarVisible: true },
   // 只保留这些分组（按顺序不生效，顺序由内部分组决定）
   toolbarKeys: ['history', 'headings', 'bold', 'italic', 'insert', 'tables', 'ai'],
   // 再剔除个别分组或 mark

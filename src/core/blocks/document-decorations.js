@@ -59,113 +59,120 @@ export const DECORATION_CATEGORY = {
  */
 const resolveBlockPos = (getPos, offset) => getPos() - offset
 
-// widget 会跨事务复用；工厂作用域只持有交互依赖与标量，不能捕获收集器的旧 doc/派生 Map。
+// widget 会跨事务复用。用绑定参数而非收集器内的新闭包，避免压缩器内联后
+// 经父作用域间接保留旧 doc、派生 Map 与装饰数组；绑定参数只含交互依赖和标量。
 function foldWidget(editor, enabled, foldId, collapsed, blockOffset) {
-  return (view, getPos) => {
-    const button = document.createElement('button')
-    const label = collapsed ? '展开' : '收起'
-    button.type = 'button'
-    button.className = 'lark-doc-heading-fold-toggle'
-    button.setAttribute('aria-label', label)
-    button.setAttribute('aria-expanded', String(!collapsed))
-    button.setAttribute('data-tooltip', label)
-    button.innerHTML =
-      '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">' +
-      '<path d="M7.712 11.351L3.34 5.9a.45.45 0 010-.538.278.278 0 01.215-.112h8.89c.168 0 .305.17.305.381a.432.432 0 01-.09.269l-4.372 5.451c-.159.199-.417.199-.576 0z" fill="currentColor"/></svg>'
-    button.contentEditable = 'false'
-    button.addEventListener('mousedown', (event) => event.preventDefault())
-    button.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
-      event.preventDefault()
-      event.stopPropagation()
-      button.click()
-    })
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      const at = resolveBlockPos(getPos, blockOffset)
-      const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
-      const foldRange = foldedRange(editor.state.doc, at)
-      const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
-      if (enabled('folding')) editor.commands.toggleLarkDocFold(at)
-      if (caretInBody) editor.commands.setTextSelection(at + 1)
-      editor.view.focus()
-      if (!wasFolded) {
-        const dom = editor.view.nodeDOM(at)
-        if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
-      }
-    })
-    return button
-  }
+  return renderFoldWidget.bind(null, editor, enabled, foldId, collapsed, blockOffset)
+}
+
+function renderFoldWidget(editor, enabled, foldId, collapsed, blockOffset, view, getPos) {
+  const button = document.createElement('button')
+  const label = collapsed ? '展开' : '收起'
+  button.type = 'button'
+  button.className = 'lark-doc-heading-fold-toggle'
+  button.setAttribute('aria-label', label)
+  button.setAttribute('aria-expanded', String(!collapsed))
+  button.setAttribute('data-tooltip', label)
+  button.innerHTML =
+    '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">' +
+    '<path d="M7.712 11.351L3.34 5.9a.45.45 0 010-.538.278.278 0 01.215-.112h8.89c.168 0 .305.17.305.381a.432.432 0 01-.09.269l-4.372 5.451c-.159.199-.417.199-.576 0z" fill="currentColor"/></svg>'
+  button.contentEditable = 'false'
+  button.addEventListener('mousedown', (event) => event.preventDefault())
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+    event.preventDefault()
+    event.stopPropagation()
+    button.click()
+  })
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const at = resolveBlockPos(getPos, blockOffset)
+    const wasFolded = typeof foldId === 'string' && editor.storage.larkDoc.folded.has(foldId)
+    const foldRange = foldedRange(editor.state.doc, at)
+    const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
+    if (enabled('folding')) editor.commands.toggleLarkDocFold(at)
+    if (caretInBody) editor.commands.setTextSelection(at + 1)
+    editor.view.focus()
+    if (!wasFolded) {
+      const dom = editor.view.nodeDOM(at)
+      if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
+    }
+  })
+  return button
 }
 
 function headingNumberWidget(editor, enabled, onHeadingNumberMenu, label, level) {
-  return (view, getPos) => {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'lark-doc-heading-number'
-    button.contentEditable = 'false'
-    button.textContent = label
-    button.setAttribute('data-number', label)
-    button.setAttribute('data-level', String(level))
-    button.setAttribute('aria-label', `标题编号 ${label}，点击设置编号`)
-    button.setAttribute('data-tooltip', '设置编号')
-    button.addEventListener('mousedown', (event) => event.preventDefault())
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (!enabled('headings') || !editor.isEditable) return
-      const at = resolveBlockPos(getPos, 1)
-      const rect = button.getBoundingClientRect()
-      if (onHeadingNumberMenu) {
-        onHeadingNumberMenu({
-          pos: at,
-          label,
-          level,
-          canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, at)?.attrs?.numberingStart),
-          rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
-        })
-      }
-    })
-    return button
-  }
+  return renderHeadingNumberWidget.bind(null, editor, enabled, onHeadingNumberMenu, label, level)
+}
+
+function renderHeadingNumberWidget(editor, enabled, onHeadingNumberMenu, label, level, view, getPos) {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'lark-doc-heading-number'
+  button.contentEditable = 'false'
+  button.textContent = label
+  button.setAttribute('data-number', label)
+  button.setAttribute('data-level', String(level))
+  button.setAttribute('aria-label', `标题编号 ${label}，点击设置编号`)
+  button.setAttribute('data-tooltip', '设置编号')
+  button.addEventListener('mousedown', (event) => event.preventDefault())
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!enabled('headings') || !editor.isEditable) return
+    const at = resolveBlockPos(getPos, 1)
+    const rect = button.getBoundingClientRect()
+    if (onHeadingNumberMenu) {
+      onHeadingNumberMenu({
+        pos: at,
+        label,
+        level,
+        canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, at)?.attrs?.numberingStart),
+        rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+      })
+    }
+  })
+  return button
 }
 
 function listMarkerWidget(editor, onListNumberMenu, label, depth, className, value) {
-  return (view, getPos) => {
-    const interactive = className === 'lark-doc-list-number'
-    const marker = document.createElement(interactive ? 'button' : 'span')
-    marker.className = className
-    marker.contentEditable = 'false'
-    marker.textContent = label
-    marker.setAttribute('data-number', label)
-    marker.setAttribute('data-depth', String(depth))
-    if (!interactive) {
-      marker.setAttribute('aria-hidden', 'true')
-      return marker
-    }
-    marker.type = 'button'
-    marker.setAttribute('aria-label', `列表编号 ${label}，点击设置编号`)
-    marker.addEventListener('mousedown', (event) => event.preventDefault())
-    marker.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (!editor.isEditable || !onListNumberMenu) return
-      const at = resolveBlockPos(getPos, 2)
-      const current = nodeAtSafe(editor.state.doc, at)
-      if (!current || current.type.name !== 'listItem') return
-      const rect = marker.getBoundingClientRect()
-      onListNumberMenu({
-        pos: at,
-        label,
-        depth,
-        value,
-        canContinue: canContinueListNumber(editor.state.doc, at),
-        rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
-      })
-    })
+  return renderListMarkerWidget.bind(null, editor, onListNumberMenu, label, depth, className, value)
+}
+
+function renderListMarkerWidget(editor, onListNumberMenu, label, depth, className, value, view, getPos) {
+  const interactive = className === 'lark-doc-list-number'
+  const marker = document.createElement(interactive ? 'button' : 'span')
+  marker.className = className
+  marker.contentEditable = 'false'
+  marker.textContent = label
+  marker.setAttribute('data-number', label)
+  marker.setAttribute('data-depth', String(depth))
+  if (!interactive) {
+    marker.setAttribute('aria-hidden', 'true')
     return marker
   }
+  marker.type = 'button'
+  marker.setAttribute('aria-label', `列表编号 ${label}，点击设置编号`)
+  marker.addEventListener('mousedown', (event) => event.preventDefault())
+  marker.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!editor.isEditable || !onListNumberMenu) return
+    const at = resolveBlockPos(getPos, 2)
+    const current = nodeAtSafe(editor.state.doc, at)
+    if (!current || current.type.name !== 'listItem') return
+    const rect = marker.getBoundingClientRect()
+    onListNumberMenu({
+      pos: at,
+      label,
+      depth,
+      value,
+      canContinue: canContinueListNumber(editor.state.doc, at),
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+    })
+  })
+  return marker
 }
 
 /**
