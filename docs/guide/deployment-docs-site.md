@@ -1,8 +1,8 @@
 # 文档站内网部署
 
-本文讲的是**这套开发文档站（VitePress）本身**怎么再部署一份到内网。
+本文仅在仓库维护，讲的是**这套开发文档站（VitePress）本身**怎么再部署一份到内网。
 
-> 如果你的目标是让内网业务系统用上 lark-doc 编辑器本体（npm 包、`dist/` 静态托管、协同服务反代），看 [内网服务器部署](./deployment-intranet)。两件事，别混。
+> 如果你的目标是让内网业务系统用上 lark-doc 编辑器本体（npm 包、`dist/` 静态托管、协同服务反代），看 [内网服务器部署](./deployment-intranet.md)。两件事，别混。
 
 ## 一、现在是怎么发布的
 
@@ -22,7 +22,7 @@
 
 关键点：文档站是 `docs/` 下的**独立子包**（`name: lark-docs`、`private: true`、`vitepress ^1.6.3`），有独立的 `package.json` 与 `package-lock.json`。根 `package.json` 里没有任何 docs 脚本，别在根目录敲 `npm run docs:build`。
 
-在线 demo 的 vendor 资源由当前提交构建，不提交旧资源。首次本地构建、内网出包前，按 [本地开发与验证](./development) 先完成库构建与 `node scripts/demo-sync-vendor.mjs`、六环境构建和 `node scripts/demo-build-examples.mjs --check`。随后再执行本文文档构建与静态托管步骤。
+在线 demo 的 vendor 资源由当前提交构建，不提交旧资源。首次本地构建、内网出包前，按 [本地开发与验证](./development.md) 先完成库构建与 `node scripts/demo-sync-vendor.mjs`、六环境构建和 `node scripts/demo-build-examples.mjs --check`。随后再执行本文文档构建与静态托管步骤。
 
 ## 二、前提改动：base 可注入（已完成，你只需知道怎么用）
 
@@ -86,7 +86,7 @@ bash scripts/pack-docs.sh --base /lark-doc/ --out /tmp/docs-out
 ### 4.2 构建使用的 Node 版本
 
 六个预览准备好之后，文档站与 `pack-docs.sh` 推荐使用 Node 20。
-库/旧 Webpack 的 Node14 和现代 Vite 的 Node22 步骤见[本地开发与验证](./development)。
+库/旧 Webpack 的 Node14 和现代 Vite 的 Node22 步骤见[本地开发与验证](./development.md)。
 不要直接用仓库 `.nvmrc` 的 Node14 构建 VitePress。
 内网服务器只是托管已构建的静态文件，不需要安装 Node。
 
@@ -246,7 +246,7 @@ HTML 是 `no-cache`、assets 带 content hash，用户正常刷新就能拿到�
 ## 五、内网重新构建
 
 内网维护者需要重新编译页面时，保留完整仓库、四个最小应用的锁文件，并配置可提供全部依赖的 npm 镜像。
-按[本地开发与验证](./development)完成依赖安装、库和六环境预览构建后，再运行：
+按[本地开发与验证](./development.md)完成依赖安装、库和六环境预览构建后，再运行：
 
 ```bash
 # 仓库根目录，Node20

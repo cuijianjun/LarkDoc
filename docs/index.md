@@ -12,8 +12,9 @@ hero:
       text: 功能与 API
       link: /guide/configuration
     - theme: alt
-      text: 本地开发
-      link: /guide/development
+      text: 在线改代码
+      link: /demo/
+      target: _blank
 features:
   - icon: 🧩
     title: 每个环境一个路由

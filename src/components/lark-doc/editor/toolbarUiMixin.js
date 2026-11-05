@@ -168,10 +168,10 @@ export default {
         /* ---------- 插入 / 表格 / 图表 / AI ---------- */
         openCommandMenu: (kind, event) => this.openCommandMenu(kind, event),
         scheduleCommandMenuClose: () => this.scheduleCommandMenuClose(),
-        openDiagramMenuOnHover: () => this.openDiagramMenuOnHover(),
-        scheduleDiagramMenuClose: () => this.scheduleDiagramMenuClose(),
         onTableToolbarClick: () => this.onTableToolbarClick(),
         toggleDiagramMenu: () => this.toggleDiagramMenu(),
+        openDiagramMenuOnHover: () => this.openDiagramMenuOnHover(),
+        scheduleDiagramMenuClose: () => this.scheduleDiagramMenuClose(),
         insertDiagramType: (id) => this.insertDiagramType(id),
         // SFC 是内联表达式 `ed.$emit('ai-request', 'rewrite')`，没有对应方法。
         emitAiRequest: (kind) => this.$emit('ai-request', kind),

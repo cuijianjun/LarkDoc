@@ -35,7 +35,7 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 
 ### 1.1 先选安装路线
 
-普通 `npm pack lark-doc@0.14.4` 得到的 tgz 不包含运行时 `node_modules`。仅搬一个 tgz，不能保证完全离线安装；应用自己的 Vue、Webpack/Vite 和其它依赖也必须在内网可用。
+普通 `npm pack lark-doc@0.14.5` 得到的 tgz 不包含运行时 `node_modules`。仅搬一个 tgz，不能保证完全离线安装；应用自己的 Vue、Webpack/Vite 和其它依赖也必须在内网可用。
 
 - **有内网 npm 镜像**：同步指定 SDK 版本及应用锁文件中的完整依赖，使用正常 `npm install` / `npm ci`。
 - **搬运普通 tgz**：在联网机更新应用的 `file:` 引用和锁文件，验证后，带走 tgz 及能够满足整份锁文件的依赖镜像或 npm 缓存。缓存方案须使用兼容的 npm 版本，并在断网的干净目录实际安装验证。
@@ -46,8 +46,8 @@ SDK 不要求 Vue runtime 或 Vue peer。宿主已有的 Vue2 / Vue3 保持原�
 ### 1.2 在联网机器准备普通 tgz
 
 ```bash
-# 在联网机器执行，得到 lark-doc-0.14.4.tgz
-npm pack lark-doc@0.14.4
+# 在联网机器执行，得到 lark-doc-0.14.5.tgz
+npm pack lark-doc@0.14.5
 ```
 
 在应用目录把它放入已有的 `vendor/`，修改依赖，执行一次正常安装以更新锁文件，再运行应用构建。
@@ -61,7 +61,7 @@ npm pack lark-doc@0.14.4
 ### 1.4 搬运前先验一遍
 
 ```bash
-sha256sum lark-doc-0.14.4.tgz > sha256.txt
+sha256sum lark-doc-0.14.5.tgz > sha256.txt
 # 将包与 sha256.txt 一起搬运；内网执行：
 sha256sum -c sha256.txt
 ```
@@ -111,7 +111,7 @@ npm run build
 ```json
 {
   "dependencies": {
-    "lark-doc": "file:./vendor/lark-doc-0.14.4.tgz"
+    "lark-doc": "file:./vendor/lark-doc-0.14.5.tgz"
   }
 }
 ```
@@ -131,7 +131,7 @@ npm run build
 ### 2.5 安装后验收
 
 ```bash
-node -p "require('lark-doc/package.json').version" # 0.14.4
+node -p "require('lark-doc/package.json').version" # 0.14.5
 node -e "console.log(typeof require('lark-doc').LarkDoc)" # function
 ```
 
@@ -141,7 +141,7 @@ node -e "console.log(typeof require('lark-doc').LarkDoc)" # function
 
 | 现象 | 检查与处理 |
 | --- | --- |
-| 仍报旧入口的 `?.` / `??` 或 `import.meta` 解析失败 | 确认实际安装 0.14.4，移除旧 SDK alias / 专属转译规则，检查是否误把 Element ESM 作为 Webpack4 入口 |
+| 仍报旧入口的 `?.` / `??` 或 `import.meta` 解析失败 | 确认实际安装 0.14.5，移除旧 SDK alias / 专属转译规则，检查是否误把 Element ESM 作为 Webpack4 入口 |
 | 样式子路径无法解析 | 改成实际文件 `lark-doc/dist/lark-doc.css` |
 | 内网安装回连 registry | 镜像或缓存未包含锁文件的完整依赖；单个普通 tgz 不包含全部依赖 |
 | `Vue packages version mismatch` | 检查应用自身 Vue / 模板编译器匹配；SDK 不提供或要求另一份 Vue |

@@ -237,15 +237,7 @@ import { migrateRecordContent } from 'lark-doc/migrations'
 | 协同入口依赖缺失 | 是否额外安装并配置 `yjs`、Provider 与 Tiptap 协同扩展 |
 | 配置生效但功能入口不见 | `toolbarKeys` 只控制显示；真正禁用/启用看 `features` |
 
-开发 lark-doc 本身时，修改后先运行：
-
-```bash
-npm run check:quick
-npm run check:pkg
-npm run check:lite
-```
-
-发布前再按仓库约定运行 `npm run check`，并确保 `dist/` 由当前 worktree 重新生成。
+修改库源码与发布前检查，见仓库的[开发指南](https://github.com/cuijianjun/LarkDoc/blob/master/docs/guide/development.md)。
 
 ## 7. 上传和显式协同
 

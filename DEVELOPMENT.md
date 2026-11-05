@@ -16,3 +16,5 @@
 应用继续使用自己的工具链。具体命令与顺序见上面的开发页，不要直接用 Node 14 跑 Vitest 或 Vite 7。
 
 日常按[开发导航](./dev/00-INDEX.md)选择相关章节。发布规则见[发布说明](./dev/07-发布.md)，当前版本以 `package.json` 为准。
+
+线上文档面向 SDK 调用者。本地开发、[历史性能验收](./docs/guide/performance.md)与[文档站部署](./docs/guide/deployment-docs-site.md)只在仓库维护，不编译进线上页面或搜索索引；修改相关能力时仍需同步这些源文件。

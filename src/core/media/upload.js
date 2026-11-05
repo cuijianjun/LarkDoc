@@ -309,11 +309,12 @@ export function createUploadProvider(options = {}) {
       documentId,
     }
     const reportCallbackError = error => {
-      const report = ctx.onCallbackError || options.onCallbackError
-      try {
-        const result = typeof report === 'function' ? report(error) : console.error('[LarkDoc] 上传回调异常', error)
-        Promise.resolve(result).catch(failure => console.error('[LarkDoc] 上传回调异常', failure))
-      } catch (failure) { console.error('[LarkDoc] 上传回调异常', failure) }
+      const reports = [options.onCallbackError, ctx.onCallbackError].filter((handler, index, list) => typeof handler === 'function' && list.indexOf(handler) === index)
+      if (!reports.length) console.error('[LarkDoc] 上传回调异常', error)
+      reports.forEach(report => {
+        try { Promise.resolve(report(error)).catch(failure => console.error('[LarkDoc] 上传回调异常', failure)) }
+        catch (failure) { console.error('[LarkDoc] 上传回调异常', failure) }
+      })
     }
     const notify = (name, extra = {}) => {
       const event = { ...baseCtx, ...extra }

@@ -23,7 +23,7 @@
  */
 
 import { applyStyle, setAttr, syncChildren } from './dom'
-import { iconNode } from './icon'
+import { diagramIconNode } from './icon'
 import { diagramTypes } from '../components/lark-doc/editor/constants'
 
 /** plus 菜单的前置分段；其余段按命令表里首次出现的顺序追加。 */
@@ -55,6 +55,7 @@ export function createCommandMenu(options = {}) {
     kind: '',
     items: [],
     templates: [],
+    diagramTypes,
     query: '',
     activeId: '',
     positionStyle: null,
@@ -76,9 +77,9 @@ export function createCommandMenu(options = {}) {
   el.className = 'lark-doc-command-menu'
   el.setAttribute('role', 'menu')
   el.setAttribute('aria-label', '插入内容')
-  el.addEventListener('keydown', onKeydown)
   el.addEventListener('mouseenter', () => call('onMenuEnter'))
   el.addEventListener('mouseleave', () => call('onMenuLeave'))
+  el.addEventListener('keydown', onKeydown)
 
   // ————————————————— 头部（`<strong>` + 搜索框） —————————————————
 
@@ -175,7 +176,7 @@ export function createCommandMenu(options = {}) {
       node.addEventListener('focus', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
       node.addEventListener('click', () => {
         const current = entry.item
-        // plus 菜单里带子菜单的项一律先展子菜单；斜杠菜单只对 分栏/模板 展，表格直接落 3×3。
+        // plus 菜单里带子菜单的项一律先展子菜单；斜杠菜单对 分栏/模板/图表 展开，表格直接落 3×3。
         if (current.submenu && (state.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(current.submenuType))) openSubmenu(current, node)
         else call('onChoose', current)
       })
@@ -349,19 +350,24 @@ export function createCommandMenu(options = {}) {
     const title = document.createElement('strong')
     title.textContent = '选择图表类型'
     submenuEl.appendChild(title)
-    diagramTypes.forEach((item) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.setAttribute('role', 'menuitem')
-      button.setAttribute('aria-label', item.label)
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', () => call('onChoose', { id: 'diagram', diagramType: item.id }))
-      button.appendChild(iconNode(`diagram-${item.id}`, 18, 'lark-doc-command-icon is-teal'))
+    state.diagramTypes.forEach((item) => {
+      const node = document.createElement('button')
+      node.type = 'button'
+      node.setAttribute('role', 'menuitem')
+      node.setAttribute('aria-label', item.label)
+      node.addEventListener('mousedown', (event) => event.preventDefault())
+      node.addEventListener('click', () => {
+        if (typeof handlers.onChooseDiagram === 'function') call('onChooseDiagram', item.id)
+        else call('onChoose', { id: 'diagram', diagramType: item.id })
+      })
+      const icon = diagramIconNode(item.id, 18, 'lark-doc-command-icon is-teal')
+      icon.setAttribute('aria-hidden', 'true')
       const label = document.createElement('span')
       label.className = 'lark-doc-command-label'
       label.textContent = item.label
-      button.appendChild(label)
-      submenuEl.appendChild(button)
+      node.appendChild(icon)
+      node.appendChild(label)
+      submenuEl.appendChild(node)
     })
     return {}
   }
@@ -472,7 +478,9 @@ export function createCommandMenu(options = {}) {
         ? 166
         : state.submenuType === 'table'
           ? 304
-          : Math.min(420, 42 + (state.submenuType === 'diagram' ? diagramTypes.length : options.length) * 40)
+          : state.submenuType === 'diagram'
+            ? Math.min(420, 42 + Math.max(1, state.diagramTypes.length) * 40)
+            : Math.min(420, 42 + options.length * 40)
     const right = triggerRect.right + SUBMENU_GAP
     const left = triggerRect.left - width - SUBMENU_GAP
     const leftPosition = right + width + SUBMENU_MARGIN <= window.innerWidth ? right : Math.max(SUBMENU_MARGIN, left)
@@ -580,6 +588,7 @@ export function createCommandMenu(options = {}) {
   function update(patch) {
     const previous = { open: state.open, kind: state.kind }
     Object.assign(state, patch || {})
+    if (!Array.isArray(state.diagramTypes)) state.diagramTypes = []
     if (!state.open) {
       if (el.parentNode) unmount()
       else closeSubmenu()
@@ -598,6 +607,7 @@ export function createCommandMenu(options = {}) {
   return {
     el,
     update,
+    choose,
     focusSearch() { if (input && typeof input.focus === 'function') input.focus() },
     get submenuEl() { return submenuEl },
     destroy() {

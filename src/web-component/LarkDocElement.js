@@ -46,6 +46,7 @@ export class LarkDocElement extends HTMLElement {
     /** @type {LarkDoc|null} 门面实例；宿主可用 el.document 直接操作。 */
     this.document = null
     this.ready = false
+    this._actualReady = false
     this._rendererProps = {}
     this._options = {}
     this._connectTask = null
@@ -180,6 +181,7 @@ export class LarkDocElement extends HTMLElement {
       clearTimeout(this[key])
       this[key] = null
     }
+    this._actualReady = false
     if (!this.document) return
     const instance = this.document
     this.document = null
@@ -201,12 +203,21 @@ export class LarkDocElement extends HTMLElement {
       const nextOptions = { ...readOptionsFromElement(this).options, ...this.__options }
       const newContent = Object.prototype.hasOwnProperty.call(nextOptions, 'content') &&
         !Object.is(nextOptions.content, this._options.content)
+      const newTitle = !Object.is(nextOptions.title, this._options.title) && nextOptions.title !== undefined
       // 在重建执行时取值，保留排队期间的编辑；只有显式新 content 才是换文档。
       const preservedState = this.document && !newContent
         ? { content: this.document.getJSON(), title: this.document.getTitle() }
         : {}
-      if (!Object.is(nextOptions.title, this._options.title) && nextOptions.title !== undefined) {
+      if (newTitle) {
         delete preservedState.title
+      }
+      if (this.document) {
+        const previous = this.document.options._preserveRuntimeState || {}
+        // 首次 ready 前仍恢复草稿；连续重建须延续已保留的运行状态或明确新值。
+        preservedState._preserveRuntimeState = {
+          content: this._actualReady || previous.content === true || newContent,
+          title: this._actualReady || previous.title === true || newContent || newTitle,
+        }
       }
       this._unmount()
       this._mount(preservedState)
@@ -225,6 +236,10 @@ export class LarkDocElement extends HTMLElement {
     if (!instance) return
     Object.keys(EVENT_MAP).forEach((name) => {
       instance.on(name, (payload) => {
+        if (name === 'ready') {
+          if (this.document !== instance) return
+          this._actualReady = true
+        }
         const detail = {
           type: name,
           document: instance,

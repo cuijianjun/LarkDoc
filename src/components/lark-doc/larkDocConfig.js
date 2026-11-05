@@ -6,6 +6,7 @@
  */
 import { MAX_BLOCK_INDENT } from './documentOperations'
 import { normalizeModesConfig } from './editor/docModes'
+import { HELP_MENU_ITEMS } from '../../ui/shortcutGroups'
 
 export const LARK_DOC_FEATURES = Object.freeze([
   'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
@@ -105,6 +106,11 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     persist: true,
     labels: {},
     shortcuts: true,
+  },
+  help: {
+    enabled: true,
+    items: HELP_MENU_ITEMS.map(item => item.id),
+    onAction: null,
   },
   text: {
     // 正文为空时的占位提示，命令式入口的 placeholder 配置项落到这里。
@@ -207,6 +213,7 @@ export function createLarkDocConfig(overrides = {}) {
     blockMenu: mergeSection(DEFAULT_LARK_DOC_CONFIG.blockMenu, source.blockMenu),
     layout: mergeSection(DEFAULT_LARK_DOC_CONFIG.layout, source.layout),
     modes: mergeSection(DEFAULT_LARK_DOC_CONFIG.modes, source.modes),
+    help: mergeSection(DEFAULT_LARK_DOC_CONFIG.help, source.help),
     text: mergeSection(DEFAULT_LARK_DOC_CONFIG.text, source.text),
     network: mergeSection(DEFAULT_LARK_DOC_CONFIG.network, source.network),
     limits: mergeSection(DEFAULT_LARK_DOC_CONFIG.limits, source.limits),
@@ -221,6 +228,10 @@ export function createLarkDocConfig(overrides = {}) {
   // `modes` 与其它段不同：`allow` 是白名单数组、`default` 要和 `allow` 对齐，
   // 只做 merge 不够 —— 归一化的唯一实现在 `editor/docModes.js`（那也有单测）。
   config.modes = normalizeModesConfig(config.modes)
+  config.help.enabled = config.help.enabled !== false
+  config.help.items = (Array.isArray(config.help.items) ? config.help.items : DEFAULT_LARK_DOC_CONFIG.help.items)
+    .filter((id, index, list) => HELP_MENU_ITEMS.some(item => item.id === id) && list.indexOf(id) === index)
+  config.help.onAction = typeof config.help.onAction === 'function' ? config.help.onAction : null
   config.layout.titleBarFixed = config.layout.titleBarFixed === true
   config.layout.toolbarFixed = config.layout.toolbarFixed === true
   config.layout.toolbarVisible = source.layout && typeof source.layout.toolbarVisible === 'boolean'

@@ -20,7 +20,7 @@
 已有应用先安装 SDK，再按对应环境页检查构建配置；原有框架和打包器保持不变：
 
 ```bash
-npm install lark-doc@0.14.4 --save-exact
+npm install lark-doc@0.14.5 --save-exact
 ```
 
 六个示例使用同一版本。库由 Rollup 构建，不携带 Vue 或 Webpack 运行时；Vue/React 由应用提供。
@@ -29,7 +29,8 @@ npm install lark-doc@0.14.4 --save-exact
 
 - **保存正文**：监听 `onUpdate`，读取 `doc.getJSON()`；页面卸载时调用 `doc.destroy()`。示例显式使用 `storage: 'none'`，由应用保存内容；默认 `local` 使用浏览器草稿。
 - **图片上传**：未配置上传接口时本地转 base64。配置 `uploader.action` 和 `response` 后，SDK 先上传、等待地址、再插图；各环境页面都附有服务器配置与完整回调。
-- **图表与公式**：默认入口按需加载实现；需要全量或 lite 时再看[产物与按需加载](https://cuijianjun.github.io/LarkDoc/guide/build-artifacts.html)。
+- **帮助菜单**：`help: { enabled: false }` 关闭右下角问号；`items` 选择菜单，`onAction` 接入应用行为，见[帮助菜单配置](https://cuijianjun.github.io/LarkDoc/guide/configuration.html#help)。
+- **图表与公式**：工具栏、插入「＋」和斜杠菜单提供同一套六类型图表选择与图标；默认按需加载实现。需要全量或 lite 时再看[产物与按需加载](https://cuijianjun.github.io/LarkDoc/guide/build-artifacts.html)。
 
 GitHub Pages 托管静态页面，服务器上传需要填写你自己的接口。
 
@@ -40,11 +41,12 @@ GitHub Pages 托管静态页面，服务器上传需要填写你自己的接口�
 | 首次接入、运行最小 demo | [统一示例中心](https://cuijianjun.github.io/LarkDoc/examples/) |
 | 查询上传参数和回调时序 | [上传器参考](https://cuijianjun.github.io/LarkDoc/blocks/uploader.html) |
 | 查询工具栏、功能和实例 API | [配置参考](https://cuijianjun.github.io/LarkDoc/guide/configuration.html) · [实例与事件](https://cuijianjun.github.io/LarkDoc/guide/instance.html) |
-| 修改编辑器源码、测试或发布 | [本地开发与验证](https://cuijianjun.github.io/LarkDoc/guide/development.html) |
+| 修改编辑器源码、测试或发布 | [仓库开发入口](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md) |
 | 业务保存、Provider 与协同 | [进阶接入指南](https://github.com/cuijianjun/LarkDoc/blob/master/DEMO_INTEGRATION_GUIDE.md) |
 | 内网安装或部署 | [安装与离线](https://cuijianjun.github.io/LarkDoc/guide/install.html) |
 
-[配置 Playground](https://cuijianjun.github.io/LarkDoc/demo/)用于调整编辑器配置；[性能记录](https://cuijianjun.github.io/LarkDoc/guide/performance.html)包含构建耗时和验证边界。
+[配置 Playground](https://cuijianjun.github.io/LarkDoc/demo/)用于在线修改初始化代码。
+源码构建、历史性能验收和文档站部署资料保留在[仓库开发导航](https://github.com/cuijianjun/LarkDoc/blob/master/dev/00-INDEX.md)，由维护者继续更新。
 
 ## 背景
 

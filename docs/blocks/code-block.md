@@ -1,10 +1,12 @@
 # 代码块
 
-代码块组件提供语言选择、语法高亮（highlight.js 按需动态加载，本地 chunk 无外网请求）、行内复制与编辑态切换。可通过 `performance.syntaxHighlight` 关闭高亮以减小包体积感知。
+代码块组件提供语言选择、语法高亮（highlight.js 按需动态加载，本地 chunk 无外网请求）、行内复制与编辑态切换。可通过 `config.performance.syntaxHighlight` 关闭语法高亮。
 
 语言选为 **Mermaid 图表** 时，代码块升级为图表块：**默认直接渲染图表**（与 Vditor 行为一致），点「编辑源码」可切回源码编辑。渲染器（mermaid，打包进产物、不请求外网）是 `import()` 懒 chunk，只在首次渲染时按需加载。
 
 图表块使用**独立外观**（白底卡片），不与深色代码框共用样式；工具栏提供独立的「图表」按钮，下拉可选流程图 / 时序图 / 甘特图 / 饼图 / 状态图 / 类图直接插入。
+
+工具栏、插入「＋」和斜杠菜单使用同一套六类型选择，每种类型都有独立图标。鼠标移入图表按钮可展开菜单，进入菜单后保持展开，离开后稍延迟收起。键入 `/图表` 后按 Enter，也会先展开类型选择。
 
 ## 基本用法
 
@@ -14,7 +16,7 @@
 new LarkDoc({
   element: '#editor',
   features: { codeBlocks: true, diagram: true },
-  performance: { syntaxHighlight: true },  // false 时纯文本渲染
+  config: { performance: { syntaxHighlight: true } }, // false 时纯文本渲染
   toolbarKeys: ['insert'],                 // 图表入口在插入分组（斜杠命令 / 加号菜单搜「图表」）
   content: '<pre><code class="language-js">console.log("hi")</code></pre>',
 })
@@ -24,7 +26,7 @@ new LarkDoc({
 
 | 入口 | 操作 |
 | --- | --- |
-| 斜杠命令 / 插入菜单 | 新建代码块；输入「图表」或 `mermaid` 可直接插入带示例源码的图表块。 |
+| 斜杠命令 / 插入菜单 | 新建代码块；输入「图表」或 `mermaid` 后，展开图表子菜单，选择类型即可插入对应示例源码。 |
 | 工具栏「图表」按钮 | 下拉选择图表类型（流程图 / 时序图 / 甘特图 / 饼图 / 状态图 / 类图），插入对应示例源码的图表块。 |
 | 块句柄菜单 | 「转为代码块」，正文与代码块互转。 |
 | 语言选择 | 代码块右上角切换语言，高亮随之更新；选 Mermaid 立即进入图表渲染。 |
@@ -38,9 +40,9 @@ new LarkDoc({
 | --- | --- | --- | --- |
 | `features.codeBlocks` | `boolean` | `true` | 关闭后代码块入口与命令不可用。 |
 | `features.diagram` | `boolean` | `true` | 关闭后语言下拉不再提供 Mermaid 图表，预览按钮与渲染器加载一并禁用；已有 mermaid 代码块退化为纯源码展示。 |
-| `performance.diagramScriptUrl` | `string \| null` | `null` | 逃生舱：显式给出一个自托管 mermaid UMD 地址时，改为运行时注入 `<script data-lark-doc-diagram="mermaid">` 加载（DOM 里出现该标签即说明走了这条路）。默认 `null` 走 `import()` 懒 chunk，地址由打包器 / 脚本自身 URL 解析，内网无需配置。 |
-| `performance.syntaxHighlight` | `boolean` | `true` | 关闭后不做语法高亮。 |
-| `blockMenu.disabled: ['codeBlock']` | `string[]` | `[]` | 禁用块菜单「转为代码块」。 |
+| `config.performance.diagramScriptUrl` | `string \| null` | `null` | 显式给出自托管 mermaid UMD 地址时，改为运行时加载该脚本。默认 `null` 使用包内按需区块，内网无需另配地址。 |
+| `config.performance.syntaxHighlight` | `boolean` | `true` | 关闭后不做语法高亮。 |
+| `config.blockMenu.disabled: ['codeBlock']` | `string[]` | `[]` | 禁用块菜单「转为代码块」。 |
 
 ### 数据契约
 
@@ -68,17 +70,18 @@ new LarkDoc({
 ### 图表渲染
 
 - 支持 mermaid 语法（流程图、时序图、甘特图、饼图等），本地渲染，不请求外部服务。
-- 编辑源码后 300ms 防抖重新渲染；渲染失败（语法错误）时自动展开源码区并显示提示，源码始终保留。
-- 渲染器不参与首屏：mermaid 是 `import()` 懒 chunk，首次渲染时才下载对应区块（约 3.3MB raw，浏览器有缓存后几乎零成本），首屏体积零增加。布局上它被拆成独立区块，源码打包的宿主会再按自己的规则二次分包。
-- `window.mermaid` 已存在时直接复用，不再加载自己的副本（宿主已有 mermaid 可省这 3.3MB）。
+- 编辑源码后 300ms 防抖重新渲染；渲染失败时自动展开源码区，并显示具体错误原因，源码始终保留。
+- 高亮资源或语言包临时加载失败时先显示纯文本，下次更新该代码块会重新尝试加载同一语言。
+- 默认入口按需加载 mermaid：首次渲染图表时下载对应区块，应用打包器会按自己的规则分包。使用 full 入口时会静态引入该能力。
+- `window.mermaid` 已存在时直接复用，不再加载自己的副本。
 - `securityLevel: 'strict'`，标签文本中的 HTML 会被转义，不执行脚本。
 
 ::: warning 部署资源
 渲染器**在 JS 产物体系内**，不是需要单独拷贝的运行时资源：
 - 按 `exports` 消费（webpack5 / vite / rollup）：宿主打包器接管懒 chunk，零附加文件、零配置；
-- 预构建 `dist` 直引（CDN / 内网 Nginx / `<script>`）：把 **`dist/` 整目录**同位部署即可——`publicPath: 'auto'` 会按脚本自身 URL 找 `lark-doc-element.umd.min.mermaid.js` 等按需区块，放在任意子目录都成立；
-- CJS 入口（`require('lark-doc')`）：`LimitChunkCountPlugin` 把 mermaid 内联进单文件，不存在附加区块；
-- 只有你**自己**想接管加载（例如已有 mermaid CDN 镜像）才需要配 `performance.diagramScriptUrl`。加载失败时预览层显示「图表渲染失败」，源码不受影响。
+- 预构建 `dist` 直引（CDN / 内网 Nginx / `<script>`）：把 **`dist/` 整目录**同位部署；Element UMD 从主脚本同目录加载 `lark-doc-element.umd.min.mermaid.js`，ESM 使用相对模块路径；
+- CJS 入口（`require('lark-doc')`）：通过相对 `require` 加载配套区块，也需保留完整 `dist/`；
+- 接管加载（例如已有 mermaid 镜像）时才需要配 `config.performance.diagramScriptUrl`。加载失败时预览层显示错误原因，源码不受影响。更多入口区别见[全量与按需加载](/guide/build-artifacts)。
 :::
 
 ### 数据契约

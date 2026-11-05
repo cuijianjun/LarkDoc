@@ -14,7 +14,6 @@ const BASE = (() => {
   return withLead.endsWith('/') ? withLead : withLead + '/'
 })()
 
-
 const examples = [
   { text: '选择环境', link: '/examples/' },
   { text: 'Vue2 + Webpack5', link: '/examples/vue2-webpack5' },
@@ -25,18 +24,79 @@ const examples = [
   { text: 'Web Component', link: '/examples/web-component' },
 ]
 
+// 调用者先跑通接入，再按需求展开参考；guide 和 blocks 使用同一份导航。
+const callerSidebar = [
+  { text: '开始使用', items: [
+    { text: '1. 选环境，运行最小 demo', link: '/examples/' },
+    { text: '快速开始', link: '/guide/getting-started' },
+    { text: '2. 常用配置', link: '/guide/configuration' },
+    { text: '3. 读取内容与事件', link: '/guide/instance' },
+    { text: '4. 服务器上传与回调', link: '/blocks/uploader' },
+    { text: '功能总览', link: '/blocks/' },
+  ] },
+  { text: '按需配置功能', collapsed: true, items: [
+    { text: '工具栏配置', link: '/guide/toolbar' },
+    { text: '标题', link: '/blocks/heading' },
+    { text: '文字格式', link: '/blocks/marks' },
+    { text: '文字样式', link: '/blocks/text-style' },
+    { text: '段落样式', link: '/blocks/paragraph' },
+    { text: '列表', link: '/blocks/lists' },
+    { text: '引用', link: '/blocks/quote' },
+    { text: '链接', link: '/blocks/link' },
+    { text: '表情', link: '/blocks/emoji' },
+    { text: '代码块与图表', link: '/blocks/code-block' },
+    { text: '高亮块', link: '/blocks/callout' },
+    { text: '分栏', link: '/blocks/columns' },
+    { text: '表格', link: '/blocks/table' },
+    { text: '图片', link: '/blocks/image' },
+    { text: '数学公式', link: '/blocks/math' },
+    { text: '导入导出', link: '/blocks/import-export' },
+    { text: '折叠块', link: '/blocks/folding' },
+    { text: '目录', link: '/blocks/outline' },
+    { text: '查找替换', link: '/blocks/search' },
+    { text: '块句柄与拖拽', link: '/blocks/block-handle' },
+    { text: '视图模式', link: '/blocks/view-modes' },
+    { text: '模板', link: '/blocks/templates' },
+    { text: '浮层矩阵', link: '/blocks/overlays' },
+    { text: 'AI 组件', link: '/blocks/ai' },
+    { text: '网络策略', link: '/blocks/network' },
+    { text: '外部服务块', link: '/blocks/external-blocks' },
+  ] },
+  { text: '进阶接入与参考', collapsed: true, items: [
+    { text: '全量与按需加载', link: '/guide/build-artifacts' },
+    { text: 'View 层与 Provider 接入', link: '/guide/view-integration' },
+    { text: '协同与权限', link: '/guide/collaboration' },
+    { text: '协同服务端契约', link: '/guide/collab-server' },
+    { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
+    { text: 'Web Component 参考', link: '/guide/web-component' },
+    { text: '环境兼容速查', link: '/guide/compatibility' },
+    { text: '浏览器验证（verify.mjs）', link: '/guide/browser-verification' },
+    { text: '背景与免责声明', link: '/guide/about' },
+  ] },
+  { text: '安装、离线与排错', collapsed: true, items: [
+    { text: '安装与离线', link: '/guide/install' },
+    { text: '补充接入与排错', link: '/guide/environments' },
+    { text: '资源本地化', link: '/guide/offline' },
+    { text: '内网迁移（Vue2 / Vue3）', link: '/guide/intranet-migration' },
+    { text: '业务应用内网部署', link: '/guide/deployment-intranet' },
+  ] },
+]
+
 export default defineConfig({
   base: BASE,
   lang: 'zh-CN',
   title: 'lark-doc',
-  description: 'LarkDoc 风格 Tiptap 文档编辑器 · 开发文档',
+  description: 'LarkDoc 编辑器 · 安装、配置与 API 调用指南',
   // head 里是裸 HTML，不会自动套 base，必须手动拼 BASE。
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: BASE + 'logo.svg' }]],
 
-  // VitePress 会把 srcDir 下所有 .md 都编译成页面。docs/superpowers/ 放的是内部
-  // 实施计划与设计规格（不是对外文档），不排除就会被打进产物、并混进本地搜索索引。
-  // 注意：srcExclude 一旦显式设置会覆盖默认值，所以默认的三条要一并写回。
-  srcExclude: ['superpowers/**', 'examples/apps/**', '**/README.md', '**/CHANGELOG.md', '**/CONTRIBUTING.md'],
+  // 维护者文档继续保留在仓库；不生成线上页面或本地搜索记录。
+  // 显式设置 srcExclude 会覆盖默认值，因此保留默认的三条。
+  srcExclude: [
+    'superpowers/**', 'examples/apps/**',
+    'guide/development.md', 'guide/performance.md', 'guide/deployment-docs-site.md',
+    '**/README.md', '**/CHANGELOG.md', '**/CONTRIBUTING.md',
+  ],
 
   themeConfig: {
     siteTitle: 'lark-doc Docs',
@@ -44,44 +104,10 @@ export default defineConfig({
 
     nav: [
       { text: '示例中心', link: '/examples/', activeMatch: '/examples/' },
-      {
-        text: '开始上手',
-        activeMatch: '/guide/(getting-started|install|compatibility|environments|instance)',
-        items: [
-          { text: '快速开始', link: '/guide/getting-started' },
-          { text: '安装与引用总表（内外网）', link: '/guide/install' },
-          { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
-          { text: '各环境引入对照', link: '/guide/environments' },
-          { text: '实例与事件', link: '/guide/instance' },
-        ],
-      },
-      {
-        text: '功能文档',
-        activeMatch: '/(blocks|guide/(configuration|toolbar|collaboration|collab-server))',
-        items: [
-          { text: '功能总览', link: '/blocks/' },
-          { text: '工具栏', link: '/guide/toolbar' },
-          { text: '内容块', link: '/blocks/' },
-          { text: '文档操作', link: '/blocks/folding' },
-          { text: '智能与扩展', link: '/blocks/ai' },
-          { text: '配置总览', link: '/guide/configuration' },
-          { text: '图片上传与完整回调', link: '/blocks/uploader' },
-          { text: '全量与按需加载', link: '/guide/build-artifacts' },
-          { text: '协同与权限', link: '/guide/collaboration' },
-        ],
-      },
-      { text: '本地开发', link: '/guide/development' },
-      {
-        text: '安装与部署',
-        items: [
-          { text: '安装与离线', link: '/guide/install' },
-          { text: '补充接入与排错', link: '/guide/environments' },
-          { text: '内网服务器部署', link: '/guide/deployment-intranet' },
-          { text: '文档站部署', link: '/guide/deployment-docs-site' },
-        ],
-      },
-      { text: '配置 Playground', link: '/demo/', target: '_blank' },
+      { text: '配置与 API', link: '/guide/configuration', activeMatch: '/(guide|blocks)/' },
+      { text: '在线改代码', link: '/demo/', target: '_blank' },
     ],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/cuijianjun/LarkDoc' }],
 
     outline: { level: [2, 3], label: '本页目录' },
 
@@ -100,124 +126,17 @@ export default defineConfig({
     },
 
     sidebar: {
-      // 功能文档按用户目标分组；安装、部署和开发资料仍保留原有入口。
+      // 功能文档按用户目标分组，保留 dev 的功能与集成参考入口。
       '/examples/': [
         { text: '完整接入示例', items: examples },
-        { text: '进一步配置', items: [
-          { text: '上传器参考', link: '/blocks/uploader' },
-          { text: '功能配置', link: '/guide/configuration' },
-          { text: '补充接入与排错', link: '/guide/environments' },
-          { text: '本地开发与验证', link: '/guide/development' },
+        { text: '进一步配置', collapsed: true, items: [
+          { text: '常用配置', link: '/guide/configuration' },
+          { text: '读取内容与事件', link: '/guide/instance' },
+          { text: '服务器上传与回调', link: '/blocks/uploader' },
         ] },
       ],
-      // 侧栏分四组，按「读文档的顺序」排，不按页面创建顺序排：
-      // 上手（我要装/要跑起来） → 功能（我要配某个能力） → 部署（我要上线/进内网） → 参考。
-      // 新增页面时先想清楚它属于哪一组，别继续往第一组里塞。
-      '/guide/': [
-        {
-          text: '开始上手',
-          items: [
-            { text: '选择环境与完整 demo', link: '/examples/' },
-            { text: '快速开始', link: '/guide/getting-started' },
-            { text: '安装与引用总表（内外网）', link: '/guide/install' },
-            { text: '补充接入与排错', link: '/guide/environments' },
-            { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
-            { text: '实例与事件', link: '/guide/instance' },
-            { text: '本地开发与验证', link: '/guide/development' },
-          ],
-        },
-        {
-          text: '功能入口',
-          items: [
-            { text: '功能总览', link: '/blocks/' },
-            { text: '配置总览', link: '/guide/configuration' },
-            { text: '工具栏', link: '/guide/toolbar' },
-            { text: '协同与权限', link: '/guide/collaboration' },
-          ],
-        },
-        {
-          text: '集成参考',
-          items: [
-            { text: '协同服务端契约', link: '/guide/collab-server' },
-            { text: 'View 层接入', link: '/guide/view-integration' },
-            { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
-            { text: 'Web Component（跨框架）', link: '/guide/web-component' },
-          ],
-        },
-        {
-          text: '打包与内网部署',
-          items: [
-            { text: '安装与离线', link: '/guide/install' },
-            { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
-            { text: '离线与资源本地化', link: '/guide/offline' },
-            { text: '内网迁移实战（Vue2 / Vue3）', link: '/guide/intranet-migration' },
-            { text: '内网服务器部署（nginx）', link: '/guide/deployment-intranet' },
-            { text: '文档站内网部署', link: '/guide/deployment-docs-site' },
-          ],
-        },
-        {
-          text: '参考',
-          items: [
-            { text: '性能基线与收口', link: '/guide/performance' },
-            { text: '浏览器验证（verify.mjs）', link: '/guide/browser-verification' },
-            { text: '背景与免责声明', link: '/guide/about' },
-          ],
-        },
-      ],
-      '/blocks/': [
-        {
-          text: '功能总览',
-          items: [
-            { text: '功能总览', link: '/blocks/' },
-          ],
-        },
-        {
-          text: '基础编辑',
-          items: [
-            { text: '标题', link: '/blocks/heading' },
-            { text: '文字格式', link: '/blocks/marks' },
-            { text: '文字样式', link: '/blocks/text-style' },
-            { text: '段落样式', link: '/blocks/paragraph' },
-            { text: '列表', link: '/blocks/lists' },
-            { text: '引用', link: '/blocks/quote' },
-            { text: '链接', link: '/blocks/link' },
-            { text: '表情', link: '/blocks/emoji' },
-            { text: '代码块', link: '/blocks/code-block' },
-            { text: '高亮块', link: '/blocks/callout' },
-            { text: '分栏', link: '/blocks/columns' },
-          ],
-        },
-        {
-          text: '媒体与数据',
-          items: [
-            { text: '表格', link: '/blocks/table' },
-            { text: '图片', link: '/blocks/image' },
-            { text: '数学公式', link: '/blocks/math' },
-            { text: '导入导出', link: '/blocks/import-export' },
-          ],
-        },
-        {
-          text: '文档能力',
-          items: [
-            { text: '折叠块', link: '/blocks/folding' },
-            { text: '目录', link: '/blocks/outline' },
-            { text: '查找替换', link: '/blocks/search' },
-            { text: '块句柄与拖拽', link: '/blocks/block-handle' },
-            { text: '视图模式', link: '/blocks/view-modes' },
-            { text: '模板', link: '/blocks/templates' },
-            { text: '浮层矩阵', link: '/blocks/overlays' },
-          ],
-        },
-        {
-          text: '智能与扩展',
-          items: [
-            { text: 'AI 组件', link: '/blocks/ai' },
-            { text: '上传器', link: '/blocks/uploader' },
-            { text: '网络策略', link: '/blocks/network' },
-            { text: '外部服务块', link: '/blocks/external-blocks' },
-          ],
-        },
-      ],
+      '/guide/': callerSidebar,
+      '/blocks/': callerSidebar,
     },
 
     docFooter: { prev: '上一页', next: '下一页' },

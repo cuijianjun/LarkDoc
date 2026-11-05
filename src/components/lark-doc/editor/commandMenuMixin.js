@@ -170,7 +170,12 @@ export default {
       // P4-02a：日历浮层同样要接管 Esc / Enter（浮层会吃掉这两个键，别让它们穿透到正文）。
       if (typeof this.onReminderKeydown === 'function' && this.onReminderKeydown(event)) return
       if (event.isComposing || this.editor?.view.composing || !this.menuOpen) return
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) } else if (event.key === 'Enter') { event.preventDefault(); this.chooseCommand(this.filteredCommands[this.activeCommandIndex]) } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); this.moveCommand(event.key === 'ArrowDown' ? 1 : -1) }
+      else if (event.key === 'Enter') {
+        event.preventDefault()
+        if (typeof this._commandMenuUi?.choose === 'function') this._commandMenuUi.choose()
+        else this.chooseCommand(this.filteredCommands[this.activeCommandIndex])
+      } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
     },
     chooseCommand(item) {
       if (!item || !this.writable()) return
@@ -276,6 +281,7 @@ export default {
       this.closeDiagramMenu()
       this.run('insertContent', { type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: item.source }] })
     },
+    /** 执行菜单与程序化调用共用的命令；未在菜单展示的块仍保留已有执行分支。 */
     executeCommand(id, templateId = '', diagramType = '') {
       if (!this.writable()) return
       const feature = commandFeatureOf(id)

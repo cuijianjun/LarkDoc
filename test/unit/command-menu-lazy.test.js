@@ -6,6 +6,7 @@ import { createBlockHandle } from '../../src/ui/blockHandle'
 import { createToolbar } from '../../src/ui/toolbar'
 import commandMenuMixin from '../../src/components/lark-doc/editor/commandMenuMixin'
 import commandMenuUiMixin from '../../src/components/lark-doc/editor/commandMenuUiMixin'
+import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
 import blockHandleUiMixin from '../../src/components/lark-doc/editor/blockHandleUiMixin'
 import toolbarUiMixin from '../../src/components/lark-doc/editor/toolbarUiMixin'
 import toolbarCollapseMixin from '../../src/components/lark-doc/editor/toolbarCollapseMixin'
@@ -100,6 +101,52 @@ describe('命令菜单原生 options host', () => {
     h.host.onCommandMenuReady(old)
     await settle()
     expect(focus).not.toHaveBeenCalled()
+  })
+  it('恢复焦点的关闭回调不能打断下一批菜单', async () => {
+    const h = menuHost()
+    h.open()
+    await settle()
+    const focus = vi.spyOn(h.host, 'focus')
+    const revision = h.host.menuRevision
+    h.host.closeCommandMenu(true)
+    expect(h.host.menuRevision).toBe(revision + 1)
+    expect(focus).toHaveBeenCalledOnce()
+    h.open()
+    await settle()
+    expect(focus).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(h.host._commandMenuUi.el.querySelector('input'))
+  })
+  it('采用主线传入的图表类型与专用回调，单次点击只执行一次', () => {
+    const root = rootNode()
+    const handlers = { onChoose: vi.fn(), onChooseDiagram: vi.fn() }
+    const ui = createCommandMenu({ host: root, handlers })
+    const diagram = { id: 'diagram', label: '图表', category: '基础', submenu: '图表', submenuType: 'diagram' }
+    ui.update({ open: true, kind: 'slash', items: [diagram], activeId: 'diagram', diagramTypes: [diagramTypes[3]] })
+    ui.choose()
+    const buttons = ui.submenuEl.querySelectorAll('button')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].getAttribute('aria-label')).toBe(diagramTypes[3].label)
+    expect(buttons[0].querySelector('.lark-doc-diagram-icon svg')).not.toBeNull()
+    buttons[0].click()
+    expect(handlers.onChooseDiagram).toHaveBeenCalledExactlyOnceWith(diagramTypes[3].id)
+    expect(handlers.onChoose).not.toHaveBeenCalled()
+    ui.destroy()
+  })
+  it('本实例插入按钮不关闭菜单，其他实例插入按钮会关闭', () => {
+    const root = rootNode()
+    const own = document.createElement('button')
+    own.setAttribute('aria-label', '插入')
+    const child = document.createElement('span')
+    own.appendChild(child)
+    root.appendChild(own)
+    const foreign = document.createElement('button')
+    foreign.setAttribute('aria-label', '插入')
+    document.body.appendChild(foreign)
+    const ctx = { $refs: { root }, menuOpen: true, closeCommandMenu: vi.fn(), headingNumberMenu: { open: false } }
+    overlayDismissMixin.methods.onDocumentPointerDown.call(ctx, { target: child })
+    expect(ctx.closeCommandMenu).not.toHaveBeenCalled()
+    overlayDismissMixin.methods.onDocumentPointerDown.call(ctx, { target: foreign })
+    expect(ctx.closeCommandMenu).toHaveBeenCalledOnce()
   })
   it('禁用原因、hover 保活和图表子菜单在鼠标与 Enter 入口均保留', () => {
     const root = rootNode()

@@ -1,8 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { JSDOM } from 'jsdom'
 import { createWorkspaceController, createWorkspaceState } from '../../src/workspace/WorkspaceController'
+import { downloadText, htmlToMarkdown } from '../../src/utils/importExport'
+
+vi.mock('../../src/utils/importExport', () => ({
+  downloadText: vi.fn(),
+  htmlToMarkdown: vi.fn(async () => 'converted markdown'),
+  safeFileName: value => value,
+  exportDocx: vi.fn(),
+}))
+
+const controllers = []
+afterEach(() => {
+  controllers.splice(0).forEach(controller => controller.dispose())
+  vi.clearAllMocks()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 function createHarness(overrides = {}) {
-  const state = createWorkspaceState({ config: {}, initialContent: '<p>正文</p>', initialTitle: '文档' })
+  const state = createWorkspaceState({ config: overrides.config || {}, initialContent: '<p>正文</p>', initialTitle: '文档' })
   const events = []
   const persistence = {
     kind: 'memory',
@@ -52,7 +69,9 @@ function createHarness(overrides = {}) {
     setProvider() {},
     getDocumentRecord: ({ title }) => ({ title, content: { type: 'doc', content: [] }, schemaVersion: 3 }),
     attachEditor() {},
+    dispose() {},
   }
+  controllers.push(controller)
   return { controller, state, persistence, events }
 }
 
@@ -105,5 +124,85 @@ describe('WorkspaceController 阶段7主壳前置', () => {
     expect(cancelled).toBe(1)
     expect(state.aiRunning).toBe(false)
     expect(state.aiStatus).toBe('已停止')
+  })
+
+  it('关闭自动保存后不调度落盘，手动保存和离开保存仍可用', async () => {
+    vi.useFakeTimers()
+    const { controller, state, persistence } = createHarness({ config: { autosave: { enabled: false } } })
+    state.initialized = true
+    const save = vi.spyOn(persistence, 'save')
+    controller.queueSave()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(save).not.toHaveBeenCalled()
+    expect(state.saveStatus).toBe('自动保存已关闭')
+    await controller.save()
+    expect(save).toHaveBeenCalledTimes(1)
+    controller.flushOnLeave()
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([0, 120, 900])('自动保存按配置延迟 %ims 生效', async delay => {
+    vi.useFakeTimers()
+    const { controller, state, persistence } = createHarness({ config: { autosave: { delay } } })
+    state.initialized = true
+    const save = vi.spyOn(persistence, 'save')
+    controller.queueSave()
+    expect(save).not.toHaveBeenCalled()
+    if (delay) {
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(save).not.toHaveBeenCalled()
+    }
+    await vi.advanceTimersByTimeAsync(delay ? 1 : 0)
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('关闭持久化总闸时，自动和手动保存均不写入', async () => {
+    vi.useFakeTimers()
+    const { controller, state, persistence } = createHarness({ config: { features: { persistence: false } } })
+    state.initialized = true
+    const save = vi.spyOn(persistence, 'save')
+    controller.queueSave()
+    await vi.advanceTimersByTimeAsync(1000)
+    await controller.save()
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { importExport: { importEnabled: false } },
+    { importExport: { importFormats: ['json'] } },
+  ])('导入独立开关和格式白名单在读取文件前阻止操作：%j', async config => {
+    const { controller } = createHarness({ config })
+    const file = { name: 'notes.md', size: 100, text: vi.fn(async () => { throw new Error('不应读取文件') }) }
+    await controller.importDocument({ target: { files: [file], value: 'selected' } })
+    expect(file.text).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { importExport: { exportEnabled: false } },
+    { importExport: { exportFormats: ['json'] } },
+  ])('导出独立开关和格式白名单阻止禁用格式下载：%j', async config => {
+    const { controller } = createHarness({ config })
+    await controller.exportDocument('html')
+    expect(downloadText).not.toHaveBeenCalled()
+  })
+
+  it.each(['html', 'md'])('%s 导出跟随媒体链接配置，原始编辑器 HTML 保持不变', async format => {
+    const dom = new JSDOM('<!doctype html><html><body></body></html>')
+    vi.stubGlobal('document', dom.window.document)
+    const raw = '<figure data-type="image"><img src="https://example.test/a.png" alt="原图"></figure>'
+    const { controller } = createHarness({
+      config: { media: { htmlMode: 'link', linkText: '查看图片', newTab: false } },
+      host: { getHTML: () => raw },
+    })
+    try {
+      await controller.exportDocument(format)
+      expect(downloadText).toHaveBeenCalledTimes(1)
+      const html = format === 'html' ? downloadText.mock.calls[0][0] : htmlToMarkdown.mock.calls[0][0]
+      expect(html).not.toContain('<img')
+      expect(html).toContain('<a href="https://example.test/a.png"')
+      expect(html).toContain('查看图片</a>')
+      expect(html).not.toContain('target="_blank"')
+      expect(controller.getHTML()).toBe(raw)
+    } finally { dom.window.close() }
   })
 })

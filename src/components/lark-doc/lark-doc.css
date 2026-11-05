@@ -788,7 +788,15 @@
 .lark-doc .lark-doc-command-section button.is-skip:hover,
 .lark-doc .lark-doc-command-section button.is-skip:focus-visible { background: transparent; color: var(--ld-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-command-section button.is-skip .lark-doc-command-icon { opacity: .6; }
-.lark-doc .lark-doc-diagram-menu-icon { color: var(--ld-cat-teal); }
+.lark-doc .lark-doc-diagram-icon,
+.lark-doc .lark-doc-diagram-menu-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; color: currentColor; }
+.lark-doc .lark-doc-diagram-menu-icon.is-teal { color: var(--ld-cat-teal); }
+.lark-doc .lark-doc-diagram-icon svg,
+.lark-doc .lark-doc-diagram-menu-icon svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.lark-doc .lark-doc-diagram-icon svg path[fill="none"],
+.lark-doc .lark-doc-diagram-menu-icon svg path[fill="none"] { fill: none; }
+.lark-doc .lark-doc-diagram-icon svg path[fill="currentColor"],
+.lark-doc .lark-doc-diagram-menu-icon svg path[fill="currentColor"] { fill: currentColor; stroke: none; }
 .lark-doc .lark-doc-diagram-menu button { display: flex; align-items: center; gap: 8px; }
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] { background: var(--ld-bg-hover); }
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] .lark-doc-card-title,

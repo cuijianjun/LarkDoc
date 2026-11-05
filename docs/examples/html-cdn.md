@@ -4,7 +4,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 # 原生 HTML / CDN
 
-使用普通 `<div>` 容器和 `new window.LarkDoc.LarkDoc(...)`；不需要 Vue、React 或打包器。本页使用 **lark-doc 0.14.4**，Node/npm 只用于获取 SDK，Python 3 用于启动本地静态服务。
+使用普通 `<div>` 容器和 `new window.LarkDoc.LarkDoc(...)`；不需要 Vue、React 或打包器。本页使用 **lark-doc 0.14.5**，Node/npm 只用于获取 SDK，Python 3 用于启动本地静态服务。
 
 <EnvironmentPreview env="html-cdn" title="原生 HTML / CDN" />
 
@@ -16,7 +16,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 ```bash
 npm init -y
-npm install lark-doc@0.14.4 --save-exact
+npm install lark-doc@0.14.5 --save-exact
 mkdir -p public/vendor
 cp -R node_modules/lark-doc/dist/. public/vendor/
 ```

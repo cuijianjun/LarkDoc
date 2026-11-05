@@ -1,33 +1,48 @@
+---
+outline: 2
+---
+
 # 配置总览
 
-全部配置都写在 `new LarkDoc({ ... })` 的入参里。关掉某个能力只是隐藏入口、阻止新操作，已有 JSON 仍能正常打开。
+第一次接入，先到[示例中心](/examples/)选好环境，准备 SDK 和容器。之后按本页配置，复杂功能在需要时再展开查。
 
-## 最常用的一段
+## 先用这段配置 {#最常用的一段}
 
 ```js
 const doc = new LarkDoc({
   element: '#editor',
   title: '未命名文档',
-  content: '<p></p>',
-  placeholder: '输入正文，或输入 / 插入内容',
-  readonly: false,
-  theme: 'light',                     // 'light' | 'dark'
-
-  storage: 'local',                   // 'none' = 完全不落盘
-  autosave: { enabled: true, delay: 650 },
-
-  features: { ai: false, folding: true },   // 关掉不需要的能力
-  toolbarKeys: ['history', 'headings', 'marks', 'insert'],
-
-  importExport: { importEnabled: true, exportEnabled: true },
-  media: { htmlMode: 'inline' },      // HTML 产物里图片内嵌还是只留地址
-
-  onReady: ({ editor }) => {},
-  onUpdate: ({ html }) => {},
+  content: '<p>开始编辑</p>',
+  storage: 'none',
+  onUpdate: ({ json }) => {
+    console.log(json) // 换成应用自己的保存逻辑
+  },
 })
 ```
 
-## 顶层配置
+示例由应用保存正文，`storage: 'none'` 会关闭浏览器草稿。需要浏览器记住草稿时使用默认的 `storage: 'local'`；它不会替你把正文保存到业务服务器。
+离开页面时调用 `doc.destroy()`。Vue、React 等环境的创建和销毁位置，见对应环境的完整示例。
+
+## 按要做的事查配置
+
+| 你要做什么 | 入口与配置 |
+| --- | --- |
+| 读取或保存正文 | `onUpdate`、`getJSON()`，见[实例与事件](/guide/instance)。 |
+| 上传图片到服务器，再用返回地址插图 | `uploader.action`、`response` 与回调，见[上传器](/blocks/uploader)。 |
+| 减少工具栏按钮 | `toolbarKeys` / `toolbarExcludes`，见[工具栏配置](/guide/toolbar)。 |
+| 开关 AI、图表等功能 | `features`，展开下方[功能开关](#features-能力开关)。 |
+| 设置只读、修订或阅读模式 | `readonly` / `modes`，见[视图模式](/blocks/view-modes)。 |
+| 限制导入或导出格式 | `importExport`，见[导入导出](/blocks/import-export)。 |
+| 设置右下角问号菜单 | `help` 控制开关、菜单和点击回调，展开下方[帮助菜单](#help)。 |
+| 接入协同、权限与评论 | 见[协同与权限](/guide/collaboration)。 |
+
+## 完整参数参考
+
+以下按需展开。配置仍传给 `new LarkDoc({ ... })`；关闭能力会阻止新操作，已有 JSON 内容仍可打开。
+
+<span id="顶层配置"></span>
+
+:::: details 基本参数
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -49,7 +64,11 @@ const doc = new LarkDoc({
 | `collaboration` / `authorization` / `versioning` / `comments` | - | 五大 Provider 快捷注入。 |
 | `onReady` / `onUpdate` / `onSave` / `onError` / `onDestroy` | - | 生命周期回调，见[实例与事件](/guide/instance)。 |
 
-### features 能力开关
+::::
+
+<span id="features-能力开关"></span>
+
+:::: details 功能开关（features）
 
 `features: { ai: false }` 就关掉 AI 入口。键名全表：
 
@@ -69,9 +88,13 @@ const doc = new LarkDoc({
 | `callouts` | 高亮块 | `diagram` | 图表（mermaid） |
 | `columns` | 分栏 | | |
 
-## 几组高频配置
+::::
 
-### autosave 自动保存
+<span id="几组高频配置"></span>
+
+<span id="autosave-自动保存"></span>
+
+:::: details 自动保存：浏览器草稿
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -80,10 +103,14 @@ const doc = new LarkDoc({
 
 两种「关」不一样，别混：
 
-- `autosave.enabled: false` → 只停自动那一层，手动保存按钮和 `save()` 照旧可用；
+- `autosave.enabled: false` → 停止编辑后的防抖保存；手动保存、离页及销毁时的最后一次草稿保存仍可用；
 - `features.persistence: false` 或 `storage: 'none'` → 整套持久化下线，不读草稿也不写。
 
-### importExport 导入 / 导出
+::::
+
+<span id="importexport-导入-导出"></span>
+
+:::: details 导入与导出
 
 两个入口各自显隐，格式也各自白名单。`features.importExport` 是它们共同的总闸。
 
@@ -99,7 +126,11 @@ importExport: {
 
 `importFormats` 同时决定文件选择框的 `accept`；不在白名单里的扩展名会被挡下并提示，不会静默失败。格式 id 对照见[导入导出](/blocks/import-export)。
 
-### media 媒体在 HTML 里的写法
+::::
+
+<span id="media-媒体在-html-里的写法"></span>
+
+:::: details HTML 中的图片与链接
 
 只影响 **HTML 产物**（`getHTML()`、导出 HTML）；JSON 不动，永远可无损往返。
 
@@ -119,7 +150,11 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 
 `link` 档是**单向**的：链接态 HTML 再导回编辑器会变成普通超链接，图片不会复原。要可逆请用 JSON。
 
-### modes 顶栏「编辑 / 修订 / 阅读」
+::::
+
+<span id="modes-顶栏「编辑-修订-阅读」"></span>
+
+:::: details 编辑、修订与阅读模式
 
 顶栏右上角那个按钮的三种状态。全部字段都可选，不传就是全开：
 
@@ -138,7 +173,7 @@ modes: {
 | `default` | `'edit'` | 初始模式。不在 `allow` 里就自动回落到 `allow[0]`。 |
 | `allow` | 三项全留 | 下拉裁剪。只剩一项时按钮变成静态文字（无箭头、点不动）。传空数组或非法值会回落成三项全留 —— 想关切换请写 `allow: ['edit']`。 |
 | `persist` | `true` | `false` = 不读写 `localStorage`，每次打开都从 `default` 开始。 |
-| `labels` | `{}` | 只认 `edit` / `suggest` / `read` 三个键，值是非空字符串；提示条跟着改写（`已切换为预览模式`）。 |
+| `labels` | `{}` | 只认 `edit` / `suggest` / `read` 三个键，值是非空字符串；提示卡片跟着改写（`已切换为预览模式`）。 |
 | `shortcuts` | `true` | `false` = 三套键位全部不接管，也不会 `preventDefault`，宿主可以自己用这些组合键。 |
 
 ```js
@@ -152,15 +187,59 @@ new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 're
 
 **已知边界**：`shortcuts: false` 只关实际按键，快捷键帮助面板（⌘/）里那三行仍是静态文案，不会跟着消失。
 
-## 其余分组
+::::
 
-不想用扁平项、想直接传内部结构也可以：
+<span id="其余分组"></span>
+
+:::: details 命令、布局与内容上限
+
+限制命令、布局或内容上限时，可按下表配置。`commands`、`blockMenu`、`performance` 放在 `config` 内，其余分组也支持下表所示的顶层写法。
 
 | 分组 | 关键字段 | 用途 |
 | --- | --- | --- |
-| `commands` | `disabled` / `allow` | 按命令 id 禁用或白名单。 |
-| `blockMenu` | `disabled` / `allow` | 块句柄菜单动作裁剪（`duplicate` / `delete` 等）。 |
+| `config.commands` | `disabled` / `allow` | 按命令 id 禁用或白名单。 |
+| `config.blockMenu` | `disabled` / `allow` | 块句柄菜单动作裁剪（`duplicate` / `delete` 等）。 |
 | `layout` | `headerVisible` / `titleBarFixed` / `toolbarFixed` | 顶栏显隐与吸附。`headerVisible: false` 时操作入口收进工具栏「⋯」。 |
 | `modes` | `default` / `allow` / `persist` / `labels` / `shortcuts` | 顶栏编辑 / 修订 / 阅读三态，见上一节。 |
 | `limits` | `titleLength` 120、`maxLength` 0、`maxImageSize` 5MB、`maxTableRows` 9、`maxIndent` 5、`maxSnapshots` 20 | 各项上限（`maxLength: 0` = 不限）。 |
-| `performance` | `changeDebounce` 16、`syntaxHighlight` true、`diagramScriptUrl` null | 通知防抖、代码高亮、图表脚本地址（默认走包内懒加载，内网不用配）。 |
+| `config.performance` | `changeDebounce` 16、`syntaxHighlight` true、`diagramScriptUrl` null | 通知防抖、代码高亮、图表脚本地址（默认走包内懒加载，内网不用配）。 |
+
+::::
+
+<span id="help"></span>
+
+:::: details 右下角帮助菜单（help）
+
+```js
+new LarkDoc({
+  element: '#editor',
+  help: {
+    enabled: true,
+    items: ['help-center', 'shortcuts'],
+    onAction: ({ id, label }) => {
+      console.log('帮助菜单', id, label) // 在这里接入你自己的帮助页或客服
+    },
+  },
+})
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `enabled` | `true` | 控制整个右下角问号菜单。`false` 会收起并移除它。 |
+| `items` | 下述五项 | 按数组顺序显示已知项，去重并忽略未知 ID；`[]` 隐藏菜单。 |
+| `onAction` | `null` | 每次点击通知应用 `{ id, label }`；异常进入实例 `onError` 通道。 |
+
+可选 ID：`upload-log`（上传日志）、`support`（联系客服）、`whats-new`（功能更新）、`help-center`（帮助中心）、`shortcuts`（快捷键）。默认保留原有五项；其中快捷键会打开内置抽屉，其余入口的业务由应用通过 `onAction` 提供。
+
+```js
+// 整体关闭
+help: { enabled: false }
+
+// 只保留内置快捷键
+help: { items: ['shortcuts'] }
+```
+
+`help` 只控制右下角菜单。工具栏的快捷键入口仍由 `features.shortcuts` / 工具栏配置控制。
+也可把这组设置放入 `config.help`；同时提供时，顶层 `help` 的设置优先。
+
+::::

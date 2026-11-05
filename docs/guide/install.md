@@ -7,7 +7,7 @@
 Vue2、Vue3、React 和无框架应用使用相同命令：
 
 ```bash
-npm install lark-doc@0.14.4 --save-exact
+npm install lark-doc@0.14.5 --save-exact
 npm ls lark-doc
 ```
 
@@ -17,13 +17,13 @@ Node14.21.3 的契约是库构建与普通 CJS 消费，应用仍遵守自身 Vi
 
 ## 内网安装 {#do-install-intranet}
 
-`npm pack lark-doc@0.14.4` 得到的普通 tgz **不包含 node_modules 运行时依赖**。联网机器可以安装它；完全离线不能只带这一份包。
+`npm pack lark-doc@0.14.5` 得到的普通 tgz **不包含 node_modules 运行时依赖**。联网机器可以安装它；完全离线不能只带这一份包。
 
 已有内网 npm 镜像时，将该版本及依赖同步到镜像，再用正常 npm 安装。仓库保留了历史离线出包辅助脚本：
 
 ```bash
 # 在已经安装开发依赖的 LarkDoc 仓库根目录执行
-bash scripts/pack-intranet.sh --version 0.14.4
+bash scripts/pack-intranet.sh --version 0.14.5
 ```
 
 该辅助脚本的打包依赖闭包尚未按本轮新增的外部依赖重新验收，不能把生成 tgz 当成本轮离线安装通过的证明。需要 npm 接入时优先同步完整依赖到内网镜像；无打包器的静态页面可使用下面的完整 dist 方案。历史搬运步骤见[内网迁移实战](/guide/intranet-migration)。
