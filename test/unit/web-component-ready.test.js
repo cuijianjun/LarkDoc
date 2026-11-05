@@ -109,8 +109,11 @@ describe('Web Component 的 ready 初始化边界', () => {
     expect(element.querySelector('.ProseMirror')).toBeNull()
   })
 
-  it('移除再插入后重新就绪，slot 内容保留且每轮回调的写入持续有效', async () => {
-    const element = createElement({}, '<p>重建时的初始正文</p>')
+  it.each([
+    ['none', ['重建时的初始正文', '重建时的初始正文']],
+    ['local', ['重建时的初始正文', '第 1 次 ready 写入']],
+  ])('移除再插入后重新就绪（storage=%s），slot或草稿恢复后ready写入持续有效', async (storage, expectedTexts) => {
+    const element = createElement({ storage }, '<p>重建时的初始正文</p>')
     const initialTexts = []
     const ready = vi.fn(() => {
       initialTexts.push(element.getText())
@@ -130,7 +133,7 @@ describe('Web Component 的 ready 初始化边界', () => {
 
     expect(ready).toHaveBeenCalledTimes(2)
     expect(element.getInstance()).not.toBe(firstInstance)
-    expect(initialTexts).toEqual(['重建时的初始正文', '重建时的初始正文'])
+    expect(initialTexts).toEqual(expectedTexts)
     expect(element.getText()).toBe('第 2 次 ready 写入')
     await vi.advanceTimersByTimeAsync(1000)
     expect(element.getText()).toBe('第 2 次 ready 写入')

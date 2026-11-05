@@ -4,7 +4,8 @@ import { mergeLegacyConfig } from './larkDocConfig'
 const props = {
   value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
   config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
-  templates: { type: Array, default: () => [] }, uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
+  templates: { type: Array, default: () => [] }, uploader: { type: [Object, Function], default: null },
+  uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
   uploadFile: { type: Function, default: null }, resolveFileUrl: { type: Function, default: null }, session: { type: Object, default: null },
   contentFormat: { type: String, default: 'auto' }, foldPersistKey: { type: String, default: '' }, collab: { type: Object, default: null },
   onEmbedTitle: { type: Function, default: null }, onEmbedSave: { type: Function, default: null }, onEmbedCardAction: { type: Function, default: null },

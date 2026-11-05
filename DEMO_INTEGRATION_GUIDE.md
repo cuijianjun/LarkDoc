@@ -1,226 +1,134 @@
-# LarkDoc 包接入与架构指南
+# LarkDoc 接入与架构指南
 
-## 1. 先跑起来
+初次接入按本文前五节操作。需要看内部边界时，再读后面的数据模型与 Provider。源码开发步骤在 [DEVELOPMENT.md](./DEVELOPMENT.md)，[在线开发说明](https://cuijianjun.github.io/LarkDoc/guide/development.html)会随文档站部署。
+
+## 1. 安装和创建
 
 ```bash
-npm i lark-doc
+npm install lark-doc@0.14.4 --save-exact
 ```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-
-const doc = new LarkDoc({
-  element: '#editor',
-  content: '<p>开始编辑。</p>',
-})
-```
-
-页面只需要一个挂载点：
 
 ```html
 <div id="editor"></div>
 ```
 
-框架只负责创建和销毁挂载点；编辑器由 `LarkDoc` 自己管理。离开页面时调用 `doc.destroy()`。
-
-## 2. 包的职责
-
-`lark-doc` 把 `/lark-doc` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
-
-默认入口提供无框架的 `LarkDoc` 门面，Vue2 / Vue3 / React 宿主统一从 `lark-doc` 引入，内部挂载原生 DOM UI，不导入 Vue：
-
-| 入口 | 职责 | 适用场景 |
-| --- | --- | --- |
-| `LarkDocEditor` | Tiptap 实例、工具栏、块操作、表格、图片、公式、目录、搜索替换、命令菜单和 AI/审阅交互 | 只需要编辑器，页面状态由宿主自己管理 |
-| `LarkDocWorkspace` | 编辑器之上的标题、模板、草稿、快照、导入导出、Mock AI 预览和持久化接入 | 需要完整文档工作台，或希望以后接协同/版本/评论 |
-
-当前默认是本地模式：不会自动创建 Yjs、WebSocket 或后台请求。协同、版本、评论和权限只有在宿主显式传入对应 Provider 后才会启用。
-
-## 3. 安装与最小用法
-
-任意框架或无框架应用均可安装，不需要 Vue peer 或 `--legacy-peer-deps`：
-
-```bash
-npm i lark-doc
-```
-
-### 2.1 命令式入口（推荐）
-
 ```js
 import { LarkDoc } from 'lark-doc'
 import 'lark-doc/style.css'
 
 const doc = new LarkDoc({
   element: '#editor',
-  title: '未命名文档',
+  title: '我的文档',
   content: '<p>开始编辑。</p>',
+  storage: 'none',
+  onUpdate: ({ json }) => console.log('正文变化', json),
 })
-
-doc.on('update', ({ html, json }) => { /* 自动保存 */ })
-doc.destroy()
+// 离开页面时调用 doc.destroy()。
 ```
 
-`src/LarkDoc.js` 只做四件事：把 AiEditor 风格配置翻译成 `createLarkDocConfig` 结构、通过 DOM renderer 挂载 WorkspaceController、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
+页面只需一个挂载点，框架负责它的生命周期，编辑器自己管理内部 DOM。默认 storage 为 local，示例明确使用 none，避免本地草稿覆盖演示内容。内容变化与业务后端保存应分别处理。
 
-### 2.2 组件式（原有方式）
+## 2. 选完整功能还是按需实现
+
+| 入口 | 用途 |
+| --- | --- |
+| `lark-doc` | 推荐起点，重能力在使用时按需加载 |
+| `lark-doc/full` | 同样的编辑器 API，一次注册全部本地特性并导出低频模块 |
+| `lark-doc/lite` | 不带重实现；通过 `lark-doc/features/*` 按需恢复 |
+| `lark-doc/element` | 自动注册自定义元素，也提供 mountLarkDoc |
+| `lark-doc/vue2` | 交给应用已有 Vue2 使用的 options 兼容组件 |
+
+默认/full/lite 显式引公共 CSS；Element ESM/UMD 注入样式。math 特性另引 `lark-doc/dist/features/math.css`。静态托管保留整个 dist；不能只拿入口小文件。完整规则见[产物文档](./docs/guide/build-artifacts.md)。
+
+全部库产物由 Rollup 构建，不依赖 Vue 或 Webpack runtime。宿主应用的 Vue CLI/Webpack/Vite 保持原样；Vue2 兼容组件自身不导入 Vue，但仍交给宿主 Vue2 执行生命周期。
+
+## 3. 服务器图片上传
+
+初始化时传 uploader，库等待服务器返回图片地址后再写入编辑器：
 
 ```js
-import Vue from 'vue'
-import {
-  LarkDocEditor,
-  LarkDocWorkspace,
-} from 'lark-doc'
-import 'lark-doc/dist/lark-doc-vue2.css'
-
-Vue.component('LarkDocEditor', LarkDocEditor)
-Vue.component('LarkDocWorkspace', LarkDocWorkspace)
+const uploader = {
+  action: '/api/upload',
+  fieldName: 'file',
+  response: {
+    success: { path: 'code', equals: 0 },
+    url: 'data.url',
+    attchId: 'data.id',
+    message: 'message',
+  },
+  onProgress: event => console.log('进度', event.percent),
+  onSuccess: event => console.log('取得结果', event.taskId),
+  onError: event => console.error(event.error.message),
+  onSettled: event => console.log('结束', event.status),
+}
+// 创建时加入：new LarkDoc({ element: '#editor', storage: 'none', uploader })
 ```
 
-`style.css` 是包根目录的公开样式入口，宿主应用只引入一次；入口会加载包内命名空间样式和本地 KaTeX 样式，`src/components/lark-doc/lark-doc.css` 不应由宿主应用直接引用。
+服务端返回 `{ "code": 0, "data": { "url": "/images/a.png", "id": "123" } }`。直接返回 `{ "url": "/images/a.png" }` 可省略 response。跨域后端通常应返回完整图片 URL，并配置允许页面来源的 CORS。
 
-### 2.3 离线承诺
+不传 action/upload 时本地转 base64；自定义 upload 优先于 action。服务器失败不回退 base64。选图、粘贴文件、拖拽、替换、裁剪共用 beforeUpload/start/progress/retry/success/error/cancel/reject/settled，另有 onCallbackError 处理应用通知异常。完整可复制代码见[上传器](./docs/blocks/uploader.md)。
 
-- `network.mode` 默认 `offline`，外链图片降级为占位块并保留 `data-original-src`。
-- KaTeX 样式与字体收在 `src/styles/vendor/katex.css` 与 `src/assets/fonts/katex/`，构建产物带 `dist/fonts/`。
-- `npm run check:offline` 会扫描 `src`、`dist` 的远程地址并校验字体完整性。
+不要在 onSuccess 再插图：它表示获得合法结果；文档 update/change 确认正文事务，业务保存结果应由应用保存接口或持久化流程确认。
 
-本仓库的 `vue2-webpack-node14` Demo 通过同级本地 `file:` 依赖消费 `lark-doc` 包，入口只有 `src/views/LarkDocView.vue`（内部 `new LarkDoc(...)`）；这保证 Demo 的调用方式和 npm 使用方一致。
+## 4. Vue2、Vue3、React 和标签
 
-标题栏布局可以按宿主页面选择是否固定：
+三框架都推荐主入口 new LarkDoc，上传对象完全相同：
 
-```vue
-<LarkDocWorkspace :config="{ layout: { titleBarFixed: true } }" />
-```
+| 宿主 | 创建 | 清理 | 标签/兼容组件可选方案 |
+| --- | --- | --- | --- |
+| Vue2 | mounted | beforeDestroy → destroy | `:uploader` 传给 LarkDocEditor |
+| Vue3 | onMounted | onBeforeUnmount → destroy | `<lark-doc :options.prop="options">` |
+| React | useEffect | effect 返回 destroy | createReactLarkDoc(React)，options/uploader 走 property |
+| 原生标签 | el.options 配对象 | 元素断开或手动 destroy | 完整 dist + Element UMD |
 
-`layout.titleBarFixed` 默认值为 `false`。开启后只有顶部标题栏吸附到窗口顶端，编辑工具栏保持原有文档流位置；`LarkDocEditor` 与 `LarkDocWorkspace` 均支持该配置。
+[各环境完整示例](./docs/guide/environments.md)包含共用上传配置、Vue2兼容组件、Vue3标签、React薄壳和SSR模式。Webpack4根入口无需旧alias，CSS/深子路径用实际dist文件；新Element ESM面向现代打包器。
 
-## 4. 目录结构
+需要更新上传配置时调用 `doc.setUploader(nextUploader)`，或更新元素的 `el.options`。仅上传配置变化保留编辑器、正文、标题和撤销历史；不对任意配置更新作相同承诺。函数对象不能 JSON 序列化成 HTML attribute。
 
-```text
-src/
-  index.js                         公共导出：默认 LarkDoc，具名保留组件与工具
-  LarkDoc.js                命令式入口：配置翻译、挂载、方法转发、销毁
-  toolbarKeys.js                   toolbarKeys / toolbarExcludes 到内部工具栏的映射
-  networkPolicy.js                 出网策略：offline / allowlist / open 与图片拦截
-  styles/vendor/katex.css          收编的 KaTeX 样式，字体为相对路径
-  assets/fonts/katex/              随包发布的 KaTeX 字体（woff2 + woff）
-  core/
-    documentSchema.js              文档 JSON 信封、Schema 版本和节点身份
-    migrations.js                  正文 Schema 迁移注册表
-    transactionMetadata.js         ProseMirror transaction 来源和审计元数据
-  session/
-    DocumentSession.js             文档会话、编辑器绑定、能力判断和生命周期
-  providers/
-    authorization.js               权限能力集合和授权 Provider 校验
-    collaboration.js               协同 Provider 最小接口校验
-    comments.js                    评论线程 Provider 最小接口校验
-    persistence.js                 草稿/本地快照 Provider 兼容层
-    versioning.js                  不可变版本 Provider 最小接口校验
-    index.js                       Provider 统一导出
-  core/nodeviews/
-    code-block.js           代码块 NodeView：语言下拉、懒加载高亮、Mermaid 图表（三端共用）
-    image.js                图片 NodeView、附件和裁剪（三端共用）
-    ...                     其余块类型 NodeView 同样是纯 DOM 实现
-  components/lark-doc/
-    LarkDocEditor.js        无 Vue import 的 options 适配器
-    LarkDocWorkspace.js     无 Vue import 的工作台 options 适配器
-    commands.js                    块级命令实现
-    documentOperations.js          文档级操作和块移动/复制/删除
-    ecsImages.js                   ECS 图片上传适配器
-    extensions.js                  Tiptap 扩展集合
-    larkDocConfig.js                默认配置和能力开关
-    mockAI.js                      确定性 AI 预览、审阅和提案
-    templates.js                   内置模板
-    workspace.js                   本地草稿和快照存储
-    lark-doc.css                     组件样式，使用 `.lark-doc` 命名空间
-  utils/
-    importExport.js                HTML/Markdown/DOCX/JSON 转换
-    logger.js                      脱敏日志
-    safety.js                      文档、评论和名称校验
-scripts/
-  check-architecture.js            Schema、Session、能力和 Provider 契约检查
-  check-lark-doc-core.js             编辑器核心行为检查
-  check-lark-doc-workspace.js        工作区和本地持久化检查
-  check-ecs-images.js              ECS 图片适配器检查
-```
+## 5. 运行 demo 并验收
 
-包根目录的 `style.css` 组合包内命名空间样式与 KaTeX 样式，并随 npm 包发布；这样宿主应用可以使用与 AiEditor 相同的显式样式接入方式，同时避免宿主 `css-loader` 对已编译 CSS 的字体路径进行二次解析。
+- [Playground](https://cuijianjun.github.io/LarkDoc/demo/)：修改初始化代码，查看真实编辑器。
+- [base64 与回调](https://cuijianjun.github.io/LarkDoc/demo/?example=base64)：无需服务器。
+- [服务器上传配置](https://cuijianjun.github.io/LarkDoc/demo/?example=server)：填入自己的接口后发起真实请求。
+- [Mermaid 图表](https://cuijianjun.github.io/LarkDoc/demo/?example=diagram)：验证实际 SVG 渲染。
 
-注释集中解释跨模块约束、Node 14 兼容、销毁顺序、数据边界和 Provider 设计；普通 Vue 模板、赋值和循环不重复写逐行注释。需要理解某个函数时，先看同目录的契约检查脚本，再看组件对外方法。
+GitHub Pages 托管静态页面，不提供业务上传后端。先在控制台/页面查看回调，再在 Network 确认图片和配套资源可访问；应用后端仍需按真实接口联调。
 
-## 5. 文档数据模型
+## 6. 数据与应用职责
 
-正文仍是 Tiptap JSON，包在可演进的文档信封中：
+宿主负责路由、用户、登录、服务端接口和业务保存。包负责编辑器、工作台交互、文档格式、Provider 边界和本地模式。默认不会创建 Yjs、WebSocket 或后台协同连接。
+
+正文是 Tiptap JSON，可放进版本化记录：
 
 ```js
-{
+const record = {
   documentId: 'doc-1',
   schemaVersion: 1,
   revisionId: 'revision-42',
   content: { type: 'doc', content: [{ type: 'paragraph' }] },
   title: '示例文档',
-  updatedAt: 1730000000000,
+  updatedAt: Date.now(),
 }
 ```
 
-`normalizeDocumentRecord` 同时兼容历史 `{ title, json }` 记录，`getDocumentContent` 只返回正文。`schemaVersion` 由 `migrations.js` 逐版本迁移；评论、Presence、权限和 AI 运行状态不写入正文版本。`getNodeId` 为未来评论和 AI 锚点读取稳定块 ID，旧节点没有 ID 时返回 `null`，不会擅自改变现有文档。
+`content` 接收此记录、直接 JSON 或 HTML。Vditor HTML 可直接传入，或使用 doc.importVditor(html)；doc.getImportReport() 查看归一化结果。评论、Presence、权限与 AI 临时状态不应混进正文版本。
 
-## 6. DocumentSession 生命周期
+## 7. Provider 与协同边界
 
-`createDocumentSession(options)` 创建会话，常用字段如下：
+Provider 是应用提供的 JavaScript 对象，不绑定后端框架：
 
-```js
-const session = createDocumentSession({
-  documentId: 'doc-1',
-  mode: 'local', // collaborative 模式必须提供 collaboration Provider
-  user: { id: 'user-1' },
-  providers: { persistence, authorization },
-})
-```
+| Provider | 最小方法 |
+| --- | --- |
+| persistence | load/save/snapshots/snapshot/restore |
+| collaboration | connect/disconnect |
+| versioning | list/createSnapshot/get/restore |
+| comments | list/createThread/reply/resolve/reopen |
+| authorization | getCapabilities |
 
-生命周期顺序是：组件创建 Session → 编辑器 `ready` 后 `attachEditor` → 宿主按需 `connect` → 路由离开时先销毁编辑器，再 `dispose` Session。`getProvider`、`setProvider`、`getCapabilities`、`can`、`createVersion` 和 `restoreVersion` 是宿主可调用的边界。`on(event, listener)` 用于监听 `editor`、`capabilities` 和 `connection` 事件。
+先接入服务端保存，再按需要添加权限、版本、评论与协同。权限 UI 不代替服务端鉴权；版本恢复应创建新修订，评论锚点使用稳定身份而非短暂选区坐标。
 
-每次需要标记来源的 ProseMirror transaction 都通过 `transactionMetadata.js` 写入统一 meta：`user`、`remote`、`import`、`restore`、`ai`、`host`。这样撤销、审计、协同合并和未来服务端事件可以区分来源，而不需要修改编辑器命令。
+显式协同从 lark-doc/collab 接入，应用提供匹配的单例、同格式 ProseMirror/Yjs 依赖；ESM配ESM，CJS配CJS，UMD不接外部协同扩展。collabDependencies是契约元数据，不是npm安装约束。当前验证使用Node22、Yjs13.6.33、Hocuspocus Provider4.7.1与Tiptap协同扩展3.32.0，不据此推定任意旧版本兼容。Node14普通编辑契约不扩展为Node14协同承诺。
 
-## 7. Provider 契约
+## 8. 开发入口
 
-Provider 是宿主实现的纯 JavaScript 对象。包只在创建 Session 时校验方法存在，不绑定后端框架、Yjs 或 HTTP 客户端。
-
-| Provider | 最小方法 | 约束 |
-| --- | --- | --- |
-| `persistence` | `load`, `save`, `snapshots`, `snapshot`, `restore` | 兼容当前 Demo 的本地草稿和最多 20 份快照，可同步或返回 Promise |
-| `collaboration` | `connect`, `disconnect` | 只有 `mode: 'collaborative'` 才连接；Provider 自己负责 Yjs/Hocuspocus、Presence 和远端事务 |
-| `versioning` | `list`, `createSnapshot`, `get`, `restore` | 快照不可变；恢复应创建新修订，不能覆盖历史记录 |
-| `comments` | `list`, `createThread`, `reply`, `resolve`, `reopen` | 评论独立存储；长期锚点使用稳定 block ID 和 Provider 位置，不保存瞬时 `from/to` |
-| `authorization` | `getCapabilities` | 服务端能力是最终判断，UI 能力只用于按钮、只读状态和交互提示 |
-
-默认能力包括 `canView`、`canEdit`、`canComment`、`canResolveComment`、`canCreateVersion`、`canRestoreVersion`、`canExport` 和 `canManagePermission`。权限拒绝会在 Session 方法层抛错，宿主应将错误映射为自己的提示。
-
-## 8. 从本地模式扩展到协同产品
-
-推荐按以下顺序接入服务端，不改变组件入口：
-
-1. 用服务端 `persistence` 替换本地草稿，保存 `DocumentRecord` 和 `revisionId`。
-2. 注入 `authorization`，让服务端返回能力集合；编辑器只根据 `session.can('canEdit')` 控制交互。
-3. 注入 `versioning`，把每次发布或手动保存变成不可变快照，恢复时产生新修订。
-4. 注入 `comments`，用 block ID/相对位置解析评论锚点，避免正文插入后坐标漂移。
-5. 最后注入 `collaboration`，把远端 transaction 标记为 `remote`，Presence 单独走 awareness，不混入版本正文。
-
-AI 预览和提案也应沿用同一套 transaction metadata：生成结果先留在预览状态，用户确认后以 `ai` 来源提交；源选区或锚点失效时拒绝写入。
-
-## 9. 验证
-
-完整安装开发依赖使用 Node22+；依赖安装后，库构建和 lint 可在 Node14.21.3/npm8.19.4 下运行：
-
-```bash
-nvm use 22
-npm ci
-nvm use 14.21.3
-npm run check:architecture
-npm run check:lark-doc
-npm run lint
-npm run build
-```
-
-`check:architecture` 验证文档信封、事务 meta、Session 生命周期、权限能力和 Provider 方法；核心/工作区检查验证现有编辑功能。默认 / Element / legacy 构建均无 Vue runtime；CJS 按 `require()` 加载兄弟 chunk，ESM 保留原生动态 import，Element 按主脚本 URL 加载按需 chunk。静态部署需保留完整 `dist/`。协同依赖保持 optional peer，普通编辑无需安装。
+[开发说明](./DEVELOPMENT.md) → [开发手册索引](./dev/00-INDEX.md) → 对应模块源码和验证脚本。环境要求、快速检查和发版步骤以开发文档与仓库脚本为准。性能数据分别看库冷构建、应用冷/缓存构建，不用入口壳大小或单次结果替代完整证据。

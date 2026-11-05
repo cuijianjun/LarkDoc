@@ -2,9 +2,8 @@
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../components/lark-doc/extensions'
 import { sanitizeHTML } from '../components/lark-doc/documentOperations'
-import { safeAttachmentId, safeUrl } from '../core/documentOperations'
+import { isAbortError, normalizeUploader } from '../core/media/upload'
 import { normalizeVditorHtml } from '../legacy'
-import { IMAGE_REJECT, imageRejectMessage, isImageMime } from '../core/media/image-insert'
 import { createEditorController } from '../editor/EditorController'
 import { createNativeEditorHost } from '../editor/nativeEditorHost'
 import { createLarkDocConfig } from '../components/lark-doc/larkDocConfig'
@@ -21,30 +20,50 @@ function prepareHTML(content, format) {
   return { ...legacy, html: sanitizeHTML(legacy.html) }
 }
 
-function createImageResolver(props, getHost, viewWindow) {
-  return async file => {
+function createImageResolver(props, getHost, onCallbackError) {
+  let input
+  let provider
+  let generation = 0
+  const active = new Set()
+  const resolve = async (file, context = {}) => {
     const host = getHost()
     if (!host.writable() || !host.featureEnabled('images')) return null
-    const maxSize = host.effectiveImageMaxSize
-    if (!isImageMime(file.type)) throw new Error(imageRejectMessage(IMAGE_REJECT.MIME))
-    if (file.size > maxSize) throw new Error(imageRejectMessage(IMAGE_REJECT.SIZE, { maxSize }))
-    if (typeof props.uploadImage === 'function') {
-      const uploaded = await props.uploadImage(file)
-      if (!host.writable()) return null
-      const attchId = typeof uploaded?.attchId === 'string' || Number.isFinite(uploaded?.attchId) ? String(uploaded.attchId) : null
-      if (!safeUrl(uploaded?.url, true) || !safeAttachmentId(attchId)) throw new Error('图片上传未返回有效地址或附件 ID')
-      return { src: uploaded.url, attchId }
+    const next = props.uploader || props.uploadImage
+    if (!provider || next !== input) {
+      const normalized = normalizeUploader(next, { limits: null })
+      active.forEach(controller => controller.abort('uploader-change'))
+      if (provider && provider !== input) provider.clearResume()
+      input = next
+      provider = normalized
     }
-    const src = await new Promise((resolve, reject) => {
-      const reader = new viewWindow.FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = () => reject(new Error('本地图片读取失败'))
-      reader.readAsDataURL(file)
-    })
-    if (!host.writable()) return null
-    if (!safeUrl(src, true)) throw new Error('本地图片格式无效')
-    return { src, attchId: null }
+    const current = generation
+    const controller = new AbortController()
+    active.add(controller)
+    try {
+      const uploaded = await provider.upload(file, {
+        ...context,
+        signal: controller.signal,
+        source: context.source || 'select',
+        documentId: host.session?.documentId ?? props.documentId ?? null,
+        limits: { maxSize: host.effectiveImageMaxSize },
+        onCallbackError,
+      })
+      if (current !== generation || !host.writable()) return null
+      return { src: uploaded.url, attchId: uploaded.attchId == null ? null : String(uploaded.attchId) }
+    } catch (error) {
+      if (isAbortError(error) || current !== generation) return null
+      throw error
+    } finally {
+      active.delete(controller)
+    }
   }
+  resolve.cancelAll = reason => {
+    generation += 1
+    active.forEach(controller => controller.abort(reason))
+    if (provider && provider !== input) provider.clearResume()
+  }
+  resolve.generation = () => generation
+  return resolve
 }
 
 export function createDomRenderer() {
@@ -71,12 +90,16 @@ export function createDomRenderer() {
       const emit = (name, payload) => {
         if (destroyed) return
         if (name === 'update:title') workspaceController?.setTitle(payload)
-        if (name === 'mode-change') runtime.state.effectiveReadonly = payload.readonly
+        if (name === 'mode-change') {
+          if (payload.readonly) resolveImageFile.cancelAll('readonly')
+          runtime.state.effectiveReadonly = payload.readonly
+        }
         if (name === 'ai-request' && typeof on[name] !== 'function') workspaceController?.startAI(payload)
-        if (typeof on[name] === 'function') on[name](payload)
+        const result = typeof on[name] === 'function' ? on[name](payload) : undefined
         requestRender()
+        return result
       }
-      const resolveImageFile = createImageResolver(props, () => runtime.host, viewWindow)
+      const resolveImageFile = createImageResolver(props, () => runtime.host, error => emit('error', error))
       runtime = createNativeEditorHost({
         shell, props, state: createWorkspaceState(props), emit, onChange: requestRender, resolveImageFile,
       })
@@ -88,7 +111,7 @@ export function createDomRenderer() {
         getJSON: () => editorController?.getJSON() || null,
         getText: () => editorController?.getText() || '',
         setContent: (content, options) => editorController?.setContent(content, options) || false,
-        setReadonly: readonly => editorController?.setReadonly(readonly) || false,
+        setReadonly: readonly => { if (readonly) resolveImageFile.cancelAll('readonly'); return editorController?.setReadonly(readonly) || false },
         focus: () => editorController?.focus(),
         focusTemplateSearch: () => workspaceUi?.focusTemplateSearch(),
         writable: () => documentHost.writable(),
@@ -280,7 +303,7 @@ export function createDomRenderer() {
           onImportReport: report => workspaceController.onImportReport(report),
           getMaxLength: () => documentHost.effectiveMaxLength,
           getNetwork: () => createNetworkPolicy(state.editorConfig.network),
-          onBeforeContentReplace: () => { documentHost.closeBlockMenu(); state.handleRange = null; documentHost._foldsReady = false },
+          onBeforeContentReplace: () => { resolveImageFile.cancelAll('document-change'); documentHost.closeBlockMenu(); state.handleRange = null; documentHost._foldsReady = false },
           onAfterContentReplace: () => { documentHost.restoreFolds(); state.savedSelection = null; documentHost.refreshDocumentState() },
         })
         runtime.mount(editor, editorController)
@@ -303,7 +326,7 @@ export function createDomRenderer() {
         getTitle: () => workspaceController.getTitle(),
         setTitle: value => { const changed = workspaceController.setTitle(value); if (changed) emit('update', { title: state.title }); return changed },
         setContent: (content, options) => workspaceController.setContent(content, options),
-        setReadonly: value => workspaceController.setReadonly(value),
+        setReadonly: value => { if (value) resolveImageFile.cancelAll('readonly'); return workspaceController.setReadonly(value) },
         isReadonly: () => documentHost.effectiveReadonly,
         focus: () => editorController.focus(),
         getSession: () => workspaceController.getSession(),
@@ -329,14 +352,15 @@ export function createDomRenderer() {
       })
       return {
         instance, root: shell.root, editor, state, workspaceController, editorController, workspaceUi,
-        stageUi: documentHost._stageUi, topBarUi: documentHost._topBarUi, toolbarUi: documentHost._toolbarUi,
+        resolveImageFile, stageUi: documentHost._stageUi, topBarUi: documentHost._topBarUi, toolbarUi: documentHost._toolbarUi,
         helpFabUi: documentHost._helpFabUi, outlineUi: documentHost._panelsUi?.outline,
         editorUiRegistry, viewWindow, props, requestRender, nativeHost: runtime,
-        cleanup: () => { destroyed = true; renderScheduled = false },
+        cleanup: () => { resolveImageFile.cancelAll('destroy'); destroyed = true; renderScheduled = false },
       }
     },
     update(handle, props = {}) {
       if (!handle?.instance || handle.destroyed) return
+      if (['session', 'documentId', 'uploader', 'uploadImage'].some(key => Object.prototype.hasOwnProperty.call(props, key) && props[key] !== handle.props[key])) handle.resolveImageFile.cancelAll('document-change')
       Object.assign(handle.props, props)
       if (Object.prototype.hasOwnProperty.call(props, 'config')) handle.state.editorConfig = createLarkDocConfig(props.config)
       if (Object.prototype.hasOwnProperty.call(props, 'readonly')) handle.instance.setReadonly(props.readonly === true)

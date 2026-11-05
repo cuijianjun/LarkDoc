@@ -34,3 +34,6 @@ docs/.vitepress/.dist-verify/
 # P0-10 性能基线：临时运行目录与采集结果不入库（baseline.json 入库）
 perf/.run/
 perf/.perf-result.json
+
+# Online demo assets are built from the current commit by deploy-docs.yml.
+/docs/public/demo/vendor/

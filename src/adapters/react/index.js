@@ -6,8 +6,8 @@
  * 「adapters/react → <LarkDoc ref>，useEffect 挂载，onChange 等事件」）。
  *
  * 职责边界（硬规则 5，三件事）：
- * 1. props → attributes：按 web-component/attributes 的 ATTRIBUTE_SCHEMA
- *    白名单序列化成 HTML 属性；
+ * 1. 标量 props 按 ATTRIBUTE_SCHEMA 序列化；options / uploader / uploadImage
+ *    由 effect 写入 element.options property，保留对象和函数身份；
  * 2. 事件转发：onChange/onReady/onSave/onError → 元素上的
  *    lark-doc-change / lark-doc-ready / lark-doc-save / lark-doc-error；
  * 3. 方法代理：ref 暴露 getJSON / setContent / focus 等快捷方法
@@ -19,12 +19,10 @@
  *   const LarkDoc = createReactLarkDoc(React)
  *   <LarkDoc content={html} contentFormat="html" onChange={...} ref={docRef} />
  *
- * 注意：lark-doc/element 是构建产物（dist/lark-doc-element.umd.min.js），
- * 源码内含 Vue 2 SFC，React 宿主不能直接引 lark-doc 源码入口。
+ * lark-doc/element 的 import 条件使用预构建 ESM，不要求宿主安装 Vue。
  */
 import { ATTRIBUTE_SCHEMA } from '../../web-component/attributes'
-// 只引零依赖的 events 名单，不引 LarkDocElement（其依赖链含 Vue 2 SFC，
-// React 宿主构建器没有 Vue 2 插件，引了就编译失败——P0-06 踩坑修正）。
+// 薄壳只引属性和事件契约；元素运行时由宿主显式加载。
 import { EVENT_MAP } from '../../web-component/events'
 // 挂载点探一次「<lark-doc> 有没有注册」：漏 import 'lark-doc/element' 时
 // 元素是 HTMLUnknownElement，ref 上方法全是 undefined 且控制台干净 —— 必须报出来。
@@ -73,6 +71,18 @@ export function createReactLarkDoc(React) {
       return () => unbinders.forEach((unbind) => unbind())
     }, [])
 
+    useEffect(() => {
+      const el = elRef.current
+      if (!el) return
+      el.options = props.uploader === undefined && props.uploadImage === undefined
+        ? props.options || {}
+        : {
+          ...props.options,
+          ...(props.uploader !== undefined ? { uploader: props.uploader } : {}),
+          ...(props.uploadImage !== undefined ? { uploadImage: props.uploadImage } : {}),
+        }
+    }, [props.options, props.uploader, props.uploadImage])
+
     useImperativeHandle(ref, () => {
       // 方法体在调用时现取 elRef.current：不依赖挂载时序（DOM ref 先于父 ref 被赋值）。
       const proxy = {}
@@ -100,7 +110,7 @@ export function createReactLarkDoc(React) {
     const attrs = { ref: elRef }
     const eventProps = new Set(Object.keys(PROP_EVENTS))
     for (const [key, value] of Object.entries(props)) {
-      if (eventProps.has(key) || value == null) continue
+      if (eventProps.has(key) || key === 'options' || key === 'uploader' || key === 'uploadImage' || value == null) continue
       const attr = key.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)
       const entry = ATTRIBUTE_SCHEMA.find((item) => item.attr === attr)
       if (!entry) {

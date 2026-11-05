@@ -7,12 +7,21 @@
  * 给出可读提示）。宿主想要回这些能力时，加载 lark-doc/features/* 特性包
  * 即可，主产物无需更换。
  */
+import { readFeature } from './registry'
+
 const unavailable = () => {
   throw new Error('[lark-doc] lite 构建不含该可选依赖；请先加载对应特性包（lark-doc/features/*）')
 }
 
 // 保留可选依赖常用的导出形状，使 Rollup 能静态分析 lite 入口；真正调用时才报错。
-export const marked = { parse: unavailable }
+export const marked = { parse(...args) {
+  const feature = readFeature('markdown')
+  if (!feature || !feature.marked) {
+    if (feature && typeof feature.catch === 'function') feature.catch(() => {})
+    return unavailable()
+  }
+  return feature.marked.parse(...args)
+} }
 export const Document = unavailable
 export const Packer = { toBlob: unavailable }
 export const Paragraph = unavailable

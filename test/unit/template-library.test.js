@@ -12,8 +12,7 @@
  *   3. 语义：模板库**不进编辑器**、**「使用」= 让宿主去复制文档**。
  *      所以组件只 `emit('use')`，源码里不许出现 `insertContent`。
  *
- * 组件本身是 .vue，vitest 的 forbidVueImports 插件拒载，所以这里只测
- * `core/templates/library.js` + 用源码文本守卫组件语义（同 no-dead-code 的做法）。
+ * 原生 DOM 工厂与纯数据模块直接测行为；源码守卫只检查编辑器边界和样式约束。
  */
 
 import { readFileSync } from 'fs'
@@ -26,6 +25,7 @@ import {
   buildCategoryList, normalizeTemplate, searchTemplates, templatesOf,
 } from '../../src/core/templates/library.js'
 import { createTemplateLibrary, templateLibraryRootStyle } from '../../src/ui/templateLibrary.js'
+import * as templateEntry from '../../src/templates.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8')
@@ -387,11 +387,16 @@ describe('P5-07 语义守卫：模板库在宿主侧、使用=复制文档', () 
     expect(read('src/components/lark-doc/LarkDocEditor.js')).not.toContain('TemplateLibrary')
   })
 
-  it('模板库从入口单独导出无 Vue 工厂，并保留旧命名兼容导出', () => {
-    const index = read('src/index.js')
-    expect(index).toContain('createTemplateLibrary')
-    expect(index).toContain('const LarkDocTemplateLibrary = createTemplateLibrary')
-    expect(index).not.toContain("./components/lark-doc/TemplateLibrary.vue")
+  it('模板子入口导出真实无 Vue 工厂，并保留旧命名兼容导出', () => {
+    expect(templateEntry.createTemplateLibrary).toBe(createTemplateLibrary)
+    expect(templateEntry.LarkDocTemplateLibrary).toBe(createTemplateLibrary)
+    expect(templateEntry.TEMPLATE_MODAL).toBe(TEMPLATE_MODAL)
+    const host = document.createElement('div')
+    const library = templateEntry.LarkDocTemplateLibrary({ host })
+    library.open()
+    expect(host.querySelector('[role="dialog"]')).not.toBeNull()
+    library.destroy()
+    expect(host.children).toHaveLength(0)
   })
 
   it('样式单独立文件并由 style.css @import 进来（与其他四份同一条构建链）', () => {

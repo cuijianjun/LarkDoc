@@ -1,24 +1,24 @@
 /**
- * P4-06 三态模式切换（编辑 / 修订 / 阅读）单测 —— Node 环境、无 DOM。
- * 规格出处：07 §1 / §1.1 / §12.1；尺寸与层级出处：03 顶栏按钮组 #2、06 §6.2、06 §6.3。
- *
- * 顶栏按钮与下拉已经由原生 renderer 接管，所以照 help-drawer.test.js 的三层守：
- *  1. 数据层：import docModes.js，锁三项文案 / 顺序 / 提示语 / 键位判定；
- *  2. 行为层：import viewModesMixin + overlayDismissMixin，用假宿主直测
- *     切换幂等、持久化降级、下拉定位、提示条定时器、三套键位派发；
- *  3. 规格层：读 css / src/ui/topBar.js / LarkDocEditor.vue 文本，锁 84×32 / 180×160 / 170×50 /
- *     顶部条 16 高 @y32 / z 9999，以及「原生动作宿主仍在」「没给『更多』菜单加修订入口」这两条回归点。
- *
- * 🔴 这批像素或文案一变就要同步改这里 —— 它们是「飞书实测值」的唯一守卫。
+ * P4-06 三态契约：纯数据/键位、原生行为宿主、真实 createTopBar/select DOM 与 controller。
+ * 菜单开合/定位由共享 select 所有，模式状态/持久化由 viewModesMixin 所有。
+ * 几何锁当前共享下拉契约：84×32 按钮、340 最小宽、两行 22/18+2、5px 内衬；
+ * 提示条仍为 16 高 @y32/z9999。JSDOM 只桩布局测量，不替换交互实现。
  */
 
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { JSDOM } from 'jsdom'
+import { Editor } from '@tiptap/core'
+import StarterKit from '@tiptap/starter-kit'
+import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
+import { createTopBar } from '../../src/ui/topBar'
+import { createEditorController } from '../../src/editor/EditorController'
+import { createWorkspaceController, createWorkspaceState } from '../../src/workspace/WorkspaceController'
+import readingModeMixin from '../../src/components/lark-doc/editor/readingModeMixin'
 import {
-  DOC_MODES, DOC_MODE_IDS, MODE_ICONS, MODE_MENU_HEIGHT, MODE_MENU_ITEM_HEIGHT, MODE_MENU_ITEM_WIDTH,
-  MODE_MENU_WIDTH, MODE_STORAGE_KEY, MODE_TOAST, MODE_TOAST_MS,
+  DOC_MODES, DOC_MODE_IDS, MODE_ICONS, MODE_MENU_MIN_WIDTH, MODE_STORAGE_KEY, MODE_TOAST, MODE_TOAST_MS,
   isDocMode, isEditableTarget, modeFromShortcut, modeLabel, modeMeta, modeToastText,
 } from '../../src/components/lark-doc/editor/docModes'
 import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
@@ -26,7 +26,6 @@ import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDis
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
-const topbar = fs.readFileSync(path.join(root, 'src/ui/topBar.js'), 'utf8')
 const renderer = fs.readFileSync(path.join(root, 'src/mount/domRenderer.js'), 'utf8')
 const shell = fs.readFileSync(path.join(root, 'src/ui/workspaceShell.js'), 'utf8')
 const icons = fs.readFileSync(path.join(root, 'src/ui/icons.js'), 'utf8')
@@ -37,9 +36,83 @@ function ruleFor(selector) {
   return css.split('\n').find((line) => line.startsWith(`${selector} {`)) || ''
 }
 
-/** P4-06 新增的那一段（从三态起到底），用来验「这一段不许出现字面色值」。 */
-const modeCssSection = css.slice(css.indexOf('.lark-doc .lark-doc-mode-switch {'))
-if (!modeCssSection) throw new Error('lark-doc.css 里找不到 P4-06 三态样式段')
+const modeCssStart = css.indexOf('.lark-doc .lark-doc-mode-select {')
+if (modeCssStart < 0) throw new Error('缺少三态共享下拉样式')
+const modeCssSection = css.slice(modeCssStart).replace(/\/\*[\s\S]*?\*\//g, '')
+
+const runtimes = []
+const nativeBars = []
+const doms = []
+const editors = []
+const globalKeys = ['window', 'document', 'navigator', 'HTMLElement', 'Node', 'DOMParser', 'MutationObserver',
+  'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'innerHeight', 'innerWidth']
+const originalGlobals = new Map(globalKeys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+
+afterEach(() => {
+  // 外层 describe 的 afterEach 可能先删 window；仍须在所属 DOM 存活时销毁监听。
+  if (doms.length) Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: doms[doms.length - 1].window })
+  nativeBars.splice(0).reverse().forEach(bar => bar.destroy())
+  runtimes.splice(0).reverse().forEach(runtime => runtime.destroy())
+  editors.splice(0).forEach(editor => editor.destroy())
+  doms.splice(0).forEach(dom => dom.window.close())
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+  originalGlobals.forEach((descriptor, key) => {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+    else delete globalThis[key]
+  })
+})
+
+function createDom() {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://mode-switch.test/', pretendToBeVisual: true,
+  })
+  doms.push(dom)
+  dom.window.innerWidth = 1512
+  dom.window.innerHeight = 1000
+  globalKeys.forEach(key => {
+    const value = key === 'window' ? dom.window : dom.window[key]
+    Object.defineProperty(globalThis, key, {
+      configurable: true, writable: true, value: typeof value === 'function' && ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(key) ? value.bind(dom.window) : value,
+    })
+  })
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: makeStorage() })
+  return dom
+}
+
+function createModeBar({ rect = { left: 1088, right: 1172, top: 16, bottom: 48, width: 84 }, config } = {}) {
+  createDom()
+  const host = document.createElement('section')
+  host.className = 'lark-doc'
+  document.body.appendChild(host)
+  const actionsHost = document.createElement('button')
+  actionsHost.textContent = '宿主动作'
+  let bar
+  let visible = true
+  const ed = createEd({ config, onChange: () => { if (bar) paint() } })
+  function paint() {
+    bar.update({
+      headerVisible: visible, title: '测试文档', readonly: ed.reading, mode: ed.mode,
+      modeLabel: ed.modeLabel, modeIcon: ed.modeIcon, modeOptions: ed.modeOptions,
+      modeSwitchable: ed.modeSwitchable,
+    })
+  }
+  ed.restoreMode()
+  bar = createTopBar({ host, actionsHost, handlers: { setMode: id => ed.setMode(id) } })
+  nativeBars.push(bar)
+  paint()
+  const trigger = host.querySelector('[role="combobox"]')
+  trigger.getBoundingClientRect = () => rect
+  // JSDOM 无布局；168 = 三行×(22+18+2+上下5) + 上下5内衬 + 上下1边框。
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', {
+    configurable: true, get() { return this.classList.contains('lark-doc-select-menu') ? 168 : 0 },
+  })
+  return {
+    ed, bar, host, trigger, actionsHost, rect,
+    menu: () => host.querySelector('[role="listbox"]'),
+    setVisible(value) { visible = value; paint() },
+  }
+}
 
 describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
   it('三项、顺序为编辑 → 修订 → 阅读', () => {
@@ -81,11 +154,8 @@ describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
     expect(MODE_TOAST_MS).toBe(3300)
   })
 
-  it('下拉尺寸 180×160，三项各 170×50 ⇒ 四周各留 5px', () => {
-    expect([MODE_MENU_WIDTH, MODE_MENU_HEIGHT]).toEqual([180, 160])
-    expect([MODE_MENU_ITEM_WIDTH, MODE_MENU_ITEM_HEIGHT]).toEqual([170, 50])
-    expect(MODE_MENU_ITEM_WIDTH * 1 + 5 * 2).toBe(MODE_MENU_WIDTH)
-    expect(MODE_MENU_ITEM_HEIGHT * 3 + 5 * 2).toBe(MODE_MENU_HEIGHT)
+  it('共享模式下拉保留明确的 340px 最小宽度，行高由两行内容撑开', () => {
+    expect(MODE_MENU_MIN_WIDTH).toBe(340)
   })
 
   it('图标映射：阅读复用既有 reading，另两个是新画的', () => {
@@ -200,24 +270,25 @@ function makeStorage(initial) {
   }
 }
 
-/** 假宿主：viewModesMixin（被测）+ overlayDismissMixin（入口层）+ 这两个方法读到的零散状态。 */
-function createEd() {
-  const ed = {
-    mode: 'edit', modeMenuOpen: false, modeMenuPos: null, modeToast: '', modeToastTimer: null,
-    focusCalls: 0,
-    headingNumberMenu: { open: false },
-    helpOpen: false, isvPanelOpen: false, menuOpen: false, mentionOpen: false, reminderOpen: false,
-    calendarOpen: false, blockMenuOpen: false, blockTypeMenuOpen: false, blockAlignMenuOpen: false,
-    blockColorMenuOpen: false, bubbleAlignOpen: false, bubbleHeadingOpen: false, calloutEmojiOpen: false,
-    colorPaletteOpen: '', headerMenuOpen: false, diagramMenuOpen: false, tableToolsOpen: false,
-    searchOpen: false, headingOpen: false, mathDialog: '', linkDialog: false, tablePicker: false,
-    $refs: { root: { contains: () => true } },
-    focus() { ed.focusCalls += 1 },
-  }
-  // reading 在真身里是 computed，假宿主用 getter 复刻同一语义。
-  Object.defineProperty(ed, 'reading', { get() { return ed.mode === 'read' } })
-  Object.assign(ed, viewModesMixin.methods, overlayDismissMixin.methods)
-  return ed
+/** 使用生产原生宿主，computed 链和方法绑定不再由测试手抄。 */
+function createEd({ config, onChange } = {}) {
+  const runtime = createNativeOptionsHost({
+    options: {
+      mixins: [viewModesMixin, overlayDismissMixin],
+      methods: { focus() { this.focusCalls += 1 } },
+    },
+    state: {
+      larkDocConfig: config || {}, focusCalls: 0, headingNumberMenu: { open: false },
+      helpOpen: false, isvPanelOpen: false, menuOpen: false, mentionOpen: false, reminderOpen: false,
+      calendarOpen: false, blockMenuOpen: false, blockTypeMenuOpen: false, blockAlignMenuOpen: false,
+      blockColorMenuOpen: false, bubbleAlignOpen: false, bubbleHeadingOpen: false, calloutEmojiOpen: false,
+      colorPaletteOpen: '', headerMenuOpen: false, diagramMenuOpen: false, tableToolsOpen: false,
+      headingOpen: false, mathDialog: '', linkDialog: false, tablePicker: false,
+    },
+    refs: { root: { contains: () => true } }, onChange,
+  })
+  runtimes.push(runtime)
+  return runtime.host
 }
 
 describe('P4-06 模式切换行为（viewModesMixin）', () => {
@@ -228,32 +299,27 @@ describe('P4-06 模式切换行为（viewModesMixin）', () => {
     delete globalThis.window
   })
 
-  it('setMode 切态 + 关菜单 + 落库 + 出提示', () => {
+  it('setMode 切态、落库并出提示；选项关闭在原生下拉层验证', () => {
     const ed = createEd()
-    ed.modeMenuOpen = true
     ed.setMode('suggest')
     expect(ed.mode).toBe('suggest')
-    expect(ed.modeMenuOpen).toBe(false)
     expect(window.localStorage.writes).toEqual([[MODE_STORAGE_KEY, 'suggest']])
     expect(ed.modeToast).toBe('已切换为修订模式')
   })
 
-  it('setMode 幂等：切到当前态只关菜单，不重复落库也不重复提示', () => {
+  it('setMode 幂等：当前态不重复落库或提示', () => {
     const ed = createEd()
     ed.mode = 'read'
-    ed.modeMenuOpen = true
     ed.setMode('read')
-    expect(ed.modeMenuOpen).toBe(false)
     expect(window.localStorage.writes).toEqual([])
     expect(ed.modeToast).toBe('')
   })
 
-  it('setMode 非法 id 不改状态、只关菜单', () => {
+  it('setMode 非法 id 不改状态、不落库、不出提示', () => {
     const ed = createEd()
-    ed.modeMenuOpen = true
     ed.setMode('suggestion')
     expect(ed.mode).toBe('edit')
-    expect(ed.modeMenuOpen).toBe(false)
+    expect(window.localStorage.writes).toEqual([])
     expect(ed.modeToast).toBe('')
   })
 
@@ -275,7 +341,7 @@ describe('P4-06 模式切换行为（viewModesMixin）', () => {
     expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('mode-comment')
     ed.mode = 'read'
     expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('reading')
-    expect(viewModesMixin.computed.modeOptions.call(ed)).toBe(DOC_MODES)
+    expect(viewModesMixin.computed.modeOptions.call(ed)).toEqual(DOC_MODES)
   })
 
   it('toggleReading 是二态入口：编辑 ↔ 阅读往返', () => {
@@ -286,39 +352,41 @@ describe('P4-06 模式切换行为（viewModesMixin）', () => {
     expect(ed.mode).toBe('edit')
   })
 
-  it('toggleModeMenu 定位：右缘对齐菜单右缘，top = 按钮底边 + 2（84×32 @1088,16）', () => {
-    const ed = createEd()
-    ed.toggleModeMenu({ getBoundingClientRect: () => ({ right: 1172, bottom: 48 }) })
-    expect(ed.modeMenuOpen).toBe(true)
-    expect(ed.modeMenuPos).toEqual({ left: 992, top: 50 })
-    expect(viewModesMixin.computed.modeMenuStyle.call(ed)).toEqual({ left: '992px', top: '50px' })
+  it('原生下拉定位：按按钮左侧展开，顶部 = 按钮底边 + 4', () => {
+    const ui = createModeBar()
+    ui.trigger.click()
+    expect(ui.trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(ui.menu().style.minWidth).toBe('340px')
+    expect(ui.menu().style.left).toBe('1088px')
+    expect(ui.menu().style.top).toBe('52px')
   })
 
-  it('toggleModeMenu 右侧夹取：贴右边时菜单左移留 8px', () => {
-    const ed = createEd()
-    ed.toggleModeMenu({ getBoundingClientRect: () => ({ right: 1500, bottom: 48 }) })
-    // 1500 - 180 = 1320 < 1512 - 180 - 8 = 1324 ⇒ 不触顶，保持右缘对齐。
-    expect(ed.modeMenuPos.left).toBe(1320)
-    // 真的贴到视口右缘（right = 1520 越界）才夹到 1324。
-    const flush = createEd()
-    flush.toggleModeMenu({ getBoundingClientRect: () => ({ right: 1520, bottom: 48 }) })
-    expect(flush.modeMenuPos.left).toBe(1324)
+  it('原生下拉贴右时按 340px 宽度夹取，视口右侧保留 8px', () => {
+    const ui = createModeBar({ rect: { left: 1416, right: 1500, top: 16, bottom: 48, width: 84 } })
+    ui.trigger.click()
+    expect(ui.menu().style.left).toBe('1164px')
+    ui.rect.left = 1436
+    ui.rect.right = 1520
+    window.dispatchEvent(new window.Event('resize'))
+    expect(ui.menu().style.left).toBe('1164px')
   })
 
-  it('toggleModeMenu 左侧夹取：贴左边时菜单至少留 8px', () => {
-    const ed = createEd()
-    ed.toggleModeMenu({ getBoundingClientRect: () => ({ right: 100, bottom: 48 }) })
-    expect(ed.modeMenuPos.left).toBe(8)
+  it('原生下拉贴左至少留 8px，下方不足则翻到按钮上方', () => {
+    const ui = createModeBar({ rect: { left: -20, right: 64, top: 350, bottom: 382, width: 84 } })
+    window.innerHeight = 400
+    ui.trigger.click()
+    expect(ui.menu().style.left).toBe('8px')
+    expect(ui.menu().style.top).toBe('178px')
   })
 
-  it('toggleModeMenu 二次点击收起；无锚点时仍能展开（坐标留空用 CSS 兜）', () => {
-    const ed = createEd()
-    ed.toggleModeMenu(null)
-    expect(ed.modeMenuOpen).toBe(true)
-    expect(ed.modeMenuPos).toBe(null)
-    expect(viewModesMixin.computed.modeMenuStyle.call(ed)).toBe(null)
-    ed.toggleModeMenu(null)
-    expect(ed.modeMenuOpen).toBe(false)
+  it('原生触发器二次点击收起；零布局测量仍安全展开', () => {
+    const ui = createModeBar({ rect: { left: 0, right: 0, top: 0, bottom: 0, width: 0 } })
+    ui.trigger.click()
+    expect(ui.menu().style.left).toBe('8px')
+    expect(ui.menu().style.top).toBe('4px')
+    ui.trigger.click()
+    expect(ui.menu()).toBe(null)
+    expect(ui.trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('persistMode 写进 localStorage；restoreMode 读回三态', () => {
@@ -432,31 +500,31 @@ describe('P4-06 模式入口派发（overlayDismissMixin）', () => {
     expect(help.helpCalls).toBe(1)
   })
 
-  it('点外部收下拉；点下拉自身（含按钮）不拦', () => {
-    const ed = createEd()
-    ed.modeMenuOpen = true
-    overlayDismissMixin.methods.onDocumentPointerDown.call(ed, { target: { closest: () => null } })
-    expect(ed.modeMenuOpen).toBe(false)
-
-    ed.modeMenuOpen = true
-    overlayDismissMixin.methods.onDocumentPointerDown.call(ed, {
-      target: { closest: (sel) => (sel === '.lark-doc-mode-switch' ? { className: 'lark-doc-mode-switch' } : null) },
-    })
-    expect(ed.modeMenuOpen).toBe(true)
+  it('原生下拉点内部不关闭，document 外部 pointerdown 关闭', () => {
+    const ui = createModeBar()
+    ui.trigger.click()
+    ui.menu().querySelector('.lark-doc-select-item-label').dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+    expect(ui.menu()).not.toBe(null)
+    document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }))
+    expect(ui.menu()).toBe(null)
+    expect(ui.trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('closeOverlay 收掉下拉并回焦（Esc 复用同一条互斥链）', () => {
-    const ed = createEd()
-    ed.modeMenuOpen = true
-    overlayDismissMixin.methods.closeOverlay.call(ed)
-    expect(ed.modeMenuOpen).toBe(false)
-    expect(ed.focusCalls).toBe(1)
+  it('原生 Esc 关闭下拉且不吞全局按键，overlay 关闭链仍回焦编辑器', () => {
+    const ui = createModeBar()
+    ui.trigger.click()
+    const event = new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    document.body.dispatchEvent(event)
+    expect(ui.menu()).toBe(null)
+    expect(event.defaultPrevented).toBe(false)
+    ui.ed.closeOverlay()
+    expect(ui.ed.focusCalls).toBe(1)
   })
 })
 
 describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
   it('顶栏按钮 84×32、radius 6、白底非主色、文字用正文色', () => {
-    const btn = ruleFor('.lark-doc .lark-doc-mode-btn')
+    const btn = ruleFor('.lark-doc .lark-doc-mode-select .lark-doc-select-trigger')
     expect(btn).toContain('width: 84px')
     expect(btn).toContain('height: 32px')
     expect(btn).toContain('border-radius: 6px')
@@ -466,22 +534,30 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
     expect(btn).not.toContain('--ld-brand')
   })
 
-  it('下拉 180×160、四周 5px 内衬、fixed + 层级 1050（顶栏子面板档）', () => {
-    const menu = ruleFor('.lark-doc .lark-doc-mode-menu')
-    expect(menu).toContain('position: fixed')
+  it('共享下拉 fixed、340px 最小宽度与5px内衬、层级1050', () => {
+    expect(ruleFor('.lark-doc .lark-doc-select-menu')).toContain('position: fixed')
+    expect(ruleFor('.lark-doc .lark-doc-select-menu')).toContain('border: 1px solid var(--ld-border-chrome)')
+    const menu = ruleFor('.lark-doc .lark-doc-mode-select .lark-doc-select-menu')
     expect(menu).toContain('z-index: 1050')
-    expect(menu).toContain(`width: ${MODE_MENU_WIDTH}px`)
-    expect(menu).toContain(`height: ${MODE_MENU_HEIGHT}px`)
     expect(menu).toContain('padding: 5px')
+    const ui = createModeBar()
+    ui.trigger.click()
+    expect(ui.menu().style.minWidth).toBe(MODE_MENU_MIN_WIDTH + 'px')
   })
 
-  it('下拉项 170×50，两行（主标题 22 + 副标题 18 + 2 间距 = 42 ≤ 50）', () => {
-    const item = ruleFor('.lark-doc .lark-doc-mode-item')
-    expect(item).toContain(`width: ${MODE_MENU_ITEM_WIDTH}px`)
-    expect(item).toContain(`height: ${MODE_MENU_ITEM_HEIGHT}px`)
-    expect(item).toContain('flex-direction: column')
-    expect(ruleFor('.lark-doc .lark-doc-mode-item-label')).toContain('line-height: 22px')
-    expect(ruleFor('.lark-doc .lark-doc-mode-item-hint')).toContain('line-height: 18px')
+  it('下拉项保持左对齐两行22/18+2、上下5px内衬，自然撑高52px', () => {
+    const item = ruleFor('.lark-doc .lark-doc-mode-select .lark-doc-select-menu button')
+    expect(item).toContain('padding: 5px 10px')
+    expect(ruleFor('.lark-doc .lark-doc-select-menu button')).toContain('text-align: left')
+    expect(ruleFor('.lark-doc .lark-doc-select-text')).toContain('flex-direction: column')
+    expect(ruleFor('.lark-doc .lark-doc-select-text')).toContain('gap: 2px')
+    expect(ruleFor('.lark-doc .lark-doc-mode-select .lark-doc-select-item-label')).toContain('line-height: 22px')
+    expect(ruleFor('.lark-doc .lark-doc-select-item-hint')).toContain('line-height: 18px')
+    const labelHeight = Number(ruleFor('.lark-doc .lark-doc-mode-select .lark-doc-select-item-label').match(/line-height: (\d+)px/)[1])
+    const hintHeight = Number(ruleFor('.lark-doc .lark-doc-select-item-hint').match(/line-height: (\d+)px/)[1])
+    const gap = Number(ruleFor('.lark-doc .lark-doc-select-text').match(/gap: (\d+)px/)[1])
+    const padding = Number(item.match(/padding: (\d+)px/)[1])
+    expect(labelHeight + hintHeight + gap + padding * 2).toBe(52)
   })
 
   it('顶部提示条：fixed / 通栏 / 16 高 @y32 / z 9999（06 §6.2）+ 打印隐藏', () => {
@@ -512,12 +588,17 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
     expect(modeCssSection).not.toMatch(/:\s*white\b/)
   })
 
-  it('原生顶栏保留模式按钮与宿主动作节点', () => {
-    expect(topbar).toContain("import { iconNode, setIcon } from './icon'")
-    expect(topbar).toContain('actionsHost')
-    expect(topbar).toContain('headerActions.appendChild(actionsHost)')
-    expect(topbar.indexOf('lark-doc-mode-btn')).toBeGreaterThan(-1)
-    expect(topbar.indexOf('headerActions.appendChild(actionsHost)')).toBeGreaterThan(topbar.indexOf('lark-doc-mode-btn'))
+  it('原生顶栏保留真实模式控件与宿主动作，隐藏再显示仍交还同一宿主', () => {
+    const ui = createModeBar()
+    const actions = ui.host.querySelector('.lark-doc-header-actions')
+    expect(actions.children[0].classList.contains('lark-doc-mode-select')).toBe(true)
+    expect(actions.children[1]).toBe(ui.actionsHost)
+    ui.setVisible(false)
+    expect(ui.host.querySelector('header')).toBe(null)
+    document.body.appendChild(ui.actionsHost)
+    ui.setVisible(true)
+    expect(actions.children[1]).toBe(ui.actionsHost)
+    expect(ui.host.querySelector('header')).toBe(ui.bar.el)
   })
 
   it('主组件挂提示条、根 class 带修订态、mounted 里先 restoreMode', () => {
@@ -530,5 +611,134 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
 
   it('「更多」菜单里没有修订入口（07 §12.1 实测，别好心加回去）', () => {
     expect(collapseMixin).not.toContain('修订')
+  })
+})
+
+describe('P4-06 原生控件与 controller 回归', () => {
+  it.each(DOC_MODE_IDS)('真实菜单点击 %s 同步模式/标签/只读标题并关闭', id => {
+    const ui = createModeBar()
+    ui.trigger.click()
+    const rows = Array.from(ui.menu().querySelectorAll('[role="option"]'))
+    expect(rows.map(row => row.querySelector('.lark-doc-select-item-label').textContent)).toEqual(DOC_MODES.map(item => item.label))
+    expect(rows.map(row => row.querySelector('.lark-doc-select-item-hint').textContent)).toEqual(DOC_MODES.map(item => item.hint))
+    rows[DOC_MODE_IDS.indexOf(id)].click()
+    expect(ui.ed.mode).toBe(id)
+    expect(ui.trigger.querySelector('.lark-doc-select-label').textContent).toBe(modeLabel(id))
+    expect(ui.host.querySelector('input').hasAttribute('readonly')).toBe(id === 'read')
+    expect(ui.menu()).toBe(null)
+    expect(window.localStorage.writes).toEqual(id === 'edit' ? [] : [[MODE_STORAGE_KEY, id]])
+    expect(ui.ed.modeToast).toBe(id === 'edit' ? '' : MODE_TOAST[id])
+  })
+
+  it('hover即开，点击不误关，移开150ms后关闭；移入菜单取消关闭', () => {
+    vi.useFakeTimers()
+    const ui = createModeBar()
+    ui.trigger.dispatchEvent(new window.MouseEvent('mouseenter'))
+    ui.trigger.click()
+    expect(ui.menu()).not.toBe(null)
+    ui.trigger.dispatchEvent(new window.MouseEvent('mouseleave'))
+    vi.advanceTimersByTime(149)
+    expect(ui.menu()).not.toBe(null)
+    ui.menu().dispatchEvent(new window.MouseEvent('mouseenter'))
+    vi.advanceTimersByTime(1)
+    expect(ui.menu()).not.toBe(null)
+    ui.menu().dispatchEvent(new window.MouseEvent('mouseleave'))
+    vi.advanceTimersByTime(150)
+    expect(ui.menu()).toBe(null)
+  })
+
+  it('键盘上下选项与Enter真实切态，Escape关闭', () => {
+    const ui = createModeBar()
+    const key = value => ui.trigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }))
+    key('ArrowDown')
+    key('ArrowDown')
+    key('Enter')
+    expect(ui.ed.mode).toBe('suggest')
+    expect(ui.menu()).toBe(null)
+    key('ArrowUp')
+    key('ArrowUp')
+    key('Enter')
+    expect(ui.ed.mode).toBe('edit')
+    key('ArrowDown')
+    key('Escape')
+    expect(ui.menu()).toBe(null)
+  })
+
+  it('单个允许模式成为静态控件，不暴露菜单语义或灰化', () => {
+    const ui = createModeBar({ config: { modes: { allow: ['read'], default: 'read' } } })
+    expect(ui.trigger.disabled).toBe(true)
+    expect(ui.trigger.hasAttribute('aria-haspopup')).toBe(false)
+    expect(ui.trigger.parentElement.classList.contains('is-static')).toBe(true)
+    ui.trigger.click()
+    expect(ui.menu()).toBe(null)
+    expect(ruleFor('.lark-doc .lark-doc-mode-select .lark-doc-select-trigger:disabled')).toContain('opacity: 1')
+    expect(ruleFor('.lark-doc .lark-doc-mode-select.is-static .lark-doc-select-caret')).toContain('display: none')
+  })
+
+  it('销毁原生菜单清除全局监听，并交还宿主动作节点', () => {
+    const ui = createModeBar()
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    ui.trigger.click()
+    const pointer = add.mock.calls.find(call => call[0] === 'pointerdown')
+    const keyboard = add.mock.calls.find(call => call[0] === 'keydown')
+    ui.bar.destroy()
+    expect(remove).toHaveBeenCalledWith('pointerdown', pointer[1], true)
+    expect(remove).toHaveBeenCalledWith('keydown', keyboard[1])
+    expect(ui.actionsHost.parentNode).toBe(null)
+    expect(ui.host.querySelector('header')).toBe(null)
+  })
+
+  it('真实三态可编辑口径与controller保存：修订可写、阅读禁止改正文但仍可保存，再编辑不丢内容', async () => {
+    createDom()
+    const editor = new Editor({ element: document.createElement('div'), extensions: [StarterKit], content: '<p>待保存正文</p>' })
+    editors.push(editor)
+    const state = createWorkspaceState({ initialTitle: '文档', initialContent: '<p>待保存正文</p>', config: {} })
+    state.initialized = true
+    const persistence = { kind: 'host', save: vi.fn(async () => {}) }
+    const runtime = createNativeOptionsHost({
+      options: { mixins: [viewModesMixin, readingModeMixin] },
+      state: { editor, readonly: false, larkDocConfig: {}, session: null },
+      emit: (name, payload) => { if (name === 'mode-change') state.effectiveReadonly = payload.readonly },
+    })
+    runtimes.push(runtime)
+    const ed = runtime.host
+    const editorController = createEditorController({ editor })
+    const workspace = createWorkspaceController({
+      state, props: { persistence },
+      host: {
+        getEditor: () => editor, getJSON: () => editor.getJSON(), getHTML: () => editor.getHTML(),
+        getText: () => editor.getText(), writable: () => ed.writable(), setReadonly: value => editorController.setReadonly(value),
+        emit() {}, getWindow: () => window,
+      },
+    })
+    ed.setMode('suggest')
+    runtime.flush()
+    expect(ed.interactionMode).toBe('suggest')
+    expect(editor.isEditable).toBe(true)
+    expect(workspace.insertText('保留修改')).toBe(true)
+    const json = editor.getJSON()
+    ed.setMode('read')
+    runtime.flush()
+    expect(ed.interactionMode).toBe('read')
+    expect(editor.isEditable).toBe(false)
+    expect(workspace.isReadonly()).toBe(true)
+    expect(workspace.insertText('不得写入')).toBe(false)
+    expect(workspace.setTitle('不得改标题')).toBe(false)
+    expect(editor.getJSON()).toEqual(json)
+    await workspace.saveNow(true)
+    expect(persistence.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: '文档', json }))
+    ed.setMode('edit')
+    runtime.flush()
+    expect(editor.isEditable).toBe(true)
+    expect(workspace.isReadonly()).toBe(false)
+    expect(ed.editor).toBe(editor)
+    expect(editor.getJSON()).toEqual(json)
+    expect(workspace.setReadonly(true)).toBe(true)
+    expect(workspace.isReadonly()).toBe(true)
+    expect(workspace.insertText('宿主只读也不得写入')).toBe(false)
+    expect(workspace.setReadonly(false)).toBe(true)
+    expect(editor.isEditable).toBe(true)
+    expect(editor.getJSON()).toEqual(json)
   })
 })

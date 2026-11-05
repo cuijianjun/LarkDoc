@@ -8,6 +8,9 @@ import 'core-js/features/array/find-last'
 import 'core-js/features/array/find-last-index'
 import 'core-js/features/array/at'
 import 'core-js/features/structured-clone'
+// Mermaid也使用ES2021/2022 API；Node14 DOM宿主需显式补齐。
+import 'core-js/features/object/has-own'
+import 'core-js/features/string/replace-all'
 // 样式随入口一并进入构建，保证 dist/lark-doc.css 自带正文样式与
 // 本地 KaTeX 字体；宿主显式 import 'lark-doc/style.css' 也走同一份源。
 import '../style.css'

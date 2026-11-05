@@ -10,19 +10,19 @@
 
 | 环节 | 取值 |
 | --- | --- |
-| 触发 | push 到 `master` 且改动命中 `docs/**`；也可手动 `workflow_dispatch` |
-| Node | 20 |
-| 依赖缓存 | `docs/package-lock.json` |
-| 工作目录 | `docs` |
+| 触发 | push 到 `master` 且文档、库源码、构建脚本或依赖变化；也可手动 `workflow_dispatch` |
+| Node | 库依赖安装 22，兼容构建 14.21.3，文档 20 |
+| 依赖缓存 | 根及 `docs/package-lock.json` |
+| 工作目录 | 根目录构建编辑器，再进入 `docs` |
 | 安装 | `npm ci` |
-| 构建 | `npm run docs:build`（= `vitepress build .`） |
+| 构建 | 根 `build:all` → `demo-sync-vendor.mjs` → `--check` → docs `docs:build` |
 | 产物 | `docs/.vitepress/dist` |
 | 发布 | `actions/upload-pages-artifact@v3` + `actions/deploy-pages@v4` |
 | 访问 | `https://<user>.github.io/LarkDoc/` |
 
 关键点：文档站是 `docs/` 下的**独立子包**（`name: lark-docs`、`private: true`、`vitepress ^1.6.3`），有独立的 `package.json` 与 `package-lock.json`。根 `package.json` 里没有任何 docs 脚本，别在根目录敲 `npm run docs:build`。
 
-内网部署要复刻的，就是这条流水线里「构建 → 产物 → 静态托管」这一段，与 GitHub 无关。
+在线 demo 的 vendor 资源由当前提交构建，不提交旧资源。首次本地构建、内网出包前，按 [本地开发与验证](./development) 先完成库构建与 `node scripts/demo-sync-vendor.mjs`、`--check`。随后再执行本文文档构建与静态托管步骤。
 
 ## 二、前提改动：base 可注入（已完成，你只需知道怎么用）
 
@@ -42,7 +42,7 @@ DOCS_BASE=/lark-doc/ npm run docs:build # 内网子路径
 | | 路线 A · 构建机出静态包 | 路线 B · 内网自建 | 路线 C · 源码整体搬迁 |
 | --- | --- | --- | --- |
 | 内网需要什么 | 只要 nginx | Node ≥18 + npm 内网源 | 同 B，另加 git |
-| 搬进去的体积 | **1.3 MB**（`site.tar.gz`） | 源码 19 MB + `node_modules` 100 MB | 再加 `.git` 21 MB |
+| 搬进去的体积 | 以本次实际包为准（`site.tar.gz`） | 源码 19 MB + `node_modules` 100 MB | 再加 `.git` 21 MB |
 | 内网改内容 | 改不了，要回构建机重建 | 可以，改完自己 build | 可以 |
 | 首次准备 | 一条命令 | 配 npm 源 + 装 77 个包 | 同 B |
 | 适用 | 内网只读文档，内容由研发维护 | 内网要能独立出包 | 内网要能提 PR / 看历史 |
@@ -57,6 +57,7 @@ DOCS_BASE=/lark-doc/ npm run docs:build # 内网子路径
 
 ```bash
 cd apps/lark-doc
+# 先按本地开发指南完成库构建、demo-sync-vendor 校验
 
 # 根路径部署（内网独立域名，如 docs.intra.example.com/）
 bash scripts/pack-docs.sh
@@ -74,7 +75,7 @@ bash scripts/pack-docs.sh --base /lark-doc/ --out /tmp/docs-out
 
 | 文件 | 说明 |
 | --- | --- |
-| `site.tar.gz` | 静态站点，**1.3 MB**，解压即用 |
+| `site.tar.gz` | 静态站点，以本次实际包为准，解压即用 |
 | `site/` | 同一份内容未压缩，本机可直接用 nginx 指过来验证 |
 | `nginx-docs.conf` | 已按 `--base` 生成好的配置，改 1~2 个路径即可用 |
 | `INSTALL-内网.md` | 内网侧操作手册（含真实文件名，不用现场 `ls`） |
@@ -253,7 +254,7 @@ HTML 是 `no-cache`、assets 带 content hash，用户正常刷新就能拿到�
 内网要自己出包时才走这条，除了 Node ≥18 之外，还需要：
 
 - **npm 内网源**：`docs/node_modules` 有 77 个顶层包 / 100 MB，离线装不了。要么配 Nexus / Verdaccio 代理，要么在有外网的机器上 `npm ci` 后把 `docs/node_modules` 一起搬进去。
-- **构建只需要 `docs/` 里的这些**：`blocks/`、`guide/`、`index.md`、`public/`、`package.json`、`package-lock.json`、`.vitepress/config.mts`。`docs/superpowers/`（内部实施计划与设计规格）已在 `config.mts` 的 `srcExclude` 里排除，不会被构建成页面，也不必搬。
+- **已有同步后的 demo 资源时，文档构建使用 `docs/` 里的这些**：`blocks/`、`guide/`、`index.md`、`public/`、`package.json`、`package-lock.json`、`.vitepress/config.mts`。`docs/superpowers/`（内部实施计划与设计规格）已在 `config.mts` 的 `srcExclude` 里排除，不会被构建成页面，也不必搬。
 - **可以不带 `.git`**：实测把上述文件拷到一个没有 `.git` 的目录，`npx vitepress build` 依然成功（26.5s，exit 0）。唯一降级是页脚「最后更新」日期不渲染——`lastUpdated` 从 git 历史取，没有就空着。可接受。
 - 路线 C 额外带上 `.git`（21 MB），换来内网能看历史、能提 PR。
 

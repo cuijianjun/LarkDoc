@@ -14,7 +14,7 @@
  * 否则桩会泄漏给同 worker 的后续文件。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { hasFeature, loadFeature, registerFeature } from '../../src/core/features/registry'
 
 const KEY = '__LARK_DOC_FEATURES__'
@@ -123,4 +123,33 @@ describe('全局共享语义', () => {
     unbind()
     cleanup(['probe-global'])
   })
+})
+
+it('lite公式先失败后注册feature，后续加载恢复且不会复用占位API', async () => {
+  vi.resetModules()
+  globalThis[KEY]?.delete('math')
+  vi.doMock('katex', () => ({ default: () => { throw new Error('lite unavailable') } }))
+  let unregister
+  try {
+    const { loadKatex } = await import('../../src/core/blocks/math')
+    const missing = await loadKatex()
+    expect(() => missing.renderToString('x')).toThrow()
+    const available = { renderToString: () => '<span>math</span>' }
+    unregister = registerFeature('math', () => available)
+    expect(await loadKatex()).toBe(available)
+  } finally { unregister?.(); vi.doUnmock('katex'); vi.resetModules() }
+})
+
+it('lite Markdown导出先失败后注册feature，后续转换恢复', async () => {
+  vi.resetModules()
+  globalThis[KEY]?.delete('markdown')
+  vi.doMock('turndown', () => ({ default: class { constructor() { throw new Error('lite unavailable') } } }))
+  let unregister
+  try {
+    const { htmlToMarkdown } = await import('../../src/utils/importExport')
+    await expect(htmlToMarkdown('<p>first</p>')).rejects.toThrow('lite unavailable')
+    class AvailableTurndown { turndown() { return 'restored' } }
+    unregister = registerFeature('markdown', () => ({ TurndownService: AvailableTurndown }))
+    await expect(htmlToMarkdown('<p>second</p>')).resolves.toBe('restored')
+  } finally { unregister?.(); vi.doUnmock('turndown'); vi.resetModules() }
 })

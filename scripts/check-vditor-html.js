@@ -12,6 +12,9 @@
  * 4. 幂等：转换结果再跑一次不再改写。
  */
 const { JSDOM } = require('jsdom')
+const fs = require('fs')
+const path = require('path')
+const { artifactFiles } = require('./artifact-graph')
 
 const dom = new JSDOM('<!doctype html><html><body><div id="editor"></div></body></html>', {
   pretendToBeVisual: true,
@@ -229,7 +232,7 @@ async function main() {
   check('图表块默认渲染预览（无需切换）', Boolean(previewBoxDefault))
   check('预览层不可编辑', Boolean(previewBoxDefault) && previewBoxDefault.getAttribute('contenteditable') === 'false')
   const codeBody = firstBlock.querySelector('.lark-doc-code-body')
-  // jsdom 无真实布局，common.js 内联构建下 mermaid 会真正执行并渲染失败 → 错误态。
+  // jsdom 无真实布局，包内 Mermaid 运行时真正执行并渲染失败 → 错误态。
   // 错误态按设计显示源码区 + 错误提示（便于修错）；渲染成功路径由 verify-browser-mermaid.js 在真浏览器验证。
   check('渲染失败显错提示（jsdom 无布局，成功路径见浏览器断言）', Boolean(firstBlock.querySelector('.lark-doc-diagram-error')))
   check('错误态源码区可见（便于修错）', Boolean(codeBody) && codeBody.style.display !== 'none')
@@ -261,14 +264,22 @@ async function main() {
   check('渲染走动态 import（无 script 注入）', !document.querySelector('script[data-lark-doc-diagram="mermaid"]'))
 
   /* ---------- 4.5 「图表」插入命令 ---------- */
-  // 阶段 3 起 CJS 拆块：mermaid 不再内联进主文件，而是独立成 `lark-doc.common.mermaid.js`
-  // 兄弟区块（由产物内 require() 寻址加载）。「内网零外链」的语义 = 本地区块文件存在、
-  // 内容完整，主文件不再背 mermaid 的体积。
-  const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.js'), 'utf8')
-  const mermaidChunk = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.mermaid.js'), 'utf8')
-  check('mermaid 拆出独立区块且内容完整（内网零外链）', mermaidChunk.indexOf('flowchart-v2') !== -1 && bundle.indexOf('flowchart-v2') === -1)
-  check('命令清单含「图表」插入项', /id:\s*'diagram'/.test(bundle))
-  check('插入命令携带 mermaid 示例源码', bundle.indexOf('A[开始]') !== -1)
+  // 校验真实依赖边：入口可能只是转发壳，Mermaid 是动态加载的共享运行时。
+  const dist = path.join(__dirname, '../dist')
+  const initialFiles = artifactFiles(dist, 'cjs', false)
+  const allFiles = artifactFiles(dist, 'cjs', true)
+  const bundle = initialFiles.map(file => fs.readFileSync(path.join(dist, file), 'utf8')).join('\n')
+  const manifest = JSON.parse(fs.readFileSync(path.join(dist, 'lark-doc-manifest.json'), 'utf8'))
+  const mermaidFile = manifest.mermaid.mermaidCjs
+  const mermaidChunk = fs.readFileSync(path.join(dist, mermaidFile), 'utf8')
+  check('mermaid 拆出独立区块且内容完整（内网零外链）', allFiles.includes(mermaidFile) && !initialFiles.includes(mermaidFile)
+    && mermaidChunk.indexOf('flowchart-v2') !== -1 && bundle.indexOf('flowchart-v2') === -1)
+  check('命令清单含「图表」插入项', /(?:\bid|["']id["'])\s*:\s*["']diagram["']/.test(bundle))
+  doc.setContent('<p>图表命令验证</p>')
+  doc.getWorkspace().executeCommand('diagram')
+  const insertedDiagrams = collect(doc.getJSON(), 'codeBlock')
+  check('插入命令携带 mermaid 示例源码', insertedDiagrams.length === 1 && insertedDiagrams[0].attrs.language === 'mermaid'
+    && insertedDiagrams[0].content.some(node => node.type === 'text' && node.text.indexOf('A[开始]') !== -1))
 
   /* ---------- 5. importVditor 强制归一化 + 普通内容回归 ---------- */
   const forced = doc.importVditor('<ul><li class="vditor-task"><input type="checkbox" disabled />强制导入</li></ul>')
@@ -285,7 +296,7 @@ async function main() {
   check('销毁后移除 DOM', host.children.length === 0)
 
   /* ---------- 6. features.diagram: false 关闭图表 ---------- */
-  // 渲染走动态 import（common.js 下内联同步执行），新实例关闭 features.diagram 后不应触发任何渲染副作用。
+  // 新实例关闭 features.diagram 后不应触发包内运行时渲染副作用。
   const host2 = document.createElement('div')
   document.body.appendChild(host2)
   const doc2 = new pkg.LarkDoc({
@@ -298,13 +309,10 @@ async function main() {
   const buttons2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('关闭 features.diagram 无预览按钮', buttons2.indexOf('预览图表') === -1)
   check('关闭后无预览层', host2.querySelectorAll('.lark-doc-diagram').length === 0)
-  const langSelect2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select'))
-    .find((node) => node.querySelector('[aria-label="代码语言"]'))
-  const langTrigger2 = langSelect2 && langSelect2.querySelector('.lark-doc-select-trigger')
-  if (langTrigger2) langTrigger2.click()
-  await delay(60)
-  const langMenuItems2 = Array.from(host2.querySelectorAll('.lark-doc-select-menu button')).map((button) => button.textContent.trim())
-  check('关闭后下拉无 Mermaid 图表功能项', langMenuItems2.every((text) => text.indexOf('Mermaid 图表') === -1))
+  const langSelect2 = host2.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
+  check('关闭图表后仍保留原生代码语言下拉', Boolean(langSelect2) && langSelect2.options.length > 0)
+  const langMenuItems2 = langSelect2 ? Array.from(langSelect2.options).map(option => option.textContent.trim()) : []
+  check('关闭后下拉无 Mermaid 图表功能项', Boolean(langSelect2) && langMenuItems2.every((text) => text.indexOf('Mermaid 图表') === -1))
   check('关闭后无 mermaid 渲染痕迹（无 SVG / 错误态）', host2.querySelectorAll('.lark-doc-diagram-svg, .lark-doc-diagram-error, .lark-doc-diagram-status').length === 0)
   doc2.destroy()
   check('第二个实例销毁', host2.children.length === 0)

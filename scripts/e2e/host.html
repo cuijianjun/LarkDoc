@@ -5,16 +5,13 @@
   <title>lark-doc element CI 冒烟</title>
 </head>
 <body>
-  <lark-doc id="doc"></lark-doc>
+  <lark-doc id="doc" storage="none" content-format="html" content="&lt;h1&gt;冒烟标题&lt;/h1&gt;&lt;p data-indent=&quot;1&quot;&gt;冒烟正文段落。&lt;/p&gt;"></lark-doc>
   <!-- element UMD 产物由 CI（或本地模拟）拷贝到本文件同目录 -->
   <script src="./lark-doc-element.umd.min.js"></script>
   <script>
-    // 与 vue3 冒烟同口径：先等自定义元素升级（脚本按顺序执行时 UMD 已 define 完毕），
-    // 再设 content（data-indent 缩进 = 折叠范围前提，见 verify-smoke.js 口径注释），
-    // 最后暴露 window.__larkDoc 供 verify-smoke.js 统一驱动。
+    // 初始化属性在连接前声明，关闭本地草稿，避免后台恢复内容或属性重建覆盖测试输入。
+    // data-indent 缩进是折叠范围前提；暴露统一的冒烟入口。
     var el = document.getElementById('doc')
-    el.setAttribute('content', '<h1>冒烟标题</h1><p data-indent="1">冒烟正文段落。</p>')
-    el.setAttribute('content-format', 'html')
     window.__larkDoc = el
   </script>
 </body>

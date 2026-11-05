@@ -5,6 +5,13 @@ on:
     branches: [master]
     paths:
       - 'docs/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'vendor/**'
+      - 'style.css'
+      - 'rollup.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
@@ -24,7 +31,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup library dependencies runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install library dependencies
+        run: npm ci
+
+      - name: Setup library build runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 14.21.3
+
+      - name: Build editor and sync demo assets
+        run: |
+          npm run build:all
+          node scripts/demo-sync-vendor.mjs
+          node scripts/demo-sync-vendor.mjs --check
+
+      - name: Setup docs runtime
         uses: actions/setup-node@v4
         with:
           node-version: 20

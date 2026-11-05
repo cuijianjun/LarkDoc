@@ -4,11 +4,14 @@
 
 ## 配置示例
 
+下面的示例用于已有 Vue2 应用。工作台兼容组件从 `lark-doc/vue2` 引入，由宿主 Vue2 注册；库自身不导入 Vue，默认主入口不再导出 Vue2 组件。
+
 模板集是**工作台组件 `LarkDocWorkspace` 的 prop**（命令式门面 `new LarkDoc()` 不透传 `templates`，模板只在完整工作台的新建 / 清空入口出现）。
 
 ```vue
 <script>
-import { LarkDocWorkspace } from 'lark-doc'
+import { LarkDocWorkspace } from 'lark-doc/vue2'
+import 'lark-doc/style.css'
 
 export default {
   components: { LarkDocWorkspace },
@@ -28,12 +31,14 @@ export default {
 </template>
 ```
 
+Webpack4 不读取短子路径 exports：组件改从 `lark-doc/dist/lark-doc-vue2.common.js` 引入，样式改为 `lark-doc/dist/lark-doc.css`。组件会在销毁时释放自身编辑器；框架生命周期示例见[各环境接入](/guide/environments#env-vue2-sfc)。
+
 ## 配置与用法
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `features.templates` | `boolean` | `true` | 关闭后模板选择入口隐藏。 |
-| `templates`（Workspace prop） | `TemplateItem[]` | 内置 4 套 | 整体替换模板集；传空数组或非数组时回退内置 `TEMPLATES`。 |
+| `templates`（Workspace prop） | `TemplateItem[]` | 内置 4 套 | 整体替换模板集；未传或非数组时使用内置 `TEMPLATES`。空数组表示空模板集，初始内容回退为空段落。 |
 
 ### TemplateItem
 

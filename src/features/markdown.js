@@ -9,4 +9,4 @@ import { registerFeature } from '../core/features/registry'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 
-registerFeature('markdown', () => Promise.resolve({ marked, TurndownService }))
+registerFeature('markdown', () => ({ marked, TurndownService }))

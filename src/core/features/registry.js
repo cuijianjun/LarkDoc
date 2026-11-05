@@ -87,6 +87,13 @@ export function hasFeature(name) {
   return !!(map && map.has(name))
 }
 
+/** 同步codec只读取同步实现；异步加载仍由loadFeature负责。 */
+export function readFeature(name) {
+  const map = getMap()
+  const loader = map && map.get(name)
+  return typeof loader === 'function' ? loader() : null
+}
+
 /**
  * 加载特性：注册的 loader 优先；未注册时走 fallback（包内置的动态 import），
  * 两者都没有则 reject。任何错误加注特性名。

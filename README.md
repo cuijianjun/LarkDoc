@@ -1,31 +1,24 @@
 # lark-doc
 
-> ⚠️ **声明**：本项目是**个人学习用途**的开源练习项目，界面与交互模仿飞书文档（Lark Docs / Feishu Docs），
-> **与飞书、Lark、字节跳动无任何隶属、合作或授权关系，非官方产物，禁止用于任何商业用途**。
-> 使用产生的侵权等后果由使用者自行承担。详见 [背景](#背景) 与 [免责声明](#免责声明)。
+> 本项目用于个人学习与技术研究，界面与交互参考飞书文档；与飞书、Lark、字节跳动无隶属、合作或授权关系。使用前请阅读本文末尾的背景、免责声明与协议。
 
-飞书风格富文本文档编辑器与工作台组件库 —— 基于 Tiptap 3 与原生 DOM UI，支持 Web Component、命令式 API 和显式 options 兼容适配器；默认、Element 和 legacy 产物均不依赖 Vue 运行时。
+基于 Tiptap 3 和原生 DOM 的文档编辑器，支持 Vue2、Vue3、React、Web Component 和普通 HTML 页面。
 
-完整文档：[VitePress 使用手册](https://cuijianjun.github.io/LarkDoc/)（源码在 `docs/` 目录，随仓库自动部署到 GitHub Pages）。
+[使用文档](https://cuijianjun.github.io/LarkDoc/) · [在线 demo](https://cuijianjun.github.io/LarkDoc/demo/) · [开发说明](./DEVELOPMENT.md)
 
-在线演示：[https://cuijianjun.github.io/LarkDoc/demo/](https://cuijianjun.github.io/LarkDoc/demo/)（上方编辑器预览 + 下方可折叠代码预览，可在页面直接改初始化配置实时生效）。
+## 1. 安装并显示编辑器
 
-> **开发/改代码前必读**：[DEVELOPMENT.md](./DEVELOPMENT.md) —— 踩坑清单与回归防护（折叠高亮、blockId、缩进、编号、弹窗、排版实测值、Vditor 兼容）。
+在已有应用中安装，不需要为编辑器补装 Vue，也不需要更换应用的 Vue CLI、Webpack 或 Vite。
 
-> **长期路线两份**
-> - [MULTI_ENV_PLAN.md](./MULTI_ENV_PLAN.md) —— **宿主怎么引入**：产物格式、`exports` 路由、webpack4/5/Vite/内网 的配置收敛。
-> - [FRAMEWORK_AGNOSTIC_PLAN.md](./FRAMEWORK_AGNOSTIC_PLAN.md) —— **包内部怎么写**：分层、UI 去 Vue 的演进节奏（S0~S4）与验收口径。
+```bash
+npm install lark-doc@0.14.4 --save-exact
+```
 
-## 环境要求
+页面先放一个容器，再执行初始化代码：
 
-- **运行时（接入方）**：Node `>= 14.21.3`（`engines.node` 已放宽；Tiptap 3 依赖的 ES2022+ API 已由入口 core-js polyfill 补齐，Node 14 可正常运行）。无需固定某个版本。
-- **框架依赖**：`vue`、`vue-template-compiler`、`@tiptap/vue-2` 已从顶层依赖移除，不靠内联 Vue 隐藏依赖。Vue CLI 只作为开发构建工具保留。
-- **可选 peer**：仅协同入口需要 `yjs`、`@hocuspocus/provider` 和 Tiptap 协同扩展；普通编辑无需安装它们。
-- **源码构建**：已安装依赖时可用 Node `14.21.3` + npm `8.19.4` 构建。完整安装开发依赖及运行 Vitest / Hocuspocus 开发服务需要 Node `>=22`；不要把构建兼容性等同于所有开发工具兼容 Node14。
-
-## 接入方式
-
-默认导出是命令式入口，View 层只留一个挂载点：
+```html
+<div id="editor"></div>
+```
 
 ```js
 import { LarkDoc } from 'lark-doc'
@@ -33,186 +26,111 @@ import 'lark-doc/style.css'
 
 const doc = new LarkDoc({
   element: '#editor',
-  title: '未命名文档',
-  content: '<p>开始编辑。</p>',
+  title: '我的第一篇文档',
+  content: '<p>开始编辑，也可以粘贴或拖入图片。</p>',
+  storage: 'none', // 示例不读取或保存本地草稿
+  onUpdate: ({ json }) => console.log('正文已更新', json),
 })
 
-doc.getHTML()
-doc.getJSON()
-doc.destroy()
+// 需要时读取内容：doc.getJSON() / doc.getHTML()
+// 离开页面时调用：doc.destroy()
 ```
 
-### 各环境引入对照（内网 / 外网统一，零配置）
+`content` 接收 HTML、Tiptap JSON 或文档记录。`storage` 默认是 `local`，会使用浏览器草稿；由应用管理正文时建议明确传 `none`。框架中必须在挂载后创建、卸载时销毁，完整示例见[各环境接入](./docs/guide/environments.md)。
 
-| 宿主环境 | 引入写法 | 说明 |
-|---|---|---|
-| Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | 宿主统一编译：懒区块（公式 / Word / 高亮 / mermaid）由宿主输出，内网外网零配置 |
-| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 主入口要**一行 alias**（`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`）：webpack4 不读 `exports`，会落到保留现代语法的 ESM 档，不能保证由 acorn 6.4.2 解析；CJS 档已降到 ES2018 所以**不用 babel**。子路径与样式要写全 `dist/` 路径 |
-| Vue 3 / React | `import { mountLarkDoc } from 'lark-doc/element'` | 预打包 DOM 产物，不含 Vue 运行时；也可直接使用主入口 `LarkDoc`；`dist/` 整目录拷入静态目录 |
-| 原生 / CDN / 静态托管 | `<script src=".../lark-doc-element.umd.min.js">` | `<lark-doc>` 标签直接可用，`dist/` 整目录拷贝（按需区块同目录寻址） |
-| Nuxt / Next（SSR） | `process.client` / `dynamic(..., { ssr: false })` 内动态 `import('lark-doc/element')` | 仅客户端挂载 |
+## 2. 上传到服务器，再显示图片
 
-mermaid 图表默认走懒区块自动加载（无需任何配置）；要接管加载可挂载前设 `window.mermaid`，或传 `performance.diagramScriptUrl` 指定自托管渲染器地址。
-
-> 每个环境的**编译工具配置、工具栏（编辑工具）配置、可直接粘贴运行的完整 demo** 见文档站「各环境引入对照」：<https://cuijianjun.github.io/LarkDoc/guide/environments.html>（源文件 `docs/guide/environments.md`）。
-
-### 包契约（v0.13 起）
-
-对外只承诺一份契约，宿主不需要为环境写任何特判：
-
-| 契约项 | 口径 | 为什么 |
-|---|---|---|
-| **`browser` 字段** | **已删除** | 它会让 webpack4/5 与部分工具跳过 ESM、直接落到 UMD「浏览器直挂档」，宿主拿到的就不是可 tree-shaking 的模块产物。SSR 与浏览器吃**同一份产物**；需要环境差异一律走 `exports` 的 condition。 |
-| **`sideEffects`** | 只列 `**/*.css`、`**/*.scss` 与 UMD / element 自注册档、CJS 档 | UMD 档确实有顶层副作用（自定义元素注册、`__webpack_public_path__`），不能谎报为纯；ESM 档是唯一需要被 tree-shake 的路径，已排除在名单外。 |
-| **`exports` 子入口** | `.` / `./element` / `./vue2` / `./vue3` / `./react` / `./adapters/*` / `./collab` / `./lite` / `./features/*` / `./plugin` / `./style.css` / `./dist/*` / `./package.json` | legacy 仅提供无 Vue import 的 options 适配器，Vue3/React 薄壳只桥接自定义元素。 |
-| **样式** | CJS 显式 `import 'lark-doc/style.css'`（webpack4 写 `lark-doc/dist/lark-doc.css`） | ESM / lite / Element 样式随 JS 注入；legacy CJS 使用自己的 `dist/lark-doc-vue2.css`。 |
-
-> `sideEffects` 收窄的实测收益（webpack 5，入口只 `import { LarkDoc } from 'lark-doc'` 但**从不使用**）：
-> 收窄前 `1,922,452 B` → 收窄后 **`151 B`**；而副作用型入口 `import 'lark-doc/element'` 仍完整保留 `1,695,666 B`，不会被误删。
-
-## 旧数据兼容（Vditor）
-
-Vditor `getHTML()` 导出的 HTML 可直接喂给 `content`，命中 `vditor-*` / `language-math` / 图表 `language-*` 等指纹时自动归一化公式、任务列表、图表代码块、脚注与表格列宽：
+只需要在初始化时配置上传接口和响应字段。库负责发送文件、等待响应、校验地址和写入编辑器，应用不用再实现 `upload()`。
 
 ```js
-const doc = new LarkDoc({ element: '#editor', content: vditorHtml })
-doc.importVditor(vditorHtml)      // 或显式强制归一化
-doc.getImportReport()             // { source, math, taskList, taskItem, diagram, table, footnote, dropped }
+const uploader = {
+  action: '/api/upload', // 改为你的后端上传接口
+  fieldName: 'file',     // 后端接收的文件字段名
+  response: {
+    success: { path: 'code', equals: 0 },
+    url: 'data.url',
+    attchId: 'data.id',
+    message: 'message',
+  },
+  onProgress: event => console.log('上传进度', event.percent),
+  onSuccess: event => console.log('取得图片地址', event.taskId),
+  onError: event => console.error('上传失败', event.error.message),
+  onSettled: event => console.log('任务结束', event.status),
+}
+
+const doc = new LarkDoc({ element: '#editor', storage: 'none', uploader })
 ```
 
-图片无需配置（默认 `open`，http 直连）。校验脚本 `npm run check:vditor`。
+上例后端返回 JSON：
 
-旧调用方式仍然可用：
+```json
+{ "code": 0, "message": "上传成功", "data": { "url": "/images/a.png", "id": "123" } }
+```
+
+`url` 可以是 HTTP(S) 地址、相对图片路径或支持的图片 base64。后端直接返回 `{ "url": "/images/a.png" }` 时，可省略 `response`。
+
+- **本地 base64**：不配置 `action` 和 `upload`，仍可收到上传生命周期回调。
+- **自定义流程**：提供 `uploader.upload(file, ctx)`，返回 `{ url, attchId? }`；它优先于 `action`。
+- **完整回调**：`beforeUpload`、`onStart`、`onProgress`、`onRetry`、`onSuccess`、`onError`、`onCancel`、`onReject`、`onSettled`，五种图片来源共用；`onCallbackError` 处理应用通知异常。
+- **失败处理**：服务器失败不会改成本地 base64；`onSuccess` 无需再次插图。正文更新与服务端保存应分别监听文档事件。
+
+[上传器完整配置与回调](./docs/blocks/uploader.md)包含请求头、额外字段、跨域、超时、重试、取消和 Vue2/Vue3 透传写法。
+
+## 3. 全量引入或按需引入
+
+| 入口 | 适合的场景 | 样式 |
+| --- | --- | --- |
+| `lark-doc` | 推荐起点；重功能在使用时加载 | 显式引 `lark-doc/style.css` |
+| `lark-doc/full` | 一次注册所有本地特性，仍提供相同编辑器 API | 同上 |
+| `lark-doc/lite` + `lark-doc/features/*` | 只加载需要的公式、图表等实现 | 同上；math 还需特性 CSS |
+| `lark-doc/element` | `<lark-doc>` 自定义元素或 `mountLarkDoc()` | JS 自动注入 |
+| `lark-doc/vue2` | 旧 Vue2 模板使用 options 兼容组件 | 显式引公共 CSS |
+
+全量写法只需把第一节的 import 改成 `import { LarkDoc } from 'lark-doc/full'`。按需示例：
 
 ```js
-import {
-  LarkDocEditor,
-  LarkDocWorkspace,
-} from 'lark-doc'
+import { LarkDoc } from 'lark-doc/lite'
+import 'lark-doc/style.css'
+import 'lark-doc/features/mermaid' // 图表
+import 'lark-doc/features/math'    // 公式
+import 'lark-doc/dist/features/math.css'
+
+const doc = new LarkDoc({ element: '#editor', storage: 'none' })
 ```
 
-这些导出是交给 Vue2 宿主注册的普通 options 对象，内部仍挂载 DOM renderer，不导入 Vue。webpack4 兼容入口写 `lark-doc/dist/lark-doc-vue2.common.js`。
+可选特性还有 `highlight`、`markdown`、`office`。lite 没注册某特性时保留可读降级或提示，不会自动下载被排除的实现。协同始终从 `lark-doc/collab` 显式接入。
 
-默认 CJS 的公开样式入口为 `lark-doc/style.css`，只需引入一次；legacy CJS 使用 `dist/lark-doc-vue2.css`。ESM / Element 已注入样式，不必重复引入；不要直接引 `src/components/lark-doc/lark-doc.css`。
+## 4. 各环境怎么用
 
-## 资源本地化与网络策略
+| 环境 | 推荐写法 | 配置差异 |
+| --- | --- | --- |
+| Vue2 | `mounted` 中 `new LarkDoc()`，`beforeDestroy` 中销毁 | 保留宿主现有 Vue2 工具链 |
+| Vue3 | `onMounted` 中创建，`onBeforeUnmount` 中销毁 | 命令式无需专属配置；标签方式配置 `isCustomElement` |
+| React | `useEffect` 中创建并返回销毁函数 | 标签薄壳用 `createReactLarkDoc(React)` |
+| Webpack4 | 同一主入口 | CSS 写实际路径 `lark-doc/dist/lark-doc.css`；深入口也使用实际文件路径 |
+| 普通 HTML / CDN | 独立 script 加载 `dist/lark-doc-element.umd.min.js` | 完整托管 `dist/`，保留特性脚本、字体和子目录 |
+| SSR | 客户端生命周期内动态导入并创建 | 不在服务端创建依赖 DOM 的编辑器 |
 
-- KaTeX 样式与字体随包发布（`src/assets/fonts/katex`），构建产物带 `dist/fonts/`；代码高亮、Emoji 同样本地化，不请求任何 CDN。
-- `network.mode` 默认 `open`：正文里的外链图片（含老系统的 http 图床）按原地址加载，开箱可用。
-- 需要收敛时显式配置：
+库的默认、full、lite、Element 和兼容产物均由 **Rollup** 构建，不包含 Vue 运行时或包内 Webpack runtime。`lark-doc/vue2` 的 options 对象交给应用已有 Vue2 注册，库自身不导入 Vue。主库的构建方式不改变应用自己的打包器。
 
-```js
-new LarkDoc({
-  element: '#editor',
-  // 只放行白名单 host
-  network: { mode: 'allowlist', allowlist: ['img.your-corp.com'] },
-  // 或完全离线：外链图片显示占位并保留 data-original-src
-  // network: { mode: 'offline' },
-})
-```
+Webpack4 根 ESM 已降语法，无需旧的 `lark-doc$` alias；新的 Element ESM 面向现代 Vite/Webpack5，Webpack4 标签方案使用独立 script 加载 UMD。安装、引入、配置与清理的[完整示例](./docs/guide/environments.md)使用同一套上传配置。
 
-- 构建守卫：`npm run check:offline` 扫描 `src`、`dist` 的远程地址与字体完整性。
+## 5. 先运行这些 demo
 
-## 配置示例
+- [编辑器 Playground](https://cuijianjun.github.io/LarkDoc/demo/)：编辑初始化代码并预览。
+- [本地 base64 与回调](https://cuijianjun.github.io/LarkDoc/demo/?example=base64)：无需上传服务器。
+- [服务器上传配置](https://cuijianjun.github.io/LarkDoc/demo/?example=server)：填入自己的接口后测试。
+- [图表渲染](https://cuijianjun.github.io/LarkDoc/demo/?example=diagram)：查看 Mermaid 图表。
 
-```js
-new LarkDoc({
-  element: this.$refs.host,
-  title: '项目说明',
-  content: record,                 // HTML / Tiptap JSON / 文档信封
-  readonly: false,
-  storage: 'none',                 // 默认不写 localStorage
-  saveHtml: false,                 // true 时保存 record 附带 html 派生副本（默认仅存 json）
-  toolbarKeys: ['bold', 'italic', 'heading', 'table', 'image', 'ai'],
-  features: { ai: false, importExport: false },
-  limits: { maxLength: 5000, maxImageSize: 3 * 1024 * 1024 },
-  uploader: { upload: fileToOss },
-  onUpdate: ({ html, json }) => { /* 自动保存 */ },
-  onError: (error) => console.error(error),
-})
-```
+GitHub Pages 托管文档与静态 demo，不提供业务上传后端。跨域接口需要后端允许页面来源；不要在演示代码里保存长期凭证。
 
-- `toolbarKeys` 是白名单，`toolbarExcludes` 是黑名单，12 个分组 + 8 个 mark key，详见文档「配置总览」。
-- `storage: 'local'` 才启用浏览器草稿；命令式入口默认关闭，避免不同文档互相覆盖。
-- `saveHtml: true` 时，`persistence.save(record)` 的 `record` 会额外带 `html` 字段（Tiptap 还原后的 HTML），方便后端直接渲染；默认 `false` 只传 `json` 结构化数据（无损、可协同）。
+## 6. 开发、性能与边界
 
-## 构建与校验
+[DEVELOPMENT.md](./DEVELOPMENT.md)介绍源码安装、快速检查和发布流程。[性能记录](./docs/guide/performance.md)分别记录库冷构建、应用冷构建与缓存构建，不能用切换库打包器来推断应用速度。
 
-```bash
-nvm use 22   # 完整开发依赖安装需要 Node >=22
-npm ci
-npm run lint
-# 已安装依赖后，Node14 构建可用 nvm use 14.21.3 切换
-npm run build
-npm run build:esm
-npm run build:element
-npm run build:legacy
-```
+普通编辑不会主动创建 Yjs 或 WebSocket。显式协同需要应用提供匹配格式的协同依赖和单例，见[接入与架构指南](./DEMO_INTEGRATION_GUIDE.md)。Node14.21.3 的兼容范围为库构建和普通 CJS 编辑，不代表所有开发工具或协同依赖都能在 Node14 运行。
 
-单独跑：
-
-```bash
-npm run check:offline
-npm run check:lark-doc
-npm run build
-```
-
-## 产物与按需加载
-
-默认三种产物按「宿主怎么用」划分；KaTeX / docx / mammoth / turndown / highlight.js / mermaid 拆成按需区块，marked 因 Markdown 导出静态引用仍可进入主文件。legacy options 入口单独构建：
-
-```bash
-npm run build          # dist/lark-doc.common.js        CJS 主文件 + 按需兄弟 chunk（main，无 Vue）
-npm run build:esm      # dist/lark-doc.esm.js           ES Module（module，拆包最彻底）
-npm run build:element  # dist/lark-doc-element.umd.min.js  Web Component，兼职 CDN <script> 直挂（unpkg / jsdelivr）
-npm run build:legacy   # options 兼容入口，无 Vue import，chunk 与主 ESM 隔离
-npm run build:analyze  # 三种默认产物 + 体积诊断输出
-```
-
-阶段7本工作区实测（2026-10-31，未发布，gzip）：ESM 主文件 306.22 kB、Element 465.66 kB、CJS 主文件 1,055,560 B、lite 主文件 294.24 kB、collab 2.92 kB。ESM 首屏还包含 tiptap / vendor 两个初始区块，三文件 gzip 合计 478,842 B；这些入口均无 Vue runtime。
-部署时按需区块要与主文件同目录，详见文档站「打包产物与按需加载」。
-
-### lite 主产物与可选特性包
-
-体积敏感的宿主可以走 `lark-doc/lite`（`dist/lark-doc-lite.esm.js`）：它把六个重依赖
-（KaTeX / docx / mammoth / marked / turndown / highlight.js，以及 vendored mermaid）
-从主产物里整体掐断，首屏进一步变小。被掐断的能力不消失——改走**特性注册表**：
-
-- 主产物未注册特性时，对应功能沿内置 catch 降级（公式留 LaTeX 纯文本、代码块纯文本、
-  Markdown/Word 导入导出给可读提示）；
-- 宿主按需加载 `lark-doc/features/<name>`（`<script>` 或 import）后，对应能力即刻恢复，
-  主产物不用换、不重发。
-
-| 特性包 | 注册名 | 恢复的能力 |
-|---|---|---|
-| `lark-doc/features/math` | `math` | 公式渲染（KaTeX 样式随包注入，字体同目录发布） |
-| `lark-doc/features/mermaid` | `mermaid` | 图表渲染（自带 vendored mermaid） |
-| `lark-doc/features/highlight` | `highlight` | 代码语法高亮（全语言） |
-| `lark-doc/features/markdown` | `markdown` | Markdown 导入 / 导出 |
-| `lark-doc/features/office` | `office.buildDocx` / `office.docx` / `office.mammoth` | Word 导入导出 |
-
-接入示例：
-
-```html
-<script type="module">
-  import { LarkDoc } from './dist/lark-doc-lite.esm.js'
-  // 部署时 features/ 目录整体拷入（math.js 的 KaTeX 字体按同目录相对路径解析）
-  import './dist/features/math.js'
-  import './dist/features/highlight.js'
-
-  new LarkDoc({ element: '#editor', content: '<p>开始编辑。</p>' })
-</script>
-```
-
-自定义宿主也可以用同一注册表接入自己的实现（`registerFeature(name, loader)`，
-见 `src/core/features/registry.js`）。全量产物不受影响：未注册特性时走内置按需区块，
-行为与 0.12 完全一致。
-
-## 边界
-
-包默认不创建 Yjs、WebSocket 或后台连接。`DocumentSession` 统一文档身份、事务来源、能力判断和 Provider 生命周期；协同、版本、评论、权限都通过显式 Provider 接入。数据模型与 Provider 契约见 [DEMO_INTEGRATION_GUIDE.md](DEMO_INTEGRATION_GUIDE.md)。
-
-Demo 应用只负责路由与页面呈现；本仓库通过 `file:` 依赖以真实消费方的方式验证包，开发期再 alias 到源码。
+Vditor HTML 可直接作为 `content`，也可用 `doc.importVditor(html)`；字体、Mermaid、公式与高亮资源随包发布。静态部署应保留整个 `dist/`，本地资源不依赖外部 CDN；正文外链和上传接口仍按应用网络配置访问。
 
 ## 背景
 

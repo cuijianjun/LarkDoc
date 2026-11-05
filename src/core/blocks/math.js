@@ -5,8 +5,7 @@ import { loadFeature } from '../features/registry'
 let katexPromise
 /**
  * KaTeX 与它的样式一起按需加载：katex.css 有 118 KB（产物 CSS 的 2/3），
- * 文档里没有公式时完全不必下载。样式写在 async 块里，webpack 会把它拆成
- * 独立的 CSS 块（lib 单文件构建则合并回主 CSS），无需运行时按 URL 拼路径。
+ * 文档里没有公式时完全不必下载。Rollup按入口选择抽取或注入样式；Element特性包同时定位同目录字体。
  *
  * 阶段 4：接入特性注册表 —— 注册了 'math' 特性（宿主加载 lark-doc/features/math.js）
  * 时直接用宿主提供的实例；否则走内置通道。'lark-doc/katex.css' 与
@@ -14,15 +13,19 @@ let katexPromise
  * 各自映射到真实文件或 stub，见 rollup.config.mjs 与 scripts/build-rollup.mjs。
  */
 export function loadKatex() {
-  if (!katexPromise) {
-    katexPromise = loadFeature('math', () =>
-      Promise.all([
+  // 每次先查注册表：lite曾取得占位实现后，补加载的feature仍能恢复。
+  return loadFeature('math', () => {
+    if (!katexPromise) {
+      katexPromise = Promise.all([
         import(/* webpackChunkName: "math" */ 'katex'),
         import(/* webpackChunkName: "math" */ 'lark-doc/katex.css'),
-      ]).then(([module]) => module.default || module),
-    )
-  }
-  return katexPromise
+      ]).then(([module]) => module.default || module).catch(error => {
+        katexPromise = null
+        throw error
+      })
+    }
+    return katexPromise
+  })
 }
 
 function mathExtension(name, onError) {

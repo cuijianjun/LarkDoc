@@ -1,7 +1,7 @@
 /* =============================================================
    lark-doc Playground · 页面自身的样式
    只负责「预览区 + 代码区」这层外壳，编辑器内部样式由
-   vendor/lark-doc.css 提供，这里除少量宿主适配外不做覆盖。
+   vendor/lark-doc-element.umd.min.js 注入，这里只做少量宿主适配。
    ============================================================= */
 
 :root {
@@ -465,3 +465,28 @@ kbd {
   background: #cbd8d3;
 }
 .pg-host::-webkit-scrollbar-thumb:hover { background: #b4c6bf; }
+
+/* 示例入口与上传回调记录 */
+.pg-examples {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  font-size: 12px;
+}
+.pg-example-help { flex: 1 1 280px; color: var(--muted); line-height: 1.6; }
+.pg-btn:disabled { opacity: .5; cursor: default; transform: none; }
+.pg-events { flex: 0 0 auto; max-height: 150px; overflow: auto; border-top: 1px solid var(--line); background: #fff; }
+.pg-events summary { padding: 8px 14px; cursor: pointer; font-size: 12px; }
+.pg-event-hint { color: var(--muted); margin-left: 10px; }
+#pgUploadLog { margin: 0; padding: 0 14px 10px; color: #34463f; font: 11px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 820px) {
+  .pg-examples { padding: 8px 10px; }
+  .pg-example-help { flex-basis: 100%; }
+  .pg-events { max-height: 110px; }
+  .pg-event-hint { display: none; }
+}

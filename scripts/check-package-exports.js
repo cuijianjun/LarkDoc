@@ -13,7 +13,7 @@
  *   E1  exports 里每个叶子路径（含 `*` 通配的目录）在磁盘上存在
  *   E2  main / module / unpkg / jsdelivr / style 落点存在
  *   E3  files 里声明的每个条目存在
- *   E4  不得再有 `browser` 字段（阶段 1-A 摘掉；它会让打包器跳过 ESM 走 UMD）
+ *   E4  browser 仅允许离线 PM 模块到同一直接依赖的映射，禁止替换主入口
  *   E5  sideEffects 不得出现 `dist/*` 这种一网打尽的写法（会让 tree-shaking 全废）
  *   E6  exports 必须保留 `./package.json` 逃生口（工具链读元信息的标准做法）
  *   E7  PENDING 清单里的子入口一旦产出就必须从清单移除（清单只减不增）
@@ -107,13 +107,16 @@ for (const entry of pkg.files || []) {
   if (!exists(entry)) errors.push(`E3 files 里声明的 "${entry}" 不存在`)
 }
 
-/* ---------- E4 browser 字段必须消失 ---------- */
-if ('browser' in pkg) {
-  errors.push(
-    'E4 不得声明 "browser" 字段：它会让 webpack4/5 与部分工具跳过 ESM 直接落 UMD，\n' +
-      '     宿主拿到的就不是可 tree-shaking 的模块产物（阶段 1-A 已摘，勿复活）。\n' +
-      '     SSR 与浏览器应吃同一份产物 —— 需要环境差异请走 exports 的 condition。'
-  )
+/* ---------- E4 browser 只映射 PM，不替换 ESM 主入口 ---------- */
+if (pkg.browser && (typeof pkg.browser !== 'object' || Array.isArray(pkg.browser))) {
+  errors.push('E4 browser 不得使用入口字符串；仅允许 PM 离线模块到共享依赖的映射')
+} else {
+  for (const [from, to] of Object.entries(pkg.browser || {})) {
+    const match = from.match(/^\.\/dist\/pm\/([a-z-]+)\.js$/)
+    if (!match || to !== `prosemirror-${match[1]}` || !pkg.dependencies[to] || !exists(from)) {
+      errors.push(`E4 非法 PM 映射或缺少直接依赖/产物：${from} → ${to}`)
+    }
+  }
 }
 
 /* ---------- E5 sideEffects 不得一网打尽 ---------- */

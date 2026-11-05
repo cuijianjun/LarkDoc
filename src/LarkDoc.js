@@ -17,7 +17,7 @@ import { createNetworkPolicy } from './networkPolicy'
 import { createDocumentSession } from './session/DocumentSession'
 import { migrateRecordContent } from './core/migrations'
 import { createThemeController } from './theme'
-import { createUploadProvider } from './core/media/upload'
+import { assertCollabRuntime } from './core/collabRuntime'
 
 const EVENT_NAMES = Object.freeze(['ready', 'update', 'change', 'save', 'title-change', 'error', 'destroy', 'import-report', 'themeChange'])
 
@@ -80,6 +80,7 @@ function normalizeDocumentInput(input) {
 export class LarkDoc {
   constructor(options = {}) {
     const source = options && typeof options === 'object' ? options : {}
+    assertCollabRuntime(source.collab)
     this.options = { ...DEFAULTS, ...source }
     this.element = resolveElement(source.element)
     this._destroyed = false
@@ -111,7 +112,10 @@ export class LarkDoc {
         readonly: Boolean(source.readonly),
         persistence: this._resolvePersistence(source),
         saveHtml: this.options.saveHtml === true,
-        uploadImage: this._resolveUploader(source),
+        uploader: source.uploader,
+        uploadImage: source.uploadImage,
+        collab: source.collab,
+        documentId: source.documentId,
         uploadFile: this._resolveFileUploader(source),
         resolveFileUrl: this._resolveFileUrlResolver(source),
         // `ai` 支持四种写法：地址字符串、{endpoint}、{protocol:'openai',baseURL}、
@@ -223,34 +227,6 @@ export class LarkDoc {
   }
 
   /**
-   * 上传通道归一（P2-02）。三种宿主写法 → 同一个 `(file, ctx?) => Promise<result>`：
-   *   `uploader: { upload, limits?, retry?, chunked?, chunkSize? }` / `uploader: fn` / `uploadImage: fn`。
-   *
-   * 注意 `limits` 默认是 null（= 不在 provider 层拦）：图片块自己已有 imageMaxSize
-   * 这道校验，两处都设上限容易出现「宿主放宽到 30 MB 却被门面按 20 MB 拒掉」。
-   * 想统一口径就显式传 `uploader.limits`。
-   */
-  _resolveUploader(source) {
-    const uploader = source.uploader
-    const isObject = uploader && typeof uploader.upload === 'function'
-    const upload = isObject ? uploader.upload.bind(uploader) : typeof uploader === 'function' ? uploader : null
-    if (upload) {
-      return createUploadProvider({
-        upload,
-        limits: uploader.limits === undefined ? null : uploader.limits,
-        retry: uploader.retry,
-        chunked: uploader.chunked,
-        chunkSize: uploader.chunkSize,
-        getDocumentId: () => (source.documentId == null ? null : String(source.documentId)),
-      })
-    }
-    if (typeof source.uploadImage === 'function') {
-      return createUploadProvider({ upload: source.uploadImage, limits: null, getDocumentId: () => (source.documentId == null ? null : String(source.documentId)) })
-    }
-    return null
-  }
-
-  /**
    * 文件上传通道归一（P2-04）。附件块和图片块**不共用**解析结果：
    * 图片侧允许回落到 `uploader`，文件侧优先 `uploadFile`，其次 `uploader`，
    * 但**绝不**回落到 `uploadImage`——图片上传实现普遍会按 MIME 白名单拒掉 mp4/pdf。
@@ -354,7 +330,9 @@ export class LarkDoc {
   _emit(name, payload) {
     const list = this._handlers[name] || []
     list.slice().forEach((handler) => {
-      try { handler(payload) } catch (error) { if (typeof console !== 'undefined') console.error(`[LarkDoc] ${name} 回调异常`, error) }
+      try {
+        Promise.resolve(handler(payload)).catch(error => { if (typeof console !== 'undefined') console.error(`[LarkDoc] ${name} 回调异常`, error) })
+      } catch (error) { if (typeof console !== 'undefined') console.error(`[LarkDoc] ${name} 回调异常`, error) }
     })
     if (name === 'update' && this.options.onUpdate) this._safeCall(this.options.onUpdate, payload)
     if (name === 'change' && this.options.onChange) this._safeCall(this.options.onChange, payload)
@@ -367,7 +345,9 @@ export class LarkDoc {
   }
 
   _safeCall(fn, payload) {
-    try { fn(payload) } catch (error) { if (typeof console !== 'undefined') console.error('[LarkDoc] 回调异常', error) }
+    try {
+      Promise.resolve(fn(payload)).catch(error => { if (typeof console !== 'undefined') console.error('[LarkDoc] 回调异常', error) })
+    } catch (error) { if (typeof console !== 'undefined') console.error('[LarkDoc] 回调异常', error) }
   }
 
   /* ------------------------------------------------------------------ */
@@ -508,6 +488,14 @@ export class LarkDoc {
   setReadonly(value) {
     const workspace = this.getWorkspace()
     if (workspace) workspace.setReadonly(value === true)
+    return this
+  }
+
+  setUploader(input) {
+    if (this._destroyed) return this
+    this.options.uploader = input
+    this.options.uploadImage = undefined
+    this._renderer.update(this._handle, { uploader: input, uploadImage: undefined })
     return this
   }
 

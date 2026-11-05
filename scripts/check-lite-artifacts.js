@@ -19,6 +19,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { artifactFiles, gzipBytes } = require('./artifact-graph')
 
 const ROOT = path.resolve(__dirname, '..')
 const DIST = path.resolve(ROOT, 'dist')
@@ -41,8 +42,6 @@ const HEAVY_DEPS = [
   { name: 'marked', token: 'extension level must be', where: 'lark-doc.esm.js' },
 ]
 
-const LITE_MAIN = 'lark-doc-lite.esm.js'
-const FULL_MAIN = 'lark-doc.esm.js'
 
 const assertions = []
 let failed = 0
@@ -66,7 +65,7 @@ function requireFile(file) {
 }
 
 function readOf(file) {
-  return fs.readFileSync(requireFile(file), 'utf8')
+  return fs.readFileSync(requireFile(file), 'utf8').replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
 }
 
 function sizeOf(file) {
@@ -74,18 +73,8 @@ function sizeOf(file) {
 }
 
 /** 全部 lite 产物：主文件 + 本轮构建产出的按需区块。 */
-function liteArtifacts() {
-  const files = fs.readdirSync(DIST)
-  return [LITE_MAIN, ...files.filter((file) => /^lite\..+\.esm\.js$/.test(file)).sort()]
-}
-
-/** 全量 esm 产物：正向对照的搜索空间（排除所有 lite 文件）。 */
-function fullArtifacts() {
-  return fs.readdirSync(DIST)
-    .filter((file) => file.endsWith('.esm.js'))
-    .filter((file) => file !== LITE_MAIN && !file.startsWith('lite.'))
-    .sort()
-}
+function liteArtifacts() { return artifactFiles(DIST, 'lite') }
+function fullArtifacts() { return artifactFiles(DIST, 'esm') }
 
 const liteFiles = liteArtifacts()
 const liteSources = new Map(liteFiles.map((file) => [file, readOf(file)]))
@@ -112,7 +101,7 @@ for (const dep of HEAVY_DEPS) {
 }
 
 /* ---- 区块体积：存在的 lite 区块必须小到装不下真依赖 ---- */
-for (const file of liteFiles.filter((name) => name.startsWith('lite.'))) {
+for (const file of liteFiles.filter((name) => /stub/.test(name))) {
   check(`${file} < ${MAX_STUB_CHUNK_BYTES / 1024} KB`, () => {
     const size = sizeOf(file)
     if (size > MAX_STUB_CHUNK_BYTES) throw new Error(`${size} B —— 重依赖被打了进去`)
@@ -127,8 +116,8 @@ check('lite 产物含 stub 文案', () => {
 
 /* ---- 主文件必须比全量小：stub 化后引用边更少 ---- */
 check('lite 主产物小于全量 esm 主产物', () => {
-  const lite = sizeOf(LITE_MAIN)
-  const full = sizeOf(FULL_MAIN)
+  const lite = gzipBytes(DIST, liteFiles)
+  const full = gzipBytes(DIST, [...fullSources.keys()])
   if (lite >= full) throw new Error(`lite ${lite} B >= 全量 ${full} B —— stub 化应当让主文件更小`)
 })
 
@@ -140,7 +129,7 @@ if (failed) {
     console.error(`  ✗ ${item.name}`)
     console.error(`    ${item.message}`)
   }
-  console.error('\n修法：确认 scripts/build-lite.js 设置了 LARK_DOC_CACHE_FLAVOR=lite，')
+  console.error('\n修法：检查Rollup lite的最终alias及完整依赖图，')
   console.error('      再跑 npm run build:esm && npm run build:lite 重建。\n')
   process.exit(1)
 }

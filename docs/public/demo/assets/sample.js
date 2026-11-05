@@ -1121,7 +1121,7 @@ window.__LARK_DOC_SAMPLE__ = {
               "type": "code"
             }
           ],
-          "text": "lark-doc.umd.min.mermaid.js"
+          "text": "lark-doc-element.umd.min.mermaid.js"
         },
         {
           "type": "text",
@@ -1221,7 +1221,7 @@ window.__LARK_DOC_SAMPLE__ = {
       "content": [
         {
           "type": "text",
-          "text": "支持两种图片地址：上传的图片转成 data URI 跟着文档走，不依赖图床；也可以直接写 https:// 开头的远程地址，按原地址引用、不转存。点右上角「HTML 输出」看两种媒体写法的差别。"
+          "text": "支持 URL 和 base64 图片。未配置上传接口时，本地图片会读成 base64；配置 uploader.action 后，先上传服务器，成功返回地址后再插入。上方可切换「本地图片与回调」或「服务器上传配置」查看可运行代码。"
         }
       ]
     },

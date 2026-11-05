@@ -56,14 +56,11 @@ module.exports = {
      * 但不会再因为并发数随测试文件增长而抖。
      */
     /**
-     * 复用 worker：默认 isolate 会给每个测试文件重启一个独立环境，73 个文件里
-     * 有 70 个耗时全花在「spawn + init environment」上（实测 409s → 157s）。
-     * 本仓库单测是纯 Node 环境、不碰 DOM 全局，用例之间也没有共享可变单例，
-     * 因此关掉隔离是安全的（已全量双跑校验：73 files / 1709 tests 结果一致）。
-     * 一旦将来某个用例需要在全局上打桩，务必改回 isolate: true，
-     * 否则桩会泄漏给同 worker 的后续文件，表现为「单独跑绿、全量跑红」。
+     * 用例现在覆盖真实 DOM、跨产物 feature registry 和浏览器全局桩。
+     * 每个文件隔离模块及全局状态，避免复用 worker 时注册器、样式和 DOM realm
+     * 污染后续文件，产生「单独跑绿、全量跑红」。
      */
-    isolate: false,
+    isolate: true,
     pool: 'forks',
     maxWorkers: 4,
     minWorkers: 1,

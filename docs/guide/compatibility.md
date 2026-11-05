@@ -20,7 +20,7 @@ const editor = new LarkDoc({
 
 editor.on('update', ({ json }) => console.log(json))
 editor.getJSON()
-editor.setJSON({ type: 'doc', content: [{ type: 'paragraph' }] })
+editor.setContent({ type: 'doc', content: [{ type: 'paragraph' }] })
 editor.focus()
 editor.destroy()
 ```
@@ -59,8 +59,8 @@ new LarkDoc({
 
 | 环境 | 推荐入口 | 是否需要额外配置 |
 |---|---|---|
-| Vue 2.7 + webpack 5 / Vite | `import { LarkDoc } from 'lark-doc'` | 不需要 lark-doc 专用配置 |
-| Vue 2.7 + webpack 4 | `import { LarkDoc } from 'lark-doc'` | 不需要 lark-doc 专用配置；样式引 `lark-doc/style.css` |
+| Vue 2.7 + webpack 5 / Vite | `import { LarkDoc } from 'lark-doc'` | 默认/full/lite 显式引 CSS；不需专属 alias |
+| Vue 2.7 + webpack 4 | `import { LarkDoc } from 'lark-doc'` | 主入口无需 alias；深子路径与样式写 dist 实际路径 |
 | Vue 3 | `lark-doc/element` + `lark-doc/vue3`，或直接默认入口 | 自定义元素需放行 |
 | React | `lark-doc/element` + `lark-doc/react`，或直接默认入口 | CRA/Vite 通常不需要配置 |
 | 原生 HTML / CDN | `dist/lark-doc-element.umd.min.js` | `dist/` 整目录同位托管 |
@@ -69,11 +69,11 @@ new LarkDoc({
 
 ### Vue2 / webpack 4
 
-当前包为 Vue2 提供可直接消费的 CJS `main`，应用层无需增加 alias、源码路径或专属 Babel 配置：
+webpack4 通常按 module 选择公开 ESM，不能假定它读取 exports 或优先 main/CJS。包侧已覆盖该 ESM 及可达 chunk 的语法降级，不要求根 alias、源码路径或专属 Babel 配置；本轮同版包已在真实 webpack4.47 / Node14 消费夹具通过编译、异步图表/公式和运行时 API 补全：
 
 ```js
 import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
+import 'lark-doc/dist/lark-doc.css'
 
 // mounted
 const editor = new LarkDoc({ element: this.$refs.editor })
@@ -100,8 +100,7 @@ Vue 3 的 Vite 配置：
 
 ```js
 export default {
-  plugins: [vue()],
-  compilerOptions: { isCustomElement: (tag) => tag === 'lark-doc' },
+  plugins: [vue({ template: { compilerOptions: { isCustomElement: tag => tag === 'lark-doc' } } })],
 }
 ```
 
@@ -147,7 +146,7 @@ npm install ./lark-doc-<version>.tgz
 
 如果异步 chunk 404，优先检查：主文件与 chunk 是否同目录、`fonts/` 是否存在、nginx 是否允许静态文件返回 200。
 
-## 4. 懒加载：默认不加载低频能力
+## 4. 全量与按需能力
 
 默认入口保留核心编辑器；公式、Mermaid、Office、Markdown、代码高亮通过动态 import 在真正使用时加载。应用只使用默认入口时，不会主动把这些低频实现作为首屏代码执行。
 
@@ -164,6 +163,7 @@ npm install ./lark-doc-<version>.tgz
 ```js
 import { LarkDoc } from 'lark-doc/lite'
 import 'lark-doc/features/math'
+import 'lark-doc/dist/features/math.css'
 import 'lark-doc/features/highlight'
 import 'lark-doc/style.css'
 
@@ -174,12 +174,11 @@ new LarkDoc({ element: '#editor', content: '<p>轻量入口</p>' })
 
 ### 一次性引入全部能力
 
-如果应用希望像 Element 的全量入口一样，用一次 import 获得 Mermaid、Office、KaTeX、Markdown、Highlight，以及 Templates、Comments、Versioning、Providers、Migrations，可以使用：
+如果应用希望用一次 import 静态注册 Mermaid、Office、KaTeX、Markdown、Highlight，以及 Templates、Comments、Versioning、Providers、Migrations，可以使用：
 
 ```js
 import {
   LarkDoc,
-  createCollabExtensions,
   createTemplateLibrary,
   createMemoryCommentsProvider,
   createMemoryVersioningProvider,
@@ -191,7 +190,7 @@ import 'lark-doc/style.css'
 
 `lark-doc/full` 是独立的全量产物：它静态注册五个可选 feature，并转出全部低频子入口；因此应用不需要再逐个 `import('lark-doc/features/*')`。代价是首屏 bundle 会包含这些能力及其依赖，适合功能覆盖完整、首屏体积不敏感的后台或桌面应用。它不是默认入口的别名，也不要与 `lark-doc/lite` 同时作为两个编辑器核心加载。
 
-Collab 不并入这个全量文件：它依赖宿主安装的 `yjs`、Tiptap 协同扩展和 Hocuspocus Provider，并且必须与宿主保持单例。全量应用若需要协同，再额外引入 `lark-doc/collab`，这是唯一需要补充的一行：
+Collab 不并入这个全量文件：它依赖宿主安装的 `yjs`、Tiptap 协同扩展和 Hocuspocus Provider，并且必须与宿主保持单例。全量应用若需要协同，再额外引入 `lark-doc/collab`，同时配对 SDK、collab 和 Yjs 的模块格式：
 
 ```js
 import * as Collab from 'lark-doc/collab'
@@ -210,18 +209,18 @@ const { LarkDoc } = await import('lark-doc/lite')
 await import('lark-doc/features/mermaid')
 ```
 
-- **CDN / Element**：保留 `dist/` 全目录；Element 的异步 chunk 由主脚本地址推导。
+- **Element import**：ESM 原生动态 import，由宿主输出；**require/CDN UMD**：保留 dist 全目录，配套 feature UMD 按主脚本目录加载。
 
 ## 5. 低频子入口
 
-默认入口不再静态导出模板、评论、版本、providers、migrations 等低频模块，按需引入：
+默认入口聚焦编辑器核心，模板、评论、版本、providers、migrations 等低频模块按需引入；full 同时转出这些模块：
 
 ```js
 import { createTemplateLibrary } from 'lark-doc/templates'
 import { createMemoryCommentsProvider } from 'lark-doc/comments'
 import { createMemoryVersioningProvider } from 'lark-doc/versioning'
-import { createDocumentSession } from 'lark-doc/providers'
-import { migrateDocument } from 'lark-doc/migrations'
+import { createPersistenceProvider } from 'lark-doc/providers'
+import { migrateRecordContent } from 'lark-doc/migrations'
 ```
 
 这些入口仍由同一个 `lark-doc` npm 包提供，不需要拆装多个包。
@@ -230,7 +229,7 @@ import { migrateDocument } from 'lark-doc/migrations'
 
 | 现象 | 先检查 |
 |---|---|
-| webpack 4 解析 `import.meta` 失败 | 是否配置了 `lark-doc$` → `lark-doc/dist/lark-doc.common.js` |
+| webpack4 解析失败 | 是否消费当前同版 Rollup 产物及全部 chunk；主 ESM 不要求根 alias，深子路径仍写 dist 文件 |
 | Vue/React 标签空白 | 是否先 `import 'lark-doc/element'` |
 | 公式、Word 或图表时报 feature 未加载 | 是否加载对应 `lark-doc/features/*`，或改用完整 `lark-doc` 入口 |
 | 静态页首次能打开、点击功能 404 | 是否完整复制 `dist/` 和 `fonts/`，chunk 是否同位 |
@@ -247,3 +246,28 @@ npm run check:lite
 ```
 
 发布前再按仓库约定运行 `npm run check`，并确保 `dist/` 由当前 worktree 重新生成。
+
+## 7. 上传和显式协同
+
+图片完整生命周期、取消、base64 与 URL 结果见[上传器](/blocks/uploader)。仅上传配置更新使用 doc.setUploader 或框架 property 路径，保留正文、标题和撤销历史；函数不可序列化成 attribute。
+
+普通编辑不声明协同 optional peer。collabDependencies 是版本契约元数据，不是 npm constraints；显式 collab 保持宿主单例。当前依赖验证基于 Hocuspocus Provider 4.7.1、Yjs 13.6.33、Tiptap 协同扩展 3.32.0；Hocuspocus 桥在连接前检查 attach/detach 并拒绝旧 API，不据此宣称任意旧版本受支持。
+
+显式协同入口面向支持 package exports 的现代 bundler 与 Node22；webpack4 的验证范围是普通主入口，不包含外部协同栈。
+
+显式协同当前验证使用 Node 22；Yjs 13.6.33 自身声明 Node >=16，库的 Node14 构建/普通编辑兼容不扩展为 Node14 协同承诺。
+
+SDK 与协同位置算法共享 ProseMirror 类身份。npm 入口通过直接依赖及窄范围 browser 映射共享 PM，离线 ESM 保留 dist/pm。支持客户端 ESM SDK + ESM collab + ESM Yjs，或 CJS SDK + CJS collab + require Yjs。Node 的 exports.node 选择 CJS，请整组使用 require；UMD 与外部 collab、ESM/CJS 混用会在挂载前明确拒绝。不要复制两份 PM、添加宿主 alias 或修改 plugin key 绕过检查。
+
+```js
+// Node + jsdom；浏览器应用使用前面的 ESM import 组合
+const { LarkDoc } = require('lark-doc')
+const { createCollabExtensions, isRemoteTransaction } = require('lark-doc/collab')
+const Y = require('yjs')
+const ydoc = new Y.Doc({ gc: false })
+const doc = new LarkDoc({
+  element: document.querySelector('#editor'), storage: 'none',
+  collab: { extensions: createCollabExtensions({ ydoc }), isRemoteTransaction },
+})
+// 先销毁 doc，再销毁 ydoc；共享 Y.Doc 应在全部编辑器销毁后释放。
+```

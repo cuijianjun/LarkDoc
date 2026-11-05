@@ -1,9 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import Vue from 'vue'
-
-Vue.config.productionTip = false
-Vue.config.devtools = false
 
 const mocks = vi.hoisted(() => ({ handles: [], readyOnMount: false, realRenderer: null }))
 vi.mock('../../src/mount/domRenderer', () => ({
@@ -40,45 +36,64 @@ import LarkDocEditor from '../../src/components/lark-doc/LarkDocEditor'
 import LarkDocWorkspace from '../../src/components/lark-doc/LarkDocWorkspace'
 
 const mounted = []
-afterEach(() => { mounted.splice(0).forEach(vm => vm.$destroy()); mocks.handles.length = 0; mocks.readyOnMount = false; mocks.realRenderer = null; document.body.innerHTML = '' })
+afterEach(() => {
+  mounted.splice(0).forEach(({ component, vm }) => { component.beforeDestroy.call(vm); vm.$el.remove() })
+  mocks.handles.length = 0; mocks.readyOnMount = false; mocks.realRenderer = null; document.body.innerHTML = ''
+})
+
+// Invoke the public options contract explicitly. Vue2's reactivity/VNode patching
+// belongs to the real consumer-browser tests; the library supplies no runtime.
+function createHost(component, propsData = {}) {
+  const props = Object.fromEntries(Object.entries(component.props).map(([key, option]) => [key,
+    typeof option.default === 'function' && option.type !== Function ? option.default() : option.default]))
+  Object.assign(props, propsData)
+  const refs = Object.fromEntries(['nativeHost', 'slotPark', 'headerActions', 'sidePanel'].map(key => [key, document.createElement('div')]))
+  refs.slotPark.append(refs.headerActions, refs.sidePanel)
+  const root = document.createElement('div')
+  root.append(refs.nativeHost, refs.slotPark)
+  document.body.appendChild(root)
+  const vm = {
+    ...component.methods, ...props, $props: props, $refs: refs, $el: root,
+    $emit: vi.fn(), $nextTick: callback => Promise.resolve().then(callback),
+  }
+  mounted.push({ component, vm })
+  return vm
+}
 function mount(component, propsData) {
-  const vm = new (Vue.extend(component))({ propsData }).$mount()
-  document.body.appendChild(vm.$el)
-  mounted.push(vm)
+  const vm = createHost(component, propsData)
+  component.mounted.call(vm)
   return { vm, handle: mocks.handles[mocks.handles.length - 1] }
 }
+const emitted = (vm, event) => vm.$emit.mock.calls.filter(([name]) => name === event).map(([, payload]) => payload)
 
 describe('无SFC Vue2 options 薄适配器', () => {
   it('保留组件名、v-model、标题事件与命令式转发，不自行创建业务状态', async () => {
     const { vm, handle } = mount(LarkDocEditor, { value: '<p>正文</p>', title: '初始', maxLength: 12 })
-    expect(vm.$options.name).toBe('LarkDocEditor')
+    expect(typeof LarkDocEditor).toBe('object')
+    expect(LarkDocEditor.name).toBe('LarkDocEditor')
     expect(handle.props.initialContent).toBe('<p>正文</p>')
     expect(handle.props.config.limits.maxLength).toBe(12)
     expect(handle.props.config.features.persistence).toBe(false)
     expect(vm.getEditor()).toBe(handle.instance.getEditor())
     expect(vm.getJSON()).toEqual({ type: 'doc' })
-    vm.html = '<p>替换</p>'
-    expect(vm.html).toBe('<p>替换</p>')
-    const input = vi.fn()
-    const title = vi.fn()
-    const ready = vi.fn()
-    vm.$on('input', input).$on('update:title', title).$on('ready', ready)
+    LarkDocEditor.computed.html.set.call(vm, '<p>替换</p>')
+    expect(LarkDocEditor.computed.html.get.call(vm)).toBe('<p>替换</p>')
     handle.on.change({ html: '<p>输入</p>' })
-    expect(input).toHaveBeenCalledWith('<p>输入</p>')
+    expect(emitted(vm, 'input')).toEqual(['<p>输入</p>'])
     handle.setTitle('修改')
     handle.on.update({ title: '修改' })
     handle.on.update({})
-    expect(title).toHaveBeenCalledExactlyOnceWith('修改')
+    expect(emitted(vm, 'update:title')).toEqual(['修改'])
     handle.setTitle('直接标题')
     handle.on['update:title']('直接标题')
     handle.on.update({})
-    expect(title).toHaveBeenCalledTimes(2)
+    expect(emitted(vm, 'update:title')).toEqual(['修改', '直接标题'])
     handle.on['ai-request']('rewrite')
     expect(handle.instance.startAI).not.toHaveBeenCalled()
     handle.on.ready({ editor: vm.getEditor() })
-    expect(ready).toHaveBeenCalledWith(vm.getEditor())
-    vm.value = '<p>宿主</p>'
-    await Vue.nextTick()
+    expect(emitted(vm, 'ready')).toEqual([vm.getEditor()])
+    vm.value = vm.$props.value = '<p>宿主</p>'
+    LarkDocEditor.watch.value.handler.call(vm, vm.value)
     expect(handle.instance.setContent).toHaveBeenLastCalledWith('<p>宿主</p>')
   })
 
@@ -88,38 +103,31 @@ describe('无SFC Vue2 options 薄适配器', () => {
     expect(handle.props.foldPersistKey).toBe('doc-1')
     handle.on['ai-request']('rewrite')
     expect(handle.instance.startAI).toHaveBeenCalledExactlyOnceWith('rewrite')
-    vm.readonly = true
-    await Vue.nextTick()
+    vm.readonly = vm.$props.readonly = true
+    LarkDocWorkspace.watch.readonly.handler.call(vm, true)
     expect(handle.patches).toEqual([{ readonly: true }])
     vm.config.limits.maxLength = 20
-    await Vue.nextTick()
+    expect(LarkDocWorkspace.watch.config.deep).toBe(true)
+    LarkDocWorkspace.watch.config.handler.call(vm, vm.config)
     expect(handle.patches[1]).toEqual({ config: vm.config })
     expect(handle.patches[1]).not.toHaveProperty('initialTitle')
     expect(handle.patches[1]).not.toHaveProperty('session')
-    const ready = vi.fn()
-    vm.$on('ready', ready)
     const payload = { editor: vm.getEditor(), document: handle.instance }
     handle.on.ready(payload)
-    expect(ready).toHaveBeenCalledWith(payload)
+    expect(emitted(vm, 'ready')).toEqual([payload])
   })
 
   it('同步 ready 保持编辑器载荷，挂载后新增插槽仍可更新', async () => {
     mocks.readyOnMount = true
-    const ready = vi.fn()
-    const parent = new Vue({
-      data: () => ({ visible: false }),
-      render(h) { return h(LarkDocEditor, { on: { ready } }, this.visible ? [h('button', { slot: 'header-actions' }, '新增操作')] : []) },
-    }).$mount()
-    mounted.push(parent)
-    const handle = mocks.handles[0]
-    expect(ready).not.toHaveBeenCalled()
-    await Vue.nextTick()
-    expect(ready).toHaveBeenCalledExactlyOnceWith(handle.instance.getEditor())
-    parent.visible = true
-    await Vue.nextTick()
+    const { vm, handle } = mount(LarkDocEditor)
+    expect(emitted(vm, 'ready')).toEqual([])
+    await Promise.resolve()
+    expect(emitted(vm, 'ready')).toEqual([handle.instance.getEditor()])
+    const button = document.createElement('button')
+    button.textContent = '新增操作'
+    vm.$refs.headerActions.appendChild(button)
     expect(handle.nativeHost.host.$refs.actionsHost.textContent).toBe('新增操作')
-    parent.visible = false
-    await Vue.nextTick()
+    button.remove()
     expect(handle.nativeHost.host.$refs.actionsHost.textContent).toBe('')
   })
 
@@ -128,16 +136,18 @@ describe('无SFC Vue2 options 薄适配器', () => {
     const ready = vi.fn()
     const input = vi.fn()
     const title = vi.fn()
-    const vm = new (Vue.extend(LarkDocEditor))({ propsData: {
+    const vm = createHost(LarkDocEditor, {
       value: '<p>原生正文</p>', title: '原生标题',
       config: { performance: { changeDebounce: 0 }, network: { mode: 'offline' } },
-    } })
-    mounted.push(vm)
-    vm.$on('ready', payload => { expect(vm.getEditor()).toBe(payload); ready(payload) }).$on('input', input).$on('update:title', title)
-    vm.$mount()
-    document.body.appendChild(vm.$el)
+    })
+    vm.$emit.mockImplementation((event, payload) => {
+      if (event === 'ready') { expect(vm.getEditor()).toBe(payload); ready(payload) }
+      if (event === 'input') input(payload)
+      if (event === 'update:title') title(payload)
+    })
+    LarkDocEditor.mounted.call(vm)
     const handle = vm._nativeHandle
-    await Vue.nextTick()
+    await Promise.resolve()
     expect(ready).toHaveBeenCalledExactlyOnceWith(vm.getEditor())
     expect(vm.getText()).toBe('原生正文')
     expect(vm.getTitle()).toBe('原生标题')
@@ -146,35 +156,51 @@ describe('无SFC Vue2 options 薄适配器', () => {
     expect(input).toHaveBeenLastCalledWith(expect.stringContaining('替换正文'))
     vm.setTitle('新标题')
     expect(title).toHaveBeenCalledExactlyOnceWith('新标题')
-    vm.value = '<p>宿主热更</p>'
-    await Vue.nextTick()
+    vm.value = vm.$props.value = '<p>宿主热更</p>'
+    LarkDocEditor.watch.value.handler.call(vm, vm.value)
     expect(vm.getText()).toBe('宿主热更')
     const editor = vm.getEditor()
-    vm.$destroy()
+    LarkDocEditor.beforeDestroy.call(vm)
     expect(editor.isDestroyed).toBe(true)
     expect(handle.root.isConnected).toBe(false)
   })
 
   it('插槽由宿主 Vue 更新，卸载前归还节点并销毁原生句柄', async () => {
-    const parent = new Vue({
-      data: () => ({ label: '操作' }),
-      render(h) { return h(LarkDocEditor, { ref: 'editor' }, [
-        h('button', { slot: 'header-actions' }, this.label),
-        h('span', { slot: 'side-panel' }, this.label),
-      ]) },
-    }).$mount()
-    mounted.push(parent)
-    document.body.appendChild(parent.$el)
-    const handle = mocks.handles[0]
+    const vm = createHost(LarkDocEditor)
+    const button = document.createElement('button')
+    const panel = document.createElement('span')
+    button.textContent = panel.textContent = '操作'
+    vm.$refs.headerActions.appendChild(button)
+    vm.$refs.sidePanel.appendChild(panel)
+    LarkDocEditor.mounted.call(vm)
+    const handle = vm._nativeHandle
     expect(handle.nativeHost.host.$refs.actionsHost.textContent).toBe('操作')
     expect(handle.nativeHost.host.$refs.externalPanel.textContent).toBe('操作')
-    parent.label = '更新'
-    await Vue.nextTick()
+    button.textContent = panel.textContent = '更新'
     expect(handle.nativeHost.host.$refs.actionsHost.textContent).toBe('更新')
     expect(handle.nativeHost.host.$refs.externalPanel.textContent).toBe('更新')
-    parent.$destroy()
+    LarkDocEditor.beforeDestroy.call(vm)
     expect(handle.destroyed).toBe(true)
     expect(handle.root.isConnected).toBe(false)
-    expect(parent.$refs.editor).toBeUndefined()
+    expect(vm.$refs.headerActions.parentNode).toBe(vm.$refs.slotPark)
+    expect(vm.$refs.sidePanel.parentNode).toBe(vm.$refs.slotPark)
+    expect(vm._nativeHandle).toBeNull()
+    expect(vm._nativeRenderer).toBeNull()
+  })
+
+  it.each([LarkDocEditor, LarkDocWorkspace])('$name 把插槽交给宿主 h，保留原生挂载点和隐藏停泊点', component => {
+    const header = [{}]
+    const side = [{}]
+    const h = (tag, data, children) => ({ tag, data, children })
+    const tree = component.render.call({ $slots: { 'header-actions': header, 'side-panel': side } }, h)
+    expect(tree.tag).toBe('div')
+    expect(tree.data.class).toBe('lark-doc-vue2-adapter')
+    expect(tree.children[0].data.ref).toBe('nativeHost')
+    const park = tree.children[1]
+    expect(park.data).toEqual({ ref: 'slotPark', style: { display: 'none' } })
+    expect(park.children[0].data.ref).toBe('headerActions')
+    expect(park.children[0].children).toBe(header)
+    expect(park.children[1].data.ref).toBe('sidePanel')
+    expect(park.children[1].children).toBe(side)
   })
 })

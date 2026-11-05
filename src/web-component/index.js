@@ -24,6 +24,9 @@ import 'core-js/features/array/find-last'
 import 'core-js/features/array/find-last-index'
 import 'core-js/features/array/at'
 import 'core-js/features/structured-clone'
+// Mermaid也使用ES2021/2022 API；Node14 DOM宿主需显式补齐。
+import 'core-js/features/object/has-own'
+import 'core-js/features/string/replace-all'
 // 样式随入口进入构建：element 构建关闭 CSS 抽取，样式由 JS 注入 <style>，
 // 宿主无需再单独 import css（零配置可用）。
 import '../../style.css'
@@ -33,7 +36,7 @@ import { createRenderer } from '../mount'
 import { LarkDocElement as BaseLarkDocElement, DEFAULT_TAG, registerLarkDoc as registerElement, upgradeLarkDoc, isRegistered } from './register'
 
 class LarkDocElement extends BaseLarkDocElement {
-  _mount() {
+  _mount(preservedState = {}) {
     if (this.document || !this.isConnected) return
     const options = this.__options
     // 无持久化时 ready 可在 renderer.mount 返回前同步发出；交回微任务，
@@ -63,7 +66,7 @@ class LarkDocElement extends BaseLarkDocElement {
       },
     }
     this.__options = mountOptions
-    try { super._mount() } finally {
+    try { super._mount(preservedState) } finally {
       if (this.__options === mountOptions) this.__options = options
     }
   }
@@ -82,10 +85,9 @@ export function createLarkDocElement(options = {}) {
   registerLarkDoc(DEFAULT_TAG)
   const el = document.createElement(DEFAULT_TAG)
   if (options && typeof options === 'object') {
-    Object.keys(options).forEach((key) => {
-      if (key === 'element') return
-      el.setAttribute(key, String(options[key]))
-    })
+    const configuration = { ...options }
+    delete configuration.element
+    el.options = configuration
   }
   return el
 }

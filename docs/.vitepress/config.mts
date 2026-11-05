@@ -45,6 +45,7 @@ export default defineConfig({
           { text: '快速开始', link: '/guide/getting-started' },
           { text: '安装与引用总表（内外网）', link: '/guide/install' },
           { text: '各环境引入对照', link: '/guide/environments' },
+          { text: '图片上传与完整回调', link: '/blocks/uploader' },
           { text: '实例与事件', link: '/guide/instance' },
         ],
       },
@@ -53,6 +54,7 @@ export default defineConfig({
         activeMatch: '/guide/(configuration|toolbar|view-integration|collaboration|collab-server|vditor-import|web-component)',
         items: [
           { text: '配置总览', link: '/guide/configuration' },
+          { text: '图片上传与完整回调', link: '/blocks/uploader' },
           { text: '工具栏配置', link: '/guide/toolbar' },
           { text: '内容块（标题 / 列表 / 表格 …）', link: '/blocks/heading' },
           { text: 'View 层接入', link: '/guide/view-integration' },
@@ -104,6 +106,7 @@ export default defineConfig({
             { text: '各环境引入对照', link: '/guide/environments' },
             { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
             { text: '实例与事件', link: '/guide/instance' },
+            { text: '本地开发与验证', link: '/guide/development' },
           ],
         },
         {

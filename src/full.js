@@ -7,6 +7,7 @@
  * Collab remains a separate peer-dependent entry; see the note below.
  */
 export * from './index'
+export { default } from './index'
 export * from './templates'
 export * from './comments'
 export * from './versioning'
@@ -14,7 +15,7 @@ export * from './providers'
 export * from './migrations'
 
 // Collab intentionally stays at `lark-doc/collab`: its Yjs/Tiptap/Hocuspocus
-// packages are optional peers and must remain the host's singleton instances.
+// packages follow collabDependencies versions and remain host singleton instances.
 // Applications using the full bundle add `import 'lark-doc/collab'` separately.
 
 // Feature modules register their implementations as a side effect. Keeping
