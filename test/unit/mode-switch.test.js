@@ -2,7 +2,7 @@
  * P4-06 三态契约：纯数据/键位、原生行为宿主、真实 createTopBar/select DOM 与 controller。
  * 菜单开合/定位由共享 select 所有，模式状态/持久化由 viewModesMixin 所有。
  * 几何锁当前共享下拉契约：84×32 按钮、340 最小宽、两行 22/18+2、5px 内衬；
- * 提示条仍为 16 高 @y32/z9999。JSDOM 只桩布局测量，不替换交互实现。
+ * 成功提示为顶部居中卡片 @y32/z9999。JSDOM 只桩布局测量，不替换交互实现。
  */
 
 import fs from 'fs'
@@ -560,19 +560,22 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
     expect(labelHeight + hintHeight + gap + padding * 2).toBe(52)
   })
 
-  it('顶部提示条：fixed / 通栏 / 16 高 @y32 / z 9999（06 §6.2）+ 打印隐藏', () => {
+  it('成功提示卡片：顶部居中、内容宽度、窄屏留边，并在打印时隐藏', () => {
     const toast = ruleFor('.lark-doc .lark-doc-mode-toast')
     expect(toast).toContain('position: fixed')
     expect(toast).toContain('z-index: 9999')
     expect(toast).toContain('top: 32px')
-    expect(toast).toContain('height: 16px')
-    expect(toast).toContain('left: 0')
-    expect(toast).toContain('right: 0')
+    expect(toast).toContain('left: 50%')
+    expect(toast).toContain('transform: translateX(-50%)')
+    expect(toast).toContain('width: max-content')
+    expect(toast).toContain('min-height: 32px')
+    expect(toast).toContain('max-width: min(420px, calc(100vw - 32px))')
+    expect(toast).not.toContain('right: 0')
     const printRule = css.split('\n').find((line) => line.startsWith('@media print')) || ''
     expect(printRule).toContain('.lark-doc-mode-toast')
   })
 
-  it('提示条是中性条：不复用右下角琥珀 error toast', () => {
+  it('成功提示使用主题配色，不复用右下角琥珀 error toast', () => {
     const toast = ruleFor('.lark-doc .lark-doc-mode-toast')
     expect(toast).toContain('background: var(--ld-bg-surface-chrome)')
     expect(toast).not.toContain('error')

@@ -366,6 +366,33 @@ describe('迁移期 DOM renderer 契约', () => {
     expect(host.firstElementChild).toBeNull()
   })
 
+  it('连续切换三态只更新成功提示文字，保留同一成功图标和正文', async () => {
+    const host = document.createElement('div')
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, {
+      element: host,
+      props: { initialContent: '<p>正文</p>', config: { modes: { persist: false } } },
+    })
+    const root = renderer.getRoot(handle)
+    const toast = root.querySelector('.lark-doc-mode-toast')
+    const icon = toast.querySelector('.lark-doc-mode-toast-icon')
+    expect(toast.hidden).toBe(true)
+    expect(toast.getAttribute('role')).toBe('status')
+    expect(icon).not.toBeNull()
+    expect(icon.textContent).toBe('✓')
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    const json = handle.editor.getJSON()
+
+    for (const [index, label] of [[1, '修订'], [2, '阅读'], [0, '编辑']]) {
+      root.querySelector('.lark-doc-mode-select [role="combobox"]').click()
+      root.querySelectorAll('.lark-doc-mode-select [role="option"]')[index].click()
+      await vi.waitFor(() => expect(toast.querySelector('.lark-doc-mode-toast-text')?.textContent).toBe(`已切换为${label}模式`))
+      expect(toast.hidden).toBe(false)
+      expect(toast.querySelector('.lark-doc-mode-toast-icon')).toBe(icon)
+      expect(handle.editor.getJSON()).toEqual(json)
+    }
+  })
+
   it('DOM renderer 的演示模式复用 stage DOM 契约并支持退出', async () => {
     const host = document.createElement('div')
     const renderer = createDomRenderer()
