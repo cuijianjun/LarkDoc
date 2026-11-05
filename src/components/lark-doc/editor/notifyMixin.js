@@ -263,6 +263,7 @@ export default {
         this.closeNotify()
         return
       }
+      if (!this.notifyCurrent(this.notificationContext())) return
       const el = event && event.currentTarget
       const rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null
       if (!rect) return
@@ -281,7 +282,7 @@ export default {
       this.notifyAnchor = null
     },
     measureNotify() {
-      const el = this.$refs && this.$refs.notifyPopover
+      const el = this._notificationsUi && this._notificationsUi.el
       if (!el || !this.notifyAnchor) return
       this.notifyStyle = anchorPopoverStyle(this.notifyAnchor, el.getBoundingClientRect(), {
         width: window.innerWidth,

@@ -58,7 +58,7 @@ async function main() {
   })
   record('样式由 JS 注入（自包含）', styled.styleTags > 0 && styled.height > 200, JSON.stringify(styled))
 
-  // 4. 初始内容来自 content 属性
+  // 4. 初始内容来自标签内 HTML（slot 兜底）
   const textA = await page.locator('#editor-a .ProseMirror').first().innerText()
   record('标签内 HTML 作为初始内容', textA.includes('飞书风格文档'), textA.slice(0, 30).replace(/\n/g, ' '))
 
@@ -107,21 +107,50 @@ async function main() {
   })
   record('第二个实例（JS 注入能力 + ready 后 setContent）', secondOk.mounted === 'true' && secondOk.text.includes('JS 注入能力'), JSON.stringify(secondOk))
 
-  // 10. 卸载与重建：remove 后重新 append 不应报错，且能重建
-  await page.evaluate(() => {
+  // 10. 默认持久化开启：先确定保存完成，再检查重连恢复的完整正文，不能误判为 slot 失效。
+  const rebuilt = await page.evaluate(async () => {
     const el = document.getElementById('editor-a')
+    const instance = el.getInstance()
+    const before = el.getText()
+    await el.save()
     const parent = el.parentNode
     parent.removeChild(el)
-    setTimeout(() => parent.insertBefore(el, parent.firstChild), 60)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    const unmounted = el.getInstance() === null
+    const ready = new Promise(resolve => el.addEventListener('lark-doc-ready', resolve, { once: true }))
+    parent.insertBefore(el, parent.firstChild)
+    await ready
+    return {
+      mounted: el.getAttribute('data-mounted'), pmCount: el.querySelectorAll('.ProseMirror').length,
+      unmounted, newInstance: el.getInstance() !== instance, before, text: el.getText(),
+    }
   })
-  await page.waitForTimeout(1200)
-  const rebuilt = await page.evaluate(() => {
-    const el = document.getElementById('editor-a')
-    return { mounted: el.getAttribute('data-mounted'), hasPM: !!el.querySelector('.ProseMirror'), text: el.getText().slice(0, 12) }
+  record('移除后重新插入可重建且已保存正文保留', rebuilt.mounted === 'true' && rebuilt.pmCount === 1 && rebuilt.unmounted && rebuilt.newInstance && rebuilt.text === rebuilt.before && rebuilt.text.includes('覆写成功'), JSON.stringify(rebuilt))
+
+  // 11. 隔离验证 slot 缓存：关闭持久化，避免草稿恢复遮蔽声明正文的初始化契约。
+  const slot = await page.evaluate(async () => {
+    const el = document.createElement('lark-doc')
+    el.options = { storage: 'none' }
+    el.innerHTML = '<p>独立验证的 slot 初始正文</p>'
+    const appendReady = async () => {
+      const ready = new Promise(resolve => el.addEventListener('lark-doc-ready', resolve, { once: true }))
+      document.body.appendChild(el)
+      await ready
+    }
+    await appendReady()
+    const initial = el.getText()
+    el.setContent('<p>不应被当作 slot 缓存的临时覆写</p>')
+    const written = el.getText()
+    el.remove()
+    await new Promise(resolve => setTimeout(resolve, 60))
+    const unmounted = el.getInstance() === null
+    await appendReady()
+    const result = { initial, written, unmounted, text: el.getText(), pmCount: el.querySelectorAll('.ProseMirror').length }
+    el.remove()
+    await new Promise(resolve => setTimeout(resolve, 60))
+    return result
   })
-  record('移除后重新插入可重建且初始内容保留', rebuilt.mounted === 'true' && rebuilt.hasPM && rebuilt.text.includes('覆写成功') === false, JSON.stringify(rebuilt))
-  const rebuiltContent = await page.evaluate(() => document.getElementById('editor-a').getText().includes('飞书风格文档'))
-  record('重建后标签内初始内容恢复（slot 缓存）', rebuiltContent)
+  record('无持久化草稿时重连恢复标签内初始内容（slot 缓存）', slot.initial === '独立验证的 slot 初始正文' && slot.written === '不应被当作 slot 缓存的临时覆写' && slot.unmounted && slot.text === slot.initial && slot.pmCount === 1, JSON.stringify(slot))
 
   await page.screenshot({ path: path.join(SHOTS, 'element-01.png'), fullPage: true })
   record('无页面脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '))

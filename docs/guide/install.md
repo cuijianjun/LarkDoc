@@ -8,10 +8,10 @@
 npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network 看 200
 ```
 
-> **0.13 起「配」这一步基本消失了。** 包自己的 `browser` 字段指向 ES2018 的 UMD 产物、
-> `peerDependencies` 全部标成可选、样式随 JS 注入，webpack 4/5、Vite、Rollup 都能直接
-> `import { LarkDoc } from 'lark-doc'`，不再需要 alias、也不再需要给 `node_modules` 挂
-> babel-loader。旧版本的兼容写法保留在[各环境引入对照](/guide/environments#env-vue2-wp4)。
+> **0.13 起「配」这一步几乎消失了。** 包的 `exports` 覆盖了全部入口、`peerDependencies` 全部标成可选，
+> webpack 5 / Vite / Rollup / Node 都能直接 `import { LarkDoc } from 'lark-doc'`，不再需要 alias、也不再
+> 需要给 `node_modules` 挂 babel-loader。只有 **webpack 4** 这一档要一行 alias（它不读 `exports`，
+> 且 0.13 起没有 `browser` 字段兜底）；CJS 需显式引 `lark-doc/style.css`，ESM / Element 样式随 JS 注入。旧版本的兼容写法保留在[各环境引入对照](/guide/environments#env-vue2-wp4)。
 
 > 本文是**索引 + 最短路径**：每一步给出可照抄的命令，配置细节挂在《各环境引入对照》对应锚点上。
 > 内网想直接看「分宿主的一步步操作」，跳到[内网迁移实战](/guide/intranet-migration)；服务器侧 nginx 看[内网服务器部署](/guide/deployment-intranet)。
@@ -20,9 +20,9 @@ npm/ tgz   一行代码      0.13 起基本不用   静态托管才要   Network
 
 | 你的项目 | 走哪个入口 | 装不装 npm 包 | 编译工具要改吗 |
 | --- | --- | --- | --- |
-| **Vue 2.7**（webpack 4/5、Vite 都算） | `lark-doc`（主入口，`new LarkDoc()` 或 `<lark-doc-editor>`） | 装 | **不用改** |
-| **Vue 3** | `lark-doc/vue3`（薄壳）或 `lark-doc/element`（原样用标签） | 装 | 只要给 `lark-doc` 标签放行 |
-| **React 18** | `lark-doc/react`（薄壳）或 `lark-doc/element` | 装 | TSX 里补一条 `JSX.IntrinsicElements` 声明 |
+| **Vue 2.7**（webpack 4/5、Vite） | `lark-doc`（`new LarkDoc()`）；旧组件用 `lark-doc/vue2` | 装 | webpack4 需 alias CJS；webpack5 / Vite 无需改 |
+| **Vue 3**（Vite / webpack5） | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/element` 薄壳 | 装 | 命令式无需专属配置；标签方式放行 `lark-doc` |
+| **React 16.8+** | `lark-doc`（`new LarkDoc()`）；也可用 `lark-doc/react` 薄壳 | 装 | CRA5/Vite 无需专属配置；TSX 标签需补类型 |
 | **纯静态页 / 老系统 / 没有打包器** | `dist/lark-doc-element.umd.min.js`（`<script>` 直引） | **不装**，只拷 `dist/` | 不用 |
 
 判断自己是哪一档：
@@ -32,19 +32,26 @@ node -p "require('vue/package.json').version" 2>/dev/null || echo "没有 vue"
 node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --version
 ```
 
-`2.7.x` → 第一档；`3.x` / 项目里根本没 vue → 第二、三档；打不出这两个 → 最后一档。
+Vue 版本只影响宿主自己的组件与薄壳写法，不限制默认入口；任意框架或无框架均可使用 `new LarkDoc()`。不使用打包器时选择静态 Element 方式。
 
 ::: warning 三个最容易走错的路
-- **Vue 3 用主入口** → 运行时报 `Vue.extend is not a function`（Vue 3 已移除该 API）。走 `lark-doc/vue3` 或 `lark-doc/element`。
+- **把 legacy options 当跨框架组件** → `lark-doc/vue2` 仅供 Vue2 宿主注册；任意框架都可以用默认 `new LarkDoc()` 或 `lark-doc/element`，两者都不需要 Vue2。
 - **薄壳只装了一半** → 组件渲染成空白、控制台报「`<lark-doc>` 尚未注册」。薄壳只做属性/事件桥接，**元素本体在 element 入口**，宿主入口要最先 `import 'lark-doc/element'`。
 - **只拷了主文件、没拷 `*.math.js` 这些** → 编辑器能开，但插公式、导出 Word 时 404。`dist/` 要**整目录**同位放。
 :::
 
 ::: tip webpack 4 读不到 `exports` 字段
-webpack 4 不看 `exports`，只能靠 `main` / `module` / `browser` 三个字段。`lark-doc` 的
-`browser` 已指向 **ES2018 的 UMD 产物**（样式随 JS 注入），所以 `import { LarkDoc } from 'lark-doc'`
-在 webpack 4 里同样能直接编译通过。但 `lark-doc/element`、`lark-doc/vue3` 这类**子路径**在
-webpack 4 里解析不到，要写全：`lark-doc/dist/lark-doc-element.umd.min.js`。
+webpack 4 不看 `exports`，只能靠 `main` / `module` 两个字段。`lark-doc` 的 `module` 指向 ESM 产物，
+里面含 `import.meta`，webpack 4 自带的 acorn 解析不了 —— 所以主入口要**一行 alias** 指到 CJS 档
+（`dist/lark-doc.common.js`，已降到 ES2018 语法，不用再挂 babel）：
+
+```js
+// vue.config.js
+configureWebpack: { resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } } }
+```
+
+`lark-doc/element`、`lark-doc/style.css` 这类**子路径**在 webpack 4 里同样解析不到，要写全：
+`lark-doc/dist/lark-doc-element.umd.min.js`、`lark-doc/dist/lark-doc.css`。
 :::
 
 ## 第 1 步 · 装（外网） {#do-install-online}
@@ -59,9 +66,7 @@ npm i lark-doc
 npm i lark-doc@<ver> -E
 ```
 
-> 0.12 及更早版本把 `vue ^2.7`、`@tiptap/vue-2` 写成强制 peer，Vue 3 / React 项目
-> `npm i` 会报 `ERESOLVE`，需要加 `--legacy-peer-deps`。0.13 起这些 peer 全部标成了
-> optional，**不再需要**那个参数。
+> 阶段7源码中 `vue`、`vue-template-compiler`、`@tiptap/vue-2` 顶层依赖已移除；默认、Element、lite 与 legacy 均不内联或外置 Vue。不需要 `--legacy-peer-deps`。开发锁文件中若仍有 Vue 编译工具或 Vue 节点，它们属于 Vue CLI 的开发期传递依赖，不构成包的运行时依赖。
 
 装完立刻验一遍，输出应该是**一个**版本号：
 
@@ -95,7 +100,7 @@ npm pack lark-doc@<ver> && tar -xzf lark-doc-<ver>.tgz && cp -r package/dist pub
 
 ```
 public/vendor/lark-doc/
-├── lark-doc-element.umd.min.js            ← <script> 引这个（含 Vue 2 运行时 + 样式）
+├── lark-doc-element.umd.min.js            ← <script> 引这个（原生 DOM + 注入样式，无 Vue）
 ├── lark-doc-element.umd.min.math.js       ← 按需区块，必须与主文件同目录
 ├── lark-doc-element.umd.min.mermaid.js
 ├── lark-doc-element.umd.min.office.js     ← 导出 Word / 导入 docx
@@ -123,7 +128,6 @@ bash scripts/pack-intranet.sh --version <ver>
 | 文件 | Vue2 webpack4/5 | Vue3 / React / 静态 | 说明 |
 | --- | :---: | :---: | --- |
 | `lark-doc-<ver>-intranet.tgz` | ✅ | — | 主包，已含 21 个运行时依赖，`npm i ./xxx.tgz` 一把装完 |
-| `vue-<ver>-intranet.tgz` | 内网没有 `vue@2.7` 时才要 | — | 重打过的 vue，去掉了 macOS tar 头 |
 | `lark-doc-<ver>-node-modules.zip` | 兜底 | — | `npm` 彻底装不上时直接解压进 `node_modules/` |
 | `dist/`（整目录） | 需要时 | ✅ **必须** | 静态托管 / 二次打包用 |
 | `INSTALL-内网.md` / `sha256.txt` | ✅ | ✅ | 说明 + 校验，一起带进去 |
@@ -139,7 +143,6 @@ cd dist-intranet && sha256sum -c sha256.txt
 ```bash
 # 把 tgz 放到项目外的固定目录，例如 /opt/pkgs/
 npm i /opt/pkgs/lark-doc-<ver>-intranet.tgz
-npm i /opt/pkgs/vue-<ver>-intranet.tgz        # 内网没有 vue@2.7 时
 ```
 
 tgz 装完 `package.json` 里会出现 `"lark-doc": "file:../opt/pkgs/..."` —— 这是正常的，说明它走的是本地路径而不是 registry。
@@ -171,8 +174,8 @@ node -e "console.log(require('lark-doc/package.json').version)"
 | --- | --- | --- |
 | Vue 2.7 + webpack 5 | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({ element })` |
 | Vue 2.7 + Vite | 同上（装 `@vitejs/plugin-vue2`） | 同上 |
-| Vue 2.7 + webpack 4 | 同上（**样式随 JS 注入，不用另引 CSS**） | 同上 |
-| Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc'` | `<lark-doc-editor v-model="html" />` |
+| Vue 2.7 + webpack 4 | 同上 + `import 'lark-doc/dist/lark-doc.css'` + 一行 alias（见下表） | 同上 |
+| Vue 2.7 组件式 | `import { LarkDocEditor } from 'lark-doc/vue2'` | `<lark-doc-editor v-model="html" />` |
 | **Vue 3** | `import 'lark-doc/element'` + `import { resolveVue3Attrs } from 'lark-doc/vue3'` | `<lark-doc v-bind="resolveVue3Attrs(props)" @lark-doc-change="onChange">` |
 | **React 18** | `import 'lark-doc/element'` + `import { createReactLarkDoc } from 'lark-doc/react'` | `const LarkDoc = createReactLarkDoc(React)` → `<LarkDoc content={html} onChange={fn} ref={docRef} />` |
 | 原生 / CDN / 静态 | `<script src="…/lark-doc-element.umd.min.js">` | `<lark-doc>` 标签 |
@@ -205,25 +208,26 @@ import { createReactLarkDoc } from 'lark-doc/react'
 | 环境 | 要改的配置 | 一行结论 |
 | --- | --- | --- |
 | webpack 5 / vue-cli 5 | **什么都不用改** | `vue.config.js` 只放你自己的业务配置 |
-| webpack 4 / vue-cli 4 | **主入口也不用改** | `browser` 字段已指向 ES2018 产物 |
+| webpack 4 / vue-cli 4 | **一行 alias** | `alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' }`；子路径与样式写全 `dist/` 路径 |
 | Vite（Vue 2） | 装 `@vitejs/plugin-vue2` | 与 lark-doc 无关，是 Vue 2 + Vite 的通用前置 |
 | Vite（Vue 3 / React） | `compilerOptions.isCustomElement` 放行 `lark-doc` | 不放行会报「未知标签」的编译警告 |
 | 静态页 / SSR | 无打包器配置 | 静态页靠 `<script>`；SSR 靠 client-only |
 
-**webpack 4 为什么现在不用配了**：0.12 的产物是 ES2020+ 语法，webpack 4 自带的 acorn
-读不了 `?.` / `??`，所以以前要 alias 到 `common.js` 再挂一条 babel-loader。0.13 把
-UMD 与 element 两个产物降到了 **ES2018**，同时补上 `browser` 字段——webpack 4 的
-`resolve.mainFields` 默认 `['browser','module','main']`，会直接命中 UMD，语法规避、
-样式自动注入，全程零配置。
+**webpack 4 为什么现在只剩一行**：0.12 的产物是 ES2020+ 语法，webpack 4 自带的 acorn
+读不了 `?.` / `??`，所以以前要 alias 到 `common.js` **再挂一条 babel-loader**。0.13 把
+CJS 也跟随 UMD / element 一起降到了 **ES2018**，于是 alias 之后就不需要 babel 了。
 
-### webpack 4 唯一还要留意的一件事：按需区块的路径
+0.13 同时**摘掉了 `browser` 字段**：它一存在，webpack 就会跳过 ESM 直落「浏览器直挂档」，
+SSR 与浏览器吃到两份不同产物。摘掉之后环境差异一律走 `exports` 的 condition，代价就是
+webpack 4 少了 `browser` 兜底、必须显式 alias 到 `main`。这是一行换一致性，值得。
 
-UMD 产物把公式 / 导出 Word / mermaid / 代码高亮拆成了 `.umd.min.*.js` 旁挂区块，运行时
-按「当前 script 的地址」推导目录。静态 `<script src>` 直挂时推导天然正确；被**打包器**
-`import` 时，当前 script 指向的是宿主自己的 bundle，会去 `/js/math.js` 这种错误位置找 →
-**首屏正常，一插公式就 404**。
+### webpack 4 还要留意的两件小事
 
-宿主两行搞定（把 `dist/` 整目录放进静态目录，再告诉它基址）：
+**① 按需区块基址 —— 走 CJS 就不用管了。** 只有 UMD / element 旁挂了 `.umd.min.*.js`
+懒区块，运行时按「当前 script 的地址」推导目录；静态 `<script src>` 直挂时推导天然正确，
+被**打包器** `import` 时当前 script 指向宿主自己的 bundle，会去 `/js/math.js` 这种错误
+位置找 → **首屏正常，一插公式就 404**。CJS 按 `require()` 加载同目录兄弟 chunk，交给 Node 或宿主打包器解析，所以不用设 `__LARK_DOC_PUBLIC_PATH__`，但不能只分发主文件。
+UMD / element 的宿主两行搞定（把 `dist/` 整目录放进静态目录，再告诉它基址）：
 
 ```js
 // ① 把 node_modules/lark-doc/dist/* 拷到 public/vendor/lark-doc/
@@ -232,6 +236,9 @@ window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'
 ```
 
 不用公式 / 导出 Word / mermaid 的项目可以不设，也不会报错——那几个区块根本不会被请求。
+
+**② 公式字体。** 走 CJS 时样式是从 `lark-doc/dist/lark-doc.css` 引的，`url()` 指向同目录的
+`fonts/*.woff2`。webpack 4 能处理 CSS 里的 `url()`，会自动 emit 字体，不用手动拷。
 
 ::: tip 老版本（0.12 及以前）的写法
 alias + babel-loader 那一套仍然有效，留在[各环境引入对照 · webpack4](/guide/environments#env-vue2-wp4)，
@@ -280,14 +287,14 @@ cp -r node_modules/lark-doc/dist/* public/vendor/lark-doc/
 | 现象 | 原因 | 解决 |
 | --- | --- | --- |
 | `npm i lark-doc` 报 `ERESOLVE` | 装的是 0.12 及更早版本（peer 里 `vue ^2.7` 是强制的） | 加 `--legacy-peer-deps`，或升到 0.13+ |
-| 运行时 `Vue.extend is not a function` | Vue 3 项目用了主入口 | 换成 `lark-doc/vue3` 或 `import 'lark-doc/element'` + `<lark-doc>` |
+| 运行时 `Vue.extend is not a function` | 仍在加载去 Vue 前的旧产物或源码 alias | 重建/升级完整产物并移除旧 alias；当前默认入口不调用 Vue.extend |
 | 控制台 `[lark-doc] <lark-doc> 尚未注册` | 薄壳引了，但漏了 `import 'lark-doc/element'` | 宿主入口最先 import 它（薄壳只桥接，元素本体在 element 入口） |
 | `Module not found: 'lark-doc/element'` | webpack 4 不读 `exports` 字段 | 写全 `lark-doc/dist/lark-doc-element.umd.min.js` |
 | `Module parse failed: Unexpected token` 指到 `?.` | 装了 0.12 及更早版本的产物 | 升到 0.13+（UMD/element 已降到 ES2018）；临时办法见[webpack4 老写法](/guide/environments#env-vue2-wp4) |
 | 插公式 / 导出 Word 没反应，Network 里 `*.math.js` 404 | 走打包器 import 时按需区块基址算错 | 设 `window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'`（见[第 4 步](#do-config)） |
-| 编辑器出来了但完全没样式（纯白、挤成一坨） | 用的是 0.12 的 CJS 产物，CSS 不会自动注入 | 升到 0.13+（UMD 样式随 JS 注入）；或 `import 'lark-doc/dist/lark-doc.css'` |
+| 编辑器出来了但完全没样式 | CJS 样式未显式引入，或使用了不完整旧产物 | 当前 CJS 仍需 `import 'lark-doc/dist/lark-doc.css'`；ESM / Element 随 JS 注入 |
 | 公式显示成方框 | `fonts/` 没拷 | 连 `fonts/` 一起拷 |
-| `Cannot find module 'vue'` | 主入口需要宿主的 Vue 2.7 | 一起装 `vue-<ver>-intranet.tgz` |
+| `Cannot find module 'vue'` | 旧版本产物、旧 alias 或宿主自身依赖未清理 | 当前 lark-doc 不要求 Vue；核对实际解析路径与产物版本，不要为编辑器补装 Vue2 |
 | 内网 `npm i` 报 `ENOTFOUND` / 卡在 registry | 还在走外网源 | 改 `npm i /opt/pkgs/xxx.tgz` 本地路径 |
 | 内网 tgz 装上但依赖缺一堆 | 用的是 `npm pack` 的裸包（不含依赖） | 用 `pack-intranet.sh` 出的 `-intranet.tgz` |
 | Windows 上 tgz 解压 `EPERM` / 目录不全 | 老 npm 6 的 tgz 处理缺陷 | 改用 `-node-modules.zip` 解压进 `node_modules/` |

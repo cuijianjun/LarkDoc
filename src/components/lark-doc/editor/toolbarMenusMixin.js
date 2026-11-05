@@ -5,13 +5,14 @@
  * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
 import { safeUrl } from '../documentOperations'
+import { loadKatex } from '../../../core/blocks/math'
 import { EMBED_MENU_ITEMS, EMBED_HELP_URL } from '../../../core/embed/presets'
 import { readHost, resolveEmbed } from '../../../core/embed/resolve'
 import {
   marks, fontFamilyOptions, fontSizeOptions, lineHeightOptions,
   widthModeOptions, cellTextAlignOptions, cellVerticalAlignOptions,
 } from './constants'
-import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from './palette'
+import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from '../../../ui/palette'
 
 export default {
   data() { return {
@@ -23,7 +24,7 @@ export default {
     // 文案与 placeholder 由 EMBED_MENU_ITEMS 现查，不另存一份字符串（否则 15 份文案会漂移）。
     embedDialog: null, embedValue: '', embedDialogRejected: false, embedDialogPos: { left: '0px', top: '0px' },
     mathDialog: '', mathValue: '', mathError: '', marks,
-    // 自绘下拉（LarkDocSelect）选项清单与最近一次应用的值（替代原生 select 的非受控展示）。
+    // 下拉选项清单与最近一次应用的值，供原生 UI renderer 展示。
     fontFamilyOptions, fontSizeOptions, lineHeightOptions, widthModeOptions,
     cellTextAlignOptions, cellVerticalAlignOptions,
     appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: DEFAULT_TEXT_COLOR, backgroundColor: DEFAULT_TEXT_BACKGROUND },
@@ -166,9 +167,11 @@ export default {
     async insertMath() {
       if (!this.writable() || !this.featureEnabled('math')) return
       try {
-        const module = await import(/* webpackChunkName: "math" */ 'katex')
+        // 阶段 4：复用 core/blocks/math.js 的 loadKatex（含特性注册通道），不再
+        // 自开一条 import('katex') 接缝 —— 两处各写一条会让 lite 的 stub / 特性包
+        // 注册只覆盖其一。
+        const katex = await loadKatex()
         if (!this.writable() || !this.mathDialog) return
-        const katex = module.default || module
         katex.renderToString(this.mathValue, { throwOnError: true, trust: false })
         this.mathError = ''
         this.run('insertContent', { type: this.mathDialog, attrs: { latex: this.mathValue } })

@@ -3,8 +3,8 @@
  *
  * `src/components/lark-doc/`（core 装配层）的依赖闭包里不允许出现 Vue：
  * 这是「core 零框架 + 三端薄适配」的第一道结构性门禁。UI 框架专属的
- * NodeView 已经搬到 `src/adapters/vue2/`，由适配层在模块加载时通过
- * `setNodeView()` 注册进 `src/registry/nodeviews.js`，core 只查表。
+ * NodeView 已经全部下沉为 core 的纯 DOM 实现（`src/core/nodeviews/*.js`），
+ * core 只查 `setNodeView()` 注册表；宿主仍可用它覆盖默认实现。
  *
  * 守卫内容：
  *  1. extensions.js 的依赖闭包不含任何 vue 系包（vue / @vue/* / @tiptap/vue-2）；

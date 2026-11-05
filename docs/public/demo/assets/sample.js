@@ -1075,6 +1075,79 @@ window.__LARK_DOC_SAMPLE__ = {
       "attrs": {
         "indent": 0,
         "lineHeight": null,
+        "blockId": "bdgmhead01",
+        "textAlign": null,
+        "level": 3,
+        "numbering": false,
+        "numberingStart": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "图表（Mermaid）"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
+        "blockId": "bdgmpara01",
+        "textAlign": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "图表就是语言为 "
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ],
+          "text": "mermaid"
+        },
+        {
+          "type": "text",
+          "text": " 的代码块，渲染发生在 NodeView、数据仍是 codeBlock。渲染器是懒 chunk（"
+        },
+        {
+          "type": "text",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ],
+          "text": "lark-doc.umd.min.mermaid.js"
+        },
+        {
+          "type": "text",
+          "text": "），所以部署时这个文件必须和主文件同目录，否则这里只会剩一段源码。"
+        }
+      ]
+    },
+    {
+      "type": "codeBlock",
+      "attrs": {
+        "blockId": "bdgrmmd001",
+        "language": "mermaid",
+        "indent": 0
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "graph TD\n  A[输入 mermaid 代码] --> B{语言判定}\n  B -->|mermaid| C[懒加载 mermaid chunk]\n  C --> D[本地渲染成 SVG]\n  B -->|其他| E[highlight.js 高亮]\n  D --> F[主题切换时按新配色重画]"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "attrs": {
+        "indent": 0,
+        "lineHeight": null,
         "blockId": "bsa0w4ey1h",
         "textAlign": null,
         "level": 3,
@@ -1148,7 +1221,7 @@ window.__LARK_DOC_SAMPLE__ = {
       "content": [
         {
           "type": "text",
-          "text": "支持本地图片，跟着文档一起保存，不依赖图床。"
+          "text": "支持两种图片地址：上传的图片转成 data URI 跟着文档走，不依赖图床；也可以直接写 https:// 开头的远程地址，按原地址引用、不转存。点右上角「HTML 输出」看两种媒体写法的差别。"
         }
       ]
     },
@@ -1166,6 +1239,22 @@ window.__LARK_DOC_SAMPLE__ = {
         "originalAttchId": null,
         "align": "center",
         "caption": ""
+      }
+    },
+    {
+      "type": "image",
+      "attrs": {
+        "blockId": "b32vnmh02n",
+        "src": "https://cuijianjun.github.io/LarkDoc/logo.svg",
+        "alt": "远程地址图片",
+        "title": null,
+        "width": null,
+        "height": null,
+        "originalSrc": null,
+        "attchId": null,
+        "originalAttchId": null,
+        "align": "center",
+        "caption": "这张图的 src 是 https:// 远程地址，inline 档原样输出 <img src=\"https://…\">，link 档只剩一条地址链接"
       }
     },
     {

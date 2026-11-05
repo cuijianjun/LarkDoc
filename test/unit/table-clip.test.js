@@ -21,7 +21,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8')
 const CSS = read('src/components/lark-doc/lark-doc.css')
 const MIXIN = read('src/components/lark-doc/editor/tableToolsMixin.js')
-const HOST = read('src/components/lark-doc/LarkDocEditor.vue')
+const HOST = read('src/editor/nativeEditorHost.js')
 
 const FADE_WIDTH = 24
 
@@ -154,6 +154,6 @@ describe('规格层：接线', () => {
   })
 
   it('列宽拖拽结束会 dispatch 事务，所以 onTransaction 里重算就够', () => {
-    expect(HOST).toContain('this.syncTableClip()')
+    expect(HOST).toContain('host.syncTableClip()')
   })
 })

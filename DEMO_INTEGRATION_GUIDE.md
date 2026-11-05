@@ -1,10 +1,34 @@
 # LarkDoc 包接入与架构指南
 
-## 1. 包的职责
+## 1. 先跑起来
+
+```bash
+npm i lark-doc
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+
+const doc = new LarkDoc({
+  element: '#editor',
+  content: '<p>开始编辑。</p>',
+})
+```
+
+页面只需要一个挂载点：
+
+```html
+<div id="editor"></div>
+```
+
+框架只负责创建和销毁挂载点；编辑器由 `LarkDoc` 自己管理。离开页面时调用 `doc.destroy()`。
+
+## 2. 包的职责
 
 `lark-doc` 把 `/lark-doc` 的编辑能力从 Demo 路由中抽离出来。宿主应用负责路由、页面布局、登录用户和服务端 API；包负责 Tiptap 编辑器、工作区交互、文档格式、Provider 契约和本地单人模式。
 
-包公开两个稳定的 Vue 2 组件入口：
+默认入口提供无框架的 `LarkDoc` 门面，Vue2 / Vue3 / React 宿主统一从 `lark-doc` 引入，内部挂载原生 DOM UI，不导入 Vue：
 
 | 入口 | 职责 | 适用场景 |
 | --- | --- | --- |
@@ -13,9 +37,9 @@
 
 当前默认是本地模式：不会自动创建 Yjs、WebSocket 或后台请求。协同、版本、评论和权限只有在宿主显式传入对应 Provider 后才会启用。
 
-## 2. 安装与最小用法
+## 3. 安装与最小用法
 
-发布后，Vue 2.7 应用可以直接安装：
+任意框架或无框架应用均可安装，不需要 Vue peer 或 `--legacy-peer-deps`：
 
 ```bash
 npm i lark-doc
@@ -37,7 +61,7 @@ doc.on('update', ({ html, json }) => { /* 自动保存 */ })
 doc.destroy()
 ```
 
-`src/LarkDoc.js` 只做四件事：把 AiEditor 风格配置翻译成 `createLarkDocConfig` 结构、用 Vue 渲染函数挂载 Workspace、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
+`src/LarkDoc.js` 只做四件事：把 AiEditor 风格配置翻译成 `createLarkDocConfig` 结构、通过 DOM renderer 挂载 WorkspaceController、把实例方法转发给 Workspace/Editor、按固定顺序销毁。它不实现编辑器逻辑。
 
 ### 2.2 组件式（原有方式）
 
@@ -47,7 +71,7 @@ import {
   LarkDocEditor,
   LarkDocWorkspace,
 } from 'lark-doc'
-import 'lark-doc/style.css'
+import 'lark-doc/dist/lark-doc-vue2.css'
 
 Vue.component('LarkDocEditor', LarkDocEditor)
 Vue.component('LarkDocWorkspace', LarkDocWorkspace)
@@ -71,7 +95,7 @@ Vue.component('LarkDocWorkspace', LarkDocWorkspace)
 
 `layout.titleBarFixed` 默认值为 `false`。开启后只有顶部标题栏吸附到窗口顶端，编辑工具栏保持原有文档流位置；`LarkDocEditor` 与 `LarkDocWorkspace` 均支持该配置。
 
-## 3. 目录结构
+## 4. 目录结构
 
 ```text
 src/
@@ -94,12 +118,13 @@ src/
     persistence.js                 草稿/本地快照 Provider 兼容层
     versioning.js                  不可变版本 Provider 最小接口校验
     index.js                       Provider 统一导出
+  core/nodeviews/
+    code-block.js           代码块 NodeView：语言下拉、懒加载高亮、Mermaid 图表（三端共用）
+    image.js                图片 NodeView、附件和裁剪（三端共用）
+    ...                     其余块类型 NodeView 同样是纯 DOM 实现
   components/lark-doc/
-    LarkDocEditor.vue       编辑器 UI 和 Tiptap 生命周期
-    LarkDocWorkspace.vue    工作台 UI、持久化和 Session 接入
-    CommandMenu.vue                `/` 命令菜单
-    CodeNode.vue                   代码块 NodeView 和高亮加载
-    ImageNode.vue                  图片 NodeView、附件和裁剪
+    LarkDocEditor.js        无 Vue import 的 options 适配器
+    LarkDocWorkspace.js     无 Vue import 的工作台 options 适配器
     commands.js                    块级命令实现
     documentOperations.js          文档级操作和块移动/复制/删除
     ecsImages.js                   ECS 图片上传适配器
@@ -124,7 +149,7 @@ scripts/
 
 注释集中解释跨模块约束、Node 14 兼容、销毁顺序、数据边界和 Provider 设计；普通 Vue 模板、赋值和循环不重复写逐行注释。需要理解某个函数时，先看同目录的契约检查脚本，再看组件对外方法。
 
-## 4. 文档数据模型
+## 5. 文档数据模型
 
 正文仍是 Tiptap JSON，包在可演进的文档信封中：
 
@@ -141,7 +166,7 @@ scripts/
 
 `normalizeDocumentRecord` 同时兼容历史 `{ title, json }` 记录，`getDocumentContent` 只返回正文。`schemaVersion` 由 `migrations.js` 逐版本迁移；评论、Presence、权限和 AI 运行状态不写入正文版本。`getNodeId` 为未来评论和 AI 锚点读取稳定块 ID，旧节点没有 ID 时返回 `null`，不会擅自改变现有文档。
 
-## 5. DocumentSession 生命周期
+## 6. DocumentSession 生命周期
 
 `createDocumentSession(options)` 创建会话，常用字段如下：
 
@@ -158,7 +183,7 @@ const session = createDocumentSession({
 
 每次需要标记来源的 ProseMirror transaction 都通过 `transactionMetadata.js` 写入统一 meta：`user`、`remote`、`import`、`restore`、`ai`、`host`。这样撤销、审计、协同合并和未来服务端事件可以区分来源，而不需要修改编辑器命令。
 
-## 6. Provider 契约
+## 7. Provider 契约
 
 Provider 是宿主实现的纯 JavaScript 对象。包只在创建 Session 时校验方法存在，不绑定后端框架、Yjs 或 HTTP 客户端。
 
@@ -172,7 +197,7 @@ Provider 是宿主实现的纯 JavaScript 对象。包只在创建 Session 时�
 
 默认能力包括 `canView`、`canEdit`、`canComment`、`canResolveComment`、`canCreateVersion`、`canRestoreVersion`、`canExport` 和 `canManagePermission`。权限拒绝会在 Session 方法层抛错，宿主应将错误映射为自己的提示。
 
-## 7. 从本地模式扩展到协同产品
+## 8. 从本地模式扩展到协同产品
 
 推荐按以下顺序接入服务端，不改变组件入口：
 
@@ -184,16 +209,18 @@ Provider 是宿主实现的纯 JavaScript 对象。包只在创建 Session 时�
 
 AI 预览和提案也应沿用同一套 transaction metadata：生成结果先留在预览状态，用户确认后以 `ai` 来源提交；源选区或锚点失效时拒绝写入。
 
-## 8. 验证
+## 9. 验证
 
-在 Node 14.21.3/npm 8.19.4 下运行：
+完整安装开发依赖使用 Node22+；依赖安装后，库构建和 lint 可在 Node14.21.3/npm8.19.4 下运行：
 
 ```bash
+nvm use 22
 npm ci
+nvm use 14.21.3
 npm run check:architecture
 npm run check:lark-doc
 npm run lint
 npm run build
 ```
 
-`check:architecture` 验证文档信封、事务 meta、Session 生命周期、权限能力和 Provider 方法；核心/工作区检查验证现有编辑功能。构建会输出较大的单文件库，这是为了让 npm 消费方不需要额外部署动态 chunk；Vue 和 Tiptap 仍作为 peer 依赖解析。
+`check:architecture` 验证文档信封、事务 meta、Session 生命周期、权限能力和 Provider 方法；核心/工作区检查验证现有编辑功能。默认 / Element / legacy 构建均无 Vue runtime；CJS 按 `require()` 加载兄弟 chunk，ESM 保留原生动态 import，Element 按主脚本 URL 加载按需 chunk。静态部署需保留完整 `dist/`。协同依赖保持 optional peer，普通编辑无需安装。

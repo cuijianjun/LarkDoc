@@ -229,7 +229,7 @@ async function main() {
   check('图表块默认渲染预览（无需切换）', Boolean(previewBoxDefault))
   check('预览层不可编辑', Boolean(previewBoxDefault) && previewBoxDefault.getAttribute('contenteditable') === 'false')
   const codeBody = firstBlock.querySelector('.lark-doc-code-body')
-  // jsdom 无真实布局，common.js 内联构建下 mermaid 会真正执行并渲染失败 → 错误态。
+  // jsdom 无真实布局，common.js 加载本地 mermaid 区块后会渲染失败，进入错误态。
   // 错误态按设计显示源码区 + 错误提示（便于修错）；渲染成功路径由 verify-browser-mermaid.js 在真浏览器验证。
   check('渲染失败显错提示（jsdom 无布局，成功路径见浏览器断言）', Boolean(firstBlock.querySelector('.lark-doc-diagram-error')))
   check('错误态源码区可见（便于修错）', Boolean(codeBody) && codeBody.style.display !== 'none')
@@ -237,20 +237,21 @@ async function main() {
   check('图表块出现「编辑源码」按钮', blockButtons().indexOf('编辑源码') !== -1)
   check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
   check('图表块携带独立外观类', firstBlock.className.indexOf('lark-doc-code-diagram') !== -1)
-  // 代码块语言下拉已换自绘浮层 `CodeLangPicker`（04 §2.2，219×317，挂在 `LarkDocOverlays`
-  // 这一层而不是工具栏里），所以按**触发按钮**找，点开后校验选项清单。
-  // ⚠️ 不要再按 `.lark-doc-select` 找：那是旧实现（工具栏内嵌下拉），已下线。
-  const langSelect = Array.from(host.querySelectorAll('.lark-doc-code-toolbar button.lark-doc-code-lang-trigger'))
-    .find((node) => node.getAttribute('aria-label') === '代码语言')
-  check('代码块使用自绘语言下拉', Boolean(langSelect)
-    && host.querySelectorAll('.lark-doc-code-toolbar select').length === 0)
-  if (langSelect) langSelect.click()
-  await delay(60)
-  const langMenuItems = Array.from(host.querySelectorAll('.lark-doc-code-lang-item')).map((item) => item.textContent.trim())
+  // 代码块语言下拉由 core 的原生 NodeView 渲染，直接检查 select 的选项。
+  const langSelect = host.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
+  check('代码块使用原生语言下拉', Boolean(langSelect))
+  const langMenuItems = langSelect
+    ? Array.from(langSelect.options).map((option) => option.textContent.trim())
+    : []
   check('语言下拉含 Mermaid 图表项', langMenuItems.some((text) => text.indexOf('Mermaid 图表') !== -1))
   // 71 项语言（04 §2.2 ⑤）+ 图表开启时追加的「Mermaid 图表」。
-  check('语言下拉 71 项语言 + 图表项', langMenuItems.length === 72)
+  check('语言下拉 71 项语言 + 图表项', langMenuItems.length === 72, `实际 ${langMenuItems.length} 项`)
   check('语言下拉首项为 Plain Text', langMenuItems[0] === 'Plain Text')
+  const jsBlock = Array.from(host.querySelectorAll('.lark-doc-code')).find((block) =>
+    block.querySelector('.lark-doc-code-input').textContent === 'console.log(1)')
+  const jsSelect = jsBlock && jsBlock.querySelector('select[aria-label="代码语言"]')
+  check('历史 js 别名回填 JavaScript 且不改写落库值', Boolean(jsSelect) && jsSelect.value === 'javascript'
+    && collect(doc.getJSON(), 'codeBlock').some((node) => node.attrs.language === 'js'))
   let blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '编辑源码')
   if (blockButton) blockButton.click()
   await delay(100)
@@ -266,10 +267,13 @@ async function main() {
   check('渲染走动态 import（无 script 注入）', !document.querySelector('script[data-lark-doc-diagram="mermaid"]'))
 
   /* ---------- 4.5 「图表」插入命令 ---------- */
+  // 阶段 3 起 CJS 拆块：mermaid 不再内联进主文件，而是独立成 `lark-doc.common.mermaid.js`
+  // 兄弟区块（由产物内 require() 寻址加载）。「内网零外链」的语义 = 本地区块文件存在、
+  // 内容完整，主文件不再背 mermaid 的体积。
   const bundle = require('fs').readFileSync(require('path').join(__dirname, '../dist/lark-doc.common.js'), 'utf8')
-  check('mermaid 内联进 common 包（内网零外链）', bundle.indexOf('flowchart-v2') !== -1)
-  // 引号风格不参与判定：产物经 terser 压缩后字符串字面量可能被统一引号（详见
-  // scripts/minify-lib-cjs.js 的 quote_style 说明），这里只认「命令 id 是 diagram」。
+  // Rollup CJS 使用 inlineDynamicImports；不能再要求 Webpack 固定命名分片。
+  check('mermaid 随 CJS 完整内联（内网零外链）', bundle.indexOf('flowchart-v2') !== -1)
+  // 引号风格不参与判定，兼容压缩产物中的单引号和双引号。
   check('命令清单含「图表」插入项', /id:\s*['"]diagram['"]/.test(bundle))
   check('插入命令携带 mermaid 示例源码', bundle.indexOf('A[开始]') !== -1)
 
@@ -288,7 +292,7 @@ async function main() {
   check('销毁后移除 DOM', host.children.length === 0)
 
   /* ---------- 6. features.diagram: false 关闭图表 ---------- */
-  // 渲染走动态 import（common.js 下内联同步执行），新实例关闭 features.diagram 后不应触发任何渲染副作用。
+  // 渲染通过动态 import 加载本地区块；关闭 features.diagram 后不应触发任何渲染副作用。
   const host2 = document.createElement('div')
   document.body.appendChild(host2)
   const doc2 = new pkg.LarkDoc({
@@ -301,13 +305,27 @@ async function main() {
   const buttons2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('关闭 features.diagram 无预览按钮', buttons2.indexOf('预览图表') === -1)
   check('关闭后无预览层', host2.querySelectorAll('.lark-doc-diagram').length === 0)
-  const langTrigger2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar button.lark-doc-code-lang-trigger'))
-    .find((node) => node.getAttribute('aria-label') === '代码语言')
-  if (langTrigger2) langTrigger2.click()
-  await delay(60)
-  const langMenuItems2 = Array.from(host2.querySelectorAll('.lark-doc-code-lang-item')).map((item) => item.textContent.trim())
-  check('关闭后下拉无 Mermaid 图表功能项', langMenuItems2.length === 71
-    && langMenuItems2.every((text) => text.indexOf('Mermaid 图表') === -1))
+  const langSelect2 = host2.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
+  check('关闭后仍使用原生语言下拉', Boolean(langSelect2))
+  const langMenuItems2 = langSelect2
+    ? Array.from(langSelect2.options).map((option) => option.textContent.trim())
+    : []
+  check('关闭后语言下拉保留 71 项语言', langMenuItems2.length === 71, `实际 ${langMenuItems2.length} 项`)
+  check('关闭后下拉无 Mermaid 图表功能项', Boolean(langSelect2)
+    && !Array.from(langSelect2.options).some((option) => option.value === 'mermaid'
+      || option.textContent.indexOf('Mermaid 图表') !== -1))
+  check('关闭后保留已有 Mermaid 源码及语言', collect(doc2.getJSON(), 'codeBlock').some((node) =>
+    node.attrs.language === 'mermaid' && node.content[0].text === 'graph TD\n  A --> B'))
+  // HTML / Shell 都有独立落库值，不能因高亮别名归一化而回填成 XML / Bash。
+  const languageChanges = ['html', 'shell', 'rust', 'abap', 'plaintext'].map((language) => {
+    if (!langSelect2) return false
+    langSelect2.value = language
+    langSelect2.dispatchEvent(new window.Event('change', { bubbles: true }))
+    const block = collect(doc2.getJSON(), 'codeBlock')[0]
+    return langSelect2.value === language && block && block.attrs.language === language
+      && block.content[0].text === 'graph TD\n  A --> B'
+  })
+  check('原生下拉切换语言保留落库值、当前选项及正文', languageChanges.every(Boolean))
   check('关闭后无 mermaid 渲染痕迹（无 SVG / 错误态）', host2.querySelectorAll('.lark-doc-diagram-svg, .lark-doc-diagram-error, .lark-doc-diagram-status').length === 0)
   doc2.destroy()
   check('第二个实例销毁', host2.children.length === 0)

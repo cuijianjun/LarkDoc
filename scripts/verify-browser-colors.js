@@ -158,7 +158,7 @@ async function main() {
         const v = hex.replace('#', '')
         return `rgb(${parseInt(v.slice(0, 2), 16)}, ${parseInt(v.slice(2, 4), 16)}, ${parseInt(v.slice(4, 6), 16)})`
       })
-      // 与 editor/palette.js 两套表严格对齐；顺序 = 墨绿/薄荷绿/青绿/天空蓝/靛蓝/暖黄/橙色/珊瑚红/淡紫。
+      // 与 ui/palette.js 两套表严格对齐；顺序 = 墨绿/薄荷绿/青绿/天空蓝/靛蓝/暖黄/橙色/珊瑚红/淡紫。
       const LIGHT = hexToRgb(['#263b35', '#d8f3e5', '#00b887', '#dbeafe', '#586bff', '#fff2a8', '#ffb35c', '#f58a8a', '#eadcff'])
       const DARK = hexToRgb(['#1F471B', '#296B22', '#339428', '#203E78', '#2851A3', '#877B10', '#845117', '#6B2827', '#4D2691'])
 

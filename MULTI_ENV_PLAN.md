@@ -65,7 +65,7 @@ Tiptap / Monaco / Swiper / Element Plus 四家**没有一家的"兼容"是靠多
 | `browser` 字段 | `dist/lark-doc.umd.min.js` | 删除（或指 ESM） | **P0** |
 | 产物套数 | 5：common / esm / umd / element / adapters | 3：esm / cjs / cdn | P1 |
 | CJS 体积 | 8.9 MB（`LimitChunkCountPlugin=1` 全内联） | 主 ~1.5 MB + 按需块 | P1 |
-| 入口写法 | 3 种（`import {LarkDoc}` / `import 'lark-doc/element'` / `createReactLarkDoc`） | 1 种 `createLarkDoc(el, opts)` | P1 |
+| 入口写法 | 3 种（`import {LarkDoc}` / `import 'lark-doc/element'` / `createReactLarkDoc`） | 1 种 `new LarkDoc(el, opts)` | P1 |
 | 重依赖 | `docx / mammoth / marked / turndown / highlight.js / katex / mermaid` 全进主包 | `lite` 不含，`features/*` 按需 | P2 |
 | 运行时外部资源 | mermaid vendored UMD 内联 + katex 字体 | 本地化 + `assetsBase` 可替换 | **P2（内网命门）** |
 | 拷贝体力活 | 各 demo 手写 `copy-webpack-plugin` | `lark-doc/plugin` 一个插件 | P3 |
@@ -99,11 +99,11 @@ Tiptap / Monaco / Swiper / Element Plus 四家**没有一家的"兼容"是靠多
    - `dist/lark-doc.cjs`（Node/老工具链）
    - `dist/lark-doc.cdn.js`（`<script>` 直挂，唯一 UMD）
 2. CJS 放开 `LimitChunkCountPlugin`，允许拆块。
-3. 统一门面 `createLarkDoc(el, { content, readonly })` → 返回 `{ on, destroy, getJSON, setJSON }`，三端同一句。
+3. 统一门面 `new LarkDoc({ element: el, content, readonly })` → 返回 `{ on, destroy, getJSON, setJSON }`，三端同一句。
    框架糖衣保留为可选：`lark-doc/vue3`、`lark-doc/react`。
 4. `size-limit` 那条 "CJS 全量 2500 KB" 的线改为「拆后主文件」口径。
 
-**判据**：三份产物各自 `npm run size` 绿；demo 三种写法全部替换成 `createLarkDoc` 后功能断言不回退。
+**判据**：三份产物各自 `npm run size` 绿；demo 三种写法全部替换成 `new LarkDoc(...)` 后功能断言不回退。
 
 ---
 
@@ -157,9 +157,9 @@ Tiptap / Monaco / Swiper / Element Plus 四家**没有一家的"兼容"是靠多
    若走 P3 插件：vite/webpack config 加一行 larkDoc() 即可
 
 ④ 引（目标：1 种写法）
-   import { createLarkDoc } from 'lark-doc'
+   import { LarkDoc } from 'lark-doc'
    import 'lark-doc/style.css'
-   const doc = createLarkDoc(el, { content, readonly })
+   const doc = new LarkDoc({ element: el, content, readonly })
 
 ⑤ 验（四道门禁，全绿才算迁移完成）
    npm run check:offline       # 零外部资源
@@ -186,7 +186,7 @@ Tiptap / Monaco / Swiper / Element Plus 四家**没有一家的"兼容"是靠多
 | 阶段 | 出口判据 | 可回归指标 |
 |---|---|---|
 | P0 | `check` 绿 + 新 vite 项目 tree-shaking 生效 | `sideEffects` 收窄、webpack4 走 ESM |
-| P1 | 三产物 `size` 绿 + 三 demo 统一 `createLarkDoc` | CJS 主文件 ≤ 1.5 MB |
+| P1 | 三产物 `size` 绿 + 三 demo 统一 `new LarkDoc(...)` | CJS 主文件 ≤ 1.5 MB |
 | P2 | `check:offline` 绿 + 断网渲染 mermaid | `lite` ≤ 300 KB |
 | P3 | 宿主接入零 copy 配置 | demo 手写 copy 全部删除 |
 | P4 | `setRenderer(domRenderer)` 无 Vue 运行 | WC 退为兼容档 |

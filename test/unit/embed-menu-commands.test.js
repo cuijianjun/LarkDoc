@@ -29,16 +29,18 @@ const EMBED_IDS = EMBED_MENU_ITEMS.map((item) => item.id)
 const isEmbed = (item) => commandFeatureOf(item.id) === 'embed'
 
 describe('P3-07 内嵌网页命令接线', () => {
-  it('COMMANDS 共 73 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
-    // 73 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）
+  it('COMMANDS 共 62 条，末 15 条就是 EMBED_MENU_ITEMS 的派生（顺序一致）', () => {
+    // 62 = 原 32（22 条显式 + 9 个生成标题 + file）+ 15 条内嵌网页 + 3 条 mention（P4-01）
     //      + 1 条 reminder（P4-02a）+ 1 条 calendar_event（P4-02b）
     //      + 3 条按钮 + 1 条 catalogue（P4-04）+ 1 条 sheet（P5-02）+ 1 条 poll（P5-03）
     //      + 5 条多维表格（P5-04）+ 3 条绘图（P5-05）+ 8 条 skip 项（P5-06：
     //      文档管理 2 + 项目管理 4 + 会议议程 + 订阅号文章；`okr` 无菜单入口，只在渲染层）
-    //      − 1 条 emoji。
+    //      − 1 条 emoji
+    //      − 11 条 master 未实现的入口（file / sheet / 多维表格 5 / 绘图 3 / poll）。
     // emoji 不是飞书斜杠的入口（02 §16 定判：唯一入口是高亮块图标位），0.12 起从命令表摘掉。
+    // 那 11 条只有块定义、没有插入链路（点了只留空段落），功能没落地就不该占菜单位。
     // 这个字面量是「有人动了命令表」的显式提醒：加命令时请同时确认 order / 架构断言。
-    expect(COMMANDS).toHaveLength(73)
+    expect(COMMANDS).toHaveLength(62)
     expect(COMMANDS.slice(-15).map((item) => item.id)).toEqual(EMBED_IDS)
   })
 
@@ -115,7 +117,8 @@ describe('P3-07 commandFeatureOf', () => {
     expect(commandFeatureOf('paragraph')).toBe('blockStyle')
     expect(commandFeatureOf('heading1')).toBe('blockStyle')
     expect(commandFeatureOf('image')).toBe('images')
-    expect(commandFeatureOf('file')).toBe('files')
+    // `file`（视频或文件）已从菜单摘掉，所以它不再有专属开关映射 —— 落到兜底值。
+    expect(commandFeatureOf('file')).toBe('blockStyle')
     // P4-02a：日期提醒与三条 mention 共用一个「插入」开关（落正文的行内物件）。
     expect(commandFeatureOf('reminder')).toBe('insert')
     // 未知 id 不该炸，也不该被当成 embed。

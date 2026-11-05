@@ -5,9 +5,16 @@
  * 通过 this.editor、this.writable()、this.changeIndent()/this.setAlign()/this.toggleMark()
  * （主组件方法）协作；selectionPacingMixin 的 onSelectionUpdate 会读写 bubbleVisible 并调用
  * closeBubbleAlignMenu / closeBubbleHeadingMenu。
- * 采用 mixin 而非子组件：气泡与子菜单模板留在主 SFC，依赖 Vue 2 选项合并语义。
+ *
+ * 阶段 5 批次 1 起**渲染层已原生化**：`editor/BubbleBar.vue` 删掉了，DOM 由
+ * `src/ui/bubbleBar.js`（纯 DOM、零框架）创建，本 mixin 只负责「算状态 → 推给 UI」。
+ * 因此：模板不再驱动显隐/定位，任何入口改完状态都必须落到 `refreshBubbleBar()`；
+ * 对外口子（`bubbleVisible` / `bubblePosition` / `bubbleSafeTop()` / `closeBubbleAlignMenu()`
+ * / `closeBubbleHeadingMenu()` / `positionBubbleAlignMenu()`）一个都不能少 ——
+ * `selectionPacingMixin`、`overlayDismissMixin`、`readingModeMixin` 与单测都在用。
  */
 import { computeOrderedListNumbers, maxIndentAt } from '../documentOperations'
+import { createBubbleBar } from '../../../ui/bubbleBar'
 
 // 飞书气泡条的行内格式顺序：加粗 → 删除线 → 斜体 → 下划线 → 行内代码 → 高亮（带取色）。
 const BUBBLE_MARK_ORDER = [
@@ -18,18 +25,20 @@ const BUBBLE_MARK_ORDER = [
   { id: 'code', icon: 'inlineCode', label: '行内代码' },
 ]
 
+// 对齐四项的顺序（与 `bubbleBar.js` 里的 `ALIGN_ORDER` 一致，UI 按下标对号入座）。
+const BUBBLE_ALIGN_ORDER = ['left', 'center', 'right', 'justify']
+
 // 气泡条的标题级别下拉与工具栏共用 LarkDocHeadingMenu（同一份选项与观感），
 // 这里不再维护自己的 opt 列表——两处各写一份就会像以前那样慢慢分叉。
 
 export default {
   data() { return {
-    bubbleVisible: false, bubblePosition: { left: 20, top: 120 }, bubbleAlignOpen: false, bubbleAlignMenuStyle: {},
-    bubbleHeadingOpen: false, bubbleHeadingMenuStyle: {},
+    bubbleVisible: false, bubblePosition: { left: 20, top: 120 }, bubbleAlignOpen: false,
+    bubbleHeadingOpen: false,
     // 气泡条下拉的 hover 关闭定时器：鼠标离开触发器/弹层后延时关闭（跨 6px 间隙不误关）。
     bubbleCloseTimer: null,
   } },
   computed: {
-    bubbleStyle() { return { left: `${this.bubblePosition.left}px`, top: `${this.bubblePosition.top}px` } },
     bubbleMarkItems() {
       if (!this.larkDocConfig.features.marks) return []
       const allow = this.larkDocConfig.toolbar.marksAllow
@@ -42,7 +51,87 @@ export default {
       return !Array.isArray(allow) || allow.includes('highlight')
     },
   },
+  // 原生化之后 DOM 不再由模板驱动：这四个字段是气泡条的全部输入，
+  // 任何一处变化都要重新算 state 推给 `src/ui/bubbleBar.js`。
+  // Vue 的 watcher 在渲染帧前批量触发，节奏与过去模板重渲染一致。
+  watch: {
+    bubbleVisible() { this.refreshBubbleBar() },
+    bubblePosition() { this.refreshBubbleBar() },
+    bubbleAlignOpen() { this.refreshBubbleBar() },
+    bubbleHeadingOpen() { this.refreshBubbleBar() },
+  },
   methods: {
+    /**
+     * 挂载原生气泡条（由主组件 `mounted` 调用）。
+     * 宿主是模板里 `<div ref="bubbleHost" />` 那个空 div —— 它必须在
+     * `ref="root"` 的 `<section class="lark-doc">` 内：气泡条所有样式都带
+     * `.lark-doc ` 前缀，挂在外面等于全部失效。
+     */
+    mountBubbleBar() {
+      if (this._bubbleUi) return
+      const host = this.$refs.bubbleHost
+      if (!host) return
+      this._bubbleUi = createBubbleBar(host, {
+        config: this.bubbleBarConfig(),
+        handlers: {
+          safeTop: () => this.bubbleSafeTop(),
+          onAi: () => this.$emit('ai-request', 'rewrite'),
+          onCancelHoverClose: () => this.cancelBubbleHoverClose(),
+          onHeadingOpen: () => this.openBubbleHeadingMenu(),
+          onHeadingLeave: () => this.scheduleBubbleHeadingClose(),
+          onHeadingChoose: (level) => this.bubbleHeadingAction(level),
+          onAlignOpen: () => this.openBubbleAlignMenu(),
+          onAlignLeave: () => this.scheduleBubbleAlignClose(),
+          onAlignAction: (id) => this.bubbleAlignAction(id),
+          onToggleMark: (id) => this.toggleMark(id),
+          // 透传原事件：`toggleColorPalette` 要靠 `currentTarget` 定位取色面板。
+          onPalette: (event) => this.toggleColorPalette('textBackground', event),
+          onCopy: () => this.bubbleCopy(),
+        },
+      })
+      this.refreshBubbleBar()
+    },
+    destroyBubbleBar() {
+      if (!this._bubbleUi) return
+      this._bubbleUi.destroy()
+      this._bubbleUi = null
+    },
+    /** 特性快照：气泡条哪几段存在由它决定（段序断言依赖于此）。 */
+    bubbleBarConfig() {
+      return {
+        ai: this.featureEnabled('ai'),
+        blockStyle: this.featureEnabled('blockStyle'),
+        marks: this.bubbleMarkItems,
+        highlightAllowed: this.bubbleHighlightAllowed,
+      }
+    },
+    /**
+     * 气泡条 DOM 的唯一写入口：显隐、位置、按钮选中态、菜单开合一次推平。
+     * 隐藏态走最便宜的分支（只比对布尔，不碰文档）。
+     */
+    refreshBubbleBar() {
+      const bar = this._bubbleUi
+      if (!bar) return
+      if (!this.bubbleVisible || this.effectiveReadonly) { bar.hide(); return }
+      bar.setConfig(this.bubbleBarConfig())
+      const alignValue = this.bubbleAlignValue()
+      bar.update({
+        left: this.bubblePosition.left,
+        top: this.bubblePosition.top,
+        headingValue: this.bubbleHeadingValue(),
+        headingOpen: this.bubbleHeadingOpen,
+        headingLevel: this.bubbleHeadingLevel(),
+        alignOpen: this.bubbleAlignOpen,
+        alignValue,
+        alignItems: BUBBLE_ALIGN_ORDER.map((id) => ({ id, glyph: this.alignGlyphs[id], name: this.alignNames[id], tooltip: this.bubbleAlignTooltip(id), active: alignValue === id })),
+        canIncrease: this.bubbleAlignCanIncrease(),
+        increaseTooltip: this.bubbleAlignTooltip('increaseIndent'),
+        canDecrease: this.bubbleAlignIndent() > 0,
+        decreaseTooltip: this.bubbleAlignTooltip('decreaseIndent'),
+        marks: this.bubbleMarkItems.map((item) => ({ id: item.id, active: this.isActive(item.id) })),
+        highlightActive: this.isActive('highlight'),
+      })
+    },
     /**
      * 顶部安全线：sticky/fixed 的顶栏（标题栏、工具栏）会盖住视口上沿，
      * 气泡条下拉是 `position: fixed`，必须让下界至少排到这些栏的底边之下，
@@ -106,38 +195,20 @@ export default {
     openBubbleAlignMenu() {
       if (!this.bubbleVisible || !this.writable()) return
       this.cancelBubbleHoverClose()
-      if (this.bubbleAlignOpen) { this.$nextTick(() => this.positionBubbleAlignMenu()); return }
+      // 已经开着：只是位置要跟着选区/滚动重算一次。
+      if (this.bubbleAlignOpen) { this.positionBubbleAlignMenu(); return }
       this.closeBubbleHeadingMenu()
       this.bubbleAlignOpen = true
-      this.bubbleAlignMenuStyle = {}
-      this.$nextTick(() => this.positionBubbleAlignMenu())
+      // 原生 DOM 同步插入即可同步测量，旧版这里的 `$nextTick(() => position…)` 已删除。
+      this.refreshBubbleBar()
     },
     closeBubbleAlignMenu() {
       this.cancelBubbleHoverClose()
-      this.bubbleAlignOpen = false
-      this.bubbleAlignMenuStyle = {}
-    },
-    positionBubbleAlignMenu() {
       if (!this.bubbleAlignOpen) return
-      const root = this.$refs.root
-      const trigger = root?.querySelector('.lark-doc-bubble-align-trigger')
-      const menu = root?.querySelector('.lark-doc-bubble-align-menu')
-      if (!trigger || !menu) return
-      const margin = 8
-      const gap = 6
-      // 下界不能是视口 8px：sticky 工具栏会盖住顶部，菜单要排在它下面。
-      const minTop = this.bubbleSafeTop()
-      const triggerRect = trigger.getBoundingClientRect()
-      const menuRect = menu.getBoundingClientRect()
-      const width = menuRect.width || 230
-      const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin)
-      const above = Math.max(0, triggerRect.top - minTop)
-      const useAbove = below < menuRect.height && above > below
-      const naturalTop = useAbove ? triggerRect.top - menuRect.height - gap : triggerRect.bottom + gap
-      const left = Math.max(margin, Math.min(window.innerWidth - width - margin, triggerRect.left))
-      const top = Math.max(minTop, Math.min(window.innerHeight - menuRect.height - margin, naturalTop))
-      this.bubbleAlignMenuStyle = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
+      this.bubbleAlignOpen = false
     },
+    /** 滚动/尺寸变化时由主组件的 rAF 调用（菜单已开才动）。 */
+    positionBubbleAlignMenu() { if (this._bubbleUi) this._bubbleUi.positionAlignMenu() },
     bubbleAlignAction(id) {
       if (!this.writable()) return
       if (id === 'increaseIndent') this.changeIndent(1)
@@ -158,48 +229,31 @@ export default {
     openBubbleHeadingMenu() {
       if (!this.bubbleVisible || !this.writable()) return
       this.cancelBubbleHoverClose()
-      if (this.bubbleHeadingOpen) { this.$nextTick(() => this.positionBubbleHeadingMenu()); return }
+      if (this.bubbleHeadingOpen) { this.positionBubbleHeadingMenu(); return }
       this.closeBubbleAlignMenu()
       this.bubbleHeadingOpen = true
-      this.bubbleHeadingMenuStyle = {}
-      this.$nextTick(() => this.positionBubbleHeadingMenu())
+      this.refreshBubbleBar()
     },
     toggleBubbleHeadingMenu() {
       if (!this.writable()) return
       this.closeBubbleAlignMenu()
       this.cancelBubbleHoverClose()
       this.bubbleHeadingOpen = !this.bubbleHeadingOpen
-      this.bubbleHeadingMenuStyle = {}
-      if (this.bubbleHeadingOpen) this.$nextTick(() => this.positionBubbleHeadingMenu())
+      this.refreshBubbleBar()
     },
-    closeBubbleHeadingMenu() { this.cancelBubbleHoverClose(); this.bubbleHeadingOpen = false; this.bubbleHeadingMenuStyle = {} },
-    positionBubbleHeadingMenu() {
+    closeBubbleHeadingMenu() {
+      this.cancelBubbleHoverClose()
       if (!this.bubbleHeadingOpen) return
-      const root = this.$refs.root
-      const trigger = root?.querySelector('.lark-doc-bubble-heading-trigger')
-      const menu = root?.querySelector('.lark-doc-bubble-heading .lark-doc-heading-menu')
-      if (!trigger || !menu) return
-      const margin = 8
-      const gap = 6
-      // 下界不能是视口 8px：sticky 工具栏会盖住顶部，菜单要排在它下面。
-      const minTop = this.bubbleSafeTop()
-      const rect = trigger.getBoundingClientRect()
-      const box = menu.getBoundingClientRect()
-      const below = window.innerHeight - rect.bottom - margin
-      const above = rect.top - minTop
-      const useAbove = below < box.height && above > below
-      const left = Math.max(margin, Math.min(window.innerWidth - box.width - margin, rect.left))
-      const naturalTop = useAbove ? rect.top - box.height - gap : rect.bottom + gap
-      const top = Math.max(minTop, Math.min(window.innerHeight - box.height - margin, naturalTop))
-      this.bubbleHeadingMenuStyle = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
+      this.bubbleHeadingOpen = false
     },
+    positionBubbleHeadingMenu() { if (this._bubbleUi) this._bubbleUi.positionHeadingMenu() },
     /** @param {number|null} level 标题级别（null = 正文），由 LarkDocHeadingMenu 的 choose 事件传入。 */
     bubbleHeadingAction(level) {
       if (!this.writable()) return
       const { state } = this.editor
       const target = Number.isInteger(level) ? level : null
       const targetType = target == null ? state.schema.nodes.paragraph : state.schema.nodes.heading
-      if (!targetType) { this.bubbleHeadingOpen = false; return }
+      if (!targetType) { this.closeBubbleHeadingMenu(); return }
       const { blocks, listItems } = this.bubbleHeadingTargets()
       if (blocks.length) {
         const tr = state.tr
@@ -214,7 +268,8 @@ export default {
       // 列表项不能直接变标题（listItem 的内容约束是 paragraph + block），先从列表里提出来再改类型。
       // 倒序处理：每提一个位置都会变，靠 blockId 重新定位，不受前面的偏移影响。
       listItems.slice().reverse().forEach((item) => this.convertListItemToBlock(item, target))
-      this.bubbleHeadingOpen = false
+      // 只收起下拉、不收起气泡条：选区还在，气泡条跟着选区走（mark 按钮那边才会收起）。
+      this.closeBubbleHeadingMenu()
     },
     /** 按 blockId 找当前位置（列表项被提出去后位置会变）。 */
     blockPosById(blockId) {

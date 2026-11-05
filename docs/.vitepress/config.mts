@@ -35,6 +35,9 @@ export default defineConfig({
     // 上手 → 功能 → 部署（外网/内网）→ 关于。侧栏再做一次更细的分组。
     nav: [
       { text: '首页', link: '/' },
+      // 在线演示是 public/demo/index.html 静态页，不是 md 路由：
+      // 必须带 target: _blank 走浏览器原生跳转，否则 SPA router 会当站内路由处理 → 404。
+      { text: '在线演示', link: '/demo/', target: '_blank' },
       {
         text: '开始上手',
         activeMatch: '/guide/(getting-started|install|compatibility|environments|instance)',
@@ -99,6 +102,7 @@ export default defineConfig({
             { text: '安装与引用总表（内外网）', link: '/guide/install' },
             { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
             { text: '各环境引入对照', link: '/guide/environments' },
+            { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
             { text: '实例与事件', link: '/guide/instance' },
           ],
         },

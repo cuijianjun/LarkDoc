@@ -15,13 +15,8 @@
  * mount/ 渲染适配层与 Web Component 产物内部，外层宿主不需要安装 Vue。
  */
 
-/* global __webpack_public_path__ */
-// 按需区块（math / office / mermaid / highlight）的基址，口径见 src/index.js 同名注释。
-// 静态 <script src> 引 lark-doc-element.umd.min.js 时无需设置；被宿主打包器 import
-// （webpack4 需写全 dist 路径）时用 window.__LARK_DOC_PUBLIC_PATH__ 指定 dist 所在目录。
-if (typeof window !== 'undefined' && window.__LARK_DOC_PUBLIC_PATH__) {
-  __webpack_public_path__ = window.__LARK_DOC_PUBLIC_PATH__
-}
+// Rollup 产物不依赖 Webpack runtime。按需能力通过 feature registry 和
+// 标准 dynamic import() 加载，宿主可在加载独立 feature 包后复用同一注册表。
 
 // Tiptap 3 与个别依赖使用 ES2022/ES2023 API（findLast / at / structuredClone）。
 // 必须在入口显式补齐，否则旧版 Safari/Chrome 与 Node 14 会在运行时抛 TypeError。
@@ -34,7 +29,49 @@ import 'core-js/features/structured-clone'
 import '../../style.css'
 
 import { LarkDoc } from '../LarkDoc'
-import { LarkDocElement, DEFAULT_TAG, registerLarkDoc, upgradeLarkDoc, isRegistered } from './register'
+import { createRenderer } from '../mount'
+import { LarkDocElement as BaseLarkDocElement, DEFAULT_TAG, registerLarkDoc as registerElement, upgradeLarkDoc, isRegistered } from './register'
+
+class LarkDocElement extends BaseLarkDocElement {
+  _mount() {
+    if (this.document || !this.isConnected) return
+    const options = this.__options
+    // 无持久化时 ready 可在 renderer.mount 返回前同步发出；交回微任务，
+    // 确保门面已取得 handle、元素已绑定事件，宿主才能在 ready 中写入正文。
+    const mountOptions = {
+      ...options,
+      rendererFactory: () => {
+        const renderer = createRenderer(options)
+        return {
+          ...renderer,
+          mount: ({ on = {}, ...args }) => {
+            let handle
+            handle = renderer.mount({
+              ...args,
+              on: {
+                ...on,
+                ready: payload => {
+                  Promise.resolve().then(() => {
+                    if (renderer.getInstance(handle) && typeof on.ready === 'function') on.ready(payload)
+                  }).catch(error => { if (typeof on.error === 'function') on.error(error) })
+                },
+              },
+            })
+            return handle
+          },
+        }
+      },
+    }
+    this.__options = mountOptions
+    try { super._mount() } finally {
+      if (this.__options === mountOptions) this.__options = options
+    }
+  }
+}
+
+function registerLarkDoc(tagName = DEFAULT_TAG, options = {}) {
+  return registerElement(tagName, { elementClass: LarkDocElement, ...options })
+}
 
 /**
  * 手动创建元素：`createLarkDocElement(options)` 返回已挂载前的元素，

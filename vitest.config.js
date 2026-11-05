@@ -2,6 +2,10 @@
 
 const path = require('path')
 
+// ESM 单测直接读取源码时也要复用 Vue CLI 的构建期别名。
+const mermaidVendor = path.resolve(__dirname, 'src/assets/vendor/mermaid/mermaid.min.js')
+const katexCss = path.resolve(__dirname, 'node_modules/katex/dist/katex.min.css')
+
 /**
  * 单元测试门禁配置。
  *
@@ -35,6 +39,7 @@ function forbidVueImports() {
 }
 
 module.exports = {
+  resolve: { alias: { 'lark-doc/mermaid-vendor': mermaidVendor, 'lark-doc/katex.css': katexCss } },
   plugins: [forbidVueImports()],
   test: {
     environment: 'node',
@@ -57,6 +62,9 @@ module.exports = {
      * 4 看上去更快（717s vs 838s），但那 717s 里少了 30% 的文件。
      * 调大之前请先确认整套 82 个文件都在输出里 —— 少跑比跑得慢危险得多。
      */
+    // dev 的调度回归会修改全局，保留文件隔离，避免复用 worker 导致桩泄漏。
+    isolate: true,
+    pool: 'forks',
     maxWorkers: 2,
     minWorkers: 1,
   },

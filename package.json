@@ -1,30 +1,34 @@
 {
   "name": "lark-doc",
-  "version": "0.12.1",
+  "version": "0.14.2",
   "private": false,
   "license": "MIT",
-  "description": "Vue 2 LarkDoc-style Tiptap document editor and workspace package",
+  "description": "Framework-agnostic LarkDoc-style Tiptap document editor and workspace package",
   "packageManager": "npm@8.19.4",
   "scripts": {
-    "build": "vue-cli-service build --target lib --no-clean --name lark-doc --formats commonjs src/index.js && node scripts/fix-lib-require-scope.js && node scripts/minify-lib-cjs.js",
-    "build:umd": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=umd vue-cli-service build --target lib --no-clean --name lark-doc --formats umd-min src/index.js",
-    "build:esm": "node scripts/build-esm.js",
-    "build:adapters": "node scripts/build-adapters.js",
-    "build:analyze": "LARK_DOC_ANALYZE=1 npm run build && LARK_DOC_ANALYZE=1 npm run build:umd && LARK_DOC_ANALYZE=1 npm run build:esm && LARK_DOC_ANALYZE=1 npm run build:element",
+    "build": "ROLLUP_TARGET=core node scripts/build-rollup.mjs",
+    "build:esm": "ROLLUP_TARGET=esm node scripts/build-rollup.mjs",
+    "build:cjs": "ROLLUP_TARGET=cjs node scripts/build-rollup.mjs",
+    "build:adapters": "ROLLUP_TARGET=adapters node scripts/build-rollup.mjs",
+    "build:plugin": "ROLLUP_TARGET=plugin node scripts/build-rollup.mjs",
+    "build:analyze": "ROLLUP_TARGET=all node scripts/build-rollup.mjs",
     "lint": "eslint --ext .js,.vue src scripts",
     "check": "npm run check:gate && npm run check:artifacts",
     "check:gate": "npm run check:deploy && npm run check:code && npm run check:ui && npm run lint",
     "check:quick": "npm run check:architecture && npm run contract:check && npm run lint",
-    "check:code": "npm run check:lark-doc && npm run check:architecture && npm run check:unit",
+    "check:code": "npm run check:lark-doc && npm run check:ai && npm run check:architecture && npm run check:unit",
     "check:ui": "npm run check:theme-tokens && npm run check:theme-contrast",
-    "check:deploy": "npm run check:node14 && npm run check:offline && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
-    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:vditor && npm run size",
+    "check:deploy": "npm run check:node14 && npm run check:offline && npm run check:pkg && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
+    "check:pkg": "node scripts/check-package-exports.js",
+    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:lite && npm run check:legacy && npm run check:vditor && npm run size",
+    "check:lite": "node scripts/check-lite-artifacts.js",
+    "check:legacy": "node scripts/check-legacy-syntax.js",
     "check:theme-tokens": "node scripts/check-theme-tokens.js",
     "check:theme-contrast": "node scripts/check-theme-contrast.js",
     "check:vditor": "node scripts/check-vditor-html.js",
+    "check:lark-doc": "node scripts/check-lark-doc-core.js && node scripts/check-lark-doc-workspace.js",
     "check:ai": "node scripts/check-ai-adapter.js",
-    "check:lark-doc": "node scripts/check-lark-doc-core.js && node scripts/check-lark-doc-workspace.js && node scripts/check-ai-adapter.js",
-    "check:offline": "node scripts/check-offline-assets.js",
+    "check:offline": "node scripts/check-offline-assets.js && node scripts/verify-offline-mermaid.mjs",
     "check:node14": "node scripts/check-node14.js",
     "check:architecture": "node scripts/check-architecture.js",
     "check:unit": "vitest run",
@@ -34,11 +38,11 @@
     "contract:check": "node scripts/gen-contract.mjs --check",
     "prepack": "node scripts/ensure-artifacts.mjs && npm run size",
     "artifacts:check": "node scripts/ensure-artifacts.mjs --check",
-    "verify:host": "node scripts/verify-host.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:all": "node scripts/verify.mjs --all",
     "verify:list": "node scripts/verify.mjs --list",
-    "build:element": "LARK_DOC_LEGACY=1 LARK_DOC_TARGET=element vue-cli-service build --target lib --no-clean --inline-vue --name lark-doc-element --formats umd-min src/web-component/index.js",
+    "build:element": "ROLLUP_TARGET=element node scripts/build-rollup.mjs",
+    "build:vue2": "ROLLUP_TARGET=vue2 node scripts/build-rollup.mjs",
     "size": "size-limit",
     "ship": "bash scripts/release.sh",
     "ship:minor": "bash scripts/release.sh --minor",
@@ -46,11 +50,14 @@
     "release": "bash scripts/release.sh",
     "release:patch": "bash scripts/release.sh --patch",
     "release:minor": "bash scripts/release.sh --minor",
-    "build:collab": "node scripts/build-collab.js",
+    "build:collab": "ROLLUP_TARGET=collab node scripts/build-rollup.mjs",
     "build:rollup:adapters": "ROLLUP_TARGET=adapters node scripts/build-rollup.mjs",
     "build:rollup:collab": "ROLLUP_TARGET=collab node scripts/build-rollup.mjs",
-    "build:rollup": "npm run build:rollup:adapters && npm run build:rollup:collab",
-    "check:rollup": "node scripts/check-rollup-artifacts.mjs"
+    "build:rollup": "ROLLUP_TARGET=all node scripts/build-rollup.mjs",
+    "check:rollup": "node scripts/check-rollup-artifacts.mjs",
+    "build:lite": "ROLLUP_TARGET=lite node scripts/build-rollup.mjs",
+    "build:features": "ROLLUP_TARGET=features node scripts/build-rollup.mjs",
+    "build:all": "ROLLUP_TARGET=all node scripts/build-rollup.mjs"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -83,28 +90,28 @@
     "turndown": "7.2.2"
   },
   "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/plugin-transform-modules-commonjs": "7.29.7",
     "@hocuspocus/provider": "4.7.1",
     "@hocuspocus/server": "4.7.1",
+    "@rollup/plugin-commonjs": "25.0.7",
+    "@rollup/plugin-json": "6.1.0",
     "@rollup/plugin-node-resolve": "15.2.3",
+    "@rollup/plugin-terser": "0.4.4",
     "@size-limit/file": "8.2.6",
-    "rollup": "3.29.4",
     "@tiptap/extension-collaboration": "3.32.0",
     "@tiptap/extension-collaboration-caret": "3.32.0",
-    "@tiptap/vue-2": "3.32.0",
-    "@vue/cli-plugin-babel": "5.0.8",
-    "@vue/cli-service": "5.0.8",
     "babel-eslint": "10.1.0",
     "emojibase-data": "15.3.1",
     "eslint": "7.32.0",
     "eslint-plugin-vue": "8.7.1",
-    "file-loader": "^6.2.0",
     "jsdom": "^16.7.0",
+    "rollup": "3.29.4",
+    "rollup-plugin-postcss": "4.0.2",
     "semver": "7.6.3",
     "serialize-javascript": "file:vendor/serialize-javascript-node14",
     "size-limit": "8.2.6",
     "vitest": "^5.0.5",
-    "vue": "2.7.14",
-    "vue-template-compiler": "2.7.14",
     "yjs": "13.6.33"
   },
   "engines": {
@@ -172,14 +179,18 @@
   ],
   "main": "dist/lark-doc.common.js",
   "module": "dist/lark-doc.esm.js",
-  "browser": "dist/lark-doc.umd.min.js",
-  "unpkg": "dist/lark-doc.umd.min.js",
-  "jsdelivr": "dist/lark-doc.umd.min.js",
+  "unpkg": "dist/lark-doc-element.umd.min.js",
+  "jsdelivr": "dist/lark-doc-element.umd.min.js",
   "style": "style.css",
   "sideEffects": [
     "**/*.css",
     "**/*.scss",
-    "dist/*"
+    "dist/lark-doc.common.js",
+    "dist/lark-doc-element.umd.min.js",
+    "dist/lark-doc-element.umd.min.*.js",
+    "dist/features/*.js",
+    "dist/fonts/**",
+    "dist/lark-doc-lite.esm.js"
   ],
   "files": [
     "dist",
@@ -187,16 +198,12 @@
     "style.css",
     "README.md",
     "DEMO_INTEGRATION_GUIDE.md",
-    "babel.config.js",
-    "legacy-syntax.js",
-    "vue.config.js"
+    "rollup.config.mjs"
   ],
   "peerDependencies": {
     "@hocuspocus/provider": "^4.7.1",
     "@tiptap/extension-collaboration": "^3.32.0",
     "@tiptap/extension-collaboration-caret": "^3.32.0",
-    "@tiptap/vue-2": "^3.32.0",
-    "vue": "^2.7.14",
     "yjs": "^13.6.33"
   },
   "peerDependenciesMeta": {
@@ -207,12 +214,6 @@
       "optional": true
     },
     "@tiptap/extension-collaboration-caret": {
-      "optional": true
-    },
-    "@tiptap/vue-2": {
-      "optional": true
-    },
-    "vue": {
       "optional": true
     },
     "yjs": {
@@ -227,11 +228,11 @@
       "default": "./dist/lark-doc.common.js"
     },
     "./element": "./dist/lark-doc-element.umd.min.js",
-    "./legacy": {
-      "node": "./dist/lark-doc.common.js",
-      "import": "./dist/lark-doc.esm.js",
-      "require": "./dist/lark-doc.common.js",
-      "default": "./dist/lark-doc.common.js"
+    "./vue2": {
+      "node": "./dist/lark-doc-vue2.common.js",
+      "import": "./dist/lark-doc-vue2.esm.js",
+      "require": "./dist/lark-doc-vue2.common.js",
+      "default": "./dist/lark-doc-vue2.common.js"
     },
     "./vue3": {
       "import": "./dist/lark-doc-vue3.mjs",
@@ -245,13 +246,50 @@
       "import": "./dist/lark-doc-vue3.mjs",
       "default": "./dist/lark-doc-vue3.mjs"
     },
+    "./adapters/vue2": {
+      "require": "./dist/lark-doc.common.js",
+      "default": "./dist/lark-doc.common.js"
+    },
     "./adapters/react": {
       "import": "./dist/lark-doc-react.mjs",
       "default": "./dist/lark-doc-react.mjs"
     },
+    "./templates": {
+      "import": "./dist/lark-doc-templates.mjs",
+      "default": "./dist/lark-doc-templates.mjs"
+    },
+    "./comments": {
+      "import": "./dist/lark-doc-comments.mjs",
+      "default": "./dist/lark-doc-comments.mjs"
+    },
+    "./versioning": {
+      "import": "./dist/lark-doc-versioning.mjs",
+      "default": "./dist/lark-doc-versioning.mjs"
+    },
+    "./providers": {
+      "import": "./dist/lark-doc-providers.mjs",
+      "default": "./dist/lark-doc-providers.mjs"
+    },
+    "./migrations": {
+      "import": "./dist/lark-doc-migrations.mjs",
+      "default": "./dist/lark-doc-migrations.mjs"
+    },
     "./collab": {
       "import": "./dist/lark-doc-collab.esm.js",
       "default": "./dist/lark-doc-collab.esm.js"
+    },
+    "./lite": {
+      "import": "./dist/lark-doc-lite.esm.js",
+      "default": "./dist/lark-doc-lite.esm.js"
+    },
+    "./features/*": {
+      "import": "./dist/features/*.js",
+      "default": "./dist/features/*.js"
+    },
+    "./plugin": {
+      "import": "./dist/plugin.mjs",
+      "require": "./dist/plugin.cjs",
+      "default": "./dist/plugin.mjs"
     },
     "./style.css": "./dist/lark-doc.css",
     "./dist/*": "./dist/*",
@@ -261,31 +299,31 @@
     {
       "name": "ESM 主包 (gzip)",
       "path": "dist/lark-doc.esm.js",
-      "limit": "285 KB",
-      "gzip": true
-    },
-    {
-      "name": "UMD 主包 (gzip)",
-      "path": "dist/lark-doc.umd.min.js",
-      "limit": "465 KB",
+      "limit": "310 KB",
       "gzip": true
     },
     {
       "name": "Element 产物 (gzip)",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "480 KB",
+      "limit": "475 KB",
       "gzip": true
     },
     {
-      "name": "CJS 全量产物（内联 mermaid，gzip）",
       "path": "dist/lark-doc.common.js",
-      "limit": "2500 KB",
-      "gzip": true
+      "limit": "1080 KB",
+      "gzip": true,
+      "name": "CJS 主文件（DOM renderer，按需区块已拆出，gzip）"
     },
     {
       "name": "协同子入口 (gzip)",
       "path": "dist/lark-doc-collab.esm.js",
-      "limit": "90 KB",
+      "limit": "4 KB",
+      "gzip": true
+    },
+    {
+      "name": "lite 主包 (gzip)",
+      "path": "dist/lark-doc-lite.esm.js",
+      "limit": "300 KB",
       "gzip": true
     }
   ]

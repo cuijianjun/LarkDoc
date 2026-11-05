@@ -1,117 +1,249 @@
 # 安装、兼容与懒加载速查
 
-本页汇总安装入口、样式、低频能力和部署注意事项。以当前 `package.json` 的 `exports` 和实际源码为准：当前 dev 仍使用 Vue2 渲染层，不能套用原生 DOM 分支的无 Vue 主入口、`lite` 或 `features/*` 子入口说明。
+这页只解决接入时最常见的几个问题：**怎么安装、怎么引用、怎么配置、不同环境怎么选、功能什么时候加载**。
 
-## 1. 按宿主选择公开入口
+## 1. 推荐写法：一次安装，一个 API
 
-| 宿主或用途 | 入口 | 前置条件 |
-| --- | --- | --- |
-| Vue 2.7 命令式工作台 | `import { LarkDoc } from 'lark-doc'` | 使用兼容的 Vue2 / Tiptap Vue2 依赖 |
-| Vue 2.7 组件 | `LarkDocEditor`、`LarkDocWorkspace`，从主入口导入 | 组件按 Vue2 契约注册 |
-| Vue3 / React / 无框架 | `lark-doc/element` | 预打包 Element 内联 Vue2，避免宿主解析主入口的 Vue2 组件 |
-| Vue3 属性桥接 | `lark-doc/vue3` 或 `lark-doc/adapters/vue3` | 先引入 Element；模板标签配置 `isCustomElement` |
-| React 声明式桥接 | `lark-doc/react` 或 `lark-doc/adapters/react` | 先引入 Element；按适配器契约传 props 和事件 |
-| 协同客户端 | `lark-doc/collab` | 显式安装并配置可选协同 peer 和服务端 |
-| 静态页 / CDN / 内网 | `dist/lark-doc-element.umd.min.js` | 同位托管整套 `dist/` |
-
-`lark-doc/legacy` 当前仍映射到同一套 Vue2 主产物，不是另一套独立的原生编辑器。各环境完整示例见[各环境引入对照](./environments)。
-
-webpack4 不读取 `exports`：子入口改用公开的 `dist/` 路径。当前包保留 `browser` 指向 UMD，不能套用原生分支“删除 browser 后主入口必须 alias CJS”的结论；如宿主明确选择 CJS，应同时显式引入 CSS。详见[安装与引用总表](./install)。
-
-## 2. 样式与资源
-
-支持 `exports` 的构建器优先使用公开样式子路径：
+```bash
+npm install lark-doc
+```
 
 ```js
+import { LarkDoc } from 'lark-doc'
 import 'lark-doc/style.css'
+
+const editor = new LarkDoc({
+  element: document.querySelector('#editor'),
+  content: '<p>开始编辑</p>',
+  readonly: false,
+})
+
+editor.on('update', ({ json }) => console.log(json))
+editor.getJSON()
+editor.setJSON({ type: 'doc', content: [{ type: 'paragraph' }] })
+editor.focus()
+editor.destroy()
 ```
 
-不读取 `exports` 的旧构建器使用完整路径：
+`LarkDoc` 是 class，构造函数只接收一个 options 对象。不要使用以下旧形式：
 
 ```js
-import 'lark-doc/dist/lark-doc.css'
-// Element：import 'lark-doc/dist/lark-doc-element.umd.min.js'
+// 不支持
+import { createLarkDoc } from 'lark-doc'
+createLarkDoc(element, options)
+new LarkDoc(element, options)
 ```
 
-Element 自行注入样式；字体和异步区块仍需要可访问。不要仅复制主 JS：静态部署应保留整个 `dist/`，包含 `lark-doc-element.umd.min.*.js`、CSS 与 `fonts/`，避免首次打开正常、插公式或图表时才 404。
-
-Element 被宿主再次打包时，必要时在挂载前设置 `window.__LARK_DOC_PUBLIC_PATH__` 指向实际托管目录。ESM 使用相对 chunk 地址，不能把文件名当作裸包 specifier。具体目录与格式见[打包产物与按需加载](./build-artifacts)。
-
-## 3. 重依赖按需加载
-
-当前完整入口内置 KaTeX、Mermaid、Office、Markdown 和 Highlight 的加载逻辑，按内容或操作触发。`features` 控制能力是否启用，`toolbarKeys` 控制工具栏显示，二者不能互相替代。
-
-| 能力 | 触发时机 | 说明 |
-| --- | --- | --- |
-| KaTeX | 首次渲染公式或使用公式弹窗 | 保留本地 CSS 和字体 |
-| Mermaid | 显示图表块 | 可通过宿主配置接管渲染器来源 |
-| Office | Word 导入 / 导出 | 涉及 `docx` / `mammoth` |
-| Markdown | Markdown 导入 / 导出 | 使用本地转换依赖 |
-| Highlight | 渲染代码块 | 按需加载高亮实现 |
-
-当前没有公开 `lark-doc/lite` 或 `lark-doc/features/*`，不能照抄这些 import；也不能把另一个分支生成的 feature 文件复制过来就认为已接入。独立入口需要配套注册表、构建脚本与导出契约，而不仅是增加一个 `exports` 字段。
-
-## 4. 模板与数据层用法
-
-模板、评论、版本、Provider、迁移能力当前由主入口导出；它们并非都拥有独立子入口：
-
-| 能力 | 当前公开导出 | 用途 |
-| --- | --- | --- |
-| 模板 | `LarkDocTemplateLibrary`、`TEMPLATES`、`templateLibrary` | Vue2 模板面板、模板数据与运算 |
-| 评论 | `comments` 命名空间 | 线程模型、锚点与内存 Provider |
-| 版本 | `versioning` 命名空间 | 快照、保留和恢复模型、内存 Provider |
-| Provider | `providers`、`createDocumentSession` | 宿主契约校验与会话接入 |
-| 迁移 | `migrations` 命名空间 | 旧记录升级 |
-
-Vue2 宿主可以按下列方式接入现有数据层：
+### 常用 options
 
 ```js
-import { LarkDoc, comments, versioning, providers, migrations } from 'lark-doc'
-
-// 内存实现用于演示；生产环境按同一契约替换为实际服务。
-const commentProvider = comments.createMemoryCommentsProvider()
-const versionProvider = versioning.createMemoryVersioningProvider()
-const persistence = providers.createLocalPersistence(window.localStorage)
-
-const doc = new LarkDoc({
-  element: '#editor',
-  content: migrations.migrateRecordContent(rawRecord.json, rawRecord.schemaVersion),
-  persistence,
-  comments: commentProvider,
-  versioning: versionProvider,
+new LarkDoc({
+  element,                         // 必填：选择器或 HTMLElement
+  content,                         // HTML、Tiptap JSON 或文档 record
+  readonly: false,
+  theme: 'light',                  // light | dark
+  storage: 'none',                 // 不需要草稿时建议显式关闭
+  autosave: { enabled: true, delay: 650 },
+  toolbarKeys: ['history', 'headings', 'marks', 'insert', 'tables'],
+  toolbarExcludes: ['shortcuts'],
+  features: { ai: false, importExport: true },
+  network: { mode: 'open' },       // open | allowlist | offline
+  uploader: { upload: uploadFile },
+  persistence: saveAdapter,
 })
 ```
 
-其中 `rawRecord` 由宿主读取。自定义持久化必须实现 `load/save/snapshots/snapshot/restore` 全部方法；`createPersistenceProvider` 校验适配器形状，不会自动把业务 API 转为完整后端。模板面板使用 Vue2 组件契约，见[模板](../blocks/templates)，不能以原生 `createTemplateLibrary({ host })` 工厂替代。
+配置仍然是 options 对象；低频功能拆成入口后，**配置字段不会自动安装对应实现**，需要额外加载 feature（见第 4 节）。
 
-评论与版本的生产持久化、鉴权和面板由宿主接入，不要将 API key 或业务数据库连接写进默认配置。完整协同连接、会话和服务端契约见[协同与权限](./collaboration)与[协同服务端契约](./collab-server)；仅安装 `lark-doc/collab` 不等于协同已可用。
+## 2. 不同环境怎么选
 
-## 5. 页面级懒加载
+| 环境 | 推荐入口 | 是否需要额外配置 |
+|---|---|---|
+| Vue 2.7 + webpack 5 / Vite | `import { LarkDoc } from 'lark-doc'` | 不需要 lark-doc 专用配置 |
+| Vue 2.7 + webpack 4 | `import { LarkDoc } from 'lark-doc'` | 不需要 lark-doc 专用配置；样式引 `lark-doc/style.css` |
+| Vue 3 | `lark-doc/element` + `lark-doc/vue3`，或直接默认入口 | 自定义元素需放行 |
+| React | `lark-doc/element` + `lark-doc/react`，或直接默认入口 | CRA/Vite 通常不需要配置 |
+| 原生 HTML / CDN | `dist/lark-doc-element.umd.min.js` | `dist/` 整目录同位托管 |
+| Next / Nuxt SSR | 客户端动态 import | 不要在服务端创建编辑器 |
+| 协同编辑 | `lark-doc/collab` | 宿主自行安装并提供 Yjs / Provider |
 
-Vue3 / React 宿主可以在客户端按页面加载 Element，而不是直接加载仍依赖 Vue2 的源码主入口：
+### Vue2 / webpack 4
+
+当前包为 Vue2 提供可直接消费的 CJS `main`，应用层无需增加 alias、源码路径或专属 Babel 配置：
 
 ```js
-async function openEditor(host, content) {
-  // host 为已挂载的 DOM 容器；仅在客户端调用。
-  const { mountLarkDoc } = await import('lark-doc/element')
-  return mountLarkDoc(host, { content, storage: 'none' })
-}
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
 
-// 页面卸载时调用返回实例的 destroy()。
+// mounted
+const editor = new LarkDoc({ element: this.$refs.editor })
 ```
 
-SSR 中不在服务端模块顶层引入 Element；把 import 和创建实例放到客户端生命周期。webpack4 将示例中的子路径替换为 `lark-doc/dist/lark-doc-element.umd.min.js`。
+不要把 `lark-doc/dist` 交给业务 Babel 重复转译；发布产物已经按宿主兼容目标构建。Element 等标签入口只有在明确选择 Web Component 方案时才引入。
+
+### Vue 3 / React
+
+使用 Web Component 时，先注册元素，再使用薄适配器：
+
+```js
+import 'lark-doc/element'
+import { resolveVue3Attrs } from 'lark-doc/vue3'
+```
+
+```js
+import 'lark-doc/element'
+import { createReactLarkDoc } from 'lark-doc/react'
+const Editor = createReactLarkDoc(React)
+```
+
+Vue 3 的 Vite 配置：
+
+```js
+export default {
+  plugins: [vue()],
+  compilerOptions: { isCustomElement: (tag) => tag === 'lark-doc' },
+}
+```
+
+### SSR
+
+编辑器依赖 DOM，只在客户端创建：
+
+```js
+// Next：组件文件顶部写 'use client'
+const { LarkDoc } = await import('lark-doc')
+const editor = new LarkDoc({ element, content })
+```
+
+Nuxt 使用 `<ClientOnly>`；不要在 `getServerSideProps`、服务端插件或 Node 进程启动阶段执行 `new LarkDoc()`。
+
+## 3. 外网、内网和静态部署
+
+### 外网项目
+
+```bash
+npm install lark-doc
+npm ls lark-doc
+```
+
+### 内网或离线项目
+
+联网机器生成包，目标机器安装：
+
+```bash
+npm pack lark-doc@<version>
+# 或在仓库中：bash scripts/pack-intranet.sh --version <version>
+npm install ./lark-doc-<version>.tgz
+```
+
+### 没有打包器的静态页
+
+不要只复制主文件，至少复制 `dist/` 中的主文件、异步 chunk、CSS 和 `fonts/`，并保持相对目录不变：
+
+```html
+<script src="./vendor/lark-doc/lark-doc-element.umd.min.js"></script>
+<lark-doc content="<p>静态页</p>"></lark-doc>
+```
+
+如果异步 chunk 404，优先检查：主文件与 chunk 是否同目录、`fonts/` 是否存在、nginx 是否允许静态文件返回 200。
+
+## 4. 懒加载：默认不加载低频能力
+
+默认入口保留核心编辑器；公式、Mermaid、Office、Markdown、代码高亮通过动态 import 在真正使用时加载。应用只使用默认入口时，不会主动把这些低频实现作为首屏代码执行。
+
+| 能力 | 触发时机 | 可选入口 |
+|---|---|---|
+| 数学公式 | 首次渲染公式 | `lark-doc/features/math` |
+| Mermaid | 首次渲染图表 | `lark-doc/features/mermaid` |
+| Word 导入导出 | 首次导入或导出 | `lark-doc/features/office` |
+| Markdown | 首次导入或导出 | `lark-doc/features/markdown` |
+| 代码高亮 | 首次渲染代码块 | `lark-doc/features/highlight` |
+
+体积敏感时使用 lite：
+
+```js
+import { LarkDoc } from 'lark-doc/lite'
+import 'lark-doc/features/math'
+import 'lark-doc/features/highlight'
+import 'lark-doc/style.css'
+
+new LarkDoc({ element: '#editor', content: '<p>轻量入口</p>' })
+```
+
+`lite` 会把低频依赖替换为可读错误或降级文本；加载对应 feature 后，注册表会恢复能力。不要同时把 `lark-doc` 和 `lark-doc/lite` 当作两个编辑器核心引入。
+
+### 一次性引入全部能力
+
+如果应用希望像 Element 的全量入口一样，用一次 import 获得 Mermaid、Office、KaTeX、Markdown、Highlight，以及 Templates、Comments、Versioning、Providers、Migrations，可以使用：
+
+```js
+import {
+  LarkDoc,
+  createCollabExtensions,
+  createTemplateLibrary,
+  createMemoryCommentsProvider,
+  createMemoryVersioningProvider,
+  createPersistenceProvider,
+  migrateRecordContent,
+} from 'lark-doc/full'
+import 'lark-doc/style.css'
+```
+
+`lark-doc/full` 是独立的全量产物：它静态注册五个可选 feature，并转出全部低频子入口；因此应用不需要再逐个 `import('lark-doc/features/*')`。代价是首屏 bundle 会包含这些能力及其依赖，适合功能覆盖完整、首屏体积不敏感的后台或桌面应用。它不是默认入口的别名，也不要与 `lark-doc/lite` 同时作为两个编辑器核心加载。
+
+Collab 不并入这个全量文件：它依赖宿主安装的 `yjs`、Tiptap 协同扩展和 Hocuspocus Provider，并且必须与宿主保持单例。全量应用若需要协同，再额外引入 `lark-doc/collab`，这是唯一需要补充的一行：
+
+```js
+import * as Collab from 'lark-doc/collab'
+const collabExtensions = Collab.createCollabExtensions({ ydoc, provider, user })
+```
+
+### 何时选择哪一种
+
+- **普通项目**：直接用 `lark-doc`，功能最完整，按功能动态加载。
+- **全量后台/桌面应用**：用 `lark-doc/full`，一次性获得所有可选能力。
+- **首屏极敏感**：用 `lark-doc/lite`，再按页面需要加载 feature。
+- **页面级懒加载**：把编辑器所在页面和 feature 一起 `import()`，例如：
+
+```js
+const { LarkDoc } = await import('lark-doc/lite')
+await import('lark-doc/features/mermaid')
+```
+
+- **CDN / Element**：保留 `dist/` 全目录；Element 的异步 chunk 由主脚本地址推导。
+
+## 5. 低频子入口
+
+默认入口不再静态导出模板、评论、版本、providers、migrations 等低频模块，按需引入：
+
+```js
+import { createTemplateLibrary } from 'lark-doc/templates'
+import { createMemoryCommentsProvider } from 'lark-doc/comments'
+import { createMemoryVersioningProvider } from 'lark-doc/versioning'
+import { createDocumentSession } from 'lark-doc/providers'
+import { migrateDocument } from 'lark-doc/migrations'
+```
+
+这些入口仍由同一个 `lark-doc` npm 包提供，不需要拆装多个包。
 
 ## 6. 常见故障排查
 
 | 现象 | 先检查 |
-| --- | --- |
-| Vue3 主入口出现 `Vue.extend` 错误 | 是否误让宿主 Vue3 接管了 Vue2 渲染层；改用 Element / adapter |
-| Vue/React 标签空白 | 是否先引入 Element，Vue3 是否放行自定义标签 |
-| 公式、Word、图表操作时 404 | 是否完整复制 `dist/`、字体及对应 chunk，基址是否正确 |
-| `features/*` 或 `lite` 无法解析 | 当前 dev 未公开这些入口，使用完整入口的内置懒加载 |
-| SSR 报 `document is not defined` | import 和挂载是否限制在客户端 |
-| 协同依赖缺失 | 是否安装匹配的可选 peer，并实际配置服务端和 Provider |
-| 配置后功能入口仍不见 | 分别检查 `features`、`toolbarKeys` 和只读 / 权限约束 |
+|---|---|
+| webpack 4 解析 `import.meta` 失败 | 是否配置了 `lark-doc$` → `lark-doc/dist/lark-doc.common.js` |
+| Vue/React 标签空白 | 是否先 `import 'lark-doc/element'` |
+| 公式、Word 或图表时报 feature 未加载 | 是否加载对应 `lark-doc/features/*`，或改用完整 `lark-doc` 入口 |
+| 静态页首次能打开、点击功能 404 | 是否完整复制 `dist/` 和 `fonts/`，chunk 是否同位 |
+| SSR 报 `document is not defined` | 是否把 import/初始化放进客户端生命周期 |
+| 协同入口依赖缺失 | 是否额外安装并配置 `yjs`、Provider 与 Tiptap 协同扩展 |
+| 配置生效但功能入口不见 | `toolbarKeys` 只控制显示；真正禁用/启用看 `features` |
 
-本页是不同来源文档增量对 dev 实际契约的适配，不代表已经执行构建或浏览器验收。开发时按 `DEVELOPMENT.md` 选择局部门禁；发布前再依仓库约定完整验收，不能用其他 worktree 的旧产物替代当前源码的构建结果。
+开发 lark-doc 本身时，修改后先运行：
+
+```bash
+npm run check:quick
+npm run check:pkg
+npm run check:lite
+```
+
+发布前再按仓库约定运行 `npm run check`，并确保 `dist/` 由当前 worktree 重新生成。

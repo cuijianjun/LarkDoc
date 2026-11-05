@@ -18,8 +18,9 @@
 // 认不出来。这里不改成 `es2020: true` —— 那会连带放宽 ecmaVersion，影响面更大。
 import fs from 'fs'
 import path from 'path'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
+import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
 
 const { hydrateOutline, jumpHeading } = viewModesMixin.methods
 
@@ -148,24 +149,70 @@ describe('P7-03 derived snapshot: the pending gate blocks navigation', () => {
 })
 
 /**
- * 闸门的两侧接线（`.vue` 在本仓库单测里禁止 import，只能读源码文本）。
- *
- * 「置 true」在 mixin 里、「置 false」在主组件里，中间隔着一个文件 ——
- * 任一侧漏掉都不会报错，只会让目录跳转要么一直可跳（原缺陷）、要么一直不可跳。
+ * 闸门的两侧原生接线：水合值在 viewModesMixin，实测值由 nativeEditorHost 整批替换。
+ * 允许 Object.freeze 包装派生数组，检查赋值来源和落闸顺序，而非锁定非冻结写法。
  */
 describe('P7-03 derived snapshot: gate wiring on both sides', () => {
-  it('refreshDocumentState() lowers the gate when the measured outline lands', () => {
-    const sfc = read('src/components/lark-doc/LarkDocEditor.vue')
-    const body = sfc.slice(sfc.indexOf('refreshDocumentState()'))
-    const clearAt = body.indexOf('outlinePending = false')
-    const outlineAt = body.indexOf('this.outline = collectOutline(')
+  it('实测目录落地时先落闸，再整批赋值；允许冻结包装', () => {
+    const source = read('src/editor/nativeEditorHost.js')
+    const body = source.match(/\n    refreshDocumentState\(\) \{([\s\S]*?)\n    \},/)[1]
+    const clearAt = body.search(/this\.outlinePending\s*=\s*false\b/)
+    const outlineAt = body.search(/this\.outline\s*=\s*(?:Object\.freeze\(\s*)?collectOutline\(this\.editor\.state\.doc\)/)
     expect(clearAt).toBeGreaterThan(-1)
     expect(outlineAt).toBeGreaterThan(clearAt)
+    expect(body.indexOf('this.syncOutlineCollapseState()')).toBeGreaterThan(outlineAt)
   })
 
-  it('OutlinePanel disables the jump button while the gate is up', () => {
-    const panel = read('src/components/lark-doc/editor/OutlinePanel.vue')
-    expect(panel).toContain(':disabled="ed.outlinePending"')
-    expect(panel).toContain('@click="ed.jumpHeading(item.pos)"')
+  it('真实原生宿主可读取冻结水合目录，整批替换后 computed 与 watch 一起更新', async () => {
+    const changes = []
+    vi.stubGlobal('window', { innerWidth: 1024, innerHeight: 768 })
+    const runtime = createNativeOptionsHost({
+      options: {
+        mixins: [viewModesMixin],
+        watch: { outline(value) { changes.push(value) } },
+      },
+      state: { outline: host().outline },
+    })
+    try {
+      const self = runtime.host
+      const previous = self.outlineItems
+      const snapshot = snapshotOutline()
+      expect(self.hydrateOutline(snapshot)).toBe(true)
+      expect(self.outlinePending).toBe(true)
+      expect(self.outlineItems).not.toBe(previous)
+      expect(self.outlineItems.map(({ pos, text }) => ({ pos, text }))).toEqual([
+        { pos: 0, text: '总则' }, { pos: 12, text: '细则' },
+      ])
+      expect(self.outline).not.toBe(snapshot)
+      snapshot[0].text = '快照已修改'
+      expect(self.outline[0].text).toBe('总则')
+      await self.$nextTick()
+      expect(changes).toHaveLength(1)
+      expect(changes[0]).toBe(self.outline)
+      const hydrated = self.outline
+      self.outlinePending = false
+      self.outline = Object.freeze([{ pos: 3, level: 1, text: '正文实测标题' }])
+      await self.$nextTick()
+      expect(self.outlinePending).toBe(false)
+      expect(self.outline).not.toBe(hydrated)
+      expect(self.outlineItems).toEqual([{ pos: 3, level: 1, text: '正文实测标题', hasChildren: false, collapsed: false }])
+      expect(changes).toHaveLength(2)
+      expect(changes[1]).toBe(self.outline)
+    } finally {
+      runtime.destroy()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('目录面板的跳转钮在闸门抬起时禁用（阶段 5 批次 4b 后落点改为 src/ui/panels.js）', () => {
+    // 原判据读 OutlinePanel.vue 的 `:disabled="ed.outlinePending"` + `@click="ed.jumpHeading(...)"`。
+    // 4b 把目录面板原生化后，同样的两件事变成属性赋值与 handler 回调 —— 判据跟着搬，
+    // 语义不变：闸门抬起（pending）则禁用 + 挂提示，点击走后仍直连 jumpHeading。
+    const panel = read('src/ui/panels.js')
+    expect(panel).toContain('jump.disabled = !!state.pending')
+    expect(panel).toContain("setAttr(jump, 'title', state.pending ? '正文还在载入，稍后可跳转' : null)")
+    expect(panel).toContain("call('onJump', pos)")
+    const wiring = read('src/components/lark-doc/editor/panelsUiMixin.js')
+    expect(wiring).toContain('onJump: (pos) => this.jumpHeading(pos)')
   })
 })

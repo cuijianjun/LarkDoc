@@ -17,6 +17,9 @@
 const TRANSITION_CLASS = 'ld-theme-transition'
 /** class 存活窗口：略长于 200ms 过渡，保证收尾不被截断。 */
 const TRANSITION_WINDOW_MS = 300
+/** 快照只允许短暂延后换色；渲染繁忙时跳过动效，不能一直停在旧主题。 */
+const SNAPSHOT_WAIT_MS = 300
+const pendingTransitions = new WeakMap()
 /** bloom 圆心变量（CSS 侧 @keyframes ld-theme-bloom 读它）。 */
 const BLOOM_X = '--ld-theme-bloom-x'
 const BLOOM_Y = '--ld-theme-bloom-y'
@@ -97,7 +100,7 @@ export function scheduleThemeTransition(root) {
  *   由浏览器拍 old/new 两帧做圆形 bloom（圆心见 setBloomOrigin）；
  * - 否则：属性同步写完，再补一段 class 缓动。
  *
- * VT 抛错（例如已有过渡进行中）时静默退回第二条路径 —— 换色本身绝不能因此失败。
+ * VT 抛错或快照等待超时，静默退回第二条路径 —— 换色本身绝不能因此失败。
  *
  * @param {Element|null} root  根容器
  * @param {function}     apply 真正写 DOM 的函数（applyToRoot）
@@ -105,12 +108,39 @@ export function scheduleThemeTransition(root) {
 export function runThemeTransition(root, apply) {
   const write = typeof apply === 'function' ? apply : function () {}
   if (!root) { write(); return }
+  const previous = pendingTransitions.get(root)
+  if (previous) previous.cancel()
   if (supportsViewTransitions() && !prefersReducedMotion()) {
     setBloomOrigin(root)
+    let transition
+    let timeout
+    let pending = true
+    const clearPending = () => {
+      pending = false
+      clearTimeout(timeout)
+      pendingTransitions.delete(root)
+    }
+    const commit = () => {
+      if (!pending) return
+      clearPending()
+      write()
+    }
+    const cancel = () => {
+      clearPending()
+      if (transition && typeof transition.skipTransition === 'function') transition.skipTransition()
+    }
+    pendingTransitions.set(root, { cancel })
+    timeout = setTimeout(() => {
+      cancel()
+      write()
+      scheduleThemeTransition(root)
+    }, SNAPSHOT_WAIT_MS)
     try {
-      swallowViewTransitionRejections(document.startViewTransition(() => { write() }))
+      transition = document.startViewTransition(commit)
+      swallowViewTransitionRejections(transition)
       return
     } catch (error) {
+      clearPending()
       // 少数状态下 VT 会抛（已有过渡进行中 / 页面正在卸载）：走下面的普通路径。
     }
   }
@@ -133,6 +163,8 @@ function swallowViewTransitionRejections(transition) {
 }
 
 /** 供销毁时清理，避免定时器挂着已卸载的根容器。 */
-export function cancelThemeTransition() {
+export function cancelThemeTransition(root) {
+  const pending = root && pendingTransitions.get(root)
+  if (pending) pending.cancel()
   if (timer) { clearTimeout(timer); timer = null }
 }

@@ -82,12 +82,13 @@ export default {
       if (this.toolbarEnabled('ai')) insertItems.push({ label: 'AI 助手', disabled: ro, run: () => this.$emit('ai-request', 'rewrite') })
       if (insertItems.length) sections.push({ id: 'insert', title: '插入', items: insertItems })
       const toolItems = []
-      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', run: () => { this.searchOpen = !this.searchOpen; this.$nextTick(() => this.$refs.searchInput?.focus()) } })
+      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', run: () => { this.searchOpen = !this.searchOpen; this.$nextTick(() => this.focusSearchPanel()) } })
       if (this.toolbarEnabled('outline')) toolItems.push({ label: '目录', checked: this.outlineOpen, run: () => { this.outlineOpen = !this.outlineOpen } })
       if (this.toolbarEnabled('viewModes')) {
         this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, checked: this.widthMode === option.value, run: () => { this.widthMode = option.value } }))
+        // `modes.allow` 摘掉 read 后这条没有意义（`setMode('read')` 会被拦），跟着隐藏。
+        if (this.modesConfig.allow.indexOf('read') >= 0) toolItems.push({ label: this.reading ? '退出阅读' : '阅读模式', run: () => this.toggleReading() })
         toolItems.push(
-          { label: this.reading ? '退出阅读' : '阅读模式', run: () => this.toggleReading() },
           { label: this.fullscreen ? '退出全屏' : '全屏', run: () => this.toggleFullscreen() },
           { label: this.slides ? '退出演示' : '演示模式', run: () => this.toggleSlides() },
         )
@@ -108,6 +109,7 @@ export default {
     },
   },
   mounted() {
+    // 原生工具栏在 mountToolbarBar 中创建，下一轮绑定才能取得真实节点。
     this.$nextTick(() => this.bindToolbarObserver())
   },
   beforeDestroy() {
@@ -126,7 +128,7 @@ export default {
       if (this._toolbarRO) { this._toolbarRO.disconnect(); this._toolbarRO = null }
       if (this._fitRaf) { cancelAnimationFrame(this._fitRaf); this._fitRaf = null }
       if (this._toolbarDisposed || this._isBeingDestroyed || this._isDestroyed) return
-      const bar = this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
+      const bar = this.larkDocConfig?.layout?.toolbarVisible === false ? null : this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
       if (!bar) {
         this.closeMoreMenu()
         this.collapsedGroups = []
@@ -139,6 +141,14 @@ export default {
       this.evaluateToolbarFit()
     },
     isGroupCollapsed(id) { return this.collapsedGroups.includes(id) },
+    /** 给工具栏节点挂 ResizeObserver（幂等：已挂过就直接返回）。 */
+    attachToolbarResizeObserver() {
+      if (this._toolbarRO) return
+      const bar = this.larkDocConfig?.layout?.toolbarVisible === false ? null : this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
+      if (!bar || typeof ResizeObserver === 'undefined') return
+      this._toolbarRO = new ResizeObserver(() => this.scheduleToolbarFit())
+      this._toolbarRO.observe(bar)
+    },
     scheduleToolbarFit() {
       if (this._toolbarDisposed || this._isBeingDestroyed || this._isDestroyed) return
       if (this._fitRaf) cancelAnimationFrame(this._fitRaf)
@@ -156,9 +166,9 @@ export default {
       try {
         const root = this.$refs.root
         const bar = root && root.querySelector('.lark-doc-toolbar')
-        if (!bar) return
+        if (!bar || this.larkDocConfig?.layout?.toolbarVisible === false) return
         const current = () => !this._toolbarDisposed && !this._isBeingDestroyed && !this._isDestroyed
-          && epoch === this._toolbarFitEpoch && this.$refs.root === root
+          && this.larkDocConfig?.layout?.toolbarVisible !== false && epoch === this._toolbarFitEpoch && this.$refs.root === root
           && root.querySelector('.lark-doc-toolbar') === bar
         const overflow = () => bar.scrollWidth > bar.clientWidth + 1
         let guard = 0

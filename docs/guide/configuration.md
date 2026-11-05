@@ -1,84 +1,59 @@
 # 配置总览
 
-`new LarkDoc(options)` 的扁平配置会被翻译成编辑器内部的 `createLarkDocConfig` 结构。配置分为 9 个分组：`features` / `toolbar` / `commands` / `blockMenu` / `layout` / `text` / `network` / `limits` / `performance`。关闭某个能力只隐藏入口并阻止新操作，历史 JSON 仍可读取。
+全部配置都写在 `new LarkDoc({ ... })` 的入参里。关掉某个能力只是隐藏入口、阻止新操作，已有 JSON 仍能正常打开。
 
-## 完整配置示例
+## 最常用的一段
 
-```ts
-new LarkDoc({
+```js
+const doc = new LarkDoc({
   element: '#editor',
+  title: '未命名文档',
+  content: '<p></p>',
+  placeholder: '输入正文，或输入 / 插入内容',
+  readonly: false,
+  theme: 'light',                     // 'light' | 'dark'
 
-  // ── 顶层便捷项（会翻译进对应分组） ──
-  title: '未命名文档',          // → initialTitle
-  content: '<p></p>',           // → initialContent
-  placeholder: '输入正文…',     // → text.placeholder
-  readonly: false,              // → readonly
-  theme: 'light',               // 'light' | 'dark'（当前默认浅色）
-  storage: 'none',              // 'none' | 'local'
-  autofocus: false,             // 挂载后自动聚焦（只读态不聚焦）
-  contentFormat: 'auto',        // 'auto' | 'vditor' | 'html'（旧数据归一化策略）
+  storage: 'local',                   // 'none' = 完全不落盘
+  autosave: { enabled: true, delay: 650 },
 
-  // ── 工具栏裁剪 ──
-  toolbarKeys: ['history', 'headings', 'marks', 'insert', 'tables'],
-  toolbarExcludes: ['shortcuts'],
+  features: { ai: false, folding: true },   // 关掉不需要的能力
+  toolbarKeys: ['history', 'headings', 'marks', 'insert'],
 
-  // ── 能力开关 ──
-  features: { ai: false, folding: true, importExport: true, diagram: true },
+  importExport: { importEnabled: true, exportEnabled: true },
+  media: { htmlMode: 'inline' },      // HTML 产物里图片内嵌还是只留地址
 
-  // ── 上传 / AI / 网络 ──
-  uploader: { upload: (file) => uploadToServer(file) },
-  // 三档任选其一：'https://…/ai'（只给地址） / { protocol: 'openai', baseURL, apiKey, model }（直连模型）
-  // / { stream: myStreamFn }（自管传输）。详见 AI 组件。
-  ai: { endpoint: '/api/ai' },
-  network: { mode: 'open', allowlist: [], imageProxy: async (url) => uploadByUrl(url) },
-
-  // ── 协同 / 权限 ──
-  mode: 'local',                // 'local' | 'collaborative'
-  documentId: 'doc-42',         // 折叠偏好分键 / 协同文档标识
-  user: { id: 'u-1', name: '张三' },
-  capabilities: { canEdit: true },
-  collaboration: myCollaborationProvider,  // 或 authorization / versioning / comments
-
-  // ── 生命周期 ──
-  onReady: () => {}, onUpdate: () => {}, onError: () => {}, onDestroy: () => {},
+  onReady: ({ editor }) => {},
+  onUpdate: ({ html }) => {},
 })
 ```
 
-## 分组详解
+## 顶层配置
 
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `element` | `string \| HTMLElement` | 必填 | 编辑器挂载容器。 |
-| `title` | `string` | `'未命名文档'` | 文档标题，写入 `initialTitle`。 |
-| `content` | `string \| object` | `''` | 初始内容，HTML / Tiptap JSON / DocumentRecord 均可。 |
-| `placeholder` | `string` | `'输入正文，或输入 / 插入内容'` | 正文为空时的占位提示。 |
-| `theme` | `'light' \| 'dark'` | `'light'` | 主题。 |
-| `readonly` | `boolean` | `false` | 只读模式。 |
-| `storage` | `'none' \| 'local'` | `'none'` | 控制器默认不写浏览器草稿；显式 `'local'` 才开启。 |
-| `autofocus` | `boolean` | `false` | 挂载后自动聚焦（只读态不聚焦）。 |
-| `contentFormat` | `'auto' \| 'vditor' \| 'html'` | `'auto'` | 旧数据归一化策略，详见[旧数据导入](/guide/vditor-import)。 |
-| `toolbarKeys` | `string[]` | - | 工具栏白名单，详见[工具栏配置](/guide/toolbar)。 |
-| `toolbarExcludes` | `string[]` | - | 工具栏黑名单。 |
-| `features` | `Record<string, boolean>` | 全开 | 能力开关，见下表。 |
-| `uploader` | `{ upload }` | - | 图片上传钩子，详见[上传器](/blocks/uploader)。 |
-| `ai` | `{ stream }` | 内置 Mock | AI 服务接管，详见 [AI 组件](/blocks/ai)。 |
-| `network` | `{ mode, allowlist, imageProxy }` | `{ mode: 'open' }` | 出网策略与转存钩子，详见[网络策略](/blocks/network)。 |
-| `mode` | `'local' \| 'collaborative'` | `'local'` | 会话模式；`collaborative` 必须同时提供 `collaboration` Provider。 |
-| `documentId` | `string` | `''` | 折叠偏好分键 / 协同文档标识。 |
-| `user` | `object` | `null` | 当前用户，传给协同 / 授权 Provider。 |
-| `capabilities` | `object` | 全放行 | 权限能力初始值，见[协同与权限](/guide/collaboration)。 |
-| `collaboration` / `authorization` / `versioning` / `comments` | Provider 对象 | - | 协同 / 权限 / 版本 / 评论 Provider 快捷项，门面代建会话。 |
-| `onReady` | `(payload) => void` | - | 编辑器就绪回调。 |
-| `onUpdate` | `(payload) => void` | - | 内容变更回调。 |
-| `onChange` | `(payload) => void` | - | 编辑器原生 change 回调。 |
-| `onSave` | `(payload) => void` | - | 保存完成回调。 |
-| `onImportReport` | `(report) => void` | - | 旧数据归一化完成回调。 |
-| `onError` | `(error) => void` | - | 错误回调。 |
-| `onDestroy` | `() => void` | - | 销毁回调。 |
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `element` | 必填 | 挂载容器，CSS 选择器或 `HTMLElement`。 |
+| `content` | `''` | 初始内容，HTML / Tiptap JSON / DocumentRecord 都行。 |
+| `title` | `'未命名文档'` | 文档标题。 |
+| `placeholder` | `'输入正文，或输入 / 插入内容'` | 空文档提示。 |
+| `readonly` | `false` | 只读模式。 |
+| `theme` | `'light'` | 主题。 |
+| `storage` | `'local'` | 草稿落点：IndexedDB → localStorage → 内存三级降级。`'none'` 则完全不落盘。 |
+| `autofocus` | `false` | 挂载后自动聚焦。 |
+| `contentFormat` | `'auto'` | 旧数据归一化：`'auto'` / `'vditor'` / `'html'`，见[旧数据导入](/guide/vditor-import)。 |
+| `toolbarKeys` / `toolbarExcludes` | - | 工具栏白名单 / 黑名单，见[工具栏配置](/guide/toolbar)。 |
+| `features` | 全开 | 能力开关，见下表。 |
+| `uploader` | 内置本地读取 | 图片上传钩子，见[上传器](/blocks/uploader)。 |
+| `ai` | 内置 Mock | AI 服务接管，见 [AI 组件](/blocks/ai)。 |
+| `network` | `{ mode: 'open' }` | 出网策略，见[网络策略](/blocks/network)。 |
+| `mode` / `documentId` / `user` / `capabilities` | - | 会话与权限，见[协同与权限](/guide/collaboration)。 |
+| `collaboration` / `authorization` / `versioning` / `comments` | - | 五大 Provider 快捷注入。 |
+| `onReady` / `onUpdate` / `onSave` / `onError` / `onDestroy` | - | 生命周期回调，见[实例与事件](/guide/instance)。 |
 
 ### features 能力开关
 
-| 名称 | 说明 | 名称 | 说明 |
+`features: { ai: false }` 就关掉 AI 入口。键名全表：
+
+| 键 | 对应能力 | 键 | 对应能力 |
 | --- | --- | --- | --- |
 | `history` | 撤销 / 重做 | `search` | 查找替换 |
 | `headings` | 标题 | `outline` | 目录 |
@@ -91,37 +66,101 @@ new LarkDoc({
 | `math` | 数学公式 | `insert` | 插入菜单 |
 | `emoji` | 表情 | `persistence` | 草稿持久化 |
 | `templates` | 模板 | `importExport` | 导入导出 |
-| `callouts` | 高亮块 | `diagram` | 图表渲染（mermaid） |
+| `callouts` | 高亮块 | `diagram` | 图表（mermaid） |
 | `columns` | 分栏 | | |
 
-### 内部分组直传
+## 几组高频配置
 
-跳过扁平翻译、直接传内部结构也是支持的：
-
-| 分组 | 关键字段 | 说明 |
-| --- | --- | --- |
-| `commands` | `disabled: string[]`、`allow: string[] \| null` | 按命令 id 禁用或白名单（如 `setEmoji`）。 |
-| `blockMenu` | `disabled: string[]`、`allow: string[] \| null` | 块句柄菜单动作裁剪（`duplicate` / `moveUp` / `delete` 等）。 |
-| `layout` | `titleBarFixed: boolean`、`toolbarVisible: boolean`、`toolbarFixed: boolean`、`headerVisible: boolean` | 格式工具栏默认隐藏，`toolbarVisible: true` 开启；仅设 `toolbarFixed: true` 兼容开启并吸顶，显式隐藏优先。`titleBarFixed` 控制标题栏吸顶；`headerVisible: false` 隐藏顶栏，操作入口移入已开启的工具栏「⋯」下拉。 |
-| `limits` | 见下 | 上限控制。 |
-| `performance` | 见下 | 性能开关。 |
-
-### limits 上限
+### autosave 自动保存
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `titleLength` | `120` | 标题最大长度。 |
-| `maxLength` | `0`（不限） | 正文最大字符数。 |
-| `maxImageSize` | `5MB` | 单张图片大小上限。 |
-| `maxTableRows` / `maxTableColumns` | `9` / `9` | 表格行列上限（硬上限 9）。 |
-| `maxIndent` | `5` | 缩进层级硬上限（只能调低；单块的实际上限还受「前一个块」约束）。 |
-| `maxSnapshots` | `20` | 快照数量上限。 |
+| `enabled` | `true` | 默认开。改完正文后 `delay` 毫秒落一次草稿。 |
+| `delay` | `650` | 防抖毫秒；`0` = 每次改动立刻存。填负数 / NaN 会回落到 650。 |
 
-### performance 开关
+两种「关」不一样，别混：
+
+- `autosave.enabled: false` → 只停自动那一层，手动保存按钮和 `save()` 照旧可用；
+- `features.persistence: false` 或 `storage: 'none'` → 整套持久化下线，不读草稿也不写。
+
+### importExport 导入 / 导出
+
+两个入口各自显隐，格式也各自白名单。`features.importExport` 是它们共同的总闸。
+
+```js
+importExport: {
+  importEnabled: true,                                  // false = 「导入」按钮消失
+  exportEnabled: true,                                  // false = 「导出」下拉消失
+  importLabel: '导入', exportLabel: '导出',
+  importFormats: ['html', 'json', 'md', 'docx'],
+  exportFormats: ['html', 'json', 'md', 'txt', 'docx', 'print'],   // 数组顺序 = 菜单顺序
+}
+```
+
+`importFormats` 同时决定文件选择框的 `accept`；不在白名单里的扩展名会被挡下并提示，不会静默失败。格式 id 对照见[导入导出](/blocks/import-export)。
+
+### media 媒体在 HTML 里的写法
+
+只影响 **HTML 产物**（`getHTML()`、导出 HTML）；JSON 不动，永远可无损往返。
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `changeDebounce` | `16` | change 通知防抖毫秒数，`0` 为同步。 |
-| `stateUpdateFrame` | `true` | 状态更新按帧合并。 |
-| `syntaxHighlight` | `true` | 代码块语法高亮。 |
-| `diagramScriptUrl` | `null` | 逃生舱：显式给出自托管 mermaid UMD 地址时改为运行时注入 `<script>` 加载。默认 `null` 走 `import()` 懒 chunk（打包进产物，不请求外网），内网无需配置。 |
+| `htmlMode` | `'inline'` | `inline` = 直出 `<figure><img>`，正文能直接看到图；`link` = 只留一条媒体地址链接。两种档位都**原样保留** `src` 是 `https://…` 的远程地址，不转存、不转 base64。 |
+| `linkText` | `''` | `link` 档的链接文案，支持 `{name}` / `{url}` / `{type}` 占位；留空用地址本身。 |
+| `newTab` | `true` | `link` 档是否新窗口打开。 |
+
+```js
+// 全局：只留地址，适合贴到邮件 / IM / 工单系统
+new LarkDoc({ element: '#editor', media: { htmlMode: 'link', linkText: '{name}' } })
+
+// 单次覆盖，不改实例配置
+const html = doc.getHTML({ media: { mode: 'link' } })
+```
+
+`link` 档是**单向**的：链接态 HTML 再导回编辑器会变成普通超链接，图片不会复原。要可逆请用 JSON。
+
+### modes 顶栏「编辑 / 修订 / 阅读」
+
+顶栏右上角那个按钮的三种状态。全部字段都可选，不传就是全开：
+
+```js
+modes: {
+  default: 'edit',                          // 首屏模式 'edit' | 'suggest' | 'read'
+  allow: ['edit', 'suggest', 'read'],       // 下拉里保留哪几项
+  persist: true,                            // 是否记住用户上次选的
+  labels: { read: '预览' },                  // 改某一项的叫法
+  shortcuts: true,                          // 要不要 ⌘⌥E / ⌘⌥X / ⌘⌥V
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `default` | `'edit'` | 初始模式。不在 `allow` 里就自动回落到 `allow[0]`。 |
+| `allow` | 三项全留 | 下拉裁剪。只剩一项时按钮变成静态文字（无箭头、点不动）。传空数组或非法值会回落成三项全留 —— 想关切换请写 `allow: ['edit']`。 |
+| `persist` | `true` | `false` = 不读写 `localStorage`，每次打开都从 `default` 开始。 |
+| `labels` | `{}` | 只认 `edit` / `suggest` / `read` 三个键，值是非空字符串；提示条跟着改写（`已切换为预览模式`）。 |
+| `shortcuts` | `true` | `false` = 三套键位全部不接管，也不会 `preventDefault`，宿主可以自己用这些组合键。 |
+
+```js
+// 只读站：不留修订入口，打开即阅读态，也不记住状态
+new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 'read', persist: false } })
+```
+
+::: tip 配置压不过协同权限
+会话里没有编辑权限时，`suggest` 会被服务端降级成 `read` —— 配 `allow: ['suggest']` 也强开不出修订态。详见[协同与权限](/guide/collaboration)。
+:::
+
+**已知边界**：`shortcuts: false` 只关实际按键，快捷键帮助面板（⌘/）里那三行仍是静态文案，不会跟着消失。
+
+## 其余分组
+
+不想用扁平项、想直接传内部结构也可以：
+
+| 分组 | 关键字段 | 用途 |
+| --- | --- | --- |
+| `commands` | `disabled` / `allow` | 按命令 id 禁用或白名单。 |
+| `blockMenu` | `disabled` / `allow` | 块句柄菜单动作裁剪（`duplicate` / `delete` 等）。 |
+| `layout` | `headerVisible` / `titleBarFixed` / `toolbarFixed` | 顶栏显隐与吸附。`headerVisible: false` 时操作入口收进工具栏「⋯」。 |
+| `modes` | `default` / `allow` / `persist` / `labels` / `shortcuts` | 顶栏编辑 / 修订 / 阅读三态，见上一节。 |
+| `limits` | `titleLength` 120、`maxLength` 0、`maxImageSize` 5MB、`maxTableRows` 9、`maxIndent` 5、`maxSnapshots` 20 | 各项上限（`maxLength: 0` = 不限）。 |
+| `performance` | `changeDebounce` 16、`syntaxHighlight` true、`diagramScriptUrl` null | 通知防抖、代码高亮、图表脚本地址（默认走包内懒加载，内网不用配）。 |

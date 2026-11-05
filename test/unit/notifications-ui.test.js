@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import Vue from 'vue'
+import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
 import notifyMixin from '../../src/components/lark-doc/editor/notifyMixin'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 import { clearProviderTasks, getProviderTask } from '../../src/providers/provider-task'
@@ -175,32 +175,40 @@ describe('通知 UI 的可选 Provider 接线（不导入 SFC）', () => {
     expect(ctx.error).toBe('当前提示')
   })
 
-  it('Vue 2 监听实际 Session 的文档、账号和 Provider 变化，不依赖 SFC', async () => {
+  it('原生宿主失效通知后重绑文档、账号、Provider，不依赖 Vue 或 SFC', async () => {
     const originalOff = vi.fn()
     const replacementOff = vi.fn()
     const provider = host({ subscribe: () => originalOff })
     const replacement = host({ subscribe: () => replacementOff })
     const session = createDocumentSession({ documentId: 'doc-1', user: { id: 'u-1' }, notifications: provider })
-    const vm = new Vue({ mixins: [notifyMixin], data: () => ({ session, error: '' }) })
+    const runtime = createNativeOptionsHost({
+      options: { mixins: [notifyMixin], data: () => ({ error: '' }) },
+      state: { sessionInstance: session },
+      aliases: { session: { get: (_host, state) => state.sessionInstance } },
+    })
+    const vm = runtime.host
     try {
       await vm.bindNotifications()
       session.documentId = 'doc-2'
-      await Vue.nextTick()
+      vm.$forceUpdate()
+      await vm.$nextTick()
       await Promise.resolve()
       expect(originalOff).toHaveBeenCalledTimes(1)
       expect(provider.list).toHaveBeenLastCalledWith({ documentId: 'doc-2', user: session.user })
       session.user.id = 'u-2'
-      await Vue.nextTick()
+      vm.$forceUpdate()
+      await vm.$nextTick()
       await Promise.resolve()
       expect(originalOff).toHaveBeenCalledTimes(2)
       session.setProvider('notifications', replacement)
-      await Vue.nextTick()
+      vm.$forceUpdate()
+      await vm.$nextTick()
       await Promise.resolve()
       expect(originalOff).toHaveBeenCalledTimes(3)
       expect(replacement.list).toHaveBeenCalledTimes(1)
       expect(replacement.list).toHaveBeenCalledWith({ documentId: 'doc-2', user: session.user })
     } finally {
-      vm.$destroy()
+      runtime.destroy()
     }
     expect(replacementOff).toHaveBeenCalledTimes(1)
   })

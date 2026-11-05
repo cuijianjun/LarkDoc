@@ -1,0 +1,7 @@
+{
+  "_readme": [
+    "阶段7严格收口：src/ 下的 .vue 文件与 Vue 运行时引用均为零。",
+    "legacy 仅保留使用宿主 Vue2 API 的 JavaScript options 薄适配器；不得恢复 SFC 或运行时依赖。"
+  ],
+  ".vue": []
+}

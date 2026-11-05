@@ -75,6 +75,9 @@ export function documentExtension(options, injected) {
       })
       let lastSlash = ''
       let lastMention = ''
+      // 斜杠菜单此刻是否真的开着：handleKeyDown 靠它决定要不要把 ↑↓/Enter 的默认行为
+      // 挡掉。判据与 `mentionActive` 同源（就是 reportSlash 算出来的那份 match）。
+      let slashActive = false
       // `dismissed` 由 Esc 置起、下一次文档变更清掉：两个锚定在光标处的浮层
       // （斜杠菜单 / `@` 面板）共用它 —— 一次 Esc 只收当前层，别让另一个趁同帧重开。
       let dismissed = false
@@ -83,6 +86,7 @@ export function documentExtension(options, injected) {
       let mentionActive = false
       const reportSlash = (view) => {
         const match = enabled('insert') && editor.isEditable && !view.composing && !dismissed ? getSlashMatch(view.state) : null
+        slashActive = !!match
         const serialized = JSON.stringify(match)
         if (lastSlash !== serialized) { lastSlash = serialized; if (options.onSlash) options.onSlash(match) }
       }
@@ -101,6 +105,7 @@ export function documentExtension(options, injected) {
         lastSlash = 'null'
         lastMention = 'null'
         mentionActive = false
+        slashActive = false
       }
       return [new Plugin({
         key: documentKey,
@@ -197,6 +202,13 @@ export function documentExtension(options, injected) {
                 return true
               }
               if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Enter' || event.key === 'Tab') return true
+            }
+            // 斜杠菜单同理（同样是「只挡默认行为、事件照旧冒泡」）：不挡的话
+            // ArrowDown 会被浏览器原生移动光标 → 选区变化 → slash match 消失 → 菜单
+            // 先自己关掉，组件层永远收不到 ↑↓/Enter，底部那句「↑ ↓ 选择 · Enter 插入」
+            // 就成了空话。Enter 不挡则会先分段、再关菜单，命令也插不进去。
+            if (slashActive && !view.composing && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Enter') { event.preventDefault(); return true }
             }
             // At a block boundary, keep the caret's horizontal goal when
             // crossing to the adjacent block. This makes ArrowUp and

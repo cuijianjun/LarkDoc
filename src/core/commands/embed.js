@@ -2,7 +2,8 @@
  * 内嵌网页组命令（P3-07 接线）：15 项 = `EMBED_MENU_ITEMS` 的派生，别手写第二份。
  *
  * 位置与数量：03 §1390 的 72 项斜杠命令核对里「内嵌网页 15」就是本组，它排在第 12 类
- * （`COMMAND_ORDER` 里挂在 `ai` 之后，`CommandMenu.categories` 按首次出现顺序出组标题，
+ * （`COMMAND_ORDER` 里挂在 `ai` 之后，菜单按首次出现顺序出组标题
+ * —— 分段逻辑在 `src/ui/commandMenu.js` 的 `categoriesOf`，
  * 所以组标题自然落到最后一位）。
  *
  * 🔴 **`plus: false` 是有意的**：`+` 菜单那 55 项清单里，同类内容只占**一条**
@@ -12,8 +13,8 @@
  *
  * 🔴 **点击行为是「开浮层」，不是二级面板**（03 §1849 batch589 更正）：
  * 15 项都没有 `item-arrow`（`A1_hit.arrow: false`），所以这里**不给** `submenu` /
- * `submenuType`。`CommandMenu.vue` 的点击分支对无 `submenu` 的项直接
- * `$emit('choose', item)` → `executeCommand(id)` → 打开 540×164 的「粘贴链接」浮层
+ * `submenuType`。菜单的点击分支（`src/ui/commandMenu.js` 的 `buttonFor`）对无 `submenu`
+ * 的项直接 `call('onChoose', item)` → `executeCommand(id)` → 打开 540×164 的「粘贴链接」浮层
  * （04 §4.3 ④）。给它们加 `submenu` 会让它们变成右侧面板，与实测不符。
  *
  * 落哪个块不在这里决定：URL 交给 `resolveEmbed`（`core/embed/resolve.js`），

@@ -6,11 +6,14 @@ const path = require('path')
 const sourceRoot = path.resolve(__dirname, '../src')
 const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
-  if (!filename.startsWith(sourceRoot + path.sep)) return originalLoader(module, filename)
+  // 只转换 src/ 下的 JavaScript，默认与 legacy 入口均不得依赖 SFC loader。
+  if (!filename.startsWith(sourceRoot + path.sep) || !filename.endsWith('.js')) {
+    return originalLoader(module, filename)
+  }
   const { code } = require('@babel/core').transformSync(fs.readFileSync(filename, 'utf8'), {
     babelrc: false,
     configFile: false,
-    plugins: ['@babel/plugin-transform-modules-commonjs'],
+    plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')],
   })
   module._compile(code, filename)
 }
@@ -54,9 +57,14 @@ assert.throws(() => createDocumentSession({ mode: 'collaborative' }), /collabora
 assert.throws(() => createCollaborationProvider({ connect() {} }), /disconnect/)
 assert.throws(() => createCommentsProvider({ list() {} }), /createThread/)
 
-// P0-03：门面组件只做装配——模板拆成子组件后 LarkDocEditor.vue 必须持续瘦身（<700 行）。
-const editorFacadeLines = fs.readFileSync(path.resolve(sourceRoot, 'components/lark-doc/LarkDocEditor.vue'), 'utf8').split('\n').length
-assert(editorFacadeLines < 700, `LarkDocEditor.vue 应保持 <700 行（P0-03 模板拆分），当前 ${editorFacadeLines} 行`)
+// P0-03：原生行为宿主继续守住拆分上限；兼容组件仅保留薄装配。
+const editorFacadeLines = fs.readFileSync(path.resolve(sourceRoot, 'editor/nativeEditorHost.js'), 'utf8').split('\n').length
+assert(editorFacadeLines < 700, `nativeEditorHost.js 应保持 <700 行（P0-03），当前 ${editorFacadeLines} 行`)
+for (const file of ['components/lark-doc/LarkDocEditor.js', 'components/lark-doc/LarkDocWorkspace.js', 'legacy-vue/createVue2Adapter.js']) {
+  const source = fs.readFileSync(path.resolve(sourceRoot, file), 'utf8')
+  assert(source.split('\n').length < 120, `${file} 必须保持 <120 行的薄适配器，不得复制业务实现`)
+  assert(!/createLarkDocExtensions|createEditorController|createWorkspaceController|mixins\s*:/.test(source), `${file} 不得重新装配业务或 mixin`)
+}
 
 // P0-04：块定义拆进 core/blocks 后，单文件必须保持 <400 行——防止新块把逻辑重新堆回单文件。
 // 阈值从 250 上调到 400（2026-10-26，用户拍板）：原 250 让每个新块都要「写完再拆文件」
@@ -81,21 +89,16 @@ const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/comma
 const expectedCommandIds = [
   'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
-  // P5-02：电子表格落在「数据」分类（03 §3.4 真值 y 685，在 绘图 749 之前），紧跟 file。
-  'sheet',
-  // P5-04：多维表格 5 项（03 §3.4 ⑤ y 1196 / 1228 / 1260 / 1292 / 1324，组标题 1164），
-  // 紧跟 sheet —— 分类顺序 数据 → 多维表格 → 绘图，必须连续成段。
-  'bitable', 'bitableKanban', 'bitableGantt', 'bitableGallery', 'bitableRefer',
-  // P5-05：绘图 3 项（03 §3.4 ⑥ y 1420 / 1452 / 1484，组标题 1356）。真值第 1 项
-  // 「画板」走 webEmbed（P3-07），不进本组，所以这里只有 3 条。
-  'mindMap', 'flowChart', 'umlDiagram',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  // 🔴 这里只列**菜单里真的能用**的项。视频或文件 `file`、电子表格 `sheet`、
+  // 多维表格 5 条、绘图 3 条（思维导图 / 流程图 / UML 图）、投票 `poll` 共 11 条
+  // 在 master 上只有块定义、没有插入链路，已从命令表摘掉；块类型本身仍在，
+  // 老文档正文照旧渲染（见 core/commands/index.js 文件头）。
   'inlineMath', 'blockMath', 'template', 'ai',
   // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
   'open_link', 'duplicate_page', 'follow_page',
   // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
-  // P5-03：`poll` 插在 mentionPage 与 reminder 之间（组内 y 1644 → 1676 → 1708）。
-  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
+  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
   // P5-06：`agenda` 是 ⑦ 团队协作第 10 项（y 1836，紧跟日程 1804）。
   'agenda',
   // P5-06：⑧ 文档管理 2 项（y 1900 / 1932）。
@@ -113,7 +116,7 @@ const expectedCommandIds = [
 assert.deepStrictEqual(COMMANDS.map((item) => item.id), expectedCommandIds, '命令 id 集合与顺序必须与拆分前逐项一致（P0-05 验收：命令 id 集合不变）')
 for (const item of COMMANDS) {
   assert(['required', 'skeleton', 'skip'].includes(item.tier), `命令 ${item.id} 缺少合法 tier 字段（P0-05：CommandDef 带 tier）`)
-  assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 12 组之一）`)
+  assert(typeof item.group === 'string' && item.group, `命令 ${item.id} 缺少 group 字段（P0-05：CommandDef 归属 10 组之一）`)
 }
 
 // P0-09：契约骨架——嵌入 preset 空壳、卡片 schema、协同客户端签名只做类型与数据，零实现。
@@ -213,4 +216,101 @@ for (const dir of SERVER_OWNED_DIRS) {
 }
 assert(serverRefs > 0, 'test/ 下应当有真线 e2e 引用 @hocuspocus/server（09 §5.7.4 C1/C4），否则这条断言在空跑')
 
-console.log('architecture checks passed: document envelope, transaction metadata, session lifecycle, capability and provider contracts, collab server boundary')
+/* ============================================================================
+ * 阶段 1-B · 去框架化三条闸门（R1 / R2 / R3）
+ *
+ * 三条都是「防止倒退」型规则：当前代码已经满足，规则的作用是把现状钉死，
+ * 让阶段 2~7 的每一次收敛都不可逆。与 P0-* 那批「限制单文件行数」的规则
+ * 不同，这三条守的是**依赖方向**：
+ *
+ *   R1  src/** 零 Vue 运行时引用 —— 包括 legacy 薄适配器在内的源码必须
+ *       能在没有 Vue 运行时或 SFC loader 的环境里加载。
+ *   R2  src/ 下 .vue 文件与 SFC 基线均为零 —— 阶段7不得恢复 SFC。
+ *   R3  renderer 契约五动作 —— mount / update / destroy / getInstance / getRoot，
+ *       门面与 Web Component 外壳只认这五个动作，不许出现第六个框架专有口子。
+ * ========================================================================== */
+
+/* ---------- R1 src/** 零 Vue 运行时引用 ---------- */
+// 只看真实模块说明符：注释里写「Vue」不算违规（否则会逼着人把架构说明删掉）。
+// 覆盖三种形态：`from 'vue'` / `import 'vue'` / `require('vue')` / `from './X.vue'`。
+const FRAMEWORK_SPEC = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"]([^'"]+)['"]/g
+// vue 生态与运行时：vue 本体、@tiptap/vue-* 绑定、.vue 单文件组件、vue 子包。
+const FRAMEWORK_HINT = /(^|\/)(vue|vue-2|vue-3)([-/@]|$)|@tiptap\/vue-|@vue\/|\.vue$/
+for (const file of walkJsFiles(sourceRoot)) {
+  const content = fs.readFileSync(file, 'utf8')
+  const relative = path.relative(sourceRoot, file)
+  const hits = Array.from(content.matchAll(FRAMEWORK_SPEC))
+    .map((match) => match[1])
+    .filter((spec) => FRAMEWORK_HINT.test(spec))
+  assert(
+    hits.length === 0,
+    `R1 src/** 必须零 Vue 运行时或 SFC 引用：${relative} → ${hits.join(', ')}\n` +
+      '     兼容组件只可使用宿主 Vue2 API，不得 import 框架运行时。'
+  )
+}
+
+/* ---------- R2 .vue 文件与基线均为零 ---------- */
+const baselinePath = path.resolve(__dirname, 'architecture-baseline.json')
+const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
+assert.deepStrictEqual(baseline['.vue'], [], 'R2 阶段7的 SFC 基线必须为零，不得放宽')
+const baselineVue = new Set(baseline['.vue'])
+const actualVue = []
+for (const file of walkJsFiles(sourceRoot)) {
+  if (!file.endsWith('.vue')) continue
+  actualVue.push(path.relative(sourceRoot, file).split(path.sep).join('/'))
+}
+actualVue.sort()
+const addedVue = actualVue.filter((item) => !baselineVue.has(item))
+assert(
+  addedVue.length === 0,
+  `R2 阶段7的 src/ 下不得存在 .vue：\n` +
+    addedVue.map((item) => `     + ${item}`).join('\n') +
+    `\n     现有 ${actualVue.length} 个 / 基线 ${baselineVue.size} 个；严格零基线不得放宽。`
+)
+// 反向：基线里已不存在的文件说明「摘掉了一个 SFC」，这种情况必须顺手收紧基线
+// —— 否则基线永远停在 38，闸门就退化成「不许新增」而拿不到「收敛进度」。
+const removedVue = Array.from(baselineVue).filter((item) => !actualVue.includes(item))
+assert(
+  removedVue.length === 0,
+  `R2 基线里有已不存在的文件，请收紧基线（scripts/architecture-baseline.json）：\n` +
+    removedVue.map((item) => `     - ${item}`).join('\n')
+)
+assert(
+  actualVue.length <= baselineVue.size,
+  `R2 .vue 数量不得增加：现有 ${actualVue.length} 个 / 基线 ${baselineVue.size} 个`
+)
+
+/* ---------- R3 renderer 契约五动作 ---------- */
+const RENDERER_ACTIONS = ['mount', 'update', 'destroy', 'getInstance', 'getRoot']
+// 默认与 legacy 兼容工厂都必须能在无 Vue loader 的 Node 环境加载。
+const { createRenderer } = require(path.resolve(sourceRoot, 'mount/index'))
+const { createDomRenderer } = require(path.resolve(sourceRoot, 'mount/domRenderer'))
+const legacy = require(path.resolve(sourceRoot, 'legacy-vue/index'))
+assert.strictEqual(legacy.createVue2Renderer, createDomRenderer, 'R3 legacy renderer 必须是 DOM 工厂的同一别名')
+assert.strictEqual(legacy.LarkDocEditor.name, 'LarkDocEditor')
+assert.strictEqual(legacy.LarkDocWorkspace.name, 'LarkDocWorkspace')
+const renderer = createRenderer()
+assert(renderer && typeof renderer === 'object', 'R3 createRenderer() 必须返回一个对象')
+for (const action of RENDERER_ACTIONS) {
+  assert.strictEqual(
+    typeof renderer[action],
+    'function',
+    `R3 renderer 契约缺 "${action}"：门面与 Web Component 外壳只认 ${RENDERER_ACTIONS.join(' / ')} 五个动作`
+  )
+}
+// 动作数量也必须锁死：多出一个框架专有口子（例如 $forceUpdate / $refs）就说明
+// 框架细节漏出了 mount/ 这一层，阶段 5 换原生渲染器时会直接断。
+const extraActions = Object.keys(renderer).filter(
+  (key) => typeof renderer[key] === 'function' && !RENDERER_ACTIONS.includes(key)
+)
+assert(
+  extraActions.length === 0,
+  `R3 renderer 不得暴露契约外的动作（框架细节必须关在 mount/ 里）：${extraActions.join(', ')}`
+)
+console.log(
+  `architecture checks passed: document envelope, transaction metadata, session lifecycle, ` +
+    `capability and provider contracts, collab server boundary, ` +
+    `R1 src zero-Vue-runtime (${walkJsFiles(sourceRoot).length} files), ` +
+    `R2 vue SFC ${actualVue.length}/${baselineVue.size} (strict-zero), ` +
+    `R3 renderer contract (${RENDERER_ACTIONS.length} actions)`
+)

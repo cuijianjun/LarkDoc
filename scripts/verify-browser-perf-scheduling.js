@@ -85,7 +85,7 @@ function buildContent() {
   const installed = await page.evaluate(() => {
     const facade = window.__larkDoc
     const editor = facade.getEditor()
-    const vm = facade.getWorkspace().$refs.document
+    const vm = facade._handle?.nativeHost?.host || facade.getWorkspace().$refs.document
     if (!vm || typeof vm.runSelectionLayout !== 'function' || typeof vm.updateSearch !== 'function') return false
     // 计数点归属：`coords` 是 view.coordsAtPos 的全局次数，`layoutCoords` 只统计
     // **发生在 runSelectionLayout 这一轮里**的次数。两者必须分开，否则会被宿主
@@ -130,7 +130,9 @@ function buildContent() {
   // ---------- 单次选区更新的成本（基线，证明计数点真的在跳） ----------
   await page.evaluate(() => {
     const { editor, positions } = window.__p7
-    editor.commands.focus()
+    // 这里只需让编辑器进入真实 focus 状态；默认 focus() 还会异步
+    // scrollIntoView，额外调用一次 coordsAtPos，污染气泡条本身的成本计数。
+    editor.commands.focus(null, { scrollIntoView: false })
     editor.commands.setTextSelection({ from: positions[0], to: positions[0] + 2 })
   })
   await page.waitForTimeout(200)

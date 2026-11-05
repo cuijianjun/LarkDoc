@@ -1,419 +1,231 @@
 // @vitest-environment jsdom
-import fs from 'fs'
-import path from 'path'
-import { transformSync } from '@babel/core'
-import compiler from 'vue-template-compiler'
-import Vue from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
+import { createCommandMenu } from '../../src/ui/commandMenu'
+import { createBlockHandle } from '../../src/ui/blockHandle'
+import { createToolbar } from '../../src/ui/toolbar'
 import commandMenuMixin from '../../src/components/lark-doc/editor/commandMenuMixin'
+import commandMenuUiMixin from '../../src/components/lark-doc/editor/commandMenuUiMixin'
+import blockHandleUiMixin from '../../src/components/lark-doc/editor/blockHandleUiMixin'
+import toolbarUiMixin from '../../src/components/lark-doc/editor/toolbarUiMixin'
+import toolbarCollapseMixin from '../../src/components/lark-doc/editor/toolbarCollapseMixin'
+import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
 import isvMixin from '../../src/components/lark-doc/editor/isvMixin'
-import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
+import isvPanelUiMixin from '../../src/components/lark-doc/editor/isvPanelUiMixin'
+import { createLarkDocConfig } from '../../src/components/lark-doc/larkDocConfig'
+import { diagramTypes } from '../../src/components/lark-doc/editor/constants'
 
-function loadSfc(relative, dependencies = {}) {
-  const filename = path.resolve(__dirname, '../../src/components/lark-doc', relative)
-  const source = compiler.parseComponent(fs.readFileSync(filename, 'utf8'))
-  const { code } = transformSync(source.script.content, {
-    filename, babelrc: false, configFile: false,
-    plugins: ['@babel/plugin-transform-dynamic-import', '@babel/plugin-transform-modules-commonjs'],
-  })
-  const exports = {}
-  new Function('require', 'exports', code)((name) => {
-    if (Object.hasOwn(dependencies, name)) return dependencies[name]
-    return name.endsWith('.vue') ? { render: (h) => h('span') } : {}
-  }, exports)
-  return { options: exports.default, template: source.template.content }
+const runtimes = []
+const rect = (left = 40, top = 100) => ({ left, top, bottom: top + 20, right: left + 20, width: 20, height: 20 })
+const settle = async () => { for (let i = 0; i < 8; i += 1) await Promise.resolve() }
+function runtime(options, state = {}, refs = {}) {
+  const result = createNativeOptionsHost({ options, state, refs })
+  runtimes.push(result)
+  return result
 }
-
-const menu = loadSfc('CommandMenu.vue')
-const CommandMenu = { ...menu.options, ...compiler.compileToFunctions(menu.template) }
-const isvPanel = loadSfc('editor/IsvButtonPanel.vue')
-const IsvButtonPanel = { ...isvPanel.options, ...compiler.compileToFunctions(isvPanel.template) }
-const hosts = []
-const rect = (left = 900, top = 680) => ({ left, top, bottom: top + 20, right: left + 20, width: 20, height: 20 })
-
-function mountHost() {
-  let resolveMenu
-  const pending = new Promise((resolve) => { resolveMenu = resolve })
-  const load = vi.fn(() => pending)
-  const editor = loadSfc('LarkDocEditor.vue', {
-    './CommandMenu.vue': { __esModule: true, default: CommandMenu },
-    '../../adapters/vue2/nodeviews': { registerVue2NodeViews() {} },
-  })
-  const components = { ...editor.options.components }
-  components.CommandMenu = load
-  const branch = editor.template.match(/<command-menu\b[\s\S]*?\/>/)[0]
-  const vm = new Vue({
-    components,
-    mixins: [commandMenuMixin],
-    data() { return Vue.observable({ effectiveReadonly: false, savedSelection: null, templates: [], larkDocConfig: {} }) },
-    beforeDestroy() { this.closeCommandMenu() },
+function rootNode() { const root = document.createElement('div'); document.body.appendChild(root); return root }
+function menuHost() {
+  const root = rootNode()
+  const r = runtime({
+    mixins: [commandMenuMixin, commandMenuUiMixin],
     methods: {
-      writable() { return !this.effectiveReadonly },
-      featureEnabled: () => true,
+      writable() { return !this.effectiveReadonly }, featureEnabled: () => true,
+      cancelPopupHoverClose: vi.fn(), schedulePopupHoverClose: vi.fn(),
       closeBlockMenu: vi.fn(), rememberSelection: vi.fn(), restoreSelection: vi.fn(),
       focus: vi.fn(), executeCommand: vi.fn(),
     },
-    ...compiler.compileToFunctions(`<div ref="root">${branch}</div>`),
-  }).$mount()
-  document.body.appendChild(vm.$el)
-  hosts.push(vm)
-  vi.spyOn(vm, 'focus')
-  vi.spyOn(vm, 'executeCommand')
-  const position = vi.spyOn(vm, 'positionCommandMenu')
-  return {
-    vm, load, position, editor,
-    open(kind = 'plus', anchor = rect()) {
-      const trigger = document.createElement('button')
-      trigger.getBoundingClientRect = () => anchor
-      vm.openCommandMenu(kind, { currentTarget: trigger })
-    },
-    async ready() {
-      resolveMenu(CommandMenu)
-      await pending
-      await Vue.nextTick()
-      await Vue.nextTick()
-    },
-  }
+  }, { effectiveReadonly: false, templates: [], larkDocConfig: {}, savedSelection: null }, { root, commandMenuHost: root })
+  r.host.mountCommandMenu()
+  const trigger = document.createElement('button')
+  trigger.getBoundingClientRect = () => rect()
+  return { ...r, open: (kind = 'plus') => r.host.openCommandMenu(kind, { currentTarget: trigger }) }
 }
-
-function mountIsvHost() {
-  let resolvePanel
-  const pending = new Promise((resolve) => { resolvePanel = resolve })
-  const load = vi.fn(() => pending)
-  const editor = loadSfc('LarkDocEditor.vue', {
-    '../../adapters/vue2/nodeviews': { registerVue2NodeViews() {} },
-  })
-  const coords = { value: rect(100, 150) }
-  const setIsv = vi.fn(() => chain)
-  const chain = { focus: () => chain, setIsv, run: vi.fn(() => true) }
-  const branch = editor.template.match(/<IsvButtonPanel\b[\s\S]*?\/>/)[0]
-  const vm = new Vue({
-    components: { IsvButtonPanel: load },
-    mixins: [isvMixin],
-    data() { return Vue.observable({ effectiveReadonly: false }) },
-    computed: { self() { return this } },
-    beforeDestroy() { this.closeIsvPanel() },
-    methods: { writable() { return !this.effectiveReadonly } },
-    ...compiler.compileToFunctions(`<div ref="root">${branch}</div>`),
-  }).$mount()
-  vm.editor = { state: { selection: { from: 1 } }, view: { coordsAtPos: () => coords.value }, chain: () => chain }
-  document.body.appendChild(vm.$el)
-  hosts.push(vm)
-  return {
-    vm, load, coords, setIsv,
-    async ready() {
-      resolvePanel(IsvButtonPanel)
-      await pending
-      await Vue.nextTick()
-      await Vue.nextTick()
-    },
-  }
+function isvHost() {
+  const root = rootNode()
+  const coords = { value: rect() }
+  const chain = { focus: () => chain, setIsv: vi.fn(() => chain), run: vi.fn(() => true) }
+  const r = runtime({ mixins: [isvMixin, isvPanelUiMixin], methods: { writable() { return !this.effectiveReadonly } } }, {
+    effectiveReadonly: false,
+    editor: { state: { selection: { from: 1 } }, view: { coordsAtPos: () => coords.value }, chain: () => chain },
+  }, { root, isvPanelHost: root })
+  r.host.mountIsvPanel()
+  return { ...r, coords, chain, root }
 }
-
-function mockMenuLayout() {
-  return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-    if (this.classList.contains('lark-doc-command-menu')) return { ...rect(), width: 470, height: 300 }
-    return rect()
-  })
-}
-
-function slashEditor() {
-  return { view: { coordsAtPos: vi.fn(() => rect(40, 100)), composing: false } }
-}
-
 afterEach(() => {
-  for (const vm of hosts.splice(0)) vm.$destroy()
+  runtimes.splice(0).reverse().forEach(r => {
+    r.host.destroyCommandMenu?.()
+    r.host.destroyIsvPanel?.()
+    r.destroy()
+  })
   document.body.innerHTML = ''
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
-describe('CommandMenu 内部异步挂载', () => {
-  it('真实门面保留公开选项对象，内部工厂在调用前不加载菜单模块', async () => {
-    let loads = 0
-    const { options } = loadSfc('LarkDocEditor.vue', {
-      get './CommandMenu.vue'() { loads += 1; return { __esModule: true, default: CommandMenu } },
-      '../../adapters/vue2/nodeviews': { registerVue2NodeViews() {} },
-    })
-    expect(options.name).toBe('LarkDocEditor')
-    expect(options).toBeTypeOf('object')
-    expect(loads).toBe(0)
-    expect(options.components.CommandMenu).toBeTypeOf('function')
-    await expect(options.components.CommandMenu()).resolves.toMatchObject({ default: CommandMenu })
-    expect(loads).toBe(1)
-    expect(options.components.IsvButtonPanel).toBeTypeOf('function')
-    const { options: isvEditor } = loadSfc('LarkDocEditor.vue', {
-      get './editor/IsvButtonPanel.vue'() { loads += 1; return { __esModule: true, default: IsvButtonPanel } },
-      '../../adapters/vue2/nodeviews': { registerVue2NodeViews() {} },
-    })
-    expect(loads).toBe(1)
-    await expect(isvEditor.components.IsvButtonPanel()).resolves.toMatchObject({ default: IsvButtonPanel })
-    expect(loads).toBe(2)
-  })
-
-  it('首次加载期间不抢焦点，mounted-ready 后按真实尺寸定位并聚焦 plus 搜索框', async () => {
-    mockMenuLayout()
-    const host = mountHost()
-    const ready = vi.spyOn(host.vm, 'onCommandMenuReady')
-    expect(host.load).not.toHaveBeenCalled()
-    host.open()
-    await Vue.nextTick()
-    expect(host.load).toHaveBeenCalledTimes(1)
-    expect(host.vm.$refs.commandMenu).toBeUndefined()
-    expect(document.activeElement).toBe(document.body)
-    const calls = host.position.mock.calls.length
-    await host.ready()
-    expect(ready).toHaveBeenCalledWith(host.vm.$refs.commandMenu)
-    expect(host.position.mock.calls.length).toBeGreaterThan(calls)
-    expect(host.vm.menuMaxHeight).toBe(300)
-    expect(host.vm.menuPosition).toEqual({ left: 546, top: 374 })
-    expect(document.activeElement).toBe(host.vm.$refs.commandMenu.$refs.search)
-    expect(host.vm.focus).not.toHaveBeenCalled()
-  })
-
-  it('首次 slash 挂载只定位，保留正文焦点和加载期间更新的查询串', async () => {
-    mockMenuLayout()
-    const host = mountHost()
-    const input = document.createElement('input')
-    document.body.appendChild(input)
-    input.focus()
-    host.vm.editor = slashEditor()
-    host.vm.onSlash({ from: 1, to: 2, query: '' })
-    await Vue.nextTick()
-    host.vm.onSlash({ from: 1, to: 4, query: '标题' })
-    await host.ready()
-    expect(host.vm.$refs.commandMenu.query).toBe('标题')
-    expect(host.vm.menuPosition).toEqual({ left: 40, top: 126 })
-    expect(host.vm.menuMaxHeight).toBe(300)
+describe('命令菜单原生 options host', () => {
+  it('首次 plus 打开后定位聚焦，slash 保留正文焦点', async () => {
+    const h = menuHost()
+    h.open()
+    await settle()
+    expect(document.activeElement).toBe(h.host._commandMenuUi.el.querySelector('input'))
+    h.host.closeCommandMenu()
+    const input = document.createElement('input'); document.body.appendChild(input); input.focus()
+    h.host.editor = { view: { coordsAtPos: () => rect(), composing: false } }
+    h.host.onSlash({ from: 1, to: 2, query: '标题' })
+    await settle()
     expect(document.activeElement).toBe(input)
+    expect(h.host._commandMenuUi.el.querySelector('input').value).toBe('标题')
   })
-
-  it.each(['close', 'readonly', 'destroy'])('加载中 %s 后完成不复活菜单、不定位或聚焦', async (action) => {
-    const host = mountHost()
-    host.open()
-    await Vue.nextTick()
-    if (action === 'close') host.vm.closeCommandMenu()
-    if (action === 'readonly') host.vm.effectiveReadonly = true
-    if (action === 'destroy') host.vm.$destroy()
-    const calls = host.position.mock.calls.length
-    await host.ready()
-    expect(host.vm.$refs.root?.querySelector('.lark-doc-command-menu') || null).toBeNull()
-    expect(host.position).toHaveBeenCalledTimes(calls)
-    expect(host.vm.focus).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(document.body)
-  })
-
-  it('加载中 plus 切 slash 不抢焦点，清除旧触发器并按最新光标定位', async () => {
-    mockMenuLayout()
-    const host = mountHost()
-    host.open()
-    await Vue.nextTick()
-    host.vm.editor = slashEditor()
-    host.vm.onSlash({ from: 1, to: 2, query: '' })
-    await host.ready()
-    expect(host.vm.menuTrigger).toBeNull()
-    expect(host.vm.menuPosition).toEqual({ left: 40, top: 126 })
-    expect(document.activeElement).toBe(document.body)
-  })
-
-  it('加载中关闭再打开以最新锚点定位聚焦，后续热打开仍正常', async () => {
-    mockMenuLayout()
-    const host = mountHost()
-    host.open()
-    await Vue.nextTick()
-    host.vm.closeCommandMenu()
-    host.open('plus', rect(50, 150))
-    await host.ready()
-    expect(host.load).toHaveBeenCalledTimes(1)
-    expect(host.vm.menuPosition).toEqual({ left: 50, top: 176 })
-    expect(document.activeElement).toBe(host.vm.$refs.commandMenu.$refs.search)
-    host.vm.closeCommandMenu()
-    await Vue.nextTick()
-    host.open('plus', rect(70, 170))
-    await Vue.nextTick()
-    await Vue.nextTick()
-    expect(host.vm.menuPosition).toEqual({ left: 70, top: 196 })
-    expect(document.activeElement).toBe(host.vm.$refs.commandMenu.$refs.search)
-  })
-
-  it('已挂载的 slash 切 plus 复用实例时也能聚焦', async () => {
-    const host = mountHost()
-    host.vm.editor = slashEditor()
-    host.vm.onSlash({ from: 1, to: 2, query: '' })
-    await Vue.nextTick()
-    await host.ready()
-    const menuVm = host.vm.$refs.commandMenu
-    host.open()
-    await Vue.nextTick()
-    await Vue.nextTick()
-    expect(host.vm.$refs.commandMenu).toBe(menuVm)
-    expect(document.activeElement).toBe(menuVm.$refs.search)
-  })
-
-  it.each(['close', 'readonly', 'destroy', 'reopen'])('mounted-ready 排队后 %s 时丢弃陈旧工作', async (action) => {
-    const host = mountHost()
-    host.open()
-    await Vue.nextTick()
-    await host.ready()
-    const oldMenu = host.vm.$refs.commandMenu
-    const focus = vi.spyOn(oldMenu, 'focusSearch')
-    host.position.mockClear()
-    host.vm.onCommandMenuReady(oldMenu)
-    if (action === 'readonly') host.vm.effectiveReadonly = true
-    else if (action === 'destroy') host.vm.$destroy()
-    else {
-      host.vm.closeCommandMenu()
-      if (action === 'reopen') host.vm.openCommandMenu('slash')
-    }
-    await Vue.nextTick()
+  it.each(['close', 'readonly', 'destroy', 'reopen'])('打开回调排队后 %s 不抢旧焦点', async action => {
+    const h = menuHost()
+    h.open()
+    const focus = vi.spyOn(h.host._commandMenuUi, 'focusSearch')
+    if (action === 'close') h.host.closeCommandMenu()
+    if (action === 'readonly') h.host.effectiveReadonly = true
+    if (action === 'destroy') h.destroy()
+    if (action === 'reopen') { h.host.closeCommandMenu(); h.open('slash') }
+    await settle()
     expect(focus).not.toHaveBeenCalled()
-    if (action !== 'reopen') expect(host.position).not.toHaveBeenCalled()
   })
-
-  it('不接收已卸载实例的迟到 ready，也不执行关闭后的旧聚焦回调', async () => {
-    const host = mountHost()
-    host.open()
-    await Vue.nextTick()
-    await host.ready()
-    const oldMenu = host.vm.$refs.commandMenu
-    const focus = vi.spyOn(oldMenu, 'focusSearch')
-    host.vm.closeCommandMenu(true)
-    expect(host.vm.focus).toHaveBeenCalledTimes(1)
-    await Vue.nextTick()
-    host.open()
-    await Vue.nextTick()
-    await Vue.nextTick()
-    host.vm.focus.mockClear()
-    host.position.mockClear()
-    host.vm.onCommandMenuReady(oldMenu)
-    await Vue.nextTick()
+  it('UI 迟到挂载按最新批次完成定位，旧实例 ready 无效', async () => {
+    const h = menuHost()
+    const old = h.host._commandMenuUi
+    h.host.destroyCommandMenu()
+    h.open()
+    await settle()
+    h.host.mountCommandMenu()
+    await settle()
+    expect(document.activeElement).toBe(h.host._commandMenuUi.el.querySelector('input'))
+    const focus = vi.spyOn(old, 'focusSearch')
+    h.host.onCommandMenuReady(old)
+    await settle()
     expect(focus).not.toHaveBeenCalled()
-    expect(host.position).not.toHaveBeenCalled()
-    host.vm.closeCommandMenu(true)
-    host.open()
-    host.vm.focus.mockClear()
-    await Vue.nextTick()
-    await Vue.nextTick()
-    expect(host.vm.focus).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(host.vm.$refs.commandMenu.$refs.search)
   })
-
-  it.each(['reopen', 'readonly', 'destroy'])('同步命令执行后 %s 不让旧恢复焦点回调抢焦点', async (action) => {
-    const host = mountHost()
-    host.open()
-    await Vue.nextTick()
-    await host.ready()
-    host.vm.chooseCommand({ id: 'paragraph' })
-    expect(host.vm.executeCommand).toHaveBeenCalledWith('paragraph', undefined)
-    expect(host.vm.focus).toHaveBeenCalledTimes(2)
-    if (action === 'reopen') host.open()
-    if (action === 'readonly') host.vm.effectiveReadonly = true
-    if (action === 'destroy') host.vm.$destroy()
-    host.vm.focus.mockClear()
-    await Vue.nextTick()
-    await Vue.nextTick()
-    expect(host.vm.focus).not.toHaveBeenCalled()
-  })
-
-  it('加载完成前键盘选择和执行仍同步，不等待组件模块', async () => {
-    const host = mountHost()
-    host.vm.openCommandMenu('slash')
-    await Vue.nextTick()
-    host.vm.moveCommand(1)
-    const item = host.vm.filteredCommands[host.vm.activeCommandIndex]
-    const event = { key: 'Enter', preventDefault: vi.fn() }
-    const result = host.vm.onEditorKeydown(event)
-    expect(result).toBeUndefined()
-    expect(event.preventDefault).toHaveBeenCalledTimes(1)
-    expect(host.vm.executeCommand).toHaveBeenCalledWith(item.id, undefined)
-    expect(host.vm.menuOpen).toBe(false)
-    await host.ready()
-    expect(host.vm.$refs.commandMenu).toBeUndefined()
+  it('禁用原因、hover 保活和图表子菜单在鼠标与 Enter 入口均保留', () => {
+    const root = rootNode()
+    const handlers = { onChoose: vi.fn(), onMenuEnter: vi.fn(), onMenuLeave: vi.fn() }
+    const ui = createCommandMenu({ host: root, handlers })
+    const diagram = { id: 'diagram', label: '图表', category: '基础', submenu: '图表', submenuType: 'diagram' }
+    ui.update({ open: true, kind: 'slash', items: [diagram, { id: 'jira', label: 'Jira', category: '基础', tier: 'skip', reason: '未接入 Jira' }], activeId: 'diagram' })
+    const skip = root.querySelector('[data-command-id="jira"]')
+    expect(skip.disabled).toBe(true)
+    expect(skip.title).toBe('未接入 Jira')
+    expect(skip.getAttribute('aria-label')).toBe('未接入 Jira')
+    ui.el.dispatchEvent(new MouseEvent('mouseenter'))
+    ui.el.dispatchEvent(new MouseEvent('mouseleave'))
+    root.querySelector('[data-command-id="diagram"]').click()
+    expect(ui.submenuEl.querySelectorAll('button')).toHaveLength(diagramTypes.length)
+    expect(ui.submenuEl.querySelector('svg')).not.toBeNull()
+    ui.submenuEl.dispatchEvent(new MouseEvent('mouseenter'))
+    ui.submenuEl.dispatchEvent(new MouseEvent('mouseleave'))
+    ui.submenuEl.querySelector('button').click()
+    expect(handlers.onChoose).toHaveBeenCalledWith({ id: 'diagram', diagramType: diagramTypes[0].id })
+    root.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(ui.submenuEl.classList.contains('is-diagram')).toBe(true)
+    expect(handlers.onMenuEnter).toHaveBeenCalledTimes(2)
+    expect(handlers.onMenuLeave).toHaveBeenCalledTimes(2)
+    ui.destroy()
   })
 })
 
-describe('IsvButtonPanel 低频异步挂载', () => {
-  it('未打开不加载，首次 ready 按最新选区定位并聚焦按钮文字，确认仍同步插块', async () => {
-    const host = mountIsvHost()
-    expect(host.load).not.toHaveBeenCalled()
-    host.vm.startIsvButton('open_link')
-    await Vue.nextTick()
-    expect(host.load).toHaveBeenCalledTimes(1)
-    expect(host.vm.$refs.isvPanel).toBeUndefined()
-    host.coords.value = rect(140, 180)
-    await host.ready()
-    expect(host.vm.isvPanelStyle).toEqual({ left: '140px', top: '206px' })
-    expect(document.activeElement).toBe(host.vm.$el.querySelector('[aria-label="按钮文字"]'))
-    host.vm.isvLinkUrl = 'https://example.com'
-    expect(host.vm.confirmIsvButton()).toBeUndefined()
-    expect(host.setIsv).toHaveBeenCalledTimes(1)
-    expect(host.vm.isvPanelOpen).toBe(false)
+describe('块菜单与工具栏增量迁移', () => {
+  it('异步块权限控制类型、副本及操作列表，状态变化能解除禁用', () => {
+    const root = rootNode()
+    const handlers = { blockTypeAction: vi.fn(), blockAction: vi.fn(), scheduleCommandMenuClose: vi.fn() }
+    const ui = createBlockHandle({ host: root, handlers })
+    ui.updateChrome({ visible: true, buttonKind: 'main', actionDisabled: true })
+    expect(ui.mainEl.getAttribute('aria-disabled')).toBe('true')
+    const patch = disabled => ({ menuOpen: true, editAllowed: !disabled, duplicateAllowed: !disabled, canDuplicate: true,
+      typeActions: [{ id: 'paragraph', label: '正文', icon: 'block-text', disabled }],
+      listActions: [{ id: 'copy', label: '复制', icon: 'copy', disabled }], colors: [] })
+    ui.updateMenu(patch(true))
+    const type = () => root.querySelector('[aria-label="正文"]')
+    expect(type().disabled).toBe(true)
+    type().click()
+    expect(handlers.blockTypeAction).not.toHaveBeenCalled()
+    expect(root.querySelector('.lark-doc-block-menu-duplicate').disabled).toBe(true)
+    expect(ui.alignTrigger.getAttribute('aria-disabled')).toBe('true')
+    expect(ui.colorTrigger.classList.contains('is-disabled')).toBe(true)
+    expect(root.querySelector('.lark-doc-block-menu-row').disabled).toBe(true)
+    ui.updateMenu(patch(false))
+    expect(type().disabled).toBe(false)
+    type().click()
+    expect(handlers.blockTypeAction).toHaveBeenCalledWith('paragraph')
+    ui.updateChrome({ buttonKind: 'empty' })
+    root.querySelector('.lark-doc-empty-block-insert').dispatchEvent(new MouseEvent('mouseleave'))
+    expect(handlers.scheduleCommandMenuClose).toHaveBeenCalledOnce()
+    expect(blockHandleUiMixin.methods.blockHandleHandlers.call({}).scheduleCommandMenuClose).toBeTypeOf('function')
+    ui.destroy()
   })
-
-  it.each(['cancel', 'escape', 'outside', 'readonly', 'destroy'])('加载中 %s 后不会迟到挂载或抢焦点，也不插块', async (action) => {
-    const host = mountIsvHost()
-    host.vm.startIsvButton('open_link')
-    await Vue.nextTick()
-    if (action === 'cancel') host.vm.closeIsvPanel()
-    if (action === 'escape') overlayDismissMixin.methods.onWindowKeydown.call({
-      applyModeShortcut: () => false, headingNumberMenu: { open: false },
-      isvPanelOpen: true, closeIsvPanel: () => host.vm.closeIsvPanel(),
-    }, { key: 'Escape' })
-    if (action === 'outside') overlayDismissMixin.methods.onDocumentPointerDown.call({
-      isvPanelOpen: true, closeIsvPanel: () => host.vm.closeIsvPanel(),
-      headingNumberMenu: { open: false }, $refs: host.vm.$refs,
-    }, { target: document.body })
-    if (action === 'readonly') host.vm.effectiveReadonly = true
-    if (action === 'destroy') host.vm.$destroy()
-    await host.ready()
-    expect(host.vm.$refs.isvPanel).toBeUndefined()
-    expect(document.activeElement).toBe(document.body)
-    expect(host.setIsv).not.toHaveBeenCalled()
+  it('工具栏插入与图表 hover 接线、标签、图标保留', () => {
+    const ctx = Object.fromEntries(['scheduleCommandMenuClose', 'cancelPopupHoverClose', 'openDiagramMenuOnHover', 'scheduleDiagramMenuClose'].map(name => [name, vi.fn()]))
+    const handlers = toolbarUiMixin.methods.toolbarHandlers.call(ctx)
+    const ui = createToolbar({ handlers })
+    ui.update({ features: { diagram: true }, diagram: { open: true, types: diagramTypes } })
+    const insert = ui.el.querySelector('[aria-label="插入"]')
+    expect(insert.getAttribute('aria-haspopup')).toBe('menu')
+    insert.dispatchEvent(new MouseEvent('mouseenter')); insert.dispatchEvent(new MouseEvent('mouseleave'))
+    const diagram = ui.el.querySelector('[aria-label="图表"]')
+    expect(diagram.textContent).toContain('图表')
+    expect(diagram.querySelector('.lark-doc-caret')).not.toBeNull()
+    diagram.dispatchEvent(new MouseEvent('mouseenter')); diagram.dispatchEvent(new MouseEvent('mouseleave'))
+    const menu = ui.el.querySelector('.lark-doc-diagram-menu')
+    menu.dispatchEvent(new MouseEvent('mouseenter')); menu.dispatchEvent(new MouseEvent('mouseleave'))
+    expect(menu.querySelectorAll('.lark-doc-diagram-menu-icon')).toHaveLength(diagramTypes.length)
+    expect(ctx.cancelPopupHoverClose).toHaveBeenCalledTimes(2)
+    expect(ctx.scheduleCommandMenuClose).toHaveBeenCalledOnce()
+    expect(ctx.openDiagramMenuOnHover).toHaveBeenCalledOnce()
+    expect(ctx.scheduleDiagramMenuClose).toHaveBeenCalledTimes(2)
+    ui.destroy()
   })
+  it('默认隐藏配置下不对暂存的工具栏绑定 observer，目录水合保持冻结', async () => {
+    const root = rootNode(); const bar = document.createElement('div'); bar.className = 'lark-doc-toolbar'; root.appendChild(bar)
+    const observer = vi.fn(); vi.stubGlobal('ResizeObserver', observer)
+    const config = createLarkDocConfig()
+    expect(config.layout.toolbarVisible).toBe(false)
+    const r = runtime({ mixins: [toolbarCollapseMixin, viewModesMixin] }, { larkDocConfig: config }, { root })
+    r.host.bindToolbarObserver()
+    expect(observer).not.toHaveBeenCalled()
+    expect(r.host._toolbarFitEpoch).toBe(1)
+    r.host.hydrateOutline([{ pos: 1, level: 1, text: '章节' }])
+    expect(Object.isFrozen(r.host.outline)).toBe(true)
+    expect(r.host.outlineItems[0].text).toBe('章节')
+    expect(r.host.modeLabel).toBe(r.host.modeOptions.find(item => item.id === r.host.mode).label)
+    r.host.setMode('read')
+    expect(r.host.reading).toBe(true)
+    expect(r.host.modeLabel).toBe(r.host.modeOptions.find(item => item.id === 'read').label)
+    await settle()
+  })
+})
 
-  it.each(['close', 'readonly', 'destroy', 'reopen'])('ready 排队后 %s 时不执行旧面板的聚焦', async (action) => {
-    const host = mountIsvHost()
-    host.vm.startIsvButton('open_link')
-    await Vue.nextTick()
-    await host.ready()
-    const panel = host.vm.$refs.isvPanel
-    const focus = vi.spyOn(panel.$el.querySelector('[aria-label="按钮文字"]'), 'focus')
-    host.vm.onIsvPanelReady(panel)
-    if (action === 'readonly') host.vm.effectiveReadonly = true
-    else if (action === 'destroy') host.vm.$destroy()
-    else {
-      host.vm.closeIsvPanel()
-      if (action === 'reopen') host.vm.startIsvButton('follow_page')
-    }
-    await Vue.nextTick()
-    await Vue.nextTick()
+describe('ISV 原生面板 ready', () => {
+  it('首次打开按最新选区定位聚焦，输入更新不重复抢焦点，确认同步插块', async () => {
+    const h = isvHost()
+    h.host.startIsvButton('open_link')
+    h.coords.value = rect(140, 180)
+    await settle()
+    expect(h.host.isvPanelStyle).toEqual({ left: '140px', top: '206px' })
+    expect(document.activeElement).toBe(h.root.querySelector('[aria-label="按钮文字"]'))
+    const focus = vi.spyOn(h.host._isvUi, 'focusText')
+    h.host.isvLinkUrl = 'https://example.com'
+    await settle()
     expect(focus).not.toHaveBeenCalled()
-    expect(host.setIsv).not.toHaveBeenCalled()
-    if (action === 'reopen') {
-      expect(host.vm.$refs.isvPanel).not.toBe(panel)
-      expect(document.activeElement).toBe(host.vm.$refs.isvPanel.$el.querySelector('[aria-label="按钮文字"]'))
-    }
+    h.host.confirmIsvButton()
+    expect(h.chain.setIsv).toHaveBeenCalledOnce()
+    expect(h.host.isvPanelOpen).toBe(false)
   })
-
-  it('加载中取消重开使用最新动作，缓存热打开和迟到旧 ready 均安全', async () => {
-    const host = mountIsvHost()
-    host.vm.startIsvButton('open_link')
-    await Vue.nextTick()
-    host.vm.closeIsvPanel()
-    host.vm.startIsvButton('follow_page')
-    await host.ready()
-    expect(host.load).toHaveBeenCalledTimes(1)
-    expect(host.vm.isvAction).toBe('follow_page')
-    expect(host.vm.$el.querySelector('[aria-label="超链接地址"]')).toBeNull()
-    const oldPanel = host.vm.$refs.isvPanel
-    const focus = vi.spyOn(oldPanel.$el.querySelector('[aria-label="按钮文字"]'), 'focus')
-    host.vm.closeIsvPanel()
-    await Vue.nextTick()
-    host.vm.startIsvButton('open_link')
-    await Vue.nextTick()
-    await Vue.nextTick()
-    host.vm.onIsvPanelReady(oldPanel)
-    await Vue.nextTick()
-    expect(focus).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(host.vm.$refs.isvPanel.$el.querySelector('[aria-label="按钮文字"]'))
+  it.each(['close', 'readonly', 'destroy', 'reopen'])('ready 排队后 %s 不执行旧批次聚焦', async action => {
+    const h = isvHost()
+    h.host.startIsvButton('open_link')
+    h.flush()
+    const focus = vi.spyOn(h.host._isvUi, 'focusText')
+    if (action === 'close') h.host.closeIsvPanel()
+    if (action === 'readonly') h.host.effectiveReadonly = true
+    if (action === 'destroy') h.destroy()
+    if (action === 'reopen') { h.host.closeIsvPanel(); h.host.startIsvButton('follow_page') }
+    await settle()
+    expect(focus).toHaveBeenCalledTimes(action === 'reopen' ? 1 : 0)
+    if (action === 'readonly') expect(h.root.querySelector('.lark-doc-isv-overlay')).toBeNull()
+    expect(h.chain.setIsv).not.toHaveBeenCalled()
   })
 })

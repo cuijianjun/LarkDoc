@@ -18,7 +18,7 @@
  * 没有「编辑已有按钮」入口：0.12 的按钮块从命令菜单插入后即定型，改属性要删了重插。
  * 这不是偷懒 —— 02 §22 ⑤-3 的实测里按钮块的右键菜单没有「编辑」项。
  */
-import { BUTTON_COLOR_ROWS, DEFAULT_BUTTON_COLOR } from './palette'
+import { BUTTON_COLOR_ROWS, DEFAULT_BUTTON_COLOR } from '../../../ui/palette'
 import {
   BUTTON_ACTION_DEFAULT, BUTTON_TEXT_DEFAULT, BUTTON_TEXT_MAX, ISV_BUTTON_ACTIONS,
   ISV_KINDS, ISV_PANEL, ISV_VALIDATION_MESSAGE, isvPanelHeight, normalizeButtonLink,

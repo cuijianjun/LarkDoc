@@ -1,13 +1,13 @@
 # Web Component（跨框架接入）
 
-`<lark-doc>` 自定义元素让编辑器脱离宿主框架：Vue 2 / Vue 3 / React / Svelte / 纯 HTML 都可以直接使用，**宿主无需安装 Vue**——Vue 运行时与全部样式已经打包进产物内部（架构对齐 AiEditor：框架依赖只存在于包内部，对外只暴露标签、属性、事件与命令式 API）。
+`<lark-doc>` 自定义元素让编辑器脱离宿主框架：Vue 2 / Vue 3 / React / Svelte / 纯 HTML 都可以直接使用，**宿主无需安装 Vue**——内部使用原生 DOM renderer，不再内联 Vue 运行时；样式随 JS 注入，对外只暴露标签、属性、事件与命令式 API。
 
 ## 快速开始
 
 ### 方式一：`<script>` 直接引入（零构建）
 
 ```html
-<!-- 产物自带 Vue 运行时与样式，无需再引 css -->
+<!-- 产物使用原生 DOM、样式随 JS 注入，无需再引 css -->
 <script src="node_modules/lark-doc/dist/lark-doc-element.umd.min.js"></script>
 
 <lark-doc title="会议纪要" theme="light">
@@ -31,7 +31,9 @@ import 'lark-doc/element' // 自动注册 <lark-doc>
 // 样式已随产物注入；若在 lib 模式下使用请另行 import 'lark-doc/style.css'
 ```
 
-> **webpack 4 宿主**：`exports` 字段读不到，上面这行要写全 `lark-doc/dist/lark-doc-element.umd.min.js`。主入口 `lark-doc` 从 0.13 起不用写全（`browser` 已指向 ES2018 产物），只有子路径需要。
+> **webpack 4 宿主**：`exports` 字段读不到，所有 `lark-doc/...` 形式的引入都要写全 `dist/` 路径 ——
+> 如果使用 npm 包，直接 `import 'lark-doc/element'`；只有纯静态页才写 `lark-doc/dist/lark-doc-element.umd.min.js` 的 script 地址。主入口无需 alias
+> （`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`；当前包不提供 `browser` 字段兜底）。
 
 ```vue
 <template>
@@ -151,7 +153,7 @@ doc.off('change', handler)
 npm run build:element   # dist/lark-doc-element.umd.min.js + 若干按需区块
 ```
 
-- 产物内置 Vue 运行时与样式（CSS 由 JS 注入 `<style>`），首屏一个文件即可；
+- 产物不含 Vue 运行时，样式随 JS 注入（CSS 由 JS 注入 `<style>`），首屏一个文件即可；
 - 重依赖按逻辑拆成按需区块，只在真正用到时下载：`math`（KaTeX + 公式样式）、
   `office`（docx 导出 / mammoth 导入）、`markdown`（marked / turndown）、`highlight`（代码高亮）、
   `mermaid`（图表渲染器）；

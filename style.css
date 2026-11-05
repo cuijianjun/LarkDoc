@@ -15,6 +15,8 @@
  * 将来 preset 要出深色档时，其 `[data-theme-preset=...][data-theme="dark"]`
  * 特异性更高，天然压在本文件之上，无需调整顺序。 */
 @import './src/components/lark-doc/theme-dark.css';
+/* 代码块 / 图表块（含 mermaid 预览 chrome）。原先是唯一的 SFC 内样式块，为消构建告警抽出。 */
+@import './src/styles/code-block.css';
 /* ---- P6b：评论 / 历史版本 / 分享 + 权限 三条线各自的样式单独立文件，由本入口统一接线 ----
    （组件自身不引样式，与本项目其它面板一致）。放在主题档**之后**：三条线的实测色值
    来自 04 / 05 的截图口径，不参与主题蒸馏，晚引才能让面板在任何主题档下都长一样。

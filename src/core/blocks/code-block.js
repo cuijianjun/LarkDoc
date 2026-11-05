@@ -2,7 +2,9 @@
 import CodeBlock from '@tiptap/extension-code-block'
 import { clampBlockIndent } from '../documentOperations'
 // 代码块 NodeView（语言下拉 / 高亮 / 图表）查注册表，注册表实现见 core/nodeviews/registry。
+// 阶段 2 起代码块是 core 自带的纯 DOM NodeView（三端共用），无人注册时直接回落它。
 import { getNodeView } from '../nodeviews/registry'
+import { createCodeBlockNodeView } from '../nodeviews/code-block'
 
 function codeExtension(config) {
   return CodeBlock.extend({
@@ -18,7 +20,7 @@ function codeExtension(config) {
       }
     },
     // 代码块 NodeView（语言下拉 / 高亮 / 图表）查注册表。
-    addNodeView() { const view = getNodeView('codeBlock'); if (view) return view },
+    addNodeView() { return getNodeView('codeBlock') || createCodeBlockNodeView },
   }).configure({
     syntaxHighlight: config?.performance?.syntaxHighlight !== false,
     diagram: config?.features?.diagram !== false,

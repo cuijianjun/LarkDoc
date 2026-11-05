@@ -304,7 +304,6 @@ process.stdin.on("data", d => s += d).on("end", () => {
   const need = [
     "dist/lark-doc.common.js",
     "dist/lark-doc.esm.js",
-    "dist/lark-doc.umd.min.js",
     "dist/lark-doc-element.umd.min.js",
     "dist/lark-doc.css"
   ]

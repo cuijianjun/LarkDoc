@@ -76,7 +76,6 @@ echo "[2/4] 校验产物齐备"
 NEED=(
   "dist/lark-doc.common.js"
   "dist/lark-doc.esm.js"
-  "dist/lark-doc.umd.min.js"
   "dist/lark-doc-element.umd.min.js"
   "dist/lark-doc.css"
 )
@@ -112,9 +111,7 @@ if [ "$NO_CACHE" = 0 ]; then
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "$NAME": "file:$OUT_DIR/$TGZ",
-    "vue": "2.7.14",
-    "@tiptap/vue-2": "3.32.0"
+    "$NAME": "file:$OUT_DIR/$TGZ"
   }
 }
 EOF
@@ -140,9 +137,7 @@ fi
 cat >"$OUT_DIR/package.snippet.json" <<EOF
 {
   "dependencies": {
-    "$NAME": "file:./$TGZ",
-    "vue": "^2.7.14",
-    "@tiptap/vue-2": "^3.32.0"
+    "$NAME": "file:./$TGZ"
   }
 }
 EOF
@@ -183,17 +178,10 @@ npm install --offline
 npm install ./$TGZ
 \`\`\`
 
-## 必须同时安装的 peerDependencies
+## 运行时依赖
 
-本包把 Vue 声明为 peer 依赖，**必须由宿主项目自己安装**，否则运行时报 \`Cannot resolve 'vue'\`：
+主入口和 element 入口均使用原生 DOM renderer，不要求宿主安装 Vue 或 \`@tiptap/vue-2\`。
 
-\`\`\`json
-"dependencies": {
-  "$NAME": "^$VERSION",
-  "vue": "^2.7.14",
-  "@tiptap/vue-2": "^3.32.0"
-}
-\`\`\`
 
 ## 按需 chunk 不能丢
 

@@ -3,7 +3,7 @@
  *
  * 与 `revision.js` 同目录、同范式：本文件只放**能纯 Node 跑**的部分（常量 / 规范化 /
  * 收集 / 高度推导）与 mark 定义；面板状态机在 `editor/commentsMixin.js`，DOM 在
- * `CommentPanel.vue`，样式在 `styles/comments.css`。
+ * `src/ui/panels.js` 的 `createCommentPanel`，样式在 `styles/comments.css`。
  *
  * 三条必须守住的口径（改之前先读 04 §3.1）：
  *   1. **mark 只带 `threadId`，不带位置**。05 §5.5⑥ 写明锚点是 `blockId + offset + length`

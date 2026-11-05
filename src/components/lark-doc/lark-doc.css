@@ -303,6 +303,16 @@
   --ld-bg-ai-review: #fffdf5;            /* AI 评审条目底 */
   --ld-bg-ai-proposal: #f6f8ff;          /* AI 建议（强调底，覆盖评审条目） */
   --ld-border-template-hover: #b8e3d1;   /* 模板条目 hover 描边 */
+  /* AI 预览富文本（--rich）：markdown 渲染结果的正文/行内码/代码块/引用/分隔线/链接。
+     原为 master 分支自带的字面色，合并进 next/0.12 后触发 T0-05 止血 lint，
+     按「UI 皮肤色必须走 token」口径收编（浅色档值一字未改，视觉零差异）。 */
+  --ld-ai-rich-text: #263b35;            /* 富正文 */
+  --ld-ai-rich-code-bg: #eef2f0;         /* 行内码底 */
+  --ld-ai-rich-pre-bg: #f3f6f4;          /* 代码块底（比行内码更亮一档） */
+  --ld-ai-rich-quote-border: #cfe0d7;    /* 引用竖线 */
+  --ld-ai-rich-quote-text: #4c5c55;      /* 引用文字 */
+  --ld-ai-rich-divider: #dbe4e0;         /* 分隔线 */
+  --ld-ai-rich-link: #1456f0;            /* 链接（品牌蓝，≠ --ld-text-link #245BDB） */
   /* 跨界转发（D2）：chrome = 编辑器外壳 UI，content = 正文画布。
      拆分原因见 12 §4.2：飞书支持「UI 深 + 正文浅」双轨，共用会让两轨互相污染。
      默认档两侧同源 → 语义零差异；dark 档分别覆写。 */
@@ -424,8 +434,9 @@
 .lark-doc .lark-doc-title-wrap { display: flex; flex-direction: column; min-width: 140px; width: min(370px, 30vw); }
 .lark-doc .lark-doc-title-wrap input { border: 0; padding: 2px 4px; font-size: 16px; font-weight: 700; text-overflow: ellipsis; }
 .lark-doc .lark-doc-title-sub { padding-left: 5px; color: var(--lark-doc-muted); font-size: 11px; }
+.lark-doc .lark-doc-actions-park { display: none; }
 .lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-start; gap: 7px; flex: 1; min-width: 96px; overflow-x: auto; scrollbar-width: thin; }
-/* 自动外边距只消耗正向余量；溢出时从起点滚动，避免 flex-end 把前部按钮推到标题下。 */
+/* 自动外边距只消耗正向余量，避免窄屏时把操作按钮推到标题下。 */
 .lark-doc .lark-doc-header-actions > :first-child { margin-left: auto; }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; -ms-overflow-style: none; }
@@ -491,6 +502,10 @@
 .lark-doc .lark-doc-select-menu button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; text-align: left; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .lark-doc .lark-doc-select-menu button:hover, .lark-doc .lark-doc-select-menu button.is-highlight { background: var(--ld-bg-hover-select); }
 .lark-doc .lark-doc-select-menu .lark-doc-select-check { width: 14px; flex: 0 0 14px; color: var(--ld-text-check); }
+/* 选项文本：单行 = 一行文字；带 `hint` 的两行式（顶栏模式下拉）自动纵向排。 */
+.lark-doc .lark-doc-select-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lark-doc .lark-doc-select-item-label { font-size: inherit; line-height: inherit; }
+.lark-doc .lark-doc-select-item-hint { font-size: 12px; line-height: 18px; color: var(--ld-text-secondary); }
 /* 工具栏自适应折叠：tools-end 内层容器 + 「更多」弹层分节样式。 */
 .lark-doc .lark-doc-tools-end-inner { display: flex; align-items: center; gap: 1px; }
 .lark-doc .lark-doc-more-title { padding: 7px 10px 3px; font-size: 11px; color: var(--lark-doc-muted); border-bottom: 1px solid var(--ld-border-chrome); }
@@ -689,6 +704,7 @@
 .lark-doc .lark-doc-heading-hover-segment.is-first { border-top-left-radius: 6px; border-top-right-radius: 6px; }
 .lark-doc .lark-doc-heading-hover-segment.is-last { border-bottom-right-radius: 6px; border-bottom-left-radius: 6px; }
 .lark-doc .lark-doc-status { display: flex; justify-content: space-between; gap: 10px; width: min(100%, 870px); margin: 8px auto; padding: 0 4px; color: var(--ld-text-tertiary); font-size: 12px; }
+.lark-doc .lark-doc-mode-toast[hidden] { display: none; }
 .lark-doc .lark-doc-external-panel { position: fixed; z-index: 45; top: 125px; right: 12px; width: 270px; max-height: calc(100vh - 145px); overflow-y: auto; padding: 0; pointer-events: none; }
 .lark-doc .lark-doc-external-panel > * { pointer-events: auto; }
 .lark-doc .lark-doc-external-panel:empty { display: none; }
@@ -701,7 +717,7 @@
 .lark-doc .lark-doc-template-panel { display: grid; gap: 10px; }.lark-doc .lark-doc-template-list { display: grid; gap: 4px; max-height: min(55vh, 420px); overflow-y: auto; }.lark-doc .lark-doc-template-list button { display: grid; gap: 2px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; }.lark-doc .lark-doc-template-list button:hover, .lark-doc .lark-doc-template-list button:focus-visible { border-color: var(--ld-border-template-hover); background: var(--ld-bg-accent); color: var(--ld-text-accent); outline: 0; }.lark-doc .lark-doc-template-list small { color: var(--lark-doc-muted); font-size: 11px; }
 .lark-doc .lark-doc-block-handle { position: absolute; z-index: 20; left: 0; display: flex; gap: 2px; }.lark-doc .lark-doc-block-handle.is-menu-open { z-index: 60; }.lark-doc .lark-doc-block-handle > button { min-width: 25px; padding: 1px; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-main { position: relative; z-index: 21; display: inline-flex; box-sizing: border-box; width: 42px; min-width: 42px !important; height: 26px; min-height: 26px; align-items: center; justify-content: space-between; gap: 2px; padding: 2px 4px !important; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-handle); }.lark-doc .lark-doc-block-handle-main:hover, .lark-doc .lark-doc-block-handle-main:focus-visible { border-color: var(--ld-border-handle-hover); background: var(--ld-bg-handle-hover); color: var(--ld-text-accent); }.lark-doc .lark-doc-block-handle-type { min-width: 22px; color: var(--ld-accent-control); font-size: 15px; font-weight: 650; line-height: 1; text-align: center; }.lark-doc .lark-doc-block-handle-dots { color: var(--ld-text-handle-icon); font-size: 17px; letter-spacing: -3px; line-height: 1; }.lark-doc .lark-doc-block-menu { position: absolute; z-index: 60; left: 0; top: 32px; display: grid; width: 230px; max-height: min(620px, calc(100vh - 16px)); padding: 5px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }.lark-doc .lark-doc-block-menu button { text-align: left; }.lark-doc .lark-doc-block-menu-section { display: grid; gap: 1px; }.lark-doc .lark-doc-block-type-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }.lark-doc .lark-doc-block-type-actions button { display: grid; min-height: 40px; place-items: center; padding: 4px 2px; text-align: center; }.lark-doc .lark-doc-block-type-actions button:hover, .lark-doc .lark-doc-block-type-actions button:focus-visible, .lark-doc .lark-doc-block-type-actions button.active { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }.lark-doc .lark-doc-block-type-icon { display: grid; min-width: 28px; min-height: 28px; place-items: center; color: currentColor; font-size: 17px; font-weight: 600; line-height: 1; }.lark-doc .lark-doc-block-menu-divider { height: 1px; margin: 5px -5px; background: var(--ld-border-chrome); }
 /* AI 预览富文本：markdown 渲染后与正文同构，避免 <pre> 里直接露出 ** 和 # */
-.lark-doc .lark-doc-ai-result--rich { white-space: normal; color: var(--ld-text-menu); font-size: 13px; line-height: 1.7; }
+.lark-doc .lark-doc-ai-result--rich { white-space: normal; color: var(--ld-ai-rich-text); font-size: 13px; line-height: 1.7; }
 .lark-doc .lark-doc-ai-result--rich > :first-child { margin-top: 0; }
 .lark-doc .lark-doc-ai-result--rich > :last-child { margin-bottom: 0; }
 .lark-doc .lark-doc-ai-result--rich h1 { margin: 10px 0 6px; font-size: 18px; line-height: 1.4; }
@@ -718,11 +734,11 @@
 .lark-doc .lark-doc-ai-result--rich code { padding: 1px 4px; border-radius: 3px; background: var(--ld-ai-rich-code-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
 .lark-doc .lark-doc-ai-result--rich pre { margin: 6px 0; padding: 8px 10px; border-radius: 5px; background: var(--ld-ai-rich-pre-bg); overflow: auto; }
 .lark-doc .lark-doc-ai-result--rich pre code { padding: 0; background: none; font-size: .92em; }
-.lark-doc .lark-doc-ai-result--rich blockquote { margin: 6px 0; padding: 2px 0 2px 10px; border-left: 3px solid var(--ld-ai-rich-quote-border); color: var(--ld-text-menu-icon); }
+.lark-doc .lark-doc-ai-result--rich blockquote { margin: 6px 0; padding: 2px 0 2px 10px; border-left: 3px solid var(--ld-ai-rich-quote-border); color: var(--ld-ai-rich-quote-text); }
 .lark-doc .lark-doc-ai-result--rich blockquote p { margin: 0; }
-.lark-doc .lark-doc-ai-result--rich hr { margin: 10px 0; border: 0; border-top: 1px solid var(--ld-ai-rich-hr); }
+.lark-doc .lark-doc-ai-result--rich hr { margin: 10px 0; border: 0; border-top: 1px solid var(--ld-ai-rich-divider); }
 .lark-doc .lark-doc-ai-result--rich strong { font-weight: 650; }
-.lark-doc .lark-doc-ai-result--rich a { color: var(--ld-brand-content); text-decoration: underline; }
+.lark-doc .lark-doc-ai-result--rich a { color: var(--ld-ai-rich-link); text-decoration: underline; }
 /* 块菜单行（AI/操作列表/子菜单触发）：飞书式 32px 行 + 图标 + 文字 */
 .lark-doc .lark-doc-block-menu-ai, .lark-doc .lark-doc-block-menu-row, .lark-doc .lark-doc-block-submenu-trigger { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); font-size: 13px; }
 .lark-doc .lark-doc-block-menu-ai:hover, .lark-doc .lark-doc-block-menu-ai:focus-visible, .lark-doc .lark-doc-block-menu-row:hover, .lark-doc .lark-doc-block-menu-row:focus-visible, .lark-doc .lark-doc-block-submenu-trigger:hover, .lark-doc .lark-doc-block-submenu-trigger:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
@@ -974,14 +990,17 @@
 .lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-frame { justify-content: flex-start; }
 .lark-doc .lark-doc-image[data-align="center"] .lark-doc-image-frame { justify-content: center; }
 .lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-frame { justify-content: flex-end; }
-.lark-doc .lark-doc-image-img, .lark-doc .lark-doc-image-frame img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; filter: brightness(var(--ld-media-dim)); }
+.lark-doc .lark-doc-image-img { display: block; max-width: 100%; height: auto; border: 0; border-radius: 0; }
+.lark-doc .lark-doc-image-img,
+.lark-doc .lark-doc-image-frame img { filter: brightness(var(--ld-media-dim)); }
 /* renderHTML 退化路径（无 shell）：自己再兜一次「栏宽 − 20」，并按 align 摆位。 */
 .lark-doc .lark-doc-image > .lark-doc-image-img { max-width: calc(100% - 20px); margin-left: auto; margin-right: auto; }
 .lark-doc .lark-doc-image[data-align="left"] > .lark-doc-image-img { margin-left: 0; }
 .lark-doc .lark-doc-image[data-align="right"] > .lark-doc-image-img { margin-right: 0; }
 /* 深色下的图片压暗开关（T3-05）：默认 --ld-media-dim: 1 = 一个像素都不改；
    宿主觉得深纸上媒体太亮时自己设 0.8~0.9。hover 一律恢复原亮度（读图场景）。 */
-.lark-doc .lark-doc-image-img:hover { filter: none; }
+.lark-doc .lark-doc-image-img:hover,
+.lark-doc .lark-doc-image-frame img:hover { filter: none; }
 .lark-doc .lark-doc-image.is-selected .lark-doc-image-shell,
 .lark-doc .lark-doc-image.is-selected > .lark-doc-image-img { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
 
@@ -2338,24 +2357,33 @@
 
 /* ==================================================================
    P4-06 · 文档三态模式（编辑 / 修订 / 阅读）
-   - 顶栏按钮 84×32：03 只采集到 bg 为白底（不是主色）、文字为深灰、radius 6；
-     白底即 --ld-bg-surface-chrome，文字即 --ld-text，都复用现有 token（不另造文档色值）。
-     内部三个位置框（03 实测）：图标 16×22 @x+9、文字 28×22 @x+29、下拉箭头 26×20 @x+57。
-     所以 padding-left 9 + gap 4 正好把文字推到 x+29，箭头字形 12 落在那个 26 宽的位置框里。
-   - 下拉 180×160：三项各 170×50 ⇒ 四周各 5px；**不描边**（160 是含上下 5px 的整高，
-     再加 1px 边框会把三项挤出 2px）。fixed 由 toggleModeMenu 给坐标 —— 按钮在
-     `.lark-doc-header-actions` 里，那个容器 `overflow-x: auto`，absolute 会被裁。
+   **下拉完全复用共享原语**（`ui/select.js`，与工具栏「字号」同一套交互与弹层 UI）：
+   - 顶栏按钮 84×32：白底（--ld-bg-surface-chrome，不是主色）、文字深灰、radius 6。
+     内部三个位置框（03 实测）：图标 16×22 @x+9、文字 28×22 @x+29、箭头 26×20 @x+57。
+     所以 padding-left 9 + gap 4 正好把文字推到 x+29。
+   - 弹层几何交给原语（fixed / 下方放不下翻转 / 贴右边界左移），这里只覆写：
+     最小宽 340（三项都是「主标题 + 副标题」两行，见 docModes.MODE_MENU_MIN_WIDTH）、
+     **无 ✓ 列**（飞书这份菜单不画勾选列，选中态靠整行底色表达）、行内两行左对齐。
+   - 选中行配色**只能走主题 token**（--ld-bg-accent-active / --ld-text-accent-hover，
+     与块菜单 `.lark-doc-menu-active` 同一套语义）。别写 `--ld-bg-selected` /
+     `--ld-brand-content`：那两枚是写死的飞书蓝字面量，默认绿档不会跟着解析，
+     拉进来就是「选中底色不符合当前主题」——飞书档自己会把 accent 解析成蓝，不必手写。
    - 提示条 = 顶部中性条：1512×16 @y=32 / z 9999 / fixed 全部照抄 06 §6.2 的
      `.ud__msg-manager--top`，配色只取 --ld-bg-surface-chrome / --ld-text / --ld-shadow-menu。
      🔴 不复用右下角 `.lark-doc-toast`：那是琥珀 error 语义，切换成功用它会像报错。
    ================================================================== */
-.lark-doc .lark-doc-mode-switch { flex: 0 0 auto; }
-.lark-doc .lark-doc-mode-btn { display: flex; box-sizing: border-box; width: 84px; height: 32px; min-width: 84px; align-items: center; gap: 4px; padding: 0 0 0 9px; border: 0; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-family: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
-.lark-doc .lark-doc-mode-btn:hover:not(:disabled), .lark-doc .lark-doc-mode-btn:focus-visible:not(:disabled), .lark-doc .lark-doc-mode-btn[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text); outline: 0; }
-.lark-doc .lark-doc-mode-btn-icon { flex: 0 0 auto; }
-.lark-doc .lark-doc-mode-btn-label { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
-.lark-doc .lark-doc-mode-btn-caret { flex: 0 0 auto; color: var(--ld-text-icon-tertiary); }
-.lark-doc .lark-doc-mode-menu { position: fixed; z-index: 1050; display: grid; box-sizing: border-box; width: 180px; height: 160px; padding: 5px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-mode-select { flex: 0 0 auto; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-trigger { width: 84px; min-width: 84px; height: 32px; gap: 4px; padding: 0 0 0 9px; border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-size: 14px; line-height: 1; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-trigger:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-trigger:focus-visible:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-trigger[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); color: var(--ld-text); outline: 0; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-icon { flex: 0 0 auto; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-label { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-caret { flex: 0 0 auto; color: var(--ld-text-icon-tertiary); }
+/* `modes.allow` 只剩一项：按钮退化成静态文字。语义上仍禁用（点了不弹菜单、无 haspopup），
+   但**不要 disabled 的 0.45 透明度** —— 它不是「不可用的控件」，只是没有别的选项。
+   视觉保持与可切换态一致，只去掉 caret。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-trigger:disabled { opacity: 1; cursor: default; }
+.lark-doc .lark-doc-mode-select.is-static .lark-doc-select-caret { display: none; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu { z-index: 1050; padding: 5px; border-radius: 9px; }
 /* 必须显式写 color —— 通用规则 `.lark-doc button:hover:not(:disabled)` 会把菜单文字刷成强调色（同帮助菜单写法）。 */
 .lark-doc .lark-doc-mode-item { display: flex; flex-direction: column; box-sizing: border-box; width: 170px; height: 50px; align-items: flex-start; justify-content: center; gap: 2px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text); font-family: inherit; text-align: left; cursor: pointer; }
 .lark-doc .lark-doc-mode-item:hover:not(:disabled), .lark-doc .lark-doc-mode-item:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text); outline: 0; }
@@ -2367,6 +2395,20 @@
 .lark-doc .lark-doc-mode-toast-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; border-radius: 50%; background: var(--ld-success); color: var(--ld-text-on-brand); font-size: 11px; font-weight: 700; line-height: 16px; }
 .lark-doc .lark-doc-mode-toast-text { overflow: hidden; color: var(--ld-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 @keyframes lark-doc-message-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button { gap: 0; padding: 5px 10px; border-radius: 6px; color: var(--ld-text); }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-menu button.is-highlight { color: var(--ld-text); }
+/* 选中行 = 「已生效」语义：底与字都取本档激活 token，跟 `.lark-doc-menu-active`（块菜单）
+   完全同一套。绿档解析成浅绿底 + 深绿字，飞书档自动解析成浅蓝底 + 蓝字（与截图一致）。
+   本选择器 (0,4,1) 高于原语里 `button:hover` / `.is-highlight` 的 (0,3,1)，
+   所以鼠标扫过选中行时底色不会被冲淡成 --ld-bg-hover-select（实测已验证，别再加
+   一串 :hover 补丁）。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active { background: var(--ld-bg-accent-active); }
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active .lark-doc-select-item-label { color: var(--ld-text-accent-hover); }
+/* 这份菜单不画勾选列（截图口径）：整行宽度全给文案，选中态靠底色；
+   副标题保持原语的 --ld-text-secondary，只给主标题上强调色。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-check { display: none; }
+.lark-doc .lark-doc-mode-select .lark-doc-select-item-label { font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
 
 /* ==================================================================
    P4-06 · 修订模式：行内标记 + 右侧建议面板

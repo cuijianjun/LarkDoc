@@ -1,6 +1,18 @@
 'use strict'
 
 const assert = require('assert')
+const fs = require('fs')
+const path = require('path')
+const sourceRoot = path.resolve(__dirname, '../src')
+const originalLoader = require.extensions['.js']
+require.extensions['.js'] = (module, filename) => {
+  if (!filename.startsWith(sourceRoot + path.sep)) return originalLoader(module, filename)
+  const { code } = require('@babel/core').transformSync(fs.readFileSync(filename, 'utf8'), {
+    babelrc: false, configFile: false, plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')],
+  })
+  module._compile(code, filename)
+}
+const { createWorkspaceState, createWorkspaceController } = require('../src/workspace/WorkspaceController')
 const { Schema } = require('@tiptap/pm/model')
 const { EditorState, TextSelection } = require('@tiptap/pm/state')
 
@@ -94,7 +106,65 @@ assert.strictEqual(proposal.requiresConfirmation, true)
 assert.strictEqual(proposal.operations[0].type, 'propose_insert')
 assert.deepStrictEqual(proposal.target, { scope: 'document', from: 0, to: 8, source: 'abcdef' })
 
+async function verifyNativeWorkspace() {
+  const events = []
+  const writes = []
+  const editor = { schema, state: { doc }, isEditable: true }
+  const props = { initialContent: '<p>初始</p>', initialTitle: '初始', saveHtml: true, persistence: store }
+  const state = createWorkspaceState(props)
+  const host = {
+    getEditor: () => editor, getJSON: () => json, getHTML: () => '<p>draft</p>',
+    setContent: value => { writes.push(value); return true },
+    writable: () => !controller.isReadonly(), emit: (...args) => events.push(args),
+    confirm: () => true,
+  }
+  const controller = createWorkspaceController({ state, props, host })
+  await controller.onReady()
+  assert.strictEqual(state.initialized, true, '原生工作区必须完成初始化')
+  assert.strictEqual(state.title, 'Local', '原生工作区必须恢复草稿标题')
+  assert.deepStrictEqual(writes[0], json, '原生工作区必须恢复草稿正文')
+  const ready = events.find(([event]) => event === 'ready')[1]
+  assert.strictEqual(ready.editor, editor)
+  assert.strictEqual(ready.document, controller)
+  assert.strictEqual(controller.setTitle('原生保存'), true)
+  await controller.saveNow(true)
+  assert.strictEqual(store.load().title, '原生保存')
+  assert.strictEqual(store.load().html, '<p>draft</p>')
+  assert(events.some(([event, payload]) => event === 'save' && payload.status === 'saved' && payload.manual))
+  await controller.createSnapshot()
+  assert.strictEqual(state.snapshots.length, 20)
+  assert.strictEqual(state.snapshots[0].title, '原生保存')
+  await controller.toggleHistory()
+  assert.strictEqual(state.historyOpen, true)
+  await controller.restoreSnapshot(state.snapshots[0].id)
+  assert.deepStrictEqual(writes[writes.length - 1], json)
+  assert.strictEqual(state.notice, '已恢复快照，可撤销正文')
+  await controller.restoreSnapshot('missing')
+  assert.match(state.notice, /不存在/)
+  controller.setReadonly(true)
+  assert.strictEqual(controller.isReadonly(), true)
+  assert.strictEqual(controller.setTitle('不得修改'), false)
+  assert.strictEqual(controller.insertContent('不得插入'), false)
+  controller.dispose()
+  assert.strictEqual(controller.isDisposed(), true)
+
+  const failureEvents = []
+  const failedState = createWorkspaceState({ initialContent: '<p>保留</p>', initialTitle: '保留' })
+  const failed = createWorkspaceController({ state: failedState, props: { persistence: denied }, host: {
+    getEditor: () => editor, emit: (...args) => failureEvents.push(args),
+    setContent: () => assert.fail('读取失败不得替换原正文'),
+  } })
+  await failed.onReady()
+  assert.strictEqual(failedState.html, '<p>保留</p>')
+  assert.strictEqual(failedState.title, '保留')
+  assert.strictEqual(failedState.storageError, true)
+  assert(failureEvents.some(([event]) => event === 'error'))
+  assert(failureEvents.some(([event, payload]) => event === 'save' && payload.status === 'failed'))
+  failed.dispose()
+}
+
 async function verifyStream() {
+  await verifyNativeWorkspace()
   let preview = ''
   let finished = 0
   await new Promise(resolve => {

@@ -17,10 +17,9 @@
 
 | 宿主 | 走哪个入口 | 联网侧要改的文件 | 内网侧要额外带什么 |
 | --- | --- | --- | --- |
-| **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>0.13 起 | `browser` → `dist/lark-doc.umd.min.js` | **不用改配置**；子路径写全、需要公式时设 `__LARK_DOC_PUBLIC_PATH__` | `lark-doc` tgz、`vue` tgz |
-| **Vue 2.7 + webpack 4**（0.12 及更早） | `main` → `dist/lark-doc.common.js` | `vue.config.js`（alias + babel 规则）、业务组件的 `import` 写全路径 | `lark-doc` tgz、`vue` tgz、**2 个 babel 插件 tgz** |
+| **Vue 2.7 + webpack 4**（vue-cli 4 / 老 vue-cli）<br>当前版本 | 一行 alias → `dist/lark-doc.common.js` | **只改 `vue.config.js` 一处**（alias）；子路径与样式写全 `dist/` 路径 | `lark-doc` tgz、`vue` tgz |
 | **Vue 2.7 + webpack 5**（vue-cli 5 / 原生 webpack5） | `module` → `dist/lark-doc.esm.js` | **不用改配置**，只改业务代码的 `import` | `lark-doc` tgz、`vue` tgz |
-| **Vue 3 + Vite** | `lark-doc/element`（UMD，自带 Vue 2 运行时与样式） | `vite.config.js`（`isCustomElement`）、`index.html` 加一行 `<script>` | **只要 `dist/` 目录，不用装 npm 包** |
+| **Vue 3 + Vite** | `lark-doc`，`new LarkDoc({ element })` | 不需要 lark-doc 专属配置；宿主正常安装 Vue3/Vite | tgz 或 npm 包；使用 Element 标签时才需额外带整套 `dist/` |
 
 判断自己是哪一档，只跑一条命令：
 
@@ -36,7 +35,7 @@ node -p "require('webpack/package.json').version" 2>/dev/null || npx vite --vers
 
 ### 1.1 为什么必须单独出包
 
-内网连不上 registry，`npm install lark-doc` 会直接失败。而 lark-doc 的 `dist` 在运行时还要从自身 `node_modules` 取 28 个运行时依赖（`vue`、`@tiptap/*`、`katex`、`mammoth` 等），所以不能只拷 `dist/` 了事——**必须打成自带依赖闭包的 tgz**。
+内网连不上 registry，`npm install lark-doc` 会直接失败。npm/tgz 安装方式需要可解析的依赖闭包，内网可使用随依赖打包的 tgz；静态 Element 方式则直接部署完整 `dist/`，无需安装 npm 包。当前 lark-doc 不要求 Vue runtime；Vue2 宿主自身的框架依赖由宿主管理。
 
 `scripts/pack-intranet.sh` 就是干这个的，它顺手修掉三类只有老 npm / Windows 才暴露的坑（详见[内网服务器部署 · 3.4](/guide/deployment-intranet#deploy-npm6)）。
 
@@ -47,13 +46,13 @@ cd apps/lark-doc
 node -v          # 必须是 v14.21.3
 npm -v           # >= 8.19.4
 npm run check    # 全绿再往下走
-bash scripts/pack-intranet.sh --version 0.12.0
+bash scripts/pack-intranet.sh --version 当前版本
 ```
 
 `dist/` 已是最新时可跳过约 4 分钟的构建：
 
 ```bash
-bash scripts/pack-intranet.sh --version 0.12.0 --skip-build
+bash scripts/pack-intranet.sh --version 当前版本 --skip-build
 ```
 
 ### 1.3 产出什么、带走什么
@@ -80,21 +79,17 @@ cd dist-intranet && sha256sum -c sha256.txt
 
 ## 2. 方案 A：Vue 2.7 + webpack 4（vue-cli 4）{#mig-vue2-wp4}
 
-::: tip 0.13 起本节大幅简化：不用改 `vue.config.js`
-`package.json` 的 `browser` 已指向 UMD 产物（ES2018 语法、无 `import.meta`、样式随产物注入），webpack 4 会先命中它。所以：
-
-- **不用** alias 到 `dist/lark-doc.common.js`
-- **不用** 装那两个 babel 插件（`@babel/plugin-proposal-optional-chaining` / `-nullish-coalescing-operator`），也就不用为它们打 tgz
-- 只剩两件事：子路径写全（`lark-doc/dist/lark-doc-element.umd.min.js`），以及用到公式 / Word 导出时设 `window.__LARK_DOC_PUBLIC_PATH__`
+::: tip 当前版本推荐直接使用包导出的主入口
+webpack 4 项目统一按当前发布产物接入，不再配置 lark-doc 专属 alias、legacy 入口或旧版迁移参数。主入口和样式均通过公开导出解析：
 
 ```js
-// src/main.js —— 0.13+ 的全部配置
-window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'   // 与 dist 托管前缀一致；不用公式可不设
+// src/main.js
 import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
 ```
 
-**下面 2.1~2.7 是 0.12 及更早版本的完整流程**，版本锁在旧版时照抄；已升到 0.13 可以只读 2.6（vendor 打包）与 2.7（验收），跳过配置与插件部分。
-:::
+若项目仍使用无法解析 `exports` 的旧构建链，应升级构建工具；不要重新指向源码或手写旧版 dist 路径。
+
 
 **关键顺序：先在联网机上改好、跑通，再把改好的项目搬进去**——在内网排编译错，成本是联网时的十倍。
 
@@ -193,7 +188,7 @@ npm pack @babel/plugin-proposal-nullish-coalescing-operator@7
 ```
 你的项目/
 └── vendor/
-    ├── lark-doc-0.12.0-intranet.tgz
+    ├── lark-doc-当前版本-intranet.tgz
     ├── vue-2.7.14-intranet.tgz
     ├── babel-plugin-proposal-optional-chaining-7.x.x.tgz
     └── babel-plugin-proposal-nullish-coalescing-operator-7.x.x.tgz
@@ -205,7 +200,7 @@ npm pack @babel/plugin-proposal-nullish-coalescing-operator@7
 {
   "dependencies": {
     "vue": "file:./vendor/vue-2.7.14-intranet.tgz",
-    "lark-doc": "file:./vendor/lark-doc-0.12.0-intranet.tgz"
+    "lark-doc": "file:./vendor/lark-doc-当前版本-intranet.tgz"
   },
   "devDependencies": {
     "@babel/plugin-proposal-optional-chaining": "file:./vendor/babel-plugin-proposal-optional-chaining-7.x.x.tgz",
@@ -228,7 +223,7 @@ npm install --no-audit --no-fund
 ### 2.7 内网 · 第 7 步：冒烟三条
 
 ```bash
-node -p "require('lark-doc/package.json').version"          # 0.12.0
+node -p "require('lark-doc/package.json').version"          # 当前版本
 node -e "const m=require('lark-doc');console.log(typeof m.LarkDoc, Object.keys(m).length)"
 # 期望：function 27
 node -p "require('@babel/plugin-proposal-optional-chaining/package.json').version"
@@ -248,7 +243,7 @@ npm run build
 | --- | --- | --- |
 | `Module parse failed: Unexpected token` | alias 没生效，命中了 esm 产物（`import.meta`） | 2.2 的 ① 是否真的写进 `configureWebpack.resolve.alias` |
 | `Module parse failed` 但报在 `?.` / `??` 处 | babel 规则没匹配上或排在后面 | 2.2 的 ② 必须 `unshift`；正则要能匹配 `node_modules/lark-doc/dist/...` |
-| `Cannot read properties of undefined (reading 'call')`，白屏 | 0.11.2 之前的 lib 内层 runtime 标识符冲突 | 升级包，宿主侧无法绕过 |
+| `Cannot read properties of undefined (reading 'call')`，白屏 | 加载了旧版或不完整的发布产物 | 重新安装 `lark-doc@0.14.2` 并确认实际解析到 `dist/` |
 | `Failed to resolve entry for 'lark-doc/style.css'` | webpack4 不读 `exports` | 改成 `lark-doc/dist/lark-doc.css` |
 | `Can't resolve '@babel/plugin-proposal-*'` | 插件没带进内网 | 回到 2.5 补 tgz |
 
@@ -316,7 +311,7 @@ module.exports = {
 {
   "dependencies": {
     "vue": "file:./vendor/vue-2.7.14-intranet.tgz",
-    "lark-doc": "file:./vendor/lark-doc-0.12.0-intranet.tgz"
+    "lark-doc": "file:./vendor/lark-doc-当前版本-intranet.tgz"
   }
 }
 ```
@@ -328,24 +323,21 @@ npm run build
 
 ### 3.4 方案 A 与 B 的差别，只记三行
 
-| | webpack 4（0.13+） | webpack 4（0.12-） | webpack 5 |
-| --- | --- | --- | --- |
-| 入口 | `browser`（UMD，gzip 447 KB） | `main`（CJS，8.6 MB） | `module`（ESM，首屏 gzip ≈ 446 KB） |
-| 宿主配置 | 无（只设 `__LARK_DOC_PUBLIC_PATH__`） | alias + babel 规则，两处 | 无 |
-| 额外依赖 | 无 | 2 个 babel 插件 | 无 |
+| | webpack 4 | webpack 5 / Vite |
+| --- | --- | --- |
+| 入口 | 升级构建链后使用包公开主入口；不指向源码、不使用 legacy alias | 直接使用包公开主入口 |
+| 宿主配置 | 当前版本不需要 lark-doc 专属 alias；样式使用 `lark-doc/style.css` | 无 |
+| 额外依赖 | 由宿主按自身编辑器能力声明 | 由宿主按自身编辑器能力声明 |
 
 ---
 
 ## 4. 方案 C：Vue 3 + Vite {#mig-vue3-vite}
 
-### 4.1 先搞清楚为什么不能照 Vue 2 那样装包
+### 4.1 Vue3 可以直接使用默认入口
 
-`lark-doc` 主入口的 peer 依赖是**强制**的：`vue ^2.7.14` 和 `@tiptap/vue-2 ^3.32.0`。在 Vue 3 项目里 `npm i lark-doc`：
+当前默认、Element 和 lite 产物均无 Vue 运行时依赖，也没有 `vue` 或 `@tiptap/vue-2` peer。Vue3 / React / 原生宿主都可正常 `npm i lark-doc`，无需 `--force` 或 `--legacy-peer-deps`，随后在客户端挂载 `new LarkDoc()`。
 
-- npm 7+ → `ERESOLVE unable to resolve dependency tree`，装不上；
-- 硬装（`--force` / `--legacy-peer-deps`）→ 浏览器里 `Vue.extend is not a function`，白屏。
-
-Vue 3 能用的只有 **element 入口**：它是一份 UMD，**内联了自己的 Vue 2 运行时和全部样式**，和宿主的 Vue 3 互不干扰。
+下面保留的是另一条可选路线：静态托管 Element UMD，使用 `<lark-doc>` 标签。它使用同一份 DOM renderer，样式随 JS 注入，并非内联 Vue2 的避让方案。
 
 ### 4.2 推荐路线：不装包，把 `dist/` 当静态资源引
 
@@ -441,7 +433,7 @@ ls dist/vendor/lark-doc/fonts | wc -l    # 期望 28
 Vue 3 项目里装 tgz 要显式跳过 peer 校验（内网 npm 8+ 才有这个参数；npm 6 只会 warn，不用加）：
 
 ```bash
-npm i ./vendor/lark-doc-0.12.0-intranet.tgz --legacy-peer-deps --no-audit --no-fund
+npm i ./vendor/lark-doc-当前版本-intranet.tgz --no-audit --no-fund
 ```
 
 ```js
@@ -476,8 +468,8 @@ import 'lark-doc/element'   // 自动注册 <lark-doc>
 
 | 宿主 | 联网侧改的文件 | 内网侧新增的文件 |
 | --- | --- | --- |
-| Vue 2.7 + webpack 4（0.13+） | 业务组件 `import`（要公式/Word 再加一行 `__LARK_DOC_PUBLIC_PATH__`） | `vendor/*.tgz`、`package.json` 的 `file:` |
-| Vue 2.7 + webpack 4（0.12-） | `vue.config.js`、业务组件 `import` | `vendor/*.tgz`、`package.json` 的 `file:`、2 个 babel 插件 tgz |
+| Vue 2.7 + webpack 4（当前版本） | 业务组件 `import`（要公式/Word 再加一行 `__LARK_DOC_PUBLIC_PATH__`） | `vendor/*.tgz`、`package.json` 的 `file:` |
+| Vue 2.7 + webpack 4（当前版本） | `vue.config.js`、业务组件 `import` | `vendor/*.tgz`、`package.json` 的 `file:` |
 | Vue 2.7 + webpack 5 | 业务组件 `import`（用了 element 再加 `vue.config.js`） | `vendor/*.tgz`、`package.json` 的 `file:` |
 | Vue 3 + Vite | `vite.config.js`、`index.html` | `public/vendor/lark-doc/`（整目录） |
 

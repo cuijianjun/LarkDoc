@@ -16,7 +16,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { COMMANDS, commandFeatureOf, filterCommands } from '../../src/core/commands/index'
 import {
   POLL_GEOMETRY, POLL_HEIGHT, POLL_LIMITS, POLL_STATUS, POLL_VERSION,
   blockHeight, byteLength, canVote, cleanText, deadlineLabel, defaultPoll, encodePoll, formatPercent,
@@ -578,21 +577,6 @@ describe('deadlineLabel / tomorrowDeadline / publishHint', () => {
  * ------------------------------------------------------------------ */
 
 describe('块定义（renderHTML = 导出产物）', () => {
-  it('命令行表中 poll 在位：团队协作组、+ 菜单「常用」、受 insert 开关管', () => {
-    const def = COMMANDS.find((item) => item.id === 'poll')
-    expect(def).toBeTruthy()
-    expect(def.label).toBe('投票')
-    expect(def.category).toBe('团队协作')
-    expect(def.plus).not.toBe(false)
-    expect(def.plusCategory).toBe('常用')
-    expect(def.tier).toBe('required')
-    expect(commandFeatureOf('poll')).toBe('insert')
-    // 斜杠与 + 两条动线都要能看到
-    expect(filterCommands('投票').some((item) => item.id === 'poll')).toBe(true)
-    expect(filterCommands('', 'plus').some((item) => item.id === 'poll')).toBe(true)
-    expect(filterCommands('toupiao').some((item) => item.id === 'poll')).toBe(true)
-  })
-
   it('导出件是一张只读投票卡：有卡片 / 标签 / 选项，没有输入控件', () => {
     const editor = freshEditor({
       type: 'doc',

@@ -152,12 +152,10 @@ export class LarkDocElement extends HTMLElement {
     // 这是 Web Component 的通用惯例；content 属性存在时以属性为准。
     const slotHTML = this._consumeSlotHTML()
     if (slotHTML && this._options.content == null && props.initialContent == null) {
-      // 无显式 content 时，每次重建都使用缓存的声明正文，避免沿用 ready 回调写入的内容。
+      // slot 只提供初始化兜底；有持久化草稿时仍由 Workspace 在 ready 前恢复，
+      // 避免重连把宿主已写入、已保存的正文重置为声明内容。
       this._options.content = slotHTML
       props.initialContent = slotHTML
-      // 仅 Web Component slot 需要在实例重建时压过持久化正文；普通宿主显式
-      // initialContent 仍保留旧的 persistence 契约（正文和标题都可恢复）。
-      this._options.preserveInitialContent = true
     }
     this._options.element = this
     try {

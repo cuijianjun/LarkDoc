@@ -1,15 +1,8 @@
 /**
- * P6b 接线（09 §5.8 收口）：五条线「互不重叠地挂进同一个编辑器实例」。
+ * P6b 接线：文档级能力通过原生宿主和原生 UI 挂进同一个编辑器实例。
  *
- * 这里守的是四件**一眼看不见、错了也不报错**的事：
- *   1. `p6bMixin` 真的挂在门面的 mixins 数组里 —— 漏了不会崩，只会所有能力静默失效；
- *   2. `LarkDocOverlays` 真的出现在模板里（Vue 2 `components` 走 mergeAssets，
- *      光 import 不写标签就是「注册了但没用」）；
- *   3. 浮层包裹层**不带 v-if**（04 §4.6.7③「弹窗关闭 → toast」会被父级提前摘掉）；
- *   4. `readingModeMixin` 排在最后 —— 它的 `writable()` 是另四条线的判据上游，
- *      靠后才能压住前面的旧口径（Vue 2 同层后写胜）。
- *
- * 全部读源码文本：`.vue` 在本仓库单测里禁止 import（core 不得依赖组件）。
+ * 守卫聚合顺序、浮层宿主、真实插入 / 移除以及 capability 视觉投影。
+ * 全部读取源码文本，不加载组件或编辑器的运行时依赖。
  */
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
@@ -18,104 +11,100 @@ import path from 'path'
 const root = path.resolve(__dirname, '../..')
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
 
-const sfc = read('src/components/lark-doc/LarkDocEditor.vue')
+const nativeHost = read('src/editor/nativeEditorHost.js')
+const shell = read('src/ui/workspaceShell.js')
 const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
-const overlays = read('src/components/lark-doc/editor/LarkDocOverlays.vue')
+const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
+const overlaysRenderer = read('src/ui/overlays.js')
+const panelsRenderer = read('src/ui/panels.js')
+const topBarRenderer = read('src/ui/topBar.js')
 
-const mixinsLine = sfc.split('\n').find((line) => line.trim().startsWith('mixins: ['))
-// 聚合层的 mixins 数组是**多行**的（九个 mixin 一行放不下），所以整段取到 `],` 为止。
-const aggregatorMixins = (() => {
-  const lines = aggregator.split('\n')
-  const start = lines.findIndex((line) => line.trim().startsWith('mixins: ['))
-  const end = lines.findIndex((line, i) => i > start && line.trim() === '],')
-  return lines.slice(start, end + 1).join('\n')
-})()
-
-// 「不许出现」类断言必须先看**代码**而不是注释：本文件的头注释里就把 transform /
-// filter 这些禁词当说明写了，不剥注释会自己把自己判红。
-const overlaysCode = overlays
-  .replace(/<!--[\s\S]*?-->/g, '')
-  .replace(/^[^\n\S]*\/\/.*$/gm, '')
+// 宿主和聚合层都可能使用多行 mixins 数组，必须匹配完整数组。
+const hostMixins = nativeHost.match(/mixins:\s*\[([\s\S]*?)\]/)[1]
+const aggregatorMixins = aggregator.match(/mixins:\s*\[([\s\S]*?)\]/)[1]
 
 describe('P6b · 门面接线', () => {
-  it('p6bMixin 已注册 + 模板挂载浮层组（缺一即全线静默失效）', () => {
-    expect(sfc).toContain("import p6bMixin from './editor/p6bMixin'")
-    expect(mixinsLine).toContain('p6bMixin')
-    expect(sfc).toContain('<LarkDocOverlays :ed="self" />')
+  it('p6bMixin 与 overlaysUiMixin 已注册，外壳挂载原生浮层宿主', () => {
+    expect(nativeHost).toContain("import p6bMixin from '../components/lark-doc/editor/p6bMixin'")
+    expect(nativeHost).toContain("import overlaysUiMixin from '../components/lark-doc/editor/overlaysUiMixin'")
+    expect(hostMixins).toContain('p6bMixin')
+    expect(hostMixins).toContain('overlaysUiMixin')
+    expect(shell).toContain("const overlayHost = ownerDocument.createElement('div')")
+    expect(shell).toContain('headingNumberMenuHost, overlayHost)')
+    expect(nativeHost).toContain("['Overlays', 'refreshOverlays']")
+    expect(nativeHost).toContain('host[`mount${domain}`]()')
+    expect(overlaysUi).toContain('createOverlays')
   })
 
-  it('门面仍守 P0-03 的 <700 行门禁（含 P6b 全部接线）', () => {
-    expect(sfc.split('\n').length).toBeLessThan(700)
+  it('原生宿主仍守 P0-03 的 <700 行门禁（含 P6b 全部接线）', () => {
+    expect(nativeHost.split('\n').length).toBeLessThan(700)
   })
 
-  it('九个子 mixin 全在聚合层里，且 readingModeMixin 排最后', () => {
+  it('文档级子 mixin 全在聚合层里，且 readingModeMixin 排最后', () => {
     const names = [
       'commentsMixin', 'versioningMixin', 'shareMixin', 'exportMixin',
-      // UI 补齐线四浮层：顶栏「更多」/ 链接悬浮卡 / 封面 / 代码语言选择器。
       'topbarMoreMixin', 'linkHoverMixin', 'coverMixin', 'codeLangMixin',
+      'confirmMixin', 'createMenuMixin', 'notifyMixin', 'relationBitableMixin',
       'readingModeMixin',
     ]
     for (const name of names) {
       expect(aggregator).toContain(`import ${name} from './${name}'`)
-      expect(aggregatorMixins).toContain(name)
     }
-    // 末项必须是 readingModeMixin：它的 writable() 是另八条线的判据上游。
-    expect(aggregatorMixins.trim().replace(/\s+/g, ' ').endsWith('readingModeMixin, ],')).toBe(true)
+    expect(aggregatorMixins.split(',').map(name => name.trim()).filter(Boolean)).toEqual(names)
   })
 })
 
 describe('P6b · 浮层容器', () => {
-  it('九条线的面板都是兄弟节点（fixed 定位的祖先不能有 transform/非 static）', () => {
-    for (const tag of [
-      'CommentPanel', 'VersionPanel', 'SaveVersionDialog', 'SharePopover', 'ExportDialog',
-      // UI 补齐线四浮层也挂在兄弟层：它们在 DOM 里离顶栏/代码块很远，只有这里能
-      // 保证 fixed 祖先链干净（封面**槽**是文档流元素，不在这里）。
-      'TopbarMoreMenu', 'LinkHoverCard', 'CoverPanel', 'CodeLangPicker',
-    ]) {
-      expect(overlays).toContain(`<${tag} :ed="ed" />`)
+  it('原生渲染器保留分享 / 权限 / 导出完整结构与语义属性', () => {
+    for (const className of [
+      'lark-doc-share-mask', 'lark-doc-share-popover', 'lark-doc-permission-layer',
+      'lark-doc-share-confirm', 'lark-doc-share-password', 'lark-doc-export-backdrop',
+      'lark-doc-export-panel',
+    ]) expect(overlaysRenderer).toContain(className)
+    expect(overlaysRenderer).toContain("role', 'dialog'")
+    expect(overlaysRenderer).toContain('aria-modal')
+    expect(overlaysRenderer).toContain('aria-label')
+  })
+
+  it('原生浮层使用真实插入 / 移除，并保留遮罩、Esc 业务出口', () => {
+    expect(overlaysRenderer).toContain('mountNode(host, el, true)')
+    expect(overlaysRenderer).toContain('event.target === backdrop')
+    expect(overlaysUi).toContain('destroyOverlays()')
+  })
+
+  it('评论、历史版本和保存版本控件保留 capability 与禁用态投影', () => {
+    const commentPanel = panelsRenderer.slice(panelsRenderer.indexOf('export function createCommentPanel('))
+    const versionPanel = panelsRenderer.slice(
+      panelsRenderer.indexOf('export function createVersionPanel('),
+      panelsRenderer.indexOf('export function createSaveVersionDialog('),
+    )
+    const saveVersion = panelsRenderer.slice(
+      panelsRenderer.indexOf('export function createSaveVersionDialog('),
+      panelsRenderer.indexOf('export function createCommentPanel('),
+    )
+    for (const source of [commentPanel, versionPanel, saveVersion]) {
+      expect(source).toContain("'data-capability'")
+      expect(source).toContain("'aria-disabled'")
     }
-    // 九个子节点同为一个根 div 的直系孩子：不含第二层包裹容器。
-    expect(overlays).toContain('<div class="lark-doc-p6b-layer">')
+    expect(commentPanel).toContain("control.id === 'resolve' ? 'canResolveComment' : 'canComment'")
+    expect(versionPanel).toContain("'data-capability', 'canRestoreVersion'")
+    expect(saveVersion).toContain("'data-capability', 'canCreateVersion'")
   })
 
-  it('包裹层不带 v-if / transform / filter / overflow（会改写 fixed 包含块或提前摘 toast）', () => {
-    const wrapper = '<div class="lark-doc-p6b-layer">'
-    expect(overlaysCode).toContain(wrapper)
-    expect(overlaysCode).not.toContain('v-if')
-    // 五子节点自管理显隐，容器自身永不参与定位：连 <style> 都没有。
-    expect(overlaysCode).not.toContain('<style')
-    for (const forbidden of ['transform', 'filter', 'overflow', 'position']) {
-      expect(overlaysCode).not.toContain(forbidden)
+  it('分享、权限设置和导出控件保留 capability 与禁用态投影', () => {
+    for (const control of ['permissionButton', 'toggle', 'submit', 'label']) {
+      const capability = control === 'permissionButton' || control === 'toggle' ? 'canManagePermission' : 'canExport'
+      expect(overlaysRenderer).toContain(`attr(${control}, 'data-capability', '${capability}')`)
+      expect(overlaysRenderer).toContain(`attr(${control}, 'aria-disabled',`)
     }
+    expect(overlaysUi).toContain("shareCanManagePermission: this.shareCan('canManagePermission')")
+    expect(overlaysUi).toContain('exportCanExport: this.exportCanExport')
+    expect(overlaysUi).toContain('exportSubmitDisabled: this.exportSubmitDisabled')
   })
 
-  it('ed 是 LarkDocEditor 实例本身，原样下传（面板直接读 ed.editor / ed.session）', () => {
-    expect(overlays).toContain('ed: { type: Object, required: true }')
-  })
-
-  it('核心浮层控件声明 capability 视觉投影字段', () => {
-    const sources = [
-      read('src/components/lark-doc/CommentPanel.vue'),
-      read('src/components/lark-doc/ExportDialog.vue'),
-      read('src/components/lark-doc/VersionPanel.vue'),
-      read('src/components/lark-doc/SaveVersionDialog.vue'),
-      read('src/components/lark-doc/SharePopover.vue'),
-      read('src/components/lark-doc/PermissionDialog.vue'),
-      read('src/components/lark-doc/editor/TopbarMoreMenu.vue'),
-    ]
-    expect(sources[0]).toContain(':data-capability=')
-    expect(sources[0]).toContain(':aria-disabled=')
-    expect(sources[1]).toContain(':data-capability=')
-    expect(sources[1]).toContain(':aria-disabled=')
-    expect(sources[2]).toContain(':data-capability=')
-    expect(sources[2]).toContain(':aria-disabled=')
-    expect(sources[3]).toContain(':data-capability=')
-    expect(sources[3]).toContain(':aria-disabled=')
-    expect(sources[4]).toContain('data-capability=')
-    expect(sources[4]).toContain(':aria-disabled=')
-    expect(sources[5]).toContain('data-capability=')
-    expect(sources[5]).toContain(':aria-disabled=')
-    expect(sources[6]).toContain(':data-capability=')
-    expect(sources[6]).toContain(':aria-disabled=')
+  it('顶栏更多菜单按权限映射 capability 与禁用态', () => {
+    expect(topBarRenderer).toContain('TOPBAR_MORE_CAPABILITY')
+    expect(topBarRenderer).toContain("setAttr(node, 'data-capability', capability || null)")
+    expect(topBarRenderer).toContain("setAttr(node, 'aria-disabled', String(node.disabled))")
   })
 })

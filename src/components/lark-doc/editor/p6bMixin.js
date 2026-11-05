@@ -49,7 +49,6 @@ import relationBitableMixin from './relationBitableMixin'
 // .removeHoveredLink` 都以 `writable()` 为闸门 —— 方法在合并完成后才被调用，
 // 所以彼此先后不影响结果；这里统一放最后是为了「谁提供判据、谁消费判据」一眼可读。
 import readingModeMixin from './readingModeMixin'
-import LarkDocOverlays from './LarkDocOverlays.vue'
 
 export default {
   mixins: [
@@ -67,5 +66,4 @@ export default {
     relationBitableMixin,
     readingModeMixin,
   ],
-  components: { LarkDocOverlays },
 }

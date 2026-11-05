@@ -1,5 +1,7 @@
 const LEVELS = Object.freeze({ debug: 10, info: 20, warn: 30, error: 40, silent: 100 })
-const configuredLevel = String(process.env.VUE_APP_LOG_LEVEL || 'info').toLowerCase()
+const configuredLevel = String(
+  typeof process !== 'undefined' && process.env ? process.env.VUE_APP_LOG_LEVEL || 'info' : 'info',
+).toLowerCase()
 const threshold = LEVELS[configuredLevel] || LEVELS.info
 const { sanitizeMetadata } = require('./safety')
 

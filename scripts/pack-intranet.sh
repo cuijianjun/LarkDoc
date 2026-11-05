@@ -32,8 +32,6 @@
 #   deps-tgz/                            方案 3 的 21 个单包 tgz，私服缺哪个 publish 哪个
 #   deps-manifest.txt                    方案 3 依赖清单（包名@版本 · 根/传递），给运维核对私服
 #   check-deps.js                        方案 3 内网自检：逐条问私服有没有
-#   vue-<ver>-intranet.tgz               重打后的 vue（有 --vue-tgz / 同目录能自动发现时）
-#   vue-<ver>-node-modules.zip           同上，但解压到项目根即得 node_modules/vue（方案 2 用）
 #   INSTALL-内网.md                      三个方案的安装说明（Windows / npm 6）
 #   sha256.txt
 #
@@ -185,8 +183,8 @@ out.dependencies = {}
 //    npm 6 对这类名字没有版本范围可用，会拿 name@* 去 registry 查最新版
 delete out.bundleDependencies
 delete out.bundledDependencies
-// ③ peer 只留 vue（@tiptap/vue-2 已在 dist 内联，宿主装了反而容易双实例）
-out.peerDependencies = { vue: (p.peerDependencies && p.peerDependencies.vue) || '^2.7.14' }
+// ③ 主入口和 element 入口均不要求 Vue peer；legacy renderer 需由宿主显式注入。
+delete out.peerDependencies
 delete out.peerDependenciesMeta
 // ④ engines 去掉 npm>=8.19.4，避免内网 npm 6 打 notsup 警告
 out.engines = { node: (p.engines && p.engines.node) || '>=14.21.3' }
@@ -848,7 +846,6 @@ echo "[2/4] 校验产物"
 NEED=(
   "dist/lark-doc.esm.js"
   "dist/lark-doc.common.js"
-  "dist/lark-doc.umd.min.js"
   "dist/lark-doc-element.umd.min.js"
   "dist/lark-doc.css"
   "dist/tiptap.esm.js"

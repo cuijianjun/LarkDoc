@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 /**
  * 文档封面（requirements/04 §1.4 / §1.4.1 / §1.4.2 / §1.4.3）。
  *
@@ -9,7 +11,10 @@
  *      组件里的字面色，但**不会**拦 token 引用写错 —— 这里补上那半边）；
  *   4. 点「添加封面」立刻落默认灰封面，不需要先选图（§1.4.1）。
  */
-import { beforeEach, afterEach, describe, expect, it } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import panelsUiMixin from '../../src/components/lark-doc/editor/panelsUiMixin'
+import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
+import { iconMarkup } from '../../src/ui/icon'
 import coverMixin, {
   COVER_DEFAULT_BG,
   COVER_GALLERY_SIZE,
@@ -54,12 +59,245 @@ function mixinCtx(extra = {}) {
   return ctx
 }
 
+const runtimes = []
+
 beforeEach(() => {
-  globalThis.window = { innerWidth: 1440, innerHeight: 900 }
+  vi.stubGlobal('innerWidth', 1440)
+  vi.stubGlobal('innerHeight', 900)
 })
 
 afterEach(() => {
-  delete globalThis.window
+  runtimes.splice(0).reverse().forEach(runtime => {
+    runtime.host.destroyPanels()
+    runtime.destroy()
+  })
+  document.body.textContent = ''
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+function nativeCover(extra = {}) {
+  const paper = document.createElement('main')
+  const title = document.createElement('h1')
+  paper.appendChild(title)
+  const panelHost = document.createElement('div')
+  const sibling = document.createElement('aside')
+  panelHost.appendChild(sibling)
+  document.body.append(paper, panelHost)
+  const emit = vi.fn()
+  const runtime = createNativeOptionsHost({
+    options: { mixins: [coverMixin, panelsUiMixin] },
+    state: { cover: undefined, effectiveReadonly: false, ...extra },
+    refs: { paper, panelHost, outlineHost: document.createElement('div') },
+    emit,
+  })
+  runtimes.push(runtime)
+  // 这里只验证封面域，不装配无关的评论、历史记录业务状态。
+  runtime.host.buildPanelsState = () => ({ outline: {}, version: {}, saveVersion: {}, comment: {} })
+  runtime.host.mountPanels()
+  return { ...runtime, paper, title, panelHost, sibling, emit }
+}
+
+function pointer(node, type, clientY) {
+  node.dispatchEvent(new MouseEvent(type, { clientY, bubbles: true }))
+}
+
+describe('封面 · 原生 UI 契约', () => {
+  it('封面槽位于标题前，添加、编辑、遮罩关闭和移除保留原有动作', async () => {
+    const { host: vm, paper, title, panelHost, sibling, emit } = nativeCover()
+    const slot = paper.querySelector('.lark-doc-cover-slot')
+    expect(paper.firstChild).toBe(slot)
+    expect(slot.nextSibling).toBe(title)
+    expect(slot.classList.contains('is-empty')).toBe(true)
+    slot.querySelector('[aria-label="添加封面"]').click()
+    await vm.$nextTick()
+    expect(emit).toHaveBeenCalledWith('cover-change', { preset: null, offset: 50 })
+    expect(slot.querySelector('.lark-doc-cover-entry')).toBeNull()
+    expect(slot.classList.contains('is-empty')).toBe(false)
+    const edit = slot.querySelector('[aria-label="编辑封面"]')
+    expect(edit.getAttribute('aria-haspopup')).toBe('menu')
+    edit.click()
+    await vm.$nextTick()
+    const panel = panelHost.querySelector('[role="dialog"][aria-label="封面"]')
+    expect(panel).toBe(vm.$refs.coverPanel)
+    expect(panel.style.left).toBe(`${vm.coverPanelStyleValue.left}px`)
+    expect(panel.style.top).toBe(`${vm.coverPanelStyleValue.top}px`)
+    expect(edit.getAttribute('aria-expanded')).toBe('true')
+    expect(panel.querySelector('[role="menu"]').getAttribute('aria-label')).toBe('封面操作')
+    const items = [...panel.querySelectorAll('[role="menuitem"]')]
+    expect(items.map(node => node.dataset.coverItem)).toEqual(['pick', 'reposition', 'remove'])
+    items.forEach((node, index) => {
+      expect(node.textContent).toBe(COVER_PANEL_ITEMS[index].label)
+      const icon = node.querySelector('.lark-doc-icon')
+      expect(icon.style.width).toBe('20px')
+      const expected = document.createElement('span')
+      expected.innerHTML = iconMarkup(COVER_PANEL_ITEMS[index].icon)
+      expect(icon.innerHTML).toBe(expected.innerHTML)
+    })
+    panelHost.querySelector('.lark-doc-cover-mask').dispatchEvent(new Event('pointerdown'))
+    await vm.$nextTick()
+    expect(panelHost.querySelector('.lark-doc-cover-layer')).toBeNull()
+    expect(edit.getAttribute('aria-expanded')).toBe('false')
+    expect(sibling.parentNode).toBe(panelHost)
+    edit.click()
+    await vm.$nextTick()
+    panel.querySelector('[data-cover-item="remove"]').click()
+    await vm.$nextTick()
+    expect(emit).toHaveBeenLastCalledWith('cover-change', null)
+    expect(slot.querySelector('.lark-doc-cover-wrapper')).toBeNull()
+    expect(slot.querySelector('.lark-doc-cover-entry')).not.toBeNull()
+  })
+
+  it('同一面板原地扩展图库，保留分组、无文字缩略图、选中与随机/移除操作', async () => {
+    const { host: vm, panelHost, emit } = nativeCover({ coverInternal: { preset: 'ocean', offset: 18 } })
+    vm._coverUi.edit.click()
+    await vm.$nextTick()
+    const panel = vm.$refs.coverPanel
+    panel.querySelector('[data-cover-item="pick"]').click()
+    await vm.$nextTick()
+    expect(panelHost.querySelector('.lark-doc-cover-panel')).toBe(panel)
+    expect(panel.classList.contains('is-gallery')).toBe(true)
+    expect(panel.querySelector('[role="menu"]')).toBeNull()
+    expect(panel.querySelectorAll('.lark-doc-cover-gallery-tabs > button')).toHaveLength(2)
+    expect(panel.querySelectorAll('.lark-doc-cover-gallery-head-right > button')).toHaveLength(2)
+    expect(panel.querySelector('.lark-doc-cover-group-title').textContent).toBe('官方图库')
+    const thumbs = [...panel.querySelectorAll('ul.lark-doc-cover-thumbs > li.lark-doc-cover-thumb > button')]
+    expect(thumbs).toHaveLength(12)
+    expect(thumbs.map(node => node.getAttribute('aria-label'))).toEqual(COVER_PRESETS.map(preset => preset.name))
+    expect(thumbs.every(node => !node.textContent)).toBe(true)
+    const selected = thumbs.find(node => node.getAttribute('aria-label') === '深海')
+    expect(selected.getAttribute('aria-pressed')).toBe('true')
+    expect(selected.classList.contains('is-active')).toBe(true)
+    thumbs.find(node => node.getAttribute('aria-label') === '玫瑰').click()
+    await vm.$nextTick()
+    expect(emit).toHaveBeenLastCalledWith('cover-change', { preset: 'rose', offset: 18 })
+    expect(panelHost.querySelector('.lark-doc-cover-layer')).toBeNull()
+    vm._coverUi.edit.click()
+    await vm.$nextTick()
+    panel.querySelector('[data-cover-item="pick"]').click()
+    await vm.$nextTick()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    panel.querySelector('[aria-label="随机封面"]').click()
+    await vm.$nextTick()
+    expect(emit).toHaveBeenLastCalledWith('cover-change', { preset: 'aurora', offset: 18 })
+    vm._coverUi.edit.click()
+    await vm.$nextTick()
+    panel.querySelector('[data-cover-item="pick"]').click()
+    await vm.$nextTick()
+    panel.querySelector('[aria-label="移除封面"]').click()
+    await vm.$nextTick()
+    expect(emit).toHaveBeenLastCalledWith('cover-change', null)
+  })
+
+  it('本地上传切换替换图库，通过 FileReader 落 data URL 并关闭面板', async () => {
+    const url = 'data:image/png;base64,AAA'
+    const read = vi.fn(function () { this.result = url; this.onload() })
+    vi.stubGlobal('FileReader', class { readAsDataURL = read })
+    const { host: vm, emit } = nativeCover({ coverInternal: { preset: null, offset: 50 } })
+    vm._coverUi.edit.click()
+    await vm.$nextTick()
+    vm.$refs.coverPanel.querySelector('[data-cover-item="pick"]').click()
+    await vm.$nextTick()
+    vm.$refs.coverPanel.querySelector('[aria-label="本地上传"]').click()
+    await vm.$nextTick()
+    expect(vm._coverUi.uploadTab.classList.contains('is-active')).toBe(true)
+    expect(vm.$refs.coverPanel.querySelector('.lark-doc-cover-storehouse')).toBeNull()
+    const file = vm.$refs.coverPanel.querySelector('input[type="file"]')
+    expect(file.accept).toBe('image/*')
+    const image = new File(['image'], 'cover.png', { type: 'image/png' })
+    Object.defineProperty(file, 'files', { value: [image] })
+    file.dispatchEvent(new Event('change'))
+    await vm.$nextTick()
+    expect(read).toHaveBeenCalledWith(image)
+    expect(emit).toHaveBeenLastCalledWith('cover-change', { preset: null, url, offset: 50 })
+    expect(vm.coverPanelOpen).toBe(false)
+    expect(vm._coverUi.wrapper.style.backgroundImage).toContain(url)
+  })
+
+  it('拖拽只预览，取消不提交，确认落 offset，pointerup/cancel 结束会话', async () => {
+    const { host: vm, emit } = nativeCover({ coverInternal: { preset: 'ocean', offset: 50 } })
+    vm._coverUi.edit.click()
+    await vm.$nextTick()
+    vm.$refs.coverPanel.querySelector('[data-cover-item="reposition"]').click()
+    await vm.$nextTick()
+    const image = vm._coverUi.image
+    // jsdom 16 不解析 center + 百分比；断言原生样式写入而非它的序列化结果。
+    const position = vi.spyOn(vm._coverUi.wrapper.style, 'backgroundPosition', 'set')
+    expect(image.classList.contains('is-dragging')).toBe(true)
+    expect(vm._coverUi.toolbar.querySelector('[aria-label="编辑封面"]')).toBeNull()
+    pointer(image, 'pointerdown', 100)
+    pointer(image, 'pointermove', 200)
+    await vm.$nextTick()
+    expect(vm.coverDraftOffset).toBe(30)
+    expect(position).toHaveBeenLastCalledWith('center 30%')
+    expect(vm.coverValue.offset).toBe(50)
+    pointer(image, 'pointerup', 200)
+    pointer(image, 'pointermove', 400)
+    expect(vm.coverDraftOffset).toBe(30)
+    vm._coverUi.cancel.click()
+    await vm.$nextTick()
+    expect(emit).not.toHaveBeenCalled()
+    expect(position).toHaveBeenLastCalledWith('center 50%')
+    vm.startCoverReposition()
+    await vm.$nextTick()
+    pointer(image, 'pointerdown', 100)
+    pointer(image, 'pointermove', 300)
+    pointer(image, 'pointercancel', 300)
+    pointer(image, 'pointermove', 500)
+    expect(vm.coverDraftOffset).toBe(10)
+    vm._coverUi.confirm.click()
+    await vm.$nextTick()
+    expect(emit).toHaveBeenLastCalledWith('cover-change', { preset: 'ocean', offset: 10 })
+    expect(image.classList.contains('is-dragging')).toBe(false)
+  })
+
+  it('只读隐藏编辑入口并阻断旧按钮、上传及拖拽，恢复后可操作', async () => {
+    const { host: vm, emit, panelHost } = nativeCover()
+    const add = vm._coverUi.add
+    vm.effectiveReadonly = true
+    await vm.$nextTick()
+    expect(vm._coverUi.slot.querySelector('button')).toBeNull()
+    add.click()
+    expect(emit).not.toHaveBeenCalled()
+    vm.coverInternal = { preset: 'ocean', offset: 50 }
+    vm.coverPanelOpen = true
+    vm.coverRepositioning = true
+    await vm.$nextTick()
+    expect(vm._coverUi.toolbar.children).toHaveLength(0)
+    expect(panelHost.querySelector('.lark-doc-cover-layer')).toBeNull()
+    const upload = vi.spyOn(vm, 'uploadCover')
+    vm._coverUi.upload.querySelector('input').dispatchEvent(new Event('change'))
+    vm._coverUi.confirm.click()
+    pointer(vm._coverUi.image, 'pointerdown', 100)
+    pointer(vm._coverUi.image, 'pointermove', 300)
+    expect(vm.coverDraftOffset).toBe(50)
+    expect(upload).not.toHaveBeenCalled()
+    expect(emit).not.toHaveBeenCalled()
+    vm.effectiveReadonly = false
+    await vm.$nextTick()
+    vm._coverUi.confirm.click()
+    expect(emit).toHaveBeenCalledWith('cover-change', { preset: 'ocean', offset: 50 })
+  })
+
+  it('多实例拖拽和销毁互不影响，不移除纸张正文或共享浮层兄弟', async () => {
+    const first = nativeCover({ coverInternal: { preset: 'ocean', offset: 50 } })
+    const second = nativeCover({ coverInternal: { preset: 'rose', offset: 60 } })
+    first.host.startCoverReposition()
+    second.host.startCoverReposition()
+    await Promise.all([first.host.$nextTick(), second.host.$nextTick()])
+    pointer(first.host._coverUi.image, 'pointerdown', 100)
+    pointer(second.host._coverUi.image, 'pointermove', 200)
+    expect(second.host.coverDraftOffset).toBe(60)
+    pointer(first.host._coverUi.image, 'pointermove', 200)
+    expect(first.host.coverDraftOffset).toBe(30)
+    first.host.destroyPanels()
+    first.host.destroyPanels()
+    expect(first.paper.querySelector('.lark-doc-cover-slot')).toBeNull()
+    expect(first.host.$refs.coverPanel).toBeUndefined()
+    expect(first.title.parentNode).toBe(first.paper)
+    expect(first.sibling.parentNode).toBe(first.panelHost)
+    expect(second.paper.querySelector('.lark-doc-cover-slot')).not.toBeNull()
+  })
 })
 
 describe('封面 · 几何常量', () => {
