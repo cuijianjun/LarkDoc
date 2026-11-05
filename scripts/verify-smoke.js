@@ -100,9 +100,14 @@ async function main() {
     const editor = window.__larkDoc.getEditor()
     const pos = []
     editor.state.doc.descendants((node, p) => { if (node.type.name === 'paragraph' && !pos.length) pos.push(p) })
-    const end = pos[0] + 1 + editor.state.doc.nodeAt(pos[0]).nodeSize - 1
+    const end = pos[0] + editor.state.doc.nodeAt(pos[0]).nodeSize - 1
     editor.commands.setTextSelection(end)
     editor.commands.focus()
+  })
+  // Tiptap 的 focus() 在下一动画帧聚焦；命令返回不代表键盘已指向正文。
+  await page.waitForFunction(() => {
+    const editor = window.__larkDoc.getEditor()
+    return document.activeElement === editor.view.dom && editor.view.hasFocus()
   })
   await page.keyboard.type('冒烟输入')
   const inputOk = await page.evaluate(() => window.__larkDoc.getEditor().state.doc.textContent.includes('冒烟输入'))
