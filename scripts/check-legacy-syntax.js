@@ -1,64 +1,31 @@
 'use strict'
 
-/**
- * Rollup 生成的 CJS / UMD 产物语法闸门。
- *
- * CJS 是传统打包器和 Node require 的兼容入口，UMD 是 CDN / 原生浏览器入口；
- * 两者都必须保持 ES2018 语法，避免 Node14 或 webpack4 acorn 在消费阶段失败。
- *
- * 用法：node scripts/check-legacy-syntax.js
- */
-
+/** webpack4支持dynamic import；其他公开浏览器区块及CJS保持ES2018语法。 */
 const fs = require('fs')
 const path = require('path')
-
-const ROOT = path.resolve(__dirname, '..')
-
-/** ecmaVersion 2018 + script：等价于 webpack 4（acorn 6.4.x）的解析能力。 */
-const TARGETS = [
-  { file: 'dist/lark-doc.common.js', label: 'CJS（webpack4 alias 目标 / Node require）' },
-  { file: 'dist/lark-doc-element.umd.min.js', label: 'Element UMD（无 Vue 宿主 / CDN 直挂）' }
-]
-
-let acorn
-try {
-  acorn = require('acorn')
-} catch (e) {
-  console.error('缺少 acorn（devDependency），无法校验产物语法等级：', e.message)
-  process.exit(1)
+const acorn = require('acorn')
+const { artifactFiles } = require('./artifact-graph')
+const DIST = path.resolve(__dirname, '../dist')
+const graphs = JSON.parse(fs.readFileSync(path.join(DIST, 'lark-doc-graph.json'), 'utf8'))
+const files = new Map()
+for (const target of Object.keys(graphs)) {
+  // 构建期插件运行在Node14，允许import.meta；不交给webpack4的浏览器解析器。
+  if (target.startsWith('plugin')) continue
+  for (const file of artifactFiles(DIST, target)) {
+    files.set(file, { ecmaVersion: target === 'elementEsm' ? 2020 : 2018, sourceType: target.endsWith(':umd') || target === 'element' || target === 'cjs' || target === 'mermaidCjs' || target === 'collabCjs' || target === 'fullCjs' || target === 'legacy' ? 'script' : 'module' })
+  }
 }
-
-/** webpack 4 用的是 acorn 6，Node ecological 默认给的是 8；两者对 ecmaVersion 的语义一致。 */
-const OPTIONS = { ecmaVersion: 2018, sourceType: 'script', allowReturnOutsideFunction: true }
-
 const failures = []
-
-for (const target of TARGETS) {
-  const abs = path.join(ROOT, target.file)
-  if (!fs.existsSync(abs)) {
-    failures.push(`${target.file}（${target.label}）缺失 —— 先跑 npm run build*`)
-    continue
-  }
-  const src = fs.readFileSync(abs, 'utf8')
+for (const [file, { sourceType, ecmaVersion }] of files) {
+  const source = fs.readFileSync(path.join(DIST, file), 'utf8')
   try {
-    acorn.parse(src, OPTIONS)
-    console.log(`  ✓ ES2018 可解析  ${target.file}  ${(src.length / 1024 / 1024).toFixed(2)} MB`)
-  } catch (err) {
-    failures.push(
-      `${target.file}（${target.label}）不是 ES2018：${
-        err && err.message ? err.message : String(err)
-      } @ ${err && err.loc ? `${err.loc.line}:${err.loc.column}` : '未知位置'}`
-    )
+    acorn.parse(source.replace(/\bimport\s*\(/g, '__dynamicImport('), { ecmaVersion, sourceType, allowReturnOutsideFunction: sourceType === 'script' })
+  } catch (error) {
+    failures.push(`${file}: ${error.message}`)
   }
 }
-
 if (failures.length) {
-  console.error(`\n✗ 产物语法等级检查失败 ${failures.length}/${TARGETS.length}`)
-  for (const line of failures) console.error(`  - ${line}`)
-  console.error(
-    '\n修法：检查 Rollup 的 legacy / element 输出配置，并确认 CJS / UMD 产物保持 ES2018 语法。'
-  )
+  console.error(`✗ ES2018语法检查失败 ${failures.length}/${files.size}\n${failures.join('\n')}`)
   process.exit(1)
 }
-
-console.log(`✓ 产物语法等级检查通过（${TARGETS.length} 份均为 ES2018，acorn ${require('acorn/package.json').version}）`)
+console.log(`✓ 产物语法检查通过：${files.size}个真实入口与静态/动态区块；根ESM/CJS/UMD为ES2018，现代Element ESM允许import.meta（acorn ${require('acorn/package.json').version}；dynamic import由webpack4集成验证）`)

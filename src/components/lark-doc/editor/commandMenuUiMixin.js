@@ -46,7 +46,7 @@ export default {
       if (this._commandMenuUi) return
       const host = this.$refs.commandMenuHost
       if (!host) return
-      this._commandMenuUi = createCommandMenu({ host, handlers: this.commandMenuHandlers() })
+      this._commandMenuUi = createCommandMenu({ host, handlers: this.commandMenuHandlers(), onReady: () => this.onCommandMenuReady(this._commandMenuUi) })
       this.refreshCommandMenu()
       if (this.menuOpen) this.onCommandMenuReady(this._commandMenuUi)
     },

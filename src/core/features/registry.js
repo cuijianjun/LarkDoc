@@ -12,9 +12,11 @@
  *   mermaid         → mermaid 实例（有 initialize / render）
  *   highlight       → 注册好语言的 hljs 实例
  *   markdown        → { marked, TurndownService }
+ *   markdown.serialize → { serializeMarkdown }（rich Markdown 导出）
  *   office.buildDocx → { buildDocx }（rich Word 导出，src/utils/export/docx.js）
  *   office.docx     → docx 命名空间（纯文本 Word 导出）
  *   office.mammoth  → mammoth 实例（docx 导入）
+ *   ui / ui.ready   → 原生编辑面板工厂；ui.ready 仅注册同步已加载实现
  *
  * 错误一律加注特性名再抛出：调用方的 catch（降级提示）能把「哪个可选能力
  * 没装上」带进 UI，而不是一句裸的模块解析失败。
@@ -85,6 +87,13 @@ export function registerFeature(name, loader) {
 export function hasFeature(name) {
   const map = getMap()
   return !!(map && map.has(name))
+}
+
+/** 同步codec只读取同步实现；异步加载仍由loadFeature负责。 */
+export function readFeature(name) {
+  const map = getMap()
+  const loader = map && map.get(name)
+  return typeof loader === 'function' ? loader() : null
 }
 
 /**

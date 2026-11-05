@@ -2,9 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>sample 导出（临时页面，导出后删除）</title>
-<script src="./vendor/vue.min.js"></script>
-<script src="./vendor/lark-doc.umd.min.js"></script>
+<title>示例文档 JSON 导出</title>
+<script src="./vendor/lark-doc-element.umd.min.js"></script>
 <style>body{margin:0}#host{height:900px}</style>
 </head>
 <body>
@@ -43,7 +42,7 @@ var SAMPLE_HTML = [
   '<p>把代码区里的 <code>theme</code> 改成 <code>"dark"</code>，或者把 <code>features.ai</code> 改成 <code>false</code>，预览会在 400 毫秒内重建。你刚才敲进去的正文不会丢 —— 页面在销毁前会把正文取出来。</p>'
 ].join('\n')
 
-var NS = window['lark-doc'] || window.larkDoc || {}
+var NS = window.LarkDoc || {}
 var LarkDocCtor = NS.LarkDoc || NS.default
 var doc = new LarkDocCtor({
   element: '#host',

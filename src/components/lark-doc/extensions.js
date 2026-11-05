@@ -25,6 +25,7 @@ import { TextStyleKit } from '@tiptap/extension-text-style'
 import Typography from '@tiptap/extension-typography'
 import { safeUrl } from '../../core/documentOperations'
 import { createNetworkPolicy } from '../../core/policy/network'
+import { assertCollabRuntime } from '../../core/collabRuntime'
 import { withUnfurlGate } from '../../core/embed/unfurl'
 import { wrapContainerAllowed } from '../../core/blocks/container-depth'
 import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
@@ -116,6 +117,7 @@ export function createLarkDocExtensions(options = {}) {
    * 非协同宿主（绝大多数）拿到的是 `null`，行为与 P5 逐字节一致。
    */
   const collab = options.collab && typeof options.collab === 'object' ? options.collab : null
+  assertCollabRuntime(collab)
   const collabExtensions = collab && Array.isArray(collab.extensions) ? collab.extensions : []
   return [
     // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
@@ -230,12 +232,12 @@ export function createLarkDocExtensions(options = {}) {
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
     FileHandler.configure({
       allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,
-      onPaste: (editor, files) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, editor.state.selection.from) },
-      onDrop: (editor, files, pos) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos) },
+      onPaste: (editor, files) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, editor.state.selection.from, 'paste') },
+      onDrop: (editor, files, pos) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos, 'drop') },
     }),
     // P2-03：没有文件、只有一个图片地址的粘贴走这里（见 core/blocks/image-paste.js）。
     blockClipboardExtension({ canCopy: options.canCopy, onError: options.onError, filterDocument: network.applyDocument }),
-    imageUrlPasteExtension({ enabled: () => enabled('images') }),
+    imageUrlPasteExtension({ enabled: () => enabled('images'), onImageFiles: options.onImageFiles }),
     mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
     Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
     Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }),

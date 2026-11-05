@@ -14,6 +14,17 @@ const BASE = (() => {
   return withLead.endsWith('/') ? withLead : withLead + '/'
 })()
 
+
+const examples = [
+  { text: '选择环境', link: '/examples/' },
+  { text: 'Vue2 + Webpack5', link: '/examples/vue2-webpack5' },
+  { text: 'Vue2 + Webpack4', link: '/examples/vue2-webpack4' },
+  { text: 'Vue3 + Vite', link: '/examples/vue3-vite' },
+  { text: 'React + Vite', link: '/examples/react-vite' },
+  { text: '原生 HTML / CDN', link: '/examples/html-cdn' },
+  { text: 'Web Component', link: '/examples/web-component' },
+]
+
 export default defineConfig({
   base: BASE,
   lang: 'zh-CN',
@@ -25,19 +36,14 @@ export default defineConfig({
   // VitePress 会把 srcDir 下所有 .md 都编译成页面。docs/superpowers/ 放的是内部
   // 实施计划与设计规格（不是对外文档），不排除就会被打进产物、并混进本地搜索索引。
   // 注意：srcExclude 一旦显式设置会覆盖默认值，所以默认的三条要一并写回。
-  srcExclude: ['superpowers/**', '**/README.md', '**/CHANGELOG.md', '**/CONTRIBUTING.md'],
+  srcExclude: ['superpowers/**', 'examples/apps/**', '**/README.md', '**/CHANGELOG.md', '**/CONTRIBUTING.md'],
 
   themeConfig: {
     siteTitle: 'lark-doc Docs',
     logo: '/logo.svg',
 
-    // 顶部导航按「读者此刻想干什么」分，不按页面目录分：
-    // 上手 → 功能 → 部署（外网/内网）→ 关于。侧栏再做一次更细的分组。
     nav: [
-      { text: '首页', link: '/' },
-      // 在线演示是 public/demo/index.html 静态页，不是 md 路由：
-      // 必须带 target: _blank 走浏览器原生跳转，否则 SPA router 会当站内路由处理 → 404。
-      { text: '在线演示', link: '/demo/', target: '_blank' },
+      { text: '示例中心', link: '/examples/', activeMatch: '/examples/' },
       {
         text: '开始上手',
         activeMatch: '/guide/(getting-started|install|compatibility|environments|instance)',
@@ -58,22 +64,23 @@ export default defineConfig({
           { text: '内容块', link: '/blocks/' },
           { text: '文档操作', link: '/blocks/folding' },
           { text: '智能与扩展', link: '/blocks/ai' },
+          { text: '配置总览', link: '/guide/configuration' },
+          { text: '图片上传与完整回调', link: '/blocks/uploader' },
+          { text: '全量与按需加载', link: '/guide/build-artifacts' },
           { text: '协同与权限', link: '/guide/collaboration' },
         ],
       },
+      { text: '本地开发', link: '/guide/development' },
       {
-        text: '内网与部署',
-        activeMatch: '/guide/(intranet-migration|deployment-intranet|deployment-docs-site|offline|build-artifacts)',
+        text: '安装与部署',
         items: [
-          { text: '安装与引用总表（内外网）', link: '/guide/install' },
-          { text: '内网迁移实战（Vue2 / Vue3）', link: '/guide/intranet-migration' },
-          { text: '内网服务器部署（nginx）', link: '/guide/deployment-intranet' },
-          { text: '文档站内网部署', link: '/guide/deployment-docs-site' },
-          { text: '离线与资源本地化', link: '/guide/offline' },
-          { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
+          { text: '安装与离线', link: '/guide/install' },
+          { text: '补充接入与排错', link: '/guide/environments' },
+          { text: '内网服务器部署', link: '/guide/deployment-intranet' },
+          { text: '文档站部署', link: '/guide/deployment-docs-site' },
         ],
       },
-      { text: '关于', link: '/guide/about' },
+      { text: '配置 Playground', link: '/demo/', target: '_blank' },
     ],
 
     outline: { level: [2, 3], label: '本页目录' },
@@ -94,16 +101,29 @@ export default defineConfig({
 
     sidebar: {
       // 功能文档按用户目标分组；安装、部署和开发资料仍保留原有入口。
+      '/examples/': [
+        { text: '完整接入示例', items: examples },
+        { text: '进一步配置', items: [
+          { text: '上传器参考', link: '/blocks/uploader' },
+          { text: '功能配置', link: '/guide/configuration' },
+          { text: '补充接入与排错', link: '/guide/environments' },
+          { text: '本地开发与验证', link: '/guide/development' },
+        ] },
+      ],
+      // 侧栏分四组，按「读文档的顺序」排，不按页面创建顺序排：
+      // 上手（我要装/要跑起来） → 功能（我要配某个能力） → 部署（我要上线/进内网） → 参考。
+      // 新增页面时先想清楚它属于哪一组，别继续往第一组里塞。
       '/guide/': [
         {
           text: '开始上手',
           items: [
+            { text: '选择环境与完整 demo', link: '/examples/' },
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '安装与引用总表（内外网）', link: '/guide/install' },
-            { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
-            { text: '各环境引入对照', link: '/guide/environments' },
+            { text: '补充接入与排错', link: '/guide/environments' },
             { text: '安装、兼容与懒加载速查', link: '/guide/compatibility' },
             { text: '实例与事件', link: '/guide/instance' },
+            { text: '本地开发与验证', link: '/guide/development' },
           ],
         },
         {
@@ -127,6 +147,7 @@ export default defineConfig({
         {
           text: '打包与内网部署',
           items: [
+            { text: '安装与离线', link: '/guide/install' },
             { text: '打包产物与按需加载', link: '/guide/build-artifacts' },
             { text: '离线与资源本地化', link: '/guide/offline' },
             { text: '内网迁移实战（Vue2 / Vue3）', link: '/guide/intranet-migration' },

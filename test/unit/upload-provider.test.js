@@ -9,7 +9,7 @@
  *  4. 断点：分片上传逐片重试，失败从失败那片续，同一文件再次上传也接着走。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createUploadProvider,
   isRetryable,
@@ -32,10 +32,243 @@ function networkError() {
   return new TypeError('Failed to fetch')
 }
 
+describe('完整上传生命周期', () => {
+  it('独立模块域共享 Provider 保持身份，并发分片与取消不碰撞或重复通知', async () => {
+    const producer = await import('../../src/core/media/upload.js?upload-domain=producer')
+    const consumer = await import('../../src/core/media/upload.js?upload-domain=consumer')
+    expect(producer.createUploadProvider).not.toBe(consumer.createUploadProvider)
+    const pendingChunks = new Map()
+    const contexts = []
+    const onStart = vi.fn()
+    const onCancel = vi.fn()
+    const onSuccess = vi.fn()
+    const onSettled = vi.fn()
+    const provider = producer.createUploadProvider({
+      chunked: true, chunkSize: 64 * 1024, onStart, onCancel, onSuccess, onSettled,
+      upload: (file, ctx) => {
+        contexts.push(ctx)
+        return new Promise(resolve => pendingChunks.set(`${ctx.documentId}:${ctx.chunk.index}`, resolve))
+      },
+    })
+    const normalized = consumer.normalizeUploader(provider)
+    expect(normalized).toBe(provider)
+    const brand = Symbol.for('lark-doc.uploadProvider')
+    expect(Object.getOwnPropertyDescriptor(provider, brand)).toMatchObject({ value: 1, enumerable: false })
+    expect({ ...provider }[brand]).toBeUndefined()
+    const file = makeFile(128 * 1024)
+    const first = provider.upload(file, { documentId: 'first' })
+    const second = normalized.upload(file, { documentId: 'second' })
+    first.catch(() => {})
+    second.catch(() => {})
+    try {
+      expect(provider.pending()).toBe(2)
+      expect(new Set(contexts.map(ctx => ctx.taskId)).size).toBe(2)
+      normalized.cancel(contexts[0].taskId, 'user')
+      await expect(first).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED, reason: 'user' })
+      pendingChunks.get('second:0')({ url: '/part.png' })
+      await vi.waitFor(() => expect(pendingChunks.has('second:1')).toBe(true))
+      pendingChunks.get('second:1')({ url: '/finished.png' })
+      await expect(second).resolves.toMatchObject({ url: '/finished.png' })
+      expect(contexts.map(ctx => [ctx.documentId, ctx.chunk.index])).toEqual([['first', 0], ['second', 0], ['second', 1]])
+      expect(onStart).toHaveBeenCalledTimes(2)
+      expect(onCancel).toHaveBeenCalledTimes(1)
+      expect(onSuccess).toHaveBeenCalledTimes(1)
+      expect(onSettled).toHaveBeenCalledTimes(2)
+      expect(provider.pending()).toBe(0)
+    } finally {
+      provider.cancelAll()
+      normalized.cancelAll()
+      await Promise.allSettled([first, second])
+    }
+  })
+
+  it('未知 Provider 协议版本或不完整协议明确失败，不二次包装', async () => {
+    const { normalizeUploader } = await import('../../src/core/media/upload.js?upload-domain=consumer')
+    const brand = Symbol.for('lark-doc.uploadProvider')
+    expect(() => normalizeUploader({ [brand]: 99, upload: vi.fn() })).toThrow('不支持的上传 Provider 协议版本')
+    expect(() => normalizeUploader({ [brand]: 1, upload: vi.fn() })).toThrow('上传 Provider 协议无效')
+  })
+
+  it('对象回调依次通知且保留文件任务上下文', async () => {
+    const events = []
+    const provider = createUploadProvider({
+      beforeUpload: (file, ctx) => { events.push('before'); expect(ctx.cancel).toBeTypeOf('function') },
+      upload: async (file, ctx) => { events.push('upload'); ctx.onProgress({ loaded: file.size }); return { url: '/image.png' } },
+      onStart: event => { events.push('start'); expect(event).toMatchObject({ source: 'paste', documentId: 'doc', mode: 'upload' }) },
+      onProgress: () => events.push('progress'),
+      onSuccess: () => events.push('success'),
+      onSettled: event => { events.push('settled'); expect(event.status).toBe('success') },
+    })
+    await provider.upload(makeFile(), { source: 'paste', documentId: 'doc' })
+    expect(events.filter(event => event !== 'progress').slice(0, 3)).toEqual(['before', 'start', 'upload'])
+    expect(events.slice(-2)).toEqual(['success', 'settled'])
+  })
+
+  it.each(['true', 'false', 'reject'])('异步 before 等待期间取消立即终结，迟到 %s 不会开始上传', async outcome => {
+    let finishBefore
+    let context
+    const upload = vi.fn(async () => ({ url: '/image.png' }))
+    const onCancel = vi.fn()
+    const onSettled = vi.fn()
+    const provider = createUploadProvider({
+      beforeUpload: (file, ctx) => { context = ctx; return new Promise((resolve, reject) => { finishBefore = outcome === 'reject' ? reject : resolve }) },
+      upload, onCancel, onSettled,
+    })
+    const pending = provider.upload(makeFile())
+    context.cancel('user')
+    await expect(pending).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED, reason: 'user' })
+    expect(provider.pending()).toBe(0)
+    finishBefore(outcome === 'reject' ? new Error('late') : outcome === 'true')
+    await Promise.resolve()
+    expect(upload).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onSettled).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['resolve', 'reject'])('忽略不响应 signal 的迟到 upload %s 与进度', async outcome => {
+    let complete
+    let uploadContext
+    const onProgress = vi.fn()
+    const onSuccess = vi.fn()
+    const onCancel = vi.fn()
+    const onSettled = vi.fn()
+    const provider = createUploadProvider({
+      upload: (file, ctx) => { uploadContext = ctx; return new Promise((resolve, reject) => { complete = outcome === 'resolve' ? resolve : reject }) },
+      onProgress, onSuccess, onCancel, onSettled,
+    })
+    const pending = provider.upload(makeFile())
+    uploadContext.cancel('route-change')
+    await expect(pending).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED, reason: 'route-change' })
+    const count = onProgress.mock.calls.length
+    complete(outcome === 'resolve' ? { url: '/late.png' } : new Error('late'))
+    uploadContext.onProgress({ loaded: 1024 })
+    await Promise.resolve()
+    expect(onSuccess).not.toHaveBeenCalled()
+    expect(onProgress).toHaveBeenCalledTimes(count)
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onSettled).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['false', 'cancel'])('beforeUpload %s 只有 cancelled 终态，没有 start/upload', async action => {
+    const upload = vi.fn()
+    const onStart = vi.fn()
+    const onCancel = vi.fn()
+    const onSettled = vi.fn()
+    const provider = createUploadProvider({
+      upload, onStart, onCancel, onSettled,
+      beforeUpload: (file, ctx) => action === 'false' ? false : ctx.cancel('denied'),
+    })
+    await expect(provider.upload(makeFile())).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED })
+    expect(upload).not.toHaveBeenCalled()
+    expect(onStart).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'cancelled' }))
+  })
+
+  it('拒绝/请求失败/非法结果各自只产生一个终态和 settled', async () => {
+    for (const scenario of ['reject', 'request', 'result']) {
+      const events = []
+      const upload = vi.fn(async () => {
+        if (scenario === 'request') throw new Error('denied')
+        return { url: 'javascript:alert(1)' }
+      })
+      const provider = createUploadProvider({
+        upload, limits: { maxSize: scenario === 'reject' ? 1 : 1024 },
+        onReject: event => events.push(['rejected', event.code]),
+        onError: event => events.push(['error', event.code]),
+        onSettled: event => events.push(['settled', event.status]),
+      })
+      await expect(provider.upload(makeFile())).rejects.toMatchObject({ code: { reject: UPLOAD_ERROR.SIZE, request: UPLOAD_ERROR.FAILED, result: UPLOAD_ERROR.RESULT }[scenario] })
+      expect(events).toEqual(scenario === 'reject' ? [['rejected', UPLOAD_ERROR.SIZE], ['settled', 'rejected']]
+        : [['error', scenario === 'request' ? UPLOAD_ERROR.FAILED : UPLOAD_ERROR.RESULT], ['settled', 'error']])
+      expect(upload).toHaveBeenCalledTimes(scenario === 'reject' ? 0 : 1)
+      expect(provider.pending()).toBe(0)
+    }
+  })
+
+  it('通知回调同步异常及 Promise rejection 走错误渠道，不重试、不递归、不阻塞 settled', async () => {
+    const failure = new Error('callback')
+    const onCallbackError = vi.fn()
+    for (const failUpload of [false, true]) {
+      const upload = vi.fn(async () => { if (failUpload) throw new Error('denied'); return { url: '/ok.png' } })
+      const onSettled = vi.fn(() => Promise.reject(failure))
+      const provider = createUploadProvider({
+        upload,
+        onStart: () => { throw failure },
+        onProgress: () => Promise.reject(failure),
+        onSuccess: () => Promise.reject(failure),
+        onError: () => { throw failure },
+        onSettled, onCallbackError,
+      })
+      if (failUpload) await expect(provider.upload(makeFile())).rejects.toMatchObject({ code: UPLOAD_ERROR.FAILED })
+      else await expect(provider.upload(makeFile())).resolves.toMatchObject({ url: '/ok.png' })
+      await Promise.resolve()
+      expect(upload).toHaveBeenCalledTimes(1)
+      expect(onSettled).toHaveBeenCalledTimes(1)
+      expect(provider.pending()).toBe(0)
+    }
+    expect(onCallbackError).toHaveBeenCalledWith(failure)
+  })
+
+  it('分片重试聚合进度单调且仅通知一次 start/success，retry 带分片身份', async () => {
+    const progress = []
+    let failed = false
+    const file = makeFile(64 * 1024 * 3)
+    const onStart = vi.fn()
+    const onSuccess = vi.fn()
+    const onRetry = vi.fn()
+    const provider = createUploadProvider({
+      chunked: true, chunkSize: 64 * 1024, retry: FAST_RETRY, onStart, onSuccess, onRetry,
+      onProgress: event => progress.push(event),
+      upload: async (part, ctx) => {
+        ctx.onProgress({ loaded: part.size * 0.8 })
+        ctx.onProgress({ loaded: 0 })
+        if (ctx.chunk.index === 1 && !failed) { failed = true; throw networkError() }
+        ctx.onProgress({ loaded: part.size * 2 })
+        return { url: '/chunk.png' }
+      },
+    })
+    await provider.upload(file, { taskId: 'chunks' })
+    expect(progress.every((event, i) => event.percent <= 100 && (i === 0 || event.loaded >= progress[i - 1].loaded))).toBe(true)
+    expect(progress.at(-1)).toMatchObject({ percent: 100, loaded: file.size, total: file.size })
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ taskId: 'chunks', attempt: 1, nextAttempt: 2, chunk: expect.objectContaining({ index: 1 }) }))
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(onSuccess).toHaveBeenCalledTimes(1)
+  })
+
+  it('无 upload 时本地 base64 复用相同生命周期，成功后取消幂等', async () => {
+    const events = []
+    let context
+    const provider = createUploadProvider({
+      beforeUpload: (file, ctx) => { context = ctx; events.push('before') },
+      onStart: event => { expect(event.mode).toBe('local'); events.push('start') },
+      onSuccess: event => { expect(event.result.url).toMatch(/^data:image\/png;base64,/); events.push('success'); event.cancel() },
+      onSettled: event => { expect(event.status).toBe('success'); events.push('settled') },
+    })
+    await provider.upload(makeFile(8))
+    expect(events).toEqual(['before', 'start', 'success', 'settled'])
+    expect(context.cancel()).toBe(0)
+    expect(context.signal.aborted).toBe(false)
+  })
+})
+
 describe('P2-02 超限', () => {
+  it('缺失 MIME 与非图片 MIME 在 before/start/upload 前拒绝', async () => {
+    const upload = vi.fn()
+    const beforeUpload = vi.fn()
+    const onStart = vi.fn()
+    const onReject = vi.fn()
+    const provider = createUploadProvider({ upload, beforeUpload, onStart, onReject })
+    await expect(provider.upload(makeFile(1, 'a.png', ''))).rejects.toMatchObject({ code: UPLOAD_ERROR.MIME })
+    expect(upload).not.toHaveBeenCalled()
+    expect(beforeUpload).not.toHaveBeenCalled()
+    expect(onStart).not.toHaveBeenCalled()
+    expect(onReject).toHaveBeenCalledTimes(1)
+  })
+
   it('类型不在白名单时抛 UPLOAD_MIME，且不调宿主', async () => {
     let calls = 0
-    const provider = createUploadProvider({ upload: async () => { calls += 1; return { url: 'x' } } })
+    const provider = createUploadProvider({ upload: async () => { calls += 1; return { url: '/x' } } })
     await expect(provider.upload(makeFile(10, 'a.pdf', 'application/pdf'))).rejects.toMatchObject({
       code: UPLOAD_ERROR.MIME,
       message: '只支持 PNG/JPEG/GIF/WEBP 图片',
@@ -44,7 +277,7 @@ describe('P2-02 超限', () => {
   })
 
   it('超过 maxSize 时抛 UPLOAD_SIZE，带尺寸供 UI 显示', async () => {
-    const provider = createUploadProvider({ upload: async () => ({ url: 'x' }), limits: { maxSize: 2 * MB } })
+    const provider = createUploadProvider({ upload: async () => ({ url: '/x' }), limits: { maxSize: 2 * MB } })
     await expect(provider.upload(makeFile(3 * MB))).rejects.toMatchObject({
       code: UPLOAD_ERROR.SIZE,
       message: '单张图片不能超过 2 MB',
@@ -53,8 +286,8 @@ describe('P2-02 超限', () => {
   })
 
   it('limits 传 null 表示不在 provider 层拦（口径交给调用方）', async () => {
-    const provider = createUploadProvider({ upload: async () => ({ url: 'x' }), limits: null })
-    await expect(provider.upload(makeFile(30 * MB, 'big.png', 'image/x-raw'))).resolves.toMatchObject({ url: 'x' })
+    const provider = createUploadProvider({ upload: async () => ({ url: '/x' }), limits: null })
+    await expect(provider.upload(makeFile(30 * MB, 'big.png', 'image/x-raw'))).resolves.toMatchObject({ url: '/x' })
     expect(validateUploadFile(makeFile(1), null)).toBeTruthy()
   })
 })
@@ -181,7 +414,7 @@ describe('P2-02 断点（分片续传）', () => {
           failedOnce = true
           throw networkError()
         }
-        return { url: 'u' }
+        return { url: '/u' }
       },
       chunked: true,
       chunkSize: CHUNK,
@@ -200,7 +433,7 @@ describe('P2-02 断点（分片续传）', () => {
       upload: async (part, ctx) => {
         indices.push(ctx.chunk.index)
         if (ctx.chunk.index === alwaysFailOn) throw Object.assign(new Error('boom'), { status: 500 })
-        return { url: 'u' }
+        return { url: '/u' }
       },
       chunked: true,
       chunkSize: CHUNK,
@@ -223,7 +456,7 @@ describe('P2-02 断点（分片续传）', () => {
     const provider = createUploadProvider({
       upload: async (part, ctx) => {
         indices.push(ctx.chunk.index)
-        return { url: 'u' }
+        return { url: '/u' }
       },
       chunked: true,
       chunkSize: CHUNK,
@@ -238,10 +471,55 @@ describe('P2-02 断点（分片续传）', () => {
     expect(provider.chunkSize).toBe(CHUNK)
   })
 
+  it('取消后立即 clearResume 不会被旧任务的异步清理重新写入断点', async () => {
+    const indices = []
+    let block = true
+    let startedSecond
+    const second = new Promise(resolve => { startedSecond = resolve })
+    const provider = createUploadProvider({
+      chunked: true, chunkSize: CHUNK,
+      upload: async (part, ctx) => {
+        indices.push(ctx.chunk.index)
+        if (block && ctx.chunk.index === 1) { startedSecond(); return new Promise(() => {}) }
+        return { url: '/chunk.png' }
+      },
+    })
+    const file = fourChunks()
+    const pending = provider.upload(file)
+    await second
+    provider.cancelAll('document-change')
+    provider.clearResume()
+    await expect(pending).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED })
+    block = false
+    indices.length = 0
+    await provider.upload(file)
+    expect(indices).toEqual([0, 1, 2, 3])
+  })
+
+  it('同一 Provider 的不同 documentId 不共享同文件断点', async () => {
+    const indices = []
+    const provider = createUploadProvider({
+      chunked: true, chunkSize: CHUNK,
+      upload: async (part, ctx) => {
+        indices.push([ctx.documentId, ctx.chunk.index])
+        if (ctx.documentId === 'first' && ctx.chunk.index === 1) throw new Error('denied')
+        return { url: '/chunk.png' }
+      },
+    })
+    const file = fourChunks()
+    await expect(provider.upload(file, { documentId: 'first' })).rejects.toMatchObject({ code: UPLOAD_ERROR.FAILED })
+    indices.length = 0
+    await provider.upload(file, { documentId: 'second' })
+    expect(indices.map(item => item[1])).toEqual([0, 1, 2, 3])
+    indices.length = 0
+    await expect(provider.upload(file, { documentId: 'first' })).rejects.toMatchObject({ code: UPLOAD_ERROR.FAILED })
+    expect(indices).toEqual([['first', 1]])
+  })
+
   it('未声明 chunked 时即便文件很大也只调一次（不分片）', async () => {
     let calls = 0
     const provider = createUploadProvider({
-      upload: async () => { calls += 1; return { url: 'u' } },
+      upload: async () => { calls += 1; return { url: '/u' } },
       limits: null,
     })
     await provider.upload(fourChunks())
@@ -280,19 +558,19 @@ describe('P2-02 返回契约与进度', () => {
       upload: async (file, ctx) => {
         ctx.onProgress({ loaded: 512 })
         ctx.onProgress({ loaded: 4096 })
-        return { url: 'u' }
+        return { url: '/u' }
       },
       limits: null,
     })
     await provider.upload(makeFile(4096), { onProgress: (event) => events.push(event) })
-    expect(events[0]).toEqual({ loaded: 0, total: 4096, percent: 0 })
-    expect(events[1]).toEqual({ loaded: 512, total: 4096, percent: 13 })
-    expect(events[2]).toEqual({ loaded: 4096, total: 4096, percent: 100 })
+    expect(events[0]).toMatchObject({ loaded: 0, total: 4096, percent: 0 })
+    expect(events[1]).toMatchObject({ loaded: 512, total: 4096, percent: 13 })
+    expect(events[2]).toMatchObject({ loaded: 4096, total: 4096, percent: 100 })
   })
 
   it('同一 taskId 并发上传直接被拒，不会有两个任务写同一份断点', async () => {
     const provider = createUploadProvider({
-      upload: (file, ctx) => new Promise((resolve) => setTimeout(() => resolve({ url: 'u' }), 5)),
+      upload: (file, ctx) => new Promise((resolve) => setTimeout(() => resolve({ url: '/u' }), 5)),
       limits: null,
     })
     const first = provider.upload(makeFile(), { taskId: 'same' })

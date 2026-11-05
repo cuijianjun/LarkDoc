@@ -29,7 +29,7 @@ import mentionMixin from '../../src/components/lark-doc/editor/mentionMixin'
 
 const mounted = []
 afterEach(() => {
-  while (mounted.length) mounted.pop()
+  while (mounted.length) mounted.pop()()
 })
 
 function mount(content, options = {}) {

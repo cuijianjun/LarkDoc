@@ -1,6 +1,6 @@
 {
   "name": "lark-doc",
-  "version": "0.14.2",
+  "version": "0.14.4",
   "private": false,
   "license": "MIT",
   "description": "Framework-agnostic LarkDoc-style Tiptap document editor and workspace package",
@@ -20,7 +20,7 @@
     "check:ui": "npm run check:theme-tokens && npm run check:theme-contrast",
     "check:deploy": "npm run check:node14 && npm run check:offline && npm run check:pkg && node scripts/check-ecs-images.js && node scripts/check-session-providers.js",
     "check:pkg": "node scripts/check-package-exports.js",
-    "check:artifacts": "node scripts/ensure-artifacts.mjs && npm run check:lite && npm run check:legacy && npm run check:vditor && npm run size",
+    "check:artifacts": "node scripts/ensure-artifacts.mjs && node scripts/check-lite-artifacts.js && node scripts/check-legacy-syntax.js && node scripts/check-vditor-html.js && node scripts/check-rollup-artifacts.mjs --size",
     "check:lite": "node scripts/check-lite-artifacts.js",
     "check:legacy": "node scripts/check-legacy-syntax.js",
     "check:theme-tokens": "node scripts/check-theme-tokens.js",
@@ -36,28 +36,29 @@
     "check:perf": "npm run build:element && node scripts/perf/measure.mjs && node scripts/perf/report.mjs",
     "contract": "node scripts/gen-contract.mjs",
     "contract:check": "node scripts/gen-contract.mjs --check",
-    "prepack": "node scripts/ensure-artifacts.mjs && npm run size",
+    "prepack": "node scripts/ensure-artifacts.mjs && node scripts/check-rollup-artifacts.mjs --size",
     "artifacts:check": "node scripts/ensure-artifacts.mjs --check",
     "verify": "node scripts/verify.mjs",
     "verify:all": "node scripts/verify.mjs --all",
     "verify:list": "node scripts/verify.mjs --list",
     "build:element": "ROLLUP_TARGET=element node scripts/build-rollup.mjs",
     "build:vue2": "ROLLUP_TARGET=vue2 node scripts/build-rollup.mjs",
-    "size": "size-limit",
+    "size": "node scripts/check-rollup-artifacts.mjs --size",
     "ship": "bash scripts/release.sh",
     "ship:minor": "bash scripts/release.sh --minor",
     "sync": "bash scripts/release.sh --git-only",
     "release": "bash scripts/release.sh",
     "release:patch": "bash scripts/release.sh --patch",
     "release:minor": "bash scripts/release.sh --minor",
-    "build:collab": "ROLLUP_TARGET=collab node scripts/build-rollup.mjs",
+    "build:collab": "ROLLUP_TARGET=collab,collabCjs node scripts/build-rollup.mjs",
     "build:rollup:adapters": "ROLLUP_TARGET=adapters node scripts/build-rollup.mjs",
-    "build:rollup:collab": "ROLLUP_TARGET=collab node scripts/build-rollup.mjs",
+    "build:rollup:collab": "ROLLUP_TARGET=collab,collabCjs node scripts/build-rollup.mjs",
     "build:rollup": "ROLLUP_TARGET=all node scripts/build-rollup.mjs",
     "check:rollup": "node scripts/check-rollup-artifacts.mjs",
     "build:lite": "ROLLUP_TARGET=lite node scripts/build-rollup.mjs",
     "build:features": "ROLLUP_TARGET=features node scripts/build-rollup.mjs",
-    "build:all": "ROLLUP_TARGET=all node scripts/build-rollup.mjs"
+    "build:all": "ROLLUP_TARGET=all node scripts/build-rollup.mjs",
+    "build:full": "ROLLUP_TARGET=full node scripts/build-rollup.mjs"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -87,13 +88,28 @@
     "katex": "0.16.47",
     "mammoth": "1.12.1",
     "marked": "4.3.0",
-    "turndown": "7.2.2"
+    "turndown": "7.2.2",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-model": "^1.25.12",
+    "prosemirror-view": "^1.42.6",
+    "prosemirror-transform": "^1.12.2",
+    "prosemirror-commands": "^1.7.2",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-inputrules": "^1.5.1",
+    "prosemirror-schema-list": "^1.5.1",
+    "prosemirror-history": "^1.5.1",
+    "prosemirror-gapcursor": "^1.4.1",
+    "prosemirror-dropcursor": "^1.8.4",
+    "prosemirror-tables": "^1.8.5",
+    "prosemirror-changeset": "^2.4.4"
   },
   "devDependencies": {
-    "@babel/core": "7.29.7",
+    "@babel/core": "7.26.10",
     "@babel/plugin-transform-modules-commonjs": "7.29.7",
+    "@babel/preset-env": "7.26.9",
     "@hocuspocus/provider": "4.7.1",
     "@hocuspocus/server": "4.7.1",
+    "@rollup/plugin-babel": "6.0.4",
     "@rollup/plugin-commonjs": "25.0.7",
     "@rollup/plugin-json": "6.1.0",
     "@rollup/plugin-node-resolve": "15.2.3",
@@ -190,7 +206,12 @@
     "dist/lark-doc-element.umd.min.*.js",
     "dist/features/*.js",
     "dist/fonts/**",
-    "dist/lark-doc-lite.esm.js"
+    "dist/lark-doc-lite.esm.js",
+    "dist/lark-doc-full*.js",
+    "dist/lark-doc-full*.esm.js",
+    "dist/lark-doc-element*.js",
+    "src/features/*.js",
+    "dist/*polyfills*.js"
   ],
   "files": [
     "dist",
@@ -200,26 +221,6 @@
     "DEMO_INTEGRATION_GUIDE.md",
     "rollup.config.mjs"
   ],
-  "peerDependencies": {
-    "@hocuspocus/provider": "^4.7.1",
-    "@tiptap/extension-collaboration": "^3.32.0",
-    "@tiptap/extension-collaboration-caret": "^3.32.0",
-    "yjs": "^13.6.33"
-  },
-  "peerDependenciesMeta": {
-    "@hocuspocus/provider": {
-      "optional": true
-    },
-    "@tiptap/extension-collaboration": {
-      "optional": true
-    },
-    "@tiptap/extension-collaboration-caret": {
-      "optional": true
-    },
-    "yjs": {
-      "optional": true
-    }
-  },
   "exports": {
     ".": {
       "node": "./dist/lark-doc.common.js",
@@ -227,7 +228,11 @@
       "require": "./dist/lark-doc.common.js",
       "default": "./dist/lark-doc.common.js"
     },
-    "./element": "./dist/lark-doc-element.umd.min.js",
+    "./element": {
+      "import": "./dist/lark-doc-element.esm.js",
+      "require": "./dist/lark-doc-element.umd.min.js",
+      "default": "./dist/lark-doc-element.umd.min.js"
+    },
     "./vue2": {
       "node": "./dist/lark-doc-vue2.common.js",
       "import": "./dist/lark-doc-vue2.esm.js",
@@ -247,8 +252,10 @@
       "default": "./dist/lark-doc-vue3.mjs"
     },
     "./adapters/vue2": {
-      "require": "./dist/lark-doc.common.js",
-      "default": "./dist/lark-doc.common.js"
+      "node": "./dist/lark-doc-vue2.common.js",
+      "import": "./dist/lark-doc-vue2.esm.js",
+      "require": "./dist/lark-doc-vue2.common.js",
+      "default": "./dist/lark-doc-vue2.common.js"
     },
     "./adapters/react": {
       "import": "./dist/lark-doc-react.mjs",
@@ -275,8 +282,10 @@
       "default": "./dist/lark-doc-migrations.mjs"
     },
     "./collab": {
+      "node": "./dist/lark-doc-collab.common.js",
       "import": "./dist/lark-doc-collab.esm.js",
-      "default": "./dist/lark-doc-collab.esm.js"
+      "require": "./dist/lark-doc-collab.common.js",
+      "default": "./dist/lark-doc-collab.common.js"
     },
     "./lite": {
       "import": "./dist/lark-doc-lite.esm.js",
@@ -293,14 +302,27 @@
     },
     "./style.css": "./dist/lark-doc.css",
     "./dist/*": "./dist/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./full": {
+      "node": "./dist/lark-doc-full.common.js",
+      "import": "./dist/lark-doc-full.esm.js",
+      "require": "./dist/lark-doc-full.common.js",
+      "default": "./dist/lark-doc-full.common.js"
+    },
+    "./legacy": {
+      "node": "./dist/lark-doc-vue2.common.js",
+      "import": "./dist/lark-doc-vue2.esm.js",
+      "require": "./dist/lark-doc-vue2.common.js",
+      "default": "./dist/lark-doc-vue2.common.js"
+    }
   },
   "size-limit": [
     {
-      "name": "ESM 主包 (gzip)",
+      "name": "ESM 主包 (gzip)（编辑器代码，运行时与总初始图另列）",
       "path": "dist/lark-doc.esm.js",
       "limit": "310 KB",
-      "gzip": true
+      "gzip": true,
+      "scope": "editor"
     },
     {
       "name": "Element 产物 (gzip)",
@@ -321,10 +343,32 @@
       "gzip": true
     },
     {
-      "name": "lite 主包 (gzip)",
+      "name": "lite 主包 (gzip)（编辑器代码，运行时与总初始图另列）",
       "path": "dist/lark-doc-lite.esm.js",
       "limit": "300 KB",
-      "gzip": true
+      "gzip": true,
+      "scope": "editor"
     }
-  ]
+  ],
+  "collabDependencies": {
+    "@hocuspocus/provider": "^4.7.1",
+    "@tiptap/extension-collaboration": "^3.32.0",
+    "@tiptap/extension-collaboration-caret": "^3.32.0",
+    "yjs": "^13.6.33"
+  },
+  "browser": {
+    "./dist/pm/state.js": "prosemirror-state",
+    "./dist/pm/model.js": "prosemirror-model",
+    "./dist/pm/view.js": "prosemirror-view",
+    "./dist/pm/transform.js": "prosemirror-transform",
+    "./dist/pm/commands.js": "prosemirror-commands",
+    "./dist/pm/keymap.js": "prosemirror-keymap",
+    "./dist/pm/inputrules.js": "prosemirror-inputrules",
+    "./dist/pm/schema-list.js": "prosemirror-schema-list",
+    "./dist/pm/history.js": "prosemirror-history",
+    "./dist/pm/gapcursor.js": "prosemirror-gapcursor",
+    "./dist/pm/dropcursor.js": "prosemirror-dropcursor",
+    "./dist/pm/tables.js": "prosemirror-tables",
+    "./dist/pm/changeset.js": "prosemirror-changeset"
+  }
 }

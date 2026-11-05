@@ -37,3 +37,9 @@ docs/.vitepress/.dist-verify/
 perf/.run/
 perf/.perf-result.json
 .codegraph/
+
+# 在线演示资源由 deploy-docs.yml 从当前提交构建。
+/docs/public/demo/vendor/
+
+# 框架预览从 docs/examples/apps 重建，不入库。
+/docs/public/examples-runtime/

@@ -109,8 +109,11 @@ describe('Web Component 的 ready 初始化边界', () => {
     expect(element.querySelector('.ProseMirror')).toBeNull()
   })
 
-  it('移除再插入后恢复已保存正文，每轮 ready 回调仍可覆写且持续有效', async () => {
-    const element = createElement({}, '<p>重建时的初始正文</p>')
+  it.each([
+    ['none', ['重建时的初始正文', '重建时的初始正文']],
+    ['local', ['重建时的初始正文', '第 1 次 ready 写入']],
+  ])('移除再插入后重新就绪（storage=%s），slot或草稿恢复后ready写入持续有效', async (storage, expectedTexts) => {
+    const element = createElement({ storage }, '<p>重建时的初始正文</p>')
     const initialTexts = []
     const ready = vi.fn(() => {
       initialTexts.push(element.getText())
@@ -132,15 +135,15 @@ describe('Web Component 的 ready 初始化边界', () => {
 
     expect(ready).toHaveBeenCalledTimes(2)
     expect(element.getInstance()).not.toBe(firstInstance)
-    expect(initialTexts).toEqual(['重建时的初始正文', '第 1 次 ready 写入'])
-    expect(element.getTitle()).toBe('应随草稿恢复的标题')
+    expect(initialTexts).toEqual(expectedTexts)
+    if (storage === 'local') expect(element.getTitle()).toBe('应随草稿恢复的标题')
     expect(element.getText()).toBe('第 2 次 ready 写入')
     await vi.advanceTimersByTimeAsync(1000)
     expect(element.getText()).toBe('第 2 次 ready 写入')
     expect(ready).toHaveBeenCalledTimes(2)
   })
 
-  it('关闭持久化时，重建与重连均从原始 slot 初始化而非上轮编辑器 DOM', async () => {
+  it('关闭持久化时，属性重建保留当前正文，断开重连从原始 slot 初始化', async () => {
     const element = createElement({ storage: 'none' }, '<p>缓存的声明正文</p>')
     const initialTexts = []
     const ready = vi.fn(() => {
@@ -163,7 +166,7 @@ describe('Web Component 的 ready 初始化边界', () => {
     document.body.appendChild(element)
     await vi.advanceTimersByTimeAsync(100)
 
-    expect(initialTexts).toEqual(['缓存的声明正文', '缓存的声明正文', '缓存的声明正文'])
+    expect(initialTexts).toEqual(['缓存的声明正文', '第 1 轮覆写', '缓存的声明正文'])
     expect(element.getText()).toBe('第 3 轮覆写')
     expect(element.querySelectorAll('.ProseMirror')).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(1000)

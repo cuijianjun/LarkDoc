@@ -215,7 +215,8 @@ else
 fi
 
 printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || die "版本号不合法：$VERSION"
-[ "$VERSION" != "$CURRENT" ] || die "版本号与当前 $CURRENT 相同"
+# bump 已写入 package.json 后，断点恢复或明确指定当前版本仍需完成校验/发布。
+[ "$VERSION" != "$CURRENT" ] || [ "$RESUME" = 1 ] || [ -n "$EXPLICIT_VERSION" ] || die "版本号与当前 $CURRENT 相同"
 
 if [ "$DO_PUBLISH" = 1 ]; then
   CODE="$(registry -o /dev/null -w '%{http_code}' "$REGISTRY$NAME/$VERSION" || echo 000)"

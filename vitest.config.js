@@ -62,7 +62,11 @@ module.exports = {
      * 4 看上去更快（717s vs 838s），但那 717s 里少了 30% 的文件。
      * 调大之前请先确认整套 82 个文件都在输出里 —— 少跑比跑得慢危险得多。
      */
-    // dev 的调度回归会修改全局，保留文件隔离，避免复用 worker 导致桩泄漏。
+    /**
+     * 用例覆盖真实 DOM、跨产物 feature registry、dev 调度回归和浏览器全局桩。
+     * 每个文件隔离模块及全局状态，避免复用 worker 时注册器、样式和 DOM realm
+     * 污染后续文件，产生「单独跑绿、全量跑红」。
+     */
     isolate: true,
     pool: 'forks',
     maxWorkers: 2,

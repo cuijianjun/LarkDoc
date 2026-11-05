@@ -8,5 +8,7 @@
 import { registerFeature } from '../core/features/registry'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
+import { serializeMarkdown } from '../utils/export/markdown.js'
 
-registerFeature('markdown', () => Promise.resolve({ marked, TurndownService }))
+registerFeature('markdown', () => ({ marked, TurndownService }))
+registerFeature('markdown.serialize', () => ({ serializeMarkdown }))

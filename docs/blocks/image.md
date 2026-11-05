@@ -10,10 +10,10 @@ new LarkDoc({
   features: { images: true },
   limits: { maxImageSize: 5 * 1024 * 1024 },     // 单张 5MB
   uploader: {
-    upload: async (file) => {
+    upload: async (file, ctx) => {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', body: form })
+      const res = await fetch('/api/upload', { method: 'POST', body: form, signal: ctx.signal })
       const data = await res.json()
       return { url: data.url, attchId: data.id }   // attchId 可选，会随 JSON 一起保存
     },
@@ -29,12 +29,18 @@ new LarkDoc({
 | `network.mode` | `'open'` | 外链图片策略，见[网络策略](/blocks/network)。 |
 | `network.imageProxy` | - | 把外链图转存成本地地址。 |
 
+## 上传生命周期
+
+选图、粘贴文件、拖拽、替换和裁剪共用 beforeUpload / upload / onStart / onProgress / onRetry / onSuccess / onError / onCancel / onReject / onSettled；已有图片链接不伪造文件上传事件。ctx 带 taskId、documentId、原始 file、source、mode、signal 与 cancel(reason?)。异步检查期间可取消；销毁、换文档和只读后不能晚写回。
+
+合法 URL、相对图片路径与 PNG/JPEG/GIF/WebP data URI 均可作为上传结果，attchId 可省略。`doc.setUploader(nextUploader)` 或框架上传 property 更新不重建正文与撤销历史。完整签名、唯一终态和错误处理见[上传器](/blocks/uploader)。
+
 ## 怎么用
 
 | 入口 | 操作 |
 | --- | --- |
 | 工具栏 / 插入菜单 | 打开文件选择。 |
-| 粘贴 / 拖拽 | 直接插入，自动走上传钩子。 |
+| 粘贴 / 拖拽 | 直接插入，自动走同一 Provider；source 为 paste / drop。 |
 | 选中图片 | 拖四角调宽度；工具条给裁剪、替换、说明文字、预览、删除。 |
 | 双击 | 大图预览。 |
 
@@ -92,5 +98,5 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 :::
 
 ::: tip 上传失败
-`upload` 抛错时图片回退成 base64 本地预览并提示，不会丢用户刚选的图。
+自定义 upload 抛错或返回非法结果时通知 onError / onSettled，不回退为 base64 成功；替换、裁剪失败保留旧图。未配置 upload 的本地转换也提供相同回调。
 :::

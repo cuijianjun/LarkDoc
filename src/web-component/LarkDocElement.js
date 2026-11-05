@@ -67,6 +67,7 @@ export class LarkDocElement extends HTMLElement {
   connectedCallback() {
     // 微任务延迟：让宿主在同一 tick 内设置的 property（如 provider 对象）先生效。
     if (this._connectTask) clearTimeout(this._connectTask)
+    if (this._disconnectTask) clearTimeout(this._disconnectTask)
     this._disconnectTask = null
     this._connectTask = setTimeout(() => {
       this._connectTask = null
@@ -132,7 +133,7 @@ export class LarkDocElement extends HTMLElement {
 
   /* ------------------------------ 挂载 / 卸载 ------------------------------ */
 
-  _mount() {
+  _mount(preservedState = {}) {
     if (this.document || !this.isConnected) return
     // 重建时先移除上一轮 renderer 留下的编辑器 DOM；否则属性读取会把
     // ready 回调写入的正文误当成新的 slot 初始内容。原始 slot 已缓存，随后恢复。
@@ -159,7 +160,7 @@ export class LarkDocElement extends HTMLElement {
     }
     this._options.element = this
     try {
-      this.document = new LarkDoc(this._options)
+      this.document = new LarkDoc({ ...this._options, ...preservedState })
       this._bindEvents()
       this.ready = true
       this._applyTheme()
@@ -174,6 +175,11 @@ export class LarkDocElement extends HTMLElement {
   }
 
   _unmount() {
+    // 显式 destroy 也会发生在首次挂载或 options 重建的计时器执行之前。
+    for (const key of ['_connectTask', '_disconnectTask', '_rebuildTask']) {
+      clearTimeout(this[key])
+      this[key] = null
+    }
     if (!this.document) return
     const instance = this.document
     this.document = null
@@ -192,8 +198,18 @@ export class LarkDocElement extends HTMLElement {
     this._rebuildTask = setTimeout(() => {
       this._rebuildTask = null
       if (!this.isConnected) return
+      const nextOptions = { ...readOptionsFromElement(this).options, ...this.__options }
+      const newContent = Object.prototype.hasOwnProperty.call(nextOptions, 'content') &&
+        !Object.is(nextOptions.content, this._options.content)
+      // 在重建执行时取值，保留排队期间的编辑；只有显式新 content 才是换文档。
+      const preservedState = this.document && !newContent
+        ? { content: this.document.getJSON(), title: this.document.getTitle() }
+        : {}
+      if (!Object.is(nextOptions.title, this._options.title) && nextOptions.title !== undefined) {
+        delete preservedState.title
+      }
       this._unmount()
-      this._mount()
+      this._mount(preservedState)
     }, 30)
   }
 
@@ -261,11 +277,21 @@ export class LarkDocElement extends HTMLElement {
 
   /**
    * 整体替换 options（对象型能力：providers / persistence / uploader / ai 等）。
-   * 已挂载时按“先销毁再重建”处理，因为这些能力在 Workspace 初始化时就固化了。
+   * 上传配置原地更新；其他初始化期能力重建时保留当前正文和标题。
    */
   set options(value) {
+    const previous = this.__options || {}
     this.__options = value && typeof value === 'object' ? value : {}
-    if (this.document) this._scheduleRebuild()
+    if (!this.document) return
+    const changed = [...new Set([...Object.keys(previous), ...Object.keys(this.__options)])]
+      .filter(key => !Object.is(previous[key], this.__options[key]))
+    if (changed.every(key => key === 'uploader' || key === 'uploadImage')) {
+      if (changed.length) {
+        try { this.document.setUploader(this.__options.uploader ?? this.__options.uploadImage) } catch (error) { this._fail('uploader', error) }
+      }
+      return
+    }
+    this._scheduleRebuild()
   }
 
   get options() { return this.__options || {} }

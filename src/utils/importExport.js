@@ -17,27 +17,31 @@ export { downloadBlob, downloadText } from './download'
  *     markdown 两项给可读报错，其余导出格式照常工作；
  *   - 宿主加载 lark-doc/features/markdown.js 后全部恢复。
  * 因此 markdownToHtml / htmlToMarkdown 从同步变为返回 Promise（唯一调用方
- * LarkDocWorkspace.vue 已同步改为 await）。
+ * WorkspaceController 已使用 await）。
  */
 import { loadFeature } from '../core/features/registry'
 
 let markdownApiPromise
 let turndownInstance
+let turndownConstructor
 
 /** markdown 双向转换的公共加载通道（特性注册优先，stub/内置兜底见文件头）。 */
 function loadMarkdownApi() {
-  if (!markdownApiPromise) {
-    markdownApiPromise = loadFeature('markdown', () =>
-      Promise.all([
+  return loadFeature('markdown', () => {
+    if (!markdownApiPromise) {
+      markdownApiPromise = Promise.all([
         import(/* webpackChunkName: "markdown" */ 'marked'),
         import(/* webpackChunkName: "markdown" */ 'turndown'),
       ]).then(([markedModule, turndownModule]) => ({
         marked: markedModule.marked || markedModule.default || markedModule,
         TurndownService: turndownModule.default || turndownModule,
-      })),
-    )
-  }
-  return markdownApiPromise
+      })).catch(error => {
+        markdownApiPromise = null
+        throw error
+      })
+    }
+    return markdownApiPromise
+  })
 }
 
 export function markdownToHtml(markdown) {
@@ -47,7 +51,10 @@ export function markdownToHtml(markdown) {
 
 export function htmlToMarkdown(html) {
   return loadMarkdownApi().then(({ TurndownService }) => {
-    if (!turndownInstance) turndownInstance = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+    if (!turndownInstance || turndownConstructor !== TurndownService) {
+      turndownInstance = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
+      turndownConstructor = TurndownService
+    }
     return turndownInstance.turndown(html)
   })
 }

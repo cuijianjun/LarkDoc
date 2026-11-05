@@ -5,9 +5,8 @@
  * 不依赖 lark-doc 的 Vue 2 渲染层。Vue 3 模板里直接写 <lark-doc> 标签，
  * 本文件只补齐三件适配职责（08 §4.1 硬规则 5）：
  *
- * 1. props → attributes：resolveVue3Attrs() 把宿主 props 按
- *    web-component/attributes 的 ATTRIBUTE_SCHEMA 白名单序列化成
- *    HTML 属性字符串（对象型配置请走 property / options，见 attributes.js 注释）；
+ * 1. resolveVue3Attrs() 按 ATTRIBUTE_SCHEMA 序列化标量属性；options / uploader /
+ *    uploadImage 保留为 options 对象，Vue 3 v-bind 写入元素已有的 options property；
  * 2. 事件转发：VUE3_EVENTS 是 <lark-doc> 派发 CustomEvent 的名单，
  *    模板里写 @lark-doc-change="..." / @lark-doc-save="..."；
  * 3. 方法代理：元素自身已代理 getJSON / setContent / focus 等快捷方法，
@@ -17,7 +16,7 @@
  *   import 'lark-doc/element'
  *   import { resolveVue3Attrs, VUE3_EVENTS } from 'lark-doc/vue3'
  *   <lark-doc v-bind="resolveVue3Attrs({ content: html, contentFormat: 'html' })"
- *             @lark-doc-change="onChange" />
+ *             :options.prop="options" @lark-doc-change="onChange" />
  *
  * 注意：lark-doc/element 是构建产物（dist/lark-doc-element.umd.min.js），
  * 源码内含 Vue 2 SFC，Vue 3 宿主不能直接引 lark-doc 源码入口。
@@ -34,7 +33,8 @@ export const VUE3_EVENTS = Object.freeze({ ...EVENT_MAP })
 
 /**
  * props → HTML attributes（v-bind 用）。
- * 只放行 ATTRIBUTE_SCHEMA 里登记过的属性；未登记的 key 会被忽略并告警，
+ * options / uploader / uploadImage 走 options property；其余只放行 ATTRIBUTE_SCHEMA，
+ * 未登记的 key 会被忽略并告警，
  * 避免 Vue 3 侧拼错属性名后静默失效。
  */
 export function resolveVue3Attrs(props = {}) {
@@ -43,7 +43,17 @@ export function resolveVue3Attrs(props = {}) {
   assertLarkDocElement()
   const byAttr = new Map(ATTRIBUTE_SCHEMA.map((entry) => [entry.attr, entry]))
   const attrs = {}
+  if ('options' in props || 'uploader' in props || 'uploadImage' in props) {
+    attrs.options = props.uploader === undefined && props.uploadImage === undefined
+      ? props.options || {}
+      : {
+        ...props.options,
+        ...(props.uploader !== undefined ? { uploader: props.uploader } : {}),
+        ...(props.uploadImage !== undefined ? { uploadImage: props.uploadImage } : {}),
+      }
+  }
   for (const [key, value] of Object.entries(props)) {
+    if (key === 'options' || key === 'uploader' || key === 'uploadImage') continue
     const attr = key.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)
     const entry = byAttr.get(attr)
     if (!entry) {

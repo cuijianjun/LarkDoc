@@ -1,138 +1,41 @@
 // @vitest-environment jsdom
-import fs from 'fs'
-import path from 'path'
-import { transformSync } from '@babel/core'
-import compiler from 'vue-template-compiler'
-import Vue, * as vue from 'vue'
-import * as tiptap from '@tiptap/vue-2'
+import { Editor } from '@tiptap/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import * as extensions from '../../src/components/lark-doc/extensions'
-import * as documentOperations from '../../src/components/lark-doc/documentOperations'
-import * as larkDocConfig from '../../src/components/lark-doc/larkDocConfig'
-import * as legacy from '../../src/legacy'
-import selectionPacingMixin from '../../src/components/lark-doc/editor/selectionPacingMixin'
+import { createDomRenderer } from '../../src/mount/domRenderer'
 import blockHandleMixin from '../../src/components/lark-doc/editor/blockHandleMixin'
 import tableToolsMixin from '../../src/components/lark-doc/editor/tableToolsMixin'
 import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
 import revisionMixin from '../../src/components/lark-doc/editor/revisionMixin'
-import toolbarMenusMixin from '../../src/components/lark-doc/editor/toolbarMenusMixin'
-import toolbarCollapseMixin from '../../src/components/lark-doc/editor/toolbarCollapseMixin'
-import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
-import * as diagram from '../../src/components/lark-doc/diagram'
-import * as themeSignal from '../../src/components/lark-doc/themeSignal'
-import * as codeLanguages from '../../src/components/lark-doc/editor/codeLanguages'
-import * as codeLangSignal from '../../src/components/lark-doc/editor/codeLangSignal'
+import { createCodeBlockNodeView } from '../../src/core/nodeviews/code-block'
 import { getNodeView, setNodeView } from '../../src/core/nodeviews/registry'
 
-// 保留 .vue 导入门禁：执行真实 SFC 脚本与模板，真实挂载 EditorContent 和代码块 NodeView。
-function loadOptions(relative, dependencies = {}) {
-  const filename = path.resolve(__dirname, '../../src/components/lark-doc', relative)
-  const content = fs.readFileSync(filename, 'utf8')
-  const source = filename.endsWith('.vue') ? compiler.parseComponent(content) : null
-  const { code } = transformSync(source ? source.script.content : content, {
-    filename, babelrc: false, configFile: false,
-    plugins: ['@babel/plugin-transform-modules-commonjs'],
-  })
-  const exports = {}
-  new Function('require', 'exports', code)((name) => dependencies[name] || {}, exports)
-  return { options: exports.default || exports, template: source?.template.content }
-}
-
-const { options: component } = loadOptions('LarkDocEditor.vue', {
-  vue,
-  '@tiptap/vue-2': tiptap,
-  './extensions': extensions,
-  './documentOperations': documentOperations,
-  './larkDocConfig': larkDocConfig,
-  '../../legacy': legacy,
-  '../../adapters/vue2/nodeviews': { registerVue2NodeViews() {} },
-})
-const toolbar = loadOptions('editor/ToolbarBar.vue')
-const ToolbarBar = {
-  ...toolbar.options,
-  ...compiler.compileToFunctions(toolbar.template),
-  components: {
-    LarkDocIcon: { render: (h) => h('i') },
-    LarkDocSelect: { render: (h) => h('span') },
-    LarkDocHeadingMenu: { render: (h) => h('span') },
-  },
-}
-const codeNode = loadOptions('../../adapters/vue2/CodeNode.vue', {
-  '@tiptap/vue-2': tiptap,
-  '../../components/lark-doc/diagram': diagram,
-  '../../components/lark-doc/themeSignal': themeSignal,
-  '../../components/lark-doc/documentOperations': documentOperations,
-  '../../components/lark-doc/editor/codeLanguages': codeLanguages,
-  '../../components/lark-doc/editor/codeLangSignal': codeLangSignal,
-})
-const CodeNode = { ...codeNode.options, ...compiler.compileToFunctions(codeNode.template) }
-const { options: nodeViews } = loadOptions('../../adapters/vue2/nodeviews.js', {
-  vue,
-  '@tiptap/vue-2': tiptap,
-  '../../registry/nodeviews': { setNodeView },
-  './CodeNode.vue': { __esModule: true, default: CodeNode },
-})
 const hosts = []
+const codeViews = []
 let previousCodeNodeView
-let previousErrorHandler
-let vueErrors
 
-function mountEditor(propsData = {}) {
-  const noops = Object.fromEntries([
-    'restoreMode', 'restoreFolds', 'persistFolds', 'updateRevisionPanels',
-    'syncHandleHighlightBackdrop', 'syncTableClip', 'updateTableBoundary',
-    'clearTableBoundaryHover', 'updateHandleAndTable', 'clearHandleHighlight',
-    'closeBubbleAlignMenu', 'closeCommandMenu', 'onFullscreenChange',
-    'onWindowKeydown', 'onHandlePointerUp', 'onDocumentPointerDown', 'onDocumentScroll',
-  ].map((name) => [name, vi.fn()]))
-  const vm = new Vue({
-    props: component.props,
-    propsData: {
-      value: '<p>plain</p><h2>heading</h2><p><strong>bold</strong> normal</p>',
-      config: { performance: { stateUpdateFrame: false, changeDebounce: 0 } },
-      ...propsData,
-    },
-    data() {
-      return Vue.observable({
-        ...viewModesMixin.data.call(this),
-        ...toolbarMenusMixin.data.call(this),
-        ...toolbarCollapseMixin.data.call(this),
-        ...component.data.call(this),
-      })
-    },
-    computed: {
-      ...component.computed,
-      ...toolbarMenusMixin.computed,
-      ...toolbarCollapseMixin.computed,
-    },
-    beforeDestroy: [selectionPacingMixin.beforeDestroy, component.beforeDestroy, toolbarMenusMixin.beforeDestroy],
-    destroyed: component.destroyed,
-    methods: {
-      ...viewModesMixin.methods,
-      ...selectionPacingMixin.methods,
-      ...toolbarMenusMixin.methods,
-      ...toolbarCollapseMixin.methods,
-      ...component.methods,
-      ...noops,
-      toolbarEnabled: (name) => ['headings', 'marks', 'textStyle'].includes(name),
-      isGroupCollapsed: () => false,
-      writable: () => true,
-    },
-    render(h) {
-      return h('section', { ref: 'root', class: 'lark-doc' }, [
-        h(ToolbarBar, { props: { ed: this } }),
-        this.editor ? h(tiptap.EditorContent, { props: { editor: this.editor } }) : null,
-      ])
-    },
-  })
-  // 布局测量仍按现有机制排队；不让 jsdom 的零尺寸布局干扰响应式断言。
+async function tick() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+function mountEditor(props = {}) {
+  const renderer = createDomRenderer()
+  const element = document.createElement('div')
+  document.body.appendChild(element)
+  const handle = renderer.mount({ element, props: {
+    initialContent: '<p>plain</p><h2>heading</h2><p><strong>bold</strong> normal</p>',
+    storage: 'none',
+    config: { layout: { toolbarVisible: true }, modes: { persist: false }, performance: { stateUpdateFrame: false, changeDebounce: 0 } },
+    ...props,
+  } })
+  const vm = handle.nativeHost.host
+  vm.$el = renderer.getRoot(handle)
   vm.$frame = { requestFrame: vi.fn(() => 1), cancelFrame: vi.fn() }
-  vm.$mount()
-  hosts.push(vm)
-  component.mounted.call(vm)
+  const destroy = () => renderer.destroy(handle)
+  hosts.push(() => { destroy(); element.remove() })
   expect(vm.error).toBe('')
-  expect(vm.editor).toBeInstanceOf(tiptap.Editor)
-  return vm
+  expect(vm.editor).toBeInstanceOf(Editor)
+  return { vm, handle, destroy }
 }
 
 function expectRawEditor(editor) {
@@ -159,119 +62,114 @@ const boldChecked = (vm) => vm.toolbarSections.find((section) => section.id === 
 
 beforeEach(() => {
   previousCodeNodeView = getNodeView('codeBlock')
-  nodeViews.registerVue2NodeViews()
-  previousErrorHandler = Vue.config.errorHandler
-  vueErrors = []
-  Vue.config.errorHandler = (error, vm, info) => vueErrors.push({ error, component: vm?.$options.name, info })
+  setNodeView('codeBlock', (props) => {
+    const nodeView = createCodeBlockNodeView(props)
+    vi.spyOn(nodeView, 'update')
+    vi.spyOn(nodeView, 'destroy')
+    codeViews.push(nodeView)
+    return nodeView
+  })
 })
 
 afterEach(() => {
-  try {
-    for (const vm of hosts.splice(0)) vm.$destroy()
-    expect(vueErrors.map(({ error, component, info }) => `${component}: ${info}: ${error.stack}`)).toEqual([])
-  } finally {
-    setNodeView('codeBlock', previousCodeNodeView)
-    Vue.config.errorHandler = previousErrorHandler
-    vi.restoreAllMocks()
-  }
+  hosts.splice(0).reverse().forEach((cleanup) => cleanup())
+  codeViews.length = 0
+  setNodeView('codeBlock', previousCodeNodeView)
+  localStorage.clear()
+  vi.restoreAllMocks()
 })
 
-describe('Vue 2.7 编辑器响应式边界', () => {
-  it('EditorContent 真实挂载原生代码块 NodeView，不递归遍历 schema 循环且正常销毁', async () => {
-    const vm = mountEditor({ value: '<pre><code class="language-plaintext">hello</code></pre>' })
-    await Vue.nextTick()
-    await Vue.nextTick()
-    expect(vueErrors.map(({ error }) => error.message)).toEqual([])
-    expect(vm.editor.contentComponent.$options.name).toBe('EditorContent')
+describe('原生编辑器响应式边界', () => {
+  it('真实挂载原生代码块 NodeView，不递归遍历 schema 循环且正常销毁', async () => {
+    const { vm, handle, destroy } = mountEditor({ initialContent: '<pre><code class="language-plaintext">hello</code></pre>' })
+    await tick()
     const node = vm.editor.state.doc.firstChild
+    const codeView = codeViews.find((view) => vm.$el.contains(view.dom))
+    codeView.update.mockClear()
     expect(node.type.schema.nodes.codeBlock).toBe(node.type)
+    expect(vm.editor).toBe(handle.editor)
     expectRawEditor(vm.editor)
-    expect(vm.$el.querySelector('.ProseMirror .lark-doc-code')).not.toBeNull()
-    expect(vm.$el.querySelector('.lark-doc-code-input').textContent).toBe('hello')
-    const codeVm = vm.editor.contentComponent.$children.find((child) => child.$options.name === 'LarkDocCodeNode')
-    expect(codeVm.node).toBe(node)
-    const highlighted = vi.spyOn(codeVm, 'refreshHighlighted')
-    const scheduled = vi.spyOn(codeVm, 'scheduleDiagramRender')
+    expect(vm.$el.querySelector('.ProseMirror .lark-doc-code')).toBe(codeView.dom)
+    expect(codeView.contentDOM.textContent).toBe('hello')
+    const highlight = codeView.dom.querySelector('.lark-doc-code-highlight code')
+    const mutations = []
+    const observer = new MutationObserver((records) => mutations.push(...records))
+    observer.observe(highlight, { childList: true, characterData: true, subtree: true })
+    try {
+      vm.editor.commands.setTextSelection({ from: 1, to: 3 })
+      await tick()
+      expect(vm.hasTextSelection).toBe(true)
+      expect(button(vm, '设置链接').disabled).toBe(false)
+      expect(codeView.update).not.toHaveBeenCalled()
+      expect(mutations).toEqual([])
 
-    vm.editor.commands.setTextSelection({ from: 1, to: 3 })
-    await Vue.nextTick()
-    expect(vm.hasTextSelection).toBe(true)
-    expect(button(vm, '设置链接').disabled).toBe(false)
-    expect(highlighted).not.toHaveBeenCalled()
-    expect(scheduled).not.toHaveBeenCalled()
+      vm.editor.commands.insertContentAt(1, '<new>')
+      await tick()
+      expect(vm.editor.state.doc.firstChild).not.toBe(node)
+      expect(codeView.contentDOM.textContent).toBe('<new>hello')
+      expect(highlight.textContent).toBe('<new>hello')
+      expect(highlight.querySelector('new')).toBeNull()
+      expect(codeView.update).toHaveBeenCalledTimes(1)
+      expectRawEditor(vm.editor)
 
-    vm.editor.commands.insertContentAt(1, '<new>')
-    await Vue.nextTick()
-    expect(codeVm.node).not.toBe(node)
-    expect(codeVm.node.textContent).toBe('<new>hello')
-    expect(vm.$el.querySelector('.lark-doc-code-input').textContent).toBe('<new>hello')
-    expect(vm.$el.querySelector('.lark-doc-code-highlight code').textContent).toBe('<new>hello')
-    expect(highlighted).toHaveBeenCalledTimes(1)
-    expect(scheduled).toHaveBeenCalledTimes(1)
-    expectRawEditor(vm.editor)
-
-    codeVm.updateAttributes({ language: 'mermaid' })
-    await Vue.nextTick()
-    expect(codeVm.lastLanguageSeen).toBe('mermaid')
-    expect(codeVm.showPreview).toBe(true)
-    expect(vm.$el.querySelector('.lark-doc-code-diagram .lark-doc-diagram')).not.toBeNull()
-    expect(scheduled).toHaveBeenCalledTimes(2)
-    codeVm.updateAttributes({ language: 'plaintext' })
-    await Vue.nextTick()
-    expect(codeVm.showPreview).toBe(false)
-    expect(vm.$el.querySelector('.lark-doc-diagram')).toBeNull()
-    const editor = vm.editor
-    vm.$destroy()
-    expect(codeVm._isDestroyed).toBe(true)
-    expect(editor.isDestroyed).toBe(true)
-    expect(editor.contentComponent).toBeNull()
+      expect(codeView.setLanguage('mermaid')).toBe(true)
+      expect(codeView.getState().showPreview).toBe(true)
+      expect(codeView.dom.querySelector('.lark-doc-diagram')).not.toBeNull()
+      expect(codeView.setLanguage('plaintext')).toBe(true)
+      expect(codeView.getState().showPreview).toBe(false)
+      expect(codeView.dom.querySelector('.lark-doc-diagram')).toBeNull()
+      const editor = vm.editor
+      destroy()
+      expect(codeView.destroy).toHaveBeenCalledTimes(1)
+      expect(editor.isDestroyed).toBe(true)
+      expect(handle.root.isConnected).toBe(false)
+    } finally { observer.disconnect() }
   })
 
   it('Vditor 图表和普通代码块首次挂载及替换正文均创建真实 NodeView', async () => {
-    const vm = mountEditor({ value: '<div class="language-mermaid">graph TD\n A --&gt; B</div><pre><code class="language-plaintext">hello</code></pre>' })
-    await Vue.nextTick()
-    await Vue.nextTick()
+    const { vm } = mountEditor({ initialContent: '<div class="language-mermaid">graph TD\n A --&gt; B</div><pre><code class="language-plaintext">hello</code></pre>' })
+    await tick()
     expect(vm.$el.querySelectorAll('.ProseMirror .lark-doc-code')).toHaveLength(2)
     expect(vm.$el.querySelector('.lark-doc-code-diagram .lark-doc-diagram')).not.toBeNull()
     expect(vm.$el.querySelector('.lark-doc-code-input').textContent).toContain('graph TD')
-    expect(vm.editor.contentComponent.$children.filter((child) => child.$options.name === 'LarkDocCodeNode')).toHaveLength(2)
+    expect(codeViews.filter((view) => vm.$el.contains(view.dom))).toHaveLength(2)
     expectRawEditor(vm.editor)
-
     vm.editor.commands.setContent('<p>replacement</p>')
-    await Vue.nextTick()
+    await tick()
     expect(vm.$el.querySelectorAll('.lark-doc-code')).toHaveLength(0)
     expect(vm.$el.querySelector('.ProseMirror').textContent).toBe('replacement')
-    expect(vm.editor.contentComponent.$children).toHaveLength(0)
+    codeViews.forEach((view) => expect(view.destroy).toHaveBeenCalledTimes(1))
     vm.editor.commands.setContent('<pre><code class="language-plaintext">again</code></pre>')
-    await Vue.nextTick()
+    await tick()
+    expect(codeViews.filter((view) => vm.$el.contains(view.dom))).toHaveLength(1)
     expect(vm.$el.querySelector('.lark-doc-code-input').textContent).toBe('again')
     expectRawEditor(vm.editor)
   })
 
-  it.each(['editor', 'component', 'removed'])('滚动帧排队后销毁 %s，不再访问 view 或更新浮层', (target) => {
+  it.each(['editor', 'host', 'removed'])('滚动帧排队后销毁 %s，不再访问 view 或更新浮层', async (target) => {
+    const { vm, destroy } = mountEditor()
+    await tick()
     let frame
     vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => { frame = callback; return 1 })
+    const original = vm.editor
     const readView = vi.fn(() => { throw new Error('不应访问已销毁 view') })
     const editor = { isDestroyed: false, get view() { return readView() } }
-    const vm = {
-      editor,
-      outline: [{ pos: 0 }],
-      currentBlockRange: vi.fn(),
-      positionBlockHandle: vi.fn(),
-      syncHandleHighlightBackdrop: vi.fn(),
-      updateTableBoundary: vi.fn(),
-      updateCalloutTools: vi.fn(),
-    }
-    component.methods.onDocumentScroll.call(vm)
+    const update = vi.spyOn(vm, 'updateTableBoundary')
+    const highlight = vi.spyOn(vm, 'syncHandleHighlightBackdrop')
+    vm.onDocumentScroll()
     expect(frame).toBeTypeOf('function')
-    if (target === 'editor') editor.isDestroyed = true
-    if (target === 'component') vm._isBeingDestroyed = true
-    if (target === 'removed') vm.editor = null
-    expect(() => frame()).not.toThrow()
-    expect(readView).not.toHaveBeenCalled()
-    expect(vm.updateTableBoundary).not.toHaveBeenCalled()
-    expect(vm.syncHandleHighlightBackdrop).not.toHaveBeenCalled()
-    expect(vm._outlineFrame).toBeNull()
+    if (target === 'host') destroy()
+    else vm.editor = target === 'removed' ? null : editor
+    editor.isDestroyed = true
+    update.mockClear()
+    highlight.mockClear()
+    try {
+      expect(() => frame()).not.toThrow()
+      expect(readView).not.toHaveBeenCalled()
+      expect(update).not.toHaveBeenCalled()
+      expect(highlight).not.toHaveBeenCalled()
+      if (target !== 'host') expect(vm._outlineFrame).toBeNull()
+    } finally { if (target !== 'host') vm.editor = original }
   })
 
   it.each([
@@ -279,20 +177,30 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     ['表格裁切', tableToolsMixin.methods.syncTableClip],
     ['评论面板', commentsMixin.methods.placeCommentPanels],
     ['修订面板', revisionMixin.methods.placeRevisionPanels],
-    ['句柄与表格', component.methods.updateHandleAndTable],
-  ])('%s 的延迟刷新在 editor 或组件销毁后不读取 view', (name, method) => {
+  ])('%s 的延迟刷新在 editor 或宿主销毁后不读取 view', (name, method) => {
     const readView = vi.fn(() => { throw new Error('不应访问已销毁 view') })
     for (const flags of [{}, { _isBeingDestroyed: true }, { _isDestroyed: true }]) {
       const vm = {
         editor: { isDestroyed: Object.keys(flags).length === 0, get view() { return readView() } },
-        commentPanels: [{}], revisionPanels: [{}],
-        updateTableBoundary: vi.fn(),
-        ...flags,
+        commentPanels: [{}], revisionPanels: [{}], ...flags,
       }
       expect(() => method.call(vm)).not.toThrow()
-      expect(vm.updateTableBoundary).not.toHaveBeenCalled()
     }
     expect(readView).not.toHaveBeenCalled()
+  })
+
+  it('原生宿主的句柄与表格延迟刷新在 editor 销毁后不读取 view', async () => {
+    const { vm } = mountEditor()
+    await tick()
+    const original = vm.editor
+    const readView = vi.fn(() => { throw new Error('不应访问已销毁 view') })
+    const update = vi.spyOn(vm, 'updateTableBoundary')
+    vm.editor = { isDestroyed: true, get view() { return readView() } }
+    try {
+      expect(() => vm.updateHandleAndTable()).not.toThrow()
+      expect(readView).not.toHaveBeenCalled()
+      expect(update).not.toHaveBeenCalled()
+    } finally { vm.editor = original }
   })
 
   it.each([
@@ -303,8 +211,7 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     const readView = vi.fn(() => { throw new Error('不应访问已销毁 view') })
     const editor = { isDestroyed: false, get view() { return readView() } }
     const vm = {
-      editor,
-      $nextTick: (callback) => { nextTick = callback },
+      editor, $nextTick: (callback) => { nextTick = callback },
       [viewport]: vi.fn(), [pointer]: vi.fn(),
       loadComments: vi.fn(), syncRevisionTracking: vi.fn(), updateRevisionPanels: vi.fn(),
     }
@@ -314,9 +221,7 @@ describe('Vue 2.7 编辑器响应式边界', () => {
       expect(() => nextTick()).not.toThrow()
       expect(vm.loadComments).not.toHaveBeenCalled()
       expect(vm.syncRevisionTracking).not.toHaveBeenCalled()
-    } finally {
-      expect(() => mixin.beforeDestroy.call(vm)).not.toThrow()
-    }
+    } finally { expect(() => mixin.beforeDestroy.call(vm)).not.toThrow() }
     expect(readView).not.toHaveBeenCalled()
   })
 
@@ -324,8 +229,7 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     let nextTick
     const readView = vi.fn(() => { throw new Error('不应访问已销毁 view') })
     const editor = {
-      isDestroyed: false,
-      get view() { return readView() },
+      isDestroyed: false, get view() { return readView() },
       storage: { larkDoc: { handleHover: { from: 0, to: 3 } } },
       commands: { setLarkDocHandleHover: vi.fn() },
     }
@@ -352,9 +256,7 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     try {
       expect(() => frame()).not.toThrow()
       expect(readView).toHaveBeenCalledTimes(1)
-    } finally {
-      tableToolsMixin.beforeDestroy.call(vm)
-    }
+    } finally { tableToolsMixin.beforeDestroy.call(vm) }
   })
 
   it.each([
@@ -365,8 +267,7 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     const readView = vi.fn(() => ({ dom }))
     const editor = { isDestroyed: false, get view() { return readView() } }
     const vm = {
-      editor,
-      $nextTick: (callback) => callback(),
+      editor, $nextTick: (callback) => callback(),
       [viewport]: vi.fn(), [pointer]: vi.fn(),
       loadComments: vi.fn(), syncRevisionTracking: vi.fn(), updateRevisionPanels: vi.fn(),
     }
@@ -384,42 +285,42 @@ describe('Vue 2.7 编辑器响应式边界', () => {
   })
 
   it('真实 editor 销毁后的延迟 DOM 刷新不触发 Tiptap view 代理错误', async () => {
-    const vm = mountEditor()
-    await Vue.nextTick()
+    const { vm, destroy } = mountEditor()
+    await tick()
     const editor = vm.editor
-    vm.$destroy()
+    destroy()
     expect(editor.isDestroyed).toBe(true)
     const host = { editor, commentPanels: [{}], revisionPanels: [{}] }
     for (const method of [
-      blockHandleMixin.methods.syncHandleHighlightBackdrop,
-      tableToolsMixin.methods.syncTableClip,
-      commentsMixin.methods.placeCommentPanels,
-      revisionMixin.methods.placeRevisionPanels,
+      blockHandleMixin.methods.syncHandleHighlightBackdrop, tableToolsMixin.methods.syncTableClip,
+      commentsMixin.methods.placeCommentPanels, revisionMixin.methods.placeRevisionPanels,
     ]) expect(() => method.call(host)).not.toThrow()
   })
 
-  it('真实 observable data 接收 Editor 时不深观察内部，也不冻结 editor/state', async () => {
-    const vm = mountEditor()
-    await Vue.nextTick()
-    const editor = vm.editor
-    expect(vm.$data.__ob__).toBeDefined()
-    expect(vm.alignNames.__ob__).toBeDefined()
-    expect(vm.editorInstance).toBe(editor)
-    expect(Vue.observable({ editor }).editor).toBe(editor)
+  it('原生响应式容器接收 Editor 保留全部内部身份，也不冻结 editor/state', async () => {
+    const { vm, handle, destroy } = mountEditor()
+    await tick()
+    const editor = handle.editor
+    expect(vm.editor).toBe(editor)
+    expect(handle.nativeHost.state.editor).toBe(editor)
+    expect(vm.editor.state).toBe(editor.state)
+    expect(vm.editor.view).toBe(editor.view)
+    expect(vm.editor.schema).toBe(editor.schema)
     expectRawEditor(editor)
-
     const previousState = editor.state
     expect(editor.commands.insertContent('new')).toBe(true)
     expect(editor.state).not.toBe(previousState)
+    expect(vm.editor.state).toBe(editor.state)
     expectRawEditor(editor)
-    vm.$destroy()
+    destroy()
     expect(editor.isDestroyed).toBe(true)
-    expect(vm.editorInstance).toBeNull()
+    expect(handle.instance).toBeNull()
+    expect(vm._isDestroyed).toBe(true)
   })
 
-  it('纯选区事务使已缓存 computed 和真实工具栏子组件刷新，不依赖目录/字数变化', async () => {
-    const vm = mountEditor()
-    await Vue.nextTick()
+  it('纯选区事务使已缓存 computed 和真实工具栏刷新，不依赖目录/字数变化', async () => {
+    const { vm } = mountEditor()
+    await tick()
     const editor = vm.editor
     const doc = editor.state.doc
     const outline = vm.outline
@@ -430,18 +331,14 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     expect(vm.headingActiveLevel).toBeNull()
     expect(boldChecked(vm)).toBe(false)
     expect(button(vm, '设置链接').disabled).toBe(true)
-    const revision = vm.editorRevision
-
     const headingPos = outline[0].pos + 1
     editor.commands.setTextSelection({ from: headingPos, to: headingPos + 2 })
-    expect(vm.editorRevision).toBe(revision + 1)
     expect(vm.hasTextSelection).toBe(true)
     expect(vm.currentBlockLabel).toBe('H2')
     expect(vm.headingActiveLevel).toBe(2)
-    await Vue.nextTick()
+    await tick()
     expect(button(vm, '标题级别').textContent.trim()).toBe('H2')
     expect(button(vm, '设置链接').disabled).toBe(false)
-
     let boldPos
     doc.descendants((node, pos) => { if (node.isText && node.text === 'bold') boldPos = pos })
     editor.commands.setTextSelection(boldPos + 1)
@@ -449,7 +346,7 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     expect(vm.currentBlockLabel).toBe('正文')
     expect(vm.headingActiveLevel).toBeNull()
     expect(boldChecked(vm)).toBe(true)
-    await Vue.nextTick()
+    await tick()
     expect(button(vm, '加粗').getAttribute('aria-pressed')).toBe('true')
     expect(button(vm, '设置链接').disabled).toBe(true)
     expect(editor.state.doc).toBe(doc)
@@ -462,8 +359,8 @@ describe('Vue 2.7 编辑器响应式边界', () => {
   })
 
   it('stored marks 和内容事务均刷新依赖，即使选区或字数不变', async () => {
-    const vm = mountEditor()
-    await Vue.nextTick()
+    const { vm } = mountEditor()
+    await tick()
     const editor = vm.editor
     const doc = editor.state.doc
     const selection = editor.state.selection
@@ -472,20 +369,16 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     const selectionUpdate = vi.spyOn(vm, 'onSelectionUpdate')
     const refresh = vi.spyOn(vm, 'refreshDocumentState')
     expect(boldChecked(vm)).toBe(false)
-    const revision = vm.editorRevision
-
     editor.commands.toggleBold()
-    expect(vm.editorRevision).toBe(revision + 1)
     expect(editor.state.doc).toBe(doc)
     expect(editor.state.selection.eq(selection)).toBe(true)
     expect(selectionUpdate).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()
     expect(boldChecked(vm)).toBe(true)
-    await Vue.nextTick()
+    await tick()
     expect(button(vm, '加粗').getAttribute('aria-pressed')).toBe('true')
-
     editor.commands.toggleBold()
-    await Vue.nextTick()
+    await tick()
     expect(boldChecked(vm)).toBe(false)
     expect(button(vm, '加粗').getAttribute('aria-pressed')).toBe('false')
     editor.commands.setHeading({ level: 3 })
@@ -497,9 +390,8 @@ describe('Vue 2.7 编辑器响应式边界', () => {
     expect(vm.currentBlockLabel).toBe('H3')
     expect(vm.headingActiveLevel).toBe(3)
     expect(refresh).toHaveBeenCalled()
-    await Vue.nextTick()
+    await tick()
     expect(button(vm, '标题级别').textContent.trim()).toBe('H3')
-
     editor.commands.insertContent('new')
     expect(vm.wordCount).toBe(count + 3)
     expect(vm.html).toContain('newplain')

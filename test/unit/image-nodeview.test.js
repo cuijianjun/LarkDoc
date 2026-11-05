@@ -79,8 +79,10 @@ function stubImagePipeline({ pixels = 100, upload } = {}) {
   window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} })
   window.HTMLCanvasElement.prototype.toBlob = (callback) => callback(new window.Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
   const calls = []
-  const resolveImageFile = async (file) => {
+  const contexts = []
+  const resolveImageFile = async (file, ctx) => {
     calls.push(file)
+    contexts.push(ctx)
     return upload ? upload(file, calls.length) : { src: 'https://cdn.example.com/cropped.png', attchId: 'crop-1' }
   }
   const restore = () => {
@@ -88,7 +90,7 @@ function stubImagePipeline({ pixels = 100, upload } = {}) {
     window.HTMLCanvasElement.prototype.getContext = saved.getContext
     window.HTMLCanvasElement.prototype.toBlob = saved.toBlob
   }
-  return { resolveImageFile, calls, restore }
+  return { resolveImageFile, calls, contexts, restore }
 }
 
 describe('P2-01 图片宽度校验', () => {
@@ -357,6 +359,37 @@ describe('P2-01 图片题注就地编辑', () => {
 })
 
 describe('P2-01 图片裁剪与重置', () => {
+  it('替换传入 source；失败保留旧图，重新选择同文件仍可成功', async () => {
+    let fail = true
+    const resolveImageFile = vi.fn(async () => { if (fail) throw new Error('denied'); return { src: '/replacement.png', attchId: null } })
+    const { nodeView, attrs } = mount({}, { resolveImageFile })
+    const input = nodeView.dom.querySelector('.lark-doc-image-replace-input')
+    const file = new File(['png'], 'same.png', { type: 'image/png' })
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    input.dispatchEvent(new Event('change'))
+    await vi.waitFor(() => expect(nodeView.dom.querySelector('.lark-doc-media-error').textContent).toBe('denied'))
+    expect(attrs().src).toBe(SRC)
+    fail = false
+    input.dispatchEvent(new Event('change'))
+    await vi.waitFor(() => expect(attrs().src).toBe('/replacement.png'))
+    expect(resolveImageFile).toHaveBeenCalledTimes(2)
+    expect(resolveImageFile).toHaveBeenLastCalledWith(file, { source: 'replace' })
+    expect(input.value).toBe('')
+  })
+
+  it.each(['readonly', 'destroy'])('替换等待中 %s 后晚结果保留旧图', async action => {
+    let complete
+    const { nodeView, attrs, editor } = mount({}, { resolveImageFile: () => new Promise(resolve => { complete = resolve }) })
+    const input = nodeView.dom.querySelector('.lark-doc-image-replace-input')
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['png'], 'a.png', { type: 'image/png' })] })
+    input.dispatchEvent(new Event('change'))
+    if (action === 'readonly') { editor.setEditable(false); editor.setEditable(true) }
+    else nodeView.destroy()
+    complete({ src: '/late.png', attchId: null })
+    await Promise.resolve()
+    expect(attrs().src).toBe(SRC)
+  })
+
   it('非法裁剪区域不上传；合法裁剪更新 src/attchId 并保留原图映射，可重置', async () => {
     const stub = stubImagePipeline()
     try {
@@ -380,6 +413,7 @@ describe('P2-01 图片裁剪与重置', () => {
       expect(stub.calls).toHaveLength(1)
       expect(stub.calls[0].type).toBe('image/png')
       expect(stub.calls[0].name).toBe('cropped-image.png')
+      expect(stub.contexts[0]).toMatchObject({ source: 'crop' })
       expect(attrs().src).toBe('https://cdn.example.com/cropped.png')
       expect(attrs().attchId).toBe('crop-1')
       expect(attrs().originalSrc).toBe(ORIGINAL)

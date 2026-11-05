@@ -7,7 +7,6 @@
   <meta name="description" content="lark-doc 原生 DOM 编辑器在线预览：上半部分是真实编辑器，下半部分是初始化代码，改代码即时生效。" />
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="./assets/demo.css" />
-  <link rel="stylesheet" href="./vendor/lark-doc.css" />
 </head>
 <body>
   <div class="pg" id="pg">
@@ -19,7 +18,7 @@
         <span class="pg-ver" id="pgVer">v—</span>
         <span class="pg-note">真实编辑器，可以直接点、直接敲</span>
         <span class="pg-grow"></span>
-        <a class="pg-btn pg-btn-ghost" href="../guide/getting-started.html">接入文档</a>
+        <a class="pg-btn pg-btn-ghost" href="../examples/">各环境接入</a>
         <button type="button" class="pg-btn" id="pgReset" title="把下面的代码恢复成初始状态">重置代码</button>
         <div class="pg-tabs" role="tablist" aria-label="预览与代码">
           <button type="button" class="pg-tab is-active" id="pgTabPreview" role="tab" aria-selected="true" aria-controls="pgHost">预览</button>
@@ -29,7 +28,24 @@
           收起代码 <kbd>⌘</kbd><kbd>J</kbd>
         </button>
       </div>
+      <div class="pg-examples">
+        <label for="pgExample">选择示例</label>
+        <select id="pgExample" class="pg-btn">
+          <option value="playground">完整文档</option>
+          <option value="base64">本地图片与回调</option>
+          <option value="server">服务器上传配置</option>
+          <option value="diagram">图表与公式</option>
+        </select>
+        <button type="button" class="pg-btn" id="pgImage">选择图片</button>
+        <button type="button" class="pg-btn" id="pgCancelUpload" disabled>取消最近任务</button>
+        <a class="pg-btn pg-btn-ghost" href="../blocks/uploader.html">上传接入说明</a>
+        <span class="pg-example-help" id="pgExampleHelp"></span>
+      </div>
       <div class="pg-host" id="pgHost"></div>
+      <details class="pg-events" id="pgUploadEvents">
+        <summary>回调记录 <span id="pgEventCount">0</span> <span class="pg-event-hint">仅显示摘要；最多保留 30 条</span></summary>
+        <pre id="pgUploadLog" aria-live="polite">选择图片后，这里会显示上传回调。正文变化后仍需应用自行保存。</pre>
+      </details>
     </section>
 
     <!-- ============ 拖拽分割条 ============ -->
@@ -62,7 +78,7 @@
 
   </div>
 
-    <script src="./vendor/lark-doc.umd.min.js"></script>
+  <script src="./vendor/lark-doc-element.umd.min.js"></script>
   <script src="./assets/sample.js"></script>
   <script src="./assets/highlight.js"></script>
   <script src="./assets/playground.js"></script>

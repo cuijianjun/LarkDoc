@@ -4,6 +4,8 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 const sourceRoot = path.resolve(__dirname, '../src')
+// 本门禁只执行JavaScript依赖；公共CSS另由产物门禁和真实浏览器验证。
+require.extensions['.css'] = () => {}
 const originalLoader = require.extensions['.js']
 require.extensions['.js'] = (module, filename) => {
   // 只转换 src/ 下的 JavaScript，默认与 legacy 入口均不得依赖 SFC loader。

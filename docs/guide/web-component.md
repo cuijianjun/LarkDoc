@@ -4,61 +4,11 @@
 
 ## 快速开始
 
-### 方式一：`<script>` 直接引入（零构建）
+从[Web Component 完整示例](/examples/web-component)开始：同一页包含安装、完整 HTML、上传配置、事件读取、生命周期清理和运行预览。本页作为属性、事件与方法参考。
 
-```html
-<!-- 产物使用原生 DOM、样式随 JS 注入，无需再引 css -->
-<script src="node_modules/lark-doc/dist/lark-doc-element.umd.min.js"></script>
+无打包器时，完整托管 `dist/`，通过独立 script 加载 `lark-doc-element.umd.min.js`。现代 Vite / Webpack5 可用 `import 'lark-doc/element'`，它选择 Element ESM、注册标签并注入样式，重功能使用原生动态 import。
 
-<lark-doc title="会议纪要" theme="light">
-  <h1>标签内的 HTML 会成为初始内容</h1>
-  <p>长正文直接写在这里，不用往属性里塞转义字符串。</p>
-</lark-doc>
-
-<script>
-  const el = document.querySelector('lark-doc')
-  el.addEventListener('lark-doc-change', (event) => {
-    console.log(event.detail.payload.html)
-  })
-  el.getJSON() // 与命令式门面同名的方法都代理到了元素上
-</script>
-```
-
-### 方式二：npm + 打包器（Vue 2 / Vue 3 / React 通用）
-
-```js
-import 'lark-doc/element' // 自动注册 <lark-doc>
-// 样式已随产物注入；若在 lib 模式下使用请另行 import 'lark-doc/style.css'
-```
-
-> **webpack 4 宿主**：`exports` 字段读不到，所有 `lark-doc/...` 形式的引入都要写全 `dist/` 路径 ——
-> 如果使用 npm 包，直接 `import 'lark-doc/element'`；只有纯静态页才写 `lark-doc/dist/lark-doc-element.umd.min.js` 的 script 地址。主入口无需 alias
-> （`'lark-doc$' → 'lark-doc/dist/lark-doc.common.js'`；当前包不提供 `browser` 字段兜底）。
-
-```vue
-<template>
-  <lark-doc :title="docTitle" @lark-doc-change="onChange" ref="editor" />
-</template>
-<script>
-export default { // Vue 2 与 Vue 3 写法完全一致（事件用 addEventListener/@lark-doc-* 均可）
-  methods: { onChange(event) { this.$emit('save', event.detail.payload.json) } },
-}
-</script>
-```
-
-```jsx
-// React
-function Editor() {
-  const ref = useRef(null)
-  useEffect(() => {
-    const el = ref.current
-    const onChange = (e) => console.log(e.detail.payload.text)
-    el.addEventListener('lark-doc-change', onChange)
-    return () => el.removeEventListener('lark-doc-change', onChange)
-  }, [])
-  return <lark-doc ref={ref} theme="light" />
-}
-```
+Webpack4 推荐根命令式 `LarkDoc` API，样式使用 `lark-doc/dist/lark-doc.css`；标签方案则独立加载 UMD。新的 Element ESM 使用 `import.meta.url`，不交给 Webpack4 打包，也不要把静态 UMD 再打进应用 bundle。
 
 ## HTML 属性
 
@@ -80,27 +30,36 @@ function Editor() {
 | `mode` / `document-id` | string | 协同模式与文档标识 |
 | `max-length` | number | 正文最大字符数（写入 `limits.maxLength`） |
 
-**热更新规则**：`readonly` / `content-format` / `theme` / `title` / `user` 变更会增量生效（不重建实例）；其余属性（含 `content`）变更会**重建实例**（运行时内容回到初始值，请先用 `getJSON()` 保存现场）。
+**热更新规则**：`readonly` / `content-format` / `theme` / `title` / `user` 变更会增量生效（不重建实例）；其余初始化属性变更可能重建：未显式传新 content 时保留当前正文与标题，但撤销历史不保证保留；显式 content 变更表示替换正文。
 
 ## 对象型能力（property 注入）
 
-上传、AI、协同 Provider 这类对象/函数无法写进 HTML 属性，通过 `element.options` 传入（赋值会触发重建）：
+上传、AI、协同 Provider 这类对象/函数无法写进 HTML 属性，通过 `element.options` property 传入，保留函数和对象身份；不要 JSON 序列化成 attribute：
 
 ```js
 const el = document.querySelector('lark-doc')
 el.options = {
-  uploader: { upload: async (file) => url },
+  uploader: { upload: async (file, ctx) => ({ url: await uploadFile(file, ctx) }) },
   ai: { endpoint: '/api/ai' },        // 只给地址；也可传 { protocol:'openai', baseURL, apiKey, model }
   persistence: myPersistenceAdapter,
 }
 ```
+
+只更新上传回调时保留其他对象配置：
+
+```js
+el.options = { ...el.options, uploader: nextUploader }
+// 或取门面后更新：el.getInstance().setUploader(nextUploader)
+```
+
+Vue2 options 使用 uploader prop；Vue3 的 resolveVue3Attrs 保留 options 对象，可显式 `:options.prop="options"`；React 薄壳通过 effect 写 element.options。全部共用[上传器](/blocks/uploader)的十个方法/回调、URL/base64、可选 attchId 和 ctx.cancel 语义，不复制状态机。
 
 ::: tip AI 配置不是开关
 `ai` 只负责「怎么生成」，`features.ai` 才是显不显示入口。`ai: { enabled: true }` 这类没有地址也没有钩子的写法会被判为无效并回退本地 Mock。三档写法见 [AI 组件](/blocks/ai)。
 :::
 
 ::: warning 时序
-`connectedCallback` 延迟到宏任务执行，因此**命令式调用必须等 `lark-doc-ready`**；`el.options = {...}` 要在挂载完成前或重建前设置。同步脚本阶段直接调 `el.getJSON()` 会得到 null。
+connectedCallback 延迟到宏任务执行，因此命令式读取要等 lark-doc-ready。挂载前可写 options；挂载后仅改变 uploader / uploadImage 时会调用 doc.setUploader 原地更新，保留 Editor、正文、标题和撤销历史。其他初始化能力变更可能重建，不将上传热更新保证推广到所有 options。
 :::
 
 ## 事件
@@ -149,35 +108,14 @@ doc.off('change', handler)
 
 ## 构建产物
 
-```bash
-npm run build:element   # dist/lark-doc-element.umd.min.js + 若干按需区块
-```
-
-- 产物不含 Vue 运行时，样式随 JS 注入（CSS 由 JS 注入 `<style>`），首屏一个文件即可；
-- 重依赖按逻辑拆成按需区块，只在真正用到时下载：`math`（KaTeX + 公式样式）、
-  `office`（docx 导出 / mammoth 导入）、`markdown`（marked / turndown）、`highlight`（代码高亮）、
-  `mermaid`（图表渲染器）；
-- 部署时把 **`dist/` 整目录**同位托管（主文件 + `lark-doc-element.umd.min.*.js` 各按需区块 + `fonts/`）：`publicPath:'auto'` 按主文件自身 URL 推导区块地址，放在任意子目录都成立，无需任何配置；
-- 想复用宿主自己的一份 mermaid 时，挂载前置 `window.mermaid` 即可（检测到就不再加载内置副本），或给元素设 `options.performance.diagramScriptUrl` 走 `<script>` 注入分支。
-
-## 亲手跑一遍
-
-**最快验证（1 分钟，不用 clone 仓库）**。在任意目录建一个 `demo.html`：
-
-```html
-<script src="./node_modules/lark-doc/dist/lark-doc-element.umd.min.js"></script>
-<lark-doc title="演示" style="display:block;height:420px"></lark-doc>
-```
-
-然后在该目录起个静态服务（`python3 -m http.server 8765`）打开它。看到带工具栏的编辑器就算成功。
-
-> 别只拷那一个 `.js`——`dist/` 里的按需区块（`math` / `office` / `markdown` / `highlight` / `mermaid`）是靠主文件自身 URL 推导地址的，整个目录一起放才行。
-
-**完整示例**：`examples/element-demo.html` 覆盖属性配置、能力注入、事件日志、卸载重建，是最接近真实接入的一份：
+库包统一由 Rollup 构建，应用继续使用自己的构建工具：
 
 ```bash
-cd apps/lark-doc && npm run build:element   # 先从源码打包出 dist/
-python3 -m http.server 8765
-# 打开 http://localhost:8765/examples/element-demo.html
+npm run build:element
 ```
+
+- npm import `lark-doc/element` 选择 Element ESM，供现代 Vite/webpack5 使用，样式随 JS 注入；重功能使用原生动态 import。
+- require/CDN 选择 `lark-doc-element.umd.min.js`，独立 script 直挂；配套 feature UMD 按主脚本同目录加载。不是 bundler 的默认 Element 格式。
+- 两种格式均无 Vue / Webpack runtime。静态部署保留完整 dist、features、CSS 和 fonts，不能只复制主文件。
+- 字体与 feature 均随包发布；Element ESM 通过 import.meta.url 定位字体，UMD 使用自身脚本目录。格式、语法降级与 runtime polyfill 的区别见[产物说明](/guide/build-artifacts)。
 

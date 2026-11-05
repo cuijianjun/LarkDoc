@@ -2,7 +2,7 @@
 
 本文面向「把 lark-doc 部署到一台无外网出口的内网服务器」这个场景，覆盖从出包、分发、静态托管、nginx 反向代理、协同服务转发，到校验和回滚的完整链路。
 
-> 文中所有命令、nginx 片段、体积数字都来自本仓库已实测的脚本与文档（`scripts/pack-intranet.sh`、`dist-intranet/INSTALL-内网.md`、`docs/guide/environments.md`、`docs/guide/intranet-migration.md`、`docs/guide/collab-server.md`、`docs/guide/offline.md`），可直接抄用。需要替换的地方用 `<尖括号>` 标出。
+> 应用接入按当前版本的[安装说明](/guide/install)和[环境示例中心](/examples/)执行。下文 nginx、旧 npm6 出包与体积记录保留为历史部署参考，不代表本次发布重新验证了对应服务器与离线 helper；部署时仍需按目标环境验收。示例域名、路径和版本号请替换成实际值。
 >
 > 分工：**本文讲服务器侧**（出包 → 分发 → 托管 → nginx → 校验 → 回滚）；**宿主工程怎么改代码才能在内网编译通过**见[内网迁移实战（Vue2/3）](/guide/intranet-migration)。
 
@@ -33,8 +33,8 @@ lark-doc 是一个**前端库**（Tiptap 3 + 原生 DOM 的 npm 包），不是�
 
 ### 最省事的判断
 
-- **已有打包器的任意框架宿主** → 可直接用默认入口 `new LarkDoc()`；内部为原生 DOM，无 Vue peer。webpack4 需 alias 到 `lark-doc/dist/lark-doc.common.js` 并显式引 CSS；当前没有 `browser` 字段。
-- **想使用标签或 Vue3 / React 薄壳** → 可选 `lark-doc/element`，部署完整 `dist/`；同样不内联或外置 Vue。webpack4 子路径要写全 `lark-doc/dist/lark-doc-element.umd.min.js`。
+- **已有打包器的任意框架宿主** → 可直接用默认入口 `new LarkDoc()`；内部为原生 DOM，无 Vue peer。Webpack4 根入口按 module 解析已兼容的 ESM，无需专属 alias；CSS 使用 `lark-doc/dist/lark-doc.css`。
+- **想使用标签或 Vue3 / React 薄壳** → 现代打包器可选 `lark-doc/element` 的 ESM；静态方式则完整托管 dist 并独立 script 引 UMD。Webpack4 标签方式使用后一种。两者均不依赖 Vue。
 - **宿主是纯静态页 / 老系统 / 不想接打包器** → 只做 ②，一个 `<script>` 引 element 产物即可，**不用装 npm 包**。
 - **要多人协同** → 再补 ③ 里的 `/collab`，并且**必须**用打包器接（UMD 不发协同产物，原因见 6.4）。
 
@@ -42,16 +42,16 @@ lark-doc 是一个**前端库**（Tiptap 3 + 原生 DOM 的 npm 包），不是�
 
 ## 1. 形态选型
 
-默认 ESM / CJS 与 Element 按挂载方式选择；旧 options 组件另走 `lark-doc`，不要混用实例：
+默认 ESM / CJS 与 Element 按挂载方式选择；旧 options 组件另走 `lark-doc/vue2`，不要混用实例：
 
 | 形态 | 引入方式 | 入口产物 | 适用 | 需要 npm 包 |
 |---|---|---|---|---|
-| **ESM**（推荐） | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js`（`module`） | webpack 5 / Vite / Rollup | 是 |
+| **ESM**（推荐） | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js`（`module`） | Webpack4 / Webpack5 / Vite / Rollup | 是 |
 | **CJS** | `require('lark-doc')` | `dist/lark-doc.common.js`（`main`） | Node / SSR / 只读 `main` 的老打包器 | 是 |
-| **Web Component** | `<lark-doc>` 自定义元素 | `dist/lark-doc-element.umd.min.js`（`./element`） | 任意框架 / 无框架，**无 Vue 运行时，样式随 JS 注入** | 否（可直接 `<script>`） |
-| **legacy options** | `import { LarkDocEditor, LarkDocWorkspace } from 'lark-doc'` | `dist/lark-doc-vue2.esm.js` / `dist/lark-doc-vue2.common.js` | 既有 Vue2 宿主注册普通 options 对象；产物不 import Vue | 是 |
+| **Web Component** | npm import 或独立 script 注册标签 | ESM: `lark-doc/element`；静态: `dist/lark-doc-element.umd.min.js` | 任意框架 / 无框架，**无 Vue 运行时，样式随 JS 注入** | 否（可直接 `<script>`） |
+| **legacy options** | `import { LarkDocEditor, LarkDocWorkspace } from 'lark-doc/vue2'` | `dist/lark-doc-vue2.esm.js` / `dist/lark-doc-vue2.common.js` | 既有 Vue2 宿主注册普通 options 对象；产物不 import Vue | 是 |
 
-> **选型建议**：现代打包器选 ESM；静态页选 Element；Node / webpack4 选 CJS。CJS 通过相对 `require()` 加载兄弟 chunk，不是内联所有重依赖的单文件；各入口均无 Vue runtime。当前不再独立生成 `lark-doc.umd.min.js`，`unpkg` / `jsdelivr` 指向 Element。体积与预算以 `npm run size` 和[产物说明](/guide/build-artifacts)为准；ESM 首屏还需计算 `tiptap` / `vendor` 初始区块，不能只报主文件。
+> **选型建议**：有打包器选根 ESM；静态页选 Element UMD；Node require 选 CJS。CJS 通过相对 `require()` 加载兄弟 chunk，不是内联所有重依赖的单文件；各入口均无 Vue runtime。当前不再独立生成 `lark-doc.umd.min.js`，`unpkg` / `jsdelivr` 指向 Element。体积与预算以 `npm run size` 和[产物说明](/guide/build-artifacts)为准；ESM 首屏还需计算 `tiptap` / `vendor` 初始区块，不能只报主文件。
 
 ---
 
@@ -67,7 +67,11 @@ npm -v    # npm >= 8.19.4
 
 仓库有 `check:node14` 守卫，Node 版本不对会直接报错。宿主项目（如 `apps/vue2-webpack-node14`）的 `engines` 也锁 `node 14.21.3` / `npm 8.19.4`。
 
-### 2.2 一条命令出内网包（推荐）
+### 2.2 历史离线出包 helper（使用前单独验收）
+
+普通 npm/tgz 不包含完整依赖。当前推荐将固定 SDK 版本和应用完整依赖同步到内网 npm 镜像，或验证完整离线缓存，再执行普通安装；具体步骤见[内网迁移实战](/guide/intranet-migration#mig-pack)。静态 UMD 则直接托管整个 dist。
+
+以下为仓库保留的旧交付 helper，**本轮未重新验证它在当前依赖闭包下的产物**。使用前必须在目标 npm/操作系统断网安装、构建并检查实际运行，不能沿用旧版依赖数量结论：
 
 ```bash
 cd apps/lark-doc
@@ -85,7 +89,7 @@ bash scripts/pack-intranet.sh --skip-build      # dist 已是最新，跳过约 
 
 | 文件 | 用途 | 方案 |
 |---|---|---|
-| `lark-doc-<ver>-intranet.tgz` | 精简主包（dist + CJS 外置闭包，ESM 自包含） | 方案 1 |
+| `lark-doc-<ver>-intranet.tgz` | 历史脚本组装的主包；需核对当前 ESM/CJS 实际依赖闭包 | 方案 1 |
 | `lark-doc-<ver>-node-modules.zip` | 解压到项目根 → 直接得到 `node_modules` | 方案 2 |
 | `INSTALL-内网.md` | 安装说明（Windows / npm 6 视角） | — |
 | `sha256.txt` | 校验值 | — |
@@ -96,14 +100,14 @@ bash scripts/pack-intranet.sh --skip-build      # dist 已是最新，跳过约 
 
 ### 2.3 手工构建（需要单独产物时）
 
-`npm run build` **只出 CJS 一份**，其余要单独跑：
+`npm run build` 生成根入口的 ESM 与 CJS，其余入口按需要单独构建：
 
 ```bash
-npm run build          # → dist/lark-doc.common.js + CJS 按需区块与 CSS
+npm run build          # → dist/lark-doc.esm.js + dist/lark-doc.common.js，以及配套区块与 CSS
 npm run build:esm      # → dist/lark-doc.esm.js + 初始及按需区块
 npm run build:element  # → dist/lark-doc-element.umd.min.js + 按需区块
-npm run build:legacy   # → 隔离命名的 legacy CJS / ESM 及其区块
-npm run build:collab   # → dist/lark-doc-collab.esm.js
+npm run build:vue2     # → dist/lark-doc-vue2.common.js + dist/lark-doc-vue2.esm.js，以及配套区块
+npm run build:collab   # → dist/lark-doc-collab.esm.js + dist/lark-doc-collab.common.js
 ```
 
 filesystem cache 按 Node 主版本、target 与构建变体隔离；构建耗时以实际输出为准。
@@ -158,9 +162,9 @@ cp dist-intranet/lark-doc-0.12.0-intranet.tgz vendor/
 npm install --no-audit --no-fund
 ```
 
-实测：`added 34 packages from 68 contributors in 2.824s`，**私服请求 0 条**（代理日志 `hits.log` 为空）。
+旧版记录：`added 34 packages from 68 contributors in 2.824s`、私服请求 0 条。这不是当前版本安装耗时或零网络请求的承诺；普通 tgz 仍需要它的运行时依赖。
 
-> ⚠️ **不要加 `--legacy-peer-deps`**。npm 6 不认识这个参数，会直接报 `unknown option`。
+> 当前 SDK 无 Vue peer，无需 `--force` 或 `--legacy-peer-deps`。旧 npm6 现场曾出现不识别该参数的报错；应用自己的依赖冲突应单独处理。
 >
 > **不要为了 lark-doc 安装 `@tiptap/vue-2`**。当前产物直接使用 `@tiptap/core` 与原生 DOM，不需要 Vue Tiptap 适配器；宿主若另有 Vue 编辑器，其依赖应单独管理。
 
@@ -220,8 +224,8 @@ npm install lark-doc --registry=http://<私服>:4873/
 
 1. **lark-doc 已无 Vue peer 或运行时依赖**；Vue2 宿主自身的框架依赖由宿主管理，不要为编辑器补装 Vue2。
 2. **不要装 `@tiptap/vue-2`**（见 3.1）。
-3. **样式**：ESM / Element 产物自带样式注入。CJS 宿主还要单独引 `import 'lark-doc/style.css'`；webpack 4 **不认 `exports` 字段**，那行要写全 `lark-doc/dist/lark-doc.css`（`package.json` 里 `"style": "style.css"` 但 `exports["./style.css"] = "./dist/lark-doc.css"`，就是这个坑的来源）。
-4. **`dist/` 整目录都要拷**。`math` / `mermaid` / `office` / `markdown` / `highlight` / `import-export` 是**动态 import 目标**，少一个就运行时 404（见第 4 节）。
+3. **样式**：默认 / full / lite ESM 与 CJS 均需显式引公共 CSS；只有 Element ESM/UMD 自动注入样式。普通宿主使用 `import 'lark-doc/style.css'`；webpack 4 **不认 `exports` 字段**，那行要写全 `lark-doc/dist/lark-doc.css`（`package.json` 里 `"style": "style.css"` 但 `exports["./style.css"] = "./dist/lark-doc.css"`，就是这个坑的来源）。
+4. **`dist/` 整目录都要拷**。`math` / `mermaid` / `office` / `markdown` / `highlight` 及其共享区块是按需资源，少一个就运行时 404（见第 4 节）。
 5. **覆盖升级必须换版本号**。同版本号重打会让 `npm ci` 报 `EINTEGRITY`（integrity 哈希变了但 lock 文件没变）。
 6. Windows 遇到 `EPERM` / `EBUSY`：关掉编辑器 / 杀毒软件的文件占用手，或重开 shell。
 7. 路径过长：项目挪到 `D:\proj` 这类短路径。
@@ -238,7 +242,7 @@ cd dist-intranet && sha256sum -c sha256.txt
 ```bash
 node -p "require('lark-doc/package.json').version"
 node -e "const m = require('lark-doc'); console.log(typeof m.LarkDoc, Object.keys(m).length)"
-# 期望：function 27
+# 期望首项为 function；导出数量不作为版本契约
 ```
 
 ---
@@ -247,7 +251,7 @@ node -e "const m = require('lark-doc'); console.log(typeof m.LarkDoc, Object.key
 
 ### 4.1 唯一硬规则：`dist/` 整目录同位托管
 
-UMD / Element 产物用 `publicPath: 'auto'`，运行时**按 `<script>` 自身的 URL 推导 chunk 地址**。所以：
+静态 Element UMD 运行时**按主 `<script>` 自身的 URL 推导同目录特性资源地址**，不再使用 Webpack 的 publicPath。现代 Element ESM 交给宿主构建器处理动态 import。静态方式需满足：
 
 - `dist/` 里的文件必须**全部**放在同一个目录下（不能只拷 `lark-doc-element.umd.min.js`）。
 - 这个目录可以是任意子路径（`/vendor/lark-doc/`、`/static/lib/ld/` 都行），只要整目录一致。
@@ -257,13 +261,11 @@ UMD / Element 产物用 `publicPath: 'auto'`，运行时**按 `<script>` 自身�
 
 ```
 lark-doc-element.umd.min.js          ← 主文件
-lark-doc-element.umd.min.vendor.js
 lark-doc-element.umd.min.math.js      ← KaTeX
 lark-doc-element.umd.min.mermaid.js
 lark-doc-element.umd.min.office.js    ← docx / mammoth
 lark-doc-element.umd.min.markdown.js  ← marked / turndown
 lark-doc-element.umd.min.highlight.js
-lark-doc-element.umd.min.import-export.js
 fonts/                                ← KaTeX 字体，缺了公式变豆腐块
 lark-doc.css
 ```
@@ -293,7 +295,7 @@ ln -sfn /srv/static/vendor/lark-doc/0.12.0 /srv/static/vendor/lark-doc/current
 
 nginx 用 `current` 提供服务，前端固定引用 `/vendor/lark-doc/current/...`。
 
-`publicPath: 'auto'` 推出来的是「主文件所在目录」，所以按需 chunk 会请求 `/vendor/lark-doc/current/*.chunk.js`，nginx 顺着软链解析到版本目录，整目录规则天然成立。
+静态 UMD 从主文件所在目录加载 `lark-doc-element.umd.min.<feature>.js` 等按需资源，nginx 顺着软链解析到版本目录，整目录规则天然成立。
 
 **软链两个坑（实测踩过）：**
 
@@ -538,50 +540,24 @@ VUE_APP_DOCUMENT_NAME=demo-document
 | POST | `/api/ai/chat` | SSE，`Accept: text/event-stream`，事件体 `{type:'chunk'\|'error'\|'done'}` |
 | POST | `/api/ai/retrieve` | `{query, topK:5}` → `{items}` |
 
-### 5.3 二次打包的坑（Element 产物被编进宿主 bundle 时）
+### 5.3 区分 npm Element ESM 与静态 UMD
 
-如果宿主不是 `<script>` 直挂，而是 `import 'lark-doc/element'` 让打包器再把 element 产物打一遍，`publicPath: 'auto'` 推出来的是**宿主自己的 chunk 目录**（vue-cli 默认 `js/`），而不是 lark-doc 的 dist 目录。此时必须把资源拷到宿主的 chunk 目录下：
+现代 Webpack5 / Vite 的 `import 'lark-doc/element'` 会解析到 Element ESM，样式自动注入，字体与动态 import 由宿主已有规则处理。无需套用旧 UMD 的 publicPath 或手动把资源复制到 `js/` 的规则。
 
-```js
-// vue.config.js
-const path = require('path')
-const larkDocSource = path.dirname(require.resolve('lark-doc/package.json'))
+静态 UMD 则完整复制 dist，通过独立 `<script src="…/lark-doc-element.umd.min.js">` 引用。主脚本按自身 URL 找同目录特性资源。不要把静态 UMD 再打入应用 bundle。
 
-module.exports = {
-  productionSourceMap: false,
-  chainWebpack(config) {
-    // 别让 KaTeX / DOCX / Mammoth 在首屏被预取
-    config.plugins.delete('prefetch')
-
-    config.plugin('copy-lark-doc-vendor').use(require('copy-webpack-plugin'), [{
-      patterns: [
-        { from: path.join(larkDocSource, 'dist/fonts'), to: 'js/fonts' },
-        { from: path.join(larkDocSource, 'dist/lark-doc-element.umd.min*.js'), to: 'js' },
-      ],
-    }])
-
-    config.module.rule('js').exclude.add(path.join(larkDocSource, 'src/assets'))
-  },
-}
-```
-
-排查口诀：**浏览器 404 的路径前缀是什么，就往那个目录拷。** 报 `js/fonts/KaTeX_Main-Regular.woff2` 404，就往 `js/fonts` 拷；报 `js/lark-doc-element.umd.min.math.js` 404，就把按需区块拷到 `js/`。
+资源 404 时先确认采用哪条路线：ESM 检查宿主构建输出及 base/publicPath；静态 UMD 检查主脚本目录、特性 JS、fonts 是否完整。可复制例子见[Web Component 完整示例](/examples/web-component)。
 
 ### 5.4 webpack 4 宿主
 
-当前包没有 `browser` 字段。webpack4 不认 `exports`，会优先读 `module`，因此显式 alias 到已降级为 ES2018 的 CJS 入口：
-
-```js
-// 宿主 webpack 配置
-resolve: { alias: { 'lark-doc$': 'lark-doc/dist/lark-doc.common.js' } }
-```
+Webpack4 不读 package exports，但会按 module 选择根 ESM。当前根入口和可达 chunk 已由库降语法，不需要 SDK 专属 alias / Babel 规则，也不要求更换应用工具链：
 
 ```js
 import { LarkDoc } from 'lark-doc'
 import 'lark-doc/dist/lark-doc.css'
 ```
 
-CJS 通过相对 `require()` 引用兄弟区块，由宿主打包器处理，不需要给它设置脚本 URL 基址。若选择 Element，子路径仍需写全 `lark-doc/dist/lark-doc-element.umd.min.js`，资源复制规则见 5.3。
+深入口写实际路径，例如 Vue2 options 使用 `lark-doc/dist/lark-doc-vue2.common.js`。新的 Element ESM 使用 import.meta.url，面向现代打包器；Webpack4 标签方案使用 5.5 的独立 UMD script。
 
 <details>
 <summary>0.12 及更早版本的老写法（alias 到 common.js + babel 降语法）</summary>
@@ -616,15 +592,15 @@ import 'lark-doc/dist/lark-doc-element.umd.min.js'
 }
 ```
 
-> 这两个 babel 插件在内网也得装 —— 它们同样打不进 `node_modules.zip`。完整分步（出包、`vendor/` 目录、插件 tgz、验收）见[内网迁移实战 · 方案 A](/guide/intranet-migration#mig-vue2-wp4)。
+> 此处仅为旧版本迁移记录；当前版本不需要上述两个 Babel 插件或 alias。当前方案见[内网迁移实战 · 方案 A](/guide/intranet-migration#mig-vue2-wp4)。
 
 </details>
 
 ### 5.5 `<script>` 直挂（无打包器）
 
 ```html
-<link rel="stylesheet" href="/vendor/lark-doc/current/lark-doc.css">
 <script src="/vendor/lark-doc/current/lark-doc-element.umd.min.js"></script>
+<!-- Element UMD 自动注入样式，无需再引公共 CSS。 -->
 
 <lark-doc id="doc" title="文档标题" style="height:100vh"></lark-doc>
 
@@ -717,7 +693,8 @@ upstream lark_doc_collab {
 
 ```js
 // JS 接入
-new LarkDoc(el, {
+new LarkDoc({
+  element: el,
   network: {
     mode: 'offline',
     allowlist: ['img.intra.example.com'],   // mode='allowlist' 时生效
@@ -785,7 +762,7 @@ cd dist-intranet && sha256sum -c sha256.txt
 ```bash
 node -p "require('lark-doc/package.json').version"
 node -e "const m=require('lark-doc'); console.log(typeof m.LarkDoc, Object.keys(m).length)"
-# 期望输出：function 27
+# 期望首项为 function；导出数量不作为版本契约
 ```
 
 ### 8.3 静态资源全在
@@ -794,13 +771,11 @@ node -e "const m=require('lark-doc'); console.log(typeof m.LarkDoc, Object.keys(
 BASE=https://wiki.intra.example.com/vendor/lark-doc/current
 for f in \
   lark-doc-element.umd.min.js \
-  lark-doc-element.umd.min.vendor.js \
   lark-doc-element.umd.min.math.js \
   lark-doc-element.umd.min.mermaid.js \
   lark-doc-element.umd.min.office.js \
   lark-doc-element.umd.min.markdown.js \
   lark-doc-element.umd.min.highlight.js \
-  lark-doc-element.umd.min.import-export.js \
   lark-doc.css ; do
   printf '%-46s %s\n' "$f" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/$f")"
 done
@@ -824,7 +799,7 @@ done
 | 11 | DevTools Network | 只有内网域名（第 7.4 节） |
 | 12 | 保存后刷新 | 内容还在（持久化适配器通了） |
 
-第 3/4/5/6/7 条任一条失败，基本都是**按需 chunk 没拷全**或**`publicPath` 推到错的目录**，回 4.1 / 5.3 对号入座。
+第 3/4/5/6/7 条任一条失败，基本都是**按需 chunk 没拷全**或**静态资源 URL 或宿主部署基址不匹配**，回 4.1 / 5.3 对号入座。
 
 ---
 
@@ -872,7 +847,7 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 | `Cannot find module 'vue/dist/vue.runtime.common.js'` | 使用了旧产物或旧 alias | 当前运行时不依赖 Vue；核对包版本、锁文件与主入口 |
 | `unknown option '--legacy-peer-deps'` | npm 6 没这参数 | 去掉它（3.1） |
 | `EINTEGRITY` | 同版本号重打了包 | 换版本号（3.5 #5） |
-| `Cannot find module 'lark-doc/element'` | webpack 4 不认 exports | 写全 `lark-doc/dist/lark-doc-element.umd.min.js`（5.4） |
+| `Cannot find module 'lark-doc/element'` | Webpack4 不读 exports | 标签方案使用独立 UMD script，不在 Webpack4 中打包新 Element ESM（5.4 / 5.5） |
 | 样式不生效 | 同上，`style.css` 解析失败 | 写全 `lark-doc/dist/lark-doc.css`（5.4） |
 | `Vue packages version mismatch` | 宿主 Vue / compiler 不一致，或仍在用旧编辑器产物 | 对齐宿主自己的框架依赖；当前编辑器无需 Vue 或 `@tiptap/vue-2` |
 | `Failed to resolve component: lark-doc` | 没注册 / 没引 element 产物 | 见 [Web Component](/guide/web-component) |
@@ -887,7 +862,7 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 | 导入 docx 报 404 | `*.office.js` chunk 404 | 4.1 |
 | 粘贴 HTML 样式丢失 | `*.markdown.js` chunk 404 | 4.1 |
 | 代码块无高亮 | `*.highlight.js` chunk 404 | 4.1 |
-| 按需 chunk 404，且路径前缀不是 `/vendor/lark-doc/` | `publicPath:'auto'` 推到了宿主 chunk 目录 | 5.3 拷到对应目录 |
+| 按需资源 404 | 混用 Element ESM / UMD 或部署目录不完整 | 按 5.3 区分接入方式，再核对基址与输出 |
 | 刷新子路由 404 | history 路由没配 `try_files` | 5.1 |
 | AI 回复一次性蹦出来（不是流式） | nginx 缓冲了 SSE | `proxy_buffering off`（4.3 第 4 段） |
 | 协同每分钟掉线 | `proxy_read_timeout` 用了默认 60s | 4.3 第 5 段 |
@@ -908,12 +883,12 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 - [ ] `npm run check` 全绿
 - [ ] `npm run size` 五项达标
 - [ ] `node scripts/check-offline-assets.js` 通过
-- [ ] `bash scripts/pack-intranet.sh` 产出 `dist-intranet/`
+- [ ] npm 路线已准备完整依赖镜像 / 缓存；若使用旧离线 helper，已在目标环境断网安装与构建验收
 - [ ] `sha256sum -c sha256.txt` 通过
 
 内网服务器：
 
-- [ ] `dist/` **整目录**已就位（含 `fonts/`、全部 `*.chunk.js`）
+- [ ] 静态 UMD 的 `dist/` **整目录**已就位，包含 fonts、全部特性与共享区块
 - [ ] nginx `types` 显式声明 `application/javascript` + `font/woff2`
 - [ ] `curl -I` 验证 `.js` / `.woff2` 的 `Content-Type`
 - [ ] 宿主 `location /` 有 `try_files ... /index.html`
@@ -929,7 +904,7 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 
 - [ ] `package.json` 里 `lark-doc` 指向实际离线包；宿主框架依赖单独管理，不为编辑器额外安装 Vue
 - [ ] `node_modules` 是在**内网机**上装出来的（不是从联网机整包拷的）
-- [ ] webpack4 宿主：`alias 'lark-doc$'` 指向 CJS，样式子路径写全；兄弟区块完整
+- [ ] Webpack4 宿主：根入口直接使用 `lark-doc`；CSS / 深子路径写实际文件，未保留旧 SDK alias / 专属转译规则
 - [ ] 仍使用旧版本时，按该版本实际语法需求配置 Babel，不把历史配置误当作当前契约
 - [ ] webpack5 宿主：没有误加 `transpileDependencies: ['lark-doc']`
 - [ ] 任意框架均可用默认入口；若选 Element 静态方式，`public/vendor/lark-doc/` 下是完整 `dist/`

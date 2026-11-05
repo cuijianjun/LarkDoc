@@ -120,16 +120,19 @@ export async function collectImages(doc) {
  * @param {string} [options.fileName] 不含扩展名的文件名
  * @param {string} [options.scope] 内容范围：`textOnly` = 仅文本（丢图片；附件类在
  *        markdown.js 的 BLOCK_SKIP 里本来就不落盘），其它值 = 所有内容
- * @returns {{ fileName: string, markdown: string, scope: string }}
+ * @returns {{ fileName: string, markdown: string, scope: string }|Promise} Element 独立特性加载时返回 Promise
  */
 export function exportMarkdown(doc, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
   const source = scope === 'textOnly' ? stripNodeTypes(nodesOf(doc), TEXT_ONLY_DROP_TYPES) : doc
-  const markdown = serializeMarkdown(source)
+  const result = serializeMarkdown(source)
   const fileName = withExtension(settings.fileName, 'md')
-  downloadText(markdown, fileName, 'text/markdown;charset=utf-8')
-  return { fileName, markdown, scope }
+  const finish = markdown => {
+    downloadText(markdown, fileName, 'text/markdown;charset=utf-8')
+    return { fileName, markdown, scope }
+  }
+  return result && typeof result.then === 'function' ? result.then(finish) : finish(result)
 }
 
 /**

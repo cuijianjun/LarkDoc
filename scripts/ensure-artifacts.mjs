@@ -6,8 +6,8 @@
  * 紧接着 `npm pack` 触发的 `prepack` 会把同样的产物再构建一遍（约 3 分钟）。
  *
  * 这里改成「输入没变就不重建」：
- *   - 计算一份「构建输入指纹」（src/** 的路径+大小+mtime、构建配置、依赖声明）；
- *   - 指纹与上次构建后写的 stamp 一致，且全部产物都在 → 跳过构建；
+ *   - 计算一份「构建输入指纹」（src/** 的路径与内容、构建配置、依赖声明）；
+ *   - 指纹与上次构建后写的 stamp 一致，且整个发布目录内容一致 → 跳过构建；
  *   - 否则按顺序重建（按 script 去重），成功后写回 stamp。
  *
  * 为什么不直接比 mtime：
@@ -22,7 +22,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -32,15 +32,25 @@ const STAMP = process.env.LARK_DOC_ARTIFACTS_STAMP || join(ROOT, '_codex', 'arti
 /** 产物 → 构建脚本。顺序与原 prepack 一致，不能换（后一步可能依赖前一步产物）。 */
 const ARTIFACTS = [
   { file: 'dist/lark-doc.common.js', script: 'build:all' },
+  { file: 'dist/lark-doc-full.esm.js', script: 'build:all' },
+  { file: 'dist/lark-doc-full.common.js', script: 'build:all' },
   { file: 'dist/lark-doc.esm.js', script: 'build:all' },
   { file: 'dist/lark-doc-collab.esm.js', script: 'build:all' },
+  { file: 'dist/lark-doc-collab.common.js', script: 'build:all' },
+  { file: 'dist/pm/state.js', script: 'build:all' },
+  { file: 'dist/lark-doc-mermaid-runtime.esm.js', script: 'build:all' },
+  { file: 'dist/lark-doc-mermaid-runtime.common.js', script: 'build:all' },
   { file: 'dist/lark-doc-element.umd.min.js', script: 'build:all' },
+  { file: 'dist/lark-doc-element.esm.js', script: 'build:all' },
+  { file: 'dist/lark-doc-graph.json', script: 'build:all' },
   { file: 'dist/lark-doc-lite.esm.js', script: 'build:all' },
   { file: 'dist/features/math.js', script: 'build:all' },
   { file: 'dist/features/mermaid.js', script: 'build:all' },
   { file: 'dist/features/highlight.js', script: 'build:all' },
   { file: 'dist/features/markdown.js', script: 'build:all' },
   { file: 'dist/features/office.js', script: 'build:all' },
+  { file: 'dist/features/ui.js', script: 'build:all' },
+  { file: 'dist/lark-doc-element.umd.min.ui.js', script: 'build:all' },
   { file: 'dist/lark-doc-vue3.mjs', script: 'build:all' },
   { file: 'dist/lark-doc-react.mjs', script: 'build:all' },
   { file: 'dist/lark-doc-vue2.common.js', script: 'build:all' },
@@ -51,10 +61,10 @@ const ARTIFACTS = [
 ]
 
 /** 整文件参与指纹的构建配置 */
-const CONFIG_FILES = ['rollup.config.mjs', 'package-lock.json', 'style.css', 'scripts/build-rollup.mjs', 'scripts/element-renderer.js', 'scripts/check-rollup-artifacts.mjs']
+const CONFIG_FILES = ['rollup.config.mjs', 'package-lock.json', 'style.css', 'scripts/build-rollup.mjs', 'scripts/element-renderer.js', 'scripts/check-rollup-artifacts.mjs', 'scripts/artifact-graph.js']
 
 /** package.json 里只取真正影响产物的字段 */
-const PKG_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects']
+const PKG_FIELDS = ['version', 'dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects', 'exports', 'browser', 'collabDependencies']
 
 const argv = process.argv.slice(2)
 const FORCE = argv.includes('--force')
@@ -63,10 +73,9 @@ const CHECK_ONLY = argv.includes('--check')
 const npmAgent = process.env.npm_config_user_agent || ''
 
 function inputFingerprint() {
-  const hash = createHash('sha1')
+  const hash = createHash('sha256').update(process.versions.node.split('.')[0])
   function feedFile(abs) {
-    const st = statSync(abs)
-    hash.update(relative(ROOT, abs) + '\0' + st.size + '\0' + Math.round(st.mtimeMs) + '\n')
+    hash.update(relative(ROOT, abs) + '\0').update(readFileSync(abs))
   }
   function walkSrc(dir) {
     for (const name of readdirSync(dir).sort()) {
@@ -112,14 +121,20 @@ try {
 }
 
 const missing = ARTIFACTS.filter((a) => !existsSync(join(ROOT, a.file)))
-const sizeDrift = ARTIFACTS.filter((a) => {
-  const p = join(ROOT, a.file)
-  if (!existsSync(p)) return false
-  const rec = stamp?.artifacts?.[a.file]
-  return rec !== undefined && rec !== statSync(p).size
-})
-
-const upToDate = !FORCE && missing.length === 0 && sizeDrift.length === 0 && stamp?.fingerprint === fingerprint
+function outputFingerprint() {
+  const hash = createHash('sha256')
+  const walk = directory => {
+    for (const name of readdirSync(directory).sort()) {
+      const file = join(directory, name)
+      if (statSync(file).isDirectory()) walk(file)
+      else hash.update(relative(ROOT, file)).update(readFileSync(file))
+    }
+  }
+  if (existsSync(join(ROOT, 'dist'))) walk(join(ROOT, 'dist'))
+  return hash.digest('hex')
+}
+const outputDrift = stamp?.outputs !== outputFingerprint()
+const upToDate = !FORCE && missing.length === 0 && !outputDrift && stamp?.fingerprint === fingerprint
 
 if (upToDate) {
   console.log(`✓ 构建输入未变，${ARTIFACTS.length} 个产物齐备 —— 跳过构建（指纹 ${fingerprint.slice(0, 8)}）`)
@@ -129,7 +144,7 @@ if (upToDate) {
 const reasons = []
 if (FORCE) reasons.push('--force')
 if (missing.length) reasons.push(`缺 ${missing.map((m) => m.file).join(', ')}`)
-if (sizeDrift.length) reasons.push(`产物被改动 ${sizeDrift.map((m) => m.file).join(', ')}`)
+if (outputDrift && stamp) reasons.push('发布目录内容与构建记录不符')
 if (!stamp?.fingerprint) reasons.push('无构建记录')
 else if (stamp.fingerprint !== fingerprint) reasons.push('源码/依赖/构建配置有变动')
 
@@ -144,14 +159,19 @@ if (CHECK_ONLY) {
 }
 
 console.log(`→ 重建产物（${reasons.join('；')}）`)
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+// --force也绕过target级持久缓存；普通漂移由每个target的输出hash判定。
+if (FORCE) {
+  try { unlinkSync(join(ROOT, '_codex/rollup-inputs.json')) } catch (error) { if (error.code !== 'ENOENT') throw error }
+}
+const npm = process.env.npm_execpath
+if (!npm) throw new Error('请通过项目npm命令执行产物构建，以保留固定的Node/npm版本')
 // 按 script 去重：build:adapters 一次出两个文件，不能跑两遍。
 const done = new Set()
 for (const a of ARTIFACTS) {
   if (done.has(a.script)) continue
   done.add(a.script)
   console.log(`\n$ npm run ${a.script}  →  ${a.file}`)
-  const r = spawnSync(npm, ['run', a.script], { cwd: ROOT, stdio: 'inherit', env: process.env })
+  const r = spawnSync(process.execPath, [npm, 'run', a.script], { cwd: ROOT, stdio: 'inherit', env: process.env })
   if (r.status !== 0) {
     console.error(`\n✗ 构建失败：${a.script}`)
     process.exit(1)
@@ -175,7 +195,7 @@ for (const a of ARTIFACTS) {
 }
 try {
   mkdirSync(dirname(STAMP), { recursive: true })
-  writeFileSync(STAMP, JSON.stringify({ fingerprint, artifacts: after, at: new Date().toISOString() }, null, 2))
+  writeFileSync(STAMP, JSON.stringify({ fingerprint, outputs: outputFingerprint(), artifacts: after, at: new Date().toISOString() }, null, 2))
 } catch {
   /* stamp 写不进去只影响下次复用，不影响本次产物 */
 }

@@ -2368,8 +2368,8 @@
      与块菜单 `.lark-doc-menu-active` 同一套语义）。别写 `--ld-bg-selected` /
      `--ld-brand-content`：那两枚是写死的飞书蓝字面量，默认绿档不会跟着解析，
      拉进来就是「选中底色不符合当前主题」——飞书档自己会把 accent 解析成蓝，不必手写。
-   - 提示条 = 顶部中性条：1512×16 @y=32 / z 9999 / fixed 全部照抄 06 §6.2 的
-     `.ud__msg-manager--top`，配色只取 --ld-bg-surface-chrome / --ld-text / --ld-shadow-menu。
+   - 切换成功提示 = 顶部居中卡片：@y=32 / z 9999 / fixed，带成功图标；
+     内容撑宽，窄屏左右至少留 16px，配色使用当前主题 token。
      🔴 不复用右下角 `.lark-doc-toast`：那是琥珀 error 语义，切换成功用它会像报错。
    ================================================================== */
 .lark-doc .lark-doc-mode-select { flex: 0 0 auto; }
@@ -2391,10 +2391,6 @@
 .lark-doc .lark-doc-mode-item.is-active .lark-doc-mode-item-label { color: var(--ld-brand-content); }
 .lark-doc .lark-doc-mode-item-label { color: inherit; font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
-.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; left: 50%; display: inline-flex; box-sizing: border-box; max-width: min(420px, calc(100vw - 32px)); align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text-secondary); font-size: 14px; line-height: 16px; pointer-events: none; transform: translateX(-50%); animation: lark-doc-message-in 160ms ease-out; }
-.lark-doc .lark-doc-mode-toast-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; border-radius: 50%; background: var(--ld-success); color: var(--ld-text-on-brand); font-size: 11px; font-weight: 700; line-height: 16px; }
-.lark-doc .lark-doc-mode-toast-text { overflow: hidden; color: var(--ld-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
-@keyframes lark-doc-message-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .lark-doc .lark-doc-mode-select .lark-doc-select-menu button { gap: 0; padding: 5px 10px; border-radius: 6px; color: var(--ld-text); }
 .lark-doc .lark-doc-mode-select .lark-doc-select-menu button:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-menu button.is-highlight { color: var(--ld-text); }
 /* 选中行 = 「已生效」语义：底与字都取本档激活 token，跟 `.lark-doc-menu-active`（块菜单）
@@ -2408,7 +2404,11 @@
    副标题保持原语的 --ld-text-secondary，只给主标题上强调色。 */
 .lark-doc .lark-doc-mode-select .lark-doc-select-check { display: none; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-item-label { font-size: 14px; line-height: 22px; }
-.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
+.lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; left: 50%; display: inline-flex; width: max-content; box-sizing: border-box; min-height: 32px; max-width: min(420px, calc(100vw - 32px)); align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text-secondary); font-size: 14px; line-height: 20px; pointer-events: none; transform: translateX(-50%); animation: lark-doc-message-in 160ms ease-out; }
+.lark-doc .lark-doc-mode-toast-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 16px; align-items: center; justify-content: center; border-radius: 50%; background: var(--ld-success); color: var(--ld-text-on-brand); font-size: 11px; font-weight: 700; line-height: 16px; }
+.lark-doc .lark-doc-mode-toast-text { overflow: hidden; color: var(--ld-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+@keyframes lark-doc-message-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .lark-doc .lark-doc-mode-toast { animation: none; } }
 
 /* ==================================================================
    P4-06 · 修订模式：行内标记 + 右侧建议面板

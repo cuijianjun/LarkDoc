@@ -4,8 +4,8 @@
  * 边界（写死，别越界）：
  *   · 服务端**不在本仓库**（独立 package `@lark-doc/collab-server`）。本目录只有客户端；
  *     e2e 起内存服务端用第三方 `@hocuspocus/server`，且只准出现在 `test/`。
- *   · yjs / @hocuspocus/* / @tiptap/extension-collaboration* 都是**可选 peer**：
- *     不用协同的宿主一个字节都不装。所以这个文件不挂在 `src/index.js` 上，
+ *   · yjs / @hocuspocus/* / @tiptap/extension-collaboration* 均由协同宿主按 collabDependencies 安装：
+ *     普通编辑不声明协同 peer，不因宿主未使用的旧版依赖阻止安装。所以这个文件不挂在 `src/index.js` 上，
  *     它是独立子入口 `lark-doc/collab`（产物 `dist/lark-doc-collab.esm.js`）。
  *   · `documentId` 是**不透明字符串**（建议 `<workspaceId>/<docId>`），客户端不解析它。
  *
@@ -17,6 +17,7 @@ import { Collaboration, isChangeOrigin } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { HocuspocusProvider } from '@hocuspocus/provider'
 import { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD } from './protocol'
+import { markCollabRuntime } from '../core/collabRuntime'
 
 export { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD }
 /**
@@ -73,14 +74,14 @@ const LarkDocCollaboration = Collaboration.extend({
 
 export function createCollabExtensions(options = {}) {
   const { ydoc, provider, user } = options
-  if (!ydoc || typeof ydoc.get !== 'function') {
-    throw new TypeError('createCollabExtensions 需要真实的 Y.Doc（宿主 new Y.Doc({ gc: false }) 后传进来）')
+  if (!(ydoc instanceof Y.Doc)) {
+    throw new TypeError('createCollabExtensions 需要同模块格式的真实 Y.Doc（ESM import 或 CJS require 必须与 lark-doc/collab 一致）')
   }
   const extensions = [LarkDocCollaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
   if (provider && provider.awareness && user && user.name) {
     extensions.push(CollaborationCaret.configure({ provider, user }))
   }
-  return extensions
+  return markCollabRuntime(extensions)
 }
 
 /**
@@ -104,6 +105,10 @@ export function createHocuspocusBridge(options = {}) {
   const { url, documentId, token, onStatus, onSynced, onAuthenticated, onError } = options
   if (!url) throw new TypeError('createHocuspocusBridge 需要 url')
   if (!documentId) throw new TypeError('createHocuspocusBridge 需要 documentId（不透明字符串）')
+  // 普通编辑不声明这些 peer；显式协同时在创建任何连接前验证所需API。
+  if (typeof HocuspocusProvider.prototype.attach !== 'function' || typeof HocuspocusProvider.prototype.detach !== 'function') {
+    throw new TypeError('协同Provider不兼容：需要Hocuspocus 4.x的attach/detach API；请按collab安装契约提供依赖')
+  }
 
   const ydoc = new Y.Doc({ gc: false })
   const provider = new HocuspocusProvider({
