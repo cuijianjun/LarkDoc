@@ -218,4 +218,10 @@ export function renderDiagram(source, options = {}) {
       if (!svg) throw new Error('empty svg')
       return svg
     })
+    .finally(() => {
+      // Mermaid 10 失败时会把错误 SVG 留在 body；视图销毁后也要清理。
+      // 只移除本次 render 的临时容器，保留其他并发图表和宿主节点。
+      const container = typeof document === 'undefined' ? null : document.getElementById('d' + id)
+      if (container) container.remove()
+    })
 }
