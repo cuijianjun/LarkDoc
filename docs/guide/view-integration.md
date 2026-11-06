@@ -114,3 +114,56 @@ new LarkDoc({ element: '#editor', session })
 ::: tip 按需裁剪
 只要编辑器不要工作台：`new LarkDoc({ element })` 加 `features: { templates: false, importExport: false, persistence: false }`，标题栏、模板、快照入口全部隐藏。
 :::
+
+## 内容与业务保存
+
+宿主负责路由、用户、登录、服务端接口和业务保存；SDK 负责编辑器交互、文档格式与 Provider 边界。默认不会创建 Yjs、WebSocket 或后台协同连接。
+
+正文是 Tiptap JSON，可保存在版本化记录中：
+
+```js
+const record = {
+  documentId: 'doc-1',
+  schemaVersion: 1,
+  revisionId: 'revision-42',
+  content: { type: 'doc', content: [{ type: 'paragraph' }] },
+  title: '示例文档',
+  updatedAt: Date.now(),
+}
+```
+
+`content` 接收文档记录、直接 JSON 或 HTML。Vditor HTML 也可通过 `doc.importVditor(html)` 导入，使用 `doc.getImportReport()` 查看归一化结果。评论、Presence、权限与 AI 临时状态应与正文版本分别保存。
+
+### Provider 方法与接入顺序
+
+| Provider | 最小方法 |
+| --- | --- |
+| persistence | load/save/snapshots/snapshot/restore |
+| collaboration | connect/disconnect |
+| versioning | list/createSnapshot/get/restore |
+| comments | list/createThread/reply/resolve/reopen |
+| authorization | getCapabilities |
+
+先接入服务端保存，再按需添加权限、版本、评论与协同。权限 UI 不代替服务端鉴权；版本恢复应创建新修订，评论锚点使用稳定身份而非临时选区坐标。
+
+显式协同从 `lark-doc/collab` 接入，宿主提供匹配的单例和同格式 ProseMirror/Yjs：ESM 配 ESM，CJS 配 CJS，UMD 不接外部协同扩展。`collabDependencies` 是契约元数据，不是 npm 安装约束。当前验证使用 Node22、Yjs13.6.33、Hocuspocus Provider4.7.1 与 Tiptap 协同扩展3.32.0，不能据此推定任意旧版本兼容；Node14 普通编辑契约不扩展为 Node14 协同承诺。详细配置见[协同接入](./collaboration.md)与[服务端契约](./collab-server.md)。
+
+## 更新上传配置
+
+初始化式服务器上传和完整回调已放在[六环境示例](../examples/index.md)。运行时更换上传配置可以原位更新，保留正文、标题和撤销历史：
+
+```js
+doc.setUploader(nextUploader)
+
+// Web Component 通过 property 传递对象和函数。
+el.options = { ...el.options, uploader: nextUploader }
+```
+
+配置了 HTTP 后，失败不会自动改为 base64。上传成功表示取得合法图片结果；正文变化和应用服务端保存成功应分别确认。参数和回调时序见[上传器参考](../blocks/uploader.md)。
+
+## 接入后检查
+
+1. 编辑内容，确认更新事件能读到 JSON；切换页面时销毁编辑器。
+2. 先验证本地 base64；接入后端后检查请求、响应字段、图片地址和成功、失败、取消、重试等回调。
+3. 插入图表与公式，确认实际 SVG、公式字体及资源加载正常。
+4. 业务保存和协同按自己的鉴权、接口与数据版本联调。

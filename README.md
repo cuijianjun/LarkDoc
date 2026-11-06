@@ -44,7 +44,8 @@ GitHub Pages 托管静态页面，服务器上传需要填写你自己的接口�
 | 查询上传参数和回调时序 | [上传器参考](https://cuijianjun.github.io/LarkDoc/blocks/uploader.html) |
 | 查询工具栏、功能和实例 API | [配置参考](https://cuijianjun.github.io/LarkDoc/guide/configuration.html) · [实例与事件](https://cuijianjun.github.io/LarkDoc/guide/instance.html) |
 | 修改编辑器源码、测试或发布 | [仓库开发入口](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md) |
-| 业务保存、Provider 与协同 | [进阶接入指南](https://github.com/cuijianjun/LarkDoc/blob/master/DEMO_INTEGRATION_GUIDE.md) |
+| 业务保存、Provider 与协同 | [业务接入指南](https://cuijianjun.github.io/LarkDoc/guide/view-integration.html) |
+| 查询新增功能、问题修复和上线状态 | [变更与上线记录](./DEVELOPMENT.md#release-history) |
 | Windows 内网安装、Linux 文档部署 | [两环境内网迁移](https://cuijianjun.github.io/LarkDoc/guide/intranet-migration.html) |
 
 [配置 Playground](https://cuijianjun.github.io/LarkDoc/demo/)用于在线修改初始化代码。

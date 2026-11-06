@@ -17,6 +17,7 @@
 ## 文档与示例的维护位置
 
 - `README.md`：项目介绍与统一入口。
+- `DEVELOPMENT.md`：当前维护约束、交付入口与[变更和上线记录](../DEVELOPMENT.md#release-history)；未发布与各渠道已上线状态分别记录。
 - `docs/examples/`：六个环境页，必需的安装与代码集中在各自页面。
 - `docs/examples/apps/`：页面直接引用的真实最小工程及独立锁文件。
 - `docs/guide/development.md`：库开发、示例构建、验证和部署的完整操作，仅在仓库维护。

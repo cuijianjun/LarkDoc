@@ -55,7 +55,7 @@
 | 3 | 站点 base 是 `/LarkDoc/` | `docs/.vitepress/config.mts: base: '/LarkDoc/'` | Demo 地址就是 `.../LarkDoc/demo/` |
 | 4 | `docs/public/` 被原样拷进产物根 | VitePress 约定；当前只有 1 个 `logo.svg` | 丢一个静态目录 = 立刻有 `/LarkDoc/demo/`，零配置 |
 | 5 | lint 范围不含 docs | `package.json`: `"lint": "eslint --ext .js,.vue src scripts"` | Demo 的 JS 不会被 lint，不会让 `npm run check` 变红 |
-| 6 | `docs/` 不进 npm 包 | `files: ["dist","src","style.css","README.md","DEMO_INTEGRATION_GUIDE.md","babel.config.js","vue.config.js"]` | Demo 与 vendor **不影响包体积** |
+| 6 | `docs/` 不进 npm 包 | 本方案采集时的 `files` 白名单未包含 `docs/`；当前发布清单见 [`package.json`](../package.json) | Demo 与 vendor **不影响包体积** |
 | 7 | element 产物完全自包含 | `publicPath=""`、无动态 chunk 引用、样式 `createElement("style")` 注入、`@font-face` 与 `url(` 均为 0 | **一个 `<script>` 就能跑**，不需要 CSS、不需要字体 |
 | 8 | Vue2 UMD 依赖全局 Vue | `lark-doc.umd.min.js` 内 `e["Vue"]`；同样自带样式注入 | Vue2 页 = `vue.min.js` + `lark-doc.umd.min.js` |
 | **9** | **`destroy()` 会移除根节点** | `mount/vueRenderer.js:56-67` → `el.parentNode.removeChild(el)` | **可以安全「销毁 → 重建」任意次，DOM 不叠加** —— Playground 的地基 |

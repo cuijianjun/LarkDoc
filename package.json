@@ -223,7 +223,7 @@
     "style.css",
     "collab.js",
     "README.md",
-    "DEMO_INTEGRATION_GUIDE.md",
+    "DEVELOPMENT.md",
     "rollup.config.mjs"
   ],
   "exports": {

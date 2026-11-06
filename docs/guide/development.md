@@ -117,6 +117,8 @@ GitHub Pages 工作流会从源码重新构建。
 
 ## 6. 提交与发布
 
+每次开发完成先更新[开发手册的“未发布”记录](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md#release-history)。获得发布授权并确认各渠道成功后，再归入对应版本和日期，分别填写 npm、内网包、文档/Demo 状态；本地提交不记为已上线。
+
 检查差异，只提交源码、锁文件、文档和构建脚本。推送 `master` 后，
 [Pages 工作流](https://github.com/cuijianjun/LarkDoc/actions/workflows/deploy-docs.yml)
 会发布文档、统一示例中心和配置 Playground。等待成功后，逐个打开六个路由与预览，刷新深链接，检查资源和控制台。
