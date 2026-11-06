@@ -19,7 +19,7 @@ import { HocuspocusProvider } from '@hocuspocus/provider'
 import { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD } from './protocol'
 import { markCollabRuntime } from '../core/collabRuntime'
 
-export { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD }
+export { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD, Y as Yjs }
 /**
  * 运行策略一并导出（B22 UI 状态 / B23 离线快照 / B24 capability 交集 / 首次播种 / 协议校验）。
  * 宿主从这里拿到的是纯函数与纯状态机：不 import yjs、不碰 DOM、不建连接。
@@ -51,7 +51,7 @@ export function isRemoteTransaction(transaction) {
 export function createCollabExtensions(options = {}) {
   const { ydoc, provider, user } = options
   if (!(ydoc instanceof Y.Doc)) {
-    throw new TypeError('createCollabExtensions 需要同模块格式的真实 Y.Doc（ESM import 或 CJS require 必须与 lark-doc/collab 一致）')
+    throw new TypeError('createCollabExtensions 需要同模块格式、同一运行时的真实 Y.Doc；可使用 lark-doc/collab 导出的 Yjs.Doc')
   }
   const extensions = [Collaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
   if (provider && provider.awareness && user && user.name) {

@@ -11,7 +11,7 @@
 | 普通 HTML，使用 script 或 CDN | [原生 HTML / CDN](/examples/html-cdn) | `window.LarkDoc.LarkDoc` 命令式创建 |
 | 希望使用 `<lark-doc>` 标签 | [Web Component](/examples/web-component) | property 传对象，DOM 事件读变化 |
 
-示例使用已发布的 `lark-doc@0.14.5`。已有项目只需安装 SDK，保留自己的框架与工具链；想从空目录练习，就按所选页面复制全部文件。Vue2 示例中的 Vue 与模板编译器必须匹配，SDK 本身不要求补装 Vue。
+示例使用已发布的 `lark-doc@0.14.6`。已有项目只需安装 SDK，保留自己的框架与工具链；想从空目录练习，就按所选页面复制全部文件。Vue2 示例中的 Vue 与模板编译器必须匹配，SDK 本身不要求补装 Vue。
 
 预览默认使用本地 base64 图片，不需要上传服务器；正文和上传回调会更新页面状态。服务器上传配置也放在各自页面中，接口由你的后端提供，文档站不提供上传服务。
 

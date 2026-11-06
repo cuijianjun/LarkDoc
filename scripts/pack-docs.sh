@@ -96,7 +96,7 @@ SIZE="$(du -sh "$OUT/site" | awk '{print $1}')"
 echo "▸ 产物：${PAGES} 个页面 / ${SIZE}"
 
 # ---- 打包 ----
-( cd "$OUT" && tar czf site.tar.gz site )
+( cd "$OUT" && COPYFILE_DISABLE=1 tar --no-xattrs --exclude='._*' --exclude='.DS_Store' -czf site.tar.gz site )
 echo "▸ 已打包 site.tar.gz（$(du -sh "$OUT/site.tar.gz" | awk '{print $1}')）"
 
 # ---- 生成 nginx 配置 ----

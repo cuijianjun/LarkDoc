@@ -4,7 +4,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 # Vue2 + Webpack4
 
-适合使用 Vue2 和 Webpack4（包括 Vue CLI4）的应用。本页最小工程使用 **Node 14.21.3、npm 8.19.4、lark-doc 0.14.5**；Vue 与模板编译器版本由下面的 `package.json` 配对固定。
+适合使用 Vue2 和 Webpack4（包括 Vue CLI4）的应用。本页最小工程使用 **Node 14.21.3、npm 8.19.4、lark-doc 0.14.6**；Vue 与模板编译器版本由下面的 `package.json` 配对固定。
 
 <EnvironmentPreview env="vue2-webpack4" title="Vue2 + Webpack4" />
 
@@ -15,7 +15,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 已有应用在项目根目录执行：
 
 ```bash
-npm install lark-doc@0.14.5 --save-exact
+npm install lark-doc@0.14.6 --save-exact
 ```
 
 保留已有的 Vue2、Vue CLI、Webpack 和 loader 配置。下面的完整工程用于从空目录练习，不需要拿它覆盖已有项目的配置。

@@ -4,7 +4,7 @@ lark-doc 的协同服务端是**独立 package `@lark-doc/collab-server`**（独
 
 本仓库只保留三样：① 客户端入口 `lark-doc/collab`（`src/collab/index.js`）；② 本契约文档；③ e2e 里用第三方 `@hocuspocus/server` 起内存实例。
 
-## 产物矩阵：只发 ESM 子入口（UMD 刻意不发）
+## 产物矩阵：打包器子入口（UMD 刻意不发）
 
 `09 §3.6` 原本列了四个入口，第四个 `dist/lark-doc-collab.umd.min.js`（CDN 协同）
 **决定不实现**，原因只有一条：
@@ -15,14 +15,14 @@ lark-doc 的协同服务端是**独立 package `@lark-doc/collab-server`**（独
 > 同一个对象 —— 现象是「连上了、peer 数正常、正文永不同步」，且只在生产环境出现。
 
 协同的本质是「把扩展注册进**宿主已有的那个编辑器**」，所以协同产物必须是**引用**
-宿主实例的薄层，而不是自带一份实现。ESM 子入口天然满足（外置全部依赖，由宿主打包器去重），
+宿主实例的薄层，而不是自带一份实现。公开 ESM/CJS 子入口外置全部依赖，由宿主解析并共享实例，
 UMD 做不到 —— tiptap 家族不发 UMD 包，没有全局对象可引用。
 
 因此：
 
 | 场景 | 用什么 |
 | --- | --- |
-| 有打包器的宿主（Vue2/Vue3/React/vite/webpack） | `import ... from 'lark-doc/collab'`（ESM 子入口，唯一推荐） |
+| 有打包器的宿主（Vue2/Vue3/React/vite/webpack） | `import ... from 'lark-doc/collab'`（由宿主解析 ESM/CJS 子入口） |
 | 纯 CDN `<script>` + `lark-doc-element` | 暂不支持协同；要做的话正确形态是「element 产物内建协同」，属新 API，另行决策 |
 
 ## 协议版本
@@ -33,15 +33,15 @@ UMD 做不到 —— tiptap 家族不发 UMD 包，没有全局对象可引用�
 
 ## 客户端入口（P6a 已实现）
 
-产物 `dist/lark-doc-collab.esm.js`（`import ... from 'lark-doc/collab'`，size 预算 90 KB，实测约 6 KB）。
-yjs / `@tiptap/extension-collaboration` / `@hocuspocus/provider` **全部是 external**：
+产物为 `dist/lark-doc-collab.esm.js` 与 `dist/lark-doc-collab.common.js`，通过 `lark-doc/collab` 引入。
+公开 npm 版的 yjs / `@tiptap/extension-collaboration` / `@hocuspocus/provider` **全部是 external**：
 产物里只有本仓库自己的代码，运行时由宿主提供。这不是为了省体积，是正确性 ——
 协同扩展要注册进宿主的编辑器，`@tiptap/core` 与 `prosemirror-*` 必须是同一个模块实例
 （两份 prosemirror-model 会让 `Node`/`Slice` 的 `instanceof` 全线失效）。
 
 ```ts
 import {
-  createCollabExtensions, createHocuspocusBridge, createCommentAnchors, isRemoteTransaction,
+  Yjs, createCollabExtensions, createHocuspocusBridge, createCommentAnchors, isRemoteTransaction,
   COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD,
 } from 'lark-doc/collab'
 
@@ -58,7 +58,10 @@ peer 数正常、正文永远空白」**——它会另建一份 fragment，所�
 宿主侧最小接法（Vue 2）：
 
 ```js
-const ydoc = new Y.Doc({ gc: false })            // gc:false 是硬要求（评论锚点用相对位置）
+import { Yjs, createCollabExtensions, isRemoteTransaction } from 'lark-doc/collab'
+import { HocuspocusProvider } from '@hocuspocus/provider'
+
+const ydoc = new Yjs.Doc({ gc: false })          // gc:false 是硬要求（评论锚点用相对位置）
 const provider = new HocuspocusProvider({ url, name: documentId, document: ydoc })
 const collab = {
   extensions: createCollabExtensions({ ydoc, provider, user: { name, color } }),
@@ -66,6 +69,10 @@ const collab = {
 }
 // <LarkDocEditor :collab="collab" />
 ```
+
+`Yjs` 是协同入口实际使用的 Yjs 运行时导出。公开 `0.14.6` 保留原有宿主共享依赖方式：只要宿主 `import * as Y from 'yjs'` 与 SDK 解析到同一模块实例，仍可传入它创建的真实 `Y.Doc`。内网 `0.14.6-intranet.1` 自带依赖，推荐按上例从 SDK 导出创建文档，或使用 `createHocuspocusBridge` 创建文档与 Provider。
+
+不同物理副本的 Yjs 即使版本相同也不能混用；同一物理包的 ESM/CJS 加载也可能产生不同实例，仅统一模块格式不足以保证身份一致。`ydoc` 必须是协同入口实际运行时的真实 `Y.Doc`，不能用形似对象绕过检查。接入自建 Provider 时也需验证它与 SDK 共享 Yjs 实例。
 
 `collab` 通道做两件事：透传扩展；**协同下不传 `content`**（初始正文只由首个客户端播种一次）。
 撤销不需要额外接线：`@tiptap/extension-collaboration` 自带 `undo`/`redo` 命令与

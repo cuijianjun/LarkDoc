@@ -1,6 +1,6 @@
 {
   "name": "lark-doc",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "private": false,
   "license": "MIT",
   "description": "Framework-agnostic LarkDoc-style Tiptap document editor and workspace package",
@@ -58,7 +58,9 @@
     "build:lite": "ROLLUP_TARGET=lite node scripts/build-rollup.mjs",
     "build:features": "ROLLUP_TARGET=features node scripts/build-rollup.mjs",
     "build:all": "ROLLUP_TARGET=all node scripts/build-rollup.mjs",
-    "build:full": "ROLLUP_TARGET=full node scripts/build-rollup.mjs"
+    "build:full": "ROLLUP_TARGET=full node scripts/build-rollup.mjs",
+    "pack:sdk": "node scripts/pack-sdk.mjs",
+    "prepublishOnly": "node -e \"console.error('Publish the verified tgz from npm run pack:sdk, or use npm run ship. Publishing the source directory omits bundled runtime dependencies.'); process.exit(1)\""
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",
@@ -178,6 +180,9 @@
     "lib0": "0.2.119",
     "emojibase": "15.3.1",
     "nanoid": "3.3.18",
+    "docx": {
+      "nanoid": "5.1.16"
+    },
     "node-releases": "2.0.20",
     "postcss": "8.5.25",
     "serialize-javascript": "$serialize-javascript",
@@ -216,6 +221,7 @@
     "dist",
     "src",
     "style.css",
+    "collab.js",
     "README.md",
     "DEMO_INTEGRATION_GUIDE.md",
     "rollup.config.mjs"

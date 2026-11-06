@@ -1245,8 +1245,8 @@ window.__LARK_DOC_SAMPLE__ = {
       "type": "image",
       "attrs": {
         "blockId": "b32vnmh02n",
-        "src": "https://cuijianjun.github.io/LarkDoc/logo.svg",
-        "alt": "远程地址图片",
+        "src": new URL('../logo.svg', window.location.href).href,
+        "alt": "本站地址图片",
         "title": null,
         "width": null,
         "height": null,
@@ -1254,7 +1254,7 @@ window.__LARK_DOC_SAMPLE__ = {
         "attchId": null,
         "originalAttchId": null,
         "align": "center",
-        "caption": "这张图的 src 是 https:// 远程地址，inline 档原样输出 <img src=\"https://…\">，link 档只剩一条地址链接"
+        "caption": "这张图使用本站 logo.svg 的 HTTP 地址，inline 档输出图片，link 档输出地址链接"
       }
     },
     {

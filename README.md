@@ -20,7 +20,7 @@
 已有应用先安装 SDK，再按对应环境页检查构建配置；原有框架和打包器保持不变：
 
 ```bash
-npm install lark-doc@0.14.5 --save-exact
+npm install lark-doc@0.14.6 --save-exact
 ```
 
 六个示例使用同一版本。库由 Rollup 构建，不携带 Vue 或 Webpack 运行时；Vue/React 由应用提供。
@@ -34,6 +34,8 @@ npm install lark-doc@0.14.5 --save-exact
 
 GitHub Pages 托管静态页面，服务器上传需要填写你自己的接口。
 
+公开 npm 版 `0.14.6` 保持由宿主共享运行依赖。完全离线接入使用基于它单独构建的 `0.14.6-intranet.1` 自包含 tgz，带齐 SDK 运行依赖和 Webpack4 兼容入口；普通 `npm pack lark-doc@0.14.6` 不能代替它。Vue2 使用 npm，Vue3 使用 pnpm 9/10，安装命令和两套最小 demo 见[内网接入说明](./docs/guide/intranet-migration.md)。npm 本地安装使用显式包名 `lark-doc@file:...`，可省去 npm 8 的一次识名解包。SDK 自包含不包含原应用的 Vue、构建工具和业务依赖。
+
 ## 文档怎么查
 
 | 你要做什么 | 阅读入口 |
@@ -43,7 +45,7 @@ GitHub Pages 托管静态页面，服务器上传需要填写你自己的接口�
 | 查询工具栏、功能和实例 API | [配置参考](https://cuijianjun.github.io/LarkDoc/guide/configuration.html) · [实例与事件](https://cuijianjun.github.io/LarkDoc/guide/instance.html) |
 | 修改编辑器源码、测试或发布 | [仓库开发入口](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md) |
 | 业务保存、Provider 与协同 | [进阶接入指南](https://github.com/cuijianjun/LarkDoc/blob/master/DEMO_INTEGRATION_GUIDE.md) |
-| 内网安装或部署 | [安装与离线](https://cuijianjun.github.io/LarkDoc/guide/install.html) |
+| Windows 内网安装、Linux 文档部署 | [两环境内网迁移](https://cuijianjun.github.io/LarkDoc/guide/intranet-migration.html) |
 
 [配置 Playground](https://cuijianjun.github.io/LarkDoc/demo/)用于在线修改初始化代码。
 源码构建、历史性能验收和文档站部署资料保留在[仓库开发导航](https://github.com/cuijianjun/LarkDoc/blob/master/dev/00-INDEX.md)，由维护者继续更新。
