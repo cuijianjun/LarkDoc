@@ -18,7 +18,11 @@ import { loadFeature } from './features/registry'
 
 const DIAGRAM_LANGUAGES = Object.freeze(['mermaid'])
 
-let rendererPromise = null
+const rendererPromises = new Map()
+
+function isMermaidRuntime(value) {
+  return !!value && typeof value.initialize === 'function' && typeof value.render === 'function'
+}
 
 /** 该语言是否由内置图表渲染器接管。 */
 export function isDiagramLanguage(name) {
@@ -41,15 +45,15 @@ export function listDiagramLanguages() {
  * 避免双份运行时。
  */
 function loadMermaidModule() {
-  if (typeof window !== 'undefined' && window.mermaid && typeof window.mermaid.initialize === 'function') {
+  if (typeof window !== 'undefined' && isMermaidRuntime(window.mermaid)) {
     return Promise.resolve(window.mermaid)
   }
   return loadFeature('mermaid', () =>
     import(/* webpackChunkName: "mermaid" */ 'lark-doc/mermaid-vendor'),
   ).then((m) => {
     const mermaid = (m && m.default) || m
-    if (mermaid && typeof mermaid.initialize === 'function') return mermaid
-    throw new Error('mermaid 模块缺失 initialize 接口')
+    if (isMermaidRuntime(mermaid)) return mermaid
+    throw new Error('mermaid 模块缺失 initialize / render 接口')
   })
 }
 
@@ -57,22 +61,46 @@ function loadMermaidModule() {
  * 逃生舱通道：宿主自托管 mermaid 或需要固定 URL 时，仍通过 <script> 注入。
  * 仅当调用方显式传 scriptUrl 时启用。
  */
+// 自托管 UMD 共用 window.mermaid，串行加载以免不同地址捕获彼此的导出。
+let scriptLoadQueue = Promise.resolve()
+
 function loadMermaidScript(scriptUrl) {
+  const pending = scriptLoadQueue.then(() => loadMermaidScriptNow(scriptUrl))
+  scriptLoadQueue = pending.catch(() => {})
+  return pending
+}
+
+function loadMermaidScriptNow(scriptUrl) {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined') { reject(new Error('图表渲染需要浏览器环境')); return }
-    const existing = window.mermaid
-    if (existing && typeof existing.initialize === 'function') { resolve(existing); return }
+    const previous = window.mermaid
     if (!scriptUrl) { reject(new Error('mermaid 自定义地址缺失')); return }
     const script = document.createElement('script')
+    const fail = (reason) => {
+      script.onload = null
+      script.onerror = null
+      script.remove()
+      window.mermaid = previous
+      reject(new Error(`${reason}：${scriptUrl}`))
+    }
     script.src = String(scriptUrl)
     script.async = true
     script.setAttribute('data-lark-doc-diagram', 'mermaid')
     script.onload = () => {
-      if (window.mermaid && typeof window.mermaid.initialize === 'function') resolve(window.mermaid)
-      else reject(new Error('mermaid 加载失败'))
+      if (isMermaidRuntime(window.mermaid)) {
+        script.onload = null
+        script.onerror = null
+        resolve(window.mermaid)
+      } else fail('mermaid 自定义脚本缺失 initialize / render 接口')
     }
-    script.onerror = () => reject(new Error('mermaid 加载失败'))
-    document.head.appendChild(script)
+    script.onerror = () => fail('mermaid 自定义脚本加载失败')
+    // 无导出/执行失败时不能把旧全局误认成这个地址的实现。
+    window.mermaid = undefined
+    try {
+      document.head.appendChild(script)
+    } catch (error) {
+      fail(`mermaid 自定义脚本加载失败（${error.message}）`)
+    }
   })
 }
 
@@ -170,29 +198,31 @@ function buildConfig(theme) {
  * 已应用的配置签名。mermaid.initialize 是全局单例配置，同一份配置不必重复下发；
  * 签名里带上 token 的**解析结果**，所以切换预设档（变量值变了但档位没变）也能生效。
  */
-let appliedSignature = null
+const appliedSignatures = new WeakMap()
 
 function applyConfig(mermaid, theme) {
   const config = buildConfig(theme)
   const signature = JSON.stringify(config)
-  if (signature === appliedSignature) return
+  if (signature === appliedSignatures.get(mermaid)) return
   mermaid.initialize(config)
-  appliedSignature = signature
+  appliedSignatures.set(mermaid, signature)
 }
 
 function loadRenderer(scriptUrl, theme) {
+  const key = scriptUrl ? String(scriptUrl) : ''
+  let rendererPromise = rendererPromises.get(key)
   if (!rendererPromise) {
-    const loaded = scriptUrl ? loadMermaidScript(scriptUrl) : loadMermaidModule()
-    rendererPromise = loaded.then((mermaid) => {
+    rendererPromise = (key ? loadMermaidScript(key) : loadMermaidModule()).then((mermaid) => {
       applyConfig(mermaid, theme)
       return mermaid
     })
-    // 加载失败**不进永久缓存**：早先的实现会把失败的 Promise 一直留在 rendererPromise 上，
-    // 于是「预构建产物少一个 mermaid chunk（404）」这种一次性事故会变成「本页之后的每个
-    // 图表都报渲染失败，只能刷新」—— 清掉缓存，下一次渲染重新尝试，chunk 补齐后即时恢复。
-    rendererPromise.catch(() => { rendererPromise = null })
+    rendererPromises.set(key, rendererPromise)
+    // 只清除本次失败的地址，允许修正资源后再次加载，不影响其他渲染器。
+    rendererPromise.catch(() => {
+      if (rendererPromises.get(key) === rendererPromise) rendererPromises.delete(key)
+    })
   }
-  // 每次渲染前对齐主题：同档位是常数时间（只比字符串），换档时才真正 re-initialize。
+  // 每次渲染前对齐主题，配置签名按实际运行时隔离。
   return rendererPromise.then((mermaid) => {
     applyConfig(mermaid, theme)
     return mermaid
