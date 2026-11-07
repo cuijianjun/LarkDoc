@@ -242,6 +242,7 @@ export default {
         titleLength: this.titleLength,
         readonly: this.effectiveReadonly,
         mode: this.mode,
+        modeVisible: this.modesConfig.visible,
         modeLabel: this.modeLabel,
         modeIcon: this.modeIcon,
         modeOptions: this.modeOptions,

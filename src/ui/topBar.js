@@ -116,7 +116,7 @@ export function createTopBar(options = {}) {
   /**
    * 唯一写入口。`state` 由 `toolbarUiMixin` 算好，字段与 `TopBar.vue` 里读的
    * `ed.xxx` 一一对应：`headerVisible` / `title` / `titleLength` / `readonly` /
-   * `mode` / `modeLabel` / `modeIcon` / `modeSwitchable` / `modeOptions`。
+   * `mode` / `modeVisible` / `modeLabel` / `modeIcon` / `modeSwitchable` / `modeOptions`。
    */
   function update(state = {}) {
     // ① 整行 v-if：挂/摘都按锚点定位，插在锚点之前（锚点始终留在原地）
@@ -138,6 +138,14 @@ export function createTopBar(options = {}) {
     setAttr(titleInput, 'readonly', readonly ? '' : null)
     const sub = readonly ? SUB_READONLY : SUB_EDITABLE
     if (titleSub.textContent !== sub) titleSub.textContent = sub
+
+    // 隐藏时摘掉整个控件，不留按钮或间距占位；重新显示仍排在宿主动作之前。
+    if (state.modeVisible !== false) {
+      if (modeSelect.el.parentNode !== headerActions) headerActions.insertBefore(modeSelect.el, headerActions.firstChild)
+    } else {
+      modeSelect.close()
+      if (modeSelect.el.parentNode) modeSelect.el.parentNode.removeChild(modeSelect.el)
+    }
 
     // ③ 模式下拉：选项表 / 当前值 / 前导图标 / 禁用态一次推完，开合与坐标不归这里管。
     const label = state.modeLabel == null ? '' : String(state.modeLabel)

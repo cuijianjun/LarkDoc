@@ -38,12 +38,13 @@ new LarkDoc({ element: '#preview', readonly: true, features: { ai: false, search
 
 ## 三态模式：编辑 / 修订 / 阅读
 
-顶栏右上角的「编辑 / 修订 / 阅读」按钮，三种状态由构造参数里的 `modes` 控制。下面五项分别控制默认状态、可选项、记忆、文案和快捷键：
+顶栏右上角的「编辑 / 修订 / 阅读」按钮及下拉列表由 `config.modes` 控制，也支持构造参数顶层别名 `modes`。下面六项分别控制入口显隐、默认状态、可选项、记忆、文案和快捷键：
 
 ```js
 new LarkDoc({
   element: '#editor',
   modes: {
+    visible: true,                      // 显示整个顶栏入口（默认向后兼容）
     default: 'edit',                    // 首屏模式
     allow: ['edit', 'suggest', 'read'], // 下拉里保留哪几项
     persist: true,                       // 记住上次的选择
@@ -55,6 +56,7 @@ new LarkDoc({
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
+| `visible` | `true` | 仅显式 `false` 隐藏整个顶栏模式按钮和下拉，不留占位；不传保持原有显示。只控制 UI，不改变当前模式、编辑权限、快捷键或工具栏「阅读模式」入口。 |
 | `default` | `'edit'` | 不在 `allow` 里会自动回落到 `allow[0]`。 |
 | `allow` | 三项全留 | 只剩一项时按钮退化成静态文字：没有箭头、点不动。 |
 | `persist` | `true` | `false` = 不读写 `localStorage`。 |
@@ -63,6 +65,7 @@ new LarkDoc({
 
 | 想做的事 | 写法 |
 | --- | --- |
+| 隐藏顶栏模式按钮和下拉 | `visible: false`（不改变模式或权限） |
 | 不让用户进修订态 | `allow: ['edit', 'read']` |
 | 完全锁死在编辑态 | `allow: ['edit']` |
 | 打开就是只读 | `default: 'read'` |
@@ -70,7 +73,13 @@ new LarkDoc({
 | 把「修订」改成「审阅」 | `labels: { suggest: '审阅' }` |
 
 ```js
-// 只读站：不留修订入口，打开即阅读态，也不记状态
+// 裁剪下拉并改文案：仅保留「编辑 / 预览」，顺序仍为编辑 → 阅读
+new LarkDoc({ element: '#editor', config: { modes: { allow: ['edit', 'read'], labels: { read: '预览' } } } })
+
+// 仅隐藏顶栏模式入口，仍保留原有模式恢复规则、工具栏阅读按钮和模式快捷键
+new LarkDoc({ element: '#editor', config: { modes: { visible: false } } })
+
+// 阅读预览：不留修订入口，打开即阅读态，也不记状态；并非权限锁定
 new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 'read', persist: false } })
 ```
 
@@ -82,5 +91,5 @@ new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 're
 - **配置压不过会话权限**：没有编辑权限时 `suggest` 会被降级成 `read`，配 `allow: ['suggest']` 也强开不出来。
 - **`allow` 传空数组等于没传**：空数组 / 非法值一律回落成三项全留，避免一次笔误把整个功能吞掉。想关切换写 `allow: ['edit']`。
 - **摘掉 `read` 会连带隐藏**：工具栏「阅读模式」按钮、工具栏「⋯」里的阅读项都会跟着消失 —— 留着也是点了不生效。
-- `features.viewModes: false` 关的是工具栏那一组（宽度 / 演示 / 全屏 / 阅读），**顶栏三态按钮不受它管**，要收三态请用 `modes`。
+- `features.viewModes: false` 或 `toolbar.viewModes: false` 关的是工具栏那一组（宽度 / 演示 / 全屏 / 阅读），**顶栏三态按钮不受它管**；隐藏顶栏入口用 `modes.visible: false`。反过来，`visible` 也不改变工具栏分组或阅读按钮的原有显示规则。
 - `shortcuts: false` 只关实际按键，快捷键帮助面板（⌘/）里那三行是静态文案，不跟着消失。

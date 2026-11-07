@@ -64,6 +64,7 @@ export const MODE_TOAST_MS = 3300
  * 另一份给 `LarkDoc` 命令式入口。两边都归一化，幂等。
  */
 export const DEFAULT_MODES_CONFIG = Object.freeze({
+  visible: true,
   default: 'edit',
   allow: Object.freeze(['edit', 'suggest', 'read']),
   persist: true,
@@ -77,13 +78,13 @@ export const DEFAULT_MODES_CONFIG = Object.freeze({
  *
  * 四条规则（顺序有意义）：
  *  1. `allow` 按 `DOC_MODE_IDS` 的规格顺序收（宿主数组顺序不参与），去非法 id、去重；
- *  2. `allow` 过滤后为空 → 回落「三项都留」。想关掉整个切换应该写 `allow: ['edit']`
- *     （变成静态文字），给空数组更可能是一次笔误，不该把功能整个吞掉；
+ *  2. `allow` 过滤后为空 → 回落「三项都留」。只保留静态文字用 `allow: ['edit']`，
+ *     隐藏整个顶栏入口用 `visible: false`；空数组不吞掉功能；
  *  3. `default` 不在 `allow` 里 → 回落 `allow[0]`（保证初始态一定是可选项之一）；
  *  4. `labels` 只认三项已知 id 的**非空字符串**，其余键与空值丢弃。
  *
  * @param {object} [input] 宿主的 `config.modes`
- * @returns {{default: string, allow: string[], persist: boolean, labels: object, shortcuts: boolean}}
+ * @returns {{visible: boolean, default: string, allow: string[], persist: boolean, labels: object, shortcuts: boolean}}
  */
 export function normalizeModesConfig(input) {
   const source = input && typeof input === 'object' ? input : {}
@@ -102,6 +103,7 @@ export function normalizeModesConfig(input) {
   const fallback = finalAllow.indexOf(wanted) >= 0 ? wanted : finalAllow[0]
 
   return {
+    visible: source.visible !== false,
     default: fallback,
     allow: finalAllow,
     persist: source.persist !== false,

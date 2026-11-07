@@ -87,6 +87,7 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
    * 文档三态（编辑 / 修订 / 阅读）—— 顶栏「编辑」下拉、工具栏「阅读模式」按钮、
    * 四个模式快捷键共用这一份，是**唯一**的配置入口：
    *
+   * - `visible`：是否显示整个顶栏模式入口，默认 true；仅控制 UI，不改模式、权限或工具栏。
    * - `default`：初始模式。不在 `allow` 里时自动回落 `allow[0]`。
    * - `allow`：下拉里出现的项（白名单）；顺序恒按「编辑 → 修订 → 阅读」。
    *   只剩一项时顶栏按钮变成静态文字（不再弹菜单），`read` 不在里面时工具栏
@@ -100,6 +101,7 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
    * `read`（见 `core/blocks/interaction-mode.js`），配置无法把修订态强开出来。
    */
   modes: {
+    visible: true,
     default: 'edit',
     allow: ['edit', 'suggest', 'read'],
     persist: true,

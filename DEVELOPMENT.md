@@ -111,6 +111,8 @@ bash scripts/pack-docs.sh --base / --skip-install --out /tmp/larkdoc-docs
 
 ### 未发布
 
+- **新增配置**：`config.modes.visible`（构造参数顶层别名 `modes.visible`）默认 `true`，不传保持原有行为；设为 `false` 时仅摘除顶栏「编辑 / 修订 / 阅读」按钮及下拉，关闭已开菜单、不留占位，保留标题与宿主操作。沿模式归一化 → 顶栏 view state → 原生 topBar 接线，不改变当前模式、编辑权限、持久化、快捷键或 `toolbar.viewModes` 阅读入口；已有 `allow` / `labels` 继续裁剪下拉与覆盖文案。
+- **范围与验证**：同步现有配置参考与视图模式示例；2026-11-07 使用 Node 22.22.2 定向运行 `mode-switch.test.js`、`dom-renderer-contract.test.js` 及配置回归 `workspace-view-state.test.js`、`help-config.test.js`，4 文件 / 142 项全部通过。覆盖默认可见、仅显式 `false` 隐藏、归一化、`allow` 裁剪/`labels` 文案、显隐恢复、菜单关闭，以及模式/只读权限/正文/编辑器身份保持；4 个变更源码文件 ESLint 与 `git diff --check` 通过，无需修复。测试依赖输出 `punycode` 弃用警告；未运行全量测试、构建或浏览器，视觉及文档构建尚未验证。未改图表逻辑，本次仅提交源码、测试与文档，不发布 npm、不重新打包或部署。
 - **修复**：Mermaid 渲染失败后清理本次临时 SVG，覆盖视图销毁后的迟到失败，保留原错误信息和单次回调，不误删其他图表。提交 `ebce8ab31959bf19f4fc35f7264b0f6af4251977`，仅本地 master，尚未推送、发布或部署。
 - **验证**：上述修复通过 Vue2.7.16 / Webpack4.47.0 / Chromium 的错误恢复、删除、六种默认图表检查；新增两个回归用例，完整 94 文件 / 2040 项测试、lint 和 Node14 产物检查通过。未新增 Windows 或其他浏览器复验。
 - **文档**：根目录收敛为 README 与本手册，合并业务接入内容和有效开发约束，补齐上线记录，更新引用、分发文档清单和 CI 路径过滤。本次整理不改变编辑器运行行为，尚未推送或上线。

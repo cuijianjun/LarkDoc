@@ -17,8 +17,10 @@ import { createTopBar } from '../../src/ui/topBar'
 import { createEditorController } from '../../src/editor/EditorController'
 import { createWorkspaceController, createWorkspaceState } from '../../src/workspace/WorkspaceController'
 import readingModeMixin from '../../src/components/lark-doc/editor/readingModeMixin'
+import { createLarkDocConfig, DEFAULT_LARK_DOC_CONFIG } from '../../src/components/lark-doc/larkDocConfig'
 import {
   DOC_MODES, DOC_MODE_IDS, MODE_ICONS, MODE_MENU_MIN_WIDTH, MODE_STORAGE_KEY, MODE_TOAST, MODE_TOAST_MS,
+  DEFAULT_MODES_CONFIG, normalizeModesConfig,
   isDocMode, isEditableTarget, modeFromShortcut, modeLabel, modeMeta, modeToastText,
 } from '../../src/components/lark-doc/editor/docModes'
 import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
@@ -94,7 +96,7 @@ function createModeBar({ rect = { left: 1088, right: 1172, top: 16, bottom: 48, 
     bar.update({
       headerVisible: visible, title: '测试文档', readonly: ed.reading, mode: ed.mode,
       modeLabel: ed.modeLabel, modeIcon: ed.modeIcon, modeOptions: ed.modeOptions,
-      modeSwitchable: ed.modeSwitchable,
+      modeVisible: ed.modesConfig.visible, modeSwitchable: ed.modeSwitchable,
     })
   }
   ed.restoreMode()
@@ -111,10 +113,27 @@ function createModeBar({ rect = { left: 1088, right: 1172, top: 16, bottom: 48, 
     ed, bar, host, trigger, actionsHost, rect,
     menu: () => host.querySelector('[role="listbox"]'),
     setVisible(value) { visible = value; paint() },
+    setModeVisible(value) { ed.larkDocConfig = { ...ed.larkDocConfig, modes: { ...ed.larkDocConfig.modes, visible: value } }; paint() },
   }
 }
 
 describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
+  it('模式入口默认可见且向后兼容；只有显式 false 隐藏', () => {
+    expect(DEFAULT_MODES_CONFIG.visible).toBe(true)
+    expect(DEFAULT_LARK_DOC_CONFIG.modes.visible).toBe(true)
+    expect(createLarkDocConfig().modes).toEqual(DEFAULT_MODES_CONFIG)
+    for (const visible of [undefined, null, true, 0, 'false']) {
+      expect(normalizeModesConfig({ visible }).visible).toBe(true)
+      expect(createLarkDocConfig({ modes: { visible } }).modes.visible).toBe(true)
+    }
+    const input = { visible: false, allow: ['read', 'edit', 'edit', 'invalid'], default: 'suggest', labels: { read: ' 预览 ', invalid: '忽略' }, persist: false, shortcuts: false }
+    const expected = { visible: false, allow: ['edit', 'read'], default: 'edit', labels: { read: '预览' }, persist: false, shortcuts: false }
+    expect(normalizeModesConfig(input)).toEqual(expected)
+    expect(createLarkDocConfig({ modes: input }).modes).toEqual(expected)
+    expect(normalizeModesConfig(expected)).toEqual(expected)
+    expect(normalizeModesConfig({ visible: false, allow: [] }).allow).toEqual(DOC_MODE_IDS)
+  })
+
   it('三项、顺序为编辑 → 修订 → 阅读', () => {
     expect(DOC_MODES.map((item) => item.id)).toEqual(['edit', 'suggest', 'read'])
     expect(DOC_MODE_IDS).toEqual(['edit', 'suggest', 'read'])
@@ -342,6 +361,23 @@ describe('P4-06 模式切换行为（viewModesMixin）', () => {
     ed.mode = 'read'
     expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('reading')
     expect(viewModesMixin.computed.modeOptions.call(ed)).toEqual(DOC_MODES)
+  })
+
+  it('隐藏入口不改变默认/持久化模式、快捷键与工具栏阅读切换', () => {
+    window.localStorage = makeStorage({ [MODE_STORAGE_KEY]: 'suggest' })
+    const ed = createEd({ config: { modes: { visible: false, default: 'read' } } })
+    ed.restoreMode()
+    expect(ed.mode).toBe('suggest')
+    const event = { key: 'v', ctrlKey: true, altKey: true, preventDefault: vi.fn() }
+    expect(ed.applyModeShortcut(event)).toBe(true)
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(ed.mode).toBe('read')
+    ed.toggleReading()
+    expect(ed.mode).toBe('edit')
+    expect(window.localStorage.writes).toEqual([[MODE_STORAGE_KEY, 'read'], [MODE_STORAGE_KEY, 'edit']])
+    const preview = createEd({ config: { modes: { visible: false, default: 'read', persist: false } } })
+    preview.restoreMode()
+    expect(preview.mode).toBe('read')
   })
 
   it('toggleReading 是二态入口：编辑 ↔ 阅读往返', () => {
@@ -665,6 +701,45 @@ describe('P4-06 原生控件与 controller 回归', () => {
     key('ArrowDown')
     key('Escape')
     expect(ui.menu()).toBe(null)
+  })
+
+  it('allow 裁剪真实下拉、labels 改写按钮和选项，未开放模式不能切入', () => {
+    const ui = createModeBar({ config: { modes: { allow: ['read', 'edit'], labels: { edit: '撰写', read: '预览' }, persist: false } } })
+    expect(ui.trigger.querySelector('.lark-doc-select-label').textContent).toBe('撰写')
+    ui.trigger.click()
+    const rows = [...ui.menu().querySelectorAll('[role="option"]')]
+    expect(rows.map(row => row.querySelector('.lark-doc-select-item-label').textContent)).toEqual(['撰写', '预览'])
+    ui.ed.setMode('suggest')
+    expect(ui.ed.mode).toBe('edit')
+    rows[1].click()
+    expect(ui.ed.mode).toBe('read')
+    expect(ui.trigger.querySelector('.lark-doc-select-label').textContent).toBe('预览')
+    expect(ui.ed.modeToast).toBe('已切换为预览模式')
+  })
+
+  it('隐藏整个模式入口关闭已开菜单和监听，不留占位；恢复仍在同一宿主动作之前', () => {
+    const ui = createModeBar()
+    const select = ui.trigger.parentElement
+    const actions = ui.actionsHost.parentElement
+    const remove = vi.spyOn(document, 'removeEventListener')
+    ui.trigger.click()
+    expect(ui.menu()).not.toBe(null)
+    ui.setModeVisible(false)
+    expect(ui.host.querySelector('.lark-doc-mode-select')).toBe(null)
+    expect(ui.menu()).toBe(null)
+    expect(select.parentNode).toBe(null)
+    expect(ui.trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(remove).toHaveBeenCalledWith('pointerdown', expect.any(Function), true)
+    expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function))
+    expect([...actions.children]).toEqual([ui.actionsHost])
+    expect(ui.host.querySelector('header')).toBe(ui.bar.el)
+    expect(ui.ed.mode).toBe('edit')
+    expect(window.localStorage.writes).toEqual([])
+    ui.setModeVisible(true)
+    expect([...actions.children]).toEqual([select, ui.actionsHost])
+    expect(ui.host.querySelector('[role="combobox"]')).toBe(ui.trigger)
+    ui.trigger.click()
+    expect(ui.menu()).not.toBe(null)
   })
 
   it('单个允许模式成为静态控件，不暴露菜单语义或灰化', () => {
