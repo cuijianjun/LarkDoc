@@ -10,8 +10,10 @@
  *     `code-block.css` 早就有 `.lark-doc-code-toolbar select` 这条规则；
  *     图表分支**不渲染下拉**（verify-browser-mermaid 断言图表块 select 数为 0）；
  *   - 高亮器与语法包保持懒加载（chunk `highlight`），代码块不进首屏主包；
- *   - 图表渲染沿用 core/diagram.js 的 mermaid 渲染器：300ms 防抖 + 版本号
- *     丢弃过期结果；正文轨换档只对图表块重画（代码块颜色全在 CSS 里）。
+ *   - 图表渲染沿用 core/diagram.js 的 mermaid 渲染器：仅「逐字编辑」走 300ms
+ *     防抖 + 版本号丢弃过期结果；首次挂载、整篇替换（setContent / 粘贴 / 切换
+ *     笔记）与换档这类离散动作立即渲染，避免打开文档先空等 300ms；
+ *     正文轨换档只对图表块重画（代码块颜色全在 CSS 里）。
  */
 import { INDENT_STEP_PX, clampBlockIndent } from '../documentOperations'
 import { isDiagramLanguage, renderDiagram } from '../diagram'
@@ -151,6 +153,10 @@ export function createCodeBlockNodeView(props) {
   let diagramError = ''
   let diagramVersion = 0
   let diagramTimer = null
+  // 上一次「发起渲染」的源码：内容未变时不再重复渲染（无关事务/重复 update）。
+  let lastRenderedSource = null
+  // 上一次进入调度时的源码：用来区分逐字输入与整篇替换。
+  let lastScheduledSource = null
   let unsubscribeTheme = null
   // 渲染用的正文轨主题：mermaid 的 SVG 是固化色，换档必须重渲染（12 T3-01）。
   let contentTheme = readContentTheme()
@@ -301,15 +307,43 @@ export function createCodeBlockNodeView(props) {
   }
 
   /* ---------- 图表 ---------- */
+  /**
+   * 是否属于「整篇替换」而非逐字编辑：剥掉公共前缀与公共后缀，只比较真正改动
+   * 的区间。用户输入一次只增删少量字符（<= 8）；setContent / 粘贴 / 切换笔记
+   * 换的是一整段不同源码，差异远大于此。必须同时看后缀，否则在图源码「中间」
+   * 插一个字符也会因剩余后缀过长被误判为整篇替换，逐字编辑就变成每键立即重渲染。
+   * 只用来决定「立即渲染 or 防抖」，不参与渲染结果。
+   */
+  function isAbruptChange(previous, next) {
+    if (previous == null) return true
+    if (previous === next) return false
+    const previousLength = previous.length
+    const nextLength = next.length
+    const limit = Math.min(previousLength, nextLength)
+    let start = 0
+    while (start < limit && previous[start] === next[start]) start += 1
+    let end = 0
+    while (end < limit - start && previous[previousLength - 1 - end] === next[nextLength - 1 - end]) end += 1
+    return previousLength - start - end > 8 || nextLength - start - end > 8
+  }
+
   function scheduleDiagramRender() {
     if (!showPreview()) return
-    if (diagramTimer) clearTimeout(diagramTimer)
+    const source = currentNode.textContent || ''
+    if (diagramTimer) { clearTimeout(diagramTimer); diagramTimer = null }
+    // 同一份源码已经渲染过（或正在渲染）：无关事务不必重画。错误态例外，
+    // 允许后续 update 重试，渲染器补回 chunk 后无需改动内容即可恢复。
+    if (source === lastRenderedSource && diagramState !== 'error') return
+    const abrupt = isAbruptChange(lastScheduledSource, source)
+    lastScheduledSource = source
+    if (abrupt) { renderDiagramNow(); return }
     diagramTimer = setTimeout(() => { diagramTimer = null; renderDiagramNow() }, DIAGRAM_DEBOUNCE)
   }
   function renderDiagramNow() {
     if (!isDiagram()) return
     const version = (diagramVersion += 1)
     const source = currentNode.textContent
+    lastRenderedSource = source
     if (!source.trim()) {
       diagramState = 'error'
       diagramError = '暂无图表内容'
@@ -344,7 +378,8 @@ export function createCodeBlockNodeView(props) {
     if (theme === contentTheme) return
     contentTheme = theme
     if (degraded || !showPreview()) return
-    scheduleDiagramRender()
+    // 换档是离散动作，源码没变也要用新配色重画；不走输入防抖。
+    renderDiagramNow()
   }
 
   /* ---------- 写入文档（NodeView 没有 updateAttributes，自行 setNodeMarkup） ---------- */

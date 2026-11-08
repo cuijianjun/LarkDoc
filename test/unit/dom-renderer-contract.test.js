@@ -521,11 +521,14 @@ describe('迁移期 DOM renderer 契约', () => {
   it('在普通 DOM 宿主下创建等价根节点并提供实例', async () => {
     const host = document.createElement('div')
     const ready = vi.fn()
+    // ready 是异步生命周期事件：只断言「最终会派发」，不绑定具体微任务数量。
+    let resolveReady
+    const readyFired = new Promise(resolve => { resolveReady = resolve })
     const renderer = createDomRenderer()
     const handle = mountRenderer(renderer, {
       element: host,
       props: { initialTitle: '迁移期文档', initialContent: '<p>正文</p>' },
-      on: { ready },
+      on: { ready: (payload) => { ready(payload); resolveReady() } },
     })
 
     expect(renderer.getRoot(handle)).toBe(host.firstElementChild)
@@ -548,7 +551,7 @@ describe('迁移期 DOM renderer 契约', () => {
       'stopAI', 'closeAI', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
       'ignoreReviewIssue', 'applyAIProposal', 'toggleSlides', 'isSlides',
     ].forEach((method) => expect(typeof instance[method]).toBe('function'))
-    await Promise.resolve()
+    await readyFired
     expect(ready).toHaveBeenCalled()
 
     renderer.destroy(handle)

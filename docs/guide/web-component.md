@@ -26,11 +26,16 @@ Webpack4 推荐根命令式 `LarkDoc` API，样式使用 `lark-doc/dist/lark-doc
 | `toolbar-excludes` | list | 逗号分隔的排除项 |
 | `features` / `limits` / `layout` / `network` / `capabilities` / `user` | JSON | 对应门面 options 同名字段 |
 | `storage` | `none` \| `local` | 本地草稿 |
+| `autosave` | JSON | 整段自动保存配置，如 `{"enabled":false,"delay":1200}`（变更重建实例） |
+| `autosave-enabled` | boolean | 自动保存开关（热更新，走 `setAutoSave()`，不重建实例） |
+| `autosave-delay` | number | 自动保存防抖毫秒（热更新，同上） |
 | `autofocus` | boolean | 挂载后自动聚焦 |
 | `mode` / `document-id` | string | 协同模式与文档标识 |
 | `max-length` | number | 正文最大字符数（写入 `limits.maxLength`） |
 
-**热更新规则**：`readonly` / `content-format` / `theme` / `title` / `user` 变更会增量生效（不重建实例）；其余初始化属性变更可能重建：未显式传新 content 时保留当前正文与标题，但撤销历史不保证保留；显式 content 变更表示替换正文。
+**热更新规则**：`readonly` / `content-format` / `theme` / `title` / `user` / `autosave-enabled` / `autosave-delay` 变更会增量生效（不重建实例）；其余初始化属性变更可能重建：未显式传新 content 时保留当前正文与标题，但撤销历史不保证保留；显式 content 变更表示替换正文。
+
+`autosave` 整段 JSON 只用于初始化，与两个标量同时存在时标量优先；标量属性运行中修改会调用门面 `setAutoSave()`，并按新值重排已排队的保存定时器，关闭不会留下一次「刚关却仍落盘」。属性被移除时回落默认值（`enabled:true` / `delay:650`）。
 
 ## 对象型能力（property 注入）
 

@@ -35,8 +35,10 @@ const DEFAULTS = Object.freeze({
    * 本地草稿落点：
    * - 'local'（默认）读写浏览器存储（IndexedDB → localStorage → 内存 三级降级），
    *   配合 `config.autosave` 就是「开箱即有的自动保存」；
-   * - 'none' 完全不落盘，正文只由宿主自己保存。
-   * 需要后端/自管存储的宿主通常传 `persistence` 适配器并保持 'none'。
+   * - 'none' 完全不落盘，正文只由宿主自己保存。它是**总闸**：
+   *   即使宿主同时传了 `features.persistence: true`，也不会重新打开内置浏览器草稿。
+   * 需要后端/自管存储的宿主通常传 `persistence` 适配器并保持 'none'；
+   * 这时没有浏览器草稿，落点由宿主掌控，持久化仍按适配器工作。
    */
   storage: 'local',
   autofocus: false,
@@ -186,9 +188,17 @@ export class LarkDoc {
     // 持久化总闸：只有显式 `storage: 'none'` 才整套下线（不读草稿、不显示保存状态）。
     // `autosave.enabled: false` 只关「自动」这一层，手动保存 / save() 仍然可用，
     // 所以不能在这里落 features —— 否则关自动保存会把保存按钮一起关掉。
+    //
+    // `storage: 'none'` 必须**覆盖**宿主显式传的 `features.persistence: true`：
+    // 宿主声明「正文自己保存」时，若还残留内置浏览器草稿，WorkspaceController.onReady()
+    // 会异步 load() 上一次的草稿并 setContent() 覆盖本次传入的正文，表现为
+    // 第二次进入 / 刷新后仍是旧内容（图表跟着显示旧图）。
+    // 唯一例外是宿主注入了自管持久化适配器：此时没有浏览器草稿，落点由宿主掌控，
+    // 按 DEFAULTS.storage 的约定保持开启，宿主仍可用 features.persistence:false 主动关掉。
     if (this.options.storage === 'none') {
       raw.features = { ...(raw.features || {}) }
-      if (raw.features.persistence === undefined) raw.features.persistence = false
+      if (!this._hasHostPersistence(source)) raw.features.persistence = false
+      else if (raw.features.persistence === undefined) raw.features.persistence = true
     }
     if (source.ai && source.ai.enabled === false) raw.features = { ...(raw.features || {}), ai: false }
 
@@ -200,6 +210,21 @@ export class LarkDoc {
   _resolvePersistence(source) {
     if (source.persistence && typeof source.persistence === 'object') return source.persistence
     return null
+  }
+
+  /**
+   * 宿主是否自带持久化落点（后端 / 自管存储）。
+   * 三种入口：`persistence` 选项、`providers.persistence`、以及宿主传入的 session
+   * 里已注册的 persistence Provider。这里只读不创建，避免为了判断而提前建会话。
+   */
+  _hasHostPersistence(source) {
+    if (source.persistence && typeof source.persistence === 'object') return true
+    if (source.providers && source.providers.persistence) return true
+    const session = source.session
+    if (session && typeof session.getProvider === 'function') {
+      try { return Boolean(session.getProvider('persistence')) } catch (error) { return false }
+    }
+    return false
   }
 
   /**
@@ -541,6 +566,43 @@ export class LarkDoc {
   save() {
     const workspace = this.getWorkspace()
     return workspace ? workspace.save() : Promise.resolve(null)
+  }
+
+  /**
+   * 运行时调整自动保存，不重建实例：
+   *   doc.setAutoSave({ enabled: false })  // 关掉编辑后的自动落盘
+   *   doc.setAutoSave({ delay: 2000 })      // 防抖改成 2 秒
+   *
+   * 只改 autosave 段；已排队的保存定时器会按新配置重排（关闭时直接取消），
+   * 手动 save() 与离页 flush 不受影响。options / config 同步更新，
+   * 重建实例或读 getConfig() 时拿到的都是新值。
+   * 返回 { enabled, delay, effective }；已销毁返回 null。
+   */
+  setAutoSave(options = {}) {
+    if (this._destroyed) return null
+    const patch = options && typeof options === 'object' ? options : {}
+    const workspace = this.getWorkspace()
+    const effective = workspace && typeof workspace.setAutoSave === 'function'
+      ? workspace.setAutoSave(patch)
+      : null
+    // 归一化复用构造期同一套规则：非法 delay 回落 650、enabled 非 false 即 true。
+    const normalized = createLarkDocConfig({ autosave: { ...(this.config.autosave || {}), ...patch } }).autosave
+    this.options.autosave = { ...normalized }
+    this.config.autosave = { ...normalized }
+    return effective || this.getAutoSave()
+  }
+
+  /** 当前自动保存配置：{ enabled（配置值）, delay, effective（叠加持久化总闸后是否真会落盘） }。 */
+  getAutoSave() {
+    if (this._destroyed) return null
+    const workspace = this.getWorkspace()
+    if (workspace && typeof workspace.getAutoSave === 'function') return workspace.getAutoSave()
+    const autosave = this.config.autosave || {}
+    return {
+      enabled: autosave.enabled !== false,
+      delay: Number(autosave.delay) || 0,
+      effective: this.config.features?.persistence !== false && autosave.enabled !== false,
+    }
   }
 
   destroy() {

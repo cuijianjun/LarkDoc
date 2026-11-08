@@ -26,6 +26,8 @@ doc.redo()
 doc.isReadonly()
 doc.setReadonly(true)
 doc.save()               // 触发一次持久化
+doc.setAutoSave({ enabled: false })  // 运行时关闭自动保存（不重建实例）
+doc.getAutoSave()        // { enabled, delay, effective }
 doc.getEditor()          // Tiptap Editor 实例
 doc.getWorkspace()       // 无框架工作台控制器
 doc.getConfig()          // 当前归一化后的配置
@@ -56,6 +58,8 @@ doc.destroy()
 | `isReadonly()` | `boolean` | 当前是否只读。 |
 | `setReadonly(v)` | `void` | 切换只读。 |
 | `save()` | `Promise` | 触发一次保存流程。 |
+| `setAutoSave(patch)` | `object` / `null` | 运行时改 `{ enabled?, delay? }`，同步 `options` / `config`，重排已排队定时器；销毁后返回 `null`。 |
+| `getAutoSave()` | `object` / `null` | `{ enabled, delay, effective }`；`effective` 叠加了持久化总闸。销毁后返回 `null`。 |
 | `getEditor()` | `Editor` | 底层 Tiptap 实例，用于高级扩展。 |
 | `getWorkspace()` | `WorkspaceController` | 无框架工作台控制器（含模板、快照、AI 状态）。 |
 | `getConfig()` | `object` | 当前归一化后的完整配置，包含工作台配置热更新。 |

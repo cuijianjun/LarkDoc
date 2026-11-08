@@ -37,7 +37,8 @@ const PROXIED_METHODS = Object.freeze([
   'getHTML', 'getJSON', 'getText', 'getTitle', 'setTitle', 'getConfig', 'getSession', 'can',
   'setTheme', 'getTheme',
   'setReadonly', 'isReadonly', 'focus', 'undo', 'redo', 'setContent', 'importVditor', 'insert',
-  'insertText', 'getImportReport', 'save', 'connectCollaboration', 'disconnectCollaboration',
+  'insertText', 'getImportReport', 'save', 'setAutoSave', 'getAutoSave',
+  'connectCollaboration', 'disconnectCollaboration',
 ])
 
 export class LarkDocElement extends HTMLElement {
@@ -57,6 +58,11 @@ export class LarkDocElement extends HTMLElement {
     this._titleAttrMuted = false
     /** 最后一次由 title 属性给出的标题（属性会被摘掉，重建实例时用它还原）。 */
     this._titleAttrValue = null
+    /**
+     * 排队中的重建是否由整段 `autosave` 声明式属性引起。
+     * 是 → 以 DOM 声明为准（含属性移除后回落默认）；否 → 沿用运行时 setAutoSave()。
+     */
+    this._autosaveDeclaredChanged = false
     // 宿主尚未设置 property 前不允许挂载：标记为待定，等微任务。
     this._pending = false
   }
@@ -103,7 +109,24 @@ export class LarkDocElement extends HTMLElement {
       return
     }
     const result = applyAttributeChange(name, newValue)
-    if (result.rebuild) { this._scheduleRebuild(); return }
+    // 自动保存标量属性：走门面运行时 API 热更，不重建实例。
+    // 属性被移除时 result.value 为 null —— 传 undefined 让配置回落默认值，
+    // 否则 delay 会变成 0（每次改动立刻落盘）、语义与「没配过」不一致。
+    if (name === 'autosave-enabled' || name === 'autosave-delay') {
+      const key = name === 'autosave-enabled' ? 'enabled' : 'delay'
+      const value = result.value === null ? undefined : result.value
+      if (this.document && typeof this.document.setAutoSave === 'function') {
+        try { this.document.setAutoSave({ [key]: value }) } catch (error) { this._fail(name, error) }
+      }
+      return
+    }
+    if (result.rebuild) {
+      // 整段 JSON 的变更 / 移除是宿主显式改声明式配置，重建时必须以 DOM 为准，
+      // 不能把上一次实例的运行时热更值继续带过去。
+      if (name === 'autosave') this._autosaveDeclaredChanged = true
+      this._scheduleRebuild()
+      return
+    }
     if (result.props && Object.keys(result.props).length) this._safePatch(result.props)
     // options 目标的 live 属性（user/theme 等）：同步写回门面 options，
     // 宿主重建实例或读取 options 时拿到的才是新值。
@@ -195,7 +218,8 @@ export class LarkDocElement extends HTMLElement {
     this._rebuildTask = setTimeout(() => {
       this._rebuildTask = null
       if (!this.isConnected) return
-      const nextOptions = { ...readOptionsFromElement(this).options, ...this.__options }
+      const attributeOptions = readOptionsFromElement(this).options
+      const nextOptions = { ...attributeOptions, ...this.__options }
       const newContent = Object.prototype.hasOwnProperty.call(nextOptions, 'content') &&
         !Object.is(nextOptions.content, this._options.content)
       const newTitle = !Object.is(nextOptions.title, this._options.title) && nextOptions.title !== undefined
@@ -213,7 +237,23 @@ export class LarkDocElement extends HTMLElement {
           content: this._actualReady || previous.content === true || newContent,
           title: this._actualReady || previous.title === true || newContent || newTitle,
         }
+        // 运行时 setAutoSave() 只改当前实例；其它非 live 属性（placeholder / content /
+        // mode …）触发重建时若不带上，配置会悄悄回落到默认，与门面「重建后仍是新值」
+        // 的承诺不符。DOM 上的声明式标量仍优先；整段 autosave 属性变更 / 移除，
+        // 或宿主用 el.options = { autosave } 显式给值时，一律以声明为准。
+        const declared = attributeOptions.autosave || {}
+        const propertyOverride = this.__options && this.__options.autosave
+        if (!this._autosaveDeclaredChanged && !propertyOverride &&
+            typeof this.document.getAutoSave === 'function') {
+          const runtime = this.document.getAutoSave()
+          preservedState.autosave = {
+            enabled: runtime.enabled,
+            delay: runtime.delay,
+            ...declared,
+          }
+        }
       }
+      this._autosaveDeclaredChanged = false
       this._unmount()
       this._mount(preservedState)
     }, 30)

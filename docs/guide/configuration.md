@@ -106,6 +106,31 @@ const doc = new LarkDoc({
 - `autosave.enabled: false` → 停止编辑后的防抖保存；手动保存、离页及销毁时的最后一次草稿保存仍可用；
 - `features.persistence: false` 或 `storage: 'none'` → 整套持久化下线，不读草稿也不写。
 
+构造期、运行时、声明式三条入口配置的是同一份状态：
+
+```js
+// 1) 构造期
+const doc = new LarkDoc({ element, autosave: { enabled: true, delay: 1200 } })
+
+// 2) 运行时热更（不重建实例、不丢光标与选区）
+doc.setAutoSave({ enabled: false })      // 关掉自动落盘
+doc.setAutoSave({ delay: 2000 })         // 防抖改成 2 秒
+doc.setAutoSave({ enabled: true, delay: 0 }) // 重新开启且每次改动立刻存
+doc.getAutoSave()                        // { enabled, delay, effective }
+```
+
+`setAutoSave()` 会把 `options.autosave` / `config.autosave`（也就是 `getConfig()`）一并同步，并**重排已排队的保存定时器**：关闭时直接取消（不会出现「刚关闭却仍落一次盘」），改延迟时从当前时刻按新值重新计时。空闲时改配置不会凭空产生一次落盘。手动 `save()` 与离页 `flush` 不受影响。
+
+`effective` 是叠加持久化总闸后的实际生效值——`features.persistence:false` 或 `storage:'none'`（且宿主未注入 persistence 适配器）时，即使 `enabled:true`，`effective` 也是 `false`。
+
+```html
+<!-- 3) Web Component 声明式：整段 JSON 初始化 + 两个标量热更 -->
+<lark-doc autosave='{"enabled":true,"delay":1200}'
+          autosave-enabled="false" autosave-delay="650"></lark-doc>
+```
+
+`autosave` 是整段 JSON（变更后重建实例），`autosave-enabled` / `autosave-delay` 是 live 属性，运行中修改走 `setAutoSave()` 原地热更；同名字段以标量为准。属性被移除时回落默认值（`enabled:true` / `delay:650`）。命令式 API 与属性映射见[实例与事件](/guide/instance)、[Web Component](/guide/web-component)。
+
 ::::
 
 <span id="importexport-导入-导出"></span>
