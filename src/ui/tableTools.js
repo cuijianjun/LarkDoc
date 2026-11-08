@@ -181,8 +181,15 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
     const kind = state.kind === 'row' ? 'row' : 'column'
     el.classList.toggle('is-column', kind === 'column')
     el.classList.toggle('is-row', kind === 'row')
-    // 根节点的盒子就是整张表格：`position: absolute` 靠它把线/按钮摆到单元格边线上。
+    // 根节点的盒子就是整张表格；CSS 用 position:fixed + viewport 坐标把线/按钮摆到
+    // 单元格边线上（旧的 absolute + paper 相对坐标会被宿主 overflow:hidden 裁掉下方 ＋）。
     applyStyle(el, state.style)
+    // 视口余量钳制后的浮出距离（tableToolsMixin.updateTableBoundary 计算）：
+    // 表格贴近视口顶部/底部时收回来，fixed 浮层的 18px ＋ 才不会被视口边缘切掉。
+    const plusUp = Number.isFinite(state.plusUp) ? state.plusUp : 28
+    const plusDown = Number.isFinite(state.plusDown) ? state.plusDown : 20
+    setVar(el, '--lark-doc-boundary-plus-top', `${-plusUp}px`)
+    setVar(el, '--lark-doc-boundary-plus-bottom', `${-plusDown}px`)
     if (kind === 'column') {
       setVar(el, '--lark-doc-column-line-left', `${state.columnLineLeft}px`)
       setVar(el, '--lark-doc-row-line-top', null)

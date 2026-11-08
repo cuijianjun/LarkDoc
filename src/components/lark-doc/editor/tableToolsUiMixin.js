@@ -48,11 +48,17 @@ export default {
           onClear: () => this.clearTableBoundaryHover(),
         },
       })
+      // md 风格交互层（选择条 / 重排 / 横滚 / 浮窗）与两条工具条共用挂载时机，
+      // 由 tableInteractionMixin 提供实现，这里只负责拉起和销毁。
+      this.mountTableOverlays?.()
       this.refreshTableTools()
       this.refreshTableBoundary()
     },
     buildTableToolsState() {
-      const open = !this.effectiveReadonly && this.featureEnabled('tables') && this.isActive('table')
+      // `tableToolsFocused()` 由 tableInteractionMixin 提供：组件整体失焦、指针移出
+      // 组件、Escape 时收起这条 86px 横条。用 `!== false` 兜底，方法未挂载时保持原语义。
+      const open = !this.effectiveReadonly && this.featureEnabled('tables')
+        && this.isActive('table') && this.tableToolsFocused?.() !== false
       if (!open) return { open: false }
       return {
         open: true,
@@ -67,10 +73,13 @@ export default {
     refreshTableTools() {
       if (!this._tableToolsUi) return
       this._tableToolsUi.update(this.buildTableToolsState())
+      this.refreshTableOverlays?.()
     },
     buildTableBoundaryState() {
       const boundary = this.tableBoundary
-      const open = this.featureEnabled('tables') && boundary.visible && !!boundary.hover && !this.effectiveReadonly
+      // 边界 ＋ 与 md 浮层共用同一个活跃闸门：鼠标移开表格邻域后边线 / ＋ 一起收起。
+      const open = this.featureEnabled('tables') && boundary.visible && !!boundary.hover
+        && !this.effectiveReadonly && this.tableUiActive?.() !== false
       if (!open) return { open: false }
       return {
         open: true,
@@ -78,6 +87,8 @@ export default {
         style: boundary.style,
         columnLineLeft: boundary.columnLineLeft,
         rowLineTop: boundary.rowLineTop,
+        plusUp: boundary.plusUp,
+        plusDown: boundary.plusDown,
       }
     },
     refreshTableBoundary() {
@@ -87,6 +98,7 @@ export default {
     destroyTableTools() {
       if (this._tableToolsUi) this._tableToolsUi.destroy()
       if (this._tableBoundaryUi) this._tableBoundaryUi.destroy()
+      this.destroyTableOverlays?.()
       this._tableToolsUi = null
       this._tableBoundaryUi = null
     },
