@@ -11,7 +11,7 @@ import { tableActions } from './constants'
 export default {
   data() { return {
     tableToolsOpen: false, tablePicker: false, tablePickerHover: { rows: 3, cols: 3 },
-    tableBoundary: { visible: false, hover: null, columnSide: 'before', rowSide: 'before', rowIndex: -1, columnIndex: -1, rowSpan: 1, columnSpan: 1, cellPosition: null, style: { top: '0px', left: '0px', width: '0px', height: '0px' }, columnLineLeft: 0, rowLineTop: 0 },
+    tableBoundary: { visible: false, hover: null, columnSide: 'before', rowSide: 'before', rowIndex: -1, columnIndex: -1, rowSpan: 1, columnSpan: 1, cellPosition: null, style: { top: '0px', left: '0px', width: '0px', height: '0px' }, columnLineLeft: 0, rowLineTop: 0, plusUp: 28, plusDown: 20 },
     columnResize: null, tableActions,
   } },
   computed: {
@@ -60,7 +60,6 @@ export default {
       const paper = this.$refs.root?.querySelector('.lark-doc-paper')
       if (!table || !paper) { this.tableBoundary.visible = false; return }
       const tableRect = table.getBoundingClientRect()
-      const paperRect = paper.getBoundingClientRect()
       if (tableRect.width < 1 || tableRect.height < 1) {
         this.tableBoundary.visible = false
         if (!this._tableBoundaryRetry) {
@@ -69,6 +68,16 @@ export default {
         }
         return
       }
+      // 边界 ＋ 是 fixed 浮层，不受宿主 overflow 裁切，但仍必须落在视口内。
+      // 28px 让 32px 热区刚好避开 12px 列选择条；20px 避开 14px 自绘滚动条。
+      // 余量不足时允许取负值：＋ 顺着表格边线回退到视口内。表格本身比视口高、
+      // 或增删行列把表格撑高时，若把下限锁死在 0，下方 ＋ 会整个落到视口外，
+      // elementsFromPoint 拿不到元素、按钮也就点不到（真实可复现）。
+      // 12px = 18px 圆点半高 9px + 3px 安全余量，上下两侧共用。
+      const viewportH = window.innerHeight || document.documentElement.clientHeight || 0
+      const edge = 12
+      const plusUp = viewportH ? Math.min(28, tableRect.top - edge) : 28
+      const plusDown = viewportH ? Math.min(20, viewportH - tableRect.bottom - edge) : 20
       const domAtSelection = this.editor.view.domAtPos(this.editor.state.selection.from).node
       const selectionElement = domAtSelection?.nodeType === 1 ? domAtSelection : domAtSelection?.parentElement
       const cell = selectionElement?.closest?.('td,th')
@@ -78,14 +87,19 @@ export default {
         hover: this.tableBoundary.hover,
         columnSide: this.tableBoundary.columnSide,
         rowSide: this.tableBoundary.rowSide,
+        // 边界条根节点是 fixed 浮层（与 .lark-doc-table-overlay 同层），坐标必须是
+        // viewport 值。旧写法减掉 paperRect 是给 absolute 用的：宿主固定高度 +
+        // overflow:hidden 时表格下方的 ＋ 会被裁掉，滚动后还会与表格错位。
         style: {
-          top: `${tableRect.top - paperRect.top}px`,
-          left: `${tableRect.left - paperRect.left}px`,
+          top: `${tableRect.top}px`,
+          left: `${tableRect.left}px`,
           width: `${tableRect.width}px`,
           height: `${tableRect.height}px`,
         },
         columnLineLeft: cellRect ? cellRect.left - tableRect.left + cellRect.width / 2 : tableRect.width / 2,
         rowLineTop: cellRect ? cellRect.top - tableRect.top + cellRect.height / 2 : tableRect.height / 2,
+        plusUp,
+        plusDown,
       }
     },
     clearTableBoundaryHover() {

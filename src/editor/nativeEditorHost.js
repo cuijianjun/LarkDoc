@@ -43,6 +43,7 @@ import foldPersistMixin from '../components/lark-doc/editor/foldPersistMixin'
 import collabMixin from '../components/lark-doc/editor/collabMixin'
 import p6bMixin from '../components/lark-doc/editor/p6bMixin'
 import overlaysUiMixin from '../components/lark-doc/editor/overlaysUiMixin'
+import tableInteractionMixin from '../components/lark-doc/editor/tableInteractionMixin'
 
 const uiDomains = [
   ['TopBar', 'refreshTopBar'], ['Dialogs', 'refreshDialogs'], ['Overlays', 'refreshOverlays'],
@@ -61,7 +62,8 @@ const options = {
     headingNumberMenuUiMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin,
     calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin,
     mentionUiMixin, isvPanelUiMixin, searchPanelUiMixin, reminderMixin, reminderUiMixin, calendarMixin,
-    isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin, overlaysUiMixin],
+    isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin, overlaysUiMixin,
+    tableInteractionMixin],
   data() { return {
     editor: null, editorController: null, helpOpen: false, savedSelection: null, error: '',
     alignNames: { left: '左', center: '居中', right: '右', justify: '两端' },
@@ -249,6 +251,7 @@ const options = {
         if (this.bubbleAlignOpen) this.positionBubbleAlignMenu()
         if (this.bubbleVisible) this.bubblePosition = this.bubbleBarPosition(this.editor.state.selection)
         this.updateTableBoundary()
+        this.refreshTableOverlays?.()
         if (this.headingOpen) this.positionHeadingMenu()
         if (this.menuOpen) this.positionCommandMenu()
         this.updateCalloutTools()
@@ -358,7 +361,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       editor.commands.normalizeLarkDocIndents?.()
       host.refreshDocumentState()
       host.restoreFolds()
-      host.$nextTick(() => host.updateTableBoundary())
+      host.$nextTick(() => { host.updateTableBoundary(); host.refreshTableOverlays?.() })
     },
     transaction() {
       runtime.invalidateEditor()
@@ -367,12 +370,13 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host.updateRevisionPanels()
       ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel', 'refreshBubbleBar'].forEach(name => host[name]())
       if (host.blockMenuOpen) host.refreshBlockMenu()
-      host.$nextTick(() => { host.syncHandleHighlightBackdrop(); host.syncTableClip() })
+      host.$nextTick(() => { host.syncHandleHighlightBackdrop(); host.syncTableClip(); host.refreshTableOverlays?.() })
     },
     selection() {
       runtime.invalidateEditor()
       host.onSelectionUpdate()
       ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel'].forEach(name => host[name]())
+      host.$nextTick(() => host.refreshTableOverlays?.())
     },
     destroy() {
       resolveImageFile.cancelAll?.('destroy')

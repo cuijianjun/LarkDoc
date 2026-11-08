@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>lark-doc · Web Component 跨框架演示</title>
+  <link rel="icon" href="data:,">
   <style>
     /* 演示页自身样式：与编辑器无关，证明宿主页面不需要任何框架 */
     body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; color: #1f2329; background: #f5f6f7; }
@@ -16,7 +17,7 @@
     button { padding: 5px 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
     button:hover { background: #f2f6f4; border-color: #b7d3c8; color: #0c7a58; }
     /* 编辑器容器必须有高度，和任何 CMS 里嵌富文本一样 */
-    lark-doc { display: block; height: 460px; overflow: hidden; border-radius: 10px; background: #fff; box-shadow: 0 2px 12px rgba(31, 35, 41, .08); }
+    lark-doc { display: block; height: 620px; overflow: hidden; border-radius: 10px; background: #fff; box-shadow: 0 2px 12px rgba(31, 35, 41, .08); }
     .log { max-height: 160px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: #1f2329; color: #a9d6c2; font: 12px/1.7 ui-monospace, Menlo, monospace; }
     .log div + div { border-top: 1px solid #33383f; }
     .tag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: #0c7a58; color: #fff; }
@@ -30,7 +31,8 @@
 
   <main>
     <section>
-      <h2>1. 纯属性配置</h2>
+      <h2>1. 纯属性配置 · md 风格表格交互</h2>
+      <p style="color:#86909c;margin:0 0 8px">把光标点进下面的表格：表格上沿会出现行/列选择条与浮窗，拖选择条可重排整行/整列；表格超宽时可拖底部滚动条，左右边缘有渐隐提示。</p>
       <div class="toolbar-row">
         <button type="button" data-action="toggle-readonly">切换只读</button>
         <button type="button" data-action="toggle-theme">切换主题</button>
@@ -44,7 +46,7 @@
         theme="light"
         placeholder="试着输入正文，或输入 / 唤出命令菜单"
         toolbar-keys="history,headings,marks,textStyle,blockStyle,insert"
-      ><h1>飞书风格文档</h1><p>这段初始内容来自 <strong>HTML 属性</strong>：content 支持 HTML 字符串，也支持 Tiptap JSON。</p></lark-doc>
+      ><h1>飞书风格文档</h1><table><colgroup><col width="180"><col width="260"><col width="240"><col width="170"><col width="150"><col width="240"></colgroup><tbody><tr><th><p>结论</p></th><th><p>内容</p></th><th><p>理由</p></th><th><p>负责人</p></th><th><p>状态</p></th><th><p>备注</p></th></tr><tr><td><p>边框只画一次</p></td><td><p>外框在 table 上，内线只挂 right / bottom，末列末行去掉</p></td><td><p>避免 border-collapse 叠成 2px 双线</p></td><td><p>表格组件</p></td><td><p>已完成</p></td><td><p>颜色全部走 --ld-* token</p></td></tr><tr><td><p>选择条 12px</p></td><td><p>列在 top:-12px，行在 left:-12px</p></td><td><p>与 WorkBuddy 实测几何一致</p></td><td><p>交互层</p></td><td><p>已完成</p></td><td><p>点击选中，按住拖动重排</p></td></tr><tr><td><p>超宽可横滚</p></td><td><p>14px 滚动条 + 左右 14px 渐隐</p></td><td><p>替代原来的裁切 + 单侧渐隐</p></td><td><p>交互层</p></td><td><p>已完成</p></td><td><p>自绘滑块可拖动</p></td></tr></tbody></table><p>点进表格试试：上方浮窗、行列选择条、拖拽重排、列宽手柄、横向滚动条与左右渐隐。</p><p>这段初始内容来自 <strong>HTML 属性</strong>：content 支持 HTML 字符串，也支持 Tiptap JSON；表格之后仍可正常输入正文。</p></lark-doc>
     </section>
 
     <section>

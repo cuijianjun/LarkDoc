@@ -94,6 +94,10 @@ export function createWorkspaceShell(ownerDocument = document) {
   error.setAttribute('role', 'alert')
   const headingNumberMenuHost = ownerDocument.createElement('div')
   const overlayHost = ownerDocument.createElement('div')
+  // 表格 md 交互层的独立宿主：`display: contents` 不吃布局，内部节点用 fixed 定位。
+  // 单独给一个宿主是为了不和 tableToolsHost / tableBoundaryHost 抢 syncChildren 的子树。
+  const tableOverlayHost = ownerDocument.createElement('div')
+  tableOverlayHost.style.display = 'contents'
 
   actionsPark.appendChild(actionsHost)
   externalPanel.appendChild(panelHost)
@@ -104,6 +108,7 @@ export function createWorkspaceShell(ownerDocument = document) {
     mentionHost, reminderHost, calendarSearchHost, isvPanelHost, revisionHost, body, bubbleHost,
     commandMenuHost, dialogHost, helpFabHost, colorPaletteHost, imageInput, fileInput, error,
     headingNumberMenuHost, overlayHost)
+  append(root, tableOverlayHost)
 
   return {
     root,
@@ -144,5 +149,6 @@ export function createWorkspaceShell(ownerDocument = document) {
     error,
     headingNumberMenuHost,
     overlayHost,
+    tableOverlayHost,
   }
 }
