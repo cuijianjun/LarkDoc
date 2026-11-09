@@ -12,11 +12,18 @@
  * 2. **不新增颜色字面值**：所有颜色在 CSS 里走 `--ld-table-*` → 已有 `--ld-*` token，
  *    深色档由 theme-dark.css 覆盖底层 token 自动继承（见 lark-doc.css 末段）。
  * 3. **不干扰既有边界条**：`.lark-doc-table-overlay` 根 `pointer-events: none`，
- *    只有选择条 / 滚动条 / 浮窗自己开 `auto`，否则 `updateTableBoundaryHover()` 的
+ *    只有选择条 / 滚动条自己开 `auto`，否则 `updateTableBoundaryHover()` 的
  *    `posAtCoords` 会被吞掉，＋按钮全失效。
  *
  * 定位用 `position: fixed` + viewport 坐标：表格可能在任意滚动容器里，用相对 paper
  * 的 offset 会随滚动漂移；fixed + 每次 scroll / transaction 重算最稳。
+ *
+ * ⚠️ v5：本层**不再有浮窗开合状态、不再注册浮窗 action 回调**。唯一浮窗
+ *    `.lark-doc-table-tools` 由 `tableToolsUiMixin.buildTableToolsState()` 直接读实时
+ *    selection 判定显隐与 mode（text / table）；这里只保留几何层（选择条 / 重排 /
+ *    横滚 / 渐隐）、活跃闸门 `tableUiActive()` 和离散点击 dismiss 闸门
+ *    `tableToolsDismissed()`。选择条点选产生的整行 / 整列选区既是选区、也是浮窗驱动源，
+ *    旧 `tableFloatOpen` 状态机、`onTableFloatAction()`、`.lark-doc-table-float` 已整体删除。
  */
 import { CellSelection, TableMap, selectedRect, deleteRow, deleteColumn, moveTableRow, moveTableColumn } from '@tiptap/pm/tables'
 import { createTableOverlays } from '../../../ui/tableOverlays'
@@ -43,6 +50,14 @@ export default {
     this._tableUiPointerInRoot = undefined
     this._tableUiKeyboardMode = false
     this._tableUiEscape = false
+    // v5：唯一浮窗的离散点击 dismiss 闸门。点表格外 / Escape 置 true，下一次**
+    // 点进表格**（或点选择条）才解除。只用 `tableUiActive()` 不够：hover 回表格会把
+    // 闸门重新打开，旧选区还在，浮窗会在没有任何新点击的情况下自己浮出来。
+    this._tableUiToolbarDismissed = false
+    // v6：选择条（行列高亮块）的**点击**闸门。用户口径：高亮块只在点击表格后才出现，
+    // 纯 hover 不出（旧实现 hover 即画，与 WorkBuddy 不符）。点进表格 / 点选择条置
+    // true，点其它地方 / Escape 置 false；键盘模式与已有整行整列选区例外放行。
+    this._tableUiClicked = false
     this._tableUiHideTimer = null
     this._tableUiFocusTimer = null
     this._tableUiOnPointerMove = (event) => {
@@ -80,14 +95,41 @@ export default {
         if (this._tableUiWindow) this.refreshTableUiVisibility()
       }, 0)
     }
+    // 浮窗显隐只看**离散点击**：window capture 才能接住挂在独立宿主上的 overlay /
+    // ＋ 按钮 / 唯一浮窗，也能在点回正文时第一时间收起。
+    this._tableUiOnPointerDown = (event) => {
+      const target = event.target
+      const inTable = !!(target && typeof target.closest === 'function'
+        && target.closest('.tableWrapper, .lark-doc-table-overlay, .lark-doc-table-boundary-tools, .lark-doc-table-tools'))
+      if (inTable) {
+        // 点进表格块 / 选择条 / 浮窗按钮 = 新的一次交互：清 dismiss、清 Escape。
+        // 合成点击 / 触屏没有前置 pointermove，这里同步把活跃闸门抬起来。
+        this._tableUiToolbarDismissed = false
+        this._tableUiPointerInside = true
+        this._tableUiEscape = false
+        this._tableUiClicked = true
+        clearTimeout(this._tableUiHideTimer)
+      } else {
+        // 点其它地方：立刻失活 + 锁住浮窗，直到下一次真正点回表格。
+        this._tableUiToolbarDismissed = true
+        this._tableUiPointerInside = false
+        this._tableUiClicked = false
+      }
+      // 即便选区还没变也要重画：pointerdown 发生在浏览器改选区之前，
+      // 此时先按新闸门收 / 放，随后 selection 钩子会再按新选区刷新一次。
+      this.refreshTableUiVisibility()
+    }
     this._tableUiOnKeydown = (event) => {
       if (event.key === 'Escape') {
         this._tableUiEscape = true
+        this._tableUiToolbarDismissed = true
+        this._tableUiClicked = false
         this._tableUiKeyboardMode = false
         this.refreshTableUiVisibility()
         return
       }
       // 后续任何键盘操作都算新交互：解除 Escape，并回到键盘模式以保留浮层的键盘可达性。
+      // ⚠️ 不解除 dismiss：Escape / 点外部后必须重新**点击**表格，浮窗才回来。
       this._tableUiEscape = false
       this._tableUiKeyboardMode = true
     }
@@ -97,6 +139,7 @@ export default {
       // capture 阶段挂 window：pointermove 不冒泡，且浮层挂在 editorEl 之外的独立宿主上，
       // 只在 editorEl 上监听会漏掉「从表格移进浮窗再移出去」这条路径。
       win.addEventListener('pointermove', this._tableUiOnPointerMove, true)
+      win.addEventListener('pointerdown', this._tableUiOnPointerDown, true)
       win.addEventListener('focusin', this._tableUiOnFocus, true)
       win.addEventListener('focusout', this._tableUiOnFocus, true)
       win.addEventListener('keydown', this._tableUiOnKeydown, true)
@@ -129,6 +172,24 @@ export default {
     editorEl.addEventListener('pointerout', this._tableOverlayOnPointerOut)
     // scroll 不冒泡，必须 capture 才能接到 .tableWrapper 自己的横滚。
     editorEl.addEventListener('scroll', this._tableOverlayOnScroll, true)
+    // v12：拖列宽期间 prosemirror-tables 的 mousemove 只走 `displayColumnWidth()`
+    // **直改 DOM colgroup 宽度、不派发 transaction**（transaction 只在 mouseup 发一次），
+    // 挂在 transaction hook 上的 refreshTableOverlays 全程不跑 —— 顶部列选择条会停在
+    // 旧几何（实测「拖拽列宽时顶部的条没有跟着一起变」）。信号：activeHandle > -1
+    // （hover 到边缘热区或拖拽中）时 prosemirror 给根节点挂 `resize-cursor` 类，
+    // 用它做开关，rAF 节流持续同步 overlay 几何。
+    this._tableResizeSyncRaf = null
+    this._tableResizeSyncOnMove = () => {
+      if (this._tableResizeSyncRaf != null) return
+      const viewDom = this.editor?.view?.dom
+      if (!viewDom || !viewDom.classList.contains('resize-cursor')) return
+      this._tableResizeSyncRaf = requestAnimationFrame(() => {
+        this._tableResizeSyncRaf = null
+        this.refreshTableOverlays()
+        this.updateTableBoundary()
+      })
+    }
+    win.addEventListener('pointermove', this._tableResizeSyncOnMove, true)
   },
   beforeDestroy() {
     const editorEl = this._tableOverlayScrollTarget
@@ -139,6 +200,7 @@ export default {
     const win = this._tableUiWindow
     if (win) {
       win.removeEventListener('pointermove', this._tableUiOnPointerMove, true)
+      win.removeEventListener('pointerdown', this._tableUiOnPointerDown, true)
       win.removeEventListener('focusin', this._tableUiOnFocus, true)
       win.removeEventListener('focusout', this._tableUiOnFocus, true)
       win.removeEventListener('keydown', this._tableUiOnKeydown, true)
@@ -148,12 +210,20 @@ export default {
     clearTimeout(this._tableUiFocusTimer)
     this._tableUiHideTimer = null
     this._tableUiFocusTimer = null
+    if (this._tableResizeSyncRaf != null) {
+      cancelAnimationFrame(this._tableResizeSyncRaf)
+      this._tableResizeSyncRaf = null
+    }
+    if (win && this._tableResizeSyncOnMove) {
+      win.removeEventListener('pointermove', this._tableResizeSyncOnMove, true)
+      this._tableResizeSyncOnMove = null
+    }
     this._tableUiWindow = null
     this._tableOverlayScrollTarget = null
     this._tableOverlayHover = null
   },
   methods: {
-    /** 真实指针事件的 target 判定：表格块 / md overlay / 边界 ＋ / 顶部表格工具条。 */
+    /** 真实指针事件的 target 判定：表格块 / md overlay / 边界 ＋ / 唯一浮窗。 */
     tableUiContainsPointer(target) {
       if (!target || typeof target.closest !== 'function') return false
       return !!target.closest('.tableWrapper, .lark-doc-table-overlay, .lark-doc-table-boundary-tools, .lark-doc-table-tools')
@@ -177,7 +247,7 @@ export default {
         || hit(this._tableOverlaysUi?.el)
         || hit(this.$refs.tableBoundaryHost)
     },
-    /** 三条浮层（md overlay / 顶部工具条 / 边界 ＋）是否都该收起或刷新。 */
+    /** 三条浮层（md overlay / 唯一浮窗 / 边界 ＋）是否都该收起或刷新。 */
     scheduleTableUiRefresh(inside) {
       clearTimeout(this._tableUiHideTimer)
       if (inside) {
@@ -214,19 +284,13 @@ export default {
       return !!(editorEl?.contains(active) && this.editor?.isActive('table'))
     },
     /**
-     * 顶部表格工具条是参与布局的 86px 横条：不能用 hover 开合（表格会被推下移 →
-     * 指针脱离 → 再收起，来回抖）。所以它只在两类**离散**事件下收起：组件整体失焦、
-     * 指针移出整个组件；外加 Escape 主动收起。isActive('table') 的原语义保留。
+     * v5：唯一浮窗的「点其它地方 / Escape」dismiss 闸门，由
+     * `tableToolsUiMixin.buildTableToolsState()` 读取。与 `tableUiActive()` 分开是刻意的：
+     * 后者管**几何层**（hover 表格就回来），前者只认**离散点击**（必须重新点回表格）。
+     * 否则 hover 回表格时旧选区还在，浮窗会在没有任何点击的情况下自己浮出来。
      */
-    tableToolsFocused() {
-      if (this._tableUiEscape) return false
-      if (this._tableUiPointerInRoot === false && !this._tableUiKeyboardMode) return false
-      const doc = this._tableUiWindow?.document || this.$refs.root?.ownerDocument || document
-      const root = this.$refs.root
-      // root 缺失（早期挂载 / SSR）时退回原语义，不额外收口。
-      if (!root) return true
-      const active = doc?.activeElement
-      return !!(active && root.contains(active))
+    tableToolsDismissed() {
+      return this._tableUiToolbarDismissed === true || this._tableUiEscape === true
     },
     /** 由 tableToolsUiMixin.mountTableTools() 一并挂载，避免多一个 UI domain 生命周期。 */
     mountTableOverlays() {
@@ -241,7 +305,6 @@ export default {
           onReorderEnd: (axis, from, to) => this.onTableReorderEnd(axis, from, to),
           onReorderCancel: () => this.onTableReorderCancel(),
           onScrollRatio: (ratio) => this.onTableScrollRatio(ratio),
-          onAction: (id) => this.onTableFloatAction(id),
         },
       })
       // Delete / Backspace 删整行整列：绑 window 的 capture 阶段。条件命中时
@@ -287,8 +350,23 @@ export default {
       if (!ui) return
       // 选区不再是 CellSelection（点回正文、删完行列、光标进单元格）时清掉选中高亮，
       // 否则 overlay 会一直画着蓝色选择条，Delete 判定也会失去真实选区依据。
-      if (this.tableSelectedLine && !(this.editor?.state?.selection instanceof CellSelection)) {
-        this.tableSelectedLine = null
+      // v12 加强：selection 仍是 CellSelection、但真实 rect 已不匹配 `tableSelectedLine`
+      // 时也要清 —— 用户先点选择条再**拖选其他单元格**，选区变了而标记残留，
+      // 浮窗形态 / 锚点 / 删除目标全都会按旧标记走（「按钮不对」「删了相邻列」的根因之一）。
+      if (this.tableSelectedLine) {
+        const sel = this.editor?.state?.selection
+        let stillLine = false
+        if (sel instanceof CellSelection) {
+          try {
+            const rect = selectedRect(this.editor.state)
+            const { map } = rect
+            const l = this.tableSelectedLine
+            stillLine = l.axis === 'column'
+              ? rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height && rect.left === l.index
+              : rect.bottom - rect.top === 1 && rect.left === 0 && rect.right === map.width && rect.top === l.index
+          } catch { stillLine = false }
+        }
+        if (!stillLine) this.tableSelectedLine = null
       }
       // 活跃闸门：光标在表格内只是「候选」，还要指针在表格邻域 / 正在键盘操作 /
       // 拖拽中 / 未主动 Escape。否则点过一次表格后浮层会永久挂着（与 WorkBuddy
@@ -379,6 +457,13 @@ export default {
         }
       }
 
+      // 选择条点击闸门（v6）：高亮块只在「点过表格」后才画。键盘模式（Tab 到选择条）
+      // 与已有整行整列 CellSelection（点完选择条后指针移开、或键盘 Shift+方向选区）
+      // 必须放行，否则选择条消失后重排 / Delete 判定失去交互入口。
+      const showSelectors = this._tableUiClicked === true || this._tableUiKeyboardMode === true
+        || this.tableSelectedLine != null
+        || this.editor?.state?.selection instanceof CellSelection
+
       ui.update({
         open: true,
         style: {
@@ -394,8 +479,8 @@ export default {
         thumbLeft,
         thumbWidth,
         scrollRatio: overflow > 0 ? scrollLeft / overflow : 0,
-        columns: visibleColumns,
-        rows: visibleRows,
+        columns: showSelectors ? visibleColumns : [],
+        rows: showSelectors ? visibleRows : [],
         selected: this.tableSelectedLine,
         drop,
         snap: !!drop,
@@ -457,7 +542,12 @@ export default {
     onTableSelectLine(axis, index) {
       if (!this.writable() || !this.selectTableLine(axis, index)) return
       this.tableSelectedLine = { axis, index }
-      this.refreshTableOverlays()
+      // 程序化触发（键盘 / 合成事件）也要解除 dismiss，且必须**显式刷新浮窗**：
+      // selectTableLine 的 dispatch 发生在 tableSelectedLine 赋值之前，那一轮
+      // selection 钩子读到的还是 null，浮窗不会自己冒出来。
+      this._tableUiToolbarDismissed = false
+      this._tableUiClicked = true
+      this.refreshTableUiVisibility()
     },
     /**
      * 验收项「选择条点选后 Delete 能删」：prosemirror-tables 自带的 keydown 把
@@ -465,6 +555,51 @@ export default {
      * 这里只在 CellSelection 恰好覆盖完整一行 / 一列时接管，其余情况（普通光标、
      * 局部框选）一律放行给 ProseMirror 原行为，不改变单元格内退格语义。
      */
+    /**
+     * 删除当前 `CellSelection` 覆盖的整行 / 整列（v12）。
+     *
+     * 工具条「删除」按钮和 Delete/Backspace 共用这一套判定，只读**真实选区**
+     * `selectedRect(state)`，绝不读 `tableSelectedLine` 这个 transient 标记。
+     * 旧按钮实现按 `tableSelectedLine?.axis` 选 `deleteRow`/`deleteColumn`，再走
+     * `this.run()` —— `run()` 会 `restoreSelection()` + `editor.chain().focus()`，
+     * 焦点回到编辑器时 DOM 选区可能仍停在点选择条之前的那个单元格，
+     * `selectedRect` 于是落到相邻列，用户实测就是「删了下一个列」。
+     * 这里直接 `command(state, view.dispatch)`：不经过 focus 链、不允许任何组件
+     * 标记覆盖真实选区，删的一定是 CellSelection 自己覆盖的那一行 / 那一列。
+     */
+    deleteSelectedTableLine(options = {}) {
+      const editor = this.editor
+      if (!editor?.view || this.effectiveReadonly || !this.writable()) return false
+      const state = editor.state
+      if (!(state.selection instanceof CellSelection)) return false
+      let rect
+      try { rect = selectedRect(state) } catch { return false }
+      const { map } = rect
+      const fullColumn = rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height
+      const fullRow = rect.bottom - rect.top === 1 && rect.left === 0 && rect.right === map.width
+      if (!fullColumn && !fullRow) return false
+      // deleteColumn/deleteRow 在「会删掉整张表」时会失败，此时不接管，
+      // 让 ProseMirror 退回清空内容，避免整张表凭空消失。
+      if ((fullColumn && map.width <= 1) || (fullRow && map.height <= 1)) return false
+      const command = fullColumn ? deleteColumn : deleteRow
+      if (!command(state)) return false
+      // 键盘路径要在 dispatch 之前拦下事件：否则 prosemirror-keymap 的
+      // deleteCellSelection 会抢先把选中单元格内容清空。
+      if (typeof options.beforeDispatch === 'function') options.beforeDispatch()
+      let applied = false
+      try { applied = !!command(state, editor.view.dispatch) } catch { applied = false }
+      if (applied) {
+        // 删完立刻清掉选择条标记并刷新几何层：否则选择条还标着旧的「选择第 N 列」，
+        // 看起来像删错了相邻列（v12 probe-delete2 实测到的状态滞后）。
+        this.tableSelectedLine = null
+        this.$nextTick(() => {
+          this.updateTableBoundary?.()
+          this.refreshTableOverlays?.()
+          this.refreshTableTools?.()
+        })
+      }
+      return applied
+    },
     onTableDeleteKeyDown(event) {
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
       if (event.defaultPrevented || this.effectiveReadonly || !this.writable()) return
@@ -476,27 +611,9 @@ export default {
       const target = event.target
       const overlay = this._tableOverlaysUi?.el
       if (!editor.view.dom.contains(target) && !(overlay && overlay.contains(target))) return
-      let rect
-      try { rect = selectedRect(state) } catch { return }
-      const { map } = rect
-      const fullColumn = rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height
-      const fullRow = rect.bottom - rect.top === 1 && rect.left === 0 && rect.right === map.width
-      if (!fullColumn && !fullRow) return
-      // deleteColumn/deleteRow 在「会删掉整张表」时会失败，此时不接管，
-      // 让 ProseMirror 退回清空内容，避免整张表凭空消失。
-      if ((fullColumn && map.width <= 1) || (fullRow && map.height <= 1)) return
-      const command = fullColumn ? deleteColumn : deleteRow
-      if (!command(state)) return
-      // window capture 阶段 stopPropagation：事件到不了 view.dom，
-      // prosemirror-keymap 的 deleteCellSelection 就不会抢先清空单元格。
-      event.preventDefault()
-      event.stopPropagation()
-      let applied = false
-      try { applied = command(state, editor.view.dispatch) } catch { applied = false }
-      if (applied) this.tableSelectedLine = null
-      this.$nextTick(() => {
-        this.updateTableBoundary?.()
-        this.refreshTableOverlays()
+      // window capture 阶段 stopPropagation：事件到不了 view.dom。
+      this.deleteSelectedTableLine({
+        beforeDispatch: () => { event.preventDefault(); event.stopPropagation() },
       })
     },
     onTableReorderMove(axis, from, to, x, y) {
@@ -541,22 +658,17 @@ export default {
       wrapper.scrollLeft = ratio * overflow
       this.refreshTableOverlays()
     },
-    onTableFloatAction(id) {
+    /**
+     * 唯一浮窗 `mode='text'` 的按钮分发（真源 `markdownFloatingItemsFactory` 的 md 白名单）：
+     * AI / 加粗 / 斜体 / 下划线 / 删除线 / 链接 / 行内代码。行列插入、合并拆分、颜色、
+     * 对齐全在 `mode='table'`，走 `tableToolsUiMixin` 的 `onAction → tableAction()`，两套
+     * 语义别再混回去。浮窗根节点 `mousedown preventDefault` 已保住选区，这里不需要兜底改光标。
+     */
+    tableTextAction(id) {
       if (!this.writable()) return
-      // 只 hover、还没点进表格时，先把光标落进首个单元格，否则 tableAction 的
-      // isActive('table') / selectedRect 会拿到表外的选区。
-      if (!this.editor.isActive('table')) {
-        const table = this._tableOverlayHover?.querySelector('table')
-        const paragraph = table?.querySelector('td p, th p')
-        if (paragraph) {
-          try {
-            const pos = this.editor.view.posAtDOM(paragraph, 0)
-            if (Number.isInteger(pos)) this.editor.commands.setTextSelection(pos)
-          } catch { /* 忽略：后续命令自身会安全失败 */ }
-        }
-      }
-      if (id === 'addRowAfter' || id === 'addColumnAfter') this.tableAction(id)
-      else this.run(id)
+      if (id === 'ai-edit') { this.$emit('ai-request', 'rewrite'); return }
+      if (id === 'link') { this.openLinkDialog?.(true); return }
+      if (['bold', 'italic', 'underline', 'strike', 'code'].includes(id)) this.toggleMark(id)
     },
   },
 }

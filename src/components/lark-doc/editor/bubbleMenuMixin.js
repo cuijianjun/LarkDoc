@@ -112,7 +112,10 @@ export default {
     refreshBubbleBar() {
       const bar = this._bubbleUi
       if (!bar) return
-      if (!this.bubbleVisible || this.effectiveReadonly) { bar.hide(); return }
+      // v7 第二道闸：即便 bubbleVisible 已由选区置真，只要唯一表格浮窗开着
+      // （mode=text / table），气泡条必须真从 DOM 摘掉，杜绝两个浮窗并存。
+      if (!this.bubbleVisible || this.effectiveReadonly
+        || this.buildTableToolsState?.().open === true) { bar.hide(); return }
       bar.setConfig(this.bubbleBarConfig())
       const alignValue = this.bubbleAlignValue()
       bar.update({

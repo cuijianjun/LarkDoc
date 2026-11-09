@@ -99,6 +99,20 @@ export const ICONS = {
   // 回复卡头像兜底（07 §12.3：灰底人形 SVG）。用半身剪影，别做成「两个圆」——
   // 32px 圆内头肩要留白，否则缩到 18px 就看不出是人。
   'rev-avatar': wrap('<circle cx="8" cy="5.5" r="2.7"/><path d="M3.1 13.7c0-2.6 2.2-4.4 4.9-4.4s4.9 1.8 4.9 4.4"/>'),
+  // —— v11 表格/文本浮窗（与顶部功能栏共用同一套 16×16 currentColor 图标，禁止字符凑图）——
+  // 合并 / 拆分单元格：两格 + 相向 / 相背箭头，与「标题行 / 标题列」网格图标同族。
+  'table-merge': wrap('<rect x="2.6" y="3.4" width="10.8" height="9.2" rx="1.4"/><path d="M8 3.4v9.2" stroke-dasharray="2 2"/><path d="M4.2 8h2.4M9.4 8h2.4"/><path d="m5.5 6.9 1.1 1.1-1.1 1.1M10.5 6.9 9.4 8l1.1 1.1"/>'),
+  'table-split': wrap('<rect x="2.6" y="3.4" width="10.8" height="9.2" rx="1.4"/><path d="M8 3.4v9.2"/><path d="M4.2 8h2.4M9.4 8h2.4"/><path d="m5.5 6.9-1.1 1.1 1.1 1.1M10.5 6.9l1.1 1.1-1.1 1.1"/>'),
+  // 单元格垂直对齐：上下基线 + 内容块贴顶 / 居中 / 贴底。
+  'valign-top': wrap('<path d="M2.8 3.2h10.4"/><path d="M2.8 12.8h10.4" opacity=".4"/><rect x="5" y="4.2" width="6" height="3.2" rx="1"/>'),
+  'valign-middle': wrap('<path d="M2.8 3.2h10.4M2.8 12.8h10.4" opacity=".4"/><rect x="5" y="6.4" width="6" height="3.2" rx="1"/>'),
+  'valign-bottom': wrap('<path d="M2.8 3.2h10.4" opacity=".4"/><path d="M2.8 12.8h10.4"/><rect x="5" y="8.6" width="6" height="3.2" rx="1"/>'),
+  // 「转换为」里的高亮块（方框 + 感叹号）与同步块（双向回环）。
+  'block-callout': wrap('<rect x="2.6" y="2.8" width="10.8" height="10.4" rx="1.6"/><path d="M8 5.4v3.2"/><path d="M8 10.8h.01" stroke-width="1.9"/>'),
+  'block-sync': wrap('<path d="M3.3 7.2a4.8 4.8 0 0 1 8.1-2.7"/><path d="m11.3 2.5.2 2.4-2.4.1"/><path d="M12.7 8.8a4.8 4.8 0 0 1-8.1 2.7"/><path d="m4.7 13.5-.2-2.4 2.4-.1"/>'),
+  // 更多：三点；复制选区链接：方框 + 右上跳出箭头（与「插入链接」的链条明确区分）。
+  'more-horizontal': wrap('<circle cx="3.6" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="12.4" cy="8" r="1.1" fill="currentColor" stroke="none"/>'),
+  'share-link': wrap('<path d="M9.2 3.4h3.1a1.3 1.3 0 0 1 1.3 1.3v6.6a1.3 1.3 0 0 1-1.3 1.3H9.2"/><path d="M6 8h7.6"/><path d="m11.4 5.8 2.2 2.2-2.2 2.2"/>'),
 }
 
 export default ICONS

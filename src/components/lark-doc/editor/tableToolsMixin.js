@@ -11,7 +11,13 @@ import { tableActions } from './constants'
 export default {
   data() { return {
     tableToolsOpen: false, tablePicker: false, tablePickerHover: { rows: 3, cols: 3 },
-    tableBoundary: { visible: false, hover: null, columnSide: 'before', rowSide: 'before', rowIndex: -1, columnIndex: -1, rowSpan: 1, columnSpan: 1, cellPosition: null, style: { top: '0px', left: '0px', width: '0px', height: '0px' }, columnLineLeft: 0, rowLineTop: 0, plusUp: 28, plusDown: 20 },
+    // v4（WorkBuddy `nearestIdx` 1:1）：一条**内部**边线 = 一颗 ＋。`actionId` 由最近的
+    // 内部边线决定（统一 `addColumnAfter` / `addRowAfter`，光标落在边线左/上侧单元格）。
+    // `plusActive` 只在 ＋ 被 hover / focus 时为真 —— hover line 仅在此时挂进 DOM
+    // （真源 `Ee && ye` / `_e &&`）。线长由 `tableToolsUiMixin` 按表格内部尺寸算，
+    // 严格不越过表格。表格最左 / 最上**外边缘**不产生 ＋。
+    // `columnSide` / `rowSide` 双按钮语义已废除。
+    tableBoundary: { visible: false, hover: null, actionId: 'addColumnAfter', plusActive: false, rowIndex: -1, columnIndex: -1, rowSpan: 1, columnSpan: 1, cellPosition: null, style: { top: '0px', left: '0px', width: '0px', height: '0px' }, columnLineLeft: 0, rowLineTop: 0, plusUp: 28, plusDown: 20 },
     columnResize: null, tableActions,
   } },
   computed: {
@@ -54,9 +60,49 @@ export default {
       }
       return null
     },
+    /**
+     * 边界几何专用：自定义 table nodeview 的 `nodeDOM()` 返回的是 `.tableWrapper`
+     * 容器，宽度 = 纸张内容区（可远大于内部 <table> 的实际宽度）。用户实测
+     * 「高亮线超过表格」正是把 wrapper 宽当成了表格宽，横线一路画到纸外。
+     * ＋ / hover line / 热区必须全部对齐**内部 <table>** 的 rect。
+     */
+    /**
+     * 纯 hover（还没点进表格）时按指针位置反查内部 <table>。选区在表格外的正文里，
+     * `activeTableElement()` 返回 null，旧实现会让 ＋ / hover line 完全不出现；而用户
+     * 口径是「鼠标悬浮在两个单元格交接处，交界处就要高亮并且有 + 号」，与光标位置无关。
+     * column-resize-handle / overlay 可能盖在表格上方，所以命中不到 table 时再按 rect 兜底。
+     */
+    tableRectElementAtPoint(event) {
+      const x = event?.clientX
+      const y = event?.clientY
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+      const root = this.$refs.root
+      const doc = root?.ownerDocument
+      if (!doc) return null
+      const hit = doc.elementFromPoint(x, y)
+      const table = hit?.closest?.('table')
+      if (table && root.contains(table)) return table
+      const pad = 44
+      for (const candidate of root.querySelectorAll('.ProseMirror table')) {
+        const r = candidate.getBoundingClientRect()
+        if (x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) return candidate
+      }
+      return null
+    },
+    activeTableRectElement(event) {
+      const el = this.activeTableElement()
+      if (el) {
+        const table = (typeof HTMLTableElement !== 'undefined' && el instanceof HTMLTableElement)
+          ? el : (el.querySelector?.('table') || el)
+        if (table) return table
+      }
+      // 选区不在表格内：用当前指针所在表格（或上一次 hover 的表格）保持几何，
+      // 否则 `updateTableBoundary()` 会把 visible 收成 false。
+      return event ? this.tableRectElementAtPoint(event) : (this._tableBoundaryHoverTable || null)
+    },
     updateTableBoundary() {
       if (!this.writable()) { this.tableBoundary.visible = false; return }
-      const table = this.activeTableElement()
+      const table = this.activeTableRectElement()
       const paper = this.$refs.root?.querySelector('.lark-doc-paper')
       if (!table || !paper) { this.tableBoundary.visible = false; return }
       const tableRect = table.getBoundingClientRect()
@@ -82,11 +128,13 @@ export default {
       const selectionElement = domAtSelection?.nodeType === 1 ? domAtSelection : domAtSelection?.parentElement
       const cell = selectionElement?.closest?.('td,th')
       const cellRect = cell?.getBoundingClientRect?.()
+      const prev = this.tableBoundary
+      // hover 已选中某条内部边线时，表格几何刷新（transaction / scroll 会反复调这里）
+      // 不能把边线位置覆盖成「当前单元格中心」，否则 ＋ 会跳回列中央。
+      const keepLine = !!prev.hover
       this.tableBoundary = {
+        ...prev,
         visible: true,
-        hover: this.tableBoundary.hover,
-        columnSide: this.tableBoundary.columnSide,
-        rowSide: this.tableBoundary.rowSide,
         // 边界条根节点是 fixed 浮层（与 .lark-doc-table-overlay 同层），坐标必须是
         // viewport 值。旧写法减掉 paperRect 是给 absolute 用的：宿主固定高度 +
         // overflow:hidden 时表格下方的 ＋ 会被裁掉，滚动后还会与表格错位。
@@ -96,52 +144,126 @@ export default {
           width: `${tableRect.width}px`,
           height: `${tableRect.height}px`,
         },
-        columnLineLeft: cellRect ? cellRect.left - tableRect.left + cellRect.width / 2 : tableRect.width / 2,
-        rowLineTop: cellRect ? cellRect.top - tableRect.top + cellRect.height / 2 : tableRect.height / 2,
+        columnLineLeft: keepLine ? prev.columnLineLeft
+          : (cellRect ? cellRect.left - tableRect.left + cellRect.width / 2 : tableRect.width / 2),
+        rowLineTop: keepLine ? prev.rowLineTop
+          : (cellRect ? cellRect.top - tableRect.top + cellRect.height / 2 : tableRect.height / 2),
         plusUp,
         plusDown,
       }
     },
     clearTableBoundaryHover() {
-      if (this.tableBoundary.hover) this.tableBoundary.hover = null
+      const boundary = this.tableBoundary
+      // 整体替换触发 `tableBoundary` 的 deep watch，让 hover line 与 ＋ 一起收起。
+      if (boundary.hover || boundary.plusActive) this.tableBoundary = { ...boundary, hover: null, plusActive: false }
     },
     keepTableBoundaryHover() {
-      if (this.writable() && this.editor?.isActive('table')) return
+      // 纯 hover 出来的 ＋，鼠标移到按钮上时选区仍在表格外；不能因此把 hover 清掉，
+      // 否则按钮在能被点到之前就自己消失了。
+      if (this.writable() && (this.editor?.isActive('table') || this._tableBoundaryHoverTable)) return
       this.clearTableBoundaryHover()
     },
+    /**
+     * v4 / WorkBuddy `nearestIdx` 单选模型（1:1）：
+     * - 候选边线只取**内部**边线：单元格的右边界（列 ＋）/ 下边界（行 ＋）。
+     *   表格最左 / 最上**外边缘**不是任何单元格的右 / 下边界，天然不产生 ＋
+     *   —— 用户实测「最左边、最上面悬浮上去是没有 + 号的」。
+     * - 一条边线只对应一颗 ＋：列 ＋ 固定在表格上方、行 ＋ 固定在表格左侧
+     *   （真源 `.sc-table-col-plus-zone{top:-28px}` / `.sc-table-row-plus-zone{left:-14px}`）。
+     * - 插入动作统一 `addColumnAfter` / `addRowAfter`：把光标落到「产生这条边线」
+     *   的那个单元格，Tiptap 就正好在这条边线上插入，不需要 before/after 双按钮。
+     */
     updateTableBoundaryHover(event) {
-      if (!this.writable() || !this.editor?.isActive('table')) { this.clearTableBoundaryHover(); return }
-      const table = this.activeTableElement()
-      const cell = event.target?.closest?.('td,th')
-      if (!table || !cell || !table.contains(cell)) { this.clearTableBoundaryHover(); return }
-      const rect = cell.getBoundingClientRect()
+      // 不再要求 `editor.isActive('table')`：那是「光标在表格内」，而用户是在**纯 hover**
+      // 状态下悬浮单元格交界处，光标可能还在表格外的正文里（反馈⑦）。
+      if (!this.writable() || !this.featureEnabled('tables')) { this.clearTableBoundaryHover(); return }
+      // 指针已经移到 ＋ / hover line 上时保持当前状态：重算会按 viewport 坐标把
+      // 表格外侧的按钮判成「离开表格」，把刚要点的 ＋ 自己清掉。
+      if (event.target?.closest?.('.lark-doc-table-boundary-tools')) return
+      const table = this.activeTableRectElement(event)
+      if (!table) { this.clearTableBoundaryHover(); return }
+      this._tableBoundaryHoverTable = table
       const tableRect = table.getBoundingClientRect()
-      const threshold = 9
+      if (!tableRect.width || !tableRect.height) { this.clearTableBoundaryHover(); return }
+      // 纯 hover 时没有 selection 事务来跑 `updateTableBoundary()`，visible / style
+      // 会是上一次（或初始 false）的值。几何不匹配就补算一次，让边界层真正挂出来。
+      const current = this.tableBoundary
+      const top = Number.parseFloat(current.style?.top)
+      const left = Number.parseFloat(current.style?.left)
+      const width = Number.parseFloat(current.style?.width)
+      const height = Number.parseFloat(current.style?.height)
+      if (!current.visible || !Number.isFinite(width) || !Number.isFinite(height)
+        || Math.abs(width - tableRect.width) > 1 || Math.abs(height - tableRect.height) > 1
+        || Math.abs(left - tableRect.left) > 1 || Math.abs(top - tableRect.top) > 1) {
+        this.updateTableBoundary()
+      }
       const x = event.clientX
       const y = event.clientY
-      const row = cell.parentElement
-      const rows = table.querySelectorAll('tr')
-      const rowIndex = row ? Array.from(rows).indexOf(row) : -1
-      const columnIndex = Number.isInteger(cell.cellIndex) ? cell.cellIndex : -1
+      const threshold = 9
+      // 44px 覆盖表格上方 -28px 的列 ＋ 与左侧行 ＋ 热区；超出即视为离开表格块。
+      const pad = 44
+      if (x < tableRect.left - pad || x > tableRect.right + pad
+        || y < tableRect.top - pad || y > tableRect.bottom + pad) {
+        this.clearTableBoundaryHover()
+        return
+      }
+      // 真源 `.sc-table-col-plus-zone{top:-28px}` / `.sc-table-row-plus-zone{left:-14px}`：
+      // 表格上方 / 左侧各有一条 28px 的 ＋ 热区，鼠标从那两条带靠近时也必须出 ＋，
+      // 否则 ＋ 只在表格内部边线上出现、用户从表格外侧根本点不到。
+      // 上方带只认列线、左侧带只认行线，避免在表格外空白同时算出两条线。
+      const above = y < tableRect.top
+      const leftOf = x < tableRect.left
+      const inVerticalBand = y >= tableRect.top - 28 && y <= tableRect.bottom + threshold
+      const inHorizontalBand = x >= tableRect.left - 28 && x <= tableRect.right + threshold
+      let colLine = null
+      let rowLine = null
+      // 真源 bundle 里确实还有 `is-leftmost` / `is-topmost` 两个特殊 zone，但用户对照
+      // 截图明确指出「最左边、最上面悬浮上去是没有 + 号的」，且 `h$18()` 的内部边线
+      // 选择本身也跳过 `leftColIndex < 0`。以可见交互为准：**不把表格最左 / 最上
+      // 外边缘当候选边线**，只收单元格的右 / 下边界。要在首列左侧 / 首行上方插入，
+      // 走表格工具条的「左侧加列 / 上方加行」。
+      table.querySelectorAll('td,th').forEach((candidate) => {
+        const r = candidate.getBoundingClientRect()
+        if (!r.width || !r.height) return
+        if (!leftOf && inVerticalBand) {
+          const dist = Math.abs(x - r.right)
+          if (dist <= threshold && (!colLine || dist < colLine.dist)) {
+            colLine = { dist, pos: r.right - tableRect.left, cell: candidate }
+          }
+        }
+        if (!above && inHorizontalBand) {
+          const dist = Math.abs(y - r.bottom)
+          if (dist <= threshold && (!rowLine || dist < rowLine.dist)) {
+            rowLine = { dist, pos: r.bottom - tableRect.top, cell: candidate }
+          }
+        }
+      })
+      // 等距时列优先（与旧实现 `verticalDistance <= horizontalDistance` 一致）。
+      const useColumn = !!(colLine && (!rowLine || colLine.dist <= rowLine.dist))
+      const line = useColumn ? colLine : rowLine
+      if (!line) { this.clearTableBoundaryHover(); return }
+      const cell = line.cell
       const paragraph = cell.querySelector('p')
-      const cellPosition = paragraph ? this.editor.view.posAtDOM(paragraph, 0) : null
-      const rowSpan = Math.max(1, cell.rowSpan || 1)
-      const columnSpan = Math.max(1, cell.colSpan || 1)
-      const verticalDistance = Math.min(Math.abs(x - rect.left), Math.abs(x - rect.right))
-      const horizontalDistance = Math.min(Math.abs(y - rect.top), Math.abs(y - rect.bottom))
-      const inVerticalRange = y >= rect.top - threshold && y <= rect.bottom + threshold
-      const inHorizontalRange = x >= rect.left - threshold && x <= rect.right + threshold
-      if (inVerticalRange && verticalDistance <= threshold && verticalDistance <= horizontalDistance) {
-        const left = Math.abs(x - rect.left) <= Math.abs(x - rect.right)
-        this.tableBoundary = { ...this.tableBoundary, hover: 'column', columnSide: left ? 'before' : 'after', rowIndex, columnIndex, rowSpan, columnSpan, cellPosition, columnLineLeft: (left ? rect.left : rect.right) - tableRect.left }
-        return
+      let cellPosition = null
+      if (paragraph) {
+        try { cellPosition = this.editor.view.posAtDOM(paragraph, 0) } catch { cellPosition = null }
       }
-      if (inHorizontalRange && horizontalDistance <= threshold) {
-        const top = Math.abs(y - rect.top) <= Math.abs(y - rect.bottom)
-        this.tableBoundary = { ...this.tableBoundary, hover: 'row', rowSide: top ? 'before' : 'after', rowIndex, columnIndex, rowSpan, columnSpan, cellPosition, rowLineTop: (top ? rect.top : rect.bottom) - tableRect.top }
-        return
+      const row = cell.parentElement
+      const rowIndex = row ? Array.from(table.querySelectorAll('tr')).indexOf(row) : -1
+      const columnIndex = Number.isInteger(cell.cellIndex) ? cell.cellIndex : -1
+      const prev = this.tableBoundary
+      this.tableBoundary = {
+        ...prev,
+        hover: useColumn ? 'column' : 'row',
+        actionId: line.actionId || (useColumn ? 'addColumnAfter' : 'addRowAfter'),
+        rowIndex,
+        columnIndex,
+        rowSpan: Math.max(1, cell.rowSpan || 1),
+        columnSpan: Math.max(1, cell.colSpan || 1),
+        cellPosition,
+        columnLineLeft: useColumn ? line.pos : prev.columnLineLeft,
+        rowLineTop: useColumn ? prev.rowLineTop : line.pos,
       }
-      this.clearTableBoundaryHover()
     },
     tableBoundaryAction(id) {
       if (!this.writable()) return

@@ -3,33 +3,32 @@
  *
  * 与 `createTableTools` / `createTableBoundaryTools` 的分工：那两条是**选区驱动**的工具条，
  * 本层是**表格块驱动**的几何层：行/列选择条、拖选择条重排（指示线 + 预览卡）、
- * 横向滚动条、左右边缘渐隐、表格上方浮窗。全部几何由 `tableInteractionMixin` 算好塞进
- * `state`，这里只负责「按 state 重画」+ 把指针手势翻译成回调，不读 ProseMirror state。
+ * 横向滚动条、左右边缘渐隐。全部几何由 `tableInteractionMixin` 算好塞进 `state`，
+ * 这里只负责「按 state 重画」+ 把指针手势翻译成回调，不读 ProseMirror state。
  *
  * 结构约定（不进 verify-browser-table-tools 的断言面，是独立新增层）：
- *   div.lark-doc-table-overlay[aria-hidden=true]     ← 盒子 = `.tableWrapper` 可视区
+ *   div.lark-doc-table-overlay                    ← 盒子 = `.tableWrapper` 可视区
  *     .lark-doc-table-edge.is-left / .is-right
  *     .lark-doc-table-scrollbar > .lark-doc-table-scrollbar-thumb
  *     .lark-doc-table-drop-line / .lark-doc-table-snap
  *     .lark-doc-table-drag-card > head + body
- *     .lark-doc-table-float > button
  *     .lark-doc-table-selector-layer > .lark-doc-table-selector[is-column|is-row]
  *
- * 🔴 根节点 `pointer-events: none`，只有选择条 / 滚动条 / 浮窗自己开 `auto`：
+ * ⚠️ v5（WorkBuddy 真源 1:1）：本层**不再挂任何浮窗**。真源全站只有一个
+ *    `sc-floating-toolbar`（`Ge.length===0?null:...`），表格场景由 `exclusive:!0` 的
+ *    contributor 把「表格工具项」塞进那唯一一条浮窗；它需要 `table-cell-range` 选区
+ *    （点最上边列选择条 / 最左边行选择条）才返回非空 items。旧实现在这里额外挂了
+ *    `.lark-doc-table-float`（AI/B I U S 格式胶囊），与 `.lark-doc-table-tools` 并存 ——
+ *    用户实测「table 里面有两个弹窗，显示逻辑、消失逻辑都不对」。现统一收敛为
+ *    `src/ui/tableTools.js` 的唯一一条选择驱动浮窗，本层只保留几何与选择条。
+ *
+ * 🔴 根节点 `pointer-events: none`，只有选择条 / 滚动条自己开 `auto`：
  *    否则会盖住单元格，边界条的 hover 判定（`updateTableBoundaryHover`）与 ProseMirror
  *    的 `posAtCoords` 都会失效。
  */
 import { applyStyle, mountNode, syncChildren } from './dom'
 
 const SEP = '\u0001'
-
-const FLOAT_ACTIONS = [
-  { id: 'toggleBold', label: 'B', title: '加粗' },
-  { id: 'toggleItalic', label: 'I', title: '斜体' },
-  { id: 'toggleStrike', label: 'S', title: '删除线' },
-  { id: 'addRowAfter', label: '＋行', title: '在下方插入行' },
-  { id: 'addColumnAfter', label: '＋列', title: '在右侧插入列' },
-]
 
 function makeNode(className) {
   const node = document.createElement('div')
@@ -41,7 +40,7 @@ function makeNode(className) {
  * @param {object} options
  * @param {HTMLElement} options.host 挂载点（在 `.lark-doc-paper` 里，`display: contents`）
  * @param {{onSelect?: Function, onReorderMove?: Function, onReorderEnd?: Function,
- *          onReorderCancel?: Function, onScrollRatio?: Function, onAction?: Function}} [options.handlers]
+ *          onReorderCancel?: Function, onScrollRatio?: Function}} [options.handlers]
  * @returns {{ el: HTMLElement, update(state: object): void, destroy(): void }}
  */
 export function createTableOverlays({ host, handlers = {} }) {
@@ -62,7 +61,6 @@ export function createTableOverlays({ host, handlers = {} }) {
   const cardBody = makeNode('lark-doc-table-drag-card-body')
   dragCard.appendChild(cardHead)
   dragCard.appendChild(cardBody)
-  const float = makeNode('lark-doc-table-float')
   const selectorLayer = makeNode('lark-doc-table-selector-layer')
   ;[edgeLeft, edgeRight, dropLine, snap, dragCard].forEach((node) => node.setAttribute('aria-hidden', 'true'))
   scrollbar.setAttribute('role', 'scrollbar')
@@ -72,25 +70,12 @@ export function createTableOverlays({ host, handlers = {} }) {
   scrollbar.setAttribute('aria-valuemax', '100')
   scrollbar.setAttribute('tabindex', '-1')
 
-  FLOAT_ACTIONS.forEach((action) => {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.textContent = action.label
-    button.setAttribute('title', action.title)
-    button.setAttribute('aria-label', action.title)
-    // 与工具条同义：不抢焦点，否则单元格选区会被浏览器清掉。
-    button.addEventListener('mousedown', (event) => event.preventDefault())
-    button.addEventListener('click', () => { if (handlers.onAction) handlers.onAction(action.id) })
-    float.appendChild(button)
-  })
-
   el.appendChild(edgeLeft)
   el.appendChild(edgeRight)
   el.appendChild(scrollbar)
   el.appendChild(dropLine)
   el.appendChild(snap)
   el.appendChild(dragCard)
-  el.appendChild(float)
   el.appendChild(selectorLayer)
 
   let current = { columns: [], rows: [] }
@@ -319,6 +304,17 @@ export function createTableOverlays({ host, handlers = {} }) {
       if (cardHead.textContent !== head) cardHead.textContent = head
       if (cardBody.textContent !== state.card.text) cardBody.textContent = state.card.text
     }
+    // 纯几何层：所有子节点常驻，显隐只由根节点的 open 控制（真摘除，不是 display:none）。
+    // 浮窗统一在 `src/ui/tableTools.js`，这里一个都不挂。
+    syncChildren(el, [
+      { node: edgeLeft, on: true },
+      { node: edgeRight, on: true },
+      { node: scrollbar, on: true },
+      { node: dropLine, on: true },
+      { node: snap, on: true },
+      { node: dragCard, on: true },
+      { node: selectorLayer, on: true },
+    ])
     mountNode(host, el, true)
   }
 
