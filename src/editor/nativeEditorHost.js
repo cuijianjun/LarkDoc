@@ -1,7 +1,7 @@
 import { TextSelection } from '@tiptap/pm/state'
 import { clampBlockIndent, collectOutline, safeAttachmentId, safeUrl } from '../components/lark-doc/documentOperations'
 import { isBlockActionEnabled, isConfigEnabled } from '../components/lark-doc/larkDocConfig'
-import { nearestInsertPosition, sortImageFiles } from '../core/media/image-insert'
+import { nearestInsertPosition } from '../core/media/image-insert'
 import { fileBlockAttrs, sortFileFiles } from '../core/media/file-block'
 import { createNativeOptionsHost } from './nativeOptionsHost'
 import viewModesMixin from '../components/lark-doc/editor/viewModesMixin'
@@ -90,6 +90,7 @@ const options = {
   watch: {
     outlineOpen() { this.syncOutlineReopen() },
     effectiveReadonly(value) {
+      if (value) this.resolveImageFile.cancelAll?.('readonly')
       if (!this.editor) return
       this.closeEditingOverlays()
       if (value) this.tableBoundary.visible = false
@@ -160,20 +161,24 @@ const options = {
     cellAttribute(name, value) { if (value) this.run('setCellAttribute', name, value) },
     onImageInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; return this.insertImageFiles(files) },
     onFileInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; return this.insertFileBlocks(files) },
-    async insertImageFiles(files, pos) {
+    async insertImageFiles(files, pos, source = 'select') {
       if (!this.writable() || !this.featureEnabled('images')) return
-      const { accepted, rejected } = sortImageFiles(files, { maxSize: this.effectiveImageMaxSize })
-      this.error = rejected[0]?.message || ''
+      this.error = ''
       let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
-      for (const file of accepted) {
+      const generation = this.resolveImageFile.generation?.()
+      for (const file of Array.from(files || [])) {
         try {
-          const image = await this.resolveImageFile(file)
-          if (!this.writable()) return
+          const pending = this.resolveImageFile(file, { source })
+          const image = await pending
+          if (!this.writable() || generation !== this.resolveImageFile.generation?.()) return
           if (!image) continue
           if (anchor !== null) this.editor.commands.setTextSelection(anchor)
           this.editor.chain().focus().setImage({ ...image, originalSrc: image.src, originalAttchId: image.attchId, alt: file.name }).run()
           if (anchor !== null) anchor = this.editor.state.selection.to
-        } catch (error) { this.error = error?.message || '图片上传失败' }
+        } catch (error) {
+          if (generation !== this.resolveImageFile.generation?.()) return
+          this.error = error?.message || '图片上传失败'
+        }
       }
     },
     async insertFileBlocks(files, pos) {
@@ -370,6 +375,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel'].forEach(name => host[name]())
     },
     destroy() {
+      resolveImageFile.cancelAll?.('destroy')
       editorContainerObserver?.disconnect()
       editorContainerObserver = null
       listeners.splice(0).forEach(remove => remove())

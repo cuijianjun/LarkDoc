@@ -4,6 +4,7 @@
  * 02 §11 ② 的「增」有两条非文件路径：粘贴剪贴板图片（走 `@tiptap/extension-file-handler`）
  * 和**粘贴图片 URL**（没有文件，只有文本）。后者默认会被浏览器当纯文本粘成一行字，
  * 这里补一个粘贴拦截：命中图片地址且当前行是空段落时，把这一行直接换成图片块。
+ * 文件事件仅补发 FileHandler 过滤掉的候选图片，拒绝通知仍由公共上传管线产生。
  *
  * 刻意收窄的三条边界（放宽任何一条都会误伤普通粘贴）：
  * 1. 只处理顶层空段落——用户在写了一半的行里粘地址，仍按文本插入；
@@ -12,7 +13,7 @@
  */
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { imageUrlFromText } from '../media/image-insert'
+import { imageUrlFromText, isImageMime } from '../media/image-insert'
 
 /** 插件 key：宿主排查粘贴链路时可按 key 取到本插件。 */
 export const IMAGE_URL_PASTE_KEY = new PluginKey('larkDocImageUrlPaste')
@@ -20,15 +21,31 @@ export const IMAGE_URL_PASTE_KEY = new PluginKey('larkDocImageUrlPaste')
 /**
  * @param {object} [options]
  * @param {() => boolean} [options.enabled] 图片功能是否开启；缺省视为开启。
+ * @param {function} [options.onImageFiles] 被 FileHandler 过滤的候选图片仍交回公共上传管线。
  */
 export function imageUrlPasteExtension(options = {}) {
   const enabled = options.enabled
+  const reportFilteredImages = (view, event, source) => {
+    if (!view.editable || (typeof enabled === 'function' && !enabled()) || typeof options.onImageFiles !== 'function') return false
+    const transfer = source === 'paste' ? event.clipboardData : event.dataTransfer
+    if (source === 'drop' && Array.from(transfer?.types || []).includes('application/x-prosemirror-slice')) return false
+    // 仅补发 FileHandler 会过滤的候选图片；附件和伴随 HTML 继续走原处理链。
+    const files = Array.from(transfer?.files || []).filter(file => !isImageMime(file.type) && (
+      /^image\//i.test(file.type) || (!file.type && /\.(?:png|jpe?g|gif|webp|svg|bmp|tiff?|ico|avif|hei[cf])$/i.test(file.name))
+    ))
+    if (files.length) options.onImageFiles(files, view.state.selection.from, source)
+    return false
+  }
   return Extension.create({
     name: 'imageUrlPaste',
     addProseMirrorPlugins() {
       return [new Plugin({
         key: IMAGE_URL_PASTE_KEY,
         props: {
+          handleDOMEvents: {
+            paste: (view, event) => reportFilteredImages(view, event, 'paste'),
+            drop: (view, event) => reportFilteredImages(view, event, 'drop'),
+          },
           handlePaste(view, event) {
             if (!view.editable) return false
             if (typeof enabled === 'function' && !enabled()) return false

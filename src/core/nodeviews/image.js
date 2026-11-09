@@ -366,7 +366,7 @@ export function createImageNodeView(props) {
     if (!file || !editable) return
     const generation = ++replaceGeneration
     try {
-      const image = await resolveImageFile(file)
+      const image = await resolveImageFile(file, { source: 'replace' })
       if (!image || generation !== replaceGeneration) return
       if (!editor || editor.isDestroyed || !editor.isEditable) return
       error = ''
@@ -584,7 +584,7 @@ export function createImageNodeView(props) {
       })
       if (generation !== cropGeneration || !editable || !dialogOpen) return false
       // 裁剪与插图共用宿主上传；originalSrc 保留原图，重置时恢复原映射。
-      const uploadedImage = await resolveImageFile(new window.File([blob], 'cropped-image.png', { type: 'image/png' }))
+      const uploadedImage = await resolveImageFile(new window.File([blob], 'cropped-image.png', { type: 'image/png' }), { source: 'crop' })
       if (!uploadedImage || generation !== cropGeneration || !editable || !dialogOpen) return false
       closeDialog()
       error = ''
@@ -620,6 +620,8 @@ export function createImageNodeView(props) {
     if (next === editable) return
     editable = next
     if (!editable) {
+      cropGeneration += 1
+      replaceGeneration += 1
       dialogOpen = false
       if (dialogEl) { dialogEl.backdrop.remove(); dialogEl = null }
       unmountToolbar()

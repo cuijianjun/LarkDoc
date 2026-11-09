@@ -184,11 +184,11 @@ export function createLarkDocExtensions(options = {}) {
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
     FileHandler.configure({
       allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,
-      onPaste: (editor, files) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, editor.state.selection.from) },
-      onDrop: (editor, files, pos) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos) },
+      onPaste: (editor, files) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, editor.state.selection.from, 'paste') },
+      onDrop: (editor, files, pos) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos, 'drop') },
     }),
     // P2-03：没有文件、只有一个图片地址的粘贴走这里（见 core/blocks/image-paste.js）。
-    imageUrlPasteExtension({ enabled: () => enabled('images') }),
+    imageUrlPasteExtension({ enabled: () => enabled('images'), onImageFiles: options.onImageFiles }),
     mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
     Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
     Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }), documentExtension({ ...options, isRemoteTransaction: collab && collab.isRemoteTransaction }, network),

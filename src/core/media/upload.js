@@ -1,3 +1,5 @@
+import { safeAttachmentId, safeUrl } from '../documentOperations'
+
 /**
  * 上传 provider（P2-02）——把宿主的一个裸函数补成有契约的上传通道。
  *
@@ -85,7 +87,7 @@ export function validateUploadFile(file, limits = DEFAULT_UPLOAD_LIMITS) {
   if (!file || typeof file.size !== 'number') throw uploadError(UPLOAD_ERROR.FAILED, '上传内容无效')
   if (!limits) return file
   const mime = Array.isArray(limits.mime) && limits.mime.length ? limits.mime : UPLOAD_MIME_ALLOWLIST
-  if (file.type && mime.indexOf(file.type) === -1) {
+  if (mime.indexOf(String(file.type || '').toLowerCase()) === -1) {
     const labels = mime.map((type) => String(type).split('/')[1].toUpperCase()).join('/')
     throw uploadError(UPLOAD_ERROR.MIME, `只支持 ${labels} 图片`, { mime: file.type })
   }
@@ -98,7 +100,7 @@ export function validateUploadFile(file, limits = DEFAULT_UPLOAD_LIMITS) {
 
 /** 补齐 05 §5.7 的返回契约；缺 url 直接判失败，不产生半截节点。 */
 export function normalizeUploadResult(result, file) {
-  if (!result || typeof result !== 'object' || typeof result.url !== 'string' || !result.url) {
+  if (!result || typeof result !== 'object' || !safeUrl(result.url, true) || (result.attchId != null && !safeAttachmentId(String(result.attchId)))) {
     throw uploadError(UPLOAD_ERROR.RESULT, '图片上传未返回有效地址')
   }
   return {
@@ -109,174 +111,218 @@ export function normalizeUploadResult(result, file) {
   }
 }
 
-function emitProgress(onProgress, loaded, total) {
-  if (typeof onProgress !== 'function') return
-  const safeTotal = Number(total) > 0 ? Number(total) : 0
-  const percent = safeTotal ? Math.min(100, Math.max(0, Math.round((loaded / safeTotal) * 100))) : 0
-  onProgress({ loaded, total: safeTotal, percent })
+const UPLOAD_PROVIDER = Symbol.for('lark-doc.uploadProvider')
+const UPLOAD_PROVIDER_VERSION = 1
+
+/** 跨入口保留 Provider 身份，回调、取消和任务编号仍由原实例管理。 */
+export function normalizeUploader(input, defaults = {}) {
+  if (input && input[UPLOAD_PROVIDER] !== undefined) {
+    if (input[UPLOAD_PROVIDER] !== UPLOAD_PROVIDER_VERSION) {
+      throw uploadError(UPLOAD_ERROR.FAILED, '不支持的上传 Provider 协议版本')
+    }
+    if (!['upload', 'cancel', 'cancelAll', 'pending', 'clearResume'].every(name => typeof input[name] === 'function')) {
+      throw uploadError(UPLOAD_ERROR.FAILED, '上传 Provider 协议无效')
+    }
+    return input
+  }
+  const options = typeof input === 'function' ? { upload: input } : (input || {})
+  return createUploadProvider({
+    ...defaults,
+    ...options,
+    upload: typeof options.upload === 'function' ? options.upload.bind(options) : undefined,
+  })
+}
+
+function readLocalImage(file, ctx) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    const onAbort = () => { reader.abort(); reject(uploadError(UPLOAD_ERROR.ABORTED, '上传已取消')) }
+    const cleanup = () => ctx.signal.removeEventListener('abort', onAbort)
+    reader.onload = () => { cleanup(); resolve({ url: reader.result }) }
+    reader.onerror = () => { cleanup(); reject(uploadError(UPLOAD_ERROR.FAILED, '本地图片读取失败')) }
+    reader.onabort = cleanup
+    reader.onprogress = event => ctx.onProgress(event)
+    ctx.signal.addEventListener('abort', onAbort, { once: true })
+    reader.readAsDataURL(file)
+  })
 }
 
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
-    if (signal && signal.aborted) return reject(uploadError(UPLOAD_ERROR.ABORTED, '上传已取消'))
-    const timer = setTimeout(() => {
-      if (signal) signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    function onAbort() {
-      clearTimeout(timer)
-      reject(uploadError(UPLOAD_ERROR.ABORTED, '上传已取消'))
-    }
-    if (signal) signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) return reject(uploadError(UPLOAD_ERROR.ABORTED, '上传已取消'))
+    const onAbort = () => { clearTimeout(timer); reject(uploadError(UPLOAD_ERROR.ABORTED, '上传已取消')) }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
   })
 }
 
-/**
- * 建一个上传通道。返回值：
- *   upload(file, ctx?)   与宿主同签名，多了 ctx.taskId / ctx.signal 两个可选键
- *   cancel(taskId)       从外部取消（不传则取消全部）
- *   cancelAll()
- *   pending()            进行中的任务数（UI 可据此禁「再次上传」）
- *   limits / retry / chunked / chunkSize   生效配置的只读副本
- */
+/** 文件任务统一管理校验、回调、重试/分片、取消和唯一终态。 */
 export function createUploadProvider(options = {}) {
-  const upload = options.upload
-  if (typeof upload !== 'function') throw new Error('上传 provider 必须传入 upload 函数')
-
+  const upload = typeof options.upload === 'function' ? options.upload.bind(options) : readLocalImage
+  const mode = typeof options.upload === 'function' ? 'upload' : 'local'
   const limits = options.limits === undefined ? DEFAULT_UPLOAD_LIMITS : options.limits
   const retry = { ...DEFAULT_RETRY, ...(options.retry || {}) }
   const attempts = Math.max(1, Math.floor(Number(retry.attempts) || 1))
-  const chunked = options.chunked === true
+  const chunked = mode === 'upload' && options.chunked === true
   const chunkSize = Math.max(64 * 1024, Number(options.chunkSize) || DEFAULT_CHUNK_SIZE)
-  const getDocumentId = typeof options.getDocumentId === 'function' ? options.getDocumentId : () => null
-
-  /** taskId → { controller, key, resumeFrom, uploadId } */
   const tasks = new Map()
-  /** 断点账本：fileSignature → { uploadId, resumeFrom }，成功即删。 */
   const resumes = new Map()
+  let resumeGeneration = 0
   let seq = 0
 
-  function makeTaskId() {
-    seq += 1
-    return `upload-${seq}`
-  }
-
-  async function withRetry(run, signal) {
-    let lastError = null
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      if (signal && signal.aborted) throw uploadError(UPLOAD_ERROR.ABORTED, '上传已取消')
-      try {
-        return await run(attempt)
-      } catch (error) {
-        lastError = error
-        if (isAbortError(error)) throw error
-        if (attempt >= attempts || !isRetryable(error)) break
-        await delay(retry.delay * Math.pow(retry.factor, attempt - 1), signal)
-      }
-    }
-    if (isAbortError(lastError)) throw lastError
-    if (lastError && lastError.code) throw lastError
-    throw uploadError(UPLOAD_ERROR.FAILED, `上传失败：${(lastError && lastError.message) || '未知错误'}`, {
-      cause: lastError,
-      attempts,
-    })
-  }
-
   async function uploadFile(file, ctx = {}) {
-    validateUploadFile(file, limits)
-
-    const key = fileSignature(file)
-    const taskId = ctx.taskId || makeTaskId()
+    const taskId = ctx.taskId || `upload-${++seq}`
     if (tasks.has(taskId)) throw uploadError(UPLOAD_ERROR.FAILED, '上传任务已在进行中', { taskId })
-
+    const documentId = ctx.documentId ?? (typeof options.getDocumentId === 'function' ? options.getDocumentId() : null)
+    const key = JSON.stringify([documentId, fileSignature(file)])
+    const currentResumeGeneration = resumeGeneration
     const controller = new AbortController()
+    const signal = controller.signal
     const outer = ctx.signal
-    const forwardAbort = () => controller.abort()
+    const resume = chunked ? resumes.get(key) : null
+    const task = { status: null, reason: null, resumeFrom: resume?.resumeFrom || 0, uploadId: resume?.uploadId || `chunk-${taskId}` }
+    const total = Number(file?.size) || 0
+    let loaded = 0
+    let rejectAbort
+    const aborted = new Promise((resolve, reject) => { rejectAbort = reject })
+    // 前置钩子可能同步取消，此时尚未开始等待它返回的 Promise。
+    aborted.catch(() => {})
+    const abortError = () => uploadError(UPLOAD_ERROR.ABORTED, '上传已取消', { taskId, reason: task.reason || 'cancelled' })
+    const cancel = (reason = 'cancelled') => {
+      if (task.status || signal.aborted) return 0
+      task.reason = reason
+      controller.abort()
+      rejectAbort(abortError())
+      return 1
+    }
+    task.cancel = cancel
+    tasks.set(taskId, task)
+    const baseCtx = {
+      ...ctx, taskId, file, source: ctx.source || 'select', mode, signal, cancel,
+      documentId,
+    }
+    const reportCallbackError = error => {
+      const report = ctx.onCallbackError || options.onCallbackError
+      try {
+        const result = typeof report === 'function' ? report(error) : console.error('[LarkDoc] 上传回调异常', error)
+        Promise.resolve(result).catch(failure => console.error('[LarkDoc] 上传回调异常', failure))
+      } catch (failure) { console.error('[LarkDoc] 上传回调异常', failure) }
+    }
+    const notify = (name, extra = {}) => {
+      const event = { ...baseCtx, ...extra }
+      const handlers = [options[name], ctx[name]].filter((handler, index, list) => typeof handler === 'function' && list.indexOf(handler) === index)
+      handlers.forEach(handler => {
+        try { Promise.resolve(handler(event)).catch(reportCallbackError) } catch (error) { reportCallbackError(error) }
+      })
+    }
+    const checkCancelled = () => { if (signal.aborted) throw abortError() }
+    const waitFor = async promise => {
+      const value = await Promise.race([promise, aborted])
+      checkCancelled()
+      return value
+    }
+    const progress = (value, extra = {}) => {
+      if (task.status || signal.aborted) return
+      loaded = Math.max(loaded, Math.min(total, Math.max(0, Number(value) || 0)))
+      notify('onProgress', { ...extra, loaded, total, percent: total ? Math.min(100, Math.round(loaded / total * 100)) : 0 })
+    }
+    const forwardAbort = () => cancel(outer.reason || 'cancelled')
     if (outer) {
-      if (outer.aborted) controller.abort()
+      if (outer.aborted) forwardAbort()
       else outer.addEventListener('abort', forwardAbort, { once: true })
     }
-
-    const resume = chunked ? resumes.get(key) || { uploadId: null, resumeFrom: 0 } : { uploadId: null, resumeFrom: 0 }
-    const task = { controller, key, resumeFrom: resume.resumeFrom, uploadId: resume.uploadId || `chunk-${taskId}` }
-    tasks.set(taskId, task)
-    const total = Number(file.size) || 0
-    const baseCtx = { documentId: ctx.documentId != null ? ctx.documentId : getDocumentId(), signal: controller.signal, taskId, onProgress: null }
-
-    try {
-      emitProgress(ctx.onProgress, 0, total)
-
-      if (!chunked || total <= chunkSize) {
-        const result = await withRetry(async () => {
-          const uploaded = await upload(file, {
-            ...baseCtx,
-            onProgress: (event) => emitProgress(ctx.onProgress, (event && event.loaded) || 0, total),
-          })
-          return uploaded
-        }, controller.signal)
-        emitProgress(ctx.onProgress, total, total)
-        resumes.delete(key)
-        return normalizeUploadResult(result, file)
+    const withRetry = async (part, chunk) => {
+      let lastError
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        checkCancelled()
+        try {
+          const result = await waitFor(upload(part, {
+            ...baseCtx, attempt, chunk,
+            onProgress: event => progress((chunk?.offset || 0) + Math.min(part.size, Number(event?.loaded) || 0), { attempt, chunk }),
+          }))
+          return result
+        } catch (error) {
+          checkCancelled()
+          lastError = error
+          if (isAbortError(error) || attempt >= attempts || !isRetryable(error)) break
+          notify('onRetry', { error, reason: error.message, attempt, nextAttempt: attempt + 1, chunk })
+          checkCancelled()
+          await waitFor(delay(retry.delay * Math.pow(retry.factor, attempt - 1), signal))
+        }
       }
-
-      const parts = Math.max(1, Math.ceil(total / chunkSize))
-      let finalResult = null
-      for (let index = task.resumeFrom; index < parts; index += 1) {
-        const start = index * chunkSize
-        const end = Math.min(total, start + chunkSize)
-        const part = file.slice(start, end)
-        finalResult = await withRetry(() => upload(part, {
-          ...baseCtx,
-          file,
-          chunk: { index, total: parts, offset: start, size: end - start, uploadId: task.uploadId },
-        }), controller.signal)
-        task.resumeFrom = index + 1
-        emitProgress(ctx.onProgress, end, total)
-      }
-      resumes.delete(key)
-      return normalizeUploadResult(finalResult, file)
-    } catch (error) {
-      // 取消或失败都留着账本：同一文件再次上传时从断点续，不从零重来。
-      if (chunked && task.resumeFrom > 0) resumes.set(key, { uploadId: task.uploadId, resumeFrom: task.resumeFrom })
-      if (isAbortError(error) || (controller.signal.aborted && !error.code)) {
-        throw uploadError(UPLOAD_ERROR.ABORTED, '上传已取消', { taskId })
-      }
-      throw error
-    } finally {
+      if (lastError?.code || isAbortError(lastError)) throw lastError
+      throw uploadError(UPLOAD_ERROR.FAILED, `上传失败：${lastError?.message || '未知错误'}`, { cause: lastError, attempts })
+    }
+    const finish = (status, extra) => {
+      if (task.status) return
+      task.status = status
       tasks.delete(taskId)
       if (outer) outer.removeEventListener('abort', forwardAbort)
+      notify({ success: 'onSuccess', error: 'onError', cancelled: 'onCancel', rejected: 'onReject' }[status], { status, ...extra })
+      notify('onSettled', { status, ...extra })
+    }
+    try {
+      checkCancelled()
+      if (ctx.limits !== undefined) validateUploadFile(file, ctx.limits)
+      validateUploadFile(file, limits)
+      if (typeof options.beforeUpload === 'function') {
+        if (await waitFor(options.beforeUpload(file, baseCtx)) === false) cancel('beforeUpload')
+      }
+      checkCancelled()
+      notify('onStart')
+      checkCancelled()
+      progress(0)
+      checkCancelled()
+      let result
+      if (!chunked || total <= chunkSize) result = await withRetry(file)
+      else {
+        const parts = Math.max(1, Math.ceil(total / chunkSize))
+        for (let index = task.resumeFrom; index < parts; index += 1) {
+          const start = index * chunkSize
+          const end = Math.min(total, start + chunkSize)
+          const chunk = { index, total: parts, offset: start, size: end - start, uploadId: task.uploadId }
+          result = await withRetry(file.slice(start, end), chunk)
+          task.resumeFrom = index + 1
+          progress(end, { chunk })
+        }
+      }
+      checkCancelled()
+      result = normalizeUploadResult(result, file)
+      resumes.delete(key)
+      progress(total)
+      checkCancelled()
+      finish('success', { result })
+      return result
+    } catch (failure) {
+      if (isAbortError(failure) && !signal.aborted) cancel(failure.reason)
+      const error = signal.aborted || isAbortError(failure) ? abortError()
+        : failure?.code ? failure : uploadError(UPLOAD_ERROR.FAILED, failure?.message || '上传失败', { cause: failure })
+      if (chunked && task.resumeFrom > 0 && currentResumeGeneration === resumeGeneration) {
+        resumes.set(key, { uploadId: task.uploadId, resumeFrom: Math.min(task.resumeFrom, Math.ceil(total / chunkSize) - 1) })
+      }
+      const status = isAbortError(error) ? 'cancelled' : [UPLOAD_ERROR.MIME, UPLOAD_ERROR.SIZE].includes(error.code) ? 'rejected' : 'error'
+      finish(status, { error, code: error.code, reason: error.reason || error.message })
+      throw error
     }
   }
 
-  return {
+  const provider = {
     upload: uploadFile,
-    cancel(taskId) {
-      if (taskId == null) return 0
-      const task = tasks.get(taskId)
-      if (!task) return 0
-      task.controller.abort()
-      return 1
-    },
-    cancelAll() {
+    cancel(taskId, reason) { return tasks.get(taskId)?.cancel(reason) || 0 },
+    cancelAll(reason) {
       let count = 0
-      tasks.forEach((task) => {
-        task.controller.abort()
-        count += 1
-      })
+      tasks.forEach(task => { count += task.cancel(reason) })
       return count
     },
-    pending() {
-      return tasks.size
-    },
-    /** 清空断点账本（宿主切换文档 / 登出时调用）。 */
-    clearResume() {
-      resumes.clear()
-    },
+    pending: () => tasks.size,
+    clearResume: () => { resumeGeneration += 1; resumes.clear() },
     limits,
     retry: Object.freeze({ ...retry, attempts }),
     chunked,
     chunkSize,
   }
+  Object.defineProperty(provider, UPLOAD_PROVIDER, { value: UPLOAD_PROVIDER_VERSION })
+  return provider
 }
 
 export default createUploadProvider
