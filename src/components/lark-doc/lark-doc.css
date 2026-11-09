@@ -471,7 +471,17 @@
 .lark-doc .lark-doc-header-menu > * { min-width: 0; }
 .lark-doc .lark-doc-header-menu button, .lark-doc .lark-doc-header-menu select { width: 100%; min-height: 32px; border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-header-menu .lark-doc-save-status { padding: 2px 4px; }
-.lark-doc .lark-doc-table-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 8px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); }
+/* v10：`.lark-doc-table-tools` 仍是**全页面唯一的浮窗节点**，但改为飞书真源的单行
+   统一工具条（实测 594×42 / 685×42）：不再有 text / table 两套 items、不再换行。
+   left/top 由 `placeFloatingToolbar()` 挂载后按 viewport 坐标写入。
+   z-index 40 > overlay(20) / boundary(30)：浮窗不能被 12px 选择条或 ＋ 压住。
+   颜色全部转发 --ld-table-float-* → --ld-* 既有 token，不写死任何 WorkBuddy 字面值。 */
+/* v12c：按钮点击盒对齐顶部功能栏 30×30，纵向 padding 8→5 让浮窗总高仍是真源 42px
+   （2 border + 5 + 30 + 5 = 42）；横向 padding 保持 8px，不压缩首尾留白。 */
+.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; max-width: calc(100vw - 16px); padding: 5px 8px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
+/* v12c：bar 高度 24→30，按钮不再溢出 bar（旧实现 CSS 写 24px，实际被全局
+   `.lark-doc button { min-height:30px }` 顶成 30px，上下各溢出 3px）。 */
+.lark-doc .lark-doc-table-tools-bar { display: flex; align-items: center; height: 30px; gap: 8px; }
 /* P4-05 查找替换浮层（04 §3.2 实测）：替换 Tab 406×286、查找 Tab 406×186（高度由内联 style 给），
    z-index 100、radius 8、默认右上角（右 16 / 顶 72），Tab 行即拖拽把手（拖后 left/top 走内联）。
    🔴 描边/文字一律走 --ld-fr-* 专线：常态描边 #DEE0E3 与禁用描边 #D0D3D6 是实测的两档，
@@ -734,7 +744,28 @@
 .lark-doc .ProseMirror .lark-doc-card[data-enterprise="true"] .lark-doc-card-desc { color: var(--ld-text-tertiary); }
 
 .lark-doc .lark-doc-dialog-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--ld-mask); }.lark-doc .lark-doc-dialog { width: min(420px, 100%); max-height: 90vh; overflow: auto; padding: 19px; border-radius: 10px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-dialog); }.lark-doc .lark-doc-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.lark-doc .lark-doc-dialog input { width: 100%; }.lark-doc .lark-doc-dialog p { color: var(--lark-doc-muted); }.lark-doc .lark-doc-dialog button { border-color: var(--ld-border-chrome); }.lark-doc .lark-doc-table-grid-size { margin-left: auto; color: var(--lark-doc-muted); font-variant-numeric: tabular-nums; }.lark-doc .lark-doc-table-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }.lark-doc .lark-doc-table-grid button { min-width: 0; padding: 2px; border: 1px solid var(--ld-border-grid-table); border-radius: 2px; background: var(--ld-bg-grid-table); color: transparent; }.lark-doc .lark-doc-table-grid button.is-preview { border-color: var(--ld-border-grid-table-active); background: var(--ld-bg-grid-table-active); }
-.lark-doc .lark-doc-table-boundary-tools { position: absolute; z-index: 18; pointer-events: none; }.lark-doc .lark-doc-table-boundary-tools button { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: transparent; font-size: 0; line-height: 1; pointer-events: auto; }.lark-doc .lark-doc-table-boundary-tools button::before { content: '＋'; position: absolute; display: grid; place-items: center; border-radius: 999px; background: var(--lark-doc-green); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-boundary); font-size: 16px; }.lark-doc .lark-doc-table-boundary-tools button:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; }.lark-doc .lark-doc-table-boundary-tools button:hover::before, .lark-doc .lark-doc-table-boundary-tools button:focus-visible::before { background: var(--ld-bg-brand-hover); }.lark-doc .lark-doc-table-boundary-tools.is-column button::before { width: 16px; height: 32px; }.lark-doc .lark-doc-table-boundary-tools.is-row button::before { width: 32px; height: 16px; }.lark-doc .lark-doc-table-boundary-tools .is-column-before { top: 0; left: var(--lark-doc-column-line-left, 50%); transform: translate(-50%, -50%); }.lark-doc .lark-doc-table-boundary-tools .is-column-after { bottom: 0; left: var(--lark-doc-column-line-left, 50%); transform: translate(-50%, 50%); }.lark-doc .lark-doc-table-boundary-tools .is-row-before { top: var(--lark-doc-row-line-top, 50%); left: 0; transform: translate(-50%, -50%); }.lark-doc .lark-doc-table-boundary-tools .is-row-after { top: var(--lark-doc-row-line-top, 50%); right: 0; transform: translate(50%, -50%); }.lark-doc .lark-doc-table-boundary-line { position: absolute; z-index: -1; background: var(--ld-accent-control); opacity: .42; pointer-events: none; }.lark-doc .lark-doc-table-boundary-line.is-column-line { top: 0; bottom: 0; width: 2px; transform: translateX(-50%); }.lark-doc .lark-doc-table-boundary-line.is-row-line { left: 0; right: 0; height: 2px; transform: translateY(-50%); }
+/* 表格边界 ＋（v4 / WorkBuddy `nearestIdx` 1:1）：一条内部边线 = **一颗** 18px 圆点。
+   button 只是 32px 透明热区，可见圆点全在 ::before 上；旧的 is-column-before/after、
+   is-row-before/after 双按钮定位与 16×32 / 32×16 药丸规则已随双按钮语义一并删除。
+   hover line 仅在 ＋ 被 hover / focus 时由 JS 挂进 DOM（见 src/ui/tableTools.js）。
+   颜色统一走 --ld-table-* → 已有 --ld-* 主题 token，沿用 lark-doc 默认主题色。 */
+.lark-doc .lark-doc-table-boundary-tools { position: absolute; z-index: 18; pointer-events: none; }
+.lark-doc .lark-doc-table-boundary-tools button { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: transparent; font-size: 0; line-height: 1; pointer-events: auto; }
+/* 用户实测反馈「＋ 外面还有一圈颜色，不要那个之外的颜色」：根因不是 box-shadow，
+   而是全局 `.lark-doc button:hover:not(:disabled){background:var(--ld-bg-accent)}`
+   特异性更高，hover ＋ 时把 32px 按钮本身刷成浅绿圆，套在 18px 绿＋外面。
+   这里用同形且更高特异性的选择器把 hover / focus / focus-visible / aria-pressed
+   全部压回透明，任何状态都不许按钮自己画底色。 */
+.lark-doc .lark-doc-table-boundary-tools button:hover:not(:disabled),
+.lark-doc .lark-doc-table-boundary-tools button:focus,
+.lark-doc .lark-doc-table-boundary-tools button:focus-visible,
+.lark-doc .lark-doc-table-boundary-tools button[aria-pressed="true"] { background: transparent; border-color: transparent; }
+.lark-doc .lark-doc-table-boundary-tools button::before { content: '＋'; position: absolute; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--ld-table-plus-bg); color: var(--ld-table-plus-fg); font-size: 14px; line-height: 1; }
+.lark-doc .lark-doc-table-boundary-tools button:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; }
+.lark-doc .lark-doc-table-boundary-tools button:hover::before, .lark-doc .lark-doc-table-boundary-tools button:focus-visible::before { background: var(--ld-bg-brand-hover); }
+.lark-doc .lark-doc-table-boundary-line { position: absolute; z-index: -1; background: var(--ld-accent-control); opacity: .42; pointer-events: none; }
+.lark-doc .lark-doc-table-boundary-line.is-column-line { top: 0; width: 2px; transform: translateX(-50%); }
+.lark-doc .lark-doc-table-boundary-line.is-row-line { left: 0; height: 2px; transform: translateY(-50%); }
 .lark-doc .lark-doc-slide-stage { display: grid; align-content: center; gap: 25px; min-height: 70vh; width: min(100%, 1100px); margin: auto; padding: clamp(25px, 8vw, 100px); background: var(--ld-bg-surface-content); box-shadow: var(--ld-shadow-paper); }.lark-doc .lark-doc-slide-stage h1 { font-size: clamp(28px, 5vw, 54px); color: var(--ld-text-slide-title); }.lark-doc .lark-doc-slide-stage > p:not(.lark-doc-slide-counter) { white-space: pre-wrap; line-height: 1.8; }.lark-doc .lark-doc-slide-counter { color: var(--lark-doc-green); }
 .lark-doc .lark-doc-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }.lark-doc .lark-doc-toast { position: fixed; z-index: 95; right: 20px; bottom: 20px; max-width: min(400px, 90vw); padding: 10px 13px; background: var(--ld-bg-toast); color: var(--ld-text-toast); border: 1px solid var(--ld-border-toast); border-radius: 7px; box-shadow: var(--ld-shadow-toast); }.lark-doc .lark-doc-error { color: var(--ld-text-error) !important; }.lark-doc .lark-doc-local-badge { padding: 4px 6px; border-radius: 4px; background: var(--ld-bg-badge); color: var(--ld-text-badge); font-size: 11px; font-weight: 700; }.lark-doc .lark-doc-save-status { font-size: 11px; color: var(--lark-doc-muted); white-space: nowrap; }.lark-doc .lark-doc-save-status.is-error { color: var(--ld-text-error); }
 @media (max-width: 1050px) { .lark-doc .lark-doc-outline { flex-basis: 165px; width: 165px; }.lark-doc .lark-doc-external-panel { flex-basis: 220px; width: 220px; }.lark-doc .lark-doc-paper { padding-left: 45px; padding-right: 35px; } }
@@ -2652,16 +2683,16 @@
 .lark-doc .ProseMirror .tableWrapper::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .lark-doc .ProseMirror .tableWrapper.is-clipped::after { display: none; }
 
-/* 列宽拖拽：prosemirror-tables 的 10px 热区保留，只在热区里画 4×16 胶囊手柄。 */
+/* 列宽拖拽：保留 prosemirror-tables 的 10px 热区（列宽仍可拖），但**不画任何可见手柄**。
+   用户实测反馈「悬浮表格时左边每行都有蓝色小竖条，WorkBuddy 真源没有」：那些 4×16
+   蓝色胶囊正是本伪元素。⚠️ 不能拿 `.ProseMirror.resize-cursor` 当显示条件 —— 该类挂在
+   **编辑器根节点**上，鼠标靠近任意列边界就会让全表所有手柄一起亮（v6 曾踩过这个坑）。
+   也别改用 opacity:0 + :hover 显示，手柄热区 10px 太宽，悬浮即被判定 hover。 */
 .lark-doc .ProseMirror .column-resize-handle { background: transparent; }
-.lark-doc .ProseMirror .column-resize-handle::after { content: ''; position: absolute; left: 3px; top: 50%; width: 4px; height: 16px; border-radius: 2px; background: var(--ld-table-accent); opacity: .5; transform: translateY(-50%); }
-.lark-doc .ProseMirror .column-resize-handle:hover::after { opacity: 1; }
+.lark-doc .ProseMirror .column-resize-handle::after { content: none; }
 .lark-doc .ProseMirror.resize-cursor { cursor: col-resize; }
 
-/* ＋ 按钮：32px 热区沿用旧实现（≈ WorkBuddy 28px），视觉改 18px 圆 + 十字，
-   颜色走 lark-doc 品牌绿而非 WorkBuddy 灰。原 ::before 是 16×32 药丸，这里压成圆。 */
-.lark-doc .lark-doc-table-boundary-tools button::before { width: 18px; height: 18px; background: var(--ld-table-plus-bg); color: var(--ld-table-plus-fg); box-shadow: none; font-size: 14px; line-height: 1; }
-.lark-doc .lark-doc-table-boundary-tools.is-column button::before, .lark-doc .lark-doc-table-boundary-tools.is-row button::before { width: 18px; height: 18px; }
+/* ＋ 圆点的 18px 视觉已在上方基础规则定义；本段只处理浮层定位与单颗 ＋ 的坐标。 */
 
 /* ⚠️ ＋ 圆点被 md 交互层压住 + 被宿主裁掉（用户实测缺陷，两个原因叠加）：
    1) 新增 .lark-doc-table-overlay 是 fixed / z-index:20，12px 列选择条与 14px 自绘滚动条
@@ -2672,14 +2703,26 @@
    修法：让边界工具与交互层同属 fixed 浮层（mixin 注入 viewport 坐标，见
    tableToolsMixin.updateTableBoundary），层级提到 30；fixed 后代不受祖先 overflow 裁切，
    圆点也能完整浮在表格外侧，保持 WorkBuddy 的 1:1 观感。
-   上方 ＋ 默认 -28px：32px 热区 = [-44,-12]，与 12px 选择条 [-12,0] 刚好不相交，
-   既不遮挡也不抢选择条点击；其余三颗默认 ±20px 避开滚动条与行选择条。
-   上下两颗的浮出量由 mixin 按视口余量钳制后写进 CSS 变量，表格贴顶/贴底时自动收回。 */
+    列 ＋ 默认浮出 28px（热区 [-44,-12]），与 12px 列选择条 [-12,0] 刚好不相交；
+    行 ＋ 固定 left:-9px，避开 12px 行选择条。同一时刻只有一颗 ＋ 出现在 DOM 里。
+    浮出量由 mixin 按视口余量钳制后写进 CSS 变量，表格贴顶/贴底时自动收回。 */
 .lark-doc .lark-doc-table-boundary-tools { position: fixed; z-index: 30; }
-.lark-doc .lark-doc-table-boundary-tools .is-column-before { top: var(--lark-doc-boundary-plus-top, -28px); }
-.lark-doc .lark-doc-table-boundary-tools .is-column-after { bottom: var(--lark-doc-boundary-plus-bottom, -20px); }
-.lark-doc .lark-doc-table-boundary-tools .is-row-before { left: -20px; }
-.lark-doc .lark-doc-table-boundary-tools .is-row-after { right: -20px; }
+/* v4（WorkBuddy 1:1）：一条内部边线只有**一颗** ＋ —— 列 + 固定在表格上方、
+   行 + 固定在表格左侧，位置由 --lark-doc-column-line-left / row-line-top 给出。
+   18px 圆点中心离表格边约 9px（真源 `.sc-table-*-plus-zone` 的 -14 + 18/2）。
+   列 + 的浮出量仍受 mixin 按视口余量钳制的 --lark-doc-boundary-plus-top 控制：
+   表格贴顶时自动回退到表格内，不会整颗跑到视口外点不到。 */
+.lark-doc .lark-doc-table-boundary-tools .lark-doc-table-col-plus-btn { top: calc(var(--lark-doc-boundary-plus-top, -28px) + 19px); left: var(--lark-doc-column-line-left, 0px); right: auto; bottom: auto; transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-table-boundary-tools .lark-doc-table-row-plus-btn { left: -9px; top: var(--lark-doc-row-line-top, 0px); right: auto; bottom: auto; transform: translate(-50%, -50%); }
+/* v12d：飞书真源 ＋ 悬浮提示（用户反馈⑧两张截图）——深色气泡 + 朝下小箭头，
+   列 ＋ →「插入列」、行 ＋ →「插入行」。样式复用包内 tooltip token（--ld-bg-tooltip /
+   --ld-text-inverse / --ld-shadow-tooltip），与标题折叠、对齐菜单的 [data-tooltip] 同一套观感。
+   定位：以 ＋ 圆心为锚（列 = --plus-top+19 / --column-line-left，行 = left:-9 / --row-line-top），
+   transform 把气泡底边抬到圆心上方 20px —— ＋ 圆点半径 16px，箭头(5px)正好搭在圆点顶缘。 */
+.lark-doc .lark-doc-table-boundary-tip { position: absolute; z-index: 2; left: var(--lark-doc-column-line-left, 0px); top: calc(var(--lark-doc-boundary-plus-top, -28px) + 19px); min-width: max-content; max-width: calc(100vw - 16px); padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; font-weight: 400; line-height: 1.35; white-space: nowrap; opacity: 0; visibility: hidden; transform: translate(-50%, calc(-100% - 20px)); transition: opacity .12s, visibility .12s; pointer-events: none; }
+.lark-doc .lark-doc-table-boundary-tip.is-row { left: -9px; top: var(--lark-doc-row-line-top, 0px); }
+.lark-doc .lark-doc-table-boundary-tip::after { content: ''; position: absolute; bottom: 0; left: 50%; border: 5px solid transparent; border-bottom-width: 0; border-top-color: var(--ld-bg-tooltip); transform: translate(-50%, 100%); }
+.lark-doc .lark-doc-table-boundary-tip.is-visible { opacity: 1; visibility: inherit; }
 
 /* ---- 交互层（src/ui/tableOverlays.js） ----
    根节点盖在 `.tableWrapper` 可视区上（fixed + viewport 坐标由 mixin 注入）。
@@ -2721,15 +2764,52 @@
 .lark-doc .lark-doc-table-overlay.is-reordering .lark-doc-table-drag-card { display: block; }
 .lark-doc .lark-doc-table-drag-card-head { font-size: 11px; opacity: .7; }
 
-/* 表格块浮窗：高 36px（4 + 28 + 4）、圆角 8。
-   ⚠️ top 必须让浮窗整体落在列选择条（top:-12px）之上：-50 + 36 = -14，
-   留 2px 间隙。若沿用 -25px，浮窗会横向盖住第 1 列选择条，导致首列点不中、
-   拖拽也起不来（elementFromPoint 命中的是浮窗按钮而不是 selector）。 */
-.lark-doc .lark-doc-table-float { left: 0; top: -50px; z-index: 5; display: flex; align-items: center; gap: 2px; height: 36px; padding: 4px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); pointer-events: auto; }
-.lark-doc .lark-doc-table-float button { min-width: 28px; height: 28px; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: var(--ld-table-float-text); font-size: 12px; line-height: 1; cursor: pointer; }
-.lark-doc .lark-doc-table-float button:hover { background: var(--ld-bg-hover); }
-.lark-doc .lark-doc-table-float button:focus-visible { outline: 2px solid var(--ld-table-accent); outline-offset: -2px; }
+/* ── v11 飞书统一工具条 items ──
+   图标 / 箭头与顶部功能栏同源：`src/ui/icon.js` 的 16×16 SVG + `chevronDown` 12px caret。
+   ⚠️ 选择器必须压过全局 `.lark-doc button:hover:not(:disabled){background:var(--ld-bg-accent)}`，
+   否则 hover 会把每个图标刷成浅绿圆（v8 修 ＋ 外圈时踩过同一个坑）。
+   ⚠️ v12c：用户反馈「按钮大小有点小」。实测图标本来就是 16×16、与顶部一致，小的是
+   点击盒（浮窗 24×30 / padding 0 2px / radius 4 / gap 2 vs 顶部 30×30 /
+   padding 3px 6px / radius 6 / gap 3）。这里按顶部口径放大到 30×30，并显式写
+   `min-height:30px`，不再让全局 `.lark-doc button` 的 min-height 隐式决定高度；
+   图标尺寸保持 16×16 不变（真源 `--sc-menu-icon-size:16px`）。 */
+.lark-doc .lark-doc-table-tools-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 30px; height: 30px; min-height: 30px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-table-float-text); font-size: 13px; line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-table-tools-btn:hover:not(:disabled) { background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-table-tools-btn:focus-visible { outline: 2px solid var(--ld-table-accent); outline-offset: -2px; }
+.lark-doc .lark-doc-table-tools-btn .lark-doc-icon { flex: none; }
+.lark-doc .lark-doc-table-tools-btn .lark-doc-caret { flex: 0 0 12px; width: 12px; height: 12px; margin-left: 2px; }
+.lark-doc .lark-doc-table-tools-btn.is-active { background: var(--ld-bg-accent); color: var(--ld-text-accent); }
+.lark-doc .lark-doc-table-tools-btn.is-menu-open { background: var(--ld-bg-hover-strong); }
+.lark-doc .lark-doc-table-tools-btn:disabled { opacity: .4; cursor: not-allowed; }
+.lark-doc .lark-doc-table-tools-btn.has-caret { min-width: 48px; }
+.lark-doc .lark-doc-table-tools-btn.is-text { min-width: 92px; gap: 6px; }
+.lark-doc .lark-doc-table-tools-text { font-size: 13px; font-weight: 500; }
+/* v12c：bar 从 24 提到 30，普通分隔线 20→22，全高分隔线仍是浮窗内容区整高
+   （2×5 padding + 30 bar = 40），负 margin 随纵向 padding 同步 8→5px。 */
+.lark-doc .lark-doc-table-tools-sep { flex: none; width: 1px; height: 22px; background: var(--ld-table-float-border); }
+.lark-doc .lark-doc-table-tools-sep.is-full { height: 40px; margin: -5px 4px; }
+
+/* 同一时刻最多挂 1 个下拉（真挂载/真摘除，不是 display:none 假切换）。 */
+.lark-doc .lark-doc-table-tools-menu { position: absolute; top: calc(100% + 4px); z-index: 41; box-sizing: border-box; min-width: 200px; max-height: min(60vh, 420px); overflow-y: auto; padding: 6px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); color: var(--ld-table-float-text); white-space: nowrap; }
+.lark-doc .lark-doc-table-tools-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-table-tools-menu-item:hover:not(:disabled), .lark-doc .lark-doc-table-tools-menu-item:focus-visible { background: var(--ld-bg-hover); outline: 0; }
+/* 「转换为」当前块类型打勾；上下文不适用的合并/拆分/缩进置灰（点了不再没反应）。 */
+.lark-doc .lark-doc-table-tools-menu-item[aria-pressed="true"] { background: var(--ld-bg-accent); border-color: transparent; color: var(--ld-text-accent); }
+.lark-doc .lark-doc-table-tools-menu-item:disabled, .lark-doc .lark-doc-table-tools-menu-item.is-disabled { background: transparent; border-color: transparent; color: var(--ld-text-disabled); opacity: .65; cursor: not-allowed; }
+.lark-doc .lark-doc-table-tools-menu-icon { flex: none; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-table-tools-menu-item[aria-pressed="true"] .lark-doc-table-tools-menu-icon,
+.lark-doc .lark-doc-table-tools-menu-item:hover:not(:disabled) .lark-doc-table-tools-menu-icon { color: inherit; }
+.lark-doc .lark-doc-table-tools-menu-divider { display: block; height: 1px; margin: 4px 2px; background: var(--ld-table-float-border); }
+.lark-doc .lark-doc-table-tools-colors { padding: 4px 6px; }
+.lark-doc .lark-doc-table-tools-colors-title { margin-bottom: 6px; font-size: 11px; opacity: .65; }
+.lark-doc .lark-doc-table-tools-colors-grid { display: grid; grid-template-columns: repeat(8, 18px); gap: 5px; }
+.lark-doc .lark-doc-table-tools-color { width: 18px; height: 18px; padding: 0; border: 1px solid var(--ld-border-chrome); border-radius: 3px; cursor: pointer; }
+.lark-doc .lark-doc-table-tools-color.is-none { background: var(--ld-bg-surface); }
+.lark-doc .lark-doc-table-tools-color:hover:not(:disabled) { outline: 2px solid var(--ld-table-accent); outline-offset: 1px; }
 
 @media print {
-  .lark-doc .lark-doc-table-overlay { display: none !important; }
+  /* 打印 / 导出态不挂任何表格 UI：浮窗、几何层、边界 ＋ 一律隐藏。 */
+  .lark-doc .lark-doc-table-overlay,
+  .lark-doc .lark-doc-table-tools,
+  .lark-doc .lark-doc-table-boundary-tools { display: none !important; }
 }
