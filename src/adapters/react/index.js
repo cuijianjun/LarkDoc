@@ -6,8 +6,8 @@
  * 「adapters/react → <LarkDoc ref>，useEffect 挂载，onChange 等事件」）。
  *
  * 职责边界（硬规则 5，三件事）：
- * 1. props → attributes：按 web-component/attributes 的 ATTRIBUTE_SCHEMA
- *    白名单序列化成 HTML 属性；
+ * 1. 标量 props 按 ATTRIBUTE_SCHEMA 序列化；options / uploader / uploadImage
+ *    由 effect 写入 element.options property，保留对象和函数身份；
  * 2. 事件转发：onChange/onReady/onSave/onError → 元素上的
  *    lark-doc-change / lark-doc-ready / lark-doc-save / lark-doc-error；
  * 3. 方法代理：ref 暴露 getJSON / setContent / focus 等快捷方法
@@ -73,6 +73,18 @@ export function createReactLarkDoc(React) {
       return () => unbinders.forEach((unbind) => unbind())
     }, [])
 
+    useEffect(() => {
+      const el = elRef.current
+      if (!el) return
+      el.options = props.uploader === undefined && props.uploadImage === undefined
+        ? props.options || {}
+        : {
+          ...props.options,
+          ...(props.uploader !== undefined ? { uploader: props.uploader } : {}),
+          ...(props.uploadImage !== undefined ? { uploadImage: props.uploadImage } : {}),
+        }
+    }, [props.options, props.uploader, props.uploadImage])
+
     useImperativeHandle(ref, () => {
       // 方法体在调用时现取 elRef.current：不依赖挂载时序（DOM ref 先于父 ref 被赋值）。
       const proxy = {}
@@ -100,7 +112,7 @@ export function createReactLarkDoc(React) {
     const attrs = { ref: elRef }
     const eventProps = new Set(Object.keys(PROP_EVENTS))
     for (const [key, value] of Object.entries(props)) {
-      if (eventProps.has(key) || value == null) continue
+      if (eventProps.has(key) || key === 'options' || key === 'uploader' || key === 'uploadImage' || value == null) continue
       const attr = key.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`)
       const entry = ATTRIBUTE_SCHEMA.find((item) => item.attr === attr)
       if (!entry) {
