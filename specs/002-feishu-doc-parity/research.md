@@ -4,6 +4,55 @@
 
 **Live document used for UI evidence**: [user-provided test document](https://iz4fkcxtig.feishu.cn/wiki/Dx6Pw1gKUiKENjkipsPcmU3DnGg). Browser observation was read-only; no other documents were modified.
 
+## 当前源码复核 — 2026-11-06（`dev` / `b66eaf5`）
+
+### 口径与证据优先级
+
+本轮在 `/Users/cjjxw/codex/.wt-larkdoc/dev` 先检查 git status/log，起始工作区干净；随后静态阅读当前源码、测试和指南。**未运行构建或测试，未执行浏览器操作，未增加真实飞书或跨账号证据，未提交或推送。** 本节为当前实现口径，需求/任务关系见 [需求追踪矩阵](requirements-traceability.md) 和 `tasks.md`，分层证据见 `contracts/parity-evidence.md`。
+
+下方旧 inventory、parity matrix、所有 checkpoint、`Current-source`、`final`、完成状态及通过数全部保留为历史记录；它们不代表当前实现或本轮验收。特别是历史本地“Provider-backed edit/private/translation/report/quote”“document-scope correction/footer composer”和 history 完成声明，与本次读取的源码不一致，不能用于关闭当前缺口。真实飞书上的编辑、全文评论、链接及正文恢复观察仍有其历史价值，但不证明本仓实现同一能力。未据此判断差异发生的具体提交或原因。
+
+当前 UI 主链为 `src/editor/nativeEditorHost.js`、`src/components/lark-doc/editor/p6bMixin.js`、`panelsUiMixin.js` 与 `src/ui/panels.js`，上述 comments/versioning/notify mixin 仍被实际复用，不是因文件名带 mixin 就视为旧实现；旧 `LarkDocEditor.vue` / `CommentPanel.vue` / `VersionPanel.vue` 等仅按历史路径追溯。
+
+### 评论高级动作与全文评论：FR-013 / T015 = PARTIAL
+
+- **已有基础调用，不笼统记为未实现**：`src/providers/comments.js` 的必需方法为 `list/createThread/reply/resolve/reopen`；`commentsMixin.js:271`、`:293`、`:304`、`:313` 分别派发锚点创建、回复、解决和重开。可选 `deleteReply` 在 `:322` 校验拒绝回执、执行回读，并隔离 Session/document/account/provider/editor/destroy/permission 变化；缺方法不会伪造删除成功。`src/core/comments/memory-provider.js` 提供内存实现，但 list 不按 documentId 过滤，须每文档实例或宿主隔离，也不证明页面刷新持久化。
+- **高级菜单仅有外观不等于完成**：`commentsMixin.js:500` 的 `runCommentMenuItem` 除 `delete` 外返回 `undefined`；编辑、翻译、举报没有业务派发。`:495` 的 `runCommentReplyControl` 除 more 外也返回 `undefined`，emoji/reaction 和 quote 未接功能。不能因 Provider 可扩展就认定当前 UI 已调用可选方法。
+- **private 不是权限隔离**：`:467` 只切换 `commentPrivateIds` 本地数组，没有 Provider 写入、服务端可见性策略或刷新回读；不能沿用历史 visitor-aware private filtering 已完成的说法。
+- **全文评论当前未闭环**：`src/core/comments/thread.js:99` 的归一化结果没有 document scope；`:155` 的 `buildThread` 要求有效 blockId。`commentsMixin.js:271` 要求选区及 writable；`:561` 仅将 bound 且未解决线程送入面板。`panelsUiMixin.js:422` 和 `src/ui/panels.js` 构造的是这些 anchored 卡片及回复 textarea，没有全文 footer composer。不能把没有锚点或失联的线程解释成已支持全文评论。
+- **链接和关注仍有差距**：`commentsMixin.js:537` 的复制锚点实际复制 quote 文本，不生成稳定 thread/comment URL 或解析打开链接；历史飞书 `comment_id` 链接不等于本仓恢复实现。当前线程的 follow 持久化/取消效果与通知结果亦没有闭环证据。
+- **测试范围**：静态阅读 `test/unit/comments-ui.test.js` 可确认 capability、草稿、锚点/几何、菜单可见性、可选删除拒绝/回读/异步隔离等断言；这是 helper/fake this 层，不是完整原生 DOM 或真实服务测试。同一内存 Provider 再次 load 后不复活不等于刷新持久化，更不能证明高级动作或全文评论。
+
+### 版本正文预览、diff、保存与恢复：FR-015 / T017 = PARTIAL
+
+- **数据层有正文，面板未渲染正文**：`src/core/versioning/provider.js:93` 的 list 仅返回元信息，`:147` 的 get 可返回二进制 payload 拷贝。`versioningMixin.js:555` 读取 payload 后只保存 `hasPayload/byteLength` 和元信息，`panelsUiMixin.js:380` 明示“需由协同运行时解码后才能渲染”。因此不是“完全没有版本正文存储”，而是当前 UI 没有解码/渲染历史正文。
+- **摘要不等于正文 diff**：`versioningMixin.js:239` 的历史 `charCount=0`、`headings=[]` 代表未提供指标，面板只比较 blockCount；“显示更改”没有业务行为，不应声明已完成历史正文差异视图。
+- **恢复只到 Provider 边界**：`versioningMixin.js:659` → `src/session/DocumentSession.js:167` → `provider.restore(versionId, { documentId })`。内存 Provider `:152` 复制源快照并新增恢复记录，不将 payload 应用到编辑器正文；成功 notice、列表增长及 RESTORE kind 不证明正文已恢复。Session 未传当前 author，内存实现依赖创建时的 `options.author`，否则可能报 `E_SNAPSHOT_AUTHOR`。自定义宿主可实现额外副作用，但本轮未取得其闭环证据。
+- **保存也不能由测试夹具替代接线**：`versioningMixin.js:712` 仅调用 `session.createVersion({ label })`；`DocumentSession.js:159` 将当前 document record 和 meta 派发给 createSnapshot，不自行编码二进制。`src/core/versioning/snapshot.js` 的写入契约要求二进制 payload（缺失/JSON 分别报错）。宿主快照编码、作者/时间/kind 等上下文和持久化仍需实际接线与验收。
+- **测试范围**：`test/unit/versioning-ui.test.js:110` 的 fakeSession 使用 `snapshotInput` 额外补入作者、kind、时间及二进制夹具；该 payload 只满足类型契约，不保证为可解码 Yjs update。现有预览断言检查 hasPayload/byteLength，恢复断言检查列表/kind/notice/busy，不断言编辑器正文变为历史内容。core 数据层、7 项窄屏样式回归及 browser-panels 的元信息/占位/几何检查也不能替代正文保存、预览与恢复验收。
+
+### mention 权限与通知：FR-012 / T014 = PARTIAL；T018 保持 PARTIAL
+
+- `src/components/lark-doc/editor/mentionMixin.js:134` 在 writable/canEdit 检查后写入 user/group/document mention atom，`notify` 仅为布尔节点属性；`src/core/blocks/mention.js` 的序列化不执行发送。插入者能编辑不代表目标已获得文档权限。当前评论输入是回复 textarea/纯文本提交，不能认定评论输入 @ 已闭环。
+- `src/core/mention/directory.js` 的 search/resolve 与 `src/providers/embedded.js` 的同名 createMentionProvider 是不同边界；后者声明 `list/notify/notifyAll/healthCheck` 宿主适配接口，不能据此推断 chooseMention 已调用授权或通知服务。
+- `src/providers/notifications.js` 与 `notifyMixin.js` 确有可选通知 Provider 接线：list/markAllRead/setMuted、写回执判断、写后回读、上下文隔离、订阅及释放。`:156` 的订阅回调重新 loadNotifications，不直接按 snapshot/upsert/remove/read/mute 事件载荷投影；历史“realtime event projection”不作为当前机制说明。
+- `test/unit/mention.test.js` 覆盖 atom/序列化、notify 属性、候选排序/过滤、失败/超时和 canEdit 分支；`notifications-provider.test.js` 覆盖合同/Session 注册/原 this 与上下文，`notifications-ui.test.js` 覆盖列表、写回执/回读、订阅和生命周期隔离。均不能证明实际权限授予、跨账号通知中心送达或取消关注后的效果。
+- T018 的缺口不再只记为真实服务/Safari 限制：还包括本节已证实的高级评论、全文评论、mention 授权/发送和版本正文闭环缺失。
+
+### 协同指南独立仓库声明：仅记录证据，不推断外部状态
+
+- `docs/guide/collab-server.md:3` 声明独立 package `@lark-doc/collab-server`、独立仓库和独立发布；`:5` 说明本仓保留客户端、契约和第三方测试实例。指南未提供可核验的外部仓库地址、独立发布版本/记录或部署验收凭据。
+- `package.json` 中 devDependency 为第三方 `@hocuspocus/server`，不含该自有服务端包；`test/collab/hocuspocus-wire.test.js` 启动第三方 Server 的内存随机端口实例。`scripts/check-architecture.js:178` 起的边界规则限制服务端依赖进入 src，只能说明设计/检查边界，不能证明自有服务端已实现。本轮未运行架构检查或协同测试。
+- git remote 仅见本项目 origin `git@github.com:cuijianjun/LarkDoc.git`，不构成独立服务端仓库证据；它也不能证明外部仓库不存在。因此独立仓库、独立发布和生产服务完成度均记为**未核验**，不凭指南声明认定完成或虚构位置。本轮未修改该指南。
+
+### 历史验证入口与结果的适用范围
+
+当前 `scripts/verify-browser-feishu-parity.js` 不存在，`scripts/verify.mjs` 动态发现 `verify-browser-*.js`，不能据历史日志将 `feishu-parity` 继续列为当前复跑入口。下文 12/12、14/14、23/23、70/70、76/76、79/79、83/83、88 项断言及 2026-11-06 全量、浏览器和性能数值全部保留，但只属于各次历史记录；当前面板脚本的存在也不代表本轮已执行。旧实际 Safari、触摸模拟、真实飞书与账号证据仍严格分层，不提升为当前本仓功能完成。
+
+## 历史研究与执行记录（下文完整保留）
+
+以下原文中的“当前”“now”“closes”“final”等只对各自历史时点和所注明的服务/测试范围成立，不覆盖上方当前源码 `PARTIAL` 结论。
+
 ## Evidence sources
 
 ### Official Feishu guidance

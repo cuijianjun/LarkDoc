@@ -1,5 +1,5 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+description: Execute dependency-ready business batches with affected verification and automatic continuation
 ---
 
 ## User Input
@@ -73,104 +73,50 @@ You **MUST** consider the user input before proceeding (if not empty).
      - **FAIL**: One or more checklists have unchecked items
 
    - **If any checklist has unchecked items**:
-     - Display the table with unchecked item counts
-     - **STOP** and ask: "Some checklists have unchecked items. Do you want to proceed with implementation anyway? (yes/no)"
-     - Wait for user response before continuing
-     - If user says "no" or "wait" or "stop", halt execution
-     - If user says "yes" or "proceed" or "continue", proceed to step 3
+     - Report the unchecked scope when it changes or requires a decision; preserve the read-only markers.
+     - If the user already explicitly authorized proceeding with these known gaps in the same scope, retain that authorization and continue to step 3 without asking again. This does not waive dependencies, safety requirements, independent review or production gates.
+     - Without applicable authorization, or when materially changed scope/risk requires a new decision, **STOP** the affected work and explain which unchecked criteria need permission before asking whether to proceed.
+     - Wait for the required response; "no", "wait" or "stop" halts that work, while approval applies only to its stated scope.
 
    - **If all checklists are checked**:
      - Display the table showing all checklists passed
      - Automatically proceed to step 3
 
-3. Load and analyze the implementation context:
-   - **REQUIRED**: Read tasks.md for the complete task list and execution plan
-   - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
-   - **IF EXISTS**: Read data-model.md for entities and relationships
-   - **IF EXISTS**: Read contracts/ for API specifications and test requirements
-   - **IF EXISTS**: Read research.md for technical decisions and constraints
-   - **IF EXISTS**: Read .specify/memory/constitution.md for governance constraints
-   - **IF EXISTS**: Read quickstart.md for integration scenarios
+3. Load and analyze the implementation context (**context router — do NOT bulk-load every document**):
+   - **Budget**: total spec context injected this round MUST stay ≤8k tokens. Never paste a whole `tasks.md`, `plan.md`, `research.md`, `MASTER_PLAN.md`, or `requirements/*.md` into the conversation. This feature's spec set is ~279KB (≈7-9万 token); reading it in full consumes most of the window before any code is written.
+   - **REQUIRED**: `HANDOFF.md` at repo root, following its navigation to the single active state card. Read the compact card, not a historical archive. It helps locate work; latest user instructions, observed source and original task acceptance outrank stale summaries. For current LarkDoc, both repository HANDOFF files point to the controller active card.
+   - **REQUIRED**: from `tasks.md`, read ONLY the section(s) for this round's task ID(s). Use `rg -n` to find line numbers, then read that range and only the selected tasks' existing audit/evidence rows when needed. Do not bulk-load header status tables or appendices.
+   - **REQUIRED**: `.specify/memory/constitution.md` — governance constraints only. If it is large, read its principle headings and only the sections referenced by the current task.
+   - **ON DEMAND**: `plan.md`, `data-model.md`, `contracts/`, `research.md`, `quickstart.md` — read only the file/section whose path or symbol appears in the current task's acceptance criteria, with line-range reads.
+   - **OPTIONAL DELEGATION**: use a focused worker only for a concrete independent output that saves time; give the task/contract excerpts rather than full chat history. Main agent implements by default. Keep necessary raw evidence once; return result/count/time and relevant errors, expanding only when needed.
+   - If the current task references none of those documents, do not read them at all.
 
-4. **Project Setup Verification**:
-   - **REQUIRED**: Create/verify ignore files based on actual project setup:
+4. **Project setup only when affected**: Inspect the existing manifest, pinned runtime and commands relevant to the selected work. Verify ignore/config files only when a setup/build/package task actually changes them. Do not re-scan every language or create unrelated setup files at each invocation. Reuse the installed project runner rather than creating temporary compiler wrappers.
 
-   **Detection & Creation Logic**:
-   - Check if the following command succeeds to determine if the repository is a git repo (create/verify .gitignore if so):
+5. **Select a dependency-ready business batch**:
+   - Honor the latest user request and `$ARGUMENTS` first, then use the active state card and existing task audit to locate the next permitted work. An unchecked checkbox alone does not mean the implementation is absent.
+   - Read only selected original task rows, their relevant dependency/phase/[P] information, contract excerpts and current audit rows. Keep original IDs, ordering constraints and full acceptance; do not regenerate the task list or repeatedly re-audit all tasks.
+   - Group related work into one verifiable business outcome without a fixed 1–3-task quota. An external blocker stops only its dependent actions: record the missing input and continue other authorized ready work. Never bypass a real implementation dependency or invent a missing external contract.
+   - Briefly establish target files, ownership, acceptance and verification in chat or the existing task artifact. Do not create a new task database, report, scheduler or handoff document.
 
-     ```sh
-     git rev-parse --git-dir 2>/dev/null
-     ```
+6. **Implement a coherent patch**:
+   - Main agent implements by default. Keep shared authorization/transaction code with one writer. Delegate only independent files/tasks allowed by dependencies/[P], using isolation and no competing writers or build-output mutation; no nested delegation.
+   - For a bug, confirm the smallest failing reproduction before fixing the root cause. Implement the ready batch and necessary test code before broad green suites when development-first is requested.
+   - Batch related reads and edits; do not repeat plan/contract/whole-feature reasoning after each small change. Use task-appropriate reasoning effort where supported, without changing user/app settings silently.
+   - Stay inside the selected scope, reuse existing code/dependencies, and preserve all unrelated dirty work.
 
-   - Check if Dockerfile* exists or Docker in plan.md → create/verify .dockerignore
-   - Check if .eslintrc* exists → create/verify .eslintignore
-   - Check if eslint.config.* exists → ensure the config's `ignores` entries cover required patterns
-   - Check if .prettierrc* exists → create/verify .prettierignore
-   - Check if .npmrc or package.json exists → create/verify .npmignore (if publishing)
-   - Check if terraform files (*.tf) exist → create/verify .terraformignore
-   - Check if .helmignore needed (helm charts present) → create/verify .helmignore
+7. **Verify and independently review the batch once**:
+   - Combine affected file inputs and downstream coverage, preserve required guards, and run the repository's relevant static/integration/browser/security checks. For this frontend, use `npm run test:affected -- <batch files>` and `npm run check:quick`; backend work uses its own pinned Node22 and existing commands.
+   - Reuse current diagnostics or past results only with unchanged relevant source/tests/config/dependencies/runtime/arguments/environment and appropriate freshness. Cite origin/time/scope; never describe reuse as a new run. If uncertain, run the smallest affected check.
+   - Widen checks for shared-core/contracts/build configuration/dependency changes, failures or unresolved material risk. Retain negative/timeout/rollback/race tests and all required integration/merge/release gates. Reporting-only changes do not force unchanged application suites to run again.
+   - A non-implementer reviews the integrated diff, original acceptance and actual results for simplicity/correctness. Fix blocking findings, rerun affected checks and review material subsequent changes. Do not call self-review independent.
+   - This step supplies the verification evidence; do not rerun the same checks merely to fill a later completion checklist.
 
-   **If ignore file already exists**: Verify it contains essential patterns, append missing critical patterns only
-   **If ignore file missing**: Create with full pattern set for detected technology
-
-   **Common Patterns by Technology** (from plan.md tech stack):
-   - **Node.js/JavaScript/TypeScript**: `node_modules/`, `dist/`, `build/`, `*.log`, `.env*`
-   - **Python**: `__pycache__/`, `*.pyc`, `.venv/`, `venv/`, `dist/`, `*.egg-info/`
-   - **Java**: `target/`, `*.class`, `*.jar`, `.gradle/`, `build/`
-   - **C#/.NET**: `bin/`, `obj/`, `*.user`, `*.suo`, `packages/`
-   - **Go**: `*.exe`, `*.test`, `vendor/`, `*.out`
-   - **Ruby**: `.bundle/`, `log/`, `tmp/`, `*.gem`, `vendor/bundle/`
-   - **PHP**: `vendor/`, `*.log`, `*.cache`, `*.env`
-   - **Rust**: `target/`, `debug/`, `release/`, `*.rs.bk`, `*.rlib`, `*.prof*`, `.idea/`, `*.log`, `.env*`
-   - **Kotlin**: `build/`, `out/`, `.gradle/`, `.idea/`, `*.class`, `*.jar`, `*.iml`, `*.log`, `.env*`
-   - **C++**: `build/`, `bin/`, `obj/`, `out/`, `*.o`, `*.so`, `*.a`, `*.exe`, `*.dll`, `.idea/`, `*.log`, `.env*`
-   - **C**: `build/`, `bin/`, `obj/`, `out/`, `*.o`, `*.a`, `*.so`, `*.exe`, `*.dll`, `autom4te.cache/`, `config.status`, `config.log`, `.idea/`, `*.log`, `.env*`
-   - **Swift**: `.build/`, `DerivedData/`, `*.swiftpm/`, `Packages/`
-   - **R**: `.Rproj.user/`, `.Rhistory`, `.RData`, `.Ruserdata`, `*.Rproj`, `packrat/`, `renv/`
-   - **Universal**: `.DS_Store`, `Thumbs.db`, `*.tmp`, `*.swp`, `.vscode/`, `.idea/`
-
-   **Tool-Specific Patterns**:
-   - **Docker**: `node_modules/`, `.git/`, `Dockerfile*`, `.dockerignore`, `*.log*`, `.env*`, `coverage/`
-   - **ESLint**: `node_modules/`, `dist/`, `build/`, `coverage/`, `*.min.js`
-   - **Prettier**: `node_modules/`, `dist/`, `build/`, `coverage/`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`
-   - **Terraform**: `.terraform/`, `*.tfstate*`, `*.tfvars`, `.terraform.lock.hcl`
-   - **Kubernetes/k8s**: `*.secret.yaml`, `secrets/`, `.kube/`, `kubeconfig*`, `*.key`, `*.crt`
-
-5. Parse tasks.md structure and extract:
-   - **Task phases**: Setup, Tests, Core, Integration, Polish
-   - **Task dependencies**: Sequential vs parallel execution rules
-   - **Task details**: ID, description, file paths, parallel markers [P]
-   - **Execution flow**: Order and dependency requirements
-
-6. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
-   - **Validation checkpoints**: Verify each phase completion before proceeding
-
-7. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
-
-8. Progress tracking and error handling:
-   - Report progress after each completed task
-   - Halt execution if any non-parallel task fails
-   - For parallel tasks [P], continue with successful tasks, report failed ones
-   - Provide clear error messages with context for debugging
-   - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
-
-9. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
-   - Confirm the implementation follows the technical plan
-
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
+8. **Track truthful results and continue**:
+   - Record original-task implementation, local verification and external acceptance separately. A blocked stub, mock or index validation is not full lifecycle/production acceptance. Mark an original task `[X]` only when its own full conditions are evidenced, not merely because the local batch is green.
+   - Update the existing active card on phase/continuity signals with current/next action, changed scope, verification provenance and blockers, around 2KB. Follow HANDOFF navigation; do not append raw logs/history or duplicate state across repositories.
+   - An internal batch checkpoint does not end a multi-task authorization. Select the next dependency-ready batch and repeat steps 5–8 without another user "continue". Remain in a coherent chat; no forced new chat after a fixed task count or one compaction.
+   - On a failure, fix the affected batch or stop its dependent actions; continue genuinely independent authorized work when safe. End the invocation only at the user's requested boundary, exhaustion of the authorized local queue, or when no permitted ready work remains. Report precise blockers, not a blanket external-only verdict.
 
 ## Mandatory Post-Execution Hooks
 
@@ -208,11 +154,13 @@ Check if `.specify/extensions.yml` exists in the project root.
 
 ## Completion Report
 
-Report final status with summary of completed work.
+Report the business outcomes and original task IDs addressed, important files, actual/reused verification, independent review and precise remaining local work/external inputs. Report partial results honestly. Do not state that work is deferred to another session merely because one batch ended. No fixed time/token saving is established by these instructions.
 
 ## Done When
 
-- [ ] All tasks in tasks.md completed and marked `[X]`
-- [ ] Implementation validated against specification, plan, and test coverage
-- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
-- [ ] Completion reported to user with summary of completed work
+- [ ] The user's requested boundary is reached or the authorized dependency-ready local queue is exhausted; otherwise continue after checkpoints
+- [ ] Required behavior and affected regression/security checks have evidence, with original-task checkboxes preserving full acceptance conditions
+- [ ] Independent review has no unresolved blocking finding; evidence is valid for the integrated changes
+- [ ] The existing active state card is current and necessary raw evidence/history is preserved
+- [ ] Extension hooks were actually dispatched or skipped under the rules above
+- [ ] Results, limitations and remaining prerequisites are reported without unauthorized remote actions

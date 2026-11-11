@@ -15,7 +15,29 @@ A row is `verified` only when the official/live claim, implementation and verifi
 
 Evidence levels are distinct: `contract` (core/provider tests), `local-browser` (the shipped UI in Chromium/Safari), and `live-parity` (the corresponding observed Feishu journey). A lower-level pass never closes a higher-level requirement. Skipped actions remain `unverified`, even if an old runner printed PASS. Missing native document behavior remains a gap; contract-only closure is limited to the FR-025 exclusions.
 
-## Execution evidence
+## 当前源码对账 — 2026-11-06（`b66eaf5`）
+
+本轮为静态审计：已读取当前源码和测试，未运行构建、测试或浏览器验证。以下各项当前完成度均为 **PARTIAL**（对应本契约状态值 `partial`）。本表优先于后续历史表中同名行为的实现/完成声明；历史官方来源、飞书观察、测试命令与数字原样保留，但不代表当前实现或本轮结果。
+
+当前有效面板链路为 `src/editor/nativeEditorHost.js` → `panelsUiMixin.js` / `p6bMixin.js` → `src/ui/panels.js` 与各状态 mixin；不能把历史 `.vue` 路径当作当前入口。需求与待验收条件详见 [需求追踪矩阵](../requirements-traceability.md)，官方来源及真实飞书观察沿用下方历史行与 `../research.md`，不将真实飞书操作移记为本仓验收。
+
+| surface / 需求与任务 | 当前可支持的实现声明 | 静态读取到的测试范围（本轮未运行） | status | 当前缺口 / 验收边界 |
+| --- | --- | --- | --- | --- |
+| collaboration/mentions；FR-012 / T014 | `mentionMixin.js:134` 插入 user/group/document atom 并写 `notify`；`canEdit` 限制插入。`src/core/mention/directory.js` 提供候选搜索/解析。 | `test/unit/mention.test.js`：atom、JSON/HTML 往返、notify 属性、排序/过滤、搜索失败/超时与无 canEdit 分支。 | partial | `notify` 不是发送回执，插入权限不是目标权限授予；评论输入 @ 未闭环。`src/providers/embedded.js` 的 mention `notify/notifyAll` 适配接口不等于当前插入路径已调用；需真实授权、拒绝与送达回读。 |
+| collaboration/comments-basic；FR-013 / T015 | `commentsMixin.js:271`、`:293`、`:304`、`:313` 有锚点创建、回复、解决/重开调用；可选 `deleteReply`（`:322`）校验拒绝回执、回读及异步上下文。必需 Provider 仍只有 list/createThread/reply/resolve/reopen。 | `comments-core.test.js` 与 `comments-ui.test.js`：模型/锚点、capability、草稿、几何/菜单、可选删除、拒绝/失败与上下文隔离；不是完整服务验收。 | partial | 内存 Provider 生命周期内回读不等于刷新持久化；当前面板仅呈现 bound 且未解决线程，不证明全部重开入口/受限参与者闭环。 |
+| collaboration/comments-advanced；FR-013 / T015 | `commentsMixin.js:500` 的菜单仅 delete 有动作；`:495` 仅 more 有动作；`:467` private 仅写 `commentPrivateIds`；`:537` 复制引用文字。 | `comments-ui.test.js` 中菜单可见性、开关状态、删除保护等断言不能证明高级业务动作。 | partial | 编辑/翻译/举报与 reaction/quote 未接业务；没有 private Provider 写入/可见性隔离或稳定评论 URL 恢复。follow 持久化与通知结果仍待端到端验收。 |
+| collaboration/full-document-comments；FR-013 / T015 | `src/core/comments/thread.js:155` 写入要求有效 blockId，归一化模型无 document scope；`panelsUiMixin.js:422` 仅由 anchored commentPanels 构造面板。 | 当前 core/UI 测试不能证明无选区全文创建、footer composer、独立全文线程回读；历史 79/79、23/23 不作当前证据。 | partial | 当前没有全文评论模型、footer composer 与持久化闭环；不能将失联锚点线程当作全文评论。需无选区创建、回复、刷新及跨账号验收。 |
+| governance/history；FR-015 / T017 | `core/versioning/provider.js` 支持二进制快照保存/读取及新建恢复记录；`versioningMixin.js:555` 取回后只留元信息和字节数，`panelsUiMixin.js:380` 只显示元信息/块数摘要。 | `versioning-core.test.js` 测数据语义；`versioning-ui.test.js` 用 fakeSession/二进制夹具测试分支、权限、列表和 notice；`scripts/verify-browser-panels.js` 检查元信息/二进制占位与控件几何。 | partial | 没有历史正文渲染或正文 diff，“显示更改”无行为。Session 保存不编码二进制，恢复仅派发且未传当前作者；内存 Provider 新增记录不更新编辑器。需真实 Session/Provider 保存、解码预览、正文应用、持久化/刷新回读与权限撤销验收。 |
+| collaboration/notifications；FR-012/013，T014/T015/T018 | 可选 `src/providers/notifications.js` 和 `notifyMixin.js` 已有列表/已读/静音、写后回读、订阅释放与上下文隔离；订阅回调重新拉取 list，而非直接投影事件载荷。 | `notifications-provider.test.js` 覆盖接口/Session 注册/上下文；`notifications-ui.test.js` 覆盖读取、写回执、回读、订阅与异步隔离。 | partial | 这是宿主合同与本地 UI 边界，不证明 mention 触发发送、真实跨账号通知中心送达、取消关注效果或权限授予。 |
+| acceptance/current-scope；FR-023/024 / T018 | 保留旧 Chromium、Safari、跨账号和真实飞书恢复观察，不向当前实现自动迁移。 | 本轮没有新测试结果；当前不存在 `scripts/verify-browser-feishu-parity.js`，`scripts/verify.mjs` 动态发现脚本的机制不能使该历史目标继续有效。 | partial | 原生 UI 当前验收、实际 Safari、真实跨账号刷新和送达仍需补齐，并同时关闭以上实现缺口；不能仅凭历史总通过数完成验收。 |
+
+### 协同服务端声明的核验边界
+
+`docs/guide/collab-server.md:3` 的“独立 package `@lark-doc/collab-server`（独立仓库、独立发布）”目前是仓内声明。本轮查阅的指南、`package.json`、`scripts/check-architecture.js`、`test/collab/hocuspocus-wire.test.js` 及当前 git remote，只支持客户端/服务端契约隔离与第三方 `@hocuspocus/server` 测试实例存在；未取得外部仓库地址、独立包发布版本或部署验收证据。因此外部仓库/发布/生产服务状态记为**未核验**，既不据此认定已实现，也不推断不存在；该指南未修改。
+
+## 历史执行证据（原记录保留，不代表当前实现）
+
+下表中的 `Current`、`now`、`final`、`verified` 和通过数字均按各自历史记录时点理解；尤其 mentions-comments 与 share/history 的原实现声明，不能覆盖上方当前 `partial` 结论。旧 parity 脚本命令仅作历史追溯，不是当前可复跑承诺。
 
 | surface | behavior | officialSource | liveObservation | implementation | verification | status | limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- |
