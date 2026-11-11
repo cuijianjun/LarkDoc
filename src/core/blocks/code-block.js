@@ -4,6 +4,10 @@ import { clampBlockIndent } from '../documentOperations'
 // 代码块 NodeView（语言下拉 / 高亮 / 图表）查注册表，注册表实现见 core/nodeviews/registry。
 import { getNodeView } from '../nodeviews/registry'
 
+const DIAGRAM_LANGUAGES = Object.freeze(['mermaid'])
+export function isDiagramLanguage(name) { return DIAGRAM_LANGUAGES.includes(name) }
+export function listDiagramLanguages() { return DIAGRAM_LANGUAGES.slice() }
+
 function codeExtension(config) {
   return CodeBlock.extend({
     addAttributes() {

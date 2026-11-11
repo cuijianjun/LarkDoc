@@ -47,6 +47,14 @@ function createEd(overrides) {
   return ed
 }
 
+describe('查找面板与其他菜单的焦点交接', () => {
+  it('关闭面板可把焦点留给新菜单，常规关闭仍回编辑器', () => {
+    const ed = createEd(); ed.closeSearch(false); expect(ed.focusCalls).toBe(0)
+    ed.closeSearch(); expect(ed.focusCalls).toBe(1)
+    expect(panel).toContain('@keydown.esc.stop.prevent="ed.closeSearch()"')
+  })
+})
+
 describe('P4-05 查找替换 —— 打开与 tab（04 §3.2）', () => {
   it('⌘+F / 工具栏入口：面板关闭时打开并落在「查找」', () => {
     const ed = createEd()
@@ -172,10 +180,10 @@ describe('P4-05 查找替换 —— 面板规格（04 §3.2 实测像素）', ()
     expect(rule).toMatch(/border-radius: 8px/)
   })
 
-  it('Tab 32×48 / fs16，激活色走 --ld-brand-content（不新造蓝）', () => {
+  it('Tab 32×48 / fs16，激活色走原主题 --ld-brand-chrome', () => {
     expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-tab')).toMatch(/width: 32px; min-width: 32px; height: 48px/)
     expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-tab')).toMatch(/font-size: 16px/)
-    expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active')).toMatch(/color: var\(--ld-brand-content\)/)
+    expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active')).toMatch(/color: var\(--ld-brand-chrome\)/)
   })
 
   it('激活 ink：容器 32×3 裁 ::before 32×6，替换 Tab 右移 60px', () => {
@@ -211,7 +219,7 @@ describe('P4-05 查找替换 —— 组件契约与深档同步', () => {
   it('保留 ref="searchInput" 与 focus() 转发 —— 父组件与 toolbarCollapseMixin 靠它聚焦', () => {
     expect(panel).toMatch(/ref="searchInput"/)
     expect(panel).toMatch(/focus\(\) \{ const input = this\.\$refs\.searchInput; if \(input\) input\.focus\(\) \}/)
-    expect(editorVue).toMatch(/<SearchPanel\n\s+ref="searchInput"/)
+    expect(editorVue).toMatch(/<SearchPanel\b[^>]*\bref="searchInput"/)
   })
 
   it('计数器 N / M：无匹配 0 / 0，有匹配是 1-based 当前序号', () => {

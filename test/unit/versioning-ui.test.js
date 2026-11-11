@@ -601,3 +601,97 @@ describe('列表拉取与降级', () => {
     expect(vm.versionPreviewError).toBe('')
   })
 })
+
+describe('C07真实版本投影与原操作状态（mixin行为，非浏览器渲染）', () => {
+  const projection = text => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
+  const record = (id, text) => ({ id, documentId: 'doc-1', label: id, createdAt: 1000, author: 'alice',
+    kind: 'manual', payload: bytes(16), contentJson: projection(text), sourceRevision: '7', sourceEpoch: '1',
+    capturedSeq: '7', contentHash: 'sha256:' + 'a'.repeat(64), stateHash: 'sha256:' + 'b'.repeat(64) })
+  const deferred = () => {
+    let resolve
+    const promise = new Promise(done => { resolve = done })
+    return { promise, resolve }
+  }
+
+  it('首项自动get真实投影，预览保留正文与来源hash，不改活动正文', async () => {
+    const calls = []
+    let activeWrites = 0
+    const provider = { list: async () => [{ id: 'v1' }], get: async id => { calls.push(id); return record(id, '冻结A') } }
+    const vm = mountMixin({ session: fakeSession({ provider }), editor: { commands: { setContent() { activeWrites++ } } } })
+    await callOf(vm, 'loadVersions')
+    expect(calls).toEqual(['v1'])
+    expect(vm.versionPreview.contentJson).toEqual(projection('冻结A'))
+    expect(vm.versionPreview.sourceRevision).toBe('7')
+    expect(vm.versionPreview.contentHash).toBe(record('v1', '').contentHash)
+    expect(activeWrites).toBe(0)
+  })
+
+  it('切换和关闭使旧get失效，不回显旧版本或越权缓存', async () => {
+    const first = deferred(), second = deferred(), third = deferred()
+    const provider = { get: id => ({ v1: first, v2: second, v3: third })[id].promise }
+    const vm = mountMixin({ session: fakeSession({ provider }), versionList: [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }] })
+    const a = callOf(vm, 'selectVersion', 'v1')
+    const b = callOf(vm, 'selectVersion', 'v2')
+    second.resolve(record('v2', 'B')); await b
+    first.resolve(record('v1', 'A')); await a
+    expect(vm.versionPreview.id).toBe('v2')
+    const c = callOf(vm, 'selectVersion', 'v3')
+    callOf(vm, 'closeVersionPanel')
+    third.resolve(record('v3', 'C')); await c
+    expect(vm.versionPreview).toBe(null)
+  })
+
+  it('unknown保原op且不成功toast，再次保存只query原结果', async () => {
+    let posts = 0, queries = 0
+    const provider = { requiresDurableConfirmation: true, supportsRestore: false,
+      queryOperation: async operationId => { queries++; return { status: 'committed', operationId, version: { status: 'durable' } } } }
+    const session = fakeSession({ provider })
+    session.createVersion = async () => { posts++; return { status: 'unknown', operationId: 'original-op' } }
+    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A' })
+    await callOf(vm, 'confirmSaveVersion')
+    expect(vm.saveVersionOpen).toBe(true)
+    expect(vm.versionNotice).toBe('')
+    expect(vm.saveVersionOperationId).toBe('original-op')
+    vm.saveVersionName = '不能另造此版本'
+    await callOf(vm, 'confirmSaveVersion')
+    expect(posts).toBe(1)
+    expect(queries).toBe(1)
+    expect(vm.saveVersionOperationId).toBe('')
+    expect(vm.versionNotice).toContain('版本已保存')
+  })
+
+  it('remote provider未收到durable wrapper不成功，US8接线前恢复置灰', async () => {
+    const provider = { requiresDurableConfirmation: true, supportsRestore: false }
+    const session = fakeSession({ provider })
+    session.createVersion = async () => ({ id: 'looks-like-version' })
+    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A', versionList: [{ id: 'v1' }], versionSelectedId: 'v1' })
+    await callOf(vm, 'confirmSaveVersion')
+    expect(vm.versionNotice).toBe('')
+    expect(vm.saveVersionOpen).toBe(true)
+    expect(vm.versionRestoreDisabled).toBe(true)
+  })
+
+  it('远端恢复unknown保原op与只读，后续只query；DBcommitted但未重开不谎称失败', async () => {
+    let restores = 0, queries = 0
+    const editable = []
+    const provider = { requiresDurableConfirmation: true, supportsRestore: true,
+      queryRestoreOperation: async operationId => { queries++; return { status: 'committed', operationId,
+        postVersion: { status: 'durable' }, reloadRequired: true, editingResumed: false } },
+      list: async () => [],
+    }
+    const session = fakeSession({ provider })
+    session.restoreVersion = async () => { restores++; return { status: 'unknown', operationId: 'restore-original' } }
+    const vm = mountMixin({ session, editor: { setEditable: value => editable.push(value) },
+      versionList: [{ id: 'v1' }], versionSelectedId: 'v1', versionPanelOpen: true })
+    await callOf(vm, 'restoreSelectedVersion')
+    expect(vm.versionNotice).toBe('')
+    expect(vm.versionRestoreOperationId).toBe('restore-original')
+    expect(vm.versionPreviewError).toContain('待确认')
+    await callOf(vm, 'restoreSelectedVersion')
+    expect(restores).toBe(1)
+    expect(queries).toBe(1)
+    expect(editable).toEqual([false, false])
+    expect(vm.versionNotice).toBe('恢复已提交，请重新打开文档')
+    expect(vm.versionRestoreNeedsReload).toBe(true)
+  })
+})

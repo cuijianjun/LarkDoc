@@ -22,6 +22,7 @@
         </button>
         <button
           type="button"
+          :disabled="!copyAllowed"
           @click="copyCode"
         >
           复制源码
@@ -39,6 +40,7 @@
         /></label>
         <button
           type="button"
+          :disabled="!copyAllowed"
           @click="copyCode"
         >
           复制代码
@@ -96,7 +98,7 @@
 
 <script>
 import { NodeViewWrapper, NodeViewContent, nodeViewProps } from '@tiptap/vue-2'
-import { isDiagramLanguage, renderDiagram } from '../../components/lark-doc/diagram'
+import { isDiagramLanguage } from '../../core/blocks/code-block'
 import { readContentTheme, subscribeContentTheme } from '../../components/lark-doc/themeSignal'
 import { INDENT_STEP_PX, clampBlockIndent } from '../../components/lark-doc/documentOperations'
 import LarkDocSelect from '../../components/lark-doc/LarkDocSelect.vue'
@@ -167,6 +169,7 @@ export default {
       languages,
       message: '',
       editable: this.editor.isEditable,
+      copyAllowed: this.editor.options?.editorProps?.larkDocCanCopy?.() !== false,
       highlightedCode: '',
       diagramState: 'idle', // idle | loading | ok | error
       diagramSvg: '',
@@ -207,13 +210,14 @@ export default {
   },
   watch: {
     node: {
-      deep: true,
+      // ProseMirror replaces immutable nodes; walking schema/editor back-references is unsafe.
       handler() { this.refreshHighlighted(); this.scheduleDiagramRender() },
     },
   },
   created() {
     this.editor.on('update', this.syncEditable)
     this.editor.on('transaction', this.syncEditable)
+    this.editor.on('lark-doc-copy-permission', this.syncEditable)
     this.refreshHighlighted()
     // 主题广播全库只挂一个观察器（themeSignal），这里只订阅「本块要不要重画」。
     this.unsubscribeTheme = subscribeContentTheme(this.handleContentTheme)
@@ -222,6 +226,7 @@ export default {
   beforeDestroy() {
     this.editor.off('update', this.syncEditable)
     this.editor.off('transaction', this.syncEditable)
+    this.editor.off('lark-doc-copy-permission', this.syncEditable)
     if (this.unsubscribeTheme) { this.unsubscribeTheme(); this.unsubscribeTheme = null }
     if (this.diagramTimer) clearTimeout(this.diagramTimer)
     this.diagramVersion = -1
@@ -251,6 +256,7 @@ export default {
       this.highlightedCode = renderHighlighted(text, language, true)
     },
     syncEditable() {
+      this.copyAllowed = this.editor.options?.editorProps?.larkDocCanCopy?.() !== false
       const next = this.editor.isEditable
       if (next === this.editable) return
       this.editable = next
@@ -276,11 +282,16 @@ export default {
         return
       }
       this.diagramState = 'loading'
-      renderDiagram(source, {
+      const options = {
         scriptUrl: this.extension?.options?.diagramScriptUrl || undefined,
         theme: this.contentTheme,
+      }
+      import(/* webpackChunkName: "diagram-renderer" */ '../../components/lark-doc/diagram').then(module => {
+        if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed || source !== this.node.textContent) return null
+        return module.renderDiagram(source, options)
       }).then((svg) => {
         if (version !== this.diagramVersion || this._isBeingDestroyed || this._isDestroyed) return
+        if (!svg || source !== this.node.textContent) return
         this.diagramSvg = svg
         this.diagramState = 'ok'
         this.diagramError = ''
@@ -302,21 +313,12 @@ export default {
       else { this.diagramState = 'idle'; this.diagramSvg = '' }
     },
     async copyCode() {
-      try {
-        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(this.node.textContent)
-        else {
-          const input = document.createElement('textarea')
-          const previous = document.activeElement
-          input.value = this.node.textContent
-          input.style.position = 'fixed'
-          input.style.opacity = '0'
-          document.body.appendChild(input)
-          input.select()
-          try { if (!document.execCommand('copy')) throw new Error('复制失败') }
-          finally { input.remove(); previous?.focus() }
-        }
-        this.message = '已复制'
-      } catch (_) { this.message = '无法访问剪贴板，请选择代码后手动复制' }
+      const editor = this.editor
+      if (editor.options?.editorProps?.larkDocCanCopy?.() === false) return false
+      const context = { kind: 'code', owner: this, editor, doc: editor.state?.doc, parent: editor.options?.editorProps?.larkDocCopyContext?.() }
+      const node = this.node
+      return import(/* webpackChunkName: "content-clipboard" */ '../../utils/contentClipboard')
+        .then(module => module.copyCode(context, node)).catch(() => false)
     },
   },
 }

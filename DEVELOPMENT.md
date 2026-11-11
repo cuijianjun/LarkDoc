@@ -11,6 +11,8 @@
 - **稳定事实 / 进度**：`_codex/CONTEXT-CARD.md`。
 - **查需求细节**：`_codex/req/<编号>/INDEX.md` 定位 → 只读命中的那一片。**不要裸读 `requirements/*.md`**（`02` 一篇约 10 万 token）。切片由 `node _codex/split-req.mjs` 生成，`requirements/` 是唯一真源。
 - **使用方**接入说明（编译工具配置 / 工具栏配置 / 可运行 demo）：`docs/guide/environments.md`。
+- **长期路线（唯一真源）**：[`MASTER_PLAN.md`](./MASTER_PLAN.md) —— 多环境统一（对外契约 / 产物 / 内网）× 框架无关（UI 去 Vue）合并版，阶段 0~7。`MULTI_ENV_PLAN.md` 与 `FRAMEWORK_AGNOSTIC_PLAN.md` 已并入它，只作案细节备查，**冲突以它为准**。
+- **独立后端协作开发（本地、未发布）**：按 [003 spec-kit 原任务](../../../.wt-larkdoc/dev/specs/003-production-collaboration/tasks.md)及其中的逐项证据推进。后端位于同级 `../lark-doc-backend/`，使用 Node22.13/npm8；本前端继续 Node14/Vue2/Webpack。内部 HTTPS owner 命令、显式 pending 刷新恢复与运行边界见[API 契约](../../../.wt-larkdoc/dev/specs/003-production-collaboration/contracts/backend-api.md)，完整真实公司集成和生产门保持单独验收。
 
 当前版本以 `package.json` 为准（别再在这里写死，历史上已漂移过一次）。
 

@@ -16,7 +16,9 @@ export * from './security'
 export * from './survey'
 export * from './collaboration'
 export * from './comments'
+export * from './notifications'
 export * from './persistence'
+export * from './resources'
 export * from './upload'
 // P3-05：网页元数据抓取（09 §265）。**第 6 个可选 provider**，不进上面 5 类必选契约 ——
 // 没接它时网页卡片降级成「URL + 域名标题」，其余能力照常。
@@ -24,3 +26,7 @@ export * from './unfurl'
 export * from './versioning'
 
 export * from './embedded'
+
+export * from './identity'
+
+export * from './document-business'

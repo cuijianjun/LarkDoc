@@ -1,6 +1,7 @@
 /**
  * 分享与权限（P6b-03）—— 分享 popover 开关、二级权限 Dialog 链、权限项读写、
  * 加密链接（密码）状态机、复制链接。
+ * 下述本地演示交互保留；远端未接线的目录/设置不能沿本地状态宣称授权成功。
  *
  * 规格：requirements/04 §4.1（分享 popover · batch60/61）、§4.1.1（权限设置 Dialog ·
  * batch441–443 + 加密链接 batch468–479）、requirements/05 §5.3.1「capability → UI
@@ -37,7 +38,7 @@
  *
  * 待定（本线自定、requirements 没拍板的四处，改动前先回来确认）：
  *   A. `LINK_SHARE_ENTITY.normal = 1`：⑤-1 只采到「加密 = 4」，关闭时回落的值没采到。
- *   B. `PERMISSION_SCOPE_OPTIONS` 里除「可阅读的用户」外的两项：04 未展开下拉采选项全集。
+ *   B. 高级权限项仍沿用原自定选项；四项基础权限的新增实测选项由PermissionDialog独立维护。
  *   C. 「不支持字符」是否含空格 / 控制字符：⑤-8 只有中文样本，这里按「密码不含空白」取严。
  *   D. 「提示」弹窗第 1 句正文在采集日志里被截断（⑤-2 原文带「…」），末尾句号是补的。
  *
@@ -135,7 +136,7 @@ export const PASSWORD_DIALOG = Object.freeze({ width: 420, height: 312, top: 319
  */
 export const CAPABILITY_TREATMENTS = Object.freeze({ allow: 'allow', gray: 'gray', downgrade: 'downgrade', replace: 'replace' })
 
-/** 8 项 capability 在「无权限」时的处置。键与 `DEFAULT_CAPABILITIES` 同源。 */
+/** 原8项与新增canCopy在「无权限」时的处置。键与DEFAULT_CAPABILITIES同源。 */
 export const CAPABILITY_UI = Object.freeze({
   canView: CAPABILITY_TREATMENTS.replace,
   canEdit: CAPABILITY_TREATMENTS.gray,
@@ -145,6 +146,7 @@ export const CAPABILITY_UI = Object.freeze({
   canRestoreVersion: CAPABILITY_TREATMENTS.gray,
   canExport: CAPABILITY_TREATMENTS.gray,
   canManagePermission: CAPABILITY_TREATMENTS.downgrade,
+  canCopy: CAPABILITY_TREATMENTS.gray,
 })
 
 /** 置灰的统一视觉（05 §5.3.1 ③）：色 `#BBBFC4`、`cursor: not-allowed`、
@@ -156,8 +158,7 @@ export const SHARE_ENTRY_MODES = Object.freeze({ manage: 'manage', readonlyLink:
 
 // —— 权限项（04 §4.1.1 ④ 文案口径，可直接照抄）——
 
-/** 下拉选项。🔴 只有「可阅读的用户」是实测值（③ 三处下拉都取它），
- *  另两项是本库自定（04 未采下拉展开后的选项全集），见文件头「待定」。 */
+/** 高级权限项保留的旧选项，尚未重采；四项基础权限实测选项见lazy PermissionDialog，不能混用。 */
 export const PERMISSION_SCOPE_OPTIONS = Object.freeze(['可阅读的用户', '可编辑的用户', '仅协作者'])
 
 /**
@@ -449,6 +450,7 @@ const SHARE_KEEP_OPEN_SELECTORS = Object.freeze([
 export default {
   data() {
     return {
+      documentBusinessDeleted: false,
       sharePopoverOpen: false,
       /** popover 落点：`{ top, right }`，由触发按钮的 rect 反推（见 `toggleSharePopover`）。 */
       sharePopoverPos: { top: 0, right: 0 },
@@ -490,17 +492,36 @@ export default {
       shareCollaborators: ['我'],
       /** 文档链接。宿主可通过 prop/赋值覆盖；缺省取当前地址。 */
       shareLink: '',
+      shareRemoteState: null,
+      shareLinkState: null,
+      shareLinkBusy: false,
+      shareLinkPending: '',
+      shareLinkError: '',
+      shareRemoteBusy: false,
+      sharePendingOperation: '',
+      shareMembers: null,
+      shareMembersBusy: false,
+      shareMembersError: '',
+      shareCandidates: [],
+      shareSelectedCandidate: null,
+      shareInviteRole: 'editor',
+      shareDirectoryBusy: false,
+      shareMemberListOpen: false,
       _shareToastTimer: null,
     }
   },
   computed: {
+    shareRemote() {
+      const provider = this.session && typeof this.session.getProvider === 'function' ? this.session.getProvider('authorization') : null
+      return Boolean(provider && provider.isRemote)
+    },
     /** 入口显隐：只有 `canView:false` 才不挂（B24 交叉约束 3）；其余一律挂载。 */
     shareEntryVisible() {
       return this.shareCan('canView')
     },
     /** `canView:false` 的整页只读遮罩。这是 8 项里唯一「替换整页」的一项。 */
     shareViewMaskVisible() {
-      return !this.shareCan('canView')
+      return !this.documentBusinessDeleted && !this.shareCan('canView')
     },
     /** 入口形态：`manage`（完整分享）/ `readonly-link`（只复制链接）。 */
     shareEntryMode() {
@@ -508,6 +529,7 @@ export default {
     },
     /** 入口文案：降级时按钮文字本身变成「分享只读链接」。 */
     shareEntryLabel() {
+      if (this.shareRemote) return this.shareCan('canManagePermission') ? '分享' : '复制文档链接'
       return shareEntryLabel(this.session)
     },
     /** 渲染用的权限项（④ 全集，文案不改写）。 */
@@ -526,14 +548,19 @@ export default {
     },
     /** 卡片上的权限标签与 scope 文案同源：改下拉两处一起变（04 §4.1 ③）。 */
     shareLinkPermLabel() {
+      if (this.shareRemote) return this.shareLinkState ? this.shareLinkState.permission === 'edit' ? '可编辑' : '可阅读' : '按文档权限访问'
       return this.shareLinkPerm
     },
     /** 一级 popover 的 scope 文案。 */
     shareScopeText() {
+      if (this.shareRemote && !this.shareLinkState) return this.shareLinkPending ? '链接更改结果待确认。' : '尚未载入链接设置。'
+      if (this.shareRemote && this.shareLinkState?.audience === 'public') return this.shareLinkState.enabled ? '互联网用户需要链接和密码访问；组织免密尚未接入。' : '互联网上获得链接的人可以访问。'
+      if (this.shareRemote) return '只有已有访问权限的用户可以打开链接。'
       return buildLinkScopeText(this.shareLinkPerm)
     },
     /** 二级 Dialog 里的 scope 文案（取值与一级不同，见 data 注释）。 */
     shareDialogScopeText() {
+      if (this.shareRemote) return '只有已有访问权限的用户可以打开链接。'
       return buildLinkScopeText(this.shareDialogLinkPerm)
     },
     /** 头像里显示的字（取首个协作者的首个字符）。04 只采到「+2 聚合」，
@@ -560,13 +587,148 @@ export default {
     // 在本仓由主组件维护、本线不改它，所以这里自建一对监听，避免「新增浮层漏接关闭」。
     document.addEventListener('pointerdown', this.onSharePointerDown, true)
     window.addEventListener('keydown', this.onShareWindowKeydown)
+    window.addEventListener('resize', this.onShareViewportChange)
+    this.bindShareSession()
   },
+  watch: { session() { this.bindShareSession() } },
   beforeDestroy() {
+    this._shareDisposed = true
+    if (this._shareSessionStops) this._shareSessionStops.forEach(stop => stop())
+    clearTimeout(this._shareDirectoryTimer)
     document.removeEventListener('pointerdown', this.onSharePointerDown, true)
     window.removeEventListener('keydown', this.onShareWindowKeydown)
+    window.removeEventListener('resize', this.onShareViewportChange)
+    this._shareAnchor = null
     this.hideShareToast()
   },
   methods: {
+    setDocumentBusinessDeleted(value) { this.documentBusinessDeleted = value === true },
+    bindShareSession() {
+      if (this._shareSessionStops) this._shareSessionStops.forEach(stop => stop())
+      this._shareSessionStops = []
+      this.clearRemoteShareView(false)
+      if (!this.session?.on) return
+      this._shareSessionStops.push(this.session.on('comments-reset', reason => this.clearRemoteShareView(reason === 'authorization-required')))
+      this._shareSessionStops.push(this.session.on('provider-changed', ({ name }) => { if (name === 'authorization') this.clearRemoteShareView(false) }))
+      this._shareSessionStops.push(this.session.on('capabilities', () => {
+        if (!this.shareCan('canManagePermission')) this.clearRemoteShareView(true)
+        else if (this.sharePopoverOpen) {
+          void this.loadShareMembers()
+          void this.remoteLinkAction('load')
+          if (this.sharePendingOperation && !this.shareRemoteBusy) void this.queryPendingShare()
+        }
+      }))
+    },
+    clearRemoteShareView(keepQuery) {
+      clearTimeout(this._shareDirectoryTimer)
+      this.shareMembers = null; this.shareMembersBusy = false; this.shareMembersError = ''
+      this.shareCandidates = []; this.shareSelectedCandidate = null; this.shareInviteQuery = ''; this.shareDirectoryBusy = false
+      this.shareRemoteState = null; this._shareReadToken = null; this._shareDirectoryToken = null
+      this.shareLinkState = null; this.secureLinkEnabled = false; this.secureLinkPassword = ''; this.passwordDraft = ''; this.passwordDialogOpen = false; this.secureLinkConfirmOpen = false
+      this._shareLinkToken = null; this.shareLinkBusy = false; this.shareLinkError = ''; if (!keepQuery) this.shareLinkPending = ''
+      if (!keepQuery) { this.sharePendingOperation = ''; this._pendingShareProvider = null; this._activeShareScope = null; this.shareRemoteBusy = false; this.shareMemberListOpen = false }
+    },
+    remoteShareScope() {
+      const session = this.session, provider = session?.getProvider('authorization'), identity = session?.user?.id
+      const identityGeneration = session?._privateIdentityGeneration, authorizationGeneration = session?._authorizationGeneration
+      const owner = () => !this._shareDisposed && !this._isDestroyed && session === this.session && provider === session?.getProvider('authorization') &&
+        identity === session?.user?.id && identityGeneration === session?._privateIdentityGeneration && !session?._destroyed
+      return { session, provider, owner, current: () => owner() && authorizationGeneration === session?._authorizationGeneration && this.shareCan('canManagePermission') }
+    },
+    async loadShareMembers() {
+      if (!this.shareRemote || !this.shareCan('canManagePermission')) return null
+      const scope = this.remoteShareScope(), token = {}; this._shareReadToken = token; this.shareMembersBusy = true; this.shareMembersError = ''
+      try {
+        const result = await scope.session.listMembers()
+        if (!scope.current() || this._shareReadToken !== token) return null
+        this.shareMembers = result; return result
+      } catch { if (scope.current() && this._shareReadToken === token) this.shareMembersError = '协作者未能加载，请重试。'; return null }
+      finally { if (this._shareReadToken === token) this.shareMembersBusy = false }
+    },
+    shareMemberSource(member) {
+      const sources = member?.sources.filter(source => source.originType === 'share' && source.sourceGrantKey.startsWith('editor-share-')) || []
+      return sources.length === 1 && !sources[0].sourceGap ? sources[0] : null
+    },
+    shareMemberRole(member) {
+      const source = this.shareMemberSource(member), scopes = source && !source.revoked ? source.scopes : member.scopes
+      return scopes.includes('document.write') ? 'editor' : scopes.includes('comment.write') ? 'commenter' : 'reader'
+    },
+    async searchShareDirectory() {
+      clearTimeout(this._shareDirectoryTimer)
+      const query = this.shareInviteQuery.trim()
+      if (!query || !this.shareCan('canManagePermission') || this.shareDirectoryBusy) return
+      const scope = this.remoteShareScope(), token = {}; this._shareDirectoryToken = token; this.shareDirectoryBusy = true; this.shareCandidates = []
+      try {
+        const result = await scope.session.resolveMentions({ query })
+        if (!scope.current() || this._shareDirectoryToken !== token || query !== this.shareInviteQuery.trim()) return
+        if (result.status === 'resolved') this.shareCandidates = result.candidates
+        else this.showShareToast('warning', '人员目录暂不可用，请稍后重试。')
+      } catch { if (scope.current() && this._shareDirectoryToken === token) this.showShareToast('warning', '人员搜索未完成，请重试。') }
+      finally { if (this._shareDirectoryToken === token) this.shareDirectoryBusy = false }
+    },
+    selectShareCandidate(candidate) { this.shareSelectedCandidate = candidate; this.shareInviteQuery = candidate.displayName; this.shareCandidates = [] },
+    toggleShareMembers() { this.shareMemberListOpen = !this.shareMemberListOpen },
+    setShareInviteRole(value) { if (['reader', 'commenter', 'editor'].includes(value)) this.shareInviteRole = value },
+    async changeShareMember(principalId, role, revoked = false) {
+      if (!this.shareMembers || !['reader', 'commenter', 'editor'].includes(role) || this.shareRemoteBusy || this.sharePendingOperation) return null
+      const member = this.shareMembers.members.find(value => value.principalId === principalId), source = this.shareMemberSource(member)
+      if ((revoked && !source) || member?.scopes.includes('grant.manage')) return null
+      const relevant = member?.sources.filter(value => value.originType === 'share' && value.sourceGrantKey.startsWith('editor-share-')) || []
+      if (relevant.length > 1) { this.showShareToast('warning', '存在多个分享来源，请逐来源核对权限。'); return null }
+      const sourceGrantKey = source?.sourceGrantKey || 'editor-share-' + Array.from(window.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+      const digits = (source?.sourceRevision || '0').split(''); let carry = 1
+      for (let index = digits.length - 1; index >= 0 && carry; index--) { const digit = Number(digits[index]) + carry; digits[index] = String(digit % 10); carry = digit > 9 ? 1 : 0 }
+      const sourceRevision = `${carry ? '1' : ''}${digits.join('')}`
+      const scopes = ['document.read', 'version.read', 'document.export', ...(role !== 'reader' ? ['comment.write'] : []),
+        ...(role === 'editor' ? ['document.write', 'comment.resolve', 'version.create', 'version.restore'] : [])]
+      return this.submitRemoteShare({ subject: principalId, sourceGrantKey, sourceRevision, expectedRevision: this.shareMembers.authzVersion, scopes: revoked ? [] : scopes, revoked })
+    },
+    remoteShareSettingsUnavailable() { this.showShareToast('warning', '当前服务未提供此项设置，未作更改。'); return false },
+    async remoteLinkAction(action, input) {
+      const scope = this.remoteShareScope()
+      const module = await import(/* webpackChunkName: "share-links" */ '../../../providers/share-links')
+      if (action === 'confirm' && !this.secureLinkConfirmOpen || action === 'password' && !this.passwordDialogOpen) return null
+      return scope.current() ? module.remoteShareLinkAction(this, action, input) : null
+    },
+    async submitRemoteShare(input) {
+      if (!this.shareRemote || !this.shareCan('canManagePermission') || this.shareRemoteBusy || this.sharePendingOperation) return null
+      const scope = this.remoteShareScope(), provider = scope.provider
+      this.shareRemoteBusy = true; this._activeShareScope = scope
+      try {
+        const result = await this.session.requestShare(input)
+        if (!scope.current()) return null
+        this.shareRemoteState = result
+        this.showShareToast(result.status === 'committed' ? 'success' : 'warning', result.status === 'committed'
+          ? '协作者权限已更新。' : '权限信息未能确认，请联系管理员。')
+        await this.loadShareMembers(); return result
+      } catch (error) {
+        if (scope.owner()) {
+          if (error.status === 'unknown' && error.operationId) { this.sharePendingOperation = error.operationId; this._pendingShareProvider = provider }
+          this.showShareToast('warning', error.status === 'unknown' ? '分享操作尚未确认，请查询原操作。' : '分享未确认或当前无权操作。')
+          if (scope.current() && error.httpStatus === 409) { await this.loadShareMembers(); this.showShareToast('warning', '协作者权限已变化，请重新选择后重试。') }
+        }
+        return null
+      } finally {
+        if (this._activeShareScope === scope) {
+          this.shareRemoteBusy = false; this._activeShareScope = null
+          if (scope.owner() && !scope.current() && this.shareCan('canManagePermission') && this.sharePendingOperation) void this.queryPendingShare()
+        }
+      }
+    },
+    async queryPendingShare() {
+      if (!this.sharePendingOperation || this.shareRemoteBusy || !this.shareCan('canManagePermission')) return null
+      const scope = this.remoteShareScope(), id = this.sharePendingOperation
+      if (this._pendingShareProvider && this._pendingShareProvider !== scope.provider) return null
+      this.shareRemoteBusy = true; this._activeShareScope = scope
+      try {
+        const result = await scope.session.queryShareOperation(id)
+        if (!scope.current() || this.sharePendingOperation !== id) return null
+        this.sharePendingOperation = ''; this._pendingShareProvider = null; this.shareRemoteState = result
+        this.showShareToast(result.status === 'committed' ? 'success' : 'warning', result.status === 'committed' ? '协作者权限已更新。' : '权限信息未能确认，请联系管理员。')
+        await this.loadShareMembers(); return result
+      } catch { if (scope.current()) this.showShareToast('warning', '原分享操作仍未确认或当前无权查询。'); return null }
+      finally { if (this._activeShareScope === scope) { this.shareRemoteBusy = false; this._activeShareScope = null } }
+    },
     // —— 权限读取（唯一入口，禁止在模板里直接读 session 字段）——
     shareCan(key) {
       return readCapability(this.session, key)
@@ -594,17 +756,27 @@ export default {
         this.closeSharePopover()
         return
       }
-      const rect = event && event.currentTarget && event.currentTarget.getBoundingClientRect
-        ? event.currentTarget.getBoundingClientRect()
-        : null
+      this._shareAnchor = event?.currentTarget || null
+      this.positionSharePopover()
+      this.sharePopoverOpen = true
+      if (this.shareRemote) { void this.loadShareMembers(); void this.remoteLinkAction('load') }
+    },
+    openShareFromToolbar(event) {
+      const target = this.$el?.querySelector('button[aria-label="文档操作"]') || event?.currentTarget
+      this.headerMenuOpen = false; this.toggleSharePopover({ currentTarget: target })
+    },
+    onShareViewportChange() { if (this.sharePopoverOpen) this.positionSharePopover() },
+    positionSharePopover() {
+      const rect = this._shareAnchor?.getBoundingClientRect?.() || null
       // 实测 popover @(596,52)、按钮本体 @(996,16) 80×32 ⇒ 顶边 = 按钮底边 + 4，
       // 右缘与按钮右缘**对齐**（1076 = 996+80），故 `right` 直接用视口宽减按钮右缘。
       const viewportWidth = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 0
+      const viewportHeight = typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 0
+      const menuWidth = Math.min(480, Math.max(0, viewportWidth - 16))
       this.sharePopoverPos = {
-        top: rect ? rect.bottom + 4 : 52,
-        right: rect ? Math.max(0, viewportWidth - rect.right) : 436,
+        top: viewportHeight ? Math.max(8, Math.min(rect ? rect.bottom + 4 : 52, viewportHeight - 339)) : rect ? rect.bottom + 4 : 52,
+        right: rect && viewportWidth ? Math.max(8, Math.min(viewportWidth - rect.right, viewportWidth - menuWidth - 8)) : 436,
       }
-      this.sharePopoverOpen = true
     },
     sharePopoverStyle() {
       return { top: `${this.sharePopoverPos.top}px`, right: `${this.sharePopoverPos.right}px` }
@@ -636,6 +808,7 @@ export default {
       // 降级形态连二级面板都没有，这里再挡一次（入口已经不弹 popover，防的是外部直调）。
       if (!this.shareCan('canManagePermission')) return
       this.permissionDialogOpen = true
+      if (this.shareRemote) void this.remoteLinkAction('load')
     },
     closePermissionDialog() {
       this.permissionDialogOpen = false
@@ -645,14 +818,19 @@ export default {
     },
     setPermissionValue(id, value) {
       if (!this.shareCan('canManagePermission')) return
+      if (this.shareRemote) return this.remoteShareSettingsUnavailable()
       this.permissionValues = { ...this.permissionValues, [id]: value }
     },
     /** 邀请输入框。受控写法：模板 `:value` + `@input`，不引 v-model（本仓统一口径）。 */
     setShareInviteQuery(value) {
       this.shareInviteQuery = String(value == null ? '' : value)
+      this.shareSelectedCandidate = null; this.shareCandidates = []; this._shareDirectoryToken = null; this.shareDirectoryBusy = false
+      clearTimeout(this._shareDirectoryTimer)
+      if (this.shareRemote && this.shareInviteQuery.trim()) this._shareDirectoryTimer = setTimeout(() => { void this.searchShareDirectory() }, 200)
     },
     /** 一级 popover 的链接权限下拉。 */
     setShareLinkPerm(value) {
+      if (this.shareRemote) return this.remoteLinkAction('permission', value)
       this.shareLinkPerm = String(value == null ? '' : value)
     },
     toggleAdvancedSettings() {
@@ -666,6 +844,7 @@ export default {
      */
     toggleSecureLink() {
       if (!this.shareCan('canManagePermission')) return
+      if (this.shareRemote) return this.remoteLinkAction('toggle')
       if (this.secureLinkEnabled) {
         this.applySecureLink(false)
         return
@@ -673,6 +852,7 @@ export default {
       this.secureLinkConfirmOpen = true
     },
     confirmSecureLink() {
+      if (this.shareRemote) return this.remoteLinkAction('confirm')
       this.secureLinkConfirmOpen = false
       this.applySecureLink(true)
     },
@@ -681,6 +861,7 @@ export default {
       this.secureLinkConfirmOpen = false
     },
     applySecureLink(on) {
+      if (this.shareRemote) return this.remoteShareSettingsUnavailable()
       this.secureLinkEnabled = !!on
       // 密码随「关 → 开」重新生成，旧密码立即失效（⑤-10 实测序列 5 次全不同），
       // 所以这里刻意不做「记住上次」。
@@ -690,6 +871,7 @@ export default {
     // —— 修改密码弹窗（⑤-5 / ⑤-9）——
     openPasswordDialog() {
       if (!this.shareCan('canManagePermission')) return
+      if (this.shareRemote && (!this.shareLinkState?.cryptoReady || this.shareLinkBusy || this.shareLinkPending)) return
       this.passwordDraft = ''
       this.passwordDialogOpen = true
     },
@@ -702,6 +884,7 @@ export default {
       this.passwordDraft = String(value == null ? '' : value)
     },
     randomizePasswordDraft() {
+      if (this.shareRemote) return this.remoteLinkAction('random')
       this.passwordDraft = randomPassword()
     },
     /**
@@ -713,6 +896,7 @@ export default {
         this.showShareToast('warning', SHARE_TOAST_TEXTS.invalidPassword)
         return false
       }
+      if (this.shareRemote) return this.remoteLinkAction('password', this.passwordDraft)
       this.secureLinkPassword = this.passwordDraft
       this.closePasswordDialog()
       return true
@@ -721,13 +905,28 @@ export default {
     // —— 复制 ——
     /** 复制链接 + 密码（⑤-4 两个入口行为完全等价：复制按钮 / 点密码值本体）。 */
     copyLinkAndPassword() {
+      if (this.shareRemote) return this.remoteLinkAction('copy-password', buildShareClipboardText)
       this.copyShareText(buildShareClipboardText(this.shareDocumentLink(), this.secureLinkPassword))
       this.showShareToast('success', SHARE_TOAST_TEXTS.copiedLinkAndPassword)
     },
     /** 降级路径：只复制链接，不带密码、不弹面板。 */
     copyShareLink() {
+      if (this.shareRemote && this.shareLinkState?.audience === 'public' && this.shareCan('canManagePermission')) return this.remoteLinkAction('copy', buildShareClipboardText)
+      if (this.shareRemote) return this.copyRemoteShareLink()
       this.copyShareText(buildShareLinkText(this.shareDocumentLink()))
       this.showShareToast('success', SHARE_TOAST_TEXTS.copiedLink)
+    },
+    async copyRemoteShareLink() {
+      const provider = this.session.getProvider('authorization')
+      try {
+        const link = await this.session.getShareLink()
+        if (this._shareDisposed || this._isDestroyed || provider !== this.session.getProvider('authorization') || !this.shareCan('canView')) return false
+        const clipboard = this.shareClipboardWriter()
+        if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('SHARE_CLIPBOARD_UNAVAILABLE')
+        await clipboard.writeText(link)
+        this.showShareToast('success', '文档链接已复制；访问仍需授权，私密评论不会因此共享。')
+        return true
+      } catch { if (!this._shareDisposed && !this._isDestroyed) this.showShareToast('warning', '当前无法复制：请检查权限及宿主规范文档链接。'); return false }
     },
     /** 文档链接：宿主赋值优先，缺省取当前地址。 */
     shareDocumentLink() {
@@ -783,6 +982,7 @@ export default {
      * 所以这里只把点击抛给宿主，不自造审批流。
      */
     requestShareAccess() {
+      if (typeof this.openDocumentAccessRequests === 'function' && this.openDocumentAccessRequests('self') === true) return
       if (typeof this.onRequestAccess === 'function') this.onRequestAccess()
     },
   },

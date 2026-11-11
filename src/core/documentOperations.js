@@ -70,6 +70,7 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'colwidth') valid = Array.isArray(value) && value.every((width) => Number.isInteger(width) && width > 0 && width <= 2400)
     else if (key === 'colspan' || key === 'rowspan' || key === 'start') valid = Number.isInteger(value) && value > 0 && value <= 10000
     else if (key === 'open' || key === 'checked') valid = typeof value === 'boolean'
+    else if (type === 'orderedList' && key === 'continueFrom') valid = typeof value === 'boolean'
     // 提及（P4-01）：`notify` 是**布尔**且默认 true，`kind` 是枚举 —— 兜底分支只收字符串，
     // 落进来必被判非法，症状与 P3-07 的 `aspect` 完全同型：「存一次盘再打开就炸」。
     // 只对 mention 生效，不用 `key === 'notify'` 全局放行，避免别的块借同名 key 钻空子。
@@ -1017,11 +1018,14 @@ export function foldedRange(doc, pos) {
  * 父节点、子序号、子起点、父内容终点都在遍历里现成，不出现任何
  * `doc.nodeAt` / `doc.resolve`。装饰层建折叠箭头用它（2,000 块从 275 ms 降到个位数）。
  */
-export function collectFoldRanges(doc) {
+export function collectFoldRanges(doc, idPositions) {
   const ranges = new Map()
   if (!doc) return ranges
+  const collectIds = idPositions && typeof idPositions.set === 'function'
   walkBlocks(doc, 0, false, (node, pos, index, isolated, parent, parentEnd) => {
     if (isolated || !node.isBlock || !BLOCK_ID_TYPES.has(node.type.name)) return
+    const id = node.attrs && node.attrs.blockId
+    if (collectIds && typeof id === 'string' && id) idPositions.set(id, pos)
     const range = foldRangeOf(node, pos, parent, index, parentEnd)
     if (range) ranges.set(pos, { from: range.from, to: range.to, node })
   })

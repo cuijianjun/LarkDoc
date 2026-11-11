@@ -23,7 +23,8 @@
  *   §4.6.7② 红字强调「默认不是全量」想避免的问题。所以档位定义收进 EXPORT_FORMATS
  *   一张表，打开弹窗时**按档重设默认值**，从不继承上一次的选择。
  */
-import { exportDocx, exportMarkdown, exportPdf, safeFileName } from '../../../utils/export/index.js'
+import { safeFileName } from '../../../utils/export/options.js'
+import { exportPdf } from '../../../utils/export/pdf.js'
 
 /**
  * 三档定义。顺序 = 「更多 → 下载为」二级菜单的实测顺序（Word / PDF / Markdown，
@@ -90,6 +91,7 @@ export default {
       exportToast: '',
       /** 派发中：只用于挡住重复点击，不用于显示进度（见负结论 4）。 */
       exportBusy: false,
+      exportPendingOperationId: '',
     }
   },
   computed: {
@@ -134,6 +136,11 @@ export default {
       return safeFileName(title || EXPORT_FILE_NAME_FALLBACK)
     },
   },
+  watch: {
+    session() { this.clearRemoteExport() },
+    'session.providers.versioning'(value, prior) { if (value !== prior) this.clearRemoteExport() },
+    'session.user.id'(value, prior) { if (value !== prior) this.clearRemoteExport() },
+  },
   mounted() {
     // Esc 挂 window 捕获阶段：根元素那句 `@keydown.esc="closeOverlay"` 是冒泡监听，
     // 这里先手 + `stopPropagation`，弹窗开时才不会被 closeOverlay 的互斥链顺手收掉
@@ -141,9 +148,30 @@ export default {
     window.addEventListener('keydown', this.onExportKeydown, true)
   },
   beforeDestroy() {
+    this._exportDisposed = true
+    this._exportSessionStops?.forEach(stop => stop())
     window.removeEventListener('keydown', this.onExportKeydown, true)
   },
   methods: {
+    clearRemoteExport() { this.exportGeneration = (this.exportGeneration || 0) + 1; this._activeExport = null; this.exportPendingOperationId = ''; this._pendingExportProvider = null; this.exportToast = ''; this.exportBusy = false },
+    remoteExportProvider() {
+      const provider = this.session && typeof this.session.getProvider === 'function' ? this.session.getProvider('versioning') : null
+      return provider && provider.requiresDurableConfirmation ? provider : null
+    },
+    async submitRemoteExport(format) {
+      if (this.exportBusy || !this.exportCanExport) return null
+      const session = this.session, provider = this.remoteExportProvider(), generation = this.exportGeneration, sessionGeneration = session && session._conversionGeneration, identity = session && session.user && session.user.id
+      const current = () => !this._exportDisposed && generation === this.exportGeneration && sessionGeneration === (session && session._conversionGeneration) && session === this.session && provider === this.remoteExportProvider() &&
+        identity === (session && session.user && session.user.id)
+      try {
+        const { remoteConversionMethods } = await import(/* webpackChunkName: "import-export" */ '../../../utils/remoteConversion')
+        if (!current()) return null
+        return remoteConversionMethods.submitRemoteExport.call(this, format)
+      } catch (error) {
+        if (current()) this.exportToast = '转换加载失败，请重试。'
+        return null
+      }
+    },
     // —— 开关 ——
     /** 打开某一档。无权限直接 return（置灰态的第二次保险）。 */
     openExportDialog(format) {
@@ -156,6 +184,7 @@ export default {
     },
     closeExportDialog() {
       this.exportOpen = false
+      if (this.remoteExportProvider()) this.exportToast = ''
     },
     /** 点「取消」：只关弹窗，**零请求**（负结论 2）。 */
     cancelExport() {
@@ -183,23 +212,36 @@ export default {
       if (!this.exportCanExport || this.exportBusy) return
       const def = this.exportFormatDef
       if (!def) return
+      if (this.remoteExportProvider()) {
+        // Remote conversion has the same visible contract as the local exporter:
+        // close the settings dialog before any request starts and show the pending
+        // toast while the lazy conversion chunk/remote task is in flight.
+        this.closeExportDialog()
+        this.exportGeneration = (this.exportGeneration || 0) + 1
+        this.exportToast = EXPORT_TOAST_TEXT
+        return this.submitRemoteExport(def.extension)
+      }
       const format = def.id
       const scope = this.exportScopeValue
       const fileName = this.exportFileBaseName
       this.closeExportDialog()
+      this.exportGeneration = (this.exportGeneration || 0) + 1
+      const active = {}; this._activeExport = active
       this.exportBusy = true
       this.exportToast = EXPORT_TOAST_TEXT
       try {
         await this.dispatchExport(format, scope, fileName)
       } finally {
-        this.exportBusy = false
-        // PDF 是唯一「完成时机由用户在打印框里决定」的一档，toast 由 onPrinted 收，
-        // 这里不再清一次 —— 否则打印框还没关提示条就没了。
-        if (format !== 'pdf') this.exportToast = ''
+        if (!this._exportDisposed && this._activeExport === active) {
+          this._activeExport = null; this.exportBusy = false
+          // PDF closes its toast on afterprint, under the captured intent generation.
+          if (format !== 'pdf') this.exportToast = ''
+        }
       }
     },
     /** 按档派发。返回 Promise（PDF 同步返回，await 一下统一形态）。 */
     dispatchExport(format, scope, fileName) {
+      if (this.remoteExportProvider()) return this.submitRemoteExport(formatDefOf(format)?.extension || format)
       if (format === 'markdown') return this.dispatchMarkdown(scope, fileName)
       if (format === 'word') return this.dispatchDocx(scope, fileName)
       if (format === 'pdf') return this.dispatchPdf(scope, fileName)
@@ -212,26 +254,40 @@ export default {
      * 「textOnly 要丢图片」「附件本来就不落盘」这些规则归 utils/export/index.js，
      * 否则同一个档位会在两处各判一次，改一处漏一处。
      */
-    dispatchMarkdown(scope, fileName) {
-      const doc = this.currentDoc()
-      if (!doc) return Promise.resolve(null)
-      return Promise.resolve(exportMarkdown(doc, { fileName, scope }))
+    async dispatchMarkdown(scope, fileName) {
+      if (this.remoteExportProvider()) return this.submitRemoteExport('md')
+      const session = this.session, generation = this.exportGeneration, conversionGeneration = session && session._conversionGeneration
+      const current = () => !this._exportDisposed && session === this.session && generation === this.exportGeneration &&
+        conversionGeneration === (session && session._conversionGeneration) && this.exportCanExport !== false
+      const doc = this.currentDoc(), options = { fileName, scope }
+      if (!doc || !current()) return null
+      const { exportMarkdown } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
+      if (!current()) return null
+      return exportMarkdown(doc, options)
     },
     /** Word 档：`scope` 只透传，本线不附带评论内容（负结论 1）。 */
-    dispatchDocx(scope, fileName) {
-      const doc = this.currentDoc()
-      if (!doc) return Promise.resolve(null)
-      return exportDocx(doc, { fileName, title: fileName, scope })
+    async dispatchDocx(scope, fileName) {
+      if (this.remoteExportProvider()) return this.submitRemoteExport('docx')
+      const session = this.session, generation = this.exportGeneration, conversionGeneration = session && session._conversionGeneration
+      const current = () => !this._exportDisposed && session === this.session && generation === this.exportGeneration &&
+        conversionGeneration === (session && session._conversionGeneration) && this.exportCanExport !== false
+      const doc = this.currentDoc(), options = { fileName, title: fileName, scope, isCurrent: current }
+      if (!doc || !current()) return null
+      const { exportDocx } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
+      if (!current()) return null
+      return exportDocx(doc, options)
     },
     /**
      * PDF 档走浏览器打印，文件名由用户在系统打印框里定。
      * `onPrinted` 在打印框关闭（afterprint）时触发，用来收掉 toast。
      */
     dispatchPdf(scope, fileName) {
+      if (this.remoteExportProvider()) return this.submitRemoteExport('pdf')
+      const session = this.session, generation = this.exportGeneration, sessionGeneration = session && session._conversionGeneration
       const result = exportPdf(this.$refs ? this.$refs.root : null, {
         title: fileName,
         scope,
-        onPrinted: () => { this.exportToast = '' },
+        onPrinted: () => { if (!this._exportDisposed && session === this.session && generation === this.exportGeneration && sessionGeneration === (session && session._conversionGeneration)) this.exportToast = '' },
       })
       if (!result || !result.ok) this.exportToast = ''
       return Promise.resolve(result)

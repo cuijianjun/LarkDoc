@@ -6,7 +6,10 @@
     aria-label="历史记录"
     aria-modal="true"
     tabindex="-1"
+    @copy.capture="ed.onContentClipboard($event, $refs.preview || null)"
+    @cut.capture="ed.onContentClipboard($event, $refs.preview || null)"
     @keydown.esc.stop.prevent
+    @keydown.stop
   >
     <!-- 左栏 1218 × 950 @(0,0)：只读预览（含 diff 摘要）+ 顶栏 4 个控件。 -->
     <div class="lark-doc-version-left">
@@ -71,7 +74,10 @@
         </p>
 
         <template v-else>
-          <div class="lark-doc-version-preview">
+          <div
+            ref="preview"
+            class="lark-doc-version-preview"
+          >
             <div class="lark-doc-version-preview-head">
               <span class="lark-doc-version-preview-title">
                 {{ (ed.versionPreview && ed.versionPreview.label) || '未命名版本' }}
@@ -83,12 +89,6 @@
             <div class="lark-doc-version-preview-meta">
               <span>{{ ed.versionItemName(ed.versionSelected) }}</span>
               <span>{{ ed.versionActorLabel(ed.versionSelected) }}</span>
-              <span v-if="ed.versionPreview">
-                二进制快照 {{ ed.versionPreview.byteLength }} 字节
-              </span>
-              <span v-if="ed.versionPreview && Number.isInteger(ed.versionPreview.blockCount)">
-                {{ ed.versionPreview.blockCount }} 个块
-              </span>
             </div>
 
             <p
@@ -99,30 +99,73 @@
             </p>
 
             <div
-              v-if="ed.versionSelectedDiff"
+              v-if="ed.versionRemoteDiff && ed.versionShowChanges"
               class="lark-doc-version-diff"
+              role="region"
+              aria-label="更改内容"
+              :style="{ maxHeight: '40vh', overflowY: 'auto' }"
             >
-              <span class="lark-doc-version-diff-title">与更早版本的差异</span>
-              <span class="lark-doc-version-diff-row">
-                块数 {{ ed.versionSelectedDiff.blockCount.prev }} →
-                {{ ed.versionSelectedDiff.blockCount.next }}
-                （{{ ed.versionSelectedDiff.blockCount.delta >= 0 ? '+' : '' }}{{ ed.versionSelectedDiff.blockCount.delta }}）
-              </span>
-              <!-- 字数与标题在历史侧取不到（正文只存二进制），这里不显示，也不补 0。 -->
+              <p v-if="ed.versionDiffLoading">
+                正在载入更改…
+              </p>
+              <p
+                v-else-if="ed.versionDiffError"
+                role="status"
+              >
+                {{ ed.versionDiffError }}
+              </p>
+              <template v-else-if="ed.versionDiff">
+                <p v-if="ed.versionDiff.identical">
+                  内容没有更改。
+                </p>
+                <div
+                  v-for="(change, index) in displayChanges"
+                  :key="index"
+                >
+                  <strong>{{ change.formatting ? '格式已更改' : { add: '新增内容', remove: '删除内容', replace: '替换内容' }[change.kind] }}</strong>
+                  <p v-if="!change.formatting && !change.hasText">
+                    此更改不包含文字。
+                  </p>
+                  <pre
+                    v-if="!change.formatting && change.hasText && change.kind !== 'add'"
+                    :style="{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }"
+                  >之前：{{ change.before || '（空）' }}</pre>
+                  <pre
+                    v-if="!change.formatting && change.hasText && change.kind !== 'remove'"
+                    :style="{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }"
+                  >之后：{{ change.after || '（空）' }}</pre>
+                </div>
+              </template>
             </div>
 
             <div class="lark-doc-version-body">
               <p
-                v-if="ed.versionPreview && ed.versionPreview.hasPayload"
+                v-if="previewRenderError"
+                class="lark-doc-version-degraded"
+              >
+                {{ previewRenderError }}
+              </p>
+              <EditorContent
+                v-else-if="previewEditor"
+                :editor="previewEditor"
+              />
+              <p
+                v-else-if="!ed.versionPreview && !ed.versionPreviewError"
                 class="lark-doc-version-binary"
               >
-                该版本正文为二进制快照（{{ ed.versionPreview.byteLength }} 字节），需由协同运行时解码后才能渲染。
+                正在载入此历史记录…
+              </p>
+              <p
+                v-else-if="ed.versionPreview && ed.versionPreview.hasPayload"
+                class="lark-doc-version-binary"
+              >
+                暂时无法预览此历史记录。
               </p>
               <p
                 v-else
                 class="lark-doc-version-binary"
               >
-                该版本没有可取回的正文，只能查看元信息。
+                此历史记录暂无可预览的正文。
               </p>
             </div>
           </div>
@@ -179,7 +222,15 @@
       </div>
 
       <div class="lark-doc-version-right-footer">
-        显示更改
+        <button
+          v-if="ed.versionRemoteDiff"
+          type="button"
+          :aria-pressed="ed.versionShowChanges ? 'true' : 'false'"
+          @mousedown.prevent="ed.toggleVersionChanges()"
+        >
+          {{ ed.versionShowChanges ? '隐藏更改' : '显示更改' }}
+        </button>
+        <span v-else>显示更改</span>
       </div>
     </div>
   </div>
@@ -201,7 +252,7 @@
  *   4. **时间线条目名是蓝色**（§3.4-C 反直觉 2，色值见 `versioning.css`），不是正文色
  *      `rgb(31,35,41)`。
  *   5. **不实现删除 / 改备注 / 展开子记录**（⑦-2 / ⑦-3 未采 + 没有子记录数据源）。
- *   6. **底栏「显示更改」没有行为**（⑦-4 未采）：按像素渲染文案，不绑事件。
+ *   6. 本地底栏保留原样；远端「显示更改」读取受权差异，只展示正文内容与格式变更提示。
  *
  * 为什么写成块注释：`scripts/check-theme-tokens.js` 只剥**块注释**，行注释里的字面色值
  * 会被当成新增并让门禁失败。所以本文件所有注释不放字面色值。
@@ -214,12 +265,74 @@
  * 紧跟着的「还原」就没有上下文可操作。
  */
 import LarkDocIcon from './LarkDocIcon.vue'
+import { Editor, EditorContent } from '@tiptap/vue-2'
+import { createLarkDocExtensions } from './extensions'
+
+/* 只读取正文节点的text/content，不把属性或协议对象序列化到界面。 */
+function versionChangeText(value) {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(versionChangeText).join('')
+  if (!value || typeof value !== 'object') return ''
+  if (typeof value.text === 'string') return value.text
+  return Array.isArray(value.content) ? value.content.map(versionChangeText).join(value.type === 'doc' ? '\n' : '') : ''
+}
 
 export default {
   name: 'LarkDocVersionPanel',
-  components: { LarkDocIcon },
+  components: { LarkDocIcon, EditorContent },
   props: {
     ed: { type: Object, required: true },
+  },
+  data() { return { previewEditor: null, previewRenderError: '' } },
+  computed: {
+    displayChanges() {
+      return (this.ed.versionDiff?.changes || []).map(change => {
+        const before = versionChangeText(change.before), after = versionChangeText(change.after)
+        const formatting = /\/(attrs|marks|type)(\/|$)/.test(change.path)
+        return { kind: change.kind, before, after, formatting, hasText: Boolean(before || after) }
+      })
+    },
+  },
+  watch: {
+    'ed.versionPreview': {
+      immediate: true,
+      handler(record) {
+        this.destroyPreview()
+        this.previewRenderError = ''
+        if (!record || !record.contentJson || !this.ed.versionPanelOpen) return
+        try {
+          // 独立只读渲染器：无session、无collab、无活动Y.Doc，投影只用于预览。
+          this.previewEditor = new Editor({ editable: false, content: record.contentJson,
+            editorProps: { larkDocCanCopy: () => this.ed.contentCopyAllowed(), larkDocCopyContext: () => this.previewCopyContext() },
+            extensions: createLarkDocExtensions({ config: this.ed.larkDocConfig }) })
+        } catch { this.previewRenderError = '暂时无法预览此历史记录。' }
+      },
+    },
+    'ed.versionPanelOpen'(open) {
+      if (!open) this.destroyPreview()
+      else this.$nextTick(() => {
+        if (this.ed.versionPanelOpen && this.$el && typeof this.$el.focus === 'function') this.$el.focus()
+      })
+    },
+    'ed.editor'() { this.bindPreviewCopy() },
+  },
+  mounted() { this.bindPreviewCopy() },
+  beforeDestroy() { this._previewCopyEditor?.off('lark-doc-copy-permission', this.forwardPreviewCopy); this.destroyPreview() },
+  methods: {
+    bindPreviewCopy() {
+      this._previewCopyEditor?.off('lark-doc-copy-permission', this.forwardPreviewCopy)
+      this._previewCopyEditor = this.ed.editor
+      this._previewCopyEditor?.on('lark-doc-copy-permission', this.forwardPreviewCopy)
+      this.forwardPreviewCopy()
+    },
+    forwardPreviewCopy() { this.previewEditor?.emit('lark-doc-copy-permission') },
+    previewCopyContext() {
+      return { kind: 'preview', owner: this, editor: this.previewEditor, doc: this.previewEditor?.state?.doc, parent: this.ed.contentCopyContext() }
+    },
+    destroyPreview() {
+      if (this.previewEditor) this.previewEditor.destroy()
+      this.previewEditor = null
+    },
   },
 }
 </script>

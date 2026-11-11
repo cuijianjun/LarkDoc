@@ -76,5 +76,6 @@ export default {
   props: {
     ed: { type: Object, required: true },
   },
+  mounted() { this.$nextTick(() => { if (!this._isDestroyed && !this._isBeingDestroyed && !this.ed._isDestroyed && this.ed.headingNumberMenu.open) this.ed.positionHeadingNumberMenu() }) },
 }
 </script>

@@ -30,5 +30,6 @@ module.exports = {
   presets: NO_POLYFILL
     ? [['@vue/cli-plugin-babel/preset', { useBuiltIns: false }]]
     : ['@vue/cli-plugin-babel/preset'],
-  plugins: LEGACY ? require('./legacy-syntax') : [],
+  // Hocuspocus's static blocks must run before the existing class-properties transform.
+  plugins: ['@babel/plugin-transform-class-static-block', ...(LEGACY ? require('./legacy-syntax') : [])],
 }

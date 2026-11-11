@@ -6,13 +6,17 @@
     :config="editorConfig"
     :templates="templateItems"
     :session="getSession()"
+    :collab="collab"
     :readonly="readonly || forcedReadonly"
     :content-format="contentFormat"
     :fold-persist-key="String(documentId || 'local')"
     :upload-image="uploadImage"
+    :upload-file="uploadFile"
+    :resolve-file-url="resolveFileUrl"
     :on-embed-title="onEmbedTitle"
     :on-embed-save="onEmbedSave"
     :on-embed-card-action="onEmbedCardAction"
+    :on-document-action="onDocumentAction"
     :embed-providers="embedProviders"
     :on-bookmark-open="onBookmarkOpen"
     :unfurl-provider="unfurlProvider"
@@ -70,8 +74,11 @@
         v-if="featureEnabled('importExport')"
         ref="importFile"
         class="lark-doc-file-input"
+        hidden
+        tabindex="-1"
+        aria-hidden="true"
         type="file"
-        accept=".html,.htm,.json,.md,.markdown,.docx"
+        accept=".html,.htm,.json,.md,.markdown,.docx,.txt"
         aria-label="导入文档"
         @change="importDocument"
       >
@@ -416,6 +423,21 @@
       >
         <span>{{ notice }}</span>
         <button
+          v-if="conversionPendingId || importUploadPending"
+          type="button"
+          :disabled="conversionBusy"
+          @click="queryRemoteConversion"
+        >
+          {{ importUploadPending ? '查询原上传请求' : '查询原转换请求' }}
+        </button>
+        <button
+          v-if="importUploadActive"
+          type="button"
+          @click="clearRemoteConversion()"
+        >
+          取消导入
+        </button>
+        <button
           type="button"
           aria-label="关闭提示"
           @click="notice = ''"
@@ -468,6 +490,7 @@ export default {
     // 保存时是否在 record 里附带 html 字段（默认 false，仅存 json）。
     saveHtml: { type: Boolean, default: false },
     session: { type: Object, default: null },
+    collab: { type: Object, default: null },
     documentId: { type: [String, Number], default: null },
     user: { type: Object, default: null },
     capabilities: { type: Object, default: null },
@@ -478,13 +501,16 @@ export default {
     contentFormat: { type: String, default: 'auto' },
     readonly: { type: Boolean, default: false },
     // 宿主侧能力注入：图片上传钩子与 AI 流式生成钩子。
-    uploadImage: { type: Function, default: null },
+    uploadImage: { type: [Function, Object], default: null },
+    uploadFile: { type: [Function, Object], default: null },
+    resolveFileUrl: { type: Function, default: null },
     aiProvider: { type: Object, default: null },
     // P3-07：内嵌内容（iframe 桥 / 卡片动作 / URL 卡抓取）的宿主回调。
     // 本层只做透传，不认识 `lark-embed/1` 协议；判定全在 LarkDoc 门面与扩展装配里。
     onEmbedTitle: { type: Function, default: null },
     onEmbedSave: { type: Function, default: null },
     onEmbedCardAction: { type: Function, default: null },
+    onDocumentAction: { type: Function, default: null },
     embedProviders: { type: Array, default: null },
     onBookmarkOpen: { type: Function, default: null },
     unfurlProvider: { type: Function, default: null },
@@ -508,6 +534,12 @@ export default {
       templateOpen: false, templateQuery: '',
       importReport: null,
       sessionInstance: null,
+      importUploadActive: false,
+      importUploadPending: false,
+      conversionPendingId: '',
+      conversionBusy: false,
+      conversionResult: null,
+      conversionGeneration: 0,
       // 自绘下拉（LarkDocSelect）的选项清单。
       maxLengthOptions: [
         { value: 0, label: '不限字数' },
@@ -543,13 +575,16 @@ export default {
     aiReplaceDisabled() { return Boolean(this.aiBudgetExceeded && this.aiGeneratedAction !== 'title') },
   },
   watch: {
+    // 单文档工作台不将旧流迁移到新路由；新文档由宿主创建新的会话/工作台。
+    documentId: { sync: true, handler(value, prior) { if (String(value || '') !== String(prior || '')) { this.retireNativeScope(); this.clearRemoteConversion() } } },
+    session: { sync: true, handler(value, prior) { if (value !== prior) { this.retireNativeScope(); this.clearRemoteConversion(); this.sessionInstance = value; this.bindRemoteConversionSession() } } },
     title() { this.queueSave() },
     config: { deep: true, handler(value) { this.editorConfig = createLarkDocConfig(value) } },
     templates(value) { this.templateItems = Array.isArray(value) ? value : TEMPLATES },
-    // user 只在 created() 进 session 一次；Web Component 的 user 属性热更
-    // （patchProps 写 prop）后，session 侧的引用也要跟上，鉴权/协作才用新用户。
-    user(value) {
-      if (this.sessionInstance && this.sessionInstance.user !== value) this.sessionInstance.user = value
+    // 本地Session跟随宿主user热更；有身份服务的Session只接受服务端主体。
+    user(value, prior) {
+      if (this.sessionInstance && !this.sessionInstance._identityRequired && this.sessionInstance.user !== value) this.sessionInstance.user = value
+      if ((value && value.id) !== (prior && prior.id)) this.clearRemoteConversion()
     },
   },
   created() {
@@ -561,9 +596,13 @@ export default {
       capabilities: this.capabilities || {},
       persistence: this.persistence,
     })
+    this.bindRemoteConversionSession()
   },
   beforeDestroy() {
     this._disposed = true
+    this.clearRemoteConversion()
+    if (this._conversionResetStop) this._conversionResetStop()
+    if (this._conversionProviderStop) this._conversionProviderStop()
     this.stopAI()
     void this.saveNow()
     clearTimeout(this._saveTimer)
@@ -573,6 +612,96 @@ export default {
     if (!this.session) void this.sessionInstance?.dispose()
   },
   methods: {
+    retireNativeScope() { this._nativeScopeRetired = true; if (this.$refs.document) this.$refs.document.nativeScopeValid = false },
+    bindRemoteConversionSession() {
+      if (this._conversionResetStop) this._conversionResetStop()
+      if (this._conversionProviderStop) this._conversionProviderStop()
+      const session = this.getSession()
+      this._conversionResetStop = session?.on?.('comments-reset', reason => {
+        if (reason === 'authorization-required') this.conversionResult = null
+        else this.clearRemoteConversion()
+      })
+      this._conversionProviderStop = session?.on?.('provider-changed', ({ name }) => { if (['versioning', 'assets'].includes(name)) this.clearRemoteConversion() })
+    },
+    remoteVersioning() {
+      const provider = this.getSession()?.getProvider('versioning')
+      return provider && provider.requiresDurableConfirmation ? provider : null
+    },
+    releaseRemoteImportUpload(intent = this._pendingImportUpload) {
+      if (!intent) return
+      intent.file = null
+      intent.controller.abort()
+      intent.stops.splice(0).forEach(stop => stop())
+      if (this._pendingImportUpload === intent) { this._pendingImportUpload = null; this.importUploadPending = false; this.importUploadActive = false }
+    },
+    clearRemoteConversion() {
+      const active = this.conversionBusy || this.conversionPendingId || this.conversionResult || this._pendingImportUpload
+      this.conversionGeneration++
+      this.releaseRemoteImportUpload()
+      this.conversionPendingId = ''; this._pendingConversionScope = null
+      this.conversionResult = null; this.conversionBusy = false; this._conversionActiveScope = null
+      if (active) this.notice = ''
+    },
+    remoteConversionScope() {
+      const session = this.getSession(), provider = this.remoteVersioning(), assets = session?.getProvider('assets'), documentId = this.documentId
+      const identity = session && session.user && session.user.id, generation = this.conversionGeneration, sessionGeneration = session && session._conversionGeneration
+      const identityGeneration = session && session._privateIdentityGeneration
+      const identityOwner = () => !this._disposed && session && !session._destroyed && generation === this.conversionGeneration && identityGeneration === session._privateIdentityGeneration && session === this.getSession() &&
+        provider === this.remoteVersioning() && assets === session.getProvider('assets') && documentId === this.documentId && identity === (session && session.user && session.user.id)
+      const owner = () => identityOwner() && sessionGeneration === session._conversionGeneration
+      return { session, provider, owner, identityOwner, current: (capability = 'canView') => owner() && session && session.can(capability) }
+    },
+    remoteImportSourceMatches(intent) {
+      if (!intent.scope.current('canEdit') || !this.writable()) return false
+      try {
+        const actual = intent.scope.provider.captureImportSource()
+        return ['expectedEpoch', 'expectedRevision', 'lastSeq'].every(key => actual[key] === intent.source[key])
+      } catch (_) { return false }
+    },
+    invalidateRemoteImportSource() {
+      if (this._pendingImportUpload && !this.remoteImportSourceMatches(this._pendingImportUpload)) { this.clearRemoteConversion(); this.notice = '正文已变化；已取消旧来源的附件导入。' }
+    },
+    importRemoteFile(file) {
+      if ([this._conversionActiveScope, this._pendingConversionScope].some(scope => scope && !scope.owner() && !(scope.identityOwner?.()))) this.clearRemoteConversion()
+      if (this.conversionBusy) return null
+      if (this.conversionPendingId || this.importUploadPending) { this.notice = '原请求尚未确认，请先查询原请求。'; return null }
+      const scope = this.remoteConversionScope()
+      if (!scope.provider || !scope.current('canEdit')) return null
+      try {
+        // Freeze before the lazy loader or upload can yield; the active editor is never rebuilt locally.
+        const source = scope.provider.captureImportSource()
+        if (!scope.current('canEdit')) return null
+        const intent = { scope, source, file, format: file.name.split('.').pop().toLowerCase(), controller: new AbortController(), stops: [],
+          metadata: { fileName: file.name, mimeType: file.type || 'application/octet-stream', sizeBytes: String(file.size), checksum: null } }
+        this._pendingImportUpload = intent; this.importUploadActive = true; this.notice = '正在上传导入文件…'; this.conversionBusy = true; this._conversionActiveScope = scope; this.conversionResult = null
+        const reset = () => { if (this._pendingImportUpload === intent && (!scope.owner() || !scope.current('canEdit'))) this.clearRemoteConversion() }
+        if (typeof scope.session.on === 'function') for (const event of ['capabilities', 'identity', 'provider-changed', 'comments-reset']) {
+          const stop = scope.session.on(event, reset); if (typeof stop === 'function') intent.stops.push(stop)
+        }
+        return this.remoteConversionAction('runRemoteFileImport', intent)
+      } catch (_) { if (scope.current()) this.notice = '导入来源未就绪或存在待确认编辑；未上传文件。'; return null }
+    },
+    async remoteConversionAction(method, ...args) {
+      const scope = this.remoteConversionScope()
+      try {
+        const { remoteConversionMethods } = await import(/* webpackChunkName: "import-export" */ '../../utils/remoteConversion')
+        if (!scope.current()) {
+          if (method === 'runRemoteFileImport') this.releaseRemoteImportUpload(args[0])
+          return null
+        }
+        return await remoteConversionMethods[method].apply(this, args)
+      } catch (error) {
+        if (scope.current()) this.notice = '转换加载失败，请重试。'
+        if (method === 'runRemoteFileImport') this.releaseRemoteImportUpload(args[0])
+        return null
+      } finally {
+        if (method === 'runRemoteFileImport' && !this._pendingImportUpload && this._conversionActiveScope === args[0].scope) {
+          this.conversionBusy = false; this._conversionActiveScope = null
+        }
+      }
+    },
+    runRemoteConversion(kind, input) { return this.remoteConversionAction('runRemoteConversion', kind, input) },
+    queryRemoteConversion() { return this.remoteConversionAction('queryRemoteConversion') },
     featureEnabled(name) { return !this.editorConfig?.features || this.editorConfig.features[name] !== false },
     // 公式样式随包样式入口一次性引入，运行时不再动态加载任何样式资源。
     getEditor() { return this.$refs.document && this.$refs.document.getEditor() },
@@ -646,13 +775,14 @@ export default {
     save() { return this.saveNow(true) },
     // 编辑器就绪后：绑定 Session，恢复宿主/本地草稿（持久化解析失败则降级提示）。
     async onReady() {
+      if (this._nativeScopeRetired) this.retireNativeScope()
       this.getSession()?.attachEditor(this.getEditor())
       // 对象形式的初始内容（Tiptap JSON）在编辑器就绪后写入，字符串已通过 v-model 注入。
-      if (this.initialContent && typeof this.initialContent === 'object' && !this._contentSeeded) {
+      if (!this.collab && this.initialContent && typeof this.initialContent === 'object' && !this._contentSeeded) {
         this._contentSeeded = true
         try { this.$refs.document.setContent(this.initialContent) } catch (error) { this.storageFailure(error) }
       }
-      if (this.featureEnabled('persistence')) {
+      if (!this.collab && this.featureEnabled('persistence')) {
         try {
           const draft = await this.callWorkspace('load')
           if (this._disposed) return
@@ -681,6 +811,7 @@ export default {
       this.$emit('ready', { editor: this.getEditor(), document: this })
     },
     onChange(value) {
+      this.invalidateRemoteImportSource()
       this.html = value.html
       this.queueSave()
       this.$emit('change', value)
@@ -789,6 +920,7 @@ export default {
       const file = event.target.files && event.target.files[0]
       event.target.value = ''
       if (!file || !this.writable()) return
+      if (this.remoteVersioning()) return this.importRemoteFile(file)
       if (file.size > 10 * 1024 * 1024) { this.notice = '导入文件不能超过 10 MB'; return }
       this.importing = true
       try {
@@ -835,6 +967,8 @@ export default {
     },
     async exportDocument(format) {
       if (!this.featureEnabled('importExport') || !format) return
+      if (format === 'print') return this.printDocument()
+      if (this.remoteVersioning()) return this.runRemoteConversion('export', { format })
       const component = this.$refs.document
       try {
         const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../../utils/importExport')
@@ -848,17 +982,15 @@ export default {
         } else if (format === 'docx') {
           await exportDocx(this.title, component.getText())
           this.notice = 'Word 为纯文本段落导出，不保留复杂块、表格和媒体布局；JSON 可保留完整正文'
-        } else if (format === 'print') {
-          const editor = this.getEditor()
-          // 折叠集合存的是标题 blockId，打印时按 id 展开、打印后按 id 折回。
-          const folded = Array.from(editor.storage.larkDoc.folded)
-          folded.forEach(id => editor.commands.toggleLarkDocFoldById(id))
-          this.$nextTick(() => {
-            window.print()
-            if (!this._disposed) folded.forEach(id => editor.commands.toggleLarkDocFoldById(id))
-          })
         }
       } catch (error) { this.notice = `导出失败：${error.message}` }
+    },
+    async printDocument() {
+      const ed = this.$refs.document, session = ed?.session, principal = session?.user?.id, generation = session?._privateIdentityGeneration
+      if (!this.featureEnabled('importExport') || !ed) return false
+      const { printEditorDocument } = await import(/* webpackChunkName: "document-menu" */ './editor/documentMenuView')
+      if (this._disposed || ed !== this.$refs.document || session !== ed.session || principal !== session?.user?.id || generation !== session?._privateIdentityGeneration) return false
+      return printEditorDocument(ed)
     },
     // —— AI 流：Mock/宿主流式生成、锚点跟随事务，接受与拒绝前校验锚点仍有效 ——
     mapAI({ transaction }) { mapAnchor(this._aiAnchor, transaction) },

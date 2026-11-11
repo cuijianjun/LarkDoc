@@ -6,6 +6,7 @@
     :style="panelStyle"
     role="search"
     aria-label="查找和替换"
+    @keydown.esc.stop.prevent="ed.closeSearch()"
   >
     <!-- Tab 行即拖拽把手（04 §3.2：整块 react-draggable）。点空白拖动、点 Tab 切页，
          两者都从 pointerdown 起算，位移小于 2px 时按「点击」处理。 -->
@@ -140,7 +141,7 @@ export default {
   props: {
     ed: { type: Object, required: true },
   },
-  data() { return { drag: null } },
+  data() { return { drag: null, defaultPosition: null } },
   computed: {
     isReplace() { return this.ed.searchTab === 'replace' },
     panelHeight() { return this.isReplace ? 286 : 186 },
@@ -151,14 +152,22 @@ export default {
     },
     panelStyle() {
       const style = { height: `${this.panelHeight}px` }
-      const pos = this.ed.searchPanelPos
-      if (pos) { style.left = `${pos.left}px`; style.top = `${pos.top}px` }
+      const pos = this.ed.searchPanelPos || this.defaultPosition
+      if (pos) { if (pos.left !== undefined) style.left = `${pos.left}px`; if (pos.right !== undefined) style.right = `${pos.right}px`; style.top = `${pos.top}px`; style.maxHeight = `${Math.max(60, window.innerHeight - pos.top - 8)}px`; style.overflowY = 'auto' }
       return style
     },
   },
-  mounted() { this.focus() },
-  beforeDestroy() { this.endDrag() },
+  mounted() { this.updatePosition(); this.focus(); window.addEventListener('resize', this.updatePosition); window.addEventListener('scroll', this.updatePosition, true) },
+  beforeDestroy() { this.endDrag(); window.removeEventListener('resize', this.updatePosition); window.removeEventListener('scroll', this.updatePosition, true) },
   methods: {
+    updatePosition() {
+      if (this.ed.searchPanelPos) return
+      const root = this.ed.$refs?.root
+      if (!root) return
+      const rect = root.getBoundingClientRect(), bars = [...root.querySelectorAll('.lark-doc-topbar,.lark-doc-toolbar')].filter(node => node.getClientRects().length)
+      const top = Math.max(rect.top, ...bars.map(node => node.getBoundingClientRect().bottom)) + 8
+      this.defaultPosition = { top: Math.min(top, Math.max(8, window.innerHeight - 80)), right: Math.max(8, window.innerWidth - rect.right + 16) }
+    },
     focus() { const input = this.$refs.searchInput; if (input) input.focus() },
     startDrag(event) {
       if (event.button) return

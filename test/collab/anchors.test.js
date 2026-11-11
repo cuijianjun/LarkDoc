@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest'
 import * as Y from 'yjs'
 import { createCommentAnchors, createYjsAnchorCodec } from '../../src/collab/anchors'
 import { createAnchorCodec, encodeAnchor, decodeAnchor } from '../../src/core/comments/anchor'
+import { bindThreads } from '../../src/core/comments/binding'
 import { COLLAB_CONTENT_FIELD } from '../../src/collab/protocol'
 
 /**
@@ -41,6 +42,21 @@ function createBody(blocks) {
 }
 
 describe('P6b 评论锚点 · Yjs 相对位置', () => {
+  it('未知根名称相对位置不能通过解码向正文分配新根', () => {
+    const { ydoc } = createBody([{ blockId: 'b1', text: 'hello' }])
+    const anchors = createCommentAnchors({ ydoc })
+    const roots = [...ydoc.share.keys()]
+    const unknown = Y.encodeRelativePosition(Y.createRelativePositionFromJSON({ tname: 'forged-root', assoc: 0 }))
+    expect(anchors.decode(unknown)).toBeNull()
+    expect(ydoc.share.has('forged-root')).toBe(false)
+    expect([...ydoc.share.keys()]).toEqual(roots)
+    const foreign = new Y.XmlText(); foreign.insert(0, 'foreign')
+    ydoc.getXmlFragment('foreign-root').insert(0, [foreign])
+    const knownRoots = [...ydoc.share.keys()]
+    expect(anchors.decode(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(foreign, 1)))).toBeNull()
+    expect([...ydoc.share.keys()]).toEqual(knownRoots)
+    ydoc.destroy()
+  })
   it('字符级 type 上，别人在前面插入后仍解回同一个词', () => {
     const { ydoc, fragment } = createBody([{ blockId: 'b1', text: 'hello world' }])
     const anchors = createCommentAnchors({ ydoc, type: fragment.get(0) })
@@ -125,5 +141,32 @@ describe('P6b 评论锚点 · Yjs 相对位置', () => {
 
   it('没有 ydoc 也没有 anchors 时报错，不静默产出无效 codec', () => {
     expect(() => createYjsAnchorCodec({})).toThrow(/Y\.Doc/)
+  })
+
+  it('原片段struct.deleted时即使块仍在也orphaned，不吸附到邻字或重用blockId', () => {
+    const { ydoc, fragment, resolve, locate } = createBody([{ blockId: 'b1', text: 'hello world tail' }])
+    const codec = createYjsAnchorCodec({ ydoc, resolve, locate })
+    const payload = encodeAnchor({ blockId: 'b1', offset: 6, length: 5 }, codec)
+    const thread = { id: 'c1', blockId: 'b1', anchor: payload }
+    expect(bindThreads(['b1'], [thread], codec)[0].anchorStatus).toBe('attached')
+    fragment.get(0).delete(6, 5)
+    expect(fragment.get(0).toString()).toBe('hello  tail')
+    expect(decodeAnchor(payload, codec)).toBeNull()
+    const bound = bindThreads(['b1'], [thread], codec)[0]
+    expect(bound).toMatchObject({ bound: false, anchorStatus: 'orphaned', anchorReason: 'unresolved-anchor', blockId: 'b1' })
+    expect(thread.anchor).toBe(payload)
+    expect(thread.anchor.kind).toBe('y') // 原持久锚点保留，不用新片段冒充原身份。
+    ydoc.destroy()
+  })
+
+  it('deleted type即使没有locate也失联，locator不能把原引用换成相邻blockId', () => {
+    const { ydoc, fragment, resolve } = createBody([{ blockId: 'b1', text: 'hello' }])
+    const codec = createYjsAnchorCodec({ ydoc, resolve })
+    const payload = codec.encode({ blockId: 'b1', offset: 0, length: 5 })
+    const misplaced = createYjsAnchorCodec({ ydoc, resolve, locate: () => ({ blockId: 'another', offset: 0 }) })
+    expect(misplaced.decode(payload)).toBeNull()
+    fragment.delete(0, 1)
+    expect(codec.decode(payload)).toBeNull()
+    ydoc.destroy()
   })
 })

@@ -15,19 +15,8 @@
 
 import { readContentTheme } from './themeSignal'
 
-const DIAGRAM_LANGUAGES = Object.freeze(['mermaid'])
-
 let rendererPromise = null
-
-/** 该语言是否由内置图表渲染器接管。 */
-export function isDiagramLanguage(name) {
-  return DIAGRAM_LANGUAGES.indexOf(name) !== -1
-}
-
-/** 当前支持的图表语言清单（配置层用它生成下拉项）。 */
-export function listDiagramLanguages() {
-  return DIAGRAM_LANGUAGES.slice()
-}
+export { isDiagramLanguage, listDiagramLanguages } from '../../core/blocks/code-block'
 
 /**
  * 默认加载通道：动态 import() 懒 chunk。

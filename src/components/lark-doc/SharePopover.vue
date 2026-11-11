@@ -54,32 +54,19 @@
         </button>
       </div>
     </div>
-    <!-- 顶栏入口（宿主挂在 TopBar 的 header-actions slot 里）。按钮同干线 Ceditable：
-         容器 100×32、本体 80×32 / var(--ld-share-brand) / radius 6 / pad 4px 11px（04 §4.1 ④-2）。
-         降级形态（`canManagePermission:false`）时文案变成「分享只读链接」，但**不置灰**
-         （B24 末行是「降级」不是「置灰」，点了要能复制）。 -->
-    <div
-      v-if="ed.shareEntryVisible"
-      class="lark-doc-share-entry"
-    >
-      <button
-        type="button"
-        class="lark-doc-share-btn-filled"
-        :aria-label="ed.shareEntryLabel"
-        @click="ed.toggleSharePopover($event)"
-      >
-        {{ ed.shareEntryLabel }}
-      </button>
-    </div>
+    <!-- 分享入口由 TopBar / 隐藏标题栏时的 ToolbarBar 渲染；浮层始终与正文兄弟挂载。 -->
     <!-- popover 外壳 480×331 / z 99 / pad 2px 0 0 / 透明底 / radius 0。 -->
     <div
       v-if="ed.sharePopoverOpen"
       class="lark-doc-share-popover"
       role="dialog"
       aria-label="分享文档"
-      :style="ed.sharePopoverStyle()"
+      :style="[ed.sharePopoverStyle(), ed.shareRemote ? { height: 'auto' } : null]"
     >
-      <div class="lark-doc-share-popover-inner">
+      <div
+        class="lark-doc-share-popover-inner"
+        :style="{ ...(ed.shareRemote ? { height: 'auto' } : {}), maxHeight: `calc(100vh - ${ed.sharePopoverPos.top}px - 10px)`, overflowY: 'auto' }"
+      >
         <!-- 标题栏 480×45（pad 13px 16px 8px）：左「分享文档」64×22 fs16 var(--ld-share-text)，
              右「权限设置」84×24（图标 20×16）。 -->
         <div class="lark-doc-share-header">
@@ -118,7 +105,19 @@
         <!-- 协作者行 480×54（pad 0 16px）：左文案 70×20 fs14，右头像 26×26 + 溢出块 31×26。 -->
         <div class="lark-doc-share-member-row">
           <span class="lark-doc-share-member-text">已有协作者</span>
-          <div class="lark-doc-share-avatars">
+          <button
+            v-if="ed.shareRemote"
+            type="button"
+            class="lark-doc-share-member-toggle"
+            :aria-expanded="ed.shareMemberListOpen ? 'true' : 'false'"
+            @click="ed.toggleShareMembers()"
+          >
+            {{ ed.shareMembersBusy ? '加载中…' : ed.shareMembers ? ed.shareMembers.members.filter(member => member.scopes.includes('document.read')).length + ' 位协作者' : '查看协作者' }} ›
+          </button>
+          <div
+            v-else
+            class="lark-doc-share-avatars"
+          >
             <span
               class="lark-doc-share-avatar"
               aria-hidden="true"
@@ -132,17 +131,150 @@
           <input
             :value="ed.shareInviteQuery"
             aria-label="邀请协作者"
-            placeholder="搜索用户、群组、部门、用户组或智能体"
+            :placeholder="ed.shareRemote ? '搜索用户' : '搜索用户、群组、部门、用户组或智能体'"
+            :disabled="ed.shareRemote && !ed.shareCan('canManagePermission')"
             @input="ed.setShareInviteQuery($event.target.value)"
+            @keydown.enter.prevent="ed.shareRemote && ed.searchShareDirectory()"
           >
           <button
             type="button"
             class="lark-doc-share-org-entry"
-            aria-label="选择组织范围"
+            :aria-label="ed.shareRemote ? '搜索协作者' : '选择组织范围'"
+            :disabled="ed.shareRemote && (ed.shareDirectoryBusy || !ed.shareInviteQuery.trim())"
+            @click="ed.shareRemote && ed.searchShareDirectory()"
           >
-            ⌄
+            {{ ed.shareRemote ? '搜索' : '⌄' }}
           </button>
         </div>
+        <div
+          v-if="ed.shareRemote"
+          class="lark-doc-share-remote-members"
+        >
+          <button v-if="ed.session && ed.session.user && ed.session.getProvider('authorization') && typeof ed.session.getProvider('authorization').documentAccess === 'function'"
+            type="button" @click="ed.openDocumentAccessRequests('self')">权限申请</button>
+          <p
+            v-if="ed.shareMembersError"
+            role="status"
+          >
+            {{ ed.shareMembersError }} <button
+              type="button"
+              @click="ed.loadShareMembers()"
+            >
+              重试
+            </button>
+          </p>
+          <p
+            v-if="ed.shareDirectoryBusy"
+            role="status"
+          >
+            正在搜索…
+          </p>
+          <div
+            v-if="ed.shareCandidates.length"
+            class="lark-doc-share-candidates"
+            aria-label="搜索结果"
+          >
+            <button
+              v-for="candidate in ed.shareCandidates"
+              :key="candidate.principalId"
+              type="button"
+              @click="ed.selectShareCandidate(candidate)"
+            >
+              <span
+                class="lark-doc-share-avatar"
+                aria-hidden="true"
+              >{{ candidate.displayName.slice(-1) }}</span>
+              {{ candidate.displayName }} <small>{{ candidate.principalId }}</small>
+            </button>
+          </div>
+          <div
+            v-if="ed.shareSelectedCandidate"
+            class="lark-doc-share-invite-actions"
+          >
+            <span>{{ ed.shareSelectedCandidate.displayName }}</span>
+            <select
+              :value="ed.shareInviteRole"
+              aria-label="邀请权限"
+              @change="ed.setShareInviteRole($event.target.value)"
+            >
+              <option value="reader">
+                可阅读
+              </option><option value="commenter">
+                可评论
+              </option><option value="editor">
+                可编辑
+              </option>
+            </select>
+            <button
+              type="button"
+              class="lark-doc-share-btn-filled"
+              :disabled="ed.shareRemoteBusy || !!ed.sharePendingOperation || !ed.shareMembers"
+              @click="ed.changeShareMember(ed.shareSelectedCandidate.principalId, ed.shareInviteRole)"
+            >
+              邀请
+            </button>
+          </div>
+          <div
+            v-if="ed.shareMemberListOpen && ed.shareMembers"
+            class="lark-doc-share-member-list"
+            aria-label="协作者列表"
+          >
+            <div
+              v-for="member in ed.shareMembers.members.filter(value => value.scopes.includes('document.read'))"
+              :key="member.principalId"
+              class="lark-doc-share-member-item"
+            >
+              <span
+                class="lark-doc-share-avatar"
+                aria-hidden="true"
+              >{{ member.principalId.slice(0, 1).toUpperCase() }}</span>
+              <span class="lark-doc-share-member-name">{{ member.principalId }}<small v-if="!ed.shareMemberSource(member) || ed.shareMemberSource(member).revoked">其他来源授权</small></span>
+              <span v-if="member.scopes.includes('grant.manage')">可管理</span>
+              <template v-else-if="ed.shareMemberSource(member) && !ed.shareMemberSource(member).revoked">
+                <select
+                  :value="ed.shareMemberRole(member)"
+                  :aria-label="member.principalId + ' 的分享权限'"
+                  :disabled="ed.shareRemoteBusy || !!ed.sharePendingOperation"
+                  @change="ed.changeShareMember(member.principalId, $event.target.value)"
+                >
+                  <option value="reader">
+                    可阅读
+                  </option><option value="commenter">
+                    可评论
+                  </option><option value="editor">
+                    可编辑
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  :aria-label="'移除 ' + member.principalId + ' 的分享授权'"
+                  :disabled="ed.shareRemoteBusy || !!ed.sharePendingOperation"
+                  @click="ed.changeShareMember(member.principalId, ed.shareMemberRole(member), true)"
+                >
+                  移除
+                </button>
+              </template>
+              <span v-else>{{ ed.shareMemberRole(member) === 'editor' ? '可编辑' : ed.shareMemberRole(member) === 'commenter' ? '可评论' : '可阅读' }}</span>
+            </div>
+            <p class="lark-doc-share-source-note">
+              移除分享授权后，其他来源的权限仍可能有效。
+            </p>
+          </div>
+        </div>
+        <p
+          v-if="ed.shareRemoteState"
+          role="status"
+        >
+          {{ ed.shareRemoteState.status === 'committed' ? '协作者权限已更新。' : '权限信息未能确认，请联系管理员。' }}
+        </p>
+        <button
+          v-if="ed.sharePendingOperation"
+          type="button"
+          :disabled="ed.shareRemoteBusy || !ed.shareCan('canManagePermission')"
+          @click="ed.queryPendingShare()"
+        >
+          查询原分享操作
+        </button>
         <!-- 下半区 480×194（pad 12px 0 0）。 -->
         <div class="lark-doc-share-lower">
           <!-- 链接分享卡 480×116（pad 16）。 -->
@@ -162,7 +294,12 @@
                 />
               </span>
               <div class="lark-doc-share-link-main">
+                <span
+                  v-if="ed.shareRemote"
+                  class="lark-doc-share-org-label"
+                >{{ ed.shareLinkState && ed.shareLinkState.audience === 'public' ? '互联网上获得链接的人' : '当前文档协作者' }}</span>
                 <button
+                  v-else
                   type="button"
                   class="lark-doc-share-org-btn"
                 >
@@ -175,6 +312,7 @@
                 class="lark-doc-share-perm-select"
                 aria-label="链接权限"
                 :value="ed.shareLinkPermLabel"
+                :disabled="ed.shareRemote && (ed.shareLinkBusy || !!ed.shareLinkPending || !ed.shareLinkState || !ed.shareLinkState.cryptoReady)"
                 @change="ed.setShareLinkPerm($event.target.value)"
               >
                 <option
@@ -190,11 +328,14 @@
               <button
                 type="button"
                 class="lark-doc-share-btn-filled"
+                :disabled="ed.shareRemote && ed.shareCan('canManagePermission') && (ed.shareLinkBusy || !!ed.shareLinkPending || !ed.shareLinkState)"
                 @click="ed.copyShareLink()"
               >
                 复制链接
               </button>
+              <button v-if="ed.shareRemote && ed.shareLinkPending" type="button" :disabled="ed.shareLinkBusy" @click="ed.remoteLinkAction('load')">核对原操作</button>
             </div>
+            <p v-if="ed.shareRemote && ed.shareLinkError" role="status">{{ ed.shareLinkError }}</p>
           </div>
         </div>
       </div>
@@ -240,3 +381,20 @@ export default {
   },
 }
 </script>
+
+
+<style>
+/* 面板主题色与本组件同步加载，保证首次暗色渲染。 */
+.lark-doc[data-theme-preset="feishu"][data-theme="dark"] {
+  --ld-share-surface: var(--ld-bg-surface);
+  --ld-share-text: var(--ld-text);
+  --ld-share-text-strong: var(--ld-text);
+  --ld-share-text-secondary: var(--ld-text-secondary);
+  --ld-share-text-tertiary: var(--ld-text-tertiary);
+  --ld-share-text-disabled: var(--ld-text-disabled);
+  --ld-share-border: var(--ld-border);
+  --ld-share-border-control: var(--ld-border-control);
+  --ld-share-bg-subtle: var(--ld-bg-code);
+  --ld-share-toast-success-bg: var(--ld-bg-badge);
+}
+</style>

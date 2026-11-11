@@ -74,7 +74,7 @@ export default {
       if (!this.handlePressed && !this.blockMenuOpen && !this.blockTypeMenuOpen) this.positionBlockHandle(this.currentBlockRange())
       this.updateTableBoundary()
       this.updateCalloutTools()
-      const visible = !selection.empty && !selection.node && !this.effectiveReadonly && this.editor.isFocused
+      const visible = !selection.empty && !selection.node && (!this.effectiveReadonly || this.canCommentNow && this.commentProvider()) && this.editor.isFocused
       this.bubbleVisible = visible
       if (visible) this.bubblePosition = this.bubbleBarPosition(selection)
       else { this.closeBubbleAlignMenu(); this.closeBubbleHeadingMenu() }

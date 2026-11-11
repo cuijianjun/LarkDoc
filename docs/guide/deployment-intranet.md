@@ -33,8 +33,8 @@ lark-doc 是一个**前端库**（Vue 2.7 + Tiptap 3 的 npm 包），不是独�
 
 ### 最省事的判断
 
-- **宿主是 Vue 2.7 且已有打包器** → 装 npm 包，走主入口 `lark-doc`，`dist/` 交给宿主的 copy 插件或 CDN 目录。
-- **宿主是 Vue 3 / React** → 照样装 npm 包，但**必须走 `lark-doc/element`**（Web Component 入口），`dist/` 同样交给 copy 插件。主入口 `lark-doc` 内含 Vue 2 SFC 与 `@tiptap/vue-2`，在 Vue 3 / React 里会直接 `Vue.extend is not a function`。
+- **宿主是 Vue 2.7 且已有打包器** → 装 npm 包，走主入口 `lark-doc`，`dist/` 交给宿主的 copy 插件或 CDN 目录。**webpack4 也一样**（0.13 起 `browser` 指向 ES2018 的 UMD 产物，不用再 alias + babel 降语法）。
+- **宿主是 Vue 3 / React** → 照样装 npm 包，但**必须走 `lark-doc/element`**（Web Component 入口），`dist/` 同样交给 copy 插件。主入口 `lark-doc` 内含 Vue 2 SFC 与 `@tiptap/vue-2`，在 Vue 3 / React 里会直接 `Vue.extend is not a function`。webpack4 下这行子路径要写全 `lark-doc/dist/lark-doc-element.umd.min.js`。
 - **宿主是纯静态页 / 老系统 / 不想接打包器** → 只做 ②，一个 `<script>` 引 element 产物即可，**不用装 npm 包**。
 - **要多人协同** → 再补 ③ 里的 `/collab`，并且**必须**用打包器接（UMD 不发协同产物，原因见 6.4）。
 
@@ -47,23 +47,23 @@ lark-doc 是一个**前端库**（Vue 2.7 + Tiptap 3 的 npm 包），不是独�
 | 形态 | 引入方式 | 入口产物 | 适用 | 需要 npm 包 |
 |---|---|---|---|---|
 | **ESM**（推荐） | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js`（`module`） | webpack 5 / Vite / Rollup | 是 |
-| **CJS** | `require('lark-doc')` | `dist/lark-doc.common.js`（`main`） | webpack 4 / 老打包器 / Node | 是 |
+| **CJS** | `require('lark-doc')` | `dist/lark-doc.common.js`（`main`） | Node / SSR / 只读 `main` 的老打包器 | 是 |
 | **Web Component** | `<lark-doc>` 自定义元素 | `dist/lark-doc-element.umd.min.js`（`./element`） | 任意框架 / 无框架，**Vue 运行时与样式内联** | 否（可直接 `<script>`） |
-| **UMD** | `<script src>` + `window.LarkDoc` | `dist/lark-doc.umd.min.js`（`unpkg`） | 纯 CDN | 否 |
+| **UMD** | `<script src>` + `window.LarkDoc`，或 `browser` 字段命中 | `dist/lark-doc.umd.min.js`（`browser` / `unpkg`） | 纯 CDN；**webpack 4 主入口** | 否 |
 
 体积参考（实测，详见[打包产物与按需加载](/guide/build-artifacts)）：
 
 | 产物 | 原始 | gzip |
 |---|---|---|
-| ESM 主文件 | 381 KB | 98 KB |
-| + tiptap 分包 | 467 KB | 139 KB |
-| + vendor 分包 | 106 KB | 39 KB |
-| **ESM 首屏合计** | — | **≈ 276 KB** |
-| UMD | 955 KB | 275 KB |
-| Element | 1.04 MB | 304 KB |
-| CJS（单文件，内联 mermaid） | 7.5 MB | 1.99 MB |
+| ESM 主文件 | 1.00 MB | 273 KB |
+| + tiptap 分包 | 446 KB | 136 KB |
+| + vendor 分包 | 101 KB | 38 KB |
+| **ESM 首屏合计** | — | **≈ 446 KB** |
+| UMD | 1.56 MB | 447 KB |
+| Element | 1.60 MB | 464 KB |
+| CJS（单文件，内联 mermaid） | 8.6 MB | 2.34 MB |
 
-> **选型建议**：宿主有打包器就选 ESM，首屏最省；没有打包器选 Element（自带 Vue，不用宿主再装一份）。CJS 只在 webpack 4 这类不认 `exports` 字段的环境里用，代价是 1.99 MB gzip。
+> **选型建议**：宿主有打包器就选 ESM；没有打包器选 Element（自带 Vue，不用宿主再装一份）。CJS 只给 Node / SSR 用 —— 它 8.6 MB、内联 mermaid、无懒加载，浏览器宿主别选。**webpack 4 会靠 `browser` 字段自动落到 UMD（447 KB gzip），不用碰 CJS**。
 
 ---
 
@@ -243,7 +243,7 @@ npm install lark-doc --registry=http://<私服>:4873/
 
 1. **`vue` 由宿主提供**，是 peer 依赖，别指望 lark-doc 带。
 2. **不要装 `@tiptap/vue-2`**（见 3.1）。
-3. **样式单独引**：`import 'lark-doc/style.css'`。webpack 4 **不认 `exports` 字段**，会解析失败——必须写全路径 `lark-doc/dist/lark-doc.css`。`package.json` 里 `"style": "style.css"` 但 `exports["./style.css"] = "./dist/lark-doc.css"`，就是这个坑的来源。
+3. **样式**：0.13 起 UMD / element 产物自带样式注入，`import 'lark-doc'` 或 `import 'lark-doc/element'` 就够了。只有 lib 单文件（CJS）宿主还要单独引 `import 'lark-doc/style.css'`；webpack 4 **不认 `exports` 字段**，那行要写全 `lark-doc/dist/lark-doc.css`（`package.json` 里 `"style": "style.css"` 但 `exports["./style.css"] = "./dist/lark-doc.css"`，就是这个坑的来源）。
 4. **`dist/` 整目录都要拷**。`math` / `mermaid` / `office` / `markdown` / `highlight` / `import-export` 是**动态 import 目标**，少一个就运行时 404（见第 4 节）。
 5. **覆盖升级必须换版本号**。同版本号重打会让 `npm ci` 报 `EINTEGRITY`（integrity 哈希变了但 lock 文件没变）。
 6. Windows 遇到 `EPERM` / `EBUSY`：关掉编辑器 / 杀毒软件的文件占用手，或重开 shell。
@@ -590,9 +590,34 @@ module.exports = {
 
 排查口诀：**浏览器 404 的路径前缀是什么，就往那个目录拷。** 报 `js/fonts/KaTeX_Main-Regular.woff2` 404，就往 `js/fonts` 拷；报 `js/lark-doc-element.umd.min.math.js` 404，就把按需区块拷到 `js/`。
 
-### 5.4 webpack 4 宿主的额外三项
+### 5.4 webpack 4 宿主
 
-webpack 4 不认 `exports`，三处都要写全路径：
+**0.13 起主入口不用配**：`package.json` 的 `browser` 指向 UMD 产物（ES2018 语法、不含 `import.meta`），webpack 4 的 `resolve.mainFields` 默认 `['browser','module','main']` 会先命中它，样式也随产物注入。
+
+```js
+import { LarkDoc } from 'lark-doc'   // 就这样
+```
+
+只有两件事还要留意：
+
+1. **子路径要写全**（`exports` 仍读不到）：
+
+```js
+import 'lark-doc/dist/lark-doc-element.umd.min.js'   // 而不是 'lark-doc/element'
+import 'lark-doc/dist/lark-doc.css'                  // 仅 lib 单文件宿主需要
+```
+
+2. **按需区块的基址**：走打包器 `import` 时 `document.currentScript` 指向宿主自己的 bundle，公式 / Word / Mermaid / 高亮区块会被请求到错误目录（首屏正常，一用就 404）。给一行基址即可：
+
+```js
+window.__LARK_DOC_PUBLIC_PATH__ = '/vendor/lark-doc/'   // 与 dist 实际托管前缀一致
+import { LarkDoc } from 'lark-doc'
+```
+
+<details>
+<summary>0.12 及更早版本的老写法（alias 到 common.js + babel 降语法）</summary>
+
+旧版没有 `browser` 字段，webpack 4 会命中 `module` 的 ESM 产物（含 `import.meta`）或在 lib 单文件上撞到 `?.` / `??`。三处写全路径 + 一条 babel 规则：
 
 ```js
 // 1. 主入口
@@ -623,6 +648,8 @@ import 'lark-doc/dist/lark-doc-element.umd.min.js'
 ```
 
 > 这两个 babel 插件在内网也得装 —— 它们同样打不进 `node_modules.zip`。完整分步（出包、`vendor/` 目录、插件 tgz、验收）见[内网迁移实战 · 方案 A](/guide/intranet-migration#mig-vue2-wp4)。
+
+</details>
 
 ### 5.5 `<script>` 直挂（无打包器）
 
@@ -933,7 +960,8 @@ node -p "require('lark-doc/package.json').version"     # 确认版本真的回�
 
 - [ ] `package.json` 里 `lark-doc` / `vue` 都指向 `file:./vendor/*.tgz`，没有 `^` 或 `latest`
 - [ ] `node_modules` 是在**内网机**上装出来的（不是从联网机整包拷的）
-- [ ] webpack4 宿主：`alias 'lark-doc$'` + 单文件 babel 规则 + 两个 babel 插件 tgz 都已就位
+- [ ] webpack4 宿主（0.13+）：主入口不用配；若用到公式 / Word 导出，已设 `window.__LARK_DOC_PUBLIC_PATH__` 指向 `dist/` 的托管前缀
+- [ ] webpack4 宿主（0.12 及更早）：`alias 'lark-doc$'` + 单文件 babel 规则 + 两个 babel 插件 tgz 都已就位
 - [ ] webpack5 宿主：没有误加 `transpileDependencies: ['lark-doc']`
 - [ ] Vue 3 宿主：没装 `lark-doc` 主入口，`public/vendor/lark-doc/` 下是 `dist/` 整目录
 - [ ] 内网首启 `npm run build` 零报错，产物里能搜到 `lark-doc`

@@ -301,22 +301,12 @@ export default {
     },
     /** 复制选中的纯文本（飞书气泡条最右侧的复制入口）。 */
     bubbleCopy() {
-      if (!this.editor) return
-      const { from, to, empty } = this.editor.state.selection
-      if (empty) return
-      const text = this.editor.state.doc.textBetween(from, to, '\n')
-      const fallback = () => {
-        const area = document.createElement('textarea')
-        area.value = text
-        area.style.position = 'fixed'
-        area.style.opacity = '0'
-        document.body.appendChild(area)
-        area.select()
-        try { document.execCommand('copy') } catch (error) { /* 剪贴板不可用时静默 */ }
-        document.body.removeChild(area)
-      }
-      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(fallback)
-      else fallback()
+      if (!this.contentCopyAllowed()) return false
+      const context = this.contentCopyContext()
+      const { from, to, empty } = context.editor.state.selection
+      if (empty) return false
+      return import(/* webpackChunkName: "content-clipboard" */ '../../../utils/contentClipboard')
+        .then(module => module.copySelection(context, { from, to })).catch(() => false)
     },
   },
 }

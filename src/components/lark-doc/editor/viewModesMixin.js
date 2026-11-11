@@ -8,12 +8,23 @@ import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../doc
 import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
 import { DOC_MODES, MODE_ICONS, MODE_MENU_WIDTH, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText } from './docModes'
 
+export function presentationSections(doc, title = '文档') {
+  if (!doc) return [{ title, from: 0, to: 0 }]
+  const sections = [{ title, from: 0, to: doc.content.size }]
+  doc.forEach((node, offset) => {
+    if (node.type.name !== 'heading' || node.attrs.level !== 1) return
+    if (offset === 0) sections[0].title = node.textContent || title
+    else { sections[sections.length - 1].to = offset; sections.push({ title: node.textContent || '章节', from: offset, to: doc.content.size }) }
+  })
+  return sections
+}
+
 export default {
   data() { return {
     // P4-06：三态模式（07 §1）。`reading` 不再单独存一个布尔 —— 它由 mode 派生
     // （见 computed.reading），否则「顶栏切到阅读」和「工具栏点阅读模式」会有两个真相。
     mode: 'edit', modeMenuOpen: false, modeMenuPos: null, modeToast: '', modeToastTimer: null,
-    slides: false, fullscreen: false, widthMode: 'standard',
+    slides: false, presentationMode: 'slides', lastSlideIndex: 0, fullscreen: false, widthMode: 'standard',
     // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
     // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
     outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
@@ -51,10 +62,7 @@ export default {
       }, [])
     },
     slideChapters() {
-      if (!this.editor) return [{ title: this.localTitle || '文档', text: '' }]
-      const headings = this.outline.filter((item) => item.level === 1)
-      if (!headings.length) return [{ title: this.localTitle || '文档', text: this.editor.getText() }]
-      return headings.map((item, index) => ({ title: item.text || '章节', text: this.editor.state.doc.textBetween(item.pos, headings[index + 1]?.pos || this.editor.state.doc.content.size).replace(item.text, '').trim() }))
+      return presentationSections(this.editorRevision >= 0 && this.editor ? this.editor.state.doc : null, this.localTitle || '文档')
     },
   },
   methods: {
@@ -187,13 +195,13 @@ export default {
       this.updateSearch()
     },
     // P4-05：关闭时把 tab 归位到「查找」（下次打开不带上次痕迹），拖拽位置刻意保留。
-    closeSearch() {
+    closeSearch(restoreFocus = true) {
       this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.searchTab = 'find'
       // 挂起的去抖必须取消：否则关面板 120ms 后还会拿空查询再全量扫一遍文档。
       if (this._searchDebounce) this._searchDebounce.cancel()
       this._searchDoc = null; this._searchSignature = ''
       this.editor?.commands.setLarkDocSearch('')
-      this.focus()
+      if (restoreFocus) this.focus()
     },
     // P4-06 第 2 条：三态模式切换（07 §1 / §1.1 / §12.1）。入口只有两个 ——
     // 顶栏「编辑」下拉与下面的键位；「更多」菜单里**刻意没有**修订入口（07 §12.1 实测）。
@@ -268,9 +276,25 @@ export default {
     setReplacement(v) { this.replacement = v },
     async toggleFullscreen() { if (!this.fullscreen) { try { await this.$refs.root.requestFullscreen() } catch (_) { this.fullscreen = true } } else if (document.fullscreenElement) await document.exitFullscreen(); else this.fullscreen = false },
     onFullscreenChange() { this.fullscreen = document.fullscreenElement === this.$refs.root },
-    toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },
-    prevSlide() { this.slideIndex -= 1 },
-    nextSlide() { this.slideIndex += 1 },
+    startPresentation(mode) {
+      if (!this.featureEnabled('viewModes') || !['document', 'slides', 'resume'].includes(mode) || this.session && !this.session.can('canView')) return false
+      if (!this.slides) this._presentationPrevious = { x: window.scrollX, y: window.scrollY, mainTop: this.$refs?.mainScroll?.scrollTop || 0, mainLeft: this.$refs?.mainScroll?.scrollLeft || 0, sidebar: this.commentSidebarOpen, session: this.session, generation: this.session?._privateIdentityGeneration, principal: this.session?.user?.id }
+      this.closeHeaderMenu?.()
+      this.presentationMode = mode === 'document' ? 'document' : 'slides'
+      this.slideIndex = mode === 'resume' ? Math.min(this.lastSlideIndex, this.slideChapters.length - 1) : 0
+      if (this.presentationMode === 'slides') this.commentSidebarOpen = false
+      this.slides = true
+      return true
+    },
+    toggleSlides() {
+      if (!this.slides) return this.startPresentation('slides')
+      const previous = this._presentationPrevious
+      this.lastSlideIndex = this.slideIndex; this.slides = false
+      return import(/* webpackChunkName: "document-menu" */ './documentMenuView').then(({ restorePresentationView }) => { if (!this.slides && this._presentationPrevious === previous) restorePresentationView(this) })
+    },
+    prevSlide() { this.slideIndex = Math.max(0, this.slideIndex - 1) },
+    nextSlide() { this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1) },
+    setSlideIndex(index) { this.slideIndex = Math.max(0, Math.min(index, this.slideChapters.length - 1)) },
   },
   // 提示条定时器必须在卸载前清掉：单页应用里反复挂载/卸载编辑器，
   // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。

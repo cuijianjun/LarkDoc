@@ -2,7 +2,8 @@
  * P6b-03 权限与分享 —— capability→UI 映射、入口降级、加密链接状态机、密码三态校验。
  *
  * 只 import `editor/shareMixin` 的**纯逻辑具名导出**与其 Vue options 对象：这两层都零 DOM、
- * 零 Vue 运行时，node 环境下跑得动（vite 门禁禁止单测 import `src/**\/*.vue`）。
+ * 零 Vue 运行时，node 环境下跑得动（vite 门禁禁止单测 import `src/**\/*.vue`）；
+ * 权限下拉另按既有冷面板模式读取组件脚本，直接检验选项与交互方法。
  *
  * 五组用例各自守一条「看着能跑、实际静默错位」的口径：
  *
@@ -20,6 +21,7 @@
  *    toast。做成 `disabled` 就偏离实景；做成抛异常才是真静默失败。
  */
 'use strict'
+import { readFileSync } from 'fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CAPABILITIES } from '../../src/providers/authorization'
 import {
@@ -32,6 +34,9 @@ import {
   shareEntryLabel, shareEntryMode,
 } from '../../src/components/lark-doc/editor/shareMixin'
 import shareMixin from '../../src/components/lark-doc/editor/shareMixin'
+import bubbleMenuMixin from '../../src/components/lark-doc/editor/bubbleMenuMixin'
+import blockMenuMixin from '../../src/components/lark-doc/editor/blockMenuMixin'
+import * as contentClipboard from '../../src/utils/contentClipboard'
 
 // —— 夹具 ——
 
@@ -80,9 +85,9 @@ afterEach(() => { vi.useRealTimers() })
 // —— 1. B24 capability → UI 逐条映射 ——
 
 describe('05 §5.3.1 B24 capability → UI 映射（8 项逐一对照）', () => {
-  it('B24 的键与 DEFAULT_CAPABILITIES 完全对齐，没有漏项暗落到 allow', () => {
+  it('原8项与新增canCopy的键与DEFAULT_CAPABILITIES对齐，没有漏项暗落到allow', () => {
     const keys = Object.keys(DEFAULT_CAPABILITIES)
-    expect(keys).toHaveLength(8)
+    expect(keys).toHaveLength(9)
     for (let i = 0; i < keys.length; i += 1) {
       expect(Object.prototype.hasOwnProperty.call(CAPABILITY_UI, keys[i])).toBe(true)
     }
@@ -90,7 +95,7 @@ describe('05 §5.3.1 B24 capability → UI 映射（8 项逐一对照）', () =>
     expect(capabilityTreatment('canSomethingElse')).toBe(CAPABILITY_TREATMENTS.allow)
   })
 
-  it('有权限时 8 项一律 allow / 挂载 / 不置灰 / 无附加样式', () => {
+  it('有权限时9项一律allow / 挂载 / 不置灰 / 无附加样式', () => {
     // 显式打开 canManagePermission：DEFAULT_CAPABILITIES 里它默认 false，
     // 用裸 session 会把「降级」分支混进这条「全部允许」的断言里。
     const session = fakeSession({ canManagePermission: true })
@@ -107,7 +112,7 @@ describe('05 §5.3.1 B24 capability → UI 映射（8 项逐一对照）', () =>
     }
   })
 
-  it('canView:false —— 8 项里唯一允许「不挂载」的一项（整页只读遮罩）', () => {
+  it('canView:false —— 9项里唯一允许「不挂载」的一项（整页只读遮罩）', () => {
     const state = capabilityUiState(deniedAllSession(), 'canView')
     expect(state.allowed).toBe(false)
     expect(state.treatment).toBe(CAPABILITY_TREATMENTS.replace)
@@ -117,10 +122,10 @@ describe('05 §5.3.1 B24 capability → UI 映射（8 项逐一对照）', () =>
     expect(state.style).toBeNull()
   })
 
-  it('另外 6 项（edit/comment/resolveComment/createVersion/restoreVersion/export）无权限一律挂载 + 置灰', () => {
+  it('原6项和canCopy无权限一律挂载 + 置灰', () => {
     const grayKeys = [
       'canEdit', 'canComment', 'canResolveComment',
-      'canCreateVersion', 'canRestoreVersion', 'canExport',
+      'canCreateVersion', 'canRestoreVersion', 'canExport', 'canCopy',
     ]
     const session = deniedAllSession()
     for (let i = 0; i < grayKeys.length; i += 1) {
@@ -525,5 +530,340 @@ describe('几何与按钮口径', () => {
     expect(PERMISSION_DIALOG.maskBackground).toBe('rgba(0, 0, 0, 0.55)')
     expect(PERMISSION_DIALOG.contentWidth).toBe(437)
     expect(PERMISSION_DIALOG.hasFooter).toBe(false)
+  })
+})
+
+describe('remote member interaction ownership and source changes', () => {
+  it.each([[1000, 792], [320, 360]])('keeps a share popover inside a %s x %s viewport even from a lower-left trigger', (width, height) => {
+    vi.stubGlobal('window', { innerWidth: width, innerHeight: height })
+    try {
+      const vm = createVm(fakeSession({ canManagePermission: true }))
+      vm.toggleSharePopover({ currentTarget: { getBoundingClientRect: () => ({ bottom: height - 20, right: 120 }) } })
+      const menuWidth = Math.min(480, width - 16), left = width - vm.sharePopoverPos.right - menuWidth
+      expect(left).toBeGreaterThanOrEqual(8); expect(left + menuWidth).toBeLessThanOrEqual(width - 8)
+      expect(vm.sharePopoverPos.top).toBeGreaterThanOrEqual(8); expect(vm.sharePopoverPos.top + Math.min(331, height - 16)).toBeLessThanOrEqual(height - 8)
+    } finally { vi.unstubAllGlobals() }
+  })
+  const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes }); return { promise, resolve } }
+  const member = () => ({ principalId: 'bob', scopes: ['document.read', 'document.write'], sources: [
+    { originType: 'direct', sourceGrantKey: 'external-source', sourceRevision: '77', scopes: ['document.read', 'document.write'], revoked: false, sourceGap: false },
+    { originType: 'share', sourceGrantKey: 'editor-share-original', sourceRevision: '999999999999999999', scopes: ['document.read', 'document.write'], revoked: false, sourceGap: false }] })
+  const session = (extra = {}) => {
+    const provider = { isRemote: true }
+    return { ...fakeSession({ canManagePermission: true }), user: { id: 'alice' }, _privateIdentityGeneration: 1, _authorizationGeneration: 1,
+      getProvider: () => provider, listMembers: vi.fn(async () => ({ authzVersion: '12', members: [member()] })), ...extra }
+  }
+  it('downgrade/removal reuse the same share source and exact decimal CAS; never remove independent sources', async () => {
+    const vm = createVm(session(), { submitRemoteShare: vi.fn(async input => input) })
+    await vm.loadShareMembers()
+    const changed = await vm.changeShareMember('bob', 'reader')
+    expect(changed).toMatchObject({ sourceGrantKey: 'editor-share-original', sourceRevision: '1000000000000000000', expectedRevision: '12', revoked: false })
+    expect(changed.scopes).not.toContain('document.write')
+    const removed = await vm.changeShareMember('bob', 'reader', true)
+    expect(removed).toMatchObject({ sourceGrantKey: 'editor-share-original', scopes: [], revoked: true })
+    expect(vm.shareMembers.members[0].sources[0].sourceRevision).toBe('77')
+  })
+  it.each(['identity ABA', 'authorization'])('late member snapshot cannot repopulate after %s', async boundary => {
+    const held = deferred(), s = session({ listMembers: vi.fn(() => held.promise) }), vm = createVm(s)
+    const pending = vm.loadShareMembers()
+    if (boundary === 'identity ABA') { s._privateIdentityGeneration++; s.user = { id: 'alice' } } else s._authorizationGeneration++
+    vm.clearRemoteShareView(boundary === 'authorization'); held.resolve({ authzVersion: '12', members: [member()] }); await pending
+    expect(vm.shareMembers).toBeNull(); expect(vm.shareMembersBusy).toBe(false)
+  })
+  it('old share unknown cannot block or alter a replacement identity', async () => {
+    let reject
+    const held = new Promise((_, no) => { reject = no }), s = session({ requestShare: vi.fn(() => held) }), vm = createVm(s, { showShareToast: vi.fn() })
+    const pending = vm.submitRemoteShare({ subject: 'bob' })
+    s._privateIdentityGeneration++; vm.clearRemoteShareView(false)
+    reject(Object.assign(Error('lost'), { status: 'unknown', operationId: 'old-share' })); await pending
+    expect(vm.sharePendingOperation).toBe(''); expect(vm.shareRemoteBusy).toBe(false); expect(vm.showShareToast).not.toHaveBeenCalled()
+  })
+})
+
+describe('实测基础权限下拉与共享选择器边界', () => {
+  function componentScript(name) {
+    const source = readFileSync(new URL(`../../src/components/lark-doc/${name}.vue`, import.meta.url), 'utf8')
+    const script = source.match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '').replace('export default', 'return')
+    return new Function('LarkDocIcon', 'LarkDocSelect', script)({}, {})
+  }
+  const select = componentScript('LarkDocSelect'), permission = componentScript('PermissionDialog')
+  const selectVm = extra => ({ ...select.data(), ...select.methods, hoverOpen: select.props.hoverOpen.default,
+    menuMinWidth: select.props.menuMinWidth.default, ...extra })
+  const permissionSnapshot = (extra = {}) => ({ tenantId: 'tenant', docId: 'doc', settingsRevision: '9007199254740993', authzVersion: '5', canManage: true,
+    values: { collaborators: 'readers', copy: 'readers', duplicate: 'readers', comment: 'readers' },
+    supported: { collaborators: ['readers', 'editors', 'managers'], copy: ['readers', 'editors', 'managers'], duplicate: ['readers', 'editors', 'managers'], comment: ['readers', 'editors'] }, ...extra })
+  function permissionVm(provider) {
+    const session = { documentId: 'doc', user: { id: 'alice' }, _privateIdentityGeneration: 1, _authorizationGeneration: 1,
+      getProvider: () => provider, refreshCapabilities: vi.fn(async () => {}) }
+    const ed = { shareRemote: true, session, shareCan: () => true, permissionValues: { copy: '可阅读的用户' } }
+    const vm = { ...permission.data(), ...permission.methods, ed, $nextTick: callback => callback() }
+    for (const key of ['permissionDisabled', 'permissionPlaceholder', 'scopeOptions', 'commentOptions']) {
+      Object.defineProperty(vm, key, { get: () => permission.computed[key].call(vm) })
+    }
+    return vm
+  }
+
+  it('远端加载失败不借本地默认值；未知只查询原操作，确认后才换值', async () => {
+    const provider = { getSharingSettingsOperation: vi.fn(async () => null), getSharingSettings: vi.fn(async () => permissionSnapshot()),
+      requestSharingSettings: vi.fn(async () => { throw Object.assign(Error('unknown'), { status: 'unknown', operationId: 'settings1' }) }),
+      querySharingSettingsOperation: vi.fn(async () => ({ ...permissionSnapshot({ values: { ...permissionSnapshot().values, copy: 'managers' } }), operationId: 'settings1' })) }
+    const vm = permissionVm(provider)
+    expect(vm.permissionValue('copy')).toBe(''); expect(vm.permissionOptions('copy')).toEqual([]); expect(vm.permissionDisabled).toBe(true)
+    await vm.loadRemotePermissions()
+    expect(vm.permissionValue('copy')).toBe('readers')
+    await vm.changePermission('copy', 'managers')
+    expect(vm.copyConfirmOpen).toBe(true); expect(provider.requestSharingSettings).not.toHaveBeenCalled()
+    expect(vm.permissionValue('copy')).toBe('readers')
+    await vm.confirmCopyPermission()
+    expect(vm.pendingOperation).toBe('settings1'); expect(vm.permissionValue('copy')).toBe(''); expect(vm.permissionDisabled).toBe(true)
+    provider.getSharingSettingsOperation.mockResolvedValue({ operationId: 'settings1', status: 'unknown' })
+    provider.getSharingSettings.mockResolvedValue(permissionSnapshot({ settingsRevision: '9007199254740995', authzVersion: '6', values: { ...permissionSnapshot().values, copy: 'editors' } }))
+    await vm.loadRemotePermissions()
+    expect(provider.requestSharingSettings).toHaveBeenCalledOnce()
+    expect(provider.requestSharingSettings).toHaveBeenCalledWith({ expectedRevision: '9007199254740993', changes: { copy: 'managers' } })
+    expect(provider.querySharingSettingsOperation).toHaveBeenCalledWith('settings1')
+    expect(vm.permissionValue('copy')).toBe('editors'); expect(vm.remoteSettings.settingsRevision).toBe('9007199254740995')
+    expect(provider.getSharingSettings).toHaveBeenCalledTimes(2); expect(vm.ed.session.refreshCapabilities).toHaveBeenCalledOnce()
+    provider.getSharingSettingsOperation.mockResolvedValue(null); provider.getSharingSettings.mockRejectedValue(Error('unavailable'))
+    await vm.loadRemotePermissions()
+    expect(vm.permissionValue('copy')).toBe(''); expect(vm.permissionOptions('copy')).toEqual([])
+  })
+
+  it('冲突只重新读取，不重发；旧主体的迟到值不能进入新主体', async () => {
+    const provider = { getSharingSettingsOperation: vi.fn(async () => null), getSharingSettings: vi.fn(async () => permissionSnapshot()),
+      requestSharingSettings: vi.fn(async () => { throw Object.assign(Error('conflict'), { status: 'rejected', httpStatus: 409 }) }) }
+    const vm = permissionVm(provider)
+    await vm.loadRemotePermissions(); await vm.changePermission('copy', 'managers'); await vm.confirmCopyPermission()
+    expect(provider.requestSharingSettings).toHaveBeenCalledOnce(); expect(provider.getSharingSettings).toHaveBeenCalledTimes(2)
+    expect(vm.remoteError).toContain('重新选择')
+    let resolve, entered
+    const gate = new Promise(done => { resolve = done }), started = new Promise(done => { entered = done })
+    provider.getSharingSettings = vi.fn(() => { entered(); return gate })
+    const pending = vm.loadRemotePermissions(); await started
+    vm.ed.session.user = { id: 'bob' }; vm.ed.session._privateIdentityGeneration++
+    resolve(permissionSnapshot()); await pending
+    expect(vm.remoteSettings).toBeNull(); expect(vm.permissionValue('copy')).toBe('')
+  })
+
+  it('copy→managers取消不提交且保旧值，身份变化后旧确认不得提交', async () => {
+    const provider = { getSharingSettingsOperation: vi.fn(async () => null), getSharingSettings: vi.fn(async () => permissionSnapshot()), requestSharingSettings: vi.fn() }
+    const vm = permissionVm(provider)
+    await vm.loadRemotePermissions(); await vm.changePermission('copy', 'managers'); vm.cancelCopyPermission()
+    expect(vm.copyConfirmOpen).toBe(false); expect(vm.permissionValue('copy')).toBe('readers'); expect(provider.requestSharingSettings).not.toHaveBeenCalled()
+    await vm.changePermission('copy', 'managers'); vm.ed.session._privateIdentityGeneration++
+    await vm.confirmCopyPermission(); expect(provider.requestSharingSettings).not.toHaveBeenCalled()
+  })
+
+  it.each([['collaborators', 'managers'], ['duplicate', 'managers'], ['comment', 'editors'], ['copy', 'editors']])('%s→%s不触发copy管理权限确认', async (key, value) => {
+    const provider = { getSharingSettingsOperation: vi.fn(async () => null), getSharingSettings: vi.fn(async () => permissionSnapshot()),
+      requestSharingSettings: vi.fn(async () => ({ ...permissionSnapshot({ values: { ...permissionSnapshot().values, [key]: value } }), operationId: 'settings1' })) }
+    const vm = permissionVm(provider)
+    await vm.loadRemotePermissions(); await vm.changePermission(key, value)
+    expect(vm.copyConfirmOpen).toBe(false); expect(provider.requestSharingSettings).toHaveBeenCalledOnce()
+    expect(provider.requestSharingSettings).toHaveBeenCalledWith({ expectedRevision: '9007199254740993', changes: { [key]: value } })
+  })
+
+  it('三项基础权限采用阅读/编辑/管理，评论只有阅读/编辑，高级旧选项与默认保持', () => {
+    const options = permission.computed.scopeOptions()
+    expect(options.map(item => item.label)).toEqual(['可阅读的用户', '可编辑的用户', '可管理的用户'])
+    expect(options.map(item => item.value)).toEqual(options.map(item => item.label))
+    expect(permission.computed.commentOptions.call({ scopeOptions: options }).map(item => item.value)).toEqual(['可阅读的用户', '可编辑的用户'])
+    const vm = createVm(fakeSession({ canManagePermission: true }))
+    expect(vm.sharePermissionOptions).toEqual(['可阅读的用户', '可编辑的用户', '仅协作者'])
+    expect(vm.permissionValues.requestAccess).toBe('仅协作者')
+  })
+
+  it('click-only不因鼠标进入打开或离开关闭，保留键盘选项确认与外部关闭', () => {
+    vi.stubGlobal('document', { addEventListener: vi.fn(), removeEventListener: vi.fn() })
+    vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() })
+    try {
+      expect(select.props.hoverOpen.default).toBe(true)
+      expect(select.props.menuMinWidth.default).toBe(132)
+      const vm = selectVm({ hoverOpen: false, value: 'reader', options: [{ value: 'reader' }, { value: 'editor' }],
+        position: vi.fn(), $refs: { trigger: { focus: vi.fn() } }, $el: { contains: () => false }, $emit: vi.fn() })
+      vm.onTriggerEnter(); expect(vm.open).toBe(false)
+      vm.toggle(); expect(vm.open).toBe(true); expect(vm.$refs.trigger.focus).toHaveBeenCalledOnce()
+      vm.onTriggerLeave(); vm.onMenuLeave(); vi.advanceTimersByTime(200); expect(vm.open).toBe(true)
+      vm.moveHighlight(1); vm.commitHighlight()
+      expect(vm.$emit).toHaveBeenCalledWith('change', 'editor'); expect(vm.open).toBe(false)
+      vm.toggle(); vm.onOutside({ target: {} }); expect(vm.open).toBe(false)
+      expect(document.removeEventListener).toHaveBeenCalledWith('pointerdown', vm.onOutside, true)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it.each([[360, 240, 330, 198, 230, 128, 102], [100, 70, -20, 10, 42, 84, 54]])('菜单按实际尺寸留在%s×%s视口内', (width, height, left, top, bottom, menuWidth, menuHeight) => {
+    vi.stubGlobal('window', { innerWidth: width, innerHeight: height })
+    try {
+      const vm = selectVm({ menuMinWidth: 128, $nextTick: callback => callback(), $refs: {
+        trigger: { getBoundingClientRect: () => ({ left, top, bottom, width: 104 }) },
+        menu: { getBoundingClientRect: () => ({ width: menuWidth, height: menuHeight }) },
+      } })
+      vm.position()
+      const x = parseFloat(vm.menuStyle.left), y = parseFloat(vm.menuStyle.top)
+      expect(x).toBeGreaterThanOrEqual(8); expect(x + menuWidth).toBeLessThanOrEqual(width - 8)
+      expect(y).toBeGreaterThanOrEqual(8); expect(y + menuHeight).toBeLessThanOrEqual(height - 8)
+      expect(parseFloat(vm.menuStyle.minWidth)).toBe(Math.min(128, width - 16))
+    } finally { vi.unstubAllGlobals() }
+  })
+})
+
+describe('正文canCopy门与异步剪贴板上下文', () => {
+  const source = readFileSync(new URL('../../src/components/lark-doc/LarkDocEditor.vue', import.meta.url), 'utf8')
+  const copySource = source.slice(source.indexOf('    contentCopyAllowed()'), source.indexOf('    featureEnabled('))
+  const methods = new Function(`return ({${copySource}})`)()
+  function copyVm(session = null) {
+    return { ...methods, session, editor: { isDestroyed: false, state: { selection: { from: 0, to: 1, empty: false },
+      doc: { textBetween: () => '正文', slice: () => ({ content: { toJSON: () => [] } }) } }, view: { focus: vi.fn() } },
+    shareCan: key => !session || session.can(key) !== false, writable: () => true, $nextTick: callback => callback(), deleteBlockRange: vi.fn() }
+  }
+  const session = () => ({ documentId: 'doc', user: { id: 'alice' }, _privateIdentityGeneration: 1, _authorizationGeneration: 1,
+    getProvider: () => provider, can: () => true })
+  const provider = { isRemote: true }
+  function coldCopyEntry(name, loadClipboard) {
+    const entries = {
+      bubbleCopy: ['components/lark-doc/editor/bubbleMenuMixin.js', '    bubbleCopy()'],
+      copyBlock: ['components/lark-doc/editor/blockMenuMixin.js', '    async copyBlock('],
+      copyCode: ['adapters/vue2/CodeNode.vue', '    async copyCode()'],
+    }
+    const [file, signature] = entries[name], code = readFileSync(new URL('../../src/' + file, import.meta.url), 'utf8')
+    const start = code.indexOf(signature), end = code.indexOf('\n  },\n}', start)
+    return new Function('loadClipboard', `return ({${code.slice(start, end).replace(/import\(/g, 'loadClipboard(')}}).${name}`)(loadClipboard)
+  }
+
+  it.each(['bubbleCopy', 'copyBlock', 'copyCode'].flatMap(name => ['identity', 'authorization', 'provider', 'editor', 'doc', 'document', 'permission'].map(boundary => [name, boundary])))('%s首次冷加载期间%s变化，不读旧正文或写剪贴板', async (name, boundary) => {
+    let finish
+    const load = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    const run = coldCopyEntry(name, load), s = session(), vm = copyVm(s)
+    const readText = vi.fn(() => '正文'); vm.editor.state.doc.textBetween = readText
+    vm.editor.options = { editorProps: { larkDocCanCopy: () => vm.contentCopyAllowed(), larkDocCopyContext: () => vm.contentCopyContext() } }
+    const node = { editor: vm.editor, node: { textContent: '代码' } }
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(), write: vi.fn() } })
+    try {
+      const pending = run.call(name === 'copyCode' ? node : vm, { from: 0, to: 1 }, true)
+      expect(load).toHaveBeenCalledOnce()
+      if (boundary === 'identity') { s.user = { id: 'alice' }; s._privateIdentityGeneration++ }
+      else if (boundary === 'authorization') s._authorizationGeneration++
+      else if (boundary === 'provider') s.getProvider = () => ({ isRemote: true })
+      else if (boundary === 'editor') vm.editor = { ...vm.editor }
+      else if (boundary === 'doc') vm.editor.state.doc = { ...vm.editor.state.doc }
+      else if (boundary === 'document') s.documentId = 'other-document'
+      else s.can = key => key !== 'canCopy'
+      finish(contentClipboard)
+      expect(await pending).toBe(false)
+      expect(readText).not.toHaveBeenCalled(); expect(navigator.clipboard.writeText).not.toHaveBeenCalled(); expect(navigator.clipboard.write).not.toHaveBeenCalled()
+      expect(vm.deleteBlockRange).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('预览代码首次冷加载期间换版本，原快照不能写剪贴板', async () => {
+    let finish
+    const run = coldCopyEntry('copyCode', () => new Promise(resolve => { finish = resolve })), vm = copyVm(session())
+    const panel = readFileSync(new URL('../../src/components/lark-doc/VersionPanel.vue', import.meta.url), 'utf8')
+    const start = panel.indexOf('    previewCopyContext()'), end = panel.indexOf('    destroyPreview()', start)
+    const previewCopyContext = new Function(`return ({${panel.slice(start, end)}}).previewCopyContext`)()
+    const preview = { isDestroyed: false, state: { doc: {} } }, view = { ed: vm, previewEditor: preview }
+    preview.options = { editorProps: { larkDocCanCopy: () => vm.contentCopyAllowed(), larkDocCopyContext: () => previewCopyContext.call(view) } }
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn() } })
+    try {
+      const pending = run.call({ editor: preview, node: { textContent: '旧版本代码' } })
+      view.previewEditor = { isDestroyed: false, state: { doc: {} } }; finish(contentClipboard)
+      expect(await pending).toBe(false); expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('冷加载后上下文未变，保留区块剪切与富文本MIME', async () => {
+    const write = vi.fn(async () => {}), vm = copyVm(session())
+    vi.stubGlobal('navigator', { clipboard: { write } })
+    vi.stubGlobal('window', { ClipboardItem: class { constructor(types) { this.types = types } } })
+    try {
+      const run = coldCopyEntry('copyBlock', () => Promise.resolve(contentClipboard))
+      expect(await run.call(vm, { from: 0, to: 1 }, true)).toBe(true)
+      expect(Object.keys(write.mock.calls[0][0][0].types)).toEqual(['text/plain', 'application/x-lark-doc-block+json'])
+      expect(vm.deleteBlockRange).toHaveBeenCalledWith({ from: 0, to: 1 }); expect(vm.error).toBe('已剪切区块')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('无session本地仍能复制，远端缺canCopy严格拒绝；原生正文copy/cut不拦评论等输入草稿', () => {
+    expect(copyVm().contentCopyAllowed()).toBe(true)
+    const s = session(); s.can = key => key === 'canView' ? true : undefined
+    const vm = copyVm(s), body = {}, draft = {}
+    expect(vm.contentCopyAllowed()).toBe(false)
+    vm.editor.view.dom = { contains: target => target === body }
+    for (const type of ['copy', 'cut']) {
+      const event = { type, target: body, preventDefault: vi.fn(), stopPropagation: vi.fn() }
+      vm.onContentClipboard(event); expect(event.preventDefault).toHaveBeenCalledOnce()
+      event.target = draft; event.preventDefault.mockClear(); vm.onContentClipboard(event)
+      expect(event.preventDefault).not.toHaveBeenCalled()
+    }
+  })
+
+  it('演示仍用活动正文门，历史派生内容按精确容器守卫；输入草稿不因旧正文选区被阻止', () => {
+    const s = session(); s.can = key => key === 'canView'
+    const vm = copyVm(s), body = {}, preview = {}, dialog = {}, input = { closest: () => input }
+    vm.slides = true; vm.editor.view.dom = { contains: target => target === body }
+    const event = { target: body, preventDefault: vi.fn(), stopPropagation: vi.fn() }
+    vm.onContentClipboard(event); expect(event.preventDefault).toHaveBeenCalledOnce()
+    vi.stubGlobal('window', { getSelection: () => ({ anchorNode: preview, focusNode: preview }) })
+    try {
+      const content = { contains: target => target === preview }
+      event.target = dialog; event.preventDefault.mockClear(); vm.onContentClipboard(event, content)
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+      event.target = input; event.preventDefault.mockClear(); vm.onContentClipboard(event, content)
+      expect(event.preventDefault).not.toHaveBeenCalled()
+      const panel = readFileSync(new URL('../../src/components/lark-doc/VersionPanel.vue', import.meta.url), 'utf8')
+      const start = panel.indexOf('    previewCopyContext()'), end = panel.indexOf('    destroyPreview()', start)
+      const previewCopyContext = new Function(`return ({${panel.slice(start, end)}}).previewCopyContext`)()
+      const previewVm = { previewEditor: { isDestroyed: false }, ed: vm }
+      const context = previewCopyContext.call(previewVm); expect(contentClipboard.copyContextCurrent(context)).toBe(false)
+      s.can = () => true
+      const allowed = previewCopyContext.call(previewVm); expect(contentClipboard.copyContextCurrent(allowed)).toBe(true)
+      previewVm.ed = copyVm(session())
+      expect(contentClipboard.copyContextCurrent(allowed)).toBe(false)
+      previewVm.ed = vm
+      previewVm.previewEditor = { isDestroyed: false }; expect(contentClipboard.copyContextCurrent(allowed)).toBe(false)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it.each(['identity', 'authorization', 'editor'])('气泡异步失败后%s已变不再fallback复制旧正文', async boundary => {
+    let reject, entered
+    const started = new Promise(done => { entered = done })
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(() => { entered(); return new Promise((_, no) => { reject = no }) }) } })
+    vi.stubGlobal('document', { createElement: vi.fn() })
+    try {
+      const s = session(), vm = copyVm(s)
+      const pending = bubbleMenuMixin.methods.bubbleCopy.call(vm)
+      await started
+      if (boundary === 'identity') { s.user = { id: 'bob' }; s._privateIdentityGeneration++ }
+      else if (boundary === 'authorization') s._authorizationGeneration++
+      else vm.editor = { ...vm.editor }
+      reject(Error('clipboard')); await pending
+      expect(document.createElement).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('区块剪切等到剪贴板返回后校验原doc，编辑期间不删除旧范围', async () => {
+    let resolve, entered
+    const started = new Promise(done => { entered = done })
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(() => { entered(); return new Promise(done => { resolve = done }) }) } })
+    vi.stubGlobal('window', {})
+    try {
+      const vm = copyVm(session()), pending = blockMenuMixin.methods.copyBlock.call(vm, { from: 0, to: 1 }, true)
+      await started
+      vm.editor.state.doc = { ...vm.editor.state.doc }; resolve(); expect(await pending).toBe(false)
+      expect(vm.deleteBlockRange).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('代码NodeView只读轻量内部桥；拒绝时不触及剪贴板，本地无桥保留原复制', async () => {
+    const code = readFileSync(new URL('../../src/adapters/vue2/CodeNode.vue', import.meta.url), 'utf8')
+    const start = code.indexOf('    async copyCode() {'), end = code.indexOf('\n  },\n}\n</script>', start)
+    const copyCode = new Function('loadClipboard', `return ({${code.slice(start, end).replace(/import\(/g, 'loadClipboard(')}}).copyCode`)(() => Promise.resolve(contentClipboard))
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } })
+    try {
+      const vm = { node: { textContent: '代码' }, editor: { options: { editorProps: { larkDocCanCopy: () => false } } } }
+      expect(await copyCode.call(vm)).toBe(false); expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+      vm.editor.options = {}; await copyCode.call(vm)
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('代码'); expect(vm.message).toBe('已复制')
+    } finally { vi.unstubAllGlobals() }
   })
 })

@@ -12,8 +12,8 @@
  *      「探测协同态 + 拿不到就退回 plain」。
  *   2. **块没了只降级 unbound，绝不就近吸附**。把甲段落的回复挂到乙段落上，比明说
  *      「原引用已删除」难查得多 —— 本文件没有、也不该有 snap / nearest。
- *   3. **codec 只翻译持久化形态，不参与 bound 判定**。bound 只看 blockId 在不在当前文档
- *      的块集合里；offset 越界仍算 bound（见 `anchor.js` 文件头「待定」）。
+ *   3. **codec 无法解回原引用时必须失联**；可解回时再检查blockId是否还在当前文档。
+ *      不能回退旧blockId吸附恢复后的新片段；offset越界仍算bound。
  *
  * 负结论（别实现）：
  *   - 「解不出锚点时用相邻的块 id 兜底」：同上第 2 条，禁止。
@@ -95,6 +95,7 @@ export function resolveAnchorCodec(editor, options) {
   if (!ydoc) return plainAnchorCodec
   try {
     return createAnchorCodec(factory({
+      editor,
       ydoc,
       type: opts.type,
       resolve: opts.resolve,
@@ -123,8 +124,21 @@ export function bindThreads(doc, threads, codec) {
     const raw = list[i]
     const thread = normalizeThread(raw)
     if (!thread) continue
+    if (thread.scope === 'document') {
+      bound.push({ ...thread, blockId: null, anchor: null, bound: false, anchorStatus: 'document', anchorReason: 'document' })
+      continue
+    }
+    if (raw.anchorStatus === 'orphaned') {
+      bound.push({ ...thread, bound: false, anchorStatus: 'orphaned', anchorReason: raw.anchorReason || 'unresolved-anchor' })
+      continue
+    }
     // 解一次持久化形态：plain codec 原样透传，yjs codec 把相对位置翻回块内偏移。
     const decoded = decodeAnchor(raw && raw.anchor, codec)
+    if (raw.anchor != null && !decoded) {
+      // 原引用不可解时只保留身份展示，不能因恢复后重用blockId而吸附新片段。
+      bound.push({ ...thread, bound: false, anchorReason: 'unresolved-anchor', anchorStatus: 'orphaned' })
+      continue
+    }
     const target = decoded ? { ...thread, anchor: decoded } : thread
     bound.push(withAnchorBinding(target, lookup))
   }

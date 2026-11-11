@@ -36,7 +36,7 @@
   --ld-bg-active: rgba(31, 35, 41, 0.10); /* 飞书口径，绿档暂无引用 */
   --ld-bg-accent: #eaf8f3;          /* 激活底（button.active / aria-pressed） */
   --ld-bg-accent-active: #e3f2ea;   /* 展开态底（工具栏 aria-expanded / 气泡 pressed） */
-  --ld-bg-selected: #E0E9FF;        /* 飞书口径：格式已生效开关底（绿档暂无引用） */
+  --ld-bg-selected: var(--ld-bg-accent);        /* 飞书口径：格式已生效开关底（绿档暂无引用） */
   /* ---- T3-05 / T3-06：两个「宿主开关」型 token ---- */
   /* 深色下图片过亮时的压暗系数。**默认 1 = 不改任何像素**，深色档也不预置 ——
      要压暗由宿主自己写 `--ld-media-dim: .85`（写在 [data-content-theme="dark"] 上），
@@ -79,14 +79,14 @@
   --ld-text-outline: #596a63;              /* 轮廓栏条目文字 */
   --ld-text-outline-heading: #324b40;      /* 轮廓栏标题 */
   --ld-text-outline-icon: #7f8c86;         /* 轮廓栏折叠三角 */
-  --ld-text-outline-active: #2869f5;       /* 轮廓栏 hover / 选中（蓝，两档同族） */
-  --ld-bg-outline-hover: #eef3ff;          /* 轮廓栏展开按钮 hover 底 */
+  --ld-text-outline-active: var(--ld-text-accent);       /* 轮廓栏 hover / 选中（蓝，两档同族） */
+  --ld-bg-outline-hover: var(--ld-bg-accent);          /* 轮廓栏展开按钮 hover 底 */
   --ld-border-paper: #ecf0ee;              /* 纸张描边 */
   --ld-shadow-paper: 0 8px 36px #3552470b; /* 纸张投影 */
   /* ---- L2 品牌 / 功能（D2 跨界拆分） ---- */
   --ld-brand-chrome: #00b887;       /* 外壳品牌色（logo/focus outline/开关；旧 green） */
   --ld-brand-content: #1456f0;      /* 正文品牌色（编号/列表序号，两档同飞书蓝） */
-  --ld-brand-subtle: #E1EAFF;       /* 飞书口径：品牌浅底（绿档暂无引用） */
+  --ld-brand-subtle: var(--ld-bg-accent);       /* 飞书口径：品牌浅底（绿档暂无引用） */
   --ld-danger: #D83931;
   --ld-warning: #DE7802;
   --ld-success: #2EA121;
@@ -97,7 +97,7 @@
   /* ---- L2 浮层 / 菜单 / 对话框 / toast（B5；值 = 收编前字面值，飞书档按 06 §3 聚拢） ---- */
   --ld-text-menu: #263b35;                /* 块菜单 / 命令菜单项文字 */
   --ld-text-menu-icon: #4c5c55;           /* 菜单项图标 */
-  --ld-text-menu-active: #2869f5;         /* 菜单 hover / 选中强调（蓝） */
+  --ld-text-menu-active: var(--ld-text-accent);         /* 菜单 hover / 选中强调（蓝） */
   --ld-text-bubble: #3e4a45;              /* 划词气泡条按钮文字 */
   --ld-text-handle: #71877b;              /* 块句柄文字 */
   --ld-text-handle-icon: #84988c;         /* 块句柄弱图标（拖拽点） */
@@ -114,7 +114,7 @@
   --ld-bg-switch-off: #bbbfc4;            /* 开关关闭轨道 */
   --ld-bg-switch-thumb: #FFFFFF;          /* 开关圆点 */
   --ld-bg-handle-hover: #f4faf7;          /* 块句柄 hover 底 */
-  --ld-bg-menu-item-active: #eef3ff;      /* 块类型快捷项 hover / 选中底 */
+  --ld-bg-menu-item-active: var(--ld-bg-accent);      /* 块类型快捷项 hover / 选中底 */
   --ld-bg-brand-hover: #00a979;           /* 表格边界按钮 hover（绿档更深的绿） */
   /* P3-07：内嵌网页浮层按钮专用实心品牌色（04 §4.3 ⑤ 飞书档实测 #336DF4 / 按下 #5083FB）。
      🔴 不能复用 --ld-bg-brand-hover：那支在默认档是「更深的绿」，同名跨档含义不同。
@@ -124,13 +124,13 @@
   --ld-bg-toast: #fff8eb;                 /* toast 底（琥珀） */
   --ld-bg-badge: #e8f8f1;                 /* 本地标记徽标底 */
   --ld-bg-grid-table: #f3f5f4;            /* 表格尺寸选择器空格 */
-  --ld-bg-grid-table-active: #91b1f6;     /* 表格尺寸选择器预览格 */
+  --ld-bg-grid-table-active: var(--ld-bg-accent-active);     /* 表格尺寸选择器预览格 */
   --ld-bg-grid-submenu: #f5f7fc;          /* 表格子菜单底 */
   --ld-bg-columns-preview: #f0f2f4;       /* 分栏选择器画布底 */
-  --ld-bg-columns-picker: #a5bdf7;        /* 分栏选择器预览块 */
-  --ld-bg-columns-cell: #dce4f5;          /* 分栏预览格 */
-  --ld-bg-columns-cell-active: #dce5fa;   /* 分栏预览格（hover） */
-  --ld-bg-columns-cell-preview: #91adf2;  /* 分栏预览格（选中） */
+  --ld-bg-columns-picker: var(--ld-bg-accent-active);        /* 分栏选择器预览块 */
+  --ld-bg-columns-cell: var(--ld-bg-accent);          /* 分栏预览格 */
+  --ld-bg-columns-cell-active: var(--ld-bg-accent-active);   /* 分栏预览格（hover） */
+  --ld-bg-columns-cell-preview: var(--ld-bg-accent-active);  /* 分栏预览格（选中） */
   --ld-mask: #17271c73;                   /* 对话框遮罩 */
   --ld-bg-print: #FFFFFF;                 /* 打印纸面（两档恒定，不随主题变化） */
   --ld-border-control: #d9e2dd;           /* 控件描边（块句柄 / 空格插入钮） */
@@ -142,13 +142,13 @@
   --ld-border-color-grid: rgba(31, 35, 41, 0.12); /* 文字颜色网格描边 */
   --ld-border-columns-picker: #dce3eb;    /* 分栏选择器描边 */
   --ld-border-grid-table: #e5e9e7;        /* 表格尺寸格描边 */
-  --ld-border-grid-table-active: #8eaff2; /* 表格尺寸格选中描边 */
+  --ld-border-grid-table-active: var(--ld-brand-chrome); /* 表格尺寸格选中描边 */
   --ld-border-toast: #edcf9f;             /* toast 描边 */
   --ld-stroke-swatch-empty: #b8c1bd;      /* 色块「无颜色」斜线 */
   --ld-stroke-swatch-clear: #ca4d54;      /* 颜色盘「清除」斜线 */
-  --ld-accent-control: #2f6cf6;           /* 控件蓝（块类型图标 / 表格边界线） */
-  --ld-focus-ring: #2f6cf666;             /* 控件焦点环 */
-  --ld-focus-ring-picker: #789cf0;        /* 选择器焦点描边 */
+  --ld-accent-control: var(--ld-brand-chrome);           /* 控件蓝（块类型图标 / 表格边界线） */
+  --ld-focus-ring: var(--ld-brand-chrome);             /* 控件焦点环 */
+  --ld-focus-ring-picker: var(--ld-brand-chrome);        /* 选择器焦点描边 */
   --ld-icon-callout: #ff7a1a;             /* 高亮块类型的橙色图标 */
   /* 命令菜单分类图标色板：主题无关，两档同值（不是 L2 语义色） */
   --ld-cat-blue: #416cf2;
@@ -204,8 +204,8 @@
   --ld-bg-th: #edf6f0;                   /* 表头底 */
   --ld-border-hr: #dce8e1;               /* 分隔线 */
   --ld-text-fold-toggle: #2b2f36;        /* 标题折叠三角 */
-  --ld-bg-fold-toggle-hover: #eef3ff;    /* 折叠三角 hover 底 */
-  --ld-text-fold-toggle-hover: #2869f5;  /* 折叠三角 hover 色 */
+  --ld-bg-fold-toggle-hover: var(--ld-bg-accent);    /* 折叠三角 hover 底 */
+  --ld-text-fold-toggle-hover: var(--ld-text-accent);  /* 折叠三角 hover 色 */
   /* 未知块占位卡（P1-03，04 §8.3 中性灰实测值，非绿系衍生） */
   --ld-unknown-card-bg: #f5f6f7;         /* 卡底 */
   --ld-unknown-card-border: #dee0e3;     /* 虚线描边（虚线区分「未就绪/就绪」） */
@@ -281,8 +281,8 @@
   --ld-fr-text: #1f2329;                             /* Tab 未激活 / 次要按钮文字 */
   --ld-fr-text-muted: #646a73;                       /* 关闭图标 / 命中计数器 */
   --ld-fr-text-disabled: #bbbfc4;                    /* 禁用态文字 */
-  --ld-fr-primary-bg: #1456f0;                       /* 「全部替换」主按钮填充 */
-  --ld-bg-hover-segment: rgba(20, 86, 240, .1); /* 标题/块 hover 整段浅蓝底 */
+  --ld-fr-primary-bg: var(--ld-brand-chrome);                       /* 「全部替换」主按钮填充 */
+  --ld-bg-hover-segment: var(--ld-bg-accent); /* 标题/块 hover 整段浅蓝底 */
   --ld-border-notice: #a9d8c2;           /* 通知条描边 */
   --ld-bg-notice: #edf9f2;               /* 通知条底 */
   --ld-text-notice: #155c42;             /* 通知条文字 */
@@ -356,7 +356,7 @@
 }
 /* 旧五件套（--lark-doc-*）转为废弃别名，指向新 token，下个大版本移除（12 §9）。
    --lark-doc-soft 已别名化到 --ld-bg-soft（B5）；AI 面板其余局部色留 B4 收编。 */
-.lark-doc { --lark-doc-green: var(--ld-brand-chrome); --lark-doc-ink: var(--ld-text); --lark-doc-muted: var(--ld-text-tertiary); --lark-doc-line: var(--ld-border); --lark-doc-soft: var(--ld-bg-soft); min-height: 100vh; width: 100%; max-width: 100%; overflow-x: clip; background: var(--ld-bg-shell); color: var(--lark-doc-ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; }
+.lark-doc { --lark-doc-green: var(--ld-brand-chrome); --lark-doc-ink: var(--ld-text); --lark-doc-muted: var(--ld-text-tertiary); --lark-doc-line: var(--ld-border); --lark-doc-soft: var(--ld-bg-soft); height: 100%; max-height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; width: 100%; max-width: 100%; overflow-x: clip; background: var(--ld-bg-shell); color: var(--lark-doc-ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; }
 .lark-doc *, .lark-doc *::before, .lark-doc *::after { box-sizing: border-box; }
 .lark-doc button, .lark-doc input, .lark-doc select { font: inherit; }
 .lark-doc button { min-height: 30px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; padding: 4px 8px; cursor: pointer; white-space: nowrap; }
@@ -366,18 +366,22 @@
 .lark-doc input, .lark-doc select { min-width: 0; border: 1px solid var(--ld-border-chrome); border-radius: 5px; background: var(--ld-bg-surface-chrome); color: var(--lark-doc-ink); padding: 5px 8px; }
 .lark-doc .lark-doc-skip { position: fixed; left: -999px; top: 8px; z-index: 100; padding: 8px; background: var(--ld-bg-surface-chrome); }
 .lark-doc .lark-doc-skip:focus { left: 8px; }
-.lark-doc .lark-doc-topbar { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 7px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-topbar { position: relative; z-index: 35; display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 7px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); }
 .lark-doc.lark-doc-titlebar-fixed .lark-doc-topbar { position: sticky; z-index: 35; top: 0; }
 /* 工具栏吸附：独立开启时贴视口顶；与标题栏同开时贴在标题栏（min-height 58px + 1px 下边框）之下。 */
 .lark-doc.lark-doc-toolbar-fixed .lark-doc-toolbar { position: sticky; z-index: 34; top: 0; }
 .lark-doc.lark-doc-titlebar-fixed.lark-doc-toolbar-fixed .lark-doc-toolbar { top: 59px; }
 .lark-doc .lark-doc-brand { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; color: var(--lark-doc-green); font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
 .lark-doc .lark-doc-brand span { color: var(--ld-text-brand-sub); font-size: 14px; letter-spacing: 0; }
-.lark-doc .lark-doc-title-wrap { display: flex; flex-direction: column; min-width: 140px; width: min(370px, 30vw); }
+.lark-doc .lark-doc-title-wrap { display: flex; flex-direction: column; min-width: 0; flex: 1; width: min(370px, 30vw); }
 .lark-doc .lark-doc-title-wrap input { border: 0; padding: 2px 4px; font-size: 16px; font-weight: 700; text-overflow: ellipsis; }
 .lark-doc .lark-doc-title-sub { padding-left: 5px; color: var(--lark-doc-muted); font-size: 11px; }
-.lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.lark-doc .lark-doc-header-actions { display: flex; align-items: center; justify-content: flex-start; gap: 7px; flex: 0 0 auto; min-width: 0; }
+/* 常用操作常驻，长宿主控件收进文档操作菜单。 */
+.lark-doc .lark-doc-header-actions > :first-child { margin-left: auto; }
+@media (max-width: 760px) { .lark-doc .lark-doc-header-actions { flex-wrap: wrap; }.lark-doc .lark-doc-header-actions > :first-child { margin-left: 0; } }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--ld-border-chrome); }
+.lark-doc .lark-doc-header-actions .lark-doc-header-more { width: 32px; min-width: 32px; padding: 0; border-color: transparent; }
 .lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; -ms-overflow-style: none; }
 .lark-doc .lark-doc-toolbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .lark-doc .lark-doc-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 7px; border-right: 1px solid var(--ld-border-chrome); }
@@ -453,6 +457,7 @@
 .lark-doc .lark-doc-header-menu > * { min-width: 0; }
 .lark-doc .lark-doc-header-menu button, .lark-doc .lark-doc-header-menu select { width: 100%; min-height: 32px; border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-header-menu .lark-doc-save-status { padding: 2px 4px; }
+
 .lark-doc .lark-doc-table-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 8px clamp(12px, 2vw, 30px); background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); }
 /* P4-05 查找替换浮层（04 §3.2 实测）：替换 Tab 406×286、查找 Tab 406×186（高度由内联 style 给），
    z-index 100、radius 8、默认右上角（右 16 / 顶 72），Tab 行即拖拽把手（拖后 left/top 走内联）。
@@ -462,10 +467,10 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 28px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
 /* Tab 32×48 / fs16：激活用 --ld-brand-content（浅 #1456F0 / 深 #4C88FF），未激活是正文色。 */
 .lark-doc .lark-doc-fr .lark-doc-fr-tab { width: 32px; min-width: 32px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 16px; line-height: 48px; cursor: pointer; }
-.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active { color: var(--ld-brand-content); }
+.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active { color: var(--ld-brand-chrome); }
 /* 激活下划线 ink：容器 32×3，::before 32×6 溢出一半被裁 —— 得到上圆角 3px 的实心条。 */
 .lark-doc .lark-doc-fr .lark-doc-fr-ink { position: absolute; bottom: 0; left: 0; z-index: 1; overflow: hidden; width: 32px; height: 3px; }
-.lark-doc .lark-doc-fr .lark-doc-fr-ink::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 6px; border-radius: 3px; background: var(--ld-brand-content); }
+.lark-doc .lark-doc-fr .lark-doc-fr-ink::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 6px; border-radius: 3px; background: var(--ld-brand-chrome); }
 .lark-doc .lark-doc-fr.is-replace .lark-doc-fr-ink { transform: translateX(60px); }
 .lark-doc .lark-doc-fr .lark-doc-fr-pane { padding-top: 16px; }
 .lark-doc .lark-doc-fr .lark-doc-fr-field { display: flex; flex-direction: column; }
@@ -486,16 +491,16 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-btn:disabled { opacity: 1; border-color: var(--ld-fr-border-disabled); background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text-disabled); cursor: not-allowed; }
 /* 主按钮「全部替换」：填充 --ld-fr-primary-bg（浅 #1456F0 / 深 #3370EB，深档实测就是这个值，
    不是品牌蓝 #4C88FF），禁用沿用仓库既有做法 —— 降不透明度，不另造一档灰蓝。 */
-.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary { border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-text-inverse); }
-.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:hover:not(:disabled) { background: var(--ld-fr-primary-bg); border-color: transparent; color: var(--ld-text-inverse); }
-.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:disabled { opacity: .43; border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-text-inverse); cursor: not-allowed; }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary { border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-code-bg); }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:hover:not(:disabled) { background: var(--ld-fr-primary-bg); border-color: transparent; color: var(--ld-code-bg); }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:disabled { opacity: .43; border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-code-bg); cursor: not-allowed; }
 /* 关闭按钮 28×28 @(1447,82)：图标盒 20×20，色 --ld-fr-text-muted（浅 #646A73 / 深 #A6A6A6）。 */
 .lark-doc .lark-doc-fr .lark-doc-fr-close { position: absolute; z-index: 10; top: 10px; right: 21px; display: grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ld-fr-text-muted); }
 .lark-doc .lark-doc-fr .lark-doc-fr-close:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--ld-fr-text-muted); }
 .lark-doc .lark-doc-table-tools label { display: flex; align-items: center; gap: 4px; }
 .lark-doc .lark-doc-table-tools input[type="color"] { width: 31px; height: 27px; padding: 1px; }
-.lark-doc .lark-doc-body { display: flex; align-items: flex-start; min-height: calc(100vh - 105px); width: 100%; max-width: 100%; }
-.lark-doc .lark-doc-outline { position: sticky; top: 0; flex: 0 0 210px; width: 210px; max-height: calc(100vh - 80px); overflow-x: hidden; overflow-y: auto; padding: 26px 12px 30px 18px; color: var(--ld-text-outline); scrollbar-width: thin; }
+.lark-doc .lark-doc-body { position: relative; display: flex; align-items: stretch; flex: 1; min-height: 0; overflow: hidden; width: 100%; max-width: 100%; }
+.lark-doc .lark-doc-outline { position: sticky; top: 0; flex: 0 0 210px; width: 210px; height: 100%; min-height: 0; max-height: 100%; overflow-x: hidden; overflow-y: auto; padding: 26px 12px 30px 18px; color: var(--ld-text-outline); scrollbar-width: thin; }
 .lark-doc .lark-doc-outline-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 9px; color: var(--ld-text-outline-heading); }
 .lark-doc .lark-doc-outline p { margin: 10px 5px; color: var(--ld-text-tertiary); font-size: 12px; }
 .lark-doc .lark-doc-outline-item { display: flex; min-width: 0; min-height: 34px; align-items: center; border-radius: 8px; }
@@ -506,9 +511,20 @@
 .lark-doc .lark-doc-outline-toggle-placeholder { display: inline-block; width: 28px; min-width: 28px; height: 30px; }
 .lark-doc .lark-doc-outline-item button:last-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; border-color: transparent; border-radius: 8px; color: var(--ld-text-outline); text-align: left; transition: background-color .15s ease, color .15s ease; }
 .lark-doc .lark-doc-outline-item:hover > button:last-child, .lark-doc .lark-doc-outline-item:focus-within > button:last-child, .lark-doc .lark-doc-outline-item button:last-child:hover, .lark-doc .lark-doc-outline-item button:last-child:focus-visible, .lark-doc .lark-doc-outline-item button:last-child.active { background: transparent; border-color: transparent; color: var(--ld-text-outline-active); }
-.lark-doc .lark-doc-outline-reopen { position: fixed; z-index: 44; top: 118px; left: 10px; display: grid; width: 34px; min-width: 34px; height: 34px; min-height: 34px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ld-text-outline-active); font-size: 22px; line-height: 1; }
+.lark-doc .lark-doc-outline-reopen { position: fixed; z-index: 19; top: 118px; left: 10px; display: grid; width: 34px; min-width: 34px; height: 34px; min-height: 34px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ld-text-outline-active); font-size: 22px; line-height: 1; }
 .lark-doc .lark-doc-outline-reopen:hover, .lark-doc .lark-doc-outline-reopen:focus-visible { background: var(--ld-bg-outline-hover); color: var(--ld-text-outline-active); outline: 0; }
-.lark-doc .lark-doc-main { min-width: 0; flex: 1; padding: 30px 18px 16px; }
+.lark-doc .lark-doc-main { min-width: 0; min-height: 0; height: 100%; flex: 1; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 30px 18px 16px; }
+/* 临时协作光标：复用已测强调色，姓名采用受控文本节点，不进入正文。 */
+.lark-doc { --ld-peer-blue: #1456F0; --ld-peer-red: #D83931; --ld-peer-green: #00875A; }
+.lark-doc .lark-doc-peer-color-0 { --ld-peer-color: var(--ld-peer-blue); }
+.lark-doc .lark-doc-peer-color-1 { --ld-peer-color: var(--ld-peer-red); }
+.lark-doc .lark-doc-peer-color-2 { --ld-peer-color: var(--ld-peer-green); }
+.lark-doc .collaboration-carets__caret { position: relative; display: inline; border-left: 2px solid var(--ld-peer-color); border-right: 0; margin-left: -1px; margin-right: -1px; pointer-events: none; word-break: normal; }
+.lark-doc .collaboration-carets__label { position: absolute; left: -2px; bottom: 100%; padding: 2px 6px; color: var(--ld-comment-surface); background: var(--ld-peer-color); border-radius: 3px 3px 3px 0; font: 12px/16px system-ui; white-space: nowrap; user-select: none; }
+.lark-doc .collaboration-carets__selection { background: color-mix(in srgb, var(--ld-peer-color) 18%, transparent); }
+.lark-doc .lark-doc-collaborators { display: flex; align-items: center; gap: 6px; }
+.lark-doc .lark-doc-collaborator { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--ld-brand-chrome); color: var(--ld-comment-surface); font: 12px/1 system-ui; }
+.lark-doc .lark-doc-collaborator i { position: absolute; width: 9px; height: 9px; right: -1px; bottom: -1px; border: 2px solid var(--ld-comment-surface); border-radius: 50%; background: var(--ld-peer-color); }
 .lark-doc .lark-doc-paper { position: relative; width: min(100%, 870px); min-height: 74vh; margin: 0 auto; padding: clamp(30px, 5vw, 72px) clamp(22px, 6vw, 92px); background: var(--ld-bg-content); border: 1px solid var(--ld-border-paper); box-shadow: var(--ld-shadow-paper); }
 .lark-doc.lark-doc-width-wide .lark-doc-paper { width: min(100%, 1140px); }
 .lark-doc.lark-doc-width-full .lark-doc-paper { width: 100%; }
@@ -640,7 +656,7 @@
 .lark-doc .lark-doc-block-menu-table { display: grid; gap: 1px; }
 .lark-doc .lark-doc-menu-switch { position: relative; flex: 0 0 auto; width: 28px; height: 16px; margin-left: auto; border-radius: 8px; background: var(--ld-bg-switch-off); transition: background .15s; }
 .lark-doc .lark-doc-menu-switch .lark-doc-menu-switch-dot { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ld-bg-switch-thumb); box-shadow: var(--ld-shadow-thumb); transition: left .15s; }
-.lark-doc .lark-doc-menu-switch.on { background: var(--ld-brand-content); }
+.lark-doc .lark-doc-menu-switch.on { background: var(--ld-brand-chrome); }
 .lark-doc .lark-doc-menu-switch.on .lark-doc-menu-switch-dot { left: 14px; }
 .lark-doc .lark-doc-empty-block-insert { width: 28px; height: 28px; padding: 0; border: 1px solid var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-menu); font-size: 22px; line-height: 1; }
 .lark-doc .lark-doc-callout-tools { position: absolute; z-index: 24; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tools); }.lark-doc .lark-doc-callout-tools label { display: grid; place-items: center; width: 30px; height: 30px; color: var(--ld-text-menu-icon); cursor: pointer; }.lark-doc .lark-doc-callout-tools label span { grid-area: 1 / 1; pointer-events: none; }.lark-doc .lark-doc-callout-tools input[type="color"] { grid-area: 1 / 1; width: 30px; height: 30px; padding: 0; border: 0; opacity: 0; cursor: pointer; }.lark-doc .lark-doc-callout-tools > button { min-width: 30px; height: 30px; padding: 3px; }
@@ -683,10 +699,10 @@
 
 .lark-doc .lark-doc-dialog-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--ld-mask); }.lark-doc .lark-doc-dialog { width: min(420px, 100%); max-height: 90vh; overflow: auto; padding: 19px; border-radius: 10px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-dialog); }.lark-doc .lark-doc-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.lark-doc .lark-doc-dialog input { width: 100%; }.lark-doc .lark-doc-dialog p { color: var(--lark-doc-muted); }.lark-doc .lark-doc-dialog button { border-color: var(--ld-border-chrome); }.lark-doc .lark-doc-table-grid-size { margin-left: auto; color: var(--lark-doc-muted); font-variant-numeric: tabular-nums; }.lark-doc .lark-doc-table-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }.lark-doc .lark-doc-table-grid button { min-width: 0; padding: 2px; border: 1px solid var(--ld-border-grid-table); border-radius: 2px; background: var(--ld-bg-grid-table); color: transparent; }.lark-doc .lark-doc-table-grid button.is-preview { border-color: var(--ld-border-grid-table-active); background: var(--ld-bg-grid-table-active); }
 .lark-doc .lark-doc-table-boundary-tools { position: absolute; z-index: 18; pointer-events: none; }.lark-doc .lark-doc-table-boundary-tools button { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: transparent; font-size: 0; line-height: 1; pointer-events: auto; }.lark-doc .lark-doc-table-boundary-tools button::before { content: '＋'; position: absolute; display: grid; place-items: center; border-radius: 999px; background: var(--lark-doc-green); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-boundary); font-size: 16px; }.lark-doc .lark-doc-table-boundary-tools button:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; }.lark-doc .lark-doc-table-boundary-tools button:hover::before, .lark-doc .lark-doc-table-boundary-tools button:focus-visible::before { background: var(--ld-bg-brand-hover); }.lark-doc .lark-doc-table-boundary-tools.is-column button::before { width: 16px; height: 32px; }.lark-doc .lark-doc-table-boundary-tools.is-row button::before { width: 32px; height: 16px; }.lark-doc .lark-doc-table-boundary-tools .is-column-before { top: 0; left: var(--lark-doc-column-line-left, 50%); transform: translate(-50%, -50%); }.lark-doc .lark-doc-table-boundary-tools .is-column-after { bottom: 0; left: var(--lark-doc-column-line-left, 50%); transform: translate(-50%, 50%); }.lark-doc .lark-doc-table-boundary-tools .is-row-before { top: var(--lark-doc-row-line-top, 50%); left: 0; transform: translate(-50%, -50%); }.lark-doc .lark-doc-table-boundary-tools .is-row-after { top: var(--lark-doc-row-line-top, 50%); right: 0; transform: translate(50%, -50%); }.lark-doc .lark-doc-table-boundary-line { position: absolute; z-index: -1; background: var(--ld-accent-control); opacity: .42; pointer-events: none; }.lark-doc .lark-doc-table-boundary-line.is-column-line { top: 0; bottom: 0; width: 2px; transform: translateX(-50%); }.lark-doc .lark-doc-table-boundary-line.is-row-line { left: 0; right: 0; height: 2px; transform: translateY(-50%); }
-.lark-doc .lark-doc-slide-stage { display: grid; align-content: center; gap: 25px; min-height: 70vh; width: min(100%, 1100px); margin: auto; padding: clamp(25px, 8vw, 100px); background: var(--ld-bg-surface-content); box-shadow: var(--ld-shadow-paper); }.lark-doc .lark-doc-slide-stage h1 { font-size: clamp(28px, 5vw, 54px); color: var(--ld-text-slide-title); }.lark-doc .lark-doc-slide-stage > p:not(.lark-doc-slide-counter) { white-space: pre-wrap; line-height: 1.8; }.lark-doc .lark-doc-slide-counter { color: var(--lark-doc-green); }
+
 .lark-doc .lark-doc-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }.lark-doc .lark-doc-toast { position: fixed; z-index: 95; right: 20px; bottom: 20px; max-width: min(400px, 90vw); padding: 10px 13px; background: var(--ld-bg-toast); color: var(--ld-text-toast); border: 1px solid var(--ld-border-toast); border-radius: 7px; box-shadow: var(--ld-shadow-toast); }.lark-doc .lark-doc-error { color: var(--ld-text-error) !important; }.lark-doc .lark-doc-local-badge { padding: 4px 6px; border-radius: 4px; background: var(--ld-bg-badge); color: var(--ld-text-badge); font-size: 11px; font-weight: 700; }.lark-doc .lark-doc-save-status { font-size: 11px; color: var(--lark-doc-muted); white-space: nowrap; }.lark-doc .lark-doc-save-status.is-error { color: var(--ld-text-error); }
 @media (max-width: 1050px) { .lark-doc .lark-doc-outline { flex-basis: 165px; width: 165px; }.lark-doc .lark-doc-external-panel { flex-basis: 220px; width: 220px; }.lark-doc .lark-doc-paper { padding-left: 45px; padding-right: 35px; } }
-@media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: fixed; z-index: 45; top: 112px; left: 0; width: min(260px, 85vw); max-height: calc(100vh - 112px); padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
+@media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: absolute; z-index: 19; top: 0; left: 0; width: min(260px, 85vw); max-height: 100%; padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
 @media (max-width: 380px) { .lark-doc .lark-doc-topbar { gap: 5px; }.lark-doc .lark-doc-brand span { display: none; }.lark-doc .lark-doc-paper { padding-left: 58px; padding-right: 12px; }.lark-doc .lark-doc-main { padding: 7px; } }
 @media (prefers-reduced-motion: reduce) { .lark-doc, .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 @media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-drawer-mask, .lark-doc .lark-doc-help-fab-wrap, .lark-doc .lark-doc-mode-toast, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
@@ -969,7 +985,7 @@
 .lark-doc .lark-doc-file-sep,
 .lark-doc .lark-doc-file-size { flex: 0 0 auto; color: var(--ld-text-tertiary); }
 .lark-doc .lark-doc-file-sep[hidden] { display: none; }
-.lark-doc .lark-doc-file-download { flex: 0 0 auto; margin-left: auto; padding: 2px 8px; border-radius: 4px; color: var(--ld-brand-content); text-decoration: none; cursor: pointer; }
+.lark-doc .lark-doc-file-download { flex: 0 0 auto; margin-left: auto; padding: 2px 8px; border-radius: 4px; color: var(--ld-text-accent); text-decoration: none; cursor: pointer; }
 .lark-doc .lark-doc-file-download:hover:not([aria-disabled="true"]),
 .lark-doc .lark-doc-file-download:focus-visible:not([aria-disabled="true"]) { background: var(--ld-bg-menu-item-active); outline: 0; }
 /* 没有可下载地址时链接退成灰字占位，不能变成「点了没反应」。 */
@@ -2148,7 +2164,7 @@
 
 /* 取消 / 确定：确定是主按钮，取消是次按钮（② §22 ⑤-1 footer 右对齐） */
 .lark-doc .lark-doc-isv-overlay .lark-doc-isv-button { box-sizing: border-box; height: 32px; padding: 0 12px; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font-family: inherit; font-size: 14px; cursor: pointer; }
-.lark-doc .lark-doc-isv-overlay .lark-doc-isv-button.is-primary { border-color: var(--ld-brand-content); background: var(--ld-brand-content); color: var(--ld-text-on-brand); }
+.lark-doc .lark-doc-isv-overlay .lark-doc-isv-button.is-primary { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); }
 
 /* Windows 高对比度：强制模式抹掉 box-shadow，用系统色描边把边界补回来 */
 @media (forced-colors: active) {
@@ -2211,7 +2227,7 @@
 .lark-doc .lark-doc-mode-item { display: flex; flex-direction: column; box-sizing: border-box; width: 170px; height: 50px; align-items: flex-start; justify-content: center; gap: 2px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text); font-family: inherit; text-align: left; cursor: pointer; }
 .lark-doc .lark-doc-mode-item:hover:not(:disabled), .lark-doc .lark-doc-mode-item:focus-visible:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text); outline: 0; }
 .lark-doc .lark-doc-mode-item.is-active { background: var(--ld-bg-selected); }
-.lark-doc .lark-doc-mode-item.is-active .lark-doc-mode-item-label { color: var(--ld-brand-content); }
+.lark-doc .lark-doc-mode-item.is-active .lark-doc-mode-item-label { color: var(--ld-brand-chrome); }
 .lark-doc .lark-doc-mode-item-label { color: inherit; font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-mode-item-hint { color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
 .lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; right: 0; left: 0; display: flex; box-sizing: border-box; height: 16px; align-items: center; justify-content: center; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text); font-size: 12px; line-height: 16px; }
@@ -2531,3 +2547,7 @@
   .lark-doc .text-revision { color: inherit; text-decoration: none; box-shadow: none; }
   .lark-doc .lark-doc-revision-panel { display: none !important; }
 }
+
+.lark-doc > .lark-doc-topbar, .lark-doc > .lark-doc-toolbar { flex-shrink: 0; }
+@media print { .lark-doc, .lark-doc .lark-doc-body, .lark-doc .lark-doc-main { display: block !important; position: static !important; height: auto !important; max-height: none !important; min-height: 0 !important; overflow: visible !important; } }
+

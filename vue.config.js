@@ -1,6 +1,7 @@
 const { defineConfig } = require('@vue/cli-service')
 const path = require('path')
 const webpack = require('webpack')
+const buildRootKey = require('crypto').createHash('sha256').update(__dirname).digest('hex').slice(0, 12)
 
 /**
  * 四种构建目标（LARK_DOC_TARGET）：
@@ -98,6 +99,22 @@ module.exports = defineConfig({
   // 都不会把 chunk / mermaid vendor / 字体解析到错误位置。
   publicPath: isLib ? './' : 'auto',
   chainWebpack(config) {
+    if (isElement || isUmd || isEsm) {
+      // CLI为构建速度关闭了常规安全压缩；按原体积门恢复默认优化。
+      // 保留既有Safari mangle/版权设置，不启用unsafe或属性名混淆。
+      config.optimization.minimizer('terser').tap(args => {
+        args[0].terserOptions = { ...args[0].terserOptions, ecma: 2018, compress: { passes: 3 } }
+        return args
+      })
+    }
+    if (isLib) {
+      // CJS保留变量名与逐语句排版，仅清理非版权注释和冗余空白。
+      config.optimization.minimizer('terser').tap(args => {
+        args[0].terserOptions = { ...args[0].terserOptions, ecma: 2018, compress: false, mangle: false,
+          format: { beautify: true, indent_level: 0, comments: 'some', quote_style: 3 } }
+        return args
+      })
+    }
     // vendored 第三方 UMD（mermaid）绝不能进 babel：transpileDependencies 的
     // core-js 注入会往文件头加 require()，file-loader 落盘后在浏览器里
     // 直接 ReferenceError: require is not defined。源码资产按原样落盘。
@@ -141,7 +158,8 @@ module.exports = defineConfig({
       type: 'filesystem',
       // LARK_DOC_LEGACY 会改变 babel 输出（降语法），必须换一份缓存，否则同一个
       // target 在两种口径间来回构建会命中对方的 babel 结果。
-      name: `lark-doc-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}`,
+      // worktree/隔离快照可共用node_modules，缓存仍必须属于各自源码根。
+      name: `lark-doc-${target}${isLegacy ? '-legacy' : ''}${noPolyfill ? '-nopolyfill' : ''}-${buildRootKey}`,
       buildDependencies: { config: [__filename, path.resolve(__dirname, 'babel.config.js')] },
     },
     // 包内 vendored mermaid（3 MB）必然超阈值，警告没有意义。
@@ -173,6 +191,12 @@ module.exports = defineConfig({
           cacheGroups: {
             defaultVendors: false,
             default: false,
+            ...(isEsm ? {
+              providers: {
+                test: module => Boolean(module.resource && module.resource.startsWith(path.resolve(__dirname, 'src/providers') + path.sep)),
+                name: 'lark-doc-providers', chunks: 'all', priority: 45, enforce: true, reuseExistingChunk: true,
+              },
+            } : {}),
             vue: { test: nodeModule('vue'), name: 'vue', chunks: initialChunks, priority: 50, reuseExistingChunk: true },
             tiptap: { test: nodeModule('@tiptap|prosemirror-[^/\\\\]+'), name: 'tiptap', chunks: initialChunks, priority: 40, reuseExistingChunk: true },
             vendor: { test: vendorModule, name: 'vendor', chunks: initialChunks, priority: 10, reuseExistingChunk: true },
@@ -184,7 +208,8 @@ module.exports = defineConfig({
           },
         },
       }
-      : {},
+      // CLI在chain之后关闭commonjs压缩；此处只启用上面的无压缩格式整理。
+      : isLib ? { minimize: true } : {},
     plugins: [
       // lib 产物保持单文件：动态 import 全部内联，宿主不需要复制/解析任何 chunk。
       ...(isLib ? [new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 })] : []),

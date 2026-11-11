@@ -21,8 +21,172 @@ import {
   MODE_MENU_WIDTH, MODE_STORAGE_KEY, MODE_TOAST, MODE_TOAST_MS,
   isDocMode, isEditableTarget, modeFromShortcut, modeLabel, modeMeta, modeToastText,
 } from '../../src/components/lark-doc/editor/docModes'
-import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
+import viewModesMixin, { presentationSections } from '../../src/components/lark-doc/editor/viewModesMixin'
 import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
+import toolbarMenusMixin from '../../src/components/lark-doc/editor/toolbarMenusMixin'
+import toolbarCollapseMixin from '../../src/components/lark-doc/editor/toolbarCollapseMixin'
+import { documentMenuItems, documentMenuChildren, runDocumentMenuAction, documentMenuRequestMethods, printEditorDocument, restorePresentationView, documentMentions } from '../../src/components/lark-doc/editor/documentMenuView'
+
+describe('飞书文档操作菜单', () => {
+  it('保留原菜单顺序并新增主题入口和独立已存版本入口，业务动作缺宿主不能执行', async () => {
+    const ed = { session: { can: () => true }, featureEnabled: () => true, toolbarEnabled: () => true, versionProvider: { list() {} }, versionCanCreate: true, exportCanExport: true }
+    const items = documentMenuItems(ed)
+    expect(items).toHaveLength(24)
+    expect(items.slice(13,17).map(item => item.label)).toEqual(['另存为版本', '查看已存版本', '文档权限', '文档小组件'])
+    expect(items.find(item => item.id === 'move').disabled).toBe(true)
+    expect(await runDocumentMenuAction(ed, 'move')).toBe(false)
+    expect(documentMenuChildren(ed, 'width').map(item => item.label)).toEqual(['默认', '较宽', '全宽'])
+    expect(documentMenuChildren(ed, 'download').map(item => item.label)).toEqual(['Word', 'PDF', 'Markdown'])
+  })
+  it('主题三选一使用原控制器，只读也可切换，非法值不派发', async () => {
+    const setTheme = vi.fn(), closeHeaderMenu = vi.fn()
+    const ed = { session: { can: key => key === 'canView' }, featureEnabled: () => true, toolbarEnabled: () => true, closeHeaderMenu, $el: { getAttribute: key => key === 'data-theme-preset' ? 'feishu' : 'dark', _larkDocTheme: { setTheme } } }
+    expect(documentMenuChildren(ed, 'theme').map(x => [x.label, x.checked])).toEqual([['经典绿色', false], ['飞书浅色', false], ['飞书暗色', true]])
+    for (const value of ['default', 'feishu-light', 'feishu-dark']) expect(await runDocumentMenuAction(ed, 'theme', value)).toBe(true)
+    expect(setTheme.mock.calls).toEqual([['light', 'auto', 'default'], ['light', 'auto', 'feishu'], ['dark', 'auto', 'feishu']])
+    expect(await runDocumentMenuAction(ed, 'theme', 'unknown')).toBe(false)
+    expect(setTheme).toHaveBeenCalledTimes(3)
+  })
+  it('隐藏顶栏且无宿主slot时，收纳工具栏仍能打开原生文档菜单', () => {
+    const openHeaderMenuFrom = vi.fn()
+    const ed = { effectiveReadonly: true, toolbarEnabled: key => key === 'viewModes', widthModeOptions: [], larkDocConfig: { layout: { headerVisible: false } }, $slots: {}, openHeaderMenuFrom }
+    const items = toolbarCollapseMixin.computed.toolbarSections.call(ed).flatMap(section => section.items)
+    const item = items.find(item => item.label === '文档操作…')
+    expect(item).toBeDefined()
+    const event = { currentTarget: {} }; item.run(event)
+    expect(openHeaderMenuFrom).toHaveBeenCalledWith(event)
+  })
+  it('菜单查找入口直接进入替换tab；无导出权限不派发', async () => {
+    const openSearch = vi.fn(), openExportDialog = vi.fn()
+    const ed = { session: { can: key => key !== 'canExport' }, featureEnabled: () => true, toolbarEnabled: () => true, closeHeaderMenu() {}, openSearch, openExportDialog, exportCanExport: false }
+    await runDocumentMenuAction(ed, 'search')
+    expect(openSearch).toHaveBeenCalledWith('replace')
+    expect(await runDocumentMenuAction(ed, 'download', 'word')).toBe(false)
+    expect(openExportDialog).not.toHaveBeenCalled()
+  })
+  it('演示分节包含首标题前的完整块和各节范围，不把富文本转成纯文本', () => {
+    const nodes = [{ type: { name: 'table' }, nodeSize: 8 }, { type: { name: 'heading' }, attrs: { level: 1 }, textContent: '第一节', nodeSize: 5 }, { type: { name: 'image' }, nodeSize: 1 }, { type: { name: 'heading' }, attrs: { level: 1 }, textContent: '第二节', nodeSize: 5 }]
+    const doc = { content: { size: 19 }, forEach: callback => { let offset = 0; nodes.forEach(node => { callback(node, offset); offset += node.nodeSize }) } }
+    expect(presentationSections(doc, '文档')).toEqual([{ title: '文档', from: 0, to: 8 }, { title: '第一节', from: 8, to: 14 }, { title: '第二节', from: 14, to: 19 }])
+  })
+  it('宿主动作只派发UI意图，不给移动、删除或关注伪造已提交状态', async () => {
+    const onDocumentAction = vi.fn(async () => ({ status: 'unknown' })), closeHeaderMenu = vi.fn()
+    const ed = { session: { user: { id: 'alice' }, documentId: 'd', can: () => true }, onDocumentAction, closeHeaderMenu, featureEnabled: () => true, toolbarEnabled: () => true }
+    expect(await runDocumentMenuAction(ed, 'move')).toBe(true)
+    expect(onDocumentAction).toHaveBeenCalledWith({ action: 'move', documentId: 'd', actorId: 'alice' })
+    expect(ed.pinned).toBeUndefined()
+    expect(closeHeaderMenu).toHaveBeenCalledOnce()
+  })
+  it('提及的人只投影当前有权限的正文人员并去重，不混入群与历史', () => {
+    const nodes = [{ type: { name: 'mention' }, attrs: { kind: 'user', id: 'bob', name: 'Bob' } }, { type: { name: 'mention' }, attrs: { kind: 'user', id: 'bob', name: '重复' } }, { type: { name: 'mention' }, attrs: { kind: 'chat', id: 'group', name: '群' } }]
+    const ed = { editor: { state: { doc: { descendants: callback => nodes.forEach(callback) } } } }
+    expect(documentMentions(ed)).toEqual([{ id: 'bob', name: 'Bob', department: '' }])
+    ed.session = { can: () => false }; expect(documentMentions(ed)).toEqual([])
+  })
+  it('功能关闭时快捷键及直接入口都不能开启演示', () => {
+    const ctx = { featureEnabled: () => false, slides: false }
+    expect(viewModesMixin.methods.startPresentation.call(ctx, 'document')).toBe(false)
+    expect(ctx.slides).toBe(false)
+  })
+  it('旧宿主回调失效后不阻塞新身份，旧finally不清新请求busy', async () => {
+    let finishOld, finishNew
+    const ed = { session: { user: { id: 'alice' }, can: () => true }, featureEnabled: () => true, toolbarEnabled: () => true, closeHeaderMenu() {}, onDocumentAction: () => new Promise(resolve => { finishOld = resolve }) }
+    const ctx = { ed, canView: true, ...documentMenuRequestMethods }
+    const old = ctx.run({ id: 'move' }); expect(ctx.busy).toBe(true)
+    ed.session = { user: { id: 'bob' }, can: () => true }; ctx.invalidateRequest()
+    expect(ctx.busy).toBe(false)
+    ed.onDocumentAction = () => new Promise(resolve => { finishNew = resolve })
+    const current = ctx.run({ id: 'move' }); finishOld(); await old
+    expect(ctx.busy).toBe(true); expect(ctx.error).toBe('')
+    finishNew(); await current; expect(ctx.busy).toBe(false)
+  })
+  it('旧版本菜单等待结束不能选择新身份重开的面板', async () => {
+    let finish, owned = true
+    const selectVersion = vi.fn(), ed = { featureEnabled: () => true, toolbarEnabled: () => true, versionProvider: {}, closeHeaderMenu() {}, openVersionPanel: () => new Promise(resolve => { finish = resolve }), versionPanelOpen: true, versionList: [{ id: 'v' }], selectVersion }
+    const request = runDocumentMenuAction(ed, 'saved-versions', 'v', null, () => owned)
+    owned = false; finish(); expect(await request).toBe(false); expect(selectVersion).not.toHaveBeenCalled()
+  })
+  it('舞台懒加载尚未挂载即退出，fallback仍恢复侧栏且清理进入快照', async () => {
+    const session = { user: { id: 'alice' }, can: () => true }, ctx = { slides: true, slideIndex: 0, session, commentSidebarOpen: false, $nextTick() {} }
+    ctx._presentationPrevious = { session, principal: 'alice', sidebar: true }
+    await viewModesMixin.methods.toggleSlides.call(ctx)
+    expect(ctx.slides).toBe(false); expect(ctx.commentSidebarOpen).toBe(true); expect(ctx._presentationPrevious).toBe(null)
+  })
+  it('演示退出只恢复进入时同身份代的本地视图，迟到滚动不可跨身份', () => {
+    let tick
+    const session = { user: { id: 'alice' }, _privateIdentityGeneration: 1, can: () => true }, ed = { session, editor: {}, commentSidebarOpen: false, $nextTick: callback => { tick = callback } }
+    ed._presentationPrevious = { session, principal: 'alice', generation: 0, sidebar: true }
+    restorePresentationView(ed, null); expect(ed.commentSidebarOpen).toBe(false); expect(tick).toBeUndefined()
+    ed._presentationPrevious = { session, principal: 'alice', generation: 1, sidebar: true }
+    restorePresentationView(ed, null); expect(ed.commentSidebarOpen).toBe(true)
+    session._privateIdentityGeneration = 2; expect(() => tick()).not.toThrow()
+  })
+  it('独立Editor打印实际调用统一实现，权限撤销后不打印且恢复折叠', async () => {
+    let tick, permitted = true
+    const print = vi.fn(), toggle = vi.fn()
+    const previous = globalThis.window; globalThis.window = { ...(previous || {}), print }
+    try {
+      const ed = { exportCanExport: true, featureEnabled: () => true, session: { can: () => permitted }, editor: { storage: { larkDoc: { folded: new Set(['block']) } }, commands: { toggleLarkDocFoldById: toggle } }, $nextTick: callback => { tick = callback } }
+      expect(printEditorDocument(ed)).toBe(true); permitted = false; tick()
+      expect(print).not.toHaveBeenCalled(); expect(toggle).toHaveBeenCalledTimes(2)
+      permitted = true; expect(printEditorDocument(ed)).toBe(true); tick(); expect(print).toHaveBeenCalledOnce()
+    } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous }
+  })
+})
+
+describe('文档操作菜单键盘', () => {
+  it('方向键循环可用项，Escape关闭并将焦点还给原入口', () => {
+    let focused = '', prevented = 0, stopped = 0
+    const items = ['save', 'export'].map(id => ({ tabIndex: 0, getClientRects: () => [{}], focus: () => { focused = id } }))
+    const ctx = { ...toolbarMenusMixin.methods, headerMenuOpen: true, _headerMenuTrigger: { focus: () => { focused = 'trigger' } } }
+    const event = key => ({ key, target: items[1], currentTarget: { querySelectorAll: () => items }, preventDefault: () => { prevented++ }, stopPropagation: () => { stopped++ } })
+    ctx.onHeaderMenuKeydown(event('ArrowDown'))
+    expect(focused).toBe('save')
+    ctx.onHeaderMenuKeydown(event('End'))
+    expect(focused).toBe('export')
+    ctx.onHeaderMenuKeydown(event('Escape'))
+    expect(ctx.headerMenuOpen).toBe(false)
+    expect(focused).toBe('trigger')
+    expect(prevented).toBe(3)
+    expect(stopped).toBe(1)
+  })
+  it('打开文档菜单收起查找替换，避免常驻浮层截获菜单点击', () => {
+    const closeSearch = vi.fn(), ctx = { headerMenuOpen: false, searchOpen: true, closeSearch, $nextTick() {} }
+    toolbarMenusMixin.methods.toggleHeaderMenu.call(ctx, {})
+    expect(closeSearch).toHaveBeenCalledOnce(); expect(ctx.headerMenuOpen).toBe(true)
+  })
+  it('Tab自然移动焦点，离开菜单才关闭', () => {
+    let closed = 0
+    const ctx = { ...toolbarMenusMixin.methods, closeHeaderMenu: () => { closed++ } }
+    ctx.onHeaderMenuKeydown({ key: 'Tab' })
+    expect(closed).toBe(0)
+    ctx.onHeaderMenuFocusout({ currentTarget: { contains: target => target === 'inside' }, relatedTarget: 'inside' })
+    expect(closed).toBe(0)
+    ctx.onHeaderMenuFocusout({ currentTarget: { contains: () => false }, relatedTarget: null })
+    expect(closed).toBe(1)
+  })
+  it('隐藏导入input不会阻断方向键，输入框的Home/End保留原生行为', () => {
+    let focused = '', prevented = false
+    const button = id => ({ tabIndex: 0, getClientRects: () => [{}], focus: () => { focused = id } })
+    const first = button('import'), last = button('export')
+    const hiddenFile = { ...button('hidden'), type: 'file' }
+    const ctx = { ...toolbarMenusMixin.methods }
+    ctx.onHeaderMenuKeydown({ key: 'ArrowDown', target: first, currentTarget: { querySelectorAll: () => [first, hiddenFile, last] }, preventDefault: () => { prevented = true } })
+    expect(focused).toBe('export'); expect(prevented).toBe(true)
+    prevented = false
+    ctx.onHeaderMenuKeydown({ key: 'Home', target: { tagName: 'INPUT' }, preventDefault: () => { prevented = true } })
+    expect(prevented).toBe(false)
+    ctx.onHeaderMenuKeydown({ key: 'ArrowDown', defaultPrevented: true, target: first, preventDefault: () => { prevented = true } })
+    expect(prevented).toBe(false)
+  })
+  it('嵌套combobox先关闭自身，再按Escape关闭文档菜单并回焦点', () => {
+    let closed = 0
+    const ctx = { ...toolbarMenusMixin.methods, closeHeaderMenu: () => { closed++ } }
+    const event = expanded => ({ key: 'Escape', target: { getAttribute: name => name === 'role' ? 'combobox' : expanded }, preventDefault() {}, stopPropagation() {} })
+    ctx.onHeaderMenuEscape(event('true')); expect(closed).toBe(0)
+    ctx.onHeaderMenuEscape(event('false')); expect(closed).toBe(1)
+  })
+})
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')

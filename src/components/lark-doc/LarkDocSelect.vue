@@ -83,6 +83,8 @@ export default {
     // value 不在 options 中时的展示文案（如代码块的自定义语言名）。
     placeholder: { type: String, default: '' },
     buttonId: { type: String, default: '' },
+    hoverOpen: { type: Boolean, default: true },
+    menuMinWidth: { type: Number, default: 132 },
   },
   data() {
     return { open: false, menuStyle: null, highlightIndex: 0, hoverTimer: null }
@@ -98,7 +100,7 @@ export default {
   methods: {
     /** 飞书式 hover 弹窗：悬停触发按钮即打开（不抢编辑器焦点），离开触发按钮/弹层后延迟关闭。 */
     onTriggerEnter() {
-      if (this.disabled) return
+      if (this.disabled || !this.hoverOpen) return
       clearTimeout(this.hoverTimer)
       if (!this.open) { this._hoverOpened = true; this.openMenu() }
     },
@@ -107,6 +109,7 @@ export default {
     onMenuLeave() { this.scheduleHoverClose() },
     scheduleHoverClose() {
       clearTimeout(this.hoverTimer)
+      if (!this.hoverOpen) return
       this.hoverTimer = setTimeout(() => { this.hoverTimer = null; this._hoverOpened = false; if (this.open) this.close() }, 150)
     },
     openMenu() {
@@ -132,16 +135,17 @@ export default {
       this.menuStyle = {
         left: `${Math.max(8, rect.left)}px`,
         top: `${rect.bottom + 4}px`,
-        minWidth: `${Math.max(rect.width, 132)}px`,
+        minWidth: `${Math.min(Math.max(rect.width, this.menuMinWidth), window.innerWidth - 16)}px`,
       }
-      // 下方放不下时翻转到触发按钮上方。
+      // fixed菜单越过滚动容器；按实测尺寸翻转并钳制到视口，避免权限Dialog裁切。
       this.$nextTick(() => {
         const menu = this.$refs.menu
         if (!menu) return
-        const height = menu.offsetHeight
-        if (rect.bottom + height + 8 > window.innerHeight && rect.top - height - 4 >= 0) {
-          this.menuStyle = { ...this.menuStyle, top: `${rect.top - height - 4}px` }
-        }
+        const { width, height } = menu.getBoundingClientRect()
+        const top = rect.bottom + height + 8 > window.innerHeight ? rect.top - height - 4 : rect.bottom + 4
+        this.menuStyle = { ...this.menuStyle,
+          left: `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`,
+          top: `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px` }
       })
     },
     close() {

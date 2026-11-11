@@ -2,8 +2,11 @@
   <section
     ref="root"
     class="lark-doc"
-    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-mode-suggest': mode === 'suggest', 'lark-doc-slides': slides, 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
+    :class="[`lark-doc-width-${widthMode}`, { 'lark-doc-reading': effectiveReadonly, 'lark-doc-comments-open': commentRemote && commentSidebarOpen, 'lark-doc-mode-suggest': mode === 'suggest', 'lark-doc-slides': slides, 'lark-doc-slide-pages': slides && presentationMode !== 'document', 'lark-doc-fullscreen': fullscreen, 'lark-doc-titlebar-fixed': larkDocConfig.layout.titleBarFixed, 'lark-doc-toolbar-fixed': larkDocConfig.layout.toolbarFixed }]"
+    @keydown.capture="onCommentShortcut"
     @keydown.esc="closeOverlay"
+    @copy.capture="onContentClipboard"
+    @cut.capture="onContentClipboard"
   >
     <a
       class="lark-doc-skip"
@@ -14,9 +17,7 @@
         <slot name="header-actions" />
       </template>
     </TopBar>
-    <!-- P4-06：「已切换为 X 模式」提示。载体是**顶部中性条**（07 §1.1 文案 + 06 §6.2
-         `.ud__msg-manager--top` 的 1512×16 @y=32 / z 9999 / fixed），
-         刻意不复用右下角 `.lark-doc-toast` —— 那是琥珀 error 语义，两者混用会让人以为切换失败。 -->
+    <!-- P4-06模式切换用顶部中性条（07§1.1/06§6.2），不复用右下角错误toast。 -->
     <div
       v-if="modeToast"
       class="lark-doc-mode-toast"
@@ -31,22 +32,37 @@
         <slot name="header-actions" />
       </template>
     </ToolbarBar>
-    <SearchPanel
-      ref="searchInput"
-      :ed="self"
-    />
-    <TableTools :ed="self" />
-    <!-- `@` 提及面板：锚在光标处，与斜杠菜单互斥（同时只会开一个） -->
-    <MentionPanel :ed="self" />
-    <!-- 日期提醒日历浮层：点 chip 打开（入口是 DOM 事件，不走插件回调），与菜单/提及互斥 -->
-    <ReminderPopover :ed="self" />
-    <!-- 日程搜索面板：斜杠「日程」打开，点结果行即插卡片（Esc 刻意不关，02 §26 ⑦） -->
-    <CalendarSearchPanel :ed="self" />
-    <!-- ISV 按钮配置面板：斜杠三条按钮命令打开（270×386，z600，无 backdrop）。
-         与日程面板相反：Esc/取消/点外部都关，关了不建块（02 §22 ⑤-3）。 -->
-    <IsvButtonPanel :ed="self" />
-    <RevisionPanel :ed="self" />
-    <div class="lark-doc-body">
+    <div
+      key="editor-context-panels"
+      style="display: contents"
+    >
+      <SearchPanel
+        v-if="searchOpen && featureEnabled('search')"
+        ref="searchInput"
+        :ed="self"
+      />
+      <TableTools :ed="self" />
+      <!-- 稳定原生边界避免异步面板解析时搬移正文；提及面板仍锚在光标处。 -->
+      <MentionPanel :ed="self" />
+      <!-- 日期提醒日历浮层：点 chip 打开（入口是 DOM 事件，不走插件回调），与菜单/提及互斥 -->
+      <ReminderPopover :ed="self" />
+      <!-- 日程搜索面板：斜杠「日程」打开，点结果行即插卡片（Esc 刻意不关，02 §26 ⑦） -->
+      <CalendarSearchPanel :ed="self" />
+      <!-- ISV配置270×386/z600；Esc/取消/外部关闭，未确认不落块（02§22⑤-3）。 -->
+      <IsvButtonPanel :ed="self" />
+      <RevisionPanel :ed="self" />
+    </div>
+    <p
+      v-if="documentBusinessDeleted"
+      class="lark-doc-deleted-document"
+    >
+      文档已移入回收站
+    </p>
+    <div
+      key="editor-body"
+      :style="documentBusinessDeleted ? { display: 'none' } : null"
+      class="lark-doc-body"
+    >
       <button
         v-if="!outlineOpen && featureEnabled('outline')"
         type="button"
@@ -58,22 +74,35 @@
         ☰
       </button>
       <OutlinePanel :ed="self" />
-      <main class="lark-doc-main">
-        <PaperStage :ed="self" />
+      <main
+        ref="mainScroll"
+        class="lark-doc-main"
+        aria-label="文档内容"
+      >
+        <PaperStage
+          v-if="slides"
+          :ed="self"
+        />
         <div
-          v-show="!slides"
+          key="editor-paper"
           class="lark-doc-paper"
           @pointermove="onPaperPointerMove"
           @pointerdown="onReminderChipClick"
         >
-          <BlockHandleMenu :ed="self" /><div
-            v-if="dropPosition !== null"
-            class="lark-doc-drop-line"
-            :style="{ top: `${dropLineTop}px` }"
-            aria-hidden="true"
-          /><editor-content
+          <div
+            key="editor-paper-controls"
+            style="display: contents"
+          >
+            <BlockHandleMenu :ed="self" /><div
+              v-if="dropPosition !== null"
+              class="lark-doc-drop-line"
+              :style="{ top: `${dropLineTop}px` }"
+              aria-hidden="true"
+            />
+          </div><editor-content
             v-if="editor"
             id="lark-doc-editor"
+            key="live-editor-content"
             :editor="editor"
             class="lark-doc-editor-content"
             @keydown.native="onEditorKeydown"
@@ -82,7 +111,10 @@
             @dragover.native="onBlockDragOver"
             @drop.native="onBlockDrop"
           /><CalloutTools :ed="self" /><TableBoundaryTools :ed="self" />
-        </div><footer class="lark-doc-status">
+        </div><DocumentLikeBar :ed="self" /><CommentPanel
+          :ed="self"
+          :document-only="true"
+        /><footer class="lark-doc-status">
           <span>{{ wordCount }}{{ effectiveMaxLength > 0 ? ` / ${effectiveMaxLength}` : '' }} 字 · {{ outline.length }} 个标题</span><span>{{ effectiveReadonly ? '仅阅读' : '输入 / 快速插入' }}</span>
         </footer>
       </main>
@@ -103,6 +135,7 @@
       :position-style="menuStyle"
       :active-id="activeCommandId"
       :kind="menuKind"
+      @hook:mounted="onCommandMenuMounted"
       @query="menuQuery = $event; activeCommandIndex = 0"
       @move="moveCommand"
       @choose="chooseCommand"
@@ -123,8 +156,7 @@
       aria-label="选择本地图片"
       @change="onImageInput"
     >
-    <!-- P2-04：视频与文件同一个入口。刻意不写 accept —— 02 L4168 实测飞书斜杠 `file`
-         的 accept 为 null（不限类型），任何附件都该能被选进来，由上传侧再兜限值。 -->
+    <!-- P2-04文件/视频共用不限accept入口（02 L4168实测）。 -->
     <input
       ref="fileInput"
       type="file"
@@ -155,51 +187,49 @@
 </template>
 
 <script>
-// LarkDocEditor.vue —— 编辑器视图层：模板、props、生命周期与内容管理核心方法。
-// 各 UI 子域拆分到 ./editor/ 下的 mixin（视图模式/命令菜单/表格工具/区块句柄/区块菜单/
-// 气泡菜单/高亮块与颜色盘/工具栏菜单），经 Vue 2 选项合并后仍以 this.xxx 供模板与生命周期调用。
+// 编辑器模板、props、生命周期与内容管理；其余UI逻辑由editor/各mixin合并到实例。
 import { Editor, EditorContent } from '@tiptap/vue-2'
+import { markRaw } from 'vue'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
-import CommandMenu from './CommandMenu.vue'
+const CommandMenu = () => import(/* webpackChunkName: "editor-panels" */ './CommandMenu.vue')
 import LarkDocIcon from './LarkDocIcon.vue'
 import TopBar from './editor/TopBar.vue'
 import ToolbarBar from './editor/ToolbarBar.vue'
-import SearchPanel from './editor/SearchPanel.vue'
-import MentionPanel from './editor/MentionPanel.vue'
+const SearchPanel = () => import(/* webpackChunkName: "editor-panels" */ './editor/SearchPanel.vue')
+const MentionPanel = () => import(/* webpackChunkName: "editor-panels" */ './editor/MentionPanel.vue')
 // P4-02a：日历浮层组件，只渲染；状态与定位全在 reminderMixin。
-import ReminderPopover from './editor/ReminderPopover.vue'
+const ReminderPopover = () => import(/* webpackChunkName: "editor-panels" */ './editor/ReminderPopover.vue')
 // P4-02b：日程搜索面板，只渲染；状态与定位全在 calendarMixin。
-import CalendarSearchPanel from './editor/CalendarSearchPanel.vue'
+const CalendarSearchPanel = () => import(/* webpackChunkName: "editor-panels" */ './editor/CalendarSearchPanel.vue')
 // P4-04：ISV 按钮配置面板，只渲染；表单状态、校验、落块全在 isvMixin。
-import IsvButtonPanel from './editor/IsvButtonPanel.vue'
-import RevisionPanel from './editor/RevisionPanel.vue' // P4-06：只渲染，状态与定位全在 revisionMixin。
-import TableTools from './editor/TableTools.vue'
-import OutlinePanel from './editor/OutlinePanel.vue'
-import PaperStage from './editor/PaperStage.vue'
-import BlockHandleMenu from './editor/BlockHandleMenu.vue'
-import CalloutTools from './editor/CalloutTools.vue'
-import TableBoundaryTools from './editor/TableBoundaryTools.vue'
-import BubbleBar from './editor/BubbleBar.vue'
-import ColorPalette from './editor/ColorPalette.vue'
-import TablePickerDialog from './editor/dialogs/TablePickerDialog.vue'
-import MathDialog from './editor/dialogs/MathDialog.vue'
-import LinkDialog from './editor/dialogs/LinkDialog.vue'
-import HelpDialog from './editor/dialogs/HelpDialog.vue'
-import HelpFab from './editor/HelpFab.vue'
-import EmbedLinkDialog from './editor/dialogs/EmbedLinkDialog.vue'
-import HeadingNumberMenu from './editor/dialogs/HeadingNumberMenu.vue'
+const IsvButtonPanel = () => import(/* webpackChunkName: "editor-panels" */ './editor/IsvButtonPanel.vue')
+const RevisionPanel = () => import(/* webpackChunkName: "editor-panels" */ './editor/RevisionPanel.vue') // P4-06：只渲染，状态与定位全在 revisionMixin。
+const TableTools = () => import(/* webpackChunkName: "editor-panels" */ './editor/TableTools.vue')
+const OutlinePanel = () => import(/* webpackChunkName: "editor-panels" */ './editor/OutlinePanel.vue')
+const PaperStage = () => import(/* webpackChunkName: "presentation" */ './editor/PaperStage.vue')
+const BlockHandleMenu = () => import(/* webpackChunkName: "editor-panels" */ './editor/BlockHandleMenu.vue')
+const CalloutTools = () => import(/* webpackChunkName: "editor-panels" */ './editor/CalloutTools.vue')
+const TableBoundaryTools = () => import(/* webpackChunkName: "editor-panels" */ './editor/TableBoundaryTools.vue')
+const BubbleBar = () => import(/* webpackChunkName: "editor-panels" */ './editor/BubbleBar.vue')
+const ColorPalette = () => import(/* webpackChunkName: "editor-panels" */ './editor/ColorPalette.vue')
+const TablePickerDialog = () => import(/* webpackChunkName: "editor-panels" */ './editor/dialogs/TablePickerDialog.vue')
+const MathDialog = () => import(/* webpackChunkName: "editor-panels" */ './editor/dialogs/MathDialog.vue')
+const LinkDialog = () => import(/* webpackChunkName: "editor-panels" */ './editor/dialogs/LinkDialog.vue')
+let helpDialogPromise
+const loadHelpDialog = () => helpDialogPromise || (helpDialogPromise = import(/* webpackChunkName: "editor-help" */ './editor/dialogs/HelpDialog.vue'))
+const HelpDialog = loadHelpDialog
+const HelpFab = () => import(/* webpackChunkName: "editor-help" */ './editor/HelpFab.vue')
+const EmbedLinkDialog = () => import(/* webpackChunkName: "editor-panels" */ './editor/dialogs/EmbedLinkDialog.vue')
+const HeadingNumberMenu = () => import(/* webpackChunkName: "editor-panels" */ './editor/dialogs/HeadingNumberMenu.vue')
 import { createLarkDocExtensions } from './extensions'
-import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, safeAttachmentId, safeUrl, sanitizeHTML, validateDocument } from './documentOperations'
+import { aggregateHeadingContainers, restoreUnknownBlocks, clampBlockIndent, collectOutline, sanitizeHTML, validateDocument } from './documentOperations'
 import { isBlockActionEnabled, isConfigEnabled, mergeLegacyConfig } from './larkDocConfig'
-// Vue 2 专属 NodeView（图片 / 代码块）住在 adapters/vue2/，自己注册进 core 的注册表，
-// 这里只负责把适配层拉起来。core → adapters 这条反向依赖是刻意的临时缝（P0-01 只做到
-// 「注册表缝」），Task 6 拆三端适配时会把 registerVue2NodeViews() 的调用点挪到宿主入口。
+// Vue2 NodeViews由适配层注册；保留core/adapters注册缝供宿主替换renderer。
 import { registerVue2NodeViews } from '../../adapters/vue2/nodeviews'
 import viewModesMixin from './editor/viewModesMixin'
-// P7-04：选区高频路径（每按键一轮定位）的帧级合并单独成一支，
-// 主组件连 onSelectionUpdate 都不再持有 —— 否则组件自身的同名方法会盖掉 mixin。
+// 高频选区定位由selectionPacing合帧；组件不要声明同名onSelectionUpdate覆盖mixin。
 import selectionPacingMixin from './editor/selectionPacingMixin'
 import commandMenuMixin from './editor/commandMenuMixin'
 import tableToolsMixin from './editor/tableToolsMixin'
@@ -212,31 +242,22 @@ import bubbleMenuMixin from './editor/bubbleMenuMixin'
 import calloutColorMixin from './editor/calloutColorMixin'
 import toolbarMenusMixin from './editor/toolbarMenusMixin'
 import headingNumberMixin from './editor/headingNumberMixin'
-// P4-01：`@` 提及面板的状态与动作（打开/关、候选、键盘、落 chip）全在这个 mixin，
-// 面板组件只负责渲染 —— 与 SearchPanel 同一套「父传 :ed="self"」范式。
+// 提及动作集中mentionMixin，面板只接:ed渲染。
 import mentionMixin from './editor/mentionMixin'
-// P4-02a：日期提醒（行内 reminder mark + 日历浮层）。入口是「点 chip」这个 DOM 事件，
-// 不走 document.js 的插件回调 —— reminder 没有关键词，那条通道没人用。
+// 无关键词的日期提醒走chip DOM事件，不走document插件回调。
 import reminderMixin from './editor/reminderMixin'
-// P4-02b：日程搜索面板的状态与动作（开/关、候选、落块）。与 reminder 的差别在于
-// 「插入 ≠ 新建」—— 面板只把**已有日程**引用成块，所有字段都不在面板里编辑。
+// 日程仅引用已有事件、不新建或编辑字段，状态由calendarMixin处理。
 import calendarMixin from './editor/calendarMixin'
-// P4-04：ISV 块（按钮 / 目录导航）的状态机。按钮走「先弹面板 → 校验 → 落块」，
-// 目录导航不弹面板、就地插块，两者共用同一个 isv 节点、靠 kind 分叉。
+// ISV按钮先配置校验再落块，目录直接落块；共享isv节点按kind分支。
 import isvMixin from './editor/isvMixin'
 import revisionMixin from './editor/revisionMixin' // P4-06 ③：接受 / 拒绝无二次确认、无 toast。
 // 折叠偏好的本设备持久化（三闸门）单独立一支，主组件只留调用点。
 import foldPersistMixin from './editor/foldPersistMixin'
 import collabMixin from './editor/collabMixin'
+import uploadMixin from './editor/uploadMixin'
 // P6b：评论 / 历史版本 / 分享 / 导出 / 三态统一五条线的聚合挂载点（含浮层容器）。
 import p6bMixin from './editor/p6bMixin'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../../core/transactionMetadata'
-// P2-03：图片插入的纯判定（MIME 分流 / 落点归一）在 core/media/image-insert.js，
-// 组件只负责「拿编辑器实例去派发」，别再往模板方法里堆边界。
-import { IMAGE_REJECT, imageRejectMessage, isImageMime, nearestInsertPosition, sortImageFiles } from '../../core/media/image-insert'
-// P2-04：文件 / 视频块与图片共用「分流 → 归一落点 → 逐块插入」这套形状，
-// 差别只有「不限 MIME、必须走宿主上传」，判定全在 core/media/file-block.js。
-import { fileBlockAttrs, sortFileFiles } from '../../core/media/file-block'
 import { createNetworkPolicy } from '../../networkPolicy'
 // 旧数据兼容：Vditor getHTML() 产物在 setContent 前归一化。
 import { normalizeVditorHtml } from '../../legacy'
@@ -247,19 +268,20 @@ registerVue2NodeViews()
 
 export default {
   name: 'LarkDocEditor',
-  components: { EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin],
+  components: { DocumentLikeBar: () => import(/* webpackChunkName: "editor-panels" */ './DocumentLikeBar.vue'), CommentPanel: () => import(/* webpackChunkName: "editor-panels" */ './CommentPanel.vue'), EditorContent, CommandMenu, LarkDocIcon, TopBar, ToolbarBar, SearchPanel, MentionPanel, ReminderPopover, CalendarSearchPanel, IsvButtonPanel, RevisionPanel, TableTools, OutlinePanel, PaperStage, BlockHandleMenu, CalloutTools, TableBoundaryTools, BubbleBar, ColorPalette, TablePickerDialog, MathDialog, LinkDialog, HelpDialog, EmbedLinkDialog, HeadingNumberMenu, HelpFab },
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, tableToolsMixin, blockHandleMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin, toolbarMenusMixin, toolbarCollapseMixin, headingNumberMixin, overlayDismissMixin, mentionMixin, reminderMixin, calendarMixin, isvMixin, revisionMixin, foldPersistMixin, collabMixin, uploadMixin, p6bMixin],
   props: {
     value: { type: String, default: '<p></p>' }, title: { type: String, default: '' }, readonly: { type: Boolean, default: false },
     config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
     templates: { type: Array, default: () => [] },
-    uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
+    uploadImage: { type: [Function, Object], default: null }, msgId: { type: [Number, String], default: null },
     // P2-04：文件 / 视频块必须走宿主上传（10 GB 的附件不可能内联成 data URI），
     // 没传 uploadFile 时该入口只报错、不落半截块。
-    uploadFile: { type: Function, default: null },
+    uploadFile: { type: [Function, Object], default: null },
     // 只存附件 token、不存直链的宿主可注入这条换票函数（token → 可渲染地址）。
     resolveFileUrl: { type: Function, default: null },
     session: { type: Object, default: null },
+    onDocumentAction: { type: Function, default: null },
     // 'auto' 按指纹识别 Vditor HTML；'vditor' 强制归一化；'html' 明确跳过归一化。
     contentFormat: { type: String, default: 'auto' },
     // 折叠偏好持久化键（通常传 documentId）：非空时章节折叠状态按标题稳定键
@@ -292,13 +314,18 @@ export default {
     calendarEventRefetch: { type: Function, default: null },
   },
   data() { return {
-    editor: null, localTitle: this.title,
+    editorRevision: 0, localTitle: this.title,
     alignNames: { left: '左', center: '居中', right: '右', justify: '两端' }, alignGlyphs: { left: '≡', center: '☷', right: '≣', justify: '▤' },
     helpOpen: false, savedSelection: null,
     error: '', pendingHTML: null, htmlSeeded: false,
     pendingStateFrame: null, pendingChangeTimer: null,
   } },
   computed: {
+    // Invalidate editor-derived UI on transactions without observing ProseMirror's tree.
+    editor: {
+      get() { void this.editorRevision; return this._runtimeEditor || null },
+      set(value) { this._runtimeEditor = value; this.editorRevision += 1 },
+    },
     // 拆分出的子组件（editor/*.vue）经实例 prop 引用本组件：模板里写 :ed="self"。
     self() { return this },
     // ECS 的 ref.html 与新页面 v-model 使用同一正文，保留原调用方的读写契约。
@@ -343,6 +370,7 @@ export default {
     },
   },
   watch: {
+    session() { this.bindContentCopyCapabilities() },
     title(value) { if (value !== this.localTitle) this.localTitle = value },
     value(value) { if (this.editor && value !== this.editor.getHTML()) { try { this.setContent(value) } catch (error) { this.error = error.message } } },
     maxLength() { if (this.editor) { this.editor.storage.characterCount.setLimit(this.effectiveMaxLength); this.refreshDocumentState() } },
@@ -352,7 +380,16 @@ export default {
     } },
     effectiveReadonly(value) { if (this.editor) { this.editor.setEditable(!value); this.editor.emit('editableUpdate', { editable: !value }); this.closeCommandMenu(); this.closeMentionPanel(); this.closeReminderPopover(); this.closeCalendarSearch(); this.headingOpen = false; this.headingStyle = {}; this.closeBlockMenu(); this.clearHandleHighlight(); this.colorPaletteOpen = ''; this.closeEmbedDialog(); this.bubbleVisible = false; this.closeBubbleAlignMenu(); if (value) this.tableBoundary.visible = false; else this.$nextTick(() => this.updateTableBoundary()); this.$emit('mode-change', { readonly: value }) } },
     tablePicker(value) { if (value) { this.tablePickerHover = { rows: 3, cols: 3 }; this.$nextTick(() => this.$refs.root?.querySelector('.lark-doc-table-grid button')?.focus()) } },
-    helpOpen(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()) },
+    helpOpen(value) {
+      if (!value) return
+      loadHelpDialog().then(() => {
+        this.$nextTick(() => {
+          if (this.helpOpen && !this._isDestroyed && !this._isBeingDestroyed) this.$refs.root?.querySelector('[aria-label="关闭快捷键帮助"]')?.focus()
+        })
+      }, () => {
+        if (this.helpOpen && !this._isDestroyed && !this._isBeingDestroyed) this.error = '帮助加载失败，请刷新页面后重试'
+      })
+    },
     linkDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector(this.linkInsertMode ? '[aria-label="链接文本"]' : '[aria-label="链接地址"]')?.focus()) },
     embedDialog(value) { if (value) this.$nextTick(() => this.$refs.root?.querySelector('[aria-label="内嵌网页链接"]')?.focus()) },
   },
@@ -367,13 +404,16 @@ export default {
         // 未提供初始正文才只读兼容旧缓存；显式空 value 也是宿主的正文选择。
         try { const cached = localStorage.getItem(String(this.msgId)); if (cached) initialHTML = cached } catch (_) { this.error = '浏览器阻止读取公告缓存' }
       }
-      this.editor = new Editor({
+      // ProseMirror owns its immutable state; Vue must observe only the editor reference.
+      this.editor = markRaw(new Editor({
         content: this.collabOptions ? undefined : this.prepareHTML(initialHTML), editable: !this.effectiveReadonly,
+        /* 内部NodeView权限桥：只传实时回调，不向Vue观察树注入Session。 */
+        editorProps: { larkDocCanCopy: () => this.contentCopyAllowed(), larkDocCopyContext: () => this.contentCopyContext() },
         extensions: createLarkDocExtensions({ ...this.embedOptions, collab: this.collabOptions || undefined, maxLength: this.effectiveMaxLength, config: this.larkDocConfig, resolveImageFile: this.resolveImageFile, resolveFileUrl: this.resolveFileUrl, onSlash: this.onSlash, onMention: this.onMention, onHeadingNumberMenu: (payload) => this.openHeadingNumberMenu(payload), onListNumberMenu: (payload) => this.openListNumberMenu(payload), onImageFiles: this.insertImageFiles, onBackspace: () => this.deletePreviousBlockOnBackspace(), onError: (message) => { this.error = message } }),
-        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
-      })
+        onUpdate: ({ transaction }) => this.onUpdate(transaction), onTransaction: () => { this.editorRevision += 1; this.syncFoldState(); this.persistFolds(); this.updateRevisionPanels(); this.$nextTick(() => { this.syncHandleHighlightBackdrop(); this.syncTableClip() }) }, onSelectionUpdate: () => this.onSelectionUpdate(),
+      }))
       this.session?.attachEditor(this.editor)
-      this._sessionCapabilitiesOff = this.session?.on?.('capabilities', () => this.$forceUpdate()) || null
+      this.bindContentCopyCapabilities()
       // 首次挂载先补齐块的稳定 id：折叠偏好、锚点都按 id 引用块；没 id 就恢复不出折叠位。
       if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
       // 老数据或外部 JSON 的缩进可能超过飞书上限（5 级），挂载/替换正文后一次性压回。
@@ -399,6 +439,33 @@ export default {
     this.editor = null
   },
   methods: {
+    bindContentCopyCapabilities() {
+      this._sessionCapabilitiesOff?.()
+      const refresh = () => { this.$forceUpdate(); this.editor?.emit('lark-doc-copy-permission'); if (this.session?.getProvider?.('authorization')?.documentInformation) void import(/* webpackChunkName: "document-information" */ '../../providers/document-information').then(module => module.recordEditorVisit(this)).catch(() => {}) }
+      this._sessionCapabilitiesOff = this.session?.on?.('capabilities', refresh) || null
+      refresh()
+    },
+    contentCopyAllowed() {
+      const session = this.session, remote = session?.getProvider?.('authorization')?.isRemote
+      return Boolean(this.editor && !this.editor.isDestroyed && this.shareCan('canView') && this.shareCan('canCopy') &&
+        (!remote || session.can('canCopy') === true))
+    },
+    contentCopyContext() {
+      const session = this.session
+      /* 瞬时私有快照只传冷执行器，不存入Vue data；首次import前固定全部授权边界。 */
+      return { owner: this, editor: this.editor, doc: this.editor?.state.doc, session,
+        provider: session?.getProvider?.('authorization'), principal: session?.user?.id,
+        identity: session?._privateIdentityGeneration, auth: session?._authorizationGeneration, documentId: session?.documentId }
+    },
+    onContentClipboard(event, content = this.editor?.view?.dom) {
+      if (event.target.closest?.('input, textarea')) return
+      const selection = typeof window !== 'undefined' && typeof window.getSelection === 'function' ? window.getSelection() : null
+      const draft = event.target.closest?.('[data-comment-draft-editor="true"]')
+      if (draft && !content?.contains(draft) && draft.closest('.lark-doc-comment-rich-input') &&
+        draft.contains(selection?.anchorNode) && draft.contains(selection?.focusNode)) return
+      if (content && (content.contains(event.target) || content.contains(selection?.anchorNode) || content.contains(selection?.focusNode)) &&
+        !this.contentCopyAllowed()) { event.preventDefault(); event.stopPropagation() }
+    },
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
     toolbarEnabled(name) { return this.larkDocConfig.toolbar[name] !== false && this.featureEnabled(name) },
     isBlockActionEnabled(id) { return isBlockActionEnabled(this.larkDocConfig, id) },
@@ -578,96 +645,6 @@ export default {
     cellAttribute(name, value) { if (value) this.run('setCellAttribute', name, value) },
     onImageInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertImageFiles(files) },
     onFileInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.insertFileBlocks(files) },
-    async resolveImageFile(file) {
-      // Keep the imperative upload boundary compatible with older ECS hosts
-      // that call the method with a small plain object instead of a Vue vm.
-      const imagesEnabled = typeof this.featureEnabled === 'function' ? this.featureEnabled('images') : true
-      const maxImageSize = this.effectiveImageMaxSize !== undefined
-        ? this.effectiveImageMaxSize
-        : Math.max(1, Number(this.imageMaxSize) || 5 * 1024 * 1024)
-      if (!this.writable() || !imagesEnabled) return null
-      if (!isImageMime(file.type)) throw new Error(imageRejectMessage(IMAGE_REJECT.MIME))
-      if (file.size > maxImageSize) throw new Error(imageRejectMessage(IMAGE_REJECT.SIZE, { maxSize: maxImageSize }))
-      if (this.uploadImage) {
-        const uploaded = await this.uploadImage(file)
-        if (!this.writable()) return null
-        const attchId = typeof uploaded?.attchId === 'string' || Number.isFinite(uploaded?.attchId) ? String(uploaded.attchId) : null
-        if (!safeUrl(uploaded?.url, true) || !safeAttachmentId(attchId)) throw new Error('图片上传未返回有效地址或附件 ID')
-        return { src: uploaded.url, attchId }
-      }
-      const src = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = () => reject(new Error('本地图片读取失败'))
-        reader.readAsDataURL(file)
-      })
-      if (!this.writable()) return null
-      if (!safeUrl(src, true)) throw new Error('本地图片格式无效')
-      return { src, attchId: null }
-    },
-    async insertImageFiles(files, pos) {
-      if (!this.writable() || !this.featureEnabled('images')) return
-      // 一次拖拽 / 粘贴可能混进非图片（PDF 与 PNG 一起框选是常见操作）：
-      // 先分流，非图片只报一条错、不阻断，剩下的图片按原顺序逐张落块。
-      const { accepted, rejected } = sortImageFiles(files, { maxSize: this.effectiveImageMaxSize })
-      if (!accepted.length) { if (rejected.length) this.error = rejected[0].message; return }
-      this.error = rejected.length ? rejected[0].message : ''
-      // 拖拽给的 pos 可能落在块边界（拖到两块之间）或文档之外，先归一成能安全
-      // setTextSelection 的文本位置；没有 pos / 归一失败时按当前选区插入。
-      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
-      for (const file of accepted) {
-        try {
-          const image = await this.resolveImageFile(file)
-          // 上传期间文档可能被切只读或组件已卸载：停止后续插入，已完成的不回滚。
-          if (!this.writable()) return
-          if (!image) continue
-          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
-          this.editor.chain().focus().setImage({ ...image, originalSrc: image.src, originalAttchId: image.attchId, alt: file.name }).run()
-          // 下一张必须接在刚插入的这张之后，否则多张图会全堆在第一张的位置上。
-          if (anchor !== null) anchor = this.editor.state.selection.to
-        } catch (error) { this.error = error?.message || '图片上传失败' }
-      }
-    },
-    /**
-     * 文件 / 视频的上传边界（P2-04）。
-     *
-     * 与 resolveImageFile 的关键差异：**没有 FileReader 兜底**。10 GB 上限的附件
-     * 不可能内联成 data URI，所以没配 uploadFile 就直接报错——宁可不落块，
-     * 也不产生一个「有壳没内容」的半截块。
-     */
-    async resolveFile(file) {
-      const filesEnabled = typeof this.featureEnabled === 'function' ? this.featureEnabled('files') : true
-      if (!this.writable() || !filesEnabled) return null
-      const upload = this.uploadFile
-      if (typeof upload !== 'function') throw new Error('未配置文件上传：请通过 uploadFile 传入上传实现')
-      const uploaded = await upload(file)
-      if (!this.writable()) return null
-      const attrs = fileBlockAttrs(file, uploaded || {})
-      // token 与 src 至少有一个，块才渲染得出来（02 §19.5 ⑤ 的字段契约）。
-      if (!safeAttachmentId(attrs.token) && !(attrs.src && safeUrl(attrs.src, true))) {
-        throw new Error('文件上传未返回有效地址或附件 ID')
-      }
-      return attrs
-    },
-    async insertFileBlocks(files, pos) {
-      if (!this.writable() || !this.featureEnabled('files')) return
-      const { accepted, rejected } = sortFileFiles(files, { maxSize: this.effectiveFileMaxSize })
-      if (!accepted.length) { if (rejected.length) this.error = rejected[0].message; return }
-      // 有被拒的也照样插能插的：一条 toast 说清原因，不阻断其余文件。
-      this.error = rejected.length ? rejected[0].message : ''
-      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
-      for (const file of accepted) {
-        try {
-          const attrs = await this.resolveFile(file)
-          if (!this.writable()) return
-          if (!attrs) continue
-          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
-          this.editor.chain().focus().setFileBlock(attrs).run()
-          // 下一个必须接在刚落的块之后，否则多选的文件会全堆在同一个位置。
-          if (anchor !== null) anchor = this.editor.state.selection.to
-        } catch (error) { this.error = error?.message || '文件上传失败' }
-      }
-    },
     onDocumentPointerMove(event) {
       const root = this.$refs.root
       if (!root || root.contains(event.target)) return

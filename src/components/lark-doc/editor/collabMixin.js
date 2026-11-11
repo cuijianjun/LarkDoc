@@ -30,6 +30,19 @@ export default {
     collab: { type: Object, default: null },
   },
   computed: {
+    collaborationUsers() {
+      if (!this.editor || !this.editorRevision && !this.collab) return []
+      const users = this.editor.storage && this.editor.storage.collaborationCaret && this.editor.storage.collaborationCaret.users
+      const seen = new Set()
+      return (Array.isArray(users) ? users : []).filter(user => { const key = user.id || user.name; if (user.avatarVisible === false || !key || seen.has(key)) return false; seen.add(key); return true })
+    },
+    // The protocol may not provide presence counts. Describe the real collaboration
+    // mode instead of treating every writable document as a single-user editor.
+    collaborationLabel() {
+      const collaborative = Boolean((this.collabOptions && this.collabOptions.extensions.length) || (this.session && this.session.mode === 'collaborative'))
+      if (collaborative) return this.effectiveReadonly ? '协作阅读' : '协作编辑'
+      return this.effectiveReadonly ? '阅读中' : '单人编辑'
+    },
     /** 归一化后的协同选项；`null` 表示单机模式。 */
     collabOptions() {
       const collab = this.collab

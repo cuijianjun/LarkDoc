@@ -259,6 +259,7 @@
         role="menuitem"
         class="lark-doc-block-menu-row"
         :title="item.label"
+        :disabled="['copy', 'cut'].includes(item.id) && !ed.contentCopyAllowed()"
         @mousedown.prevent
         @click="ed.blockAction(item.id)"
       >
@@ -361,6 +362,14 @@ export default {
   components: { LarkDocIcon },
   props: {
     ed: { type: Object, required: true },
+  },
+  mounted() {
+    this.$nextTick(() => {
+      const ed = this.ed
+      if (this._isDestroyed || this._isBeingDestroyed || ed._isDestroyed || ed._isBeingDestroyed ||
+        !ed.editor || ed.editor.isDestroyed || ed.effectiveReadonly || !ed.handleRange || !ed.featureEnabled('blockHandle')) return
+      ed.positionBlockHandle(ed.handleRange, true)
+    })
   },
 }
 </script>

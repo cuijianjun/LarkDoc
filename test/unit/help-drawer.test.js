@@ -346,7 +346,7 @@ describe('P4-06 组件契约（宿主接线与交互细节）', () => {
 
   it('宿主挂着 HelpFab，且 HelpDialog 仍在（同一 helpOpen 驱动）', () => {
     expect(editorVue).toContain('<HelpFab :ed="self" />')
-    expect(editorVue).toContain("import HelpFab from './editor/HelpFab.vue'")
+    expect(editorVue).toContain("'./editor/HelpFab.vue'")
     // 注册表是一整行，末尾就是 `HelpFab }`，不能用 `HelpFab,` 匹配。
     expect(editorVue).toMatch(/components:\s*\{[^}]*\bHelpFab\b/)
     expect(editorVue).toContain('<HelpDialog :ed="self" />')

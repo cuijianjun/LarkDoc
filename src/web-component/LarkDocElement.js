@@ -108,7 +108,7 @@ export class LarkDocElement extends HTMLElement {
     if (result.options && Object.keys(result.options).length && this.document && this.document.options) {
       Object.assign(this.document.options, result.options)
     }
-    if (name === 'theme' || name === 'content-theme') this._applyTheme()
+    if (name === 'theme' || name === 'content-theme' || name === 'theme-preset') this._applyTheme(name)
   }
 
   /**
@@ -291,12 +291,13 @@ export class LarkDocElement extends HTMLElement {
    * themeChange 事件都在 controller 一处收口。
    * 两个属性都缺省时不臆造值：交回门面按 options（默认 light/auto）解析。
    */
-  _applyTheme() {
+  _applyTheme(changed) {
     if (!this.document) return
-    const theme = this.getAttribute('theme')
-    const contentTheme = this.getAttribute('content-theme')
-    if (theme != null || contentTheme != null) {
-      this.document.setTheme(theme == null ? undefined : theme, contentTheme == null ? undefined : contentTheme)
+    const theme = !changed || changed === 'theme' ? this.getAttribute('theme') : null
+    const contentTheme = !changed || changed === 'content-theme' ? this.getAttribute('content-theme') : null
+    const preset = !changed || changed === 'theme-preset' ? this.getAttribute('theme-preset') : null
+    if (theme != null || contentTheme != null || preset != null) {
+      this.document.setTheme(theme == null ? undefined : theme, contentTheme == null ? undefined : contentTheme, preset == null ? undefined : preset)
     } else if (typeof this.document._applyHostAttributes === 'function') {
       this.document._applyHostAttributes()
     }

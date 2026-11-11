@@ -15,6 +15,10 @@ import {
 } from '../helpers/collab-harness'
 import { shouldSeed } from '../../src/collab/policies'
 import { createUiStateStore, toggleCollapsed, defaultUiState } from '../../src/collab/policies'
+import { collectRevisions } from '../../src/core/blocks/revision'
+import { createEditorCommentAnchorCodec } from '../../src/collab/anchors'
+import * as Y from 'yjs'
+import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
 
 const peers = []
 let network = null
@@ -35,6 +39,95 @@ afterEach(() => {
 })
 
 describe('C1 双向同步', () => {
+  it('正式编辑器评论codec使用真实y-sync字符映射，另一端前插后仍指向原词', () => {
+    const [a, b] = pair()
+    typeAt(a, 1, 'hello world')
+    const blockId = blockIds(a)[0], codec = createEditorCommentAnchorCodec({ editor: a.editor, ydoc: a.ydoc })
+    const payload = codec.encode({ blockId, offset: 6, length: 5 })
+    expect(payload.kind).toBe('y')
+    typeAt(b, 1, 'say ')
+    expect(codec.decode(payload)).toEqual({ blockId, offset: 10, length: 5 })
+  })
+  it('跨段评论分别保存两端位置，远端在选区内插入仍覆盖完整范围', () => {
+    const [a, b] = pair()
+    a.editor.commands.setContent({ type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'hello' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'world' }] },
+    ] })
+    const blockId = blockIds(a)[0], codec = createEditorCommentAnchorCodec({ editor: a.editor, ydoc: a.ydoc })
+    const payload = codec.encode({ blockId, offset: 1, length: 9 })
+    expect(payload.kind).toBe('y')
+    const from = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(payload.from), a.ydoc)
+    const to = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(payload.to), a.ydoc)
+    expect(from.type).not.toBe(to.type)
+    expect(codec.decode(payload)).toEqual({ blockId, offset: 1, length: 9 })
+    typeAt(b, 9, 'new')
+    expect(codec.decode(payload)).toEqual({ blockId, offset: 1, length: 12 })
+  })
+  it('跨mention两侧的评论终点来自独立文本type，不截到首段文字尾', () => {
+    const [a] = pair()
+    a.editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: 'alpha ' }, { type: 'mention', attrs: { id: 'bob', label: 'Bob' } }, { type: 'text', text: ' omega' },
+    ] }] })
+    const blockId = blockIds(a)[0], codec = createEditorCommentAnchorCodec({ editor: a.editor, ydoc: a.ydoc })
+    const payload = codec.encode({ blockId, offset: 2, length: 9 })
+    expect(payload.kind).toBe('y')
+    const end = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(payload.to), a.ydoc)
+    expect(end.type.toString().slice(0, end.index)).toBe(' ome')
+    expect(codec.decode(payload)).toEqual({ blockId, offset: 2, length: 9 })
+    a.editor.commands.deleteRange({ from: 8, to: 14 })
+    expect(codec.decode(payload)).toBeNull()
+  })
+  it('跨段评论和输入草稿在两段正文中均显示实际高亮', () => {
+    const [a] = pair()
+    a.editor.commands.setContent({ type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'hello' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'world' }] },
+    ] })
+    const blockId = blockIds(a)[0], codec = createEditorCommentAnchorCodec({ editor: a.editor, ydoc: a.ydoc })
+    const anchor = codec.encode({ blockId, offset: 1, length: 9 })
+    const vm = { editor: a.editor, commentProvider: () => ({ isRemote: true }), commentCan: () => true,
+      commentAnchorCodec: codec, commentSourceThreads: [{ id: 'cross', blockId, anchor, scope: 'selection', replies: [] }], commentActiveThreadId: 'cross' }
+    commentsMixin.methods.installCommentDecorations.call(vm)
+    const text = selector => [...a.editor.view.dom.querySelectorAll(selector)].map(node => node.textContent)
+    expect(text('[data-thread-id="cross"]')).toEqual(['ello', 'wor'])
+    vm.commentSourceThreads = []; vm.commentComposerOpen = true; vm.commentComposerContext = { anchor }
+    commentsMixin.methods.refreshCommentDecorations.call(vm)
+    expect(text('.lark-doc-comment.is-draft')).toEqual(['ello', 'wor'])
+    expect(a.editor.getJSON().content.every(node => node.content.every(child => !child.marks))).toBe(true)
+  })
+  it('原生表格选区刚变化立即按评论快捷键时，读取DOM当前选区而非PM旧空选区', () => {
+    const [a] = pair()
+    a.editor.commands.setContent({ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [
+      { type: 'tableCell', content: [{ type: 'paragraph', attrs: { blockId: 'table_text' }, content: [{ type: 'text', text: 'table quote' }] }] },
+    ] }] }] })
+    let from
+    a.editor.state.doc.descendants((node, position) => { if (node.isText && node.text === 'table quote') from = position })
+    a.editor.commands.setTextSelection(from)
+    const dom = a.editor.view.dom; document.body.appendChild(dom)
+    const native = document.getSelection(), range = document.createRange(), text = dom.querySelector('td p').firstChild
+    range.setStart(text, 0); range.setEnd(text, 5); native.removeAllRanges(); native.addRange(range)
+    let captured
+    const vm = { ...commentsMixin.methods, editor: a.editor, commentCan: () => true, openSelectionComment() { captured = this.commentSelectionRange() } }
+    try {
+      expect(a.editor.state.selection.empty).toBe(true)
+      commentsMixin.methods.onCommentShortcut.call(vm, { metaKey: true, altKey: true, code: 'KeyM', preventDefault() {}, stopPropagation() {} })
+      expect(captured).toMatchObject({ blockId: 'table_text', offset: 0, length: 5, text: 'table' })
+    } finally { native.removeAllRanges(); dom.remove() }
+  })
+  it('修订态不把远端同步正文重新标成本地建议，本地键入仍带原建议', () => {
+    const [a, b] = pair()
+    typeAt(a, 1, '原文')
+    b.editor.storage.larkDocRevisionTracker.active = true
+    typeAt(a, 1, '远端')
+    expect(b.text).toBe(a.text)
+    expect(collectRevisions(b.editor.state.doc)).toEqual([])
+    typeAt(b, 1, '本地建议')
+    const revisions = collectRevisions(b.editor.state.doc)
+    expect(revisions).toHaveLength(1)
+    expect(revisions[0].text).toBe('本地建议')
+    expect(collectRevisions(a.editor.state.doc)).toEqual(revisions)
+  })
   it('A 输入的文本在 B 侧同步出现，反向亦然', () => {
     const [a, b] = pair()
     typeAt(a, 1, '甲乙')

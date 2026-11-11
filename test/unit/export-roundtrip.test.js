@@ -716,3 +716,27 @@ describe('P6b-04 exportMixin：canExport 闸门与派发', () => {
     expect(createHost({}).exportFileBaseName).toBe('document')
   })
 })
+
+
+describe('导出异步上下文归属', () => {
+  it('Word生成期间上下文失效，不交付旧Blob或触发下载', async () => {
+    anchorClickCalls = 0
+    let current = true
+    const pending = exportDocx(doc([para(text('private source'))]), { fileName: 'private', images: {}, isCurrent: () => current })
+    current = false
+    expect(await pending).toBeNull()
+    expect(anchorClickCalls).toBe(0)
+  })
+  it('旧native请求完成不解锁新会话正在进行的导出', async () => {
+    let firstFinish, secondFinish, count = 0
+    const first = new Promise(resolve => { firstFinish = resolve }), second = new Promise(resolve => { secondFinish = resolve })
+    const host = createHost({ session: allowedSession() }); host.exportFormat = 'word'
+    host.dispatchExport = () => ++count === 1 ? first : second
+    const pending = host.submitExport()
+    host.session = allowedSession(); host.clearRemoteExport()
+    const newer = host.submitExport(); host.exportToast = 'current export'
+    firstFinish(null); await pending
+    expect(host.exportBusy).toBe(true); expect(host.exportToast).toBe('current export')
+    secondFinish(null); await newer; expect(host.exportBusy).toBe(false)
+  })
+})

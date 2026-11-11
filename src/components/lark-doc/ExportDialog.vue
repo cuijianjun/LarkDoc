@@ -102,7 +102,7 @@
               :aria-disabled="ed.exportSubmitDisabled ? 'true' : 'false'"
               @click="ed.submitExport()"
             >
-              导出
+              {{ ed.exportPendingOperationId ? '查询原请求' : '导出' }}
             </button>
           </div>
         </footer>

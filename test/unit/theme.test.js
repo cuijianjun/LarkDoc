@@ -12,6 +12,7 @@ function createRoot() {
     dark: false,
     style: {},
     setAttribute(key, value) { this.attributes[key] = value },
+    getAttribute(key) { return this.attributes[key] || null },
     classList: {
       toggle(name, force) { this._on = force },
     },
@@ -186,4 +187,71 @@ describe('createThemeController — destroy', () => {
     controller.destroy()
     expect(removeEventListener).toHaveBeenCalled()
   })
+})
+
+
+describe('三种可见主题使用同一控制器', () => {
+  it('绿色→飞书浅色→飞书暗色→绿色，预设与模式一次生效', () => {
+    const root = createRoot(), onChange = vi.fn()
+    const c = createThemeController({ getRoot: () => root, onChange })
+    c.applyToRoot()
+    expect(root._larkDocTheme).toBe(c)
+    c.setTheme('light', 'auto', 'feishu')
+    expect(root.attributes['data-theme-preset']).toBe('feishu')
+    expect(c.getTheme().preset).toBe('feishu')
+    c.setTheme('dark', 'auto', 'feishu')
+    expect(root.attributes['data-content-theme']).toBe('dark')
+    c.setTheme('light', 'auto', 'default')
+    expect(root.attributes['data-theme-preset']).toBe('default')
+    expect(root.attributes['data-theme']).toBe('light')
+    expect(onChange).toHaveBeenCalledTimes(3)
+    c.setTheme('light', 'auto', 'default')
+    expect(onChange).toHaveBeenCalledTimes(3)
+    c.destroy()
+    expect(root._larkDocTheme).toBeUndefined()
+  })
+
+  it('非法预设不部分切换；保留已有宿主手动pcvue预设', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const root = createRoot()
+    root.setAttribute('data-theme-preset', 'pcvue')
+    const c = createThemeController({ getRoot: () => root })
+    c.applyToRoot()
+    expect(c.getTheme().preset).toBe('pcvue')
+    c.setTheme('dark', 'auto', 'unknown')
+    expect(c.getTheme().theme).toBe('light')
+    expect(root.attributes['data-theme-preset']).toBe('pcvue')
+  })
+
+  it('local模式恢复预设并随模式一起存储；storage同步三者', () => {
+    const store = new Map([['lark-doc:theme-preset', 'feishu'], ['lark-doc:theme', 'dark']])
+    let onStorage
+    global.window = {
+      localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
+      addEventListener: (name, handler) => { if (name === 'storage') onStorage = handler },
+      removeEventListener() {},
+    }
+    const root = createRoot(), c = createThemeController({ themeStorage: 'local', getRoot: () => root })
+    c.applyToRoot()
+    expect(root.attributes['data-theme-preset']).toBe('feishu')
+    expect(root.attributes['data-theme']).toBe('dark')
+    c.setTheme('light', 'auto', 'default')
+    expect(store.get('lark-doc:theme-preset')).toBe('default')
+    store.set('lark-doc:theme-preset', 'feishu')
+    onStorage({ key: 'lark-doc:theme-preset' })
+    expect(c.getTheme().preset).toBe('feishu')
+    c.destroy()
+  })
+})
+
+
+it('localStorage getter被宿主隐私策略拒绝时，主题仍可切换', () => {
+  const root = createRoot()
+  global.window = { addEventListener() {}, removeEventListener() {} }
+  Object.defineProperty(global.window, 'localStorage', { get() { throw new Error('blocked') } })
+  const c = createThemeController({ themeStorage: 'local', getRoot: () => root })
+  expect(() => c.setTheme('dark', 'auto', 'feishu')).not.toThrow()
+  expect(root.attributes['data-theme']).toBe('dark')
+  expect(root.attributes['data-theme-preset']).toBe('feishu')
+  c.destroy()
 })

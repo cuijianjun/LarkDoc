@@ -31,6 +31,8 @@ import 'lark-doc/element' // 自动注册 <lark-doc>
 // 样式已随产物注入；若在 lib 模式下使用请另行 import 'lark-doc/style.css'
 ```
 
+> **webpack 4 宿主**：`exports` 字段读不到，上面这行要写全 `lark-doc/dist/lark-doc-element.umd.min.js`。主入口 `lark-doc` 从 0.13 起不用写全（`browser` 已指向 ES2018 产物），只有子路径需要。
+
 ```vue
 <template>
   <lark-doc :title="docTitle" @lark-doc-change="onChange" ref="editor" />
@@ -66,7 +68,9 @@ function Editor() {
 | `content-format` | `auto` \| `vditor` \| `html` | 旧数据归一化策略，同门面 `contentFormat` |
 | `title` | string | 文档标题 |
 | `readonly` | boolean | 只读（热更新） |
-| `theme` | `light` \| `dark` | 主题（热更新） |
+| `theme` | `light` \| `dark` \| `system` \| `host` | 外观模式（热更新） |
+| `theme-preset` | `default` \| `feishu` \| `pcvue` | 颜色预设（热更新）；三项菜单使用default/light、feishu/light、feishu/dark |
+| `theme-storage` | `none` \| `local` | 可选外观记忆；默认none，与正文草稿storage分离 |
 | `placeholder` | string | 空文档占位文案 |
 | `toolbar-keys` | list | 逗号分隔，如 `history,headings,marks` |
 | `toolbar-excludes` | list | 逗号分隔的排除项 |

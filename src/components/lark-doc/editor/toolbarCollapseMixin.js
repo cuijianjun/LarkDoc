@@ -93,7 +93,7 @@ export default {
         )
       }
       if (this.toolbarEnabled('shortcuts')) toolItems.push({ label: '快捷键帮助', run: () => { this.helpOpen = !this.helpOpen } })
-      if (!this.larkDocConfig.layout.headerVisible && this.$slots['header-actions']) toolItems.push({ label: '文档操作…', run: (event) => this.openHeaderMenuFrom(event) })
+      if (!this.larkDocConfig.layout.headerVisible) toolItems.push({ label: '文档操作…', run: (event) => this.openHeaderMenuFrom(event) })
       if (toolItems.length) sections.push({ id: 'toolsEnd', title: '视图与工具', items: toolItems })
       return sections
     },

@@ -54,5 +54,13 @@ export default {
   props: {
     ed: { type: Object, required: true },
   },
+  mounted() {
+    const ed = this.ed, session = ed.session, documentId = session?.documentId
+    // 首次冷加载可能晚于命令的 nextTick；只为仍有效的当前弹窗补焦点。
+    this.$nextTick(() => {
+      if (!this._isDestroyed && !this._isBeingDestroyed && !ed._isDestroyed && !ed._isBeingDestroyed && ed.mathDialog &&
+        session === ed.session && documentId === ed.session?.documentId && ed.editor?.isEditable && ed.$el?.contains(this.$el)) this.$refs.mathInput?.focus()
+    })
+  },
 }
 </script>

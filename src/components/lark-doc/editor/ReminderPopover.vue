@@ -143,5 +143,10 @@ export default {
   props: {
     ed: { type: Object, required: true },
   },
+  mounted() {
+    this.$nextTick(() => {
+      if (!this._isDestroyed && !this._isBeingDestroyed && !this.ed._isDestroyed && !this.ed._isBeingDestroyed && this.ed.reminderOpen) this.ed.positionReminderPopover()
+    })
+  },
 }
 </script>

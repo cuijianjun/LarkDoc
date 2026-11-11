@@ -24,6 +24,11 @@ export default {
     menuStyle() { return { left: `${this.menuPosition.left}px`, top: `${this.menuPosition.top}px`, ...(this.menuMaxHeight ? { maxHeight: `${this.menuMaxHeight}px` } : {}) } },
   },
   methods: {
+    onCommandMenuMounted() {
+      if (this._isDestroyed || this._isBeingDestroyed || !this.menuOpen || !this.writable()) return
+      this.positionCommandMenu()
+      if (this.menuKind === 'plus') this.$children.find(child => child.$options.name === 'LarkDocCommandMenu' && this.$refs.root?.contains(child.$el))?.focusSearch()
+    },
     openCommandMenu(kind, event) {
       if (!this.writable() || !this.featureEnabled('insert')) return
       if (this.menuOpen && this.menuKind === kind) { this.closeCommandMenu(true); return }
@@ -40,10 +45,7 @@ export default {
       this.headingOpen = false
       this.headingStyle = {}
       this.closeBlockMenu()
-      this.$nextTick(() => {
-        this.positionCommandMenu()
-        if (kind === 'plus') this.$children.find((child) => child.$options.name === 'LarkDocCommandMenu')?.focusSearch()
-      })
+      this.$nextTick(() => this.onCommandMenuMounted())
     },
     openEmptyBlockInsertMenu(event) {
       if (!this.writable() || !this.handleIsEmptyParagraph) return

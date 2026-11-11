@@ -79,13 +79,14 @@ export default {
       // 表格整表、列表当前 item、容器整块、其余为顶层块，父子不会同时命中。
       return resolveBlockTargetRange(this.editor.state.doc, from, to)
     },
-    positionBlockHandle(range) {
+    positionBlockHandle(range, preserveHideTimer = false) {
       if (!range) return
       const dom = this.editor.view.nodeDOM(range.from)
       const paper = this.$refs.root?.querySelector('.lark-doc-paper')
       if (!(dom instanceof Element) || !paper) return
       if (this.blockMenuOpen && this.handleRange && (this.handleRange.from !== range.from || this.handleRange.to !== range.to)) this.closeBlockMenu()
-      clearTimeout(this.handleHideTimer)
+      // 冷挂载只重排几何，保留此前离开正文安排的隐藏期限。
+      if (!preserveHideTimer) clearTimeout(this.handleHideTimer)
       this.clearBlockMenuCloseTimer()
       this.handleRange = range
       if (this.handleHovering || this.handlePressed || this.dragging || this.blockMenuOpen) this.setHandleHighlight(true)
@@ -319,6 +320,7 @@ export default {
      * （表现为高亮闪一下回到整行宽度）。overlay 由组件自己持有，不参与 PM 的 DOM 复用。
      */
     syncHandleHighlightBackdrop() {
+      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
       const root = this.editor?.view?.dom
       if (!root) return
       const overlayHost = root.parentElement || root

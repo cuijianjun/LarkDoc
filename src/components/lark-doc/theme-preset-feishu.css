@@ -107,7 +107,7 @@
   --ld-bg-columns-cell: rgba(20, 86, 240, 0.12);
   --ld-bg-columns-cell-active: rgba(20, 86, 240, 0.2);
   --ld-bg-columns-cell-preview: rgba(20, 86, 240, 0.35);
-  --ld-mask: rgba(31, 35, 41, 0.5);
+  --ld-mask: rgba(0, 0, 0, 0.55);
   /* ---- 菜单 / 浮层边框（06 §1.3 + hover 边框 #C2D4FF） ---- */
   --ld-border-control: #DEE0E3;
   --ld-border-handle-hover: #C2D4FF;
@@ -197,4 +197,40 @@
        CSS 两值仅兜底，本档覆盖会造成「面板色板显示绿、实际渲染橙」的错位。
      ★ --ld-bg-search-hit / --ld-border-search-active：搜索命中是功能高亮色，
        两档同值（黄底橙框是语义色，不参与主题化）。 */
+}
+
+
+/* 飞书暗色沿用已采集的中性深色阶梯；品牌切换为既有正文蓝，不改作者/协作者/危险色。 */
+.lark-doc[data-theme-preset="feishu"][data-theme="dark"] {
+  /* 11 §4.1 与 2026-11-10 真实外观入口复核：页面/顶栏底色。 */
+  --ld-bg-shell: #1A1A1A;
+  --ld-brand-chrome: #4C88FF;
+  --ld-text-accent: var(--ld-brand-chrome);
+  --ld-text-accent-hover: #5083FB;
+  --ld-text-check: var(--ld-brand-chrome);
+  --ld-bg-brand-hover: #5083FB;
+  --ld-bg-accent: rgba(76, 136, 255, 0.18);
+  --ld-bg-accent-active: rgba(76, 136, 255, 0.20);
+  --ld-border-accent: var(--ld-brand-chrome);
+
+}
+
+.lark-doc[data-theme-preset="feishu"][data-content-theme="dark"] {
+  --ld-bg-content: #1A1A1A;
+}
+.lark-doc[data-theme-preset="feishu"][data-theme="dark"] .lark-doc-topbar {
+  background: var(--ld-bg-shell);
+}
+.lark-doc[data-theme-preset="feishu"] .lark-doc-select-menu {
+  border-radius: 6px;
+  box-shadow: var(--ld-shadow-menu);
+}
+
+/* 打印/下载使用浅色纸张，与当前屏幕外观独立。只修飞书轨，默认绿档保持。 */
+@media print {
+  .lark-doc[data-theme-preset="feishu"][data-content-theme="dark"] {
+    --ld-bg-content: #FFFFFF;
+    --ld-text-content: #1F2329;
+    --ld-text-heading: #1F2329;
+  }
 }

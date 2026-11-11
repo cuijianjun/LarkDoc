@@ -2,13 +2,13 @@
 /**
  * prepack 的产物去重闸门。
  *
- * 问题是纯重复劳动：发布链路里 `check:artifacts` 已经构建过 5 个产物，
- * 紧接着 `npm pack` 触发的 `prepack` 会把同样这 5 个产物再构建一遍（约 3 分钟）。
+ * 问题是纯重复劳动：发布链路里 `check:artifacts` 已经构建过全部产物，
+ * 紧接着 `npm pack` 触发的 `prepack` 会把同样的产物再构建一遍（约 3 分钟）。
  *
  * 这里改成「输入没变就不重建」：
  *   - 计算一份「构建输入指纹」（src/** 的路径+大小+mtime、构建配置、依赖声明）；
- *   - 指纹与上次构建后写的 stamp 一致，且 5 个产物都在 → 跳过构建；
- *   - 否则按顺序重建 5 项，成功后写回 stamp。
+ *   - 指纹与上次构建后写的 stamp 一致，且全部产物都在 → 跳过构建；
+ *   - 否则按顺序重建（按 script 去重），成功后写回 stamp。
  *
  * 为什么不直接比 mtime：
  *   改 `package.json` 的 scripts、或改个 README，mtime 就变了，
@@ -35,7 +35,10 @@ const ARTIFACTS = [
   { file: 'dist/lark-doc.umd.min.js', script: 'build:umd' },
   { file: 'dist/lark-doc.esm.js', script: 'build:esm' },
   { file: 'dist/lark-doc-collab.esm.js', script: 'build:collab' },
-  { file: 'dist/lark-doc-element.umd.min.js', script: 'build:element' }
+  { file: 'dist/lark-doc-element.umd.min.js', script: 'build:element' },
+  // 一个脚本出两个薄壳产物：构建时按 script 去重，存在性校验仍逐文件算。
+  { file: 'dist/lark-doc-vue3.mjs', script: 'build:adapters' },
+  { file: 'dist/lark-doc-react.mjs', script: 'build:adapters' }
 ]
 
 /** 整文件参与指纹的构建配置 */
@@ -102,7 +105,7 @@ const sizeDrift = ARTIFACTS.filter((a) => {
 const upToDate = !FORCE && missing.length === 0 && sizeDrift.length === 0 && stamp?.fingerprint === fingerprint
 
 if (upToDate) {
-  console.log(`✓ 构建输入未变，5 个产物齐备 —— 跳过构建（指纹 ${fingerprint.slice(0, 8)}）`)
+  console.log(`✓ 构建输入未变，${ARTIFACTS.length} 个产物齐备 —— 跳过构建（指纹 ${fingerprint.slice(0, 8)}）`)
   process.exit(0)
 }
 
@@ -125,7 +128,11 @@ if (CHECK_ONLY) {
 
 console.log(`→ 重建产物（${reasons.join('；')}）`)
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+// 按 script 去重：build:adapters 一次出两个文件，不能跑两遍。
+const done = new Set()
 for (const a of ARTIFACTS) {
+  if (done.has(a.script)) continue
+  done.add(a.script)
   console.log(`\n$ npm run ${a.script}  →  ${a.file}`)
   const r = spawnSync(npm, ['run', a.script], { cwd: ROOT, stdio: 'inherit', env: process.env })
   if (r.status !== 0) {
@@ -149,4 +156,4 @@ try {
 } catch {
   /* stamp 写不进去只影响下次复用，不影响本次产物 */
 }
-console.log(`\n✓ 产物就绪（5/5，指纹 ${fingerprint.slice(0, 8)}）`)
+console.log(`\n✓ 产物就绪（${ARTIFACTS.length}/${ARTIFACTS.length}，指纹 ${fingerprint.slice(0, 8)}）`)

@@ -317,26 +317,34 @@
       >
         ?
       </button><button
-        v-if="!ed.larkDocConfig.layout.headerVisible && ed.$slots['header-actions']"
+        v-if="!ed.larkDocConfig.layout.headerVisible"
         type="button"
         aria-label="文档操作"
         title="文档操作"
         :aria-expanded="String(ed.headerMenuOpen)"
-        @click="ed.toggleHeaderMenu"
+        aria-haspopup="menu"
+        @click="ed.toggleHeaderMenu($event)"
+        @keydown.down.prevent="ed.openHeaderMenuFrom($event)"
       >
         ⋯
       </button></span>
       <!-- header-menu 弹层放在 span 外：tools-end 被收纳隐藏时弹层仍可由「更多」打开 -->
-      <div
-        v-if="!ed.larkDocConfig.layout.headerVisible && ed.headerMenuOpen"
-        class="lark-doc-dropdown lark-doc-header-menu"
-        :style="ed.headerMenuStyle"
-        role="menu"
-        aria-label="文档操作"
+      <DocumentMenu
+        v-if="!ed.larkDocConfig.layout.headerVisible"
+        :ed="ed"
       >
         <!-- 顶栏隐藏时承接 header-actions 插槽（字数/保存/模板/导入导出/快照） -->
+        <button
+          v-if="ed.shareEntryVisible"
+          type="button"
+          role="menuitem"
+          :aria-label="ed.shareEntryLabel"
+          @click="ed.openShareFromToolbar($event)"
+        >
+          {{ ed.shareEntryLabel }}
+        </button>
         <slot name="header-actions" />
-      </div>
+      </DocumentMenu>
       <!-- 工具栏自适应折叠：「更多 ▾」承接被收纳分组的全部功能（按组分节） -->
       <button
         v-if="ed.collapsedGroups.length"
@@ -398,10 +406,11 @@
 import LarkDocIcon from '../LarkDocIcon.vue'
 import LarkDocSelect from '../LarkDocSelect.vue'
 import LarkDocHeadingMenu from '../LarkDocHeadingMenu.vue'
+const DocumentMenu = () => import(/* webpackChunkName: "document-menu" */ '../DocumentMenu.vue')
 
 export default {
   name: 'LarkDocToolbarBar',
-  components: { LarkDocIcon, LarkDocSelect, LarkDocHeadingMenu },
+  components: { LarkDocIcon, LarkDocSelect, LarkDocHeadingMenu, DocumentMenu },
   props: {
     ed: { type: Object, required: true },
   },

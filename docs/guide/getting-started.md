@@ -30,7 +30,7 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 | 宿主环境 | 引入写法 | 初始化 | 备注 |
 | --- | --- | --- | --- |
 | Vue 2.7 + webpack5 / vite | `import { LarkDoc } from 'lark-doc'` | `new LarkDoc({...})` | 命中 `exports.import` → ESM；懒区块由宿主打包器接管，内外网零配置 |
-| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` + `import 'lark-doc/dist/lark-doc.css'` | 同上 | webpack4 不读 `exports`，CSS 必须写 `dist/` 全路径；样式不可省略 |
+| Vue 2.7 + webpack4（vue-cli 4） | `import { LarkDoc } from 'lark-doc'` | 同上 | 0.13 起零配置：`browser` 指向 ES2018 的 UMD 产物，样式随产物注入；用到公式 / Word 导出时设 `window.__LARK_DOC_PUBLIC_PATH__` |
 | Vue 2.7 直接嵌 SFC | `import { LarkDocEditor } from 'lark-doc'` | `<lark-doc-editor v-model="html" @change="fn" />` | props 与门面 options 同源（**正文是 `v-model` / `value`，不是 `content`**） |
 | Vue 3 / React / 无框架 | `import 'lark-doc/element'`（自动注册）或 `mountLarkDoc(el, opts)` | `<lark-doc title="…">` | 产物内置 Vue；对象型能力（uploader / persistence / ai）只能 `setProperty` |
 | CDN / 静态托管 / 内网 | `<script src="…/dist/lark-doc-element.umd.min.js">` | `<lark-doc>` | **`dist/` 整目录**同位部署（主文件 + `*.math.js`、`*.mermaid.js` 等按需区块 + `fonts/`） |
@@ -38,7 +38,8 @@ lark-doc 是一个发布为 npm 包的 LarkDoc 风格文档编辑器（Vue 2.7 +
 
 ::: tip 编译工具要点
 - webpack5 / vite / rollup：认 `exports`，两条入口零配置；
-- **webpack4 只认 `main` / `module`**：`import 'lark-doc/element'` 会报「找不到模块」，要写 `lark-doc/dist/lark-doc-element.umd.min.js`，或 `<script>` 直引；
+- **webpack4（0.13+）**：主入口零配置（`browser` → ES2018 的 UMD），但**子路径**读不到 `exports`：`import 'lark-doc/element'` 会报「找不到模块」，要写 `lark-doc/dist/lark-doc-element.umd.min.js`，或 `<script>` 直引；
+- **webpack4（0.12 及更早）**：只认 `main` / `module`，还要 alias 到 `dist/lark-doc.common.js` + babel 降 `?.` / `??`，见[老写法](/guide/environments#env-vue2-wp4)；
 - browserslist 为 `> 0.5% / last 2 versions / not dead`，**不含 IE11**：IE11 宿主需自己把 `node_modules/lark-doc` 加进 babel `include`；
 - 默认假设宿主有 `Promise` / `fetch` 等运行环境能力；老浏览器请自行在入口加 polyfill。
 :::
@@ -59,12 +60,19 @@ const doc = new LarkDoc({
   content: '<p>hello lark-doc</p>',  // 支持 HTML / Tiptap JSON / DocumentRecord
   placeholder: '输入正文，或输入 / 插入内容',
   theme: 'light',
+  // themePreset: 'feishu',         // 可配合 theme:'dark' 启用飞书暗色
+  // themeStorage: 'local',         // 可选：记忆外观并同步同源标签；默认none
   readonly: false,
   storage: 'none',                 // 'none' 不写本地草稿；'local' 使用浏览器草稿
   onReady: (payload) => console.log('ready', payload.editor),
   onUpdate: (payload) => console.log('update', payload.html),
   onError: (error) => console.error(error),
 })
+
+// 右上角“文档操作 → 主题”提供同样的三项选择；只改浏览器外观，不写正文。
+doc.setTheme('light', 'auto', 'default') // 经典绿色（默认）
+doc.setTheme('light', 'auto', 'feishu')  // 飞书浅色
+doc.setTheme('dark', 'auto', 'feishu')   // 飞书暗色
 
 // 实例方法
 doc.getHTML()
@@ -108,3 +116,23 @@ export default {
 - 查看全部[配置总览](/guide/configuration)与[实例方法](/guide/instance)
 - 按[功能配置](/blocks/heading)逐项了解每个内容块
 - 需要接入真实 AI、上传或持久化，参考 [View 层接入](/guide/view-integration)
+
+### 文档级业务菜单交给宿主
+
+`onDocumentAction` 是可选的界面意图回调，可从 `new LarkDoc(options)` 或 `<lark-doc>.options` 传入；Vue 工作区/编辑器也接受同名 prop。菜单的页宽、查找、演示、导出、版本和评论继续使用编辑器已有能力，移动、收藏、复制、业务删除等交给 Java/宿主打开自己的业务流程。未提供回调时这些入口置灰。
+
+```js
+const doc = new LarkDoc({
+  element: '#editor',
+  onDocumentAction: async ({ action, documentId, actorId, tab }) => {
+    // 只打开业务界面；真正权限、目标选择、幂等键、确认和结果查询由宿主负责。
+    await businessUi.open({ action, documentId, actorId, tab })
+  },
+})
+```
+
+回调 `action` 为 `follow/shortcut/move/pin/favorite/template/duplicate/translate/widgets/delete`，或“更多”中的 `applications/references/authors/offline/report`、权限中的 `transfer-ownership`。文档信息的业务页使用 `information-host`，`tab` 为“访问记录/操作记录/隐私设置”。这份回调不携带 Cookie、正文或私密评论，不代表业务操作已提交；编辑器不依据返回值伪造关注/收藏/删除成功，不自动重试。回调应以当前登录态重新核验业务权限。
+
+评论回复的“举报”复用同一回调：`action: 'report'`、`target: 'comment'`，另含 `threadId`、`replyId` 和当前 `documentId/actorId`。只传标识，不传评论正文；未配置回调时入口置灰，宿主负责举报表单、确认及提交。本人、已删除或当前不可查看的回复不会派发意图；宿主异常不会回填到已切换的身份视图。
+
+“提及的人”显示当前已授权正文中的人员提及，按人员 ID 去重，并随协作正文事务实时更新；它不是目录成员列表，也不包含评论或历史正文。

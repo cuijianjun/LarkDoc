@@ -28,9 +28,23 @@ import exportMixin from './exportMixin'
 // （「能不能评论」「能不能另存版本」最终都落到 `canEditContent(interactionMode)`），
 // 靠后放才能在有同名键时压住前面的旧口径。
 import readingModeMixin from './readingModeMixin'
-import LarkDocOverlays from './LarkDocOverlays.vue'
+const LarkDocOverlays = () => import(/* webpackChunkName: "editor-overlays" */ './LarkDocOverlays.vue')
 
 export default {
   mixins: [commentsMixin, versioningMixin, shareMixin, exportMixin, readingModeMixin],
   components: { LarkDocOverlays },
+  data: () => ({ documentAccessOpen: false, documentAccessScope: 'self', nativePanel: '', nativeScopeValid: true, nativeNotificationsAvailable: false, nativeUnreadCount: null, nativeSearchAvailable: false }),
+  methods: {
+    openDocumentAccessRequests(scope = 'self') {
+      const session = this.session
+      if (!['self', 'pending'].includes(scope) || !session?.user?.id || session._destroyed || this._isDestroyed || this._isBeingDestroyed || typeof session.getProvider('authorization')?.documentAccess !== 'function') return false
+      this.nativePanel = ''; this._nativePanelAnchor = null; this.documentAccessScope = scope; this.documentAccessOpen = true
+      return true
+    },
+    toggleNativePanel(panel, event) {
+      if (!this.nativeScopeValid || !this.session?.can('canView')) return
+      this.nativePanel = this.nativePanel === panel ? '' : panel
+      this._nativePanelAnchor = this.nativePanel ? event && event.currentTarget : null
+    },
+  },
 }

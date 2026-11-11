@@ -29,6 +29,7 @@ const DEFAULTS = Object.freeze({
   contentTheme: 'auto',
   // 'local' 才读写 localStorage（键 lark-doc:theme / lark-doc:content-theme）。
   themeStorage: 'none',
+  // themePreset: default（经典绿色）/ feishu（搭配 light 或 dark）/ pcvue（保留宿主档）。
   storage: 'none',
   autofocus: false,
   // 'auto' 按指纹识别 Vditor getHTML() 产物；'vditor' 强制归一化；'html' 跳过归一化。
@@ -104,6 +105,7 @@ export class LarkDoc {
         resolveFileUrl: this._resolveFileUrlResolver(source),
         aiProvider: source.ai && typeof source.ai === 'object' ? source.ai : null,
         session: this._session,
+        collab: source.collab || null,
         // P3-07：内嵌内容的宿主回调与 iframe 覆盖通道（iframe 桥 / 卡片动作 / URL 卡抓取）。
         ...this._resolveEmbedOptions(source),
       },
@@ -283,6 +285,7 @@ export class LarkDoc {
       onEmbedTitle: fn('onEmbedTitle'),
       onEmbedSave: fn('onEmbedSave'),
       onEmbedCardAction: fn('onEmbedCardAction'),
+      onDocumentAction: fn('onDocumentAction'),
       // `providers` 是 providerId 白名单数组，null = 全认（`core/embed/card.js`）。
       embedProviders: Array.isArray(source.embedProviders) ? source.embedProviders.slice() : null,
       onBookmarkOpen: fn('onBookmarkOpen'),
@@ -301,11 +304,13 @@ export class LarkDoc {
     if (!this._themeController) {
       this._themeController = createThemeController({
         theme: this.options.theme,
+        themePreset: this.options.themePreset,
         contentTheme: this.options.contentTheme,
         hostSkin: this._hostSkin,
         themeStorage: this.options.themeStorage,
         getRoot: () => (this._renderer && this._handle ? this._renderer.getRoot(this._handle) : null),
         onChange: (state) => {
+          Object.assign(this.options, { theme: state.theme, contentTheme: state.contentTheme, themePreset: state.preset })
           if (this._themeEventsReady && !this._destroyed) this._emit('themeChange', state)
         },
       })
@@ -481,16 +486,15 @@ export class LarkDoc {
   }
 
   /**
-   * 设置主题：theme ∈ light/dark/system/host；contentTheme ∈ auto/light/dark（省略 = 保持现值）。
+   * 设置主题：theme ∈ light/dark/system/host；contentTheme ∈ auto/light/dark；第三参数 preset ∈ default/feishu/pcvue（省略保持）。
    * 变更生效后派发 themeChange 事件（含 onThemeChange 选项回调）；
    * options 同步更新，宿主重建实例或读 options 时拿到的都是最新值。
    */
-  setTheme(theme, contentTheme) {
+  setTheme(theme, contentTheme, themePreset) {
     if (this._destroyed) return this
     this._applyHostAttributes()
-    const snapshot = this._themeController.setTheme(theme, contentTheme)
-    this.options.theme = snapshot.theme
-    this.options.contentTheme = snapshot.contentTheme
+    const snapshot = this._themeController.setTheme(theme, contentTheme, themePreset)
+    Object.assign(this.options, { theme: snapshot.theme, contentTheme: snapshot.contentTheme, themePreset: snapshot.preset })
     return this
   }
 

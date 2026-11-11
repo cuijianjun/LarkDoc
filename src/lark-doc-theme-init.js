@@ -14,10 +14,12 @@
     var read = function (key) { try { return window.localStorage.getItem(key) } catch (error) { return null } }
     var storedTheme = read('lark-doc:theme')
     var storedContent = read('lark-doc:content-theme')
+    var preset = read('lark-doc:theme-preset')
     var systemDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
     var theme = storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : (systemDark ? 'dark' : 'light')
     var content = storedContent === 'dark' || storedContent === 'light' ? storedContent : theme
     var root = document.documentElement
+    if (preset === 'default' || preset === 'feishu' || preset === 'pcvue') root.setAttribute('data-theme-preset', preset)
     root.setAttribute('data-theme', theme)
     root.setAttribute('data-content-theme', content)
     root.style.colorScheme = theme

@@ -17,6 +17,7 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getSchema } from '@tiptap/core'
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { validateDocument } from '../../src/core/documentOperations'
 
@@ -25,6 +26,30 @@ const SRC = 'https://www.figma.com/embed?embed_host=lark&url=x'
 let schema
 beforeAll(() => {
   schema = getSchema(createLarkDocExtensions())
+})
+
+describe('validateDocument × 有序列表原生布尔属性', () => {
+  function parsedList() {
+    const element = document.createElement('div')
+    element.innerHTML = '<ol><li><p>第一项</p></li><li><p>第二项</p></li></ol>'
+    return ProseMirrorDOMParser.fromSchema(schema).parse(element).toJSON()
+  }
+
+  it('原HTML parser的默认continueFrom=false及显式true能经公开内容校验回读', () => {
+    const original = parsedList()
+    expect(original.content[0].attrs.continueFrom).toBe(false)
+    expect(validateDocument(original, schema).content[0].attrs.continueFrom).toBe(false)
+    original.content[0].attrs.continueFrom = true
+    expect(validateDocument(original, schema).content[0].attrs.continueFrom).toBe(true)
+  })
+
+  it('continueFrom只接受布尔值，拒绝字符串、数字、对象与null', () => {
+    for (const value of ['true', 'false', 0, 1, {}, null]) {
+      const original = parsedList()
+      original.content[0].attrs.continueFrom = value
+      expect(() => validateDocument(original, schema)).toThrow(/orderedList\.continueFrom/)
+    }
+  })
 })
 
 /** 夹在两段正文中间 —— 与 demo 里的真实落位一致，顺带覆盖「块在文档中部」。 */

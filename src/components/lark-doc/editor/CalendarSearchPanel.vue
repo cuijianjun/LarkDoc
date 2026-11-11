@@ -90,6 +90,15 @@ export default {
       if (open) this.$nextTick(this.focusInput)
     },
   },
+  mounted() {
+    this.$nextTick(() => {
+      const ed = this.ed
+      if (this._isDestroyed || this._isBeingDestroyed || ed._isDestroyed || ed._isBeingDestroyed ||
+        !ed.calendarOpen || !ed.editor || ed.editor.isDestroyed) return
+      ed.positionCalendarSearch()
+      this.focusInput()
+    })
+  },
   methods: {
     focusInput() {
       const input = this.$refs.calendarInput

@@ -361,6 +361,7 @@ export default {
     },
     blockAction(id) {
       if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
+      if (['copy', 'cut'].includes(id) && !this.contentCopyAllowed()) return
       this.closeBlockMenu()
       const selectedRange = this.handleActionRange()
       const sectionRange = ['copy', 'cut', 'duplicate', 'moveUp', 'moveDown'].includes(id) ? this.headingActionRange(selectedRange) : null
@@ -385,44 +386,11 @@ export default {
       }
     },
     async copyBlock(range, cut = false) {
-      if (!this.writable() || !range) return false
-      const text = this.editor.state.doc.textBetween(range.from, range.to, '\n')
-      const content = this.editor.state.doc.slice(range.from, range.to).content.toJSON()
-      const structured = JSON.stringify({ schemaVersion: 1, type: 'lark-doc-block', content })
-      let copied = false
-      try {
-        if (navigator.clipboard?.write && window.ClipboardItem) {
-          const item = new window.ClipboardItem({
-            'text/plain': new Blob([text], { type: 'text/plain' }),
-            'application/x-lark-doc-block+json': new Blob([structured], { type: 'application/json' }),
-          })
-          await navigator.clipboard.write([item])
-          copied = true
-        }
-      } catch (_) { copied = false }
-      if (!copied) {
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text)
-            copied = true
-          } else {
-            const textarea = document.createElement('textarea')
-            textarea.value = text
-            textarea.setAttribute('readonly', 'true')
-            textarea.style.position = 'fixed'
-            textarea.style.opacity = '0'
-            document.body.appendChild(textarea)
-            textarea.select()
-            copied = document.execCommand('copy')
-            textarea.remove()
-          }
-        } catch (_) { copied = false }
-      }
-      if (!copied) { this.error = '无法访问剪贴板，区块未被修改；可手动选择后复制'; return false }
-      if (cut && this.writable()) this.deleteBlockRange(range)
-      this.error = cut ? '已剪切区块' : '已复制区块'
-      this.$nextTick(() => this.editor?.view.focus())
-      return true
+      if (!this.writable() || !range || !this.contentCopyAllowed()) return false
+      const context = this.contentCopyContext()
+      const originalRange = { ...range }
+      return import(/* webpackChunkName: "content-clipboard" */ '../../../utils/contentClipboard')
+        .then(module => module.copyBlock(context, originalRange, cut)).catch(() => false)
     },
   },
 }

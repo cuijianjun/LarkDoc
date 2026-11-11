@@ -59,7 +59,7 @@
   --ld-bg-active: rgba(207, 207, 207, 0.12);       /* B */
   --ld-bg-accent: rgba(31, 214, 165, 0.14);        /* C：品牌浅底 */
   --ld-bg-accent-active: rgba(31, 214, 165, 0.20); /* C */
-  --ld-bg-selected: rgba(51, 112, 235, 0.26);      /* A：11 §4.6 深色选区蓝 */
+  --ld-bg-selected: var(--ld-bg-accent);      /* A：11 §4.6 深色选区蓝 */
   --ld-bg-soft: rgba(207, 207, 207, 0.04);         /* B */
 
   /* ---- L2 边框（B：三级中性描边） ---- */
@@ -71,19 +71,19 @@
   --ld-text-outline: #A6A6A6;                      /* B */
   --ld-text-outline-heading: #F0F0F0;              /* B */
   --ld-text-outline-icon: #A6A6A6;                 /* B */
-  --ld-text-outline-active: #4C88FF;               /* A */
-  --ld-bg-outline-hover: rgba(76, 136, 255, 0.18); /* C */
+  --ld-text-outline-active: var(--ld-text-accent);               /* A */
+  --ld-bg-outline-hover: var(--ld-bg-accent); /* C */
   --ld-border-paper: #434343;                      /* B：弱线档 */
   --ld-shadow-paper: 0 8px 36px rgba(0, 0, 0, 0.28); /* E：11 §4.3 深色阴影变深加大 */
 
   /* ---- 品牌 / 功能（C：品牌提亮；语义色照 11 §4.4 不变） ---- */
   --ld-brand-chrome: #1FD6A5;             /* C：H164 S75% L48%，原 #00b887 */
   --ld-brand-content: #4C88FF;            /* A：正文品牌色提亮档 */
-  --ld-brand-subtle: rgba(76, 136, 255, 0.26);     /* A：选区蓝档 */
+  --ld-brand-subtle: var(--ld-bg-accent);     /* A：选区蓝档 */
   --ld-bg-brand-hover: #45E0B6;           /* C */
-  --ld-accent-control: #4C88FF;           /* A */
-  --ld-focus-ring: rgba(76, 136, 255, 0.40);       /* C */
-  --ld-focus-ring-picker: #4C88FF;                 /* A */
+  --ld-accent-control: var(--ld-brand-chrome);           /* A */
+  --ld-focus-ring: var(--ld-brand-chrome);       /* C */
+  --ld-focus-ring-picker: var(--ld-brand-chrome);                 /* A */
   /* --ld-danger / --ld-warning 不覆盖：11 §4.4 实测 R600/G600 深色不变 */
   --ld-text-error: #E26A64;               /* C：#D83931 +25% 白（深底需够对比） */
   --ld-stroke-swatch-clear: #E26A64;      /* C：同 error */
@@ -91,7 +91,7 @@
   /* ---- 浮层 UI（B5 收编组） ---- */
   --ld-text-menu: #F0F0F0;                /* B */
   --ld-text-menu-icon: #A6A6A6;           /* B */
-  --ld-text-menu-active: #4C88FF;         /* A */
+  --ld-text-menu-active: var(--ld-text-accent);         /* A */
   --ld-text-bubble: #F0F0F0;              /* B */
   --ld-text-handle: #A6A6A6;              /* B */
   --ld-text-handle-icon: #A6A6A6;         /* B */
@@ -101,7 +101,7 @@
   --ld-text-badge: #1FD6A5;               /* C */
   --ld-bg-tooltip: #434343;               /* B：深底浮层在深色档上浮一档 */
   --ld-bg-handle-hover: rgba(207, 207, 207, 0.08); /* B */
-  --ld-bg-menu-item-active: rgba(76, 136, 255, 0.20); /* C */
+  --ld-bg-menu-item-active: var(--ld-bg-accent); /* C */
   --ld-bg-toast: #FFF8EB;                 /* D：toast 琥珀族无实测，保留浅色 */
   --ld-text-toast: #89541A;               /* D */
   --ld-border-toast: #EDCF9F;             /* D */
@@ -118,18 +118,18 @@
   --ld-border-color-grid: rgba(207, 207, 207, 0.12); /* B */
   --ld-border-columns-picker: #434343;    /* B */
   --ld-border-grid-table: #434343;        /* B */
-  --ld-border-grid-table-active: #4C88FF; /* A */
+  --ld-border-grid-table-active: var(--ld-brand-chrome); /* A */
   --ld-stroke-swatch-empty: #757575;      /* B */
   --ld-bg-switch-off: #5F5F5F;            /* B */
   --ld-bg-switch-thumb: #F0F0F0;          /* B */
   --ld-bg-grid-table: rgba(207, 207, 207, 0.08);       /* B */
-  --ld-bg-grid-table-active: #4C88FF;                  /* A */
+  --ld-bg-grid-table-active: var(--ld-bg-accent-active);                  /* A */
   --ld-bg-grid-submenu: #292929;                       /* A：浮起表面 */
   --ld-bg-columns-preview: rgba(207, 207, 207, 0.08);  /* B */
-  --ld-bg-columns-picker: rgba(76, 136, 255, 0.45);    /* C */
-  --ld-bg-columns-cell: rgba(76, 136, 255, 0.30);      /* C */
-  --ld-bg-columns-cell-active: rgba(76, 136, 255, 0.40); /* C */
-  --ld-bg-columns-cell-preview: #4C88FF;               /* A */
+  --ld-bg-columns-picker: var(--ld-bg-accent-active);    /* C */
+  --ld-bg-columns-cell: var(--ld-bg-accent);      /* C */
+  --ld-bg-columns-cell-active: var(--ld-bg-accent-active); /* C */
+  --ld-bg-columns-cell-preview: var(--ld-bg-accent-active);               /* A */
 
   /* ---- 分类图标（命令菜单类型标识，浮层属 chrome 轨） ----
      7 个类型色实测对比度（#292929 底）：green 5.8 / orange 5.6 / teal 5.9 /
@@ -177,7 +177,7 @@
   --ld-fr-text: #F0F0F0;              /* A：Tab 未激活 / 次要按钮文字 */
   --ld-fr-text-muted: #A6A6A6;        /* A：关闭图标 / 命中计数器 */
   --ld-fr-text-disabled: #5F5F5F;     /* A：禁用态文字（≠ --ld-text-disabled 的 #757575） */
-  --ld-fr-primary-bg: #3370EB;        /* A：主按钮填充 */
+  --ld-fr-primary-bg: var(--ld-brand-chrome);        /* A：主按钮填充 */
 }
 
 /* ------------------------------------------------------------------
@@ -218,8 +218,8 @@
   --ld-border-details: #5F5F5F;                /* B */
   --ld-text-summary: #F0F0F0;                  /* B */
   --ld-text-fold-toggle: #A6A6A6;              /* B */
-  --ld-bg-fold-toggle-hover: rgba(76, 136, 255, 0.20); /* C */
-  --ld-text-fold-toggle-hover: #4C88FF;        /* A */
+  --ld-bg-fold-toggle-hover: var(--ld-bg-accent); /* C */
+  --ld-text-fold-toggle-hover: var(--ld-text-accent);        /* A */
 
   /* 未知块占位卡（P1-03，11 §4.8 内容块色层）：icon 深色未实测，复用副文 #A6A6A6 */
   --ld-unknown-card-bg: #292929;               /* A：04 §8.3 深色 bg */
@@ -284,7 +284,7 @@
   --ld-border-notice: #5F5F5F;                   /* B */
   --ld-bg-notice: rgba(207, 207, 207, 0.06);     /* B */
   --ld-text-notice: #F0F0F0;                     /* B */
-  --ld-bg-hover-segment: rgba(76, 136, 255, 0.18); /* C */
+  --ld-bg-hover-segment: var(--ld-bg-accent); /* C */
   --ld-bg-ai-context: #292929;                   /* A：浮起表面 */
   --ld-bg-ai-review: #292929;                    /* A */
   --ld-bg-ai-proposal: rgba(76, 136, 255, 0.18); /* C */

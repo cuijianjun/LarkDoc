@@ -6,6 +6,27 @@
     aria-label="提及"
     :style="ed.mentionStyle"
   >
+    <p
+      v-if="ed.mentionRemote"
+      class="lark-doc-mention-empty"
+      role="status"
+    >
+      {{ ed.mentionMessage || '内部人员目录未接通，不提供示例人员作为真实候选。' }}
+    </p>
+    <p
+      v-if="ed.mentionRequestState"
+      class="lark-doc-mention-empty"
+    >
+      来源 epoch {{ ed.mentionRequestState.sourceEpoch }} / seq {{ ed.mentionRequestState.sourceSeq }}；{{ ed.mentionRequestState.status === 'resolved' ? '候选已确认，插入后等待正文确认。' : '依赖阻塞，未创建任务。' }}
+    </p>
+    <button
+      v-if="ed.mentionRemote"
+      type="button"
+      :disabled="ed.mentionLoading"
+      @mousedown.prevent="ed.mentionPendingOperation ? ed.queryPendingMention() : ed.refreshMentionItems()"
+    >
+      {{ ed.mentionPendingOperation ? '查询原目录请求' : '重试目录查询' }}
+    </button>
     <div
       class="lark-doc-mention-tabs"
       role="tablist"
@@ -49,7 +70,7 @@
         v-if="!ed.mentionItems.length"
         class="lark-doc-mention-empty"
       >
-        {{ ed.mentionLoading ? '搜索中…' : ed.mentionEmptyText }}
+        {{ ed.mentionRemote ? (ed.mentionLoading ? '正在检查目录接线…' : '内部目录未接通，尚无真实候选。') : (ed.mentionLoading ? '搜索中…' : ed.mentionEmptyText) }}
       </p>
     </div>
     <div class="lark-doc-mention-footer">
@@ -57,9 +78,11 @@
         <input
           type="checkbox"
           :checked="ed.mentionNotify"
+          :disabled="ed.mentionRemote && ed.mentionLoading"
           aria-label="同时发送通知"
+          @mousedown="ed.mentionRemote && $event.preventDefault()"
           @change="ed.setMentionNotify($event.target.checked)"
-        ><span>同时发送通知</span>
+        ><span>{{ ed.mentionRemote ? '正文确认后请求通知' : '同时发送通知' }}</span>
       </label>
       <button
         type="button"
@@ -87,6 +110,14 @@ export default {
   name: 'LarkDocMentionPanel',
   props: {
     ed: { type: Object, required: true },
+  },
+  mounted() {
+    this.$nextTick(() => {
+      const ed = this.ed
+      if (this._isDestroyed || this._isBeingDestroyed || ed._isDestroyed || ed._isBeingDestroyed ||
+        !ed.mentionOpen || !ed.editor || ed.editor.isDestroyed) return
+      ed.positionMentionPanel()
+    })
   },
 }
 </script>

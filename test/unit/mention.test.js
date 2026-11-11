@@ -16,7 +16,10 @@
  * 排错了等于「搜张三、@到张四」。
  */
 // @vitest-environment jsdom
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
 import { Editor, getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { getMentionMatch, validateDocument } from '../../src/core/documentOperations'
@@ -26,6 +29,137 @@ import {
 } from '../../src/core/blocks/mention'
 import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../src/core/mention/directory'
 import mentionMixin from '../../src/components/lark-doc/editor/mentionMixin'
+import blockHandleMixin from '../../src/components/lark-doc/editor/blockHandleMixin'
+
+const compiler = createRequire(import.meta.url)('vue-template-compiler')
+function coldPanel(name) {
+  const file = readFileSync(resolve('src/components/lark-doc/editor', name + '.vue'), 'utf8')
+  const script = compiler.parseComponent(file).script.content.replace(/^import LarkDocIcon.*$/m, '').replace('export default', 'return')
+  return new Function('LarkDocIcon', script)({})
+}
+
+describe('冷加载面板的当前定位与焦点（E1，真实网络冷加载另验）', () => {
+  const panels = [
+    ['MentionPanel', 'mentionOpen', 'positionMentionPanel'],
+    ['CalendarSearchPanel', 'calendarOpen', 'positionCalendarSearch'],
+    ['BlockHandleMenu', 'handleRange', 'positionBlockHandle'],
+  ]
+  for (const [name, open, position] of panels) {
+    const prepare = () => {
+      const component = coldPanel(name), callbacks = [], place = vi.fn(), focus = vi.fn()
+      const ed = { editor: { isDestroyed: false }, [open]: open === 'handleRange' ? { from: 0, to: 4 } : true,
+        [position]: place, featureEnabled: () => true }
+      const host = { ed, $nextTick: callback => callbacks.push(callback), focusInput: focus }
+      component.mounted.call(host)
+      return { host, ed, place, focus, flush: () => callbacks.forEach(callback => callback()), component }
+    }
+    it(`${name}在冷挂载后使用当前范围重新定位`, () => {
+      const run = prepare()
+      if (open === 'handleRange') run.ed.handleRange = { from: 9, to: 12 }
+      run.flush()
+      expect(run.place).toHaveBeenCalledTimes(1)
+      expect(run.place.mock.calls[0]).toEqual(open === 'handleRange' ? [run.ed.handleRange, true] : [])
+      expect(run.focus).toHaveBeenCalledTimes(name === 'CalendarSearchPanel' ? 1 : 0)
+    })
+    for (const state of ['closed', 'child-destroyed', 'parent-destroyed', 'editor-destroyed']) it(`${name}晚到的${state}不再定位或夺焦点`, () => {
+      const run = prepare()
+      if (state === 'closed') run.ed[open] = false
+      if (state === 'child-destroyed') run.host._isBeingDestroyed = true
+      if (state === 'parent-destroyed') run.ed._isDestroyed = true
+      if (state === 'editor-destroyed') run.ed.editor.isDestroyed = true
+      run.flush()
+      expect(run.place).not.toHaveBeenCalled()
+      expect(run.focus).not.toHaveBeenCalled()
+    })
+  }
+  it('日程冷挂载保持真实输入框焦点与末尾光标', () => {
+    const component = coldPanel('CalendarSearchPanel'), input = document.createElement('input'), callbacks = []
+    input.value = '周会查询'; document.body.appendChild(input)
+    const host = { ed: { editor: {}, calendarOpen: true, positionCalendarSearch: vi.fn() },
+      $refs: { calendarInput: input }, $nextTick: callback => callbacks.push(callback) }
+    host.focusInput = component.methods.focusInput.bind(host)
+    try {
+      component.mounted.call(host); callbacks.forEach(callback => callback())
+      expect(document.activeElement).toBe(input)
+      expect(input.selectionStart).toBe(input.value.length)
+      expect(input.selectionEnd).toBe(input.value.length)
+    } finally { input.remove() }
+  })
+})
+
+describe('块句柄冷挂载隐藏计时器', () => {
+  it('销毁后的排队高亮回调不再访问已释放的 editor view', () => {
+    const editor = { isDestroyed: true, get view() { throw new Error('destroyed view') } }
+    expect(() => blockHandleMixin.methods.syncHandleHighlightBackdrop.call({ editor })).not.toThrow()
+  })
+  function handleHost() {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="lark-doc-paper"><p>正文</p></div><button class="lark-doc-block-handle-main"></button>'
+    document.body.appendChild(root)
+    const paragraph = root.querySelector('p'), paper = root.querySelector('.lark-doc-paper')
+    const bounds = { left: 80, top: 70, right: 200, bottom: 90, width: 120, height: 20 }
+    paragraph.getBoundingClientRect = () => bounds
+    paper.getBoundingClientRect = () => ({ left: 20, top: 30 })
+    root.querySelector('button').getBoundingClientRect = () => ({ width: 42, height: 26 })
+    const ed = { ...blockHandleMixin.data(), handleRange: { from: 0, to: 6 },
+      editor: { isDestroyed: false, view: { nodeDOM: () => paragraph } }, $refs: { root },
+      featureEnabled: () => true, clearBlockMenuCloseTimer: vi.fn(), setHandleHighlight: vi.fn(), clearHandleHighlight: vi.fn(),
+      blockShellElement: () => null, highlightStartBounds: () => bounds, firstLineInkBounds: () => null, firstTextLineBounds: () => null }
+    ed.positionBlockHandle = blockHandleMixin.methods.positionBlockHandle.bind(ed)
+    ed.scheduleHandleHide = blockHandleMixin.methods.scheduleHandleHide.bind(ed)
+    const callbacks = [], component = coldPanel('BlockHandleMenu')
+    return { ed, root, mount: () => { component.mounted.call({ ed, $nextTick: callback => callbacks.push(callback) }); callbacks.forEach(callback => callback()) } }
+  }
+
+  it('冷挂载真实几何重排保留离开后220ms隐藏期限', () => {
+    vi.useFakeTimers()
+    const run = handleHost()
+    try {
+      run.ed.scheduleHandleHide()
+      vi.advanceTimersByTime(100)
+      run.mount()
+      expect(run.ed.blockHandlePosition.top).toBe(37)
+      vi.advanceTimersByTime(119)
+      expect(run.ed.handleRange).not.toBeNull()
+      vi.advanceTimersByTime(1)
+      expect(run.ed.handleRange).toBeNull()
+      expect(run.ed.clearHandleHighlight).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(220)
+      expect(run.ed.handleRange).toBeNull()
+    } finally { run.root.remove(); vi.useRealTimers() }
+  })
+
+  it('普通定位入口仍取消此前隐藏，不因内部新参数改变悬停语义', () => {
+    vi.useFakeTimers()
+    const run = handleHost(), range = run.ed.handleRange
+    try {
+      run.ed.scheduleHandleHide()
+      vi.advanceTimersByTime(100)
+      run.ed.positionBlockHandle(range)
+      expect(run.ed.blockHandlePosition.top).toBe(37)
+      vi.advanceTimersByTime(120)
+      expect(run.ed.handleRange).toBe(range)
+      expect(run.ed.clearHandleHighlight).not.toHaveBeenCalled()
+    } finally { run.root.remove(); vi.useRealTimers() }
+  })
+
+  it('历史timerId已清除但非空时冷挂载仍重排，不猜测pending或重开计时器', () => {
+    vi.useFakeTimers()
+    const run = handleHost(), range = run.ed.handleRange
+    try {
+      run.ed.scheduleHandleHide()
+      clearTimeout(run.ed.handleHideTimer)
+      expect(run.ed.handleHideTimer).not.toBeNull()
+      vi.advanceTimersByTime(100)
+      run.mount()
+      expect(run.ed.blockHandlePosition.top).toBe(37)
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(220)
+      expect(run.ed.handleRange).toBe(range)
+      expect(run.ed.clearHandleHighlight).not.toHaveBeenCalled()
+    } finally { run.root.remove(); vi.useRealTimers() }
+  })
+})
 
 const mounted = []
 afterEach(() => {

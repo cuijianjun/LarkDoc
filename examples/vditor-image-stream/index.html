@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vditor 图片接口渲染 · 应用层 demo</title>
+<link rel="stylesheet" href="/vendor/vditor/dist/index.css">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #0f1115; color: #e6e8eb; font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 6px; }
+  h2 { font-size: 15px; font-weight: 500; margin: 0 0 6px; color: #b5d4f4; }
+  h3 { font-size: 13px; font-weight: 500; margin: 0 0 8px; color: #b4b2a9; }
+  p { margin: 0 0 12px; color: #a8adb8; font-size: 13px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #1c2029; padding: 1px 5px; border-radius: 4px; color: #9fe1cb; font-size: 12px; }
+  header { margin-bottom: 18px; }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  button { background: #185fa5; color: #e6e8eb; border: 1px solid #378add; border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+  button.ghost { background: transparent; border-color: #3a3f4a; }
+  button:hover { background: #226fb8; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1080px) { main { grid-template-columns: 1fr; } }
+  section.card { background: #171a21; border: 1px solid #2a2e37; border-radius: 10px; padding: 14px; min-width: 0; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; border: 1px solid #378add; color: #85b7eb; }
+  .tag.warn { border-color: #ba7517; color: #fac775; }
+  .log { margin-top: 16px; max-height: 190px; overflow: auto; }
+  .log ol { margin: 0; padding-left: 20px; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: #a8adb8; }
+  .log li b { color: #85b7eb; font-weight: 500; }
+  details { margin-top: 16px; background: #171a21; border: 1px solid #2a2e37; border-radius: 10px; padding: 12px 14px; }
+  summary { cursor: pointer; color: #b5d4f4; font-size: 13px; }
+  pre { overflow: auto; background: #101319; border: 1px solid #262b34; border-radius: 6px; padding: 12px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cfd4dc; }
+  .vditor { border: 1px solid #2a2e37; border-radius: 8px; overflow: hidden; }
+  .vditor img[data-pending="true"] { opacity: .35; }
+  .note { color: #fac775; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vditor 支持「图片接口渲染」吗？—— 两种应用层写法</h1>
+  <p>后端上传只返回 <code>attchId</code>，取图必须请求 <code>/api/file/:id/stream</code> 且带 <code>Authorization</code>。Vditor 没有开箱即用的渲染期拉流，下面两栏分别演示「上传期换票」与「渲染期 hook」。</p>
+</header>
+
+<div class="bar">
+  <button id="seed">注入示例图片（自动上传两张）</button>
+  <button id="clear" class="ghost">清空</button>
+  <span id="status" style="font-size:12px;color:#a8adb8"></span>
+</div>
+
+<main>
+  <section class="card">
+    <span class="tag">方案 A · 官方写法（推荐）</span>
+    <h2>上传期换票：upload.format</h2>
+    <p>把 <code>attchId</code> 换成浏览器能直接加载的代理直链，再交给 Vditor 写进 <code>![](url)</code>。文档、导出、协同全是普通 URL，零 hack。工具栏的上传按钮也走这条链路，可自己选图验证。</p>
+    <div id="editorA"></div>
+  </section>
+
+  <section class="card">
+    <span class="tag warn">方案 B · 应用层 hook（有边界）</span>
+    <h2>渲染期拉流：preview.parse</h2>
+    <p>文档里存流接口地址。<code>&lt;img&gt;</code> 裸 GET 会 401，<code>preview.parse()</code> 里带鉴权 fetch 拿二进制 → <code>blob:</code> 回填。<span class="note">只对预览区生效；wysiwyg / ir 编辑区不覆盖，blob URL 也不能持久化。</span></p>
+    <div id="editorB"></div>
+  </section>
+</main>
+
+<section class="card log">
+  <h3>请求日志</h3>
+  <ol id="log"></ol>
+</section>
+
+<details>
+  <summary>关键代码（应用层只需要这两段）</summary>
+  <pre>// A：upload.format —— 后端只给 attchId，应用层拼成可加载的直链
+upload: {
+  url: '/api/upload',
+  headers: { Authorization: 'Bearer demo-token' },
+  format(files, responseText) {
+    const { data } = JSON.parse(responseText)        // { code:0, data:{ attchId } }
+    const url = `${location.origin}/api/file/${data.attchId}/raw`
+    // Vditor 的 genUploadedLabel 只认这套结构，返回值必须是 JSON 字符串
+    return JSON.stringify({
+      code: 0, msg: '',
+      data: { errFiles: [], succMap: { [files[0].name]: url } }
+    })
+  }
+}
+
+// B：preview.parse —— 渲染后拿到 DOM，异步拉流再回填
+const cache = new Map()   // src → Promise&lt;blobUrl&gt;，去重 + 避免重复请求
+preview: {
+  parse(element) {
+    element.querySelectorAll('img[src$="/stream"]').forEach(async (img) =&gt; {
+      const src = img.getAttribute('src')
+      if (!cache.has(src)) {
+        cache.set(src, fetch(src, { headers: { Authorization: 'Bearer demo-token' } })
+          .then(r =&gt; r.blob())
+          .then(blob =&gt; URL.createObjectURL(blob)))
+      }
+      img.src = await cache.get(src)   // 只改 DOM，不写回 Markdown
+    })
+  }
+}
+// 生产还要补：token 过期重试、destroy 时 URL.revokeObjectURL、懒加载并发上限</pre>
+</details>
+
+<script src="/vendor/vditor/dist/index.min.js"></script>
+<script>
+const TOKEN = 'demo-token'
+const ORIGIN = location.origin
+const logEl = document.getElementById('log')
+const statusEl = document.getElementById('status')
+
+function log(tag, message) {
+  const li = document.createElement('li')
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  li.innerHTML = `<b>[${tag}]</b> ${escapeHtml(message)} <span style="opacity:.5">${time}</span>`
+  logEl.appendChild(li)
+  while (logEl.children.length > 40) logEl.firstChild.remove()
+  logEl.parentElement.scrollTop = logEl.parentElement.scrollHeight
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+}
+
+async function login() {
+  await fetch('/api/login', { method: 'POST' })
+  log('登录', 'Set-Cookie: demo_auth=1 —— 同源 img 裸 GET 会自动带上')
+}
+
+/** 模拟宿主上传：返回 { code:0, data:{ attchId } }，没有 url。 */
+async function uploadOnly(file) {
+  const form = new FormData()
+  form.append('file[]', file)
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    body: form,
+  })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload.msg || response.status)
+  log('上传', `${file.name} → 后端只给了 ${payload.data.attchId}（没有静态 url）`)
+  return payload.data.attchId
+}
+
+/** 用 canvas 造一张 PNG，避免 demo 依赖任何外部图片。 */
+function makePng(text, color, name) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 480
+  canvas.height = 150
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, 480, 150)
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '500 26px sans-serif'
+  ctx.fillText(text, 26, 84)
+  return new Promise((resolve) => canvas.toBlob(
+    (blob) => resolve(new File([blob], name, { type: 'image/png' })), 'image/png'))
+}
+
+/* ---------------- 方案 A：上传期换票 ---------------- */
+let vditorA = null
+vditorA = new Vditor('editorA', {
+  mode: 'sv',
+  cdn: '/vendor/vditor',
+  theme: 'dark',
+  lang: 'zh_CN',
+  height: 340,
+  cache: { enable: false },
+  toolbar: ['upload', 'undo', 'redo', '|', 'bold', 'italic'],
+  preview: { mode: 'both', delay: 200, theme: { current: 'dark' } },
+  upload: {
+    url: '/api/upload',
+    fieldName: 'file[]',
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    // 后端返回 { code:0, data:{ attchId } }；Vditor 的 genUploadedLabel
+    // 只认 { code, msg, data:{ errFiles, succMap:{ name: path } } }。
+    // 这一层就是 Vditor 官方给的「后端契约适配点」。
+    format(files, responseText) {
+      const payload = JSON.parse(responseText)
+      const id = payload.data && payload.data.attchId
+      if (!id) return JSON.stringify({ code: 1, msg: '后端未返回 attchId', data: { errFiles: [], succMap: {} } })
+      const url = `${ORIGIN}/api/file/${id}/raw`
+      log('A · format', `${id} → ${url}（代理直链，浏览器裸 GET 可加载）`)
+      return JSON.stringify({ code: 0, msg: '', data: { errFiles: [], succMap: { [files[0].name]: url } } })
+    },
+  },
+  after: () => onReady(),
+})
+
+/* ---------------- 方案 B：渲染期拉流 ---------------- */
+const streamCache = new Map() // src → Promise<blobUrl>；按 src 去重，预览重渲染不重复请求
+function streamToBlobUrl(src) {
+  if (!streamCache.has(src)) {
+    const task = fetch(src, { headers: { Authorization: `Bearer ${TOKEN}` } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`${response.status} ${(await response.json().catch(() => ({}))).msg || ''}`)
+        return URL.createObjectURL(await response.blob())
+      })
+      .catch((error) => { streamCache.delete(src); throw error })
+    streamCache.set(src, task)
+  }
+  return streamCache.get(src)
+}
+
+let vditorB = null
+vditorB = new Vditor('editorB', {
+  mode: 'sv',
+  cdn: '/vendor/vditor',
+  theme: 'dark',
+  lang: 'zh_CN',
+  height: 340,
+  cache: { enable: false },
+  toolbar: ['upload', 'undo', 'redo', '|', 'bold', 'italic'],
+  preview: {
+    mode: 'both',
+    delay: 200,
+    theme: { current: 'dark' },
+    // 预览渲染完成后的 DOM 钩子：这是 Vditor 唯一能异步改 img.src 的位置。
+    parse(element) {
+      element.querySelectorAll('img[src$="/stream"]').forEach((img) => {
+        const src = img.getAttribute('src')
+        if (img.dataset.streamResolved === src) return
+        img.dataset.streamResolved = src
+        img.setAttribute('data-pending', 'true')
+        log('B · parse', `发现接口引用 ${src}，带鉴权拉流（img 裸 GET 是 401）`)
+        streamToBlobUrl(src)
+          .then((blobUrl) => {
+            if (!img.isConnected) return
+            img.src = blobUrl
+            img.removeAttribute('data-pending')
+            log('B · parse', '已回填 blob: URL，图片显示成功')
+          })
+          .catch((error) => log('B · 失败', error.message))
+      })
+    },
+  },
+  upload: {
+    // handler 完全接管上传：Vditor 自己不插入任何内容，必须自己写回文档。
+    handler: async (files) => {
+      try {
+        const id = await uploadOnly(files[0])
+        const src = `${ORIGIN}/api/file/${id}/stream`
+        vditorB.insertMD(`![${files[0].name}](${src})\n`)
+        log('B · handler', `文档里只存接口地址 ${src}`)
+        return null
+      } catch (error) {
+        return String((error && error.message) || error) // 返回字符串 = Vditor 显示错误
+      }
+    },
+  },
+  after: () => onReady(),
+})
+
+let ready = 0
+function onReady() { if (++ready === 2) setTimeout(seed, 0) }
+
+async function seed() {
+  if (!vditorA || !vditorB) return
+  statusEl.textContent = '正在生成并上传示例图片…'
+  try {
+    await login()
+    const fileA = await makePng('A · upload-time swap', '#185fa5', 'demo-a.png')
+    const fileB = await makePng('B · render-time fetch', '#0f6e56', 'demo-b.png')
+    const idA = await uploadOnly(fileA)
+    const idB = await uploadOnly(fileB)
+    vditorA.setValue(`![${fileA.name}](${ORIGIN}/api/file/${idA}/raw)\n`)
+    vditorB.setValue(`![${fileB.name}](${ORIGIN}/api/file/${idB}/stream)\n`)
+    log('预置', '两栏已写入 Markdown：A 直接显示，B 由 preview.parse 拉流后显示')
+    statusEl.textContent = '就绪。也可以点各栏工具栏的上传按钮自行选图。'
+  } catch (error) {
+    statusEl.textContent = `失败：${error.message}`
+    log('错误', error.message)
+  }
+}
+
+document.getElementById('seed').addEventListener('click', seed)
+document.getElementById('clear').addEventListener('click', () => {
+  vditorA.setValue('')
+  vditorB.setValue('')
+  log('清空', '两栏内容已清空')
+})
+window.addEventListener('beforeunload', () => {
+  streamCache.forEach((task) => Promise.resolve(task).then((url) => URL.revokeObjectURL(url)).catch(() => {}))
+})
+</script>
+</body>
+</html>

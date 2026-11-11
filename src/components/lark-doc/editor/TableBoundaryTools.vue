@@ -3,7 +3,7 @@
     v-if="ed.featureEnabled('tables') && ed.tableBoundary.visible && ed.tableBoundary.hover && !ed.effectiveReadonly"
     class="lark-doc-table-boundary-tools"
     :class="{ 'is-column': ed.tableBoundary.hover === 'column', 'is-row': ed.tableBoundary.hover === 'row' }"
-    :style="{ ...tableBoundary.style, '--lark-doc-column-line-left': `${ed.tableBoundary.columnLineLeft}px`, '--lark-doc-row-line-top': `${ed.tableBoundary.rowLineTop}px` }"
+    :style="{ ...ed.tableBoundary.style, '--lark-doc-column-line-left': `${ed.tableBoundary.columnLineLeft}px`, '--lark-doc-row-line-top': `${ed.tableBoundary.rowLineTop}px` }"
     role="toolbar"
     aria-label="表格边界操作"
     @pointerenter="ed.keepTableBoundaryHover"

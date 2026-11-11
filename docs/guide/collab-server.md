@@ -14,16 +14,19 @@ lark-doc 的协同服务端是**独立 package `@lark-doc/collab-server`**（独
 > 同一批包）。两份共存时：`Node`/`Slice` 的 `instanceof` 失效，`ySyncPluginKey` 也不是
 > 同一个对象 —— 现象是「连上了、peer 数正常、正文永不同步」，且只在生产环境出现。
 
-协同的本质是「把扩展注册进**宿主已有的那个编辑器**」，所以协同产物必须是**引用**
-宿主实例的薄层，而不是自带一份实现。ESM 子入口天然满足（外置全部依赖，由宿主打包器去重），
-UMD 做不到 —— tiptap 家族不发 UMD 包，没有全局对象可引用。
+协同插件必须和编辑器共用 ProseMirror 实例。源码宿主共享外置依赖；预打包 SDK 则通过自身的 `loadCollaboration()` 按需加载同一次构建内的协同运行时，避免再混入另一份 ProseMirror。
 
 因此：
 
 | 场景 | 用什么 |
 | --- | --- |
-| 有打包器的宿主（Vue2/Vue3/React/vite/webpack） | `import ... from 'lark-doc/collab'`（ESM 子入口，唯一推荐） |
-| 纯 CDN `<script>` + `lark-doc-element` | 暂不支持协同；要做的话正确形态是「element 产物内建协同」，属新 API，另行决策 |
+| 源码宿主，编辑器与插件共享同一依赖实例 | `import ... from 'lark-doc/collab'`；该子入口继续保持 peers 外置 |
+| 使用预打包 CJS/ESM/UMD 主 SDK | 调用同一主入口导出的 `await loadCollaboration()` |
+| 使用预打包 `lark-doc/element` | 调用 Element 入口自己的 `await loadCollaboration()`，随 SDK 托管异步区块 |
+
+返回模块包含 bridge、`createCollabExtensions`、`isRemoteTransaction` 和 `Yjs`。从同一模块创建 Y.Doc 与插件，不把独立外置 collab 子入口混到预打包编辑器中。CJS 保留单文件、调用前不执行协同模块；其他格式按原 publicPath 加载区块。每个页面选定一个 SDK 入口，切换入口前须排空并销毁旧连接与文档。
+
+下文保留 P6a 参考服务与源码宿主示例。正式 LarkDoc 后端使用 `createDurableCollaborationBridge` 和 `editor-crdt-v1` Stateless 通道，接当前身份与短票据；不能将参考服务的 stock sync 配置直接用于正式后端。生产协议见 spec-kit `003-production-collaboration/contracts/backend-api.md`。
 
 ## 协议版本
 
@@ -126,3 +129,6 @@ location /collab {
 3. 服务端要接 Postgres / Redis / 鉴权 / 多实例，属运维领域——塞进来会污染本仓 `files` 白名单与 CI。
 
 边界靠 CI 守：`hocuspocus/server` 只准出现在 `test/`，出现第二个位置就红（`scripts/check-architecture.js` 断言）。
+
+
+文档软删除后，业务 metadata 流继续提供当前受权的回收站状态，编辑正文隐藏，原 Y.Doc/pending 保留。明确的 `deleted → active` 推送才触发 Session 的受保护 `connect()`；宿主 collaboration 端口可调用 bridge 的 `resumeAuthorization()`，以新票据恢复曾因认证超时/续票次数限制隔离的连接。该显式入口不清 pending/receipt、不重发 UPDATE，epoch/receipt/数据损坏隔离仍拒绝恢复。普通自动续票仍使用原 `connect()`，保留三次/15 秒的失败封顶。
