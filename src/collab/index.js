@@ -13,6 +13,7 @@
  * 只接受一个「这笔事务是不是远端来的」谓词（§5.7.2-1 的 blockId 冲突就靠它）。
  */
 import * as Y from 'yjs'
+export { Y as Yjs }
 import { Collaboration, isChangeOrigin } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { HocuspocusProvider } from '@hocuspocus/provider'
@@ -79,7 +80,19 @@ export function createCollabExtensions(options = {}) {
   }
   const extensions = [LarkDocCollaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
   if (provider && provider.awareness && user && user.name) {
-    extensions.push(CollaborationCaret.configure({ provider, user }))
+    const cursorClass = value => `lark-doc-peer-color-${Number.isInteger(value.colorIndex) ? value.colorIndex : 0}`
+    const render = value => {
+      const cursor = document.createElement('span'), label = document.createElement('span')
+      cursor.className = `collaboration-carets__caret ${cursorClass(value)}`
+      cursor.setAttribute('data-principal-id', value.id || value.name)
+      label.className = 'collaboration-carets__label'; label.textContent = value.name
+      cursor.appendChild(label); return cursor
+    }
+    const controlled = Boolean(provider.configuration && provider.configuration.durable)
+    const localUser = controlled ? { ...user, colorIndex: [...(user.id || user.name)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 3 } : user
+    extensions.push(CollaborationCaret.configure({ provider, user: localUser, ...(controlled ? {
+      render, selectionRender: value => ({ class: `collaboration-carets__selection ${cursorClass(value)}` }),
+    } : {}) }))
   }
   return markCollabRuntime(extensions)
 }

@@ -43,6 +43,8 @@ module.exports = {
   plugins: [forbidVueImports()],
   test: {
     environment: 'node',
+    // Vitest5默认搜索整个workspace；本项目缓存不能清理其他会话的目录。
+    fsModuleCachePath: path.join(__dirname, 'node_modules/.vitest-cache'),
     setupFiles: ['./test/bootstrap.js'],
     include: ['test/**/*.test.js'],
     // 这条链要进 npm run check，必须输出稳定：失败时立刻退出，避免 watch 卡住 CI。

@@ -1067,11 +1067,14 @@ export function foldedRange(doc, pos) {
  * 父节点、子序号、子起点、父内容终点都在遍历里现成，不出现任何
  * `doc.nodeAt` / `doc.resolve`。装饰层建折叠箭头用它（2,000 块从 275 ms 降到个位数）。
  */
-export function collectFoldRanges(doc) {
+export function collectFoldRanges(doc, idPositions) {
   const ranges = new Map()
   if (!doc) return ranges
+  const collectIds = idPositions && typeof idPositions.set === 'function'
   walkBlocks(doc, 0, false, (node, pos, index, isolated, parent, parentEnd) => {
     if (isolated || !node.isBlock || !BLOCK_ID_TYPES.has(node.type.name)) return
+    const id = node.attrs && node.attrs.blockId
+    if (collectIds && typeof id === 'string' && id) idPositions.set(id, pos)
     const range = foldRangeOf(node, pos, parent, index, parentEnd)
     if (range) ranges.set(pos, { from: range.from, to: range.to, node })
   })

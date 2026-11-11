@@ -74,13 +74,17 @@ function readEditedAt(raw) {
 export function normalizeReply(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const content = typeof raw.content === 'string' ? raw.content : bodyText(raw.content != null ? raw.content : raw.body)
-  return {
+  const result = {
     id: text(raw.id),
     author: normalizeAuthor(raw.author),
     content,
     createdAt: toTimestamp(raw.createdAt),
     editedAt: readEditedAt(raw),
   }
+  ;['replyRevision', 'deletedAt', 'tombstone', 'capabilities', 'reactions', 'attachments', 'mentions', 'references'].forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(raw, key)) result[key] = raw[key]
+  })
+  return result
 }
 
 /** 05 §5.5 的 `status` 与任务单的 `resolved` 都认；两者冲突时以 `resolved` 为准。 */
@@ -104,7 +108,7 @@ export function normalizeThread(raw) {
   const source = Array.isArray(raw.replies) ? raw.replies : (Array.isArray(raw.comments) ? raw.comments : [])
   const replies = source.map(normalizeReply).filter(Boolean)
   const anchorText = rawAnchor && typeof rawAnchor.text === 'string' ? rawAnchor.text : ''
-  return {
+  const result = {
     id: text(raw.id),
     blockId,
     anchor: { blockId, offset: anchor.offset, length: anchor.length },
@@ -114,6 +118,13 @@ export function normalizeThread(raw) {
     author: normalizeAuthor(raw.author),
     replies,
   }
+  // 远端权限、CAS和原始相对位置不能被宽容的本地投影丢失。
+  ;['tenantId', 'docId', 'scope', 'visibility', 'creator', 'participants', 'threadRevision', 'tombstone',
+    'capabilities', 'sourceEpoch', 'sourceSeq', 'rawAnchor', 'anchorStatus', 'anchorReason', 'updatedAt'].forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(raw, key)) result[key] = raw[key]
+  })
+  if (raw.scope === 'document') { result.blockId = null; result.anchor = null }
+  return result
 }
 
 /** 写路径的公共校验：内容不能是空白（`'   '` 与 `''` 等价）。 */

@@ -141,6 +141,11 @@ export default {
       return safeFileName(title || EXPORT_FILE_NAME_FALLBACK)
     },
   },
+  watch: {
+    session() { this.clearRemoteExport() },
+    'session.providers.versioning'(value, prior) { if (value !== prior) this.clearRemoteExport() },
+    'session.user.id'(value, prior) { if (value !== prior) this.clearRemoteExport() },
+  },
   mounted() {
     // Esc 挂 window 捕获阶段：根元素那句 `@keydown.esc="closeOverlay"` 是冒泡监听，
     // 这里先手 + `stopPropagation`，弹窗开时才不会被 closeOverlay 的互斥链顺手收掉
@@ -148,6 +153,8 @@ export default {
     window.addEventListener('keydown', this.onExportKeydown, true)
   },
   beforeDestroy() {
+    this._exportDisposed = true
+    this._exportSessionStops?.forEach(stop => stop())
     window.removeEventListener('keydown', this.onExportKeydown, true)
   },
   methods: {
@@ -169,6 +176,7 @@ export default {
     },
     closeExportDialog() {
       this.exportOpen = false
+      if (this.remoteExportProvider()) this.exportToast = ''
     },
     /** 点「取消」：只关弹窗，**零请求**（负结论 2）。 */
     cancelExport() {
@@ -196,10 +204,21 @@ export default {
       if (!this.exportCanExport || this.exportBusy) return
       const def = this.exportFormatDef
       if (!def) return
+      if (this.remoteExportProvider()) {
+        // Remote conversion has the same visible contract as the local exporter:
+        // close the settings dialog before any request starts and show the pending
+        // toast while the lazy conversion chunk/remote task is in flight.
+        this.closeExportDialog()
+        this.exportGeneration = (this.exportGeneration || 0) + 1
+        this.exportToast = EXPORT_TOAST_TEXT
+        return this.submitRemoteExport(def.extension)
+      }
       const format = def.id
       const scope = this.exportScopeValue
       const fileName = this.exportFileBaseName
       this.closeExportDialog()
+      this.exportGeneration = (this.exportGeneration || 0) + 1
+      const active = {}; this._activeExport = active
       this.exportBusy = true
       this.exportToast = EXPORT_TOAST_TEXT
       const action = format === 'pdf' ? 'print' : 'download'
@@ -215,14 +234,16 @@ export default {
       try {
         await this.dispatchExport(format, scope, fileName)
       } finally {
-        this.exportBusy = false
-        // PDF 是唯一「完成时机由用户在打印框里决定」的一档，toast 由 onPrinted 收，
-        // 这里不再清一次 —— 否则打印框还没关提示条就没了。
-        if (format !== 'pdf') this.exportToast = ''
+        if (!this._exportDisposed && this._activeExport === active) {
+          this._activeExport = null; this.exportBusy = false
+          // PDF closes its toast on afterprint, under the captured intent generation.
+          if (format !== 'pdf') this.exportToast = ''
+        }
       }
     },
     /** 按档派发。返回 Promise（PDF 同步返回，await 一下统一形态）。 */
     dispatchExport(format, scope, fileName) {
+      if (this.remoteExportProvider()) return this.submitRemoteExport(formatDefOf(format)?.extension || format)
       if (format === 'markdown') return this.dispatchMarkdown(scope, fileName)
       if (format === 'word') return this.dispatchDocx(scope, fileName)
       if (format === 'pdf') return this.dispatchPdf(scope, fileName)
@@ -253,10 +274,12 @@ export default {
      * `onPrinted` 在打印框关闭（afterprint）时触发，用来收掉 toast。
      */
     dispatchPdf(scope, fileName) {
+      if (this.remoteExportProvider()) return this.submitRemoteExport('pdf')
+      const session = this.session, generation = this.exportGeneration, sessionGeneration = session && session._conversionGeneration
       const result = exportPdf(this.$refs ? this.$refs.root : null, {
         title: fileName,
         scope,
-        onPrinted: () => { this.exportToast = '' },
+        onPrinted: () => { if (!this._exportDisposed && session === this.session && generation === this.exportGeneration && sessionGeneration === (session && session._conversionGeneration)) this.exportToast = '' },
       })
       if (!result || !result.ok) this.exportToast = ''
       return Promise.resolve(result)

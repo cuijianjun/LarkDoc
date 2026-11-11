@@ -14,7 +14,9 @@
  * `node.isText / marks / nodeSize / text / pos`，造一个真 ProseMirror 文档要拖进
  * 整张 schema，反而把这条契约测糊了。
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'fs'
+import { commentPanelMethods, commentPanelClock, formatDocumentCommentTime } from '../../src/components/lark-doc/editor/commentPanelView'
 import {
   COMMENT_CONTROL_IDS,
   COMMENT_HEIGHTS,
@@ -43,7 +45,102 @@ import commentsMixin, {
   commentDraftText,
   commentGate,
   commentRelativeTime,
+  commentSidebarThreads,
 } from '../../src/components/lark-doc/editor/commentsMixin'
+
+describe('全文评论与真实默认发送快捷键', () => {
+  const source = readFileSync(new URL('../../src/components/lark-doc/DocumentCommentComposer.vue', import.meta.url), 'utf8')
+  const script = source.match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '').replace('export default', 'return')
+  const component = new Function('LarkDocIcon', 'CommentTextInput', 'commentPanelMethods', script)({}, {}, commentPanelMethods)
+  const event = overrides => ({ key: 'Enter', defaultPrevented: false, isComposing: false, keyCode: 13, preventDefault() { this.defaultPrevented = true }, ...overrides })
+  it('Enter发送一次，Shift/Ctrl/Meta/IME保留编辑器默认行为', () => {
+    let calls = 0
+    const ctx = { hasContent: true, ed: { commentDocumentCanSubmit: () => true }, submit() { calls++ } }
+    const enter = event(); component.methods.onInputKeydown.call(ctx, enter)
+    expect(enter.defaultPrevented).toBe(true); expect(calls).toBe(1)
+    for (const flags of [{ shiftKey: true }, { ctrlKey: true }, { metaKey: true }, { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) {
+      component.methods.onInputKeydown.call(ctx, event(flags))
+    }
+    expect(calls).toBe(1)
+  })
+  it('空内容或无提交权限的Enter不发请求', () => {
+    let calls = 0
+    const ctx = { hasContent: false, ed: { commentDocumentCanSubmit: () => true }, submit() { calls++ } }
+    component.methods.onInputKeydown.call(ctx, event()); ctx.hasContent = true; ctx.ed.commentDocumentCanSubmit = () => false
+    component.methods.onInputKeydown.call(ctx, event()); expect(calls).toBe(0)
+  })
+})
+
+describe('全文评论时间：已保存的default格式与独立可见页时钟', () => {
+  const now = new Date(2026, 10, 10, 23, 59, 59).getTime()
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+  it.each([
+    [0, '刚刚'], [44499, '刚刚'], [44500, '1 分钟前'], [89000, '1 分钟前'], [89500, '1 分钟前'],
+    [89999, '1 分钟前'], [90000, '2 分钟前'], [44 * 60000 + 29999, '44 分钟前'],
+    [44 * 60000 + 30000, '1 小时前'], [89 * 60000, '1 小时前'], [89 * 60000 + 30000, '1 小时前'],
+    [90 * 60000, '2 小时前'], [23.5 * 3600000, '24 小时前'],
+  ])('同日经过 %d ms 使用round后的原阈值', (elapsed, expected) => {
+    expect(formatDocumentCommentTime(now - elapsed, now)).toBe(expected)
+  })
+  it('日历分支先于相对时差：昨天、同年、跨年；不把ISO按位数放大', () => {
+    const midnight = new Date(2027, 0, 1, 0, 0, 5).getTime()
+    expect(formatDocumentCommentTime(new Date(2026, 11, 31, 23, 59, 58).getTime(), midnight)).toBe('昨天 23:59')
+    expect(formatDocumentCommentTime(new Date(2026, 11, 30, 8, 3).getTime(), midnight)).toBe('2026年12月30日')
+    expect(formatDocumentCommentTime(new Date(2026, 10, 8, 8, 3).getTime(), now)).toBe('11月8日 08:03')
+    expect(formatDocumentCommentTime(new Date(2026, 10, 9, 8, 3).toISOString(), now)).toBe('昨天 08:03')
+    expect(formatDocumentCommentTime(new Date(2026, 10, 10, 23, 57, 59).toISOString(), new Date(now).toISOString())).toBe('2 分钟前')
+  })
+  it('未来钳制为当前，包括跨日跨年；无效或未知时间保持空', () => {
+    expect(formatDocumentCommentTime(now + 60000, now)).toBe('刚刚')
+    expect(formatDocumentCommentTime(new Date(2099, 0, 1).toISOString(), now)).toBe('刚刚')
+    for (const value of [undefined, null, '', 'invalid', false, {}, NaN, Infinity, 0, -1, Number.MAX_VALUE]) expect(formatDocumentCommentTime(value, now)).toBe('')
+    expect(formatDocumentCommentTime(now, NaN)).toBe('')
+  })
+  it('全文选reply.editedAt而不是线程updatedAt，未编辑时回退createdAt；侧栏原short调用不变', () => {
+    const source = readFileSync(new URL('../../src/components/lark-doc/CommentPanel.vue', import.meta.url), 'utf8')
+    expect(source).toContain('documentCommentTime(reply.editedAt == null ? reply.createdAt : reply.editedAt) : ed.commentTimeAt(reply.createdAt)')
+    const panel = { documentCommentNow: now }
+    const reply = { createdAt: now - 7200000, editedAt: now - 120000 }
+    expect(commentPanelMethods.documentCommentTime.call(panel, reply.editedAt ?? reply.createdAt)).toBe('2 分钟前')
+    expect(commentPanelMethods.documentCommentTime.call(panel, reply.createdAt)).toBe('2 小时前')
+    expect(commentRelativeTime(now, now - 59000)).toBe('刚刚')
+  })
+  function clock(visible = true, documentOnly = true) {
+    const listeners = new Set(), target = { visibilityState: visible ? 'visible' : 'hidden',
+      addEventListener: vi.fn((name, fn) => { if (name === 'visibilitychange') listeners.add(fn) }),
+      removeEventListener: vi.fn((name, fn) => { if (name === 'visibilitychange') listeners.delete(fn) }) }
+    vi.stubGlobal('document', target)
+    const panel = { ...commentPanelClock.data(), documentOnly }
+    for (const [name, fn] of Object.entries(commentPanelClock.methods)) panel[name] = fn.bind(panel)
+    commentPanelClock.mounted.call(panel)
+    return { panel, target, listeners, visibility(value) { target.visibilityState = value; for (const fn of [...listeners]) fn() } }
+  }
+  it('visible每60秒更新，hidden停，重新show立即刷新，销毁清理且旧callback不可回填', () => {
+    vi.useFakeTimers(); vi.setSystemTime(now)
+    const h = clock(), stale = h.panel._documentCommentVisibility
+    expect(vi.getTimerCount()).toBe(1); expect(h.listeners.size).toBe(1)
+    vi.advanceTimersByTime(59999); expect(h.panel.documentCommentNow).toBe(now)
+    vi.advanceTimersByTime(1); expect(h.panel.documentCommentNow).toBe(now + 60000)
+    h.visibility('hidden'); expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(120000); expect(h.panel.documentCommentNow).toBe(now + 60000)
+    h.visibility('visible'); expect(h.panel.documentCommentNow).toBe(now + 180000); expect(vi.getTimerCount()).toBe(1)
+    commentPanelClock.beforeDestroy.call(h.panel); expect(vi.getTimerCount()).toBe(0); expect(h.listeners.size).toBe(0)
+    vi.advanceTimersByTime(60000); stale(); expect(h.panel.documentCommentNow).toBe(now + 180000)
+  })
+  it('初始hidden不启timer；侧栏无listener/timer；切换documentOnly不重复绑定', () => {
+    vi.useFakeTimers(); vi.setSystemTime(now)
+    const hidden = clock(false); expect(vi.getTimerCount()).toBe(0)
+    vi.advanceTimersByTime(60000); hidden.visibility('visible'); expect(hidden.panel.documentCommentNow).toBe(now + 60000)
+    commentPanelClock.beforeDestroy.call(hidden.panel)
+    const sidebar = clock(true, false); expect(sidebar.listeners.size).toBe(0); expect(vi.getTimerCount()).toBe(0)
+    sidebar.panel.documentOnly = true; commentPanelClock.watch.documentOnly.call(sidebar.panel, true)
+    const stale = sidebar.panel._documentCommentVisibility
+    commentPanelClock.watch.documentOnly.call(sidebar.panel, true); expect(sidebar.listeners.size).toBe(1); expect(vi.getTimerCount()).toBe(1)
+    sidebar.panel.documentOnly = false; commentPanelClock.watch.documentOnly.call(sidebar.panel, false)
+    vi.advanceTimersByTime(60000); stale(); expect(sidebar.listeners.size).toBe(0); expect(vi.getTimerCount()).toBe(0)
+    commentPanelClock.beforeDestroy.call(sidebar.panel)
+  })
+})
 
 /** 造一个只带 comment mark 的文本节点替身。 */
 function textNode(text, pos, threadId) {
@@ -98,6 +195,124 @@ function mixinCtx(extra) {
 }
 
 describe('comment mark 契约', () => {
+  it('原文丢失历史与已解决列表独立，不显示正文级和已删除线程', () => {
+    const threads = [{ id: 'current', scope: 'selection', anchorStatus: 'attached' }, { id: 'resolved', scope: 'selection', anchorStatus: 'attached', resolved: true }, { id: 'orphan', scope: 'selection', anchorStatus: 'orphaned' }, { id: 'document', scope: 'document', anchorStatus: 'document' }, { id: 'deleted', scope: 'selection', anchorStatus: 'orphaned', tombstone: true }]
+    expect(commentSidebarThreads(threads, true, false, false).map(t => t.id)).toEqual(['current'])
+    expect(commentSidebarThreads(threads, true, false, true).map(t => t.id)).toEqual(['resolved'])
+    expect(commentSidebarThreads(threads, true, true, false).map(t => t.id)).toEqual(['orphan'])
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentHistorical: true, commentThreads: [{ ...threads[2], replies: [], capabilities: { canReply: true } }], commentCan: () => true, commentProvider: () => ({ isRemote: true }) })
+    expect(ctx.commentAllowed('reply', 'orphan')).toBe(false)
+  })
+  it('普通选区卡片不重复显示状态行，异常和私密状态仍明确可见', () => {
+    const panel = { ed: {} , ...commentPanelMethods }
+    expect(panel.commentStateText({ scope: 'selection', anchorStatus: 'attached', visibility: 'document' })).toBe('')
+    expect(panel.commentStateText({ scope: 'selection', anchorStatus: 'orphaned', visibility: 'private', resolved: true })).toBe('原引用已删除或无法定位 · 已解决，可重开 · 私密')
+  })
+  it('参与者选择使用目录姓名、去重，提交前拒绝覆盖已变化的线程', async () => {
+    let writes = 0
+    const thread = { id: 't', creator: 'alice', threadRevision: '3', participants: ['bob'], replies: [] }
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentMoreThreadId: 't', commentThreads: [thread], commentAllowed: () => true,
+      commentOperationCurrent: () => () => true, session: { resolveMentions: async () => ({ status: 'resolved', candidates: [{ principalId: 'bob', displayName: 'Bob' }] }) },
+      setCommentParticipants: async () => { writes++ } })
+    await ctx.openCommentParticipants('t')
+    expect(ctx.commentParticipantSelection).toEqual([{ principalId: 'bob', displayName: 'Bob' }])
+    ctx.selectCommentParticipant({ principalId: 'bob', displayName: 'Bob' })
+    expect(ctx.commentParticipantSelection).toHaveLength(1)
+    thread.threadRevision = '4'
+    await ctx.saveCommentParticipants('t')
+    expect(writes).toBe(0)
+    expect(ctx.commentParticipantError).toContain('已更新')
+  })
+  it('关闭参与者菜单后迟到的目录响应不能恢复姓名或候选', async () => {
+    let complete
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentMoreThreadId: 't', commentThreads: [{ id: 't', threadRevision: '1', participants: [], replies: [] }],
+      commentAllowed: () => true, commentOperationCurrent: () => () => true,
+      session: { resolveMentions: () => new Promise(resolve => { complete = resolve }) } })
+    const reading = ctx.openCommentParticipants('t')
+    ctx.resetCommentParticipants()
+    complete({ status: 'resolved', candidates: [{ principalId: 'bob', displayName: 'Bob' }] })
+    await reading
+    expect(ctx.commentParticipantCandidates).toEqual([])
+    expect(ctx.commentParticipantSelection).toEqual([])
+    expect(ctx.commentParticipantBusy).toBe(false)
+  })
+  it('打开时的参与者revision贯穿异步身份验证到实际写请求', async () => {
+    let payload
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentMoreThreadId: 't', commentParticipantThread: 't', commentParticipantRevision: '3',
+      commentParticipantSelection: [{ principalId: 'bob', displayName: 'Bob' }], commentThreads: [{ id: 't', threadRevision: '3' }],
+      commentAllowed: () => true, commentOperationCurrent: () => () => true,
+      runCommentWrite: async (_method, input) => { await Promise.resolve(); ctx.commentThreads[0].threadRevision = '4'; payload = input; return null } })
+    await ctx.saveCommentParticipants('t')
+    expect(payload).toEqual({ threadId: 't', participants: ['bob'], expectedRevision: '3' })
+  })
+  it('目录响应期间线程revision变化时，不能填回旧候选', async () => {
+    let complete
+    const thread = { id: 't', threadRevision: '1', participants: [], replies: [] }
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentMoreThreadId: 't', commentThreads: [thread], commentAllowed: () => true,
+      commentOperationCurrent: () => () => true, session: { resolveMentions: () => new Promise(resolve => { complete = resolve }) } })
+    const reading = ctx.openCommentParticipants('t'); thread.threadRevision = '2'
+    complete({ status: 'resolved', candidates: [{ principalId: 'bob', displayName: 'Bob' }] }); await reading
+    expect(ctx.commentParticipantCandidates).toEqual([])
+  })
+  it('评论菜单点击外部关闭，Escape还原触发按钮焦点', () => {
+    let focused = false
+    const anchor = { contains: () => false, isConnected: true, focus: () => { focused = true } }
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentMoreThreadId: 't', _commentMoreMenuAnchor: anchor })
+    ctx.onCommentReactionOutside({ target: { closest: () => null } })
+    expect(ctx.commentMoreThreadId).toBe('')
+    ctx.commentMoreThreadId = 't'; ctx._commentMoreMenuAnchor = anchor
+    ctx.onCommentReactionKeydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} })
+    expect(ctx.commentMoreThreadId).toBe('')
+    expect(focused).toBe(true)
+  })
+  it('上一条/下一条不冒泡回原卡片重新激活', () => {
+    let moved = 0, stopped = 0
+    const panel = { ed: { goComment: (_id, direction) => { moved += direction } }, ...commentPanelMethods }
+    panel.runCommentControl('go-next', 't', { stopPropagation: () => { stopped++ } })
+    expect(moved).toBe(1); expect(stopped).toBe(1)
+    panel.runCommentControl('go-previous', 't', { stopPropagation: () => { stopped++ } })
+    expect(moved).toBe(0); expect(stopped).toBe(2)
+  })
+  it('同身份授权复核只保留侧栏展开偏好，清除内容和菜单；身份切换仍关闭侧栏', () => {
+    const ctx = mixinCtx({ ...commentsMixin.data(), commentSidebarOpen: true, commentMoreThreadId: 'private-thread', commentPendingOperation: 'original',
+      commentThreads: [{ id: 'private-thread' }], resetCommentImages() {}, cancelCommentEdit() {}, refreshCommentDecorations() {} })
+    ctx.resetCommentIdentityView(true, true)
+    expect(ctx.commentSidebarOpen).toBe(true)
+    expect(ctx.commentThreads).toEqual([])
+    expect(ctx.commentMoreThreadId).toBe('')
+    expect(ctx.commentPendingOperation).toBe('original')
+    ctx.resetCommentIdentityView()
+    expect(ctx.commentSidebarOpen).toBe(false)
+    expect(ctx.commentPendingOperation).toBe('')
+  })
+  it('收起侧栏后再点同一高亮仍重新展开，并切换到对应历史状态', () => {
+    let updated = 0
+    const ctx = mixinCtx({ commentActiveThreadId: 't-1', commentSidebarOpen: false, commentHistory: false, commentRemote: true,
+      commentThreads: [{ id: 't-1', scope: 'selection', resolved: true }], updateCommentPanels: () => { updated++ } })
+    ctx.activateComment('t-1')
+    expect(ctx.commentSidebarOpen).toBe(true); expect(ctx.commentHistory).toBe(true); expect(updated).toBe(1)
+  })
+  it('全文提交不清空或覆盖尚未发送的选区草稿', async () => {
+    const ctx = mixinCtx({ commentCreateDraft: '选区草稿A', commentAuthor: { id: 'alice' }, commentAllowed: () => true,
+      runCommentWrite: async () => ({ id: 'document-thread' }), activateComment: () => {} })
+    await ctx.createDocumentComment('全文B')
+    expect(ctx.commentCreateDraft).toBe('选区草稿A')
+  })
+  it('全文输入的私有状态只透传本次创建，不复用选区私有草稿', async () => {
+    const calls = [], ctx = mixinCtx({ commentDocumentDraft: '全文私有草稿', commentCreatePrivate: false,
+      createDocumentComment: async (...args) => { calls.push(args); return { id: 'private-document' } },
+      commentDraftImages: () => [], clearCommentDraftImages: () => {} })
+    await ctx.submitDocumentComment('private')
+    expect(calls).toEqual([['全文私有草稿', 'private']])
+    expect(ctx.commentCreatePrivate).toBe(false); expect(ctx.commentDocumentDraft).toBe('')
+  })
+  it('全文图only创建保原图片scope，unknown时保留原草稿', async () => {
+    const calls = [], cleared = [], ctx = mixinCtx({ commentDocumentDraft: '',
+      createDocumentComment: async (...args) => { calls.push(args); return null },
+      commentDraftImages: scope => scope === 'document' ? [{ assetId: 'draft-image' }] : [], clearCommentDraftImages: scope => cleared.push(scope) })
+    await ctx.submitDocumentComment('private')
+    expect(calls).toEqual([['', 'private']]); expect(cleared).toEqual([])
+  })
   it('mark 名与 inclusive 都是写死的，改了会让旧文档里的高亮跟着新打字延伸', () => {
     expect(LarkDocComment.name).toBe('comment')
     // Tiptap 把 create() 的入参留在 `.config` 上（不是 `.options`），与 addAttributes 同源。
@@ -630,6 +845,50 @@ describe('评论异步回读隔离', () => {
 })
 
 describe('面板取值纯函数', () => {
+  function reportContext(onDocumentAction) {
+    return mixinCtx({ ...commentsMixin.data(), commentAuthor: { id: 'alice' },
+      commentThreads: [{ id: 'thread', replies: [{ id: 'reply', author: { id: 'bob' }, content: 'private body' }] }],
+      session: { documentId: 'doc', user: { id: 'alice' } }, onDocumentAction,
+      commentCan: () => true, closeCommentMenus() {} })
+  }
+
+  it('评论举报把目标标识交给宿主，不发送正文或伪造已举报结果', async () => {
+    const calls = [], ctx = reportContext(async value => calls.push(value))
+    expect(await ctx.runCommentMenuItem('report', 'thread', 'reply')).toBe(true)
+    expect(calls).toEqual([{ action: 'report', target: 'comment', documentId: 'doc', actorId: 'alice', threadId: 'thread', replyId: 'reply' }])
+    expect(Object.isFrozen(calls[0])).toBe(true)
+    expect(ctx.commentMessage).toBe('')
+  })
+
+  it('无举报服务的入口置灰，失去查看权或目标失效时不发意图', async () => {
+    const ctx = reportContext(null)
+    expect(ctx.commentMenuDisabled({ id: 'report' })).toBe(true)
+    expect(await ctx.runCommentMenuItem('report', 'thread', 'reply')).toBe(false)
+    let calls = 0
+    ctx.onDocumentAction = async () => { calls++ }
+    expect(ctx.commentMenuDisabled({ id: 'report' })).toBe(false)
+    expect(await ctx.runCommentMenuItem('report', 'thread', 'missing')).toBe(false)
+    ctx.commentCan = () => false
+    expect(await ctx.runCommentMenuItem('report', 'thread', 'reply')).toBe(false)
+    expect(calls).toBe(0)
+  })
+
+  it('不能举报本人或已删除回复，宿主错误跨身份后不回填新界面', async () => {
+    let reject
+    const ctx = reportContext(() => new Promise((resolve, fail) => { reject = fail }))
+    const reply = ctx.commentThreads[0].replies[0]
+    reply.author.id = 'alice'
+    expect(await ctx.runCommentMenuItem('report', 'thread', 'reply')).toBe(false)
+    reply.author.id = 'bob'; reply.tombstone = true
+    expect(await ctx.runCommentMenuItem('report', 'thread', 'reply')).toBe(false)
+    reply.tombstone = false
+    const pending = ctx.runCommentMenuItem('report', 'thread', 'reply')
+    ctx.session.user.id = 'carol'
+    reject(new Error('old host error'))
+    expect(await pending).toBe(false)
+    expect(ctx.commentMessage).toBe('')
+  })
+
   it('草稿：没写过是空串（空串 = 不浮出取消/发送）', () => {
     expect(commentDraftText({}, 't-1')).toBe('')
     expect(commentDraftText({ 't-1': '' }, 't-1')).toBe('')

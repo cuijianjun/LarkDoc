@@ -133,3 +133,6 @@ location /collab {
 3. 服务端要接 Postgres / Redis / 鉴权 / 多实例，属运维领域——塞进来会污染本仓 `files` 白名单与 CI。
 
 边界靠 CI 守：`hocuspocus/server` 只准出现在 `test/`，出现第二个位置就红（`scripts/check-architecture.js` 断言）。
+
+
+文档软删除后，业务 metadata 流继续提供当前受权的回收站状态，编辑正文隐藏，原 Y.Doc/pending 保留。明确的 `deleted → active` 推送才触发 Session 的受保护 `connect()`；宿主 collaboration 端口可调用 bridge 的 `resumeAuthorization()`，以新票据恢复曾因认证超时/续票次数限制隔离的连接。该显式入口不清 pending/receipt、不重发 UPDATE，epoch/receipt/数据损坏隔离仍拒绝恢复。普通自动续票仍使用原 `connect()`，保留三次/15 秒的失败封顶。

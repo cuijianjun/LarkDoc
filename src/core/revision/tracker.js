@@ -194,6 +194,10 @@ export function isBulkReplace(oldState, tr) {
 export const LarkDocRevisionTracker = Extension.create({
   name: 'larkDocRevisionTracker',
 
+  addOptions() {
+    return { isRemoteTransaction: null }
+  },
+
   addStorage() {
     return { active: false, author: REVISION_AUTHOR_FALLBACK, openId: '' }
   },
@@ -201,6 +205,7 @@ export const LarkDocRevisionTracker = Extension.create({
   addProseMirrorPlugins() {
     const storage = this.storage
     const editor = this.editor
+    const isRemoteTransaction = this.options.isRemoteTransaction
     // IME 组字期间记账：`compositionend` 后一次性补 mark（区间是新文档坐标）。
     let pending = []
     let compositionBound = false
@@ -258,6 +263,8 @@ export const LarkDocRevisionTracker = Extension.create({
       appendTransaction(transactions, oldState, newState) {
         if (!isActive()) return null
         if (newState.doc === oldState.doc) return null
+        // Remote CRDT replacement already carries the sender's revision marks.
+        if (typeof isRemoteTransaction === 'function' && transactions.some(isRemoteTransaction)) return null
         // 别人补的 / 自己补的 / 宿主显式跳过的，一律不碰。
         const blocked = transactions.some((tr) => tr.getMeta(REVISION_TRACK_META)
           || tr.getMeta(REVISION_SKIP_META)

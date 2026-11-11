@@ -596,6 +596,8 @@ import 'lark-doc/dist/lark-doc-element.umd.min.js'
 
 </details>
 
+</details>
+
 ### 5.5 `<script>` 直挂（无打包器）
 
 ```html

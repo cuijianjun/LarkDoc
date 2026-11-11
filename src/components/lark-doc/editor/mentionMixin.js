@@ -7,8 +7,8 @@
  *   2. 面板不抢焦点：候选行 `@mousedown.prevent`，落 chip 后焦点仍在正文。
  *   3. `Esc` 只收面板、**保留已输入的 `@` 文字**（不删、不清空）。
  *
- * 候选源两条路：宿主给了 `mentionSource`（数组或 `{ search }`）就走 provider，
- * 没给就用本地名单纯函数过滤 —— 与 unfurl 的「可选 provider」口径一致。
+ * 远端HTTP授权使用受限resolver，不回落示例名单；独立本地模式保留
+ * `mentionSource`（数组或 `{ search }`）及本地目录过滤。
  */
 import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../../core/mention/directory'
 import { projectCapabilityUi } from '../../../core/policy/capability'
@@ -45,10 +45,17 @@ export default {
       mentionStyle: {},
       mentionTabs: MENTION_TABS,
       mentionEmptyText: MENTION_EMPTY_TEXT,
+      mentionRequestState: null,
+      mentionPendingOperation: '',
+      mentionMessage: '',
     }
   },
   computed: {
     mentionDirectory() { return Array.isArray(this.mentionSource) ? this.mentionSource : [] },
+    mentionRemote() {
+      const provider = this.mentionAuthorization()
+      return Boolean(provider && provider.isRemote && typeof provider.resolveMentions === 'function')
+    },
   },
   created() {
     // provider 只建一次：宿主传函数时每次访问都会新包一层 timeout 计时器。
@@ -56,7 +63,27 @@ export default {
     // 异步搜索的序号闸门：慢请求回来晚于新一次输入时直接丢弃（避免旧结果盖新结果）。
     this._mentionToken = 0
   },
+  mounted() {
+    this.bindMentionCapabilities()
+  },
+  watch: {
+    effectiveReadonly(value) { if (value && this.mentionRemote) this.closeMentionPanel() },
+    session() { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = ''; this.bindMentionCapabilities() },
+    'session.user.id'(value, prior) { if (value !== prior && this.mentionRemote) { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = '' } },
+  },
+  beforeDestroy() {
+    this._mentionDisposed = true; this._mentionToken++
+    if (this._mentionStopCapabilities) this._mentionStopCapabilities()
+  },
   methods: {
+    mentionAuthorization() { return this.session && typeof this.session.getProvider === 'function' ? this.session.getProvider('authorization') : null },
+    bindMentionCapabilities() {
+      if (this._mentionStopCapabilities) this._mentionStopCapabilities()
+      const session = this.session
+      this._mentionStopCapabilities = session && typeof session.on === 'function' ? session.on('capabilities', () => {
+        if (session === this.session && (this.mentionRemote || !session.can('canView'))) this.closeMentionPanel()
+      }) : null
+    },
     /**
      * 文档插件每帧回调（同 `onSlash` 口径）。`match === null` = `@` 上下文已消失
      * （光标移开 / 删掉 @ / 组字开始 / Esc），此时只收面板、不动正文。
@@ -68,6 +95,7 @@ export default {
         return
       }
       const wasOpen = this.mentionOpen
+      if (!wasOpen && this.mentionRemote) this.mentionNotify = false
       // 面板与斜杠菜单互斥：`@` 是独立入口，两者同时开会抢同一组 ↑↓/Enter。
       if (!wasOpen && this.menuOpen) this.closeCommandMenu()
       this.mentionRange = { from: match.from, to: match.to }
@@ -93,12 +121,39 @@ export default {
         this.mentionLoading = false
         this.$nextTick(() => this.positionMentionPanel())
       }
+      if (this.mentionRemote) {
+        const session = this.session, authorization = this.mentionAuthorization(), identity = session && session.user && session.user.id
+        const current = () => !this._mentionDisposed && token === this._mentionToken && this.mentionOpen && session === this.session &&
+          authorization === this.mentionAuthorization() && identity === (session && session.user && session.user.id) && session.can('canView')
+        this.mentionItems = []; this.mentionRequestState = null
+        if (this.mentionPendingOperation) { this.mentionLoading = false; this.mentionMessage = '请查询原目录请求。'; return }
+        this.mentionLoading = true; this.mentionMessage = '查询人员中。'
+        session.resolveMentions({ query }).then(result => {
+          if (!current()) return
+          this.applyRemoteMentionResult(result); this.mentionLoading = false
+          this.$nextTick(() => this.positionMentionPanel())
+        }).catch(error => {
+          if (!current()) return
+          this.mentionLoading = false
+          if (error.status === 'unknown' && error.operationId) this.mentionPendingOperation = error.operationId
+          this.mentionMessage = error.status === 'unknown' ? '目录未确认，请查询原请求。' : '目录未接通或来源有变，请重查。'
+        })
+        return
+      }
       if (this._mentionProvider) {
         this.mentionLoading = true
         this._mentionProvider.search(query, { kind }).then(apply)
         return
       }
       apply(searchMentionDirectory(this.mentionDirectory, query, kind, MENTION_SEARCH_LIMIT))
+    },
+    applyRemoteMentionResult(result) {
+      this.mentionRequestState = result
+      this.mentionItems = result.status === 'resolved' && ['all', 'user'].includes(this.mentionKind)
+        ? result.candidates.slice(0, MENTION_SEARCH_LIMIT).map(value => ({ id: value.principalId, name: value.displayName, kind: 'user' })) : []
+      this.mentionActiveIndex = 0
+      this.mentionMessage = result.status === 'resolved' ? '候选已确认；未发送通知或分享。'
+        : '目录未接通；未发送通知或分享。'
     },
     setMentionKind(kind) {
       if (this.mentionKind === kind) return
@@ -112,6 +167,26 @@ export default {
     },
     setMentionNotify(value) {
       this.mentionNotify = Boolean(value)
+    },
+    async queryPendingMention() {
+      if (!this.mentionPendingOperation || this.mentionLoading) return null
+      const id = this.mentionPendingOperation, token = ++this._mentionToken, session = this.session, authorization = this.mentionAuthorization()
+      const identity = session && session.user && session.user.id
+      const current = () => !this._mentionDisposed && token === this._mentionToken && this.mentionOpen && session === this.session &&
+        authorization === this.mentionAuthorization() && identity === (session && session.user && session.user.id) && session.can('canView')
+      this.mentionLoading = true; this.mentionRequestState = null; this.mentionItems = []
+      try {
+        const result = await session.queryMentionResolution(id)
+        if (!current()) return null
+        this.mentionPendingOperation = ''; this.applyRemoteMentionResult(result)
+        return result
+      } catch (error) {
+        if (current()) {
+          if (error.code === 'MENTION_SOURCE_CONFLICT') this.mentionPendingOperation = ''
+          this.mentionMessage = '原请求不可用；未通知或分享。'
+        }
+        return null
+      } finally { if (current()) this.mentionLoading = false }
     },
     /**
      * 命令菜单（斜杠 `人员`）入口：正文里没有 `@`，所以**先补一个 `@`**，剩下的交给
@@ -132,6 +207,7 @@ export default {
     },
     /** 落 chip：先删掉正文里的 `@关键词`，再在**同一位置**插入 atom（一次事务，可一次撤销）。 */
     chooseMention(item) {
+      if (this.mentionRemote) return this.chooseRemoteMention(item)
       const entry = item || this.mentionItems[this.mentionActiveIndex]
       const range = this.mentionRange
       if (!entry || !range || !this.editor || !this.writable() || !projectCapabilityUi(this.session, 'canEdit').allowed) return
@@ -147,6 +223,46 @@ export default {
       // 当场补齐（缺失时造一个 UUID），直接 insertContent 会漏掉这个文档内实例 id。
       this.editor.chain().focus().deleteRange(range).setMention(attrs).run()
     },
+    async chooseRemoteMention(item) {
+      const entry = item || this.mentionItems[this.mentionActiveIndex], resolution = this.mentionRequestState
+      const editor = this.editor, session = this.session, authorization = this.mentionAuthorization(), range = this.mentionRange
+      if (this.mentionLoading || !resolution || resolution.status !== 'resolved' || !entry || !range || !editor ||
+        !this.mentionItems.some(value => value.id === entry.id) || !resolution.candidates.some(value => value.principalId === entry.id)) {
+        this.mentionMessage = '尚未验证真实提及目标，请重查。'; return null
+      }
+      const selection = editor.state && editor.state.selection, doc = editor.state && editor.state.doc
+      if (!selection || !Number.isSafeInteger(selection.from) || !Number.isSafeInteger(selection.to)) return null
+      const token = ++this._mentionToken, position = { from: range.from, to: range.to }, cursor = { from: selection.from, to: selection.to }
+      const principalId = entry.id, notify = this.mentionNotify === true, identity = session && session.user && session.user.id
+      const current = () => !this._mentionDisposed && !this._isDestroyed && token === this._mentionToken && this.mentionOpen &&
+        this.editor === editor && !editor.isDestroyed && session === this.session && authorization === this.mentionAuthorization() &&
+        identity === (this.session && this.session.user && this.session.user.id) && this.mentionNotify === notify &&
+        session.can('canView') && session.can('canEdit') && this.writable() && !this.effectiveReadonly && editor.isFocused === true &&
+        editor.view && typeof editor.view.hasFocus === 'function' && editor.view.hasFocus() && editor.state.doc === doc &&
+        editor.state.selection.from === cursor.from && editor.state.selection.to === cursor.to && this.mentionRange &&
+        this.mentionRange.from === position.from && this.mentionRange.to === position.to
+      if (!current()) { this.mentionItems = []; this.mentionRequestState = null; return null }
+      this.mentionLoading = true; this.mentionItems = []; this.mentionRequestState = null
+      try {
+        const result = await session.queryMentionResolution(resolution.operationId)
+        if (!current()) return null
+        const target = result.status === 'resolved' && result.operationId === resolution.operationId && result.requestHash === resolution.requestHash &&
+          result.tenantId === resolution.tenantId && result.docId === resolution.docId &&
+          result.sourceEpoch === resolution.sourceEpoch && result.sourceSeq === resolution.sourceSeq && result.persisted === true &&
+          result.notified === false && result.shared === false && result.candidates.find(value => value.principalId === principalId && value.kind === 'user')
+        if (!target) { this.mentionMessage = '候选已失效，请重查。'; return null }
+        this.closeMentionPanel()
+        const inserted = editor.chain().deleteRange(position).setMention({ id: target.principalId, name: target.displayName, kind: 'user', notify }).run()
+        this.mentionMessage = inserted ? (notify ? '已插入；等待正文确认与通知处理，未分享。' : '已插入；未请求通知，未分享。') : '提及未插入，请重新查询。'
+        return inserted
+      } catch (error) {
+        if (current()) {
+          if (error.status === 'unknown') this.mentionPendingOperation = resolution.operationId
+          this.mentionMessage = '目标或来源未确认，请查原请求。'
+        }
+        return null
+      } finally { if (!this._mentionDisposed && token === this._mentionToken) this.mentionLoading = false }
+    },
     closeMentionPanel() {
       this._mentionToken += 1
       this.mentionOpen = false
@@ -158,6 +274,7 @@ export default {
       this.mentionActiveIndex = 0
       this.mentionLoading = false
       this.mentionStyle = {}
+      this.mentionRequestState = null
     },
     /** 面板固定定位：默认贴 `@` 下方 6px，下方放不下且上方更宽裕时翻到上方。 */
     mentionStyleAt(pos) {

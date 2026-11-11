@@ -228,7 +228,7 @@ export function createLarkDocExtensions(options = {}) {
     LarkDocExternalDelete,
     // 修订的运行时：`tracker` 只在宿主把 storage.active 打开（suggest 模式）后拦截键入 /
     // 退格并补 mark，其余模式零行为；`highlight` 只画激活态那一条的底色。
-    LarkDocRevisionTracker, LarkDocRevisionHighlight,
+    LarkDocRevisionTracker.configure({ isRemoteTransaction: collab && collab.isRemoteTransaction }), LarkDocRevisionHighlight,
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
     FileHandler.configure({
       allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,

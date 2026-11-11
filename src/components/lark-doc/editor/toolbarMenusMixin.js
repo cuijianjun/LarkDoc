@@ -14,10 +14,25 @@ import {
 } from './constants'
 import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from '../../../ui/palette'
 
+const CREATE_MENU_ITEMS = Object.freeze([
+  { id: 'bitable', label: '多维表格', glyph: '▦' },
+  { id: 'document', label: '文档', glyph: '▤' },
+  { id: 'sheet', label: '表格', glyph: '▥' },
+  { id: 'slides', label: '幻灯片', glyph: '▧' },
+  { id: 'poll', label: '问卷', glyph: '☷' },
+  { id: 'mindnote', label: '思维笔记', glyph: '✎' },
+  { id: 'knowledge', label: '知识库', glyph: '⌘' },
+  { id: 'app', label: '文档应用', glyph: '▣' },
+  { id: 'board', label: '画板', glyph: '□' },
+  { id: 'mindmap', label: '思维导图', glyph: '◎' },
+  { id: 'flowchart', label: '流程图', glyph: '◇' },
+  { id: 'upload', label: '上传及导入', glyph: '↑' },
+])
+
 export default {
   data() { return {
     headingOpen: false, headingStyle: {},
-    // 顶栏隐藏时（layout.headerVisible=false），工具栏「⋯」下拉承接 header-actions 插槽。
+    // 顶栏及隐藏顶栏的工具栏共用「⋯」文档操作菜单。
     headerMenuOpen: false, headerMenuStyle: {},
     linkDialog: false, linkValue: '', linkText: '', linkInsertMode: false,
     // P3-07：内嵌网页「粘贴链接」浮层。embedDialog 存的是**菜单项 id**（null = 关闭），
@@ -31,6 +46,7 @@ export default {
     cellAlignState: { textAlign: '', verticalAlign: '' },
     // 飞书式 hover 弹窗：鼠标离开触发器/弹层后延迟关闭（跨过 6px 间隙时不误关）。
     hoverCloseTimer: null,
+    createMenuOpen: false, createMenuStyle: {}, createMenuItems: CREATE_MENU_ITEMS,
   } },
   computed: {
     visibleMarks() {
@@ -54,6 +70,43 @@ export default {
     embedDialogPlaceholder() { return this.embedDialogItem ? this.embedDialogItem.placeholder : '' },
   },
   methods: {
+    toggleCreateMenu(event) {
+      this.createMenuOpen = !this.createMenuOpen
+      this._createMenuTrigger = event?.currentTarget || null
+      this.createMenuStyle = {}
+      if (this.createMenuOpen) this.$nextTick(() => { this.positionCreateMenu(); this.$el?.querySelector('.lark-doc-create-menu button')?.focus() })
+    },
+    closeCreateMenu(restoreFocus = false) {
+      this.createMenuOpen = false; this.createMenuStyle = {}
+      if (restoreFocus) this._createMenuTrigger?.focus?.()
+    },
+    onCreateMenuFocusout(event) {
+      if (!event.currentTarget.contains(event.relatedTarget)) this.closeCreateMenu()
+    },
+    openCreateMenuFrom(event) {
+      if (!this.createMenuOpen) {
+        this.createMenuOpen = true; this._createMenuTrigger = event?.currentTarget || null; this.createMenuStyle = {}
+        this.$nextTick(() => { this.positionCreateMenu(); this.$el?.querySelector('.lark-doc-create-menu button')?.focus() })
+      }
+    },
+    positionCreateMenu() {
+      if (!this.createMenuOpen) return
+      const trigger = this.$el?.querySelector('button[aria-label="创建"]'), menu = this.$el?.querySelector('.lark-doc-create-menu')
+      if (!trigger || !menu) return
+      const margin = 8, rect = trigger.getBoundingClientRect(), width = Math.min(220, window.innerWidth - margin * 2)
+      const left = Math.max(margin, Math.min(window.innerWidth - width - margin, rect.right - width))
+      const top = Math.min(rect.bottom + 6, Math.max(margin, window.innerHeight - menu.getBoundingClientRect().height - margin))
+      this.createMenuStyle = { top: `${top}px`, left: `${left}px`, width: `${width}px`, marginTop: '0px' }
+    },
+    async runCreateMenuItem(item, event) {
+      if (!item || !this.createMenuOpen) return
+      const handler = this.onDocumentAction, session = this.session, documentId = session?.documentId ?? null, actorId = session?.user?.id ?? null
+      this.closeCreateMenu(true)
+      if (typeof handler !== 'function') return
+      // Creation is a host-owned navigation/creation intent. Do not hold the
+      // menu open while a host application waits for its own route or dialog.
+      void Promise.resolve(handler(Object.freeze({ action: 'create', createType: item.id, label: item.label, documentId, actorId, source: 'feishu-create-menu', eventType: event?.type || 'click' }))).catch(() => {})
+    },
     /** hover 弹窗公共：取消延迟关闭 / 离开后延迟关闭（进入弹层会取消）。 */
     cancelPopupHoverClose() { if (this.hoverCloseTimer) { clearTimeout(this.hoverCloseTimer); this.hoverCloseTimer = null } },
     schedulePopupHoverClose(close) {
@@ -111,23 +164,45 @@ export default {
       this.headingStyle = { top: `${Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, top))}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
     },
     /** 打开/关闭工具栏右侧「⋯」文档操作下拉（fixed 定位，贴按钮右下）。 */
-    toggleHeaderMenu() {
+    toggleHeaderMenu(event) {
       this.headerMenuOpen = !this.headerMenuOpen
+      if (this.headerMenuOpen && this.searchOpen) this.closeSearch(false)
+      this._headerMenuTrigger = event?.currentTarget || null
       this.headerMenuStyle = {}
-      if (this.headerMenuOpen) this.$nextTick(() => this.positionHeaderMenu())
+      if (this.headerMenuOpen) this.$nextTick(() => { this.positionHeaderMenu(); this.focusHeaderMenu() })
     },
-    closeHeaderMenu() { this.headerMenuOpen = false; this.headerMenuStyle = {} },
+    closeHeaderMenu(restoreFocus = false) { this.headerMenuOpen = false; this.headerMenuStyle = {}; if (restoreFocus) this._headerMenuTrigger?.focus?.() },
+    focusHeaderMenu() { this.$refs.root?.querySelector('.lark-doc-header-menu button:not(:disabled), .lark-doc-header-menu select:not(:disabled)')?.focus() },
+    onHeaderMenuFocusout(event) { if (!event.currentTarget.contains(event.relatedTarget)) this.closeHeaderMenu() },
+    onHeaderMenuEscape(event) {
+      if (event.target?.getAttribute?.('role') === 'combobox' && event.target.getAttribute('aria-expanded') === 'false') this.onHeaderMenuKeydown(event)
+    },
+    onHeaderMenuKeydown(event) {
+      if (event.defaultPrevented) return
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.closeHeaderMenu(true); return }
+      if (['SELECT', 'INPUT', 'TEXTAREA'].includes(event.target?.tagName) || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      const items = [...(event.currentTarget?.querySelectorAll('button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled)') || [])]
+        .filter(node => !['hidden', 'file'].includes(node.type) && !node.hidden && node.tabIndex >= 0 && node.getClientRects().length > 0)
+      if (!items.length) return
+      event.preventDefault(); const current = items.indexOf(event.target)
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+      items[index].focus()
+    },
     /** 「更多」弹层中的文档操作入口：内联「⋯」按钮被收纳隐藏时，以点击位置为锚点打开。 */
     openHeaderMenuFrom(event) {
+      if (this.searchOpen) this.closeSearch(false)
       this.headerMenuOpen = true
+      this._headerMenuTrigger = event?.currentTarget || null
       this.headerMenuStyle = {}
       const anchor = event?.currentTarget?.getBoundingClientRect?.()
       this.$nextTick(() => {
         if (!this.headerMenuOpen || !this.$refs.root?.querySelector('.lark-doc-header-menu')) return
+        this.focusHeaderMenu()
         if (!anchor || !anchor.width) { this.positionHeaderMenu(); return }
         const margin = 8
-        const maxHeight = Math.max(120, window.innerHeight - anchor.bottom - margin * 2)
-        this.headerMenuStyle = { top: `${anchor.bottom + 6}px`, right: `${Math.max(margin, window.innerWidth - anchor.right)}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+        const top = Math.min(anchor.bottom + 6, Math.max(margin, window.innerHeight - 160))
+        const maxHeight = Math.max(1, window.innerHeight - top - margin)
+        this.headerMenuStyle = { top: `${top}px`, right: `${Math.max(margin, window.innerWidth - anchor.right)}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
       })
     },
     positionHeaderMenu() {
@@ -139,9 +214,10 @@ export default {
       if (!trigger || !menu) return
       const margin = 8
       const triggerRect = trigger.getBoundingClientRect()
-      const maxHeight = Math.max(120, window.innerHeight - triggerRect.bottom - margin * 2)
+      const top = Math.min(triggerRect.bottom + 6, Math.max(margin, window.innerHeight - 160))
+      const maxHeight = Math.max(1, window.innerHeight - top - margin)
       const right = Math.max(margin, window.innerWidth - triggerRect.right)
-      this.headerMenuStyle = { top: `${triggerRect.bottom + 6}px`, right: `${right}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      this.headerMenuStyle = { top: `${top}px`, right: `${right}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
     },
     openLinkDialog(allowEmpty = false) {
       if (!this.writable() || (!allowEmpty && this.editor.state.selection.empty)) return

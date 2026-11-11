@@ -47,6 +47,7 @@ const TIMEOUT = (timeoutArg ? Number(timeoutArg.split('=')[1]) : DEFAULT_TIMEOUT
 const available = readdirSync(SCRIPTS)
   .filter((f) => f.startsWith(PREFIX) && f.endsWith('.js'))
   .map((f) => f.slice(PREFIX.length, -3))
+  .concat(PRODUCTION_MATRIX)
   .sort()
 
 function printList() {
@@ -60,7 +61,8 @@ if (flags.has('--list') || (targets.length === 0 && !flags.has('--all'))) {
   process.exit(0)
 }
 
-const selected = flags.has('--all') ? available : targets
+// 生产证据矩阵需显式配置和选择，不改变原--all的执行范围。
+const selected = flags.has('--all') ? available.filter(target => target !== PRODUCTION_MATRIX) : targets
 const unknown = selected.filter((t) => !available.includes(t))
 if (unknown.length) {
   console.error(`✗ 未知目标：${unknown.join(', ')}`)
@@ -131,9 +133,10 @@ function probePort({ host, port }) {
 }
 
 function runOne(target) {
-  const script = join(SCRIPTS, PREFIX + target + '.js')
-  const logPath = join(LOG_DIR, target + '.log')
-  const out = createWriteStream(logPath)
+  const matrix = target === PRODUCTION_MATRIX
+  const script = matrix ? join(ROOT, 'node_modules/vitest/vitest.mjs') : join(SCRIPTS, PREFIX + target + '.js')
+  const logPath = join(LOG_DIR, matrix ? `${target}-${Date.now()}-${process.pid}.log` : target + '.log')
+  const out = createWriteStream(logPath, { flags: matrix ? 'wx' : 'w' })
   const chunks = []
   const started = Date.now()
 

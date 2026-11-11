@@ -147,7 +147,8 @@ export function exportMarkdown(doc, options) {
  * @param {string} [options.title] 写入 docx 文档属性的标题
  * @param {object} [options.images] src → 字节；不传时自动 `collectImages`
  * @param {string} [options.scope] 内容范围（见负结论 5：只记录，不影响构建）
- * @returns {Promise<{ fileName: string, blob: Blob, failedImages: string[], scope: string }>}
+ * @param {Function} [options.isCurrent] Optional final UI-context guard before download.
+ * @returns {Promise<{ fileName: string, blob: Blob, failedImages: string[], scope: string }|null>}
  */
 export async function exportDocx(doc, options) {
   const settings = options || {}
@@ -171,6 +172,7 @@ export async function exportDocx(doc, options) {
   const { buildDocx } = await loadFeature('office.buildDocx', () =>
     import(/* webpackChunkName: "office" */ './docx.js'))
   const blob = await buildDocx(doc, { images, title: settings.title || settings.fileName })
+  if (typeof settings.isCurrent === 'function' && !settings.isCurrent()) return null
   downloadBlob(blob, fileName)
   return { fileName, blob, failedImages, scope }
 }

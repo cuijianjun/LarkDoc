@@ -28,6 +28,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { getSchema } from '@tiptap/core'
 import { EditorState } from '@tiptap/pm/state'
+import { EditorView } from '@tiptap/pm/view'
+import { collectFoldRanges, foldableIdPositions } from '../../src/core/documentOperations'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import {
   createDocumentDecorations,
@@ -208,5 +210,61 @@ describe('widget 装饰的点击目标跟随当前位置（P7-01 回归）', () 
       expect(toggleLarkDocFold).toHaveBeenCalledWith(arrow.from - 1)
     })
     expect(toggleLarkDocFold).toHaveBeenCalledWith(posOf(next.doc, 'fh'))
+  })
+})
+
+
+describe('结构编辑后的装饰DOM身份', () => {
+  it('前方新增段落后，全量重建保留未变块的fold/heading/list DOM，点击仍定位当前位置', () => {
+    const json = docFixture().toJSON()
+    json.content.find(node => node.type === 'orderedList').content[0].attrs = { blockId: 'stable-item' }
+    let state = EditorState.create({ schema, doc: schema.nodeFromJSON(json) })
+    const storage = fakeStorage(), onHeadingNumberMenu = vi.fn(), onListNumberMenu = vi.fn(), toggleLarkDocFold = vi.fn()
+    const editor = { state, storage: { larkDoc: storage }, isEditable: true, commands: { toggleLarkDocFold, setTextSelection: vi.fn() } }
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const view = new EditorView(host, { state, decorations: current => createDocumentDecorations({ state: current, storage, editor, enabled: () => true, options: { onHeadingNumberMenu, onListNumberMenu } }) })
+    editor.view = view
+    try {
+      const controls = [...view.dom.querySelectorAll('.lark-doc-heading-fold-toggle,.lark-doc-heading-number,.lark-doc-list-number')]
+      expect(controls.length).toBeGreaterThanOrEqual(4)
+      const heading = view.dom.querySelector('.lark-doc-heading-number'), list = view.dom.querySelector('.lark-doc-list-number')
+      const added = schema.nodes.paragraph.create({ blockId: 'prepend' }, schema.text('new prefix'))
+      state = state.apply(state.tr.insert(0, added)); editor.state = state; view.updateState(state)
+      controls.forEach(control => expect(view.dom.contains(control)).toBe(true))
+      heading.click(); expect(onHeadingNumberMenu.mock.calls[0][0].pos).toBe(posOf(state.doc, 'h'))
+      list.click(); expect(onListNumberMenu.mock.calls[0][0].pos).toBe(listItemPosOf(state.doc, 'li'))
+    } finally { view.destroy(); host.remove() }
+  })
+})
+
+
+describe('结构重建的widget标识边界', () => {
+  it('重复与数字blockId不和位置fallback混用，级别/显示变化更新控件', () => {
+    const storage = fakeStorage()
+    const state = EditorState.create({ schema, doc: schema.nodeFromJSON({ type: 'doc', content: [
+      h(1, 'First', { numbering: true, numberingStart: 1, blockId: 'same' }), p('body'),
+      h(1, 'Second', { numbering: true, numberingStart: 1, blockId: 'same' }), p('body'),
+      h(1, 'Numeric', { numbering: true, numberingStart: 1, blockId: '0' }), p('body'),
+    ] }) })
+    const editor = { state, storage: { larkDoc: storage }, isEditable: true }
+    const decorations = createDocumentDecorations({ state, storage, editor, enabled: () => true, options: {} }).find()
+    const keys = decorations.filter(d => d.spec.key).map(d => d.spec.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    const number = decorations.find(d => d.spec.category === 'heading-number' && d.from === 1)
+    const next = state.apply(state.tr.setNodeMarkup(0, undefined, { ...state.doc.child(0).attrs, level: 2 }))
+    editor.state = next
+    const changed = createDocumentDecorations({ state: next, storage, editor, enabled: () => true, options: {} }).find().find(d => d.spec.category === 'heading-number' && d.from === 1)
+    expect(changed.spec.key).not.toBe(number.spec.key)
+  })
+})
+
+
+describe('派生标识与折叠范围共用遍历', () => {
+  it('收集可选块标识时保留原折叠范围及重复ID归属，不要求调用方传新参数', () => {
+    const doc = docFixture(), ids = new Map(), expected = foldableIdPositions(doc)
+    const ordinary = collectFoldRanges(doc), combined = collectFoldRanges(doc, ids)
+    expect([...ids]).toEqual([...expected])
+    expect([...combined]).toEqual([...ordinary])
+    expect(() => collectFoldRanges(doc, 2)).not.toThrow()
   })
 })

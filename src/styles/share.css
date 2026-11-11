@@ -3,8 +3,8 @@
  *
  * 像素来源：requirements/04 §4.1 ④-2（分享 popover batch60/61）、§4.1.1 ② ③
  * （权限 Dialog 层级与行级像素 batch442/443）、⑤-2～⑤-9（加密链接 batch468–479）。
- * 色值与尺寸一律照抄实测，**不引蒸馏色、不混用既有皮肤 token** —— §4.1 复刻要点 1
- * 明确要求。字面 hex 只写在下方 `.lark-doc` 的 `--ld-share-*` 声明处（自定义属性声明
+ * 尺寸和交互按实测；品牌色遵循宿主项目原主题（用户明确要求）。中性色只写在下方
+ * `.lark-doc` 的 `--ld-share-*` 声明处（自定义属性声明
  * 不计入 `scripts/check-theme-tokens.js` 的止血），规则里一律 `var(...)`：既保住 04
  * 的实测原值，又不触发 T0-05（同 `comments.css` 的取舍）。
  *
@@ -23,9 +23,9 @@
    刻意挂在 `.lark-doc` 上而非 `:root`：这三条面板与本编辑器同生同灭，值不该泄漏到宿主
    页面。也刻意不复刻既有 `--ld-*` 皮肤色 —— 04 的实测值与蒸馏档不同源，混用就会失真。 */
 .lark-doc {
-  --ld-share-brand: #1456F0;            /* 主色：实心按钮底 / 聚焦描边 / 权限标签 / 开关开 */
-  --ld-share-avatar-bg: #336DF4;        /* 圆形协作者头像底（⑤-6，30×30） */
-  --ld-share-link: #3370FF;             /* 链接文字（与 brand 不同值，别合并） */
+  --ld-share-brand: var(--ld-brand-chrome);
+  --ld-share-avatar-bg: var(--ld-brand-chrome);
+  --ld-share-link: var(--ld-brand-chrome);
   --ld-share-surface: #FFFFFF;          /* 浮层 / 只读遮罩 / 输入框底 */
   --ld-share-text: #1F2329;             /* 主文字 */
   --ld-share-text-strong: #2B2F36;      /* 深一档主文字（权限 Dialog 行标题） */
@@ -53,6 +53,20 @@
 .lark-doc-share-layer {
   display: inline-block;
 }
+
+.lark-doc-share-member-toggle { border: 0; background: transparent; color: var(--ld-share-brand); cursor: pointer; font: inherit; }
+.lark-doc-share-remote-members { padding: 0 16px; color: var(--ld-share-text); font-size: 14px; }
+.lark-doc-share-candidates { max-height: 180px; overflow-y: auto; border: 1px solid var(--ld-share-border); border-radius: 6px; }
+.lark-doc-share-candidates > button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: var(--ld-share-surface); color: inherit; text-align: left; cursor: pointer; }
+.lark-doc-share-candidates > button:hover { background: var(--ld-share-bg-subtle); }
+.lark-doc-share-candidates small, .lark-doc-share-member-name small { color: var(--ld-share-text-secondary); font-size: 12px; }
+.lark-doc-share-invite-actions, .lark-doc-share-member-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.lark-doc-share-invite-actions > span, .lark-doc-share-member-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lark-doc-share-member-name small { display: block; }
+.lark-doc-share-member-list { margin-top: 8px; border-top: 1px solid var(--ld-share-border); }
+.lark-doc-share-remote-members select { max-width: 100px; padding: 5px; border: 1px solid var(--ld-share-border-control); border-radius: 6px; color: var(--ld-share-text); background: var(--ld-share-surface); }
+.lark-doc-share-source-note { color: var(--ld-share-text-secondary); font-size: 12px; line-height: 20px; }
+.lark-doc-share-org-label { font-size: 14px; color: var(--ld-share-text); }
 
 .lark-doc-share-btn-filled {
   width: 80px;
@@ -127,9 +141,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  width: 100px;
+  min-width: 100px;
   height: 32px;
+  flex-shrink: 0;
 }
+.lark-doc-share-entry .lark-doc-share-btn-filled { width: auto; min-width: 80px; white-space: nowrap; }
 
 /* ============================================================
  * 3. 分享 popover（480×331 · z 99 · **无遮罩**）
@@ -138,7 +154,8 @@
 .lark-doc-share-popover {
   position: fixed;
   z-index: 99;
-  width: 480px;
+  width: min(480px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
   height: 331px;
   padding: 2px 0 0;
   border-radius: 0;
@@ -146,12 +163,18 @@
 }
 
 .lark-doc-share-popover-inner {
-  width: 480px;
+  width: 100%;
   height: 329px;
   overflow: hidden;
   border-radius: 8px;
   background: var(--ld-share-surface);
   box-shadow: 0 6px 24px rgba(31, 35, 41, 0.12);
+}
+
+@media (max-width: 496px) {
+  .lark-doc .lark-doc-share-header, .lark-doc .lark-doc-share-member-row, .lark-doc .lark-doc-share-lower { width: 100%; }
+  .lark-doc .lark-doc-share-invite, .lark-doc .lark-doc-share-link-card { width: calc(100% - 32px); }
+  .lark-doc .lark-doc-share-invite input { width: 0; min-width: 0; flex: 1; }
 }
 
 /* 标题栏 480×45，pad 13px 16px 8px。 */
@@ -319,7 +342,7 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 4px;
-  background: rgba(20, 86, 240, 0.2);
+  background: var(--ld-bg-brand-hover);
   color: var(--ld-share-brand);
   font-size: 10px;
   line-height: 16px;

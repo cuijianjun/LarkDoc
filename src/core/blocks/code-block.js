@@ -6,6 +6,10 @@ import { clampBlockIndent } from '../documentOperations'
 import { getNodeView } from '../nodeviews/registry'
 import { createCodeBlockNodeView } from '../nodeviews/code-block'
 
+const DIAGRAM_LANGUAGES = Object.freeze(['mermaid'])
+export function isDiagramLanguage(name) { return DIAGRAM_LANGUAGES.includes(name) }
+export function listDiagramLanguages() { return DIAGRAM_LANGUAGES.slice() }
+
 function codeExtension(config) {
   return CodeBlock.extend({
     addAttributes() {

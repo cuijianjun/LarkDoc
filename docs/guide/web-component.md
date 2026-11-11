@@ -20,7 +20,9 @@ Webpack4 推荐根命令式 `LarkDoc` API，样式使用 `lark-doc/dist/lark-doc
 | `content-format` | `auto` \| `vditor` \| `html` | 旧数据归一化策略，同门面 `contentFormat` |
 | `title` | string | 文档标题 |
 | `readonly` | boolean | 只读（热更新） |
-| `theme` | `light` \| `dark` | 主题（热更新） |
+| `theme` | `light` \| `dark` \| `system` \| `host` | 外观模式（热更新） |
+| `theme-preset` | `default` \| `feishu` \| `pcvue` | 颜色预设（热更新）；三项菜单使用default/light、feishu/light、feishu/dark |
+| `theme-storage` | `none` \| `local` | 可选外观记忆；默认none，与正文草稿storage分离 |
 | `placeholder` | string | 空文档占位文案 |
 | `toolbar-keys` | list | 逗号分隔，如 `history,headings,marks` |
 | `toolbar-excludes` | list | 逗号分隔的排除项 |

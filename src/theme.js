@@ -19,9 +19,11 @@ import { runThemeTransition, cancelThemeTransition } from './themeTransition'
 
 export const THEME_STATES = Object.freeze(['light', 'dark', 'system', 'host'])
 export const CONTENT_THEME_STATES = Object.freeze(['auto', 'light', 'dark'])
+const PRESETS = ['default', 'feishu', 'pcvue']
 
 export const THEME_STORAGE_KEY = 'lark-doc:theme'
 export const CONTENT_THEME_STORAGE_KEY = 'lark-doc:content-theme'
+const PRESET_STORAGE_KEY = 'lark-doc:theme-preset'
 
 /** host 皮肤探测默认值（11 §3.9）：attr/target 可被宿主 hostSkin 覆盖，map 默认空。 */
 const DEFAULT_HOST_SKIN = Object.freeze({
@@ -31,17 +33,12 @@ const DEFAULT_HOST_SKIN = Object.freeze({
   fallback: 'light',
 })
 
-function isThemeState(value) { return THEME_STATES.indexOf(value) !== -1 }
-function isContentThemeState(value) { return CONTENT_THEME_STATES.indexOf(value) !== -1 }
 
-function readStorage(key) {
-  if (typeof window === 'undefined' || !window.localStorage) return null
-  try { return window.localStorage.getItem(key) } catch (error) { return null }
-}
-
-function writeStorage(key, value) {
-  if (typeof window === 'undefined' || !window.localStorage) return
-  try { window.localStorage.setItem(key, value) } catch (error) { /* 隐私模式写失败：静默降级为会话内生效 */ }
+// 读写共享隐私/SSR保护：捕获无window、localStorage属性getter及存储操作抛错。
+function storage(key, value) {
+  try {
+    return value === undefined ? window.localStorage.getItem(key) : window.localStorage.setItem(key, value)
+  } catch (error) { return null }
 }
 
 /**
@@ -74,6 +71,7 @@ export function resolveUiTheme(theme, hostSkin) {
  * @param {string}   [options.theme='light']        四态初值；非法值回落 'light'（D6 零破坏）。
  * @param {string}   [options.contentTheme='auto']  三值初值；非法值回落 'auto'。
  * @param {object}   [options.hostSkin]             host 态皮肤探测配置（11 §3.9）。
+ * @param {string}   [options.themePreset]         default/feishu/pcvue；缺省保留宿主预设。
  * @param {string}   [options.themeStorage='none']  'local' 才读写 localStorage。
  * @param {function} [options.getRoot]              返回根容器（.lark-doc）；返回 null 时只算不写。
  *   写 DOM 时自动走 src/themeTransition（T4-02 / T4-03）：支持 View Transitions
@@ -83,44 +81,43 @@ export function resolveUiTheme(theme, hostSkin) {
  */
 export function createThemeController(options = {}) {
   const state = {
-    theme: isThemeState(options.theme) ? options.theme : 'light',
-    contentTheme: isContentThemeState(options.contentTheme) ? options.contentTheme : 'auto',
-    themeStorage: options.themeStorage === 'local' ? 'local' : 'none',
+    theme: THEME_STATES.includes(options.theme) ? options.theme : 'light',
+    contentTheme: CONTENT_THEME_STATES.includes(options.contentTheme) ? options.contentTheme : 'auto',
+    preset: PRESETS.includes(options.themePreset) ? options.themePreset : null,
   }
+  const local = options.themeStorage === 'local'
   const hostSkin = options.hostSkin && typeof options.hostSkin === 'object' ? options.hostSkin : DEFAULT_HOST_SKIN
   const getRoot = typeof options.getRoot === 'function' ? options.getRoot : function () { return null }
   const onChange = typeof options.onChange === 'function' ? options.onChange : null
 
   let media = null
-  let onMediaChange = null
   let observer = null
-  let onStorage = null
 
-  // themeStorage === 'local'：初值以 localStorage 恢复（合法值才采用，6 §6）。
-  if (state.themeStorage === 'local') {
-    const storedTheme = readStorage(THEME_STORAGE_KEY)
-    const storedContent = readStorage(CONTENT_THEME_STORAGE_KEY)
-    if (isThemeState(storedTheme)) state.theme = storedTheme
-    if (isContentThemeState(storedContent)) state.contentTheme = storedContent
+  const storageFields = [['theme', THEME_STORAGE_KEY, THEME_STATES], ['contentTheme', CONTENT_THEME_STORAGE_KEY, CONTENT_THEME_STATES], ['preset', PRESET_STORAGE_KEY, PRESETS]]
+  function restoreStorage() {
+    storageFields.forEach(field => { const value = storage(field[1]); if (field[2].includes(value)) state[field[0]] = value })
+  }
+  if (local) restoreStorage()
+  let boundRoot = null
+
+  function preset() {
+    const root = getRoot()
+    const value = state.preset || (root && typeof root.getAttribute === 'function' && root.getAttribute('data-theme-preset'))
+    return PRESETS.includes(value) ? value : 'default'
   }
 
   function resolvedContentTheme(uiTheme) {
-    if (state.contentTheme === 'dark') return 'dark'
-    if (state.contentTheme === 'light') return 'light'
-    return uiTheme // auto：跟随 theme 解析结果
+    return state.contentTheme === 'auto' ? uiTheme : state.contentTheme
   }
 
-  function sourceTag() {
-    if (state.theme === 'system') return 'system'
-    if (state.theme === 'host') return 'host'
-    return 'explicit'
-  }
+  function sourceTag() { return state.theme === 'system' || state.theme === 'host' ? state.theme : 'explicit' }
 
   function getTheme() {
     const uiTheme = resolveUiTheme(state.theme, hostSkin)
     return {
       theme: state.theme,
       contentTheme: state.contentTheme,
+      preset: preset(),
       resolved: { theme: uiTheme, contentTheme: resolvedContentTheme(uiTheme) },
       source: sourceTag(),
     }
@@ -130,7 +127,9 @@ export function createThemeController(options = {}) {
   function applyToRoot() {
     const root = getRoot()
     if (!root || typeof root.setAttribute !== 'function') return
+    if (boundRoot !== root) bindRoot(root)
     const uiTheme = resolveUiTheme(state.theme, hostSkin)
+    root.setAttribute('data-theme-preset', preset())
     root.setAttribute('data-theme', uiTheme)
     root.setAttribute('data-content-theme', resolvedContentTheme(uiTheme))
     root.setAttribute('data-theme-source', sourceTag())
@@ -143,9 +142,8 @@ export function createThemeController(options = {}) {
   }
 
   function persist() {
-    if (state.themeStorage !== 'local') return
-    writeStorage(THEME_STORAGE_KEY, state.theme)
-    writeStorage(CONTENT_THEME_STORAGE_KEY, state.contentTheme)
+    if (!local) return
+    storageFields.forEach(field => storage(field[1], field[0] === 'preset' ? preset() : state[field[0]]))
   }
 
   /** 变更统一出口：落 DOM + 回调（回调由 setTheme 判定 changed 后触发，这里不重复判）。 */
@@ -157,44 +155,36 @@ export function createThemeController(options = {}) {
   }
 
   function stopListeners() {
-    if (media && onMediaChange) {
-      if (typeof media.removeEventListener === 'function') media.removeEventListener('change', onMediaChange)
-      else if (typeof media.removeListener === 'function') media.removeListener(onMediaChange)
+    if (media) {
+      if (typeof media.removeEventListener === 'function') media.removeEventListener('change', emit)
+      else if (typeof media.removeListener === 'function') media.removeListener(emit)
     }
     if (observer) { observer.disconnect(); observer = null }
-    if (onStorage) {
-      if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage)
-      onStorage = null
-    }
+    if (local && typeof window !== 'undefined') window.removeEventListener('storage', onStorage)
     media = null
-    onMediaChange = null
+  }
+
+  function onStorage(event) {
+    if (!event || !storageFields.some(field => field[1] === event.key)) return
+    restoreStorage()
+    emit()
   }
 
   /** 按当前形态挂监听（R1：仅对应态挂对应监听；重建态时先 stop 再 start）。 */
   function startListeners() {
     if (state.theme === 'system' && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       media = window.matchMedia('(prefers-color-scheme: dark)')
-      onMediaChange = () => emit()
-      if (typeof media.addEventListener === 'function') media.addEventListener('change', onMediaChange)
-      else if (typeof media.addListener === 'function') media.addListener(onMediaChange)
+      if (typeof media.addEventListener === 'function') media.addEventListener('change', emit)
+      else if (typeof media.addListener === 'function') media.addListener(emit)
     }
     if (state.theme === 'host' && typeof MutationObserver === 'function') {
       const target = typeof hostSkin.target === 'function' ? hostSkin.target() : null
       if (target && typeof target.getAttribute === 'function') {
-        observer = new MutationObserver(() => emit())
+        observer = new MutationObserver(emit)
         observer.observe(target, { attributes: true, attributeFilter: [hostSkin.attr || DEFAULT_HOST_SKIN.attr] })
       }
     }
-    if (state.themeStorage === 'local' && typeof window !== 'undefined') {
-      onStorage = (event) => {
-        if (!event || (event.key !== THEME_STORAGE_KEY && event.key !== CONTENT_THEME_STORAGE_KEY)) return
-        // 另一标签写入了合法新值才采用；写 null（被移除）视为维持现状。
-        const storedTheme = readStorage(THEME_STORAGE_KEY)
-        const storedContent = readStorage(CONTENT_THEME_STORAGE_KEY)
-        if (isThemeState(storedTheme) && storedTheme !== state.theme) state.theme = storedTheme
-        if (isContentThemeState(storedContent) && storedContent !== state.contentTheme) state.contentTheme = storedContent
-        emit()
-      }
+    if (local && typeof window !== 'undefined') {
       window.addEventListener('storage', onStorage)
     }
   }
@@ -205,19 +195,19 @@ export function createThemeController(options = {}) {
    * 设置主题。theme/contentTheme 传 null/undefined 视为「保持现值」；
    * 非法值 warn 后原样返回当前快照（绝不静默改写成别的合法值）。
    */
-  function setTheme(theme, contentTheme) {
-    // 先全量校验再落状态：避免 contentTheme 非法时 theme 已被改写的「半套状态」。
-    if (theme != null && !isThemeState(theme)) {
-      if (typeof console !== 'undefined') console.warn(`[lark-doc] setTheme: 非法 theme「${theme}」，忽略（合法值：${THEME_STATES.join('/')}）`)
-      return getTheme()
-    }
-    if (contentTheme != null && !isContentThemeState(contentTheme)) {
-      if (typeof console !== 'undefined') console.warn(`[lark-doc] setTheme: 非法 contentTheme「${contentTheme}」，忽略（合法值：${CONTENT_THEME_STATES.join('/')}）`)
+  function setTheme(theme, contentTheme, themePreset) {
+    // 三字段先一起校验，任何非法值都不能造成半套主题状态。
+    const values = [theme, contentTheme, themePreset]
+    const invalid = storageFields.find((field, index) => values[index] != null && !field[2].includes(values[index]))
+    if (invalid) {
+      if (typeof console !== 'undefined') console.warn(`[lark-doc] setTheme: invalid ${invalid[0]}`)
       return getTheme()
     }
     let changed = false
-    if (theme != null && theme !== state.theme) { state.theme = theme; changed = true }
-    if (contentTheme != null && contentTheme !== state.contentTheme) { state.contentTheme = contentTheme; changed = true }
+    storageFields.forEach((field, index) => {
+      const key = field[0], value = values[index], current = key === 'preset' ? preset() : state[key]
+      if (value != null && value !== current) { state[key] = value; changed = true }
+    })
     // 形态可能变化（如 explicit → system），监听器按新形态重建。
     stopListeners()
     startListeners()
@@ -228,10 +218,17 @@ export function createThemeController(options = {}) {
     return getTheme()
   }
 
+  function bindRoot(root) {
+    if (boundRoot && boundRoot._larkDocTheme === api) delete boundRoot._larkDocTheme
+    boundRoot = root
+    if (root) root._larkDocTheme = api
+  }
+
   function destroy() {
     stopListeners()
     cancelThemeTransition(getRoot())
   }
 
-  return { setTheme, getTheme, applyToRoot, destroy }
+  const api = { setTheme, getTheme, applyToRoot, destroy }
+  return api
 }

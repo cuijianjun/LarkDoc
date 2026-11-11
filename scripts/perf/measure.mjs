@@ -165,7 +165,7 @@ async function main() {
   installTeardownHandlers()
 
   const html = buildDocHtml({ seed: SEED, blocks: BLOCKS })
-  const runDir = prepareHostPage(path.join(repoRoot, 'perf', '.run'))
+  const runDir = prepareHostPage(process.env.PERF_RUN_DIR ? path.resolve(process.env.PERF_RUN_DIR) : path.join(repoRoot, 'perf', '.run'))
 
   // 起浏览器前的两道自检。先报孤儿（原因）再等负载（结果），否则用户只看到「一直在等」。
   const orphans = countOrphanChromium()
@@ -186,6 +186,17 @@ async function main() {
 
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded', timeout: 60000 })
     await waitForHostReady(page)
+    await page.waitForFunction((names) => {
+      const workspace = window.__larkDoc.document.getWorkspace(), mounted = new Set()
+      const visit = component => {
+        mounted.add(component.$options.name)
+        component.$children.forEach(visit)
+      }
+      visit(workspace)
+      return names.every(name => name === 'LarkDocNotificationPanel' && !workspace.notificationsScopeValid || mounted.has(name))
+    }, ['LarkDocP6bOverlays', 'LarkDocSearchPanel', 'LarkDocIsvButtonPanel', 'LarkDocRevisionPanel', 'LarkDocOutlinePanel',
+      'LarkDocBubbleBar', 'LarkDocTableTools', 'LarkDocTableBoundaryTools', 'LarkDocColorPalette', 'LarkDocCalloutTools',
+      'HelpDialog', 'HelpFab', 'LarkDocNotificationPanel'], { timeout: 60000 })
 
     // 1. 首屏可输入：灌 2000 块 → focus → 真键盘敲第一个字 → 事务提交（浏览器时钟 mark 对 mark）
     console.log(`[measure] 1/6 首屏灌入 ${BLOCKS} 块（${Math.round(html.length / 1024)} KB）...`)
@@ -356,8 +367,8 @@ async function main() {
         heapMB: round1(heapBytes / 1048576),
       },
     }
-    const outPath = path.join(repoRoot, 'perf', '.perf-result.json')
-    fs.writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`)
+    const outPath = process.env.PERF_RESULT_PATH ? path.resolve(process.env.PERF_RESULT_PATH) : path.join(repoRoot, 'perf', '.perf-result.json')
+    fs.writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`, process.env.PERF_RESULT_PATH ? { flag: 'wx' } : undefined)
     console.log(`性能采集完成 → ${path.relative(repoRoot, outPath)}`)
     for (const [key, value] of Object.entries(result.metrics)) console.log(`  ${key} = ${value}`)
   } finally {

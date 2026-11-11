@@ -78,7 +78,7 @@ export function serveStatic(dir) {
 }
 
 /**
- * 把 element UMD 产物与宿主页铺到 `perf/.run/`，返回该目录。
+ * 把 element UMD 及其同前缀JS分块与宿主页铺到运行目录，返回该目录。
  *
  * 宿主页与 `measure.mjs` 完全同构，只有 `window.__larkDoc` 一个契约 —— 归因脚本量的必须是
  * 采集脚本量的那个页面，否则两张数字放在同一份报告里没有意义。
@@ -93,14 +93,17 @@ export function prepareHostPage(runDir) {
     '<script>window.__larkDoc = document.getElementById("doc")</script>',
     '</body></html>',
   ].join('\n'))
-  fs.copyFileSync(path.join(REPO_ROOT, 'dist', 'lark-doc-element.umd.min.js'), path.join(runDir, 'lark-doc-element.umd.min.js'))
+  for (const file of fs.readdirSync(path.join(REPO_ROOT, 'dist'))) {
+    if (file.startsWith('lark-doc-element.') && file.endsWith('.js')) fs.copyFileSync(path.join(REPO_ROOT, 'dist', file), path.join(runDir, file))
+  }
   return runDir
 }
 
-/** 等 `window.__larkDoc.getEditor()` 可用（宿主页就绪的唯一信号）。 */
+/** 等正文与异步交互层挂载，避免把首次加载工作混入性能采样。 */
 export async function waitForHostReady(page) {
   await page.waitForFunction(
     () => window.__larkDoc && typeof window.__larkDoc.getEditor === 'function' && window.__larkDoc.getEditor(),
     { timeout: 60000 },
   )
+  await page.waitForSelector('.lark-doc-p6b-layer', { state: 'attached', timeout: 60000 })
 }

@@ -141,7 +141,8 @@ export function anchorBinding(anchor, source) {
 export function withAnchorBinding(thread, source) {
   const target = thread || {}
   const binding = anchorBinding(target.anchor || { blockId: target.blockId }, source)
-  return { ...target, anchor: binding.anchor, bound: binding.bound, anchorReason: binding.reason }
+  return { ...target, anchor: binding.anchor, bound: binding.bound, anchorReason: binding.reason,
+    anchorStatus: binding.bound ? 'attached' : 'orphaned' }
 }
 
 /** 面板要的只有两堆：能画高亮的、以及只能显示「原引用已失联」的。 */

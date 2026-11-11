@@ -102,6 +102,7 @@ export default {
         const key = (event.key || '').toLowerCase()
         if (key === 'f' && !event.shiftKey) { event.preventDefault(); this.openSearch('find'); return }
         if (key === 'h' && event.shiftKey) { event.preventDefault(); this.openSearch('replace'); return }
+        if (key === 'p' && event.shiftKey) { event.preventDefault(); this.startPresentation('document'); return }
         // P4-06：⌘+/ 开快捷键抽屉（04 §3.5 入口 2、07 §7 键位表）。同样要 preventDefault，
         // 否则 Firefox 会弹「快速查找」、部分输入法会把 / 打进正文。
         if (key === '/') { event.preventDefault(); this.toggleHelpOpen(); return }
@@ -123,8 +124,8 @@ export default {
       else if (event.key === 'Escape' && this.isvPanelOpen) this.closeIsvPanel()
       else if (event.key === 'Escape' && this.slides) this.toggleSlides()
       else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
-      else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1)
-      else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1)
+      else if (this.slides && this.presentationMode !== 'document' && event.key === 'ArrowRight') { event.preventDefault(); this.nextSlide() }
+      else if (this.slides && this.presentationMode !== 'document' && event.key === 'ArrowLeft') { event.preventDefault(); this.prevSlide() }
     },
     /**
      * 逐层收浮层（互斥链，一次只收一层），最后一律把焦点还给编辑器。

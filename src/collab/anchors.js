@@ -15,12 +15,13 @@
  *
  * 2. **内容被删，yjs 不会告诉你。** `gc: false` 时 tombstone 还在，
  *    `createAbsolutePositionFromRelativePosition` 照样返回值（实测删空后仍返回 `{ index: 0 }`）。
- *    所以「失联」只能由宿主 `locate` 判定（块不在文档里了），不能靠 decode 出 null。
+ *    因此还须检查相对位置原struct是否deleted；只靠绝对index会吸附到剩余文字。
  *
  * 边界：本文件可以 import yjs（它活在 collab 子入口里），core 一律不 import。
  */
 
 import * as Y from 'yjs'
+import { ySyncPluginKey, absolutePositionToRelativePosition, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
 import { COLLAB_CONTENT_FIELD } from './protocol'
 
 /**
@@ -40,6 +41,8 @@ export function createCommentAnchors(options = {}) {
     throw new TypeError('createCommentAnchors 需要真实的 Y.Doc')
   }
   const defaultType = options.type || ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
+  let expectedRoot = defaultType
+  while (expectedRoot.parent) expectedRoot = expectedRoot.parent
   return {
     /** 绝对 index → 可编码的相对位置（落库的是它，不是数字）。 */
     encode(index, type) {
@@ -48,8 +51,18 @@ export function createCommentAnchors(options = {}) {
     /** 相对位置 → 当前绝对位置 `{ type, index }`；`null` = 解不出来。 */
     decode(encoded) {
       if (!encoded) return null
-      const absolute = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(encoded), ydoc)
-      return absolute ? { type: absolute.type, index: absolute.index } : null
+      try {
+        const relative = Y.decodeRelativePosition(encoded)
+        if (relative.tname != null && ydoc.share.get(relative.tname) !== expectedRoot) return null
+        for (const id of [relative.item, relative.type]) {
+          if (id && Y.getItem(ydoc.store, id).deleted) return null
+        }
+        const absolute = Y.createAbsolutePositionFromRelativePosition(relative, ydoc)
+        if (!absolute) return null
+        let root = absolute.type
+        while (root.parent) root = root.parent
+        return root === expectedRoot ? { type: absolute.type, index: absolute.index } : null
+      } catch { return null }
     },
   }
 }
@@ -108,7 +121,7 @@ export function createYjsAnchorCodec(options = {}) {
      * 比明说失联难查得多（core/comments/anchor.js 文件头同一条口径）。
      *
      * 失联的两种来源：① yjs 解不出位置；② 位置能解出来但宿主 `locate` 说块没了
-     * （坑 2：删除场景只能靠 ②，yjs 自己不会报）。
+     * （原struct删除由engine额外检查，不把Yjs就近得到的绝对位置当原引用）。
      */
     decode(payload) {
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
@@ -128,8 +141,54 @@ export function createYjsAnchorCodec(options = {}) {
         return plainAnchor(payload.blockId, Number(payload.offset) || 0, length)
       }
       const at = locate(start)
-      if (!at || !at.blockId) return null
+      if (!at || !at.blockId || at.blockId !== payload.blockId) return null
       return plainAnchor(at.blockId, Number(at.offset) || 0, length)
+    },
+  }
+}
+
+/** 正式编辑器接线：从同一个y-sync映射转换字符位置，宿主不再自写一套坐标适配。 */
+export function createEditorCommentAnchorCodec({ editor, ydoc }) {
+  if (!editor || !ydoc) return null
+  const type = ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
+  const mapping = () => ySyncPluginKey.getState(editor.state)?.binding?.mapping
+  const engine = createCommentAnchors({ ydoc, type })
+  const fallback = createYjsAnchorCodec({ ydoc, type })
+  const absolute = position => relativePositionToAbsolutePosition(ydoc, type, Y.createRelativePositionFromTypeIndex(position.type, position.index), mapping())
+  const locate = position => {
+    const resolved = editor.state.doc.resolve(position)
+    for (let depth = resolved.depth; depth > 0; depth--) {
+      const blockId = resolved.node(depth).attrs.blockId
+      if (blockId) return { blockId, offset: position - resolved.start(depth) }
+    }
+    return null
+  }
+  return {
+    encode(anchor) {
+      const base = plainAnchor(anchor.blockId, anchor.offset, anchor.length)
+      let from = null
+      if (!mapping()) return base
+      editor.state.doc.descendants((node, position) => {
+        if (node.attrs.blockId !== anchor.blockId) return
+        if (anchor.offset <= node.content.size) from = position + 1 + anchor.offset
+        return false
+      })
+      if (from == null || from + anchor.length > editor.state.doc.content.size) return base
+      // PM选区可以跨段落/inline atom；两端分别转换，不能在起点Y.XmlText上累加长度。
+      const start = absolutePositionToRelativePosition(from, type, mapping())
+      const end = absolutePositionToRelativePosition(from + anchor.length, type, mapping())
+      return { kind: 'y', ...base, from: Y.encodeRelativePosition(start), to: Y.encodeRelativePosition(end) }
+    },
+    decode(payload) {
+      if (!payload || payload.kind !== 'y') return fallback.decode(payload)
+      if (!mapping()) return null
+      const start = engine.decode(payload.from), end = engine.decode(payload.to)
+      if (!start || !end) return null
+      const from = absolute(start), to = absolute(end)
+      if (from == null || to == null || to < from) return null
+      const at = locate(from)
+      if (!at || at.blockId !== payload.blockId) return null
+      return plainAnchor(at.blockId, at.offset, to - from)
     },
   }
 }

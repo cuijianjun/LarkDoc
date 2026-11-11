@@ -24,6 +24,7 @@ const path = require('path')
 const root = path.resolve(__dirname, '..')
 const LIGHT_FILE = path.join(root, 'src/components/lark-doc/lark-doc.css')
 const DARK_FILE = path.join(root, 'src/components/lark-doc/theme-dark.css')
+const FEISHU_FILE = path.join(root, 'src/components/lark-doc/theme-preset-feishu.css')
 const PCVUE_FILE = path.join(root, 'src/components/lark-doc/theme-preset-pcvue.css')
 
 /**
@@ -33,6 +34,8 @@ const PCVUE_FILE = path.join(root, 'src/components/lark-doc/theme-preset-pcvue.c
 const TRACK_BASE = {
   light: { chrome: '#FFFFFF', content: '#FFFFFF' },
   dark: { chrome: '#17181A', content: '#292929' },
+  feishu: { chrome: '#FFFFFF', content: '#FFFFFF' },
+  'feishu-dark': { chrome: '#1A1A1A', content: '#1A1A1A' },
   pcvue: { chrome: '#FFFFFF', content: '#FFFFFF' },
   'pcvue-dark': { chrome: '#1d3d39', content: '#1d3d39' },
 }
@@ -211,6 +214,9 @@ function contrast(a, b) {
 
 const lightBlocks = parseBlocks(stripComments(fs.readFileSync(LIGHT_FILE, 'utf8')))
 const darkBlocks = parseBlocks(stripComments(fs.readFileSync(DARK_FILE, 'utf8')))
+const feishuBlocks = parseBlocks(stripComments(fs.readFileSync(FEISHU_FILE, 'utf8')))
+const FEISHU_LIGHT = collectTokens(feishuBlocks, '[data-theme-preset="feishu"]')
+const FEISHU_DARK = collectTokens(feishuBlocks, '[data-theme="dark"]')
 const pcvueBlocks = parseBlocks(stripComments(fs.readFileSync(PCVUE_FILE, 'utf8')))
 
 /** 默认档浅色 token（所有档位的地基）。 */
@@ -231,6 +237,8 @@ const PCVUE_DARK = Object.assign(
 )
 
 const THEMES = {
+  feishu: { tokens: Object.assign({}, BASE_LIGHT, FEISHU_LIGHT) },
+  'feishu-dark': { tokens: Object.assign({}, BASE_LIGHT, FEISHU_LIGHT, BASE_DARK, FEISHU_DARK) },
   light: {
     tokens: BASE_LIGHT,
   },

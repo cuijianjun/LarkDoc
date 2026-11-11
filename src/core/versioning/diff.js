@@ -4,7 +4,7 @@
  * 只算**便宜且稳定**的三样：块数、字数、标题增删。刻意不做字符级 diff：
  *   · 字符级 diff 要 Myer/patience 一类算法，长文档上是 O(ND)，成本远超声称的收益；
  *   · 面板左栏的逐字高亮（04 §3.4-D 的三色）是编辑器渲染层的事，不是数据层的事。
- * 这里给的是「一眼看出这次恢复动了多少」，够时间线做摘要就够了。
+ * 以上仅指本地摘要；远端结构diff使用服务端真实结果，本文件只校验与格式化，不重算算法。
  *
  * 输入是**投影**：ProseMirror/Tiptap 的 doc JSON，或已经是三项指标的对象
  * （`{ blockCount, charCount, headings }`，用于拿不到正文时）。快照的元信息
@@ -20,6 +20,48 @@
  * 待定：`heading-0`（文档标题）不在正文里（04 §3.3 大纲口径），因此不计入 `headings`。
  */
 const EMPTY_METRICS = Object.freeze({ blockCount: 0, charCount: 0, headings: [] })
+
+const diffError = () => Object.assign(new Error('VERSION_DIFF_INVALID'), { code: 'VERSION_DIFF_INVALID' })
+const integer = value => typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)
+const hash = value => typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value)
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
+
+/** 固定不可变版本来源；不是活动正文，也不是可执行恢复指令。 */
+export function normalizeVersionDiffSource(raw, expectedVersionId) {
+  if (!raw || typeof raw.versionId !== 'string' || !raw.versionId || raw.versionId.includes('\0') ||
+    (expectedVersionId !== undefined && raw.versionId !== expectedVersionId) ||
+    ![raw.sourceRevision, raw.sourceEpoch, raw.capturedSeq, raw.schemaVersion].every(integer) || !hash(raw.stateHash) || !hash(raw.contentHash)) throw diffError()
+  return Object.freeze(Object.fromEntries(['versionId', 'sourceRevision', 'sourceEpoch', 'capturedSeq', 'schemaVersion', 'stateHash', 'contentHash'].map(key => [key, raw[key]])))
+}
+
+function immutableJson(value, seen = new Set()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (!value || typeof value !== 'object' || seen.has(value) || (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))) throw diffError()
+  seen.add(value)
+  const result = Array.isArray(value) ? Array.from(value, item => immutableJson(item, seen))
+    : Object.fromEntries(Object.keys(value).map(key => [key, immutableJson(value[key], seen)]))
+  seen.delete(value)
+  return Object.freeze(result)
+}
+
+/** 只接受只读JSONPointer描述，不执行patch，不将块数摘要当作真实差异。 */
+export function normalizeRemoteVersionDiff(raw, expected) {
+  if (!raw || raw.status !== 'completed' || raw.tenantId !== expected.tenantId || raw.docId !== expected.docId ||
+    raw.algorithm !== 'json-pointer-v1' || raw.persisted !== false || raw.taskId !== null || !Array.isArray(raw.changes) ||
+    typeof raw.identical !== 'boolean' || raw.identical !== (raw.changes.length === 0)) throw diffError()
+  const from = normalizeVersionDiffSource(raw.from, expected.fromVersionId), to = normalizeVersionDiffSource(raw.to, expected.toVersionId)
+  const changes = raw.changes.map(change => {
+    if (!change || typeof change.path !== 'string' || (change.path !== '' && change.path[0] !== '/') || /~(?![01])/.test(change.path) ||
+      !['add', 'remove', 'replace'].includes(change.kind) || own(change, 'before') !== (change.kind !== 'add') || own(change, 'after') !== (change.kind !== 'remove')) throw diffError()
+    return Object.freeze({ path: change.path, kind: change.kind,
+      ...(change.kind === 'add' ? {} : { before: immutableJson(change.before) }), ...(change.kind === 'remove' ? {} : { after: immutableJson(change.after) }) })
+  })
+  return Object.freeze({ status: 'completed', tenantId: raw.tenantId, docId: raw.docId, algorithm: 'json-pointer-v1', from, to,
+    identical: raw.identical, changes: Object.freeze(changes), persisted: false, taskId: null })
+}
+
+export function formatVersionDiffValue(value) { return JSON.stringify(value, null, 2) }
 
 /** 用 Projection 算三项指标；输入不认识就当空文档（读路径宽容，不抛）。 */
 export function projectionMetrics(input) {

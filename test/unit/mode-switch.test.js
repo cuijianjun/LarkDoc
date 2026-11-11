@@ -25,7 +25,7 @@ import {
   DEFAULT_MODES_CONFIG, normalizeModesConfig,
   isDocMode, isEditableTarget, modeFromShortcut, modeLabel, modeMeta, modeToastText,
 } from '../../src/components/lark-doc/editor/docModes'
-import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
+import viewModesMixin, { presentationSections } from '../../src/components/lark-doc/editor/viewModesMixin'
 import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
 import toolbarUiMixin from '../../src/components/lark-doc/editor/toolbarUiMixin'
 

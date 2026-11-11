@@ -23,6 +23,14 @@ const renderer = read('src/mount/domRenderer.js')
 const optionsOf = (collab) => collabMixin.computed.collabOptions.call({ collab })
 
 describe('P6a · 编辑器侧的协同通道', () => {
+  it('按需协同加载复用同一模块与其 Yjs 工厂', async () => {
+    const { loadCollaboration } = await import('../../src/loadCollaboration')
+    const [first, second] = await Promise.all([loadCollaboration(), loadCollaboration()])
+    expect(first).toBe(second)
+    const ydoc = new first.Yjs.Doc({ gc: false })
+    try { expect(first.createCollabExtensions({ ydoc })).toHaveLength(1) }
+    finally { ydoc.destroy() }
+  })
   it('没传 collab → null（单机路径与 P5 逐字节一致）', () => {
     expect(optionsOf(null)).toBeNull()
     expect(optionsOf(undefined)).toBeNull()
@@ -74,5 +82,21 @@ describe('P6a · 编辑器侧的协同通道', () => {
     const collabBudgets = pkg['size-limit'].filter((item) => /collab/i.test(item.path))
     expect(collabBudgets).toHaveLength(1)
     expect(collabBudgets[0].path).toBe('dist/lark-doc-collab.esm.js')
+  })
+})
+
+
+describe('顶栏协作模式文案', () => {
+  it.each([
+    [null, null, false, '单人编辑'],
+    [null, null, true, '阅读中'],
+    [{}, null, false, '单人编辑'],
+    [{ extensions: [] }, null, true, '阅读中'],
+    [{ extensions: [{ name: 'collaboration' }] }, null, false, '协作编辑'],
+    [{ extensions: [{ name: 'collaboration' }] }, null, true, '协作阅读'],
+    [null, { mode: 'collaborative' }, false, '协作编辑'],
+    [null, { mode: 'collaborative' }, true, '协作阅读'],
+  ])('依据实际协作接入和只读模式显示，不猜测在线人数 (%s/%s/%s)', (collab, session, effectiveReadonly, expected) => {
+    expect(collabMixin.computed.collaborationLabel.call({ collabOptions: optionsOf(collab), session, effectiveReadonly })).toBe(expected)
   })
 })

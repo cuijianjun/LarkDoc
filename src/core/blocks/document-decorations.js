@@ -213,7 +213,13 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
   // （2,000 块实测 275 ms）。collectFoldRanges 用一趟结构化遍历给同样的结果。
   // 结果留在 foldRanges 里给下面「折叠隐藏」的循环复用 —— 它需要同一份
   // {from,to,node}，再调一次 foldedRange / nodeAt 又是两次 O(n) 随机访问。
-  const foldRanges = collectFoldRanges(doc)
+  const foldIndex = new Map()
+  const foldRanges = collectFoldRanges(doc, foldIndex)
+  // Stable block identities survive structural shifts; fall back to positions for
+  // missing ids and earlier duplicates. The last duplicate retains the indexed id.
+  // The fold-range traversal also populated the identity index.
+  const widgetIds = {}
+  foldIndex.forEach((pos, id) => { widgetIds[pos] = `id:${id}` })
   foldRanges.forEach(({ node }, pos) => {
     if (!TEXT_FOLD_TYPES.has(node.type.name)) return
     if (!inWindow(pos)) return
@@ -250,11 +256,10 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
   }
   computeOrderedListNumbers(doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index, info.firstChildIsParagraph))
   computeBulletItems(doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))
-  // 折叠集合为空是常态（默认不折叠）：foldableIdPositions 是一次全树扫描，
-  // 没有折叠项时直接跳过 —— 热路径上这笔省下来是纯赚。
+  // The same identity index also resolves stored fold preferences. An empty
+  // preference set needs no hidden-range decorations.
   if (storage.folded.size) {
     // 折叠集合存 blockId，装饰需要位置：一次扫描建索引。
-    const foldIndex = foldableIdPositions(doc)
     storage.folded.forEach((foldId) => {
       const pos = foldIndex.get(foldId)
       if (pos === undefined) return
@@ -340,27 +345,12 @@ function expandFoldWindows(doc, storage, ranges) {
 }
 
 /**
- * 脏区增量更新（热路径）。
- *
- * 1. 旧集合已经由 DerivedIndex 用 `set.map(tr.mapping, tr.doc)` 带到新位置（结构共享，
- *    2,000 块约 1 ms）——这里拿到的 `previous` 已经是新坐标，不再自己 map；
- * 2. 只把窗口内、非悬停的旧装饰摘掉；
- * 3. 用同一段收集逻辑只算窗口内的新装饰，再用 `add` 并回树里。
- *
- * 脏区外的装饰**没被摘过**：`WidgetType` 实例与 `spec.key` 原样带过来 → ProseMirror
- * 的 widget 管理按 key 复用 DOM，脏区外的 2,500 个 widget 一个都不重建。
- * 这正是击键延迟的大头。
- *
- * 一个必然的副作用：widget key 里嵌了绝对位置（`...-${pos}-${label}`），而
- * `DecorationSet.map` 只搬 `from/to`、不重写 key，所以脏区外的 key 会保留编辑前的
- * 位置。key 在视图里只当**身份令牌**（同位置新旧 widget 比 key 决定是否复用 DOM），
- * 没人解析里面的数字，唯一真值是 `from/to`。别为了「key 干净」去全量重建。
- *
- * ⚠️ 但「`from/to` 最新」不等于「widget 行为最新」：复用 DOM 时 `toDOM` 不重跑，闭包捕获的变量
- * 停在建 DOM 那一帧。凡是**点击时要用的坐标**都不能走闭包 —— 见 `resolveBlockPos`，回归用例 `test/unit/document-decorations-widget-pos.test.js`。
- *
- * @returns {import('@tiptap/pm/view').DecorationSet|null} 返回 null = 「这帧不适合增量」，
- *   调用方退回全量重建。
+ * 脏区增量更新：previous已由DerivedIndex映射到新坐标，只重收集窗口内的装饰。
+ * 窗口外保留原key与DOM；稳定blockId的key包含显示/行为参数，旧/缺ID使用位置fallback。
+ * map只搬from/to，不重写fallback key；key是身份令牌，不能用来反推当前位置。
+ * DOM复用时toDOM不会重跑，点击坐标必须通过resolveBlockPos/getPos读取。
+ * 真实DOM/坐标回归见test/unit/document-decorations-widget-pos.test.js。
+ * @returns {import('@tiptap/pm/view').DecorationSet|null} null表示需要全量重建。
  */
 export function updateDocumentDecorations({ state, storage, editor, enabled, options, previous, ranges }) {
   // 搜索高亮的 active 项按「全文里的第几个命中」判断，脏区里重扫拿到的是窗口内序号，
