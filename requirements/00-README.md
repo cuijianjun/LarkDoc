@@ -5,7 +5,7 @@
 > | 项 | 说明 |
 > | --- | --- |
 > | 存放位置 | `lark-doc/requirements/`（**独立目录**，与 `dev/` 分开） |
-> | 是否参与 npm 发布 | **否**。`package.json` 的 `files` 是白名单 `["dist","src","style.css","README.md","DEMO_INTEGRATION_GUIDE.md","babel.config.js","vue.config.js"]`，本目录不在其中 |
+> | 是否参与 npm 发布 | **否**。发布范围以 [`package.json`](../package.json) 的 `files` 白名单为准，本目录不在其中 |
 > | 是否进入文档站 | **否**。不在 `docs/`（VitePress 站点）内，不会被渲染成公开页面 |
 > | 数据来源 | 飞书文档网页**实机 Playwright 采集**（computed style 实测值）+ 飞书开放平台文档 |
 > | 数值可信度 | 标注【实测】= 浏览器 `getComputedStyle` / `getBoundingClientRect` 真实读取；标注【推导】= 由实测值换算或按飞书规律外推 |

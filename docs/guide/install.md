@@ -7,7 +7,7 @@
 Vue2、Vue3、React 和无框架应用使用相同命令：
 
 ```bash
-npm install lark-doc@0.14.5 --save-exact
+npm install lark-doc@0.14.6 --save-exact
 npm ls lark-doc
 ```
 
@@ -17,16 +17,11 @@ Node14.21.3 的契约是库构建与普通 CJS 消费，应用仍遵守自身 Vi
 
 ## 内网安装 {#do-install-intranet}
 
-`npm pack lark-doc@0.14.5` 得到的普通 tgz **不包含 node_modules 运行时依赖**。联网机器可以安装它；完全离线不能只带这一份包。
+公开 npm 版 `0.14.6` 保持由宿主共享运行依赖。完全离线安装使用基于它单独构建的 `0.14.6-intranet.1` 自包含 tgz，已带齐 SDK 所需的运行依赖。将已校验的内网 tgz 复制到应用 `vendor/`，Vue2 使用 npm，Vue3 使用 pnpm 9/10；具体 Git Bash 命令和最小组件见[内网接入](/guide/intranet-migration)。不需要另带缓存，也不需要迁移应用工具链。
 
-已有内网 npm 镜像时，将该版本及依赖同步到镜像，再用正常 npm 安装。仓库保留了历史离线出包辅助脚本：
+SDK 自包含只覆盖 SDK 运行依赖。原应用的框架、构建工具和业务依赖仍由原项目准备；整个应用从空 `node_modules` 完全离线重装，需要另备应用自身依赖。
 
-```bash
-# 在已经安装开发依赖的 LarkDoc 仓库根目录执行
-bash scripts/pack-intranet.sh --version 0.14.5
-```
-
-该辅助脚本的打包依赖闭包尚未按本轮新增的外部依赖重新验收，不能把生成 tgz 当成本轮离线安装通过的证明。需要 npm 接入时优先同步完整依赖到内网镜像；无打包器的静态页面可使用下面的完整 dist 方案。历史搬运步骤见[内网迁移实战](/guide/intranet-migration)。
+维护者使用 `npm run pack:sdk` 默认生成公开包；加 `--intranet-version 0.14.6-intranet.1` 才生成内网自包含包，接收方直接安装该 tgz。普通 `npm pack lark-doc@0.14.6` 不能当作完全离线包，历史 `pack-intranet.sh` 也不用于当前发行。
 
 ## 引入方式 {#do-import}
 

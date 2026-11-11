@@ -59,7 +59,7 @@ npm run check:legacy
 npm run size
 ```
 
-上述命令描述构建与验收方式，不代表当前 worktree 的全部验收已经完成。`npm pack` 正常执行 prepack；不得跳过 prepack 或用手工 tar 代替发布链证据。
+上述命令描述构建与验收方式，不代表当前 worktree 的全部验收已经完成。`npm run pack:sdk` 默认生成公开包，保留由宿主共享的 external 依赖；显式加 `--intranet-version 0.14.6-intranet.1` 才生成基于公开 `0.14.6` 的自包含离线包。普通 `npm pack lark-doc@0.14.6` 不能代替内网包；出包与发布流程见[仓库开发入口](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md)。
 
 构建复用按输入和产物完整性判断；`npm run artifacts:check` 只检查，不自动重建。保持子进程使用同一 Node/npm 入口，避免 PATH 中其他 npm 导致重复构建或环境漂移。
 
@@ -71,7 +71,7 @@ npm --prefix docs run examples:vite
 npm --prefix docs run examples:check
 ```
 
-Vite 示例按各自锁定的 `lark-doc@0.14.5` 构建，和页面中的 npm 安装示例一致。
+Vite 示例按各自锁定的 `lark-doc@0.14.6` 构建，和页面中的 npm 安装示例一致。
 `examples:check` 会检查全部六个预览，缺文件、源码变化或产物被修改时会报错，避免发布旧预览。
 
 示例说明在 `docs/examples/`，可复制的最小工程在 `docs/examples/apps/`。
@@ -116,6 +116,8 @@ GitHub Pages 工作流会从源码重新构建。
 服务器上传需要自己的接口，静态站点不提供后端。单测不能代替业务接口联调。
 
 ## 6. 提交与发布
+
+每次开发完成先更新[开发手册的“未发布”记录](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md#release-history)。获得发布授权并确认各渠道成功后，再归入对应版本和日期，分别填写 npm、内网包、文档/Demo 状态；本地提交不记为已上线。
 
 检查差异，只提交源码、锁文件、文档和构建脚本。推送 `master` 后，
 [Pages 工作流](https://github.com/cuijianjun/LarkDoc/actions/workflows/deploy-docs.yml)

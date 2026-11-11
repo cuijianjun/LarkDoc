@@ -247,7 +247,7 @@ console.log(out.join("\n"))
   mkdir -p "$PKG/node_modules"
   cp -R "$WORK/package/dist" "$PKG/dist"
   cp "$WORK/package/package.json" "$PKG/package.json"
-  for f in style.css README.md DEMO_INTEGRATION_GUIDE.md LICENSE; do
+  for f in style.css README.md DEVELOPMENT.md LICENSE; do
     [ -f "$WORK/package/$f" ] && cp "$WORK/package/$f" "$PKG/"
   done
   printf '%s\n' "$CLOSURE" | grep . > "$WORK/closure.txt" || true
@@ -274,7 +274,7 @@ for (const n of names) {
 }
 const f=path.join(root,"package.json")
 const p=JSON.parse(fs.readFileSync(f,"utf8"))
-p.files=["dist","style.css","README.md","DEMO_INTEGRATION_GUIDE.md"]
+p.files=["dist","style.css","README.md","DEVELOPMENT.md"]
 p.dependencies=deps
 p.bundleDependencies=names
 fs.writeFileSync(f, JSON.stringify(p,null,2)+"\n")
@@ -307,7 +307,7 @@ console.log("    ✓ dependencies / bundleDependencies 同集 "+names.length+" �
   mkdir -p "$THIN_DIR"
   cp -R "$PKG/dist" "$THIN_DIR/dist"
   cp "$PKG/package.json" "$THIN_DIR/package.json"
-  for f in style.css README.md DEMO_INTEGRATION_GUIDE.md LICENSE; do
+  for f in style.css README.md DEVELOPMENT.md LICENSE; do
     if [ -f "$PKG/$f" ]; then cp "$PKG/$f" "$THIN_DIR/"; fi
   done
   node -e '
@@ -320,7 +320,7 @@ delete p.bundledDependencies
 const names = Object.keys(p.dependencies || {})
 if (!names.length) { console.error("    \u2717 thin 包 dependencies 为空，无法靠私服安装"); process.exit(1) }
 if (fs.existsSync(path.join(root, "node_modules"))) { console.error("    \u2717 thin 包里还有 node_modules"); process.exit(1) }
-p.files = ["dist", "style.css", "README.md", "DEMO_INTEGRATION_GUIDE.md"]
+p.files = ["dist", "style.css", "README.md", "DEVELOPMENT.md"]
 p.larkDocIntranet = {
   note: "thin 包：不含依赖，安装时由 registry 提供 dependencies 里的 " + names.length + " 个包",
   fixedFrom: (p.larkDocIntranet && p.larkDocIntranet.fixedFrom) || p.version,
@@ -880,7 +880,7 @@ trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$STAGE/package"
 cp -R dist "$STAGE/package/dist"
-for f in style.css README.md DEMO_INTEGRATION_GUIDE.md; do
+for f in style.css README.md DEVELOPMENT.md; do
   [ -f "$f" ] && cp "$f" "$STAGE/package/"
 done
 
@@ -898,7 +898,7 @@ const intranet = {
   unpkg: p.unpkg,
   exports: p.exports,
   sideEffects: p.sideEffects,
-  files: ['dist', 'style.css', 'README.md', 'DEMO_INTEGRATION_GUIDE.md'],
+  files: ['dist', 'style.css', 'README.md', 'DEVELOPMENT.md'],
   // 零运行时依赖：dist 已内联 tiptap / katex / docx / mammoth 等全部实现
   dependencies: {},
   // @tiptap/vue-2 已内联，不再要求宿主提供；只留 vue

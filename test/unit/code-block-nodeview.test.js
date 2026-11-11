@@ -91,4 +91,67 @@ describe('代码块加载失败后的恢复', () => {
     expect(view.getState().diagramError).toContain('temporary mermaid chunk 404')
     expect(view.dom.querySelector('.lark-doc-code-body').style.display).toBe('')
   })
+
+  it('图表解析失败不残留全局错误 SVG，保留错误回调并可修正后恢复', async () => {
+    const error = new Error('Parse error on line 2')
+    const mermaid = {
+      initialize: vi.fn(),
+      render: vi.fn(async (id, source) => {
+        const container = document.createElement('div')
+        container.id = `d${id}`
+        container.innerHTML = '<svg><text class="error-text">Syntax error in text</text></svg>'
+        document.body.appendChild(container)
+        if (source === 'const answer = 42') throw error
+        container.remove()
+        return { svg: '<svg><text>恢复成功</text></svg>' }
+      }),
+    }
+    unregister.push(registerFeature('mermaid', () => mermaid))
+    const onDiagramError = vi.fn()
+    const { view } = mount('mermaid', { onDiagramError })
+    await vi.waitFor(() => expect(onDiagramError).toHaveBeenCalledTimes(1))
+    expect(onDiagramError).toHaveBeenCalledWith(error)
+    expect(view.getState().diagramError).toBe(error.message)
+    expect(view.dom.querySelector('.lark-doc-diagram-error').textContent).toBe(error.message)
+    expect(view.dom.querySelector('.lark-doc-code-body').style.display).toBe('')
+    expect(document.querySelector('body > div[id^="dlark-doc-diagram-"]')).toBeNull()
+
+    view.update(schema.node('codeBlock', { language: 'mermaid' }, schema.text('graph TD\n A --> B')))
+    await vi.waitFor(() => expect(view.dom.querySelector('.lark-doc-diagram-svg svg')).not.toBeNull())
+    expect(view.getState().diagramError).toBe('')
+    expect(onDiagramError).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('.error-text')).toBeNull()
+  })
+
+  it('销毁视图后迟到的失败仍清理自身临时节点，不删除其他并发图表', async () => {
+    const pending = []
+    unregister.push(registerFeature('mermaid', () => ({
+      initialize: vi.fn(),
+      render: (id) => new Promise((resolve, reject) => {
+        const container = document.createElement('div')
+        container.id = `d${id}`
+        document.body.appendChild(container)
+        pending.push({ container, resolve, reject })
+      }),
+    })))
+    const onDiagramError = vi.fn()
+    const first = mount('mermaid', { onDiagramError })
+    const second = mount('mermaid')
+    const unrelated = document.createElement('div')
+    unrelated.id = 'dhost-mermaid'
+    document.body.appendChild(unrelated)
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    first.view.destroy()
+    mounted.splice(mounted.indexOf(first.view), 1)
+    pending[0].reject(new Error('late parse error'))
+    await vi.waitFor(() => expect(pending[0].container.isConnected).toBe(false))
+    expect(onDiagramError).not.toHaveBeenCalled()
+    expect(pending[1].container.isConnected).toBe(true)
+    expect(unrelated.isConnected).toBe(true)
+
+    pending[1].resolve({ svg: '<svg><text>另一个图表</text></svg>' })
+    await vi.waitFor(() => expect(second.view.dom.querySelector('.lark-doc-diagram-svg svg')).not.toBeNull())
+    expect(pending[1].container.isConnected).toBe(false)
+    expect(unrelated.isConnected).toBe(true)
+  })
 })

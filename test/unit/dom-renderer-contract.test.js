@@ -549,11 +549,14 @@ describe('迁移期 DOM renderer 契约', () => {
   it('在普通 DOM 宿主下创建等价根节点并提供实例', async () => {
     const host = document.createElement('div')
     const ready = vi.fn()
+    // ready 是异步生命周期事件：只断言「最终会派发」，不绑定具体微任务数量。
+    let resolveReady
+    const readyFired = new Promise(resolve => { resolveReady = resolve })
     const renderer = createDomRenderer()
     const handle = mountRenderer(renderer, {
       element: host,
       props: { initialTitle: '迁移期文档', initialContent: '<p>正文</p>' },
-      on: { ready },
+      on: { ready: (payload) => { ready(payload); resolveReady() } },
     })
 
     expect(renderer.getRoot(handle)).toBe(host.firstElementChild)
@@ -576,12 +579,56 @@ describe('迁移期 DOM renderer 契约', () => {
       'stopAI', 'closeAI', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
       'ignoreReviewIssue', 'applyAIProposal', 'toggleSlides', 'isSlides',
     ].forEach((method) => expect(typeof instance[method]).toBe('function'))
-    await Promise.resolve()
+    await readyFired
     expect(ready).toHaveBeenCalled()
 
     renderer.destroy(handle)
     expect(renderer.getRoot(handle)).toBeNull()
     expect(host.firstElementChild).toBeNull()
+  })
+
+  it.each([
+    ['edit', false], ['suggest', false], ['read', false], ['edit', true],
+  ])('modes.visible 经真实门面和顶栏 state 显隐，保留 %s 模式与宿主只读 %s', async (mode, readonly) => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const modes = { visible: false, default: mode, persist: false, labels: { read: '预览' } }
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>保留正文</p>', readonly, config: { modes } })
+    try {
+      const editor = doc.getEditor()
+      const host = doc._handle.nativeHost.host
+      const root = element.querySelector('.lark-doc')
+      const editable = mode !== 'read' && !readonly
+      await vi.waitFor(() => expect(editor.isEditable).toBe(editable))
+      expect(doc.getConfig().modes.visible).toBe(false)
+      expect(host.buildTopBarState().modeVisible).toBe(false)
+      expect(root.querySelector('.lark-doc-mode-select')).toBeNull()
+      expect(root.querySelector('.lark-doc-topbar')).not.toBeNull()
+      expect(host.mode).toBe(mode)
+      const json = doc.getJSON()
+      const actions = root.querySelector('.lark-doc-actions-host')
+      const reading = root.querySelector('button[aria-label="阅读模式"], button[aria-label="退出阅读"]')
+      expect(reading).not.toBeNull()
+
+      doc.patchProps({ config: { modes: { ...modes, visible: true } } })
+      await vi.waitFor(() => expect(root.querySelector('.lark-doc-mode-select')).not.toBeNull())
+      const select = root.querySelector('.lark-doc-mode-select')
+      select.querySelector('[role="combobox"]').click()
+      expect(select.querySelectorAll('[role="option"]')).toHaveLength(3)
+      expect(select.querySelectorAll('.lark-doc-select-item-label')[2].textContent).toBe('预览')
+      doc.patchProps({ config: { modes } })
+      await vi.waitFor(() => expect(root.querySelector('.lark-doc-mode-select')).toBeNull())
+      expect(select.parentNode).toBeNull()
+      expect(select.querySelector('[role="listbox"]')).toBeNull()
+      expect(host.buildTopBarState().modeVisible).toBe(false)
+      expect(host.mode).toBe(mode)
+      expect(editor.isEditable).toBe(editable)
+      expect(doc.getEditor()).toBe(editor)
+      expect(doc.getJSON()).toEqual(json)
+      expect(root.querySelector('.lark-doc-actions-host')).toBe(actions)
+      expect(root.querySelector('.lark-doc-topbar').contains(actions)).toBe(true)
+      expect(root.querySelector('button[aria-label="阅读模式"], button[aria-label="退出阅读"]')).toBe(reading)
+    } finally { doc.destroy(); element.remove() }
   })
 
   it('连续切换三态只更新成功提示文字，保留同一成功图标和正文', async () => {

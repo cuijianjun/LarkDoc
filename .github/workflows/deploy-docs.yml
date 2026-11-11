@@ -7,7 +7,6 @@ on:
       - 'docs/**'
       - 'README.md'
       - 'DEVELOPMENT.md'
-      - 'DEMO_INTEGRATION_GUIDE.md'
       - 'dev/**'
       - 'src/**'
       - 'scripts/**'

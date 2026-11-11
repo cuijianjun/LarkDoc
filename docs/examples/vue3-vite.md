@@ -4,7 +4,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 # Vue3 + Vite
 
-适合使用 Vue3 和 Vite 的浏览器应用。本页最小工程使用 **Node 22.13.0、npm 8.19.4、lark-doc 0.14.5**，具体依赖固定在下面的 `package.json`。Vite 7 需要 Node 20.19+ 或 22.12+，已有项目继续遵守自己的工具链要求。
+适合使用 Vue3 和 Vite 的浏览器应用。本页最小工程使用 **Node 22.13.0、npm 8.19.4、lark-doc 0.14.6**，具体依赖固定在下面的 `package.json`。Vite 7 需要 Node 20.19+ 或 22.12+，已有项目继续遵守自己的工具链要求。
 
 <EnvironmentPreview env="vue3-vite" title="Vue3 + Vite" />
 
@@ -15,7 +15,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 已有应用在项目根目录执行：
 
 ```bash
-npm install lark-doc@0.14.5 --save-exact
+npm install lark-doc@0.14.6 --save-exact
 ```
 
 保留已有的 Vue3 和 Vite 配置。下面的独立工程用于从空目录练习，不需要拿它覆盖已有项目的配置，也不需要为 SDK 安装其他框架。

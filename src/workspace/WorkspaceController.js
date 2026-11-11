@@ -192,6 +192,12 @@ class WorkspaceController {
     if (editor && this.host.bindAITransaction) this.host.bindAITransaction(this.mapAI)
     if (this.host.addBeforeUnload) this.host.addBeforeUnload(this.flushOnLeave)
     logger.info('lifecycle', 'lark-doc.workspace.ready', { status: this.props.persistence ? 'host' : 'local' })
+    // `ready` 必须在 `new LarkDoc()` 返回之后派发：宿主常在回调里访问刚创建的门面实例
+    // （例如 instance.getHTML() 写宿主草稿）。关掉 persistence 后 onReady() 内没有
+    // `await load()`，若这里同步 emit，回调会在构造函数执行期间触发，宿主拿到的还是 null。
+    // 统一补一个微任务边界，让两种持久化配置下的 ready 时序一致。
+    await Promise.resolve()
+    if (this._disposed) return
     this.emit('ready', { editor, document: this.host.documentApi || this })
   }
 
@@ -237,12 +243,58 @@ class WorkspaceController {
     return workspace[method](...args)
   }
 
+  /**
+   * 按当前 autosave 配置排一次落盘。返回是否真的排了定时器。
+   * queueSave() 与 setAutoSave() 共用，保证「构造期配置」和「运行中热更」
+   * 走的是同一套判定与延迟，不会出现两套口径。
+   */
+  _scheduleSaveTimer() {
+    if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null }
+    if (!this.featureEnabled('persistence') || !this.state.initialized || this.state.storageError || this._disposed) return false
+    if (!isAutoSaveEnabled(this.state.editorConfig)) return false
+    this.state.saveStatus = '等待本地保存…'
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null
+      void this.saveNow()
+    }, resolveAutoSaveDelay(this.state.editorConfig))
+    return true
+  }
+
   queueSave() {
     if (!this.featureEnabled('persistence') || !this.state.initialized || this.state.storageError || this._disposed) return
-    clearTimeout(this._saveTimer)
-    if (!isAutoSaveEnabled(this.state.editorConfig)) { this.state.saveStatus = '自动保存已关闭'; return }
-    this.state.saveStatus = '等待本地保存…'
-    this._saveTimer = setTimeout(() => { void this.saveNow() }, resolveAutoSaveDelay(this.state.editorConfig))
+    if (!this._scheduleSaveTimer()) this.state.saveStatus = '自动保存已关闭'
+  }
+
+  /**
+   * 运行时调整自动保存：{ enabled?: boolean, delay?: number }。
+   *
+   * 只改 autosave 段，归一化复用构造期同一套 createLarkDocConfig（非法 delay
+   * 回落 650、enabled 非 false 即 true）。已排队的定时器必须一起处理：
+   * - 关掉时直接取消，否则「刚关闭却仍落一次盘」；
+   * - 改延迟时从当前时刻按新值重新计时，否则新配置要等下一次编辑才生效。
+   * 手动 save() / 离页 flush 不受影响。
+   */
+  setAutoSave(options = {}) {
+    if (this._disposed) return this.getAutoSave()
+    const patch = options && typeof options === 'object' ? options : {}
+    const current = this.state.editorConfig?.autosave || {}
+    this.state.editorConfig.autosave = createLarkDocConfig({ autosave: { ...current, ...patch } }).autosave
+    // 只有在确实有待执行定时器时才动它：空闲状态改配置不该产生一次多余的落盘。
+    if (this._saveTimer) {
+      if (!this._scheduleSaveTimer()) this.state.saveStatus = '自动保存已关闭'
+    }
+    return this.getAutoSave()
+  }
+
+  /** 返回 { enabled（配置值）, delay, effective（叠加持久化总闸后的实际生效值） }。 */
+  getAutoSave() {
+    const config = this.state.editorConfig
+    const autosave = config?.autosave || {}
+    return {
+      enabled: autosave.enabled !== false,
+      delay: resolveAutoSaveDelay(config),
+      effective: isAutoSaveEnabled(config),
+    }
   }
 
   flushOnLeave() { void this.saveNow() }

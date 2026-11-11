@@ -70,6 +70,13 @@ export const ATTRIBUTE_SCHEMA = Object.freeze([
   { attr: 'save-html', key: 'saveHtml', target: 'prop', type: 'boolean', live: true, toProp: true },
   { attr: 'autofocus', key: 'autofocus', target: 'options', type: 'boolean' },
   { attr: 'storage', key: 'storage', target: 'options', type: 'string' },
+  // 自动保存：`autosave` 是整段 JSON（初始化用，低频 → 变更重建）；
+  // 两个标量是 live —— 运行中开关 / 改延迟走门面 setAutoSave() 原地热更，
+  // 不重建实例（重建会丢光标与选区，已排队的保存定时器也要按新值重排）。
+  // 顺序固定：整段在前、标量在后，同名字段由标量优先覆盖。
+  { attr: 'autosave', key: 'autosave', target: 'options', type: 'json' },
+  { attr: 'autosave-enabled', key: 'autosave.enabled', target: 'options', type: 'boolean', live: true },
+  { attr: 'autosave-delay', key: 'autosave.delay', target: 'options', type: 'number', live: true },
   { attr: 'mode', key: 'mode', target: 'options', type: 'string' },
   { attr: 'document-id', key: 'documentId', target: 'options', type: 'string' },
   { attr: 'toolbar-keys', key: 'toolbarKeys', target: 'options', type: 'list' },

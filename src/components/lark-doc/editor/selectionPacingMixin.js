@@ -74,7 +74,13 @@ export default {
       if (!this.handlePressed && !this.blockMenuOpen && !this.blockTypeMenuOpen) this.positionBlockHandle(this.currentBlockRange())
       this.updateTableBoundary()
       this.updateCalloutTools()
-      const visible = !selection.empty && !selection.node && !this.effectiveReadonly && this.editor.isFocused
+      // v7：表格内选区由「唯一浮窗」.lark-doc-table-tools 按 text / table 双模式接管，
+      // 通用划词气泡条必须让位，否则同屏出现两个功能浮窗（用户实测反馈：选中表格
+      // 文字 / 点选择条时上下各一条浮窗）。buildTableToolsState() 只读、不挂 DOM，
+      // 与 v5 的「唯一浮窗」判定同源，不会出现两套状态机。
+      const tableToolsOpen = this.buildTableToolsState?.().open === true
+      const visible = !selection.empty && !selection.node && !this.effectiveReadonly
+        && this.editor.isFocused && !tableToolsOpen
       this.bubbleVisible = visible
       if (visible) this.bubblePosition = this.bubbleBarPosition(selection)
       else { this.closeBubbleAlignMenu(); this.closeBubbleHeadingMenu() }

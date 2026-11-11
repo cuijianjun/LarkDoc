@@ -336,7 +336,7 @@ export function createDomRenderer() {
         isSlides: () => !!state.slides,
       }
       ;['insertContent', 'insertText', 'undo', 'redo', 'save', 'getWorkspace', 'callWorkspace', 'record', 'onReady',
-        'queueSave', 'flushOnLeave', 'saveNow', 'storageFailure', 'toggleHistory', 'createSnapshot', 'restoreSnapshot',
+        'queueSave', 'flushOnLeave', 'saveNow', 'setAutoSave', 'getAutoSave', 'storageFailure', 'toggleHistory', 'createSnapshot', 'restoreSnapshot',
         'importDocument', 'exportDocument', 'mapAI', 'currentAIContext', 'resetAIPreview', 'startAI', 'sendAIChat',
         'regenerateAI', 'stopAI', 'closeAI', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
         'ignoreReviewIssue', 'applyAIProposal'].forEach(method => { instance[method] = (...args) => workspaceController[method](...args) })

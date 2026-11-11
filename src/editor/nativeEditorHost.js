@@ -344,6 +344,7 @@ const options = {
         if (this.bubbleAlignOpen) this.positionBubbleAlignMenu()
         if (this.bubbleVisible) this.bubblePosition = this.bubbleBarPosition(this.editor.state.selection)
         this.updateTableBoundary()
+        this.refreshTableOverlays?.()
         if (this.headingOpen) this.positionHeadingMenu()
         if (this.menuOpen) this.positionCommandMenu()
         this.updateCalloutTools()
@@ -485,7 +486,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       editor.commands.normalizeLarkDocIndents?.()
       host.refreshDocumentState()
       host.restoreFolds()
-      host.$nextTick(() => host.updateTableBoundary())
+      host.$nextTick(() => { host.updateTableBoundary(); host.refreshTableOverlays?.() })
     },
     transaction() {
       runtime.invalidateEditor()
@@ -494,12 +495,13 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host.updateRevisionPanels()
       ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel', 'refreshBubbleBar'].forEach(name => host[name]())
       if (host.blockMenuOpen) host.refreshBlockMenu()
-      host.$nextTick(() => { host.syncHandleHighlightBackdrop(); host.syncTableClip() })
+      host.$nextTick(() => { host.syncHandleHighlightBackdrop(); host.syncTableClip(); host.refreshTableOverlays?.() })
     },
     selection() {
       runtime.invalidateEditor()
       host.onSelectionUpdate()
       ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel'].forEach(name => host[name]())
+      host.$nextTick(() => host.refreshTableOverlays?.())
     },
     destroy() {
       resolveImageFile.cancelAll?.('destroy')

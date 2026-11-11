@@ -311,6 +311,22 @@ const LarkDocComment = Mark.create({
       },
     }
   },
+  /**
+   * `applyCommentMark()` 一直在调 `editor.commands.setComment(...)`，但 mark 注册本身
+   * **不会**自动生成 setXxx 命令 —— 少了这段，划词建评论的正文高亮永远是空操作。
+   * 这里补上唯一写入口：只给当前非空选区落 mark，位置仍然不入 mark 属性（05 §5.5⑥）。
+   */
+  addCommands() {
+    return {
+      setComment: (attrs = {}) => ({ state, tr, dispatch }) => {
+        const { from, to, empty } = state.selection
+        const type = state.schema.marks[COMMENT_MARK_NAME]
+        if (empty || !type) return false
+        if (dispatch) tr.addMark(from, to, type.create({ threadId: String(attrs?.threadId || '') }))
+        return true
+      },
+    }
+  },
   parseHTML() {
     return [{ tag: `span.${COMMENT_HIGHLIGHT_CLASS}` }]
   },

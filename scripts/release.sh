@@ -35,8 +35,8 @@ cd "$PKG_DIR"
 
 REGISTRY="https://registry.npmjs.org/"
 # 构建/校验一律 Node 14（package.json engines 卡 14.21.3），发 npm 用 npm 11（实测 publish 全靠它）
-NODE14_DIR="/Users/cjjxw/.nvm/versions/node/v14.21.3/bin"
-NODE24_DIR="/Users/cjjxw/.nvm/versions/node/v24.22.0/bin"
+NODE14_DIR="${LARK_DOC_NODE14_DIR:-$HOME/.nvm/versions/node/v14.21.3/bin}"
+NODE24_DIR="${LARK_DOC_NODE24_DIR:-$HOME/.nvm/versions/node/v24.22.0/bin}"
 STATE_DIR="$PKG_DIR/.release"
 PENDING="$STATE_DIR/pending-version"
 LOGFILE=""
@@ -98,6 +98,21 @@ elapsed() { echo "$(($(date +%s) - T0))s"; }
 net() { env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy "$@"; }
 registry() { net curl -s --noproxy '*' --max-time 30 "$@"; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"; }
+sri512() { node -e 'const fs = require("fs"), crypto = require("crypto"); process.stdout.write("sha512-" + crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$1"; }
+check_public_tarball() {
+  python3 - "$1" "$NAME" "$VERSION" <<'PY'
+import json, sys, tarfile
+from pathlib import PurePosixPath
+with tarfile.open(sys.argv[1], 'r:gz') as archive:
+    for member in archive.getmembers():
+        parts = PurePosixPath(member.name).parts
+        if not parts or parts[0] != 'package' or '..' in parts or 'node_modules' in parts or not member.isfile():
+            raise ValueError('Expected public SDK payload without bundled runtime: ' + member.name)
+    manifest = json.load(archive.extractfile('package/package.json'))
+    if manifest.get('name') != sys.argv[2] or manifest.get('version') != sys.argv[3] or manifest.get('bundleDependencies') or manifest.get('bundledDependencies'):
+        raise ValueError('Expected matching public SDK identity and external runtime dependencies')
+PY
+}
 
 # 提交 + 推送。$1 = tag | notag，$2 = 默认 commit message
 git_ship() {
@@ -215,14 +230,17 @@ else
 fi
 
 printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || die "版本号不合法：$VERSION"
+[ "$DO_PUBLISH" = 0 ] || printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || die "npm latest 发布仅接受 public 正式版本；内网版本请单独使用 intranet tag"
 # bump 已写入 package.json 后，断点恢复或明确指定当前版本仍需完成校验/发布。
 [ "$VERSION" != "$CURRENT" ] || [ "$RESUME" = 1 ] || [ -n "$EXPLICIT_VERSION" ] || die "版本号与当前 $CURRENT 相同"
 
 if [ "$DO_PUBLISH" = 1 ]; then
   CODE="$(registry -o /dev/null -w '%{http_code}' "$REGISTRY$NAME/$VERSION" || echo 000)"
-  if [ "$CODE" = "200" ]; then
-    die "$NAME@$VERSION 已存在于 registry。换个版本号（如 --patch 会得到更高版本）或改用 --skip-publish"
-  fi
+  case "$CODE" in
+    404) ;;
+    200) die "$NAME@$VERSION 已存在于 registry。请使用未发布的新版本" ;;
+    *) die "无法确认版本是否可发布（registry HTTP ${CODE}），请恢复连接后重试" ;;
+  esac
   ok "registry 上 $VERSION 未被占用（HTTP ${CODE}）"
 fi
 
@@ -249,6 +267,10 @@ node -e '
   const out = raw.replace(/("version":\s*")[^"]*(")/, "$1" + want + "$2")
   if (!out.includes("\"version\": \"" + want + "\"")) { console.error("改写 version 失败"); process.exit(1) }
   fs.writeFileSync("package.json", out)
+  const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"))
+  lock.version = want
+  lock.packages[""].version = want
+  fs.writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n")
 ' "$VERSION"
 printf '%s' "$VERSION" >"$PENDING"
 ok "package.json version = ${VERSION}（断点已记录，失败可 --resume）"
@@ -294,14 +316,19 @@ if [ -d dist/vendor ]; then
   info "清理旧构建残留 dist/vendor"
   rm -rf dist/vendor
 fi
-rm -f "$STATE_DIR"/lark-doc-*.tgz
-PACK_JSON="$(net "$NODE24_DIR/npm" pack --ignore-scripts --json --pack-destination "$STATE_DIR" 2>"$STATE_DIR/pack.err" || true)"
+need_cmd python3
+PACK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lark-doc-sdk-${VERSION}.XXXXXX")"
+info "SDK 工作目录：${PACK_DIR}（保留审计，发布后可删除）"
+if ! PACK_JSON="$(PATH="$NODE24_DIR:$PATH" net "$NODE24_DIR/node" scripts/pack-sdk.mjs --work "$PACK_DIR/work" --out "$PACK_DIR/out" --node14 "$NODE14_DIR/node" --skip-build 2>"$STATE_DIR/pack.err")"; then
+  cat "$STATE_DIR/pack.err" >&2
+  die "public SDK 打包失败"
+fi
 PACK_PARSE="$(printf '%s' "$PACK_JSON" | node -e '
 let s = ""
 process.stdin.on("data", d => s += d).on("end", () => {
   let a
   try { a = JSON.parse(s) } catch (e) { process.exit(0) }
-  const p = (a && a[0]) || {}
+  const p = (Array.isArray(a) ? a[0] : a) || {}
   const need = [
     "dist/lark-doc.common.js",
     "dist/lark-doc.esm.js",
@@ -312,29 +339,38 @@ process.stdin.on("data", d => s += d).on("end", () => {
   if (Array.isArray(p.files)) {
     const have = new Set(p.files.map(f => f.path))
     const miss = need.filter(n => !have.has(n))
-    status = miss.length ? "MISS:" + miss.join(",") : "OK"
+    status = p.mode !== "public" || p.runtime !== "external" || p.version !== process.argv[1] || p.name !== process.argv[2] || p.files.some(f => f.path.startsWith("node_modules/"))
+      ? "UNSAFE" : miss.length ? "MISS:" + miss.join(",") : "OK"
   }
-  process.stdout.write([p.shasum || "", p.filename || "", status].join("\n"))
-})')"
+  process.stdout.write([p.shasum || "", p.filename || "", status, p.integrity || ""].join("\n"))
+})' "$VERSION" "$NAME")"
 TGZ_SHA="$(printf '%s\n' "$PACK_PARSE" | sed -n '1p')"
 TGZ_NAME="$(printf '%s\n' "$PACK_PARSE" | sed -n '2p')"
 PACK_STATUS="$(printf '%s\n' "$PACK_PARSE" | sed -n '3p')"
+TGZ_INTEGRITY="$(printf '%s\n' "$PACK_PARSE" | sed -n '4p')"
 [ -n "$TGZ_SHA" ] || {
   cat "$STATE_DIR/pack.err" >&2 2>/dev/null || true
-  die "npm pack 失败"
+  die "public SDK 打包结果无效"
 }
 # 四份产物少一个就说明 files / 构建链有问题，宁可停在这里也别发出去
 case "$PACK_STATUS" in
   OK) ok "$TGZ_NAME  sha1=$TGZ_SHA  四产物齐备" ;;
-  SKIP) warn "npm pack --json 未返回 files 列表，跳过产物齐备性检查"; ok "$TGZ_NAME  sha1=$TGZ_SHA" ;;
+  SKIP) die "public SDK 打包结果缺少 files 列表，无法验证产物" ;;
+  UNSAFE) die "npm 发布仅接受版本匹配、共享外部依赖的 public SDK" ;;
   *) die "tarball 缺产物：${PACK_STATUS#MISS:}（检查 package.json files 与构建）" ;;
 esac
+[[ "$TGZ_NAME" == "$(basename "$TGZ_NAME")" && "$TGZ_NAME" == *.tgz ]] || die "SDK 文件名无效"
+TGZ_PATH="$PACK_DIR/out/$TGZ_NAME"
+[ -f "$TGZ_PATH" ] || die "最终 SDK tgz 不存在"
+[ "$(shasum -a 1 "$TGZ_PATH" | awk '{print $1}')" = "$TGZ_SHA" ] || die "最终 SDK tgz 校验失败"
+[ "$(sri512 "$TGZ_PATH")" = "$TGZ_INTEGRITY" ] || die "最终 SDK tgz SHA512/SRI 校验失败"
+check_public_tarball "$TGZ_PATH" || die "最终 SDK tgz 不是版本匹配的 public 产物"
 
 # ---------- 5. 发布 ----------
 if [ "$DO_PUBLISH" = 1 ]; then
   step "npm publish → $REGISTRY"
   LOGFILE="$STATE_DIR/publish-$VERSION.log"
-  PUB_ARGS=(publish --ignore-scripts --registry="$REGISTRY")
+  PUB_ARGS=(publish "$TGZ_PATH" --registry="$REGISTRY" --tag latest)
   case "$NAME" in @*) PUB_ARGS+=(--access public) ;; esac
   [ -n "${NPM_OTP:-}" ] && PUB_ARGS+=(--otp="$NPM_OTP")
   if ! net "$NODE24_DIR/npm" "${PUB_ARGS[@]}" >"$LOGFILE" 2>&1; then
@@ -357,11 +393,13 @@ if [ "$DO_PUBLISH" = 1 ]; then
     CODE="$(registry -o "$STATE_DIR/dl.tgz" -w '%{http_code}' "$REGISTRY$NAME/-/$NAME-$VERSION.tgz" || echo 000)"
     if [ "$CODE" = "200" ]; then
       GOT_SHA="$(shasum -a 1 "$STATE_DIR/dl.tgz" | awk '{print $1}')"
-      if [ "$GOT_SHA" = "$TGZ_SHA" ]; then
-        ok "tarball GET 200，sha1 一致：$GOT_SHA"
+      GOT_INTEGRITY="$(sri512 "$STATE_DIR/dl.tgz")"
+      if [ "$GOT_SHA" = "$TGZ_SHA" ] && [ "$GOT_INTEGRITY" = "$TGZ_INTEGRITY" ]; then
+        check_public_tarball "$STATE_DIR/dl.tgz" || die "registry tgz 不是版本匹配的 public 产物"
+        ok "tarball GET 200，sha1/SHA512 一致，public 版本正确：$GOT_SHA"
         break
       fi
-      warn "sha1 不一致（$GOT_SHA ≠ ${TGZ_SHA}），继续等…"
+      warn "sha1 或 SHA512 不一致（sha1=$GOT_SHA），继续等…"
     else
       info "第 $i/$TRIES 次：HTTP ${CODE}，8s 后重试"
     fi
@@ -371,7 +409,7 @@ if [ "$DO_PUBLISH" = 1 ]; then
 
   TAGS="$(registry "$REGISTRY$NAME" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(JSON.stringify(j["dist-tags"]))}catch(e){process.stdout.write("?")}})')"
   ok "dist-tags: $TAGS"
-  printf '%s' "$TAGS" | grep -q "\"latest\":\"$VERSION\"" || warn "latest 不是 ${VERSION}，检查是否使用了 --tag"
+  printf '%s' "$TAGS" | grep -q "\"latest\":\"$VERSION\"" || die "latest 不是 ${VERSION}，发布后校验失败"
 else
   step "跳过发布"
 fi

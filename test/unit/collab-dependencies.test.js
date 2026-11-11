@@ -31,8 +31,9 @@ it('显式Hocuspocus桥拒绝不支持的Provider API，且在创建连接前失
 it('已安装支持组合保持Y.Doc单例与协同扩展的真实能力', async () => {
   const Y = await import('yjs')
   const { HocuspocusProvider } = await import('@hocuspocus/provider')
-  const { createCollabExtensions } = await import('../../src/collab')
-  const ydoc = new Y.Doc({ gc: false })
+  const { createCollabExtensions, Yjs } = await import('../../src/collab')
+  expect(Yjs.Doc).toBe(Y.Doc)
+  const ydoc = new Yjs.Doc({ gc: false })
   try {
     const extensions = createCollabExtensions({ ydoc })
     expect(extensions).toHaveLength(1)

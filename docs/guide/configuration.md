@@ -106,6 +106,31 @@ const doc = new LarkDoc({
 - `autosave.enabled: false` → 停止编辑后的防抖保存；手动保存、离页及销毁时的最后一次草稿保存仍可用；
 - `features.persistence: false` 或 `storage: 'none'` → 整套持久化下线，不读草稿也不写。
 
+构造期、运行时、声明式三条入口配置的是同一份状态：
+
+```js
+// 1) 构造期
+const doc = new LarkDoc({ element, autosave: { enabled: true, delay: 1200 } })
+
+// 2) 运行时热更（不重建实例、不丢光标与选区）
+doc.setAutoSave({ enabled: false })      // 关掉自动落盘
+doc.setAutoSave({ delay: 2000 })         // 防抖改成 2 秒
+doc.setAutoSave({ enabled: true, delay: 0 }) // 重新开启且每次改动立刻存
+doc.getAutoSave()                        // { enabled, delay, effective }
+```
+
+`setAutoSave()` 会把 `options.autosave` / `config.autosave`（也就是 `getConfig()`）一并同步，并**重排已排队的保存定时器**：关闭时直接取消（不会出现「刚关闭却仍落一次盘」），改延迟时从当前时刻按新值重新计时。空闲时改配置不会凭空产生一次落盘。手动 `save()` 与离页 `flush` 不受影响。
+
+`effective` 是叠加持久化总闸后的实际生效值——`features.persistence:false` 或 `storage:'none'`（且宿主未注入 persistence 适配器）时，即使 `enabled:true`，`effective` 也是 `false`。
+
+```html
+<!-- 3) Web Component 声明式：整段 JSON 初始化 + 两个标量热更 -->
+<lark-doc autosave='{"enabled":true,"delay":1200}'
+          autosave-enabled="false" autosave-delay="650"></lark-doc>
+```
+
+`autosave` 是整段 JSON（变更后重建实例），`autosave-enabled` / `autosave-delay` 是 live 属性，运行中修改走 `setAutoSave()` 原地热更；同名字段以标量为准。属性被移除时回落默认值（`enabled:true` / `delay:650`）。命令式 API 与属性映射见[实例与事件](/guide/instance)、[Web Component](/guide/web-component)。
+
 ::::
 
 <span id="importexport-导入-导出"></span>
@@ -156,10 +181,11 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 
 :::: details 编辑、修订与阅读模式
 
-顶栏右上角那个按钮的三种状态。全部字段都可选，不传就是全开：
+`config.modes` 控制顶栏右上角模式按钮及其下拉，也支持构造参数顶层别名 `modes`。全部字段可选，`visible` 默认 `true`，不传保持原有按钮与三项下拉，向后兼容：
 
 ```js
 modes: {
+  visible: true,                           // 整个顶栏模式入口显隐
   default: 'edit',                          // 首屏模式 'edit' | 'suggest' | 'read'
   allow: ['edit', 'suggest', 'read'],       // 下拉里保留哪几项
   persist: true,                            // 是否记住用户上次选的
@@ -170,6 +196,7 @@ modes: {
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
+| `visible` | `true` | 仅显式 `false` 隐藏整个顶栏按钮和下拉，不留占位；不改变当前模式、编辑权限、持久化或快捷键，也不改变 `toolbar.viewModes` 及其阅读按钮。 |
 | `default` | `'edit'` | 初始模式。不在 `allow` 里就自动回落到 `allow[0]`。 |
 | `allow` | 三项全留 | 下拉裁剪。只剩一项时按钮变成静态文字（无箭头、点不动）。传空数组或非法值会回落成三项全留 —— 想关切换请写 `allow: ['edit']`。 |
 | `persist` | `true` | `false` = 不读写 `localStorage`，每次打开都从 `default` 开始。 |
@@ -177,7 +204,13 @@ modes: {
 | `shortcuts` | `true` | `false` = 三套键位全部不接管，也不会 `preventDefault`，宿主可以自己用这些组合键。 |
 
 ```js
-// 只读站：不留修订入口，打开即阅读态，也不记住状态
+// 下拉仅保留「编辑 / 预览」，顺序固定为编辑 → 修订 → 阅读中的允许项
+new LarkDoc({ element: '#editor', config: { modes: { allow: ['edit', 'read'], labels: { read: '预览' } } } })
+
+// 只隐藏顶栏模式入口，不锁定模式或编辑权限
+new LarkDoc({ element: '#editor', config: { modes: { visible: false } } })
+
+// 阅读预览：不留修订入口，打开即阅读态，也不记住状态；并非权限锁定
 new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 'read', persist: false } })
 ```
 
@@ -200,7 +233,7 @@ new LarkDoc({ element: '#viewer', modes: { allow: ['edit', 'read'], default: 're
 | `config.commands` | `disabled` / `allow` | 按命令 id 禁用或白名单。 |
 | `config.blockMenu` | `disabled` / `allow` | 块句柄菜单动作裁剪（`duplicate` / `delete` 等）。 |
 | `layout` | `headerVisible` / `titleBarFixed` / `toolbarFixed` | 顶栏显隐与吸附。`headerVisible: false` 时操作入口收进工具栏「⋯」。 |
-| `modes` | `default` / `allow` / `persist` / `labels` / `shortcuts` | 顶栏编辑 / 修订 / 阅读三态，见上一节。 |
+| `modes` | `visible` / `default` / `allow` / `persist` / `labels` / `shortcuts` | 顶栏编辑 / 修订 / 阅读入口及三态，见上一节。 |
 | `limits` | `titleLength` 120、`maxLength` 0、`maxImageSize` 5MB、`maxTableRows` 9、`maxIndent` 5、`maxSnapshots` 20 | 各项上限（`maxLength: 0` = 不限）。 |
 | `config.performance` | `changeDebounce` 16、`syntaxHighlight` true、`diagramScriptUrl` null | 通知防抖、代码高亮、图表脚本地址（默认走包内懒加载，内网不用配）。 |
 
