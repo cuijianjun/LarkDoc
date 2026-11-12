@@ -127,7 +127,16 @@ pnpm build
 4. 表格、图片 hover、四角缩放圆圈、块六点 SVG 句柄和工具栏动作符合当前交互验收。
 5. 在物理断网状态下重新执行安装和构建，确认 npm/pnpm 没有访问公网。
 
-本次本机验证结果：Vue2 Webpack4/5、Vue3 Vite、React Vite、HTML CDN、Web Component 六类页面均通过构建和浏览器 smoke；每页均确认编辑器 DOM、JSON 读取和 `pageerror=0`。Windows 真机断网安装尚未在本机执行，应由接收端按本文和包内 README 复验。
+本次本机验证结果：Vue2 Webpack4/5、Vue3 Vite、React Vite、HTML CDN、Web Component 六类页面均通过构建和浏览器 smoke；每页均确认编辑器 DOM、JSON 读取和 `pageerror=0`。
+
+Windows 11 Parallels guest 已实际复验：
+
+| 环境 | 工具链 | 断网安装 | 构建 / 启动 |
+| --- | --- | --- | --- |
+| Vue2 Webpack4 | Node `14.21.3` + npm `8.19.4` | `npm ci --offline`，508 packages，成功 | `npm run build` 成功；`http://127.0.0.1:4174` 返回 HTTP 200 |
+| Vue3 Vite | Node `24.22.1` + pnpm `10.12.4` | `pnpm install --offline`，36 packages，成功 | `pnpm run build` 成功；`http://[::1]:5173` 返回 HTTP 200 |
+
+验证期间 Windows 以太网适配器保持禁用；两套 dev server 验证完成后已停止。首次空缓存尝试分别暴露了缺少 npm tarball 和 pnpm 版本不匹配，随后在联网阶段仅预热依赖缓存，再禁网重装复验；因此结果是“预热缓存后的物理断网安装”，不是空缓存无预热安装。
 
 ## 回滚
 
