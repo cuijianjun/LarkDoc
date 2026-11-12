@@ -92,6 +92,12 @@ export default {
     commentHistory() { this.refreshPanels() },
     commentHistorical() { this.refreshPanels() },
     commentMessage() { this.refreshPanels() },
+    commentImageDrafts: { deep: true, handler() { this.refreshPanels() } },
+    commentImageUrls: { deep: true, handler() { this.refreshPanels() } },
+    commentImageErrors: { deep: true, handler() { this.refreshPanels() } },
+    commentImageViewer() { this.refreshPanels() },
+    commentImageBusy() { this.refreshPanels() },
+    commentPendingImage() { this.refreshPanels() },
     commentPrivateIds() { this.refreshPanels() },
     commentMoreThreadId() { this.refreshPanels() },
     commentMenuThreadId() { this.refreshPanels() },
@@ -310,6 +316,16 @@ export default {
             input?.click()
           },
           onUploadImage: (scope, event) => uploadCommentImageFiles.call(this, scope, event),
+          onRemoveDraftImage: (scope, assetId) => this.removeCommentDraftImage(scope, assetId),
+          onOpenImage: (threadId, replyId, assetId, event) => {
+            const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
+            const reply = thread?.replies.find(item => item.id === replyId && !item.tombstone)
+            const asset = reply?.attachments?.find(item => item.assetId === assetId)
+            if (asset && this.commentCan('canView')) this.openCommentImage(thread, reply, asset, event)
+          },
+          onCloseImage: restoreFocus => this.closeCommentImage(restoreFocus),
+          onCancelImageUpload: () => this.cancelCommentImageUpload(),
+          onQueryImage: () => this.queryPendingCommentImage(),
         },
       }
     },
@@ -460,11 +476,17 @@ export default {
         moreTitle: this.commentPrivateTitle,
         moreHint: this.commentPrivateHint,
         emptyText,
+        imageViewer: this.commentImageViewer,
+        imageStatus: { busy: this.commentImageBusy, pending: !!this.commentPendingImage,
+          canCancel: this.commentImageCanCancel?.() === true, canQuery: !this.commentImageBusy && this.commentCan('canView') },
         composer: {
           open: remote && this.commentComposerOpen === true,
           quote: this.commentComposerContext?.text || '',
           author: this.commentAuthorName(this.commentAuthor),
           value: this.commentCreateDraft || '',
+          draftImages: this.commentDraftImages('selection'),
+          hasImages: this.commentDraftImages('selection').length > 0,
+          canUploadImage: this.commentCanUploadImage?.('selection') === true,
           readonly: !this.commentAllowed('create'),
           canSubmit: this.commentAllowed('create'),
           privateOn: this.commentCreatePrivate === true,
@@ -488,6 +510,11 @@ export default {
             name: this.commentAuthorName(reply.author),
             time: this.commentTimeAt(reply.createdAt),
             body: reply.content,
+            images: reply.tombstone ? [] : (reply.attachments || []).map(asset => ({
+              assetId: asset.assetId, fileName: asset.fileName,
+              url: this.commentImageUrl(item, reply, asset),
+              error: !!this.commentImageErrors[this.commentImageKey(item, reply, asset)],
+            })),
             menuOpen: this.commentMenuThreadId === item.id && this.commentMenuCommentId === reply.id,
             menus: menus.map((menu) => ({
               id: menu.id,
@@ -502,6 +529,7 @@ export default {
             readonly: !this.commentAllowed('reply', item.id),
             height: this.commentTextareaHeight(item),
           },
+          draftImages: this.commentDraftImages(item.id),
           hasDraft: this.commentHasDraft(item.id),
           allowedReply: this.commentAllowed('reply', item.id),
           canUploadImage: this.commentCanUploadImage?.(item.id) !== false,

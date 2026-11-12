@@ -769,6 +769,27 @@ export function createSaveVersionDialog(options = {}) {
 export function createCommentPanel(options = {}) {
   const host = options.host || null
   const call = handlerCaller(options.handlers || {})
+  // Preserve the editing selection on pointer press; activate through native click
+  // so keyboard and assistive-technology activation follow the same guarded path.
+  const onAction = (node, run) => {
+    node.addEventListener('mousedown', event => event.preventDefault())
+    node.addEventListener('click', event => {
+      if (node.disabled || node.getAttribute('aria-disabled') === 'true') return
+      run(event)
+    })
+  }
+  const imageDraftNodes = (scope, images = []) => images.map(image => {
+    const row = document.createElement('div')
+    const preview = document.createElement(image.previewUrl ? 'img' : 'span')
+    if (image.previewUrl) { preview.src = image.previewUrl; preview.alt = image.fileName || '' }
+    else preview.textContent = image.fileName || ''
+    const remove = document.createElement('button')
+    remove.type = 'button'; remove.textContent = '×'
+    remove.setAttribute('aria-label', '移除图片：' + (image.fileName || ''))
+    onAction(remove, () => call('onRemoveDraftImage', scope, image.assetId))
+    row.append(preview, remove)
+    return { node: row, on: true }
+  })
 
   const state = {
     open: false,
@@ -829,6 +850,23 @@ export function createCommentPanel(options = {}) {
   const composerInputRow = document.createElement('div')
   composerInputRow.className = 'lark-doc-comment-input'
   composerInputRow.appendChild(composerInput)
+  const composerImageButton = document.createElement('button')
+  composerImageButton.type = 'button'
+  composerImageButton.className = 'lark-doc-comment-operation'
+  composerImageButton.setAttribute('aria-label', '插入图片')
+  composerImageButton.appendChild(iconNode('rev-image', 16))
+  onAction(composerImageButton, () => call('onChooseImage', 'selection'))
+  const composerImageInput = document.createElement('input')
+  composerImageInput.type = 'file'; composerImageInput.multiple = true
+  composerImageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'
+  composerImageInput.className = 'lark-doc-file-input'
+  composerImageInput.dataset.commentImageScope = 'selection'
+  composerImageInput.setAttribute('aria-label', '选择评论图片')
+  composerImageInput.addEventListener('change', event => call('onUploadImage', 'selection', event))
+  composerInputRow.append(composerImageButton, composerImageInput)
+  const composerImageDrafts = document.createElement('div')
+  composerImageDrafts.className = 'lark-doc-comment-image-drafts'
+
   const composerActions = document.createElement('div')
   composerActions.className = 'lark-doc-comment-compose-actions'
   const composerPrivateLabel = document.createElement('label')
@@ -847,7 +885,35 @@ export function createCommentPanel(options = {}) {
   composerSend.textContent = '发送'
   composerSend.addEventListener('click', () => call('onComposerSubmit'))
   composerActions.append(composerPrivateLabel, composerCancel, composerSend)
-  composer.append(composerHead, composerAuthor, composerInputRow, composerActions)
+  composer.append(composerHead, composerAuthor, composerInputRow, composerImageDrafts, composerActions)
+
+  const imageStatus = document.createElement('div')
+  imageStatus.className = 'lark-doc-comment-media-status'; imageStatus.setAttribute('role', 'status')
+  const imageStatusText = document.createElement('span')
+  const cancelUpload = document.createElement('button')
+  cancelUpload.type = 'button'; cancelUpload.textContent = '取消上传'
+  cancelUpload.setAttribute('aria-label', '取消评论图片上传')
+  onAction(cancelUpload, () => call('onCancelImageUpload'))
+  const queryImage = document.createElement('button')
+  queryImage.type = 'button'; queryImage.textContent = '查询原图片操作'
+  queryImage.setAttribute('aria-label', '查询原图片操作')
+  onAction(queryImage, () => call('onQueryImage'))
+  const imageBackdrop = document.createElement('div')
+  imageBackdrop.className = 'lark-doc-comment-image-backdrop'
+  imageBackdrop.addEventListener('click', event => { if (event.target === imageBackdrop) call('onCloseImage', true) })
+  const imageViewer = document.createElement('div')
+  imageViewer.className = 'lark-doc-comment-image-viewer'
+  imageViewer.setAttribute('role', 'dialog'); imageViewer.setAttribute('aria-modal', 'true')
+  imageViewer.setAttribute('aria-label', '评论图片预览')
+  const imageClose = document.createElement('button')
+  imageClose.type = 'button'; imageClose.textContent = '×'; imageClose.setAttribute('aria-label', '关闭图片预览')
+  onAction(imageClose, () => call('onCloseImage', true))
+  imageViewer.addEventListener('keydown', event => {
+    if (event.key === 'Tab') { event.preventDefault(); imageClose.focus() }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); call('onCloseImage', true) }
+  })
+  const viewerImage = document.createElement('img'), viewerCaption = document.createElement('p')
+  imageViewer.append(imageClose, viewerImage, viewerCaption); imageBackdrop.append(imageViewer)
 
   /** @type {Map<string, ReturnType<typeof createPanelNode>>} */
   const panelNodes = new Map()
@@ -886,7 +952,7 @@ export function createCommentPanel(options = {}) {
     operation.className = 'lark-doc-comment-operation'
     operation.setAttribute('aria-label', '插入图片')
     operation.appendChild(iconNode('rev-image', 16))
-    onMouseDownPrevent(operation, () => call('onChooseImage', id))
+    onAction(operation, () => call('onChooseImage', id))
     const imageInput = document.createElement('input')
     imageInput.type = 'file'
     imageInput.multiple = true
@@ -899,18 +965,20 @@ export function createCommentPanel(options = {}) {
     inputRow.appendChild(operation)
     inputRow.appendChild(imageInput)
 
+    const draftImages = document.createElement('div')
+    draftImages.className = 'lark-doc-comment-image-drafts'
     const actions = document.createElement('div')
     actions.className = 'lark-doc-comment-actions'
     const cancelAction = document.createElement('button')
     cancelAction.type = 'button'
     cancelAction.className = 'lark-doc-comment-action is-outlined'
     cancelAction.textContent = '取消'
-    onMouseDownPrevent(cancelAction, () => call('onClearDraft', id))
+    onAction(cancelAction, () => call('onClearDraft', id))
     const sendAction = document.createElement('button')
     sendAction.type = 'button'
     sendAction.className = 'lark-doc-comment-action is-filled'
     sendAction.textContent = '发送'
-    onMouseDownPrevent(sendAction, () => call('onSubmit', id))
+    onAction(sendAction, () => call('onSubmit', id))
     actions.appendChild(cancelAction)
     actions.appendChild(sendAction)
 
@@ -935,7 +1003,7 @@ export function createCommentPanel(options = {}) {
     switchHandler.className = 'lark-doc-comment-switch-handler'
     switchHandler.setAttribute('aria-hidden', 'true')
     switchButton.appendChild(switchHandler)
-    onMouseDownPrevent(switchButton, () => call('onTogglePrivate', id))
+    onAction(switchButton, () => call('onTogglePrivate', id))
     moreRow.appendChild(moreIcon)
     moreRow.appendChild(moreTitle)
     moreRow.appendChild(switchButton)
@@ -959,6 +1027,8 @@ export function createCommentPanel(options = {}) {
       inputRow,
       textarea,
       imageInput,
+      draftImages,
+      draftImagesSignature: null,
       actions,
       cancelAction,
       operation,
@@ -997,7 +1067,7 @@ export function createCommentPanel(options = {}) {
           dots.setAttribute('aria-hidden', 'true')
           button.appendChild(dots)
         }
-        onMouseDownPrevent(button, () => call('onControl', control.id, entry.threadId))
+        onAction(button, () => call('onControl', control.id, entry.threadId))
         cell.appendChild(button)
       }
       entry.controls.appendChild(cell)
@@ -1034,6 +1104,20 @@ export function createCommentPanel(options = {}) {
       body.textContent = reply.body == null ? '' : String(reply.body)
       right.appendChild(info)
       right.appendChild(body)
+      if (reply.images?.length) {
+        const images = document.createElement('div'); images.className = 'lark-doc-comment-images'
+        reply.images.forEach(image => {
+          const button = document.createElement('button'); button.type = 'button'
+          button.setAttribute('aria-label', '查看评论图片：' + (image.fileName || ''))
+          button.disabled = !image.url && !image.error
+          onAction(button, event => call('onOpenImage', item.id, reply.id, image.assetId, event))
+          const preview = document.createElement(image.url ? 'img' : 'span')
+          if (image.url) { preview.src = image.url; preview.alt = image.fileName || '' }
+          else preview.textContent = image.error ? '图片加载失败，点击重试' : '图片加载中…'
+          button.appendChild(preview); images.appendChild(button)
+        })
+        right.appendChild(images)
+      }
       main.appendChild(avatar)
       main.appendChild(right)
 
@@ -1051,7 +1135,7 @@ export function createCommentPanel(options = {}) {
           dots.setAttribute('aria-hidden', 'true')
           button.appendChild(dots)
         }
-        onMouseDownPrevent(button, () => call('onReplyControl', control.id, item.id, reply.id))
+        onAction(button, () => call('onReplyControl', control.id, item.id, reply.id))
         replyControls.appendChild(button)
       })
 
@@ -1072,7 +1156,7 @@ export function createCommentPanel(options = {}) {
         const menuDisabled = menu.disabled === true
         li.setAttribute('aria-disabled', String(menuDisabled))
         li.tabIndex = menuDisabled ? -1 : 0
-        onMouseDownPrevent(li, () => { if (!menuDisabled) call('onMenuItem', menu.id, item.id, reply.id) })
+        onAction(li, () => { if (!menuDisabled) call('onMenuItem', menu.id, item.id, reply.id) })
         li.addEventListener('keydown', event => {
           if (menuDisabled) return
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); call('onMenuItem', menu.id, item.id, reply.id) }
@@ -1135,8 +1219,14 @@ export function createCommentPanel(options = {}) {
     entry.sendAction.disabled = !item.allowedReply
     entry.cancelAction.disabled = !item.hasDraft
     entry.operation.disabled = item.canUploadImage === false
+    const draftImagesSignature = JSON.stringify(item.draftImages || [])
+    if (entry.draftImagesSignature !== draftImagesSignature) {
+      entry.draftImagesSignature = draftImagesSignature
+      syncChildren(entry.draftImages, imageDraftNodes(item.id, item.draftImages))
+    }
     syncChildren(entry.textareaWrap, [
       { node: entry.inputRow, on: true },
+      { node: entry.draftImages, on: !!item.draftImages?.length },
       { node: entry.actions, on: !!item.hasDraft },
     ])
 
@@ -1186,10 +1276,20 @@ export function createCommentPanel(options = {}) {
     composerPrivate.disabled = !!nextComposer.readonly
     composerSend.disabled = !nextComposer.canSubmit || (!String(nextComposer.value || '').trim() && !nextComposer.hasImages)
     composerCancel.disabled = false
+    composerImageButton.disabled = nextComposer.canUploadImage === false
+    syncChildren(composerImageDrafts, imageDraftNodes('selection', nextComposer.draftImages))
+    composerImageDrafts.hidden = !nextComposer.draftImages?.length
     chrome.push({ node: composer, on: !!nextComposer.open })
     setText(emptyState, state.emptyText || '')
     chrome.push({ node: emptyState, on: !!state.emptyText && !nextComposer.open && !(state.items || []).length })
-    syncChildren(el, [...chrome, ...slots])
+    const media = state.imageStatus || {}
+    setText(imageStatusText, media.busy ? '正在处理图片…' : '图片上传结果尚未确认')
+    queryImage.disabled = !media.canQuery
+    syncChildren(imageStatus, [{ node: imageStatusText, on: true }, { node: cancelUpload, on: !!media.busy && !!media.canCancel }, { node: queryImage, on: !!media.pending }])
+    const viewer = state.imageViewer
+    if (viewer) { viewerImage.src = viewer.url; viewerImage.alt = viewer.fileName || ''; setText(viewerCaption, viewer.fileName) }
+    else viewerImage.removeAttribute('src')
+    syncChildren(el, [...chrome, ...slots, { node: imageStatus, on: !!media.busy || !!media.pending }, { node: imageBackdrop, on: !!viewer }])
   }
 
   function update(patch) {
