@@ -6,6 +6,7 @@
  */
 import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../documentOperations'
 import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
+import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
 import { DEFAULT_MODES_CONFIG, MODE_ICONS, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
 
 export default {
@@ -182,8 +183,12 @@ export default {
       this.editor.view.domAtPos(match.from).node.parentElement?.scrollIntoView({ block: 'center' })
     },
     replace(all) {
-      if (!this.writable() || !this.searchQuery) return
+      if (!this.writable() || !this.featureEnabled('search') || !this.searchQuery) return
+      this.flushSearchUpdate()
       if (all) { replaceText(this.editor, this.searchQuery, this.replacement, true) } else {
+        // A query change or document update may still be waiting for the debounce.
+        // Resolve the current range before changing document text.
+        this.updateSearch()
         const match = this.searchMatches[this.searchIndex]
         if (!match) return
         const tr = this.editor.state.tr
@@ -281,15 +286,121 @@ export default {
     setWidthMode(v) { this.widthMode = v },
     setSearchQuery(v) { this.searchQuery = v },
     setReplacement(v) { this.replacement = v },
-    async toggleFullscreen() { if (!this.fullscreen) { try { await this.$refs.root.requestFullscreen() } catch (_) { this.fullscreen = true } } else if (document.fullscreenElement) await document.exitFullscreen(); else this.fullscreen = false },
-    onFullscreenChange() { this.fullscreen = document.fullscreenElement === this.$refs.root },
-    toggleSlides() { this.slides = !this.slides; this.slideIndex = 0 },
-    prevSlide() { this.slideIndex -= 1 },
-    nextSlide() { this.slideIndex += 1 },
+    async toggleFullscreen() {
+      const root = this.$refs.root, owner = root?.ownerDocument
+      if (!owner) return false
+      try {
+        if (owner.fullscreenElement && root.contains(owner.fullscreenElement)) {
+          if (typeof owner.exitFullscreen !== 'function') throw new Error('当前环境不支持退出全屏')
+          await owner.exitFullscreen()
+        } else {
+          if (typeof root.requestFullscreen !== 'function') throw new Error('当前环境不支持全屏')
+          await root.requestFullscreen()
+        }
+        this.onFullscreenChange()
+        return this.fullscreen
+      } catch (error) {
+        this.onFullscreenChange()
+        this.error = error?.message || '无法切换全屏'
+        return false
+      }
+    },
+    onFullscreenChange() {
+      const element = this.$refs.root.ownerDocument.fullscreenElement
+      this.fullscreen = element === this.$refs.root
+      const scope = this._presentation
+      if (!scope) return
+      if (element && scope.root.contains(element)) scope.enteredFullscreen = true
+      else if (scope.enteredFullscreen) this.exitSlides(false)
+    },
+    presentationCurrent(scope = this._presentation) {
+      return !!scope && !scope.closed && this.slides && this.editor === scope.editor && !scope.editor.isDestroyed
+        && this.session === scope.session && this.documentId === scope.documentId
+        && this.session?.documentId === scope.sessionDocumentId && this.session?.can?.('canView') !== false
+    },
+    toggleSlides() {
+      if (this.slides) return this.exitSlides()
+      const editor = this.editor, root = this.$refs.root
+      if (!editor || editor.isDestroyed || !root || this.session?.can?.('canView') === false) return false
+      const owner = root.ownerDocument
+      const scope = { editor, root, session: this.session, documentId: this.documentId,
+        sessionDocumentId: this.session?.documentId, mode: this.mode, bookmark: editor.state.selection.getBookmark(),
+        focus: owner.activeElement, enteredFullscreen: owner.fullscreenElement === root,
+        alreadyFullscreen: owner.fullscreenElement === root, closed: false }
+      this._presentation = scope
+      this.slides = true
+      this.slideIndex = 0
+      scope.onTransaction = ({ transaction }) => {
+        if (!this.presentationCurrent(scope)) { this.exitSlides(true, false); return }
+        if (!transaction.docChanged) return
+        const origin = getTransactionMetadata(transaction)?.origin
+        if (origin === TRANSACTION_ORIGINS.HOST || origin === TRANSACTION_ORIGINS.RESTORE
+          || transaction.steps.some(step => step.from === 0 && step.to >= transaction.before.content.size)) {
+          this.exitSlides(true, false)
+          return
+        }
+        scope.bookmark = scope.bookmark.map(transaction.mapping)
+        this.refreshStage?.()
+      }
+      editor.on('transaction', scope.onTransaction)
+      scope.offCapabilities = this.session?.on?.('capabilities', () => {
+        if (!this.presentationCurrent(scope)) this.exitSlides(true, false)
+      })
+      this.applyInteractionMode?.()
+      this.refreshStage?.()
+      this.$nextTick(() => { if (this.presentationCurrent(scope)) this._stageUi?.focus() })
+      // A denied/unsupported native request still leaves the full-viewport presentation usable.
+      if (!scope.alreadyFullscreen && typeof root.requestFullscreen === 'function') {
+        try {
+          Promise.resolve(root.requestFullscreen()).then(() => {
+            if (this._presentation === scope && !scope.closed) scope.enteredFullscreen = owner.fullscreenElement === root
+            else if (!this._presentation && owner.fullscreenElement === root) Promise.resolve(owner.exitFullscreen?.()).catch(() => {})
+          }).catch(() => {})
+        } catch (_) { /* Fullscreen may require a trusted user gesture. */ }
+      }
+      return true
+    },
+    exitSlides(exitFullscreen = true, restore = true) {
+      const scope = this._presentation
+      if (!scope && !this.slides) return false
+      const current = this.presentationCurrent(scope)
+      this._presentation = null
+      if (scope) {
+        scope.closed = true
+        scope.editor.off('transaction', scope.onTransaction)
+        scope.offCapabilities?.()
+      }
+      this.slides = false
+      this.slideIndex = 0
+      if (current && restore) this.mode = scope.mode
+      this.applyInteractionMode?.()
+      this.refreshStage?.()
+      const owner = scope?.root.ownerDocument
+      if (exitFullscreen && scope && !scope.alreadyFullscreen && owner.fullscreenElement && scope.root.contains(owner.fullscreenElement)) {
+        try { Promise.resolve(owner.exitFullscreen?.()).catch(() => {}) } catch (_) { /* Already exiting. */ }
+      }
+      if (current && restore) {
+        try {
+          const selection = scope.bookmark.resolve(scope.editor.state.doc)
+          if (!selection.eq(scope.editor.state.selection)) scope.editor.view.dispatch(scope.editor.state.tr.setSelection(selection).setMeta('addToHistory', false))
+        } catch (_) { /* A remotely removed selection has no surviving bookmark. */ }
+        this.$nextTick(() => {
+          if (this._presentation || this.editor !== scope.editor || this.session !== scope.session
+            || this.documentId !== scope.documentId || this.session?.documentId !== scope.sessionDocumentId || scope.editor.isDestroyed) return
+          if (scope.focus?.isConnected) scope.focus.focus?.({ preventScroll: true })
+          else scope.editor.view.focus()
+        })
+      }
+      return true
+    },
+    // Kept for existing callers; presentation navigation is now continuous document scrolling.
+    prevSlide() { this._stageUi?.el.scrollBy?.({ top: -window.innerHeight * 0.8 }) },
+    nextSlide() { this._stageUi?.el.scrollBy?.({ top: window.innerHeight * 0.8 }) },
   },
   // 提示条定时器必须在卸载前清掉：单页应用里反复挂载/卸载编辑器，
   // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。
   beforeDestroy() {
+    this.exitSlides(true, false)
     if (this.modeToastTimer) { clearTimeout(this.modeToastTimer); this.modeToastTimer = null }
     // 查找去抖同理：卸载后不许再有回调去摸 editor。
     if (this._searchDebounce) { this._searchDebounce.dispose(); this._searchDebounce = null }

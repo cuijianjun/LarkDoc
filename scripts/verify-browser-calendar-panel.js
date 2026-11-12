@@ -57,7 +57,7 @@ async function main() {
     record('搜索输入框属性完整并自动获得焦点', await root.locator('input[type="text"]').getAttribute('aria-label') === '搜索日程' && await root.locator('input').getAttribute('placeholder') === '搜索日程' && await page.evaluate(() => document.activeElement?.classList.contains('lark-doc-calendar-search-input')))
     record('结果区声明 listbox/aria-label', await root.locator('[role="listbox"]').count() === 1 && await root.locator('[role="listbox"]').getAttribute('aria-label') === '日程搜索结果')
     await page.waitForTimeout(120)
-    record('无数据时显示加载或空态，且结果区固定存在', await root.locator('[role="listbox"]').count() === 1 && (await root.locator('.lark-doc-calendar-search-empty').count() === 1 || await root.locator('.lark-doc-calendar-search-row').count() === 0))
+    record('无数据时渲染真实空态文案', await root.locator('[role="listbox"]').count() === 1 && await root.locator('.lark-doc-calendar-search-empty').innerText() === '没有匹配的搜索结果')
 
     await root.locator('input').fill('不存在的日程')
     record('输入事件更新搜索状态且仍保留面板', await root.locator('input').inputValue() === '不存在的日程' && await root.count() === 1)
@@ -79,6 +79,38 @@ async function main() {
     await page.waitForTimeout(120)
     await page.locator('.lark-doc-calendar-search-close').dispatchEvent('mousedown')
     record('关闭按钮 mousedown 直接关闭面板', await page.locator('.lark-doc-calendar-search').count() === 0)
+    // Exercise the public facade and a genuinely asynchronous host directory.
+    await page.evaluate(() => {
+      const Facade = window.__larkDoc.document?.constructor || window.__larkDoc.constructor
+      window.__larkDoc.destroy()
+      const element = document.createElement('div')
+      element.id = 'calendar-provider-acceptance'
+      document.body.appendChild(element)
+      window.__calendarJoinCalls = []
+      window.__calendarContractDoc = new Facade({ element, storage: 'none', content: '<p></p>',
+        calendarSource: { search: () => new Promise(resolve => { window.__calendarSearchResolve = resolve }) },
+        onCalendarEventJoin: value => window.__calendarJoinCalls.push(value),
+      })
+    })
+    const fixture = page.locator('#calendar-provider-acceptance')
+    await fixture.locator('.ProseMirror > p').first().click()
+    await page.keyboard.type('/')
+    await fixture.locator('[data-command-id="calendar_event"]').click()
+    const providerPanel = fixture.locator('.lark-doc-calendar-search')
+    record('宿主异步请求期间渲染搜索中', await providerPanel.locator('.lark-doc-calendar-search-empty').innerText() === '搜索中…')
+    await page.evaluate(() => window.__calendarSearchResolve([{ eventId: 'parity-calendar', title: '宿主日程闭环', start: '2026-11-11T10:00:00+08:00', end: '2026-11-11T11:00:00+08:00' }]))
+    const row = providerPanel.locator('.lark-doc-calendar-search-row')
+    await row.waitFor({ state: 'visible' })
+    record('异步候选真实进入DOM而不是仅更新状态', await row.count() === 1 && await row.innerText() === '宿主日程闭环')
+    await providerPanel.locator('input').fill('没有此日程')
+    record('筛选零结果渲染空态', await providerPanel.locator('.lark-doc-calendar-search-empty').innerText() === '没有匹配的搜索结果')
+    await providerPanel.locator('input').fill('')
+    await row.click()
+    record('点击实际候选行插入卡片并关闭搜索', await providerPanel.count() === 0 && await fixture.locator('.lark-doc-calendar-container').count() === 1)
+    await fixture.locator('.lark-doc-calendar-join').click()
+    const calls = await page.evaluate(() => window.__calendarJoinCalls)
+    record('加入按钮经门面回调返回正确日程身份', calls.length === 1 && calls[0].eventId === 'parity-calendar' && calls[0].title === '宿主日程闭环')
+    await page.evaluate(() => { window.__calendarContractDoc.destroy(); document.getElementById('calendar-provider-acceptance').remove(); delete window.__calendarSearchResolve; delete window.__calendarContractDoc; delete window.__calendarJoinCalls })
     record('页面无脚本错误', pageErrors.length === 0, pageErrors.join(' | '))
   } finally {
     await browser.close()

@@ -12,9 +12,8 @@
  *   1. **新增走 `appendTransaction`** —— 键入是浏览器 / IME 的内建行为，拦按键去手写
  *      插入会跟 IME 组字、输入法候选、粘贴、拖拽全部打架。所以让改动先正常发生，
  *      事后再把「新增的那些字符」补上 mark（只改 doc，不改按键）。
- *   2. **删除走 `handleKeyDown`** —— 删除必须**不发生**（文字要留着画删除线），
- *      事后补不回来。所以只在「纯字符退格」这一种情形拦按键，其余（跨块合并段落、
- *      整块选中删除）照旧真删。
+ *   2. **删除走 `handleKeyDown`** —— 保留字符及跨段选区，以零宽节点记录待删除的
+ *      段落边界。接受时才合并段落，拒绝保留原文（2026-11-10 源站实操）。
  *
  * 四条硬口径：
  *   - **标记不能自成一个撤销步**。补 mark 的事务一律 `addToHistory: false` ——
@@ -29,8 +28,10 @@
  *     所以 `view.composing` 时先记账，`compositionend` 后再一次性补。
  */
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { closeHistory, isHistoryTransaction } from '@tiptap/pm/history'
 import { normalizeRevision, createRevisionId, REVISION_AUTHOR_FALLBACK } from '../blocks/revision'
+import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../transactionMetadata'
 
 /** 本插件自己写的补丁事务 meta（见到就跳过，防自激）。 */
 export const REVISION_TRACK_META = 'larkDocRevisionTrack'
@@ -83,6 +84,14 @@ export function revisionSpans(doc, from, to, type) {
   const spans = []
   if (!type || to <= from) return spans
   doc.nodesBetween(from, to, (node, pos) => {
+    if (node.type.name === 'codeBlock' && node.attrs.deletionRevisionId) {
+      spans.push({ mark: { attrs: { revisionId: node.attrs.deletionRevisionId, author: node.attrs.deletionAuthor, kind: 'delete' } }, from: Math.max(from, pos), to: Math.min(to, pos + node.nodeSize) })
+      return false
+    }
+    if (node.type.name === 'revisionBoundary') {
+      spans.push({ mark: { attrs: { ...node.attrs, kind: 'delete' } }, from: pos, to: pos + node.nodeSize })
+      return false
+    }
     if (!node.isText) return true
     const mark = type.isInSet(node.marks)
     if (!mark) return true
@@ -97,23 +106,70 @@ export function revisionSpans(doc, from, to, type) {
 /**
  * 退格 / 删除要作用到哪一段（`forward` = true 为 Delete，向后删）。
  *
- * 只认「一个文本块内的字符」：光标在段落里、前后还有字。其余情形（块首退格要合并段落、
- * 整块选中、单元格边界）返回 null → 交给默认行为真删。这是刻意收窄的 V1 口径
- * （07 §12 没实测这些边界，不凭手感造行为）。
+ * 文本选区可以跨段；段首/段尾删除捕获同一容器内相邻文本块的边界。
+ * 单元格与容器边界不误合并。
  */
-export function deletionRange(state, forward) {
+function revisionTextSelection(state) {
   const sel = state.selection
-  if (!sel || sel.$from === undefined) return null
+  if (!(sel instanceof TextSelection) || sel.empty || sel.$anchor.sameParent(sel.$head)) return sel
+  if (sel.$anchor.parent.type.name === 'codeBlock') {
+    return TextSelection.create(state.doc, sel.anchor, sel.head > sel.anchor ? sel.$anchor.end() : sel.$anchor.start())
+  }
+  if (sel.$head.parent.type.name === 'codeBlock') {
+    return TextSelection.create(state.doc, sel.anchor, sel.head > sel.anchor ? sel.$head.end() : sel.$head.start())
+  }
+  return sel
+}
+
+export function deletionRange(state, forward) {
+  const sel = revisionTextSelection(state)
+  if (!(sel instanceof TextSelection)) return null
   if (!sel.empty) {
-    if (sel.$from.parent && sel.$from.parent.isTextblock && sel.$from.sameParent(sel.$to)) return { from: sel.from, to: sel.to }
+    if (sel.$from.parent.isTextblock && sel.$to.parent.isTextblock) return { from: sel.from, to: sel.to }
     return null
   }
   const $pos = sel.$from
   if (!$pos.parent || !$pos.parent.isTextblock) return null
   const offset = $pos.parentOffset
-  if (!forward) return offset > 0 ? { from: $pos.pos - 1, to: $pos.pos } : null
-  if (offset < $pos.parent.content.size) return { from: $pos.pos, to: $pos.pos + 1 }
+  if (!forward && offset > 0) {
+    const size = /[\uD800-\uDBFF][\uDC00-\uDFFF]$/.test($pos.nodeBefore?.text || '') ? 2 : 1
+    return { from: $pos.pos - size, to: $pos.pos }
+  }
+  if (forward && offset < $pos.parent.content.size) {
+    const size = /^[\uD800-\uDBFF][\uDC00-\uDFFF]/.test($pos.nodeAfter?.text || '') ? 2 : 1
+    return { from: $pos.pos, to: $pos.pos + size }
+  }
+  if (!forward && offset === 0 && $pos.before() > 0) {
+    const previous = state.doc.resolve($pos.before() - 1)
+    if (previous.parent.isTextblock && previous.node(previous.depth - 1) === $pos.node($pos.depth - 1)) {
+      return { from: previous.pos - (previous.parent.lastChild?.type.name === 'revisionBoundary' ? 1 : 0), to: $pos.pos }
+    }
+  }
+  if (forward && offset === $pos.parent.content.size && $pos.after() < state.doc.content.size) {
+    const next = state.doc.resolve($pos.after() + 1)
+    if (next.parent.isTextblock && next.node(next.depth - 1) === $pos.node($pos.depth - 1)) {
+      return { from: $pos.pos - ($pos.parent.lastChild?.type.name === 'revisionBoundary' ? 1 : 0), to: next.pos }
+    }
+  }
   return null
+}
+
+/** Adjacent text blocks crossed by a deletion; table/container boundaries stay separate. */
+function deletionBoundaries(doc, range) {
+  const boundaries = []
+  doc.nodesBetween(range.from, range.to, (node, pos) => {
+    if (!node.isTextblock) return true
+    if (node.type.name === 'codeBlock') return false
+    const end = pos + node.nodeSize - 1
+    if (range.from > end || range.to <= end || pos + node.nodeSize >= doc.content.size) return false
+    const here = doc.resolve(end)
+    const next = doc.resolve(pos + node.nodeSize + 1)
+    if (next.parent.type.name !== 'codeBlock' && next.parent.isTextblock && here.node(here.depth - 1) === next.node(next.depth - 1)) {
+      boundaries.push({ pos: end, existing: node.lastChild?.type.name === 'revisionBoundary' })
+    }
+    return false
+  })
+  return boundaries
 }
 
 /**
@@ -127,8 +183,24 @@ export function deletionRange(state, forward) {
  */
 export function deleteDecision(doc, range, type) {
   const spans = revisionSpans(doc, range.from, range.to, type)
-  const covered = spans.reduce((sum, span) => sum + (span.to - span.from), 0)
-  if (!spans.length || covered < range.to - range.from) return 'mark'
+  if (!spans.length || deletionBoundaries(doc, range).some(item => !item.existing)) return 'mark'
+  const coveredRanges = mergeRanges(spans)
+  let spanIndex = 0
+  let covered = 0
+  let eligible = 0
+  doc.nodesBetween(range.from, range.to, (node, pos) => {
+    if (!node.isText && node.type.name !== 'revisionBoundary') return
+    const from = Math.max(range.from, pos)
+    const to = Math.min(range.to, pos + node.nodeSize)
+    eligible += to - from
+    // Whole-block suggestions include structural positions; count only the same
+    // text/boundary positions as eligible, never offset an unmarked neighbour.
+    while (spanIndex < coveredRanges.length && coveredRanges[spanIndex].to <= from) spanIndex += 1
+    for (let index = spanIndex; index < coveredRanges.length && coveredRanges[index].from < to; index += 1) {
+      covered += Math.max(0, Math.min(to, coveredRanges[index].to) - Math.max(from, coveredRanges[index].from))
+    }
+  })
+  if (covered < eligible) return 'mark'
   const kinds = spans.map((span) => normalizeRevision(span.mark.attrs).kind)
   if (kinds.every((kind) => kind === 'delete')) return 'keep'
   if (kinds.every((kind) => kind === 'insert')) return 'drop'
@@ -139,7 +211,7 @@ export function deleteDecision(doc, range, type) {
  * 紧挨着 `from` 之前那个字符上的建议 id（跨块、块首一律返回空串）。
  * 只有它等于 `openId`（本插件刚写过的那条）时才算「继续同一条建议」。
  */
-export function adjacentRevisionId(doc, from, type) {
+export function adjacentRevisionId(doc, from, type, expected = null) {
   if (!type || from <= 0) return ''
   const $pos = doc.resolve(from)
   if (!$pos.parent || !$pos.parent.isTextblock || $pos.parentOffset <= 0) return ''
@@ -147,7 +219,10 @@ export function adjacentRevisionId(doc, from, type) {
   doc.nodesBetween(from - 1, from, (node) => {
     if (!node.isText) return true
     const mark = type.isInSet(node.marks)
-    if (mark) found = normalizeRevision(mark.attrs).revisionId
+    if (mark) {
+      const attrs = normalizeRevision(mark.attrs)
+      if (!expected || attrs.kind === expected.kind && attrs.author === expected.author) found = attrs.revisionId
+    }
     return true
   })
   return found
@@ -163,6 +238,30 @@ export function buildRevisionMarkTr(state, range, attrs, meta) {
   // 补 mark 不算一次编辑：并进同一个 undo event（见文件头第一条硬口径）。
   tr.setMeta('addToHistory', false)
   if (meta) tr.setMeta(meta, true)
+  return tr
+}
+
+/** A user deletion is one undoable edit; appended insertion marks use the helper above. */
+function buildDeletionSuggestionTr(state, range, attrs) {
+  const type = state.schema.marks.revision
+  const boundaryType = state.schema.nodes.revisionBoundary
+  if (!type || !boundaryType) return null
+  const revision = normalizeRevision({ ...attrs, kind: 'delete' })
+  const tr = state.tr.addMark(range.from, range.to, type.create(revision))
+  const selection = revisionTextSelection(state)
+  if (selection instanceof TextSelection && !selection.$from.sameParent(selection.$to)) {
+    state.doc.nodesBetween(range.from, range.to, (node, pos) => {
+      if (node.type.name === 'codeBlock' && range.from <= pos + 1 && range.to >= pos + node.nodeSize - 1) {
+        tr.setNodeMarkup(pos, null, { ...node.attrs, deletionRevisionId: revision.revisionId, deletionAuthor: revision.author })
+        return false
+      }
+    })
+  }
+  deletionBoundaries(state.doc, range).slice().reverse().forEach(item => {
+    if (!item.existing) tr.insert(item.pos, boundaryType.create({ revisionId: revision.revisionId, author: revision.author }))
+  })
+  tr.setMeta(REVISION_TRACK_META, true)
+  tr.setMeta(REVISION_SKIP_META, true)
   return tr
 }
 
@@ -205,7 +304,7 @@ export const LarkDocRevisionTracker = Extension.create({
     let pending = []
     let compositionBound = false
 
-    const isActive = () => !!(storage && storage.active)
+    const isActive = () => !!(storage && storage.active && !editor.isDestroyed && editor.isEditable)
     const markType = (state) => state.schema.marks.revision
     const authorOf = () => (storage && storage.author) || REVISION_AUTHOR_FALLBACK
 
@@ -215,7 +314,7 @@ export const LarkDocRevisionTracker = Extension.create({
       if (!type || !ranges.length) return null
       let tr = null
       ranges.forEach((range) => {
-        const adjacent = adjacentRevisionId(state.doc, range.from, type)
+        const adjacent = adjacentRevisionId(state.doc, range.from, type, { kind: 'insert', author: authorOf() })
         const revisionId = adjacent && adjacent === storage.openId ? adjacent : createRevisionId()
         const next = buildRevisionMarkTr(state, range, { revisionId, author: authorOf(), kind: 'insert' })
         if (!next) return
@@ -256,10 +355,17 @@ export const LarkDocRevisionTracker = Extension.create({
       key: revisionTrackerKey,
 
       appendTransaction(transactions, oldState, newState) {
+        if (transactions.some(tr => tr.getMeta('larkDocRevisionAction'))) {
+          return closeHistory(newState.tr).setMeta(REVISION_SKIP_META, true).setMeta('addToHistory', false)
+        }
         if (!isActive()) return null
-        if (newState.doc === oldState.doc) return null
+        if (newState.doc === oldState.doc) {
+          const selection = revisionTextSelection(newState)
+          return selection.eq(newState.selection) ? null : newState.tr.setSelection(selection).setMeta(REVISION_SKIP_META, true).setMeta('addToHistory', false)
+        }
         // 别人补的 / 自己补的 / 宿主显式跳过的，一律不碰。
-        const blocked = transactions.some((tr) => tr.getMeta(REVISION_TRACK_META)
+        const blocked = transactions.some((tr) => isHistoryTransaction(tr) || tr.getMeta(REVISION_TRACK_META)
+          || getTransactionMetadata(tr)?.origin === TRANSACTION_ORIGINS.RESTORE
           || tr.getMeta(REVISION_SKIP_META)
           || tr.getMeta('appendedTransaction'))
         if (blocked) return null
@@ -288,9 +394,9 @@ export const LarkDocRevisionTracker = Extension.create({
           const decision = deleteDecision(state.doc, range, type)
           if (decision === 'keep') return true
           if (decision === 'drop') return false
-          const adjacent = adjacentRevisionId(state.doc, range.from, type)
+          const adjacent = adjacentRevisionId(state.doc, range.from, type, { kind: 'delete', author: authorOf() })
           const revisionId = adjacent && adjacent === storage.openId ? adjacent : createRevisionId()
-          const tr = buildRevisionMarkTr(state, range, { revisionId, author: authorOf(), kind: 'delete' }, REVISION_SKIP_META)
+          const tr = buildDeletionSuggestionTr(state, range, { revisionId, author: authorOf(), kind: 'delete' })
           if (!tr) return false
           storage.openId = revisionId
           view.dispatch(tr)

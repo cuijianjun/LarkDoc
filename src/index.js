@@ -18,6 +18,8 @@ import LarkDoc from './LarkDoc'
 import { TOOLBAR_GROUPS, TOOLBAR_KEYS, MARK_KEYS, resolveToolbarKeys } from './toolbarKeys'
 import { createNetworkPolicy, NETWORK_MODES, DEFAULT_NETWORK } from './networkPolicy'
 import { detectLegacyHtml, isVditorHtml, normalizeVditorHtml } from './legacy'
+import { normalizeAIProvider, buildAIRequest, AI_KINDS, AI_CONTENT_FORMATS, AI_PROTOCOLS } from './components/lark-doc/ai'
+import { createOpenAICompatibleProvider, validateAIWriteback } from './providers/ai'
 
 /**
  * 默认入口只暴露编辑器核心和无重量的基础配置工具。
@@ -36,6 +38,13 @@ export {
   detectLegacyHtml,
   isVditorHtml,
   normalizeVditorHtml,
+  normalizeAIProvider,
+  buildAIRequest,
+  AI_KINDS,
+  AI_CONTENT_FORMATS,
+  AI_PROTOCOLS,
+  createOpenAICompatibleProvider,
+  validateAIWriteback,
 }
 
 export default LarkDoc

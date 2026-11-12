@@ -4,15 +4,16 @@
 
 AI 组件提供选区 / 整块的 AI 交互面板，内置 11 种动作（续写、改写、扩写、精简、摘要、翻译、校对、正式语气、友好语气、生成标题、生成大纲）。默认由内置 Mock 流式输出驱动，可完整走通交互；接入真实模型只改 `ai` 一项配置，**不需要写传输层、不需要写渲染逻辑**。
 
-接入分三档，按宿主的能力和诉求选一档即可：
+接入分四档，按宿主的能力和诉求选一档即可：
 
 | 档次 | 写法 | 谁负责发请求 | 谁负责显示 | 适合 |
 | --- | --- | --- | --- | --- |
 | **L1 只给地址** | `ai: '/api/ai'` | 组件内置（XHR + SSE 解析） | 组件内置 | 后端自己封装了 AI 网关 |
 | **L2 直连模型** | `ai: { protocol: 'openai', baseURL, apiKey, model }` | 组件内置 | 组件内置 | 有 OpenAI 兼容服务，想省掉后端 |
+| **L2.5 宿主请求** | `ai: { endpoint, request(request, args) { … } }` | 宿主请求函数 | 组件内置 | 需要 fetch、签名、SDK 或自定义网关 |
 | **L3 自管传输** | `ai: { stream(args) { … } }` | 宿主 | 组件内置 | 已有 SDK / 签名 / 加密 / 特殊协议 |
 
-> `ai` 的三档写法会在内部归一化成同一个 `{ kind, protocol, contentFormat, stream(args) }` 契约，下游只认这一种形态，因此三档可以随时升降级，不用改调用代码。
+> `ai` 的四档写法会在内部归一化成同一个 `{ kind, protocol, contentFormat, stream(args) }` 契约，下游只认这一种形态，因此可以随时升降级，不用改调用代码。
 
 ## 配置内容
 
@@ -28,6 +29,28 @@ new LarkDoc({
   ai: '/api/ai',
 })
 ```
+
+需要宿主直接控制请求时，传入 `request(request, args)`。组件仍负责请求体、协议解析、增量回调、错误和取消；宿主只负责把结构化请求交给自己的 `fetch` / SDK：
+
+```ts
+new LarkDoc({
+  element: '#editor',
+  ai: {
+    endpoint: '/api/ai',
+    protocol: 'auto',
+    request: ({ url, method, headers, body, signal }) => fetch(url, {
+      method,
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    }),
+  },
+})
+```
+
+`request` 的入参固定为 `{ url, method, headers, body, protocol, signal, timeout, withCredentials }`，第二个参数是本次 `stream(args)` 入参；返回值可以是标准 `Response`、带 `body` 可读流的对象、字符串或 JSON 对象。返回内容继续按 SSE / JSON / 纯文本自动解析。
+
+需要在宿主外部复用归一化或 OpenAI 兼容 provider 时，默认入口也导出 `normalizeAIProvider`、`buildAIRequest`、`AI_PROTOCOLS` 与 `createOpenAICompatibleProvider`；provider 的 `baseURL/baseUrl/baseurl/base_url`、`apiKey/api_key` 都兼容。
 
 需要显式指定协议时写成对象：
 
@@ -144,6 +167,9 @@ ai: (args) => ({ cancel() {} })
 | `language` | `string` | 目标语言，`translate` 用；未设置为空串。 |
 | `range` | `{ from, to, source }` | 生成时的文档位置快照，用于结果回落。 |
 | `context` | `object` | 上下文快照（含上下文来源、块信息等），排查问题用。 |
+| `images` | `{ url, blockId, alt }[]?` | 图片问答的临时引用。`url` 为只含可见裁剪区域的 PNG data URL，不含 `originalSrc`，不写入正文 JSON。 |
+
+图片工具条的「问问AI」先打开右侧问答栏并附上 `[图片]`，输入问题后才请求服务；移除引用、关闭、停止、切换文档或撤销能力会中止旧请求。未配置识图服务时不会用文本 Mock 代替识图。自定义服务须声明 `supportsImages: true` 并处理 `images`。OpenAI 协议将图片转换为用户消息中的 `image_url` 内容项（[官方图片消息格式](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)）；自定义 `messages(args)` 或 `transformRequest` 必须自行保留图片。
 
 回调（**全部可选**，但建议至少实现 `onChunk` 与 `onError`）：
 
@@ -165,16 +191,18 @@ ai: (args) => ({ cancel() {} })
 | `ai` | `string \| object \| function` | 内置 Mock | 三档接入任选其一；传 `null` / `false` 回落 Mock。 |
 | `ai.enabled` | `boolean` | `true` | 显式置 `false` 关闭接入（同时回落 Mock），便于按环境开关。 |
 | `ai.endpoint` | `string` | — | 自家 AI 网关地址；别名 `url`、`api`。 |
-| `ai.baseURL` | `string` | — | OpenAI 兼容服务基址；别名 `baseUrl`。配了它且没配 `endpoint` 时协议默认 `openai`。 |
+| `ai.baseURL` | `string` | — | OpenAI 兼容服务基址；别名 `baseUrl`、`baseurl`、`base_url`。配了它且没配 `endpoint` 时协议默认 `openai`。 |
 | `ai.urlPath` | `string` | `/chat/completions` | `openai` 协议拼接的路径。 |
-| `ai.apiKey` | `string \| () => string` | — | 自动补 `Authorization: Bearer …`；已有同名头则跳过。 |
+| `ai.apiKey` | `string \| () => string` | — | 自动补 `Authorization: Bearer …`；别名 `api_key`；已有同名头则跳过。 |
 | `ai.model` | `string` | — | 仅 `openai` 协议，写进请求体。 |
+| `ai.supportsImages` | `boolean` | `false` | 确认服务和模型支持图片时置 `true`，启用图片引用发送。独立 `createOpenAICompatibleProvider` 默认支持，可设为 `false`。 |
 | `ai.protocol` | `'auto' \| 'openai' \| 'chatStream' \| 'json'` | `auto` | 决定请求体形状与帧解析方式。 |
 | `ai.contentFormat` | `'auto' \| 'markdown' \| 'html' \| 'text'` | `auto` | 结果按什么格式渲染预览并落正文。 |
 | `ai.headers` | `object \| () => object` | `{}` | 额外请求头，函数形式每次请求实时求值。 |
 | `ai.params` | `object` | — | 合并进请求体的额外字段，如 `{ temperature: 0.2 }`。 |
 | `ai.messages` | `(args) => Message[]` | 组件生成 | 仅 `openai` 协议，覆盖默认 `system + user`。 |
 | `ai.transformRequest` | `(request, args) => request` | — | 发请求前整体改写 `{ url, headers, body }`。 |
+| `ai.request` | `(request, args) => Response \| Promise<Response>` | — | 直接接管一次请求；保留 `signal` 以支持停止，返回 Response / 可读 body / 字符串 / JSON。 |
 | `ai.stream`（布尔） | `boolean` | `true` | 置 `false` 时不做流式，一次性接收整包结果。 |
 | `ai.timeout` | `number` | `0` | 毫秒；流式建议保持 `0`。 |
 | `ai.withCredentials` | `boolean` | `false` | 跨域带 cookie。 |

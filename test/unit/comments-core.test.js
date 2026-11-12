@@ -353,4 +353,39 @@ describe('内存 Provider：五方法契约', () => {
     await expect(provider.resolve('nope')).rejects.toThrow(/评论线程不存在/)
     await expect(provider.reopen('nope')).rejects.toThrow(/评论线程不存在/)
   })
+
+  it('persists edits, reply deletion and reaction toggles; deleting the last reply removes its thread', async () => {
+    let now = 1000
+    const provider = createMemoryCommentsProvider({ now: () => now })
+    const author = { id: 'u1', name: '我' }
+    const thread = await provider.createThread({ blockId: 'image-1', author, content: '原评论' })
+    const reply = await provider.reply({ threadId: thread.id, author, content: '回复' })
+    now = 2000
+    await provider.editReply({ threadId: thread.id, commentId: reply.id, author, content: '编辑后的回复' })
+    await expect(provider.editReply({ threadId: thread.id, commentId: reply.id, author, content: '   ' })).rejects.toThrow()
+    let listed = await provider.list()
+    expect(listed[0].replies[1]).toMatchObject({ content: '编辑后的回复', editedAt: 2000 })
+    await provider.toggleReaction({ threadId: thread.id, commentId: reply.id, author, emoji: '👍' })
+    listed = await provider.list()
+    expect(listed[0].replies[1].reactions).toEqual([{ emoji: '👍', users: ['u1'] }])
+    listed[0].replies[1].reactions[0].users.push('injected')
+    expect((await provider.list())[0].replies[1].reactions[0].users).toEqual(['u1'])
+    await provider.toggleReaction({ threadId: thread.id, commentId: reply.id, author, emoji: '👍' })
+    expect((await provider.list())[0].replies[1].reactions).toEqual([])
+    await provider.deleteReply({ threadId: thread.id, commentId: reply.id, author })
+    expect((await provider.list())[0].replies).toHaveLength(1)
+    await provider.deleteReply({ threadId: thread.id, commentId: thread.replies[0].id, author })
+    expect(await provider.list()).toEqual([])
+  })
+
+  it('deleting the first comment preserves later replies and the original thread anchor', async () => {
+    const provider = createMemoryCommentsProvider()
+    const author = { id: 'u1', name: '我' }
+    const thread = await provider.createThread({ blockId: 'paragraph_1', author, content: '首条评论', quote: '正文锚点' })
+    const reply = await provider.reply({ threadId: thread.id, author: { id: 'u2', name: '协作者' }, content: '仍需保留的回复' })
+    await provider.deleteReply({ threadId: thread.id, commentId: thread.replies[0].id, author })
+    const retained = (await provider.list())[0]
+    expect(retained).toMatchObject({ id: thread.id, blockId: 'paragraph_1', quote: '正文锚点' })
+    expect(retained.replies).toEqual([reply])
+  })
 })

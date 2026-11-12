@@ -221,7 +221,7 @@
   right: 4px;
   z-index: 1041;
   box-sizing: border-box;
-  width: 152px;
+  width: 124px;
   height: 134px;
   padding: 7px 4px;
   border: 1px solid var(--ld-comment-border);
@@ -233,7 +233,7 @@
 .lark-doc .lark-doc-comment-menu-item {
   box-sizing: border-box;
   display: flex;
-  width: 144px;
+  width: 100%;
   height: 30px;
   align-items: center;
   justify-content: space-between;
@@ -245,6 +245,7 @@
   cursor: pointer;
 }
 .lark-doc .lark-doc-comment-menu-item:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-comment-menu-item[aria-disabled="true"] { color: var(--ld-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-comment-menu-label {
   min-width: 0;
   white-space: nowrap;
@@ -289,7 +290,42 @@
 }
 .lark-doc .lark-doc-comment-input-zone:focus-visible { border-color: var(--ld-brand-chrome); outline: 0; }
 /* 无 canComment：照挂、置灰、可读（readonly 而非 disabled —— 后者会把焦点整个摘掉）。 */
-.lark-doc .lark-doc-comment-input-zone:read-only { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-input-zone[contenteditable="false"] { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-input-zone { white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; }
+.lark-doc .lark-doc-comment-input-zone:empty::before { content: attr(data-placeholder); color: var(--ld-text-tertiary); pointer-events: none; }
+.lark-doc .lark-doc-comment-mention { color: var(--ld-brand-chrome); background: var(--ld-bg-badge); border-radius: 2px; }
+
+.lark-doc .lark-doc-comment-edited { margin-left: 4px; color: var(--ld-comment-time); font-size: 12px; }
+.lark-doc .lark-doc-comment-reply.has-reactions,
+.lark-doc .lark-doc-comment-reply.has-reactions .lark-doc-comment-reply-main,
+.lark-doc .lark-doc-comment-reply.has-reactions .lark-doc-comment-reply-right { height: auto; min-height: 49px; }
+.lark-doc .lark-doc-comment-reactions { display: flex; flex-wrap: wrap; gap: 4px; min-height: 26px; padding-top: 4px; }
+.lark-doc .lark-doc-comment-reaction { display: inline-flex; align-items: center; gap: 10px; box-sizing: border-box; min-height: 22px; padding: 1px 5px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-comment-reaction.is-mine { border-color: var(--ld-brand-chrome); background: var(--ld-bg-badge); }
+.lark-doc .lark-doc-comment-reaction-icon { display: inline-block; flex: 0 0 auto; background-repeat: no-repeat; font-size: 18px; line-height: 18px; vertical-align: middle; }
+.lark-doc .lark-doc-comment-reaction-picker { position: fixed; z-index: 1060; display: flex; flex-direction: column; box-sizing: border-box; width: 346px; height: 342px; overflow: hidden; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-comment-reaction-scroll { flex: 0 0 276px; height: 276px; overflow: auto; }
+.lark-doc .lark-doc-comment-reaction-title { box-sizing: border-box; height: 28px; padding: 4px 8px; font-size: 12px; line-height: 20px; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-comment-reaction-grid { display: grid; grid-template-columns: repeat(9, 36px); padding: 0 6px 6px; }
+.lark-doc .lark-doc-comment-reaction-picker button { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 36px; min-width: 36px; height: 36px; padding: 0; border: 0; border-radius: 4px; background: transparent; }
+.lark-doc .lark-doc-comment-reaction-picker button:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-comment-reaction-recent { display: flex; justify-content: space-between; height: 28px; padding: 0 8px 8px; }
+.lark-doc .lark-doc-comment-reaction-recent button { height: 28px; }
+.lark-doc .lark-doc-comment-reply.is-editing,
+.lark-doc .lark-doc-comment-reply.is-editing .lark-doc-comment-reply-main,
+.lark-doc .lark-doc-comment-reply.is-editing .lark-doc-comment-reply-right,
+.lark-doc .lark-doc-comment-reply.is-editing .lark-doc-comment-body { height: auto; min-height: 28px; overflow: visible; }
+.lark-doc .lark-doc-comment-edit-input { display: block; box-sizing: border-box; width: 100%; min-height: 64px; padding: 6px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); color: var(--ld-comment-name); font: inherit; line-height: 22px; resize: vertical; }
+.lark-doc .lark-doc-comment-edit-input:focus { outline: 1px solid var(--ld-brand-chrome); }
+.lark-doc .lark-doc-comment-edit-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; }
+.lark-doc .lark-doc-comment-edit-actions button { height: 28px; padding: 0 10px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); color: var(--ld-comment-name); cursor: pointer; }
+.lark-doc .lark-doc-comment-edit-actions button:last-child { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); }
+.lark-doc .lark-doc-comment-menu-item[aria-disabled="true"] { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-composer { z-index: 1051; padding-bottom: 12px; }
+.lark-doc .lark-doc-comment-composer-author { padding: 10px 12px 4px; color: var(--ld-comment-name); font-size: 12px; }
+.lark-doc .lark-doc-comment-composer > textarea { width: calc(100% - 24px); min-height: 70px; margin: 4px 12px; padding: 6px; border: 1px solid var(--ld-comment-border); border-radius: 4px; }
+.lark-doc .lark-doc-comment-composer > .lark-doc-comment-edit-actions { padding-right: 12px; }
+.lark-doc .lark-doc-comment-composer-error { margin: 4px 12px; color: var(--ld-text-error); font-size: 12px; }
 .lark-doc .lark-doc-comment-operation {
   box-sizing: border-box;
   display: grid;
@@ -424,3 +460,53 @@
   background: var(--ld-comment-halo-resolved);
   color: var(--ld-text-disabled);
 }
+.lark-doc .lark-doc-comment[data-comment-missing="true"] { background: transparent; color: inherit; cursor: text; }
+
+.lark-doc .lark-doc-comment-history { position: fixed; z-index: 1050; display: flex; flex-direction: column; box-sizing: border-box; width: 360px; max-width: calc(100vw - 16px); border: 0; border-radius: 6px; outline: 1px solid var(--ld-comment-border); background: var(--ld-comment-surface); box-shadow: var(--ld-shadow-float); }
+.lark-doc .lark-doc-comment-history-head { display: flex; box-sizing: border-box; height: 48px; min-height: 48px; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--ld-comment-border); color: var(--ld-comment-name); font-size: 16px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-info { position: relative; display: grid; box-sizing: border-box; width: 16px; height: 16px; min-height: 16px; padding: 0; place-items: center; border: 0; border-radius: 0; background: transparent; color: var(--ld-comment-quote); font-size: 12px; line-height: 14px; cursor: help; }
+.lark-doc .lark-doc-comment-history-hint { position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 1; display: none; padding: 8px 12px; border-radius: 6px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); font-size: 12px; line-height: 20px; white-space: nowrap; transform: translateX(-50%); }
+.lark-doc .lark-doc-comment-history-info:hover .lark-doc-comment-history-hint,
+.lark-doc .lark-doc-comment-history-info:focus-visible .lark-doc-comment-history-hint { display: block; }
+.lark-doc .lark-doc-comment-history-list { box-sizing: border-box; min-height: 0; max-height: calc(100vh - 112px); padding: 0 16px 12px; overflow: auto; }
+.lark-doc .lark-doc-comment-history-empty { margin: 0 -16px -12px; padding: 140px 0; color: var(--ld-comment-time); text-align: center; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-illustration { height: 126px; }
+.lark-doc .lark-doc-comment-history-illustration .lark-doc-icon { display: block; margin: 0 auto; }
+.lark-doc .lark-doc-comment-history-empty-text { margin-top: 16px; }
+.lark-doc .lark-doc-comment-history-item { position: relative; width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+.lark-doc .lark-doc-comment-history-item > .lark-doc-comment-quote { position: relative; display: block; box-sizing: border-box; height: 38px; padding: 8px 16px 8px 26px; border-radius: 6px; background: var(--ld-bg-hover-menu); color: var(--ld-comment-time); font-size: 12px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-item > .lark-doc-comment-quote::before { position: absolute; top: 8px; bottom: 8px; left: 16px; border-left: 2px solid var(--ld-comment-time); content: ''; }
+.lark-doc .lark-doc-comment-history-item .lark-doc-comment-reply-main { width: 100%; }
+.lark-doc .lark-doc-comment-history-item .lark-doc-comment-reply-right { width: calc(100% - 44px); }
+.lark-doc .lark-doc-comment-history-resolved { display: flex; box-sizing: border-box; height: 48px; align-items: center; justify-content: space-between; padding: 16px 0 10px; color: var(--ld-comment-quote); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-resolved button { padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-history-resolved button[aria-disabled="true"] { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-history-actions { display: inline-flex; align-items: center; gap: 8px; }
+.lark-doc .lark-doc-comment-history-actions .lark-doc-comment-history-reopen { font-size: 12px; }
+.lark-doc .lark-doc-comment-history-split { width: 1px; height: 14px; background: var(--ld-comment-border); }
+.lark-doc .lark-doc-comment-history-actions .lark-doc-comment-history-delete { display: grid; width: 18px; height: 20px; place-items: center; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-comment-history-actions .lark-doc-comment-history-delete[aria-disabled="true"] { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-translation-label { display: block; color: var(--ld-comment-time); font-size: 12px; }
+.lark-doc .lark-doc-comment-original { position: relative; padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; font-size: 12px; cursor: pointer; }
+.lark-doc .lark-doc-comment-original-text { position: absolute; right: 0; bottom: 100%; z-index: 1; display: none; box-sizing: border-box; width: 200px; padding: 8px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); box-shadow: var(--ld-shadow-float); color: var(--ld-comment-name); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-comment-original:hover .lark-doc-comment-original-text,
+.lark-doc .lark-doc-comment-original:focus-visible .lark-doc-comment-original-text { display: block; }
+.lark-doc .lark-doc-comment-service-status { display: flex; gap: 8px; color: var(--ld-comment-time); font-size: 12px; }
+.lark-doc .lark-doc-comment-service-status[role="alert"] { color: var(--ld-text-error); }
+.lark-doc .lark-doc-comment-service-status button { padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-attachments,
+.lark-doc .lark-doc-comment-body-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.lark-doc .lark-doc-comment-body-attachments { margin-top: 6px; padding: 0; }
+.lark-doc .lark-doc-comment-body.is-image-only { margin-top: 0; }
+.lark-doc .lark-doc-comment-attachment { position: relative; display: inline-flex; box-sizing: border-box; width: 64px; height: 64px; flex: 0 0 64px; border: 1px solid var(--ld-comment-border); border-radius: 6px; color: var(--ld-comment-time); font-size: 12px; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-comment-attachment img { display: block; width: 62px; height: 62px; border-radius: 5px; object-fit: cover; }
+.lark-doc .lark-doc-comment-attachment button { padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-attachment .lark-doc-comment-attachment-preview { display: block; width: 62px; height: 62px; }
+.lark-doc .lark-doc-comment-attachment .lark-doc-comment-attachment-remove { position: absolute; top: 0; right: 0; z-index: 2; width: 24px; height: 24px; border-radius: 50%; background: var(--ld-mask); color: var(--ld-text-on-brand); font-size: 18px; line-height: 24px; }
+.lark-doc .lark-doc-comment-attachment-status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 5px; background: var(--ld-mask); color: var(--ld-text-on-brand); }
+.lark-doc .lark-doc-comment-attachment-status progress { width: 42px; height: 4px; accent-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-comment-attachment .lark-doc-comment-attachment-retry { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--ld-comment-surface); }
+.lark-doc .lark-doc-comment-attachment-viewer { z-index: 1061; }
+.lark-doc .lark-doc-comment-composer > .lark-doc-comment-operation { margin-left: 12px; }
+.lark-doc .lark-doc-comment-composer > .lark-doc-comment-attachments { padding: 4px 12px; }
+.lark-doc .lark-doc-comment-operation:disabled { color: var(--ld-text-disabled); cursor: not-allowed; }

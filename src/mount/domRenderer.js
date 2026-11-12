@@ -6,7 +6,7 @@ import { isAbortError, normalizeUploader } from '../core/media/upload'
 import { normalizeVditorHtml } from '../legacy'
 import { createEditorController } from '../editor/EditorController'
 import { createNativeEditorHost } from '../editor/nativeEditorHost'
-import { createLarkDocConfig, resolveMediaOptions } from '../components/lark-doc/larkDocConfig'
+import { createLarkDocConfig, isCommandEnabled, resolveMediaOptions } from '../components/lark-doc/larkDocConfig'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createWorkspaceState, createWorkspaceController } from '../workspace/WorkspaceController'
 import { createWorkspace } from '../ui/workspace'
@@ -15,6 +15,19 @@ import { createEditorUiRegistry } from '../ui/editorUiRegistry'
 import { createWorkspaceViewState } from '../core/workspace/workspace-view-state'
 import { createNetworkPolicy } from '../networkPolicy'
 import { previewToHtml, looksLikeMarkdown } from '../components/lark-doc/ai'
+import { LARGE_DOCUMENT_SIZE } from '../editor/documentSnapshot'
+import { createSegmentedDocumentModel, createSegmentedDocumentReader, createLargeDocumentViewportController } from '../editor/segmentedDocumentModel'
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** Runtime config patches preserve omitted sections while replacing supplied sections. */
+function mergeConfigPatch(current, patch) {
+  const base = isPlainObject(current) ? current : {}
+  const source = isPlainObject(patch) ? patch : {}
+  return { ...base, ...source }
+}
 
 function prepareHTML(content, format) {
   const legacy = normalizeVditorHtml(content, { force: format === 'vditor', skip: format === 'html' })
@@ -28,7 +41,7 @@ function createImageResolver(props, getHost, onCallbackError) {
   const active = new Set()
   const resolve = async (file, context = {}) => {
     const host = getHost()
-    if (!host.writable() || !host.featureEnabled('images')) return null
+    if (!host.writable() || !isCommandEnabled(host.larkDocConfig, 'image', 'images')) return null
     const next = props.uploader || props.uploadImage
     if (!provider || next !== input) {
       const normalized = normalizeUploader(next, { limits: null })
@@ -39,6 +52,9 @@ function createImageResolver(props, getHost, onCallbackError) {
     }
     const current = generation
     const controller = new AbortController()
+    const onAbort = () => controller.abort(context.signal.reason || 'placeholder-removed')
+    if (context.signal?.aborted) onAbort()
+    else context.signal?.addEventListener('abort', onAbort, { once: true })
     active.add(controller)
     try {
       const uploaded = await provider.upload(file, {
@@ -49,17 +65,19 @@ function createImageResolver(props, getHost, onCallbackError) {
         limits: { maxSize: host.effectiveImageMaxSize },
         onCallbackError,
       })
-      if (current !== generation || !host.writable()) return null
+      if (current !== generation || !host.writable() || !isCommandEnabled(host.larkDocConfig, 'image', 'images')) return null
       return { src: uploaded.url, attchId: uploaded.attchId == null ? null : String(uploaded.attchId) }
     } catch (error) {
       if (isAbortError(error) || current !== generation) return null
       throw error
     } finally {
+      context.signal?.removeEventListener('abort', onAbort)
       active.delete(controller)
     }
   }
   resolve.cancelAll = reason => {
     generation += 1
+    getHost()?.editor?.storage.imageUploadTasks?.cancelAll(reason)
     active.forEach(controller => controller.abort(reason))
     if (provider && provider !== input) provider.clearResume()
   }
@@ -83,6 +101,14 @@ export function createDomRenderer() {
       let workspaceUi = null
       let instance = null
       let runtime
+      let snapshotAbort = null
+      let largeDocumentModel = null
+      let largeDocumentViewport = null
+      let largeDocumentReader = null
+      let largeDocumentDoc = null
+      let largeDocumentPendingDoc = null
+      let largeDocumentReadTimer = null
+      let largeDocumentReadAbort = null
       const requestRender = () => {
         if (destroyed || renderScheduled) return
         renderScheduled = true
@@ -95,10 +121,61 @@ export function createDomRenderer() {
           if (payload.readonly) resolveImageFile.cancelAll('readonly')
           runtime.state.effectiveReadonly = payload.readonly
         }
-        if (name === 'ai-request' && typeof on[name] !== 'function') workspaceController?.startAI(payload)
+        if (name === 'ai-request' && typeof on[name] !== 'function') {
+          if (payload?.action === 'image') workspaceController?.openImageAI(payload.image)
+          else if (payload === 'rewrite' || payload?.action === 'chat') workspaceController?.openSelectionAI()
+          else workspaceController?.startAI(payload)
+        }
         const result = typeof on[name] === 'function' ? on[name](payload) : undefined
         requestRender()
         return result
+      }
+      const resetLargeDocumentLayout = () => {
+        if (largeDocumentReadTimer != null) viewWindow.clearTimeout(largeDocumentReadTimer)
+        largeDocumentReadTimer = null
+        largeDocumentReadAbort?.abort()
+        largeDocumentReadAbort = null
+        largeDocumentViewport?.destroy()
+        largeDocumentViewport = null
+        largeDocumentModel = null
+        largeDocumentDoc = null
+        largeDocumentPendingDoc = null
+        shell.root.removeAttribute('data-ld-segment-count')
+        shell.root.removeAttribute('data-ld-segment-blocks')
+      }
+      const scheduleLargeDocumentLayout = () => {
+        const doc = editor?.state?.doc
+        const large = !!doc && doc.content.size > LARGE_DOCUMENT_SIZE
+        shell.root.classList.toggle('lark-doc-large-document', large)
+        if (!large) {
+          resetLargeDocumentLayout()
+          return
+        }
+        if (largeDocumentDoc === doc && largeDocumentModel) return
+        if (largeDocumentPendingDoc === doc) return
+        if (largeDocumentReadTimer != null) viewWindow.clearTimeout(largeDocumentReadTimer)
+        largeDocumentPendingDoc = doc
+        largeDocumentReadTimer = viewWindow.setTimeout(async () => {
+          largeDocumentReadTimer = null
+          largeDocumentPendingDoc = null
+          if (destroyed || !editor || editor.state.doc !== doc) return
+          const model = createSegmentedDocumentModel(doc)
+          largeDocumentReadAbort?.abort()
+          const abort = new AbortController()
+          largeDocumentReadAbort = abort
+          largeDocumentModel = model
+          largeDocumentDoc = doc
+          largeDocumentViewport?.destroy()
+          largeDocumentViewport = createLargeDocumentViewportController({ editorDom: editor.view.dom, model, viewWindow })
+          largeDocumentViewport.refresh(model)
+          largeDocumentReader ||= createSegmentedDocumentReader()
+          const result = await largeDocumentReader.read(model, { signal: abort.signal })
+          if (destroyed || abort.signal.aborted || editor.state.doc !== doc || largeDocumentModel !== model) return
+          model.applyWorkerResult(result)
+          largeDocumentViewport.refresh(model)
+          shell.root.setAttribute('data-ld-segment-count', String(model.segmentCount))
+          shell.root.setAttribute('data-ld-segment-blocks', String(model.segmentBlocks))
+        }, 120)
       }
       const resolveImageFile = createImageResolver(props, () => runtime.host, error => emit('error', error))
       runtime = createNativeEditorHost({
@@ -108,6 +185,7 @@ export function createDomRenderer() {
       documentHost.restoreMode()
       const host = {
         getEditor: () => editor,
+        getDocumentAccess: () => editorController,
         getHTML: () => editorController?.getHTML() || '',
         getJSON: () => editorController?.getJSON() || null,
         getText: () => editorController?.getText() || '',
@@ -121,6 +199,7 @@ export function createDomRenderer() {
         getWindow: () => viewWindow,
         getNavigator: () => viewWindow.navigator,
         getAIProvider: () => props.aiProvider,
+        focusImageAI: () => { requestRender(); Promise.resolve().then(() => { if (!destroyed) workspaceUi?.focusImageAI() }) },
         hydrateOutline: outline => documentHost.hydrateOutline(outline),
         bindAITransaction: handler => editor?.on('transaction', handler),
         unbindAITransaction: handler => editor?.off('transaction', handler),
@@ -139,6 +218,9 @@ export function createDomRenderer() {
         importDocument: event => workspaceController.importDocument(event),
         exportDocument: value => workspaceController.exportDocument(value),
         toggleHistory: () => workspaceController.toggleHistory(),
+        openVersionHistory: renderNow(() => documentHost.openVersionPanel()),
+        openSaveVersion: renderNow(() => documentHost.openSaveVersionDialog()),
+        openCommentHistory: renderNow(() => { documentHost.closeHeaderMenu(); documentHost.openCommentHistory() }),
         closeTemplate: () => workspaceController.closeTemplatePicker(),
         setTemplateQuery: value => { state.templateQuery = value },
         chooseTemplate: id => workspaceController.chooseTemplate(id),
@@ -146,10 +228,14 @@ export function createDomRenderer() {
         createSnapshot: () => workspaceController.createSnapshot(),
         restoreSnapshot: id => workspaceController.restoreSnapshot(id),
         closeAI: () => workspaceController.closeAI(),
+        removeAIImage: () => workspaceController.removeAIImage(),
+        removeAIReference: () => workspaceController.removeAIReference(),
         setAIContext: value => { state.aiContextScope = value; workspaceController.resetAIPreview() },
         setAIAction: value => { state.aiAction = value },
         setAILanguage: value => { state.aiLanguage = value },
         setAIPrompt: value => { state.aiPrompt = value },
+        isAIChatCurrent: epoch => !destroyed && state.aiOpen && state.aiChatEpoch === epoch
+          && workspaceController.aiChatScopeValid(state.aiSelectionChat ? workspaceController._aiChatScope : workspaceController._aiImageScope),
         startAI: () => workspaceController.startAI(state.aiAction),
         stopAI: () => workspaceController.stopAI(),
         sendAIChat: () => workspaceController.sendAIChat(),
@@ -183,6 +269,7 @@ export function createDomRenderer() {
         if (destroyed) return
         runtime.flush()
         runtime.bindSession()
+        workspaceController.syncImageAI()
         const projected = createWorkspaceViewState(state, props)
         const templateItems = state.templateItems || []
         const query = String(state.templateQuery || '').trim().toLocaleLowerCase()
@@ -193,6 +280,8 @@ export function createDomRenderer() {
           saveStatus: state.saveStatus,
           storageError: state.storageError,
           readonly: documentHost.effectiveReadonly,
+          versionCanCreate: documentHost.versionCanCreate,
+          commentHistoryAvailable: documentHost.commentCanViewHistory?.() === true,
           importing: state.importing,
           persistenceLabel: workspaceController.persistenceLabel(),
           persistenceCaveat: workspaceController.persistenceCaveat(),
@@ -204,6 +293,13 @@ export function createDomRenderer() {
           historyOpen: state.historyOpen,
           snapshots: state.snapshots,
           aiOpen: state.aiOpen,
+          aiImageChat: state.aiImageChat,
+          aiSelectionChat: state.aiSelectionChat,
+          aiReference: state.aiReference,
+          aiCanRetry: !!workspaceController._aiLastChat,
+          aiImage: state.aiImage,
+          aiImageAvailable: !!workspaceController.getAIAdapter()?.supportsImages,
+          aiServiceAvailable: !!workspaceController.getAIChatAdapter(),
           aiActions: state.aiActions,
           aiContextOptions: state.aiContextOptions,
           aiContextScope: state.aiContextScope,
@@ -228,15 +324,19 @@ export function createDomRenderer() {
         shell.root.classList.toggle('lark-doc-slides', state.slides)
         shell.root.classList.toggle('lark-doc-fullscreen', !!state.fullscreen)
         shell.root.classList.toggle('lark-doc-reading', readonly)
+        shell.root.classList.toggle('lark-doc-has-image-ai', !!(state.aiOpen && (state.aiImageChat || state.aiSelectionChat)))
         shell.root.classList.toggle('lark-doc-mode-suggest', state.mode === 'suggest')
         shell.root.classList.toggle('lark-doc-titlebar-fixed', !!state.editorConfig.layout.titleBarFixed)
         shell.root.classList.toggle('lark-doc-toolbar-fixed', !!state.editorConfig.layout.toolbarFixed)
         shell.root.classList.toggle('lark-doc-dom-migration-ready', !!editor)
+        scheduleLargeDocumentLayout()
         ;['standard', 'wide', 'full'].forEach(mode => shell.root.classList.toggle(`lark-doc-width-${mode}`, state.widthMode === mode))
         shell.root.setAttribute('data-interaction-mode', documentHost.interactionMode)
         shell.root.setAttribute('data-interaction-reason', documentHost.interactionReason)
         shell.root.setAttribute('data-title', state.title || '')
-        shell.editorEl.setAttribute('contenteditable', readonly ? 'false' : 'true')
+        // The inner ProseMirror owns editability. Toggling this ancestor on
+        // every render makes the entire document's editing/layout state dirty
+        // and fights the host's MutationObserver on the next microtask.
         shell.statusSummary.textContent = `${state.wordCount}${documentHost.effectiveMaxLength > 0 ? ` / ${documentHost.effectiveMaxLength}` : ''} 字 · ${state.outline.length} 个标题`
         shell.statusHint.textContent = readonly ? '仅阅读' : '输入 / 快速插入'
         shell.modeToastText.textContent = state.modeToast
@@ -245,24 +345,48 @@ export function createDomRenderer() {
         shell.error.hidden = !state.error
         reopenOutline.hidden = state.outlineOpen || !documentHost.featureEnabled('outline')
         shell.dropLine.style.display = state.dropPosition === null ? 'none' : ''
+        shell.root.classList.toggle('is-image-file-dragging', state.dropPosition !== null && !state.dragging)
         shell.dropLine.style.top = `${state.dropLineTop}px`
       }
       const refreshChange = transaction => {
-        documentHost.scheduleDocumentState()
+        documentHost.scheduleDocumentState(transaction)
+        snapshotAbort?.abort()
         if (transaction?.getMeta && (transaction.getMeta('larkDocBlockIds') || transaction.getMeta('larkDocIndentNormalized'))) return
         clearTimeout(state.pendingChangeTimer)
-        const publish = () => {
+        if (state.pendingChangeIdle && typeof viewWindow.cancelIdleCallback === 'function') viewWindow.cancelIdleCallback(state.pendingChangeIdle)
+        state.pendingChangeIdle = null
+        const publish = async () => {
           if (destroyed || !editorController) return
-          const html = editorController.getHTML()
-          const payload = { html: applyMediaHtmlMode(html, resolveMediaOptions(state.editorConfig)), json: editorController.getJSON(), text: editorController.getText() }
-          state.html = html
+          const doc = editor.state.doc
+          const media = resolveMediaOptions(state.editorConfig)
+          const abort = new AbortController()
+          snapshotAbort = abort
+          const payload = doc.content.size > 500000
+            ? await editorController.getSnapshotAsync({ signal: abort.signal, media })
+            : { html: applyMediaHtmlMode(editorController.getHTML(), media), json: editorController.getJSON(), text: editorController.getText() }
+          if (!payload || abort.signal.aborted || destroyed || editor.state.doc !== doc) return
+          state.html = payload.html
           workspaceController.queueSave()
           emit('update', payload)
           emit('change', payload)
         }
-        const delay = state.editorConfig.performance.changeDebounce
-        state.pendingChangeTimer = delay > 0 ? setTimeout(publish, delay) : null
-        if (!delay) publish()
+        const baseDelay = Number(state.editorConfig.performance.changeDebounce) || 0
+        const docSize = editor?.state?.doc?.content?.size || 0
+        // Let the editor stay responsive while a large document settles. The
+        // final payload is still emitted once after the quiet period.
+        // A large document must stay interactive through a burst of typing and
+        // scrolling.  Serialising its HTML/JSON/text payload is intentionally
+        // kept behind a quiet window; requestIdleCallback alone is insufficient
+        // because one serialization is still a long, non-preemptible task.
+        const delay = docSize > 500000 ? Math.max(baseDelay, 2000) : baseDelay
+        const scheduleIdle = () => {
+          if (destroyed) return
+          if (typeof viewWindow.requestIdleCallback === 'function') {
+            state.pendingChangeIdle = viewWindow.requestIdleCallback(() => { state.pendingChangeIdle = null; publish() }, { timeout: 1000 })
+          } else publish()
+        }
+        state.pendingChangeTimer = delay > 0 ? setTimeout(() => { state.pendingChangeTimer = null; scheduleIdle() }, delay) : null
+        if (!delay) scheduleIdle()
       }
       const initialContent = props.initialContent == null ? state.html : props.initialContent
       element.appendChild(shell.root)
@@ -276,6 +400,12 @@ export function createDomRenderer() {
           editable: !documentHost.effectiveReadonly,
           extensions: createLarkDocExtensions({
             ...props,
+            getCalendarEventOptions: () => ({ onJoin: props.onCalendarEventJoin, refetch: props.calendarEventRefetch }),
+            getIsvOptions: () => ({ onButtonAction: props.onIsvButtonAction, onCatalogJump: props.onIsvCatalogJump }),
+            getImageOptions: () => ({ enabled: isCommandEnabled(state.editorConfig, 'image', 'images'), aiEnabled: state.editorConfig.features.ai !== false, onAction: documentHost.runImageAction, onComment: documentHost.openImageComments, canLoad: src => createNetworkPolicy(state.editorConfig.network).allows(src) }),
+            isColumnsEnabled: () => state.editorConfig.features.columns,
+            isAgendaEnabled: () => isCommandEnabled(state.editorConfig, 'agenda', 'insert'),
+            getMathOptions: () => ({ enabled: state.editorConfig.features.math, scope: documentHost.session }),
             collab: documentHost.collabOptions || undefined,
             config: state.editorConfig,
             maxLength: documentHost.effectiveMaxLength,
@@ -288,7 +418,11 @@ export function createDomRenderer() {
             onBackspace: documentHost.deletePreviousBlockOnBackspace,
             onError: message => { state.error = message },
           }),
-          onUpdate: ({ transaction }) => refreshChange(transaction),
+          // The document can cross the large-document threshold through a
+          // runtime setContent/insert transaction after the initial render.
+          // Re-project once after the view has applied that transaction so
+          // the CSS fast path is enabled (or removed) at the same boundary.
+          onUpdate: ({ transaction }) => { refreshChange(transaction); requestRender() },
           onTransaction: () => { if (documentHost.editor) runtime.transaction(); requestRender() },
           onSelectionUpdate: () => { if (documentHost.editor) runtime.selection(); requestRender() },
           onFocus: () => { if (documentHost.editor) runtime.selection() },
@@ -304,7 +438,17 @@ export function createDomRenderer() {
           onImportReport: report => workspaceController.onImportReport(report),
           getMaxLength: () => documentHost.effectiveMaxLength,
           getNetwork: () => createNetworkPolicy(state.editorConfig.network),
-          onBeforeContentReplace: () => { resolveImageFile.cancelAll('document-change'); documentHost.closeBlockMenu(); state.handleRange = null; documentHost._foldsReady = false },
+          onBeforeContentReplace: () => {
+            resolveImageFile.cancelAll('document-change')
+            workspaceController.closeAI(false)
+            documentHost.closeBlockMenu()
+            // A content replacement invalidates the previous block position.
+            // Clear the native handle itself, otherwise its stale button can
+            // sit over the first cell of the new document and intercept input.
+            documentHost.handleRange = null
+            state.handleRange = null
+            documentHost._foldsReady = false
+          },
           onAfterContentReplace: () => { documentHost.restoreFolds(); state.savedSelection = null; documentHost.refreshDocumentState() },
         })
         runtime.mount(editor, editorController)
@@ -338,7 +482,7 @@ export function createDomRenderer() {
       ;['insertContent', 'insertText', 'undo', 'redo', 'save', 'getWorkspace', 'callWorkspace', 'record', 'onReady',
         'queueSave', 'flushOnLeave', 'saveNow', 'setAutoSave', 'getAutoSave', 'storageFailure', 'toggleHistory', 'createSnapshot', 'restoreSnapshot',
         'importDocument', 'exportDocument', 'mapAI', 'currentAIContext', 'resetAIPreview', 'startAI', 'sendAIChat',
-        'regenerateAI', 'stopAI', 'closeAI', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
+        'regenerateAI', 'stopAI', 'closeAI', 'openImageAI', 'openSelectionAI', 'removeAIImage', 'removeAIReference', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
         'ignoreReviewIssue', 'applyAIProposal'].forEach(method => { instance[method] = (...args) => workspaceController[method](...args) })
       ;['executeCommand', 'setMode', 'openVersionPanel', 'closeVersionPanel', 'openSaveVersionDialog',
         'toggleSharePopover', 'openPermissionDialog', 'openExportDialog', 'createCommentFromSelection'].forEach(method => {
@@ -356,14 +500,26 @@ export function createDomRenderer() {
         resolveImageFile, stageUi: documentHost._stageUi, topBarUi: documentHost._topBarUi, toolbarUi: documentHost._toolbarUi,
         helpFabUi: documentHost._helpFabUi, outlineUi: documentHost._panelsUi?.outline,
         editorUiRegistry, viewWindow, props, requestRender, nativeHost: runtime,
-        cleanup: () => { resolveImageFile.cancelAll('destroy'); destroyed = true; renderScheduled = false },
+        cleanup: () => {
+          resolveImageFile.cancelAll('destroy')
+          snapshotAbort?.abort()
+          resetLargeDocumentLayout()
+          if (state.pendingChangeIdle && typeof viewWindow.cancelIdleCallback === 'function') viewWindow.cancelIdleCallback(state.pendingChangeIdle)
+          clearTimeout(state.pendingChangeTimer)
+          state.pendingChangeIdle = null
+          destroyed = true
+          renderScheduled = false
+        },
       }
     },
     update(handle, props = {}) {
       if (!handle?.instance || handle.destroyed) return
       if (['session', 'documentId', 'uploader', 'uploadImage'].some(key => Object.prototype.hasOwnProperty.call(props, key) && props[key] !== handle.props[key])) handle.resolveImageFile.cancelAll('document-change')
       Object.assign(handle.props, props)
-      if (Object.prototype.hasOwnProperty.call(props, 'config')) handle.state.editorConfig = createLarkDocConfig(props.config)
+      if (Object.prototype.hasOwnProperty.call(props, 'config')) {
+        handle.state.editorConfig = createLarkDocConfig(mergeConfigPatch(handle.state.editorConfig, props.config))
+        if (!isCommandEnabled(handle.state.editorConfig, 'image', 'images')) handle.resolveImageFile.cancelAll('images-disabled')
+      }
       if (Object.prototype.hasOwnProperty.call(props, 'readonly')) handle.instance.setReadonly(props.readonly === true)
       if (Object.prototype.hasOwnProperty.call(props, 'initialTitle')) handle.instance.setTitle(props.initialTitle)
       if (Object.prototype.hasOwnProperty.call(props, 'session')) {
@@ -371,7 +527,7 @@ export function createDomRenderer() {
         previous?.detachEditor?.(handle.editor)
         handle.workspaceController.initializeSession()
         handle.editorController.session = handle.workspaceController.getSession()
-        handle.workspaceController.getSession()?.attachEditor?.(handle.editor)
+        handle.workspaceController.getSession()?.attachEditor?.(handle.editor, handle.editorController)
       }
       handle.nativeHost.updateProps()
       handle.requestRender()

@@ -5,7 +5,7 @@
  * 采用 mixin 而非子组件：菜单 DOM 挂在主模板的句柄内，依赖 Vue 2 选项合并语义，拆子组件会破坏定位逻辑。
  */
 import { closeHistory } from '@tiptap/pm/history'
-import { clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, stepBlockIndent } from '../documentOperations'
+import { BLOCK_ID_PATTERN, clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, safeUrl, stepBlockIndent } from '../documentOperations'
 import { isBlockActionEnabled } from '../larkDocConfig'
 import { blockActions, blockTypeActions } from './constants'
 
@@ -368,6 +368,8 @@ export default {
         ? (this.columnsRangeFor(selectedRange) || this.detailsRangeFor(selectedRange) || selectedRange)
         : sectionRange || selectedRange
       if (!range) return
+      if (id === 'share') return this.handleIsTable && this.openSelectionShareDialog(range.from)
+      if (id === 'copyLink') return this.copyBlockLink(range)
       if (id === 'copy' || id === 'cut') { this.copyBlock(range, id === 'cut'); return }
       if (id === 'translate') { this.$emit('ai-request', 'translate'); this.editor.view.focus(); return }
       if (id === 'delete') { this.deleteBlockRange(range); return }
@@ -383,6 +385,23 @@ export default {
         const targetIndex = id === 'moveUp' ? index - 1 : endIndex + 1
         if (targetIndex >= 0 && targetIndex <= resolved.parent.childCount) moveBlockRange(this.editor, from, to, resolved.posAtIndex(targetIndex, resolved.depth))
       }
+    },
+    async copyBlockLink(range) {
+      if (!this.shareCan('canView')) return false
+      const editor = this.editor, session = this.session, doc = editor?.state.doc
+      const node = nodeAtSafe(doc, range?.from), documentLink = this.shareDocumentLink()
+      if (node?.type.name !== 'table' || !BLOCK_ID_PATTERN.test(node.attrs.blockId || '')) return false
+      const current = () => this.editor === editor && !editor.isDestroyed && this.session === session
+        && editor.state.doc === doc && this.shareCan('canView') && this.shareDocumentLink() === documentLink
+      try {
+        const url = new URL(documentLink, window.location.href)
+        if (!/^https?:$/.test(url.protocol) || !safeUrl(url.href)) return false
+        url.hash = `share-${node.attrs.blockId}`
+        if (!await this.copyShareText(url.href)) throw new Error('复制失败，请检查剪贴板权限')
+        if (!current()) return false
+        this.showShareToast('success', '复制成功')
+        return true
+      } catch (error) { if (current()) this.error = error?.message || '复制失败，请检查剪贴板权限'; return false }
     },
     async copyBlock(range, cut = false) {
       if (!this.writable() || !range) return false

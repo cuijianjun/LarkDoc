@@ -74,7 +74,7 @@ const Isv = Node.create({
    *     （④-5 实测就是滚动，不是换选区）。
    */
   addOptions() {
-    return { onButtonAction: null, onCatalogJump: null }
+    return { onButtonAction: null, onCatalogJump: null, getRuntimeOptions: null }
   },
 
   addAttributes() {

@@ -28,6 +28,7 @@
  */
 import {
   createCommentPanel,
+  createCommentComposer,
   createOutlinePanel,
   createSaveVersionDialog,
   createVersionPanel,
@@ -49,6 +50,8 @@ export default {
     versionSelectedId() { this.refreshPanels() },
     versionPreview: { deep: true, handler() { this.refreshPanels() } },
     versionPreviewError() { this.refreshPanels() },
+    versionPreviewLoading() { this.refreshPanels() },
+    versionRestoreConfirmOpen() { this.refreshPanels() },
     versionError() { this.refreshPanels() },
     versionLoading() { this.refreshPanels() },
     versionRestoreBusy() { this.refreshPanels() },
@@ -63,13 +66,48 @@ export default {
 
     // —— 评论：面板几何 / 草稿 / 私有开关 / 两套菜单 ——
     commentPanels: { deep: true, handler() { this.refreshPanels() } },
-    commentDrafts: { deep: true, handler() { this.refreshPanels() } },
+    commentDrafts: { deep: true, handler() { this.refreshPanels(); this.$nextTick(() => this.placeCommentPanels()) } },
     commentPrivateIds() { this.refreshPanels() },
     commentMoreThreadId() { this.refreshPanels() },
     commentMenuThreadId() { this.refreshPanels() },
     commentMenuCommentId() { this.refreshPanels() },
+    commentEditing: { deep: true, handler() { this.refreshPanels(); this.$nextTick(() => this.placeCommentPanels()) } },
+    commentComposer: { deep: true, handler() { this.refreshPanels() } },
+    commentReaction() { this.refreshPanels() },
+    commentReactionCatalog() { this.refreshPanels() },
+    commentReactionRecent() { this.refreshPanels() },
+    commentHistoryOpen() { this.refreshPanels() },
+    commentHistoryStyle() { this.refreshPanels() },
+    commentServices: { deep: true, handler() { this.refreshPanels(); this.$nextTick(() => this.placeCommentPanels()) } },
+    commentAttachments: { deep: true, handler() { this.refreshPanels(); this.$nextTick(() => this.placeCommentPanels()) } },
+    commentSubmitting() { this.refreshPanels() },
+    commentDeleting: { deep: true, handler() { this.refreshPanels() } },
+    commentContextEpoch() { this.refreshPanels() },
   },
   methods: {
+    openImageComments(image, open, viewer) {
+      if (this._imageCommentTarget) {
+        if (this._commentComposerHost === this._imageCommentTarget.host) this.cancelCommentComposer()
+        this._imageCommentsUi?.destroy()
+        this._imageCommentTarget.host.remove()
+        this._imageCommentTarget = null
+        this._imageCommentsUi = null
+      }
+      if (!open) return true
+      const pos = this.commentBlockPos(image.blockId)
+      const node = pos >= 0 ? this.editor?.state.doc.nodeAt(pos) : null
+      if (node?.type.name !== 'image' || node.attrs.blockId !== image.blockId || node.attrs.src !== image.src) { this.error = '原图片已变化，请重新打开查看器'; return false }
+      const host = document.createElement('aside')
+      host.className = 'lark-doc-image-viewer-comments'
+      const title = document.createElement('header')
+      host.appendChild(title)
+      viewer.appendChild(host)
+      this._imageCommentTarget = { host, title, blockId: image.blockId, viewer }
+      this._imageCommentsUi = createCommentPanel({ host, handlers: this.panelsHandlers().comment })
+      if (!this.beginCommentComposer(pos, host)) { this.openImageComments(null, false); return false }
+      this.refreshPanels()
+      return true
+    },
     /** 挂载四个面板（由主组件 `mounted` 调用，不依赖编辑器实例）。 */
     mountPanels() {
       if (this._panelsUi) return
@@ -82,14 +120,31 @@ export default {
         version: createVersionPanel({ host: panelHost, handlers: handlers.version }),
         saveVersion: createSaveVersionDialog({ host: panelHost, handlers: handlers.saveVersion }),
         comment: createCommentPanel({ host: panelHost, handlers: handlers.comment }),
+        composer: this.createCommentComposerUi(),
       }
+      this._commentComposerUiEpoch = this.commentContextEpoch
       this.refreshPanels()
     },
     destroyPanels() {
+      this.openImageComments(null, false)
       const ui = this._panelsUi
       if (!ui) return
       Object.keys(ui).forEach((key) => ui[key].destroy())
       this._panelsUi = null
+    },
+
+    createCommentComposerUi() {
+      const epoch = this.commentContextEpoch
+      const current = () => epoch === this.commentContextEpoch && !this.editor?.isDestroyed && !this._isDestroyed
+      return createCommentComposer({ host: this.$refs.panelHost, handlers: {
+        isCurrentContext: current,
+        onInput: value => { if (current()) this.setCommentComposerDraft(value) },
+        onCancel: () => { if (current()) this.cancelCommentComposer() },
+        onSubmit: () => { if (current()) return this.submitCommentComposer() },
+        onAttachments: files => { if (current()) return this.addCommentAttachments('', files) },
+        onRemoveAttachment: id => { if (current()) this.removeCommentAttachment('', id) },
+        onRetryAttachment: id => { if (current()) return this.retryCommentAttachment('', id) },
+      } })
     },
 
     /** handler 全表（键名与 `src/ui/panels.js` 里的 `call('onXxx')` 一一对应）。 */
@@ -103,7 +158,10 @@ export default {
         version: {
           // 唯一关闭出口：`Esc` 在这条线上是「拦冒泡」而不是关闭（SFC 头负结论 1）。
           onClose: () => this.closeVersionPanel(),
-          onRestore: () => this.restoreSelectedVersion(),
+          onRestore: () => this.requestVersionRestore(),
+          onCancelRestore: () => this.closeVersionRestoreConfirm(),
+          onConfirmRestore: () => this.confirmVersionRestore(),
+          onMountPreview: (element, record) => this.mountVersionDocumentPreview(element, record),
           onPrev: () => this.versionPrev(),
           onNext: () => this.versionNext(),
           onSelect: (id) => this.selectVersion(id),
@@ -116,14 +174,30 @@ export default {
           onNoticeLink: () => { this.openVersionPanel(); this.dismissVersionNotice() },
         },
         comment: {
+          isCurrentContext: epoch => epoch === this.commentContextEpoch && !this.editor?.isDestroyed && !this._isDestroyed,
           onActivate: (id) => this.activateComment(id),
           onControl: (controlId, threadId) => this.runCommentControl(controlId, threadId),
-          onReplyControl: (ctlId, threadId, replyId) => this.runCommentReplyControl(ctlId, threadId, replyId),
+          onReplyControl: (ctlId, threadId, replyId, event) => this.runCommentReplyControl(ctlId, threadId, replyId, event),
+          onQuickReaction: (threadId, replyId) => this.quickCommentReaction(threadId, replyId),
+          onReaction: (threadId, replyId, emoji) => this.toggleCommentReaction(threadId, replyId, emoji),
+          onChooseReaction: emoji => this.selectCommentReaction(emoji),
+          onCloseReaction: () => this.closeCommentReaction(),
+          onCloseReplyMenu: (threadId, replyId) => this.closeCommentReplyMenu(threadId, replyId),
           onMenuItem: (menuId, threadId, replyId) => this.runCommentMenuItem(menuId, threadId, replyId),
           onDraft: (threadId, value) => this.setCommentDraft(threadId, value),
           onClearDraft: (threadId) => this.clearCommentDraft(threadId),
           onSubmit: (threadId) => this.submitCommentDraft(threadId),
           onTogglePrivate: (threadId) => this.toggleCommentPrivate(threadId),
+          onEditConfirm: (threadId, commentId, text) => this.confirmCommentEdit(threadId, commentId, text),
+          onEditCancel: () => this.cancelCommentEdit(),
+          onEditDraft: (threadId, commentId, value) => this.setCommentEditDraft(threadId, commentId, value),
+          onCloseHistory: () => this.closeCommentHistory(),
+          onCancelTranslation: (threadId, commentId) => this.cancelCommentService(threadId, commentId),
+          onAttachments: (threadId, files) => this.addCommentAttachments(threadId, files),
+          onRemoveAttachment: (threadId, id) => this.removeCommentAttachment(threadId, id),
+          onRetryAttachment: (threadId, id) => this.retryCommentAttachment(threadId, id),
+          onPreviewAttachment: (threadId, commentId, index) => this.openCommentAttachment(threadId, commentId, index),
+          onDeleteThread: threadId => this.deleteCommentThread(threadId),
         },
       }
     },
@@ -175,6 +249,12 @@ export default {
           title: this.versionCanRestoreReason,
           style: this.versionDisabledStyle(restoreDisabled),
         },
+        confirm: {
+          open: !!this.versionRestoreConfirmOpen,
+          text: this.versionRestoreConfirmText || '',
+          busy: !!this.versionRestoreBusy,
+          applyDisabled: !this.versionCanRestore,
+        },
         pager: {
           cursor: this.versionCursorLabel,
           prev: { disabled: prevDisabled, style: this.versionDisabledStyle(prevDisabled) },
@@ -212,13 +292,15 @@ export default {
         row = `块数 ${prev} → ${next} （${delta >= 0 ? '+' : ''}${delta}）`
       }
       return {
-        title: (preview && preview.label) || '未命名版本',
+        title: preview?.document ? preview.document.title || this.localTitle || '未命名文档' : (preview && preview.label) || '未命名版本',
         kind: this.versionKindLabel(selected && selected.kind),
         meta,
         degraded: this.versionPreviewError || '',
         diff: diff ? { row } : null,
+        document: preview?.document || null,
+        renderKey: preview ? `${preview.id}:${JSON.stringify(this.larkDocConfig?.network || {})}` : '',
         // 有载荷才给文案；空串 = 走「该版本没有可取回的正文」那条兜底。
-        payload: preview && preview.hasPayload
+        payload: this.versionPreviewLoading ? '正在载入版本正文…' : preview && preview.hasPayload && !preview.document
           ? `该版本正文为二进制快照（${preview.byteLength} 字节），需由协同运行时解码后才能渲染。`
           : '',
       }
@@ -245,19 +327,14 @@ export default {
     },
 
     buildCommentState() {
+      this.reconcileCommentRequests()
       const panels = this.commentPanels || []
       const controls = this.commentControls || []
       const menus = this.commentMenuItems || []
       const allowedReply = this.commentAllowed('reply')
-      return {
-        open: panels.length > 0,
-        title: this.commentPanelTitle,
-        controls,
-        replyControls: this.commentReplyControls || [],
-        moreTitle: this.commentPrivateTitle,
-        moreHint: this.commentPrivateHint,
-        items: panels.map((item) => ({
+      const itemState = (item) => ({
           id: item.id,
+          blockId: item.blockId,
           // 一次合成（SFC 是数组合并语义，`applyStyle` 是替换语义）。
           style: {
             ...this.commentPanelStyle(item),
@@ -273,35 +350,85 @@ export default {
             name: this.commentAuthorName(reply.author),
             time: this.commentTimeAt(reply.createdAt),
             body: reply.content,
+            attachments: this.commentImageState(reply.attachments),
+            translation: this.commentServiceOf(item.id, reply.id),
+            report: this.commentServiceOf(item.id, reply.id, 'report'),
+            reactions: (reply.reactions || []).map(reaction => ({
+              ...reaction,
+              mine: reaction.users.includes(this.commentAuthor.id),
+              names: reaction.users.map(id => id === this.commentAuthor.id ? this.commentAuthor.name || '我' : item.replies.find(reply => reply.author.id === id)?.author.name || id),
+            })),
+            edited: !!reply.editedAt,
+            editing: this.commentEditing?.threadId === item.id && this.commentEditing?.commentId === reply.id,
+            editValue: this.commentEditing?.threadId === item.id && this.commentEditing?.commentId === reply.id ? this.commentEditing.value : '',
+            editBusy: !!this.commentEditing?.busy,
             menuOpen: this.commentMenuThreadId === item.id && this.commentMenuCommentId === reply.id,
             menus: menus.map((menu) => ({
               id: menu.id,
               label: menu.label,
               submenu: !!menu.submenu,
               visible: this.commentMenuVisible(menu, reply),
+              disabled: this.commentMenuDisabled(menu.id) || menu.id === 'translate' && !reply.content.trim(),
             })),
           })),
           textarea: {
             value: this.commentDraftOf(item.id),
+            replyTo: this.commentReplyTargets[item.id] || null,
             readonly: !allowedReply,
             height: this.commentTextareaHeight(item),
           },
           hasDraft: this.commentHasDraft(item.id),
+          attachments: this.commentAttachmentDraftState(item.id),
+          canAttach: this.commentCanAttach(),
+          submitBusy: !!this.commentSubmitting[item.id],
+          sendReady: allowedReply && !this.commentSubmitting[item.id] && this.commentDraftReady(item.id, this.commentDraftOf(item.id)),
           allowedReply,
           moreOpen: this.commentMoreThreadId === item.id,
           privateOn: this.commentPrivate(item.id),
+        })
+      return {
+        open: panels.length > 0 || this.commentHistoryOpen,
+        title: this.commentPanelTitle,
+        contextEpoch: this.commentContextEpoch,
+        reaction: this.commentReaction,
+        reactionCatalog: this.commentReactionCatalog,
+        reactionRecent: this.commentReactionRecent,
+        controls,
+        replyControls: this.commentReplyControls || [],
+        moreTitle: this.commentPrivateTitle,
+        moreHint: this.commentPrivateHint,
+        historyOpen: this.commentHistoryOpen,
+        historyStyle: this.commentHistoryStyle,
+        historyItems: (this.commentThreads || []).filter(item => item.resolved).map(item => ({ ...itemState(item),
+          canReopen: this.commentAllowed('reopen') && !this.commentDeleting[item.id],
+          canDelete: this.commentAllowed('remove') && typeof this.commentProvider()?.deleteThread === 'function' && !this.commentDeleting[item.id],
+          deleteBusy: !!this.commentDeleting[item.id],
         })),
+        items: panels.map(itemState),
       }
     },
 
     refreshPanels() {
       const ui = this._panelsUi
       if (!ui) return
+      if (this._commentComposerUiEpoch !== this.commentContextEpoch) {
+        ui.composer.destroy()
+        ui.composer = this.createCommentComposerUi()
+        this._commentComposerUiEpoch = this.commentContextEpoch
+      }
       const state = this.buildPanelsState()
       ui.outline.update(state.outline)
       ui.version.update(state.version)
       ui.saveVersion.update(state.saveVersion)
       ui.comment.update(state.comment)
+      ui.composer?.update({ open: !!this.commentComposer, ...(this.commentComposer || {}), host: this._commentComposerHost, author: this.commentAuthor.name || '我',
+        attachments: this.commentAttachmentDraftState(''), canAttach: this.commentCanAttach(), readonly: !this.commentAllowed('create'), sendReady: this.commentAllowed('create') && this.commentDraftReady('', this.commentComposer?.value) })
+      const target = this._imageCommentTarget
+      if (target && this._imageCommentsUi) {
+        const items = state.comment.items.filter(item => item.blockId === target.blockId)
+        target.title.textContent = `评论（${items.length}）`
+        this._imageCommentsUi.update({ ...state.comment, historyOpen: false, open: !!items.length, items: items.map(item => ({ ...item, style: { position: 'relative', top: 'auto', left: 'auto', height: 'auto' } })) })
+      }
     },
   },
 }

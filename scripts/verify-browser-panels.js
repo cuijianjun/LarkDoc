@@ -41,7 +41,10 @@ const path = require('path')
 const { chromium } = require('playwright-core')
 
 const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
-const TEMPLATE_BASE = BASE.replace(/\/lark-doc\/?$/, '/lark-doc-templates')
+const templateUrl = new URL(BASE)
+templateUrl.pathname = templateUrl.pathname.replace(/\/lark-doc\/?$/, '/lark-doc-templates')
+templateUrl.search = ''
+const TEMPLATE_BASE = templateUrl.href
 const results = []
 
 function findChromium() {
@@ -200,8 +203,8 @@ const measureComments = () => {
     } : null,
     textarea: textarea ? {
       label: textarea.getAttribute('aria-label'),
-      readonly: textarea.readOnly,
-      value: textarea.value,
+      readonly: textarea.tagName === 'TEXTAREA' ? textarea.readOnly : textarea.getAttribute('aria-readonly') === 'true',
+      value: textarea.tagName === 'TEXTAREA' ? textarea.value : textarea.textContent,
       wrapHeight: textareaWrap ? Math.round(textareaWrap.getBoundingClientRect().height) : null,
       wrapInline: textareaWrap ? textareaWrap.getAttribute('style') : null,
       operation: (() => {
@@ -319,7 +322,7 @@ const measureSaveDialog = () => {
   const rect = dialog ? dialog.getBoundingClientRect() : null
   const header = dialog ? dialog.querySelector('.lark-doc-save-version-header') : null
   const closeBtn = header ? header.querySelector('.lark-doc-save-version-close') : null
-  const input = document.querySelector('#lark-doc-save-version-input')
+  const input = dialog ? dialog.querySelector('.lark-doc-save-version-input') : null
   const size = (node) => {
     if (!node) return null
     const r = node.getBoundingClientRect()
@@ -806,26 +809,24 @@ const vueCall = (page, body) => page.evaluate((source) => {
       filled.pager.cursor === '编辑记录 1/3',
     filled ? `${filled.days.map((d) => `${d.label}:${d.items.length}`).join(' ')} / ${filled.pager.cursor}` : '没渲染')
 
-  record('[版本] 有数据 → 降级文案消失、还原钮可用、上一项禁用下一项可用',
-    !!filled && filled.empties.length === 0 && filled.restore.disabled === false &&
+  record('[版本] 载入记录但二进制无效 → 不允许还原，仍可浏览下一项',
+    !!filled && filled.empties.length === 0 && filled.restore.disabled === true &&
       filled.pager.steps[0].disabled === true && filled.pager.steps[1].disabled === false,
     filled ? `empties=${filled.empties.length} restore=${filled.restore.disabled}` : '没渲染')
 
-  record('[版本] 预览头 = 版本名 + 类型徽标（未 selectVersion 时回落「未命名版本」）',
-    !!filled && !!filled.preview && filled.preview.title === '未命名版本' && filled.preview.kind === '手动保存',
+  record('[版本] 打开后自动选择最新记录，预览头显示版本名与类型',
+    !!filled && !!filled.preview && filled.preview.title === '终稿' && filled.preview.kind === '手动保存',
     filled && filled.preview ? `${filled.preview.title}/${filled.preview.kind}` : '没渲染')
 
-  // 没有 preview 载荷时只出前两项（时间 / 作者），后两项**真不进 DOM**——这是刻意的：
-  // 没拿到 `get()` 结果就不许编字节数、也不许编块数（补 0 就是假数据）。
-  record('[版本] 未 selectVersion → meta 只出「时间 / 作者」，字节数与块数**不进 DOM**',
-    !!filled && !!filled.preview && filled.preview.meta.length === 2 &&
+  record('[版本] 自动取回记录后显示真实时间、作者、字节数与块数',
+    !!filled && !!filled.preview && filled.preview.meta.length === 4 &&
       /\d+月\d+日 \d{2}:\d{2}$/.test(filled.preview.meta[0]) &&
-      filled.preview.meta[1] === '张三',
+      filled.preview.meta[1] === '张三' && filled.preview.meta[2].includes('1024 字节') && filled.preview.meta[3] === '7 个块',
     filled && filled.preview ? filled.preview.meta.join(' | ') : '没渲染')
 
-  record('[版本] 未 selectVersion → 正文段只说「没有可取回的正文」，不假装能渲染',
+  record('[版本] 无效二进制只报告解码限制，不伪造正文',
     !!filled && !!filled.preview && filled.preview.binary.length === 1 &&
-      filled.preview.binary[0] === '该版本没有可取回的正文，只能查看元信息。',
+      filled.preview.binary[0] === '该版本正文为二进制快照（1024 字节），需由协同运行时解码后才能渲染。',
     filled && filled.preview ? filled.preview.binary.join(' | ') : '没渲染')
 
   record('[版本] 时间线条目 = 名称 / 描述 / 作者三行，最新一条带 selected',
@@ -910,23 +911,23 @@ const vueCall = (page, body) => page.evaluate((source) => {
 
   record('[评论] 引用段显示原文（甲乙丙丁）', comments.panel && comments.quote === '甲乙丙丁', comments.quote)
 
-  record('[评论] 控件条 6 格 = 5 个按钮 + 1 条 1×16 分隔（`aria-hidden`）',
-    !!comments.panel && comments.cells.length === 6 &&
-      comments.cells.filter((cell) => cell.childTag === 'button').length === 5 &&
+  record('[评论] 当前飞书控件条为四按钮与一条1×16分隔',
+    !!comments.panel && comments.cells.length === 5 &&
+      comments.cells.filter((cell) => cell.childTag === 'button').length === 4 &&
       !!comments.split && comments.split.w === 1 && comments.split.h === 16 && comments.split.ariaHidden === 'true',
     comments.panel ? `${comments.cells.length} 格 / split=${JSON.stringify(comments.split)}` : '没渲染')
 
-  record('[评论] 五个控件顺序与文案 = 下一条 / 上一条 / 复制锚点 / 解决评论 / 更多',
+  record('[评论] 四个控件顺序为下一条、上一条、复制锚点和解决',
     !!comments.panel && JSON.stringify(comments.buttons.map((b) => b.label)) === JSON.stringify([
-      '下一条评论', '上一条评论', '复制锚点', '解决评论', '更多',
+      '下一条评论', '上一条评论', '复制锚点', '解决评论',
     ]),
     comments.panel ? comments.buttons.map((b) => b.label).join(',') : '没渲染')
 
-  record('[评论] 单条线程 → 前后翻都 is-disabled，解决钮 is-primary，更多钮画圆点不画图标',
+  record('[评论] 单条线程前后禁用、解决按钮及图标保留',
     !!comments.panel && comments.buttons[0].cls.indexOf('is-disabled') !== -1 &&
       comments.buttons[1].cls.indexOf('is-disabled') !== -1 &&
       comments.buttons[3].cls.indexOf('is-primary') !== -1 &&
-      comments.buttons[4].hasDots === true && comments.buttons[4].hasIcon === false &&
+      comments.buttons.length === 4 &&
       comments.buttons[2].iconSize.w === 14 && comments.buttons[3].iconSize.w === 14,
     comments.panel ? comments.buttons.map((b) => b.cls).join(' | ') : '没渲染')
 
@@ -960,10 +961,10 @@ const vueCall = (page, body) => page.evaluate((source) => {
     await sleep(300)
   `)
   const replyMenu = await page.evaluate(measureComments)
-  record('[评论] 回复行更多菜单三项 = 编辑 / 翻译为简体中文 / 删除（own 无举报）',
+  record('[评论] 回复行菜单保留当前飞书的编辑、翻译、删除和举报',
     !!replyMenu.panel && !!replyMenu.replyMenu &&
       JSON.stringify(replyMenu.replyMenu.items.map((item) => item.text)) === JSON.stringify([
-        '编辑', '翻译为简体中文', '删除',
+        '编辑', '翻译为英语', '删除', '举报',
       ]),
     replyMenu.replyMenu ? replyMenu.replyMenu.items.map((item) => item.text).join(',') : '没渲染')
 
@@ -974,34 +975,19 @@ const vueCall = (page, body) => page.evaluate((source) => {
 
   await vueCall(page, 'vue.closeCommentMenus(); await sleep(240)')
 
-  // 面板头「更多」→ 只有私有评论开关，没有删除 / 解决
-  await vueCall(page, 'vue.toggleCommentMoreMenu(vue.commentPanels[0].id); await sleep(300)')
-  const moreMenu = await page.evaluate(measureComments)
-  record('[评论] 面板头「更多」= 图标 + 「私有评论」+ switch（aria-checked=false）',
-    !!moreMenu.panel && !!moreMenu.moreMenu &&
-      JSON.stringify(moreMenu.moreMenu.rowChildren) === JSON.stringify([
-        'lark-doc-comment-more-icon', 'lark-doc-comment-more-title', 'lark-doc-comment-switch',
-      ]) &&
-      moreMenu.moreMenu.iconSize.w === 20 && moreMenu.moreMenu.title === '私有评论' &&
-      moreMenu.moreMenu.switchRole.role === 'switch' && moreMenu.moreMenu.switchRole.checked === 'false' &&
-      moreMenu.moreMenu.switchRole.handler === true,
-    moreMenu.moreMenu ? JSON.stringify(moreMenu.moreMenu.rowChildren) : '没渲染')
-
-  record('[评论] 「更多」里有开关**没有**删除 / 解决项（解决是头部独立按钮）',
-    !!moreMenu.moreMenu && moreMenu.moreMenu.hint.indexOf('开启后，仅提及的协作者、文档所有者') === 0 &&
-      (await page.evaluate(() => document.querySelectorAll('.lark-doc-comment-more-menu button').length)) === 1,
-    moreMenu.moreMenu ? moreMenu.moreMenu.hint.slice(0, 16) + '…' : '没渲染')
-
-  await vueCall(page, 'vue.closeCommentMenus(); await sleep(240)')
+  // 当前飞书头部没有旧版私有评论菜单；不通过内部方法制造不可达的旧 UI。
+  record('[评论] 头部没有私有评论更多入口或隐藏的旧菜单',
+    comments.buttons.length === 4 && !comments.moreMenu &&
+      await page.locator('.lark-doc-comment-controls [aria-label="更多"], .lark-doc-comment-more-menu').count() === 0)
 
   // 草稿态：高度 156 → 238、textarea 58 → 98、取消/发送真进 DOM
   await vueCall(page, 'vue.setCommentDraft(vue.commentPanels[0].id, "补充一句"); await sleep(320)')
   const drafting = await page.evaluate(measureComments)
-  record('[评论] 有草稿 → 面板高 238、输入区高 98、「取消 / 发送」真进 DOM',
+  record('[评论] 有草稿 → 面板高238、输入区高98、取消与回复进入DOM',
     !!drafting.panel && drafting.rect.h === 238 && drafting.textarea.wrapHeight === 98 &&
       !!drafting.actions && drafting.actions.length === 2 &&
       drafting.actions[0].text === '取消' && drafting.actions[0].cls.indexOf('is-outlined') !== -1 &&
-      drafting.actions[1].text === '发送' && drafting.actions[1].cls.indexOf('is-filled') !== -1,
+      drafting.actions[1].text === '回复' && drafting.actions[1].cls.indexOf('is-filled') !== -1,
     drafting.panel ? `h=${drafting.rect.h} textarea=${drafting.textarea.wrapHeight} actions=${JSON.stringify(drafting.actions)}` : '没渲染')
 
   await vueCall(page, 'vue.clearCommentDraft(vue.commentPanels[0].id); await sleep(300)')
@@ -1032,8 +1018,7 @@ const vueCall = (page, body) => page.evaluate((source) => {
 
   record('[版本弹窗] `label[for]` 指向输入框 id，输入框 maxlength=1000 / placeholder=请输入名称',
     !!save.label && save.label.tag === 'label' && save.label.text === '版本名称' &&
-      save.label.for === 'lark-doc-save-version-input' &&
-      !!save.input && save.input.id === 'lark-doc-save-version-input' &&
+      !!save.input && !!save.input.id && save.label.for === save.input.id &&
       save.input.type === 'text' && save.input.maxlength === '1000' &&
       save.input.placeholder === '请输入名称',
     save.input ? JSON.stringify(save.input) : '没渲染')
@@ -1055,7 +1040,7 @@ const vueCall = (page, body) => page.evaluate((source) => {
 
   // 输入 → 计数更新；Esc 关闭（与历史记录面板相反）
   await page.evaluate(() => {
-    const input = document.querySelector('#lark-doc-save-version-input')
+    const input = document.querySelector('.lark-doc-save-version-input')
     input.focus()
     input.value = '周报 第 3 版'
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -1070,7 +1055,7 @@ const vueCall = (page, body) => page.evaluate((source) => {
   await page.waitForTimeout(320)
   record('[版本弹窗] 点遮罩**不关闭**（与常规弹窗口径不同）', await open(page, '.lark-doc-save-version-wrap'))
 
-  await page.evaluate(() => document.querySelector('#lark-doc-save-version-input').focus())
+  await page.evaluate(() => document.querySelector('.lark-doc-save-version-input').focus())
   await page.keyboard.press('Escape')
   await page.waitForTimeout(320)
   record('[版本弹窗] `Esc` 关闭（与历史记录面板正好相反）',

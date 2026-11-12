@@ -1,41 +1,9 @@
 /**
- * 历史版本面板（P6b-02）—— 面板开关、列表拉取、选中态、恢复 / 另存为派发、错误态。
- *
- * 规格：requirements/04 §3.4（几何与交互）/ §⑤-2（另存为版本 Dialog）/ 05 §5.4（Provider 契约）。
- *
- * 数据层在 `core/versioning`（**只 import，本线不改**）。本 mixin 是它的第一层消费者：
- * 列表走 `provider.list()`（只有九个元字段，没有正文），取正文走 `provider.get()`
- * （含二进制 `payload`），写走 `session.createVersion / session.restoreVersion`。
- *
- * 八条负结论（别「补全」）—— 全部来自 04 §3.4 实测与 ⑦「仍未采」清单：
- *   1. **`Esc` 关不掉历史面板**（§3.4 ⑤ `stillOpenAfterEsc=true`）。只有点左栏顶栏返回
- *      图标才关。这里的 `@keydown.esc` 交给面板根节点（`src/ui/panels.js` 的
- *      `createVersionPanel`）`.stop.prevent`，目的是
- *      **不让 Esc 冒泡到 `overlayDismissMixin.closeOverlay()`** —— 那条互斥 else-if 链
- *      里没有版本面板分支，Esc 传过去只会误关别的浮层。
- *   2. **「还原此历史记录」默认 `disabled`**（§3.4 ⑤ 反直觉 1，底色 `#BBBFC4`、
- *      `cursor: not-allowed`）。启用条件是 ⑦-1「未采到」项：只能推断为
- *      「选中了版本 && `canRestoreVersion` && 有 Provider」，见 `versionRestoreDisabled`
- *      的注释。**推断实现，不代表飞书真实口径。**
- *   3. **「还原此历史记录」没有二次确认弹窗**（⑦-1 未采）。不发明「确定要还原吗」。
- *   4. **没有版本删除入口**（⑦-2 未采）。野 deleting UI 一律不画，包括 hover 菜单与右键。
- *   5. **没有「编辑记录改备注」**（⑦-3 未采）。时间线只读，不提供重命名。
- *   6. **右栏底栏「显示更改」没有行为**（⑦-4 未采）。按像素渲染文案与位置，**不绑事件**。
- *   7. **不做字符级 diff**（`core/versioning/diff.js` 文件头的取舍）。左栏的三色宏观高亮
- *      是编辑器渲染层的事；这里只给「块数 / 字数 / 标题增删」三项便宜指标。
- *   8. **不猜 diff 的触发策略**（⑦-5，属后端）。本 mixin 从不主动 `createSnapshot`，
- *      面板里唯一能产生快照的动作是「另存为版本」与「还原」这两个出口。
- *
- * 为什么历史事件链的比较多半只有 `blockCount`：
- *   `provider.list()` 返回的是九个元字段（09 §5.7.2-9：快照正文只存二进制），历史快照
- *   **没有 JSON**，所以 history 侧拿不到字数和标题。`recordMetrics()` 里这两个字段恒为
- *   0 / `[]`，表示「历史侧不提供」而不是「历史快照是空文档」；面板因此只展示 `blockCount`
- *   的差。真要按字数比，得先 `get()` 再把二进制交给 collab 运行时解码 —— 那是另一条链路，
- *   不在这里。
- *
- * 为什么纯函数要**命名导出**：`vitest.config.js` 的 `forbidVueImports` 插件会拒载 `/src/`
- * 下的 `.vue`，单测只能在 Node 里 import 纯 JS。所以与时间、分组、错误码、闸门有关的计算
- * 全部做成模块级纯函数并导出，`test/unit/versioning-ui.test.js` 直接 import 它们。
+ * Version history uses immutable binary provider records and a real readonly document preview.
+ * Local sessions encode tagged document snapshots; custom binary formats use documentCodec.
+ * Feishu source rechecked 2026-11-10: past-history restore opens a 420×178 confirmation,
+ * Escape cancels that confirmation, backdrop clicks keep it open; restoring retains history.
+ * The outer history view still closes through 返回文档. Summary helpers remain independently usable.
  */
 import {
   E_SNAPSHOT_AUTHOR,
@@ -50,6 +18,10 @@ import {
   projectionMetrics,
   toBytes,
 } from '../../../core/versioning'
+import { Editor } from '@tiptap/core'
+import { createLarkDocExtensions } from '../extensions'
+import { validateDocument } from '../../../core/documentOperations'
+import { createNetworkPolicy } from '../../../core/policy/network'
 
 /** 时间线日期分组文案（实测只有「今天」「昨天」两级，再往前是 `M月D日`）。 */
 export const VERSIONING_DAY_LABELS = Object.freeze({
@@ -291,11 +263,11 @@ export default {
       versionRestoreBusy: false,
       /** 列表级错误（拉不到列表时整个右栏走降级，不白屏）。 */
       versionError: '',
-      /**
-       * 左栏预览。`get()` 回来的正文是二进制（09 §5.7.2-9），这里只带**能不能显示正文**
-       * 与字节数，不试图解码 —— 解码是 collab 运行时的事。
-       */
+      /** Decoded document and immutable version metadata for the readonly preview. */
       versionPreview: null,
+      versionPreviewLoading: false,
+      versionRestoreConfirmOpen: false,
+      versionRestoreTargetId: '',
       /** 预览级错误（单个版本取不到时只降级这一屏）。 */
       versionPreviewError: '',
       /** 成功提示（④-2 的 toast「版本已保存，可在 ··· 更多菜单中找到」）。 */
@@ -309,21 +281,39 @@ export default {
     }
   },
 
+  watch: {
+    session(next, previous) { if (next !== previous) this.resetVersionContext() },
+    documentId(next, previous) { if (next !== previous) this.resetVersionContext() },
+    'session.documentId'(next, previous) { if (next !== previous) this.resetVersionContext() },
+  },
+  beforeDestroy() {
+    this._versionLoadToken = (this._versionLoadToken || 0) + 1
+    this._versionPreviewToken = (this._versionPreviewToken || 0) + 1
+    this._versionSaveToken = (this._versionSaveToken || 0) + 1
+    this._versionRestoreToken = (this._versionRestoreToken || 0) + 1
+  },
+
   computed: {
+    versionRestoreConfirmText() {
+      const record = this.versionList.find(item => item.id === this.versionRestoreTargetId)
+      if (!record) return ''
+      const date = new Date(record.createdAt)
+      return `将当前文档还原至 ${date.getMonth() + 1}月${date.getDate()}日 ${formatVersionClock(record.createdAt)} 的状态`
+    },
     /** 「另存为版本」闸门（05 §5.4 源码实测 `canCreateVersion`）。 */
     versionCanCreate() {
-      return versionCapabilityGate(this.session, 'canCreateVersion').allowed
+      return (!this.writable || this.writable()) && versionCapabilityGate(this.session, 'canCreateVersion').allowed
     },
     /** 「还原此历史记录」闸门（05 §5.4 源码实测 `canRestoreVersion`）。 */
     versionCanRestore() {
-      return versionCapabilityGate(this.session, 'canRestoreVersion').allowed
+      return (!this.writable || this.writable()) && versionCapabilityGate(this.session, 'canRestoreVersion').allowed
     },
     /** 置灰但不隐藏：rule「无权限 = 挂载 + 置灰」。文案告诉用户是权限还是接线问题。 */
     versionCanCreateReason() {
-      return versionCapabilityGate(this.session, 'canCreateVersion').reason
+      return this.writable && !this.writable() ? '当前为只读模式，无法创建版本' : versionCapabilityGate(this.session, 'canCreateVersion').reason
     },
     versionCanRestoreReason() {
-      return versionCapabilityGate(this.session, 'canRestoreVersion').reason
+      return this.writable && !this.writable() ? '当前为只读模式，无法还原版本' : versionCapabilityGate(this.session, 'canRestoreVersion').reason
     },
     /** versioning Provider 的唯一取值点；没有就是 null，所有写操作在此统一截断。 */
     versionProvider() {
@@ -349,14 +339,11 @@ export default {
       }
       return null
     },
-    /**
-     * ⑦-1 **推断实现**：实测一进面板就是 disabled，翻编辑记录 1/10→3/10、以及选中时间线
-     * 任意项之后都仍然 disabled（环境受限，采不到启用态）。这里退一步只保证「条件不满足
-     * 时一定禁用」，满足时才启用 —— 即：选中了版本 && 过了 `canRestoreVersion` 闸门。
-     * 飞书真实口径未知，别把这条当成规格。
-     */
+    /** Current, unreadable and pending versions cannot start a restore. */
     versionRestoreDisabled() {
-      if (this.versionRestoreBusy) return true
+      if (this.versionRestoreBusy || this.versionPreviewLoading || this.versionPreviewError) return true
+      if (this.session?.readVersionDocument && !this.versionPreview?.document) return true
+      if (this.versionSelectedId && this.session?.getCurrentVersionId?.() === this.versionSelectedId) return true
       return !this.versionSelected || !this.versionCanRestore
     },
     /** 上一项：游标在首条时禁用（实测 1/10 时 `#BBBFC4` + `not-allowed`）。 */
@@ -399,6 +386,50 @@ export default {
   },
 
   methods: {
+    versionContextMatches(session, provider, editor) {
+      return !this._isDestroyed && !editor?.isDestroyed && this.session === session && this.versionProvider === provider && this.editor === editor
+    },
+    resetVersionContext() {
+      this._versionLoadToken = (this._versionLoadToken || 0) + 1
+      this._versionPreviewToken = (this._versionPreviewToken || 0) + 1
+      this._versionSaveToken = (this._versionSaveToken || 0) + 1
+      this._versionRestoreToken = (this._versionRestoreToken || 0) + 1
+      this.versionList = []
+      this.versionIndex = 0
+      this.versionSelectedId = ''
+      this.versionPreview = null
+      this.versionPreviewError = ''
+      this.versionPreviewLoading = false
+      this.versionLoading = false
+      this.versionRestoreBusy = false
+      this.versionRestoreConfirmOpen = false
+      this.versionRestoreTargetId = ''
+      this.saveVersionOpen = false
+      this.saveVersionBusy = false
+      this.saveVersionName = ''
+      this.saveVersionError = ''
+      this.versionError = ''
+      this.versionNotice = ''
+      if (this.versionPanelOpen) this.loadVersions()
+    },
+    mountVersionDocumentPreview(element, record) {
+      try {
+        const network = createNetworkPolicy(this.larkDocConfig?.network)
+        const content = network.applyDocument(validateDocument(record.content, this.editor.schema))
+        const preview = new Editor({
+          element, editable: false,
+          content,
+          extensions: createLarkDocExtensions({ config: this.larkDocConfig, getImageOptions: () => ({ canLoad: src => createNetworkPolicy(this.larkDocConfig?.network).allows(src) }) }),
+          editorProps: { attributes: { 'aria-label': '历史版本正文' } },
+        })
+        return () => { preview.destroy(); element.replaceChildren() }
+      } catch (error) {
+        const message = element.ownerDocument.createElement('p')
+        message.textContent = `无法预览此版本：${error.message}`
+        element.appendChild(message)
+        return () => element.replaceChildren()
+      }
+    },
     /**
      * 打开历史面板。04 §3.4 ③ 的入口是顶栏「更多」菜单里的「历史记录」，
      * 那个菜单项不在本线的交付清单里 —— 由宿主调用本方法即可。
@@ -407,12 +438,17 @@ export default {
       this.versionPanelOpen = true
       this.versionError = ''
       await this.loadVersions()
+      if (this.versionPanelOpen && this.versionSelectedId) await this.selectVersion(this.versionSelectedId)
     },
 
     /** 关面板 = 唯一的关闭路径（`Esc` 无效，见文件头负结论 1）。 */
     closeVersionPanel() {
+      this._versionPreviewToken = (this._versionPreviewToken || 0) + 1
       this.versionPanelOpen = false
+      this.versionRestoreConfirmOpen = false
+      this.versionRestoreTargetId = ''
       this.versionPreview = null
+      this.versionPreviewLoading = false
       this.versionPreviewError = ''
       this.versionSelectedId = ''
       this.versionError = ''
@@ -421,6 +457,10 @@ export default {
     /** 拉列表；拉不动时右栏显示降级文案而不是空白（面板自己不抛、不白屏）。 */
     async loadVersions() {
       const provider = this.versionProvider
+      const session = this.session, editor = this.editor
+      const token = (this._versionLoadToken || 0) + 1
+      this._versionLoadToken = token
+      const current = () => token === this._versionLoadToken && this.versionContextMatches(session, provider, editor)
       if (!provider) {
         this.versionList = []
         this.versionError = '未配置 versioning Provider，历史记录不可用'
@@ -429,17 +469,19 @@ export default {
       this.versionLoading = true
       this.versionError = ''
       try {
-        const list = await provider.list({ documentId: this.session ? this.session.documentId : '' })
+        const list = await provider.list({ documentId: session ? session.documentId : '' })
+        if (!current()) return []
         this.versionList = Array.isArray(list) ? list : []
         this.versionIndex = this.versionList.length ? 1 : 0
         this.versionSelectedId = this.versionList.length ? this.versionList[0].id : ''
         return this.versionList
       } catch (error) {
+        if (!current()) return []
         this.versionList = []
         this.versionError = versioningErrorMessage(error) || VERSIONING_ERROR_FALLBACK
         return []
       } finally {
-        this.versionLoading = false
+        if (current()) this.versionLoading = false
       }
     },
 
@@ -451,15 +493,30 @@ export default {
       const index = this.indexOfVersion(id)
       if (index >= 0) this.versionIndex = index + 1
       const provider = this.versionProvider
+      const session = this.session, editor = this.editor
+      const token = (this._versionPreviewToken || 0) + 1
+      this._versionPreviewToken = token
+      const current = () => token === this._versionPreviewToken && this.versionContextMatches(session, provider, editor) && this.versionSelectedId === id
       if (!provider) {
         this.versionPreview = null
         this.versionPreviewError = VERSIONING_ERROR_TEXT[E_SNAPSHOT_PAYLOAD_MISSING]
         return null
       }
       this.versionPreviewError = ''
+      this.versionPreview = null
+      this.versionPreviewLoading = true
       try {
         const record = await provider.get(id)
+        if (!current()) return null
         const bytes = toBytes(record && record.payload)
+        let document = null, contentError = ''
+        if (bytes && session?.readVersionDocument) {
+          try {
+            document = await session.readVersionDocument(id, record)
+            if (editor?.schema) validateDocument(document.content, editor.schema)
+          } catch (error) { document = null; contentError = versioningErrorMessage(error) }
+        }
+        if (!current()) return null
         this.versionPreview = {
           id: record.id,
           label: record.label,
@@ -473,12 +530,17 @@ export default {
           hasPayload: Boolean(bytes),
           byteLength: payloadSize(record && record.payload),
           restore: record.kind === SNAPSHOT_KIND.RESTORE,
+          document,
         }
+        this.versionPreviewError = contentError
         return this.versionPreview
       } catch (error) {
+        if (!current()) return null
         this.versionPreview = null
         this.versionPreviewError = versioningErrorMessage(error)
         return null
+      } finally {
+        if (current()) this.versionPreviewLoading = false
       }
     },
 
@@ -540,32 +602,47 @@ export default {
       return this.stepVersion(1)
     },
 
-    /**
-     * 恢复为新版本 = **新建**版本（`core/versioning/restore.js` 的 `createRestoreRecord`
-     * 口径），不覆盖被恢复的那份 —— 覆盖会让「回到过去之后再想去更晚的时刻」变成不可能。
-     *
-     * ⚠️ 接线缺口：`DocumentSession.restoreVersion` 只传 `{ documentId }`，不传 `author`；
-     * 内存 Provider 因此只能依赖宿主创建时注入的 `options.author`，没有就抛
-     * `E_SNAPSHOT_AUTHOR`。这里把错误翻译成人话，不悄悄吞掉。
-     */
-    async restoreSelectedVersion() {
-      if (!this.versionSelected) return null
+    /** Confirmation captures one version id; provider restore appends a new immutable record. */
+    requestVersionRestore() {
+      if (this.versionRestoreDisabled) return false
+      this.versionRestoreTargetId = this.versionSelectedId
+      this.versionRestoreConfirmOpen = true
+      return true
+    },
+    closeVersionRestoreConfirm() { this.versionRestoreConfirmOpen = false; this.versionRestoreTargetId = '' },
+    confirmVersionRestore() {
+      if (!this.versionRestoreConfirmOpen || !this.versionRestoreTargetId) return null
+      const id = this.versionRestoreTargetId
+      this.closeVersionRestoreConfirm()
+      return this.restoreSelectedVersion(id)
+    },
+    async restoreSelectedVersion(versionId = this.versionSelectedId) {
+      if (this.versionRestoreBusy || !this.versionSelected) return null
       if (!this.versionCanRestore) {
         this.versionPreviewError = versionCapabilityGate(this.session, 'canRestoreVersion').reason
         return null
       }
       this.versionRestoreBusy = true
       this.versionPreviewError = ''
+      const session = this.session, provider = this.versionProvider, editor = this.editor
+      const token = (this._versionRestoreToken || 0) + 1
+      this._versionRestoreToken = token
+      const current = () => token === this._versionRestoreToken && this.versionContextMatches(session, provider, editor)
       try {
-        const created = await this.session.restoreVersion(this.versionSelectedId)
+        const created = await session.restoreVersion(versionId)
+        if (!current()) return created
         await this.loadVersions()
+        if (!current()) return created
+        if (this.versionSelectedId) await this.selectVersion(this.versionSelectedId)
+        if (!current()) return created
         this.versionNotice = '已恢复为新版本，原版本仍保留在历史记录中'
         return created
       } catch (error) {
+        if (!current()) return null
         this.versionPreviewError = versioningErrorMessage(error)
         return null
       } finally {
-        this.versionRestoreBusy = false
+        if (current()) this.versionRestoreBusy = false
       }
     },
 
@@ -579,6 +656,7 @@ export default {
         return false
       }
       this.saveVersionOpen = true
+      this._saveVersionDialogEpoch = (this._saveVersionDialogEpoch || 0) + 1
       this.saveVersionError = ''
       // 04 §⑤-2 实测默认名 =「{文档名} 第 {N} 版」。N 的口径未采（`/code 第 1 版` 只有一条
       // 样本），这里取「当前版本总数 + 1」—— 包含自动快照也算一条，属推断。
@@ -590,6 +668,7 @@ export default {
     },
 
     closeSaveVersionDialog() {
+      this._saveVersionDialogEpoch = (this._saveVersionDialogEpoch || 0) + 1
       this.saveVersionOpen = false
       this.saveVersionName = ''
       this.saveVersionError = ''
@@ -602,25 +681,33 @@ export default {
     },
 
     async confirmSaveVersion() {
+      if (this.saveVersionBusy) return null
       if (!this.versionCanCreate) {
         this.saveVersionError = versionCapabilityGate(this.session, 'canCreateVersion').reason
         return null
       }
       this.saveVersionBusy = true
       this.saveVersionError = ''
+      const session = this.session, provider = this.versionProvider, editor = this.editor
+      const token = (this._versionSaveToken || 0) + 1
+      const epoch = this._saveVersionDialogEpoch
+      this._versionSaveToken = token
+      const current = () => token === this._versionSaveToken && this.versionContextMatches(session, provider, editor)
       try {
         const label = this.saveVersionName.trim() || defaultVersionLabel(this.localTitle, nextVersionOrdinal(this.versionList))
-        const created = await this.session.createVersion({ label })
-        this.closeSaveVersionDialog()
+        const created = await session.createVersion({ label, title: this.localTitle })
+        if (!current()) return created
+        if (this._saveVersionDialogEpoch === epoch) this.closeSaveVersionDialog()
         // 04 §⑤-2 的成功 toast 原文：「版本已保存，可在 ··· 更多菜单中找到」+「立即查看」。
         this.versionNotice = '版本已保存，可在 ··· 更多菜单中找到'
         if (this.versionPanelOpen) await this.loadVersions()
         return created
       } catch (error) {
+        if (!current()) return null
         this.saveVersionError = versioningErrorMessage(error)
         return null
       } finally {
-        this.saveVersionBusy = false
+        if (current()) this.saveVersionBusy = false
       }
     },
 

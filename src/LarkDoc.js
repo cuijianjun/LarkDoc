@@ -121,6 +121,15 @@ export class LarkDoc {
         documentId: source.documentId,
         uploadFile: this._resolveFileUploader(source),
         resolveFileUrl: this._resolveFileUrlResolver(source),
+        mentionSource: source.mentionSource || null,
+        calendarSource: source.calendarSource || null,
+        onImageShare: typeof source.onImageShare === 'function' ? source.onImageShare : null,
+        onSelectionShare: typeof source.onSelectionShare === 'function' ? source.onSelectionShare : null,
+        templates: source.templates,
+        onCalendarEventJoin: typeof source.onCalendarEventJoin === 'function' ? source.onCalendarEventJoin : null,
+        calendarEventRefetch: typeof source.calendarEventRefetch === 'function' ? source.calendarEventRefetch : null,
+        onIsvButtonAction: typeof source.onIsvButtonAction === 'function' ? source.onIsvButtonAction : null,
+        onIsvCatalogJump: typeof source.onIsvCatalogJump === 'function' ? source.onIsvCatalogJump : null,
         // `ai` 支持四种写法：地址字符串、{endpoint}、{protocol:'openai',baseURL}、
         // 以及旧的 {stream(args){}} 钩子。这里统一收敛成标准 provider，Workspace 只认一种契约。
         aiProvider: normalizeAIProvider(source.ai),

@@ -89,6 +89,13 @@ export default {
     // 异步搜索的序号闸门：慢请求回来晚于新一次打开时直接丢弃。
     this._calendarToken = 0
   },
+  watch: {
+    calendarSource(value) {
+      this._calendarToken += 1
+      this._calendarProvider = createCalendarProvider(value)
+      if (this.calendarOpen) this.loadCalendarEvents()
+    },
+  },
   methods: {
     /**
      * 命令菜单「日程」入口（`commandMenuMixin.executeCommand`）。

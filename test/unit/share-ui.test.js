@@ -67,6 +67,28 @@ function createVm(session, overrides = {}) {
   return vm
 }
 
+describe('image share asynchronous boundaries', () => {
+  it.each([false, true])('does not lose send completion to an older search (reject=%s)', async reject => {
+    let finishSearch, finishSend
+    const image = { pos: 0, blockId: 'image_a', src: '/a.png' }
+    const vm = createVm(null, {
+      editor: { state: { doc: { nodeAt: () => ({ type: { name: 'image' }, attrs: image }) } } },
+      _mentionProvider: { search: () => new Promise(resolve => { finishSearch = resolve }) },
+      onImageShare: () => new Promise((resolve, fail) => { finishSend = () => reject ? fail(new Error('send rejected')) : resolve(true) }),
+      shareDocumentLink: () => 'http://localhost/document', showShareToast: vi.fn(),
+    })
+    vm.imageShare = { image, recipients: [{ id: 'user', kind: 'user' }], message: 'keep', query: '', results: [], sending: false }
+    const search = vm.searchImageShareRecipients('slow')
+    const send = vm.submitImageShare()
+    finishSearch([{ id: 'user', kind: 'user', name: 'User' }])
+    await search
+    finishSend()
+    expect(await send).toBe(!reject)
+    if (reject) expect(vm.imageShare).toMatchObject({ message: 'keep', sending: false, error: 'send rejected' })
+    else expect(vm.imageShare).toBeNull()
+  })
+})
+
 /** 把 mixin 的剪贴板出口换成探针，避免 node 下真的去摸 navigator / document。 */
 function withClipboardProbe(vm) {
   const written = []

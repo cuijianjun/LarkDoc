@@ -116,7 +116,7 @@ export function createTableOverlays({ host, handlers = {} }) {
     node.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()
-      if (handlers.onSelect) handlers.onSelect(axis, index)
+      if (handlers.onSelect) handlers.onSelect(axis, index, event)
     })
     return { node, index }
   }
@@ -141,7 +141,7 @@ export function createTableOverlays({ host, handlers = {} }) {
     event.preventDefault()
     const win = el.ownerDocument.defaultView
     if (!win) return
-    drag = { axis, index, startX: event.clientX, startY: event.clientY, moved: false, to: index }
+    drag = { axis, index, shiftKey: event.shiftKey, startX: event.clientX, startY: event.clientY, moved: false, to: index }
     // 触屏有 implicit pointer capture：节点一旦在拖拽中被摘掉，后续 pointermove 就断了。
     // 显式 capture 到命中节点并在 detach 时 release，保证整套手势完整；合成事件
     // （浏览器验收里手工 dispatch）没有 active pointer，setPointerCapture 会抛，忽略即可。
@@ -163,12 +163,12 @@ export function createTableOverlays({ host, handlers = {} }) {
       const rect = el.getBoundingClientRect()
       const point = axis === 'column' ? moveEvent.clientX - rect.left : moveEvent.clientY - rect.top
       const items = axis === 'column' ? current.columns : current.rows
-      let target = items.length - 1
+      let target = items.length ? items[items.length - 1].index : drag.index
       for (let i = 0; i < items.length; i += 1) {
         const item = items[i]
         const start = axis === 'column' ? item.left : item.top
         const size = axis === 'column' ? item.width : item.height
-        if (point < start + size / 2) { target = i; break }
+        if (point < start + size / 2) { target = item.index; break }
       }
       drag.to = target
       if (handlers.onReorderMove) handlers.onReorderMove(axis, drag.index, target, moveEvent.clientX, moveEvent.clientY)
@@ -196,7 +196,7 @@ export function createTableOverlays({ host, handlers = {} }) {
       if (done.moved) {
         if (handlers.onReorderEnd) handlers.onReorderEnd(done.axis, done.index, done.to)
         if (handlers.onReorderCancel) handlers.onReorderCancel()
-      } else if (handlers.onSelect) handlers.onSelect(done.axis, done.index)
+      } else if (handlers.onSelect) handlers.onSelect(done.axis, done.index, { shiftKey: done.shiftKey })
     }
     win.addEventListener('pointermove', onMove, true)
     win.addEventListener('pointerup', onUp, true)
@@ -272,17 +272,21 @@ export function createTableOverlays({ host, handlers = {} }) {
       node.classList.toggle('is-selected', on)
       node.setAttribute('aria-pressed', on ? 'true' : 'false')
     }
+    const selected = state.selected
+    const isSelected = (axis, index) => selected?.axis === axis
+      && index >= (selected.from ?? Math.min(selected.index, selected.endIndex ?? selected.index))
+      && index < (selected.to ?? Math.max(selected.index, selected.endIndex ?? selected.index) + 1)
     colNodes.forEach((entry, i) => {
       const item = colItems[i]
       if (!item) return
       applyStyle(entry.node, { left: `${item.left}px`, width: `${item.width}px` })
-      markSelected(entry.node, state.selected?.axis === 'column' && state.selected.index === item.index)
+      markSelected(entry.node, isSelected('column', item.index))
     })
     rowNodes.forEach((entry, i) => {
       const item = rowItems[i]
       if (!item) return
       applyStyle(entry.node, { top: `${item.top}px`, height: `${item.height}px` })
-      markSelected(entry.node, state.selected?.axis === 'row' && state.selected.index === item.index)
+      markSelected(entry.node, isSelected('row', item.index))
     })
     scrollbar.setAttribute('tabindex', state.scrollVisible ? '0' : '-1')
     scrollbar.setAttribute('aria-hidden', state.scrollVisible ? 'false' : 'true')

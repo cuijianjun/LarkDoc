@@ -26,6 +26,8 @@ export default {
       const target = event.target
       const insertTrigger = target.closest?.('button[aria-label="插入"]')
       const ownInsertTrigger = insertTrigger && this.$refs.root?.contains(insertTrigger)
+      const tableTrigger = target.closest?.('.lark-doc-toolbar button[aria-label="表格工具"]')
+      const ownTableTrigger = tableTrigger && this.$refs.root?.contains(tableTrigger)
       if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target) && !ownInsertTrigger) this.closeCommandMenu()
       // P4-01：`@` 面板的常规关闭由选区变化驱动（document.js 回调 onMention(null)），
       // 这里只补那种「不换选区」的点击：工具栏 / 页眉 / 页边空白。点回正文不拦，
@@ -43,10 +45,10 @@ export default {
       // 所以它在下面的 `onWindowKeydown` 与 `closeOverlay` 里都有分支（日历两者都没有）。
       // 点外部同样生效，且只有这三个入口：面板自身、它的下拉、色板都在 `.lark-doc-isv-overlay` 内。
       if (this.isvPanelOpen && !target.closest?.('.lark-doc-isv-overlay')) this.closeIsvPanel()
-      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
-      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
+      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
+      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.blockTypeMenuOpen = false
+      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
+      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
       if (this.bubbleAlignOpen && !target.closest?.('.lark-doc-bubble-align') && !target.closest?.('.lark-doc-bubble-align-menu')) this.closeBubbleAlignMenu()
       if (this.bubbleHeadingOpen && !target.closest?.('.lark-doc-bubble-heading')) this.closeBubbleHeadingMenu()
       if (this.calloutEmojiOpen && !target.closest?.('.lark-doc-callout-tools')) this.closeCalloutEmoji()
@@ -72,8 +74,9 @@ export default {
         this.tableToolsOpen = false
       }
     },
-    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页；另外接管 ⌘+F / ⌘+Shift+H / ⌘+/ 与模式键位。 */
+    /** 全局 Esc、⌘+F / ⌘+Shift+H / ⌘+/ 与模式键位；演示方向键由浏览器滚动全文。 */
     onWindowKeydown(event) {
+      if (this.versionPanelOpen) return
       // P4-06：模式键位（⌘/Ctrl+⌥+E·X·V 与裸 E，07 §12.1）先过一遍。放在最前面是因为
       // 它们**带 alt**，下面的 ⌘+F 分支明确排斥 alt，两组不会互相抢键；
       // 裸 E 的「焦点不在输入区」闸门由 applyModeShortcut 内部判（否则正文打 e 会切模式）。
@@ -93,8 +96,6 @@ export default {
       else if (event.key === 'Escape' && this.isvPanelOpen) this.closeIsvPanel()
       else if (event.key === 'Escape' && this.slides) this.toggleSlides()
       else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
-      else if (this.slides && event.key === 'ArrowRight') this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1)
-      else if (this.slides && event.key === 'ArrowLeft') this.slideIndex = Math.max(0, this.slideIndex - 1)
     },
     /**
      * 逐层收浮层（互斥链，一次只收一层），最后一律把焦点还给编辑器。
@@ -103,6 +104,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

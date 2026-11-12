@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { createOpenAICompatibleProvider, parseSseEvents, validateAIWriteback } from '../../src/providers/ai'
+import { AI_PROTOCOLS, normalizeAIProvider } from '../../src/components/lark-doc/ai'
 
 describe('OpenAI-compatible AI provider', () => {
+  it('sends actual image content parts alongside the question', async () => {
+    let payload
+    const provider = createOpenAICompatibleProvider({ baseUrl: 'https://llm.example.test/v1', request: async (_, init) => {
+      payload = JSON.parse(init.body)
+      return { ok: true, body: 'data: [DONE]\n\n' }
+    } })
+    await provider.generate({ action: 'chat', prompt: '描述图片', images: [{ url: 'data:image/png;base64,YQ==' }] })
+    expect(payload.messages[1].content).toEqual([
+      { type: 'text', text: '描述图片\n\nDocument text:\n' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,YQ==' } },
+    ])
+    expect(provider.supportsImages).toBe(true)
+  })
   it('normalizes a base URL and builds a bearer-auth chat request', async () => {
     const calls = []
     const provider = createOpenAICompatibleProvider({
@@ -22,6 +36,46 @@ describe('OpenAI-compatible AI provider', () => {
     expect(calls[0].init.headers.Authorization).toBe('Bearer secret-key')
     expect(JSON.parse(calls[0].init.body)).toMatchObject({ model: 'demo-model', stream: true })
     expect(chunks).toEqual(['Hi'])
+  })
+
+  it('accepts baseurl/api_key aliases and exposes a direct request contract', async () => {
+    let captured
+    const chunks = []
+    const provider = normalizeAIProvider({
+      protocol: 'openai',
+      baseurl: 'https://llm.example.test/v1',
+      api_key: 'alias-key',
+      request: async request => {
+        captured = request
+        return { ok: true, status: 200, body: 'data: {"choices":[{"delta":{"content":"直连结果"}}]}\n\ndata: [DONE]\n\n' }
+      },
+    })
+    await new Promise((resolve, reject) => provider.stream({
+      action: 'chat', text: '上下文', prompt: '问题',
+      onChunk: chunk => chunks.push(chunk), onDone: resolve, onError: reject,
+    }))
+    expect(captured.url).toBe('https://llm.example.test/v1/chat/completions')
+    expect(captured.method).toBe('POST')
+    expect(captured.headers.Authorization).toBe('Bearer alias-key')
+    expect(captured.body.messages[1].content).toContain('问题')
+    expect(chunks).toEqual(['直连结果'])
+    expect(AI_PROTOCOLS).toContain('openai')
+  })
+
+  it('keeps the standalone OpenAI provider compatible with baseURL and dynamic api_key', async () => {
+    let authorization = ''
+    const provider = createOpenAICompatibleProvider({
+      baseURL: 'https://llm.example.test/v1',
+      api_key: () => 'dynamic-alias-key',
+      request: async (_url, init) => {
+        authorization = init.headers.Authorization
+        return { ok: true, body: 'data: [DONE]\n\n' }
+      },
+    })
+    expect(provider.kind).toBe('endpoint')
+    expect(provider.baseURL).toBe('https://llm.example.test/v1')
+    await provider.generate({ action: 'chat', prompt: 'hello' })
+    expect(authorization).toBe('Bearer dynamic-alias-key')
   })
 
   it('parses multiline SSE events and ignores comments', () => {

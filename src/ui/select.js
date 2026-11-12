@@ -178,6 +178,9 @@ export function createSelect(options = {}) {
   function paintRows() {
     rows.forEach((row, index) => {
       const active = row.value === config.value
+      const disabled = !!config.options[index]?.disabled
+      row.button.disabled = disabled
+      row.button.setAttribute('aria-disabled', disabled ? 'true' : 'false')
       row.button.classList.toggle('lark-doc-select-active', active)
       row.button.classList.toggle('is-highlight', index === highlightIndex)
       row.button.setAttribute('aria-selected', active ? 'true' : 'false')
@@ -267,6 +270,7 @@ export function createSelect(options = {}) {
   }
 
   function choose(value) {
+    if (config.disabled || config.options.find(item => item.value === value)?.disabled) return
     if (value !== config.value && onChange) onChange(value)
     close()
   }

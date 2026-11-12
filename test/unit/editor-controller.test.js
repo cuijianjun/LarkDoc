@@ -41,6 +41,25 @@ describe('EditorController 阶段7前置', () => {
     expect(editor.setEditable).toHaveBeenLastCalledWith(true)
   })
 
+  it('同一 editor state 复用正文快照，状态变化后再重新序列化', () => {
+    const editor = createEditor()
+    editor.state = {}
+    const html = vi.spyOn(editor, 'getHTML')
+    const json = vi.spyOn(editor, 'getJSON')
+    const text = vi.spyOn(editor, 'getText')
+    const controller = createEditorController({ editor })
+
+    controller.getHTML(); controller.getJSON(); controller.getText()
+    controller.getHTML(); controller.getJSON(); controller.getText()
+    expect(html).toHaveBeenCalledTimes(1)
+    expect(json).toHaveBeenCalledTimes(1)
+    expect(text).toHaveBeenCalledTimes(1)
+
+    editor.state = {}
+    controller.getJSON()
+    expect(json).toHaveBeenCalledTimes(2)
+  })
+
   it('destroy 负责 detach、editor cleanup，并且可幂等调用', () => {
     const editor = createEditor()
     const session = { detachEditor: vi.fn() }
@@ -55,5 +74,24 @@ describe('EditorController 阶段7前置', () => {
     expect(editor.destroy).toHaveBeenCalledTimes(1)
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(controller.getEditor()).toBeNull()
+  })
+
+  it('按doc身份缓存各格式，选区变化不失效；导出对象由调用方独立持有', () => {
+    const editor = createEditor()
+    const doc = {}
+    editor.state = { doc }
+    const html = vi.spyOn(editor, 'getHTML')
+    const json = vi.spyOn(editor, 'getJSON')
+    const text = vi.spyOn(editor, 'getText')
+    const controller = createEditorController({ editor })
+    controller.getText()
+    expect(html).not.toHaveBeenCalled()
+    expect(json).not.toHaveBeenCalled()
+    editor.state = { doc }
+    controller.getText()
+    expect(text).toHaveBeenCalledTimes(1)
+    const first = controller.getJSON()
+    first.content.push({ type: 'paragraph' })
+    expect(controller.getJSON().content).toEqual([])
   })
 })

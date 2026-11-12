@@ -6,7 +6,7 @@
  * | 类型 \ 动作 | accept | reject |
  * | --- | --- | --- |
  * | insert | 留文字、摘标记 | 连文字一起丢 |
- * | delete | 连文字一起丢（定稿） | 连文字一起丢（原文不恢复） |
+ * | delete | 连文字一起丢（定稿） | 摘标记、保留原文和段落边界 |
  *
  * 三条硬口径：
  *   - **无二次确认、无 toast**（07 §12.5 逐字要求）。命令只返回事务，弹窗/提示由宿主
@@ -17,7 +17,8 @@
  *     必须放手，否则拒绝一条新增会被再记成一条删除建议（自激）。
  */
 import { collectRevisions, revisionDecision, normalizeRevision } from '../blocks/revision'
-import { REVISION_SKIP_META } from './tracker'
+import { REVISION_SKIP_META, mergeRanges } from './tracker'
+import { closeHistory } from '@tiptap/pm/history'
 
 /** 一条建议在文档里的全部区间 + 类型（按 `from` 升序）；不存在返回 null。 */
 export function revisionTarget(doc, revisionId) {
@@ -31,7 +32,7 @@ export function revisionTarget(doc, revisionId) {
     author: first.author,
     from: items[0].from,
     to: items[items.length - 1].to,
-    ranges: items.map((item) => ({ from: item.from, to: item.to })),
+    ranges: items.flatMap((item) => item.ranges || [{ from: item.from, to: item.to }]),
   }
 }
 
@@ -46,14 +47,31 @@ export function buildRevisionDecisionTr(state, revisionId, action) {
   const { dropText } = revisionDecision(target.kind, action)
   const type = state.schema.marks.revision
   const tr = state.tr
+  const boundaries = []
+  const blocks = []
+  state.doc.descendants((node, pos) => {
+    if (node.type.name === 'codeBlock' && node.attrs.deletionRevisionId === target.revisionId) {
+      blocks.push({ pos, attrs: node.attrs })
+      return false
+    }
+    if (node.type.name !== 'revisionBoundary' || node.attrs.revisionId !== target.revisionId) return
+    const $pos = state.doc.resolve(pos)
+    const after = $pos.after()
+    const next = after < state.doc.content.size ? state.doc.resolve(after + 1) : null
+    const canJoin = next?.parent.isTextblock && next.node(next.depth - 1) === $pos.node($pos.depth - 1)
+    boundaries.push({ from: pos, to: pos + node.nodeSize, joinFrom: $pos.end(), joinTo: canJoin ? next.pos : $pos.end() })
+  })
   if (dropText) {
-    target.ranges.slice().reverse().forEach((range) => tr.delete(range.from, range.to))
+    const ranges = target.ranges.concat(boundaries.map(item => ({ from: item.joinFrom, to: item.joinTo })))
+    mergeRanges(ranges).reverse().forEach((range) => tr.delete(range.from, range.to))
   } else if (type) {
     target.ranges.forEach((range) => tr.removeMark(range.from, range.to, type))
+    blocks.forEach(block => tr.setNodeMarkup(block.pos, null, { ...block.attrs, deletionRevisionId: '', deletionAuthor: '' }))
+    boundaries.reverse().forEach(range => tr.delete(range.from, range.to))
   }
   tr.setMeta(REVISION_SKIP_META, true)
   tr.setMeta('larkDocRevisionAction', action)
-  return tr
+  return closeHistory(tr)
 }
 
 /** 文档里全部建议的跳转目标（`from` 升序）。prev/next 与面板排序共用这一份。 */

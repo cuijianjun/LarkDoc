@@ -10,6 +10,7 @@
  *   ai: 'https://api.example.com/ai'                 // L1 只给地址
  *   ai: { endpoint: '/api/ai', protocol: 'auto' }    // L1 显式协议
  *   ai: { protocol: 'openai', baseURL, apiKey, model }  // L2 直连模型服务
+ *   ai: { endpoint: '/api/ai', request(request, args) { ... } } // L2 宿主请求
  *   ai: { stream(args) { ... return { cancel } } }    // L3 旧钩子，完全自管
  *   ai: (args) => ({ cancel })                       // L3 函数简写
  *
@@ -23,6 +24,7 @@ import { previewToHtml } from './markdown'
 
 export const AI_KINDS = Object.freeze(['stream', 'endpoint'])
 export const AI_CONTENT_FORMATS = Object.freeze(['auto', 'markdown', 'html', 'text'])
+export const AI_PROTOCOLS = Object.freeze(['auto', 'openai', 'chatStream', 'json'])
 
 const OPENAI_DEFAULT_PATH = '/chat/completions'
 
@@ -34,10 +36,19 @@ function trimSlash(value) {
   return String(value || '').replace(/\/+$/, '')
 }
 
+function resolveApiKey(config) {
+  const source = config.apiKey ?? config.api_key
+  return typeof source === 'function' ? source() : source
+}
+
+function resolveBaseURL(config) {
+  return config.baseURL || config.baseUrl || config.baseurl || config.base_url || ''
+}
+
 function resolveHeaders(config) {
   const source = typeof config.headers === 'function' ? config.headers() : config.headers
   const headers = isPlainObject(source) ? { ...source } : {}
-  const apiKey = typeof config.apiKey === 'function' ? config.apiKey() : config.apiKey
+  const apiKey = resolveApiKey(config)
   if (apiKey && !Object.keys(headers).some(key => key.toLowerCase() === 'authorization')) {
     headers.Authorization = `Bearer ${apiKey}`
   }
@@ -70,7 +81,10 @@ export function normalizeAIProvider(source) {
   if (hook) return createStreamProvider(source, hook)
 
   const endpoint = source.endpoint || source.url || source.api
-  const baseURL = source.baseURL || source.baseUrl
+  const baseURL = resolveBaseURL(source)
+  if (typeof source.request === 'function') {
+    return createEndpointProvider({ ...source, endpoint: typeof endpoint === 'string' ? endpoint.trim() : endpoint, baseURL, protocol: source.protocol || (baseURL && !endpoint ? 'openai' : 'auto') })
+  }
   if (typeof endpoint === 'string' && endpoint.trim()) {
     return createEndpointProvider({ ...source, endpoint: endpoint.trim(), baseURL })
   }
@@ -82,6 +96,7 @@ export function normalizeAIProvider(source) {
 
 function createStreamProvider(config, hook) {
   return {
+    supportsImages: config.supportsImages === true,
     kind: 'stream',
     protocol: config.protocol || 'custom',
     contentFormat: normalizeContentFormat(config.contentFormat),
@@ -95,22 +110,26 @@ function createStreamProvider(config, hook) {
 }
 
 function createEndpointProvider(config) {
-  const protocol = config.protocol || (config.baseURL && !config.endpoint ? 'openai' : 'auto')
+  const baseURL = resolveBaseURL(config)
+  const protocol = config.protocol || (baseURL && !config.endpoint ? 'openai' : 'auto')
   return {
+    supportsImages: config.supportsImages === true,
     kind: 'endpoint',
     protocol,
     contentFormat: normalizeContentFormat(config.contentFormat),
     endpoint: config.endpoint || '',
-    baseURL: config.baseURL || '',
+    baseURL,
     config,
     stream(args) {
-      return runEndpointStream(config, protocol, args)
+      return typeof config.request === 'function'
+        ? runDirectRequestStream(config, protocol, args)
+        : runEndpointStream(config, protocol, args)
     },
   }
 }
 
 /** 组装一次请求。宿主的 transformRequest 可以整体接管。 */
-function buildRequest(config, protocol, args) {
+export function buildAIRequest(config, protocol, args) {
   const headers = { ...resolveHeaders(config) }
   if (!Object.keys(headers).some(key => key.toLowerCase() === 'accept')) {
     headers.Accept = httpAcceptFor(protocol)
@@ -123,11 +142,11 @@ function buildRequest(config, protocol, args) {
       stream: config.stream !== false,
       messages: typeof config.messages === 'function'
         ? config.messages(args)
-        : buildMessages(args.action, args.text, args.prompt, args.language),
+        : buildMessages(args.action, args.text, args.prompt, args.language, args.images),
       ...(isPlainObject(config.params) ? config.params : {}),
     }
     if (body.model === undefined) delete body.model
-    request = { url, headers, body, protocol: 'openai' }
+    request = { url, method: 'POST', headers, body, protocol: 'openai' }
   } else {
     const body = {
       action: args.action,
@@ -135,9 +154,10 @@ function buildRequest(config, protocol, args) {
       prompt: args.prompt,
       language: args.language,
       range: args.range,
+      ...(args.images?.length ? { images: args.images } : {}),
       ...(isPlainObject(config.params) ? config.params : {}),
     }
-    request = { url: config.endpoint, headers, body, protocol }
+    request = { url: config.endpoint, method: 'POST', headers, body, protocol }
   }
   if (typeof config.transformRequest === 'function') {
     const patched = config.transformRequest(request, args)
@@ -145,6 +165,8 @@ function buildRequest(config, protocol, args) {
   }
   return request
 }
+
+const buildRequest = buildAIRequest
 
 function decideMode(text, forceWhole) {
   if (forceWhole) return 'whole'
@@ -290,6 +312,134 @@ function runEndpointStream(config, protocol, args) {
       settled = true
       handle.cancel()
       if (onCancelled) onCancelled()
+    },
+  }
+}
+
+function redactProviderError(error, config) {
+  const key = resolveApiKey(config)
+  const message = String(error?.message || 'AI 请求失败')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(key ? new RegExp(String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g') : /$^/g, '[redacted]')
+  const normalized = new Error(message)
+  normalized.code = error?.name === 'AbortError' ? 'AI_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR')
+  normalized.status = error?.status
+  return normalized
+}
+
+async function readDirectResponse(response, onText) {
+  if (typeof response === 'string') { onText(response); return }
+  if (response?.body && typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader()
+    const decoder = typeof TextDecoder === 'function' ? new TextDecoder() : null
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      onText(decoder ? decoder.decode(value, { stream: true }) : String(value))
+    }
+    if (decoder) {
+      const tail = decoder.decode()
+      if (tail) onText(tail)
+    }
+    return
+  }
+  if (typeof response?.text === 'function') { onText(await response.text()); return }
+  if (typeof response?.body === 'string') { onText(response.body); return }
+  if (typeof response?.json === 'function') { onText(JSON.stringify(await response.json())); return }
+  if (response && typeof response === 'object') onText(JSON.stringify(response))
+}
+
+/**
+ * 宿主直连请求：request 接收结构化请求并返回 Response/可读 body/字符串/JSON。
+ * 这样签名、fetch、SDK 和测试 transport 都能接入，同时继续复用统一协议解析。
+ */
+function runDirectRequestStream(config, protocol, args) {
+  const callbacks = args || {}
+  const onStart = typeof callbacks.onStart === 'function' ? callbacks.onStart : null
+  const onChunk = typeof callbacks.onChunk === 'function' ? callbacks.onChunk : null
+  const onCancelled = typeof callbacks.onCancelled === 'function' ? callbacks.onCancelled : null
+  const onError = typeof callbacks.onError === 'function' ? callbacks.onError : null
+  let request
+  try { request = buildAIRequest(config, protocol, callbacks) } catch (error) {
+    onError?.(redactProviderError(error, config))
+    return { cancel() {} }
+  }
+  const controller = typeof AbortController === 'function' ? new AbortController() : { signal: undefined, abort() {} }
+  const parser = createFrameParser(request.protocol)
+  const decoder = createSseDecoder({
+    onEvent(event) {
+      if (settled) return
+      const result = parser.parse(event.data, event.event)
+      if (result.error) { fail(result.error); return }
+      if (result.delta) emit(result.delta)
+      if (result.done) complete()
+    },
+  })
+  let settled = false
+  let cancelled = false
+  let started = false
+  let mode = config.stream === false ? 'whole' : null
+  let pending = ''
+  let raw = ''
+  const start = () => { if (!started) { started = true; onStart?.() } }
+  const emit = text => { if (text) { start(); onChunk?.(text) } }
+  const complete = () => { if (!settled) { settled = true; start(); callbacks.onDone?.() } }
+  const fail = error => { if (!settled) { settled = true; onError?.(redactProviderError(error, config)) } }
+  const feed = chunk => {
+    if (settled) return
+    if (mode === 'sse') { decoder.push(chunk); return }
+    if (mode === 'whole') { raw += chunk; return }
+    if (mode === 'plain') { emit(chunk); return }
+    pending += chunk
+    const decided = decideMode(pending, false)
+    if (!decided) return
+    mode = decided
+    const buffered = pending
+    pending = ''
+    if (mode === 'sse') decoder.push(buffered)
+    else if (mode === 'whole') raw += buffered
+    else emit(buffered)
+  }
+  const finishBody = () => {
+    if (settled || cancelled) return
+    try {
+      if (mode === 'sse') decoder.end()
+      else if (mode === 'whole' || mode === null) {
+        const whole = extractWholeBody(raw || pending)
+        if (whole) emit(whole)
+      }
+      complete()
+    } catch (error) { fail(error) }
+  }
+  const run = async () => {
+    try {
+      const response = await config.request({
+        ...request,
+        signal: controller.signal,
+        withCredentials: config.withCredentials === true,
+        timeout: Number(config.timeout) || 0,
+      }, callbacks)
+      if (response?.ok === false || Number(response?.status) >= 400) {
+        const error = new Error(`AI 接口返回 HTTP ${response?.status || 0}`)
+        error.status = response?.status
+        throw error
+      }
+      start()
+      await readDirectResponse(response, feed)
+      finishBody()
+    } catch (error) {
+      if (cancelled || error?.name === 'AbortError') { if (!settled) { settled = true; onCancelled?.() } return }
+      fail(error)
+    }
+  }
+  run()
+  return {
+    cancel() {
+      if (settled) return
+      cancelled = true
+      controller.abort()
+      settled = true
+      onCancelled?.()
     },
   }
 }

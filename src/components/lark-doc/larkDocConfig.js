@@ -36,7 +36,7 @@ export const LARK_DOC_EXPORT_FORMATS = Object.freeze([
   Object.freeze({ value: 'json', label: 'JSON（完整正文）', hint: '保留全部块属性，可无损再导入' }),
   Object.freeze({ value: 'md', label: 'Markdown（简化）', hint: '字体、分栏、公式与图片裁剪会降级' }),
   Object.freeze({ value: 'txt', label: '纯文本', hint: '只保留文字' }),
-  Object.freeze({ value: 'docx', label: 'Word（简化）', hint: '纯文本段落，不保留复杂块与媒体布局' }),
+  Object.freeze({ value: 'docx', label: 'Word（简化）', hint: '保留正文、表格与图片，复杂块可能降级' }),
   Object.freeze({ value: 'print', label: '打印 / PDF', hint: '调用浏览器打印，可选「另存为 PDF」' }),
 ])
 
@@ -169,7 +169,7 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
   limits: {
     titleLength: 120,
     maxLength: 0,
-    maxImageSize: 5 * 1024 * 1024,
+    maxImageSize: 20 * 1024 * 1024,
     // 附件上限：02 L4188 实测飞书斜杠 `file` 的报错是「文件大小为 0 MB 或者大于 10 GB」，
     // 上下限同一句，下限是开区间 0（0 字节直接拒）。
     maxFileSize: 10 * 1024 * 1024 * 1024,

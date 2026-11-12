@@ -113,7 +113,13 @@ export default {
       // 的怪态（§12.1：有编辑权限的用户才可进入 / 处理修订）。
       // `interactionMode` 缺席（readingModeMixin 未挂载）时退回旧口径。
       const suggest = this.interactionMode ? this.interactionMode === 'suggest' : this.mode === 'suggest'
+      const changed = storage.active !== suggest
       storage.active = suggest
+      // Both modes keep the editor writable; notify node views of this narrower
+      // mode change without recording another document/history edit.
+      if (changed && this.editor.view?.dispatch && this.editor.state?.tr) {
+        this.editor.view.dispatch(this.editor.state.tr.setMeta('larkDocRevisionMode', suggest).setMeta('addToHistory', false))
+      }
       if (!storage.active) {
         this.revisionActiveId = ''
         this.revisionHoverId = ''
@@ -133,7 +139,12 @@ export default {
         this.revisionActiveId = ''
         return
       }
-      const items = collectRevisions(this.editor.state.doc)
+      const doc = this.editor.state.doc
+      if (this._revisionDoc !== doc) {
+        this._revisionDoc = doc
+        this._revisionItems = collectRevisions(doc)
+      }
+      const items = this._revisionItems
       if (!items.length) {
         this.revisionPanels = []
         this.revisionActiveId = ''
@@ -301,7 +312,7 @@ export default {
     onRevisionPointerDown(event) {
       if (!this.revisionTrackingOn()) return
       const target = event.target
-      const container = target && typeof target.closest === 'function' ? target.closest('.revision-container') : null
+      const container = target && typeof target.closest === 'function' ? target.closest('.revision-container, .lark-doc-code[data-revision-id]') : null
       const revisionId = container ? container.getAttribute('data-revision-id') || '' : ''
       this.activateRevision(revisionId)
     },

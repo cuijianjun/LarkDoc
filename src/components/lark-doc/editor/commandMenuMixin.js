@@ -5,12 +5,28 @@
  * 采用 mixin 而非子组件：菜单模板留在主 SFC，命令执行复用主组件的 run/featureEnabled 管线。
  */
 import { TextSelection } from '@tiptap/pm/state'
-import { wrapContainerAllowed } from '../../../core/blocks/container-depth'
+import { DOMParser, DOMSerializer } from '@tiptap/pm/model'
+import { closeHistory } from '@tiptap/pm/history'
+import { containerDepthAt, maxContainerDepthWithin, CONTAINER_NESTING_MAX, wrapContainerAllowed } from '../../../core/blocks/container-depth'
+import { collectBlockIdFixes, sanitizeHTML } from '../../../core/documentOperations'
+import { createNetworkPolicy } from '../../../core/policy/network'
+import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
+import { createTemplateLibrary } from '../../../ui/templateLibrary'
 import { filterCommands, commandFeatureOf } from '../commands'
 import { boardProviderOf } from '../../../core/embed/board-diagram'
 import { ENTERPRISE_TOOLTIP } from '../../../core/embed/enterprise'
 import { isCommandEnabled } from '../larkDocConfig'
 import { diagramTypes } from './constants'
+
+// The menu exposes “columns”; columns2–5 are its internal count choices.
+// Explicit child/parent denials still win before slash text or selection changes.
+function commandEnabled(config, id) {
+  const feature = commandFeatureOf(id)
+  if (!/^columns[2-5]$/.test(id)) return isCommandEnabled(config, id, feature)
+  const disabled = config?.commands?.disabled
+  if (Array.isArray(disabled) && (disabled.includes('columns') || disabled.includes(id))) return false
+  return isCommandEnabled(config, id, feature) || isCommandEnabled(config, 'columns', feature)
+}
 
 export default {
   data() { return {
@@ -19,11 +35,181 @@ export default {
     diagramMenuOpen: false, diagramMenuStyle: {}, diagramTypes,
   } },
   computed: {
-    filteredCommands() { return filterCommands(this.menuQuery, this.menuKind || 'slash', this.larkDocConfig) },
+    filteredCommands() { return filterCommands(this.menuQuery, this.menuKind || 'slash', this.larkDocConfig, this.editor?.isActive('table') ? 'cell' : 'block') },
     activeCommandId() { return this.filteredCommands[this.activeCommandIndex]?.id || '' },
     menuStyle() { return { left: `${this.menuPosition.left}px`, top: `${this.menuPosition.top}px`, ...(this.menuMaxHeight ? { maxHeight: `${this.menuMaxHeight}px` } : {}) } },
   },
+  watch: {
+    session(value, previous) { if (value !== previous) this.closeTemplateLibrary(false) },
+    documentId() { this.closeTemplateLibrary(false) },
+    effectiveReadonly() { this.reconcileTemplateLibrary() },
+    larkDocConfig: { deep: true, handler() { this.reconcileTemplateLibrary() } },
+    templates() { this.reconcileTemplateLibrary() },
+  },
+  beforeDestroy() { this.closeTemplateLibrary(false); this.stopTemplateMenuTracking() },
   methods: {
+    templateInsertionAllowed() {
+      return !!this.editor && !this.editor.isDestroyed && this.writable()
+        && this.session?.can?.('canView') !== false && this.session?.can?.('canEdit') !== false
+        && this.featureEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'template', 'templates')
+    },
+    templateInsertionScope() {
+      if (this.menuOpen && this.menuKind === 'plus' && this._templateMenuScope) return this.templateInsertionCurrent(this._templateMenuScope) ? this._templateMenuScope : null
+      if (!this.templateInsertionAllowed()) return null
+      const editor = this.editor, doc = editor.state.doc
+      const range = this.menuKind === 'slash' && this.slashMatch ? this.slashMatch
+        : this.menuKind === 'plus' && this.savedSelection ? this.savedSelection : editor.state.selection
+      try {
+        const selection = TextSelection.create(doc, range.from, range.to)
+        return { editor, session: this.session, documentId: this.documentId, sessionDocumentId: this.session?.documentId,
+          templates: this.templates, network: JSON.stringify(this.larkDocConfig.network || {}), imageProxy: this.larkDocConfig.network?.imageProxy,
+          bookmark: selection.getBookmark(), doc, library: false }
+      } catch (_) { return null }
+    },
+    templateInsertionCurrent(scope) {
+      return !!scope && !scope.invalid && (!scope.library || this._templateInsertion === scope) && this.templateInsertionAllowed()
+        && this.editor === scope.editor && this.session === scope.session && this.documentId === scope.documentId
+        && this.session?.documentId === scope.sessionDocumentId && this.templates === scope.templates
+        && JSON.stringify(this.larkDocConfig.network || {}) === scope.network && this.larkDocConfig.network?.imageProxy === scope.imageProxy
+    },
+    prepareEditorTemplate(templateId) {
+      const template = (this.templates || []).find(item => item.id === templateId)
+      if (!template || typeof template.html !== 'string') throw new Error('模板正文尚不可用，请选择其它模板')
+      if (this.editorController?.prepareContent) return this.editorController.prepareContent(template.html).next
+      const container = this.editor.view.dom.ownerDocument.createElement('div')
+      const network = createNetworkPolicy(this.larkDocConfig.network)
+      container.innerHTML = network.filterHtml(sanitizeHTML(template.html))
+      return this.editor.schema.nodeFromJSON(network.applyDocument(DOMParser.fromSchema(this.editor.schema).parse(container).toJSON()))
+    },
+    closeTemplateHistory(editor) {
+      // The PM and optional collaboration histories must both isolate a template insertion.
+      editor.state.plugins.forEach(plugin => plugin.getState(editor.state)?.undoManager?.stopCapturing?.())
+    },
+    mapTemplateInsertion(scope, transaction) {
+      if (!this.templateInsertionCurrent(scope)) return false
+      if (!transaction.docChanged || scope.doc === scope.editor.state.doc) return true
+      const origin = getTransactionMetadata(transaction)?.origin
+      if (origin === TRANSACTION_ORIGINS.HOST || origin === TRANSACTION_ORIGINS.RESTORE) return false
+      try {
+        const previous = scope.bookmark.resolve(transaction.before)
+        const from = transaction.mapping.mapResult(previous.from, 1), to = transaction.mapping.mapResult(previous.to, -1)
+        if (from.deletedAcross || to.deletedAcross || from.pos > to.pos) return false
+        const bookmark = scope.bookmark.map(transaction.mapping)
+        const next = bookmark.resolve(scope.editor.state.doc)
+        if (!previous.empty && transaction.before.textBetween(previous.from, previous.to) !== scope.editor.state.doc.textBetween(next.from, next.to)) return false
+        scope.bookmark = bookmark
+        scope.doc = scope.editor.state.doc
+        return true
+      } catch (_) { return false }
+    },
+    stopTemplateMenuTracking() {
+      if (this._templateMenuScope && this._templateMenuListener) this._templateMenuScope.editor.off('transaction', this._templateMenuListener)
+      this._templateMenuScope = null
+      this._templateMenuListener = null
+    },
+    trackTemplateMenu() {
+      this.stopTemplateMenuTracking()
+      if (!this.menuOpen || this.menuKind !== 'plus') return
+      const scope = this.templateInsertionScope()
+      if (!scope) return
+      this._templateMenuScope = scope
+      this._templateMenuListener = ({ transaction }) => {
+        if (this._templateMenuScope === scope && !this.mapTemplateInsertion(scope, transaction)) scope.invalid = true
+      }
+      scope.editor.on('transaction', this._templateMenuListener)
+    },
+    insertEditorTemplate(templateId, scope = this.templateInsertionScope()) {
+      if (!this.templateInsertionCurrent(scope)) return false
+      try {
+        const content = this.prepareEditorTemplate(templateId)
+        if (!this.templateInsertionCurrent(scope)) return false
+        const editor = scope.editor
+        const selection = scope.bookmark.resolve(editor.state.doc)
+        if (containerDepthAt(editor.state.doc, selection.from) + maxContainerDepthWithin(content, 0, content.content.size) > CONTAINER_NESTING_MAX) {
+          this.error = '容器嵌套最多 5 层'
+          return false
+        }
+        this.closeTemplateHistory(editor)
+        const inserted = editor.chain().command(({ tr }) => { closeHistory(tr); return true })
+          .insertContentAt({ from: selection.from, to: selection.to }, content.content.toJSON(), { updateSelection: true })
+          .command(({ tr }) => {
+            // StarterKit's TrailingNode would append an unkeyed node in a second
+            // transaction. Include that same node before assigning IDs so a
+            // later non-history ID repair cannot swallow this Yjs undo event.
+            const trailing = editor.extensionManager.extensions.find(extension => extension.name === 'trailingNode')
+            if (trailing) {
+              const name = trailing.options.node || editor.schema.topNodeType.contentMatch.defaultType?.name || 'paragraph'
+              if (!(trailing.options.notAfter || []).concat(name).includes(tr.doc.lastChild?.type.name)) {
+                tr.insert(tr.doc.content.size, editor.schema.nodes[name].create())
+              }
+            }
+            if (this.effectiveMaxLength > 0 && editor.storage.characterCount.characters({ node: tr.doc }) > this.effectiveMaxLength) { tr.setMeta('preventDispatch', true); return false }
+            collectBlockIdFixes(tr.doc, { doc: tr.before, mapping: tr.mapping }).forEach(({ pos, id }) => {
+              const node = tr.doc.nodeAt(pos)
+              tr.setNodeMarkup(pos, node.type, { ...node.attrs, blockId: id })
+            })
+            return true
+          }).run()
+        if (!inserted) { this.error = '模板未插入，请检查正文长度或当前编辑权限'; return false }
+        editor.view.dispatch(closeHistory(editor.state.tr))
+        this.closeTemplateHistory(editor)
+        this.closeCommandMenu(false)
+        this.closeTemplateLibrary(false)
+        this.savedSelection = null
+        editor.view.focus()
+        return true
+      } catch (error) { this.error = error?.message || '模板插入失败，请重试'; return false }
+    },
+    openTemplateLibrary() {
+      const scope = this.templateInsertionScope()
+      if (!scope) return false
+      this.closeTemplateLibrary(false)
+      this.closeCommandMenu(false)
+      scope.library = true
+      this._templateInsertion = scope
+      this._templateMapListener = ({ transaction }) => { if (!this.mapTemplateInsertion(scope, transaction)) this.closeTemplateLibrary(false) }
+      scope.editor.on('transaction', this._templateMapListener)
+      const document = scope.editor.view.dom.ownerDocument
+      this._templateLibraryUi = createTemplateLibrary({ host: this.$refs.panelHost || this.$refs.root, mode: 'insert',
+        renderDocument: (element, template) => {
+          if (!this.templateInsertionCurrent(scope)) return
+          const content = this.prepareEditorTemplate(template.id)
+          const body = document.createElement('div')
+          body.className = 'ProseMirror lark-doc-template-document'
+          body.setAttribute('contenteditable', 'false')
+          body.appendChild(DOMSerializer.fromSchema(scope.editor.schema).serializeFragment(content.content, { document }))
+          body.querySelectorAll('input, textarea, select, button').forEach(control => { control.disabled = true })
+          element.replaceChildren(body)
+        },
+        handlers: {
+          onClose: () => { if (this._templateInsertion === scope) this.closeTemplateLibrary(true) },
+          onInsert: template => this.insertEditorTemplate(template.id, scope),
+          isCurrent: () => this.templateInsertionCurrent(scope),
+        },
+      })
+      this._templateLibraryUi.update({ open: true, templates: (this.templates || []).map(item => ({ ...item, name: item.label || item.title || item.id })) })
+      this._templateLibraryUi.focusSearch()
+      return true
+    },
+    reconcileTemplateLibrary() {
+      if (this._templateInsertion && !this.templateInsertionCurrent(this._templateInsertion)) this.closeTemplateLibrary(false)
+    },
+    closeTemplateLibrary(restoreFocus = false) {
+      const scope = this._templateInsertion
+      const editor = scope?.editor
+      const restore = restoreFocus && this.templateInsertionCurrent(scope)
+      if (editor && this._templateMapListener) editor.off('transaction', this._templateMapListener)
+      this._templateMapListener = null
+      this._templateInsertion = null
+      this._templateLibraryUi?.destroy()
+      this._templateLibraryUi = null
+      if (scope) this.savedSelection = null
+      if (restore) {
+        try { editor.view.dispatch(editor.state.tr.setSelection(scope.bookmark.resolve(editor.state.doc)).setMeta('addToHistory', false)) }
+        catch (_) { /* The document may have replaced the old insertion target. */ }
+        editor.view.focus()
+      }
+    },
     openCommandMenu(kind, event) {
       if (!this.writable() || !this.featureEnabled('insert')) return
       this.cancelPopupHoverClose()
@@ -41,6 +227,7 @@ export default {
       this.headingOpen = false
       this.headingStyle = {}
       this.closeBlockMenu()
+      this.trackTemplateMenu()
       this.$nextTick(() => {
         this.positionCommandMenu()
         // plus 菜单打开即可打字：焦点交给搜索框。
@@ -58,6 +245,7 @@ export default {
       // insertion menu instead of treating that click as a second toggle.
       if (this.menuOpen && this.menuKind === 'plus') {
         this.savedSelection = { from: cursor, to: cursor }
+        this.trackTemplateMenu()
         this.menuTrigger = event?.currentTarget || this.menuTrigger
         const rect = event?.currentTarget?.getBoundingClientRect?.()
         if (rect) this.menuAnchor = { left: rect.left, top: rect.top, bottom: rect.bottom }
@@ -66,6 +254,7 @@ export default {
       }
       this.openCommandMenu('plus', event)
       this.savedSelection = { from: cursor, to: cursor }
+      this.trackTemplateMenu()
     },
     onSlash(match) {
       if (this._isDestroyed) return
@@ -102,12 +291,14 @@ export default {
       const desiredHeight = Math.min(naturalHeight, viewportSpace)
       const below = Math.max(0, window.innerHeight - this.menuAnchor.bottom - margin)
       const above = Math.max(0, this.menuAnchor.top - margin)
+      // 飞书在视口底部向上展开斜杠菜单，不能把可点击项裁在屏幕外。
       const useAbove = below < desiredHeight && above > below
-      const available = useAbove ? above : below
+      const gap = useAbove && this.menuKind === 'slash' ? 2 : 6
+      const available = Math.max(0, Math.min(viewportSpace, (useAbove ? above : below) - gap))
       const maxHeight = Math.max(40, Math.min(desiredHeight, available || viewportSpace))
-      const rawTop = useAbove ? this.menuAnchor.top - maxHeight - 6 : this.menuAnchor.bottom + 6
+      const rawTop = useAbove ? this.menuAnchor.top - maxHeight - gap : this.menuAnchor.bottom + gap
       const top = Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, rawTop))
-      const width = Math.min(rect.width || (this.menuKind === 'plus' ? 470 : 280), window.innerWidth - margin * 2)
+      const width = Math.min(rect.width || 232, window.innerWidth - margin * 2)
       const left = Math.max(margin, Math.min(window.innerWidth - width - margin, this.menuAnchor.left))
       this.menuPosition = { left, top }
       this.menuMaxHeight = Math.round(maxHeight)
@@ -119,6 +310,7 @@ export default {
     },
     closeCommandMenu(restoreFocus = false) {
       this.cancelPopupHoverClose()
+      this.stopTemplateMenuTracking()
       this.menuOpen = false
       this.menuKind = ''
       this.menuTrigger = null
@@ -165,6 +357,11 @@ export default {
     },
     chooseCommand(item) {
       if (!item || !this.writable()) return
+      if (!this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, item.id)) return
+      // Picker callbacks may outlive a config or selection change. Apply the
+      // same execution gate as direct commands before restoring/deleting text.
+      if (item.id === 'table' && item.tableSize && (this.menuKind !== 'plus' || !this.filteredCommands.some(entry => entry.id === 'table' && entry.submenuType === 'table'))) return
+      if (item.id === 'template') return item.templateLibrary ? this.openTemplateLibrary() : this.insertEditorTemplate(item.templateId)
       /**
        * P5-06：skip 项不可执行。菜单里它们本来就 `disabled`（鼠标点不动），
        * 这条拦的是**键盘 Enter**（`CommandMenu` 自己也会挡住，但两条路径都走
@@ -176,9 +373,7 @@ export default {
         this.error = ENTERPRISE_TOOLTIP
         return
       }
-      const isSlashTable = this.menuKind === 'slash' && item.id === 'table'
       const isTableSize = item.id === 'table' && item.tableSize
-      const isTemplateSelection = item.id === 'template' && !!item.templateId
       // 开浮层 / 开选择器型命令不抢焦点（浮层自己要聚焦输入框）。
       // 🔴 内嵌网页 15 条走 commandFeatureOf 派生，**别**把 15 个 id 手抄进数组：
       // 那会和 EMBED_MENU_ITEMS 形成第二份清单，改一条就漂。
@@ -195,12 +390,11 @@ export default {
       // 它不弹面板，选完就地插块，焦点该还给编辑器。
       // 🔴 P5-03 的 poll 进名单：它也不弹面板，但焦点要落在**块内**标题 textarea
       // （02 §23 ⑤），交给 `focusPollTitle()` 自己处理；这里若 focus() 一次就前功尽弃。
-      const focusAfter = isTemplateSelection || (commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page', 'poll'].includes(item.id))
+      const focusAfter = commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page', 'poll'].includes(item.id)
       if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
-      if (isSlashTable) this.insertTable(3, 3)
-      else if (isTableSize) this.insertTable(item.tableSize.rows, item.tableSize.cols)
+      if (isTableSize) this.insertTable(item.tableSize.rows, item.tableSize.cols)
       else this.executeCommand(item.id, item.templateId, item.diagramType)
       if (focusAfter) {
         this.focus()
@@ -272,8 +466,7 @@ export default {
      */
     executeCommand(id, templateId = '', diagramType = '') {
       if (!this.writable()) return
-      const feature = commandFeatureOf(id)
-      if (!isCommandEnabled(this.larkDocConfig, id, feature)) return
+      if (!commandEnabled(this.larkDocConfig, id)) return
       if (id === 'paragraph') this.run('setParagraph')
       else if (/^heading[1-9]$/.test(id)) this.run('setHeading', { level: Number(id.slice(-1)) })
       else if (id === 'bulletList') this.run('toggleBulletList')
@@ -295,9 +488,9 @@ export default {
         const count = Number(id.slice(-1))
         const { from, to } = this.editor.state.selection
         if (!wrapContainerAllowed(this.editor.state, from, to, 1)) { this.error = '容器嵌套最多 5 层'; return }
-        this.run('insertContent', { type: 'columns', content: Array.from({ length: count }, () => ({ type: 'column', attrs: { width: Math.round(100 / count) }, content: [{ type: 'paragraph' }] })) })
+        this.run('insertColumns', count)
       }
-      else if (id === 'table') this.tablePicker = true
+      else if (id === 'table') this.insertTable()
       else if (id === 'image') this.$refs.imageInput.click()
       // P2-04：视频与文件同一个入口，accept 不限类型（02 L4168：斜杠 file 的 accept 为 null）。
       else if (id === 'file') this.$refs.fileInput.click()
@@ -308,6 +501,7 @@ export default {
       // 然后把焦点交给标题 textarea —— 真飞书插完就能直接打字，不用再点一次标题。
       // 它必须同时在 `focusAfter` 排除名单里，否则上面那句 `this.focus()` 会把焦点抢回正文。
       else if (id === 'poll') { this.run('setPoll'); this.focusPollTitle() }
+      else if (id === 'agenda') this.run('insertAgenda')
       // P5-04：多维表格 5 项**共用一个块类型**，只有默认视图不同（03 §3.4 ⑤：表格 / 看板 /
       // 甘特图 / 画册 / 关联各插一块，块内能自由切）。命令 id 自己就是视图线索，交给
       // `setBitable` 内部的 `viewOfCommand` 映射，这里不另抄一张表。
@@ -319,17 +513,13 @@ export default {
       // providerId 由 `board-diagram.js` 唯一给出，这里不抄第二张 id 表。
       // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单（同 sheet / bitable）。
       else if (boardProviderOf(id)) this.run('setReferenceCard', { kind: boardProviderOf(id) })
-      // 阶段 5 批次 4：弹窗已原生化，「打开即聚焦」由 `dialogsUiMixin` 的 `mathDialog`
-      // watcher 同步完成 —— 这里不再 `$nextTick` + `querySelector` 找一次输入框。
-      else if (id === 'inlineMath' || id === 'blockMath') { this.mathDialog = id; this.mathValue = ''; this.mathError = '' }
+      else if (id === 'inlineMath' || id === 'blockMath') this.insertMathAtSelection()
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。
       // 菜单项只决定浮层里的**文案**；落 iframe 块还是书签卡由粘贴链接的 host 决定（04 §4.3 ⑤.1）。
       else if (commandFeatureOf(id) === 'embed') this.openEmbedDialog(id)
       else if (id === 'template') {
-        const template = this.templates.find(item => item.id === templateId)
-        if (template) this.run('insertContent', template.html)
-        else this.error = '模板不可用，请重新打开模板列表'
+        this.insertEditorTemplate(templateId)
       }
       else if (id === 'ai') this.$emit('ai-request', 'rewrite')
       // P4-01：三条 mention 只决定面板默认 tab，正文里补 `@` 之后由插件回调接上

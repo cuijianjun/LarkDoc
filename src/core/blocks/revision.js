@@ -18,16 +18,16 @@
  *   3. **接受 / 拒绝都是「整条建议」粒度**，不是「选区」粒度 —— 一条 revisionId 可能
  *      横跨多个文本节点（连续键入被合并成同一条），必须整体处理。
  *
- * 四条负结论（别实现）：
+ * 其余边界：
  *   - 「修订本身可编辑」：07 §12.5「改」一行明确 ❌（要改只能拒绝后重做）。本库 V1 允许
  *     「在已有修订里继续键入 = 延用同一条建议」（见 tracker 的 id 复用），不做键入拦截 ——
  *     拦截按键会把 IME 与宿主快捷键搅乱，收益不抵风险。
  *   - 「作者区分颜色」：07 §12.2 行为标记一栏写「无（不区分作者颜色，全部同色）」。
- *   - 「拒绝后恢复被删的原文」：07 §12.5 两处都写死「删掉的原文**不会恢复**」。所以
- *     删除态的两颗按钮结果相同（文字都不回来），差别只在语义。
+ *   - 删除建议保留原文；接受才删除，拒绝只摘标记。2026-11-10 飞书真实闭环
+ *     纠正了旧 07 §12.5 的记录，段落边界也遵守相同决策。
  *   - 「已解决 / 私有评论」概念：07 §12.6 差异表明确「无『已解决』概念」「无 more-btn」。
  */
-import { Mark } from '@tiptap/core'
+import { Mark, Node } from '@tiptap/core'
 
 /** 两种标记：新增（蓝字 + 2px 蓝下划线）/ 删除（原色字 + 删除线 + 10% 蓝底）。 */
 export const REVISION_KINDS = Object.freeze(['insert', 'delete'])
@@ -138,13 +138,23 @@ export function revisionMarkOf(node) {
 /**
  * 扫描整篇文档，把「同一条 revisionId」的片段合并成一条建议。
  *
- * 合并规则：同 id 且**位置相邻或重叠**的片段算一条（连续键入会被 ProseMirror 自动
- * 并成一个文本节点，但跨段 / 跨 mark 边界时会拆开）。顺序按文档序，`from` 升序。
+ * 同 id 的跨段片段是一条建议。非连续片段保留 ranges，决策与高亮只处理实际片段，
+ * 不包含中间未标记的原文。顺序按首次出现的文档位置升序。
  */
 export function collectRevisions(doc) {
   if (!doc || typeof doc.descendants !== 'function') return []
   const segments = []
   doc.descendants((node, pos) => {
+    if (node.type?.name === 'codeBlock' && node.attrs.deletionRevisionId) {
+      const attrs = normalizeRevision({ revisionId: node.attrs.deletionRevisionId, author: node.attrs.deletionAuthor, kind: 'delete' })
+      segments.push({ ...attrs, from: pos, to: pos + node.nodeSize, text: `${node.textContent || '代码块'}\n` })
+      return false
+    }
+    if (node.type?.name === 'revisionBoundary') {
+      const attrs = normalizeRevision({ ...node.attrs, kind: 'delete' })
+      segments.push({ ...attrs, from: pos, to: pos + node.nodeSize, text: '\n' })
+      return
+    }
     if (!node.isText) return
     const mark = revisionMarkOf(node)
     if (!mark) return
@@ -152,15 +162,21 @@ export function collectRevisions(doc) {
     segments.push({ revisionId: attrs.revisionId, author: attrs.author, kind: attrs.kind, from: pos, to: pos + node.nodeSize, text: node.text })
   })
   const merged = []
+  const byId = new Map()
   segments.forEach((segment) => {
-    const last = merged[merged.length - 1]
-    if (last && last.revisionId === segment.revisionId && segment.from <= last.to) {
-      last.to = Math.max(last.to, segment.to)
-      last.text += segment.text
-      return
+    let item = byId.get(segment.revisionId)
+    if (!item) {
+      item = { ...segment, ranges: [] }
+      byId.set(segment.revisionId, item)
+      merged.push(item)
     }
-    merged.push({ ...segment })
+    else { item.to = Math.max(item.to, segment.to); item.text += segment.text }
+    const lastRange = item.ranges[item.ranges.length - 1]
+    if (lastRange && segment.from <= lastRange.to) lastRange.to = Math.max(lastRange.to, segment.to)
+    else item.ranges.push({ from: segment.from, to: segment.to })
   })
+  // Preserve the established shape for one continuous interval.
+  merged.forEach(item => { if (item.ranges.length === 1) delete item.ranges })
   return merged
 }
 
@@ -169,7 +185,7 @@ export function revisionRanges(doc, revisionId) {
   const target = String(revisionId || '')
   return collectRevisions(doc)
     .filter((item) => item.revisionId === target)
-    .map((item) => ({ from: item.from, to: item.to }))
+    .flatMap((item) => item.ranges || [{ from: item.from, to: item.to }])
 }
 
 /** 某个文档位置落在哪条修订里（没有就空串）。面板高亮 / 点标记定位共用。 */
@@ -178,24 +194,24 @@ export function revisionAt(doc, pos) {
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i]
     // `to` 是开区间：光标停在标记末尾不该算「在修订里」（否则刚敲完就高亮错位）。
-    if (pos >= item.from && pos < item.to) return item.revisionId
+    if ((item.ranges || [item]).some(range => pos >= range.from && pos < range.to)) return item.revisionId
   }
   return ''
 }
 
 /**
- * 接受 / 拒绝的**决策表**（07 §12.5，两处原文互相印证）：
+ * 接受 / 拒绝决策表（2026-11-10 实操纠正旧 07 §12.5）：
  *
  * | 类型 \ 动作 | accept            | reject                 |
  * | ---------- | ----------------- | ---------------------- |
  * | insert     | 留文字、摘标记     | 连文字一起丢            |
- * | delete     | 连文字一起丢（定稿）| 连文字一起丢（不恢复）  |
+ * | delete     | 连文字一起丢（定稿）| 摘标记，保留原文与段落  |
  *
  * 返回 `{ dropText }`：true = 把该条建议覆盖的文字删掉，false = 只摘 mark 留文字。
  */
 export function revisionDecision(kind, action) {
   if (REVISION_ACTIONS.indexOf(action) === -1) return { dropText: false }
-  if (kind === 'delete') return { dropText: true }
+  if (kind === 'delete') return { dropText: action === 'accept' }
   return { dropText: action === 'reject' }
 }
 
@@ -203,7 +219,8 @@ export function revisionDecision(kind, action) {
 export function revisionSummary(item) {
   const source = item && typeof item === 'object' ? item : {}
   const kind = REVISION_KINDS.indexOf(source.kind) === -1 ? REVISION_DEFAULT_KIND : source.kind
-  return { label: REVISION_LABELS[kind], text: source.text === null || source.text === undefined ? '' : String(source.text) }
+  const text = source.text === null || source.text === undefined ? '' : String(source.text)
+  return { label: REVISION_LABELS[kind], text: text === '\n' ? '段落' : text }
 }
 
 /** 一条修订的面板高度：折叠态按类型分档，激活态恒 169（07 §12.3）。 */
@@ -239,7 +256,7 @@ const LarkDocRevision = Mark.create({
     }
   },
   parseHTML() {
-    return [{ tag: 'span.revision-container' }]
+    return [{ tag: 'span[data-revision-id]:not([data-type="revision-boundary"])' }, { tag: 'span.revision-container:not([data-type="revision-boundary"])' }]
   },
   renderHTML({ mark }) {
     const attrs = normalizeRevision(mark.attrs)
@@ -259,3 +276,25 @@ const LarkDocRevision = Mark.create({
 })
 
 export { LarkDocRevision }
+
+/** A retained paragraph boundary, rendered as Feishu's zero-width enter marker. */
+export const LarkDocRevisionBoundary = Node.create({
+  name: 'revisionBoundary',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: false,
+  marks: '',
+  addAttributes() {
+    return {
+      revisionId: { default: '', parseHTML: element => element.getAttribute('data-revision-id') || '', rendered: false },
+      author: { default: '', parseHTML: element => element.getAttribute('data-revision-author') || '', rendered: false },
+    }
+  },
+  parseHTML() { return [{ tag: 'span[data-type="revision-boundary"]' }] },
+  renderHTML({ node }) {
+    return ['span', { class: 'revision-container lark-doc-revision-boundary', 'data-type': 'revision-boundary',
+      'data-revision-id': node.attrs.revisionId, 'data-revision-author': node.attrs.author, 'data-revision-kind': 'delete', contenteditable: 'false',
+    }, ['span', { class: 'text-revision revision-linefeed revision-linethrough', 'data-enter': 'true' }, '\u200b']]
+  },
+})

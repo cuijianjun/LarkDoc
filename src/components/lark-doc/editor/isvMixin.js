@@ -19,6 +19,7 @@
  * 这不是偷懒 —— 02 §22 ⑤-3 的实测里按钮块的右键菜单没有「编辑」项。
  */
 import { BUTTON_COLOR_ROWS, DEFAULT_BUTTON_COLOR } from '../../../ui/palette'
+import { isCommandEnabled } from '../larkDocConfig'
 import {
   BUTTON_ACTION_DEFAULT, BUTTON_TEXT_DEFAULT, BUTTON_TEXT_MAX, ISV_BUTTON_ACTIONS,
   ISV_KINDS, ISV_PANEL, ISV_VALIDATION_MESSAGE, isvPanelHeight, normalizeButtonLink,
@@ -94,6 +95,7 @@ export default {
      */
     startIsvButton(action) {
       if (!this.editor || !this.writable() || this.effectiveReadonly) return
+      if (!isCommandEnabled(this.larkDocConfig, action || BUTTON_ACTION_DEFAULT, 'insert')) return
       // 面板与斜杠菜单互斥：两者都吃键盘（面板里有 input 与下拉）。
       if (this.menuOpen) this.closeCommandMenu()
       const known = ISV_BUTTON_ACTIONS.some((item) => item.id === action)
@@ -147,6 +149,7 @@ export default {
      */
     confirmIsvButton() {
       if (!this.editor || !this.writable()) return
+      if (!isCommandEnabled(this.larkDocConfig, this.isvAction, 'insert')) { this.closeIsvPanel(); return }
       const payload = {
         kind: ISV_KINDS.button,
         action: this.isvAction,

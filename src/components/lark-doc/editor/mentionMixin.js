@@ -16,16 +16,17 @@ import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } f
 // 「export 'MENTION_EMPTY_TEXT' was not found」，运行期拿到 `undefined` —— 面板空态于是
 // 渲染成空白（`{{ mentionLoading ? '搜索中…' : mentionEmptyText }}`），且没有任何断言看得见。
 import { MENTION_EMPTY_TEXT } from '../../../core/blocks/mention'
+import { closeHistory } from '@tiptap/pm/history'
 
 /** 面板 tab：飞书是「全部 / 人 / 云文档 / 群名片」四个（任务清单不单列 tab）。 */
 export const MENTION_TABS = Object.freeze([
   { id: 'all', label: '全部' },
-  { id: 'user', label: '人员' },
+  { id: 'user', label: '人' },
   { id: 'page', label: '云文档' },
   { id: 'chat', label: '群名片' },
 ])
 
-const PANEL_WIDTH = 360
+const PANEL_WIDTH = 362
 const PANEL_MIN_HEIGHT = 168
 const PANEL_GAP = 6
 const VIEWPORT_MARGIN = 8
@@ -39,7 +40,7 @@ export default {
       mentionRange: null,
       mentionItems: [],
       mentionActiveIndex: 0,
-      mentionNotify: true,
+      mentionNotify: false,
       mentionLoading: false,
       mentionStyle: {},
       mentionTabs: MENTION_TABS,
@@ -48,6 +49,13 @@ export default {
   },
   computed: {
     mentionDirectory() { return Array.isArray(this.mentionSource) ? this.mentionSource : [] },
+  },
+  watch: {
+    mentionSource(value) {
+      this._mentionToken += 1
+      this._mentionProvider = createMentionProvider(value)
+      if (this.mentionOpen) this.refreshMentionItems()
+    },
   },
   created() {
     // provider 只建一次：宿主传函数时每次访问都会新包一层 timeout 计时器。
@@ -139,12 +147,17 @@ export default {
         id: entry.id,
         name: entry.name,
         department: entry.department,
-        notify: this.mentionNotify,
+        notify: entry.kind === 'user' && !!this.mentionNotify,
       }
       this.closeMentionPanel()
+      const editor = this.editor
+      const managers = editor.state.plugins.map(plugin => plugin.getState(editor.state)?.undoManager).filter(Boolean)
+      managers.forEach(manager => manager.stopCapturing())
       // 走 `setMention` 而不是裸 `insertContent`：`mentionId` 由 `normalizeMention`
       // 当场补齐（缺失时造一个 UUID），直接 insertContent 会漏掉这个文档内实例 id。
-      this.editor.chain().focus().deleteRange(range).setMention(attrs).run()
+      editor.chain().focus().command(({ tr }) => { closeHistory(tr); return true }).deleteRange(range).setMention(attrs).run()
+      editor.view.dispatch(closeHistory(editor.state.tr))
+      managers.forEach(manager => manager.stopCapturing())
     },
     closeMentionPanel() {
       this._mentionToken += 1
@@ -173,7 +186,7 @@ export default {
       const left = Math.max(VIEWPORT_MARGIN, Math.min(window.innerWidth - width - VIEWPORT_MARGIN, coords.left))
       return { left: `${left}px`, top: `${Math.max(VIEWPORT_MARGIN, top)}px` }
     },
-    /** 候选数变化会改面板高度（空态 168 / 每行 +50），落完 DOM 再校一次上下翻转。 */
+    /** 候选数变化会改面板高度（空态 168 / 每行 +48），落完 DOM 再校一次上下翻转。 */
     positionMentionPanel() {
       if (!this.mentionOpen || !this.mentionRange || !this.editor) return
       const panel = this.$refs.root ? this.$refs.root.querySelector('.lark-doc-mention-panel') : null

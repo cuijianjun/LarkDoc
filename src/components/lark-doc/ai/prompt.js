@@ -64,9 +64,22 @@ export function buildUserPrompt(action, text, prompt) {
  * OpenAI / 兼容协议用：system + user 两条消息。
  * baseURL 直连时宿主更希望自己控制 messages，可以用 `messages` 钩子覆盖。
  */
-export function buildMessages(action, text, prompt, language) {
+export function withImageContent(messages, images) {
+  if (!images?.length) return messages
+  const parts = images.map(image => {
+    if (typeof image?.url !== 'string' || !/^(?:https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(image.url)) throw new Error('AI 图片必须是可访问的完整地址或图片数据')
+    return { type: 'image_url', image_url: { url: image.url } }
+  })
+  const result = messages.map(message => ({ ...message }))
+  const last = result[result.length - 1]
+  if (last?.role === 'user') last.content = [{ type: 'text', text: String(last.content || '') }, ...parts]
+  else result.push({ role: 'user', content: parts })
+  return result
+}
+
+export function buildMessages(action, text, prompt, language, images) {
   const messages = [{ role: 'system', content: resolveSystemPrompt(action, language) }]
   const user = buildUserPrompt(action, text, prompt)
   if (user) messages.push({ role: 'user', content: user })
-  return messages
+  return withImageContent(messages, images)
 }

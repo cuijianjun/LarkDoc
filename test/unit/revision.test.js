@@ -9,8 +9,8 @@
  *    这一个，写路径（tracker）与展示路径（面板）都过它，别各自判。
  * 2. `collectRevisions` / `revisionAt` —— 同 id 相邻片段必须并成**一条**（连续键入会被
  *    ProseMirror 拆成多个文本节点），`to` 是**开区间**（光标停在末尾不算在修订里）。
- * 3. 决策表 —— insert+accept 留文字摘标记；insert+reject 连文字丢；delete 两档都丢且
- *    **不恢复原文**（§12.5 两处原文）。
+ * 3. 决策表 —— insert+accept 留文字摘标记；insert+reject 连文字丢；delete+reject
+ *    保留原文与段落边界（2026-11-10 源站闭环纠正旧 §12.5）。
  * 4. 面板几何 —— 三态高度 137 / 115 / 169，六按钮顺序（拒绝在前、接受在后）、图标
  *    两档 12/14、热区恒 16。
  * 5. tracker 纯函数 —— `deleteDecision` 三分支（keep / drop / mark）是与 IME、退格语义
@@ -22,9 +22,10 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { describe, expect, it } from 'vitest'
-import { getSchema } from '@tiptap/core'
+import { afterEach, describe, expect, it } from 'vitest'
+import { Editor, getSchema } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
+import { sanitizeHTML, validateDocument } from '../../src/core/documentOperations'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import {
   REVISION_ACTIONS, REVISION_AUTHOR_FALLBACK, REVISION_AUTHOR_NAME_FALLBACK, REVISION_BUTTON_IDS,
@@ -50,6 +51,8 @@ const modeMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/edito
 
 const schema = getSchema(createLarkDocExtensions())
 const revisionType = schema.marks.revision
+const liveEditors = []
+afterEach(() => liveEditors.splice(0).forEach(editor => editor.destroy()))
 
 /** 造一段正文：`runs` 里每项 `{ text, attrs }`，带 attrs 的挂 revision mark。 */
 function docOf(runs) {
@@ -176,9 +179,9 @@ describe('P4-06 接受 / 拒绝决策表（07 §12.5）', () => {
     expect(revisionDecision('insert', 'reject')).toEqual({ dropText: true })
   })
 
-  it('delete：两档都丢文字（拒绝不恢复原文）', () => {
+  it('delete：接受删除、拒绝保留原文（2026-11-10 飞书实操）', () => {
     expect(revisionDecision('delete', 'accept')).toEqual({ dropText: true })
-    expect(revisionDecision('delete', 'reject')).toEqual({ dropText: true })
+    expect(revisionDecision('delete', 'reject')).toEqual({ dropText: false })
   })
 
   it('动作越界按「只摘标记」处理，不乱删正文', () => {
@@ -205,7 +208,7 @@ describe('P4-06 接受 / 拒绝决策表（07 §12.5）', () => {
       { text: '后' },
     ])
     expect(buildRevisionDecisionTrFor(deleteDoc, 'r2', 'accept').doc.textContent).toBe('前后')
-    expect(buildRevisionDecisionTrFor(deleteDoc, 'r2', 'reject').doc.textContent).toBe('前后')
+    expect(buildRevisionDecisionTrFor(deleteDoc, 'r2', 'reject').doc.textContent).toBe('前删字后')
   })
 
   it('id 不存在时返回 false（面板据此不派发）', () => {
@@ -225,6 +228,202 @@ function buildRevisionDecisionTrFor(doc, revisionId, action) {
   // 延迟 require 会让「决策表」用例也能在没点开事务的场合跑；这里直接走 state。
   return buildRevisionDecisionTr(stateOf(doc), revisionId, action)
 }
+
+describe('Source-verified deletion and paragraph-boundary lifecycle', () => {
+  function suggest(content, from, to = from, key = 'Backspace') {
+    const editor = new Editor({ element: document.createElement('div'), extensions: createLarkDocExtensions(), content })
+    liveEditors.push(editor)
+    editor.storage.larkDocRevisionTracker.active = true
+    editor.commands.setTextSelection({ from, to })
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    return editor
+  }
+  function decide(editor, action) {
+    const item = collectRevisions(editor.state.doc)[0]
+    expect(item).toBeTruthy()
+    editor.view.dispatch(buildRevisionDecisionTr(editor.state, item.revisionId, action))
+  }
+
+  it('keeps cross-paragraph text as one suggestion, rejects without losing either paragraph, and undoes once', () => {
+    const editor = suggest('<p>leftAAA</p><p>BBBend</p>', 5, 13)
+    const items = collectRevisions(editor.state.doc)
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.textContent).toBe('leftAAABBBend')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ kind: 'delete', text: 'AAA\nBBB' })
+    const marked = editor.getJSON()
+    decide(editor, 'reject')
+    expect(editor.state.doc.textContent).toBe('leftAAABBBend')
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    editor.commands.undo()
+    expect(editor.getJSON()).toEqual(marked)
+    editor.commands.undo()
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    expect(editor.state.doc.textContent).toBe('leftAAABBBend')
+  })
+
+  it('accepts a partial cross-paragraph deletion by joining only the marked range and supports undo/redo', () => {
+    const editor = suggest('<p>leftAAA</p><p>BBBend</p>', 5, 13)
+    const marked = editor.getJSON()
+    decide(editor, 'accept')
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.textContent).toBe('leftend')
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    editor.commands.undo()
+    expect(editor.getJSON()).toEqual(marked)
+    editor.commands.redo()
+    expect(editor.state.doc.textContent).toBe('leftend')
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+  })
+
+  it.each(['Backspace', 'Delete'])('suggests only the paragraph boundary for %s and preserves all text', key => {
+    const editor = suggest('<p>left</p><p>right</p>', key === 'Backspace' ? 7 : 5, undefined, key)
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.textContent).toBe('leftright')
+    expect(collectRevisions(editor.state.doc)).toHaveLength(1)
+    const marker = editor.view.dom.querySelector('[data-type="revision-boundary"]')
+    expect(marker?.textContent).toBe('\u200b')
+    const json = validateDocument(editor.getJSON(), editor.schema)
+    const reloaded = new Editor({ extensions: createLarkDocExtensions(), content: sanitizeHTML(editor.getHTML()) })
+    liveEditors.push(reloaded)
+    expect(reloaded.getJSON()).toEqual(json)
+    decide(editor, 'accept')
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.textContent).toBe('leftright')
+    editor.commands.undo()
+    decide(editor, 'reject')
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.textContent).toBe('leftright')
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+  })
+
+  it('does not delete unmarked text between separate fragments of the same suggestion', () => {
+    const doc = docOf([{ text: 'A', attrs: { revisionId: 'same', kind: 'delete' } }, { text: 'keep' }, { text: 'B', attrs: { revisionId: 'same', kind: 'delete' } }])
+    expect(collectRevisions(doc)).toHaveLength(1)
+    expect(revisionAt(doc, 3)).toBe('')
+    expect(buildRevisionDecisionTrFor(doc, 'same', 'accept').doc.textContent).toBe('keep')
+  })
+
+  it('keeps unmarked text subsequently inserted after a retained boundary', () => {
+    const editor = suggest('<p>left</p><p>right</p>', 7)
+    let boundaryPos = -1
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === 'revisionBoundary') boundaryPos = pos })
+    editor.view.dispatch(editor.state.tr.insertText('KEEP', boundaryPos + 1).setMeta('larkDocRevisionSkip', true))
+    decide(editor, 'accept')
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.textContent).toBe('leftKEEPright')
+  })
+
+  it('does not produce suggestions from key events after the editor becomes readonly', () => {
+    const editor = suggest('<p>text</p>', 1)
+    editor.setEditable(false)
+    editor.commands.setTextSelection(2)
+    const saved = editor.getJSON()
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(editor.getJSON()).toEqual(saved)
+  })
+
+  it('never splits a UTF-16 surrogate pair during character deletion', () => {
+    const doc = docOf([{ text: 'a😀b' }])
+    expect(deletionRange(stateOf(doc, 4), false)).toEqual({ from: 2, to: 4 })
+    expect(deletionRange(stateOf(doc, 2), true)).toEqual({ from: 2, to: 4 })
+  })
+
+  it.each(['insert-then-delete', 'delete-then-insert'])('keeps opposite revision kinds separate in %s and both decisions preserve the intended original', order => {
+    for (const action of ['accept', 'reject']) {
+      const editor = new Editor({ extensions: createLarkDocExtensions(), content: '<p data-block-id="b12345678">original</p>' })
+      liveEditors.push(editor)
+      editor.storage.larkDocRevisionTracker.active = true
+      editor.commands.setTextSelection(1)
+      if (order === 'insert-then-delete') {
+        editor.commands.insertContent('NEW')
+        editor.commands.setTextSelection(4)
+        editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))
+      } else {
+        editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))
+        editor.commands.setTextSelection(2)
+        editor.commands.insertContent('NEW')
+      }
+      const items = collectRevisions(editor.state.doc)
+      expect(items).toHaveLength(2)
+      expect(new Set(items.map(item => item.kind))).toEqual(new Set(['insert', 'delete']))
+      expect(new Set(items.map(item => item.revisionId)).size).toBe(2)
+      decide(editor, action)
+      decide(editor, action)
+      expect(editor.state.doc.textContent).toBe(action === 'accept' ? 'NEWriginal' : 'original')
+      expect(collectRevisions(editor.state.doc)).toEqual([])
+    }
+  })
+
+  it.each(['accept', 'reject'])('supports source-verified code text deletion and %s without permitting ordinary formatting marks', action => {
+    const editor = suggest('<pre><code>const</code></pre><p>end</p>', 2, 4)
+    expect(editor.state.doc.firstChild.textContent).toBe('const')
+    expect(collectRevisions(editor.state.doc)).toHaveLength(1)
+    expect(collectRevisions(editor.state.doc)[0]).toMatchObject({ kind: 'delete', text: 'on' })
+    editor.commands.setTextSelection({ from: 1, to: 5 })
+    editor.commands.toggleBold()
+    expect(editor.getHTML()).not.toContain('<strong>')
+    decide(editor, action)
+    expect(editor.state.doc.firstChild.textContent).toBe(action === 'accept' ? 'cst' : 'const')
+    expect(editor.state.doc.childCount).toBe(2)
+  })
+
+  it.each(['accept', 'reject'])('clamps a code-anchored cross-zone drag to code text and %s preserves the paragraph', action => {
+    const editor = suggest('<pre><code>abc</code></pre><p>def</p>', 2, 7)
+    expect(editor.state.selection.from).toBeGreaterThanOrEqual(1)
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.textContent).toBe('abcdef')
+    expect(collectRevisions(editor.state.doc)).toHaveLength(1)
+    expect(collectRevisions(editor.state.doc)[0].text).toBe('bc')
+    decide(editor, action)
+    expect(editor.state.doc.firstChild.textContent).toBe(action === 'accept' ? 'a' : 'abc')
+    expect(editor.state.doc.child(1).textContent).toBe('def')
+    expect(editor.state.doc.childCount).toBe(2)
+  })
+
+  it.each(['accept', 'reject'])('selects a whole code block when a paragraph-anchored drag enters its zone; %s retains the paragraph identity', action => {
+    const editor = new Editor({ extensions: createLarkDocExtensions(), content: '<pre data-block-id="b12345678"><code>abc</code></pre><p data-block-id="b87654321">def</p>' })
+    liveEditors.push(editor)
+    const original = editor.getJSON()
+    editor.storage.larkDocRevisionTracker.active = true
+    editor.commands.setTextSelection({ from: 7, to: 2 })
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.textContent).toBe('abcdef')
+    expect(collectRevisions(editor.state.doc)).toHaveLength(1)
+    const marked = editor.getJSON()
+    expect(() => validateDocument(marked, editor.schema)).not.toThrow()
+    const reload = new Editor({ extensions: createLarkDocExtensions(), content: sanitizeHTML(editor.getHTML()) })
+    liveEditors.push(reload)
+    expect(reload.getJSON()).toEqual(marked)
+    decide(editor, action)
+    if (action === 'reject') expect(editor.getJSON()).toEqual(original)
+    else {
+      expect(editor.state.doc.childCount).toBe(1)
+      expect(editor.state.doc.firstChild.type.name).toBe('paragraph')
+      expect(editor.state.doc.firstChild.attrs.blockId).toBe('b87654321')
+      expect(editor.state.doc.firstChild.textContent).toBe('ef')
+    }
+    editor.commands.undo()
+    expect(editor.getJSON()).toEqual(marked)
+  })
+
+  it.each([1, 2])('extends an existing whole-code deletion by %s unmarked paragraph characters', extra => {
+    const editor = new Editor({ extensions: createLarkDocExtensions(), content: '<pre><code>abc</code></pre><p>def</p>' })
+    liveEditors.push(editor)
+    editor.storage.larkDocRevisionTracker.active = true
+    editor.commands.setTextSelection({ from: 7, to: 2 })
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    editor.commands.setTextSelection({ from: 7 + extra, to: 2 })
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(collectRevisions(editor.state.doc)).toHaveLength(1)
+    expect(collectRevisions(editor.state.doc)[0].text).toBe('abc\n' + 'def'.slice(0, 1 + extra))
+    decide(editor, 'accept')
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.firstChild.textContent).toBe('def'.slice(1 + extra))
+  })
+})
 
 describe('P4-06 跳转与锚点（07 §12.4 #1 #2 #3）', () => {
   const doc = docOf([
@@ -375,19 +574,18 @@ describe('P4-06 tracker 纯函数（07 §12.2 删除语义）', () => {
     expect(deleteDecision(marked, { from: 1, to: 3 }, type)).toBe('mark')
   })
 
-  it('deletionRange 只认块内字符，块首/块尾交回默认行为', () => {
+  it('deletionRange 捕获块内字符和跨段文本选区，文档两端没有删除目标', () => {
     const doc = docOf([{ text: 'abc' }])
     expect(deletionRange(stateOf(doc, 2), false)).toEqual({ from: 1, to: 2 })
     expect(deletionRange(stateOf(doc, 1), false)).toBeNull()
     expect(deletionRange(stateOf(doc, 2), true)).toEqual({ from: 2, to: 3 })
     expect(deletionRange(stateOf(doc, 4), true)).toBeNull()
-    // 跨块选区不接管。
     const twoBlocks = schema.nodes.doc.create(null, [
       schema.nodes.paragraph.create(null, schema.text('ab')),
       schema.nodes.paragraph.create(null, schema.text('cd')),
     ])
     const cross = EditorState.create({ schema, doc: twoBlocks, selection: TextSelection.create(twoBlocks, 1, 6) })
-    expect(deletionRange(cross, false)).toBeNull()
+    expect(deletionRange(cross, false)).toEqual({ from: 1, to: 6 })
   })
 
   it('adjacentRevisionId 只看光标前一个字符所在建议', () => {

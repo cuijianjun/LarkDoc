@@ -24,6 +24,9 @@ const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office']
 export const PM_NAMES = ['state', 'model', 'view', 'transform', 'commands', 'keymap', 'inputrules', 'schema-list', 'history', 'gapcursor', 'dropcursor', 'tables', 'changeset']
 const PM_ENTRY = '\0lark-doc-pm:'
 const MERMAID_ENTRY = '\0lark-doc-mermaid'
+const REACTION_CATALOG = resolve(ROOT, 'src/core/comments/reaction-catalog.json')
+const REACTION_CATALOG_ENTRY = '\0lark-doc-reaction-catalog-assets'
+const REACTION_ASSET_BASE = '__larkDocReactionAssetBase'
 export const MERMAID_FILES = { mermaidEsm: 'lark-doc-mermaid-runtime.esm.js', mermaidCjs: 'lark-doc-mermaid-runtime.common.js' }
 const mermaidEsmTargets = new Set(['esm', 'full', 'legacyEsm', 'elementEsm', 'feature:mermaid'])
 const mermaidCjsTargets = new Set(['cjs', 'fullCjs', 'legacy'])
@@ -87,6 +90,10 @@ function packageAlias(target = '') {
       ['docx', resolve(ROOT, 'src/core/features/stub.js')],
       ...(target === 'lite' ? [['marked', resolve(ROOT, 'src/core/features/stub.js')]] : []),
       ['turndown', resolve(ROOT, 'src/core/features/stub.js')],
+      // Markdown parsing is a lazy feature in the element build. Keep the
+      // synchronous export codec's API shape, but avoid bundling marked into
+      // the first screen; the feature entry supplies the real parser on demand.
+      ['marked', resolve(ROOT, 'src/core/features/stub.js')],
       ['mammoth/mammoth.browser', resolve(ROOT, 'src/core/features/stub.js')],
       ['mammoth/mammoth.browser.js', resolve(ROOT, 'src/core/features/stub.js')],
       ['lark-doc/mermaid-vendor', resolve(ROOT, 'src/core/features/stub.js')],
@@ -167,8 +174,45 @@ export function inlineCssImports() {
 }
 inlineCssImports.postcss = true
 
+/** UMD cannot split dynamic imports; retain the catalog while emitting its original PNG bytes. */
+export function reactionCatalogAssets() {
+  const references = new Set()
+  return {
+    name: 'lark-doc-reaction-catalog-assets',
+    resolveId(id, importer) {
+      const file = isAbsolute(id) ? id : importer && id.startsWith('.') ? resolve(dirname(importer), id) : null
+      return file === REACTION_CATALOG ? REACTION_CATALOG_ENTRY : null
+    },
+    load(id) { return id === REACTION_CATALOG_ENTRY ? 'export default null' : null },
+    shouldTransformCachedModule({ id }) { return id === REACTION_CATALOG_ENTRY ? true : null },
+    transform(_code, id) {
+      if (id !== REACTION_CATALOG_ENTRY) return null
+      this.addWatchFile(REACTION_CATALOG)
+      const catalog = JSON.parse(readFileSync(REACTION_CATALOG, 'utf8'))
+      let sequence = 0
+      const literal = value => {
+        if (typeof value === 'string') {
+          const image = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value)
+          if (image) {
+            const reference = this.emitFile({ type: 'asset', name: `lark-doc-reaction-${sequence++}.png`, source: Buffer.from(image[1], 'base64') })
+            references.add(reference)
+            return `assetUrl(import.meta.ROLLUP_FILE_URL_${reference})`
+          }
+        }
+        if (Array.isArray(value)) return `[${value.map(literal).join(',')}]`
+        if (value && typeof value === 'object') return `{${Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}:${literal(item)}`).join(',')}}`
+        return JSON.stringify(value)
+      }
+      return `function assetUrl(file){try{return ${REACTION_ASSET_BASE}?new URL(file,${REACTION_ASSET_BASE}).href:file}catch(_){return file}}\nexport default ${literal(catalog)};`
+    },
+    resolveFileUrl({ referenceId, relativePath }) {
+      return references.has(referenceId) ? JSON.stringify(relativePath) : null
+    },
+  }
+}
+
 export function cssInjection(target) {
-  if (!['element', 'elementEsm', 'feature:math:umd'].includes(target)) return false
+  if (!['element', 'elementRuntime', 'elementEsm', 'feature:math:umd'].includes(target)) return false
   return (variable, id) => {
     const fonts = [...new Set([...readFileSync(id, 'utf8').matchAll(/url\(["']?(\.\/fonts\/[^"')]+)["']?\)/g)].map(match => match[1]))]
     let rebase = ''
@@ -185,6 +229,7 @@ export function cssInjection(target) {
 
 function plugins(target, cssFile) {
   return [
+    ...(target === 'element' || target.endsWith(':umd') ? [reactionCatalogAssets()] : []),
     ...(MERMAID_FILES[target] ? [{
       name: 'lark-doc-mermaid-entry',
       resolveId(id) { return id === MERMAID_ENTRY ? id : null },
@@ -207,7 +252,7 @@ function plugins(target, cssFile) {
       }] : [])],
       inject: cssInjection(target),
       extract: cssFile || false,
-      minimize: target === 'element' || target === 'elementEsm' || target === 'feature:math:umd',
+      minimize: target === 'element' || target === 'elementRuntime' || target === 'elementEsm' || target === 'feature:math:umd',
       sourceMap: false,
     }),
   ]
@@ -250,12 +295,21 @@ const targets = {
     css: 'lark-doc.css',
   },
   element: {
-    input: resolve(ROOT, 'src/web-component/standalone.js'),
+    input: resolve(ROOT, 'src/web-component/loader.js'),
     format: 'umd',
     file: 'lark-doc-element.umd.min.js',
     entryFileNames: 'lark-doc-element.umd.min.js',
     inlineDynamicImports: true,
     name: 'LarkDoc',
+    css: null,
+  },
+  elementRuntime: {
+    input: resolve(ROOT, 'src/web-component/standalone.js'),
+    format: 'umd',
+    file: 'lark-doc-element.runtime.umd.min.js',
+    entryFileNames: 'lark-doc-element.runtime.umd.min.js',
+    inlineDynamicImports: true,
+    name: 'LarkDocRuntime',
     css: null,
   },
   elementEsm: {
@@ -370,6 +424,13 @@ export function getRollupConfig(target = process.env.ROLLUP_TARGET || 'esm') {
     entryFileNames: selected.entryFileNames,
     chunkFileNames: selected.chunkFileNames || 'lark-doc-[name]-[hash].js',
     inlineDynamicImports: selected.inlineDynamicImports,
+    // Keep optional feature imports as native dynamic imports in CommonJS
+    // consumers. Webpack 4 can then create a real lazy chunk for the Vue2
+    // host instead of rewriting the import to a static require and pulling
+    // all highlight grammars into the first screen.
+    ...(selected.format === 'cjs' && !selected.inlineDynamicImports ? { dynamicImportInCjs: false } : {}),
+    // Capture per IIFE before an inlined dynamic catalog is evaluated on a later user click.
+    ...(selected.format === 'umd' ? { intro: `var ${REACTION_ASSET_BASE}=typeof document!=="undefined"&&document.currentScript&&document.currentScript.src||null;` } : {}),
     paths(id) {
       if (id === 'lark-doc/mermaid-vendor' && mermaidTarget(normalizedTarget)) {
         return `${normalizedTarget.startsWith('feature:') ? '..' : '.'}/${MERMAID_FILES[mermaidTarget(normalizedTarget)]}`

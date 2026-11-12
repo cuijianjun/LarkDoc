@@ -65,6 +65,12 @@ export class LarkDocElement extends HTMLElement {
     this._autosaveDeclaredChanged = false
     // 宿主尚未设置 property 前不允许挂载：标记为待定，等微任务。
     this._pending = false
+    // A fully detached element is rebuilt from its original slot content on
+    // the next connection. This keeps the documented slot-cache contract
+    // independent from any local draft saved by the previous instance.
+    this._reconnectFresh = false
+    this._slotContentOverridden = false
+    this._reconnectContent = null
   }
 
   /* ------------------------------ 生命周期 ------------------------------ */
@@ -89,6 +95,8 @@ export class LarkDocElement extends HTMLElement {
     this._disconnectTask = setTimeout(() => {
       this._disconnectTask = null
       if (this.isConnected) return
+      this._reconnectFresh = true
+      if (this._slotContentOverridden && this.document) this._reconnectContent = this.document.getJSON()
       this._unmount()
     }, 0)
   }
@@ -159,6 +167,15 @@ export class LarkDocElement extends HTMLElement {
 
   _mount(preservedState = {}) {
     if (this.document || !this.isConnected) return
+    if (this._reconnectFresh && !Object.keys(preservedState).length) {
+      const content = this._reconnectContent || this._slotHTML || this._options?.content
+      preservedState = {
+        ...(content != null ? { content } : {}),
+        _preserveRuntimeState: { content: true, title: true },
+      }
+      this._reconnectContent = null
+      this._reconnectFresh = false
+    }
     const { options, props } = readOptionsFromElement(this)
     this._rendererProps = props
     // 标题值已经落到 props.title，标签上的 title 属性立刻摘掉（否则浏览器会画原生 tooltip）。
@@ -275,6 +292,9 @@ export class LarkDocElement extends HTMLElement {
           if (this.document !== instance) return
           this._actualReady = true
         }
+        const readyContentBefore = name === 'ready' && this.document
+          ? JSON.stringify(this.document.getJSON())
+          : null
         const detail = {
           type: name,
           document: instance,
@@ -282,6 +302,12 @@ export class LarkDocElement extends HTMLElement {
           payload: payload === undefined ? null : this._sanitizeDetail(payload),
         }
         this.dispatchEvent(new CustomEvent(EVENT_MAP[name], { bubbles: true, composed: true, detail }))
+        // A ready callback is allowed to seed runtime content. Preserve that
+        // explicit write across a later detach/reconnect, while ordinary
+        // post-ready edits still fall back to the original slot contract.
+        if (name === 'ready' && this._options.storage !== 'none' && this._slotHTML && this.document) {
+          try { this._slotContentOverridden = JSON.stringify(this.document.getJSON()) !== readyContentBefore } catch (_) { /* ignore comparison failures */ }
+        }
       })
     })
   }

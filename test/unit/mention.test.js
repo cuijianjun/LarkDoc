@@ -25,7 +25,76 @@ import {
   createMentionId, mentionPlainText, normalizeMention, readMention,
 } from '../../src/core/blocks/mention'
 import { MENTION_SEARCH_LIMIT, createMentionProvider, searchMentionDirectory } from '../../src/core/mention/directory'
-import mentionMixin from '../../src/components/lark-doc/editor/mentionMixin'
+import mentionMixin, { MENTION_TABS } from '../../src/components/lark-doc/editor/mentionMixin'
+import mentionUiMixin from '../../src/components/lark-doc/editor/mentionUiMixin'
+import { createMentionPanel } from '../../src/ui/mention'
+
+describe('飞书提及候选头像与上下两行信息', () => {
+  const avatar = 'data:image/png;base64,YQ=='
+  function panel(run) {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const ui = createMentionPanel({ host })
+    const state = { open: true, tabs: MENTION_TABS, kind: 'all', notify: false, items: [{ kind: 'user', id: 'me', name: '我', department: '测试部门', avatar }], activeIndex: 0 }
+    try { ui.update(state); run({ host, ui, state }) } finally { ui.destroy(); host.remove() }
+  }
+  it('渲染提供的头像并将姓名和部门放进同一纵向主区', () => panel(({ host }) => {
+    const row = host.querySelector('[role="option"]')
+    const image = row.querySelector('.lark-doc-mention-avatar img')
+    expect(image?.getAttribute('src')).toBe(avatar)
+    expect(image?.getAttribute('alt')).toBe('')
+    expect(row.querySelector('.lark-doc-mention-main .lark-doc-mention-row-name')?.textContent).toBe('我')
+    expect(row.querySelector('.lark-doc-mention-main .lark-doc-mention-row-dept')?.textContent).toBe('测试部门')
+  }))
+  it('图片加载失败保留姓名首字，复用行时替换头像和部门', () => panel(({ host, ui, state }) => {
+    const first = host.querySelector('.lark-doc-mention-avatar img')
+    expect(first).not.toBeNull()
+    first.dispatchEvent(new Event('error'))
+    expect(host.querySelector('.lark-doc-mention-avatar img')).toBeNull()
+    expect(host.querySelector('.lark-doc-mention-avatar')?.textContent).toBe('我')
+    ui.update({ ...state, items: [{ kind: 'user', id: 'other', name: '另一个人', avatar: '/other-avatar.png' }] })
+    expect(host.querySelector('.lark-doc-mention-avatar img')?.getAttribute('src')).toBe('/other-avatar.png')
+    expect(host.querySelector('.lark-doc-mention-row-dept')).toBeNull()
+    expect(host.textContent).not.toContain('测试部门')
+  }))
+  it('即时出网策略阻止远端头像，允许本地头像且不接受脚本地址', () => panel(({ host, ui, state }) => {
+    const remote = { kind: 'user', id: 'remote', name: '远端', avatar: 'https://avatars.example.test/a.png' }
+    ui.update({ ...state, items: [remote], network: { mode: 'open' } })
+    expect(host.querySelector('.lark-doc-mention-avatar img')?.getAttribute('src')).toBe(remote.avatar)
+    ui.update({ ...state, items: [remote], network: { mode: 'offline' } })
+    expect(host.querySelector('img')).toBeNull()
+    ui.update({ ...state, items: [remote], network: { mode: 'allowlist', allowlist: ['avatars.example.test'] } })
+    expect(host.querySelector('img')?.getAttribute('src')).toBe(remote.avatar)
+    ui.update({ ...state, items: [{ ...remote, avatar: 'javascript:alert(1)' }], network: { mode: 'open' } })
+    expect(host.querySelector('img')).toBeNull()
+    ui.update({ ...state, network: { mode: 'offline' } })
+    expect(host.querySelector('img')?.getAttribute('src')).toBe(avatar)
+  }))
+  it('宿主把实时网络策略传入提及渲染器', () => {
+    const network = { mode: 'offline' }
+    expect(mentionUiMixin.methods.buildMentionPanelState.call({ mentionOpen: true, larkDocConfig: { network } }).network).toEqual(network)
+  })
+  it.each(['offline', 'allowlist'])('%s 不将斜杠反斜杠开头的远端头像当成本地路径', mode => panel(({ host, ui, state }) => {
+    ui.update({ ...state, items: [{ ...state.items[0], avatar: '/' + String.fromCharCode(92) + 'remote.example/avatar.png' }], network: { mode, allowlist: [] } })
+    expect(host.querySelector('img')).toBeNull()
+  }))
+  it('仅人员候选显示通知选项，云文档、群和空结果不显示', () => panel(({ host, ui, state }) => {
+    expect(host.querySelector('input[type=checkbox]')).not.toBeNull()
+    for (const items of [[{ kind: 'chat', id: 'chat', name: '群' }], [{ kind: 'page', id: 'page', name: '文档' }], []]) {
+      ui.update({ ...state, items })
+      expect(host.querySelector('input[type=checkbox]')).toBeNull()
+    }
+    ui.update(state)
+    expect(host.querySelector('input[type=checkbox]')?.checked).toBe(false)
+  }))
+})
+
+describe('当前飞书提及入口默认状态', () => {
+  it('使用当前四个分类文案，并且通知默认不勾选', () => {
+    expect(MENTION_TABS.map(item => item.label)).toEqual(['全部', '人', '云文档', '群名片'])
+    expect(mentionMixin.data().mentionNotify).toBe(false)
+  })
+})
 
 const mounted = []
 afterEach(() => {
@@ -42,6 +111,35 @@ function mount(content, options = {}) {
 function caretAt(editor, offset) {
   editor.commands.setTextSelection(1 + offset)
 }
+
+describe('提及选择的独立撤销', () => {
+  it.each(['page', 'chat'])('提及%s不携带不可用的通知勾选状态', kind => {
+    const editor = mount('<p>@</p>')
+    caretAt(editor, 1)
+    mentionMixin.methods.chooseMention.call({ editor, writable: () => true, mentionRange: { from: 1, to: 2 }, mentionNotify: true, closeMentionPanel() {} }, { kind, id: kind, name: '核验对象' })
+    expect(editor.getJSON().content[0].content[0].attrs.notify).toBe(false)
+  })
+  it.each(['pm', 'yjs'])('%s 中一次撤销恢复输入查询，重做保留同一个mentionId', async mode => {
+    const runtime = mode === 'yjs' ? await import('../../src/collab') : null
+    const ydoc = runtime ? new runtime.Yjs.Doc() : null
+    const collab = runtime ? { extensions: runtime.createCollabExtensions({ ydoc }), isRemoteTransaction: runtime.isRemoteTransaction } : null
+    const editor = mount('<p></p>', collab ? { collab } : {})
+    try {
+      editor.commands.setContent('<p></p>')
+      const manager = editor.state.plugins.map(plugin => plugin.getState(editor.state)?.undoManager).find(Boolean)
+      manager?.clear()
+      editor.commands.insertContent('@')
+      const query = editor.getJSON()
+      mentionMixin.methods.chooseMention.call({ editor, writable: () => true, mentionRange: { from: 1, to: 2 }, mentionNotify: false, closeMentionPanel() {} }, { kind: 'user', id: 'self', name: '核验人' })
+      const chosen = editor.getJSON()
+      expect(chosen.content[0].content[0].type).toBe('mention')
+      expect(editor.commands.undo()).toBe(true)
+      expect(editor.getJSON()).toEqual(query)
+      expect(editor.commands.redo()).toBe(true)
+      expect(editor.getJSON()).toEqual(chosen)
+    } finally { editor.destroy(); ydoc?.destroy() }
+  })
+})
 
 let schema
 beforeAll(() => {

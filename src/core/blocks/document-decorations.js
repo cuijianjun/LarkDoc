@@ -250,7 +250,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
     }, { key: `${className}-${pos}-${label}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.LIST_MARKER }))
   }
   computeOrderedListNumbers(doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index, info.firstChildIsParagraph))
-  computeBulletItems(doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))
+  computeBulletItems(doc).forEach((info, pos) => pushListMarker(pos, info.depth === 2 ? '◦' : '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))
   // 折叠集合为空是常态（默认不折叠）：foldableIdPositions 是一次全树扫描，
   // 没有折叠项时直接跳过 —— 热路径上这笔省下来是纯赚。
   if (storage.folded.size) {

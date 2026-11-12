@@ -100,6 +100,12 @@ async function runRoute(page, url, label, isWc) {
   // 4. mermaid 懒 chunk 按需请求 + SVG（走初始内容里的图表块）
   //    注意：webpack JSONP 加载完会移除 <script>，只能从 request 事件里取证。
   const mermaidChunk = firstScreen.find((entry) => /mermaid[^/]*\.js(\?|$)/i.test(entry)) || ''
+  // Both the Vue ESM graph and the standalone element entry render Mermaid
+  // asynchronously after their lazy chunk resolves. `networkidle` can fire
+  // before the NodeView has committed the SVG, so wait on the visible contract
+  // instead of sampling the DOM immediately. The element entry additionally
+  // needs its sibling runtime loader to settle here.
+  await page.waitForFunction(() => document.querySelectorAll('.lark-doc-diagram svg').length > 0, { timeout: 10000 }).catch(() => {})
   const diagram = await page.evaluate(() => ({
     injectedScript: !!document.querySelector('script[data-lark-doc-diagram="mermaid"]'),
     svg: document.querySelectorAll('.lark-doc-diagram svg').length,
@@ -110,6 +116,7 @@ async function runRoute(page, url, label, isWc) {
     `chunk=${mermaidChunk.split('/').pop() || '(未请求)'} svg=${diagram.svg} 注入script=${diagram.injectedScript}`)
 
   // 5. 代码块 → highlight 区块按需加载
+  const initialScripts = new Set(scripts)
   scripts.length = 0
   const hasApi = await page.evaluate(() => !!(window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor()))
   if (hasApi) {
@@ -118,7 +125,11 @@ async function runRoute(page, url, label, isWc) {
     })
     await page.waitForTimeout(2000)
     const highlighted = await page.locator('.lark-doc-code [class^="hljs-"]').count()
-    const pulled = scripts.filter((entry) => /highlight/i.test(entry))
+    // Rollup's ESM graph names the JavaScript highlighter chunks after their
+    // concrete modules (`lark-doc-core-*` and `lark-doc-javascript-*`), while
+    // Webpack's legacy graph uses the explicit `highlight` name. Accept both,
+    // but only count requests that happened after the code block was inserted.
+    const pulled = scripts.filter((entry) => !initialScripts.has(entry) && /(?:highlight|lark-doc-(?:core|javascript)-)/i.test(entry))
     record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, highlighted > 0 && pulled.length > 0,
       `高亮节点=${highlighted}，新增 highlight 脚本=${pulled.length}`)
   } else {

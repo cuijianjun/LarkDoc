@@ -14,48 +14,19 @@
  *   3. **不做静默兜底**：图片取不到字节就是取不到，`collectImages` 跳过该图并在返回值里
  *      列出失败清单，由上层决定要不要提示 —— 不伪造占位图，那会让用户以为图还在。
  *   4. **不做格式嗅探**：导出哪种格式由调用方显式指定，不根据标题后缀或内容猜。
- *   5. **「导出正文及评论」不产评论内容**：`scope='withComments'` 只被原样记进返回值，
- *      不参与 docx / pdf 的构建 —— 评论线不在本线范围，伪造一块评论节点比不导更糟。
+ *   5. **评论必须来自真实读取结果**：`withComments` 要求显式传入评论数组；缺失时拒绝导出。
+ *      Word 使用原生批注与引用区，PDF 在打印期间临时追加可读评论。
  */
-import { serializeMarkdown } from './markdown.js'
+import { serializeMarkdown, normalizeExportDocument } from './markdown.js'
 import { printDocument } from './pdf.js'
 import { downloadBlob, downloadText } from '../importExport.js'
 import { loadFeature } from '../../core/features/registry'
-
-/** 文件名里的非法字符（Windows 最严，顺带堵住路径分隔符）。 */
-const UNSAFE_FILE_NAME_CHARS = /[\\/:*?"<>|]/g
-
-/** 文件名最长 80 字符：超了在多数文件系统上会被截断，截出乱码不如自己截。 */
-const FILE_NAME_MAX_LENGTH = 80
-
-/** 拿不到标题时的兜底名。 */
-const DEFAULT_FILE_NAME = 'document'
-
-/**
- * 文件名安全化（本线自己实现，与 importExport.js 的同名函数**刻意不共享**，见负结论 2）。
- *
- * 相比那份实现多的两步：
- *   - 折叠连续空白：编辑器标题里常有换行 / 全角空格，直接做文件名会出现一串怪字符；
- *   - 去掉前导点：`.md` 在 Unix 下是隐藏文件，`..` 更是直接指向父目录。
- *
- * @param {string} value 原始标题
- * @returns {string} 安全文件名（已兜底，永远非空）
- */
-export function safeFileName(value) {
-  const cleaned = String(value === null || value === undefined ? '' : value)
-    .replace(UNSAFE_FILE_NAME_CHARS, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^[.\s]+/, '')
-    .slice(0, FILE_NAME_MAX_LENGTH)
-  return cleaned || DEFAULT_FILE_NAME
-}
-
-/** 文件名 + 扩展名。`safeFileName` 不含点，后缀在这里加，避免 `a.md` 被剪成 `a.m`。 */
-export function withExtension(value, extension) {
-  const base = safeFileName(value)
-  return `${base}.${String(extension || '').replace(/^\./, '')}`
-}
+import { flattenHeadingContainers, safeUrl } from '../../core/documentOperations'
+import { normalizeThread } from '../../core/comments/thread'
+import { createNetworkPolicy } from '../../core/policy/network'
+import { cropImageBlob, normalizeImageCrop } from '../../core/media/image-crop'
+import { withExtension } from './fileName.js'
+export { safeFileName, withExtension } from './fileName.js'
 
 /** doc → 块数组：兼容 doc JSON、doc 节点实例与裸数组三种输入。 */
 function nodesOf(doc) {
@@ -68,7 +39,7 @@ function nodesOf(doc) {
 }
 
 /** Markdown「仅文本」档要丢掉的节点类型（附件类在 markdown.js 的 BLOCK_SKIP 里已经不落盘）。 */
-const TEXT_ONLY_DROP_TYPES = Object.freeze(['image'])
+const TEXT_ONLY_DROP_TYPES = Object.freeze(['image', 'fileBlock'])
 
 /**
  * 深拷一份去掉指定类型节点的块数组。
@@ -110,23 +81,38 @@ function collectImageSources(nodes, found) {
  * 把图片 src → 字节。
  *
  * 只处理 `http(s)` 与 data URI 之外的常规地址；`data:` 开头的图片不抓取（它本身就是
- * 内联字节，fetch 一把既慢又没收益）。失败逐个跳过 —— 见负结论 3，不做占位兜底。
+ * 内联字节，直接解码交给构建器，不产生请求）。失败逐个跳过 —— 见负结论 3，不做占位兜底。
  *
  * @returns {Promise<{ images: object, failed: string[] }>}
  */
-export async function collectImages(doc) {
-  const sources = collectImageSources(nodesOf(doc), [])
+export async function collectImages(doc, options = {}) {
+  // Match the builder's flat JSON input, including public heading.children and PM nodes.
+  const source = typeof doc?.toJSON === 'function' ? doc.toJSON() : doc
+  const flat = flattenHeadingContainers({
+    type: 'doc',
+    content: nodesOf(source).map(node => typeof node?.toJSON === 'function' ? node.toJSON() : node),
+  })
+  const sources = collectImageSources(nodesOf(flat), [])
   const images = {}
   const failed = []
-  if (typeof fetch !== 'function') {
-    for (let i = 0; i < sources.length; i += 1) failed.push(sources[i])
-    return { images, failed }
-  }
+  const network = createNetworkPolicy(options.network)
   for (let i = 0; i < sources.length; i += 1) {
     const src = sources[i]
-    if (/^data:/i.test(src)) continue
+    if (typeof options.shouldDownload === 'function' && options.shouldDownload() !== true) throw new Error('导出条件已改变，请重新导出')
+    if (/^data:/i.test(src)) {
+      try {
+        if (!safeUrl(src, true)) throw new Error('无效内联图片')
+        const base64 = src.slice(src.indexOf(',') + 1)
+        if (base64.length % 4 === 1 || (base64.includes('=') && base64.length % 4 !== 0)) throw new Error('无效图片编码')
+        images[src] = typeof atob === 'function'
+          ? Uint8Array.from(atob(base64), character => character.charCodeAt(0))
+          : new Uint8Array(Buffer.from(base64, 'base64'))
+      } catch (_) { failed.push(src) }
+      continue
+    }
+    if (src.includes('\\') || !safeUrl(src, true) || !network.allows(src)) { failed.push(src); continue }
     try {
-      const response = await fetch(src)
+      const response = await fetch(src, { credentials: 'same-origin', redirect: 'error' })
       if (!response.ok) {
         failed.push(src)
         continue
@@ -138,6 +124,42 @@ export async function collectImages(doc) {
     }
   }
   return { images, failed }
+}
+
+/** A missing comments payload must never masquerade as an export containing comments. */
+export function normalizeExportComments(comments) {
+  if (!Array.isArray(comments)) throw new Error('未读取到评论，无法导出正文及评论')
+  return comments.map(normalizeThread).filter(Boolean).map(thread => ({ ...thread,
+    createdAt: Number.isFinite(new Date(thread.createdAt).getTime()) ? thread.createdAt : 0,
+    replies: thread.replies.map(reply => ({ ...reply, createdAt: Number.isFinite(new Date(reply.createdAt).getTime()) ? reply.createdAt : 0 })),
+  }))
+}
+
+async function prepareImageCrops(doc, images, failed) {
+  const prepared = { ...images }
+  let sequence = 0
+  async function visit(node) {
+    if (node.type === 'image') {
+      const crop = normalizeImageCrop(node.attrs?.crop), src = node.attrs?.src
+      if (!crop) return
+      if (!prepared[src]) { if (src && !failed.includes(src)) failed.push(src); return }
+      try {
+        const blob = await cropImageBlob(new Blob([prepared[src]]), crop)
+        const croppedSrc = `lark-doc-export-crop:${++sequence}`
+        prepared[croppedSrc] = new Uint8Array(await blob.arrayBuffer())
+        node.attrs = { ...node.attrs, src: croppedSrc, crop: null, naturalWidth: null, naturalHeight: null,
+          width: (Number(node.attrs.width) || 320) * (crop[2] - crop[0]),
+          height: Number(node.attrs.height) > 0 ? Number(node.attrs.height) * (crop[3] - crop[1]) : null }
+      } catch (_) {
+        if (!failed.includes(src)) failed.push(src)
+        // Retain the failure, but give the builder no route to the original hidden pixels.
+        node.attrs = { ...node.attrs, src: '' }
+      }
+    }
+    for (const child of node.content || []) await visit(child)
+  }
+  await visit(doc)
+  return prepared
 }
 
 /**
@@ -153,7 +175,9 @@ export async function collectImages(doc) {
 export function exportMarkdown(doc, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
-  const source = scope === 'textOnly' ? stripNodeTypes(nodesOf(doc), TEXT_ONLY_DROP_TYPES) : doc
+  const input = typeof doc?.toJSON === 'function' ? doc.toJSON() : doc
+  const flat = flattenHeadingContainers({ type: 'doc', content: nodesOf(input).map(node => typeof node?.toJSON === 'function' ? node.toJSON() : node) })
+  const source = scope === 'textOnly' ? stripNodeTypes(flat.content, TEXT_ONLY_DROP_TYPES) : flat
   const markdown = serializeMarkdown(source)
   const fileName = withExtension(settings.fileName, 'md')
   downloadText(markdown, fileName, 'text/markdown;charset=utf-8')
@@ -171,20 +195,25 @@ export function exportMarkdown(doc, options) {
  * @param {string} [options.fileName] 不含扩展名的文件名
  * @param {string} [options.title] 写入 docx 文档属性的标题
  * @param {object} [options.images] src → 字节；不传时自动 `collectImages`
- * @param {string} [options.scope] 内容范围（见负结论 5：只记录，不影响构建）
+ * @param {string} [options.scope] contentOnly 或 withComments；后者必须提供 comments 数组
+ * @param {Function} [options.shouldDownload] 打包后同步复查；必须返回 true 才允许下载
  * @returns {Promise<{ fileName: string, blob: Blob, failedImages: string[], scope: string }>}
  */
 export async function exportDocx(doc, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
   const fileName = withExtension(settings.fileName, 'docx')
+  const comments = scope === 'withComments' ? normalizeExportComments(settings.comments) : []
+  // Work on a JSON snapshot so cropping and semantic fallbacks never change the editor.
+  const source = normalizeExportDocument(doc)
   let images = settings.images
   let failedImages = []
   if (!images) {
-    const collected = await collectImages(doc)
+    const collected = await collectImages(source, settings)
     images = collected.images
     failedImages = collected.failed
   }
+  images = await prepareImageCrops(source, images, failedImages)
   // webpackChunkName 必须是 **"office"**：`utils/importExport.js` 里那条 `await import('docx')`
   // 已经占了这个名字，Rollup 的 office feature target 也按这个名字把 docx 收成一个
   // 按需区块。这里不标（或标别的名字）webpack 会另开一个自动命名的 async chunk 装 docx，
@@ -195,7 +224,10 @@ export async function exportDocx(doc, options) {
   // 宿主加载 lark-doc/features/office.js（自带 buildDocx）后恢复 rich Word 导出。
   const { buildDocx } = await loadFeature('office.buildDocx', () =>
     import(/* webpackChunkName: "office" */ './docx.js'))
-  const blob = await buildDocx(doc, { images, title: settings.title || settings.fileName })
+  const blob = await buildDocx(source, { images, title: settings.title || settings.fileName, comments })
+  if (typeof settings.shouldDownload === 'function' && settings.shouldDownload() !== true) {
+    throw new Error('导出已取消：文档、权限或导出条件已改变，请重新导出')
+  }
   downloadBlob(blob, fileName)
   return { fileName, blob, failedImages, scope }
 }
@@ -208,13 +240,14 @@ export async function exportDocx(doc, options) {
  * @param {HTMLElement} [rootEl]
  * @param {object} [options]
  * @param {string} [options.title] 临时页眉标题
- * @param {string} [options.scope] 内容范围（见负结论 5：只记录，不影响打印）
+ * @param {string} [options.scope] contentOnly 或 withComments；后者必须提供 comments 数组
  * @param {Function} [options.onPrinted]
  * @returns {{ ok: boolean, reason?: string, cleanup?: Function, scope: string }}
  */
 export function exportPdf(rootEl, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
-  const result = printDocument(rootEl, { title: settings.title, onPrinted: settings.onPrinted })
+  const comments = scope === 'withComments' ? normalizeExportComments(settings.comments) : []
+  const result = printDocument(rootEl, { title: settings.title, onPrinted: settings.onPrinted, comments, shouldPrint: settings.shouldPrint })
   return { ...result, scope }
 }

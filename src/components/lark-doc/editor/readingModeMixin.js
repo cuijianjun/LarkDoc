@@ -48,6 +48,7 @@ const OVERLAY_CLOSERS = Object.freeze([
   'closeMentionPanel',
   'closeReminderPopover',
   'closeCalendarSearch',
+  'closeIsvPanel',
   'closeBlockMenu',
   'clearHandleHighlight',
   'closeEmbedDialog',

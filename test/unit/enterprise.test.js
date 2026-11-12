@@ -214,11 +214,11 @@ describe('渲染：9 个变体是同一种置灰卡，payload 一个字段都不
 describe('命令表接线：菜单可见、但不可执行', () => {
   const at = (id) => COMMANDS.findIndex((item) => item.id === id)
 
-  it('8 条都在表里，tier 全是 skip', () => {
+  it('保留企业卡兼容；本地原生议程独立启用，其余服务仍 skip', () => {
     for (const item of ENTERPRISE_MENU_ITEMS) {
       const command = COMMANDS[at(item.menuId)]
       expect(command).toBeTruthy()
-      expect(command.tier).toBe('skip')
+      expect(command.tier).toBe(item.menuId === 'agenda' ? 'required' : 'skip')
       expect(command.label).toBe(item.label)
       expect(command.category).toBe(item.category)
     }

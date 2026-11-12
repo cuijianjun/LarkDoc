@@ -9,6 +9,7 @@
 import { createSelect } from './select'
 import { iconNode } from './icon'
 import { mountNode, setAttr, setText, syncChildren } from './dom'
+import { createImageAiChat } from './imageAiChat'
 
 function call(handlers, name, ...args) {
   const handler = handlers[name]
@@ -46,6 +47,7 @@ export function createWorkspace(options = {}) {
   const handlers = options.handlers || {}
   const state = {}
   const owned = []
+  const imageAi = createImageAiChat(handlers)
 
   const header = document.createElement('div')
   header.className = 'lark-doc-workspace-actions'
@@ -82,6 +84,13 @@ export function createWorkspace(options = {}) {
     onChange: value => call(handlers, 'exportDocument', value),
   })
   const historyButton = button('本地快照', () => call(handlers, 'toggleHistory'))
+  const versionMenu = createSelect({
+    ariaLabel: '文档更多操作', placeholder: '⋯', menuMinWidth: 200,
+    onChange: value => {
+      versionMenu.update({ value: '' })
+      call(handlers, { 'save-version': 'openSaveVersion', history: 'openVersionHistory', 'comments-history': 'openCommentHistory' }[value])
+    },
+  })
   function syncHeader() {
     syncChildren(header, [
       { node: localBadge, on: true },
@@ -93,6 +102,7 @@ export function createWorkspace(options = {}) {
       { node: importInput, on: !!state.importEnabled },
       { node: exportSelect.el, on: !!state.exportEnabled },
       { node: historyButton, on: !!state.historyEnabled },
+      { node: versionMenu.el, on: !!(state.historyEnabled || state.commentHistoryAvailable) },
     ])
   }
 
@@ -166,12 +176,12 @@ export function createWorkspace(options = {}) {
   const aiTitle = document.createElement('h2')
   aiTitle.appendChild(document.createTextNode('AI 助手 '))
   const aiMock = document.createElement('small')
-  aiMock.textContent = '本地 Mock'
+  aiMock.textContent = '未配置'
   aiTitle.appendChild(aiMock)
   aiHeading.appendChild(aiTitle)
   aiHeading.appendChild(closeButton('关闭 AI 预览', () => call(handlers, 'closeAI')))
   const aiDescription = document.createElement('p')
-  aiDescription.textContent = '单人本地工作区，不调用模型；只有明确接受、插入或替换才修改正文。'
+  aiDescription.textContent = '配置 AI 服务后，生成结果会流式显示；只有明确接受、插入或替换才修改正文。'
   const aiContext = document.createElement('div')
   aiContext.className = 'lark-doc-ai-context'
   const aiContextLabel = document.createElement('label')
@@ -292,7 +302,7 @@ export function createWorkspace(options = {}) {
   notice.appendChild(noticeText)
   notice.appendChild(noticeClose)
 
-  owned.push(header, templatePanel, historyPanel, aiPanel, notice)
+  owned.push(header, templatePanel, historyPanel, aiPanel, imageAi.el, notice)
 
   function updateTemplateItems(items) {
     const list = Array.isArray(items) ? items : []
@@ -418,12 +428,20 @@ export function createWorkspace(options = {}) {
       syncChildren(panelHost, [
         { node: templatePanel, on: templateOpen },
         { node: historyPanel, on: historyOpen },
-        { node: aiPanel, on: aiOpen },
+        { node: aiPanel, on: aiOpen && !(state.aiImageChat || state.aiSelectionChat) },
+        { node: imageAi.el, on: aiOpen && !!(state.aiImageChat || state.aiSelectionChat) },
         { node: notice, on: !!state.notice },
       ])
     }
 
     maxLengthSelect.update({ options: state.maxLengthOptions, value: state.maxLength })
+    versionMenu.update({ value: '', options: [
+      ...(state.historyEnabled ? [
+        { value: 'save-version', label: '另存为版本', disabled: !state.versionCanCreate },
+        { value: 'history', label: '历史记录' },
+      ] : []),
+      ...(state.commentHistoryAvailable ? [{ value: 'comments-history', label: '历史评论' }] : []),
+    ] })
     saveStatus.classList.toggle('is-error', !!state.storageError)
     setText(saveStatus, state.saveStatus)
     setDisabled(saveButton, state.readonly || state.importing)
@@ -459,6 +477,7 @@ export function createWorkspace(options = {}) {
     updateSnapshots(snapshots, state.readonly)
 
     setText(aiContextSummary, state.aiContextSummary)
+    imageAi.update(state)
     aiContextSelect.update({ options: state.aiContextOptions, value: state.aiContextScope, disabled: state.aiRunning || state.readonly })
     aiActionSelect.update({ options: state.aiActions, value: state.aiAction, disabled: state.readonly })
     aiLanguageLabel.style.display = state.aiAction === 'translate' ? '' : 'none'
@@ -521,13 +540,19 @@ export function createWorkspace(options = {}) {
     setDisabled(acceptButton, !state.aiPreview || state.aiRunning || state.readonly || state.aiReplaceDisabled)
 
     setText(noticeText, state.notice)
+    setText(aiMock, state.aiServiceAvailable ? '已接入' : '未配置')
+    setText(aiDescription, state.aiServiceAvailable
+      ? '当前使用宿主配置的 AI 服务；只有明确接受、插入或替换才修改正文。'
+      : '尚未配置 AI 服务；请先提供 endpoint、request 或 stream。')
   }
 
   return {
     el: header,
     update,
     focusTemplateSearch() { templateSearch.focus() },
+    focusImageAI() { imageAi.focus() },
     destroy() {
+      versionMenu.destroy()
       maxLengthSelect.destroy()
       templateSelect.destroy()
       exportSelect.destroy()

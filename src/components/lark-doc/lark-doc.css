@@ -476,12 +476,9 @@
    left/top 由 `placeFloatingToolbar()` 挂载后按 viewport 坐标写入。
    z-index 40 > overlay(20) / boundary(30)：浮窗不能被 12px 选择条或 ＋ 压住。
    颜色全部转发 --ld-table-float-* → --ld-* 既有 token，不写死任何 WorkBuddy 字面值。 */
-/* v12c：按钮点击盒对齐顶部功能栏 30×30，纵向 padding 8→5 让浮窗总高仍是真源 42px
-   （2 border + 5 + 30 + 5 = 42）；横向 padding 保持 8px，不压缩首尾留白。 */
-.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; max-width: calc(100vw - 16px); padding: 5px 8px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
-/* v12c：bar 高度 24→30，按钮不再溢出 bar（旧实现 CSS 写 24px，实际被全局
-   `.lark-doc button { min-height:30px }` 顶成 30px，上下各溢出 3px）。 */
-.lark-doc .lark-doc-table-tools-bar { display: flex; align-items: center; height: 30px; gap: 8px; }
+/* 飞书实测：24px操作盒、8px内边距、外框42px；主题颜色仍用项目token。 */
+.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-table-float-border); border-radius: 6px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
+.lark-doc .lark-doc-table-tools-bar { display: flex; align-items: center; height: 24px; gap: 0; }
 /* P4-05 查找替换浮层（04 §3.2 实测）：替换 Tab 406×286、查找 Tab 406×186（高度由内联 style 给），
    z-index 100、radius 8、默认右上角（右 16 / 顶 72），Tab 行即拖拽把手（拖后 left/top 走内联）。
    🔴 描边/文字一律走 --ld-fr-* 专线：常态描边 #DEE0E3 与禁用描边 #D0D3D6 是实测的两档，
@@ -544,7 +541,33 @@
 .lark-doc /* 行距与块间距对齐真飞书（2026-10-22 在 iz4fkcxtig.feishu.cn wiki 正文实测）：
    正文 16px / 行高 28.8px = 1.8；正文块 margin 0 0 8px；
    标题块行高 = 字号的 1.4 倍，H1 26px 且 margin 26px 0 10px（标题上间距 = 自身字号）。 */
-.ProseMirror { position: relative; min-height: 56vh; max-width: 100%; outline: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 16px; line-height: 1.8; color: var(--ld-text-content); overflow-wrap: anywhere; }
+.ProseMirror { position: relative; min-height: 56vh; max-width: 100%; outline: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 16px; line-height: 1.625; color: var(--ld-text-content); overflow-wrap: anywhere; }
+/*
+   Large documents keep the complete ProseMirror tree for selection, search and
+   export, while Chromium skips layout/paint for blocks outside the viewport.
+   The old 40px placeholder was far below the real height of a long paragraph;
+   scrolling then had to expand each block as it entered the viewport. Reserve
+   a realistic default and narrow it for the common block shapes so the scroll
+   range stays stable while blocks are hydrated.
+*/
+.lark-doc-large-document .ProseMirror > * { content-visibility: auto; contain-intrinsic-size: 340px; contain-intrinsic-size: auto 340px; }
+.lark-doc-large-document .ProseMirror > p { contain-intrinsic-size: 340px; contain-intrinsic-size: auto 340px; }
+.lark-doc-large-document .ProseMirror > h1,
+.lark-doc-large-document .ProseMirror > h2,
+.lark-doc-large-document .ProseMirror > h3,
+.lark-doc-large-document .ProseMirror > h4,
+.lark-doc-large-document .ProseMirror > h5,
+.lark-doc-large-document .ProseMirror > h6,
+.lark-doc-large-document .ProseMirror > [data-type="heading"] { contain-intrinsic-size: 64px; contain-intrinsic-size: auto 64px; }
+.lark-doc-large-document .ProseMirror > h1 { contain-intrinsic-size: 76px; contain-intrinsic-size: auto 76px; }
+.lark-doc-large-document .ProseMirror > table { contain-intrinsic-size: 112px; contain-intrinsic-size: auto 112px; }
+.lark-doc-large-document .ProseMirror > figure,
+.lark-doc-large-document .ProseMirror > img { contain-intrinsic-size: 192px; contain-intrinsic-size: auto 192px; }
+.lark-doc-large-document .ProseMirror > ul,
+.lark-doc-large-document .ProseMirror > ol,
+.lark-doc-large-document .ProseMirror > blockquote,
+.lark-doc-large-document .ProseMirror > pre,
+.lark-doc-large-document .ProseMirror > [data-type]:not([data-type="heading"]):not([data-type="image"]) { contain-intrinsic-size: 180px; contain-intrinsic-size: auto 180px; }
 .lark-doc .ProseMirror:focus-visible { outline: 0; }
 .lark-doc .ProseMirror h1, .lark-doc .ProseMirror h2, .lark-doc .ProseMirror h3, .lark-doc .ProseMirror h4, .lark-doc .ProseMirror h5, .lark-doc .ProseMirror h6, .lark-doc .ProseMirror [data-type="heading"] { margin: 1em 0 8px; color: var(--ld-text-heading); line-height: 1.4; }
 /* 字号取自飞书实测（H1 26px），往下按同比例收敛；上间距 = 自身字号（1em），H1 实测 26px 对得上。 */
@@ -569,10 +592,10 @@
 .lark-doc .ProseMirror ul[data-type="taskList"] { margin: 12px 0; padding: 0; list-style: none; }
 .lark-doc .ProseMirror ul[data-type="taskList"] > li { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; padding: 0; list-style: none; }
 /* 复选框要和「首行文字」垂直居中对齐 —— 不能靠 margin-top 硬凑：
-   正文行高是 1.8，所以 label 给等高盒子（1.8em = 28.8px）再内部居中，
+   label 使用继承的正文行高（默认 1.625 × 16px = 26px）再内部居中，
    中心自然落在首行行盒中心；文字换行时 checkbox 仍停在第 1 行。
    旧写法 margin: 10px 0 0 + min-height: 28px 会让复选框整体下沉 10px。 */
-.lark-doc .ProseMirror ul[data-type="taskList"] > li > label { display: flex; flex: 0 0 20px; align-items: center; justify-content: center; height: 1.8em; min-height: 0; margin: 0; }
+.lark-doc .ProseMirror ul[data-type="taskList"] > li > label { display: flex; flex: 0 0 20px; align-items: center; justify-content: center; height: 1.625em; height: 1lh; min-height: 0; margin: 0; }
 .lark-doc .ProseMirror ul[data-type="taskList"] > li > label input { margin: 0; }
 .lark-doc .ProseMirror ul[data-type="taskList"] > li > div { min-width: 0; flex: 1; }
 /* 列表标记（序号 / 圆点）走装饰层，所以关掉原生 ::marker。
@@ -589,10 +612,49 @@
 .lark-doc .ProseMirror button.lark-doc-list-number { min-height: 0; height: auto; padding: 0 1px; border: 0; border-radius: 3px; background: transparent; color: var(--ld-brand-content); line-height: inherit; white-space: nowrap; cursor: pointer; }
 .lark-doc .ProseMirror button.lark-doc-list-number:hover:not(:disabled), .lark-doc .ProseMirror button.lark-doc-list-number:focus-visible { border: 0; background: var(--ld-bg-number-hover); color: var(--ld-text-number-hover); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; outline: 0; }
 .lark-doc .ProseMirror .lark-doc-list-bullet { min-width: .85em; color: var(--ld-text-bullet); }
-.lark-doc .ProseMirror div[data-type="columns"] { display: flex; gap: 15px; width: 100%; max-width: 100%; min-width: 0; margin: 24px 0; }
-.lark-doc .ProseMirror div[data-type="column"] { min-width: 0; flex-shrink: 1; padding: 8px; border: 1px dashed var(--ld-border-column); border-radius: 4px; }
-.lark-doc .ProseMirror div[data-type="column"]:hover { border-color: var(--ld-border-column-hover); }
-.lark-doc .ProseMirror div[data-type="column"]:not(:last-child) { cursor: text; }
+.lark-doc .ProseMirror div[data-type="columns"] { display: flex; gap: 24px; width: 100%; max-width: 100%; min-width: 0; margin: 8px 0; }
+.lark-doc .ProseMirror div[data-type="column"] { position: relative; box-sizing: border-box; min-width: 0; flex: 1 1 0px; padding: 0; margin: 0 -2px; border: 0; border-radius: 0; }
+.lark-doc .ProseMirror .lark-doc-column-content { padding: 0 2px; }
+.lark-doc .ProseMirror[contenteditable="true"] div[data-type="columns"]:hover > div[data-type="column"], .lark-doc .ProseMirror div[data-type="columns"].is-resizing > div[data-type="column"] { background: var(--ld-bg-soft); }
+.lark-doc .ProseMirror .lark-doc-column-content > :last-child { margin-bottom: 0; }
+.lark-doc .ProseMirror .lark-doc-column-tools { position: absolute; top: 0; right: -16px; bottom: 0; width: 12px; opacity: 0; user-select: none; }
+.lark-doc .ProseMirror div[data-type="columns"]:hover > div[data-type="column"] > .lark-doc-column-tools, .lark-doc .ProseMirror div[data-type="columns"]:focus-within > div[data-type="column"] > .lark-doc-column-tools, .lark-doc .ProseMirror div[data-type="columns"].is-resizing > div[data-type="column"] > .lark-doc-column-tools { opacity: 1; }
+.lark-doc .ProseMirror .lark-doc-column-add { position: absolute; left: -2px; top: -15px; display: grid; place-items: center; box-sizing: border-box; min-width: 16px; width: 16px; min-height: 16px; height: 16px; padding: 0; border: 0; background: transparent; font-size: 0; cursor: pointer; }
+.lark-doc .ProseMirror .lark-doc-column-add::before { content: ''; width: 3px; height: 3px; border-radius: 50%; background: var(--ld-text-disabled); }
+.lark-doc .ProseMirror .lark-doc-column-add:hover::after, .lark-doc .ProseMirror .lark-doc-column-add:focus-visible::after { content: '+'; position: absolute; top: -3px; left: -3px; width: 22px; height: 24px; padding-bottom: 2px; box-sizing: border-box; clip-path: polygon(0 0,100% 0,100% 82%,50% 100%,0 82%); border-radius: 50% 50% 0 0; background: var(--ld-brand-chrome); color: var(--ld-text-inverse); font-size: 20px; line-height: 21px; }
+.lark-doc .ProseMirror .lark-doc-column-divider { width: 12px; height: 100%; min-height: 26px; display: flex; justify-content: center; cursor: col-resize; touch-action: none; }
+.lark-doc .ProseMirror .lark-doc-column-divider::after { content: ''; width: 2px; height: 100%; min-height: 26px; background: var(--ld-brand-chrome); opacity: 0; }
+.lark-doc .ProseMirror .lark-doc-column-divider:hover::after, .lark-doc .ProseMirror .is-resizing > .lark-doc-column-tools .lark-doc-column-divider::after { opacity: 1; }
+.lark-doc .ProseMirror div[data-type="column"]:last-child > .lark-doc-column-tools .lark-doc-column-divider { cursor: default; }
+.lark-doc .ProseMirror div[data-type="column"]:last-child > .lark-doc-column-tools .lark-doc-column-divider::after { display: none; }
+.lark-doc .ProseMirror .lark-doc-column-percentage { position: absolute; left: 50%; bottom: -24px; transform: translateX(-50%); display: none; color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
+.lark-doc .ProseMirror div[data-type="columns"].is-resizing > div[data-type="column"] > .lark-doc-column-percentage { display: block; }
+.lark-doc .ProseMirror[contenteditable="false"] .lark-doc-column-tools { display: none; }
+.lark-doc .ProseMirror [data-type="columns"][data-columns-editable="false"] > [data-type="column"] > .lark-doc-column-tools { display: none; }
+.lark-doc .tiptap-mathematics-render { display: inline-block; max-width: 100%; vertical-align: baseline; cursor: pointer; }
+.lark-doc .tiptap-mathematics-render[data-type="block-math"] { display: block; }
+.lark-doc .tiptap-mathematics-render[data-math-editable="false"] { cursor: default; }
+.lark-doc .lark-doc-math-empty, .lark-doc .lark-doc-math-invalid, .lark-doc .lark-doc-math-load-error { padding: 0 4px; border-radius: 4px; background: var(--ld-bg-soft); color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-math-warning { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; margin-right: 4px; border-radius: 50%; background: var(--ld-warning); color: var(--ld-text-inverse); font-size: 13px; font-weight: 700; line-height: 16px; }
+.lark-doc .lark-doc-math-editor { position: fixed; z-index: 1001; box-sizing: border-box; padding: 16px 16px 8px; border: 1px solid var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-content); box-shadow: var(--ld-shadow-menu-sm); }
+.lark-doc .lark-doc-math-editor textarea { display: block; box-sizing: border-box; width: 100%; min-height: 40px; max-height: 500px; padding: 8px 12px; border: 1px solid var(--ld-border-control); border-radius: 4px; outline: 0; resize: none; background: transparent; color: inherit; font-family: Menlo, Consolas, monospace; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-math-editor textarea:focus { border-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-math-editor-footer { display: flex; height: 24px; align-items: center; justify-content: space-between; margin-top: 8px; color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-math-editor-footer a { display: inline-block; padding: 2px 4px; color: var(--ld-text-secondary); font-size: 12px; line-height: 20px; text-decoration: none; }
+.lark-doc .lark-doc-math-editor-footer a:hover { background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-version-document { width: 100%; min-height: 56vh; }
+.lark-doc .lark-doc-version-left-content:has(.has-document) { padding: 48px 32px; }
+.lark-doc .lark-doc-version-preview.has-document { max-width: 820px; margin: 0 auto; padding: 0; border: 0; border-radius: 0; }
+.lark-doc .has-document .lark-doc-version-preview-title { font-size: 34px; line-height: 55.25px; font-weight: 600; }
+.lark-doc .has-document .lark-doc-version-preview-kind { display: none; }
+.lark-doc .has-document .lark-doc-version-body { margin-top: 24px; }
+.lark-doc .lark-doc-version-confirm-mask { position: fixed; z-index: 1100; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--ld-mask); }
+.lark-doc .lark-doc-version-confirm { display: flex; flex-direction: column; box-sizing: border-box; width: min(420px, calc(100vw - 32px)); min-height: 178px; padding: 24px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-dialog); }
+.lark-doc .lark-doc-version-confirm > strong { display: block; color: var(--ld-text-content); font-size: 16px; font-weight: 600; line-height: 24px; }
+.lark-doc .lark-doc-version-confirm > p { margin: 24px 0 4px; color: var(--ld-text-content); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-version-confirm > div { display: flex; flex-direction: row-reverse; gap: 12px; margin-top: 24px; }
+.lark-doc .lark-doc-version-confirm button { box-sizing: border-box; width: 80px; min-height: 32px; height: 32px; padding: 4px 11px; border: 1px solid var(--ld-border-control); border-radius: 4px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-content); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-version-confirm button.is-primary { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); }
 .lark-doc .lark-doc-drop-line { position: absolute; left: 30px; right: 30px; z-index: 12; height: 3px; border-radius: 3px; background: var(--lark-doc-green); pointer-events: none; }
 .lark-doc .ProseMirror details { background: var(--ld-bg-details); border-color: var(--ld-border-details); }.lark-doc .ProseMirror summary { color: var(--ld-text-summary); }
 /* 未知块占位卡（P1-03，04 §8.3 降级卡统一 chrome：min-height 56、圆角 6、虚线描边、
@@ -655,7 +717,7 @@
 .lark-doc .lark-doc-panel-heading { display: flex; align-items: center; justify-content: space-between; }.lark-doc .lark-doc-panel-heading h2 { margin: 0; font-size: 15px; }.lark-doc .lark-doc-side-panel p { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-side-panel button { border-color: var(--ld-border-chrome); }.lark-doc .lark-doc-side-panel input, .lark-doc .lark-doc-side-panel select { width: 100%; max-width: 100%; }.lark-doc .lark-doc-panel-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }.lark-doc .lark-doc-ai-result { min-height: 95px; max-height: 250px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--lark-doc-soft); padding: 10px; border-radius: 5px; }.lark-doc .lark-doc-snapshot-list { padding-left: 16px; }
 .lark-doc .lark-doc-ai-panel { display: grid; gap: 7px; }.lark-doc .lark-doc-ai-panel h2 small { color: var(--lark-doc-muted); font-size: 11px; font-weight: 500; }.lark-doc .lark-doc-ai-panel label { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-context { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-context); }.lark-doc .lark-doc-ai-context-summary, .lark-doc .lark-doc-ai-status { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-status { margin: 0; }.lark-doc .lark-doc-ai-messages, .lark-doc .lark-doc-ai-review-list { display: grid; gap: 6px; max-height: 150px; margin: 0; padding: 0; overflow: auto; list-style: none; }.lark-doc .lark-doc-ai-messages li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--lark-doc-soft); }.lark-doc .lark-doc-ai-messages li.is-user { background: var(--ld-bg-accent); }.lark-doc .lark-doc-ai-messages span { white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-review-list li, .lark-doc .lark-doc-ai-proposal { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-review); }.lark-doc .lark-doc-ai-review-list small { color: var(--lark-doc-muted); }.lark-doc .lark-doc-ai-review-list button { justify-self: start; }.lark-doc .lark-doc-ai-proposal { background: var(--ld-bg-ai-proposal); }.lark-doc .lark-doc-ai-proposal p { margin: 0; }.lark-doc .lark-doc-ai-proposal pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-panel textarea { width: 100%; resize: vertical; }
 .lark-doc .lark-doc-template-panel { display: grid; gap: 10px; }.lark-doc .lark-doc-template-list { display: grid; gap: 4px; max-height: min(55vh, 420px); overflow-y: auto; }.lark-doc .lark-doc-template-list button { display: grid; gap: 2px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; }.lark-doc .lark-doc-template-list button:hover, .lark-doc .lark-doc-template-list button:focus-visible { border-color: var(--ld-border-template-hover); background: var(--ld-bg-accent); color: var(--ld-text-accent); outline: 0; }.lark-doc .lark-doc-template-list small { color: var(--lark-doc-muted); font-size: 11px; }
-.lark-doc .lark-doc-block-handle { position: absolute; z-index: 20; left: 0; display: flex; gap: 2px; }.lark-doc .lark-doc-block-handle.is-menu-open { z-index: 60; }.lark-doc .lark-doc-block-handle > button { min-width: 25px; padding: 1px; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-main { position: relative; z-index: 21; display: inline-flex; box-sizing: border-box; width: 42px; min-width: 42px !important; height: 26px; min-height: 26px; align-items: center; justify-content: space-between; gap: 2px; padding: 2px 4px !important; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-handle); }.lark-doc .lark-doc-block-handle-main:hover, .lark-doc .lark-doc-block-handle-main:focus-visible { border-color: var(--ld-border-handle-hover); background: var(--ld-bg-handle-hover); color: var(--ld-text-accent); }.lark-doc .lark-doc-block-handle-type { min-width: 22px; color: var(--ld-accent-control); font-size: 15px; font-weight: 650; line-height: 1; text-align: center; }.lark-doc .lark-doc-block-handle-dots { color: var(--ld-text-handle-icon); font-size: 17px; letter-spacing: -3px; line-height: 1; }.lark-doc .lark-doc-block-menu { position: absolute; z-index: 60; left: 0; top: 32px; display: grid; width: 230px; max-height: min(620px, calc(100vh - 16px)); padding: 5px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }.lark-doc .lark-doc-block-menu button { text-align: left; }.lark-doc .lark-doc-block-menu-section { display: grid; gap: 1px; }.lark-doc .lark-doc-block-type-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }.lark-doc .lark-doc-block-type-actions button { display: grid; min-height: 40px; place-items: center; padding: 4px 2px; text-align: center; }.lark-doc .lark-doc-block-type-actions button:hover, .lark-doc .lark-doc-block-type-actions button:focus-visible, .lark-doc .lark-doc-block-type-actions button.active { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }.lark-doc .lark-doc-block-type-icon { display: grid; min-width: 28px; min-height: 28px; place-items: center; color: currentColor; font-size: 17px; font-weight: 600; line-height: 1; }.lark-doc .lark-doc-block-menu-divider { height: 1px; margin: 5px -5px; background: var(--ld-border-chrome); }
+.lark-doc .lark-doc-block-handle { position: absolute; z-index: 20; left: 0; display: flex; gap: 2px; }.lark-doc .lark-doc-block-handle.is-menu-open { z-index: 60; }.lark-doc .lark-doc-block-handle > button { min-width: 25px; padding: 1px; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-main { position: relative; z-index: 21; display: inline-flex; box-sizing: border-box; width: 42px; min-width: 42px !important; height: 26px; min-height: 26px; align-items: center; justify-content: space-between; gap: 2px; padding: 2px 4px !important; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-handle); }.lark-doc .lark-doc-block-handle-main:hover, .lark-doc .lark-doc-block-handle-main:focus-visible { border-color: var(--ld-border-handle-hover); background: var(--ld-bg-handle-hover); color: var(--ld-text-accent); }.lark-doc .lark-doc-block-handle-type { min-width: 22px; color: var(--ld-accent-control); font-size: 15px; font-weight: 650; line-height: 1; text-align: center; }.lark-doc .lark-doc-block-handle-dots { display: grid; width: 16px; height: 16px; place-items: center; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-dots .lark-doc-icon { display: block; width: 16px; height: 16px; }.lark-doc .lark-doc-block-menu { position: absolute; z-index: 60; left: 0; top: 32px; display: grid; width: 230px; max-height: min(620px, calc(100vh - 16px)); padding: 5px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }.lark-doc .lark-doc-block-menu button { text-align: left; }.lark-doc .lark-doc-block-menu-section { display: grid; gap: 1px; }.lark-doc .lark-doc-block-type-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }.lark-doc .lark-doc-block-type-actions button { display: grid; min-height: 40px; place-items: center; padding: 4px 2px; text-align: center; }.lark-doc .lark-doc-block-type-actions button:hover, .lark-doc .lark-doc-block-type-actions button:focus-visible, .lark-doc .lark-doc-block-type-actions button.active { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }.lark-doc .lark-doc-block-type-icon { display: grid; min-width: 28px; min-height: 28px; place-items: center; color: currentColor; font-size: 17px; font-weight: 600; line-height: 1; }.lark-doc .lark-doc-block-menu-divider { height: 1px; margin: 5px -5px; background: var(--ld-border-chrome); }
 /* AI 预览富文本：markdown 渲染后与正文同构，避免 <pre> 里直接露出 ** 和 # */
 .lark-doc .lark-doc-ai-result--rich { white-space: normal; color: var(--ld-ai-rich-text); font-size: 13px; line-height: 1.7; }
 .lark-doc .lark-doc-ai-result--rich > :first-child { margin-top: 0; }
@@ -766,13 +828,24 @@
 .lark-doc .lark-doc-table-boundary-line { position: absolute; z-index: -1; background: var(--ld-accent-control); opacity: .42; pointer-events: none; }
 .lark-doc .lark-doc-table-boundary-line.is-column-line { top: 0; width: 2px; transform: translateX(-50%); }
 .lark-doc .lark-doc-table-boundary-line.is-row-line { left: 0; height: 2px; transform: translateY(-50%); }
-.lark-doc .lark-doc-slide-stage { display: grid; align-content: center; gap: 25px; min-height: 70vh; width: min(100%, 1100px); margin: auto; padding: clamp(25px, 8vw, 100px); background: var(--ld-bg-surface-content); box-shadow: var(--ld-shadow-paper); }.lark-doc .lark-doc-slide-stage h1 { font-size: clamp(28px, 5vw, 54px); color: var(--ld-text-slide-title); }.lark-doc .lark-doc-slide-stage > p:not(.lark-doc-slide-counter) { white-space: pre-wrap; line-height: 1.8; }.lark-doc .lark-doc-slide-counter { color: var(--lark-doc-green); }
+/* Presentation is a full rich document with a fixed return bar, not paginated text. */
+.lark-doc .lark-doc-slide-stage { position: fixed; z-index: 1100; inset: 0; display: block; width: 100vw; height: 100vh; min-height: 0; margin: 0; padding: 0; overflow: auto; overscroll-behavior: contain; scroll-padding-top: 64px; background: var(--ld-bg-content); color: var(--ld-text); outline: 0; box-shadow: none; }
+.lark-doc .lark-doc-presentation-header { position: fixed; z-index: 1; top: 0; left: 0; display: flex; align-items: center; width: 100%; height: 64px; padding: 0 48px; background: var(--ld-bg-content); }
+.lark-doc .lark-doc-presentation-header > button { display: inline-flex; align-items: center; gap: 16px; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); font-size: 16px; font-weight: 400; line-height: 22px; }
+.lark-doc .lark-doc-presentation-header > button:hover { background: var(--ld-bg-hover); color: var(--ld-text); }
+.lark-doc .lark-doc-presentation-back-icon { flex: none; transform: rotate(90deg); }
+.lark-doc .lark-doc-presentation-content { position: relative; width: 80vw; margin: 64px auto 72px; }
+.lark-doc .lark-doc-presentation-zoom { display: flow-root; width: 55.55555556%; transform: scale(1.8); transform-origin: top left; }
+.lark-doc .lark-doc-presentation-title { margin: 0 0 24px; padding: 0; color: var(--ld-text); font-size: 34px; font-weight: 700; line-height: 47.6px; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-presentation-document { min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; font-size: 16px; line-height: 26px; caret-color: transparent; outline: 0; }
+.lark-doc .lark-doc-presentation-document [data-presentation-image], .lark-doc .lark-doc-presentation-document [data-presentation-href] { cursor: pointer; }
+.lark-doc .lark-doc-presentation-document .lark-doc-code-caption { display: block; overflow: hidden; white-space: nowrap; }
 .lark-doc .lark-doc-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }.lark-doc .lark-doc-toast { position: fixed; z-index: 95; right: 20px; bottom: 20px; max-width: min(400px, 90vw); padding: 10px 13px; background: var(--ld-bg-toast); color: var(--ld-text-toast); border: 1px solid var(--ld-border-toast); border-radius: 7px; box-shadow: var(--ld-shadow-toast); }.lark-doc .lark-doc-error { color: var(--ld-text-error) !important; }.lark-doc .lark-doc-local-badge { padding: 4px 6px; border-radius: 4px; background: var(--ld-bg-badge); color: var(--ld-text-badge); font-size: 11px; font-weight: 700; }.lark-doc .lark-doc-save-status { font-size: 11px; color: var(--lark-doc-muted); white-space: nowrap; }.lark-doc .lark-doc-save-status.is-error { color: var(--ld-text-error); }
 @media (max-width: 1050px) { .lark-doc .lark-doc-outline { flex-basis: 165px; width: 165px; }.lark-doc .lark-doc-external-panel { flex-basis: 220px; width: 220px; }.lark-doc .lark-doc-paper { padding-left: 45px; padding-right: 35px; } }
 @media (max-width: 760px) { .lark-doc .lark-doc-topbar { flex-wrap: wrap; }.lark-doc .lark-doc-title-wrap { flex: 1; width: auto; }.lark-doc .lark-doc-header-actions { flex-basis: 100%; justify-content: flex-start; }.lark-doc .lark-doc-outline { position: fixed; z-index: 45; top: 112px; left: 0; width: min(260px, 85vw); max-height: calc(100vh - 112px); padding: 12px; border-right: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-drawer); }.lark-doc .lark-doc-body { flex-wrap: wrap; }.lark-doc .lark-doc-main { flex-basis: 100%; padding: 12px; }.lark-doc .lark-doc-paper { min-height: 70vh; padding: 30px 30px 50px 70px; }.lark-doc .lark-doc-external-panel { position: fixed; top: auto; bottom: 12px; right: 12px; width: min(330px, calc(100vw - 24px)); max-height: min(60vh, 460px); }.lark-doc .lark-doc-toolbar { padding: 4px 7px; }.lark-doc .lark-doc-block-handle { left: 0; } }
 @media (max-width: 380px) { .lark-doc .lark-doc-topbar { gap: 5px; }.lark-doc .lark-doc-brand span { display: none; }.lark-doc .lark-doc-paper { padding-left: 58px; padding-right: 12px; }.lark-doc .lark-doc-main { padding: 7px; } }
 @media (prefers-reduced-motion: reduce) { .lark-doc, .lark-doc *, .lark-doc *::before, .lark-doc *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
-@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-drawer-mask, .lark-doc .lark-doc-help-fab-wrap, .lark-doc .lark-doc-mode-toast, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; } }
+@media print { .lark-doc .lark-doc-topbar, .lark-doc .lark-doc-toolbar, .lark-doc .lark-doc-outline, .lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-external-panel, .lark-doc .lark-doc-status, .lark-doc .lark-doc-block-handle, .lark-doc .lark-doc-fr, .lark-doc .lark-doc-drawer-mask, .lark-doc .lark-doc-help-fab-wrap, .lark-doc .lark-doc-mode-toast, .lark-doc .lark-doc-table-tools, .lark-doc .lark-doc-table-boundary-tools { display: none !important; }.lark-doc, .lark-doc .lark-doc-main, .lark-doc .lark-doc-paper { width: 100%; min-height: 0; margin: 0; padding: 0; background: var(--ld-bg-print); box-shadow: none; border: 0; }.lark-doc-large-document .ProseMirror > * { content-visibility: visible !important; contain: none !important; } }
 .lark-doc .lark-doc-block-submenu-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lark-doc .lark-doc-block-submenu-trigger > span:last-child { color: var(--ld-text-submenu-arrow); font-size: 18px; }
 .lark-doc .lark-doc-block-submenu { position: fixed; z-index: 42; display: grid; width: 230px; gap: 1px; max-height: min(620px, calc(100vh - 16px)); overflow-y: auto; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); }
@@ -817,9 +890,74 @@
 .lark-doc .lark-doc-command-submenu strong { padding: 4px 7px; color: var(--lark-doc-muted); font-size: 12px; }
 .lark-doc .lark-doc-command-submenu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; text-align: left; }.lark-doc .lark-doc-command-submenu button:hover, .lark-doc .lark-doc-command-submenu button:focus-visible { background: var(--ld-bg-hover-menu); outline: 0; }.lark-doc .lark-doc-command-submenu.is-templates { width: 250px; }.lark-doc .lark-doc-command-submenu.is-templates .lark-doc-command-label { display: grid; gap: 2px; }.lark-doc .lark-doc-command-submenu.is-templates .lark-doc-command-label small { color: var(--lark-doc-muted); font-size: 11px; }
 .lark-doc .lark-doc-command-submenu.is-columns, .lark-doc .lark-doc-command-submenu.is-table { width: 196px; padding: 10px; }
+.lark-doc .lark-doc-command-submenu.is-templates { box-sizing: border-box; width: min(358px, calc(100vw - 16px)); gap: 0; padding: 2px 0 3px; overflow-y: auto; border: 0; border-radius: 6px; }
+.lark-doc .lark-doc-command-submenu.is-templates button { box-sizing: border-box; display: flex; height: 32px; min-height: 32px; padding: 4px 12px; border: 0; border-radius: 0; background: transparent; color: var(--ld-text); font-size: 14px; line-height: 24px; }
+.lark-doc .lark-doc-command-submenu.is-templates .lark-doc-command-label { display: block; }
+.lark-doc .lark-doc-command-submenu.is-templates button:disabled { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-library-modal { width: calc(100% - var(--tpl-width-inset)); max-width: var(--tpl-max-width); background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-library-header { background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-target { color: var(--ld-text); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-categories button { color: var(--ld-text); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-categories button.is-active { color: var(--ld-text-accent); background: var(--ld-bg-accent); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-search input { color: var(--ld-text); background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-search input:focus { border-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-grid { grid-template-columns: repeat(auto-fill, minmax(min(226px, 100%), 226px)); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card { max-width: 100%; background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-name { color: var(--ld-text); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-meta { color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-icon { color: var(--ld-text-accent); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-actions { background: linear-gradient(360deg, var(--ld-bg-surface-chrome) 76.56%, transparent 100%); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-thumb { position: relative; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-thumb > .lark-doc-template-document { width: 820px; min-height: 740px; padding: 20px; transform: scale(.2463); transform-origin: top left; pointer-events: none; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document { box-sizing: border-box; color: var(--ld-text); background: var(--ld-bg-surface-chrome); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document-preview { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document-preview > header { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 16px; padding: 0 16px; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document-preview > header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document-preview > footer { display: flex; min-height: 64px; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 12px; padding: 0 16px; border-top: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document-preview > footer button { min-width: 80px; padding: 4px 12px; border-radius: 6px; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-preview-body { min-height: 0; flex: 1 1 auto; overflow: auto; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-preview-body > .lark-doc-template-document { width: min(820px, 100%); min-height: 100%; margin: 0 auto; padding: 32px; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document img { max-width: 100%; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document ol { padding-left: 24px; list-style: decimal; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document ul:not([data-type="taskList"]) { padding-left: 24px; list-style: disc; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-document ul ul:not([data-type="taskList"]) { list-style: circle; }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-preview { color: var(--ld-text-accent); border-color: var(--ld-text-accent); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-preview:hover { background: var(--ld-bg-accent); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-use { color: var(--ld-text-inverse); border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-use:hover { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-template-library.is-editor-insert .lark-doc-template-card-actions button:disabled { opacity: .5; cursor: not-allowed; }
+/* Current Feishu plus menu: compact icon shortcuts, then 32px list rows. */
+.lark-doc .lark-doc-command-menu.is-slash { box-sizing: border-box; width: min(232px, calc(100vw - 16px)); padding: 8px; border-radius: 6px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-hint { display: none; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-section { gap: 0; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-section small { padding: 8px 4px 4px; font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-section button { box-sizing: border-box; display: flex; height: 32px; min-height: 32px; padding: 0 4px; gap: 14px; border-radius: 4px; font-size: 14px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-icon { width: 18px; height: 18px; flex-basis: 18px; font-size: 18px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-submenu-arrow { width: 16px; min-width: 16px; height: 24px; flex-basis: 16px; }
+.lark-doc .lark-doc-command-menu.is-plus { width: min(232px, calc(100vw - 16px)); max-height: min(643px, calc(100vh - 16px)); padding: 8px; border-radius: 6px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-hint { display: none; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section { gap: 0; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section small { padding: 8px 4px 4px; font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button { height: 32px; min-height: 32px; padding: 0 4px; gap: 14px; border-radius: 4px; font-size: 14px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-icon { width: 18px; height: 18px; flex-basis: 18px; font-size: 16px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] { gap: 0; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] button { display: grid; height: 36px; min-height: 36px; padding: 0; gap: 0; place-items: center; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] .lark-doc-command-icon { color: var(--lark-doc-ink); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] .lark-doc-command-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active { background: transparent; color: inherit; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active:focus-visible,
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-submenu-arrow { width: 16px; min-width: 16px; height: 24px; flex-basis: 16px; }
+.lark-doc .lark-doc-command-submenu.is-table { display: block; width: 314px; height: 348px; padding: 0; border-radius: 6px; }
+.lark-doc .lark-doc-command-submenu.is-table .lark-doc-submenu-picker-head { display: flex; justify-content: space-between; height: 20px; margin: 12px 0; padding: 0 12px; font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-command-submenu.is-table .lark-doc-submenu-picker-head output { color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-table-submenu-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(9, 24px); gap: 6px; width: 288px; height: 290px; margin: 0 12px 12px; padding: 12px; border: 1px solid var(--ld-border-control); border-radius: 2px; }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid button { width: 100%; height: 24px; min-height: 0; padding: 0; border: 1px solid var(--ld-border-chrome); border-radius: 0; background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid button.is-preview { border-color: var(--ld-text-accent); background: var(--ld-bg-accent); }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid button:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 1px; }
 .lark-doc .lark-doc-submenu-picker-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 3px 9px; color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-submenu-picker-head output { color: var(--lark-doc-ink); font-variant-numeric: tabular-nums; }
 .lark-doc .lark-doc-columns-picker { position: relative; height: 104px; padding: 11px 12px; border: 1px solid var(--ld-border-columns-picker); border-radius: 2px; background: var(--ld-bg-surface-chrome); }.lark-doc .lark-doc-columns-preview { display: flex; align-items: stretch; gap: 6px; height: 80px; pointer-events: none; }.lark-doc .lark-doc-columns-preview span { min-width: 0; flex: 1; border-radius: 1px; background: var(--ld-bg-columns-preview); }.lark-doc .lark-doc-columns-preview span.is-primary { background: var(--ld-bg-columns-picker); }.lark-doc .lark-doc-command-submenu .lark-doc-columns-choice { position: absolute; z-index: 1; top: 0; bottom: 0; width: 25%; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: transparent; font-size: 0; }.lark-doc .lark-doc-command-submenu .lark-doc-columns-choice:hover, .lark-doc .lark-doc-command-submenu .lark-doc-columns-choice.is-preview, .lark-doc .lark-doc-command-submenu .lark-doc-columns-choice:focus-visible { border: 0; background: transparent; outline: 0; color: transparent; }.lark-doc .lark-doc-columns-choice:focus-visible::after { content: ''; position: absolute; inset: 0; border: 2px solid var(--ld-focus-ring-picker); border-radius: 2px; }
-.lark-doc .lark-doc-table-submenu-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 8px; background: var(--ld-bg-grid-submenu); }.lark-doc .lark-doc-table-submenu-grid button { min-width: 0; min-height: 19px; padding: 0; border: 1px solid var(--ld-bg-columns-cell); border-radius: 2px; background: var(--ld-bg-columns-cell-active); }.lark-doc .lark-doc-table-submenu-grid button.is-preview, .lark-doc .lark-doc-table-submenu-grid button:hover, .lark-doc .lark-doc-table-submenu-grid button:focus-visible { border-color: var(--ld-focus-ring-picker); background: var(--ld-bg-columns-cell-preview); outline: 0; }
 .lark-doc .lark-doc-color-palette { position: fixed; z-index: 95; display: grid; width: 232px; gap: 8px; padding: 10px; border: 1px solid var(--ld-border-chrome); border-radius: 9px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-colorpanel); }
 .lark-doc .lark-doc-color-palette > strong { font-size: 12px; }
 .lark-doc .lark-doc-color-palette-section { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
@@ -968,24 +1106,73 @@
 .lark-doc .lark-doc-image-img:hover,
 .lark-doc .lark-doc-image-frame img:hover { filter: none; }
 .lark-doc .lark-doc-image.is-selected .lark-doc-image-shell,
-.lark-doc .lark-doc-image.is-selected > .lark-doc-image-img { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
+.lark-doc .lark-doc-image.is-selected > .lark-doc-image-img { outline: 2px solid var(--ld-brand-chrome); outline-offset: -1px; }
 
 /* 离线策略拦截的外链图片：不渲染 img，避免浏览器发起外部请求。 */
 .lark-doc .lark-doc-image-blocked { display: grid; gap: 4px; justify-items: start; padding: 18px 20px; border: 1px dashed var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-soft); color: var(--ld-text-secondary); font-size: 12px; }
 .lark-doc .lark-doc-image-blocked strong { color: var(--ld-text); font-size: 13px; }
 .lark-doc .lark-doc-image-blocked code { max-width: 100%; overflow-wrap: anywhere; color: var(--ld-text-tertiary); font-size: 11px; }
+.lark-doc .lark-doc-image-blocked-replace { margin-top: 4px; padding: 4px 10px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); cursor: pointer; font-size: 12px; }
+.lark-doc .lark-doc-image-blocked-replace:hover:not(:disabled) { border-color: var(--ld-text-accent); color: var(--ld-text-accent); }
+.lark-doc .lark-doc-image-blocked-replace:disabled { cursor: not-allowed; opacity: .55; }
 
 /* 悬浮工具条：hover 才挂载（真实增删节点），所以这里不做 display 切换。 */
-.lark-doc .lark-doc-image-toolbar { position: absolute; z-index: 86; bottom: calc(100% + 8px); left: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 310px; height: 42px; padding: 0 6px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); transform: translateX(-50%); white-space: nowrap; }
-.lark-doc .lark-doc-image-toolbar button { flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; font-size: 16px; line-height: 1; }
+.lark-doc .lark-doc-image-toolbar { position: absolute; z-index: 86; top: -50px; bottom: auto; left: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 310px; height: 42px; padding: 0 8px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-float); transform: translateX(-50%); white-space: nowrap; }
+.lark-doc .lark-doc-image-toolbar button { flex: 0 0 24px; display: inline-flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; font-size: 16px; line-height: 1; }
 .lark-doc .lark-doc-image-toolbar button:hover:not(:disabled),
 .lark-doc .lark-doc-image-toolbar button:focus-visible,
-.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
+.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-brand-chrome); outline: 0; }
 .lark-doc .lark-doc-image-toolbar button:disabled { color: var(--ld-text-icon); cursor: not-allowed; }
-.lark-doc .lark-doc-image-toolbar-divider { flex: 0 0 1px; width: 1px; height: 22px; background: var(--ld-border-control); }
+ .lark-doc .lark-doc-image-toolbar-divider { position: absolute; top: 10px; left: 82px; width: 1px; height: 20px; background: var(--ld-border-control); }
+.lark-doc .lark-doc-image-toolbar-divider:nth-of-type(2) { left: 191px; top: 0; height: 40px; }
+.lark-doc .lark-doc-image-toolbar button[data-action="crop"], .lark-doc .lark-doc-image-toolbar button[data-action="caption"], .lark-doc .lark-doc-image-toolbar button[data-action="share"] { margin-right: 9px; }
+.lark-doc .lark-doc-image-toolbar button[data-action="right"] { margin-right: 17px; }
+.lark-doc .lark-doc-image-toolbar.has-reset { width: 342px; }
+.lark-doc .lark-doc-image-toolbar.has-reset button[data-action="crop"] { margin-right: 0; }
+.lark-doc .lark-doc-image-toolbar button[data-action="reset"] { margin-right: 9px; }
+.lark-doc .lark-doc-image-toolbar.has-reset .lark-doc-image-toolbar-divider { left: 114px; }
+.lark-doc .lark-doc-image-toolbar.has-reset .lark-doc-image-toolbar-divider:nth-of-type(2) { left: 223px; }
+.lark-doc .lark-doc-image-toolbar.has-image-ai { width: 415px; }
+.lark-doc .lark-doc-image-toolbar.has-image-ai.has-reset { width: 447px; }
+.lark-doc .lark-doc-image-toolbar button[data-action="ai"] { flex-basis: 97px; width: 97px; gap: 5px; margin: 0; }
+.lark-doc .lark-doc-image-toolbar.has-image-ai .lark-doc-image-toolbar-divider { left: 187px; }
+.lark-doc .lark-doc-image-toolbar.has-image-ai .lark-doc-image-toolbar-divider:nth-of-type(2) { left: 296px; }
+.lark-doc .lark-doc-image-toolbar.has-image-ai.has-reset .lark-doc-image-toolbar-divider { left: 219px; }
+.lark-doc .lark-doc-image-toolbar.has-image-ai.has-reset .lark-doc-image-toolbar-divider:nth-of-type(2) { left: 328px; }
+.lark-doc.lark-doc-has-image-ai .lark-doc-body { box-sizing: border-box; padding-right: 400px; }
+.lark-doc.lark-doc-has-image-ai .lark-doc-external-panel { top: 64px; right: 0; bottom: 0; width: 400px; max-width: 100vw; max-height: none; overflow: hidden; border-left: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface); z-index: 89; }
+.lark-doc.lark-doc-has-image-ai .lark-doc-external-panel > div { height: 100%; }
+.lark-doc .lark-doc-image-ai { height: 100%; display: flex; flex-direction: column; color: var(--ld-text); }
+.lark-doc .lark-doc-image-ai button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; color: var(--ld-text); background: transparent; cursor: pointer; }
+.lark-doc .lark-doc-image-ai button:hover:not(:disabled) { background: var(--ld-bg-menu-item-active); }
+.lark-doc .lark-doc-image-ai-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; height: 56px; padding: 0 16px; font-size: 14px; }
+.lark-doc .lark-doc-image-ai-body { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px 20px; overflow: auto; gap: 12px; }
+.lark-doc .lark-doc-image-ai-hero { display: grid; place-items: center; align-content: center; flex: 1; gap: 28px; padding-bottom: 96px; color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-image-ai-hero h2 { font-size: 28px; font-weight: 600; line-height: 42px; color: var(--ld-text); margin: 0; white-space: nowrap; }
+.lark-doc .lark-doc-image-ai-composer { flex-shrink: 0; display: grid; gap: 10px; margin: 12px 16px 16px; padding: 11px; border: 1px solid var(--ld-border-chrome); border-radius: 24px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-panel); }
+.lark-doc .lark-doc-image-ai-reference { display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 6px 0 10px; border-radius: 12px; background: var(--lark-doc-soft); color: var(--lark-doc-muted); font-size: 14px; }
+.lark-doc .lark-doc-image-ai-reference[hidden] { display: none; }
+.lark-doc .lark-doc-image-ai-reference > span { padding-left: 8px; border-left: 3px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-image-ai-reference button { width: 22px; height: 22px; color: var(--lark-doc-muted); }
+.lark-doc .lark-doc-image-ai-composer textarea { box-sizing: border-box; display: block; width: 100%; min-height: 24px; max-height: 160px; padding: 6px 8px; border: 0; outline: 0; background: transparent; color: var(--ld-text); font: inherit; font-size: 14px; line-height: 24px; resize: none; }
+.lark-doc .lark-doc-image-ai-controls { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
+.lark-doc .lark-doc-image-ai-controls small { max-width: 280px; color: var(--lark-doc-muted); font-size: 12px; }
+.lark-doc .lark-doc-image-ai-controls button { border-radius: 50%; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 24px; }
+.lark-doc .lark-doc-image-ai-controls button:disabled { background: var(--ld-border-chrome); color: var(--ld-text-on-brand); cursor: default; }
+.lark-doc .lark-doc-image-ai-messages { display: grid; gap: 20px; }
+.lark-doc .lark-doc-image-ai-message, .lark-doc .lark-doc-image-ai-answer { font-size: 14px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-image-ai-message.is-user { justify-self: end; max-width: 90%; padding: 10px 14px; border-radius: 16px; background: var(--lark-doc-soft); }
+.lark-doc .lark-doc-image-ai-status, .lark-doc .lark-doc-image-ai-error { margin: 0; font-size: 12px; }
+.lark-doc .lark-doc-image-ai-status { color: var(--lark-doc-muted); }
+.lark-doc .lark-doc-image-ai-error { color: var(--ld-text-error); }
+.lark-doc .lark-doc-image-ai-reference > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-image-ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lark-doc .lark-doc-image-ai-actions button { width: auto; min-height: 32px; padding: 0 8px; font: inherit; font-size: 12px; }
+@media (max-width: 800px) { .lark-doc.lark-doc-has-image-ai .lark-doc-body { padding-right: 0; } }
+
 
 /* 四角缩放手柄：可编辑态常驻，拖动只改文档属性，不回写 DOM 宽度。 */
-.lark-doc .lark-doc-image-resize { position: absolute; z-index: 2; box-sizing: border-box; width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 2px solid var(--ld-text-menu-active); border-radius: 50%; background: var(--ld-bg-surface); transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-image-resize { position: absolute; z-index: 4; box-sizing: border-box; width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; border: 2px solid var(--ld-brand-chrome); border-radius: 50%; background: var(--ld-bg-surface); box-shadow: 0 0 0 1px var(--ld-bg-surface), 0 1px 4px rgba(31,35,41,.18); transform: translate(-50%, -50%); }
 .lark-doc .lark-doc-image-resize.is-top-left { top: 0; left: 0; cursor: nwse-resize; }
 .lark-doc .lark-doc-image-resize.is-top-right { top: 0; left: 100%; cursor: nesw-resize; }
 .lark-doc .lark-doc-image-resize.is-bottom-left { top: 100%; left: 0; cursor: nesw-resize; }
@@ -994,33 +1181,56 @@
 .lark-doc .lark-doc-image-replace-input { position: absolute; width: 1px; min-width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 /* 题注：展示态是图下一行灰字，编辑态换成同位置的输入框。 */
-.lark-doc .lark-doc-image-caption-text { margin-top: 6px; color: var(--ld-text-tertiary); font-size: 13px; line-height: 1.6; text-align: center; cursor: text; }
+.lark-doc .lark-doc-image-caption-text { margin-top: 6px; color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; text-align: center; cursor: text; }
+.lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-caption,
 .lark-doc .lark-doc-image[data-align="left"] .lark-doc-image-caption-text { text-align: left; }
+.lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-caption,
 .lark-doc .lark-doc-image[data-align="right"] .lark-doc-image-caption-text { text-align: right; }
-.lark-doc .lark-doc-image-caption { display: block; box-sizing: border-box; width: 100%; margin: 6px 0 0; padding: 6px 0; border: 0; border-bottom: 1px solid var(--ld-border); border-radius: 0; background: transparent; color: var(--ld-text-tertiary); font-size: 13px; }
+.lark-doc .lark-doc-image-caption { display: block; box-sizing: border-box; width: 100%; margin: 6px 0 0; padding: 0; text-align: center; border: 0; border-bottom: 1px solid var(--ld-border); border-radius: 0; background: transparent; color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; }
 
 .lark-doc .lark-doc-media-error { margin: 6px 0 0; color: var(--ld-text-error); font-size: 13px; }
 
 /* 本实现的显隐统一走工具类（手柄 / 题注 / 占位卡 / 报错行）。 */
 .lark-doc .lark-doc-image .is-hidden { display: none !important; }
 
-/* 双击全屏预览：挂在块内（见 nodeviews/image.js 注释），全屏靠 fixed。 */
-.lark-doc .lark-doc-image-viewer-shell { position: fixed; z-index: 1049; inset: 0; box-sizing: border-box; display: grid; place-items: center; padding: 24px; background: var(--ld-mask); }
-.lark-doc .lark-doc-image-viewer-shell img { max-width: 100%; max-height: calc(100vh - 120px); object-fit: contain; box-shadow: var(--ld-shadow-dialog); }
-.lark-doc .lark-doc-image-viewer-close { position: absolute; top: 16px; right: 16px; padding: 6px 14px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text-menu); }
+/* 图片查看器：选择后单击打开，挂在块内以继承宿主主题与 Shadow DOM 样式。 */
+.lark-doc .lark-doc-image-viewer-shell { position: fixed; z-index: 1049; inset: 0; box-sizing: border-box; background: var(--ld-mask); background: color-mix(in srgb, var(--ld-bg-tooltip) 85%, transparent); color: var(--ld-text-inverse); outline: none; }
+.lark-doc .lark-doc-image-viewer-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; }
+.lark-doc .lark-doc-image-viewer-projection { position: relative; overflow: hidden; transform-origin: center; cursor: grab; }
+.lark-doc .lark-doc-image-viewer-shell img { position: absolute; display: block; max-width: none; max-height: none; margin: 0; cursor: grab; user-select: none; filter: none; }
+.lark-doc .lark-doc-image-viewer-toolbar { position: absolute; z-index: 1; left: 50%; bottom: 20px; display: flex; align-items: center; gap: 12px; box-sizing: border-box; height: 48px; max-width: calc(100% - 16px); padding: 12px 22px; border-radius: 8px; background: var(--ld-bg-tooltip); transform: translateX(-50%); font-size: 14px; white-space: nowrap; }
+.lark-doc .lark-doc-image-viewer-toolbar button, .lark-doc .lark-doc-image-viewer-close { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.lark-doc .lark-doc-image-viewer-toolbar button:disabled { opacity: .3; cursor: default; }
+.lark-doc .lark-doc-image-viewer-toolbar button:hover:not(:disabled), .lark-doc .lark-doc-image-viewer-close:hover { background: var(--ld-bg-menu-item-hover); }
+.lark-doc .lark-doc-image-viewer-percentage { min-width: 40px; text-align: center; }
+.lark-doc .lark-doc-image-viewer-position { min-width: 16px; text-align: center; }
+.lark-doc .lark-doc-image-viewer-close { position: absolute; z-index: 2; top: 24px; right: 24px; }
+.lark-doc .lark-doc-image-viewer-message { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); font-size: 14px; }
+.lark-doc .lark-doc-image-viewer-shell.has-comments .lark-doc-image-viewer-stage { right: 295px; }
+.lark-doc .lark-doc-image-viewer-shell.has-comments .lark-doc-image-viewer-toolbar { left: calc((100% - 295px) / 2); }
+.lark-doc .lark-doc-image-viewer-comments { position: absolute; top: 0; right: 0; bottom: 0; box-sizing: border-box; width: 295px; padding: 16px 12px; overflow-y: auto; background: var(--ld-bg-surface); color: var(--ld-text); font-size: 14px; }
+.lark-doc .lark-doc-image-viewer-comments > header { padding: 4px 0 16px; }
+.lark-doc .lark-doc-image-viewer-comments .lark-doc-comment-panel { position: relative; left: auto; top: auto; margin-bottom: 12px; height: auto; }
 
-/* 裁剪对话框 */
-.lark-doc .lark-doc-media-backdrop { position: fixed; z-index: 2000; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--ld-mask); }
-.lark-doc .lark-doc-media-dialog { box-sizing: border-box; width: 760px; max-width: 100%; max-height: 90vh; overflow: auto; padding: 20px; border-radius: 12px; background: var(--ld-bg-surface-raised); color: var(--ld-text-menu); box-shadow: var(--ld-shadow-dialog); }
-.lark-doc .lark-doc-media-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.lark-doc .lark-doc-crop-preview { position: relative; width: fit-content; max-width: 100%; margin: auto; }
-.lark-doc .lark-doc-crop-preview img { display: block; max-width: 100%; max-height: 56vh; }
-/* 区域外压暗：用预览层自己的遮罩伪元素压住底图，选区再叠在它上面。
-   比 `box-shadow: 0 0 0 9999px <遮罩色>` 省一个硬编码色值，也不受对话框圆角裁切影响。 */
-.lark-doc .lark-doc-crop-preview::after { content: ""; position: absolute; z-index: 0; inset: 0; background: var(--ld-mask); pointer-events: none; }
-.lark-doc .lark-doc-crop-region { position: absolute; z-index: 1; outline: 2px solid var(--ld-text-menu-active); background: transparent; cursor: move; }
-.lark-doc .lark-doc-crop-fields { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
-.lark-doc .lark-doc-crop-fields input { width: 64px; }
+/* Inline crop retains the source image and only edits relative bounds. */
+.lark-doc .lark-doc-image-viewport { display: block; max-width: 100%; }
+.lark-doc .lark-doc-crop-mask { position: absolute; z-index: 1; inset: 0; background: var(--ld-mask); pointer-events: none; }
+.lark-doc .lark-doc-crop-region { position: absolute; z-index: 5; box-sizing: border-box; outline: 1px solid var(--ld-bg-surface); box-shadow: inset 0 0 0 1px var(--ld-text); background: transparent; cursor: move; }
+.lark-doc .lark-doc-crop-handle { position: absolute; box-sizing: border-box; width: 24px; height: 24px; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-text); }
+.lark-doc .lark-doc-crop-handle:hover { background: transparent; }
+.lark-doc .lark-doc-crop-handle::before, .lark-doc .lark-doc-crop-handle::after { position: absolute; background: currentColor; box-shadow: 0 0 0 1px var(--ld-bg-surface); }
+.lark-doc .lark-doc-crop-handle.is-n, .lark-doc .lark-doc-crop-handle.is-s { left: calc(50% - 12px); cursor: ns-resize; }
+.lark-doc .lark-doc-crop-handle.is-w, .lark-doc .lark-doc-crop-handle.is-e { top: calc(50% - 12px); cursor: ew-resize; }
+.lark-doc .lark-doc-crop-handle.is-n, .lark-doc .lark-doc-crop-handle.is-nw, .lark-doc .lark-doc-crop-handle.is-ne { top: 1px; }
+.lark-doc .lark-doc-crop-handle.is-s, .lark-doc .lark-doc-crop-handle.is-sw, .lark-doc .lark-doc-crop-handle.is-se { bottom: 1px; }
+.lark-doc .lark-doc-crop-handle.is-w, .lark-doc .lark-doc-crop-handle.is-nw, .lark-doc .lark-doc-crop-handle.is-sw { left: 1px; }
+.lark-doc .lark-doc-crop-handle.is-e, .lark-doc .lark-doc-crop-handle.is-ne, .lark-doc .lark-doc-crop-handle.is-se { right: 1px; }
+.lark-doc .lark-doc-crop-handle.is-nw, .lark-doc .lark-doc-crop-handle.is-se { cursor: nwse-resize; }
+.lark-doc .lark-doc-crop-handle.is-ne, .lark-doc .lark-doc-crop-handle.is-sw { cursor: nesw-resize; }
+.lark-doc .lark-doc-crop-handle.is-n::before, .lark-doc .lark-doc-crop-handle.is-nw::before, .lark-doc .lark-doc-crop-handle.is-ne::before { content: ''; width: 24px; height: 4px; left: 0; top: 0; }
+.lark-doc .lark-doc-crop-handle.is-s::before, .lark-doc .lark-doc-crop-handle.is-sw::before, .lark-doc .lark-doc-crop-handle.is-se::before { content: ''; width: 24px; height: 4px; left: 0; bottom: 0; }
+.lark-doc .lark-doc-crop-handle.is-w::after, .lark-doc .lark-doc-crop-handle.is-nw::after, .lark-doc .lark-doc-crop-handle.is-sw::after { content: ''; width: 4px; height: 24px; left: 0; top: 0; }
+.lark-doc .lark-doc-crop-handle.is-e::after, .lark-doc .lark-doc-crop-handle.is-ne::after, .lark-doc .lark-doc-crop-handle.is-se::after { content: ''; width: 4px; height: 24px; right: 0; top: 0; }
 
 /* ==================================================================
    文件 / 视频块（P2-04 / 02 §19.5 实测规格）
@@ -1202,6 +1412,9 @@
 
 /* info：左 12 右 16 **不对称**（内容区 504 = 534 − 2 − 12 − 16） */
 .lark-doc .ProseMirror .lark-doc-bookmark-info { padding: 12px 16px 12px 12px; }
+.lark-doc .ProseMirror .lark-doc-bookmark-card.has-cover { display: flex; overflow: hidden; }
+.lark-doc .ProseMirror .lark-doc-bookmark-cover { flex: 1 1 0%; min-width: 0; background-position: center; background-size: cover; }
+.lark-doc .ProseMirror .lark-doc-bookmark-card.has-cover .lark-doc-bookmark-info { flex: 2 1 0%; min-width: 0; }
 
 /* url 行：锁 20 高，icon + url 横向排 */
 .lark-doc .ProseMirror .lark-doc-bookmark-url-wrapper {
@@ -1212,14 +1425,14 @@
 }
 
 /* favicon：**SPAN + inline background-image，不是 img**（用 img 还得补 object-fit 才对齐）；
-   16×16 r4、右侧硬间距 8（URL 起点 = 616 + 16 + 8 = 640）。
+   16×16 无圆角、右侧硬间距 8（URL 起点 = 616 + 16 + 8 = 640）。
    无 favicon 时这个 span 由 markup 层**根本不渲染**（不做空占位，URL 直接吃 616） */
 .lark-doc .ProseMirror .lark-doc-bookmark-icon {
   flex: none;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
-  background-position: center;
+  border-radius: 0;
+  background-position: 0% 0%;
   background-repeat: no-repeat;
   background-size: cover;
 }
@@ -1398,14 +1611,14 @@
   line-height: 20px;
 }
 
-/* 面板：362 = 内容 360 + 左右各 1px 描边；高度 = tab 37 + 8 + 48n + 8 + footer 44。
+/* 面板：362 = 内容 360 + 左右各 1px 描边；列表每行48px，行间2px，footer48px。
    tab 项宽度**按汉字数收紧**（「人」12 /「云文档」36），靠间距拉开，绝不能 flex:1。 */
 .lark-doc .lark-doc-mention-panel {
   position: fixed;
   z-index: 44;
   display: flex;
   flex-direction: column;
-  width: 360px;
+  width: 362px;
   min-height: 168px;
   max-height: min(420px, calc(100vh - 24px));
   border: 1px solid var(--ld-border-chrome);
@@ -1458,11 +1671,11 @@
 .lark-doc .lark-doc-mention-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   height: 48px;
   margin-bottom: 2px;
-  padding: 0 12px;
+  padding: 0 16px;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -1474,8 +1687,11 @@
 
 .lark-doc .lark-doc-mention-row:hover:not(:disabled) { background: var(--ld-bg-hover-menu); border-color: transparent; color: var(--ld-text); }
 .lark-doc .lark-doc-mention-row.is-active { background: var(--ld-bg-hover-menu); color: var(--ld-text); }
-.lark-doc .lark-doc-mention-row-name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lark-doc .lark-doc-mention-row-dept { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ld-text-tertiary); font-size: 13px; }
+.lark-doc .lark-doc-mention-row .lark-doc-mention-avatar { width: 32px; height: 32px; flex: 0 0 32px; font-size: 14px; }
+.lark-doc .lark-doc-mention-row .lark-doc-mention-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lark-doc .lark-doc-mention-main { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; justify-content: center; }
+.lark-doc .lark-doc-mention-row-name { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-mention-row-dept { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
 
 .lark-doc .lark-doc-mention-empty {
   padding: 16px 12px;
@@ -1490,30 +1706,51 @@
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
-  height: 44px;
-  padding: 0 12px;
+  height: 48px;
+  padding: 8px 16px;
   border-top: 1px solid var(--ld-border-chrome);
 }
 
 .lark-doc .lark-doc-mention-notify {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--ld-text-secondary);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   cursor: pointer;
 }
 
-.lark-doc .lark-doc-mention-notify input { margin: 0; }
+.lark-doc .lark-doc-mention-notify input {
+  position: relative;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--ld-border-control);
+  border-radius: 4px;
+  background: var(--ld-bg-surface-chrome);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-mention-notify input:hover { border-color: var(--ld-brand-content); }
+.lark-doc .lark-doc-mention-notify input:focus-visible { outline: 2px solid var(--ld-brand-content); outline-offset: 2px; }
+.lark-doc .lark-doc-mention-notify input:checked { background: var(--ld-brand-content); border-color: var(--ld-brand-content); }
+.lark-doc .lark-doc-mention-notify input:checked::after { content: ''; position: absolute; left: 3px; top: 3px; width: 8px; height: 5px; border: 2px solid var(--ld-text-on-brand); border-top: 0; border-right: 0; transform: rotate(-45deg); }
 
 .lark-doc .lark-doc-mention-confirm {
-  min-height: 26px;
-  padding: 2px 12px;
+  margin-left: auto;
+  height: 32px;
+  min-height: 32px;
+  padding: 4px 11px;
   border: 1px solid var(--ld-brand-content);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--ld-brand-content);
   color: var(--ld-text-on-brand);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   cursor: pointer;
 }
 
@@ -1539,6 +1776,8 @@
   cursor: pointer;
   user-select: none;
 }
+.lark-doc .lark-doc-reminder-chip[data-reminder-tone="past"] { color: var(--ld-danger); }
+.lark-doc .lark-doc-reminder-chip[data-reminder-tone="future"] { color: var(--ld-brand-chrome); }
 
 /* 日历图标：mask + currentColor —— 抄 `.lark-doc-unknown-card-icon` 的双写手法，
    换档只改 `color` 就跟着变色，不必再备一份彩色 SVG。 */
@@ -1562,13 +1801,12 @@
   background: var(--ld-bg-hover-segment);
 }
 
-/* 浮层壳 280 宽 = 体 280（含 1px 描边）→ 内容区 278，飞书实测 278×519 / 壳 280×534。
-   顶部 5px、底部 10px 的差就是壳与体的 15px。 */
+/* 浮层含边框 280×519；时间和通知开关分别移除 40px、32px。 */
 .lark-doc .lark-doc-reminder-popover {
   position: fixed;
   z-index: 46;
   width: 280px;
-  padding: 5px 0 10px;
+  padding: 0;
   color: var(--ld-text);
   font-size: 14px;
 }
@@ -1589,7 +1827,18 @@
 }
 
 /* 日历区：左右内边距 16（选项组是 24，飞书两处刻意不统一，别合并）→ 278 − 32 = 246。 */
-.lark-doc .lark-doc-reminder-calendar { padding: 16px; }
+.lark-doc .lark-doc-reminder-calendar { box-sizing: border-box; height: 312px; padding: 16px; }
+.lark-doc .lark-doc-reminder-calendar-title { display: inline-flex; align-items: center; gap: 4px; }
+.lark-doc .lark-doc-reminder-calendar-title button { height: 32px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-reminder-calendar-title button:hover { background: var(--ld-reminder-option); }
+.lark-doc .lark-doc-reminder-periods { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(4, 32px); align-content: space-between; justify-content: space-between; height: 248px; }
+.lark-doc .lark-doc-reminder-periods.is-year { grid-template-columns: repeat(4, 48px); grid-template-rows: repeat(5, 32px); }
+.lark-doc .lark-doc-reminder-period { width: 48px; height: 32px; min-height: 0; padding: 0; border: 0; border-radius: 16px; background: transparent; color: var(--ld-text); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-reminder-period:hover { background: var(--ld-reminder-option); }
+.lark-doc .lark-doc-reminder-popover { --ld-reminder-selection: var(--ld-reminder-text); }
+.lark-doc .lark-doc-reminder-popover[data-reminder-tone="past"] { --ld-reminder-selection: var(--ld-danger); }
+.lark-doc .lark-doc-reminder-popover[data-reminder-tone="future"] { --ld-reminder-selection: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-reminder-period.is-selected { background: var(--ld-reminder-selection); color: var(--ld-text-inverse); }
 
 .lark-doc .lark-doc-reminder-calendar-head {
   display: flex;
@@ -1628,8 +1877,9 @@
 .lark-doc .lark-doc-reminder-week,
 .lark-doc .lark-doc-reminder-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(7, 32px);
+  justify-content: space-between;
+  row-gap: 4px;
 }
 
 .lark-doc .lark-doc-reminder-week span {
@@ -1640,6 +1890,7 @@
   font-size: 12px;
   line-height: 1;
 }
+.lark-doc .lark-doc-reminder-week { margin-bottom: 4px; }
 
 .lark-doc .lark-doc-reminder-day {
   display: grid;
@@ -1648,10 +1899,11 @@
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  width: 32px;
+  border-radius: 16px;
   background: transparent;
   color: var(--ld-text);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
@@ -1665,16 +1917,17 @@
 /* 非本月补白格：飞书点它「连校验都不跑」（02 §19.4 ④-ter ②），V1 直接 disabled —— 
    同样的「点了没反应」，但不会让人以为是程序卡住。 */
 .lark-doc .lark-doc-reminder-day.is-outside { color: var(--ld-text-tertiary); opacity: .45; cursor: default; }
+.lark-doc .lark-doc-reminder-day.is-today:not(.is-selected) { border: 1px solid var(--ld-brand-chrome); color: var(--ld-brand-chrome); }
 
 /* 选中态：飞书是 `date-picker_orange` 主题（橙色 accent），但选中格的具体像素未采 —— 
    这里用同一支提醒橙兜底，实测替换时只改这一处。 */
 .lark-doc .lark-doc-reminder-day.is-selected {
-  background: var(--ld-reminder-text);
+  background: var(--ld-reminder-selection);
   color: var(--ld-bg-surface-chrome);
 }
 
 .lark-doc .lark-doc-reminder-day.is-selected:hover:not(:disabled) {
-  background: var(--ld-reminder-text);
+  background: var(--ld-reminder-selection);
   color: var(--ld-bg-surface-chrome);
 }
 
@@ -1688,27 +1941,33 @@
 .lark-doc .lark-doc-reminder-row.is-repeat { margin-top: 16px; } /* 比 set-time 少 4px，飞书如此 */
 
 .lark-doc .lark-doc-reminder-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   height: 22px;
+  margin-bottom: 8px;
   color: var(--ld-text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 22px;
+  cursor: pointer;
 }
+.lark-doc .lark-doc-reminder-label.is-collapsed { margin-bottom: 0; }
+.lark-doc .lark-doc-reminder-label input { width: 16px; height: 16px; margin: 0; accent-color: var(--ld-brand-chrome); }
 
 .lark-doc .lark-doc-reminder-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  width: 174px;
   height: 32px;
   min-height: 0;
   padding: 0 8px;
   border: 1px solid var(--ld-reminder-border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--ld-bg-surface-chrome);
   color: var(--ld-text);
-  font-size: 13px;
-  line-height: 1;
+  font-size: 14px;
+  line-height: 20px;
   cursor: pointer;
 }
 
@@ -1717,13 +1976,15 @@
   background: var(--ld-bg-surface-chrome);
   color: var(--ld-text);
 }
+.lark-doc .lark-doc-reminder-select input { flex: 1; width: 100%; min-width: 0; height: 28px; margin: 0; padding: 0; outline: none; border: 0; background: transparent; color: inherit; font: inherit; }
+.lark-doc .lark-doc-reminder-select input::-webkit-search-cancel-button { display: none; }
 
-.lark-doc .lark-doc-reminder-select:disabled { opacity: 1; cursor: default; } /* 「事件发生时」是只读展示，别灰掉 */
+.lark-doc .lark-doc-reminder-select:disabled { opacity: 1; cursor: default; }
 
 .lark-doc .lark-doc-reminder-select-caret { color: var(--ld-text-tertiary); font-size: 10px; line-height: 1; }
 
 .lark-doc .lark-doc-reminder-user {
-  margin: 12px 24px 0;
+  margin: 12px 24px;
   color: var(--ld-reminder-meta);
   font-size: 12px;
   line-height: 20px;
@@ -2149,6 +2410,10 @@
    按钮**不套 222** —— 222 是「iframe 还没自报高度」的加载态值，
    ⑤-3 实测的按钮块就是那颗 26px 的宿主 span，套 222 会得到一个空盒子。 */
 .lark-doc .ProseMirror .docx-isv-block[data-isv-kind="catalog"] .isv-block-layout { height: var(--lark-doc-isv-height, 335px); overflow: hidden; }
+.lark-doc .ProseMirror .docx-isv-block[data-isv-kind="catalog"] .isv-block-container,
+.lark-doc .ProseMirror .docx-isv-block[data-isv-kind="catalog"] .isv-block-body,
+.lark-doc .ProseMirror .docx-isv-block[data-isv-kind="catalog"] .isv-catalog-iframe { height: 100%; }
+.lark-doc .ProseMirror .docx-isv-block .isv-catalog-iframe { display: block; width: 100%; border: 0; }
 .lark-doc .ProseMirror .docx-isv-block[data-isv-kind="button"] .isv-block-layout { height: auto; }
 
 /* 0×29 空占位（④-1 第 2 层）：撑出块后的换行选区，压掉会点不到块尾 */
@@ -2159,6 +2424,29 @@
 .lark-doc .ProseMirror .docx-isv-block .isv-missing { padding: 8px 0; color: var(--ld-text-tertiary); font-size: 14px; line-height: 22px; }
 
 /* ---- B 目录导航内层（④-5）：灰底卡片 + 绝对定位工具条 + 真嵌套树 ---- */
+/* Native meeting agenda: text belongs to the document; controls never enter exported HTML. */
+.lark-doc .ProseMirror [data-type="agenda"] { min-height: 40px; margin: 12px 0; }
+.lark-doc .ProseMirror [data-type="agenda-item"] { position: relative; margin: 12px 0; padding: 12px 16px; border-left: 3px solid var(--ld-bg-brand-hover); border-radius: 4px; background: var(--ld-bg-surface); }
+.lark-doc .ProseMirror .lark-doc-agenda-tools { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; font-size: 14px; color: var(--ld-text-secondary); }
+.lark-doc .ProseMirror .lark-doc-agenda-tools input { box-sizing: border-box; width: 64px; height: 26px; min-height: 0; padding: 0 4px; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font: inherit; }
+.lark-doc .ProseMirror .lark-doc-agenda-tools .lark-doc-agenda-duration-label { display: none; }
+.lark-doc .ProseMirror .lark-doc-agenda-remove { margin-left: auto; width: 24px; min-width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--ld-text-secondary); opacity: 0; }
+.lark-doc .ProseMirror [data-type="agenda-item"]:hover .lark-doc-agenda-remove,
+.lark-doc .ProseMirror [data-type="agenda-item"]:focus-within .lark-doc-agenda-remove,
+.lark-doc .ProseMirror .lark-doc-agenda-remove:focus { opacity: 1; }
+.lark-doc .ProseMirror [data-type="agenda-title"] { min-height: 26px; font-weight: 600; }
+.lark-doc .ProseMirror [data-type="agenda-title"]:has(> br.ProseMirror-trailingBreak)::before { content: attr(data-placeholder); float: left; height: 0; color: var(--ld-text-tertiary); pointer-events: none; }
+.lark-doc .ProseMirror [data-type="agenda-content"] > p:only-child:has(> br.ProseMirror-trailingBreak)::before { content: '输入内容'; float: left; height: 0; color: var(--ld-text-tertiary); pointer-events: none; }
+.lark-doc .ProseMirror [data-agenda-editable="false"] .lark-doc-agenda-tools > :not(.lark-doc-agenda-duration-label) { display: none; }
+.lark-doc .ProseMirror [data-agenda-editable="false"] .lark-doc-agenda-tools .lark-doc-agenda-duration-label { display: inline; }
+@media print {
+  .lark-doc .ProseMirror .lark-doc-agenda-tools > :not(.lark-doc-agenda-duration-label) { display: none; }
+  .lark-doc .ProseMirror .lark-doc-agenda-tools .lark-doc-agenda-duration-label { display: inline; }
+  .lark-doc .ProseMirror [data-type="agenda-item"] { break-inside: avoid; }
+  .lark-doc .ProseMirror [data-type="agenda-title"]::before,
+  .lark-doc .ProseMirror [data-type="agenda-content"] > p::before { content: none !important; }
+}
+
 .lark-doc .ProseMirror .docx-isv-block .wrap-catalog-container,
 .lark-doc .ProseMirror .docx-isv-block .catalog-container { box-sizing: border-box; width: 100%; border-radius: 8px; background: var(--ld-isv-catalog-bg); }
 /* padding 25/26/20 实测；工具条要绝对定位到这张卡上，所以它是定位父级 */
@@ -2350,6 +2638,9 @@
 .lark-doc .revision-container[data-revision-kind="delete"] { background: var(--ld-revision-halo); }
 .lark-doc .revision-container[data-revision-kind="delete"] > .text-revision { color: inherit; line-height: 19px; }
 .lark-doc .text-revision.revision-linethrough { text-decoration: line-through; text-decoration-color: var(--ld-revision); text-decoration-thickness: 2px; }
+.lark-doc .lark-doc-revision-boundary { border: 0; background: none; }
+.lark-doc .lark-doc-revision-boundary > .revision-linefeed { position: relative; line-height: inherit; text-decoration: none; }
+.lark-doc .lark-doc-revision-boundary > .revision-linefeed::after { content: ' '; position: absolute; left: 0; top: 0; bottom: -2px; width: 4.5px; border-bottom: 2px solid var(--ld-text); background: var(--ld-revision-halo); pointer-events: none; }
 /* 激活高亮由装饰层下发类名，只能落在文字那一层（装饰触达不到外层容器的类名）→
    用 box-shadow 造一圈 2px 的浅底，视觉上把整段包住。 */
 .lark-doc .text-revision.is-revision-active { background: var(--ld-revision-halo); box-shadow: 0 0 0 2px var(--ld-revision-halo); }
@@ -2666,22 +2957,31 @@
   --ld-table-card-text: var(--ld-text-secondary);
 }
 
-/* 外框只在 table 上、内线只挂 right/bottom、末列末行去掉 ——
-   任何位置都只会出现 1 条线，不会像 border-collapse 那样叠成 2px 双线。 */
-.lark-doc .ProseMirror table { max-width: none; min-width: 100%; table-layout: auto; border-collapse: separate; border-spacing: 0; border: 1px solid var(--ld-table-line); }
-.lark-doc .ProseMirror td, .lark-doc .ProseMirror th { position: relative; min-width: 5em; padding: 8px; border: 0; border-right: 1px solid var(--ld-table-line); border-bottom: 1px solid var(--ld-table-line); overflow-wrap: anywhere; vertical-align: top; }
-.lark-doc .ProseMirror td:last-child, .lark-doc .ProseMirror th:last-child { border-right: 0; }
-.lark-doc .ProseMirror tr:last-child > td, .lark-doc .ProseMirror tr:last-child > th { border-bottom: 0; }
-.lark-doc .ProseMirror tr:first-child > td, .lark-doc .ProseMirror tr:first-child > th { background: var(--ld-table-head-bg); font-weight: 600; }
-.lark-doc .ProseMirror th { background: var(--ld-table-head-bg); font-weight: 600; }
+/* Source cells own their borders: no extra table border may enlarge the column
+   sum. First row adds top; first column draws an inset left edge. */
+.lark-doc .ProseMirror table { width: auto; max-width: none; min-width: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0; border: 0; }
+.lark-doc .ProseMirror td, .lark-doc .ProseMirror th { position: relative; box-sizing: border-box; min-width: 50px; padding: 8px; border: 0; border-right: 1px solid var(--ld-table-line); border-bottom: 1px solid var(--ld-table-line); overflow-wrap: anywhere; vertical-align: top; }
+.lark-doc .ProseMirror td:last-child, .lark-doc .ProseMirror th:last-child { border-right: 1px solid var(--ld-table-line); }
+.lark-doc .ProseMirror tr:last-child > td, .lark-doc .ProseMirror tr:last-child > th { border-bottom: 1px solid var(--ld-table-line); }
+.lark-doc .ProseMirror tr:first-child > td, .lark-doc .ProseMirror tr:first-child > th { border-top: 1px solid var(--ld-table-line); }
+.lark-doc .ProseMirror td:first-child, .lark-doc .ProseMirror th:first-child { box-shadow: inset 1px 0 var(--ld-table-line); }
+.lark-doc .ProseMirror td > p, .lark-doc .ProseMirror th > p { margin: 0; font-size: 14px; line-height: 23px; }
+.lark-doc .ProseMirror th { background: var(--ld-table-head-bg); font-weight: 500; }
 /* WorkBuddy `.is-in-selection` 的同款写法：inset 阴影盖满单元格但不改文字色。 */
 .lark-doc .ProseMirror .selectedCell { box-shadow: inset 0 0 0 9999px var(--ld-table-selection-bg); }
+.lark-doc .ProseMirror .selectedCell:first-child { box-shadow: inset 1px 0 var(--ld-table-line), inset 0 0 0 9999px var(--ld-table-selection-bg); }
 
 /* 超宽 = 横向滚动 + 左右双向渐隐（旧实现是裁切 + 单侧渐隐）。
    原生滚动条藏起来，改由 `.lark-doc-table-scrollbar` 画 14px / thumb 8px 的自绘条。 */
 .lark-doc .ProseMirror .tableWrapper { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .lark-doc .ProseMirror .tableWrapper::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .lark-doc .ProseMirror .tableWrapper.is-clipped::after { display: none; }
+
+.lark-doc .lark-doc-table-tools-submenu { position: relative; }
+.lark-doc .lark-doc-table-tools-submenu > button { width: 100%; }
+.lark-doc .lark-doc-table-tools-submenu-caret { margin-left: auto; transform: rotate(-90deg); }
+.lark-doc .lark-doc-table-tools-menu.is-heading-submenu { position: fixed; min-width: 180px; margin: 0; }
+.lark-doc .lark-doc-table-tools-menu.is-heading-submenu[hidden] { display: none; }
 
 /* 列宽拖拽：保留 prosemirror-tables 的 10px 热区（列宽仍可拖），但**不画任何可见手柄**。
    用户实测反馈「悬浮表格时左边每行都有蓝色小竖条，WorkBuddy 真源没有」：那些 4×16
@@ -2712,15 +3012,20 @@
    18px 圆点中心离表格边约 9px（真源 `.sc-table-*-plus-zone` 的 -14 + 18/2）。
    列 + 的浮出量仍受 mixin 按视口余量钳制的 --lark-doc-boundary-plus-top 控制：
    表格贴顶时自动回退到表格内，不会整颗跑到视口外点不到。 */
-.lark-doc .lark-doc-table-boundary-tools .lark-doc-table-col-plus-btn { top: calc(var(--lark-doc-boundary-plus-top, -28px) + 19px); left: var(--lark-doc-column-line-left, 0px); right: auto; bottom: auto; transform: translate(-50%, -50%); }
-.lark-doc .lark-doc-table-boundary-tools .lark-doc-table-row-plus-btn { left: -9px; top: var(--lark-doc-row-line-top, 0px); right: auto; bottom: auto; transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-table-boundary-tools .lark-doc-table-col-plus-btn { width: 30px; height: 32px; top: calc(var(--lark-doc-boundary-plus-top, -28px) + 14.5px); left: var(--lark-doc-column-line-left, 0px); right: auto; bottom: auto; transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-table-boundary-tools .lark-doc-table-row-plus-btn { width: 32px; height: 30px; left: calc(var(--lark-doc-row-line-left, 0px) - 13.5px); top: var(--lark-doc-row-line-top, 0px); right: auto; bottom: auto; transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-table-boundary-tools button { color: var(--ld-table-plus-bg); }
+.lark-doc .lark-doc-table-boundary-tools button::before { content: none; }
+.lark-doc .lark-doc-table-row-plus-btn .lark-doc-table-insert-glyph { transform: rotate(-90deg); }
+.lark-doc .lark-doc-table-boundary-tools button:hover .lark-doc-table-insert-glyph { color: var(--ld-bg-brand-hover); }
+.lark-doc .lark-doc-table-boundary-line { opacity: 1; }
 /* v12d：飞书真源 ＋ 悬浮提示（用户反馈⑧两张截图）——深色气泡 + 朝下小箭头，
    列 ＋ →「插入列」、行 ＋ →「插入行」。样式复用包内 tooltip token（--ld-bg-tooltip /
    --ld-text-inverse / --ld-shadow-tooltip），与标题折叠、对齐菜单的 [data-tooltip] 同一套观感。
    定位：以 ＋ 圆心为锚（列 = --plus-top+19 / --column-line-left，行 = left:-9 / --row-line-top），
    transform 把气泡底边抬到圆心上方 20px —— ＋ 圆点半径 16px，箭头(5px)正好搭在圆点顶缘。 */
-.lark-doc .lark-doc-table-boundary-tip { position: absolute; z-index: 2; left: var(--lark-doc-column-line-left, 0px); top: calc(var(--lark-doc-boundary-plus-top, -28px) + 19px); min-width: max-content; max-width: calc(100vw - 16px); padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; font-weight: 400; line-height: 1.35; white-space: nowrap; opacity: 0; visibility: hidden; transform: translate(-50%, calc(-100% - 20px)); transition: opacity .12s, visibility .12s; pointer-events: none; }
-.lark-doc .lark-doc-table-boundary-tip.is-row { left: -9px; top: var(--lark-doc-row-line-top, 0px); }
+.lark-doc .lark-doc-table-boundary-tip { position: absolute; z-index: 2; left: var(--lark-doc-column-line-left, 0px); top: calc(var(--lark-doc-boundary-plus-top, -28px) + 14.5px); min-width: max-content; max-width: calc(100vw - 16px); padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; font-weight: 400; line-height: 1.35; white-space: nowrap; opacity: 0; visibility: hidden; transform: translate(-50%, calc(-100% - 20px)); transition: opacity .12s, visibility .12s; pointer-events: none; }
+.lark-doc .lark-doc-table-boundary-tip.is-row { left: calc(var(--lark-doc-row-line-left, 0px) - 13.5px); top: var(--lark-doc-row-line-top, 0px); }
 .lark-doc .lark-doc-table-boundary-tip::after { content: ''; position: absolute; bottom: 0; left: 50%; border: 5px solid transparent; border-bottom-width: 0; border-top-color: var(--ld-bg-tooltip); transform: translate(-50%, 100%); }
 .lark-doc .lark-doc-table-boundary-tip.is-visible { opacity: 1; visibility: inherit; }
 
@@ -2764,33 +3069,28 @@
 .lark-doc .lark-doc-table-overlay.is-reordering .lark-doc-table-drag-card { display: block; }
 .lark-doc .lark-doc-table-drag-card-head { font-size: 11px; opacity: .7; }
 
-/* ── v11 飞书统一工具条 items ──
-   图标 / 箭头与顶部功能栏同源：`src/ui/icon.js` 的 16×16 SVG + `chevronDown` 12px caret。
-   ⚠️ 选择器必须压过全局 `.lark-doc button:hover:not(:disabled){background:var(--ld-bg-accent)}`，
-   否则 hover 会把每个图标刷成浅绿圆（v8 修 ＋ 外圈时踩过同一个坑）。
-   ⚠️ v12c：用户反馈「按钮大小有点小」。实测图标本来就是 16×16、与顶部一致，小的是
-   点击盒（浮窗 24×30 / padding 0 2px / radius 4 / gap 2 vs 顶部 30×30 /
-   padding 3px 6px / radius 6 / gap 3）。这里按顶部口径放大到 30×30，并显式写
-   `min-height:30px`，不再让全局 `.lark-doc button` 的 min-height 隐式决定高度；
-   图标尺寸保持 16×16 不变（真源 `--sc-menu-icon-size:16px`）。 */
-.lark-doc .lark-doc-table-tools-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 30px; height: 30px; min-height: 30px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-table-float-text); font-size: 13px; line-height: 1; cursor: pointer; }
+/* 浮窗独立匹配实页：24px图标盒/18px主SVG，显式覆盖通用button的30px最小高。 */
+.lark-doc .lark-doc-table-tools-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 0; width: 24px; height: 24px; min-width: 24px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-table-float-text); font-size: 12px; line-height: 16px; margin-left: 8px; cursor: pointer; }
 .lark-doc .lark-doc-table-tools-btn:hover:not(:disabled) { background: var(--ld-bg-hover); }
 .lark-doc .lark-doc-table-tools-btn:focus-visible { outline: 2px solid var(--ld-table-accent); outline-offset: -2px; }
+.lark-doc .lark-doc-table-tools-btn:first-child { margin-left: 0; }
 .lark-doc .lark-doc-table-tools-btn .lark-doc-icon { flex: none; }
-.lark-doc .lark-doc-table-tools-btn .lark-doc-caret { flex: 0 0 12px; width: 12px; height: 12px; margin-left: 2px; }
+.lark-doc .lark-doc-table-tools-btn > .lark-doc-icon:not(.lark-doc-caret) svg { width: 18px; height: 18px; }
+.lark-doc .lark-doc-table-tools-btn[data-cmd="highlight"] > .lark-doc-icon:not(.lark-doc-caret) svg { width: 14px; height: 14px; }
+.lark-doc .lark-doc-table-tools-btn .lark-doc-caret { flex: 0 0 12px; width: 12px; height: 12px; margin-left: 0; }
 .lark-doc .lark-doc-table-tools-btn.is-active { background: var(--ld-bg-accent); color: var(--ld-text-accent); }
 .lark-doc .lark-doc-table-tools-btn.is-menu-open { background: var(--ld-bg-hover-strong); }
 .lark-doc .lark-doc-table-tools-btn:disabled { opacity: .4; cursor: not-allowed; }
-.lark-doc .lark-doc-table-tools-btn.has-caret { min-width: 48px; }
+.lark-doc .lark-doc-table-tools-btn.has-caret { width: 44px; min-width: 44px; gap: 8px; }
 .lark-doc .lark-doc-table-tools-btn.is-text { min-width: 92px; gap: 6px; }
 .lark-doc .lark-doc-table-tools-text { font-size: 13px; font-weight: 500; }
-/* v12c：bar 从 24 提到 30，普通分隔线 20→22，全高分隔线仍是浮窗内容区整高
-   （2×5 padding + 30 bar = 40），负 margin 随纵向 padding 同步 8→5px。 */
-.lark-doc .lark-doc-table-tools-sep { flex: none; width: 1px; height: 22px; background: var(--ld-table-float-border); }
-.lark-doc .lark-doc-table-tools-sep.is-full { height: 40px; margin: -5px 4px; }
+.lark-doc .lark-doc-table-tools-sep { flex: none; width: 1px; height: 20px; margin: 2px 0 2px 8px; background: var(--ld-table-float-border); }
+.lark-doc .lark-doc-table-tools-sep.is-full { height: 40px; margin: -8px 4px -8px 12px; }
 
 /* 同一时刻最多挂 1 个下拉（真挂载/真摘除，不是 display:none 假切换）。 */
 .lark-doc .lark-doc-table-tools-menu { position: absolute; top: calc(100% + 4px); z-index: 41; box-sizing: border-box; min-width: 200px; max-height: min(60vh, 420px); overflow-y: auto; padding: 6px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); color: var(--ld-table-float-text); white-space: nowrap; }
+.lark-doc .lark-doc-table-tools-menu[data-menu="turninto"], .lark-doc .lark-doc-table-tools-menu[data-menu="align"], .lark-doc .lark-doc-table-tools-menu.is-heading-submenu { width: 232px; padding: 8px; border-radius: 6px; }
+.lark-doc .lark-doc-table-tools-menu[data-menu="turninto"] .lark-doc-table-tools-menu-item, .lark-doc .lark-doc-table-tools-menu[data-menu="align"] .lark-doc-table-tools-menu-item { height: 32px; min-height: 32px; padding: 4px; font-size: 14px; }
 .lark-doc .lark-doc-table-tools-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .lark-doc .lark-doc-table-tools-menu-item:hover:not(:disabled), .lark-doc .lark-doc-table-tools-menu-item:focus-visible { background: var(--ld-bg-hover); outline: 0; }
 /* 「转换为」当前块类型打勾；上下文不适用的合并/拆分/缩进置灰（点了不再没反应）。 */
@@ -2813,3 +3113,80 @@
   .lark-doc .lark-doc-table-tools,
   .lark-doc .lark-doc-table-boundary-tools { display: none !important; }
 }
+
+.lark-doc .ProseMirror a[href]:not([download]):not([role="button"]) { color: var(--ld-text-link); text-decoration: underline; text-decoration-skip-ink: none; }
+/* v12e: cell insertion and link views */
+.lark-doc .lark-doc-cell-plus { position: fixed; z-index: 35; height: 26px; line-height: 26px; }
+.lark-doc .lark-doc-cell-plus-btn { display: grid; place-items: center; width: 31px; height: 26px; min-height: 0; padding: 0; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-secondary); cursor: pointer; }
+.lark-doc .lark-doc-cell-plus-btn:hover { color: var(--ld-text-accent); }
+.lark-doc .lark-doc-link-tools { position: fixed; z-index: 600; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 440px; height: 42px; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-bubble); color: var(--ld-text); font-size: 14px; }
+.lark-doc .lark-doc-link-tools-url { flex: 0 1 184px; width: 184px; height: 24px; margin-right: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 24px; color: var(--ld-text); text-decoration: none; }
+.lark-doc .lark-doc-link-tools button { display: flex; box-sizing: border-box; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); cursor: pointer; font: inherit; }
+.lark-doc .lark-doc-link-tools button:hover { background: var(--ld-bg-active); }
+.lark-doc .lark-doc-link-tools [hidden] { display: none; }
+.lark-doc .lark-doc-link-tools .lark-doc-link-view-trigger { width: 108px; gap: 0; justify-content: flex-start; }
+.lark-doc .lark-doc-link-view-trigger > .lark-doc-icon { margin: 0 3px; }
+.lark-doc .lark-doc-link-view-trigger > span:nth-child(2) { box-sizing: border-box; width: 64px; padding-left: 4px; white-space: nowrap; }
+.lark-doc .lark-doc-link-view-caret { display: grid; place-items: center; width: 20px; color: var(--ld-text-submenu-arrow); }
+.lark-doc .lark-doc-link-tools-divider { width: 1px; height: 20px; flex: 0 0 1px; background: var(--ld-border-cell); }
+.lark-doc .lark-doc-link-view-menu { position: fixed; z-index: 999; box-sizing: border-box; width: 232px; padding: 8px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-bubble); }
+.lark-doc .lark-doc-link-view-menu button { width: 214px; height: 32px; padding: 4px; gap: 16px; justify-content: flex-start; text-align: left; }
+.lark-doc .lark-doc-link-menu-icon { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; }
+.lark-doc .lark-doc-link-view-check { margin-left: auto; visibility: hidden; color: var(--ld-text-accent); }
+.lark-doc .lark-doc-link-view-menu [aria-checked="true"] .lark-doc-link-view-check { visibility: visible; }
+.lark-doc .lark-doc-link-dialog { position: fixed; z-index: 600; display: grid; box-sizing: border-box; grid-template-columns: 316px 80px; grid-template-rows: 32px 32px; gap: 12px 24px; width: 470px; max-width: calc(100vw - 16px); padding: 24px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-colorpanel); font-size: 14px; line-height: 22px; color: var(--ld-text); }
+.lark-doc .lark-doc-link-dialog label { grid-column: 1; display: grid; grid-template-columns: 28px 280px; gap: 8px; align-items: center; margin: 0; }
+.lark-doc .lark-doc-link-dialog input { box-sizing: border-box; width: 280px; height: 32px; padding: 6px 12px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); color: var(--ld-text); font-size: 14px; line-height: 18px; outline: none; }
+.lark-doc .lark-doc-link-dialog input:focus { border-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-link-dialog button { grid-column: 2; grid-row: 2; width: 80px; height: 32px; padding: 0 12px; border: 0; border-radius: 4px; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 14px; line-height: 32px; cursor: pointer; }
+.lark-doc .lark-doc-link-dialog button:disabled { background: var(--ld-text-disabled); cursor: default; }
+.lark-doc .lark-doc-link-embed { margin: 8px 0; border-radius: 6px; }
+.lark-doc .lark-doc-link-embed.is-selected { outline: 2px solid var(--ld-brand-chrome); }
+.lark-doc .lark-doc-link-embed a { color: var(--ld-text-link); text-decoration: none; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-link-embed-row { display: block; padding: 8px 12px; }
+.lark-doc .lark-doc-link-tools.is-preview,
+.lark-doc .lark-doc-link-tools.is-card { width: auto; }
+.lark-doc .lark-doc-link-tools-divider.is-full { height: 40px; margin: -8px 0 -8px 8px; }
+.lark-doc .lark-doc-link-view-trigger[aria-expanded="true"] .lark-doc-link-view-caret { transform: rotate(180deg); }
+.lark-doc .lark-doc-link-embed[data-view="preview"] { display: flex; justify-content: center; }
+.lark-doc .lark-doc-link-embed[data-view="preview"].is-selected { outline: none; }
+.lark-doc .lark-doc-link-preview-body:hover,
+.lark-doc .lark-doc-link-preview-body.is-resizing { border-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-link-preview-body { position: relative; flex: none; overflow: visible; box-sizing: content-box; border: 1px solid var(--ld-border-cell); border-radius: 8px; box-shadow: none; }
+.lark-doc .lark-doc-link-preview-resize { position: absolute; z-index: 3; display: none; width: 20px; height: 20px; touch-action: none; }
+.lark-doc .lark-doc-link-preview-resize::after { content: ''; position: absolute; top: 7px; left: 7px; width: 6px; height: 6px; box-sizing: border-box; border: 1px solid var(--ld-brand-chrome); border-radius: 50%; background: var(--ld-bg-content); }
+.lark-doc .lark-doc-link-preview-body:hover .lark-doc-link-preview-resize,
+.lark-doc .lark-doc-link-preview-body:focus-within .lark-doc-link-preview-resize,
+.lark-doc .lark-doc-link-preview-body.is-resizing .lark-doc-link-preview-resize { display: block; }
+.lark-doc .is-readonly .lark-doc-link-preview-resize,
+.lark-doc .ProseMirror[contenteditable="false"] .lark-doc-link-preview-resize,
+.lark-doc [data-embed-state="blocked"] .lark-doc-link-preview-resize { display: none !important; }
+.lark-doc .lark-doc-link-preview-body.is-resizing iframe { pointer-events: none; }
+.lark-doc .lark-doc-link-preview-resize.is-w { left: -10px; top: calc(50% - 10px); cursor: ew-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-e { right: -10px; top: calc(50% - 10px); cursor: ew-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-n { top: -10px; left: calc(50% - 10px); cursor: ns-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-s { bottom: -10px; left: calc(50% - 10px); cursor: ns-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-nw { left: -10px; top: -10px; cursor: nwse-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-ne { right: -10px; top: -10px; cursor: nesw-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-sw { left: -10px; bottom: -10px; cursor: nesw-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-se { right: -10px; bottom: -10px; cursor: nwse-resize; }
+
+/* Upload previews remain outside document content until the provider succeeds. */
+.lark-doc.is-image-file-dragging .prosemirror-dropcursor-inline,
+.lark-doc.is-image-file-dragging .prosemirror-dropcursor-block { display: none !important; }
+.lark-doc .lark-doc-image-upload { display: flex; justify-content: center; max-width: 100%; margin: 4px 0; line-height: 0; cursor: default; }
+.lark-doc .lark-doc-image-upload-frame { position: relative; display: inline-block; max-width: 100%; min-width: 65px; min-height: 48px; vertical-align: top; }
+.lark-doc .lark-doc-image-upload img { display: block; max-width: 100%; height: auto; }
+.lark-doc .lark-doc-image-upload-mask { position: absolute; inset: 0; background: var(--ld-bg-tooltip); opacity: .2; }
+.lark-doc .lark-doc-image-upload.is-selected .lark-doc-image-upload-frame { outline: 2px solid var(--ld-brand-chrome); }
+.lark-doc .lark-doc-image-upload-progress { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 65px; height: 28px; padding: 3px 6px; border-radius: 5px; color: var(--ld-text-inverse); font-size: 12px; line-height: 21.6px; }
+.lark-doc .lark-doc-image-upload-progress::before { position: absolute; inset: 0; border-radius: inherit; background: var(--ld-bg-tooltip); opacity: .3; content: ''; }
+.lark-doc .lark-doc-image-upload-percent { position: relative; width: 31px; text-align: center; }
+.lark-doc .lark-doc-image-upload-spinner { position: relative; display: flex; flex: 0 0 22px; align-items: center; justify-content: center; height: 22px; }
+.lark-doc .lark-doc-image-upload-spinner::after { width: 12px; height: 12px; box-sizing: border-box; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: lark-doc-upload-spin 900ms linear infinite; content: ''; }
+@keyframes lark-doc-upload-spin { to { transform: rotate(360deg); } }
+.lark-doc .lark-doc-image-upload-errors { position: fixed; z-index: 10000; top: 40px; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 24px; max-width: calc(100vw - 32px); transform: translateX(-50%); }
+.lark-doc .lark-doc-image-upload-error { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 54px; padding: 16px; border-radius: 6px; background: var(--ld-bg-toast); box-shadow: var(--ld-shadow-toast); color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-image-upload-error-icon { display: flex; flex: 0 0 16px; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--ld-danger); color: var(--ld-text-inverse); font-size: 12px; font-weight: 700; line-height: 16px; }
+@media print { .lark-doc-image-upload, .lark-doc-image-upload-errors { display: none !important; } }
+@media (max-width: 500px) { .lark-doc .lark-doc-link-dialog { display: flex; flex-direction: column; gap: 12px; } .lark-doc .lark-doc-link-dialog label { grid-template-columns: 28px minmax(0, 1fr); } .lark-doc .lark-doc-link-dialog input { width: 100%; } .lark-doc .lark-doc-link-dialog button { align-self: flex-end; } }

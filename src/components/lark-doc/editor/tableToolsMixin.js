@@ -6,6 +6,7 @@
  */
 import { closeHistory } from '@tiptap/pm/history'
 import { selectedRect } from '@tiptap/pm/tables'
+import { TextSelection } from '@tiptap/pm/state'
 import { tableActions } from './constants'
 
 export default {
@@ -18,7 +19,7 @@ export default {
     // 严格不越过表格。表格最左 / 最上**外边缘**不产生 ＋。
     // `columnSide` / `rowSide` 双按钮语义已废除。
     tableBoundary: { visible: false, hover: null, actionId: 'addColumnAfter', plusActive: false, rowIndex: -1, columnIndex: -1, rowSpan: 1, columnSpan: 1, cellPosition: null, style: { top: '0px', left: '0px', width: '0px', height: '0px' }, columnLineLeft: 0, rowLineTop: 0, plusUp: 28, plusDown: 20 },
-    columnResize: null, tableActions,
+    tableActions,
   } },
   computed: {
     visibleTableActions() { return this.larkDocConfig.features.tables ? this.tableActions : [] },
@@ -47,9 +48,15 @@ export default {
   beforeDestroy() { window.removeEventListener('resize', this.syncTableClip) },
   methods: {
     // P0-03：工具栏表格按钮的三态行为收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
-    onTableToolbarClick() { if (this.isActive('table')) this.tableToolsOpen = !this.tableToolsOpen; else this.tablePicker = true },
+    onTableToolbarClick() {
+      if (!this.writable() || !this.featureEnabled('tables')) return
+      if (!this.isActive('table')) return this.insertTable()
+      if (this.blockMenuOpen && this.handleIsTable) return this.closeBlockMenu()
+      this.positionBlockHandle(this.currentBlockRange())
+      this.openBlockMenu()
+    },
     previewTableSize(rows, cols) { if (!this.tablePicker) return; this.tablePickerHover = { rows, cols } },
-    insertTable(rows, cols) { if (!this.writable() || !this.featureEnabled('tables')) return; this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 }; this.run('insertTable', { rows, cols, withHeaderRow: false }); this.$nextTick(() => this.updateTableBoundary()) },
+    insertTable(rows = 2, cols = 3) { if (!this.writable() || !this.featureEnabled('tables')) return false; this.tablePicker = false; this.tablePickerHover = { rows: 2, cols: 3 }; const inserted = this.run('insertLarkDocTable', { rows, cols }); this.$nextTick(() => this.updateTableBoundary()); return inserted },
     activeTableElement() {
       if (!this.editor || !this.editor.isActive('table')) return null
       const { $from } = this.editor.state.selection
@@ -72,6 +79,14 @@ export default {
      * 口径是「鼠标悬浮在两个单元格交接处，交界处就要高亮并且有 + 号」，与光标位置无关。
      * column-resize-handle / overlay 可能盖在表格上方，所以命中不到 table 时再按 rect 兜底。
      */
+    tableVisibleHorizontalBounds(table) {
+      const rect = table.getBoundingClientRect()
+      const wrapper = table.closest('.tableWrapper')
+      const view = wrapper?.getBoundingClientRect()
+      const left = Math.max(0, rect.left, view ? view.left + wrapper.clientLeft : rect.left)
+      const right = Math.min(window.innerWidth || Infinity, rect.right, view ? view.left + wrapper.clientLeft + (wrapper.clientWidth || view.width) : rect.right)
+      return { left, right: Math.max(left, right) }
+    },
     tableRectElementAtPoint(event) {
       const x = event?.clientX
       const y = event?.clientY
@@ -85,11 +100,14 @@ export default {
       const pad = 44
       for (const candidate of root.querySelectorAll('.ProseMirror table')) {
         const r = candidate.getBoundingClientRect()
-        if (x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) return candidate
+        const visible = this.tableVisibleHorizontalBounds(candidate)
+        if (x >= visible.left - pad && x <= visible.right + pad && y >= r.top - pad && y <= r.bottom + pad) return candidate
       }
       return null
     },
     activeTableRectElement(event) {
+      if (event) return this.tableRectElementAtPoint(event)
+      if (this.tableBoundary.hover && this._tableBoundaryHoverTable && this.$refs.root?.contains(this._tableBoundaryHoverTable)) return this._tableBoundaryHoverTable
       const el = this.activeTableElement()
       if (el) {
         const table = (typeof HTMLTableElement !== 'undefined' && el instanceof HTMLTableElement)
@@ -98,14 +116,14 @@ export default {
       }
       // 选区不在表格内：用当前指针所在表格（或上一次 hover 的表格）保持几何，
       // 否则 `updateTableBoundary()` 会把 visible 收成 false。
-      return event ? this.tableRectElementAtPoint(event) : (this._tableBoundaryHoverTable || null)
+      return this._tableBoundaryHoverTable || null
     },
-    updateTableBoundary() {
+    updateTableBoundary(table = this.activeTableRectElement()) {
       if (!this.writable()) { this.tableBoundary.visible = false; return }
-      const table = this.activeTableRectElement()
       const paper = this.$refs.root?.querySelector('.lark-doc-paper')
       if (!table || !paper) { this.tableBoundary.visible = false; return }
       const tableRect = table.getBoundingClientRect()
+      const visible = this.tableVisibleHorizontalBounds(table)
       if (tableRect.width < 1 || tableRect.height < 1) {
         this.tableBoundary.visible = false
         if (!this._tableBoundaryRetry) {
@@ -132,8 +150,24 @@ export default {
       // hover 已选中某条内部边线时，表格几何刷新（transaction / scroll 会反复调这里）
       // 不能把边线位置覆盖成「当前单元格中心」，否则 ＋ 会跳回列中央。
       const keepLine = !!prev.hover
+      const hoveredCell = this._tableBoundaryHoverCell
+      const liveRect = hoveredCell && table.contains(hoveredCell) ? hoveredCell.getBoundingClientRect() : null
+      const hover = keepLine && hoveredCell && (!liveRect?.width || !liveRect.height) ? null : prev.hover
+      let cellPosition = prev.cellPosition
+      if (hover && liveRect) {
+        const paragraph = hoveredCell.querySelector('p,h1,h2,h3,h4,h5,h6,h7,h8,h9,pre')
+        try { cellPosition = this.editor.view.posAtDOM(paragraph || hoveredCell, 0) } catch { cellPosition = null }
+      }
       this.tableBoundary = {
         ...prev,
+        hover,
+        cellPosition,
+        ...(hover && liveRect ? {
+          rowIndex: Array.from(table.querySelectorAll('tr')).indexOf(hoveredCell.parentElement),
+          columnIndex: hoveredCell.cellIndex,
+          rowSpan: Math.max(1, hoveredCell.rowSpan || 1),
+          columnSpan: Math.max(1, hoveredCell.colSpan || 1),
+        } : {}),
         visible: true,
         // 边界条根节点是 fixed 浮层（与 .lark-doc-table-overlay 同层），坐标必须是
         // viewport 值。旧写法减掉 paperRect 是给 absolute 用的：宿主固定高度 +
@@ -144,15 +178,18 @@ export default {
           width: `${tableRect.width}px`,
           height: `${tableRect.height}px`,
         },
-        columnLineLeft: keepLine ? prev.columnLineLeft
+        columnLineLeft: keepLine ? (liveRect ? liveRect.right - tableRect.left : prev.columnLineLeft)
           : (cellRect ? cellRect.left - tableRect.left + cellRect.width / 2 : tableRect.width / 2),
-        rowLineTop: keepLine ? prev.rowLineTop
+        rowLineTop: keepLine ? (liveRect ? liveRect.bottom - tableRect.top : prev.rowLineTop)
           : (cellRect ? cellRect.top - tableRect.top + cellRect.height / 2 : tableRect.height / 2),
         plusUp,
         plusDown,
+        rowLineLeft: visible.left - tableRect.left,
+        rowLineLength: visible.right - visible.left,
       }
     },
     clearTableBoundaryHover() {
+      this._tableBoundaryHoverCell = null
       const boundary = this.tableBoundary
       // 整体替换触发 `tableBoundary` 的 deep watch，让 hover line 与 ＋ 一起收起。
       if (boundary.hover || boundary.plusActive) this.tableBoundary = { ...boundary, hover: null, plusActive: false }
@@ -195,14 +232,15 @@ export default {
       if (!current.visible || !Number.isFinite(width) || !Number.isFinite(height)
         || Math.abs(width - tableRect.width) > 1 || Math.abs(height - tableRect.height) > 1
         || Math.abs(left - tableRect.left) > 1 || Math.abs(top - tableRect.top) > 1) {
-        this.updateTableBoundary()
+        this.updateTableBoundary(table)
       }
       const x = event.clientX
       const y = event.clientY
       const threshold = 9
       // 44px 覆盖表格上方 -28px 的列 ＋ 与左侧行 ＋ 热区；超出即视为离开表格块。
       const pad = 44
-      if (x < tableRect.left - pad || x > tableRect.right + pad
+      const visible = this.tableVisibleHorizontalBounds(table)
+      if (x < visible.left - pad || x > visible.right + pad
         || y < tableRect.top - pad || y > tableRect.bottom + pad) {
         this.clearTableBoundaryHover()
         return
@@ -214,7 +252,7 @@ export default {
       const above = y < tableRect.top
       const leftOf = x < tableRect.left
       const inVerticalBand = y >= tableRect.top - 28 && y <= tableRect.bottom + threshold
-      const inHorizontalBand = x >= tableRect.left - 28 && x <= tableRect.right + threshold
+      const inHorizontalBand = x >= visible.left - 28 && x <= visible.right + threshold
       let colLine = null
       let rowLine = null
       // 真源 bundle 里确实还有 `is-leftmost` / `is-topmost` 两个特殊 zone，但用户对照
@@ -243,6 +281,7 @@ export default {
       const line = useColumn ? colLine : rowLine
       if (!line) { this.clearTableBoundaryHover(); return }
       const cell = line.cell
+      this._tableBoundaryHoverCell = cell
       const paragraph = cell.querySelector('p')
       let cellPosition = null
       if (paragraph) {
@@ -269,6 +308,11 @@ export default {
       if (!this.writable()) return
       const boundary = { ...this.tableBoundary }
       if (Number.isInteger(boundary.cellPosition)) this.editor.commands.setTextSelection(boundary.cellPosition)
+      if (!this.editor.isActive('table')) return
+      const rect = selectedRect(this.editor.state)
+      // Resolve logical coordinates after restoring the live cell. DOM cellIndex
+      // excludes cells spanning from earlier rows and cannot locate the new cell.
+      Object.assign(boundary, { rowIndex: rect.top, columnIndex: rect.left, rowSpan: rect.bottom - rect.top, columnSpan: rect.right - rect.left })
       this.clearTableBoundaryHover()
       // 行/列操作要和相邻的表格变更分开记录，确保每次点击都对应一次撤销。
       this.editor.view.dispatch(closeHistory(this.editor.state.tr))
@@ -283,16 +327,16 @@ export default {
     },
     focusTableBoundaryCell(id, boundary) {
       if (!this.writable() || !boundary || boundary.rowIndex < 0 || boundary.columnIndex < 0) return
-      const table = this.activeTableElement()
-      if (!table) return
+      if (!this.editor.isActive('table')) return
+      const state = this.editor.state
+      const { table, tableStart, map } = selectedRect(state)
       const rowOffset = id === 'addRowAfter' ? boundary.rowSpan : 0
       const columnOffset = id === 'addColumnAfter' ? boundary.columnSpan : 0
-      const row = table.querySelectorAll('tr')[boundary.rowIndex + rowOffset]
-      const cell = row?.cells[boundary.columnIndex + columnOffset]
-      const paragraph = cell?.querySelector('p')
-      if (!paragraph) return
-      const position = this.editor.view.posAtDOM(paragraph, 0)
-      if (Number.isInteger(position)) this.editor.commands.setTextSelection(position)
+      const row = boundary.rowIndex + rowOffset
+      const column = boundary.columnIndex + columnOffset
+      if (row >= map.height || column >= map.width) return
+      const position = tableStart + map.positionAt(row, column, table) + 1
+      this.editor.view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(position))))
     },
     tableAction(id) {
       if (!this.writable() || !this.featureEnabled('tables')) return
@@ -363,56 +407,33 @@ export default {
       const selected = selectedRect(this.editor.state)
       if (!table || !selected.map.width) return false
       const tableElement = this.activeTableElement()
-      const width = Math.max(70, Math.round((tableElement?.clientWidth || selected.map.width * 120) / selected.map.width))
+      const { map } = selected
+      const columns = Array.from(tableElement?.querySelectorAll('colgroup > col') || [])
+      const widths = Array.from({ length: map.width }, (_, column) => {
+        for (let row = 0; row < map.height; row += 1) {
+          const pos = map.map[row * map.width + column]
+          const cell = table.nodeAt(pos)
+          const value = cell?.attrs.colwidth?.[column - map.findCell(pos).left]
+          if (value > 0) return value
+        }
+        return columns[column]?.getBoundingClientRect().width || (tableElement?.clientWidth || map.width * 120) / map.width
+      })
+      const width = Math.max(70, Math.round(widths.slice(selected.left, selected.right).reduce((sum, value) => sum + value, 0) / (selected.right - selected.left)))
       const tr = this.editor.state.tr
       const cellPositions = [...new Set(selected.map.map)]
       cellPositions.forEach((cellPos) => {
         const cell = table.nodeAt(cellPos)
-        if (cell) tr.setNodeMarkup(selected.tableStart + cellPos, undefined, { ...cell.attrs, colwidth: Array(cell.attrs.colspan || 1).fill(width) })
+        const rect = map.findCell(cellPos)
+        if (!cell || rect.right <= selected.left || rect.left >= selected.right) return
+        const colwidth = Array.from({ length: cell.attrs.colspan || 1 }, (_, index) => {
+          const column = rect.left + index
+          return column >= selected.left && column < selected.right ? width : cell.attrs.colwidth?.[index] || widths[column]
+        })
+        tr.setNodeMarkup(selected.tableStart + cellPos, undefined, { ...cell.attrs, colwidth })
       })
       if (tr.docChanged) this.editor.view.dispatch(tr)
       return tr.docChanged
     },
-    onColumnPointerDown(event) {
-      if (!this.writable()) return
-      const column = event.target.closest('[data-type="column"]')
-      const next = column?.nextElementSibling
-      if (!next || next.getAttribute('data-type') !== 'column') return
-      const rect = column.getBoundingClientRect()
-      if (rect.right - event.clientX > 9) return
-      const pos = this.editor.view.posAtDOM(column, 0)
-      const resolved = this.editor.state.doc.resolve(pos)
-      const depth = Array.from({ length: resolved.depth }, (_, index) => index + 1).find((index) => resolved.node(index).type.name === 'column')
-      if (!depth) return
-      const firstPos = resolved.before(depth)
-      const secondPos = firstPos + this.editor.state.doc.nodeAt(firstPos).nodeSize
-      this.columnResize = { firstPos, secondPos, firstWidth: this.editor.state.doc.nodeAt(firstPos).attrs.width, secondWidth: this.editor.state.doc.nodeAt(secondPos).attrs.width, startX: event.clientX, pixels: rect.width + next.getBoundingClientRect().width, firstElement: column, secondElement: next, nextWidth: null }
-      event.preventDefault()
-      window.addEventListener('pointermove', this.onColumnPointerMove)
-      window.addEventListener('pointerup', this.onColumnPointerUp, { once: true })
-    },
-    onColumnPointerMove(event) {
-      const resize = this.columnResize
-      if (!resize || !this.writable()) return
-      const total = resize.firstWidth + resize.secondWidth
-      const delta = (event.clientX - resize.startX) / resize.pixels * total
-      const first = Math.max(10, Math.min(total - 10, Math.round(resize.firstWidth + delta)))
-      resize.nextWidth = first
-      resize.firstElement.style.flexBasis = `${first}%`
-      resize.secondElement.style.flexBasis = `${total - first}%`
-    },
-    onColumnPointerUp() {
-      const resize = this.columnResize
-      this.columnResize = null
-      window.removeEventListener('pointermove', this.onColumnPointerMove)
-      if (!resize) return
-      resize.firstElement.style.flexBasis = ''
-      resize.secondElement.style.flexBasis = ''
-      if (resize.nextWidth === null || !this.writable()) return
-      const tr = this.editor.state.tr
-      tr.setNodeMarkup(resize.firstPos, undefined, { width: resize.nextWidth })
-      tr.setNodeMarkup(resize.secondPos, undefined, { width: resize.firstWidth + resize.secondWidth - resize.nextWidth })
-      this.editor.view.dispatch(tr)
-    },
+
   },
 }

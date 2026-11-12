@@ -251,7 +251,7 @@ node -e "const m = require('lark-doc'); console.log(typeof m.LarkDoc, Object.key
 
 ### 4.1 唯一硬规则：`dist/` 整目录同位托管
 
-静态 Element UMD 运行时**按主 `<script>` 自身的 URL 推导同目录特性资源地址**，不再使用 Webpack 的 publicPath。现代 Element ESM 交给宿主构建器处理动态 import。静态方式需满足：
+静态 Element UMD 由一个轻量主 `<script>` 和同目录 runtime 组成：主脚本按自身 URL 自动加载 `lark-doc-element.runtime.umd.min.js`，runtime 再按需加载特性资源；不再使用 Webpack 的 publicPath。现代 Element ESM 交给宿主构建器处理动态 import。静态方式需满足：
 
 - `dist/` 里的文件必须**全部**放在同一个目录下（不能只拷 `lark-doc-element.umd.min.js`）。
 - 这个目录可以是任意子路径（`/vendor/lark-doc/`、`/static/lib/ld/` 都行），只要整目录一致。
@@ -261,6 +261,7 @@ node -e "const m = require('lark-doc'); console.log(typeof m.LarkDoc, Object.key
 
 ```
 lark-doc-element.umd.min.js          ← 主文件
+lark-doc-element.runtime.umd.min.js  ← 主文件自动加载的 runtime
 lark-doc-element.umd.min.math.js      ← KaTeX
 lark-doc-element.umd.min.mermaid.js
 lark-doc-element.umd.min.office.js    ← docx / mammoth
@@ -295,7 +296,7 @@ ln -sfn /srv/static/vendor/lark-doc/0.12.0 /srv/static/vendor/lark-doc/current
 
 nginx 用 `current` 提供服务，前端固定引用 `/vendor/lark-doc/current/...`。
 
-静态 UMD 从主文件所在目录加载 `lark-doc-element.umd.min.<feature>.js` 等按需资源，nginx 顺着软链解析到版本目录，整目录规则天然成立。
+静态 UMD 从主文件所在目录加载 runtime 与 `lark-doc-element.umd.min.<feature>.js` 等按需资源，nginx 顺着软链解析到版本目录，整目录规则天然成立。
 
 **软链两个坑（实测踩过）：**
 
@@ -544,7 +545,7 @@ VUE_APP_DOCUMENT_NAME=demo-document
 
 现代 Webpack5 / Vite 的 `import 'lark-doc/element'` 会解析到 Element ESM，样式自动注入，字体与动态 import 由宿主已有规则处理。无需套用旧 UMD 的 publicPath 或手动把资源复制到 `js/` 的规则。
 
-静态 UMD 则完整复制 dist，通过独立 `<script src="…/lark-doc-element.umd.min.js">` 引用。主脚本按自身 URL 找同目录特性资源。不要把静态 UMD 再打入应用 bundle。
+静态 UMD 则完整复制 dist，通过独立 `<script src="…/lark-doc-element.umd.min.js">` 引用。主脚本会先按自身 URL 加载同目录 runtime，再由 runtime 找同目录特性资源。不要把静态 UMD 再打入应用 bundle。
 
 资源 404 时先确认采用哪条路线：ESM 检查宿主构建输出及 base/publicPath；静态 UMD 检查主脚本目录、特性 JS、fonts 是否完整。可复制例子见[Web Component 完整示例](/examples/web-component)。
 

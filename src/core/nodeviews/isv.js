@@ -3,13 +3,11 @@
  *
  * 规格来源 requirements/02 §22 ④-1（13 层壳链）④-5（目录导航内层）⑤-3（按钮落地形态）。
  *
- * 两处「与真机不同」的取巧，都在代码里标了原因，不是随手写的：
+ * 目录导航使用本地 `srcdoc` iframe 承载，模拟飞书 `web_offline` ISV 的边界；正文只保留
+ * 壳和消息桥，标题跳转通过 `postMessage` 回到宿主。这样宿主页面不会把目录树节点混进
+ * 正文 DOM，滚动也只由宿主负责。
  *
- *  1. **目录导航不进 iframe**。真机跑在 `lf-fb.feishupkg.com` 的 `web_offline` 里，
- *     V1 无外网、CDN 不可达，所以按 ④-5 的实测几何在宿主 DOM 复刻（`ul>li>ul>li`
- *     真嵌套 —— 因为「父 item 高度 = 32 + 后代之和」，扁平画不出来这个高度关系）。
- *     ② 的 CRUD 与 ④-5 的空态（容器 + 工具条全在，不加提示文案）都按实测原样。
- *  2. **工具条图标是通用 SVG，不是飞书字形**。真飞书是 `FilterOutlined` /
+ * 工具条图标仍是通用 SVG，不是飞书字形。真飞书是 `FilterOutlined` /
  *     `ContentOutlined` / `DownBoldOutlined` / `ResetOutlined`，path 未取到实测值，
  *     这里先给同义的通用形状（尺寸 / 颜色 / 禁用态按实测），见交接清单待替换。
  *
@@ -38,63 +36,130 @@ function markUi(element) {
   return element
 }
 
-/**
- * 工具条四个图标（24×24，stroke 用 `currentColor` —— 颜色交给 CSS，
- * core 里不落任何字面色值，06 §「UI 皮肤色收进 CSS 变量」）。
- */
-const ICONS = {
-  filter: '<path d="M4 5h16l-6.2 7.4V19l-3.6-2v-4.6z" />',
-  content: '<path d="M4 6h16M4 12h16M4 18h10" />',
-  down: '<path d="M5 8l7 7 7-7" />',
-  reset: '<path d="M20 12a8 8 0 11-3.2-6.4M20 4v5h-5" />',
+function isScrollable(element) {
+  if (!element || typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return false
+  const style = window.getComputedStyle(element)
+  return /(auto|scroll|overlay)/.test(`${style.overflowY}${style.overflow}`) && element.scrollHeight > element.clientHeight + 1
 }
 
-function icon(name, size) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('width', String(size))
-  svg.setAttribute('height', String(size))
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('fill', 'none')
-  svg.setAttribute('stroke', 'currentColor')
-  svg.setAttribute('stroke-width', '2')
-  svg.setAttribute('stroke-linecap', 'round')
-  svg.setAttribute('stroke-linejoin', 'round')
-  svg.setAttribute('aria-hidden', 'true')
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  path.setAttribute('d', ICONS[name] || '')
-  svg.appendChild(path)
-  return svg
+function findScrollContainer(target, boundary) {
+  let current = target && target.parentElement
+  while (current && current !== boundary && current !== document.body && current !== document.documentElement) {
+    if (isScrollable(current)) return current
+    current = current.parentElement
+  }
+  return null
+}
+
+function fixedChromeBottom(root) {
+  if (!root || typeof window === 'undefined') return 0
+  let bottom = 0
+  root.querySelectorAll('.lark-doc-topbar, .lark-doc-toolbar, .lark-doc-actions-host').forEach(element => {
+    const position = window.getComputedStyle(element).position
+    if (position !== 'fixed' && position !== 'sticky') return
+    const rect = element.getBoundingClientRect()
+    if (rect.bottom > 0 && rect.top < window.innerHeight) bottom = Math.max(bottom, rect.bottom)
+  })
+  return bottom
+}
+
+/**
+ * Scroll a catalogue target inside the editor's own scroll context.
+ *
+ * `Element.scrollIntoView({ block: 'start' })` walks all scrollable ancestors and,
+ * when the host has no dedicated editor scroller, moves the document root so the
+ * heading sits at the browser's very top. Feishu keeps the document chrome stable
+ * and only applies the smallest delta needed to reveal the heading. We mirror that
+ * behavior for both an embedded scroller and the normal page-scroll fallback.
+ */
+function scrollCatalogTarget(target, root) {
+  if (!target || typeof window === 'undefined') return false
+  const container = findScrollContainer(target, root)
+  // 飞书目录点击完成后立即把目标放入可视区；保留页面滚动上下文的
+  // nearest 计算，但不要让一个长距离 smooth 动画把整页留在中途状态。
+  const behavior = 'auto'
+  if (container) {
+    const targetRect = target.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const topInset = 8
+    const bottomInset = 8
+    let delta = 0
+    if (targetRect.top < containerRect.top + topInset) delta = targetRect.top - (containerRect.top + topInset)
+    else if (targetRect.bottom > containerRect.bottom - bottomInset) delta = targetRect.bottom - (containerRect.bottom - bottomInset)
+    if (Math.abs(delta) < 1) return true
+    const next = Math.max(0, Math.min(container.scrollHeight - container.clientHeight, container.scrollTop + delta))
+    if (typeof container.scrollTo === 'function') container.scrollTo({ top: next, behavior })
+    else container.scrollTop = next
+    return true
+  }
+  const rect = target.getBoundingClientRect()
+  const top = Math.max(8, fixedChromeBottom(root) + 8)
+  const bottom = window.innerHeight - 8
+  let delta = 0
+  if (rect.top < top) delta = rect.top - top
+  else if (rect.bottom > bottom) delta = rect.bottom - bottom
+  if (Math.abs(delta) < 1) return true
+  const scrolling = document.scrollingElement || document.documentElement
+  const next = Math.max(0, Math.min(scrolling.scrollHeight - window.innerHeight, (window.scrollY || scrolling.scrollTop || 0) + delta))
+  if (typeof window.scrollTo === 'function') window.scrollTo({ top: next, behavior })
+  else scrolling.scrollTop = next
+  return true
 }
 
 /** 目录层级的扁平 → 真嵌套 `ul>li>ul>li`（④-5：父 item 高度 = 32 + 后代之和）。 */
-function buildCatalogNodes(nodes, host) {
-  const list = el('ul', 'catalog-list')
-  ;(nodes || []).forEach((entry) => {
-    const item = el('li', `catalog-item catalog_level_${entry.level}`)
-    const text = markUi(el('div', 'catalog-text'))
-    text.style.paddingLeft = `${catalogIndent(entry.level)}px`
-    text.style.paddingRight = `${CATALOG_PADDING_RIGHT}px`
-    text.style.fontWeight = String(catalogFontWeight(entry.level))
-    text.textContent = entry.text
-    if (typeof entry.pos === 'number') text.setAttribute('data-catalog-pos', String(entry.pos))
-    // 20×18 删除钮：默认 `display:none`，hover 才显形（④-5）。图标不绑行为 —— 真机
-    // 采到的也是「未采」，V1 就让它只出现、点了没反应，别自己发明删除语义。
-    const remove = el('span', 'delete-icon-container', { 'aria-hidden': 'true' })
-    item.appendChild(text)
-    item.appendChild(remove)
-    if (entry.children && entry.children.length) buildCatalogNodes(entry.children, item)
-    list.appendChild(item)
-  })
-  host.appendChild(list)
-  return host
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function catalogTreeHtml(nodes) {
+  const list = (nodes || []).map(entry => {
+    const indent = catalogIndent(entry.level)
+    const weight = catalogFontWeight(entry.level)
+    const children = entry.children && entry.children.length ? catalogTreeHtml(entry.children) : ''
+    return `<li class="catalog-item catalog_level_${Number(entry.level) || 1}">`
+      + `<button class="catalog-text" type="button" data-catalog-pos="${Number(entry.pos)}" style="padding-left:${indent}px;padding-right:${CATALOG_PADDING_RIGHT}px;font-weight:${weight}">`
+      + `<span>${escapeHtml(entry.text)}</span><span class="delete-icon-container" aria-hidden="true"></span></button>${children}</li>`
+  }).join('')
+  return `<ul class="catalog-list">${list}</ul>`
+}
+
+function catalogFrameHtml(nodes) {
+  const tree = catalogTreeHtml(nodes)
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    :root{color-scheme:light}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+    body{background:#f5f6f7;color:#1f2329;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:22px}
+    .catalog-container{position:relative;width:100%;height:100%;padding:25px 26px 20px;border-radius:8px;background:#f5f6f7;overflow:auto}
+    .top-tool-container{position:absolute;top:8px;right:10px;display:flex;width:96px;height:24px;align-items:center;justify-content:space-between;color:#646a73}
+    .catalog-tool-icon,.switch-view{display:inline-flex;align-items:center;justify-content:center;color:#646a73;cursor:pointer}
+    .catalog-tool-icon{width:24px;height:24px}.switch-view{width:40px;height:24px;gap:2px}.catalog-tool-icon.is-disabled{color:#bbbfc4;cursor:default}
+    .catalog-list{margin:0;padding:0;list-style:none}.catalog-item{width:100%;min-height:32px;border-radius:6px}
+    .catalog-item>ul{margin:0;padding:0;list-style:none}.catalog-text{display:flex;width:100%;height:30px;align-items:center;justify-content:space-between;padding-top:4px;padding-bottom:4px;border:0;border-radius:6px;background:transparent;color:#1f2329;font:inherit;line-height:22px;text-align:left;cursor:pointer}
+    .catalog-text:hover{background:rgba(31,35,41,.08)}.delete-icon-container{display:none;width:20px;height:18px}
+    .catalog-text:hover .delete-icon-container{display:block}
+    svg{display:block;flex:none}
+  </style></head><body><div class="catalog-container">
+    <div class="top-tool-container"><span class="catalog-tool-icon" role="button" aria-label="筛选"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6.2 7.4V19l-3.6-2v-4.6z"/></svg></span>
+      <span class="switch-view" role="button" aria-label="切换视图"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 7 7 7-7"/></svg></span>
+      <span class="catalog-tool-icon is-disabled" role="button" aria-label="重置" aria-disabled="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-3.2-6.4M20 4v5h-5"/></svg></span>
+    </div>${tree}</div><script>
+      document.addEventListener('click', function(event){var target=event.target.closest && event.target.closest('[data-catalog-pos]');if(!target)return;parent.postMessage({type:'lark-doc-catalog-jump',pos:Number(target.getAttribute('data-catalog-pos'))},'*')})
+    </script></body></html>`
 }
 
 export function createIsvNodeView(props) {
   const { node, editor, extension } = props
   const options = (extension && extension.options) || {}
+  const runtimeOptions = () => (typeof options.getRuntimeOptions === 'function' ? options.getRuntimeOptions() : options) || {}
 
   let currentNode = node
   let lastDoc = (editor && editor.state && editor.state.doc) || null
+  let catalogFrame = null
+  let catalogMessageHandler = null
   const attrs = () => currentNode.attrs || {}
 
   /* ---------- 13 层壳（④-1） ---------- */
@@ -138,46 +203,59 @@ export function createIsvNodeView(props) {
   function buildButton(view) {
     const span = markUi(el('span', 'docx-button-component light-blue embed-text-container hoverable'))
     span.textContent = view.buttonText || BUTTON_TEXT_DEFAULT
+    span.setAttribute('role', 'button')
+    span.tabIndex = 0
     /* 底色空 = 走 CSS 的浅蓝默认（`--ld-bg-selected` #E0E9FF，⑤-3 真机实测值）；
        有值才写 inline（用户内容色）。空值别补成色板默认格 #E1EAFF，见 isvMixin 的说明。 */
     if (view.buttonColor) span.style.backgroundColor = view.buttonColor
-    span.addEventListener('click', () => {
+    const activate = () => {
       if (view.action !== 'open_link') {
         // 另两个动作（创建副本 / 关注文档更新）需要宿主能力，core 不自己发明 ——
         // 有回调就交给宿主，没有就静默（真机采到的是「点了没反应」，⑤-2 未采行为）。
-        if (typeof options.onButtonAction === 'function') options.onButtonAction(view.action, view)
+        const callbacks = runtimeOptions()
+        if (typeof callbacks.onButtonAction === 'function') callbacks.onButtonAction(view.action, view)
         return
       }
       if (!view.linkUrl) return
       if (typeof window !== 'undefined' && typeof window.open === 'function') {
         window.open(view.linkUrl, '_blank', 'noopener,noreferrer')
       }
+    }
+    span.addEventListener('click', activate)
+    span.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); activate() }
     })
     return span
   }
 
   /** 目录导航（④-5）：灰底容器 + 工具条 + 真嵌套树；空态只留容器与工具条。 */
   function buildCatalog() {
+    if (catalogMessageHandler) window.removeEventListener('message', catalogMessageHandler)
+    catalogMessageHandler = null
+    catalogFrame = null
     const wrap = el('div', 'wrap-catalog-container light-catalog-container')
-    const box = el('div', 'catalog-container')
-    const tools = markUi(el('div', 'top-tool-container'))
-    const filter = markUi(el('span', 'catalog-tool-icon', { role: 'button', 'aria-label': '筛选' }))
-    filter.appendChild(icon('filter', 24))
-    const switchView = markUi(el('span', 'switch-view', { role: 'button', 'aria-label': '切换视图' }))
-    switchView.appendChild(icon('content', 16))
-    switchView.appendChild(icon('down', 9))
-    // 「重置」在空态/初始态就是禁用灰（`rgb(187,191,196)` = `--ld-text-disabled`），
-    // 实测不是 hover 才变 —— 别做成交互态。
-    const reset = markUi(el('span', 'catalog-tool-icon is-disabled', { role: 'button', 'aria-label': '重置', 'aria-disabled': 'true' }))
-    reset.appendChild(icon('reset', 24))
-    tools.appendChild(filter)
-    tools.appendChild(switchView)
-    tools.appendChild(reset)
-    box.appendChild(tools)
-
     const items = outlineItems()
-    if (items.length) buildCatalogNodes(buildCatalogTree(items), box)
-    wrap.appendChild(box)
+    const frame = markUi(el('iframe', 'isv-catalog-iframe', {
+      title: '目录导航',
+      sandbox: 'allow-scripts',
+      scrolling: 'no',
+    }))
+    frame.setAttribute('frameborder', '0')
+    frame.setAttribute('aria-label', '目录导航')
+    frame.style.display = 'block'
+    frame.style.width = '100%'
+    frame.style.height = '100%'
+    frame.style.border = '0'
+    frame.srcdoc = catalogFrameHtml(buildCatalogTree(items))
+    catalogFrame = frame
+    catalogMessageHandler = event => {
+      if (!catalogFrame || event.source !== catalogFrame.contentWindow) return
+      const data = event.data || {}
+      if (data.type !== 'lark-doc-catalog-jump') return
+      jumpTo(data.pos)
+    }
+    window.addEventListener('message', catalogMessageHandler)
+    wrap.appendChild(frame)
     return wrap
   }
 
@@ -190,24 +268,22 @@ export function createIsvNodeView(props) {
   function jumpTo(raw) {
     const pos = Number(raw)
     if (!Number.isFinite(pos) || !editor || !editor.view) return
-    if (typeof options.onCatalogJump === 'function') { options.onCatalogJump(pos); return }
+    const callbacks = runtimeOptions()
+    if (typeof callbacks.onCatalogJump === 'function') { callbacks.onCatalogJump(pos); return }
     try {
-      const found = editor.view.domAtPos(Math.min(Math.max(pos, 0), editor.state.doc.content.size))
-      let target = found && found.node
-      if (target && target.nodeType === 3) target = target.parentNode
-      if (target && typeof target.scrollIntoView === 'function') {
-        target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      const clamped = Math.min(Math.max(pos, 0), editor.state.doc.content.size)
+      let target = typeof editor.view.nodeDOM === 'function' ? editor.view.nodeDOM(clamped) : null
+      if (!target) {
+        const found = editor.view.domAtPos(clamped)
+        target = found && found.node
       }
+      if (target && target.nodeType === 3) target = target.parentNode
+      const heading = target && typeof target.closest === 'function'
+        ? target.closest('[data-type="heading"], h1, h2, h3, h4, h5, h6')
+        : null
+      scrollCatalogTarget(heading || target, dom.closest('.lark-doc') || dom)
     } catch (_) { /* 位置在协同下可能被别人删了，跳不动就保持原样 */ }
   }
-
-  /** 点击 .catalog-text 真跳转（④-5 实测 scrollTop 2000→5696）；不高亮当前标题。 */
-  dom.addEventListener('click', (event) => {
-    const target = event && event.target
-    if (!target || typeof target.closest !== 'function') return
-    const text = target.closest('.catalog-text')
-    if (text) jumpTo(text.getAttribute('data-catalog-pos'))
-  })
 
   const RENDER_KEYS = ['kind', 'instanceId', 'appId', 'align', 'height', 'buttonText', 'buttonColor', 'action', 'linkUrl']
 
@@ -261,7 +337,11 @@ export function createIsvNodeView(props) {
       return Boolean(target && typeof target.closest === 'function' && target.closest(`[${UI_ATTR}]`))
     },
     ignoreMutation() { return true },
-    destroy() {},
+    destroy() {
+      if (catalogMessageHandler) window.removeEventListener('message', catalogMessageHandler)
+      catalogMessageHandler = null
+      catalogFrame = null
+    },
     // 测试与宿主联调通道。
     kind() { return readIsv(attrs()) ? readIsv(attrs()).kind : null },
     height() { return dom.style.getPropertyValue('--lark-doc-isv-height') },

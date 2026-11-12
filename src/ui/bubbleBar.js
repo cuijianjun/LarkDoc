@@ -60,11 +60,11 @@ export function createBubbleBar(host, options = {}) {
   const aiButton = document.createElement('button')
   aiButton.type = 'button'
   aiButton.className = 'lark-doc-bubble-ai'
-  aiButton.title = '问问 AI'
-  aiButton.setAttribute('aria-label', '问问 AI')
+  aiButton.title = '问问AI'
+  aiButton.setAttribute('aria-label', '问问AI')
   aiButton.appendChild(iconNode('block-quote', 16))
   const aiLabel = document.createElement('span')
-  aiLabel.textContent = '问问 AI'
+  aiLabel.textContent = '问问AI'
   aiButton.appendChild(aiLabel)
   aiButton.addEventListener('click', () => call('onAi'))
 
@@ -224,6 +224,12 @@ export function createBubbleBar(host, options = {}) {
   copyButton.title = '复制选中文字'
   copyButton.addEventListener('click', () => call('onCopy'))
   copyButton.appendChild(iconNode('copy', 16))
+  const commentButton = document.createElement('button')
+  commentButton.type = 'button'
+  commentButton.setAttribute('aria-label', '添加评论')
+  commentButton.title = '添加评论'
+  commentButton.appendChild(iconNode('mode-comment', 16))
+  commentButton.addEventListener('click', () => call('onComment'))
 
   function createDivider() {
     const span = document.createElement('span')
@@ -265,11 +271,12 @@ export function createBubbleBar(host, options = {}) {
     }
     el.appendChild(tailDivider)
     el.appendChild(copyButton)
+    if (config.comment) el.appendChild(commentButton)
   }
 
   const configSignature = (config) => {
     const { ai, blockStyle, marks = [], highlightAllowed } = config || {}
-    return `${ai ? 1 : 0}|${blockStyle ? 1 : 0}|${highlightAllowed ? 1 : 0}|${marks.map((item) => item.id).join(',')}`
+    return `${ai ? 1 : 0}|${blockStyle ? 1 : 0}|${highlightAllowed ? 1 : 0}|${config?.comment ? 1 : 0}|${marks.map((item) => item.id).join(',')}`
   }
 
   // ——————————————————— 菜单开合 ———————————————————
