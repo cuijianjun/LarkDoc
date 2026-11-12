@@ -120,7 +120,9 @@ export function createTopBar(options = {}) {
   const notifyDot = document.createElement('span')
   notifyDot.className = 'lark-doc-notify-dot'
   const moreButton = actionButton('lark-doc-more-btn', '更多', 'more', 'menu', 'toggleTopbarMore')
-  headerActions.append(createButton, notifyButton, modeSelect.el, moreButton)
+  // 模式切换是标题栏动作区的第一项；宿主动作紧随其后，创建/通知/更多再按
+  // 飞书文档的常用操作顺序排列。这样宿主按钮不会被新增原生入口挤到模式之后。
+  headerActions.append(modeSelect.el, createButton, notifyButton, moreButton)
 
   // 弹层独占一个子宿主，不能让工作台或通知的更新摘掉菜单。
   const menus = document.createElement('div')
@@ -266,10 +268,13 @@ export function createTopBar(options = {}) {
       if (visible && el.parentNode !== host) host.insertBefore(el, anchor || null)
       else if (!visible && el.parentNode) el.parentNode.removeChild(el)
     }
-    // 插槽宿主固定排在模式切换**之后**。每次 update 都对齐一次而不是只在构造时搬：
+    // 插槽宿主固定紧跟模式切换。每次 update 都对齐一次而不是只在构造时搬：
     // 顶栏隐藏期间调用方会把宿主搬回停泊位（否则 DOM 更新会落进游离子树），
     // 重新显示时必须搬回来，否则宿主控件整块消失。
-    if (visible && actionsHost && (actionsHost.parentNode !== headerActions || actionsHost.nextSibling !== moreButton)) headerActions.insertBefore(actionsHost, moreButton)
+    if (visible && actionsHost) {
+      const hostAnchor = modeSelect.el.parentNode === headerActions ? modeSelect.el.nextSibling : headerActions.firstChild
+      if (actionsHost.parentNode !== headerActions || actionsHost.previousSibling !== modeSelect.el) headerActions.insertBefore(actionsHost, hostAnchor || null)
+    }
     setAttr(createButton, 'aria-expanded', String(!!state.createMenuOpen))
     createButton.disabled = !!state.readonly
     notifyButton.disabled = !!state.notifyDisabled
