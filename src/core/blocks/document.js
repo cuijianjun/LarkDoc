@@ -162,14 +162,21 @@ export function documentExtension(options, injected) {
           // 补 ID 是随机的，两端各补一次就会"同一块两个 ID"，折叠与评论锚点立刻错位。
           // 判据由 collab 子入口注入（core 不知道 yjs 存在）：任一事务来自远端就整体跳过，
           // 本地那段改动会在本端被补上，再随同步传播给对方。
-          if (isRemoteTransaction && transactions.some((transaction) => isRemoteTransaction(transaction))) return null
+          const origins = transactions.map(transaction => transaction.getMeta('appendedTransaction') || transaction)
+          if (isRemoteTransaction && origins.some(transaction => isRemoteTransaction(transaction))) return null
           // 注意 appendMapping 返回 undefined，不能写成 reduce 的累加器。
           const mapping = new Mapping()
           transactions.forEach((transaction) => mapping.appendMapping(transaction.mapping))
           const fixes = collectBlockIdFixes(newState.doc, { doc: oldState.doc, mapping })
           if (!fixes.length) return null
           const tr = newState.tr
-          return applyBlockIdFixes(tr, fixes) ? tr : null
+          if (!applyBlockIdFixes(tr, fixes)) return null
+          // 协同绑定会一次同步最终文档。补 ID 仍属于原业务操作，不能用末尾的
+          // 非历史标记把整次插入排除出撤销栈；宿主/远端和普通 PM 路径保持原策略。
+          if (options.collab && origins.some(transaction => transaction.docChanged && transaction.getMeta('addToHistory') !== false)) {
+            tr.setMeta('addToHistory', true)
+          }
+          return tr
         },
         props: {
           transformPastedHTML: (html) => network.filterHtml(sanitizeHTML(html)),

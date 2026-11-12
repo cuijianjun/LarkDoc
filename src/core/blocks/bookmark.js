@@ -75,6 +75,7 @@ const Bookmark = Node.create({
        * 飞书抓取失败也是同一张卡，无文案、无重试、无 toast）。
        */
       unfurl: null,
+      canLoadMedia: null,
       /**
        * 打开链接的通道：`onOpen({ url, recordId })`。不传就自己 `window.open`，
        * 与飞书一致（卡内没有 `a`，点击由 JS 打开）。
@@ -107,6 +108,18 @@ const Bookmark = Node.create({
         default: null,
         validate: validateAttribute('bookmark.favicon', safeMetaUrl),
         parseHTML: readUrlAttr('data-favicon'),
+        rendered: false,
+      },
+      cover: {
+        default: null,
+        validate: validateAttribute('bookmark.cover', safeMetaUrl),
+        parseHTML: readUrlAttr('data-cover'),
+        rendered: false,
+      },
+      linkTitle: {
+        default: null,
+        validate: validateAttribute('bookmark.linkTitle', value => value == null || (typeof value === 'string' && value.length <= 100000 && !value.includes('\u0000'))),
+        parseHTML: readAttr('data-link-title'),
         rendered: false,
       },
       // 飞书的 `data-record-id`：一条抓取记录的标识，**每卡唯一**，不参与渲染判定。
@@ -175,6 +188,8 @@ const Bookmark = Node.create({
           if (typeof source.desc === 'string' && source.desc && source.desc !== attrs.desc) next.desc = source.desc
           const favicon = readBookmarkUrl(source.favicon)
           if (favicon && favicon !== attrs.favicon) next.favicon = favicon
+          const cover = readBookmarkUrl(source.cover)
+          if (cover && cover !== attrs.cover) next.cover = cover
           if (!Object.keys(next).length) return
           tr.setNodeMarkup(pos, undefined, { ...attrs, ...next })
           changed = true
@@ -187,6 +202,11 @@ const Bookmark = Node.create({
   renderHTML({ node }) {
     const attrs = node.attrs || {}
     const bookmark = readBookmark(attrs)
+    for (const key of ['favicon', 'cover']) {
+      if (bookmark?.[key] && typeof this.options.canLoadMedia === 'function') {
+        try { if (!this.options.canLoadMedia(bookmark[key])) bookmark[key] = null } catch (_) { bookmark[key] = null }
+      }
+    }
     const root = {
       class: 'lark-doc-bookmark docx-bookmark-block',
       'data-type': 'bookmark',
@@ -197,6 +217,11 @@ const Bookmark = Node.create({
     if (typeof attrs.blockId === 'string' && BLOCK_ID_PATTERN.test(attrs.blockId)) root['data-block-id'] = attrs.blockId
     if (typeof attrs.recordId === 'string' && RECORD_ID_PATTERN.test(attrs.recordId)) root['data-record-id'] = attrs.recordId
     if (bookmark) root['data-url'] = bookmark.url
+    if (attrs.title) root['data-title'] = attrs.title
+    if (attrs.desc) root['data-desc'] = attrs.desc
+    if (attrs.favicon) root['data-favicon'] = attrs.favicon
+    if (attrs.cover) root['data-cover'] = attrs.cover
+    if (attrs.linkTitle) root['data-link-title'] = attrs.linkTitle
 
     // URL 不合法 = 数据坏了。不画空卡：画一行「链接数据缺失」，样式复用 unknown-block 的
     // 中性 chrome（P3-04 placeholder 同口径），原文 url 是什么就写什么，便于人工修。

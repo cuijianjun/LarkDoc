@@ -102,6 +102,24 @@ function reactHost() {
 }
 
 describe('adapter options property contract', () => {
+  it.each([LarkDocEditor, LarkDocWorkspace])('Vue2 $name preserves reference providers and actions on mount and replacement', component => {
+    const sources = { mentionSource: [], calendarSource: { search: vi.fn() }, onCalendarEventJoin: vi.fn(),
+      calendarEventRefetch: vi.fn(), onIsvButtonAction: vi.fn(), onIsvCatalogJump: vi.fn() }
+    for (const key of Object.keys(sources)) expect(component.props).toHaveProperty(key)
+    const props = Object.fromEntries(Object.entries(component.props).map(([key, option]) => [key,
+      typeof option.default === 'function' && option.type !== Function ? option.default() : option.default]))
+    const vm = { ...component.methods, ...props, ...sources, $props: { ...props, ...sources }, $emit: vi.fn(), $nextTick: vi.fn(),
+      $refs: { nativeHost: document.createElement('div'), headerActions: document.createElement('div'), sidePanel: document.createElement('div'), slotPark: document.createElement('div') } }
+    component.mounted.call(vm)
+    const handle = mocks.handles[0]
+    for (const [key, value] of Object.entries(sources)) expect(handle.props[key]).toBe(value)
+    const next = vi.fn()
+    vm.onIsvButtonAction = vm.$props.onIsvButtonAction = next
+    component.watch.onIsvButtonAction.handler.call(vm, next)
+    expect(handle.patches).toEqual([{ onIsvButtonAction: next }])
+    component.beforeDestroy.call(vm)
+  })
+
   it.each([LarkDocEditor, LarkDocWorkspace])('Vue2 $name forwards uploader identity on mount and update', component => {
     expect(component.props.uploader?.type).toEqual([Object, Function])
     const uploader = { upload: vi.fn(), beforeUpload: vi.fn(), onSettled: vi.fn() }

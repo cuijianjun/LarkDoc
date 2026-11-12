@@ -184,7 +184,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
 
   // ——————————————————— ② 六段结构 ———————————————————
   const segments = await page.evaluate(bubbleSegments)
-  const expected = ['ai', 'divider', 'heading', 'align', 'divider', 'mark:加粗', 'mark:删除线', 'mark:斜体', 'mark:下划线', 'mark:行内代码', 'highlight', 'highlight-caret', 'divider', 'copy']
+  const expected = ['ai', 'divider', 'heading', 'align', 'divider', 'mark:加粗', 'mark:删除线', 'mark:斜体', 'mark:下划线', 'mark:行内代码', 'highlight', 'highlight-caret', 'divider', 'copy', 'mark:添加评论']
   record('[结构] 六段顺序与 demo 全量特性下的按钮序列一致', JSON.stringify(segments) === JSON.stringify(expected), segments ? segments.join(' | ') : '未取到')
   record('[结构] 三个分隔符把气泡条分成「AI / 块级与行内格式 / 复制」三段',
     Array.isArray(segments) && segments.filter((item) => item === 'divider').length === 3,

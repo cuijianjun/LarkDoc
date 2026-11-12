@@ -164,7 +164,7 @@ function assertNodeVersion() {
 export function targetsFor(name) {
   if (name.includes(',')) return [...new Set(name.split(',').map(target => target.trim()).filter(Boolean).flatMap(targetsFor))]
   let names
-  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'plugin', 'pluginCjs', ...['math', 'mermaid', 'highlight', 'markdown', 'office'].flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
+  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementRuntime', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'plugin', 'pluginCjs', ...['math', 'mermaid', 'highlight', 'markdown', 'office'].flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
   else if (name === 'full') names = ['full', 'fullCjs']
   else if (name === 'core') names = ['esm', 'cjs']
   else if (name === 'features') names = ['math', 'mermaid', 'highlight', 'markdown', 'office'].flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])
@@ -186,6 +186,7 @@ function expectedFiles(name) {
     fullCjs: ['lark-doc-full.common.js'],
     lite: ['lark-doc-lite.esm.js'],
     element: ['lark-doc-element.umd.min.js'],
+    elementRuntime: ['lark-doc-element.runtime.umd.min.js'],
     elementEsm: ['lark-doc-element.esm.js'],
     legacy: ['lark-doc-vue2.common.js'],
     legacyEsm: ['lark-doc-vue2.esm.js'],
@@ -250,7 +251,7 @@ async function buildOne(name) {
     const graph = readGraph()
     graph[name] = Object.fromEntries(output.filter(item => item.type === 'chunk').map(item => [item.fileName, {
       entry: item.isEntry, runtime: isRuntimeChunk(item), modules: Object.keys(item.modules).map(id => id.replace(`${ROOT}/`, '')).sort(),
-      imports: item.imports, dynamicImports: item.dynamicImports,
+      imports: item.imports, dynamicImports: item.dynamicImports, assets: item.referencedFiles || [],
     }]))
     writeFileSync(resolve(DIST, 'lark-doc-graph.json'), `${JSON.stringify(graph, null, 2)}\n`)
     verifiedBuilds.set(name, { inputs, sources, fingerprint, outputs, graphHash: graphFingerprint(graph[name]) })
@@ -292,6 +293,7 @@ function copyRuntimeAssets() {
 }
 
 function writeManifest(names) {
+  const assets = [...new Set(Object.values(readGraph()).flatMap(graph => Object.values(graph).flatMap(chunk => chunk.assets || [])))].sort()
   const manifest = {
     version: JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).version,
     generatedBy: 'rollup',
@@ -307,6 +309,7 @@ function writeManifest(names) {
     pm: Object.fromEntries(PM_NAMES.map(name => [name, `pm/${name}.js`])),
     mermaid: MERMAID_FILES,
     built: names,
+    assets: fileRecords(DIST, assets),
   }
   writeFileSync(resolve(DIST, 'lark-doc-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 }

@@ -124,13 +124,17 @@ export function commandFeatureOf(id) {
   return COMMAND_FEATURES[id] || 'blockStyle'
 }
 
-export function filterCommands(query, kind = 'slash', config = null) {
+export function filterCommands(query, kind = 'slash', config = null, context = 'block') {
   const needle = String(query || '').trim().toLocaleLowerCase()
   // LarkDoc keeps the column count picker behind the single “分栏” entry.
   // The count options are implementation ids for the secondary picker, not
   // independent slash commands.
   const candidates = COMMANDS.filter((item) => {
     if (/^columns[2-5]$/.test(item.id)) return false
+    // Existing block-math documents stay readable; Feishu has one inline formula entry.
+    if (item.id === 'blockMath') return false
+    if (kind === 'plus' && (item.id === 'paragraph' || /^heading[4-9]$/.test(item.id))) return false
+    if (kind === 'plus' && context === 'cell' && ['table', 'template'].includes(item.id)) return false
     const feature = COMMAND_FEATURES[item.id]
     if (feature && config?.features?.[feature] === false) return false
     if (Array.isArray(config?.commands?.disabled) && config.commands.disabled.includes(item.id)) return false
@@ -138,5 +142,22 @@ export function filterCommands(query, kind = 'slash', config = null) {
     return kind !== 'plus' || item.plus !== false
   })
   const filtered = !needle ? candidates : candidates.filter((item) => `${item.label} ${item.id} ${item.keywords}`.toLocaleLowerCase().includes(needle))
-  return filtered.map((item) => ({ ...item, category: kind === 'plus' ? (item.plusCategory || item.category) : item.category }))
+  if (kind !== 'plus') return filtered.map(item => {
+    if (item.id !== 'table') return { ...item }
+    const directTable = { ...item }
+    delete directTable.submenu
+    delete directTable.submenuType
+    return directTable
+  })
+  // The source plus menu has icon shortcuts followed by normal common rows.
+  // Task and callout have two visual entries, backed by the same command.
+  const basic = ['heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
+  const common = ['taskList', 'image', 'table', 'columns', 'callout', 'inlineMath', 'template']
+  const byId = new Map(filtered.map(item => [item.id, item]))
+  const entry = (id, category) => ({ ...byId.get(id), category, ...(id === 'taskList' ? { label: '任务' } : id === 'image' ? { label: '图片' } : {}) })
+  return [
+    ...basic.filter(id => byId.has(id)).map(id => entry(id, '基础')),
+    ...common.filter(id => byId.has(id)).map(id => entry(id, '常用')),
+    ...filtered.filter(item => !basic.includes(item.id) && !common.includes(item.id)).map(item => ({ ...item, category: item.id === 'diagram' ? '绘图' : item.plusCategory || item.category })),
+  ]
 }

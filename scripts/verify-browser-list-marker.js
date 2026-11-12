@@ -18,7 +18,6 @@ const path = require('path')
 const { chromium } = require('playwright-core')
 
 const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
-const LARK_DOC_PRIMARY = 'rgb(20, 86, 240)'
 const results = []
 
 function findChromium() {
@@ -67,7 +66,13 @@ const readMarkers = (page) => page.evaluate(() => {
   const firstList = document.querySelector('.ProseMirror ol')
   const firstBullet = document.querySelector('.ProseMirror ul:not([data-type="taskList"])')
   const body = document.querySelector('.ProseMirror p')
+  const themeProbe = document.createElement('span')
+  themeProbe.style.color = 'var(--ld-brand-content)'
+  document.querySelector('.lark-doc').appendChild(themeProbe)
+  const themePrimary = getComputedStyle(themeProbe).color
+  themeProbe.remove()
   return {
+    themePrimary,
     labels: numbers.map((el) => el.textContent),
     depths: numbers.map((el) => el.getAttribute('data-depth')),
     colors: numbers.map((el) => getComputedStyle(el).color),
@@ -184,10 +189,10 @@ async function main() {
   // 改动只动断言、不许动 CSS。
   record('[列表] 关掉浏览器原生 marker', markers.listStyle === 'none' && markers.listPadding === '0px' && markers.bulletListStyle === 'none',
     `ol=${markers.listStyle}/${markers.listPadding} ul=${markers.bulletListStyle}`)
-  record('[列表] 序号用飞书主色 #1456f0', markers.colors.every((color) => color === LARK_DOC_PRIMARY), markers.colors[0])
+  record('[列表] 序号保留项目原主题色', markers.colors.every((color) => color === markers.themePrimary), markers.colors[0])
   record('[列表] 序号字号跟随正文', markers.fontSizes.every((size) => size === markers.bodyFontSize), `${markers.fontSizes[0]} / ${markers.bodyFontSize}`)
   record('[列表] 序号是块级 UI（contentEditable=false）', markers.contentEditable.every((value) => value === 'false'), markers.contentEditable.join(','))
-  record('[列表] 圆点是灰色而不是蓝色', markers.bulletLabels.every((label) => label === '•') && markers.bulletColor !== LARK_DOC_PRIMARY, `${markers.bulletLabels[0]} ${markers.bulletColor}`)
+  record('[列表] 一级实心圆、二级空心圆并保留原灰色', JSON.stringify(markers.bulletLabels) === JSON.stringify(['•', '◦']) && markers.bulletColor !== markers.themePrimary, `${markers.bulletLabels.join(' ')} ${markers.bulletColor}`)
   record('[列表] 序号不进正文文本', !/\d+\.\s/.test(markers.text) && markers.text.includes('第一项'), JSON.stringify(markers.text))
   record('[HTML] 序号不写进 HTML', !/>\s*1\.\s*</.test(markers.html) && /<ol/.test(markers.html), markers.html.slice(0, 50))
   const beforeText = await markerBeforeText(page)

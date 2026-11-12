@@ -17,7 +17,7 @@
  *    默认按钮**不写 inline 底色**，走 CSS 的 #E0E9FF（真机实测值，不是色板默认格）。
  */
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import {
@@ -26,6 +26,88 @@ import {
   buildCatalogTree, catalogFontWeight, catalogIndent, flattenCatalogTree, isButtonLinkValid,
   isvPanelHeight, normalizeButtonLink, normalizeIsv, readIsv, validateIsvButton,
 } from '../../src/core/blocks/isv'
+import { createIsvPanel } from '../../src/ui/isvPanel'
+import readingModeMixin from '../../src/components/lark-doc/editor/readingModeMixin'
+import isvPanelUiMixin from '../../src/components/lark-doc/editor/isvPanelUiMixin'
+
+describe('button configuration input and keyboard lifecycle', () => {
+  function panel(run) {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const state = { open: true, text: '按钮', link: '', color: '#E1EAFF', colors: [[{ value: '#E1EAFF', label: '浅色' }]], action: 'open_link', actionLabel: '打开超链接', actions: ISV_BUTTON_ACTIONS, needsLink: true, height: 386 }
+    const confirm = vi.fn(), close = vi.fn(), color = vi.fn()
+    const ui = createIsvPanel({ host, handlers: {
+      onText: event => { state.text = event.target.value; ui.update(state) },
+      onLink: event => { state.link = event.target.value; ui.update(state) },
+      onToggleAction: () => { state.selectOpen = !state.selectOpen; ui.update(state) },
+      onAction: id => { state.action = id; state.needsLink = id === 'open_link'; state.selectOpen = false; ui.update(state) },
+      onColor: color, onConfirm: confirm, onClose: close,
+    } })
+    try { ui.update(state); return run({ host, state, ui, confirm, close, color }) } finally { ui.destroy(); host.remove() }
+  }
+  it('retains the focused input, caret and typed characters across state refreshes', () => panel(({ host, ui }) => {
+    const input = host.querySelector('input[aria-label="按钮文字"]')
+    expect(document.activeElement).toBe(input)
+    for (const value of ['新', '新按钮', '新按钮ABC']) {
+      input.value = value; input.setSelectionRange(value.length, value.length)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      expect(host.querySelector('input[aria-label="按钮文字"]')).toBe(input)
+      expect(document.activeElement).toBe(input)
+      expect(input.selectionStart).toBe(value.length)
+    }
+    ui.update({ errorField: 'linkUrl' })
+    expect(document.activeElement).toBe(input)
+  }))
+  it('preserves IME drafts through unrelated updates and does not submit a composition Enter', () => panel(({ host, ui, state, confirm }) => {
+    const input = host.querySelector('input')
+    input.dispatchEvent(new CompositionEvent('compositionstart'))
+    input.value = '正在组字'
+    input.dispatchEvent(new InputEvent('input', { isComposing: true }))
+    ui.update({ errorField: 'linkUrl' })
+    expect(input.value).toBe('正在组字')
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }))
+    expect(confirm).not.toHaveBeenCalled()
+    input.dispatchEvent(new CompositionEvent('compositionend'))
+    expect(state.text).toBe('正在组字')
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(confirm).toHaveBeenCalledTimes(1)
+  }))
+  it('accepts keyboard-generated click for footer, swatch and action options exactly once', () => panel(({ host, confirm, close, color, state }) => {
+    host.querySelector('.is-primary').click()
+    host.querySelector('.lark-doc-isv-panel-footer button').click()
+    const swatch = host.querySelector('.lark-doc-isv-color-item')
+    swatch.focus(); swatch.click()
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(color).toHaveBeenCalledWith('#E1EAFF')
+    host.querySelector('.lark-doc-isv-select').click()
+    host.querySelectorAll('[role="option"]')[2].click()
+    expect(state.action).toBe('follow_page')
+    expect(host.querySelector('input[aria-label="超链接地址"]')).toBeNull()
+  }))
+  it('keeps color and dropdown nodes alive while editing and traverses the dropdown with arrows', () => panel(({ host, ui }) => {
+    const swatch = host.querySelector('.lark-doc-isv-color-item')
+    swatch.focus(); ui.update({ link: 'https://www.barenkeji.com' })
+    expect(document.activeElement).toBe(swatch)
+    const select = host.querySelector('.lark-doc-isv-select')
+    select.click()
+    const options = host.querySelectorAll('[role="option"]')
+    options[0].focus()
+    options[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(options[1])
+    options[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(host.querySelector('[role="listbox"]')).toBeNull()
+    expect(document.activeElement).toBe(select)
+  }))
+  it('clears and closes stale configuration when read permissions change', () => {
+    const closeIsvPanel = vi.fn(), refreshIsvPanel = vi.fn()
+    isvPanelUiMixin.watch.effectiveReadonly.call({ closeIsvPanel, refreshIsvPanel }, true)
+    expect(closeIsvPanel).toHaveBeenCalledTimes(1)
+    expect(refreshIsvPanel).toHaveBeenCalledTimes(1)
+    readingModeMixin.methods.closeEditingOverlays.call({ closeIsvPanel })
+    expect(closeIsvPanel).toHaveBeenCalledTimes(2)
+  })
+})
 
 describe('P4-04 isv 链接合法性（02 §22 ⑤-1）', () => {
   it('只放 http(s)，脚本协议与空串一律非法', () => {

@@ -10,6 +10,7 @@ export { levels, validateAttribute } from '../core/blocks/shared'
 export { LarkDocHeading } from '../core/blocks/heading'
 export { CALLOUT_EMOJI_DEFAULT, safeCalloutEmoji, Callout } from '../core/blocks/callout'
 export { Columns, Column } from '../core/blocks/columns'
+export { Agenda, AgendaItem, AgendaTitle, AgendaContent } from '../core/blocks/agenda'
 export { LarkDocOrderedList } from '../core/blocks/ordered-list'
 export { LarkDocListItemNumber } from '../core/blocks/list-item-number'
 export { LarkDocBlockId } from '../core/blocks/block-id'
@@ -93,7 +94,7 @@ export {
 // （kind 枚举 / 面板几何 / 三态高度 / 六按钮 / 建议收集与定位 / 决定语义）同源再导出，
 // 面板与事务跟踪都只从这里取，谁都不许自己维护常量副本。
 export {
-  LarkDocRevision, REVISION_ACTIONS, REVISION_BUTTONS, REVISION_BUTTON_IDS, REVISION_HEIGHTS,
+  LarkDocRevision, LarkDocRevisionBoundary, REVISION_ACTIONS, REVISION_BUTTONS, REVISION_BUTTON_IDS, REVISION_HEIGHTS,
   REVISION_KINDS, REVISION_LABELS, REVISION_PANEL, REVISION_PANEL_TITLE,
   collectRevisions, createRevisionId, normalizeRevision, readRevision, revisionAt,
   revisionDecision, revisionMarkOf, revisionPanelHeight, revisionRanges, revisionSummary,
@@ -161,3 +162,5 @@ export {
   readBitable, recordCountText, recordList, relationHint, viewLabel, viewMenu, viewOf,
   viewOfCommand, withView,
 } from '../core/blocks/bitable'
+
+export { LinkEmbed } from '../core/blocks/link-embed'

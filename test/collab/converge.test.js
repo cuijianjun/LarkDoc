@@ -70,8 +70,7 @@ describe('C3 撤销隔离', () => {
   it('A 撤销只撤自己的输入，B 的不变', () => {
     const [a, b] = pair()
     // 先铺一段「服务端已有正文」：真实顺序是 sync 完成后再输入。
-    // 这一段同时是对 y-prosemirror 语义的说明 —— 空文档上的**第一次**整篇写入被标成
-    // `addToHistory: false`（它把那次写当成"初始内容"），所以下面要先把这段写完。
+    // 先有正文，再验证各端仅撤销自己的输入；远端同步不进入本地撤销栈。
     insertBlock(a, { type: 'paragraph', content: [{ type: 'text', text: '已有正文' }] })
     typeAt(a, 1, 'A的')
     typeAt(b, b.editor.state.doc.content.size, 'B的')
@@ -84,13 +83,24 @@ describe('C3 撤销隔离', () => {
     expect(b.text).toBe(a.text)
   })
 
-  it('空文档上的第一次整篇写入不进撤销栈（y-prosemirror 的初始内容语义）', () => {
+  it('空文档上的第一次用户输入及补块ID可以撤销和重做', () => {
     const [a] = pair()
     typeAt(a, 1, '第一个字')
-    // 这不是缺陷，是 y-prosemirror 刻意的：首次 PM→Y 的整篇写入被当作初始内容，
-    // 撤销它等于把文档清空。真实部署里第一步永远是服务端 sync，用户不会碰到这个边界。
+    const ids = blockIds(a)
+    expect(a.editor.commands.undo()).toBe(true)
+    expect(a.text).toBe('')
+    expect(a.editor.commands.redo()).toBe(true)
+    expect(a.text).toBe('第一个字')
+    expect(blockIds(a)).toEqual(ids)
+  })
+
+  it('宿主显式非历史播种不会进入撤销栈', () => {
+    const [a, b] = pair()
+    a.editor.view.dispatch(a.editor.state.tr.insertText('初始正文', 1).setMeta('addToHistory', false))
     expect(a.editor.commands.undo()).toBe(false)
-    expect(a.text).toContain('第一个字')
+    expect(a.text).toBe('初始正文')
+    expect(b.text).toBe(a.text)
+    expect(b.editor.commands.undo()).toBe(false)
   })
 
   it('A 未做任何编辑时 undo 返回 false（不误撤别人的）', () => {

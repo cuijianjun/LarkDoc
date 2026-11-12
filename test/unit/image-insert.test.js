@@ -22,14 +22,14 @@ import {
 const makeFile = (type, size = 1024, name = `f.${String(type).split('/')[1] || 'bin'}`) => ({ name, type, size })
 
 describe('isImageMime / 白名单', () => {
-  it('四种图片格式通过，大小写不敏感', () => {
-    for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'IMAGE/PNG', 'Image/Jpeg']) {
+  it('飞书原生选择器的图片格式通过，大小写不敏感', () => {
+    for (const type of [...IMAGE_MIME_ALLOWLIST, 'IMAGE/PNG', 'Image/Jpeg']) {
       expect(isImageMime(type)).toBe(true)
     }
   })
 
   it('svg / heic / 非图片 / 空值一律拒绝', () => {
-    for (const type of ['image/svg+xml', 'image/heic', 'image/bmp', 'application/pdf', '', null, undefined]) {
+    for (const type of ['image/svg+xml', 'image/heic', 'application/pdf', '', null, undefined]) {
       expect(isImageMime(type)).toBe(false)
     }
   })
@@ -51,7 +51,7 @@ describe('formatImageSize / imageRejectMessage', () => {
   })
 
   it('文案与既有工具栏上传报错保持一致', () => {
-    expect(imageRejectMessage(IMAGE_REJECT.MIME)).toBe('只支持 PNG/JPEG/GIF/WebP 图片')
+    expect(imageRejectMessage(IMAGE_REJECT.MIME)).toBe('只支持 JPEG/PNG/GIF/WebP/BMP 图片')
     expect(imageRejectMessage(IMAGE_REJECT.SIZE, { maxSize: 2 * 1024 * 1024 })).toBe('单张图片不能超过 2 MB')
     expect(imageRejectMessage('其它')).toBe('图片插入失败')
   })
@@ -66,7 +66,7 @@ describe('sortImageFiles', () => {
     expect(accepted).toEqual([png, webp])
     expect(rejected).toHaveLength(1)
     expect(rejected[0]).toMatchObject({ file: pdf, code: IMAGE_REJECT.MIME })
-    expect(rejected[0].message).toBe('只支持 PNG/JPEG/GIF/WebP 图片')
+    expect(rejected[0].message).toBe('只支持 JPEG/PNG/GIF/WebP/BMP 图片')
   })
 
   it('超限单张被拒，文案带上限', () => {
@@ -194,5 +194,20 @@ describe('粘贴图片地址成块', () => {
       expect(runPaste(on, 'https://cdn.example.com/page')).toBe(false)
       expect(on.getJSON().content[0].type).toBe('paragraph')
     } finally { off.destroy(); on.destroy() }
+  })
+
+  it.each([{ disabled: ['image'] }, { allow: ['paragraph'] }])('respects standalone command policy for both URL and file paste: %j', commands => {
+    for (const getImageOptions of [undefined, () => ({ canLoad: () => true }), () => undefined]) {
+      let uploads = 0, consumed = false
+      const editor = new Editor({ extensions: createLarkDocExtensions({ config: { commands }, getImageOptions, onImageFiles: () => { uploads += 1 } }), content: '<p></p>' })
+      try {
+        expect(runPaste(editor, 'https://cdn.example.com/a.png')).toBe(false)
+        const plugin = editor.state.plugins.find(item => item.key.startsWith('fileHandler$'))
+        expect(plugin.props.handlePaste(editor.view, { clipboardData: { files: [new File(['png'], 'a.png', { type: 'image/png' })], getData: () => '' }, preventDefault: () => { consumed = true }, stopPropagation: () => {} })).toBe(false)
+        expect(uploads).toBe(0)
+        expect(consumed).toBe(false)
+        expect(editor.state.doc.firstChild.type.name).toBe('paragraph')
+      } finally { editor.destroy() }
+    }
   })
 })

@@ -96,7 +96,7 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
     expect(shareMixin).toContain('this.secureLinkConfirmOpen')
     expect(shareMixin).toContain('this.permissionDialogOpen')
     expect(shareMixin).toContain('this.sharePopoverOpen')
-    expect(exportMixin).toContain('dispatchExport(format, scope, fileName)')
+    expect(exportMixin).toContain('dispatchExport(format, scope, fileName, context)')
   })
 
   it('补齐 renderer 对动态协作者和二级 scope 的刷新监听', () => {

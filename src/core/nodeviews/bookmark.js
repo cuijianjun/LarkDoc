@@ -17,6 +17,7 @@
  * 无文案、无重试、无 toast（02 §24 ③-ter）。所以这里失败只做一件事 —— 收起骨架。
  */
 import { DOMSerializer } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
 import { BOOKMARK_VARIANT, readBookmark, renderBookmarkCard } from '../embed/bookmark'
 
 /** 卡身（可点的区域）；root 的 16px 外边距是「不跳转的死区」，留给选中与拖拽。 */
@@ -25,7 +26,7 @@ const CARD_SELECTOR = '.lark-doc-bookmark-card'
 const CONTAINER_SELECTOR = '.lark-doc-bookmark-container'
 
 /** 参与渲染的 attrs；其余（如 `blockId` 之外的扩展字段）变化不必重造 DOM。 */
-const RENDER_KEYS = ['url', 'title', 'desc', 'favicon', 'recordId', 'blockId']
+const RENDER_KEYS = ['url', 'title', 'desc', 'favicon', 'cover', 'linkTitle', 'recordId', 'blockId']
 
 function clearChildren(element) {
   while (element.firstChild) element.removeChild(element.firstChild)
@@ -96,7 +97,9 @@ export function createBookmarkNodeView(props) {
     const selection = typeof window !== 'undefined' && typeof window.getSelection === 'function'
       ? window.getSelection()
       : null
-    if (selection && selection.isCollapsed === false) return
+    const nodeSelected = props.editor?.state?.selection instanceof NodeSelection && props.editor.state.selection.node.type.name === 'bookmark'
+    const textSelected = selection?.anchorNode?.nodeType === 3 || selection?.focusNode?.nodeType === 3
+    if (selection && selection.isCollapsed === false && (!nodeSelected || textSelected)) return
     openLink()
   }
 
@@ -159,6 +162,7 @@ export function createBookmarkNodeView(props) {
     if (result.title && result.title !== attrs.title) next.title = result.title
     if (result.desc && result.desc !== attrs.desc) next.desc = result.desc
     if (result.favicon && result.favicon !== attrs.favicon) next.favicon = result.favicon
+    if (result.cover && result.cover !== attrs.cover) next.cover = result.cover
     if (!Object.keys(next).length) return false
 
     let position = null

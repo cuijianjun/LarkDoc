@@ -86,7 +86,7 @@ const measureHandle = () => {
     h: Math.round(handleRect.height),
     button: buttonRect ? { w: Math.round(buttonRect.width), h: Math.round(buttonRect.height), left: Math.round(buttonRect.left), right: Math.round(buttonRect.right), top: Math.round(buttonRect.top), bottom: Math.round(buttonRect.bottom) } : null,
     glyph: type ? (type.textContent || '').trim() : null,
-    dots: dots ? (dots.textContent || '').trim() : null,
+    dots: dots ? { text: (dots.textContent || '').trim(), svg: !!dots.querySelector('svg'), circles: dots.querySelectorAll('circle').length } : null,
     insertLabel: insert ? insert.getAttribute('aria-label') : null,
     insertTitle: insert ? insert.getAttribute('title') : null,
     mainLabel: main ? main.getAttribute('aria-label') : null,
@@ -339,8 +339,9 @@ const menuOpen = (page) => page.evaluate(() => !!document.querySelector('.lark-d
     !!handle && handle.hasMain && handle.mainLabel === '块操作' && handle.mainTitle === '块操作与拖动' && handle.draggable === 'true',
     handle ? `${handle.mainLabel} / ${handle.mainTitle} / draggable=${handle.draggable}` : '')
 
-  record('[句柄] 主按钮由「类型字形 + 拖拽点 ⠿」两段组成',
-    !!handle && handle.glyph === 'T' && handle.dots === '⠿', handle ? `${handle.glyph} + ${handle.dots}` : '')
+  record('[句柄] 主按钮由「类型字形 + 飞书六点 SVG 拖拽图标」两段组成',
+    !!handle && handle.glyph === 'T' && handle.dots?.svg === true && handle.dots.circles === 6,
+    handle ? `${handle.glyph} + svg=${handle.dots?.svg} circles=${handle.dots?.circles}` : '')
 
   record('[句柄] 空段落换成「＋」插入按钮（aria-label=插入内容），不给块操作',
     await (async () => {
@@ -419,8 +420,8 @@ const menuOpen = (page) => page.evaluate(() => !!document.querySelector('.lark-d
     !!typeGrid && typeGrid.items.filter((item) => item.active).map((item) => item.label).join(',') === '正文',
     typeGrid ? `active=${typeGrid.items.filter((item) => item.active).map((item) => item.label).join(',') || '无'}` : '')
 
-  record('[菜单] 首段是「问问 AI」按钮（带 16px 图标）',
-    !!menu && !!menu.ai && menu.ai.label.includes('问问 AI') && menu.ai.icon && menu.ai.iconSize === 16,
+  record('[菜单] 首段是「问问AI」按钮（带 16px 图标）',
+    !!menu && !!menu.ai && menu.ai.label.includes('问问AI') && menu.ai.icon && menu.ai.iconSize === 16,
     menu?.ai ? `${menu.ai.label} icon=${menu.ai.iconSize}px title=${menu.ai.title}` : '无 AI 段')
 
   // 段序（飞书块菜单的固定分段，见 BlockHandleMenu.vue 的模板顺序）：

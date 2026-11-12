@@ -62,8 +62,9 @@ function setInputValue(input, value) {
 function onMouseDownPrevent(node, run) {
   node.addEventListener('mousedown', (event) => {
     event.preventDefault()
-    run(event)
+    if (node.isConnected) run(event)
   })
+  node.addEventListener('click', event => { if (event.detail === 0 && node.isConnected) run(event) })
 }
 
 // 面板开合走 `mountNode(host, el, on)`（只增删自己这一棵，`dom.js`），**不是
@@ -240,10 +241,32 @@ export function createVersionPanel(options = {}) {
   el.setAttribute('aria-label', '历史记录')
   el.setAttribute('aria-modal', 'true')
   el.setAttribute('tabindex', '-1')
+  const suspended = []
+  let previousFocus = null
+  function isolateEditor() {
+    const root = host?.closest('.lark-doc')
+    if (!root) return
+    let branch = el
+    while (branch && branch !== root && branch.parentElement) {
+      for (const sibling of branch.parentElement.children) {
+        if (sibling !== branch && !sibling.hasAttribute('inert')) { sibling.setAttribute('inert', ''); suspended.push(sibling) }
+      }
+      branch = branch.parentElement
+    }
+  }
+  function releaseEditor() {
+    suspended.splice(0).forEach(element => element.removeAttribute('inert'))
+    if (previousFocus?.isConnected) previousFocus.focus?.()
+    previousFocus = null
+  }
   el.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return
     event.stopPropagation()
-    event.preventDefault()
+    if (event.key === 'Escape' && state.confirm?.open) {
+      event.preventDefault()
+      call('onCancelRestore')
+      return
+    }
+    if (event.key === 'Escape' || (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'h') event.preventDefault()
   })
 
   // ── 左栏 ──
@@ -338,6 +361,15 @@ export function createVersionPanel(options = {}) {
   const binaryMissing = document.createElement('p')
   binaryMissing.className = 'lark-doc-version-binary'
   binaryMissing.textContent = '该版本没有可取回的正文，只能查看元信息。'
+  const documentPreview = document.createElement('div')
+  documentPreview.className = 'lark-doc-version-document'
+  let previewCleanup = null, previewKey = null
+  function releasePreview() {
+    previewCleanup?.()
+    previewCleanup = null
+    previewKey = null
+    documentPreview.replaceChildren()
+  }
   bodyBox.appendChild(binaryPayload)
   bodyBox.appendChild(binaryMissing)
 
@@ -353,6 +385,33 @@ export function createVersionPanel(options = {}) {
 
   left.appendChild(leftHeader)
   left.appendChild(leftContent)
+
+  const confirmMask = document.createElement('div')
+  confirmMask.className = 'lark-doc-version-confirm-mask'
+  const confirmDialog = document.createElement('section')
+  confirmDialog.className = 'lark-doc-version-confirm'
+  confirmDialog.setAttribute('role', 'dialog')
+  confirmDialog.setAttribute('aria-modal', 'true')
+  confirmDialog.setAttribute('aria-label', '还原此记录？')
+  const confirmTitle = document.createElement('strong')
+  confirmTitle.textContent = '还原此记录？'
+  const confirmText = document.createElement('p')
+  const confirmFooter = document.createElement('div')
+  const confirmCancel = document.createElement('button')
+  confirmCancel.type = 'button'
+  confirmCancel.textContent = '取消'
+  confirmCancel.addEventListener('click', () => call('onCancelRestore'))
+  const confirmApply = document.createElement('button')
+  confirmApply.type = 'button'
+  confirmApply.textContent = '还原'
+  confirmApply.className = 'is-primary'
+  confirmApply.addEventListener('click', () => call('onConfirmRestore'))
+  confirmFooter.append(confirmApply, confirmCancel)
+  confirmDialog.append(confirmTitle, confirmText, confirmFooter)
+  confirmMask.appendChild(confirmDialog)
+  confirmMask.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); call('onCancelRestore') }
+  })
 
   // ── 右栏 ──
   const right = document.createElement('div')
@@ -428,6 +487,8 @@ export function createVersionPanel(options = {}) {
 
   function renderPreview() {
     const preview = state.preview || {}
+    const hasDocument = !!preview.document
+    previewBox.classList.toggle('has-document', hasDocument)
     setText(previewTitle, preview.title || '未命名版本')
     setText(previewKind, preview.kind)
     const meta = preview.meta || []
@@ -440,19 +501,27 @@ export function createVersionPanel(options = {}) {
     // `v-if` / 组件外的兄弟：降级文案与 diff 段各自独立。
     syncChildren(previewBox, [
       { node: previewHead, on: true },
-      { node: previewMeta, on: true },
+      { node: previewMeta, on: !hasDocument },
       { node: degradedNode, on: degradedOn },
-      { node: diffBox, on: !!preview.diff },
+      { node: diffBox, on: !hasDocument && !!preview.diff },
       { node: bodyBox, on: true },
     ])
     if (preview.diff) setText(diffRow, preview.diff.row)
     // `payload` 非空 = 该版本正文是可解码的二进制快照（模板里的 `v-if`）；空则走兜底文案。
     const payload = preview.payload || ''
     if (payload) setText(binaryPayload, payload)
+    if (!hasDocument) releasePreview()
     syncChildren(bodyBox, [
-      { node: binaryPayload, on: !!payload },
-      { node: binaryMissing, on: !payload },
+      { node: documentPreview, on: hasDocument },
+      { node: binaryPayload, on: !hasDocument && !!payload },
+      { node: binaryMissing, on: !hasDocument && !payload },
     ])
+    const key = preview.renderKey || preview.document
+    if (hasDocument && previewKey !== key) {
+      releasePreview()
+      previewKey = key
+      previewCleanup = call('onMountPreview', documentPreview, preview.document) || null
+    }
   }
 
   function render() {
@@ -473,20 +542,34 @@ export function createVersionPanel(options = {}) {
       { node: previewBox, on: state.view === 'preview' },
     ])
     if (state.view === 'preview') renderPreview()
+    else releasePreview()
     renderTimeline()
+    const confirming = !!state.confirm?.open
+    const wasConfirming = !!confirmMask.parentNode
+    mountNode(el, confirmMask, confirming)
+    if (confirming) {
+      setText(confirmText, state.confirm.text)
+      confirmCancel.disabled = !!state.confirm.busy
+      confirmApply.disabled = !!state.confirm.busy || !!state.confirm.applyDisabled
+      if (!wasConfirming) confirmApply.focus()
+    } else if (wasConfirming && !restoreButton.disabled) restoreButton.focus()
   }
 
   function update(patch) {
     Object.assign(state, patch || {})
+    const wasOpen = !!el.parentNode
+    if (state.open && !wasOpen) previousFocus = el.ownerDocument.activeElement
     mountNode(host, el, !!state.open)
-    if (!state.open) return
+    if (!state.open) { releasePreview(); confirmMask.remove(); releaseEditor(); return }
+    isolateEditor()
+    if (!wasOpen) el.focus()
     render()
   }
 
   return {
     el,
     update,
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
+    destroy() { releasePreview(); if (el.parentNode) el.parentNode.removeChild(el); releaseEditor() },
   }
 }
 
@@ -504,9 +587,12 @@ export function createVersionPanel(options = {}) {
  *
  * state: `{ open, notice, title, value, maxLength, counter, confirm: { disabled, title, style }, error }`
  */
+let saveVersionInputSequence = 0
+
 export function createSaveVersionDialog(options = {}) {
   const host = options.host || null
   const call = handlerCaller(options.handlers || {})
+  const inputId = `lark-doc-save-version-input-${++saveVersionInputSequence}`
 
   const state = {
     open: false,
@@ -559,12 +645,12 @@ export function createSaveVersionDialog(options = {}) {
   field.className = 'lark-doc-save-version-field'
   const label = document.createElement('label')
   label.className = 'lark-doc-save-version-label'
-  label.setAttribute('for', 'lark-doc-save-version-input')
+  label.setAttribute('for', inputId)
   label.textContent = '版本名称'
   const inputRow = document.createElement('div')
   inputRow.className = 'lark-doc-save-version-input-row'
   const input = document.createElement('input')
-  input.id = 'lark-doc-save-version-input'
+  input.id = inputId
   input.className = 'lark-doc-save-version-input'
   input.type = 'text'
   input.setAttribute('placeholder', '请输入名称')
@@ -693,9 +779,151 @@ export function createSaveVersionDialog(options = {}) {
  * }
  * ```
  */
+function commentAttachmentNodes(items, draft, call) {
+  return (items || []).map((item, index) => {
+    const attachment = draft ? item.attachment || (item.previewUrl ? { url: item.previewUrl, name: item.name } : null) : item
+    const root = document.createElement('div')
+    root.className = 'lark-doc-comment-attachment'
+    root.classList.toggle('is-draft', draft)
+    if (attachment?.url) {
+      const image = document.createElement('img')
+      image.src = attachment.url
+      image.alt = attachment.name || item.name || '评论图片'
+      if (draft) root.appendChild(image)
+      else {
+        const preview = document.createElement('button')
+        preview.type = 'button'
+        preview.className = 'lark-doc-comment-attachment-preview'
+        preview.setAttribute('aria-label', `预览评论图片${index + 1}`)
+        preview.appendChild(image)
+        onMouseDownPrevent(preview, () => call?.('onPreviewAttachment', index))
+        root.appendChild(preview)
+      }
+    } else {
+      const label = document.createElement('span')
+      label.textContent = attachment?.blocked ? attachment.blockedReason || '图片被当前网络策略拦截' : item.error || `${item.name || '图片'}${item.status === 'uploading' ? ` ${item.progress || 0}%` : ''}`
+      root.appendChild(label)
+    }
+    if (draft) {
+      if (item.status === 'pending' || item.status === 'uploading') {
+        const status = document.createElement('div')
+        status.className = 'lark-doc-comment-attachment-status'
+        status.setAttribute('role', 'status')
+        status.textContent = `${item.progress || 0}%`
+        const progress = document.createElement('progress')
+        progress.max = 100
+        progress.value = item.progress || 0
+        progress.setAttribute('aria-label', '评论图片上传进度')
+        status.appendChild(progress)
+        root.appendChild(status)
+      }
+      if (item.status === 'error') {
+        root.title = item.error || '图片上传失败，请重试'
+        const retry = document.createElement('button')
+        retry.type = 'button'
+        retry.className = 'lark-doc-comment-attachment-retry'
+        retry.textContent = '重试'
+        onMouseDownPrevent(retry, () => call('onRetryAttachment', item.id))
+        root.appendChild(retry)
+      }
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'lark-doc-comment-attachment-remove'
+      remove.setAttribute('aria-label', '移除评论图片')
+      remove.textContent = '×'
+      onMouseDownPrevent(remove, () => call('onRemoveAttachment', item.id))
+      root.appendChild(remove)
+    }
+    return root
+  })
+}
+
+export function createCommentComposer({ host, handlers = {} } = {}) {
+  const root = document.createElement('div')
+  root.className = 'lark-doc-comment-panel lark-doc-comment-composer'
+  root.setAttribute('role', 'dialog')
+  root.setAttribute('aria-label', '添加评论')
+  const quote = document.createElement('div')
+  quote.className = 'lark-doc-comment-head lark-doc-comment-quote'
+  const author = document.createElement('div')
+  author.className = 'lark-doc-comment-composer-author'
+  const input = document.createElement('textarea')
+  input.className = 'lark-doc-comment-input-zone'
+  input.placeholder = '输入评论'
+  input.setAttribute('aria-label', '输入评论')
+  input.addEventListener('input', () => { if (root.isConnected && handlers.isCurrentContext?.() !== false) handlers.onInput?.(input.value) })
+  const attachmentInput = document.createElement('input')
+  attachmentInput.type = 'file'
+  attachmentInput.accept = 'image/gif,image/jpg,image/jpeg,image/bmp,image/png'
+  attachmentInput.multiple = true
+  attachmentInput.hidden = true
+  attachmentInput.addEventListener('change', () => {
+    const files = Array.from(attachmentInput.files || [])
+    attachmentInput.value = ''
+    if (root.isConnected && handlers.isCurrentContext?.() !== false && !attach.disabled) handlers.onAttachments?.(files)
+  })
+  const attach = document.createElement('button')
+  attach.type = 'button'
+  attach.className = 'lark-doc-comment-operation'
+  attach.setAttribute('aria-label', '插入图片')
+  attach.appendChild(iconNode('rev-image', 16))
+  onMouseDownPrevent(attach, () => { if (!attach.disabled) attachmentInput.click() })
+  const attachments = document.createElement('div')
+  attachments.className = 'lark-doc-comment-attachments'
+  const error = document.createElement('div')
+  error.className = 'lark-doc-comment-composer-error'
+  error.setAttribute('role', 'alert')
+  const actions = document.createElement('div')
+  actions.className = 'lark-doc-comment-edit-actions'
+  const cancel = document.createElement('button')
+  cancel.type = 'button'
+  cancel.textContent = '取消'
+  onMouseDownPrevent(cancel, () => handlers.onCancel?.())
+  const submit = document.createElement('button')
+  submit.type = 'button'
+  submit.textContent = '发送'
+  onMouseDownPrevent(submit, () => { if (!submit.disabled) handlers.onSubmit?.() })
+  actions.append(cancel, submit)
+  root.append(quote, author, input, attach, attachmentInput, attachments, error, actions)
+  let open = false
+  function keydown(event) { if (event.key === 'Escape' && !event.target.closest?.('[data-lark-doc-image-ui]')) { event.preventDefault(); event.stopPropagation(); handlers.onCancel?.() } }
+  function outside(event) { if (!root.contains(event.target) && !input.value.trim() && !attachments.children.length) handlers.onCancel?.() }
+  function listen(value) {
+    if (value === open) return
+    open = value
+    window[value ? 'addEventListener' : 'removeEventListener']('keydown', keydown, true)
+    window[value ? 'addEventListener' : 'removeEventListener']('mousedown', outside, true)
+  }
+  return {
+    el: root,
+    update(state) {
+      listen(!!state.open)
+      mountNode(state.host || host, root, open)
+      if (!open) return
+      applyStyle(root, state.style)
+      quote.textContent = state.quote || ''
+      author.textContent = state.author || '我'
+      setInputValue(input, state.value)
+      input.readOnly = !!state.busy || !!state.readonly
+      attach.disabled = !state.canAttach || !!state.busy
+      attachments.replaceChildren(...commentAttachmentNodes(state.attachments, true, (name, id) => {
+        if (root.isConnected && handlers.isCurrentContext?.() !== false && !state.busy) handlers[name]?.(id)
+      }))
+      error.textContent = state.error || ''
+      error.hidden = !state.error
+      actions.hidden = !state.value?.trim() && !state.error && !state.attachments?.length
+      submit.disabled = !!state.busy || !state.sendReady
+      submit.textContent = state.busy ? '发送中…' : '发送'
+    },
+    focusInput() { if (open) input.focus() },
+    destroy() { listen(false); root.remove() },
+  }
+}
+
 export function createCommentPanel(options = {}) {
   const host = options.host || null
-  const call = handlerCaller(options.handlers || {})
+  const dispatch = handlerCaller(options.handlers || {})
+  const call = (...args) => dispatch(...args)
 
   const state = {
     open: false,
@@ -705,16 +933,148 @@ export function createCommentPanel(options = {}) {
     moreTitle: '',
     moreHint: '',
     items: [],
+    contextEpoch: 0,
   }
 
   const el = document.createElement('div')
   el.className = 'lark-doc-comment-layer'
 
+  const history = document.createElement('section')
+  history.className = 'lark-doc-comment-history'
+  history.setAttribute('role', 'dialog')
+  history.setAttribute('aria-label', '历史评论')
+  const historyHead = document.createElement('header')
+  historyHead.className = 'lark-doc-comment-history-head'
+  historyHead.textContent = '历史评论'
+  const historyInfo = document.createElement('button')
+  historyInfo.type = 'button'
+  historyInfo.className = 'lark-doc-comment-history-info'
+  historyInfo.setAttribute('aria-label', '历史评论查看权限')
+  historyInfo.appendChild(iconNode('comment-history-info', 16))
+  const historyHint = document.createElement('span')
+  historyHint.className = 'lark-doc-comment-history-hint'
+  historyHint.textContent = '仅支持可编辑文档的用户查看'
+  historyInfo.appendChild(historyHint)
+  historyHead.appendChild(historyInfo)
+  const historyList = document.createElement('div')
+  historyList.className = 'lark-doc-comment-history-list'
+  const historyEmpty = document.createElement('div')
+  historyEmpty.className = 'lark-doc-comment-history-empty'
+  const historyIllustration = document.createElement('div')
+  historyIllustration.className = 'lark-doc-comment-history-illustration'
+  historyIllustration.setAttribute('aria-hidden', 'true')
+  historyIllustration.appendChild(iconNode('comment-history-empty', 120))
+  const historyEmptyLabel = document.createElement('div')
+  historyEmptyLabel.className = 'lark-doc-comment-history-empty-text'
+  historyEmptyLabel.textContent = '在这可查看所有已解决的评论'
+  historyEmpty.append(historyIllustration, historyEmptyLabel)
+  history.append(historyHead, historyList)
+  let historyListening = false
+  function dismissHistory(event) {
+    if (event.target.closest?.('[data-lark-doc-image-ui]')) return
+    if (event.type === 'keydown') {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); call('onCloseHistory') }
+    } else if (!history.contains(event.target)) call('onCloseHistory')
+  }
+  function listenHistory(on) {
+    if (historyListening === on) return
+    historyListening = on
+    for (const type of ['pointerdown', 'keydown']) el.ownerDocument[on ? 'addEventListener' : 'removeEventListener'](type, dismissHistory, true)
+  }
+
+  const reactionPicker = document.createElement('div')
+  reactionPicker.className = 'lark-doc-comment-reaction-picker'
+  reactionPicker.setAttribute('role', 'menu')
+  reactionPicker.setAttribute('aria-label', '评论表情回复')
+  reactionPicker.addEventListener('mousedown', event => event.preventDefault())
+  const reactionScroll = document.createElement('div')
+  reactionScroll.className = 'lark-doc-comment-reaction-scroll'
+  const reactionTitle = document.createElement('div')
+  reactionTitle.className = 'lark-doc-comment-reaction-title'
+  reactionTitle.textContent = '默认表情'
+  const reactionGrid = document.createElement('div')
+  reactionGrid.className = 'lark-doc-comment-reaction-grid'
+  reactionScroll.append(reactionTitle, reactionGrid)
+  const recentTitle = document.createElement('div')
+  recentTitle.className = 'lark-doc-comment-reaction-title'
+  recentTitle.textContent = '最近使用'
+  const reactionRecent = document.createElement('div')
+  reactionRecent.className = 'lark-doc-comment-reaction-recent'
+  reactionPicker.append(reactionScroll, recentTitle, reactionRecent)
+  let reactionCatalog = null, reactionListening = false, reactionHoverTimer = null
+  let replyMenuHoverTimer = null
+  const closeReplyMenuLater = (threadId, replyId) => {
+    clearTimeout(replyMenuHoverTimer)
+    const epoch = state.contextEpoch
+    replyMenuHoverTimer = setTimeout(() => { if (epoch === state.contextEpoch) call('onCloseReplyMenu', threadId, replyId) }, 180)
+  }
+  const closeReactionLater = () => { clearTimeout(reactionHoverTimer); reactionHoverTimer = setTimeout(() => call('onCloseReaction'), 180) }
+  reactionPicker.addEventListener('mouseenter', () => clearTimeout(reactionHoverTimer))
+  reactionPicker.addEventListener('mouseleave', closeReactionLater)
+  function dismissReaction(event) {
+    if (event.type === 'keydown') {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); call('onCloseReaction') }
+      return
+    }
+    if (!reactionPicker.contains(event.target) && !event.target.closest?.('[data-comment-reaction-trigger]')) call('onCloseReaction')
+  }
+  function listenReaction(on) {
+    if (reactionListening === on) return
+    reactionListening = on
+    for (const type of ['pointerdown', 'keydown']) el.ownerDocument[on ? 'addEventListener' : 'removeEventListener'](type, dismissReaction, true)
+  }
+  function reactionIcon(key, size) {
+    const item = state.reactionCatalog?.items.find(item => item.id === key)
+    const icon = document.createElement('span')
+    icon.className = 'lark-doc-comment-reaction-icon'
+    icon.setAttribute('role', 'img')
+    icon.setAttribute('aria-label', item?.name || key)
+    icon.style.height = `${size}px`
+    if (!item) { icon.textContent = key; return icon }
+    const scale = size / item.height
+    icon.style.width = `${item.width * scale}px`
+    icon.style.backgroundImage = `url("${item.image || state.reactionCatalog.sprite}")`
+    if (item.image) icon.style.backgroundSize = 'contain'
+    else {
+      icon.style.backgroundSize = item.size.split(' ').map(value => `${parseFloat(value) * scale}px`).join(' ')
+      icon.style.backgroundPosition = item.pos.split(' ').map(value => `${parseFloat(value) * scale}px`).join(' ')
+    }
+    return icon
+  }
+  function reactionButton(item, size) {
+    const contextEpoch = state.contextEpoch
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('role', 'menuitem')
+    button.setAttribute('aria-label', item.name)
+    button.title = item.name
+    button.appendChild(reactionIcon(item.id, size))
+    onMouseDownPrevent(button, () => { if (button.isConnected && contextEpoch === state.contextEpoch && dispatch('isCurrentContext', contextEpoch) !== false) call('onChooseReaction', item.id) })
+    return button
+  }
+  function renderReactionPicker() {
+    const open = !!state.reaction && !!state.reactionCatalog
+    listenReaction(open)
+    if (!open) { clearTimeout(reactionHoverTimer); return }
+    applyStyle(reactionPicker, state.reaction.style)
+    if (reactionCatalog !== state.reactionCatalog) {
+      reactionCatalog = state.reactionCatalog
+      reactionGrid.replaceChildren(...reactionCatalog.items.map(item => reactionButton(item, 24)))
+    }
+    const keys = [...new Set([...(state.reactionRecent || []), 'applaud_v2', 'thumbsup_v2', 'typing', 'fighton_v2', 'ok_v2', 'heart', 'plusone'])].slice(0, 7)
+    reactionRecent.replaceChildren(...keys.map(key => reactionCatalog.items.find(item => item.id === key)).filter(Boolean).map(item => reactionButton(item, 28)))
+  }
+
   /** @type {Map<string, ReturnType<typeof createPanelNode>>} */
   const panelNodes = new Map()
+  const historyNodes = new Map()
 
   function createPanelNode(id) {
+    const contextEpoch = state.contextEpoch
     const root = document.createElement('div')
+    const call = (...args) => {
+      if (root.isConnected && contextEpoch === state.contextEpoch && dispatch('isCurrentContext', contextEpoch) !== false) return dispatch(...args)
+    }
     root.className = 'lark-doc-comment-panel'
     root.setAttribute('role', 'dialog')
     // 根节点**没有** `.prevent`：它要抢焦点去点亮线程。
@@ -736,16 +1096,49 @@ export function createCommentPanel(options = {}) {
     textareaWrap.className = 'lark-doc-comment-textarea'
     const inputRow = document.createElement('div')
     inputRow.className = 'lark-doc-comment-input'
-    const textarea = document.createElement('textarea')
+    const textarea = document.createElement('div')
     textarea.className = 'lark-doc-comment-input-zone'
     textarea.setAttribute('aria-label', '回复')
-    textarea.addEventListener('input', (event) => call('onDraft', id, event.target.value))
+    textarea.setAttribute('role', 'textbox')
+    textarea.setAttribute('aria-multiline', 'true')
+    textarea.dataset.placeholder = '回复'
+    const readText = () => typeof textarea.innerText === 'string' ? textarea.innerText.replace(/\r/g, '') : textarea.textContent
+    textarea.addEventListener('input', () => call('onDraft', id, readText()))
+    textarea.addEventListener('compositionstart', () => { textarea.__composing = true })
+    textarea.addEventListener('compositionend', () => { textarea.__composing = false; call('onDraft', id, readText()) })
+    textarea.addEventListener('paste', event => {
+      event.preventDefault()
+      if (textarea.getAttribute('contenteditable') === 'false' || !root.isConnected || contextEpoch !== state.contextEpoch || dispatch('isCurrentContext', contextEpoch) === false) return
+      const value = event.clipboardData?.getData('text/plain') || ''
+      const selection = textarea.ownerDocument.getSelection()
+      if (!selection?.rangeCount || !textarea.contains(selection.anchorNode) || !textarea.contains(selection.focusNode)) return
+      const range = selection.getRangeAt(0)
+      if (!textarea.contains(range.startContainer) || !textarea.contains(range.endContainer)) return
+      range.deleteContents()
+      const node = textarea.ownerDocument.createTextNode(value)
+      range.insertNode(node)
+      range.setStartAfter(node)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      call('onDraft', id, readText())
+    })
     const operation = document.createElement('button')
     operation.type = 'button'
     operation.className = 'lark-doc-comment-operation'
     operation.setAttribute('aria-label', '插入图片')
     operation.appendChild(iconNode('rev-image', 16))
-    onMouseDownPrevent(operation, () => {})
+    const attachmentInput = document.createElement('input')
+    attachmentInput.type = 'file'
+    attachmentInput.accept = 'image/gif,image/jpg,image/jpeg,image/bmp,image/png'
+    attachmentInput.multiple = true
+    attachmentInput.hidden = true
+    attachmentInput.addEventListener('change', () => {
+      const files = Array.from(attachmentInput.files || [])
+      attachmentInput.value = ''
+      if (!operation.disabled) call('onAttachments', id, files)
+    })
+    onMouseDownPrevent(operation, () => { if (!operation.disabled) attachmentInput.click() })
     inputRow.appendChild(textarea)
     inputRow.appendChild(operation)
 
@@ -759,12 +1152,15 @@ export function createCommentPanel(options = {}) {
     const sendAction = document.createElement('button')
     sendAction.type = 'button'
     sendAction.className = 'lark-doc-comment-action is-filled'
-    sendAction.textContent = '发送'
+    sendAction.textContent = '回复'
     onMouseDownPrevent(sendAction, () => call('onSubmit', id))
     actions.appendChild(cancelAction)
     actions.appendChild(sendAction)
 
     textareaWrap.appendChild(inputRow)
+    const attachments = document.createElement('div')
+    attachments.className = 'lark-doc-comment-attachments'
+    textareaWrap.append(attachmentInput, attachments)
     textareaWrap.appendChild(actions)
 
     const moreMenu = document.createElement('div')
@@ -796,6 +1192,7 @@ export function createCommentPanel(options = {}) {
 
     return {
       root,
+      call,
       // 控件条只在签名变化时重建，所以回调里必须读实时 id，不能闭包 `id`。
       threadId: id,
       head,
@@ -807,7 +1204,12 @@ export function createCommentPanel(options = {}) {
       repliesSignature: null,
       textareaWrap,
       inputRow,
+      attachmentInput,
+      operation,
+      attachments,
       textarea,
+      readText,
+      replyTargetKey: '',
       actions,
       sendAction,
       moreMenu,
@@ -819,6 +1221,7 @@ export function createCommentPanel(options = {}) {
 
   /** 控件条六格：分隔条走 `split` 分支，其余是带图标（或圆点）的按钮。 */
   function ensureControls(entry) {
+    const call = entry.call
     const signature = state.controls.map((control) => control.id).join(',')
     if (entry.controlSignature === signature) return
     entry.controlSignature = signature
@@ -853,10 +1256,20 @@ export function createCommentPanel(options = {}) {
   }
 
   function buildReplies(entry, item) {
+    const call = entry.call
     const nodes = []
     ;(item.replies || []).forEach((reply) => {
+      const retained = reply.editing && [...entry.replies.children].find(node => node.dataset.replyId === reply.id && node.classList.contains('is-editing'))
+      if (retained) {
+        retained.querySelector('textarea').readOnly = !!reply.editBusy
+        retained.querySelectorAll('.lark-doc-comment-edit-actions button').forEach(button => { button.disabled = !!reply.editBusy })
+        nodes.push(retained)
+        return
+      }
       const root = document.createElement('div')
       root.className = 'lark-doc-comment-reply'
+      root.dataset.replyId = reply.id
+      root.classList.toggle('is-editing', !!reply.editing)
 
       const main = document.createElement('div')
       main.className = 'lark-doc-comment-reply-main'
@@ -878,9 +1291,91 @@ export function createCommentPanel(options = {}) {
       info.appendChild(time)
       const body = document.createElement('div')
       body.className = 'lark-doc-comment-body'
-      body.textContent = reply.body == null ? '' : String(reply.body)
+      const translation = reply.translation?.source === reply.body ? reply.translation : null
+      body.textContent = translation?.content || (reply.body == null ? '' : String(reply.body))
+      if (reply.attachments?.length) {
+        const row = document.createElement('div')
+        row.className = 'lark-doc-comment-body-attachments'
+        row.append(...commentAttachmentNodes(reply.attachments, false, (action, index) => call(action, item.id, reply.id, index)))
+        body.classList.toggle('is-image-only', !reply.body)
+        body.appendChild(row)
+      }
+      if (translation?.content && !reply.editing) {
+        const label = document.createElement('span')
+        label.className = 'lark-doc-comment-translation-label'
+        label.textContent = 'Translated by AI'
+        const original = document.createElement('button')
+        original.type = 'button'
+        original.className = 'lark-doc-comment-original'
+        original.textContent = '查看原文'
+        original.setAttribute('aria-label', '查看原文')
+        const originalText = document.createElement('span')
+        originalText.className = 'lark-doc-comment-original-text'
+        originalText.textContent = translation.source
+        original.appendChild(originalText)
+        onMouseDownPrevent(original, () => call('onCancelTranslation', item.id, reply.id))
+        body.append(label, original)
+      }
+      if (reply.edited) {
+        const edited = document.createElement('span')
+        edited.className = 'lark-doc-comment-edited'
+        edited.textContent = '（已编辑）'
+        body.appendChild(edited)
+      }
+      if (reply.editing) {
+        const input = document.createElement('textarea')
+        input.className = 'lark-doc-comment-edit-input'
+        input.setAttribute('aria-label', '编辑评论')
+        input.value = reply.editValue || ''
+        input.readOnly = !!reply.editBusy
+        input.addEventListener('input', () => call('onEditDraft', item.id, reply.id, input.value))
+        const actions = document.createElement('div')
+        actions.className = 'lark-doc-comment-edit-actions'
+        for (const [label, handler] of [['取消', () => call('onEditCancel')], ['确定', () => call('onEditConfirm', item.id, reply.id, input.value)]]) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.textContent = label
+          button.disabled = !!reply.editBusy
+          onMouseDownPrevent(button, handler)
+          actions.appendChild(button)
+        }
+        body.replaceChildren(input, actions)
+        queueMicrotask(() => { if (input.isConnected) { input.focus(); input.setSelectionRange(input.value.length, input.value.length) } })
+      }
       right.appendChild(info)
       right.appendChild(body)
+      if (translation?.busy || translation?.error || reply.report?.error) {
+        const status = document.createElement('div')
+        status.className = 'lark-doc-comment-service-status'
+        status.setAttribute('role', translation?.error || reply.report?.error ? 'alert' : 'status')
+        status.textContent = translation?.error || reply.report?.error || '翻译中…'
+        if (translation?.busy) {
+          const cancel = document.createElement('button')
+          cancel.type = 'button'
+          cancel.textContent = '取消'
+          onMouseDownPrevent(cancel, () => call('onCancelTranslation', item.id, reply.id))
+          status.appendChild(cancel)
+        }
+        right.appendChild(status)
+      }
+      if (reply.reactions?.length) {
+        root.classList.add('has-reactions')
+        const reactions = document.createElement('div')
+        reactions.className = 'lark-doc-comment-reactions'
+        for (const reaction of reply.reactions) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = `lark-doc-comment-reaction${reaction.mine ? ' is-mine' : ''}`
+          button.setAttribute('aria-pressed', String(!!reaction.mine))
+          const label = state.reactionCatalog?.items.find(item => item.id === reaction.emoji)?.name || reaction.emoji
+          button.setAttribute('aria-label', `${label}: ${(reaction.names || []).join('、')}`)
+          button.title = button.getAttribute('aria-label')
+          button.append(reactionIcon(reaction.emoji, 18), document.createTextNode((reaction.names || []).join('、')))
+          onMouseDownPrevent(button, () => call('onReaction', item.id, reply.id, reaction.emoji))
+          reactions.appendChild(button)
+        }
+        right.appendChild(reactions)
+      }
       main.appendChild(avatar)
       main.appendChild(right)
 
@@ -898,19 +1393,38 @@ export function createCommentPanel(options = {}) {
           dots.setAttribute('aria-hidden', 'true')
           button.appendChild(dots)
         }
-        onMouseDownPrevent(button, () => call('onReplyControl', control.id, item.id, reply.id))
+        if (control.id === 'emoji') {
+          button.dataset.commentReactionTrigger = ''
+          button.setAttribute('aria-haspopup', 'menu')
+          button.addEventListener('mouseenter', event => { clearTimeout(reactionHoverTimer); call('onReplyControl', control.id, item.id, reply.id, event) })
+          button.addEventListener('mouseleave', closeReactionLater)
+          onMouseDownPrevent(button, () => call('onQuickReaction', item.id, reply.id))
+        } else {
+          if (control.id === 'more') {
+            button.setAttribute('aria-haspopup', 'menu')
+            button.addEventListener('mouseenter', event => { clearTimeout(replyMenuHoverTimer); call('onReplyControl', control.id, item.id, reply.id, event) })
+            button.addEventListener('mouseleave', () => closeReplyMenuLater(item.id, reply.id))
+          }
+          onMouseDownPrevent(button, event => call('onReplyControl', control.id, item.id, reply.id, event))
+        }
         replyControls.appendChild(button)
       })
 
       const menuBox = document.createElement('div')
       menuBox.className = 'lark-doc-comment-reply-menu'
+      menuBox.setAttribute('role', 'menu')
+      menuBox.setAttribute('aria-label', '评论更多菜单')
+      menuBox.addEventListener('mouseenter', () => clearTimeout(replyMenuHoverTimer))
+      menuBox.addEventListener('mouseleave', () => closeReplyMenuLater(item.id, reply.id))
       const menuList = document.createElement('ul')
       menuList.className = 'lark-doc-comment-menu-list'
       ;(reply.menus || []).forEach((menu) => {
         if (!menu.visible) return
         const li = document.createElement('li')
         li.className = 'lark-doc-comment-menu-item'
-        onMouseDownPrevent(li, () => call('onMenuItem', menu.id, item.id, reply.id))
+        li.setAttribute('role', 'menuitem')
+        li.setAttribute('aria-disabled', String(!!menu.disabled))
+        onMouseDownPrevent(li, () => { if (!menu.disabled) call('onMenuItem', menu.id, item.id, reply.id) })
         const menuLabel = document.createElement('span')
         menuLabel.className = 'lark-doc-comment-menu-label'
         menuLabel.textContent = menu.label == null ? '' : String(menu.label)
@@ -938,6 +1452,7 @@ export function createCommentPanel(options = {}) {
     setAttr(entry.root, 'aria-label', state.title)
     // SFC 是数组形式（合并语义）；接线层已经把 `{left, top}` 与 `{height}` 合成一份。
     applyStyle(entry.root, item.style)
+    if ((item.replies || []).some(reply => reply.editing || reply.attachments?.length || reply.translation || reply.report) || item.attachments?.length) entry.root.style.height = 'auto'
     setText(entry.quote, item.quote)
 
     ensureControls(entry)
@@ -957,12 +1472,33 @@ export function createCommentPanel(options = {}) {
     }
 
     const textareaState = item.textarea || {}
-    applyStyle(entry.textareaWrap, { height: `${textareaState.height}px` })
-    setInputValue(entry.textarea, textareaState.value)
-    entry.textarea.readOnly = !!textareaState.readonly
+    applyStyle(entry.textareaWrap, { height: item.attachments?.length ? 'auto' : `${textareaState.height}px` })
+    const value = textareaState.value || ''
+    const target = textareaState.replyTo
+    const targetKey = target?.commentId || ''
+    if (!entry.textarea.__composing && (entry.readText() !== value || entry.replyTargetKey !== targetKey)) {
+      entry.replyTargetKey = targetKey
+      const prefix = target ? `@${target.authorName}` : ''
+      if (prefix && value.startsWith(prefix)) {
+        const mention = document.createElement('span')
+        mention.className = 'lark-doc-comment-mention'
+        mention.contentEditable = 'false'
+        mention.dataset.userId = target.authorId
+        mention.textContent = prefix
+        entry.textarea.replaceChildren(mention, document.createTextNode(value.slice(prefix.length)))
+      } else entry.textarea.textContent = value
+    }
+    entry.textarea.setAttribute('contenteditable', String(!textareaState.readonly))
+    entry.textarea.setAttribute('aria-readonly', String(!!textareaState.readonly))
     entry.sendAction.classList.toggle('is-disabled', !item.allowedReply)
+    entry.sendAction.disabled = item.sendReady === false
+    entry.sendAction.textContent = item.submitBusy ? '发送中…' : '回复'
+    entry.operation.disabled = !item.canAttach || !!item.submitBusy
+    entry.attachments.replaceChildren(...commentAttachmentNodes(item.attachments, true, (name, attachmentId) => entry.call(name, item.id, attachmentId)))
     syncChildren(entry.textareaWrap, [
       { node: entry.inputRow, on: true },
+      { node: entry.attachmentInput, on: true },
+      { node: entry.attachments, on: !!item.attachments?.length },
       { node: entry.actions, on: !!item.hasDraft },
     ])
 
@@ -995,19 +1531,97 @@ export function createCommentPanel(options = {}) {
     Array.from(panelNodes.keys()).forEach((id) => {
       if (!alive.has(id)) panelNodes.delete(id)
     })
-    syncChildren(el, slots)
+    listenHistory(!!state.historyOpen)
+    if (state.historyOpen) {
+      applyStyle(history, state.historyStyle)
+      const aliveHistory = new Set()
+      const nodes = (state.historyItems || []).map(item => {
+        aliveHistory.add(item.id)
+        let entry = historyNodes.get(item.id)
+        if (!entry) { entry = createPanelNode(item.id); historyNodes.set(item.id, entry) }
+        entry.root.classList.add('lark-doc-comment-history-item')
+        entry.root.setAttribute('aria-label', '已解决的评论')
+        entry.quote.textContent = item.quote || '原引用已删除'
+        if (!entry.resolved) {
+          entry.resolved = document.createElement('div')
+          entry.resolved.className = 'lark-doc-comment-history-resolved'
+          const label = document.createElement('span')
+          label.textContent = '已解决此评论'
+          entry.reopen = document.createElement('button')
+          entry.reopen.type = 'button'
+          entry.reopen.className = 'lark-doc-comment-history-reopen'
+          entry.reopen.textContent = '重新打开'
+          onMouseDownPrevent(entry.reopen, () => { if (entry.reopen.getAttribute('aria-disabled') !== 'true') entry.call('onControl', 'reopen', item.id) })
+          const actions = document.createElement('span')
+          actions.className = 'lark-doc-comment-history-actions'
+          const split = document.createElement('span')
+          split.className = 'lark-doc-comment-history-split'
+          entry.remove = document.createElement('button')
+          entry.remove.type = 'button'
+          entry.remove.className = 'lark-doc-comment-history-delete'
+          entry.remove.setAttribute('aria-label', '删除评论线程')
+          entry.remove.appendChild(iconNode('table-float-remove', 16))
+          onMouseDownPrevent(entry.remove, () => { if (entry.remove.getAttribute('aria-disabled') !== 'true') entry.call('onDeleteThread', item.id) })
+          actions.append(entry.reopen, split, entry.remove)
+          entry.resolved.append(label, actions)
+        }
+        entry.reopen.setAttribute('aria-disabled', String(!item.canReopen))
+        entry.remove.setAttribute('aria-disabled', String(!item.canDelete))
+        entry.remove.setAttribute('aria-busy', String(!!item.deleteBusy))
+        entry.remove.title = item.deleteBusy ? '删除中…' : item.canDelete ? '删除评论线程' : '当前评论服务不支持删除线程或没有删除权限'
+        const signature = JSON.stringify(item.replies || [])
+        if (entry.repliesSignature !== signature) {
+          entry.repliesSignature = signature
+          syncChildren(entry.replies, buildReplies(entry, item).map(node => ({ node, on: true })))
+        }
+        syncChildren(entry.root, [entry.resolved, entry.quote, entry.replies].map(node => ({ node, on: true })))
+        return entry.root
+      })
+      for (const [id, entry] of historyNodes) if (!aliveHistory.has(id)) { entry.root.remove(); historyNodes.delete(id) }
+      syncChildren(historyList, (nodes.length ? nodes : [historyEmpty]).map(node => ({ node, on: true })))
+    }
+    renderReactionPicker()
+    syncChildren(el, [...slots,
+      { node: history, on: !!state.historyOpen },
+      { node: reactionPicker, on: !!state.reaction && !!state.reactionCatalog },
+    ])
   }
 
   function update(patch) {
+    if (patch && patch.contextEpoch !== undefined && patch.contextEpoch !== state.contextEpoch) {
+      for (const entry of panelNodes.values()) {
+        entry.textarea.__composing = false
+        entry.textarea.textContent = ''
+        entry.root.remove()
+      }
+      panelNodes.clear()
+      historyNodes.clear()
+      reactionCatalog = null
+      listenReaction(false)
+      clearTimeout(reactionHoverTimer)
+      clearTimeout(replyMenuHoverTimer)
+    }
     Object.assign(state, patch || {})
     mountNode(host, el, !!state.open)
-    if (!state.open) return
+    if (!state.open) { listenHistory(false); listenReaction(false); clearTimeout(reactionHoverTimer); clearTimeout(replyMenuHoverTimer); reactionPicker.remove(); return }
     render()
   }
 
   return {
     el,
     update,
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
+    heightOf(id) { return panelNodes.get(id)?.root.getBoundingClientRect().height || 0 },
+    focusReply(id) {
+      const input = panelNodes.get(id)?.textarea
+      if (!input) return
+      input.focus()
+      const range = input.ownerDocument.createRange()
+      range.selectNodeContents(input)
+      range.collapse(false)
+      const selection = input.ownerDocument.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+    },
+    destroy() { listenHistory(false); listenReaction(false); clearTimeout(reactionHoverTimer); clearTimeout(replyMenuHoverTimer); if (el.parentNode) el.parentNode.removeChild(el) },
   }
 }

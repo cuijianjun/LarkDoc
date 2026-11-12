@@ -119,7 +119,6 @@ export function createWebEmbedNodeView(props) {
       allow,
       allowfullscreen: 'true',
       referrerpolicy: 'no-referrer',
-      loading: 'lazy',
     }))
     return element
   }

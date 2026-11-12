@@ -106,6 +106,8 @@ export function createUnfurlProvider(option) {
       if (cached) return cached
       const task = run(target, ctx)
       inflight.set(target, task)
+      // 只复用成功与进行中的抓取。瞬态失败/超时不能把此 URL 永久锁成简卡。
+      task.then(result => { if (!result.ok && inflight.get(target) === task) inflight.delete(target) })
       if (inflight.size > cacheLimit) {
         // 简单的 FIFO 淘汰：够用，且不会因为 Map 无限增长把长文档撑爆。
         const oldest = inflight.keys().next()

@@ -1,5 +1,8 @@
-import { createDocumentRecord } from '../core/documentSchema'
-import { aggregateHeadingContainers, restoreUnknownBlocks } from '../core/documentOperations'
+import { createDocumentRecord, normalizeDocumentRecord } from '../core/documentSchema'
+import { aggregateHeadingContainers, restoreUnknownBlocks, validateDocument } from '../core/documentOperations'
+import { closeHistory } from '@tiptap/pm/history'
+import { encodeVersionDocument, decodeVersionDocument, isVersionDocumentPayload } from '../core/versioning/document-codec'
+import { SNAPSHOT_KIND, versioningError } from '../core/versioning/types'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
 import { createAuthorizationProvider, normalizeCapabilities } from '../providers/authorization'
 import { createCollaborationProvider } from '../providers/collaboration'
@@ -25,6 +28,7 @@ export class DocumentSession {
     this.mode = options.mode || 'local'
     this.user = options.user || null
     this._editor = null
+    this._documentAccess = null
     this._listeners = new Map()
     this._destroyed = false
     this._capabilities = normalizeCapabilities(options.capabilities)
@@ -56,6 +60,8 @@ export class DocumentSession {
     const factory = PROVIDER_FACTORIES[name]
     if (!factory) throw new Error(`未知 Provider：${name}`)
     this.providers[name] = factory(provider)
+    if (name === 'versioning') this._currentVersion = null
+    this.emit('provider', { name, provider: this.providers[name] })
     if (name === 'authorization' && this.providers.authorization) {
       this._capabilitiesPromise = this.refreshCapabilities().catch(error => {
         this.emit('error', error)
@@ -79,16 +85,18 @@ export class DocumentSession {
   }
 
   /** 绑定 Tiptap 实例，使记录、事务和版本操作共享同一正文。 */
-  attachEditor(editor) {
+  attachEditor(editor, documentAccess) {
     if (this._destroyed) throw new Error('DocumentSession 已销毁')
+    if (this._editor !== editor) { this._documentAccess = null; this._currentVersion = null }
     this._editor = editor || null
+    if (documentAccess !== undefined) this._documentAccess = documentAccess
     this.emit('editor', this._editor)
     return this._editor
   }
 
   /** 在 Vue 子组件销毁前解除绑定，防止旧编辑器继续接收事件。 */
   detachEditor(editor) {
-    if (!editor || this._editor === editor) this._editor = null
+    if (!editor || this._editor === editor) { this._editor = null; this._documentAccess = null; this._currentVersion = null }
     this.emit('editor', null)
   }
 
@@ -156,23 +164,108 @@ export class DocumentSession {
     if (!this.can('canCreateVersion')) throw new Error('当前用户没有创建版本的权限')
     const provider = this.providers.versioning
     if (!provider) throw new Error('未配置 versioning Provider')
-    return provider.createSnapshot({ ...this.getDocumentRecord(), ...meta })
+    const context = this._versionContext(provider)
+    const record = this.getDocumentRecord(meta)
+    const identity = meta.author || this.user?.id || this.user?.name
+    const author = identity == null ? undefined : String(identity)
+    const payload = meta.payload === undefined ? await (provider.documentCodec?.encode ? provider.documentCodec.encode(record) : encodeVersionDocument(record)) : meta.payload
+    this._assertVersionContext(context, 'canCreateVersion')
+    const created = await provider.createSnapshot({ ...record, ...meta, documentId: this.documentId, author, kind: meta.kind || SNAPSHOT_KIND.MANUAL, payload })
+    if (!this._destroyed && this._editor === context.editor && this.providers.versioning === provider && context.doc) this._currentVersion = { ...context, id: created.id }
+    return created
   }
 
-  /** 请求恢复版本；Provider 应把恢复实现为新的 revision。 */
+  getCurrentVersionId() {
+    const value = this._currentVersion
+    return !this._destroyed && value && value.editor === this._editor && value.provider === this.providers.versioning && value.documentId === this.documentId && value.doc === this._editor?.state?.doc ? value.id : null
+  }
+
+  _versionContext(provider) {
+    return { provider, editor: this._editor, access: this._documentAccess, documentId: this.documentId, doc: this._editor?.state?.doc }
+  }
+
+  _assertVersionContext(context, capability) {
+    if (this._destroyed || context.editor?.isDestroyed || context.provider !== this.providers.versioning || context.editor !== this._editor || context.access !== this._documentAccess || context.documentId !== this.documentId) throw versioningError('E_VERSION_CONTEXT_CHANGED', '版本操作的文档或 Provider 已失效')
+    if (capability && !this.can(capability)) throw new Error('当前用户没有版本操作权限')
+  }
+
+  async _decodeVersionRecord(record, provider) {
+    if (record?.documentId !== this.documentId) throw new Error('版本不属于当前文档')
+    const decoded = isVersionDocumentPayload(record.payload) ? decodeVersionDocument(record.payload)
+      : provider.documentCodec?.decode ? normalizeDocumentRecord(await provider.documentCodec.decode(record.payload, record)) : decodeVersionDocument(record.payload)
+    if (decoded.documentId !== this.documentId) throw new Error('版本正文不属于当前文档')
+    return decoded
+  }
+
+  /** Decode a provider snapshot without changing either the live editor or version chain. */
+  async readVersionDocument(versionId, snapshot) {
+    const provider = this.providers.versioning
+    if (!provider) throw new Error('未配置 versioning Provider')
+    const context = this._versionContext(provider)
+    const record = snapshot || await provider.get(versionId)
+    if (record?.id !== versionId) throw new Error('版本正文与所选版本不匹配')
+    this._assertVersionContext(context)
+    const decoded = await this._decodeVersionRecord(record, provider)
+    this._assertVersionContext(context)
+    return decoded
+  }
+
+  _prepareVersionDocument(record, context) {
+    if (context.access?.prepareContent) return context.access.prepareContent(record.content)
+    const { editor } = context
+    let content = validateDocument(record.content, editor.schema)
+    const network = editor.storage.larkDoc?.network
+    if (network) content = network.applyDocument(content)
+    return { next: editor.schema.nodeFromJSON(validateDocument(content, editor.schema)), report: null }
+  }
+
+  /** Restore a real document while preserving the immutable source snapshot. */
   async restoreVersion(versionId) {
     if (!this.can('canRestoreVersion')) throw new Error('当前用户没有恢复版本的权限')
     const provider = this.providers.versioning
     if (!provider) throw new Error('未配置 versioning Provider')
-    return provider.restore(versionId, { documentId: this.documentId })
+    const context = this._versionContext(provider), { editor } = context
+    const identity = this.user?.id || this.user?.name
+    const author = identity == null ? undefined : String(identity)
+    // Headless integrations retain the server-side restore contract.
+    if (!editor?.state || !editor?.view) return provider.restore(versionId, { documentId: this.documentId, author })
+    if (!editor.isEditable) throw new Error('当前编辑器为只读，无法还原版本')
+    const source = await provider.get(versionId)
+    if (source?.id !== versionId) throw new Error('版本正文与所选版本不匹配')
+    this._assertVersionContext(context, 'canRestoreVersion')
+    const record = await this._decodeVersionRecord(source, provider)
+    this._assertVersionContext(context, 'canRestoreVersion')
+    const prepared = this._prepareVersionDocument(record, context)
+    if (!editor.isEditable || editor.state.doc !== context.doc) throw new Error('还原前正文或权限已更改，请重新选择版本')
+    const created = await provider.restore(versionId, { documentId: this.documentId, author })
+    this._assertVersionContext(context, 'canRestoreVersion')
+    if (!editor.isEditable) throw new Error('当前编辑器已切为只读，恢复记录已保留，正文未替换')
+    if (editor.state.doc !== context.doc && !editor.state.doc.eq(prepared.next)) throw new Error('等待期间正文已更改，恢复记录已保留，当前正文未覆盖')
+    // Re-check current limits and network policy after the asynchronous provider write.
+    const current = this._prepareVersionDocument(record, context)
+    if (context.access?.applyPreparedContent) context.access.applyPreparedContent(current, { origin: TRANSACTION_ORIGINS.RESTORE })
+    else if (!current.next.eq(editor.state.doc)) {
+      const before = editor.state.doc
+      this.dispatch(closeHistory(editor.state.tr).replaceWith(0, editor.state.doc.content.size, current.next.content), { origin: TRANSACTION_ORIGINS.RESTORE })
+      if (editor.state.doc === before) throw new Error('版本记录已保留，但当前编辑器拒绝替换正文')
+      editor.commands.ensureLarkDocBlockIds?.()
+      editor.commands.normalizeLarkDocIndents?.()
+      editor.commands.resetLarkDocFolds?.()
+      editor.view.dispatch(closeHistory(editor.state.tr))
+    }
+    this._currentVersion = current.next.eq(editor.state.doc) ? { ...context, id: created.id, doc: editor.state.doc } : null
+    this.emit('version-restored', { versionId, created })
+    return created
   }
 
   /** 按连接、编辑器、监听器顺序释放会话资源。 */
   async dispose() {
     if (this._destroyed) return
     this._destroyed = true
+    this._currentVersion = null
     await this.disconnect()
     this._editor = null
+    this._documentAccess = null
     this._listeners.clear()
   }
 

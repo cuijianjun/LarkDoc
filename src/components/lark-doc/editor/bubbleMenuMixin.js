@@ -87,6 +87,7 @@ export default {
           // 透传原事件：`toggleColorPalette` 要靠 `currentTarget` 定位取色面板。
           onPalette: (event) => this.toggleColorPalette('textBackground', event),
           onCopy: () => this.bubbleCopy(),
+          onComment: () => { if (this.beginCommentComposer()) this.bubbleVisible = false },
         },
       })
       this.refreshBubbleBar()
@@ -99,6 +100,7 @@ export default {
     /** 特性快照：气泡条哪几段存在由它决定（段序断言依赖于此）。 */
     bubbleBarConfig() {
       return {
+        comment: true,
         ai: this.featureEnabled('ai'),
         blockStyle: this.featureEnabled('blockStyle'),
         marks: this.bubbleMarkItems,

@@ -98,14 +98,15 @@
    未采（⑦-1），沿用主色 `rgb(20,86,240)`（= #1456F0），与「下一项」同源。 */
 .lark-doc .lark-doc-version-restore {
   position: absolute;
-  left: 548px;
+  left: 50%;
+  transform: translateX(-50%);
   top: 16px;
   width: 122px;
   height: 32px;
   padding: 0;
   border: 0 none;
   border-radius: 6px;
-  background-color: rgb(20, 86, 240);
+  background-color: var(--ld-brand-chrome);
   color: rgb(255, 255, 255);
   font-size: 14px;
   cursor: pointer;
@@ -144,14 +145,14 @@
   padding: 0;
   border: 0 none;
   border-radius: 6px;
-  background-color: rgb(20, 86, 240);
+  background-color: var(--ld-brand-chrome);
   color: rgb(255, 255, 255);
   font-size: 12px;
   cursor: pointer;
 }
 
 .lark-doc .lark-doc-version-step:hover:not([disabled]) {
-  background-color: rgb(51, 109, 244);
+  background-color: var(--ld-brand-chrome);
 }
 
 .lark-doc .lark-doc-version-step[disabled] {
@@ -321,7 +322,7 @@
    条目宽 293 → 278（右侧让出 15px 滚动条）。 */
 .lark-doc .lark-doc-version-item.selected {
   width: 278px;
-  background-color: rgb(224, 233, 255);
+  background-color: var(--ld-bg-badge);
 }
 
 /* 条目名：fs 14 / fw 500 / **`rgb(51,109,244)`**（反直觉 2：不是正文色）。 */
@@ -329,7 +330,7 @@
   font-size: 14px;
   font-weight: 500;
   line-height: 20px;
-  color: rgb(51, 109, 244);
+  color: var(--ld-brand-chrome);
 }
 
 /* 描述：fs 12 / rgb(31,35,41)，选中时转 `rgb(51,109,244)`。 */
@@ -341,7 +342,7 @@
 }
 
 .lark-doc .lark-doc-version-item.selected .lark-doc-version-item-desc {
-  color: rgb(51, 109, 244);
+  color: var(--ld-brand-chrome);
 }
 
 /* 作者：fs 12 / fw 500 / rgb(31,35,41)。 */
@@ -498,9 +499,9 @@
   height: 32px;
   padding: 4px 11px;
   box-sizing: border-box;
-  border: 1px solid rgb(20, 86, 240);
+  border: 1px solid var(--ld-brand-chrome);
   border-radius: 6px;
-  background-color: rgb(20, 86, 240);
+  background-color: var(--ld-brand-chrome);
   color: rgb(255, 255, 255);
   font-size: 14px;
   cursor: pointer;
@@ -557,7 +558,7 @@
   padding: 0;
   border: 0 none;
   background-color: transparent;
-  color: rgb(51, 109, 244);
+  color: var(--ld-brand-chrome);
   font-size: 14px;
   cursor: pointer;
 }

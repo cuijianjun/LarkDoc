@@ -1,32 +1,14 @@
-/**
- * 命令菜单（`/` 斜杠 + 空段落「＋」）—— 原生 DOM 版（`src/ui/` 积木 · 阶段 5 批次 3）。
- *
- * 原 SFC `components/lark-doc/CommandMenu.vue` 在阶段 5 批次 3 删除，这里是唯一实现。
- * **结构即契约**：`scripts/verify-browser-command-menu.js` 的 48 条断言在逐字段量
- * 这里产出的 DOM —— 段序（斜杠 15 段 / plus 3 段）、项属性（`role` / `aria-*` /
- * `data-tier` / `title`）、三分支子菜单（模板 / 分栏 / 表格 / 默认）的每一格，全都
- * 不能凭手感改。
- *
- * 三条规矩（与 `blockHandle.js` / `toolbar.js` 一致）：
- * 1. **结构即契约**：类名 / `role` / `aria-*` / 段序逐字段复刻 SFC；`v-if` → 真
- *    insert/remove，`v-show` → `style.display`（本模块没有 `v-show`）。
- * 2. **一次建节点、之后只改属性**：命令按钮按 `item.id` 缓存复用（换过滤词只换
- *    段容器里的按钮排列，**不重建按钮**）—— 重建会把鼠标下的按钮摘掉再插回，
- *    浏览器补发 `mouseenter`，刚关掉的子菜单又被自己的 hover 打开。
- * 3. **同步定位**：子菜单节点先入 DOM 再量 `getBoundingClientRect()`，
- *    SFC 里 `openSubmenu` → `$nextTick(positionSubmenu)` 的时序点就此消灭。
- *
- * ⚠️ 两个入口共用一份模板、靠 `kind` 分叉：斜杠是 15 段纵向列表（宽 280），plus 是
- * 3 段网格（宽 470，基础段 6 列），**分段顺序也各有一套**（plus 的
- * `基础/常用/其他标题` 是前置，不与斜杠共用）。宽度由 CSS 按 `is-plus` / `is-slash`
- * 决定，这里不写死。
+/** Native slash and plus menus. The plus layout and 9x9 picker follow the
+ * observed Feishu UI; command buttons are retained across state updates so
+ * pointer hover and focus survive transactions and filtering.
  */
 
 import { applyStyle, setAttr, syncChildren } from './dom'
-import { diagramIconNode } from './icon'
+import { diagramIconNode, setIcon } from './icon'
 
 /** plus 菜单的前置分段；其余段按命令表里首次出现的顺序追加。 */
-const PLUS_CATEGORIES = ['基础', '常用', '其他标题']
+const PLUS_CATEGORIES = ['基础', '常用', '绘图']
+const BASIC_ICONS = { heading1: 'block-h1', heading2: 'block-h2', heading3: 'block-h3', orderedList: 'block-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'block-quote', callout: 'block-callout', divider: 'horizontal-rule', link: 'link' }
 /** 子菜单贴触发器的间距 / 视口留边（与 SFC 完全一致，断言在量）。 */
 const SUBMENU_GAP = 5
 const SUBMENU_MARGIN = 8
@@ -61,7 +43,7 @@ export function createCommandMenu(options = {}) {
     submenuOpen: '',
     submenuType: '',
     columnsHover: null,
-    tableHover: { rows: 3, cols: 3 },
+    tableHover: null,
   }
   let composing = false
   /** 分段签名：段名 + 每段项 id 顺序。变了才重排段容器。 */
@@ -130,10 +112,15 @@ export function createCommandMenu(options = {}) {
     setAttr(node, 'aria-expanded', item.submenu ? String(state.submenuOpen === item.submenu) : null)
 
     const glyph = item.glyph || '·'
-    if (icon.textContent !== glyph) icon.textContent = glyph
+    const iconName = (state.kind === 'slash' || state.kind === 'plus' && item.category === '基础') && BASIC_ICONS[item.id]
+    if (iconName) setIcon(icon, iconName, 18)
+    else if (icon.textContent !== glyph || icon.querySelector('svg')) { icon.textContent = glyph; icon.removeAttribute('style') }
     const tone = `lark-doc-command-icon is-${item.tone || 'blue'}`
     if (icon.className !== tone) icon.className = tone
     if (label.textContent !== item.label) label.textContent = item.label
+    // The omitted sync-block command has no implementation in master. Keep the
+    // source divider/link slots without exposing an empty or fake command.
+    node.style.gridColumn = state.kind === 'plus' && item.category === '基础' && item.id === 'divider' ? '5' : ''
 
     // `›` 箭头只在有子菜单的项上出现；命令表是静态的，这里只做「齐备性」保证。
     if (item.submenu) {
@@ -163,19 +150,21 @@ export function createCommandMenu(options = {}) {
   }
 
   function buttonFor(item) {
-    let entry = entries.get(item.id)
+    const key = `${item.category}:${item.id}`
+    let entry = entries.get(key)
     if (!entry) {
       const node = document.createElement('button')
       node.type = 'button'
       node.setAttribute('role', 'menuitem')
       node.dataset.commandId = item.id
+      node.dataset.entryKey = key
       // `@mousedown.prevent`：不挡的话按下会先抢焦点、菜单当场关掉。
       node.addEventListener('mousedown', (event) => event.preventDefault())
       node.addEventListener('mouseenter', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
       node.addEventListener('focus', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
       node.addEventListener('click', () => {
         const current = entry.item
-        // plus 菜单里带子菜单的项一律先展子菜单；斜杠菜单对 分栏/模板/图表 展开，表格直接落 3×3。
+        // plus 菜单里带子菜单的项一律先展子菜单；斜杠菜单对 分栏/模板/图表 展开，表格直接落 2×3。
         if (current.submenu && (state.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(current.submenuType))) openSubmenu(current, node)
         else call('onChoose', current)
       })
@@ -187,7 +176,7 @@ export function createCommandMenu(options = {}) {
       node.appendChild(icon)
       node.appendChild(label)
       entry = { node, item, icon, label, arrow: null }
-      entries.set(item.id, entry)
+      entries.set(key, entry)
     }
     syncEntry(entry, item)
     return entry.node
@@ -198,7 +187,7 @@ export function createCommandMenu(options = {}) {
     const seen = []
     items.forEach((item) => { if (seen.indexOf(item.category) === -1) seen.push(item.category) })
     if (state.kind !== 'plus') return seen
-    return PLUS_CATEGORIES.concat(seen.filter((category) => PLUS_CATEGORIES.indexOf(category) === -1))
+    return PLUS_CATEGORIES.filter(category => seen.includes(category)).concat(seen.filter((category) => PLUS_CATEGORIES.indexOf(category) === -1))
   }
 
   /** 段容器按签名重建；按钮本体复用（见文件头第 2 条）。 */
@@ -275,73 +264,76 @@ export function createCommandMenu(options = {}) {
   }
 
   function buildTableSubmenu() {
-    const headNode = makePickerHead('选择大小')
-    // 表格分支的 `<output>` **恒在**（SFC 里没有 `v-if`），初值 `3 × 3` 与
-    // `state.tableHover` 的默认值同源。分栏分支相反 —— 那边是 `v-if="columnsHover"`。
+    const headNode = makePickerHead('插入支持富文本的表格')
     const output = document.createElement('output')
-    output.textContent = `${state.tableHover.cols} × ${state.tableHover.rows}`
+    output.setAttribute('aria-live', 'polite')
     headNode.appendChild(output)
     const grid = document.createElement('div')
     grid.className = 'lark-doc-table-submenu-grid'
     grid.setAttribute('role', 'group')
-    grid.setAttribute('aria-label', '选择表格大小')
+    grid.setAttribute('aria-label', '选择表格行列')
     const cells = []
-    for (let cell = 1; cell <= 36; cell += 1) {
-      const rows = Math.floor((cell - 1) / 6) + 1
-      const cols = ((cell - 1) % 6) + 1
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.setAttribute('role', 'menuitem')
-      button.setAttribute('aria-label', `${cols}列${rows}行`)
-      button.addEventListener('mouseenter', () => setTableHover({ rows, cols }))
-      button.addEventListener('focus', () => setTableHover({ rows, cols }))
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', () => call('onChoose', { id: 'table', tableSize: { rows, cols } }))
-      grid.appendChild(button)
-      cells.push({ rows, cols, node: button })
+    for (let row = 1; row <= 9; row += 1) {
+      for (let col = 1; col <= 9; col += 1) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.setAttribute('role', 'menuitem')
+        button.setAttribute('aria-label', `${row}行${col}列`)
+        button.dataset.row = row
+        button.dataset.col = col
+        const preview = () => { state.tableHover = { rows: row, cols: col }; syncSubmenuLive() }
+        button.addEventListener('mouseenter', preview)
+        button.addEventListener('focus', preview)
+        button.addEventListener('mousedown', event => event.preventDefault())
+        button.addEventListener('click', () => call('onChoose', { id: 'table', tableSize: { rows: row, cols: col } }))
+        button.addEventListener('keydown', event => {
+          const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -9, ArrowDown: 9 }[event.key]
+          if (!delta) return
+          event.preventDefault(); event.stopPropagation()
+          cells[Math.max(0, Math.min(80, (row - 1) * 9 + col - 1 + delta))].node.focus()
+        })
+        cells.push({ row, col, node: button })
+        grid.appendChild(button)
+      }
     }
+    grid.addEventListener('mouseleave', () => { state.tableHover = null; syncSubmenuLive() })
     submenuEl.appendChild(headNode)
     submenuEl.appendChild(grid)
-    return { headNode, cells }
+    return { output, cells }
   }
 
   function buildTemplatesSubmenu() {
-    const title = document.createElement('strong')
-    title.textContent = '选择模板插入文档'
-    submenuEl.appendChild(title)
     if (!state.templates.length) {
       const empty = document.createElement('div')
       empty.className = 'lark-doc-command-empty'
       empty.textContent = '暂无可用模板'
       submenuEl.appendChild(empty)
-      return {}
     }
     state.templates.forEach((template) => {
       const node = document.createElement('button')
       node.type = 'button'
       node.setAttribute('role', 'menuitem')
       node.setAttribute('aria-label', template.label || template.title || template.id)
+      node.disabled = typeof template.html !== 'string'
+      node.setAttribute('aria-disabled', String(node.disabled))
+      if (template.unavailable) node.title = template.unavailable
       node.addEventListener('mousedown', (event) => event.preventDefault())
       node.addEventListener('click', () => call('onChoose', { id: 'template', templateId: template.id }))
-      const icon = document.createElement('span')
-      icon.className = 'lark-doc-command-icon is-indigo'
-      icon.setAttribute('aria-hidden', 'true')
-      icon.textContent = '◇'
       const label = document.createElement('span')
       label.className = 'lark-doc-command-label'
       const main = document.createElement('span')
       main.textContent = template.label || template.title || template.id
       label.appendChild(main)
-      // 短名 + 长标题并存时，长标题降级成 `<small>`（SFC 同一套判据）。
-      if (template.label && template.title && template.label !== template.title) {
-        const sub = document.createElement('small')
-        sub.textContent = template.title
-        label.appendChild(sub)
-      }
-      node.appendChild(icon)
       node.appendChild(label)
       submenuEl.appendChild(node)
     })
+    const more = document.createElement('button')
+    more.type = 'button'
+    more.setAttribute('role', 'menuitem')
+    more.textContent = '更多模板'
+    more.addEventListener('mousedown', event => event.preventDefault())
+    more.addEventListener('click', () => call('onChoose', { id: 'template', templateLibrary: true }))
+    submenuEl.appendChild(more)
     return {}
   }
 
@@ -395,6 +387,12 @@ export function createCommandMenu(options = {}) {
 
   function syncSubmenuLive() {
     if (!submenuEl) return
+    if (state.submenuType === 'table') {
+      const hover = state.tableHover
+      submenuLive.output.textContent = hover ? `${hover.cols} x ${hover.rows}` : ''
+      submenuLive.cells.forEach(cell => cell.node.classList.toggle('is-preview', !!hover && cell.row <= hover.rows && cell.col <= hover.cols))
+      return
+    }
     if (state.submenuType === 'columns') {
       const { headNode, bars, choices } = submenuLive
       const hover = state.columnsHover
@@ -409,13 +407,7 @@ export function createCommandMenu(options = {}) {
       choices.forEach((choice) => choice.node.classList.toggle('is-preview', choice.count === hover))
       return
     }
-    if (state.submenuType === 'table') {
-      const { headNode, cells } = submenuLive
-      const { rows, cols } = state.tableHover
-      const existing = headNode.querySelector('output')
-      if (existing && existing.textContent !== `${cols} × ${rows}`) existing.textContent = `${cols} × ${rows}`
-      cells.forEach((cell) => cell.node.classList.toggle('is-preview', cell.rows <= rows && cell.cols <= cols))
-    }
+
   }
 
   function setColumnsHover(value) {
@@ -424,24 +416,20 @@ export function createCommandMenu(options = {}) {
     syncSubmenuLive()
   }
 
-  function setTableHover(value) {
-    if (state.tableHover.rows === value.rows && state.tableHover.cols === value.cols) return
-    state.tableHover = value
-    syncSubmenuLive()
-  }
 
   /**
    * 展开子菜单：建内容 → 入 DOM → **同步**量位置。
    *
-   * 位置算式与 SFC 逐项对齐（`gap 5` / `margin 8` / 宽 250(模板) 或 190 / 估算高度
+   * 位置算式与 SFC 逐项对齐（`gap 5` / `margin 8` / 宽 358(模板) 或 190 / 估算高度
    * 决定上下翻转），断言在量 `left` 与 `width`，改了就会红。
    */
   function openSubmenu(item, triggerNode) {
     if (!item || !item.submenu) return
+    if (state.submenuOpen === item.submenu && submenuTrigger === triggerNode) return
     state.submenuOpen = item.submenu
     state.submenuType = item.submenuType || 'commands'
     if (state.submenuType === 'columns') state.columnsHover = null
-    if (state.submenuType === 'table') state.tableHover = { rows: 3, cols: 3 }
+    if (state.submenuType === 'table') state.tableHover = null
     submenuTrigger = triggerNode || null
 
     submenuEl = document.createElement('div')
@@ -466,15 +454,13 @@ export function createCommandMenu(options = {}) {
     if (!submenuEl || !submenuTrigger) return
     const triggerRect = submenuTrigger.getBoundingClientRect()
     if (!triggerRect || (!triggerRect.width && !triggerRect.height)) return
-    const width = state.submenuType === 'templates' ? 250 : 190
+    const width = state.submenuType === 'table' ? 314 : state.submenuType === 'templates' ? Math.min(358, window.innerWidth - 16) : state.submenuType === 'columns' ? 196 : 190
     const options = state.items.filter((item) => item.submenu === state.submenuOpen)
     const estimatedHeight = state.submenuType === 'templates'
-      ? Math.min(420, 42 + Math.max(1, state.templates.length) * 40)
-      : state.submenuType === 'columns'
+      ? 5 + (Math.max(1, state.templates.length) + 1) * 32
+      : state.submenuType === 'table' ? 348 : state.submenuType === 'columns'
         ? 166
-        : state.submenuType === 'table'
-          ? 304
-          : state.submenuType === 'diagram'
+        : state.submenuType === 'diagram'
             ? Math.min(420, 42 + Math.max(1, state.diagramTypes.length) * 40)
             : Math.min(420, 42 + options.length * 40)
     const right = triggerRect.right + SUBMENU_GAP
@@ -484,7 +470,7 @@ export function createCommandMenu(options = {}) {
     applyStyle(submenuEl, {
       left: `${Math.round(leftPosition)}px`,
       top: `${Math.round(top)}px`,
-      ...(state.submenuType === 'templates' ? { width: `${width}px` } : {}),
+      ...(state.submenuType === 'templates' ? { width: `${width}px`, height: `${estimatedHeight}px`, maxHeight: `${Math.max(40, window.innerHeight - 16)}px` } : {}),
     })
   }
 
@@ -507,7 +493,7 @@ export function createCommandMenu(options = {}) {
     applyStyle(el, state.positionStyle)
 
     const sections = state.items.length ? sectionList() : []
-    const slots = [{ node: head, on: true }]
+    const slots = [{ node: head, on: state.kind !== 'slash' }]
     slots.push({ node: emptyEl, on: !state.items.length })
     sections.forEach((node) => slots.push({ node, on: true }))
     if (submenuEl) slots.push({ node: submenuEl, on: true })
@@ -518,7 +504,7 @@ export function createCommandMenu(options = {}) {
     if (input.value !== state.query) input.value = state.query
     sections.forEach((section) => {
       Array.prototype.forEach.call(section.querySelectorAll('button[data-command-id]'), (node) => {
-        const entry = entries.get(node.dataset.commandId)
+        const entry = entries.get(node.dataset.entryKey)
         if (entry) syncEntry(entry, entry.item)
       })
     })
@@ -557,7 +543,7 @@ export function createCommandMenu(options = {}) {
     const item = state.items.find((entry) => entry.id === state.activeId) || state.items[0]
     if (!item) return
     if (item.submenu && (state.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType))) {
-      openSubmenu(item, entries.has(item.id) ? entries.get(item.id).node : null)
+      openSubmenu(item, entries.get(`${item.category}:${item.id}`)?.node || null)
       return
     }
     call('onChoose', item)
@@ -596,6 +582,7 @@ export function createCommandMenu(options = {}) {
       sectionNodes.clear()
       closeSubmenu()
     }
+    if (state.submenuOpen && !state.items.some(item => item.submenu === state.submenuOpen && item.submenuType === state.submenuType && !isSkip(item))) closeSubmenu()
     mount()
     renderRoot()
   }

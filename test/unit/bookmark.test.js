@@ -405,6 +405,15 @@ describe('createUnfurlProvider：第 6 个可选 provider', () => {
     await provider.unfurl(SAMPLE)
     expect(spy).toHaveBeenCalledTimes(2)
   })
+
+  it('does not retain failed or timed-out metadata as a successful cache entry', async () => {
+    const fetch = vi.fn().mockRejectedValueOnce(new Error('temporary')).mockResolvedValue({ title: 'Recovered' })
+    const provider = createUnfurlProvider(fetch)
+    expect((await provider.unfurl(SAMPLE)).ok).toBe(false)
+    expect(provider.size()).toBe(0)
+    expect(await provider.unfurl(SAMPLE)).toMatchObject({ ok: true, title: 'Recovered' })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
 })
 
 /* ------------------------------------------------------------------ NodeView */

@@ -15,10 +15,8 @@
  *      打印分页是 print.css 的事，不在这里重复。
  *   2. **不猜字体**：只用 `DOCX_FONT_*` 里写死的两个字体族（正文、等宽），不读用户主题、
  *      不做系统字体探测 —— 探测结果在不同机器上不一致，同一份文档导出两份排版不同更难查。
- *   3. **不支持的块不静默降级成段落**：fileBlock / webEmbed / cardEmbed / bookmark /
- *      calendar_event / isv / sheet / poll / bitable / unknownBlock / blockMath 一律跳过
- *      （与 markdown.js 的 `BLOCK_SKIP` 保持一致），宁可少一段，也不产出「看着是正文、
- *      其实丢了结构」的内容。
+ *   3. **语义回退不冒充原块布局**：已实现卡片、容器、公式复用 Markdown 的可读回退，
+ *      未知块仍按 BLOCK_SKIP 兼容策略处理。
  *   4. **不做网络请求**：图片**只接受调用方给的字节**（`options.images`）。身为纯工具层，
  *      这里不 fetch、不读 canvas；取字节（含跨域兜底与失败占位）由 index.js 负责。
  *   5. **不做文件名 / 落盘**：只产出 Document 实例与 Blob，命名与下载在 index.js。
@@ -29,9 +27,12 @@
 import {
   AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, ImageRun,
   LevelFormat, Packer, Paragraph, Shading, Table, TableCell, TableRow,
-  TextRun, VerticalAlign, WidthType,
+  TextRun, VerticalAlign, WidthType, CommentRangeStart, CommentRangeEnd, CommentReference,
 } from 'docx'
-import { MD_HEADING_MAX, MD_HEADING_MIN } from './markdown.js'
+import { MD_HEADING_MAX, MD_HEADING_MIN, BLOCK_SKIP, INLINE_FALLBACK, normalizeExportDocument } from './markdown.js'
+import { mentionPlainText } from '../../core/blocks/mention'
+import { normalizeThread } from '../../core/comments/thread'
+import { isImageDimension, normalizeImageCrop } from '../../core/media/image-crop'
 
 /** 正文字号（half-points）：21 = 10.5pt。 */
 export const DOCX_BODY_SIZE = 21
@@ -76,10 +77,7 @@ export const DOCX_LEVEL_FORMATS = Object.freeze({
 })
 
 /** 与 markdown.js 的 `BLOCK_SKIP` 保持一致：不支持的块直接跳过（负结论 3）。 */
-export const DOCX_BLOCK_SKIP = Object.freeze([
-  'fileBlock', 'webEmbed', 'cardEmbed', 'bookmark', 'calendar_event',
-  'isv', 'sheet', 'poll', 'bitable', 'unknownBlock', 'blockMath',
-])
+export const DOCX_BLOCK_SKIP = BLOCK_SKIP
 
 // —— 小工具（风格照 core/blocks/revision.js：Object.freeze 常量 + for 循环）——
 
@@ -201,17 +199,45 @@ function runFromText(node, inlineOptions) {
  * 跳过 —— 见负结论 4，这里不发请求。宽高缺省用 320×180，避免图片节点没写 attrs 时
  * ImageRun 因缺 transformation 报错。
  */
+function imageSize(data) {
+  const bytes = data instanceof Uint8Array ? data : data instanceof ArrayBuffer ? new Uint8Array(data) : null
+  if (!bytes) return null
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (bytes.length >= 24 && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71) return [view.getUint32(16), view.getUint32(20)]
+  if (bytes.length >= 10 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70) return [view.getUint16(6, true), view.getUint16(8, true)]
+  if (bytes.length >= 26 && bytes[0] === 66 && bytes[1] === 77) return [Math.abs(view.getInt32(18, true)), Math.abs(view.getInt32(22, true))]
+  if (bytes[0] === 255 && bytes[1] === 216) {
+    let offset = 2
+    while (offset + 3 < bytes.length && bytes[offset] === 255) {
+      const marker = bytes[offset + 1]
+      if (marker === 255) { offset += 1; continue }
+      if (marker === 217 || marker === 218) break
+      const length = view.getUint16(offset + 2)
+      if (length < 2 || offset + length + 2 > bytes.length) break
+      if ([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(marker) && length >= 7) return [view.getUint16(offset + 7), view.getUint16(offset + 5)]
+      offset += length + 2
+    }
+  }
+  return null
+}
+
 function runFromImage(node, images) {
   const src = String(attrOf(node, 'src', ''))
   const data = src ? images[src] : null
+  // The public collector clears crop only after producing cropped bytes. Never embed hidden pixels.
   if (!data) return null
+  if (normalizeImageCrop(node.attrs?.crop)) throw new Error('裁剪图片尚未安全处理，请使用 exportDocx 收集图片后导出')
+  const measured = imageSize(data)
+  const naturalWidth = Number(attrOf(node, 'naturalWidth', measured?.[0]))
+  const naturalHeight = Number(attrOf(node, 'naturalHeight', measured?.[1]))
+  const width = Number(attrOf(node, 'width', 320)) || 320
+  const knownRatio = isImageDimension(naturalWidth) && isImageDimension(naturalHeight)
+  if (Number(node.attrs?.width) > 0 && !(Number(node.attrs?.height) > 0) && !knownRatio) throw new Error('无法确定图片原始比例，请等待图片加载完成后导出')
+  const height = Number(attrOf(node, 'height', knownRatio ? width * naturalHeight / naturalWidth : 180)) || 180
   return new ImageRun({
-    type: 'png',
     data,
-    transformation: {
-      width: Number(attrOf(node, 'width', 320)) || 320,
-      height: Number(attrOf(node, 'height', 180)) || 180,
-    },
+    transformation: { width, height },
+    altText: { title: String(node.attrs?.alt || node.attrs?.caption || '图片'), description: String(node.attrs?.caption || node.attrs?.alt || ''), name: '文档图片' },
   })
 }
 
@@ -230,7 +256,9 @@ export function buildInlineRuns(children, images, inlineOptions) {
     pendingHref = ''
   }
   for (let i = 0; i < children.length; i += 1) {
-    const node = children[i]
+    const source = children[i]
+    const fallback = source.type === 'mention' ? mentionPlainText({ type: { name: 'mention' }, attrs: source.attrs }) : INLINE_FALLBACK[source.type]?.(source)
+    const node = fallback == null ? source : { ...source, type: 'text', text: fallback }
     if (node.type === 'hardBreak') {
       flushLink()
       runs.push(new TextRun({ break: 1, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE }))
@@ -428,6 +456,10 @@ function buildBlock(node, images, depth, extra) {
   switch (node.type) {
     case 'paragraph':
       return [buildParagraph(node, images, extra)]
+    case 'image': {
+      const image = runFromImage(node, images)
+      return image ? [new Paragraph({ ...paragraphOptions(extra), children: [image] })] : []
+    }
     case 'heading':
       return [buildHeading(node, images, extra)]
     case 'blockquote':
@@ -503,11 +535,34 @@ export function buildNumberingConfig() {
 export function buildDocxDocument(docOrNodes, options) {
   const settings = options || {}
   const images = settings.images || {}
-  const nodes = Array.isArray(docOrNodes) ? docOrNodes : childrenOf(docOrNodes)
-  const children = buildDocxElements(nodes, images, 0)
+  const flat = normalizeExportDocument(docOrNodes)
+  const children = buildDocxElements(flat.content, images, 0)
+  const comments = (Array.isArray(settings.comments) ? settings.comments : []).map(normalizeThread).filter(Boolean)
+  const dateOf = timestamp => timestamp > 0 && Number.isFinite(new Date(timestamp).getTime()) ? new Date(timestamp) : null
+  const nativeComments = []
+  if (comments.length) {
+    children.push(new Paragraph({ text: '评论', heading: HeadingLevel.HEADING_1 }))
+    comments.forEach((thread, id) => {
+      const author = thread.author.name || thread.author.id || '匿名'
+      const replies = thread.replies.map(reply => {
+        const time = dateOf(reply.createdAt) ? ` (${dateOf(reply.createdAt).toISOString()})` : ''
+        const attachments = (reply.attachments || []).map(item => `附件：${item.name || '图片'} ${/^data:/i.test(item.url) ? '[内嵌图片]' : item.url}`).join('\n')
+        return `${reply.author.name || reply.author.id || '匿名'}${time}：${reply.content}${attachments ? `\n${attachments}` : ''}`
+      })
+      const quote = thread.quote || '[块级评论]'
+      const lines = [`引用：${quote}`, `状态：${thread.resolved ? '已解决' : '未解决'}`, ...replies]
+      nativeComments.push({ id, author, ...(dateOf(thread.createdAt) ? { date: dateOf(thread.createdAt) } : {}),
+        children: lines.map(text => new Paragraph({ children: [new TextRun(text)] })),
+      })
+      // This is an honest appendix reference, not a fabricated character range in the document.
+      children.push(new Paragraph({ children: [new CommentRangeStart(id), new TextRun(`${id + 1}. ${quote}`), new CommentRangeEnd(id), new TextRun({ children: [new CommentReference(id)] })] }))
+      children.push(...replies.map(text => new Paragraph({ children: [new TextRun(text)] })))
+    })
+  }
   return new Document({
     title: String(settings.title || ''),
     numbering: buildNumberingConfig(),
+    ...(nativeComments.length ? { comments: { children: nativeComments } } : {}),
     sections: [{
       children: children.length ? children : [new Paragraph(buildEmptyOptions())],
     }],

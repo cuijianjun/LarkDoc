@@ -1,11 +1,11 @@
 /**
- * toolbarMenusMixin — 顶部工具栏下拉：标题级别菜单、链接对话框、公式对话框。
+ * toolbarMenusMixin — 顶部工具栏下拉：标题级别菜单、链接表单与公式插入。
  * 通过 this.editor、this.writable()、this.rememberSelection()/this.restoreSelection()/this.run()
- * （主组件方法）协作；commandMenuMixin 的 executeCommand 会打开这里的 mathDialog/linkDialog。
+ * （主组件方法）协作；commandMenuMixin 的 executeCommand 复用这里的插入方法。
  * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
-import { safeUrl } from '../documentOperations'
-import { loadKatex } from '../../../core/blocks/math'
+import { normalizeLinkUrl } from '../../../core/documentOperations'
+import { openMathAt } from '../../../core/nodeviews/math'
 import { EMBED_MENU_ITEMS, EMBED_HELP_URL } from '../../../core/embed/presets'
 import { readHost, resolveEmbed } from '../../../core/embed/resolve'
 import {
@@ -19,11 +19,11 @@ export default {
     headingOpen: false, headingStyle: {},
     // 顶栏隐藏时（layout.headerVisible=false），工具栏「⋯」下拉承接 header-actions 插槽。
     headerMenuOpen: false, headerMenuStyle: {},
-    linkDialog: false, linkValue: '', linkText: '', linkInsertMode: false,
+    linkDialog: false, linkValue: '', linkText: '', linkInsertMode: false, linkEditing: false, linkDialogAnchor: null,
     // P3-07：内嵌网页「粘贴链接」浮层。embedDialog 存的是**菜单项 id**（null = 关闭），
     // 文案与 placeholder 由 EMBED_MENU_ITEMS 现查，不另存一份字符串（否则 15 份文案会漂移）。
     embedDialog: null, embedValue: '', embedDialogRejected: false, embedDialogPos: { left: '0px', top: '0px' },
-    mathDialog: '', mathValue: '', mathError: '', marks,
+    marks,
     // 下拉选项清单与最近一次应用的值，供原生 UI renderer 展示。
     fontFamilyOptions, fontSizeOptions, lineHeightOptions, widthModeOptions,
     cellTextAlignOptions, cellVerticalAlignOptions,
@@ -143,43 +143,54 @@ export default {
       const right = Math.max(margin, window.innerWidth - triggerRect.right)
       this.headerMenuStyle = { top: `${triggerRect.bottom + 6}px`, right: `${right}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
     },
-    openLinkDialog(allowEmpty = false) {
-      if (!this.writable() || (!allowEmpty && this.editor.state.selection.empty)) return
-      this.rememberSelection(allowEmpty)
-      this.linkInsertMode = this.editor.state.selection.empty
-      this.linkText = ''
-      this.linkValue = this.editor.getAttributes('link').href || ''
+    openLinkDialog(allowEmpty = true) {
+      if (!this.writable() || !this.featureEnabled('marks') || (!allowEmpty && this.editor.state.selection.empty)) return
+      if (this.linkCommandEnabled?.() === false) return
+      this._linkDialogTarget = null
+      this.linkEditing = false
+      const { from, to } = this.editor.state.selection
+      const selected = this.editor.state.selection.node
+      const dom = selected && ['bookmark', 'linkEmbed'].includes(selected.type.name)
+        ? this.editor.view.nodeDOM(from) : this.editor.view.domAtPos(from).node
+      const element = dom.nodeType === 1 ? dom : dom.parentElement
+      const target = this.linkTargetAt?.(element)
+      if (target) { this._linkTarget = target; this.editHoveredLink(); return }
+      this.rememberSelection(true)
+      this._linkInsertDoc = this.editor.state.doc
+      this.linkInsertMode = true
+      this.linkText = this.editor.state.doc.textBetween(from, to, ' ')
+      this.linkValue = ''
+      try {
+        const { left, right, top, bottom } = this.editor.view.coordsAtPos(from)
+        this.linkDialogAnchor = { left, right, top, bottom }
+      } catch (_) { this.linkDialogAnchor = null }
       this.linkDialog = true
     },
     applyLink() {
-      if (!this.writable() || !this.linkValue || !safeUrl(this.linkValue)) { this.error = '链接地址无效，仅支持 http、https、mailto、tel 或 # 锚点'; return }
-      const attrs = { href: this.linkValue, target: '_blank', rel: 'noopener noreferrer' }
+      if (this.linkCommandEnabled?.() === false) return false
+      if (this._linkDialogTarget) return this.updateHoveredLink()
+      const href = normalizeLinkUrl(this.linkValue)
+      if (!this.writable() || !href) { this.error = '链接地址无效，仅支持 http、https、mailto、tel 或 # 锚点'; return }
+      const attrs = { href, target: '_blank', rel: 'noopener noreferrer' }
       if (this.linkInsertMode) {
-        if (!this.linkText.trim()) { this.error = '请输入链接显示文字'; return }
+        const text = this.linkText.trim() ? this.linkText : href
+        if (this._linkInsertDoc && this._linkInsertDoc !== this.editor.state.doc) { this.error = '正文已变化，请重新插入链接'; return }
         this.restoreSelection(true)
-        this.editor.chain().focus().insertContent({ type: 'text', text: this.linkText.trim(), marks: [{ type: 'link', attrs }] }).run()
+        const { from, to, empty } = this.editor.state.selection
+        if (!empty && this.editor.state.doc.textBetween(from, to, ' ') === text) this.editor.chain().focus().setLink(attrs).run()
+        else this.editor.chain().focus().insertContent({ type: 'text', text, marks: [{ type: 'link', attrs }] }).run()
       } else this.run('setLink', attrs)
       this.linkDialog = false
       this.linkInsertMode = false
       this.linkText = ''
     },
-    removeLink() { if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
-    async insertMath() {
-      if (!this.writable() || !this.featureEnabled('math')) return
-      try {
-        // 阶段 4：复用 core/blocks/math.js 的 loadKatex（含特性注册通道），不再
-        // 自开一条 import('katex') 接缝 —— 两处各写一条会让 lite 的 stub / 特性包
-        // 注册只覆盖其一。
-        const katex = await loadKatex()
-        if (!this.writable() || !this.mathDialog) return
-        katex.renderToString(this.mathValue, { throwOnError: true, trust: false })
-        this.mathError = ''
-        this.run('insertContent', { type: this.mathDialog, attrs: { latex: this.mathValue } })
-        this.mathDialog = ''
-      } catch (_) { this.mathError = '公式无法解析，请检查 LaTeX 语法' }
+    removeLink() { if (this._linkDialogTarget) return this.removeHoveredLink(this._linkDialogTarget); if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
+    insertMathAtSelection() {
+      if (!this.writable() || !this.featureEnabled('math')) return false
+      this.restoreSelection()
+      if (!this.editor.commands.insertContent({ type: 'inlineMath', attrs: { latex: '' } })) return false
+      return openMathAt(this.editor, this.editor.state.selection.from - 1)
     },
-    // P0-03：弹窗输入框的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
-    setMathValue(value) { this.mathValue = value },
     setLinkText(value) { this.linkText = value },
     setLinkValue(value) { this.linkValue = value },
 

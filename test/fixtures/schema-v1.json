@@ -2,6 +2,41 @@
   "$comment": "P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。\n   盲区声明（比对的是结构契约，不是行为契约）：① parseHTML / renderHTML / addNodeView /\n   parse LaTeX 等函数行为不进快照——两份 schema 即使 JSON 相同，函数仍可能不同；\n   ② attrs default 为函数或不可 JSON 化的值时，这里只落 `<type>` 占位符；\n   ③ marks 谓词只存名字数组，谓词语义不校验。若 Task 4 需要比对这些，另行加行为级用例。",
   "topNode": "doc",
   "nodes": {
+    "agenda": {
+      "content": "agendaItem*",
+      "group": "block",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "agendaContent": {
+      "content": "block+",
+      "defining": true,
+      "isolating": true,
+      "attrs": {}
+    },
+    "agendaItem": {
+      "content": "agendaTitle agendaContent",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "durationMinutes": {
+          "default": 20
+        },
+        "itemId": {
+          "default": null
+        }
+      }
+    },
+    "agendaTitle": {
+      "content": "inline*",
+      "defining": true,
+      "attrs": {}
+    },
     "bitable": {
       "group": "block",
       "atom": true,
@@ -46,10 +81,19 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "cover": {
+          "default": null
+        },
         "desc": {
           "default": null
         },
         "favicon": {
+          "default": null
+        },
+        "linkTitle": {
           "default": null
         },
         "recordId": {
@@ -148,16 +192,28 @@
       "group": "block",
       "code": true,
       "defining": true,
-      "marks": "",
+      "marks": "revision",
       "attrs": {
         "blockId": {
           "default": null
+        },
+        "caption": {
+          "default": ""
+        },
+        "deletionAuthor": {
+          "default": ""
+        },
+        "deletionRevisionId": {
+          "default": ""
         },
         "indent": {
           "default": 0
         },
         "language": {
           "default": "plaintext"
+        },
+        "wrap": {
+          "default": false
         }
       }
     },
@@ -171,7 +227,7 @@
       }
     },
     "columns": {
-      "content": "column{2,5}",
+      "content": "column{2,}",
       "group": "block",
       "defining": true,
       "isolating": true,
@@ -325,7 +381,16 @@
         "caption": {
           "default": ""
         },
+        "crop": {
+          "default": null
+        },
         "height": {
+          "default": null
+        },
+        "naturalHeight": {
+          "default": null
+        },
+        "naturalWidth": {
           "default": null
         },
         "originalAttchId": {
@@ -390,6 +455,34 @@
           "default": "catalog"
         },
         "linkUrl": {
+          "default": null
+        }
+      }
+    },
+    "linkEmbed": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "cardMeta": {
+          "default": null
+        },
+        "height": {
+          "default": null
+        },
+        "href": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "view": {
+          "default": "card"
+        },
+        "width": {
           "default": null
         }
       }
@@ -479,6 +572,21 @@
         },
         "poll": {
           "default": null
+        }
+      }
+    },
+    "revisionBoundary": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": false,
+      "marks": "",
+      "attrs": {
+        "author": {
+          "default": ""
+        },
+        "revisionId": {
+          "default": ""
         }
       }
     },
@@ -669,6 +777,15 @@
         "href": {
           "default": null
         },
+        "linkCardMeta": {
+          "default": null
+        },
+        "linkTitle": {
+          "default": null
+        },
+        "linkView": {
+          "default": "title"
+        },
         "rel": {
           "default": "noopener noreferrer"
         },
@@ -682,8 +799,14 @@
     },
     "reminder": {
       "attrs": {
+        "hasTime": {
+          "default": true
+        },
         "notify": {
           "default": true
+        },
+        "notifyOffset": {
+          "default": 0
         },
         "remindAt": {
           "default": ""

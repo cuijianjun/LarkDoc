@@ -111,6 +111,9 @@ bash scripts/pack-docs.sh --base / --skip-install --out /tmp/larkdoc-docs
 
 ### 未发布
 
+- **大文档与图片交互增量**：大文档接入 128 顶层块一段的段级模型，使用 typed-array Blob Worker 计算段范围和高度，Worker 失败回退同步计算；保留完整 ProseMirror DOM 与选区映射，根节点只保留段元数据，不改写子节点。30M 本地压测在当前稳定 CSS 基线上为 31,891,759 bytes、52,144 blocks、408 段、mount 7.79s、input 1.45s、程序化滚动 6 FPS、toolbar 1.23s、pageErrors 0；仍低于飞书级 60 FPS，不能视为性能完全对齐。固定 intrinsic CSS 尝试曾回退到 4 FPS，已撤回。
+- **图片/表格对齐**：图片四角缩放圆圈默认隐藏，仅图片块 hover 时显示四颗，工具条继续按 hover 挂载和离开延时卸载；块句柄使用六点 SVG，表格六点句柄与 cell-plus 并存，表格工具图标统一使用 SVG。增量单测 151/151，图片浏览器验证含默认 0 / hover 4；块句柄 37/37、表格工具 137 项通过。全量测试、发布前门禁、npm、GitHub Pages 和线上文档尚未由本条记录确认。
+
 - **新增配置**：`config.modes.visible`（构造参数顶层别名 `modes.visible`）默认 `true`，不传保持原有行为；设为 `false` 时仅摘除顶栏「编辑 / 修订 / 阅读」按钮及下拉，关闭已开菜单、不留占位，保留标题与宿主操作。沿模式归一化 → 顶栏 view state → 原生 topBar 接线，不改变当前模式、编辑权限、持久化、快捷键或 `toolbar.viewModes` 阅读入口；已有 `allow` / `labels` 继续裁剪下拉与覆盖文案。
 - **范围与验证**：同步现有配置参考与视图模式示例；2026-11-07 使用 Node 22.22.2 定向运行 `mode-switch.test.js`、`dom-renderer-contract.test.js` 及配置回归 `workspace-view-state.test.js`、`help-config.test.js`，4 文件 / 142 项全部通过。覆盖默认可见、仅显式 `false` 隐藏、归一化、`allow` 裁剪/`labels` 文案、显隐恢复、菜单关闭，以及模式/只读权限/正文/编辑器身份保持；4 个变更源码文件 ESLint 与 `git diff --check` 通过，无需修复。测试依赖输出 `punycode` 弃用警告；未运行全量测试、构建或浏览器，视觉及文档构建尚未验证。未改图表逻辑，本次仅提交源码、测试与文档，不发布 npm、不重新打包或部署。
 - **修复**：Mermaid 渲染失败后清理本次临时 SVG，覆盖视图销毁后的迟到失败，保留原错误信息和单次回调，不误删其他图表。提交 `ebce8ab31959bf19f4fc35f7264b0f6af4251977`，仅本地 master，尚未推送、发布或部署。

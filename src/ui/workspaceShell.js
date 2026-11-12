@@ -5,6 +5,8 @@
  * renderer 挂载。这里不依赖 Vue，也不绑定任何业务事件，方便 DOM renderer
  * 与后续其他宿主复用同一份结构契约。
  */
+import { IMAGE_MIME_ALLOWLIST } from '../core/media/image-insert'
+
 function append(parent, ...children) {
   children.forEach(child => parent.appendChild(child))
   return parent
@@ -81,7 +83,8 @@ export function createWorkspaceShell(ownerDocument = document) {
   const colorPaletteHost = ownerDocument.createElement('div')
   const imageInput = ownerDocument.createElement('input')
   imageInput.type = 'file'
-  imageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'
+  imageInput.accept = IMAGE_MIME_ALLOWLIST.join(',')
+  imageInput.multiple = true
   imageInput.className = 'lark-doc-file-input'
   imageInput.setAttribute('aria-label', '选择本地图片')
   const fileInput = ownerDocument.createElement('input')

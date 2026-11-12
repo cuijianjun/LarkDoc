@@ -31,7 +31,7 @@ HTML 使用普通 script 引入：
 <script src="./vendor/lark-doc-element.umd.min.js"></script>
 ```
 
-这个 UMD 入口提供 `window.LarkDoc` 命名空间并自动注入样式，构造器是其中的 `LarkDoc`。先准备容器，再创建实例；无需另加 CSS。
+这个 UMD 主入口会从同目录加载 runtime；runtime 提供 `window.LarkDoc` 命名空间并自动注入样式，构造器是其中的 `LarkDoc`。先准备容器，再创建实例；无需另加 CSS。请保持主入口和 `lark-doc-element.runtime.umd.min.js` 同目录。
 
 页面离开时调用实例的 `destroy()`，释放编辑器监听和未完成的图片任务。示例设置 `storage: 'none'`，刷新后恢复初始内容。
 
@@ -59,7 +59,7 @@ python3 -m http.server 4176 --directory public
 2. 选一张图片或将图片拖入正文，确认图片显示，页面图片状态最终变为 `success（local）`。
 3. 插入公式或图表，确认字体和配套脚本正常加载，Network 中没有资源 404。
 
-部署时完整上传 `public/`。如果使用自己的 CDN，把 script 地址改为 CDN 上同版本的主 JS 地址，并在该地址的同目录保留整套配套资源；UMD 会相对主脚本定位它们。
+部署时完整上传 `public/`。如果使用自己的 CDN，把 script 地址改为 CDN 上同版本的主 JS 地址，并在该地址的同目录保留 runtime、特性脚本、字体等整套配套资源；UMD 会相对主脚本定位它们。
 
 ## 可选：改为服务器上传
 

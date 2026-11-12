@@ -28,7 +28,7 @@ const fs = require('fs')
 const { chromium } = require('playwright-core')
 
 const BASE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
-const SHOT_DIR = path.join(__dirname, '..', '.verify-shots')
+const SHOT_DIR = process.env.LARK_DOC_EVIDENCE_DIR || path.join(__dirname, '..', '.verify-shots')
 
 function findChromium() {
   const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
@@ -61,7 +61,7 @@ const READ_PAGE = `(() => {
   }
   const root = document.querySelector('.lark-doc')
   return {
-    tdBorder: cs('.ProseMirror td', 'borderTopColor'),
+    tdBorder: cs('.ProseMirror tr:first-child > :first-child', 'borderTopColor'),
     thBg: cs('.ProseMirror th', 'backgroundColor'),
     tdBg: cs('.ProseMirror td', 'backgroundColor'),
     imgFilter: cs('.lark-doc-image-frame img', 'filter'),

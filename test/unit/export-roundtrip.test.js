@@ -44,10 +44,13 @@ import {
   exportMarkdown,
   exportDocx,
   exportPdf,
+  collectImages,
   safeFileName,
   withExtension,
 } from '../../src/utils/export/index.js'
 import exportMixin, { EXPORT_FORMATS, EXPORT_TOAST_TEXT } from '../../src/components/lark-doc/editor/exportMixin.js'
+import { registerFeature } from '../../src/core/features/registry'
+import JSZip from 'jszip'
 
 // —— 造文档的小工具（JSON 直写，不依赖编辑器实例）——
 
@@ -345,9 +348,8 @@ describe('P6b-04 已知取舍：没能严格往返的块', () => {
     expect(serializeMarkdown(doc([table]))).toBe('| 甲<br>乙 |\n| --- |')
   })
 
-  it('[取舍] BLOCK_SKIP 的 11 类块不落任何 Markdown（含 blockMath）', () => {
-    expect(BLOCK_SKIP.length).toBe(11)
-    expect(BLOCK_SKIP).toContain('blockMath')
+  it('[取舍] 只有未知块跳过，已知块使用可读语义回退', () => {
+    expect(BLOCK_SKIP).toEqual(['unknownBlock'])
     const nodes = BLOCK_SKIP.map((type) => ({ type, attrs: {} }))
     const serialized = serializeMarkdown(doc([para(text('前')), ...nodes, para(text('后'))]))
     expect(serialized).toBe('前\n\n后')
@@ -399,6 +401,88 @@ afterAll(() => {
 })
 
 describe('P6b-04 统一出口：文件名与内容范围', () => {
+  it('无fetch与atob的Node环境仍解码内联图片，仅远端图片报告失败', async () => {
+    const previousFetch = globalThis.fetch, previousAtob = globalThis.atob
+    const src = 'data:image/png;base64,AQID'
+    globalThis.fetch = undefined
+    globalThis.atob = undefined
+    try {
+      const result = await collectImages(doc([{ type: 'image', attrs: { src } }, { type: 'image', attrs: { src: 'https://missing.example.test/a.png' } }]))
+      expect(result.images[src]).toEqual(new Uint8Array([1, 2, 3]))
+      expect(result.failed).toEqual(['https://missing.example.test/a.png'])
+    } finally { globalThis.fetch = previousFetch; globalThis.atob = previousAtob }
+  })
+  it.each(['A', 'AA=', 'AAAA=='])('Node Buffer回退拒绝非法base64长度与padding：%s', async value => {
+    const previousAtob = globalThis.atob, src = 'data:image/png;base64,' + value
+    globalThis.atob = undefined
+    try {
+      const result = await collectImages(doc([{ type: 'image', attrs: { src } }]))
+      expect(result.images).toEqual({})
+      expect(result.failed).toEqual([src])
+    } finally { globalThis.atob = previousAtob }
+  })
+  it('真实Word包保留聚合标题下的正文、表格、块图片及人员提及', async () => {
+    const src = 'https://allowed.example.test/pixel.png'
+    const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=', 'base64'))
+    const sample = doc([{ type: 'heading', attrs: { level: 2 }, content: [text('聚合标题')], children: [
+      para(text('标题下的正文'), { type: 'mention', attrs: { kind: 'user', id: 'u1', name: '张三' } }),
+      { type: 'image', attrs: { src, width: 20, height: 20 } },
+      { type: 'table', content: [row(cell('tableCell', '表格内容'))] },
+    ] }])
+    const before = JSON.stringify(sample)
+    const blob = await buildDocx(sample, { title: '结构Word', images: { [src]: png } })
+    const buffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsArrayBuffer(blob)
+    })
+    const zip = await JSZip.loadAsync(new Uint8Array(buffer))
+    const xml = await zip.file('word/document.xml').async('string')
+    expect(xml).toContain('聚合标题')
+    expect(xml).toContain('标题下的正文')
+    expect(xml).toContain('@张三')
+    expect(xml).toContain('表格内容')
+    expect(xml).toContain('<w:tbl>')
+    expect(xml).toContain('<w:drawing>')
+    expect(Object.keys(zip.files).some(name => /^word\/media\/[^/]+\.png$/.test(name))).toBe(true)
+    expect(JSON.stringify(sample)).toBe(before)
+  })
+
+  it('顶层图片和提及在Word构建中都有可见内容', () => {
+    const src = '/image.png'
+    const blocks = buildDocxElements([{ type: 'image', attrs: { src } }], { [src]: new Uint8Array([1, 2, 3]) }, 0)
+    expect(blocks).toHaveLength(1)
+    const mentions = buildDocxElements([para({ type: 'mention', attrs: { kind: 'user', id: 'u1', name: '张三' } })], {}, 0)
+    expect(JSON.stringify(mentions)).toContain('@张三')
+  })
+
+  it.each(['remote', 'inline'])('公开Word入口默认收取聚合标题下的%s图片并真实写入包内', async kind => {
+    const src = kind === 'inline' ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=' : 'https://allowed.example.test/public.png'
+    const sample = doc([{ type: 'heading', attrs: { level: 1 }, content: [text('公开聚合入口')], children: [{ type: 'image', attrs: { src, width: 20, height: 20 } }] }])
+    const previousFetch = globalThis.fetch
+    let requests = 0
+    globalThis.fetch = async requested => {
+      expect(requested).toBe(src)
+      requests += 1
+      return { ok: true, arrayBuffer: async () => Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=', 'base64')).buffer }
+    }
+    try {
+      const result = await exportDocx(sample, { fileName: '聚合图片' })
+      expect(requests).toBe(kind === 'inline' ? 0 : 1)
+      expect(result.failedImages).toEqual([])
+      const buffer = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsArrayBuffer(result.blob)
+      })
+      const zip = await JSZip.loadAsync(new Uint8Array(buffer))
+      expect(await zip.file('word/document.xml').async('string')).toContain('<w:drawing>')
+      expect(Object.keys(zip.files).some(name => /^word\/media\/[^/]+\.png$/.test(name))).toBe(true)
+    } finally { globalThis.fetch = previousFetch }
+  })
+
   it('文件名安全化：非法字符、前导点、连续空白、空标题都兜得住', () => {
     expect(safeFileName('机密/会议:纪要')).toBe('机密-会议-纪要')
     expect(safeFileName('  ..周报  ')).toBe('周报')
@@ -436,6 +520,21 @@ describe('P6b-04 统一出口：文件名与内容范围', () => {
     expect(result.blob.size).toBeGreaterThan(0)
     expect(result.failedImages).toEqual([])
     expect(result.scope).toBe('')
+  })
+
+  it('Word异步打包完成后重新检查下载权限，撤权不触发文件下载', async () => {
+    anchorClickCalls = 0
+    let finish, started, allowed = true
+    const building = new Promise(resolve => { started = resolve })
+    const off = registerFeature('office.buildDocx', () => ({ buildDocx: () => { started(); return new Promise(resolve => { finish = resolve }) } }))
+    try {
+      const pending = exportDocx(doc([para(text('原正文'))]), { images: {}, shouldDownload: () => allowed })
+      await building
+      allowed = false
+      finish(new Blob(['word']))
+      await expect(pending).rejects.toThrow(/导出|下载/)
+      expect(anchorClickCalls).toBe(0)
+    } finally { off() }
   })
 
   it('导出 PDF：拿不到打印根时明确报 no-root，不打空打印', () => {
@@ -547,6 +646,28 @@ function allowedSession() {
 }
 
 describe('P6b-04 exportMixin：canExport 闸门与派发', () => {
+  it.each(['canExport', 'canView', 'session', 'editor', 'destroy'])('Word打包期间%s变化不会下载旧文档', async action => {
+    anchorClickCalls = 0
+    let finish, started, allowed = true
+    const building = new Promise(resolve => { started = resolve })
+    const off = registerFeature('office.buildDocx', () => ({ buildDocx: () => { started(); return new Promise(resolve => { finish = resolve }) } }))
+    const session = { can: permission => permission !== action || allowed }
+    const host = createHost({ session, title: 'Word撤权核验', editor: { getJSON: () => doc([para(text('原文'))]) } })
+    try {
+      host.openExportDialog('word')
+      const pending = host.submitExport()
+      await building
+      if (action === 'canExport' || action === 'canView') allowed = false
+      if (action === 'session') host.session = allowedSession()
+      if (action === 'editor') host.editor = { getJSON: () => doc([para(text('新文档'))]) }
+      if (action === 'destroy') exportMixin.beforeDestroy.call(host)
+      finish(new Blob(['word']))
+      await pending.catch(() => {})
+      expect(anchorClickCalls).toBe(0)
+      expect(host.exportBusy).toBe(false)
+      expect(host.exportToast).toBe('')
+    } finally { off() }
+  })
   it('三档顺序是 Word / PDF / Markdown，默认值不是「全量」', () => {
     expect(EXPORT_FORMATS.map((format) => format.id)).toEqual(['word', 'pdf', 'markdown'])
     for (let i = 0; i < EXPORT_FORMATS.length; i += 1) {
@@ -691,7 +812,7 @@ describe('P6b-04 exportMixin：canExport 闸门与派发', () => {
     const root = window.document.createElement('div')
     root.innerHTML = '<p>正文</p>'
     window.document.body.appendChild(root)
-    const host = createHost({ session: allowedSession(), title: '文档', $refs: { root } })
+    const host = createHost({ session: allowedSession(), title: '文档', $refs: { root }, editor: { getJSON: () => doc([para(text('正文'))]) } })
     host.openExportDialog('pdf')
     await host.submitExport()
     // 打印框还没关，提示条必须在。
@@ -714,5 +835,47 @@ describe('P6b-04 exportMixin：canExport 闸门与派发', () => {
     const host = createHost({ localTitle: '机密/会议:纪要' })
     expect(host.exportFileBaseName).toBe('机密-会议-纪要')
     expect(createHost({}).exportFileBaseName).toBe('document')
+  })
+})
+
+
+describe('最终补全：真实评论导出与裁剪隐私', () => {
+  const comments = [{ id: 'thread-export', blockId: 'body', quote: '被引用正文', resolved: false,
+    author: { id: 'author', name: '评论作者' }, createdAt: 1700000000000,
+    replies: [{ id: 'reply-export', author: { id: 'author', name: '评论作者' }, content: '完整评论回复', createdAt: 1700000000000 }] }]
+  async function zipOf(blob) {
+    const buffer = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsArrayBuffer(blob) })
+    return JSZip.loadAsync(new Uint8Array(buffer))
+  }
+  it('Word包含实际原生评论记录与诚实的附录引用，不只回传scope', async () => {
+    const zip = await zipOf(await buildDocx(doc([para(text('原文保持完整'))]), { comments }))
+    const xml = await zip.file('word/comments.xml').async('string')
+    const body = await zip.file('word/document.xml').async('string')
+    expect(xml).toContain('完整评论回复')
+    expect(xml).toContain('评论作者')
+    expect(xml).toContain('被引用正文')
+    expect(body).toContain('commentRangeStart')
+    expect(body).toContain('commentReference')
+    expect(body).toContain('原文保持完整')
+  })
+  it('选择正文与评论但未实际提供评论时拒绝伪成功', async () => {
+    await expect(exportDocx(doc([para(text('原文'))]), { scope: 'withComments', shouldDownload: () => false })).rejects.toThrow('评论')
+  })
+  it('Markdown裁剪图不泄漏包含隐藏区域的原图URL', () => {
+    const image = { type: 'image', attrs: { src: 'https://private.example/hidden-original.png', alt: '可见裁剪图', crop: [.25, .25, .75, .75] } }
+    const result = serializeMarkdown(doc([image]))
+    expect(result).not.toContain('hidden-original.png')
+    expect(result).toContain('可见裁剪图')
+  })
+  it('复杂块按可读语义保留且不将运行代码带入Markdown', () => {
+    const result = serializeMarkdown(doc([
+      { type: 'linkEmbed', attrs: { href: 'https://example.test', title: '网页标题', view: 'card' } },
+      para({ type: 'inlineMath', attrs: { latex: 'x^2+1' } }),
+      { type: 'fileBlock', attrs: { name: '合同.pdf', src: 'https://example.test/a.pdf' } },
+    ]))
+    expect(result).toContain('网页标题')
+    expect(result).toContain('https://example.test')
+    expect(result).toContain('x^2+1')
+    expect(result).not.toContain('<iframe')
   })
 })

@@ -89,9 +89,10 @@ export default {
       this.clearBlockMenuCloseTimer()
       this.handleRange = range
       if (this.handleHovering || this.handlePressed || this.dragging || this.blockMenuOpen) this.setHandleHighlight(true)
+      const tableAnchor = dom.closest?.('.tableWrapper') || dom.closest?.('table')
       const shell = this.blockShellElement(dom)
       const callout = dom.closest?.('[data-type="callout"]')
-      const anchor = shell instanceof Element ? shell : callout instanceof Element ? callout : dom
+      const anchor = tableAnchor instanceof Element ? tableAnchor : shell instanceof Element ? shell : callout instanceof Element ? callout : dom
       const domRect = anchor.getBoundingClientRect()
       const paperRect = paper.getBoundingClientRect()
       const isCallout = anchor.matches?.('[data-type="callout"]')
@@ -108,7 +109,9 @@ export default {
       const firstLineAnchor = isCodeBlock ? anchor.querySelector?.('.lark-doc-code-toolbar') || anchor : anchor
       const firstLineBounds = this.firstLineInkBounds(firstLineAnchor) || this.firstTextLineBounds(firstLineAnchor) || textBounds
       // 标题的折叠箭头会随文字对齐方式移动；以箭头实际位置为锚点，保持句柄与箭头固定间距。
-      const handleLeft = foldRect
+      const handleLeft = tableAnchor instanceof Element
+        ? domRect.left - paperRect.left - handleWidth - 12
+        : foldRect
         ? foldRect.left - paperRect.left - handleWidth - 10
         : isCallout
           ? domRect.left - paperRect.left - handleWidth - 12

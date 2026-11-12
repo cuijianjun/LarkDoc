@@ -64,7 +64,8 @@ function ancestorsOf(root) {
  * 而 root 在 DOM 里的深度不固定。这里只打标记，真正的隐藏交给 print.css。
  */
 function markOutsideNodes(root) {
-  if (typeof document === 'undefined' || !document.body) return []
+  const document = root.ownerDocument
+  if (!document?.body) return []
   const chain = ancestorsOf(root)
   const marked = []
   const kids = document.body.children
@@ -104,6 +105,39 @@ function removeClasses(nodes, className) {
   for (let i = 0; i < nodes.length; i += 1) nodes[i].classList.remove(className)
 }
 
+function commentsAppendix(root, comments) {
+  if (!comments?.length) return null
+  // Never append into ProseMirror's managed document; this is temporary print chrome.
+  const paper = root.querySelector('.lark-doc-paper') || root
+  if (paper.matches('.ProseMirror') || paper.closest('.ProseMirror')) throw new Error('请从文档根节点打印评论')
+  const document = root.ownerDocument
+  const section = document.createElement('section')
+  section.setAttribute('data-lark-doc-export-comments', '')
+  section.style.breakBefore = 'page'
+  section.style.whiteSpace = 'pre-wrap'
+  const heading = document.createElement('h1')
+  heading.textContent = '评论'
+  section.appendChild(heading)
+  comments.forEach((thread, index) => {
+    const article = document.createElement('article')
+    const title = document.createElement('h2')
+    title.textContent = `${index + 1}. ${thread.author.name || thread.author.id || '匿名'}（${thread.resolved ? '已解决' : '未解决'}）`
+    const quote = document.createElement('blockquote')
+    quote.textContent = thread.quote || '[块级评论]'
+    article.append(title, quote)
+    thread.replies.forEach(reply => {
+      const paragraph = document.createElement('p')
+      const date = reply.createdAt > 0 ? ` (${new Date(reply.createdAt).toISOString()})` : ''
+      const attachments = (reply.attachments || []).map(item => `附件：${item.name || '图片'} ${/^data:/i.test(item.url) ? '[内嵌图片]' : item.url}`).join('\n')
+      paragraph.textContent = `${reply.author.name || reply.author.id || '匿名'}${date}：${reply.content}${attachments ? `\n${attachments}` : ''}`
+      article.appendChild(paragraph)
+    })
+    section.appendChild(article)
+  })
+  paper.appendChild(section)
+  return section
+}
+
 /**
  * 打印文档。
  *
@@ -121,10 +155,14 @@ export function printDocument(rootEl, opts) {
   const options = opts || {}
   const root = resolveRoot(rootEl)
   if (!root) return { ok: false, reason: 'no-root' }
-  if (typeof window === 'undefined' || typeof window.print !== 'function') {
+  const document = root.ownerDocument
+  const window = document.defaultView
+  if (!window || typeof window.print !== 'function') {
     return { ok: false, reason: 'no-window' }
   }
+  if (typeof options.shouldPrint === 'function' && options.shouldPrint() !== true) return { ok: false, reason: '导出条件已改变，请重新导出' }
 
+  const appendix = commentsAppendix(root, options.comments)
   const hidden = markOutsideNodes(root)
   const breaks = markBreakPoints(root)
   const hasBody = typeof document !== 'undefined' && Boolean(document.body)
@@ -144,6 +182,7 @@ export function printDocument(rootEl, opts) {
       timer = null
     }
     root.classList.remove(PRINT_CLASS.root)
+    appendix?.remove()
     if (hasBody) document.body.classList.remove(PRINT_CLASS.body)
     removeClasses(hidden, PRINT_CLASS.hidden)
     removeClasses(breaks.keepInside, PRINT_CLASS.avoidBreak)
@@ -155,6 +194,6 @@ export function printDocument(rootEl, opts) {
 
   window.addEventListener('afterprint', cleanup)
   timer = setTimeout(cleanup, PRINT_CLEANUP_FALLBACK_MS)
-  window.print()
+  try { window.print() } catch (error) { cleanup(); return { ok: false, reason: error.message || '打印失败' } }
   return { ok: true, cleanup }
 }

@@ -238,17 +238,28 @@ async function main() {
   check('错误态源码区可见（便于修错）', Boolean(codeBody) && codeBody.style.display !== 'none')
   const blockButtons = () => Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('图表块出现「编辑源码」按钮', blockButtons().indexOf('编辑源码') !== -1)
-  check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
+  check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select, .lark-doc-code-toolbar .lark-doc-select, .lark-doc-code-language').length === 0)
   check('图表块携带独立外观类', firstBlock.className.indexOf('lark-doc-code-diagram') !== -1)
-  // 代码块语言下拉：阶段 2 起由 core 的纯 DOM NodeView 自绘，形态是**原生 <select>**
-  // （R1 禁止 core 引 `.vue`，代码块语言下拉使用原生 select，样式由
-  // `code-block.css` 里早已存在的 select 规则承接），所以这里直接读 options 清单。
-  const langSelect = host.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
-  check('代码块使用原生语言下拉', Boolean(langSelect))
-  const langMenuItems = langSelect
-    ? Array.from(langSelect.options).map((option) => option.textContent.trim())
-    : []
-  check('语言下拉含 Mermaid 图表项', langMenuItems.some((text) => text.indexOf('Mermaid 图表') !== -1))
+  // 当前语言选择器是 71 项可搜索 listbox；Mermaid 使用上面的独立图表外观。
+  const languageButton = host.querySelector('.lark-doc-code:not(.lark-doc-code-diagram) button[aria-label="代码语言"]')
+  if (languageButton) languageButton.click()
+  const languageMenu = host.querySelector('.lark-doc-code-language-menu[role="listbox"]')
+  const languageSearch = languageMenu && languageMenu.querySelector('input[aria-label="搜索代码语言"]')
+  const languageOptions = languageMenu ? Array.from(languageMenu.querySelectorAll('[role="option"]')) : []
+  check('代码语言按钮打开 71 项可搜索菜单', Boolean(languageButton && languageSearch)
+    && languageButton.getAttribute('aria-expanded') === 'true' && languageOptions.length === 71)
+  if (languageSearch) {
+    languageSearch.value = 'pYtH'
+    languageSearch.dispatchEvent(new window.Event('input', { bubbles: true }))
+  }
+  const pythonOptions = languageMenu ? Array.from(languageMenu.querySelectorAll('[role="option"]')) : []
+  const pythonMatched = pythonOptions.length === 1 && pythonOptions[0].textContent.trim() === 'Python'
+  if (pythonMatched) pythonOptions[0].click()
+  check('语言菜单搜索并选择 Python 更新实际节点', Boolean(languageButton) && pythonMatched
+    && languageButton.textContent.indexOf('Python') !== -1
+    && languageButton.getAttribute('aria-expanded') === 'false'
+    && !host.querySelector('.lark-doc-code-language-menu')
+    && collect(doc.getJSON(), 'codeBlock').some(node => node.attrs.language === 'python'))
   let blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '编辑源码')
   if (blockButton) blockButton.click()
   await delay(100)
@@ -309,10 +320,26 @@ async function main() {
   const buttons2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('关闭 features.diagram 无预览按钮', buttons2.indexOf('预览图表') === -1)
   check('关闭后无预览层', host2.querySelectorAll('.lark-doc-diagram').length === 0)
-  const langSelect2 = host2.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
-  check('关闭图表后仍保留原生代码语言下拉', Boolean(langSelect2) && langSelect2.options.length > 0)
-  const langMenuItems2 = langSelect2 ? Array.from(langSelect2.options).map(option => option.textContent.trim()) : []
-  check('关闭后下拉无 Mermaid 图表功能项', Boolean(langSelect2) && langMenuItems2.every((text) => text.indexOf('Mermaid 图表') === -1))
+  const languageButton2 = host2.querySelector('button[aria-label="代码语言"]')
+  if (languageButton2) languageButton2.click()
+  const languageMenu2 = host2.querySelector('.lark-doc-code-language-menu[role="listbox"]')
+  const languageSearch2 = languageMenu2 && languageMenu2.querySelector('input[aria-label="搜索代码语言"]')
+  const languageOptions2 = languageMenu2 ? Array.from(languageMenu2.querySelectorAll('[role="option"]')) : []
+  check('关闭图表后仍可打开 71 项普通代码语言菜单', Boolean(languageButton2 && languageSearch2)
+    && languageButton2.getAttribute('aria-expanded') === 'true' && languageOptions2.length === 71)
+  const noMermaid = languageOptions2.length === 71 && languageOptions2.every(option => !/mermaid/i.test(option.textContent))
+  if (languageSearch2) {
+    languageSearch2.value = 'c++'
+    languageSearch2.dispatchEvent(new window.Event('input', { bubbles: true }))
+  }
+  const cppOptions = languageMenu2 ? Array.from(languageMenu2.querySelectorAll('[role="option"]')) : []
+  const cppMatched = cppOptions.length === 1 && cppOptions[0].textContent.trim() === 'C++'
+  if (cppMatched) cppOptions[0].click()
+  check('关闭图表仅去 Mermaid，普通语言仍可搜索选择', Boolean(languageButton2) && noMermaid && cppMatched
+    && languageButton2.textContent.indexOf('C++') !== -1
+    && languageButton2.getAttribute('aria-expanded') === 'false'
+    && !host2.querySelector('.lark-doc-code-language-menu')
+    && collect(doc2.getJSON(), 'codeBlock').some(node => node.attrs.language === 'cpp'))
   check('关闭后无 mermaid 渲染痕迹（无 SVG / 错误态）', host2.querySelectorAll('.lark-doc-diagram-svg, .lark-doc-diagram-error, .lark-doc-diagram-status').length === 0)
   doc2.destroy()
   check('第二个实例销毁', host2.children.length === 0)

@@ -20,6 +20,7 @@
  */
 
 import { isValidBlockId, normalizeAnchor, validateAnchor } from './anchor'
+import { safeAttachmentId, safeUrl } from '../documentOperations'
 
 /** 05 §5.5「Actor」的零值：字段齐、值为空，面板不必再判 undefined。 */
 export const ANONYMOUS_AUTHOR = Object.freeze({ id: '', name: '', avatarUrl: '', color: '' })
@@ -70,16 +71,44 @@ function readEditedAt(raw) {
   return null
 }
 
+function readReplyTarget(raw) {
+  const value = raw && raw.replyTo
+  if (!value || typeof value !== 'object' || !text(value.commentId) || !text(value.authorId)) return null
+  return { commentId: text(value.commentId).slice(0, 256), authorId: text(value.authorId).slice(0, 256), authorName: text(value.authorName).slice(0, 256) }
+}
+
+/** Comment images use the existing upload result shape; unsafe/temporary URLs never persist. */
+function readAttachments(raw, strict = false) {
+  const source = raw?.attachments
+  if (source == null) return []
+  if (!Array.isArray(source)) {
+    if (strict) throw new Error('评论图片格式无效')
+    return []
+  }
+  const attachments = source.map(item => {
+    if (!item || !safeUrl(item.url, true) || (item.attchId != null && !safeAttachmentId(String(item.attchId)))) return null
+    return { url: item.url, name: text(item.name), mime: text(item.mime),
+      ...(Number.isFinite(item.size) && item.size >= 0 ? { size: item.size } : {}),
+      ...(item.attchId != null ? { attchId: String(item.attchId) } : {}) }
+  }).filter(Boolean)
+  if (strict && attachments.length !== source.length) throw new Error('评论图片地址无效')
+  return attachments
+}
+
 /** 读路径：null / 非对象 / 数组都是「没有这条回复」，返回 null 让调用方过滤。 */
 export function normalizeReply(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const content = typeof raw.content === 'string' ? raw.content : bodyText(raw.content != null ? raw.content : raw.body)
+  const attachments = readAttachments(raw)
   return {
     id: text(raw.id),
     author: normalizeAuthor(raw.author),
     content,
     createdAt: toTimestamp(raw.createdAt),
     editedAt: readEditedAt(raw),
+    ...(attachments.length ? { attachments } : {}),
+    ...(readReplyTarget(raw) ? { replyTo: readReplyTarget(raw) } : {}),
+    ...(Array.isArray(raw.reactions) ? { reactions: raw.reactions.filter(item => item && typeof item.emoji === 'string' && item.emoji.trim() && Array.isArray(item.users)).map(item => ({ emoji: item.emoji, users: [...new Set(item.users.filter(id => typeof id === 'string' && id))] })).filter(item => item.users.length) } : {}),
   }
 }
 
@@ -116,10 +145,10 @@ export function normalizeThread(raw) {
   }
 }
 
-/** 写路径的公共校验：内容不能是空白（`'   '` 与 `''` 等价）。 */
-function requiredContent(value, label) {
+/** A reply needs readable content or at least one validated image. */
+function requiredContent(value, label, attachments = []) {
   const content = typeof value === 'string' ? value : bodyText(value)
-  if (!content.trim()) throw new Error(`${label}内容不能为空`)
+  if (!content.trim() && !attachments.length) throw new Error(`${label}内容不能为空`)
   return content
 }
 
@@ -138,13 +167,16 @@ export function buildReply(input, context) {
   const source = input || {}
   const options = context || {}
   const author = requiredAuthor(source.author)
-  const content = requiredContent(source.content != null ? source.content : source.body, '回复')
+  const attachments = readAttachments(source, true)
+  const content = requiredContent(source.content != null ? source.content : source.body, '回复', attachments)
   return {
     id: text(options.id),
     author,
     content,
     createdAt: toTimestamp(options.now),
     editedAt: null,
+    ...(attachments.length ? { attachments } : {}),
+    ...(readReplyTarget(source) ? { replyTo: readReplyTarget(source) } : {}),
   }
 }
 
@@ -160,11 +192,12 @@ export function buildThread(input, context) {
     throw new Error(`评论线程 blockId 不合法：${blockId || '(空)'}`)
   }
   const author = requiredAuthor(source.author)
-  const content = requiredContent(source.content != null ? source.content : source.body, '首条评论')
+  const attachments = readAttachments(source, true)
+  const content = requiredContent(source.content != null ? source.content : source.body, '首条评论', attachments)
   const anchor = source.anchor == null
     ? { blockId, offset: 0, length: 0 }
     : { ...validateAnchor(source.anchor), blockId }
-  const reply = buildReply({ author: source.author, content }, { id: options.replyId, now: options.now })
+  const reply = buildReply({ author: source.author, content, attachments }, { id: options.replyId, now: options.now })
   return {
     id: text(options.id),
     blockId,

@@ -120,8 +120,10 @@ export function createNetworkPolicy(options = {}) {
         if (!node.attrs.originalSrc && node.attrs.src) node.attrs.originalSrc = node.attrs.src
         node.attrs.src = BLOCKED_IMAGE_PLACEHOLDER
       }
-      if (node.type === 'bookmark' && node.attrs && node.attrs.favicon && !allows(node.attrs.favicon)) {
-        node.attrs.favicon = null
+      if (node.type === 'bookmark' && node.attrs) {
+        for (const key of ['favicon', 'cover']) {
+          if (node.attrs[key] && !allows(node.attrs[key])) node.attrs[key] = null
+        }
       }
       if (node.type === 'fileBlock' && node.attrs) {
         const attrs = node.attrs

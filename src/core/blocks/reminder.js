@@ -29,6 +29,9 @@ export const REMINDER_REPEATS = Object.freeze(['none', 'daily', 'weekly', 'month
 
 /** 重复规则 → 浮层选项文案。 */
 export const REMINDER_REPEAT_LABELS = Object.freeze({ none: '不重复', daily: '每天', weekly: '每周', monthly: '每月' })
+// Lead time is independent of the legacy recurrence attribute.
+export const REMINDER_OFFSETS = Object.freeze([0, 5, 15, 30, 60, 120, 1440, 2880, 10080])
+export const REMINDER_OFFSET_LABELS = Object.freeze({ 0: '事件发生时', 5: '提前 5 分钟', 15: '提前 15 分钟', 30: '提前 30 分钟', 60: '提前 1 小时', 120: '提前 2 小时', 1440: '提前 1 天', 2880: '提前 2 天', 10080: '提前 1 周' })
 
 /**
  * `remindAt` 的合法形状：ISO 8601 **必须带时区**（`Z` 或 `±HH:mm`）。
@@ -66,7 +69,7 @@ function startOfLocalDay(date) {
 }
 
 /**
- * 默认提醒时间：当前时刻 +24h，且**分钟归零**。
+ * 默认提醒时间：当前时刻 +24h，向下取到最近半小时。
  *
  * 输出 `toISOString()`（UTC `Z`）而不是拼本地 `+08:00`：两者是同一时刻，UTC 形式
  * 不受宿主时区影响、逐字节可比较；用户看到的分档（今天/明天/周X）仍由
@@ -75,7 +78,7 @@ function startOfLocalDay(date) {
 export function createDefaultRemindAt(now) {
   const base = toDate(now) || new Date()
   const next = new Date(base.getTime() + REMINDER_DEFAULT_OFFSET_MS)
-  next.setMinutes(0, 0, 0)
+  next.setMinutes(Math.floor(next.getMinutes() / 30) * 30, 0, 0)
   return next.toISOString()
 }
 
@@ -86,17 +89,33 @@ export function createDefaultRemindAt(now) {
  * 过去的时间点走最后一档具体日期：飞书允许设到过去且不警告（④-quater），
  * 这里既不拦也不特殊化成「昨天」—— 具体日期在「已过期」场景下信息量更大。
  */
-export function reminderLabel(remindAt, now) {
+export function reminderLabel(remindAt, now, hasTime = true) {
   const target = toDate(remindAt)
   if (!target) return ''
   const base = toDate(now) || new Date()
   const dayDiff = Math.round((startOfLocalDay(target) - startOfLocalDay(base)) / DAY_MS)
   // 用本地时分（不是 remindAt 串里的时分）：串可能带任意时区，显示的必须是"我这边的几点"。
   const clock = `${pad2(target.getHours())}:${pad2(target.getMinutes())}`
-  if (dayDiff === 0) return `今天 ${clock}`
-  if (dayDiff === 1) return `明天 ${clock}`
-  if (dayDiff > 1 && dayDiff < 7) return `${WEEKDAY_LABELS[target.getDay()]} ${clock}`
-  return `${target.getMonth() + 1}月${target.getDate()}日 ${clock}`
+  let label
+  const monday = new Date(base.getTime())
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7)
+  const weekDay = Math.round((startOfLocalDay(target) - startOfLocalDay(monday)) / DAY_MS)
+  if (dayDiff === -1) label = '昨天'
+  else if (dayDiff === 0) label = '今天'
+  else if (dayDiff === 1) label = '明天'
+  else if (dayDiff > 1 && weekDay >= 0 && weekDay < 7) label = `本${WEEKDAY_LABELS[target.getDay()]}`
+  else if (dayDiff > 1 && weekDay >= 7 && weekDay < 14) label = `下${WEEKDAY_LABELS[target.getDay()]}`
+  else label = `${target.getFullYear() === base.getFullYear() ? '' : `${target.getFullYear()}年`}${target.getMonth() + 1}月${target.getDate()}日`
+  return hasTime ? `${label} ${clock}` : label
+}
+
+export function reminderTone(attrs, now) {
+  const target = toDate(attrs?.remindAt)
+  if (!target) return 'soon'
+  const base = toDate(now) || new Date()
+  if (attrs.hasTime === false) target.setHours(23, 59, 59, 999)
+  const distance = target.getTime() - base.getTime()
+  return distance < 0 ? 'past' : distance <= 7 * DAY_MS ? 'soon' : 'future'
 }
 
 /** 收口一份提醒属性（写入前必过）：缺时间就补默认值，枚举越界就落 `none`。 */
@@ -107,6 +126,8 @@ export function normalizeReminder(input) {
     remindAt: REMINDER_AT_PATTERN.test(raw) ? raw : createDefaultRemindAt(),
     notify: source.notify === undefined || source.notify === null ? true : Boolean(source.notify),
     repeat: REMINDER_REPEATS.indexOf(source.repeat) === -1 ? 'none' : source.repeat,
+    hasTime: source.hasTime !== false,
+    notifyOffset: REMINDER_OFFSETS.includes(source.notifyOffset) ? source.notifyOffset : 0,
   }
 }
 
@@ -119,6 +140,8 @@ export function readReminder(mark) {
     remindAt: raw,
     notify: attrs.notify !== false,
     repeat: REMINDER_REPEATS.indexOf(attrs.repeat) === -1 ? 'none' : attrs.repeat,
+    hasTime: attrs.hasTime !== false,
+    notifyOffset: REMINDER_OFFSETS.includes(attrs.notifyOffset) ? attrs.notifyOffset : 0,
   }
 }
 
@@ -126,7 +149,7 @@ export function readReminder(mark) {
 export function reminderText(attrs, now) {
   const source = attrs && typeof attrs === 'object' ? attrs : {}
   const raw = source.remindAt === null || source.remindAt === undefined ? '' : String(source.remindAt)
-  return reminderLabel(raw, now)
+  return reminderLabel(raw, now, source.hasTime !== false)
 }
 
 const LarkDocReminder = Mark.create({
@@ -152,16 +175,26 @@ const LarkDocReminder = Mark.create({
         parseHTML: (element) => (REMINDER_REPEATS.indexOf(element.getAttribute('data-repeat')) === -1 ? 'none' : element.getAttribute('data-repeat')),
         renderHTML: (attrs) => ({ 'data-repeat': REMINDER_REPEATS.indexOf(attrs.repeat) === -1 ? 'none' : attrs.repeat }),
       },
+      hasTime: {
+        default: true,
+        parseHTML: element => element.getAttribute('data-has-time') !== 'false',
+        renderHTML: attrs => ({ 'data-has-time': String(attrs.hasTime !== false) }),
+      },
+      notifyOffset: {
+        default: 0,
+        parseHTML: element => { const value = Number(element.getAttribute('data-notify-offset')); return REMINDER_OFFSETS.includes(value) ? value : 0 },
+        renderHTML: attrs => ({ 'data-notify-offset': String(REMINDER_OFFSETS.includes(attrs.notifyOffset) ? attrs.notifyOffset : 0) }),
+      },
     }
   },
   parseHTML() {
     return [{ tag: 'span[data-type="reminder"]' }]
   },
-  renderHTML({ HTMLAttributes }) {
+  renderHTML({ mark, HTMLAttributes }) {
     // 只有一层：chip 的 18px 左内边距就是日历图标位（02 §19.4 ④），图标由 CSS
     // ::before 画，不占 DOM —— 多一层壳在这里没有排版价值（与 mention 的两层不同：
     // 那边前后各 5px 间隙需要一个不染色的外层）。
-    return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'reminder', class: 'lark-doc-reminder-chip' }), 0]
+    return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'reminder', 'data-reminder-tone': reminderTone(mark.attrs), class: 'lark-doc-reminder-chip' }), 0]
   },
   addCommands() {
     return {
@@ -176,7 +209,7 @@ const LarkDocReminder = Mark.create({
         // 先 normalize 再派生文案：文案必须和真正落库的 `remindAt` 一致，
         // 顺序反了就会出现「chip 写明天、attrs 存后天」。
         const normalized = normalizeReminder(attrs)
-        const text = reminderLabel(normalized.remindAt)
+        const text = reminderText(normalized)
         if (!text) return false
         return commands.insertContent({
           type: 'text',

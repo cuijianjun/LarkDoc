@@ -277,6 +277,6 @@ it('真实 CJS 协同扩展的原数组/spread/filter 传给实际 UMD SDK 时�
   const runtime = loadCjsRuntime()
   const artifactRoot = getArtifactRoot()
   const require = createRequire(resolve(artifactRoot, '../package.json'))
-  const { LarkDoc } = require(resolve(artifactRoot, 'lark-doc-element.umd.min.js'))
+  const { LarkDoc } = require(resolve(artifactRoot, 'lark-doc-element.runtime.umd.min.js'))
   expectRuntimeRejectedBeforeMount(LarkDoc, runtime)
 })

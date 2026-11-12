@@ -108,6 +108,7 @@ export default {
       const blockStyle = this.featureEnabled('blockStyle')
       return {
         // 模板条件：`ed.editor && !ed.effectiveReadonly && featureEnabled('blockHandle') && handleRange`
+        // Keep the table six-dot handle beside the active-cell plus control.
         visible: !!(this.editor && !this.effectiveReadonly && this.featureEnabled('blockHandle') && this.handleRange),
         style: this.blockHandleStyle,
         menuOpen: this.blockMenuOpen,
@@ -139,7 +140,11 @@ export default {
           icon: item.icon,
           active: this.blockTypeActive(item.id),
         })),
-        listActions: this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon })),
+        listActions: [
+          ...this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon })),
+          ...(this.handleIsTable && this.selectionShareAllowed?.() && this.isBlockActionEnabled('share') ? [{ id: 'share', label: '分享', icon: 'share-link' }] : []),
+          ...(this.handleIsTable && this.shareCan('canView') && this.isBlockActionEnabled('copyLink') ? [{ id: 'copyLink', label: '复制链接', icon: 'link' }] : []),
+        ],
         table: this.handleIsTable,
         tableHeader: this.handleTableHeaderState(),
         canDuplicate: this.isBlockActionEnabled('duplicate'),

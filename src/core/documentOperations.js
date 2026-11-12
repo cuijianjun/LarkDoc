@@ -1,8 +1,10 @@
 import { Fragment } from '@tiptap/pm/model'
 import { moveDepthAllowed } from './blocks/container-depth'
 import { MENTION_KINDS } from './blocks/mention'
-import { REMINDER_REPEATS, REMINDER_AT_PATTERN } from './blocks/reminder'
+import { REMINDER_REPEATS, REMINDER_AT_PATTERN, REMINDER_OFFSETS } from './blocks/reminder'
 import { isEmojiGlyph } from './emoji/catalog'
+import { safeLinkCardMeta } from './embed/bookmark'
+import { isImageCrop, isImageDimension, parseImageCrop } from './media/image-crop'
 
 // 未知块占位卡 payload 上限（P1-03）：payload 可能承载替代整个子树的原始块 JSON。
 export const UNKNOWN_PAYLOAD_MAX = 1000000
@@ -11,7 +13,7 @@ export const UNKNOWN_PAYLOAD_MAX = 1000000
 /** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image 与本地相对路径。返回 boolean。 */
 export function safeUrl(value, image = false) {
   if (typeof value !== 'string' || !value || Array.from(value).some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return false
-  if (image && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
+  if (image && /^data:image\/(png|jpe?g|gif|webp|bmp|x-bmp|x-ms-bmp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
   // 图片的相对路径（/、./、../ 开头）是本地资源引用，与 networkPolicy.isLocalUrl 语义一致。
   // 它们不含 javascript:/data: 等危险协议，可直接进 schema（老系统图床 /note/... 即此类）。
   // 注意排除协议相对 URL（//host/... 会被浏览器解析为 http(s)://host/...，属外链而非本地资源）。
@@ -20,6 +22,14 @@ export function safeUrl(value, image = false) {
     try { const url = new URL(value); return !!url.hostname && !url.username && !url.password } catch (_) { return false }
   }
   return !image && (/^(mailto|tel):[^:<>]+$/i.test(value) || /^#[\w\u0080-\uffff-]+$/.test(value))
+}
+
+/** 链接表单允许裸域名；与飞书一致补 http，仍使用同一 URL 安全闸门。 */
+export function normalizeLinkUrl(value) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (safeUrl(text)) return text
+  if (!/^[^\s/:?#]+\.[^\s/:?#]+(?::\d+)?(?:[/?#].*)?$/.test(text)) return null
+  return safeUrl(`http://${text}`) ? `http://${text}` : null
 }
 
 /** 校验颜色值（hex / rgb(a) / hsl(a) / CSS 关键字），防止 style 注入。 */
@@ -49,8 +59,13 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'attchId' || key === 'originalAttchId') valid = safeAttachmentId(value)
     else if (key === 'href') valid = safeUrl(value)
     else if (key === 'level') valid = Number.isInteger(value) && value >= 1 && value <= 9
+    else if (type === 'image' && key === 'crop') valid = isImageCrop(value)
+    else if (type === 'image' && (key === 'naturalWidth' || key === 'naturalHeight')) valid = isImageDimension(value)
     else if (key === 'indent') valid = Number.isInteger(value) && value >= 0 && value <= 8
-    else if (key === 'width' || key === 'height') valid = Number.isFinite(value) && value >= (type === 'column' ? 10 : 40) && value <= (type === 'column' ? 90 : 2400)
+    else if (type === 'linkEmbed' && (key === 'width' || key === 'height')) valid = Number.isFinite(value) && value >= 88 && value <= (key === 'width' ? 1060 : 4000)
+    else if (type === 'column' && key === 'width') valid = Number.isFinite(value) && value > 0 && value <= 100
+    else if (type === 'agendaItem' && key === 'durationMinutes') valid = Number.isSafeInteger(value) && value >= 1
+    else if (key === 'width' || key === 'height') valid = Number.isFinite(value) && value >= 40 && value <= 2400
     // 内嵌网页（P3-07）的 `aspect` / `bridgeVersion` 都是**数字**，而本白名单的兜底分支
     // 只收字符串 —— 落进来必被判非法，症状是带这两个字段的 webEmbed 一进 setContent
     // 就整块抛错；`bridgeVersion` 有默认值 1，等于「存一次盘再打开就炸」。
@@ -70,6 +85,7 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'colwidth') valid = Array.isArray(value) && value.every((width) => Number.isInteger(width) && width > 0 && width <= 2400)
     else if (key === 'colspan' || key === 'rowspan' || key === 'start') valid = Number.isInteger(value) && value > 0 && value <= 10000
     else if (key === 'open' || key === 'checked') valid = typeof value === 'boolean'
+    else if (type === 'codeBlock' && key === 'wrap') valid = typeof value === 'boolean'
     // 「继续编号」标记（ordered-list.js 的布尔属性，默认 false）：`toJSON` 会把默认值
     // 一并写出，落进兜底分支（只收字符串）→ 任何带有序列表的文档存一次盘再打开就整篇
     // 抛错。只对 orderedList 放行，避免别的块借同名 key 钻空子。
@@ -86,6 +102,8 @@ function validateAttrs(type, attrs, definition) {
     // 前两个落进兜底分支必被判非法（兜底只收字符串），`remindAt` 则相反 —— 兜底会
     // 放行任意 10 万字串，这里收紧到 ISO 形状。空串放行：那是 mark 的 schema 默认值。
     else if (type === 'reminder' && key === 'notify') valid = typeof value === 'boolean'
+    else if (type === 'reminder' && key === 'hasTime') valid = typeof value === 'boolean'
+    else if (type === 'reminder' && key === 'notifyOffset') valid = REMINDER_OFFSETS.includes(value)
     else if (type === 'reminder' && key === 'repeat') valid = REMINDER_REPEATS.indexOf(value) !== -1
     else if (type === 'reminder' && key === 'remindAt') valid = value === '' || (typeof value === 'string' && REMINDER_AT_PATTERN.test(value))
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
@@ -209,7 +227,9 @@ export function validateDocument(json, schema) {
   function visit(item, depth) {
     if (!item || typeof item !== 'object' || depth > 100 || ++count > 100000) throw new Error('文档结构过深或过大')
     const type = schema.nodes[item.type]
-    if (!type) {
+    // Official/provider agenda payloads predate our local editable tree; retain them losslessly.
+    const externalAgenda = item.type === 'agenda' && (typeof item.attrs?.agendaId === 'string' || Array.isArray(item.attrs?.items) || Array.isArray(item.content) && item.content.some(child => child?.type === 'agenda_item'))
+    if (!type || externalAgenda) {
       // P1-03：未知块就地降级为占位卡，原始 JSON 逐字节存进 payload
       // （JSON.stringify 保 key 顺序，stringify/parse 幂等）。payload 超 1M 时
       // 放弃保真只存占位（载入优先于还原）；unknownType 供副文案展示。
@@ -248,6 +268,7 @@ export function validateDocument(json, schema) {
   node.check()
   node.descendants((child) => {
     if (child.type.name === 'image' && !safeUrl(child.attrs.src, true)) throw new Error('图片地址无效')
+    if (child.type.name === 'image' && child.attrs.crop && (!isImageDimension(child.attrs.naturalWidth) || !isImageDimension(child.attrs.naturalHeight))) throw new Error('裁剪图片缺少原图尺寸')
   })
   return node.toJSON()
 }
@@ -259,7 +280,10 @@ export function sanitizeHTML(html) {
   container.innerHTML = html
   const tags = new Set(['P', 'DIV', 'SPAN', 'MARK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'PRE', 'SUB', 'SUP', 'BLOCKQUOTE', 'HR', 'UL', 'OL', 'LI', 'A', 'IMG', 'FIGURE', 'FIGCAPTION', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'DETAILS', 'SUMMARY', 'LABEL', 'INPUT'])
   const dangerous = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META', 'BASE', 'FRAME', 'FRAMESET'])
-  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'class'])
+  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-code-wrap', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'data-has-time', 'data-notify-offset', 'class'])
+  for (const name of ['data-revision-id', 'data-revision-kind', 'data-revision-author', 'data-deletion-revision-id', 'data-deletion-author']) attributes.add(name)
+  for (const name of ['data-natural-width', 'data-natural-height']) attributes.add(name)
+  for (const name of ['data-item-id', 'data-duration-minutes']) attributes.add(name)
   Array.from(container.querySelectorAll('*')).forEach((element) => {
     if (!container.contains(element)) return
     const tag = element.tagName.toUpperCase()
@@ -281,6 +305,31 @@ export function sanitizeHTML(html) {
         })
         element.removeAttribute('style')
         Object.keys(allowed).forEach((property) => { element.style.setProperty(property, allowed[property]) })
+      } else if (name === 'data-crop') {
+        if (!['FIGURE', 'IMG'].includes(tag) || !parseImageCrop(attribute.value)) element.removeAttribute(name)
+      } else if (['data-card-meta', 'data-link-card-meta'].includes(name)) {
+        const ownBlock = name === 'data-card-meta' && tag === 'DIV' && element.getAttribute('data-type') === 'link-embed'
+        const ownMark = name === 'data-link-card-meta' && tag === 'A'
+        if (!(ownBlock || ownMark) || !safeLinkCardMeta(attribute.value)) element.removeAttribute(name)
+      } else if (['data-link-view', 'data-link-title'].includes(name)) {
+        const bookmarkTitle = name === 'data-link-title' && tag === 'DIV' && element.getAttribute('data-type') === 'bookmark'
+        if ((tag !== 'A' && !bookmarkTitle) || (name === 'data-link-view' ? !['title', 'link'].includes(attribute.value) : attribute.value.length > 100000 || attribute.value.includes('\u0000'))) element.removeAttribute(name)
+      } else if (['data-url', 'data-desc', 'data-favicon', 'data-cover', 'data-record-id'].includes(name)) {
+        const bookmark = tag === 'DIV' && element.getAttribute('data-type') === 'bookmark'
+        const valid = name === 'data-desc' ? Array.from(attribute.value).length <= 2000 && !attribute.value.includes('\u0000')
+          : name === 'data-record-id' ? /^[A-Za-z0-9_-]{1,64}$/.test(attribute.value)
+            : attribute.value.length <= 2048 && /^https?:\/\//i.test(attribute.value) && safeUrl(attribute.value)
+        if (!bookmark || !valid) element.removeAttribute(name)
+      } else if (['data-href', 'data-view', 'data-title'].includes(name)) {
+        const linkBlock = tag === 'DIV' && element.getAttribute('data-type') === 'link-embed'
+        const bookmark = tag === 'DIV' && element.getAttribute('data-type') === 'bookmark'
+        const valid = name === 'data-href' ? safeUrl(attribute.value)
+          : name === 'data-view' ? ['link', 'card', 'preview'].includes(attribute.value)
+            : (bookmark ? Array.from(attribute.value).length <= 300 : attribute.value.length <= 100000) && !attribute.value.includes('\u0000')
+        if (!(linkBlock || (bookmark && name === 'data-title' && Array.from(attribute.value).length <= 300)) || !valid) element.removeAttribute(name)
+      } else if (['data-width', 'data-height'].includes(name) && element.getAttribute('data-type') === 'link-embed') {
+        const value = Number(attribute.value)
+        if (!Number.isFinite(value) || value < 88 || value > (name === 'data-width' ? 1060 : 4000)) element.removeAttribute(name)
       } else if (!attributes.has(name)) element.removeAttribute(name)
       else if (name === 'data-color' && (tag !== 'MARK' || !safeColor(attribute.value))) element.removeAttribute(name)
       else if (name === 'colwidth') {
@@ -297,6 +346,8 @@ export function sanitizeHTML(html) {
       // 提及（P4-01）：身份属性必须落进 schema 认识的形态 —— 放行一个畸形值，
       // 结果是「粘贴一段带 @ 的富文本 → 整篇 setContent 抛错」，比丢掉 attr 严重得多。
       else if (name === 'data-notify' && !['true', 'false'].includes(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-has-time' && !['true', 'false'].includes(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-notify-offset' && (!/^\d+$/.test(attribute.value) || !REMINDER_OFFSETS.includes(Number(attribute.value)))) element.removeAttribute(name)
       else if (name === 'data-remind-at' && !REMINDER_AT_PATTERN.test(attribute.value)) element.removeAttribute(name)
       else if (name === 'data-repeat' && REMINDER_REPEATS.indexOf(attribute.value) === -1) element.removeAttribute(name)
       else if (name === 'data-mention-kind' && MENTION_KINDS.indexOf(attribute.value) === -1) element.removeAttribute(name)
@@ -607,20 +658,23 @@ export function bulletListDepth(doc, pos) {
 }
 
 /**
- * 前一个同层的有序列表（`ol` 的紧邻兄弟节点）。
+ * 前一个同层的有序列表（允许中间隔着普通正文段落）。
  *
  * 「继续编号」要跨列表接号（飞书同款：上一个列表排到 3，这个列表从 4 起），
- * 这里只认**紧邻**兄弟 —— 中间隔着段落/别的块就是两个独立列表，不接号。
+ * 只在同一父容器内跳过 paragraph；其它块保留为边界，不跨父容器接号。
  */
 export function previousSiblingOrderedList(doc, pos) {
   if (!doc || !Number.isInteger(pos)) return null
   try {
     const $pos = doc.resolve(pos)
-    const index = $pos.index()
-    if (index <= 0) return null
-    const prev = $pos.parent.child(index - 1)
-    if (!prev || prev.type.name !== 'orderedList') return null
-    return { node: prev, pos: pos - prev.nodeSize }
+    let previousPos = pos
+    for (let index = $pos.index() - 1; index >= 0; index -= 1) {
+      const previous = $pos.parent.child(index)
+      previousPos -= previous.nodeSize
+      if (previous.type.name === 'orderedList') return { node: previous, pos: previousPos }
+      if (previous.type.name !== 'paragraph') return null
+    }
+    return null
   } catch (_) {
     return null
   }
@@ -631,7 +685,7 @@ export function previousSiblingOrderedList(doc, pos) {
  *
  * 两种情况可继续：
  * 1. 该 item 自己有显式起点（`numberStart`）→ 清掉即回到接着上一个 item 数；
- * 2. 它是列表首项、且前面紧邻另一个有序列表 → 让这个列表接上前一个列表的序号。
+ * 2. 它是列表首项，且前面同容器有有序列表（可隔正文）→ 接上前一个列表的序号。
  *
  * 其余情况（孤立的列表、已经处于继续态）禁用 —— 与飞书菜单一致。
  */
@@ -662,25 +716,30 @@ export function canContinueListNumber(doc, pos) {
  * 拉回指定值，后面的兄弟项接着它继续 —— 这是「重新开始编号 / 设置编号的值」
  * 落库的方式：只标一个起点，编号值本身仍然每帧现算。
  *
- * 列表上的 `continueFrom`（「继续编号」写下的标记）让这个列表接着**前面紧邻**
- * 有序列表的最后一项继续排；前一个列表增删条目时跟着变，不落死数字。
+ * 列表上的 `continueFrom`（「继续编号」写下的标记）让这个列表接着同父容器前一
+ * 有序列表的最后一项继续排（可隔普通正文）；前一个列表增删条目时跟着变，不落死数字。
  */
 /**
- * 一趟结构化遍历所有「同类型列表」，顺路带下嵌套层数与前一个兄弟。
+ * 一趟结构化遍历所有「同类型列表」，顺路带下嵌套层数与前一列表的位置。
  *
  * 原实现每个列表都调 `listDepth(doc, pos)` → `doc.resolve(pos)`，扁平文档上是
  * O(块数) 的随机访问，几百个列表叠起来就是 O(n²)（2,000 块实测 30 ms 级）。
- * 前兄弟也不再 resolve：递归时手上就有 parent / index。
+ * 每次 walk 独立记录前一列表，普通正文保留记录，其它块清空；不逆向重扫兄弟，
+ * 也不 resolve 或跨父容器查找。
  *
  * 语义与 `listDepth` 一致：层数 = 祖先里同类列表容器的个数 + 1。
  */
 function eachList(doc, typeName, visit) {
   const walk = (parent, parentStart, depth) => {
     let pos = parentStart
+    let previousListPos = null
     for (let index = 0; index < parent.childCount; index += 1) {
       const child = parent.child(index)
       const isSame = child.type.name === typeName
-      if (isSame) visit(child, pos, depth + 1, parent, index)
+      if (isSame) {
+        visit(child, pos, depth + 1, previousListPos)
+        previousListPos = pos
+      } else if (child.type.name !== 'paragraph') previousListPos = null
       if (child.content.size) walk(child, pos + 1, isSame ? depth + 1 : depth)
       pos += child.nodeSize
     }
@@ -693,11 +752,10 @@ export function computeOrderedListNumbers(doc) {
   if (!doc) return result
   // 每个列表排到第几号（ol 起始 pos → 最后一项的序号），供后面的「继续编号」接号。
   const totals = new Map()
-  eachList(doc, 'orderedList', (node, pos, depth, parent, index) => {
+  eachList(doc, 'orderedList', (node, pos, depth, previousListPos) => {
     let start = Number(node.attrs?.start) > 0 ? Number(node.attrs.start) : 1
     if (node.attrs && node.attrs.continueFrom) {
-      const prev = index > 0 ? parent.child(index - 1) : null
-      const prevTotal = prev && prev.type.name === 'orderedList' ? totals.get(pos - prev.nodeSize) : undefined
+      const prevTotal = totals.get(previousListPos)
       if (Number.isFinite(prevTotal)) start = prevTotal + 1
     }
     let current = start
@@ -1132,10 +1190,10 @@ export const BLOCK_ID_TYPES = new Set([
   'bulletList', 'orderedList', 'taskList', 'codeBlock', 'image', 'horizontalRule', 'blockMath', 'table',
   // 文件 / 视频块（P2-04）是原子块，但它自己就是「用户能当作一个块操作」的单位，
   // 折叠与锚点都要能指向它，所以进 id 集合。
-  'fileBlock',
+  'fileBlock', 'linkEmbed', 'bookmark',
   // 小组件块（P4-04）：原子块，但折叠与锚点都要能指向它 —— 不进集合就没有 blockId，
   // 导出再导回时实例键与块 id 会一起漂。
-  'isv',
+  'isv', 'agenda',
   // 电子表格块（P5-02）：同上。悬停手柄把 `blockId` 转交给宿主开块菜单，
   // 不给 id 就永远只能传 `null`；折叠/评论锚点也缺一个落点。
   'sheet',

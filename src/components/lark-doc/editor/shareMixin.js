@@ -48,6 +48,11 @@
  *   否则裸用编辑器会整页变只读遮罩。
  */
 import { DEFAULT_CAPABILITIES } from '../../../providers/authorization'
+import { searchMentionDirectory } from '../../../core/mention/directory'
+import { NodeSelection, TextSelection } from '@tiptap/pm/state'
+import { CellSelection } from '@tiptap/pm/tables'
+import { BLOCK_ID_PATTERN, safeUrl } from '../../../core/documentOperations'
+import { createNetworkPolicy, BLOCKED_IMAGE_PLACEHOLDER } from '../../../core/policy/network'
 
 // —— 几何：分享 popover（04 §4.1 ④-2 实测 batch60/61）——
 
@@ -446,10 +451,77 @@ const SHARE_KEEP_OPEN_SELECTORS = Object.freeze([
   '.lark-doc-share-toast',
 ])
 
+function shareExcerptImageUrl(value, network) {
+  // Browsers treat backslashes as URL separators; the shared policy's relative
+  // path shortcut must not turn /\host into an offline/allowlisted image.
+  return typeof value === 'string' && !value.includes('\\') && safeUrl(value, true) && network.allows(value) ? value : null
+}
+
+/** Inert static excerpts; only the core bookmark's single, gated image resource survives CSS cleanup. */
+export function cloneShareExcerpt(source, network = createNetworkPolicy()) {
+  const inert = source.ownerDocument.implementation.createHTMLDocument('')
+  const clone = inert.importNode(source, true)
+  const removed = 'script,style,link,meta,base,iframe,object,embed,video,audio,source,track,button,input,select,textarea,form,svg,math,template,noscript,canvas,[data-lark-doc-ui],[data-lark-doc-image-ui],[data-lark-doc-link-ui],[data-lark-doc-embed-ui],.column-resize-handle,.lark-doc-link-preview-resize'
+  if (clone.matches(removed)) { const label = inert.createElement('div'); label.textContent = source.textContent; return label }
+  clone.setAttribute('inert', '')
+  clone.setAttribute('draggable', 'false')
+  clone.querySelectorAll(removed).forEach(element => element.remove())
+  for (const element of [clone, ...clone.querySelectorAll('*')]) {
+    const bookmarkMedia = element.classList.contains('lark-doc-bookmark-cover') || element.classList.contains('lark-doc-bookmark-icon')
+    // CSSOM supplies the canonical property, but escaped tokens and composite
+    // images still fail closed. Rebuild one url() instead of retaining a style.
+    const background = bookmarkMedia && element.style.getPropertyValue('background-image')
+    const match = background && /^url\(\s*(?:"([^"\\]*)"|'([^'\\]*)'|([^\s"'()\\]+))\s*\)$/i.exec(background)
+    const imageUrl = match && shareExcerptImageUrl(match[1] ?? match[2] ?? match[3], network)
+    for (const attribute of [...element.attributes]) {
+      const name = attribute.name.toLowerCase()
+      if (/^on/.test(name) || ['id', 'data-block-id', 'data-record-id', 'contenteditable', 'tabindex', 'href', 'xlink:href', 'srcset', 'srcdoc', 'poster', 'background', 'action', 'formaction', 'autofocus'].includes(name) || (name === 'src' && element.tagName !== 'IMG')) element.removeAttribute(attribute.name)
+    }
+    for (const property of Array.from(element.style || [])) {
+      if (/url\s*\(|image-set\s*\(|expression|@import|\\/i.test(element.style.getPropertyValue(property)) || /^(?:background-image|border-image|list-style-image|mask|filter|clip-path|cursor|content)/.test(property)) element.style.removeProperty(property)
+    }
+    if (imageUrl) element.style.setProperty('background-image', `url("${imageUrl.replace(/"/g, '%22')}")`)
+    if (element.tagName === 'IMG') {
+      const src = element.getAttribute('src')
+      if (!shareExcerptImageUrl(src, network)) element.setAttribute('src', BLOCKED_IMAGE_PLACEHOLDER)
+    }
+  }
+  return clone
+}
+
+function shareExcerpt(editor, node, pos, network) {
+  if (!node) return null
+  const snapshot = { text: node.textContent, type: node.type.name, level: node.attrs.level || null }
+  if (node.type.name === 'webEmbed' || (node.type.name === 'linkEmbed' && node.attrs.view === 'preview')) return { ...snapshot, text: '[内嵌网页]' }
+  const source = editor.view.nodeDOM(pos)
+  if (!source?.cloneNode || source.nodeType !== 1) return snapshot
+  const clone = cloneShareExcerpt(source, network)
+  const style = source.ownerDocument.defaultView.getComputedStyle(source)
+  Object.assign(clone.style, { margin: '0', fontSize: '14px', fontWeight: style.fontWeight, lineHeight: '22px', textAlign: style.textAlign })
+  return { ...snapshot, dom: clone }
+}
+
+function selectionShareKind(selection) {
+  return selection instanceof CellSelection ? 'cell' : selection instanceof NodeSelection ? 'node' : selection instanceof TextSelection ? 'text' : null
+}
+
+function selectionShareBlock(selection) {
+  if (selection instanceof NodeSelection) return { node: selection.node, pos: selection.from }
+  const $from = selection instanceof CellSelection ? selection.$anchorCell : selection.$from
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth)
+    if (selection instanceof CellSelection ? node.type.name === 'table' : BLOCK_ID_PATTERN.test(node.attrs.blockId || '')) return { node, pos: $from.before(depth) }
+  }
+  return null
+}
+
+const shareNetworkKey = host => JSON.stringify(host.larkDocConfig?.network || {})
+
 export default {
   data() {
     return {
       sharePopoverOpen: false,
+      imageShare: null,
       /** popover 落点：`{ top, right }`，由触发按钮的 rect 反推（见 `toggleSharePopover`）。 */
       sharePopoverPos: { top: 0, right: 0 },
       permissionDialogOpen: false,
@@ -494,6 +566,7 @@ export default {
     }
   },
   computed: {
+    selectionShareEntryAvailable() { return this.selectionShareAllowed() },
     /** 入口显隐：只有 `canView:false` 才不挂（B24 交叉约束 3）；其余一律挂载。 */
     shareEntryVisible() {
       return this.shareCan('canView')
@@ -555,6 +628,16 @@ export default {
       return this.secureLinkEnabled ? 78 : 22
     },
   },
+  watch: {
+    session(value, previous) { if (value !== previous) this.closeImageShareDialog() },
+    onImageShare() { if (this.imageShare?.target !== 'selection') this.closeImageShareDialog() },
+    onSelectionShare() { if (this.imageShare?.target === 'selection') this.closeImageShareDialog() },
+    mentionSource() { if (this.imageShare?.target === 'selection') this.closeImageShareDialog() },
+    shareLink() { if (this.imageShare?.target === 'selection') this.closeImageShareDialog() },
+    larkDocConfig: { deep: true, handler() {
+      if (this._selectionShareTarget && shareNetworkKey(this) !== this._selectionShareTarget.network) this.closeImageShareDialog()
+    } },
+  },
   mounted() {
     // 两个浮层的关闭入口与 `overlayDismissMixin` 同源（点外部 / Esc），但那边的互斥链
     // 在本仓由主组件维护、本线不改它，所以这里自建一对监听，避免「新增浮层漏接关闭」。
@@ -562,11 +645,191 @@ export default {
     window.addEventListener('keydown', this.onShareWindowKeydown)
   },
   beforeDestroy() {
+    this._selectionShareDisposed = true
+    this.closeImageShareDialog()
     document.removeEventListener('pointerdown', this.onSharePointerDown, true)
     window.removeEventListener('keydown', this.onShareWindowKeydown)
     this.hideShareToast()
   },
   methods: {
+    selectionShareAllowed() { return !this._selectionShareDisposed && this.shareCan('canView') && this.shareCan('canExport') },
+    selectionShareTargetValid(target = this._selectionShareTarget, doc = this.editor?.state.doc) {
+      if (!target || !doc || this.editor !== target.editor || target.editor.isDestroyed || this.session !== target.session || this.session?._destroyed || this.session?.documentId !== target.documentId || this.onSelectionShare !== target.callback || this._mentionProvider !== target.directory || !this.selectionShareAllowed() || shareNetworkKey(this) !== target.network || this.shareDocumentLink() !== target.documentLink) return false
+      try {
+        const selection = target.bookmark.resolve(doc)
+        const block = selectionShareBlock(selection)
+        // Node/Slice equality also binds the captured descendant blockIds.
+        return selectionShareKind(selection) === target.kind && block?.node.attrs.blockId === target.blockId && block.node.eq(target.node) && selection.content().eq(target.slice)
+      } catch (_) { return false }
+    },
+    openSelectionShareDialog(pos) {
+      const editor = this.editor
+      if (!editor || editor.isDestroyed || !this.selectionShareAllowed()) return false
+      try {
+        if (pos !== undefined) {
+          const node = Number.isInteger(pos) && editor.state.doc.nodeAt(pos)
+          if (!node?.isBlock || !NodeSelection.isSelectable(node)) return false
+          editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)).setMeta('addToHistory', false))
+        }
+        const selection = editor.state.selection
+        const kind = selectionShareKind(selection), block = selectionShareBlock(selection)
+        if (!kind || selection.empty || !block || !BLOCK_ID_PATTERN.test(block.node.attrs.blockId || '')) return false
+        const slice = selection.content()
+        const policy = createNetworkPolicy(this.larkDocConfig?.network)
+        const source = editor.view.nodeDOM(block.pos)
+        const table = block.node.type.name === 'table' ? (source?.matches?.('table') ? source : source?.querySelector?.('table')) : null
+        const previewSource = table || source
+        const unsupported = block.node.type.name === 'webEmbed' || (block.node.type.name === 'linkEmbed' && block.node.attrs.view === 'preview')
+        const bounds = previewSource?.getBoundingClientRect?.()
+        let dom = !unsupported && previewSource?.nodeType === 1 ? cloneShareExcerpt(previewSource, policy) : null
+        if (kind === 'text') {
+          const range = source?.ownerDocument.createRange(), start = editor.view.domAtPos(selection.from), end = editor.view.domAtPos(selection.to)
+          if (!range) return false
+          range.setStart(start.node, start.offset); range.setEnd(end.node, end.offset)
+          const holder = source.ownerDocument.implementation.createHTMLDocument('').createElement('div')
+          holder.appendChild(range.cloneContents())
+          dom = cloneShareExcerpt(holder, policy)
+        }
+        const $block = editor.state.doc.resolve(block.pos), index = $block.index(), parent = $block.parent
+        const beforeNode = index > 0 ? parent.child(index - 1) : null
+        const afterNode = index + 1 < parent.childCount ? parent.child(index + 1) : null
+        const context = (node, at) => node?.type.name === 'image' ? { type: 'image', text: '[图片]' } : shareExcerpt(editor, node, at, policy)
+        const excerpt = { before: context(beforeNode, block.pos - (beforeNode?.nodeSize || 0)), after: context(afterNode, block.pos + block.node.nodeSize) }
+        const target = { editor, session: this.session, documentId: this.session?.documentId, callback: this.onSelectionShare, directory: this._mentionProvider, documentLink: this.shareDocumentLink(), network: shareNetworkKey(this), bookmark: selection.getBookmark(), kind, blockId: block.node.attrs.blockId, node: block.node, slice }
+        this.closeImageShareDialog()
+        this._selectionShareTarget = target
+        const cancel = () => { if (this._selectionShareTarget === target) this.closeImageShareDialog() }
+        const check = () => { if (!this.selectionShareTargetValid(target)) cancel() }
+        const map = event => { if (this._selectionShareTarget === target) this.mapSelectionShare(event) }
+        editor.on('transaction', map); editor.on('destroy', cancel)
+        this._selectionShareOffs = [() => editor.off('transaction', map), () => editor.off('destroy', cancel)]
+        for (const event of ['provider', 'editor', 'connection', 'capabilities']) {
+          const off = this.session?.on?.(event, event === 'capabilities' ? check : cancel)
+          if (typeof off === 'function') this._selectionShareOffs.push(off)
+        }
+        const text = slice.content.textBetween(0, slice.content.size, '\n', node => node.type.name === 'image' ? '[图片]' : String(node.attrs.title || node.attrs.url || node.attrs.href || ''))
+        this.imageShare = { target: 'selection', selection: { type: kind, blockId: target.blockId, text, content: slice.toJSON() }, preview: { dom, unsupported, width: bounds?.width || 340, height: bounds?.height || 44 }, excerpt, query: '', recipients: [], results: [], message: '', error: '', loading: false, sending: false }
+        this.searchImageShareRecipients('')
+        return true
+      } catch (_) { return false }
+    },
+    mapSelectionShare({ transaction }) {
+      const target = this._selectionShareTarget
+      if (!target || !transaction.docChanged) return
+      try {
+        const previous = target.bookmark.resolve(transaction.before)
+        if (previous.ranges.some(range => transaction.mapping.mapResult(range.$from.pos, 1).deleted || transaction.mapping.mapResult(range.$to.pos, -1).deleted)) { this.closeImageShareDialog(); return }
+        target.bookmark = target.bookmark.map(transaction.mapping)
+        if (!this.selectionShareTargetValid(target, transaction.doc)) this.closeImageShareDialog()
+      } catch (_) { this.closeImageShareDialog() }
+    },
+    openImageShareDialog(image) {
+      this.closeImageShareDialog()
+      const doc = this.editor?.state.doc
+      const resolved = doc && Number.isInteger(image.pos) ? doc.resolve(image.pos) : null
+      const index = resolved?.index()
+      const parent = resolved?.parent
+      const context = (node, pos) => shareExcerpt(this.editor, node, pos)
+      const previous = index > 0 ? parent?.child(index - 1) : null
+      const excerpt = parent ? { before: context(previous, image.pos - (previous?.nodeSize || 0)), after: context(index + 1 < parent.childCount ? parent.child(index + 1) : null, image.pos + parent.child(index).nodeSize) } : null
+      this.imageShare = { image, excerpt, query: '', recipients: [], results: [], message: '', error: '', loading: false, sending: false }
+      this.searchImageShareRecipients('')
+      return true
+    },
+    closeImageShareDialog() {
+      this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
+      this._selectionShareOffs?.forEach(off => off())
+      this._selectionShareOffs = null
+      this._selectionShareTarget = null
+      const controller = this._imageShareAbort
+      this._imageShareAbort = null
+      this.imageShare = null
+      controller?.abort()
+    },
+    async searchImageShareRecipients(query) {
+      if (!this.imageShare || this.imageShare.sending) return
+      const token = this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
+      this.imageShare = { ...this.imageShare, query, loading: true }
+      try {
+        const items = this._mentionProvider ? await this._mentionProvider.search(query, { kind: 'all' }) : searchMentionDirectory(this.mentionDirectory, query, 'all')
+        if (!this.imageShare || this.imageShare.sending || token !== this._imageShareSearchToken) return
+        if (this.imageShare.target === 'selection' && !this.selectionShareTargetValid()) { this.closeImageShareDialog(); return }
+        this.imageShare = { ...this.imageShare, loading: false, results: items.filter(item => item?.id && ['user', 'chat'].includes(item.kind)) }
+      } catch (error) {
+        if (this.imageShare && token === this._imageShareSearchToken) this.imageShare = { ...this.imageShare, loading: false, error: error?.message || '接收人搜索失败，请重试' }
+      }
+    },
+    toggleImageShareRecipient(id, kind) {
+      const state = this.imageShare
+      if (!state || state.sending) return
+      const selected = state.recipients.some(item => item.id === id && item.kind === kind)
+      const item = state.results.find(item => item.id === id && item.kind === kind)
+      const recipients = selected ? state.recipients.filter(item => item.id !== id || item.kind !== kind) : item ? [...state.recipients, item] : state.recipients
+      this.imageShare = { ...state, recipients }
+    },
+    setImageShareMessage(message) { if (this.imageShare && !this.imageShare.sending) this.imageShare = { ...this.imageShare, message } },
+    async submitSelectionShare() {
+      const state = this.imageShare, target = this._selectionShareTarget
+      if (state?.target !== 'selection' || state.sending || !state.recipients.length) return false
+      if (!this.selectionShareTargetValid(target)) { this.closeImageShareDialog(); return false }
+      const callback = target.callback
+      if (typeof callback !== 'function') { this.imageShare = { ...state, error: '当前宿主尚未配置选区分享服务' }; return false }
+      const controller = this._imageShareAbort = new AbortController()
+      this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
+      this.imageShare = { ...state, loading: false, sending: true, error: '' }
+      const pending = this.imageShare
+      try {
+        const url = new URL(target.documentLink)
+        if (!/^https?:$/.test(url.protocol) || !safeUrl(url.href)) throw new Error('文档分享地址无效')
+        url.hash = `share-${target.blockId}`
+        const result = await callback({ selection: JSON.parse(JSON.stringify(state.selection)), url: url.href, recipients: state.recipients.map(item => ({ ...item })), message: state.message, signal: controller.signal })
+        if (controller.signal.aborted || this.imageShare !== pending || this._selectionShareTarget !== target) return false
+        if (!this.selectionShareTargetValid(target)) { this.closeImageShareDialog(); return false }
+        if (result === false) throw new Error('选区分享失败，请重试')
+        this._imageShareAbort = null
+        this.closeImageShareDialog()
+        this.showShareToast('success', '发送成功')
+        return true
+      } catch (error) {
+        if (this.imageShare === pending && !controller.signal.aborted && this._selectionShareTarget === target) {
+          if (!this.selectionShareTargetValid(target)) this.closeImageShareDialog()
+          else { this._imageShareAbort = null; this.imageShare = { ...state, loading: false, sending: false, error: error?.message || '选区分享失败，请重试' } }
+        }
+        return false
+      }
+    },
+    async submitImageShare() {
+      const state = this.imageShare, callback = this.onImageShare, editor = this.editor, session = this.session
+      if (state?.target === 'selection') return this.submitSelectionShare()
+      if (!state || state.sending || !state.recipients.length) return false
+      if (typeof callback !== 'function') { this.imageShare = { ...state, error: '当前宿主尚未配置图片分享服务' }; return false }
+      const node = editor?.state.doc.nodeAt(state.image.pos)
+      if (node?.type.name !== 'image' || node.attrs.blockId !== state.image.blockId || node.attrs.src !== state.image.src) { this.imageShare = { ...state, error: '原图片已变化，请重新打开分享' }; return false }
+      const controller = this._imageShareAbort = new AbortController()
+      this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
+      this.imageShare = { ...state, loading: false, sending: true, error: '' }
+      const pending = this.imageShare
+      try {
+        const url = new URL(this.shareDocumentLink())
+        url.hash = `share-${state.image.blockId}`
+        const result = await callback({ image: { ...node.attrs }, url: url.href, recipients: state.recipients.map(item => ({ ...item })), message: state.message, signal: controller.signal })
+        if (controller.signal.aborted || this.imageShare !== pending || this.editor !== editor || editor?.isDestroyed || this.session !== session || this.onImageShare !== callback) {
+          if (this.imageShare === pending) this.closeImageShareDialog()
+          return false
+        }
+        if (result === false) throw new Error('图片分享失败，请重试')
+        this._imageShareAbort = null
+        this.closeImageShareDialog()
+        this.showShareToast('success', '发送成功')
+        return true
+      } catch (error) {
+        if (this.imageShare === pending && !controller.signal.aborted) {
+          if (this.editor !== editor || editor?.isDestroyed || this.session !== session || this.onImageShare !== callback) this.closeImageShareDialog()
+          else this.imageShare = { ...state, loading: false, sending: false, error: error?.message || '图片分享失败，请重试' }
+        }
+        return false
+      }
+    },
     // —— 权限读取（唯一入口，禁止在模板里直接读 session 字段）——
     shareCan(key) {
       return readCapability(this.session, key)
@@ -737,10 +1000,9 @@ export default {
     copyShareText(text) {
       const clipboard = this.shareClipboardWriter()
       if (clipboard && typeof clipboard.writeText === 'function') {
-        clipboard.writeText(text).catch(() => this.copyShareTextFallback(text))
-        return
+        return clipboard.writeText(text).then(() => true).catch(() => this.copyShareTextFallback(text))
       }
-      this.copyShareTextFallback(text)
+      return Promise.resolve(this.copyShareTextFallback(text))
     },
     /** 拆成方法是为了让 http 页面（非安全上下文）与单测都能替换剪贴板实现。 */
     shareClipboardWriter() {
@@ -748,19 +1010,19 @@ export default {
     },
     /** 兜底路径：textarea + execCommand（与 `revisionMixin.copyRevisionAnchorFallback` 同写法）。 */
     copyShareTextFallback(text) {
+      let area
       try {
-        const area = document.createElement('textarea')
+        area = document.createElement('textarea')
         area.value = text
         area.setAttribute('readonly', 'readonly')
         area.style.position = 'fixed'
         area.style.top = '-1000px'
         document.body.appendChild(area)
         area.select()
-        document.execCommand('copy')
-        document.body.removeChild(area)
+        return document.execCommand('copy') === true
       } catch (error) {
-        // 复制失败不改文档状态，静默即可。
-      }
+        return false
+      } finally { area?.remove() }
     },
 
     // —— toast ——

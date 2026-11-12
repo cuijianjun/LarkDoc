@@ -1,36 +1,13 @@
 /**
- * 弹窗 / 抽屉 / 内嵌浮层 —— 原生 DOM 版（`src/ui/` 积木 · 阶段 5 批次 4）。
- *
- * 原 SFC `components/lark-doc/editor/dialogs/` 下的 5 个文件在本批次删除，这里是唯一实现：
- * 表格选择器 / 公式 / 链接 / 快捷键抽屉 / 内嵌网页浮层。
- * `scripts/verify-browser-dialogs.js` 的 52 条断言在逐字段量这里产出的 DOM
- * （`.lark-doc-dialog` 的宽 `min(420px,100%)` + padding 19 + radius 10、header 三段序、
- * 81 格网格的 `aria-label` 口径「{列}行{行}列」、抽屉 314 宽右贴边 + 关闭钮 26×26、
- * 内嵌浮层 540×164 / radius 8 / z-index 99 + footer 三段序），改之前先跑一遍。
- *
- * 四条与其它积木一致的规矩：
- * 1. **结构即契约**：类名 / `role` / `aria-*` / 段序逐字段复刻 SFC。
- * 2. **`v-if` → 真 insert/remove**：条件段（公式错误行、链接的「链接文本」与首段提示）
- *    一律走 `syncChildren`，不能只 `display:none` —— 断言量的是
- *    `querySelectorAll('label').length` 与 `paragraphs.length`，节点还在就会多算一项。
- * 3. **一次建节点、之后只改属性**：81 格网格、抽屉分组都在工厂里建好，`update()` 只切
- *    `is-preview` 与文案；重建会把焦点、hover 态与鼠标下的节点一起丢掉。
- * 4. **关闭即摘节点**：五个弹层各自是 `v-if`，`open: false` 时 `el` 从宿主摘掉，
- *    下次打开是一棵干净的子树（与 Vue 的销毁语义一致）。
- *
- * ⚠️ 三处**故意不统一**，别顺手改成「看起来更合理」的样子：
- * - `HelpDrawer` 是抽屉外壳（`.lark-doc-drawer-mask` + `.lark-doc-drawer`，右贴边全高），
- *   不是居中弹窗；关闭钮实测 **26×26** —— `.lark-doc button[aria-label^="关闭"]` 的 26px
- *   特异性盖住了 `.lark-doc-drawer-close` 的 24，别按 CSS 里的 24 写断言。
- * - `EmbedDialog` 不套 backdrop、不绑 Esc、外壳没有 `aria-modal`：它是贴着插入位置的
- *   非模态浮层，唯一全局关闭点是 `overlayDismissMixin.onDocumentPointerDown`。
- * - 表格选择器**没有** Esc 处理（靠根元素 `@keydown.esc` 冒泡到 `closeOverlay`），
- *   公式与链接则各自 `stop + prevent` 一层，避免同一次 Esc 被根元素重复消费。
+ * Pure DOM table picker, link form, shortcut drawer and web embed popover.
+ * Factories retain stable controls and attach/remove their surfaces on update().
+ * Formula editing lives with its core NodeView and uses the source anchored editor.
  */
 
-import { applyStyle, setAttr, syncChildren } from './dom'
+import { applyStyle, setAttr } from './dom'
 import { iconNode } from './icon'
 import { DRAWER_GROUPS } from './shortcutGroups'
+import { normalizeLinkUrl } from '../core/documentOperations'
 
 /** 表格选择器网格：9 列 × 9 行（对应 SFC 的 `v-for="n in 81"`）。 */
 const GRID_COLUMNS = 9
@@ -73,7 +50,7 @@ function closeButtonNode(label, iconSize) {
  * `@click.self` → 原生没有修饰符，比 `event.target === backdrop`：点弹窗内部时
  * target 是子节点，不关。
  */
-function createDialogShell(label, onClose, options = {}) {
+function createDialogShell(label, onClose) {
   const backdrop = document.createElement('div')
   backdrop.className = 'lark-doc-dialog-backdrop'
   backdrop.addEventListener('click', (event) => {
@@ -85,15 +62,6 @@ function createDialogShell(label, onClose, options = {}) {
   section.setAttribute('role', 'dialog')
   section.setAttribute('aria-modal', 'true')
   section.setAttribute('aria-label', label)
-  // `@keydown.esc.stop.prevent`：只有公式 / 链接两个 SFC 写了，表格选择器刻意没有。
-  if (options.closeOnEsc) {
-    section.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      event.preventDefault()
-      onClose()
-    })
-  }
   backdrop.appendChild(section)
   return { backdrop, section }
 }
@@ -199,75 +167,6 @@ export function createTablePickerDialog(options = {}) {
 }
 
 /**
- * 公式对话框（`MathDialog.vue`）。
- *
- * 错误行是 `v-if`：`role="alert"` 的 `p` 在无错时**真的不在 DOM 里**
- * （断言 `measureDialog().hasAlert === false`）。输入框 `@keydown.enter.prevent`
- * 直接提交，与「插入」按钮同一条路径。
- */
-export function createMathDialog(options = {}) {
-  const handlers = options.handlers || {}
-  const host = options.host || null
-  const call = (name, ...args) => {
-    const fn = handlers[name]
-    return typeof fn === 'function' ? fn(...args) : undefined
-  }
-
-  const state = { open: false, value: '', error: '' }
-
-  const onClose = () => call('onClose')
-  const { backdrop: el, section } = createDialogShell('插入公式', onClose, { closeOnEsc: true })
-  const { header } = createDialogHeader({ title: '插入公式', closeLabel: '关闭对话框', iconSize: 14, onClose })
-
-  const label = document.createElement('label')
-  // `<label>LaTeX <input>`：文字在前，input 在后（同一行，CSS 不管，断言也不管，但结构得对）。
-  label.appendChild(document.createTextNode('LaTeX '))
-  const input = document.createElement('input')
-  input.setAttribute('aria-label', 'LaTeX 公式')
-  input.setAttribute('placeholder', '例如 x^2 + y^2')
-  input.addEventListener('input', (event) => call('onInput', event.target.value))
-  onEnter(input, () => call('onSubmit'))
-  label.appendChild(input)
-
-  const errorNode = document.createElement('p')
-  errorNode.setAttribute('role', 'alert')
-  errorNode.className = 'lark-doc-error'
-
-  const submit = document.createElement('button')
-  submit.type = 'button'
-  submit.textContent = '插入'
-  submit.addEventListener('click', () => call('onSubmit'))
-
-  function render() {
-    syncChildren(section, [
-      { node: header, on: true },
-      { node: label, on: true },
-      { node: errorNode, on: !!state.error },
-      { node: submit, on: true },
-    ])
-    setInputValue(input, state.value)
-    if (state.error && errorNode.textContent !== state.error) errorNode.textContent = state.error
-  }
-
-  function update(patch) {
-    Object.assign(state, patch || {})
-    if (!state.open) {
-      if (el.parentNode) el.parentNode.removeChild(el)
-      return
-    }
-    if (host && el.parentNode !== host) host.appendChild(el)
-    render()
-  }
-
-  return {
-    el,
-    update,
-    focusInput() { if (el.parentNode) input.focus() },
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
-  }
-}
-
-/**
  * 链接对话框（`LinkDialog.vue`）—— 两形态共用一层外壳。
  *
  * 插入模式（空选区）比编辑模式多两段：「链接文本」label 与首段提示；两处都是 `v-if`，
@@ -277,90 +176,55 @@ export function createMathDialog(options = {}) {
  * 两个按钮的 `disabled` 是**算出来的**，不是点出来的：
  * 应用 = 地址非空 且（编辑模式 或 显示文字非空）；解除 = 非插入模式 且 当前在链接上。
  */
-export function createLinkDialog(options = {}) {
-  const handlers = options.handlers || {}
-  const host = options.host || null
-  const call = (name, ...args) => {
-    const fn = handlers[name]
-    return typeof fn === 'function' ? fn(...args) : undefined
+export function createLinkDialog({ host, handlers = {} } = {}) {
+  const el = document.createElement('div')
+  el.className = 'lark-doc-link-dialog'
+  el.setAttribute('role', 'dialog')
+  el.setAttribute('aria-label', '设置链接')
+  const state = {}
+  function input(label, name, placeholder, onInput) {
+    const row = document.createElement('label')
+    row.textContent = label
+    const field = document.createElement('input')
+    field.setAttribute('aria-label', name)
+    field.placeholder = placeholder
+    field.spellcheck = false
+    field.addEventListener('input', event => onInput?.(event.target.value))
+    onEnter(field, () => handlers.onApply?.())
+    row.appendChild(field)
+    el.appendChild(row)
+    return field
   }
-
-  const state = { open: false, insertMode: false, value: '', text: '', linkActive: false }
-
-  const onClose = () => call('onClose')
-  const { backdrop: el, section } = createDialogShell('设置链接', onClose, { closeOnEsc: true })
-  const { header } = createDialogHeader({ title: '设置链接', closeLabel: '关闭链接设置', iconSize: 14, onClose })
-
-  const textLabel = document.createElement('label')
-  textLabel.appendChild(document.createTextNode('链接文本 '))
-  const textInput = document.createElement('input')
-  textInput.setAttribute('aria-label', '链接文本')
-  textInput.setAttribute('placeholder', '输入链接显示文字')
-  textInput.addEventListener('input', (event) => call('onTextInput', event.target.value))
-  onEnter(textInput, () => call('onApply'))
-  textLabel.appendChild(textInput)
-
-  const valueLabel = document.createElement('label')
-  valueLabel.appendChild(document.createTextNode('链接地址 '))
-  const valueInput = document.createElement('input')
-  valueInput.setAttribute('aria-label', '链接地址')
-  valueInput.setAttribute('placeholder', 'https://example.com')
-  valueInput.addEventListener('input', (event) => call('onValueInput', event.target.value))
-  onEnter(valueInput, () => call('onApply'))
-  valueLabel.appendChild(valueInput)
-
-  const textHint = document.createElement('p')
-  textHint.textContent = '输入显示文字和地址后插入本地链接；'
-
-  const urlHint = document.createElement('p')
-  urlHint.textContent = '仅允许 http、https、mailto、tel 或 # 锚点链接；取消不会改变选区。'
-
-  const applyButton = document.createElement('button')
-  applyButton.type = 'button'
-  applyButton.textContent = '应用链接'
-  applyButton.addEventListener('click', () => call('onApply'))
-
-  const removeButton = document.createElement('button')
-  removeButton.type = 'button'
-  removeButton.textContent = '解除链接'
-  removeButton.addEventListener('click', () => call('onRemove'))
-
-  function render() {
-    syncChildren(section, [
-      { node: header, on: true },
-      { node: textLabel, on: !!state.insertMode },
-      { node: valueLabel, on: true },
-      { node: textHint, on: !!state.insertMode },
-      { node: urlHint, on: true },
-      { node: applyButton, on: true },
-      { node: removeButton, on: true },
-    ])
-    setInputValue(textInput, state.text)
-    setInputValue(valueInput, state.value)
-    const text = state.text === null || state.text === undefined ? '' : String(state.text)
-    applyButton.disabled = !state.value || (!!state.insertMode && !text.trim())
-    removeButton.disabled = !!state.insertMode || !state.linkActive
-  }
-
-  function update(patch) {
-    Object.assign(state, patch || {})
-    if (!state.open) {
-      if (el.parentNode) el.parentNode.removeChild(el)
-      return
-    }
-    if (host && el.parentNode !== host) host.appendChild(el)
-    render()
-  }
-
+  const textInput = input('文本', '链接文本', '输入文本', handlers.onTextInput)
+  const valueInput = input('链接', '链接地址', '粘贴或输入链接', handlers.onValueInput)
+  const apply = document.createElement('button')
+  apply.type = 'button'
+  apply.textContent = '确认'
+  apply.addEventListener('click', () => handlers.onApply?.())
+  el.appendChild(apply)
+  el.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    handlers.onClose?.()
+  })
   return {
     el,
-    update,
-    /** 打开即聚焦：插入模式落「链接文本」，编辑模式落「链接地址」。 */
-    focusFirstField() {
-      if (!el.parentNode) return
-      ;(state.insertMode ? textInput : valueInput).focus()
+    update(patch) {
+      Object.assign(state, patch)
+      if (!state.open) { el.remove(); return }
+      if (host && el.parentNode !== host) host.appendChild(el)
+      setInputValue(textInput, state.text)
+      setInputValue(valueInput, state.value)
+      apply.disabled = !normalizeLinkUrl(state.value)
+      const win = el.ownerDocument.defaultView
+      const rect = el.getBoundingClientRect()
+      const anchor = state.anchor || { left: (win.innerWidth - rect.width) / 2, top: win.innerHeight / 2, bottom: win.innerHeight / 2 }
+      el.style.left = `${Math.max(8, Math.min(anchor.left, win.innerWidth - rect.width - 8))}px`
+      el.style.top = `${Math.max(8, anchor.bottom + rect.height + 4 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - rect.height - 4)}px`
     },
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
+    focusFirstField() { if (el.parentNode) (state.insertMode ? textInput : valueInput).focus() },
+    destroy() { el.remove() },
   }
 }
 

@@ -38,6 +38,7 @@ import LarkDocWorkspace from '../../src/components/lark-doc/LarkDocWorkspace'
 const mounted = []
 afterEach(() => {
   mounted.splice(0).forEach(({ component, vm }) => { component.beforeDestroy.call(vm); vm.$el.remove() })
+  vi.restoreAllMocks()
   mocks.handles.length = 0; mocks.readyOnMount = false; mocks.realRenderer = null; document.body.innerHTML = ''
 })
 
@@ -67,6 +68,45 @@ function mount(component, propsData) {
 const emitted = (vm, event) => vm.$emit.mock.calls.filter(([name]) => name === event).map(([, payload]) => payload)
 
 describe('无SFC Vue2 options 薄适配器', () => {
+  it('真实 renderer 的引用候选和按钮动作采用替换后的 props', { timeout: 60000 }, async () => {
+    const createRange = document.createRange.bind(document)
+    vi.spyOn(document, 'createRange').mockImplementation(() => Object.assign(createRange(), {
+      getClientRects: () => [],
+      getBoundingClientRect: () => ({ top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 }),
+    }))
+    mocks.realRenderer = (await vi.importActual('../../src/mount/domRenderer')).createDomRenderer
+    const oldAction = vi.fn()
+    const nextAction = vi.fn()
+    const { vm } = mount(LarkDocWorkspace, {
+      initialContent: '<p>正文</p>',
+      mentionSource: [{ kind: 'user', id: 'old-user', name: 'Old User' }],
+      calendarSource: [{ eventId: 'old-event', title: 'Old Event', start: '2026-11-11T10:00:00Z' }],
+      onIsvButtonAction: oldAction,
+    })
+    const handle = vm._nativeHandle
+    const next = {
+      mentionSource: [{ kind: 'user', id: 'new-user', name: 'New User' }],
+      calendarSource: [{ eventId: 'new-event', title: 'New Event', start: '2026-11-11T10:00:00Z' }],
+      onIsvButtonAction: nextAction,
+    }
+    for (const [key, value] of Object.entries(next)) {
+      vm[key] = vm.$props[key] = value
+      LarkDocWorkspace.watch[key].handler.call(vm, value)
+    }
+    await Promise.resolve()
+    const host = handle.nativeHost.host
+    host.editor.commands.setIsv({ kind: 'button', action: 'follow_page', buttonText: 'Follow' })
+    handle.root.querySelector('.docx-button-component').click()
+    expect(nextAction).toHaveBeenCalledOnce()
+    expect(oldAction).not.toHaveBeenCalled()
+    host.onMention({ from: 1, to: 1, query: '' })
+    await vi.waitFor(() => expect(host.mentionItems[0]?.id).toBe('new-user'))
+    host.closeMentionPanel()
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    host.startCalendarEvent()
+    await vi.waitFor(() => expect(host.calendarEvents[0]?.eventId).toBe('new-event'))
+  })
+
   it('保留组件名、v-model、标题事件与命令式转发，不自行创建业务状态', async () => {
     const { vm, handle } = mount(LarkDocEditor, { value: '<p>正文</p>', title: '初始', maxLength: 12 })
     expect(typeof LarkDocEditor).toBe('object')

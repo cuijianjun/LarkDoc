@@ -34,6 +34,7 @@ import {
   updateDocumentDecorations,
 } from '../../src/core/blocks/document-decorations'
 import { createDerivedIndex } from '../../src/core/derive/index'
+import { canContinueListNumber, computeOrderedListNumbers, previousSiblingOrderedList } from '../../src/core/documentOperations'
 
 const schema = getSchema(createLarkDocExtensions())
 
@@ -170,6 +171,45 @@ const clickWidget = (decoration) => {
   dom.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   return dom
 }
+
+describe('飞书列表编号与圆点', () => {
+  const ordered = (items, attrs = {}) => ({ type: 'orderedList', attrs, content: items.map((value, index) => ({ type: 'listItem', content: [p(value, { blockId: `item_${value}_${index}` })] })) })
+  const documentOf = content => schema.nodeFromJSON({ type: 'doc', content })
+  const listPositions = doc => {
+    const positions = []
+    doc.descendants((node, pos) => { if (node.type.name === 'orderedList') positions.push(pos) })
+    return positions
+  }
+  it('隔着正文仍能接上同容器前一有序列表，显示4而非重新从1开始', () => {
+    const doc = documentOf([ordered(['一', '二', '三']), p('分隔正文'), ordered(['四'], { continueFrom: true })])
+    const [first, second] = listPositions(doc)
+    expect(previousSiblingOrderedList(doc, second)?.pos).toBe(first)
+    expect(computeOrderedListNumbers(doc).get(second + 1).label).toBe('4.')
+    const separate = documentOf([ordered(['一', '二', '三']), p('分隔正文'), ordered(['四'])])
+    expect(canContinueListNumber(separate, listPositions(separate)[1] + 1)).toBe(true)
+  })
+  it('未选择继续编号保持独立起点，后续继续只接最近同容器列表', () => {
+    const doc = documentOf([ordered(['一', '二', '三']), p('分隔正文'), ordered(['七'], { start: 7 }), p('另一段'), ordered(['八'], { continueFrom: true })])
+    const [, second, third] = listPositions(doc)
+    const numbers = computeOrderedListNumbers(doc)
+    expect(numbers.get(second + 1).label).toBe('7.')
+    expect(numbers.get(third + 1).label).toBe('8.')
+  })
+  it('继续编号不读取外层或前一不同父容器的列表', () => {
+    const doc = documentOf([ordered(['一', '二', '三']), { type: 'blockquote', content: [p('引用'), ordered(['内层'], { continueFrom: true })] }])
+    const [, inner] = listPositions(doc)
+    expect(previousSiblingOrderedList(doc, inner)).toBeNull()
+    expect(computeOrderedListNumbers(doc).get(inner + 1).label).toBe('1.')
+  })
+  it('二级无序列表渲染源空心圆，一级保持实心圆', () => {
+    const doc = documentOf([{ type: 'bulletList', content: [{ type: 'listItem', content: [p('一级'), { type: 'bulletList', content: [{ type: 'listItem', content: [p('二级')] }] }] }] }])
+    const state = EditorState.create({ schema, doc })
+    const editor = { state, isEditable: true, view: { nodeDOM: () => null }, storage: { larkDoc: { folded: new Set() } } }
+    const set = createDocumentDecorations({ state, editor, storage: fakeStorage(), enabled: () => true, options: {} })
+    const markers = widgetsOfCategory(set, 'list-marker').map(widget => widget.type.toDOM(null, () => widget.from).textContent)
+    expect(markers).toEqual(['•', '◦'])
+  })
+})
 
 describe('widget 装饰的点击目标跟随当前位置（P7-01 回归）', () => {
   it('fixture 确实让后面的块整体后移一位', () => {

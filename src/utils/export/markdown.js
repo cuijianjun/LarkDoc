@@ -24,10 +24,8 @@
  *   1. **不引入 GFM 之外的方言语法**：Markdown 没有下划线与高亮的原生写法，本文件用
  *      `<u>` / `<mark>` 两种**行内 HTML** 承载（marked 原样透传、归一器认这两个标签）。
  *      不发明 `==highlight==` 之类只在个别渲染器里生效的记号。
- *   2. **不把未知块硬塞成段落**：fileBlock / webEmbed / cardEmbed / bookmark /
- *      calendar_event / isv / sheet / poll / bitable / unknownBlock / blockMath 一律
- *      **跳过、不落 Markdown**（见 `INLINE_FALLBACK` 与 `BLOCK_SKIP`）；宁可少一段文本，
- *      也不产出一个「看着像正文、其实丢了结构」的 md。
+ *   2. **未知块保留兼容策略**：unknownBlock 仍跳过；已实现的卡片、容器与公式
+ *      导出可读文本、链接或数据表，不把语义回退冒称为原块结构的无损往返。
  *   3. **不支持的 mark 组合不绕**：`代码 + 强调/链接` 在 Markdown 里只能保住外层时，
  *      按 `MD_MARK_WRAPPERS` 的固定顺序取内外层，不做二次转义。
  *   4. **不为围栏里的反引号转义**：代码块按内容里最长连续反引号 +1 取围栏长度，
@@ -36,6 +34,13 @@
  *   6. **不碰编辑器实例**：入参是 doc（JSON 或节点实例），不读 editor 状态。
  */
 import { marked } from 'marked'
+import { flattenHeadingContainers, safeUrl } from '../../core/documentOperations'
+import { readCard } from '../../core/embed/card'
+import { readCalendarEvent } from '../../core/embed/calendar-event'
+import { readSheet, cellText, columnLabel } from '../../core/blocks/sheet-render'
+import { readBitable, gridRows } from '../../core/blocks/bitable-render'
+import { readPoll } from '../../core/blocks/poll-render'
+import { normalizeImageCrop } from '../../core/media/image-crop'
 
 /** 硬换行的落地写法：`\` + 换行（比行尾两空格更抗「被编辑器 trim」）。 */
 export const MD_HARD_BREAK = '\\\n'
@@ -88,16 +93,89 @@ export const MD_MARK_WRAPPERS = Object.freeze([
  * 注意：退化后**结构不往返**（mention 节点 → 普通文本），是刻意的取舍，见负结论 2。
  */
 export const INLINE_FALLBACK = Object.freeze({
-  emoji: (node) => node.attrs.name || '',
-  mention: (node) => `@${node.attrs.name || node.attrs.id || ''}`,
-  inlineMath: (node) => `$${node.attrs.latex || ''}$`,
+  emoji: (node) => node.attrs?.name || '',
+  mention: (node) => `@${node.attrs?.name || node.attrs?.id || ''}`,
+  inlineMath: (node) => `$${node.attrs?.latex || ''}$`,
 })
 
 /** 直接跳过（不落任何 Markdown）的块级节点 —— 见负结论 2。 */
 export const BLOCK_SKIP = Object.freeze([
-  'fileBlock', 'webEmbed', 'cardEmbed', 'bookmark', 'calendar_event',
-  'isv', 'sheet', 'poll', 'bitable', 'unknownBlock', 'blockMath',
+  'unknownBlock',
 ])
+
+const exportText = value => typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+const exportParagraph = text => ({ type: 'paragraph', content: text ? [{ type: 'text', text: String(text) }] : [] })
+const exportLink = (label, href) => ({ type: 'paragraph', content: [{ type: 'text', text: String(label || href || ''),
+  ...(typeof href === 'string' && !href.includes('\\') && (safeUrl(href) || (safeUrl(href, true) && !/^data:/i.test(href))) ? { marks: [{ type: 'link', attrs: { href } }] } : {}),
+}] })
+function exportTable(rows) {
+  return { type: 'table', content: rows.map((row, index) => ({ type: 'tableRow', content: row.map(value => ({
+    type: index ? 'tableCell' : 'tableHeader', content: [exportParagraph(exportText(value))],
+  })) })) }
+}
+
+/** Known atoms become portable semantic content; unknown payloads remain on the compatibility path. */
+function portableBlock(node) {
+  const attrs = node.attrs || {}
+  if (BLOCK_SKIP.includes(node.type)) return []
+  if (['callout', 'columns', 'column', 'details', 'detailsContent'].includes(node.type)) return childrenOf(node).flatMap(portableBlock)
+  if (node.type === 'detailsSummary') return [{ ...node, type: 'paragraph' }]
+  if (['linkEmbed', 'webEmbed', 'bookmark', 'fileBlock'].includes(node.type)) {
+    const href = attrs.href || attrs.url || attrs.src || attrs.originalSrc || ''
+    let meta = {}
+    try { if (typeof attrs.cardMeta === 'string') meta = JSON.parse(attrs.cardMeta) || {} } catch (_) { /* A readable URL is still useful without metadata. */ }
+    const label = exportText(meta.title) || attrs.title || attrs.name || href || (node.type === 'fileBlock' ? '附件' : '网页')
+    const result = [exportLink(label, href)]
+    const desc = exportText(meta.desc) || exportText(attrs.desc)
+    if (desc) result.push(exportParagraph(desc))
+    return result
+  }
+  if (node.type === 'blockMath') return [{ type: 'codeBlock', attrs: { language: 'latex' }, content: [{ type: 'text', text: exportText(attrs.latex) }] }]
+  if (node.type === 'sheet') {
+    const sheet = readSheet(attrs.sheet)
+    if (!sheet) return [exportParagraph('[电子表格]')]
+    const rows = [Array.from({ length: sheet.cols }, (_, col) => columnLabel(col))]
+    for (let row = 0; row < sheet.rows; row += 1) rows.push(Array.from({ length: sheet.cols }, (_, col) => cellText(sheet, row, col)))
+    return [exportParagraph(sheet.name || '电子表格'), exportTable(rows)]
+  }
+  if (node.type === 'bitable') {
+    const bitable = readBitable(attrs.bitable)
+    if (!bitable) return [exportParagraph('[多维表格]')]
+    const grid = gridRows(bitable)
+    return [exportParagraph(bitable.name), ...(grid.header.length ? [exportTable([grid.header, ...grid.rows])] : [])]
+  }
+  if (node.type === 'poll') {
+    const poll = readPoll(attrs.poll)
+    if (!poll) return [exportParagraph('[投票]')]
+    return [exportParagraph(poll.title || '投票'), ...poll.options.map(option => exportParagraph(`${option.text || '未命名选项'} (${poll.votes[option.id] || 0} 票)`)),
+      ...(poll.deadline ? [exportParagraph(`截止：${poll.deadline}`)] : [])]
+  }
+  if (node.type === 'calendar_event') {
+    const event = readCalendarEvent(attrs)
+    return event ? [event.title, event.dateLine, event.organizerLine?.name, event.location, event.reminderLine].filter(Boolean).map(exportParagraph) : [exportParagraph(attrs.title || '[日程]')]
+  }
+  if (node.type === 'isv') return [attrs.kind === 'button' ? exportLink(attrs.buttonText || '按钮', attrs.linkUrl) : exportParagraph('[目录导航]')]
+  if (node.type === 'agenda') return childrenOf(node).flatMap(portableBlock)
+  if (node.type === 'agendaItem') return [exportParagraph(`${attrs.durationMinutes} 分钟`), ...childrenOf(node).flatMap(portableBlock)]
+  if (node.type === 'agendaTitle') return [{ ...node, type: 'paragraph' }]
+  if (node.type === 'agendaContent') return childrenOf(node).flatMap(portableBlock)
+  if (node.type === 'cardEmbed') {
+    const card = readCard(attrs.card)
+    const payload = card?.payload || {}
+    return [exportParagraph(exportText(payload.title) || '[卡片]'), ...(payload.desc ? [exportParagraph(exportText(payload.desc))] : []),
+      ...(Array.isArray(payload.fields) ? payload.fields.map(field => exportParagraph([exportText(field.label), exportText(field.value)].filter(Boolean).join('：'))) : []),
+      ...(Array.isArray(card?.actions) ? card.actions.filter(action => action.kind === 'open').map(action => exportLink(action.label || action.href, action.href)) : [])]
+  }
+  return [{ ...node, ...(Array.isArray(node.content) ? { content: node.content.flatMap(portableBlock) } : {}) }]
+}
+
+/** Shared JSON boundary for Word/Markdown, including public heading.children and PM nodes. */
+export function normalizeExportDocument(doc) {
+  const source = typeof doc?.toJSON === 'function' ? doc.toJSON() : doc
+  const nodes = Array.isArray(source) ? source : childrenOf(source)
+  const flat = flattenHeadingContainers({ type: 'doc', content: nodes.map(node => typeof node?.toJSON === 'function' ? node.toJSON() : node) })
+  return { type: 'doc', content: flat.content.filter(node => node && typeof node === 'object').flatMap(portableBlock) }
+}
 
 /** HTML 里「不产生节点、直接下钻」的容器（marked 的 thead/tbody 就是这种）。 */
 const HTML_TRANSPARENT = Object.freeze(['thead', 'tbody', 'tfoot', 'colgroup', 'html', 'body'])
@@ -230,9 +308,12 @@ export function prefixLines(text, firstPrefix, restPrefix, emptyPrefix) {
 // —— 序列化：doc → Markdown ——
 
 function serializeImage(node) {
+  if (normalizeImageCrop(node.attrs?.crop)) return escapeText(`[裁剪图片未导出原图链接：${node.attrs?.alt || node.attrs?.caption || '请另存可见区域'}]`, false)
+  const rawSrc = String(attrOf(node, 'src', ''))
+  if (rawSrc.includes('\\') || !safeUrl(rawSrc, true)) return '[图片链接无效]'
   // escapeText 已经处理过 `[` `]`，这里别再转一次（会变成 `\\[`）。
   const alt = escapeText(String(attrOf(node, 'alt', '') || ''), false)
-  const src = linkHref({ attrs: { href: attrOf(node, 'src', '') } })
+  const src = linkHref({ attrs: { href: rawSrc } })
   const title = attrOf(node, 'title', '')
   const suffix = title ? ` "${String(title).replace(/"/g, '\\"')}"` : ''
   return `![${alt}](${src}${suffix})`
@@ -519,6 +600,8 @@ function serializeBlock(node, indent) {
       return `${indent}---`
     case 'table':
       return serializeTable(node, indent)
+    case 'image':
+      return prefixLines(serializeImage(node), indent, indent)
     default:
       return ''
   }
@@ -543,8 +626,7 @@ function serializeChildren(nodes, indent) {
  */
 export function serializeMarkdown(doc) {
   if (!doc || typeof doc !== 'object') return ''
-  const nodes = Array.isArray(doc) ? doc : childrenOf(doc)
-  return serializeChildren(nodes, '')
+  return serializeChildren(normalizeExportDocument(doc).content, '')
 }
 
 // —— 解析：Markdown → HTML → doc ——
