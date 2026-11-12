@@ -31,33 +31,6 @@ function dispatchFileEvent(editor, source, files, html = '') {
 }
 
 describe('真实门面图片上传', () => {
-  it('门面同时保留初始正文保护选项透传、图片配置身份和独立附件通道', async () => {
-    const uploader = { action: '/api/images', onSuccess: vi.fn() }
-    const uploadFile = { upload: vi.fn(async () => ({ token: 'attachment-token' })) }
-    const file = { resolveUrl: vi.fn(async () => '/attachments/document.pdf') }
-    const renderer = createDomRenderer()
-    const mount = vi.spyOn(renderer, 'mount')
-    const element = document.createElement('div')
-    const doc = new LarkDoc({
-      element, storage: 'none', content: '<p>宿主正文</p>', preserveInitialContent: true,
-      uploader, uploadFile, file, rendererFactory: () => renderer,
-    })
-    try {
-      const props = mount.mock.calls[0][0].props
-      expect(props.preserveInitialContent).toBe(true)
-      expect(props.uploader).toBe(uploader)
-      expect(doc.getText()).toBe('宿主正文')
-      const attachment = new File(['pdf'], 'document.pdf', { type: 'application/pdf' })
-      expect(await props.uploadFile(attachment)).toEqual({ token: 'attachment-token' })
-      expect(uploadFile.upload).toHaveBeenCalledExactlyOnceWith(attachment)
-      expect(uploadFile.upload.mock.contexts[0]).toBe(uploadFile)
-      expect(await props.resolveFileUrl('attachment-token')).toBe('/attachments/document.pdf')
-      expect(file.resolveUrl.mock.contexts[0]).toBe(file)
-      expect(uploader.onSuccess).not.toHaveBeenCalled()
-      expect(LarkDoc.prototype._resolveUploader).toBeUndefined()
-    } finally { doc.destroy() }
-  })
-
   it.each(['object', 'function', 'legacy', 'provider', 'legacy-provider'])('%s uploader 实际执行并采用无附件 ID 的地址', async kind => {
     const upload = vi.fn(async () => ({ url: 'https://cdn.example.com/uploaded.png' }))
     const options = kind === 'legacy' ? { uploadImage: upload } : kind === 'legacy-provider' ? { uploadImage: createUploadProvider({ upload }) }
@@ -367,8 +340,7 @@ describe('图表菜单交互', () => {
     stubRangeLayout()
     vi.stubGlobal('mermaid', { initialize: vi.fn(), render: vi.fn(async () => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' })) })
     const renderer = createDomRenderer()
-    const config = { ...props.config, layout: { ...props.config?.layout, toolbarVisible: true } }
-    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p></p>', ...props, config } })
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p></p>', ...props } })
     return { root: renderer.getRoot(handle), host: handle.nativeHost.host, editor: handle.editor }
   }
 
@@ -700,7 +672,7 @@ describe('迁移期 DOM renderer 契约', () => {
       element: host,
       props: {
         initialContent: '<p>正文</p>',
-        config: { layout: { toolbarVisible: true }, toolbar: { marksAllow: ['bold', 'strike'] }, features: { ai: false, outline: false } },
+        config: { toolbar: { marksAllow: ['bold', 'strike'] }, features: { ai: false, outline: false } },
       },
     })
     await Promise.resolve()
@@ -718,10 +690,7 @@ describe('迁移期 DOM renderer 契约', () => {
   it('正文标题切换走 setParagraph，清除格式同时清节点', async () => {
     const host = document.createElement('div')
     const renderer = createDomRenderer()
-    const handle = mountRenderer(renderer, {
-      element: host,
-      props: { initialContent: '<p>正文</p>', config: { layout: { toolbarVisible: true } } },
-    })
+    const handle = mountRenderer(renderer, { element: host, props: { initialContent: '<p>正文</p>' } })
     await Promise.resolve()
     const root = renderer.getRoot(handle)
     const editor = handle.editor
@@ -827,7 +796,7 @@ describe('真实门面媒体 HTML 回传', () => {
 it('两个真实编辑器之间点击插入按钮会关闭另一个编辑器的菜单', async () => {
   const elements = [document.createElement('div'), document.createElement('div')]
   elements.forEach(element => document.body.appendChild(element))
-  const docs = elements.map(element => new LarkDoc({ element, storage: 'none', content: '<p>正文</p>', config: { layout: { toolbarVisible: true } } }))
+  const docs = elements.map(element => new LarkDoc({ element, storage: 'none', content: '<p>正文</p>' }))
   try {
     const firstHost = docs[0]._handle.nativeHost.host
     firstHost.openCommandMenu('plus')

@@ -227,6 +227,8 @@ export function createThemeController(options = {}) {
   function destroy() {
     stopListeners()
     cancelThemeTransition(getRoot())
+    if (boundRoot && boundRoot._larkDocTheme === api) delete boundRoot._larkDocTheme
+    boundRoot = null
   }
 
   const api = { setTheme, getTheme, applyToRoot, destroy }

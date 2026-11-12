@@ -13,7 +13,6 @@
  * 只接受一个「这笔事务是不是远端来的」谓词（§5.7.2-1 的 blockId 冲突就靠它）。
  */
 import * as Y from 'yjs'
-export { Y as Yjs }
 import { Collaboration, isChangeOrigin } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { HocuspocusProvider } from '@hocuspocus/provider'
@@ -30,6 +29,7 @@ export * from './policies'
  * 评论锚点：编解码器 + 接进 `core/comments` 的那个 codec（P6b 才真正用上）。
  */
 export * from './anchors'
+export * from './durable-bridge'
 
 /**
  * 这笔事务是不是「远端来的」。

@@ -11,7 +11,17 @@ import {
 import { unreadCount } from '../../../core/comments/index'
 import { bindThreads, resolveAnchorCodec } from '../../../core/comments/binding'
 import { normalizeAuthor } from '../../../core/comments/thread'
+import { normalizeCommentMetadata } from '../../../core/comments/mentions'
+import { encodeAnchor, decodeAnchor } from '../../../core/comments/anchor'
+import { createCommentOperationId } from '../../../providers/comments'
 import { projectCapabilityUi } from '../../../core/policy/capability'
+
+let commentImagesPromise
+function loadCommentImages() {
+  if (!commentImagesPromise) commentImagesPromise = import(/* webpackChunkName: "editor-comment-images" */ './commentImages').catch(error => { commentImagesPromise = null; throw error })
+  let timer
+  return Promise.race([commentImagesPromise, new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('COMMENT_IMAGE_COMPONENT_TIMEOUT')), 15000) })]).finally(() => clearTimeout(timer))
+}
 
 /** 面板与正文右缘的间距（实测 1214 - 1202，与修订面板同口径）。 */
 const COMMENT_ANCHOR_GUTTER = 12
@@ -155,6 +165,7 @@ export default {
     }
   },
   computed: {
+    commentCapabilityState() { return projectCapabilityUi(this.session, 'canComment') },
     
     
     
@@ -194,20 +205,35 @@ export default {
     window.addEventListener('keydown', this.onCommentReactionKeydown, true)
     // 宿主的 `mounted` 在本钩子之后才建编辑器 —— 延一帧再拉评论、挂监听。
     this.$nextTick(() => {
-      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-      this._commentEditorDom = this.editor.view.dom
-      this._commentEditorDom.addEventListener('pointerdown', this.onCommentPointerDown)
-      this.loadComments()
+      if (!this.editor) return
+      this.editor.view.dom.addEventListener('pointerdown', this.onCommentPointerDown)
+      this.editor.on('transaction', this.onCommentTransaction)
+      this.loadComments().then(() => this.openCommentLink()).catch(() => {})
     })
     window.addEventListener('scroll', this.onCommentViewportChange, true)
     window.addEventListener('resize', this.onCommentViewportChange)
   },
   beforeDestroy() {
-    this._commentLoadToken = null
+    this.resetCommentParticipants()
+    document.removeEventListener('pointerdown', this.onCommentReactionOutside, true)
+    window.removeEventListener('keydown', this.onCommentReactionKeydown, true)
+    this.resetCommentImages()
+    this.closeCommentReaction()
+    this.commentDisposed = true; this.commentLoadGeneration++
+    if (this._commentStopCapabilities) this._commentStopCapabilities()
+    if (this._commentStopProvider) this._commentStopProvider()
+    if (this._commentStopReset) this._commentStopReset()
+    if (this._commentStopChanges) this._commentStopChanges()
+    if (this._commentStopAssets) this._commentStopAssets()
+    if (this.editor) {
+      this.editor.off('transaction', this.onCommentTransaction)
+      if (this._commentDecorationKey) this.editor.unregisterPlugin(this._commentDecorationKey)
+    }
     window.removeEventListener('scroll', this.onCommentViewportChange, true)
     window.removeEventListener('resize', this.onCommentViewportChange)
-    this._commentEditorDom?.removeEventListener('pointerdown', this.onCommentPointerDown)
-    this._commentEditorDom = null
+    if (this.editor && this.editor.view && this.editor.view.dom) {
+      this.editor.view.dom.removeEventListener('pointerdown', this.onCommentPointerDown)
+    }
   },
   methods: {
     setCommentMessage(value) { this.commentMessage = value },
@@ -367,8 +393,13 @@ export default {
     closeCommentTranslation() { this.commentTranslationContext = null; this.commentTranslationState = null },
     // —— 闸门与 Provider ——
     /** 单一判定入口：没配 session 时按 DEFAULT_CAPABILITIES（八项默认 true）放行。 */
+    commentCapabilityState(capability = 'canComment') {
+      return projectCapabilityUi(this.session, capability)
+    },
     commentCan(capability) {
-      return projectCapabilityUi(this.session, capability).allowed
+      const session = this.session
+      if (!session || typeof session.can !== 'function') return true
+      return projectCapabilityUi(session, capability).allowed
     },
     /** 写操作的统一闸门；返回 false 时调用方直接 return（UI 侧同步置灰）。 */
     commentAllowed(action, threadId, replyId) {
@@ -403,39 +434,38 @@ export default {
 
     // —— 读取与绑定 ——
     async loadComments() {
-      if (this._isBeingDestroyed || this._isDestroyed || (this.editor && this.editor.isDestroyed)) return []
-      const editor = this.editor
-      const token = {}
-      this._commentLoadToken = token
-      const session = this.session
+      const generation = ++this.commentLoadGeneration
       const provider = this.commentProvider()
       if (!provider || !this.commentCan('canView')) {
-        this.commentThreads = []
-        this.commentPanels = []
+        this.resetCommentImages(true)
+        this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
+        this.refreshCommentDecorations()
         return []
       }
-      const documentId = session && session.documentId ? session.documentId : ''
-      const user = session && session.user
-      const current = () => this._commentLoadToken === token
-        && this.session === session
-        && (session && session.documentId ? session.documentId : '') === documentId
-        && (session && session.user) === user
-        && this.commentProvider() === provider
-        && this.editor === editor
-        && !this._isBeingDestroyed && !this._isDestroyed
-        && !(editor && editor.isDestroyed)
-        && this.commentCan('canView')
-      let threads
       try {
-        threads = await provider.list({ documentId })
+        const threads = this.session && typeof this.session.listComments === 'function'
+          ? await this.session.listComments() : await provider.list({ documentId: this.session && this.session.documentId })
+        if (this.commentDisposed || generation !== this.commentLoadGeneration || provider !== this.commentProvider() || !this.commentCan('canView')) return []
+        this.commentSourceThreads = threads
+        this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, threads, this.commentAnchorCodec)
+        if (this.commentParticipantThread && !this.commentAllowed('participants', this.commentParticipantThread)) this.resetCommentParticipants()
+        if (this.commentReactionContext && !this.commentAllowed('react', this.commentReactionContext.threadId, this.commentReactionContext.replyId)) this.closeCommentReaction()
+        if (this.commentTranslationState && !this.commentTranslationIsCurrent(this.commentTranslationState)) this.commentTranslationState = null
+        this.syncCommentImages()
+        this.installCommentDecorations()
+        this.refreshCommentDecorations()
+        this.updateCommentPanels()
+        return this.commentThreads
       } catch (error) {
-        if (!current()) return []
+        if (!this.commentDisposed && generation === this.commentLoadGeneration) {
+          this.resetCommentImages(true)
+          this.closeCommentReaction()
+          this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
+          this.commentMessage = error.code || error.message
+          this.refreshCommentDecorations()
+        }
         throw error
       }
-      if (!current()) return []
-      this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, threads, this.commentAnchorCodec)
-      this.updateCommentPanels()
-      return this.commentThreads
     },
     async runCommentWrite(method, input, sessionMethod) {
       if (this.commentBusy || this.commentPendingOperation) return null
@@ -550,50 +580,14 @@ export default {
       if (!this.commentAllowed('reopen', threadId)) return null
       return this.runCommentWrite('reopen', threadId, 'reopenComment')
     },
-    /** 删除无二次确认；缺少可选 deleteReply 时保留原回复，不伪造持久化成功。 */
     async deleteCommentReply(threadId, commentId) {
       if (!this.commentAllowed('remove', threadId, commentId)) return null
       const provider = this.commentProvider()
-      if (!provider || typeof provider.deleteReply !== 'function') return null
-      const session = this.session
-      const documentId = session && session.documentId
-      const user = session && session.user
-      const editor = this.editor
-      const current = () => this.session === session
-        && (session && session.documentId) === documentId
-        && (session && session.user) === user
-        && this.editor === editor
-        && this.commentProvider() === provider
-        && !this._isBeingDestroyed && !this._isDestroyed
-        && !(editor && editor.isDestroyed)
-        && this.commentCan('canView') && this.commentAllowed('remove')
-      if (!current()) return null
-      let result
-      try {
-        result = await provider.deleteReply({ threadId, commentId })
-      } catch (error) {
-        if (!current()) return null
-        throw error
-      }
-      if (!current()) return null
-      const receipt = result && typeof result === 'object' ? result : {}
-      const code = receipt.code
-      const rejected = result === false || receipt.ok === false || receipt.allowed === false
-        || ['deny', 'approval_required', 'failed', 'error', 'rejected'].includes(receipt.status)
-        || (typeof code === 'number' && code !== 0)
-        || (typeof code === 'string' && code !== '' && !['0', 'OK', 'SUCCESS'].includes(code.toUpperCase()))
-      if (rejected) {
-        const error = new Error('评论删除被 Provider 拒绝')
-        error.code = 'E_COMMENT_DELETE_REJECTED'
-        throw error
-      }
-      try {
-        await this.loadComments()
-      } catch (error) {
-        if (!current()) return null
-        throw error
-      }
-      return current() ? true : null
+      if (provider && typeof provider.deleteReply === 'function') return this.runCommentWrite('deleteReply', { threadId, commentId }, 'deleteCommentReply')
+      if (provider && provider.isRemote) return null
+      this.commentThreads = this.commentThreads.map(thread => thread.id !== threadId ? thread : { ...thread, replies: thread.replies.filter(reply => reply.id !== commentId) })
+      this.updateCommentPanels()
+      return true
     },
     beginEditComment(threadId, replyId) {
       if (!this.commentAllowed('edit', threadId, replyId)) return
@@ -796,70 +790,14 @@ export default {
       this.commentMoreMenuPosition = null
       this._commentMoreMenuAnchor = null; this._commentReplyMenuAnchor = null
     },
-    /**
-     * 回复行三按钮派发：V1 只有「更多」有行为。
-     * 「添加表情回复」要表情面板、「引用回复」要把引用回填进输入区的协议，04 §3.1④-2
-     * 两处都没给 —— 按钮照像素渲染，点了静默，不私自替飞书定语义。
-     */
-    runCommentReplyControl(id, threadId, commentId) {
-      if (id === 'more') return this.toggleCommentReplyMenu(threadId, commentId)
-      return undefined
-    },
-    /** 回复行「更多」的四项派发：V1 只有「删除」有行为（见文件头负结论）。 */
-    runCommentMenuItem(id, threadId, commentId) {
-      this.closeCommentMenus()
-      if (id === 'delete') {
-        return this.deleteCommentReply(threadId, commentId).catch(() => {
-          this.error = '评论删除或回读失败，请刷新后重试'
-          return null
-        })
-      }
-      return undefined
-    },
-    /**
-     * 回复行「更多」的可见性：编辑只给自己的、举报只给别人的（04 §3.1④-3 B 备注列）。
-     * 作者 id 缺失时两边都不显示 —— 判不出归属就别给一条点了没反应的菜单项。
-     */
-    commentMenuVisible(item, reply) {
-      const meta = COMMENT_REPLY_MENU_ITEMS.find((entry) => entry.id === item.id)
-      if (!meta) return true
-      const owner = reply && reply.author ? reply.author.id : ''
-      const mine = Boolean(owner) && owner === this.commentAuthor.id
-      if (meta.ownOnly) return mine
-      if (meta.othersOnly) return Boolean(owner) && !mine
-      return true
-    },
-    /** 头部六按钮派发。`resolve` 在已解决面板里换成 `reopen`（重开在已解决面板）。 */
-    runCommentControl(id, threadId) {
-      if (id === 'go-next') return this.goComment(threadId, 1)
-      if (id === 'go-previous') return this.goComment(threadId, -1)
-      if (id === 'resolve') return this.resolveComment(threadId)
-      if (id === 'reopen') return this.reopenComment(threadId)
-      if (id === 'copyAnchor') return this.copyCommentAnchor(threadId)
-      if (id === 'more') return this.toggleCommentMoreMenu(threadId)
-      return undefined
-    },
-    /**
-     * 复制锚点：把引用原文放进剪贴板（04 §3.1④ `_copyAnchor-btn`）。
-     * 剪贴板不可用时静默 —— 面板没有 toast 位，报错只会吓到人。
-     */
-    copyCommentAnchor(threadId) {
-      const item = this.commentThreads.find((thread) => thread.id === threadId)
-      const text = item ? this.commentQuoteOf(item) : ''
-      if (!text) return false
-      const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null
-      if (!clipboard || typeof clipboard.writeText !== 'function') return false
-      clipboard.writeText(text).catch(() => {})
-      return true
-    },
-    commentCapabilityState(capability = 'canComment') {
-      return projectCapabilityUi(this.session, capability)
-    },
-    commentControlDisabled(id, threadId) {
-      if (id === 'go-next' || id === 'go-previous') {
-        const index = this.commentPanels.findIndex((item) => item.id === threadId)
-        if (index === -1) return true
-        return id === 'go-next' ? index >= this.commentPanels.length - 1 : index <= 0
+    commentDraftImages(scope) { return this.commentImageDrafts?.[scope] || [] },
+    invalidateCommentImageUpload(scope) {
+      if (!this.commentImageDraftGenerations) this.commentImageDraftGenerations = {}
+      this.$set(this.commentImageDraftGenerations, scope, (this.commentImageDraftGenerations[scope] || 0) + 1)
+      if (this.commentPendingImage?.scope === scope) this.commentPendingImage = { operationId: this.commentPendingImage.operationId, kind: this.commentPendingImage.kind, scope: null }
+      if (this._commentImageInFlight?.scope === scope) {
+        this.commentPendingImage = { operationId: this._commentImageInFlight.operationId, beginOperationId: this._commentImageInFlight.beginOperationId, kind: 'complete', scope: null }
+        this._commentImageUploadController?.abort()
       }
       if (this._commentImageUploadScope === scope && !this._commentImageInFlight) { this._commentImageUploadController?.abort(); this._commentImageUploadController = null; this._commentImageUploadScope = ''; this.commentImageBusy = false }
     },
@@ -1129,9 +1067,33 @@ export default {
       this.$nextTick(() => this.placeCommentPanels())
     },
     placeCommentPanels() {
-      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-      const view = this.editor.view
-      if (!view || !this.commentPanels.length) return
+      this.updateCommentLayerBounds()
+      const view = this.editor && this.editor.view
+      if (!view) return
+      if (this.commentRemote) {
+        const layer = this.$el.querySelector('.lark-doc-comment-layer.is-remote')
+        let floor = this.commentLayerTop + 52
+        const at = anchor => {
+          const pos = anchor && this.commentBlockPos(anchor.blockId)
+          if (pos == null || pos < 0) return floor
+          try { return view.coordsAtPos(pos + 1 + (anchor.offset || 0)).top } catch (error) { return floor }
+        }
+        if (this.commentComposerOpen && this.commentComposerContext) {
+          const anchor = decodeAnchor(this.commentComposerContext.anchor, this.commentAnchorCodec)
+          this.commentComposerGap = Math.max(0, at(anchor) - floor)
+          floor += this.commentComposerGap + (layer?.querySelector('.lark-doc-comment-composer')?.getBoundingClientRect().height || COMMENT_HEIGHTS.empty) + COMMENT_PANEL_GAP
+        }
+        const nodes = layer ? [...layer.querySelectorAll('[data-comment-thread]')] : []
+        this.commentPanels = [...this.commentPanels].sort((a, b) => at(a.anchor) - at(b.anchor)).map(item => {
+          const top = Math.max(floor, item.bound ? at(item.anchor) : floor)
+          const gap = Math.max(0, top - floor)
+          const height = nodes.find(node => node.dataset.commentThread === item.id)?.getBoundingClientRect().height || this.commentPanelHeightOf(item)
+          floor = top + height + COMMENT_PANEL_GAP
+          return { ...item, top, gap }
+        })
+        return
+      }
+      if (!this.commentPanels.length) return
       const bound = view.dom.getBoundingClientRect()
       const maxLeft = window.innerWidth - COMMENT_PANEL.width - COMMENT_VIEWPORT_MARGIN
       const left = Math.max(COMMENT_VIEWPORT_MARGIN, Math.min(maxLeft, bound.right + COMMENT_ANCHOR_GUTTER))

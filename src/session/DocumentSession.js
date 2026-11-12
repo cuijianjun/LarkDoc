@@ -1,8 +1,8 @@
 import { isIdentityPrincipal } from '../providers/identity'
 import { createDocumentRecord } from '../core/documentSchema'
 import { aggregateHeadingContainers, restoreUnknownBlocks } from '../core/documentOperations'
-import { createTransactionId, setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
-import { createAuthorizationProvider, normalizeCapabilities } from '../providers/authorization'
+import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
+import { createAuthorizationProvider, normalizeCapabilities, normalizeRemoteCapabilities, DENIED_CAPABILITIES } from '../providers/authorization'
 import { createCollaborationProvider } from '../providers/collaboration'
 import { createCommentsProvider } from '../providers/comments'
 import { createNotificationsProvider } from '../providers/notifications'
@@ -261,10 +261,8 @@ export class DocumentSession {
   dispatch(transaction, metadata = {}) {
     if (this._identityRequired && !this.can('canEdit')) throw this._identityError()
     if (!this._editor || !this._editor.view) throw new Error('DocumentSession 尚未绑定编辑器')
-    const transactionId = metadata.transactionId || createTransactionId()
-    const next = setTransactionMetadata(transaction, { ...metadata, transactionId })
+    const next = setTransactionMetadata(transaction, metadata)
     this._editor.view.dispatch(next)
-    this.emit('transaction', { transactionId, metadata: next.getMeta('larkDocTransaction') })
     return next
   }
 

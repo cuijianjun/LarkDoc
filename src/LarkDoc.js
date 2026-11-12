@@ -114,7 +114,6 @@ export class LarkDoc {
         contentFormat: this.options.contentFormat,
         readonly: Boolean(source.readonly),
         persistence: this._resolvePersistence(source),
-        preserveInitialContent: source.preserveInitialContent === true,
         saveHtml: this.options.saveHtml === true,
         uploader: source.uploader,
         uploadImage: source.uploadImage,
@@ -126,7 +125,6 @@ export class LarkDoc {
         // 以及旧的 {stream(args){}} 钩子。这里统一收敛成标准 provider，Workspace 只认一种契约。
         aiProvider: normalizeAIProvider(source.ai),
         session: this._session,
-        collab: source.collab || null,
         // P3-07：内嵌内容的宿主回调与 iframe 覆盖通道（iframe 桥 / 卡片动作 / URL 卡抓取）。
         ...this._resolveEmbedOptions(source),
       },
@@ -537,15 +535,16 @@ export class LarkDoc {
   }
 
   /**
-   * 设置主题：theme ∈ light/dark/system/host；contentTheme ∈ auto/light/dark；第三参数 preset ∈ default/feishu/pcvue（省略保持）。
+   * 设置主题：theme ∈ light/dark/system/host；contentTheme ∈ auto/light/dark（省略 = 保持现值）。
    * 变更生效后派发 themeChange 事件（含 onThemeChange 选项回调）；
    * options 同步更新，宿主重建实例或读 options 时拿到的都是最新值。
    */
-  setTheme(theme, contentTheme, themePreset) {
+  setTheme(theme, contentTheme) {
     if (this._destroyed) return this
     this._applyHostAttributes()
-    const snapshot = this._themeController.setTheme(theme, contentTheme, themePreset)
-    Object.assign(this.options, { theme: snapshot.theme, contentTheme: snapshot.contentTheme, themePreset: snapshot.preset })
+    const snapshot = this._themeController.setTheme(theme, contentTheme)
+    this.options.theme = snapshot.theme
+    this.options.contentTheme = snapshot.contentTheme
     return this
   }
 
