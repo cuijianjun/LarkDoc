@@ -382,6 +382,75 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
   })
   const host = runtime.host
   const listeners = []
+  let themeUi = null
+  function mountThemeUi() {
+    const actions = shell.actionsHost
+    if (!actions || themeUi) return
+    const document = shell.root.ownerDocument
+    const commentButton = document.createElement('button')
+    commentButton.type = 'button'
+    commentButton.className = 'lark-doc-comment-entry-button'
+    commentButton.setAttribute('aria-label', '全文评论')
+    commentButton.textContent = '评论'
+    commentButton.addEventListener('click', () => {
+      if (host.commentSidebarOpen !== true) host.commentSidebarOpen = true
+      host.updateCommentPanels?.()
+      host.refreshPanels?.()
+    })
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'lark-doc-theme-button'
+    button.setAttribute('aria-label', '主题')
+    button.setAttribute('aria-haspopup', 'menu')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '主题'
+    const menu = document.createElement('div')
+    menu.className = 'lark-doc-dropdown lark-doc-theme-menu'
+    menu.setAttribute('role', 'menu')
+    menu.setAttribute('aria-label', '主题')
+    const choices = [
+      ['default', '经典绿色', 'light'],
+      ['feishu-light', '飞书浅色', 'light'],
+      ['feishu-dark', '飞书暗色', 'dark'],
+    ]
+    const rows = choices.map(([id, label, theme]) => {
+      const row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'lark-doc-theme-item'
+      row.setAttribute('role', 'menuitemradio')
+      row.dataset.themeChoice = id
+      row.textContent = label
+      row.addEventListener('click', () => {
+        const controller = shell.root._larkDocTheme
+        if (!controller) return
+        controller.setTheme(theme, 'auto', id === 'default' ? 'default' : 'feishu')
+        menu.hidden = true
+        button.setAttribute('aria-expanded', 'false')
+        refreshThemeUi()
+      })
+      menu.appendChild(row)
+      return row
+    })
+    const refreshThemeUi = () => {
+      const controller = shell.root._larkDocTheme
+      const snapshot = controller?.getTheme?.()
+      const choice = snapshot?.preset === 'feishu' ? (snapshot.resolved?.theme === 'dark' ? 'feishu-dark' : 'feishu-light') : 'default'
+      rows.forEach(row => row.setAttribute('aria-checked', String(row.dataset.themeChoice === choice)))
+    }
+    button.addEventListener('click', () => {
+      menu.hidden = !menu.hidden
+      button.setAttribute('aria-expanded', String(!menu.hidden))
+      if (!menu.hidden) {
+        const rect = button.getBoundingClientRect()
+        menu.style.top = `${Math.round(rect.bottom + 4)}px`
+        menu.style.left = `${Math.max(8, Math.round(rect.right - 144))}px`
+        refreshThemeUi()
+      }
+    })
+    menu.hidden = true
+    actions.append(commentButton, button, menu)
+    themeUi = { commentButton, button, menu, refresh: refreshThemeUi }
+  }
   let editorContainerObserver = null
   const listen = (target, type, handler, capture = false) => {
     target.addEventListener(type, handler, capture)
@@ -442,6 +511,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
         editor.off('blur', onEditorBlur)
         editor.on('blur', onBlur)
       })
+      mountThemeUi()
       uiDomains.forEach(([domain]) => host[`mount${domain}`]())
       runtime.mount()
       bindSession()
@@ -461,6 +531,8 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       }
       listen(shell.editorEl, 'copy', guardCopy, true)
       listen(shell.editorEl, 'cut', guardCopy, true)
+      // 评论快捷键必须在捕获阶段读取 DOM 选区，早于 ProseMirror selectionchange。
+      listen(shell.root, 'keydown', event => host.onCommentShortcut?.(event), true)
       listen(shell.root, 'keydown', event => { if (event.key === 'Escape') host.closeOverlay() })
       listen(shell.paper, 'pointermove', host.onPaperPointerMove)
       listen(shell.paper, 'pointerdown', host.onReminderChipClick)
@@ -521,6 +593,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       ;['handleHideTimer', 'blockMenuCloseTimer', '_keepMenuTimer', 'pendingChangeTimer'].forEach(key => clearTimeout(host[key]))
       ;['pendingStateFrame', '_outlineFrame'].forEach(key => { if (host[key]) cancelAnimationFrame(host[key]) })
       uiDomains.slice().reverse().forEach(([domain]) => host[`destroy${domain}`]())
+      if (themeUi) { themeUi.commentButton.remove(); themeUi.button.remove(); themeUi.menu.remove(); themeUi = null }
       runtime.destroy()
       panelHost.remove()
     },

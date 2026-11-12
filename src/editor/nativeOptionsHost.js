@@ -120,6 +120,7 @@ export function createNativeOptionsHost({ options, state: initialState = {}, pro
   })
   const target = {
     $refs: refs,
+    $el: refs.root || refs.editorEl || null,
     $slots: slots,
     $data: state,
     $emit: (...args) => { if (!destroying && !destroyed) emit?.(...args) },

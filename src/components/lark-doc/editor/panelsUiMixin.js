@@ -35,6 +35,7 @@ import {
 import { applyStyle, mountNode, syncChildren } from '../../../ui/dom'
 import { COVER_PANEL_ITEMS, coverImageStyle } from './coverMixin'
 import { iconNode } from '../../../ui/icon'
+import { uploadCommentImageFiles } from './commentImages'
 
 export default {
   watch: {
@@ -83,6 +84,14 @@ export default {
     // —— 评论：面板几何 / 草稿 / 私有开关 / 两套菜单 ——
     commentPanels: { deep: true, handler() { this.refreshPanels() } },
     commentDrafts: { deep: true, handler() { this.refreshPanels() } },
+    commentSidebarOpen() { this.refreshPanels() },
+    commentComposerOpen() { this.refreshPanels() },
+    commentComposerContext: { deep: true, handler() { this.refreshPanels() } },
+    commentCreateDraft() { this.refreshPanels() },
+    commentCreatePrivate() { this.refreshPanels() },
+    commentHistory() { this.refreshPanels() },
+    commentHistorical() { this.refreshPanels() },
+    commentMessage() { this.refreshPanels() },
     commentPrivateIds() { this.refreshPanels() },
     commentMoreThreadId() { this.refreshPanels() },
     commentMenuThreadId() { this.refreshPanels() },
@@ -288,6 +297,19 @@ export default {
           onClearDraft: (threadId) => this.clearCommentDraft(threadId),
           onSubmit: (threadId) => this.submitCommentDraft(threadId),
           onTogglePrivate: (threadId) => this.toggleCommentPrivate(threadId),
+          onCloseMenus: () => this.closeCommentMenus(),
+          onToggleSidebar: () => this.toggleCommentSidebar(),
+          onToggleHistory: () => this.setCommentHistory(!this.commentHistory),
+          onComposerDraft: value => this.setCommentCreateDraft(value),
+          onComposerCancel: () => this.closeCommentComposer(),
+          onComposerPrivate: value => this.setCommentCreatePrivate(value),
+          onComposerSubmit: () => this.createCommentFromSelection(this.commentCreateDraft, this.commentCreatePrivate ? 'private' : 'document'),
+          onChooseImage: (scope) => {
+            if (!this.commentCanUploadImage?.(scope)) return
+            const input = [...(this.$el?.querySelectorAll?.('input[data-comment-image-scope]') || [])].find(node => node.dataset.commentImageScope === scope)
+            input?.click()
+          },
+          onUploadImage: (scope, event) => uploadCommentImageFiles.call(this, scope, event),
         },
       }
     },
@@ -420,25 +442,43 @@ export default {
     },
 
     buildCommentState() {
-      const panels = this.commentPanels || []
+      const panels = [...(this.commentPanels || []), ...(this.commentDocumentThreads || []).map(item => ({ ...item, documentOnly: true }))]
       const controls = this.commentControls || []
       const menus = this.commentMenuItems || []
-      const allowedReply = this.commentAllowed('reply')
+      const remote = this.commentRemote === true
+      const sidebarOpen = remote ? this.commentSidebarOpen === true : panels.length > 0
+      const historical = this.commentHistorical === true
+      const emptyText = remote && sidebarOpen && !panels.length && !this.commentComposerOpen
+        ? (historical ? '暂无历史评论' : this.commentHistory ? '暂无已解决评论' : '暂无选区评论，选中文字即可发表评论。') : ''
       return {
-        open: panels.length > 0,
+        open: sidebarOpen,
+        remote,
+        sidebarOpen,
         title: this.commentPanelTitle,
         controls,
         replyControls: this.commentReplyControls || [],
         moreTitle: this.commentPrivateTitle,
         moreHint: this.commentPrivateHint,
+        emptyText,
+        composer: {
+          open: remote && this.commentComposerOpen === true,
+          quote: this.commentComposerContext?.text || '',
+          author: this.commentAuthorName(this.commentAuthor),
+          value: this.commentCreateDraft || '',
+          readonly: !this.commentAllowed('create'),
+          canSubmit: this.commentAllowed('create'),
+          privateOn: this.commentCreatePrivate === true,
+          history: this.commentHistory || historical ? (historical || this.commentHistory ? '返回未解决' : '已解决评论') : '已解决评论',
+        },
         items: panels.map((item) => ({
           id: item.id,
           // 一次合成（SFC 是数组合并语义，`applyStyle` 是替换语义）。
           style: {
-            ...this.commentPanelStyle(item),
-            height: `${this.commentPanelHeightOf(item)}px`,
+            ...(item.documentOnly ? { position: 'relative', left: 'auto', top: 'auto', height: 'auto' } : this.commentPanelStyle(item)),
+            ...(item.documentOnly ? {} : { height: `${this.commentPanelHeightOf(item)}px` }),
           },
-          quote: this.commentQuoteOf(item),
+          documentOnly: item.documentOnly === true,
+          quote: item.documentOnly ? '' : this.commentQuoteOf(item),
           // 置灰而不是隐藏：无权限的按钮照挂，加 `is-disabled`。
           disabled: controls
             .filter((control) => !control.split && this.commentControlDisabled(control.id, item.id))
@@ -454,15 +494,17 @@ export default {
               label: menu.label,
               submenu: !!menu.submenu,
               visible: this.commentMenuVisible(menu, reply),
+              disabled: this.commentMenuDisabled?.(menu) === true,
             })),
           })),
           textarea: {
             value: this.commentDraftOf(item.id),
-            readonly: !allowedReply,
+            readonly: !this.commentAllowed('reply', item.id),
             height: this.commentTextareaHeight(item),
           },
           hasDraft: this.commentHasDraft(item.id),
-          allowedReply,
+          allowedReply: this.commentAllowed('reply', item.id),
+          canUploadImage: this.commentCanUploadImage?.(item.id) !== false,
           moreOpen: this.commentMoreThreadId === item.id,
           privateOn: this.commentPrivate(item.id),
         })),

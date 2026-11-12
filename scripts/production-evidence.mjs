@@ -10,6 +10,15 @@ import { REGRESSION_LIMIT, PERF_METRICS, checkWorkload, compareMetrics } from '.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
+function resolveBackendRoot() {
+  const candidates = [
+    process.env.LARK_DOC_BACKEND_ROOT,
+    path.resolve(root, '../lark-doc-backend'),
+    path.resolve(root, '../../tiptap-integration-demos/apps/lark-doc-backend'),
+  ].filter(Boolean)
+  return candidates.find(directory => fs.existsSync(path.join(directory, 'test/evidence/schema.json'))) || candidates[1]
+}
+function defaultEvidenceSchemaPath() { return path.join(resolveBackendRoot(), 'test/evidence/schema.json') }
 export const EVIDENCE_LEVELS = Object.freeze({ E0: '文档静态', E1: '单元/mock', E2: '真实协议/DB集成', E3: '真实账号浏览器/故障', E4: '批准生产观测' })
 export const EVIDENCE_SOURCE = '.specify/memory/constitution.md:29'
 export const AC_IDS = Object.freeze(['AC-15-S', 'AC-15-F', 'AC-15-A', 'AC-15-C', 'AC-15-D', 'AC-15-R', 'AC-15-Q'])
@@ -69,7 +78,7 @@ function sensitive(value) {
   if (!value || typeof value !== 'object') return false
   return Object.entries(value).some(([key, item]) => /^(token|cookie|authorization|password|secret|privateBody|privateText|contentJson|payloadBase64)$/i.test(key) || sensitive(item))
 }
-export function validateEvidence(report, { verifyArtifacts = true, schemaPath = path.resolve(root, '../lark-doc-backend/test/evidence/schema.json') } = {}) {
+export function validateEvidence(report, { verifyArtifacts = true, schemaPath = defaultEvidenceSchemaPath() } = {}) {
   const errors = []
   try {
     // 复用现有Webpack依赖中的Ajv；独立实例避免共享校验器重复注册同$id。
@@ -138,7 +147,7 @@ function indexSource(sourceRoot, file, roots) {
 }
 
 /** 独立任务索引只校验已有原始结果，不执行测试、不修改tasks、不生成报告目录。 */
-export function validateTaskIndex(report, { schemaPath = path.resolve(root, '../lark-doc-backend/test/evidence/schema.json') } = {}) {
+export function validateTaskIndex(report, { schemaPath = defaultEvidenceSchemaPath() } = {}) {
   const errors = [], runs = new Map(), roots = []
   try {
     const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8')), Ajv = require('ajv')
@@ -265,7 +274,7 @@ export function preserveReport(directory, report) {
   fs.writeFileSync(filename, JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
   return artifact(filename, 'raw-report', report.runId)
 }
-export function createEvidence({ frontend = root, backend = path.resolve(root, '../lark-doc-backend'), level = 'E2', scope = 'p0-increment' } = {}) {
+export function createEvidence({ frontend = root, backend = resolveBackendRoot(), level = 'E2', scope = 'p0-increment' } = {}) {
   const now = new Date().toISOString()
   return { schemaVersion: 'larkdoc-production-evidence-v1', runId: 'us15-' + randomUUID(), level,
     levelDefinition: { definition: EVIDENCE_LEVELS[level], source: EVIDENCE_SOURCE }, scope, status: 'BLOCKED', productionApproval: null,

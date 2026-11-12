@@ -200,25 +200,29 @@ export default {
   },
   watch: { session: { sync: true, handler() { this.resetCommentIdentityView(); this.bindCommentSession() } } },
   mounted() {
-    this.bindCommentSession()
+    this.bindCommentSession?.()
     document.addEventListener('pointerdown', this.onCommentReactionOutside, true)
     window.addEventListener('keydown', this.onCommentReactionKeydown, true)
     // 宿主的 `mounted` 在本钩子之后才建编辑器 —— 延一帧再拉评论、挂监听。
     this.$nextTick(() => {
-      if (!this.editor) return
-      this.editor.view.dom.addEventListener('pointerdown', this.onCommentPointerDown)
-      this.editor.on('transaction', this.onCommentTransaction)
-      this.loadComments().then(() => this.openCommentLink()).catch(() => {})
+      const view = this.editor && !this.editor.isDestroyed ? this.editor.view : null
+      if (!view?.dom) return
+      this._commentEditorDom = view.dom
+      this._commentEditorDom.addEventListener('pointerdown', this.onCommentPointerDown)
+      if (typeof this.editor.on === 'function') {
+        this.editor.on('transaction', this.onCommentTransaction)
+        this.loadComments?.().then(() => this.openCommentLink?.()).catch(() => {})
+      }
     })
     window.addEventListener('scroll', this.onCommentViewportChange, true)
     window.addEventListener('resize', this.onCommentViewportChange)
   },
   beforeDestroy() {
-    this.resetCommentParticipants()
+    this.resetCommentParticipants?.()
     document.removeEventListener('pointerdown', this.onCommentReactionOutside, true)
     window.removeEventListener('keydown', this.onCommentReactionKeydown, true)
-    this.resetCommentImages()
-    this.closeCommentReaction()
+    this.resetCommentImages?.()
+    this.closeCommentReaction?.()
     this.commentDisposed = true; this.commentLoadGeneration++
     if (this._commentStopCapabilities) this._commentStopCapabilities()
     if (this._commentStopProvider) this._commentStopProvider()
@@ -226,14 +230,13 @@ export default {
     if (this._commentStopChanges) this._commentStopChanges()
     if (this._commentStopAssets) this._commentStopAssets()
     if (this.editor) {
-      this.editor.off('transaction', this.onCommentTransaction)
-      if (this._commentDecorationKey) this.editor.unregisterPlugin(this._commentDecorationKey)
+      this.editor.off?.('transaction', this.onCommentTransaction)
+      if (this._commentDecorationKey) this.editor.unregisterPlugin?.(this._commentDecorationKey)
     }
     window.removeEventListener('scroll', this.onCommentViewportChange, true)
     window.removeEventListener('resize', this.onCommentViewportChange)
-    if (this.editor && this.editor.view && this.editor.view.dom) {
-      this.editor.view.dom.removeEventListener('pointerdown', this.onCommentPointerDown)
-    }
+    this._commentEditorDom?.removeEventListener?.('pointerdown', this.onCommentPointerDown)
+    this._commentEditorDom = null
   },
   methods: {
     setCommentMessage(value) { this.commentMessage = value },
@@ -1067,8 +1070,9 @@ export default {
       this.$nextTick(() => this.placeCommentPanels())
     },
     placeCommentPanels() {
-      this.updateCommentLayerBounds()
-      const view = this.editor && this.editor.view
+      if (this._isBeingDestroyed || this._isDestroyed || this.editor?.isDestroyed) return
+      this.updateCommentLayerBounds?.()
+      const view = this.editor?.view
       if (!view) return
       if (this.commentRemote) {
         const layer = this.$el.querySelector('.lark-doc-comment-layer.is-remote')
@@ -1161,7 +1165,7 @@ export default {
     onCommentViewportChange(event) {
       const target = event && event.target
       const menuScroll = target && typeof target.closest === 'function' && target.closest('.lark-doc-comment-more-menu, .lark-doc-comment-reply-menu, .lark-doc-comment-reaction-picker')
-      this.updateCommentLayerBounds()
+      this.updateCommentLayerBounds?.()
       if (event && !menuScroll && this.commentReactionContext) this.closeCommentReaction()
       if (event && !menuScroll && this.commentRemote) {
         for (const [id, anchorKey, position, geometry] of [

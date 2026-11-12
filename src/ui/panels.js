@@ -772,16 +772,82 @@ export function createCommentPanel(options = {}) {
 
   const state = {
     open: false,
+    remote: false,
     title: '评论',
     controls: [],
     replyControls: [],
     moreTitle: '',
     moreHint: '',
+    emptyText: '',
+    sidebarOpen: false,
+    composer: { open: false },
     items: [],
   }
 
   const el = document.createElement('div')
   el.className = 'lark-doc-comment-layer'
+
+  const sidebarHead = document.createElement('header')
+  sidebarHead.className = 'lark-doc-comment-sidebar-head'
+  const sidebarTitle = document.createElement('span')
+  const historyButton = document.createElement('button')
+  historyButton.type = 'button'
+  historyButton.className = 'lark-doc-comment-sidebar-history'
+  historyButton.addEventListener('click', () => call('onToggleHistory'))
+  const collapseButton = document.createElement('button')
+  collapseButton.type = 'button'
+  collapseButton.className = 'lark-doc-comment-sidebar-collapse'
+  collapseButton.setAttribute('aria-label', '收起评论侧栏')
+  collapseButton.textContent = '»'
+  collapseButton.addEventListener('click', () => call('onToggleSidebar'))
+  sidebarHead.append(sidebarTitle, historyButton, collapseButton)
+
+  const emptyState = document.createElement('p')
+  emptyState.className = 'lark-doc-comment-state'
+
+  const composer = document.createElement('section')
+  composer.className = 'lark-doc-comment-composer is-selection'
+  composer.setAttribute('aria-label', '发表选区评论')
+  const composerHead = document.createElement('div')
+  composerHead.className = 'lark-doc-comment-head'
+  const composerQuote = document.createElement('span')
+  composerQuote.className = 'lark-doc-comment-quote'
+  const composerCancelEmpty = document.createElement('button')
+  composerCancelEmpty.type = 'button'
+  composerCancelEmpty.className = 'lark-doc-comment-cancel-empty'
+  composerCancelEmpty.setAttribute('aria-label', '取消新评论')
+  composerCancelEmpty.textContent = '×'
+  composerCancelEmpty.addEventListener('click', () => call('onComposerCancel'))
+  composerHead.append(composerQuote, composerCancelEmpty)
+  const composerAuthor = document.createElement('div')
+  composerAuthor.className = 'lark-doc-comment-composer-author'
+  const composerInput = document.createElement('textarea')
+  composerInput.className = 'lark-doc-comment-input-zone'
+  composerInput.setAttribute('aria-label', '新评论')
+  composerInput.setAttribute('placeholder', '输入评论')
+  composerInput.addEventListener('input', event => call('onComposerDraft', event.target.value))
+  const composerInputRow = document.createElement('div')
+  composerInputRow.className = 'lark-doc-comment-input'
+  composerInputRow.appendChild(composerInput)
+  const composerActions = document.createElement('div')
+  composerActions.className = 'lark-doc-comment-compose-actions'
+  const composerPrivateLabel = document.createElement('label')
+  const composerPrivate = document.createElement('input')
+  composerPrivate.type = 'checkbox'
+  composerPrivate.addEventListener('change', event => call('onComposerPrivate', event.target.checked))
+  composerPrivateLabel.append(composerPrivate, document.createTextNode('私密评论'))
+  const composerCancel = document.createElement('button')
+  composerCancel.type = 'button'
+  composerCancel.className = 'lark-doc-comment-action is-outlined'
+  composerCancel.textContent = '取消'
+  composerCancel.addEventListener('click', () => call('onComposerCancel'))
+  const composerSend = document.createElement('button')
+  composerSend.type = 'button'
+  composerSend.className = 'lark-doc-comment-action is-filled'
+  composerSend.textContent = '发送'
+  composerSend.addEventListener('click', () => call('onComposerSubmit'))
+  composerActions.append(composerPrivateLabel, composerCancel, composerSend)
+  composer.append(composerHead, composerAuthor, composerInputRow, composerActions)
 
   /** @type {Map<string, ReturnType<typeof createPanelNode>>} */
   const panelNodes = new Map()
@@ -789,6 +855,7 @@ export function createCommentPanel(options = {}) {
   function createPanelNode(id) {
     const root = document.createElement('div')
     root.className = 'lark-doc-comment-panel'
+    root.dataset.commentThread = id
     root.setAttribute('role', 'dialog')
     // 根节点**没有** `.prevent`：它要抢焦点去点亮线程。
     root.addEventListener('mousedown', () => call('onActivate', id))
@@ -812,15 +879,25 @@ export function createCommentPanel(options = {}) {
     const textarea = document.createElement('textarea')
     textarea.className = 'lark-doc-comment-input-zone'
     textarea.setAttribute('aria-label', '回复')
+    textarea.setAttribute('placeholder', '回复')
     textarea.addEventListener('input', (event) => call('onDraft', id, event.target.value))
     const operation = document.createElement('button')
     operation.type = 'button'
     operation.className = 'lark-doc-comment-operation'
     operation.setAttribute('aria-label', '插入图片')
     operation.appendChild(iconNode('rev-image', 16))
-    onMouseDownPrevent(operation, () => {})
+    onMouseDownPrevent(operation, () => call('onChooseImage', id))
+    const imageInput = document.createElement('input')
+    imageInput.type = 'file'
+    imageInput.multiple = true
+    imageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'
+    imageInput.className = 'lark-doc-file-input'
+    imageInput.dataset.commentImageScope = id
+    imageInput.setAttribute('aria-label', '选择评论图片')
+    imageInput.addEventListener('change', event => call('onUploadImage', id, event))
     inputRow.appendChild(textarea)
     inputRow.appendChild(operation)
+    inputRow.appendChild(imageInput)
 
     const actions = document.createElement('div')
     actions.className = 'lark-doc-comment-actions'
@@ -881,7 +958,10 @@ export function createCommentPanel(options = {}) {
       textareaWrap,
       inputRow,
       textarea,
+      imageInput,
       actions,
+      cancelAction,
+      operation,
       sendAction,
       moreMenu,
       moreTitle,
@@ -979,11 +1059,24 @@ export function createCommentPanel(options = {}) {
       menuBox.className = 'lark-doc-comment-reply-menu'
       const menuList = document.createElement('ul')
       menuList.className = 'lark-doc-comment-menu-list'
+      menuList.setAttribute('role', 'menu')
+      menuList.setAttribute('aria-label', '评论操作')
+      menuList.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); call('onCloseMenus') }
+      })
       ;(reply.menus || []).forEach((menu) => {
         if (!menu.visible) return
         const li = document.createElement('li')
         li.className = 'lark-doc-comment-menu-item'
-        onMouseDownPrevent(li, () => call('onMenuItem', menu.id, item.id, reply.id))
+        li.setAttribute('role', 'menuitem')
+        const menuDisabled = menu.disabled === true
+        li.setAttribute('aria-disabled', String(menuDisabled))
+        li.tabIndex = menuDisabled ? -1 : 0
+        onMouseDownPrevent(li, () => { if (!menuDisabled) call('onMenuItem', menu.id, item.id, reply.id) })
+        li.addEventListener('keydown', event => {
+          if (menuDisabled) return
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); call('onMenuItem', menu.id, item.id, reply.id) }
+        })
         const menuLabel = document.createElement('span')
         menuLabel.className = 'lark-doc-comment-menu-label'
         menuLabel.textContent = menu.label == null ? '' : String(menu.label)
@@ -1009,6 +1102,8 @@ export function createCommentPanel(options = {}) {
   function renderPanel(entry, item) {
     entry.threadId = item.id
     setAttr(entry.root, 'aria-label', state.title)
+    entry.root.classList.toggle('is-document', item.documentOnly === true)
+    entry.root.setAttribute('role', item.documentOnly ? 'group' : 'dialog')
     // SFC 是数组形式（合并语义）；接线层已经把 `{left, top}` 与 `{height}` 合成一份。
     applyStyle(entry.root, item.style)
     setText(entry.quote, item.quote)
@@ -1021,6 +1116,7 @@ export function createCommentPanel(options = {}) {
       if (!button) return
       button.classList.toggle('is-primary', control.tone === 'primary')
       button.classList.toggle('is-disabled', disabled.has(control.id))
+      button.disabled = disabled.has(control.id)
       setAttr(button, 'aria-disabled', String(disabled.has(control.id)))
       setAttr(button, 'data-capability', control.id === 'resolve' ? 'canResolveComment' : 'canComment')
     })
@@ -1036,6 +1132,9 @@ export function createCommentPanel(options = {}) {
     setInputValue(entry.textarea, textareaState.value)
     entry.textarea.readOnly = !!textareaState.readonly
     entry.sendAction.classList.toggle('is-disabled', !item.allowedReply)
+    entry.sendAction.disabled = !item.allowedReply
+    entry.cancelAction.disabled = !item.hasDraft
+    entry.operation.disabled = item.canUploadImage === false
     syncChildren(entry.textareaWrap, [
       { node: entry.inputRow, on: true },
       { node: entry.actions, on: !!item.hasDraft },
@@ -1047,7 +1146,7 @@ export function createCommentPanel(options = {}) {
     setAttr(entry.switchButton, 'aria-checked', item.privateOn ? 'true' : 'false')
 
     syncChildren(entry.root, [
-      { node: entry.head, on: true },
+      { node: entry.head, on: !item.documentOnly },
       { node: entry.replies, on: true },
       { node: entry.textareaWrap, on: true },
       { node: entry.moreMenu, on: !!item.moreOpen },
@@ -1070,7 +1169,27 @@ export function createCommentPanel(options = {}) {
     Array.from(panelNodes.keys()).forEach((id) => {
       if (!alive.has(id)) panelNodes.delete(id)
     })
-    syncChildren(el, slots)
+    const chrome = []
+    if (state.remote) {
+      setText(sidebarTitle, state.title)
+      setText(historyButton, state.composer?.history || '')
+      historyButton.hidden = !state.sidebarOpen
+      collapseButton.hidden = !state.sidebarOpen
+      chrome.push({ node: sidebarHead, on: true })
+    }
+    const nextComposer = state.composer || {}
+    setText(composerQuote, nextComposer.quote || '')
+    setText(composerAuthor, nextComposer.author || '')
+    setInputValue(composerInput, nextComposer.value || '')
+    composerInput.readOnly = !!nextComposer.readonly
+    composerPrivate.checked = !!nextComposer.privateOn
+    composerPrivate.disabled = !!nextComposer.readonly
+    composerSend.disabled = !nextComposer.canSubmit || (!String(nextComposer.value || '').trim() && !nextComposer.hasImages)
+    composerCancel.disabled = false
+    chrome.push({ node: composer, on: !!nextComposer.open })
+    setText(emptyState, state.emptyText || '')
+    chrome.push({ node: emptyState, on: !!state.emptyText && !nextComposer.open && !(state.items || []).length })
+    syncChildren(el, [...chrome, ...slots])
   }
 
   function update(patch) {

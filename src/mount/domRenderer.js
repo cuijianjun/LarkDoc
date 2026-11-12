@@ -121,6 +121,8 @@ export function createDomRenderer() {
         getWindow: () => viewWindow,
         getNavigator: () => viewWindow.navigator,
         getAIProvider: () => props.aiProvider,
+        getTheme: () => shell.root._larkDocTheme?.getTheme?.() || null,
+        setTheme: (theme, contentTheme, preset) => shell.root._larkDocTheme?.setTheme?.(theme, contentTheme, preset) || null,
         hydrateOutline: outline => documentHost.hydrateOutline(outline),
         bindAITransaction: handler => editor?.on('transaction', handler),
         unbindAITransaction: handler => editor?.off('transaction', handler),

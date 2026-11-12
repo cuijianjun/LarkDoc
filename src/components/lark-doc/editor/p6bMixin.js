@@ -49,8 +49,22 @@ import relationBitableMixin from './relationBitableMixin'
 // .removeHoveredLink` 都以 `writable()` 为闸门 —— 方法在合并完成后才被调用，
 // 所以彼此先后不影响结果；这里统一放最后是为了「谁提供判据、谁消费判据」一眼可读。
 import readingModeMixin from './readingModeMixin'
+import { commentPanelComputed, commentPanelMethods } from './commentPanelView'
+
+// CommentPanel.vue 原本把这组纯逻辑挂在子组件实例上；native 面板没有 Vue 子实例，
+// 这里用一个极薄的 `ed` 适配上下文复用同一套动作/权限/菜单判定，避免两套口径漂移。
+const nativeCommentPanelMixin = {
+  computed: Object.fromEntries(Object.entries(commentPanelComputed).map(([name, getter]) => [name, function () {
+    return getter.call({ ed: this, documentOnly: false })
+  }])),
+  methods: Object.fromEntries(Object.entries(commentPanelMethods).map(([name, method]) => [name, function (...args) {
+    return method.apply({ ed: this, documentOnly: false }, args)
+  }])),
+}
 
 export default {
+  computed: nativeCommentPanelMixin.computed,
+  methods: nativeCommentPanelMixin.methods,
   mixins: [
     commentsMixin,
     versioningMixin,

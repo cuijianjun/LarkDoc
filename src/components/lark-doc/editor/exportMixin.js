@@ -26,6 +26,7 @@
 import { safeFileName } from '../../../utils/export/options.js'
 import { exportPdf } from '../../../utils/export/pdf.js'
 import { projectCapabilityUi } from '../../../core/policy/capability'
+import { createOutputAuditEvent, evaluateOutputPolicy } from '../../../core/policy/output'
 
 /**
  * 三档定义。顺序 = 「更多 → 下载为」二级菜单的实测顺序（Word / PDF / Markdown，
@@ -93,6 +94,7 @@ export default {
       /** 派发中：只用于挡住重复点击，不用于显示进度（见负结论 4）。 */
       exportBusy: false,
       exportPendingOperationId: '',
+      outputAuditEvents: [],
     }
   },
   computed: {
@@ -155,6 +157,9 @@ export default {
     window.removeEventListener('keydown', this.onExportKeydown, true)
   },
   methods: {
+    recordOutputAudit(action, result, reason = '') {
+      this.outputAuditEvents = [...(this.outputAuditEvents || []), createOutputAuditEvent({ action, result, reason, docId: this.session?.documentId ?? null, actorId: this.session?.user?.id ?? null })]
+    },
     clearRemoteExport() { this.exportGeneration = (this.exportGeneration || 0) + 1; this._activeExport = null; this.exportPendingOperationId = ''; this._pendingExportProvider = null; this.exportToast = ''; this.exportBusy = false },
     remoteExportProvider() {
       const provider = this.session && typeof this.session.getProvider === 'function' ? this.session.getProvider('versioning') : null
@@ -224,6 +229,12 @@ export default {
         return this.submitRemoteExport(def.extension)
       }
       const format = def.id
+      const outputAction = format === 'pdf' ? 'print' : 'download'
+      const policy = evaluateOutputPolicy(this.session?.getProvider?.('security')?.policy || {}, outputAction)
+      if (!policy.allowed) {
+        this.recordOutputAudit(outputAction, 'denied', policy.reason)
+        return null
+      }
       const scope = this.exportScopeValue
       const fileName = this.exportFileBaseName
       this.closeExportDialog()
@@ -273,7 +284,11 @@ export default {
       const session = this.session, generation = this.exportGeneration, conversionGeneration = session && session._conversionGeneration
       const current = () => !this._exportDisposed && session === this.session && generation === this.exportGeneration &&
         conversionGeneration === (session && session._conversionGeneration) && this.exportCanExport !== false
-      const doc = this.currentDoc(), options = { fileName, title: fileName, scope, isCurrent: current }
+      const doc = this.currentDoc()
+      const options = { fileName, title: fileName, scope }
+      // Keep the late-context guard available to the exporter without changing the
+      // public enumerable option shape consumed by existing integrations.
+      Object.defineProperty(options, 'isCurrent', { value: current, enumerable: false })
       if (!doc || !current()) return null
       const { exportDocx } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
       if (!current()) return null

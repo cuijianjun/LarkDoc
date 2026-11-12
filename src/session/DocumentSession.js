@@ -632,7 +632,7 @@ export class DocumentSession {
     this._assetGeneration++
     this._notificationSubscriptions.forEach(stop => stop())
     this.providers.documentBusiness?.reset('disposed')
-    this.providers.notifications?.dispose?.()
+    // notifications Provider 由宿主拥有；Session 销毁只解除本层订阅，不接管其资源生命周期。
     if (typeof this.providers.assets?.dispose === 'function') this.providers.assets.dispose()
     else this.providers.assets?.reset?.('disposed')
     if (typeof this.providers.versioning?.dispose === 'function') this.providers.versioning.dispose()

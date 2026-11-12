@@ -538,7 +538,7 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 28px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
 /* Tab 32×48 / fs16：激活用 --ld-brand-content（浅 #1456F0 / 深 #4C88FF），未激活是正文色。 */
 .lark-doc .lark-doc-fr .lark-doc-fr-tab { width: 32px; min-width: 32px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 16px; line-height: 48px; cursor: pointer; }
-.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active { color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active { color: var(--ld-brand-content); }
 /* 激活下划线 ink：容器 32×3，::before 32×6 溢出一半被裁 —— 得到上圆角 3px 的实心条。 */
 .lark-doc .lark-doc-fr .lark-doc-fr-ink { position: absolute; bottom: 0; left: 0; z-index: 1; overflow: hidden; width: 32px; height: 3px; }
 .lark-doc .lark-doc-fr .lark-doc-fr-ink::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 6px; border-radius: 3px; background: var(--ld-brand-chrome); }
@@ -3238,3 +3238,14 @@
   .lark-doc .lark-doc-table-tools,
   .lark-doc .lark-doc-table-boundary-tools { display: none !important; }
 }
+
+/* Native theme entry: kept in the shared header-actions host so it also remains
+   reachable when the title bar is hidden and the document-operations menu parks it. */
+.lark-doc .lark-doc-comment-entry-button { box-sizing: border-box; min-width: 48px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text-secondary); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-entry-button:hover { background: var(--ld-bg-hover); color: var(--ld-text); }
+.lark-doc .lark-doc-theme-button { box-sizing: border-box; min-width: 48px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text-secondary); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-theme-button:hover, .lark-doc .lark-doc-theme-button[aria-expanded="true"] { background: var(--ld-bg-hover); color: var(--ld-text); }
+.lark-doc .lark-doc-theme-menu { position: fixed; z-index: 1030; display: grid; min-width: 144px; padding: 4px; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); }
+.lark-doc .lark-doc-theme-menu[hidden] { display: none; }
+.lark-doc .lark-doc-theme-item { width: 100%; min-height: 32px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); font: inherit; text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-theme-item:hover, .lark-doc .lark-doc-theme-item[aria-checked="true"] { background: var(--ld-bg-selected); color: var(--ld-brand-content); }
