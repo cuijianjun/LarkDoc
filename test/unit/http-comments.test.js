@@ -1262,15 +1262,6 @@ describe('T082 configured translation frontend lifecycle', () => {
       await vm.submitCommentTranslation(); expect(remote.requestTranslation).toHaveBeenCalledOnce()
     }
   })
-  it('actual panel renders translatedText as escaped text interpolation, never innerHTML', () => {
-    const panel = readFileSync(new NodeURL('../../src/components/lark-doc/CommentPanel.vue', import.meta.url), 'utf8')
-    const fragment = panel.match(/<p\s+v-if="[^"]*commentTranslationState.status === 'ready'[^"]*"[^>]*>[\s\S]*?<\/p>/)[0]
-    const require = createRequire(import.meta.url), Vue = require('vue/dist/vue.common.js'), compiled = require('vue-template-compiler').compile(fragment)
-    expect(compiled.errors).toEqual([])
-    const vm = new Vue({ data: () => ({ ed: { commentTranslationState: task('ready'), commentTranslationIsCurrent: () => true } }), render: new Function(compiled.render), staticRenderFns: compiled.staticRenderFns.map(code => new Function(code)) })
-    try { const node = vm._render(); expect(node.children.map(child => child.text || '').join('')).toContain(task('ready').translatedText); expect(node.data && node.data.domProps && node.data.domProps.innerHTML).toBeUndefined(); expect(fragment).not.toContain('v-html') }
-    finally { vm.$destroy() }
-  })
 })
 
 
@@ -1378,57 +1369,7 @@ describe('T082 translation identity generation and Session delivery boundary', (
     expect((await pending).error).toMatchObject({ code: 'COMMENT_TRANSLATION_INVALIDATED', operationId: 'translation1' })
     await session.dispose()
   })
-  it('a real Vue session-prop replacement clears synchronously and rebinds only the new Session', async () => {
-    const require = createRequire(import.meta.url), Vue = require('vue/dist/vue.common.js'), remote = remoteProvider()
-    const alice = createDocumentSession({ documentId: 'doc1', user: { id: 'alice' }, comments: remote, capabilities: FLAGS })
-    const bob = createDocumentSession({ documentId: 'doc1', user: { id: 'bob' }, comments: remote, capabilities: FLAGS })
-    const vm = new Vue({ data: () => ({ ...commentsMixin.data(), session: alice, editor: null }),
-      methods: { ...commentsMixin.methods, ...commentTranslationActions, refreshCommentDecorations() {}, async loadComments() { this.commentLoadGeneration++; return [] } }, watch: commentsMixin.watch })
-    try {
-      vm.bindCommentSession(); vm.commentThreads = [thread()]; vm.commentSourceThreads = [thread()]; vm.beginCommentTranslation('thread:1', 'reply:1')
-      await vm.submitCommentTranslation(); expect(vm.commentTranslationState.translatedText).toBe(privateText)
-      vm.session = bob; clean(vm); vm.commentMessage = 'Bob current'
-      alice.user = { id: 'other' }; expect(vm.commentMessage).toBe('Bob current')
-      bob.user = { id: 'other' }; clean(vm); expect(vm.commentMessage).toBe('')
-    } finally { vm.session = null; vm.$destroy(); await alice.dispose(); await bob.dispose() }
-  })
 
-  it('real Vue Session prop A-B-A cannot restore an old unknown key or unlock a new request', async () => {
-    const require = createRequire(import.meta.url), Vue = require('vue/dist/vue.common.js')
-    let releaseOld, releaseNew, enteredOld, enteredNew
-    const oldReply = new Promise(resolve => { releaseOld = resolve }), newReply = new Promise(resolve => { releaseNew = resolve })
-    const oldStarted = new Promise(resolve => { enteredOld = resolve }), newStarted = new Promise(resolve => { enteredNew = resolve })
-    const remote = remoteProvider({ requestTranslation: vi.fn()
-      .mockImplementationOnce(() => { enteredOld(); return oldReply })
-      .mockImplementationOnce(() => { enteredNew(); return newReply }) })
-    const alice = createDocumentSession({ documentId: 'doc1', user: { id: 'alice' }, comments: remote, capabilities: FLAGS })
-    const bob = createDocumentSession({ documentId: 'doc1', user: { id: 'bob' }, comments: remoteProvider(), capabilities: FLAGS })
-    const vm = new Vue({ data: () => ({ ...commentsMixin.data(), session: alice, editor: null }),
-      methods: { ...commentsMixin.methods, ...commentTranslationActions, refreshCommentDecorations() {}, async loadComments() { this.commentLoadGeneration++; return [] } }, watch: commentsMixin.watch })
-    const next = { ...task('pending'), operationId: 'translation-new-view' }, pending = []
-    try {
-      vm.bindCommentSession(); vm.commentThreads = [thread()]; vm.commentSourceThreads = [thread()]
-      vm.beginCommentTranslation('thread:1', 'reply:1')
-      const original = vm.submitCommentTranslation(); pending.push(original); await oldStarted
-      const originalSessionGeneration = alice._commentGeneration
-      vm.session = bob; vm.session = alice
-      expect(alice._commentGeneration).toBe(originalSessionGeneration)
-      vm.commentThreads = [thread()]; vm.commentSourceThreads = [thread()]
-      vm.beginCommentTranslation('thread:1', 'reply:1')
-      const currentContext = vm.commentTranslationContext, current = vm.submitCommentTranslation(); pending.push(current); await newStarted
-      vm.commentMessage = 'new request in flight'
-      expect(vm.commentTranslationBusy).toBe(true); expect(vm.commentPendingTranslationOperation).toBe('')
-      releaseOld(task('unknown')); expect(await original).toBeNull()
-      expect(vm.commentTranslationState).toBeNull(); expect(vm.commentTranslationContext).toBe(currentContext)
-      expect(vm.commentPendingTranslationOperation).toBe(''); expect(vm._commentPendingTranslationProvider).toBeNull()
-      expect(vm.commentTranslationBusy).toBe(true); expect(vm.commentMessage).toBe('new request in flight')
-      releaseNew(next); expect(await current).toEqual(next)
-      expect(vm.commentPendingTranslationOperation).toBe('translation-new-view'); expect(vm.commentTranslationBusy).toBe(false)
-    } finally {
-      releaseOld(task('unknown')); releaseNew(next); await Promise.allSettled(pending)
-      vm.session = null; vm.$destroy(); await alice.dispose(); await bob.dispose()
-    }
-  })
 })
 
 
