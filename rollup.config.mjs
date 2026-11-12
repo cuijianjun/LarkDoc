@@ -18,7 +18,10 @@ const collabPeers = new Set([
   'yjs',
   '@tiptap/extension-collaboration',
   '@tiptap/extension-collaboration-caret',
+  '@tiptap/y-tiptap',
   '@hocuspocus/provider',
+  'y-protocols',
+  'lib0',
 ])
 export const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui']
 const ELEMENT_UI_ENTRY = '\0lark-doc-element-ui:'
