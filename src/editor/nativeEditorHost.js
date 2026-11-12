@@ -387,6 +387,12 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     const actions = shell.actionsHost
     if (!actions || themeUi) return
     const document = shell.root.ownerDocument
+    const readingButton = document.createElement('button')
+    readingButton.type = 'button'
+    readingButton.className = 'lark-doc-reading-entry-button'
+    readingButton.setAttribute('aria-label', '阅读模式')
+    readingButton.textContent = '阅读'
+    readingButton.addEventListener('click', () => { host.toggleReading?.(); refreshThemeUi?.() })
     const commentButton = document.createElement('button')
     commentButton.type = 'button'
     commentButton.className = 'lark-doc-comment-entry-button'
@@ -432,6 +438,8 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       return row
     })
     const refreshThemeUi = () => {
+      readingButton.textContent = host.reading ? '退出阅读' : '阅读'
+      readingButton.setAttribute('aria-label', host.reading ? '退出阅读' : '阅读模式')
       const controller = shell.root._larkDocTheme
       const snapshot = controller?.getTheme?.()
       const choice = snapshot?.preset === 'feishu' ? (snapshot.resolved?.theme === 'dark' ? 'feishu-dark' : 'feishu-light') : 'default'
@@ -448,8 +456,8 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       }
     })
     menu.hidden = true
-    actions.append(commentButton, button, menu)
-    themeUi = { commentButton, button, menu, refresh: refreshThemeUi }
+    actions.append(readingButton, commentButton, button, menu)
+    themeUi = { readingButton, commentButton, button, menu, refresh: refreshThemeUi }
   }
   let editorContainerObserver = null
   const listen = (target, type, handler, capture = false) => {
@@ -593,7 +601,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       ;['handleHideTimer', 'blockMenuCloseTimer', '_keepMenuTimer', 'pendingChangeTimer'].forEach(key => clearTimeout(host[key]))
       ;['pendingStateFrame', '_outlineFrame'].forEach(key => { if (host[key]) cancelAnimationFrame(host[key]) })
       uiDomains.slice().reverse().forEach(([domain]) => host[`destroy${domain}`]())
-      if (themeUi) { themeUi.commentButton.remove(); themeUi.button.remove(); themeUi.menu.remove(); themeUi = null }
+      if (themeUi) { themeUi.readingButton.remove(); themeUi.commentButton.remove(); themeUi.button.remove(); themeUi.menu.remove(); themeUi = null }
       runtime.destroy()
       panelHost.remove()
     },
