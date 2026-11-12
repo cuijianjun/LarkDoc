@@ -292,6 +292,7 @@ export default {
         // 链接按钮的可用性：`effectiveReadonly || !hasTextSelection` 时禁用。
         // `hasTextSelection` 读编辑器实时选区，非响应式 —— 选区变化由主组件显式刷新。
         hasSelection: this.hasTextSelection,
+        linkAllowed: this.linkCommandEnabled?.() !== false,
         textStyle: this.appliedTextStyle,
         colorOpenFor: this.colorPaletteOpen,
         options: {

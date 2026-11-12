@@ -24,16 +24,16 @@ new LarkDoc({
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `features.images` | `true` | 关闭后图片入口隐藏。 |
-| `limits.maxImageSize` | `5MB` | 单张大小上限。 |
+| `limits.maxImageSize` | `20MB` | 单张大小上限，可按宿主要求收紧。 |
 | `uploader.upload` | 内置本地读取 | 宿主接管上传；不提供时转 base64 本地预览。 |
 | `network.mode` | `'open'` | 外链图片策略，见[网络策略](/blocks/network)。 |
 | `network.imageProxy` | - | 把外链图转存成本地地址。 |
 
 ## 上传生命周期
 
-选图、粘贴文件、拖拽、替换和裁剪共用 beforeUpload / upload / onStart / onProgress / onRetry / onSuccess / onError / onCancel / onReject / onSettled；已有图片链接不伪造文件上传事件。ctx 带 taskId、documentId、原始 file、source、mode、signal 与 cancel(reason?)。异步检查期间可取消；销毁、换文档和只读后不能晚写回。
+选图、粘贴文件、拖拽和替换共用 beforeUpload / upload / onStart / onProgress / onRetry / onSuccess / onError / onCancel / onReject / onSettled；已有图片链接不伪造文件上传事件。ctx 带 taskId、documentId、原始 file、source、mode、signal 与 cancel(reason?)。异步检查期间可取消；销毁、换文档和只读后不能晚写回。
 
-合法 URL、相对图片路径与 PNG/JPEG/GIF/WebP data URI 均可作为上传结果，attchId 可省略。`doc.setUploader(nextUploader)` 或框架上传 property 更新不重建正文与撤销历史。完整签名、唯一终态和错误处理见[上传器](/blocks/uploader)。
+合法 URL、相对图片路径与 JPEG/PNG/GIF/WebP/BMP data URI 均可作为上传结果，attchId 可省略。文件选择器支持多选；本地预览与上传进度不写入文档，粘贴后可在图片下方继续输入。选中上传预览后按 Delete/Backspace 取消，也支持撤销和重做。`doc.setUploader(nextUploader)` 或框架上传 property 更新不重建正文与撤销历史。完整签名、唯一终态和错误处理见[上传器](/blocks/uploader)。
 
 ## 怎么用
 
@@ -41,8 +41,8 @@ new LarkDoc({
 | --- | --- |
 | 工具栏 / 插入菜单 | 打开文件选择。 |
 | 粘贴 / 拖拽 | 直接插入，自动走同一 Provider；source 为 paste / drop。 |
-| 选中图片 | 拖四角调宽度；工具条给裁剪、替换、说明文字、预览、删除。 |
-| 双击 | 大图预览。 |
+| 选中图片 | 四角等比缩放；工具条提供裁剪、说明、左/中/右对齐、复制图片链接、分享和评论。 |
+| 已选中后单击 / 阅读模式单击 | 大图查看：前后图片、缩放、原始尺寸、适应窗口、旋转、下载和评论。 |
 
 数据契约：`<img src alt width data-attch-id>`；JSON 为 `{ type: 'image', attrs: { src, alt, width, attchId? } }`。被网络策略拦下的外链图 `src` 为空、原地址留在 `data-original-src`。
 
@@ -100,3 +100,15 @@ const html = doc.getHTML({ media: { mode: 'link' } })
 ::: tip 上传失败
 自定义 upload 抛错或返回非法结果时通知 onError / onSettled，不回退为 base64 成功；替换、裁剪失败保留旧图。未配置 upload 的本地转换也提供相同回调。
 :::
+
+## 原位裁剪与分享
+
+裁剪保留原始 `src` 与 `attchId`，只保存 `crop: [left, top, right, bottom]`（0–1 的边界，提交精度四位小数）以及 `naturalWidth`、`naturalHeight`。八个手柄调整边界，Enter 或点击外部提交，Escape 取消草稿；重新进入裁剪并扩展边界，或点击裁剪后出现的「重置图片」，均可还原全图，已有显示宽度不变。HTML/JSON 保留裁剪属性；Markdown 降级为原图链接。
+
+图片分享的接收人目录复用 `mentionSource` 的人员和会话条目，发送由宿主的异步 `onImageShare({ image, url, recipients, message, signal })` 确认。返回 `false` 或 reject 会保留窗口和输入并显示错误；未配置回调时不允许发送。关闭窗口会使 `signal` 中止，宿主应据此取消尚未执行的请求。SDK 不自行发送消息。
+
+编辑模式下首次点击图片只选中，再次点击打开查看器；阅读模式下单击直接打开。查看器支持方向键与上一张、下一张按钮，首尾停止切换，Escape 关闭；在评论输入框内按方向键仍用于编辑文字。分享预览包含图片与相邻内容的摘录，单选接收人后收起搜索列表，多选模式保留列表，取消会清空当前接收人和留言。
+
+查看器下载裁剪图时按原图像素导出可见区域为 PNG，不重新上传或修改正文；普通图片仍下载原文件。
+
+图片评论使用同一 `comments` Provider，以 `blockId` 锚定图片；不会把评论写进图片像素或更改附件。

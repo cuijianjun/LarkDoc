@@ -1,10 +1,9 @@
 /**
  * 全局浮层消解（P0-03 持续瘦身：从 LarkDocEditor.vue 原样下沉，逻辑零改动）。
  *
- * 一个界面上同时可能有 21 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
+ * 一个界面上同时可能有 17 个浮层（命令菜单 / 块菜单 / 颜色面板 / 表格选择器 /
  * 帮助 / 标题下拉 / 文档操作 / 图表 / 气泡对齐 / 气泡标题 / callout 表情 /
- * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗 / 日期提醒日历 / 日程搜索面板 /
- * 顶栏「更多」/ 链接悬浮卡 / 封面面板 / 代码语言选择器），它们的关闭入口只有三个：
+ * 表格工具 / 搜索 / 编号菜单 / 链接·公式·表情弹窗 / 日期提醒日历 / 日程搜索面板），它们的关闭入口只有三个：
  *   1. 点外部（`onDocumentPointerDown`，capture 阶段绑在 document 上）；
  *   2. `Esc`（`onWindowKeydown`）；
  *   3. 显式调 `closeOverlay()`（弹窗背板点击、Esc 键、宿主主动收起都走它）。
@@ -27,6 +26,8 @@ export default {
       const target = event.target
       const insertTrigger = target.closest?.('button[aria-label="插入"]')
       const ownInsertTrigger = insertTrigger && this.$refs.root?.contains(insertTrigger)
+      const tableTrigger = target.closest?.('.lark-doc-toolbar button[aria-label="表格工具"]')
+      const ownTableTrigger = tableTrigger && this.$refs.root?.contains(tableTrigger)
       if (this.menuOpen && !target.closest?.('.lark-doc-command-menu') && target !== this.menuTrigger && !this.menuTrigger?.contains(target) && !ownInsertTrigger) this.closeCommandMenu()
       // P4-01：`@` 面板的常规关闭由选区变化驱动（document.js 回调 onMention(null)），
       // 这里只补那种「不换选区」的点击：工具栏 / 页眉 / 页边空白。点回正文不拦，
@@ -44,10 +45,10 @@ export default {
       // 所以它在下面的 `onWindowKeydown` 与 `closeOverlay` 里都有分支（日历两者都没有）。
       // 点外部同样生效，且只有这三个入口：面板自身、它的下拉、色板都在 `.lark-doc-isv-overlay` 内。
       if (this.isvPanelOpen && !target.closest?.('.lark-doc-isv-overlay')) this.closeIsvPanel()
-      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle')) this.blockTypeMenuOpen = false
-      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
-      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle')) this.closeBlockMenu()
+      if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
+      if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.blockTypeMenuOpen = false
+      if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
+      if (this.blockColorMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
       if (this.bubbleAlignOpen && !target.closest?.('.lark-doc-bubble-align') && !target.closest?.('.lark-doc-bubble-align-menu')) this.closeBubbleAlignMenu()
       if (this.bubbleHeadingOpen && !target.closest?.('.lark-doc-bubble-heading')) this.closeBubbleHeadingMenu()
       if (this.calloutEmojiOpen && !target.closest?.('.lark-doc-callout-tools')) this.closeCalloutEmoji()
@@ -65,33 +66,17 @@ export default {
       // Esc 故意不管它（04 §4.3 ⑤ 实测 Esc ×1、×2 都关不掉），所以下面 onWindowKeydown
       // 和 closeOverlay 里都没有它的分支，这里就是它唯一的全局关闭点。
       if (this.embedDialog && !target.closest?.('.lark-doc-embed-dialog')) this.closeEmbedDialog()
-      // 模式下拉由原生 select 自行关闭，其余 dev 浮层保留各自命中判定。
-      // —— UI 补齐线四浮层 ——
-      // ⚠️ 这四个走各自的 `xxxContains()` 而不是在这里再抄一遍选择器：命中判定要与
-      // 浮层自己的 DOM 类名同源，抄一份就会出现「改了组件忘了改这里」的静默失效。
-      // 内含的可选调用（`node.closest &&`）由对方方法内部兜住。
-      if (this.topbarMoreOpen && !this.topbarMoreContains(target)) this.closeTopbarMore()
-      if (this.linkHoverOpen && !this.linkHoverContains(target)) this.closeLinkHover()
-      if (this.coverPanelOpen && !this.coverContains(target)) this.closeCoverPanel()
-      if (this.codeLangOpen && !this.codeLangContains(target)) this.closeCodeLangPicker()
-      // —— 浮层矩阵补齐线四浮层 ——
-      // 同一套 `xxxContains()` 纪律。两处「刻意不关」：
-      //   · 确认框点遮罩会关（`closeConfirm` 返回 false）—— 遮罩点击本身就是 04 §4.9
-      //     的取消通路之一，但这里**不再兜一遍**：确认框自己绑了 `@mousedown.prevent`
-      //     的遮罩关闭，document 上再关一次会抢在它的 `resolve` 之前把 Promise 结掉。
-      //     所以确认框不在这里出现，只由组件自身 + Esc 关。
-      //   · 关联多维表格同理，遮罩点击在组件里绑死。
-      if (this.createMenuOpen && !this.createMenuContains(target)) this.closeCreateMenu()
-      if (this.notifyOpen && !this.notifyContains(target)) this.closeNotify()
-      if (this.relationOpen && !this.relationContains(target)) this.closeRelationBitable()
+      // P4-06 模式下拉不在这里：它是共享下拉原语（`ui/select.js`）的实例，
+      // 「外部 pointerdown 关」由原语自己挂在 document 上，别再判一遍（两处会抢着关）。
       if (!this.$refs.root?.contains(target)) {
         this.headingOpen = false
         this.headingStyle = {}
         this.tableToolsOpen = false
       }
     },
-    /** 全局 Esc。演示模式（`slides`）下额外接管左右方向键翻页；另外接管 ⌘+F / ⌘+Shift+H / ⌘+/ 与模式键位。 */
+    /** 全局 Esc、⌘+F / ⌘+Shift+H / ⌘+/ 与模式键位；演示方向键由浏览器滚动全文。 */
     onWindowKeydown(event) {
+      if (this.versionPanelOpen) return
       // P4-06：模式键位（⌘/Ctrl+⌥+E·X·V 与裸 E，07 §12.1）先过一遍。放在最前面是因为
       // 它们**带 alt**，下面的 ⌘+F 分支明确排斥 alt，两组不会互相抢键；
       // 裸 E 的「焦点不在输入区」闸门由 applyModeShortcut 内部判（否则正文打 e 会切模式）。
@@ -102,30 +87,15 @@ export default {
         const key = (event.key || '').toLowerCase()
         if (key === 'f' && !event.shiftKey) { event.preventDefault(); this.openSearch('find'); return }
         if (key === 'h' && event.shiftKey) { event.preventDefault(); this.openSearch('replace'); return }
-        if (key === 'p' && event.shiftKey) { event.preventDefault(); this.startPresentation('document'); return }
         // P4-06：⌘+/ 开快捷键抽屉（04 §3.5 入口 2、07 §7 键位表）。同样要 preventDefault，
         // 否则 Firefox 会弹「快速查找」、部分输入法会把 / 打进正文。
         if (key === '/') { event.preventDefault(); this.toggleHelpOpen(); return }
       }
-      // UI 补齐线四浮层的 Esc 入口。四个都给了 —— 只有「日程搜索面板」和「内嵌网页浮层」
-      // 是实测 Esc 无效才故意不进这条链（见它们各自的注释）。
-      // 浮层矩阵补齐线：确认框放**最前**（04 §4.9 是模态，Esc 必须先关它，不能让
-      // 底层菜单跟着一起收）；关联多维表格同为模态，紧随其后。
-      if (event.key === 'Escape' && this.confirmOpen) this.closeConfirm()
-      else if (event.key === 'Escape' && this.relationOpen) this.closeRelationBitable()
-      else if (event.key === 'Escape' && this.createMenuOpen) this.closeCreateMenu()
-      else if (event.key === 'Escape' && this.notifyOpen) this.closeNotify()
-      else if (event.key === 'Escape' && this.topbarMoreOpen) this.closeTopbarMore()
-      else if (event.key === 'Escape' && this.linkHoverOpen) this.closeLinkHover()
-      else if (event.key === 'Escape' && this.coverPanelOpen) this.closeCoverPanel()
-      else if (event.key === 'Escape' && this.codeLangOpen) this.closeCodeLangPicker()
-      else if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
+      if (event.key === 'Escape' && this.headingNumberMenu.open) this.closeHeadingNumberMenu({ restoreFocus: true })
       // P4-04：按钮配置面板 Esc 可关（02 §22 ⑤-1），关了就不建块 —— 与「日程面板 Esc 无效」相反。
       else if (event.key === 'Escape' && this.isvPanelOpen) this.closeIsvPanel()
       else if (event.key === 'Escape' && this.slides) this.toggleSlides()
       else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
-      else if (this.slides && this.presentationMode !== 'document' && event.key === 'ArrowRight') { event.preventDefault(); this.nextSlide() }
-      else if (this.slides && this.presentationMode !== 'document' && event.key === 'ArrowLeft') { event.preventDefault(); this.prevSlide() }
     },
     /**
      * 逐层收浮层（互斥链，一次只收一层），最后一律把焦点还给编辑器。
@@ -134,6 +104,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.confirmOpen) this.closeConfirm(); else if (this.relationOpen) this.closeRelationBitable(); else if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.mathDialog) this.mathDialog = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.createMenuOpen) this.closeCreateMenu(); else if (this.notifyOpen) this.closeNotify(); else if (this.topbarMoreOpen) this.closeTopbarMore(); else if (this.codeLangOpen) this.closeCodeLangPicker(); else if (this.coverPanelOpen) this.closeCoverPanel(); else if (this.linkHoverOpen) this.closeLinkHover(); else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

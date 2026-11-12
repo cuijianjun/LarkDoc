@@ -36,6 +36,21 @@ export const BOOKMARK_LIMITS = Object.freeze({
   desc: 2000,
 })
 
+/** Bounded snapshot carried through inline/preview link views. */
+export function safeLinkCardMeta(value) {
+  if (value === null || value === undefined) return true
+  if (typeof value !== 'string' || value.length > 10000 || value.includes('\u0000')) return false
+  try {
+    const meta = JSON.parse(value)
+    if (!meta || Array.isArray(meta) || typeof meta !== 'object' || Object.keys(meta).some(key => !['title', 'desc', 'favicon', 'cover', 'recordId'].includes(key))) return false
+    return (meta.desc == null || (typeof meta.desc === 'string' && Array.from(meta.desc).length <= BOOKMARK_LIMITS.desc && !meta.desc.includes('\u0000')))
+      && (meta.favicon == null || readBookmarkUrl(meta.favicon) !== null)
+      && (meta.cover == null || readBookmarkUrl(meta.cover) !== null)
+      && (meta.title == null || (typeof meta.title === 'string' && Array.from(meta.title).length <= BOOKMARK_LIMITS.title && !meta.title.includes('\u0000')))
+      && (meta.recordId == null || (typeof meta.recordId === 'string' && RECORD_ID_PATTERN.test(meta.recordId)))
+  } catch (_) { return false }
+}
+
 /** 三态块高（02 §24 ③-ter / ③-quinquies 实测值；CSS 若改高度，这里同步改）。 */
 export const BOOKMARK_HEIGHTS = Object.freeze({ loading: 122, simple: 74, rich: 113 })
 
@@ -101,10 +116,11 @@ export function normalizeBookmark(input) {
   const title = readBookmarkText(source.title, BOOKMARK_LIMITS.title)
   const desc = readBookmarkText(source.desc, BOOKMARK_LIMITS.desc)
   const favicon = readBookmarkUrl(source.favicon)
+  const cover = readBookmarkUrl(source.cover)
   const recordId = typeof source.recordId === 'string' && RECORD_ID_PATTERN.test(source.recordId)
     ? source.recordId
     : createRecordId()
-  return { url, title: title || null, desc: desc || null, favicon, recordId }
+  return { url, title: title || null, desc: desc || null, favicon, recordId, ...(cover ? { cover } : {}) }
 }
 
 /**
@@ -123,6 +139,7 @@ export function readBookmark(attrs) {
     title,
     desc,
     favicon: readBookmarkUrl(source.favicon),
+    ...(readBookmarkUrl(source.cover) ? { cover: readBookmarkUrl(source.cover) } : {}),
     variant: desc ? BOOKMARK_VARIANT.rich : BOOKMARK_VARIANT.simple,
   }
 }
@@ -134,6 +151,8 @@ export function readBookmarkMeta(value) {
     title: readBookmarkText(source.title, BOOKMARK_LIMITS.title) || null,
     desc: readBookmarkText(source.desc, BOOKMARK_LIMITS.desc) || null,
     favicon: readBookmarkUrl(source.favicon),
+    ...(readBookmarkUrl(source.cover) ? { cover: readBookmarkUrl(source.cover) } : {}),
+    ...(typeof source.preview === 'boolean' ? { preview: source.preview } : {}),
   }
 }
 
@@ -193,16 +212,18 @@ export function renderBookmarkCard(bookmark, variant) {
   // 标题与摘要之间是**真 `<br>`**，不是 block（02 §24 ②：飞书原生就是 `<br>`，行高才连得上）。
   if (data.desc) detailChildren.push(['br'], ['span', { class: 'lark-doc-bookmark-summary' }, data.desc])
 
+  const cover = data.cover ? ['div', { class: 'lark-doc-bookmark-cover', 'aria-hidden': 'true', style: `background-image: url("${escapeCssUrl(data.cover)}")` }] : null
   return shell('lark-doc-bookmark-wrapper', [
     shell('lark-doc-bookmark-content', [
       ['div', {
-        class: 'lark-doc-bookmark-card',
+        class: `lark-doc-bookmark-card${cover ? ' has-cover' : ''}`,
         'data-bookmark-variant': data.variant || BOOKMARK_VARIANT.simple,
         // 整卡就是链接：飞书卡内没有 `a`，点击由 JS `window.open` 完成。
         // `role` / `tabindex` 是 V1 补的无障碍入口（飞书实测没有，纯增强，不影响排版）。
         role: 'link',
         tabindex: '0',
       },
+      ...(cover ? [cover] : []),
       ['div', { class: 'lark-doc-bookmark-info' },
         ['div', { class: 'lark-doc-bookmark-url-wrapper' }, ...urlChildren],
         ['div', { class: 'lark-doc-bookmark-detail' }, ...detailChildren]],

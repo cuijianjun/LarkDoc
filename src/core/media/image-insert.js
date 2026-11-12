@@ -13,16 +13,16 @@ import { safeUrl } from '../documentOperations'
  * 与 schema 里 `image.src` 的 `safeUrl(value, true)` 白名单、以及 NodeView 能
  * 渲染的格式严格一致——多一种都会变成「能进文档但渲染不出来」的坏块。
  */
-export const IMAGE_MIME_ALLOWLIST = Object.freeze(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+export const IMAGE_MIME_ALLOWLIST = Object.freeze(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/x-bmp', 'image/x-ms-bmp'])
 
 /** 分流被拒的原因；宿主可据此换文案，不要反向解析 message。 */
 export const IMAGE_REJECT = Object.freeze({ MIME: 'IMAGE_MIME', SIZE: 'IMAGE_SIZE' })
 
 // 粘贴图片地址：必须带图片扩展名。`?...` / `#...` 是图床常见签名参数，要放进来，
 // 但整串里不许出现空白（多行粘贴进来的富文本不算「一个地址」）。
-const IMAGE_URL_RE = /^https?:\/\/\S+\.(?:png|jpe?g|gif|webp)(?:\?\S*)?(?:#\S*)?$/i
+const IMAGE_URL_RE = /^https?:\/\/\S+\.(?:png|jpe?g|gif|webp|bmp)(?:\?\S*)?(?:#\S*)?$/i
 // 小图内联（02 §11 ④-bis：飞书对 <3 KB 的图直接给 data URI），格式与 safeUrl 同一口径。
-const DATA_IMAGE_RE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i
+const DATA_IMAGE_RE = /^data:image\/(?:png|jpe?g|gif|webp|bmp|x-bmp|x-ms-bmp);base64,[A-Za-z0-9+/]+={0,2}$/i
 
 /** MIME 是否是能插入的图片（大小写不敏感，宿主偶尔给 `IMAGE/PNG`）。 */
 export function isImageMime(type) {
@@ -39,7 +39,7 @@ export function formatImageSize(bytes) {
 
 /** 被拒文案（中文，与工具栏上传报错同源，别在两处各写一遍）。 */
 export function imageRejectMessage(code, options = {}) {
-  if (code === IMAGE_REJECT.MIME) return '只支持 PNG/JPEG/GIF/WebP 图片'
+  if (code === IMAGE_REJECT.MIME) return '只支持 JPEG/PNG/GIF/WebP/BMP 图片'
   if (code === IMAGE_REJECT.SIZE) return `单张图片不能超过 ${formatImageSize(options.maxSize)}`
   return '图片插入失败'
 }

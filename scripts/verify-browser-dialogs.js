@@ -20,8 +20,8 @@
  *   `.lark-doc-dialog-backdrop` + `.lark-doc-dialog`；`HelpDialog` 走抽屉外壳；
  *   `EmbedLinkDialog` **既不遮罩也不居中**（540×164 贴着插入位置浮出）。
  *   原生化时最容易「统一成一套外壳」，那正是 04 §4.3 明确否掉的做法。
- * - 条件段是契约：`LinkDialog` 的「链接文本」是 `v-if="ed.linkInsertMode"`、
- *   `MathDialog` 的错误段是 `v-if="ed.mathError"` —— 条件为假时**必须真的不在 DOM 里**，
+ * - 公式错误段是条件节点：`v-if="ed.mathError"` 为假时必须真的不在 DOM 里；
+ *   v12e 链接表单则按飞书实页统一两字段、470×126非模态浮层，
  *   改成 `hidden` / `display:none` 就会让读屏念出空段落。
  * - 内嵌网页浮层的四条反直觉行为（04 §4.3 ③⑤）：Esc ×1/×2 都关不掉、
  *   非法值不报错只有按钮换色、`<output>` 式的静默拒绝、点「查看示例」要关浮层。
@@ -68,87 +68,6 @@ const BASE_CONTENT = '<p>甲乙丙丁戊己庚辛</p>'
 const SLASH_CONTENT = '<p></p><p>第二段正文</p>'
 
 // —— 页面内工具函数（必须自包含：会被 page.evaluate 序列化执行） ——
-
-/** 三个共用外壳的弹窗：背板 + `.lark-doc-dialog` 的整体快照。 */
-const measureDialog = () => {
-  const backdrop = document.querySelector('.lark-doc-dialog-backdrop')
-  if (!backdrop) return null
-  const dialog = backdrop.querySelector('.lark-doc-dialog')
-  if (!dialog) return { backdrop: true, dialog: false }
-  const cs = getComputedStyle(dialog)
-  const rect = dialog.getBoundingClientRect()
-  const header = dialog.querySelector('header')
-  const closeButton = header ? header.querySelector('button') : null
-  const closeIcon = closeButton ? closeButton.querySelector('.lark-doc-icon') : null
-  const labels = [...dialog.querySelectorAll('label')].map((label) => {
-    const textNode = [...label.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim())
-    const input = label.querySelector('input')
-    return {
-      text: textNode ? textNode.textContent.trim() : '',
-      inputLabel: input ? input.getAttribute('aria-label') : null,
-      placeholder: input ? input.getAttribute('placeholder') : null,
-      value: input ? input.value : null,
-      focused: input ? document.activeElement === input : false,
-    }
-  })
-  return {
-    backdrop: true,
-    dialog: true,
-    role: dialog.getAttribute('role'),
-    ariaModal: dialog.getAttribute('aria-modal'),
-    ariaLabel: dialog.getAttribute('aria-label'),
-    width: Math.round(rect.width),
-    padding: cs.padding,
-    radius: cs.borderTopLeftRadius,
-    headerStrong: header && header.querySelector('strong') ? header.querySelector('strong').textContent.trim() : null,
-    headerChildren: header ? [...header.children].map((node) => node.tagName.toLowerCase()) : [],
-    closeLabel: closeButton ? closeButton.getAttribute('aria-label') : null,
-    closeType: closeButton ? closeButton.getAttribute('type') : null,
-    closeIcon: closeIcon ? { w: Math.round(closeIcon.getBoundingClientRect().width), h: Math.round(closeIcon.getBoundingClientRect().height) } : null,
-    labels,
-    paragraphs: [...dialog.querySelectorAll('p')].map((p) => ({
-      text: p.textContent.trim(),
-      role: p.getAttribute('role'),
-      cls: p.className,
-    })),
-    buttons: [...dialog.querySelectorAll('button')].map((button) => ({
-      text: button.textContent.trim(),
-      label: button.getAttribute('aria-label'),
-      disabled: button.disabled,
-      type: button.getAttribute('type'),
-      cls: button.className,
-    })),
-  }
-}
-
-/** 表格选择器：尺寸标签 + 网格。 */
-const measureTablePicker = () => {
-  const dialog = document.querySelector('.lark-doc-dialog-backdrop .lark-doc-dialog')
-  if (!dialog) return null
-  const size = dialog.querySelector('.lark-doc-table-grid-size')
-  const grid = dialog.querySelector('.lark-doc-table-grid')
-  const cells = grid ? [...grid.querySelectorAll('button')] : []
-  const header = dialog.querySelector('header')
-  const closeButton = header ? header.querySelector('button') : null
-  return {
-    ariaLabel: dialog.getAttribute('aria-label'),
-    sizeText: size ? size.textContent.trim() : null,
-    // `margin-left: auto` 在 flex 里会被解析成实际像素，读 computed 拿不到 "auto"；
-    // 真正的契约是「贴右」，所以量它与右侧关闭钮之间那段 12px 的 header gap。
-    sizeRightGap: size && closeButton ? Math.round(closeButton.getBoundingClientRect().left - size.getBoundingClientRect().right) : null,
-    headerChildren: header ? [...header.children].map((node) => node.tagName.toLowerCase()) : [],
-    paragraphBeforeGrid: !!(dialog.querySelector('p') && grid && dialog.querySelector('p').compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING),
-    cellCount: cells.length,
-    cellType: cells.length ? cells[0].getAttribute('type') : null,
-    cellText: cells.length ? cells[0].textContent.trim() : null,
-    firstLabel: cells.length ? cells[0].getAttribute('aria-label') : null,
-    lastLabel: cells.length ? cells[cells.length - 1].getAttribute('aria-label') : null,
-    previewCount: cells.filter((cell) => cell.classList.contains('is-preview')).length,
-    previewLabels: cells.filter((cell) => cell.classList.contains('is-preview')).map((cell) => cell.getAttribute('aria-label')),
-    activeIsFirst: cells.length ? document.activeElement === cells[0] : false,
-    columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0,
-  }
-}
 
 /** 快捷键抽屉。 */
 const measureHelpDrawer = () => {
@@ -231,7 +150,7 @@ async function resetTo(page, html) {
   // 内嵌浮层只认「点外部」，Esc 对它无效 —— 点页面左侧空白（.lark-doc 之外）走 onDocumentPointerDown。
   await page.mouse.click(5, 420)
   await page.waitForTimeout(180)
-  await page.evaluate((content) => window.__larkDoc.setContent(content), html)
+  await page.evaluate((content) => { window.__larkDoc.setContent(content) }, html)
   await page.waitForTimeout(320)
 }
 
@@ -280,19 +199,6 @@ async function chooseCommand(page, id) {
   await page.waitForTimeout(420)
 }
 
-/** 打开表格选择器：工具栏「插入表格」按钮（非表格态下唯一入口）。 */
-async function openTablePicker(page) {
-  await resetTo(page, BASE_CONTENT)
-  const clicked = await page.evaluate(() => {
-    const button = document.querySelector('.lark-doc-toolbar button[aria-label="插入表格"]')
-    if (!button) return false
-    button.click()
-    return true
-  })
-  if (!clicked) throw new Error('工具栏里没有「插入表格」按钮')
-  await page.waitForTimeout(420)
-}
-
 /** 选中正文第 from~to 两个位置之间的文字，并（可选）先打上链接标记。 */
 async function selectRange(page, from, to, href) {
   await page.evaluate(({ start, end, url }) => {
@@ -312,258 +218,233 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(BASE, { waitUntil: 'networkidle' })
+  await page.evaluate(() => {
+    const editors = [...document.querySelectorAll('lark-doc')]
+    const target = editors.find(node => node.querySelector('button[aria-label="插入表格"]')) || editors[0]
+    editors.forEach(node => { if (node !== target) node.remove() })
+  })
+  await page.evaluate(() => { if (!window.__larkDoc) window.__larkDoc = document.querySelector('lark-doc') })
   await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
 
-  /* ═══════════════════ ① 表格选择器 ═══════════════════ */
+  /* Source table insertion is direct, with the real block menu inside tables. */
+  await resetTo(page, '<p>preserve before table</p><p></p>')
+  await clickBlockEnd(page)
+  await page.locator('.lark-doc-toolbar button[aria-label="插入表格"]').click()
+  await page.locator('.ProseMirror table').waitFor()
+  const inserted = await page.locator('.ProseMirror table').evaluate(table => ({
+    rows: table.rows.length, cols: table.rows[0].cells.length,
+    headers: table.querySelectorAll('th').length,
+    widths: [...table.querySelectorAll('col')].map(col => parseFloat(col.style.width)),
+  }))
+  record('[表格] 真人点击直接插入2×3、100px、无标题行，不弹大小选择器',
+    inserted.rows === 2 && inserted.cols === 3 && inserted.headers === 0
+      && inserted.widths.length === 3 && inserted.widths.every(width => width === 100)
+      && await page.locator('.lark-doc-dialog-backdrop').count() === 0, JSON.stringify(inserted))
+  await page.locator('.lark-doc-toolbar button[aria-label="表格工具"]').click()
+  await page.locator('.lark-doc-block-menu').waitFor({ state: 'visible' })
+  record('[表格] 表内顶部工具按钮打开真实表格块菜单',
+    await page.locator('.lark-doc-block-menu').innerText().then(text => text.includes('标题行') && text.includes('均分列宽')))
+  await page.locator('.lark-doc-toolbar button[aria-label="表格工具"]').click()
+  record('[表格] 再次点击收起表格块菜单', await page.locator('.lark-doc-block-menu').count() === 0)
+  await page.keyboard.press('ControlOrMeta+z')
+  record('[表格] 一次撤销移除新表格并保留原正文',
+    await page.locator('.ProseMirror table').count() === 0
+      && (await page.locator('.ProseMirror').innerText()).includes('preserve before table'))
 
-  await openTablePicker(page)
-  const table = await page.evaluate(measureTablePicker)
-
-  record('[表格] 工具栏「插入表格」打开 `.lark-doc-dialog-backdrop` + `.lark-doc-dialog`',
-    !!table, table ? '已打开' : '没打开')
-
-  record('[表格] role=dialog / aria-modal=true / aria-label=插入表格',
-    !!table && await page.evaluate(() => {
-      const dialog = document.querySelector('.lark-doc-dialog-backdrop .lark-doc-dialog')
-      return dialog.getAttribute('role') === 'dialog' && dialog.getAttribute('aria-modal') === 'true' && dialog.getAttribute('aria-label') === '插入表格'
-    }))
-
-  record('[表格] 头部段序：strong → 尺寸标签 → 关闭按钮',
-    !!table && JSON.stringify(table.headerChildren) === JSON.stringify(['strong', 'span', 'button']),
-    table ? table.headerChildren.join('→') : '')
-
-  record('[表格] 尺寸标签贴在头部右侧（与关闭钮之间正好 12px 的 header gap）',
-    !!table && table.sizeRightGap === 12,
-    table ? `${table.sizeText} 距关闭钮 ${table.sizeRightGap}px` : '')
-
-  record('[表格] 说明 `<p>` 在网格之前（"插入支持富文本的表格"）',
-    !!table && table.paragraphBeforeGrid,
-    table ? `before=${table.paragraphBeforeGrid}` : '')
-
-  record('[表格] 网格 9 列 × 9 行 = 81 格，`button type=button`、格内 ▦',
-    !!table && table.columns === 9 && table.cellCount === 81 && table.cellType === 'button' && table.cellText === '▦',
-    table ? `${table.columns} 列 / ${table.cellCount} 格 / type=${table.cellType} / 字="${table.cellText}"` : '')
-
-  record('[表格] `aria-label` 口径是「{列}行{行}列」：首格 1行1列、末格 9行9列',
-    !!table && table.firstLabel === '1行1列' && table.lastLabel === '9行9列',
-    table ? `${table.firstLabel} … ${table.lastLabel}` : '')
-
-  /**
-   * 初始高亮是 **1×1 而不是 3×3** —— 反直觉，但是既有契约：
-   * `LarkDocEditor.vue` 的 `watch.tablePicker` 先把 hover 复位成 `{3,3}`，
-   * 紧接着 `$nextTick` 把焦点放到网格首格；首格的 `@focus` 又调了一次
-   * `previewTableSize(1, 1)`，于是打开瞬间的稳态就是 1×1 / 1 格高亮。
-   * 原生化必须照抄这条链路（复位 → 聚焦首格），否则「打开即 3×3 高亮」会漂。
-   */
-  record('[表格] 打开即聚焦首格 → 稳态 `1 × 1`、高亮 1 格（focus 会覆盖 3×3 的初值）',
-    !!table && table.sizeText === '1 × 1' && table.previewCount === 1
-    && table.previewLabels.join(',') === '1行1列' && table.activeIsFirst === true,
-    table ? `${table.sizeText} / ${table.previewCount} 格 / 首格聚焦=${table.activeIsFirst}` : '')
-
-  // hover 第 10 格（第 2 行第 1 列）→ 标签「1 × 2」、2 格高亮
-  await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('.lark-doc-table-grid button')]
-    cells[9].dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }))
-  })
-  await page.waitForTimeout(220)
-  const tableHover10 = await page.evaluate(measureTablePicker)
-  record('[表格] hover 第 10 格 → 标签 `1 × 2`、高亮 2 格',
-    !!tableHover10 && tableHover10.sizeText === '1 × 2' && tableHover10.previewCount === 2,
-    tableHover10 ? `${tableHover10.sizeText} / ${tableHover10.previewCount} 格` : '')
-
-  // hover 第 81 格 → 「9 × 9」、81 格高亮
-  await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('.lark-doc-table-grid button')]
-    cells[80].dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }))
-  })
-  await page.waitForTimeout(220)
-  const tableHover81 = await page.evaluate(measureTablePicker)
-  record('[表格] hover 第 81 格 → `9 × 9`、81 格全亮',
-    !!tableHover81 && tableHover81.sizeText === '9 × 9' && tableHover81.previewCount === 81,
-    tableHover81 ? `${tableHover81.sizeText} / ${tableHover81.previewCount} 格` : '')
-
-  // 点第 10 格（2 行 1 列）→ 落 2×1 表格且弹窗关闭
-  await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('.lark-doc-table-grid button')]
-    cells[9].click()
-  })
-  await page.waitForTimeout(520)
-  const tableInserted = await page.evaluate(() => {
-    const json = window.__larkDoc.getEditor().getJSON()
-    const tableNode = (json.content || []).find((node) => node.type === 'table')
-    return {
-      closed: !document.querySelector('.lark-doc-dialog-backdrop'),
-      rows: tableNode ? tableNode.content.length : 0,
-      cols: tableNode && tableNode.content[0] ? tableNode.content[0].content.length : 0,
-    }
-  })
-  record('[表格] 点第 10 格 → 落 2 行 1 列表格并关闭弹窗',
-    tableInserted.closed && tableInserted.rows === 2 && tableInserted.cols === 1,
-    `关闭=${tableInserted.closed} ${tableInserted.rows}行${tableInserted.cols}列`)
-
-  // 背板点击关闭 + 下次打开高亮复位到 3×3
-  await openTablePicker(page)
-  await page.evaluate(() => {
-    const backdrop = document.querySelector('.lark-doc-dialog-backdrop')
-    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-  })
-  await page.waitForTimeout(300)
-  const backdropClosed = await open(page, '.lark-doc-dialog-backdrop')
-  record('[表格] 点背板自身关闭弹窗', !backdropClosed)
-
-  await openTablePicker(page)
-  const tableReopened = await page.evaluate(measureTablePicker)
-  record('[表格] 重开时 hover 复位（不停在上次的 `9 × 9`，回到聚焦首格的 `1 × 1`）',
-    !!tableReopened && tableReopened.sizeText === '1 × 1' && tableReopened.previewCount === 1,
-    tableReopened ? `${tableReopened.sizeText} / ${tableReopened.previewCount} 格` : '')
-
-  /* ═══════════════════ ② 公式弹窗 ═══════════════════ */
-
+  /* ② 公式：源400×98非模态浮层；完整闭环另见verify-browser-math.js。 */
   await chooseCommand(page, 'inlineMath')
-  const math = await page.evaluate(measureDialog)
-  record('[公式] 打开共用外壳弹窗，aria-label=插入公式、头部 strong 同文案',
-    !!math && math.dialog === true && math.ariaLabel === '插入公式' && math.headerStrong === '插入公式',
-    math && math.dialog ? `${math.ariaLabel} / ${math.headerStrong}` : '没打开')
+  const mathPanel = page.getByRole('dialog', { name: '编辑公式', exact: true })
+  await mathPanel.waitFor()
+  const mathRect = await mathPanel.boundingBox()
+  record('[公式] 400×98贴近公式的非模态浮层', mathRect.width === 400 && mathRect.height === 98 && await mathPanel.getAttribute('aria-modal') === null)
+  const mathInput = mathPanel.getByRole('textbox', { name: 'LaTeX 公式' })
+  await mathInput.fill('\\badcommand{')
+  await page.locator('.tiptap [data-type="inline-math"]').filter({ hasText: '无效公式' }).waitFor()
+  await mathInput.press('Escape')
+  record('[公式] 无效源保留并显示占位，Esc完成输入', await mathPanel.count() === 0 && await page.locator('.tiptap .lark-doc-math-invalid').count() === 1)
+  await page.locator('.tiptap [data-type="inline-math"]').click()
+  record('[公式] 点击重新编辑相同LaTeX', await mathInput.inputValue() === '\\badcommand{')
+  await mathInput.fill('x^2 + y^2')
+  await mathInput.press('Escape')
+  await page.locator('.tiptap [data-type="inline-math"] .katex').waitFor()
+  record('[公式] 修复后即时渲染并保存', await mathPanel.count() === 0)
 
-  record('[公式] role=dialog / aria-modal=true / 圆角 10px / 内边距 19px',
-    !!math && math.dialog === true && math.role === 'dialog' && math.ariaModal === 'true' && math.radius === '10px' && math.padding === '19px',
-    math && math.dialog ? `role=${math.role} modal=${math.ariaModal} radius=${math.radius} padding=${math.padding}` : '')
-
-  record('[公式] 只有一个 label「LaTeX」，输入框 aria-label=LaTeX 公式、placeholder 齐备、打开即聚焦',
-    !!math && math.dialog === true && math.labels.length === 1 && math.labels[0].text === 'LaTeX'
-    && math.labels[0].inputLabel === 'LaTeX 公式' && math.labels[0].placeholder === '例如 x^2 + y^2' && math.labels[0].focused === true,
-    math && math.dialog ? JSON.stringify(math.labels[0]) : '')
-
-  record('[公式] 关闭钮 aria-label=关闭对话框、内部图标 14×14',
-    !!math && math.dialog === true && math.closeLabel === '关闭对话框' && !!math.closeIcon && math.closeIcon.w === 14 && math.closeIcon.h === 14,
-    math && math.dialog ? `${math.closeLabel} ${math.closeIcon ? `${math.closeIcon.w}x${math.closeIcon.h}` : '无图标'}` : '')
-
-  record('[公式] 初始无错误段（`v-if="ed.mathError"` → 真的不在 DOM 里）',
-    !!math && math.dialog === true && math.paragraphs.length === 0,
-    math && math.dialog ? `${math.paragraphs.length} 段 <p>` : '')
-
-  // 非法 LaTeX → role=alert 的错误段 + 弹窗保持打开
-  await page.evaluate(() => {
-    const input = document.querySelector('.lark-doc-dialog input[aria-label="LaTeX 公式"]')
-    input.value = '\\frac{1}'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-  await page.waitForTimeout(160)
-  await page.evaluate(() => {
-    const buttons = [...document.querySelectorAll('.lark-doc-dialog button')]
-    buttons.find((button) => button.textContent.trim() === '插入').click()
-  })
-  await page.waitForTimeout(700)
-  const mathError = await page.evaluate(measureDialog)
-  record('[公式] 非法 LaTeX → 出现 `role=alert` 的 `.lark-doc-error`，弹窗不关',
-    !!mathError && mathError.dialog === true && mathError.paragraphs.length === 1
-    && mathError.paragraphs[0].role === 'alert' && /公式无法解析/.test(mathError.paragraphs[0].text)
-    && /lark-doc-error/.test(mathError.paragraphs[0].cls),
-    mathError && mathError.dialog ? JSON.stringify(mathError.paragraphs) : '弹窗被关掉了')
-
-  // 合法 LaTeX → Enter 插入节点并关闭
-  await page.evaluate(() => {
-    const input = document.querySelector('.lark-doc-dialog input[aria-label="LaTeX 公式"]')
-    input.value = 'x^2 + y^2'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-  })
-  await page.waitForTimeout(800)
-  const mathInserted = await page.evaluate(() => {
-    const json = window.__larkDoc.getEditor().getJSON()
-    const found = JSON.stringify(json).indexOf('inlineMath') !== -1
-    return { found, closed: !document.querySelector('.lark-doc-dialog-backdrop') }
-  })
-  record('[公式] 合法 LaTeX + Enter → 落 inlineMath 节点并关闭弹窗',
-    mathInserted.found && mathInserted.closed,
-    `节点=${mathInserted.found} 关闭=${mathInserted.closed}`)
-
-  /* ═══════════════════ ③ 链接弹窗 ═══════════════════ */
-
-  await chooseCommand(page, 'link')
-  const linkInsert = await page.evaluate(measureDialog)
-  record('[链接] 空选区 → 插入模式：两个 label「链接文本」→「链接地址」',
-    !!linkInsert && linkInsert.dialog === true && linkInsert.ariaLabel === '设置链接'
-    && linkInsert.labels.length === 2 && linkInsert.labels[0].text === '链接文本' && linkInsert.labels[1].text === '链接地址',
-    linkInsert && linkInsert.dialog ? linkInsert.labels.map((label) => label.text).join('→') : '没打开')
-
-  record('[链接] 插入模式提示两段（第一段只在插入模式出现）',
-    !!linkInsert && linkInsert.dialog === true && linkInsert.paragraphs.length === 2
-    && /输入显示文字和地址后插入本地链接/.test(linkInsert.paragraphs[0].text),
-    linkInsert && linkInsert.dialog ? linkInsert.paragraphs.map((p) => p.text).join(' | ') : '')
-
-  record('[链接] 地址为空 →「应用链接」禁用；插入模式下「解除链接」禁用',
-    !!linkInsert && linkInsert.dialog === true && (() => {
-      const apply = linkInsert.buttons.find((button) => button.text === '应用链接')
-      const remove = linkInsert.buttons.find((button) => button.text === '解除链接')
-      return !!apply && apply.disabled === true && !!remove && remove.disabled === true
-    })(),
-    linkInsert && linkInsert.dialog ? linkInsert.buttons.map((button) => `${button.text}:${button.disabled}`).join(' ') : '')
-
-  // 填文本 + 地址 → 应用 → 落带 link mark 的文本
-  await page.evaluate(() => {
-    const set = (label, value) => {
-      const input = document.querySelector(`.lark-doc-dialog input[aria-label="${label}"]`)
-      input.value = value
-      input.dispatchEvent(new Event('input', { bubbles: true }))
+  /* ═══════════════════ ③ 链接：飞书实页470×126表单与440×42悬浮条 ═══════════════════ */
+  await resetTo(page, '<p></p>')
+  await clickBlockEnd(page)
+  await page.keyboard.press('Meta+k')
+  const form = page.locator('.lark-doc-link-dialog')
+  await form.waitFor({ state: 'visible' })
+  const formShape = await form.evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight, labels: [...el.querySelectorAll('label')].map(e => e.firstChild.textContent), modal: el.getAttribute('aria-modal'), placeholder: [...el.querySelectorAll('input')].map(e => e.placeholder) }))
+  record('[链接] Cmd+K打开470×126非模态双字段表单，与飞书实页一致', formShape.width === 470 && formShape.height === 126 && !formShape.modal && formShape.labels.join('/') === '文本/链接', JSON.stringify(formShape))
+  record('[链接] 空文本/地址时确认禁用，焦点在文本框', await form.getByRole('button', { name: '确认', exact: true }).isDisabled() && await form.getByRole('textbox', { name: '链接文本' }).evaluate(el => el === document.activeElement))
+  const href = new URL('/__larkdoc-preview-fixture?link-v12e=1', BASE).href
+  await form.getByRole('textbox', { name: '链接文本' }).fill('示例站')
+  await form.getByRole('textbox', { name: '链接地址' }).fill(href)
+  record('[链接] 焦点边框与确认按钮沿用项目品牌色', await form.evaluate(el => getComputedStyle(el.querySelector('input:focus')).borderTopColor === getComputedStyle(el.querySelector('button')).backgroundColor))
+  await form.getByRole('button', { name: '确认', exact: true }).click()
+  record('[链接] 真实鼠标确认后插入文本及安全链接，并关闭表单', await page.locator('.ProseMirror a').first().getAttribute('href') === href && await form.count() === 0)
+  const openPage = async locator => {
+    const [opened] = await Promise.all([page.waitForEvent('popup', { timeout: 5000 }), locator.click()])
+    await opened.waitForLoadState('domcontentloaded', { timeout: 5000 })
+    const ok = opened.url() === href
+    await opened.close()
+    await page.bringToFront()
+    return ok
+  }
+  record('[链接] 标题视图单击打开新标签页', await openPage(page.locator('.ProseMirror a').first()))
+  const hoverLink = async () => {
+    await page.bringToFront()
+    await page.mouse.move(8, 8)
+    // Let Chromium's frame hit-test catch up after undo replaces an iframe.
+    await page.waitForTimeout(80)
+    const target = page.locator('.ProseMirror a, .ProseMirror [data-type="bookmark"], .ProseMirror [data-type="link-embed"]').first()
+    // The embedded page owns pointer events inside the frame; use its document
+    // block border, as in the source preview toolbar interaction.
+    const preview = await target.getAttribute('data-view') === 'preview'
+    if (preview) {
+      // The content-box figure excludes its body's 1px border. Hover the
+      // actual border, rather than the iframe's own opaque document.
+      const box = await target.locator('.lark-doc-link-preview-body').boundingBox()
+      await page.mouse.move(box.x - 8, box.y + box.height / 2, { steps: 12 })
+      await page.mouse.move(box.x + 0.25, box.y + box.height / 2, { steps: 4 })
+    } else await target.hover()
+    try {
+      await page.locator('.lark-doc-link-tools').waitFor({ state: 'visible', timeout: 3000 })
+    } catch (error) {
+      console.error('Link hover diagnostics', JSON.stringify(await page.evaluate(() => ({
+        focus: document.activeElement?.className,
+        hits: [...document.querySelectorAll('.ProseMirror [data-type="link-embed"]')].map(el => {
+          const r = el.getBoundingClientRect()
+          return document.elementFromPoint(r.x + 2, r.y + 2)?.outerHTML.slice(0, 300)
+        }),
+        candidates: [...document.querySelectorAll('.ProseMirror a, .ProseMirror [data-type="bookmark"], .ProseMirror [data-type="link-embed"]')].map(el => {
+          const r = el.getBoundingClientRect(), editor = window.__larkDoc.getEditor(), pos = editor.view.posAtDOM(el, 0)
+          return { tag: el.tagName, type: el.dataset.type, view: el.dataset.view, href: el.getAttribute('href'), rect: { x: r.x, y: r.y, w: r.width, h: r.height }, pos, node: editor.state.doc.nodeAt(pos)?.type.name }
+        }),
+        tools: [...document.querySelectorAll('.lark-doc-link-tools')].map(el => ({ text: el.innerText, display: getComputedStyle(el).display })),
+      }))))
+      if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'master-parity-local-link-hover-failed.png') })
+      throw error
     }
-    set('链接文本', '示例站')
-    set('链接地址', 'https://example.com/a')
-  })
-  await page.waitForTimeout(200)
-  await page.evaluate(() => {
-    const buttons = [...document.querySelectorAll('.lark-doc-dialog button')]
-    buttons.find((button) => button.textContent.trim() === '应用链接').click()
-  })
-  await page.waitForTimeout(520)
-  const linkApplied = await page.evaluate(() => {
-    const json = window.__larkDoc.getEditor().getJSON()
-    let href = null
-    const walk = (node) => {
-      if (!node) return
-      if (Array.isArray(node.marks)) node.marks.forEach((mark) => { if (mark.type === 'link') href = mark.attrs.href })
-      ;(node.content || []).forEach(walk)
-    }
-    walk(json)
-    return { href, closed: !document.querySelector('.lark-doc-dialog-backdrop') }
-  })
-  record('[链接] 插入模式填文本+地址 → 落 link mark（href 正确）并关闭',
-    linkApplied.href === 'https://example.com/a' && linkApplied.closed,
-    `href=${linkApplied.href} 关闭=${linkApplied.closed}`)
-
-  // 选中已有链接文字 → 工具栏「设置链接」→ 编辑模式（只有 1 个 label）
-  await resetTo(page, BASE_CONTENT)
-  await selectRange(page, 1, 5, 'https://example.com/b')
-  await page.evaluate(() => {
-    document.querySelector('.lark-doc-toolbar button[aria-label="设置链接"]').click()
-  })
-  await page.waitForTimeout(420)
-  const linkEdit = await page.evaluate(measureDialog)
-  record('[链接] 选中已有链接 → 编辑模式：只有「链接地址」一个 label（`v-if` 真的删节点）',
-    !!linkEdit && linkEdit.dialog === true && linkEdit.labels.length === 1 && linkEdit.labels[0].text === '链接地址',
-    linkEdit && linkEdit.dialog ? linkEdit.labels.map((label) => label.text).join('/') : '没打开')
-
-  record('[链接] 编辑模式：地址框预填当前 href、「解除链接」可用、「应用链接」可用',
-    !!linkEdit && linkEdit.dialog === true && linkEdit.labels[0].value === 'https://example.com/b' && (() => {
-      const apply = linkEdit.buttons.find((button) => button.text === '应用链接')
-      const remove = linkEdit.buttons.find((button) => button.text === '解除链接')
-      return !!apply && apply.disabled === false && !!remove && remove.disabled === false
-    })(),
-    linkEdit && linkEdit.dialog ? `value=${linkEdit.labels[0].value}` : '')
-
-  // 编辑模式只有一段提示
-  record('[链接] 编辑模式提示只剩一段（插入模式那段不在 DOM 里）',
-    !!linkEdit && linkEdit.dialog === true && linkEdit.paragraphs.length === 1
-    && /仅允许 http、https、mailto、tel 或 # 锚点链接/.test(linkEdit.paragraphs[0].text),
-    linkEdit && linkEdit.dialog ? `${linkEdit.paragraphs.length} 段` : '')
-
-  // Esc 关闭
-  await page.evaluate(() => {
-    const dialog = document.querySelector('.lark-doc-dialog')
-    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-  })
-  await page.waitForTimeout(320)
-  record('[链接] Esc 关闭弹窗', !(await open(page, '.lark-doc-dialog-backdrop')))
+    return page.locator('.lark-doc-link-tools')
+  }
+  let tools = await hoverLink()
+  const geometry = await tools.evaluate(el => { const a = document.querySelector('.ProseMirror a').getBoundingClientRect(); const r = el.getBoundingClientRect(); return { width:r.width,height:r.height,bottom:r.bottom,anchor:a.top,url:el.querySelector('a').textContent } })
+  record('[链接] 悬浮条440×42、完整URL、位于链接上方', geometry.width === 440 && geometry.height === 42 && geometry.bottom <= geometry.anchor && geometry.url === href, JSON.stringify(geometry))
+  if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'local-link-hover.png') })
+  await tools.getByRole('button', { name: '编辑链接', exact: true }).click()
+  record('[链接] 悬浮编辑打开双字段预填表单', await form.getByRole('textbox', { name: '链接文本' }).inputValue() === '示例站' && await form.getByRole('textbox', { name: '链接地址' }).inputValue() === href)
+  await form.getByRole('textbox', { name: '链接文本' }).fill('更新标题')
+  if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'local-link-edit.png') })
+  await form.getByRole('button', { name: '确认', exact: true }).click()
+  record('[链接] 编辑修改真实链接文字', await page.locator('.ProseMirror a').first().innerText() === '更新标题')
+  const chooseView = async kind => {
+    tools = await hoverLink()
+    await tools.getByRole('button', { name: '链接视图', exact: true }).hover()
+    const menu = tools.getByRole('menu', { name: '链接显示视图' })
+    await menu.waitFor({ state: 'visible' })
+    const r = await menu.boundingBox()
+    record('[链接] 四视图菜单232×146，悬浮展开且当前项有勾选', Math.round(r.width) === 232 && Math.round(r.height) === 146 && await menu.getByRole('menuitemradio').count() === 4 && await menu.locator('[aria-checked="true"]').count() === 1)
+    if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'local-link-views.png') })
+    await menu.locator('[data-view="' + kind + '"]').click()
+  }
+  await chooseView('link')
+  record('[链接] 链接视图只替换行内显示URL，保留同一段落', await page.locator('.ProseMirror a').first().innerText() === href && await page.locator('.ProseMirror > p').count() === 1)
+  record('[链接] URL视图单击打开新标签页', await openPage(page.locator('.ProseMirror a').first()))
+  await chooseView('card')
+  record('[链接] 卡片复用真实bookmark节点与既有渲染/抓取通道', await page.locator('.ProseMirror [data-type="bookmark"] .lark-doc-bookmark-card').count() === 1)
+  record('[链接] 整张卡片单击打开新标签页', await openPage(page.locator('.ProseMirror .lark-doc-bookmark-card').first()))
+  await page.locator('.ProseMirror .lark-doc-bookmark-card').first().focus()
+  await page.keyboard.press('Meta+k')
+  await form.waitFor({ state: 'visible' })
+  record('[链接] 选中卡片后Cmd+K编辑原卡片，预填原地址和当前标题', await form.getByRole('textbox', { name: '链接地址' }).inputValue() === href && await form.getByRole('textbox', { name: '链接文本' }).inputValue() === new URL(href).hostname)
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => document.activeElement?.classList.contains('ProseMirror'))
+  await chooseView('preview')
+  await page.waitForFunction(() => document.querySelector('[data-type="link-embed"]')?.dataset.embedState === 'ready')
+  record('[链接] 预览复用网页壳与实测比例，同源页面保留opaque sandbox', await page.locator('.ProseMirror iframe').getAttribute('src') === href && !(await page.locator('.ProseMirror iframe').getAttribute('sandbox')).includes('allow-same-origin') && await page.locator('.lark-doc-link-preview-body').evaluate(el => { const r = el.getBoundingClientRect(); return Math.abs(r.height / r.width - 0.5621) < 0.002 }) && await page.locator('[data-type="link-embed"] > a').count() === 0)
+  const previewBody = page.locator('.lark-doc-link-preview-body')
+  const previewFrame = previewBody.locator('iframe')
+  const originalPreview = await previewFrame.boundingBox()
+  const previewLimits = await previewBody.evaluate(el => ({
+    documentWidth: document.querySelector('.ProseMirror').clientWidth,
+    max: parseFloat(el.style.maxWidth), viewport: window.innerWidth,
+  }))
+  record('[链接] 预览原网页视口比例精确56.2%，最大宽度随正文取1.27倍',
+    Math.abs(originalPreview.height / originalPreview.width - 0.562) < 0.0001
+      && previewLimits.max === Math.min(1060, Math.floor(previewLimits.documentWidth * 1.27), previewLimits.viewport - 24))
+  await previewBody.hover({ position: { x: 2, y: 2 } })
+  const eastHandle = await previewBody.locator('.is-e').boundingBox()
+  await page.mouse.move(eastHandle.x + eastHandle.width / 2, eastHandle.y + eastHandle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(eastHandle.x + eastHandle.width / 2 + 40, eastHandle.y + eastHandle.height / 2, { steps: 12 })
+  await page.mouse.up()
+  const resizedPreview = await previewFrame.boundingBox()
+  record('[链接] 真人横拖40px使预览宽增80px、高不变，超正文宽自动右对齐',
+    Math.abs(resizedPreview.width - Math.min(originalPreview.width + 80, previewLimits.max)) < 1
+      && Math.abs(resizedPreview.height - originalPreview.height) < 1
+      && await previewBody.evaluate(el => el.parentElement.style.justifyContent === 'flex-end'))
+  await page.keyboard.press('ControlOrMeta+z')
+  record('[链接] 一次撤销恢复默认预览宽度与居中',
+    Math.abs((await previewFrame.boundingBox()).width - originalPreview.width) < 1
+      && await previewBody.evaluate(el => el.parentElement.style.justifyContent === 'center'))
+  tools = await hoverLink()
+  record('[链接] 预览专用条无URL/编辑/移除，独立打开原网页', !(await tools.getByRole('button', { name: '编辑链接', exact: true }).isVisible()) && await openPage(tools.getByRole('button', { name: '打开原网页', exact: true })))
+  await chooseView('title')
+  record('[链接] 元数据不可用时切标题视图显示域名，不恢复旧自定义文字', await page.locator('.ProseMirror a').first().innerText() === new URL(href).hostname)
+  tools = await hoverLink()
+  await tools.getByRole('button', { name: '更多链接操作' }).hover()
+  const more = tools.getByRole('menu', { name: '链接复制操作' })
+  await more.waitFor({ state: 'visible' })
+  record('[链接] 更多菜单具有文档定位链接/原始URL两种复制操作', await more.getByRole('menuitem').count() === 2)
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await more.getByRole('menuitem', { name: '复制原始网页链接', exact: true }).click()
+  await tools.waitFor({ state: 'detached' })
+  record('[链接] 原始网页URL真正写入剪贴板', await page.evaluate(() => navigator.clipboard.readText()) === href)
+  tools = await hoverLink()
+  await tools.getByRole('button', { name: '更多链接操作' }).hover()
+  await tools.getByRole('menu', { name: '链接复制操作' }).getByRole('menuitem', { name: '复制链接', exact: true }).click()
+  await tools.waitFor({ state: 'detached' })
+  const anchorLink = await page.evaluate(() => navigator.clipboard.readText())
+  const blockId = await page.locator('.ProseMirror a').first().evaluate(el => el.closest('[data-block-id]').dataset.blockId)
+  record('[链接] 复制链接写入当前文档的稳定块定位地址',
+    new URL(anchorLink).hash === `#share-${blockId}` && new URL(anchorLink).origin === new URL(BASE).origin, anchorLink)
+  await page.goto(anchorLink, { waitUntil: 'domcontentloaded' })
+  const anchorBox = await page.locator(`[data-block-id="${blockId}"]`).boundingBox()
+  record('[链接] 真实导航到复制地址后定位到当前文档中的链接块', anchorBox && anchorBox.y >= 0 && anchorBox.y < 900)
+  await page.evaluate(() => { window.__larkDoc.setReadonly(true) })
+  await page.waitForFunction(() => document.querySelector('.ProseMirror').getAttribute('contenteditable') === 'false')
+  tools = await hoverLink()
+  record('[链接] 只读状态隐藏编辑/移除/转换控件，保留真实链接', !(await tools.getByRole('button', { name: '编辑链接', exact: true }).isVisible()) && !(await tools.getByRole('button', { name: '移除链接', exact: true }).isVisible()) && await tools.locator('a').getAttribute('href') === href)
+  await page.evaluate(() => { window.__larkDoc.setReadonly(false) })
+  await page.waitForFunction(() => document.querySelector('.ProseMirror').getAttribute('contenteditable') === 'true')
+  tools = await hoverLink()
+  await tools.getByRole('button', { name: '移除链接', exact: true }).click()
+  record('[链接] 移除保留当前文字且真正取消link mark', await page.locator('.ProseMirror a').count() === 0 && (await page.locator('.ProseMirror').innerText()).includes(new URL(href).hostname))
+  await page.locator('.ProseMirror').first().click()
+  await page.keyboard.press('Meta+k')
+  await form.waitFor({ state: 'visible' })
+  await page.keyboard.press('Escape')
+  record('[链接] Escape关闭浮层', await form.count() === 0)
+  await page.waitForFunction(() => document.activeElement?.classList.contains('ProseMirror'))
+  await page.keyboard.press('Meta+k')
+  await form.waitFor({ state: 'visible' })
+  await page.mouse.click(5, 420)
+  record('[链接] 点击外部关闭浮层', await form.count() === 0)
+  await resetTo(page, '<p><strong>bold</strong><em>italic</em></p>')
+  await selectRange(page, 1, 11)
+  await page.keyboard.press('Meta+k')
+  await form.getByRole('textbox', { name: '链接地址' }).fill(href)
+  await form.getByRole('button', { name: '确认', exact: true }).click()
+  record('[链接] 选中混合格式后添加URL保留粗体与斜体', await page.locator('.ProseMirror a strong').innerText() === 'bold' && await page.locator('.ProseMirror a em').innerText() === 'italic')
+  await resetTo(page, '<p>first</p><p>second</p>')
+  await page.locator('.ProseMirror').first().click()
+  await page.keyboard.press('Meta+a')
+  await page.keyboard.press('Meta+k')
+  await form.getByRole('textbox', { name: '链接地址' }).fill(href)
+  await form.getByRole('button', { name: '确认', exact: true }).click()
+  record('[链接] 跨段选区添加URL保留两个段落', await page.locator('.ProseMirror > p').count() === 2 && await page.locator('.ProseMirror a').count() === 2)
 
   /* ═══════════════════ ④ 快捷键抽屉 ═══════════════════ */
 
@@ -724,6 +605,22 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
   await page.mouse.click(5, 420)
   await page.waitForTimeout(360)
   record('[内嵌] 点浮层外部关闭', !(await open(page, '.lark-doc-embed-dialog')))
+
+  // Media policy covers both initial HTML and provider-populated bookmark icons.
+  const unexpectedMedia = []
+  page.on('request', request => { if (request.url().startsWith('https://tracker.invalid/')) unexpectedMedia.push(request.url()) })
+  for (const mode of ['offline', 'allowlist']) {
+    await page.evaluate(nextMode => {
+      const Facade = window.__larkDoc.document?.constructor || window.__larkDoc.constructor
+      const element = document.createElement('div')
+      element.id = 'link-policy-fixture'
+      document.body.appendChild(element)
+      window.__linkPolicyDoc = new Facade({ element, config: { network: { mode: nextMode, allowlist: ['example.com'] } }, content: '<div data-type="bookmark" data-url="https://example.com" data-title="Policy card" data-favicon="https://tracker.invalid/pixel.png"></div>' })
+    }, mode)
+    await page.waitForTimeout(150)
+    record(`[链接] ${mode}模式HTML卡片图标不生成外部资源请求`, await page.locator('#link-policy-fixture .lark-doc-bookmark-icon').count() === 0 && unexpectedMedia.length === 0)
+    await page.evaluate(() => { window.__linkPolicyDoc.destroy(); document.getElementById('link-policy-fixture').remove(); delete window.__linkPolicyDoc })
+  }
 
   record('无脚本错误', errors.length === 0, errors.join(' | '))
 

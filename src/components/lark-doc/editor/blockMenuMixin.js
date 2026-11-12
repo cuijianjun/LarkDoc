@@ -5,12 +5,9 @@
  * 采用 mixin 而非子组件：菜单 DOM 挂在主模板的句柄内，依赖 Vue 2 选项合并语义，拆子组件会破坏定位逻辑。
  */
 import { closeHistory } from '@tiptap/pm/history'
-import { BLOCK_CLIPBOARD_MIME, serializeBlockClipboard } from '../../../core/blocks/block-clipboard'
-import { evaluateOutputPolicy } from '../../../core/policy/output'
-import { clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, stepBlockIndent } from '../documentOperations'
+import { BLOCK_ID_PATTERN, clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, safeUrl, stepBlockIndent } from '../documentOperations'
 import { isBlockActionEnabled } from '../larkDocConfig'
 import { blockActions, blockTypeActions } from './constants'
-import { asyncBlockActionCapability } from '../../../core/policy/capability'
 
 export default {
   data() { return {
@@ -242,7 +239,7 @@ export default {
       this.blockColorMenuStyle = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
     },
     blockAlignAction(id) {
-      if (!this.writable() || !this.featureEnabled('blockStyle') || !this.blockActionAllowed('edit')) return
+      if (!this.writable() || !this.featureEnabled('blockStyle')) return
       const range = this.handleActionRange()
       if (!range) return
       this.closeBlockMenu()
@@ -260,7 +257,7 @@ export default {
       this.applyBlockAttribute(target, 'textAlign', id)
     },
     blockColorAction(value) {
-      if (!this.writable() || !this.featureEnabled('blockStyle') || !this.blockActionAllowed('edit')) return
+      if (!this.writable() || !this.featureEnabled('blockStyle')) return
       const range = this.handleActionRange()
       const target = this.blockTextblockTarget(range)
       if (!target) return
@@ -273,7 +270,7 @@ export default {
       this.editor.view.focus()
     },
     blockTypeAction(id) {
-      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id) || !this.blockActionAllowed('edit')) return
+      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
       const range = this.handleActionRange()
       const node = nodeAtSafe(this.editor?.state?.doc, range?.from)
       if (!range || !node || !['paragraph', 'heading'].includes(node.type.name)) return
@@ -322,7 +319,7 @@ export default {
       return { row: rowHeader, column: columnHeader }
     },
     tableHandleAction(id) {
-      if (!this.writable() || !this.featureEnabled('tables') || !this.blockActionAllowed('edit')) return
+      if (!this.writable() || !this.featureEnabled('tables')) return
       const range = this.handleRange
       if (!range) return
       // 表格命令都按当前选区定位：先把光标落进表格（isActive('table') 才成立）。
@@ -362,14 +359,8 @@ export default {
       this.closeBlockMenu()
       this.tableAction(id)
     },
-    blockActionAllowed(id) {
-      const node = this.handleBlockNode && this.handleBlockNode()
-      const state = node && node.attrs ? node.attrs.asyncState : null
-      const action = id === 'delete' ? 'delete' : (id === 'duplicate' ? 'duplicate' : (['moveUp', 'moveDown'].includes(id) ? 'move' : (['copy', 'cut'].includes(id) ? 'copy' : 'edit')))
-      return asyncBlockActionCapability(action, state, this.session).allowed
-    },
     blockAction(id) {
-      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id) || !this.blockActionAllowed(id)) return
+      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
       this.closeBlockMenu()
       const selectedRange = this.handleActionRange()
       const sectionRange = ['copy', 'cut', 'duplicate', 'moveUp', 'moveDown'].includes(id) ? this.headingActionRange(selectedRange) : null
@@ -377,6 +368,8 @@ export default {
         ? (this.columnsRangeFor(selectedRange) || this.detailsRangeFor(selectedRange) || selectedRange)
         : sectionRange || selectedRange
       if (!range) return
+      if (id === 'share') return this.handleIsTable && this.openSelectionShareDialog(range.from)
+      if (id === 'copyLink') return this.copyBlockLink(range)
       if (id === 'copy' || id === 'cut') { this.copyBlock(range, id === 'cut'); return }
       if (id === 'translate') { this.$emit('ai-request', 'translate'); this.editor.view.focus(); return }
       if (id === 'delete') { this.deleteBlockRange(range); return }
@@ -393,61 +386,40 @@ export default {
         if (targetIndex >= 0 && targetIndex <= resolved.parent.childCount) moveBlockRange(this.editor, from, to, resolved.posAtIndex(targetIndex, resolved.depth))
       }
     },
-    async copyBlock(range, cut = false) {
-      const editor = this.editor
-      const allowed = () => this.session?.can?.('canCopy') !== false
-        && evaluateOutputPolicy(this.session?.getProvider?.('security')?.policy || {}, 'copy').allowed
-      if (!editor || editor.isDestroyed || !range || !allowed() || (cut && !this.writable())) return false
-      const doc = editor.state.doc
-      const snapshot = { from: range.from, to: range.to }
-      let values
-      try { values = serializeBlockClipboard(editor.view, doc.slice(snapshot.from, snapshot.to).content) }
-      catch (error) { this.error = `复制失败：${error.message}`; return false }
-      const text = values['text/plain']
-      let copied = false
-      let structured = false
-      let synchronousStructured = false
-      // Cut must have a synchronous, browser-owned copy event before deletion. The
-      // async ClipboardItem write can resolve successfully while native paste still
-      // exposes only text/html/plain, so it is never sufficient proof for a cut.
-      if (cut && typeof document?.execCommand === 'function') {
-        let sawCopyEvent = false
-        let wroteStructured = false
-        const onCopy = (event) => {
-          const data = event.clipboardData
-          if (!data) return
-          try {
-            data.setData('text/html', values['text/html'])
-            data.setData('text/plain', values['text/plain'])
-            data.setData(BLOCK_CLIPBOARD_MIME, values[BLOCK_CLIPBOARD_MIME])
-            sawCopyEvent = true
-            wroteStructured = Array.from(data.types || []).includes(BLOCK_CLIPBOARD_MIME)
-          } catch (_) { /* browser denied the synchronous clipboard write */ }
-        }
-        document.addEventListener('copy', onCopy, true)
-        try {
-          editor.view.focus()
-          copied = document.execCommand('copy') === true && sawCopyEvent && wroteStructured
-          structured = copied
-          synchronousStructured = copied
-        } catch (_) { copied = false }
-        document.removeEventListener('copy', onCopy, true)
-      }
+    async copyBlockLink(range) {
+      if (!this.shareCan('canView')) return false
+      const editor = this.editor, session = this.session, doc = editor?.state.doc
+      const node = nodeAtSafe(doc, range?.from), documentLink = this.shareDocumentLink()
+      if (node?.type.name !== 'table' || !BLOCK_ID_PATTERN.test(node.attrs.blockId || '')) return false
+      const current = () => this.editor === editor && !editor.isDestroyed && this.session === session
+        && editor.state.doc === doc && this.shareCan('canView') && this.shareDocumentLink() === documentLink
       try {
-        if (!copied && navigator.clipboard?.write && window.ClipboardItem) {
-          const customType = `web ${BLOCK_CLIPBOARD_MIME}`
-          const supportsCustom = window.ClipboardItem.supports?.(customType) === true
-          const formats = { 'text/plain': new Blob([text], { type: 'text/plain' }),
-            'text/html': new Blob([values['text/html']], { type: 'text/html' }) }
-          if (supportsCustom) formats[customType] = new Blob([values[BLOCK_CLIPBOARD_MIME]], { type: BLOCK_CLIPBOARD_MIME })
-          // Plain/HTML fallbacks may lose editor-specific entities: never cut on them.
-          if (cut && !supportsCustom) throw new Error('浏览器不支持结构化剪切')
-          await navigator.clipboard.write([new window.ClipboardItem(formats)])
+        const url = new URL(documentLink, window.location.href)
+        if (!/^https?:$/.test(url.protocol) || !safeUrl(url.href)) return false
+        url.hash = `share-${node.attrs.blockId}`
+        if (!await this.copyShareText(url.href)) throw new Error('复制失败，请检查剪贴板权限')
+        if (!current()) return false
+        this.showShareToast('success', '复制成功')
+        return true
+      } catch (error) { if (current()) this.error = error?.message || '复制失败，请检查剪贴板权限'; return false }
+    },
+    async copyBlock(range, cut = false) {
+      if (!this.writable() || !range) return false
+      const text = this.editor.state.doc.textBetween(range.from, range.to, '\n')
+      const content = this.editor.state.doc.slice(range.from, range.to).content.toJSON()
+      const structured = JSON.stringify({ schemaVersion: 1, type: 'lark-doc-block', content })
+      let copied = false
+      try {
+        if (navigator.clipboard?.write && window.ClipboardItem) {
+          const item = new window.ClipboardItem({
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+            'application/x-lark-doc-block+json': new Blob([structured], { type: 'application/json' }),
+          })
+          await navigator.clipboard.write([item])
           copied = true
-          structured = supportsCustom
         }
       } catch (_) { copied = false }
-      if (!copied && !cut) {
+      if (!copied) {
         try {
           if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(text)
@@ -466,21 +438,8 @@ export default {
         } catch (_) { copied = false }
       }
       if (!copied) { this.error = '无法访问剪贴板，区块未被修改；可手动选择后复制'; return false }
-      if (cut) {
-        if (this.editor !== editor || editor.isDestroyed || editor.state.doc !== doc || !this.writable() || !allowed()) {
-          this.error = '已复制，但文档或权限已变化；未删除区块'
-          return false
-        }
-        if (!synchronousStructured) {
-          this.error = '已复制但未剪切：浏览器无法保证结构化回读，请选中区块使用键盘剪切'
-          return false
-        }
-        this.deleteBlockRange(snapshot)
-        this.error = '已剪切区块'
-        this.$nextTick(() => this.editor?.view.focus())
-        return true
-      }
-      this.error = cut ? '已剪切区块' : (structured ? '已复制区块' : '已复制（兼容格式，部分区块属性可能丢失）')
+      if (cut && this.writable()) this.deleteBlockRange(range)
+      this.error = cut ? '已剪切区块' : '已复制区块'
       this.$nextTick(() => this.editor?.view.focus())
       return true
     },

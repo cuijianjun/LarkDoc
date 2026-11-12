@@ -17,6 +17,11 @@ function preventMouseDown(node, handler) {
     event.preventDefault()
     handler(event)
   })
+  node.addEventListener('click', event => {
+    if (event.detail !== 0) return
+    event.preventDefault()
+    handler(event)
+  })
 }
 
 function setClass(node, name, on) {
@@ -24,7 +29,9 @@ function setClass(node, name, on) {
 }
 
 export function createReminder({ host, handlers = {} } = {}) {
+  let destroyed = false, rendering = false, renderPending = false
   const call = (name, ...args) => {
+    if (destroyed) return
     const handler = handlers[name]
     return typeof handler === 'function' ? handler(...args) : undefined
   }
@@ -45,6 +52,10 @@ export function createReminder({ host, handlers = {} } = {}) {
   calendarHead.className = 'lark-doc-reminder-calendar-head'
   const calendarTitle = document.createElement('span')
   calendarTitle.className = 'lark-doc-reminder-calendar-title'
+  const yearButton = button('', '选择年份')
+  const monthButton = button('', '选择月份')
+  preventMouseDown(yearButton, () => call('onCalendarMode', 'year'))
+  preventMouseDown(monthButton, () => call('onCalendarMode', 'month'))
   const calendarNav = document.createElement('span')
   calendarNav.className = 'lark-doc-reminder-calendar-nav'
   const previous = button('', '上个月')
@@ -62,37 +73,66 @@ export function createReminder({ host, handlers = {} } = {}) {
   const dayGrid = document.createElement('div')
   dayGrid.className = 'lark-doc-reminder-days'
   dayGrid.setAttribute('role', 'grid')
-  calendar.append(calendarHead, weekdays, dayGrid)
+  const periodGrid = document.createElement('div')
+  periodGrid.className = 'lark-doc-reminder-periods'
+  periodGrid.setAttribute('role', 'grid')
 
   const options = document.createElement('div')
   options.className = 'lark-doc-reminder-options'
   const timeRow = document.createElement('div')
   timeRow.className = 'lark-doc-reminder-row is-time'
-  const timeLabel = document.createElement('span')
+  const timeLabel = document.createElement('label')
   timeLabel.className = 'lark-doc-reminder-label'
-  setText(timeLabel, '设置时间')
-  const timeSelect = button('lark-doc-reminder-select', '设置时间')
+  const hasTime = document.createElement('input')
+  hasTime.type = 'checkbox'
+  hasTime.setAttribute('aria-label', '设置时间开关')
+  hasTime.addEventListener('change', () => call('onHasTime', hasTime.checked))
+  timeLabel.addEventListener('mousedown', event => event.preventDefault())
+  timeLabel.append(hasTime, document.createTextNode('设置时间'))
+  const timeSelect = document.createElement('div')
+  timeSelect.className = 'lark-doc-reminder-select'
   timeSelect.setAttribute('data-reminder', 'time')
-  const timeText = document.createElement('span')
+  const timeText = document.createElement('input')
+  timeText.type = 'search'
+  timeText.setAttribute('aria-label', '设置时间')
+  timeText.setAttribute('role', 'combobox')
+  timeText.setAttribute('autocomplete', 'off')
+  timeText.addEventListener('focus', () => call('onOpenTimes'))
+  timeText.addEventListener('input', () => call('onEditTime', timeText.value))
+  timeText.addEventListener('blur', () => call('onBlurTime'))
+  timeText.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229) return
+    if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); call('onCommitTime', timeText.value); timeText.blur() }
+    else if (event.key === 'Escape' && call('onTimeEscape', event)) event.stopPropagation()
+  })
   const timeCaret = document.createElement('span')
   timeCaret.className = 'lark-doc-reminder-select-caret'
   timeCaret.setAttribute('aria-hidden', 'true')
   setText(timeCaret, '▾')
   timeSelect.append(timeText, timeCaret)
-  preventMouseDown(timeSelect, () => call('onToggleTimes'))
-  timeRow.append(timeLabel, timeSelect)
+  timeSelect.addEventListener('mousedown', event => {
+    if (event.target === timeText) return
+    event.preventDefault()
+    if (state.timesOpen) call('onToggleTimes')
+    else { timeText.focus(); call('onOpenTimes') }
+  })
 
   const repeatRow = document.createElement('div')
   repeatRow.className = 'lark-doc-reminder-row is-repeat'
-  const repeatLabel = document.createElement('span')
+  const repeatLabel = document.createElement('label')
   repeatLabel.className = 'lark-doc-reminder-label'
-  setText(repeatLabel, '提醒')
+  const notify = document.createElement('input')
+  notify.type = 'checkbox'
+  notify.setAttribute('aria-label', '提醒开关')
+  notify.addEventListener('change', () => call('onNotify', notify.checked))
+  repeatLabel.addEventListener('mousedown', event => event.preventDefault())
+  repeatLabel.append(notify, document.createTextNode('提醒'))
   const repeatSelect = button('lark-doc-reminder-select', '提醒')
-  repeatSelect.setAttribute('data-reminder', 'repeat')
-  repeatSelect.disabled = true
+  repeatSelect.setAttribute('data-reminder', 'offset')
+  preventMouseDown(repeatSelect, () => call('onToggleOffsets'))
   const repeatText = document.createElement('span')
-  repeatSelect.appendChild(repeatText)
-  repeatRow.append(repeatLabel, repeatSelect)
+  const repeatCaret = timeCaret.cloneNode(true)
+  repeatSelect.append(repeatText, repeatCaret)
   options.append(timeRow, repeatRow)
 
   const user = document.createElement('p')
@@ -108,6 +148,15 @@ export function createReminder({ host, handlers = {} } = {}) {
   layer.append(popover, times)
   let state = {
     open: false,
+    hasTime: true,
+    notify: true,
+    offsetsOpen: false,
+    offsetOptions: [],
+    selectedOffset: 0,
+    calendarMode: 'date',
+    periods: [],
+    viewYear: 0,
+    viewMonth: 0,
     timesOpen: false,
     style: {},
     timesStyle: {},
@@ -147,26 +196,54 @@ export function createReminder({ host, handlers = {} } = {}) {
   }
 
   function renderTimes() {
-    const nodes = state.timeOptions.map((slot) => {
+    const slots = state.offsetsOpen ? state.offsetOptions : state.timeOptions.map(value => ({ value, label: value }))
+    const nodes = slots.map((slot) => {
       const node = button('lark-doc-reminder-time-row')
       node.setAttribute('role', 'option')
-      const selected = slot === state.selectedTime
+      const selected = slot.value === (state.offsetsOpen ? state.selectedOffset : state.selectedTime)
       node.setAttribute('aria-selected', selected ? 'true' : 'false')
       setClass(node, 'is-selected', selected)
-      setText(node, slot)
-      preventMouseDown(node, () => call('onChooseTime', slot))
+      setText(node, slot.label)
+      preventMouseDown(node, () => call(state.offsetsOpen ? 'onChooseOffset' : 'onChooseTime', slot.value))
       return node
     })
     syncChildren(times, nodes.map((node) => ({ node, on: true })))
   }
 
-  function render() {
+  function paint() {
     applyStyle(popover, state.style)
     applyStyle(times, state.timesStyle)
-    setText(calendarTitle, state.viewTitle)
-    setText(timeText, state.selectedTime)
+    setAttr(popover, 'data-reminder-tone', state.tone)
+    setText(yearButton, state.calendarMode === 'year' ? state.viewTitle : `${state.viewYear}年`)
+    setText(monthButton, `${state.viewMonth + 1}月`)
+    setAttr(previous, 'aria-label', state.calendarMode === 'date' ? '上个月' : state.calendarMode === 'year' ? '前 20 年' : '上一年')
+    setAttr(next, 'aria-label', state.calendarMode === 'date' ? '下个月' : state.calendarMode === 'year' ? '后 20 年' : '下一年')
+    syncChildren(calendarTitle, [{ node: yearButton, on: true }, { node: monthButton, on: state.calendarMode !== 'year' }])
+    const timeValue = state.timeDraft == null ? state.selectedTime : state.timeDraft
+    if (timeText.value !== timeValue) timeText.value = timeValue || ''
+    setAttr(timeText, 'aria-expanded', state.timesOpen ? 'true' : 'false')
     setAttr(timeSelect, 'aria-expanded', state.timesOpen ? 'true' : 'false')
     setText(repeatText, state.repeatText)
+    setText(user, state.user ? `提醒：${state.user}` : '')
+    hasTime.checked = state.hasTime
+    notify.checked = state.notify
+    timeLabel.classList.toggle('is-collapsed', !state.hasTime)
+    syncChildren(timeRow, [{ node: timeLabel, on: true }, { node: timeSelect, on: state.hasTime }])
+    syncChildren(repeatRow, [{ node: repeatLabel, on: true }, { node: repeatSelect, on: state.notify }])
+    setAttr(repeatSelect, 'aria-expanded', String(state.offsetsOpen))
+    setAttr(times, 'aria-label', state.offsetsOpen ? '提前提醒' : '提醒时间')
+    periodGrid.classList.toggle('is-year', state.calendarMode === 'year')
+    const periods = state.periods.map(cell => {
+      const node = button('lark-doc-reminder-period')
+      node.setAttribute('role', 'gridcell')
+      node.setAttribute('aria-selected', String(cell.selected))
+      setClass(node, 'is-selected', cell.selected)
+      setText(node, cell.label)
+      preventMouseDown(node, () => call('onChoosePeriod', cell.value))
+      return node
+    })
+    syncChildren(periodGrid, periods.map(node => ({ node, on: true })))
+    syncChildren(calendar, [{ node: calendarHead, on: true }, { node: weekdays, on: state.calendarMode === 'date' }, { node: dayGrid, on: state.calendarMode === 'date' }, { node: periodGrid, on: state.calendarMode !== 'date' }])
     renderWeekdays()
     renderDays()
     renderTimes()
@@ -177,9 +254,23 @@ export function createReminder({ host, handlers = {} } = {}) {
     ])
     syncChildren(layer, [
       { node: popover, on: state.open },
-      { node: times, on: state.open && state.timesOpen },
+      { node: times, on: state.open && (state.timesOpen || state.offsetsOpen) },
     ])
-    mountNode(host, layer, true)
+    if (!destroyed) mountNode(host, layer, true)
+  }
+
+  function render() {
+    if (destroyed) return
+    // Removing the focused time input/popover fires blur synchronously. Its
+    // handler can update state, but must not mutate this same child list midway.
+    if (rendering) { renderPending = true; return }
+    rendering = true
+    try {
+      do {
+        renderPending = false
+        paint()
+      } while (renderPending && !destroyed)
+    } finally { rendering = false }
   }
 
   render()
@@ -187,10 +278,14 @@ export function createReminder({ host, handlers = {} } = {}) {
   return {
     el: layer,
     update(patch = {}) {
+      if (destroyed) return
       state = { ...state, ...patch }
       render()
     },
     destroy() {
+      if (destroyed) return
+      destroyed = true
+      renderPending = false
       if (layer.parentNode) layer.parentNode.removeChild(layer)
     },
   }

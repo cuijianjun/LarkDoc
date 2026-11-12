@@ -9,6 +9,7 @@ export default {
     mentionNotify() { this.refreshMentionPanel() },
     mentionLoading() { this.refreshMentionPanel() },
     mentionStyle: { deep: true, handler() { this.refreshMentionPanel() } },
+    larkDocConfig: { deep: true, handler() { this.refreshMentionPanel() } },
   },
   methods: {
     mountMentionPanel() {
@@ -23,7 +24,7 @@ export default {
       this.refreshMentionPanel()
     },
     buildMentionPanelState() {
-      return { open: !!this.mentionOpen && !this.effectiveReadonly, tabs: this.mentionTabs, kind: this.mentionKind, items: this.mentionItems, activeIndex: this.mentionActiveIndex, notify: this.mentionNotify, loading: this.mentionLoading, emptyText: this.mentionEmptyText, style: this.mentionStyle }
+      return { open: !!this.mentionOpen && !this.effectiveReadonly, tabs: this.mentionTabs, kind: this.mentionKind, items: this.mentionItems, activeIndex: this.mentionActiveIndex, notify: this.mentionNotify, loading: this.mentionLoading, emptyText: this.mentionEmptyText, style: this.mentionStyle, network: this.larkDocConfig?.network }
     },
     refreshMentionPanel() { if (this._mentionUi) this._mentionUi.update(this.buildMentionPanelState()) },
     destroyMentionPanel() { if (this._mentionUi) { this._mentionUi.destroy(); this._mentionUi = null } },

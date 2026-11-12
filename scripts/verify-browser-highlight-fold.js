@@ -78,6 +78,7 @@ async function readHighlight(page) {
         className: String(node.className || ''),
         text: (node.textContent || '').slice(0, 16),
         blockWidth: Math.round(node.getBoundingClientRect().width),
+        tableWidth: Math.round(Math.min((node.matches('table') ? node : node.querySelector('table'))?.getBoundingClientRect().width || node.getBoundingClientRect().width, node.getBoundingClientRect().width)),
       })),
       segments,
     }
@@ -177,7 +178,7 @@ async function main() {
   const tableTarget = table.targets[0] || {}
   record('[高亮] 表格按整表命中', table.count === 1 && (tableTarget.tag === 'TABLE' || /tableWrapper/.test(tableTarget.className)),
     `${tableTarget.tag}.${tableTarget.className}`)
-  record('[高亮] 表格外框宽度覆盖整表', (table.segments[0]?.width || 0) >= tableTarget.blockWidth - 4, `高亮宽=${Math.round(table.segments[0]?.width || 0)} 块宽=${tableTarget.blockWidth}`)
+  record('[高亮] 表格外框贴真实表宽，不延伸至空白 wrapper', Math.abs((table.segments[0]?.width || 0) - tableTarget.tableWidth) <= 2, `高亮宽=${Math.round(table.segments[0]?.width || 0)} 表宽=${tableTarget.tableWidth} wrapper=${tableTarget.blockWidth}`)
 
   // 7. 标题：有后代的标题按章节整体高亮（多段覆盖）
   const heading = await hoverSelector(page, 'h2:text-is("章节 A")')

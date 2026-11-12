@@ -1,4 +1,5 @@
 import { safeAttachmentId, safeUrl } from '../documentOperations'
+import { IMAGE_MIME_ALLOWLIST } from './image-insert'
 
 /**
  * 上传 provider（P2-02）——把宿主的一个裸函数补成有契约的上传通道。
@@ -31,9 +32,9 @@ export const UPLOAD_ERROR = Object.freeze({
 })
 
 /** 与图片块允许的类型一致；宿主想放宽就传自己的 limits。 */
-export const UPLOAD_MIME_ALLOWLIST = Object.freeze(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+export const UPLOAD_MIME_ALLOWLIST = IMAGE_MIME_ALLOWLIST
 
-/** 默认上限 20 MB：比图片块默认 5 MB 宽，只兜「明显不符」的情况。 */
+/** 与文档图片入口一致，默认单张最大 20 MB。 */
 export const DEFAULT_UPLOAD_LIMITS = Object.freeze({ maxSize: 20 * 1024 * 1024, mime: UPLOAD_MIME_ALLOWLIST })
 
 export const DEFAULT_RETRY = Object.freeze({ attempts: 3, delay: 300, factor: 3 })
@@ -81,14 +82,14 @@ function formatMB(bytes) {
 
 /**
  * 超限校验。limits 传 null / undefined 表示「不设 provider 级上限」，
- * 交给调用方自己那道校验（图片块已有 5 MB 默认，避免两处口径打架）。
+ * 交给调用方自己那道校验（文档入口默认 20 MB，允许宿主单独收紧）。
  */
 export function validateUploadFile(file, limits = DEFAULT_UPLOAD_LIMITS) {
   if (!file || typeof file.size !== 'number') throw uploadError(UPLOAD_ERROR.FAILED, '上传内容无效')
   if (!limits) return file
   const mime = Array.isArray(limits.mime) && limits.mime.length ? limits.mime : UPLOAD_MIME_ALLOWLIST
   if (mime.indexOf(String(file.type || '').toLowerCase()) === -1) {
-    const labels = mime.map((type) => String(type).split('/')[1].toUpperCase()).join('/')
+    const labels = [...new Set(mime.map(type => String(type).split('/')[1].toUpperCase().replace(/^JPG$/, 'JPEG').replace(/^X-(?:MS-)?BMP$/, 'BMP')))].join('/')
     throw uploadError(UPLOAD_ERROR.MIME, `只支持 ${labels} 图片`, { mime: file.type })
   }
   const maxSize = Number(limits.maxSize)

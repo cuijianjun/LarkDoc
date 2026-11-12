@@ -3,12 +3,12 @@
  *
  * 与 `commandMenuUiMixin` / `bubbleMenuMixin` 同一套范式：DOM 由 `src/ui/dialogs.js`
  * （纯 DOM、零框架）创建，本 mixin 只做「把状态算成一份 state → 推给 UI」。
- * 五个弹窗原有的开合/校验/落块逻辑一行没动，全留在 `toolbarMenusMixin` /
+ * 公式由 core NodeView 处理；其余弹层的开合、校验和落块逻辑在 `toolbarMenusMixin` /
  * `tableToolsMixin` / `commandMenuMixin` 里。
  *
  * 三条必须守住的线：
  *
- * 1. **`open` 就是原 `v-if` 的那个条件**（`tablePicker` / `mathDialog` / `linkDialog` /
+ * 1. **`open` 就是原 `v-if` 的那个条件**（`tablePicker` / `linkDialog` /
  *    `helpOpen` / `embedDialog`）。原模板里 `v-if` 为假时组件整棵销毁，原生层用
  *    「从宿主摘节点」对齐 —— 断言用 `querySelector` 找不到才是对的，只 `display:none`
  *    会让 `measureDialog()` 多量出一层。
@@ -16,7 +16,7 @@
  *    `update()` 里已经把节点插进文档，紧接着 `focus()` 就能生效，不再需要等一拍。
  *    表格选择器尤其依赖这条：聚焦首格会再触发一次 `preview(1, 1)`，稳态 **1 × 1**
  *    是「复位 3×3 → 渲染 → 聚焦首格」三步接力出来的，顺序不能动。
- * 3. **五个弹层共用一个宿主**（`ref="dialogHost"`）。它们各自 `position: fixed`
+ * 3. **四个弹层共用一个宿主**（`ref="dialogHost"`）。它们各自 `position: fixed`
  *    （内嵌浮层的 `fixed` 由 `embedDialogPos` 给），父级是谁不影响定位，而样式全是
  *    `.lark-doc .lark-doc-dialog*` 后代选择器，多一层空 div 不丢样式。
  */
@@ -24,7 +24,6 @@ import {
   createEmbedDialog,
   createHelpDrawer,
   createLinkDialog,
-  createMathDialog,
   createTablePickerDialog,
 } from '../../../ui/dialogs'
 
@@ -43,12 +42,10 @@ export default {
       if (value) this._dialogsUi?.table.focusTableGrid()
     },
     tablePickerHover: { deep: true, handler() { this.refreshDialogs() } },
-    // 公式：错误行是 `v-if`（`role="alert"`），文案与错误态都要重推。
-    mathDialog(value) { this.refreshDialogs(); if (value) this._dialogsUi?.math.focusInput() },
-    mathValue() { this.refreshDialogs() },
-    mathError() { this.refreshDialogs() },
     // 链接：插入 / 编辑两形态差两段（v-if），两个按钮的 disabled 也得跟着算。
     linkDialog(value) { this.refreshDialogs(); if (value) this._dialogsUi?.link.focusFirstField() },
+    linkDialogAnchor: { deep: true, handler() { this.refreshDialogs() } },
+    linkEditing() { this.refreshDialogs() },
     linkInsertMode() { this.refreshDialogs() },
     linkValue() { this.refreshDialogs() },
     linkText() { this.refreshDialogs() },
@@ -61,7 +58,7 @@ export default {
     embedDialogPos: { deep: true, handler() { this.refreshDialogs() } },
   },
   methods: {
-    /** 挂载五个原生弹层（由主组件 `mounted` 调用，不依赖编辑器实例）。 */
+    /** 挂载四个原生弹层（由主组件 `mounted` 调用，不依赖编辑器实例）。 */
     mountDialogs() {
       if (this._dialogsUi) return
       const host = this.$refs.dialogHost
@@ -69,7 +66,6 @@ export default {
       const handlers = this.dialogsHandlers()
       this._dialogsUi = {
         table: createTablePickerDialog({ host, handlers: handlers.table }),
-        math: createMathDialog({ host, handlers: handlers.math }),
         link: createLinkDialog({ host, handlers: handlers.link }),
         help: createHelpDrawer({ host, handlers: handlers.help }),
         embed: createEmbedDialog({ host, handlers: handlers.embed }),
@@ -98,11 +94,6 @@ export default {
           onInsert: (rows, cols) => this.insertTable(rows, cols),
           onClose: () => this.closeOverlay(),
         },
-        math: {
-          onInput: (value) => this.setMathValue(value),
-          onSubmit: () => this.insertMath(),
-          onClose: () => this.closeOverlay(),
-        },
         link: {
           onTextInput: (value) => this.setLinkText(value),
           onValueInput: (value) => this.setLinkValue(value),
@@ -124,15 +115,16 @@ export default {
     buildDialogsState() {
       return {
         table: { open: !!this.tablePicker, rows: this.tablePickerHover.rows, cols: this.tablePickerHover.cols },
-        math: { open: !!this.mathDialog, value: this.mathValue, error: this.mathError },
         link: {
           open: !!this.linkDialog,
           insertMode: !!this.linkInsertMode,
           value: this.linkValue,
           text: this.linkText,
+          editText: !!this.linkEditing,
+          anchor: this.linkDialogAnchor,
           // `:disabled="ed.linkInsertMode || !ed.isActive('link')"` 的那一半：
           // 弹窗打开期间编辑器的选区是冻结的，算一次就够，不必挂进热路径。
-          linkActive: this.isActive('link'),
+          linkActive: this.isActive('link') || !!this.linkEditing,
         },
         help: { open: !!this.helpOpen },
         embed: {
@@ -151,7 +143,6 @@ export default {
       if (!ui) return
       const state = this.buildDialogsState()
       ui.table.update(state.table)
-      ui.math.update(state.math)
       ui.link.update(state.link)
       ui.help.update(state.help)
       ui.embed.update(state.embed)

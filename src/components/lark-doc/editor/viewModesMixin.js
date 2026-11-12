@@ -6,18 +6,8 @@
  */
 import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../documentOperations'
 import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
+import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
 import { DEFAULT_MODES_CONFIG, MODE_ICONS, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
-
-export function presentationSections(doc, title = '文档') {
-  if (!doc) return [{ title, from: 0, to: 0 }]
-  const sections = [{ title, from: 0, to: doc.content.size }]
-  doc.forEach((node, offset) => {
-    if (node.type.name !== 'heading' || node.attrs.level !== 1) return
-    if (offset === 0) sections[0].title = node.textContent || title
-    else { sections[sections.length - 1].to = offset; sections.push({ title: node.textContent || '章节', from: offset, to: doc.content.size }) }
-  })
-  return sections
-}
 
 export default {
   data() { return {
@@ -25,11 +15,6 @@ export default {
     // （见 computed.reading），否则「顶栏切到阅读」和「工具栏点阅读模式」会有两个真相。
     mode: 'edit', modeToast: '', modeToastTimer: null,
     slides: false, fullscreen: false, widthMode: 'standard',
-    // US4：移动端窄屏/横屏是运行时状态，不能只靠首次 CSS media query；旋转后
-    // 需要让浮层、目录和宿主布局重新投影。默认值兼容 Node/SSR 单测。
-    viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0,
-    viewportHeight: typeof window !== 'undefined' ? window.innerHeight : 0,
-    viewportOrientation: typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait',
     // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
     // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
     outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
@@ -42,7 +27,6 @@ export default {
     // 阅读态的唯一来源。工具栏「阅读模式」按钮、顶栏副标题、effectiveReadonly 都读它，
     // 所以三态切换后这三处自动一致，不用各自同步。
     reading() { return this.mode === 'read' },
-    isNarrowViewport() { return this.viewportWidth > 0 && this.viewportWidth <= 760 },
     /**
      * 三态配置（`config.modes`）。这里再归一化一次而不是信任上游：
      * `LarkDoc` 命令式入口会过 `createLarkDocConfig`，但宿主也可能直接把 config
@@ -76,40 +60,13 @@ export default {
       }, [])
     },
     slideChapters() {
-      return presentationSections(this.editorRevision >= 0 && this.editor ? this.editor.state.doc : null, this.localTitle || '文档')
+      if (!this.editor) return [{ title: this.localTitle || '文档', text: '' }]
+      const headings = this.outline.filter((item) => item.level === 1)
+      if (!headings.length) return [{ title: this.localTitle || '文档', text: this.editor.getText() }]
+      return headings.map((item, index) => ({ title: item.text || '章节', text: this.editor.state.doc.textBetween(item.pos, headings[index + 1]?.pos || this.editor.state.doc.content.size).replace(item.text, '').trim() }))
     },
-  },
-  mounted() {
-    this.syncViewportState()
-    if (typeof window !== 'undefined') {
-      window.addEventListener('resize', this.syncViewportState)
-      window.addEventListener('orientationchange', this.syncViewportState)
-    }
-  },
-  beforeDestroy() {
-    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-      window.removeEventListener('resize', this.syncViewportState)
-      window.removeEventListener('orientationchange', this.syncViewportState)
-    }
-    if (this.modeToastTimer) {
-      clearTimeout(this.modeToastTimer)
-      this.modeToastTimer = null
-    }
-    if (this._searchDebounce) {
-      if (typeof this._searchDebounce.dispose === 'function') this._searchDebounce.dispose()
-      else this._searchDebounce.cancel()
-      this._searchDebounce = null
-    }
   },
   methods: {
-    syncViewportState() {
-      const width = typeof window !== 'undefined' ? Number(window.innerWidth) || 0 : 0
-      const height = typeof window !== 'undefined' ? Number(window.innerHeight) || 0 : 0
-      this.viewportWidth = width
-      this.viewportHeight = height
-      this.viewportOrientation = width > height ? 'landscape' : 'portrait'
-      return { width, height, orientation: this.viewportOrientation }
-    },
     syncFoldState() {
       if (!this.editor) return
       const current = this.editor.storage.larkDoc?.folded || new Set()
@@ -138,8 +95,7 @@ export default {
      */
     hydrateOutline(outline) {
       if (!Array.isArray(outline) || !outline.length) return false
-      // 与正文刷新一致：目录仅整批替换，不为每条派生记录建立响应式订阅。
-      this.outline = Object.freeze(outline.map((item) => ({ pos: item.pos, level: item.level, text: item.text })))
+      this.outline = outline.map((item) => ({ pos: item.pos, level: item.level, text: item.text }))
       this.outlinePending = true
       return true
     },
@@ -227,8 +183,12 @@ export default {
       this.editor.view.domAtPos(match.from).node.parentElement?.scrollIntoView({ block: 'center' })
     },
     replace(all) {
-      if (!this.writable() || !this.searchQuery) return
+      if (!this.writable() || !this.featureEnabled('search') || !this.searchQuery) return
+      this.flushSearchUpdate()
       if (all) { replaceText(this.editor, this.searchQuery, this.replacement, true) } else {
+        // A query change or document update may still be waiting for the debounce.
+        // Resolve the current range before changing document text.
+        this.updateSearch()
         const match = this.searchMatches[this.searchIndex]
         if (!match) return
         const tr = this.editor.state.tr
@@ -240,13 +200,13 @@ export default {
       this.updateSearch()
     },
     // P4-05：关闭时把 tab 归位到「查找」（下次打开不带上次痕迹），拖拽位置刻意保留。
-    closeSearch(restoreFocus = true) {
+    closeSearch() {
       this.searchOpen = false; this.searchQuery = ''; this.searchMatches = []; this.searchTab = 'find'
       // 挂起的去抖必须取消：否则关面板 120ms 后还会拿空查询再全量扫一遍文档。
       if (this._searchDebounce) this._searchDebounce.cancel()
       this._searchDoc = null; this._searchSignature = ''
       this.editor?.commands.setLarkDocSearch('')
-      if (restoreFocus) this.focus()
+      this.focus()
     },
     // P4-06 第 2 条：三态模式切换（07 §1 / §1.1 / §12.1）。入口只有两个 ——
     // 顶栏「编辑」下拉与下面的键位；「更多」菜单里**刻意没有**修订入口（07 §12.1 实测）。
@@ -326,26 +286,123 @@ export default {
     setWidthMode(v) { this.widthMode = v },
     setSearchQuery(v) { this.searchQuery = v },
     setReplacement(v) { this.replacement = v },
-    async toggleFullscreen() { if (!this.fullscreen) { try { await this.$refs.root.requestFullscreen() } catch (_) { this.fullscreen = true } } else if (document.fullscreenElement) await document.exitFullscreen(); else this.fullscreen = false },
-    onFullscreenChange() { this.fullscreen = document.fullscreenElement === this.$refs.root },
-    startPresentation(mode) {
-      if (!this.featureEnabled('viewModes') || !['document', 'slides', 'resume'].includes(mode) || this.session && !this.session.can('canView')) return false
-      if (!this.slides) this._presentationPrevious = { x: window.scrollX, y: window.scrollY, mainTop: this.$refs?.mainScroll?.scrollTop || 0, mainLeft: this.$refs?.mainScroll?.scrollLeft || 0, sidebar: this.commentSidebarOpen, session: this.session, generation: this.session?._privateIdentityGeneration, principal: this.session?.user?.id }
-      this.closeHeaderMenu?.()
-      this.presentationMode = mode === 'document' ? 'document' : 'slides'
-      this.slideIndex = mode === 'resume' ? Math.min(this.lastSlideIndex, this.slideChapters.length - 1) : 0
-      if (this.presentationMode === 'slides') this.commentSidebarOpen = false
-      this.slides = true
-      return true
+    async toggleFullscreen() {
+      const root = this.$refs.root, owner = root?.ownerDocument
+      if (!owner) return false
+      try {
+        if (owner.fullscreenElement && root.contains(owner.fullscreenElement)) {
+          if (typeof owner.exitFullscreen !== 'function') throw new Error('当前环境不支持退出全屏')
+          await owner.exitFullscreen()
+        } else {
+          if (typeof root.requestFullscreen !== 'function') throw new Error('当前环境不支持全屏')
+          await root.requestFullscreen()
+        }
+        this.onFullscreenChange()
+        return this.fullscreen
+      } catch (error) {
+        this.onFullscreenChange()
+        this.error = error?.message || '无法切换全屏'
+        return false
+      }
+    },
+    onFullscreenChange() {
+      const element = this.$refs.root.ownerDocument.fullscreenElement
+      this.fullscreen = element === this.$refs.root
+      const scope = this._presentation
+      if (!scope) return
+      if (element && scope.root.contains(element)) scope.enteredFullscreen = true
+      else if (scope.enteredFullscreen) this.exitSlides(false)
+    },
+    presentationCurrent(scope = this._presentation) {
+      return !!scope && !scope.closed && this.slides && this.editor === scope.editor && !scope.editor.isDestroyed
+        && this.session === scope.session && this.documentId === scope.documentId
+        && this.session?.documentId === scope.sessionDocumentId && this.session?.can?.('canView') !== false
     },
     toggleSlides() {
-      if (!this.slides) return this.startPresentation('slides')
-      const previous = this._presentationPrevious
-      this.lastSlideIndex = this.slideIndex; this.slides = false
-      return import(/* webpackChunkName: "document-menu" */ './documentMenuView').then(({ restorePresentationView }) => { if (!this.slides && this._presentationPrevious === previous) restorePresentationView(this) })
+      if (this.slides) return this.exitSlides()
+      const editor = this.editor, root = this.$refs.root
+      if (!editor || editor.isDestroyed || !root || this.session?.can?.('canView') === false) return false
+      const owner = root.ownerDocument
+      const scope = { editor, root, session: this.session, documentId: this.documentId,
+        sessionDocumentId: this.session?.documentId, mode: this.mode, bookmark: editor.state.selection.getBookmark(),
+        focus: owner.activeElement, enteredFullscreen: owner.fullscreenElement === root,
+        alreadyFullscreen: owner.fullscreenElement === root, closed: false }
+      this._presentation = scope
+      this.slides = true
+      this.slideIndex = 0
+      scope.onTransaction = ({ transaction }) => {
+        if (!this.presentationCurrent(scope)) { this.exitSlides(true, false); return }
+        if (!transaction.docChanged) return
+        const origin = getTransactionMetadata(transaction)?.origin
+        if (origin === TRANSACTION_ORIGINS.HOST || origin === TRANSACTION_ORIGINS.RESTORE
+          || transaction.steps.some(step => step.from === 0 && step.to >= transaction.before.content.size)) {
+          this.exitSlides(true, false)
+          return
+        }
+        scope.bookmark = scope.bookmark.map(transaction.mapping)
+        this.refreshStage?.()
+      }
+      editor.on('transaction', scope.onTransaction)
+      scope.offCapabilities = this.session?.on?.('capabilities', () => {
+        if (!this.presentationCurrent(scope)) this.exitSlides(true, false)
+      })
+      this.applyInteractionMode?.()
+      this.refreshStage?.()
+      this.$nextTick(() => { if (this.presentationCurrent(scope)) this._stageUi?.focus() })
+      // A denied/unsupported native request still leaves the full-viewport presentation usable.
+      if (!scope.alreadyFullscreen && typeof root.requestFullscreen === 'function') {
+        try {
+          Promise.resolve(root.requestFullscreen()).then(() => {
+            if (this._presentation === scope && !scope.closed) scope.enteredFullscreen = owner.fullscreenElement === root
+            else if (!this._presentation && owner.fullscreenElement === root) Promise.resolve(owner.exitFullscreen?.()).catch(() => {})
+          }).catch(() => {})
+        } catch (_) { /* Fullscreen may require a trusted user gesture. */ }
+      }
+      return true
     },
-    prevSlide() { this.slideIndex = Math.max(0, this.slideIndex - 1) },
-    nextSlide() { this.slideIndex = Math.min(this.slideChapters.length - 1, this.slideIndex + 1) },
-    setSlideIndex(index) { this.slideIndex = Math.max(0, Math.min(index, this.slideChapters.length - 1)) },
+    exitSlides(exitFullscreen = true, restore = true) {
+      const scope = this._presentation
+      if (!scope && !this.slides) return false
+      const current = this.presentationCurrent(scope)
+      this._presentation = null
+      if (scope) {
+        scope.closed = true
+        scope.editor.off('transaction', scope.onTransaction)
+        scope.offCapabilities?.()
+      }
+      this.slides = false
+      this.slideIndex = 0
+      if (current && restore) this.mode = scope.mode
+      this.applyInteractionMode?.()
+      this.refreshStage?.()
+      const owner = scope?.root.ownerDocument
+      if (exitFullscreen && scope && !scope.alreadyFullscreen && owner.fullscreenElement && scope.root.contains(owner.fullscreenElement)) {
+        try { Promise.resolve(owner.exitFullscreen?.()).catch(() => {}) } catch (_) { /* Already exiting. */ }
+      }
+      if (current && restore) {
+        try {
+          const selection = scope.bookmark.resolve(scope.editor.state.doc)
+          if (!selection.eq(scope.editor.state.selection)) scope.editor.view.dispatch(scope.editor.state.tr.setSelection(selection).setMeta('addToHistory', false))
+        } catch (_) { /* A remotely removed selection has no surviving bookmark. */ }
+        this.$nextTick(() => {
+          if (this._presentation || this.editor !== scope.editor || this.session !== scope.session
+            || this.documentId !== scope.documentId || this.session?.documentId !== scope.sessionDocumentId || scope.editor.isDestroyed) return
+          if (scope.focus?.isConnected) scope.focus.focus?.({ preventScroll: true })
+          else scope.editor.view.focus()
+        })
+      }
+      return true
+    },
+    // Kept for existing callers; presentation navigation is now continuous document scrolling.
+    prevSlide() { this._stageUi?.el.scrollBy?.({ top: -window.innerHeight * 0.8 }) },
+    nextSlide() { this._stageUi?.el.scrollBy?.({ top: window.innerHeight * 0.8 }) },
+  },
+  // 提示条定时器必须在卸载前清掉：单页应用里反复挂载/卸载编辑器，
+  // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。
+  beforeDestroy() {
+    this.exitSlides(true, false)
+    if (this.modeToastTimer) { clearTimeout(this.modeToastTimer); this.modeToastTimer = null }
+    // 查找去抖同理：卸载后不许再有回调去摸 editor。
+    if (this._searchDebounce) { this._searchDebounce.dispose(); this._searchDebounce = null }
   },
 }

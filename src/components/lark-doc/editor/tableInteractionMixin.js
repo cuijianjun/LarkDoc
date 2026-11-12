@@ -25,7 +25,7 @@
  *    `tableToolsDismissed()`。选择条点选产生的整行 / 整列选区既是选区、也是浮窗驱动源，
  *    旧 `tableFloatOpen` 状态机、`onTableFloatAction()`、`.lark-doc-table-float` 已整体删除。
  */
-import { CellSelection, TableMap, selectedRect, deleteRow, deleteColumn, moveTableRow, moveTableColumn } from '@tiptap/pm/tables'
+import { CellSelection, TableMap, selectedRect, deleteRow, deleteColumn, deleteCellSelection, moveTableRow, moveTableColumn } from '@tiptap/pm/tables'
 import { createTableOverlays } from '../../../ui/tableOverlays'
 
 const MIN_THUMB = 28
@@ -300,18 +300,14 @@ export default {
       this._tableOverlaysUi = createTableOverlays({
         host,
         handlers: {
-          onSelect: (axis, index) => this.onTableSelectLine(axis, index),
+          onSelect: (axis, index, event) => this.onTableSelectLine(axis, index, event),
           onReorderMove: (axis, from, to, x, y) => this.onTableReorderMove(axis, from, to, x, y),
           onReorderEnd: (axis, from, to) => this.onTableReorderEnd(axis, from, to),
           onReorderCancel: () => this.onTableReorderCancel(),
           onScrollRatio: (ratio) => this.onTableScrollRatio(ratio),
         },
       })
-      // Delete / Backspace 删整行整列：绑 window 的 capture 阶段。条件命中时
-      // stopPropagation 让事件根本到不了 view.dom，ProseMirror 自带的
-      // deleteCellSelection（只清空单元格内容）就不会抢先执行。
-      // 用 window 而不是 editorEl：选择条在独立的 tableOverlayHost 里，键盘选中后
-      // 焦点在 overlay 上，绑 editorEl 会漏掉这条路径。
+      // 飞书删除键清空内容、保留行列结构。overlay 也可获得键盘焦点，故在 window 接线。
       const win = host.ownerDocument.defaultView
       if (win) {
         this._tableOverlayKeydownTarget = win
@@ -361,9 +357,11 @@ export default {
             const rect = selectedRect(this.editor.state)
             const { map } = rect
             const l = this.tableSelectedLine
+            const start = l.from ?? Math.min(l.index, l.endIndex ?? l.index)
+            const end = l.to ?? Math.max(l.index, l.endIndex ?? l.index) + 1
             stillLine = l.axis === 'column'
-              ? rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height && rect.left === l.index
-              : rect.bottom - rect.top === 1 && rect.left === 0 && rect.right === map.width && rect.top === l.index
+              ? rect.top === 0 && rect.bottom === map.height && rect.left === start && rect.right === end
+              : rect.left === 0 && rect.right === map.width && rect.top === start && rect.bottom === end
           } catch { stillLine = false }
         }
         if (!stillLine) this.tableSelectedLine = null
@@ -392,6 +390,7 @@ export default {
       }
       const firstRow = table.querySelector('tr')
       const headCells = firstRow ? Array.from(firstRow.cells) : []
+      const columnElements = Array.from(table.querySelectorAll('colgroup > col'))
       const rowEls = Array.from(table.querySelectorAll('tr'))
       const viewWidth = wrapper.clientWidth
       const scrollWidth = wrapper.scrollWidth
@@ -404,7 +403,7 @@ export default {
         ? Math.round((scrollLeft / overflow) * (viewWidth - thumbWidth))
         : 0
 
-      const columns = headCells.map((cell, index) => {
+      const columns = (columnElements.length ? columnElements : headCells).map((cell, index) => {
         const cellRect = cell.getBoundingClientRect()
         return { index, left: cellRect.left - rect.left, width: cellRect.width }
       })
@@ -510,26 +509,23 @@ export default {
       return null
     },
     /** 整行 / 整列 CellSelection：moveTableRow/Column 与 deleteRow/Column 都依赖它。 */
-    selectTableLine(axis, index) {
+    selectTableLine(axis, index, endIndex = index) {
       const editor = this.editor
       const found = this.tableOverlayTablePos()
       if (!editor || !found) return false
       const map = TableMap.get(found.node)
-      if ((axis === 'column' && index >= map.width) || (axis === 'row' && index >= map.height)) return false
-      const offsets = []
-      if (axis === 'column') {
-        for (let row = 0; row < map.height; row += 1) offsets.push(map.map[row * map.width + index])
-      } else {
-        for (let col = 0; col < map.width; col += 1) offsets.push(map.map[index * map.width + col])
-      }
+      const limit = axis === 'column' ? map.width : map.height
+      if (![index, endIndex].every(value => Number.isInteger(value) && value >= 0 && value < limit)) return false
+      const anchor = axis === 'column' ? map.map[index] : map.map[index * map.width]
+      const head = axis === 'column' ? map.map[(map.height - 1) * map.width + endIndex] : map.map[(endIndex + 1) * map.width - 1]
       // ⚠️ 这里必须是「单元格节点边界」位置（tableStart + mapOffset），不能 +1 进单元格内容：
       // pointsAtCell() 要求 $pos.parent 是 tableRow 且 $pos.nodeAfter 是 cell，
       // 传内容位置会让 rectBetween/findCell 抛 RangeError，被 catch 吞掉后表现为「点了没反应」。
       const start = found.pos + 1
       try {
         const doc = editor.state.doc
-        const $anchor = doc.resolve(start + offsets[0])
-        const $head = doc.resolve(start + offsets[offsets.length - 1])
+        const $anchor = doc.resolve(start + anchor)
+        const $head = doc.resolve(start + head)
         const selection = axis === 'column'
           ? CellSelection.colSelection($anchor, $head)
           : CellSelection.rowSelection($anchor, $head)
@@ -539,9 +535,12 @@ export default {
         return false
       }
     },
-    onTableSelectLine(axis, index) {
-      if (!this.writable() || !this.selectTableLine(axis, index)) return
-      this.tableSelectedLine = { axis, index }
+    onTableSelectLine(axis, index, event = {}) {
+      const previous = this.tableSelectedLine
+      const anchor = event.shiftKey && previous?.axis === axis ? previous.index : index
+      if (!this.writable() || !this.selectTableLine(axis, anchor, index)) return
+      const rect = selectedRect(this.editor.state)
+      this.tableSelectedLine = { axis, index: anchor, endIndex: index, from: axis === 'column' ? rect.left : rect.top, to: axis === 'column' ? rect.right : rect.bottom }
       // 程序化触发（键盘 / 合成事件）也要解除 dismiss，且必须**显式刷新浮窗**：
       // selectTableLine 的 dispatch 发生在 tableSelectedLine 赋值之前，那一轮
       // selection 钩子读到的还是 null，浮窗不会自己冒出来。
@@ -550,15 +549,9 @@ export default {
       this.refreshTableUiVisibility()
     },
     /**
-     * 验收项「选择条点选后 Delete 能删」：prosemirror-tables 自带的 keydown 把
-     * Backspace/Delete 映射成 deleteCellSelection（只清空选中单元格内容），不会删行列。
-     * 这里只在 CellSelection 恰好覆盖完整一行 / 一列时接管，其余情况（普通光标、
-     * 局部框选）一律放行给 ProseMirror 原行为，不改变单元格内退格语义。
-     */
-    /**
-     * 删除当前 `CellSelection` 覆盖的整行 / 整列（v12）。
+     * 工具条删除当前选区覆盖的完整行 / 列；键盘删除独立走清空内容。
      *
-     * 工具条「删除」按钮和 Delete/Backspace 共用这一套判定，只读**真实选区**
+     * 工具条「删除」按钮只读**真实选区**
      * `selectedRect(state)`，绝不读 `tableSelectedLine` 这个 transient 标记。
      * 旧按钮实现按 `tableSelectedLine?.axis` 选 `deleteRow`/`deleteColumn`，再走
      * `this.run()` —— `run()` 会 `restoreSelection()` + `editor.chain().focus()`，
@@ -567,7 +560,7 @@ export default {
      * 这里直接 `command(state, view.dispatch)`：不经过 focus 链、不允许任何组件
      * 标记覆盖真实选区，删的一定是 CellSelection 自己覆盖的那一行 / 那一列。
      */
-    deleteSelectedTableLine(options = {}) {
+    deleteSelectedTableLine() {
       const editor = this.editor
       if (!editor?.view || this.effectiveReadonly || !this.writable()) return false
       const state = editor.state
@@ -575,17 +568,11 @@ export default {
       let rect
       try { rect = selectedRect(state) } catch { return false }
       const { map } = rect
-      const fullColumn = rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height
-      const fullRow = rect.bottom - rect.top === 1 && rect.left === 0 && rect.right === map.width
+      const fullColumn = rect.top === 0 && rect.bottom === map.height
+      const fullRow = rect.left === 0 && rect.right === map.width
       if (!fullColumn && !fullRow) return false
-      // deleteColumn/deleteRow 在「会删掉整张表」时会失败，此时不接管，
-      // 让 ProseMirror 退回清空内容，避免整张表凭空消失。
-      if ((fullColumn && map.width <= 1) || (fullRow && map.height <= 1)) return false
       const command = fullColumn ? deleteColumn : deleteRow
       if (!command(state)) return false
-      // 键盘路径要在 dispatch 之前拦下事件：否则 prosemirror-keymap 的
-      // deleteCellSelection 会抢先把选中单元格内容清空。
-      if (typeof options.beforeDispatch === 'function') options.beforeDispatch()
       let applied = false
       try { applied = !!command(state, editor.view.dispatch) } catch { applied = false }
       if (applied) {
@@ -611,10 +598,10 @@ export default {
       const target = event.target
       const overlay = this._tableOverlaysUi?.el
       if (!editor.view.dom.contains(target) && !(overlay && overlay.contains(target))) return
-      // window capture 阶段 stopPropagation：事件到不了 view.dom。
-      this.deleteSelectedTableLine({
-        beforeDispatch: () => { event.preventDefault(); event.stopPropagation() },
-      })
+      if (!deleteCellSelection(state)) return
+      event.preventDefault()
+      event.stopPropagation()
+      deleteCellSelection(state, editor.view.dispatch)
     },
     onTableReorderMove(axis, from, to, x, y) {
       this._tableReorder = { axis, from, to, x, y }

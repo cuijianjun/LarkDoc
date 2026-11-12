@@ -147,17 +147,17 @@ export const COMMENT_PRIVATE_SWITCH = Object.freeze({
 })
 
 /**
- * 回复行「更多」下拉（04 §3.1④-3 B）：152×134、菜单项 144×30 × 4。
+ * 回复行「更多」下拉：2026-11-10 源界面为 124×134，四项。
  * 飞书把 dropdown 拼成了 **dorpdown**，复刻保留原类名便于与实机比对。
  */
-export const COMMENT_REPLY_MENU = Object.freeze({ width: 152, height: 134, itemWidth: 144, itemHeight: 30 })
+export const COMMENT_REPLY_MENU = Object.freeze({ width: 124, height: 134, itemWidth: 116, itemHeight: 30 })
 
-/** 四项顺序固定（04 §3.1④-3 B）：编辑 / 翻译为简体中文 / 删除 / 举报。 */
+/** 当前源顺序：编辑 / 翻译为英语 / 删除 / 举报。 */
 export const COMMENT_REPLY_MENU_ITEMS = Object.freeze([
   { id: 'edit', label: '编辑', ownOnly: true },
-  { id: 'translate', label: '翻译为简体中文', submenu: true },
+  { id: 'translate', label: '翻译为英语', submenu: true },
   { id: 'delete', label: '删除', danger: false },
-  { id: 'report', label: '举报', othersOnly: true },
+  { id: 'report', label: '举报' },
 ])
 
 /** 四项 id 的顺序清单（测试与面板 v-for 共用一份）。 */

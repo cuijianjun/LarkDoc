@@ -427,7 +427,7 @@ export function createToolbar(options = {}) {
     })
 
     // ④ 文字样式
-    linkButton.disabled = disabled || !next.hasSelection
+    linkButton.disabled = disabled || next.linkAllowed === false
     setAttr(linkButton, 'aria-pressed', active.link ? 'true' : 'false')
     fontSelect.update({ options: options.fontFamily, value: textStyle.fontFamily, disabled })
     sizeSelect.update({ options: options.fontSize, value: textStyle.fontSize, disabled })

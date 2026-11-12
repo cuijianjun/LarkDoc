@@ -28,6 +28,13 @@ export function safeUrl(value, image = false) {
   return !image && (/^(mailto|tel):[^:<>]+$/i.test(value) || /^#[\w\u0080-\uffff-]+$/.test(value))
 }
 
+/** Normalize link input without weakening the safeUrl gate used by schema writes. */
+export function normalizeLinkUrl(value) {
+  if (typeof value !== 'string') return ''
+  const next = value.trim()
+  return safeUrl(next) ? next : ''
+}
+
 /** 校验颜色值（hex / rgb(a) / hsl(a) / CSS 关键字），防止 style 注入。 */
 export function safeColor(value) {
   return typeof value === 'string' && (/^#[\da-f]{3,8}$/i.test(value) || /^(rgb|hsl)a?\([\d.,%\s+-]+\)$/i.test(value) || /^[a-z]+$/i.test(value))

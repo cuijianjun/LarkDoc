@@ -72,7 +72,11 @@ async function main() {
         })(),
         remindAt: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt,
         layerChildren: layer ? Array.from(layer.children).map(el => el.className) : [],
-        repeatDisabled: document.querySelector('[data-reminder="repeat"]')?.disabled === true,
+        hasTimeChecked: document.querySelector('input[aria-label="设置时间开关"]')?.checked === true,
+        notifyChecked: document.querySelector('input[aria-label="提醒开关"]')?.checked === true,
+        switchesEnabled: Array.from(popover?.querySelectorAll('input[type="checkbox"]') || []).length === 2
+          && Array.from(popover.querySelectorAll('input[type="checkbox"]')).every(input => !input.disabled),
+        offsetEnabled: document.querySelector('[data-reminder="offset"]')?.disabled === false,
         timeExpanded: document.querySelector('[data-reminder="time"]')?.getAttribute('aria-expanded'),
       }
     })
@@ -80,8 +84,37 @@ async function main() {
     record('日历严格渲染 42 格且补白格 disabled', open.days === 42 && open.outside > 0 && open.outside < 14, `格数=${open.days} disabled=${open.outside}`)
     record('日期格保留 gridcell/selected/aria-label 语义', open.selected === 1 && open.dayLabels && open.selectedLabel === open.expectedLabel, `${open.selectedLabel} / 预期 ${open.expectedLabel}`)
     record('HTML 导入保留原始提醒日期', open.remindAt === '2099-10-26T13:00:00Z', open.remindAt)
-    record('提醒行保持 disabled 展示', open.repeatDisabled === true)
+    record('设置时间和提醒是两个独立可用开关', open.hasTimeChecked && open.notifyChecked && open.switchesEnabled && open.offsetEnabled)
     record('时间下拉初始关闭且真实不在 DOM', open.timeExpanded === 'false' && !open.layerChildren.includes('lark-doc-reminder-times'))
+
+    await page.getByRole('checkbox', { name: '提醒开关', exact: true }).uncheck()
+    await page.waitForFunction(() => !document.querySelector('[data-reminder="offset"]'))
+    const muted = await page.evaluate(() => ({
+      attrs: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs,
+      time: !!document.querySelector('input[aria-label="设置时间"]'),
+    }))
+    record('关闭提醒仅隐藏提前提醒，保留时间设置', muted.attrs?.notify === false && muted.attrs?.hasTime === true && muted.time)
+    await page.getByRole('checkbox', { name: '提醒开关', exact: true }).check()
+    await page.locator('[data-reminder="offset"]').click()
+    await page.waitForSelector('.lark-doc-reminder-times[aria-label="提前提醒"]')
+    record('提前提醒提供九个可选择档位', await page.locator('.lark-doc-reminder-time-row').count() === 9)
+    await page.locator('.lark-doc-reminder-time-row').nth(2).click()
+    const offset = await page.evaluate(() => window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.notifyOffset)
+    record('选择提前 15 分钟真实写回 mark', offset === 15)
+
+    // Removing a focused time input invokes blur synchronously; rendering must not re-enter syncChildren.
+    await page.getByRole('combobox', { name: '设置时间', exact: true }).focus()
+    await page.getByRole('checkbox', { name: '设置时间开关', exact: true }).uncheck()
+    await page.waitForFunction(() => !document.querySelector('[data-reminder="time"]') && !document.querySelector('.lark-doc-reminder-times'))
+    const dateOnly = await page.evaluate(() => ({
+      attrs: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs,
+      offset: !!document.querySelector('[data-reminder="offset"]'),
+    }))
+    record('移除聚焦时间框不重入出错，提醒开关保持独立', dateOnly.attrs?.hasTime === false && dateOnly.attrs?.notify === true && dateOnly.offset)
+    await page.getByRole('checkbox', { name: '设置时间开关', exact: true }).check()
+    await page.waitForSelector('input[aria-label="设置时间"]')
+    const restoredTime = await page.evaluate(() => window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs)
+    record('重新设置时间保留日期、原时分和提前提醒', restoredTime.hasTime === true && restoredTime.remindAt === open.remindAt && restoredTime.notifyOffset === 15)
 
     const daySelection = await page.evaluate(() => {
       const button = document.querySelector('.lark-doc-reminder-day:not(:disabled)')
@@ -136,7 +169,7 @@ async function main() {
     await page.waitForTimeout(200)
     const afterTime = await page.evaluate((selectedDay) => ({
       list: !!document.querySelector('.lark-doc-reminder-times'),
-      selected: document.querySelector('[data-reminder="time"]')?.textContent.trim() || '',
+      selected: document.querySelector('input[aria-label="设置时间"]')?.value || '',
       html: window.__larkDoc.getEditor().getHTML(),
       remindAt: window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt,
       expectedAt: (() => {
@@ -148,6 +181,40 @@ async function main() {
     record('选择时间委托 reminderMixin 并收起下拉', !afterTime.list && afterTime.selected.includes('23:30'))
     record('时间选择写回正文 mark 属性', /data-remind-at="/.test(afterTime.html) && /lark-doc-reminder-chip/.test(afterTime.html) && afterTime.remindAt === afterTime.expectedAt, `${afterTime.remindAt} / 预期 ${afterTime.expectedAt}`)
 
+    const timeInput = page.getByRole('combobox', { name: '设置时间', exact: true })
+    await timeInput.fill('13:17')
+    record('自定义分钟输入仍展示全部 48 个半小时时段', await page.locator('.lark-doc-reminder-time-row').count() === 48)
+    await timeInput.press('Enter')
+    const committed = await page.evaluate(() => {
+      const date = new Date(window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt)
+      return {
+        value: document.querySelector('input[aria-label="设置时间"]')?.value,
+        hours: date.getHours(), minutes: date.getMinutes(),
+        list: !!document.querySelector('.lark-doc-reminder-times'),
+        blurred: document.activeElement?.tagName === 'BODY',
+      }
+    })
+    record('Enter 保存任意合法分钟、收起列表并失焦', committed.value === '13:17' && committed.hours === 13
+      && committed.minutes === 17 && !committed.list && committed.blurred)
+    await timeInput.fill('9:5')
+    await timeInput.press('Enter')
+    const normalizedTime = await page.evaluate(() => {
+      const at = window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt
+      const date = new Date(at)
+      return { at, hours: date.getHours(), minutes: date.getMinutes() }
+    })
+    const normalizedAt = normalizedTime.at
+    record('一位时分规范化为 09:05', await timeInput.inputValue() === '09:05' && normalizedTime.hours === 9 && normalizedTime.minutes === 5)
+    await timeInput.fill('25:99')
+    await timeInput.press('Enter')
+    record('非法时分回滚且正文不变', await timeInput.inputValue() === '09:05'
+      && await page.evaluate(() => window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt) === normalizedAt)
+    await timeInput.fill('12:34')
+    await timeInput.press('Tab')
+    record('仅失焦不提交时间草稿', await page.evaluate(() => window.__larkDoc.getEditor().getJSON().content[0].content[0].marks.find(mark => mark.type === 'reminder')?.attrs.remindAt) === normalizedAt)
+    await timeInput.focus()
+    await page.keyboard.press('Escape')
+    record('首次 Escape 仅关闭时间列表', await page.locator('.lark-doc-reminder-times').count() === 0 && await page.locator('.lark-doc-reminder-popover').count() === 1)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(150)
     record('Escape 后浮层节点真实摘除', await page.locator('.lark-doc-reminder-popover').count() === 0)

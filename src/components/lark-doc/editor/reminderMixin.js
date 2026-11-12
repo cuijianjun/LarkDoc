@@ -16,7 +16,8 @@
  *   - 「`!日期错误` 失败态」在真飞书里不存在（允许设到过去、无警告）⇒ 这里不校验时间先后。
  *   - 「撤销只回 chip 不回蒙层」是飞书 bug ⇒ 我们 mark + decoration 天然同生同死，不复刻。
  */
-import { REMINDER_REPEAT_LABELS, normalizeReminder, readReminder, reminderLabel } from '../../../core/blocks/reminder'
+import { REMINDER_OFFSETS, REMINDER_OFFSET_LABELS, normalizeReminder, readReminder, reminderText, reminderTone } from '../../../core/blocks/reminder'
+import { isCommandEnabled } from '../larkDocConfig'
 
 /** 星期表头：飞书写「日一二三四五六」，不写「星期天」。 */
 export const REMINDER_WEEKDAYS = Object.freeze(['日', '一', '二', '三', '四', '五', '六'])
@@ -25,8 +26,8 @@ export const REMINDER_WEEKDAYS = Object.freeze(['日', '一', '二', '三', '四
 const REMINDER_TIME_STEP = 30
 
 const POPOVER_WIDTH = 280
-/** 未量到实际高度前的兜底（02 §19.4 ④：壳 280×534）。落 DOM 后会读真实 offsetHeight 再校一次。 */
-const POPOVER_HEIGHT = 534
+/** 两项开关均打开时 280×519；挂载后按当前真实高度定位。 */
+const POPOVER_HEIGHT = 519
 const TIMES_WIDTH = 166
 const TIMES_HEIGHT = 246
 const POPOVER_GAP = 6
@@ -61,17 +62,17 @@ export default {
       /** 唯一真相：带时区的 ISO 串（02 §19.4 ⑥）。chip 文案永远由它现算。 */
       reminderAt: '',
       reminderNotify: true,
+      reminderHasTime: true,
+      reminderNotifyOffset: 0,
       reminderRepeat: 'none',
+      reminderCalendarMode: 'date',
+      reminderOffsetsOpen: false,
+      reminderTimeDraft: null,
       /** 日历当前展示的月份（0-based month，与 `Date` 一致）。 */
       reminderView: { year: 0, month: 0 },
       reminderTimesOpen: false,
       reminderStyle: {},
       reminderTimesStyle: {},
-      /**
-       * 浮层底部「提醒：xxx」的宿主用户名。**V1 恒为空**（组件没有「当前用户」这个概念，
-       * 不新造配置字段），为空时整行不渲染 —— 换宿主注入时只填这里，模板不用动。
-       */
-      reminderUser: '',
       reminderWeekdays: REMINDER_WEEKDAYS,
     }
   },
@@ -85,7 +86,23 @@ export default {
       return date ? `${pad2(date.getHours())}:${pad2(date.getMinutes())}` : ''
     },
     reminderViewTitle() {
+      if (this.reminderCalendarMode === 'year') {
+        const start = Math.floor(this.reminderView.year / 20) * 20
+        return `${start} - ${start + 19}`
+      }
       return `${this.reminderView.year}年 ${this.reminderView.month + 1}月`
+    },
+    reminderUser() { return this.session?.user?.name || this.user?.name || '我' },
+    reminderTone() { return reminderTone({ remindAt: this.reminderAt, hasTime: this.reminderHasTime }) },
+    reminderOffsetOptions() { return REMINDER_OFFSETS.map(value => ({ value, label: REMINDER_OFFSET_LABELS[value] })) },
+    reminderPeriodCells() {
+      const year = this.reminderCalendarMode === 'year'
+      const start = year ? Math.floor(this.reminderView.year / 20) * 20 : 0
+      const selected = toDate(this.reminderAt)
+      return Array.from({ length: year ? 20 : 12 }, (_, index) => {
+        const value = start + index
+        return { value, label: year ? String(value) : `${value + 1}月`, selected: !!selected && (year ? selected.getFullYear() === value : selected.getFullYear() === this.reminderView.year && selected.getMonth() === value) }
+      })
     },
     /**
      * 42 个日历格。`outside`（前后月补白）在飞书里**点了连校验都不跑**（02 §19.4 ④-ter ②），
@@ -124,18 +141,29 @@ export default {
       }
       return options
     },
-    /**
-     * 第二行「提醒」下拉的文案。飞书这一格是 **`readOnly`** 的展示项，默认文案
-     * 「事件发生时」（02 §19.4 ④-bis 5″）—— 所以 `none` 显示「事件发生时」而不是
-     * `REMINDER_REPEAT_LABELS.none` 的「不重复」，其余三档直接复用契约层标签。
-     * 🔴 若日后证实这格可编辑，只改模板里那个 `disabled`，状态机已经具备。
-     */
+    /** 通知提前量独立于旧 repeat 属性；旧值继续往返，不误用作提前量。 */
     reminderRepeatText() {
-      if (this.reminderRepeat === 'none') return '事件发生时'
-      return REMINDER_REPEAT_LABELS[this.reminderRepeat] || REMINDER_REPEAT_LABELS.none
+      return REMINDER_OFFSET_LABELS[this.reminderNotifyOffset] || REMINDER_OFFSET_LABELS[0]
     },
   },
   methods: {
+    reminderContextMatches() {
+      const scope = this._reminderScope
+      return !!scope && scope.editor === this.editor && scope.session === this.session && scope.documentId === (this.documentId ?? null) && scope.sessionDocumentId === (this.session?.documentId ?? null)
+    },
+    reminderEditable() { return !!this.editor && !this.editor.isDestroyed && this.writable() && !this.effectiveReadonly && isCommandEnabled(this.larkDocConfig, 'reminder', 'insert') && (!this.reminderOpen || this.reminderContextMatches()) },
+    onReminderTransaction({ transaction }) {
+      if (!this.reminderOpen || this._applyingReminder || !transaction.docChanged) return
+      if (!this.reminderContextMatches()) { this.closeReminderPopover(); return }
+      const from = transaction.mapping.mapResult(this.reminderFrom, 1)
+      const to = transaction.mapping.mapResult(this.reminderTo, -1)
+      if (from.deletedAcross || to.deletedAcross) { this.closeReminderPopover(); return }
+      const found = this.reminderRangeAt(from.pos)
+      if (!found || found.from !== from.pos || found.to !== to.pos || JSON.stringify(readReminder(found.mark)) !== JSON.stringify(normalizeReminder({ remindAt: this.reminderAt, hasTime: this.reminderHasTime, notify: this.reminderNotify, notifyOffset: this.reminderNotifyOffset, repeat: this.reminderRepeat }))) { this.closeReminderPopover(); return }
+      this.reminderFrom = found.from
+      this.reminderTo = found.to
+      this.$nextTick(() => this.positionReminderPopover())
+    },
     /**
      * 点 chip 打开浮层（模板绑在 `.lark-doc-paper` 上做事件委托）。
      *
@@ -143,7 +171,7 @@ export default {
      * 所以同一块里有多个 chip 也不会串台（若改成「扫块内第一个 reminder」就会串）。
      */
     onReminderChipClick(event) {
-      if (!this.editor || !this.writable() || this.effectiveReadonly) return
+      if (!this.reminderEditable()) return
       const target = event ? event.target : null
       const chip = target && target.closest ? target.closest('.lark-doc-reminder-chip') : null
       if (!chip) return
@@ -165,34 +193,39 @@ export default {
       if (typeof pos !== 'number' || pos < 0 || pos > doc.content.size) return null
       const $pos = doc.resolve(pos)
       const base = $pos.start()
-      let strict = null
-      let boundary = null
+      const spans = []
       $pos.parent.forEach((node, offset) => {
         if (!node.isText) return
         const mark = node.marks.find((item) => item.type.name === 'reminder')
         if (!mark) return
         const from = base + offset
         const to = from + node.nodeSize
-        if (pos >= from && pos < to) {
-          if (!strict) strict = { from, to, mark }
-        } else if (pos === to && !boundary) {
-          boundary = { from, to, mark }
-        }
+        const previous = spans[spans.length - 1]
+        if (previous && previous.to === from && previous.mark.eq(mark)) { previous.to = to; previous.parts.push({ from, to, node }) }
+        else spans.push({ from, to, mark, parts: [{ from, to, node }] })
       })
-      return strict || boundary
+      return spans.find(span => pos >= span.from && pos < span.to) || spans.find(span => pos === span.to) || null
     },
     /** OPEN：接一份 attrs，把浮层内部状态铺好并挂到 chip 旁边。 */
     openReminderPopover(from, to, attrs) {
+      if (this.reminderOpen && !this.reminderContextMatches()) this.closeReminderPopover()
+      if (!this.reminderEditable()) return
+      this._reminderScope = { editor: this.editor, session: this.session, documentId: this.documentId ?? null, sessionDocumentId: this.session?.documentId ?? null }
       const next = normalizeReminder(attrs)
       const date = toDate(next.remindAt) || new Date()
       this.reminderFrom = from
       this.reminderTo = to
       this.reminderAt = next.remindAt
       this.reminderNotify = next.notify
+      this.reminderHasTime = next.hasTime
+      this.reminderNotifyOffset = next.notifyOffset
       this.reminderRepeat = next.repeat
       this.reminderView = { year: date.getFullYear(), month: date.getMonth() }
       this.reminderOpen = true
       this.reminderTimesOpen = false
+      this.reminderOffsetsOpen = false
+      this.reminderCalendarMode = 'date'
+      this.reminderTimeDraft = null
       this.reminderStyle = this.reminderStyleAt(from, POPOVER_HEIGHT)
       this.$nextTick(() => this.positionReminderPopover())
     },
@@ -201,10 +234,15 @@ export default {
       if (!this.reminderOpen && this.reminderFrom === null) return
       this.reminderOpen = false
       this.reminderTimesOpen = false
+      this.reminderOffsetsOpen = false
       this.reminderFrom = null
       this.reminderTo = null
+      this._reminderScope = null
       this.reminderAt = ''
+      this.reminderTimeDraft = null
       this.reminderNotify = true
+      this.reminderHasTime = true
+      this.reminderNotifyOffset = 0
       this.reminderRepeat = 'none'
       this.reminderStyle = {}
       this.reminderTimesStyle = {}
@@ -213,13 +251,12 @@ export default {
     /**
      * 命令菜单入口（斜杠「日期提醒」）：插默认 chip → 立刻弹浮层。
      *
-     * 默认值 = 当前时刻 +24h 且分钟归零（`normalizeReminder({})` 走的就是 `createDefaultRemindAt`），
-     * 所以 chip 文案落在「明天 HH:00」这一档（02 §19.4 ② batch373 / batch385 两次实测一致）。
+     * 默认值为下一天、当前半小时档，插入后立即打开日历。
      */
     startReminder() {
-      if (!this.editor || !this.writable() || this.effectiveReadonly) return
+      if (!this.reminderEditable()) return
       const attrs = normalizeReminder({})
-      const text = reminderLabel(attrs.remindAt)
+      const text = reminderText(attrs)
       if (!text) return
       this.closeCommandMenu()
       this.editor.chain().focus().insertContent({ type: 'text', text, marks: [{ type: 'reminder', attrs }] }).run()
@@ -235,57 +272,122 @@ export default {
      * chip 的可见文字就是文案，所以必须整段文本一起换。
      */
     applyReminder(patch) {
-      if (!this.editor || this.reminderFrom === null || this.reminderTo === null) return
+      if (!this.reminderEditable() || !this.reminderOpen || this.reminderFrom === null || this.reminderTo === null) return
+      const found = this.reminderRangeAt(this.reminderFrom)
+      if (!found || found.from !== this.reminderFrom || found.to !== this.reminderTo) { this.closeReminderPopover(); return }
       const merged = patch && typeof patch === 'object' ? patch : {}
       const next = normalizeReminder({
         remindAt: merged.remindAt === undefined ? this.reminderAt : merged.remindAt,
         notify: merged.notify === undefined ? this.reminderNotify : merged.notify,
+        hasTime: merged.hasTime === undefined ? this.reminderHasTime : merged.hasTime,
+        notifyOffset: merged.notifyOffset === undefined ? this.reminderNotifyOffset : merged.notifyOffset,
         repeat: merged.repeat === undefined ? this.reminderRepeat : merged.repeat,
       })
-      const text = reminderLabel(next.remindAt)
+      const text = reminderText(next)
       if (!text) return
       const from = this.reminderFrom
       const to = this.reminderTo
       const schema = this.editor.schema
       const tr = this.editor.state.tr
-      tr.replaceWith(from, to, schema.text(text, [schema.marks.reminder.create(next)]))
-      this.editor.view.dispatch(tr)
+      const mark = schema.marks.reminder.create(next), nodes = []
+      let cursor = 0
+      found.parts.forEach((part, index) => {
+        const end = index === found.parts.length - 1 ? text.length : Math.min(text.length, cursor + part.to - part.from)
+        if (end > cursor) nodes.push(schema.text(text.slice(cursor, end), [mark, ...part.node.marks.filter(item => item.type.name !== 'reminder')]))
+        cursor = end
+      })
+      tr.replaceWith(from, to, nodes)
+      this._applyingReminder = true
+      try { this.editor.view.dispatch(tr) } finally { this._applyingReminder = false }
       // 同起点替换 ⇒ 起点不变、终点 = 起点 + 新文案长度（文案会变长变短，必须现算）。
       this.reminderTo = from + text.length
       this.reminderAt = next.remindAt
       this.reminderNotify = next.notify
+      this.reminderHasTime = next.hasTime
+      this.reminderNotifyOffset = next.notifyOffset
       this.reminderRepeat = next.repeat
       const date = toDate(next.remindAt)
       if (date) this.reminderView = { year: date.getFullYear(), month: date.getMonth() }
+      this.refreshReminder?.()
       this.$nextTick(() => {
         this.positionReminderPopover()
         if (this.reminderTimesOpen) this.positionReminderTimes()
       })
     },
     shiftReminderMonth(step) {
+      if (!this.reminderEditable()) return
       const view = this.reminderView
-      const date = new Date(view.year, view.month + step, 1)
+      const years = this.reminderCalendarMode === 'year' ? 20 : 1
+      const date = this.reminderCalendarMode === 'date' ? new Date(view.year, view.month + step, 1) : new Date(view.year + step * years, view.month, 1)
       this.reminderView = { year: date.getFullYear(), month: date.getMonth() }
+    },
+    setReminderCalendarMode(mode) {
+      if (!this.reminderEditable() || !this.reminderOpen || !['date', 'month', 'year'].includes(mode)) return
+      this.reminderCalendarMode = mode
+      this.reminderTimesOpen = false
+      this.reminderOffsetsOpen = false
+    },
+    chooseReminderPeriod(value) {
+      if (!this.reminderEditable() || !this.reminderOpen || !Number.isInteger(value)) return
+      if (this.reminderCalendarMode === 'year' && value >= 1 && value <= 9999) this.reminderView = { ...this.reminderView, year: value }
+      else if (this.reminderCalendarMode === 'month' && value >= 0 && value < 12) this.reminderView = { ...this.reminderView, month: value }
+      else return
+      this.reminderCalendarMode = 'date'
+    },
+    setReminderHasTime(value) { this.reminderTimesOpen = false; this.reminderTimeDraft = null; this.applyReminder({ hasTime: !!value }) },
+    setReminderNotify(value) { this.reminderOffsetsOpen = false; this.applyReminder({ notify: !!value }) },
+    chooseReminderOffset(value) {
+      if (!this.reminderNotify || !REMINDER_OFFSETS.includes(value)) return
+      this.reminderOffsetsOpen = false
+      this.applyReminder({ notifyOffset: value })
+    },
+    toggleReminderOffsets() {
+      if (!this.reminderEditable() || !this.reminderOpen || !this.reminderNotify) return
+      this.reminderTimesOpen = false
+      this.reminderOffsetsOpen = !this.reminderOffsetsOpen
+      this.$nextTick(() => { this.positionReminderTimes(); this.scrollReminderTimeIntoView() })
     },
     /** 选日：时间沿用当前 chip 的时分（飞书的日历只换日期，不动时刻）。 */
     chooseReminderDay(cell) {
       if (!cell || cell.outside) return
+      if (![cell.year, cell.month, cell.day].every(Number.isInteger) || cell.year < 100 || cell.year > 9999 || cell.month < 0 || cell.month > 11 || cell.day < 1 || cell.day > 31) return
       const base = toDate(this.reminderAt) || new Date()
       const picked = new Date(cell.year, cell.month, cell.day, base.getHours(), base.getMinutes(), 0, 0)
+      if (picked.getMonth() !== cell.month || picked.getDate() !== cell.day) return
       this.applyReminder({ remindAt: picked.toISOString() })
     },
     /** 选时：日期沿用当前选中的那天。 */
     chooseReminderTime(value) {
+      if (!/^\d{1,2}:\d{1,2}$/.test(String(value))) return false
       const parts = String(value || '').split(':')
       const hours = Number(parts[0])
       const minutes = Number(parts[1])
-      if (Number.isNaN(hours) || Number.isNaN(minutes)) return
+      if (!this.reminderEditable() || !this.reminderOpen || !this.reminderHasTime || !Number.isInteger(hours) || hours < 0 || hours > 23 || !Number.isInteger(minutes) || minutes < 0 || minutes > 59) return false
       const base = toDate(this.reminderAt) || new Date()
       const picked = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hours, minutes, 0, 0)
       this.reminderTimesOpen = false
+      this.reminderTimeDraft = null
       this.applyReminder({ remindAt: picked.toISOString() })
+      return true
     },
+    editReminderTime(value) {
+      if (!this.reminderEditable() || !this.reminderOpen || !this.reminderHasTime) return
+      this.reminderTimeDraft = String(value).slice(0, 16)
+      this.reminderOffsetsOpen = false
+      this.reminderTimesOpen = true
+      this.refreshReminder?.()
+      this.$nextTick(() => this.positionReminderTimes())
+    },
+    commitReminderTime(value) {
+      if (this.chooseReminderTime(value)) return true
+      this.reminderTimeDraft = null
+      this.refreshReminder?.()
+      return false
+    },
+    blurReminderTime() { this.reminderTimesOpen = false; this.refreshReminder?.() },
     toggleReminderTimes() {
+      if (!this.reminderEditable() || !this.reminderOpen || !this.reminderHasTime) return
+      this.reminderOffsetsOpen = false
       this.reminderTimesOpen = !this.reminderTimesOpen
       if (!this.reminderTimesOpen) return
       this.$nextTick(() => {
@@ -329,9 +431,9 @@ export default {
       this.reminderStyle = this.reminderStyleAt(this.reminderFrom, height)
     },
     positionReminderTimes() {
-      if (!this.reminderTimesOpen) return
+      if (!this.reminderTimesOpen && !this.reminderOffsetsOpen) return
       const root = this.$refs.root
-      const select = root ? root.querySelector('[data-reminder="time"]') : null
+      const select = root ? root.querySelector(`[data-reminder="${this.reminderOffsetsOpen ? 'offset' : 'time'}"]`) : null
       if (!select) return
       const rect = select.getBoundingClientRect()
       const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN
@@ -354,8 +456,9 @@ export default {
       if (event.isComposing || (this.editor && this.editor.view.composing)) return false
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (this.reminderTimesOpen) {
+        if (this.reminderTimesOpen || this.reminderOffsetsOpen) {
           this.reminderTimesOpen = false
+          this.reminderOffsetsOpen = false
           return true
         }
         this.closeReminderPopover()

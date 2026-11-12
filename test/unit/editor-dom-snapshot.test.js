@@ -4,11 +4,12 @@
  * 拆 LarkDocEditor.vue 模板成 8 个子组件时，唯一的红线是"渲染结果逐节点不变"：
  * 类名、层级、顺序、属性有任何漂移都算视觉回归。本测试用与基线抓取
  * （scripts/capture-baseline.js dom，Task 1）完全相同的归一化口径，把 demo
- * 当前 DOM 与重构前基线 test/fixtures/editor-dom-before.html 逐字节比对。
+ * legacy Vue renderer 的 DOM 与重构前基线 test/fixtures/editor-dom-before.html
+ * 逐字节比对。后续原生 DOM renderer 的 UI 变更不属于此历史不变性契约。
  *
  * 运行前提：demo dev server 在线（apps/vue2-webpack-node14，8080 /lark-doc）
  * 与 playwright-core 可解析（NODE_PATH 指向其 node_modules，见基线抓取命令）。
- * 环境未备齐时跳过比对（保持 `npm run check` 在无浏览器环境自洽），但
+ * 环境未备齐时正式标记跳过；显式指定 URL 时缺环境必须失败。但
  * fixture 缺失在任何环境下都算失败——基线不能丢。
  * 想强制跑：起 dev server 后 LARK_DOC_DOM_URL 可覆盖默认地址。
  */
@@ -74,18 +75,22 @@ describe('P0-03 RF5 编辑器 DOM 快照', () => {
     expect(fs.statSync(fixturePath).size).toBeGreaterThan(1000)
   })
 
-  it('demo 当前 DOM 与重构前基线逐字节一致', { timeout: 200000 }, async () => {
+  it('legacy demo DOM 与 Vue 模板拆分前基线逐字节一致', { timeout: 200000 }, async (context) => {
     const reachable = await serverReachable(pageUrl)
+    const explicitTarget = Boolean(process.env.LARK_DOC_DOM_URL)
     if (!playwrightAvailable()) {
-      console.warn(`[skip] playwright-core 不可解析（需 NODE_PATH 指向其 node_modules），跳过 DOM 快照比对`)
-      return
+      if (explicitTarget) throw new Error('显式 DOM 核验缺少 playwright-core；需设置 NODE_PATH')
+      context.skip('legacy RF5 未执行：playwright-core 不可解析')
     }
     if (!reachable) {
-      console.warn(`[skip] demo dev server 不可达（${pageUrl}），跳过 DOM 快照比对`)
-      return
+      if (explicitTarget) throw new Error(`显式 DOM 核验目标不可达：${pageUrl}`)
+      context.skip(`legacy RF5 未执行：demo dev server 不可达（${pageUrl}）`)
     }
     const baseline = fs.readFileSync(fixturePath, 'utf8').replace(/\n$/, '')
     const current = captureCurrentDom().replace(/\n$/, '')
+    if (/^<section\b[^>]*\sdata-renderer="dom-migration"/.test(current)) {
+      context.skip('legacy RF5 不适用于原生 DOM renderer；当前 UI 由 renderer 契约与浏览器交互验收')
+    }
     expect(current, firstDiffContext(baseline, current)).toBe(baseline)
   })
 })

@@ -6,6 +6,8 @@ const props = {
   config: { type: Object, default: () => ({}) }, maxLength: { type: Number, default: null }, imageMaxSize: { type: Number, default: null },
   templates: { type: Array, default: () => [] }, uploader: { type: [Object, Function], default: null },
   uploadImage: { type: Function, default: null }, msgId: { type: [Number, String], default: null },
+  onImageShare: { type: Function, default: null },
+  onSelectionShare: { type: Function, default: null },
   uploadFile: { type: Function, default: null }, resolveFileUrl: { type: Function, default: null }, session: { type: Object, default: null },
   contentFormat: { type: String, default: 'auto' }, foldPersistKey: { type: String, default: '' }, collab: { type: Object, default: null },
   onEmbedTitle: { type: Function, default: null }, onEmbedSave: { type: Function, default: null }, onEmbedCardAction: { type: Function, default: null },
@@ -13,6 +15,7 @@ const props = {
   embedSandbox: { type: String, default: null }, embedAllow: { type: String, default: null },
   mentionSource: { type: [Array, Function, Object], default: null }, calendarSource: { type: [Array, Function, Object], default: null },
   onCalendarEventJoin: { type: Function, default: null }, calendarEventRefetch: { type: Function, default: null },
+  onIsvButtonAction: { type: Function, default: null }, onIsvCatalogJump: { type: Function, default: null },
 }
 
 export default createVue2Adapter({

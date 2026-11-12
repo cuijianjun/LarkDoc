@@ -248,6 +248,7 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   const firstPlus = { getBoundingClientRect: () => ({ left: 10, top: 20, bottom: 40 }) }
   const secondPlus = { getBoundingClientRect: () => ({ left: 50, top: 60, bottom: 80 }) }
   const emptyParagraphPlus = {
+    ...component.methods,
     writable: () => true,
     handleIsEmptyParagraph: true,
     handleRange: { from: 12, to: 14 },
@@ -412,7 +413,7 @@ check('Official FileHandler routes accepted image files to the ECS upload bounda
   const extension = createLarkDocExtensions({ onImageFiles: (files, pos) => calls.push({ files, pos }) }).find((ext) => ext.name === 'fileHandler')
   assert(extension, 'Missing official FileHandler for image paste/drop')
   const editor = { isEditable: true, state: { selection: { from: 7 } } }
-  const plugin = extension.config.addProseMirrorPlugins.call({ name: extension.name, options: extension.options, editor })[0]
+  const plugin = getExtensionField(extension, 'addProseMirrorPlugins', { name: extension.name, options: extension.options, editor })()[0]
   const image = { type: 'image/png', size: 2 }
   const unsupported = { type: 'image/svg+xml', size: 2 }
   const event = { clipboardData: { files: [image, unsupported], getData: () => '<p>clipboard html</p>' }, preventDefault() {}, stopPropagation() {} }
@@ -1415,41 +1416,37 @@ async function checkEcsUploadBoundary() {
 async function checkEcsCropBoundary() {
   const close = openDom()
   const { window: domWindow } = global
-  // Node 核心测试仅替代解码 / canvas I/O；正文、schema、裁剪区域校验与裁剪后
-  // 元数据更新全部跑实际代码（src/core/nodeviews/image.js）。
-  domWindow.Image = class {
-    constructor() { this.naturalWidth = 100; this.naturalHeight = 100 }
-    set src(value) { this.currentSrc = value; if (this.onload) this.onload() }
-  }
-  domWindow.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} })
-  domWindow.HTMLCanvasElement.prototype.toBlob = (callback) => callback(new domWindow.Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
   let uploaded = 0
   const { editor, nodeView } = imageNodeViewFor(
-    { src: 'https://example.com/original.png', attchId: 'original' },
-    { resolveImageFile: async (file) => { uploaded += 1; assert(file && file.type === 'image/png', '裁剪结果必须以 PNG 走宿主上传'); return { src: 'https://example.com/crop.png', attchId: 'crop-42' } } },
+    { src: 'https://example.com/original.png', attchId: 'original', width: 463 },
+    { resolveImageFile: async () => { uploaded += 1; throw new Error('Crop must not upload') } },
   )
   try {
-    assert.strictEqual(nodeView.openCrop(), true, '可编辑态下裁剪入口必须能打开对话框')
-    // 越界区域不产生裁剪、也不得发起上传。
+    const image = nodeView.dom.querySelector('img')
+    Object.defineProperties(image, { naturalWidth: { value: 323 }, naturalHeight: { value: 275 } })
+    image.dispatchEvent(new domWindow.Event('load'))
+    assert.strictEqual(nodeView.openCrop(), true, '可编辑态必须打开原位裁剪')
+    assert.strictEqual(nodeView.dom.querySelectorAll('[data-crop-handle]').length, 8)
+    assert.strictEqual(nodeView.dom.querySelector('[role="dialog"]'), null)
     nodeView.setCropArea({ x: 60, y: 0, width: 60, height: 50 })
-    assert.strictEqual(await nodeView.applyCrop(), false)
-    assert.strictEqual(uploaded, 0, '非法裁剪区域不得走到上传')
+    assert.strictEqual(nodeView.applyCrop(), false)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.crop, null)
     nodeView.setCropArea({ x: 10, y: 10, width: 50, height: 50 })
-    assert.strictEqual(await nodeView.applyCrop(), true)
-    assert.strictEqual(uploaded, 1)
-    assert.strictEqual(editor.state.doc.firstChild.attrs.src, 'https://example.com/crop.png')
-    assert.strictEqual(editor.state.doc.firstChild.attrs.attchId, 'crop-42')
-    assert.strictEqual(editor.state.doc.firstChild.attrs.originalSrc, 'https://example.com/original.png')
-    assert.strictEqual(editor.state.doc.firstChild.attrs.originalAttchId, 'original')
-    // 裁剪后可重置回原图，原映射跟着回到原附件。
-    assert.strictEqual(nodeView.reset(), true)
+    assert.strictEqual(nodeView.applyCrop(), true)
+    assert.strictEqual(uploaded, 0, '原位裁剪不得重新上传附件')
     assert.strictEqual(editor.state.doc.firstChild.attrs.src, 'https://example.com/original.png')
     assert.strictEqual(editor.state.doc.firstChild.attrs.attchId, 'original')
+    assert.deepStrictEqual(editor.state.doc.firstChild.attrs.crop, [0.1, 0.1, 0.6, 0.6])
+    assert.strictEqual(editor.state.doc.firstChild.attrs.naturalWidth, 323)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.width, 463)
+    assert.strictEqual(nodeView.reset(), true)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.crop, null)
+    assert.strictEqual(editor.state.doc.firstChild.attrs.width, 463)
   } finally {
     nodeView.destroy()
     close()
   }
-  console.log('PASS ECS crop updates the URL and attachment together and retains the original mapping')
+  console.log('PASS inline crop validates bounds, preserves original attachments and resized dimensions')
 }
 
 // 可选的 DOM 回归使用已运行的真实页面；不模拟 DOM selector/remove/replaceWith 语义。

@@ -91,7 +91,7 @@ export function createCalendarSearch({ host, handlers = {} } = {}) {
       setText(empty, state.loading ? '搜索中…' : '没有匹配的搜索结果')
       children.push(empty)
     }
-    syncChildren(listbox, children.map(node => ({ node })))
+    syncChildren(listbox, children.map(node => ({ node, on: true })))
     if (state.open) {
       mountNode(host, root, true)
       input.focus()

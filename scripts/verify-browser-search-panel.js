@@ -50,7 +50,10 @@ async function main() {
     record('查找按钮 disabled 与计数器正确', await root.locator('.lark-doc-fr-btn').count() === 2 && await root.locator('.lark-doc-fr-btn').allTextContents().then(text => text.includes('上一处') && text.includes('下一处')) && await root.locator('.lark-doc-fr-counter').textContent() === '0 / 0')
 
     await root.locator('input#lark-doc-fr-find').fill('查找')
-    await page.waitForTimeout(180)
+    // Search is intentionally debounced (120ms); wait for its observable
+    // counter rather than sampling at a fixed instant while the full matrix
+    // is warming the dev server.
+    await page.waitForFunction(() => document.querySelector('.lark-doc-fr-counter')?.textContent === '1 / 2', { timeout: 5000 })
     record('输入触发业务搜索且计数器更新', await root.locator('.lark-doc-fr-counter').textContent() === '1 / 2' && await root.locator('button').filter({ hasText: '下一处' }).isEnabled())
     await root.locator('.lark-doc-fr-tab').filter({ hasText: '替换' }).click()
     record('替换页保留结构并真实插入条件节点', await root.locator('#lark-doc-fr-replace').count() === 1 && await root.locator('.lark-doc-fr-field').count() === 2 && await root.locator('.lark-doc-fr-btn').count() === 4 && await root.evaluate(node => node.style.height) === '286px')

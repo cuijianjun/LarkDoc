@@ -2,15 +2,47 @@
   "$comment": "P0 重构前 schema 快照。生成：node scripts/capture-baseline.js schema（getSchema(createLarkDocExtensions())）。用于 Task 4「schema 逐字节不变」比对。\n   盲区声明（比对的是结构契约，不是行为契约）：① parseHTML / renderHTML / addNodeView /\n   parse LaTeX 等函数行为不进快照——两份 schema 即使 JSON 相同，函数仍可能不同；\n   ② attrs default 为函数或不可 JSON 化的值时，这里只落 `<type>` 占位符；\n   ③ marks 谓词只存名字数组，谓词语义不校验。若 Task 4 需要比对这些，另行加行为级用例。",
   "topNode": "doc",
   "nodes": {
+    "agenda": {
+      "content": "agendaItem*",
+      "group": "block",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        }
+      }
+    },
+    "agendaContent": {
+      "content": "block+",
+      "defining": true,
+      "isolating": true,
+      "attrs": {}
+    },
+    "agendaItem": {
+      "content": "agendaTitle agendaContent",
+      "defining": true,
+      "isolating": true,
+      "attrs": {
+        "durationMinutes": {
+          "default": 20
+        },
+        "itemId": {
+          "default": null
+        }
+      }
+    },
+    "agendaTitle": {
+      "content": "inline*",
+      "defining": true,
+      "attrs": {}
+    },
     "bitable": {
       "group": "block",
       "atom": true,
       "selectable": true,
       "draggable": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "bitable": {
           "default": null
         },
@@ -25,9 +57,6 @@
       "atom": true,
       "selectable": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -41,9 +70,6 @@
       "group": "block",
       "defining": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -55,16 +81,19 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
-        "asyncState": {
+        "blockId": {
           "default": null
         },
-        "blockId": {
+        "cover": {
           "default": null
         },
         "desc": {
           "default": null
         },
         "favicon": {
+          "default": null
+        },
+        "linkTitle": {
           "default": null
         },
         "recordId": {
@@ -82,9 +111,6 @@
       "content": "listItem+",
       "group": "block list",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -133,9 +159,6 @@
       "group": "block",
       "defining": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "backgroundColor": {
           "default": null
         },
@@ -169,19 +192,28 @@
       "group": "block",
       "code": true,
       "defining": true,
-      "marks": "",
+      "marks": "revision",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
+        },
+        "caption": {
+          "default": ""
+        },
+        "deletionAuthor": {
+          "default": ""
+        },
+        "deletionRevisionId": {
+          "default": ""
         },
         "indent": {
           "default": 0
         },
         "language": {
           "default": "plaintext"
+        },
+        "wrap": {
+          "default": false
         }
       }
     },
@@ -195,14 +227,11 @@
       }
     },
     "columns": {
-      "content": "column{2,5}",
+      "content": "column{2,}",
       "group": "block",
       "defining": true,
       "isolating": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -214,9 +243,6 @@
       "defining": true,
       "isolating": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -237,9 +263,6 @@
       "defining": true,
       "isolating": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -260,50 +283,12 @@
         }
       }
     },
-    "externalBlock": {
-      "group": "block",
-      "atom": true,
-      "selectable": true,
-      "draggable": true,
-      "attrs": {
-        "asyncState": {
-          "default": null
-        },
-        "blockId": {
-          "default": null
-        },
-        "kind": {
-          "default": ""
-        },
-        "payload": {
-          "default": ""
-        },
-        "provider": {
-          "default": ""
-        },
-        "reason": {
-          "default": ""
-        },
-        "sourceUrl": {
-          "default": ""
-        },
-        "status": {
-          "default": "unavailable"
-        },
-        "title": {
-          "default": ""
-        }
-      }
-    },
     "fileBlock": {
       "group": "block",
       "atom": true,
       "selectable": true,
       "draggable": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -345,9 +330,6 @@
       "group": "block",
       "defining": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -374,9 +356,6 @@
     "horizontalRule": {
       "group": "block",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -393,9 +372,6 @@
         "alt": {
           "default": null
         },
-        "asyncState": {
-          "default": null
-        },
         "attchId": {
           "default": null
         },
@@ -405,7 +381,16 @@
         "caption": {
           "default": ""
         },
+        "crop": {
+          "default": null
+        },
         "height": {
+          "default": null
+        },
+        "naturalHeight": {
+          "default": null
+        },
+        "naturalWidth": {
           "default": null
         },
         "originalAttchId": {
@@ -451,9 +436,6 @@
         "appId": {
           "default": null
         },
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -477,13 +459,38 @@
         }
       }
     },
+    "linkEmbed": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "attrs": {
+        "blockId": {
+          "default": null
+        },
+        "cardMeta": {
+          "default": null
+        },
+        "height": {
+          "default": null
+        },
+        "href": {
+          "default": null
+        },
+        "title": {
+          "default": null
+        },
+        "view": {
+          "default": "card"
+        },
+        "width": {
+          "default": null
+        }
+      }
+    },
     "listItem": {
       "content": "paragraph block*",
       "defining": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -522,9 +529,6 @@
       "content": "listItem+",
       "group": "block list",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -543,9 +547,6 @@
       "content": "inline*",
       "group": "block",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -566,14 +567,26 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
         "poll": {
           "default": null
+        }
+      }
+    },
+    "revisionBoundary": {
+      "group": "inline",
+      "inline": true,
+      "atom": true,
+      "selectable": false,
+      "marks": "",
+      "attrs": {
+        "author": {
+          "default": ""
+        },
+        "revisionId": {
+          "default": ""
         }
       }
     },
@@ -583,9 +596,6 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -600,9 +610,6 @@
       "isolating": true,
       "tableRole": "table",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -673,9 +680,6 @@
       "content": "paragraph block*",
       "defining": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         },
@@ -688,9 +692,6 @@
       "content": "taskItem+",
       "group": "block list",
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
         "blockId": {
           "default": null
         }
@@ -705,12 +706,6 @@
       "atom": true,
       "selectable": true,
       "attrs": {
-        "asyncState": {
-          "default": null
-        },
-        "blockId": {
-          "default": null
-        },
         "payload": {
           "default": ""
         },
@@ -726,12 +721,6 @@
       "draggable": true,
       "attrs": {
         "aspect": {
-          "default": null
-        },
-        "asyncState": {
-          "default": null
-        },
-        "blockId": {
           "default": null
         },
         "bridgeVersion": {
@@ -788,6 +777,15 @@
         "href": {
           "default": null
         },
+        "linkCardMeta": {
+          "default": null
+        },
+        "linkTitle": {
+          "default": null
+        },
+        "linkView": {
+          "default": "title"
+        },
         "rel": {
           "default": "noopener noreferrer"
         },
@@ -801,8 +799,14 @@
     },
     "reminder": {
       "attrs": {
+        "hasTime": {
+          "default": true
+        },
         "notify": {
           "default": true
+        },
+        "notifyOffset": {
+          "default": 0
         },
         "remindAt": {
           "default": ""

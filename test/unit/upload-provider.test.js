@@ -332,7 +332,7 @@ describe('P2-02 超限', () => {
     const provider = createUploadProvider({ upload: async () => { calls += 1; return { url: '/x' } } })
     await expect(provider.upload(makeFile(10, 'a.pdf', 'application/pdf'))).rejects.toMatchObject({
       code: UPLOAD_ERROR.MIME,
-      message: '只支持 PNG/JPEG/GIF/WEBP 图片',
+      message: '只支持 JPEG/PNG/GIF/WEBP/BMP 图片',
     })
     expect(calls).toBe(0)
   })

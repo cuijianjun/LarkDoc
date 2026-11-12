@@ -3,14 +3,12 @@
  *
  * 规格来源：02 §28（batch414–422 九探）。三条必须记住的结论：
  *
- *   1. 🔴 **入口不在编辑器里**。编辑器页内 `nTpl=0` / `nBar=0`、侧栏也不给入口；
- *      唯一真入口是**云盘首页**「新建 / 上传 / 模板库」三卡里的第三张。
- *      ⇒ 本文件与 `src/ui/templateLibrary.js` 是**可嵌入宿主的独立 UI 契约**，
- *      不挂进 `LarkDocEditor`，也不进斜杠菜单。编辑器里加任何模板入口都是错。
- *   2. 🔴 **「使用模板」= 复制一整篇文档**，不是「拿模板 JSON 逐块 insert」。
+ *   1. 云盘首页「模板库」是独立宿主入口；2026-11-10 实测编辑器的模板菜单也有
+ *      「更多模板」，打开同页模板库。两者复用布局，保留各自的操作合同。
+ *   2. 云盘模式的**「使用模板」= 复制一整篇文档**，不是「拿模板 JSON 逐块 insert」。
  *      实测请求是 `POST /space/api/wiki/v2/tree/create_node/`，落点 `/wiki/{nodeId}`，
  *      新 tab 首屏写着「正在创建副本，请稍候」。⇒ 组件只 `emit('use', template)`，
- *      复制由宿主做；组件内**绝不能**出现 `insertContent` / 块数组灌入。
+ *      复制由宿主做；编辑器 insert mode 走独立 onInsert，由编辑器映射选区后插入。
  *   3. 🔴 **缩略图不复刻 `blob:` 机制**。飞书 24 张卡的 `img.src` 全是
  *      `URL.createObjectURL` 造的、原始 URL 不可得 ⇒ 用宿主自己的静态图。
  *
@@ -30,6 +28,9 @@ export const TEMPLATE_MODAL = Object.freeze({
   bodyBg: 'rgb(248, 249, 250)',
   mask: 'rgba(0, 0, 0, 0.55)',
 })
+
+/** Editor's same-page library: measured at 1680×1050 as 1229×966. */
+export const TEMPLATE_EDITOR_MODAL = Object.freeze({ maxWidth: 1229, widthInset: 32 })
 
 /** header 三段（02 §28.3）。搜索框在**正中**，不是右对齐。 */
 export const TEMPLATE_HEADER = Object.freeze({

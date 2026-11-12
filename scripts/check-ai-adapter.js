@@ -208,6 +208,20 @@ assert.deepStrictEqual([].concat(AI_KINDS), ['stream', 'endpoint'])
 assert.deepStrictEqual([].concat(AI_CONTENT_FORMATS), ['auto', 'markdown', 'html', 'text'])
 assert.ok(Object.isFrozen(AI_KINDS), 'AI_KINDS 应为不可变常量')
 
+// Optional image requests retain their actual multimodal content in both built-in transports.
+const imageInput = [{ url: 'data:image/png;base64,YQ==', blockId: 'image_test', alt: '图片' }]
+const imageEndpoint = normalizeAIProvider({ baseURL: 'https://model.example/v1', protocol: 'openai', supportsImages: true })
+assert.strictEqual(imageEndpoint.supportsImages, true)
+const imageRun = startStream(imageEndpoint, { action: 'chat', prompt: '描述图片', images: imageInput })
+assert.deepStrictEqual(JSON.parse(imageRun.xhr.sentBody).messages[1].content, [
+  { type: 'text', text: '描述图片' }, { type: 'image_url', image_url: { url: imageInput[0].url } },
+])
+imageRun.handle.cancel()
+const gatewayImageRun = startStream(normalizeAIProvider({ endpoint: '/api/ai', supportsImages: true }), { action: 'chat', images: imageInput })
+assert.deepStrictEqual(JSON.parse(gatewayImageRun.xhr.sentBody).images, imageInput)
+gatewayImageRun.handle.cancel()
+assert.strictEqual(normalizeAIProvider({ endpoint: '/api/ai' }).supportsImages, false)
+
 // ---------------------------------------------------------------------------
 // 2. 协议解析
 // ---------------------------------------------------------------------------

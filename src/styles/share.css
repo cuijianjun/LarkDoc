@@ -41,6 +41,64 @@
   --ld-share-toast-warning-bg: #FFF3E5; /* 校验失败 toast 底（⑤-9） */
 }
 
+.lark-doc .lark-doc-image-share-layer { position: fixed; z-index: 1052; inset: 0; display: grid; place-items: center; background: var(--ld-mask); }
+.lark-doc .lark-doc-image-share-layer[hidden] { display: none; }
+.lark-doc .lark-doc-image-share-dialog { position: relative; box-sizing: border-box; width: 500px; max-width: calc(100vw - 32px); height: 518px; max-height: calc(100vh - 64px); overflow: auto; border-radius: 8px; background: var(--ld-bg-surface); color: var(--ld-text); box-shadow: var(--ld-shadow-dialog); font-size: 14px; }
+.lark-doc .lark-doc-image-share-header { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 68px; padding: 24px 24px 20px; }
+.lark-doc .lark-doc-image-share-header strong { font-size: 16px; font-weight: 600; line-height: 24px; }
+.lark-doc .lark-doc-image-share-header button { display: grid; place-items: center; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--ld-text-tertiary); cursor: pointer; }
+.lark-doc .lark-doc-image-share-body { padding: 0 24px; }
+.lark-doc .lark-doc-image-share-selector { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; box-sizing: border-box; min-height: 32px; margin-top: 4px; border: 1px solid var(--ld-border-control); border-radius: 6px; }
+.lark-doc .lark-doc-image-share-selector:focus-within { border-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-image-share-selector input { flex: 1; box-sizing: border-box; width: 50px; min-width: 6px; height: 30px; min-height: 30px; padding: 0 12px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.lark-doc .lark-doc-image-share-recipients { display: flex; flex-wrap: wrap; gap: 4px; max-width: 75%; }
+.lark-doc .lark-doc-image-share-recipients button { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 6px 2px 2px; border: 0; border-radius: 12px; background: var(--ld-bg-hover-menu); color: var(--ld-text); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-image-share-recipients .lark-doc-image-share-avatar { flex-basis: 20px; width: 20px; height: 20px; font-size: 10px; }
+.lark-doc .lark-doc-image-share-results { position: absolute; z-index: 2; box-sizing: border-box; top: calc(100% + 4px); left: -1px; width: calc(100% + 2px); max-height: 448px; overflow-y: auto; padding: 4px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-image-share-results-head { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 8px; color: var(--ld-text-tertiary); font-size: 12px; }
+.lark-doc .lark-doc-image-share-results-head[hidden] { display: none; }
+.lark-doc .lark-doc-image-share-results-head button { min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-image-share-result { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); text-align: left; font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-image-share-result:hover, .lark-doc .lark-doc-image-share-result.is-active { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-image-share-avatar { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; overflow: hidden; border-radius: 50%; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 12px; }
+.lark-doc .lark-doc-image-share-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.lark-doc .lark-doc-image-share-result-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-image-share-result-name small { display: block; color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-image-share-context { pointer-events: none; }
+.lark-doc .lark-doc-image-share-selected { color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-image-share-check { display: grid; place-items: center; box-sizing: border-box; width: 16px; height: 16px; border: 1px solid var(--ld-border-control); border-radius: 3px; color: var(--ld-text-on-brand); font-size: 12px; }
+.lark-doc .lark-doc-image-share-check.is-checked { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-image-share-empty { padding: 16px 8px; color: var(--ld-text-tertiary); }
+.lark-doc .lark-doc-image-share-preview { display: grid; place-items: center; box-sizing: border-box; height: 256px; margin-top: 24px; }
+.lark-doc .lark-doc-image-share-preview-frame { position: relative; box-sizing: border-box; max-width: 100%; height: 254px; margin: 0; overflow: hidden; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); }
+.lark-doc .lark-doc-image-share-excerpt { position: relative; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; width: 400px; padding: 60px 30px; transform-origin: top left; }
+.lark-doc .lark-doc-image-share-excerpt::after { position: absolute; inset: 0; pointer-events: none; content: ''; background: linear-gradient(to bottom, var(--ld-bg-surface) 0%, transparent 18%, transparent 82%, var(--ld-bg-surface) 100%); }
+.lark-doc .lark-doc-image-share-excerpt.is-unsupported { padding: 60px 28px 28px; }
+.lark-doc .lark-doc-image-share-excerpt.is-unsupported::after { display: none; }
+.lark-doc .lark-doc-image-share-excerpt.is-unsupported .lark-doc-image-share-context { right: 28px; left: 28px; }
+.lark-doc .lark-doc-image-share-excerpt.is-unsupported .lark-doc-image-share-context.is-after { bottom: 0; }
+.lark-doc .lark-doc-image-share-preview-frame img { display: block; object-fit: contain; }
+.lark-doc .lark-doc-image-share-preview-frame figcaption { flex-shrink: 0; box-sizing: border-box; height: 28px; padding-top: 8px; color: var(--ld-text-tertiary); font-size: 14px; line-height: 20px; text-align: center; }
+.lark-doc .lark-doc-image-share-preview-frame figcaption:empty { display: none; }
+.lark-doc .lark-doc-image-share-context { position: absolute; right: 30px; left: 30px; height: 26px; overflow: hidden; color: var(--ld-text); font-size: 16px; line-height: 26px; opacity: .15; white-space: nowrap; }
+.lark-doc .lark-doc-image-share-context.is-before { top: 25px; }
+.lark-doc .lark-doc-image-share-context.is-after { bottom: 16px; }
+.lark-doc .lark-doc-image-share-context > * { margin: 0; }
+.lark-doc .lark-doc-selection-share-content { min-height: 0; padding: 0; pointer-events: none; }
+.lark-doc .lark-doc-selection-share-content table { margin: 0; }
+.lark-doc .lark-doc-selection-share-unsupported { position: relative; box-sizing: border-box; height: 198px; overflow: hidden; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); }
+.lark-doc .lark-doc-selection-share-unsupported > header { position: absolute; top: 6px; left: 11px; display: flex; align-items: center; gap: 6px; height: 22px; padding: 0; border: 0; color: var(--ld-text); font-size: 14px; font-weight: 400; line-height: 22px; }
+.lark-doc .lark-doc-selection-share-unsupported > header .lark-doc-icon { flex-shrink: 0; color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-selection-share-unsupported .lark-doc-selection-share-illustration { position: absolute; top: 51.5px; left: 50%; transform: translateX(-50%); }
+.lark-doc .lark-doc-selection-share-unsupported > div > p { position: absolute; top: 147px; right: 0; left: 0; height: 22px; margin: 0; padding: 0; color: var(--ld-share-text-secondary); font-size: 14px; font-weight: 400; line-height: 22px; text-align: center; }
+.lark-doc .lark-doc-image-share-message { display: block; box-sizing: border-box; width: 100%; height: 30px; min-height: 30px; margin-top: 24px; padding: 3px 8px 3px 11px; resize: none; border: 1px solid var(--ld-border-control); border-radius: 6px; background: transparent; color: var(--ld-text); font: inherit; line-height: 22px; }
+.lark-doc .lark-doc-image-share-footer { display: flex; justify-content: flex-end; gap: 12px; box-sizing: border-box; height: 80px; padding: 24px; }
+.lark-doc .lark-doc-image-share-footer button { box-sizing: border-box; width: 80px; height: 32px; min-height: 32px; padding: 0 12px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-image-share-footer button.is-primary { width: 122px; min-width: 122px; padding: 4px 11px; white-space: nowrap; border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); }
+.lark-doc .lark-doc-image-share-footer button:disabled { opacity: .45; cursor: not-allowed; }
+.lark-doc .lark-doc-image-share-footer button.is-primary:disabled { opacity: 1; border-color: var(--ld-text-disabled); background: var(--ld-text-disabled); }
+.lark-doc .lark-doc-image-share-error { position: absolute; right: 24px; bottom: 68px; left: 24px; color: var(--ld-text-error); font-size: 12px; }
+
 /* ============================================================
  * 0. 包裹层与通用按钮
  * ============================================================ */

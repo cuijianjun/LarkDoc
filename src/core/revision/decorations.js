@@ -22,8 +22,8 @@ export function buildRevisionDecorations(doc, activeId) {
   if (!id) return DecorationSet.empty
   const items = collectRevisions(doc).filter((item) => item.revisionId === id)
   if (!items.length) return DecorationSet.empty
-  const decorations = items
-    .map((item) => Decoration.inline(item.from, item.to, { class: 'is-revision-active' }))
+  const decorations = items.flatMap(item => (item.ranges || [item])
+    .map(range => Decoration.inline(range.from, range.to, { class: 'is-revision-active' })))
   return DecorationSet.create(doc, decorations)
 }
 

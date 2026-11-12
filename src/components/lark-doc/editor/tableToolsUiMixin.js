@@ -12,7 +12,7 @@
  *      B. 点列/行选择条产生 `CellSelection` → 选择条态 13 项（前面插标题行列 /
  *         合并拆分 / 单元格背景三颗表格专属按钮，去掉链接，末尾删除）
  *      C. 拖选两个及以上单元格 → multi 态 11 项（无标题行列、末尾无删除）
- *      v12c 用户口径：「复制选区链接」「评论」无实际功能，三态一律不展示。
+ *      评论现按真实 Provider/能力接入；未接通的分享入口仍不展示。
  *    用户初轮口径「选中 table 的文字 和 点击最上边/最左边 出来的弹窗 功能操作栏是
  *    不一样的」在 B 态差异里兑现；「统一成一个浮窗」在唯一 DOM 节点里兑现。
  *    显隐只认 `tableToolsDismissed()`（点其它地方 / Escape 的**离散点击**闸门），
@@ -29,18 +29,39 @@
  */
 import { CellSelection, selectedRect } from '@tiptap/pm/tables'
 import { TextSelection } from '@tiptap/pm/state'
+import { createCellPlusTools } from '../../../ui/cellPlusTools'
 import { createTableTools, createTableBoundaryTools } from '../../../ui/tableTools'
+import { closeHistory } from '@tiptap/pm/history'
+import { isCommandEnabled } from '../larkDocConfig'
 
 export default {
   watch: {
     tableBoundary: { deep: true, handler() { this.refreshTableBoundary() } },
-    // `applyCellAlign` 是按键写（`this.cellAlignState[key] = value`），浅比较抓不到。
-    cellAlignState: { deep: true, handler() { this.refreshTableTools() } },
     effectiveReadonly() { this.refreshTableTools(); this.refreshTableBoundary() },
+    blockMenuOpen() { this.refreshTableTools() },
+    commentEntryVisible() { this.refreshTableTools() },
+    selectionShareEntryAvailable() { this.refreshTableTools() },
+    commentEntryAvailable() { this.refreshTableTools() },
+    commentContextEpoch() { this.refreshTableTools() },
     // `larkDocConfig` 是 computed：features.tables 被关掉时两条都得立刻消失。
     larkDocConfig() { this.refreshTableTools(); this.refreshTableBoundary() },
   },
   methods: {
+    tableSelectionAlignment(selection) {
+      const horizontal = new Set()
+      const vertical = new Set()
+      const collect = node => {
+        if (node.isTextblock) horizontal.add(node.attrs.textAlign || 'left')
+        if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') vertical.add(node.attrs.verticalAlign || 'top')
+      }
+      if (selection instanceof CellSelection) {
+        selection.forEachCell(node => { collect(node); node.descendants(collect) })
+      } else {
+        this.editor.state.doc.nodesBetween(selection.from, selection.to, collect)
+      }
+      const common = values => values.size === 1 ? values.values().next().value : null
+      return { textAlign: common(horizontal), verticalAlign: common(vertical) }
+    },
     /** 挂载两条浮动条（由主组件 `mounted` 调用；`isActive` 对空编辑器是安全的）。 */
     mountTableTools() {
       if (this._tableToolsUi) return
@@ -68,6 +89,12 @@ export default {
       })
       // md 风格交互层（选择条 / 重排 / 横滚）与两条工具条共用挂载时机，
       // 由 tableInteractionMixin 提供实现，这里只负责拉起和销毁。
+      this._cellPlusUi = createCellPlusTools({
+        host: toolsHost,
+        handlers: { onOpen: (button) => {
+          if (this.buildCellPlusState().visible) this.openCommandMenu('plus', { currentTarget: button })
+        } },
+      })
       this.mountTableOverlays?.()
       this.refreshTableTools()
       this.refreshTableBoundary()
@@ -79,7 +106,7 @@ export default {
      *    表现为「点了正文浮窗还在」，正是用户反馈的「消失逻辑不对」。
      */
     buildTableToolsState() {
-      if (this.effectiveReadonly || !this.featureEnabled('tables')) return { open: false }
+      if (this.effectiveReadonly || this.writable?.() === false || !this.featureEnabled('tables')) return { open: false }
       // v6：只认离散点击闸门。不再叠加 `tableUiActive() === false` 的 hover 闸门 ——
       // 否则点选择条出浮窗后鼠标移开表格，浮窗会在没有任何点击的情况下自己收起，
       // 与「点击任何其他地方才可以消失」的用户口径不符。dismiss 后点回表格 /
@@ -129,17 +156,8 @@ export default {
       const parentName = parent?.type?.name
       // 「拆分单元格」只对已合并的单元格有意义；没有 colspan/rowspan>1 时置灰，
       // 避免用户点到一颗命令合法、但当前文档里什么都拆不了的按钮（v11 全量审计发现）。
-      let canSplitCell = false
-      try {
-        for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
-          if (selection.$from.node(depth).type.name !== 'table') continue
-          selection.$from.node(depth).descendants((node) => {
-            if ((node.type.name === 'tableCell' || node.type.name === 'tableHeader')
-              && (Number(node.attrs.colspan || 1) > 1 || Number(node.attrs.rowspan || 1) > 1)) canSplitCell = true
-          })
-          break
-        }
-      } catch { /* 扩展未注册 / 非表格态：按「无可拆分单元格」处理 */ }
+      const canSplitCell = isCommandEnabled(this.larkDocConfig, 'splitCell') && !!this.editor.can().splitCell()
+      const line = selection instanceof CellSelection && cellKind === 'line' ? this.tableCellLineFromRect(selection) : null
       let hasTextColor = false
       let hasCellBg = false
       try {
@@ -154,16 +172,20 @@ export default {
         anchor,
         active,
         tableContext: true,
+        aiVisible: this.featureEnabled('ai'),
+        commentVisible: !!this.commentEntryVisible,
+        shareVisible: !!this.selectionShareEntryAvailable,
+        canComment: !!this.commentEntryAvailable,
         header: this.tableHeaderState,
-        textAlign: this.cellAlignState?.textAlign,
-        verticalAlign: this.cellAlignState?.verticalAlign,
+        ...this.tableSelectionAlignment(selection),
         cellTextAlignOptions: this.cellTextAlignOptions,
         cellVerticalAlignOptions: this.cellVerticalAlignOptions,
         cellSelection: selection instanceof CellSelection,
         cellKind,
         canSplitCell,
-        canIndentIn: !!this.canIncreaseIndent?.(),
-        canIndentOut: Number(this.blockIndentLevel?.() || 0) > 0,
+        canMergeCell: isCommandEnabled(this.larkDocConfig, 'mergeCells') && !!this.editor.can().mergeCells(),
+        headerAxis: line?.index === 0 ? line.axis : null,
+        headerEnabled: !!line && isCommandEnabled(this.larkDocConfig, line.axis === 'column' ? 'toggleHeaderColumn' : 'toggleHeaderRow'),
         hasTextColor,
         hasCellBg,
         blockType: parentName === 'heading' ? `heading${parent.attrs?.level || 1}` : parentName,
@@ -173,15 +195,12 @@ export default {
      * v11 统一工具条命令分发。菜单里只留项目真能承接的能力：编辑器命令直接执行，
      * AI / 搜索走项目已有的面板与事件；v10 那些靠 localStorage / window.open
      * 伪造的「模板 / 词典 / 子文档 / 网页搜索」已按用户口径从 UI 移除，这里也不再留分支。
-     * ⚠️ v12c：「复制选区链接」（只写 `#pos=` 假链接、无 hash 解析 / 无宿主接线）与
-     *    「评论」（无 Provider 时只落本地 comment mark、没有评论面板 / 输入框 / 线程）
-     *    两颗按钮从 UI 摘除，这里对应的假实现分支也一并删除 —— 不留下「从别处还能
-     *    调到、但其实没功能」的死命令。`commentsMixin` 的 Provider 链路仍完整保留，
-     *    等宿主接了真实评论后端再由它自己的入口启用。
+     * 评论走 commentsMixin 的真实 composer/Provider，缺服务不产生本地假评论。
+     * 分享未接通前保持隐藏，不复活旧 #pos 假链接。
      * 飞书功能栏没有「表格操作」按钮，结构命令由边界 ＋、块句柄菜单与各表格下拉承接。
      */
     tableToolbarCommand(id, value) {
-      if (!this.writable()) return false
+      if (!this.writable() || !this.featureEnabled('tables')) return false
       const state = this.editor?.state
       const selection = state?.selection
       const text = selection && !selection.empty
@@ -202,10 +221,31 @@ export default {
       }
 
       switch (id) {
+        case 'ask-ai':
+          if (!this.featureEnabled('ai') || !this.buildTableToolsState().open) return false
+          this.$emit?.('ai-request', { action: 'chat', source: 'table' })
+          return true
+        case 'share-link': return this.openSelectionShareDialog()
+        case 'comment':
+          if (!this.commentEntryAvailable || !this.buildTableToolsState().open) return false
+          return this.beginCommentComposer()
         case 'bold': case 'strike': case 'italic': case 'underline': case 'code':
           this.toggleMark?.(id); return true
         case 'link': this.openLinkDialog?.(true); return true
-        case 'table-header': case 'merge-cell': this.tableAction?.(value); return true
+        case 'table-header': {
+          const line = this.tableCellLineFromRect(selection)
+          if (!line || line.index !== 0) return false
+          const command = line.axis === 'column' ? 'toggleHeaderColumn' : 'toggleHeaderRow'
+          if (!isCommandEnabled(this.larkDocConfig, command)) return false
+          this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+          return this.editor.commands[command]()
+        }
+        case 'merge-cell': {
+          const action = this.editor.can().splitCell() ? 'splitCell' : 'mergeCells'
+          if (!isCommandEnabled(this.larkDocConfig, action)) return false
+          this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+          return this.editor.commands[action]()
+        }
         case 'cell-bg':
           setCellBg(String(value || '').startsWith('cellbg:') ? String(value).slice(7) : value)
           return true
@@ -215,30 +255,21 @@ export default {
           // 浮窗点击时句柄未激活 → range 为空 → 函数提前 return，命令根本没执行
           // （v10 独立自测 S12f 实测：heading1 点了但块还是 P）。这里与命令菜单
           // `executeCommand` 同口径，直接以**当前选区**走 `this.run()`。
-          // 飞书「转换为」12 项逐项落真实命令，不留下只有事件、没有效果的死按钮。
+          // Cell conversion excludes container/synced blocks in the source UI.
           const commands = {
             paragraph: ['setParagraph'],
-            heading1: ['setHeading', { level: 1 }],
-            heading2: ['setHeading', { level: 2 }],
-            heading3: ['setHeading', { level: 3 }],
+            ...Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`heading${index + 1}`, ['setHeading', { level: index + 1 }]])),
             orderedList: ['toggleOrderedList'],
             bulletList: ['toggleBulletList'],
             taskList: ['toggleTaskList'],
             codeBlock: ['setCodeBlock'],
-            blockquote: ['toggleBlockquote'],
-            callout: ['wrapIn', 'callout'],
-            synced: ['setReferenceCard', { kind: 'source_synced' }],
           }
           const cmd = commands[id]
-          if (!cmd) { emit(`turninto:${id}`); return true }
+          if (!cmd) return false
           let applied = false
           try { applied = !!this.run(cmd[0], ...cmd.slice(1)) } catch { applied = false }
-          // 表格单元格里 wrapIn 可能因 schema 约束失败，退回插入空高亮块（与命令菜单同款）。
-          if (!applied && id === 'callout') {
-            try { applied = !!this.run('insertContent', { type: 'callout', content: [{ type: 'paragraph' }] }) } catch { /* 保持 applied=false */ }
-          }
           emit(`turninto:${id}`, { applied })
-          return true
+          return applied
         }
         case 'align': {
           const [kind, val] = String(value || '').split(':')
@@ -274,6 +305,7 @@ export default {
           this.run('deleteSelection')
           return true
         }
+        case 'distributeColumns': return this.distributeColumns()
         default: emit(`unknown:${id}`); return false
       }
     },
@@ -322,9 +354,12 @@ export default {
       try { rect = selectedRect(editor.state) } catch { return null }
       const { map } = rect
       if (!map || !map.width || !map.height) return null
-      const fullColumn = rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height
-      const fullRow = rect.bottom - rect.top === 1 && rect.left === 0 && rect.right === map.width
-      return fullColumn || fullRow ? 'line' : 'multi'
+      const fullColumn = rect.top === 0 && rect.bottom === map.height
+      const fullRow = rect.left === 0 && rect.right === map.width
+      if (fullColumn && fullRow && this.tableSelectedLine?.axis === 'row') return rect.bottom - rect.top === 1 ? 'line' : 'rows'
+      if (fullColumn) return rect.right - rect.left === 1 ? 'line' : 'columns'
+      if (fullRow) return rect.bottom - rect.top === 1 ? 'line' : 'rows'
+      return 'multi'
     },
     /** line 态锚点所需的 `{axis,index}`：`tableSelectedLine` 缺失时从真实 rect 反推。 */
     tableCellLineFromRect(selection) {
@@ -333,6 +368,7 @@ export default {
       let rect
       try { rect = selectedRect(editor.state) } catch { return null }
       const { map } = rect
+      if (map.width === 1 && map.height === 1 && this.tableSelectedLine?.axis === 'row') return { axis: 'row', index: 0 }
       if (rect.right - rect.left === 1 && rect.top === 0 && rect.bottom === map.height) {
         return { axis: 'column', index: rect.left }
       }
@@ -411,10 +447,28 @@ export default {
       return {
         x: rect.left,
         y: rr ? rr.top + rr.height / 2 : rect.top + rect.height / 2,
+        fallbackX: rect.left + 2,
+        fallbackY: rect.top,
         placement: 'left',
       }
     },
+    buildCellPlusState() {
+      const selection = this.editor?.state.selection
+      if (this.blockMenuOpen || this.effectiveReadonly || this.writable?.() === false || !this.featureEnabled('tables') || !this.featureEnabled('insert') || !(selection instanceof TextSelection) || !selection.empty) return { visible: false }
+      const $pos = selection.$from
+      for (let depth = $pos.depth; depth > 0; depth -= 1) {
+        if (!['tableCell', 'tableHeader'].includes($pos.node(depth).type.name)) continue
+        const dom = this.editor.view.nodeDOM($pos.before(depth))
+        const rect = dom?.getBoundingClientRect?.()
+        if (!rect?.width || !rect.height) return { visible: false }
+        const offset = selectedRect(this.editor.state).left === 0 ? 48 : 36
+        return { visible: true, left: rect.left - offset, top: rect.top + Math.max(0, (rect.height - 26) / 2) }
+      }
+      return { visible: false }
+    },
     refreshTableTools() {
+      this._cellPlusUi?.update(this.buildCellPlusState())
+      this.refreshBlockHandle?.()
       if (!this._tableToolsUi) return
       this._tableToolsUi.update(this.buildTableToolsState())
       // v7：唯一表格浮窗一开一关，通用划词气泡条都要同步重算（bubbleMenuMixin
@@ -434,12 +488,18 @@ export default {
       // 列线 height = 表格高、行线 width = 表格宽，绝不越过表格边界。
       const tableWidth = Number.parseFloat(boundary.style?.width) || 0
       const tableHeight = Number.parseFloat(boundary.style?.height) || 0
+      const rowLineLeft = boundary.rowLineLeft || 0
+      const rowLineLength = Number.isFinite(boundary.rowLineLength) ? boundary.rowLineLength : tableWidth
+      if (!tableWidth || !tableHeight || !rowLineLength
+        || (boundary.hover === 'column' && (!Number.isFinite(boundary.columnLineLeft) || boundary.columnLineLeft < rowLineLeft || boundary.columnLineLeft > rowLineLeft + rowLineLength))
+        || (boundary.hover === 'row' && (!Number.isFinite(boundary.rowLineTop) || boundary.rowLineTop < 0 || boundary.rowLineTop > tableHeight))) return { open: false }
       return {
         open: true,
         kind: boundary.hover,
         style: boundary.style,
         columnLineLeft: boundary.columnLineLeft,
         rowLineTop: boundary.rowLineTop,
+        rowLineLeft,
         plusUp: boundary.plusUp,
         plusDown: boundary.plusDown,
         // `nearestIdx` 选出的那条内部边线决定插入命令（before / after）。
@@ -448,7 +508,7 @@ export default {
         // 旧实现 lineVisible 只认 plusActive（＋ 被 hover 才挂线），悬浮交界处只见
         // ＋ 不见线 —— open 闸门已保证只在 hover 边线时进入本分支，这里恒亮。
         lineVisible: true,
-        lineLength: boundary.hover === 'row' ? tableWidth : tableHeight,
+        lineLength: boundary.hover === 'row' ? rowLineLength : tableHeight,
       }
     },
     refreshTableBoundary() {
@@ -456,6 +516,8 @@ export default {
       this._tableBoundaryUi.update(this.buildTableBoundaryState())
     },
     destroyTableTools() {
+      this._cellPlusUi?.destroy()
+      this._cellPlusUi = null
       if (this._tableToolsUi) this._tableToolsUi.destroy()
       if (this._tableBoundaryUi) this._tableBoundaryUi.destroy()
       this.destroyTableOverlays?.()

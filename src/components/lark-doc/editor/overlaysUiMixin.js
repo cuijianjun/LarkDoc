@@ -10,6 +10,8 @@ import { watermarkAttributes } from '../../../core/policy/output'
 
 export default {
   watch: {
+    imageShare: { deep: true, handler() { this.refreshOverlays() } },
+    larkDocConfig: { deep: true, handler() { this.refreshOverlays() } },
     sharePopoverOpen() { this.refreshOverlays() },
     sharePopoverPos: { deep: true, handler() { this.refreshOverlays() } },
     permissionDialogOpen() { this.refreshOverlays() },
@@ -66,6 +68,11 @@ export default {
     },
     overlaysHandlers() {
       return {
+        onImageShareClose: () => this.closeImageShareDialog(),
+        onImageShareQuery: query => this.searchImageShareRecipients(query),
+        onImageShareRecipient: (id, kind) => this.toggleImageShareRecipient(id, kind),
+        onImageShareMessage: message => this.setImageShareMessage(message),
+        onImageShareSend: () => this.submitImageShare(),
         onRequestAccess: () => this.requestShareAccess(),
         onToggleSharePopover: (event) => this.toggleSharePopover(event),
         onOpenPermissionDialog: () => this.openPermissionDialog(),
@@ -93,6 +100,11 @@ export default {
     },
     buildOverlaysState() {
       return {
+        imageShare: this.imageShare,
+        imageShareAvailable: this.imageShare?.target === 'selection'
+          ? typeof this.onSelectionShare === 'function' && this.selectionShareAllowed()
+          : typeof this.onImageShare === 'function',
+        imageShareNetwork: this.larkDocConfig?.network,
         shareViewMaskVisible: this.shareViewMaskVisible,
         shareEntryVisible: this.shareEntryVisible,
         shareEntryLabel: this.shareEntryLabel,

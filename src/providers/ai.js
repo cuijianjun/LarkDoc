@@ -1,3 +1,5 @@
+import { withImageContent } from '../components/lark-doc/ai/prompt'
+
 /**
  * OpenAI-compatible AI provider.
  *
@@ -12,6 +14,15 @@ function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '')
   if (!url) throw new Error('AI baseUrl 不能为空')
   return url
+}
+
+function resolveApiKey(options) {
+  const source = options.apiKey ?? options.api_key
+  return typeof source === 'function' ? source() : source
+}
+
+function resolveBaseUrl(options) {
+  return options.baseUrl || options.baseURL || options.baseurl || options.base_url
 }
 
 function parseDataValue(value) {
@@ -111,22 +122,24 @@ export function validateAIWriteback(input = {}) {
 }
 
 export function createOpenAICompatibleProvider(options = {}) {
-  const baseUrl = normalizeBaseUrl(options.baseUrl)
-  const apiKey = String(options.apiKey || '')
+  const baseUrl = normalizeBaseUrl(resolveBaseUrl(options))
   const model = String(options.model || 'gpt-4o-mini')
   const request = options.request || ((url, init) => fetch(url, init))
   const endpoint = options.endpoint || '/chat/completions'
 
+  const currentApiKey = () => String(resolveApiKey(options) || '')
+  const headers = () => ({ 'Content-Type': 'application/json', ...(currentApiKey() ? { Authorization: `Bearer ${currentApiKey()}` } : {}), ...(typeof options.headers === 'function' ? options.headers() : options.headers || {}) })
+
   async function postJson(path, input = {}) {
     const response = await request(`${baseUrl}${path.startsWith('/') ? path : `/${path}`}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+      headers: headers(),
       body: JSON.stringify(input),
     })
     if (!response?.ok) {
       const error = new Error(`AI 请求失败（HTTP ${response?.status || 0}）`)
       error.status = response?.status
-      throw safeError(error, 'AI 请求失败', apiKey)
+      throw safeError(error, 'AI 请求失败', currentApiKey())
     }
     return typeof response.json === 'function' ? response.json() : response
   }
@@ -138,10 +151,10 @@ export function createOpenAICompatibleProvider(options = {}) {
     return {
       model: input.model || model,
       stream: true,
-      messages: [
+      messages: withImageContent([
         { role: 'system', content: input.system || 'You are a careful document assistant. Return only the requested result.' },
         { role: 'user', content: `${prompt}\n\nDocument text:\n${context}` },
-      ],
+      ], input.images),
     }
   }
 
@@ -155,7 +168,7 @@ export function createOpenAICompatibleProvider(options = {}) {
     const finishError = error => {
       if (settled) return
       settled = true
-      const normalized = safeError(error, 'AI 请求失败', apiKey)
+      const normalized = safeError(error, 'AI 请求失败', currentApiKey())
       if (normalized.code === 'AI_CANCELLED') {
         cancelled = true
         if (input.onCancelled) input.onCancelled()
@@ -173,7 +186,7 @@ export function createOpenAICompatibleProvider(options = {}) {
         if (input.onStart) input.onStart()
         const response = await request(`${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+          headers: headers(),
           body: JSON.stringify(createPayload(input)),
           signal: controller.signal,
         })
@@ -210,7 +223,13 @@ export function createOpenAICompatibleProvider(options = {}) {
   }
 
   return {
+    kind: 'endpoint',
+    protocol: 'openai',
+    contentFormat: 'auto',
+    endpoint: `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`,
+    baseURL: baseUrl,
     baseUrl,
+    supportsImages: options.supportsImages !== false,
     model,
     stream,
     async generate(input = {}) { return stream(input).done },

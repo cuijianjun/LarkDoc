@@ -136,7 +136,7 @@ export function createBlockHandle(options = {}) {
   const dotsNode = document.createElement('span')
   dotsNode.className = 'lark-doc-block-handle-dots'
   dotsNode.setAttribute('aria-hidden', 'true')
-  dotsNode.textContent = '⠿'
+  dotsNode.appendChild(iconNode('drag-handle', 16, 'lark-doc-drag-handle-icon'))
   mainButton.appendChild(glyphNode)
   mainButton.appendChild(dotsNode)
 
@@ -155,11 +155,11 @@ export function createBlockHandle(options = {}) {
   aiButton.type = 'button'
   aiButton.setAttribute('role', 'menuitem')
   aiButton.className = 'lark-doc-block-menu-ai'
-  aiButton.setAttribute('title', '问问 AI')
+  aiButton.setAttribute('title', '问问AI')
   aiButton.addEventListener('click', () => call('emitAiRequest', 'rewrite'))
   aiButton.appendChild(iconNode('sparkle', 16, 'lark-doc-block-menu-icon'))
   const aiText = document.createElement('span')
-  aiText.textContent = '问问 AI'
+  aiText.textContent = '问问AI'
   aiButton.appendChild(aiText)
 
   const menuDividerAi = makeDivider('lark-doc-block-menu-divider')

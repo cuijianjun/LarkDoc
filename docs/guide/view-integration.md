@@ -6,7 +6,7 @@ lark-doc 与宿主的边界是显式的：编辑器只负责文档交互，**数
 
 ### 原生页面
 
-Element UMD 使用原生 DOM，不依赖全局 `Vue`；样式随 JS 注入，无需单独引 CSS。将 `dist/` 整目录同位部署后即可使用自定义元素：
+Element UMD 使用原生 DOM，不依赖全局 `Vue`；主脚本会加载同目录 runtime，样式随 runtime 注入，无需单独引 CSS。将 `dist/` 整目录同位部署后即可使用自定义元素：
 
 ```html
 <script src="./dist/lark-doc-element.umd.min.js"></script>

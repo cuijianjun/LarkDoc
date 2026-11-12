@@ -10,6 +10,7 @@
  */
 const fs = require('fs')
 const path = require('path')
+const acorn = require('acorn') // Already used by check-legacy-syntax.js; no new dependency.
 
 const root = path.resolve(__dirname, '..')
 const failures = []
@@ -50,6 +51,61 @@ function walk(dir) {
     else output.push(relative)
   })
   return output
+}
+
+// A navigation anchor's href does not load a stylesheet. Prove its immutable
+// DOM binding in the AST; minified variable names are reused across scopes, so
+// a nearby createElement('a') regex is not sufficient. Unknown receivers fail.
+function remoteResourceHrefCount(source) {
+  const ast = acorn.parse(source, { ecmaVersion: 'latest', sourceType: 'module', allowReturnOutsideFunction: true, allowHashBang: true })
+  const references = []
+  const rootScope = { parent: null, bindings: new Map(), function: true }
+  const newScope = (parent, isFunction = false) => ({ parent, bindings: new Map(), function: isFunction })
+  const functionScope = scope => scope.function ? scope : functionScope(scope.parent)
+  const lookup = (scope, name) => !scope ? undefined : scope.bindings.has(name) ? scope.bindings.get(name) : lookup(scope.parent, name)
+  function bind(pattern, scope, initializer = null) {
+    if (!pattern) return
+    if (pattern.type === 'Identifier') scope.bindings.set(pattern.name, { initializer, scope })
+    else if (pattern.type === 'RestElement') bind(pattern.argument, scope)
+    else if (pattern.type === 'AssignmentPattern') bind(pattern.left, scope)
+    else if (pattern.type === 'ArrayPattern') pattern.elements.forEach(item => bind(item, scope))
+    else if (pattern.type === 'ObjectPattern') pattern.properties.forEach(item => bind(item.type === 'RestElement' ? item.argument : item.value, scope))
+  }
+  function isAnchor(node, scope) {
+    if (!node) return false
+    if (node.type === 'Identifier') {
+      const binding = lookup(scope, node.name)
+      return !!binding && binding.initializer?.type === 'CallExpression' && isAnchor(binding.initializer, binding.scope)
+    }
+    const callee = node.type === 'CallExpression' && node.callee
+    return !!callee && callee.type === 'MemberExpression' && !callee.computed
+      && callee.object.type === 'Identifier' && callee.object.name === 'document' && lookup(scope, 'document') === undefined
+      && callee.property.name === 'createElement' && node.arguments[0]?.type === 'Literal' && node.arguments[0].value === 'a'
+  }
+  function visit(node, outer) {
+    if (!node || typeof node.type !== 'string') return
+    const isFunction = /^(?:FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/.test(node.type)
+    if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') bind(node.id, outer)
+    let scope = outer
+    if (isFunction || ['BlockStatement', 'StaticBlock', 'CatchClause', 'ClassExpression', 'ClassDeclaration', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'SwitchStatement'].includes(node.type)) scope = newScope(outer, isFunction || node.type === 'StaticBlock')
+    if (isFunction) { bind(node.id, scope); node.params.forEach(param => bind(param, scope)) }
+    if (node.type === 'CatchClause') bind(node.param, scope)
+    if (node.type === 'ClassExpression' || node.type === 'ClassDeclaration') bind(node.id, scope)
+    if (node.type === 'ImportDeclaration') node.specifiers.forEach(item => bind(item.local, scope))
+    if (node.type === 'VariableDeclaration') node.declarations.forEach(item => {
+      bind(item.id, node.kind === 'var' ? functionScope(scope) : scope, node.kind === 'const' && item.id.type === 'Identifier' ? item.init : null)
+    })
+    if (node.type === 'AssignmentExpression' && node.operator === '=' && node.left.type === 'MemberExpression') {
+      const property = node.left.computed ? node.left.property.value : node.left.property.name
+      if (property === 'href' && node.right.type === 'Literal' && typeof node.right.value === 'string' && /^https?:\/\//i.test(node.right.value)) references.push({ node: node.left.object, scope })
+    }
+    Object.values(node).forEach(value => {
+      if (Array.isArray(value)) value.forEach(child => { if (child && typeof child.type === 'string') visit(child, scope) })
+      else if (value && typeof value.type === 'string') visit(value, scope)
+    })
+  }
+  visit(ast, rootScope)
+  return references.filter(reference => !isAnchor(reference.node, reference.scope)).length
 }
 
 // 1. 样式入口
@@ -140,11 +196,15 @@ if (exists('dist')) {
     const RUNTIME_LOAD_RULES = [
       { rule: /import\s*\(\s*["']https?:\/\//i, label: '运行时动态导入远程模块' },
       { rule: /\.src\s*=\s*["']https?:\/\//i, label: '运行时注入远程脚本/媒体' },
-      { rule: /\.href\s*=\s*["']https?:\/\//i, label: '运行时注入远程样式表' },
     ]
     RUNTIME_LOAD_RULES.forEach(({ rule, label }) => {
       if (rule.test(js)) fail(`${file}：产物内含${label}`)
     })
+    if (/(?:\.href|\[\s*["']href["']\s*\])\s*=\s*["']https?:\/\//i.test(js)) {
+      try {
+        if (remoteResourceHrefCount(js)) fail(`${file}：产物内含运行时注入远程样式表（非已证明的导航锚点）`)
+      } catch (error) { fail(`${file}：远程 href 载入检查无法解析产物：${error.message}`) }
+    }
   })
   const bundledFonts = distFiles.filter((file) => file.indexOf('fonts/') !== -1)
   if (!bundledFonts.length) fail('dist 未输出字体目录，宿主将无法离线渲染公式')

@@ -74,7 +74,7 @@ export default {
       if (this.toolbarEnabled('insert')) insertItems.push({ label: '插入内容…', disabled: ro, run: (event) => this.openCommandMenu('plus', event) })
       if (this.toolbarEnabled('tables')) insertItems.push({
         label: this.isActive('table') ? '表格工具' : '插入表格', disabled: ro,
-        run: () => { if (this.isActive('table')) this.tableToolsOpen = !this.tableToolsOpen; else this.tablePicker = true },
+        run: () => this.onTableToolbarClick(),
       })
       if (this.toolbarEnabled('insert') && this.larkDocConfig.features.diagram) {
         diagramTypes.forEach((type) => insertItems.push({ label: `图表 · ${type.label}`, disabled: ro, run: () => this.insertDiagramType(type.id) }))

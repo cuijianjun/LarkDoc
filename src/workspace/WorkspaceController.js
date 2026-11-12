@@ -1,4 +1,5 @@
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
+import { CellSelection } from '@tiptap/pm/tables'
 import { createPersistenceWorkspace, detectBrowserStorage } from '../providers/persistence'
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from '../components/lark-doc/mockAI'
 import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMarkdown } from '../components/lark-doc/ai'
@@ -15,10 +16,24 @@ import { DOCUMENT_SCHEMA_VERSION } from '../core/documentSchema'
 import { logger } from '../utils/logger'
 import { loadFeature } from '../core/features/registry'
 import { createDocumentSession } from '../session/DocumentSession'
+import { cropImageBlob, normalizeImageCrop, FULL_IMAGE_CROP } from '../core/media/image-crop'
+import { createNetworkPolicy } from '../core/policy/network'
+import { flattenHeadingContainers, safeUrl } from '../core/documentOperations'
 
 const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
   ? new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   : Promise.resolve())
+
+function aiNetworkAllows(value, network, base, image = false) {
+  if (typeof value !== 'string' || !value || /[\\\s]/.test(value)) return false
+  let target = value
+  if (target.startsWith('//')) {
+    if (image) return false
+    try { target = new URL(target, base || 'https://local.invalid/').href } catch (_) { return false }
+  }
+  if (image ? !safeUrl(value, true) : (/^[a-z][a-z\d+.-]*:/i.test(target) && (!/^https?:\/\//i.test(target) || !safeUrl(target, true)))) return false
+  return network.allows(target)
+}
 
 export function createWorkspaceState({ initialContent, initialTitle, templates, config }) {
   const templateItems = Array.isArray(templates) ? templates : TEMPLATES
@@ -53,6 +68,11 @@ export function createWorkspaceState({ initialContent, initialTitle, templates, 
     aiPrompt: '',
     aiMessages: [],
     aiOpen: false,
+    aiImageChat: false,
+    aiImage: null,
+    aiSelectionChat: false,
+    aiReference: null,
+    aiChatEpoch: 0,
     aiRunning: false,
     aiPreview: '',
     aiError: '',
@@ -145,8 +165,8 @@ class WorkspaceController {
     return editor.chain().focus().insertContent(content).run()
   }
   insertText(text) { return this.insertContent(String(text == null ? '' : text)) }
-  undo() { const editor = this.getEditor(); return editor ? editor.chain().focus().undo().run() : false }
-  redo() { const editor = this.getEditor(); return editor ? editor.chain().focus().redo().run() : false }
+  undo() { const editor = this.getEditor(); return editor ? editor.storage?.imageUploadTasks?.undoPending() || editor.chain().focus().undo().run() : false }
+  redo() { const editor = this.getEditor(); return editor ? editor.storage?.imageUploadTasks?.redoPending() || editor.chain().focus().redo().run() : false }
   save() { return this.saveNow(true) }
 
   initializeSession() {
@@ -163,7 +183,7 @@ class WorkspaceController {
   getSession() { return this.state.sessionInstance || this.props.session }
 
   async onReady() {
-    this.getSession()?.attachEditor(this.getEditor())
+    this.getSession()?.attachEditor(this.getEditor(), this.host.getDocumentAccess?.())
     if (this.props.initialContent && typeof this.props.initialContent === 'object' && !this._contentSeeded) {
       this._contentSeeded = true
       try { this.setContent(this.props.initialContent) } catch (error) { this.storageFailure(error) }
@@ -391,6 +411,11 @@ class WorkspaceController {
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
     if (!file || !this.writable()) return
+    // `state.importing` is reflected by the editor host as a temporary lock while the
+    // file is being read. Capture the editor before that lock so the post-read guard
+    // can distinguish a real readonly transition from our own import busy state.
+    const importingEditor = this.getEditor()
+    if (!importingEditor || !importingEditor.isEditable) return
     if (file.size > 10 * 1024 * 1024) { this.state.notice = '导入文件不能超过 10 MB'; return }
     const format = resolveImportFormatId(this.state.editorConfig, file.name.split('.').pop())
     if (!format) {
@@ -417,7 +442,12 @@ class WorkspaceController {
           content = sanitizeHTML(await markdownToHtml(text))
         } else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
       }
-      if (this._disposed || !this.getEditor().isEditable) return
+      const activeEditor = this.getEditor()
+      // The host aliases `readonly` to `source.importing`, so `effectiveReadonly` is
+      // intentionally true during this read. Only abort for an actual read mode or a
+      // forced readonly prop; otherwise every import would self-cancel here.
+      const actuallyReadonly = this.state.mode === 'read' || this.state.forcedReadonly
+      if (this._disposed || !activeEditor || activeEditor.isDestroyed || actuallyReadonly) return
       if (typeof content === 'string') {
         const container = (this.getWindow().document || document).createElement('div')
         container.innerHTML = content
@@ -442,8 +472,9 @@ class WorkspaceController {
   async exportDocument(format) {
     if (!isExportEnabled(this.state.editorConfig) || !format) return
     if (!this.state.editorConfig.importExport.exportFormats.includes(format)) return
+    if (format === 'docx') return this.exportWordDocument()
     try {
-      const { downloadText, exportDocx, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
+      const { downloadText, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
       const filename = safeFileName(this.state.title)
       if (format === 'html') downloadText(this.getExportHTML(), `${filename}.html`, 'text/html;charset=utf-8')
       else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.state.title, document: this.getJSON() }, null, 2), `${filename}.json`, 'application/json')
@@ -451,9 +482,6 @@ class WorkspaceController {
       else if (format === 'md') {
         downloadText(await htmlToMarkdown(this.getExportHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
         this.state.notice = 'Markdown 为简化导出，字体、分栏、公式和图片裁剪布局可能降级；JSON 可保留完整正文'
-      } else if (format === 'docx') {
-        await exportDocx(this.state.title, this.getText())
-        this.state.notice = 'Word 为纯文本段落导出，不保留复杂块、表格和媒体布局；JSON 可保留完整正文'
       } else if (format === 'print') {
         const editor = this.getEditor()
         const folded = Array.from(editor.storage.larkDoc.folded)
@@ -466,7 +494,262 @@ class WorkspaceController {
     } catch (error) { this.state.notice = `导出失败：${error.message}` }
   }
 
-  mapAI({ transaction }) { mapAnchor(this._aiAnchor, transaction) }
+  async exportWordDocument() {
+    const editor = this.getEditor(), session = this.getSession()
+    const sourceDoc = editor?.state?.doc
+    const documentId = this.props.documentId, sessionDocumentId = session?.documentId
+    const networkKey = JSON.stringify(this.state.editorConfig.network)
+    const current = () => !this._disposed && !editor?.isDestroyed && !session?._destroyed
+      && this.getEditor() === editor && this.getSession() === session
+      && this.props.documentId === documentId && session?.documentId === sessionDocumentId
+      && editor?.state?.doc === sourceDoc
+    const allowed = () => current() && isExportEnabled(this.state.editorConfig)
+      && this.state.editorConfig.importExport.exportFormats.includes('docx')
+      && (typeof session?.can !== 'function' || (session.can('canView') && session.can('canExport')))
+      && JSON.stringify(this.state.editorConfig.network) === networkKey
+    try {
+      if (!current()) return false
+      if (!allowed()) throw new Error('当前用户没有导出权限或导出已关闭')
+      const title = this.state.title
+      const doc = flattenHeadingContainers(JSON.parse(JSON.stringify(this.getJSON())))
+      if (!doc || doc.type !== 'doc' || !Array.isArray(doc.content)) throw new Error('没有可导出的正文结构')
+      const network = createNetworkPolicy(this.state.editorConfig.network)
+      const sources = new Set()
+      const visit = node => {
+        if (node.type === 'image' && typeof node.attrs?.src === 'string' && node.attrs.src) sources.add(node.attrs.src)
+        if (Array.isArray(node.content)) node.content.forEach(visit)
+      }
+      visit(doc)
+      const { exportDocx } = await import(/* webpackChunkName: "import-export" */ '../utils/export/index.js')
+      const images = {}, failed = new Set()
+      const viewWindow = this.getWindow()
+      const fetchImage = viewWindow.fetch || (typeof fetch === 'function' ? fetch : null)
+      for (const src of sources) {
+        if (!allowed()) throw new Error('导出期间文档、权限或网络策略已改变，请重新导出')
+        // Never let collectImages implicitly fetch an off-policy resource or follow redirects.
+        if (src.includes('\\') || !safeUrl(src, true) || !network.allows(src) || !fetchImage) { failed.add(src); continue }
+        try {
+          const response = await fetchImage(src, { credentials: 'same-origin', redirect: 'error' })
+          if (!allowed()) throw new Error('导出条件已改变')
+          if (!response.ok) throw new Error('图片读取失败')
+          images[src] = new Uint8Array(await response.arrayBuffer())
+        } catch (_) { failed.add(src) }
+      }
+      if (!allowed()) throw new Error('导出期间文档、权限或网络策略已改变，请重新导出')
+      // Supplying even an empty map keeps the canonical exporter from fetching on its own.
+      const result = await exportDocx(doc, { fileName: title, title, scope: 'contentOnly', images, shouldDownload: allowed })
+      for (const src of result?.failedImages || []) failed.add(src)
+      if (allowed()) this.state.notice = failed.size
+        ? `Word 已导出；${failed.size} 张图片因网络策略或读取失败未导出`
+        : 'Word 已导出'
+      return result
+    } catch (error) {
+      if (current()) this.state.notice = `导出失败：${error.message}`
+      return false
+    }
+  }
+
+  mapAI({ transaction }) {
+    if ((this.state.aiImageChat || this.state.aiSelectionChat) && transaction.docChanged) {
+      let replaced = false
+      transaction.mapping.maps?.forEach(map => map.forEach((from, to) => { if (from === 0 && to >= transaction.before?.content.size) replaced = true }))
+      if (replaced) { this.closeAI(false); return }
+    }
+    mapAnchor(this._aiAnchor, transaction)
+    const reference = this._aiSelectionReference
+    if (reference && transaction.docChanged) {
+      try {
+        const previous = reference.bookmark.resolve(transaction.before)
+        if (previous.ranges.some(range => transaction.mapping.mapResult(range.$from.pos, 1).deleted || transaction.mapping.mapResult(range.$to.pos, -1).deleted)) throw new Error('deleted reference')
+        reference.bookmark = reference.bookmark.map(transaction.mapping)
+        if (reference.cells) reference.cells = reference.cells.map(cell => ({ ...cell, pos: transaction.mapping.mapResult(cell.pos, 1).pos }))
+        if (!this.selectionAIReferenceValid(reference, transaction.doc)) throw new Error('changed reference')
+      } catch (_) { this.removeAIReference('引用的内容已改变，请重新选择后提问。') }
+    }
+    if (this.state.aiImage && transaction.docChanged) {
+      const mapped = transaction.mapping.mapResult(this.state.aiImage.pos, 1)
+      this.state.aiImage = { ...this.state.aiImage, pos: mapped.pos }
+      // setNodeMarkup can mark an unchanged leaf as deleted while resizing/aligning it.
+      if (!this.imageAIValid()) {
+        this.removeAIImage()
+        this.state.aiError = '引用的图片已改变，请重新添加图片。'
+      }
+    }
+    this.syncImageAI()
+  }
+
+  createAIChatScope() {
+    const session = this.getSession()
+    return { editor: this.getEditor(), session, sessionDocumentId: session?.documentId, documentId: this.props.documentId,
+      provider: this.host.getAIProvider ? this.host.getAIProvider() : this.props.aiProvider, network: JSON.stringify(this.state.editorConfig.network) }
+  }
+
+  aiChatScopeValid(scope) {
+    const session = this.getSession()
+    return !!scope?.editor?.state && !this._disposed && !scope.editor.isDestroyed && !session?._destroyed
+      && this.writable() && this.featureEnabled('ai') && this.getEditor() === scope.editor
+      && session === scope.session && session?.documentId === scope.sessionDocumentId && this.props.documentId === scope.documentId
+      && (typeof session?.can !== 'function' || (session.can('canView') && session.can('canEdit')))
+      && scope.provider === (this.host.getAIProvider ? this.host.getAIProvider() : this.props.aiProvider)
+      && scope.network === JSON.stringify(this.state.editorConfig.network)
+  }
+
+  getAIChatAdapter() {
+    const adapter = this.getAIAdapter()
+    if (adapter?.kind === 'endpoint' && !aiNetworkAllows(adapter.endpoint || adapter.baseURL, createNetworkPolicy(this.state.editorConfig.network), this.getWindow().location?.href)) return null
+    return adapter
+  }
+
+  openSelectionAI() {
+    const scope = this.createAIChatScope()
+    if (!this.aiChatScopeValid(scope)) return false
+    const selection = scope.editor.state.selection
+    let reference = null
+    if (!selection.empty) {
+      const cells = []
+      if (selection instanceof CellSelection) selection.forEachCell((node, pos) => cells.push({ node, pos }))
+      cells.sort((a, b) => a.pos - b.pos)
+      const text = cells.length ? cells.map(cell => cell.node.textContent).join('\n') : scope.editor.state.doc.textBetween(selection.from, selection.to, '\n')
+      reference = { kind: cells.length ? 'table' : 'text', replaceable: this.aiSelectionReplaceable(selection), bookmark: selection.getBookmark(), slice: selection.content(), cells: cells.length ? cells : null, text }
+    }
+    this.closeAI(false)
+    this._aiChatScope = scope
+    this._aiSelectionReference = reference
+    this.state.aiOpen = true
+    this.state.aiSelectionChat = true
+    this.state.aiReference = reference ? { kind: reference.kind, text: reference.text, replaceable: reference.replaceable, label: reference.kind === 'table' ? '[表格选区]' : reference.text || '[选区]' } : null
+    this.state.aiContextSummary = reference ? `${reference.kind === 'table' ? '所选单元格' : '当前选区'} · ${reference.text.length} 字` : '无上下文'
+    this.state.aiPrompt = ''
+    this.state.aiPreview = ''
+    this.state.aiMessages = []
+    this.state.aiError = ''
+    this.state.aiStatus = ''
+    this.host.focusImageAI?.()
+    return true
+  }
+
+  selectionAIReferenceValid(reference = this._aiSelectionReference, doc = this.getEditor()?.state.doc) {
+    if (!reference || !doc) return !reference
+    try {
+      const selection = reference.bookmark.resolve(doc)
+      return (selection instanceof CellSelection) === (reference.kind === 'table') && selection.content().eq(reference.slice)
+        && (!reference.cells || reference.cells.every(cell => doc.nodeAt(cell.pos) === cell.node))
+    } catch (_) { return false }
+  }
+
+  aiSelectionReplaceable(selection) {
+    if (selection instanceof CellSelection) return false
+    const cellAt = position => {
+      for (let depth = position.depth; depth > 0; depth -= 1) {
+        if (['tableCell', 'tableHeader'].includes(position.node(depth).type.name)) return position.before(depth)
+      }
+      return null
+    }
+    if (cellAt(selection.$from) !== cellAt(selection.$to)) return false
+    let table = false
+    this.getEditor().state.doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+      if (node.type.name === 'table' && pos >= selection.from && pos + node.nodeSize <= selection.to) table = true
+    })
+    return !table
+  }
+
+  aiChatInsertionPoint(selection, outsideTable) {
+    const end = selection instanceof CellSelection ? selection.$headCell : selection.$to
+    if (outsideTable || selection instanceof CellSelection) {
+      for (let depth = 1; depth <= end.depth; depth += 1) {
+        if (end.node(depth).type.name === 'table') return { pos: end.after(depth), block: true }
+      }
+    }
+    return { pos: selection.to, block: !selection.$to.parent.isTextblock }
+  }
+
+  selectionAIContext() {
+    const reference = this._aiSelectionReference
+    if (!reference) return { scope: 'none', from: 0, to: 0, source: '', text: '', summary: '无上下文' }
+    const selection = reference.bookmark.resolve(this.getEditor().state.doc)
+    return { scope: 'selection', kind: reference.kind, from: selection.from, to: selection.to, source: reference.text,
+      text: reference.text.slice(0, 4000), summary: this.state.aiContextSummary, truncated: reference.text.length > 4000, budgetExceeded: reference.text.length > 4000,
+      ...(reference.kind === 'table' ? { ranges: reference.cells.map(cell => ({ from: cell.pos, to: cell.pos + cell.node.nodeSize })), ...(reference.text.length <= 4000 ? { content: reference.slice.toJSON() } : {}) } : {}) }
+  }
+
+  removeAIReference(error = '') {
+    this.stopAI()
+    this._aiSelectionReference = null
+    this._aiLastChat = null
+    this._aiAnchor = null
+    this._aiContext = null
+    this.state.aiReference = null
+    this.state.aiPreview = ''
+    this.state.aiContextSummary = '无上下文'
+    this.state.aiError = error
+    this.state.aiStatus = ''
+  }
+
+  imageAIValid(image = this.state.aiImage) {
+    if (!image) return false
+    let node
+    try { node = this.getEditor()?.state.doc.nodeAt(image.pos) } catch (_) { return false }
+    return node?.type.name === 'image' && node.attrs.blockId === image.blockId
+      && node.attrs.src === image.src
+      && JSON.stringify(normalizeImageCrop(node.attrs.crop)) === JSON.stringify(normalizeImageCrop(image.crop))
+  }
+
+  openImageAI(image) {
+    if (this._disposed || !this.featureEnabled('ai') || !this.featureEnabled('images') || !this.writable() || !this.imageAIValid(image)) return false
+    if (!aiNetworkAllows(image.src, createNetworkPolicy(this.state.editorConfig.network), this.getWindow().location?.href, true)) return false
+    this.closeAI(false)
+    this.state.aiOpen = true
+    this.state.aiImageChat = true
+    this.state.aiImage = { pos: image.pos, blockId: image.blockId, src: image.src, crop: normalizeImageCrop(image.crop), alt: image.alt || '' }
+    this._aiImageScope = this.createAIChatScope()
+    this.state.aiPrompt = ''
+    this.state.aiPreview = ''
+    this.state.aiMessages = []
+    this.state.aiError = ''
+    this.state.aiStatus = ''
+    this._aiAnchor = null
+    this.host.focusImageAI?.()
+    return true
+  }
+
+  syncImageAI() {
+    if (this.state.aiSelectionChat) {
+      if (!this.aiChatScopeValid(this._aiChatScope)) this.closeAI(false)
+      else if (!this.selectionAIReferenceValid()) this.removeAIReference('引用的内容已改变，请重新选择后提问。')
+      return
+    }
+    if (!this.state.aiImageChat || !this._aiImageScope) return
+    const scope = this._aiImageScope
+    if (!this.aiChatScopeValid(scope) || !this.featureEnabled('images')) this.closeAI(false)
+  }
+
+  removeAIImage() {
+    this.stopAI()
+    this.state.aiImage = null
+    this.state.aiError = ''
+    this.state.aiStatus = ''
+    this._aiLastChat = null
+  }
+
+  async prepareAIImage(image, signal) {
+    if (!this.imageAIValid(image) || !aiNetworkAllows(image.src, createNetworkPolicy(this.state.editorConfig.network), this.getWindow().location?.href, true)) throw new Error('无法读取引用的图片')
+    const viewWindow = this.getWindow()
+    const response = await (viewWindow.fetch || fetch)(image.src, { signal, credentials: 'same-origin', redirect: 'error' })
+    if (!response.ok) throw new Error('读取图片失败，请重试')
+    let blob = await response.blob()
+    if (blob.size > 20 * 1024 * 1024) throw new Error('图片超过 20 MB，请使用较小的图片')
+    // Encode the visible crop only. Never send originalSrc or hidden pixels to an AI provider.
+    blob = await cropImageBlob(blob, image.crop || FULL_IMAGE_CROP)
+    if (blob.size > 20 * 1024 * 1024) throw new Error('图片超过 20 MB，请使用较小的图片')
+    if (signal.aborted) throw new Error('已停止')
+    const url = await new Promise((resolve, reject) => {
+      const reader = new (viewWindow.FileReader || FileReader)()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => reject(new Error('读取图片失败，请重试'))
+      reader.readAsDataURL(blob)
+    })
+    return { url, blockId: image.blockId, alt: image.alt }
+  }
 
   currentAIContext() {
     const editor = this.getEditor()
@@ -486,17 +769,18 @@ class WorkspaceController {
 
   startAI(action = 'rewrite', options = {}) {
     if (!this.featureEnabled('ai') || !this.writable()) return
+    if ((this.state.aiImageChat || this.state.aiSelectionChat) && !options.context) this.closeAI(false)
     this.stopAI()
     const allowed = AI_ACTIONS.some(item => item.value === action)
     const previewAction = action === 'chat' ? 'chat' : (allowed ? action : 'rewrite')
     if (previewAction !== 'chat') this.state.aiAction = previewAction
     this._aiPreviewAction = previewAction
-    const context = this.currentAIContext()
+    const context = options.context || this.currentAIContext()
     this._aiContext = context
     this.state.aiBudgetExceeded = Boolean(context.budgetExceeded)
     this.state.aiGeneratedAction = previewAction
     this.state.aiContextSummary = context.summary
-    this._aiAnchor = { from: context.from, to: context.to, source: context.source, valid: true }
+    this._aiAnchor = context.kind === 'table' ? null : { from: context.from, to: context.to, source: context.source, valid: true }
     this.state.aiOpen = true
     this.state.aiRunning = true
     this.state.aiPreview = ''
@@ -505,19 +789,29 @@ class WorkspaceController {
     this.state.aiReviewIssues = []
     this.state.aiProposal = null
     const generation = this._aiGeneration
+    let settled = false
+    const chatScope = options.chatScope
+    const reference = this._aiSelectionReference
+    const current = () => {
+      if (settled || this._disposed || generation !== this._aiGeneration) return false
+      if (chatScope && !this.aiChatScopeValid(chatScope)) { this.closeAI(false); return false }
+      if (chatScope && reference && !this.selectionAIReferenceValid(reference)) { this.removeAIReference('引用的内容已改变，请重新选择后提问。'); return false }
+      return true
+    }
     const callbacks = {
-      onStart: () => { if (generation === this._aiGeneration) this.state.aiStatus = '生成中…' },
-      onChunk: chunk => { if (!this._disposed && generation === this._aiGeneration) { this.state.aiPreview += chunk; this.state.aiStatus = '生成中…' } },
+      onStart: () => { if (current()) this.state.aiStatus = '生成中…' },
+      onChunk: chunk => { if (current()) { this.state.aiPreview += chunk; this.state.aiStatus = '生成中…' } },
       onDone: () => {
-        if (this._disposed || generation !== this._aiGeneration) return
+        if (!current()) return
+        settled = true
         this.state.aiRunning = false
         this.state.aiStatus = '已完成，等待确认'
         if (this._aiPreviewAction === 'proofread') this.state.aiReviewIssues = createReviewResult(context.text).issues
         if (this._aiPreviewAction === 'outline') this.state.aiProposal = createToolProposal(context, this._aiAnchor)
         if (this._aiPreviewAction === 'chat' && options.appendMessage) this.state.aiMessages.push({ id: `ai-${Date.now()}`, role: 'assistant', text: this.state.aiPreview })
       },
-      onCancelled: () => { if (generation === this._aiGeneration) this.state.aiStatus = '已停止' },
-      onError: error => { if (generation === this._aiGeneration) { this.state.aiRunning = false; this.state.aiError = error.message || 'AI 生成失败'; this.state.aiStatus = '失败' } },
+      onCancelled: () => { if (current()) { settled = true; this.state.aiRunning = false; this.state.aiStatus = '已停止' } },
+      onError: error => { if (current()) { settled = true; this.state.aiRunning = false; this.state.aiError = error?.message || 'AI 生成失败'; this.state.aiStatus = '失败' } },
     }
     const adapter = this.getAIAdapter()
     this.state.aiContentFormat = adapter ? adapter.contentFormat : 'text'
@@ -530,10 +824,17 @@ class WorkspaceController {
           language: this.state.aiLanguage,
           range: { from: context.from, to: context.to, source: context.source },
           context,
+          ...(options.images?.length ? { images: options.images } : {}),
           ...callbacks,
         })
-        this._aiStream = typeof handle === 'function' ? { cancel: handle } : (handle || { cancel() {} })
+        const stream = typeof handle === 'function' ? { cancel: handle } : (handle || { cancel() {} })
+        // Provider errors are displayed by onError; consume the optional completion promise.
+        stream.done?.catch?.(() => {})
+        if (this._disposed || generation !== this._aiGeneration || !this.state.aiOpen) stream.cancel?.()
+        else this._aiStream = stream
       } catch (error) { callbacks.onError(error) }
+    } else if (options.requireProvider) {
+      callbacks.onError(new Error('请先配置 AI 服务。'))
     } else {
       this._aiStream = streamMock(this._aiPreviewAction, context.text, {
         prompt: options.prompt || this.state.aiPrompt,
@@ -545,18 +846,76 @@ class WorkspaceController {
     logger.info('ai', 'lark-doc.mock.started', { action: previewAction, status: 'local' })
   }
 
-  sendAIChat() {
+  async sendAIChat(options = {}) {
     const prompt = this.state.aiPrompt.trim()
-    if (!prompt || this.state.aiRunning || !this.writable()) return
+    if (!prompt || this.state.aiRunning || !this.writable() || !this.featureEnabled('ai')) return
+    if (this.state.aiImageChat) {
+      this.syncImageAI()
+      if (!this.state.aiOpen) return
+      const adapter = this.getAIChatAdapter()
+      if (!adapter || (this.state.aiImage && !adapter.supportsImages)) {
+        this.state.aiError = this.state.aiImage ? '请配置支持图片的 AI 服务后发送。' : '请先配置 AI 服务。'
+        return
+      }
+      const image = this.state.aiImage
+      if (image && !this.imageAIValid(image)) { this.removeAIImage(); this.state.aiError = '引用的图片已改变，请重新添加图片。'; return }
+      this.stopAI()
+      const generation = this._aiGeneration
+      const abort = this._aiImageAbort = new AbortController()
+      this.state.aiRunning = true
+      this.state.aiError = ''
+      this.state.aiStatus = image ? '正在准备图片…' : '准备生成…'
+      try {
+        const images = image ? [await this.prepareAIImage(image, abort.signal)] : []
+        this.syncImageAI()
+        if (this._disposed || generation !== this._aiGeneration || !this.state.aiOpen || (image && !this.imageAIValid())) {
+          if (generation === this._aiGeneration) this.stopAI()
+          return
+        }
+        this._aiImageAbort = null
+        if (!options.retry) this.state.aiMessages.push({ id: `user-${Date.now()}`, role: 'user', text: image ? `[图片]\n${prompt}` : prompt })
+        this._aiLastChat = { prompt }
+        this.startAI('chat', { prompt, appendMessage: true, images, requireProvider: true, chatScope: this._aiImageScope, context: { scope: 'image', from: 0, to: 0, source: '', text: '', summary: image ? '引用的图片' : '无上下文' } })
+        this.state.aiPrompt = ''
+      } catch (error) {
+        if (generation === this._aiGeneration && !this._disposed) { this.state.aiRunning = false; this.state.aiError = error.message || '图片准备失败'; this.state.aiStatus = '失败' }
+      }
+      return
+    }
+    if (this.state.aiSelectionChat) {
+      const reference = this._aiSelectionReference
+      this.syncImageAI()
+      if (!this.state.aiOpen || !this.aiChatScopeValid(this._aiChatScope)) return
+      if (reference && reference !== this._aiSelectionReference) return
+      if (!this.getAIChatAdapter()) { this.state.aiError = '请先配置当前网络策略允许的 AI 服务。'; return }
+      if (!this.selectionAIReferenceValid()) { this.removeAIReference('引用的内容已改变，请重新选择后提问。'); return }
+      const context = this.selectionAIContext()
+      if (!options.retry) this.state.aiMessages.push({ id: `user-${Date.now()}`, role: 'user', text: prompt })
+      this._aiLastChat = { prompt }
+      this.startAI('chat', { prompt, appendMessage: true, requireProvider: true, chatScope: this._aiChatScope, context })
+      this.state.aiPrompt = ''
+      return
+    }
     this.state.aiMessages.push({ id: `user-${Date.now()}`, role: 'user', text: prompt })
     this.startAI('chat', { prompt, appendMessage: true })
     this.state.aiPrompt = ''
   }
 
-  regenerateAI() { if (!this.state.aiRunning) this.startAI(this.state.aiAction, { prompt: this.state.aiPrompt }) }
+  regenerateAI() {
+    if (this.state.aiRunning) return
+    if (this.state.aiImageChat || this.state.aiSelectionChat) {
+      if (!this._aiLastChat) return
+      this.state.aiPrompt = this._aiLastChat.prompt
+      if (this.state.aiMessages[this.state.aiMessages.length - 1]?.role === 'assistant') this.state.aiMessages.pop()
+      return this.sendAIChat({ retry: true })
+    }
+    this.startAI(this.state.aiAction, { prompt: this.state.aiPrompt })
+  }
 
   stopAI() {
     this._aiGeneration += 1
+    this._aiImageAbort?.abort()
+    this._aiImageAbort = null
     if (this._aiStream && typeof this._aiStream.cancel === 'function') {
       try { this._aiStream.cancel() } catch (error) { /* 宿主流已关闭时忽略 */ }
     }
@@ -565,9 +924,24 @@ class WorkspaceController {
     if (this.state.aiOpen && !this.state.aiStatus.includes('完成')) this.state.aiStatus = '已停止'
   }
 
-  closeAI() {
+  closeAI(focus = true) {
     this.stopAI()
+    this.state.aiChatEpoch = Number(this.state.aiChatEpoch || 0) + 1
+    if (this.state.aiImageChat || this.state.aiSelectionChat) {
+      this.state.aiMessages = []
+      this.state.aiPrompt = ''
+      this.state.aiPreview = ''
+      this.state.aiError = ''
+    }
     this.state.aiOpen = false
+    this.state.aiImageChat = false
+    this.state.aiImage = null
+    this.state.aiSelectionChat = false
+    this.state.aiReference = null
+    this._aiSelectionReference = null
+    this._aiChatScope = null
+    this._aiLastChat = null
+    this._aiImageScope = null
     this._aiAnchor = null
     this._aiPreviewAction = null
     this._aiContext = null
@@ -576,20 +950,43 @@ class WorkspaceController {
     this.state.aiReviewIssues = []
     this.state.aiProposal = null
     this.state.aiStatus = ''
-    if (!this._disposed) this.focus()
+    if (!this._disposed && focus) this.focus()
   }
 
   async copyAIPreview() {
     if (!this.state.aiPreview) return
+    const generation = this._aiGeneration, scope = this._aiChatScope || this._aiImageScope
+    const current = () => !this._disposed && generation === this._aiGeneration && (!scope || this.aiChatScopeValid(scope))
+    if (!current()) { if (scope) this.closeAI(false); return }
     try {
       const clipboard = this.getNavigator().clipboard
       if (clipboard?.writeText) await clipboard.writeText(this.state.aiPreview)
       else throw new Error('clipboard unavailable')
-      this.state.notice = 'AI 结果已复制'
-    } catch (_) { this.state.aiError = '无法访问剪贴板，请手动选择复制' }
+      if (current()) this.state.notice = 'AI 结果已复制'
+    } catch (_) { if (current()) this.state.aiError = '无法访问剪贴板，请手动选择复制' }
   }
 
   acceptAI(mode = 'replace') {
+    if (this.state.aiImageChat) return
+    if (this.state.aiSelectionChat) {
+      this.syncImageAI()
+      if (!this.state.aiOpen || !this.aiChatScopeValid(this._aiChatScope) || this.state.aiRunning || !this.state.aiPreview || !this.selectionAIReferenceValid()) return false
+      const editor = this.getEditor(), reference = this._aiSelectionReference
+      const selection = reference?.bookmark.resolve(editor.state.doc)
+      if (mode !== 'insert' && (!reference?.replaceable || !this.aiSelectionReplaceable(selection) || this.state.aiBudgetExceeded)) { this.state.aiError = '当前回复可插入正文；替换需要有效且不跨单元格的文字选区。'; return false }
+      let applied
+      if (mode === 'insert' || !selection) {
+        const target = this.aiChatInsertionPoint(selection || editor.state.selection, !reference?.replaceable)
+        if (target.block && this.state.aiContentFormat === 'text' && !looksLikeMarkdown(this.state.aiPreview)) {
+          applied = editor.chain().focus().insertContentAt(target.pos, { type: 'paragraph', content: [{ type: 'text', text: this.state.aiPreview }] }).run()
+        } else applied = this.insertAIResult(editor, target.pos, target.pos)
+      } else {
+        applied = this.insertAIResult(editor, selection.from, selection.to)
+      }
+      if (applied === false) { this.state.aiError = '回复未写入，请检查正文长度限制或编辑权限。'; return false }
+      this.closeAI()
+      return true
+    }
     if (!this.writable() || this.state.aiRunning || !this.state.aiPreview) return
     if (this.state.aiBudgetExceeded && mode !== 'insert' && this.state.aiGeneratedAction !== 'title') {
       this.state.aiError = '上下文超过预算，只能插入到光标；请缩小范围后再替换。'
@@ -613,15 +1010,19 @@ class WorkspaceController {
   }
 
   insertAIResult(editor, from, to) {
-    const fallback = () => editor.view.dispatch(editor.state.tr.insertText(this.state.aiPreview, from, to).scrollIntoView())
+    const fallback = () => {
+      const before = editor.state.doc
+      editor.view.dispatch(editor.state.tr.insertText(this.state.aiPreview, from, to).scrollIntoView())
+      return editor.state.doc !== before
+    }
     const format = this.state.aiContentFormat || 'auto'
-    if (format !== 'html' && format !== 'markdown' && !looksLikeMarkdown(this.state.aiPreview)) { fallback(); return }
+    if (format !== 'html' && format !== 'markdown' && !looksLikeMarkdown(this.state.aiPreview)) return fallback()
     const html = previewToHtml(this.state.aiPreview, format)
-    if (!html) { fallback(); return }
+    if (!html) return fallback()
     const inline = singleParagraphInner(html)
     try {
-      editor.chain().focus().insertContentAt({ from, to }, inline === null ? html : inline, { updateSelection: true }).scrollIntoView().run()
-    } catch (error) { fallback() }
+      return editor.chain().focus().insertContentAt({ from, to }, inline === null ? html : inline, { updateSelection: true }).scrollIntoView().run()
+    } catch (error) { return fallback() }
   }
 
   acceptReviewIssue(issue) {
@@ -665,7 +1066,7 @@ class WorkspaceController {
   dispose() {
     if (this._disposed) return
     this._disposed = true
-    this.stopAI()
+    this.closeAI(false)
     void this.saveNow()
     clearTimeout(this._saveTimer)
     if (this.host.removeBeforeUnload) this.host.removeBeforeUnload(this.flushOnLeave)

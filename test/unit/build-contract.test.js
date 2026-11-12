@@ -294,13 +294,14 @@ describe('公开产物与轻量包边界', () => {
     for (const file of keep) expect(fs.existsSync(path.join(dist, file))).toBe(true)
   }))
 
-  it('element has separate native ESM splitting and standalone UMD inputs', () => {
+  it('element has separate native ESM splitting and loader/runtime UMD inputs', () => {
     const esm = getRollupConfig('elementEsm')
     expect(esm.input).toMatch(/src\/web-component\/index\.js$/)
     expect(esm.output.format).toBe('es')
     expect(esm.output.entryFileNames).toBe('lark-doc-element.esm.js')
     expect(esm.output.inlineDynamicImports).toBe(false)
-    expect(getRollupConfig('element').input).toMatch(/src\/web-component\/standalone\.js$/)
+    expect(getRollupConfig('element').input).toMatch(/src\/web-component\/loader\.js$/)
+    expect(getRollupConfig('elementRuntime').input).toMatch(/src\/web-component\/standalone\.js$/)
   })
 
   it('UMD 降级辅助函数不泄漏全局，且兼容浏览器、旧全局、AMD 和 CommonJS', async () => {

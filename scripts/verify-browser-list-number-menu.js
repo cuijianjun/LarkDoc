@@ -204,6 +204,24 @@ async function main() {
   record('[接号] 重新开始编号回到 1. 并摘掉接号标记', JSON.stringify(unlinked.labels) === JSON.stringify(['1.', '1.']) && !/data-continue-from/.test(unlinked.html),
     `${unlinked.labels.join(' ')} / ${/data-continue-from/.test(unlinked.html)}`)
 
+  await setContent(page, '<ol><li><p>一</p></li><li><p>二</p></li><li><p>三</p></li></ol><p>分隔正文</p><ol><li><p>四</p></li></ol>')
+  await clickMarker(page, 3)
+  const separatedMenu = await menuState(page)
+  record('[跨正文接号] 菜单允许继续前面的列表', separatedMenu.open && separatedMenu.disabled[0] === false)
+  await page.locator('.lark-doc-heading-number-item[data-menu-id="continue"]').click()
+  let separated = await readMarkers(page)
+  record('[跨正文接号] 真实点击后按1、2、3、4显示', separated.labels.join(' ') === '1. 2. 3. 4.')
+  const continuedHtml = separated.html
+  await page.keyboard.press('Meta+z')
+  await page.waitForFunction(() => document.querySelectorAll('.lark-doc-list-number')[3]?.textContent === '1.')
+  record('[跨正文接号] 撤销恢复独立编号', (await readMarkers(page)).labels.join(' ') === '1. 2. 3. 1.')
+  await page.keyboard.press('Meta+Shift+z')
+  await page.waitForFunction(() => document.querySelectorAll('.lark-doc-list-number')[3]?.textContent === '4.')
+  record('[跨正文接号] 重做恢复继续编号', (await readMarkers(page)).labels.join(' ') === '1. 2. 3. 4.')
+  await setContent(page, continuedHtml)
+  separated = await readMarkers(page)
+  record('[跨正文接号] HTML重入保留继续关系与正文', separated.labels.join(' ') === '1. 2. 3. 4.' && separated.text.includes('分隔正文'))
+
   // 6. 菜单不画滚动条（滚动条宽度为 0）
   record('[滚动条] 编号菜单无可视滚动条', menu.scrollbarWidth === 'none' && menu.scrollbarGap === 0, `scrollbar-width=${menu.scrollbarWidth} 占宽=${menu.scrollbarGap}px`)
 

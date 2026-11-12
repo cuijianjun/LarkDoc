@@ -53,6 +53,8 @@ jobs:
           node-version: 14.21.3
 
       - name: Build editor and sync demo assets
+        env:
+          NODE_OPTIONS: --max_old_space_size=8192
         run: |
           npm run build:all
           node scripts/demo-sync-vendor.mjs

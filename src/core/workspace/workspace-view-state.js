@@ -71,6 +71,10 @@ export function createWorkspaceViewState(state = {}, props = {}) {
     templatesEnabled: featureFlags.templates,
     historyEnabled: featureFlags.history,
     aiEnabled: featureFlags.ai,
+    aiSelectionChat: !!state.aiSelectionChat,
+    aiChatEpoch: state.aiChatEpoch || 0,
+    aiReference: state.aiReference || null,
+    aiCanReplace: !!(state.aiSelectionChat && state.aiReference?.kind === 'text' && state.aiReference.replaceable && !state.aiBudgetExceeded),
   }
 }
 

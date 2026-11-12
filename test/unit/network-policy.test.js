@@ -11,6 +11,9 @@
  */
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { URL as NodeURL } from 'node:url'
+import * as acorn from 'acorn'
 import {
   BLOCKED_IMAGE_PLACEHOLDER, DEFAULT_NETWORK, NETWORK_MODES,
   createNetworkPolicy, isLocalUrl, urlHost,
@@ -221,4 +224,23 @@ describe('resolveImage：宿主代理兜底', () => {
     const policy = createNetworkPolicy({ mode: 'offline', imageProxy: async () => '/proxied/a.png' })
     await expect(policy.resolveImage(IMG)).resolves.toBe('/proxied/a.png')
   })
+})
+
+
+describe('离线产物检查只豁免经证明的导航链接', () => {
+  const source = readFileSync(new NodeURL('../../scripts/check-offline-assets.js', import.meta.url), 'utf8')
+  const start = source.indexOf('function remoteResourceHrefCount(')
+  const finish = source.indexOf('// 1. 样式入口', start)
+  const count = new Function('acorn', source.slice(start, finish) + '; return remoteResourceHrefCount')(acorn)
+  it.each([
+    ["const a=document.createElement('a');a.href='https://help.example/doc'", 0],
+    ["const a=document.createElement('link');a.href='https://cdn.example/style.css'", 1],
+    ["const a=document.createElement('a');function f(a){a.href='https://cdn.example/style.css'}", 1],
+    ["var a=document.createElement('a');a.href='https://cdn.example/style.css'", 1],
+    ["function f(document){const a=document.createElement('a');a.href='https://cdn.example/style.css'}", 1],
+    ["const a=unknown();a.href='https://cdn.example/style.css'", 1],
+    ["class X { static { const n=document.createElement('link'); n.href='https://outside/x.css' } static { const n=document.createElement('a') } }", 1],
+    ["const n=document.createElement('link');n['href']='https://outside/x.css'", 1],
+    ["const text=\"a.href='https://cdn.example/style.css'\"", 0],
+  ])('正确区分导航与实际资源 %s', (code, expected) => { expect(count(code)).toBe(expected) })
 })

@@ -64,9 +64,10 @@ export function createCalendarEventNodeView(props) {
   function join() {
     const data = calendarEvent()
     if (!data) return
-    if (typeof options.onJoin !== 'function') return
+    const callbacks = (typeof options.getRuntimeOptions === 'function' ? options.getRuntimeOptions() : options) || {}
+    if (typeof callbacks.onJoin !== 'function') return
     // 宿主回调抛错不该让点击「没反应」变成「报错」：卡片是外来内容，宿主只是执行方。
-    try { options.onJoin({ eventId: data.eventId, title: data.title }) } catch (_) { /* 吞掉 */ }
+    try { callbacks.onJoin({ eventId: data.eventId, title: data.title }) } catch (_) { /* 吞掉 */ }
   }
 
   function onClick(event) {

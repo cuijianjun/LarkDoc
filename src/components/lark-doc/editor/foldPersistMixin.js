@@ -22,14 +22,14 @@ export default {
       // 闸门 1 —— _foldsReady 之前不写回：编辑器初始化/内容替换会先清空折叠位，
       // 若此时写盘会把已保存的偏好覆盖成空数组，刷新后就永远恢复不出来。
       if (!key || !this.editor || !this._foldsReady) return
+      const next = serializeFoldedIds(this.editor.storage.larkDoc?.folded)
+      if (next === this._persistedFolds) return
       // 闸门 2 —— 宿主异步灌入正文时，编辑器会先处于「空文档」状态：此时没有任何可折叠块，
       // 写盘只会把上一次会话的偏好覆盖成空数组（刷新恢复失效的直接原因）。
       // 判定条件用「可折叠块」而不是「有标题」：段落/列表项挂了缩进子块也能折叠，
       // 没有标题的文档同样需要恢复折叠位。
       if (foldableIdPositions(this.editor.state.doc).size === 0) return
-      const next = serializeFoldedIds(this.editor.storage.larkDoc?.folded)
       // 闸门 3 —— 与上次写盘内容一致就不重复写。
-      if (next === this._persistedFolds) return
       this._persistedFolds = next
       writeFoldStorage(() => window.localStorage, key, next)
     },

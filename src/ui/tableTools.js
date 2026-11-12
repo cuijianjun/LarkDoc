@@ -1,52 +1,12 @@
 /**
- * 飞书式统一浮动工具条（v11）+ 表格边界操作条 —— 原生 DOM 版（`src/ui/` 积木）。
- *
- * ⚠️ v11（用户实测口径，2026-11-09）：**全页面唯一浮窗节点** `.lark-doc-table-tools`，
- *    以飞书浮窗 1:1 为准，不再自己创造功能。四条硬口径：
- *      1. 图标 / 下拉箭头与顶部功能栏**同一套**：`icons.js` + `iconNode()` 渲染 16×16
- *         currentColor SVG，箭头是 `iconNode('chevronDown', 12, 'lark-doc-caret')`；
- *         下拉交互同 `toolbarMenusMixin`：hover/focus 打开、离开 150ms 延迟关、
- *         进入弹层取消关、click 切换、Escape / 点外部关闭。
- *      2. 暂不具备的能力（转换为子文档 / 收录到词典 / 保存为模板 / 网页搜索）直接从
- *         「更多」里去掉，不再用 localStorage / window.open 造假效果。
- *      3. 飞书功能栏**没有「表格操作」按钮** —— 删除 v10 自造的 `table-ops`。
- *         表格结构能力本来就有各自的真源入口：边界 ＋ 增删行列、块句柄菜单标题行 /
- *         标题列 / 均分列宽、`table-header` / `merge-cell` / `cell-bg` / `align` 下拉、
- *         末尾「删除」与 Delete 键。
- *      4. 项数按真源实测：表格内选中文字 **13 项**，点整行/整列选择条 **15 项**（同一条
- *         浮窗节点，按上下文用 `syncChildren` 真摘除/插入，不是两套 mode、不是两个 DOM）。
- *         v12 用户口径再裁两处：最左侧「问问豆包」暂不提供 → **12 / 14 项**；
- *         「复制选区链接」只保留尾部 `share-link` 一颗按钮，删掉「更多」里重复的
- *         `copyAnchorLink` 菜单项（飞书真源尾部是 more▾ / shareTextLink，不是两个入口）。
- *         ⚠️ v12c 用户实测口径：「复制选区链接」与「评论」两颗按钮在当前实现里**没有
- *         真实功能**（前者只把 `#pos=` 假链接写进剪贴板且无 hash 解析/选区还原、
- *         无宿主接线；后者在无评论 Provider 时只落一个本地 comment mark，没有评论面板
- *         /输入框/线程 UI），按「如果没有实现，可以先取消显示」从三态清单里全部摘除 →
- *         **文字态 10 项 / 整行整列 13 项 / 拖选多格 11 项**，尾部统一收在 `more▾`。
- *         文字态：转换为▾ 对齐▾ | B S I U 链接 </> 高亮▾ | 更多▾。
- *         选择条态：标题行列 合并 背景 | 转换为▾ 对齐▾ | B S I U </> 高亮▾ | 更多▾ 删除。
- *         多格拖选态：合并 背景 | 转换为▾ 对齐▾ | B S I U </> 高亮▾ | 更多▾。
- *         两颗按钮的命令分发分支一并删除（v11 口径：不展示的能力不留假分支），
- *         `commentsMixin` 的评论 Provider 链路保留给真正接了后端的宿主，不受影响。
- *
- * 结构即契约（`scripts/verify-browser-table-tools.js` / `selftest-table-interaction.cjs` 逐字段量）：
- *
- *   div.lark-doc-table-tools[role=toolbar][aria-label=表格工具]   ← fixed 浮窗，**唯一**
- *     div.lark-doc-table-tools-bar
- *       button.lark-doc-table-tools-btn[data-cmd=...][title=...]  ← 单行，mark 按钮带 aria-pressed
- *       span.lark-doc-table-tools-sep[.is-full]                   ← 分隔线
- *     div.lark-doc-table-tools-menu[data-menu=...][role=menu]     ← 同一时刻最多挂 1 个
- *       button.lark-doc-table-tools-menu-item[data-value=...]
- *       div.lark-doc-table-tools-colors > button[data-value=...]
- *
- *   div.lark-doc-table-boundary-tools[.is-column|.is-row] ...    ← 边界 ＋；v12d 起 ＋ hover
- *      出飞书同款深色 tip（「插入列」/「插入行」，深底 + 朝下箭头），原生 title 同步移除
- *
- * 显隐 / 锚点由 `tableToolsUiMixin.buildTableToolsState()` 算好塞进 `state`；根节点
- * `onMouseDown preventDefault()` 与真源同义：按下不转移焦点，选区不会被浏览器清掉。
+ * 表格选区浮窗与边界工具（纯DOM）。
+ * 文字、单整行列、多整行列与局部多格共用一颗浮窗，按真实选区提供操作。
+ * 首行/首列标题与合并/拆分为直接按钮；多列独有均分，完整行列提供结构删除。
+ * 参考已核对的飞书实页；问问AI打开待输入聊天，分享与评论走各自真实服务。
+ * 颜色复用项目token；鼠标不抢编辑器焦点，菜单支持hover/键盘与点击外部关闭。
  */
 import { applyStyle, mountNode, syncChildren } from './dom'
-import { iconNode } from './icon'
+import { iconNode, setIcon } from './icon'
 import { TEXT_COLOR_OPTIONS, TEXT_BACKGROUND_ROWS, CALLOUT_COLOR_OPTIONS } from './palette'
 
 function setVar(node, name, value) {
@@ -69,6 +29,11 @@ function placeFloatingToolbar(el, anchor) {
   const pad = 8
   let left = anchor.placement === 'left' ? anchor.x - gap - rect.width : anchor.x - rect.width / 2
   let top = anchor.placement === 'left' ? anchor.y - rect.height / 2 : anchor.y - gap - rect.height
+  // 左侧空间不足时放到表格上方，不能钳回去盖住行选择条并误触颜色菜单。
+  if (anchor.placement === 'left' && left < pad) {
+    left = anchor.fallbackX ?? anchor.x
+    top = (anchor.fallbackY ?? anchor.y) - rect.height
+  }
   if (vw) left = Math.max(pad, Math.min(vw - rect.width - pad, left))
   if (vh) top = Math.max(pad, Math.min(vh - rect.height - pad, top))
   el.style.left = `${Math.round(left)}px`
@@ -78,34 +43,28 @@ function placeFloatingToolbar(el, anchor) {
 const DIV = { divider: true }
 const FULL_DIV = { divider: true, full: true }
 
-/** 飞书「转换为」下拉（真源 12 项）；图标与顶部功能栏共用 `icons.js`。 */
+/** Source cell conversion menu, including the nested H4–H9 choices. */
 const TURN_INTO = [
-  { id: 'paragraph', label: '正文', icon: 'block-text' },
+  { id: 'paragraph', label: '正文', icon: 'table-float-text' },
   { id: 'heading1', label: '一级标题', icon: 'block-h1' },
   { id: 'heading2', label: '二级标题', icon: 'block-h2' },
   { id: 'heading3', label: '三级标题', icon: 'block-h3' },
-  DIV,
+  { id: 'other-headings', label: '其他标题', icon: 'block-h4', children: Array.from({ length: 6 }, (_, index) => ({ id: `heading${index + 4}`, label: `${['四', '五', '六', '七', '八', '九'][index]}级标题`, icon: `block-h${index + 4}` })) },
   { id: 'orderedList', label: '有序列表', icon: 'block-ordered' },
   { id: 'bulletList', label: '无序列表', icon: 'block-bullet' },
   { id: 'taskList', label: '任务', icon: 'block-task' },
   { id: 'codeBlock', label: '代码块', icon: 'block-code' },
-  { id: 'blockquote', label: '引用', icon: 'block-quote' },
-  { id: 'callout', label: '高亮块', icon: 'block-callout' },
-  { id: 'synced', label: '同步块', icon: 'block-sync' },
 ]
 
-/** 飞书「对齐与缩进」下拉（真源 8 项）。 */
+/** Source table alignment menu: three horizontal and three vertical choices. */
 const ALIGN_ITEMS = [
-  { id: 'align:left', label: '左对齐', icon: 'align-left' },
+  { id: 'align:left', label: '左对齐', icon: 'table-float-align' },
   { id: 'align:center', label: '居中对齐', icon: 'align-center' },
   { id: 'align:right', label: '右对齐', icon: 'align-right' },
   DIV,
   { id: 'valign:top', label: '顶部对齐', icon: 'valign-top' },
   { id: 'valign:middle', label: '垂直居中', icon: 'valign-middle' },
   { id: 'valign:bottom', label: '底部对齐', icon: 'valign-bottom' },
-  DIV,
-  { id: 'indent:1', label: '增加缩进', icon: 'indent-inc' },
-  { id: 'indent:-1', label: '减少缩进', icon: 'indent-dec' },
 ]
 
 /**
@@ -122,38 +81,42 @@ const MORE_ITEMS = [
   { id: 'larkSearch', label: '文档内搜索', icon: 'search' },
 ]
 
-const TURN = { id: 'turninto', label: '转换为', icon: 'block-text', caret: true, menu: true }
-const ALIGN = { id: 'align', label: '对齐与缩进', icon: 'align-left', caret: true, menu: true }
+const TURN = { id: 'turninto', label: '转换为', icon: 'table-float-text', caret: true, menu: true }
+const ALIGN = { id: 'align', label: '对齐与缩进', icon: 'table-float-align', caret: true, menu: true }
 const MARKS = [
-  { id: 'bold', label: '加粗', icon: 'mark-bold', mark: 'bold' },
-  { id: 'strike', label: '删除线', icon: 'mark-strike', mark: 'strike' },
-  { id: 'italic', label: '斜体', icon: 'mark-italic', mark: 'italic' },
-  { id: 'underline', label: '下划线', icon: 'mark-underline', mark: 'underline' },
+  { id: 'bold', label: '加粗', icon: 'table-float-bold', mark: 'bold' },
+  { id: 'strike', label: '删除线', icon: 'table-float-strike', mark: 'strike' },
+  { id: 'italic', label: '斜体', icon: 'table-float-italic', mark: 'italic' },
+  { id: 'underline', label: '下划线', icon: 'table-float-underline', mark: 'underline' },
   { id: 'link', label: '插入链接', icon: 'link' },
-  { id: 'code', label: '行内代码', icon: 'inlineCode', mark: 'code' },
-  { id: 'highlight', label: '字体色 / 背景色', icon: 'mark-highlight', caret: true, menu: true },
+  { id: 'code', label: '行内代码', icon: 'table-float-code', mark: 'code' },
+  { id: 'highlight', label: '字体色 / 背景色', icon: 'table-float-highlight', caret: true, menu: true },
 ]
 /** 飞书「标题行列」按钮：只对**整行 / 整列**选区（形态 D/H）出现 —— 多格拖选（形态 E）没有它。 */
 const CELL_LINE = [
-  { id: 'table-header', label: '标题行 / 标题列', icon: 'table-header-row', menu: true },
+  { id: 'table-header', label: '标题行', icon: 'table-float-header-row' },
 ]
 /** 飞书表格态共享两颗：合并 / 拆分、单元格背景 —— 整行列与多格拖选都有（形态 C/E/F/G）。 */
 const CELL_SHARED = [
-  { id: 'merge-cell', label: '合并 / 拆分单元格', icon: 'table-merge', menu: true },
-  { id: 'cell-bg', label: '单元格背景', icon: 'palette', menu: true },
+  { id: 'merge-cell', label: '合并单元格', icon: 'table-float-merge' },
+  { id: 'cell-bg', label: '单元格背景', icon: 'table-float-background', menu: true },
 ]
-/** v12c：尾部只剩「更多」——`share-link` / `comment` 两颗无实现按钮已下线。 */
+/** Comments follow their provider capability; selection sharing has its own transport. */
 const TAIL = [
-  { id: 'more', label: '更多', icon: 'more-horizontal', caret: true, menu: true },
+  { id: 'more', label: '更多', icon: 'table-float-more', menu: true },
+  { id: 'share-link', label: '分享', icon: 'share-link' },
+  { id: 'comment', label: '添加评论', icon: 'mode-comment' },
 ]
-const REMOVE = { id: 'remove', label: '删除', icon: 'trash' }
+const REMOVE = { id: 'remove', label: '删除', icon: 'table-float-remove' }
+const DISTRIBUTE = { id: 'distributeColumns', label: '均分所选列宽', icon: 'table-float-distribute' }
+const AI = { id: 'ask-ai', label: '问问AI', icon: 'sparkle', text: true }
 
-/** 全部按钮（用于一次建好节点，之后只按上下文挂/摘）。v12：不再有「问问豆包」；v12c：不再有复制选区链接 / 评论。 */
-const ALL_ITEMS = [...CELL_LINE, ...CELL_SHARED, TURN, ALIGN, ...MARKS, ...TAIL, REMOVE]
+/** Build once; the comment node is mounted only when a readable provider is configured. */
+const ALL_ITEMS = [AI, ...CELL_LINE, DISTRIBUTE, ...CELL_SHARED, TURN, ALIGN, ...MARKS, ...TAIL, REMOVE]
 
 /**
  * 同一条浮窗的三种上下文（v12 按飞书真源形态拆分，见 requirements/02 §⑦-3 ★四套形态；
- * v12c 三态各自再去掉 `share-link` + `comment`）：
+ * 以下为基础按钮结构；已配置评论服务时各态在「更多」后追加评论，分享仍不展示）：
  *  - `text`  单元格内选文字（形态 B，**10 项**）：转换为 对齐 | B S I U 链接 </> 高亮 | 更多。
  *  - `line`  **整行 / 整列**选区（点选择条，形态 D/H，**13 项**）：标题行列 合并 背景 | 转换为 对齐 |
  *            B S I U </> 高亮 | 更多 删除（末尾 remove）。
@@ -161,9 +124,13 @@ const ALL_ITEMS = [...CELL_LINE, ...CELL_SHARED, TURN, ALIGN, ...MARKS, ...TAIL,
  *            B S I U </> 高亮 | 更多（🔴 无标题行列、🔴 末尾既不是评论也不是删除，
  *            原「末尾评论」的识别信号改为「无 table-header 且无 remove」）。
  */
-function toolbarItems(kind) {
+function toolbarItems(kind, headerAxis) {
+  if (kind === 'columns' || kind === 'rows') {
+    return [...(kind === 'columns' ? [DISTRIBUTE] : []), ...CELL_SHARED, DIV, TURN, ALIGN, DIV,
+      ...MARKS.filter((item) => item.id !== 'link'), FULL_DIV, ...TAIL, REMOVE]
+  }
   if (kind === 'line') {
-    return [...CELL_LINE, ...CELL_SHARED, DIV, TURN, ALIGN, DIV,
+    return [...(headerAxis === null ? [] : CELL_LINE), ...CELL_SHARED, DIV, TURN, ALIGN, DIV,
       ...MARKS.filter((item) => item.id !== 'link'), FULL_DIV, ...TAIL, REMOVE]
   }
   if (kind === 'multi') {
@@ -192,6 +159,36 @@ function makeMenuItem(entry, onPick) {
   label.textContent = entry.label
   b.appendChild(label)
   if (entry.pressed !== undefined) b.setAttribute('aria-pressed', String(!!entry.pressed))
+  if (entry.children) {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'lark-doc-table-tools-submenu'
+    b.setAttribute('aria-haspopup', 'menu')
+    b.setAttribute('aria-expanded', 'false')
+    b.appendChild(iconNode('link-view-caret', 12, 'lark-doc-table-tools-submenu-caret'))
+    const submenu = document.createElement('div')
+    submenu.className = 'lark-doc-table-tools-menu is-heading-submenu'
+    submenu.setAttribute('role', 'menu')
+    submenu.setAttribute('aria-label', entry.label)
+    submenu.hidden = true
+    entry.children.forEach(item => submenu.appendChild(makeMenuItem(item, onPick)))
+    const open = () => {
+      submenu.hidden = false
+      b.setAttribute('aria-expanded', 'true')
+      const rect = b.getBoundingClientRect()
+      const size = submenu.getBoundingClientRect()
+      submenu.style.left = `${Math.max(8, rect.right + size.width <= window.innerWidth - 8 ? rect.right : rect.left - size.width)}px`
+      submenu.style.top = `${Math.max(8, Math.min(rect.top, window.innerHeight - size.height - 8))}px`
+    }
+    const close = () => { submenu.hidden = true; b.setAttribute('aria-expanded', 'false') }
+    wrapper.addEventListener('mouseenter', open)
+    wrapper.addEventListener('mouseleave', close)
+    b.addEventListener('focus', open)
+    b.addEventListener('click', open)
+    wrapper.addEventListener('focusout', event => { if (!wrapper.contains(event.relatedTarget)) close() })
+    b.addEventListener('mousedown', event => event.preventDefault())
+    wrapper.append(b, submenu)
+    return wrapper
+  }
   // 上下文不适用（无 CellSelection 时的合并/拆分、到顶的缩进）直接置灰：
   // native disabled 按钮不派发 click，用户不会遇到「点了没反应」。
   if (entry.disabled) {
@@ -231,6 +228,12 @@ function makeColorRow(menu, title, colors, prefix, onPick) {
   menu.appendChild(box)
 }
 
+function alignmentPressed(id, state) {
+  const [kind, value] = id.split(':')
+  const alignment = kind === 'align' ? state.textAlign : state.verticalAlign
+  return value === (alignment === null ? null : alignment || (kind === 'align' ? 'left' : 'top'))
+}
+
 /** 按菜单名生成一份菜单 DOM；菜单项图标同样来自 `icons.js`。 */
 function buildMenu(name, state, onPick) {
   const menu = document.createElement('div')
@@ -241,25 +244,13 @@ function buildMenu(name, state, onPick) {
   menu.addEventListener('mousedown', (event) => event.preventDefault())
   const add = (entries) => entries.forEach((entry) => menu.appendChild(makeMenuItem(entry, onPick)))
 
-  if (name === 'table-header') {
-    add([
-      { id: 'toggleHeaderRow', label: '标题行', icon: 'table-header-row', pressed: state.header?.row },
-      { id: 'toggleHeaderColumn', label: '标题列', icon: 'table-header-col', pressed: state.header?.column },
-    ])
-  } else if (name === 'merge-cell') {
-    add([
-      { id: 'mergeCells', label: '合并单元格', icon: 'table-merge', disabled: !state.cellSelection },
-      { id: 'splitCell', label: '拆分单元格', icon: 'table-split', disabled: !state.cellSelection || !state.canSplitCell },
-    ])
-  } else if (name === 'turninto') {
+  if (name === 'turninto') {
     // 飞书「转换为」会把当前块类型打勾；同时它也是「点了 paragraph 没变化」的正确解释。
-    add(TURN_INTO.map((item) => (item.divider ? item : { ...item, pressed: item.id === state.blockType })))
+    add(TURN_INTO.map((item) => (item.divider ? item : { ...item, pressed: item.id === state.blockType, children: item.children?.map(child => ({ ...child, pressed: child.id === state.blockType })) })))
   } else if (name === 'align') {
     add(ALIGN_ITEMS.map((item) => {
       if (item.divider) return item
-      if (item.id === 'indent:1') return { ...item, disabled: !state.canIndentIn }
-      if (item.id === 'indent:-1') return { ...item, disabled: !state.canIndentOut }
-      return item
+      return { ...item, pressed: alignmentPressed(item.id, state) }
     }))
   } else if (name === 'more') {
     add(MORE_ITEMS)
@@ -268,14 +259,14 @@ function buildMenu(name, state, onPick) {
     makeColorRow(menu, '文字背景', TEXT_BACKGROUND_ROWS.flat(), 'bg', onPick)
     add([DIV, { id: 'highlight:clear', label: '清除颜色与高亮', icon: 'clear', disabled: !state.hasTextColor }])
   } else if (name === 'cell-bg') {
-    makeColorRow(menu, '单元格背景', CALLOUT_COLOR_OPTIONS, 'cellbg', onPick)
-    add([DIV, { id: 'cellbg:', label: '清除单元格背景', icon: 'clear', disabled: !state.hasCellBg }])
+    makeColorRow(menu, '单元格背景颜色', CALLOUT_COLOR_OPTIONS, 'cellbg', onPick)
+    add([DIV, { id: 'cellbg:', label: '恢复默认', icon: 'clear', disabled: !state.hasCellBg }])
   }
   return menu
 }
 
 /**
- * 工具按钮：图标 = `iconNode()` 的 SVG，箭头 = `iconNode('chevronDown', 12, 'lark-doc-caret')`。
+ * 工具按钮：图标 = `iconNode()` 的 SVG，箭头 = `iconNode('link-view-caret', 12, 'lark-doc-caret')`。
  * 与 `src/ui/toolbar.js` / `bubbleBar.js` 完全同源；`aria-expanded=true` 时箭头由全局
  * `.lark-doc-caret` 规则自动翻 180°，不在这里另写一套字符箭头。
  */
@@ -293,14 +284,14 @@ function makeTool(item, onCommand, ui) {
     b.setAttribute('aria-haspopup', 'menu')
     b.setAttribute('aria-expanded', 'false')
   }
-  b.appendChild(iconNode(item.icon, 16, 'lark-doc-table-tools-icon'))
+  b.appendChild(iconNode(item.icon, 24, 'lark-doc-table-tools-icon'))
   if (item.text) {
     const text = document.createElement('span')
     text.className = 'lark-doc-table-tools-text'
     text.textContent = item.label
     b.appendChild(text)
   }
-  if (item.caret) b.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
+  if (item.caret) b.appendChild(iconNode('link-view-caret', 12, 'lark-doc-caret'))
   b.addEventListener('mousedown', (event) => event.preventDefault())
   if (item.menu) {
     // 顶部功能栏同一套交互：hover / focus 即展开，离开延迟收（跨过按钮与弹层间隙不误关）。
@@ -409,12 +400,14 @@ export function createTableTools({ host, handlers = {} }) {
   ALL_ITEMS.forEach((item) => buttons.set(item.id, makeTool(item, command, ui)))
 
   /** 同一条 bar 按上下文真摘除/插入按钮（`toolbar.js` 的 `syncChildren` 语义）。 */
-  function syncBar(kind) {
-    if (lastCellSelection === kind) return
-    lastCellSelection = kind
+  function syncBar(kind, headerAxis, commentVisible, shareVisible, aiVisible) {
+    const signature = `${kind}:${headerAxis}:${commentVisible}:${shareVisible}:${aiVisible}`
+    if (lastCellSelection === signature) return
+    lastCellSelection = signature
     let normal = 0
     let full = 0
-    const spec = toolbarItems(kind).map((item) => {
+    const items = [...(aiVisible ? [AI, DIV] : []), ...toolbarItems(kind, headerAxis)]
+    const spec = items.filter(item => (item.id !== 'comment' || commentVisible) && (item.id !== 'share-link' || shareVisible)).map((item) => {
       if (!item.divider) return { node: buttons.get(item.id), on: true }
       const pool = item.full ? sepPool.full : sepPool.normal
       const index = item.full ? full++ : normal++
@@ -438,8 +431,35 @@ export function createTableTools({ host, handlers = {} }) {
       return
     }
     lastState = state
+    // Transactions can change the selection while a menu stays open (keyboard
+    // undo, collaboration). Update checkmarks without replacing focused nodes.
+    if (openMenuName === 'align' || openMenuName === 'turninto') {
+      openMenuNode?.querySelectorAll('button[data-value]').forEach(button => {
+        const pressed = openMenuName === 'align'
+          ? alignmentPressed(button.dataset.value, state) : button.dataset.value === state.blockType
+        button.setAttribute('aria-pressed', String(pressed))
+      })
+    }
     // v12：三种上下文（'text' | 'line' | 'multi'）；旧字段 cellSelection 布尔值兜底为 line。
-    syncBar(state.cellKind || (state.cellSelection ? 'line' : 'text'))
+    syncBar(state.cellKind || (state.cellSelection ? 'line' : 'text'), state.headerAxis, !!state.commentVisible, !!state.shareVisible, !!state.aiVisible)
+    const comment = buttons.get('comment')
+    comment.disabled = !state.canComment
+    comment.title = state.canComment ? '添加评论' : '当前没有评论权限'
+    const header = buttons.get('table-header')
+    const axis = state.headerAxis === 'column' ? 'column' : 'row'
+    const headerOn = !!state.header?.[axis]
+    header.title = `${headerOn ? '取消' : ''}标题${axis === 'column' ? '列' : '行'}`
+    header.setAttribute('aria-label', header.title)
+    header.setAttribute('aria-pressed', String(headerOn))
+    header.classList.toggle('is-active', headerOn)
+    header.disabled = state.headerEnabled === false
+    setIcon(header.firstElementChild, axis === 'column' ? 'table-float-header-column' : 'table-float-header-row', 24)
+    const merge = buttons.get('merge-cell')
+    merge.title = state.canSplitCell ? '拆分单元格' : '合并单元格'
+    merge.setAttribute('aria-label', merge.title)
+    merge.disabled = !(state.canSplitCell || (state.canMergeCell ?? state.cellSelection))
+    merge.setAttribute('aria-pressed', String(!!state.canSplitCell))
+    merge.classList.toggle('is-active', !!state.canSplitCell)
     const active = state.active || {}
     buttons.forEach((b, id) => {
       const item = itemById(id)
@@ -494,7 +514,9 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
   const plus = document.createElement('button')
   plus.type = 'button'
   plus.className = 'lark-doc-table-col-plus-btn'
-  plus.textContent = '＋'
+  const glyph = iconNode('table-insert-boundary', 24, 'lark-doc-table-insert-glyph')
+  glyph.style.width = '22px'
+  plus.appendChild(glyph)
   let actionId = 'addColumnAfter'
   plus.addEventListener('mousedown', (event) => event.preventDefault())
   plus.addEventListener('click', () => { if (handlers.onAction) handlers.onAction(actionId) })
@@ -538,6 +560,8 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
     const plusDown = Number.isFinite(state.plusDown) ? state.plusDown : 20
     setVar(el, '--lark-doc-boundary-plus-top', `${-plusUp}px`)
     setVar(el, '--lark-doc-boundary-plus-bottom', `${-plusDown}px`)
+    const rowLineLeft = Number.isFinite(state.rowLineLeft) ? state.rowLineLeft : 0
+    setVar(el, '--lark-doc-row-line-left', `${rowLineLeft}px`)
     const length = Math.max(0, Number.isFinite(state.lineLength) ? state.lineLength : 0)
     if (kind === 'column') {
       setVar(el, '--lark-doc-column-line-left', `${state.columnLineLeft}px`)
@@ -548,7 +572,7 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
     } else {
       setVar(el, '--lark-doc-row-line-top', `${state.rowLineTop}px`)
       setVar(el, '--lark-doc-column-line-left', null)
-      applyStyle(line, { top: `${state.rowLineTop}px`, left: '', width: `${length}px`, height: '' })
+      applyStyle(line, { top: `${state.rowLineTop}px`, left: `${rowLineLeft}px`, width: `${length}px`, height: '' })
       plus.setAttribute('aria-label', '在此处插入行')
       tip.textContent = '插入行'
     }

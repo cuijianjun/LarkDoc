@@ -8,7 +8,7 @@
  *
  * 为什么这块值得单独一套断言：
  * - 它有两个入口（正文 `/` 斜杠、空段落「＋」），两者**结构不同**：斜杠是 15 段纵向列表
- *   （宽 280），plus 是 3 段网格（宽 470，基础段 6 列）。同一份模板靠 `:class` 分叉，
+ *   （宽 232），plus 是 3 段网格。同一份模板靠 `:class` 分叉，
  *   原生化时最容易把两边共用的段序搞混。
  * - 它的子菜单有**三个分支**（模板 / 分栏 / 表格 / 默认命令列表），分栏还带一个
  *   `output` + 5 个 preview span 的联动，表格是 6×6 网格。分支选择靠 `submenuType`，
@@ -19,8 +19,7 @@
  * 本脚本只经由 DOM 与公开门面断言，不碰 Vue 实例内部字段，原生化之后同一份断言仍然有效。
  *
  * 量法说明（以实测 + CSS 为准）：
- * - 斜杠菜单宽 **280px**、plus 菜单宽 **470px**，两者都 `position: fixed`、`z-index: 80`；
- *   子菜单 `z-index: 82`、宽 **196px**（模板分支特例 250px，靠内联 `width` 撑）。
+ * - 斜杠菜单宽 **232px**，`position: fixed`、`z-index: 80`；模板分支358×197。
  * - 斜杠菜单共 **15** 个分类段 / **69** 项按钮；plus 菜单 **3** 段 / **32** 项。
  * - 分段顺序是契约：`文字 → 列表 → 插入 → 布局 → 数据 → 多维表格 → 绘图 → 智能 →
  *   按钮 → 团队协作 → 文档管理 → 项目管理 → 进阶 → 文档小组件 → 内嵌网页`。
@@ -58,8 +57,8 @@ function record(name, ok, detail = '') {
 const SLASH_CONTENT = '<p></p><p>第二段正文</p>'
 const PLUS_CONTENT = '<p>第一段正文</p><p></p>'
 
-/** 斜杠菜单的 15 个分类段，顺序即契约。 */
-const SLASH_CATEGORIES = ['文字', '列表', '插入', '布局', '数据', '多维表格', '绘图', '智能', '按钮', '团队协作', '文档管理', '项目管理', '进阶', '文档小组件', '内嵌网页']
+/** 只验证 master 中实际有可用入口的分类；旧块兼容不等于已接通插入。 */
+const SLASH_CATEGORIES = ['文字', '列表', '插入', '布局', '智能', '按钮', '团队协作', '文档管理', '项目管理', '进阶', '文档小组件', '内嵌网页']
 
 // —— 页面内工具函数（必须自包含：会被 page.evaluate 序列化执行） ——
 
@@ -116,6 +115,7 @@ const measureMenu = () => {
     } : null,
     empty: (() => { const node = menu.querySelector('.lark-doc-command-empty'); return node ? node.textContent.trim() : null })(),
     hint: (() => { const node = menu.querySelector('.lark-doc-command-hint'); return node ? node.textContent.trim() : null })(),
+    hintVisible: (() => { const node = menu.querySelector('.lark-doc-command-hint'); return !!node && getComputedStyle(node).display !== 'none' })(),
     sections,
     buttons,
     activeId: active ? active.id : '',
@@ -142,6 +142,7 @@ const measureSubmenu = () => {
     position: cs.position,
     zIndex: cs.zIndex,
     width: Math.round(rect.width),
+    height: Math.round(rect.height),
     inlineStyle: submenu.getAttribute('style') || '',
     strong: (() => { const node = submenu.querySelector('strong'); return node ? node.textContent.trim() : null })(),
     headLabel: head ? (head.querySelector('span') || {}).textContent || '' : null,
@@ -237,6 +238,7 @@ async function hoverSubmenuTrigger(page, label) {
   await page.goto(BASE, { waitUntil: 'networkidle' })
   await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
 
+  if (!process.argv.includes('--templates-only')) {
   // ——————————————————— ① 斜杠菜单：几何与头部 ———————————————————
   await openSlashMenu(page)
   const slash = await page.evaluate(measureMenu)
@@ -245,25 +247,22 @@ async function hoverSubmenuTrigger(page, label) {
     !!slash && slash.cls.includes('is-slash') && slash.role === 'menu' && slash.label === '插入内容',
     slash ? `${slash.cls} role=${slash.role} label=${slash.label}` : '菜单没打开')
 
-  record('[斜杠] position:fixed、z-index:80、宽 280',
-    !!slash && slash.position === 'fixed' && slash.zIndex === '80' && slash.rect.width === 280,
+  record('[斜杠] position:fixed、z-index:80、源宽232',
+    !!slash && slash.position === 'fixed' && slash.zIndex === '80' && slash.rect.width === 232,
     slash ? `${slash.position} z=${slash.zIndex} w=${slash.rect.width}` : '')
 
   record('[斜杠] 位置贴光标下沿 6px（内联 style 带 left/top/max-height，px 允许小数）',
     !!slash && /left:\s*-?\d+(?:\.\d+)?px/.test(slash.inlineStyle) && /top:\s*-?\d+(?:\.\d+)?px/.test(slash.inlineStyle) && /max-height:\s*\d+(?:\.\d+)?px/.test(slash.inlineStyle),
     slash ? slash.inlineStyle : '')
 
-  record('[斜杠] 头部是 `<strong>插入内容</strong>` + 搜索框（aria-label/placeholder 齐备）',
-    !!slash && slash.head && slash.head.strong === '插入内容'
-    && slash.head.inputLabel === '搜索插入内容' && slash.head.placeholder === '搜索命令 / 拼音',
-    slash && slash.head ? `${slash.head.strong} | ${slash.head.inputLabel} | ${slash.head.placeholder}` : '')
+  record('[斜杠] 源列表无冗余头部搜索框，保留正文键入焦点',
+    !!slash && slash.head === null && await page.locator('.tiptap').evaluate(node => node.contains(document.activeElement)))
 
-  record('[斜杠] 底部提示固定文案',
-    !!slash && slash.hint === '↑ ↓ 选择 · Enter 插入 · Esc 关闭',
-    slash ? String(slash.hint) : '')
+  record('[斜杠] 源列表隐藏底部提示且每行32px',
+    !!slash && !slash.hintVisible && slash.buttons.every(button => button.minHeight === '32px'))
 
   // ——————————————————— ② 斜杠菜单：分类段与项 ———————————————————
-  record('[斜杠] 15 个分类段，顺序为 文字→列表→插入→布局→数据→多维表格→绘图→智能→按钮→团队协作→文档管理→项目管理→进阶→文档小组件→内嵌网页',
+  record('[斜杠] master 已接线分类的顺序正确',
     !!slash && JSON.stringify(slash.sections.map((section) => section.category)) === JSON.stringify(SLASH_CATEGORIES),
     slash ? slash.sections.map((section) => section.category).join('→') : '')
 
@@ -271,8 +270,8 @@ async function hoverSubmenuTrigger(page, label) {
     !!slash && slash.sections.every((section) => section.label === section.category),
     slash ? slash.sections.filter((section) => section.label !== section.category).map((section) => `${section.category}/${section.label}`).join(' ') : '')
 
-  record('[斜杠] 共 69 项命令按钮',
-    !!slash && slash.buttons.length === 69,
+  record('[斜杠] 共 57 项命令按钮（62 定义减4个二级分栏与历史块公式）',
+    !!slash && slash.buttons.length === 57,
     slash ? `${slash.buttons.length} 项` : '')
 
   record('[斜杠] 每段至少一项、总和等于按钮总数',
@@ -372,21 +371,21 @@ async function hoverSubmenuTrigger(page, label) {
   await openPlusMenu(page)
   const plus = await page.evaluate(measureMenu)
 
-  record('[plus] 空段落「＋」打开 `.is-plus` 菜单，宽 470、position:fixed、z-index:80',
-    !!plus && plus.cls.includes('is-plus') && plus.rect.width === 470
+  record('[plus] 空段落「＋」打开 `.is-plus` 菜单，宽 232、position:fixed、z-index:80',
+    !!plus && plus.cls.includes('is-plus') && plus.rect.width === 232
     && plus.position === 'fixed' && plus.zIndex === '80',
     plus ? `${plus.cls} w=${plus.rect.width} ${plus.position} z=${plus.zIndex}` : '菜单没打开')
 
-  record('[plus] 只有 基础 / 常用 / 其他标题 三段（顺序固定、不与斜杠共用分段表）',
-    !!plus && JSON.stringify(plus.sections.map((section) => section.category)) === JSON.stringify(['基础', '常用', '其他标题']),
+  record('[plus] 基础 / 常用 / 绘图独立分组，保留master已实现入口',
+    !!plus && JSON.stringify(plus.sections.map((section) => section.category)) === JSON.stringify(['基础', '常用', '绘图']),
     plus ? plus.sections.map((section) => section.category).join('→') : '')
 
-  record('[plus] 共 32 项命令按钮',
-    !!plus && plus.buttons.length === 32,
+  record('[plus] 共19个真实入口（任务与高亮块同时有基础快捷图标和常用行）',
+    !!plus && plus.buttons.length === 19,
     plus ? `${plus.buttons.length} 项` : '')
 
-  record('[plus] 基础段是 6 列网格，按钮 min-height:58px',
-    !!plus && plus.sections[0].columns === 6 && plus.buttons[0].minHeight === '58px',
+  record('[plus] 基础快捷图标为6列，36px按钮',
+    !!plus && plus.sections[0].columns === 6 && plus.buttons[0].minHeight === '36px',
     plus ? `列=${plus.sections[0].columns} minHeight=${plus.buttons[0].minHeight}` : '')
 
   record('[plus] 搜索框自动聚焦（打开即可打字）',
@@ -394,9 +393,9 @@ async function hoverSubmenuTrigger(page, label) {
     plus ? `focused=${plus.head.focused}` : '')
 
   const plusArrows = plus ? plus.buttons.filter((button) => button.arrow) : []
-  record('[plus] 三个子菜单入口：分栏 / 表格 / 模板',
-    plusArrows.length === 3
-    && JSON.stringify(plusArrows.map((button) => button.arrow.label).sort()) === JSON.stringify(['打开分栏子菜单', '打开表格子菜单', '打开模板子菜单'].sort()),
+  record('[plus] 四个子菜单入口：表格 / 图表 / 分栏 / 模板',
+    plusArrows.length === 4
+    && JSON.stringify(plusArrows.map((button) => button.arrow.label).sort()) === JSON.stringify(['打开表格子菜单', '打开图表子菜单', '打开分栏子菜单', '打开模板子菜单'].sort()),
     plusArrows.map((button) => `${button.id}=${button.arrow.label}`).join(' '))
 
   // ——————————————————— ⑧ 子菜单：分栏 ———————————————————
@@ -455,53 +454,141 @@ async function hoverSubmenuTrigger(page, label) {
       columns: block ? [...block.children].map((child) => ({ type: child.dataset.type, width: child.dataset.width })) : null,
     }
   })
-  record('[分栏] 点「3栏」关菜单并插入 3 栏（每栏 data-width=33）',
+  record('[分栏] 点「3栏」关菜单并插入 3 栏（每栏宽度精确为100/3）',
     columnsResult.open === false && !!columnsResult.columns && columnsResult.columns.length === 3
-    && columnsResult.columns.every((column) => column.type === 'column' && column.width === '33'),
+    && columnsResult.columns.every((column) => column.type === 'column' && Math.abs(Number(column.width) - 100 / 3) < 1e-9),
     columnsResult.columns ? JSON.stringify(columnsResult.columns) : '没插进 columns 块')
 
-  // ——————————————————— ⑨ 子菜单：表格 ———————————————————
+  // Global plus has a 9x9 picker; the slash path remains direct 2x3.
   await openPlusMenu(page)
   await hoverSubmenuTrigger(page, '打开表格子菜单')
-  const tableMenu = await page.evaluate(measureSubmenu)
+  const picker = page.locator('.lark-doc-command-submenu.is-table')
+  const pickerBox = await picker.boundingBox()
+  record('[表格] PLUS选择器314×348、9×9共81格',
+    pickerBox.width === 314 && pickerBox.height === 348 && await picker.locator('.lark-doc-table-submenu-grid button').count() === 81)
+  record('[表格] 实际排9列且81格全部位于选择器内，无旧6列样式覆盖', await picker.evaluate(el => {
+    const rect = el.getBoundingClientRect()
+    const grid = el.querySelector('.lark-doc-table-submenu-grid')
+    return getComputedStyle(grid).gridTemplateColumns.split(' ').length === 9
+      && [...grid.children].every(cell => { const r = cell.getBoundingClientRect(); return r.left >= rect.left && r.right <= rect.right && r.top >= rect.top && r.bottom <= rect.bottom })
+  }))
+  await picker.locator('[data-row="2"][data-col="3"]').hover()
+  record('[表格] 悬浮3列2行显示3 x 2并高亮6格',
+    await picker.locator('output').innerText() === '3 x 2' && await picker.locator('.is-preview').count() === 6)
+  if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'master-parity-local-plus-table-picker.png') })
+  await picker.locator('[data-row="3"][data-col="4"]').click()
+  await page.waitForTimeout(300)
+  const insertedTable = await page.locator('.ProseMirror table').last().evaluate(table => ({
+    rows: table.rows.length, columns: table.rows[0].cells.length,
+    headers: table.querySelectorAll('th').length,
+    widths: [...table.querySelectorAll('col')].map(col => parseFloat(col.style.width)),
+    width: table.getBoundingClientRect().width, height: table.getBoundingClientRect().height,
+  }))
+  record('[表格] 点击3行4列插入400×121、每列100px、无标题行',
+    insertedTable.rows === 3 && insertedTable.columns === 4 && insertedTable.headers === 0
+      && insertedTable.widths.every(width => width === 100)
+      && Math.abs(insertedTable.width - 400) < 0.1 && Math.abs(insertedTable.height - 121) < 0.1, JSON.stringify(insertedTable))
+  await page.keyboard.press('ControlOrMeta+z')
+  await page.waitForTimeout(150)
+  record('[表格] 一次撤销移除选择器插入的整张表格', await page.locator('.ProseMirror table').count() === 0)
 
-  record('[表格] 子菜单 `is-table`、aria-label=表格子菜单、宽 196、z-index:82',
-    !!tableMenu && tableMenu.cls.includes('is-table') && tableMenu.label === '表格子菜单'
-    && tableMenu.width === 196 && tableMenu.zIndex === '82',
-    tableMenu ? `${tableMenu.cls} ${tableMenu.label} w=${tableMenu.width}` : '子菜单没开')
+  for (const config of [{ commands: { disabled: ['table'] } }, { commands: { allow: ['image'] } }, { features: { tables: false } }]) {
+    await openPlusMenu(page)
+    await hoverSubmenuTrigger(page, '打开表格子菜单')
+    const before = await page.evaluate(() => JSON.stringify(window.__larkDoc.getEditor().getJSON()))
+    await page.evaluate(config => window.__larkDoc.patchProps({ config }), config)
+    await page.waitForTimeout(100)
+    record(`[表格] 运行时策略${JSON.stringify(config)}关闭旧选择器且正文不变`,
+      await page.locator('.lark-doc-command-submenu.is-table').count() === 0
+        && await page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === before, before))
+    // `patchProps` keeps omitted config sections by design. Explicitly clear
+    // the command deny-list before the next strategy case so each assertion
+    // starts from the normal command surface.
+    await page.evaluate(() => window.__larkDoc.patchProps({ config: { commands: { disabled: [], allow: null }, features: { tables: true } } }))
+    await page.keyboard.press('Escape')
+  }
+  await resetTo(page, '<table><tr><td><p></p></td><td><p>B</p></td></tr></table>')
+  // Click at the text inset. In a legacy 50px column the selected next
+  // cell's floating plus can occupy part of this cell's centre (as in source).
+  const clickCellText = async index => {
+    await page.locator('.ProseMirror td').nth(index).click({ position: { x: 12, y: 18 } })
+    // Native selectionchange is delivered after the pointer events. Wait for
+    // the model to enter this cell before reading its floating button.
+    await page.waitForFunction(index => {
+      const editor = window.__larkDoc.getEditor(), pos = editor.state.selection.$from
+      for (let depth = pos.depth; depth > 0; depth -= 1) {
+        if (['tableCell', 'tableHeader'].includes(pos.node(depth).type.name)) return editor.view.nodeDOM(pos.before(depth)) === document.querySelectorAll('.ProseMirror td')[index]
+      }
+      return false
+    }, index)
+  }
+  await clickCellText(0)
+  const cellPlusGeometry = index => page.locator('.ProseMirror td').nth(index).evaluate(cell => {
+    const c = cell.getBoundingClientRect(), b = document.querySelector('.lark-doc-cell-plus-btn').getBoundingClientRect()
+    return { width: b.width, height: b.height, offset: c.left - b.left, centre: Math.abs(c.top + c.height / 2 - b.top - b.height / 2) }
+  })
+  let cellPlusBox = await cellPlusGeometry(0)
+  record('[表格] 首列插入按钮31×26、左距48px、垂直居中', cellPlusBox.width === 31 && cellPlusBox.height === 26 && Math.abs(cellPlusBox.offset - 48) < 0.1 && cellPlusBox.centre < 0.1, JSON.stringify(cellPlusBox))
+  await clickCellText(1)
+  cellPlusBox = await cellPlusGeometry(1)
+  record('[表格] 后续列左距36px，真实点击可切回前一窄列', Math.abs(cellPlusBox.offset - 36) < 0.1, JSON.stringify(cellPlusBox))
+  await clickCellText(0)
+  await page.locator('.lark-doc-cell-plus-btn').click()
+  record('[表格] 单元格PLUS保留公式，隐藏嵌套表格及模板入口',
+    await page.locator('.lark-doc-command-menu [data-command-id="inlineMath"]').count() === 1
+      && await page.locator('.lark-doc-command-menu [data-command-id="table"], .lark-doc-command-menu [data-command-id="template"]').count() === 0)
+  await page.keyboard.press('Escape')
 
-  record('[表格] 头部 `<span>选择大小</span>` + output 默认 `3 × 3`',
-    !!tableMenu && tableMenu.headLabel === '选择大小' && tableMenu.output === '3 × 3',
-    tableMenu ? `head=${tableMenu.headLabel} output=${tableMenu.output}` : '')
-
-  record('[表格] 6×6=36 格，标签 1列1行 ~ 6列6行',
-    !!tableMenu && tableMenu.cells.length === 36
-    && tableMenu.cells[0].label === '1列1行' && tableMenu.cells[35].label === '6列6行',
-    tableMenu ? `${tableMenu.cells.length} 格 ${tableMenu.cells[0].label}~${tableMenu.cells[35].label}` : '')
-
-  record('[表格] 默认 3×3 共 9 格带 is-preview',
-    !!tableMenu && tableMenu.cells.filter((cell) => cell.preview).length === 9,
-    tableMenu ? `${tableMenu.cells.filter((cell) => cell.preview).length} 格高亮` : '')
-
-  // 第 10 格 = 4列2行 ⇒ output 跟着走、高亮 8 格（2 行 × 4 列）
-  await page.locator('.lark-doc-table-submenu-grid > button').nth(9).hover()
-  await page.waitForTimeout(240)
-  const tableHover = await page.evaluate(measureSubmenu)
-  record('[表格] 悬停第 10 格 → output `4 × 2`、高亮 8 格',
-    !!tableHover && tableHover.output === '4 × 2' && tableHover.cells.filter((cell) => cell.preview).length === 8,
-    tableHover ? `output=${tableHover.output} 高亮=${tableHover.cells.filter((cell) => cell.preview).length}` : '')
+  }
 
   // ——————————————————— ⑩ 子菜单：模板 ———————————————————
   await openPlusMenu(page)
   await hoverSubmenuTrigger(page, '打开模板子菜单')
   const templateMenu = await page.evaluate(measureSubmenu)
-  record('[模板] 子菜单 `is-templates`、宽 250（特例，靠内联 width 撑）',
-    !!templateMenu && templateMenu.cls.includes('is-templates') && templateMenu.width === 250,
+  record('[模板] 源快捷菜单is-templates、358×197、六行',
+    !!templateMenu && templateMenu.cls.includes('is-templates') && templateMenu.width === 358 && templateMenu.height === 197 && templateMenu.items.length === 6,
     templateMenu ? `${templateMenu.cls} w=${templateMenu.width}` : '子菜单没开')
 
-  record('[模板] 分支标题固定为「选择模板插入文档」',
-    !!templateMenu && templateMenu.strong === '选择模板插入文档',
-    templateMenu ? String(templateMenu.strong) : '')
+  record('[模板] 五个真实模板与更多模板，无旧标题或装饰图标',
+    await page.locator('.lark-doc-command-submenu.is-templates').evaluate(node => !node.querySelector('strong,.lark-doc-command-icon') && node.textContent.includes('读书笔记') && node.textContent.includes('更多模板')))
+  if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'master-parity-local-template-shortcuts.png') })
+  for (const [label, marker] of [['读书笔记', '基本信息'], ['个人总结', '全年目标'], ['工作汇报', '【工作内容】'], ['会议记录', '会议主题：']]) {
+    if (label !== '读书笔记') { await openPlusMenu(page); await hoverSubmenuTrigger(page, '打开模板子菜单') }
+    const beforeTemplate = await page.evaluate(() => window.__larkDoc.getEditor().getJSON())
+    await page.locator('.lark-doc-command-submenu.is-templates').getByRole('menuitem', { name: label, exact: true }).click()
+    record(`[模板] 实际点击${label}插入真实正文并保留原文`, await page.locator('.tiptap').innerText().then(text => text.includes(marker) && text.includes('第一段正文')))
+    await page.keyboard.press('ControlOrMeta+z')
+    record(`[模板] ${label}单次撤销完整恢复正文与ID`, await page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === JSON.stringify(before), beforeTemplate))
+  }
+  await openPlusMenu(page)
+  await hoverSubmenuTrigger(page, '打开模板子菜单')
+  const beforeLibrary = await page.evaluate(() => window.__larkDoc.getEditor().getJSON())
+  await page.locator('.lark-doc-command-submenu.is-templates').getByRole('menuitem', { name: '更多模板', exact: true }).click()
+  const library = page.getByRole('dialog', { name: '模板库', exact: true })
+  await library.waitFor()
+  const libraryGeometry = await library.evaluate(node => ({ width: node.querySelector('.lark-doc-template-library-modal').getBoundingClientRect().width, height: node.querySelector('.lark-doc-template-library-modal').getBoundingClientRect().height, grid: getComputedStyle(node.querySelector('.lark-doc-template-grid')).gridTemplateColumns, card: node.querySelector('.lark-doc-template-card').getBoundingClientRect().toJSON() }))
+  record('[模板库] 同页1229宽/视窗减84高、四列226×256实际正文缩略图', libraryGeometry.width === 1229 && libraryGeometry.height === 816 && libraryGeometry.grid.split(' ').length === 4 && libraryGeometry.card.width === 226 && libraryGeometry.card.height === 256, JSON.stringify(libraryGeometry))
+  const personal = library.locator('[data-template-id="personal"]')
+  await personal.hover()
+  await personal.getByRole('button', { name: '预览', exact: true }).click()
+  const templatePreview = library.locator('[aria-label="模板正文预览"]')
+  record('[模板库] 预览真实只读表格正文，无活iframe', (await templatePreview.innerText()).includes('全年目标') && await templatePreview.locator('[contenteditable="false"] table').count() > 0 && await templatePreview.locator('iframe').count() === 0)
+  await templatePreview.getByRole('button', { name: '下一个', exact: true }).click()
+  record('[模板库] 下一个跳过不可用SWOT并显示真实周报', (await templatePreview.innerText()).includes('【工作内容】'))
+  await templatePreview.getByRole('button', { name: '上一个', exact: true }).click()
+  record('[模板库] 上一个返回个人总结', (await templatePreview.innerText()).includes('全年目标'))
+  if (process.env.LARK_DOC_EVIDENCE_DIR) await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'master-parity-local-template-preview.png') })
+  await page.keyboard.press('Escape')
+  record('[模板库] 单次Esc关闭预览与库，正文不变', await library.count() === 0 && await page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === JSON.stringify(before), beforeLibrary))
+  await openPlusMenu(page)
+  await hoverSubmenuTrigger(page, '打开模板子菜单')
+  const beforeLibraryInsert = await page.evaluate(() => window.__larkDoc.getEditor().getJSON())
+  await page.locator('.lark-doc-command-submenu.is-templates').getByRole('menuitem', { name: '更多模板', exact: true }).click()
+  await library.locator('[data-template-id="personal"]').hover()
+  await library.locator('[data-template-id="personal"]').getByRole('button', { name: '插入', exact: true }).click()
+  record('[模板库] 卡片插入保留原文并关闭库', await library.count() === 0 && (await page.locator('.tiptap').innerText()).includes('全年目标'))
+  await page.keyboard.press('ControlOrMeta+z')
+  record('[模板库] 卡片插入单次撤销完整恢复', await page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === JSON.stringify(before), beforeLibraryInsert))
 
   // ——————————————————— ⑪ plus 菜单：键盘 + 点选 ———————————————————
   await openPlusMenu(page)

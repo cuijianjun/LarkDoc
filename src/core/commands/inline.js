@@ -8,6 +8,6 @@
  * 那是老文档往返与 API 面要用的）。
  */
 export const inlineCommands = [
-  { id: 'inlineMath', label: '行内公式', category: '插入', plusCategory: '常用', glyph: 'TeX', tone: 'gray', keywords: 'math gongshi inline', group: 'inline', tier: 'required' },
+  { id: 'inlineMath', label: '公式', category: '插入', plusCategory: '常用', glyph: 'TeX', tone: 'gray', keywords: 'math gongshi inline', group: 'inline', tier: 'required' },
   { id: 'blockMath', label: '块公式', category: '插入', plusCategory: '常用', glyph: '∑', tone: 'gray', keywords: 'math gongshi block', group: 'inline', tier: 'required' },
 ]

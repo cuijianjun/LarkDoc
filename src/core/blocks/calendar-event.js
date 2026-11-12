@@ -76,6 +76,7 @@ const CalendarEvent = Node.create({
        * 兜底快照（**允许过期**，这是设计如此，不是缺陷）。
        */
       refetch: null,
+      getRuntimeOptions: null,
     }
   },
 

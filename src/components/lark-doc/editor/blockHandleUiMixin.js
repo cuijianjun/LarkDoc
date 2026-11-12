@@ -108,6 +108,7 @@ export default {
       const blockStyle = this.featureEnabled('blockStyle')
       return {
         // 模板条件：`ed.editor && !ed.effectiveReadonly && featureEnabled('blockHandle') && handleRange`
+        // Keep the table six-dot handle beside the active-cell plus control.
         visible: !!(this.editor && !this.effectiveReadonly && this.featureEnabled('blockHandle') && this.handleRange),
         style: this.blockHandleStyle,
         menuOpen: this.blockMenuOpen,
@@ -116,7 +117,6 @@ export default {
         buttonKind: this.handleIsEmptyParagraph ? 'empty' : this.handleIsTaskList ? 'none' : 'main',
         glyph: this.handleGlyph,
         isCallout: this.handleBlockNode()?.type?.name === 'callout',
-        actionDisabled: !!this.handleBlockNode()?.attrs?.asyncState && !this.blockActionAllowed('edit'),
         draggable: this.featureEnabled('blockDrag'),
       }
     },
@@ -124,11 +124,7 @@ export default {
     /** 菜单内容 state（只在开合、配置、文档/选区变化时算）。 */
     buildBlockMenuState() {
       const blockStyle = this.featureEnabled('blockStyle')
-      const editAllowed = this.blockActionAllowed('edit')
       return {
-        editAllowed,
-        actionDisabled: !!this.handleBlockNode()?.attrs?.asyncState && !editAllowed,
-        duplicateAllowed: this.blockActionAllowed('duplicate'),
         menuOpen: this.blockMenuOpen,
         alignOpen: !!this.blockAlignMenuOpen && blockStyle,
         colorOpen: !!this.blockColorMenuOpen && blockStyle,
@@ -143,9 +139,12 @@ export default {
           label: item.label,
           icon: item.icon,
           active: this.blockTypeActive(item.id),
-          disabled: !editAllowed,
         })),
-        listActions: this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon, disabled: !this.blockActionAllowed(item.id) })),
+        listActions: [
+          ...this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon })),
+          ...(this.handleIsTable && this.selectionShareAllowed?.() && this.isBlockActionEnabled('share') ? [{ id: 'share', label: '分享', icon: 'share-link' }] : []),
+          ...(this.handleIsTable && this.shareCan('canView') && this.isBlockActionEnabled('copyLink') ? [{ id: 'copyLink', label: '复制链接', icon: 'link' }] : []),
+        ],
         table: this.handleIsTable,
         tableHeader: this.handleTableHeaderState(),
         canDuplicate: this.isBlockActionEnabled('duplicate'),

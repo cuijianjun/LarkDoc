@@ -11,7 +11,7 @@
 | `lark-doc/lite` | `dist/lark-doc-lite.esm.js`；整个依赖图排除 KaTeX、Mermaid、Office、Markdown 和高亮实现 | 显式引 `lark-doc/style.css` |
 | `lark-doc/features/*` | `dist/features/*.js`；按需注册 math / mermaid / office / markdown / highlight | math ESM 另引 dist/features/math.css；UMD math 注入样式，保留字体 |
 | `lark-doc/element` 的 import | `dist/lark-doc-element.esm.js`；自定义元素与原生动态 import，供打包器消费 | 随 JS 注入 |
-| `lark-doc/element` 的 require / CDN | `dist/lark-doc-element.umd.min.js`；浏览器直挂，功能实现从同目录 feature UMD 加载 | 随 JS 注入 |
+| `lark-doc/element` 的 require / CDN | `dist/lark-doc-element.umd.min.js` 主 loader + 同目录 `lark-doc-element.runtime.umd.min.js`；浏览器直挂，功能实现从同目录 feature UMD 加载 | 随 runtime 注入 |
 | `lark-doc/vue2` / `lark-doc/legacy` | `dist/lark-doc-vue2.{esm,common}.js`；普通 options 对象，渲染仍为原生 DOM | 显式引随包的 `dist/lark-doc.css` |
 | `lark-doc/vue3` / `lark-doc/react` | `dist/lark-doc-{vue3,react}.mjs`；属性、property、事件和方法桥接，需先注册 Element | 不含编辑器样式 |
 | `lark-doc/collab` | `dist/lark-doc-collab.esm.js` / `dist/lark-doc-collab.common.js`；协同依赖保持 external，由宿主提供单例 | 无 |

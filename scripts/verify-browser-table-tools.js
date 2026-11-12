@@ -18,8 +18,8 @@
  *   ② 根 `div[role=toolbar][aria-label=表格工具]` position:fixed，**不再有** `data-mode`、
  *      `.is-text-mode`、`.is-table-mode`。两种选区（表格内非空文字选区 / 点行列选择条
  *      产生的整行整列 CellSelection）弹出的是**同一个浮窗 DOM 根节点**，items 按上下文
- *      用 syncChildren 在同一条 bar 上真摘除/插入：v12c 后文字态 10 个 data-cmd、
- *      选择条态 13 个 data-cmd（B 比 A 多 3 颗表格专属按钮、去掉 link、末尾多 remove）。
+ *      用 syncChildren 在同一条 bar 上真摘除/插入：v12c 后文字态 11 个 data-cmd、
+ *      选择条态 14 个 data-cmd（B 比 A 多 3 颗表格专属按钮、去掉 link、末尾多 remove）。
  *      v12 反馈④（「选中两个单元格或者多个，功能栏浮窗的按钮不对」）后共有**三种上下文**
  *      （`buildTableToolsState().cellKind`）：文字态 text 10 项 / 整行整列 line 13 项 /
  *      **拖选两个及以上单元格 multi 11 项**（局部 CellSelection，飞书形态 E：开头 合并/背景、
@@ -76,53 +76,53 @@ const results = []
 // 的 toolbarItems() 逐项展开）、5 个 mark 按钮 / 3 颗表格专属按钮 / 4 个 caret 菜单按钮、
 // 两态菜单按钮集合、「更多」保留 2 项与被删 5 项、「转换为」11 个菜单项、对齐 8 个菜单项。
 const EXPECTED_CMDS_A = [
-  'turninto', 'align', 'bold', 'strike', 'italic', 'underline',
-  'link', 'code', 'highlight', 'more',
+  'ask-ai',   'turninto', 'align', 'bold', 'strike', 'italic', 'underline',
+  'link', 'code', 'highlight', 'more', 'share-link',
 ]
 const EXPECTED_CMDS_B = [
-  'table-header', 'merge-cell', 'cell-bg', 'turninto', 'align',
-  'bold', 'strike', 'italic', 'underline', 'code', 'highlight', 'more', 'remove',
+  'ask-ai',   'table-header', 'merge-cell', 'cell-bg', 'turninto', 'align',
+  'bold', 'strike', 'italic', 'underline', 'code', 'highlight', 'more', 'share-link', 'remove',
 ]
 // toolbarItems('text') = [TURN, ALIGN, DIV, ...MARKS, FULL_DIV, ...TAIL]
 // → 10 button + 2 span（其中 1 条 .is-full）；toolbarItems('line') 多一组 CELL_* 与前置
 // DIV、末尾 REMOVE → 13 button + 3 span。条数由 tag 序列推导，不沿用 v10 的 18 按钮 / 4 分隔线。
 const EXPECTED_BAR_TAGS_A = [
-  'button', 'button', 'span', 'button', 'button', 'button', 'button', 'button',
-  'button', 'button', 'span', 'button',
+  'button', 'span',   'button', 'button', 'span', 'button', 'button', 'button', 'button', 'button',
+  'button', 'button', 'span', 'button', 'button',
 ]
 const EXPECTED_BAR_TAGS_B = [
-  'button', 'button', 'button', 'span', 'button', 'button', 'span', 'button',
-  'button', 'button', 'button', 'button', 'button', 'span', 'button', 'button',
+  'button', 'span',   'button', 'button', 'button', 'span', 'button', 'button', 'span', 'button',
+  'button', 'button', 'button', 'button', 'button', 'span', 'button', 'button', 'button',
 ]
 const SEP_A = EXPECTED_BAR_TAGS_A.filter((t) => t === 'span').length
 const SEP_B = EXPECTED_BAR_TAGS_B.filter((t) => t === 'span').length
 // v12 形态 E / v12c：拖选两个及以上单元格（局部 CellSelection，cellKind='multi'）→ 11 项。
 // 开头是 合并单元格 / 单元格背景（🔴 没有 table-header），末尾是 more（🔴 不是 remove、也不是已下线的评论）。
 const EXPECTED_CMDS_E = [
-  'merge-cell', 'cell-bg', 'turninto', 'align', 'bold', 'strike',
-  'italic', 'underline', 'code', 'highlight', 'more',
+  'ask-ai',   'merge-cell', 'cell-bg', 'turninto', 'align', 'bold', 'strike',
+  'italic', 'underline', 'code', 'highlight', 'more', 'share-link',
 ]
 // toolbarItems('multi') = [MERGE, BG, DIV, TURN, ALIGN, DIV, ...MARKS(去 link),
 // FULL_DIV, ...TAIL] → 11 button + 3 span（其中 1 条 .is-full）。
 const EXPECTED_BAR_TAGS_E = [
-  'button', 'button', 'span', 'button', 'button', 'span', 'button', 'button',
-  'button', 'button', 'button', 'button', 'span', 'button',
+  'button', 'span',   'button', 'button', 'span', 'button', 'button', 'span', 'button', 'button',
+  'button', 'button', 'button', 'button', 'span', 'button', 'button',
 ]
 const SEP_E = EXPECTED_BAR_TAGS_E.filter((t) => t === 'span').length
 const MARK_CMDS = ['bold', 'strike', 'italic', 'underline', 'code']
 const TABLE_ONLY_CMDS = ['table-header', 'merge-cell', 'cell-bg']
-const CARET_CMDS = ['turninto', 'align', 'highlight', 'more']
+const CARET_CMDS = ['turninto', 'align', 'highlight']
 const MENU_CMDS_A = ['turninto', 'align', 'highlight', 'more']
-const MENU_CMDS_B = ['table-header', 'merge-cell', 'cell-bg', 'turninto', 'align', 'highlight', 'more']
+const MENU_CMDS_B = ['cell-bg', 'turninto', 'align', 'highlight', 'more']
 const MORE_ITEMS = ['translate', 'larkSearch']
 const MORE_REMOVED = ['searchWeb', 'saveBlockTemplate', 'newChildDocWithContent', 'create-lingo', 'copyAnchorLink']
 const TURN_INTO_ITEMS = [
-  'paragraph', 'heading1', 'heading2', 'heading3', 'orderedList', 'bulletList',
-  'taskList', 'codeBlock', 'blockquote', 'callout', 'synced',
+  'paragraph', 'heading1', 'heading2', 'heading3', 'other-headings', 'orderedList', 'bulletList',
+  'taskList', 'codeBlock',
 ]
 const ALIGN_ITEMS = [
   'align:left', 'align:center', 'align:right', 'valign:top', 'valign:middle',
-  'valign:bottom', 'indent:1', 'indent:-1',
+  'valign:bottom',
 ]
 
 function findChromium() {
@@ -191,7 +191,7 @@ const measureToolbar = () => {
     menuName: menu ? menu.dataset.menu : null,
     menuRole: menu ? menu.getAttribute('role') : null,
     menuAttached: !!menu && menu.parentNode === el,
-    menuItems: menu ? [...menu.querySelectorAll('button.lark-doc-table-tools-menu-item')].map((b) => ({
+    menuItems: menu ? [...menu.querySelectorAll('button.lark-doc-table-tools-menu-item')].filter(b => b.closest('.lark-doc-table-tools-menu') === menu).map((b) => ({
       value: b.dataset.value || null,
       text: b.textContent.trim(),
       pressed: b.getAttribute('aria-pressed'),
@@ -238,7 +238,7 @@ const measureToolbar = () => {
         isMenuOpen: b.classList.contains('is-menu-open'),
         hasCaret: b.classList.contains('has-caret'),
         // v11：按钮图标 = iconNode() 的 span.lark-doc-icon > svg（16×16）；caret 是 12px SVG。
-        iconOk: !!icon && icon.style.width === '16px' && icon.style.height === '16px'
+        iconOk: !!icon && icon.style.width === '24px' && icon.style.height === '24px'
           && icon.querySelectorAll('svg').length === 1
           && !b.querySelector('.lark-doc-table-tools-glyph'),
         caretOk: !!caret && caret.style.width === '12px' && caret.style.height === '12px'
@@ -294,6 +294,7 @@ const measureBoundary = () => {
       className: b.className,
       type: b.getAttribute('type'),
       text: b.textContent.trim(),
+      glyph: b.querySelector('svg')?.getAttribute('viewBox'),
       ariaLabel: b.getAttribute('aria-label'),
       title: b.getAttribute('title'),
     })),
@@ -405,13 +406,18 @@ const selectCell = (index) => {
   return pos
 }
 
-/** 表格后的正文段落中心（点击它 = 点表格外）。 */
+/** 表格外正文中未被浮窗遮挡的点，确保鼠标实际命中正文。 */
 const outsidePoint = () => {
-  const paragraphs = [...document.querySelectorAll('.ProseMirror p')]
-  const p = paragraphs[paragraphs.length - 1]
-  if (!p) return null
-  const r = p.getBoundingClientRect()
-  return { x: r.left + Math.min(20, r.width / 2), y: r.top + r.height / 2 }
+  const paragraphs = [...document.querySelectorAll('.ProseMirror p')].reverse()
+  for (const p of paragraphs) {
+    if (p.closest('table')) continue
+    const r = p.getBoundingClientRect()
+    const y = r.top + r.height / 2
+    for (const x of [r.right - Math.min(20, r.width / 2), r.left + Math.min(20, r.width / 2)]) {
+      if (x > 0 && x < innerWidth && y > 0 && y < innerHeight && p.contains(document.elementFromPoint(x, y))) return { x, y }
+    }
+  }
+  throw new Error('找不到未被浮窗遮挡的表格外正文')
 }
 
 /** 列 / 行选择条中心点（点它 = 整列 / 整行 CellSelection → 同一个 v11 统一浮窗）。 */
@@ -596,31 +602,26 @@ const cellDragPoints = () => {
       && nodeA.rootChildTags.every((t) => t === 'div'),
     nodeA ? `mode=${nodeA.mode} hasModeAttr=${nodeA.hasModeAttr} [${nodeA.classes.join('.')}] root=[${nodeA.rootChildClasses.join(' | ')}] menu=${nodeA.menuCount}` : '没渲染')
 
-  record('[状态 A] 10 个 data-cmd 齐全且顺序 = v12c 文字态工具条（无 share-link / comment）',
+  record('[状态 A] 12 个 data-cmd 齐全且顺序 = v12c 文字态工具条（含分享，无未配置的评论）',
     !!nodeA && JSON.stringify(nodeA.cmds) === JSON.stringify(EXPECTED_CMDS_A),
     nodeA ? nodeA.cmds.join(',') : '没渲染')
 
-  // v12：最左侧「问问豆包」（data-cmd=ask-ai）彻底移除，浮窗按钮/菜单项也不得再出现该文案。
-  const askAiAudit = await page.evaluate(() => {
-    const askAi = document.querySelectorAll('[data-cmd="ask-ai"]').length
-    const root = document.querySelector('.lark-doc-table-tools')
-    const controls = root ? [...root.querySelectorAll('button, [role="menuitem"]')] : []
-    const doubao = controls.filter((b) => /问问豆包/.test(
-      `${b.textContent || ''}|${b.title || ''}|${b.getAttribute('aria-label') || ''}`)).length
-    return { askAi, doubao, controls: controls.length }
-  })
-  record('[v12] 全页无 data-cmd="ask-ai" 按钮（「问问豆包」彻底移除）；浮窗按钮/菜单项的 text/title/aria-label 均不含「问问豆包」',
-    askAiAudit.askAi === 0 && askAiAudit.doubao === 0,
-    `askAi=${askAiAudit.askAi} doubaoHits=${askAiAudit.doubao} controls=${askAiAudit.controls}`)
+  const askAiAudit = await page.locator('.lark-doc-table-tools').evaluate(root => ({
+    count: root.querySelectorAll('[data-cmd="ask-ai"]').length,
+    first: root.querySelector('.lark-doc-table-tools-btn')?.dataset.cmd,
+    label: root.querySelector('[data-cmd="ask-ai"]')?.getAttribute('aria-label'),
+  }))
+  record('[当前飞书] 工具条首项为唯一问问AI入口',
+    askAiAudit.count === 1 && askAiAudit.first === 'ask-ai' && askAiAudit.label === '问问AI', JSON.stringify(askAiAudit))
 
-  record('[状态 A] bar 内 10 按钮 + 2 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(text)',
+  record('[状态 A] bar 内 12 按钮 + 3 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(text)',
     !!nodeA && JSON.stringify(nodeA.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_A)
-      && nodeA.buttons.length === 10 && nodeA.separators === SEP_A && nodeA.fullSeparators === 1,
+      && nodeA.buttons.length === EXPECTED_CMDS_A.length && nodeA.separators === SEP_A && nodeA.fullSeparators === 1,
     nodeA ? `${nodeA.barChildTags.join(',')} sep=${nodeA.separators} full=${nodeA.fullSeparators}` : '没渲染')
 
   record('[状态 A syncChildren] 文字态真摘除表格专属 3 颗与 remove（不在 DOM），link 挂在（B 态才反）',
     !!nodeA && TABLE_ONLY_CMDS.every((cmd) => !nodeA.cmds.includes(cmd)) && !nodeA.cmds.includes('remove')
-      && nodeA.cmds.includes('link') && !nodeA.cmds.includes('share-link') && !nodeA.cmds.includes('comment')
+      && nodeA.cmds.includes('link') && nodeA.cmds.includes('share-link') && !nodeA.cmds.includes('comment')
       && (await page.evaluate(() => document.querySelectorAll('.lark-doc-table-tools-btn[data-cmd="table-header"], .lark-doc-table-tools-btn[data-cmd="remove"]').length)) === 0,
     nodeA ? `[${nodeA.cmds.join(',')}]` : '没渲染')
 
@@ -637,17 +638,17 @@ const cellDragPoints = () => {
 
   record('[状态 A] 5 个 mark 按钮带 aria-pressed="true|false"（共 5 个）',
     !!nodeA && MARK_CMDS.every((cmd) => nodeA.buttons.some((b) => b.cmd === cmd && b.hasPressed && (b.pressed === 'true' || b.pressed === 'false')))
-      && nodeA.buttons.filter((b) => b.hasPressed).length === 5,
+      && nodeA.buttons.filter((b) => MARK_CMDS.includes(b.cmd) && b.hasPressed).length === 5,
     nodeA ? `pressed=[${nodeA.buttons.filter((b) => b.hasPressed).map((b) => `${b.cmd}=${b.pressed}`).join(',')}]` : '没渲染')
 
   record('[状态 A] 4 个菜单按钮（turninto/align/highlight/more）aria-haspopup=menu / aria-expanded=false / 带 SVG caret',
     !!nodeA && MENU_CMDS_A.every((cmd) => nodeA.buttons.some((b) => b.cmd === cmd && b.haspopup === 'menu' && b.expanded === 'false'))
       && nodeA.buttons.filter((b) => b.haspopup === 'menu').length === 4
-      && nodeA.buttons.filter((b) => b.haspopup === 'menu' && b.hasCaretSpan).length === 4,
+      && nodeA.buttons.filter((b) => b.haspopup === 'menu' && b.hasCaretSpan).length === 3,
     nodeA ? `[${nodeA.buttons.filter((b) => b.haspopup === 'menu').map((b) => `${b.cmd}:${b.expanded}`).join(',')}]` : '没渲染')
 
   record('[v11 图标] 所有按钮都是 SVG 图标（span.lark-doc-table-tools-icon.lark-doc-icon > svg，16×16），无字符 .lark-doc-table-tools-glyph 节点',
-    !!nodeA && nodeA.buttons.length === 10 && nodeA.buttons.every((b) => b.iconOk)
+    !!nodeA && nodeA.buttons.length === EXPECTED_CMDS_A.length && nodeA.buttons.every((b) => b.iconOk)
       && nodeA.buttons.every((b) => !b.hasGlyph) && nodeA.glyphNodes === 0,
     nodeA ? `iconOk=${nodeA.buttons.filter((b) => b.iconOk).length}/${nodeA.buttons.length} glyph=${nodeA.glyphNodes}` : '没渲染')
 
@@ -658,7 +659,7 @@ const cellDragPoints = () => {
     const bb = (n) => { const r = n.getBoundingClientRect(); return { w: +r.width.toFixed(1), h: +r.height.toFixed(1) } }
     const float = document.querySelector('.lark-doc-table-tools')
     const bar = float?.querySelector('.lark-doc-table-tools-bar')
-    const fbtn = float?.querySelector('.lark-doc-table-tools-btn:not(.has-caret)')
+    const fbtn = float?.querySelector('.lark-doc-table-tools-btn:not(.has-caret):not(.is-text)')
     const tbtn = [...document.querySelectorAll('.lark-doc-toolbar .lark-doc-tools button')]
       .find((n) => !n.querySelector('.lark-doc-caret') && n.querySelector('svg'))
     const ficon = fbtn?.querySelector('svg')
@@ -671,14 +672,14 @@ const cellDragPoints = () => {
       radius: fcs?.borderRadius, padding: fcs?.padding, minHeight: fcs?.minHeight,
     }
   })
-  record('[v12c 尺寸] 浮窗普通按钮盒 30×30 == 顶部功能栏 30×30；图标仍同为 16×16；bar 高 30、浮窗高 42、radius/padding 对齐',
+  record('[飞书尺寸] 浮窗按钮24×24、主图标18×18、bar24、外框42；顶部项目按钮保留原尺寸',
     !!v12cSize.fbtn && !!v12cSize.tbtn
-      && v12cSize.fbtn.w === 30 && v12cSize.fbtn.h === 30
+      && v12cSize.fbtn.w === 24 && v12cSize.fbtn.h === 24
       && v12cSize.tbtn.w === 30 && v12cSize.tbtn.h === 30
-      && v12cSize.ficon?.w === 16 && v12cSize.ficon?.h === 16
+      && v12cSize.ficon?.w === 18 && v12cSize.ficon?.h === 18
       && v12cSize.ticon?.w === 16 && v12cSize.ticon?.h === 16
-      && v12cSize.bar?.h === 30 && v12cSize.float?.h === 42
-      && v12cSize.radius === '6px' && v12cSize.padding === '0px 6px' && v12cSize.minHeight === '30px',
+      && v12cSize.bar?.h === 24 && v12cSize.float?.h === 42
+      && v12cSize.radius === '4px' && v12cSize.padding === '0px' && v12cSize.minHeight === '0px',
     JSON.stringify(v12cSize))
 
   // v12c：两颗无实现按钮从**全页**消失（含 data-cmd 与中文文案控件），且 more 菜单未补回 copyAnchorLink。
@@ -692,14 +693,14 @@ const cellDragPoints = () => {
         || (b.getAttribute('aria-label') || '').trim() === label).length)
     return { byCmd, byLabel, cmds, names }
   })
-  record('[v12c 下线] 全页无 data-cmd=share-link / comment 按钮，浮窗内也无「复制选区链接」「评论」同名可点控件',
-    v12cRemoved.byCmd.every((n) => n === 0) && v12cRemoved.byLabel.every((n) => n === 0),
+  record('[配置门禁] 分享入口可查看，未配置评论服务不显示评论，不存在旧复制选区链接伪入口',
+    JSON.stringify(v12cRemoved.byCmd) === '[1,0]' && v12cRemoved.byLabel.every((n) => n === 0),
     `byCmd=${JSON.stringify(v12cRemoved.cmds.map((c, i) => `${c}:${v12cRemoved.byCmd[i]}`))} byLabel=${JSON.stringify(v12cRemoved.names.map((c, i) => `${c}:${v12cRemoved.byLabel[i]}`))}`)
 
   record('[v11 图标] 4 个 caret 按钮的箭头是 12px SVG（span.lark-doc-caret.lark-doc-icon > svg），无字符 .lark-doc-table-tools-caret 节点',
     !!nodeA && CARET_CMDS.every((cmd) => nodeA.buttons.some((b) => b.cmd === cmd && b.caretOk && b.hasCaretSpan))
-      && nodeA.buttons.filter((b) => b.hasCaretSpan).length === 4
-      && nodeA.buttons.filter((b) => b.hasCaret && b.caretOk).length === 4
+      && nodeA.buttons.filter((b) => b.hasCaretSpan).length === 3
+      && nodeA.buttons.filter((b) => b.hasCaret && b.caretOk).length === 3
       && nodeA.buttons.every((b) => !b.hasLegacyCaret) && nodeA.legacyCaretNodes === 0,
     nodeA ? `caretOk=${nodeA.buttons.filter((b) => b.caretOk).length} legacyCaret=${nodeA.legacyCaretNodes}` : '没渲染')
 
@@ -827,9 +828,9 @@ const cellDragPoints = () => {
       && (await page.evaluate(() => document.querySelectorAll('.lark-doc-table-tools-menu[data-menu]').length)) === 1,
     menuSnap.node ? `menu=${menuSnap.node.menuName} role=${menuSnap.node.menuRole} attached=${menuSnap.node.menuAttached} expanded=[${menuSnap.node.buttons.filter((b) => b.expanded === 'true').map((b) => b.cmd).join(',')}] root=[${menuSnap.node.rootChildClasses.join(' | ')}]` : '没渲染')
 
-  record('[v11 下拉] turninto 菜单 11 个菜单项（+1 分隔线＝飞书 12 项）值精确、每项图标是 .lark-doc-table-tools-menu-icon SVG、当前块 paragraph 回填 aria-pressed=true',
+  record('[飞书当前菜单] 单元格转换仅正文/H1–H3/其他标题/列表/任务/代码，不暴露会替换内容的容器入口',
     !!menuSnap.node && JSON.stringify(menuSnap.node.menuItems.map((i) => i.value)) === JSON.stringify(TURN_INTO_ITEMS)
-      && menuSnap.node.menuDividers === 1
+      && menuSnap.node.menuDividers === 0
       && menuSnap.node.menuItems.every((i) => i.menuIconOk)
       && menuSnap.node.menuItems.some((i) => i.value === 'paragraph' && i.pressed === 'true')
       && menuSnap.node.menuItems.some((i) => i.value === 'heading1' && i.pressed === 'false'),
@@ -903,8 +904,8 @@ const cellDragPoints = () => {
       || (b.getAttribute('aria-label') || '').trim() === label).length)
     return { byCmd, menuCopy, commentMenu, labelControls }
   })
-  record('[v12c 下线复查] more 菜单展开时仍无 share-link / comment 按钮，菜单未补回 copyAnchorLink / 评论项，浮窗内无两按钮同名可点控件',
-    moreSnap.node?.menuName === 'more' && downlineAudit.byCmd.every((n) => n === 0)
+  record('[配置门禁复查] more打开仍保留独立分享按钮，无未配置评论与旧复制伪入口',
+    moreSnap.node?.menuName === 'more' && JSON.stringify(downlineAudit.byCmd) === '[1,0]'
       && downlineAudit.menuCopy === 0 && downlineAudit.commentMenu === 0
       && downlineAudit.labelControls.every((n) => n === 0),
     `menu=${moreSnap.node?.menuName} byCmd=[${downlineAudit.byCmd.join(',')}] menuCopy=${downlineAudit.menuCopy} commentMenu=${downlineAudit.commentMenu} labelControls=[${downlineAudit.labelControls.join(',')}]`)
@@ -927,9 +928,9 @@ const cellDragPoints = () => {
       && prevMenuGone && allMenuCount === 1,
     `menu=${menuSnap.node?.menuName} count=${menuSnap.node?.menuCount} prevGone=${prevMenuGone} 全页menu=${allMenuCount}`)
 
-  record('[v11 下拉] align 菜单 8 项（align/valign/indent）+ 2 分隔线、valign 三项齐全、图标全为 SVG（表格结构操作仍可达）',
+  record('[飞书当前菜单] align 菜单6项（水平/垂直对齐）+ 1分隔线，图标为SVG',
     !!menuSnap.node && JSON.stringify(menuSnap.node.menuItems.map((i) => i.value)) === JSON.stringify(ALIGN_ITEMS)
-      && menuSnap.node.menuDividers === 2
+      && menuSnap.node.menuDividers === 1
       && menuSnap.node.menuItems.filter((i) => /^valign:/.test(i.value || '')).length === 3
       && menuSnap.node.menuItems.every((i) => i.menuIconOk),
     menuSnap.node ? `items=[${menuSnap.node.menuItems.map((i) => i.value).join(',')}] div=${menuSnap.node.menuDividers}` : '没渲染')
@@ -1005,7 +1006,7 @@ const cellDragPoints = () => {
   record('[v11 下拉] 点浮窗外（表格块内）→ closeMenus 真摘除菜单且浮窗仍在（非整窗摘除）',
     beforeProbe.node?.menuCount === 1
       && afterProbe.count === 1 && afterProbe.node?.menuCount === 0
-      && afterProbe.node.cmds.length === 10,
+      && afterProbe.node.cmds.length === EXPECTED_CMDS_A.length,
     `before=${beforeProbe.node?.menuName} after.tools=${afterProbe.count} after.menu=${afterProbe.node?.menuCount} cmds=${afterProbe.node?.cmds.length}`)
 
   // ═════════════ ③.2 v11 命令分发：真实效果（不只测 DOM） ═════════════
@@ -1036,6 +1037,26 @@ const cellDragPoints = () => {
     turnF.node?.menuName === 'turninto' && turnF.node.menuItems.some((i) => i.value === 'heading1')
       && (headState.h1 > h1Before || headState.headingActive === true || /<h1[\s>]/.test(headState.html)),
     `menu=${turnF.node?.menuName} h1=${h1Before}→${headState.h1} headingActive=${headState.headingActive}`)
+
+  await setDoc(page)
+  await openTextSelection(page, await page.evaluate(tableGeometry))
+  await page.locator('.lark-doc-table-tools-btn[data-cmd="turninto"]').hover()
+  const otherHeading = page.locator('.lark-doc-table-tools-menu [data-value="other-headings"]')
+  await otherHeading.hover()
+  const headingSubmenu = page.locator('.is-heading-submenu')
+  await headingSubmenu.waitFor({ state: 'visible' })
+  const submenuBox = await headingSubmenu.boundingBox()
+  record('[当前飞书] 真人悬浮“其他标题”出现H4–H9子菜单，宽232且不出视口',
+    await headingSubmenu.locator('button').count() === 6 && Math.abs(submenuBox.width - 232) < 1
+      && submenuBox.x >= 0 && submenuBox.y >= 0)
+  const originalCellText = await page.locator('.ProseMirror table').textContent()
+  await headingSubmenu.locator('[data-value="heading9"]').click()
+  record('[当前飞书] 鼠标选择九级标题保留表格文字',
+    await page.evaluate(() => window.__larkDoc.getEditor().isActive('heading', { level: 9 }))
+      && await page.locator('.ProseMirror table').textContent() === originalCellText)
+  await page.keyboard.press('ControlOrMeta+z')
+  record('[当前飞书] 九级标题可撤销',
+    !await page.evaluate(() => window.__larkDoc.getEditor().isActive('heading', { level: 9 })))
 
   // align→align:center：段落 text-align 真的变化（computed / 编辑器属性 = center）。
   await setDoc(page)
@@ -1072,6 +1093,17 @@ const cellDragPoints = () => {
       && alignIsCenter && alignChanged,
     `menu=${alignMenuF.node?.menuName} 前=${alignBefore} 后 computed=${alignAfter.computed} inline=${alignAfter.inline} nodeAlign=${alignAfter.nodeAlign}`)
 
+  await page.locator('.lark-doc-table-tools-btn[data-cmd="align"]').hover()
+  record('[对齐回填] 真人重开菜单后勾选实际居中状态',
+    await page.locator('.lark-doc-table-tools-menu [data-value="align:center"]').getAttribute('aria-pressed') === 'true'
+      && await page.locator('.lark-doc-table-tools-menu [data-value="align:left"]').getAttribute('aria-pressed') === 'false')
+  await page.keyboard.press('Escape')
+  await page.locator('.ProseMirror table td').first().click()
+  await page.getByRole('button', { name: '选择第 1 列', exact: true }).click()
+  await page.locator('.lark-doc-table-tools-btn[data-cmd="align"]').hover()
+  record('[对齐回填] 选中居中/左对齐混合整列，不勾选任一水平对齐',
+    await page.locator('.lark-doc-table-tools-menu [data-value^="align:"][aria-pressed="true"]').count() === 0)
+
   // ═════════════ ④ 状态 B：点列 / 行选择条 → 同一个 v11 统一浮窗 ═════════════
   await setDoc(page)
   const geoB = await page.evaluate(tableGeometry)
@@ -1090,13 +1122,13 @@ const cellDragPoints = () => {
     nodeB ? `marker=${nodeB.rootMarker} A=[${cmdsA.join(',')}] B=[${nodeB.cmds.join(',')}] mode=${nodeB.mode} [${nodeB.classes.join('.')}]` : '没渲染')
 
   const boldSameNode = await page.evaluate(() => !!document.querySelector('.lark-doc-table-tools-btn[data-cmd="bold"][data-verify-btn="1"]'))
-  record('[状态 B syncChildren] 按钮节点一次建好、按上下文挂摘：A 标记的 bold 仍是同一节点，link 真摘除、share-link/comment 保持下线、表格专属 3 颗 + remove 真插入',
+  record('[状态 B syncChildren] 按钮节点一次建好、按上下文挂摘：A 标记的 bold 仍是同一节点，link 真摘除、share-link保持可用、未配置comment隐藏、表格专属 3 颗 + remove 真插入',
     !!nodeB && boldSameNode
-      && !nodeB.cmds.includes('link') && !nodeB.cmds.includes('share-link') && !nodeB.cmds.includes('comment')
+      && !nodeB.cmds.includes('link') && nodeB.cmds.includes('share-link') && !nodeB.cmds.includes('comment')
       && TABLE_ONLY_CMDS.every((cmd) => nodeB.cmds.includes(cmd)) && nodeB.cmds.includes('remove'),
     nodeB ? `boldSame=${boldSameNode} A=[${cmdsA.join(',')}] B=[${nodeB.cmds.join(',')}]` : '没渲染')
 
-  record('[状态 B] 13 个 data-cmd 齐全且顺序 = v12c 选择条态工具条',
+  record('[状态 B] 14 个 data-cmd 齐全且顺序 = v12c 选择条态工具条',
     !!nodeB && JSON.stringify(nodeB.cmds) === JSON.stringify(EXPECTED_CMDS_B),
     nodeB ? nodeB.cmds.join(',') : '没渲染')
 
@@ -1106,7 +1138,7 @@ const cellDragPoints = () => {
 
   record('[状态 B] 5 个 mark 按钮带 aria-pressed="true|false"（共 5 个）',
     !!nodeB && MARK_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd && b.hasPressed && (b.pressed === 'true' || b.pressed === 'false')))
-      && nodeB.buttons.filter((b) => b.hasPressed).length === 5,
+      && nodeB.buttons.filter((b) => MARK_CMDS.includes(b.cmd) && b.hasPressed).length === 5,
     nodeB ? `pressed=[${nodeB.buttons.filter((b) => b.hasPressed).map((b) => `${b.cmd}=${b.pressed}`).join(',')}]` : '没渲染')
 
   record('[状态 B] bar 内无 label > input[type=color] / 无 .lark-doc-select 旧下拉原语（v11 统一走 menu）',
@@ -1131,43 +1163,32 @@ const cellDragPoints = () => {
   })
   await page.waitForTimeout(140)
 
-  // merge-cell 菜单：2 项；无合并单元格时「合并」解禁、「拆分」按状态置灰（v11 全量审计）；图标 SVG。
-  await page.evaluate(() => {
-    const btn = document.querySelector('.lark-doc-table-tools-btn[data-cmd="merge-cell"]')
-    if (btn) btn.click()
-  })
+  // 实页为同一颗直接合并/拆分按钮，禁止用下拉伪装。
+  await page.locator('.lark-doc-table-tools-btn[data-cmd="merge-cell"]').click()
   await page.waitForTimeout(180)
-  const mergeMenu = await page.evaluate(measureToolbar)
-  const mergeVals = mergeMenu.node ? mergeMenu.node.menuItems.map((i) => i.value) : []
-  record('[状态 B] merge-cell 菜单含两项：合并解禁、无可拆分单元格时拆分置灰、图标 SVG（表格结构操作仍可达）',
-    mergeMenu.node?.menuName === 'merge-cell'
-      && JSON.stringify(mergeVals) === JSON.stringify(['mergeCells', 'splitCell'])
-      && mergeMenu.node.menuItems[0]?.disabled === false
-      && mergeMenu.node.menuItems[1]?.disabled === true
-      && mergeMenu.node.menuItems.every((i) => i.menuIconOk),
-    `menu=${mergeMenu.node?.menuName} items=[${mergeVals.join(',')}] disabled=[${mergeMenu.node?.menuItems.map((i) => i.disabled).join(',')}]`)
-  await page.evaluate(() => {
-    const btn = document.querySelector('.lark-doc-table-tools-btn[data-cmd="merge-cell"]')
-    if (btn) btn.click()
-  })
+  record('[状态 B] 直接合并整列，不弹额外菜单，同按钮进入拆分状态',
+    await page.locator('.ProseMirror [rowspan="2"]').count() > 0
+      && await page.locator('.lark-doc-table-tools-menu[data-menu="merge-cell"]').count() === 0
+      && await page.locator('.lark-doc-table-tools-btn[data-cmd="merge-cell"]').getAttribute('aria-pressed') === 'true')
+  await page.locator('.lark-doc-table-tools-btn[data-cmd="merge-cell"]').click()
   await page.waitForTimeout(140)
   snapB = await page.evaluate(measureToolbar)
   nodeB = snapB.node
 
-  record('[状态 B] 7 个菜单按钮齐全（table-header/merge-cell/cell-bg/turninto/align/highlight/more），aria-haspopup=menu / aria-expanded=false',
+  record('[状态 B] 5 个真实下拉齐全，标题/合并为直接操作，aria-haspopup=menu / aria-expanded=false',
     !!nodeB && MENU_CMDS_B.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd))
       && nodeB.buttons.filter((b) => b.haspopup === 'menu').length === MENU_CMDS_B.length
       && nodeB.buttons.filter((b) => b.haspopup === 'menu').every((b) => b.expanded === 'false'),
     nodeB ? `[${nodeB.buttons.filter((b) => b.haspopup === 'menu').map((b) => b.cmd).join(',')}]` : '没渲染')
 
-  record('[状态 B] 只有 4 个 caret 按钮（turninto/align/highlight/more）带 SVG 箭头，表格专属 3 颗纯图标无 caret',
+  record('[状态 B] 只有 3 个 caret 按钮（turninto/align/highlight）带 SVG 箭头，表格专属 3 颗纯图标无 caret',
     !!nodeB && CARET_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd && b.hasCaret && b.caretOk))
-      && nodeB.buttons.filter((b) => b.hasCaret).length === 4
+      && nodeB.buttons.filter((b) => b.hasCaret).length === 3
       && TABLE_ONLY_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd && !b.hasCaret && !b.hasCaretSpan)),
     nodeB ? `caret=[${nodeB.buttons.filter((b) => b.hasCaret).map((b) => b.cmd).join(',')}] tableOnly=[${TABLE_ONLY_CMDS.map((c) => `${c}:${nodeB.buttons.find((b) => b.cmd === c)?.hasCaret}`).join(',')}]` : '没渲染')
 
   record('[状态 B 统一] 13 按钮 + 3 条 sep（其中 1 条 .is-full），bar 子节点序列精确 = toolbarItems(line)',
-    !!nodeB && nodeB.buttons.length === 13 && nodeB.separators === SEP_B && nodeB.fullSeparators === 1
+    !!nodeB && nodeB.buttons.length === EXPECTED_CMDS_B.length && nodeB.separators === SEP_B && nodeB.fullSeparators === 1
       && JSON.stringify(nodeB.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_B)
       && MARK_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd))
       && TABLE_ONLY_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd)),
@@ -1225,28 +1246,17 @@ const cellDragPoints = () => {
     if (btn) btn.click()
   })
   await page.waitForTimeout(180)
-  const headerMenu = await page.evaluate(measureToolbar)
-  const headerItems = headerMenu.node ? headerMenu.node.menuItems.map((i) => i.value) : []
-  record('[状态 B] table-header 菜单结构：标题行/标题列 2 项、图标全为 .lark-doc-table-tools-menu-icon SVG',
-    headerMenu.node?.menuName === 'table-header'
-      && JSON.stringify(headerItems) === JSON.stringify(['toggleHeaderRow', 'toggleHeaderColumn'])
-      && headerMenu.node.menuItems.every((i) => i.menuIconOk),
-    `menu=${headerMenu.node?.menuName} items=[${headerItems.join(',')}]`)
-  await page.evaluate(() => {
-    const item = document.querySelector('.lark-doc-table-tools-menu[data-menu="table-header"] button.lark-doc-table-tools-menu-item[data-value="toggleHeaderRow"]')
-    if (item) item.click()
-  })
-  await page.waitForTimeout(420)
+  record('[状态 B] 首列标题按钮直接生效，不弹标题行列下拉',
+    await page.locator('.lark-doc-table-tools-menu[data-menu="table-header"]').count() === 0
+      && await page.locator('.ProseMirror tr').first().locator('th').count() > 0)
   const headerState = await page.evaluate(() => ({ th: document.querySelectorAll('.ProseMirror table th').length }))
-  record('[状态 B] 点 table-header 下拉的 toggleHeaderRow → 首行变 th（菜单项真分发）',
-    headerItems.length === 2 && headerState.th > 0,
-    `menu=${headerMenu.node?.menuName} items=[${headerItems.join(',')}] th=${headerState.th}`)
+  record('[状态 B] 直接切换标题列覆盖首列所有单元格', headerState.th === 2, `th=${headerState.th}`)
 
   // 行选择条同样出同一个统一浮窗；items 按上下文切成 13 项。
   await setDoc(page)
   const geoB3 = await page.evaluate(tableGeometry)
   snapB = await openCellSelection(page, geoB3, 'row', 0)
-  record('[状态 B] 点第 1 条行选择条 → 也是**同一个统一浮窗**（整行 CellSelection，13 个 data-cmd、无 mode）',
+  record('[状态 B] 点第 1 条行选择条 → 也是**同一个统一浮窗**（整行 CellSelection，14 个 data-cmd、无 mode）',
     snapB.count === 1 && !!snapB.node && snapB.node.mode === null
       && snapB.node.rootMarker === 'A1'
       && JSON.stringify(snapB.node.cmds) === JSON.stringify(EXPECTED_CMDS_B),
@@ -1255,14 +1265,14 @@ const cellDragPoints = () => {
   // 从 B 切回 A：syncChildren 真摘除表格专属 3 颗 + remove、插回 link；
   // v12c 已下线的 share-link / comment 不得被 syncBar 顺手挂回来。
   const snapBack = await openTextSelection(page, geoB3)
-  record('[统一浮窗] B → A → 回到 10 个 data-cmd、items 真摘除/插回、无 mode 属性、bar 序列精确、下线两按钮未复活',
+  record('[统一浮窗] B → A → 回到 11 个 data-cmd、items 真摘除/插回、无 mode 属性、bar 序列精确、分享仍可见、未配置评论隐藏',
     snapBack.count === 1 && !!snapBack.node && snapBack.node.mode === null && !snapBack.node.hasModeAttr
       && JSON.stringify(snapBack.node.cmds) === JSON.stringify(cmdsA)
       && JSON.stringify(snapBack.node.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_A)
-      && snapBack.node.buttons.length === 10 && snapBack.node.separators === SEP_A
+      && snapBack.node.buttons.length === EXPECTED_CMDS_A.length && snapBack.node.separators === SEP_A
       && !snapBack.node.cmds.includes('remove') && TABLE_ONLY_CMDS.every((c) => !snapBack.node.cmds.includes(c))
       && snapBack.node.cmds.includes('link')
-      && !snapBack.node.cmds.includes('share-link') && !snapBack.node.cmds.includes('comment')
+      && snapBack.node.cmds.includes('share-link') && !snapBack.node.cmds.includes('comment')
       && !snapBack.node.hasLabel && snapBack.node.selectCount === 0,
     snapBack.node ? `mode=${snapBack.node.mode} cmds=${snapBack.node.cmds.length} sep=${snapBack.node.separators} [${snapBack.node.cmds.join(',')}]` : '没渲染')
 
@@ -1309,19 +1319,19 @@ const cellDragPoints = () => {
       dragInfo.selectedCells >= 2 && snap.count === 1 && snap.legacy === 0,
       `selectedCell=${dragInfo.selectedCells} tools=${snap.count} legacy=${snap.legacy}`)
 
-    record('[状态 E] 11 个 data-cmd 齐全且顺序 = v12c 多格拖选形态 E（开头 合并/背景、无 table-header、末尾 more）',
+    record('[状态 E] 13 个 data-cmd 齐全且顺序 = 当前多格拖选形态 E（开头 合并/背景、无 table-header、末尾 more）',
       !!nodeE && JSON.stringify(cmdsE) === JSON.stringify(EXPECTED_CMDS_E),
       nodeE ? nodeE.cmds.join(',') : `没渲染（selectedCell=${dragInfo.selectedCells} tools=${snap.count}）`)
 
-    record('[状态 E] 末尾是 data-cmd="more"（🔴 不是 remove、也不是已下线的 comment / share-link）；table-header 与 remove 在 multi 态都不存在',
-      !!nodeE && cmdsE[cmdsE.length - 1] === 'more'
+    record('[状态 E] 末尾为独立share-link；未配置评论隐藏，table-header与remove不出现在multi态',
+      !!nodeE && cmdsE[cmdsE.length - 1] === 'share-link'
         && !cmdsE.includes('table-header') && !cmdsE.includes('remove')
-        && !cmdsE.includes('comment') && !cmdsE.includes('share-link')
+        && !cmdsE.includes('comment') && cmdsE.includes('share-link')
         && (await page.evaluate(() => document.querySelectorAll('.lark-doc-table-tools-btn[data-cmd="table-header"], .lark-doc-table-tools-btn[data-cmd="remove"]').length)) === 0,
       nodeE ? `末尾=${cmdsE[cmdsE.length - 1]} header/remove/下线两按钮皆无` : '没渲染')
 
-    record('[状态 E] bar 内 11 按钮 + 3 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(multi)',
-      !!nodeE && nodeE.buttons.length === 11 && nodeE.separators === SEP_E && nodeE.fullSeparators === 1
+    record('[状态 E] bar 内 13 按钮 + 4 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(multi)',
+      !!nodeE && nodeE.buttons.length === EXPECTED_CMDS_E.length && nodeE.separators === SEP_E && nodeE.fullSeparators === 1
         && JSON.stringify(nodeE.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_E),
       nodeE ? `${nodeE.barChildTags.join(',')} sep=${nodeE.separators} full=${nodeE.fullSeparators}` : '没渲染')
 
@@ -1331,25 +1341,15 @@ const cellDragPoints = () => {
         && nodeE.rootMarker === 'A1' && nodeE.rootChildTags.every((t) => t === 'div'),
       nodeE ? `marker=${nodeE.rootMarker} mode=${nodeE.mode} [${nodeE.classes.join('.')}]` : '没渲染')
 
-    // merge-cell 菜单：state.cellSelection（line / multi 都为 true）→「合并单元格」不置灰。
     await page.mouse.move(8, 8)
     await page.waitForTimeout(160)
-    await page.evaluate(() => {
-      const btn = document.querySelector('.lark-doc-table-tools-btn[data-cmd="merge-cell"]')
-      if (btn) btn.click()
-    })
+    await page.locator('.lark-doc-table-tools-btn[data-cmd="merge-cell"]').click()
     await page.waitForTimeout(180)
-    const mergeMenuE = await page.evaluate(measureToolbar)
-    const mergeValsE = mergeMenuE.node ? mergeMenuE.node.menuItems.map((i) => i.value) : []
-    record('[状态 E] merge-cell 菜单可用：data-menu=merge-cell 挂载、两项齐全、「合并单元格」**不置灰**（cellSelection=true）',
-      mergeMenuE.count === 1 && mergeMenuE.node?.menuName === 'merge-cell'
-        && JSON.stringify(mergeValsE) === JSON.stringify(['mergeCells', 'splitCell'])
-        && mergeMenuE.node.menuItems[0]?.disabled === false,
-      `menu=${mergeMenuE.node?.menuName} items=[${mergeValsE.join(',')}] disabled=[${mergeMenuE.node?.menuItems.map((i) => i.disabled).join(',')}]`)
-    await page.evaluate(() => {
-      const btn = document.querySelector('.lark-doc-table-tools-btn[data-cmd="merge-cell"]')
-      if (btn) btn.click()
-    })
+    record('[状态 E] 多格直接合并，同按钮拆分且无下拉',
+      await page.locator('.ProseMirror [colspan="2"]').count() > 0
+        && await page.locator('.lark-doc-table-tools-btn[data-cmd="merge-cell"]').getAttribute('aria-pressed') === 'true'
+        && await page.locator('.lark-doc-table-tools-menu[data-menu="merge-cell"]').count() === 0)
+    await page.locator('.lark-doc-table-tools-btn[data-cmd="merge-cell"]').click()
     await page.waitForTimeout(140)
 
     // 复位：Escape 收浮窗，避免残留 multi 选区影响后续 ⑤ 边界条断言。
@@ -1382,7 +1382,7 @@ const cellDragPoints = () => {
     !!boundary && boundary.buttons.length === 1
       && boundary.childTags.join(',') === 'span,button,div'
       && /\blark-doc-table-col-plus-btn\b/.test(boundary.buttons[0].className)
-      && boundary.buttons[0].text === '＋' && boundary.buttons[0].type === 'button'
+      && boundary.buttons[0].glyph === '0 0 22 24' && boundary.buttons[0].type === 'button'
       && !boundary.buttons.some((b) => /is-column-before|is-column-after|is-row-before|is-row-after/.test(b.className)),
     boundary ? `${boundary.childTags.join(',')} [${boundary.buttons.map((b) => b.className)}]` : '没渲染')
 
@@ -1558,6 +1558,30 @@ const cellDragPoints = () => {
   }
 
   // ═════════ ⑥.1 v7：窄表格（wrapper 比表格宽）线与浮窗的回归 ═════════
+  // 实页对照：Shift 连选、多列专用入口、所选均分、键盘清空与按钮删除分别验收。
+  const parityTable = '<p>前</p><table>' + Array.from({ length: 3 }, (_, row) => '<tr>' + [180, 100, 300, 200].map((width, col) => `<td colwidth="${width}"><p>${row + 1}-${col + 1}</p></td>`).join('') + '</tr>').join('') + '</table><p>后</p>'
+  await page.evaluate(content => { window.__larkDoc.setContent(content) }, parityTable)
+  await page.waitForTimeout(300)
+  await page.locator('.ProseMirror td').first().click()
+  await page.getByRole('button', { name: '选择第 2 列', exact: true }).click()
+  await page.getByRole('button', { name: '选择第 4 列', exact: true }).click({ modifiers: ['Shift'] })
+  record('[飞书对照] Shift 第2→4列连续选中三整列', await page.locator('.ProseMirror .selectedCell').count() === 9)
+  await page.getByRole('button', { name: '选择第 1 列', exact: true }).click({ modifiers: ['Shift'] })
+  record('[飞书对照] 再Shift第1列仍沿首次第2列作锚点', await page.locator('.ProseMirror .selectedCell').count() === 6)
+  const parityTools = page.locator('.lark-doc-table-tools')
+  record('[飞书对照] 多整列有均分/删除，无标题行列项', await parityTools.locator('[data-cmd="distributeColumns"]').count() === 1 && await parityTools.locator('[data-cmd="remove"]').count() === 1 && await parityTools.locator('[data-cmd="table-header"]').count() === 0)
+  await parityTools.locator('[data-cmd="distributeColumns"]').click()
+  const parityWidths = await page.evaluate(() => window.__larkDoc.getJSON().content.find(node => node.type === 'table').content[0].content.map(cell => cell.attrs.colwidth?.[0]))
+  record('[飞书对照] 只均分所选列180/100→140/140，其余300/200不变', JSON.stringify(parityWidths) === '[140,140,300,200]')
+  await page.keyboard.press('Backspace')
+  const cleared = await page.locator('.ProseMirror table').evaluate(table => ({ rows: table.rows.length, cols: table.rows[0].cells.length, empty: [...table.rows].every(row => !row.cells[0].textContent && !row.cells[1].textContent), kept: [...table.rows].every((row, index) => row.cells[2].textContent === `${index + 1}-3` && row.cells[3].textContent === `${index + 1}-4`) }))
+  record('[飞书对照] Backspace清内容保留3×4结构和未选内容', cleared.rows === 3 && cleared.cols === 4 && cleared.empty && cleared.kept, JSON.stringify(cleared))
+  await parityTools.locator('[data-cmd="remove"]').click()
+  record('[飞书对照] 浮窗删除真正删除两整列', await page.locator('.ProseMirror tr').first().locator('td,th').count() === 2 && await page.locator('.ProseMirror tr').count() === 3)
+  await page.getByRole('button', { name: '选择第 1 行', exact: true }).click()
+  await page.getByRole('button', { name: '选择第 3 行', exact: true }).click({ modifiers: ['Shift'] })
+  record('[飞书对照] 多整行有删除、无均分和标题行列', await parityTools.locator('[data-cmd="remove"]').count() === 1 && await parityTools.locator('[data-cmd="distributeColumns"], [data-cmd="table-header"]').count() === 0)
+
   // 用户实测反馈「高亮条超过 table」：自定义 nodeview 的 nodeDOM 返回 .tableWrapper
   // （纸张宽 539px），而内部 <table> 只有 242px，旧代码把 wrapper 宽当线宽。
   // 之前 ⑥ 的 2×2 表格恰好 table 宽 == wrapper 宽，断言是假阳性，这里补专门场景。
@@ -1616,6 +1640,76 @@ const cellDragPoints = () => {
   record('[浮层 v7] 悬浮列交界时手柄热区在（用例有效）且**零个可见蓝色胶囊**（反馈①）',
     caps.count > 0 && caps.visible === 0,
     `handles=${caps.count} visible=${caps.visible} resize-cursor=${caps.hasResizeCursor}`)
+
+  // v12e：fixed 横线必须裁切到横滚可视区，并跟随真正 hover 的表格。
+  const wideTable = '<table><tbody>' + Array.from({ length: 2 }, (_, row) => '<tr>' + Array.from({ length: 8 }, (_, col) => `<td colwidth="240"><p>${row + 1}-${col + 1}</p></td>`).join('') + '</tr>').join('') + '</tbody></table>'
+  await page.evaluate(content => { window.__larkDoc.setContent(content) }, wideTable)
+  await page.locator('.ProseMirror td').first().click()
+  const scrollControl = page.getByRole('scrollbar', { name: '表格横向滚动' })
+  await scrollControl.waitFor({ state: 'visible' })
+  const visibleGeometry = () => {
+    const table = document.querySelector('.ProseMirror table')
+    const wrapper = table.closest('.tableWrapper')
+    const t = table.getBoundingClientRect(), w = wrapper.getBoundingClientRect()
+    const left = Math.max(t.left, w.left + wrapper.clientLeft), right = Math.min(t.right, w.left + wrapper.clientLeft + wrapper.clientWidth)
+    const edges = [...table.rows[0].cells].map(cell => cell.getBoundingClientRect().right)
+    let x = left + 30
+    while (x < right - 10 && edges.some(edge => Math.abs(edge - x) < 20)) x += 25
+    return { left, right, x, y: table.rows[0].getBoundingClientRect().bottom, logicalWidth: t.width, viewWidth: right - left, scrollLeft: wrapper.scrollLeft }
+  }
+  for (const [label, keys] of [['起点', ['Home']], ['中间', ['Home', ...Array(6).fill('ArrowRight')]], ['末端', ['End']]]) {
+    for (const key of keys) await scrollControl.press(key)
+    await page.waitForTimeout(160)
+    const geometry = await page.evaluate(visibleGeometry)
+    await page.mouse.move(geometry.x, geometry.y)
+    await page.locator('.lark-doc-table-boundary-line.is-row-line').waitFor({ state: 'visible' })
+    const line = await page.locator('.lark-doc-table-boundary-line.is-row-line').boundingBox()
+    record(`[边界条 v12e] 宽表横滚${label}：横线左右端均在真实可视表格范围内`, geometry.logicalWidth > geometry.viewWidth + 100 && line.x >= geometry.left - 1 && line.x + line.width <= geometry.right + 1 && Math.abs(line.width - geometry.viewWidth) < 2, JSON.stringify({ line, geometry }))
+  }
+  await scrollControl.press('Home')
+  await page.waitForTimeout(180)
+  const afterScroll = await page.evaluate(visibleGeometry)
+  const stationaryLine = await page.locator('.lark-doc-table-boundary-line.is-row-line').boundingBox()
+  record('[边界条 v12e] 不移动鼠标横滚后，横线起点和长度仍及时重算', stationaryLine && stationaryLine.x >= afterScroll.left - 1 && stationaryLine.x + stationaryLine.width <= afterScroll.right + 1)
+  await page.mouse.move(afterScroll.left - 60, afterScroll.y)
+  await page.waitForTimeout(260)
+  record('[边界条 v12e] 指针在裁切区外，不命中隐藏的逻辑表格', await page.locator('.lark-doc-table-boundary-line').count() === 0)
+
+  await page.evaluate(content => { window.__larkDoc.setContent(content) }, wideTable + '<p>两表之间</p>' + NARROW)
+  await page.locator('.ProseMirror table').first().locator('td,th').first().click()
+  const second = page.locator('.ProseMirror table').nth(1)
+  const secondCell = await second.locator('td,th').first().boundingBox()
+  await page.mouse.move(secondCell.x + secondCell.width / 2, secondCell.y + secondCell.height)
+  await page.locator('.lark-doc-table-boundary-line.is-row-line').waitFor({ state: 'visible' })
+  const secondRect = await second.boundingBox(), secondLine = await page.locator('.lark-doc-table-boundary-line.is-row-line').boundingBox()
+  record('[边界条 v12e] 光标在宽表A、悬浮窄表B，横线属于B', secondLine.x >= secondRect.x - 1 && secondLine.x + secondLine.width <= secondRect.x + secondRect.width + 1 && Math.abs(secondLine.width - secondRect.width) < 2)
+  const rowsBefore = await page.locator('.ProseMirror table').evaluateAll(tables => tables.map(table => table.rows.length))
+  await page.getByRole('button', { name: '在此处插入行', exact: true }).click()
+  const rowsAfter = await page.locator('.ProseMirror table').evaluateAll(tables => tables.map(table => table.rows.length))
+  record('[边界条 v12e] 点击B的＋只增加B的行，不改A', rowsAfter[0] === rowsBefore[0] && rowsAfter[1] === rowsBefore[1] + 1, `${rowsBefore} → ${rowsAfter}`)
+
+  await page.evaluate(() => {
+    const doc = window.__larkDoc
+    doc.setContent('<table><tr><td colwidth="100"><p>shrink this row<br>line two<br>line three<br>line four</p></td><td colwidth="100"><p>B</p></td></tr><tr><td colwidth="100"><p>C</p></td><td colwidth="100"><p>D</p></td></tr></table>')
+    const editor = doc.getEditor(), p = editor.view.dom.querySelector('td p')
+    const from = editor.view.posAtDOM(p, 0)
+    editor.commands.setTextSelection({ from, to: from + editor.state.doc.nodeAt(from - 1).content.size })
+    editor.commands.focus()
+  })
+  const tallCell = await page.locator('.ProseMirror td').first().boundingBox()
+  await page.mouse.move(tallCell.x + tallCell.width / 2, tallCell.y + tallCell.height)
+  await page.locator('.lark-doc-table-boundary-line.is-row-line').waitFor({ state: 'visible' })
+  await page.keyboard.press('Backspace')
+  await page.waitForTimeout(200)
+  const shrunkTable = await page.locator('.ProseMirror table').boundingBox()
+  const shrunkLineLocator = page.locator('.lark-doc-table-boundary-line.is-row-line')
+  const shrunkLine = await shrunkLineLocator.count() ? await shrunkLineLocator.boundingBox() : null
+  record('[高亮条回归] 鼠标不动，键盘删除多行文字后横线仍在缩小后的表格内',
+    shrunkTable.height < tallCell.height && (!shrunkLine || shrunkLine.y + shrunkLine.height <= shrunkTable.y + shrunkTable.height + 1),
+    JSON.stringify({ tallCell, shrunkTable, shrunkLine }))
+  if (process.env.LARK_DOC_EVIDENCE_DIR) {
+    await page.screenshot({ path: path.join(process.env.LARK_DOC_EVIDENCE_DIR, 'master-parity-local-table-shrunk-boundary.png') })
+  }
 
   // ═════════════ ⑥.2 打印态：@media print 隐藏表格浮窗（防打印带出操作条） ═════════════
   await setDoc(page)
