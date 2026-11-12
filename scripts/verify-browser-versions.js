@@ -29,7 +29,16 @@ async function main() {
   const openAction = async name => {
     if (!await page.getByRole('combobox', { name: '文档更多操作', exact: true }).isVisible()) await click(page.getByRole('button', { name: '文档操作', exact: true }))
     await click(page.getByRole('combobox', { name: '文档更多操作', exact: true }))
-    await click(page.getByRole('option', { name, exact: true }))
+    // The shared select opens on hover and closes 150ms after the pointer leaves
+    // the trigger. Playwright's locator.click waits between move and click long
+    // enough to lose the menu; use the same immediate pointer sequence as a
+    // human click across the 4px trigger/menu gap.
+    const option = page.getByRole('option', { name, exact: true })
+    const box = await option.boundingBox()
+    if (!box) throw new Error(`版本菜单选项未定位：${name}`)
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 1 })
+    await page.mouse.down()
+    await page.mouse.up()
   }
   const save = async label => {
     await openAction('另存为版本')
