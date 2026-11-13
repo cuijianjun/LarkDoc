@@ -397,12 +397,13 @@
 .lark-doc .lark-doc-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 7px; border-right: 1px solid var(--ld-border-chrome); }
 .lark-doc .lark-doc-tools-end { margin-left: auto; border-right: 0; }
 .lark-doc .lark-doc-tools select { max-width: 115px; height: 30px; border-color: transparent; background: transparent; padding: 3px 5px; }
-.lark-doc .lark-doc-tools button { min-width: 29px; height: 30px; padding: 3px 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 12.5px; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-tools button { min-width: 29px; height: 30px; padding: 3px 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 13px; color: var(--ld-text-secondary); }
 /* 扁平化（对齐飞书）：hover 仅浅灰底无边框；展开（aria-expanded）/激活（aria-pressed）浅绿底 + 主色图标。 */
 .lark-doc .lark-doc-tools button:hover:not(:disabled), .lark-doc .lark-doc-select-trigger:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--lark-doc-ink); }
 .lark-doc .lark-doc-tools button[aria-pressed="true"], .lark-doc .lark-doc-tools button[aria-expanded="true"], .lark-doc .lark-doc-select-open .lark-doc-select-trigger { background: var(--ld-bg-accent-active); border-color: transparent; color: var(--ld-text-accent-hover); }
 /* 格式字母按钮（B/I/U/S 等）：用排版本身当图标，飞书同款做法。 */
-.lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] { font-size: 13px; font-weight: 700; }
+.lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] { font-size: 14px; font-weight: 700; }
+.lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] .lark-doc-icon { width: 18px; height: 18px; flex: 0 0 18px; }
 .lark-doc .lark-doc-mark-bold { font-weight: 800; }
 .lark-doc .lark-doc-mark-italic { font-family: Georgia, "Times New Roman", serif; font-style: italic; }
 .lark-doc .lark-doc-mark-underline { text-decoration: underline; text-underline-offset: 2px; }
@@ -411,7 +412,8 @@
 /* 颜色按钮：字色 = A + 底部色条；背景色 = A 带下半高亮（飞书同款语义）。 */
 .lark-doc .lark-doc-color { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
 .lark-doc .lark-doc-color:hover { background: var(--ld-bg-hover-chrome); }
-.lark-doc .lark-doc-color-letter { font-size: 16px; font-weight: 700; line-height: 1; color: var(--ld-text-secondary); padding: 0 1px; }
+.lark-doc .lark-doc-color-letter { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; line-height: 1; color: var(--ld-text-secondary); padding: 0; }
+.lark-doc .lark-doc-color-icon { width: 18px; height: 18px; flex: 0 0 18px; }
 /* 颜色触发器箭头：与「字号 / 行高」等下拉箭头同轴（30px 触发区里 12px 图标 → 上下各 9px），不再用 margin 微调。 */
 .lark-doc .lark-doc-color-arrow { flex: 0 0 12px; width: 12px; height: 12px; color: var(--ld-text-icon-tertiary); transition: transform 0.18s ease; }
 .lark-doc .lark-doc-color[aria-expanded="true"] .lark-doc-color-arrow { transform: rotate(180deg); }
@@ -444,7 +446,8 @@
 .lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active,
 .lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active:hover:not(:disabled) { background: var(--ld-bg-accent-active); border-color: transparent; color: var(--ld-text-accent-hover); }
 .lark-doc .lark-doc-heading-menu button[role="menuitem"].lark-doc-menu-active .lark-doc-heading-glyph { color: var(--ld-text-accent-hover); }
-.lark-doc .lark-doc-menu-check { margin-left: auto; padding-left: 8px; color: currentColor; font-size: 12px; line-height: 1; }
+.lark-doc .lark-doc-menu-check { display: inline-flex; width: 14px; height: 14px; margin-left: auto; padding-left: 8px; align-items: center; color: currentColor; line-height: 1; }
+.lark-doc .lark-doc-menu-check .lark-doc-check-icon { width: 14px; height: 14px; flex: 0 0 14px; }
 /* 共享下拉原语（LarkDocSelect）：触发按钮沿用工具栏按钮观感，选项列表为 fixed 自绘弹层。 */
 .lark-doc .lark-doc-select { position: relative; display: inline-flex; }
 .lark-doc .lark-doc-select-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 29px; height: 30px; padding: 3px 6px; font-size: 12px; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
@@ -453,6 +456,9 @@
 .lark-doc .lark-doc-select-caret { font-size: 10px; color: var(--lark-doc-muted); }
 .lark-doc .lark-doc-select-menu { position: fixed; z-index: 70; display: grid; padding: 5px; background: var(--ld-bg-surface-chrome); border: 1px solid var(--ld-border-chrome); border-radius: 9px; box-shadow: var(--ld-shadow-chrome); max-height: 60vh; overflow-y: auto; }
 .lark-doc .lark-doc-select-menu button { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; text-align: left; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.lark-doc .lark-doc-select-check { display: inline-flex; width: 14px; height: 14px; flex: 0 0 14px; align-items: center; justify-content: center; color: var(--ld-text-check); }
+.lark-doc .lark-doc-select-check .lark-doc-check-icon { width: 14px; height: 14px; flex: 0 0 14px; opacity: 0; }
+.lark-doc .lark-doc-select-check.is-visible .lark-doc-check-icon { opacity: 1; }
 .lark-doc .lark-doc-select-menu button:hover, .lark-doc .lark-doc-select-menu button.is-highlight { background: var(--ld-bg-hover-select); }
 .lark-doc .lark-doc-select-menu .lark-doc-select-check { width: 14px; flex: 0 0 14px; color: var(--ld-text-check); }
 /* 选项文本：单行 = 一行文字；带 `hint` 的两行式（顶栏模式下拉）自动纵向排。 */
@@ -717,7 +723,7 @@
 .lark-doc .lark-doc-panel-heading { display: flex; align-items: center; justify-content: space-between; }.lark-doc .lark-doc-panel-heading h2 { margin: 0; font-size: 15px; }.lark-doc .lark-doc-side-panel p { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-side-panel button { border-color: var(--ld-border-chrome); }.lark-doc .lark-doc-side-panel input, .lark-doc .lark-doc-side-panel select { width: 100%; max-width: 100%; }.lark-doc .lark-doc-panel-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }.lark-doc .lark-doc-ai-result { min-height: 95px; max-height: 250px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--lark-doc-soft); padding: 10px; border-radius: 5px; }.lark-doc .lark-doc-snapshot-list { padding-left: 16px; }
 .lark-doc .lark-doc-ai-panel { display: grid; gap: 7px; }.lark-doc .lark-doc-ai-panel h2 small { color: var(--lark-doc-muted); font-size: 11px; font-weight: 500; }.lark-doc .lark-doc-ai-panel label { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-context { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-context); }.lark-doc .lark-doc-ai-context-summary, .lark-doc .lark-doc-ai-status { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-status { margin: 0; }.lark-doc .lark-doc-ai-messages, .lark-doc .lark-doc-ai-review-list { display: grid; gap: 6px; max-height: 150px; margin: 0; padding: 0; overflow: auto; list-style: none; }.lark-doc .lark-doc-ai-messages li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--lark-doc-soft); }.lark-doc .lark-doc-ai-messages li.is-user { background: var(--ld-bg-accent); }.lark-doc .lark-doc-ai-messages span { white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-review-list li, .lark-doc .lark-doc-ai-proposal { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-review); }.lark-doc .lark-doc-ai-review-list small { color: var(--lark-doc-muted); }.lark-doc .lark-doc-ai-review-list button { justify-self: start; }.lark-doc .lark-doc-ai-proposal { background: var(--ld-bg-ai-proposal); }.lark-doc .lark-doc-ai-proposal p { margin: 0; }.lark-doc .lark-doc-ai-proposal pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-panel textarea { width: 100%; resize: vertical; }
 .lark-doc .lark-doc-template-panel { display: grid; gap: 10px; }.lark-doc .lark-doc-template-list { display: grid; gap: 4px; max-height: min(55vh, 420px); overflow-y: auto; }.lark-doc .lark-doc-template-list button { display: grid; gap: 2px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; }.lark-doc .lark-doc-template-list button:hover, .lark-doc .lark-doc-template-list button:focus-visible { border-color: var(--ld-border-template-hover); background: var(--ld-bg-accent); color: var(--ld-text-accent); outline: 0; }.lark-doc .lark-doc-template-list small { color: var(--lark-doc-muted); font-size: 11px; }
-.lark-doc .lark-doc-block-handle { position: absolute; z-index: 20; left: 0; display: flex; gap: 2px; }.lark-doc .lark-doc-block-handle.is-menu-open { z-index: 60; }.lark-doc .lark-doc-block-handle > button { min-width: 25px; padding: 1px; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-main { position: relative; z-index: 21; display: inline-flex; box-sizing: border-box; width: 42px; min-width: 42px !important; height: 26px; min-height: 26px; align-items: center; justify-content: space-between; gap: 2px; padding: 2px 4px !important; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-handle); }.lark-doc .lark-doc-block-handle-main:hover, .lark-doc .lark-doc-block-handle-main:focus-visible { border-color: var(--ld-border-handle-hover); background: var(--ld-bg-handle-hover); color: var(--ld-text-accent); }.lark-doc .lark-doc-block-handle-type { min-width: 22px; color: var(--ld-accent-control); font-size: 15px; font-weight: 650; line-height: 1; text-align: center; }.lark-doc .lark-doc-block-handle-dots { display: grid; width: 16px; height: 16px; place-items: center; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-dots .lark-doc-icon { display: block; width: 16px; height: 16px; }.lark-doc .lark-doc-block-menu { position: absolute; z-index: 60; left: 0; top: 32px; display: grid; width: 230px; max-height: min(620px, calc(100vh - 16px)); padding: 5px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }.lark-doc .lark-doc-block-menu button { text-align: left; }.lark-doc .lark-doc-block-menu-section { display: grid; gap: 1px; }.lark-doc .lark-doc-block-type-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }.lark-doc .lark-doc-block-type-actions button { display: grid; min-height: 40px; place-items: center; padding: 4px 2px; text-align: center; }.lark-doc .lark-doc-block-type-actions button:hover, .lark-doc .lark-doc-block-type-actions button:focus-visible, .lark-doc .lark-doc-block-type-actions button.active { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }.lark-doc .lark-doc-block-type-icon { display: grid; min-width: 28px; min-height: 28px; place-items: center; color: currentColor; font-size: 17px; font-weight: 600; line-height: 1; }.lark-doc .lark-doc-block-menu-divider { height: 1px; margin: 5px -5px; background: var(--ld-border-chrome); }
+.lark-doc .lark-doc-block-handle { position: absolute; z-index: 20; left: 0; display: flex; gap: 2px; }.lark-doc .lark-doc-block-handle.is-menu-open { z-index: 60; }.lark-doc .lark-doc-block-handle > button { min-width: 25px; padding: 1px; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-main { position: relative; z-index: 21; display: inline-flex; box-sizing: border-box; width: 42px; min-width: 42px !important; height: 26px; min-height: 26px; align-items: center; justify-content: center; gap: 2px; padding: 2px 4px !important; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-handle); }.lark-doc .lark-doc-block-handle-main:hover, .lark-doc .lark-doc-block-handle-main:focus-visible { border-color: var(--ld-border-handle-hover); background: var(--ld-bg-handle-hover); color: var(--ld-text-accent); }.lark-doc .lark-doc-block-handle-type { display: inline-flex; flex: 0 0 18px; width: 18px; min-width: 18px; height: 18px; align-items: center; justify-content: center; color: var(--ld-accent-control); line-height: 1; text-align: center; }.lark-doc .lark-doc-block-handle-dots { display: grid; flex: 0 0 14px; width: 14px; height: 14px; place-items: center; color: var(--ld-text-handle-icon); }.lark-doc .lark-doc-block-handle-type .lark-doc-icon { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; }.lark-doc .lark-doc-block-handle-dots .lark-doc-icon { display: block; width: 14px; height: 14px; }.lark-doc .lark-doc-block-menu { position: absolute; z-index: 60; left: 0; top: 32px; display: grid; width: 230px; max-height: min(620px, calc(100vh - 16px)); padding: 5px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }.lark-doc .lark-doc-block-menu button { text-align: left; }.lark-doc .lark-doc-block-menu-section { display: grid; gap: 1px; }.lark-doc .lark-doc-block-type-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }.lark-doc .lark-doc-block-type-actions button { display: grid; min-height: 40px; place-items: center; padding: 4px 2px; text-align: center; }.lark-doc .lark-doc-block-type-actions button:hover, .lark-doc .lark-doc-block-type-actions button:focus-visible, .lark-doc .lark-doc-block-type-actions button.active { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }.lark-doc .lark-doc-block-type-icon { display: grid; min-width: 28px; min-height: 28px; place-items: center; color: currentColor; font-size: 17px; font-weight: 600; line-height: 1; }.lark-doc .lark-doc-block-menu-divider { height: 1px; margin: 5px -5px; background: var(--ld-border-chrome); }
 /* AI 预览富文本：markdown 渲染后与正文同构，避免 <pre> 里直接露出 ** 和 # */
 .lark-doc .lark-doc-ai-result--rich { white-space: normal; color: var(--ld-ai-rich-text); font-size: 13px; line-height: 1.7; }
 .lark-doc .lark-doc-ai-result--rich > :first-child { margin-top: 0; }
@@ -746,7 +752,7 @@
 .lark-doc .lark-doc-block-menu-ai:hover, .lark-doc .lark-doc-block-menu-ai:focus-visible, .lark-doc .lark-doc-block-menu-row:hover, .lark-doc .lark-doc-block-menu-row:focus-visible, .lark-doc .lark-doc-block-submenu-trigger:hover, .lark-doc .lark-doc-block-submenu-trigger:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
 .lark-doc .lark-doc-block-menu-icon { flex: 0 0 auto; color: var(--ld-text-menu-icon); }
 .lark-doc .lark-doc-block-menu-ai:hover .lark-doc-block-menu-icon, .lark-doc .lark-doc-block-menu-row:hover .lark-doc-block-menu-icon, .lark-doc .lark-doc-block-submenu-trigger:hover .lark-doc-block-menu-icon { color: var(--ld-text-accent-hover); }
-.lark-doc .lark-doc-block-menu-arrow { margin-left: auto; color: var(--ld-text-icon-tertiary); font-size: 15px; }
+.lark-doc .lark-doc-block-menu-arrow { width: 14px; height: 14px; margin-left: auto; color: var(--ld-text-icon-tertiary); transform: rotate(-90deg); }
 .lark-doc .lark-doc-block-submenu-trigger .lark-doc-block-menu-arrow { margin-left: auto; }
 .lark-doc .lark-doc-block-menu-duplicate { display: grid; min-height: 34px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu-icon); }
 .lark-doc .lark-doc-block-menu-duplicate:hover, .lark-doc .lark-doc-block-menu-duplicate:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
@@ -757,6 +763,7 @@
 .lark-doc .lark-doc-menu-switch.on { background: var(--ld-brand-content); }
 .lark-doc .lark-doc-menu-switch.on .lark-doc-menu-switch-dot { left: 14px; }
 .lark-doc .lark-doc-empty-block-insert { width: 28px; height: 28px; padding: 0; border: 1px solid var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-menu); font-size: 22px; line-height: 1; }
+.lark-doc .lark-doc-empty-block-icon { width: 18px; height: 18px; }
 .lark-doc .lark-doc-callout-tools { position: absolute; z-index: 24; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-tools); }.lark-doc .lark-doc-callout-tools label { display: grid; place-items: center; width: 30px; height: 30px; color: var(--ld-text-menu-icon); cursor: pointer; }.lark-doc .lark-doc-callout-tools label span { grid-area: 1 / 1; pointer-events: none; }.lark-doc .lark-doc-callout-tools input[type="color"] { grid-area: 1 / 1; width: 30px; height: 30px; padding: 0; border: 0; opacity: 0; cursor: pointer; }.lark-doc .lark-doc-callout-tools > button { min-width: 30px; height: 30px; padding: 3px; }
 .lark-doc .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* —— 划词浮动工具条（对齐飞书：AI 入口 → 标题级别 ▾ → 对齐缩进 ▾ → 行内格式 → 高亮取色 → 复制）—— */
@@ -854,8 +861,10 @@
 .lark-doc .lark-doc-block-submenu button.active { background: transparent; color: var(--ld-text-menu-active); }
 .lark-doc .lark-doc-block-submenu button.active:hover, .lark-doc .lark-doc-block-submenu button.active:focus-visible { background: var(--ld-bg-hover-menu); }
 .lark-doc .lark-doc-block-submenu button:disabled:hover { background: var(--ld-bg-hover-menu); }
-.lark-doc .lark-doc-block-align-glyph { display: inline-grid; width: 20px; flex: 0 0 20px; place-items: center; color: var(--ld-text-align-glyph); font-size: 18px; line-height: 1; }
-.lark-doc .lark-doc-block-align-check { margin-left: auto; color: var(--ld-text-menu-active); font-size: 16px; font-weight: 700; }
+.lark-doc .lark-doc-block-align-glyph { display: inline-grid; width: 20px; height: 20px; flex: 0 0 20px; place-items: center; color: var(--ld-text-align-glyph); line-height: 1; }
+.lark-doc .lark-doc-block-align-glyph .lark-doc-block-align-icon { width: 18px; height: 18px; }
+.lark-doc .lark-doc-block-align-check { display: inline-flex; width: 16px; height: 16px; margin-left: auto; align-items: center; color: var(--ld-text-menu-active); }
+.lark-doc .lark-doc-block-align-check-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .lark-doc .lark-doc-block-align-help { display: inline-grid; width: 16px; height: 16px; margin-left: auto; place-items: center; border: 1px solid var(--ld-border-help); border-radius: 50%; color: var(--ld-text-help); font-size: 11px; line-height: 1; }
 .lark-doc .lark-doc-block-submenu button[data-tooltip]:hover::after { content: attr(data-tooltip); position: absolute; z-index: 3; top: 50%; left: calc(100% + 8px); min-width: max-content; padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; line-height: 1.35; transform: translateY(-50%); white-space: nowrap; pointer-events: none; }
 .lark-doc .lark-doc-block-submenu-divider { height: 1px; margin: 5px -7px; background: var(--ld-border-chrome); }
@@ -885,7 +894,7 @@
 /* 行内 emoji（02 §16 ⑤：与文字同基线、不抬行高）。彩色 emoji 字体的 ascent/descent
    比正文大，不加这道锁行高，16px 正文的 26px 行盒会被顶到 30px 以上。 */
 .lark-doc .lark-doc-emoji { font-style: normal; line-height: 1; vertical-align: baseline; }
-.lark-doc .lark-doc-command-submenu-arrow { display: inline-grid; width: 28px; height: 28px; min-width: 28px; flex: 0 0 28px; margin-left: auto; place-items: center; border-radius: 5px; color: var(--lark-doc-muted); font-size: 18px; line-height: 1; cursor: pointer; }.lark-doc .lark-doc-command-submenu-arrow:hover, .lark-doc .lark-doc-command-submenu-arrow.is-open { background: var(--ld-bg-accent); color: var(--ld-text-accent); }.lark-doc .lark-doc-command-submenu-arrow:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; border-radius: 3px; }
+.lark-doc .lark-doc-command-submenu-arrow { display: inline-grid; width: 28px; height: 28px; min-width: 28px; flex: 0 0 28px; margin-left: auto; place-items: center; border-radius: 5px; color: var(--lark-doc-muted); line-height: 1; cursor: pointer; }.lark-doc .lark-doc-command-submenu-arrow .lark-doc-command-submenu-arrow-icon { width: 14px; height: 14px; transform: rotate(-90deg); }.lark-doc .lark-doc-command-submenu-arrow:hover, .lark-doc .lark-doc-command-submenu-arrow.is-open { background: var(--ld-bg-accent); color: var(--ld-text-accent); }.lark-doc .lark-doc-command-submenu-arrow:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; border-radius: 3px; }
 .lark-doc .lark-doc-command-submenu { position: fixed; z-index: 82; display: grid; width: 190px; gap: 2px; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 9px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); }
 .lark-doc .lark-doc-command-submenu strong { padding: 4px 7px; color: var(--lark-doc-muted); font-size: 12px; }
 .lark-doc .lark-doc-command-submenu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; text-align: left; }.lark-doc .lark-doc-command-submenu button:hover, .lark-doc .lark-doc-command-submenu button:focus-visible { background: var(--ld-bg-hover-menu); outline: 0; }.lark-doc .lark-doc-command-submenu.is-templates { width: 250px; }.lark-doc .lark-doc-command-submenu.is-templates .lark-doc-command-label { display: grid; gap: 2px; }.lark-doc .lark-doc-command-submenu.is-templates .lark-doc-command-label small { color: var(--lark-doc-muted); font-size: 11px; }
@@ -1106,7 +1115,10 @@
 .lark-doc .lark-doc-image-img:hover,
 .lark-doc .lark-doc-image-frame img:hover { filter: none; }
 .lark-doc .lark-doc-image.is-selected .lark-doc-image-shell,
-.lark-doc .lark-doc-image.is-selected > .lark-doc-image-img { outline: 2px solid var(--ld-brand-chrome); outline-offset: -1px; }
+.lark-doc .lark-doc-image.is-selected > .lark-doc-image-img,
+.lark-doc .lark-doc-image:hover .lark-doc-image-shell,
+.lark-doc .lark-doc-image:hover > .lark-doc-image-img { outline: 2px solid var(--ld-accent-control); outline-offset: -1px; }
+/* 飞书 hover 状态：工具条、四角圆形控件和蓝色外框同时出现；移出图片后随 hover 一起消失。 */
 
 /* 离线策略拦截的外链图片：不渲染 img，避免浏览器发起外部请求。 */
 .lark-doc .lark-doc-image-blocked { display: grid; gap: 4px; justify-items: start; padding: 18px 20px; border: 1px dashed var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-soft); color: var(--ld-text-secondary); font-size: 12px; }
@@ -1121,7 +1133,7 @@
 .lark-doc .lark-doc-image-toolbar button { flex: 0 0 24px; display: inline-flex; align-items: center; justify-content: center; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; font-size: 16px; line-height: 1; }
 .lark-doc .lark-doc-image-toolbar button:hover:not(:disabled),
 .lark-doc .lark-doc-image-toolbar button:focus-visible,
-.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-brand-chrome); outline: 0; }
+.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
 .lark-doc .lark-doc-image-toolbar button:disabled { color: var(--ld-text-icon); cursor: not-allowed; }
  .lark-doc .lark-doc-image-toolbar-divider { position: absolute; top: 10px; left: 82px; width: 1px; height: 20px; background: var(--ld-border-control); }
 .lark-doc .lark-doc-image-toolbar-divider:nth-of-type(2) { left: 191px; top: 0; height: 40px; }
@@ -1172,7 +1184,7 @@
 
 
 /* 四角缩放手柄：可编辑态常驻，拖动只改文档属性，不回写 DOM 宽度。 */
-.lark-doc .lark-doc-image-resize { position: absolute; z-index: 4; box-sizing: border-box; width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; border: 2px solid var(--ld-brand-chrome); border-radius: 50%; background: var(--ld-bg-surface); box-shadow: 0 0 0 1px var(--ld-bg-surface), 0 1px 4px rgba(31,35,41,.18); transform: translate(-50%, -50%); }
+.lark-doc .lark-doc-image-resize { position: absolute; z-index: 4; box-sizing: border-box; width: 16px; min-width: 16px; height: 16px; min-height: 16px; padding: 0; border: 2px solid var(--ld-accent-control); border-radius: 50%; background: var(--ld-bg-surface); box-shadow: 0 0 0 1px var(--ld-bg-surface), 0 1px 4px rgba(31,35,41,.18); transform: translate(-50%, -50%); }
 .lark-doc .lark-doc-image-resize.is-top-left { top: 0; left: 0; cursor: nwse-resize; }
 .lark-doc .lark-doc-image-resize.is-top-right { top: 0; left: 100%; cursor: nesw-resize; }
 .lark-doc .lark-doc-image-resize.is-bottom-left { top: 100%; left: 0; cursor: nesw-resize; }
@@ -3096,7 +3108,7 @@
 /* 「转换为」当前块类型打勾；上下文不适用的合并/拆分/缩进置灰（点了不再没反应）。 */
 .lark-doc .lark-doc-table-tools-menu-item[aria-pressed="true"] { background: var(--ld-bg-accent); border-color: transparent; color: var(--ld-text-accent); }
 .lark-doc .lark-doc-table-tools-menu-item:disabled, .lark-doc .lark-doc-table-tools-menu-item.is-disabled { background: transparent; border-color: transparent; color: var(--ld-text-disabled); opacity: .65; cursor: not-allowed; }
-.lark-doc .lark-doc-table-tools-menu-icon { flex: none; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-table-tools-menu-icon { width: 18px; height: 18px; flex: 0 0 18px; color: var(--ld-text-secondary); }
 .lark-doc .lark-doc-table-tools-menu-item[aria-pressed="true"] .lark-doc-table-tools-menu-icon,
 .lark-doc .lark-doc-table-tools-menu-item:hover:not(:disabled) .lark-doc-table-tools-menu-icon { color: inherit; }
 .lark-doc .lark-doc-table-tools-menu-divider { display: block; height: 1px; margin: 4px 2px; background: var(--ld-table-float-border); }

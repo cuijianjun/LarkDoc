@@ -4,11 +4,12 @@
  */
 
 import { applyStyle, setAttr, syncChildren } from './dom'
-import { diagramIconNode, setIcon } from './icon'
+import { diagramIconNode, iconNode, setIcon } from './icon'
 
 /** plus 菜单的前置分段；其余段按命令表里首次出现的顺序追加。 */
 const PLUS_CATEGORIES = ['基础', '常用', '绘图']
 const BASIC_ICONS = { heading1: 'block-h1', heading2: 'block-h2', heading3: 'block-h3', orderedList: 'block-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'block-quote', callout: 'block-callout', divider: 'horizontal-rule', link: 'link' }
+const SEMANTIC_COMMAND_ICONS = { taskList: 'block-task', callout: 'block-callout', columns: 'block-columns', columns2: 'block-columns', columns3: 'block-columns', columns4: 'block-columns', columns5: 'block-columns', table: 'block-table', image: 'block-image', template: 'block-template', diagram: 'block-diagram' }
 /** 子菜单贴触发器的间距 / 视口留边（与 SFC 完全一致，断言在量）。 */
 const SUBMENU_GAP = 5
 const SUBMENU_MARGIN = 8
@@ -112,8 +113,8 @@ export function createCommandMenu(options = {}) {
     setAttr(node, 'aria-expanded', item.submenu ? String(state.submenuOpen === item.submenu) : null)
 
     const glyph = item.glyph || '·'
-    const iconName = (state.kind === 'slash' || state.kind === 'plus' && item.category === '基础') && BASIC_ICONS[item.id]
-    if (iconName) setIcon(icon, iconName, 18)
+    const iconName = ((state.kind === 'slash' || state.kind === 'plus' && item.category === '基础') && BASIC_ICONS[item.id]) || SEMANTIC_COMMAND_ICONS[item.id]
+    if (iconName) setIcon(icon, iconName, state.kind === 'plus' && item.category === '基础' ? 20 : 18)
     else if (icon.textContent !== glyph || icon.querySelector('svg')) { icon.textContent = glyph; icon.removeAttribute('style') }
     const tone = `lark-doc-command-icon is-${item.tone || 'blue'}`
     if (icon.className !== tone) icon.className = tone
@@ -130,7 +131,7 @@ export function createCommandMenu(options = {}) {
         arrow.setAttribute('role', 'button')
         arrow.setAttribute('tabindex', '0')
         arrow.setAttribute('aria-label', `打开${item.submenu}子菜单`)
-        arrow.textContent = '›'
+        arrow.appendChild(iconNode('link-view-caret', 14, 'lark-doc-command-submenu-arrow-icon'))
         arrow.addEventListener('click', (event) => { event.stopPropagation(); event.preventDefault(); openSubmenu(entry.item, node) })
         arrow.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return

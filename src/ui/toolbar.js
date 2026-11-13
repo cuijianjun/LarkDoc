@@ -38,6 +38,16 @@ const GROUPS = [
 ]
 
 const ALIGN_ORDER = ['left', 'center', 'right', 'justify']
+const MARK_ICONS = {
+  bold: 'mark-bold',
+  italic: 'mark-italic',
+  underline: 'mark-underline',
+  strike: 'mark-strike',
+  code: 'inlineCode',
+  subscript: 'mark-subscript',
+  superscript: 'mark-superscript',
+  highlight: 'mark-highlight',
+}
 
 /**
  * @param {object} options
@@ -145,7 +155,8 @@ export function createToolbar(options = {}) {
     markButtons = list.map((item) => makeButton({
       cls: `lark-doc-mark-${item.id}`,
       label: item.label,
-      text: item.glyph,
+      icon: MARK_ICONS[item.id] || 'inlineCode',
+      iconSize: 18,
       preventDefault: true,
       onClick: () => call('toggleMark', item.id),
     }))
@@ -177,7 +188,11 @@ export function createToolbar(options = {}) {
   const colorLetter = document.createElement('span')
   colorLetter.className = 'lark-doc-color-letter lark-doc-color-letter-hl'
   colorLetter.setAttribute('aria-hidden', 'true')
-  colorLetter.textContent = 'A'
+  colorLetter.appendChild(iconNode('text-color', 18, 'lark-doc-color-icon'))
+  const colorLetterText = document.createElement('span')
+  colorLetterText.className = 'sr-only'
+  colorLetterText.textContent = 'A'
+  colorLetter.appendChild(colorLetterText)
 
   const textColorInput = document.createElement('input')
   textColorInput.type = 'color'
@@ -287,8 +302,8 @@ export function createToolbar(options = {}) {
   const readingButton = makeButton({ label: '阅读模式', icon: 'reading', onClick: () => call('toggleReading') })
   const fullscreenButton = makeButton({ label: '全屏', icon: 'fullscreen', onClick: () => call('toggleFullscreen') })
   const slidesButton = makeButton({ label: '演示模式', icon: 'slides', onClick: () => call('toggleSlides') })
-  const shortcutsButton = makeButton({ label: '快捷键帮助', text: '?', onClick: () => call('toggleHelpOpen') })
-  const docOpsButton = makeButton({ label: '文档操作', text: '⋯', onClick: () => call('toggleHeaderMenu') })
+  const shortcutsButton = makeButton({ label: '快捷键帮助', icon: 'help-keyboard', iconSize: 18, onClick: () => call('toggleHelpOpen') })
+  const docOpsButton = makeButton({ label: '文档操作', icon: 'more-horizontal', iconSize: 18, onClick: () => call('toggleHeaderMenu') })
 
   toolsEndInner.appendChild(searchButton)
   toolsEndInner.appendChild(outlineButton)
@@ -357,7 +372,13 @@ export function createToolbar(options = {}) {
         const check = document.createElement('span')
         check.className = 'lark-doc-select-check'
         check.setAttribute('aria-hidden', 'true')
-        check.textContent = item.checked ? '✓' : ''
+        if (item.checked) {
+          check.appendChild(iconNode('check', 14, 'lark-doc-check-icon'))
+          const checkText = document.createElement('span')
+          checkText.className = 'sr-only'
+          checkText.textContent = '✓'
+          check.appendChild(checkText)
+        }
         button.appendChild(check)
         button.appendChild(document.createTextNode(item.label))
         moreMenu.appendChild(button)

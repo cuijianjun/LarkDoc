@@ -56,6 +56,7 @@ export function createBlockHandle(options = {}) {
     blockStyle: true,
     buttonKind: 'none',
     glyph: 'T',
+    icon: 'block-text',
     isCallout: false,
     draggable: true,
     features: {},
@@ -112,7 +113,11 @@ export function createBlockHandle(options = {}) {
   emptyButton.className = 'lark-doc-empty-block-insert'
   emptyButton.setAttribute('aria-label', '插入内容')
   emptyButton.setAttribute('title', '插入内容')
-  emptyButton.textContent = '＋'
+  emptyButton.appendChild(iconNode('plus', 18, 'lark-doc-empty-block-icon'))
+  const emptyText = document.createElement('span')
+  emptyText.className = 'sr-only'
+  emptyText.textContent = '＋'
+  emptyButton.appendChild(emptyText)
   emptyButton.addEventListener('mouseenter', (event) => call('openEmptyBlockInsertMenu', event))
   emptyButton.addEventListener('mouseleave', () => call('scheduleCommandMenuClose'))
   emptyButton.addEventListener('click', (event) => call('openEmptyBlockInsertMenu', event))
@@ -132,11 +137,17 @@ export function createBlockHandle(options = {}) {
 
   const glyphNode = document.createElement('span')
   glyphNode.className = 'lark-doc-block-handle-type'
-  glyphNode.textContent = 'T'
+  let glyphIcon = iconNode('block-text', 18, 'lark-doc-block-handle-icon')
+  glyphIcon.dataset.icon = 'block-text'
+  const glyphText = document.createElement('span')
+  glyphText.className = 'sr-only'
+  glyphText.textContent = 'T'
+  glyphNode.appendChild(glyphIcon)
+  glyphNode.appendChild(glyphText)
   const dotsNode = document.createElement('span')
   dotsNode.className = 'lark-doc-block-handle-dots'
   dotsNode.setAttribute('aria-hidden', 'true')
-  dotsNode.appendChild(iconNode('drag-handle', 16, 'lark-doc-drag-handle-icon'))
+  dotsNode.appendChild(iconNode('drag-handle', 14, 'lark-doc-drag-handle-icon'))
   mainButton.appendChild(glyphNode)
   mainButton.appendChild(dotsNode)
 
@@ -185,7 +196,7 @@ export function createBlockHandle(options = {}) {
       button.setAttribute('title', item.label)
       if (item.active) button.classList.add('active')
       button.addEventListener('click', () => call('blockTypeAction', item.id))
-      button.appendChild(iconNode(item.icon, 18, 'lark-doc-block-type-icon'))
+      button.appendChild(iconNode(item.icon, 20, 'lark-doc-block-type-icon'))
       const hidden = document.createElement('span')
       hidden.className = 'sr-only'
       hidden.textContent = item.label
@@ -218,11 +229,9 @@ export function createBlockHandle(options = {}) {
     button.addEventListener('mouseenter', (event) => onOpen(event))
     button.addEventListener('focus', (event) => onOpen(event))
     button.addEventListener('click', (event) => { event.stopPropagation(); onOpen(event) })
-    const [iconEl, textEl] = makeIconLabel(icon, 16, label)
-    const arrow = document.createElement('span')
-    arrow.className = 'lark-doc-block-menu-arrow'
+    const [iconEl, textEl] = makeIconLabel(icon, 18, label)
+    const arrow = iconNode('link-view-caret', 14, 'lark-doc-block-menu-arrow')
     arrow.setAttribute('aria-hidden', 'true')
-    arrow.textContent = '›'
     button.appendChild(iconEl)
     button.appendChild(textEl)
     button.appendChild(arrow)
@@ -301,7 +310,7 @@ export function createBlockHandle(options = {}) {
     button.setAttribute('role', spec.role)
     button.setAttribute('title', spec.title)
     button.addEventListener('click', () => call('tableHandleAction', spec.action))
-    const [iconEl, textEl] = makeIconLabel(spec.icon, 16, spec.label)
+    const [iconEl, textEl] = makeIconLabel(spec.icon, 18, spec.label)
     button.appendChild(iconEl)
     button.appendChild(textEl)
     if (spec.role !== 'menuitemcheckbox') return { button, switchEl: null, switchDot: null }
@@ -341,7 +350,7 @@ export function createBlockHandle(options = {}) {
       button.className = 'lark-doc-block-menu-row'
       button.setAttribute('title', item.label)
       button.addEventListener('click', () => call('blockAction', item.id))
-      const [iconEl, textEl] = makeIconLabel(item.icon, 16, item.label)
+      const [iconEl, textEl] = makeIconLabel(item.icon, 18, item.label)
       button.appendChild(iconEl)
       button.appendChild(textEl)
       return button
@@ -357,7 +366,7 @@ export function createBlockHandle(options = {}) {
   addBelowButton.setAttribute('title', '在下方添加正文')
   addBelowButton.addEventListener('click', () => call('blockAction', 'addBelow'))
   {
-    const [iconEl, textEl] = makeIconLabel('plus', 16, '在下方添加正文')
+    const [iconEl, textEl] = makeIconLabel('plus', 18, '在下方添加正文')
     addBelowButton.appendChild(iconEl)
     addBelowButton.appendChild(textEl)
   }
@@ -382,7 +391,11 @@ export function createBlockHandle(options = {}) {
     const check = document.createElement('span')
     check.className = 'lark-doc-block-align-check'
     check.setAttribute('aria-hidden', 'true')
-    check.textContent = '✓'
+    check.appendChild(iconNode('check', 16, 'lark-doc-align-check-icon'))
+    const checkText = document.createElement('span')
+    checkText.className = 'sr-only'
+    checkText.textContent = '✓'
+    check.appendChild(checkText)
     button.appendChild(glyph)
     button.appendChild(text)
     button.appendChild(check)
@@ -398,7 +411,7 @@ export function createBlockHandle(options = {}) {
   const indentMoreGlyph = document.createElement('span')
   indentMoreGlyph.className = 'lark-doc-block-align-glyph'
   indentMoreGlyph.setAttribute('aria-hidden', 'true')
-  indentMoreGlyph.textContent = '⇥'
+  indentMoreGlyph.appendChild(iconNode('indent-inc', 18, 'lark-doc-block-align-icon'))
   const indentMoreText = document.createElement('span')
   indentMoreText.textContent = '增加缩进'
   const indentMoreHelp = document.createElement('span')
@@ -416,7 +429,7 @@ export function createBlockHandle(options = {}) {
   const indentLessGlyph = document.createElement('span')
   indentLessGlyph.className = 'lark-doc-block-align-glyph'
   indentLessGlyph.setAttribute('aria-hidden', 'true')
-  indentLessGlyph.textContent = '⇤'
+  indentLessGlyph.appendChild(iconNode('indent-dec', 18, 'lark-doc-block-align-icon'))
   const indentLessText = document.createElement('span')
   indentLessText.textContent = '减少缩进'
   indentLessButton.appendChild(indentLessGlyph)
@@ -486,11 +499,18 @@ export function createBlockHandle(options = {}) {
 
     // 对齐子菜单
     const alignName = state.alignNames || {}
-    const alignGlyph = state.alignGlyphs || {}
     const align = state.align || { value: 'left', indent: 0, canIncrease: false }
     alignButtons.forEach((entry) => {
       const active = align.value === entry.align
-      entry.glyph.textContent = alignGlyph[entry.align] || ''
+      const alignIcon = `align-${entry.align}`
+      const nextIcon = entry.glyph.dataset.icon
+      if (nextIcon !== alignIcon) {
+        const svg = iconNode(alignIcon, 18, 'lark-doc-block-align-icon')
+        svg.dataset.icon = alignIcon
+        entry.glyph.textContent = ''
+        entry.glyph.appendChild(svg)
+        entry.glyph.dataset.icon = alignIcon
+      }
       entry.text.textContent = `${alignName[entry.align] || entry.align}对齐`
       entry.button.classList.toggle('active', active)
       setAttr(entry.button, 'aria-pressed', String(active))
@@ -518,7 +538,13 @@ export function createBlockHandle(options = {}) {
   function updateChrome(patch) {
     Object.assign(state, patch || {})
     if (patch && patch.glyph !== undefined && glyphNode.textContent !== String(state.glyph)) {
-      glyphNode.textContent = String(state.glyph)
+      glyphText.textContent = String(state.glyph)
+    }
+    if (patch && patch.icon !== undefined && glyphIcon.dataset.icon !== state.icon) {
+      const svg = iconNode(state.icon || 'block-text', 18, 'lark-doc-block-handle-icon')
+      svg.dataset.icon = state.icon || 'block-text'
+      glyphNode.replaceChild(svg, glyphIcon)
+      glyphIcon = svg
     }
     if (patch && patch.isCallout !== undefined) mainButton.classList.toggle('is-callout', !!state.isCallout)
     if (patch && patch.draggable !== undefined) setAttr(mainButton, 'draggable', String(!!state.draggable))

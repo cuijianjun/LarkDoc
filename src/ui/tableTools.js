@@ -154,7 +154,7 @@ function makeMenuItem(entry, onPick) {
   b.className = 'lark-doc-table-tools-menu-item'
   b.dataset.value = entry.id
   b.setAttribute('role', 'menuitem')
-  if (entry.icon) b.appendChild(iconNode(entry.icon, 16, 'lark-doc-table-tools-menu-icon'))
+  if (entry.icon) b.appendChild(iconNode(entry.icon, 18, 'lark-doc-table-tools-menu-icon'))
   const label = document.createElement('span')
   label.textContent = entry.label
   b.appendChild(label)

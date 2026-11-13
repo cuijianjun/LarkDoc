@@ -116,6 +116,7 @@ export default {
         blockStyle,
         buttonKind: this.handleIsEmptyParagraph ? 'empty' : this.handleIsTaskList ? 'none' : 'main',
         glyph: this.handleGlyph,
+        icon: this.handleIcon,
         isCallout: this.handleBlockNode()?.type?.name === 'callout',
         draggable: this.featureEnabled('blockDrag'),
       }

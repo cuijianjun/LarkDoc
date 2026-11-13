@@ -38,6 +38,8 @@ export const ICONS = {
   undo: wrap('<path d="M6.5 3.5 3 7l3.5 3.5"/><path d="M3 7h6.5a3.5 3.5 0 0 1 0 7H7"/>'),
   redo: wrap('<path d="M9.5 3.5 13 7l-3.5 3.5"/><path d="M13 7H6.5a3.5 3.5 0 0 0 0 7H9"/>'),
   inlineCode: wrap('<path d="M5.5 4 2 8l3.5 4"/><path d="M10.5 4 14 8l-3.5 4"/><path d="M9 3 7 13"/>'),
+  check: wrap('<path d="m3.1 8.2 3.1 3.1 6.7-6.6"/>'),
+  'text-color': wrap('<path d="m4 12.6 3.1-8.8h1.8l3.1 8.8M5.2 9.3h5.6"/><path d="M2.8 14h10.4"/>'),
   link: wrap('<path d="M6.5 9.5l3-3"/><path d="M4.8 7.7 3.2 9.3a2.6 2.6 0 0 0 3.7 3.7l1.6-1.6"/><path d="M11.2 8.3l1.6-1.6a2.6 2.6 0 0 0-3.7-3.7L7.5 4.6"/>'),
   'align-left': wrap('<path d="M2.5 4h11"/><path d="M2.5 8h7"/><path d="M2.5 12h9"/>'),
   'align-center': wrap('<path d="M2.5 4h11"/><path d="M4.5 8h7"/><path d="M3.5 12h9"/>'),
@@ -68,12 +70,12 @@ export const ICONS = {
   'numbered-value': wrap('<text x="4" y="10.8" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="8" font-weight="600" text-anchor="middle">1.</text><rect x="9" y="4.8" width="5.8" height="6.4" rx="1.3"/><path d="M11.2 6.7v2.6"/>'),
   // —— 块菜单类型网格（对齐飞书：正文/标题是文字字形，列表/代码/引用是线性符号）——
   'block-text': wrap('<text x="8" y="12.2" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="500" text-anchor="middle">T</text>'),
-  'block-h1': wrap('<text x="8" y="11.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" text-anchor="middle">H<tspan font-size="7">1</tspan></text>'),
-  'block-h2': wrap('<text x="8" y="11.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" text-anchor="middle">H<tspan font-size="7">2</tspan></text>'),
-  'block-h3': wrap('<text x="8" y="11.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" text-anchor="middle">H<tspan font-size="7">3</tspan></text>'),
+  'block-h1': wrap('<text x="8" y="12" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="650" text-anchor="middle">H<tspan font-size="8.5">1</tspan></text>'),
+  'block-h2': wrap('<text x="8" y="12" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="650" text-anchor="middle">H<tspan font-size="8.5">2</tspan></text>'),
+  'block-h3': wrap('<text x="8" y="12" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="650" text-anchor="middle">H<tspan font-size="8.5">3</tspan></text>'),
   ...Object.fromEntries(Array.from({ length: 6 }, (_, index) => {
     const level = index + 4
-    return [`block-h${level}`, wrap(`<text x="8" y="11.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" text-anchor="middle">H<tspan font-size="7">${level}</tspan></text>`)]
+    return [`block-h${level}`, wrap(`<text x="8" y="12" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="650" text-anchor="middle">H<tspan font-size="8.5">${level}</tspan></text>`)]
   })),
   'block-ordered': wrap('<text x="3.4" y="6.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="6" font-weight="600" text-anchor="middle">1</text><text x="3.4" y="13" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="6" font-weight="600" text-anchor="middle">2</text><path d="M7.4 5.2h6"/><path d="M7.4 8h6"/><path d="M7.4 11.6h6"/>'),
   'block-bullet': wrap('<circle cx="3.6" cy="4.9" r="1" fill="currentColor" stroke="none"/><circle cx="3.6" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="3.6" cy="11.1" r="1" fill="currentColor" stroke="none"/><path d="M7.4 4.9h6"/><path d="M7.4 8h6"/><path d="M7.4 11.1h6"/>'),
@@ -81,6 +83,12 @@ export const ICONS = {
   'horizontal-rule': wrap('<path d="M2 8h12"/><path d="M2 3h3M7 3h3M12 3h2M2 13h3M7 13h3M12 13h2"/>'),
   'block-code': wrap('<path d="M5.8 4c-1.3 0-1.6.7-1.6 1.7v1.1c0 .8-.4 1.2-1.4 1.2v.1c1 0 1.4.4 1.4 1.2v1.1c0 1 .3 1.7 1.6 1.7"/><path d="M10.2 4c1.3 0 1.6.7 1.6 1.7v1.1c0 .8.4 1.2 1.4 1.2v.1c-1 0-1.4.4-1.4 1.2v1.1c0 1-.3 1.7-1.6 1.7"/>'),
   'block-quote': wrap('<path d="M7 5.2c-1.9.4-3 1.6-3 3.6v2h3.2V7.6H5.6c.1-.9.7-1.5 1.4-1.8z" fill="currentColor" stroke="none"/><path d="M12.6 5.2c-1.9.4-3 1.6-3 3.6v2h3.2V7.6h-1.6c.1-.9.7-1.5 1.4-1.8z" fill="currentColor" stroke="none"/>'),
+  'block-image': wrap('<rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.7"/><circle cx="5.7" cy="5.8" r="1.1"/><path d="m3.6 12 3.1-3.1 2.2 2.2 1.9-1.9 1.7 1.7"/>'),
+  'block-table': wrap('<rect x="2.5" y="2.5" width="11" height="11" rx="1.4"/><path d="M2.8 6.2h10.4M2.8 9.8h10.4M6.2 2.8v10.4M9.8 2.8v10.4"/>'),
+  'block-columns': wrap('<path d="M5 2.8v10.4M11 2.8v10.4" stroke-width="2.2"/>'),
+  'block-details': wrap('<path d="m4.5 6.2 3.5 3.5 3.5-3.5"/>'),
+  'block-template': wrap('<path d="m8 2.4 5.6 5.6L8 13.6 2.4 8 8 2.4Z"/><path d="M6.1 8h3.8"/>'),
+  'block-diagram': wrap('<rect x="2.2" y="2.2" width="4.1" height="3.4" rx=".7"/><rect x="9.7" y="10.4" width="4.1" height="3.4" rx=".7"/><path d="M6.3 3.9h3.1v8.2M9.4 12.1H8"/>'),
   "link-view-preview": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v9h14V5H5ZM4 19a1 1 0 1 0 0 2h16a1 1 0 1 0 0-2H4Z\" fill=\"currentColor\"></path></svg>",
   "table-float-header-row": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M4 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4Zm4.5 13.5V20H4v-4.5h4.5ZM4 4h4.5v5H4V4Zm4.5 6v4.5H4V10h4.5Zm1 0h5v4.5h-5V10ZM20 10v4.5h-4.5V10H20Zm-4.5 5.5H20V20h-4.5v-4.5ZM20 4v5h-4.5V4H20ZM9.5 15.5h5V20h-5v-4.5Zm5-11.5v5h-5V4h5Z\" fill=\"currentColor\"></path><path d=\"M4 4h4.5v5H4V4Zm11.5 0H20v5h-4.5V4Zm-6 0h5v5h-5V4Z\" opacity=\"0.5\" fill=\"currentColor\"></path></svg>",
   "table-float-header-column": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v16Zm13.5-4.5H20V20h-4.5v-4.5ZM4 20v-4.5h5V20H4Zm6-4.5h4.5V20H10v-4.5Zm0-1v-5h4.5v5H10ZM10 4h4.5v4.5H10V4Zm5.5 4.5V4H20v4.5h-4.5ZM4 4h5v4.5H4V4Zm11.5 10.5v-5H20v5h-4.5ZM4 9.5h5v5H4v-5Z\" fill=\"currentColor\"></path><path d=\"M4 20v-4.5h5V20H4ZM4 8.5V4h5v4.5H4Zm0 6v-5h5v5H4Z\" opacity=\"0.5\" fill=\"currentColor\"></path></svg>",
@@ -118,6 +126,8 @@ export const ICONS = {
   'mark-underline': wrap('<text x="8" y="11" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="10.5" text-anchor="middle">U</text><path d="M4.6 13.2h6.8"/>'),
   // 高亮按钮：黄色小色块打底（飞书的高亮 icon 自带黄色），A 随 currentColor。
   'mark-highlight': wrap(`<rect x="3" y="3" width="10" height="10" rx="2" fill="${ICON_PALETTE.highlightSwatch}" stroke="none"/><text x="8" y="11.4" fill="${ICON_PALETTE.highlightGlyph}" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="600" text-anchor="middle">A</text>`),
+  'mark-subscript': wrap('<path d="M2.8 4.3 7.2 8.7M7.2 4.3 2.8 8.7"/><path d="M9.6 10.2h3.7l-3.7 3.1h3.7"/>'),
+  'mark-superscript': wrap('<path d="M2.8 7.7 7.2 12.1M7.2 7.7 2.8 12.1"/><path d="M9.6 5.8h3.7l-3.7-3.1h3.7"/>'),
   // 块菜单「颜色」行的调色盘（飞书同款语义：调色盘 + 一笔）。
   palette: wrap('<path d="M8 2.6a5.4 5.4 0 1 0 0 10.8c1 0 1.4-.5 1.4-1.1 0-.9-.7-1.2-.7-2 0-.7.5-1.2 1.3-1.2h1.2c1.6 0 2.4-1 2.4-2.3C13.6 4.5 11.1 2.6 8 2.6z"/><circle cx="5.4" cy="6.4" r=".9" fill="currentColor" stroke="none"/><circle cx="8.2" cy="5" r=".9" fill="currentColor" stroke="none"/><circle cx="10.9" cy="6.6" r=".9" fill="currentColor" stroke="none"/>'),
   // —— P4-06 顶栏模式切换按钮（03 §顶栏右侧按钮组 #2：图标位 16×22）——

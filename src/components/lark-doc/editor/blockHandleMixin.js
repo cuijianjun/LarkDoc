@@ -50,6 +50,26 @@ export default {
       if (node?.type?.name === 'heading') return `H${node.attrs?.level || 1}`
       return glyphs[node?.type?.name] || 'T'
     },
+    handleIcon() {
+      if (!this.editor || !this.handleRange) return 'plus'
+      const doc = this.editor.state.doc
+      const directNode = nodeAtSafe(doc, this.handleRange.from)
+      const node = this.handleBlockNode() || directNode
+      let type = node?.type?.name || 'paragraph'
+      if (type === 'listItem') {
+        const $pos = doc.resolve(Math.min(doc.content.size, this.handleRange.from + 1))
+        for (let depth = $pos.depth; depth > 0; depth -= 1) {
+          const name = $pos.node(depth).type.name
+          if (['taskList', 'orderedList', 'bulletList'].includes(name)) { type = name; break }
+        }
+      }
+      if (type === 'heading') return `block-h${node.attrs?.level || 1}`
+      return {
+        paragraph: 'block-text', bulletList: 'block-bullet', orderedList: 'block-ordered', taskList: 'block-task',
+        blockquote: 'block-quote', codeBlock: 'block-code', horizontalRule: 'horizontal-rule', callout: 'block-callout',
+        details: 'block-details', columns: 'block-columns', column: 'block-columns', table: 'block-table', image: 'block-image',
+      }[type] || 'block-text'
+    },
   },
   methods: {
     currentBlockRange() {

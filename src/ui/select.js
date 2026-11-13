@@ -148,6 +148,11 @@ export function createSelect(options = {}) {
       const check = document.createElement('span')
       check.className = 'lark-doc-select-check'
       check.setAttribute('aria-hidden', 'true')
+      check.appendChild(iconNode('check', 14, 'lark-doc-check-icon'))
+      const checkText = document.createElement('span')
+      checkText.className = 'sr-only'
+      checkText.textContent = '✓'
+      check.appendChild(checkText)
 
       const text = document.createElement('span')
       text.className = 'lark-doc-select-text'
@@ -184,7 +189,7 @@ export function createSelect(options = {}) {
       row.button.classList.toggle('lark-doc-select-active', active)
       row.button.classList.toggle('is-highlight', index === highlightIndex)
       row.button.setAttribute('aria-selected', active ? 'true' : 'false')
-      row.check.textContent = active ? '✓' : ''
+      row.check.classList.toggle('is-visible', active)
     })
   }
 

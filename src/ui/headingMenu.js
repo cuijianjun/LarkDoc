@@ -13,6 +13,8 @@
  * 纯受控：开关与定位由调用方决定（气泡条走 `bubbleMenuMixin`），
  * 本模块只渲染、只回调。
  */
+import { iconNode } from './icon'
+
 const HEADING_NAMES = ['一', '二', '三', '四', '五', '六', '七', '八', '九']
 
 export const HEADING_MENU_OPTIONS = [
@@ -45,10 +47,8 @@ export function createHeadingMenu(options = {}) {
     button.addEventListener('mousedown', (event) => event.preventDefault())
     button.addEventListener('click', () => { if (onChoose) onChoose(option.level) })
 
-    const glyph = document.createElement('span')
-    glyph.className = 'lark-doc-heading-glyph'
+    const glyph = iconNode(option.level === null ? 'block-text' : `block-h${option.level}`, 20, 'lark-doc-heading-glyph')
     glyph.setAttribute('aria-hidden', 'true')
-    glyph.textContent = option.glyph
     button.appendChild(glyph)
     // 与 SFC 的 `{{ option.label }}` 同构：标签是**文本节点**，不是 span。
     // 断言里量「文字起点」靠的正是 `childNodes` 里那个 nodeType === 3 的节点。
@@ -57,7 +57,11 @@ export function createHeadingMenu(options = {}) {
     const check = document.createElement('span')
     check.className = 'lark-doc-menu-check'
     check.setAttribute('aria-hidden', 'true')
-    check.textContent = '✓'
+    check.appendChild(iconNode('check', 14, 'lark-doc-check-icon'))
+    const checkText = document.createElement('span')
+    checkText.className = 'sr-only'
+    checkText.textContent = '✓'
+    check.appendChild(checkText)
 
     el.appendChild(button)
     return { button, check, level: option.level }
