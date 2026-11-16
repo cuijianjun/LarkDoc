@@ -670,8 +670,9 @@ async function verifyOutlineHandleHitTargets(page, width) {
       outline.flexBasis === '210px' && outline.padding === '26px 12px 30px 18px' && outline.overflowY === 'auto',
     outline ? `${outline.width}px ${outline.position} ${outline.padding}` : '没渲染')
 
-  record('[目录] 头部 = strong「目录」+ 关闭钮（icon 14×14）',
-    !!outline && outline.headingStrong === '目录' && outline.closeLabel === '关闭目录' &&
+  // 飞书口径：展开态收起钮用 « 双左尖括号，气泡「收起目录」。
+  record('[目录] 头部 = strong「目录」+ 收起钮（« icon 14×14）',
+    !!outline && outline.headingStrong === '目录' && outline.closeLabel === '收起目录' &&
       outline.closeType === 'button' && !!outline.closeIcon && outline.closeIcon.w === 14 && outline.closeIcon.h === 14 &&
       outline.closeIcon.svg === true,
     outline ? `${outline.headingStrong}/${outline.closeLabel}/${JSON.stringify(outline.closeIcon)}` : '没渲染')
@@ -742,19 +743,22 @@ async function verifyOutlineHandleHitTargets(page, width) {
     if (!button) return null
     const cs = getComputedStyle(button)
     const rect = button.getBoundingClientRect()
+    const svg = button.querySelector('svg')
     return {
       label: button.getAttribute('aria-label'),
-      title: button.getAttribute('title'),
-      text: button.textContent.trim(),
+      tooltip: button.getAttribute('data-tooltip'),
+      icon: svg ? { w: Math.round(svg.getBoundingClientRect().width), h: Math.round(svg.getBoundingClientRect().height), paths: svg.querySelectorAll('path').length } : null,
       position: cs.position,
       zIndex: cs.zIndex,
       size: { w: Math.round(rect.width), h: Math.round(rect.height) },
       aside: !!document.querySelector('.lark-doc-outline'),
     }
   })
-  record('[目录] 关闭后侧栏真出 DOM，父级出现 ☰ 展开钮（fixed / z44 / 34×34）',
-    !!reopen && reopen.aside === false && reopen.label === '展开目录' && reopen.title === '展开目录' &&
-      reopen.text === '☰' && reopen.position === 'fixed' && reopen.zIndex === '44' &&
+  // 飞书口径：收起态用 ≡ 三横线 SVG（不用字符 ☰，避免平台字形漂移），气泡「展开目录」。
+  record('[目录] 关闭后侧栏真出 DOM，父级出现 ≡ 展开钮（fixed / z44 / 34×34）',
+    !!reopen && reopen.aside === false && reopen.label === '展开目录' && reopen.tooltip === '展开目录' &&
+      !!reopen.icon && reopen.icon.w === 20 && reopen.icon.h === 20 && reopen.icon.paths === 3 &&
+      reopen.position === 'fixed' && reopen.zIndex === '44' &&
       reopen.size.w === 34 && reopen.size.h === 34,
     JSON.stringify(reopen))
 

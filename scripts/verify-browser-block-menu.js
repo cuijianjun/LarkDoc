@@ -516,7 +516,7 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
     await page.setViewportSize({ width: 1536, height: 782 })
     await page.getByRole('combobox', { name: '页面宽度', exact: true }).click()
     await page.getByRole('listbox', { name: '页面宽度', exact: true }).getByRole('option', { name: mode === 'full' ? '通栏' : '标准', exact: true }).click()
-    if (await page.evaluate(() => window.__larkDoc._handle.nativeHost.host.outlineOpen)) await page.getByRole('button', { name: '关闭目录', exact: true }).click()
+    if (await page.evaluate(() => window.__larkDoc._handle.nativeHost.host.outlineOpen)) await page.getByRole('button', { name: '收起目录', exact: true }).click()
     if (section === 'template') {
       await page.getByRole('combobox', { name: '字体', exact: true }).click()
       fontSurface = await page.getByRole('listbox', { name: '字体', exact: true }).evaluate(e => { const s = getComputedStyle(e), b = getComputedStyle(e.querySelector('button')); return { border: s.borderWidth, padding: s.padding, radius: s.borderRadius, shadow: s.boxShadow, background: s.backgroundColor, rowPadding: b.padding, rowRadius: b.borderRadius, rowFont: b.fontSize, rowHeight: e.querySelector('button').getBoundingClientRect().height } })

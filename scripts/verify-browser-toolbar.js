@@ -408,8 +408,11 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!headerMenu && headerMenu.role === 'menu' && headerMenu.label === '文档操作' && headerMenu.expanded === 'true',
     headerMenu ? `${headerMenu.role}/${headerMenu.label} expanded=${headerMenu.expanded}` : '未打开')
 
-  record('[承接] 弹层内含字数上限 / 保存 / 模板 / 导入 / 导出 / 快照 六个入口',
-    !!headerMenu && ['字数上限', '保存', '选择文档模板', '导入', '导出文档格式', '本地快照'].every((label) => headerMenu.labels.includes(label)),
+  record('[承接] 弹层内含字数上限 / 保存 / 模板 / 导入 / 导出 五个入口',
+    !!headerMenu && ['字数上限', '保存', '选择文档模板', '导入', '导出文档格式'].every((label) => headerMenu.labels.includes(label)),
+    headerMenu ? headerMenu.labels.join(' | ') : '')
+  record('[对齐飞书] 本地快照入口已隐藏（飞书只有本地记录，无用户可见快照列表）',
+    !!headerMenu && !headerMenu.labels.includes('本地快照'),
     headerMenu ? headerMenu.labels.join(' | ') : '')
 
   await page.mouse.click(720, 780)

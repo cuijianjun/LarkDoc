@@ -136,7 +136,7 @@ async function auditParityV57(page, section, width = 1536, height = 782, mode = 
     await page.getByRole('combobox', { name: '页面宽度', exact: true }).click()
     await page.getByRole('listbox', { name: '页面宽度', exact: true }).getByRole('option', { name: { standard: '标准', wide: '宽版', full: '通栏' }[mode], exact: true }).click()
     const isOpen = await page.evaluate(() => window.__larkDoc._handle.nativeHost.host.outlineOpen)
-    if (isOpen !== outlineOpen) await page.getByRole('button', { name: isOpen ? '关闭目录' : '展开目录', exact: true }).click()
+    if (isOpen !== outlineOpen) await page.getByRole('button', { name: isOpen ? '收起目录' : '展开目录', exact: true }).click()
     await page.setViewportSize({ width, height })
     await page.waitForTimeout(250)
     if (await page.evaluate(() => window.__larkDoc._handle.nativeHost.host.outlineOpen) !== outlineOpen) throw new Error('目录实际状态不符')
