@@ -42,5 +42,22 @@ jobs:
       - name: Unit tests (vitest)
         run: npm run check:unit
 
-      - name: Size limit
-        run: npm run size
+      # 以下三组门禁此前只存在于本地 `npm run check`，CI 没接，导致 lite 体积、
+      # legacy 语法、vditor 契约、核心与工作区行为红了半个月没人发现。
+      - name: Core and workspace behaviour
+        run: npm run check:lark-doc
+
+      # check:artifacts 的首步 ensure-artifacts 是给 prepack 用的幂等重建，CI 刚
+      # build:all 过，没必要再花三分钟重建，这里只跑它后面的四项只读断言。
+      # 最后一项 check-rollup-artifacts --size 等价于原来的 Size limit 步骤。
+      - name: Artifact contracts (lite size / legacy syntax / vditor HTML / size limit)
+        run: npm run check:lite && npm run check:legacy && npm run check:vditor && npm run size
+
+      # check:offline 会起 headless Chromium 真渲染断网 mermaid，因此本 job 需要浏览器。
+      - name: Install Playwright Chromium
+        run: |
+          npm i --no-save playwright@1.49.0
+          npx playwright install --with-deps chromium
+
+      - name: Deploy contracts (node14 / offline mermaid / exports / ecs / session)
+        run: npm run check:deploy

@@ -93,7 +93,13 @@ const measureHandle = () => {
       svg: !!type.querySelector('svg'),
       size: Math.round(type.querySelector('[data-icon]')?.getBoundingClientRect().width || 0),
     } : null,
-    dots: dots ? { text: (dots.textContent || '').trim(), svg: !!dots.querySelector('svg'), circles: dots.querySelectorAll('circle').length } : null,
+    // 六点用 path 画（不是 6 个 <circle>）：按 d 里每个圆点一段 a1.75 1.75 来数
+    dots: dots ? {
+      text: (dots.textContent || '').trim(),
+      svg: !!dots.querySelector('svg'),
+      circles: dots.querySelectorAll('circle').length,
+      pathDots: ((dots.querySelector('path')?.getAttribute('d') || '').match(/a1\.75 1\.75/g) || []).length,
+    } : null,
     insertLabel: insert ? insert.getAttribute('aria-label') : null,
     insertTitle: insert ? insert.getAttribute('title') : null,
     mainLabel: main ? main.getAttribute('aria-label') : null,
@@ -377,9 +383,10 @@ async function verifyTableScopes(page) {
 
   for (const label of ['剪切', '删除', '在下方添加']) {
     await reset(); await open('cell'); await action(label)
-    if (label === '在下方添加') await page.locator('.lark-doc-command-menu [data-command-id="paragraph"]').click()
+    // plus 菜单不含「正文」（新块默认即正文），插的是一级标题：格内块序列变为 A1 / 空 h1 / A-next
+    if (label === '在下方添加') await page.locator('.lark-doc-command-menu [data-command-id="heading1"]').click()
     if (label === '剪切') await page.waitForFunction(() => !window.__larkDoc.getText().includes('A1'))
-    const values = await cells().first().locator('p').allTextContents()
+    const values = await cells().first().locator('p, h1').allTextContents()
     const ok = label === '在下方添加' ? values.length === 3 && values[1] === '' : values.join('/') === 'A-next'
     record('[单元格操作] ' + label + '保持整表及相邻格', ok && await page.locator('.ProseMirror table').count() === 1 && await cells().nth(1).innerText() === 'B1', values.join('/'))
     await page.keyboard.press('ControlOrMeta+z')
@@ -709,8 +716,8 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
 
   record('[句柄] 主按钮由「18px 类型 SVG + 飞书六点 SVG」两段组成',
     !!handle && handle.glyph === 'T' && handle.icon?.name === 'block-text' && handle.icon.svg && handle.icon.size === 18
-      && handle.dots?.svg === true && handle.dots.circles === 6,
-    handle ? `${JSON.stringify(handle.icon)} + svg=${handle.dots?.svg} circles=${handle.dots?.circles}` : '')
+      && handle.dots?.svg === true && handle.dots.pathDots === 6,
+    handle ? `${JSON.stringify(handle.icon)} + svg=${handle.dots?.svg} pathDots=${handle.dots?.pathDots}（circle=${handle.dots?.circles}）` : '')
 
   record('[句柄] 空段落换成「＋」插入按钮（aria-label=插入内容），不给块操作',
     await (async () => {
@@ -797,7 +804,7 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
 
   record('[菜单] 首段是「问问AI」按钮（带 16px 图标）',
     !!menu && !!menu.ai && menu.ai.label.includes('问问AI') && menu.ai.icon && menu.ai.iconSize === 16,
-    menu?.ai ? `${menu.ai.label} icon=${menu.ai.iconSize}px title=${menu.ai.title}` : '无 AI 段')
+    menu?.ai ? `${menu.ai.label} icon=${menu.ai.iconSize}px title=${menu.ai.title}（原生 title 应为 null）` : '无 AI 段')
 
   // 段序（飞书块菜单的固定分段，见 BlockHandleMenu.vue 的模板顺序）：
   //   AI | — | 类型网格 | — | 缩进和对齐 颜色 | — | 编辑操作 | — | 分享操作 | — | 在下方添加
@@ -812,13 +819,13 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
   record('[菜单] 子菜单触发项声明 aria-haspopup=menu 且初始 aria-expanded=false',
     buttonSegments.filter((segment) => segment.haspopup === 'menu').length === 3
     && buttonSegments.filter((segment) => segment.haspopup === 'menu').every((segment) => segment.expanded === 'false' && segment.arrow),
-    buttonSegments.filter((segment) => segment.haspopup === 'menu').map((segment) => `${segment.title}:${segment.expanded}`).join(' '))
+    buttonSegments.filter((segment) => segment.haspopup === 'menu').map((segment) => `${segment.label}:${segment.expanded}`).join(' '))
 
   // 与飞书一致分成编辑和分享两组；副本/上下移动仅保留命令 API。
   const actionRows = buttonSegments.filter((segment) => segment.cls.includes('lark-doc-block-menu-row'))
   record('[菜单] 评论/编辑/分享/复制链接和下方添加都有明确入口',
     JSON.stringify(actionRows.map((segment) => segment.label)) === JSON.stringify(['评论', '剪切', '复制', '翻译', '删除', '分享', '保存为模板', '复制链接', '在下方添加']),
-    actionRows.map((segment) => segment.title).join('/'))
+    actionRows.map((segment) => segment.label).join('/'))
 
   record('[菜单] 菜单出现在正文左侧、不溢出视口',
     !!menu && menu.x >= 8 && menu.right <= 1440 - 8 && menu.right <= 640,
@@ -826,7 +833,8 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
 
   // ——————————————————— ③ 子菜单 ———————————————————
   const alignTrigger = await page.evaluate(() => {
-    const trigger = [...document.querySelectorAll('.lark-doc-block-submenu-trigger')].find((node) => node.getAttribute('title') === '缩进和对齐')
+    // 触发器只带 aria-label，不再带原生 title（悬停提示走 select.js 自绘浮层）
+    const trigger = [...document.querySelectorAll('.lark-doc-block-submenu-trigger')].find((node) => node.getAttribute('aria-label') === '缩进和对齐')
     if (!trigger) return null
     const rect = trigger.getBoundingClientRect()
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, right: rect.right, top: rect.top }
@@ -859,7 +867,7 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
   // 换个块重开菜单，因为「能否增加缩进」取决于**前一个块**的缩进，不是当前菜单状态。
   await openBlockMenu(page, 0)
   const firstAlignTrigger = await page.evaluate(() => {
-    const trigger = [...document.querySelectorAll('.lark-doc-block-submenu-trigger')].find((node) => node.getAttribute('title') === '缩进和对齐')
+    const trigger = [...document.querySelectorAll('.lark-doc-block-submenu-trigger')].find((node) => node.getAttribute('aria-label') === '缩进和对齐')
     if (!trigger) return null
     const rect = trigger.getBoundingClientRect()
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
@@ -910,16 +918,23 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
   const afterOutside = await menuOpen(page)
   record('[开合] 点菜单外部关闭块菜单', afterOutside === false, `点外部后=${afterOutside ? '还在' : '已关'}`)
 
-  // 在下方添加先选择正文：菜单关闭 + 文档多一块
-  const before = await page.evaluate(() => document.querySelectorAll('.ProseMirror > *').length)
+  // 在下方添加：plus 菜单里没有「正文」——新块默认就是正文，filterCommands 显式排除
+  // paragraph（见 src/core/commands/index.js），所以选「一级标题」验证插入并生效。
+  const before = await page.evaluate(() => ({
+    count: document.querySelectorAll('.ProseMirror > *').length,
+    h1: document.querySelectorAll('.ProseMirror > h1').length,
+  }))
   await openBlockMenu(page, 1)
   await page.locator('.lark-doc-block-menu [aria-label="在下方添加"]').click()
-  await page.locator('.lark-doc-command-menu [data-command-id="paragraph"]').click()
+  await page.locator('.lark-doc-command-menu [data-command-id="heading1"]').click()
   await page.waitForTimeout(320)
-  const after = await page.evaluate(() => document.querySelectorAll('.ProseMirror > *').length)
-  record('[动作] 下方添加选择正文后插一块并关闭菜单',
-    after === before + 1 && (await menuOpen(page)) === false,
-    `${before} → ${after} 菜单=${await menuOpen(page)}`)
+  const after = await page.evaluate(() => ({
+    count: document.querySelectorAll('.ProseMirror > *').length,
+    h1: document.querySelectorAll('.ProseMirror > h1').length,
+  }))
+  record('[动作] 下方添加选一级标题后插一块并关闭菜单',
+    after.count === before.count + 1 && after.h1 === before.h1 + 1 && (await menuOpen(page)) === false,
+    `${before.count} → ${after.count} h1 ${before.h1} → ${after.h1} 菜单=${await menuOpen(page)}`)
 
   // 空段落句柄不给块菜单（＋ 走「插入内容」命令菜单）。索引动态取：上面「下方添加」
   // 已经插了一块，写死下标会指到别的块上。
@@ -977,14 +992,23 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
   const task = page.locator('ul[data-type="taskList"] li').first()
   await task.locator('p').hover()
   await page.locator('.lark-doc-block-handle-main').waitFor()
-  record('[任务] 悬浮显示六点句柄且不改变勾选', await page.locator('.lark-doc-block-handle-main circle').count() === 6 && await task.getAttribute('data-checked') === 'false')
+  // 六点是 path 画的（不是 6 个 <circle>），按 d 里的圆点弧段数断言。
+  const taskDots = await page.evaluate(() => {
+    const dots = document.querySelector('.lark-doc-block-handle-main .lark-doc-block-handle-dots')
+    const d = dots?.querySelector('path')?.getAttribute('d') || ''
+    return { svg: !!dots?.querySelector('svg'), pathDots: (d.match(/a1\.75 1\.75/g) || []).length }
+  })
+  record('[任务] 悬浮显示六点句柄且不改变勾选',
+    taskDots.svg && taskDots.pathDots === 6 && await task.getAttribute('data-checked') === 'false', JSON.stringify(taskDots))
   await page.locator('.lark-doc-block-handle-main').hover()
   await page.locator('.lark-doc-block-menu').waitFor()
   record('[任务] 句柄悬浮高亮当前任务并打开操作菜单', await task.evaluate(node => node.classList.contains('lark-doc-block-handle-hovered')))
   await page.locator('.lark-doc-block-menu').getByRole('menuitem', { name: '剪切', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll('ul[data-type="taskList"] li').length === 0)
+  // taskList 至少要留一个 taskItem（schema 约束）：剪掉唯一一项后编辑器会补一个空项，
+  // 所以这里断言「文字被清空」，不能断言 li 归零。
+  await page.waitForFunction(() => (window.__larkDoc.getText() || '').trim() === '')
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
-  await page.waitForFunction(() => document.querySelectorAll('ul[data-type="taskList"] li').length === 1)
+  await page.waitForFunction(() => (window.__larkDoc.getText() || '').includes('任务悬浮核验'))
   await task.locator('input[type="checkbox"]').check()
   record('[任务] 剪切可撤销且复选框仍可切换', await task.getAttribute('data-checked') === 'true')
   await page.evaluate(html => { window.__larkDoc.setContent(html); window.__larkDoc.getEditor().commands.focus('start') }, CONTENT)
@@ -998,6 +1022,10 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
   record('[只读] 只读态不渲染块句柄、也不开块菜单', readonlyHandle === false && readonlyMenu === false, `句柄=${readonlyHandle} 菜单=${readonlyMenu}`)
 
   record('无脚本错误', errors.length === 0, errors.slice(0, 3).join(' | '))
+
+  // 只读段结束后必须恢复可写：下面的多视口点击验证要靠真实句柄。
+  await page.evaluate(() => { window.__larkDoc.setReadonly(false) })
+  await page.waitForTimeout(200)
 
   for (const [width, height] of [[320, 480], [360, 320], [360, 782], [420, 782], [768, 782], [1536, 782]]) {
     const clicks = await verifyBlockSubmenuClickTargets(page, width, height)
