@@ -32,6 +32,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -169,8 +171,8 @@ const triggerText = (page) => page.evaluate(() => document.querySelector('.lark-
 const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lark-doc-heading-tool .lark-doc-heading-menu'))
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const context = await browser.newContext({ viewport: { width: 1920, height: 900 } })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -233,9 +235,9 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   const heights = buttons ? [...new Set(buttons.rows.map((row) => row.h))] : []
   record('[尺寸] 工具按钮统一 30px 高', heights.length === 1 && heights[0] === 30, `高度集合 ${heights.join(',')}`)
 
-  // marks 组用文字字形当图标，字号比其他按钮大半档（13px vs 12.5px）—— 现状如此，原生化必须照抄
-  const boxBad = buttons ? buttons.rows.filter((row) => !(row.minWidth === '29px' && row.padding === '3px 6px' && row.radius === '6px' && row.fontSize === (row.group === 2 ? '13px' : '12.5px'))) : []
-  record('[尺寸] 按钮盒模型统一（min-width 29 / padding 3px 6px / 圆角 6 / 字号 12.5，marks 组 13）', !!buttons && boxBad.length === 0,
+  // 当前 SVG/文字工具按钮采用放大后的字号；marks 组为 14px，其余为 13px。
+  const boxBad = buttons ? buttons.rows.filter((row) => !(row.minWidth === '29px' && row.padding === '3px 6px' && row.radius === '6px' && row.fontSize === (row.group === 2 ? '14px' : '13px'))) : []
+  record('[尺寸] 按钮盒模型统一（min-width 29 / padding 3px 6px / 圆角 6 / 字号 13，marks 组 14）', !!buttons && boxBad.length === 0,
     boxBad.length ? boxBad.map((row) => `${row.label}=${row.minWidth}/${row.padding}/${row.radius}/${row.fontSize}`).join(' | ') : `字号分组 ${[...new Set(buttons.rows.map((row) => `组${row.group}:${row.fontSize}`))].join(' ')}`)
 
   const withIcon = buttons ? buttons.rows.filter((row) => row.dy !== null) : []
@@ -374,7 +376,7 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   const moreClosed = await page.evaluate(() => !document.querySelector('.lark-doc-more-menu'))
   record('[折叠] Esc 关闭「更多」弹层', moreClosed)
 
-  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setViewportSize({ width: 1920, height: 900 })
   await page.waitForTimeout(1100)
   const restored = await page.evaluate(measureGroups)
   record('[折叠] 视口放宽后按逆序逐步展开、分组全部复现且「更多」消失',
@@ -384,11 +386,11 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   // ——————————————————— ⑥ 顶栏隐藏时的「文档操作」承接 ———————————————————
   const docOpsBtn = await page.evaluate(() => {
     const btn = document.querySelector('.lark-doc-toolbar button[aria-label="文档操作"]')
-    return btn ? { text: btn.textContent.trim(), expanded: btn.getAttribute('aria-expanded') } : null
+    return btn ? { svg: !!btn.querySelector('svg'), expanded: btn.getAttribute('aria-expanded') } : null
   })
   record('[承接] 顶栏隐藏时工具栏出现「文档操作」入口，初始 aria-expanded=false',
-    !!docOpsBtn && docOpsBtn.expanded === 'false' && docOpsBtn.text === '⋯',
-    docOpsBtn ? `${docOpsBtn.text} expanded=${docOpsBtn.expanded}` : '未出现')
+    !!docOpsBtn && docOpsBtn.expanded === 'false' && docOpsBtn.svg,
+    docOpsBtn ? `SVG=${docOpsBtn.svg} expanded=${docOpsBtn.expanded}` : '未出现')
 
   await page.click('.lark-doc-toolbar button[aria-label="文档操作"]')
   await page.waitForTimeout(460)

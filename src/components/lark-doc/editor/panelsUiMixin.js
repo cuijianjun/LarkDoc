@@ -26,13 +26,9 @@
  *    冻在「页面刚打开那一刻」，第二次打开也是同一个时间点 —— 所以这里用条件求值，
  *    保持与 SFC「首次渲染才求值」一致的行为。
  */
-import {
-  createCommentPanel,
-  createCommentComposer,
-  createOutlinePanel,
-  createSaveVersionDialog,
-  createVersionPanel,
-} from '../../../ui/panels'
+import { createLazyUi, createLazyView } from '../../../ui/lazy'
+
+const loadPanels = () => import('../../../ui/panels')
 
 export default {
   watch: {
@@ -85,6 +81,15 @@ export default {
     commentContextEpoch() { this.refreshPanels() },
   },
   methods: {
+    createLazyPanel(name, options) {
+      return createLazyUi({
+        load: loadPanels,
+        create: module => module[name](options),
+        isOpen: state => !!(state.open || state.notice),
+        onError: () => { this.error = '面板暂时无法打开，请关闭后重试' },
+        onReady: () => { if (!this._isDestroyed) this.$nextTick(() => this.placeCommentPanels()) },
+      })
+    },
     openImageComments(image, open, viewer) {
       if (this._imageCommentTarget) {
         if (this._commentComposerHost === this._imageCommentTarget.host) this.cancelCommentComposer()
@@ -103,7 +108,7 @@ export default {
       host.appendChild(title)
       viewer.appendChild(host)
       this._imageCommentTarget = { host, title, blockId: image.blockId, viewer }
-      this._imageCommentsUi = createCommentPanel({ host, handlers: this.panelsHandlers().comment })
+      this._imageCommentsUi = this.createLazyPanel('createCommentPanel', { host, handlers: this.panelsHandlers().comment })
       if (!this.beginCommentComposer(pos, host)) { this.openImageComments(null, false); return false }
       this.refreshPanels()
       return true
@@ -116,10 +121,10 @@ export default {
       if (!outlineHost || !panelHost) return
       const handlers = this.panelsHandlers()
       this._panelsUi = {
-        outline: createOutlinePanel({ host: outlineHost, handlers: handlers.outline }),
-        version: createVersionPanel({ host: panelHost, handlers: handlers.version }),
-        saveVersion: createSaveVersionDialog({ host: panelHost, handlers: handlers.saveVersion }),
-        comment: createCommentPanel({ host: panelHost, handlers: handlers.comment }),
+        outline: createLazyView(() => import('../../../ui/outlinePanel'), 'createOutlinePanel', { host: outlineHost, handlers: handlers.outline }, { onError: () => { this.error = '目录暂时无法打开，请关闭后重试' } }),
+        version: this.createLazyPanel('createVersionPanel', { host: panelHost, handlers: handlers.version }),
+        saveVersion: this.createLazyPanel('createSaveVersionDialog', { host: panelHost, handlers: handlers.saveVersion }),
+        comment: this.createLazyPanel('createCommentPanel', { host: panelHost, handlers: handlers.comment }),
         composer: this.createCommentComposerUi(),
       }
       this._commentComposerUiEpoch = this.commentContextEpoch
@@ -136,7 +141,7 @@ export default {
     createCommentComposerUi() {
       const epoch = this.commentContextEpoch
       const current = () => epoch === this.commentContextEpoch && !this.editor?.isDestroyed && !this._isDestroyed
-      return createCommentComposer({ host: this.$refs.panelHost, handlers: {
+      return this.createLazyPanel('createCommentComposer', { host: this.$refs.panelHost, handlers: {
         isCurrentContext: current,
         onInput: value => { if (current()) this.setCommentComposerDraft(value) },
         onCancel: () => { if (current()) this.cancelCommentComposer() },

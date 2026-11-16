@@ -13,12 +13,46 @@ import tableInteraction from '../../src/components/lark-doc/editor/tableInteract
 import tableCommands from '../../src/components/lark-doc/editor/tableToolsMixin'
 import overlayDismiss from '../../src/components/lark-doc/editor/overlayDismissMixin'
 import { createTableTools } from '../../src/ui/tableTools'
-import { createLinkDialog } from '../../src/ui/dialogs'
+import { createLinkDialog, createEmbedDialog } from '../../src/ui/dialogs'
 import { createCommandMenu } from '../../src/ui/commandMenu'
 import { filterCommands } from '../../src/core/commands'
 import commandMenu from '../../src/components/lark-doc/editor/commandMenuMixin'
 import blockHandleUi from '../../src/components/lark-doc/editor/blockHandleUiMixin'
+
+describe('shared link popover viewport bounds', () => {
+  it.each([true, false])('fits the real popup height and follows viewport resize (application=%s)', application => {
+    const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    const height = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    Object.defineProperty(window, 'innerWidth', { value: 420, configurable: true })
+    Object.defineProperty(window, 'innerHeight', { value: 240, configurable: true })
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const ui = createEmbedDialog({ host })
+    ui.el.getBoundingClientRect = () => ({ left: 9, top: 210, right: 549, bottom: 410, width: 540, height: 200 })
+    try {
+      ui.update({ open: true, application, title: '链接预览', position: { left: '9px', top: '210px' } })
+      expect(parseFloat(ui.el.style.maxWidth)).toBeLessThanOrEqual(406)
+      expect(parseFloat(ui.el.style.top) + 200).toBeLessThanOrEqual(233)
+      Object.defineProperty(window, 'innerWidth', { value: 320, configurable: true })
+      Object.defineProperty(window, 'innerHeight', { value: 180, configurable: true })
+      window.dispatchEvent(new Event('resize'))
+      expect(parseFloat(ui.el.style.maxWidth)).toBeLessThanOrEqual(306)
+      expect(parseFloat(ui.el.style.maxHeight)).toBeLessThanOrEqual(166)
+      ui.update({ open: false })
+      const before = ui.el.style.cssText
+      window.dispatchEvent(new Event('resize'))
+      expect(ui.el.style.cssText).toBe(before)
+    } finally {
+      ui.destroy(); host.remove()
+      Object.defineProperty(window, 'innerWidth', width)
+      Object.defineProperty(window, 'innerHeight', height)
+    }
+  })
+})
+import { createTooltip } from '../../src/ui/tooltip'
+import { createBubbleBar } from '../../src/ui/bubbleBar'
+import { createDiagramMenu } from '../../src/ui/diagramMenu'
 import viewModes from '../../src/components/lark-doc/editor/viewModesMixin'
+import { createSearchPanel } from '../../src/ui/searchPanel'
 
 const editors = []
 function editor(content, config, options = {}) {
@@ -27,6 +61,26 @@ function editor(content, config, options = {}) {
   return value
 }
 afterEach(() => editors.splice(0).forEach(value => value.destroy()))
+
+it('search input preserves native Ctrl+Cmd+F while retaining single-modifier find shortcuts', () => {
+  const host = document.createElement('div'), onTab = vi.fn()
+  document.body.appendChild(host)
+  const panel = createSearchPanel({ host, handlers: { onTab } })
+  try {
+    panel.update({ open: true })
+    const input = panel.el.querySelector('input')
+    const native = new KeyboardEvent('keydown', { key: 'f', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true })
+    input.dispatchEvent(native)
+    expect(native.defaultPrevented).toBe(false)
+    expect(onTab).not.toHaveBeenCalled()
+    for (const key of ['metaKey', 'ctrlKey']) {
+      const find = new KeyboardEvent('keydown', { key: 'f', [key]: true, bubbles: true, cancelable: true })
+      input.dispatchEvent(find)
+      expect(find.defaultPrevented).toBe(true)
+    }
+    expect(onTab.mock.calls).toEqual([['find'], ['find']])
+  } finally { panel.destroy(); host.remove() }
+})
 
 function hostFor(ed) {
   document.body.appendChild(ed.view.dom)
@@ -256,6 +310,175 @@ describe('v12e link and cell interactions', () => {
     expect(filterCommands('', 'plus', { features: { tables: false } }).some(item => item.id === 'table')).toBe(false)
   })
 
+  it.each(['plus', 'slash'])('普通命令的悬浮、焦点和键盘活动项关闭旧子菜单：%s', kind => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host })
+    const items = filterCommands('', kind)
+    menu.update({ open: true, kind, items, templates: [{ id: 'one', label: '示例模板' }] })
+    const template = menu.el.querySelector('[data-command-id="template"]')
+    const ordinary = [...menu.el.querySelectorAll('[data-command-id="callout"]')].at(-1)
+    template.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.submenuEl).not.toBeNull()
+    ordinary.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.submenuEl).toBeNull()
+    template.focus(); ordinary.focus()
+    expect(menu.submenuEl).toBeNull()
+    template.dispatchEvent(new MouseEvent('mouseenter'))
+    menu.update({ activeId: 'callout', activeIndex: items.findIndex(item => item.id === 'callout') })
+    expect(menu.submenuEl).toBeNull()
+    menu.destroy(); host.remove()
+  })
+  it('模板条目原地更新会清除旧子菜单且重新打开显示新列表', () => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host }), templates = [{ id: 'one', label: '旧模板' }]
+    menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus'), templates })
+    const trigger = menu.el.querySelector('[data-command-id="template"]')
+    trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.submenuEl.textContent).toContain('旧模板')
+    templates[0] = { id: 'two', label: '新模板' }
+    menu.update({ templates })
+    expect(menu.submenuEl).toBeNull()
+    trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.submenuEl.textContent).toContain('新模板')
+    menu.destroy(); host.remove()
+  })
+
+  it('重复命令别名仅激活当前分类，Enter遵循当前索引', () => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const onChoose = vi.fn(), menu = createCommandMenu({ host, handlers: { onChoose } }), items = filterCommands('', 'plus')
+    const activeIndex = items.findIndex(item => item.id === 'taskList' && item.category === '常用')
+    menu.update({ open: true, kind: 'plus', items, activeId: 'taskList', activeIndex })
+    expect([...menu.el.querySelectorAll('button.active')].map(node => node.dataset.entryKey)).toEqual(['常用:taskList'])
+    menu.choose()
+    expect(onChoose).toHaveBeenCalledWith(items[activeIndex])
+    menu.destroy(); host.remove()
+  })
+  it('相同菜单顺序的新对象同步最新内容和鼠标活动索引', () => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const onActivate = vi.fn(), onChoose = vi.fn(), menu = createCommandMenu({ host, handlers: { onActivate, onChoose } })
+    const items = filterCommands('', 'plus')
+    menu.update({ open: true, kind: 'plus', items })
+    const node = menu.el.querySelector('[data-entry-key="常用:taskList"]')
+    const next = items.map(item => ({ ...item, label: item.id === 'taskList' ? '更新后的任务' : item.label }))
+    menu.update({ items: next })
+    expect(menu.el.querySelector('[data-entry-key="常用:taskList"]')).toBe(node)
+    expect(node.textContent).toContain('更新后的任务')
+    node.dispatchEvent(new MouseEvent('mouseenter')); node.click()
+    expect(onActivate).toHaveBeenCalledWith(next.findIndex(item => item.id === 'taskList' && item.category === '常用'))
+    expect(onChoose).toHaveBeenCalledWith(next.find(item => item.id === 'taskList' && item.category === '常用'))
+    menu.destroy(); host.remove()
+  })
+
+  it('v58 划词对齐子菜单无CSS或原生tips，禁用原因保留在无障碍说明', () => {
+    const host = document.createElement('div'); document.body.append(host)
+    const ui = createBubbleBar(host, { config: { blockStyle: true, marks: [] } })
+    try {
+      ui.update({ left: 100, top: 100, alignOpen: true, alignItems: ['左', '居中', '右', '两端'].map((name, index) => ({ name, tooltip: name + '对齐快捷键', active: index === 0 })), canIncrease: false, canDecrease: false, increaseTooltip: '前面没有可缩进父块', decreaseTooltip: '已经没有缩进' })
+      const panel = host.querySelector('.lark-doc-bubble-align-menu')
+      expect(panel.querySelector('[data-tooltip],[title]')).toBeNull()
+      expect(panel.querySelector('button').getAttribute('aria-description')).toContain('对齐快捷键')
+      expect([...panel.querySelectorAll('button:disabled')].every(button => button.getAttribute('aria-description'))).toBe(true)
+    } finally { ui.destroy(); host.remove() }
+  })
+
+  it.each(['menu', 'listbox', 'dialog', 'alertdialog'])('v58 %s弹层内不显示黑色tips且不残留描述关联', role => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'), popup = document.createElement('div'), button = document.createElement('button')
+    document.body.append(host); host.append(popup); popup.append(button); popup.setAttribute('role', role); button.title = 'Arial'
+    button.getBoundingClientRect = () => ({ left: 100, top: 100, width: 50, height: 30 })
+    const tips = createTooltip({ host }); tips.bind(button)
+    try {
+      button.dispatchEvent(new MouseEvent('mouseenter')); vi.advanceTimersByTime(180)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+      button.focus(); vi.advanceTimersByTime(180)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+      expect(button.hasAttribute('aria-describedby')).toBe(false)
+      expect(button.title).toBe('')
+    } finally { tips.destroy(); host.remove(); vi.useRealTimers() }
+  })
+
+  it('v58 提示等待期间移入弹窗不补挂，弹窗外图标仍保留提示', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'), popup = document.createElement('div'), button = document.createElement('button')
+    document.body.append(host); host.append(button, popup); popup.setAttribute('role', 'listbox'); button.title = '加粗'
+    button.getBoundingClientRect = () => ({ left: 100, top: 100, width: 50, height: 30 })
+    const tips = createTooltip({ host })
+    try {
+      tips.show(button); popup.append(button); vi.advanceTimersByTime(180)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+      host.append(button); tips.show(button); vi.advanceTimersByTime(180)
+      expect(host.querySelector('[role="tooltip"]').textContent).toBe('加粗')
+      popup.append(button); tips.refresh()
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+      expect(button.hasAttribute('aria-describedby')).toBe(false)
+    } finally { tips.destroy(); host.remove(); vi.useRealTimers() }
+  })
+
+  it('v58 插入菜单代码块和分隔线不显示黑色tips', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host })
+    try {
+      menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus') })
+      for (const id of ['code', 'divider']) {
+        const node = menu.el.querySelector(`[data-command-id="${id}"]`)
+        node.getBoundingClientRect = () => ({ left: 100, top: 120, right: 140, bottom: 150, width: 40, height: 30 })
+        node.dispatchEvent(new MouseEvent('mouseenter')); vi.advanceTimersByTime(150)
+        expect(host.querySelector('[role="tooltip"]')).toBeNull()
+        expect(node.hasAttribute('title')).toBe(false)
+        expect(node.hasAttribute('aria-describedby')).toBe(false)
+        node.dispatchEvent(new MouseEvent('mouseleave'))
+        expect(host.querySelector('[role="tooltip"]')).toBeNull()
+        expect(node.hasAttribute('aria-describedby')).toBe(false)
+      }
+      menu.el.querySelector('[data-command-id="code"]').dispatchEvent(new MouseEvent('mouseenter'))
+      menu.update({ open: false }); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { menu.destroy(); host.remove(); vi.useRealTimers() }
+  })
+  it('提示支持焦点、翻转、滚动关闭与销毁', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); host.className = 'lark-doc'; document.body.appendChild(host)
+    const tips = createTooltip({ host }), button = document.createElement('button')
+    tips.bind(button)
+    try {
+      button.title = '查找'; button.setAttribute('aria-describedby', 'existing-description'); host.appendChild(button)
+      button.getBoundingClientRect = () => ({ left: 2, top: 1, right: 32, bottom: 31, width: 30, height: 30 })
+      button.focus(); vi.advanceTimersByTime(150)
+      const tip = host.querySelector('[role="tooltip"]')
+      expect(tip.textContent).toBe('查找'); expect(tip.classList.contains('is-below')).toBe(true)
+      expect(parseFloat(tip.style.left)).toBeGreaterThanOrEqual(8)
+      expect(button.title).toBe('')
+      window.dispatchEvent(new Event('scroll'))
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+      expect(button.getAttribute('aria-describedby')).toBe('existing-description')
+      button.dispatchEvent(new MouseEvent('mouseenter'))
+      tips.destroy(); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { tips.destroy(); host.remove(); vi.useRealTimers() }
+  })
+  it('每个图表入口保留独立SVG和点击，文字行不额外显示tips', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const insertDiagramType = vi.fn(), menu = createDiagramMenu({ host, handlers: { insertDiagramType } })
+    try {
+      const types = ['flowchart', 'sequence', 'gantt', 'pie', 'state', 'class'].map(id => ({ id, label: id }))
+      menu.update({ open: true, types })
+      expect(new Set([...host.querySelectorAll('button svg')].map(node => node.outerHTML)).size).toBe(6)
+      for (const node of host.querySelectorAll('button')) {
+        node.getBoundingClientRect = () => ({ left: 100, top: 120, right: 140, bottom: 150, width: 40, height: 30 })
+        node.dispatchEvent(new MouseEvent('mouseenter')); vi.advanceTimersByTime(150)
+        expect(host.querySelector('[role="tooltip"]')).toBeNull()
+        expect(node.getAttribute('aria-label')).toBe(node.textContent)
+        node.click(); expect(insertDiagramType).toHaveBeenLastCalledWith(node.textContent)
+        node.dispatchEvent(new MouseEvent('mouseleave'))
+      }
+      host.querySelector('button').dispatchEvent(new MouseEvent('mouseenter'))
+      menu.update({ open: false }); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { menu.destroy(); host.remove(); vi.useRealTimers() }
+  })
+
   it('renders source plus icon slots and common aliases as separate stable buttons', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -280,11 +503,11 @@ describe('v12e link and cell interactions', () => {
     const menu = createCommandMenu({ host, handlers: { onChoose: choose } })
     menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus') })
     menu.el.querySelector('[data-command-id="table"]').dispatchEvent(new MouseEvent('mouseenter'))
-    const grid = menu.el.querySelector('.lark-doc-table-submenu-grid')
+    const grid = menu.submenuEl?.querySelector('.lark-doc-table-submenu-grid')
     expect(grid?.querySelectorAll('button')).toHaveLength(81)
     const cell = grid.querySelector('[data-row="2"][data-col="3"]')
     cell.focus()
-    expect(menu.el.querySelector('.lark-doc-submenu-picker-head output').textContent).toBe('3 x 2')
+    expect(menu.submenuEl.querySelector('.lark-doc-submenu-picker-head output').textContent).toBe('3 x 2')
     expect(grid.querySelectorAll('.is-preview')).toHaveLength(6)
     cell.click()
     expect(choose).toHaveBeenCalledWith({ id: 'table', tableSize: { rows: 2, cols: 3 } })
@@ -707,6 +930,22 @@ describe('v12e link and cell interactions', () => {
     expect(target).toMatchObject({ view: 'link', title: 'http://www.a.com', href: 'http://www.a.com' })
   })
 
+  it('editing a link restores focus immediately and stays separate from following typing undo', () => {
+    const ed = editor('<p><a href="https://example.com">old</a></p>'), host = hostFor(ed)
+    const scroll = vi.spyOn(ed.view, 'scrollToSelection').mockImplementation(() => {})
+    host._linkTarget = host.linkTargetAt(ed.view.dom.querySelector('a'))
+    host.editHoveredLink(); host.linkText = 'changed'
+    const input = document.createElement('input'); document.body.appendChild(input); input.focus()
+    try {
+      expect(host.updateHoveredLink()).toBe(true)
+      expect(document.activeElement).toBe(ed.view.dom)
+      ed.commands.setTextSelection(8); ed.commands.insertContent('next'); ed.commands.undo()
+      expect(ed.getText()).toBe('changed')
+      ed.commands.undo()
+      expect(ed.getText()).toBe('old')
+    } finally { input.remove(); scroll.mockRestore() }
+  })
+
   it('resolves a pending webpage title without overwriting later user edits', async () => {
     let resolve
     const ed = new Editor({ extensions: createLarkDocExtensions({ unfurlProvider: () => new Promise(done => { resolve = done }) }), content: '<p><a href="https://example.com">https://example.com</a></p>' })
@@ -866,8 +1105,8 @@ describe('v12e link and cell interactions', () => {
     } finally { open.mockRestore(); selection.removeAllRanges() }
   })
 
-  it('shows the cell plus only for a collapsed cursor inside one editable cell', () => {
-    const ed = editor('<p>outside</p><table><tr><td><p>cell</p></td><td><p>next</p></td></tr></table>')
+  it('shows the cell plus only for a collapsed cursor inside one empty editable block', () => {
+    const ed = editor('<p>outside</p><table><tr><td><p></p></td><td><p>next</p></td></tr></table>')
     const host = { editor: ed, featureEnabled: () => true, effectiveReadonly: false }
     const build = tableTools.methods.buildCellPlusState
     expect(typeof build).toBe('function')
@@ -880,7 +1119,7 @@ describe('v12e link and cell interactions', () => {
     expect(build.call(host)).toMatchObject({ visible: true, left: 72, top: 87 })
     ed.view.nodeDOM(cells[1]).getBoundingClientRect = () => ({ left: 220, top: 80, width: 100, height: 40, right: 320, bottom: 120 })
     ed.commands.setTextSelection(cells[1] + 2)
-    expect(build.call(host)).toMatchObject({ visible: true, left: 184, top: 87 })
+    expect(build.call(host).visible).toBe(false)
     host.blockMenuOpen = true
     expect(build.call(host).visible).toBe(false)
     host.blockMenuOpen = false
@@ -1245,4 +1484,62 @@ describe('链接预览尺寸观察器生命周期', () => {
       window.cancelAnimationFrame = previousCancel
     }
   })
+})
+
+describe('REA search composition and compact link parity', () => {
+  it('publishes only committed query text and keeps the composition draft during unrelated paint', () => {
+    const host = document.createElement('div'); document.body.append(host)
+    const queries = [], ui = createSearchPanel({ host, handlers: { onQuery: e => queries.push(e.target.value) } })
+    try {
+      const state = { open: true, query: '', height: 186 }
+      ui.update(state)
+      const input = host.querySelector('input')
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      input.value = 'zhong'; input.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+      ui.update({ ...state, counterText: '0 / 0' })
+      expect(input.value).toBe('zhong')
+      expect(queries).toEqual([])
+      input.value = '中'; input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+      input.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      expect(queries).toEqual(['中'])
+    } finally { ui.destroy(); host.remove() }
+  })
+})
+
+describe('caption search is a structured attribute match', () => {
+  it('finds, replaces and undoes image/code captions alongside formatted body without treating attributes as text positions', async () => {
+    const { findTextMatches, replaceText } = await import('../../src/core/documentOperations')
+    const ed = editor({ type: 'doc', content: [
+      { type: 'codeBlock', attrs: { blockId: 'bcode53', caption: 'needle needle' }, content: [{ type: 'text', text: 'needle' }] },
+      { type: 'image', attrs: { src: 'https://example.test/a.png', blockId: 'bimage53', caption: 'needle image' } },
+      { type: 'paragraph', attrs: { blockId: 'btext53' }, content: [{ type: 'text', text: 'needle', marks: [{ type: 'bold' }] }] },
+    ] })
+    const original = ed.getJSON(), matches = findTextMatches(ed.state.doc, 'needle')
+    expect(matches).toHaveLength(5)
+    expect(matches.filter(m => m.attribute === 'caption')).toHaveLength(3)
+    expect(replaceText(ed, 'needle', 'X', true, matches)).toBe(5)
+    expect(ed.state.doc.child(0).attrs.caption).toBe('X X')
+    expect(ed.state.doc.child(0).textContent).toBe('X')
+    expect(ed.state.doc.child(1).attrs.caption).toBe('X image')
+    expect(ed.state.doc.child(2).firstChild.marks[0].type.name).toBe('bold')
+    ed.commands.undo(); expect(ed.getJSON()).toEqual(original)
+  })
+})
+
+it.each(['code', 'image'])('scrolls the actual %s caption inside its scroll owner without using the node selection end', async kind => {
+  const { scrollDocumentSelection } = await import('../../src/editor/pagedDocumentView')
+  const owner = document.createElement('div'); owner.style.overflowY = 'auto'
+  Object.defineProperties(owner, { scrollHeight: { value: 2000 }, clientHeight: { value: 400 } })
+  owner.getBoundingClientRect = () => ({ top: 100, bottom: 500 })
+  owner.scrollBy = vi.fn()
+  const root = document.createElement('div'), shell = document.createElement('div'), caption = document.createElement(kind === 'code' ? 'input' : 'figcaption')
+  caption.className = kind === 'code' ? 'lark-doc-code-caption' : 'lark-doc-image-caption-text'
+  caption.getBoundingClientRect = () => ({ top: 600, bottom: 620, height: 20 })
+  shell.append(caption); root.append(shell); owner.append(root); document.body.append(owner)
+  const coords = vi.fn(() => { throw new Error('must not use block end') })
+  try {
+    scrollDocumentSelection({ view: { dom: root, nodeDOM: () => shell, coordsAtPos: coords }, state: { selection: { head: 999 } } }, { from: 0, attribute: 'caption' })
+    expect(coords).not.toHaveBeenCalled()
+    expect(owner.scrollBy).toHaveBeenCalledWith({ top: 307.5, behavior: 'instant' })
+  } finally { owner.remove() }
 })

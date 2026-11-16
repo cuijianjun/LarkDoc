@@ -18,7 +18,7 @@ import {
 import { readContentTheme, subscribeContentTheme } from '../themeSignal'
 // 表情面板全量（P4-03）：字形 / 中文名 / 9 组分类 / 搜索全部来自 core 的 catalog，
 // 面板不再自维护 11 条硬编码；写入侧的归一化与 schema 校验共用同一张表。
-import { emojiCategories, emojiItems, findEmojiByGlyph, findEmojiByName, searchEmoji } from '../../../core/emoji/catalog'
+import { emojiGlyphs, findEmojiByGlyph } from '../../../core/emoji/lookup'
 // 随机与「恢复默认样式」回落到与 schema 一致的 `💡`（02 §654），不再散落字面量。
 import { CALLOUT_EMOJI_DEFAULT } from '../../../core/blocks/callout'
 
@@ -50,6 +50,7 @@ const writeRecentColors = (colors) => writeColorList(RECENT_COLORS_STORAGE_KEY, 
 
 export default {
   data() { return {
+    calloutEmojiCatalog: null,
     calloutEmojiOpen: false, calloutEmojiQuery: '', calloutEmojiCategory: 'all', calloutEmojiRecent: [], calloutEmojiPlacement: 'below', calloutToolsPosition: { top: 0, left: 0 },
     // 色板是两套色整组替换，所以只存档位、具体色值由 computed 现算（T3-03）。
     contentTheme: readContentTheme(),
@@ -60,19 +61,21 @@ export default {
     colorPaletteOptions() { return calloutColorOptions(this.contentTheme) },
     calloutDefaultColors() { return calloutDefaults(this.contentTheme) },
     // 分类 tab：9 个 emojibase 分组，「最近 / 全部」两个固定项在模板里写死（02 §16 ④）。
-    calloutEmojiCategories() { return emojiCategories },
+    calloutEmojiCategories() { return this.calloutEmojiCatalog?.emojiCategories || [] },
     // 「最近」只在会话内按名字记，跨会话不落盘；搜索对「最近」同样生效，否则切到最近像失灵。
     filteredCalloutEmojiItems() {
+      const catalog = this.calloutEmojiCatalog
+      if (!catalog) return []
       const keyword = String(this.calloutEmojiQuery || '').trim().toLowerCase()
       const hit = (item) => !keyword
         || item.label.toLowerCase().indexOf(keyword) !== -1
         || item.value.indexOf(keyword) !== -1
         || item.glyph.indexOf(keyword) !== -1
       if (this.calloutEmojiCategory === 'recent') {
-        return this.calloutEmojiRecent.map((name) => findEmojiByName(name)).filter(Boolean).filter(hit)
+        return this.calloutEmojiRecent.map((name) => catalog.findEmojiByName(name)).filter(Boolean).filter(hit)
       }
       // 空分类 = 「全部」，由 catalog 内部跳过分类裁剪，省一次全量拷贝。
-      return searchEmoji(keyword, this.calloutEmojiCategory === 'all' ? '' : this.calloutEmojiCategory)
+      return catalog.searchEmoji(keyword, this.calloutEmojiCategory === 'all' ? '' : this.calloutEmojiCategory)
     },
     colorPaletteTitle() {
       return { textColor: '文字颜色', textBackground: '背景颜色', calloutColor: '高亮块文字颜色', calloutBackground: '高亮块背景颜色', calloutBorder: '高亮块边框颜色' }[this.colorPaletteOpen] || '颜色'
@@ -111,7 +114,7 @@ export default {
     updateCalloutTools() {
       const callout = this.activeCalloutElement()
       const paper = this.$refs.root?.querySelector('.lark-doc-paper')
-      if (!callout || !paper || !this.writable()) { this.calloutEmojiOpen = false; return }
+      if (!callout || !paper || !this.writable()) { this.closeCalloutEmoji(); return }
       const rect = callout.getBoundingClientRect()
       const paperRect = paper.getBoundingClientRect()
       this.calloutToolsPosition = { top: Math.max(4, rect.top - paperRect.top - 44), left: Math.max(8, Math.min(paper.clientWidth - CALLOUT_TOOLS_WIDTH, rect.right - paperRect.left - CALLOUT_TOOLS_WIDTH)) }
@@ -119,7 +122,7 @@ export default {
     // 未设置属性时回落到默认三色（色值集中在 palette.js，模板里不再写字面 hex）。
     calloutColor(name, fallback) { return this.editor?.getAttributes('callout')?.[name] || fallback || this.calloutDefaultColors[name] },
     setCalloutColor(name, value) { if (this.writable() && /^#[0-9a-f]{6}$/i.test(value)) this.run('updateAttributes', 'callout', { [name]: value }) },
-    pickRandomCalloutEmoji() { return emojiItems[Math.floor(Math.random() * emojiItems.length)].glyph || CALLOUT_EMOJI_DEFAULT },
+    pickRandomCalloutEmoji() { return emojiGlyphs[Math.floor(Math.random() * emojiGlyphs.length)] || CALLOUT_EMOJI_DEFAULT },
     // P0-03：表情搜索/分类的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
     setCalloutEmojiQuery(value) { this.calloutEmojiQuery = value },
     setCalloutEmojiCategory(category) { this.calloutEmojiCategory = category },
@@ -129,9 +132,27 @@ export default {
      *    否则靠近页底的块一点面板就顶出可视区；
      *  - 每次打开都回到「全部」并清空搜索，避免上次的过滤条件把人困在空列表里。
      */
-    toggleCalloutEmoji() {
+    async toggleCalloutEmoji() {
       if (!this.writable()) return
-      if (this.calloutEmojiOpen) { this.closeCalloutEmoji(); return }
+      if (this.calloutEmojiOpen || this._calloutEmojiOpening) { this.closeCalloutEmoji(); return }
+      const opening = { doc: this.editor.state.doc, element: this.activeCalloutElement() }
+      this._calloutEmojiOpening = opening
+      if (!this.calloutEmojiCatalog) {
+        try {
+          const catalog = await import('../../../core/emoji/catalog')
+          if (this._isDestroyed || this._isBeingDestroyed) return
+          this.calloutEmojiCatalog = catalog
+        } catch (_) {
+          if (this._calloutEmojiOpening === opening && !this._isDestroyed) {
+            this._calloutEmojiOpening = null
+            this.error = '表情暂时无法打开，请重试'
+          }
+          return
+        }
+      }
+      if (this._calloutEmojiOpening !== opening) return
+      this._calloutEmojiOpening = null
+      if (!this.writable() || this.editor.state.doc !== opening.doc || this.activeCalloutElement() !== opening.element) return
       this.calloutEmojiQuery = ''
       this.calloutEmojiCategory = 'all'
       const tools = this.$refs.root && this.$refs.root.querySelector('.lark-doc-callout-tools')
@@ -142,6 +163,7 @@ export default {
       this.calloutEmojiOpen = true
     },
     closeCalloutEmoji() {
+      this._calloutEmojiOpening = null
       this.calloutEmojiOpen = false
       this.calloutEmojiQuery = ''
       this.calloutEmojiCategory = 'all'

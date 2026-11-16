@@ -9,6 +9,14 @@ import { selectedRect } from '@tiptap/pm/tables'
 import { TextSelection } from '@tiptap/pm/state'
 import { tableActions } from './constants'
 
+function destroyTableClipObserver() {
+  this._tableClipObserver?.disconnect()
+  this._tableClipObserver = null
+  this._tableClipRoot = null
+  this._observedTableClips?.clear()
+  this._visibleTableClips?.clear()
+}
+
 export default {
   data() { return {
     tableToolsOpen: false, tablePicker: false, tablePickerHover: { rows: 3, cols: 3 },
@@ -45,7 +53,7 @@ export default {
     // 窗口变宽后原本溢出的表格不再溢出，得把 is-clipped 摘掉。
     window.addEventListener('resize', this.syncTableClip)
   },
-  beforeDestroy() { window.removeEventListener('resize', this.syncTableClip) },
+  beforeDestroy() { window.removeEventListener('resize', this.syncTableClip); this.destroyTableClipObserver() },
   methods: {
     // P0-03：工具栏表格按钮的三态行为收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
     onTableToolbarClick() {
@@ -53,6 +61,7 @@ export default {
       if (!this.isActive('table')) return this.insertTable()
       if (this.blockMenuOpen && this.handleIsTable) return this.closeBlockMenu()
       this.positionBlockHandle(this.currentBlockRange())
+      if (this._tableHandleContext) this.positionBlockHandle(this._tableHandleContext.table)
       this.openBlockMenu()
     },
     previewTableSize(rows, cols) { if (!this.tablePicker) return; this.tablePickerHover = { rows, cols } },
@@ -363,14 +372,59 @@ export default {
      * 直接改 wrapper 的 class 而不进文档 —— 这是纯视觉态，落进 JSON 就是脏数据。
      * 列宽拖拽结束会 dispatch 事务，所以挂 onTransaction 就够，不用另监听 pointerup。
      */
-    syncTableClip() {
+    destroyTableClipObserver,
+    syncTableClip(renderedBlocks) {
+      if (this._isBeingDestroyed || this._isDestroyed || this.editor?.isDestroyed) { destroyTableClipObserver.call(this); return }
       const editorDom = this.editor && this.editor.view && this.editor.view.dom
       if (!editorDom || typeof editorDom.querySelectorAll !== 'function') return
-      editorDom.querySelectorAll('.tableWrapper').forEach((wrapper) => {
+      const measure = wrapper => {
         const clipped = wrapper.scrollWidth > wrapper.clientWidth + 1
         if (clipped === wrapper.classList.contains('is-clipped')) return
         wrapper.classList.toggle('is-clipped', clipped)
-      })
+      }
+      const Observer = editorDom.ownerDocument?.defaultView?.IntersectionObserver
+      const large = this.editor.state?.doc?.content?.size > 500000
+      if (large && Observer) {
+        const blocks = Array.isArray(renderedBlocks) ? renderedBlocks : this.editor.storage?.larkDoc?.projection?.getRenderedBlocks?.()
+        const wrappers = new Set()
+        if (blocks) blocks.forEach(node => {
+          if (node.nodeType !== 1 || !editorDom.contains(node)) return
+          if (node.matches('.tableWrapper')) wrappers.add(node)
+          node.querySelectorAll('.tableWrapper').forEach(wrapper => wrappers.add(wrapper))
+        })
+        else editorDom.querySelectorAll('.tableWrapper').forEach(wrapper => wrappers.add(wrapper))
+        if (!this._tableClipObserver || this._tableClipRoot !== editorDom) {
+          destroyTableClipObserver.call(this)
+          this._observedTableClips = new Set()
+          this._visibleTableClips = new Set()
+          this._tableClipRoot = editorDom
+          const observer = new Observer(entries => {
+            if (this._tableClipObserver !== observer) return
+            if (this._isBeingDestroyed || this._isDestroyed || this.editor?.isDestroyed) { destroyTableClipObserver.call(this); return }
+            entries.forEach(({ target, isIntersecting }) => {
+              if (!this._observedTableClips.has(target) || !editorDom.contains(target)) return
+              if (isIntersecting) { this._visibleTableClips.add(target); measure(target) }
+              else this._visibleTableClips.delete(target)
+            })
+          })
+          this._tableClipObserver = observer
+        }
+        this._observedTableClips.forEach(wrapper => {
+          if (wrappers.has(wrapper) && editorDom.contains(wrapper)) return
+          this._tableClipObserver.unobserve(wrapper)
+          this._observedTableClips.delete(wrapper)
+          this._visibleTableClips.delete(wrapper)
+        })
+        wrappers.forEach(wrapper => {
+          if (this._observedTableClips.has(wrapper)) return
+          this._observedTableClips.add(wrapper)
+          this._tableClipObserver.observe(wrapper)
+        })
+        this._visibleTableClips.forEach(measure)
+        return
+      }
+      if (this._tableClipObserver) destroyTableClipObserver.call(this)
+      editorDom.querySelectorAll('.tableWrapper').forEach(measure)
     },
     deleteActiveTable() {
       if (!this.writable() || !this.editor.isActive('table')) return false

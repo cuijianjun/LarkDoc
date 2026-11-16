@@ -4,10 +4,10 @@ import { Schema } from '@tiptap/pm/model'
 import highlighter from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
 import { Editor } from '@tiptap/core'
-import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
+let createLarkDocExtensions
 import { sanitizeHTML, validateDocument } from '../../src/core/documentOperations'
 import revisionMixin from '../../src/components/lark-doc/editor/revisionMixin'
-import { languageLoaders } from '../../src/core/nodeviews/code-languages'
+import { languageLoaders } from '../../src/core/nodeviews/code-language-loaders'
 
 const schema = new Schema({ nodes: {
   doc: { content: 'block+' },
@@ -70,6 +70,7 @@ beforeEach(async () => {
     getBoundingClientRect: () => ({ top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 }),
   }))
   vi.resetModules()
+  ;({ createLarkDocExtensions } = await import('../../src/components/lark-doc/extensions'))
   ;({ createCodeBlockNodeView } = await import('../../src/core/nodeviews/code-block'))
   ;({ registerFeature } = await import('../../src/core/features/registry'))
   highlighter.registerLanguage('javascript', javascript)
@@ -101,6 +102,122 @@ describe('Feishu code block closed interaction', () => {
     return editor
   }
 
+  const key = (editor, name, options = {}) => editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: name, ...options })))
+  it('indents selected code lines without replacing source, reverses them and retains a backward selection', () => {
+    const editor = realCode('<pre><code>one\ntwo</code></pre><p>after</p>')
+    editor.commands.setTextSelection({ from: 8, to: 2 })
+    key(editor, 'Tab')
+    expect(editor.state.doc.firstChild.textContent).toBe('    one\n    two')
+    expect(editor.state.selection.anchor).toBeGreaterThan(editor.state.selection.head)
+    key(editor, 'Tab', { shiftKey: true })
+    expect(editor.state.doc.firstChild.textContent).toBe('one\ntwo')
+    editor.commands.undo()
+    expect(editor.state.doc.firstChild.textContent).toBe('    one\n    two')
+  })
+  it('inserts a tab before a single-line selection and unindents only spaces before its start', () => {
+    const editor = realCode('<pre><code>ab cd</code></pre>')
+    editor.commands.setTextSelection({ from: 4, to: 6 })
+    key(editor, 'Tab')
+    expect(editor.state.doc.firstChild.textContent).toBe('ab     cd')
+    editor.commands.setTextSelection({ from: 8, to: 10 })
+    key(editor, 'Tab', { shiftKey: true })
+    expect(editor.state.doc.firstChild.textContent).toBe('ab cd')
+  })
+  it('inherits leading spaces on Enter and inserts command-enter lines inside the code block', () => {
+    const editor = realCode('<pre><code>    abc</code></pre><p>after</p>')
+    editor.commands.setTextSelection(8)
+    key(editor, 'Enter')
+    expect(editor.state.doc.firstChild.textContent).toBe('    abc\n    ')
+    editor.commands.undo()
+    editor.commands.setTextSelection(7)
+    key(editor, 'Enter', { ctrlKey: true })
+    expect(editor.state.doc.firstChild.textContent).toBe('    abc\n    ')
+    key(editor, 'Enter', { ctrlKey: true, shiftKey: true })
+    expect(editor.state.doc.firstChild.textContent).toBe('    abc\n    \n    ')
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.child(1).textContent).toBe('after')
+  })
+  it('keeps code Tab inside a table cell and ignores readonly and composing input', () => {
+    const editor = realCode('<table><tr><td><pre><code>x</code></pre></td><td><p>next</p></td></tr></table>')
+    let pos; editor.state.doc.descendants((node, offset) => { if (node.type.name === 'codeBlock') pos = offset + 1 })
+    editor.commands.setTextSelection(pos)
+    key(editor, 'Tab')
+    expect(editor.state.selection.$from.parent.type.name).toBe('codeBlock')
+    expect(editor.state.selection.$from.parent.textContent).toBe('    x')
+    const saved = editor.getJSON()
+    editor.view.input.composing = true
+    key(editor, 'Tab')
+    editor.view.input.composing = false
+    editor.setEditable(false)
+    key(editor, 'Enter')
+    expect(editor.getJSON()).toEqual(saved)
+  })
+
+  it.each(['bulletList', 'taskList'])('code inside %s owns Tab before its list ancestor can indent', kind => {
+    const list = kind === 'taskList' ? ' data-type="taskList"' : ''
+    const item = kind === 'taskList' ? ' data-type="taskItem" data-checked="false"' : ''
+    const editor = realCode('<ul'+list+'><li'+item+'><p>before</p></li><li'+item+'><p>item</p><pre><code>x</code></pre></li></ul>')
+    let pos; editor.state.doc.descendants((node, offset) => { if (node.type.name === 'codeBlock') pos = offset + 1 })
+    editor.commands.setTextSelection(pos)
+    key(editor, 'Tab')
+    expect(editor.state.selection.$from.parent.textContent).toBe('    x')
+    expect(editor.state.doc.firstChild.childCount).toBe(2)
+    key(editor, 'Tab', { shiftKey: true })
+    expect(editor.state.selection.$from.parent.textContent).toBe('x')
+    expect(editor.state.doc.firstChild.childCount).toBe(2)
+  })
+
+  it('handles a leading empty line at offset zero, preserves command chains and lets arrows leave the code', () => {
+    const editor = realCode('<pre><code>\nabc</code></pre><p>after</p>')
+    editor.commands.setTextSelection(1)
+    key(editor, 'Enter')
+    expect(editor.state.doc.firstChild.textContent).toBe('\n\nabc')
+    editor.commands.setTextSelection(1)
+    editor.chain().editCode('tab').editCode('tab').run()
+    expect(editor.state.doc.firstChild.textContent).toBe('        \n\nabc')
+    expect(editor.state.selection.from).toBe(9)
+    const saved = editor.getJSON()
+    editor.can().editCode('tab')
+    expect(editor.getJSON()).toEqual(saved)
+    editor.commands.setTextSelection(editor.state.doc.firstChild.nodeSize - 1)
+    key(editor, 'ArrowDown')
+    expect(editor.state.doc.child(1).type.name).toBe('paragraph')
+  })
+
+  it('keeps caption search node decorations when folding and copy status repaint the NodeView', () => {
+    const editor = realCode('<pre data-caption="needle"><code>source</code></pre>')
+    editor.commands.setLarkDocSearch('needle', 0)
+    const code = editor.view.dom.querySelector('.lark-doc-code')
+    expect(code.classList.contains('lark-doc-search-active')).toBe(true)
+    code.querySelector('[aria-label="折叠代码块"]').click()
+    expect(code.classList.contains('lark-doc-search-active')).toBe(true)
+  })
+
+  it.each(['plaintext', 'mermaid'])('selects only %s source before replacing it, then permits document-wide select all', language => {
+    const editor = realCode(`<p>before</p><pre data-language="${language}"><code>source</code></pre><p>after</p>`)
+    const start = editor.state.doc.firstChild.nodeSize + 1
+    const selectAll = () => editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })))
+    editor.commands.setTextSelection(start + 2)
+    selectAll()
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('source')
+    editor.commands.insertContent('replacement')
+    expect(editor.state.doc.textContent).toBe('beforereplacementafter')
+    expect(editor.state.doc.child(1).attrs.language).toBe(language)
+    selectAll()
+    selectAll()
+    expect(editor.state.selection.toJSON().type).toBe('all')
+  })
+  it('keeps empty code select-all scoped and leaves outside text selection unchanged', () => {
+    const editor = realCode('<p>before</p><pre><code></code></pre><p>after</p>')
+    editor.commands.setTextSelection(editor.state.doc.firstChild.nodeSize + 1)
+    editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })))
+    editor.commands.insertContent('source')
+    expect(editor.state.doc.textContent).toBe('beforesourceafter')
+    editor.commands.setTextSelection(2)
+    editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })))
+    expect(editor.state.selection.toJSON().type).toBe('all')
+  })
+
   it('offers the exact 71 source languages with ordered-subsequence search and literal spaces', async () => {
     const { codeBlockLanguageOptions, filterCodeBlockLanguages } = await import('../../src/core/nodeviews/code-block')
     const choices = codeBlockLanguageOptions(true)
@@ -115,7 +232,7 @@ describe('Feishu code block closed interaction', () => {
     expect(filterCodeBlockLanguages('Python ')).toEqual([])
   })
 
-  it('edits caption, searches language, toggles wrap, remembers new-block preferences and survives HTML/JSON', () => {
+  it('edits caption, searches language, toggles wrap, remembers new-block preferences and survives HTML/JSON', async () => {
     const editor = realCode()
     const code = editor.view.dom.querySelector('.lark-doc-code')
     const caption = code.querySelector('input[aria-label="代码块标题"]')
@@ -126,7 +243,9 @@ describe('Feishu code block closed interaction', () => {
     const wrap = code.querySelector('[aria-label="自动换行"]')
     expect(wrap).not.toBeNull()
     wrap.click()
-    code.querySelector('button[aria-label="代码语言"]').click()
+    editor.view.dom.querySelector('button[aria-label="代码语言"]').click()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => expect(document.querySelector('.lark-doc-code-language-menu')).not.toBeNull())
     const menu = document.querySelector('.lark-doc-code-language-menu')
     expect(menu).not.toBeNull()
     const search = menu.querySelector('input')
@@ -205,10 +324,12 @@ describe('Feishu code block closed interaction', () => {
     await vi.waitFor(() => expect(numbers().map(node => node.style.height)).toEqual(['22px', '22px', '22px']))
   })
 
-  it('supports keyboard search, literal no-result queries, outside close and readonly close', () => {
+  it('supports keyboard search, literal no-result queries, outside close and readonly close', async () => {
     const editor = realCode()
     const trigger = editor.view.dom.querySelector('[aria-label="代码语言"]')
     trigger.click()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => expect(document.querySelector('.lark-doc-code-language-menu')).not.toBeNull())
     let search = document.querySelector('.lark-doc-code-language-search')
     search.value = ' python'
     search.dispatchEvent(new Event('input', { bubbles: true }))
@@ -231,9 +352,39 @@ describe('Feishu code block closed interaction', () => {
     expect(document.querySelector('.lark-doc-code-language-menu')).toBeNull()
   })
 
-  it.each([['js', 'JavaScript', 'javascript'], ['ts', 'TypeScript', 'typescript'], ['htm', 'XML', 'xml']])('keeps the active item consistent for legacy %s when pressing Enter', (alias, label, value) => {
+  it('closes language search through the owning workspace Escape boundary and cleans up after detachment', async () => {
+    const editor = realCode(), root = document.createElement('section')
+    root.className = 'lark-doc'; document.body.appendChild(root); root.appendChild(editor.view.dom)
+    root.addEventListener('keydown', event => event.stopPropagation())
+    const trigger = root.querySelector('[aria-label="代码语言"]')
+    trigger.click()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => expect(root.querySelector('.lark-doc-code-language-menu')).not.toBeNull())
+    const search = root.querySelector('.lark-doc-code-language-search')
+    for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, ...composing })
+      search.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(root.querySelector('.lark-doc-code-language-menu')).not.toBeNull()
+      expect(document.activeElement).toBe(search)
+    }
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(root.querySelector('.lark-doc-code-language-menu')).toBeNull()
+    expect(document.activeElement).toBe(editor.view.dom)
+    trigger.click()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => expect(root.querySelector('.lark-doc-code-language-menu')).not.toBeNull())
+    const remove = vi.spyOn(root, 'removeEventListener')
+    editor.view.dom.remove(); editor.destroy()
+    expect(root.querySelector('.lark-doc-code-language-menu')).toBeNull()
+    expect(remove.mock.calls.some(([type, , capture]) => type === 'keydown' && capture === true)).toBe(true)
+  })
+
+  it.each([['js', 'JavaScript', 'javascript'], ['ts', 'TypeScript', 'typescript'], ['htm', 'XML', 'xml']])('keeps the active item consistent for legacy %s when pressing Enter', async (alias, label, value) => {
     const editor = realCode(`<pre data-language="${alias}"><code>text</code></pre>`)
     editor.view.dom.querySelector('[aria-label="代码语言"]').click()
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => expect(document.querySelector('.lark-doc-code-language-menu')).not.toBeNull())
     const menu = document.querySelector('.lark-doc-code-language-menu')
     expect(menu.querySelector('[aria-selected="true"]').textContent).toBe(label)
     expect(menu.querySelector('.is-highlight').textContent).toBe(label)

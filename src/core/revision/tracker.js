@@ -31,7 +31,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { closeHistory, isHistoryTransaction } from '@tiptap/pm/history'
 import { normalizeRevision, createRevisionId, REVISION_AUTHOR_FALLBACK } from '../blocks/revision'
-import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../transactionMetadata'
+import { getTransactionMetadata, TRANSACTION_ORIGINS, PAGED_IMPORT_META } from '../transactionMetadata'
 
 /** 本插件自己写的补丁事务 meta（见到就跳过，防自激）。 */
 export const REVISION_TRACK_META = 'larkDocRevisionTrack'
@@ -365,6 +365,7 @@ export const LarkDocRevisionTracker = Extension.create({
         }
         // 别人补的 / 自己补的 / 宿主显式跳过的，一律不碰。
         const blocked = transactions.some((tr) => isHistoryTransaction(tr) || tr.getMeta(REVISION_TRACK_META)
+          || tr.getMeta(PAGED_IMPORT_META)
           || getTransactionMetadata(tr)?.origin === TRANSACTION_ORIGINS.RESTORE
           || tr.getMeta(REVISION_SKIP_META)
           || tr.getMeta('appendedTransaction'))

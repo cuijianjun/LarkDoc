@@ -22,6 +22,9 @@
 import { describe, expect, it } from 'vitest'
 import { getSchema } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
+import { history, undo, redo } from '@tiptap/pm/history'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Step } from '@tiptap/pm/transform'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import {
   BLOCK_ID_META, INDENT_META, INPLACE_FIX_LIMIT, applyBlockIdFixes, applyIndentFixes,
@@ -42,6 +45,102 @@ const para = (text, attrs) => ({
 })
 /** n 个各带一点文字的段落（文字长度不影响位置计算的正确性，但会真正暴露算错）。 */
 const paras = (n, attrs) => Array.from({ length: n }, (_, i) => para(`第${i}段`, attrs))
+
+describe('bulk attribute normalization preserves position mappings', () => {
+  it('keeps anchors, decorations and selection bookmarks inside the document', () => {
+    const state = stateOf(paras(40))
+    const anchor = state.doc.child(0).nodeSize + 2
+    const selection = TextSelection.create(state.doc, anchor, anchor + 1)
+    const decoration = DecorationSet.create(state.doc, [Decoration.inline(anchor, anchor + 1, { class: 'comment' })])
+    const tr = state.tr.setSelection(selection)
+    applyBlockIdFixes(tr, deterministicFixes(state.doc))
+    expect(tr.mapping.mapResult(anchor).deleted).toBe(false)
+    expect(tr.mapping.map(anchor)).toBe(anchor)
+    expect(selection.getBookmark().map(tr.mapping).resolve(tr.doc).eq(selection)).toBe(true)
+    expect(decoration.map(tr.mapping, tr.doc).find().map(item => [item.from, item.to])).toEqual([[anchor, anchor + 1]])
+  })
+
+  it('keeps user edits undoable and redoable across non-history bulk fixes', () => {
+    let state = EditorState.create({ schema, doc: docOf(paras(40)), plugins: [history()] })
+    const before = state.doc.textContent
+    state = state.apply(state.tr.insertText('编辑', 2))
+    const edited = state.doc.textContent
+    const tr = state.tr
+    applyBlockIdFixes(tr, deterministicFixes(state.doc))
+    state = state.apply(tr)
+    const dispatch = next => { state = state.apply(next) }
+    expect(undo(state, dispatch)).toBe(true)
+    expect(state.doc.textContent).toBe(before)
+    expect(redo(state, dispatch)).toBe(true)
+    expect(state.doc.textContent).toBe(edited)
+  })
+
+  it('normalizes many indents in one attribute-only step', () => {
+    const state = stateOf(paras(80, { indent: MAX_BLOCK_INDENT + 10 }))
+    const tr = state.tr
+    expect(applyIndentFixes(tr)).toBe(true)
+    expect(tr.steps).toHaveLength(1)
+    expect(tr.mapping.mapResult(3).deleted).toBe(false)
+    expect(tr.mapping.map(3)).toBe(3)
+    expect(tr.doc.child(79).attrs.indent).toBe(MAX_BLOCK_INDENT)
+  })
+
+  it('round-trips and inverts the batch step while preserving unrelated attrs and marks', () => {
+    const state = stateOf([...paras(39), { type: 'paragraph', attrs: { indent: 2 }, content: [{ type: 'text', text: '粗体', marks: [{ type: 'bold' }] }] }])
+    const tr = state.tr
+    applyBlockIdFixes(tr, deterministicFixes(state.doc))
+    const step = Step.fromJSON(schema, JSON.parse(JSON.stringify(tr.steps[0].toJSON())))
+    expect(step.apply(state.doc).doc.eq(tr.doc)).toBe(true)
+    expect(step.invert(state.doc).apply(tr.doc).doc.eq(state.doc)).toBe(true)
+    expect(tr.doc.lastChild.attrs.indent).toBe(2)
+    expect(tr.doc.lastChild.firstChild.marks[0].type.name).toBe('bold')
+    const unrelated = state.tr.setNodeAttribute(0, 'indent', 3)
+    expect(step.map(unrelated.mapping).apply(unrelated.doc).doc.firstChild.attrs.indent).toBe(3)
+  })
+
+  it('maps patches after insertions and drops deleted targets without patching neighbours', () => {
+    const state = stateOf(paras(40))
+    const tr = state.tr
+    applyBlockIdFixes(tr, deterministicFixes(state.doc))
+    const step = tr.steps[0]
+    const inserted = schema.nodeFromJSON(para('新增', { blockId: 'new' }))
+    const insert = state.tr.insert(0, inserted)
+    const result = step.map(insert.mapping).apply(insert.doc)
+    expect(result.doc.child(0).attrs.blockId).toBe('new')
+    expect(result.doc.child(1).attrs.blockId).toBe('b0')
+    const deletion = state.tr.delete(0, state.doc.firstChild.nodeSize)
+    const mapped = step.map(deletion.mapping)
+    expect(mapped.toJSON().changes).toHaveLength(39)
+    expect(mapped.apply(deletion.doc).doc.firstChild.attrs.blockId).toBe('b1')
+    expect(step.map(state.tr.delete(0, state.doc.content.size).mapping)).toBeNull()
+  })
+
+  it('rejects malformed, missing and wrong-type targets atomically', () => {
+    const state = stateOf(paras(40))
+    const tr = state.tr
+    applyBlockIdFixes(tr, deterministicFixes(state.doc))
+    const json = tr.steps[0].toJSON()
+    for (const change of [{ ...json.changes[0], pos: 1 }, { ...json.changes[0], type: 'heading' }]) {
+      const invalid = Step.fromJSON(schema, { ...json, changes: [change, ...json.changes.slice(1)] })
+      expect(invalid.apply(state.doc).failed).toBeTruthy()
+      expect(state.doc.firstChild.attrs.blockId).toBeNull()
+    }
+    for (const changes of [[{ pos: -1, type: 'paragraph', attrs: { blockId: 'x' } }],
+      [{ pos: 0, type: 'paragraph', attrs: { indent: 'bad' } }], [json.changes[0], json.changes[0]]]) {
+      expect(() => Step.fromJSON(schema, { ...json, changes })).toThrow(RangeError)
+    }
+  })
+
+  it('keeps the collaborative fallback on native attribute steps with identity mappings', () => {
+    const state = stateOf(paras(40))
+    const tr = state.tr
+    applyBlockIdFixes(tr, deterministicFixes(state.doc), { batch: false })
+    expect(tr.steps).toHaveLength(40)
+    expect(tr.steps.every(step => step.toJSON().stepType === 'attr')).toBe(true)
+    expect(tr.mapping.mapResult(3).deleted).toBe(false)
+    expect(tr.doc.eq(referenceApply(state, deterministicFixes(state.doc)).doc)).toBe(true)
+  })
+})
 
 /**
  * 给文档里每个可编号块按顺序配一个确定性 id（`b0`、`b1`…）。

@@ -51,13 +51,13 @@ export function createDocumentCommands() {
       return true
     },
     // 给缺号/重号的块补 blockId（初始化与 setContent 后由宿主显式调用一次）。
-    ensureLarkDocBlockIds: () => ({ tr, dispatch }) => {
+    ensureLarkDocBlockIds: () => ({ tr, dispatch, editor }) => {
       if (!dispatch) return collectBlockIdFixes(tr.doc).length > 0
-      return applyBlockIdFixes(tr)
+      return applyBlockIdFixes(tr, undefined, { batch: editor?.storage?.larkDoc?.deferNormalization !== false })
     },
-    normalizeLarkDocIndents: () => ({ tr, dispatch }) => {
+    normalizeLarkDocIndents: () => ({ tr, dispatch, editor }) => {
       if (!dispatch) return collectIndentFixes(tr.doc).length > 0
-      return applyIndentFixes(tr)
+      return applyIndentFixes(tr, undefined, { batch: editor?.storage?.larkDoc?.deferNormalization !== false })
     },
     /**
      * 标题编号的唯一写入口。`patch` 只带需要改的字段：
@@ -71,8 +71,12 @@ export function createDocumentCommands() {
       if (!node || node.type.name !== 'heading') return false
       const next = { ...node.attrs }
       if (typeof patch?.numbering === 'boolean') next.numbering = patch.numbering
-      if (patch && 'numberingStart' in patch) next.numberingStart = patch.numberingStart === null ? null : clampHeadingNumberStart(patch.numberingStart)
-      if (next.numbering === node.attrs.numbering && next.numberingStart === node.attrs.numberingStart) return false
+      if (patch && 'numberingStart' in patch) next.numberingStart = patch.numberingStart === null ? null : clampHeadingNumberStart(patch.numberingStart, 999999999)
+      if (patch && 'numberingLevel' in patch) {
+        if (patch.numberingLevel !== null && (!Number.isInteger(patch.numberingLevel) || patch.numberingLevel < 1 || patch.numberingLevel > 9)) return false
+        next.numberingLevel = patch.numberingLevel
+      }
+      if (next.numbering === node.attrs.numbering && next.numberingStart === node.attrs.numberingStart && next.numberingLevel === node.attrs.numberingLevel) return false
       if (dispatch) tr.setNodeMarkup(pos, node.type, next)
       return true
     },
@@ -81,7 +85,7 @@ export function createDocumentCommands() {
       const node = nodeAtSafe(tr.doc, pos)
       if (!node || node.type.name !== 'heading') return false
       const next = { ...node.attrs, numbering: !node.attrs.numbering }
-      if (!next.numbering) next.numberingStart = null
+      if (!next.numbering) { next.numberingStart = null; next.numberingLevel = null }
       if (dispatch) tr.setNodeMarkup(pos, node.type, next)
       return true
     },

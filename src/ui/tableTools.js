@@ -7,6 +7,7 @@
  */
 import { applyStyle, mountNode, syncChildren } from './dom'
 import { iconNode, setIcon } from './icon'
+import { TABLE_ICONS } from './tableToolsIcons'
 import { TEXT_COLOR_OPTIONS, TEXT_BACKGROUND_ROWS, CALLOUT_COLOR_OPTIONS } from './palette'
 
 function setVar(node, name, value) {
@@ -45,7 +46,7 @@ const FULL_DIV = { divider: true, full: true }
 
 /** Source cell conversion menu, including the nested H4–H9 choices. */
 const TURN_INTO = [
-  { id: 'paragraph', label: '正文', icon: 'table-float-text' },
+  { id: 'paragraph', label: '正文', icon: TABLE_ICONS['table-float-text'] },
   { id: 'heading1', label: '一级标题', icon: 'block-h1' },
   { id: 'heading2', label: '二级标题', icon: 'block-h2' },
   { id: 'heading3', label: '三级标题', icon: 'block-h3' },
@@ -58,13 +59,13 @@ const TURN_INTO = [
 
 /** Source table alignment menu: three horizontal and three vertical choices. */
 const ALIGN_ITEMS = [
-  { id: 'align:left', label: '左对齐', icon: 'table-float-align' },
+  { id: 'align:left', label: '左对齐', icon: TABLE_ICONS['table-float-align'] },
   { id: 'align:center', label: '居中对齐', icon: 'align-center' },
   { id: 'align:right', label: '右对齐', icon: 'align-right' },
   DIV,
-  { id: 'valign:top', label: '顶部对齐', icon: 'valign-top' },
-  { id: 'valign:middle', label: '垂直居中', icon: 'valign-middle' },
-  { id: 'valign:bottom', label: '底部对齐', icon: 'valign-bottom' },
+  { id: 'valign:top', label: '顶部对齐', icon: TABLE_ICONS['valign-top'] },
+  { id: 'valign:middle', label: '垂直居中', icon: TABLE_ICONS['valign-middle'] },
+  { id: 'valign:bottom', label: '底部对齐', icon: TABLE_ICONS['valign-bottom'] },
 ]
 
 /**
@@ -81,34 +82,34 @@ const MORE_ITEMS = [
   { id: 'larkSearch', label: '文档内搜索', icon: 'search' },
 ]
 
-const TURN = { id: 'turninto', label: '转换为', icon: 'table-float-text', caret: true, menu: true }
-const ALIGN = { id: 'align', label: '对齐与缩进', icon: 'table-float-align', caret: true, menu: true }
+const TURN = { id: 'turninto', label: '转换为', icon: TABLE_ICONS['table-float-text'], caret: true, menu: true }
+const ALIGN = { id: 'align', label: '对齐与缩进', icon: TABLE_ICONS['table-float-align'], caret: true, menu: true }
 const MARKS = [
-  { id: 'bold', label: '加粗', icon: 'table-float-bold', mark: 'bold' },
-  { id: 'strike', label: '删除线', icon: 'table-float-strike', mark: 'strike' },
-  { id: 'italic', label: '斜体', icon: 'table-float-italic', mark: 'italic' },
-  { id: 'underline', label: '下划线', icon: 'table-float-underline', mark: 'underline' },
+  { id: 'bold', label: '加粗', icon: TABLE_ICONS['table-float-bold'], mark: 'bold' },
+  { id: 'strike', label: '删除线', icon: TABLE_ICONS['table-float-strike'], mark: 'strike' },
+  { id: 'italic', label: '斜体', icon: TABLE_ICONS['table-float-italic'], mark: 'italic' },
+  { id: 'underline', label: '下划线', icon: TABLE_ICONS['table-float-underline'], mark: 'underline' },
   { id: 'link', label: '插入链接', icon: 'link' },
-  { id: 'code', label: '行内代码', icon: 'table-float-code', mark: 'code' },
-  { id: 'highlight', label: '字体色 / 背景色', icon: 'table-float-highlight', caret: true, menu: true },
+  { id: 'code', label: '行内代码', icon: TABLE_ICONS['table-float-code'], mark: 'code' },
+  { id: 'highlight', label: '字体色 / 背景色', icon: TABLE_ICONS['table-float-highlight'], caret: true, menu: true },
 ]
 /** 飞书「标题行列」按钮：只对**整行 / 整列**选区（形态 D/H）出现 —— 多格拖选（形态 E）没有它。 */
 const CELL_LINE = [
-  { id: 'table-header', label: '标题行', icon: 'table-float-header-row' },
+  { id: 'table-header', label: '标题行', icon: TABLE_ICONS['table-float-header-row'] },
 ]
 /** 飞书表格态共享两颗：合并 / 拆分、单元格背景 —— 整行列与多格拖选都有（形态 C/E/F/G）。 */
 const CELL_SHARED = [
-  { id: 'merge-cell', label: '合并单元格', icon: 'table-float-merge' },
-  { id: 'cell-bg', label: '单元格背景', icon: 'table-float-background', menu: true },
+  { id: 'merge-cell', label: '合并单元格', icon: TABLE_ICONS['table-float-merge'] },
+  { id: 'cell-bg', label: '单元格背景', icon: TABLE_ICONS['table-float-background'], menu: true },
 ]
 /** Comments follow their provider capability; selection sharing has its own transport. */
 const TAIL = [
-  { id: 'more', label: '更多', icon: 'table-float-more', menu: true },
+  { id: 'more', label: '更多', icon: TABLE_ICONS['table-float-more'], menu: true },
   { id: 'share-link', label: '分享', icon: 'share-link' },
   { id: 'comment', label: '添加评论', icon: 'mode-comment' },
 ]
 const REMOVE = { id: 'remove', label: '删除', icon: 'table-float-remove' }
-const DISTRIBUTE = { id: 'distributeColumns', label: '均分所选列宽', icon: 'table-float-distribute' }
+const DISTRIBUTE = { id: 'distributeColumns', label: '均分所选列宽', icon: TABLE_ICONS['table-float-distribute'] }
 const AI = { id: 'ask-ai', label: '问问AI', icon: 'sparkle', text: true }
 
 /** Build once; the comment node is mounted only when a readable provider is configured. */
@@ -216,7 +217,6 @@ function makeColorRow(menu, title, colors, prefix, onPick) {
     b.type = 'button'
     b.className = 'lark-doc-table-tools-color'
     b.dataset.value = `${prefix}:${color.value}`
-    b.title = color.label
     b.setAttribute('aria-label', `${title} ${color.label}`)
     if (color.value) b.style.background = color.value
     else b.classList.add('is-none')
@@ -275,7 +275,7 @@ function makeTool(item, onCommand, ui) {
   b.type = 'button'
   b.className = 'lark-doc-table-tools-btn'
   b.dataset.cmd = item.id
-  b.title = item.label
+  // 浮窗是弹层：不放原生 title（会弹黑底提示），按钮名只走 aria-label。
   b.setAttribute('aria-label', item.label)
   if (item.mark) b.dataset.mark = item.mark
   if (item.text) b.classList.add('is-text')
@@ -444,19 +444,17 @@ export function createTableTools({ host, handlers = {} }) {
     syncBar(state.cellKind || (state.cellSelection ? 'line' : 'text'), state.headerAxis, !!state.commentVisible, !!state.shareVisible, !!state.aiVisible)
     const comment = buttons.get('comment')
     comment.disabled = !state.canComment
-    comment.title = state.canComment ? '添加评论' : '当前没有评论权限'
+    comment.setAttribute('aria-label', state.canComment ? '添加评论' : '当前没有评论权限')
     const header = buttons.get('table-header')
     const axis = state.headerAxis === 'column' ? 'column' : 'row'
     const headerOn = !!state.header?.[axis]
-    header.title = `${headerOn ? '取消' : ''}标题${axis === 'column' ? '列' : '行'}`
-    header.setAttribute('aria-label', header.title)
+    header.setAttribute('aria-label', `${headerOn ? '取消' : ''}标题${axis === 'column' ? '列' : '行'}`)
     header.setAttribute('aria-pressed', String(headerOn))
     header.classList.toggle('is-active', headerOn)
     header.disabled = state.headerEnabled === false
-    setIcon(header.firstElementChild, axis === 'column' ? 'table-float-header-column' : 'table-float-header-row', 24)
+    setIcon(header.firstElementChild, axis === 'column' ? TABLE_ICONS['table-float-header-column'] : TABLE_ICONS['table-float-header-row'], 24)
     const merge = buttons.get('merge-cell')
-    merge.title = state.canSplitCell ? '拆分单元格' : '合并单元格'
-    merge.setAttribute('aria-label', merge.title)
+    merge.setAttribute('aria-label', state.canSplitCell ? '拆分单元格' : '合并单元格')
     merge.disabled = !(state.canSplitCell || (state.canMergeCell ?? state.cellSelection))
     merge.setAttribute('aria-pressed', String(!!state.canSplitCell))
     merge.classList.toggle('is-active', !!state.canSplitCell)
@@ -514,7 +512,7 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
   const plus = document.createElement('button')
   plus.type = 'button'
   plus.className = 'lark-doc-table-col-plus-btn'
-  const glyph = iconNode('table-insert-boundary', 24, 'lark-doc-table-insert-glyph')
+  const glyph = iconNode(TABLE_ICONS['table-insert-boundary'], 24, 'lark-doc-table-insert-glyph')
   glyph.style.width = '22px'
   plus.appendChild(glyph)
   let actionId = 'addColumnAfter'

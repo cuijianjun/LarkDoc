@@ -81,6 +81,9 @@ function normalizeDocumentInput(input) {
 
 export class LarkDoc {
   constructor(options = {}) {
+    // An imperative editor owns a cyclic PM view/model graph. Vue 2.7/3 must
+    // not turn it into a deep reactive object when a host stores this facade.
+    Object.defineProperty(this, '__v_skip', { value: true, configurable: true, writable: true })
     const source = options && typeof options === 'object' ? options : {}
     assertCollabRuntime(source.collab)
     this.options = { ...DEFAULTS, ...source }
@@ -125,6 +128,7 @@ export class LarkDoc {
         calendarSource: source.calendarSource || null,
         onImageShare: typeof source.onImageShare === 'function' ? source.onImageShare : null,
         onSelectionShare: typeof source.onSelectionShare === 'function' ? source.onSelectionShare : null,
+        onSaveTemplate: typeof source.onSaveTemplate === 'function' ? source.onSaveTemplate : null,
         templates: source.templates,
         onCalendarEventJoin: typeof source.onCalendarEventJoin === 'function' ? source.onCalendarEventJoin : null,
         calendarEventRefetch: typeof source.calendarEventRefetch === 'function' ? source.calendarEventRefetch : null,
@@ -267,17 +271,12 @@ export class LarkDoc {
    * 图片侧允许回落到 `uploader`，文件侧优先 `uploadFile`，其次 `uploader`，
    * 但**绝不**回落到 `uploadImage`——图片上传实现普遍会按 MIME 白名单拒掉 mp4/pdf。
    *
-   * 返回值刻意是裸函数而不是 upload provider：文件块需要的只是一张
-   * `(file) => ({ token?, url?, name?, size?, mimeType? })` 的票，进度/重试/分片
-   * 属于宿主自己的事（02 §19.5 没有上传中态）。
+   * 保留显式来源及其分片配置；未显式配置时由文件入口读取当前 uploader，
+   * 避免 setUploader 后仍调用初始化时绑定的旧函数。
    */
   _resolveFileUploader(source) {
     const explicit = source.uploadFile
-    if (typeof explicit === 'function') return explicit
-    if (explicit && typeof explicit.upload === 'function') return explicit.upload.bind(explicit)
-    const uploader = source.uploader
-    if (uploader && typeof uploader.upload === 'function') return uploader.upload.bind(uploader)
-    if (typeof uploader === 'function') return uploader
+    if (typeof explicit === 'function' || explicit && typeof explicit.upload === 'function') return explicit
     return null
   }
 
@@ -478,6 +477,19 @@ export class LarkDoc {
     if (normalized.content == null) return false
     const format = options.format || this.options.contentFormat || 'auto'
     return workspace.setContent(normalized.content, { format: format === 'wangeditor' ? 'auto' : format })
+  }
+
+  /** 分页校验并分段提交；完成前不发布部分正文，失败保留原正文。 */
+  async setContentAsync(content, options = {}) {
+    const workspace = this.getWorkspace()
+    if (!workspace) return false
+    if (typeof workspace.setContentAsync !== 'function') throw new Error('当前渲染器不支持异步导入')
+    const normalized = normalizeDocumentInput(content)
+    if (normalized.content == null) return false
+    const format = options.format || this.options.contentFormat || 'auto'
+    const result = await workspace.setContentAsync(normalized.content, { ...options, format: format === 'wangeditor' ? 'auto' : format })
+    if (normalized.title != null) workspace.setTitle(normalized.title)
+    return result
   }
 
   /**

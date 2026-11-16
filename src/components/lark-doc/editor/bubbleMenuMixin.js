@@ -14,7 +14,37 @@
  * `selectionPacingMixin`、`overlayDismissMixin`、`readingModeMixin` 与单测都在用。
  */
 import { computeOrderedListNumbers, maxIndentAt } from '../documentOperations'
-import { createBubbleBar } from '../../../ui/bubbleBar'
+import { createLazyUi } from '../../../ui/lazy'
+
+function createLazyBubbleBar(host, options, onError) {
+  let config = options.config
+  let view = null
+  const lazy = createLazyUi({
+    load: () => import('../../../ui/bubbleBar'),
+    create: module => {
+      view = module.createBubbleBar(host, { ...options, config })
+      return {
+        get el() { return view.el },
+        update(state) {
+          if (!state.open) { view.hide(); return }
+          view.setConfig(config)
+          view.update(state)
+        },
+        destroy() { view.destroy(); view = null },
+      }
+    },
+    onError,
+  })
+  return {
+    get el() { return lazy.el },
+    setConfig(next) { config = next },
+    update(state) { lazy.update({ ...state, open: true }) },
+    hide() { lazy.update({ open: false }) },
+    positionAlignMenu() { view?.positionAlignMenu() },
+    positionHeadingMenu() { view?.positionHeadingMenu() },
+    destroy() { lazy.destroy() },
+  }
+}
 
 // 飞书气泡条的行内格式顺序：加粗 → 删除线 → 斜体 → 下划线 → 行内代码 → 高亮（带取色）。
 const BUBBLE_MARK_ORDER = [
@@ -71,7 +101,7 @@ export default {
       if (this._bubbleUi) return
       const host = this.$refs.bubbleHost
       if (!host) return
-      this._bubbleUi = createBubbleBar(host, {
+      this._bubbleUi = createLazyBubbleBar(host, {
         config: this.bubbleBarConfig(),
         handlers: {
           safeTop: () => this.bubbleSafeTop(),
@@ -89,7 +119,7 @@ export default {
           onCopy: () => this.bubbleCopy(),
           onComment: () => { if (this.beginCommentComposer()) this.bubbleVisible = false },
         },
-      })
+      }, () => { this.error = '工具条暂时无法打开，请重新选择文字后重试' })
       this.refreshBubbleBar()
     },
     destroyBubbleBar() {
@@ -345,9 +375,11 @@ export default {
         attrs.level = level
         attrs.numbering = index != null
         attrs.numberingStart = index == null ? null : index
+        attrs.numberingLevel = index == null ? null : 1
       } else {
         attrs.numbering = false
         attrs.numberingStart = null
+        attrs.numberingLevel = null
       }
       const tr = this.editor.state.tr.setNodeMarkup(pos, type, attrs)
       // 后面紧邻的列表接着数：写 <ol start>（被标题隔开后无法用 continueFrom 连号）。

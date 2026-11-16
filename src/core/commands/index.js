@@ -10,10 +10,8 @@
  *   3. filterCommands 按 features 开关、commands.disabled/allow 与关键词过滤（逻辑原样保留）。
  * CommandDef 契约见 requirements/09 §3.2：tier = required | skeleton | skip。
  *
- * 🔴 只出菜单里**真的能用**的项。原先挂在这里的 11 条（视频或文件 `file`、电子表格
- * `sheet`、多维表格 5 条、绘图 3 条、投票 `poll`）在 master 上只有块定义、没有可用的
- * 插入链路 —— 点了只留一个空段落。功能没落地就不该在菜单里占位，已整段摘掉
- * （块类型与 `editor.commands.setSheet/setPoll/setBitable` 仍保留，老文档正文照样能渲染）。
+ * 数据、绘图与企业应用只插入链接预览卡；投票走本地 poll 节点。
+ * 旧 sheet/bitable/cardEmbed 数据继续兼容。
  */
 import { basicCommands } from './basic'
 import { commonCommands } from './common'
@@ -26,6 +24,7 @@ import { advancedCommands } from './advanced'
 import { docmanageCommands } from './docmanage'
 import { inlineCommands } from './inline'
 import { EMBED_MENU_ITEMS } from '../embed/presets'
+import { APP_PREVIEW_ITEMS } from '../embed/app-preview'
 
 const GROUPS = [
   basicCommands, commonCommands, embedCommands, collabCommands,
@@ -60,10 +59,11 @@ const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'template', 'ai',
+  'sheet', 'bitable', 'whiteboard', 'mindMap', 'flowChart', 'umlDiagram',
   'open_link', 'duplicate_page', 'follow_page',
-  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event', 'agenda',
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event', 'agenda',
   'folderManager', 'wikiRecent',
   'jiraIssue', 'jiraFilter', 'meegoView', 'meegoDetail',
   'subscribeArticle',
@@ -84,7 +84,7 @@ export const COMMANDS = COMMAND_ORDER.map((id) => {
 
 const COMMAND_FEATURES = {
   table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
-  image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', template: 'templates',
+  image: 'images', file: 'files', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', template: 'templates',
   callout: 'callouts', ai: 'ai',
   // P4-01：三条 mention 与「`@` 快捷输入」共用一个开关（document.js 的 reportMention
   // 读的也是 `insert`）。不这么写就落进兜底的 blockStyle，出现「关掉插入还能 @」。
@@ -112,6 +112,9 @@ const COMMAND_FEATURES = {
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：
 // 逐条手写 15 个键必然与 `EMBED_MENU_ITEMS` 漂移。
 for (const { id } of EMBED_MENU_ITEMS) COMMAND_FEATURES[id] = 'embed'
+// 外部应用预览属于插入能力，不能绕过宿主的 insert 开关。
+for (const { id } of APP_PREVIEW_ITEMS) COMMAND_FEATURES[id] = 'insert'
+COMMAND_FEATURES.poll = 'insert'
 
 /**
  * 命令 id → 它受哪个 feature 开关管（没有专属开关的落 `blockStyle`）。
@@ -130,6 +133,7 @@ export function filterCommands(query, kind = 'slash', config = null, context = '
   // The count options are implementation ids for the secondary picker, not
   // independent slash commands.
   const candidates = COMMANDS.filter((item) => {
+    if (item.menu === false) return false
     if (/^columns[2-5]$/.test(item.id)) return false
     // Existing block-math documents stay readable; Feishu has one inline formula entry.
     if (item.id === 'blockMath') return false
@@ -152,7 +156,7 @@ export function filterCommands(query, kind = 'slash', config = null, context = '
   // The source plus menu has icon shortcuts followed by normal common rows.
   // Task and callout have two visual entries, backed by the same command.
   const basic = ['heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
-  const common = ['taskList', 'image', 'table', 'columns', 'callout', 'inlineMath', 'template']
+  const common = ['taskList', 'image', 'file', 'table', 'columns', 'callout', 'inlineMath', 'template']
   const byId = new Map(filtered.map(item => [item.id, item]))
   const entry = (id, category) => ({ ...byId.get(id), category, ...(id === 'taskList' ? { label: '任务' } : id === 'image' ? { label: '图片' } : {}) })
   return [

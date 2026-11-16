@@ -2,7 +2,7 @@
  * CalloutTools 原生渲染接线层（阶段 5-G）。业务仍在 calloutColorMixin，
  * 本层只把 Vue 状态推给 src/ui/calloutTools.js。
  */
-import { createCalloutTools } from '../../../ui/calloutTools'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -21,7 +21,7 @@ export default {
       if (this._calloutToolsUi) return
       const host = this.$refs.calloutToolsHost
       if (!host) return
-      this._calloutToolsUi = createCalloutTools({
+      this._calloutToolsUi = createLazyView(() => import('../../../ui/calloutTools'), 'createCalloutTools', {
         host,
         handlers: {
           onPalette: (target, event) => this.toggleColorPalette(target, event),
@@ -34,7 +34,7 @@ export default {
           onRandom: () => this.setCalloutEmoji(this.pickRandomCalloutEmoji()),
           onEmoji: (value) => this.setCalloutEmoji(value),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, isOpen: state => !!state.visible, onReady: () => this.updateCalloutTools() })
       this.refreshCalloutTools()
     },
     buildCalloutToolsState() {

@@ -572,6 +572,34 @@ describe('P6b-04 统一出口：文件名与内容范围', () => {
 })
 
 describe('P6b-04 docx 结构', () => {
+  it('retains explicit text fonts, sizes, colors, highlight colors and sub/superscripts in the Word package', async () => {
+    const styledParagraph = para(
+      text('样式正文', [{ type: 'textStyle', attrs: { fontFamily: 'Arial', fontSize: '20px', color: '#1456f0' } }, { type: 'highlight', attrs: { color: 'rgb(209, 250, 229)' } }]),
+      text('2', [{ type: 'subscript' }]), text('3', [{ type: 'superscript' }]),
+    )
+    styledParagraph.attrs = { textAlign: 'right', lineHeight: '1.5', indent: 1 }
+    const largeLineHeight = para(text('宽行距'))
+    largeLineHeight.attrs = { lineHeight: '3.5', indent: 99 }
+    const invalidStyle = para(text('无效样式回退', [{ type: 'textStyle', attrs: { fontFamily: 'A\u0000B', fontSize: '999999px', color: 'constructor' } }]))
+    const sample = doc([styledParagraph, largeLineHeight, invalidStyle])
+    const blob = await buildDocx(sample, {})
+    const buffer = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsArrayBuffer(blob) })
+    const xml = await (await JSZip.loadAsync(new Uint8Array(buffer))).file('word/document.xml').async('string')
+    expect(xml).toContain('w:ascii="Arial"')
+    expect(xml).toContain('w:sz w:val="30"')
+    expect(xml).toContain('w:color w:val="1456F0"')
+    expect(xml).toContain('w:fill="D1FAE5"')
+    expect(xml).toContain('w:vertAlign w:val="subscript"')
+    expect(xml).toContain('w:vertAlign w:val="superscript"')
+    expect(xml).toContain('w:jc w:val="right"')
+    expect(xml).toContain('w:line="360"')
+    expect(xml).toContain('w:left="375"')
+    expect(xml).toContain('w:line="840"')
+    expect(xml).toContain('w:left="1875"')
+    expect(xml).not.toContain('constructor')
+    expect(xml).not.toContain('999999')
+    expect(xml).not.toContain('A\u0000B')
+  })
   const content = [
     { type: 'heading', attrs: { level: 2 }, content: [text('标题')] },
     para(text('粗', [{ type: 'bold' }])),

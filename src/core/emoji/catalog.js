@@ -51,20 +51,26 @@ function normalizeEmojiGlyph(value) {
 
 // 面板要的扁平列表：`{ value(英文主名), label(中文名), glyph, category(组中文名) }`，
 // 唯一的消费方是高亮块的 emoji 面板（02 §16：飞书没有别的表情入口）。
-const emojiItems = []
-const emojiByGlyph = Object.create(null)
-const emojiByName = Object.create(null)
+function createEmojiIndex() {
+  const emojiItems = []
+  const emojiByGlyph = Object.create(null)
+  const emojiByName = Object.create(null)
 
-EMOJI_GROUP_META.forEach((group) => {
-  const rows = EMOJI_DATA[group.key] || []
-  rows.forEach((row) => {
-    const item = { value: row[2], label: row[1], glyph: row[0], category: group.label }
-    emojiItems.push(item)
-    // 同字形/同名只认第一条：emojibase 的短名偶尔被两个码位共用，以分组靠前者为准。
-    if (!emojiByGlyph[normalizeEmojiGlyph(item.glyph)]) emojiByGlyph[normalizeEmojiGlyph(item.glyph)] = item
-    if (!emojiByName[item.value]) emojiByName[item.value] = item
+  EMOJI_GROUP_META.forEach((group) => {
+    const rows = EMOJI_DATA[group.key] || []
+    rows.forEach((row) => {
+      const item = { value: row[2], label: row[1], glyph: row[0], category: group.label }
+      emojiItems.push(item)
+      // 同字形/同名只认第一条：emojibase 的短名偶尔被两个码位共用，以分组靠前者为准。
+      if (!emojiByGlyph[normalizeEmojiGlyph(item.glyph)]) emojiByGlyph[normalizeEmojiGlyph(item.glyph)] = item
+      if (!emojiByName[item.value]) emojiByName[item.value] = item
+    })
   })
-})
+
+  return { emojiItems, emojiByGlyph, emojiByName }
+}
+// No registration side effects: unused registry re-exports must stay out of the initial graph.
+const { emojiItems, emojiByGlyph, emojiByName } = /* #__PURE__ */ createEmojiIndex()
 
 /** 面板分类 tab（按组顺序，不含「最近 / 全部」两个固定项）。 */
 const emojiCategories = EMOJI_GROUP_META.map((group) => group.label)

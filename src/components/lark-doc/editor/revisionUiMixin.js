@@ -1,5 +1,5 @@
 /** RevisionPanel 原生渲染接线层。 */
-import { createRevisionPanels } from '../../../ui/revision'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -13,14 +13,14 @@ export default {
       if (this._revisionUi) return
       const host = this.$refs.revisionHost
       if (!host) return
-      this._revisionUi = createRevisionPanels({
+      this._revisionUi = createLazyView(() => import('../../../ui/revision'), 'createRevisionPanels', {
         host,
         handlers: {
           onEnter: (id) => this.enterRevisionPanel(id),
           onLeave: () => this.leaveRevisionPanel(),
           onButton: (id, revisionId) => this.runRevisionButton(id, revisionId),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, isOpen: state => !!state.items?.length })
       this.refreshRevisionPanels()
     },
     buildRevisionPanelsState() {

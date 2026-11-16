@@ -106,6 +106,7 @@ describe('P7-03 derived snapshot: the pending gate blocks navigation', () => {
       storage: { larkDoc: { folded: new Set() } },
       commands: {
         setTextSelection: (pos) => calls.push(['setTextSelection', pos]),
+        scrollIntoView: () => calls.push(['scrollIntoView']),
         toggleLarkDocFold: (pos) => calls.push(['toggleLarkDocFold', pos]),
       },
       view: {
@@ -167,7 +168,7 @@ describe('P7-03 derived snapshot: gate wiring on both sides', () => {
     // 原判据读 OutlinePanel.vue 的 `:disabled="ed.outlinePending"` + `@click="ed.jumpHeading(...)"`。
     // 4b 把目录面板原生化后，同样的两件事变成属性赋值与 handler 回调 —— 判据跟着搬，
     // 语义不变：闸门抬起（pending）则禁用 + 挂提示，点击走后仍直连 jumpHeading。
-    const panel = read('src/ui/panels.js')
+    const panel = read('src/ui/outlinePanel.js')
     expect(panel).toContain('jump.disabled = !!state.pending')
     expect(panel).toContain("setAttr(jump, 'title', state.pending ? '正文还在载入，稍后可跳转' : null)")
     expect(panel).toContain("call('onJump', pos)")

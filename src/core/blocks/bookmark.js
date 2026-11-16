@@ -23,6 +23,7 @@ import { BLOCK_ID_PATTERN } from '../documentOperations'
 import { validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createBookmarkNodeView } from '../nodeviews/bookmark'
+import { appPreviewOf } from '../embed/app-preview'
 import {
   BOOKMARK_LIMITS, BOOKMARK_VARIANT, RECORD_ID_PATTERN,
   normalizeBookmark, readBookmark, readBookmarkUrl, renderBookmarkCard,
@@ -86,6 +87,12 @@ const Bookmark = Node.create({
 
   addAttributes() {
     return {
+      appKind: {
+        default: null,
+        validate: validateAttribute('bookmark.appKind', value => value == null || !!appPreviewOf(value)),
+        parseHTML: el => appPreviewOf(el.getAttribute('data-app-kind')) ? el.getAttribute('data-app-kind') : null,
+        rendered: false,
+      },
       url: {
         default: null,
         validate: validateAttribute('bookmark.url', (value) => value === null || readBookmarkUrl(value) !== null),
@@ -217,6 +224,7 @@ const Bookmark = Node.create({
     if (typeof attrs.blockId === 'string' && BLOCK_ID_PATTERN.test(attrs.blockId)) root['data-block-id'] = attrs.blockId
     if (typeof attrs.recordId === 'string' && RECORD_ID_PATTERN.test(attrs.recordId)) root['data-record-id'] = attrs.recordId
     if (bookmark) root['data-url'] = bookmark.url
+    if (bookmark?.appKind) root['data-app-kind'] = bookmark.appKind
     if (attrs.title) root['data-title'] = attrs.title
     if (attrs.desc) root['data-desc'] = attrs.desc
     if (attrs.favicon) root['data-favicon'] = attrs.favicon

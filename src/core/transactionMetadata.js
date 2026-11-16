@@ -3,6 +3,7 @@
  * AI 提案层区分用户输入、远端同步、导入和恢复操作。
  */
 export const TRANSACTION_META_KEY = 'larkDocTransaction'
+export const PAGED_IMPORT_META = 'larkDocPagedImport'
 export const TRANSACTION_ORIGINS = Object.freeze({
   USER: 'user',
   REMOTE: 'remote',

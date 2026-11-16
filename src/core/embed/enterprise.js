@@ -1,4 +1,5 @@
 /**
+ * 当前菜单只做应用链接预览；下述 V1 降级仍用于兼容旧 cardEmbed。
  * 企业授权类块（P5-06）—— 9 个 `cardEmbed` 的 `providerId` 变体，**渲染成同一种置灰卡**。
  *
  * 依据：09 §5.6 P5-06「`skip` 档的 9 项全部落成 `cardEmbed` 的 `providerId` 变体，
@@ -103,9 +104,9 @@ export function toEnterpriseCommand(item, group) {
     plus: false,
     glyph: item.glyph,
     tone: item.tone,
-    keywords: `${item.label} ${item.id} ${ENTERPRISE_TOOLTIP}`,
+    keywords: `${item.label} ${item.id}`,
     group,
-    tier: 'skip',
+    tier: 'required',
   }
 }
 

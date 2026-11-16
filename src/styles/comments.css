@@ -302,7 +302,7 @@
 .lark-doc .lark-doc-comment-reactions { display: flex; flex-wrap: wrap; gap: 4px; min-height: 26px; padding-top: 4px; }
 .lark-doc .lark-doc-comment-reaction { display: inline-flex; align-items: center; gap: 10px; box-sizing: border-box; min-height: 22px; padding: 1px 5px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
 .lark-doc .lark-doc-comment-reaction.is-mine { border-color: var(--ld-brand-chrome); background: var(--ld-bg-badge); }
-.lark-doc .lark-doc-comment-reaction-icon { display: inline-block; flex: 0 0 auto; background-repeat: no-repeat; font-size: 18px; line-height: 18px; vertical-align: middle; }
+.lark-doc .lark-doc-comment-reaction-icon { display: inline-block; flex: 0 0 auto; background-image: var(--lark-doc-comment-reaction-sprite); background-repeat: no-repeat; font-size: 18px; line-height: 18px; vertical-align: middle; }
 .lark-doc .lark-doc-comment-reaction-picker { position: fixed; z-index: 1060; display: flex; flex-direction: column; box-sizing: border-box; width: 346px; height: 342px; overflow: hidden; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-comment-reaction-scroll { flex: 0 0 276px; height: 276px; overflow: auto; }
 .lark-doc .lark-doc-comment-reaction-title { box-sizing: border-box; height: 28px; padding: 4px 8px; font-size: 12px; line-height: 20px; color: var(--ld-text-secondary); }

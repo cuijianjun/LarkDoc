@@ -18,9 +18,9 @@ import { INDENT_STEP_PX, clampBlockIndent } from '../documentOperations'
 import { isDiagramLanguage, renderDiagram } from '../diagram'
 import { readContentTheme, subscribeContentTheme } from '../themeSignal'
 import { loadFeature } from '../features/registry'
-import { CODE_BLOCK_LANGUAGES, codeBlockLanguageOptions, filterCodeBlockLanguages, languageLoaders, normalizeCodeLanguage } from './code-languages'
+import { CODE_BLOCK_LANGUAGES, normalizeCodeLanguage } from './code-languages'
 
-export { CODE_BLOCK_LANGUAGES, codeBlockLanguageOptions, filterCodeBlockLanguages, normalizeCodeLanguage }
+export { CODE_BLOCK_LANGUAGES, codeBlockLanguageOptions, filterCodeBlockLanguages, normalizeCodeLanguage } from './code-languages'
 
 /** 标记「属于 NodeView 自己的交互元素」：事件停在这里，不进 ProseMirror。 */
 const UI_ATTR = 'data-lark-doc-code-ui'
@@ -61,14 +61,17 @@ const languagePromises = Object.create(null)
 function ensureLanguage(name) {
   const language = normalizeCodeLanguage(name)
   if (hljs && hljs.getLanguage(language)) return Promise.resolve(true)
-  if (!languageLoaders[language] && language !== 'javascript') return Promise.resolve(false)
+  if (!CODE_BLOCK_LANGUAGES.some(item => normalizeCodeLanguage(item.value) === language)) return Promise.resolve(false)
   if (!languagePromises[language]) {
     languagePromises[language] = loadHighlighter().then((highlighter) => {
       if (!highlighter) return false
       if (highlighter.getLanguage(language)) return true
-      return languageLoaders[language]().then((module) => {
-        highlighter.registerLanguage(language, module.default || module)
-        return true
+      return import('./code-language-loaders').then(({ languageLoaders }) => {
+        if (!languageLoaders[language]) return false
+        return languageLoaders[language]().then((module) => {
+          highlighter.registerLanguage(language, module.default || module)
+          return true
+        })
       })
     }).catch(() => false).then((loaded) => {
       // 失败只降级本次渲染；下次正文更新仍可加载同一语言。
@@ -105,8 +108,6 @@ const CODE_ICONS = {
   caret: [14, 'M7 9.204l4.744-4.744a.292.292 0 01.412 0l.413.413a.292.292 0 010 .412l-5.156 5.156a.583.583 0 01-.825 0L1.432 5.285a.292.292 0 010-.412l.412-.413a.292.292 0 01.413 0L7 9.204z'],
   wrap: [22, 'M4.583 4.95c0-.202.165-.367.367-.367h.642c.202 0 .367.165.367.367v12.1a.367.367 0 01-.367.367H4.95a.367.367 0 01-.367-.367V4.95zM16.409 4.583a.367.367 0 00-.367.367v12.1c0 .203.164.367.366.367h.642a.367.367 0 00.367-.367V4.95a.367.367 0 00-.367-.367h-.642zM7.61 11.516c.902 0 1.856-.001 3.197-.007v1.444c0 .427.492.667.829.405l2.775-2.159a.513.513 0 000-.81l-2.775-2.16a.513.513 0 00-.829.406v1.497H7.61a.412.412 0 00-.412.412v.56c0 .227.184.412.412.412z'],
   copy: [22, 'M6.188 8.25v8.25h6.875V8.25H6.186zm8.25-.688v9.702c0 .337-.288.611-.642.611H5.454c-.354 0-.641-.274-.641-.611V7.486c0-.337.287-.611.641-.611h8.296c.38 0 .688.308.688.688zm2.548-3.236a.685.685 0 01.201.487v8.593c0 .19-.153.344-.343.344h-.688a.344.344 0 01-.343-.344V5.5H9.28a.344.344 0 01-.344-.344V4.47c0-.19.154-.344.344-.344H16.5c.19 0 .362.077.486.201z'],
-  check: [24, 'M4 11.293a1 1 0 011.414 0l4.072 4.07 9.07-9.07a1 1 0 011.415 0l.706.707a1 1 0 010 1.414L10.193 18.9a1 1 0 01-1.415 0l-5.485-5.485a1 1 0 010-1.414L4 11.293z'],
-  search: [24, 'M16.473 17.887A9.46 9.46 0 0110.5 20a9.5 9.5 0 119.5-9.5 9.46 9.46 0 01-2.113 5.973l3.773 3.773a.996.996 0 01-.007 1.407.996.996 0 01-1.407.007l-3.773-3.773zM18 10.5a7.5 7.5 0 10-15 0 7.5 7.5 0 0015 0z'],
   fold: [12, 'M1.5 3.5h9L6 8.5z'],
 }
 
@@ -131,7 +132,6 @@ export function createCodeBlockNodeView(props) {
   let editable = Boolean(editor && !editor.isDestroyed && editor.isEditable)
   let captionEditable = editable && !editor.storage?.larkDocRevisionTracker?.active
   let destroyed = false
-  let message = ''
   let highlightedCode = ''
   let diagramState = 'idle' // idle | loading | ok | error
   let diagramSvg = ''
@@ -151,9 +151,6 @@ export function createCodeBlockNodeView(props) {
   let previewMounted = false
   let collapsed = false
   let lineFrame = null
-  let languageMenuOpen = false
-  let languageActive = 0
-  let messageTimer = null
 
   /* ---------- DOM 骨架 ---------- */
   const dom = el('div', 'lark-doc-code')
@@ -187,13 +184,7 @@ export function createCodeBlockNodeView(props) {
   const toggleButton = el('button', null, { type: 'button' })
   const copyButton = el('button', 'lark-doc-code-copy', { type: 'button' })
   const statusNode = el('span', 'lark-doc-code-copy-toast', { role: 'status', 'aria-live': 'polite' })
-  const languageMenu = markUi(el('div', 'lark-doc-code-language-menu', { role: 'listbox', 'aria-label': '代码语言' }))
-  const languageSearch = el('input', 'lark-doc-code-language-search', { type: 'text', placeholder: '搜索', 'aria-label': '搜索代码语言' })
-  const languageSearchRow = el('div', 'lark-doc-code-language-search-row')
-  languageSearchRow.append(codeIcon('search'), languageSearch)
-  const languageList = el('div', 'lark-doc-code-language-list')
-  languageMenu.appendChild(languageSearchRow)
-  languageMenu.appendChild(languageList)
+
 
   const body = el('div', 'lark-doc-code-body')
   // 高亮层只接收 highlight.js 已转义的输出；正文始终由 Tiptap 的 contentDOM 管理。
@@ -241,81 +232,36 @@ export function createCodeBlockNodeView(props) {
     toolbar.appendChild(statusNode)
   }
 
-  function positionLanguageMenu() {
-    if (!languageMenuOpen) return
-    const win = dom.ownerDocument.defaultView
-    const rect = languageButton.getBoundingClientRect()
-    const below = win.innerHeight - rect.bottom - 12
-    const above = rect.top - 12
-    const down = below >= Math.min(300, above)
-    const height = Math.max(100, Math.min(720, down ? below : above))
-    languageMenu.style.maxHeight = `${height}px`
-    languageList.style.maxHeight = `${height - 58}px`
-    languageMenu.style.left = `${Math.max(8, Math.min(rect.left, win.innerWidth - 227))}px`
-    languageMenu.style.top = `${down ? rect.bottom + 4 : Math.max(8, rect.top - languageMenu.getBoundingClientRect().height - 4)}px`
-  }
-
+  let languageUi = null, languageLoading = null, languageRequest = 0, languageCleanup = null
   function closeLanguageMenu(focus = false) {
-    languageMenuOpen = false
-    languageButton.setAttribute('aria-expanded', 'false')
-    languageMenu.remove()
-    const doc = dom.ownerDocument
-    doc.removeEventListener('pointerdown', outsideLanguageMenu, true)
-    doc.removeEventListener('keydown', onLanguageMenuKeydown)
-    doc.defaultView.removeEventListener('resize', positionLanguageMenu)
-    doc.defaultView.removeEventListener('scroll', positionLanguageMenu, true)
-    if (focus && editable && !editor.isDestroyed) editor.commands?.focus()
+    languageRequest += 1
+    languageCleanup?.(); languageCleanup = null
+    languageUi?.close(focus)
   }
-
-  function renderLanguageChoices() {
-    const choices = filterCodeBlockLanguages(languageSearch.value)
-    languageList.textContent = ''
-    if (!choices.length) {
-      const empty = el('div', 'lark-doc-code-language-empty', { 'aria-disabled': 'true' })
-      empty.textContent = '无匹配结果'
-      languageList.appendChild(empty)
-    }
-    choices.forEach((choice, index) => {
-      const selected = choice.value === currentLanguageChoice().value
-      const item = el('button', 'lark-doc-code-language-option', { type: 'button', role: 'option', 'aria-selected': String(selected) })
-      item.classList.toggle('is-highlight', index === languageActive)
-      item.appendChild(document.createTextNode(choice.label))
-      if (selected) item.appendChild(codeIcon('check'))
-      item.addEventListener('mousedown', event => event.preventDefault())
-      item.addEventListener('mouseenter', () => {
-        languageActive = index
-        Array.from(languageList.children).forEach((node, position) => node.classList.toggle('is-highlight', position === index))
-      })
-      item.addEventListener('click', () => { if (setLanguage(choice.value)) closeLanguageMenu(true) })
-      languageList.appendChild(item)
-    })
-    positionLanguageMenu()
-  }
-
-  function outsideLanguageMenu(event) {
-    if (!languageMenu.contains(event.target) && !languageButton.contains(event.target)) closeLanguageMenu()
-  }
-
-  function onLanguageMenuKeydown(event) {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLanguageMenu(true) }
-  }
-
-  function openLanguageMenu() {
+  async function openLanguageMenu() {
     if (!editable) return
-    if (languageMenuOpen) { closeLanguageMenu(); return }
-    languageMenuOpen = true
-    languageSearch.value = ''
-    languageActive = CODE_BLOCK_LANGUAGES.indexOf(currentLanguageChoice())
-    ;(dom.closest('.lark-doc') || dom.ownerDocument.body).appendChild(languageMenu)
-    languageButton.setAttribute('aria-expanded', 'true')
-    renderLanguageChoices()
-    languageList.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
-    languageSearch.focus()
-    const doc = dom.ownerDocument
-    doc.addEventListener('pointerdown', outsideLanguageMenu, true)
-    doc.addEventListener('keydown', onLanguageMenuKeydown)
-    doc.defaultView.addEventListener('resize', positionLanguageMenu)
-    doc.defaultView.addEventListener('scroll', positionLanguageMenu, true)
+    if (languageLoading) { closeLanguageMenu(); return }
+    if (!languageUi) {
+      const request = ++languageRequest, openingDoc = editor.state?.doc
+      const current = () => !destroyed && editable && request === languageRequest && editor.state?.doc === openingDoc
+      const cancel = event => {
+        if (event.type === 'keydown' && (event.key !== 'Escape' || event.isComposing || event.keyCode === 229)) return
+        if (!languageButton.contains(event.target)) closeLanguageMenu()
+      }
+      const doc = dom.ownerDocument
+      doc.addEventListener('pointerdown', cancel, true)
+      doc.addEventListener('keydown', cancel, true)
+      const cleanup = () => { doc.removeEventListener('pointerdown', cancel, true); doc.removeEventListener('keydown', cancel, true) }
+      languageCleanup = cleanup
+      try {
+        languageLoading = import('./code-language-menu')
+        const { createCodeLanguageMenu } = await languageLoading
+        if (!current()) return
+        languageUi = createCodeLanguageMenu({ dom, languageButton, currentLanguageChoice, setLanguage, canEdit: () => !destroyed && editable, focus: () => editor.view?.focus() })
+      } catch (_) { if (current()) { statusNode.textContent = '语言菜单加载失败，请重试' } return }
+      finally { languageLoading = null; cleanup(); if (languageCleanup === cleanup) languageCleanup = null }
+    }
+    languageUi.toggle()
   }
 
   function syncLineNumbers() {
@@ -386,7 +332,8 @@ export function createCodeBlockNodeView(props) {
   /* ---------- 全量同步：把内部状态一次性刷到 DOM ---------- */
   function syncDom() {
     const diagram = isDiagram()
-    dom.className = diagram ? 'lark-doc-code lark-doc-code-diagram' : 'lark-doc-code'
+    dom.classList.add('lark-doc-code')
+    dom.classList.toggle('lark-doc-code-diagram', diagram)
     dom.classList.toggle('is-wrapped', currentNode.attrs.wrap === true)
     dom.classList.toggle('is-collapsed', collapsed && !diagram)
     dom.classList.toggle('is-revision-delete', Boolean(currentNode.attrs.deletionRevisionId))
@@ -423,14 +370,10 @@ export function createCodeBlockNodeView(props) {
       foldButton.setAttribute('aria-label', collapsed ? '展开代码块' : '折叠代码块')
       foldButton.setAttribute('aria-expanded', String(!collapsed))
       copyButton.setAttribute('aria-label', '复制代码')
-      if (languageMenuOpen) renderLanguageChoices()
+      languageUi?.refresh()
       if (!editable) closeLanguageMenu()
     }
-    statusNode.textContent = ''
-    if (message) {
-      if (message === '复制成功') statusNode.appendChild(codeIcon('check'))
-      statusNode.appendChild(document.createTextNode(message))
-    }
+
 
     highlightCode.innerHTML = highlightedCode || renderHighlighted(
       currentNode.textContent || '', currentNode.attrs.language, syntaxHighlight()
@@ -554,11 +497,10 @@ export function createCodeBlockNodeView(props) {
   /* ---------- 交互 ---------- */
   function setLanguage(language) {
     if (!editable) return false
-    const allowed = codeBlockLanguageOptions(diagramEnabled())
-    if (!allowed.some((item) => item.value === language)) return false
+    if (!CODE_BLOCK_LANGUAGES.some(item => item.value === language)) return false
     if (!updateAttributes({ language })) return false
     if (editor.storage?.codeBlock) editor.storage.codeBlock.lastLanguage = language
-    message = ''
+    statusNode.replaceChildren()
     // 切成图表语言立即给预览；切走则丢弃渲染结果。
     if (isDiagramLanguage(language)) { previewShown = true; renderDiagramNow() }
     else { diagramState = 'idle'; diagramSvg = ''; diagramError = '' }
@@ -570,31 +512,15 @@ export function createCodeBlockNodeView(props) {
     if (previewShown) renderDiagramNow()
     syncDom()
   }
-  function copyCode() {
+  let clipboardUi = null
+  async function copyCode() {
     const text = currentNode.textContent
-    const fallback = () => {
-      const input = document.createElement('textarea')
-      const previous = document.activeElement
-      input.value = text
-      input.style.position = 'fixed'
-      input.style.opacity = '0'
-      document.body.appendChild(input)
-      input.select()
-      try { if (!document.execCommand('copy')) throw new Error('复制失败') }
-      finally { input.remove(); if (previous && previous.focus) previous.focus() }
-    }
-    const done = navigator.clipboard && navigator.clipboard.writeText
-      ? navigator.clipboard.writeText(text)
-      : Promise.resolve().then(fallback)
-    const showMessage = text => {
+    try {
+      const { createCodeClipboard } = await import('./code-language-menu')
       if (destroyed) return
-      message = text
-      if (messageTimer) clearTimeout(messageTimer)
-      messageTimer = setTimeout(() => { messageTimer = null; message = ''; syncDom() }, 3000)
-      syncDom()
-    }
-    return done.then(() => showMessage('复制成功'))
-      .catch(() => showMessage('无法访问剪贴板，请选择代码后手动复制'))
+      if (!clipboardUi) clipboardUi = createCodeClipboard({ document: dom.ownerDocument, statusNode })
+      return clipboardUi.copy(text)
+    } catch (_) { if (!destroyed) { statusNode.textContent = '复制功能加载失败，请重试' } }
   }
 
   caption.addEventListener('input', () => {
@@ -605,8 +531,9 @@ export function createCodeBlockNodeView(props) {
   caption.addEventListener('blur', () => { caption.value = currentNode.attrs.caption || '' })
   caption.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === 'Escape') {
-      event.preventDefault()
       event.stopPropagation()
+      if (event.isComposing || event.keyCode === 229) return
+      event.preventDefault()
       caption.blur()
       editor.commands?.focus()
     }
@@ -621,18 +548,6 @@ export function createCodeBlockNodeView(props) {
   foldButton.addEventListener('click', () => { collapsed = !collapsed; syncDom() })
   languageButton.addEventListener('mousedown', event => event.preventDefault())
   languageButton.addEventListener('click', openLanguageMenu)
-  languageSearch.addEventListener('input', () => { languageActive = 0; renderLanguageChoices() })
-  languageSearch.addEventListener('keydown', event => {
-    const items = Array.from(languageList.querySelectorAll('[role="option"]'))
-    if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (event.key === 'Enter') { items[languageActive]?.click(); return }
-    if (!items.length) return
-    languageActive = (languageActive + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
-    items.forEach((item, index) => item.classList.toggle('is-highlight', index === languageActive))
-    items[languageActive].scrollIntoView?.({ block: 'nearest' })
-  })
   toggleButton.addEventListener('click', togglePreview)
   copyButton.addEventListener('click', () => copyCode())
   body.addEventListener('scroll', () => { lineNumbers.style.transform = `translateX(${body.scrollLeft}px)` })
@@ -690,8 +605,9 @@ export function createCodeBlockNodeView(props) {
     },
     destroy() {
       destroyed = true
-      if (messageTimer) { clearTimeout(messageTimer); messageTimer = null }
+      clipboardUi?.destroy()
       closeLanguageMenu()
+      languageUi?.destroy()
       lineObserver?.disconnect()
       if (lineFrame != null) { cancelFrame(lineFrame); lineFrame = null }
       diagramVersion += 1
@@ -710,7 +626,7 @@ export function createCodeBlockNodeView(props) {
     /** 联调/测试通道：内部状态快照。 */
     getState() {
       return {
-        editable, message, diagramState, diagramError, contentTheme, previewShown,
+        editable, message: statusNode.textContent, diagramState, diagramError, contentTheme, previewShown,
         isDiagram: isDiagram(), showPreview: showPreview(), indent: blockIndent(),
       }
     },

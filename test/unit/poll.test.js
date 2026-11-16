@@ -13,7 +13,7 @@
  * 三态断言统一用 `pollStatus()` 的口径（**已投优先于已截止**），时间一律注入 `now`，
  * 不依赖真实时钟 —— 否则跨午夜跑会随机红。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import {
@@ -35,6 +35,57 @@ afterEach(() => {
 
 /** 固定时间锚点：2025-06-15 10:00 本地时（周一，非夏令时边界）。 */
 const NOW = new Date(2025, 5, 15, 10, 0, 0, 0).getTime()
+
+describe('投票写权限与截止日期', () => {
+  it('saves dates, closes and reopens through actual controls; expiry refreshes without a click', async () => {
+    vi.useFakeTimers()
+    const timerSpy = vi.spyOn(globalThis, 'setTimeout')
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout')
+    try {
+      vi.setSystemTime(NOW)
+      const { nodeView, dom, editor } = mountPoll({ poll: filledDraft() })
+      click(dom.querySelector('[aria-label="投票更多操作"]'))
+      await vi.dynamicImportSettled()
+      const input = dom.querySelector('[aria-label="投票截止时间"]')
+      input.value = '2025-06-15T10:01'
+      click([...dom.querySelectorAll('button')].find(button => button.textContent === '保存截止时间'))
+      expect(nodeView.poll().deadline).toBe(new Date(2025, 5, 15, 10, 1).toISOString())
+      click(nodeView.submit())
+      await vi.advanceTimersByTimeAsync(60001)
+      expect(dom.getAttribute('data-poll-status')).toBe(POLL_STATUS.CLOSED)
+      click([...dom.querySelectorAll('button')].find(button => button.textContent === '重新开放投票'))
+      expect(nodeView.status()).toBe(POLL_STATUS.OPEN)
+      click([...dom.querySelectorAll('button')].find(button => button.textContent === '结束投票'))
+      expect(nodeView.status()).toBe(POLL_STATUS.CLOSED)
+      nodeView.apply({ type: 'deadline', value: new Date(Date.now() + 1000).toISOString() })
+      const index = timerSpy.mock.calls.findLastIndex(call => call[1] === 1001)
+      expect(index).toBeGreaterThanOrEqual(0)
+      const pending = timerSpy.mock.results[index].value
+      editor.destroy()
+      expect(clearSpy).toHaveBeenCalledWith(pending)
+    } finally { timerSpy.mockRestore(); clearSpy.mockRestore(); vi.useRealTimers() }
+  })
+  it('uses a chosen deadline and keeps published content immutable', () => {
+    const draft = filledDraft()
+    const deadline = new Date(NOW + 3600000).toISOString()
+    expect(pollReducer(draft, { type: 'deadline', value: deadline }, NOW).deadline).toBe(deadline)
+    expect(pollReducer(draft, { type: 'deadline', value: 'invalid' }, NOW)).toEqual(draft)
+    const published = { ...draft, published: true }
+    expect(pollReducer(published, { type: 'title', value: '覆盖' }, NOW)).toEqual(published)
+    const closed = pollReducer(published, { type: 'close' }, NOW)
+    expect(pollStatus(closed, NOW)).toBe(POLL_STATUS.CLOSED)
+    expect(pollReducer(closed, { type: 'reopen' }, NOW).deadline).toBeNull()
+  })
+  it('does not mutate a poll through nested inputs or voting in a read-only editor', () => {
+    const { editor, nodeView } = mountPoll({ poll: filledDraft() })
+    editor.setEditable(false)
+    const before = editor.state.doc
+    typeInto(nodeView.titleInput(), '禁止修改')
+    click(nodeView.submit())
+    expect(editor.state.doc).toBe(before)
+    expect(nodeView.apply({ type: 'publish' })).toBe(false)
+  })
+})
 
 /** 已发布 + 至少一项选项有内容的最小可发布草稿。 */
 function filledDraft(overrides = {}) {
@@ -403,14 +454,15 @@ describe('pollReducer（§19.1 ⑥ 的全部 action）', () => {
     expect(next.options).toHaveLength(POLL_LIMITS.options)
   })
 
-  it('removeOption 最少留两项，并清掉该选项的票与我的选择', () => {
+  it('removeOption 草稿最少留两项；发布后拒绝删除已收票的选项', () => {
     let state = filledDraft()
     state = pollReducer(state, { type: 'addOption' })
     state = pollReducer(state, { type: 'publish' })
     state = pollReducer(state, { type: 'vote', ids: ['opt_1'] })
     const three = { ...state, options: [...state.options], voted: ['opt_1'], votes: { opt_1: 1 } }
     expect(three.options).toHaveLength(3)
-    const removed = pollReducer(three, { type: 'removeOption', id: 'opt_1' })
+    expect(pollReducer(three, { type: 'removeOption', id: 'opt_1' })).toEqual(three)
+    const removed = pollReducer({ ...three, published: false }, { type: 'removeOption', id: 'opt_1' })
     expect(removed.options).toHaveLength(2)
     expect(removed.votes).toEqual({})
     expect(removed.voted).toEqual([])
@@ -703,12 +755,15 @@ describe('NodeView 编辑态（三态由数据决定，不由 DOM 决定）', ()
     expect(readPoll(pollsIn(editor)[0].attrs.poll).title).toBe('周末团建')
   })
 
-  it('输入选项 → 落回文档；本地勾选被清掉', () => {
-    const { editor, nodeView } = mountPoll({ poll: pollReducer(filledDraft(), { type: 'publish' }) })
+  it('草稿输入选项落回文档，发布后输入不再修改选项', () => {
+    const { editor, nodeView } = mountPoll({ poll: filledDraft() })
     const row = nodeView.rows()[0]
     typeInto(row.input, '改内容')
     expect(nodeView.poll().options[0].text).toBe('改内容')
     expect(readPoll(pollsIn(editor)[0].attrs.poll).options[0].text).toBe('改内容')
+    nodeView.apply({ type: 'publish' })
+    typeInto(nodeView.rows()[0].input, '发布后覆盖')
+    expect(nodeView.poll().options[0].text).toBe('改内容')
   })
 
   it('草稿点提交：标题空 → 提示「请输入标题」且不发布', () => {

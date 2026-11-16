@@ -115,9 +115,10 @@ export function resolveAnchorCodec(editor, options) {
  * 常常直接被丢进来，改了会污染缓存）。脏条目（null / 非对象）由 `normalizeThread` 过滤。
  */
 export function bindThreads(doc, threads, codec) {
+  const list = Array.isArray(threads) ? threads : []
+  if (!list.length) return []
   const source = doc && typeof doc.descendants === 'function' ? documentBlockIds(doc) : doc
   const lookup = blockIdLookup(source)
-  const list = Array.isArray(threads) ? threads : []
   const bound = []
   for (let i = 0; i < list.length; i += 1) {
     const raw = list[i]

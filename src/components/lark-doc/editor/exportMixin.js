@@ -203,7 +203,9 @@ export default {
       this.exportBusy = true
       this.exportToast = EXPORT_TOAST_TEXT
       try {
-        await this.dispatchExport(format, scope, fileName, context)
+        const result = await this.dispatchExport(format, scope, fileName, context)
+        const warnings = [...(result?.warnings || []), ...(result?.failedImages?.length ? [`${result.failedImages.length} 张图片未能导出`] : [])]
+        if (context.current() && warnings.length) this.error = `Word 已导出；${warnings.join('；')}`
       } catch (error) {
         if (context && this._exportContext === context && context.current()) this.error = `导出失败：${error.message}`
       } finally {

@@ -13,13 +13,82 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
+import { Schema } from '@tiptap/pm/model'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { flattenHeadingContainers, aggregateHeadingContainers, validateDocument } from '../../src/core/documentOperations'
+import { flattenHeadingContainers, aggregateHeadingContainers, validateDocument, computeHeadingNumbers } from '../../src/core/documentOperations'
 import { migrateDocument, migrateRecordContent } from '../../src/core/migrations'
+
+it('结构编号只跳过行内内容，合法块标题容器中的子标题仍计数', () => {
+  const nestedSchema = new Schema({ nodes: {
+    doc: { content: 'block+' }, text: { group: 'inline' },
+    paragraph: { group: 'block', content: 'inline*' },
+    heading: { group: 'block', content: 'block*', attrs: { level: { default: 1 }, numbering: { default: true } } },
+  } })
+  const child = nestedSchema.node('heading', { level: 2 }, nestedSchema.node('paragraph', null, nestedSchema.text('inner')))
+  const doc = nestedSchema.node('doc', null, nestedSchema.node('heading', { level: 1 }, child))
+  expect([...computeHeadingNumbers(doc).values()].map(item => item.level)).toEqual([1, 2])
+})
 import { DOCUMENT_SCHEMA_VERSION } from '../../src/core/documentSchema'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 
+describe('飞书标题编号队列（REA v52）', () => {
+  const heading = (level, text, attrs = {}) => ({ type: 'heading', attrs: { level, numbering: true, ...attrs }, content: [{ type: 'text', text }] })
+  const labels = content => [...computeHeadingNumbers(getSchema(createLarkDocExtensions()).nodeFromJSON({ type: 'doc', content })).values()].map(item => item.label)
+  it('H1直接接H3时压缩缺级，不生成2.0.3', () => {
+    expect(labels([heading(1, '甲'), heading(1, '乙'), heading(3, '丙', { numberingStart: 3 })])).toEqual(['1.', '2.', '2.3'])
+  })
+  it('独立H3从2开始，后续同级接3，外层H1仍继续3', () => {
+    expect(labels([heading(1, '甲'), heading(1, '乙'), heading(3, '丙', { numberingStart: 2, numberingLevel: 1 }), heading(3, '丁'), heading(1, '戊')])).toEqual(['1.', '2.', '2.', '3.', '3.'])
+  })
+  it('较浅标题晚出现也要追溯压缩整个队列', () => {
+    expect(labels([heading(3, '甲'), heading(1, '乙')])).toEqual(['1.1', '2.'])
+  })
+  it('继续状态按正文次序比较，不能按队列计算顺序丢掉前项', () => {
+    const doc = getSchema(createLarkDocExtensions()).nodeFromJSON({ type: 'doc', content: [heading(1, '甲'), heading(3, '乙'), heading(3, '丙', { numberingLevel: 1, numberingStart: 7 }), heading(3, '丁', { numberingStart: 4 })] })
+    const info = [...computeHeadingNumbers(doc).values()]
+    expect(info.map(item => item.label)).toEqual(['1.', '1.1', '7.', '1.4'])
+    expect(info[3].canContinue).toBe(true)
+  })
+  it('隔离容器的编号序列不消费页面标题的序号', () => {
+    expect(labels([heading(1, '甲'), { type: 'callout', content: [heading(1, '高亮块')] }, heading(1, '乙')])).toEqual(['1.', '1.', '2.'])
+  })
+  it('编号层级和九位起点可往返HTML/JSON，关闭编号清掉两项设置', () => {
+    const editor = new Editor({ extensions: createLarkDocExtensions(), content: '<h3 data-numbering="true" data-numbering-level="1" data-numbering-start="999999999">正文</h3>' })
+    try {
+      expect(editor.state.doc.firstChild.attrs).toMatchObject({ numberingLevel: 1, numberingStart: 999999999 })
+      expect(editor.getHTML()).toContain('data-numbering-level="1"')
+      expect(validateDocument(editor.getJSON(), editor.schema).content[0].attrs.numberingStart).toBe(999999999)
+      expect(editor.commands.setLarkDocHeadingNumber(0, { numberingLevel: 10 })).toBe(false)
+      editor.commands.toggleLarkDocHeadingNumber(0)
+      expect(editor.state.doc.firstChild.attrs).toMatchObject({ numbering: false, numberingLevel: null, numberingStart: null })
+    } finally { editor.destroy() }
+  })
+})
+
 const schema = getSchema(createLarkDocExtensions())
+
+describe('大文档校验容量', () => {
+  it('52144个带文本段落可通过公开导入必经校验', () => {
+    const input = { type: 'doc', content: Array.from({ length: 52144 }, (_, index) => ({ type: 'paragraph', content: [{ type: 'text', text: `正文${index}` }] })) }
+    const result = validateDocument(input, schema)
+    expect(result.content).toHaveLength(52144)
+    expect(result.content[52143].content[0].text).toBe('正文52143')
+  })
+
+  it('结构节点仍限制十万，不能用空段落绕过', () => {
+    expect(() => validateDocument({ type: 'doc', content: Array.from({ length: 100000 }, () => ({ type: 'paragraph' })) }, schema)).toThrow('文档结构过深或过大')
+  })
+
+  it('文本叶子也独立限制十万，不能靠拆分文本无限扩张', () => {
+    expect(() => validateDocument({ type: 'doc', content: [{ type: 'paragraph', content: Array.from({ length: 100001 }, () => ({ type: 'text', text: '字' })) }] }, schema)).toThrow('文档结构过深或过大')
+  })
+
+  it('深度限制保持100，不能靠少节点的深层容器绕过', () => {
+    let node = { type: 'paragraph' }
+    for (let i = 0; i < 101; i += 1) node = { type: 'blockquote', content: [node] }
+    expect(() => validateDocument({ type: 'doc', content: [node] }, schema)).toThrow('文档结构过深或过大')
+  })
+})
 
 /** 容器形态的标题（v2 预定义：heading.children = 子块数组，嵌套标题同样带 children）。 */
 const containerDoc = () => ({

@@ -15,8 +15,7 @@ import { createEditorUiRegistry } from '../ui/editorUiRegistry'
 import { createWorkspaceViewState } from '../core/workspace/workspace-view-state'
 import { createNetworkPolicy } from '../networkPolicy'
 import { previewToHtml, looksLikeMarkdown } from '../components/lark-doc/ai'
-import { LARGE_DOCUMENT_SIZE } from '../editor/documentSnapshot'
-import { createSegmentedDocumentModel, createSegmentedDocumentReader, createLargeDocumentViewportController } from '../editor/segmentedDocumentModel'
+import { LARGE_DOCUMENT_SIZE } from '../editor/documentStats'
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -99,20 +98,71 @@ export function createDomRenderer() {
       let editorController = null
       let workspaceController = null
       let workspaceUi = null
+      let importConfirmation = null
       let instance = null
       let runtime
       let snapshotAbort = null
+      let contentChangePending = false
       let largeDocumentModel = null
       let largeDocumentViewport = null
       let largeDocumentReader = null
       let largeDocumentDoc = null
+      let largeDocumentFailedDoc = null
+      let largeDocumentProjection = null
+      let flatDocumentProjection = null
+      let largeDocumentProjectionLoading = null
+      let largeDocumentProjectionChecked = false
       let largeDocumentPendingDoc = null
       let largeDocumentReadTimer = null
       let largeDocumentReadAbort = null
+      let readProjectionSelection = null
+      const prepareProjectionSelection = ({ editor: current, nextState, transaction }) => {
+        if (!current.storage.larkDoc?.pagedImport && current.storage.larkDoc?.pagedView?.isDocument(nextState.doc)) { current.storage.larkDoc.pagedView.prepareSelection(); return }
+        if (destroyed || current.storage.larkDoc?.pagedImport || !largeDocumentProjection || nextState.doc.content.size <= LARGE_DOCUMENT_SIZE
+          || largeDocumentProjection === current.storage.larkDoc?.pagedView
+          || nextState.doc === current.state.doc && nextState.selection.eq(current.state.selection)) return
+        largeDocumentProjection.prepareSelection(readProjectionSelection(nextState.selection, transaction))
+      }
+      let largeDocumentViewportFrame = null
+      let largeDocumentRuntimeTransactionFrame = null
+      let blockHandleVisibilityScheduled = false
+      const refreshBlockHandleVisibility = () => {
+        if (destroyed || blockHandleVisibilityScheduled) return
+        blockHandleVisibilityScheduled = true
+        Promise.resolve().then(() => {
+          blockHandleVisibilityScheduled = false
+          if (!destroyed) documentHost.syncBlockHandleVisibility()
+        })
+      }
       const requestRender = () => {
         if (destroyed || renderScheduled) return
         renderScheduled = true
         Promise.resolve().then(() => { renderScheduled = false; if (!destroyed && workspaceUi) render() })
+      }
+      const refreshLargeDocumentViewport = () => {
+        if (!largeDocumentViewport) return
+        if (largeDocumentViewportFrame != null) return
+        const refresh = () => {
+          largeDocumentViewportFrame = null
+          if (!destroyed) largeDocumentViewport?.refresh()
+        }
+        if (typeof viewWindow.requestAnimationFrame === 'function') largeDocumentViewportFrame = viewWindow.requestAnimationFrame(refresh)
+        else largeDocumentViewportFrame = setTimeout(refresh, 16)
+      }
+      const refreshRuntimeTransaction = () => {
+        if (!documentHost?.editor) return
+        const largeDocument = documentHost.editor.state.doc.content.size > LARGE_DOCUMENT_SIZE
+        if (!largeDocument) {
+          runtime.transaction()
+          return
+        }
+        if (largeDocumentRuntimeTransactionFrame != null) return
+        const refresh = () => {
+          largeDocumentRuntimeTransactionFrame = null
+          if (!destroyed && documentHost?.editor) runtime.transaction()
+        }
+        if (typeof viewWindow.requestAnimationFrame === 'function') largeDocumentRuntimeTransactionFrame = viewWindow.requestAnimationFrame(refresh)
+        else largeDocumentRuntimeTransactionFrame = setTimeout(refresh, 16)
       }
       const emit = (name, payload) => {
         if (destroyed) return
@@ -131,50 +181,105 @@ export function createDomRenderer() {
         return result
       }
       const resetLargeDocumentLayout = () => {
+        if (largeDocumentViewportFrame != null) {
+          if (typeof viewWindow.cancelAnimationFrame === 'function') viewWindow.cancelAnimationFrame(largeDocumentViewportFrame)
+          else clearTimeout(largeDocumentViewportFrame)
+          largeDocumentViewportFrame = null
+        }
+        if (largeDocumentRuntimeTransactionFrame != null) {
+          if (typeof viewWindow.cancelAnimationFrame === 'function') viewWindow.cancelAnimationFrame(largeDocumentRuntimeTransactionFrame)
+          else clearTimeout(largeDocumentRuntimeTransactionFrame)
+          largeDocumentRuntimeTransactionFrame = null
+        }
         if (largeDocumentReadTimer != null) viewWindow.clearTimeout(largeDocumentReadTimer)
         largeDocumentReadTimer = null
         largeDocumentReadAbort?.abort()
         largeDocumentReadAbort = null
         largeDocumentViewport?.destroy()
         largeDocumentViewport = null
+        largeDocumentProjection?.setActive(false)
         largeDocumentModel = null
         largeDocumentDoc = null
+        largeDocumentFailedDoc = null
         largeDocumentPendingDoc = null
         shell.root.removeAttribute('data-ld-segment-count')
         shell.root.removeAttribute('data-ld-segment-blocks')
       }
       const scheduleLargeDocumentLayout = () => {
         const doc = editor?.state?.doc
+        const paged = editor?.storage.larkDoc?.pagedView
+        const pagedDocument = doc && paged?.isDocument(doc)
+        if (pagedDocument && largeDocumentProjection !== paged) {
+          flatDocumentProjection = largeDocumentProjection
+          flatDocumentProjection?.setActive(false)
+          largeDocumentViewport?.destroy(); largeDocumentViewport = null
+          largeDocumentProjection = paged
+          paged.setWindowCallback(nodes => { refreshBlockHandleVisibility(); documentHost.syncTableClip(nodes) })
+          editor.storage.larkDoc.projection = paged
+        } else if (!pagedDocument && largeDocumentProjection === paged) {
+          paged?.setActive(false)
+          largeDocumentProjection = flatDocumentProjection
+          editor.storage.larkDoc.projection = flatDocumentProjection
+        }
         const large = !!doc && doc.content.size > LARGE_DOCUMENT_SIZE
         shell.root.classList.toggle('lark-doc-large-document', large)
         if (!large) {
           resetLargeDocumentLayout()
           return
         }
+        // During a locked import the DOM observer maintains the window. Avoid
+        // two extra synchronous layout/selection reads for every appended page.
+        if (!editor.storage.larkDoc?.pagedImport || !editor.view.dom.classList.contains('lark-doc-segment-layout')) largeDocumentProjection?.setActive(true)
+        if (!pagedDocument && !largeDocumentProjectionChecked && !largeDocumentProjectionLoading && largeDocumentFailedDoc !== doc) {
+          largeDocumentProjectionLoading = import('../editor/segmentedDocumentModel').then(tools => {
+            if (destroyed || !editor || editor.storage.larkDoc?.pagedView?.isDocument(editor.state.doc)) return
+            readProjectionSelection = tools.createProjectionSelectionReader(editor.view)
+            largeDocumentProjection = tools.createLargeDocumentProjection({ editorDom: editor.view.dom,
+              onRenderWindowChange: nodes => {
+                if (destroyed) return
+                // A prepared selection must finish before hover cleanup can dispatch.
+                refreshBlockHandleVisibility()
+                documentHost.syncTableClip(nodes)
+              },
+              initialActive: editor.state.doc.content.size > LARGE_DOCUMENT_SIZE,
+              getSelectionNodes: () => readProjectionSelection(editor.state.selection) })
+            editor.storage.larkDoc.projection = largeDocumentProjection
+            largeDocumentProjectionChecked = true
+            largeDocumentProjection?.setActive(editor.state.doc.content.size > LARGE_DOCUMENT_SIZE)
+          }).catch(error => {
+            if (!destroyed) { largeDocumentFailedDoc = editor?.state.doc; emit('error', error) }
+          }).finally(() => { largeDocumentProjectionLoading = null })
+        }
+        if (editor.storage.larkDoc?.pagedImport) return
         if (largeDocumentDoc === doc && largeDocumentModel) return
+        if (largeDocumentFailedDoc === doc) return
         if (largeDocumentPendingDoc === doc) return
         if (largeDocumentReadTimer != null) viewWindow.clearTimeout(largeDocumentReadTimer)
+        largeDocumentReadAbort?.abort()
+        const abort = new AbortController()
+        largeDocumentReadAbort = abort
         largeDocumentPendingDoc = doc
         largeDocumentReadTimer = viewWindow.setTimeout(async () => {
           largeDocumentReadTimer = null
-          largeDocumentPendingDoc = null
-          if (destroyed || !editor || editor.state.doc !== doc) return
-          const model = createSegmentedDocumentModel(doc)
-          largeDocumentReadAbort?.abort()
-          const abort = new AbortController()
-          largeDocumentReadAbort = abort
-          largeDocumentModel = model
-          largeDocumentDoc = doc
-          largeDocumentViewport?.destroy()
-          largeDocumentViewport = createLargeDocumentViewportController({ editorDom: editor.view.dom, model, viewWindow })
-          largeDocumentViewport.refresh(model)
-          largeDocumentReader ||= createSegmentedDocumentReader()
-          const result = await largeDocumentReader.read(model, { signal: abort.signal })
-          if (destroyed || abort.signal.aborted || editor.state.doc !== doc || largeDocumentModel !== model) return
-          model.applyWorkerResult(result)
-          largeDocumentViewport.refresh(model)
-          shell.root.setAttribute('data-ld-segment-count', String(model.segmentCount))
-          shell.root.setAttribute('data-ld-segment-blocks', String(model.segmentBlocks))
+          const current = () => !destroyed && !abort.signal.aborted && !!editor && editor.state.doc === doc
+          try {
+            if (!await documentHost._backgroundGate.wait(current)) return
+            const tools = await import('../editor/segmentedDocumentModel')
+            if (!current()) return
+            largeDocumentReader ||= tools.createSegmentedDocumentReader()
+            const model = await largeDocumentReader.create(pagedDocument ? paged.logicalDocument(doc) : doc, { signal: abort.signal, waitForBackground: () => documentHost._backgroundGate.wait(current) })
+            if (!model || !current()) return
+            largeDocumentModel = model
+            largeDocumentDoc = doc
+            largeDocumentViewport?.destroy()
+            if (!pagedDocument) largeDocumentViewport = tools.createLargeDocumentViewportController({ editorDom: editor.view.dom, model, viewWindow })
+            shell.root.setAttribute('data-ld-segment-count', String(model.segmentCount))
+            shell.root.setAttribute('data-ld-segment-blocks', String(model.segmentBlocks))
+          } catch (error) {
+            if (current()) { largeDocumentFailedDoc = doc; emit('error', error) }
+          } finally {
+            if (largeDocumentPendingDoc === doc) largeDocumentPendingDoc = null
+          }
         }, 120)
       }
       const resolveImageFile = createImageResolver(props, () => runtime.host, error => emit('error', error))
@@ -190,12 +295,21 @@ export function createDomRenderer() {
         getJSON: () => editorController?.getJSON() || null,
         getText: () => editorController?.getText() || '',
         setContent: (content, options) => editorController?.setContent(content, options) || false,
+        setContentAsync: (content, options) => editorController?.setContentAsync(content, options) || Promise.resolve(false),
         setReadonly: readonly => { if (readonly) resolveImageFile.cancelAll('readonly'); return editorController?.setReadonly(readonly) || false },
         focus: () => editorController?.focus(),
         focusTemplateSearch: () => workspaceUi?.focusTemplateSearch(),
         writable: () => documentHost.writable(),
         emit,
         confirm: message => typeof viewWindow.confirm === 'function' ? viewWindow.confirm(message) : true,
+        confirmImport: async (message, details) => {
+          const { createImportConfirmation } = await import('../ui/dialogs')
+          if (destroyed) return false
+          importConfirmation?.destroy()
+          const dialog = importConfirmation = createImportConfirmation({ host: shell.panelHost, message, ...details })
+          try { return await dialog.result }
+          finally { if (importConfirmation === dialog) importConfirmation = null }
+        },
         getWindow: () => viewWindow,
         getNavigator: () => viewWindow.navigator,
         getAIProvider: () => props.aiProvider,
@@ -212,6 +326,7 @@ export function createDomRenderer() {
       workspaceController.initializeSession()
       const renderNow = action => (...args) => { const result = action(...args); runtime.flush(); render(); return result }
       const workspaceHandlers = {
+        onLoadError: () => { state.notice = '面板暂时无法打开，请关闭后重试' },
         setMaxLength: value => { state.editorConfig.limits.maxLength = value },
         save: () => workspaceController.save(true),
         applyTemplate: value => workspaceController.applyTemplate(value),
@@ -248,7 +363,7 @@ export function createDomRenderer() {
         cancelAIProposal: () => { state.aiProposal = null },
         clearNotice: () => { state.notice = '' },
       }
-      workspaceUi = createWorkspace({ headerHost: shell.actionsHost, panelHost: shell.panelHost, handlers: workspaceHandlers })
+      workspaceUi = createWorkspace({ headerHost: shell.actionsHost, panelHost: shell.panelHost, noticeHost: shell.noticeHost, handlers: workspaceHandlers })
       const errorText = shell.root.ownerDocument.createTextNode('')
       const closeError = shell.root.ownerDocument.createElement('button')
       closeError.type = 'button'
@@ -349,9 +464,14 @@ export function createDomRenderer() {
         shell.dropLine.style.top = `${state.dropLineTop}px`
       }
       const refreshChange = transaction => {
+        if (editor?.state.doc.content.size > LARGE_DOCUMENT_SIZE) documentHost._backgroundGate.touch()
         documentHost.scheduleDocumentState(transaction)
         snapshotAbort?.abort()
-        if (transaction?.getMeta && (transaction.getMeta('larkDocBlockIds') || transaction.getMeta('larkDocIndentNormalized'))) return
+        const attributesOnly = transaction?.getMeta && (transaction.getMeta('larkDocBlockIds') || transaction.getMeta('larkDocIndentNormalized'))
+        // Attribute normalization can invalidate an in-flight user snapshot.
+        // Keep that user's publication owed, without publishing standalone metadata changes.
+        if (attributesOnly && !contentChangePending) return
+        if (!attributesOnly) contentChangePending = true
         clearTimeout(state.pendingChangeTimer)
         if (state.pendingChangeIdle && typeof viewWindow.cancelIdleCallback === 'function') viewWindow.cancelIdleCallback(state.pendingChangeIdle)
         state.pendingChangeIdle = null
@@ -365,6 +485,7 @@ export function createDomRenderer() {
             ? await editorController.getSnapshotAsync({ signal: abort.signal, media })
             : { html: applyMediaHtmlMode(editorController.getHTML(), media), json: editorController.getJSON(), text: editorController.getText() }
           if (!payload || abort.signal.aborted || destroyed || editor.state.doc !== doc) return
+          contentChangePending = false
           state.html = payload.html
           workspaceController.queueSave()
           emit('update', payload)
@@ -394,9 +515,24 @@ export function createDomRenderer() {
         const preparedInitial = !documentHost.collabOptions && typeof initialContent === 'string'
           ? prepareHTML(initialContent, props.contentFormat)
           : null
+        const selectionScrollMargin = { top: 5, right: 5, bottom: 5, left: 5 }
+        const selectionScrollThreshold = { top: 0, right: 0, bottom: 0, left: 0 }
         editor = new Editor({
           element: shell.editorEl,
           content: documentHost.collabOptions ? undefined : (preparedInitial ? preparedInitial.html : initialContent),
+          editorProps: {
+            scrollMargin: selectionScrollMargin, scrollThreshold: selectionScrollThreshold,
+            handleScrollToSelection() {
+              largeDocumentProjection?.refresh()
+              const toolbar = shell.root.querySelector('.lark-doc-toolbar')
+              const style = toolbar && viewWindow.getComputedStyle(toolbar)
+              const height = style && style.display !== 'none' && /^(sticky|fixed)$/.test(style.position) ? toolbar.getBoundingClientRect().height : 0
+              const inset = height > 0 ? Math.ceil(height + Math.max(0, parseFloat(style.top) || 0)) : 0
+              selectionScrollMargin.top = inset + 5
+              selectionScrollThreshold.top = inset ? inset + 5 : 0
+              return false
+            },
+          },
           editable: !documentHost.effectiveReadonly,
           extensions: createLarkDocExtensions({
             ...props,
@@ -405,6 +541,7 @@ export function createDomRenderer() {
             getImageOptions: () => ({ enabled: isCommandEnabled(state.editorConfig, 'image', 'images'), aiEnabled: state.editorConfig.features.ai !== false, onAction: documentHost.runImageAction, onComment: documentHost.openImageComments, canLoad: src => createNetworkPolicy(state.editorConfig.network).allows(src) }),
             isColumnsEnabled: () => state.editorConfig.features.columns,
             isAgendaEnabled: () => isCommandEnabled(state.editorConfig, 'agenda', 'insert'),
+            isDividerEnabled: () => isCommandEnabled(state.editorConfig, 'divider', 'blockStyle'),
             getMathOptions: () => ({ enabled: state.editorConfig.features.math, scope: documentHost.session }),
             collab: documentHost.collabOptions || undefined,
             config: state.editorConfig,
@@ -422,9 +559,15 @@ export function createDomRenderer() {
           // runtime setContent/insert transaction after the initial render.
           // Re-project once after the view has applied that transaction so
           // the CSS fast path is enabled (or removed) at the same boundary.
-          onUpdate: ({ transaction }) => { refreshChange(transaction); requestRender() },
-          onTransaction: () => { if (documentHost.editor) runtime.transaction(); requestRender() },
-          onSelectionUpdate: () => { if (documentHost.editor) runtime.selection(); requestRender() },
+          onUpdate: ({ transaction }) => { if (editor?.storage.larkDoc?.pagedImport) return; refreshLargeDocumentViewport(); refreshChange(transaction); requestRender() },
+          onTransaction: () => { largeDocumentProjection?.completeSelection(); if (editor?.storage.larkDoc?.pagedImport) { scheduleLargeDocumentLayout(); return } refreshLargeDocumentViewport(); refreshRuntimeTransaction(); requestRender() },
+          onSelectionUpdate: () => {
+            if (documentHost.editor) {
+              largeDocumentViewport?.ensureForPos(documentHost.editor.state.selection.from)
+              runtime.selection()
+            }
+            requestRender()
+          },
           onFocus: () => { if (documentHost.editor) runtime.selection() },
           onBlur: () => {
             state.bubbleVisible = false
@@ -432,6 +575,8 @@ export function createDomRenderer() {
             documentHost.closeBubbleHeadingMenu()
           },
         })
+        Object.defineProperty(editor, '__v_skip', { value: true, configurable: true, writable: true })
+        editor.storage.larkDoc.backgroundGate = documentHost._backgroundGate
         editorController = createEditorController({
           editor, session: workspaceController.getSession(), title: state.title,
           prepareHTML: (content, format) => prepareHTML(content, format || props.contentFormat),
@@ -439,9 +584,15 @@ export function createDomRenderer() {
           getMaxLength: () => documentHost.effectiveMaxLength,
           getNetwork: () => createNetworkPolicy(state.editorConfig.network),
           onBeforeContentReplace: () => {
+            snapshotAbort?.abort()
+            viewWindow.clearTimeout(state.pendingChangeTimer)
+            if (state.pendingChangeIdle && typeof viewWindow.cancelIdleCallback === 'function') viewWindow.cancelIdleCallback(state.pendingChangeIdle)
+            state.pendingChangeIdle = null
             resolveImageFile.cancelAll('document-change')
+            documentHost.cancelFileUploads('document-change')
             workspaceController.closeAI(false)
             documentHost.closeBlockMenu()
+            documentHost.endBlockDrag()
             // A content replacement invalidates the previous block position.
             // Clear the native handle itself, otherwise its stale button can
             // sit over the first cell of the new document and intercept input.
@@ -451,6 +602,7 @@ export function createDomRenderer() {
           },
           onAfterContentReplace: () => { documentHost.restoreFolds(); state.savedSelection = null; documentHost.refreshDocumentState() },
         })
+        editor.on('beforeTransaction', prepareProjectionSelection)
         runtime.mount(editor, editorController)
         editorController.setImportReport(preparedInitial?.converted ? preparedInitial.report : null)
       } catch (error) {
@@ -471,6 +623,7 @@ export function createDomRenderer() {
         getTitle: () => workspaceController.getTitle(),
         setTitle: value => { const changed = workspaceController.setTitle(value); if (changed) emit('update', { title: state.title }); return changed },
         setContent: (content, options) => workspaceController.setContent(content, options),
+        setContentAsync: (content, options) => workspaceController.setContentAsync(content, options),
         setReadonly: value => { if (value) resolveImageFile.cancelAll('readonly'); return workspaceController.setReadonly(value) },
         isReadonly: () => documentHost.effectiveReadonly,
         focus: () => editorController.focus(),
@@ -501,9 +654,14 @@ export function createDomRenderer() {
         helpFabUi: documentHost._helpFabUi, outlineUi: documentHost._panelsUi?.outline,
         editorUiRegistry, viewWindow, props, requestRender, nativeHost: runtime,
         cleanup: () => {
+          importConfirmation?.destroy()
+          editor?.off('beforeTransaction', prepareProjectionSelection)
           resolveImageFile.cancelAll('destroy')
           snapshotAbort?.abort()
           resetLargeDocumentLayout()
+          largeDocumentProjection?.destroy()
+          if (flatDocumentProjection !== largeDocumentProjection) flatDocumentProjection?.destroy()
+          if (editor) editor.storage.larkDoc.projection = null
           if (state.pendingChangeIdle && typeof viewWindow.cancelIdleCallback === 'function') viewWindow.cancelIdleCallback(state.pendingChangeIdle)
           clearTimeout(state.pendingChangeTimer)
           state.pendingChangeIdle = null
@@ -514,6 +672,7 @@ export function createDomRenderer() {
     },
     update(handle, props = {}) {
       if (!handle?.instance || handle.destroyed) return
+      if (['session', 'documentId', 'uploader', 'uploadFile'].some(key => Object.prototype.hasOwnProperty.call(props, key) && props[key] !== handle.props[key])) handle.nativeHost.host.cancelFileUploads('document-change')
       if (['session', 'documentId', 'uploader', 'uploadImage'].some(key => Object.prototype.hasOwnProperty.call(props, key) && props[key] !== handle.props[key])) handle.resolveImageFile.cancelAll('document-change')
       Object.assign(handle.props, props)
       if (Object.prototype.hasOwnProperty.call(props, 'config')) {

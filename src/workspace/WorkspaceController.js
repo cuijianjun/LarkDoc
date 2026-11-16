@@ -1,4 +1,3 @@
-import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { CellSelection } from '@tiptap/pm/tables'
 import { createPersistenceWorkspace, detectBrowserStorage } from '../providers/persistence'
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from '../components/lark-doc/mockAI'
@@ -6,15 +5,14 @@ import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMark
 import { TEMPLATES } from '../components/lark-doc/templates'
 import {
   createLarkDocConfig, isAutoSaveEnabled, resolveAutoSaveDelay,
-  isImportEnabled, isExportEnabled, resolveImportFormatId, resolveMediaOptions,
+  isImportEnabled, isExportEnabled, resolveMediaOptions,
 } from '../components/lark-doc/larkDocConfig'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
-import { sanitizeHTML, validateDocument } from '../components/lark-doc/documentOperations'
+import { validateDocument } from '../components/lark-doc/documentOperations'
 import { migrateRecordContent } from '../core/migrations'
 import { createDerivedSnapshot, validateDerivedSnapshot } from '../core/derive/snapshot'
 import { DOCUMENT_SCHEMA_VERSION } from '../core/documentSchema'
 import { logger } from '../utils/logger'
-import { loadFeature } from '../core/features/registry'
 import { createDocumentSession } from '../session/DocumentSession'
 import { cropImageBlob, normalizeImageCrop, FULL_IMAGE_CROP } from '../core/media/image-crop'
 import { createNetworkPolicy } from '../core/policy/network'
@@ -132,6 +130,13 @@ class WorkspaceController {
   emit(...args) { if (this.host.emit) this.host.emit(...args) }
   confirm(message) { return this.host.confirm ? this.host.confirm(message) : true }
   setContent(content, options) { return this.host.setContent ? this.host.setContent(content, options) : false }
+  async setContentAsync(content, options) {
+    const job = { previous: this._asyncImport?.previous ?? this.state.importing }
+    this._asyncImport = job
+    this.state.importing = true
+    try { return await (this.host.setContentAsync ? this.host.setContentAsync(content, options) : this.setContent(content, options)) }
+    finally { if (this._asyncImport === job) { this._asyncImport = null; if (!this._disposed) this.state.importing = job.previous } }
+  }
   focus() { if (this.host.focus) this.host.focus() }
   getHTML() { return this.host.getHTML ? this.host.getHTML() : '' }
   getExportHTML() { return applyMediaHtmlMode(this.getHTML(), resolveMediaOptions(this.state.editorConfig)) }
@@ -231,7 +236,7 @@ class WorkspaceController {
     const editor = this.getEditor()
     const doc = editor && editor.state && editor.state.doc
     if (doc) {
-      const derived = createDerivedSnapshot(doc)
+      const derived = createDerivedSnapshot(editor.storage?.larkDoc?.pagedView?.logicalDocument(doc) || doc)
       if (derived) base.derived = derived
     }
     return base
@@ -322,6 +327,7 @@ class WorkspaceController {
   async saveNow(manual = false) {
     if (!this.featureEnabled('persistence')) return
     clearTimeout(this._saveTimer)
+    if (this.state.importing || this.getEditor()?.storage?.larkDoc?.pagedImport) return false
     if (!this.state.initialized || !this.getEditor() || (!manual && this.state.storageError)) return
     const generation = ++this._saveGeneration
     try {
@@ -410,66 +416,19 @@ class WorkspaceController {
     if (!isImportEnabled(this.state.editorConfig)) return
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
-    if (!file || !this.writable()) return
-    // `state.importing` is reflected by the editor host as a temporary lock while the
-    // file is being read. Capture the editor before that lock so the post-read guard
-    // can distinguish a real readonly transition from our own import busy state.
+    if (!file || this.state.importing || !this.writable()) return
     const importingEditor = this.getEditor()
     if (!importingEditor || !importingEditor.isEditable) return
-    if (file.size > 10 * 1024 * 1024) { this.state.notice = '导入文件不能超过 10 MB'; return }
-    const format = resolveImportFormatId(this.state.editorConfig, file.name.split('.').pop())
-    if (!format) {
-      this.state.notice = `不支持的文件格式，可导入：${this.state.editorConfig.importExport.importFormats.join(' / ').toUpperCase()}`
-      return
-    }
     this.state.importing = true
     try {
-      let content
-      let importedTitle
-      if (format === 'docx') {
-        const mammoth = await loadFeature('office.mammoth', () => import(/* webpackChunkName: "office" */ 'mammoth/mammoth.browser'))
-        const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() })
-        content = sanitizeHTML(result.value)
-      } else {
-        const text = await file.text()
-        if (format === 'json') {
-          const value = JSON.parse(text)
-          content = validateDocument(migrateRecordContent(value.document || value, value.schemaVersion), this.getEditor().schema)
-          if (typeof value.title === 'string') importedTitle = value.title
-        } else if (format === 'html') content = sanitizeHTML(text)
-        else if (format === 'md') {
-          const { markdownToHtml } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
-          content = sanitizeHTML(await markdownToHtml(text))
-        } else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
-      }
-      const activeEditor = this.getEditor()
-      // The host aliases `readonly` to `source.importing`, so `effectiveReadonly` is
-      // intentionally true during this read. Only abort for an actual read mode or a
-      // forced readonly prop; otherwise every import would self-cancel here.
-      const actuallyReadonly = this.state.mode === 'read' || this.state.forcedReadonly
-      if (this._disposed || !activeEditor || activeEditor.isDestroyed || actuallyReadonly) return
-      if (typeof content === 'string') {
-        const container = (this.getWindow().document || document).createElement('div')
-        container.innerHTML = content
-        const parsed = ProseMirrorDOMParser.fromSchema(this.getEditor().schema).parse(container)
-        content = validateDocument(parsed.toJSON(), this.getEditor().schema)
-        let hasContent = false
-        parsed.descendants(node => { if (node.isText ? node.text.trim() : !node.isTextblock && node.type.name !== 'hardBreak') hasContent = true })
-        if (!hasContent) throw new Error('文件未包含可导入的正文或内容块')
-      }
-      if (!this.confirm('导入并替换当前正文？原正文可通过撤销恢复。')) return
-      this.closeAI()
-      this.setContent(content)
-      if (importedTitle !== undefined) this.state.title = importedTitle
-      this.state.notice = format === 'docx' || format === 'md' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
-      logger.info('import', 'lark-doc.document.imported', { format, status: 'success' })
-    } catch (error) {
-      if (!this._disposed) this.state.notice = `导入失败，原正文未替换：${error.message}`
-      logger.warn('import', 'lark-doc.document.rejected', { status: 'failed' })
-    } finally { if (!this._disposed) this.state.importing = false }
+      const { importWorkspaceFile } = await import('../editor/pagedDocumentSource')
+      if (!this._disposed) return await importWorkspaceFile(this, file, importingEditor)
+    } catch (error) { if (!this._disposed) this.state.notice = `导入失败：${error.message}` }
+    finally { if (!this._disposed) this.state.importing = false }
   }
 
   async exportDocument(format) {
+    if (this.state.importing || this.getEditor()?.storage?.larkDoc?.pagedImport) return false
     if (!isExportEnabled(this.state.editorConfig) || !format) return
     if (!this.state.editorConfig.importExport.exportFormats.includes(format)) return
     if (format === 'docx') return this.exportWordDocument()
@@ -539,9 +498,7 @@ class WorkspaceController {
       // Supplying even an empty map keeps the canonical exporter from fetching on its own.
       const result = await exportDocx(doc, { fileName: title, title, scope: 'contentOnly', images, shouldDownload: allowed })
       for (const src of result?.failedImages || []) failed.add(src)
-      if (allowed()) this.state.notice = failed.size
-        ? `Word 已导出；${failed.size} 张图片因网络策略或读取失败未导出`
-        : 'Word 已导出'
+      if (allowed()) this.state.notice = ['Word 已导出', ...(result?.warnings || []), ...(failed.size ? [`${failed.size} 张图片因网络策略或读取失败未导出`] : [])].join('；')
       return result
     } catch (error) {
       if (current()) this.state.notice = `导出失败：${error.message}`

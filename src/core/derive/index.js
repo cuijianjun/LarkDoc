@@ -184,7 +184,7 @@ function insideOneTextblock(doc, from, to) {
  * 结构变更由调用方退回全量重建 —— 那是回车 / 粘贴 / 缩进 / 列表增删级操作，
  * 不在击键路径上，2,000 块约 36 ms，换取「绝不出现错号或漏折叠」。
  */
-function isTextOnlyChange(doc, steps) {
+export function isTextOnlyChange(doc, steps) {
   if (!Array.isArray(steps) || !steps.length) return false
   return steps.every((step) => {
     const slice = step && step.slice
@@ -221,7 +221,7 @@ function perfSink() {
  *   脏区增量回调（P7-01）。`previous` 已经由本模块 `map` 到新文档坐标，`ranges` 是
  *   「可能变脏」的区间（同样是新文档坐标）。不传就退回全量重建（老宿主/测试桩）。
  */
-export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
+export function createDerivedIndex({ doc, schema, rebuild, incremental, searchDecorations }) {
   let currentDoc = doc
   let cachedDoc = null
   let cachedSet = null
@@ -232,6 +232,7 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
   let pendingSteps = []
   // 脏区统一存**最新 doc** 坐标：每来一笔事务先把它前移到新坐标，再并本笔的新段。
   let pendingRanges = []
+  let searchOnly = false
 
   const resetPending = () => { pendingSteps = []; pendingRanges = [] }
 
@@ -253,6 +254,7 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
 
   const index = {
     schema,
+    invalidateSearch() { if (!dirty) searchOnly = true; dirty = true },
 
     /**
      * 事务后更新：收集 mapping 区间、按块（+ 一层父块）与标题传播扩张，登记为待消费脏区。
@@ -267,23 +269,26 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
      *   两者都没变就该直接复用缓存，否则每次点击、每个方向键都会白付一次全量重建。
      * @returns {{ changed: Array<{from: number, to: number}>, index: object }}
      */
-    update(tr, { touchesDecorations = true } = {}) {
+    update(tr, { touchesDecorations = true, onlySearch = false, markupRanges = null, analysisRanges = [] } = {}) {
       const changed = []
       // 纪律 1：受影响区间来自 tr.mapping.maps，不是 tr.docChanged——
       // 只取第一段在协同下必然漏更新。
       tr.mapping.maps.forEach((map) => {
         map.forEach((oldStart, oldEnd) => changed.push({ from: oldStart, to: oldEnd }))
       })
+      if (markupRanges) changed.push(...markupRanges)
       const rawChanged = mergeRanges(changed)
       const docChanged = tr.docChanged || rawChanged.length > 0
       const expanded = docChanged ? expandDirtyRanges(currentDoc, rawChanged) : []
       if (docChanged) {
+        searchOnly = false
         // 只有「文本块内的纯文字改动」才值得脏区重扫；节点增删 / attrs 变更会让
         // 窗口外的编号与折叠变样，直接整份重建（判据见 isTextOnlyChange）。
-        if (isTextOnlyChange(currentDoc, tr.steps)) {
+        if (isTextOnlyChange(currentDoc, tr.steps) || markupRanges) {
           pendingRanges = mergeRanges([
             ...mapForward(tr.mapping, pendingRanges),
             ...mapForward(tr.mapping, expanded),
+            ...analysisRanges,
           ])
           pendingSteps.push({ mapping: tr.mapping, doc: tr.doc })
         } else {
@@ -294,6 +299,7 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
         // 纯 UI 事务（搜索词 / 折叠集合 / 把手悬停）：改的是装饰输入，整份重建比
         // 局部推断更稳，而且这些都是点击级操作，不在击键路径上。
         resetPending()
+        searchOnly = onlySearch && (!dirty || searchOnly)
         dirty = true
       }
       currentDoc = tr.doc
@@ -316,7 +322,10 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
       // 待消费批次必须正好落在当前文档上；对不上（例如有人直接换了文档）就走冷路径。
       const pendingDoc = pendingSteps.length ? pendingSteps[pendingSteps.length - 1].doc : null
       const canIncremental = !!incremental && !!cachedSet && pendingDoc === doc && pendingRanges.length > 0
-      if (canIncremental) {
+      if (searchOnly && cachedSet && cachedDoc === doc && searchDecorations) {
+        cachedSet = searchDecorations(state, cachedSet)
+        path = 'search'
+      } else if (canIncremental) {
         let previous = cachedSet
         pendingSteps.forEach((step) => { previous = previous.map(step.mapping, step.doc) })
         // incremental 返回 null = 「这帧不适合增量」（例如搜索高亮开着，全局命中序号
@@ -333,6 +342,7 @@ export function createDerivedIndex({ doc, schema, rebuild, incremental }) {
       }
       cachedDoc = doc
       dirty = false
+      searchOnly = false
       resetPending()
       if (sink) sink.samples.push({ path, ms: performance.now() - startedAt })
       return cachedSet

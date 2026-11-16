@@ -26,6 +26,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -150,7 +152,7 @@ const bubbleVisible = (page) => page.evaluate(() => !!document.querySelector('.l
 const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.lark-doc-bubble-align-menu'))
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   const errors = []
@@ -332,7 +334,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
     return {
       role: menu.getAttribute('role'),
       label: menu.getAttribute('aria-label'),
-      pressed: [...menu.querySelectorAll('button[role="menuitem"]')].map((item) => ({ text: item.textContent.trim(), pressed: item.getAttribute('aria-pressed'), tooltip: item.getAttribute('data-tooltip'), disabled: item.disabled })).slice(0, 4),
+      pressed: [...menu.querySelectorAll('button[role="menuitem"]')].map((item) => ({ text: item.textContent.trim(), pressed: item.getAttribute('aria-pressed'), tooltip: item.getAttribute('aria-description'), disabled: item.disabled })).slice(0, 4),
       separator: !!menu.querySelector('.lark-doc-block-submenu-divider[role="separator"]'),
       box: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, h: window.innerHeight, w: window.innerWidth },
     }
@@ -341,7 +343,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
   record('[对齐] 四项对齐里恰好一个 aria-pressed=true 且是「左对齐」',
     !!alignSnapshot && alignSnapshot.pressed.length === 4 && alignSnapshot.pressed.filter((item) => item.pressed === 'true').length === 1 && alignSnapshot.pressed[0].pressed === 'true' && alignSnapshot.pressed[0].text.includes('左对齐'),
     alignSnapshot ? alignSnapshot.pressed.map((item) => `${item.text}:${item.pressed}`).join(' | ') : '')
-  record('[对齐] 四项对齐都带快捷键 data-tooltip',
+  record('[对齐] 四项对齐都带快捷键无障碍说明',
     !!alignSnapshot && ['⌘ + Shift + L', '⌘ + Shift + E', '⌘ + Shift + R', '⌘ + Shift + J'].every((shortcut, index) => alignSnapshot.pressed[index].tooltip === shortcut),
     alignSnapshot ? alignSnapshot.pressed.map((item) => item.tooltip).join(' | ') : '')
   record('[对齐] 对齐项与缩进项之间有分隔符', !!alignSnapshot && alignSnapshot.separator)
@@ -374,9 +376,9 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
     const decrease = find('减少缩进')
     return {
       increaseDisabled: increase?.disabled,
-      increaseTooltip: increase?.getAttribute('data-tooltip'),
+      increaseTooltip: increase?.getAttribute('aria-description'),
       decreaseDisabled: decrease?.disabled,
-      decreaseTooltip: decrease?.getAttribute('data-tooltip'),
+      decreaseTooltip: decrease?.getAttribute('aria-description'),
       help: !!increase?.querySelector('.lark-doc-block-align-help'),
       helpLabel: increase?.querySelector('.lark-doc-block-align-help')?.getAttribute('aria-label'),
     }
@@ -414,7 +416,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
     const buttons = [...document.querySelectorAll('.lark-doc-bubble-align-menu button[role="menuitem"]')]
     const increase = buttons.find((item) => item.textContent.includes('增加缩进'))
     const help = increase?.querySelector('.lark-doc-block-align-help')
-    return { disabled: increase?.disabled, tooltip: increase?.getAttribute('data-tooltip'), help: !!help, ariaLabel: help?.getAttribute('aria-label') }
+    return { disabled: increase?.disabled, tooltip: increase?.getAttribute('aria-description'), help: !!help, ariaLabel: help?.getAttribute('aria-label') }
   })
   record('[缩进] 达到最大缩进时「增加缩进」disabled 并给出上限说明',
     maxIndent.disabled === true && maxIndent.tooltip === '当前内容块已达最大缩进层级',

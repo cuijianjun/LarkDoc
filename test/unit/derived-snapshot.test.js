@@ -37,6 +37,31 @@ const persisted = (value) => JSON.parse(JSON.stringify(value))
 const baseline = () => persisted(createDerivedSnapshot(sampleDoc()))
 
 describe('P7-03 derived snapshot: creation', () => {
+  it('persists visible heading numbers and rejects stale numbering snapshots', () => {
+    const doc = nodeFromJSON([
+      { type: 'heading', attrs: { level: 1, numbering: true, blockId: 'first' }, content: [{ type: 'text', text: '你好' }] },
+      { type: 'heading', attrs: { level: 1, numbering: true, blockId: 'second' }, content: [{ type: 'text', text: '我也好' }] },
+    ])
+    const snapshot = persisted(createDerivedSnapshot(doc))
+    expect(snapshot.outline.map(item => item.text)).toEqual(['1. 你好', '2. 我也好'])
+    const changed = doc.toJSON()
+    changed.content[0].attrs.numberingStart = 5
+    expect(validateDerivedSnapshot(snapshot, changed)).toBeNull()
+    changed.content[0].attrs.numberingStart = null
+    changed.content[0].attrs.numbering = false
+    expect(validateDerivedSnapshot(snapshot, changed)).toBeNull()
+    expect(validateDerivedSnapshot({ ...snapshot, v: 1 }, doc.toJSON())).toBeNull()
+    expect(validateDerivedSnapshot({ ...snapshot, v: 2 }, doc.toJSON())).toBeNull()
+    const newLevel = doc.toJSON()
+    newLevel.content[0].attrs.numberingLevel = 1
+    expect(validateDerivedSnapshot(snapshot, newLevel)).toBeNull()
+  })
+  it.each([['mention', 'name', '小明', '小红'], ['emoji', 'name', 'smile', 'check'], ['inlineMath', 'latex', 'x', 'y']])('invalidates %s heading text when its inline attributes change', (type, key, before, after) => {
+    const doc = nodeFromJSON([{ type: 'heading', attrs: { level: 1 }, content: [{ type, attrs: { [key]: before } }] }])
+    const snapshot = createDerivedSnapshot(doc), changed = doc.toJSON()
+    changed.content[0].content[0].attrs[key] = after
+    expect(validateDerivedSnapshot(snapshot, changed)).toBeNull()
+  })
   it('captures the outline from the document structure alone, without editor state or decorations', () => {
     const doc = sampleDoc()
     const snapshot = createDerivedSnapshot(doc)
@@ -229,7 +254,7 @@ describe('P7-03 derived snapshot: localStorage leg shape gate', () => {
   // 必须是 ESM 侧接受集合的超集 —— 否则一条腿会把另一条腿写进去的快照丢掉。
   it('accepts everything createDerivedSnapshot produces and rejects malformed shapes', () => {
     expect(isValidDerivedSnapshot(persisted(createDerivedSnapshot(sampleDoc())))).toBe(true)
-    expect(isValidDerivedSnapshot({ v: 1, blockCount: 1, fingerprint: 0, outline: [] })).toBe(true)
+    expect(isValidDerivedSnapshot({ v: DERIVED_SNAPSHOT_VERSION, blockCount: 1, fingerprint: 0, outline: [] })).toBe(true)
 
     for (const value of [null, undefined, 0, 'x', [], {}, { v: 1 }, { v: '1', blockCount: 1, fingerprint: 0, outline: [] },
       { v: 1, blockCount: -1, fingerprint: 0, outline: [] },

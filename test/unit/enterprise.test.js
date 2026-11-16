@@ -97,13 +97,13 @@ describe('真值表：9 项、逐项来自 17 §17.4.2', () => {
     }
   })
 
-  it('派生的 CommandDef 全部 tier skip / plus false / group 正确', () => {
+  it('派生的 CommandDef 启用应用预览 / plus false / group 正确', () => {
     for (const item of ENTERPRISE_MENU_ITEMS) {
       const command = enterpriseCommandOf(item.menuId, 'pim')
       expect(command.id).toBe(item.menuId)
       expect(command.label).toBe(item.label)
       expect(command.category).toBe(item.category)
-      expect(command.tier).toBe('skip')
+      expect(command.tier).toBe('required')
       expect(command.plus).toBe(false)
       expect(command.group).toBe('pim')
     }
@@ -214,11 +214,11 @@ describe('渲染：9 个变体是同一种置灰卡，payload 一个字段都不
 describe('命令表接线：菜单可见、但不可执行', () => {
   const at = (id) => COMMANDS.findIndex((item) => item.id === id)
 
-  it('保留企业卡兼容；本地原生议程独立启用，其余服务仍 skip', () => {
+  it('保留企业卡兼容；议程原生启用，其余入口打开应用预览', () => {
     for (const item of ENTERPRISE_MENU_ITEMS) {
       const command = COMMANDS[at(item.menuId)]
       expect(command).toBeTruthy()
-      expect(command.tier).toBe(item.menuId === 'agenda' ? 'required' : 'skip')
+      expect(command.tier).toBe('required')
       expect(command.label).toBe(item.label)
       expect(command.category).toBe(item.category)
     }

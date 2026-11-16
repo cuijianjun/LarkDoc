@@ -48,7 +48,7 @@ async function main() {
       times: !!document.querySelector('.lark-doc-reminder-times'),
       layer: !!document.querySelector('.lark-doc-reminder-layer'),
     }))
-    record('关闭态只保留原生 layer，浮层节点真实摘除', initial.layer && !initial.popover && !initial.times)
+    record('冷关闭态不加载提醒界面且浮层不在 DOM', !initial.layer && !initial.popover && !initial.times)
 
     await page.locator('.lark-doc-reminder-chip').click()
     await page.waitForTimeout(250)

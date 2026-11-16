@@ -91,16 +91,14 @@ const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/comma
 const expectedCommandIds = [
   'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
-  // 🔴 这里只列**菜单里真的能用**的项。视频或文件 `file`、电子表格 `sheet`、
-  // 多维表格 5 条、绘图 3 条（思维导图 / 流程图 / UML 图）、投票 `poll` 共 11 条
-  // 在 master 上只有块定义、没有插入链路，已从命令表摘掉；块类型本身仍在，
-  // 老文档正文照旧渲染（见 core/commands/index.js 文件头）。
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
+  // 外部应用预览保留一个多维表格入口，不重复暴露应用内视图。
   'inlineMath', 'blockMath', 'template', 'ai',
+  'sheet', 'bitable', 'whiteboard', 'mindMap', 'flowChart', 'umlDiagram',
   // P4-04：3 个按钮插在三条 mention 之前（03 §3.4 ④-4 组序：按钮 972 < 团队协作 1516）。
   'open_link', 'duplicate_page', 'follow_page',
   // P4-01 / P4-02a / P4-02b 补进来的 5 条（03 §3.4 ⑦ 的位置），同样是字面量：谁动顺序谁改两处。
-  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event',
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event',
   // P5-06：`agenda` 是 ⑦ 团队协作第 10 项（y 1836，紧跟日程 1804）。
   'agenda',
   // P5-06：⑧ 文档管理 2 项（y 1900 / 1932）。

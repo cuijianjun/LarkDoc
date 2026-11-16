@@ -115,10 +115,11 @@ function exportTable(rows) {
 }
 
 /** Known atoms become portable semantic content; unknown payloads remain on the compatibility path. */
-function portableBlock(node) {
+function portableBlock(node, options) {
   const attrs = node.attrs || {}
+  const portable = child => portableBlock(child, options)
   if (BLOCK_SKIP.includes(node.type)) return []
-  if (['callout', 'columns', 'column', 'details', 'detailsContent'].includes(node.type)) return childrenOf(node).flatMap(portableBlock)
+  if (['callout', 'details', 'detailsContent'].includes(node.type) || (options?.format !== 'word' && ['columns', 'column'].includes(node.type))) return childrenOf(node).flatMap(portable)
   if (node.type === 'detailsSummary') return [{ ...node, type: 'paragraph' }]
   if (['linkEmbed', 'webEmbed', 'bookmark', 'fileBlock'].includes(node.type)) {
     const href = attrs.href || attrs.url || attrs.src || attrs.originalSrc || ''
@@ -130,7 +131,7 @@ function portableBlock(node) {
     if (desc) result.push(exportParagraph(desc))
     return result
   }
-  if (node.type === 'blockMath') return [{ type: 'codeBlock', attrs: { language: 'latex' }, content: [{ type: 'text', text: exportText(attrs.latex) }] }]
+  if (node.type === 'blockMath' && options?.format !== 'word') return [{ type: 'codeBlock', attrs: { language: 'latex' }, content: [{ type: 'text', text: exportText(attrs.latex) }] }]
   if (node.type === 'sheet') {
     const sheet = readSheet(attrs.sheet)
     if (!sheet) return [exportParagraph('[电子表格]')]
@@ -155,10 +156,10 @@ function portableBlock(node) {
     return event ? [event.title, event.dateLine, event.organizerLine?.name, event.location, event.reminderLine].filter(Boolean).map(exportParagraph) : [exportParagraph(attrs.title || '[日程]')]
   }
   if (node.type === 'isv') return [attrs.kind === 'button' ? exportLink(attrs.buttonText || '按钮', attrs.linkUrl) : exportParagraph('[目录导航]')]
-  if (node.type === 'agenda') return childrenOf(node).flatMap(portableBlock)
-  if (node.type === 'agendaItem') return [exportParagraph(`${attrs.durationMinutes} 分钟`), ...childrenOf(node).flatMap(portableBlock)]
+  if (node.type === 'agenda') return childrenOf(node).flatMap(portable)
+  if (node.type === 'agendaItem') return [exportParagraph(`${attrs.durationMinutes} 分钟`), ...childrenOf(node).flatMap(portable)]
   if (node.type === 'agendaTitle') return [{ ...node, type: 'paragraph' }]
-  if (node.type === 'agendaContent') return childrenOf(node).flatMap(portableBlock)
+  if (node.type === 'agendaContent') return childrenOf(node).flatMap(portable)
   if (node.type === 'cardEmbed') {
     const card = readCard(attrs.card)
     const payload = card?.payload || {}
@@ -166,15 +167,15 @@ function portableBlock(node) {
       ...(Array.isArray(payload.fields) ? payload.fields.map(field => exportParagraph([exportText(field.label), exportText(field.value)].filter(Boolean).join('：'))) : []),
       ...(Array.isArray(card?.actions) ? card.actions.filter(action => action.kind === 'open').map(action => exportLink(action.label || action.href, action.href)) : [])]
   }
-  return [{ ...node, ...(Array.isArray(node.content) ? { content: node.content.flatMap(portableBlock) } : {}) }]
+  return [{ ...node, ...(Array.isArray(node.content) ? { content: node.content.flatMap(portable) } : {}) }]
 }
 
 /** Shared JSON boundary for Word/Markdown, including public heading.children and PM nodes. */
-export function normalizeExportDocument(doc) {
+export function normalizeExportDocument(doc, options) {
   const source = typeof doc?.toJSON === 'function' ? doc.toJSON() : doc
   const nodes = Array.isArray(source) ? source : childrenOf(source)
   const flat = flattenHeadingContainers({ type: 'doc', content: nodes.map(node => typeof node?.toJSON === 'function' ? node.toJSON() : node) })
-  return { type: 'doc', content: flat.content.filter(node => node && typeof node === 'object').flatMap(portableBlock) }
+  return { type: 'doc', content: flat.content.filter(node => node && typeof node === 'object').flatMap(node => portableBlock(node, options)) }
 }
 
 /** HTML 里「不产生节点、直接下钻」的容器（marked 的 thead/tbody 就是这种）。 */
@@ -644,7 +645,7 @@ function decodeEntities(value) {
 }
 
 /** 极简 HTML 扫描器：只认「标签 / 文本 / 注释」，不建 DOM、不引依赖。 */
-function scanHtml(html) {
+export function scanHtml(html) {
   const source = String(html || '')
   const roots = []
   const stack = []

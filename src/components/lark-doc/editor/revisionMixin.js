@@ -253,8 +253,11 @@ export default {
       if (!item) return
       // 跳到别的建议后要把它滚进视野，否则点「下一个」看起来什么都没发生。
       try {
+        this.editor.storage?.larkDoc?.projection?.revealPosition?.(item.from)
         const at = this.editor.view.domAtPos(item.from)
-        const node = at.node && at.node.nodeType === 3 ? at.node.parentNode : at.node
+        const direct = this.editor.view.nodeDOM?.(item.from) || at.node
+        const node = direct && direct.nodeType === 3 ? direct.parentNode : direct
+        this.editor.storage?.larkDoc?.projection?.revealNode?.(node)
         if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center' })
       } catch (error) {
         // 滚不动不影响点亮结果，静默。

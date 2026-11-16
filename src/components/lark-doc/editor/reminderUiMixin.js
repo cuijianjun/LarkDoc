@@ -1,4 +1,4 @@
-import { createReminder } from '../../../ui/reminder'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -31,7 +31,7 @@ export default {
       if (this._reminderUi) return
       const host = this.$refs.reminderHost
       if (!host) return
-      this._reminderUi = createReminder({
+      this._reminderUi = createLazyView(() => import('../../../ui/reminder'), 'createReminder', {
         host,
         handlers: {
           onShiftMonth: (step) => this.shiftReminderMonth(step),
@@ -50,7 +50,7 @@ export default {
           onCalendarMode: mode => this.setReminderCalendarMode(mode),
           onChoosePeriod: value => this.chooseReminderPeriod(value),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, onReady: () => this.positionReminderPopover() })
       this._reminderBoundEditor = this.editor
       this._reminderBoundEditor.on('transaction', this.onReminderTransaction)
       this.refreshReminder()

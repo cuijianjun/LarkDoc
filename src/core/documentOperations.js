@@ -2,7 +2,7 @@ import { Fragment } from '@tiptap/pm/model'
 import { moveDepthAllowed } from './blocks/container-depth'
 import { MENTION_KINDS } from './blocks/mention'
 import { REMINDER_REPEATS, REMINDER_AT_PATTERN, REMINDER_OFFSETS } from './blocks/reminder'
-import { isEmojiGlyph } from './emoji/catalog'
+import { isEmojiGlyph } from './emoji/lookup'
 import { safeLinkCardMeta } from './embed/bookmark'
 import { isImageCrop, isImageDimension, parseImageCrop } from './media/image-crop'
 
@@ -109,7 +109,8 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
     // 标题编号：开关是布尔，起点是 1..999 的整数或不设（null = 继续）。
     else if (key === 'numbering') valid = typeof value === 'boolean'
-    else if (key === 'numberingStart') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= HEADING_NUMBER_MAX)
+    else if (key === 'numberingStart') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= HEADING_VALUE_MAX)
+    else if (key === 'numberingLevel') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= 9)
     // 列表项起点（等价 <li value>）：null = 继续前序，数字 = 从该值起算。
     else if (key === 'numberStart') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= HEADING_NUMBER_MAX)
     else if (key === 'target') valid = ['_blank', '_self'].includes(value)
@@ -162,31 +163,7 @@ export function flattenHeadingContainers(json) {
  * - 纯函数：不修改入参；对已是容器形态的输入幂等（既有 children 原样保留）。
  * - 非 doc 顶层 JSON 直通返回；聚合结果继续由 validateDocument 全量校验。
  */
-export function aggregateHeadingContainers(json) {
-  if (!json || typeof json !== 'object' || json.type !== 'doc' || !Array.isArray(json.content)) return json
-  const headingLevel = (node) => (node && node.type === 'heading' ? Number(node.attrs && node.attrs.level) || 1 : Infinity)
-  const build = (blocks) => {
-    const result = []
-    let index = 0
-    while (index < blocks.length) {
-      const block = blocks[index]
-      if (!block || block.type !== 'heading') { result.push(block); index += 1; continue }
-      const level = headingLevel(block)
-      // 已聚合输入的既有 children 原样保留在前（幂等）；分节内的后续块递归聚合后追加。
-      const children = Array.isArray(block.children) ? block.children.slice() : []
-      let end = index + 1
-      while (end < blocks.length && headingLevel(blocks[end]) > level) end += 1
-      if (end > index + 1) children.push(...build(blocks.slice(index + 1, end)))
-      const next = { ...block }
-      if (children.length) next.children = children
-      else delete next.children
-      result.push(next)
-      index = end
-    }
-    return result
-  }
-  return { ...json, content: build(json.content) }
-}
+export { aggregateHeadingContainers } from './documentJSON'
 
 /**
  * 未知块占位还原（P1-03）：unknownBlock → payload 内原始 JSON，导出侧保真出口。
@@ -198,25 +175,7 @@ export function aggregateHeadingContainers(json) {
  * - 还原结果可能仍含未知 type（正是原始形态），消费方不得再过 validateDocument。
  * - 纯函数：不修改入参；heading.children 容器形态同步递归。
  */
-export function restoreUnknownBlocks(json) {
-  if (!json || typeof json !== 'object') return json
-  const walk = (node) => {
-    if (Array.isArray(node)) return node.map(walk)
-    if (!node || typeof node !== 'object') return node
-    const next = { ...node }
-    if (Array.isArray(next.content)) next.content = next.content.map(walk)
-    if (Array.isArray(next.children)) next.children = next.children.map(walk)
-    if (next.type !== 'unknownBlock') return next
-    const payload = next.attrs && next.attrs.payload
-    if (typeof payload !== 'string' || !payload) return next
-    try {
-      const restored = JSON.parse(payload)
-      if (restored && typeof restored === 'object' && typeof restored.type === 'string' && restored.type !== 'unknownBlock') return restored
-    } catch (_) { /* payload 损坏 → 保留占位 */ }
-    return next
-  }
-  return walk(json)
-}
+export { restoreUnknownBlocks } from './documentJSON'
 
 /** 全量校验 Tiptap JSON（节点/属性/深度/规模白名单）并返回规范化 JSON，导入与快照恢复的必经入口。 */
 export function validateDocument(json, schema) {
@@ -224,8 +183,14 @@ export function validateDocument(json, schema) {
   json = flattenHeadingContainers(json)
   if (!json || json.type !== 'doc') throw new Error('请输入有效的 Tiptap 文档 JSON')
   let count = 0
+  let textCount = 0
   function visit(item, depth) {
-    if (!item || typeof item !== 'object' || depth > 100 || ++count > 100000) throw new Error('文档结构过深或过大')
+    if (!item || typeof item !== 'object' || depth > 100) throw new Error('文档结构过深或过大')
+    if (item.type === 'documentSegment') throw new Error('内部文档分段不能作为公开正文导入')
+    // A text paragraph has two nodes. Sharing the structural budget with its
+    // text leaf rejected the supported 52k-block import before rendering began.
+    // Keep both bounded, without increasing the existing structural/depth caps.
+    if (item.type === 'text' ? ++textCount > 100000 : ++count > 100000) throw new Error('文档结构过深或过大')
     const type = schema.nodes[item.type]
     // Official/provider agenda payloads predate our local editable tree; retain them losslessly.
     const externalAgenda = item.type === 'agenda' && (typeof item.attrs?.agendaId === 'string' || Array.isArray(item.attrs?.items) || Array.isArray(item.content) && item.content.some(child => child?.type === 'agenda_item'))
@@ -280,7 +245,7 @@ export function sanitizeHTML(html) {
   container.innerHTML = html
   const tags = new Set(['P', 'DIV', 'SPAN', 'MARK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'PRE', 'SUB', 'SUP', 'BLOCKQUOTE', 'HR', 'UL', 'OL', 'LI', 'A', 'IMG', 'FIGURE', 'FIGCAPTION', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'DETAILS', 'SUMMARY', 'LABEL', 'INPUT'])
   const dangerous = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META', 'BASE', 'FRAME', 'FRAMESET'])
-  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-code-wrap', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'data-has-time', 'data-notify-offset', 'class'])
+  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-code-wrap', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-numbering-level', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'data-has-time', 'data-notify-offset', 'class'])
   for (const name of ['data-revision-id', 'data-revision-kind', 'data-revision-author', 'data-deletion-revision-id', 'data-deletion-author']) attributes.add(name)
   for (const name of ['data-natural-width', 'data-natural-height']) attributes.add(name)
   for (const name of ['data-item-id', 'data-duration-minutes']) attributes.add(name)
@@ -413,59 +378,64 @@ export function findTextMatches(doc, query, ranges = null) {
   if (typeof query !== 'string' || !query) return []
   const matches = []
   const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-  const scan = (node, pos) => {
-    // 文本 Mark 不改变位置；叶节点占位防止跨公式/Emoji 错配。
-    const value = node.textBetween(0, node.content.size, '', '\ufffc')
+  const occurrences = (value, push) => {
     pattern.lastIndex = 0
-    let match = pattern.exec(value)
-    while (match) {
-      matches.push({ from: pos + 1 + match.index, to: pos + 1 + match.index + match[0].length })
-      match = pattern.exec(value)
+    let match
+    while ((match = pattern.exec(value))) push(match.index, match[0].length)
+  }
+  const scan = (node, pos) => {
+    if (['image', 'codeBlock'].includes(node.type?.name) && typeof node.attrs?.caption === 'string') {
+      occurrences(node.attrs.caption, (textFrom, length) => matches.push({ from: pos, to: pos + node.nodeSize, attribute: 'caption', textFrom, textTo: textFrom + length }))
     }
+    if (!node.isTextblock) return true
+    // Inline atoms occupy one position and cannot join two text fragments.
+    occurrences(node.textBetween(0, node.content.size, '', '\ufffc'), (index, length) => matches.push({ from: pos + 1 + index, to: pos + 1 + index + length }))
+    return false
   }
-  if (Array.isArray(ranges) && ranges.length) {
-    // nodesBetween 会带出与区间相交的**整个**文本块，边界半截的块也在内 —— 与脏区
-    // 已经扩张到块边界的前提一致，不会漏算半块里的命中。
-    ranges.forEach((range) => {
-      doc.nodesBetween(range.from, range.to, (node, pos) => {
-        if (node.isTextblock) { scan(node, pos); return false }
-        return true
-      })
-    })
-    return matches
-  }
-  doc.descendants((node, pos) => {
-    if (!node.isTextblock) return
-    scan(node, pos)
-  })
+  if (Array.isArray(ranges) && ranges.length) ranges.forEach(range => doc.nodesBetween(range.from, range.to, scan))
+  else doc.descendants(scan)
   return matches
 }
 
 /** 替换查找命中：默认替换当前/首个匹配，all=true 替换全部；返回替换数量。 */
-export function replaceText(editor, query, replacement, all = false) {
+export function replaceText(editor, query, replacement, all = false, preparedMatches = null) {
   if (!editor.isEditable || typeof replacement !== 'string') return 0
-  const matches = findTextMatches(editor.state.doc, query)
+  const matches = preparedMatches || findTextMatches(editor.state.doc, query)
   const selection = editor.state.selection
   const current = matches.find((match) => match.from === selection.from && match.to === selection.to)
     || matches[editor.storage?.larkDoc?.activeIndex || 0] || matches[0]
   const selected = all ? matches : current ? [current] : []
   if (!selected.length) return 0
   const tr = editor.state.tr
-  selected.slice().reverse().forEach(({ from, to }) => {
+  let count = 0
+  selected.slice().reverse().forEach(({ from, to, attribute, textFrom, textTo }) => {
+    if (attribute) {
+      const node = tr.doc.nodeAt(from), value = node?.attrs.caption
+      if (attribute !== 'caption' || !['image', 'codeBlock'].includes(node?.type.name) || typeof value !== 'string' || editor.storage?.larkDocRevisionTracker?.active) return
+      const caption = value.slice(0, textFrom) + replacement + value.slice(textTo)
+      if (caption.length > 100000 || caption.includes('\u0000')) return
+      tr.setNodeMarkup(from, null, { ...node.attrs, caption })
+      count += 1
+      return
+    }
+    count += 1
     const marks = tr.doc.resolve(from).marks()
     if (replacement) tr.replaceWith(from, to, editor.state.schema.text(replacement, marks))
     else tr.delete(from, to)
   })
-  editor.view.dispatch(tr)
-  return selected.length
+  if (count) editor.view.dispatch(tr)
+  return count
 }
 
 /** 把 [from, to) 的完整块整体移动到 target 位置；结构非法时返回 false 不动文档。 */
 export function moveBlockRange(editor, from, to, target) {
-  const { doc } = editor.state
+  let { doc } = editor.state
   if (!editor.isEditable || ![from, to, target].every(Number.isInteger) || from < 0 || from >= to || to > doc.content.size || target < 0 || target > doc.content.size || (target >= from && target <= to)) return false
+  const tr = editor.state.tr
+  const mapped = editor.storage?.larkDoc?.pagedView?.prepareBlockRange(tr, [from, to, target])
+  if (mapped) { [from, to, target] = mapped; doc = tr.doc }
   // P1-05：容器嵌套深度兜底判定（拖拽 / 上移下移共用入口）。
-  if (!moveDepthAllowed(editor, from, to, target)) return false
+  if (!moveDepthAllowed({ state: { doc } }, from, to, target)) return false
   const start = doc.resolve(from)
   const end = doc.resolve(to)
   const dest = doc.resolve(target)
@@ -482,93 +452,135 @@ export function moveBlockRange(editor, from, to, target) {
     filler = Fragment.from(empty)
     if (!start.parent.canReplace(first, last, filler)) return false
   }
-  const tr = editor.state.tr.replaceWith(from, to, filler)
-  const insertAt = tr.mapping.map(target, target > to ? -1 : 1)
-  const mapped = tr.doc.resolve(insertAt)
-  if (!mapped.parent.canReplace(mapped.index(), mapped.index(), slice.content)) return false
+  const step = tr.steps.length
+  tr.replaceWith(from, to, filler)
+  const insertAt = tr.mapping.slice(step).map(target, target > to ? -1 : 1)
+  const destination = tr.doc.resolve(insertAt)
+  if (!destination.parent.canReplace(destination.index(), destination.index(), slice.content)) return false
   tr.insert(insertAt, slice.content)
   tr.doc.check()
   editor.view.dispatch(tr)
   return true
 }
 
-/** 收集页面级标题大纲（排除容器内标题）；返回 [{ pos, level, text }]。 */
-export function collectOutline(doc) {
-  const result = []
-  doc.descendants((node, pos) => {
-    if (node.type.name !== 'heading') return
-    const resolved = doc.resolve(pos)
-    const hiddenByContainer = Array.from({ length: resolved.depth }, (_, index) => resolved.node(index + 1).type.name)
-      .some((type) => ['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'].includes(type))
-    if (!hiddenByContainer) result.push({ pos, level: node.attrs.level, text: node.textContent })
+/** 目录只取可见行内文字：软换行分词，原子节点不能像 textContent 一样消失。 */
+export function headingOutlineText(node) {
+  return node.textBetween(0, node.content.size, ' ', leaf => {
+    const type = leaf.type.name, attrs = leaf.attrs
+    // 表情的 DOM 输出规格是 [tag, attrs, glyph]，直接取同一份字形，不创建 DOM。
+    if (type === 'emoji') return leaf.type.spec.toDOM(leaf)[2]
+    return attrs.name || attrs.latex || (type === 'mention' ? '未知' : ' ')
   })
+}
+
+/** 只遍历块元信息；分页节点透明，隔离容器拥有自己的编号队列。 */
+function collectHeadingEntries(doc) {
+  const result = []
+  const walk = (parent, start, scope, hidden) => parent.forEach((node, offset) => {
+    const pos = start + offset
+    if (node.type.name === 'heading') result.push({ pos, level: node.attrs.level, attrs: node.attrs, node, scope, hidden })
+    if (!node.isTextblock && !node.isLeaf) walk(node, pos + 1, HEADING_NUMBER_CONTAINERS.has(node.type.name) ? node : scope, hidden || isolatedHeadingContainers.has(node.type.name))
+  })
+  if (doc) walk(doc, 0, null)
   return result
 }
 
-const isolatedHeadingContainers = new Set(['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'])
-
-/*
- * —— 标题编号（对齐飞书）——
- *
- * 飞书的「标题编号」不是一个独立的编号系统，而是「把标题块设为有序列表」：
- * 开放平台模型里就是 ParagraphStyle{ headingLevel: 1..9, list: { type: 'number', number } }
- * ——标题和有序列表共用同一套 list 字段。所以这里也只加两个属性：
- *
- *   numbering: false | true        // 是否显示编号（飞书新建标题默认无编号）
- *   numberingStart: null | number  // 「重新开始编号 / 设置编号的值」的起点，null = 继续
- *
- * 「继续标题编号」= numberingStart 清成 null（所以它在已经是继续态时是禁用的）。
- * 编号值本身不落库：由前序同级标题算出来，删除/移动/插入会自动更新（飞书同款行为）。
- */
-export const HEADING_NUMBER_MAX = 999
-
-/**
- * 把一串层级计数拼成飞书样式的编号。
- *
- * H1 → `1.`（带尾点）；H2 → `1.1`；H3 → `1.1.1`（多级不带尾点）。
- * 前导 0 会被丢掉：文档直接从 H2 开始时显示 `1.` 而不是 `0.1`。
- */
-export function formatHeadingNumber(numbers) {
-  if (!Array.isArray(numbers) || !numbers.length) return ''
-  let first = 0
-  while (first < numbers.length - 1 && !numbers[first]) first += 1
-  const parts = numbers.slice(first)
-  return `${parts.join('.')}${parts.length === 1 ? '.' : ''}`
+/** 正文与目录消费同一编号结果，编号不写入标题文字。 */
+export function collectOutline(doc) {
+  return collectOutlineState(doc).outline
 }
 
-/**
- * 推进一个编号标题对计数器的影响，返回该标题的编号信息。
- *
- * 这是「编号怎么长」的**唯一**实现：全文扫描（computeHeadingNumbers）与
- * P7-01 的局部重扫（按脏区续算）都调它，避免两套规则各自漂移。
- * `counters[0]` 不使用（层级从 1 起），长度固定 10。
- */
-export function advanceHeadingCounters(counters, node) {
-  const level = Math.max(1, Math.min(9, Number(node.attrs?.level) || 1))
-  // 更深层的计数归零：出现 H2 之后，之前的 H3 序列不再影响新的 H3。
-  for (let deeper = level + 1; deeper <= 9; deeper += 1) counters[deeper] = 0
-  const start = node.attrs?.numberingStart
-  if (Number.isInteger(start) && start > 0) counters[level] = Math.min(HEADING_NUMBER_MAX, start) - 1
-  counters[level] += 1
-  const numbers = counters.slice(1, level + 1)
-  return { label: formatHeadingNumber(numbers), level, counters: numbers.slice() }
-}
-
-/**
- * 扫描整篇文档，返回 `Map<pos, { label, level, counters }>`。
- *
- * 只统计「带编号的标题」：正文有序列表由浏览器 list-style 自己排，两者互不干扰。
- * `numberingStart` 生效时把该层计数器压回起点，后续同级兄弟从它继续（飞书语义）。
- */
-export function computeHeadingNumbers(doc) {
-  const result = new Map()
-  if (!doc) return result
-  const counters = new Array(10).fill(0)
-  doc.descendants((node, pos) => {
-    if (node.type.name !== 'heading' || !node.attrs || !node.attrs.numbering) return true
-    result.set(pos, advanceHeadingCounters(counters, node))
-    return true
+/** Reuse the same traversal for menu heading limits, including hidden containers. */
+export function collectOutlineState(doc) {
+  const headings = collectHeadingEntries(doc), numbers = computeHeadingNumbers(doc, headings)
+  let maxHeadingLevel = 0
+  const outline = []
+  headings.forEach(item => {
+    maxHeadingLevel = Math.max(maxHeadingLevel, item.level)
+    if (item.hidden) return
+    const text = headingOutlineText(item.node), label = numbers.get(item.pos)?.label
+    outline.push({ pos: item.pos, level: item.level, text: label ? `${label} ${text || '无标题'}` : text })
   })
+  return { outline, maxHeadingLevel }
+}
+
+const isolatedHeadingContainers = new Set(['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'])
+// 与飞书 HeadingModule.getContainer 的页面/高亮块/表格/单元格边界对应；目录隐藏规则独立。
+export const HEADING_NUMBER_CONTAINERS = new Set(['callout', 'table', 'tableCell', 'tableHeader'])
+
+// 标题可设九位整数；旧列表入口仍保持原有上限，不能只放大存值而不改列表显示。
+export const HEADING_NUMBER_MAX = 999
+export const HEADING_VALUE_MAX = 999999999
+
+export function formatHeadingNumber(numbers) {
+  return numbers.length ? `${numbers.join('.')}${numbers.length === 1 ? '.' : ''}` : ''
+}
+
+/**
+ * REA v52：字号 level 与编号层级 numberingLevel 分离。按隔离容器分队列，
+ * 队列内实际出现的标题级别密集映射；独立重启队列不消费外层续号。
+ * 只存原始元信息；同步调用排空，异步目录通过 yield 保持可取消与分片。
+ */
+export function* iterateHeadingNumbers(headings) {
+  const scopes = new Map(), numbers = new Map(), items = []
+  for (let index = 0; index < headings.length; index++) {
+    const entry = headings[index], attrs = entry.attrs
+    if (attrs.numbering) {
+      let context = scopes.get(entry.scope)
+      if (!context) { context = { queues: [], active: 0, previous: new Map() }; scopes.set(entry.scope, context) }
+      const { queues, previous } = context
+      const item = { entry, previous: previous.get(entry.level) }
+      items.push(item)
+      for (const level of previous.keys()) if (level > entry.level) previous.delete(level)
+      previous.set(entry.level, item)
+      if (attrs.numberingLevel || !queues.length) {
+        queues.push({ items: [item], levels: 1 << entry.level }); context.active = queues.length - 1
+      } else {
+        for (let at = context.active; at >= 0; at--) {
+          const first = queues[at].items[0].entry
+          const accepts = entry.level >= first.level || !first.attrs.numberingLevel
+          const independent = entry.level === first.level && first.attrs.numberingLevel && attrs.numberingStart
+          if (accepts && !independent) { queues[at].items.push(item); queues[at].levels |= 1 << entry.level; context.active = at; break }
+          if (!at) { queues.push({ items: [item], levels: 1 << entry.level }); context.active = queues.length - 1 }
+        }
+      }
+    }
+    if (index % 128 === 127) yield
+  }
+  for (const { queues } of scopes.values()) {
+    let regular = [], independent = []
+    for (const queue of queues) {
+      // 收集时记录九级位图；预处理最多九步，避免巨型队列一次map/sort。
+      const depths = new Map()
+      let base = queue.items[0].entry.attrs.numberingLevel || 1
+      for (let level = 1; level <= 9; level++) if (queue.levels & (1 << level)) depths.set(level, base++)
+      let custom = false
+      for (const item of queue.items) {
+        const { entry } = item, { attrs } = entry
+        if (attrs.numberingLevel) custom = true
+        const next = [...(custom ? independent : regular)], depth = depths.get(entry.level)
+        if (next.length < depth) while (next.length < depth) next.push(1)
+        else { next.length = depth; next[depth - 1]++ }
+        if (attrs.numberingStart) next[depth - 1] = Math.min(HEADING_VALUE_MAX, attrs.numberingStart)
+        numbers.set(item, next)
+        if (custom) independent = next
+        else regular = next
+        yield
+      }
+    }
+  }
+  // 队列处理顺序不同于正文顺序；所有队列落定后再比较前一个同级标题。
+  for (const item of items) {
+    const next = numbers.get(item), before = numbers.get(item.previous), { entry } = item
+    const sequential = before && before.length === next.length && before.slice(0, -1).every((value, index) => value === next[index]) && before[before.length - 1] + 1 === next[next.length - 1]
+    const canContinue = !!before && !sequential && !!(entry.attrs.numberingLevel || entry.attrs.numberingStart)
+    yield { pos: entry.pos, info: { label: formatHeadingNumber(next), level: entry.level, counters: next, canContinue } }
+  }
+}
+
+export function computeHeadingNumbers(doc, headings = collectHeadingEntries(doc)) {
+  const result = new Map()
+  for (const item of iterateHeadingNumbers(headings)) if (item) result.set(item.pos, item.info)
   return result
 }
 
@@ -581,12 +593,12 @@ export function headingNumberAt(doc, pos) {
 }
 
 /** 把越界的编号起点压回合法区间（1..999），null/空串表示「继续」（返回 null）。 */
-export function clampHeadingNumberStart(value) {
+export function clampHeadingNumberStart(value, maximum = HEADING_NUMBER_MAX) {
   // 必须先挡 null：Number(null) === 0 会被误判成合法数字并夹成 1。
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)
   if (!Number.isFinite(number)) return null
-  return Math.max(1, Math.min(HEADING_NUMBER_MAX, Math.round(number)))
+  return Math.max(1, Math.min(maximum, Math.round(number)))
 }
 
 /**
@@ -753,6 +765,7 @@ export function computeOrderedListNumbers(doc) {
   // 每个列表排到第几号（ol 起始 pos → 最后一项的序号），供后面的「继续编号」接号。
   const totals = new Map()
   eachList(doc, 'orderedList', (node, pos, depth, previousListPos) => {
+    depth = ['1', 'a', 'i'].indexOf(node.attrs.type) + 1 || depth
     let start = Number(node.attrs?.start) > 0 ? Number(node.attrs.start) : 1
     if (node.attrs && node.attrs.continueFrom) {
       const prevTotal = totals.get(previousListPos)
@@ -955,6 +968,7 @@ function scanSectionSiblings(parent, startIndex, startChildPos, baseIndent, host
   const hostIsText = hostNode.type.name === 'paragraph' || hostNode.type.name === 'heading'
   let siblingPos = startChildPos
   for (let index = startIndex; index < parent.childCount; index += 1) {
+    if (parent.positionAt) siblingPos = parent.positionAt(index)
     const sibling = parent.child(index)
     const indent = sectionIndent(sibling, previousIndent)
     // 列表在视觉上天然缩进（序号/圆点画在正文列之外），飞书里标题/段落下面
@@ -986,14 +1000,14 @@ export function resolveHeadingSectionMode(doc, pos) {
   // 飞书的章节不属于标题：段落、列表、代码块只要下面挂了子块，折叠与悬停高亮
   // 都按同一套「缩进子树」处理（用户实测：段落 + 缩进代码块也是一个整体）。
   if (!heading || !heading.isBlock) return null
-  const parent = resolved.parent
+  const { parent, index, end } = siblingContext(doc, resolved)
   const scan = scanSectionSiblings(
     parent,
-    resolved.index() + 1,
+    index + 1,
     pos + heading.nodeSize,
     nodeIndent(heading),
     heading,
-    resolved.end(),
+    end,
   )
   const blocks = [sectionBlock(heading, pos, 'heading'), ...scan.blocks]
   // hasContent 的语义是「标题下面还有块」——只挂子标题也算有内容，
@@ -1071,7 +1085,13 @@ export function foldedRange(doc, pos) {
   const resolved = doc.resolve(pos)
   const node = resolved.nodeAfter
   if (!isFoldableNodeAt(resolved, node)) return null
-  return foldRangeOf(node, pos, resolved.parent, resolved.index(), resolved.end())
+  const { parent, index, end } = siblingContext(doc, resolved)
+  return foldRangeOf(node, pos, parent, index, end)
+}
+
+function siblingContext(doc, resolved) {
+  const parent = doc.type.schema.cached.segmentSiblings?.(doc, resolved) || resolved.parent
+  return { parent, index: parent.positionAt ? parent.indexAt(resolved.pos) : resolved.index(), end: parent.positionAt ? doc.content.size : resolved.end() }
 }
 
 /**
@@ -1103,15 +1123,16 @@ export function collectFoldRanges(doc) {
  * 等价于原先每块重算 `doc.resolve(pos)` 再逐层查祖先。
  */
 function walkBlocks(parent, parentStart, isolated, visit) {
+  parent = parent.type.schema.cached.segmentSiblings?.(parent) || parent
   const parentEnd = parentStart + parent.content.size
   let pos = parentStart
   for (let index = 0; index < parent.childCount; index += 1) {
     const child = parent.child(index)
-    const childPos = pos
+    const childPos = parent.positionAt ? parent.positionAt(index) : pos
     pos += child.nodeSize
     const childIsolated = isolated || isolatedHeadingContainers.has(child.type.name)
     visit(child, childPos, index, childIsolated, parent, parentEnd)
-    if (child.content.size) walkBlocks(child, childPos + 1, childIsolated, visit)
+    if (child.content.size && !child.isTextblock) walkBlocks(child, childPos + 1, childIsolated, visit)
   }
 }
 
@@ -1148,11 +1169,18 @@ export function resolveBlockTargetRange(doc, from, to = from) {
       return { from: $from.before(depth), to: $from.after(depth), parentDepth: depth - 1, container: name }
     }
   }
-  const lastIndex = $from.node(0).childCount - 1
-  const startIndex = Math.min($from.index(0), lastIndex)
+  const depth = $from.depth > 0 && $from.node(1).type.name === 'documentSegment' ? 1 : 0
+  const lastIndex = $from.node(depth).childCount - 1
+  const startIndex = Math.min($from.index(depth), lastIndex)
   if (startIndex < 0) return null
-  const endIndex = Math.max(startIndex + 1, Math.min($to.index(0) + Number($to.pos > $to.posAtIndex($to.index(0), 0)), lastIndex + 1))
-  return { from: $from.posAtIndex(startIndex, 0), to: $from.posAtIndex(endIndex, 0), parentDepth: 0, container: null }
+  if (depth && (!$to.depth || $from.node(1) !== $to.node(1))) {
+    const endDepth = $to.depth && $to.node(1).type.name === 'documentSegment' ? 1 : 0
+    const index = $to.index(endDepth), parent = $to.node(endDepth)
+    const end = Math.min(index + Number($to.pos > $to.posAtIndex(index, endDepth)), parent.childCount)
+    return { from: $from.posAtIndex(startIndex, 1), to: $to.posAtIndex(end, endDepth), parentDepth: 0, container: null }
+  }
+  const endIndex = Math.max(startIndex + 1, Math.min($to.index(depth) + Number($to.pos > $to.posAtIndex($to.index(depth), depth)), lastIndex + 1))
+  return { from: $from.posAtIndex(startIndex, depth), to: $from.posAtIndex(endIndex, depth), parentDepth: depth, container: null }
 }
 
 /*
@@ -1226,10 +1254,10 @@ export function createBlockId(taken) {
  * 谁离它更近谁保留原 id —— 这样粘贴在文档**前面**的副本也不会抢走原块的 id，
  * 折叠状态始终留在原来那个块上。
  */
-export function collectBlockIdFixes(doc, previous) {
+export function collectBlockIdFixes(doc, previous, reservedIds) {
   const fixes = []
   if (!doc) return fixes
-  const taken = new Set()
+  const taken = new Set(reservedIds)
   const owner = new Map()
   const oldPositions = new Map()
   if (previous && previous.doc) {
@@ -1251,7 +1279,7 @@ export function collectBlockIdFixes(doc, previous) {
   doc.descendants((node, pos) => {
     if (!BLOCK_ID_TYPES.has(node.type.name)) return true
     const id = node.attrs && node.attrs.blockId
-    if (typeof id !== 'string' || !BLOCK_ID_PATTERN.test(id)) { fixes.push({ pos, id: reissue() }); return true }
+    if (typeof id !== 'string' || !BLOCK_ID_PATTERN.test(id) || reservedIds?.has(id)) { fixes.push({ pos, id: reissue() }); return true }
     if (!owner.has(id)) { taken.add(id); owner.set(id, pos); return true }
     const keeper = owner.get(id)
     const expected = expectedPosition(id)

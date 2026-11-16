@@ -104,7 +104,7 @@ export function createIsvPanel({ host, handlers = {} } = {}) {
         let swatch = colors.get(color.value)
         if (!swatch) { swatch = makeButton('lark-doc-isv-color-item'); activate(swatch, () => handlers.onColor?.(color.value)); colors.set(color.value, swatch) }
         swatch.style.backgroundColor = color.value
-        setAttr(swatch, 'aria-label', color.label); setAttr(swatch, 'title', color.label)
+        setAttr(swatch, 'aria-label', color.label)
         setAttr(swatch, 'aria-pressed', state.color === color.value ? 'true' : 'false')
         swatch.classList.toggle('is-active', state.color === color.value)
         return { node: swatch, on: true }

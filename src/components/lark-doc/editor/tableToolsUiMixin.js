@@ -29,8 +29,8 @@
  */
 import { CellSelection, selectedRect } from '@tiptap/pm/tables'
 import { TextSelection } from '@tiptap/pm/state'
-import { createCellPlusTools } from '../../../ui/cellPlusTools'
-import { createTableTools, createTableBoundaryTools } from '../../../ui/tableTools'
+
+import { createLazyView } from '../../../ui/lazy'
 import { closeHistory } from '@tiptap/pm/history'
 import { isCommandEnabled } from '../larkDocConfig'
 
@@ -69,11 +69,11 @@ export default {
       const boundaryHost = this.$refs.tableBoundaryHost
       if (!toolsHost || !boundaryHost) return
       // v11：统一一条飞书工具条，所有按钮（含下拉）走同一个 onCommand 分发。
-      this._tableToolsUi = createTableTools({
+      this._tableToolsUi = createLazyView(() => import('../../../ui/tableTools'), 'createTableTools', {
         host: toolsHost,
         handlers: { onCommand: (id, value) => this.tableToolbarCommand(id, value) },
-      })
-      this._tableBoundaryUi = createTableBoundaryTools({
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
+      this._tableBoundaryUi = createLazyView(() => import('../../../ui/tableTools'), 'createTableBoundaryTools', {
         host: boundaryHost,
         handlers: {
           onAction: (id) => this.tableBoundaryAction(id),
@@ -86,15 +86,15 @@ export default {
           onKeep: () => this.keepTableBoundaryHover(),
           onClear: () => this.clearTableBoundaryHover(),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       // md 风格交互层（选择条 / 重排 / 横滚）与两条工具条共用挂载时机，
       // 由 tableInteractionMixin 提供实现，这里只负责拉起和销毁。
-      this._cellPlusUi = createCellPlusTools({
+      this._cellPlusUi = createLazyView(() => import('../../../ui/cellPlusTools'), 'createCellPlusTools', {
         host: toolsHost,
         handlers: { onOpen: (button) => {
           if (this.buildCellPlusState().visible) this.openCommandMenu('plus', { currentTarget: button })
         } },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, isOpen: state => !!state.visible })
       this.mountTableOverlays?.()
       this.refreshTableTools()
       this.refreshTableBoundary()
@@ -456,6 +456,7 @@ export default {
       const selection = this.editor?.state.selection
       if (this.blockMenuOpen || this.effectiveReadonly || this.writable?.() === false || !this.featureEnabled('tables') || !this.featureEnabled('insert') || !(selection instanceof TextSelection) || !selection.empty) return { visible: false }
       const $pos = selection.$from
+      if ($pos.parent.type.name !== 'paragraph' || $pos.parent.content.size) return { visible: false }
       for (let depth = $pos.depth; depth > 0; depth -= 1) {
         if (!['tableCell', 'tableHeader'].includes($pos.node(depth).type.name)) continue
         const dom = this.editor.view.nodeDOM($pos.before(depth))

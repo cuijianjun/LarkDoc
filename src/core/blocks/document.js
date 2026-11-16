@@ -1,7 +1,8 @@
 /** 文档级扩展：折叠、搜索、块把手、slash 监听与粘贴网络策略都挂在这个插件上。 */
-import { Extension } from '@tiptap/core'
+import { Extension, Node } from '@tiptap/core'
 import { Plugin } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
+import { DecorationSet } from '@tiptap/pm/view'
 import {
   blockIdAt,
   collectBlockIdFixes,
@@ -13,12 +14,14 @@ import {
   sanitizeHTML,
 } from '../documentOperations'
 import { createNetworkPolicy } from '../policy/network'
-import { createDerivedIndex } from '../derive/index'
-import { applyBlockIdFixes } from './block-fixes'
+import { createDerivedIndex, isTextOnlyChange } from '../derive/index'
+import { applyBlockIdFixes, BLOCK_ID_META, DEFER_BLOCK_ID_META } from './block-fixes'
 import { documentKey } from './document-key'
 import { applyLineStartMarker, verticalBoundarySelection } from './document-helpers'
 import { createDocumentCommands } from './document-commands'
 import { createDocumentDecorations, updateDocumentDecorations } from './document-decorations'
+import { PAGED_IMPORT_META } from '../transactionMetadata'
+import { isCommandEnabled } from '../../components/lark-doc/larkDocConfig'
 
 /**
  * @param {object} options 装配层传下来的全部选项（`config` / 各类回调）
@@ -41,12 +44,20 @@ export function documentExtension(options, injected) {
     priority: 1000,
     // `network` 挂在 storage 上：`LarkDocEditor.setContent` 的载入降级要复用同一实例，
     // 而不是再造一份（策略是纯函数，但两份实例会让「改了配置只生效一半」这种问题查不出来）。
-    addStorage() { return { folded: new Set(), query: '', activeIndex: 0, handleHover: null, network } },
+    addStorage() { return { folded: new Set(), query: '', activeIndex: 0, handleHover: null, network, deferNormalization: !options.collab && !isRemoteTransaction } },
+    addExtensions() {
+      return [Node.create({
+        name: 'documentSegment', group: 'block', content: 'block+', isolating: true, selectable: false,
+        addAttributes() { return { pageId: { default: null, rendered: false } } },
+        renderHTML() { return ['div', 0] },
+      })]
+    },
     addCommands() {
       return createDocumentCommands()
     },
     addKeyboardShortcuts() {
       return {
+        'Mod-Alt-s': () => this.editor.isEditable && (options.isDividerEnabled?.() ?? isCommandEnabled(options.config, 'divider', 'blockStyle')) && this.editor.commands.setHorizontalRule(),
         // 飞书为标题加编号的快捷键：Mac Cmd+Shift+7 / Win Ctrl+Shift+7
         'Mod-Shift-7': () => {
           const { $from } = this.editor.state.selection
@@ -60,6 +71,7 @@ export function documentExtension(options, injected) {
     addProseMirrorPlugins() {
       const storage = this.storage
       const editor = this.editor
+      const validIdDocs = new WeakSet()
       // P0-11（09 §3.7）：派生计算收拢进 DerivedIndex。
       // P7-01 起它是双路径的：`update(tr)` 收集脏区，`decorations()` 有脏区就只重扫脏区
       // （incremental），没有就整份重建（rebuild）—— 搜索词/折叠集合/把手悬停都走 tr meta，
@@ -70,9 +82,18 @@ export function documentExtension(options, injected) {
         // 会用真实事务补上；查询方法对 null doc 有护栏。
         doc: editor.state?.doc ?? null,
         schema: editor.schema,
-        rebuild: (state) => createDocumentDecorations({ state, storage, editor, enabled, options }),
-        incremental: ({ state, previous, ranges }) => updateDocumentDecorations({ state, storage, editor, enabled, options, previous, ranges }),
+        rebuild: (state) => createDocumentDecorations({ state, storage, editor, enabled, options, analysis: storage.pagedView?.readAnalysis(state.doc) }),
+        incremental: ({ state, previous, ranges }) => updateDocumentDecorations({ state, storage, editor, enabled, options, previous, ranges, analysis: storage.pagedView?.readAnalysis(state.doc) }),
+        searchDecorations: (state, previous) => storage.pagedView.updateSearchDecorations(state, storage, previous),
+
       })
+      storage.derivedIndex = derivedIndex
+      const prepareDecorations = async (yieldToMain, check) => {
+        await storage.pagedView?.prepareAnalysis(yieldToMain, check)
+        check()
+        derivedIndex.decorations(editor.state)
+      }
+      storage.prepareDecorations = prepareDecorations
       let lastSlash = ''
       let lastMention = ''
       // 斜杠菜单此刻是否真的开着：handleKeyDown 靠它决定要不要把 ↑↓/Enter 的默认行为
@@ -84,6 +105,40 @@ export function documentExtension(options, injected) {
       // 面板此刻是否真的开着（Esc、组字、切到只读都会让它变 false）。`handleKeyDown`
       // 靠它决定要不要把 ↑↓/Enter/Tab 的默认行为挡掉。
       let mentionActive = false
+      let deferredBlockIdTimer = null
+      let deferredBlockIdKind = null
+      let deferredBlockIdVersion = 0
+      const cancelDeferredBlockIds = () => {
+        deferredBlockIdVersion += 1
+        if (deferredBlockIdTimer == null) return
+        const viewWindow = editor.view?.dom?.ownerDocument?.defaultView
+        if (deferredBlockIdKind === 'idle' && typeof viewWindow?.cancelIdleCallback === 'function') viewWindow.cancelIdleCallback(deferredBlockIdTimer)
+        else clearTimeout(deferredBlockIdTimer)
+        deferredBlockIdTimer = null
+        deferredBlockIdKind = null
+      }
+      const scheduleDeferredBlockIds = () => {
+        if (deferredBlockIdTimer != null) return
+        const version = ++deferredBlockIdVersion
+        const run = async () => {
+          deferredBlockIdTimer = null
+          deferredBlockIdKind = null
+          const current = () => !editor.isDestroyed && !!editor.view && deferredBlockIdVersion === version
+          const gate = editor.storage.larkDoc?.backgroundGate
+          if (gate && !await gate.wait(current)) return
+          if (!current()) return
+          const tr = editor.state.tr
+          if (applyBlockIdFixes(tr, undefined, { batch: storage.deferNormalization })) editor.view.dispatch(tr)
+        }
+        const viewWindow = editor.view?.dom?.ownerDocument?.defaultView
+        if (typeof viewWindow?.requestIdleCallback === 'function') {
+          deferredBlockIdKind = 'idle'
+          deferredBlockIdTimer = viewWindow.requestIdleCallback(run, { timeout: 500 })
+        } else {
+          deferredBlockIdKind = 'timeout'
+          deferredBlockIdTimer = setTimeout(run, 50)
+        }
+      }
       const reportSlash = (view) => {
         const match = enabled('insert') && editor.isEditable && !view.composing && !dismissed ? getSlashMatch(view.state) : null
         slashActive = !!match
@@ -113,10 +168,17 @@ export function documentExtension(options, injected) {
           init: () => null,
           apply: (tr) => {
             const action = tr.getMeta(documentKey)
+            const imported = tr.getMeta(PAGED_IMPORT_META), validated = storage.validatedPagedImport
+            if (validated && imported?.phase === 'complete' && imported.id === validated.id && validated.doc === tr.doc &&
+              tr.getMeta(DEFER_BLOCK_ID_META) && (!isRemoteTransaction || !isRemoteTransaction(tr.getMeta('appendedTransaction') || tr))) validIdDocs.add(tr.doc)
+            const markupRanges = tr.docChanged ? storage.pagedView?.localMarkupRanges(tr) : null
+            const analysisRanges = tr.docChanged ? storage.pagedView?.mapAnalysis(tr, markupRanges) : null
             // 派生索引先行。只有「正文变了」或「本插件的 UI 状态变了」才可能改动装饰的
             // 输入（doc / query / activeIndex / folded / handleHover）：纯选区事务（点击、
             // 方向键、跨块保列）和别家插件的 meta 一律复用缓存，否则每个方向键都要全量重建。
-            derivedIndex.update(tr, { touchesDecorations: tr.docChanged || !!action })
+            const onlySearch = !!action && Object.keys(action).every(key => key === 'search' || key === 'activeIndex' || key === 'reveal')
+            derivedIndex.update(tr, { touchesDecorations: tr.docChanged || !!action && (!onlySearch || action.search !== undefined || storage.folded.size > 0), onlySearch: onlySearch && storage.folded.size === 0 && !!storage.pagedView,
+              markupRanges: storage.folded.size === 0 && analysisRanges ? markupRanges : null, analysisRanges: analysisRanges || [] })
             if (tr.docChanged) { dismissed = false; storage.handleHover = null }
             if (action?.resetFolds) storage.folded.clear()
             if (action?.search !== undefined) { storage.query = action.search; storage.activeIndex = action.activeIndex }
@@ -126,7 +188,7 @@ export function documentExtension(options, injected) {
               const index = foldableIdPositions(tr.doc)
               action.foldIds.forEach((id) => { if (index.has(id)) storage.folded.add(id) })
             }
-            if (action?.reveal) {
+            if (action?.reveal && storage.folded.size) {
               const index = foldableIdPositions(tr.doc)
               Array.from(storage.folded).forEach((id) => {
                 const pos = index.get(id)
@@ -157,20 +219,41 @@ export function documentExtension(options, injected) {
         // 已有 id 的块一字不动，只有缺失/重号的块在事务末尾被重新编号。
         // 注意它必须挂在 plugin spec 顶层，放进 props 里 ProseMirror 不会调用。
         appendTransaction: (transactions, oldState, newState) => {
+          const pageShape = storage.pagedView?.normalize(transactions, oldState, newState)
+          if (pageShape) return pageShape
           if (!transactions.some((transaction) => transaction.docChanged)) return null
           // 协同（P6a / 09 §5.7.2-1）：**远端事务一律不补 blockId**。
           // 补 ID 是随机的，两端各补一次就会"同一块两个 ID"，折叠与评论锚点立刻错位。
           // 判据由 collab 子入口注入（core 不知道 yjs 存在）：任一事务来自远端就整体跳过，
           // 本地那段改动会在本端被补上，再随同步传播给对方。
           const origins = transactions.map(transaction => transaction.getMeta('appendedTransaction') || transaction)
-          if (isRemoteTransaction && origins.some(transaction => isRemoteTransaction(transaction))) return null
+          if (isRemoteTransaction && origins.some(transaction => isRemoteTransaction(transaction))) { cancelDeferredBlockIds(); return null }
+          if (transactions.some(transaction => transaction.getMeta(BLOCK_ID_META))) return null
+          if (transactions.some((transaction) => transaction.getMeta(DEFER_BLOCK_ID_META))) { cancelDeferredBlockIds(); return null }
+          // Text cannot introduce or change block IDs. Trust only documents
+          // already verified here or normalized by the cooperative importer.
+          if (validIdDocs.has(oldState.doc) && transactions.every(tr => !tr.docChanged || tr.steps.length === 1 && isTextOnlyChange(tr.before, tr.steps) || storage.pagedView?.localMarkupRanges(tr))) {
+            validIdDocs.add(newState.doc)
+            return null
+          }
+          const bulkReplace = newState.doc.content.size > 500000 && transactions.some((transaction) => {
+            if (transaction.steps.length !== 1) return false
+            const step = transaction.steps[0]
+            return typeof step.from === 'number' && typeof step.to === 'number'
+              && step.from === 0 && step.to === oldState.doc.content.size
+          })
+          if (bulkReplace && storage.deferNormalization) {
+            cancelDeferredBlockIds()
+            scheduleDeferredBlockIds()
+            return null
+          }
           // 注意 appendMapping 返回 undefined，不能写成 reduce 的累加器。
           const mapping = new Mapping()
           transactions.forEach((transaction) => mapping.appendMapping(transaction.mapping))
           const fixes = collectBlockIdFixes(newState.doc, { doc: oldState.doc, mapping })
-          if (!fixes.length) return null
+          if (!fixes.length) { validIdDocs.add(newState.doc); return null }
           const tr = newState.tr
-          if (!applyBlockIdFixes(tr, fixes)) return null
+          if (!applyBlockIdFixes(tr, fixes, { batch: storage.deferNormalization })) return null
           // 协同绑定会一次同步最终文档。补 ID 仍属于原业务操作，不能用末尾的
           // 非历史标记把整次插入排除出撤销栈；宿主/远端和普通 PM 路径保持原策略。
           if (options.collab && origins.some(transaction => transaction.docChanged && transaction.getMeta('addToHistory') !== false)) {
@@ -193,6 +276,7 @@ export function documentExtension(options, injected) {
             return applyLineStartMarker(view, from)
           },
           handleKeyDown: (view, event) => {
+            if (storage.pagedView?.handleKeyDown(view, event)) return true
             if (enabled('shortcuts') && event.key === 'Backspace' && !view.composing && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && options.onBackspace?.(view)) {
               event.preventDefault()
               return true
@@ -240,9 +324,15 @@ export function documentExtension(options, injected) {
           // 已有 id 的块一字不动，只有缺失/重号的块在事务末尾被重新编号。
           // 派生计算一律走 DerivedIndex（硬规则 13：不许在 props.decorations
           // 里直接全量重扫文档）——具体计算在 document-decorations.js。
-          decorations: (state) => derivedIndex.decorations(state),
+          decorations: (state) => {
+            const base = storage.pagedImport ? DecorationSet.empty : derivedIndex.decorations(state)
+            return storage.pagedView?.decorations(state, base) || base
+          },
         },
-        view: (view) => { reportFloats(view); return { update: reportFloats, destroy: clearFloats } },
+        view: (view) => {
+          reportFloats(view)
+          return { update: (view, previousState) => { storage.pagedView?.syncProjection(view, previousState); reportFloats(view); storage.pagedView?.schedule() }, destroy: () => { cancelDeferredBlockIds(); clearFloats(); if (storage.prepareDecorations === prepareDecorations) delete storage.prepareDecorations } }
+        },
       })]
     },
   })

@@ -24,11 +24,6 @@ export default {
       const node = nodeAtSafe(this.editor?.state?.doc, this.handleRange.from)
       return this.handleBlockNode() === node && node?.type.name === 'paragraph' && node.content.size === 0
     },
-    handleIsTaskList() {
-      if (!this.editor || !this.handleRange) return false
-      const node = nodeAtSafe(this.editor?.state?.doc, this.handleRange.from)
-      return ['taskList', 'taskItem'].includes(node?.type?.name)
-    },
     // 表格是整块目标（resolveBlockTargetRange 已把范围收敛成整表），句柄菜单走表格分支
     handleIsTable() {
       if (!this.editor || !this.handleRange) return false
@@ -37,10 +32,10 @@ export default {
     handleGlyph() {
       if (!this.editor || !this.handleRange) return '＋'
       const doc = this.editor.state.doc
-      const directNode = nodeAtSafe(this.editor?.state?.doc, this.handleRange.from)
+      const directNode = nodeAtSafe(doc, this.handleRange.from)
       const node = this.handleBlockNode() || directNode
       const glyphs = { paragraph: 'T', heading: 'H', bulletList: '•', orderedList: '1≡', taskList: '☑', listItem: '•', blockquote: '❝', codeBlock: '{}', horizontalRule: '≡', callout: '▤', details: '▾', columns: 'Ⅱ', table: '▦', image: '▧' }
-      if (node?.type.name === 'listItem') {
+      if (['listItem', 'taskItem'].includes(node?.type.name)) {
         const $pos = doc.resolve(Math.min(doc.content.size, this.handleRange.from + 1))
         for (let depth = $pos.depth; depth > 0; depth -= 1) {
           const name = $pos.node(depth).type.name
@@ -51,13 +46,18 @@ export default {
       return glyphs[node?.type?.name] || 'T'
     },
     handleIcon() {
-      if (!this.editor || !this.handleRange) return 'plus'
+      return this.handleIconFor(this.handleRange)
+    },
+  },
+  methods: {
+    handleIconFor(range) {
+      if (!this.editor || !range) return 'plus'
       const doc = this.editor.state.doc
-      const directNode = nodeAtSafe(doc, this.handleRange.from)
-      const node = this.handleBlockNode() || directNode
+      const directNode = nodeAtSafe(doc, range.from)
+      const node = this.handleNodeFor(range) || directNode
       let type = node?.type?.name || 'paragraph'
-      if (type === 'listItem') {
-        const $pos = doc.resolve(Math.min(doc.content.size, this.handleRange.from + 1))
+      if (['listItem', 'taskItem'].includes(type)) {
+        const $pos = doc.resolve(Math.min(doc.content.size, range.from + 1))
         for (let depth = $pos.depth; depth > 0; depth -= 1) {
           const name = $pos.node(depth).type.name
           if (['taskList', 'orderedList', 'bulletList'].includes(name)) { type = name; break }
@@ -70,8 +70,6 @@ export default {
         details: 'block-details', columns: 'block-columns', column: 'block-columns', table: 'block-table', image: 'block-image',
       }[type] || 'block-text'
     },
-  },
-  methods: {
     currentBlockRange() {
       if (!this.editor) return null
       const { selection } = this.editor.state
@@ -82,6 +80,7 @@ export default {
       const selected = this.currentBlockRange()
       if (!selected) return this.handleRange
       const { selection, doc } = this.editor.state
+      if (this.handleIsTable || this._tableHandleContext?.doc === doc) return this.handleRange || selected
       if (!selection.empty) {
         const start = doc.resolve(selected.from)
         const end = doc.resolve(selected.to)
@@ -97,63 +96,144 @@ export default {
     rangeAt(from, to = from) {
       // 上下层包含规则统一收敛在 documentOperations.resolveBlockTargetRange：
       // 表格整表、列表当前 item、容器整块、其余为顶层块，父子不会同时命中。
-      return resolveBlockTargetRange(this.editor.state.doc, from, to)
+      const doc = this.editor.state.doc, range = resolveBlockTargetRange(doc, from, to)
+      if (range?.container !== 'table') return range
+      const $pos = doc.resolve(Math.max(0, Math.min(from, doc.content.size)))
+      for (let depth = $pos.depth; depth > 0; depth--) {
+        const cell = $pos.node(depth)
+        if (!['tableCell', 'tableHeader'].includes(cell.type.name)) continue
+        const start = $pos.start(depth)
+        const local = resolveBlockTargetRange(cell, from - start, Math.max(0, Math.min(to - start, cell.content.size)))
+        return local && { ...local, from: start + local.from, to: start + local.to, parentDepth: depth + local.parentDepth }
+      }
+      return range
+    },
+    blockHandleAnchorHidden(dom, checkVisibility = true) {
+      const editorDom = this.editor?.view?.dom
+      if (!(dom instanceof Element) || !editorDom?.contains(dom)) return true
+      let renderBlock = dom, hidden = false
+      while (renderBlock && renderBlock !== editorDom) {
+        if (renderBlock.hidden || renderBlock.style?.display === 'none') hidden = true
+        if (renderBlock.parentElement === editorDom) break
+        renderBlock = renderBlock.parentElement
+      }
+      const unassigned = editorDom.shadowRoot && renderBlock?.parentElement === editorDom && !renderBlock.assignedSlot
+      return !!(hidden || unassigned || checkVisibility && dom.checkVisibility?.({ contentVisibilityAuto: true }) === false)
+    },
+    hideBlockHandle() {
+      this._blockHandleAnchor = null
+      this.handleRange = null
+      this.closeBlockMenu()
+      this.clearHandleHighlight()
+    },
+    syncBlockHandleVisibility() {
+      if (!this.handleRange) { this._blockHandleAnchor = null; return }
+      const context = this._tableHandleContext
+      if (context && context.doc !== this.editor.state.doc) {
+        const current = this.rangeAt(this.editor.state.selection.from)
+        this.positionBlockHandle(this.handleRange.from === context.table.from ? this.tableRangeFor(current) || current : current)
+        return
+      }
+      // Window retirement only needs ancestry/assignment checks, not style resolution.
+      if (this._blockHandleAnchor && this.blockHandleAnchorHidden(this._blockHandleAnchor, false)) this.hideBlockHandle()
     },
     positionBlockHandle(range) {
       if (!range) return
       const dom = this.editor.view.nodeDOM(range.from)
-      const paper = this.$refs.root?.querySelector('.lark-doc-paper')
-      if (!(dom instanceof Element) || !paper) return
+      if (!(dom instanceof Element)) return
+      if (this.blockHandleAnchorHidden(dom)) { this.hideBlockHandle(); return }
+      this._blockHandleAnchor = dom
       if (this.blockMenuOpen && this.handleRange && (this.handleRange.from !== range.from || this.handleRange.to !== range.to)) this.closeBlockMenu()
       clearTimeout(this.handleHideTimer)
       this.clearBlockMenuCloseTimer()
-      this.handleRange = range
-      if (this.handleHovering || this.handlePressed || this.dragging || this.blockMenuOpen) this.setHandleHighlight(true)
-      const tableAnchor = dom.closest?.('.tableWrapper') || dom.closest?.('table')
-      const shell = this.blockShellElement(dom)
-      const callout = dom.closest?.('[data-type="callout"]')
-      const anchor = tableAnchor instanceof Element ? tableAnchor : shell instanceof Element ? shell : callout instanceof Element ? callout : dom
-      const domRect = anchor.getBoundingClientRect()
-      const paperRect = paper.getBoundingClientRect()
-      const isCallout = anchor.matches?.('[data-type="callout"]')
-      // 折叠箭头现在挂在任何「有缩进子树的文本块 / 列表项」上，句柄要跟着箭头让位，
-      // 否则 42px 的药丸会盖住箭头，点击直接落在句柄上（折叠点不动）。
-      const foldToggle = anchor.querySelector?.('.lark-doc-heading-fold-toggle') || null
-      const foldRect = foldToggle instanceof Element ? foldToggle.getBoundingClientRect() : null
-      const handleElement = this.$refs.root?.querySelector('.lark-doc-block-handle-main')
-      const handleWidth = handleElement instanceof Element ? handleElement.getBoundingClientRect().width : 42
-      const handleHeight = handleElement instanceof Element ? handleElement.getBoundingClientRect().height : 30
-      const isCodeBlock = anchor.matches?.('.lark-doc-code, [data-type="codeBlock"]')
-      const textBounds = isCodeBlock || shell instanceof Element ? this.outerBlockBounds(anchor) : this.highlightStartBounds(anchor)
-      // 代码块的首行是飞书式语言/复制工具栏行；代码正文仍属于同一外壳高亮。
-      const firstLineAnchor = isCodeBlock ? anchor.querySelector?.('.lark-doc-code-toolbar') || anchor : anchor
-      const firstLineBounds = this.firstLineInkBounds(firstLineAnchor) || this.firstTextLineBounds(firstLineAnchor) || textBounds
-      // 标题的折叠箭头会随文字对齐方式移动；以箭头实际位置为锚点，保持句柄与箭头固定间距。
-      const handleLeft = tableAnchor instanceof Element
-        ? domRect.left - paperRect.left - handleWidth - 12
-        : foldRect
-        ? foldRect.left - paperRect.left - handleWidth - 10
-        : isCallout
-          ? domRect.left - paperRect.left - handleWidth - 12
-          : (textBounds ? textBounds.left : domRect.left) - paperRect.left - handleWidth - 12
-      const verticalAnchor = foldRect || firstLineBounds
-      const firstTop = verticalAnchor ? verticalAnchor.top : domRect.top
-      const firstBottom = verticalAnchor ? verticalAnchor.bottom : domRect.bottom
-      this.blockHandlePosition = {
-        // 句柄垂直跟随首行文字；多行块仍锚定第一行，而不是整个块盒。
-        top: Math.max(0, Math.round(((firstTop + firstBottom) / 2 - paperRect.top - (paper.clientTop || 0) - handleHeight / 2) * 2) / 2),
-        // Keep the narrow handle immediately before the fold widget and the
-        // text, regardless of paper padding or viewport width.
-        left: Math.round(handleLeft),
+      const doc = this.editor.state.doc, table = this.tableRangeFor(range)
+      let cell = table && range.from !== table.from ? range : null
+      if (table && !cell) {
+        const previous = this._tableHandleContext
+        if (previous?.doc === doc && previous.table.from === table.from) cell = previous.cell
+        else {
+          const candidate = this.rangeAt(this.editor.state.selection.from)
+          if (candidate && candidate.from > table.from && candidate.to < table.to) cell = candidate
+        }
       }
+      const other = cell && (range.from === table.from ? cell : table)
+      this._tableHandleContext = other ? { doc, table, cell, other, position: this.blockHandleGeometry(other) } : null
+      const previous = this.handleRange
+      if (!previous || Object.keys(previous).length !== Object.keys(range).length
+        || Object.keys(range).some(key => previous[key] !== range[key])) this.handleRange = range
+      if (this.handleHovering || this.handlePressed || this.dragging || this.blockMenuOpen) this.setHandleHighlight(true)
+      const position = this.blockHandleGeometry(range)
+      if (!position) return
+      if (this.blockHandlePosition?.top !== position.top || this.blockHandlePosition?.left !== position.left) this.blockHandlePosition = position
+      else this.refreshBlockHandle()
+    },
+    tableRangeFor(range) {
+      if (!range || !this.editor) return null
+      const doc = this.editor.state.doc
+      if (nodeAtSafe(doc, range.from)?.type.name === 'table') return range
+      const $pos = doc.resolve(Math.min(doc.content.size, range.from + 1))
+      for (let depth = $pos.depth; depth > 0; depth--) {
+        if ($pos.node(depth).type.name === 'table') return { from: $pos.before(depth), to: $pos.after(depth), parentDepth: depth - 1, container: 'table' }
+      }
+      return null
+    },
+    activateSecondaryHandle(target, event) {
+      if (!this.writable() || !this.featureEnabled('blockHandle') || target?.doc !== this.editor.state.doc) return false
+      this.positionBlockHandle(target.range)
+      this.handleHovering = true
+      this.openBlockMenu(event)
+      return true
+    },
+    blockHandleGeometry(range) {
+      const dom = this.editor.view.nodeDOM(range.from), paper = this.$refs.root?.querySelector('.lark-doc-paper')
+      if (!(dom instanceof Element) || !paper || this.blockHandleAnchorHidden(dom)) return null
+      const isTable = nodeAtSafe(this.editor.state.doc, range.from)?.type.name === 'table'
+      const tableAnchor = isTable && (dom.matches('table') ? dom : dom.querySelector('table'))
+      const shell = this.blockShellElement(dom)
+      const anchor = tableAnchor || shell || dom
+      const domRect = anchor.getBoundingClientRect(), paperRect = paper.getBoundingClientRect()
+      // 整表与正文按钮尺寸不同，换目标时不能用上一个主句柄的尺寸。
+      const handle = this.$refs.root?.querySelector(isTable
+        ? '.lark-doc-block-handle-main[data-block-scope="table"]'
+        : '.lark-doc-block-handle-main:not([data-block-scope="table"])')
+      const handleRect = handle?.getBoundingClientRect()
+      const handleWidth = handleRect?.width || (isTable ? 40 : 42), handleHeight = handleRect?.height || (isTable ? 24 : 26)
+      const position = (top, left) => ({
+        top: Math.max(0, Math.round((top - paperRect.top - (paper.clientTop || 0)) * 2) / 2),
+        left: Math.round(left - paperRect.left - (paper.clientLeft || 0)),
+      })
+      if (isTable) return position(domRect.top - handleHeight - 4, domRect.left - handleWidth - 4)
+      const cell = dom.closest('td,th'), cellRect = cell?.getBoundingClientRect()
+      const tableRect = cell?.closest('table')?.getBoundingClientRect()
+      // 句柄留在整表外，避免后列句柄遮挡前一格的点击和跨格拖选。
+      const cellLeft = tableRect ? tableRect.left - handleWidth - (Math.abs(cellRect.left - tableRect.left) < 2 ? 20 : 8) : null
+      if (anchor.matches('figure[data-type="image"]')) {
+        const frame = (anchor.querySelector('.lark-doc-image-frame') || anchor).getBoundingClientRect()
+        return position(frame.top, cellLeft ?? domRect.left - handleWidth - 12)
+      }
+      const foldToggle = anchor.querySelector('.lark-doc-heading-fold-toggle')
+      const foldRect = foldToggle?.getBoundingClientRect()
+      const isCodeBlock = anchor.matches('.lark-doc-code, [data-type="codeBlock"]')
+      const textBounds = isCodeBlock || shell ? this.outerBlockBounds(anchor) : this.highlightStartBounds(anchor)
+      // taskItem 的 label 有屏幕阅读器文本，其 Range 仍有墨迹坐标；只测正文内容。
+      const firstLineAnchor = isCodeBlock ? anchor.querySelector('.lark-doc-code-toolbar') || anchor
+        : anchor.matches('li') ? anchor.querySelector(':scope > div, :scope > p') || anchor : anchor
+      const firstLineBounds = this.firstLineInkBounds(firstLineAnchor) || this.firstTextLineBounds(firstLineAnchor) || textBounds
+      const left = cellLeft !== null ? cellLeft
+        : foldRect ? foldRect.left - handleWidth - 10
+          : (textBounds?.left ?? domRect.left) - handleWidth - 12
+      const line = foldRect || firstLineBounds || domRect
+      return position((line.top + line.bottom - handleHeight) / 2, left)
     },
     columnsRangeFor(range) {
       if (!range || !this.editor) return null
       const doc = this.editor.state.doc
+      if (nodeAtSafe(doc, range.from)?.type.name === 'table') return null
       const probes = [range.from, range.from + 1, Math.max(range.from, range.to - 1)]
       for (const probe of probes) {
         const $from = doc.resolve(Math.min(doc.content.size, Math.max(0, probe)))
         for (let depth = $from.depth; depth >= 1; depth -= 1) {
+          if (['tableCell', 'tableHeader'].includes($from.node(depth).type.name)) return null
           if ($from.node(depth).type.name === 'columns') return { from: $from.before(depth), to: $from.after(depth), parentDepth: depth - 1 }
         }
       }
@@ -169,11 +249,14 @@ export default {
       return null
     },
     handleBlockNode() {
-      if (!this.editor || !this.handleRange) return null
+      return this.handleNodeFor(this.handleRange)
+    },
+    handleNodeFor(range) {
+      if (!this.editor || !range) return null
       const doc = this.editor.state.doc
-      const direct = nodeAtSafe(this.editor?.state?.doc, this.handleRange.from)
-      if (!direct || direct.type.name !== 'paragraph' || this.handleRange.parentDepth <= 0) return direct
-      const parent = doc.resolve(this.handleRange.from).node(this.handleRange.parentDepth)
+      const direct = nodeAtSafe(doc, range.from)
+      if (!direct || direct.type.name !== 'paragraph' || range.parentDepth <= 0) return direct
+      const parent = doc.resolve(range.from).node(range.parentDepth)
       return ['callout', 'details', 'columns', 'column'].includes(parent.type.name) ? parent : direct
     },
     handleHighlightRange() {
@@ -316,7 +399,9 @@ export default {
     },
     blockShellElement(element) {
       if (!(element instanceof Element)) return null
-      return element.closest('.lark-doc-code, [data-type="codeBlock"], blockquote, [data-type="callout"], [data-type="columns"], [data-type="column"], table, figure[data-type="image"], hr')
+      const shell = element.closest('.lark-doc-code, [data-type="codeBlock"], blockquote, [data-type="callout"], [data-type="columns"], [data-type="column"], table, figure[data-type="image"], hr')
+      const cell = element.closest('td,th')
+      return cell && shell && !cell.contains(shell) ? null : shell
     },
     handleHighlightBounds(element) {
       if (!(element instanceof Element)) return element?.getBoundingClientRect?.() || null
@@ -345,7 +430,10 @@ export default {
       const root = this.editor?.view?.dom
       if (!root) return
       const overlayHost = root.parentElement || root
-      overlayHost.querySelector('.lark-doc-heading-hover-overlay')?.remove()
+      this._handleHighlightOverlay?.remove()
+      this._handleHighlightOverlay = null
+      if (this.editor.storage?.larkDoc && !this.editor.storage.larkDoc.handleHover) return
+      if (!this.editor.storage?.larkDoc) overlayHost.querySelector('.lark-doc-heading-hover-overlay')?.remove()
       const hoveredNodes = Array.from(root.querySelectorAll('.lark-doc-block-handle-hovered'))
       if (!hoveredNodes.length) return
       const hostRect = overlayHost.getBoundingClientRect()
@@ -391,6 +479,7 @@ export default {
         overlay.appendChild(segment)
       })
       overlayHost.appendChild(overlay)
+      this._handleHighlightOverlay = overlay
     },
     clearHandleHighlight() {
       if (!this.editor || this.editor.isDestroyed || !this.editor.commands?.setLarkDocHandleHover) return
@@ -418,7 +507,7 @@ export default {
       }, 220)
     },
     onEditorPointerMove(event) {
-      if (this.dragging || this.handlePressed || this.columnResize) return
+      if (event.buttons || this.dragging || this.handlePressed || this.columnResize) return
       this.updateTableBoundaryHover(event)
       const pos = this.editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
       if (Number.isInteger(pos)) this.positionBlockHandle(this.rangeAt(pos))
@@ -438,9 +527,10 @@ export default {
       if (!range || !this.editor) return range
       const doc = this.editor.state.doc
       const direct = nodeAtSafe(this.editor?.state?.doc, range.from)
-      if (direct?.type.name === 'callout') return range
+      if (['callout', 'table'].includes(direct?.type.name)) return range
       const $from = doc.resolve(range.from)
       for (let depth = $from.depth; depth >= 1; depth -= 1) {
+        if (['tableCell', 'tableHeader'].includes($from.node(depth).type.name)) return range
         if ($from.node(depth).type.name !== 'callout') continue
         return { from: $from.before(depth), to: $from.after(depth), parentDepth: depth - 1 }
       }
@@ -449,8 +539,9 @@ export default {
     startBlockDrag(event) {
       if (!this.writable() || !this.featureEnabled('blockDrag')) return
       const selected = this.handleActionRange()
-      this.dragging = this.blockDragRange(this.headingActionRange(selected) || selected)
-      if (!this.dragging) return
+      const range = this.blockDragRange(this.headingActionRange(selected) || selected)
+      if (!range) return
+      this.dragging = { ...range, doc: this.editor.state.doc }
       this.refreshHandleHighlight()
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move'
@@ -459,6 +550,7 @@ export default {
     },
     onBlockDragOver(event) {
       if (!this.featureEnabled('blockDrag') || !this.dragging) return
+      if (!this.writable() || this.dragging.doc !== this.editor.state.doc) { this.endBlockDrag(); return }
       const pos = this.editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
       const rawTarget = Number.isInteger(pos) ? this.rangeAt(pos) : null
       const targetRange = this.blockDragRange(rawTarget)
@@ -479,7 +571,8 @@ export default {
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
     },
     onBlockDrop(event) {
-      if (!this.featureEnabled('blockDrag') || !this.dragging || !this.writable()) return
+      if (!this.dragging) return
+      if (!this.featureEnabled('blockDrag') || !this.writable() || this.dragging.doc !== this.editor.state.doc) { this.endBlockDrag(); return }
       event.preventDefault()
       const source = this.dragging
       this.dragging = null

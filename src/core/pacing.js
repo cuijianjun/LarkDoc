@@ -21,6 +21,34 @@ const FRAME_FALLBACK_MS = 16
  *  但停顿后立刻有结果」的区间里；飞书实测约 100~150ms，取中值偏上留余量。 */
 export const SEARCH_DEBOUNCE_MS = 120
 
+/** Cooperative document jobs wait for a quiet input/scroll window between bounded slices. */
+export function createActivityGate({ quietMs = 150, now = Date.now, timers = {} } = {}) {
+  const setTimer = timers.setTimeout || ((callback, ms) => setTimeout(callback, ms))
+  const clearTimer = timers.clearTimeout || (handle => clearTimeout(handle))
+  const pending = new Set()
+  let until = 0
+  let disposed = false
+  return {
+    touch() { if (!disposed) until = now() + quietMs },
+    wait(current = () => true) {
+      if (disposed || !current()) return Promise.resolve(false)
+      if (now() >= until) return Promise.resolve(true)
+      return new Promise(resolve => {
+        const item = { timer: null, finish(value) { clearTimer(item.timer); pending.delete(item); resolve(value) } }
+        const check = () => {
+          if (disposed || !current()) { item.finish(false); return }
+          const remaining = until - now()
+          if (remaining <= 0) item.finish(true)
+          else item.timer = setTimer(check, Math.min(32, remaining))
+        }
+        pending.add(item)
+        check()
+      })
+    },
+    dispose() { disposed = true; pending.forEach(item => item.finish(false)) },
+  }
+}
+
 function defaultFrameApi() {
   if (typeof requestAnimationFrame === 'function' && typeof cancelAnimationFrame === 'function') {
     return {

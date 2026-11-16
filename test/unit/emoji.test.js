@@ -22,6 +22,7 @@ import { createLarkDocExtensions } from '../../src/components/lark-doc/extension
 import { validateDocument } from '../../src/core/documentOperations'
 import { CALLOUT_EMOJI_DEFAULT, safeCalloutEmoji } from '../../src/core/blocks/callout'
 import { EMOJI_DEFAULT_NAME } from '../../src/core/blocks/emoji'
+import * as lookup from '../../src/core/emoji/lookup'
 import {
   EMOJI_GROUP_META, EMOJI_NAME_MAX, emojiCategories, emojiGroupOf, emojiItems,
   findEmojiByGlyph, findEmojiByName, isEmojiGlyph,
@@ -29,6 +30,17 @@ import {
 } from '../../src/core/emoji/catalog'
 
 const mounted = []
+it('compact schema lookup preserves every picker glyph, primary name and legacy alias', () => {
+  expect(lookup.emojiGlyphs).toHaveLength(emojiItems.length)
+  emojiItems.forEach(item => {
+    expect(lookup.findEmojiByName(item.value)?.glyph).toBe(item.glyph)
+    expect(lookup.isEmojiGlyph(item.glyph)).toBe(true)
+  })
+  for (const name of ['pin', 'check', 'comment', 'target', ':SMILE:']) {
+    expect(lookup.findEmojiByName(name)?.glyph).toBe(findEmojiByName(name)?.glyph)
+  }
+  for (const invalid of [null, '', '不是表情', 'javascript:alert(1)', '💡<script>']) expect(lookup.isEmojiGlyph(invalid)).toBe(false)
+})
 afterEach(() => {
   while (mounted.length) mounted.pop()()
 })

@@ -7,7 +7,7 @@ const base = process.argv[2] || 'http://127.0.0.1:58742/lark-doc?verify=1'
 const evidence = process.env.LARK_DOC_EVIDENCE_DIR || '/tmp/lark-doc-v12e'
 const results = []
 async function main() {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
@@ -21,7 +21,12 @@ async function main() {
   const stage = () => page.locator('.lark-doc-slide-stage')
   const snapshot = () => page.evaluate(() => JSON.stringify(window.__larkDoc.getJSON()))
   const enter = async () => {
-    await page.locator('.lark-doc-toolbar button[aria-label="演示模式"]').click()
+    const button = page.locator('.lark-doc-toolbar button[aria-label="演示模式"]')
+    if (await button.isVisible()) await button.click()
+    else {
+      await page.locator('.lark-doc-toolbar button[aria-label="更多"]').click()
+      await page.getByRole('menu', { name: '更多工具', exact: true }).getByRole('menuitem', { name: '演示模式', exact: true }).click()
+    }
     await stage().waitFor()
     await page.waitForFunction(() => !!document.fullscreenElement && document.querySelector('.lark-doc-slide-stage strong')?.textContent === '粗体正文')
   }

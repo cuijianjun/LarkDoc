@@ -5,9 +5,24 @@
  * 采用 mixin 而非子组件：模板结构保持不变，依赖 Vue 2 的 data/computed/methods 合并语义。
  */
 import { findTextMatches, foldedRange, isPageHeading, replaceText } from '../documentOperations'
+import { closeHistory } from '@tiptap/pm/history'
 import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing'
 import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
 import { DEFAULT_MODES_CONFIG, MODE_ICONS, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
+
+function scrollDocumentPosition(editor, match) {
+  // PM scrolls the selected text range, including a hit inside a tall block,
+  // and honors nested scroll owners plus the toolbar margin from the renderer.
+  const scroll = () => { if (!match?.attribute) editor.commands.scrollIntoView() }
+  if (editor.storage?.larkDoc?.pagedView?.navigate) editor.storage.larkDoc.pagedView.navigate(scroll, match)
+  else {
+    scroll()
+    const root = editor.view.dom, selection = editor.state.selection, doc = editor.state.doc
+    if (root && (match?.attribute || !root.contains(root.ownerDocument.getSelection()?.focusNode))) return import('../../../editor/pagedDocumentView').then(module => {
+      if (!editor.isDestroyed && editor.state.doc === doc && selection.eq(editor.state.selection)) module.scrollDocumentSelection(editor, match)
+    })
+  }
+}
 
 export default {
   data() { return {
@@ -17,7 +32,7 @@ export default {
     slides: false, fullscreen: false, widthMode: 'standard',
     // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
     // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
-    outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
+    maxHeadingLevel: 0, outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
     searchOpen: false, searchQuery: '', replacement: '', searchMatches: [], searchIndex: 0, slideIndex: 0,
     // P4-05 查找替换浮层：tab 决定面板高度（find 186 / replace 286，04 §3.2）；
     // pos 是拖拽后的 fixed 坐标，null 表示用 CSS 默认位（右上角）。
@@ -58,12 +73,6 @@ export default {
         if (collapsed && hasChildren) hiddenLevels.push(item.level)
         return items
       }, [])
-    },
-    slideChapters() {
-      if (!this.editor) return [{ title: this.localTitle || '文档', text: '' }]
-      const headings = this.outline.filter((item) => item.level === 1)
-      if (!headings.length) return [{ title: this.localTitle || '文档', text: this.editor.getText() }]
-      return headings.map((item, index) => ({ title: item.text || '章节', text: this.editor.state.doc.textBetween(item.pos, headings[index + 1]?.pos || this.editor.state.doc.content.size).replace(item.text, '').trim() }))
     },
   },
   methods: {
@@ -126,10 +135,8 @@ export default {
         ancestors.forEach((at) => this.editor.commands.toggleLarkDocFold(at))
       }
       this.editor.commands.setTextSelection(Math.min(pos + 1, this.editor.state.doc.content.size))
-      const node = this.editor.view.nodeDOM(pos)
-      const target = node instanceof Element ? node : this.editor.view.domAtPos(pos + 1).node.parentElement
-      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       this.activeHeading = pos
+      return scrollDocumentPosition(this.editor)
     },
     /**
      * 重算命中并刷新高亮（P7-04）。
@@ -145,21 +152,16 @@ export default {
      */
     updateSearch() {
       if (!this.editor || !this.featureEnabled('search')) return
-      const doc = this.editor.state.doc
-      const signature = `${this.searchQuery}\u0000${this.searchIndex}`
+      if (this.editor.storage?.larkDoc?.pagedView?.isDocument(this.editor.state.doc)) return this.editor.storage.larkDoc.pagedView.updateSearch(this)
+      const doc = this.editor.state.doc, signature = `${this.searchQuery}\u0000${this.searchIndex}`
       if (this._searchDoc === doc && this._searchSignature === signature) return
       this.searchMatches = findTextMatches(doc, this.searchQuery)
-      // clamp 之后再落签名：否则签名记的是 clamp 前的 index，下一次同样输入的
-      // updateSearch 会被判成「变了」而白跑一轮全量扫描。
       this.searchIndex = Math.min(this.searchIndex, Math.max(0, this.searchMatches.length - 1))
-      this._searchDoc = doc
-      this._searchSignature = `${this.searchQuery}\u0000${this.searchIndex}`
-      if (this.searchMatches.length) {
-        const match = this.searchMatches[this.searchIndex]
-        this.editor.commands.revealLarkDocMatch(match.from, match.to)
-      }
+      this._searchDoc = doc; this._searchSignature = `${this.searchQuery}\u0000${this.searchIndex}`
+      if (this.searchMatches.length) { const match = this.searchMatches[this.searchIndex]; this.editor.commands.revealLarkDocMatch(match.from, match.to) }
       this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex)
     },
+
     /** 去抖入口：连续输入 / 连续编辑只留最后一次。`$timers` 是单测注入的假时钟。 */
     scheduleSearchUpdate() {
       if (!this.editor || !this.featureEnabled('search')) return
@@ -174,29 +176,32 @@ export default {
       // 输入框刚改完、去抖还没到点就按了 Enter：先把待办 flush 掉，
       // 否则跳的是上一轮命中的位置。
       this.flushSearchUpdate()
+      const pending = this.updateSearch(), generation = this._searchGeneration
+      if (pending) return pending.then(() => { if (generation === this._searchGeneration) this.nextMatch(step) })
       if (!this.searchMatches.length) return
       this.searchIndex = (this.searchIndex + step + this.searchMatches.length) % this.searchMatches.length
       const match = this.searchMatches[this.searchIndex]
       this.editor.commands.revealLarkDocMatch(match.from, match.to)
       this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex)
-      this.editor.commands.setTextSelection(match)
-      this.editor.view.domAtPos(match.from).node.parentElement?.scrollIntoView({ block: 'center' })
+      if (match.attribute) this.editor.commands.setNodeSelection(match.from)
+      else this.editor.commands.setTextSelection(match)
+      return scrollDocumentPosition(this.editor, match)
     },
     replace(all) {
       if (!this.writable() || !this.featureEnabled('search') || !this.searchQuery) return
       this.flushSearchUpdate()
-      if (all) { replaceText(this.editor, this.searchQuery, this.replacement, true) } else {
+      const pending = this.updateSearch(), generation = this._searchGeneration
+      if (pending) return pending.then(() => { if (generation === this._searchGeneration) this.replace(all) })
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+      if (all) { replaceText(this.editor, this.searchQuery, this.replacement, true, this.searchMatches) } else {
         // A query change or document update may still be waiting for the debounce.
         // Resolve the current range before changing document text.
         this.updateSearch()
         const match = this.searchMatches[this.searchIndex]
         if (!match) return
-        const tr = this.editor.state.tr
-        const marks = tr.doc.resolve(match.from).marks()
-        if (this.replacement) tr.replaceWith(match.from, match.to, this.editor.schema.text(this.replacement, marks))
-        else tr.delete(match.from, match.to)
-        this.editor.view.dispatch(tr)
+        replaceText(this.editor, this.searchQuery, this.replacement, false, [match])
       }
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
       this.updateSearch()
     },
     // P4-05：关闭时把 tab 归位到「查找」（下次打开不带上次痕迹），拖拽位置刻意保留。
@@ -205,6 +210,7 @@ export default {
       // 挂起的去抖必须取消：否则关面板 120ms 后还会拿空查询再全量扫一遍文档。
       if (this._searchDebounce) this._searchDebounce.cancel()
       this._searchDoc = null; this._searchSignature = ''
+      this._searchGeneration = (this._searchGeneration || 0) + 1; this._searchPending = null
       this.editor?.commands.setLarkDocSearch('')
       this.focus()
     },
@@ -394,12 +400,13 @@ export default {
       return true
     },
     // Kept for existing callers; presentation navigation is now continuous document scrolling.
-    prevSlide() { this._stageUi?.el.scrollBy?.({ top: -window.innerHeight * 0.8 }) },
-    nextSlide() { this._stageUi?.el.scrollBy?.({ top: window.innerHeight * 0.8 }) },
+    prevSlide() { this._stageUi?.el?.scrollBy?.({ top: -window.innerHeight * 0.8 }) },
+    nextSlide() { this._stageUi?.el?.scrollBy?.({ top: window.innerHeight * 0.8 }) },
   },
   // 提示条定时器必须在卸载前清掉：单页应用里反复挂载/卸载编辑器，
   // 残留的 setTimeout 会在实例销毁后写 `this.modeToast`。
   beforeDestroy() {
+    this._searchGeneration = (this._searchGeneration || 0) + 1
     this.exitSlides(true, false)
     if (this.modeToastTimer) { clearTimeout(this.modeToastTimer); this.modeToastTimer = null }
     // 查找去抖同理：卸载后不许再有回调去摸 editor。

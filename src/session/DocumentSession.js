@@ -114,6 +114,7 @@ export class DocumentSession {
   /** 以当前编辑器正文生成可保存的版本化记录。 */
   getDocumentRecord(extra = {}) {
     const editor = this._editor
+    if (!extra.content && editor?.storage?.larkDoc?.pagedImport) throw new Error('导入提交中，暂不可读取部分正文')
     return createDocumentRecord({
       documentId: this.documentId,
       // 内部 ProseMirror 文档恒为扁平模型；记录出口统一聚合为 v2 容器形态
@@ -229,6 +230,7 @@ export class DocumentSession {
     const author = identity == null ? undefined : String(identity)
     // Headless integrations retain the server-side restore contract.
     if (!editor?.state || !editor?.view) return provider.restore(versionId, { documentId: this.documentId, author })
+    const logical = () => editor.storage?.larkDoc?.pagedView?.logicalDocument(editor.state.doc) || editor.state.doc
     if (!editor.isEditable) throw new Error('当前编辑器为只读，无法还原版本')
     const source = await provider.get(versionId)
     if (source?.id !== versionId) throw new Error('版本正文与所选版本不匹配')
@@ -240,11 +242,11 @@ export class DocumentSession {
     const created = await provider.restore(versionId, { documentId: this.documentId, author })
     this._assertVersionContext(context, 'canRestoreVersion')
     if (!editor.isEditable) throw new Error('当前编辑器已切为只读，恢复记录已保留，正文未替换')
-    if (editor.state.doc !== context.doc && !editor.state.doc.eq(prepared.next)) throw new Error('等待期间正文已更改，恢复记录已保留，当前正文未覆盖')
+    if (editor.state.doc !== context.doc && !logical().eq(prepared.next)) throw new Error('等待期间正文已更改，恢复记录已保留，当前正文未覆盖')
     // Re-check current limits and network policy after the asynchronous provider write.
     const current = this._prepareVersionDocument(record, context)
     if (context.access?.applyPreparedContent) context.access.applyPreparedContent(current, { origin: TRANSACTION_ORIGINS.RESTORE })
-    else if (!current.next.eq(editor.state.doc)) {
+    else if (!current.next.eq(logical())) {
       const before = editor.state.doc
       this.dispatch(closeHistory(editor.state.tr).replaceWith(0, editor.state.doc.content.size, current.next.content), { origin: TRANSACTION_ORIGINS.RESTORE })
       if (editor.state.doc === before) throw new Error('版本记录已保留，但当前编辑器拒绝替换正文')
@@ -253,7 +255,7 @@ export class DocumentSession {
       editor.commands.resetLarkDocFolds?.()
       editor.view.dispatch(closeHistory(editor.state.tr))
     }
-    this._currentVersion = current.next.eq(editor.state.doc) ? { ...context, id: created.id, doc: editor.state.doc } : null
+    this._currentVersion = current.next.eq(logical()) ? { ...context, id: created.id, doc: editor.state.doc } : null
     this.emit('version-restored', { versionId, created })
     return created
   }

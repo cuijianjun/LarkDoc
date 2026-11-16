@@ -109,6 +109,7 @@ describe('帮助菜单配置', () => {
     const { element } = mount({ help: { items: ['shortcuts'], onAction }, onError })
     openMenu(element)[0].click()
     await vi.waitFor(() => expect(onError).toHaveBeenCalledExactlyOnceWith(failure))
+    await vi.dynamicImportSettled()
     expect(element.querySelector('.lark-doc-help-drawer')).not.toBeNull()
   })
 })

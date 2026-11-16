@@ -49,6 +49,13 @@ import versioningMixin from '../../src/components/lark-doc/editor/versioningMixi
 
 /* ---------------- 脚手架 ---------------- */
 
+it('named versions retain their saved name in the history timeline with a time fallback', () => {
+  const name = versioningMixin.methods.versionItemName
+  const createdAt = Date.UTC(2026, 10, 15, 6, 0)
+  expect(name({ label: '验收版本', createdAt })).toContain('验收版本')
+  expect(name({ label: '  ', createdAt })).toBe(formatVersionTime(createdAt))
+})
+
 /** 假二进制：只关心字节数，不关心是不是合法 Yjs update。 */
 function bytes(length) {
   return new Uint8Array(length).fill(7)

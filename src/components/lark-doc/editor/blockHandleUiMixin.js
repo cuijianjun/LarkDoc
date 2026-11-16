@@ -16,21 +16,23 @@
  * 3. **同步定位**：`openBlockMenu()` 先渲染菜单再 `positionBlockMenu()`，
  *    `getBoundingClientRect()` 当场可量 —— SFC 里那串 `$nextTick` 就此消失。
  */
-import { createBlockHandle } from '../../../ui/blockHandle'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
-    handleRange() { this.refreshBlockHandle() },
+    handleRange() { if (!this.handleRange) { this._blockHandleAnchor = null; this._tableHandleContext = null } this.refreshBlockHandle() },
     effectiveReadonly() { this.refreshBlockHandle(); this.refreshBlockMenu() },
     larkDocConfig() { this.refreshBlockHandle(); this.refreshBlockMenu() },
     // 颜色子菜单的色板来自内容主题（深/浅色），主题一换选项就换。
     contentTheme() { this.refreshBlockMenu() },
+    maxHeadingLevel() { this.refreshBlockMenu() },
     alignNames: { deep: true, handler() { this.refreshBlockMenu() } },
     alignGlyphs: { deep: true, handler() { this.refreshBlockMenu() } },
     // —— 开合与定位：SFC 时代这些是模板插值，Vue 渲染 watcher 自动跟进；原生层必须显式推。
     // 时序也与 SFC 等价：watcher 在 DOM flush 前跑（菜单因此入 DOM），mixin 里
     // `positionBlockMenu` 包的 `$nextTick` 回调晚于 flush，量的就是已布局好的盒子。
     blockMenuOpen() { this.refreshBlockMenu() },
+    menuOpen() { this.refreshBlockMenu() },
     blockAlignMenuOpen() { this.refreshBlockMenu() },
     blockColorMenuOpen() { this.refreshBlockMenu() },
     blockMenuStyle() { this.refreshBlockMenu() },
@@ -52,11 +54,15 @@ export default {
       if (this._blockHandleUi) return
       const anchor = this.$refs.blockHandleHost
       if (!anchor || !anchor.parentNode) return
-      this._blockHandleUi = createBlockHandle({
+      this._blockHandleUi = createLazyView(() => import('../../../ui/blockHandle'), 'createBlockHandle', {
         host: anchor.parentNode,
         anchor,
         handlers: this.blockHandleHandlers(),
-      })
+      }, { isOpen: state => !!state.chrome?.visible, onReady: () => {
+        if (this.handleRange) this.positionBlockHandle(this.handleRange)
+        this.refreshBlockMenu()
+        if (this.blockMenuOpen) this.positionBlockMenu('.lark-doc-block-menu')
+      }, onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       this.refreshBlockHandle()
       this.refreshBlockMenu()
     },
@@ -64,6 +70,9 @@ export default {
       if (!this._blockHandleUi) return
       this._blockHandleUi.destroy()
       this._blockHandleUi = null
+      this._blockHandleChrome = null
+      this._blockHandleMenu = null
+      this._tableHandleContext = null
     },
 
     /**
@@ -79,6 +88,7 @@ export default {
      */
     blockHandleHandlers() {
       return {
+        onMenuRuntime: (runtime, insert, current, position) => { this._blockMenuState = runtime; this._blockInsertRuntime = insert; this._blockInsertCurrent = current; this._blockMenuPosition = position },
         onHandleEnter: (event) => this.onBlockHandleEnter(event),
         onHandleLeave: (event) => this.onBlockHandleLeave(event),
         openEmptyBlockInsertMenu: (event) => this.openEmptyBlockInsertMenu(event),
@@ -88,13 +98,17 @@ export default {
         pressHandle: () => this.pressHandle(),
         startBlockDrag: (event) => this.startBlockDrag(event),
         endBlockDrag: () => this.endBlockDrag(),
+        activateSecondary: (target, event) => this.activateSecondaryHandle(target, event),
         onBlockMenuEnter: () => this.onBlockMenuEnter(),
         onBlockMenuLeave: (event) => this.onBlockMenuLeave(event),
         onBlockMenuFocusIn: () => this.onBlockMenuFocusIn(),
         onBlockMenuFocusOut: (event) => this.onBlockMenuFocusOut(event),
-        emitAiRequest: (kind) => this.$emit('ai-request', kind),
+        emitAiRequest: (kind) => this.requestBlockAI(kind),
         blockTypeAction: (id) => this.blockTypeAction(id),
         blockAction: (id) => this.blockAction(id),
+        openBlockInsertMenu: (event) => this.openBlockInsertMenu(event),
+        closeBlockInsertMenu: () => this.closeBlockInsertMenu(),
+        closeBlockSubmenus: () => { this.blockAlignMenuOpen = this.blockColorMenuOpen = false },
         openBlockAlignMenuOnHover: (event) => this.openBlockAlignMenuOnHover(event),
         openBlockColorMenuOnHover: (event) => this.openBlockColorMenuOnHover(event),
         blockColorAction: (value) => this.blockColorAction(value),
@@ -106,15 +120,26 @@ export default {
     /** 句柄本体 state（热路径，字段越少越好）。 */
     buildBlockHandleState() {
       const blockStyle = this.featureEnabled('blockStyle')
+      const context = this._tableHandleContext?.doc === this.editor?.state?.doc ? this._tableHandleContext : null
+      const otherNode = context && this.handleNodeFor(context.other)
+      const emptyCellBlock = context && this.handleIsEmptyParagraph
       return {
         // 模板条件：`ed.editor && !ed.effectiveReadonly && featureEnabled('blockHandle') && handleRange`
         // Keep the table six-dot handle beside the active-cell plus control.
         visible: !!(this.editor && !this.effectiveReadonly && this.featureEnabled('blockHandle') && this.handleRange),
         style: this.blockHandleStyle,
         menuOpen: this.blockMenuOpen,
+        insertOpen: !!this._blockInsertContext && this.menuOpen,
         alignOpen: !!this.blockAlignMenuOpen && blockStyle,
         blockStyle,
-        buttonKind: this.handleIsEmptyParagraph ? 'empty' : this.handleIsTaskList ? 'none' : 'main',
+        buttonKind: emptyCellBlock ? 'none' : this.handleIsEmptyParagraph ? 'empty' : 'main',
+        scope: this.handleIsTable ? 'table' : context ? 'cell' : null,
+        secondary: context?.position && !(otherNode?.type.name === 'paragraph' && !otherNode.content.size) ? {
+          doc: context.doc, range: context.other,
+          scope: context.other.from === context.table.from ? 'table' : 'cell',
+          icon: this.handleIconFor(context.other),
+          style: { top: `${context.position.top}px`, left: `${context.position.left}px` },
+        } : null,
         glyph: this.handleGlyph,
         icon: this.handleIcon,
         isCallout: this.handleBlockNode()?.type?.name === 'callout',
@@ -123,57 +148,20 @@ export default {
     },
 
     /** 菜单内容 state（只在开合、配置、文档/选区变化时算）。 */
-    buildBlockMenuState() {
-      const blockStyle = this.featureEnabled('blockStyle')
-      return {
-        menuOpen: this.blockMenuOpen,
-        alignOpen: !!this.blockAlignMenuOpen && blockStyle,
-        colorOpen: !!this.blockColorMenuOpen && blockStyle,
-        blockStyle,
-        features: {
-          ai: this.featureEnabled('ai'),
-          blockStyle,
-          tables: this.featureEnabled('tables'),
-        },
-        typeActions: this.visibleBlockTypeActions.map((item) => ({
-          id: item.id,
-          label: item.label,
-          icon: item.icon,
-          active: this.blockTypeActive(item.id),
-        })),
-        listActions: [
-          ...this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon })),
-          ...(this.handleIsTable && this.selectionShareAllowed?.() && this.isBlockActionEnabled('share') ? [{ id: 'share', label: '分享', icon: 'share-link' }] : []),
-          ...(this.handleIsTable && this.shareCan('canView') && this.isBlockActionEnabled('copyLink') ? [{ id: 'copyLink', label: '复制链接', icon: 'link' }] : []),
-        ],
-        table: this.handleIsTable,
-        tableHeader: this.handleTableHeaderState(),
-        canDuplicate: this.isBlockActionEnabled('duplicate'),
-        canAddBelow: this.isBlockActionEnabled('addBelow'),
-        menuStyle: this.blockMenuStyle,
-        alignMenuStyle: this.blockAlignMenuStyle,
-        colorMenuStyle: this.blockColorMenuStyle,
-        colors: this.colorPaletteOptions.map((color) => ({ value: color.value, label: color.label })),
-        align: {
-          value: this.blockAlignValue(),
-          indent: this.blockAlignIndent(),
-          canIncrease: this.blockAlignCanIncrease(),
-        },
-        alignGlyphs: this.alignGlyphs,
-        alignNames: this.alignNames,
-      }
-    },
+    buildBlockMenuState() { return this._blockMenuState?.call(this) || { menuOpen: this.blockMenuOpen } },
 
     refreshBlockHandle() {
       const ui = this._blockHandleUi
       if (!ui) return
-      ui.updateChrome(this.buildBlockHandleState())
+      this._blockHandleChrome = this.buildBlockHandleState()
+      ui.update({ chrome: this._blockHandleChrome, menu: this._blockHandleMenu })
     },
 
     refreshBlockMenu() {
       const ui = this._blockHandleUi
       if (!ui) return
-      ui.updateMenu(this.buildBlockMenuState())
+      this._blockHandleMenu = this.buildBlockMenuState()
+      ui.update({ chrome: this._blockHandleChrome, menu: this._blockHandleMenu })
     },
   },
 }

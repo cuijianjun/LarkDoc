@@ -13,7 +13,7 @@ const results = []
 const source = `const value = 42;\nconsole.log(value);\n${'long-line-code-'.repeat(40)}\n// logical fourth line`
 
 async function main() {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
   const context = await browser.newContext({ viewport: { width: 1680, height: 1050 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
@@ -41,6 +41,14 @@ async function main() {
     await click(page.locator('.lark-doc-command-menu [data-command-id="code"]'))
     await code().locator('.lark-doc-code-caption').waitFor({ state: 'visible' })
     check('Slash insertion starts with Plain Text and wrap off', (await attrs()).language === 'plaintext' && (await attrs()).wrap === false)
+    const palette = await code().evaluate(node => {
+      const swatch = document.createElement('span'); node.appendChild(swatch)
+      swatch.style.background = 'var(--ld-bg-code)'; swatch.style.color = 'var(--ld-text)'
+      const actual = getComputedStyle(node), expected = getComputedStyle(swatch)
+      const value = { background: actual.backgroundColor, expectedBackground: expected.backgroundColor, text: getComputedStyle(node.querySelector('.lark-doc-code-highlight')).color, expectedText: expected.color }
+      swatch.remove(); return value
+    })
+    check('Code card uses the Feishu light surface and readable text tokens', palette.background === palette.expectedBackground && palette.text === palette.expectedText, palette)
     await click(code().locator('.lark-doc-code-caption'))
     await page.keyboard.type('代码闭环标题')
     await click(code().locator('.lark-doc-code-language'))
@@ -143,6 +151,11 @@ async function main() {
       await page.evaluate(json => window.__larkDoc.setContent(json), json)
       await page.waitForFunction(expected => [...document.querySelectorAll('.lark-doc-code-highlight .hljs-keyword')].some(node => node.textContent === expected), token)
       check(`${label} survives a fresh node view`, await code().locator('.lark-doc-code-highlight').innerText() === sample)
+    }
+    for (const [key, type] of [['c', 'codeBlock'], ['s', 'horizontalRule']]) {
+      await page.evaluate(() => { window.__larkDoc.setContent('<p>快捷键保留正文</p>'); window.__larkDoc.getEditor().commands.focus('end') })
+      await page.keyboard.press(`ControlOrMeta+Alt+${key}`)
+      check(`Chrome native shortcut Alt+${key.toUpperCase()} inserts ${type}`, await page.evaluate(type => window.__larkDoc.getJSON().content.some(node => node.type === type) && window.__larkDoc.getText().includes('快捷键保留正文'), type))
     }
     check('No uncaught page errors', errors.length === 0, errors)
   } finally {

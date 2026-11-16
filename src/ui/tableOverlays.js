@@ -112,6 +112,10 @@ export function createTableOverlays({ host, handlers = {} }) {
     node.setAttribute('aria-pressed', 'false')
     node.setAttribute('aria-label', axis === 'column' ? `选择第 ${index + 1} 列` : `选择第 ${index + 1} 行`)
     node.addEventListener('pointerdown', (event) => startDrag(event, axis, index))
+    // Safari/读屏的原生 AXPress 只产生 detail=0 的 click，没有 pointerdown/up。
+    node.addEventListener('click', event => {
+      if (event.detail === 0 && handlers.onSelect) handlers.onSelect(axis, index, event)
+    })
     // 键盘等价：Enter / Space 选中整行整列（与指针单击同一个 handler）。
     node.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return

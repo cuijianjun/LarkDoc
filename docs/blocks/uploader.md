@@ -222,3 +222,33 @@ el.options = { ...el.options, uploader: nextUploader }
 同一包已在 Vue2/CLI5/Webpack5、Vue3/Vite7、React18/Vite7，以及三个真实适配器、原生 default/full/lite+features、Element ESM、CDN UMD、Webpack4.47 中验证。覆盖初始化配置、真实 multipart、图片加载、五来源、URL/base64、适用回调、重试、取消、超时和失败；图表、公式及本地字体同时回归。
 
 该验证使用本机 Chromium 和本地 HTTP 模拟上传服务，尚未与具体业务后端联调。Node14 验证库构建与普通 CJS 编辑，不代表服务器原生支持 XMLHttpRequest；SSR 仍只在客户端挂载。
+
+
+## 附件上传
+
+“视频或文件”可从 `/` 搜索或 `+` 菜单的“常用”区进入；`config.features.files: false` 同时关闭两个入口。
+
+`uploadFile` 优先于 `uploader` 的自定义 `upload`（或裸函数），支持 `(file, ctx) => ({ token?, url? })`，或包含 `upload` 的配置对象。附件不使用图片的本地 base64 读取；文件大小继续受 `limits.maxFileSize` 约束。
+
+```js
+new LarkDoc({
+  element: '#editor',
+  uploadFile: {
+    chunked: true,
+    chunkSize: 4 * 1024 * 1024,
+    concurrency: 2,
+    retry: { attempts: 3, delay: 300 },
+    async upload(part, ctx) {
+      // 应用按 ctx.chunk 的 index/total/offset/uploadId 实现接收与合并。
+      const response = await fetch('/upload-part', { method: 'POST', body: part, signal: ctx.signal })
+      if (!response.ok) throw Object.assign(new Error('上传失败'), { status: response.status })
+      return response.json() // 最后片返回有效 token 或 url
+    },
+    onProgress(event) { console.log(event.percent) },
+  },
+})
+```
+
+默认每编辑器顺序处理，`concurrency` 限制为 1–3 个文件；同一文件的分片保持顺序。裸函数默认只调用一次，对象可显式配置重试。续传记录保存在当前编辑器内存中，取消后重新选择同一文件可从已完成分片继续；它不保证跨页面恢复或服务端幂等。`ctx.documentId` 保留真实会话标识，`ctx.resumeScope` 仅隔离内部续传记录。
+
+只读、销毁、替换正文、切换文档/上传器或禁用文件入口会取消所属请求。忽略 Abort 的迟到结果也不会插入正文。上传完成按原选择顺序一次落块，保留当前光标并隔离撤销历史。

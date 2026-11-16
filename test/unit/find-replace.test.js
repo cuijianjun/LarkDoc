@@ -147,8 +147,8 @@ describe('P4-05 查找替换 —— 快捷键（overlayDismissMixin）', () => {
     expect(b.searchTab).toBe('replace')
   })
 
-  it('⌘+Shift+F / 单独 F / ⌘+Alt+F 都不拦（不抢别的快捷键）', () => {
-    const cases = [keyEvent('f', { metaKey: true, shiftKey: true }), keyEvent('f'), keyEvent('f', { metaKey: true, altKey: true })]
+  it('⌘+Shift+F / 单独 F / ⌘+Alt+F / Ctrl+⌘+F 都不拦（不抢原生全屏快捷键）', () => {
+    const cases = [keyEvent('f', { metaKey: true, shiftKey: true }), keyEvent('f'), keyEvent('f', { metaKey: true, altKey: true }), keyEvent('f', { metaKey: true, ctrlKey: true })]
     cases.forEach((event) => {
       const ed = createEd()
       od.onWindowKeydown.call(ed, event)

@@ -20,6 +20,7 @@ import { LarkDoc } from '../../src/LarkDoc'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 import { createMemoryCommentsProvider } from '../../src/core/comments/memory-provider'
 import { CellSelection } from '@tiptap/pm/tables'
+import { applyBlockIdFixes } from '../../src/core/blocks/block-fixes'
 import {
   COMMENT_CONTROL_IDS,
   COMMENT_HEIGHTS,
@@ -63,7 +64,75 @@ async function withCommentDocument(run, options = {}) {
   } finally { doc.destroy(); element.remove() }
 }
 
+async function commentReplyInput() {
+  return vi.waitFor(() => {
+    const input = document.querySelector('.lark-doc-comment-panel:not(.lark-doc-comment-composer) .lark-doc-comment-input-zone')
+    expect(input).not.toBeNull()
+    return input
+  })
+}
+
 describe('评论剩余闭环', () => {
+  it.each(['metaKey', 'ctrlKey'])('%s+Enter submits the reply through the provider and ignores composition', key => withCommentDocument(async ({ host, provider, thread }) => {
+    host.activateComment(thread.id)
+    await vi.dynamicImportSettled()
+    const input = await commentReplyInput()
+    input.textContent = '快捷键回复'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await host.$nextTick()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', [key]: true, isComposing: true, bubbles: true }))
+    expect((await provider.list())[0].replies).toHaveLength(1)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', [key]: true, bubbles: true }))
+    await vi.waitFor(async () => expect((await provider.list())[0].replies.map(reply => reply.content)).toEqual(['原评论', '快捷键回复']))
+  }))
+  it('Cmd+Enter submits a new comment once and keeps plain Enter as input', () => withCommentDocument(async ({ doc, host, provider }) => {
+    doc.getEditor().commands.setTextSelection({ from: 1, to: 5 })
+    host.beginCommentComposer()
+    await vi.waitFor(() => expect(document.querySelector('.lark-doc-comment-composer textarea')).not.toBeNull())
+    const input = document.querySelector('.lark-doc-comment-composer textarea')
+    input.value = '快捷键新评论'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await host.$nextTick()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(await provider.list()).toHaveLength(1)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    await vi.waitFor(async () => expect(await provider.list()).toHaveLength(2))
+  }))
+  it('reply shortcut rejects keyCode 229, readonly fields and a detached previous provider field', () => withCommentDocument(async ({ host, provider, session, thread }) => {
+    host.activateComment(thread.id)
+    await vi.dynamicImportSettled()
+    const input = await commentReplyInput()
+    input.textContent = '保留草稿'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await host.$nextTick()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, keyCode: 229, bubbles: true }))
+    expect((await provider.list())[0].replies).toHaveLength(1)
+    session.setProvider('authorization', { getCapabilities: async () => ({ canView: true, canEdit: true, canComment: false }) })
+    await session.refreshCapabilities()
+    await host.$nextTick()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+    expect((await provider.list())[0].replies).toHaveLength(1)
+    session.setProvider('comments', createMemoryCommentsProvider())
+    await host.$nextTick()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+    expect((await provider.list())[0].replies).toHaveLength(1)
+  }))
+  it('reply shortcut cannot start a second request while the provider is pending', () => withCommentDocument(async ({ host, provider, thread }) => {
+    host.activateComment(thread.id)
+    await vi.dynamicImportSettled()
+    const input = await commentReplyInput(), actual = provider.reply.bind(provider)
+    let finish
+    provider.reply = vi.fn(value => new Promise(resolve => { finish = () => resolve(actual(value)) }))
+    input.textContent = '只发一次'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await host.$nextTick()
+    const send = () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+    send(); send()
+    await vi.waitFor(() => expect(provider.reply).toHaveBeenCalledOnce())
+    finish()
+    await vi.waitFor(async () => expect((await provider.list())[0].replies).toHaveLength(2))
+  }))
   const picture = () => new File(['png'], 'comment.png', { type: 'image/png' })
   const url = 'data:image/png;base64,YQ=='
   it('更多菜单悬停打开，点击收起，移开后关闭', () => withCommentDocument(async ({ host, thread, reply }) => {
@@ -95,8 +164,11 @@ describe('评论剩余闭环', () => {
     const trigger = document.querySelector('[aria-label="文档更多操作"]')
     expect(trigger).not.toBeNull()
     trigger.click()
-    const option = [...document.querySelectorAll('[role="option"]')].find(node => node.textContent.trim() === '历史评论')
-    expect(option).toBeDefined()
+    const option = await vi.waitFor(() => {
+      const item = [...document.querySelectorAll('[role="option"]')].find(node => node.querySelector('.lark-doc-select-item-label')?.textContent === '历史评论')
+      expect(item).toBeDefined()
+      return item
+    })
     option.click()
     await vi.waitFor(() => expect(document.querySelector('.lark-doc-comment-history')).not.toBeNull())
   }, { props: { config: { features: { history: false } } } }))
@@ -253,6 +325,39 @@ describe('表格与链接真实评论入口', () => {
     editor.state.doc.descendants((node, pos) => { if (node.type.name === 'tableCell') cells.push(pos) })
     editor.view.dispatch(editor.state.tr.setSelection(CellSelection.create(editor.state.doc, cells[0], cells[4])))
   }
+  it.each(['text', 'cells'])('批量补号保留 %s 评论草稿和 Provider 等待中的原引用', kind => withCommentDocument(async ({ doc, host, provider }) => {
+    const editor = doc.getEditor()
+    editor.commands.setContent({ type: 'doc', content: [kind === 'cells' ? table : { type: 'paragraph', attrs: { blockId: 'comment_body' }, content: [{ type: 'text', text: '评论原文' }] },
+      ...Array.from({ length: 40 }, () => ({ type: 'paragraph', content: [{ type: 'text', text: '补号正文' }] })),
+    ] })
+    if (kind === 'cells') selectRectangle(editor)
+    else editor.commands.setTextSelection({ from: 1, to: 5 })
+    expect(host.beginCommentComposer()).toBe(true)
+    const quote = host.commentComposer.quote
+    host.setCommentComposerDraft('保留原引用')
+    const fixes = []
+    editor.state.doc.forEach((node, pos, index) => { if (index > 0) fixes.push({ pos, id: `normalized_tail_${index}` }) })
+    const normalized = editor.state.tr
+    applyBlockIdFixes(normalized, fixes)
+    editor.view.dispatch(normalized)
+    expect(host.commentComposer.value).toBe('保留原引用')
+    expect(host._commentComposerAnchor.bookmark.resolve(editor.state.doc).eq(editor.state.selection)).toBe(true)
+    const actual = provider.createThread.bind(provider)
+    let complete
+    provider.createThread = input => new Promise(resolve => { complete = () => resolve(actual(input)) })
+    const pending = host.submitCommentComposer()
+    await vi.waitFor(() => expect(complete).toBeTypeOf('function'))
+    const again = editor.state.tr
+    applyBlockIdFixes(again, fixes.map((fix, index) => ({ ...fix, id: `normalized_again_${index}` })))
+    editor.view.dispatch(again)
+    expect(host.commentComposer.busy).toBe(true)
+    complete()
+    const saved = await pending
+    expect(saved).toBeTruthy()
+    expect(saved.quote).toBe(quote)
+    expect(saved.blockId).toBe(kind === 'cells' ? 'comment_table' : 'comment_body')
+    expect(host.commentComposer).toBeNull()
+  }))
   it('矩形评论引用只含所选四格，稳定锚点属于表格而非首格段落', () => withCommentDocument(async ({ doc, host, provider, thread: seed }) => {
     const editor = doc.getEditor()
     editor.commands.setContent({ type: 'doc', content: [table] })
@@ -308,10 +413,25 @@ describe('表格与链接真实评论入口', () => {
 })
 
 describe('real comment reaction and reply lifecycle', () => {
+  it('keeps an unknown provider reaction as plain text without the shared atlas', () => withCommentDocument(async ({ host, provider, thread, reply }) => {
+    await provider.toggleReaction({ threadId: thread.id, commentId: reply.id, emoji: 'future_reaction', author: { id: 'comment-owner', name: '我' } })
+    await host.loadComments()
+    const icon = await vi.waitFor(() => {
+      const target = document.querySelector('.lark-doc-comment-reaction-icon')
+      expect(target).not.toBeNull()
+      return target
+    })
+    expect(icon.textContent).toBe('future_reaction')
+    expect(icon.style.backgroundImage).toBe('none')
+  }))
+
   it('opens the offline source reaction palette and renders persisted reaction chips', () => withCommentDocument(async ({ host, provider, thread, reply }) => {
     await host.runCommentReplyControl('emoji', thread.id, reply.id, { currentTarget: { getBoundingClientRect: () => ({ right: 900, top: 300 }) } })
     expect(host.commentReactionCatalog.items).toHaveLength(188)
-    expect(document.querySelector('[aria-label="评论表情回复"]')).not.toBe(null)
+    await vi.waitFor(() => expect(document.querySelector('[aria-label="评论表情回复"]')).not.toBe(null))
+    const palette = document.querySelector('.lark-doc-comment-reaction-picker')
+    expect(palette.querySelector('.lark-doc-comment-reaction-icon').style.backgroundImage).toBe('')
+    expect(palette.parentElement.style.getPropertyValue('--lark-doc-comment-reaction-sprite').startsWith('url(')).toBe(true)
     await host.selectCommentReaction('applaud_v2')
     expect((await provider.list())[0].replies[0].reactions).toEqual([{ emoji: 'applaud_v2', users: ['comment-owner'] }])
     await vi.waitFor(() => expect(document.querySelector('.lark-doc-comment-reaction')).not.toBe(null))
@@ -347,7 +467,11 @@ describe('real comment reaction and reply lifecycle', () => {
 
   it('keeps the palette during internal scrolling and closes it on document scrolling', () => withCommentDocument(async ({ host, thread, reply }) => {
     await host.openCommentReaction(thread.id, reply.id)
-    const palette = document.querySelector('.lark-doc-comment-reaction-picker')
+    const palette = await vi.waitFor(() => {
+      const node = document.querySelector('.lark-doc-comment-reaction-picker')
+      expect(node).not.toBeNull()
+      return node
+    })
     palette.querySelector('.lark-doc-comment-reaction-scroll').dispatchEvent(new Event('scroll'))
     expect(host.commentReaction).not.toBe(null)
     window.dispatchEvent(new Event('scroll'))
@@ -371,7 +495,7 @@ describe('real comment reaction and reply lifecycle', () => {
   }))
 
   it('rejects late composition events when a replacement provider reuses the same thread id', () => withCommentDocument(async ({ host, session, provider, thread }) => {
-    const oldInput = document.querySelector('.lark-doc-comment-panel:not(.lark-doc-comment-composer) .lark-doc-comment-input-zone')
+    const oldInput = await commentReplyInput()
     oldInput.dispatchEvent(new Event('compositionstart'))
     oldInput.textContent = '旧文档私有组合草稿'
     oldInput.dispatchEvent(new Event('input', { bubbles: true }))
@@ -379,7 +503,11 @@ describe('real comment reaction and reply lifecycle', () => {
     session.setProvider('comments', nextProvider)
     oldInput.dispatchEvent(new Event('compositionend', { bubbles: true }))
     await host.loadComments()
-    const input = document.querySelector('.lark-doc-comment-panel:not(.lark-doc-comment-composer) .lark-doc-comment-input-zone')
+    const input = await vi.waitFor(async () => {
+      const node = await commentReplyInput()
+      expect(node).not.toBe(oldInput)
+      return node
+    })
     expect(input).not.toBe(oldInput)
     expect(input.textContent).toBe('')
     expect(host.commentDraftOf(thread.id)).toBe('')
@@ -387,7 +515,7 @@ describe('real comment reaction and reply lifecycle', () => {
 
   it.each([false, true])('refuses paste ranges that extend outside the reply field (backward=%s)', backward => withCommentDocument(async ({ host, thread }) => {
     host.setCommentDraft(thread.id, 'reply field')
-    const input = document.querySelector('.lark-doc-comment-panel:not(.lark-doc-comment-composer) .lark-doc-comment-input-zone')
+    const input = await commentReplyInput()
     await vi.waitFor(() => expect(input.textContent).toBe('reply field'))
     const outside = document.createElement('span')
     outside.textContent = 'outside editable guard'
@@ -598,6 +726,11 @@ describe('面板几何常量与高度', () => {
 })
 
 describe('bindThreads（块没了只降级，不吸附）', () => {
+  it('没有评论时不扫描文档', () => {
+    const doc = { descendants() { throw new Error('无评论不应扫描全文') } }
+    expect(bindThreads(doc, [], plainAnchorCodec)).toEqual([])
+    expect(bindThreads(doc, undefined, plainAnchorCodec)).toEqual([])
+  })
   it('块还在就是 bound，块被删只标 unbound —— 绝不就近挂到别的块', () => {
     const threads = [
       { id: 't-1', blockId: 'b-1', replies: [] },

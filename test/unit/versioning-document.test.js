@@ -24,6 +24,16 @@ function mount(provider = createMemoryVersioningProvider(), extra = {}) {
 }
 
 describe('version document lifecycle through the real facade and provider', () => {
+  it('restores a paged document with public content and retains the current version marker', async () => {
+    const { doc, session } = mount()
+    await doc.setContentAsync('<h1>version</h1>' + '<p>body</p>'.repeat(12), { pagedView: true, pageBlocks: 2, yieldToMain: async () => {} })
+    const before = doc.getJSON(), saved = await session.createVersion({ label: 'paged' })
+    doc.getEditor().commands.insertContentAt(2, 'edit')
+    const restored = await session.restoreVersion(saved.id)
+    expect(doc.getJSON()).toEqual(before)
+    expect(session.getCurrentVersionId()).toBe(restored.id)
+    expect(JSON.stringify(doc.getJSON())).not.toContain('documentSegment')
+  })
   it('saves binary current content, decodes it for preview and restores the body as a new immutable version', async () => {
     const { doc, session, provider } = mount()
     const before = doc.getJSON()
@@ -214,7 +224,7 @@ describe('version document lifecycle through the real facade and provider', () =
     doc.setReadonly(false)
     await vi.waitFor(() => expect(rows[0].disabled).toBe(false))
     rows[0].click()
-    expect(root.querySelector('.lark-doc-save-version-mask')).not.toBe(null)
+    await vi.waitFor(() => expect(root.querySelector('.lark-doc-save-version-mask')).not.toBe(null))
   })
 
   it.each(['offline', 'allowlist'])('rechecks current %s resource policy after an awaited provider restore', async mode => {
@@ -255,6 +265,7 @@ describe('版本保存框上下文失效边界', () => {
     second.doc._handle.nativeHost.host.openSaveVersionDialog()
     await first.doc._handle.nativeHost.host.$nextTick()
     await second.doc._handle.nativeHost.host.$nextTick()
+    await vi.dynamicImportSettled()
     const inputs = [...document.querySelectorAll('.lark-doc-save-version-input')]
     expect(inputs).toHaveLength(2)
     expect(new Set(inputs.map(input => input.id)).size).toBe(2)

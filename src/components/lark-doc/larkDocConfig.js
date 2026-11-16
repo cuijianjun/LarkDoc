@@ -6,7 +6,7 @@
  */
 import { MAX_BLOCK_INDENT } from './documentOperations'
 import { normalizeModesConfig } from './editor/docModes'
-import { HELP_MENU_ITEMS } from '../../ui/shortcutGroups'
+import { HELP_MENU_ITEMS } from '../../ui/helpMenuItems'
 
 export const LARK_DOC_FEATURES = Object.freeze([
   'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
@@ -36,7 +36,7 @@ export const LARK_DOC_EXPORT_FORMATS = Object.freeze([
   Object.freeze({ value: 'json', label: 'JSON（完整正文）', hint: '保留全部块属性，可无损再导入' }),
   Object.freeze({ value: 'md', label: 'Markdown（简化）', hint: '字体、分栏、公式与图片裁剪会降级' }),
   Object.freeze({ value: 'txt', label: '纯文本', hint: '只保留文字' }),
-  Object.freeze({ value: 'docx', label: 'Word（简化）', hint: '保留正文、表格与图片，复杂块可能降级' }),
+  Object.freeze({ value: 'docx', label: 'Word', hint: '保留分栏、公式与图表；无法转换的公式和图表以源码保留并提示' }),
   Object.freeze({ value: 'print', label: '打印 / PDF', hint: '调用浏览器打印，可选「另存为 PDF」' }),
 ])
 

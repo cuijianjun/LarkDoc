@@ -5,8 +5,12 @@
  * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
 import { normalizeLinkUrl } from '../../../core/documentOperations'
+import { closeHistory } from '@tiptap/pm/history'
+import { placeMenu } from '../../../ui/menuLayout'
 import { openMathAt } from '../../../core/nodeviews/math'
 import { EMBED_MENU_ITEMS, EMBED_HELP_URL } from '../../../core/embed/presets'
+import { appPreviewOf } from '../../../core/embed/app-preview'
+import { isCommandEnabled } from '../larkDocConfig'
 import { readHost, resolveEmbed } from '../../../core/embed/resolve'
 import {
   marks, fontFamilyOptions, fontSizeOptions, lineHeightOptions,
@@ -29,8 +33,6 @@ export default {
     cellTextAlignOptions, cellVerticalAlignOptions,
     appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: DEFAULT_TEXT_COLOR, backgroundColor: DEFAULT_TEXT_BACKGROUND },
     cellAlignState: { textAlign: '', verticalAlign: '' },
-    // 飞书式 hover 弹窗：鼠标离开触发器/弹层后延迟关闭（跨过 6px 间隙时不误关）。
-    hoverCloseTimer: null,
   } },
   computed: {
     visibleMarks() {
@@ -48,21 +50,30 @@ export default {
     // 内嵌网页浮层当前项：15 条里按 id 现查（未命中给 null，模板里 v-if 已先拦一层）。
     embedDialogItem() {
       if (!this.embedDialog) return null
-      return EMBED_MENU_ITEMS.find((item) => item.id === this.embedDialog) || null
+      const app = appPreviewOf(this.embedDialog)
+      return app ? { ...app, dialogTitle: `插入${app.label}预览`, placeholder: '粘贴应用的 http(s) 链接' } : EMBED_MENU_ITEMS.find((item) => item.id === this.embedDialog) || null
     },
     embedDialogTitle() { return this.embedDialogItem ? this.embedDialogItem.dialogTitle : '' },
     embedDialogPlaceholder() { return this.embedDialogItem ? this.embedDialogItem.placeholder : '' },
   },
   methods: {
     /** hover 弹窗公共：取消延迟关闭 / 离开后延迟关闭（进入弹层会取消）。 */
-    cancelPopupHoverClose() { if (this.hoverCloseTimer) { clearTimeout(this.hoverCloseTimer); this.hoverCloseTimer = null } },
-    schedulePopupHoverClose(close) {
-      this.cancelPopupHoverClose()
-      this.hoverCloseTimer = setTimeout(() => { this.hoverCloseTimer = null; close() }, 150)
+    cancelPopupHoverClose(owner) {
+      const pending = this._popupHoverClose
+      this._popupHoverClose = null
+      if (!pending) return
+      clearTimeout(pending.timer)
+      // Only re-entering the same popup cancels its leave action. Moving to
+      // another trigger must finish the old close before owning the timer.
+      if (owner && pending.owner !== owner) pending.close()
+    },
+    schedulePopupHoverClose(close, owner) {
+      this.cancelPopupHoverClose(owner)
+      this._popupHoverClose = { owner, close, timer: setTimeout(() => { this._popupHoverClose = null; close() }, 150) }
     },
     openHeadingMenuOnHover() {
       if (!this.writable()) return
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('heading')
       if (this.headingOpen) return
       // 直接置态而非复用 toggleHeadingMenu：避免其把 hover 标志清掉，导致紧随的 click 又关闭弹窗。
       this._headingHoverOpened = true
@@ -71,12 +82,12 @@ export default {
       this.menuOpen = false
       this.$nextTick(() => this.positionHeadingMenu())
     },
-    scheduleHeadingMenuClose() { this.schedulePopupHoverClose(() => { this._headingHoverOpened = false; if (this.headingOpen) this.toggleHeadingMenu() }) },
+    scheduleHeadingMenuClose() { this.schedulePopupHoverClose(() => { this._headingHoverOpened = false; if (this.headingOpen) this.toggleHeadingMenu() }, 'heading') },
     openColorPaletteOnHover(event) {
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('color')
       if (this.colorPaletteOpen !== 'textColor') { this._paletteHoverOpened = true; this.toggleColorPalette('textColor', event) }
     },
-    scheduleColorPaletteClose() { this.schedulePopupHoverClose(() => { this._paletteHoverOpened = false; if (this.colorPaletteOpen) this.colorPaletteOpen = '' }) },
+    scheduleColorPaletteClose() { this.schedulePopupHoverClose(() => { this._paletteHoverOpened = false; if (this.colorPaletteOpen) this.colorPaletteOpen = '' }, 'color') },
     setHeading(level) { if (!this.featureEnabled('headings')) return; this.headingOpen = false; this.headingStyle = {}; if (level) this.run('setHeading', { level }); else this.run('setParagraph') },
     toggleHeadingMenu() {
       if (!this.writable()) return
@@ -91,43 +102,44 @@ export default {
     positionHeadingMenu() {
       if (!this.headingOpen) return
       const root = this.$refs.root
-      const trigger = root?.querySelector('.lark-doc-heading-tool > button')
-      const menu = root?.querySelector('.lark-doc-dropdown')
-      if (!trigger || !menu) return
+      this.headingStyle = this.positionToolbarPopup(root?.querySelector('.lark-doc-heading-tool > button'), root?.querySelector('.lark-doc-heading-menu'))
+    },
+    positionToolbarPopup(trigger, menu, minHeight = 40) {
+      if (!trigger || !menu) return {}
       const margin = 8
       const triggerRect = trigger.getBoundingClientRect()
       const menuRect = menu.getBoundingClientRect()
-      const viewportSpace = Math.max(40, window.innerHeight - margin * 2)
+      const viewportSpace = Math.max(minHeight, window.innerHeight - margin * 2)
       const naturalHeight = Math.max(menu.scrollHeight, menuRect.height)
       const desiredHeight = Math.min(naturalHeight, viewportSpace)
       const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin)
       const above = Math.max(0, triggerRect.top - margin)
       const useAbove = below < desiredHeight && above > below
       const available = useAbove ? above : below
-      const maxHeight = Math.max(40, Math.min(desiredHeight, available || viewportSpace))
+      const maxHeight = Math.max(minHeight, Math.min(desiredHeight, available || viewportSpace))
       const top = useAbove ? triggerRect.top - maxHeight - 6 : triggerRect.bottom + 6
       const width = Math.min(menuRect.width || 155, window.innerWidth - margin * 2)
       const left = Math.max(margin, Math.min(window.innerWidth - width - margin, triggerRect.left))
-      this.headingStyle = { top: `${Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, top))}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      return { top: `${Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, top))}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
     },
     /** 打开/关闭工具栏右侧「⋯」文档操作下拉（fixed 定位，贴按钮右下）。 */
     toggleHeaderMenu() {
+      this._headerMenuAnchor = null
       this.headerMenuOpen = !this.headerMenuOpen
       this.headerMenuStyle = {}
       if (this.headerMenuOpen) this.$nextTick(() => this.positionHeaderMenu())
     },
-    closeHeaderMenu() { this.headerMenuOpen = false; this.headerMenuStyle = {} },
+    closeHeaderMenu() { this.headerMenuOpen = false; this.headerMenuStyle = {}; this._headerMenuAnchor = null },
     /** 「更多」弹层中的文档操作入口：内联「⋯」按钮被收纳隐藏时，以点击位置为锚点打开。 */
     openHeaderMenuFrom(event) {
       this.headerMenuOpen = true
       this.headerMenuStyle = {}
       const anchor = event?.currentTarget?.getBoundingClientRect?.()
+      this._headerMenuAnchor = anchor
       this.$nextTick(() => {
         if (!this.headerMenuOpen || !this.$refs.root?.querySelector('.lark-doc-header-menu')) return
         if (!anchor || !anchor.width) { this.positionHeaderMenu(); return }
-        const margin = 8
-        const maxHeight = Math.max(120, window.innerHeight - anchor.bottom - margin * 2)
-        this.headerMenuStyle = { top: `${anchor.bottom + 6}px`, right: `${Math.max(margin, window.innerWidth - anchor.right)}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+        this.headerMenuStyle = placeMenu(this.$refs.root.querySelector('.lark-doc-header-menu'), anchor, 8, { align: 'end', maxWidth: 280 })
       })
     },
     positionHeaderMenu() {
@@ -136,12 +148,9 @@ export default {
       // 触发按钮可能在 .lark-doc-tools-end-inner（折叠改造后的内层容器）或 .lark-doc-tools-end 直接子级。
       const trigger = root?.querySelector('button[aria-label="文档操作"]')
       const menu = root?.querySelector('.lark-doc-header-menu')
-      if (!trigger || !menu) return
-      const margin = 8
-      const triggerRect = trigger.getBoundingClientRect()
-      const maxHeight = Math.max(120, window.innerHeight - triggerRect.bottom - margin * 2)
-      const right = Math.max(margin, window.innerWidth - triggerRect.right)
-      this.headerMenuStyle = { top: `${triggerRect.bottom + 6}px`, right: `${right}px`, left: 'auto', maxWidth: `${Math.min(280, window.innerWidth - margin * 2)}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      if (!menu) return
+      const anchor = trigger?.getBoundingClientRect().width ? trigger : this._headerMenuAnchor
+      if (anchor) this.headerMenuStyle = placeMenu(menu, anchor, 8, { align: 'end', maxWidth: 280 })
     },
     openLinkDialog(allowEmpty = true) {
       if (!this.writable() || !this.featureEnabled('marks') || (!allowEmpty && this.editor.state.selection.empty)) return
@@ -172,19 +181,21 @@ export default {
       const href = normalizeLinkUrl(this.linkValue)
       if (!this.writable() || !href) { this.error = '链接地址无效，仅支持 http、https、mailto、tel 或 # 锚点'; return }
       const attrs = { href, target: '_blank', rel: 'noopener noreferrer' }
+      if (this.linkInsertMode && this._linkInsertDoc && this._linkInsertDoc !== this.editor.state.doc) { this.error = '正文已变化，请重新插入链接'; return }
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
       if (this.linkInsertMode) {
         const text = this.linkText.trim() ? this.linkText : href
-        if (this._linkInsertDoc && this._linkInsertDoc !== this.editor.state.doc) { this.error = '正文已变化，请重新插入链接'; return }
         this.restoreSelection(true)
         const { from, to, empty } = this.editor.state.selection
         if (!empty && this.editor.state.doc.textBetween(from, to, ' ') === text) this.editor.chain().focus().setLink(attrs).run()
         else this.editor.chain().focus().insertContent({ type: 'text', text, marks: [{ type: 'link', attrs }] }).run()
       } else this.run('setLink', attrs)
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
       this.linkDialog = false
       this.linkInsertMode = false
       this.linkText = ''
+      this.editor.view.focus()
     },
-    removeLink() { if (this._linkDialogTarget) return this.removeHoveredLink(this._linkDialogTarget); if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
     insertMathAtSelection() {
       if (!this.writable() || !this.featureEnabled('math')) return false
       this.restoreSelection()
@@ -205,6 +216,7 @@ export default {
       this.embedDialog = embedId
       this.embedValue = ''
       this.embedDialogRejected = false
+      this._embedDialogDoc = this.editor?.state?.doc
       this.embedDialogPos = this.computeEmbedDialogPos()
     },
     computeEmbedDialogPos() {
@@ -233,7 +245,7 @@ export default {
     },
     // 模板经 ed. 调用（同 setLinkValue），避免 vue/no-mutating-props；重输即复位拒绝态。
     setEmbedValue(value) { this.embedValue = value; this.embedDialogRejected = false },
-    closeEmbedDialog() { this.embedDialog = null; this.embedValue = ''; this.embedDialogRejected = false },
+    closeEmbedDialog() { this.embedDialog = null; this.embedValue = ''; this.embedDialogRejected = false; this._embedDialogDoc = null },
     /**
      * 「确认」。04 §4.3 ⑤ 三条实测行为：
      * - 合法链接 → 浮层消失 + 落块；
@@ -245,11 +257,17 @@ export default {
      */
     applyEmbedDialog() {
       if (!this.writable()) return
+      const app = appPreviewOf(this.embedDialog)
+      if (app && !isCommandEnabled(this.larkDocConfig, app.id, 'insert')) return
+      if (this._embedDialogDoc && this._embedDialogDoc !== this.editor.state.doc) { this.error = '正文已变化，请重新插入链接预览'; return }
       const url = String(this.embedValue || '').trim()
       // 与 resolve.js 共用同一个 host 口径：readHost 为 null 就是「这压根不是一个链接」。
       if (!url || !readHost(url)) { this.embedDialogRejected = true; return }
-      const { kind, attrs } = resolveEmbed(url)
-      this.run('insertContent', { type: kind === 'iframe' ? 'webEmbed' : 'bookmark', attrs })
+      // 应用链接一律落可跳转卡片；不会因域名命中播放器规则而变成 iframe。
+      const { kind, attrs } = app ? { kind: 'bookmark', attrs: { url, appKind: app.id } } : resolveEmbed(url)
+      // 各块命令负责规范化 URL / recordId 和协议校验，不能把解析层的 src 直接当书签属性。
+      const command = kind === 'iframe' ? 'setWebEmbed' : 'setBookmark'
+      if (!this.editor.can()[command](attrs) || !this.run(command, attrs)) { this.embedDialogRejected = true; return }
       this.closeEmbedDialog()
     },
     /**
@@ -265,5 +283,5 @@ export default {
       }
     },
   },
-  beforeDestroy() { if (this.hoverCloseTimer) clearTimeout(this.hoverCloseTimer) },
+  beforeDestroy() { this.cancelPopupHoverClose() },
 }

@@ -208,7 +208,8 @@ check('Changing the active handle target closes a stale block menu', () => {
     const paragraph = new FakeElement(rect)
     const paper = new FakeElement(rect)
     const context = {
-      editor: { view: { nodeDOM: () => paragraph } },
+      editor: { view: { dom: { contains: () => true }, nodeDOM: () => paragraph } },
+      blockHandleAnchorHidden: component.methods.blockHandleAnchorHidden,
       $refs: { root: { querySelector: selector => selector === '.lark-doc-paper' ? paper : null } },
       handleRange: { from: 0, to: 2 },
       blockMenuOpen: true,

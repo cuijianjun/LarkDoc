@@ -41,6 +41,8 @@ export function createWorkspaceShell(ownerDocument = document) {
   modeToastText.className = 'lark-doc-mode-toast-text'
   append(modeToast, modeToastIcon, modeToastText)
   const toolbarHost = ownerDocument.createElement('div')
+  const noticeHost = ownerDocument.createElement('div')
+  noticeHost.className = 'lark-doc-notice-host'
   const searchPanelHost = ownerDocument.createElement('div')
   const tableToolsHost = ownerDocument.createElement('div')
   const mentionHost = ownerDocument.createElement('div')
@@ -107,7 +109,7 @@ export function createWorkspaceShell(ownerDocument = document) {
   append(paper, blockHandleHost, dropLine, editorEl, tableBoundaryHost, calloutToolsHost)
   append(main, stageHost, paper, status)
   append(body, outlineHost, main, externalPanel)
-  append(root, skip, topBarHost, actionsPark, modeToast, toolbarHost, searchPanelHost, tableToolsHost,
+  append(root, skip, topBarHost, actionsPark, modeToast, toolbarHost, noticeHost, searchPanelHost, tableToolsHost,
     mentionHost, reminderHost, calendarSearchHost, isvPanelHost, revisionHost, body, bubbleHost,
     commandMenuHost, dialogHost, helpFabHost, colorPaletteHost, imageInput, fileInput, error,
     headingNumberMenuHost, overlayHost)
@@ -121,6 +123,7 @@ export function createWorkspaceShell(ownerDocument = document) {
     modeToast,
     modeToastText,
     toolbarHost,
+    noticeHost,
     searchPanelHost,
     tableToolsHost,
     mentionHost,

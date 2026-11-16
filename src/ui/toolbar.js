@@ -21,7 +21,8 @@
  * 这只是节点搬运，插槽内容始终由 Vue 渲染与更新。
  */
 
-import { iconNode, diagramIconNode } from './icon'
+import { iconNode } from './icon'
+import { createLazyView } from './lazy'
 import { createHeadingMenu } from './headingMenu'
 import { createSelect } from './select'
 import { applyStyle, setAttr, setVisible, syncChildren } from './dom'
@@ -85,6 +86,7 @@ export function createToolbar(options = {}) {
       button.setAttribute('title', spec.title)
     }
     if (spec.icon) button.appendChild(iconNode(spec.icon, spec.iconSize || 16, spec.caret ? 'lark-doc-caret' : ''))
+    if (spec.popup) button.setAttribute('aria-haspopup', spec.popup)
     if (spec.text) button.appendChild(document.createTextNode(spec.text))
     if (spec.preventDefault) button.addEventListener('mousedown', (event) => event.preventDefault())
     if (spec.onClick) button.addEventListener('click', (event) => spec.onClick(event))
@@ -136,7 +138,7 @@ export function createToolbar(options = {}) {
   const headingMenu = createHeadingMenu({
     ariaLabel: '标题级别',
     onChoose: (level) => call('setHeading', level),
-    onKeepOpen: () => call('cancelPopupHoverClose'),
+    onKeepOpen: () => call('cancelPopupHoverClose', 'heading'),
     onScheduleClose: () => call('scheduleHeadingMenuClose'),
   })
 
@@ -167,6 +169,7 @@ export function createToolbar(options = {}) {
 
   const linkButton = makeButton({
     label: '设置链接',
+    popup: 'dialog',
     icon: 'link',
     preventDefault: true,
     onClick: () => call('openLinkDialog'),
@@ -239,50 +242,26 @@ export function createToolbar(options = {}) {
 
   const insertButton = makeButton({
     label: '插入',
+    popup: 'menu',
     title: '插入内容',
     icon: 'plus',
     text: '插入',
     onClick: (event) => call('openCommandMenu', 'plus', event),
-    onMouseEnter: () => call('cancelPopupHoverClose'),
+    onMouseEnter: () => call('cancelPopupHoverClose', 'command'),
     onMouseLeave: () => call('scheduleCommandMenuClose'),
   })
   insertButton.setAttribute('aria-haspopup', 'menu')
-  const tableButton = makeButton({ label: '插入表格', icon: 'table', preventDefault: true, onClick: () => call('onTableToolbarClick') })
+  const tableButton = makeButton({ label: '插入表格', icon: 'table', popup: 'dialog', preventDefault: true, onClick: () => call('onTableToolbarClick') })
   const diagramButton = makeButton({ label: '图表', title: '插入图表', icon: 'chart', text: '图表', onClick: () => call('toggleDiagramMenu'), onMouseEnter: () => call('openDiagramMenuOnHover'), onMouseLeave: () => call('scheduleDiagramMenuClose') })
   diagramButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
   diagramButton.setAttribute('aria-haspopup', 'menu')
-  const aiButton = makeButton({ label: 'AI 助手', icon: 'sparkle', text: 'AI', onClick: () => call('emitAiRequest', 'rewrite') })
+  const aiButton = makeButton({ label: 'AI 助手', icon: 'sparkle', text: 'AI', popup: 'dialog', onClick: () => call('emitAiRequest', 'rewrite') })
 
-  const diagramMenu = document.createElement('div')
-  diagramMenu.className = 'lark-doc-dropdown lark-doc-diagram-menu'
-  diagramMenu.setAttribute('role', 'menu')
-  diagramMenu.setAttribute('aria-label', '图表类型')
-  diagramMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose'))
-  diagramMenu.addEventListener('mouseleave', () => call('scheduleDiagramMenuClose'))
-  let diagramButtons = []
-  let diagramSignature = ''
-
-  function syncDiagramItems(types) {
-    const signature = types.map((item) => item.id).join('|')
-    if (signature === diagramSignature) return
-    diagramSignature = signature
-    diagramButtons.forEach((button) => { if (button.parentNode) button.parentNode.removeChild(button) })
-    diagramButtons = types.map((item) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.setAttribute('role', 'menuitem')
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', () => call('insertDiagramType', item.id))
-      const icon = diagramIconNode(item.id, 16, 'lark-doc-diagram-menu-icon is-teal')
-      icon.setAttribute('aria-hidden', 'true')
-      const label = document.createElement('span')
-      label.textContent = item.label
-      button.appendChild(icon)
-      button.appendChild(label)
-      diagramMenu.appendChild(button)
-      return button
-    })
-  }
+  const diagramMenuHost = document.createElement('span')
+  diagramMenuHost.style.display = 'contents'
+  const diagramMenu = createLazyView(() => import('./diagramMenu'), 'createDiagramMenu', { host: diagramMenuHost, handlers }, {
+    onReady: () => call('positionDiagramMenu'), onError: () => call('onDiagramError'),
+  })
 
   groupEls.insert.appendChild(insertButton)
   groupEls.insert.appendChild(tableButton)
@@ -294,7 +273,7 @@ export function createToolbar(options = {}) {
   const toolsEndInner = document.createElement('span')
   toolsEndInner.className = 'lark-doc-tools-end-inner'
 
-  const searchButton = makeButton({ label: '查找', icon: 'search', onClick: () => call('openSearchPanel') })
+  const searchButton = makeButton({ label: '查找', icon: 'search', popup: 'dialog', onClick: () => call('openSearchPanel') })
   const outlineButton = makeButton({ label: '目录', icon: 'outline', onClick: () => call('toggleOutlineOpen') })
   const widthSelect = createSelect({ ariaLabel: '页面宽度', onChange: (value) => call('setWidthMode', value) })
 
@@ -302,7 +281,7 @@ export function createToolbar(options = {}) {
   const readingButton = makeButton({ label: '阅读模式', icon: 'reading', onClick: () => call('toggleReading') })
   const fullscreenButton = makeButton({ label: '全屏', icon: 'fullscreen', onClick: () => call('toggleFullscreen') })
   const slidesButton = makeButton({ label: '演示模式', icon: 'slides', onClick: () => call('toggleSlides') })
-  const shortcutsButton = makeButton({ label: '快捷键帮助', icon: 'help-keyboard', iconSize: 18, onClick: () => call('toggleHelpOpen') })
+  const shortcutsButton = makeButton({ label: '快捷键帮助', icon: 'help-keyboard', popup: 'dialog', iconSize: 18, onClick: () => call('toggleHelpOpen') })
   const docOpsButton = makeButton({ label: '文档操作', icon: 'more-horizontal', iconSize: 18, onClick: () => call('toggleHeaderMenu') })
 
   toolsEndInner.appendChild(searchButton)
@@ -318,6 +297,7 @@ export function createToolbar(options = {}) {
   headerMenu.className = 'lark-doc-dropdown lark-doc-header-menu'
   headerMenu.setAttribute('role', 'menu')
   headerMenu.setAttribute('aria-label', '文档操作')
+  let headerMenuWasOpen = false
 
   const moreButton = document.createElement('button')
   moreButton.type = 'button'
@@ -334,7 +314,7 @@ export function createToolbar(options = {}) {
   moreMenu.className = 'lark-doc-dropdown lark-doc-more-menu'
   moreMenu.setAttribute('role', 'menu')
   moreMenu.setAttribute('aria-label', '更多工具')
-  moreMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose'))
+  moreMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose', 'more'))
   moreMenu.addEventListener('mouseleave', () => call('scheduleMoreMenuClose'))
 
   groupEls.toolsEnd.appendChild(toolsEndInner)
@@ -484,7 +464,7 @@ export function createToolbar(options = {}) {
       { node: tableButton, on: features.tables !== false },
       { node: diagramButton, on: features.diagram === true },
       { node: aiButton, on: features.ai !== false },
-      { node: diagramMenu, on: !!(next.diagram && next.diagram.open) },
+      { node: diagramMenuHost, on: true },
     ])
     const tableLabel = active.table ? '表格工具' : '插入表格'
     setAttr(tableButton, 'aria-label', tableLabel)
@@ -494,8 +474,7 @@ export function createToolbar(options = {}) {
     diagramButton.disabled = disabled
     aiButton.disabled = disabled
     setAttr(diagramButton, 'aria-expanded', next.diagram && next.diagram.open ? 'true' : 'false')
-    syncDiagramItems((next.diagram && next.diagram.types) || [])
-    if (next.diagram && next.diagram.open) applyStyle(diagramMenu, next.diagram.style)
+    diagramMenu.update(next.diagram || { open: false })
 
     // ⑦ 收尾
     setVisible(toolsEndInner, !collapsed.includes('toolsEnd'))
@@ -532,6 +511,8 @@ export function createToolbar(options = {}) {
 
     // 「文档操作」弹层：只读态下它仍要能开（保存/导出/快照都在里面）
     const headerState = next.headerMenu || {}
+    if (headerMenuWasOpen && !headerState.open) headerMenu.dispatchEvent(new Event('close'))
+    headerMenuWasOpen = !!headerState.open
     setAttr(docOpsButton, 'aria-expanded', headerState.open ? 'true' : 'false')
     if (headerState.open) applyStyle(headerMenu, headerState.style)
     // 承接插槽：宿主节点由调用方持有，这里只保证它在菜单里（`appendChild` 就是搬运）
@@ -551,14 +532,40 @@ export function createToolbar(options = {}) {
       { node: moreButton, on: !!more.visible },
       { node: moreMenu, on: !!more.open },
     ])
+    syncTooltip()
   }
 
   GROUPS.forEach((group) => el.appendChild(groupEls[group.id]))
+  const tooltip = createLazyView(() => import('./tooltip'), 'createTooltipLayer', { host: el })
+  let tooltipAnchor = null
+  const syncTooltip = () => tooltip.update({ open: !!tooltipAnchor, anchor: tooltipAnchor })
+  const tooltipTarget = event => {
+    const node = event.target.closest?.('button, [role=combobox], input[type=color]')
+    if (!node || !el.contains(node)) return null
+    if (node.title) { node.dataset.tooltipTitle = node.title; node.removeAttribute('title') }
+    return node.matches('[aria-haspopup], [aria-expanded]') || /[\u3400-\u9fff]/.test(node.textContent)
+      || node.closest('[role="menu"]') ? null : node
+  }
+  const enterTip = event => { const node = tooltipTarget(event); if (!node || !node.contains(event.relatedTarget)) { tooltipAnchor = node; syncTooltip() } }
+  const leaveTip = event => { const node = tooltipTarget(event); if (node && node === tooltipAnchor && !node.contains(event.relatedTarget)) { tooltipAnchor = null; syncTooltip() } }
+  const hideTip = () => { if (tooltipAnchor) { tooltipAnchor = null; syncTooltip() } }
+  const tooltipEvents = [['mouseover', enterTip], ['focusin', enterTip], ['mouseout', leaveTip], ['focusout', leaveTip], ['mousedown', hideTip]]
+  tooltipEvents.forEach(([name, handler]) => el.addEventListener(name, handler))
+  const tooltipWindow = el.ownerDocument.defaultView
+  tooltipWindow.addEventListener('scroll', hideTip, true)
+  tooltipWindow.addEventListener('resize', hideTip)
+  el.ownerDocument.addEventListener('keydown', hideTip, true)
 
   return {
     el,
     update,
     destroy() {
+      headerMenu.dispatchEvent(new Event('close'))
+      tooltipEvents.forEach(([name, handler]) => el.removeEventListener(name, handler))
+      tooltipWindow.removeEventListener('scroll', hideTip, true)
+      tooltipWindow.removeEventListener('resize', hideTip)
+      el.ownerDocument.removeEventListener('keydown', hideTip, true)
+      tooltipAnchor = null; tooltip.destroy(); diagramMenu.destroy()
       // 插槽宿主是 Vue 的资产：交还调用方，不能跟着工具栏一起被丢掉
       if (actionsHost && actionsHost.parentNode === headerMenu) headerMenu.removeChild(actionsHost)
       if (el.parentNode) el.parentNode.removeChild(el)

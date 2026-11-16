@@ -11,8 +11,8 @@ const fixture = path.join(evidenceDir, 'master-parity-upload-fixture.png')
 const results = []
 
 async function main() {
-  assert(fs.existsSync(fixture), 'Provide the real 323×275 PNG source fixture in the evidence directory')
-  const browser = await chromium.launch({ headless: true })
+  assert(fs.existsSync(fixture), 'Provide the valid 323×275 PNG test fixture in the evidence directory')
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
   const context = await browser.newContext({ viewport: { width: 1680, height: 1050 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
@@ -27,7 +27,8 @@ async function main() {
     const r = await locator.boundingBox(), viewport = page.viewportSize()
     assert(r)
     assert(r.y + r.height / 2 >= 0 && r.y + r.height / 2 <= viewport.height && r.x + r.width / 2 >= 0 && r.x + r.width / 2 <= viewport.width, 'Mouse target must remain inside the viewport')
-    await page.mouse.click(r.x + r.width / 2, r.y + r.height / 2)
+    // Wait for the current control to settle and pass hit testing after a lazy panel or toolbar moves.
+    await locator.click()
   }
   const tool = async label => { await page.mouse.move(1550, 950); await image().locator('.lark-doc-image-img').hover(); await click(image().getByRole('button', { name: label, exact: true })) }
   const drag = async (locator, dx, dy = 0) => { const r = await locator.boundingBox(); assert(r); await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await page.mouse.down(); await page.mouse.move(r.x + r.width / 2 + dx, r.y + r.height / 2 + dy, { steps: 12 }); await page.mouse.up() }
@@ -44,7 +45,7 @@ async function main() {
       window.__imageComments = window.__larkDocComments.createMemoryCommentsProvider()
       window.__imageShareCalls = []
       window.__imageShareFail = false
-      window.__imageDoc = new Facade({ element, storage: 'none', content: '<p></p>',
+      window.__imageDoc = new Facade({ element, storage: 'none', content: '<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>reefed</p></li></ul><p></p>',
         comments: window.__imageComments, user: { id: 'fixture-author', name: '本地核验用户' },
         mentionSource: [{ kind: 'user', id: 'fixture-recipient', name: '本地核验接收人' }, { kind: 'chat', id: 'fixture-chat', name: '本地核验会话' }],
         onImageShare: async payload => {
@@ -63,16 +64,72 @@ async function main() {
         reader.readAsDataURL(file)
       }) })
     })
-    await click(page.locator('.tiptap p').first())
+    await click(page.locator('.tiptap p').last())
     await page.keyboard.type('/')
     const chooser = page.waitForEvent('filechooser')
     await click(page.locator('[data-command-id="image"]'))
     await (await chooser).setFiles(fixture)
     await image().locator('img').waitFor()
     await page.waitForFunction(() => document.querySelector('.lark-doc-image-img')?.naturalWidth === 323)
-    check('File chooser uploads the real PNG once and retains its attachment', (await attrs()).attchId === 'fixture-attachment' && await page.evaluate(() => window.__imageUploads.length) === 1)
+    check('File chooser uploads the PNG once and retains its attachment', (await attrs()).attchId === 'fixture-attachment' && await page.evaluate(() => window.__imageUploads.length) === 1)
     let r = await image().locator('.lark-doc-image-img').boundingBox()
     check('Natural image renders at 323×275', Math.abs(r.width - 323) < 1 && Math.abs(r.height - 275) < 1, r)
+    const checkImageHandle = async label => {
+      const current = await image().boundingBox()
+      if (current.height > page.viewportSize().height - 150) {
+        if (current.y < 80 || current.y > page.viewportSize().height - 160) await page.evaluate(top => scrollBy(0, top - 200), current.y)
+      } else await image().scrollIntoViewIfNeeded()
+      const frame = await image().boundingBox()
+      await page.mouse.move(20, 20)
+      await page.mouse.move(frame.x + 3, frame.y + Math.min(80, frame.height / 2))
+      await image().locator('.lark-doc-image-toolbar').waitFor()
+      await page.locator('.lark-doc-block-handle-main').waitFor()
+      const geometry = await page.evaluate(() => {
+        const frame = document.querySelector('.lark-doc-image-frame').getBoundingClientRect(), handle = document.querySelector('.lark-doc-block-handle-main').getBoundingClientRect()
+        return { imageTop: frame.top, handleTop: handle.top, imageHeight: frame.height, scroll: scrollY }
+      })
+      check(`Image block handle aligns with the image top ${label}`, Math.abs(geometry.imageTop - geometry.handleTop) <= 1, geometry)
+    }
+    await checkImageHandle('with task above and floating toolbar mounted')
+    const imageScroll = await page.evaluate(() => scrollY)
+    await page.evaluate(() => { document.body.style.minHeight = '3000px' })
+    await page.mouse.wheel(0, 80)
+    await page.waitForFunction(before => scrollY > before, imageScroll)
+    await checkImageHandle('after scrolling')
+    await page.mouse.wheel(0, -80)
+    await page.waitForFunction(before => Math.abs(scrollY - before) <= 1, imageScroll)
+    await page.evaluate(() => { document.body.style.minHeight = '' })
+    if (process.argv.includes('--handle-anchor-only')) {
+      await page.evaluate(() => {
+        const canvas = document.createElement('canvas'); canvas.width = 323; canvas.height = 1600
+        canvas.getContext('2d').fillRect(0, 0, 323, 1600)
+        window.__imageDoc.setContent({ type: 'doc', content: [{ type: 'image', attrs: { src: canvas.toDataURL(), width: 323, naturalWidth: 323, naturalHeight: 1600, caption: '高图片说明' } }, { type: 'paragraph' }] })
+      })
+      await page.waitForFunction(() => document.querySelector('.lark-doc-image-img')?.naturalHeight === 1600)
+      await checkImageHandle('for a 1600px tall image with caption')
+      await page.mouse.wheel(0, 80)
+      await checkImageHandle('for the tall image after scrolling')
+      return
+    }
+    // Exercise the user's plus path with a real click, cancellation and the same file again.
+    const openImagePicker = async () => {
+      const empty = page.locator('.tiptap > p').last()
+      await empty.hover()
+      await page.locator('.lark-doc-empty-block-insert').hover()
+      await page.locator('.lark-doc-command-menu.is-plus').waitFor()
+      const pending = page.waitForEvent('filechooser')
+      await click(page.locator('.lark-doc-command-menu [data-command-id="image"]'))
+      return pending
+    }
+    const firstImageId = (await attrs()).blockId
+    await (await openImagePicker()).setFiles([])
+    check('Cancelling the plus image chooser keeps the document and upload count', await page.locator('.lark-doc-image').count() === 1 && await page.evaluate(() => window.__imageUploads.length) === 1)
+    await (await openImagePicker()).setFiles(fixture)
+    await page.waitForFunction(() => document.querySelectorAll('.lark-doc-image').length === 2)
+    check('The same PNG can be selected again through plus', await page.evaluate(() => window.__imageUploads.length) === 2)
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
+    await page.waitForFunction(() => document.querySelectorAll('.lark-doc-image').length === 1)
+    check('Undo removes the second image and preserves the first attachment', (await attrs()).blockId === firstImageId && (await attrs()).attchId === 'fixture-attachment')
     await image().locator('.lark-doc-image-img').hover()
     check('Resize circles stay hidden until image hover, then show all four', await image().locator('.lark-doc-image-resize:not(.is-hidden)').count() === 4)
     await drag(image().locator('[data-corner="bottom-right"]'), 70)
@@ -81,6 +138,7 @@ async function main() {
     await page.keyboard.insertText('公开品牌图核验说明')
     await page.keyboard.press('Enter')
     check('Caption input commits into document and visible text', (await attrs()).caption === '公开品牌图核验说明' && await image().locator('figcaption').innerText() === '公开品牌图核验说明')
+    await checkImageHandle('with a saved caption')
     const original = await attrs()
     await tool('裁剪')
     check('Crop is inline, with eight 24px handles and no modal', await image().locator('[data-crop-handle]').count() === 8 && await page.locator('.lark-doc-media-backdrop').count() === 0 && (await image().locator('[data-crop-handle]').first().boundingBox()).width === 24)
@@ -89,7 +147,7 @@ async function main() {
     const clipped = await attrs()
     r = await image().locator('.lark-doc-image-viewport').boundingBox()
     check('Crop preserves source/attachment/resize and records four-decimal bounds', clipped.src === original.src && clipped.attchId === original.attchId && clipped.width === 463 && Math.abs(clipped.crop[2] - 0.8704) < 0.0001 && Math.abs(r.width - 403) < 1 && Math.abs(r.height - 394.2) < 1, { attrs: { ...clipped, src: '[PNG]' }, rect: r })
-    check('Crop does not upload another file', await page.evaluate(() => window.__imageUploads.length) === 1)
+    check('Crop does not upload another file', await page.evaluate(() => window.__imageUploads.length) === 2)
     await image().screenshot({ path: path.join(evidenceDir, 'master-parity-local-image-cropped.png') })
     await tool('重置图片')
     check('Conditional Reset restores the original crop while keeping resized dimensions', (await attrs()).crop === null && (await attrs()).width === 463)

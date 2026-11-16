@@ -11,9 +11,9 @@ import { containerDepthAt, maxContainerDepthWithin, CONTAINER_NESTING_MAX, wrapC
 import { collectBlockIdFixes, sanitizeHTML } from '../../../core/documentOperations'
 import { createNetworkPolicy } from '../../../core/policy/network'
 import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
-import { createTemplateLibrary } from '../../../ui/templateLibrary'
+import { createLazyView } from '../../../ui/lazy'
 import { filterCommands, commandFeatureOf } from '../commands'
-import { boardProviderOf } from '../../../core/embed/board-diagram'
+import { appPreviewOf } from '../../../core/embed/app-preview'
 import { ENTERPRISE_TOOLTIP } from '../../../core/embed/enterprise'
 import { isCommandEnabled } from '../larkDocConfig'
 import { diagramTypes } from './constants'
@@ -63,11 +63,11 @@ export default {
         const selection = TextSelection.create(doc, range.from, range.to)
         return { editor, session: this.session, documentId: this.documentId, sessionDocumentId: this.session?.documentId,
           templates: this.templates, network: JSON.stringify(this.larkDocConfig.network || {}), imageProxy: this.larkDocConfig.network?.imageProxy,
-          bookmark: selection.getBookmark(), doc, library: false }
+          bookmark: selection.getBookmark(), doc, library: false, append: this._blockInsertContext || null }
       } catch (_) { return null }
     },
     templateInsertionCurrent(scope) {
-      return !!scope && !scope.invalid && (!scope.library || this._templateInsertion === scope) && this.templateInsertionAllowed()
+      return !!scope && !scope.invalid && (!scope.append || (scope.append.doc === scope.editor.state.doc && this.isBlockActionEnabled('addBelow'))) && (!scope.library || this._templateInsertion === scope) && this.templateInsertionAllowed()
         && this.editor === scope.editor && this.session === scope.session && this.documentId === scope.documentId
         && this.session?.documentId === scope.sessionDocumentId && this.templates === scope.templates
         && JSON.stringify(this.larkDocConfig.network || {}) === scope.network && this.larkDocConfig.network?.imageProxy === scope.imageProxy
@@ -124,11 +124,12 @@ export default {
         const content = this.prepareEditorTemplate(templateId)
         if (!this.templateInsertionCurrent(scope)) return false
         const editor = scope.editor
-        const selection = scope.bookmark.resolve(editor.state.doc)
+        const selection = scope.append ? { from: scope.append.range.to, to: scope.append.range.to } : scope.bookmark.resolve(editor.state.doc)
         if (containerDepthAt(editor.state.doc, selection.from) + maxContainerDepthWithin(content, 0, content.content.size) > CONTAINER_NESTING_MAX) {
           this.error = '容器嵌套最多 5 层'
           return false
         }
+        if (scope.append) this.closeBlockMenu()
         this.closeTemplateHistory(editor)
         const inserted = editor.chain().command(({ tr }) => { closeHistory(tr); return true })
           .insertContentAt({ from: selection.from, to: selection.to }, content.content.toJSON(), { updateSelection: true })
@@ -170,7 +171,7 @@ export default {
       this._templateMapListener = ({ transaction }) => { if (!this.mapTemplateInsertion(scope, transaction)) this.closeTemplateLibrary(false) }
       scope.editor.on('transaction', this._templateMapListener)
       const document = scope.editor.view.dom.ownerDocument
-      this._templateLibraryUi = createTemplateLibrary({ host: this.$refs.panelHost || this.$refs.root, mode: 'insert',
+      this._templateLibraryUi = createLazyView(() => import('../../../ui/templateLibrary'), 'createTemplateLibrary', { host: this.$refs.panelHost || this.$refs.root, mode: 'insert',
         renderDocument: (element, template) => {
           if (!this.templateInsertionCurrent(scope)) return
           const content = this.prepareEditorTemplate(template.id)
@@ -186,7 +187,7 @@ export default {
           onInsert: template => this.insertEditorTemplate(template.id, scope),
           isCurrent: () => this.templateInsertionCurrent(scope),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       this._templateLibraryUi.update({ open: true, templates: (this.templates || []).map(item => ({ ...item, name: item.label || item.title || item.id })) })
       this._templateLibraryUi.focusSearch()
       return true
@@ -212,7 +213,7 @@ export default {
     },
     openCommandMenu(kind, event) {
       if (!this.writable() || !this.featureEnabled('insert')) return
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('command')
       if (this.menuOpen && this.menuKind === kind) { this.closeCommandMenu(true); return }
       this.rememberSelection(kind === 'plus')
       this.menuKind = kind
@@ -226,7 +227,7 @@ export default {
       this.menuOpen = true
       this.headingOpen = false
       this.headingStyle = {}
-      this.closeBlockMenu()
+      if (!this._blockInsertContext) this.closeBlockMenu()
       this.trackTemplateMenu()
       this.$nextTick(() => {
         this.positionCommandMenu()
@@ -238,7 +239,7 @@ export default {
     },
     openEmptyBlockInsertMenu(event) {
       if (!this.writable() || !this.handleIsEmptyParagraph) return
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('command')
       this.closeBlockMenu()
       const cursor = this.handleRange.from + 1
       // Hover opens this menu before the pointer click event; keep the same
@@ -306,9 +307,10 @@ export default {
     scheduleCommandMenuClose() {
       this.schedulePopupHoverClose(() => {
         if (this.menuOpen && this.menuKind === 'plus') this.closeCommandMenu()
-      })
+      }, 'command')
     },
     closeCommandMenu(restoreFocus = false) {
+      this._blockInsertContext = null
       this.cancelPopupHoverClose()
       this.stopTemplateMenuTracking()
       this.menuOpen = false
@@ -319,8 +321,7 @@ export default {
       this.slashMatch = null
       if (restoreFocus) {
         // 菜单按钮点击会先夺走焦点；结构命令提交前同步回到编辑器，避免紧接着输入落到 body。
-        this.focus()
-        this.$nextTick(() => this.focus())
+        this.editor.view.focus()
       }
     },
     /**
@@ -352,16 +353,23 @@ export default {
       else if (event.key === 'Enter') {
         event.preventDefault()
         if (typeof this._commandMenuUi?.choose === 'function') this._commandMenuUi.choose()
-        else this.chooseCommand(this.filteredCommands[this.activeCommandIndex])
+        else {
+          const item = this.filteredCommands[this.activeCommandIndex]
+          if (item?.submenu && (this.menuKind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType))) this._commandMenuUi?.showSubmenu(item.id)
+          else this.chooseCommand(item)
+        }
       } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
     },
     chooseCommand(item) {
       if (!item || !this.writable()) return
       if (!this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, item.id)) return
+      const append = this._blockInsertContext
+      if (append && !this.blockInsertionCurrent(append)) { this.closeBlockMenu(); return false }
       // Picker callbacks may outlive a config or selection change. Apply the
       // same execution gate as direct commands before restoring/deleting text.
       if (item.id === 'table' && item.tableSize && (this.menuKind !== 'plus' || !this.filteredCommands.some(entry => entry.id === 'table' && entry.submenuType === 'table'))) return
       if (item.id === 'template') return item.templateLibrary ? this.openTemplateLibrary() : this.insertEditorTemplate(item.templateId)
+      if (append && item.id === 'diagram') { this.closeBlockMenu(); return this.insertDiagramType(item.diagramType || 'flowchart', append) }
       /**
        * P5-06：skip 项不可执行。菜单里它们本来就 `disabled`（鼠标点不动），
        * 这条拦的是**键盘 Enter**（`CommandMenu` 自己也会挡住，但两条路径都走
@@ -390,21 +398,25 @@ export default {
       // 它不弹面板，选完就地插块，焦点该还给编辑器。
       // 🔴 P5-03 的 poll 进名单：它也不弹面板，但焦点要落在**块内**标题 textarea
       // （02 §23 ⑤），交给 `focusPollTitle()` 自己处理；这里若 focus() 一次就前功尽弃。
-      const focusAfter = commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page', 'poll'].includes(item.id)
-      if (this.menuKind === 'plus') this.restoreSelection(true)
+      const focusAfter = !appPreviewOf(item.id) && commandFeatureOf(item.id) !== 'embed' && !['table', 'image', 'file', 'inlineMath', 'blockMath', 'link', 'template', 'ai', 'reminder', 'calendar_event', 'open_link', 'duplicate_page', 'follow_page', 'poll'].includes(item.id)
+      if (append) {
+        this._blockInsertContext = null
+        this.blockAction('addBelow', append.range)
+        if (this.editor.state.doc === append.doc) return false
+        this.savedSelection = null
+      } else if (this.menuKind === 'plus') this.restoreSelection(true)
       if (this.menuKind === 'slash' && this.slashMatch) { const { from, to } = this.slashMatch; const tr = this.editor.state.tr.delete(from, to); tr.setSelection(TextSelection.create(tr.doc, from)); this.editor.view.dispatch(tr); this.savedSelection = null }
       this.closeCommandMenu(focusAfter)
-      if (isTableSize) this.insertTable(item.tableSize.rows, item.tableSize.cols)
-      else this.executeCommand(item.id, item.templateId, item.diagramType)
-      if (focusAfter) {
-        this.focus()
-        this.$nextTick(() => this.focus())
-      }
+      const result = isTableSize ? this.insertTable(item.tableSize.rows, item.tableSize.cols) : this.executeCommand(item.id, item.templateId, item.diagramType)
+      const finish = () => { if (append && !append.editor.isDestroyed && this.editor === append.editor) this.editor.view.dispatch(closeHistory(this.editor.state.tr)) }
+      if (result?.then) return result.finally(finish)
+      finish()
+      return result
     },
     /** 工具栏「图表」按钮：打开类型下拉（fixed 定位贴按钮下方）。 */
     openDiagramMenuOnHover() {
-      if (!this.writable() || !this.featureEnabled('diagram')) return
-      this.cancelPopupHoverClose()
+      if (!this.writable() || !this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, 'diagram')) return
+      this.cancelPopupHoverClose('diagram')
       if (this.diagramMenuOpen) return
       this._diagramHoverOpened = true
       this.diagramMenuOpen = true
@@ -415,13 +427,13 @@ export default {
       this.schedulePopupHoverClose(() => {
         this._diagramHoverOpened = false
         if (this.diagramMenuOpen) this.closeDiagramMenu()
-      })
+      }, 'diagram')
     },
     toggleDiagramMenu() {
-      if (!this.writable() || !this.featureEnabled('diagram')) return
+      if (!this.writable() || !this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, 'diagram')) return
       if (this._diagramHoverOpened && this.diagramMenuOpen) return
       this._diagramHoverOpened = false
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('diagram')
       this.diagramMenuOpen = !this.diagramMenuOpen
       this.diagramMenuStyle = {}
       if (this.diagramMenuOpen) this.$nextTick(() => this.positionDiagramMenu())
@@ -430,43 +442,30 @@ export default {
     positionDiagramMenu() {
       if (!this.diagramMenuOpen) return
       const root = this.$refs.root
-      const trigger = root?.querySelector('button[aria-label="图表"]')
-      const menu = root?.querySelector('.lark-doc-diagram-menu')
-      if (!trigger || !menu) return
-      const margin = 8
-      const triggerRect = trigger.getBoundingClientRect()
-      const menuRect = menu.getBoundingClientRect()
-      const naturalHeight = Math.max(menu.scrollHeight, menuRect.height)
-      const viewportSpace = Math.max(120, window.innerHeight - margin * 2)
-      const desiredHeight = Math.min(naturalHeight, viewportSpace)
-      const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin)
-      const above = Math.max(0, triggerRect.top - margin)
-      const useAbove = below < desiredHeight && above > below
-      const available = useAbove ? above : below
-      const maxHeight = Math.max(120, Math.min(desiredHeight, available || viewportSpace))
-      const rawTop = useAbove ? triggerRect.top - maxHeight - 6 : triggerRect.bottom + 6
-      const top = Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, rawTop))
-      const left = Math.max(margin, Math.min(window.innerWidth - menuRect.width - margin, triggerRect.left))
-      this.diagramMenuStyle = { top: `${top}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      this.diagramMenuStyle = this.positionToolbarPopup(root?.querySelector('button[aria-label="图表"]'), root?.querySelector('.lark-doc-diagram-menu'), 120)
     },
     /** 按类型插入 mermaid 图表块；插入菜单「图表」命令也走这里（默认流程图）。 */
-    insertDiagramType(typeId) {
-      const item = (this.diagramTypes || diagramTypes).find((entry) => entry.id === typeId)
-      if (!item || !this.writable() || !this.featureEnabled('diagram')) return
+    async insertDiagramType(typeId, append = null) {
+      const item = (this.diagramTypes || diagramTypes).find(entry => entry.id === typeId)
+      const allowed = () => this.writable() && this.featureEnabled('insert') && commandEnabled(this.larkDocConfig, 'diagram')
+      if (!item || !allowed()) return false
+      const editor = this.editor, doc = editor.state.doc, selection = editor.state.selection, saved = this.savedSelection
+      const request = this._diagramInsertRequest = {}
+      const current = () => request === this._diagramInsertRequest && this.editor === editor && !editor.isDestroyed && (append ? this.blockInsertionCurrent(append) : editor.state.doc === doc && selection.eq(editor.state.selection)) && allowed()
       this.closeDiagramMenu()
-      this.run('insertContent', { type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: item.source }] })
+      try {
+        const { DIAGRAM_SOURCES, insertDiagramContent } = await import('../../../ui/diagramMenu')
+        if (!current()) return false
+        const source = DIAGRAM_SOURCES[item.id]
+        if (!source) return false
+        return insertDiagramContent.call(this, source, append, saved)
+      } catch (_) { if (current()) this.error = '图表加载失败，请重试'; return false }
     },
-    /**
-     * 执行一条菜单命令。
-     *
-     * 注意：`file / sheet / poll / bitable*` 这 11 条已从命令表摘掉（master 上只有块定义、
-     * 没有可用的插入链路），所以下面这几个分支从菜单已经走不到 —— 保留是因为块类型本身
-     * 还在（老文档正文照旧渲染），走 `doc.commands.setSheet/setPoll/setBitable` 的程序化
-     * 调用依然要落块。别再往菜单里加回来，除非把插入链路补完。
-     */
+    /** 应用入口共用链接预览；正文原生块走各自命令。 */
     executeCommand(id, templateId = '', diagramType = '') {
       if (!this.writable()) return
       if (!commandEnabled(this.larkDocConfig, id)) return
+      if (appPreviewOf(id)) { this.openEmbedDialog(id); return }
       if (id === 'paragraph') this.run('setParagraph')
       else if (/^heading[1-9]$/.test(id)) this.run('setHeading', { level: Number(id.slice(-1)) })
       else if (id === 'bulletList') this.run('toggleBulletList')
@@ -476,7 +475,7 @@ export default {
       else if (id === 'divider') this.run('setHorizontalRule')
       else if (id === 'details') this.run('setDetails')
       else if (id === 'code') this.run('setCodeBlock')
-      else if (id === 'diagram') this.insertDiagramType(diagramType || 'flowchart')
+      else if (id === 'diagram') return this.insertDiagramType(diagramType || 'flowchart')
       else if (id === 'callout') {
         // P1-05：容器嵌套上限守卫（命令层守卫覆盖不到 insertContent 型入口）。
         const { from, to } = this.editor.state.selection
@@ -494,25 +493,11 @@ export default {
       else if (id === 'image') this.$refs.imageInput.click()
       // P2-04：视频与文件同一个入口，accept 不限类型（02 L4168：斜杠 file 的 accept 为 null）。
       else if (id === 'file') this.$refs.fileInput.click()
-      // P5-02：电子表格**无对话框**（02 §25 ①），直接落默认空表（20 × 8）。
-      // 没有 `sheetDialog` / 行列数选择 —— 真飞书也是插完再在块内改，V1 更是只读。
-      else if (id === 'sheet') this.run('setSheet')
       // P5-03：投票块同样**无对话框**（02 §23 ⑤「插入 → 不再弹配置面板」），落一张空投票卡，
       // 然后把焦点交给标题 textarea —— 真飞书插完就能直接打字，不用再点一次标题。
       // 它必须同时在 `focusAfter` 排除名单里，否则上面那句 `this.focus()` 会把焦点抢回正文。
       else if (id === 'poll') { this.run('setPoll'); this.focusPollTitle() }
       else if (id === 'agenda') this.run('insertAgenda')
-      // P5-04：多维表格 5 项**共用一个块类型**，只有默认视图不同（03 §3.4 ⑤：表格 / 看板 /
-      // 甘特图 / 画册 / 关联各插一块，块内能自由切）。命令 id 自己就是视图线索，交给
-      // `setBitable` 内部的 `viewOfCommand` 映射，这里不另抄一张表。
-      // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单，焦点照常回正文（同 sheet）。
-      else if (id === 'bitable' || id === 'bitableKanban' || id === 'bitableGantt' || id === 'bitableGallery' || id === 'bitableRefer') this.run('setBitable', id)
-      // P5-05：绘图 3 项共用 `cardEmbed` 的**空态引用卡**（V1 没有绘图引擎，见
-      // `core/embed/board-diagram.js` 文件头）。只给 `kind` ⇒ 状态自动落 `unbound`，
-      // 卡面只剩「绑定」一个动作 —— 这就是验收项「可插入、可绑定 resourceId」。
-      // providerId 由 `board-diagram.js` 唯一给出，这里不抄第二张 id 表。
-      // 无对话框、无块内输入框 ⇒ 不进 `focusAfter` 排除名单（同 sheet / bitable）。
-      else if (boardProviderOf(id)) this.run('setReferenceCard', { kind: boardProviderOf(id) })
       else if (id === 'inlineMath' || id === 'blockMath') this.insertMathAtSelection()
       else if (id === 'link') this.openLinkDialog(true)
       // P3-07：15 条内嵌网页命令共用这一个分支（03 §⑫：它们不是二级面板，点了就开 540×164 浮层）。

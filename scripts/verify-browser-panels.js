@@ -48,6 +48,8 @@ const TEMPLATE_BASE = templateUrl.href
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -265,7 +267,9 @@ const measureVersions = () => {
       return {
         text: btn.textContent.trim(),
         disabled: btn.disabled,
+        // 弹窗内不放原生 title（会弹黑底提示），说明改由 aria-label 承担。
         title: btn.getAttribute('title'),
+        hint: btn.getAttribute('aria-label'),
         type: btn.getAttribute('type'),
         bg: getComputedStyle(btn).backgroundColor,
         cursor: getComputedStyle(btn).cursor,
@@ -563,8 +567,87 @@ const vueCall = (page, body) => page.evaluate((source) => {
   return fn(vue, (ms) => new Promise((resolve) => setTimeout(resolve, ms)))
 }, body)
 
-;(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
+// Also run against the attached Chrome page: use real pointer/keyboard paths, not DOM .click().
+async function verifyOutlineHandleHitTargets(page, width) {
+  const viewport = page.viewportSize()
+  const backup = await page.evaluate(() => ({ json: window.__larkDoc.getJSON(), open: window.__larkDoc._handle.nativeHost.host.outlineOpen }))
+  const rows = []
+  const tail = '<p>滚动验收</p>'.repeat(24)
+  try {
+    await page.setViewportSize({ width, height: 782 })
+    for (const [kind, html, selector] of [
+      ['heading', '<h1 data-numbering="true">首行标题</h1>', '.ProseMirror h1'],
+      ['paragraph', '<p>首行正文</p>', '.ProseMirror > p'],
+      ['task', '<ul data-type="taskList"><li data-type="taskItem"><p>首行任务</p></li></ul>', '.ProseMirror li p'],
+      ['table', '<table><tr><td><p>A1</p></td><td><p>B1</p></td></tr><tr><td><p>A2</p></td><td><p>B2</p></td></tr></table>', '.ProseMirror td p'],
+    ]) {
+      await page.keyboard.press('Escape')
+      await page.evaluate(content => {
+        const doc = window.__larkDoc, host = doc._handle.nativeHost.host
+        host.closeBlockMenu()
+        if (host.outlineOpen) host.toggleOutlineOpen()
+        doc.setContent(content)
+        window.scrollTo(0, 0)
+      }, html + tail)
+      await page.locator(selector).first().hover()
+      const count = kind === 'table' ? 2 : 1
+      for (let index = 0; index < count; index++) {
+        if (index) {
+          await page.keyboard.press('Escape')
+          await page.locator(selector).first().hover()
+        }
+        // Hover swaps the primary/secondary DOM nodes; keep the semantic target stable.
+        const scope = kind === 'table' ? (index ? 'table' : 'cell') : null
+        const button = page.locator(scope ? `.lark-doc-block-handle-main[data-block-scope="${scope}"]:visible` : '.lark-doc-block-handle-main:visible').first()
+        await button.waitFor()
+        const hoverBox = await button.boundingBox()
+        await page.mouse.move(hoverBox.x + hoverBox.width / 2, hoverBox.y + hoverBox.height / 2)
+        const hit = await button.evaluate(node => {
+          const rect = node.getBoundingClientRect(), outline = document.querySelector('.lark-doc-outline-reopen')?.getBoundingClientRect()
+          return {
+            scope: node.dataset.blockScope || 'block',
+            overlap: !!outline && rect.left < outline.right && rect.right > outline.left && rect.top < outline.bottom && rect.bottom > outline.top,
+            points: [1, rect.width / 2, rect.width - 1].every(x => document.elementFromPoint(rect.left + x, rect.top + rect.height / 2)?.closest('button') === node),
+            overflow: document.documentElement.scrollWidth > innerWidth,
+          }
+        })
+        await button.click({ timeout: 2000 })
+        const menu = page.locator('.lark-doc-block-menu:visible')
+        await menu.waitFor()
+        const bounds = await menu.boundingBox()
+        const row = { width, kind, ...hit, menu: !!bounds && bounds.x >= 7 && bounds.x + bounds.width <= width - 7 && bounds.y >= 7 && bounds.y + bounds.height <= 775 }
+        rows.push(row)
+        if (row.overlap || !row.points || row.overflow || !row.menu) throw new Error(JSON.stringify(row))
+      }
+    }
+    await page.keyboard.press('Escape')
+    await page.locator('.ProseMirror > p').last().hover()
+    const scrollBefore = await page.evaluate(() => scrollY)
+    const reopen = page.getByRole('button', { name: '展开目录', exact: true })
+    const reopenBox = await reopen.boundingBox()
+    if (scrollBefore <= 0 || !reopenBox || reopenBox.y < 0 || reopenBox.y + reopenBox.height > 782) throw new Error('滚动后目录入口不在视口')
+    await reopen.click()
+    const scrollAfter = await page.evaluate(() => scrollY)
+    if (Math.abs(scrollAfter - scrollBefore) > 1) throw new Error(`展开目录改变阅读位置：${scrollBefore} -> ${scrollAfter}`)
+    await page.locator('.lark-doc-outline-heading button').click()
+    await reopen.focus()
+    await page.keyboard.press('Enter')
+    if (!await page.locator('.lark-doc-outline').isVisible()) throw new Error('键盘展开目录失败')
+    rows.push({ width, scrollBefore, scrollAfter, scrolledOutlineClick: true, keyboardReopen: true })
+    return rows
+  } finally {
+    await page.keyboard.press('Escape')
+    await page.evaluate(saved => {
+      const doc = window.__larkDoc, host = doc._handle.nativeHost.host
+      host.closeBlockMenu(); doc.setContent(saved.json)
+      if (host.outlineOpen !== saved.open) host.toggleOutlineOpen()
+    }, backup)
+    if (viewport) await page.setViewportSize(viewport)
+  }
+}
+
+(async () => {
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -675,9 +758,14 @@ const vueCall = (page, body) => page.evaluate((source) => {
       reopen.size.w === 34 && reopen.size.h === 34,
     JSON.stringify(reopen))
 
-  await page.evaluate(() => document.querySelector('button.lark-doc-outline-reopen').click())
+  await page.locator('button.lark-doc-outline-reopen').click()
   await page.waitForTimeout(320)
   record('[目录] 点展开钮侧栏回来', await open(page, '.lark-doc-outline'))
+
+  for (const width of [320, 360, 420, 760, 768, 960, 1050, 1051, 1536]) {
+    const hits = await verifyOutlineHandleHitTargets(page, width)
+    record(`[目录/首行] ${width}px 正文/标题/任务/表格双句柄无遮挡，真实点击及滚动后键盘展开`, hits.length === 6, JSON.stringify(hits))
+  }
 
   // 工具栏「目录」项（`src/ui/toolbar.js:271`，收尾组第 2 个）：唯一从工具栏开合侧栏的入口，
   // 走 `toggleOutlineOpen()` 裸取反，没有 aria-pressed —— 状态只能从侧栏本体读。
@@ -692,13 +780,13 @@ const vueCall = (page, body) => page.evaluate((source) => {
       pressed: node.getAttribute('aria-pressed'),
       group: node.parentElement ? node.parentElement.className : '',
       size: { w: Math.round(rect.width), h: Math.round(rect.height) },
-      icon: icon ? { w: Math.round(icon.getBoundingClientRect().width), h: Math.round(icon.getBoundingClientRect().height) } : null,
+      icon: icon ? { svg: !!icon.querySelector('svg'), width: icon.style.width, height: icon.style.height } : null,
     }
   })
-  record('[目录] 工具栏收尾组第 2 个 = 「目录」钮（icon 16×16，无 aria-pressed）',
+  record('[目录] 工具栏收尾组保留目录 SVG 入口（声明 16×16，无 aria-pressed）',
     !!outlineButton && outlineButton.type === 'button' && outlineButton.title === '目录' &&
       outlineButton.pressed === null && outlineButton.group === 'lark-doc-tools-end-inner' &&
-      !!outlineButton.icon && outlineButton.icon.w === 16 && outlineButton.icon.h === 16,
+      !!outlineButton.icon && outlineButton.icon.svg && outlineButton.icon.width === '16px' && outlineButton.icon.height === '16px',
     JSON.stringify(outlineButton))
 
   await page.evaluate(() => document.querySelector('.lark-doc-toolbar button[aria-label="目录"]').click())
@@ -761,9 +849,9 @@ const vueCall = (page, body) => page.evaluate((source) => {
       degraded.back.iconSize.w === 24 && degraded.back.iconSize.h === 24,
     degraded ? JSON.stringify(degraded.back) : '没渲染')
 
-  record('[版本] 无 provider → 还原钮 disabled + title 说明 + 灰底 rgb(187,191,196)',
+  record('[版本] 无 provider → 还原钮 disabled + aria-label 说明 + 无原生 title + 灰底 rgb(187,191,196)',
     !!degraded && degraded.restore.text === '还原此历史记录' && degraded.restore.disabled === true &&
-      degraded.restore.title === '未配置 versioning Provider' &&
+      degraded.restore.hint === '未配置 versioning Provider' && degraded.restore.title === null &&
       degraded.restore.bg === 'rgb(187, 191, 196)' && degraded.restore.cursor === 'not-allowed',
     degraded ? JSON.stringify(degraded.restore) : '没渲染')
 

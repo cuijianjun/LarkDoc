@@ -24,6 +24,7 @@ import { safeUrl } from '../../../core/documentOperations'
 import { createNetworkPolicy } from '../../../core/policy/network'
 import { isAbortError, normalizeUploader, validateUploadFile } from '../../../core/media/upload'
 import { createImageViewer } from '../../../core/nodeviews/image-viewer'
+import { PAGED_IMPORT_META } from '../../../core/transactionMetadata'
 
 /** 面板与正文右缘的间距（实测 1214 - 1202，与修订面板同口径）。 */
 const COMMENT_ANCHOR_GUTTER = 12
@@ -208,6 +209,7 @@ export default {
       if (!this.editor) return
       this.editor.view.dom.addEventListener('pointerdown', this.onCommentPointerDown)
       this.editor.on('transaction', this.mapCommentComposer)
+      this.editor.on('update', this.refreshImportedComments)
       this.resetCommentContext()
     })
     window.addEventListener('scroll', this.onCommentViewportChange, true)
@@ -226,6 +228,7 @@ export default {
     if (this.editor && this.editor.view && this.editor.view.dom) {
       this.editor.view.dom.removeEventListener('pointerdown', this.onCommentPointerDown)
       this.editor.off('transaction', this.mapCommentComposer)
+      this.editor.off('update', this.refreshImportedComments)
     }
   },
   methods: {
@@ -256,6 +259,7 @@ export default {
       this.commentPrivateIds = []
       this.closeCommentMenus()
       this.refreshPanels?.()
+      this.refreshBlockMenu?.()
       if (this._imageCommentTarget?.viewer) this._imageCommentTarget.viewer.querySelector('[data-viewer-action="close"]')?.click()
       this.openImageComments?.(null, false)
       if (!context.editor || context.editor.isDestroyed || !context.provider) return
@@ -286,8 +290,11 @@ export default {
       this.$nextTick(() => this._panelsUi?.composer.focusInput())
       return true
     },
-    mapCommentComposer({ transaction }) {
-      if (transaction.docChanged) {
+    refreshImportedComments(payload) {
+      if (payload.transaction.getMeta(PAGED_IMPORT_META)) this.mapCommentComposer({ ...payload, imported: true })
+    },
+    mapCommentComposer({ transaction, imported = false }) {
+      if (imported || transaction.docChanged && !transaction.getMeta(PAGED_IMPORT_META)) {
         this.commentThreads = bindThreads(this.editor?.state.doc, this.commentThreads, this.commentAnchorCodec)
         this.updateCommentPanels()
       }
@@ -1000,8 +1007,11 @@ export default {
       const pos = this.commentBlockPos(blockId)
       if (pos < 0) return
       try {
+        this.editor.storage?.larkDoc?.projection?.revealPosition?.(pos)
         const at = this.editor.view.domAtPos(pos)
-        const node = at.node && at.node.nodeType === 3 ? at.node.parentNode : at.node
+        const direct = this.editor.view.nodeDOM?.(pos) || at.node
+        const node = direct && direct.nodeType === 3 ? direct.parentNode : direct
+        this.editor.storage?.larkDoc?.projection?.revealNode?.(node)
         if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center' })
       } catch (error) {
         // 滚不动不影响点亮结果，静默（没有 toast 位）。

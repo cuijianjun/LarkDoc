@@ -26,6 +26,7 @@
  * `core/blocks/card-embed.js` 的注释），别再来第二次。
  */
 import { safeUrl } from '../documentOperations'
+import { appPreviewOf } from './app-preview'
 
 /** 契约版本（与 `cardSchema.cardVersion` 同思路：形状变了才动这个数）。 */
 export const BOOKMARK_VERSION = 1
@@ -120,7 +121,7 @@ export function normalizeBookmark(input) {
   const recordId = typeof source.recordId === 'string' && RECORD_ID_PATTERN.test(source.recordId)
     ? source.recordId
     : createRecordId()
-  return { url, title: title || null, desc: desc || null, favicon, recordId, ...(cover ? { cover } : {}) }
+  return { url, title: title || null, desc: desc || null, favicon, recordId, ...(cover ? { cover } : {}), ...(appPreviewOf(source.appKind) ? { appKind: source.appKind } : {}) }
 }
 
 /**
@@ -141,6 +142,7 @@ export function readBookmark(attrs) {
     favicon: readBookmarkUrl(source.favicon),
     ...(readBookmarkUrl(source.cover) ? { cover: readBookmarkUrl(source.cover) } : {}),
     variant: desc ? BOOKMARK_VARIANT.rich : BOOKMARK_VARIANT.simple,
+    ...(appPreviewOf(source.appKind) ? { appKind: source.appKind } : {}),
   }
 }
 
@@ -204,6 +206,8 @@ export function renderBookmarkCard(bookmark, variant) {
 
   const data = bookmark || {}
   const urlChildren = []
+  const app = appPreviewOf(data.appKind)
+  if (app) urlChildren.push(['span', { class: 'lark-doc-bookmark-app-kind' }, app.label])
   const icon = iconSpec(data.favicon)
   if (icon) urlChildren.push(icon)
   urlChildren.push(['span', { class: 'lark-doc-bookmark-url' }, data.url || ''])

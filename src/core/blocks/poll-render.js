@@ -4,8 +4,7 @@
  * 分工同 `./sheet-render.js`：不 import tiptap、不碰 DOM、不读主题，只做「数据归一 + 几何真值 +
  * 本地状态机」。块定义在 `./poll.js`，交互在 `../nodeviews/poll.js`，两边都从这里取数。
  *
- * 🔴 V1 范围（已拍板，别顺手扩张）：不做日期选择器日历（「定时截止」只置成「明天 18:00」）；
- * 不做 header「更多」菜单三态；不发任何真实请求（票数由本地状态机维护，接 provider 时整体替换）。
+ * 本地维护发布/投票/截止状态，不发真实请求；协同由宿主处理。
  *
  * 数据形状照 §19.1 ⑥，其中 `key`（A/B/C…）是**纯展示派生值、不落库**。唯一例外是
  * `votes` / `voted`：规格 payload 没有它们（真实票数由服务端给），但 V1 要跑通「发布 → 投票 →
@@ -293,12 +292,7 @@ export function headerLabels(poll, now) {
   return labels
 }
 
-/**
- * 截止 chip 文案：`明天 18:00 截止` —— 三段式（相对日 + 时间 + 截止），实测 81×16。
- *
- * V1 的 deadline 只可能来自「定时截止」开关（明天 18:00），所以这里只处理
- * 今天 / 明天 / 更远三种相对日，不做真正的日历格式化。
- */
+/** 截止时间标签：相对日期或月日加本地时间。 */
 export function deadlineLabel(deadline, now) {
   const time = new Date(deadline)
   if (Number.isNaN(time.getTime())) return ''
@@ -336,21 +330,24 @@ export function publishReady(poll) {
   return publishHint(poll) === null
 }
 
-/**
- * 本地状态机。纯函数：不改入参，永远返回新对象。
- *
- * action 一览：
- *   { type: 'title', value }
- *   { type: 'option', id, value }
- *   { type: 'addOption' } / { type: 'removeOption', id }
- *   { type: 'toggle', key: 'multiple' | 'anonymous' | 'deadline' }
- *   { type: 'publish' }
- *   { type: 'vote', ids: string[] }
- */
+/** 本地投票状态机；已发布内容锁定，截止时间可调整。 */
 export function pollReducer(poll, action, now) {
   const state = normalizePoll(poll)
   const act = action && typeof action === 'object' ? action : {}
+  if (state.published && (['title', 'option', 'addOption', 'removeOption'].includes(act.type)
+    || (act.type === 'toggle' && ['multiple', 'anonymous'].includes(act.key)))) return state
   switch (act.type) {
+    case 'deadline': {
+      if (act.value === null) return { ...state, deadline: null }
+      const time = typeof act.value === 'string' ? Date.parse(act.value) : NaN
+      return Number.isFinite(time) && time > (now === undefined ? Date.now() : now)
+        ? { ...state, deadline: new Date(time).toISOString() } : state
+    }
+    case 'close':
+      return state.published ? { ...state, deadline: new Date(now === undefined ? Date.now() : now).toISOString() } : state
+    case 'reopen':
+      return state.published && state.deadline && Date.parse(state.deadline) <= (now === undefined ? Date.now() : now)
+        ? { ...state, deadline: null } : state
     case 'title':
       return { ...state, title: cleanText(act.value, POLL_LIMITS.titleLength) }
     case 'option':

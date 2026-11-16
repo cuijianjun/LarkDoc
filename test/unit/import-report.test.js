@@ -29,6 +29,13 @@ function parseHTML(html) {
   return ProseMirrorDOMParser.fromSchema(schema).parse(container)
 }
 
+it.each([false, true])('旧div任务保留自身checkbox状态，checked=%s', checked => {
+  const prepared = prepareHTML(`<div class="vditor-task"><input type="checkbox"${checked ? ' checked' : ''}>旧任务</div>`, 'vditor')
+  const states = []
+  parseHTML(prepared.html).descendants(node => { if (node.type.name === 'taskItem') states.push(node.attrs.checked) })
+  expect(states).toEqual([checked])
+})
+
 function createHarness(options = {}) {
   const emit = vi.fn()
   const state = createWorkspaceState({ config: { features: { persistence: false } }, initialTitle: '' })

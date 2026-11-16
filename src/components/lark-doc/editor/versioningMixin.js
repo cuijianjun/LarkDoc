@@ -551,7 +551,9 @@ export default {
      * 下标取更不容易错位（差一位就会把 A 的时间贴到 B 上）。
      */
     versionItemName(record) {
-      return formatVersionTime(record ? record.createdAt : 0) || VERSIONING_DAY_LABELS.unknown
+      const time = formatVersionTime(record ? record.createdAt : 0) || VERSIONING_DAY_LABELS.unknown
+      const label = typeof record?.label === 'string' ? record.label.trim() : ''
+      return label ? `${label} · ${time}` : time
     },
 
     /** 时间线 `-item-desc`：与**更早**那条的块数差。 */

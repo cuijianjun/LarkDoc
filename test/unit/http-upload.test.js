@@ -37,6 +37,17 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+it('HTTP传输模块尚未加载时取消，不调用请求头钩子或发送迟到请求', async () => {
+  const headers = vi.fn(() => ({}))
+  const provider = createUploadProvider({ action: '/api/upload', headers })
+  const pending = provider.upload(file())
+  provider.cancelAll('cancel-before-transport')
+  await expect(pending).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED })
+  await vi.dynamicImportSettled()
+  expect(headers).not.toHaveBeenCalled()
+  expect(requests).toHaveLength(0)
+})
+
 describe('初始化配置式 HTTP 图片上传', () => {
   it('action 配置执行 multipart 请求，等待响应映射且保留完整任务上下文', async () => {
     const events = []
@@ -182,6 +193,7 @@ describe('初始化配置式 HTTP 图片上传', () => {
     const first = provider.upload(file(), { documentId: 'one' })
     first.catch(() => {})
     const second = provider.upload(file(), { documentId: 'two' })
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
     provider.cancel(contexts[0].taskId, 'unmount')
     await expect(first).rejects.toMatchObject({ code: UPLOAD_ERROR.ABORTED })
     await expect(second).resolves.toMatchObject({ url: '/other.png' })

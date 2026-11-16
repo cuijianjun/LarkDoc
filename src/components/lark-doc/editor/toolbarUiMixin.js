@@ -21,6 +21,7 @@
  */
 import { createToolbar } from '../../../ui/toolbar'
 import { createTopBar } from '../../../ui/topBar'
+import { isCommandEnabled } from '../larkDocConfig'
 
 export default {
   // 原生化之后这些字段就是 UI 的唯一输入。Vue 的 watcher 在渲染帧前批量触发，
@@ -149,7 +150,7 @@ export default {
         scheduleHeadingMenuClose: () => this.scheduleHeadingMenuClose(),
         toggleHeadingMenu: () => this.toggleHeadingMenu(),
         setHeading: (level) => this.setHeading(level),
-        cancelPopupHoverClose: () => this.cancelPopupHoverClose(),
+        cancelPopupHoverClose: (owner) => this.cancelPopupHoverClose(owner),
         /* ---------- 行内格式 ---------- */
         toggleMark: (id) => this.toggleMark(id),
         /* ---------- 文字样式 ---------- */
@@ -173,6 +174,8 @@ export default {
         openDiagramMenuOnHover: () => this.openDiagramMenuOnHover(),
         scheduleDiagramMenuClose: () => this.scheduleDiagramMenuClose(),
         insertDiagramType: (id) => this.insertDiagramType(id),
+        positionDiagramMenu: () => this.positionDiagramMenu(),
+        onDiagramError: () => { this.error = '图表菜单暂时无法打开，请重试' },
         // SFC 是内联表达式 `ed.$emit('ai-request', 'rewrite')`，没有对应方法。
         emitAiRequest: (kind) => this.$emit('ai-request', kind),
         /* ---------- 收尾：视图与工具 ---------- */
@@ -308,7 +311,7 @@ export default {
         features: {
           insert: this.toolbarEnabled('insert'),
           tables: this.toolbarEnabled('tables'),
-          diagram: this.toolbarEnabled('insert') && !!this.larkDocConfig.features.diagram,
+          diagram: this.toolbarEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'diagram', 'diagram'),
           ai: this.toolbarEnabled('ai'),
           search: this.toolbarEnabled('search'),
           outline: this.toolbarEnabled('outline'),
@@ -319,7 +322,7 @@ export default {
           docOps,
         },
         diagram: {
-          open: this.diagramMenuOpen,
+          open: this.diagramMenuOpen && !this.effectiveReadonly && this.toolbarEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'diagram', 'diagram'),
           style: this.diagramMenuStyle,
           types: this.diagramTypes,
         },

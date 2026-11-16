@@ -4,12 +4,16 @@
  */
 
 import { applyStyle, setAttr, syncChildren } from './dom'
-import { diagramIconNode, iconNode, setIcon } from './icon'
+import { iconNode, setIcon } from './icon'
+import { diagramIconNode } from './diagramMenu'
+import { MENU_ICON_MARKUP } from './commandIcons'
 
 /** plus 菜单的前置分段；其余段按命令表里首次出现的顺序追加。 */
 const PLUS_CATEGORIES = ['基础', '常用', '绘图']
+// Observed in the approved Feishu insert panel; loaded with this menu.
+
 const BASIC_ICONS = { heading1: 'block-h1', heading2: 'block-h2', heading3: 'block-h3', orderedList: 'block-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'block-quote', callout: 'block-callout', divider: 'horizontal-rule', link: 'link' }
-const SEMANTIC_COMMAND_ICONS = { taskList: 'block-task', callout: 'block-callout', columns: 'block-columns', columns2: 'block-columns', columns3: 'block-columns', columns4: 'block-columns', columns5: 'block-columns', table: 'block-table', image: 'block-image', template: 'block-template', diagram: 'block-diagram' }
+const SEMANTIC_COMMAND_ICONS = { sheet: 'block-table', bitable: 'block-table', whiteboard: 'block-diagram', mindMap: 'block-diagram', flowChart: 'block-diagram', umlDiagram: 'block-diagram', poll: 'block-diagram', taskList: 'block-task', callout: 'block-callout', columns: 'block-columns', columns2: 'block-columns', columns3: 'block-columns', columns4: 'block-columns', columns5: 'block-columns', table: 'block-table', image: 'block-image', file: 'block-file', template: 'block-template', diagram: 'block-diagram' }
 /** 子菜单贴触发器的间距 / 视口留边（与 SFC 完全一致，断言在量）。 */
 const SUBMENU_GAP = 5
 const SUBMENU_MARGIN = 8
@@ -40,6 +44,7 @@ export function createCommandMenu(options = {}) {
     diagramTypes: [],
     query: '',
     activeId: '',
+    activeIndex: null,
     positionStyle: null,
     submenuOpen: '',
     submenuType: '',
@@ -52,10 +57,16 @@ export function createCommandMenu(options = {}) {
   /** 子菜单节点（开时才存在）；`submenuType` 决定内容分支。 */
   let submenuEl = null
   let submenuTrigger = null
+  let submenuSignature = '', submenuSource = null
+  const activeItem = () => Number.isInteger(state.activeIndex) ? state.items[state.activeIndex] : state.items.find(item => item.id === state.activeId)
+  const submenuData = () => state.submenuType === 'templates' ? state.templates : state.submenuType === 'diagram' ? state.diagramTypes : null
+  const submenuDataSignature = () => JSON.stringify((submenuData() || state.items.filter(item => item.submenu === state.submenuOpen)).map(item => [item.id, item.label, item.title, item.description, item.unavailable, item.tier]))
 
   // ————————————————— 根节点 —————————————————
 
   const el = document.createElement('div')
+  const viewWindow = el.ownerDocument.defaultView
+  let listening = false
   el.className = 'lark-doc-command-menu'
   el.setAttribute('role', 'menu')
   el.setAttribute('aria-label', '插入内容')
@@ -102,10 +113,12 @@ export function createCommandMenu(options = {}) {
     entry.item = item
     const { node, icon, label } = entry
     node.classList.toggle('is-skip', isSkip(item))
-    node.classList.toggle('active', item.id === state.activeId && !isSkip(item))
+    const active = activeItem()
+    node.classList.toggle('active', active?.id === item.id && active?.category === item.category && !isSkip(item))
     node.disabled = isSkip(item)
     // skip 项：`title` 换成统一说明，`aria-disabled` 才出现（SFC 里是三元表达式）。
-    setAttr(node, 'title', isSkip(item) ? '需要企业版接入' : item.label)
+    setAttr(node, 'title', null)
+    setAttr(node, 'data-tooltip-title', isSkip(item) ? '需要企业版接入' : item.label)
     setAttr(node, 'aria-label', item.label)
     setAttr(node, 'aria-disabled', isSkip(item) ? 'true' : null)
     setAttr(node, 'data-tier', item.tier || null)
@@ -114,15 +127,16 @@ export function createCommandMenu(options = {}) {
 
     const glyph = item.glyph || '·'
     const iconName = ((state.kind === 'slash' || state.kind === 'plus' && item.category === '基础') && BASIC_ICONS[item.id]) || SEMANTIC_COMMAND_ICONS[item.id]
-    if (iconName) setIcon(icon, iconName, state.kind === 'plus' && item.category === '基础' ? 20 : 18)
+    const sourceIcon = MENU_ICON_MARKUP[item.id]
+    if (sourceIcon) {
+      icon.style.width = icon.style.height = state.kind === 'plus' && item.category === '基础' ? '20px' : '18px'
+      if (icon.innerHTML !== sourceIcon) icon.innerHTML = sourceIcon
+    }
+    else if (iconName) setIcon(icon, iconName, state.kind === 'plus' && item.category === '基础' ? 20 : 18)
     else if (icon.textContent !== glyph || icon.querySelector('svg')) { icon.textContent = glyph; icon.removeAttribute('style') }
     const tone = `lark-doc-command-icon is-${item.tone || 'blue'}`
     if (icon.className !== tone) icon.className = tone
     if (label.textContent !== item.label) label.textContent = item.label
-    // The omitted sync-block command has no implementation in master. Keep the
-    // source divider/link slots without exposing an empty or fake command.
-    node.style.gridColumn = state.kind === 'plus' && item.category === '基础' && item.id === 'divider' ? '5' : ''
-
     // `›` 箭头只在有子菜单的项上出现；命令表是静态的，这里只做「齐备性」保证。
     if (item.submenu) {
       if (!entry.arrow) {
@@ -161,8 +175,14 @@ export function createCommandMenu(options = {}) {
       node.dataset.entryKey = key
       // `@mousedown.prevent`：不挡的话按下会先抢焦点、菜单当场关掉。
       node.addEventListener('mousedown', (event) => event.preventDefault())
-      node.addEventListener('mouseenter', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
-      node.addEventListener('focus', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
+      const activate = () => {
+        const index = state.items.findIndex(item => `${item.category}:${item.id}` === node.dataset.entryKey)
+        if (index >= 0) call('onActivate', index)
+        if (entry.item.submenu) openSubmenu(entry.item, node)
+        else closeSubmenu()
+      }
+      node.addEventListener('mouseenter', activate)
+      node.addEventListener('focus', activate)
       node.addEventListener('click', () => {
         const current = entry.item
         // plus 菜单里带子菜单的项一律先展子菜单；斜杠菜单对 分栏/模板/图表 展开，表格直接落 2×3。
@@ -317,7 +337,7 @@ export function createCommandMenu(options = {}) {
       node.setAttribute('aria-label', template.label || template.title || template.id)
       node.disabled = typeof template.html !== 'string'
       node.setAttribute('aria-disabled', String(node.disabled))
-      if (template.unavailable) node.title = template.unavailable
+      if (template.unavailable) node.setAttribute('aria-description', template.unavailable)
       node.addEventListener('mousedown', (event) => event.preventDefault())
       node.addEventListener('click', () => call('onChoose', { id: 'template', templateId: template.id }))
       const label = document.createElement('span')
@@ -421,24 +441,30 @@ export function createCommandMenu(options = {}) {
   /**
    * 展开子菜单：建内容 → 入 DOM → **同步**量位置。
    *
-   * 位置算式与 SFC 逐项对齐（`gap 5` / `margin 8` / 宽 358(模板) 或 190 / 估算高度
+   * 位置算式与 SFC 逐项对齐（`gap 5` / `margin 8` / 宽 250(模板) 或 190 / 估算高度
    * 决定上下翻转），断言在量 `left` 与 `width`，改了就会红。
    */
   function openSubmenu(item, triggerNode) {
     if (!item || !item.submenu) return
     if (state.submenuOpen === item.submenu && submenuTrigger === triggerNode) return
+    closeSubmenu()
     state.submenuOpen = item.submenu
     state.submenuType = item.submenuType || 'commands'
+    submenuSource = submenuData()
+    submenuSignature = submenuDataSignature()
     if (state.submenuType === 'columns') state.columnsHover = null
     if (state.submenuType === 'table') state.tableHover = null
     submenuTrigger = triggerNode || null
 
     submenuEl = document.createElement('div')
     submenuEl.className = `lark-doc-command-submenu is-${state.submenuType}`
+    submenuEl.id = `lark-doc-command-submenu-${Math.random().toString(36).slice(2)}`
     submenuEl.setAttribute('role', 'menu')
     submenuEl.setAttribute('aria-label', `${state.submenuOpen}子菜单`)
+    submenuTrigger?.setAttribute('aria-controls', submenuEl.id)
     submenuEl.addEventListener('mouseenter', () => call('onMenuEnter'))
     submenuEl.addEventListener('mouseleave', () => call('onMenuLeave'))
+    submenuEl.addEventListener('keydown', onKeydown)
 
     if (state.submenuType === 'templates') submenuLive = buildTemplatesSubmenu()
     else if (state.submenuType === 'columns') submenuLive = buildColumnsSubmenu()
@@ -451,27 +477,53 @@ export function createCommandMenu(options = {}) {
     positionSubmenu()
   }
 
-  function positionSubmenu() {
+  function positionSubmenu(event) {
     if (!submenuEl || !submenuTrigger) return
+    if (event?.target?.nodeType && submenuEl.contains(event.target)) return
     const triggerRect = submenuTrigger.getBoundingClientRect()
     if (!triggerRect || (!triggerRect.width && !triggerRect.height)) return
-    const width = state.submenuType === 'table' ? 314 : state.submenuType === 'templates' ? Math.min(358, window.innerWidth - 16) : state.submenuType === 'columns' ? 196 : 190
+    const parentRect = el.getBoundingClientRect()
+    if (parentRect.height && (triggerRect.bottom <= parentRect.top || triggerRect.top >= parentRect.bottom)) { closeSubmenu(); return }
+    const viewport = viewWindow.visualViewport
+    const x = viewport?.offsetLeft || 0, y = viewport?.offsetTop || 0
+    const availableWidth = Math.max(0, (viewport?.width || viewWindow.innerWidth) - SUBMENU_MARGIN * 2)
+    const availableHeight = Math.max(0, (viewport?.height || viewWindow.innerHeight) - SUBMENU_MARGIN * 2)
+    const width = Math.min(availableWidth, state.submenuType === 'table' ? 314 : state.submenuType === 'templates' ? 250 : state.submenuType === 'columns' ? 196 : 190)
     const options = state.items.filter((item) => item.submenu === state.submenuOpen)
     const estimatedHeight = state.submenuType === 'templates'
-      ? 5 + (Math.max(1, state.templates.length) + 1) * 32
+      ? 12 + (Math.max(1, state.templates.length) + 1) * 30
       : state.submenuType === 'table' ? 348 : state.submenuType === 'columns'
         ? 166
         : state.submenuType === 'diagram'
             ? Math.min(420, 42 + Math.max(1, state.diagramTypes.length) * 40)
             : Math.min(420, 42 + options.length * 40)
+    const sizing = { width: `${width}px`, maxWidth: `${availableWidth}px`, maxHeight: `${availableHeight}px` }
+    Object.assign(submenuEl.style, sizing)
+    const height = Math.min(submenuEl.getBoundingClientRect().height || estimatedHeight, availableHeight)
     const right = triggerRect.right + SUBMENU_GAP
     const left = triggerRect.left - width - SUBMENU_GAP
-    const leftPosition = right + width + SUBMENU_MARGIN <= window.innerWidth ? right : Math.max(SUBMENU_MARGIN, left)
-    const top = Math.max(SUBMENU_MARGIN, Math.min(window.innerHeight - estimatedHeight - SUBMENU_MARGIN, triggerRect.top))
+    const boundRight = x + availableWidth + SUBMENU_MARGIN
+    if (right + width > boundRight && left < x + SUBMENU_MARGIN) {
+      // 左右两侧都放不下（窄屏）：改为在父触发项上方/下方避让，短屏用有界高度滚动；
+      // 不能横向夹到视口边，否则会盖住自己的父触发项、截获 hover 点击。
+      // 下一轮 resize 会先由 sizing 复位 maxHeight，扩窗后自然恢复完整高度。
+      const above = triggerRect.top - y - SUBMENU_MARGIN - SUBMENU_GAP
+      const below = y + availableHeight + SUBMENU_MARGIN - triggerRect.bottom - SUBMENU_GAP
+      const upward = below < height && above > below
+      const limit = Math.max(0, Math.min(availableHeight, upward ? above : below))
+      const bounded = Math.min(height, limit)
+      const narrowLeft = Math.max(x + SUBMENU_MARGIN, Math.min(boundRight - width, triggerRect.left))
+      const narrowTop = upward ? triggerRect.top - bounded - SUBMENU_GAP : triggerRect.bottom + SUBMENU_GAP
+      applyStyle(submenuEl, {
+        ...sizing, maxHeight: `${bounded}px`, left: `${narrowLeft}px`,
+        top: `${Math.max(y + SUBMENU_MARGIN, Math.min(y + availableHeight + SUBMENU_MARGIN - bounded, narrowTop))}px`,
+      })
+      return
+    }
+    const leftPosition = Math.max(x + SUBMENU_MARGIN, Math.min(x + availableWidth + SUBMENU_MARGIN - width, right + width <= x + availableWidth + SUBMENU_MARGIN ? right : left))
+    const top = Math.max(y + SUBMENU_MARGIN, Math.min(y + availableHeight + SUBMENU_MARGIN - height, triggerRect.top))
     applyStyle(submenuEl, {
-      left: `${Math.round(leftPosition)}px`,
-      top: `${Math.round(top)}px`,
-      ...(state.submenuType === 'templates' ? { width: `${width}px`, height: `${estimatedHeight}px`, maxHeight: `${Math.max(40, window.innerHeight - 16)}px` } : {}),
+      ...sizing, left: `${leftPosition}px`, top: `${top}px`,
     })
   }
 
@@ -479,8 +531,11 @@ export function createCommandMenu(options = {}) {
     if (!state.submenuOpen) return
     state.submenuOpen = ''
     state.submenuType = ''
+    submenuEl?.remove()
+    submenuTrigger?.removeAttribute('aria-controls')
     submenuEl = null
     submenuTrigger = null
+    submenuSource = null; submenuSignature = ''
     submenuLive = {}
     renderRoot()
   }
@@ -497,18 +552,21 @@ export function createCommandMenu(options = {}) {
     const slots = [{ node: head, on: state.kind !== 'slash' }]
     slots.push({ node: emptyEl, on: !state.items.length })
     sections.forEach((node) => slots.push({ node, on: true }))
-    if (submenuEl) slots.push({ node: submenuEl, on: true })
     slots.push({ node: hintEl, on: true })
     syncChildren(el, slots)
+    // 子菜单与滚动主菜单平级，避免 Safari/窄屏裁切；仍归同一工作区管理。
+    if (submenuEl && submenuEl.parentNode !== (host || el.parentNode)) (host || el.parentNode)?.appendChild(submenuEl)
 
     // 输入框的值由 state 单向驱动（用户打字时 onQuery 会把它写回来，值是同一个）。
     if (input.value !== state.query) input.value = state.query
+    const currentItems = new Map(state.items.map(item => [`${item.category}:${item.id}`, item]))
     sections.forEach((section) => {
       Array.prototype.forEach.call(section.querySelectorAll('button[data-command-id]'), (node) => {
         const entry = entries.get(node.dataset.entryKey)
-        if (entry) syncEntry(entry, entry.item)
+        if (entry && currentItems.has(node.dataset.entryKey)) syncEntry(entry, currentItems.get(node.dataset.entryKey))
       })
     })
+    positionSubmenu()
   }
 
   // ————————————————— 键盘 —————————————————
@@ -541,7 +599,7 @@ export function createCommandMenu(options = {}) {
 
   /** Enter：有子菜单的项先展开（plus / 分栏 / 模板），其余交给 `onChoose`。 */
   function choose() {
-    const item = state.items.find((entry) => entry.id === state.activeId) || state.items[0]
+    const item = activeItem() || state.items[0]
     if (!item) return
     if (item.submenu && (state.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType))) {
       openSubmenu(item, entries.get(`${item.category}:${item.id}`)?.node || null)
@@ -555,9 +613,23 @@ export function createCommandMenu(options = {}) {
   function mount() {
     if (!host) return
     if (el.parentNode !== host) host.insertBefore(el, anchor && anchor.parentNode === host ? anchor : null)
+    if (!listening) {
+      listening = true
+      viewWindow.addEventListener('resize', positionSubmenu)
+      viewWindow.addEventListener('scroll', positionSubmenu, true)
+      viewWindow.visualViewport?.addEventListener('resize', positionSubmenu)
+      viewWindow.visualViewport?.addEventListener('scroll', positionSubmenu)
+    }
   }
 
   function unmount() {
+    if (listening) {
+      listening = false
+      viewWindow.removeEventListener('resize', positionSubmenu)
+      viewWindow.removeEventListener('scroll', positionSubmenu, true)
+      viewWindow.visualViewport?.removeEventListener('resize', positionSubmenu)
+      viewWindow.visualViewport?.removeEventListener('scroll', positionSubmenu)
+    }
     if (el.parentNode) el.parentNode.removeChild(el)
     closeSubmenu()
   }
@@ -569,12 +641,11 @@ export function createCommandMenu(options = {}) {
    * 关闭时子树一并清掉，下次打开是干净的（与 `v-if` 的销毁语义一致）。
    */
   function update(patch) {
-    const previous = { open: state.open, kind: state.kind }
+    const previous = { open: state.open, kind: state.kind, activeId: state.activeId, activeIndex: state.activeIndex }
     Object.assign(state, patch || {})
     if (!Array.isArray(state.diagramTypes)) state.diagramTypes = []
     if (!state.open) {
-      if (el.parentNode) unmount()
-      else closeSubmenu()
+      unmount()
       return
     }
     if (previous.kind !== state.kind) {
@@ -583,7 +654,12 @@ export function createCommandMenu(options = {}) {
       sectionNodes.clear()
       closeSubmenu()
     }
-    if (state.submenuOpen && !state.items.some(item => item.submenu === state.submenuOpen && item.submenuType === state.submenuType && !isSkip(item))) closeSubmenu()
+    if (state.submenuOpen && !state.items.some(item => item.submenu === state.submenuOpen && item.submenuType === state.submenuType && `${item.category}:${item.id}` === submenuTrigger?.dataset.entryKey && !isSkip(item))) closeSubmenu()
+    if (state.submenuOpen && (submenuSource !== submenuData() || submenuSignature !== submenuDataSignature())) closeSubmenu()
+    if (state.submenuOpen && (previous.activeId !== state.activeId || previous.activeIndex !== state.activeIndex)) {
+      const active = activeItem()
+      if (!active || `${active.category}:${active.id}` !== submenuTrigger?.dataset.entryKey) closeSubmenu()
+    }
     mount()
     renderRoot()
   }
@@ -592,10 +668,14 @@ export function createCommandMenu(options = {}) {
     el,
     update,
     choose,
+    showSubmenu(id) {
+      const item = activeItem()?.id === id ? activeItem() : null
+      if (state.open && item?.submenu) openSubmenu(item, entries.get(`${item.category}:${item.id}`)?.node || null)
+    },
     focusSearch() { if (input && typeof input.focus === 'function') input.focus() },
     get submenuEl() { return submenuEl },
     destroy() {
-      if (el.parentNode) el.parentNode.removeChild(el)
+      unmount()
       entries.clear()
       sectionNodes.clear()
     },

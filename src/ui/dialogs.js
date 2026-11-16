@@ -4,10 +4,11 @@
  * Formula editing lives with its core NodeView and uses the source anchored editor.
  */
 
-import { applyStyle, setAttr } from './dom'
+import { applyStyle, setAttr, syncChildren } from './dom'
 import { iconNode } from './icon'
 import { DRAWER_GROUPS } from './shortcutGroups'
 import { normalizeLinkUrl } from '../core/documentOperations'
+import { placeMenu } from './menuLayout'
 
 /** 表格选择器网格：9 列 × 9 行（对应 SFC 的 `v-for="n in 81"`）。 */
 const GRID_COLUMNS = 9
@@ -83,6 +84,106 @@ function createDialogHeader(options) {
   ;(options.middle || []).forEach((node) => header.appendChild(node))
   header.appendChild(button)
   return { header, button }
+}
+
+/** Import confirmation never blocks the renderer's task queue. */
+export function createImportConfirmation({ host, message, fileName }) {
+  const owner = host.ownerDocument, previous = owner.activeElement
+  let settle, settled = false
+  const result = new Promise(resolve => { settle = resolve })
+  const close = accepted => {
+    if (settled) return
+    settled = true
+    el.remove()
+    if (previous?.isConnected) previous.focus({ preventScroll: true })
+    settle(accepted)
+  }
+  const { backdrop: el, section } = createDialogShell('导入并替换正文', () => close(false))
+  section.classList.add('lark-doc-import-confirm')
+  const { header, button: dismiss } = createDialogHeader({ title: '导入文档', closeLabel: '取消导入', onClose: () => close(false) })
+  dismiss.classList.add('lark-doc-import-confirm-close')
+  const text = owner.createElement('p')
+  text.id = `lark-doc-import-description-${Math.random().toString(36).slice(2)}`
+  text.textContent = message
+  section.setAttribute('aria-describedby', text.id)
+  const file = owner.createElement('div')
+  file.className = 'lark-doc-import-confirm-file'
+  if (fileName) file.textContent = fileName
+  const footer = owner.createElement('footer')
+  const cancel = owner.createElement('button'), accept = owner.createElement('button')
+  cancel.type = accept.type = 'button'
+  cancel.textContent = '取消'; accept.textContent = '导入并替换'
+  accept.className = 'primary'
+  cancel.addEventListener('click', () => close(false))
+  accept.addEventListener('click', () => close(true))
+  footer.append(cancel, accept); section.appendChild(header)
+  if (fileName) section.appendChild(file)
+  section.append(text, footer)
+  const controls = [dismiss, cancel, accept]
+  el.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(false) }
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      const index = controls.indexOf(owner.activeElement)
+      controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus()
+    }
+  })
+  host.appendChild(el)
+  cancel.focus({ preventScroll: true })
+  return { result, destroy: () => close(false) }
+}
+
+/** 模板保存只在宿主确认落盘后关闭；取消会由桥接层中止未完成的请求。 */
+export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
+  const owner = host.ownerDocument
+  let destroyed = false, busy = false
+  const close = () => handlers.onClose?.()
+  const { backdrop, section } = createDialogShell('保存为模板', close)
+  section.classList.add('lark-doc-template-save-dialog')
+  const { header } = createDialogHeader({ title: '保存为模板', closeLabel: '取消保存模板', onClose: close })
+  const label = owner.createElement('label'), input = owner.createElement('input')
+  label.textContent = '模板名称'
+  input.setAttribute('aria-label', '模板名称'); input.maxLength = 100; input.value = name
+  label.appendChild(input)
+  const description = owner.createElement('p')
+  description.textContent = '将当前区块保存为模板，正文保持不变。模板由当前应用保存和管理。'
+  const error = owner.createElement('p'); error.setAttribute('role', 'alert')
+  const footer = owner.createElement('footer'), cancel = owner.createElement('button'), save = owner.createElement('button')
+  cancel.type = save.type = 'button'; cancel.textContent = '取消'; save.textContent = '保存'
+  save.className = 'primary'
+  cancel.addEventListener('click', close)
+  const sync = () => {
+    if (busy && owner.activeElement === save) cancel.focus({ preventScroll: true })
+    input.readOnly = busy; save.disabled = busy || !input.value.trim(); save.textContent = busy ? '保存中…' : '保存'
+  }
+  const submit = async () => {
+    if (destroyed || busy || !input.value.trim() || handlers.isCurrent?.() === false) return
+    busy = true; error.textContent = ''; sync()
+    try {
+      const saved = await handlers.onSave?.(input.value.trim())
+      if (!destroyed && handlers.isCurrent?.() !== false && saved) close()
+    } catch (failure) {
+      if (!destroyed && handlers.isCurrent?.() !== false) error.textContent = failure?.message || '模板保存失败，请重试'
+    } finally { if (!destroyed) { busy = false; sync() } }
+  }
+  input.addEventListener('input', sync); save.addEventListener('click', submit)
+  backdrop.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229) {
+      if (event.key === 'Enter' || event.key === 'Escape') event.stopPropagation()
+      return
+    }
+    if (event.key === 'Enter' && event.target === input) { event.preventDefault(); event.stopPropagation(); submit() }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
+    if (event.key === 'Tab') {
+      const controls = [...section.querySelectorAll('input,button')].filter(control => !control.disabled)
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && owner.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && owner.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+  })
+  footer.append(cancel, save); section.append(header, description, label, error, footer)
+  host.appendChild(backdrop); sync(); input.focus(); input.select()
+  return { destroy() { destroyed = true; backdrop.remove() } }
 }
 
 /**
@@ -167,14 +268,8 @@ export function createTablePickerDialog(options = {}) {
 }
 
 /**
- * 链接对话框（`LinkDialog.vue`）—— 两形态共用一层外壳。
- *
- * 插入模式（空选区）比编辑模式多两段：「链接文本」label 与首段提示；两处都是 `v-if`，
- * 打开 / 关闭时必须真增删（断言 `linkInsert.labels.length === 2` 而
- * `linkEdit.labels.length === 1`）。
- *
- * 两个按钮的 `disabled` 是**算出来的**，不是点出来的：
- * 应用 = 地址非空 且（编辑模式 或 显示文字非空）；解除 = 非插入模式 且 当前在链接上。
+ * 选中文字时只编辑地址；空光标插入和已有链接编辑保留文本字段。
+ * 切换时增删字段行，保留输入节点与草稿；确认始终使用同一 URL 校验。
  */
 export function createLinkDialog({ host, handlers = {} } = {}) {
   const el = document.createElement('div')
@@ -182,9 +277,22 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
   el.setAttribute('role', 'dialog')
   el.setAttribute('aria-label', '设置链接')
   const state = {}
+  const win = el.ownerDocument.defaultView
+  function position() {
+    if (!state.open || !el.isConnected) return
+    let anchor = state.anchor
+    if (!anchor) {
+      el.style.maxWidth = el.style.maxHeight = ''
+      const rect = el.getBoundingClientRect()
+      anchor = { left: (win.innerWidth - rect.width) / 2, top: win.innerHeight / 2, bottom: win.innerHeight / 2 }
+    }
+    placeMenu(el, anchor, 8, { gap: 4 })
+  }
   function input(label, name, placeholder, onInput) {
     const row = document.createElement('label')
-    row.textContent = label
+    const caption = document.createElement('span')
+    caption.textContent = label
+    row.appendChild(caption)
     const field = document.createElement('input')
     field.setAttribute('aria-label', name)
     field.placeholder = placeholder
@@ -197,6 +305,7 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
   }
   const textInput = input('文本', '链接文本', '输入文本', handlers.onTextInput)
   const valueInput = input('链接', '链接地址', '粘贴或输入链接', handlers.onValueInput)
+  const textRow = textInput.parentElement, valueRow = valueInput.parentElement
   const apply = document.createElement('button')
   apply.type = 'button'
   apply.textContent = '确认'
@@ -212,19 +321,20 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
     el,
     update(patch) {
       Object.assign(state, patch)
-      if (!state.open) { el.remove(); return }
+      if (!state.open) { win.removeEventListener('resize', position); el.remove(); return }
+      state.onlyLink = !!state.insertMode && state.selection?.from !== state.selection?.to && !!state.text?.trim()
+      el.classList.toggle('is-only-link', !!state.onlyLink)
+      valueRow.firstChild.hidden = !!state.onlyLink
+      syncChildren(el, [{ node: textRow, on: !state.onlyLink }, { node: valueRow, on: true }, { node: apply, on: true }])
       if (host && el.parentNode !== host) host.appendChild(el)
+      win.addEventListener('resize', position)
       setInputValue(textInput, state.text)
       setInputValue(valueInput, state.value)
       apply.disabled = !normalizeLinkUrl(state.value)
-      const win = el.ownerDocument.defaultView
-      const rect = el.getBoundingClientRect()
-      const anchor = state.anchor || { left: (win.innerWidth - rect.width) / 2, top: win.innerHeight / 2, bottom: win.innerHeight / 2 }
-      el.style.left = `${Math.max(8, Math.min(anchor.left, win.innerWidth - rect.width - 8))}px`
-      el.style.top = `${Math.max(8, anchor.bottom + rect.height + 4 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - rect.height - 4)}px`
+      position()
     },
-    focusFirstField() { if (el.parentNode) (state.insertMode ? textInput : valueInput).focus() },
-    destroy() { el.remove() },
+    focusFirstField() { if (el.parentNode) (state.insertMode && !state.onlyLink ? textInput : valueInput).focus() },
+    destroy() { win.removeEventListener('resize', position); el.remove() },
   }
 }
 
@@ -334,11 +444,26 @@ export function createEmbedDialog(options = {}) {
     return typeof fn === 'function' ? fn(...args) : undefined
   }
 
-  const state = { open: false, title: '', placeholder: '', value: '', rejected: false, position: null }
+  const state = { open: false, title: '', placeholder: '', value: '', rejected: false, position: null, application: false }
+  let trackingViewport = false
 
   const el = document.createElement('div')
   el.className = 'lark-doc-embed-dialog'
   el.setAttribute('role', 'dialog')
+  const win = el.ownerDocument.defaultView
+  function position() {
+    if (!state.open || !el.isConnected || !win) return
+    const left = parseFloat(state.position?.left) || 9
+    const top = parseFloat(state.position?.top) || 9
+    placeMenu(el, { getBoundingClientRect: () => ({ left, right: left, top, bottom: top }) }, 9, { gap: 0 })
+  }
+  function stopViewportTracking() {
+    if (!trackingViewport) return
+    win.removeEventListener('resize', position)
+    win.visualViewport?.removeEventListener('resize', position)
+    win.visualViewport?.removeEventListener('scroll', position)
+    trackingViewport = false
+  }
 
   // 关闭钮是**首个子节点**（不是 header 里的第三段），顺序照 SFC。
   const closeBtn = document.createElement('button')
@@ -359,7 +484,11 @@ export function createEmbedDialog(options = {}) {
   input.type = 'text'
   input.setAttribute('aria-label', '内嵌网页链接')
   input.addEventListener('input', (event) => call('onInput', event.target.value))
-  onEnter(input, () => call('onApply'))
+  input.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
+    event.preventDefault()
+    call('onApply')
+  })
 
   const footer = document.createElement('footer')
   const helpButton = document.createElement('button')
@@ -389,33 +518,52 @@ export function createEmbedDialog(options = {}) {
   el.appendChild(closeBtn)
   el.appendChild(header)
   el.appendChild(input)
+  const error = document.createElement('div')
+  error.className = 'lark-doc-embed-dialog-error'
+  error.setAttribute('role', 'alert')
+  el.appendChild(error)
   el.appendChild(footer)
 
   function render() {
     // `:aria-label="ed.embedDialogTitle"` + header 里的同一个标题（两处共用一份文案）。
     setAttr(el, 'aria-label', state.title)
+    el.classList.toggle('is-application', !!state.application)
+    input.setAttribute('aria-label', state.application ? '应用链接' : '内嵌网页链接')
+    input.setAttribute('aria-invalid', state.application && state.rejected ? 'true' : 'false')
+    closeBtn.setAttribute('aria-label', state.application ? '关闭应用预览链接' : '关闭内嵌网页链接')
+    error.textContent = state.application && state.rejected ? '请输入有效的 http(s) 应用链接' : ''
+    error.hidden = !error.textContent
+    helpButton.hidden = sampleButton.hidden = !!state.application
     if (title.textContent !== state.title) title.textContent = state.title || ''
     setAttr(input, 'placeholder', state.placeholder)
     setInputValue(input, state.value)
     confirmButton.classList.toggle('is-rejected', !!state.rejected)
     // `:style="ed.embedDialogPos"` —— 替换语义，整体覆盖 left/top。
     applyStyle(el, state.position)
+    position()
   }
 
   function update(patch) {
     Object.assign(state, patch || {})
     if (!state.open) {
+      stopViewportTracking()
       if (el.parentNode) el.parentNode.removeChild(el)
       return
     }
     if (host && el.parentNode !== host) host.appendChild(el)
     render()
+    if (!trackingViewport && win) {
+      win.addEventListener('resize', position)
+      win.visualViewport?.addEventListener('resize', position)
+      win.visualViewport?.addEventListener('scroll', position)
+      trackingViewport = true
+    }
   }
 
   return {
     el,
     update,
     focusInput() { if (el.parentNode) input.focus() },
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
+    destroy() { stopViewportTracking(); if (el.parentNode) el.parentNode.removeChild(el) },
   }
 }

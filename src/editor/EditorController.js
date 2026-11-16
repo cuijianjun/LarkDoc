@@ -2,9 +2,10 @@ import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { aggregateHeadingContainers, restoreUnknownBlocks, validateDocument } from '../components/lark-doc/documentOperations'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
+import { DEFER_BLOCK_ID_META, normalizeImportedBlockAttributes } from '../core/blocks/block-fixes'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createNetworkPolicy } from '../networkPolicy'
-import { createDocumentSnapshotReader } from './documentSnapshot'
+import { LARGE_DOCUMENT_SIZE } from './documentStats'
 
 export function createEditorController(options = {}) {
   return new EditorController(options)
@@ -29,6 +30,9 @@ export class EditorController {
     this._snapshot = null
     this._snapshotReader = null
     this._destroyed = false
+    this._importJob = null
+    this._readonlyVersion = 0
+    this._importVersion = 0
   }
 
   setEditor(editor) {
@@ -61,6 +65,7 @@ export class EditorController {
   getText() { return this._readSnapshot('text') }
 
   _readSnapshot(format) {
+    if (this._importJob?.committing) throw new Error('导入提交中，暂不可读取部分正文')
     if (!this.editor) return format === 'json' ? null : ''
     const state = this.editor.state?.doc || this.editor.state || this.editor
     if (this._snapshotState !== state || !this._snapshot) {
@@ -75,9 +80,16 @@ export class EditorController {
     return this._snapshot[format]
   }
   async getSnapshotAsync(options) {
+    if (this._importJob?.committing) return null
     if (!this.editor || this._destroyed) return null
-    if (!this._snapshotReader) this._snapshotReader = createDocumentSnapshotReader()
-    return this._snapshotReader.read(this.editor, options)
+    const editor = this.editor
+    const doc = editor.state.doc
+    if (!this._snapshotReader) {
+      const { createDocumentSnapshotReader } = await import('./documentSnapshot')
+      if (this.editor !== editor || this._destroyed || editor.state.doc !== doc || options?.signal?.aborted) return null
+      if (!this._snapshotReader) this._snapshotReader = createDocumentSnapshotReader()
+    }
+    return this._snapshotReader.read(editor, options)
   }
   getImportReport() { return this.lastImportReport }
   setImportReport(report) {
@@ -89,6 +101,8 @@ export class EditorController {
   setTitle(value) { this.title = value; return this.title }
 
   setReadonly(readonly) {
+    this._readonlyVersion++
+    if (readonly) { this._importVersion++; this._cancelImport() }
     if (!this.editor) return false
     const editable = !readonly
     this.editor.setEditable(editable)
@@ -98,7 +112,30 @@ export class EditorController {
 
   setContent(content, options = {}) {
     if (!this.editor) return false
+    this._importVersion++
+    if (this._cancelImport() === false) return false
     return this.applyPreparedContent(this.prepareContent(content, options), options)
+  }
+
+  _cancelImport() {
+    const job = this._importJob
+    if (!job) return
+    job.abort.abort()
+    if (!job.dispatchDepth) job.rollback?.()
+    return !job.dispatchDepth
+  }
+
+  /** Cooperative import lives outside the synchronous editor entry graph. */
+  async setContentAsync(content, options = {}) {
+    const version = ++this._importVersion
+    const previous = this._importJob
+    const editor = this.editor, wait = !!previous?.dispatchDepth
+    this._cancelImport()
+    // Cancellation can synchronously restore the pre-import document. A
+    // reentrant cancellation restores that same baseline when dispatch exits.
+    const initialDoc = wait ? previous.initialDoc : editor?.state.doc
+    const { startPagedImport } = await import('./pagedDocumentSource')
+    return startPagedImport(this, content, options, { version, previous, wait, editor, initialDoc })
   }
 
   /** Preflight snapshots before requesting an immutable restore from the provider. */
@@ -124,20 +161,31 @@ export class EditorController {
   }
 
   applyPreparedContent({ next, report }, options = {}) {
+    if (this._importJob?.committing && this._cancelImport() === false) throw new Error('导入事务执行中，暂不可替换正文')
     if (!this.editor || this._destroyed) throw new Error('编辑器已失效')
-    if (next.eq(this.editor.state.doc)) {
+    const largeDocument = next.content.size > LARGE_DOCUMENT_SIZE
+    const normalizedImport = largeDocument && this.editor.storage?.larkDoc?.deferNormalization !== false
+    if (normalizedImport) next = normalizeImportedBlockAttributes(next)
+    if (next.eq(this.editor.storage?.larkDoc?.pagedView?.logicalDocument(this.editor.state.doc) || this.editor.state.doc)) {
       this.setImportReport(report)
       return false
     }
     if (this.onBeforeContentReplace) this.onBeforeContentReplace()
     const before = this.editor.state.doc
     const tr = closeHistory(this.editor.state.tr).replaceWith(0, this.editor.state.doc.content.size, next.content)
+    // The detached model already has canonical attributes. Skip the plugin's
+    // extra pass, while the import itself remains one normal history step.
+    if (normalizedImport) tr.setMeta(DEFER_BLOCK_ID_META, true)
     this.editor.view.dispatch(setTransactionMetadata(tr, { origin: options.origin || TRANSACTION_ORIGINS.HOST }))
     if (this.editor.state.doc === before) throw new Error('当前编辑器拒绝替换正文')
     if (this.editor.commands && typeof this.editor.commands.resetLarkDocFolds === 'function') this.editor.commands.resetLarkDocFolds()
-    if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
-    if (this.editor.commands && typeof this.editor.commands.normalizeLarkDocIndents === 'function') this.editor.commands.normalizeLarkDocIndents()
+    if (!normalizedImport) {
+      if (this.editor.commands && typeof this.editor.commands.ensureLarkDocBlockIds === 'function') this.editor.commands.ensureLarkDocBlockIds()
+      if (this.editor.commands && typeof this.editor.commands.normalizeLarkDocIndents === 'function') this.editor.commands.normalizeLarkDocIndents()
+    }
     if (this.onAfterContentReplace) this.onAfterContentReplace()
+    // Close both sides of the import so the first edit can be undone separately.
+    // The first edit must have its own boundary after the import.
     this.editor.view.dispatch(closeHistory(this.editor.state.tr))
     this.setImportReport(report)
     return true
@@ -145,6 +193,7 @@ export class EditorController {
 
   destroy(cleanup) {
     if (this._destroyed) return
+    this._cancelImport()
     this._destroyed = true
     if (this.session && this.editor) this.session.detachEditor(this.editor)
     this.editor?.destroy()

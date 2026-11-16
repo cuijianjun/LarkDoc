@@ -147,8 +147,8 @@ export function createCalloutTools({ host, handlers = {} } = {}) {
     }
     data.itemNodes.forEach((node) => {
       const item = node.__ldItem
+      // 表情选择器是 role=menu 弹窗：只留 aria-label，原生 title 会弹黑底提示。
       setAttr(node, 'aria-label', item.label)
-      setAttr(node, 'title', item.label)
     })
     if (!items.length) {
       const empty = document.createElement('p')

@@ -16,7 +16,7 @@
  * `scripts/verify-browser-perf-scheduling.js` 负责；这里只钉调度语义。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createFrameBatcher, createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../src/core/pacing'
+import { createActivityGate, createFrameBatcher, createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../src/core/pacing'
 import selectionPacingMixin from '../../src/components/lark-doc/editor/selectionPacingMixin'
 import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
 
@@ -55,6 +55,44 @@ function fakeTimers() {
     get size() { return pending.size },
   }
 }
+
+describe('large-document foreground activity gate', () => {
+  it('extends the quiet window on continued scrolling, then resumes pending work', async () => {
+    const timers = fakeTimers()
+    let now = 0
+    const gate = createActivityGate({ timers, now: () => now })
+    expect(await gate.wait()).toBe(true)
+    gate.touch()
+    let finished = false
+    const waiting = gate.wait().then(value => { finished = value })
+    now = 100; timers.advance(100)
+    gate.touch()
+    now = 249; timers.advance(149)
+    await Promise.resolve()
+    expect(finished).toBe(false)
+    now = 250; timers.advance(1)
+    await waiting
+    expect(finished).toBe(true)
+    expect(timers.size).toBe(0)
+    gate.dispose()
+  })
+
+  it('cancels stale or disposed jobs and releases all waiting promises', async () => {
+    const timers = fakeTimers()
+    const gate = createActivityGate({ timers, now: () => 0 })
+    gate.touch()
+    let current = true
+    const stale = gate.wait(() => current)
+    current = false
+    timers.advance(32)
+    expect(await stale).toBe(false)
+    const pending = [gate.wait(), gate.wait()]
+    gate.dispose()
+    expect(await Promise.all(pending)).toEqual([false, false])
+    expect(timers.size).toBe(0)
+    expect(await gate.wait()).toBe(false)
+  })
+})
 
 /** 选区路径的最小 `this`：真实组件要整棵 Vue 实例，这里只给这 8 个方法会摸的字段。 */
 function selectionHost({ empty = true, focused = false } = {}) {
@@ -123,6 +161,7 @@ function searchHost() {
         revealLarkDocMatch() { stats.reveal += 1 },
         setLarkDocSearch() { stats.search += 1 },
         setTextSelection() {},
+        scrollIntoView() {},
       },
     },
   }

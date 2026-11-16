@@ -205,7 +205,7 @@ export async function exportDocx(doc, options) {
   const fileName = withExtension(settings.fileName, 'docx')
   const comments = scope === 'withComments' ? normalizeExportComments(settings.comments) : []
   // Work on a JSON snapshot so cropping and semantic fallbacks never change the editor.
-  const source = normalizeExportDocument(doc)
+  const source = normalizeExportDocument(doc, { format: 'word' })
   let images = settings.images
   let failedImages = []
   if (!images) {
@@ -214,6 +214,9 @@ export async function exportDocx(doc, options) {
     failedImages = collected.failed
   }
   images = await prepareImageCrops(source, images, failedImages)
+  const report = {}
+  const { prepareWordDiagrams } = await import(/* webpackChunkName: "office-visuals" */ './docx-visuals.js')
+  images = await prepareWordDiagrams(source, images, settings, report)
   // webpackChunkName 必须是 **"office"**：`utils/importExport.js` 里那条 `await import('docx')`
   // 已经占了这个名字，Rollup 的 office feature target 也按这个名字把 docx 收成一个
   // 按需区块。这里不标（或标别的名字）webpack 会另开一个自动命名的 async chunk 装 docx，
@@ -224,12 +227,13 @@ export async function exportDocx(doc, options) {
   // 宿主加载 lark-doc/features/office.js（自带 buildDocx）后恢复 rich Word 导出。
   const { buildDocx } = await loadFeature('office.buildDocx', () =>
     import(/* webpackChunkName: "office" */ './docx.js'))
-  const blob = await buildDocx(source, { images, title: settings.title || settings.fileName, comments })
+  const blob = await buildDocx(source, { images, title: settings.title || settings.fileName, comments, report })
   if (typeof settings.shouldDownload === 'function' && settings.shouldDownload() !== true) {
     throw new Error('导出已取消：文档、权限或导出条件已改变，请重新导出')
   }
   downloadBlob(blob, fileName)
-  return { fileName, blob, failedImages, scope }
+  const warnings = [report.mathFallbacks ? `${report.mathFallbacks} 个公式以源码保留` : '', report.chartFallbacks ? `${report.chartFallbacks} 个图表以源码保留` : ''].filter(Boolean)
+  return { fileName, blob, failedImages, scope, warnings }
 }
 
 /**

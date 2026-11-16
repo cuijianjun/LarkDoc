@@ -48,6 +48,7 @@ export default {
     },
     overlaysHandlers() {
       return {
+        onLoadError: () => { this.error = '面板暂时无法打开，请关闭后重试' },
         onImageShareClose: () => this.closeImageShareDialog(),
         onImageShareQuery: query => this.searchImageShareRecipients(query),
         onImageShareRecipient: (id, kind) => this.toggleImageShareRecipient(id, kind),

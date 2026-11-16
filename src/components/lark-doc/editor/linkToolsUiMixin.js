@@ -1,7 +1,7 @@
 import { getMarkRange } from '@tiptap/core'
 import { closeHistory } from '@tiptap/pm/history'
 import { BLOCK_ID_PATTERN, safeUrl, normalizeLinkUrl } from '../../../core/documentOperations'
-import { createLinkTools } from '../../../ui/linkTools'
+import { createLazyView } from '../../../ui/lazy'
 import { isCommandEnabled } from '../larkDocConfig'
 import { readBookmarkHost, readBookmarkMeta } from '../../../core/embed/bookmark'
 
@@ -17,7 +17,7 @@ export default {
   },
   methods: {
     mountLinkTools() {
-      this._linkToolsUi = createLinkTools({
+      this._linkToolsUi = createLazyView(() => import('../../../ui/linkTools'), 'createLinkTools', {
         host: this.$refs.panelHost,
         handlers: {
           onEdit: () => this.editHoveredLink(), onRemove: () => this.removeHoveredLink(),
@@ -30,7 +30,7 @@ export default {
           onKeep: () => clearTimeout(this._linkHideTimer),
           onLeave: () => this.scheduleLinkHide(),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
     },
     linkTargetAt(element) {
       const view = this.editor?.view
@@ -63,7 +63,7 @@ export default {
       this.loadLinkMetadata(target.href)
     },
     onLinkMouseOut(event) {
-      if (this._linkTarget?.element.contains(event.relatedTarget) || this._linkToolsUi?.el.contains(event.relatedTarget)) return
+      if (this._linkTarget?.element.contains(event.relatedTarget) || this._linkToolsUi?.el?.contains(event.relatedTarget)) return
       this.scheduleLinkHide()
     },
     scheduleLinkHide() {
@@ -230,7 +230,8 @@ export default {
       }
       view.dispatch(closeHistory(tr))
       this.linkDialog = false
-      this.editor.commands.focus()
+      view.dispatch(closeHistory(view.state.tr))
+      view.focus()
       return true
     },
     removeHoveredLink(target = this._linkTarget) {

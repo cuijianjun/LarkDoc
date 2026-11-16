@@ -10,6 +10,7 @@
  * 行为完全一致；该分组结构同时为移动端「底部栏 + 更多 sheet」提供数据基础。
  */
 import { diagramTypes } from './constants'
+import { placeMenu } from '../../../ui/menuLayout'
 
 /** 收纳优先序：靠前的组先收进「更多」（核心的文本格式/历史最后收）。 */
 const TOOLBAR_COLLAPSE_ORDER = ['toolsEnd', 'insert', 'blockStyle', 'textStyle', 'marks', 'headings', 'history']
@@ -45,7 +46,7 @@ export default {
         })) })
       }
       if (this.toolbarEnabled('textStyle')) {
-        const items = [{ label: '设置链接…', disabled: ro || !this.hasTextSelection, run: () => this.openLinkDialog() }]
+        const items = [{ label: '设置链接…', disabled: ro || this.linkCommandEnabled?.() === false, run: () => this.openLinkDialog() }]
         this.fontFamilyOptions.filter((option) => option.value).forEach((option) => items.push({
           label: option.label, disabled: ro, checked: this.appliedTextStyle.fontFamily === option.value,
           run: () => this.applyTextStyle('fontFamily', option.value),
@@ -164,21 +165,20 @@ export default {
       } else this.teardownMoreMenu()
     },
     openMoreMenuOnHover() {
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('more')
       if (!this.moreMenuOpen) { this._moreHoverOpened = true; this.toggleMoreMenu() }
     },
-    scheduleMoreMenuClose() { this.schedulePopupHoverClose(() => { this._moreHoverOpened = false; this.closeMoreMenu() }) },
+    scheduleMoreMenuClose() { this.schedulePopupHoverClose(() => { this._moreHoverOpened = false; this.closeMoreMenu() }, 'more') },
     // hover 已打开时点击不关闭（飞书行为：hover 弹窗靠移开鼠标关闭）。
     toggleMoreMenuGuarded() { if (this._moreHoverOpened && this.moreMenuOpen) return; this.toggleMoreMenu() },
     positionMoreMenu() {
       if (!this.moreMenuOpen) return
       const trigger = this.$refs.root && this.$refs.root.querySelector('button[aria-label="更多"]')
       if (!trigger) return
-      const margin = 8
-      const rect = trigger.getBoundingClientRect()
-      const maxHeight = Math.max(120, window.innerHeight - rect.bottom - margin * 2)
-      const right = Math.max(margin, window.innerWidth - rect.right)
-      this.moreMenuStyle = { top: `${rect.bottom + 6}px`, right: `${right}px`, left: 'auto', width: '200px', maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      const menu = this.$refs.root.querySelector('.lark-doc-more-menu')
+      if (!menu) return
+      menu.style.width = '200px'
+      this.moreMenuStyle = { ...placeMenu(menu, trigger, 8, { align: 'end' }), width: '200px' }
     },
     closeMoreMenu() {
       if (!this.moreMenuOpen) return

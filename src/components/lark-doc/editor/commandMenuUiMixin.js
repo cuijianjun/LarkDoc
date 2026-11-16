@@ -17,7 +17,7 @@
  * 3. **定位仍走 `positionCommandMenu`**：它读的是 `$refs.root` 里真实 DOM 的尺寸，
  *    不认谁建的节点。原生化之后 `menuStyle` 照样由它算，这里只负责把结果推下去。
  */
-import { createCommandMenu } from '../../../ui/commandMenu'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -46,7 +46,7 @@ export default {
       if (this._commandMenuUi) return
       const host = this.$refs.commandMenuHost
       if (!host) return
-      this._commandMenuUi = createCommandMenu({ host, handlers: this.commandMenuHandlers() })
+      this._commandMenuUi = createLazyView(() => import('../../../ui/commandMenu'), 'createCommandMenu', { host, handlers: this.commandMenuHandlers() }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, onReady: () => this.positionCommandMenu() })
       this.refreshCommandMenu()
     },
     destroyCommandMenu() {
@@ -65,10 +65,11 @@ export default {
       return {
         onQuery: (value) => { this.menuQuery = value; this.activeCommandIndex = 0 },
         onMove: (step) => this.moveCommand(step),
+        onActivate: index => { this.activeCommandIndex = index; this.refreshCommandMenu() },
         onChoose: (item) => this.chooseCommand(item),
         onChooseDiagram: (typeId) => this.chooseCommand({ id: 'diagram', diagramType: typeId }),
         onClose: () => this.closeCommandMenu(true),
-        onMenuEnter: () => this.cancelPopupHoverClose(),
+        onMenuEnter: () => this.cancelPopupHoverClose('command'),
         onMenuLeave: () => this.scheduleCommandMenuClose(),
       }
     },
@@ -83,6 +84,7 @@ export default {
         templates: this.templates,
         query: this.menuQuery,
         activeId: this.activeCommandId,
+        activeIndex: this.activeCommandIndex,
         positionStyle: this.menuStyle,
         diagramTypes: this.diagramTypes,
       }

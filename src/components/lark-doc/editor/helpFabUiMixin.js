@@ -3,7 +3,7 @@
  * 快捷键使用内置抽屉，其余动作交给应用的 help.onAction。
  */
 import { createHelpFab } from '../../../ui/helpFab'
-import { HELP_MENU_ITEMS } from '../../../ui/shortcutGroups'
+import { HELP_MENU_ITEMS } from '../../../ui/helpMenuItems'
 
 export default {
   watch: {

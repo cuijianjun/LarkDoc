@@ -1,10 +1,9 @@
 import { TextSelection } from '@tiptap/pm/state'
-import { createDocumentStatsReader } from './documentSnapshot'
-import { clampBlockIndent, collectOutline, safeAttachmentId, safeUrl } from '../components/lark-doc/documentOperations'
+import { createActivityGate } from '../core/pacing'
+import { clampBlockIndent, collectOutlineState } from '../components/lark-doc/documentOperations'
 import { isBlockActionEnabled, isCommandEnabled, isConfigEnabled } from '../components/lark-doc/larkDocConfig'
-import { isImageMime, nearestInsertPosition } from '../core/media/image-insert'
+import { isImageMime } from '../core/media/image-insert'
 import { showImageUploadError } from '../ui/imageUploadPlaceholder'
-import { fileBlockAttrs, sortFileFiles } from '../core/media/file-block'
 import { createNativeOptionsHost } from './nativeOptionsHost'
 import viewModesMixin from '../components/lark-doc/editor/viewModesMixin'
 import selectionPacingMixin from '../components/lark-doc/editor/selectionPacingMixin'
@@ -72,7 +71,7 @@ const options = {
     editor: null, editorController: null, helpOpen: false, savedSelection: null, error: '',
     alignNames: { left: '左', center: '居中', right: '右', justify: '两端' },
     alignGlyphs: { left: '≡', center: '☷', right: '≣', justify: '▤' },
-    pendingStateFrame: null, pendingChangeTimer: null, pendingDerivedIdle: null, pendingDerivedTimer: null, pendingDerivedVersion: 0, activeHeadingTimer: null, _derivedDoc: null,
+    pendingStateFrame: null, pendingChangeTimer: null, pendingDerivedIdle: null, pendingDerivedTimer: null, pendingDerivedVersion: 0, _derivedDoc: null,
   } },
   computed: {
     larkDocConfig() { return this.editorConfig },
@@ -83,9 +82,9 @@ const options = {
     titleLength() { return this.larkDocConfig.limits.titleLength },
     effectiveReadonly() { return this.interactionMode === 'read' },
     hasTextSelection() { return !!this.editor && !this.editor.state.selection.empty },
-    visibleBlockActions() { return this.blockActions.filter(item => this.isBlockActionEnabled(item.id)) },
+    visibleBlockActions() { return this.blockActions.filter(item => this.isBlockActionEnabled(item.id) && (item.id !== 'translate' || this.featureEnabled('ai'))) },
     visibleBlockTypeActions() {
-      return this.blockTypeActions.filter(item => this.featureEnabled(item.id === 'codeBlock' ? 'codeBlocks' : 'blockStyle') && this.isBlockActionEnabled(item.id))
+      return this.blockTypeActions.filter(item => (!/^heading/.test(item.id) || Number(item.id.slice(-1)) <= Math.min(9, Math.max(3, (this.maxHeadingLevel || 0) + 1))) && this.featureEnabled('blockStyle') && this.featureEnabled(item.id === 'codeBlock' ? 'codeBlocks' : item.id === 'callout' ? 'callouts' : /^heading/.test(item.id) ? 'headings' : 'blockStyle') && this.isBlockActionEnabled(item.id))
     },
     visibleBlockListActions() {
       const list = this.visibleBlockActions.filter(item => item.id !== 'duplicate')
@@ -97,13 +96,14 @@ const options = {
     session() { this.editor?.storage.inlineMath?.refresh?.(); this.editor?.storage.blockMath?.refresh?.() },
     outlineOpen() { this.syncOutlineReopen() },
     effectiveReadonly(value) {
-      if (value) { this.resolveImageFile.cancelAll?.('readonly'); this.dropPosition = null }
+      if (value) { this.resolveImageFile.cancelAll?.('readonly'); this.cancelFileUploads('readonly'); this.dropPosition = null }
       if (!this.editor) return
       this.closeEditingOverlays()
       if (value) this.tableBoundary.visible = false
       else this.$nextTick(() => this.updateTableBoundary())
     },
     editorConfig: { deep: true, handler() {
+      if (!this.featureEnabled('files')) this.cancelFileUploads('files-disabled')
       if (!isCommandEnabled(this.larkDocConfig, 'image', 'images')) {
         this.resolveImageFile.cancelAll?.('images-disabled')
         if (!this.dragging) this.dropPosition = null
@@ -149,7 +149,9 @@ const options = {
       const hash = window.location.hash
       if (!hash.startsWith('#share-')) return
       const blockId = hash.slice(7)
-      const element = [...this.editor.view.dom.querySelectorAll('[data-block-id]')].find(node => node.dataset.blockId === blockId)
+      const element = this.editor.storage?.larkDoc?.projection?.revealBlockId?.(blockId)
+        || [...this.editor.view.dom.querySelectorAll('[data-block-id]')].find(node => node.dataset.blockId === blockId)
+      this.editor.storage?.larkDoc?.projection?.revealNode?.(element)
       element?.scrollIntoView({ block: 'center' })
     },
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
@@ -242,22 +244,13 @@ const options = {
     },
     async insertFileBlocks(files, pos) {
       if (!this.writable() || !this.featureEnabled('files')) return
-      const { accepted, rejected } = sortFileFiles(files, { maxSize: this.effectiveFileMaxSize })
-      this.error = rejected[0]?.message || ''
-      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
-      for (const file of accepted) {
-        try {
-          if (typeof this.uploadFile !== 'function') throw new Error('未配置文件上传：请通过 uploadFile 传入上传实现')
-          const uploaded = await this.uploadFile(file)
-          if (!this.writable()) return
-          const attrs = fileBlockAttrs(file, uploaded || {})
-          if (!safeAttachmentId(attrs.token) && !(attrs.src && safeUrl(attrs.src, true))) throw new Error('文件上传未返回有效地址或附件 ID')
-          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
-          this.editor.chain().focus().setFileBlock(attrs).run()
-          if (anchor !== null) anchor = this.editor.state.selection.to
-        } catch (error) { this.error = error?.message || '文件上传失败' }
-      }
+      const epoch = this._fileUploadEpoch || 0
+      const { createFileUploadTasks } = await import('../core/media/file-upload-tasks')
+      if (epoch !== (this._fileUploadEpoch || 0) || !this.writable()) return
+      this._fileUploadTasks ||= createFileUploadTasks(this)
+      return this._fileUploadTasks.insert(files, pos)
     },
+    cancelFileUploads(reason) { this._fileUploadEpoch = (this._fileUploadEpoch || 0) + 1; this._fileUploadTasks?.cancelAll(reason) },
     refreshDocumentState(transaction = null) {
       if (!this.editor) return
       const doc = this.editor.state.doc
@@ -273,7 +266,7 @@ const options = {
         return
       }
       this.outlinePending = false
-      this.outline = collectOutline(doc)
+      Object.assign(this, collectOutlineState(doc))
       this.syncOutlineCollapseState()
       this.syncFoldState()
       this.wordCount = this.editor.storage.characterCount.characters()
@@ -287,12 +280,16 @@ const options = {
       const version = ++this.pendingDerivedVersion
       this.outlinePending = true
       this._derivedDoc = doc
-      if (!this._derivedStatsReader) this._derivedStatsReader = createDocumentStatsReader()
       const current = () => !!this.editor && !this._isBeingDestroyed && !this._isDestroyed
         && version === this.pendingDerivedVersion && this.editor.state.doc === doc
-      this._derivedStatsReader.read(doc, current).then(result => {
+      import('./documentSnapshot').then(module => {
+        if (!current()) return null
+        this._derivedStatsReader ||= module.createDocumentStatsReader()
+        return this._derivedStatsReader.read(doc, current, active => this._backgroundGate?.wait(active) ?? Promise.resolve(active()))
+      }).then(result => {
         if (!result || !current()) return
         this.outline = result.outline
+        this.maxHeadingLevel = result.maxHeadingLevel
         this.wordCount = result.characters
         this.outlinePending = false
         this.syncOutlineCollapseState()
@@ -301,7 +298,7 @@ const options = {
         else if (this.error.startsWith('正文不能超过 ')) this.error = ''
         if (this.searchQuery) this.scheduleSearchUpdate()
         this.$nextTick(() => this.updateHandleAndTable())
-      })
+      }).catch(error => { if (current()) { this.outlinePending = false; this.error = error.message } })
     },
     scheduleDocumentState(transaction = null) {
       if (!this.editor) return
@@ -334,22 +331,33 @@ const options = {
         this.closeBlockMenu(); this.handleRange = null
       } else this.positionBlockHandle(this.handleRange)
     },
-    onDocumentScroll() {
-      if (this._outlineFrame || !this.editor) return
+    onDocumentScroll(event) {
+      if (!this.editor) return
       const largeDocument = this.editor.state.doc.content.size > 500000
-      const needsGeometry = this.handleRange || this.handlePressed || this.handleHovering || this.dragging
+      if (largeDocument) this._backgroundGate?.touch()
+      if (event?.type === 'resize') this._handleResizePending = true
+      if (this._outlineFrame) return
+      const handleEngaged = this.handlePressed || this.handleHovering || this.dragging
         || this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen
+      // The idle handle is absolutely positioned in paper coordinates. Scroll
+      // moves both together; remeasuring it forces an offscreen render window
+      // to lay out every frame. Pointer movement and transactions already
+      // refresh its anchor, while engaged controls and resize still need it.
+      const handleGeometry = !largeDocument || this._handleResizePending || handleEngaged
+      const needsGeometry = (handleGeometry && this.handleRange) || handleEngaged
         || this.bubbleVisible || this.bubbleAlignOpen || this.linkDialog || this.tableToolsOpen
         || this.tableBoundary?.visible || this._tableOverlayHover || this.headingOpen || this.menuOpen
-        || this.calloutEmojiOpen
+        || this.calloutEmojiOpen || this.headerMenuOpen || this.moreMenuOpen
       this.scheduleActiveHeading()
-      if (largeDocument && !needsGeometry) return
+      if (largeDocument && !needsGeometry) { this._handleResizePending = false; return }
       this._outlineFrame = requestAnimationFrame(() => {
         this._outlineFrame = null
         if (this._isBeingDestroyed || this._isDestroyed) return
+        const measureHandle = handleGeometry || this._handleResizePending
+        this._handleResizePending = false
         const hasHandle = !!this.handleRange || !!this.handlePressed || !!this.handleHovering || !!this.dragging
-        if (hasHandle && !this.blockMenuOpen && !this.blockTypeMenuOpen && !this.handlePressed) this.positionBlockHandle(this.handleRange)
-        if (hasHandle) this.syncHandleHighlightBackdrop()
+        if (hasHandle && measureHandle && !this.blockMenuOpen && !this.blockTypeMenuOpen && !this.handlePressed) this.positionBlockHandle(this.handleRange)
+        if (hasHandle && measureHandle) this.syncHandleHighlightBackdrop()
         if (this.blockAlignMenuOpen) this.positionBlockAlignMenu()
         if (this.blockColorMenuOpen) this.positionBlockColorMenu()
         if (this.bubbleAlignOpen) this.positionBubbleAlignMenu()
@@ -359,6 +367,8 @@ const options = {
         if (this.tableBoundary?.visible || this._tableBoundaryHoverTable) this.updateTableBoundary()
         if (this.tableToolsOpen || this._tableOverlayHover) this.refreshTableOverlays?.()
         if (this.headingOpen) this.positionHeadingMenu()
+        if (this.headerMenuOpen) this.positionHeaderMenu()
+        if (this.moreMenuOpen) this.positionMoreMenu()
         if (this.menuOpen) this.positionCommandMenu()
         if (this.calloutEmojiOpen || this._calloutToolsUi?.el?.isConnected) this.updateCalloutTools()
       })
@@ -371,23 +381,28 @@ const options = {
       // viewport is moving competes directly with the browser's layout work.
       // Keep the existing leading cadence for normal documents and use a
       // trailing timer for the large-document path.
-      if (largeDocument) clearTimeout(this.activeHeadingTimer)
-      else if (this.activeHeadingTimer) return
-      this.activeHeadingTimer = setTimeout(() => {
-        this.activeHeadingTimer = null
+      if (largeDocument) clearTimeout(this._activeHeadingTimer)
+      else if (this._activeHeadingTimer) return
+      this._activeHeadingTimer = setTimeout(() => {
+        this._activeHeadingTimer = null
         if (!this.editor || this.outlinePending || this._isBeingDestroyed || this._isDestroyed) return
         if (this.editor.state.doc.content.size > 500000) {
-          // Resolve just the block at the reading edge, then binary-search
-          // the outline. Never read every offscreen heading's layout rect.
-          const rect = this.editor.view.dom.getBoundingClientRect()
-          const hit = this.editor.view.posAtCoords({ left: rect.left + Math.min(40, rect.width / 2), top: Math.max(170, rect.top + 1) })
-          if (!hit) return
+          // PM's posAtCoords can fall back to reading every child's rect when
+          // the point hits whitespace. Bound this lookup to the render window.
+          const root = this.editor.view.dom
+          const rect = root.getBoundingClientRect()
+          const left = rect.left + Math.min(40, rect.width / 2), top = Math.max(170, rect.top + 1)
+          const target = this.editor.storage.larkDoc.projection?.blockAtPoint(left, top)
+            || root.ownerDocument.elementFromPoint?.(left, top)
+          if (!target || target === root || !root.contains(target)) return
+          let position
+          try { position = this.editor.view.posAtDOM(target, 0) } catch (_) { return }
           let low = 0
           let high = this.outline.length - 1
           let visible = -1
           while (low <= high) {
             const middle = (low + high) >> 1
-            if (this.outline[middle].pos <= hit.pos) { visible = this.outline[middle].pos; low = middle + 1 }
+            if (this.outline[middle].pos <= position) { visible = this.outline[middle].pos; low = middle + 1 }
             else high = middle - 1
           }
           if (visible !== -1) this.activeHeading = visible
@@ -400,7 +415,7 @@ const options = {
           else if (visible !== -1) break
         }
         if (visible !== -1) this.activeHeading = visible
-      }, 80)
+      }, largeDocument ? 150 : 80)
     },
     onDocumentPointerMove(event) {
       if (this.$refs.root.contains(event.target)) return
@@ -426,6 +441,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     },
   })
   const host = runtime.host
+  host._backgroundGate = createActivityGate()
   const listeners = []
   let editorContainerObserver = null
   const listen = (target, type, handler, capture = false) => {
@@ -483,6 +499,12 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       editorContainerObserver.observe(shell.editorEl, { attributes: true, attributeFilter: ['contenteditable'] })
       syncEditorContainer()
       host.syncOutlineReopen()
+      // 成功提示保留「立即查看」，进入其他弹窗控件后让出它们的操作区域。
+      const dismissNoticeForPopup = event => {
+        if (host.versionNotice && event.target.closest?.('[aria-haspopup]')) host.dismissVersionNotice()
+      }
+      listen(shell.root, 'pointerover', dismissNoticeForPopup)
+      listen(shell.root, 'focusin', dismissNoticeForPopup)
       listen(shell.root, 'keydown', event => { if (event.key === 'Escape') { host.closeLinkTools(); host.closeOverlay() } })
       listen(shell.paper, 'pointermove', host.onPaperPointerMove)
       listen(shell.paper, 'pointerdown', host.onReminderChipClick)
@@ -510,10 +532,11 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       })
       listen(window, 'scroll', host.onDocumentScroll, true)
       listen(window, 'resize', host.onDocumentScroll)
+      listen(window, 'resize', host.syncTableClip)
       listen(window, 'pointerup', host.onHandlePointerUp)
       listen(document, 'pointerdown', event => {
-        if (!host._linkToolsUi?.el.contains(event.target)) host.closeLinkTools()
-        if (host.linkDialog && !host._dialogsUi?.link.el.contains(event.target)) host.linkDialog = false
+        if (!host._linkToolsUi?.el?.contains(event.target)) host.closeLinkTools()
+        if (host.linkDialog && !host._dialogsUi?.link.el?.contains(event.target)) host.linkDialog = false
         host.onDocumentPointerDown(event)
       }, true)
       listen(window, 'pointermove', host.onDocumentPointerMove, true)
@@ -525,6 +548,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     },
     transaction() {
       runtime.invalidateEditor()
+      host.syncBlockHandleVisibility()
       host.refreshLinkTools()
       host.syncFoldState()
       host.persistFolds()
@@ -540,6 +564,8 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host.$nextTick(() => host.refreshTableOverlays?.())
     },
     destroy() {
+      host.cancelFileUploads('destroy'); host._fileUploadTasks?.dispose()
+      host._blockHandleAnchor = null
       resolveImageFile.cancelAll?.('destroy')
       host._imageUploadErrorOff?.()
       editorContainerObserver?.disconnect()
@@ -556,10 +582,12 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host.closeCommandMenu()
       ;['handleHideTimer', 'blockMenuCloseTimer', '_keepMenuTimer', 'pendingChangeTimer', 'pendingDerivedTimer'].forEach(key => clearTimeout(host[key]))
       host.pendingDerivedVersion += 1
+      host._backgroundGate.dispose()
+      host.destroyTableClipObserver()
       if (host.pendingDerivedIdle && typeof cancelIdleCallback === 'function') cancelIdleCallback(host.pendingDerivedIdle)
       host.pendingDerivedIdle = null
-      clearTimeout(host.activeHeadingTimer)
-      host.activeHeadingTimer = null
+      clearTimeout(host._activeHeadingTimer)
+      host._activeHeadingTimer = null
       ;['pendingStateFrame', '_outlineFrame'].forEach(key => { if (host[key]) cancelAnimationFrame(host[key]) })
       uiDomains.slice().reverse().forEach(([domain]) => host[`destroy${domain}`]())
       runtime.destroy()

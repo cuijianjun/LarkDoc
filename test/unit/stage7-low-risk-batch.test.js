@@ -9,7 +9,7 @@ const exists = (relative) => fs.existsSync(path.join(root, relative))
 const editor = source('src/editor/nativeEditorHost.js')
 const workspace = source('src/components/lark-doc/LarkDocWorkspace.js')
 const baseline = source('scripts/architecture-baseline.json')
-const overlays = source('src/ui/overlays.js')
+const overlays = source('src/ui/overlays.js') + source('src/ui/overlayViews.js')
 const overlaysUi = source('src/components/lark-doc/editor/overlaysUiMixin.js')
 const shareMixin = source('src/components/lark-doc/editor/shareMixin.js')
 const exportMixin = source('src/components/lark-doc/editor/exportMixin.js')
@@ -65,7 +65,7 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
 
   it('原生 renderer 与 overlaysUiMixin 覆盖分享、权限及全部业务回调', () => {
     shareHandlers.forEach((name) => {
-      expect(overlays).toContain(`'${name}'`)
+      expect(overlays).toMatch(new RegExp(`(?:'${name}'|\\.${name})`))
       expect(overlaysUi).toContain(`${name}:`)
     })
     exportHandlers.forEach((name) => expect(overlays).toContain(`'${name}'`))

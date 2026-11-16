@@ -335,7 +335,8 @@ export function createTemplateLibrary(options = {}) {
         const available = typeof source?.html === 'string'
         entry.preview.disabled = !available
         entry.use.disabled = !available
-        entry.preview.title = entry.use.title = source?.unavailable || ''
+        setAttr(entry.preview, 'aria-description', source?.unavailable || null)
+        setAttr(entry.use, 'aria-description', source?.unavailable || null)
         if (entry.html !== source?.html) {
           entry.html = source?.html
           entry.thumb.replaceChildren()

@@ -70,129 +70,7 @@ function onMouseDownPrevent(node, run) {
 // 面板开合走 `mountNode(host, el, on)`（只增删自己这一棵，`dom.js`），**不是
 // `syncChildren`** —— 历史层 / 另存为 / 评论层共用同一个 `panelHost`，用后者会互相摘除。
 
-/* ═══════════════════════════ ① 目录侧栏 ═══════════════════════════ */
-
-/**
- * 目录侧栏（`OutlinePanel.vue`）。
- *
- * 宿主必须是 `.lark-doc-body` 里的 `ref="outlineHost"`（带 `display: contents`）：
- * `aside` 的 `flex: 0 0 210px` / `position: sticky` 都要求它是那层 flex 的直接子项。
- *
- * 条目按 `pos` 缓存：折叠 / 展开只改类名与条目集合，节点本身复用。
- * `hasChildren` 决定首格是折叠钮还是占位 span —— 两个节点都建好，用
- * `syncChildren` 二选一，等价于模板里的 `v-if` / `v-else`。
- *
- * state: `{ open, empty, pending, active, items: [{ pos, text, level, hasChildren, collapsed }] }`
- */
-export function createOutlinePanel(options = {}) {
-  const host = options.host || null
-  const call = handlerCaller(options.handlers || {})
-
-  const state = { open: false, empty: true, pending: false, active: -1, items: [] }
-
-  const el = document.createElement('aside')
-  el.className = 'lark-doc-outline'
-  el.setAttribute('aria-label', '文档目录')
-
-  const heading = document.createElement('div')
-  heading.className = 'lark-doc-outline-heading'
-  const headingTitle = document.createElement('strong')
-  headingTitle.textContent = '目录'
-  const closeButton = document.createElement('button')
-  closeButton.type = 'button'
-  closeButton.setAttribute('aria-label', '关闭目录')
-  closeButton.appendChild(iconNode('close', 14))
-  closeButton.addEventListener('click', () => call('onToggleOpen'))
-  heading.appendChild(headingTitle)
-  heading.appendChild(closeButton)
-
-  // 空态：必须是 `aside` 的**直系** `<p>`（断言读 `:scope > p`）。
-  const emptyNode = document.createElement('p')
-  emptyNode.textContent = '添加标题后自动生成目录'
-
-  /** @type {Map<number, ReturnType<typeof createItemNode>>} */
-  const itemNodes = new Map()
-
-  function createItemNode(pos) {
-    const root = document.createElement('div')
-    root.className = 'lark-doc-outline-item'
-
-    const toggle = document.createElement('button')
-    toggle.type = 'button'
-    // 箭头是 8×12 的 CSS 三角（`border-left` 撑出来的），**不是** SVG。
-    const arrow = document.createElement('span')
-    arrow.className = 'lark-doc-outline-arrow'
-    arrow.setAttribute('aria-hidden', 'true')
-    toggle.appendChild(arrow)
-    toggle.addEventListener('click', () => call('onToggle', pos))
-
-    const placeholder = document.createElement('span')
-    placeholder.className = 'lark-doc-outline-toggle-placeholder'
-    placeholder.setAttribute('aria-hidden', 'true')
-
-    const jump = document.createElement('button')
-    jump.type = 'button'
-    jump.addEventListener('click', () => call('onJump', pos))
-
-    return { root, toggle, arrow, placeholder, jump }
-  }
-
-  function render() {
-    const slots = [
-      { node: heading, on: true },
-      { node: emptyNode, on: !!state.empty },
-    ]
-    const alive = new Set()
-    state.items.forEach((item) => {
-      alive.add(item.pos)
-      let entry = itemNodes.get(item.pos)
-      if (!entry) {
-        entry = createItemNode(item.pos)
-        itemNodes.set(item.pos, entry)
-      }
-      const { root, toggle, arrow, placeholder, jump } = entry
-      // `:style="{ paddingLeft: min(level-1,5)*10 }"` —— 替换语义，整体覆盖。
-      applyStyle(root, { paddingLeft: `${Math.min(item.level - 1, 5) * 10}px` })
-      const active = item.pos === state.active
-      if (item.hasChildren) {
-        toggle.classList.toggle('active', active)
-        setAttr(toggle, 'aria-label', `${item.collapsed ? '展开' : '收起'}目录：${item.text || '标题'}`)
-        setAttr(toggle, 'aria-expanded', String(!item.collapsed))
-        setAttr(toggle, 'title', item.collapsed ? '展开目录' : '收起目录')
-        arrow.classList.toggle('is-collapsed', !!item.collapsed)
-      }
-      jump.classList.toggle('active', active)
-      jump.disabled = !!state.pending
-      // 未 pending 时**不输出** title（模板里是 `undefined`），断言会量 null。
-      setAttr(jump, 'title', state.pending ? '正文还在载入，稍后可跳转' : null)
-      setText(jump, item.text || '无标题')
-      syncChildren(root, [
-        { node: toggle, on: !!item.hasChildren },
-        { node: placeholder, on: !item.hasChildren },
-        { node: jump, on: true },
-      ])
-      slots.push({ node: root, on: true })
-    })
-    // 折叠掉的 pos 从缓存里删掉，别让它跟着文档一直长。
-    Array.from(itemNodes.keys()).forEach((pos) => {
-      if (!alive.has(pos)) itemNodes.delete(pos)
-    })
-    syncChildren(el, slots)
-  }
-
-  function update(patch) {
-    Object.assign(state, patch || {})
-    mountNode(host, el, !!state.open)
-    if (!state.open) return
-    render()
-  }
-
-  return {
-    el,
-    update,
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
-  }
-}
+export { createOutlinePanel } from './outlinePanel'
 
 /* ═══════════════════════ ② 历史记录全屏层 ═══════════════════════ */
 
@@ -527,7 +405,8 @@ export function createVersionPanel(options = {}) {
   function render() {
     setText(cursorLabel, state.pager.cursor)
     restoreButton.disabled = !!state.restore.disabled
-    setAttr(restoreButton, 'title', state.restore.title)
+    // 版本弹窗（role=dialog）内不放原生 title，说明改由 aria-label 承担。
+    setAttr(restoreButton, 'aria-label', state.restore.title || null)
     applyStyle(restoreButton, state.restore.style)
     prevButton.disabled = !!state.pager.prev.disabled
     applyStyle(prevButton, state.pager.prev.style)
@@ -711,7 +590,8 @@ export function createSaveVersionDialog(options = {}) {
     setInputValue(input, state.value)
     setText(counter, state.counter)
     confirmButton.disabled = !!state.confirm.disabled
-    setAttr(confirmButton, 'title', state.confirm.title)
+    // 同上：弹窗内按钮的说明只走 aria-label，避免原生黑底提示。
+    setAttr(confirmButton, 'aria-label', state.confirm.title || null)
     applyStyle(confirmButton, state.confirm.style)
     setText(errorNode, state.error)
     syncChildren(dialog, [
@@ -886,7 +766,13 @@ export function createCommentComposer({ host, handlers = {} } = {}) {
   actions.append(cancel, submit)
   root.append(quote, author, input, attach, attachmentInput, attachments, error, actions)
   let open = false
-  function keydown(event) { if (event.key === 'Escape' && !event.target.closest?.('[data-lark-doc-image-ui]')) { event.preventDefault(); event.stopPropagation(); handlers.onCancel?.() } }
+  function keydown(event) {
+    if (event.isComposing || event.keyCode === 229) return
+    if (event.target === input && event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+      event.preventDefault(); event.stopPropagation()
+      if (root.isConnected && handlers.isCurrentContext?.() !== false && !input.readOnly && !submit.disabled) submit.click()
+    } else if (event.key === 'Escape' && !event.target.closest?.('[data-lark-doc-image-ui]')) { event.preventDefault(); event.stopPropagation(); handlers.onCancel?.() }
+  }
   function outside(event) { if (!root.contains(event.target) && !input.value.trim() && !attachments.children.length) handlers.onCancel?.() }
   function listen(value) {
     if (value === open) return
@@ -1001,7 +887,7 @@ export function createCommentPanel(options = {}) {
   const reactionRecent = document.createElement('div')
   reactionRecent.className = 'lark-doc-comment-reaction-recent'
   reactionPicker.append(reactionScroll, recentTitle, reactionRecent)
-  let reactionCatalog = null, reactionListening = false, reactionHoverTimer = null
+  let reactionCatalog = null, reactionSprite = null, reactionListening = false, reactionHoverTimer = null
   let replyMenuHoverTimer = null
   const closeReplyMenuLater = (threadId, replyId) => {
     clearTimeout(replyMenuHoverTimer)
@@ -1030,10 +916,10 @@ export function createCommentPanel(options = {}) {
     icon.setAttribute('role', 'img')
     icon.setAttribute('aria-label', item?.name || key)
     icon.style.height = `${size}px`
-    if (!item) { icon.textContent = key; return icon }
+    if (!item) { icon.style.backgroundImage = 'none'; icon.textContent = key; return icon }
     const scale = size / item.height
     icon.style.width = `${item.width * scale}px`
-    icon.style.backgroundImage = `url("${item.image || state.reactionCatalog.sprite}")`
+    if (item.image) icon.style.backgroundImage = `url("${item.image}")`
     if (item.image) icon.style.backgroundSize = 'contain'
     else {
       icon.style.backgroundSize = item.size.split(' ').map(value => `${parseFloat(value) * scale}px`).join(' ')
@@ -1046,13 +932,18 @@ export function createCommentPanel(options = {}) {
     const button = document.createElement('button')
     button.type = 'button'
     button.setAttribute('role', 'menuitem')
+    // 表情选择器是 role=menu 弹窗：只留 aria-label，原生 title 会弹黑底提示。
     button.setAttribute('aria-label', item.name)
-    button.title = item.name
     button.appendChild(reactionIcon(item.id, size))
     onMouseDownPrevent(button, () => { if (button.isConnected && contextEpoch === state.contextEpoch && dispatch('isCurrentContext', contextEpoch) !== false) call('onChooseReaction', item.id) })
     return button
   }
   function renderReactionPicker() {
+    const sprite = state.reactionCatalog?.sprite || ''
+    if (reactionSprite !== sprite) {
+      reactionSprite = sprite
+      el.style.setProperty('--lark-doc-comment-reaction-sprite', sprite ? `url("${sprite}")` : 'none')
+    }
     const open = !!state.reaction && !!state.reactionCatalog
     listenReaction(open)
     if (!open) { clearTimeout(reactionHoverTimer); return }
@@ -1154,6 +1045,11 @@ export function createCommentPanel(options = {}) {
     sendAction.className = 'lark-doc-comment-action is-filled'
     sendAction.textContent = '回复'
     onMouseDownPrevent(sendAction, () => call('onSubmit', id))
+    textarea.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.isComposing || event.keyCode === 229 || textarea.__composing) return
+      event.preventDefault(); event.stopPropagation()
+      if (textarea.isConnected && textarea.getAttribute('contenteditable') !== 'false' && !sendAction.disabled && !sendAction.classList.contains('is-disabled')) sendAction.click()
+    })
     actions.appendChild(cancelAction)
     actions.appendChild(sendAction)
 

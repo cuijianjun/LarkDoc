@@ -21,7 +21,7 @@ const sfc = read('src/editor/nativeEditorHost.js')
 const shell = read('src/ui/workspaceShell.js')
 const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
 const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
-const overlaysRenderer = read('src/ui/overlays.js')
+const overlaysRenderer = read('src/ui/overlays.js') + read('src/ui/overlayViews.js')
 
 const mixinsLine = sfc.match(/mixins: \[([\s\S]*?)\]/)[1]
 const aggregatorMixins = aggregator.split('\n').find((line) => line.trim().startsWith('mixins: ['))
