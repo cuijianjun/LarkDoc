@@ -62,8 +62,11 @@ jobs:
           npm i --no-save playwright@1.49.0
           npx playwright install --with-deps chromium
 
+      # build:element 只打 loader；采集页需要 runtime 才能渲染 2000 块。
       - name: Build element umd
-        run: npm run build:element
+        env:
+          ROLLUP_TARGET: element,elementRuntime
+        run: node scripts/build-rollup.mjs
 
       - name: Measure (2,000 blocks, seed 42)
         run: node scripts/perf/measure.mjs
