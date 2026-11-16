@@ -33,7 +33,10 @@ jobs:
         run: npm run lint
 
       # Tests and size checks read real artifacts, including full/lite and adapters.
+      # element runtime 单文件约 10.7 MB，Rollup 打它时默认堆（4 GB）会 OOM，和 deploy-docs 对齐到 8 GB。
       - name: Build all Rollup artifacts
+        env:
+          NODE_OPTIONS: --max_old_space_size=8192
         run: npm run build:all
 
       - name: Unit tests (vitest)

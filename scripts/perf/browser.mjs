@@ -94,6 +94,8 @@ export function prepareHostPage(runDir) {
     '</body></html>',
   ].join('\n'))
   fs.copyFileSync(path.join(REPO_ROOT, 'dist', 'lark-doc-element.umd.min.js'), path.join(runDir, 'lark-doc-element.umd.min.js'))
+  // 主文件只是 loader，会从同目录取 runtime；缺了它页面起不来，采集会一直等宿主就绪。
+  fs.copyFileSync(path.join(REPO_ROOT, 'dist', 'lark-doc-element.runtime.umd.min.js'), path.join(runDir, 'lark-doc-element.runtime.umd.min.js'))
   return runDir
 }
 

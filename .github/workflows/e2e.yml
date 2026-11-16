@@ -42,6 +42,8 @@ jobs:
         run: |
           mkdir -p .e2e-smoke
           cp dist/lark-doc-element.umd.min.js .e2e-smoke/
+          # 主文件只是 loader，会从同目录取 runtime；缺了它宿主页会白屏并超时。
+          cp dist/lark-doc-element.runtime.umd.min.js .e2e-smoke/
           cp scripts/e2e/host.html .e2e-smoke/index.html
 
       - name: Start static server

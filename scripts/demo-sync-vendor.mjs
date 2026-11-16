@@ -13,7 +13,8 @@ const vendor = path.join(root, 'docs/public/demo/vendor')
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version
 const check = process.argv.includes('--check')
 const quiet = process.argv.includes('--quiet')
-const bundles = ['lark-doc-element.umd.min.js', 'lark-doc.css',
+// 主文件只是 loader，会按自身 URL 取同目录的 runtime；漏掉 runtime 会让 demo 与示例页白屏。
+const bundles = ['lark-doc-element.umd.min.js', 'lark-doc-element.runtime.umd.min.js', 'lark-doc.css',
   ...['math', 'mermaid', 'highlight', 'markdown', 'office'].map(name => `lark-doc-element.umd.min.${name}.js`)]
 const expected = new Map()
 for (const name of bundles) expected.set(name, path.join(dist, name))
