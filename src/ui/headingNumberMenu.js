@@ -264,16 +264,18 @@ export function createHeadingNumberRuntime(host) {
       }
     },
     headingNumberMenuDisabled(id) {
-      const menu = this.headingNumberMenu
-      if (id === 'continue') return !menu.canContinue
-      if (menu.kind !== 'heading') return false
-      return id === 'restart' ? menu.label === '1.' : id === 'restart-prefix' && this.trailingNumber(menu.label) === 1
+      // 「继续编号」在已处于继续态时禁用（没有可清的东西）；
+      // 同前缀子项「从 X1 开始」在当前就是该层第 1 项时禁用。
+      // 「重新开始编号 / 设置编号的值」始终可点，重复设成 1. 只是无害的空操作。
+      if (id === 'continue') return !this.headingNumberMenu.canContinue
+      if (this.headingNumberMenu.kind !== 'heading') return false
+      return id === 'restart-prefix' && this.trailingNumber(this.headingNumberMenu.label) === 1
     },
     actions() {
       const heading = this.headingNumberMenu.kind === 'heading'
       const prefix = heading ? this.headingNumberMenu.label.replace(/\d+\.?$/, '') : ''
       return [
-        { id: 'continue', label: heading ? '继续标题编号' : '继续编号', icon: 'numbered-continue' },
+        { id: 'continue', label: '继续编号', icon: 'numbered-continue' },
         { id: 'restart', label: '重新开始编号', icon: 'numbered-restart', children: prefix ? [
           { id: 'restart', label: '从 1. 开始' }, { id: 'restart-prefix', label: `从 ${prefix}1 开始` },
         ] : null },

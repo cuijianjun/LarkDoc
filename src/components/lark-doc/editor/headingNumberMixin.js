@@ -10,6 +10,8 @@
  * computeHeadingNumbers / computeOrderedListNumbers 每帧算出来 —— 删除、移动、
  * 插入后编号自动更新，不需要任何补丁逻辑。
  */
+import { headingNumberAt } from '../../../core/documentOperations'
+
 export default {
   data() {
     return {
@@ -31,7 +33,13 @@ export default {
     openHeadingNumberMenu(payload) {
       if (!this.writable() || !payload) return
       const value = Number(payload.value)
-      this._headingNumberDoc = this.editor.state.doc
+      const doc = this.editor.state.doc
+      // 「继续编号」的可用性必须在点击这一刻按当前文档算：同标签的编号会复用同一个
+      // widget DOM，payload 里带的是建 DOM 那一帧的状态，设过起点后仍会判成「已连续」。
+      const canContinue = payload.kind === 'list'
+        ? payload.canContinue === true // 列表标记在点击时已经现算过（canContinueListNumber）
+        : headingNumberAt(doc, payload.pos)?.canContinue === true
+      this._headingNumberDoc = doc
       this.headingNumberMenu = {
         open: true,
         kind: payload.kind === 'list' ? 'list' : 'heading',
@@ -39,7 +47,7 @@ export default {
         label: payload.label || '',
         level: payload.level || 1,
         value: Number.isFinite(value) && value > 0 ? value : null,
-        canContinue: payload.canContinue === true,
+        canContinue,
         rect: payload.rect || null,
       }
       this.headingNumberEditing = false

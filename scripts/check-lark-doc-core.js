@@ -207,8 +207,19 @@ check('Changing the active handle target closes a stale block menu', () => {
     const rect = { left: 10, top: 20, right: 40, bottom: 40, width: 30, height: 20 }
     const paragraph = new FakeElement(rect)
     const paper = new FakeElement(rect)
+    // positionBlockHandle 现在从 editor.state.doc 解析目标块并读 selection，
+    // 只给 view 的旧 mock 会直接抛 "Cannot read properties of undefined (reading 'doc')"。
+    const handleEditor = editorFor(doc([p('第一段'), p('第二段')]))
+    handleEditor.view = { ...handleEditor.view, dom: { contains: () => true }, nodeDOM: () => paragraph }
     const context = {
-      editor: { view: { dom: { contains: () => true }, nodeDOM: () => paragraph } },
+      editor: handleEditor,
+      // 真实 mixin 方法：positionBlockHandle 内部会按 range 判表格 / 分栏 / 折叠块。
+      tableRangeFor: component.methods.tableRangeFor,
+      columnsRangeFor: component.methods.columnsRangeFor,
+      detailsRangeFor: component.methods.detailsRangeFor,
+      rangeAt: component.methods.rangeAt,
+      blockHandleGeometry: component.methods.blockHandleGeometry,
+      refreshBlockHandle() { this.refreshBlockHandleCalls = (this.refreshBlockHandleCalls || 0) + 1 },
       blockHandleAnchorHidden: component.methods.blockHandleAnchorHidden,
       $refs: { root: { querySelector: selector => selector === '.lark-doc-paper' ? paper : null } },
       handleRange: { from: 0, to: 2 },
@@ -258,7 +269,9 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
     menuKind: '',
     menuTrigger: null,
     menuAnchor: null,
-    hoverCloseTimer: setTimeout(() => {}, 1000),
+    // 弹层延迟关闭已统一走 `_popupHoverClose = { owner, close, timer }`（toolbarMenusMixin），
+    // 旧的单独 `hoverCloseTimer` 字段不再存在。
+    _popupHoverClose: { owner: 'command', close() {}, timer: setTimeout(() => {}, 1000) },
     cancelPopupHoverClose: component.methods.cancelPopupHoverClose,
     $nextTick(callback) { callback() },
     positionCommandMenu() { repositionCalls += 1 },
@@ -267,7 +280,7 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   }
   const event = { type: 'mouseenter', currentTarget: firstPlus }
   component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, event)
-  assert.strictEqual(emptyParagraphPlus.hoverCloseTimer, null, 'entering the empty plus cancels a pending hover close')
+  assert.strictEqual(emptyParagraphPlus._popupHoverClose, null, 'entering the empty plus cancels a pending hover close')
   assert.strictEqual(insertCalls, 1)
   assert.deepStrictEqual(emptyParagraphPlus.lastInsert, { kind: 'plus', event }, 'the empty paragraph plus opens the insertion command menu')
   assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 13, to: 13 }, 'insert commands target the empty paragraph even when the editor selection was elsewhere')
@@ -275,9 +288,9 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   emptyParagraphPlus.menuOpen = true
   emptyParagraphPlus.menuKind = 'plus'
   emptyParagraphPlus.handleRange = { from: 20, to: 22 }
-  emptyParagraphPlus.hoverCloseTimer = setTimeout(() => {}, 1000)
+  emptyParagraphPlus._popupHoverClose = { owner: 'command', close() {}, timer: setTimeout(() => {}, 1000) }
   component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, { type: 'click', currentTarget: secondPlus })
-  assert.strictEqual(emptyParagraphPlus.hoverCloseTimer, null, 'reusing the insertion menu also cancels a pending hover close')
+  assert.strictEqual(emptyParagraphPlus._popupHoverClose, null, 'reusing the insertion menu also cancels a pending hover close')
   assert.strictEqual(insertCalls, 1, 'the click following hover must not close the insertion menu')
   assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 21, to: 21 }, 'a repeated plus event keeps the current empty paragraph as the insertion target')
   assert.strictEqual(emptyParagraphPlus.menuTrigger, secondPlus, 'moving to another empty paragraph retargets the existing insert menu')
@@ -310,8 +323,12 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
     handleHovering: false,
     openBlockMenu() { opened += 1 },
   }
+  // e6aecb4 起 `handleIsTaskList` 已移除：任务列表句柄与普通句柄共用同一条块菜单入口，
+  // 唯一排除条件只剩空段。这里守住空段那条底线，任务列表放开后不再断言拦截。
   component.methods.openBlockMenuOnHover.call(taskHandle)
-  assert.strictEqual(opened, 0, 'task list handles remain excluded from the block menu')
+  assert.strictEqual(opened, 1, 'task list handles open the block menu; only empty paragraphs are excluded')
+  component.methods.openBlockMenuOnHover.call({ writable: () => true, handleIsEmptyParagraph: true, openBlockMenu() { opened += 1 } })
+  assert.strictEqual(opened, 1, 'empty paragraphs stay excluded from the block menu')
 })
 
 check('Pointer movement over the editor can switch away from an open block menu', () => {
@@ -670,10 +687,11 @@ check('Heading numbering attributes round-trip through HTML and pass the sanitiz
   const plain = schema.nodes.heading.spec.toDOM(schema.nodeFromJSON(hd(2, 'Y')))
   assert.strictEqual(plain[1]['data-numbering'], undefined, '没开编号的标题不输出编号属性')
   assert.strictEqual(plain[1]['data-numbering-start'], undefined)
-  // 越界起点被 JSON 校验拦下（sanitize 白名单由 check-vditor-html 的 jsdom 用例覆盖）
-  assert.throws(() => validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 99999 })] }, schema), /不安全或无效|numberingStart/, '越界起点被 JSON 校验拦下')
-  const imported = validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 3 })] }, schema)
-  assert.strictEqual(imported.content[0].attrs.numberingStart, 3)
+  // 标题编号起始值是九位上限（HEADING_VALUE_MAX = 999999999），99999 合法；
+  // 列表入口的 999 上限由 clampHeadingNumberStart 单独守（见上一条检查）。
+  assert.throws(() => validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 1000000000 })] }, schema), /不安全或无效|numberingStart/, '越界起点被 JSON 校验拦下')
+  const imported = validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 99999 })] }, schema)
+  assert.strictEqual(imported.content[0].attrs.numberingStart, 99999, '九位以内的起始编号不再被旧上限拦下')
 })
 check('Heading numbering commands toggle, restart and skip empty transactions', () => {
   const extension = createLarkDocExtensions().find((ext) => ext.name === 'larkDoc')
@@ -1175,7 +1193,7 @@ check('Code blocks indent as a box, capped at the LarkDoc nesting limit', () => 
   assert.strictEqual(createLarkDocConfig({}).limits.maxIndent, 5)
   // 块菜单的「增加缩进」要能找到代码块目标（文本对齐仍只认段落/标题）。
   const document = doc([{ type: 'codeBlock', content: [text('nested')] }])
-  const context = { editor: { state: { doc: document } }, blockTextblockTarget: component.methods.blockTextblockTarget }
+  const context = { editor: { state: { doc: document } }, blockTextblockTarget: component.methods.blockTextblockTarget, blockTypeTextRange: component.methods.blockTypeTextRange }
   const target = component.methods.blockIndentTarget.call(context, { from: 0, to: document.firstChild.nodeSize })
   assert(target && target.node.type.name === 'codeBlock', 'code blocks are valid indent targets')
   assert.strictEqual(component.methods.blockTextblockTarget.call(context, { from: 0, to: document.firstChild.nodeSize }), null, 'text alignment stays limited to text blocks')

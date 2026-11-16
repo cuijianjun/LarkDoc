@@ -513,7 +513,12 @@ export const HEADING_NUMBER_MAX = 999
 export const HEADING_VALUE_MAX = 999999999
 
 export function formatHeadingNumber(numbers) {
-  return numbers.length ? `${numbers.join('.')}${numbers.length === 1 ? '.' : ''}` : ''
+  if (!Array.isArray(numbers) || !numbers.length) return ''
+  // 文档直接从 H2/H3 开始时高位计数是 0，飞书省略前导 0（[0,1] 显示为「1.」而不是「0.1」）。
+  let first = 0
+  while (first < numbers.length - 1 && !numbers[first]) first += 1
+  const parts = numbers.slice(first)
+  return `${parts.join('.')}${parts.length === 1 ? '.' : ''}`
 }
 
 /**
@@ -569,11 +574,12 @@ export function* iterateHeadingNumbers(headings) {
       }
     }
   }
-  // 队列处理顺序不同于正文顺序；所有队列落定后再比较前一个同级标题。
+  // 队列处理顺序不同于正文顺序，落定后再按正文顺序产出。
   for (const item of items) {
-    const next = numbers.get(item), before = numbers.get(item.previous), { entry } = item
-    const sequential = before && before.length === next.length && before.slice(0, -1).every((value, index) => value === next[index]) && before[before.length - 1] + 1 === next[next.length - 1]
-    const canContinue = !!before && !sequential && !!(entry.attrs.numberingLevel || entry.attrs.numberingStart)
+    const next = numbers.get(item), { entry } = item
+    // 「继续编号」只在块自己带起点/层级时可点：不带就是天然连续，点了也没有可清的东西。
+    // 不能拿「前一个同级是否连续」判——首块没有前项，设过起点后会被误禁用。
+    const canContinue = !!(entry.attrs.numberingLevel || entry.attrs.numberingStart)
     yield { pos: entry.pos, info: { label: formatHeadingNumber(next), level: entry.level, counters: next, canContinue } }
   }
 }

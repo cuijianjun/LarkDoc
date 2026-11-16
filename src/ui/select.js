@@ -209,7 +209,6 @@ export function createSelect(options = {}) {
     trigger.disabled = config.disabled
     trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
     el.classList.toggle('lark-doc-select-open', open)
-    if (el.closest('.lark-doc-toolbar, .lark-doc-workspace-actions, .lark-doc-header-actions')) trigger.removeAttribute('title')
   }
 
   function position() {
