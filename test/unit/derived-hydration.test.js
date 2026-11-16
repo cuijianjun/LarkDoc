@@ -159,7 +159,8 @@ describe('P7-03 derived snapshot: gate wiring on both sides', () => {
     const sfc = read('src/editor/nativeEditorHost.js')
     const body = sfc.slice(sfc.indexOf('refreshDocumentState()'))
     const clearAt = body.indexOf('outlinePending = false')
-    const outlineAt = body.indexOf('this.outline = collectOutline(')
+    // collectOutline 已重构为 collectOutlineState，落地方式改为 Object.assign；语义不变。
+    const outlineAt = body.indexOf('Object.assign(this, collectOutlineState(')
     expect(clearAt).toBeGreaterThan(-1)
     expect(outlineAt).toBeGreaterThan(clearAt)
   })

@@ -81,6 +81,9 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "appKind": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -272,6 +275,17 @@
       "content": "block+",
       "attrs": {}
     },
+    "documentSegment": {
+      "content": "block+",
+      "group": "block",
+      "selectable": false,
+      "isolating": true,
+      "attrs": {
+        "pageId": {
+          "default": null
+        }
+      }
+    },
     "emoji": {
       "group": "inline",
       "inline": true,
@@ -344,6 +358,9 @@
         },
         "numbering": {
           "default": false
+        },
+        "numberingLevel": {
+          "default": null
         },
         "numberingStart": {
           "default": null

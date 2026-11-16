@@ -64,5 +64,13 @@ module.exports = {
     pool: 'forks',
     maxWorkers: 4,
     minWorkers: 1,
+    /**
+     * 默认 5s 对这里不够：用例里有真实 rollup 打包（13 个 PM 入口、产物图）、
+     * 子进程 import 和整段 web-component 动态 import，4 个 worker 满载时会稳定
+     * 超过 5s，表现成随机某个文件假红（单独跑该文件却通过）。放宽等待时间，
+     * 断言内容不变。
+     */
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
 }
