@@ -542,6 +542,23 @@
 .lark-doc .lark-doc-outline-item:hover > button:last-child, .lark-doc .lark-doc-outline-item:focus-within > button:last-child, .lark-doc .lark-doc-outline-item button:last-child:hover, .lark-doc .lark-doc-outline-item button:last-child:focus-visible, .lark-doc .lark-doc-outline-item button:last-child.active { background: transparent; border-color: transparent; color: var(--ld-text-outline-active); }
 .lark-doc .lark-doc-outline-reopen { position: fixed; z-index: 44; top: 118px; left: 10px; display: grid; width: 34px; min-width: 34px; height: 34px; min-height: 34px; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ld-text-outline-active); font-size: 22px; line-height: 1; }
 .lark-doc .lark-doc-outline-reopen:hover, .lark-doc .lark-doc-outline-reopen:focus-visible { background: var(--ld-bg-outline-hover); color: var(--ld-text-outline-active); outline: 0; }
+/* 目录开合按钮的飞书黑色气泡：图标上方，带指向按钮的小三角（与标题折叠同一套 token）。 */
+.lark-doc .lark-doc-outline-reopen[data-tooltip]:hover::after, .lark-doc .lark-doc-outline-reopen[data-tooltip]:focus-visible::after,
+.lark-doc .lark-doc-outline-heading button[data-tooltip]:hover::after, .lark-doc .lark-doc-outline-heading button[data-tooltip]:focus-visible::after { content: attr(data-tooltip); position: absolute; z-index: 46; bottom: calc(100% + 8px); left: 50%; min-width: max-content; padding: 7px 10px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font-size: 12px; font-weight: 400; line-height: 1.35; transform: translateX(-50%); white-space: nowrap; pointer-events: none; }
+.lark-doc .lark-doc-outline-reopen[data-tooltip]:hover::before, .lark-doc .lark-doc-outline-reopen[data-tooltip]:focus-visible::before,
+.lark-doc .lark-doc-outline-heading button[data-tooltip]:hover::before, .lark-doc .lark-doc-outline-heading button[data-tooltip]:focus-visible::before { content: ''; position: absolute; z-index: 46; bottom: calc(100% + 3px); left: 50%; width: 8px; height: 8px; background: var(--ld-bg-tooltip); transform: translateX(-50%) rotate(45deg); pointer-events: none; }
+.lark-doc .lark-doc-outline-reopen, .lark-doc .lark-doc-outline-heading button[data-tooltip] { position: relative; }
+.lark-doc .lark-doc-outline-reopen { position: fixed; }
+/* 收起态按钮贴左边界，居中的气泡会被视口裁掉；改成以按钮左缘对齐，整条气泡可见（与飞书一致）。 */
+.lark-doc .lark-doc-outline-reopen[data-tooltip]:hover::after, .lark-doc .lark-doc-outline-reopen[data-tooltip]:focus-visible::after,
+.lark-doc .lark-doc-outline-reopen[data-tooltip]:hover::before, .lark-doc .lark-doc-outline-reopen[data-tooltip]:focus-visible::before { left: 0; transform: translateX(0); }
+.lark-doc .lark-doc-outline-reopen[data-tooltip]:hover::before, .lark-doc .lark-doc-outline-reopen[data-tooltip]:focus-visible::before { left: 12px; }
+/* 「本地保存已关闭」排到顶栏动作行最前（飞书口径）：只在这两个宿主确实位于可见顶栏时
+   扁平化成 flex 项，再用 order 提到模式按钮之前；顶栏隐藏时宿主被搬去停泊位/纵向菜单，
+   选择器不匹配，原布局完全不变。DOM 顺序不动，syncChildren / 单元测试的 children[0] 契约不受影响。 */
+.lark-doc .lark-doc-header-actions > .lark-doc-actions-host,
+.lark-doc .lark-doc-header-actions > .lark-doc-actions-host > .lark-doc-workspace-actions { display: contents; }
+.lark-doc .lark-doc-header-actions .lark-doc-save-status { order: -1; }
 .lark-doc .lark-doc-main { min-width: 0; flex: 1; padding: 30px 18px 16px; }
 .lark-doc .lark-doc-paper { position: relative; width: min(100%, 870px); min-height: 74vh; margin: 0 auto; padding: clamp(30px, 5vw, 72px) clamp(22px, 6vw, 92px); background: var(--ld-bg-content); border: 1px solid var(--ld-border-paper); box-shadow: var(--ld-shadow-paper); }
 .lark-doc.lark-doc-width-wide .lark-doc-paper { width: min(100%, 1140px); }

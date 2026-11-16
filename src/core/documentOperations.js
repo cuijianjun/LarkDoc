@@ -10,10 +10,15 @@ import { isImageCrop, isImageDimension, parseImageCrop } from './media/image-cro
 export const UNKNOWN_PAYLOAD_MAX = 1000000
 
 // HTML 是导入适配器；所有 JSON 在写入编辑器前必须通过完整 schema 校验。
-/** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image 与本地相对路径。返回 boolean。 */
+// 文件块也用 `safeUrl(value, true)` 宽松档，因此这里额外放行可内嵌的媒体 data URL
+// （video/audio/pdf/octet-stream）——本地预览没有后端，附件只能以内联 data URI 落块。
+// 只认 base64，仍挡掉 data:text/html 这类可执行类型。
+const MEDIA_DATA_RE = /^data:(?:video\/(?:mp4|webm|ogg|quicktime|x-m4v)|audio\/(?:mpeg|mp3|mp4|wav|ogg|x-wav|aac|flac|webm)|application\/(?:pdf|octet-stream));base64,[A-Za-z0-9+/]+={0,2}$/i
+/** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片/文件额外放行 data: 与本地相对路径。返回 boolean。 */
 export function safeUrl(value, image = false) {
   if (typeof value !== 'string' || !value || Array.from(value).some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return false
   if (image && /^data:image\/(png|jpe?g|gif|webp|bmp|x-bmp|x-ms-bmp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
+  if (image && MEDIA_DATA_RE.test(value)) return true
   // 图片的相对路径（/、./、../ 开头）是本地资源引用，与 networkPolicy.isLocalUrl 语义一致。
   // 它们不含 javascript:/data: 等危险协议，可直接进 schema（老系统图床 /note/... 即此类）。
   // 注意排除协议相对 URL（//host/... 会被浏览器解析为 http(s)://host/...，属外链而非本地资源）。

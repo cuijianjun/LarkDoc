@@ -43,8 +43,9 @@ export function createOutlinePanel(options = {}) {
   headingTitle.textContent = '目录'
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
-  closeButton.setAttribute('aria-label', '关闭目录')
-  closeButton.appendChild(iconNode('close', 14))
+  closeButton.setAttribute('aria-label', '收起目录')
+  closeButton.setAttribute('data-tooltip', '收起目录')
+  closeButton.appendChild(iconNode('outline-collapse', 14))
   closeButton.addEventListener('click', () => call('onToggleOpen'))
   heading.appendChild(headingTitle)
   heading.appendChild(closeButton)

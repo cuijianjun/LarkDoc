@@ -10,6 +10,7 @@ import { createLarkDocConfig, isCommandEnabled, resolveMediaOptions } from '../c
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createWorkspaceState, createWorkspaceController } from '../workspace/WorkspaceController'
 import { createWorkspace } from '../ui/workspace'
+import { iconNode } from '../ui/icon'
 import { createWorkspaceShell } from '../ui/workspaceShell'
 import { createEditorUiRegistry } from '../ui/editorUiRegistry'
 import { createWorkspaceViewState } from '../core/workspace/workspace-view-state'
@@ -375,8 +376,8 @@ export function createDomRenderer() {
       reopenOutline.type = 'button'
       reopenOutline.className = 'lark-doc-outline-reopen'
       reopenOutline.setAttribute('aria-label', '展开目录')
-      reopenOutline.title = '展开目录'
-      reopenOutline.textContent = '☰'
+      reopenOutline.setAttribute('data-tooltip', '展开目录')
+      reopenOutline.appendChild(iconNode('outline-expand', 20))
       reopenOutline.addEventListener('click', () => { state.outlineOpen = true })
       shell.outlineHost.parentNode.insertBefore(reopenOutline, shell.outlineHost)
 

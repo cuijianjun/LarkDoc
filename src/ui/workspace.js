@@ -78,7 +78,6 @@ export function createWorkspace(options = {}) {
     placeholder: '导出',
     onChange: value => call(handlers, 'exportDocument', value),
   })
-  const historyButton = button('本地快照', () => call(handlers, 'toggleHistory'))
   const versionMenu = createSelect({
     ariaLabel: '文档更多操作', placeholder: '⋯', menuMinWidth: 200,
     onChange: value => {
@@ -96,7 +95,6 @@ export function createWorkspace(options = {}) {
       { node: importButton, on: !!state.importEnabled },
       { node: importInput, on: !!state.importEnabled },
       { node: exportSelect.el, on: !!state.exportEnabled },
-      { node: historyButton, on: !!state.historyEnabled },
       { node: versionMenu.el, on: !!(state.historyEnabled || state.commentHistoryAvailable) },
     ])
   }
@@ -141,7 +139,6 @@ export function createWorkspace(options = {}) {
     setText(importButton, state.importing ? '导入中…' : (state.importLabel || '导入'))
     if (state.importAccept) importInput.accept = state.importAccept
     exportSelect.update({ options: state.exportOptions, value: '' })
-    setAttr(historyButton, 'aria-expanded', state.historyOpen ? 'true' : 'false')
 
     setText(noticeText, state.notice)
 

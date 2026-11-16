@@ -78,6 +78,14 @@
 .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) :is(.hljs-keyword, .hljs-selector-tag, .hljs-title, .hljs-built_in) { color: var(--ld-text-link); }
 .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) :is(.hljs-string, .hljs-attr) { color: var(--ld-text-accent); }
 .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) :is(.hljs-number, .hljs-literal, .hljs-comment) { color: var(--ld-text-secondary); }
+/* 飞书视觉口径（浅底恒定色）：const 紫红 / var 橙 / function 与函数名紫 / 字符串绿。
+   选择器特异性高于上面的主题 token 规则，且不影响图表块的 inherit 降级。 */
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .hljs-kw-const { color: #c678dd; }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .hljs-kw-var { color: #e5c07b; }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .hljs-kw-function { color: #c678dd; }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .hljs-title { color: #c678dd; }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .hljs-string { color: #98c379; }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .hljs-number { color: #b8860b; }
 /* 图表块独立外观：白底卡片，去掉代码框的深色 chrome 与高亮配色。 */
 .lark-doc .lark-doc-code-diagram { background: var(--ld-diagram-card-bg); border-color: var(--ld-diagram-border); }
 .lark-doc .lark-doc-code-diagram .lark-doc-code-toolbar { background: var(--ld-diagram-toolbar-bg); color: var(--ld-diagram-toolbar-text); }

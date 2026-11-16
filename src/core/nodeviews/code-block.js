@@ -85,10 +85,25 @@ function ensureLanguage(name) {
 function escapeHTML(value) {
   return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
+// hljs 10.7.3 把 const / var / function / let / return 全标成 .hljs-keyword，
+// 纯 CSS 无法区分。这里给飞书视觉口径里颜色不同的三个关键字补细分 class，
+// 只在 keyword 的 span 内改写，不动其它 token、不动源码文本。
+const KEYWORD_CLASS = [
+  ['const', 'hljs-kw-const'],
+  ['var', 'hljs-kw-var'],
+  ['function', 'hljs-kw-function'],
+]
+function subdivideKeywords(html) {
+  return html.replace(/<span class="hljs-keyword">([a-zA-Z]+)<\/span>/g, (match, word) => {
+    const hit = KEYWORD_CLASS.find(([name]) => name === word)
+    return hit ? `<span class="hljs-keyword ${hit[1]}">${word}</span>` : match
+  })
+}
+
 function renderHighlighted(text, language, syntaxHighlight = true) {
   const normalized = normalizeCodeLanguage(language)
   if (!syntaxHighlight || normalized === 'plaintext' || !hljs || !hljs.getLanguage(normalized)) return escapeHTML(text)
-  return hljs.highlight(text, { language: normalized, ignoreIllegals: true }).value
+  return subdivideKeywords(hljs.highlight(text, { language: normalized, ignoreIllegals: true }).value)
 }
 
 
