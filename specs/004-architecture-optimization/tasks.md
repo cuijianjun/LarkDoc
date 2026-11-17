@@ -52,6 +52,10 @@
       **懒加载白名单同步**：`LAZY_PACKAGE_CALLERS` 原来按 `DocumentSession.js` 匹配三处 `import()`，现拆成 `sessionVersionMethods.js`（remoteConversion、versioning.snapshot）与 `sessionResourceMethods.js`（session.resourceOutcome）两条。
       **体积**：内核 gzip 542,599 → **542,650**（+51 B）；「含动态区块」同步 +51，说明三处懒加载没有被急切打回内核。
       验证：会话七支 528 用例 + `versioning-auto`、`build` 项目 133、`lint` / `check:architecture`（R1 467 文件）/ `contract:check` 全绿。
+- [x] **C12 `editor/tableInteractionMixin.js` 拆分**：870 行 → `tableInteractionMixin.js`(50，只剩 data + 两行生命周期委托 + 方法域展开) + `tableInteractionBindings.js`(293，`bindTableInteraction(vm)` / `releaseTableInteraction(vm)` 承接原 mounted / beforeDestroy 的全部监听接线，238 行体逐行一致，仅 `this.` → `vm.`) + `tableOverlayMethods.js`(298，几何域：列宽还原、选择条几何、重排落位线、横滚比例、触摸桥接) + `tableLineMethods.js`(139，行列选区 / 删除 / 重排 / 浮窗文本动作) + `tableGateMethods.js`(102，活跃闸门、dismiss 闸门、浮层挂载与销毁)。22 个方法按三域以对象展开并入 `methods`，方法体逐字未改（AST 归一化后 22/22 全等）。
+      接线层能整体搬走的前提是**这一段里没有任何裸 `this`**（全部是 `this.x`），所以 `this.` → `vm.` 的机械替换是安全的；`CONST` 侧 `MIN_THUMB` 随几何域、`TOUCH_RESIZE_TOLERANCE` 随接线层，两者各自只有单一使用者，不额外开共享文件。
+      **体积**：内核 gzip 542,650 → **542,669**（+19 B）；esm / lite / `uiPanels` / `ui` 未动。
+      验证：表格四支（`link-cell-interaction` / `mobile-table-gesture` / `table-clip` / `bitable`）248 用例、`element-ui` 18 用例、`lint` / `check:architecture`（R1 471 文件）/ `contract:check` 全绿。
 
 ## Phase D — 首屏（P2）
 
@@ -73,11 +77,11 @@
 | `lint` | 每次全量重扫 | 命中 eslint 磁盘缓存；且 HEAD 起就红的问题已修 |
 | 单测并发 | 固定 2 | 默认 2，可用 `VITEST_MAX_WORKERS` 覆盖 |
 | 单测编排 | 单趟全量，构建用例与普通用例同池（改上游枢纽时白付 118s，且 4 条假超时） | `unit` 162 支 / `build` 3 支，两趟串行；`test:affected` 只走 `unit` |
-| 最大单文件（手写代码） | `ui/panels.js` 2,244 行 | 拆成 4 个（最大 1,506）→ 再拆 4 个（最大 713）→ `editor/commentsMixin` 1,469 → 208 → `editor/shareMixin` 1,117 → 262 → `workspace/WorkspaceController` 1,173 → **305** → `session/DocumentSession` 940 → **302** |
+| 最大单文件（手写代码） | `ui/panels.js` 2,244 行 | 拆成 4 个（最大 1,506）→ 再拆 4 个（最大 713）→ `editor/commentsMixin` 1,469 → 208 → `editor/shareMixin` 1,117 → 262 → `workspace/WorkspaceController` 1,173 → **305** → `session/DocumentSession` 940 → **302** → `editor/tableInteractionMixin` 870 → **50**（最大单文件现为 `editor/segmentedDocumentModel.js` 1,114，已按数据否决拆分理由） |
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
 | 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
-| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B） |
+| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B）→ C12 拆 `tableInteractionMixin` **542,669**（+19 B） |
 | esm / lite | 384,221 / 384,259 | 384,615 / 384,656（+394 / +397，预算 395,000 仍有余量） |
 | 体积预算 | — | 10 条全过；`elementRuntime` 542,650 / 550,000，`esm` 384,615 / 395,000，`uiPanels` 98,048 / 99,000 |
 | 全量单测 | 162 文件 / 4,950 用例 | 162 文件 / 4,950 用例全绿（294s）；`build` 项目 133 用例（50s） |

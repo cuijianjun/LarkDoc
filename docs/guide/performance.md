@@ -516,6 +516,27 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 逐项未变；`uiPanels` 预算余量从 ~2.9 KB 降到 952 B（98,048 / 99,000）。要收回这 1.3 KB，把
 `commentPanelChrome.js` 合回主文件即可，主文件回到约 1,040 行。
 
+### `editor/tableInteractionMixin.js` 拆成接线层 + 三域（870 → 50 / 293 / 298 / 139 / 102）
+
+这个 mixin 的 870 行里有 238 行是 `mounted` 里的一整段监听接线（window capture 上的
+pointermove / pointerdown / focusin / focusout / keydown / blur、editorEl 上的
+pointerover / pointerout / scroll、以及触控列宽桥接）。它和「方法」其实是两层东西：
+
+| 文件 | 行数 | 职责 |
+| --- | --- | --- |
+| `tableInteractionMixin.js` | 50 | data + `bindTableInteraction` / `releaseTableInteraction` 两行委托 + 方法域展开 |
+| `tableInteractionBindings.js` | 293 | 原来 mounted / beforeDestroy 的全部监听接线，改为 `vm` 入参 |
+| `tableOverlayMethods.js` | 298 | 几何域：列宽还原、选择条几何、重排落位线、横滚比例、触摸桥接、落位线 |
+| `tableLineMethods.js` | 139 | 行列选区 / 删除 / 重排 / 浮窗文本动作 |
+| `tableGateMethods.js` | 102 | 活跃闸门、dismiss 闸门、浮层挂载与销毁 |
+
+接线层能整体搬走的前提，是**这一段里没有裸 `this`**（全部写作 `this.x`），所以
+`this.` → `vm.` 的机械替换可证安全；搬完按行比对 238/238 一致。方法侧 AST 归一化后
+22/22 全等。两个模块常量各自只有一个使用者（`MIN_THUMB` 在几何域、
+`TOUCH_RESIZE_TOLERANCE` 在接线层），所以没有为它们单开共享文件。
+
+体积代价 **+19 B gzip**（内核 542,669）。
+
 ### `session/DocumentSession.js` 按方法域拆开（940 → 302 + 七域）
 
 会话层是「一个类 + 十个 Provider 端口」，119 个成员里有 90 个是按域成组的方法。按域切开后
