@@ -18,7 +18,13 @@ function mount(provider = createMemoryVersioningProvider(), extra = {}) {
   const element = document.createElement('div')
   document.body.appendChild(element)
   const session = createDocumentSession({ documentId: 'versions_document', user: { id: 'version-owner' }, providers: { versioning: provider } })
-  const doc = new LarkDoc({ element, storage: 'none', session, content: '<p data-block-id="version_p">历史正文中文😀</p>', ...extra })
+  // 本文件验证的是「版本能力」本身（保存 / 预览 / 还原链路），所以显式打开入口开关；
+  // 「入口缺省关闭」那一层由 workspace-view-state 的单测覆盖。
+  const doc = new LarkDoc({
+    element, storage: 'none', session,
+    config: { features: { versionHistory: true } },
+    content: '<p data-block-id="version_p">历史正文中文😀</p>', ...extra,
+  })
   mounted.push(() => { doc.destroy(); element.remove() })
   return { doc, session, provider }
 }
@@ -291,5 +297,63 @@ describe('版本保存框上下文失效边界', () => {
     await host.$nextTick()
     expect(host.saveVersionOpen).toBe(false)
     expect(host.saveVersionName).toBe('')
+  })
+})
+
+describe('automatic history recording', () => {
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+  /** 自动记录要自己配防抖，所以这条链单独建 session，不走 mount() 的默认会话。 */
+  function mountAuto(autoSnapshot) {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const session = createDocumentSession({
+      documentId: 'auto_versions',
+      user: { id: 'auto-owner' },
+      providers: { versioning: createMemoryVersioningProvider() },
+      autoSnapshot,
+    })
+    const doc = new LarkDoc({ element, storage: 'none', session, content: '<p data-block-id="auto_p">基线</p>' })
+    mounted.push(() => { doc.destroy(); element.remove() })
+    return { doc, session, provider: session.getProvider('versioning') }
+  }
+
+  it('默认开启 2.5s 防抖与 60s 节流，只读或计数断言场景可关掉', () => {
+    const { session } = mountAuto()
+    expect(session.setAutoSnapshot()).toEqual({ enabled: true, debounce: 2500, minInterval: 60000 })
+    expect(session.setAutoSnapshot({ enabled: false }).enabled).toBe(false)
+  })
+
+  it('编辑后无需另存为版本即落一条 auto 快照', async () => {
+    const { doc, session, provider } = mountAuto({ debounce: 20, minInterval: 0 })
+    const created = []
+    session.on('version-created', event => created.push(event.kind))
+    doc.getEditor().commands.insertContentAt(2, '自动记录')
+    await sleep(150)
+    const list = await provider.list({ documentId: session.documentId })
+    expect(list).toHaveLength(1)
+    expect(list[0].kind).toBe('auto')
+    expect(created).toEqual(['auto'])
+  })
+
+  it('正文等价的替换被去重，不产生空记录', async () => {
+    const { doc, session, provider } = mountAuto({ debounce: 20, minInterval: 0 })
+    doc.getEditor().commands.insertContentAt(2, '自动记录')
+    await sleep(150)
+    const { state } = doc.getEditor()
+    doc.getEditor().view.dispatch(state.tr.replace(0, state.doc.content.size, state.doc.slice(0, state.doc.content.size)))
+    await sleep(150)
+    expect((await provider.list({ documentId: session.documentId })).length).toBe(1)
+  })
+
+  it('关闭自动记录后编辑不再写盘，重新打开可继续', async () => {
+    const { doc, session, provider } = mountAuto({ debounce: 20, minInterval: 0 })
+    session.setAutoSnapshot({ enabled: false })
+    doc.getEditor().commands.insertContentAt(2, '关闭期间')
+    await sleep(150)
+    expect((await provider.list({ documentId: session.documentId })).length).toBe(0)
+    session.setAutoSnapshot({ enabled: true, debounce: 20, minInterval: 0 })
+    doc.getEditor().commands.insertContentAt(2, '重新开启')
+    await sleep(150)
+    expect((await provider.list({ documentId: session.documentId })).length).toBe(1)
   })
 })

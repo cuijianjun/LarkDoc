@@ -300,6 +300,17 @@ export default {
       const date = new Date(record.createdAt)
       return `将当前文档还原至 ${date.getMonth() + 1}月${date.getDate()}日 ${formatVersionClock(record.createdAt)} 的状态`
     },
+    /**
+     * 版本历史入口总闸（`features.versionHistory`，缺省关闭）。
+     *
+     * 顶栏菜单项已经按它隐藏；这里再挡一道，是因为 `openVersionPanel` /
+     * `openSaveVersionDialog` 同时是公开 API（`LarkDoc` 门面与 Vue2 适配层都暴露），
+     * 只藏 UI 的话宿主照样能把面板调出来。
+     */
+    versionHistoryEnabled() {
+      const features = this.larkDocConfig && this.larkDocConfig.features
+      return !!features && features.versionHistory === true
+    },
     /** 「另存为版本」闸门（05 §5.4 源码实测 `canCreateVersion`）。 */
     versionCanCreate() {
       return (!this.writable || this.writable()) && versionCapabilityGate(this.session, 'canCreateVersion').allowed
@@ -435,6 +446,8 @@ export default {
      * 那个菜单项不在本线的交付清单里 —— 由宿主调用本方法即可。
      */
     async openVersionPanel() {
+      // 入口下线期间连公开 API 一起挡：面板打开就会读 provider，没意义。
+      if (!this.versionHistoryEnabled) return false
       this.versionPanelOpen = true
       this.versionError = ''
       await this.loadVersions()
@@ -666,6 +679,7 @@ export default {
      * return，不隐藏）—— 由调用方决定要不要把入口画成置灰。
      */
     openSaveVersionDialog() {
+      if (!this.versionHistoryEnabled) return false
       if (!this.versionCanCreate) {
         this.saveVersionError = versionCapabilityGate(this.session, 'canCreateVersion').reason
         return false
@@ -696,6 +710,7 @@ export default {
     },
 
     async confirmSaveVersion() {
+      if (!this.versionHistoryEnabled) return null
       if (this.saveVersionBusy) return null
       if (!this.versionCanCreate) {
         this.saveVersionError = versionCapabilityGate(this.session, 'canCreateVersion').reason

@@ -55,10 +55,27 @@ async function main() {
     await page.evaluate(() => {
       window.__versionDoc = window.__larkDoc.document || window.__larkDoc
       const session = window.__versionDoc.getSession()
+      // 本脚本按「手动落盘条数」精确断言（1 → 2 → 3），关掉自动记录避免计数漂移。
+      session.setAutoSnapshot({ enabled: false })
       window.__versionProvider = window.__larkDocVersioning.createMemoryVersioningProvider({ author: 'browser-owner' })
       session.setProvider('versioning', window.__versionProvider)
       window.__versionDoc.setContent('<p data-block-id="version_browser_body"></p>')
     })
+    // 版本历史入口在 `features.versionHistory` 关闭时整体下线（见 larkDocConfig 默认值）。
+    // 此时脚本没有可验证的 UI —— 把「功能已下线」误报成回归失败没有意义，直接跳过；
+    // dev 分支实现完把开关打开后，这条链路会自动恢复执行。
+    const versionEntryEnabled = await page.evaluate(() => {
+      for (const api of [window.__versionDoc, window.__larkDoc]) {
+        if (!api || typeof api.getConfig !== 'function') continue
+        const config = api.getConfig()
+        if (config && config.features) return config.features.versionHistory === true
+      }
+      return false
+    })
+    if (!versionEntryEnabled) {
+      console.log('SKIP 版本历史入口已下线（features.versionHistory !== true），本脚本无 UI 可验证')
+      return
+    }
     await click(editor())
     await page.keyboard.insertText('历史正文中文😀')
     const baseline = await json()

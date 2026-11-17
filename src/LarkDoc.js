@@ -263,6 +263,11 @@ export class LarkDoc {
         comments: source.comments,
       },
       capabilities: source.capabilities,
+      // 版本历史入口下线期间（`features.versionHistory` 缺省 false）也不要后台攒快照：
+      // 面板打不开，写进 provider 的只有没人会看的数据。宿主显式传 autoSnapshot 时以其为准。
+      autoSnapshot: source.autoSnapshot != null
+        ? source.autoSnapshot
+        : this.config.features.versionHistory === true,
     })
   }
 

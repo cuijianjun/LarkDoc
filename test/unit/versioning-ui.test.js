@@ -127,7 +127,18 @@ function fakeSession(options) {
  * 方法内部拿到的会是 undefined，测出来的就不是同一条分支。
  */
 function mountMixin(state) {
-  const vm = Object.assign({}, versioningMixin.data(), state || {})
+  /**
+   * 默认打开版本历史入口（`features.versionHistory` 缺省 false，见 `larkDocConfig`）。
+   *
+   * 本文件测的是「版本能力 + UI 纯函数」本身，入口开关不该参与其中；「缺省关闭」由
+   * `workspace-view-state.test.js` 覆盖，入口闸门另有一条显式 `versionHistory: false`
+   * 的用例（见「另存为版本 Dialog」段末）。放在最前面，让 `state` 能覆盖它。
+   */
+  const vm = Object.assign(
+    { larkDocConfig: { features: { versionHistory: true } } },
+    versioningMixin.data(),
+    state || {},
+  )
   /**
    * computed 与 methods 都装到实例上：`this.versionProvider` / `this.indexOfVersion`
    * 这类内部互调必须能走通，否则测到的不是同一条分支。
@@ -524,6 +535,23 @@ describe('另存为版本 Dialog（04 §3.4 ⑤-2）', () => {
     expect(callOf(allowed, 'openSaveVersionDialog')).toBe(true)
     expect(allowed.saveVersionOpen).toBe(true)
     expect(allowed.saveVersionName).toBe('doc 第 1 版')
+  })
+
+  it('入口关闭时两个公开方法都直接返回，且不写错误文案、不打开任何面板', async () => {
+    // `features.versionHistory` 缺省 false（入口下线期）。公开 API 也一起挡：
+    // 面板打开就会读 provider，宿主直调没意义，还会把「无权限」之类的文案留在状态里。
+    const off = {
+      session: fakeSession({ capabilities: { canCreateVersion: false } }),
+      larkDocConfig: { features: { versionHistory: false } },
+      localTitle: 'doc',
+    }
+    const vm = mountMixin(off)
+    expect(callOf(vm, 'openSaveVersionDialog')).toBe(false)
+    expect(vm.saveVersionOpen).toBe(false)
+    expect(vm.saveVersionError).toBe('')
+    expect(await callOf(vm, 'confirmSaveVersion')).toBe(null)
+    expect(await callOf(vm, 'openVersionPanel')).toBe(false)
+    expect(vm.versionPanelOpen).toBe(false)
   })
 
   it('kind 徽标三个值都有中文文案，未知 kind 退回「手动保存」而不是空串', () => {

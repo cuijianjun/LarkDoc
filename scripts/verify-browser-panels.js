@@ -668,6 +668,16 @@ async function verifyOutlineHandleHitTargets(page, width) {
   await page.goto(BASE, { waitUntil: 'networkidle' })
   await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
 
+  // 版本历史入口是否可用（`features.versionHistory`，缺省关闭，见 larkDocConfig）。
+  // 关闭时 ②③⑤ 三段的 DOM 根本不存在 —— 整段跳过而不是判失败；
+  // dev 分支实现完并打开开关后，这三段会自动恢复执行。
+  const versionPanelsEnabled = await page.evaluate(() => {
+    const doc = window.__larkDoc
+    const config = doc && typeof doc.getConfig === 'function' ? doc.getConfig() : null
+    return !!(config && config.features && config.features.versionHistory === true)
+  })
+  if (!versionPanelsEnabled) console.log('SKIP 版本历史入口已下线（features.versionHistory !== true），跳过 ②③⑤ 面板断言')
+
   /* ═══════════════════ ① 目录侧栏 ═══════════════════ */
 
   await resetTo(page, HEADING_CONTENT)
@@ -835,6 +845,7 @@ async function verifyOutlineHandleHitTargets(page, width) {
     emptyOutline ? `${emptyOutline.emptyText}/${emptyOutline.items.length}` : '没渲染')
 
   /* ═══════════════════ ② 历史记录（无 provider 降级态） ═══════════════════ */
+  if (versionPanelsEnabled) {
 
   await resetTo(page, HEADING_CONTENT)
   await vueCall(page, 'await vue.openVersionPanel(); await sleep(420)')
@@ -1011,6 +1022,8 @@ async function verifyOutlineHandleHitTargets(page, width) {
   await page.evaluate(() => document.querySelector('.lark-doc-version-back').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
   await page.waitForTimeout(300)
 
+  }
+
   /* ═══════════════════ ④ 评论面板 ═══════════════════ */
 
   await resetTo(page, '<p>甲乙丙丁戊己庚辛</p>')
@@ -1131,6 +1144,7 @@ async function verifyOutlineHandleHitTargets(page, width) {
     cleared.panel ? `h=${cleared.rect.h} actions=${cleared.actions}` : '没渲染')
 
   /* ═══════════════════ ⑤ 另存为版本 Dialog + 恢复 toast ═══════════════════ */
+  if (versionPanelsEnabled) {
 
   const opened = await vueCall(page, 'const ok = vue.openSaveVersionDialog(); await sleep(360); return ok')
   record('[版本弹窗] openSaveVersionDialog() 在 Provider 就绪后返回 true',
@@ -1217,6 +1231,8 @@ async function verifyOutlineHandleHitTargets(page, width) {
 
   await page.evaluate(() => document.querySelector('.lark-doc-version-back').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
   await page.waitForTimeout(300)
+
+  }
 
   /* ═══════════════════ ⑥ 模板库（宿主侧，独立路由） ═══════════════════ */
 
