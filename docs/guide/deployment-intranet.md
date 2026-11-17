@@ -48,7 +48,7 @@ lark-doc 是一个**前端库**（Tiptap 3 + 原生 DOM 的 npm 包），不是�
 |---|---|---|---|---|
 | **ESM**（推荐） | `import { LarkDoc } from 'lark-doc'` | `dist/lark-doc.esm.js`（`module`） | Webpack4 / Webpack5 / Vite / Rollup | 是 |
 | **CJS** | `require('lark-doc')` | `dist/lark-doc.common.js`（`main`） | Node / SSR / 只读 `main` 的老打包器 | 是 |
-| **Web Component** | npm import 或独立 script 注册标签 | ESM: `lark-doc/element`；静态: `dist/lark-doc-element.umd.min.js` | 任意框架 / 无框架，**无 Vue 运行时，样式随 JS 注入** | 否（可直接 `<script>`） |
+| **Web Component** | npm import 或独立 script 注册标签 | ESM: `lark-doc/element`；静态: `dist/lark-doc-element.umd.min.js` | 任意框架 / 无框架，**无 Vue 运行时，UMD 样式由 loader 自动注入 `<link>`** | 否（可直接 `<script>`） |
 | **legacy options** | `import { LarkDocEditor, LarkDocWorkspace } from 'lark-doc/vue2'` | `dist/lark-doc-vue2.esm.js` / `dist/lark-doc-vue2.common.js` | 既有 Vue2 宿主注册普通 options 对象；产物不 import Vue | 是 |
 
 > **选型建议**：有打包器选根 ESM；静态页选 Element UMD；Node require 选 CJS。CJS 通过相对 `require()` 加载兄弟 chunk，不是内联所有重依赖的单文件；各入口均无 Vue runtime。当前不再独立生成 `lark-doc.umd.min.js`，`unpkg` / `jsdelivr` 指向 Element。体积与预算以 `npm run size` 和[产物说明](/guide/build-artifacts)为准；ESM 首屏还需计算 `tiptap` / `vendor` 初始区块，不能只报主文件。

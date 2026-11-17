@@ -596,7 +596,9 @@ export function reactionCatalogAssets() {
 }
 
 export function cssInjection(target) {
-  if (!['element', 'elementRuntime', 'elementEsm', 'feature:math:umd', 'feature:ui:umd'].includes(target)) return false
+  // elementRuntime 不再内联：265 KB 的样式字符串改成 dist/lark-doc-element.css，
+  // 由 loader 注入 <link>。样式因此可以边下载边解析，不必等 594 KB 的内核求值。
+  if (!['element', 'elementEsm', 'feature:math:umd', 'feature:ui:umd'].includes(target)) return false
   return (variable, id) => {
     const fonts = [...new Set([...readFileSync(id, 'utf8').matchAll(/url\(["']?(\.\/fonts\/[^"')]+)["']?\)/g)].map(match => match[1]))]
     let rebase = ''
@@ -694,6 +696,18 @@ const targets = {
     entryFileNames: 'lark-doc-element.runtime.umd.min.js',
     inlineDynamicImports: true,
     name: 'LarkDocRuntime',
+    // 样式独立成文件：loader 用 <link> 并行拉，内核 JS 不再背 265 KB 字符串。
+    css: 'lark-doc-element.css',
+  },
+  // 只有旧环境缺的 ES2022/2023 API。独立成文件后内核不再背 core-js 的 170+ 个
+  // 内部模块，引导体按特性检测决定拉不拉（见 src/web-component/loader.js）。
+  elementPolyfills: {
+    input: resolve(ROOT, 'src/web-component/polyfills.js'),
+    format: 'umd',
+    file: 'lark-doc-element.polyfills.umd.min.js',
+    entryFileNames: 'lark-doc-element.polyfills.umd.min.js',
+    inlineDynamicImports: true,
+    name: 'LarkDocPolyfills',
     css: null,
   },
   elementEsm: {

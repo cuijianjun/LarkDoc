@@ -99,6 +99,8 @@ export function rollupCacheGroup(name) {
   if (name === 'collabBrowser') return 'collabBrowser'
   // 独立 UMD 内联 PM；Element ESM 与协同浏览器入口必须使用同一个外置 PM。
   if (name === 'elementRuntime') return 'elementRuntime'
+  // polyfill 包只装 core-js，与 featureUmd 无共享解析，单独成组避免污染缓存。
+  if (name === 'elementPolyfills') return 'elementPolyfills'
   // UMD 必须内联 vendor，不能沿用 ESM 已缓存的 external 解析结果。
   if (name.endsWith(':umd')) return 'featureUmd'
   return name === 'lite' || name === 'element' || name === 'pm' ? name : name.startsWith('plugin') ? 'plugin' : name.startsWith('collab') ? 'collab' : 'default'
@@ -146,8 +148,9 @@ export function canReuseBuild(name, previous, { root = ROOT, dist = DIST } = {})
       if (JSON.stringify(fileHash(resolve(dist, file))) !== JSON.stringify(previous.outputHashes[file])) return false
     }
     const graph = readGraph(dist)[name]
+    // 构建图只收录 chunk；样式表这类静态资源不在图里，跳过。
     return Boolean(graph && Object.keys(graph).length && graphFingerprint(graph) === previous.graphHash &&
-      expectedFiles(name).every(file => graph[file]?.entry))
+      expectedFiles(name).filter(file => /\.m?js$/.test(file)).every(file => graph[file]?.entry))
   } catch (_) { return false }
 }
 
@@ -168,8 +171,8 @@ function assertNodeVersion() {
 export function targetsFor(name) {
   if (name.includes(',')) return [...new Set(name.split(',').map(target => target.trim()).filter(Boolean).flatMap(targetsFor))]
   let names
-  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementRuntime', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'collabBrowser', 'plugin', 'pluginCjs', ...featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
-  else if (name === 'element' || name === 'elementRuntime') names = [...(name === 'element' ? ['element'] : []), 'elementRuntime', ...featureNames.map(feature => `feature:${feature}:umd`)]
+  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementRuntime', 'elementPolyfills', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'collabBrowser', 'plugin', 'pluginCjs', ...featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
+  else if (name === 'element' || name === 'elementRuntime') names = [...(name === 'element' ? ['element'] : []), 'elementRuntime', 'elementPolyfills', ...featureNames.map(feature => `feature:${feature}:umd`)]
   else if (name === 'full') names = ['full', 'fullCjs']
   else if (name === 'core') names = ['esm', 'cjs']
   else if (name === 'features') names = featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])
@@ -191,7 +194,8 @@ function expectedFiles(name) {
     fullCjs: ['lark-doc-full.common.js'],
     lite: ['lark-doc-lite.esm.js'],
     element: ['lark-doc-element.umd.min.js'],
-    elementRuntime: ['lark-doc-element.runtime.umd.min.js'],
+    elementRuntime: ['lark-doc-element.runtime.umd.min.js', 'lark-doc-element.css'],
+    elementPolyfills: ['lark-doc-element.polyfills.umd.min.js'],
     elementEsm: ['lark-doc-element.esm.js'],
     legacy: ['lark-doc-vue2.common.js'],
     legacyEsm: ['lark-doc-vue2.esm.js'],
@@ -302,7 +306,7 @@ function writeManifest(names) {
   const manifest = {
     version: JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).version,
     generatedBy: 'rollup',
-    core: { esm: 'lark-doc.esm.js', cjs: 'lark-doc.common.js', element: 'lark-doc-element.umd.min.js', elementRuntime: 'lark-doc-element.runtime.umd.min.js', elementEsm: 'lark-doc-element.esm.js' },
+    core: { esm: 'lark-doc.esm.js', cjs: 'lark-doc.common.js', element: 'lark-doc-element.umd.min.js', elementRuntime: 'lark-doc-element.runtime.umd.min.js', elementPolyfills: 'lark-doc-element.polyfills.umd.min.js', elementEsm: 'lark-doc-element.esm.js' },
     vue2: { cjs: 'lark-doc-vue2.common.js', esm: 'lark-doc-vue2.esm.js' },
     adapters: { vue3: 'lark-doc-vue3.mjs', react: 'lark-doc-react.mjs' },
     features: Object.fromEntries(featureNames.map((name) => [name, {

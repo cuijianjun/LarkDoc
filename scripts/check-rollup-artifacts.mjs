@@ -124,7 +124,7 @@ function externalPmFiles(graph) {
 
 if (process.argv.includes('--size')) {
   const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'))
-  const targets = { 'lark-doc.esm.js': 'esm', 'lark-doc.common.js': 'cjs', 'lark-doc-element.umd.min.js': 'element', 'lark-doc-element.runtime.umd.min.js': 'elementRuntime', 'lark-doc-collab.esm.js': 'collab', 'lark-doc-lite.esm.js': 'lite' }
+  const targets = { 'lark-doc.esm.js': 'esm', 'lark-doc.common.js': 'cjs', 'lark-doc-element.umd.min.js': 'element', 'lark-doc-element.runtime.umd.min.js': 'elementRuntime', 'lark-doc-element.polyfills.umd.min.js': 'elementPolyfills', 'lark-doc-collab.esm.js': 'collab', 'lark-doc-lite.esm.js': 'lite' }
   // Element 拆两条预算：引导文件走应用加载路径，runtime 惰性拉取。两者分开卡，
   // 否则把 runtime 移出加载路径的改动会让单文件口径看起来毫无收益。
   const RUNTIME_FILE = 'lark-doc-element.runtime.umd.min.js'

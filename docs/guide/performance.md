@@ -249,18 +249,34 @@ node scripts/check-rollup-artifacts.mjs --size
 1. **lite 与 ESM 合并为一个口径**。两者同 scope、同产物形态，实测只差 54 B（384040 vs 383986）。原先 300/310 的双预算让 lite 永远比 ESM 早 10 KB 报警，语义上是同一个数。现两条 `size-limit` 均记 `310 KB`，并把 lite 条目名改成「与 ESM 同一口径」。
 2. **collab 4 KB → 8 KB**。4 KB 是 P6a 内核（`anchors`/`durable-bridge`/`protocol`/`policies`）合入之前的基线，内核本身就是该子入口的业务内容，不属于回退。实测 7447 B，记 8 KB。
 
-Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组（`ui` 183 KB、`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。实测这条路还能再拆四层：
+Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组（`ui` 183 KB、`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。
 
-| 层 | 手段 | 交付形态 | 收益 |
+### 已落地
+
+| 层 | 手段 | 交付形态 | 实测（gzip） |
 | --- | --- | --- | ---: |
-| L0 | `loader.js` 把 `runtimeReady` 从模块顶层常量改为视口观察后触发 | 应用加载路径上的 Element | 613 KB → 0 |
-| L1.5 | 295 个只经 `import()` 到达的模块（含 prosemirror 全家）外置成 `engine` 组 | 首启可编辑时间后移一次请求 | −196 KB（−32%） |
-| L1 | 按业务切 18 组（工具栏 / 评论 / 块处理器 / 表格 / 版本 …）走现有 `groups` 表 | 特性首用时侧载 | −154 KB |
-| L2+L3 | CSS 随组下沉 + core-js 按 browserslist 裁剪 | 同上 | −31 KB |
+| L0 | `loader.js` 把 `runtimeReady` 从模块顶层常量改为视口观察后触发 | 应用加载路径上只有 1.5 KB 引导器 | 614,339 → 0（加载路径） |
+| L2a | core-js 6 个 API 拆成 `lark-doc-element.polyfills.umd.min.js`，引导器按特性检测决定拉不拉 | 现代浏览器零请求 | runtime −17,447（614,339 → 596,892），模块 556 → 382 |
+| L2b | CSS 从 JS 字符串改为独立 `lark-doc-element.css`，loader 注入 `<link>` 与内核并行 | 样式边下边解析，不阻塞内核求值 | runtime −41,522（596,892 → 555,370），JS 内不再有 265 KB 字符串 |
 
-叠加后单文件 ≈ **233 KB（−62%）**，与 A/B/C 三档并行、互不阻塞，明细见 [主产物体积拆分方案](./performance-split-plan.md) 第七节。
+现代浏览器实际支付：**引导器 1,579 B + 内核 555,370 B**，样式 40,601 B 独立可缓存、可并行解析；旧浏览器额外拉 17,224 B 补丁包。
 
-> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个 1.5 KB 引导器加一个 613 KB 惰性 runtime，总字节没变，但进不了应用加载路径。这条预算已拆成两条：`dist/lark-doc-element.umd.min.js` 卡 `2 KB`（`scope: bootstrap`，排除 runtime），`dist/lark-doc-element.runtime.umd.min.js` 卡 `620 KB`（`scope: lazy`）。runtime 这条随每层落地逐档收紧 **620 → 418（L1.5）→ 264（L1）→ 240 KB（L2+L3）**，一次收到 240 KB 会让门禁在整个实施期内恒红、失去回归信号。实测：引导 648 B / runtime 614,339 B。
+### 下一步（按实测收益排序）
+
+| 靶点 | `renderedLength` | 占比 | 手段 |
+| --- | ---: | ---: | --- |
+| `src/components/editor` | 801,558 | 19.6% | 按 mixin / presentation 继续侧载 |
+| `src/core/blocks` + `src/core/nodeviews` | 507,443 | 12.4% | 块定义与渲染器分离 |
+| `src/ui` | 268,959 | 6.6% | 扩 `elementUiModules` 延迟表 |
+| `@tiptap:core` | 253,665 | 6.2% | 静态可达，只能靠 treeshake 与替身裁剪 |
+| `dep:linkifyjs` / `documentOperations.js` | 118,384 | 2.9% | 单模块，查替代或按需 |
+
+> **L1.5 已废弃**：原方案称「295 个模块（含 prosemirror 全家）只经 `import()` 到达，外置成 `engine` 组可省 196,457 B / 32%」。关掉 `inlineDynamicImports` 重新生成 chunk 图后，这条前提不成立——单静态 chunk 就有 `3,963,848 B / 523 模块`，`prosemirror-*` 与 `@tiptap/*` 全部在里面；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip` 这类小功能，合计约 120 KB。当初「仅动态可达」的结论是拿 `bundle.cache.modules[].dependencies` 做 BFS 得出的，而折叠模式下 cache 不含动态边，会把动态入口整棵子树误判成静态不可达。
+
+> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成三条：引导文件卡 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核卡 `560 KB`（`scope: lazy`）、补丁包卡 `18 KB`（`scope: lazy`）。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）**。
 >
 > **语义变化（L0 引入）**：`LarkDoc.runtimeReady` 从「模块顶层常量（Promise）」改为「函数」。`await LarkDoc.runtimeReady` 拿到的会是一个函数对象而不是 runtime，正确写法是 `await LarkDoc.runtimeReady()`。
+>
+> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）与 `lark-doc-element.css`（内核样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。
+
 

@@ -334,16 +334,23 @@
       "scope": "editor"
     },
     {
-      "name": "Element 引导文件 (gzip)（应用加载路径上只有它）",
+      "name": "Element 引导文件 (gzip)（应用加载路径上只有它，含 polyfill 门禁）",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "2 KB",
+      "limit": "1.7 KB",
       "gzip": true,
       "scope": "bootstrap"
     },
     {
-      "name": "Element runtime (gzip)（惰性拉取；逐层收紧 620 → 418 → 264 → 240 KB）",
+      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 KB；core-js 与 CSS 均已移出）",
       "path": "dist/lark-doc-element.runtime.umd.min.js",
-      "limit": "620 KB",
+      "limit": "560 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element polyfill 包 (gzip)（仅旧浏览器按需拉取，现代浏览器零请求）",
+      "path": "dist/lark-doc-element.polyfills.umd.min.js",
+      "limit": "18 KB",
       "gzip": true,
       "scope": "lazy"
     },

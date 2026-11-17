@@ -344,12 +344,14 @@ Element 档 614,339 B gzip（`lark-doc-element.runtime.umd.min.js`）。原 475,
 
 四层各治一个病，可以分开上线：
 
+> **⚠ 7.5（L1.5）已作废，2026-11-17 实测推翻前提。** 关掉 `inlineDynamicImports` 重新出图后，`elementRuntime` 只有一个静态 chunk：`3,963,848 B / 523 模块`，`prosemirror-*` 与 `@tiptap/*` **全部在里面**；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip`、`snapshot` 这类小功能，合计约 120 KB。原文「295 模块 / 217,596 只经 `import()` 到达」是拿 `bundle.cache.modules[].dependencies` 做 BFS 得出的——折叠模式下 cache 不含动态边，于是动态入口的整棵子树被误判成「静态不可达」。**L1.5 方案与本章所有 −196,457 / −217,596 / 418 KB / 264 KB 的数字一并不成立。**
+
 | 层 | 治什么 | 一句话做法 | 收益 |
 | --- | --- | --- | ---: |
 | **L0** | 应用加载时太大 | `loader.js` 不再在模块顶层无条件插 runtime，改视口观察 | 加载路径 613 KB → 0 |
-| **L1.5** | 单文件被 `import()` 内联虚胖 | 295 个只经 `import()` 到达的模块外置成 `engine` 组 | −196,457 |
+| ~~**L1.5**~~ | ~~单文件被 `import()` 内联虚胖~~ | ~~295 个只经 `import()` 到达的模块外置成 `engine` 组~~ | ~~−196,457~~ **作废** |
 | **L1** | 业务代码全在首屏 | 按使用时机切 18 组，走现有 `groups` 表 | −153,744 |
-| **L2/L3** | CSS 与垫片跟着首屏走 | `@import` 改挂组入口 + `browserslist` 裁 core-js | −31,038 |
+| **L2/L3** | CSS 与垫片跟着首屏走 | CSS 独立成文件 + 卸掉 core-js | 已落地 59,350（见 7.9） |
 
 ### 7.1 实测构成（`elementRuntime`，K = gz / ΣrenderedLength = 0.1501）
 
@@ -472,10 +474,12 @@ lark-doc:not(:defined) { display: block; min-height: var(--lark-doc-placeholder-
 
 上表把「已被某个业务面独占的代码」搬出去。但实测还暴露了一件更关键的事：
 
+> **⚠ 本节结论已作废（2026-11-17）。** 下面这张「可达 / 未达」分布是拿 `bundle.cache.modules[].dependencies` 做 BFS 算出来的，而 `inlineDynamicImports: true` 时 cache **不含动态边**，动态入口的整棵子树会被记成「静态不可达」。关掉折叠重新出图后的事实是：单静态 chunk `3,963,848 B / 523 模块`，`prosemirror-*`、`@tiptap/*` 全在里面；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip`、`snapshot` 等小功能，合计约 120 KB。**继续往下读之前请先接受这一点：没有「把 prosemirror 外置」这条路。**
+
 ```
 产物 556 模块 / 614,339 gzip
-├── 可达（从 standalone.js 沿静态 + 动态边）    289 模块 / 396,743
-└── 未达（只经 import() 到达，被 inlineDynamicImports 内联在文件里）  295 模块 / 217,596
+├── 可达（从 standalone.js 沿静态 + 动态边）    289 模块 / 396,743   ← 错：实际 523 模块
+└── 未达（只经 import() 到达，被 inlineDynamicImports 内联在文件里）  295 模块 / 217,596  ← 错
 ```
 
 **这 295 个模块里包含几乎全部 prosemirror**：`prosemirror-view` 37,496、`model` 18,725、`tables` 12,918、`transform` 12,914、`state` 5,405、`commands` 4,017、`history` 2,636 ……，还有 `nodeviews` 全量（`code-block` 5,781 / `image` 4,334 / `poll` 3,033 …）和 `blocks` 全量（36 个模块 30,243）。
@@ -555,30 +559,46 @@ CSS 在 Element 产物里是**单一模块** `style.css`（265,008 renderedLengt
 
 | 层 | 作用 | 应用加载路径 | 首次可见时 |
 | --- | --- | ---: | ---: |
-| 现状 | — | **678 B + 613 KB** | — |
+| 改造前 | — | **678 B + 613 KB** | — |
 | L0 | runtime 移出加载路径 | **678 B + 1.5 KB** | 613 KB |
-| L0 + L1.5 | 引擎组再外置 | 1.5 KB | 418 KB |
-| L0 + L1 + L1.5 + L2 + L3 | 业务面与 CSS 再下沉 | 1.5 KB | **233 KB** |
+| L0 + L2a（core-js） | 垫片按特性检测拉 | 1,579 B | 596,892 |
+| L0 + L2a + L2b（CSS） | 样式独立成文件并行解析 | 1,579 B | **555,370 + 40,601（并行）** |
 
-**预算口径必须跟着改**。475 KB 现在是「单文件大小」，它既衡量不到 L0 的收益，也会在 L1.5 落地后变成无意义的约束。已在 `package.json` 拆成两条：
+**预算口径必须跟着改**。475 KB 现在是「单文件大小」，它既衡量不到 L0 的收益，也量不出 CSS 与垫片拆分的收益。已在 `package.json` 拆成三条：
 
-| 指标 | 现状 | 全部落地 | 当前卡法 | 收紧阶梯 |
-| --- | ---: | ---: | --- | --- |
-| `element` 引导文件（应用加载路径） | 678 B | ≈ 1,500 B | `2 KB` 硬上限 | 固定 |
-| `element` runtime（首次可见时拉取） | 614,339 | ≈ 233,100 | `620 KB` 硬上限 | L1.5 → 418 / L1 → 264 / L2+L3 → 240 KB |
-| 组包总量（首次全功能交互后） | 1,817,000 | 1,817,000 | 不卡（本来就按需） | — |
+| 指标 | 改造前 | 现在 | 当前卡法 |
+| --- | ---: | ---: | --- |
+| `element` 引导文件（应用加载路径） | 678 B | 1,579 B | `1.7 KB` 硬上限 |
+| `element` runtime（首次可见时拉取） | 613,000 | 555,370 | `560 KB` 硬上限（620 → 600 → 560） |
+| `element` polyfill 包（仅旧浏览器） | — | 17,224 | `18 KB` 硬上限 |
+| `element` 样式表（与内核并行） | 内联在 JS 里 | 40,601 | 不单独卡（并入内核口径观察） |
+| 组包总量（首次全功能交互后） | 1,817,000 | 1,817,000 | 不卡（本来就按需） |
 
-runtime 这条**一次收到 240 KB 会让门禁在整个实施期内恒红**，失去「有没有回退」的信号；逐档收紧才能让每层落地都变成一次可验证的下降。否则 L0 做得再好，`--size` 也永远报「超 140 KB」，把真正有效的改动判成失败。
+逐档收紧而不是一步到位：一次收到目标值会让门禁在整个实施期内恒红，失去「有没有回退」的信号。
 
-### 7.9 落地顺序与风险
+### 7.9 已落地实测（2026-11-17）
+
+做了两件事，都验证过产物、单测与产物门禁：
+
+| 项 | 做法 | 结果 |
+| --- | --- | --- |
+| L2a 卸 core-js | 6 个 ES2022/2023 API 拆成 `src/web-component/polyfills.js` → 独立 UMD；`loader.js` 用 `needsPolyfills()` 特性检测决定拉不拉，且**先补丁后内核** | runtime 模块 556 → 382，gzip 614,339 → 596,892；补丁包 17,224，现代浏览器 0 请求 |
+| L2b 卸 CSS | `cssInjection` 不再接管 `elementRuntime`；target 改 `css: 'lark-doc-element.css'`，postcss `extract` 直接产出压缩样式表；loader 注入 `<link>` 且排在 `<script>` 之前 | JS 内 265 KB 字符串消失，gzip 596,892 → 555,370；样式 40,601 独立可缓存、与内核并行解析 |
+
+两处踩坑记录：
+
+1. `canReuseBuild` 用 `expectedFiles(name).every(file => graph[file]?.entry)` 校验图，而构建图只收 chunk；把 `lark-doc-element.css` 加进 `expectedFiles` 后这条恒假，构建报「产物或构建图验证失败」。已改为先 `.filter(file => /\.m?js$/)` 再校验。
+2. 单测里拔 API 模拟旧浏览器必须登记原描述符并复原：vitest 自身依赖 `Object.hasOwn` 与 `Array.prototype.at`，漏复原会让 runner 在收尾阶段崩；圈定「任一项缺失即触发」的用例只能挑 `findLast` / `findLastIndex`。
+
+### 7.10 落地顺序与风险
 
 | 阶段 | 改动面 | 收益 | 风险 | 建议 |
 | --- | --- | ---: | --- | --- |
-| **L0** | `loader.js` 一个文件，≈ 40 行 | 613 KB 移出加载路径 | 低（`customElements` upgrade 是标准行为） | **独立 PR，先上** |
-| **L1.5** | `rollup.config.mjs` 加 target + `features/element.js` 加一组 + `import()` 换 `loadFeature` | -196,457 | 中（首屏多一次请求，需与 L0 同发） | 第二个 PR |
+| **L0** | `loader.js` 一个文件 | 613 KB 移出加载路径 | 低（`customElements` upgrade 是标准行为） | 已完成 |
+| ~~L1.5~~ | — | — | 前提被实测推翻 | **不做** |
+| **L2a** | `polyfills.js` + loader 门禁 + 一个 UMD target | -17,447 | 低（现代浏览器 0 请求，旧环境行为不变） | 已完成 |
+| **L2b** | `cssInjection` 收口 + loader 注入 `<link>` | -41,522 | 低（样式表与内核同目录，加载顺序已用单测锁住） | 已完成 |
 | **L1** | 18 组，按第 1–4 组先做 | -153,744（前四组 73,962） | 中低（20 组静态桩零风险，12 组需 Phase 0） | 分批 PR，按收益排序 |
-| **L2** | 12 条 `@import` 搬家 | -21,038 | 低（CSS 作用域已隔离） | 随 L1 各组一起走 |
-| **L3** | 删 2–6 个 core-js feature | -10,000～-21,139 | 低（需过浏览器矩阵） | 独立 PR |
 
 **L0 单独上线就能解决用户感知的问题**；L1.5 + L1 + L2 + L3 是「首次可见时」的优化。两者不要捆在一个 PR 里，否则回滚粒度会丢。
 

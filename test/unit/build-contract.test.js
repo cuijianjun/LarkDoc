@@ -52,8 +52,8 @@ it('assembles the CI smoke host with the complete Element loader dependency file
 
 it('clean Element build includes its eager runtime and every local optional script', () => {
   const features = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document'].map(name => `feature:${name}:umd`)
-  expect(targetsFor('element')).toEqual(['element', 'elementRuntime', ...features])
-  expect(targetsFor('elementRuntime')).toEqual(['elementRuntime', ...features])
+  expect(targetsFor('element')).toEqual(['element', 'elementRuntime', 'elementPolyfills', ...features])
+  expect(targetsFor('elementRuntime')).toEqual(['elementRuntime', 'elementPolyfills', ...features])
   expect(new Set(targetsFor('all')).size).toBe(targetsFor('all').length)
 })
 

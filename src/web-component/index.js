@@ -18,17 +18,15 @@
 // Rollup 产物不依赖 Webpack runtime。按需能力通过 feature registry 和
 // 标准 dynamic import() 加载，宿主可在加载独立 feature 包后复用同一注册表。
 
-// Tiptap 3 与个别依赖使用 ES2022/ES2023 API（findLast / at / structuredClone）。
-// 必须在入口显式补齐，否则旧版 Safari/Chrome 与 Node 14 会在运行时抛 TypeError。
-import 'core-js/features/array/find-last'
-import 'core-js/features/array/find-last-index'
-import 'core-js/features/array/at'
-import 'core-js/features/structured-clone'
-// Mermaid也使用ES2021/2022 API；Node14 DOM宿主需显式补齐。
-import 'core-js/features/object/has-own'
-import 'core-js/features/string/replace-all'
-// 样式随入口进入构建：element 构建关闭 CSS 抽取，样式由 JS 注入 <style>，
-// 宿主无需再单独 import css（零配置可用）。
+// Tiptap 3 与个别依赖使用 ES2022/ES2023 API（findLast / at / structuredClone），
+// 旧版 Safari/Chrome 与 Node 14 会在运行时抛 TypeError；Mermaid 另用 hasOwn /
+// replaceAll。这些 polyfill 已移到独立产物 `lark-doc-element.polyfills.umd.min.js`
+// （见 ./polyfills.js），由引导体 loader.js 在注入本内核**之前**按特性检测决定
+// 是否加载——core-js 为这 6 个 API 要拖进 170+ 个内部模块，不值得让现代浏览器
+// 陪着下载。走 ESM 入口（src/index.js）的宿主仍自行内联补齐。
+// 样式随入口进入构建：ESM 档关闭 CSS 抽取，样式由 JS 注入 <style>，宿主无需再
+// 单独 import css；UMD 档（standalone.js 走这里）抽取成 lark-doc-element.css，
+// 由 loader 注入 <link> 与内核并行下载，省掉 JS 里 265 KB 的样式字符串。
 import '../../style.css'
 
 import { LarkDoc } from '../LarkDoc'
