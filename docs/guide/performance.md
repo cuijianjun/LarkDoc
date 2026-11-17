@@ -538,8 +538,25 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 `uiPanels` 不受影响。`lint` / `check:architecture`（R1 446 → 451 文件）/ `contract:check` /
 `check:artifacts`（560s）全绿，`build` 项目 133 passed。
 
+### `editor/shareMixin.js` 拆出纯逻辑层（1,117 → 262 + 436 + 236 + 264）
+
+该文件头原本就写着「纯逻辑 + Vue mixin 两层」，这次把两层落成两个模块：`shareModel.js` 装几何
+常量、B24 capability 映射、密码规则、剪贴板文本（38 个具名导出，`shareMixin.js` 逐名重新导出，
+对外签名不变）；方法按「链接与选区 / 弹窗与密码」两域展开。
+
+**这次踩到一个真回归，值得记下来**：`shareLinkAction` 里的 `import('../../../providers/share-links')`
+靠 `rollup.config.mjs` 的 `shareCaller` **白名单按导入方文件路径**改写成 `loadFeature('document.shareLinks')`。
+方法搬进 `shareLinkMethods.js` 后白名单失配，provider 被急切打进内核：raw **+11,589 B**、gzip **+3,929 B**
+（内核 542,320 → 546,250）。把新文件加进白名单后回到 raw +22 B / gzip **+162 B**（内核 542,482）。
+
+教训：这类「按 importer 路径」的构建改写，是拆分方法域时唯一会静默变胖的地方 —— 分包后的
+`feature:*` 体积不变（`uiPanels` 98,048 一动没动），胖的全在内核首屏。`build-contract` 里
+`maps each existing asynchronous share-link entry to its original namespace` 那条 transform 断言
+已经锁住了这份名单，用例里的文件名随之改成 `shareLinkMethods.js`。
+
 ### 门禁
 
 `check:artifacts` 全绿（10 条体积预算不变，首屏仍为 601,740 B）；`build-contract` 73 passed、
 `shared-host` 3 passed；`test:affected` 44 文件 / 2,002 用例通过。C07 之后：`lint`、`check:architecture`、
-`contract:check`、`check:artifacts`（442s）全绿，`build` 项目 133 passed。
+`contract:check`、`check:artifacts`（442s）全绿，`build` 项目 133 passed。C09 之后：`check:artifacts`（425s）、
+`build` 项目 133 passed、相关 5 支单测 109 用例全绿，内核 542,482 / 550,000。

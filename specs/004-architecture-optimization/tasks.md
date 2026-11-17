@@ -40,6 +40,9 @@
       公开导出 5 个（`COMMENT_GATES` / `commentGate` / `commentDraftText` / `commentRelativeTime` / `commentSidebarThreads`）改为从 `commentMixinShared.js` 重新导出，对外签名不变；四个方法域从 `commentMixinShared.js` 取判定，避免与 mixin 本体成环。
       **体积**：内核 gzip 542,353 → **542,320**（−33 B，首屏同步 −33）；esm 384,221 → 384,231（+10）、lite 384,259 → 384,286（+27），均在预算内。`feature:uiPanels:umd` 未受影响（98,048）。
       验证：`comments-ui` + `editor-reactivity` + `mobile-reference-comments` 168 用例全绿；`build` 项目 133 passed；`lint` / `check:architecture`（R1 446 → 451 文件）/ `contract:check` / `check:artifacts`（560s）全绿。
+- [x] **C09 `editor/shareMixin.js` 拆分**：1,117 行 → `shareMixin.js`(262，只剩 data/computed/watch/生命周期 + 方法域展开) + `shareModel.js`(436，纯逻辑层：几何常量、B24 capability 映射、密码规则、剪贴板文本) + `shareDialogMethods.js`(264) + `shareLinkMethods.js`(236)。38 个具名导出逐名从 `shareModel.js` 重新导出，对外签名一字不变；两个方法域以对象展开按原顺序并入 `methods`。
+      **踩到并修掉的一次真实回归**：`shareLinkAction` 里的 `import('../../../providers/share-links')` 原本靠 `rollup.config.mjs` 的 `shareCaller` **按导入方文件路径**白名单改写成 `loadFeature('document.shareLinks')`。方法搬进 `shareLinkMethods.js` 后白名单失配，provider 被**急切打进内核**：raw +11,589 B、gzip +3,929 B（内核 542,320 → 546,250）。把新文件加进 `shareCaller` 后回到 raw +22 B / gzip **+162 B**。同一处白名单也被 `build-contract` 的 transform 断言锁着，该用例的文件名随之改成 `shareLinkMethods.js`；`stage7-low-risk-batch` 改读 mixin + 两个方法域。
+      **体积**：内核 gzip 542,320 → **542,482**（+162 B）；esm 384,378、lite 384,426、`uiPanels` 98,048 均未受影响。`check:artifacts`（425s）、`build` 项目 133 passed、相关 5 支单测 109 用例全绿。
 
 ## Phase D — 首屏（P2）
 
@@ -65,4 +68,4 @@
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
 | 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
-| 内核（首屏） | gzip 542,353 | C07 未动；C08 拆 `commentsMixin` 后 **542,320**（−33 B），首屏分项同步 −33 |
+| 内核（首屏） | gzip 542,353 | C07 未动 → C08 拆 `commentsMixin` **542,320**（−33 B）→ C09 拆 `shareMixin` **542,482**（+162 B） |

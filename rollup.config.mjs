@@ -558,7 +558,14 @@ function packageAlias(target = '') {
       const modelCaller = id === resolve(ROOT, 'src/mount/domRenderer.js')
       const pagedCaller = [resolve(ROOT, 'src/editor/pagedDocumentSource.js'), resolve(ROOT, 'src/components/lark-doc/editor/viewModesMixin.js')].includes(id)
       const importCaller = [resolve(ROOT, 'src/editor/EditorController.js'), resolve(ROOT, 'src/workspace/WorkspaceController.js')].includes(id)
-      const shareCaller = [resolve(ROOT, 'src/providers/authorization.js'), resolve(ROOT, 'src/components/lark-doc/editor/shareMixin.js'), resolve(ROOT, 'src/providers/document-business.js')].includes(id)
+      // 分享链接的两条异步入口按**导入方文件**白名单改写；`shareLinkAction` 现住在
+      // `editor/shareLinkMethods.js`（`shareMixin.js` 拆出的方法域），名单里跟着换。
+      const shareCaller = [
+        resolve(ROOT, 'src/providers/authorization.js'),
+        resolve(ROOT, 'src/components/lark-doc/editor/shareMixin.js'),
+        resolve(ROOT, 'src/components/lark-doc/editor/shareLinkMethods.js'),
+        resolve(ROOT, 'src/providers/document-business.js'),
+      ].includes(id)
       // 导出、浮层、上传、转换与后台统计：见 LAZY_PACKAGE_CALLERS 的注释。
       const lazyPackages = LAZY_PACKAGE_CALLERS.get(id)
       if (!modelCaller && !pagedCaller && !importCaller && !shareCaller && !lazyPackages) return null

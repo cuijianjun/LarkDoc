@@ -1490,7 +1490,7 @@ describe('classic segmented document feature boundary', () => {
   it('maps each existing asynchronous share-link entry to its original namespace only in classic Element', () => {
     const root = path.resolve(__dirname, '../..')
     const plugin = getRollupConfig('elementRuntime').plugins.find(item => item.name === 'lark-doc-package-alias')
-    for (const [file, links, access] of [['src/providers/authorization.js', 1, 1], ['src/components/lark-doc/editor/shareMixin.js', 1, 0], ['src/providers/document-business.js', 0, 1]]) {
+    for (const [file, links, access] of [['src/providers/authorization.js', 1, 1], ['src/components/lark-doc/editor/shareLinkMethods.js', 1, 0], ['src/providers/document-business.js', 0, 1]]) {
       const id = path.join(root, file), source = fs.readFileSync(id, 'utf8'), result = plugin.transform(source, id)
       expect(result).not.toBeNull()
       expect((result.code.match(/__larkDocLoadDocumentFeature\('document.shareLinks'\)/g) || []).length).toBe(links)

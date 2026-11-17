@@ -15,7 +15,9 @@ const overlays = source('src/ui/overlays.js') +
     .map((name) => source(`src/ui/${name}.js`)).join('\n') +
   source('src/ui/shareEntry.js')
 const overlaysUi = source('src/components/lark-doc/editor/overlaysUiMixin.js')
-const shareMixin = source('src/components/lark-doc/editor/shareMixin.js')
+// 分享 mixin 已按方法域拆开：断言落到 mixin 本体 + 两个方法域文件的拼接。
+const shareMixin = ['shareMixin', 'shareLinkMethods', 'shareDialogMethods']
+  .map(name => source(`src/components/lark-doc/editor/${name}.js`)).join('\n')
 const exportMixin = source('src/components/lark-doc/editor/exportMixin.js')
 // 导出派发逻辑已抽到 exportInteraction.js；断言落到实际承载实现的文件。
 const exportInteraction = source('src/components/lark-doc/editor/exportInteraction.js')
