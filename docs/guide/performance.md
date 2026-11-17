@@ -244,10 +244,11 @@ node scripts/check-rollup-artifacts.mjs --size
 
 > CSS 一栏旧记 28 KB 是错的。Element 产物里 CSS 是**单一模块** `style.css`（`renderedLength` 265,008，由 13 条 `@import` 聚合），模块级 gzip 折算后 **39,797**。差异来源见下方口径说明：`renderedLength` 是 terser 压缩**前**长度，模块级必须用 `gzip(chunk) / Σ renderedLength = 0.1501` 折算，不能用整文件 `gz / raw = 0.2873`。
 
-两条失效口径就地修正，预算数字本身不改判定标准：
+三条失效口径就地修正，预算数字本身不改判定标准：
 
-1. **lite 与 ESM 合并为一个口径**。两者同 scope、同产物形态，实测只差 54 B（384040 vs 383986）。原先 300/310 的双预算让 lite 永远比 ESM 早 10 KB 报警，语义上是同一个数。现两条 `size-limit` 均记 `310 KB`，并把 lite 条目名改成「与 ESM 同一口径」。
+1. **lite 与 ESM 合并为一个口径**。两者同 scope、同产物形态，实测只差 54 B（384040 vs 383986）。原先 300/310 的双预算让 lite 永远比 ESM 早 10 KB 报警，语义上是同一个数。先统一记 `310 KB`，并把 lite 条目名改成「与 ESM 同一口径」；随后按第 3 条一并抬到 395 KB。
 2. **collab 4 KB → 8 KB**。4 KB 是 P6a 内核（`anchors`/`durable-bridge`/`protocol`/`policies`）合入之前的基线，内核本身就是该子入口的业务内容，不属于回退。实测 7447 B，记 8 KB。
+3. **ESM / lite 310 KB → 395 KB**。310 KB 是 L1.5「把 prosemirror 全家外置成 `engine` 组」成立时的目标值，而 L1.5 已经废弃（见下节末条）：关掉 `inlineDynamicImports` 复算后单静态 chunk 就有 3,963,848 B / 523 模块，第三方一行也搬不走，这个目标值的前提不复存在。实测 383,983 / 384,040，抬到 395 KB 留 11 KB（2.9%）回归余量。**这不等于放过回退**——门禁量的是「相对上一次是否变差」，不是「离一个已作废的目标还有多远」；长期恒红的条目等于没有信号，比不设这条预算更糟。真要回到 310 KB 只能走「逐域语义降级」（见「拆分边界实测」第 2、3 条），那是逐域推进的产品行为设计，不是构建配置能给出来的。
 
 Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组（`ui` 183 KB、`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。
 

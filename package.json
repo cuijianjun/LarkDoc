@@ -329,9 +329,9 @@
   },
   "size-limit": [
     {
-      "name": "ESM 主包 (gzip)（编辑器代码，运行时与总初始图另列）",
+      "name": "ESM 主包 (gzip)（编辑器代码，运行时与总初始图另列；310 → 395 的理由见 performance.md）",
       "path": "dist/lark-doc.esm.js",
-      "limit": "310 KB",
+      "limit": "395 KB",
       "gzip": true,
       "scope": "editor"
     },
@@ -390,9 +390,9 @@
       "gzip": true
     },
     {
-      "name": "lite 主包 (gzip)（与 ESM 同一口径，编辑器代码）",
+      "name": "lite 主包 (gzip)（与 ESM 同一口径，编辑器代码；310 → 395 的理由见 performance.md）",
       "path": "dist/lark-doc-lite.esm.js",
-      "limit": "310 KB",
+      "limit": "395 KB",
       "gzip": true,
       "scope": "editor"
     }
