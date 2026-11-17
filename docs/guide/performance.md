@@ -415,6 +415,31 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
   `/* global globalThis */`（仓库既有 21 个文件都带），从 `f61d295` 起 `npm run lint` 一直失败。
   按既有约定补声明，不改 eslint 配置（改配置会牵连那 21 处的 `no-redeclare`）。
 
+#### 单测拆两套：跑真构建的用例独立成 `build` 项目
+
+三支文件会真起 rollup（单跑实测）：`build-contract` **69.0s** / `shared-host` **27.3s** /
+`export-lazy` **21.6s**，合计 118s，占全量三分之一。它们有两个特殊之处：
+
+1. **需要长超时**。构建一支 UMD 要 5~40s，默认 5s 的 `testTimeout` 在机器忙时必然误报；
+   把全局超时抬到 120s 又会削弱其余 4,900 条用例「卡住算失败」的信号。
+2. **不能和普通用例同池并发**。实测三者同跑（2 worker）93s 里出现 **4 条假超时**
+   （3 条 5s、1 条 30s），逐支单跑 118s 全绿 —— 构建是纯 CPU 密集，抢核心只会两边都慢还出假红。
+
+于是 `vitest.config.js` 用 `projects` 拆成 `unit`（162 支）与 `build`（3 支，`testTimeout: 120000`）：
+
+| 命令 | 内容 | 实测 |
+| --- | --- | --- |
+| `npm run test:unit` | `--project unit`，日常/增量 | 162 文件 / 4,950 用例 / 477s |
+| `npm run test:build` | `--project build`，改构建链时才需要 | 3 文件 / 133 用例 / 75s |
+| `npm run check:unit` | 两趟串行，等价于原来的 `vitest run` | 554s（改前单趟 562s） |
+
+总墙钟基本持平，换来的是**不再有假超时**，以及增量门禁变便宜：`test:affected` 走
+`--project=unit`，改 `src/core/comments/thread.js`（`commentsMixin` 的上游）时命中 40/162
+文件、构建用例 **0 支** —— 改前它会被依赖图反查出来，白付 118s。
+
+一个坑：根 `test.include` 与 project 的 `include` 是**合并**而不是覆盖，`include` 必须写进
+各 project，否则 `build` 那套会把全量再收一遍（第一次就踩了这个，`--project build` 跑了 165 个文件）。
+
 ### 可读性：`src/ui/panels.js` 2,244 行 → 4 个文件
 
 | 文件 | 行 | 内容 |

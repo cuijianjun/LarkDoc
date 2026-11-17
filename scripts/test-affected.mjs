@@ -87,7 +87,11 @@ if (dryRun) {
 }
 
 const bin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const result = spawnSync(bin, ['vitest', 'related', ...targets, '--run', '--reporter=dot'], {
+// 只走 `unit` 项目：改到 commentsMixin / DocumentSession 这类枢纽时，构建契约用例
+// 会被依赖图反查出来，而它要真跑 rollup（build-contract 单支 69s）。增量门禁宁可
+// 快，构建契约交给 `npm run test:build` 或全量 `check:unit`（见 vitest.config.js）。
+const args = ['vitest', 'related', ...targets, '--run', '--reporter=dot', '--project=unit'];
+const result = spawnSync(bin, args, {
   cwd: ROOT,
   stdio: 'inherit',
   env: { ...process.env, CI: 'true' },

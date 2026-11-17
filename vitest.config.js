@@ -38,6 +38,25 @@ function forbidVueImports() {
   }
 }
 
+/**
+ * 跑真 rollup 构建的用例。单独成一套，理由有两层，都是实测出来的：
+ *
+ * 1. 它们是**唯一需要长超时**的文件。构建一支 UMD 要 5~40 秒，默认的 5s
+ *    testTimeout 在机器忙时必然误报；把全局 testTimeout 抬到 100s 又会削弱其余
+ *    4,900 条用例「卡住算失败」的信号。分开之后只给这 3 个文件放宽。
+ * 2. 它们**不能和普通用例同池并发**。实测同跑三支（2 worker）：93s 里 4 条
+ *    5s/30s 超时误报；逐支单跑 69.0 + 27.3 + 21.6 = 118s 全绿。构建是纯 CPU
+ *    密集，和同池用例抢核心只会两边都慢还出假红。
+ *
+ * 于是 `check:unit` 拆成两趟串行：先 `--project unit`（快、并发），再
+ * `--project build`（慢、独占）。日常增量 `test:affected` 只走 unit 那套。
+ */
+const BUILD_TEST_FILES = [
+  'test/unit/build-contract.test.js',
+  'test/unit/export-lazy.test.js',
+  'test/unit/shared-host.test.js',
+]
+
 module.exports = {
   resolve: { alias: { 'lark-doc/mermaid-vendor': mermaidVendor, 'lark-doc/katex.css': katexCss } },
   plugins: [forbidVueImports()],
@@ -46,7 +65,8 @@ module.exports = {
     // Vitest5默认搜索整个workspace；本项目缓存不能清理其他会话的目录。
     fsModuleCachePath: path.join(__dirname, 'node_modules/.vitest-cache'),
     setupFiles: ['./test/bootstrap.js'],
-    include: ['test/**/*.test.js'],
+    // include 放在各 project 里，不放这里：根上的 include 会和 project 的 include
+    // 合并（不是覆盖），结果 build 那套又把全部用例收进来。
     // 这条链要进 npm run check，必须输出稳定：失败时立刻退出，避免 watch 卡住 CI。
     watch: false,
     reporters: ['dot'],
@@ -75,5 +95,25 @@ module.exports = {
     // 上界不要超过「能全部跑完」的那个数：调大前先确认输出里的文件数与总数没少。
     maxWorkers: Number(process.env.VITEST_MAX_WORKERS) || 2,
     minWorkers: 1,
+    /**
+     * 两套用例，共用上面全部选项（`extends: true` 继承根配置）。
+     *
+     *   npm run test:unit    只跑快的（缺省，日常/增量）
+     *   npm run test:build   只跑真构建（单独放宽超时）
+     *   npm run check:unit   两趟串行，等价于原来的全量 `vitest run`
+     */
+    projects: [
+      { extends: true, test: { name: 'unit', include: ['test/**/*.test.js'], exclude: BUILD_TEST_FILES } },
+      {
+        extends: true,
+        test: {
+          name: 'build',
+          include: BUILD_TEST_FILES,
+          // 单支 UMD 构建 5~40s；`startTranspile` 那批还要真起子进程。
+          testTimeout: 120000,
+          hookTimeout: 60000,
+        },
+      },
+    ],
   },
 }
