@@ -18,7 +18,13 @@
 #   --no-wait        不等待 registry 读侧同步（默认最长等 ~5 分钟）
 #   --include-new    把未跟踪的新文件也一起 commit（默认只提交已跟踪文件的改动）
 #   --resume         发布中断后从断点继续（复用上次 bump 出来的版本号）
+#   --approve        暂存包已上传、只差 2FA 批准时收尾：approve + 线上校验 + tag/push
 #   --dry-run        只打印计划，不改任何东西
+#
+# npm 发布走「暂存（staged）」：npm 已把免 2FA token 的直接发布收窄为暂存流水线
+# （https://gh.io/npm-gat-bypass2fa-deprecation）。stage publish 不需要 OTP，
+# 批准（stage approve）必须 OTP —— 所以带 NPM_OTP 时一条命令跑完，
+# 不带时脚本会把 stage id 落盘并停住，人工批准后用 --approve 收尾。
 #   -m "说明"         自定义 commit message（默认 "release: v<版本>"）
 #
 # 设计原则：全程非交互、可重入、每一步都自证。任何一步失败立刻停，退出码非 0。
@@ -39,6 +45,7 @@ NODE14_DIR="${LARK_DOC_NODE14_DIR:-$HOME/.nvm/versions/node/v14.21.3/bin}"
 NODE24_DIR="${LARK_DOC_NODE24_DIR:-$HOME/.nvm/versions/node/v24.22.0/bin}"
 STATE_DIR="$PKG_DIR/.release"
 PENDING="$STATE_DIR/pending-version"
+STAGED_FILE="" # 本次版本的 stage id 落盘路径，拿到 VERSION 后才定
 LOGFILE=""
 
 # shellcheck disable=SC1091
@@ -56,6 +63,7 @@ DRY_RUN=0
 RESUME=0
 INCLUDE_NEW=0
 GIT_ONLY=0
+APPROVE_ONLY=0
 COMMIT_MSG=""
 
 usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
@@ -71,6 +79,7 @@ while [ $# -gt 0 ]; do
     --no-wait) DO_WAIT=0; shift ;;
     --include-new) INCLUDE_NEW=1; shift ;;
     --git-only) GIT_ONLY=1; shift ;;
+    --approve) APPROVE_ONLY=1; shift ;;
     --resume) RESUME=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -m | --message) COMMIT_MSG="${2:-}"; shift 2 ;;
@@ -134,14 +143,14 @@ check_publish_auth() {
     })
   ' <<<"$body" 2>/dev/null || echo unknown)"
   case "$verdict" in
-    yes) ok "token 免 2FA，可直接 publish" ;;
+    yes) ok "token 免 2FA：可自动 stage publish；批准（stage approve）仍要 OTP，最好带上 NPM_OTP" ;;
     no)
       die "当前 npm token 无法免 OTP 发布（账号 2FA = auth-and-writes）。两条路：
-         ① 一劳永逸：https://www.npmjs.com/settings/~/tokens 建 Classic → Automation token，写进 ~/.npmrc：
+         ① 本次应急：认证器取 6 位码 →  NPM_OTP=123456 bash scripts/release.sh --resume
+         ② 一劳永逸：https://www.npmjs.com/settings/~/tokens 建带 bypass 2FA 的 token，写进 ~/.npmrc：
               //registry.npmjs.org/:_authToken=npm_xxx
-            或临时注入：      NPM_TOKEN=npm_xxx bash scripts/release.sh --resume
-         ② 本次应急：认证器取 6 位码 →  NPM_OTP=123456 bash scripts/release.sh --resume" ;;
-    *) warn "无法从 registry 确认 token 类型，继续（若 publish 报 EOTP，改用 Automation token 或带 NPM_OTP）" ;;
+            它能免掉登录/暂存环节的 OTP，但批准仍需 OTP（npm 新政策），照样带 NPM_OTP 最省事" ;;
+    *) warn "无法从 registry 确认 token 类型，继续（若 approve 报 EOTP，带 NPM_OTP 或去网页批准）" ;;
   esac
 }
 sri512() { node -e 'const fs = require("fs"), crypto = require("crypto"); process.stdout.write("sha512-" + crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$1"; }
@@ -185,6 +194,52 @@ git_ship() {
 }
 
 [ -d "$STATE_DIR" ] || mkdir -p "$STATE_DIR"
+
+# ---------- npm 暂存发布 ----------
+# 统一入口：NPM_TOKEN 优先于 ~/.npmrc（npm 11 把 *_authToken 设为 protected，config get 读不到）
+npm_stage() {
+  local args=(stage "$@")
+  [ -n "${NPM_TOKEN:-}" ] && args+=("--//registry.npmjs.org/:_authToken=${NPM_TOKEN}")
+  args+=("--registry=$REGISTRY")
+  net "$NODE24_DIR/npm" "${args[@]}"
+}
+staged_versions() {
+  npm_stage list "$NAME" 2>/dev/null | awk -F': ' '/^version:/{print $2}' || true
+}
+
+# 校验 registry 上的产物。$1 = 期望 sha1，$2 = 期望 SHA512（都为空时只核 HTTP 200 + dist-tags，
+# 用于「人工在网页批准」的场景：本地 tarball 已随临时目录清掉，只能信暂存时算过的哈希）
+verify_registry() {
+  local want_sha="$1" want_integrity="$2" tries code got_sha got_integrity tags
+  if [ "$DO_WAIT" = 1 ]; then
+    info "读侧同步有延迟（实测 HEAD 会 404 约 5 分钟，GET 却已 200），用 GET + sha1 判定"
+    tries=40
+  else
+    tries=3
+  fi
+  got_sha=""
+  for i in $(seq 1 "$tries"); do
+    code="$(registry -o "$STATE_DIR/dl.tgz" -w '%{http_code}' "$REGISTRY$NAME/-/$NAME-$VERSION.tgz" || echo 000)"
+    if [ "$code" = "200" ]; then
+      got_sha="$(shasum -a 1 "$STATE_DIR/dl.tgz" | awk '{print $1}')"
+      got_integrity="$(sri512 "$STATE_DIR/dl.tgz")"
+      if [ -z "$want_sha" ] || { [ "$got_sha" = "$want_sha" ] && [ "$got_integrity" = "$want_integrity" ]; }; then
+        check_public_tarball "$STATE_DIR/dl.tgz" || die "registry tgz 不是版本匹配的 public 产物"
+        ok "tarball GET 200，public 版本正确：$got_sha"
+        break
+      fi
+      warn "sha1 或 SHA512 不一致（sha1=$got_sha），继续等…"
+    else
+      info "第 $i/$tries 次：HTTP ${code}，8s 后重试"
+    fi
+    [ "$i" = "$tries" ] && die "等待超时，线上 tarball 与本地不一致。稍后手动核：curl -s --noproxy '*' $REGISTRY$NAME/-/$NAME-$VERSION.tgz | shasum -a 1"
+    sleep 8
+  done
+
+  tags="$(registry "$REGISTRY$NAME" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(JSON.stringify(j["dist-tags"]))}catch(e){process.stdout.write("?")}})')"
+  ok "dist-tags: $tags"
+  printf '%s' "$tags" | grep -q "\"latest\":\"$VERSION\"" || die "latest 不是 ${VERSION}，发布后校验失败"
+}
 
 echo "lark-doc 发布 $(basename "$PKG_DIR") · 当前 $NAME@$CURRENT · 分支 $BRANCH"
 [ "$DRY_RUN" = 1 ] && echo "（dry-run：只打印计划，不做任何改动）"
@@ -256,6 +311,51 @@ if [ "$GIT_ONLY" = 1 ]; then
   exit 0
 fi
 
+# ---------- 只差 2FA 批准的收尾快路径 ----------
+# stage publish 不需要 OTP，approve 必须要 OTP。没给 NPM_OTP 时主流程会停在这里，
+# 人工批准（CLI 或 npmjs.com 的 Staged Packages）后用 --approve 补完校验与 tag/push。
+if [ "$APPROVE_ONLY" = 1 ]; then
+  step "批准暂存包并收尾"
+  VERSION="$(cat "$PENDING" 2>/dev/null || printf '%s' "$CURRENT")"
+  STAGED_FILE="$STATE_DIR/staged-$VERSION.id"
+  [ -f "$STAGED_FILE" ] || die "找不到 ${VERSION} 的 stage id（${STAGED_FILE}）。要重新发版：bash scripts/release.sh --version ${VERSION}"
+  STAGE_ID="$(cat "$STAGED_FILE")"
+  [ "$BRANCH" = master ] || die "收尾只允许在 master（当前 ${BRANCH}）"
+  LOGFILE="$STATE_DIR/approve-$VERSION.log"
+  : >"$LOGFILE"
+  ok "版本 ${VERSION} / stage ${STAGE_ID}"
+
+  if [ "$DO_PUBLISH" = 1 ]; then
+    if [ -n "${NPM_OTP:-}" ]; then
+      if npm_stage approve "$STAGE_ID" --otp="$NPM_OTP" >>"$LOGFILE" 2>&1; then
+        ok "已批准（2FA）"
+      else
+        warn "approve 未成功（可能已在网页批准，或暂存已过期），继续核线上产物"
+      fi
+    elif grep -qx "$VERSION" <<<"$(staged_versions)"; then
+      die "${VERSION} 仍在暂存队列且没给 NPM_OTP。二选一：
+         ① 认证器 6 位码 → NPM_OTP=123456 bash scripts/release.sh --approve
+         ② 网页批准 https://www.npmjs.com/settings/~/packages（Staged Packages 标签页）后重跑本命令"
+    else
+      info "暂存队列里已没有 ${VERSION}：视为已批准，直接核线上产物"
+    fi
+    verify_registry "" ""
+  fi
+
+  if [ "$DO_GIT" = 1 ]; then
+    step "提交 GitHub"
+    git_ship tag "release: v$VERSION
+
+npm: $NAME@$VERSION"
+  else
+    step "跳过 git"
+  fi
+  rm -f "$PENDING" "$STAGED_FILE"
+  printf '\n✓ 收尾完成：%s@%s（%s）\n' "$NAME" "$VERSION" "$(elapsed)"
+  printf '  npm     https://www.npmjs.com/package/%s/v/%s\n' "$NAME" "$VERSION"
+  exit 0
+fi
+
 # ---------- 2. 版本号 ----------
 step "确定版本号"
 if [ "$RESUME" = 1 ] && [ -f "$PENDING" ]; then
@@ -289,6 +389,14 @@ if [ "$DO_PUBLISH" = 1 ]; then
     *) die "无法确认版本是否可发布（registry HTTP ${CODE}），请恢复连接后重试" ;;
   esac
   ok "registry 上 $VERSION 未被占用（HTTP ${CODE}）"
+  # 暂存项不占 registry 的版本号（/NAME/VERSION 仍 404），但会挡住再次发布：
+  # E409 Cannot publish over previously staged version。所以这里要单独查暂存队列。
+  if grep -qx "$VERSION" <<<"$(staged_versions)"; then
+    die "${NAME}@${VERSION} 已在 npm 暂存队列里，再发会 E409（Cannot publish over previously staged version）。二选一：
+       ① 批准它：NPM_OTP=<认证器 6 位码> bash scripts/release.sh --approve
+       ② 丢掉它：npm stage list $NAME 查 id → npm stage reject <id>，然后重跑本命令"
+  fi
+  ok "暂存队列里没有 $VERSION"
 fi
 
 if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
@@ -320,6 +428,8 @@ node -e '
   fs.writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n")
 ' "$VERSION"
 printf '%s' "$VERSION" >"$PENDING"
+STAGED_FILE="$STATE_DIR/staged-$VERSION.id"
+rm -f "$STAGED_FILE"
 ok "package.json version = ${VERSION}（断点已记录，失败可 --resume）"
 
 # ---------- 4. 全链校验 ----------
@@ -413,56 +523,57 @@ TGZ_PATH="$PACK_DIR/out/$TGZ_NAME"
 [ "$(sri512 "$TGZ_PATH")" = "$TGZ_INTEGRITY" ] || die "最终 SDK tgz SHA512/SRI 校验失败"
 check_public_tarball "$TGZ_PATH" || die "最终 SDK tgz 不是版本匹配的 public 产物"
 
-# ---------- 5. 发布 ----------
+# ---------- 5. 发布（npm 暂存流水线） ----------
+# npm 已把免 2FA token 的直接发布收窄为暂存：publish 会被 registry 暂存，
+# 而 CLI 的非 stage 路径不读 stageId —— 于是日志显示 + NAME@VERSION、退出码 0，
+# 包却没上线、版本号反被占住（下次 E409 previously staged version）。只能显式走 stage。
 if [ "$DO_PUBLISH" = 1 ]; then
-  step "npm publish → $REGISTRY"
+  step "npm stage publish → $REGISTRY"
   LOGFILE="$STATE_DIR/publish-$VERSION.log"
-  PUB_ARGS=(publish "$TGZ_PATH" --registry="$REGISTRY" --tag latest)
+  : >"$LOGFILE"
+  PUB_ARGS=(publish "$TGZ_PATH" --tag latest)
   case "$NAME" in @*) PUB_ARGS+=(--access public) ;; esac
-  # NPM_TOKEN 优先于 ~/.npmrc，CI / 临时换 token 时不必改全局配置
-  [ -n "${NPM_TOKEN:-}" ] && PUB_ARGS+=("--//registry.npmjs.org/:_authToken=${NPM_TOKEN}")
-  [ -n "${NPM_OTP:-}" ] && PUB_ARGS+=(--otp="$NPM_OTP")
-  if ! net "$NODE24_DIR/npm" "${PUB_ARGS[@]}" >"$LOGFILE" 2>&1; then
+  if ! npm_stage "${PUB_ARGS[@]}" >"$LOGFILE" 2>&1; then
     tail -30 "$LOGFILE" >&2
-    if grep -q 'EOTP' "$LOGFILE"; then
-      die "publish 被 2FA 拦下（EOTP）：当前 token 不免 OTP。改用 Automation token，
-        或本次应急：NPM_OTP=<认证器 6 位码> bash scripts/release.sh --resume"
+    if grep -q 'previously staged version' "$LOGFILE"; then
+      die "该版本已在暂存队列（E409）。批准：NPM_OTP=<6 位码> bash scripts/release.sh --approve
+        或丢掉：npm stage list $NAME 查 id → npm stage reject <id>"
     fi
-    die "npm publish 失败（见 ${LOGFILE}）。修好后：bash scripts/release.sh --resume"
+    if grep -q 'EOTP' "$LOGFILE"; then
+      die "stage publish 被 2FA 拦下（EOTP）：带 NPM_OTP=<认证器 6 位码> 重跑 --resume"
+    fi
+    die "npm stage publish 失败（见 ${LOGFILE}）。修好后：bash scripts/release.sh --resume"
   fi
-  ok "publish 返回 0"
-  grep -E '^\+ |shasum|total files' "$LOGFILE" | sed 's/^/        /' || true
+  STAGE_ID="$(grep -oE 'staged with id [0-9a-fA-F-]{36}' "$LOGFILE" | awk '{print $NF}' | tail -1)"
+  if [ -z "$STAGE_ID" ]; then
+    info "未捕获 stage id（npm/registry 可能走了直接发布路径），以线上校验为准"
+  else
+    printf '%s' "$STAGE_ID" >"$STAGED_FILE"
+    ok "已暂存：${STAGE_ID}（sha1=${TGZ_SHA}）"
+    if [ -n "${NPM_OTP:-}" ]; then
+      step "npm stage approve（2FA）"
+      if ! npm_stage approve "$STAGE_ID" --otp="$NPM_OTP" >>"$LOGFILE" 2>&1; then
+        tail -20 "$LOGFILE" >&2
+        die "stage approve 失败。人工批准后收尾：bash scripts/release.sh --approve"
+      fi
+      ok "已批准上线"
+    else
+      cat >&2 <<EOF
+
+    ! 包已暂存，但还没上线：批准必须 2FA，任何 token 都免不了这一步。
+      stage id：${STAGE_ID}
+      A) 认证器 6 位码 → NPM_OTP=123456 bash scripts/release.sh --approve
+      B) 网页批准      → https://www.npmjs.com/settings/~/packages 的 Staged Packages 标签页
+                         批准后 bash scripts/release.sh --approve
+EOF
+      die "${NAME}@${VERSION} 等待人工批准（未上线；版本号已被暂存占用，别再 bump 重发）"
+    fi
+  fi
 
   # ---------- 6. 校验线上产物 ----------
   step "校验 registry 上的产物"
-  if [ "$DO_WAIT" = 1 ]; then
-    info "读侧同步有延迟（实测 HEAD 会 404 约 5 分钟，GET 却已 200），用 GET + sha1 判定"
-    TRIES=40
-  else
-    TRIES=3
-  fi
-  GOT_SHA=""
-  for i in $(seq 1 "$TRIES"); do
-    CODE="$(registry -o "$STATE_DIR/dl.tgz" -w '%{http_code}' "$REGISTRY$NAME/-/$NAME-$VERSION.tgz" || echo 000)"
-    if [ "$CODE" = "200" ]; then
-      GOT_SHA="$(shasum -a 1 "$STATE_DIR/dl.tgz" | awk '{print $1}')"
-      GOT_INTEGRITY="$(sri512 "$STATE_DIR/dl.tgz")"
-      if [ "$GOT_SHA" = "$TGZ_SHA" ] && [ "$GOT_INTEGRITY" = "$TGZ_INTEGRITY" ]; then
-        check_public_tarball "$STATE_DIR/dl.tgz" || die "registry tgz 不是版本匹配的 public 产物"
-        ok "tarball GET 200，sha1/SHA512 一致，public 版本正确：$GOT_SHA"
-        break
-      fi
-      warn "sha1 或 SHA512 不一致（sha1=$GOT_SHA），继续等…"
-    else
-      info "第 $i/$TRIES 次：HTTP ${CODE}，8s 后重试"
-    fi
-    [ "$i" = "$TRIES" ] && die "等待超时，线上 tarball 与本地不一致。稍后手动核：curl -s --noproxy '*' $REGISTRY$NAME/-/$NAME-$VERSION.tgz | shasum -a 1"
-    sleep 8
-  done
+  verify_registry "$TGZ_SHA" "$TGZ_INTEGRITY"
 
-  TAGS="$(registry "$REGISTRY$NAME" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(JSON.stringify(j["dist-tags"]))}catch(e){process.stdout.write("?")}})')"
-  ok "dist-tags: $TAGS"
-  printf '%s' "$TAGS" | grep -q "\"latest\":\"$VERSION\"" || die "latest 不是 ${VERSION}，发布后校验失败"
 else
   step "跳过发布"
 fi
@@ -478,7 +589,7 @@ else
   step "跳过 git"
 fi
 
-rm -f "$PENDING"
+rm -f "$PENDING" "$STAGED_FILE"
 
 REMOTE_URL="$(git remote get-url origin)"
 case "$REMOTE_URL" in
