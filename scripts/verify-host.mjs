@@ -91,7 +91,7 @@ window.addEventListener('pagehide', () => window.__verifyHostVm.$destroy(), { on
   routes.set(route, { script, styles, wc })
 }
 
-const artifactFiles = ['dist/lark-doc-element.umd.min.js', 'dist/lark-doc-element.runtime.umd.min.js', 'dist/lark-doc-element.polyfills.umd.min.js', 'dist/lark-doc-element.css', 'dist/lark-doc-element.umd.min.ui.js', 'dist/lark-doc.css']
+const artifactFiles = ['dist/lark-doc-element.umd.min.js', 'dist/lark-doc-element.runtime.umd.min.js', 'dist/lark-doc-element.polyfills.umd.min.js', 'dist/lark-doc-element.css', 'dist/lark-doc-element.umd.min.ui.js', 'dist/lark-doc-element.umd.min.uiPanels.js', 'dist/lark-doc-element.ui.css', 'dist/lark-doc.css']
 const describeFile = (base, file) => {
   const abs = join(base, file)
   const stat = statSync(abs)

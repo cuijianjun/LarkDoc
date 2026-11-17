@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { featureNames } from '../rollup.config.mjs'
+import { elementPackNames } from '../rollup.config.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -20,7 +20,7 @@ const quiet = process.argv.includes('--quiet')
 const bundles = ['lark-doc-element.umd.min.js', 'lark-doc-element.runtime.umd.min.js',
   'lark-doc-element.polyfills.umd.min.js', 'lark-doc-element.css', 'lark-doc-element.ui.css',
   'lark-doc.css',
-  ...featureNames.map(name => `lark-doc-element.umd.min.${name}.js`)]
+  ...elementPackNames.map(name => `lark-doc-element.umd.min.${name}.js`)]
 const expected = new Map()
 for (const name of bundles) expected.set(name, path.join(dist, name))
 const fonts = path.join(dist, 'fonts')

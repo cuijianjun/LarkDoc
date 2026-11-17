@@ -2,7 +2,7 @@
 import { loadFeature, readFeature } from '../core/features/registry'
 import { configSignature } from '../ui/bubbleConfig'
 
-export function createDeferredUi(name, options, visible = state => state.open, fallback) {
+export function createDeferredUi(name, options, visible = state => state.open, fallback, pack = 'ui') {
   let ui
   let state = {}
   let pending
@@ -34,9 +34,11 @@ export function createDeferredUi(name, options, visible = state => state.open, f
     if (ui) { ui.update(state); return }
     if (!visible(state) || pending) return
     // 预加载或前一次打开后保持同步，避免已缓存面板也多等一拍。
+    // 面板包已按触发时机拆开：只有本包负责的那个工厂真的在表里才算就绪，
+    // 否则去拉本包——拿半个 api 去 mount 只会在 api[name] 上撞到 undefined。
     const registered = readFeature('ui.ready')
-    if (registered) { mount(registered); return }
-    pending = loadFeature('ui', fallback).then(mount).catch(error => {
+    if (registered && typeof registered[name] === 'function') { mount(registered); return }
+    pending = loadFeature(pack, fallback).then(mount).catch(error => {
       if (destroyed || !visible(state) || !host) return
       clearError()
       const document = host.ownerDocument

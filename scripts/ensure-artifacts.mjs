@@ -56,6 +56,7 @@ const ARTIFACTS = [
   { file: 'dist/features/document.js', script: 'build:all' },
   { file: 'dist/lark-doc-element.umd.min.document.js', script: 'build:all' },
   { file: 'dist/lark-doc-element.umd.min.ui.js', script: 'build:all' },
+  { file: 'dist/lark-doc-element.umd.min.uiPanels.js', script: 'build:all' },
   { file: 'dist/lark-doc-element.ui.css', script: 'build:all' },
   { file: 'dist/lark-doc-vue3.mjs', script: 'build:all' },
   { file: 'dist/lark-doc-react.mjs', script: 'build:all' },

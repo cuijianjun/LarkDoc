@@ -90,10 +90,17 @@ describe('Element 首屏与冷 UI 样式边界', () => {
   })
 
   it('冷层在发布 ui.ready 前静态加载，公开入口只包含一次原始规则', async () => {
-    const source = fs.readFileSync(projectFile('src/features/ui.js'), 'utf8')
-    const styleImport = source.indexOf("import '../styles/deferred-ui.css'")
-    expect(styleImport).toBeGreaterThanOrEqual(0)
-    expect(styleImport).toBeLessThan(source.indexOf("registerFeature('ui.ready'"))
+    // 两半各有自己的入口：交互包（ui-core）负责把冷层样式带进 <link>，所以它必须在
+    // 发布 ui.ready 之前静态引样式；面板包（ui-panels）共用同一张表，刻意不引，
+    // 否则两支 UMD 会各打一份 CSS。非 Element 的全量出口（ui.js）同理。
+    const readEntry = name => fs.readFileSync(projectFile(`src/features/${name}`), 'utf8')
+    for (const name of ['ui.js', 'ui-core.js']) {
+      const source = readEntry(name)
+      const styleImport = source.indexOf("import '../styles/deferred-ui.css'")
+      expect(styleImport, name).toBeGreaterThanOrEqual(0)
+      expect(styleImport, name).toBeLessThan(source.indexOf('registerUiApi('))
+    }
+    expect(readEntry('ui-panels.js')).not.toContain('styles/deferred-ui.css')
     const deferred = postcss.parse(fs.readFileSync(projectFile('src/styles/deferred-ui.css'), 'utf8'))
     const full = await packageStyles(), initial = await packageStyles(true)
     const declarations = root => {

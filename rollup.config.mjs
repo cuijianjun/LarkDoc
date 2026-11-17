@@ -24,6 +24,11 @@ const collabPeers = new Set([
   'lib0',
 ])
 export const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document']
+// Element 侧的面板包：`ui` 守选区/悬浮/表格/顶栏，`uiPanels` 守侧栏面板与对话框。
+// uiPanels 只有 UMD 形态——非 Element 宿主统一走 features/ui.js 全量出口。
+export const elementPackNames = [...featureNames, 'uiPanels']
+// UMD 入口未必与特性同名：ui 的两半各有一个入口，es 形态仍用 ui.js 全集。
+const FEATURE_UMD_ENTRY = { ui: 'ui-core', uiPanels: 'ui-panels' }
 const ELEMENT_UI_ENTRY = '\0lark-doc-element-ui:'
 const UI_FALLBACK_ENTRY = '\0lark-doc-ui-fallback'
 const PANEL_PRESENTATION_ENTRY = '\0lark-doc-panel-presentation'
@@ -64,6 +69,11 @@ const elementUiModules = {
   topBarMenus: ['createTopBarMenus'],
   blockHandleMenus: ['createBlockHandleMenus'],
 }
+// 侧栏面板/对话框/浮层：只有显式点击后才会变成可见，可以多等一个脚本。
+// 其余（选区、悬浮块、表格工具、顶栏菜单、命令面板、callout 工具）都要在
+// 鼠标一动时立刻出现，留在 ui 包。
+const uiPanelPackGroups = new Set(['panels', 'dialogs', 'overlays', 'templateLibrary', 'workspacePanels',
+  'reminder', 'searchPanel', 'revision', 'isvPanel', 'calendarSearch', 'notifications'])
 
 /** Read only literal private presentation keys; never evaluate application code. */
 function privatePresentationShape(source, factoryName, namespaces) {
@@ -503,10 +513,14 @@ function packageAlias(target = '') {
         elementUiModules[name].map(factory => {
           const predicate = factory === 'createCommentPanel' ? ',s=>s.open||s.documentInline||s.launcher?.visible'
             : factory === 'createVersionToast' ? ',s=>s.open||s.notice' : visible
-          const fallback = element ? '' : `${predicate ? '' : ',undefined'},()=>import(${JSON.stringify(resolve(ROOT, 'src/features/ui.js'))}).then(module=>module.uiApi)`
+          // Element 侧只认自己那一个包：B 包的工厂绝不去触发 A 包的加载槽位。
+          // 非 Element 宿主没有拆包，两半都从 features/ui.js 全量出口拿。
+          const pack = element ? (uiPanelPackGroups.has(name) ? 'ui.panels' : 'ui') : 'ui'
+          const fallback = element ? 'undefined' : `()=>import(${JSON.stringify(resolve(ROOT, 'src/features/ui.js'))}).then(module=>module.uiApi)`
           const signature = name === 'bubbleBar' ? '(host,options)' : 'options'
           const options = name === 'bubbleBar' ? '{...options,host}' : 'options'
-          return `export const ${factory}=${signature}=>createDeferredUi(${JSON.stringify(factory)},${options}${predicate}${fallback});`
+          const args = [JSON.stringify(factory), options, predicate.slice(1) || 'undefined', fallback, JSON.stringify(pack)]
+          return `export const ${factory}=${signature}=>createDeferredUi(${args.join(',')});`
         }).join('')
     },
   }
@@ -808,8 +822,9 @@ targets.full = { ...targets.esm, input: resolve(ROOT, 'src/full.js'), file: 'lar
 targets.fullCjs = { ...targets.cjs, input: resolve(ROOT, 'src/full.js'), file: 'lark-doc-full.common.js', entryFileNames: 'lark-doc-full.common.js', chunkFileNames: 'lark-doc-full-[name]-[hash].common.js' }
 
 function featureTarget(name, format = 'es') {
+  const entry = format === 'umd' ? FEATURE_UMD_ENTRY[name] || name : name
   return {
-    input: resolve(ROOT, `src/features/${name}.js`),
+    input: resolve(ROOT, `src/features/${entry}.js`),
     format,
     ...(format === 'umd' ? { file: `lark-doc-element.umd.min.${name}.js` } : { dir: DIST }),
     entryFileNames: format === 'umd' ? `lark-doc-element.umd.min.${name}.js` : `features/${name}.js`,
@@ -886,6 +901,8 @@ export function getRollupConfig(target = process.env.ROLLUP_TARGET || 'esm') {
 }
 
 export const ROLLUP_TARGETS = Object.keys(targets)
-export const FEATURE_TARGETS = featureNames.flatMap((name) => [`feature:${name}`, `feature:${name}:umd`])
+// uiPanels 只有 UMD 形态（非 Element 宿主从 features/ui.js 取全集），所以它不进
+// featureNames 的 es/umd 成对展开，单独挂在最后。
+export const FEATURE_TARGETS = [...featureNames.flatMap((name) => [`feature:${name}`, `feature:${name}:umd`]), 'feature:uiPanels:umd']
 const defaultTarget = process.env.ROLLUP_TARGET?.split(',')[0].trim() || undefined
 export default getRollupConfig(['features', 'all', 'core'].includes(defaultTarget) ? 'esm' : defaultTarget)

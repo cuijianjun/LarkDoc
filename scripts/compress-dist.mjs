@@ -28,7 +28,7 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileS
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib'
-import { featureNames } from '../rollup.config.mjs'
+import { elementPackNames } from '../rollup.config.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = join(ROOT, 'dist')
@@ -38,7 +38,7 @@ export const DELIVERY_FILES = [
   'lark-doc-element.umd.min.js',
   'lark-doc-element.runtime.umd.min.js',
   'lark-doc-element.polyfills.umd.min.js',
-  ...featureNames.map(name => `lark-doc-element.umd.min.${name}.js`),
+  ...elementPackNames.map(name => `lark-doc-element.umd.min.${name}.js`),
   'lark-doc-element.css',
   'lark-doc-element.ui.css',
 ]

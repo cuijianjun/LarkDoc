@@ -51,10 +51,29 @@ it('assembles the CI smoke host with the complete Element loader dependency file
 })
 
 it('clean Element build includes its eager runtime and every local optional script', () => {
-  const features = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document'].map(name => `feature:${name}:umd`)
+  // uiPanels 只有 UMD 形态，跟随 element / elementRuntime 一起构建，但不进 esm 特性清单。
+  const features = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document', 'uiPanels'].map(name => `feature:${name}:umd`)
   expect(targetsFor('element')).toEqual(['element', 'elementRuntime', 'elementPolyfills', ...features])
   expect(targetsFor('elementRuntime')).toEqual(['elementRuntime', 'elementPolyfills', ...features])
   expect(new Set(targetsFor('all')).size).toBe(targetsFor('all').length)
+})
+
+it('splits the Element UI feature into disjoint interaction and panel factory tables', async () => {
+  const { uiCoreFactories } = await import('../../src/features/ui-core-factories')
+  const { uiPanelFactories } = await import('../../src/features/ui-panels-factories')
+  const core = Object.keys(uiCoreFactories), panels = Object.keys(uiPanelFactories)
+  // 重叠就是同一个工厂被打进两个包：谁先到谁生效，另一份纯属白下。
+  expect(core.filter(name => panels.includes(name))).toEqual([])
+  // 非 Element 宿主只有 features/ui.js 一个出口，它必须正好是两半之和。
+  const uiSource = fs.readFileSync(path.resolve(__dirname, '../../src/features/ui.js'), 'utf8')
+  expect(uiSource).toContain('...uiCoreFactories, ...uiPanelFactories')
+  // 虚拟入口按组名钉死加载槽位：面板类去 ui.panels，选区/悬浮类留在 ui。
+  const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+  const editorDir = path.resolve(__dirname, '../../src/components/lark-doc/editor')
+  const generated = (source, importer) => alias.load(alias.resolveId(source, path.join(editorDir, importer)))
+  expect(generated('../../../ui/panels', 'panelsUiMixin.js')).toContain('"ui.panels"')
+  expect(generated('../../../ui/commandMenu', 'commandMenuUiMixin.js')).not.toContain('ui.panels')
+  expect(generated('../../../ui/bubbleBar', 'bubbleMenuMixin.js')).not.toContain('ui.panels')
 })
 
 it('optional browser collaboration bundles installed peers while sharing the published PM runtime', () => {
@@ -273,16 +292,24 @@ describe('公开产物与轻量包边界', () => {
     const versioningPresentation = alias.resolveId('./versioningPresentation', path.join(root, 'src/components/lark-doc/editor/versioningMixin.js'))
     const source = `import ${JSON.stringify(path.join(root, 'src/features/element.js'))};export {createDeferredUi} from ${JSON.stringify(path.join(root, 'src/features/element-ui.js'))};export {default as commandMenuUiMixin} from ${JSON.stringify(path.join(root, 'src/components/lark-doc/editor/commandMenuUiMixin.js'))};export {createCommentPanel} from ${JSON.stringify(panels)};export {createBubbleBar} from ${JSON.stringify(bubble)};export {createPanelPresentation} from ${JSON.stringify(presentation)};export {createTablePresentation} from ${JSON.stringify(tablePresentation)};export {createCommentInteraction} from ${JSON.stringify(commentInteraction)};export {createCalloutPresentation} from ${JSON.stringify(calloutPresentation)};export {createVersioningPresentation} from ${JSON.stringify(versioningPresentation)};export {createNativeOptionsHost} from ${JSON.stringify(path.join(root, 'src/editor/nativeOptionsHost.js'))};export {createWorkspace} from ${JSON.stringify(path.join(root, 'src/ui/workspace.js'))}`
     const bundle = await rollup({ ...config, input, plugins: [{ name: 'element-ui-fixture', resolveId: id => [input, panels, bubble, presentation, tablePresentation, commentInteraction, calloutPresentation, versioningPresentation].includes(id) ? id : null, load: id => id === input ? source : null }, ...config.plugins] })
-    const feature = await rollup(getRollupConfig('feature:ui:umd'))
+    // 面板包按触发时机拆成两支：交互包（ui）与面板包（uiPanels）。这里两个都打，
+    // 才能验证「各自去重、各自失败重试、样式表只下一次」以及跨包合并后的挂载。
+    const coreFeature = await rollup(getRollupConfig('feature:ui:umd'))
+    const panelsFeature = await rollup(getRollupConfig('feature:uiPanels:umd'))
     const commentHandles = []
     const presentationHosts = []
     const workspaces = []
     let bubbleHandle
     try {
       const main = await bundle.generate(config.output)
-      const built = await feature.generate(getRollupConfig('feature:ui:umd').output)
-      const code = built.output.find(item => item.type === 'chunk').code
-      expect(Object.keys(built.output[0].modules).some(id => /node_modules\/(?:@tiptap|prosemirror-)/.test(id))).toBe(false)
+      const coreBuilt = await coreFeature.generate(getRollupConfig('feature:ui:umd').output)
+      const panelsBuilt = await panelsFeature.generate(getRollupConfig('feature:uiPanels:umd').output)
+      const coreCode = coreBuilt.output.find(item => item.type === 'chunk').code
+      const panelsCode = panelsBuilt.output.find(item => item.type === 'chunk').code
+      // 两支都必须是纯 UI 代码：编辑器内核（tiptap / prosemirror）一份都不能混进来。
+      for (const built of [coreBuilt, panelsBuilt]) {
+        expect(Object.keys(built.output[0].modules).some(id => /node_modules\/(?:@tiptap|prosemirror-)/.test(id))).toBe(false)
+      }
       runInContext(main.output[0].code, context)
       const visibility = { open: false, documentInline: true }
       const presenter = dom.window.LarkDoc.createPanelPresentation({ commentModel: {} })
@@ -396,14 +423,16 @@ describe('公开产物与轻量包边界', () => {
       expect(lateHandlers).not.toHaveBeenCalled()
       lateOwner.setCommentDocumentDraft = vi.fn()
       await settle()
-      expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.ui.js'])
+      expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.uiPanels.js'])
       // 面板样式独立成表，在脚本 append 之前就已注入，样式与 JS 并行下载。
       expect([...document.querySelectorAll('link[data-lark-doc-feature]')].map(node => node.href))
         .toEqual(['https://assets.test/vendor/lark-doc-element.ui.css'])
       const hosts = [document.createElement('div'), document.createElement('div')]
       hosts.forEach(host => document.body.appendChild(host))
       const onQuery = vi.fn()
-      const ui = hosts.map((host, index) => dom.window.LarkDoc.createDeferredUi('createSearchPanel', { host, handlers: index === 0 ? { onQuery } : {} }))
+      // 与生成的虚拟入口一致：搜索栏归面板包，第 5 参显式钉住加载槽位。
+      const ui = hosts.map((host, index) => dom.window.LarkDoc.createDeferredUi('createSearchPanel',
+        { host, handlers: index === 0 ? { onQuery } : {} }, undefined, undefined, 'ui.panels'))
       const menuHost = document.createElement('div')
       document.body.appendChild(menuHost)
       const menuMethods = dom.window.LarkDoc.commandMenuUiMixin.methods
@@ -415,15 +444,21 @@ describe('公开产物与轻量包边界', () => {
       menuMethods.mountCommandMenu.call(menuContext)
       ui.forEach((panel, index) => panel.update({ open: true, query: `查询${index}` }))
       await settle()
-      expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.ui.js'])
+      // 两支脚本各自一份：先被触发的面板包在前，命令菜单要的交互包在后。
+      expect(scripts.map(node => node.src)).toEqual([
+        'https://assets.test/vendor/lark-doc-element.umd.min.uiPanels.js',
+        'https://assets.test/vendor/lark-doc-element.umd.min.ui.js',
+      ])
       // 多实例共享同一组脚本，样式表也必须只注入一次。
       expect(document.querySelectorAll('link[data-lark-doc-feature]')).toHaveLength(1)
       scripts[0].onerror()
       await settle()
       expect(hosts.every(host => host.querySelector('[role="alert"]'))).toBe(true)
       expect(retiredWorkspace.panelHost.querySelector('[role="alert"]')).toBeNull()
+      // 一个包失败不连坐另一个：命令菜单还在等自己那支脚本，不该冒出错误按钮。
+      expect(menuHost.querySelector('[role="alert"]')).toBeNull()
       currentWorkspace.panelHost.querySelector('[role="alert"]').click()
-      ;[...hosts, menuHost].forEach(host => host.querySelector('[role="alert"]').click())
+      hosts.forEach(host => host.querySelector('[role="alert"]').click())
       footer.ui.update(currentCommentState)
       latePanel.update(currentCommentState)
       launcher.ui.update({ ...currentCommentState, documentInline: false, launcher: { visible: true } })
@@ -431,9 +466,16 @@ describe('公开产物与轻量包边界', () => {
       retired.ui.update(currentCommentState)
       retired.ui.update(hiddenState)
       await settle()
-      expect(scripts).toHaveLength(2)
-      runInContext(code, context)
+      expect(scripts.map(node => node.src)).toEqual([
+        'https://assets.test/vendor/lark-doc-element.umd.min.uiPanels.js',
+        'https://assets.test/vendor/lark-doc-element.umd.min.ui.js',
+        'https://assets.test/vendor/lark-doc-element.umd.min.uiPanels.js',
+      ])
+      // 两支实现都到位，后到的那支并进同一张 API 表；先到的句柄也能看见新工厂。
+      runInContext(coreCode, context)
+      runInContext(panelsCode, context)
       scripts[1].onload()
+      scripts[2].onload()
       await settle()
       expect(lateHandlers).toHaveBeenCalledOnce()
       const lateDraft = lateInlineHost.querySelector('textarea[aria-label="全文评论"]')
@@ -513,9 +555,10 @@ describe('公开产物与轻量包边界', () => {
       ui[1].update({ open: false })
       ui[1].update({ open: true, query: '重开' })
       expect(hosts[1].querySelector('input').value).toBe('重开')
-      expect(scripts).toHaveLength(2)
+      // 失败重试只补一次脚本，后续复用不再下载。
+      expect(scripts).toHaveLength(3)
       ui[1].destroy()
-    } finally { workspaces.forEach(handle => handle.destroy()); presentationHosts.forEach(runtime => runtime.destroy()); commentHandles.forEach(handle => handle.destroy()); bubbleHandle?.destroy(); await bundle.close(); await feature.close(); dom.window.close() }
+    } finally { workspaces.forEach(handle => handle.destroy()); presentationHosts.forEach(runtime => runtime.destroy()); commentHandles.forEach(handle => handle.destroy()); bubbleHandle?.destroy(); await bundle.close(); await coreFeature.close(); await panelsFeature.close(); dom.window.close() }
   }, 30000)
 
   it('workspace action controls stay synchronous while inactive panels stay outside the initial graph', () => {

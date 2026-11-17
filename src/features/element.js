@@ -6,7 +6,12 @@ const base = script && script.src ? new URL('.', script.src).href : null
 const scripts = new Map()
 // ui 组的样式独立成表，跟脚本同目录同位部署；这里只负责把 <link> 提前塞进去，
 // 让样式与 JS 并行下载。样式缺失不影响功能，绝不 reject。
-const stylesheets = { 'lark-doc-element.umd.min.ui.js': 'lark-doc-element.ui.css' }
+// 面板包拆成两半（选区/悬浮与侧栏面板），但共用同一张样式表：先到的那个把
+// <link> 塞进 head，后到的靠 data-lark-doc-feature 去重，不会重复下载。
+const stylesheets = {
+  'lark-doc-element.umd.min.ui.js': 'lark-doc-element.ui.css',
+  'lark-doc-element.umd.min.uiPanels.js': 'lark-doc-element.ui.css',
+}
 
 function loadStyle(file) {
   if (!file || !base || typeof document === 'undefined') return
@@ -45,7 +50,11 @@ function loadScript(file) {
 
 const groups = {
   math: ['math'], mermaid: ['mermaid'], highlight: ['highlight'], markdown: ['markdown', 'markdown.serialize'],
-  office: ['office.buildDocx', 'office.docx', 'office.mammoth'], ui: ['ui'], document: ['document.segmented', 'document.pagedView', 'document.pagedImport', 'document.shareLinks', 'document.shareLinkAccess'],
+  office: ['office.buildDocx', 'office.docx', 'office.mammoth'],
+  // 面板包按触发时机拆成两支：ui 守选区/悬浮/表格/顶栏，ui.panels 守侧栏面板
+  // 与对话框。加载槽位与包名一一对应，createDeferredUi 只拉自己那一个。
+  ui: ['ui'], uiPanels: ['ui.panels'],
+  document: ['document.segmented', 'document.pagedView', 'document.pagedImport', 'document.shareLinks', 'document.shareLinkAccess'],
 }
 for (const group of Object.keys(groups)) {
   for (const name of groups[group]) {

@@ -5,7 +5,7 @@ import { rollup } from 'rollup'
 import { createHash } from 'node:crypto'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { featureNames, getRollupConfig, isRuntimeChunk, mermaidTarget, MERMAID_FILES, PM_NAMES } from '../rollup.config.mjs'
+import { elementPackNames, FEATURE_TARGETS, featureNames, getRollupConfig, isRuntimeChunk, mermaidTarget, MERMAID_FILES, PM_NAMES } from '../rollup.config.mjs'
 import { compressDelivery } from './compress-dist.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -172,11 +172,11 @@ function assertNodeVersion() {
 export function targetsFor(name) {
   if (name.includes(',')) return [...new Set(name.split(',').map(target => target.trim()).filter(Boolean).flatMap(targetsFor))]
   let names
-  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementRuntime', 'elementPolyfills', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'collabBrowser', 'plugin', 'pluginCjs', ...featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
-  else if (name === 'element' || name === 'elementRuntime') names = [...(name === 'element' ? ['element'] : []), 'elementRuntime', 'elementPolyfills', ...featureNames.map(feature => `feature:${feature}:umd`)]
+  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementRuntime', 'elementPolyfills', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'collabBrowser', 'plugin', 'pluginCjs', ...FEATURE_TARGETS]
+  else if (name === 'element' || name === 'elementRuntime') names = [...(name === 'element' ? ['element'] : []), 'elementRuntime', 'elementPolyfills', ...elementPackNames.map(feature => `feature:${feature}:umd`)]
   else if (name === 'full') names = ['full', 'fullCjs']
   else if (name === 'core') names = ['esm', 'cjs']
-  else if (name === 'features') names = featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])
+  else if (name === 'features') names = FEATURE_TARGETS
   else if (name === 'plugin') names = ['plugin', 'pluginCjs']
   else if (name === 'vue2' || name === 'legacy') names = ['legacy', 'legacyEsm']
   else if (name === 'collab') names = ['collab', 'collabCjs']
@@ -318,8 +318,10 @@ function writeManifest(names) {
     core: { esm: 'lark-doc.esm.js', cjs: 'lark-doc.common.js', element: 'lark-doc-element.umd.min.js', elementRuntime: 'lark-doc-element.runtime.umd.min.js', elementPolyfills: 'lark-doc-element.polyfills.umd.min.js', elementEsm: 'lark-doc-element.esm.js' },
     vue2: { cjs: 'lark-doc-vue2.common.js', esm: 'lark-doc-vue2.esm.js' },
     adapters: { vue3: 'lark-doc-vue3.mjs', react: 'lark-doc-react.mjs' },
-    features: Object.fromEntries(featureNames.map((name) => [name, {
-      esm: `features/${name}.js`,
+    // uiPanels 只有 UMD 形态：它在 Element 宿主里与 ui 分包，非 Element 宿主
+    // 从 features/ui.js 取全集，所以清单里只登记 umd，不写 esm。
+    features: Object.fromEntries(elementPackNames.map((name) => [name, {
+      ...(featureNames.includes(name) ? { esm: `features/${name}.js` } : {}),
       umd: `lark-doc-element.umd.min.${name}.js`,
     }])),
     full: { esm: 'lark-doc-full.esm.js', cjs: 'lark-doc-full.common.js' },

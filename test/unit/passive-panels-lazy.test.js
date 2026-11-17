@@ -617,8 +617,10 @@ describe('callout label presentation readiness', () => {
     } }))
     const { default: mixin } = await import('../../src/components/lark-doc/editor/calloutToolsUiMixin?label-presentation-ready')
     const root = document.createElement('div')
+    // 表情表跟着面板包走：工具条一出现就去预取，所以 onReady 会调到这个方法。
     const vm = { $refs: { calloutToolsHost: root }, calloutPresentationRevision: 0,
-      calloutEmojiOpen: true, calloutEmojiQuery: 'pending query', refreshCalloutTools: vi.fn(), focus: vi.fn() }
+      calloutEmojiOpen: true, calloutEmojiQuery: 'pending query', refreshCalloutTools: vi.fn(), focus: vi.fn(),
+      prefetchCalloutEmoji: mixin.methods.prefetchCalloutEmoji }
     mixin.methods.mountCalloutTools.call(vm)
     const first = factories[0]
     expect(first.options.onReady).toBeTypeOf('function')

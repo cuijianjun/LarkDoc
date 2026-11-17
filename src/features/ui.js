@@ -4,53 +4,12 @@
 import '../styles/versioning.css'
 import '../styles/deferred-ui.css'
 import '../components/lark-doc/template-library.css'
-import { registerFeature } from '../core/features/registry'
-import { createCommentPanel, createVersionPanel, createVersionToast } from '../ui/panels'
-import { createEmbedDialog, createHelpDrawer, createLinkDialog, createMathDialog, createTablePickerDialog, createTemplateSaveDialog } from '../ui/dialogs'
-import { createExtendedOverlays } from '../ui/extendedOverlays'
-import { createColorPalette } from '../ui/colorPalette'
-import { createRevisionPanels } from '../ui/revision'
-import { createIsvPanel } from '../ui/isvPanel'
-import { createReminder } from '../ui/reminder'
-import { createCalendarSearch } from '../ui/calendarSearch'
-import { createSearchPanel } from '../ui/searchPanel'
-import { createCommandMenu } from '../ui/commandMenu'
-import { createTemplateLibrary } from '../ui/templateLibrary'
-import { createDocumentOverlays } from '../ui/overlays'
-import { createNotifications } from '../ui/notifications'
-import { createTableTools, createTableBoundaryTools } from '../ui/tableTools'
-import { createTableOverlays } from '../ui/tableOverlays'
-import { createCellPlusTools } from '../ui/cellPlusTools'
-import { createLinkTools } from '../ui/linkTools'
-import { createBubbleBar } from '../ui/bubbleBar'
-import { createPanelPresentation } from '../components/lark-doc/editor/panelPresentation'
-import { createVersioningPresentation } from '../components/lark-doc/editor/versioningPresentation'
-import { createTablePresentation } from '../components/lark-doc/editor/tablePresentation'
-import { createWorkspacePanels } from '../ui/workspacePanels'
-import { createCommentInteraction } from '../components/lark-doc/editor/commentInteraction'
-import { createShareInteraction } from '../components/lark-doc/editor/shareInteraction'
-import { createExportInteraction } from '../components/lark-doc/editor/exportInteraction'
-import { createCalloutPresentation } from '../components/lark-doc/editor/calloutPresentation'
-import { createCalloutTools } from '../ui/calloutTools'
-import { createTopBarMenus } from '../ui/topBarMenus'
-import { createBlockHandleMenus } from '../ui/blockHandleMenus'
-import { createBlockInteraction } from '../components/lark-doc/editor/blockInteraction'
+import { registerUiApi } from './ui-registry'
+import { uiCoreFactories } from './ui-core-factories'
+import { uiPanelFactories } from './ui-panels-factories'
 
-export const uiApi = {
-  createCommentPanel, createVersionPanel, createVersionToast,
-  createEmbedDialog, createHelpDrawer, createLinkDialog, createMathDialog, createTablePickerDialog, createTemplateSaveDialog,
-  createExtendedOverlays, createColorPalette, createRevisionPanels, createIsvPanel, createReminder,
-  createCalendarSearch, createSearchPanel, createCommandMenu, createTemplateLibrary,
-  createDocumentOverlays, createNotifications, createTableTools, createTableBoundaryTools,
-  createTableOverlays, createCellPlusTools, createLinkTools,
-  createBubbleBar: options => createBubbleBar(options.host, options),
-  createPanelPresentation, createVersioningPresentation,
-  createTablePresentation,
-  createWorkspacePanels,
-  createCommentInteraction, createShareInteraction, createExportInteraction,
-  createCalloutPresentation, createCalloutTools,
-  createTopBarMenus, createBlockHandleMenus, createBlockInteraction,
-}
-registerFeature('ui', () => uiApi)
-registerFeature('ui.ready', () => uiApi)
-
+// 非 Element 宿主（es/cjs/lite）只认这一个入口：包内置动态 import 拿到的必须是
+// 全集，所以这里把两个 UMD 包各自的工厂表并起来。Element 侧分别走
+// features/ui-core.js 与 features/ui-panels.js，本文件不进任何一个 UMD 包。
+export const uiApi = { ...uiCoreFactories, ...uiPanelFactories }
+registerUiApi('ui', uiApi)

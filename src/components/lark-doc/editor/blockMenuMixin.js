@@ -90,7 +90,9 @@ export default {
       const loadUi = ready ? Promise.resolve(ready) : loadFeature('ui', () => import('../../../features/ui').then(module => module.uiApi))
       loadUi.then(api => {
         if (!current()) return
-        if (!api?.createTemplateSaveDialog) throw new Error('UI特性版本不匹配，请先加载同目录ui特性包')
+        // 面板包已拆成两支，这里只校验随 A 包必然下发的工厂——拿 B 包的工厂
+        // 当版本探针会把「对方包还没加载」误报成「特性包版本不匹配」。
+        if (!api?.createBlockHandleMenus) throw new Error('UI特性版本不匹配，请先加载同目录ui特性包')
         return import('../../../editor/templateSave').then(({ openTemplateSave }) => {
           if (!current()) return
           request.stopPending()

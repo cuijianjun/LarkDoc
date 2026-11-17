@@ -250,7 +250,7 @@ node scripts/check-rollup-artifacts.mjs --size
 2. **collab 4 KB → 8 KB**。4 KB 是 P6a 内核（`anchors`/`durable-bridge`/`protocol`/`policies`）合入之前的基线，内核本身就是该子入口的业务内容，不属于回退。实测 7447 B，记 8 KB。
 3. **ESM / lite 310 KB → 395 KB**。310 KB 是 L1.5「把 prosemirror 全家外置成 `engine` 组」成立时的目标值，而 L1.5 已经废弃（见下节末条）：关掉 `inlineDynamicImports` 复算后单静态 chunk 就有 3,963,848 B / 523 模块，第三方一行也搬不走，这个目标值的前提不复存在。实测 383,983 / 384,040，抬到 395 KB 留 11 KB（2.9%）回归余量。**这不等于放过回退**——门禁量的是「相对上一次是否变差」，不是「离一个已作废的目标还有多远」；长期恒红的条目等于没有信号，比不设这条预算更糟。真要回到 310 KB 只能走「逐域语义降级」（见「拆分边界实测」第 2、3 条），那是逐域推进的产品行为设计，不是构建配置能给出来的。
 
-Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组（`ui` 183 KB、`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。
+Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组、8 个特性包（`ui` 已拆成 49 KB + 122 KB 两半，`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。
 
 ### 已落地
 
@@ -260,8 +260,9 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 | L2a | core-js 6 个 API 拆成 `lark-doc-element.polyfills.umd.min.js`，引导器按特性检测决定拉不拉 | 现代浏览器零请求 | runtime −17,447（614,339 → 596,892），模块 556 → 382 |
 | L2b | CSS 从 JS 字符串改为独立 `lark-doc-element.css`，loader 注入 `<link>` 与内核并行 | 样式边下边解析，不阻塞内核求值 | runtime −41,522（596,892 → 555,370），JS 内不再有 265 KB 字符串 |
 | L2c | `ui` 组的样式同样拆成 `lark-doc-element.ui.css`，由内核在拉面板脚本时同目录注入 `<link>`，与脚本并行下载；样式缺失不 reject | 面板包 JS −19,380；样式可独立缓存，不阻塞脚本求值 | `ui` 183,728 → 164,348；`ui.css` 18,852 新增 |
+| L2d | `ui` 再按**触发时机**拆成两包：`ui`（选区 / 悬浮块 / 表格 / 顶栏，鼠标一动就要用）与 `uiPanels`（侧栏面板 / 对话框 / 浮层，点了才用）。两个独立 UMD 各带一份 registry 副本，靠 `globalThis` 上的 `__LARK_DOC_UI_API__`（可增长的表）与只注册一次的 `ui.ready` 合成同一张工厂表；样式仍共用 `lark-doc-element.ui.css`，`data-lark-doc-feature` 去重只下一次 | 高频交互不再为 40 多个面板付钱；两包同下合计 +4.5%（摊到 13 份交付产物上是 +0.3%） | `ui` 164,348 → **49,678**（−69.8%）；新增 `uiPanels` 122,159；两条路径合计 171,837（+4.5%） |
 
-现代浏览器实际支付：**引导器 1,579 B + 内核 555,482 B + 内核样式 41,247 B + 补丁 17,224 B = 615,532 B**；旧浏览器补丁包按特性检测决定拉不拉，现代浏览器零请求。首次打开任意面板再拉 `ui` 165,177 B + `ui.css` 19,226 B。
+现代浏览器实际支付：**引导器 1,579 B + 内核 555,482 B + 内核样式 41,247 B + 补丁 17,224 B = 615,532 B**；旧浏览器补丁包按特性检测决定拉不拉，现代浏览器零请求。此后分两档：选中文字 / 悬浮块 / 顶栏菜单一动就拉 `ui` **49,678 B**（+ 与它同目录的 `ui.css` 19,226 B，共用一张样式表）；真正点开侧栏面板或对话框再补 `uiPanels` 122,159 B。两包都到齐合计 171,837 B，比拆前单文件只多 4.5%。
 
 ### 下一步（按本会话实测重排）
 
@@ -280,13 +281,13 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 
 > **L1.5 已废弃**：原方案称「295 个模块（含 prosemirror 全家）只经 `import()` 到达，外置成 `engine` 组可省 196,457 B / 32%」。关掉 `inlineDynamicImports` 重新生成 chunk 图后，这条前提不成立——单静态 chunk 就有 `3,963,848 B / 523 模块`，`prosemirror-*` 与 `@tiptap/*` 全部在里面；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip` 这类小功能，合计约 120 KB。当初「仅动态可达」的结论是拿 `bundle.cache.modules[].dependencies` 做 BFS 得出的，而折叠模式下 cache 不含动态边，会把动态入口整棵子树误判成静态不可达。
 
-> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成**六条**，各自量一个交付单元：引导文件 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核 `560 KB`（`scope: lazy`）、补丁包 `18 KB`、内核样式 `45 KB`、面板包 `168 KB`、面板样式 `20 KB`。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）**。
+> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成**七条**，各自量一个交付单元：引导文件 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核 `560 KB`（`scope: lazy`）、补丁包 `18 KB`、内核样式 `45 KB`、交互包 `52 KB`、面板包 `126 KB`、UI 样式 `20 KB`（两包共用）。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）**。
 >
-> 六条里只有前两条走「入口图」计量，后四条（补丁包、内核样式、面板包、面板样式）是**单文件计量**：样式表在构建图里记 `asset: true / entry: false`，不挂入口链，否则并行的样式会被内核预算一起吞掉，看起来像回退。
+> 七条里只有前两条走「入口图」计量，后五条（补丁包、内核样式、交互包、面板包、UI 样式）是**单文件计量**：样式表在构建图里记 `asset: true / entry: false`，不挂入口链，否则并行的样式会被内核预算一起吞掉，看起来像回退。
 >
 > **语义变化（L0 引入）**：`LarkDoc.runtimeReady` 从「模块顶层常量（Promise）」改为「函数」。`await LarkDoc.runtimeReady` 拿到的会是一个函数对象而不是 runtime，正确写法是 `await LarkDoc.runtimeReady()`。
 >
-> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）与 `lark-doc-element.ui.css`（面板样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。每个交付产物旁边还会多出一对 `<file>.br` / `<file>.gz` 预压缩文件，服务器开 `gzip_static` / `brotli_static` 即可直接命中，见下文「传输层」。
+> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）、`lark-doc-element.umd.min.ui.js`（交互包）、`lark-doc-element.umd.min.uiPanels.js`（面板包）与 `lark-doc-element.ui.css`（两个 UI 包共用的样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。每个交付产物旁边还会多出一对 `<file>.br` / `<file>.gz` 预压缩文件，服务器开 `gzip_static` / `brotli_static` 即可直接命中，见下文「传输层」。
 
 ### 拆分边界实测：为什么剩下的部分搬不动
 
@@ -314,7 +315,7 @@ dist/lark-doc-element.runtime.umd.min.js.br
 dist/lark-doc-element.runtime.umd.min.js.gz
 ```
 
-只压浏览器会请求的 **12 个交付产物**（引导器 / 内核 / 补丁包 / 7 个特性包 / 2 份样式）。ESM 分块、manifest、graph 不压——那些是给 bundler 和门禁读的，压了只让发布目录膨胀。
+只压浏览器会请求的 **13 个交付产物**（引导器 / 内核 / 补丁包 / 8 个特性包 / 2 份样式）。ESM 分块、manifest、graph 不压——那些是给 bundler 和门禁读的，压了只让发布目录膨胀。
 
 | 产物 | raw | gzip | brotli | br 比 gzip |
 | --- | ---: | ---: | ---: | ---: |
@@ -322,8 +323,9 @@ dist/lark-doc-element.runtime.umd.min.js.gz
 | **内核** | 1,870,731 | 554,009 | **431,538** | −22.1% |
 | 内核样式 | 264,734 | 40,618 | 32,536 | −19.9% |
 | 补丁包 | 41,005 | 17,192 | 15,517 | −9.7% |
-| 面板包 | 540,218 | 164,348 | 131,611 | −19.9% |
-| 面板样式 | 134,880 | 18,852 | 16,043 | −14.9% |
+| 交互包 | 171,466 | 49,678 | 42,006 | −15.4% |
+| 面板包 | 395,230 | 122,159 | 98,972 | −19.0% |
+| UI 样式（两包共用） | 134,880 | 18,852 | 16,043 | −14.9% |
 | mermaid | 3,371,763 | 1,004,679 | 762,391 | −24.1% |
 | office | 865,551 | 218,791 | 155,549 | −28.9% |
 | math | 285,388 | 80,625 | 65,991 | −18.2% |
@@ -331,7 +333,7 @@ dist/lark-doc-element.runtime.umd.min.js.gz
 | document | 91,980 | 30,750 | 27,267 | −11.3% |
 | markdown | 57,067 | 18,898 | 16,838 | −10.9% |
 
-首屏 **615,532 → 480,958（−21.9%）**；12 份交付产物合计 gzip 2,218,707 → brotli 1,713,264（−22.8%）。按需包省得更多，因为它们的原始体积更大：`mermaid` 少 242 KB、`office` 少 63 KB。
+首屏 **615,532 → 480,958（−21.9%）**；13 份交付产物合计 gzip 2,226,196 → brotli 1,722,631（−22.6%）。按需包省得更多，因为它们的原始体积更大：`mermaid` 少 242 KB、`office` 少 63 KB。
 
 **宿主一侧不需要任何运行时模块**，只要服务器能直接读预压缩文件：
 
@@ -351,7 +353,7 @@ curl -sI -H 'Accept-Encoding: br' \
 
 **为什么收益集中在内核**：内核 raw 1.87 MB，里面 prosemirror 与业务存在同名工具函数、重复类名字符串这类跨模块片段。brotli 的滑动窗口默认 4 MB，能一次看到整个文件；gzip 的窗口只有 32 KB，只能压局部。这也解释了为什么 terser 已经跑 3 轮 passes 再压不出东西，而传输层还能再省 22% —— 前者消除的是语法冗余，后者利用的是全文件重复。
 
-门禁：`npm run compress:check` 校验 12 份 `.br` / `.gz` 都在且新于源文件，已挂进 `check:artifacts`。预压缩放在构建流程内部而不是单独的 npm script，因为 `ensure-artifacts` 的产物指纹覆盖整个 `dist/`，拿到构建之外写 `.br` 会让指纹与目录内容永远对不上，每次 `prepack` 都误判成「产物变脏」重跑三分钟。
+门禁：`npm run compress:check` 校验 13 份 `.br` / `.gz` 都在且新于源文件，已挂进 `check:artifacts`。预压缩放在构建流程内部而不是单独的 npm script，因为 `ensure-artifacts` 的产物指纹覆盖整个 `dist/`，拿到构建之外写 `.br` 会让指纹与目录内容永远对不上，每次 `prepack` 都误判成「产物变脏」重跑三分钟。
 
 
 
