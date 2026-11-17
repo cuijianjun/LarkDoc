@@ -5,7 +5,7 @@ import '../styles/versioning.css'
 import '../styles/deferred-ui.css'
 import '../components/lark-doc/template-library.css'
 import { registerFeature } from '../core/features/registry'
-import { createCommentPanel, createSaveVersionDialog, createVersionPanel } from '../ui/panels'
+import { createCommentPanel, createVersionPanel, createVersionToast } from '../ui/panels'
 import { createEmbedDialog, createHelpDrawer, createLinkDialog, createMathDialog, createTablePickerDialog, createTemplateSaveDialog } from '../ui/dialogs'
 import { createExtendedOverlays } from '../ui/extendedOverlays'
 import { createColorPalette } from '../ui/colorPalette'
@@ -37,7 +37,7 @@ import { createBlockHandleMenus } from '../ui/blockHandleMenus'
 import { createBlockInteraction } from '../components/lark-doc/editor/blockInteraction'
 
 export const uiApi = {
-  createCommentPanel, createSaveVersionDialog, createVersionPanel,
+  createCommentPanel, createVersionPanel, createVersionToast,
   createEmbedDialog, createHelpDrawer, createLinkDialog, createMathDialog, createTablePickerDialog, createTemplateSaveDialog,
   createExtendedOverlays, createColorPalette, createRevisionPanels, createIsvPanel, createReminder,
   createCalendarSearch, createSearchPanel, createCommandMenu, createTemplateLibrary,

@@ -21,9 +21,9 @@
 export const SNAPSHOT_KINDS = Object.freeze(['auto', 'manual', 'restore'])
 
 export const SNAPSHOT_KIND = Object.freeze({
-  /** 定时/策略自动落盘，可被保留策略淘汰。 */
+  /** 编辑落定后自动记录，可被保留策略淘汰（飞书的历史记录就是这个来源）。 */
   AUTO: 'auto',
-  /** 用户「另存为版本」，永久保留。 */
+  /** 显式建快照，永久保留。手动「另存为版本」已下线，但历史数据仍是这一类。 */
   MANUAL: 'manual',
   /** 「恢复为新版本」产生的快照，永久保留（恢复点被淘汰就再也回不去）。 */
   RESTORE: 'restore',

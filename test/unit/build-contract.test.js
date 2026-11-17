@@ -610,7 +610,7 @@ describe('公开产物与轻量包边界', () => {
   it('private presenter metadata comes from literal functions and rejects an unknown spread', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../../src/components/lark-doc/editor/panelPresentation.js'), 'utf8')
     const shape = panelPresentationShape(source)
-    expect(shape.methods).toEqual(['panelsHandlers', 'buildVersionState', 'buildVersionPreviewState', 'buildSaveVersionState', 'buildCommentState'])
+    expect(shape.methods).toEqual(['panelsHandlers', 'buildVersionState', 'buildVersionPreviewState', 'buildCommentState'])
     expect(shape.commentPanelMethods).toContain('selectCommentParticipant')
     for (const keys of Object.values(shape)) expect(new Set(keys).size).toBe(keys.length)
     expect(() => panelPresentationShape(source.replace('const commentPanelMethods = {', 'const commentPanelMethods = { ...unknownRuntime,'))).toThrow('Unsupported private presentation shape')
@@ -623,9 +623,9 @@ describe('公开产物与轻量包边界', () => {
     expect(id).toBe('\0lark-doc-versioning-presentation')
     const shape = versioningPresentationShape()
     expect(shape.computed).toEqual(['versionRestoreConfirmText', 'versionDayGroups', 'versionChangeCursor', 'versionSelectedDiff'])
-    expect(shape.methods).toEqual(['mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'setSaveVersionName', 'confirmSaveVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
+    expect(shape.methods).toEqual(['mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionItemBadge', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'toggleVersionShowChanges', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
     const code = alias.load(id)
-    for (const hot of ['restoreVersion', 'queryRestoreVersion', 'saveVersion', 'loadVersions']) expect(code).not.toContain(hot)
+    for (const hot of ['restoreVersion', 'queryRestoreVersion', 'loadVersions']) expect(code).not.toContain(hot)
     expect(code).not.toMatch(/import\(|TextSelection|new Editor/)
     expect(getRollupConfig('feature:ui').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./versioningPresentation', importer)).toBeNull()
   })
@@ -641,7 +641,7 @@ describe('公开产物与轻量包边界', () => {
       runInNewContext(output[0].code, context)
       const dependencies = { versionCapabilityGate: () => ({ allowed: true }) }
       const actions = context.VersionFixture.createVersioningPresentation(dependencies).methods
-      for (const name of ['versionNext', 'confirmVersionRestore', 'confirmSaveVersion', 'purgeDeletedVersion']) expect(() => actions[name].call({})).toThrow('版本界面尚未加载')
+      for (const name of ['versionNext', 'confirmVersionRestore', 'purgeDeletedVersion']) expect(() => actions[name].call({})).toThrow('版本界面尚未加载')
       runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/versioningPresentation.js'), 'utf8').replace('export function', 'function') + ';globalThis.versionFactory=createVersioningPresentation;', context)
       const implementation = context.versionFactory(dependencies), original = Promise.resolve('original result')
       implementation.methods.restoreSelectedVersion = vi.fn(() => original)

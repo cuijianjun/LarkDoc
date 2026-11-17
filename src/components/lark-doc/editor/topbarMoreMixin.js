@@ -10,8 +10,9 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
  *
  * 三条必须守住的红线：
  *
- *   1. **一级菜单是 23 项，不是 22 项**。§4.2.1 白纸黑字：`查看已存版本` 是独立一级项，
- *      位于 `另存为版本` 之后、`文档权限` 之前，带右侧箭头。历史上把 22 项当真源会漏掉
+ *   1. **一级菜单是 22 项**（§4.2.1 的 23 项去掉 `另存为版本` —— 手动建版本已按飞书口径
+ *      改为后端自动记录，见 `versioning` 的自动快照）。§4.2.1 白纸黑字：`查看已存版本`
+ *      是独立一级项，位于 `文档权限` 之前，带右侧箭头。历史上把 22 项当真源会漏掉
  *      这一项；把「更多」子菜单里的 5 项（上传日志/联系客服/功能更新/帮助中心/快捷键）
  *      计进来又会多出 5 项 —— 那 5 项来自**另一个离屏预挂载菜单**（采集快照坐标
  *      -8560,-9123），§4.2 明确「不要写进『更多』子菜单」。
@@ -30,7 +31,7 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
  *   ② 单测要能脱离 Vue 验证「顺序 / 分组 / 子面板归属 / 定位」，逻辑必须是纯函数。
  */
 
-/** 一级菜单 23 项。顺序与 §4.2.1 逐字一致；`order` 从 1 起。 */
+/** 一级菜单 22 项。顺序与 §4.2.1 一致（去掉了已下线的 `另存为版本`）；`order` 从 1 起。 */
 export const TOPBAR_MORE_ITEMS = Object.freeze([
   { id: 'width', label: '页宽设置', order: 1, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'width' },
   { id: 'slides', label: '演示模式', order: 2, kind: 'item', enabled: true, affordance: 'none', action: 'slides' },
@@ -46,16 +47,15 @@ export const TOPBAR_MORE_ITEMS = Object.freeze([
   // §4.2 ④-3：类名是 submenu，但实测无子面板，点击直接进翻译模式 ⇒ kind 记 route。
   { id: 'translate', label: '翻译为英语', order: 12, kind: 'route', enabled: true, affordance: 'arrow', action: 'translate' },
   { id: 'print', label: '打印', order: 13, kind: 'item', enabled: true, affordance: 'none', action: 'print' },
-  { id: 'save-version', label: '另存为版本', order: 14, kind: 'item', enabled: true, affordance: 'none', action: 'save-version' },
-  { id: 'view-versions', label: '查看已存版本', order: 15, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'view-versions' },
-  { id: 'doc-permission', label: '文档权限', order: 16, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'doc-permission' },
-  { id: 'widgets', label: '文档小组件', order: 17, kind: 'item', enabled: true, affordance: 'none', action: 'widgets' },
-  { id: 'doc-info', label: '文档信息', order: 18, kind: 'item', enabled: true, affordance: 'none', action: 'doc-info' },
-  { id: 'mentioned', label: '提及的人', order: 19, kind: 'item', enabled: true, affordance: 'none', action: 'mentioned' },
-  { id: 'history', label: '历史记录', order: 20, kind: 'item', enabled: true, affordance: 'none', action: 'history' },
-  { id: 'history-comments', label: '历史评论', order: 21, kind: 'item', enabled: true, affordance: 'none', action: 'history-comments' },
-  { id: 'more', label: '更多', order: 22, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'more' },
-  { id: 'delete', label: '删除', order: 23, kind: 'item', enabled: true, affordance: 'none', action: 'delete' },
+  { id: 'view-versions', label: '查看已存版本', order: 14, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'view-versions' },
+  { id: 'doc-permission', label: '文档权限', order: 15, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'doc-permission' },
+  { id: 'widgets', label: '文档小组件', order: 16, kind: 'item', enabled: true, affordance: 'none', action: 'widgets' },
+  { id: 'doc-info', label: '文档信息', order: 17, kind: 'item', enabled: true, affordance: 'none', action: 'doc-info' },
+  { id: 'mentioned', label: '提及的人', order: 18, kind: 'item', enabled: true, affordance: 'none', action: 'mentioned' },
+  { id: 'history', label: '历史记录', order: 19, kind: 'item', enabled: true, affordance: 'none', action: 'history' },
+  { id: 'history-comments', label: '历史评论', order: 20, kind: 'item', enabled: true, affordance: 'none', action: 'history-comments' },
+  { id: 'more', label: '更多', order: 21, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'more' },
+  { id: 'delete', label: '删除', order: 22, kind: 'item', enabled: true, affordance: 'none', action: 'delete' },
 ])
 
 /**
@@ -67,11 +67,11 @@ export const TOPBAR_MORE_ITEMS = Object.freeze([
  *   ① 视图（页宽设置/演示模式）② 关注（关注文档更新/查找和替换）
  *   ③ 快捷方式（添加快捷方式到/移动到/添加到「置顶」/添加到收藏）
  *   ④ 模板与副本（转换为模板/创建副本）⑤ 导出（下载为/翻译为英语）
- *   ⑥ 打印 ⑦ 版本（另存为版本/查看已存版本）⑧ 权限与小组件（文档权限/文档小组件）
+ *   ⑥ 打印 ⑦ 版本（查看已存版本）⑧ 权限与小组件（文档权限/文档小组件）
  *   ⑨ 信息（文档信息/提及的人/历史记录/历史评论）⑩ 危险区（更多/删除）
  *
- * 22 项时代版本组只有「另存为版本」一项，所以它前后各有一条线（570 / 611）；
- * 23 项时代版本组多了一项，两条线里靠前的那条顺移到组尾 ⇒ **变成 8 条**。
+ * `另存为版本` 下线前，版本组是「另存为版本/查看已存版本」两项，两条线分别在组首组尾；
+ * 现在版本组只剩「查看已存版本」一项，线仍在组尾（`view-versions` 之后）⇒ 仍是 **8 条**。
  * 这不是随手改的，是「组间只有一条线」这个不变量决定的。
  */
 export const TOPBAR_MORE_DIVIDER_AFTER = Object.freeze([
@@ -117,13 +117,12 @@ export const TOPBAR_MORE_SUBPANELS = Object.freeze({
 
 /** 只读态（阅读模式）下必须置灰的项 —— 全是写操作，读态不该给入口。 */
 export const TOPBAR_MORE_READONLY_DISABLED = Object.freeze([
-  'delete', 'save-version', 'duplicate', 'template', 'translate', 'move', 'pin', 'favorite', 'shortcut', 'follow',
+  'delete', 'duplicate', 'template', 'translate', 'move', 'pin', 'favorite', 'shortcut', 'follow',
 ])
 
 /** 需要读 capability 才能决定启用态的项：不在表里的项恒启用。 */
 export const TOPBAR_MORE_CAPABILITY = Object.freeze({
   'download-as': 'canExport',
-  'save-version': 'canCreateVersion',
   'view-versions': 'canRestoreVersion',
   'doc-permission': 'canManagePermission',
   duplicate: 'canCopy',
@@ -233,7 +232,7 @@ export default {
         const key = capability[item.id]
         let enabled = item.enabled
         if (key && typeof this.shareCan === 'function' && !this.shareCan(key)) enabled = false
-        // 阅读态（只读）下写操作一律置灰：删除/另存为版本/创建副本/转换为模板/翻译。
+        // 阅读态（只读）下写操作一律置灰：删除/创建副本/转换为模板/翻译。
         if (enabled && this.effectiveReadonly && TOPBAR_MORE_READONLY_DISABLED.indexOf(item.id) >= 0) enabled = false
         if (item.id === 'history-comments') enabled = enabled && this.commentRemote === true && this.commentCan?.('canView') === true
         return { ...item, enabled, ...(!enabled && item.id === 'history-comments' ? { title: '当前评论服务不可用或没有查看权限' } : {}) }
@@ -487,10 +486,6 @@ export default {
             title: this.localTitle || this.title || '未命名文档',
             document: this.editor && typeof this.editor.getJSON === 'function' ? this.editor.getJSON() : null,
           })
-          return
-        case 'save-version':
-          this.closeTopbarMore()
-          this.openSaveVersionDialog()
           return
         case 'history-comments':
           if (this.commentRemote !== true || this.commentCan?.('canView') !== true) return false

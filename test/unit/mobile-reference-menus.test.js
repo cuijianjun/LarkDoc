@@ -56,22 +56,16 @@ describe('phone saved-version menu reads', () => {
     }
     return { doc, host, element, provider, more, choose }
   }
-  it('loads the first real manual version after saving before any history panel was opened', async () => {
+  it('lists the first automatic version before any history panel was opened', async () => {
     const { doc, host, element, provider, choose } = nativeVersionMenu(), before = doc.getJSON()
-    await choose('save-version')
-    const input = await vi.waitFor(() => { const node = element.querySelector('.lark-doc-save-version-input'); expect(node).not.toBeNull(); return node })
-    input.value = 'QA 模拟手机保存'; input.dispatchEvent(new Event('input', { bubbles: true }))
-    const confirm = element.querySelector('.lark-doc-save-version-confirm')
-    await vi.waitFor(() => expect(confirm.disabled).toBe(false))
-    confirm.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect(host.saveVersionOpen).toBe(false))
+    await doc.getSession().createVersion({ purpose: 'auto', label: 'QA 模拟自动记录' })
     const saved = await provider.list({ documentId: 'menu-versions' })
-    expect(saved).toHaveLength(1); expect(saved[0]).toMatchObject({ kind: 'manual', label: 'QA 模拟手机保存' })
+    expect(saved).toHaveLength(1); expect(saved[0]).toMatchObject({ kind: 'auto', label: 'QA 模拟自动记录' })
     expect(host.versionPanelOpen).toBe(false); expect(host.versionList).toEqual([])
     const list = vi.spyOn(provider, 'list')
-    const button = await choose('saved-versions')
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="更多-saved-versions"]')?.textContent).toContain('QA 模拟手机保存'))
-    expect(button.getAttribute('aria-expanded')).toBe('true'); expect(list).toHaveBeenCalledOnce()
+    await choose('saved-versions')
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="更多-saved-versions"]')?.textContent).toContain('QA 模拟自动记录'))
+    expect(list).toHaveBeenCalledOnce()
     expect(doc.getJSON()).toEqual(before)
   })
   it.each(['empty', 'error'])('shows an honest %s saved-version submenu', async outcome => {
@@ -264,7 +258,7 @@ describe('browser reference mobile document menus', () => {
   it('keeps the pictured groups and exposes unsupported host operations as disabled', () => {
     const ed = editorHost(), items = referenceDocumentMenuItems(ed)
     expect(items.slice(0, 5).map(item => item.id)).toEqual(['mode', 'ai', 'notifications', 'workspace-search', 'create'])
-    expect(items.slice(5, 19).map(item => item.id)).toEqual(['width', 'presentation', 'follow', 'search', 'shortcut', 'move', 'pin', 'favorite', 'template', 'duplicate', 'download', 'translate', 'print', 'save-version'])
+    expect(items.slice(5, 19).map(item => item.id)).toEqual(['width', 'presentation', 'follow', 'search', 'shortcut', 'move', 'pin', 'favorite', 'template', 'duplicate', 'download', 'translate', 'print', 'saved-versions'])
     for (const id of ['ai', 'workspace-search', 'create', 'follow', 'move', 'template', 'translate']) {
       expect(items.find(item => item.id === id).enabled).toBe(false); expect(items.find(item => item.id === id).title).toContain('未配置')
     }

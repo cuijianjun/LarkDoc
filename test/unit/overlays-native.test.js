@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOverlays } from '../../src/ui/overlays'
 import { createNotifications } from '../../src/ui/notifications'
-import { createCommentPanel as createPlainCommentPanel, createSaveVersionDialog, createVersionPanel } from '../../src/ui/panels'
+import { createCommentPanel as createPlainCommentPanel, createVersionPanel } from '../../src/ui/panels'
 import overlaysUiMixin from '../../src/components/lark-doc/editor/overlaysUiMixin'
 import panelsUiMixin from '../../src/components/lark-doc/editor/panelsUiMixin'
 import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
@@ -999,18 +999,18 @@ describe('原生浮层迁移契约', () => {
     expect(ui.el.querySelector('.lark-doc-version-trash')).toBeNull()
   })
 
-  it('评论与另存版本保留 dev 的权限语义', () => {
+  it('评论与历史版本保留 dev 的权限语义', () => {
     const comment = createCommentPanel({ host: hostNode() })
-    const save = createSaveVersionDialog({ host: hostNode() })
-    cleanups.push(() => { comment.destroy(); save.destroy() })
+    const version = createVersionPanel({ host: hostNode() })
+    cleanups.push(() => { comment.destroy(); version.destroy() })
     comment.update({ open: true, controls: [{ id: 'resolve', label: '解决' }], items: [{ id: 't1', disabled: ['resolve'], textarea: { height: 50 } }] })
     const resolve = comment.el.querySelector('.lark-doc-comment-btn')
     expect(resolve.getAttribute('data-capability')).toBe('canResolveComment')
     expect(resolve.getAttribute('aria-disabled')).toBe('true')
-    save.update({ open: true, confirm: { disabled: true } })
-    const confirm = save.el.querySelector('.lark-doc-save-version-confirm')
-    expect(confirm.getAttribute('data-capability')).toBe('canCreateVersion')
-    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    version.update({ open: true, restore: { disabled: true, title: '' } })
+    const restore = version.el.querySelector('.lark-doc-version-restore')
+    expect(restore.getAttribute('data-capability')).toBe('canRestoreVersion')
+    expect(restore.getAttribute('aria-disabled')).toBe('true')
   })
   it('评论操作支持原生 click 和键盘激活，鼠标按下只保留焦点且禁用不执行', () => {
     const onSubmit = vi.fn(), onChooseImage = vi.fn(), onControl = vi.fn()

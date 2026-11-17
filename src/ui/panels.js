@@ -4,7 +4,8 @@
  * 原 SFC 在本批次删除，这里是四个面板的唯一实现：
  *   ① `editor/OutlinePanel.vue`   —— 目录侧栏（210px sticky，父级另有一颗 ☰ 兄弟钮）
  *   ② `VersionPanel.vue`          —— 历史记录全屏层（左预览 + 右按天时间线）
- *   ③ `SaveVersionDialog.vue`     —— 另存为版本 Dialog + 恢复成功 toast
+ *   ③ toast                       —— 恢复成功等版本提示（`SaveVersionDialog.vue` 的残留物：
+ *                                    手动另存为已按飞书口径改为后端自动记录，Dialog 下线）
  *   ④ `CommentPanel.vue`          —— 评论面板层（`display:contents` 容器 + 每线程一张卡）
  *
  * 模板库是**宿主侧**原生 UI（`src/ui/templateLibrary.js`，`src/index.js` 对外导出、独立路由），
@@ -28,7 +29,7 @@
  * ⚠️ 四处**故意不统一**，别顺手改成「看起来更合理」的样子：
  * - `VersionPanel` 的 `Esc` **关不掉**：根节点只 `stop + prevent`，不接关闭逻辑 ——
  *   目的是拦住冒泡到 `overlayDismissMixin.closeOverlay()`（那条链里没有版本面板分支）。
- *   唯一出口是左栏顶栏的返回图标。`SaveVersionDialog` 正好相反：`Esc` 能关、点遮罩不关。
+ *   唯一出口是左栏顶栏的返回图标。
  * - `CommentPanel` 的根节点是 `@mousedown`（**没有** `.prevent`）：它要抢焦点去点亮线程；
  *   里面的按钮则一律 `.prevent`（点面板不能把焦点让给 body，否则编辑器选区掉了）。
  *   唯一例外是 textarea —— 它必须拿到焦点。
@@ -44,7 +45,6 @@ import { applyStyle, lockPageScroll, mountNode, setAttr, setText, syncChildren }
 import { iconNode } from './icon'
 import { placeMenu } from './menuLayout'
 
-let saveVersionInputSequence = 0
 
 // Standalone UI keeps its dependency-free textarea contract. The native editor
 // injects the rich factory from its existing PM runtime instead of bundling PM
@@ -128,7 +128,7 @@ function onMouseDownPrevent(node, run) {
 }
 
 // 面板开合走 `mountNode(host, el, on)`（只增删自己这一棵，`dom.js`），**不是
-// `syncChildren`** —— 历史层 / 另存为 / 评论层共用同一个 `panelHost`，用后者会互相摘除。
+// `syncChildren`** —— 历史层 / 版本提示 / 评论层共用同一个 `panelHost`，用后者会互相摘除。
 
 /* ═══════════════════════════ ① 目录侧栏 ═══════════════════════════ */
 
@@ -216,6 +216,11 @@ export function createVersionPanel(options = {}) {
   backButton.className = 'lark-doc-version-back'
   backButton.setAttribute('aria-label', '返回文档')
   backButton.appendChild(iconNode('undo', 24))
+  // 飞书这里是「箭头 + 返回文档」的文字按钮，不是一个裸图标。
+  const backLabel = document.createElement('span')
+  backLabel.className = 'lark-doc-version-back-label'
+  backLabel.textContent = '返回文档'
+  backButton.appendChild(backLabel)
   backButton.addEventListener('click', () => {
     if (mobile() && mobileView === 'preview') { mobileView = 'list'; render(); return }
     call('onClose')
@@ -246,12 +251,12 @@ export function createVersionPanel(options = {}) {
   const prevButton = document.createElement('button')
   prevButton.type = 'button'
   prevButton.className = 'lark-doc-version-step'
-  prevButton.textContent = '上一版本'
+  prevButton.textContent = '上一页'
   onMouseDownPrevent(prevButton, () => call('onPrev'))
   const nextButton = document.createElement('button')
   nextButton.type = 'button'
   nextButton.className = 'lark-doc-version-step'
-  nextButton.textContent = '下一版本'
+  nextButton.textContent = '下一页'
   onMouseDownPrevent(nextButton, () => call('onNext'))
   pager.appendChild(cursorLabel)
   pager.appendChild(prevButton)
@@ -382,13 +387,24 @@ export function createVersionPanel(options = {}) {
 
   const rightHeader = document.createElement('div')
   rightHeader.className = 'lark-doc-version-right-header'
+  // 「历史记录 ⓘ」是一个整体：图标紧贴标题，不参与右侧 space-between 的分布。
+  const rightHeading = document.createElement('div')
+  rightHeading.className = 'lark-doc-version-right-heading'
   const rightTitle = document.createElement('span')
   rightTitle.className = 'lark-doc-version-right-title'
   rightTitle.textContent = '历史记录'
+  const rightInfo = document.createElement('span')
+  rightInfo.className = 'lark-doc-version-right-info'
+  rightInfo.setAttribute('role', 'img')
+  rightInfo.setAttribute('aria-label', '历史记录会自动保存，可随时还原任意一条')
+  setAttr(rightInfo, 'title', '历史记录会自动保存，可随时还原任意一条')
+  rightInfo.appendChild(iconNode('info', 16))
+  rightHeading.appendChild(rightTitle)
+  rightHeading.appendChild(rightInfo)
   const rightIcon = document.createElement('span')
   rightIcon.className = 'lark-doc-version-right-icon'
   rightIcon.appendChild(iconNode('chevronDown', 24))
-  rightHeader.appendChild(rightTitle)
+  rightHeader.appendChild(rightHeading)
   const trashToggle = document.createElement('button')
   trashToggle.type = 'button'
   trashToggle.className = 'lark-doc-version-trash-toggle'
@@ -404,7 +420,22 @@ export function createVersionPanel(options = {}) {
 
   const rightFooter = document.createElement('div')
   rightFooter.className = 'lark-doc-version-right-footer'
-  rightFooter.textContent = '显示更改'
+  // 飞书底栏是「显示更改 + 开关」，不是一个说明文字：关掉后预览里不再叠改动高亮。
+  const showChangesLabel = document.createElement('span')
+  showChangesLabel.className = 'lark-doc-version-changes-label'
+  showChangesLabel.textContent = '显示更改'
+  const showChangesToggle = document.createElement('button')
+  showChangesToggle.type = 'button'
+  showChangesToggle.className = 'lark-doc-version-changes-switch'
+  showChangesToggle.setAttribute('role', 'switch')
+  showChangesToggle.setAttribute('aria-label', '显示更改')
+  const showChangesThumb = document.createElement('span')
+  showChangesThumb.className = 'lark-doc-version-changes-switch-handler'
+  showChangesThumb.setAttribute('aria-hidden', 'true')
+  showChangesToggle.appendChild(showChangesThumb)
+  showChangesToggle.addEventListener('click', () => { if (!showChangesToggle.disabled && !destroyed) call('onToggleShowChanges') })
+  rightFooter.appendChild(showChangesLabel)
+  rightFooter.appendChild(showChangesToggle)
 
   right.appendChild(rightHeader)
   right.appendChild(timeline)
@@ -437,7 +468,9 @@ export function createVersionPanel(options = {}) {
     trashToggle.hidden = !stateTrash
     trashToggle.disabled = !stateTrash || !stateTrash.canManage
     setAttr(trashToggle, 'title', stateTrash ? stateTrash.reason : '')
-    setAttr(trashToggle, 'data-capability', 'canCreateVersion')
+    // 回收站的两个动作是「恢复」与「彻底删除」，能力口径跟还原按钮一致；
+    // 手动「另存为版本」下线后 `canCreateVersion` 在前端已无对应入口，不能再拿它当回收站门禁。
+    setAttr(trashToggle, 'data-capability', 'canRestoreVersion')
     setAttr(trashToggle, 'aria-disabled', String(trashToggle.disabled))
     const items = stateTrash ? stateTrash.items || [] : []
     const signature = JSON.stringify({ items, busy: stateTrash?.busy, canManage: stateTrash?.canManage })
@@ -497,19 +530,37 @@ export function createVersionPanel(options = {}) {
       const name = document.createElement('div')
       name.className = 'lark-doc-version-item-name'
       name.textContent = item.name == null ? '' : String(item.name)
-      const desc = document.createElement('div')
+      // 第二行是「最近更新」绿标 + 改动描述，第三行才是作者 —— 飞书实测三行结构
+      // （name 20 / desc 36 / user 18），合成两行会把条目高度从 104 压到 86。
+      const meta = document.createElement('div')
+      meta.className = 'lark-doc-version-item-meta'
+      const badge = document.createElement('span')
+      badge.className = 'lark-doc-version-item-badge'
+      badge.textContent = item.badge == null ? '' : String(item.badge)
+      badge.hidden = !badge.textContent
+      const desc = document.createElement('span')
       desc.className = 'lark-doc-version-item-desc'
       desc.textContent = item.desc == null ? '' : String(item.desc)
+      desc.hidden = !desc.textContent
       const user = document.createElement('div')
       user.className = 'lark-doc-version-item-user'
       user.textContent = item.user == null ? '' : String(item.user)
+      meta.appendChild(badge)
+      meta.appendChild(desc)
       row.appendChild(name)
-      row.appendChild(desc)
+      row.appendChild(meta)
       row.appendChild(user)
       rows.appendChild(row)
     })
     if (items.length > visible.length) {
-      const more = document.createElement('button'); more.type = 'button'; more.className = 'lark-doc-version-more-history'; more.textContent = '展开更多历史记录'
+      // 飞书这一格是 `history-timeline-open-icon`（20×20、radius 4），不是一条文字按钮；
+      // 文案退到 `aria-label` / `title`，可见面只留箭头。
+      const more = document.createElement('button')
+      more.type = 'button'
+      more.className = 'lark-doc-version-more-history'
+      more.setAttribute('aria-label', '展开更多历史记录')
+      setAttr(more, 'title', '展开更多历史记录')
+      more.appendChild(iconNode('chevronDown', 20))
       more.addEventListener('click', () => { expandedDays.add(day.key); daysSignature = null; renderTimeline() }); rows.appendChild(more)
     }
     return box
@@ -537,14 +588,20 @@ export function createVersionPanel(options = {}) {
     syncChildren(previewMeta, metaSpans.map((span, index) => ({ node: span, on: index < meta.length })))
     setText(degradedNode, preview.degraded)
     const degradedOn = !!preview.degraded
+    const showChanges = state.showChanges !== false
+    // 关掉「显示更改」= 只看版式：差异行、改动清单、翻页器和高亮一起让位。
+    if (!showChanges) {
+      documentBody.querySelectorAll('.is-version-change').forEach(node => node.classList.remove('is-version-change'))
+      lastChangeIndex = -1
+    }
     // `v-if` / 组件外的兄弟：降级文案与 diff 段各自独立。
     syncChildren(previewBox, [
       { node: previewHead, on: true },
       { node: previewMeta, on: true },
       { node: degradedNode, on: degradedOn },
-      { node: diffBox, on: !!preview.diff },
+      { node: diffBox, on: showChanges && !!preview.diff },
       { node: bodyBox, on: true },
-      { node: changesMessage, on: true }, { node: changesList, on: !!preview.changes?.length }, { node: changePager, on: true },
+      { node: changesMessage, on: showChanges }, { node: changesList, on: showChanges && !!preview.changes?.length }, { node: changePager, on: showChanges },
     ])
     if (preview.diff) setText(diffRow, preview.diff.row)
     // `payload` 非空 = 该版本正文是可解码的二进制快照（模板里的 `v-if`）；空则走兜底文案。
@@ -577,7 +634,7 @@ export function createVersionPanel(options = {}) {
       })
     }
     changesList.querySelectorAll('[data-change-index]').forEach(row => row.classList.toggle('is-active', Number(row.dataset.changeIndex) === at))
-    if (at !== lastChangeIndex && at > 0) {
+    if (at !== lastChangeIndex && at > 0 && showChanges) {
       documentBody.querySelectorAll('.is-version-change').forEach(node => node.classList.remove('is-version-change'))
       lastChangeIndex = at
       const change = changes[at - 1]
@@ -599,8 +656,15 @@ export function createVersionPanel(options = {}) {
     el.classList.toggle('is-phone-preview', mobile() && mobileView === 'preview')
     el.classList.toggle('is-saved-versions', state.kind === 'saved')
     backButton.setAttribute('aria-label', mobile() && mobileView === 'preview' ? '返回版本列表' : '返回文档')
+    backLabel.textContent = mobile() && mobileView === 'preview' ? '返回列表' : '返回文档'
     savedMenu.hidden = state.kind !== 'saved'
     setText(rightTitle, state.kind === 'saved' ? '已存版本' : '历史记录')
+    // 对话框名跟着视图走：`查看已存版本` 打开的仍是这个层，但读屏不能报成「历史记录」。
+    el.setAttribute('aria-label', state.kind === 'saved' ? '已存版本' : '历史记录')
+    // 「显示更改」开关的当前态：视觉靠 `.on`，语义靠 `aria-checked`。
+    const showChanges = state.showChanges !== false
+    showChangesToggle.setAttribute('aria-checked', String(showChanges))
+    showChangesToggle.classList.toggle('on', showChanges)
     setText(cursorLabel, state.pager.cursor)
     restoreButton.disabled = !!state.restore.disabled
     setAttr(restoreButton, 'aria-disabled', String(restoreButton.disabled))
@@ -641,119 +705,23 @@ export function createVersionPanel(options = {}) {
   }
 }
 
-/* ═════════════════════ ③ 另存为版本 Dialog ═════════════════════ */
+/* ═════════════════════ ③ 版本提示 toast ═════════════════════ */
 
 /**
- * 「另存为版本」Dialog + 恢复成功 toast（`SaveVersionDialog.vue`）。
+ * 版本提示 toast（`SaveVersionDialog.vue` 里与 Dialog 同级的那一条）。
  *
- * 两件事与历史面板**正好相反**（不是笔误）：
- * - `Esc` **能关**（`@keydown.esc.stop.prevent="closeSaveVersionDialog()"`）；
- * - **点遮罩不关**（⑤-2 未采，关掉会丢输入，刻意保守）。
+ * 手动「另存为版本」按飞书口径改为**后端自动记录**后，Dialog 整块下线，只剩这条提示 ——
+ * 还原成功（「已恢复为新版本，原版本仍保留在历史记录中」）仍要靠它回话。
  *
- * toast 与 Dialog 是**同级兄弟**且共用一层包裹（`v-if="open || notice"`）：
- * 关掉 Dialog 后 toast 仍在，所以包裹层不能跟着 `open` 一起摘。
- *
- * state: `{ open, notice, title, value, maxLength, counter, confirm: { disabled, title, style }, error }`
+ * state: `{ notice }`；空串即整棵摘掉。
  */
-export function createSaveVersionDialog(options = {}) {
+export function createVersionToast(options = {}) {
   const host = options.host || null
   const call = handlerCaller(options.handlers || {})
 
-  const state = {
-    open: false,
-    notice: '',
-    title: '',
-    value: '',
-    maxLength: 1000,
-    counter: '0/1000',
-    confirm: { disabled: true, title: '', style: null },
-    error: '',
-  }
+  const state = { notice: '' }
 
-  // 包裹层：`v-if="open || notice"` —— 两个子节点共用，摘掉它会把 toast 一起带走。
   const el = document.createElement('div')
-
-  const mask = document.createElement('div')
-  mask.className = 'lark-doc-save-version-mask'
-
-  const wrap = document.createElement('div')
-  wrap.className = 'lark-doc-save-version-wrap'
-  wrap.setAttribute('tabindex', '-1')
-  wrap.setAttribute('role', 'dialog')
-  wrap.setAttribute('aria-modal', 'true')
-  wrap.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return
-    event.stopPropagation()
-    event.preventDefault()
-    call('onClose')
-  })
-
-  const dialog = document.createElement('section')
-  dialog.className = 'lark-doc-save-version-dialog'
-
-  const header = document.createElement('header')
-  header.className = 'lark-doc-save-version-header'
-  const titleNode = document.createElement('h3')
-  titleNode.className = 'lark-doc-save-version-title'
-  const closeButton = document.createElement('button')
-  closeButton.type = 'button'
-  closeButton.className = 'lark-doc-save-version-close'
-  closeButton.setAttribute('aria-label', '关闭')
-  closeButton.appendChild(iconNode('close', 20))
-  onMouseDownPrevent(closeButton, () => call('onClose'))
-  header.appendChild(titleNode)
-  header.appendChild(closeButton)
-
-  const body = document.createElement('div')
-  body.className = 'lark-doc-save-version-body'
-  const field = document.createElement('div')
-  field.className = 'lark-doc-save-version-field'
-  const inputId = `lark-doc-save-version-input-${++saveVersionInputSequence}`
-  const label = document.createElement('label')
-  label.className = 'lark-doc-save-version-label'
-  label.setAttribute('for', inputId)
-  label.textContent = '版本名称'
-  const inputRow = document.createElement('div')
-  inputRow.className = 'lark-doc-save-version-input-row'
-  const input = document.createElement('input')
-  input.id = inputId
-  input.className = 'lark-doc-save-version-input'
-  input.type = 'text'
-  input.setAttribute('placeholder', '请输入名称')
-  input.addEventListener('input', (event) => call('onInput', event.target.value))
-  const counter = document.createElement('span')
-  counter.className = 'lark-doc-save-version-counter'
-  inputRow.appendChild(input)
-  inputRow.appendChild(counter)
-  field.appendChild(label)
-  field.appendChild(inputRow)
-  body.appendChild(field)
-
-  const footer = document.createElement('footer')
-  footer.className = 'lark-doc-save-version-footer'
-  const cancelButton = document.createElement('button')
-  cancelButton.type = 'button'
-  cancelButton.className = 'lark-doc-save-version-cancel'
-  cancelButton.textContent = '取消'
-  onMouseDownPrevent(cancelButton, () => call('onClose'))
-  const confirmButton = document.createElement('button')
-  confirmButton.type = 'button'
-  confirmButton.className = 'lark-doc-save-version-confirm'
-  confirmButton.textContent = '确定'
-  confirmButton.setAttribute('data-capability', 'canCreateVersion')
-  onMouseDownPrevent(confirmButton, () => { if (!confirmButton.disabled) call('onConfirm') })
-  footer.appendChild(cancelButton)
-  footer.appendChild(confirmButton)
-
-  const errorNode = document.createElement('p')
-  errorNode.className = 'lark-doc-save-version-error'
-
-  dialog.appendChild(header)
-  dialog.appendChild(body)
-  dialog.appendChild(footer)
-  dialog.appendChild(errorNode)
-  wrap.appendChild(dialog)
-  mask.appendChild(wrap)
 
   // toast：首个子节点**必须**是 span（断言读 `notice.firstChild.textContent`）。
   const notice = document.createElement('div')
@@ -767,46 +735,18 @@ export function createSaveVersionDialog(options = {}) {
   onMouseDownPrevent(noticeLink, () => call('onNoticeLink'))
   notice.appendChild(noticeText)
   notice.appendChild(noticeLink)
-
-  el.appendChild(mask)
   el.appendChild(notice)
-
-  function render() {
-    setText(titleNode, state.title)
-    setAttr(wrap, 'aria-label', state.title)
-    setAttr(input, 'maxlength', state.maxLength)
-    setInputValue(input, state.value)
-    setText(counter, state.counter)
-    confirmButton.disabled = !!state.confirm.disabled
-    setAttr(confirmButton, 'aria-disabled', String(confirmButton.disabled))
-    setAttr(confirmButton, 'title', state.confirm.title)
-    applyStyle(confirmButton, state.confirm.style)
-    setText(errorNode, state.error)
-    syncChildren(dialog, [
-      { node: header, on: true },
-      { node: body, on: true },
-      { node: footer, on: true },
-      { node: errorNode, on: !!state.error },
-    ])
-    setText(noticeText, state.notice)
-    syncChildren(el, [
-      { node: mask, on: !!state.open },
-      { node: notice, on: !!state.notice },
-    ])
-  }
 
   function update(patch) {
     Object.assign(state, patch || {})
-    // 包裹层跟着 `open || notice` 走；两者都假时整棵摘掉。
-    mountNode(host, el, !!state.open || !!state.notice)
+    mountNode(host, el, !!state.notice)
     if (!el.parentNode) return
-    render()
+    setText(noticeText, state.notice)
   }
 
   return {
     el,
     update,
-    focusInput() { if (el.parentNode) input.focus() },
     destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
   }
 }

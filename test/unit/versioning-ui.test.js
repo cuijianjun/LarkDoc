@@ -30,16 +30,13 @@ import {
   E_VERSION_EVICTED,
   E_VERSION_NOT_FOUND,
   SNAPSHOT_KIND,
-  SNAPSHOT_LABEL_MAX,
   createMemoryVersioningProvider,
 } from '../../src/core/versioning/index'
 import {
   VERSIONING_CURSOR_LABEL,
   VERSIONING_DAY_LABELS,
   VERSIONING_ERROR_TEXT,
-  VERSION_KIND_LABELS,
   currentProjection,
-  defaultVersionLabel,
   describeVersionDiff,
   formatVersionClock,
   formatVersionDayLabel,
@@ -119,11 +116,11 @@ describe('private version presentation boundary', () => {
   })
 
   it('keeps panel actions synchronous at entry and returns the original delegated promise', async () => {
-    const gate = vi.fn(), errorText = vi.fn(), confirmation = vi.fn(), defaultLabel = vi.fn(), ordinal = vi.fn()
+    const gate = vi.fn(), errorText = vi.fn(), confirmation = vi.fn()
     const presentation = createVersioningPresentation({ versionCapabilityGate: gate, versioningErrorMessage: errorText,
-      confirmedVersionResult: confirmation, defaultVersionLabel: defaultLabel, nextVersionOrdinal: ordinal, SNAPSHOT_LABEL_MAX: 3 })
+      confirmedVersionResult: confirmation })
     expect(presentation.then).toBeUndefined()
-    for (const helper of [gate, errorText, confirmation, defaultLabel, ordinal]) expect(helper).not.toHaveBeenCalled()
+    for (const helper of [gate, errorText, confirmation]) expect(helper).not.toHaveBeenCalled()
     const pending = Promise.resolve({ id: 'selected' }), selectVersion = vi.fn(() => pending)
     const host = { versionIndex: 1, versionTotal: 2, versionList: [{ id: 'first' }, { id: 'second' }], selectVersion,
       versionPrevDisabled: false, versionNextDisabled: false, stepVersion: vi.fn(() => pending) }
@@ -133,24 +130,6 @@ describe('private version presentation boundary', () => {
     expect(host.versionIndex).toBe(2)
     expect(selectVersion).toHaveBeenCalledExactlyOnceWith('second')
     expect(await result).toEqual({ id: 'selected' })
-    expect(presentation.methods.setSaveVersionName.call(host, 'abcdef')).toBeUndefined()
-    expect(host.saveVersionName).toBe('abc')
-  })
-
-  it('keeps save busy immediate and ignores a late result after the live actor changes', async () => {
-    let finish
-    const write = vi.fn(() => new Promise(resolve => { finish = resolve }))
-    const session = fakeSession({ provider: {} }); session.user = { id: 'first' }; session.createVersion = write
-    const host = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'original' })
-    const result = host.confirmSaveVersion()
-    expect(host.saveVersionBusy).toBe(true)
-    expect(write).toHaveBeenCalledExactlyOnceWith({ label: 'original', title: undefined })
-    session.user.id = 'second'
-    finish({ id: 'committed-for-first' })
-    expect(await result).toEqual({ id: 'committed-for-first' })
-    expect(host.saveVersionOpen).toBe(true)
-    expect(host.versionNotice).toBe('')
-    expect(host.saveVersionBusy).toBe(false)
   })
 
   it('keeps preview failure text inert and returns synchronous cleanup', () => {
@@ -441,7 +420,8 @@ describe('版本回收站 UI 工作流', () => {
     await vm.purgeDeletedVersion(first.id)
     expect(vm.versionDeletedList).toHaveLength(0)
 
-    const denied = mountMixin({ session: fakeSession({ provider, capabilities: { canCreateVersion: false } }) })
+    // 回收站门禁跟还原按钮同口径：没有 `canRestoreVersion` 就 fail-closed。
+    const denied = mountMixin({ session: fakeSession({ provider, capabilities: { canRestoreVersion: false } }) })
     await expect(denied.openVersionTrash()).resolves.toBe(false)
     expect(denied.versionTrashOpen).toBe(false)
   })
@@ -570,13 +550,11 @@ describe('capability 闸门（04 §3.4-B 置灰，不隐藏）', () => {
     expect(gate).toEqual({ allowed: true, reason: '', missingProvider: false })
   })
 
-  it('两个能力互相独立：只关 canCreateVersion 不影响 canRestoreVersion', () => {
-    const session = fakeSession({ capabilities: { canCreateVersion: false } })
+  it('只关 canRestoreVersion：列表照读，只有还原被拦（手动另存为已下线，不再有第二个能力位）', () => {
+    const session = fakeSession({ capabilities: { canRestoreVersion: false } })
     const vm = mountMixin({ session })
-    expect(computedOf(vm, 'versionCanCreate')).toBe(false)
-    expect(computedOf(vm, 'versionCanRestore')).toBe(true)
-    expect(computedOf(vm, 'versionCanCreateReason')).toBe('当前用户没有该操作的权限')
-    expect(computedOf(vm, 'versionCanRestoreReason')).toBe('')
+    expect(computedOf(vm, 'versionCanRestore')).toBe(false)
+    expect(computedOf(vm, 'versionCanRestoreReason')).toBe('当前用户没有该操作的权限')
   })
 
   it('无权限时置灰但不隐藏：置灰样式照给，按钮照挂', () => {
@@ -654,59 +632,6 @@ describe('选中态与编辑记录游标', () => {
     expect(callOf(vm, 'versionTimelineClass', { id: 'a' })).toEqual({ selected: false })
     expect(callOf(vm, 'versionTimelineClass', { id: 'b' })).toEqual({ selected: true })
     expect(callOf(vm, 'versionTimelineClass', null)).toEqual({ selected: false })
-  })
-})
-
-/* ---------------- 7. 另存为版本 Dialog ---------------- */
-
-describe('另存为版本 Dialog（04 §3.4 ⑤-2）', () => {
-  it('默认名是「{文档名} 第 {N} 版」，N = 当前版本数 + 1（实测只有一条样本，属推断）', () => {
-    expect(defaultVersionLabel('/code', 1)).toBe('/code 第 1 版')
-    expect(defaultVersionLabel('  ', 3)).toBe('未命名文档 第 3 版')
-    expect(defaultVersionLabel(undefined, 0)).toBe('未命名文档 第 1 版')
-  })
-
-  it('计数是「已输入/1000」，且与 SNAPSHOT_LABEL_MAX 同源', () => {
-    const vm = mountMixin({ saveVersionName: '/code 第 1 版' })
-    expect(computedOf(vm, 'versionNameCounter')).toBe('11/1000')
-    // 04 §⑤-2 实测：输入 4 个字后是 15/1000 —— 追加，不是全选替换。
-    callOf(vm, 'setSaveVersionName', '/code 第 1 版abcd')
-    expect(computedOf(vm, 'versionNameCounter')).toBe('15/1000')
-    expect(computedOf(vm, 'versionNameMax')).toBe(SNAPSHOT_LABEL_MAX)
-  })
-
-  it('超长输入被截断到上限，不靠 maxlength 属性兜底', () => {
-    const vm = mountMixin()
-    callOf(vm, 'setSaveVersionName', 'x'.repeat(SNAPSHOT_LABEL_MAX + 50))
-    expect(vm.saveVersionName.length).toBe(SNAPSHOT_LABEL_MAX)
-    callOf(vm, 'setSaveVersionName', null)
-    expect(vm.saveVersionName).toBe('')
-  })
-
-  it('Dialog 标题是「保存 今天 HH:mm 的文档版本」', () => {
-    const vm = mountMixin()
-    expect(computedOf(vm, 'saveVersionDialogTitle'))
-      .toBe(`保存 ${VERSIONING_DAY_LABELS.today} ${formatVersionClock(Date.now())} 的文档版本`)
-  })
-
-  it('无 canCreateVersion 时开不了 Dialog，但入口照挂（置灰 + 直接 return，不隐藏）', () => {
-    const denied = mountMixin({ session: fakeSession({ capabilities: { canCreateVersion: false } }) })
-    expect(callOf(denied, 'openSaveVersionDialog')).toBe(false)
-    expect(denied.saveVersionOpen).toBe(false)
-    expect(denied.saveVersionError).toBe('当前用户没有该操作的权限')
-
-    const allowed = mountMixin({ session: fakeSession(), localTitle: 'doc' })
-    expect(callOf(allowed, 'openSaveVersionDialog')).toBe(true)
-    expect(allowed.saveVersionOpen).toBe(true)
-    expect(allowed.saveVersionName).toBe('doc 第 1 版')
-  })
-
-  it('kind 徽标三个值都有中文文案，未知 kind 退回「手动保存」而不是空串', () => {
-    expect(VERSION_KIND_LABELS[SNAPSHOT_KIND.AUTO]).toBe('自动快照')
-    expect(VERSION_KIND_LABELS[SNAPSHOT_KIND.MANUAL]).toBe('手动保存')
-    expect(VERSION_KIND_LABELS[SNAPSHOT_KIND.RESTORE]).toBe('恢复产生')
-    const vm = mountMixin()
-    expect(callOf(vm, 'versionKindLabel', 'whatever')).toBe('手动保存')
   })
 })
 
@@ -897,75 +822,6 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
     expect(vm.versionPreview).toBe(null)
   })
 
-  it('unknown保原op且不成功toast，再次保存只query原结果', async () => {
-    let posts = 0, queries = 0
-    const provider = { requiresDurableConfirmation: true, supportsRestore: false,
-      queryOperation: async operationId => { queries++; return { status: 'committed', operationId, version: { status: 'durable' } } } }
-    const session = fakeSession({ provider })
-    session.createVersion = async () => { posts++; return { status: 'unknown', operationId: 'original-op' } }
-    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A' })
-    await callOf(vm, 'confirmSaveVersion')
-    expect(vm.saveVersionOpen).toBe(true)
-    expect(vm.versionNotice).toBe('')
-    expect(vm.saveVersionOperationId).toBe('original-op')
-    expect(vm.saveVersionError).toContain('待确认')
-    vm.closeSaveVersionDialog()
-    vm.openSaveVersionDialog()
-    vm.saveVersionName = '不能另造此版本'
-    await callOf(vm, 'confirmSaveVersion')
-    expect(posts).toBe(1)
-    expect(queries).toBe(1)
-    expect(vm.saveVersionOperationId).toBe('')
-    expect(vm.versionNotice).toContain('版本已保存')
-  })
-
-  it('remote provider未收到durable wrapper不成功，US8接线前恢复置灰', async () => {
-    const provider = { requiresDurableConfirmation: true, supportsRestore: false }
-    const session = fakeSession({ provider })
-    session.createVersion = vi.fn(async () => ({ id: 'looks-like-version' }))
-    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A', versionList: [{ id: 'v1' }], versionSelectedId: 'v1' })
-    await callOf(vm, 'confirmSaveVersion')
-    expect(vm.versionNotice).toBe('')
-    expect(vm.saveVersionOpen).toBe(true)
-    expect(vm.versionRestoreDisabled).toBe(true)
-    await callOf(vm, 'confirmSaveVersion')
-    expect(session.createVersion).toHaveBeenCalledTimes(1)
-    expect(vm.saveVersionError).toContain('原操作查询服务')
-  })
-
-  it('保存待确认缺查询服务或查询返回异键均不重新 POST 或伪成功', async () => {
-    const provider = { requiresDurableConfirmation: true }
-    const session = fakeSession({ provider })
-    session.createVersion = vi.fn(async () => ({ status: 'unknown', operationId: 'original-op' }))
-    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A' })
-    await vm.confirmSaveVersion()
-    await vm.confirmSaveVersion()
-    expect(vm.saveVersionError).toContain('原操作查询服务')
-    expect(vm.saveVersionOperationId).toBe('original-op')
-    provider.queryOperation = vi.fn(async () => ({ status: 'committed', operationId: 'wrong-op', version: { status: 'durable' } }))
-    await vm.confirmSaveVersion()
-    expect(provider.queryOperation).toHaveBeenCalledExactlyOnceWith('original-op')
-    expect(session.createVersion).toHaveBeenCalledTimes(1)
-    expect(vm.saveVersionOperationId).toBe('original-op')
-    expect(vm.versionNotice).toBe('')
-    expect(vm.saveVersionOpen).toBe(true)
-  })
-
-  it('待确认保存绑定原身份，代际改变后既不查询旧键也不新 POST', async () => {
-    const provider = { requiresDurableConfirmation: true, queryOperation: vi.fn() }
-    const session = fakeSession({ provider })
-    session.createVersion = vi.fn(async () => ({ status: 'unknown', operationId: 'original-op' }))
-    session._privateIdentityGeneration = 0
-    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A' })
-    await vm.confirmSaveVersion()
-    session._privateIdentityGeneration += 1
-    await vm.confirmSaveVersion()
-    expect(provider.queryOperation).not.toHaveBeenCalled()
-    expect(session.createVersion).toHaveBeenCalledTimes(1)
-    expect(vm.saveVersionError).toContain('身份或文档已改变')
-    expect(vm.versionNotice).toBe('')
-  })
-
   it('远端恢复unknown保原op与只读，后续只query；DBcommitted但未重开不谎称失败', async () => {
     let restores = 0, queries = 0
     const editable = []
@@ -1008,5 +864,103 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
     expect(vm.versionRestoreOperationId).toBe('restore-original')
     expect(vm.versionPreviewError).toContain('原操作查询服务')
     expect(vm.versionNotice).toBe('')
+  })
+})
+
+/**
+ * 右栏与飞书 1:1 对齐的 DOM 契约。
+ *
+ * 飞书历史面板的右栏条目是两行（时间 / 「最近更新」绿标 + 作者），底栏「显示更改」是
+ * 开关而不是说明文字。这三条都是纯 DOM 结构，只有真的把面板建出来才断言得到 ——
+ * 上面那些 describe 走的都是纯函数，覆盖不到。
+ */
+describe('右栏飞书对齐的 DOM 契约', () => {
+  const mountPanel = (hosted) => {
+    const dom = new JSDOM('<div id="host"></div>')
+    vi.stubGlobal('document', dom.window.document)
+    const host = dom.window.document.querySelector('#host')
+    const handlers = { onToggleShowChanges: vi.fn() }
+    const panel = createVersionPanel({ host, handlers })
+    return { dom, panel, handlers, update: extra => panel.update({ open: true, view: 'timeline',
+      pager: { cursor: '编辑记录 2/2', prev: { disabled: false }, next: { disabled: true } },
+      restore: { disabled: false }, ...hosted, ...extra }) }
+  }
+
+  it('时间线条目三行：时间 / 「最近更新」+ 改动描述 / 作者，绿标只给最新一条', () => {
+    const { dom, panel, update } = mountPanel({
+      days: [{ key: 'd1', label: '今天', items: [
+        { id: 'v2', name: '11月17日 10:00', badge: '最近更新', desc: '新增 2 个块', user: '张三' },
+        { id: 'v1', name: '11月17日 09:00', badge: '', desc: '', user: '李四' },
+      ] }],
+    })
+    try {
+      update()
+      const items = panel.el.querySelectorAll('.lark-doc-version-item')
+      expect(items).toHaveLength(2)
+      const [newest, older] = items
+      expect(newest.querySelector('.lark-doc-version-item-name').textContent).toBe('11月17日 10:00')
+      // 第二行 = 绿标 + 改动描述；作者必须独占第三行，合成两行会把条目高度压掉 18px。
+      expect(newest.querySelector('.lark-doc-version-item-meta').textContent).toBe('最近更新新增 2 个块')
+      expect(newest.querySelector('.lark-doc-version-item-badge').hidden).toBe(false)
+      expect(newest.querySelector('.lark-doc-version-item-desc').textContent).toBe('新增 2 个块')
+      expect(newest.querySelector('.lark-doc-version-item-user').textContent).toBe('张三')
+      // 空标签/空描述必须真的不可见，否则第二行会多出空白。
+      expect(older.querySelector('.lark-doc-version-item-badge').hidden).toBe(true)
+      expect(older.querySelector('.lark-doc-version-item-desc').hidden).toBe(true)
+      expect(older.querySelector('.lark-doc-version-item-user').textContent).toBe('李四')
+      expect(items[0].children).toHaveLength(3)
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('「显示更改」是 role=switch 的开关，状态走 aria-checked 且可点击回调', () => {
+    const { dom, panel, handlers, update } = mountPanel({ showChanges: true })
+    try {
+      update()
+      const toggle = panel.el.querySelector('.lark-doc-version-changes-switch')
+      expect(toggle).not.toBeNull()
+      expect(toggle.getAttribute('role')).toBe('switch')
+      expect(toggle.getAttribute('aria-label')).toBe('显示更改')
+      expect(toggle.getAttribute('aria-checked')).toBe('true')
+      expect(toggle.classList.contains('on')).toBe(true)
+      toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      expect(handlers.onToggleShowChanges).toHaveBeenCalledTimes(1)
+      // 关：滑块回左、语义同步；差异行与改动清单一起让位。
+      update({ showChanges: false, preview: { id: 'v2', title: 'A', diff: { row: '新增 1 个块' }, changes: [{ kind: 'add', path: '/content/0', after: {} }] } })
+      expect(toggle.getAttribute('aria-checked')).toBe('false')
+      expect(toggle.classList.contains('on')).toBe(false)
+      expect(panel.el.querySelector('.lark-doc-version-diff')).toBeNull()
+      expect(panel.el.querySelector('.lark-doc-version-changes')).toBeNull()
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('返回按钮带「返回文档」文字，翻页是「上一页 / 下一页」而不是「上一版本」', () => {
+    const { dom, panel, update } = mountPanel({})
+    try {
+      update()
+      expect(panel.el.querySelector('.lark-doc-version-back-label').textContent).toBe('返回文档')
+      const steps = [...panel.el.querySelectorAll('.lark-doc-version-step')].map(node => node.textContent)
+      expect(steps).toEqual(['上一页', '下一页'])
+      expect(panel.el.querySelector('.lark-doc-version-right-title').textContent).toBe('历史记录')
+      // ⓘ 只是说明图标，不是可点控件。
+      expect(panel.el.querySelector('.lark-doc-version-right-info').getAttribute('role')).toBe('img')
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('「展开更多历史记录」是 20×20 箭头图标按钮，不是一条文字按钮（history-timeline-open-icon）', () => {
+    const items = Array.from({ length: 4 }, (_, index) => ({ id: `v${index}`, name: `条目 ${index}`, user: '张三' }))
+    const { dom, panel, update } = mountPanel({ days: [{ key: 'd1', label: '今天', items }] })
+    try {
+      update()
+      expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(3)
+      const more = panel.el.querySelector('.lark-doc-version-more-history')
+      expect(more).not.toBeNull()
+      // 飞书这一格只有箭头：可见面不含文案，文案退到 aria-label / title。
+      expect(more.textContent).toBe('')
+      expect(more.getAttribute('aria-label')).toBe('展开更多历史记录')
+      expect(more.getAttribute('title')).toBe('展开更多历史记录')
+      expect(more.querySelector('svg')).not.toBeNull()
+      more.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(4)
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
   })
 })

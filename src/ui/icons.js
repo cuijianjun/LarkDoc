@@ -88,6 +88,8 @@ export const ICONS = {
   fullscreen: wrap('<path d="M2.5 6V3.9a1.4 1.4 0 0 1 1.4-1.4H6"/><path d="M10 2.5h2.1a1.4 1.4 0 0 1 1.4 1.4V6"/><path d="M13.5 10v2.1a1.4 1.4 0 0 1-1.4 1.4H10"/><path d="M6 13.5H3.9a1.4 1.4 0 0 1-1.4-1.4V10"/>'),
   slides: wrap('<rect x="2.5" y="3" width="11" height="7.6" rx="1.3"/><path d="M7 5.6 9.6 6.8 7 8z" fill="currentColor" stroke="none"/><path d="M8 10.6v2"/><path d="M5.6 13h4.8"/>'),
   chevronDown: wrap('<path d="m4.2 6.2 3.8 3.8 3.8-3.8"/>'),
+  // 右栏标题旁的说明入口（飞书 `.docx-history-info-icon` 的「ⓘ」），点开是自动保存口径。
+  info: wrap('<circle cx="8" cy="8" r="6"/><path d="M8 7.4v4"/><circle cx="8" cy="5.1" r=".75" fill="currentColor" stroke="none"/>'),
   // 实心小三角：下拉触发器尾部的「▾」（飞书菜单用实心，比 chevron 更紧凑）
   caretSolid: wrap('<path d="M4.6 6.2h6.8L8 10.7z" fill="currentColor" stroke="none"/>'),
   chevronUp: wrap('<path d="m4.2 9.8 3.8-3.8 3.8 3.8"/>'),

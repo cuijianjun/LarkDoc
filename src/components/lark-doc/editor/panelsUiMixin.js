@@ -8,29 +8,23 @@
  * 四条必须守住的线：
  *
  * 1. **`open` 就是原 `v-if` 的那个条件**。目录是 `outlineOpen && featureEnabled('outline')`、
- *    历史面板是 `versionPanelOpen`、评论层是 `commentPanels.length`、另存为是
- *    `saveVersionOpen || versionNotice`（两者共用一个包裹层，关掉 Dialog 后 toast 还在，
- *    所以那一条不能跟着 `open` 一起摘）。原模板里条件为假时组件整棵不在 DOM 里，
- *    断言用 `querySelector` 找不到才是对的。
+ *    历史面板是 `versionPanelOpen`、评论层是 `commentPanels.length`。原模板里条件为假时
+ *    组件整棵不在 DOM 里，断言用 `querySelector` 找不到才是对的。
  * 2. **三个宿主分工不同**：
  *    - `outlineHost` 必须在 `.lark-doc-body` 里（`main.lark-doc-main` 之前、☰ 钮之后）。
  *      `aside` 是 `flex: 0 0 210px` + `position: sticky`，必须是那层 flex 的直接子项，
  *      所以这个宿主带 `display: contents`，自身不占一格。
- *    - `panelHost` 与编辑器根同层（`<LarkDocOverlays>` 的兄弟）：评论卡 / 历史层 /
- *      另存为都是 `position: fixed`，祖先不许有 transform / filter / 非 static 定位。
+ *    - `panelHost` 与编辑器根同层（`<LarkDocOverlays>` 的兄弟）：评论卡 / 历史层都是
+ *      `position: fixed`，祖先不许有 transform / filter / 非 static 定位。
  * 3. **评论卡的 `:style` 在 SFC 里是数组**（`[commentPanelStyle(item), { height }]`，
  *    合并语义）。`src/ui/panels.js` 的 `applyStyle` 是替换语义，所以这里先合成一份对象
  *    再传，不能分两次 `applyStyle`。
- * 4. **`saveVersionDialogTitle` 只在弹窗打开时求值**。那个 computed 没有响应式依赖
- *    （时间取自 `Date.now()`），Vue 2 会把它缓存成常量。挂载时顺手读一次就会把标题
- *    冻在「页面刚打开那一刻」，第二次打开也是同一个时间点 —— 所以这里用条件求值，
- *    保持与 SFC「首次渲染才求值」一致的行为。
  */
 import {
   createCommentPanel,
   createOutlinePanel,
-  createSaveVersionDialog,
   createVersionPanel,
+  createVersionToast,
 } from '../../../ui/panels'
 import { applyStyle, mountNode, syncChildren } from '../../../ui/dom'
 import { COVER_PANEL_ITEMS, coverImageStyle } from './coverMixin'
@@ -50,7 +44,6 @@ export default {
     session() { this.refreshPanels() },
     effectiveReadonly() { this.refreshPanels() },
     versionRestoreDisabled() { this.refreshPanels() },
-    versionCanCreate() { this.refreshPanels() },
     versionCanManageTrash() { this.refreshPanels() },
     canCommentNow() { this.refreshPanels() },
     coverValue() { this.refreshCover() },
@@ -82,12 +75,7 @@ export default {
     versionTrashBusy() { this.refreshPanels() },
     versionDeletedList: { deep: true, handler() { this.refreshPanels() } },
 
-    // —— 另存为 Dialog + toast ——
-    // 打开即聚焦输入框（与原 `@focus` 的 `$nextTick` 口径一致，原生渲染是同步的）。
-    saveVersionOpen(value) { this.refreshPanels(); if (value) this._panelsUi?.saveVersion.focusInput() },
-    saveVersionName() { this.refreshPanels() },
-    saveVersionBusy() { this.refreshPanels() },
-    saveVersionError() { this.refreshPanels() },
+    // —— 版本成功提示 toast ——
     versionNotice() { this.refreshPanels() },
 
     // —— 评论：面板几何 / 草稿 / 私有开关 / 两套菜单 ——
@@ -158,7 +146,7 @@ export default {
         } }),
         version: createVersionPanel({ host: panelHost, get handlers() { return owner.panelsHandlers().version }, onReady,
           renderDocument: (element, record) => this.mountVersionDocumentPreview(element, record) }),
-        saveVersion: createSaveVersionDialog({ host: panelHost, get handlers() { return owner.panelsHandlers().saveVersion }, onReady }),
+        versionToast: createVersionToast({ host: panelHost, get handlers() { return owner.panelsHandlers().versionToast }, onReady }),
         comment: createCommentPanel({ host: panelHost, inlineHost: this.$refs.paper, get handlers() { return owner.panelsHandlers().comment }, composerFactory: createCommentComposer, onReady }),
 
       }
@@ -319,7 +307,7 @@ export default {
       return {
         outline: this.buildOutlineState(),
         version: this.buildVersionState(),
-        saveVersion: this.buildSaveVersionState(),
+        versionToast: { notice: this.versionNotice || '' },
         comment: this.buildCommentState(),
       }
     },
@@ -392,13 +380,6 @@ export default {
         contextKey, previewPolicyKey: JSON.stringify(this.larkDocConfig?.network || {}),
         restoreConfirm: { open: false }, trash: { open: false }, days: [], preview: null }
     },
-    buildSaveVersionVisibility() {
-      const disabled = !this.versionCanCreate || !!this.saveVersionBusy
-      return { open: !!this.saveVersionOpen, notice: this.versionNotice || '',
-        title: this.saveVersionOpen ? this.saveVersionDialogTitle : '', value: this.saveVersionName || '',
-        maxLength: this.versionNameMax, counter: this.versionNameCounter,
-        confirm: { disabled, title: this.versionCanCreateReason, style: this.versionDisabledStyle(disabled) }, error: this.saveVersionError || '' }
-    },
 
     refreshPanels() {
       if (this._imageCommentScope && !this.imageCommentCurrent()) { this.closeImageComments(null, false); return }
@@ -408,7 +389,7 @@ export default {
       const state = this.buildPanelsState()
       ui.outline.update(state.outline)
       ui.version.update(state.version)
-      ui.saveVersion.update(state.saveVersion)
+      ui.versionToast.update(state.versionToast)
       const scope = this._imageCommentScope
       if (scope) {
         ui.comment.update({ open: false, documentInline: false, launcher: { visible: false }, composer: { open: false }, documentComposer: { open: false } })

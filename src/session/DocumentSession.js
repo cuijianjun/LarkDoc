@@ -37,6 +37,29 @@ function resourceSnapshot(value) {
 const resourceKey = (operationId, commandType) => JSON.stringify([commandType, operationId])
 
 /**
+ * 自动历史版本的节流间隔（毫秒）。
+ *
+ * 飞书前端**没有**「创建版本」接口（只有 `history/page/list`、`revert` 一类读与还原），
+ * 历史版本由服务端在内容提交时持续记录，所以这里不是「定时快照」，而是「正文落定后补一次
+ * 提交，交给后端存」。60s 是节流上限：连续编辑的 60 秒内只留一条，否则时间线会退化成
+ * 击键日志 —— 而历史面板的价值恰恰在「隔几分钟才有一条可读的记录」。
+ */
+export const AUTO_VERSION_INTERVAL_MS = 60000
+
+/**
+ * `purpose`（服务端口径）→ 本地快照 `kind`（`core/versioning` 的三分类）。
+ *
+ * 两套词表不是一回事：远端用 `manual / approval / pre_restore / post_restore` 说明
+ * 「谁因为什么建的版本」，本地只关心「能不能被保留策略淘汰」。恢复相关的两种 purpose
+ * 都映成 `restore` —— 恢复点一旦被淘汰，用户就再也回不到那个状态。
+ */
+function localSnapshotKind(purpose) {
+  if (purpose === 'auto') return 'auto'
+  if (purpose === 'pre_restore' || purpose === 'post_restore') return 'restore'
+  return 'manual'
+}
+
+/**
  * 单文档会话。编辑器和工作台只依赖这层，Provider 可以在本地模式或未来的
  * 协同、版本、评论和权限服务之间替换，而不改变 Vue 组件 API。
  */
@@ -64,6 +87,15 @@ export class DocumentSession {
     this._privateIdentityGeneration = 0
     this._identityState = null
     this._identityDisconnect = Promise.resolve()
+    // 自动历史版本：默认开启（飞书同样没有「手动保存版本」这个动作），
+    // 宿主可用 `autoVersion: false` 关掉 —— 例如只读预览或测试。
+    this._autoVersionEnabled = options.autoVersion !== false
+    this._autoVersionTimer = null
+    this._autoVersionListener = null
+    this._autoVersionRunning = false
+    this._autoVersionDirty = false
+    this._autoVersionAt = 0
+    this._autoVersionSignature = ''
     this.providers = {}
     const input = options.providers || {}
     Object.keys(PROVIDER_FACTORIES).forEach((name) => {
@@ -244,17 +276,19 @@ export class DocumentSession {
   /** 绑定 Tiptap 实例，使记录、事务和版本操作共享同一正文。 */
   attachEditor(editor, documentAccess = null) {
     if (this._destroyed) throw new Error('DocumentSession 已销毁')
+    if (this._editor && this._editor !== editor) this._unbindAutoVersion(this._editor)
     this._editor = editor || null
     this._documentAccess = documentAccess
     this._currentVersion = null
     this._pendingLocalRestore = null
+    this._bindAutoVersion(this._editor)
     this.emit('editor', this._editor)
     return this._editor
   }
 
   /** 在 Vue 子组件销毁前解除绑定，防止旧编辑器继续接收事件。 */
   detachEditor(editor) {
-    if (!editor || this._editor === editor) { this._editor = null; this._documentAccess = null; this._currentVersion = null; this._pendingLocalRestore = null }
+    if (!editor || this._editor === editor) { this._unbindAutoVersion(this._editor); this._editor = null; this._documentAccess = null; this._currentVersion = null; this._pendingLocalRestore = null }
     this.emit('editor', null)
   }
 
@@ -330,6 +364,96 @@ export class DocumentSession {
     if (listeners) Array.from(listeners).forEach(listener => { if (listeners.has(listener)) listener(value) })
   }
 
+  /** 自动历史版本的总闸；关掉只停「自动」这一层，显式 `createVersion()` 仍可用。 */
+  get autoVersion() { return this._autoVersionEnabled }
+  setAutoVersion(enabled) {
+    this._autoVersionEnabled = enabled !== false
+    if (!this._autoVersionEnabled) this._autoVersionDirty = false
+    if (!this._autoVersionEnabled && this._autoVersionTimer) { clearTimeout(this._autoVersionTimer); this._autoVersionTimer = null }
+    return this._autoVersionEnabled
+  }
+
+  /**
+   * 编辑器每次 `update` 只做两件事：标记「正文脏了」，确保有一个尾部定时器在跑。
+   *
+   * **不在 `update` 里直接提交**是刻意的：飞书的历史记录是「一段编辑落定后的补记」，
+   * 不是击键日志。同步提交还会把自动版本插进用户显式操作的中间（另存、恢复前后），
+   * 让版本序号和并发校验对不上。
+   */
+  _bindAutoVersion(editor) {
+    if (!editor || typeof editor.on !== 'function') return
+    this._autoVersionListener = () => {
+      if (!this._autoVersionEnabled) return
+      this._autoVersionDirty = true
+      this._armAutoVersion(AUTO_VERSION_INTERVAL_MS)
+    }
+    editor.on('update', this._autoVersionListener)
+  }
+
+  _unbindAutoVersion(editor) {
+    if (this._autoVersionTimer) { clearTimeout(this._autoVersionTimer); this._autoVersionTimer = null }
+    if (editor && this._autoVersionListener && typeof editor.off === 'function') editor.off('update', this._autoVersionListener)
+    this._autoVersionListener = null
+    this._autoVersionDirty = false
+  }
+
+  /**
+   * 记一条自动历史版本。四条硬约束缺一条都会在生产里出事：
+   *
+   *   1. **节流**：`AUTO_VERSION_INTERVAL_MS` 内最多一条，否则历史面板变成击键日志；
+   *   2. **内容去重**：正文与上一条自动版本相同就跳过 —— 光标移动、选区变化同样会触发
+   *      `update`，那不是「新版本」；
+   *   3. **失败静默**：自动保存不弹错、不打断输入，用户打开历史面板时 `list()` 照实反映
+   *      后端状态，那才是唯一真相；
+   *   4. **只在有权限且有 Provider 时**：只读预览、未接版本服务都直接空跑。
+   *
+   * @param {object} [meta] 透传给 `createVersion`（如 `label`）。
+   * @returns {Promise<object|null>} 新版本元信息；被节流/去重/无权限/失败时为 null。
+   */
+  async requestAutoVersion(meta = {}) {
+    if (this._destroyed || !this._autoVersionEnabled) return null
+    if (!this.can('canCreateVersion') || !this.providers.versioning) return null
+    // 已在提交中：保留「正文仍然是脏的」这个标记，等这次落地后再补一次，绝不并发发两条。
+    if (this._autoVersionRunning) { this._autoVersionDirty = true; return null }
+    const now = Date.now()
+    const wait = this._autoVersionAt + AUTO_VERSION_INTERVAL_MS - now
+    if (this._autoVersionAt && wait > 0) { this._autoVersionDirty = true; this._armAutoVersion(wait); return null }
+    // 先清脏标记再取正文：请求期间的新编辑会重新置脏，由 finally 决定是否补下一轮。
+    this._autoVersionDirty = false
+    this._autoVersionRunning = true
+    try {
+      const record = this.getDocumentRecord()
+      const signature = JSON.stringify(record.content === undefined ? null : record.content)
+      if (signature === this._autoVersionSignature) return null
+      const created = await this.createVersion({
+        ...meta,
+        purpose: 'auto',
+        ...(record.content === undefined ? {} : { content: record.content }),
+      })
+      this._autoVersionSignature = signature
+      this._autoVersionAt = now
+      return created
+    } catch (_) {
+      // 失败也推后节流窗口：否则每次按键都会重试同一次失败，把接口打成靶子。
+      this._autoVersionAt = now
+      return null
+    } finally {
+      this._autoVersionRunning = false
+      if (this._autoVersionDirty) this._armAutoVersion(AUTO_VERSION_INTERVAL_MS)
+    }
+  }
+
+  /** 单个尾部定时器：窗口内的后续输入不重排，避免「一直打字一直不落」。 */
+  _armAutoVersion(delay) {
+    if (this._autoVersionTimer || this._destroyed || !this._autoVersionEnabled) return
+    this._autoVersionTimer = setTimeout(() => {
+      this._autoVersionTimer = null
+      void this.requestAutoVersion()
+    }, Math.max(0, delay))
+    // 浏览器里返回数字（没有 unref）；Node 里挂 unref，测试进程不被待执行定时器吊住。
+    if (this._autoVersionTimer && typeof this._autoVersionTimer.unref === 'function') this._autoVersionTimer.unref()
+  }
+
   /** 通过版本 Provider 创建不可变快照。 */
   async createVersion(meta = {}) {
     if (!this.can('canCreateVersion')) throw new Error('当前用户没有创建版本的权限')
@@ -344,7 +468,10 @@ export class DocumentSession {
     const currentContent = !Object.prototype.hasOwnProperty.call(meta, 'payload') && !Object.prototype.hasOwnProperty.call(meta, 'content')
     const record = { ...this.getDocumentRecord(meta), ...meta }
     if (record.author === undefined) record.author = scope.actor
-    if (record.kind === undefined) record.kind = 'manual'
+    // `kind` 必须跟着 `purpose` 走：这里以前硬编码 `'manual'`，于是 `purpose: 'auto'`
+    // 的自动快照会被记成手动 —— 而手动是「永久保留」，结果是自动版本永远不被保留策略
+    // 淘汰，保留策略形同虚设，历史记录只增不减。
+    if (record.kind === undefined) record.kind = localSnapshotKind(record.purpose)
     if (record.payload === undefined) record.payload = await provider.documentCodec.encode(record)
     scope.check()
     const result = await this._identityAction(() => provider.createSnapshot(record))
@@ -800,6 +927,7 @@ export class DocumentSession {
     if (typeof this.providers.versioning?.dispose === 'function') this.providers.versioning.dispose()
     else this._resetVersions('disposed')
     await this.disconnect()
+    this._unbindAutoVersion(this._editor)
     this._editor = null
     this._listeners.clear()
   }

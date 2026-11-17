@@ -377,7 +377,6 @@ export function createDomRenderer() {
         importDocument: event => workspaceController.importDocument(event),
         exportDocument: value => workspaceController.exportDocument(value),
         toggleHistory: () => workspaceController.toggleHistory(),
-        openSaveVersion: renderNow(() => documentHost.openSaveVersionDialog()),
         openVersionHistory: renderNow(() => documentHost.openVersionPanel()),
         openCommentHistory: renderNow(() => documentHost.openHistoricalComments()),
         closeTemplate: () => workspaceController.closeTemplatePicker(),
@@ -435,7 +434,6 @@ export function createDomRenderer() {
         const query = String(state.templateQuery || '').trim().toLocaleLowerCase()
         workspaceUi.update({
           ...projected,
-          versionCanCreate: documentHost.versionCanCreate,
           commentHistoryAvailable: documentHost.featureEnabled('comments') && documentHost.commentCan('canView'),
           maxLength: state.editorConfig.limits.maxLength,
           maxLengthOptions: state.maxLengthOptions,
@@ -671,7 +669,7 @@ export function createDomRenderer() {
         'importDocument', 'exportDocument', 'mapAI', 'currentAIContext', 'resetAIPreview', 'startAI', 'sendAIChat',
         'regenerateAI', 'stopAI', 'closeAI', 'openImageAI', 'openSelectionAI', 'removeAIImage', 'removeAIReference', 'copyAIPreview', 'acceptAI', 'insertAIResult', 'acceptReviewIssue',
         'ignoreReviewIssue', 'applyAIProposal'].forEach(method => { instance[method] = (...args) => workspaceController[method](...args) })
-      ;['executeCommand', 'setMode', 'openVersionPanel', 'closeVersionPanel', 'openSaveVersionDialog',
+      ;['executeCommand', 'setMode', 'openVersionPanel', 'closeVersionPanel',
         'toggleSharePopover', 'openPermissionDialog', 'openExportDialog', 'createCommentFromSelection'].forEach(method => {
         if (typeof documentHost[method] === 'function') instance[method] = documentHost[method]
       })

@@ -5,7 +5,7 @@ export function createVersioningPresentation(dependencies) {
   const { Editor, createLarkDocExtensions, validateDocument, createNetworkPolicy,
     formatVersionClock, formatVersionTime, groupVersionsByDay, historyDiffSummary, describeVersionDiff, pairOf,
     VERSIONING_DAY_LABELS, VERSION_KIND_LABELS, SNAPSHOT_KIND,
-    versionCapabilityGate, versioningErrorMessage, confirmedVersionResult, defaultVersionLabel, nextVersionOrdinal, SNAPSHOT_LABEL_MAX } = dependencies
+    versionCapabilityGate, versioningErrorMessage, confirmedVersionResult } = dependencies
 
   const computed = {
     versionRestoreConfirmText() {
@@ -68,12 +68,28 @@ export function createVersioningPresentation(dependencies) {
       return label ? `${label} · ${time}` : time
     },
 
-    /** 时间线 `-item-desc`：与**更早**那条的块数差。 */
+    /**
+     * 时间线 `-item-desc`：与**更早**那条的块数差。
+     *
+     * 飞书这一行是「最近更新编辑了封面」这种「标签 + 做了什么」，块数差是同一栏里
+     * 我们唯一拿得到、且不编造的事实（历史快照只有 blockCount，没有正文）。
+     */
     versionItemDesc(record) {
       const index = this.indexOfVersion(record ? record.id : '')
       if (index < 0) return ''
       const pair = pairOf(this.versionList, index)
       return describeVersionDiff(pair.prev, pair.current)
+    },
+
+    /**
+     * 最新一条才挂「最近更新」绿标。
+     *
+     * `versionList` 是 new → old，所以判据是**首条**而不是最大时间戳：`createdAt` 缺失
+     * （`normalizeSnapshot` 兜 0）时按时间比会把一条远古记录认成最新。
+     */
+    versionItemBadge(record) {
+      const newest = this.versionList[0]
+      return record && newest && record.id === newest.id ? '最近更新' : ''
     },
 
     /** `kind` 徽标文案（09 §5.8 要求区分「自动 / 手动 / 恢复产生」）。 */
@@ -92,6 +108,11 @@ export function createVersioningPresentation(dependencies) {
       return {
         selected: Boolean(record) && record.id === this.versionSelectedId,
       }
+    },
+    /** 右栏底部「显示更改」：只翻转本屏呈现，不重新拉差异数据。 */
+    toggleVersionShowChanges() {
+      this.versionShowChanges = !this.versionShowChanges
+      return this.versionShowChanges
     },
     stepVersionChange(delta) {
       const index = this.versionChangeIndex + delta
@@ -215,67 +236,6 @@ export function createVersioningPresentation(dependencies) {
         return null
       } finally {
         if (token === this._versionRestoreToken) this.versionRestoreBusy = false
-      }
-    },
-
-    /** 输入有两处约束：上限 `SNAPSHOT_LABEL_MAX`，且**追加不清空**（§⑤-2 实测 11 → 15）。 */
-    setSaveVersionName(value) {
-      const text = typeof value === 'string' ? value : ''
-      this.saveVersionName = text.length > SNAPSHOT_LABEL_MAX ? text.slice(0, SNAPSHOT_LABEL_MAX) : text
-    },
-
-    async confirmSaveVersion() {
-      if (this.saveVersionBusy) return null
-      if (!this.versionCanCreate) {
-        this.saveVersionError = versionCapabilityGate(this.session, 'canCreateVersion').reason
-        return null
-      }
-      this.saveVersionBusy = true
-      this.saveVersionError = ''
-      const session = this.session, provider = this.versionProvider, editor = this.editor
-      const pending = this.saveVersionPending
-      const context = pending ? this._versionSaveOperationContext : { session, provider, editor, documentId: this.documentId, scope: this.versionOperationScope() }
-      this._versionSaveOperationContext = context
-      const token = (this._versionSaveToken || 0) + 1
-      const epoch = this._saveVersionDialogEpoch
-      this._versionSaveToken = token
-      const current = () => token === this._versionSaveToken && this.versionOperationMatches(context) && session.can('canCreateVersion')
-      try {
-        if (!current()) { this.saveVersionError = '原保存操作的身份或文档已改变，结果仍待确认'; return null }
-        if (pending && (!this.saveVersionOperationId || typeof provider.queryOperation !== 'function')) {
-          this.saveVersionError = '保存结果待确认，尚无可用的原操作查询服务'; return null
-        }
-        const label = this.saveVersionName.trim() || defaultVersionLabel(this.localTitle, nextVersionOrdinal(this.versionList))
-        const operationId = this.saveVersionOperationId
-        const local = !provider.isRemote && typeof provider.documentCodec?.encode === 'function'
-        const created = pending ? await (local ? session.queryLocalVersionCreation(operationId) : provider.queryOperation(operationId)) : await session.createVersion({ label, title: this.localTitle })
-        if (!current()) return created
-        if (!confirmedVersionResult(created, provider, 'version') || (pending && created.operationId !== operationId)) {
-          this.saveVersionPending = true
-          if (!operationId && typeof created?.operationId === 'string') this.saveVersionOperationId = created.operationId
-          this.versionNotice = ''
-          this.saveVersionError = this.saveVersionOperationId && typeof provider.queryOperation === 'function'
-            ? '保存结果待确认，请查询原操作，不会重复保存' : '保存结果待确认，尚无可用的原操作查询服务，不会重复保存'
-          return created
-        }
-        this.saveVersionPending = false
-        this.saveVersionOperationId = ''
-        this._versionSaveOperationContext = null
-        if (this._saveVersionDialogEpoch === epoch) this.closeSaveVersionDialog()
-        // 04 §⑤-2 的成功 toast 原文：「版本已保存，可在 ··· 更多菜单中找到」+「立即查看」。
-        this.versionNotice = '版本已保存，可在 ··· 更多菜单中找到'
-        if (this.versionPanelOpen) await this.loadVersions()
-        return created
-      } catch (error) {
-        if (!current()) return null
-        if (pending || error.status === 'unknown') {
-          this.saveVersionPending = true
-          if (!this.saveVersionOperationId && typeof error.operationId === 'string') this.saveVersionOperationId = error.operationId
-          this.saveVersionError = `保存结果待确认：${versioningErrorMessage(error)}`
-        } else this.saveVersionError = versioningErrorMessage(error)
-        return null
-      } finally {
-        if (token === this._versionSaveToken) this.saveVersionBusy = false
       }
     },
 

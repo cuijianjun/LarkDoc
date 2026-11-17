@@ -68,13 +68,13 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     expect(create).toHaveBeenCalledTimes(11)
   })
 
-  it('更多的 23 个一级项和全部子项仍分发至原 mixin 动作', async () => {
+  it('更多的 22 个一级项和全部子项仍分发至原 mixin 动作', async () => {
     const { vm, root, tick } = mount({ capabilities: { canManagePermission: true } })
     const action = vi.spyOn(vm, 'runTopbarMoreAction').mockImplementation(() => vm.closeTopbarMore())
     for (const item of TOPBAR_MORE_ITEMS) {
       root.querySelector('.lark-doc-more-btn').click()
       await tick()
-      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"]')).toHaveLength(23)
+      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"]')).toHaveLength(22)
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(8)
       const row = root.querySelector(`[data-topbar-more-id="${item.id}"]`)
       // 历史评论等项受运行时能力门控（远端评论服务 + canView），门控关闭时不派发动作。
@@ -126,7 +126,7 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
       ['slides', 'toggleSlides', []], ['find', 'openSearch', ['find']],
       ['width.standard', 'setWidthMode', ['standard']], ['width.wide', 'setWidthMode', ['wide']], ['width.full', 'setWidthMode', ['full']],
       ['export.word', 'openExportDialog', ['word']], ['export.pdf', 'openExportDialog', ['pdf']], ['export.markdown', 'openExportDialog', ['markdown']],
-      ['save-version', 'openSaveVersionDialog', []], ['version.open', 'openVersionPanel', []],
+      ['version.open', 'openVersionPanel', []],
       ['permission.manage', 'toggleSharePopover', [null]], ['permission.settings', 'openPermissionDialog', []], ['print', 'printDocument', []],
     ]
     for (const [action, method, args] of cases) {

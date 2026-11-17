@@ -4,7 +4,7 @@
  * 只测**不碰 DOM** 的部分：清单结构、分隔线分组、子面板归属、定位纯函数、动作分发。
  * 面板 DOM 与像素交给 `scripts/verify-browser-*.js`，这里不掺和。
  *
- * 为什么要为「一张菜单清单」写这么多断言：这份清单是 23 项手抄自真机快照的，
+ * 为什么要为「一张菜单清单」写这么多断言：这份清单是 22 项手抄自真机快照的，
  * 抄错一项（漏 `查看已存版本`、或多抄 5 项离屏菜单）在 UI 上**只会少/多一行**，
  * 没有任何报错 —— 只有在这里写成不变量才拦得住。
  */
@@ -86,7 +86,6 @@ function hostCtx(extra = {}) {
     openSearch: record('openSearch'),
     setWidthMode: record('setWidthMode'),
     openExportDialog: record('openExportDialog'),
-    openSaveVersionDialog: record('openSaveVersionDialog'),
     openVersionPanel: record('openVersionPanel'),
     toggleSharePopover: record('toggleSharePopover'),
     openPermissionDialog: record('openPermissionDialog'),
@@ -98,17 +97,18 @@ function hostCtx(extra = {}) {
 }
 
 describe('顶栏更多 · 清单结构（§4.2.1 逐字）', () => {
-  it('一级菜单是 23 项，id 唯一，order 连续 1..23', () => {
-    expect(TOPBAR_MORE_ITEMS).toHaveLength(23)
-    expect(new Set(ids).size).toBe(23)
+  it('一级菜单是 22 项，id 唯一，order 连续 1..22', () => {
+    expect(TOPBAR_MORE_ITEMS).toHaveLength(22)
+    expect(new Set(ids).size).toBe(22)
     TOPBAR_MORE_ITEMS.forEach((item, index) => {
       expect(item.order).toBe(index + 1)
     })
   })
 
-  it('「查看已存版本」是独立一级项，夹在「另存为版本」与「文档权限」之间', () => {
+  it('「查看已存版本」是独立一级项，夹在「打印」与「文档权限」之间（另存为版本已下线）', () => {
     expect(ids).toContain('view-versions')
-    expect(idAt('view-versions')).toBe(idAt('save-version') + 1)
+    expect(ids).not.toContain('save-version')
+    expect(idAt('view-versions')).toBe(idAt('print') + 1)
     expect(idAt('view-versions')).toBe(idAt('doc-permission') - 1)
   })
 
@@ -122,10 +122,10 @@ describe('顶栏更多 · 清单结构（§4.2.1 逐字）', () => {
 
   it('首项「页宽设置」、末项「删除」——顺序由 order 守，不由数组位置守', () => {
     expect(TOPBAR_MORE_ITEMS[0].id).toBe('width')
-    expect(TOPBAR_MORE_ITEMS[22].id).toBe('delete')
+    expect(TOPBAR_MORE_ITEMS[21].id).toBe('delete')
   })
 
-  it('分隔线 8 条：每个 id 都真在清单里，且数量随 23 项口径（22 项是 9 条）', () => {
+  it('分隔线 8 条：每个 id 都真在清单里，且数量随 22 项口径（21 项是 9 条）', () => {
     expect(TOPBAR_MORE_DIVIDER_AFTER).toHaveLength(8)
     for (const id of TOPBAR_MORE_DIVIDER_AFTER) expect(ids).toContain(id)
     // 单列「打印」组只有一项，所以相邻分隔线允许只差 1 —— 这里守的是「严格递增、
@@ -256,9 +256,9 @@ describe('顶栏更多 · 定位纯函数', () => {
 })
 
 describe('顶栏更多 · 渲染行', () => {
-  it('行数 = 23 项 + 8 条分隔线，且分隔线紧跟在被标记的项之后', () => {
+  it('行数 = 22 项 + 8 条分隔线，且分隔线紧跟在被标记的项之后', () => {
     const rows = topbarMoreRows()
-    expect(rows).toHaveLength(31)
+    expect(rows).toHaveLength(30)
     expect(rows[0]).toEqual({ kind: 'item', item: TOPBAR_MORE_ITEMS[0] })
     expect(rows[1].kind).toBe('item')
     // slides 之后是第一条分隔线。
@@ -269,7 +269,7 @@ describe('顶栏更多 · 渲染行', () => {
     const orders = topbarMoreRows()
       .filter((row) => row.kind === 'item')
       .map((row) => row.item.order)
-    expect(orders).toEqual(Array.from({ length: 23 }, (_, i) => i + 1))
+    expect(orders).toEqual(Array.from({ length: 22 }, (_, i) => i + 1))
   })
 
   it('分隔线 id 互不相同（模板拿它当 key）', () => {
@@ -347,7 +347,6 @@ describe('顶栏更多 · action 分发（哪些真接了线，一眼数得清�
       ['export.pdf', ['openExportDialog', 'pdf']],
       ['export.word', ['openExportDialog', 'word']],
       ['export.markdown', ['openExportDialog', 'markdown']],
-      ['save-version', ['openSaveVersionDialog']],
       ['version.open', ['openVersionPanel']],
       ['permission.settings', ['openPermissionDialog']],
       ['print', ['printDocument']],

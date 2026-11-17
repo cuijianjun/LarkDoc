@@ -11,7 +11,7 @@ function handlerCaller(handlers) {
 }
 
 // 面板开合走 `mountNode(host, el, on)`（只增删自己这一棵，`dom.js`），**不是
-// `syncChildren`** —— 历史层 / 另存为 / 评论层共用同一个 `panelHost`，用后者会互相摘除。
+// `syncChildren`** —— 历史层 / 版本提示 / 评论层共用同一个 `panelHost`，用后者会互相摘除。
 
 /* ═══════════════════════════ ① 目录侧栏 ═══════════════════════════ */
 

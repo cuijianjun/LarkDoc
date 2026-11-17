@@ -174,6 +174,7 @@ class WorkspaceController {
       user: this.props.user,
       capabilities: this.props.capabilities || {},
       persistence: this.props.persistence,
+      autoVersion: this.props.autoVersion,
     })
     return this.state.sessionInstance
   }

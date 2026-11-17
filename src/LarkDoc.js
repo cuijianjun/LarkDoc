@@ -263,6 +263,9 @@ export class LarkDoc {
         comments: source.comments,
       },
       capabilities: source.capabilities,
+      // 自动历史版本默认开。宿主可传 `autoVersion: false` 关掉（只读预览、批量导入脚本），
+      // 关掉只停自动那一层，显式 `session.createVersion()` 照旧可用。
+      autoVersion: source.autoVersion,
     })
   }
 

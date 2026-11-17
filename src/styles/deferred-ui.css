@@ -2031,7 +2031,7 @@
 .lark-doc .lark-doc-image-toolbar button:focus-visible,
 .lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
 .lark-doc.lark-doc-has-image-ai .lark-doc-body { box-sizing: border-box; padding-right: 400px; }
-.lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-save-version-mask, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
+.lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
 .lark-doc .lark-doc-image-ai-reference > span { padding-left: 8px; border-left: 3px solid var(--ld-border-chrome); }
 .lark-doc .lark-doc-link-dialog label { grid-column: 1; display: grid; grid-template-columns: 28px 280px; gap: 8px; align-items: center; margin: 0; }
 .lark-doc .lark-doc-link-dialog button { grid-column: 2; grid-row: 2; width: 80px; height: 32px; padding: 0 12px; border: 0; border-radius: 4px; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 14px; line-height: 32px; cursor: pointer; }

@@ -88,7 +88,7 @@ export function createWorkspace(options = {}) {
     ariaLabel: '文档更多操作', placeholder: '⋯', menuMinWidth: 200,
     onChange: value => {
       versionMenu.update({ value: '' })
-      call(handlers, { 'save-version': 'openSaveVersion', history: 'openVersionHistory', 'comments-history': 'openCommentHistory' }[value])
+      call(handlers, { history: 'openVersionHistory', 'comments-history': 'openCommentHistory' }[value])
     },
   })
   function syncHeader() {
@@ -130,10 +130,7 @@ export function createWorkspace(options = {}) {
 
     maxLengthSelect.update({ options: state.maxLengthOptions, value: state.maxLength })
     versionMenu.update({ value: '', options: [
-      ...(state.historyEnabled ? [
-        { value: 'save-version', label: '另存为版本', disabled: !state.versionCanCreate },
-        { value: 'history', label: '历史记录' },
-      ] : []),
+      ...(state.historyEnabled ? [{ value: 'history', label: '历史记录' }] : []),
       ...(state.commentHistoryAvailable ? [{ value: 'comments-history', label: '历史评论' }] : []),
     ] })
     saveStatus.classList.toggle('is-error', !!state.storageError)

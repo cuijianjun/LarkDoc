@@ -98,7 +98,7 @@ export function createHttpVersioningProvider(options = {}) {
       !text(raw.createdBy) || typeof raw.createdAt !== 'string' || !Number.isFinite(Date.parse(raw.createdAt)) ||
       ![raw.capturedSeq, raw.sourceRevision, raw.sourceEpoch, raw.schemaVersion].every(integer) ||
       !hash(raw.contentHash) || !hash(raw.stateHash) || typeof raw.label !== 'string' ||
-      !['manual', 'approval', 'pre_restore', 'post_restore'].includes(raw.purpose) || raw.kind !== raw.purpose || raw.status !== 'durable' ||
+      !['auto', 'manual', 'approval', 'pre_restore', 'post_restore'].includes(raw.purpose) || raw.kind !== raw.purpose || raw.status !== 'durable' ||
       raw.protocolVersion !== 'editor-crdt-v1' || !Number.isSafeInteger(raw.sizeBytes) || raw.sizeBytes < 0) throw failure('VERSION_INVALID_RESPONSE')
     const meta = { ...raw, id: raw.versionId, documentId: raw.docId, author: raw.createdBy,
       createdAtIso: raw.createdAt, createdAt: Date.parse(raw.createdAt) }
@@ -562,7 +562,10 @@ export function createHttpVersioningProvider(options = {}) {
       const operationId = record.operationId === undefined ? 'version-' + Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('') : record.operationId
       if (!text(operationId) || (record.label !== undefined && typeof record.label !== 'string')) throw failure('VERSION_INVALID_REQUEST')
       const body = Object.freeze({ operationId, expectedRevision, label: record.label || '', purpose: record.purpose || 'manual' })
-      if (!['manual', 'approval'].includes(body.purpose)) throw failure('VERSION_INVALID_REQUEST')
+      // `auto` 是自动历史版本（编辑落定后由前端提交、后端落库，与飞书一致：前端没有
+      // 「创建版本」入口）。手动另存为已下线，`manual` 仍然保留 —— 历史数据与隐藏的
+      // 宿主调用方都用它，删掉会让老版本读不出来。
+      if (!['auto', 'manual', 'approval'].includes(body.purpose)) throw failure('VERSION_INVALID_REQUEST')
       if (retiredOperations.has(operationId)) throw contextChanged()
       const prior = operations.get(operationId)
       if (prior) {

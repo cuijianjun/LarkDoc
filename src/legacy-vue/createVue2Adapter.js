@@ -6,7 +6,7 @@ const methods = [
   'undo', 'redo', 'save', 'getWorkspace', 'record', 'saveNow', 'createSnapshot', 'restoreSnapshot',
   'toggleHistory', 'importDocument', 'exportDocument', 'startAI', 'stopAI', 'closeAI',
   'executeCommand', 'setMode', 'toggleSlides', 'isSlides', 'openVersionPanel', 'closeVersionPanel',
-  'openSaveVersionDialog', 'toggleSharePopover', 'openPermissionDialog', 'openExportDialog',
+  'toggleSharePopover', 'openPermissionDialog', 'openExportDialog',
   'createCommentFromSelection',
 ]
 

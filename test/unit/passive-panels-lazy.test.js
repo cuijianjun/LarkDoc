@@ -522,7 +522,7 @@ describe('native panel presentation boundary', () => {
     const deferred = []
     vi.doMock('../../src/ui/panels', () => ({
       createOutlinePanel: options => ({ options, update: vi.fn(), destroy: vi.fn() }),
-      ...Object.fromEntries(['createVersionPanel', 'createSaveVersionDialog', 'createCommentPanel'].map(name => [name, options => {
+      ...Object.fromEntries(['createVersionPanel', 'createVersionToast', 'createCommentPanel'].map(name => [name, options => {
         deferred.push({ name, options })
         return { update: vi.fn(), destroy: vi.fn() }
       }])),
@@ -565,11 +565,14 @@ describe('native panel presentation boundary', () => {
     const api = createPanelPresentation({ commentModel: {}, supportsDocumentAction: () => false,
       formatDocumentCommentTime: () => 'time', openCommentDocumentTarget: () => false })
     expect(api).not.toBeInstanceOf(Promise)
-    expect(Object.keys(api.methods)).toEqual(['panelsHandlers', 'buildVersionState', 'buildVersionPreviewState', 'buildSaveVersionState', 'buildCommentState'])
+    expect(Object.keys(api.methods)).toEqual(['panelsHandlers', 'buildVersionState', 'buildVersionPreviewState', 'buildCommentState'])
     expect(api.computed.commentPanelTitle.call({ ed: {} })).toBe('评论')
-    const vm = { saveVersionOpen: true, versionNotice: '', saveVersionDialogTitle: '保存点击时的版本', saveVersionName: 'kept', versionCanCreate: true,
-      saveVersionBusy: false, versionDisabledStyle: () => null }
-    expect(api.methods.buildSaveVersionState.call(vm)).toMatchObject({ open: true, title: '保存点击时的版本', value: 'kept', confirm: { disabled: false } })
+    const opened = [], dismissed = []
+    const handlers = api.methods.panelsHandlers.call({ openVersionPanel: () => opened.push(true), dismissVersionNotice: () => dismissed.push(true) })
+    expect(typeof handlers.versionToast.onNoticeLink).toBe('function')
+    handlers.versionToast.onNoticeLink()
+    expect(opened).toEqual([true])
+    expect(dismissed).toEqual([true])
     const event = { target: { files: [], value: '' } }
     const work = api.commentPanelMethods.uploadCommentImageFiles.call({ ed: { commentCanUploadImage: () => false } }, 'document', event)
     expect(work).toBeInstanceOf(Promise)
@@ -579,12 +582,12 @@ describe('native panel presentation boundary', () => {
     const factories = []
     vi.doMock('../../src/ui/panels', () => {
       const create = options => { const ui = { options, update: vi.fn(), destroy: vi.fn() }; factories.push(ui); return ui }
-      return { createOutlinePanel: create, createVersionPanel: create, createSaveVersionDialog: create, createCommentPanel: create }
+      return { createOutlinePanel: create, createVersionPanel: create, createVersionToast: create, createCommentPanel: create }
     })
     const { default: panels } = await import('../../src/components/lark-doc/editor/panelsUiMixin?panel-presentation-ready')
     const root = document.createElement('div')
     const vm = { $refs: { outlineHost: root, panelHost: root }, panelPresentationRevision: 0,
-      panelsHandlers: () => ({ outline: {}, version: {}, saveVersion: {}, comment: {} }), mountCover: vi.fn(), refreshPanels: vi.fn() }
+      panelsHandlers: () => ({ outline: {}, version: {}, versionToast: {}, comment: {} }), mountCover: vi.fn(), refreshPanels: vi.fn() }
     panels.methods.mountPanels.call(vm)
     expect(vm.refreshPanels).toHaveBeenCalledOnce()
     const ready = factories.filter(ui => typeof ui.options.onReady === 'function').map(ui => ui.options.onReady)

@@ -12,7 +12,6 @@ import {
   E_VERSION_EVICTED,
   E_VERSION_NOT_FOUND,
   SNAPSHOT_KIND,
-  SNAPSHOT_LABEL_MAX,
   diffSummary,
   payloadSize,
   projectionMetrics,
@@ -227,18 +226,6 @@ export function currentProjection(editor) {
   }
 }
 
-/** 默认版本名：04 §⑤-2 实测「{文档名} 第 {N} 版」（`/code 第 1 版` 共 11 字符）。 */
-export function defaultVersionLabel(title, ordinal) {
-  const bag = (title && String(title).trim()) || '未命名文档'
-  const n = Number.isInteger(ordinal) && ordinal > 0 ? ordinal : 1
-  return `${bag} 第 ${n} 版`
-}
-
-/** 默认版本名里的 {N}。实测只有一条样本（`/code 第 1 版`），口径未采，见方法内注释。 */
-function nextVersionOrdinal(records) {
-  return Array.isArray(records) ? records.length + 1 : 1
-}
-
 function pairOf(records, index) {
   if (!Array.isArray(records) || index < 0) return { prev: null, current: null }
   // `records` 是 new → old，所以「更早的那份」是 index + 1。
@@ -258,7 +245,7 @@ const versionPresentation = /*#__PURE__*/ createVersioningPresentation({
   Editor, createLarkDocExtensions, validateDocument, createNetworkPolicy,
   formatVersionClock, formatVersionTime, groupVersionsByDay, historyDiffSummary, describeVersionDiff, pairOf,
   VERSIONING_DAY_LABELS, VERSION_KIND_LABELS, SNAPSHOT_KIND,
-  versionCapabilityGate, versioningErrorMessage, confirmedVersionResult, defaultVersionLabel, nextVersionOrdinal, SNAPSHOT_LABEL_MAX,
+  versionCapabilityGate, versioningErrorMessage, confirmedVersionResult,
 })
 
 export default {
@@ -297,6 +284,13 @@ export default {
       versionChangeIndex: 0,
       versionChangesLoading: false,
       versionChangesError: '',
+      /**
+       * 右栏底部「显示更改」开关，默认开（= 飞书默认在预览里叠改动高亮）。
+       *
+       * 关掉只影响**这一屏的呈现**（差异行、改动清单、正文高亮），不重新拉数据 ——
+       * 它是看版式用的开关，不是过滤器。
+       */
+      versionShowChanges: true,
       versionRestoreConfirmOpen: false,
       versionRestoreTargetId: '',
       versionRestoreTargetLabel: '',
@@ -304,14 +298,6 @@ export default {
       versionPreviewError: '',
       /** 成功提示（④-2 的 toast「版本已保存，可在 ··· 更多菜单中找到」）。 */
       versionNotice: '',
-      /** 「另存为版本」Dialog（04 §⑤-2）。 */
-      saveVersionOpen: false,
-      /** 版本名；计数上限来自 `SNAPSHOT_LABEL_MAX`（实测 `11/1000`）。 */
-      saveVersionName: '',
-      saveVersionBusy: false,
-      saveVersionError: '',
-      saveVersionPending: false,
-      saveVersionOperationId: '',
     }
   },
 
@@ -327,7 +313,6 @@ export default {
     this.closeVersionTrash()
     this._versionLoadToken = (this._versionLoadToken || 0) + 1
     this._versionPreviewToken = (this._versionPreviewToken || 0) + 1
-    this._versionSaveToken = (this._versionSaveToken || 0) + 1
     this._versionRestoreToken = (this._versionRestoreToken || 0) + 1
   },
 
@@ -340,18 +325,11 @@ export default {
     versionRestoreCapabilityState() {
       return projectCapabilityUi(this.session, 'canRestoreVersion')
     },
-    /** 「另存为版本」闸门（05 §5.4 源码实测 `canCreateVersion`）。 */
-    versionCanCreate() {
-      return (!this.writable || this.writable()) && versionCapabilityGate(this.session, 'canCreateVersion').allowed
-    },
     /** 「还原此历史记录」闸门（05 §5.4 源码实测 `canRestoreVersion`）。 */
     versionCanRestore() {
       return (!this.writable || this.writable()) && versionCapabilityGate(this.session, 'canRestoreVersion').allowed
     },
     /** 置灰但不隐藏：rule「无权限 = 挂载 + 置灰」。文案告诉用户是权限还是接线问题。 */
-    versionCanCreateReason() {
-      return this.writable && !this.writable() ? '当前为只读模式，无法创建版本' : versionCapabilityGate(this.session, 'canCreateVersion').reason
-    },
     versionCanRestoreReason() {
       if (this.versionRestoreNeedsReload) return '恢复已提交，请重新打开文档'
       if (this.versionRestorePending) return '恢复结果待确认，只查询原操作'
@@ -389,11 +367,11 @@ export default {
       return !this.versionSelected || !this.versionCanRestore
     },
     versionCanManageTrash() {
-      return versionCapabilityGate(this.session, 'canCreateVersion').allowed && (!this.writable || this.writable())
+      return versionCapabilityGate(this.session, 'canRestoreVersion').allowed && (!this.writable || this.writable())
         && ['listDeleted', 'restoreDeleted', 'purge'].every(method => typeof this.versionProvider?.[method] === 'function')
     },
     versionTrashReason() {
-      if (!versionCapabilityGate(this.session, 'canCreateVersion').allowed) return versionCapabilityGate(this.session, 'canCreateVersion').reason
+      if (!versionCapabilityGate(this.session, 'canRestoreVersion').allowed) return versionCapabilityGate(this.session, 'canRestoreVersion').reason
       if (this.writable && !this.writable()) return '当前为只读模式，无法管理版本回收站'
       return this.versionCanManageTrash ? this.versionTrashError : '尚未配置版本回收站服务'
     },
@@ -408,19 +386,6 @@ export default {
     /** 当前正文投影：这是 `projectionMetrics` 唯一能拿到真字数、真标题的输入。 */
     versionCurrentProjection() {
       return currentProjection(this.editor)
-    },
-    /** 输入框 `maxlength`：与 `SNAPSHOT_LABEL_MAX` 同源，避免 lint/表里两处写 1000。 */
-    versionNameMax() {
-      return SNAPSHOT_LABEL_MAX
-    },
-    /** §⑤-2 的标题原文「保存 今天 00:18 的文档版本」—— 时间点 = 打开 Dialog 的那一刻。 */
-    saveVersionDialogTitle() {
-      const now = Date.now()
-      return `保存 ${formatVersionDayLabel(now, now)} ${formatVersionClock(now)} 的文档版本`
-    },
-    /** 草稿版本名的计数，实测 `11/1000` → 输入 4 字后 `15/1000`（**追加**，不是全选替换）。 */
-    versionNameCounter() {
-      return `${this.saveVersionName.length}/${SNAPSHOT_LABEL_MAX}`
     },
   },
 
@@ -441,7 +406,6 @@ export default {
     resetVersionContext() {
       this._versionLoadToken = (this._versionLoadToken || 0) + 1
       this._versionPreviewToken = (this._versionPreviewToken || 0) + 1
-      this._versionSaveToken = (this._versionSaveToken || 0) + 1
       this._versionRestoreToken = (this._versionRestoreToken || 0) + 1
       this.versionList = []
       this.versionIndex = 0
@@ -459,18 +423,11 @@ export default {
       this.versionRestoreOperationId = ''
       this.versionRestoreNeedsReload = false
       this._versionRestoreOperationContext = null
-      this.saveVersionPending = false
-      this.saveVersionOperationId = ''
-      this._versionSaveOperationContext = null
       this.closeVersionTrash()
       this.versionDeletedList = []
       this.versionRestoreConfirmOpen = false
       this.versionRestoreTargetId = ''
       this.closeVersionRestoreConfirm()
-      this.saveVersionOpen = false
-      this.saveVersionBusy = false
-      this.saveVersionName = ''
-      this.saveVersionError = ''
       this.versionError = ''
       this.versionNotice = ''
       if (this.versionPanelOpen) this.loadVersions()
@@ -640,34 +597,6 @@ export default {
       this._versionRestoreConfirmEpoch = (this._versionRestoreConfirmEpoch || 0) + 1
       this._versionRestoreConfirmation = null
       this.versionRestoreConfirmOpen = false; this.versionRestoreTargetId = ''; this.versionRestoreTargetLabel = ''
-    },
-
-    /**
-     * 开「另存为版本」Dialog。无 `canCreateVersion` 时**挂载但不打开**（rule：置灰 + 直接
-     * return，不隐藏）—— 由调用方决定要不要把入口画成置灰。
-     */
-    openSaveVersionDialog() {
-      if (!this.versionCanCreate) {
-        this.saveVersionError = versionCapabilityGate(this.session, 'canCreateVersion').reason
-        return false
-      }
-      this.saveVersionOpen = true
-      this._saveVersionDialogEpoch = (this._saveVersionDialogEpoch || 0) + 1
-      this.saveVersionError = ''
-      // 04 §⑤-2 实测默认名 =「{文档名} 第 {N} 版」。N 的口径未采（`/code 第 1 版` 只有一条
-      // 样本），这里取「当前版本总数 + 1」—— 包含自动快照也算一条，属推断。
-      if (!this.saveVersionName) {
-        const ordinal = nextVersionOrdinal(this.versionList)
-        this.saveVersionName = defaultVersionLabel(this.localTitle, ordinal)
-      }
-      return true
-    },
-
-    closeSaveVersionDialog() {
-      this._saveVersionDialogEpoch = (this._saveVersionDialogEpoch || 0) + 1
-      this.saveVersionOpen = false
-      this.saveVersionName = ''
-      this.saveVersionError = ''
     },
 
     closeVersionTrash() {

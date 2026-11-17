@@ -49,7 +49,7 @@ const PAGED_IMPORT_ENTRY = '\0lark-doc-paged-import-runtime'
 const PAGED_IMPORT_SOURCE = resolve(ROOT, 'src/editor/pagedDocumentSource.js')
 const PAGED_IMPORT_RUNTIME_SOURCE = resolve(ROOT, 'src/editor/pagedDocumentImportRuntime.js')
 const elementUiModules = {
-  panels: ['createCommentPanel', 'createSaveVersionDialog', 'createVersionPanel'],
+  panels: ['createCommentPanel', 'createVersionPanel', 'createVersionToast'],
   dialogs: ['createEmbedDialog', 'createHelpDrawer', 'createLinkDialog', 'createMathDialog', 'createTablePickerDialog'],
   extendedOverlays: ['createExtendedOverlays'],
   colorPalette: ['createColorPalette'], revision: ['createRevisionPanels'], isvPanel: ['createIsvPanel'],
@@ -502,7 +502,7 @@ function packageAlias(target = '') {
         (name === 'panels' ? `export {createOutlinePanel} from ${JSON.stringify(resolve(ROOT, 'src/ui/outlinePanel.js'))};` : '') +
         elementUiModules[name].map(factory => {
           const predicate = factory === 'createCommentPanel' ? ',s=>s.open||s.documentInline||s.launcher?.visible'
-            : factory === 'createSaveVersionDialog' ? ',s=>s.open||s.notice' : visible
+            : factory === 'createVersionToast' ? ',s=>s.open||s.notice' : visible
           const fallback = element ? '' : `${predicate ? '' : ',undefined'},()=>import(${JSON.stringify(resolve(ROOT, 'src/features/ui.js'))}).then(module=>module.uiApi)`
           const signature = name === 'bubbleBar' ? '(host,options)' : 'options'
           const options = name === 'bubbleBar' ? '{...options,host}' : 'options'

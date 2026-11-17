@@ -80,23 +80,22 @@ describe('P6b · 浮层容器', () => {
     expect(overlaysUi).toContain('destroyOverlays()')
   })
 
-  it('评论、历史版本和保存版本控件保留 capability 与禁用态投影', () => {
+  it('评论、历史版本控件保留 capability 与禁用态投影', () => {
     const commentPanel = panelsRenderer.slice(panelsRenderer.indexOf('export function createCommentPanel('))
     const versionPanel = panelsRenderer.slice(
       panelsRenderer.indexOf('export function createVersionPanel('),
-      panelsRenderer.indexOf('export function createSaveVersionDialog('),
+      panelsRenderer.indexOf('export function createVersionToast('),
     )
-    const saveVersion = panelsRenderer.slice(
-      panelsRenderer.indexOf('export function createSaveVersionDialog('),
-      panelsRenderer.indexOf('export function createCommentPanel('),
-    )
-    for (const source of [commentPanel, versionPanel, saveVersion]) {
+    for (const source of [commentPanel, versionPanel]) {
       expect(source).toContain("'data-capability'")
       expect(source).toContain("'aria-disabled'")
     }
     expect(commentPanel).toContain("control.id === 'resolve' ? 'canResolveComment' : 'canComment'")
     expect(versionPanel).toContain("'data-capability', 'canRestoreVersion'")
-    expect(saveVersion).toContain("'data-capability', 'canCreateVersion'")
+    // 面板内每个 capability 点都必须是「还原」口径；`canCreateVersion` 已无前端入口。
+    expect(versionPanel).not.toContain("'canCreateVersion'")
+    // 手动「另存为版本」已下线：只保留只读的历史列表 + 自动保存提示浮条。
+    expect(panelsRenderer).not.toContain('createSaveVersionDialog')
   })
 
   it('原生评论菜单把线程 id 传给编辑/删除权限判定', () => {

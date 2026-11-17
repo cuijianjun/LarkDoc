@@ -225,16 +225,14 @@ describe('version document lifecycle through the real facade and provider', () =
     expect(doc.getJSON()).toEqual(before)
   })
 
-  it('the actual save-version UI uses the real binary provider rather than a metadata-only stub', async () => {
-    const { doc, provider } = mount()
+  it('automatic snapshots reach the real binary provider and the panel previews them', async () => {
+    const { doc, session, provider } = mount()
     const host = doc._handle.nativeHost.host
-    host.openSaveVersionDialog()
-    host.saveVersionName = '完整正文版本'
-    expect(await host.confirmSaveVersion()).toBeTruthy()
-    expect(host.saveVersionOpen).toBe(false)
+    const saved = await session.createVersion({ purpose: 'auto' })
+    expect(saved.payload).toBeInstanceOf(Uint8Array)
     const list = await provider.list({ documentId: 'versions_document' })
-    expect(list).toHaveLength(1)
-    await host.selectVersion(list[0].id)
+    expect(list.map(record => record.id)).toContain(saved.id)
+    await host.selectVersion(saved.id)
     expect(host.versionPreview.document.content).toEqual(doc.getJSON())
   })
 
@@ -335,26 +333,6 @@ describe('version document lifecycle through the real facade and provider', () =
     expect(doc.getEditor().state.doc.textContent).toBe('回调产生的新编辑')
   })
 
-  it('keeps a reopened save dialog draft when an earlier save acknowledgement arrives', async () => {
-    const memory = createMemoryVersioningProvider()
-    let release
-    const provider = { ...memory, createSnapshot: (...args) => new Promise(resolve => { release = async () => resolve(await memory.createSnapshot(...args)) }) }
-    const { doc } = mount(provider)
-    const host = doc._handle.nativeHost.host
-    host.openSaveVersionDialog()
-    host.saveVersionName = '第一次保存'
-    const pending = host.confirmSaveVersion()
-    await vi.waitFor(() => expect(typeof release).toBe('function'))
-    host.closeSaveVersionDialog()
-    host.openSaveVersionDialog()
-    host.saveVersionName = '再次打开的草稿'
-    await release()
-    await pending
-    expect(host.saveVersionOpen).toBe(true)
-    expect(host.saveVersionName).toBe('再次打开的草稿')
-    expect(host.saveVersionBusy).toBe(false)
-  })
-
   it('does not mark a restore record current when a synchronous update subscriber edits its body', async () => {
     const { doc, session } = mount()
     const saved = await session.createVersion()
@@ -381,21 +359,16 @@ describe('version document lifecycle through the real facade and provider', () =
     expect(doc.getJSON()).toEqual(original)
   })
 
-  it('disables only version saving in readonly menus and updates the same row after editing is enabled', async () => {
+  it('keeps 查看已存版本 enabled in readonly menus now that 另存为版本 is gone', async () => {
     const { doc } = mount()
-    const root = doc._handle.nativeHost.host.$refs.root
+    const host = doc._handle.nativeHost.host
     doc.setReadonly(true)
-    const trigger = root.querySelector('[aria-label="文档更多操作"]')
-    trigger.click()
-    const rows = [...document.querySelectorAll('[role="listbox"][aria-label="文档更多操作"] [role="option"]')]
-    await vi.waitFor(() => expect(rows[0].disabled).toBe(true))
-    expect(rows[1].disabled).toBe(false)
-    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    expect(root.querySelector('.lark-doc-save-version-mask')).toBe(null)
-    doc.setReadonly(false)
-    await vi.waitFor(() => expect(rows[0].disabled).toBe(false))
-    rows[0].click()
-    await vi.waitFor(() => expect(root.querySelector('.lark-doc-save-version-mask')).not.toBe(null))
+    host.topbarMoreOpen = true
+    await host.$nextTick()
+    const items = host.topbarMoreItems
+    expect(items.some(item => item.label === '另存为版本')).toBe(false)
+    const versionItem = items.find(item => item.id === 'view-versions' || item.id === 'saved-versions')
+    expect(versionItem.enabled).toBe(true)
   })
 
   it.each(['offline', 'allowlist'])('rechecks current %s resource policy after an awaited provider restore', async mode => {
@@ -419,49 +392,34 @@ describe('version document lifecycle through the real facade and provider', () =
 })
 
 
-describe('版本保存框上下文失效边界', () => {
-  it('同一session的普通视图刷新不清空刚打开的保存框', async () => {
+describe('历史面板上下文失效边界', () => {
+  it('同一session的普通视图刷新不清空刚打开的历史面板', async () => {
     const { doc } = mount()
     const host = doc._handle.nativeHost.host
-    host.openSaveVersionDialog()
-    host.saveVersionName = '保留版本名称'
+    host.openVersionPanel()
     host.$forceUpdate()
     await host.$nextTick()
-    expect(host.saveVersionOpen).toBe(true)
-    expect(host.saveVersionName).toBe('保留版本名称')
+    expect(host.versionPanelOpen).toBe(true)
   })
-  it('同一页面的两个保存框各自关联自己的版本名输入', async () => {
-    const first = mount(), second = mount()
-    first.doc._handle.nativeHost.host.openSaveVersionDialog()
-    second.doc._handle.nativeHost.host.openSaveVersionDialog()
-    await first.doc._handle.nativeHost.host.$nextTick()
-    await second.doc._handle.nativeHost.host.$nextTick()
-    await vi.dynamicImportSettled()
-    const inputs = [...document.querySelectorAll('.lark-doc-save-version-input')]
-    expect(inputs).toHaveLength(2)
-    expect(new Set(inputs.map(input => input.id)).size).toBe(2)
-    for (const input of inputs) {
-      expect(input.labels).toHaveLength(1)
-      expect(input.labels[0].control).toBe(input)
-    }
-  })
-  it('真实文档标识变化仍关闭保存框', async () => {
+  it('真实文档标识变化后历史面板按新文档重载而不是留着旧列表', async () => {
     const { doc } = mount()
     const host = doc._handle.nativeHost.host
-    host.openSaveVersionDialog()
+    await host.openVersionPanel()
+    host.versionSelectedId = host.versionList[0]?.id || ''
     doc.patchProps({ documentId: 'changed-document' })
     await host.$nextTick()
-    expect(host.saveVersionOpen).toBe(false)
+    expect(host.versionSelectedId).toBe('')
+    expect(host.versionList).toEqual([])
   })
-  it('真实替换versioning provider仍关闭旧保存框并清除草稿', async () => {
+  it('真实替换versioning provider仍清空旧选中与旧列表', async () => {
     const { doc, session } = mount()
     const host = doc._handle.nativeHost.host
-    host.openSaveVersionDialog()
-    host.saveVersionName = '旧服务草稿'
+    await host.openVersionPanel()
+    host.versionSelectedId = host.versionList[0]?.id || ''
     session.setProvider('versioning', createMemoryVersioningProvider())
     await host.$nextTick()
-    expect(host.saveVersionOpen).toBe(false)
-    expect(host.saveVersionName).toBe('')
+    expect(host.versionSelectedId).toBe('')
+    expect(host.versionList).toEqual([])
   })
 })
 
@@ -766,36 +724,6 @@ describe('T077 native local unknown-version query', () => {
     }
     return { ...port, host, source, original, before, query }
   }
-
-  it('confirms a real local create through the same native save action and original query key without a second create', async () => {
-    const { doc, session, element, operationId, createSnapshot, restore, queryOperation, memory, facts } = localPort('create')
-    const before = doc.getJSON(), host = doc._handle.nativeHost.host
-    host.openSaveVersionDialog()
-    await vi.waitFor(() => expect(element.querySelector('.lark-doc-save-version-input')).not.toBeNull())
-    const input = element.querySelector('.lark-doc-save-version-input')
-    input.value = '仅查询原保存操作'; input.dispatchEvent(new Event('input', { bubbles: true }))
-    const confirm = vi.spyOn(host, 'confirmSaveVersion')
-    down(element.querySelector('.lark-doc-save-version-confirm'))
-    expect(confirm).toHaveBeenCalledOnce()
-    await confirm.mock.results[0].value
-    expect(host.saveVersionPending).toBe(true)
-    expect(host.saveVersionOperationId).toBe(operationId)
-    expect(host.versionNotice).toBe('')
-    expect(await memory.list({ documentId: session.documentId })).toHaveLength(1)
-    await vi.waitFor(() => expect(element.querySelector('.lark-doc-save-version-confirm')?.disabled).toBe(false))
-    down(element.querySelector('.lark-doc-save-version-confirm'))
-    expect(confirm).toHaveBeenCalledTimes(2)
-    await confirm.mock.results[1].value
-    expect(queryOperation).toHaveBeenCalledExactlyOnceWith(operationId)
-    expect(createSnapshot).toHaveBeenCalledOnce()
-    expect(restore).not.toHaveBeenCalled()
-    expect(host.saveVersionPending).toBe(false)
-    expect(host.saveVersionOperationId).toBe('')
-    expect(host.saveVersionOpen).toBe(false)
-    expect(host.versionNotice).toContain('版本已保存')
-    expect((await session.readVersionDocument(facts.created.id)).content).toEqual(before)
-    expect(doc.getJSON()).toEqual(before)
-  })
 
   it('queries one real committed restore by its original key, applies the snapshot and releases only its own readonly lock', async () => {
     const port = await pendingRestore(), { doc, session, host, original, before, query, operationId } = port

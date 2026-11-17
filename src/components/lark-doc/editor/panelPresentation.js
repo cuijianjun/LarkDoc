@@ -489,17 +489,15 @@ export function createPanelPresentation(dependencies) {
           onNext: () => this.versionNext(),
           onChangePrev: () => this.stepVersionChange(-1),
           onChangeNext: () => this.stepVersionChange(1),
+          onToggleShowChanges: () => this.toggleVersionShowChanges(),
           onSelect: (id) => this.selectVersion(id),
           onOpenTrash: () => this.openVersionTrash(),
           onCloseTrash: () => this.closeVersionTrash(),
           onRestoreDeleted: (id) => this.restoreDeletedVersion(id),
           onPurgeDeleted: (id) => this.purgeDeletedVersion(id),
         },
-        saveVersion: {
-          onClose: () => this.closeSaveVersionDialog(),
-          onInput: (value) => this.setSaveVersionName(value),
-          onConfirm: () => this.confirmSaveVersion(),
-          // toast 的「立即查看」：先开面板再收 toast（顺序与模板里的内联两调用一致）。
+        versionToast: {
+          // 提示里的「立即查看」：先开面板再收提示（与模板里的内联两调用顺序一致）。
           onNoticeLink: () => { this.openVersionPanel(); this.dismissVersionNotice() },
         },
         comment: {
@@ -641,10 +639,12 @@ export function createPanelPresentation(dependencies) {
             style: this.versionDisabledStyle(restoreDisabled),
           },
           pager: {
-            cursor: `版本 ${this.versionIndex}/${total}`,
+            cursor: this.versionCursorLabel,
             prev: { disabled: prevDisabled, style: this.versionDisabledStyle(prevDisabled) },
             next: { disabled: nextDisabled, style: this.versionDisabledStyle(nextDisabled) },
           },
+          // 底栏「显示更改」是开关，不是文案（飞书默认开）。
+          showChanges: this.versionShowChanges !== false,
           // 左栏三选一：错误 > 空态 > 预览（`v-if` / `v-else-if` / `v-else` 的顺序）。
           view: error ? 'error' : (total ? 'preview' : 'empty'),
           errorText: error,
@@ -659,6 +659,8 @@ export function createPanelPresentation(dependencies) {
               id: item.id,
               cls: this.versionTimelineClass(item).selected ? 'selected' : '',
               name: this.versionItemName(item),
+              // 飞书条目是三行：时间 / 「最近更新」绿标 + 改动描述 / 作者。
+              badge: this.versionItemBadge(item),
               desc: this.versionItemDesc(item),
               user: this.versionActorLabel(item),
             })),
@@ -692,26 +694,6 @@ export function createPanelPresentation(dependencies) {
           payload: preview && preview.hasPayload && !preview.document
             ? `该版本正文为二进制快照（${preview.byteLength} 字节），需由协同运行时解码后才能渲染。`
             : '',
-        }
-      },
-
-  buildSaveVersionState() {
-        // `:disabled="!versionCanCreate || saveVersionBusy"` —— 两处都要用这一份布尔。
-        const disabled = !this.versionCanCreate || !!this.saveVersionBusy
-        return {
-          open: !!this.saveVersionOpen,
-          notice: this.versionNotice || '',
-          // 标题带时间戳且 computed 无响应式依赖：只在打开时求值，别在挂载时就冻住。
-          title: this.saveVersionOpen ? this.saveVersionDialogTitle : '',
-          value: this.saveVersionName || '',
-          maxLength: this.versionNameMax,
-          counter: this.versionNameCounter,
-          confirm: {
-            disabled,
-            title: this.versionCanCreateReason,
-            style: this.versionDisabledStyle(disabled),
-          },
-          error: this.saveVersionError || '',
         }
       },
 

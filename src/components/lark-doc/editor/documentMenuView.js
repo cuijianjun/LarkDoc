@@ -10,14 +10,14 @@ const definitions = [
   ['pin', '添加到“置顶”', 'outline', 'host'], ['favorite', '添加到收藏', 'sparkle', 'host'],
   ['template', '转换为模板', 'copy', 'host'], ['duplicate', '创建副本', 'copy', 'host'],
   ['download', '下载为', 'rev-next', 'submenu'], ['translate', '翻译为英语', 'translate', 'host'],
-  ['print', '打印', 'block-text'], ['save-version', '另存为版本', 'copy'],
+  ['print', '打印', 'block-text'],
   ['saved-versions', '查看已存版本', 'undo', 'submenu'], ['permissions', '文档权限', 'outline', 'submenu'],
   ['widgets', '文档小组件', 'plus', 'host'], ['information', '文档信息', 'help-center'],
   ['mentions', '提及的人', 'mode-comment'], ['history', '历史记录', 'undo'],
   ['history-comments', '历史评论', 'mode-comment'], ['more', '更多', 'plus', 'submenu'],
   ['theme', '主题', 'sparkle', 'submenu'], ['delete', '删除', 'trash', 'host'],
 ]
-const separators = new Set(['follow', 'shortcut', 'template', 'print', 'save-version', 'permissions', 'widgets', 'information', 'delete'])
+const separators = new Set(['follow', 'shortcut', 'template', 'print', 'permissions', 'widgets', 'information', 'delete'])
 const can = (ed, capability) => !ed.session || typeof ed.session.can !== 'function' || ed.session.can(capability)
 export const supportsDocumentAction = (ed, action) => typeof ed.onDocumentAction === 'function' &&
   (!Array.isArray(ed.onDocumentAction.supportedActions) || ed.onDocumentAction.supportedActions.includes(action))
@@ -93,7 +93,6 @@ export function documentMenuItems(ed, business = ed.session?.getProvider?.('docu
     let allowed = can(ed, 'canView')
     if (kind === 'host') allowed = allowed && host(ed, id)
     if (['download', 'print'].includes(id)) allowed = allowed && ed.exportCanExport === true
-    if (id === 'save-version') allowed = allowed && ed.versionCanCreate === true
     if (['history', 'saved-versions'].includes(id)) allowed = allowed && Boolean(ed.versionProvider)
     if (id === 'search') allowed = allowed && ed.featureEnabled('search')
     if (id === 'history-comments') allowed = allowed && ed.commentRemote === true
@@ -121,7 +120,9 @@ export function documentMenuChildren(ed, id, appearance, business = ed.session?.
   if (id === 'width') return [['standard', '默认'], ['wide', '较宽'], ['full', '全宽']].map(([value, label]) => ({ id: 'width', value, label, checked: ed.widthMode === value }))
   if (id === 'download') return [['word', 'Word'], ['pdf', 'PDF'], ['markdown', 'Markdown']].map(([value, label]) => ({ id: 'download', value, label }))
   if (id === 'presentation') return [{ id: 'presentation', value: 'document', label: '文档模式' }, { id: 'presentation', value: 'slides', label: '幻灯片模式' }, ...(ed.lastSlideIndex > 0 ? [{ id: 'presentation', value: 'resume', label: '回到上次演示位置' }] : [])]
-  if (id === 'saved-versions') return (ed.versionList || []).filter(version => version.purpose === 'manual' || version.kind === 'manual').map(version => ({ id: 'saved-versions', value: version.id, label: version.label }))
+  // 飞书那栏「已存版本」就是历史列表本身，不是「被手动命名过的版本」。手动另存为下线后
+  // 这里再按 `manual` 过滤，自动历史（`auto`）和恢复点（`restore`）都会消失，子菜单永远是空的。
+  if (id === 'saved-versions') return (ed.versionList || []).map(version => ({ id: 'saved-versions', value: version.id, label: version.label }))
   if (id === 'permissions') {
     const port = ed.session?.getProvider?.('documentBusiness'), available = port ? business?.capabilities.canTransferOwnership === true && typeof port.ownershipCandidates === 'function' : host(ed, 'transfer-ownership') && ed.shareCan('canManagePermission')
     return [{ id: 'manage-members', label: '管理协作者', disabled: !ed.shareCan('canManagePermission') }, { id: 'permission-settings', label: '权限设置', disabled: !ed.shareCan('canManagePermission') }, { id: 'transfer-ownership', label: '转移所有权', kind: port ? 'business' : 'host', disabled: !available }]
@@ -147,7 +148,6 @@ export async function runDocumentMenuAction(ed, id, value, event, current = () =
   else if (id === 'search') ed.openSearch('replace')
   else if (id === 'download') { if (!['word', 'pdf', 'markdown'].includes(value)) return false; ed.openExportDialog(value) }
   else if (id === 'print') return printEditorDocument(ed)
-  else if (id === 'save-version') ed.openSaveVersionDialog()
   else if (id === 'history') await ed.openVersionPanel()
   else if (id === 'saved-versions') { await ed.openVersionPanel({ kind: 'saved' }); if (!current() || !ed.versionPanelOpen || !ed.versionList.some(version => version.id === value)) return false; await ed.selectVersion(value) }
   else if (id === 'manage-members') ed.toggleSharePopover(event)
