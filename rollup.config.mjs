@@ -443,9 +443,13 @@ export const LAZY_PACKAGE_CALLERS = new Map([
   [resolve(ROOT, 'src/workspace/workspaceTransferMethods.js'), [
     ['src/utils/export/index.js', 'export.api'],
   ]],
-  [resolve(ROOT, 'src/session/DocumentSession.js'), [
+  // 会话里的三处懒加载分别落在「版本与转换域」和「资源绑定域」；名单按导入方
+  // 文件路径匹配，拆文件时跟着换。
+  [resolve(ROOT, 'src/session/sessionVersionMethods.js'), [
     ['src/utils/remoteConversion.js', 'export.remoteConversion'],
     ['src/core/versioning/snapshot.js', 'versioning.snapshot'],
+  ]],
+  [resolve(ROOT, 'src/session/sessionResourceMethods.js'), [
     ['src/session/resourceOutcome.js', 'session.resourceOutcome'],
   ]],
   [resolve(ROOT, 'src/components/lark-doc/editor/headingNumberMenuUiMixin.js'), [

@@ -47,6 +47,11 @@
       **两处按 importer 路径的白名单同步**（第三次踩同一个坑，这次是先查再改）：`LAZY_PACKAGE_CALLERS` 与 transform 的 `importCaller` 原本都按 `WorkspaceController.js` 匹配，把 Word 导出与分页导入的实现搬进 `workspaceTransferMethods.js` 后名单跟着改；`build-contract` 里那条 transform 断言的文件名同步替换。`nextPaintFrame` 有两个使用者（`onReady` 与 `restoreSnapshot`）且不能各写一份，落到 `workspaceShared.js`。
       **体积**：内核 gzip 542,482 → **542,599**（+117 B）；esm / lite / `uiPanels` 未动。
       验证：工作区六支单测 186 用例、`build` 项目 133、`lint` / `check:architecture`（R1 460 文件）/ `contract:check` 全绿。
+- [x] **C11 `session/DocumentSession.js` 拆分**：940 行 → `DocumentSession.js`(302，构造 + Provider 装配 + 编辑器/事件/连接 + `dispose`) + `sessionVersionMethods.js`(329) + `sessionIdentityMethods.js`(121) + `sessionResourceMethods.js`(110) + `sessionCommentMethods.js`(105) + `sessionAssetMethods.js`(51) + `sessionNotificationMethods.js`(49) + `sessionPermissionMethods.js`(41)。119 个成员按对象字面量 `Object.assign` 回原型，AST 比对 119/119 无重复无遗漏。
+      **两处技巧性收口**：① `get autoVersion` 这类**访问器不能走 `Object.assign`** —— 它复制的是取值结果而不是 getter，第一版直接把 `autoVersion` 变成 `undefined`，被 `versioning-auto` 的用例抓住；访问器留在类里。② `AUTO_VERSION_INTERVAL_MS` 与 `localSnapshotKind` 随版本域搬走，常量由 `DocumentSession.js` 重新导出（对外签名不变），`resourceSnapshot` / `resourceKey` 随资源域走。
+      **懒加载白名单同步**：`LAZY_PACKAGE_CALLERS` 原来按 `DocumentSession.js` 匹配三处 `import()`，现拆成 `sessionVersionMethods.js`（remoteConversion、versioning.snapshot）与 `sessionResourceMethods.js`（session.resourceOutcome）两条。
+      **体积**：内核 gzip 542,599 → **542,650**（+51 B）；「含动态区块」同步 +51，说明三处懒加载没有被急切打回内核。
+      验证：会话七支 528 用例 + `versioning-auto`、`build` 项目 133、`lint` / `check:architecture`（R1 467 文件）/ `contract:check` 全绿。
 
 ## Phase D — 首屏（P2）
 

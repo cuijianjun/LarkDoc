@@ -516,6 +516,32 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 逐项未变；`uiPanels` 预算余量从 ~2.9 KB 降到 952 B（98,048 / 99,000）。要收回这 1.3 KB，把
 `commentPanelChrome.js` 合回主文件即可，主文件回到约 1,040 行。
 
+### `session/DocumentSession.js` 按方法域拆开（940 → 302 + 七域）
+
+会话层是「一个类 + 十个 Provider 端口」，119 个成员里有 90 个是按域成组的方法。按域切开后
+仍是同一个类，方法以对象字面量 `Object.assign` 回原型：
+
+| 文件 | 行数 | 职责 |
+| --- | --- | --- |
+| `DocumentSession.js` | 302 | 构造与 Provider 装配、编辑器与事件、连接、`dispose` |
+| `sessionVersionMethods.js` | 329 | 自动版本节流、建版本 / 恢复、版本正文与 diff、远端转换四条命令 |
+| `sessionIdentityMethods.js` | 121 | 身份代际、能力刷新与闸门、私密视图清理 |
+| `sessionResourceMethods.js` | 110 | 资源绑定与操作轮询（`_resourceOutcome` 的未知结果收口） |
+| `sessionCommentMethods.js` | 105 | 线程 / 回复 / 表情 / 可见性 / 关注 / 链接 / 翻译（统一走 `_commentAction`） |
+| `sessionAssetMethods.js` | 51 | 附件上传与读取 |
+| `sessionNotificationMethods.js` | 49 | 通知快照 / 分页 / 已读 / 订阅 |
+| `sessionPermissionMethods.js` | 41 | 提及解析、成员、分享、分享链接 |
+
+**这次学到的两条硬约束：**
+
+1. **访问器不能走 `Object.assign`。** 它按 `[[Get]]` 取值再赋值，`get autoVersion()` 会被
+   当成数据属性写成 `undefined`。第一版就栽在这里，被 `versioning-auto` 的用例当场抓住；
+   读侧访问器（`autoVersion`）与 `user` / `transactionOrigins` 一起留在类里。
+2. **域内的懒加载入口要同步进 `LAZY_PACKAGE_CALLERS`。** 三处 `import()` 分别落在版本域与
+   资源域，白名单按导入方文件路径匹配，不改就会急切打回内核。
+
+体积代价 **+51 B gzip**（内核 542,650），「含动态区块」同步 +51 —— 三个懒包确实还懒着。
+
 ### `workspace/WorkspaceController.js` 按方法域拆开（1,173 → 305 + 五域 + 共享）
 
 最大的手写类不是状态机难点，而是「九个领域混在一个类体里」。按职责切开后仍然是同一个类，
