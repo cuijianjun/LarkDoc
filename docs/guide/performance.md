@@ -537,6 +537,14 @@ path 数据；高亮器那 60 行被注释与三重兜底占满。
 
 体积 +32 B gzip（内核 542,701），`feature:ui:umd` 41,960 一动没动。
 
+### 收口（C12–C13 之后）
+
+`check:artifacts` 7m24s 全绿（38 目标全量重建，10 条体积预算全过，0 条 Circular）；
+`test:unit` 162 文件 / 4,950 用例 252s；`test:build` 133 用例 31s；`lint`、
+`check:architecture`（R1 474 文件）、`contract:check` 全绿。首屏 601,829 B
+（内核 542,701 + 样式 41,247 + 补丁 17,224 + 引导 1,579），较本阶段开始时 +409 B，
+全部来自模块边界与拆分带来的名单。
+
 ### `editor/tableInteractionMixin.js` 拆成接线层 + 三域（870 → 50 / 293 / 298 / 139 / 102）
 
 这个 mixin 的 870 行里有 238 行是 `mounted` 里的一整段监听接线（window capture 上的
