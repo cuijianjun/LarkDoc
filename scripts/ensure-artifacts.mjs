@@ -163,13 +163,24 @@ if (FORCE) {
 }
 const npm = process.env.npm_execpath
 if (!npm) throw new Error('请通过项目npm命令执行产物构建，以保留固定的Node/npm版本')
+// build:all 单进程串行打全部 target，默认堆会被 GC 追赶后 OOM（表现是父进程写管道时拿到 EPIPE）。
+// **只能追加、不能替换**：NODE_OPTIONS 里常已有宿主注入的 `--require=…(沙箱/语言 shim)`，
+// 早先写成 `process.env.NODE_OPTIONS || '…8192'`，一旦外部非空就整串被保住、8GB 丢了，
+// 于是 build:all 照旧 OOM。这里只在缺 --max-old-space-size 时补一段。
+const inheritedNodeOptions = process.env.NODE_OPTIONS || ''
+const heapFlag = /--max-old-space-size(?:=|\s)/.test(inheritedNodeOptions) ? '' : '--max-old-space-size=8192'
+const childNodeOptions = `${inheritedNodeOptions} ${heapFlag}`.trim()
 // 按 script 去重：build:adapters 一次出两个文件，不能跑两遍。
 const done = new Set()
 for (const a of ARTIFACTS) {
   if (done.has(a.script)) continue
   done.add(a.script)
   console.log(`\n$ npm run ${a.script}  →  ${a.file}`)
-  const r = spawnSync(process.execPath, [npm, 'run', a.script], { cwd: ROOT, stdio: 'inherit', env: process.env })
+  const r = spawnSync(process.execPath, [npm, 'run', a.script], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, NODE_OPTIONS: childNodeOptions },
+  })
   if (r.status !== 0) {
     console.error(`\n✗ 构建失败：${a.script}`)
     process.exit(1)

@@ -98,6 +98,52 @@ elapsed() { echo "$(($(date +%s) - T0))s"; }
 net() { env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy "$@"; }
 registry() { net curl -s --noproxy '*' --max-time 30 "$@"; }
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"; }
+# 发布认证预检。npm whoami 能过不代表能 publish：账号 2FA 为 auth-and-writes 时，
+# 非 bypass-2fa 的 token 必须在 publish 时带一次性密码，否则最后一步才 EOTP（白跑一次全链校验）。
+# 有 NPM_OTP 就无需预检；否则按 token 类型提前判定，把失败点从 publish 提前到开头。
+check_publish_auth() {
+  if [ -n "${NPM_OTP:-}" ]; then
+    ok "已提供 NPM_OTP，publish 时附带一次性密码"
+    return 0
+  fi
+  local tok body verdict rc
+  # npm 11 把 *_authToken 设为 protected，config get 读不到，只能从 userconfig 文件取
+  if [ -n "${NPM_TOKEN:-}" ]; then
+    tok="$NPM_TOKEN"
+  else
+    rc="$(net "$NODE24_DIR/npm" config get userconfig 2>/dev/null || echo "$HOME/.npmrc")"
+    if [ -f "$rc" ]; then
+      tok="$(awk -F= '/^[[:space:]]*\/\/registry\.npmjs\.org\/:_authToken[[:space:]]*=/{v=$2; gsub(/[[:space:]"]/,"",v); print v; exit}' "$rc")"
+    fi
+  fi
+  if [ -z "$tok" ]; then
+    warn "未读到 $REGISTRY 的 _authToken，无法预检 token 类型"
+    return 0
+  fi
+  body="$(registry -H "Authorization: Bearer $tok" "${REGISTRY}-/npm/v1/tokens" 2>/dev/null || true)"
+  verdict="$(TOK="$tok" node -e '
+    let s = ""
+    process.stdin.on("data", d => (s += d)).on("end", () => {
+      const tok = process.env.TOK
+      let list = []
+      try { list = JSON.parse(s).objects || [] } catch (e) { process.stdout.write("unknown"); return }
+      // 服务端只回脱敏值（npm_xxxx...abcd），用首尾片段认领当前 token
+      const hit = list.find(o => typeof o.token === "string"
+        && o.token.startsWith(tok.slice(0, 8)) && o.token.endsWith(tok.slice(-4)))
+      process.stdout.write(!hit ? "unknown" : hit.bypass_2fa ? "yes" : "no")
+    })
+  ' <<<"$body" 2>/dev/null || echo unknown)"
+  case "$verdict" in
+    yes) ok "token 免 2FA，可直接 publish" ;;
+    no)
+      die "当前 npm token 无法免 OTP 发布（账号 2FA = auth-and-writes）。两条路：
+         ① 一劳永逸：https://www.npmjs.com/settings/~/tokens 建 Classic → Automation token，写进 ~/.npmrc：
+              //registry.npmjs.org/:_authToken=npm_xxx
+            或临时注入：      NPM_TOKEN=npm_xxx bash scripts/release.sh --resume
+         ② 本次应急：认证器取 6 位码 →  NPM_OTP=123456 bash scripts/release.sh --resume" ;;
+    *) warn "无法从 registry 确认 token 类型，继续（若 publish 报 EOTP，改用 Automation token 或带 NPM_OTP）" ;;
+  esac
+}
 sri512() { node -e 'const fs = require("fs"), crypto = require("crypto"); process.stdout.write("sha512-" + crypto.createHash("sha512").update(fs.readFileSync(process.argv[1])).digest("base64"))' "$1"; }
 check_public_tarball() {
   python3 - "$1" "$NAME" "$VERSION" <<'PY'
@@ -195,6 +241,7 @@ if [ "$DO_PUBLISH" = 1 ] && [ "$GIT_ONLY" = 0 ]; then
   WHO="$(net "$NODE24_DIR/npm" whoami --registry="$REGISTRY" 2>/dev/null || true)"
   [ -n "$WHO" ] || die "npm 未登录（${REGISTRY}）。先 npm login"
   ok "npm 身份：$WHO"
+  check_publish_auth
 fi
 
 # ---------- 只提交 GitHub 的快路径 ----------
@@ -372,9 +419,15 @@ if [ "$DO_PUBLISH" = 1 ]; then
   LOGFILE="$STATE_DIR/publish-$VERSION.log"
   PUB_ARGS=(publish "$TGZ_PATH" --registry="$REGISTRY" --tag latest)
   case "$NAME" in @*) PUB_ARGS+=(--access public) ;; esac
+  # NPM_TOKEN 优先于 ~/.npmrc，CI / 临时换 token 时不必改全局配置
+  [ -n "${NPM_TOKEN:-}" ] && PUB_ARGS+=("--//registry.npmjs.org/:_authToken=${NPM_TOKEN}")
   [ -n "${NPM_OTP:-}" ] && PUB_ARGS+=(--otp="$NPM_OTP")
   if ! net "$NODE24_DIR/npm" "${PUB_ARGS[@]}" >"$LOGFILE" 2>&1; then
     tail -30 "$LOGFILE" >&2
+    if grep -q 'EOTP' "$LOGFILE"; then
+      die "publish 被 2FA 拦下（EOTP）：当前 token 不免 OTP。改用 Automation token，
+        或本次应急：NPM_OTP=<认证器 6 位码> bash scripts/release.sh --resume"
+    fi
     die "npm publish 失败（见 ${LOGFILE}）。修好后：bash scripts/release.sh --resume"
   fi
   ok "publish 返回 0"
