@@ -2,9 +2,10 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
-import { TextSelection } from '@tiptap/pm/state'
+import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { Plugin } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { createDomRenderer } from '../../src/mount/domRenderer'
 import { createRenderer, setRenderer } from '../../src/mount'
 import { LarkDoc } from '../../src/LarkDoc'
@@ -14,19 +15,2164 @@ import { createMemoryCommentsProvider } from '../../src/core/comments/memory-pro
 import { createDocumentSession } from '../../src/session/DocumentSession'
 import { BLOCKED_IMAGE_PLACEHOLDER, createNetworkPolicy } from '../../src/core/policy/network'
 import { cloneShareExcerpt } from '../../src/components/lark-doc/editor/shareMixin'
+import * as segmentedDocument from '../../src/editor/segmentedDocumentModel'
+import { PAGED_IMPORT_META, setTransactionMetadata, TRANSACTION_ORIGINS } from '../../src/core/transactionMetadata'
+import { collectFoldRanges, foldedRange, resolveBlockTargetRange, moveBlockRange } from '../../src/core/documentOperations'
+import { validateDerivedSnapshot } from '../../src/core/derive/snapshot'
+import * as documentOperations from '../../src/core/documentOperations'
+import { createDocumentDecorations } from '../../src/core/blocks/document-decorations'
+import { documentKey } from '../../src/core/blocks/document-key'
+import { DEFER_BLOCK_ID_META } from '../../src/core/blocks/block-fixes'
+import { createWorkspace } from '../../src/ui/workspace'
+import { createWorkspaceShell } from '../../src/ui/workspaceShell'
+import { createSelect } from '../../src/ui/select'
+import { placeMenu } from '../../src/ui/menuLayout'
+import { lockPageScroll } from '../../src/ui/dom'
+import * as commentComposerModule from '../../src/ui/commentComposer'
 
 const ACTIONS = ['mount', 'update', 'destroy', 'getInstance', 'getRoot']
 const mounted = []
 
+describe('菜单所属工作区与键盘焦点', () => {
+  it('分数像素宽高的菜单定位不会因向上取整越过视窗安全边距', () => {
+    const menu = document.createElement('div')
+    document.body.appendChild(menu)
+    vi.stubGlobal('innerWidth', 480); vi.stubGlobal('innerHeight', 680)
+    vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue({ width: 325.4453125, height: 342.4453125 })
+    try {
+      placeMenu(menu, { left: 420, right: 474, top: 650, bottom: 680 }, 8, { align: 'end' })
+      expect(parseFloat(menu.style.left) + 325.4453125).toBeLessThanOrEqual(472)
+      expect(parseFloat(menu.style.top) + 342.4453125).toBeLessThanOrEqual(672)
+    } finally { menu.remove(); vi.unstubAllGlobals() }
+  })
+  it('滚动父菜单里的下拉移到工作区根，窄短视窗内完整可滚动且仍可点击', () => {
+    const root = document.createElement('div'), parent = document.createElement('div')
+    root.className = 'lark-doc'; parent.className = 'lark-doc-header-menu'
+    root.appendChild(parent); document.body.appendChild(root)
+    const changed = vi.fn(), select = createSelect({ ariaLabel: '文档更多操作', options: [{ value: 'history', label: '历史记录', hint: '完整的历史记录说明' }], onChange: changed })
+    parent.appendChild(select.el)
+    vi.stubGlobal('innerWidth', 320); vi.stubGlobal('innerHeight', 180)
+    const button = select.el.querySelector('button')
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue({ left: 260, right: 310, top: 140, bottom: 170, width: 50, height: 30 })
+    try {
+      button.click()
+      const menu = root.querySelector('[role="listbox"]')
+      expect(menu.parentElement).toBe(root)
+      expect(parseFloat(menu.style.maxWidth)).toBeLessThanOrEqual(304)
+      expect(parseFloat(menu.style.maxHeight)).toBeLessThanOrEqual(164)
+      menu.querySelector('button').click()
+      expect(changed).toHaveBeenCalledWith('history')
+      expect(root.querySelector('[role="listbox"]')).toBeNull()
+      button.click()
+      expect(root.querySelector('[role="listbox"]')).toBe(menu)
+      parent.dispatchEvent(new Event('close'))
+      expect(root.querySelector('[role="listbox"]')).toBeNull()
+      button.click()
+      const stale = menu.querySelector('button')
+      select.destroy()
+      expect(root.querySelector('[role="listbox"]')).toBeNull()
+      stale.click(); button.click()
+      expect(root.querySelector('[role="listbox"]')).toBeNull()
+      expect(changed).toHaveBeenCalledTimes(1)
+    } finally { select.destroy(); root.remove(); vi.unstubAllGlobals() }
+  })
+  it('悬浮后点击取得键盘焦点，Esc穿过本工作区隔离边界且不关闭另一工作区', () => {
+    const shells = [createWorkspaceShell(), createWorkspaceShell()]
+    const changed = vi.fn()
+    const selects = shells.map(shell => {
+      const select = createSelect({ ariaLabel: '测试字体', value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], onChange: changed })
+      shell.root.appendChild(select.el); document.body.appendChild(shell.root)
+      return select
+    })
+    try {
+      const [first, second] = selects.map(select => select.el.querySelector('button'))
+      first.dispatchEvent(new MouseEvent('mouseenter')); first.click()
+      expect(document.activeElement).toBe(first)
+      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      expect(changed).toHaveBeenCalledWith('b')
+      for (const trigger of [first, second]) trigger.dispatchEvent(new MouseEvent('mouseenter'))
+      const input = document.createElement('input'); shells[0].root.appendChild(input); input.focus()
+      for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+        const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, ...composing })
+        input.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(false)
+        expect(shells[0].root.querySelector('[role="listbox"]')).not.toBeNull()
+      }
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      expect(shells[0].root.querySelector('[role="listbox"]')).toBeNull()
+      expect(shells[1].root.querySelector('[role="listbox"]')).not.toBeNull()
+      const remove = vi.spyOn(shells[1].root, 'removeEventListener')
+      selects[1].destroy()
+      expect(remove.mock.calls.some(([type, , capture]) => type === 'keydown' && capture === true)).toBe(true)
+    } finally { selects.forEach(select => select.destroy()); shells.forEach(shell => shell.root.remove()) }
+  })
+})
+
 describe('源模板插入与更多模板闭环', () => {
+  it('touches an inline link to edit and remove it through the native tools without navigating', async () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p><a href="https://example.com/h5">验证链接</a></p>' })
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    try {
+      const anchor = doc.getEditor().view.dom.querySelector('a')
+      anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      expect(element.querySelectorAll('.lark-doc-link-tools')).toHaveLength(1)
+      expect(element.querySelector('.lark-doc-link-hover-card')).toBeNull()
+      const tap = new MouseEvent('click', { bubbles: true, cancelable: true })
+      Object.defineProperty(tap, 'pointerType', { value: 'touch' })
+      anchor.dispatchEvent(tap)
+      expect(open).not.toHaveBeenCalled()
+      expect(tap.defaultPrevented).toBe(true)
+      const tools = element.querySelector('.lark-doc-link-tools')
+      expect(tools).toBeTruthy()
+      const host = doc._handle.nativeHost.host
+      const hide = vi.spyOn(host, 'scheduleLinkHide')
+      anchor.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: element }))
+      expect(hide).not.toHaveBeenCalled()
+      tools.querySelector('[aria-label="编辑链接"]').click()
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-link-dialog')).toBeTruthy())
+      const remove = [...element.querySelectorAll('.lark-doc-link-dialog button')].find(button => button.textContent === '移除链接')
+      expect(remove.hidden).toBe(false)
+      remove.click()
+      await vi.waitFor(() => expect(doc.getEditor().view.dom.querySelector('a')).toBeNull())
+      expect(doc.getEditor().getText()).toBe('验证链接')
+      await vi.waitFor(() => expect(document.activeElement).toBe(doc.getEditor().view.dom))
+    } finally { open.mockRestore(); doc.destroy(); element.remove() }
+  })
+
+  it('keeps touch navigation out of editable cards while preserving readonly inline navigation', async () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: { type: 'doc', content: [{ type: 'linkEmbed', attrs: { href: 'https://example.com/h5', title: '卡片', view: 'card' } }] } })
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const outside = document.createElement('input'); document.body.append(outside)
+    const tap = node => { const event = new MouseEvent('click', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'pointerType', { value: 'touch' }); node.dispatchEvent(event); return event }
+    try {
+      doc.getEditor().commands.setNodeSelection(0)
+      expect(tap(doc.getEditor().view.dom.querySelector('.lark-doc-bookmark-card')).defaultPrevented).toBe(true)
+      expect(open).not.toHaveBeenCalled()
+      expect(element.querySelector('.lark-doc-link-tools')).toBeTruthy()
+      const editorElement = doc.getEditor().view.dom
+      let editorConsumed = false
+      const consume = event => { editorConsumed = true; event.preventDefault() }
+      editorElement.addEventListener('keydown', consume, { once: true })
+      editorElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      expect(element.querySelector('.lark-doc-link-tools')).toBeNull()
+      expect(editorConsumed).toBe(false)
+      editorElement.removeEventListener('keydown', consume)
+      tap(doc.getEditor().view.dom.querySelector('.lark-doc-bookmark-card'))
+      outside.focus()
+      outside.addEventListener('keydown', event => event.preventDefault(), { once: true })
+      outside.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      expect(element.querySelector('.lark-doc-link-tools')).toBeTruthy()
+      outside.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true }))
+      expect(element.querySelector('.lark-doc-link-tools')).toBeTruthy()
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      outside.dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(true)
+      expect(element.querySelector('.lark-doc-link-tools')).toBeNull()
+      await vi.waitFor(() => expect(document.activeElement).toBe(doc.getEditor().view.dom))
+      doc.setContent('<p><a href="https://example.com/readonly">只读链接</a></p>')
+      doc.setReadonly(true)
+      tap(doc.getEditor().view.dom.querySelector('a'))
+      expect(open).toHaveBeenCalledWith('https://example.com/readonly', '_blank', 'noopener,noreferrer')
+    } finally { outside.remove(); open.mockRestore(); doc.destroy(); element.remove() }
+  })
+
+  it('keeps actual editor focus when an old plus menu closes into slash and lets a new plus take focus', async () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>保留正文</p>' })
+    const trigger = document.createElement('button'); element.append(trigger)
+    trigger.getBoundingClientRect = () => ({ left: 30, right: 60, top: 100, bottom: 120, width: 30, height: 20 })
+    try {
+      const host = doc._handle.nativeHost.host, editor = doc.getEditor(), before = doc.getJSON()
+      editor.view.focus()
+      host.openCommandMenu('plus', { currentTarget: trigger })
+      host.closeCommandMenu()
+      host.openCommandMenu('slash', { currentTarget: trigger })
+      await host.$nextTick(); await host.$nextTick()
+      expect(host.menuOpen).toBe(true)
+      expect(host.menuKind).toBe('slash')
+      expect(host._commandMenuUi.el.isConnected).toBe(true)
+      expect(document.activeElement).toBe(editor.view.dom)
+      host.closeCommandMenu(true)
+      host.openCommandMenu('plus', { currentTarget: trigger })
+      await host.$nextTick(); await host.$nextTick()
+      expect(document.activeElement).toBe(host._commandMenuUi.el.querySelector('input'))
+      host.closeCommandMenu(true)
+      host.openCommandMenu('plus', { currentTarget: trigger })
+      await host.$nextTick(); await host.$nextTick()
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      expect(document.activeElement).toBe(host._commandMenuUi.el.querySelector('input'))
+      expect(doc.getJSON()).toEqual(before)
+    } finally { doc.destroy(); element.remove() }
+  })
+
+  it('continues numbering across body paragraphs through the native menu and can restart it', async () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const item = id => ({ type: 'listItem', content: [{ type: 'paragraph', attrs: { blockId: id }, content: [{ type: 'text', text: id }] }] })
+    const doc = new LarkDoc({ element, storage: 'none', content: { type: 'doc', content: [
+      { type: 'orderedList', content: [item('first'), item('second'), item('third')] },
+      { type: 'paragraph', attrs: { blockId: 'separator' }, content: [{ type: 'text', text: '分隔正文' }] },
+      { type: 'orderedList', content: [item('fourth')] },
+    ] } })
+    try {
+      const before = doc.getJSON(), labels = () => [...element.querySelectorAll('.lark-doc-list-number')].map(e => e.textContent)
+      expect(labels()).toEqual(['1.', '2.', '3.', '1.'])
+      const action = text => [...element.querySelectorAll('.lark-doc-heading-number-menu [role="menuitem"]')].find(e => e.textContent.includes(text))
+      element.querySelectorAll('.lark-doc-list-number')[3].click()
+      await vi.waitFor(() => expect(action('继续编号')?.disabled).toBe(false))
+      action('继续编号').click()
+      await vi.waitFor(() => expect(labels()).toEqual(['1.', '2.', '3.', '4.']))
+      const expected = JSON.parse(JSON.stringify(before)); expected.content[2].attrs.continueFrom = true
+      expect(doc.getJSON()).toEqual(expected)
+      element.querySelectorAll('.lark-doc-list-number')[3].click()
+      await vi.waitFor(() => expect(action('重新开始编号')).toBeTruthy())
+      action('重新开始编号').click()
+      await vi.waitFor(() => expect(labels()).toEqual(['1.', '2.', '3.', '1.']))
+      expect(doc.getJSON().content[2].attrs.continueFrom).toBe(false)
+    } finally { doc.destroy(); element.remove() }
+  })
+
+  it('folds a converted heading section without changing body or block IDs and moves a hidden caret back', async () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const text = value => [{ type: 'text', text: value }]
+    const doc = new LarkDoc({ element, storage: 'none', content: { type: 'doc', content: [
+      { type: 'paragraph', attrs: { blockId: 'fold-heading' }, content: text('本章') },
+      { type: 'paragraph', attrs: { blockId: 'fold-body' }, content: text('本章普通正文') },
+      { type: 'heading', attrs: { blockId: 'fold-next', level: 1 }, content: text('下一章') },
+      { type: 'paragraph', attrs: { blockId: 'fold-peer' }, content: text('下一章正文') },
+    ] } })
+    try {
+      const editor = doc.getEditor()
+      editor.commands.setTextSelection(1)
+      editor.commands.setHeading({ level: 1 })
+      await vi.waitFor(() => expect(element.querySelector('h1[data-block-id="fold-heading"] .lark-doc-heading-fold-toggle')).toBeTruthy())
+      const heading = element.querySelector('h1[data-block-id="fold-heading"]')
+      heading.scrollIntoView = vi.fn() // jsdom has no scrolling layout.
+      let child = 0
+      editor.state.doc.descendants((node, pos) => { if (node.attrs.blockId === 'fold-body') child = pos })
+      editor.commands.setTextSelection(child + 2)
+      const before = doc.getJSON()
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      await vi.waitFor(() => expect(heading.querySelector('.lark-doc-heading-fold-toggle').getAttribute('aria-expanded')).toBe('false'))
+      expect(editor.state.selection.$from.parent.attrs.blockId).toBe('fold-heading')
+      expect(doc.getJSON()).toEqual(before)
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      await vi.waitFor(() => expect(heading.querySelector('.lark-doc-heading-fold-toggle').getAttribute('aria-expanded')).toBe('true'))
+      expect(doc.getJSON()).toEqual(before)
+      let peer = 0
+      editor.state.doc.descendants((node, pos) => { if (node.attrs.blockId === 'fold-next') peer = pos })
+      editor.commands.setNodeSelection(peer)
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      expect(editor.state.selection.node?.attrs.blockId).toBe('fold-next')
+      expect(doc.getJSON()).toEqual(before)
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      editor.commands.setTextSelection({ from: 1, to: child + 2 })
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      expect(editor.state.selection.$head.parent.attrs.blockId).toBe('fold-heading')
+      expect(editor.state.selection.empty).toBe(true)
+      expect(doc.getJSON()).toEqual(before)
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      editor.commands.setTextSelection({ from: child + 2, to: 1 })
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+      expect(editor.state.selection.head).toBe(1)
+      expect(doc.getJSON()).toEqual(before)
+      heading.querySelector('.lark-doc-heading-fold-toggle').click()
+    } finally { doc.destroy(); element.remove() }
+  })
+
+  it('keeps consumed Escape on a child input instead of focusing document content', () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>保留正文</p>' })
+    try {
+      const host = doc._handle.nativeHost.host, input = document.createElement('input')
+      host.$el.append(input); input.focus()
+      input.addEventListener('keydown', event => { if (event.key === 'Escape') event.preventDefault() })
+      const close = vi.spyOn(host, 'closeOverlay'), escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      input.dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(true); expect(close).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(input); expect(doc.getEditor().getText()).toBe('保留正文')
+      host.$el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      expect(close).toHaveBeenCalledTimes(1)
+    } finally { doc.destroy(); element.remove() }
+  })
+  it('mounts the native table selection layer with the editor instead of leaving its controls unwired', () => {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>正文</p>' })
+    try {
+      const host = doc._handle.nativeHost.host
+      expect(host._tableOverlaysUi).toBeTruthy()
+      expect(typeof host.onTableSelectLine).toBe('function')
+    } finally { doc.destroy(); element.remove() }
+  })
+
+  it('preserves an open notification list and subscription through a same-session repaint', async () => {
+    stubRangeLayout()
+    const off = vi.fn(), subscribe = vi.fn(() => off), list = vi.fn(async () => [{ id: 'notice', title: '当前通知', read: false }])
+    const session = createDocumentSession({ documentId: 'notify-repaint', user: { id: 'alice' }, notifications: { list, subscribe, markAllRead: vi.fn(), setMuted: vi.fn() } })
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>正文</p>', session })
+    try {
+      const host = doc._handle.nativeHost.host
+      await vi.waitFor(() => expect(host.notifyItems).toHaveLength(1))
+      element.querySelector('.lark-doc-notify-btn').click()
+      await vi.waitFor(() => expect(host.notifyOpen).toBe(true))
+      const subscriptions = subscribe.mock.calls.length, releases = off.mock.calls.length
+      host.$forceUpdate(); await host.$nextTick(); await host.$nextTick()
+      expect(host.notifyOpen).toBe(true); expect(host.notifyItems.map(item => item.id)).toEqual(['notice'])
+      expect(subscribe).toHaveBeenCalledTimes(subscriptions); expect(off).toHaveBeenCalledTimes(releases)
+      session.user = { id: 'bob' }; host.$forceUpdate(); await host.$nextTick()
+      expect(host.notifyOpen).toBe(false)
+    } finally { doc.destroy(); element.remove(); await session.dispose() }
+  })
+
+  it('完成提示使用独立正常布局宿主，关闭按钮保持可用', () => {
+    const shell = createWorkspaceShell(), clearNotice = vi.fn()
+    const ui = createWorkspace({ panelHost: shell.panelHost, noticeHost: shell.noticeHost, handlers: { clearNotice } })
+    try {
+      ui.update({ notice: '导入完成' })
+      const notice = shell.root.querySelector('.lark-doc-notice')
+      expect(notice).not.toBeNull()
+      expect(shell.externalPanel.contains(notice)).toBe(false)
+      expect(notice.parentElement).toBe(shell.noticeHost)
+      notice.querySelector('button').click()
+      expect(clearNotice).toHaveBeenCalledOnce()
+      ui.update({ notice: '' })
+      expect(shell.noticeHost.childElementCount).toBe(0)
+    } finally { ui.destroy() }
+  })
+  it('查找按目标文本块滚动，不能把页容器当成命中目标', () => withTemplateDocument(async ({ host, editor }) => {
+    await vi.dynamicImportSettled()
+    const paragraph = editor.view.nodeDOM(editor.state.doc.firstChild.nodeSize)
+    paragraph.scrollIntoView = vi.fn()
+    paragraph.parentElement.scrollIntoView = vi.fn()
+    const dispatch = vi.spyOn(editor.view, 'dispatch')
+    host.searchQuery = '目标'; host.updateSearch(); host.nextMatch(1)
+    expect(dispatch.mock.calls.some(([tr]) => tr.scrolledIntoView)).toBe(true)
+    expect(paragraph.parentElement.scrollIntoView).not.toHaveBeenCalled()
+  }))
+  it('查找框持焦且native选区在正文外，仍按选中文本坐标滚动而不抢焦点', () => withTemplateDocument(async ({ host, editor }) => {
+    const input = document.createElement('input'), outside = document.createElement('span')
+    outside.textContent = 'outside'; document.body.append(input, outside)
+    const scroll = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
+    const coords = vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 3000, bottom: 3020, left: 200, right: 220 })
+    try {
+      input.focus(); const native = document.getSelection(), range = document.createRange()
+      range.selectNodeContents(outside); native.removeAllRanges(); native.addRange(range)
+      host.searchQuery = '目标'; host.updateSearch(); await host.nextMatch(0)
+      expect(coords).toHaveBeenCalledWith(editor.state.selection.head)
+      expect(scroll).toHaveBeenCalled()
+      expect(document.activeElement).toBe(input)
+    } finally { scroll.mockRestore(); coords.mockRestore(); input.remove(); outside.remove() }
+  }))
   async function withTemplateDocument(run, options = {}) {
     stubRangeLayout()
     const element = document.createElement('div')
     document.body.appendChild(element)
-    const doc = new LarkDoc({ element, storage: 'none', title: '保留原文标题', content: '<p data-block-id="before_template">前文</p><p data-block-id="template_target">目标正文</p>', ...options })
+    const doc = new LarkDoc({ element, storage: 'none', title: '保留原文标题', content: '<p data-block-id="before_template">前文</p><p data-block-id="template_target">目标正文</p>', ...options, config: { ...options.config, layout: { toolbarVisible: true, ...options.config?.layout } } })
     try { return await run({ doc, host: doc._handle.nativeHost.host, element, editor: doc.getEditor() }) }
     finally { doc.destroy(); element.remove() }
   }
+  it('replaces the mention provider through public patchProps while retaining permission watchers', () => withTemplateDocument(async ({ doc, host }) => {
+    doc.patchProps({ mentionSource: { search: () => [{ id: 'new-user', name: 'New User', kind: 'user' }] } })
+    await host.$nextTick()
+    expect((await host._mentionProvider.search('New', { kind: 'user' })).map(item => item.id)).toEqual(['new-user'])
+  }, { mentionSource: { search: () => [{ id: 'old-user', name: 'Old User', kind: 'user' }] } }))
+  it('persists native table background and vertical alignment through the actual toolbar handlers', () => withTemplateDocument(async ({ doc, host, editor }) => {
+    expect(editor.commands.insertLarkDocTable({ rows: 2, cols: 3 })).toBe(true)
+    expect(host.selectTableLine('row', 0)).toBe(true)
+    host.tableToolbarCommand('cell-bg', 'cellbg:#FFF2D1')
+    host.tableToolbarCommand('align', 'valign:bottom')
+    const cells = () => { const result = []; editor.state.doc.descendants(node => { if (node.type.name === 'tableCell') result.push(node.attrs) }); return result }
+    expect(cells().slice(0, 3).every(attrs => attrs.backgroundColor === '#FFF2D1' && attrs.verticalAlign === 'bottom')).toBe(true)
+    expect(cells().slice(3).every(attrs => attrs.backgroundColor === null && attrs.verticalAlign === null)).toBe(true)
+    const html = doc.getHTML()
+    doc.setContent(html)
+    expect(cells().slice(0, 3).every(attrs => attrs.backgroundColor && attrs.verticalAlign === 'bottom')).toBe(true)
+    doc.setReadonly(true)
+    const before = doc.getJSON()
+    expect(host.tableToolbarCommand('cell-bg', 'cellbg:#ffffff')).toBe(false)
+    expect(doc.getJSON()).toEqual(before)
+  }))
+  it('keeps a declarative readonly lock until public patchProps releases it without rebuilding the editor', async () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>保留正文</p>', readonly: true, config: { modes: { default: 'edit', persist: false } } })
+    try {
+      const editor = doc.getEditor(), json = doc.getJSON()
+      doc.setReadonly(false)
+      expect(doc.isReadonly()).toBe(true)
+      expect(editor.isEditable).toBe(false)
+      doc.patchProps({ readonly: false })
+      await vi.waitFor(() => expect(editor.isEditable).toBe(true))
+      expect(doc.isReadonly()).toBe(false)
+      expect(doc.getEditor()).toBe(editor)
+      expect(doc.getJSON()).toEqual(json)
+      doc.patchProps({ readonly: true })
+      await vi.waitFor(() => expect(editor.isEditable).toBe(false))
+    } finally { doc.destroy(); element.remove() }
+  })
+
+  it('Markdown导入保留语义格式与任务状态，不按扩展名宣称发生降级', () => withTemplateDocument(async ({ doc, editor, element }) => {
+    const content = '# 标题\n\n**加粗正文**\n\n> 引用\n\n```js\nconst value = 1\n```\n\n| 列甲 | 列乙 |\n| --- | --- |\n| A | B |\n\n- [x] 已完成\n- [ ] 待办\n'
+    const controller = doc._handle.workspaceController
+    const pending = controller.importDocument({ target: { files: [{ name: '格式.md', size: content.length, text: async () => content }], value: 'selected' } })
+    await vi.waitFor(() => expect(element.querySelector('[role="dialog"]')).not.toBeNull())
+    ;[...element.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === '导入并替换').click()
+    await pending
+    expect(controller.state.notice).toBe('导入完成')
+    const types = [], checked = []
+    editor.state.doc.descendants(node => { types.push(node.type.name); if (node.type.name === 'taskItem') checked.push(node.attrs.checked) })
+    expect(types).toEqual(expect.arrayContaining(['heading', 'blockquote', 'codeBlock', 'table']))
+    expect(editor.getHTML()).toContain('<strong>加粗正文</strong>')
+    expect(checked).toEqual([true, false])
+  }))
+  it('导入确认显示文件名、说明和独立操作区，取消保持原文', () => withTemplateDocument(async ({ doc, editor, element }) => {
+    const before = editor.state.doc
+    const pending = doc._handle.workspaceController.importDocument({ target: { files: [{ name: '示例.html', size: 10, text: async () => '<p>new</p>' }], value: 'selected' } })
+    await vi.waitFor(() => expect(element.querySelector('[role="dialog"]')).not.toBeNull())
+    const dialog = element.querySelector('[role="dialog"]')
+    expect(dialog.classList.contains('lark-doc-import-confirm')).toBe(true)
+    expect(dialog.textContent).toContain('示例.html')
+    expect(dialog.getAttribute('aria-describedby')).toBeTruthy()
+    ;[...dialog.querySelectorAll('button')].find(button => button.textContent === '取消').click()
+    await pending
+    expect(editor.state.doc).toBe(before)
+  }))
+  it('关闭文档操作父弹窗同步收起其浮出的导出菜单', () => withTemplateDocument(async ({ host, element }) => {
+    await vi.dynamicImportSettled()
+    host.openHeaderMenuFrom({ currentTarget: { getBoundingClientRect: () => ({ left: 100, right: 140, top: 40, bottom: 70, width: 40, height: 30 }) } })
+    await Promise.resolve()
+    const button = element.querySelector('.lark-doc-header-menu button[aria-label="导出文档格式"]')
+    expect(button).not.toBeNull(); button.click()
+    expect(element.querySelector('.lark-doc-select-menu')).not.toBeNull()
+    host.closeHeaderMenu()
+    await vi.waitFor(() => expect(element.querySelector('.lark-doc-select-menu')).toBeNull())
+  }, { config: { layout: { headerVisible: false } } }))
+  it.each([[false, false], [false, true], [true, false], [true, true]])('嵌套Markdown任务独立保留父%s/子%s勾选，普通项不变', (parent, child) => withTemplateDocument(async ({ doc, editor, element }) => {
+    const text = `- [${parent ? 'x' : ' '}] 父任务\n  - [${child ? 'x' : ' '}] 子任务\n- 普通项\n  - [x] 普通项下的完成任务\n`
+    const pending = doc._handle.workspaceController.importDocument({ target: { files: [{ name: '嵌套.md', size: text.length, text: async () => text }], value: 'selected' } })
+    await vi.waitFor(() => expect(element.querySelector('[role="dialog"]')).not.toBeNull())
+    ;[...element.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === '导入并替换').click()
+    await pending
+    const states = [], types = []
+    editor.state.doc.descendants(node => { types.push(node.type.name); if (node.type.name === 'taskItem') states.push(node.attrs.checked) })
+    expect(states).toEqual([parent, child, true])
+    expect(types).toContain('listItem')
+  }))
+  it('列回退先收集真实跨度边界，再细分未知的三列合并区域', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<table><tr><td colspan="3"><p>整行合并</p></td></tr><tr><td colspan="2"><p>两列合并</p></td><td><p>第三列</p></td></tr></table>')
+    editor.commands.setTextSelection(4)
+    const table = editor.view.dom.querySelector('table'), wrapper = table.closest('.tableWrapper')
+    const box = (left, width) => ({ left, right: left + width, top: 200, bottom: 280, width, height: 80 })
+    vi.spyOn(wrapper, 'getBoundingClientRect').mockReturnValue(box(100, 300))
+    vi.spyOn(table, 'getBoundingClientRect').mockReturnValue(box(100, 300))
+    Object.defineProperties(wrapper, { clientWidth: { configurable: true, value: 300 }, scrollWidth: { configurable: true, value: 300 } })
+    ;[...table.querySelectorAll('td')].forEach((cell, i) => vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue(i === 0 ? box(100, 300) : box(i === 1 ? 100 : 250, 150)))
+    const previous = host._tableOverlaysUi, update = vi.fn()
+    host._tableOverlaysUi = { update, destroy() {} }; host._tableUiClicked = true
+    vi.spyOn(host, 'tableOverlayWrapper').mockReturnValue(wrapper); vi.spyOn(host, 'tableUiActive').mockReturnValue(true)
+    try {
+      host.refreshTableOverlays()
+      expect(update.mock.calls.at(-1)[0].columns.map(col => col.width)).toEqual([75, 75, 150])
+    } finally { host._tableOverlaysUi = previous }
+  }))
+  it.each([0, 50])('col几何不可用时，合并格按逻辑列回退并裁剪横滚区间，scroll=%s', scroll => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<table><tr><td colspan="2"><p>合并</p></td></tr><tr><td><p>A</p></td><td><p>B</p></td></tr></table>')
+    editor.commands.setTextSelection(4)
+    const table = editor.view.dom.querySelector('table'), wrapper = table.closest('.tableWrapper')
+    const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
+    vi.spyOn(wrapper, 'getBoundingClientRect').mockReturnValue(box(100, 200, 150, 80))
+    vi.spyOn(table, 'getBoundingClientRect').mockReturnValue(box(100 - scroll, 200, 200, 80))
+    Object.defineProperties(wrapper, { clientWidth: { configurable: true, value: 150 }, scrollWidth: { configurable: true, value: 200 }, scrollLeft: { configurable: true, value: scroll } })
+    ;[...table.querySelectorAll('td')].forEach((cell, index) => vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue(index === 0 ? box(100 - scroll, 200, 200, 40) : box(100 - scroll + (index - 1) * 100, 240, 100, 40)))
+    const previous = host._tableOverlaysUi, update = vi.fn()
+    host._tableOverlaysUi = { update, destroy() {} }; host._tableUiClicked = true
+    vi.spyOn(host, 'tableOverlayWrapper').mockReturnValue(wrapper)
+    vi.spyOn(host, 'tableUiActive').mockReturnValue(true)
+    try {
+      host.refreshTableOverlays()
+      const state = update.mock.calls.at(-1)[0]
+      expect(state.columns).toHaveLength(2)
+      expect(state.columns[0]).toMatchObject({ index: 0, left: 0, width: scroll ? 50 : 100 })
+      expect(state.columns[1]).toMatchObject({ index: 1, left: scroll ? 50 : 100, width: scroll ? 100 : 50 })
+    } finally { host._tableOverlaysUi = previous }
+  }))
+  it('插入菜单仅基础图标区显示tips，常用文字行不显示', () => withTemplateDocument(async ({ host, element }) => {
+    host.openCommandMenu('plus'); await vi.dynamicImportSettled()
+    const basic = element.querySelector('.lark-doc-command-section[data-category="基础"] button')
+    const row = element.querySelector('.lark-doc-command-section[data-category="常用"] button')
+    expect(basic).not.toBeNull(); expect(row).not.toBeNull()
+    for (const button of [basic, row]) button.getBoundingClientRect = () => ({ left: 100, top: 200, right: 150, bottom: 230, width: 50, height: 30 })
+    basic.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.waitFor(() => expect(element.querySelector('[role="tooltip"]')).not.toBeNull())
+    row.dispatchEvent(new MouseEvent('mouseenter'))
+    await new Promise(resolve => setTimeout(resolve, 180))
+    expect(element.querySelector('[role="tooltip"]')).toBeNull()
+  }))
+  it('分页兄弟索引只建立页目录且保留跨页块坐标', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>row</p>'.repeat(96), { pagedView: true, yieldToMain: async () => {} })
+    const candidate = editor.state.doc.copy(editor.state.doc.content)
+    const expected = []
+    candidate.forEach((page, pos) => page.forEach((node, offset) => expected.push({ node, pos: pos + 1 + offset })))
+    const scans = candidate.content.content.map(page => vi.spyOn(page, 'forEach'))
+    try {
+      const siblings = editor.schema.cached.segmentSiblings(candidate)
+      expect(scans.every(scan => !scan.mock.calls.length)).toBe(true)
+      expect(siblings.childCount).toBe(expected.length)
+      for (let index = expected.length - 1; index >= 0; index--) {
+        expect(siblings.child(index)).toBe(expected[index].node)
+        expect(siblings.positionAt(index)).toBe(expected[index].pos)
+        expect(siblings.indexAt(expected[index].pos)).toBe(index)
+        expect(siblings.indexAt(expected[index].pos + 1)).toBeUndefined()
+      }
+    } finally { scans.forEach(scan => scan.mockRestore()) }
+  }))
+  it('未编号标题格式复用结构分析，编号变化重新分析并可撤销', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>head</p><p data-indent="1">child</p>' + '<p>tail</p>'.repeat(65), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, before = editor.state.doc, analysis = runtime.readAnalysis(before)
+    editor.chain().setTextSelection(2).setHeading({ level: 2 }).run()
+    const formatted = runtime.readAnalysis(editor.state.doc)
+    expect(formatted.headingNumbers).toBe(analysis.headingNumbers)
+    expect(formatted.orderedListNumbers).toBe(analysis.orderedListNumbers)
+    expect(formatted.foldRanges.get(1).node).toBe(editor.state.doc.nodeAt(1))
+    editor.commands.updateAttributes('heading', { numbering: true })
+    const numbered = runtime.readAnalysis(editor.state.doc)
+    expect(numbered.headingNumbers).not.toBe(formatted.headingNumbers)
+    expect(numbered.headingNumbers.size).toBe(1)
+    editor.commands.undo()
+    expect(runtime.readAnalysis(editor.state.doc).headingNumbers.size).toBe(0)
+  }))
+  it.each(['cancel', 'accept', 'destroy'])('导入使用异步页面确认且生命周期完成：%s', mode => withTemplateDocument(async ({ doc, element, editor }) => {
+    const controller = doc._handle.workspaceController, before = editor.state.doc
+    const nativeConfirm = vi.spyOn(window, 'confirm').mockImplementation(() => { throw new Error('native dialog must not run') })
+    const file = { name: 'local.html', size: 100, text: vi.fn(async () => '<p>confirmed import</p>') }
+    try {
+      const pending = controller.importDocument({ target: { files: [file], value: 'selected' } })
+      await vi.waitFor(() => expect(element.querySelector('[role="dialog"][aria-label="导入并替换正文"]')).not.toBeNull())
+      expect(file.text).not.toHaveBeenCalled()
+      const modal = element.querySelector('[role="dialog"][aria-label="导入并替换正文"]')
+      expect(document.activeElement.textContent).toBe('取消')
+      if (mode === 'destroy') doc.destroy()
+      else if (mode === 'cancel') modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      else Array.from(modal.querySelectorAll('button')).find(button => button.textContent === '导入并替换').click()
+      await pending
+      expect(element.querySelector('[role="dialog"][aria-label="导入并替换正文"]')).toBeNull()
+      expect(file.text).toHaveBeenCalledTimes(mode === 'accept' ? 1 : 0)
+      expect(nativeConfirm).not.toHaveBeenCalled()
+      if (mode === 'cancel') expect(editor.state.doc).toBe(before)
+      if (mode === 'accept') { expect(editor.state.doc.textContent).toBe('confirmed import'); editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true) }
+    } finally { nativeConfirm.mockRestore() }
+  }))
+  it('任务行保留可打开菜单的块句柄且不改变勾选状态', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>任务回归</p></li></ul>')
+    host.handleRange = host.rangeAt(3)
+    const from = host.handleRange.from, before = editor.state.doc.nodeAt(from)
+    expect(before.type.name).toBe('taskItem')
+    expect(host.buildBlockHandleState().buttonKind).toBe('main')
+    expect(host.handleIcon).toBe('block-task')
+    host.openBlockMenu()
+    expect(host.blockMenuOpen).toBe(true)
+    expect(editor.state.doc.nodeAt(from)).toBe(before)
+    host.closeBlockMenu()
+  }))
+  it.each([false, true])('任务句柄对齐可见正文，不计入复选框隐藏标签，checked=%s', checked => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent(`<ul data-type="taskList"><li data-type="taskItem" data-checked="${checked}"><p>任务正文</p></li></ul>`)
+    const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
+    vi.spyOn(element.querySelector('.lark-doc-paper'), 'getBoundingClientRect').mockReturnValue(box(50, 20, 800, 800))
+    const createRange = document.createRange.getMockImplementation()
+    vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = createRange()
+      range.getClientRects = () => [range.startContainer.parentElement?.closest('label') ? box(110, 212, 260, 20) : box(128, 205, 100, 20)]
+      return range
+    })
+    const range = host.rangeAt(3), before = editor.state.doc
+    host.positionBlockHandle(range)
+    expect(host.blockHandlePosition.top).toBe(182)
+    expect(editor.state.doc).toBe(before)
+  }))
+  it('表格句柄锚定真实边框，双句柄大小切换不改变首行中线', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<table><tr><td><p>A1</p></td><td><p>B1</p></td></tr></table>')
+    const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
+    const paper = element.querySelector('.lark-doc-paper')
+    vi.spyOn(paper, 'getBoundingClientRect').mockReturnValue(box(50, 20, 800, 800))
+    Object.defineProperty(paper, 'clientLeft', { configurable: true, value: 1 })
+    vi.spyOn(editor.view.dom.querySelector('.tableWrapper'), 'getBoundingClientRect').mockReturnValue(box(100, 160, 600, 160))
+    vi.spyOn(editor.view.dom.querySelector('table'), 'getBoundingClientRect').mockReturnValue(box(120, 200, 560, 80))
+    vi.spyOn(host, 'firstLineInkBounds').mockReturnValue(box(130, 211, 30, 20))
+    editor.commands.setTextSelection(4)
+    host.positionBlockHandle(host.rangeAt(4))
+    await vi.dynamicImportSettled()
+    const tableButton = element.querySelector('[data-block-scope="table"]')
+    vi.spyOn(tableButton, 'getBoundingClientRect').mockReturnValue(box(0, 0, 40, 24))
+    host.positionBlockHandle(host._tableHandleContext.table)
+    expect(host.blockHandlePosition).toEqual({ top: 152, left: 25 })
+    host.positionBlockHandle(host._tableHandleContext.cell)
+    expect(host.blockHandlePosition.top).toBe(188)
+    expect(element.querySelectorAll('[data-block-scope="table"]')).toHaveLength(1)
+    expect(element.querySelectorAll('[data-block-scope="cell"]')).toHaveLength(1)
+  }))
+  it.each([['', false, 240], ['图片下方说明', false, 240], ['', true, 240], ['图片下方说明', true, 240], ['', false, 1600], ['高图说明', true, 1600]])('图片句柄顶部对齐，不受浮条、说明和高度影响：%s，首次=%s，高=%s', (caption, cold, height) => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent({ type: 'doc', content: [
+      { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'reefed' }] }] }] },
+      { type: 'image', attrs: { src: 'data:image/png;base64,cG5n', caption } },
+    ] })
+    let imagePos
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === 'image') imagePos = pos })
+    const range = { from: imagePos, to: imagePos + 1 }, image = editor.view.nodeDOM(imagePos)
+    image.dispatchEvent(new MouseEvent('mouseenter'))
+    host.handleRange = range; host.refreshBlockHandle()
+    await vi.dynamicImportSettled()
+    const paper = element.querySelector('.lark-doc-paper'), frame = image.querySelector('.lark-doc-image-frame'), handle = element.querySelector('.lark-doc-block-handle-main')
+    expect(image.querySelector('.lark-doc-image-toolbar')).not.toBeNull()
+    let scroll = 0
+    const box = (left, top, width, height) => ({ left, top: top - scroll, right: left + width, bottom: top - scroll + height, width, height })
+    vi.spyOn(paper, 'getBoundingClientRect').mockImplementation(() => box(50, 20, 800, 800))
+    vi.spyOn(image, 'getBoundingClientRect').mockImplementation(() => box(100, 200, 600, 300))
+    vi.spyOn(frame, 'getBoundingClientRect').mockImplementation(() => box(100, 200, 600, height))
+    vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue(box(0, 0, 42, 26))
+    if (cold) handle.remove()
+    vi.spyOn(host, 'firstLineInkBounds').mockImplementation(() => box(160, 150, 80, 18))
+    const before = editor.state.doc
+    host.positionBlockHandle(range)
+    expect(host.blockHandlePosition.top).toBe(180)
+    scroll = 80; host.positionBlockHandle(range)
+    expect(host.blockHandlePosition.top).toBe(180)
+    expect(editor.state.doc).toBe(before)
+  }))
+
+  it.each(['paragraph', 'image'])('后列%s句柄留在表外，保留前格的点击区域', kind => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    const text = value => ({ type: 'paragraph', content: [{ type: 'text', text: value }] })
+    doc.setContent({ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [
+      { type: 'tableCell', content: [text('A1')] },
+      { type: 'tableCell', content: [kind === 'image' ? { type: 'image', attrs: { src: 'data:image/png;base64,cG5n' } } : text('B1')] },
+    ] }] }] })
+    const box = left => ({ left, top: 200, right: left + 100, bottom: 240, width: 100, height: 40 })
+    vi.spyOn(element.querySelector('.lark-doc-paper'), 'getBoundingClientRect').mockReturnValue(box(0))
+    vi.spyOn(editor.view.dom.querySelector('table'), 'getBoundingClientRect').mockReturnValue(box(100))
+    editor.view.dom.querySelectorAll('td').forEach((cell, i) => { vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue(box(100 + i * 100)) })
+    vi.spyOn(host, 'firstLineInkBounds').mockReturnValue(box(208))
+    let pos
+    editor.state.doc.descendants((node, at) => { if (node.type.name === kind && (kind === 'image' || node.textContent === 'B1')) pos = at })
+    if (kind === 'image') vi.spyOn(editor.view.nodeDOM(pos), 'getBoundingClientRect').mockReturnValue(box(200))
+    expect(host.blockHandleGeometry({ from: pos, to: pos + editor.state.doc.nodeAt(pos).nodeSize }).left).toBeLessThanOrEqual(58)
+  }))
+  it('正文拖选按住鼠标时不重定位浮动句柄', () => withTemplateDocument(async ({ host }) => {
+    const position = vi.spyOn(host, 'positionBlockHandle')
+    host.onEditorPointerMove({ buttons: 1, clientX: 100, clientY: 100 })
+    expect(position).not.toHaveBeenCalled()
+  }))
+  it('表格内块拥有独立范围和双句柄，删除段落不删除整表', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<p>前文</p><table><tbody><tr><td><p>A1</p><p>A-next</p></td><td><p>B1</p></td></tr><tr><td><p>A2</p></td><td><p>B2</p></td></tr></tbody></table><p>后文</p>')
+    let pos
+    editor.state.doc.descendants((node, at) => { if (node.type.name === 'paragraph' && node.textContent === 'A1') pos = at })
+    const range = host.rangeAt(pos + 1)
+    expect(editor.state.doc.nodeAt(range.from).type.name).toBe('paragraph')
+    editor.commands.setTextSelection(pos + 1); host.positionBlockHandle(range)
+    await vi.dynamicImportSettled(); host.refreshBlockHandle()
+    expect(element.querySelectorAll('[data-block-scope="table"]')).toHaveLength(1)
+    expect(element.querySelectorAll('[data-block-scope="cell"]')).toHaveLength(1)
+    host.blockAction('delete')
+    expect(editor.view.dom.querySelectorAll('table')).toHaveLength(1)
+    expect(editor.getText()).toContain('A-next')
+    expect(editor.getText()).toContain('B1')
+    editor.state.doc.check(); editor.commands.undo()
+    expect(editor.getText()).toContain('A1')
+  }))
+
+  it('整表与单元格菜单可互换目标，标题行保持双句柄，类型转换和副本只改当前块', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<table><tbody><tr><td><p>A1</p><p>A-next</p></td><td><p>B1</p></td></tr><tr><td><p>A2</p></td><td><p>B2</p></td></tr></tbody></table>')
+    let pos
+    editor.state.doc.descendants((node, at) => { if (node.type.name === 'paragraph' && node.textContent === 'A1') pos = at })
+    editor.commands.setTextSelection(pos + 1); host.positionBlockHandle(host.rangeAt(pos + 1))
+    await vi.dynamicImportSettled()
+    element.querySelector('[data-block-scope="table"]').dispatchEvent(new MouseEvent('mouseenter'))
+    expect(host.handleIsTable).toBe(true)
+    host.tableHandleAction('toggleHeaderRow')
+    expect(editor.state.doc.firstChild.firstChild.firstChild.type.name).toBe('tableHeader')
+    expect(host.blockMenuOpen).toBe(true)
+    expect(element.querySelectorAll('[data-block-scope="cell"]')).toHaveLength(1)
+    element.querySelector('[data-block-scope="cell"]').dispatchEvent(new MouseEvent('mouseenter'))
+    expect(host.handleIsTable).toBe(false)
+    host.blockTypeAction('heading2')
+    expect(editor.view.dom.querySelector('th h2')?.textContent).toBe('A1')
+    expect(editor.getText()).toContain('B1')
+    host.positionBlockHandle(host.rangeAt(editor.state.selection.from)); host.blockAction('duplicate')
+    expect(editor.view.dom.querySelectorAll('th h2')).toHaveLength(2)
+    expect(editor.view.dom.querySelectorAll('table')).toHaveLength(1)
+    editor.state.doc.check()
+  }))
+
+  it.each([false, true])('整表菜单均分全部逻辑列，保留合并格和相邻表并能一次撤销，嵌套=%s', nested => withTemplateDocument(async ({ doc, editor, host }) => {
+    const inner = nested ? '<table><tr><td colwidth="50"><p>内表甲</p></td><td colwidth="90"><p>内表乙</p></td></tr></table>' : ''
+    doc.setContent('<table><tr><td colwidth="80">' + inner + '<p>A1</p></td><td colwidth="180"><p>B1</p></td></tr><tr><td colspan="2" colwidth="80,180"><p>合并格</p></td></tr></table><p>保留段落</p><table><tr><td colwidth="220"><p>相邻表</p></td></tr></table>')
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }
+    host.tableHandleAction('distributeColumns')
+    const table = editor.state.doc.firstChild
+    expect(table.child(0).child(0).attrs.colwidth).toEqual([130])
+    expect(table.child(0).child(1).attrs.colwidth).toEqual([130])
+    expect(table.child(1).firstChild.attrs.colwidth).toEqual([130, 130])
+    expect(editor.state.doc.child(2).firstChild.firstChild.attrs.colwidth).toEqual([220])
+    if (nested) {
+      const innerTable = table.firstChild.firstChild.firstChild
+      expect(innerTable.firstChild.firstChild.attrs.colwidth).toEqual([50])
+      expect(innerTable.firstChild.child(1).attrs.colwidth).toEqual([90])
+    }
+    editor.commands.undo()
+    expect(editor.state.doc.firstChild.firstChild.firstChild.attrs.colwidth).toEqual([80])
+    expect(editor.state.doc.firstChild.firstChild.child(1).attrs.colwidth).toEqual([180])
+    editor.state.doc.check()
+  }))
+  it.each(['replace', 'edit', 'readonly', 'destroy', 'session'])('等待剪贴板时%s不再剪切旧范围或抢焦点', mode => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<p>原段落</p><p>保留正文</p>')
+    let finish
+    const session = host.session
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(() => new Promise(resolve => { finish = resolve })) } })
+    const focus = vi.spyOn(editor.view, 'focus').mockImplementation(() => {})
+    try {
+      const pending = host.copyBlock({ from: 0, to: editor.state.doc.firstChild.nodeSize }, true)
+      expect(finish).toBeTypeOf('function')
+      if (mode === 'replace') doc.setContent('<p>替换后的正文</p>')
+      if (mode === 'edit') editor.commands.insertContent('新输入')
+      if (mode === 'readonly') doc.setReadonly(true)
+      if (mode === 'session') host.session = { documentId: 'other-document' }
+      const before = editor.state.doc
+      if (mode === 'destroy') doc.destroy()
+      focus.mockClear(); finish()
+      expect(await pending).toBe(false)
+      expect(editor.state.doc).toBe(before)
+      expect(focus).not.toHaveBeenCalled()
+      expect(host.error).not.toBe('已剪切区块')
+    } finally {
+      host.session = session
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+      else delete navigator.clipboard
+    }
+  }))
+  it.each(['replace', 'edit', 'readonly'])('拖拽期间%s清除旧来源，不能移动新正文', mode => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<p>第一段</p><p>第二段</p>')
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }
+    host.startBlockDrag({}); host.dropPosition = editor.state.doc.content.size
+    if (mode === 'replace') doc.setContent('<p>新第一段</p><p>新第二段</p>')
+    if (mode === 'edit') editor.commands.insertContent('新输入')
+    if (mode === 'readonly') doc.setReadonly(true)
+    const before = editor.state.doc
+    host.onBlockDrop({ preventDefault: vi.fn() })
+    expect(editor.state.doc).toBe(before)
+    expect(host.dragging).toBeNull()
+    expect(host.dropPosition).toBeNull()
+  }))
+  it('副句柄焦点转交主句柄后按Enter仍操作整表', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<table><tbody><tr><td><p>A1</p></td><td><p>B1</p></td></tr></tbody></table>')
+    editor.commands.setTextSelection(4); host.positionBlockHandle(host.rangeAt(4))
+    await vi.dynamicImportSettled()
+    element.querySelector('[data-block-scope="table"]').focus()
+    const focused = document.activeElement
+    expect(focused.dataset.blockScope).toBe('table')
+    expect(focused.classList.contains('lark-doc-block-handle-extra')).toBe(false)
+    const other = element.querySelector('.lark-doc-block-handle-extra')
+    other.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(host.handleIsTable).toBe(true)
+    focused.click()
+    expect(host.handleIsTable).toBe(true)
+    const move = new MouseEvent('mousemove')
+    Object.defineProperty(move, 'movementX', { value: 1 })
+    other.dispatchEvent(move)
+    expect(host.handleIsTable).toBe(false)
+  }))
+  it('冷菜单加载完成后重新定位，关闭后移除菜单', () => withTemplateDocument(async ({ host, element }) => {
+    host.handleRange = host.rangeAt(1)
+    const position = vi.spyOn(host, 'positionBlockMenu')
+    host.openBlockMenu()
+    await vi.dynamicImportSettled(); await Promise.resolve()
+    expect(position).toHaveBeenCalledWith('.lark-doc-block-menu')
+    expect(element.querySelector('.lark-doc-block-menu')).not.toBeNull()
+    expect(host.blockMenuStyle.top).toBeDefined()
+    host.closeBlockMenu()
+    expect(element.querySelector('.lark-doc-block-menu')).toBeNull()
+  }))
+
+  it.each([
+    ['taskItem', '<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p><strong>目标正文</strong></p></li><li data-type="taskItem" data-checked="false"><p>另一任务</p></li></ul>'],
+    ['listItem', '<ul><li><p><strong>目标正文</strong></p></li><li><p>另一项目</p></li></ul>'],
+    ['blockquote', '<blockquote><p><strong>目标正文</strong></p></blockquote>'],
+    ['codeBlock', '<pre><code>目标正文</code></pre>'],
+  ])('六点%s菜单显示类型网格并只转换目标，内容和撤销保留', (kind, html) => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<p>前文</p>' + html + '<p>后文</p>')
+    let target
+    editor.state.doc.descendants((node, pos) => { if (!target && node.type.name === kind && node.textContent === '目标正文') target = { from: pos, to: pos + node.nodeSize } })
+    let textBlockId
+    editor.state.doc.descendants(node => { if (node.isTextblock && node.textContent === '目标正文') textBlockId = node.attrs.blockId })
+    const before = editor.state.doc
+    editor.commands.setTextSelection(1)
+    host.handleRange = target; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const grid = element.querySelector('.lark-doc-block-type-actions')
+    expect(grid).not.toBeNull()
+    expect(grid.querySelector('[aria-label="高亮块"]')).not.toBeNull()
+    grid.querySelector('[aria-label="二级标题"]').click()
+    expect(editor.view.dom.querySelector('h2')?.textContent).toBe('目标正文')
+    expect(editor.state.doc.textContent).toBe(before.textContent)
+    let converted
+    editor.state.doc.descendants(node => { if (node.type.name === 'heading' && node.textContent === '目标正文') converted = node })
+    expect(converted.attrs.blockId).toBe(textBlockId)
+    if (kind === 'taskItem') {
+      const tasks = []; editor.state.doc.descendants(node => { if (node.type.name === 'taskItem') tasks.push({ text: node.textContent, checked: node.attrs.checked }) })
+      expect(tasks).toEqual([{ text: '另一任务', checked: false }])
+    }
+    expect(editor.commands.undo()).toBe(true)
+    expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+
+  it('块菜单副本有文案，下方添加展开真实插入选择并保持目标位置', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<p>前文</p><p>后文</p>')
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const menu = element.querySelector('.lark-doc-block-menu')
+    expect([...menu.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '创建副本')?.textContent).toContain('创建副本')
+    const add = [...menu.querySelectorAll('button')].find(b => b.textContent === '在下方添加')
+    expect(add?.getAttribute('aria-haspopup')).toBe('menu')
+    add.click(); await vi.dynamicImportSettled()
+    expect(host.menuOpen).toBe(true)
+    host.chooseCommand({ id: 'code' })
+    expect(editor.state.doc.content.content.map(node => node.type.name)).toEqual(['paragraph', 'codeBlock', 'paragraph'])
+    expect(editor.state.doc.textContent).toBe('前文后文')
+  }))
+
+  it('块菜单评论接真实composer并指向句柄块，未配置服务时明确禁用', () => withTemplateDocument(async ({ editor, host, element }) => {
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const unavailable = [...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === '评论')
+    expect(unavailable).toBeTruthy(); expect(unavailable.disabled).toBe(true)
+    host.session.setProvider('comments', createMemoryCommentsProvider())
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const comment = [...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === '评论')
+    expect(comment.disabled).toBe(false)
+    for (const row of element.querySelectorAll('.lark-doc-block-menu-row')) expect(row.querySelector('svg'), row.textContent).not.toBeNull()
+    comment.click(); await vi.dynamicImportSettled()
+    expect(host.commentComposerOpen).toBe(true)
+    expect(host.commentComposerContext.text).toBe('前文')
+  }))
+  it.each(['taskItem', 'listItem'])('%s下方添加后在新正文内执行插入，不把选区留在列表边界', kind => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent({ type: 'doc', content: [{ type: kind === 'taskItem' ? 'taskList' : 'bulletList', content: ['目标', '相邻'].map(text => ({ type: kind, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })) }, { type: 'paragraph', content: [{ type: 'text', text: '后文' }] }] })
+    host.handleRange = { from: 1, to: 1 + editor.state.doc.firstChild.firstChild.nodeSize }; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const add = [...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === '在下方添加')
+    add.click(); await vi.dynamicImportSettled()
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph')
+    expect(editor.state.selection.$from.parent.textContent).toBe('')
+    host.chooseCommand({ id: 'code' })
+    expect(editor.state.doc.child(1).type.name).toBe('codeBlock')
+    expect(editor.state.doc.textContent).toBe('目标相邻后文')
+    expect(editor.state.doc.child(2).firstChild.textContent).toBe('相邻')
+  }))
+  it.each(['duplicate', 'moveDown'])('菜单%s后恢复编辑器焦点，快捷键可以立即撤销', id => withTemplateDocument(async ({ editor, host, element }) => {
+    const before = editor.state.doc
+    host.handleRange = { from: 0, to: before.firstChild.nodeSize }; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const button = [...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === (id === 'duplicate' ? '创建副本' : '下移区块'))
+    button.focus(); button.click()
+    expect(document.activeElement).toBe(editor.view.dom)
+    const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true })
+    editor.view.dom.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('保留保存模板入口和图标，不恢复同步块与子文档；未接服务明确禁用', () => withTemplateDocument(async ({ host, editor, element }) => {
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.openBlockMenu()
+    await vi.dynamicImportSettled()
+    const save = [...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === '保存为模板')
+    expect(save.disabled).toBe(true); expect(save.title).toContain('未配置')
+    expect(save.querySelector('svg')).not.toBeNull()
+    expect(element.querySelector('.lark-doc-block-menu').textContent).not.toMatch(/同步块|转换为子文档/)
+  }))
+  it('六点保存模板只取目标富文本并可重新插入，原文及来源身份保持', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    const saved = []
+    doc.patchProps({ onSaveTemplate: vi.fn(async input => { saved.push(input); return { id: 'saved_template' } }) })
+    doc.setContent('<p data-block-id="before_save">前文</p><ul data-type="taskList"><li data-type="taskItem" data-block-id="save_task" data-checked="true"><p><strong>模板任务</strong></p></li><li data-type="taskItem" data-checked="false"><p>相邻任务</p></li></ul><p>后文</p>')
+    const before = editor.state.doc, beforeJSON = JSON.stringify(before.toJSON()), from = before.firstChild.nodeSize + 1
+    editor.commands.setTextSelection(1); host.handleRange = { from, to: from + before.nodeAt(from).nodeSize }
+    expect(host.templateSaveAllowed()).toBe(true)
+    expect(host.blockAction('saveTemplate')).toBe(true); await vi.dynamicImportSettled()
+    expect(host.error).toBe('')
+    const dialog = element.querySelector('[aria-label="保存为模板"]'), input = dialog.querySelector('input')
+    expect(document.activeElement).toBe(input)
+    input.value = '  我的任务模板  '; input.dispatchEvent(new Event('input'))
+    ;[...dialog.querySelectorAll('button')].find(b => b.textContent === '保存').click()
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="保存为模板"]')).toBeNull())
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ name: '我的任务模板', blockId: 'save_task', content: { type: 'doc' } })
+    expect(saved[0].content.content[0].type).toBe('taskList')
+    expect(saved[0].content.content[0].content).toHaveLength(1)
+    expect(saved[0].html).toContain('<strong>模板任务</strong>')
+    expect(saved[0].html).not.toMatch(/相邻任务|前文|后文|data-block-id/)
+    expect(JSON.stringify(saved[0].content)).not.toContain('blockId')
+    expect(editor.state.doc.eq(before)).toBe(true)
+    expect(JSON.stringify(editor.state.doc.toJSON())).toBe(beforeJSON)
+    expect(editor.state.doc.nodeAt(from).attrs.blockId).toBe('save_task')
+    doc.patchProps({ templates: [{ id: 'saved_template', label: '我的任务模板', html: saved[0].html }] })
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    expect(host.insertEditorTemplate('saved_template')).toBe(true)
+    const tasks = []; editor.state.doc.descendants(n => { if (n.type.name === 'taskItem') tasks.push({ text: n.textContent, checked: n.attrs.checked, id: n.attrs.blockId }) })
+    expect(tasks.filter(n => n.text === '模板任务').map(n => n.checked)).toEqual([true, true])
+    expect(new Set(tasks.map(n => n.id)).size).toBe(tasks.length)
+    editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('保存模板拒绝空名称、重复提交和未确认的保存，并保留错误供重试', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    let finish
+    const save = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    doc.patchProps({ onSaveTemplate: save })
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.blockAction('saveTemplate')
+    await vi.dynamicImportSettled()
+    const dialog = element.querySelector('[aria-label="保存为模板"]'), input = dialog.querySelector('input')
+    const submit = [...dialog.querySelectorAll('button')].find(b => b.textContent === '保存')
+    input.value = ' '; input.dispatchEvent(new Event('input')); expect(submit.disabled).toBe(true)
+    input.value = '重试模板'; input.dispatchEvent(new Event('input')); submit.click(); submit.click()
+    expect(save).toHaveBeenCalledTimes(1); expect(submit.disabled).toBe(true)
+    finish(false)
+    await vi.waitFor(() => expect(dialog.querySelector('[role="alert"]').textContent).toContain('尚未保存'))
+    expect(submit.disabled).toBe(false)
+    save.mockRejectedValueOnce(new Error('模板服务不可用')); submit.click()
+    await vi.waitFor(() => expect(dialog.querySelector('[role="alert"]').textContent).toBe('模板服务不可用'))
+    expect(host.shareToast).toBeNull()
+  }))
+  it.each([['Enter', true, 13], ['Escape', true, 27], ['Enter', false, 229], ['Escape', false, 229]])('模板名称组词%s composing=%s code=%s不误保存或关闭', (key, isComposing, keyCode) => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    const save = vi.fn(async () => ({ id: 'ime_template' }))
+    doc.patchProps({ onSaveTemplate: save }); host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }
+    host.blockAction('saveTemplate'); await vi.dynamicImportSettled()
+    const dialog = element.querySelector('[aria-label="保存为模板"]'), input = dialog.querySelector('input')
+    const event = new KeyboardEvent('keydown', { key, keyCode, isComposing, bubbles: true, cancelable: true })
+    input.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(save).not.toHaveBeenCalled()
+    expect(dialog.isConnected).toBe(true); expect(document.activeElement).toBe(input)
+  }))
+  it.each(['input', 'save'])('模板%s持焦提交后仍可按Escape取消忙态', focus => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    let finish, signal
+    doc.patchProps({ onSaveTemplate: value => { signal = value.signal; return new Promise(resolve => { finish = resolve }) } })
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.blockAction('saveTemplate')
+    await vi.dynamicImportSettled()
+    const dialog = element.querySelector('[aria-label="保存为模板"]'), input = dialog.querySelector('input')
+    const save = [...dialog.querySelectorAll('button')].find(button => button.textContent === '保存')
+    if (focus === 'input') { input.focus(); input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) }
+    else { save.focus(); save.click() }
+    expect(input.readOnly).toBe(true); expect(save.disabled).toBe(true)
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(signal.aborted).toBe(true); expect(dialog.isConnected).toBe(false)
+    finish({ id: 'late' }); await Promise.resolve(); await Promise.resolve()
+    expect(host.shareToast).toBeNull()
+  }))
+  it.each(['replace', 'destroy'])('打开模板名称框时blur同步%s不会留下失效弹窗', action => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    const save = vi.fn(async () => ({ id: 'unwanted' }))
+    doc.patchProps({ onSaveTemplate: save }); editor.view.focus()
+    const onBlur = () => { editor.off('blur', onBlur); if (action === 'destroy') doc.destroy(); else doc.setContent('<p>同步替换的新正文</p>') }
+    editor.on('blur', onBlur)
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.blockAction('saveTemplate')
+    await vi.dynamicImportSettled()
+    expect(element.querySelector('[aria-label="保存为模板"]')).toBeNull()
+    expect(save).not.toHaveBeenCalled()
+  }))
+  it.each(['cancel', 'replace', 'readonly', 'handler', 'feature'])('保存模板等待期间%s会关闭并中止，晚到结果不报成功', action => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    let finish, signal
+    doc.patchProps({ onSaveTemplate: input => { signal = input.signal; return new Promise(resolve => { finish = resolve }) } })
+    host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.blockAction('saveTemplate')
+    await vi.dynamicImportSettled()
+    const dialog = element.querySelector('[aria-label="保存为模板"]')
+    ;[...dialog.querySelectorAll('button')].find(b => b.textContent === '保存').click()
+    if (action === 'cancel') [...dialog.querySelectorAll('button')].find(b => b.textContent === '取消').click()
+    else if (action === 'replace') doc.setContent('<p>新的正文</p>')
+    else if (action === 'readonly') doc.setReadonly(true)
+    else if (action === 'handler') doc.patchProps({ onSaveTemplate: async () => ({ id: 'new' }) })
+    else doc.patchProps({ config: { features: { templates: false } } })
+    await vi.waitFor(() => expect(signal.aborted).toBe(true))
+    expect(element.querySelector('[aria-label="保存为模板"]')).toBeNull()
+    finish({ id: 'late_template' }); await Promise.resolve(); await Promise.resolve()
+    expect(host.shareToast).toBeNull()
+  }))
+
+  it('任务转换后保留嵌套任务和相邻项，失败或关闭能力不会提交一半转换', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p>父任务</p><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>子任务</p></li></ul></li><li data-type="taskItem" data-checked="true"><p>相邻任务</p></li></ul>')
+    const item = editor.state.doc.firstChild.firstChild, range = { from: 1, to: 1 + item.nodeSize }
+    host.handleRange = range
+    const before = editor.state.doc
+    const blocked = vi.spyOn(editor.commandManager.rawCommands, 'setHeading').mockImplementation(() => () => false)
+    try { expect(host.blockTypeAction('heading2')).toBe(false); expect(editor.state.doc.eq(before)).toBe(true) }
+    finally { blocked.mockRestore() }
+    host.handleRange = range
+    expect(host.blockTypeAction('heading2')).toBe(true)
+    const tasks = []; editor.state.doc.descendants(node => { if (node.type.name === 'taskItem') tasks.push({ text: node.textContent, checked: node.attrs.checked }) })
+    expect(tasks).toEqual([{ text: '子任务', checked: false }, { text: '相邻任务', checked: true }])
+    expect(editor.state.doc.textContent).toBe(before.textContent)
+    editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+    doc.patchProps({ config: { features: { headings: false } } }); host.handleRange = range
+    expect(host.blockTypeAction('heading2')).toBe(false); expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+
+  it.each([false, true])('高亮块转换包裹原内容；AI和翻译按句柄内容而非旧光标取上下文（配置AI服务：%s）', available => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<p>前文</p><p><strong>目标正文</strong></p><p>后文</p>')
+    const from = editor.state.doc.firstChild.nodeSize, target = editor.state.doc.child(1)
+    host.handleRange = { from, to: from + target.nodeSize }
+    expect(host.blockTypeAction('callout')).toBe(true)
+    const callout = editor.state.doc.child(1)
+    expect(callout.type.name).toBe('callout')
+    expect(callout.textContent).toBe('目标正文')
+    expect(callout.firstChild.firstChild.marks.some(mark => mark.type.name === 'bold')).toBe(true)
+    editor.commands.undo()
+    const sent = []
+    vi.spyOn(host, '$emit').mockImplementation((event, kind) => { if (event === 'ai-request') sent.push({ kind, text: editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to) }) })
+    editor.commands.setTextSelection(1); host.handleRange = { from, to: from + target.nodeSize }
+    expect(host.requestBlockAI('rewrite')).toBe(available)
+    editor.commands.setTextSelection(1); host.handleRange = { from, to: from + target.nodeSize }
+    host.blockAction('translate')
+    expect(sent).toEqual(available ? [{ kind: 'rewrite', text: '目标正文' }, { kind: 'translate', text: '目标正文' }] : [])
+    if (!available) expect(editor.state.selection.from).toBe(1)
+  }, { ai: available ? { stream: vi.fn() } : undefined }))
+  it.each(['taskItem', 'listItem'])('%s转标题保留原正文ID与存量评论绑定，撤销恢复容器身份', kind => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent({ type: 'doc', content: [{ type: kind === 'taskItem' ? 'taskList' : 'bulletList', content: [{ type: kind, attrs: { blockId: 'wrapper_identity' }, content: [{ type: 'paragraph', attrs: { blockId: 'text_identity' }, content: [{ type: 'text', text: '已评论正文' }] }] }] }] })
+    const provider = createMemoryCommentsProvider()
+    await provider.createThread({ blockId: 'text_identity', author: { id: 'owner', name: '我' }, content: '已有评论', quote: '已评论正文', anchor: { blockId: 'text_identity', offset: 0, length: 5 } })
+    host.session.setProvider('comments', provider); await host.loadComments()
+    expect(host.commentThreads[0].bound).toBe(true)
+    const before = editor.state.doc
+    editor.commands.setTextSelection(3); host.handleRange = { from: 1, to: 1 + before.firstChild.firstChild.nodeSize }
+    expect(host.blockTypeAction('heading2')).toBe(true)
+    expect(editor.state.doc.firstChild.attrs.blockId).toBe('text_identity')
+    expect(host.commentThreads[0].bound).toBe(true)
+    expect(host.commentThreads[0].anchor.blockId).toBe('text_identity')
+    editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('代码转列表的准备步骤失败时不提交后续转换', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<pre><code>代码内容</code></pre>')
+    const before = editor.state.doc
+    host.handleRange = { from: 0, to: before.firstChild.nodeSize }
+    const blocked = vi.spyOn(editor.commandManager.rawCommands, 'setParagraph').mockImplementation(() => () => false)
+    try { expect(host.blockTypeAction('taskList')).toBe(false); expect(editor.state.doc.eq(before)).toBe(true) }
+    finally { blocked.mockRestore() }
+  }))
+  it('六点菜单容器转换也遵守五层限制，失败不留下部分改动', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    let nested = { type: 'paragraph', content: [{ type: 'text', text: '最深正文' }] }
+    for (let i = 0; i < 5; i += 1) nested = { type: 'blockquote', content: [nested] }
+    doc.setContent({ type: 'doc', content: [nested] })
+    const before = editor.state.doc
+    let range
+    before.descendants((node, pos) => { if (!range && node.type.name === 'paragraph') range = { from: pos, to: pos + node.nodeSize } })
+    expect(range.from).toBe(5)
+    editor.commands.setTextSelection(range.from + 1)
+    host.handleRange = range
+    expect(host.handleActionRange()).toEqual(range)
+    expect(host.blockTypeTextRange(range)).toEqual({ from: 6, to: 10 })
+    expect(host.blockTypeAction('callout')).toBe(false)
+    expect(host.error).toBe('容器嵌套最多 5 层')
+    expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it.each(['columns', 'callout'])('嵌套%s中的整表删除与拖拽不提升到外层容器', kind => withTemplateDocument(async ({ doc, editor, host }) => {
+    const table = { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A1' }] }] }] }] }
+    const paragraph = text => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+    const outer = kind === 'columns'
+      ? { type: 'columns', content: [{ type: 'column', content: [table, paragraph('同列保留')] }, { type: 'column', content: [paragraph('旁列保留')] }] }
+      : { type: 'callout', content: [table, paragraph('高亮块保留')] }
+    doc.setContent({ type: 'doc', content: [outer, paragraph('外部保留')] })
+    let pos
+    editor.state.doc.descendants((node, at) => { if (node.type.name === 'table') pos = at })
+    const range = { from: pos, to: pos + editor.state.doc.nodeAt(pos).nodeSize }
+    expect(host.blockDragRange(range)).toEqual(range)
+    expect(host.columnsRangeFor(range)).toBeNull()
+    host.handleRange = range; host.blockAction('delete')
+    expect(editor.state.doc.firstChild.type.name).toBe(kind)
+    expect(editor.getText()).toContain(kind === 'columns' ? '旁列保留' : '高亮块保留')
+    expect(editor.getText()).toContain('外部保留')
+    expect(editor.view.dom.querySelector('table')).toBeNull()
+    editor.commands.undo(); expect(editor.view.dom.querySelector('table')).not.toBeNull()
+  }))
+
+  it.each([-100, 100, 500])('整表菜单避开两个句柄，左右可用空间=%s', left => withTemplateDocument(async ({ doc, editor, host, element }) => {
+    doc.setContent('<table><tr><td><p>A1</p></td><td><p>B1</p></td></tr></table>')
+    editor.commands.setTextSelection(4); host.positionBlockHandle(host.rangeAt(4))
+    await vi.dynamicImportSettled()
+    element.querySelector('[data-block-scope="table"]').dispatchEvent(new MouseEvent('mouseenter'))
+    const box = x => ({ left: x, right: x + 42, top: 200, bottom: 226, width: 42, height: 26 })
+    vi.spyOn(element.querySelector('.lark-doc-block-handle:not(.lark-doc-block-handle-secondary)'), 'getBoundingClientRect').mockReturnValue(box(left))
+    vi.spyOn(element.querySelector('.lark-doc-block-handle-secondary'), 'getBoundingClientRect').mockReturnValue(box(left - 16))
+    vi.spyOn(element.querySelector('.lark-doc-block-menu'), 'getBoundingClientRect').mockReturnValue({ ...box(0), width: 230 })
+    vi.spyOn(element.querySelector('.lark-doc-editor-content'), 'getBoundingClientRect').mockReturnValue(box(left + 46))
+    host.positionBlockMenu('.lark-doc-block-menu'); await Promise.resolve()
+    const menuLeft = left + parseFloat(host.blockMenuStyle.left)
+    expect(menuLeft).toBeGreaterThanOrEqual(8)
+    expect(menuLeft + 230 <= left - 16 - 8 || menuLeft >= left + 42 + 8).toBe(true)
+  }))
+  it.each(['taskList', 'bulletList'])('分页列表%s内部的上移下移保持结构并可撤销', kind => withTemplateDocument(async ({ doc, editor, host }) => {
+    const itemType = kind === 'taskList' ? 'taskItem' : 'listItem'
+    const content = { type: 'doc', content: [{ type: kind, content: ['甲', '乙', '丙'].map(text => ({ type: itemType, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })) }, { type: 'paragraph', content: [{ type: 'text', text: '保留列表后文' }] }] }
+    await doc.setContentAsync(content, { pagedView: true, yieldToMain: async () => {} })
+    const target = text => { let pos; editor.state.doc.descendants((node, at) => { if (node.type.name === itemType && node.textContent === text) pos = at }); host.handleRange = host.rangeAt(pos + 1) }
+    const order = () => doc.getJSON().content[0].content.map(node => node.content[0].content[0].text)
+    const before = editor.state.doc
+    target('乙'); host.blockAction('moveUp')
+    expect(order()).toEqual(['乙', '甲', '丙'])
+    editor.state.doc.check()
+    expect(doc.getJSON().content[1].content[0].text).toBe('保留列表后文')
+    doc.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+    target('乙'); host.blockAction('moveDown')
+    expect(order()).toEqual(['甲', '丙', '乙'])
+    editor.state.doc.check()
+    doc.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('分隔线快捷键遵循动态配置与只读状态', () => withTemplateDocument(async ({ doc, editor }) => {
+    doc.setContent('<p>保留正文</p>')
+    editor.commands.setTextSelection(1)
+    editor.commands.keyboardShortcut('Mod-Alt-s')
+    expect(editor.state.doc.content.content.some(node => node.type.name === 'horizontalRule')).toBe(true)
+    doc.patchProps({ config: { features: { blockStyle: false } } })
+    doc.setContent('<p>保留正文</p>')
+    editor.commands.setTextSelection(1)
+    const before = editor.state.doc
+    editor.commands.keyboardShortcut('Mod-Alt-s')
+    expect(editor.state.doc).toBe(before)
+    doc.patchProps({ config: { features: { blockStyle: true }, commands: { disabled: ['divider'] } } })
+    editor.commands.keyboardShortcut('Mod-Alt-s')
+    expect(editor.state.doc).toBe(before)
+    doc.patchProps({ config: { commands: { disabled: [] } } })
+    editor.setEditable(false)
+    editor.commands.keyboardShortcut('Mod-Alt-s')
+    expect(editor.state.doc).toBe(before)
+  }))
+  const fileNodes = editor => {
+    const result = []
+    editor.state.doc.descendants(node => { if (node.type.name === 'fileBlock') result.push(node) })
+    return result
+  }
+  it('附件按配置逐片重试，token-only 结果单次落块且单次撤销', () => withTemplateDocument(async ({ host, editor }) => {
+    const before = editor.state.doc, chunks = [], failures = new Set()
+    host.uploadFile = { chunked: true, chunkSize: 65536, retry: { attempts: 2, delay: 0 },
+      upload: async (blob, ctx) => {
+        chunks.push(ctx.chunk.index)
+        if (ctx.chunk.index === 1 && !failures.size) { failures.add(1); throw Object.assign(new Error('retry'), { status: 503 }) }
+        return { token: 'file_token' }
+      } }
+    await host.insertFileBlocks([new File([new Uint8Array(180000)], 'large.pdf', { type: 'application/pdf' })])
+    expect(chunks).toEqual([0, 1, 1, 2])
+    expect(fileNodes(editor).map(node => node.attrs.token)).toEqual(['file_token'])
+    editor.commands.undo()
+    expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('取消附件忽略迟到结果，同编辑器再次上传从已完成分片续传', () => withTemplateDocument(async ({ host, editor }) => {
+    const contexts = []; let late, first = true
+    host.uploadFile = { chunked: true, chunkSize: 65536, upload: async (blob, ctx) => {
+      contexts.push(ctx)
+      if (ctx.chunk.index === 1 && first) { first = false; return new Promise(resolve => { late = resolve }) }
+      return { token: 'resumed_file' }
+    } }
+    const file = new File([new Uint8Array(180000)], 'resume.pdf', { type: 'application/pdf' })
+    const pending = host.insertFileBlocks([file])
+    await vi.waitFor(() => expect(contexts).toHaveLength(2))
+    host.cancelFileUploads('cancelled')
+    await pending
+    late({ token: 'late_file' }); await Promise.resolve()
+    expect(fileNodes(editor)).toHaveLength(0)
+    await host.insertFileBlocks([file])
+    expect(contexts.map(ctx => ctx.chunk.index)).toEqual([0, 1, 1, 2])
+    expect(new Set(contexts.map(ctx => ctx.chunk.uploadId)).size).toBe(1)
+    expect(fileNodes(editor).map(node => node.attrs.token)).toEqual(['resumed_file'])
+  }))
+  it.each(['readonly', 'replace', 'provider', 'permission', 'destroy'])('附件 %s 生命周期变化取消请求且不接受迟到插入', mode => withTemplateDocument(async ({ doc, host, editor }) => {
+    let finish, context
+    host.uploadFile = (file, ctx) => { context = ctx; return new Promise(resolve => { finish = resolve }) }
+    const pending = host.insertFileBlocks([new File(['pdf'], 'late.pdf', { type: 'application/pdf' })])
+    await vi.waitFor(() => expect(context).toBeTruthy())
+    if (mode === 'readonly') doc.setReadonly(true)
+    if (mode === 'replace') doc.setContent('<p>replacement</p>')
+    if (mode === 'provider') doc.patchProps({ uploadFile: async () => ({ token: 'new_provider' }) })
+    if (mode === 'permission') doc.patchProps({ config: { features: { files: false } } })
+    if (mode === 'destroy') doc.destroy()
+    await pending
+    expect(context.signal.aborted).toBe(true)
+    finish({ token: 'late_file' }); await Promise.resolve()
+    expect(fileNodes(editor)).toHaveLength(0)
+  }))
+  it('附件最多三个文件并发，完成乱序仍按选择顺序单次落块', () => withTemplateDocument(async ({ host, editor }) => {
+    const pendingFiles = new Map(); let running = 0, max = 0
+    host.uploadFile = { concurrency: 2, upload: (file) => {
+      running++; max = Math.max(max, running)
+      return new Promise(resolve => pendingFiles.set(file.name, () => { running--; resolve({ token: file.name.replace('.', '_') }) }))
+    } }
+    const before = editor.state.doc
+    const pending = host.insertFileBlocks(['a.pdf', 'b.pdf', 'c.pdf'].map(name => new File(['pdf'], name, { type: 'application/pdf' })))
+    await vi.waitFor(() => expect(pendingFiles.size).toBe(2))
+    pendingFiles.get('b.pdf')()
+    await vi.waitFor(() => expect(pendingFiles.size).toBe(3))
+    pendingFiles.get('c.pdf')(); pendingFiles.get('a.pdf')()
+    await pending
+    expect(max).toBe(2)
+    expect(fileNodes(editor).map(node => node.attrs.name)).toEqual(['a.pdf', 'b.pdf', 'c.pdf'])
+    editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('setUploader 后附件 fallback 使用新来源，裸函数失败不自动重试', () => withTemplateDocument(async ({ doc, host, editor }) => {
+    const old = vi.fn(async () => ({ token: 'old' })), current = vi.fn(async () => ({ token: 'current' }))
+    doc.setUploader(old); doc.setUploader(current)
+    await host.insertFileBlocks([new File(['pdf'], 'a.pdf', { type: 'application/pdf' })])
+    expect(old).not.toHaveBeenCalled(); expect(current).toHaveBeenCalledOnce()
+    expect(fileNodes(editor)[0].attrs.token).toBe('current')
+    const fail = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    doc.setUploader(fail)
+    await host.insertFileBlocks([new File(['pdf'], 'b.pdf', { type: 'application/pdf' })])
+    expect(fail).toHaveBeenCalledOnce(); expect(fileNodes(editor)).toHaveLength(1)
+  }))
+  it.each(['heading', 'empty-heading', 'paragraph', 'ordered', 'bullet', 'same-size', 'ui', 'structure', 'multi-text', 'mark', 'heading-format', 'indent-format'])('分页结构分析复用且装饰与冷构造一致：%s', async mode => {
+    // 只 spy 得到 `collectBlockIdFixes`（插件在事务里直接按名调用）。`collectFoldRanges`
+    // 等四个分析函数是**在模块初始化时被取成引用注入运行时**的，之后再 `vi.spyOn` 换掉
+    // 模块导出，运行时手里那份还是原函数 —— 装上去只会恒为 0。分析到底重算没重算，
+    // 看 `mapAnalysis` 的返回值：`[]` = 整份映射复用 / `undefined` = 缓存作废待重算 /
+    // 非空区间 = 这些区间局部重算。
+    const scans = [vi.spyOn(documentOperations, 'collectBlockIdFixes')]
+    let mapSpy
+    try {
+      await withTemplateDocument(async ({ doc, editor }) => {
+        await doc.setContentAsync('<h1 data-numbering="true">one</h1><p data-indent="1">body</p><ol><li><p>ordered</p></li></ol><ul><li><p>bullet</p></li></ul><h2 data-numbering="true">two</h2><p>tail</p>', { pagedView: true, pageBlocks: 2, yieldToMain: async () => {} })
+        let position, target
+        const text = mode === 'paragraph' ? 'body' : mode === 'ordered' ? 'ordered' : mode === 'bullet' ? 'bullet' : 'one'
+        editor.state.doc.descendants((node, pos) => { if (node.isTextblock && node.textContent === text) { position = pos; target = node } })
+        editor.commands.setTextSelection(position + 2)
+        scans.forEach(scan => scan.mockClear())
+        mapSpy = vi.spyOn(editor.storage.larkDoc.pagedView, 'mapAnalysis')
+        if (mode === 'ui') editor.view.dispatch(editor.state.tr.setMeta(documentKey, { handleHover: null }))
+        else if (mode === 'mark') editor.view.dispatch(editor.state.tr.addMark(position + 1, position + 2, editor.schema.marks.bold.create()))
+        else if (mode === 'heading-format') editor.view.dispatch(editor.state.tr.setNodeMarkup(position, null, { ...target.attrs, level: 2 }))
+        else if (mode === 'indent-format') editor.view.dispatch(editor.state.tr.setNodeMarkup(position, null, { ...target.attrs, indent: 1 }))
+        else if (mode === 'structure') editor.view.dispatch(editor.state.tr.insertText('x', position + 2).setNodeMarkup(position, null, { ...target.attrs, numbering: false }))
+        else if (mode === 'multi-text') editor.view.dispatch(editor.state.tr.insertText('x', position + 2).insertText('y', position + 3))
+        else if (mode === 'empty-heading') editor.view.dispatch(editor.state.tr.delete(position + 1, position + 1 + target.content.size))
+        else if (mode === 'same-size') editor.view.dispatch(editor.state.tr.insertText('X', position + 1, position + 2))
+        else editor.commands.insertContent('界😀')
+        const analysisRanges = mapSpy.mock.results[0]?.value
+        // UI 事务不动正文：分析层根本不该被问。
+        if (mode === 'ui') expect(mapSpy).not.toHaveBeenCalled()
+        // 改结构（attrs/层级）或多步编辑：整份分析作废，下一次 readAnalysis 全量重算。
+        else if (mode === 'structure' || mode === 'multi-text') expect(analysisRanges).toBeUndefined()
+        // 只改 attrs 的排版变更：按区间局部重算，不必整份作废。
+        else if (mode.endsWith('format')) expect(analysisRanges.length).toBeGreaterThan(0)
+        // 纯文字改动：分析整份映射复用。
+        else expect(analysisRanges).toEqual([])
+        // blockId 快路径只信任「文本块内纯文字」的改动，其余都要补扫。
+        if (mode === 'structure' || mode === 'multi-text') expect(scans[0]).toHaveBeenCalled()
+        else expect(scans[0]).not.toHaveBeenCalled()
+        const project = set => set.find().filter(item => !item.spec.ldPagedActive).map(item => {
+          const dom = typeof item.type.toDOM === 'function' ? item.type.toDOM(editor.view, () => item.from) : item.type.toDOM
+          return { from: item.from, to: item.to, category: item.spec.category, attrs: item.type.attrs || null, html: dom?.outerHTML || null }
+        }).sort((a, b) => a.from - b.from || a.to - b.to || String(a.category).localeCompare(String(b.category)))
+        const equivalent = () => expect(project(documentKey.get(editor.state).props.decorations(editor.state))).toEqual(project(createDocumentDecorations({ state: editor.state, storage: editor.storage.larkDoc, editor, enabled: () => true, options: {} })))
+        equivalent()
+        if (mode !== 'ui') { editor.commands.undo(); equivalent(); editor.commands.redo(); equivalent() }
+      })
+    } finally { scans.forEach(scan => scan.mockRestore()); mapSpy?.mockRestore() }
+  })
+  it('分页查找共享异步结果，下一处不重扫结构且与全文命中相同', () => withTemplateDocument(async ({ doc, host, editor }) => {
+    await doc.setContentAsync('<h1>飞书😀.*</h1><p>飞书😀.*</p><h2>飞书😀.*</h2>', { pagedView: true, pageBlocks: 1, yieldToMain: async () => {} })
+    const expected = documentOperations.findTextMatches(editor.state.doc, '😀.*')
+    const scan = vi.spyOn(documentOperations, 'findTextMatches'), fold = vi.spyOn(documentOperations, 'collectFoldRanges'), ids = vi.spyOn(documentOperations, 'foldableIdPositions')
+    try {
+      host.searchQuery = '😀.*'
+      await host.updateSearch()
+      expect(host.searchMatches).toEqual(expected)
+      const calls = scan.mock.calls.length
+      await host.nextMatch(1)
+      expect(scan).toHaveBeenCalledTimes(calls)
+      expect(fold).not.toHaveBeenCalled()
+      expect(ids).not.toHaveBeenCalled()
+      const hits = documentKey.get(editor.state).props.decorations(editor.state).find().filter(item => item.spec.category === 'search')
+      expect(hits.map(hit => ({ from: hit.from, to: hit.to })).sort((a, b) => a.from - b.from)).toEqual(expected)
+      expect(hits.filter(hit => hit.type.attrs.class.includes('search-active')).map(hit => hit.from)).toEqual([expected[1].from])
+      expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('😀.*')
+      host.closeSearch()
+      expect(documentKey.get(editor.state).props.decorations(editor.state).find().filter(item => item.spec.category === 'search')).toHaveLength(0)
+    } finally { scan.mockRestore(); fold.mockRestore(); ids.mockRestore() }
+  }))
+  it('公开分页查找命令等待结果后刷新高亮，编辑和关闭不泄漏旧查询', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>飞书😀.*</p><p>飞书😀.*</p>', { pagedView: true, pageBlocks: 1, yieldToMain: async () => {} })
+    const hits = () => documentKey.get(editor.state).props.decorations(editor.state).find().filter(item => item.spec.category === 'search')
+    editor.commands.setLarkDocSearch('😀.*', 1)
+    await vi.waitFor(() => expect(hits()).toHaveLength(2))
+    editor.commands.insertContent('😀.*')
+    await vi.waitFor(() => expect(hits()).toHaveLength(3))
+    editor.commands.setLarkDocSearch('飞书')
+    editor.commands.setLarkDocSearch('')
+    await Promise.resolve(); await Promise.resolve()
+    expect(hits()).toHaveLength(0)
+  }))
+  it('带当前查询分页导入，锁内完成的搜索在解锁后刷新全部高亮', () => withTemplateDocument(async ({ doc, editor }) => {
+    editor.commands.setLarkDocSearch('飞书')
+    await doc.setContentAsync('<p>飞书一</p><p>飞书二</p><p>飞书三</p>', { pagedView: true, pageBlocks: 1, yieldToMain: () => new Promise(resolve => setTimeout(resolve, 0)) })
+    await vi.waitFor(() => {
+      const hits = documentKey.get(editor.state).props.decorations(editor.state).find().filter(item => item.spec.category === 'search')
+      expect(hits).toHaveLength(3)
+    })
+  }))
+  it('附件上下文保留真实文档ID，续传隔离键不替代宿主路由', () => withTemplateDocument(async ({ host }) => {
+    const contexts = []
+    host.uploadFile = async (file, ctx) => { contexts.push(ctx); return { token: 'route_file' } }
+    await host.insertFileBlocks([new File(['file'], 'route.pdf', { type: 'application/pdf' })])
+    expect(contexts[0].documentId).toBe('business-doc')
+    expect(contexts[0].resumeScope).toMatch(/:/)
+  }, { documentId: 'business-doc' }))
+  it('附件上传期间锚点映射，完成保留当前光标并单次撤销插入', () => withTemplateDocument(async ({ host, editor }) => {
+    let finish
+    host.uploadFile = () => new Promise(resolve => { finish = resolve })
+    editor.commands.setTextSelection(2)
+    const pending = host.insertFileBlocks([new File(['file'], 'anchor.pdf', { type: 'application/pdf' })])
+    await vi.waitFor(() => expect(finish).toBeTruthy())
+    editor.commands.insertContent('X')
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    const before = editor.state.doc, selection = editor.state.selection.getBookmark()
+    let transaction
+    const observe = payload => { if (payload.transaction.docChanged) transaction = payload.transaction }
+    editor.on('transaction', observe)
+    finish({ token: 'anchor_file' }); await pending
+    editor.off('transaction', observe)
+    expect(editor.state.selection.eq(selection.map(transaction.mapping).resolve(editor.state.doc))).toBe(true)
+    expect(fileNodes(editor)).toHaveLength(1)
+    editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+  }))
+  it('附件锚点被删除时取消，不向后来光标落块', () => withTemplateDocument(async ({ host, editor }) => {
+    let finish, context
+    host.uploadFile = (file, ctx) => { context = ctx; return new Promise(resolve => { finish = resolve }) }
+    editor.commands.setTextSelection(2)
+    const pending = host.insertFileBlocks([new File(['file'], 'anchor.pdf', { type: 'application/pdf' })])
+    await vi.waitFor(() => expect(context).toBeTruthy())
+    editor.view.dispatch(editor.state.tr.delete(0, editor.state.doc.firstChild.nodeSize))
+    await pending; expect(context.signal.aborted).toBe(true)
+    finish({ token: 'late_anchor' }); await Promise.resolve()
+    expect(fileNodes(editor)).toHaveLength(0)
+  }))
+  it.each(['raw', 'duplicate', 'forged-complete'])('分页ID快速路径不信任未经验证的原始state：%s', mode => withTemplateDocument(async ({ editor }) => {
+    const paragraph = text => editor.schema.node('paragraph', { blockId: mode === 'duplicate' ? 'duplicate_id' : null }, editor.schema.text(text))
+    const invalid = editor.schema.node('doc', null, mode === 'duplicate' ? [paragraph('legacy'), paragraph('other')] : paragraph('legacy'))
+    editor.view.updateState(EditorState.create({ schema: editor.schema, doc: invalid, plugins: editor.state.plugins }))
+    if (mode === 'forged-complete') editor.view.dispatch(editor.state.tr.setMeta(PAGED_IMPORT_META, { phase: 'complete', id: 999 }).setMeta(DEFER_BLOCK_ID_META, true))
+    const scan = vi.spyOn(documentOperations, 'collectBlockIdFixes')
+    editor.commands.setTextSelection(2)
+    editor.commands.insertContent('X')
+    expect(scan).toHaveBeenCalled()
+    expect(editor.state.doc.firstChild.attrs.blockId).toMatch(documentOperations.BLOCK_ID_PATTERN)
+    expect(editor.state.doc.textContent).toBe(mode === 'duplicate' ? 'lXegacyother' : 'lXegacy')
+    expect(new Set(editor.state.doc.content.content.map(node => node.attrs.blockId)).size).toBe(editor.state.doc.childCount)
+  }))
+  it.each(['cancel', 'callback-failure', 'complete'])('分页导入 %s 后评论绑定保持最终正文状态', mode => withTemplateDocument(async ({ doc, host, editor }) => {
+    await vi.dynamicImportSettled()
+    const blockId = editor.state.doc.firstChild.attrs.blockId
+    host.session.setProvider('comments', createMemoryCommentsProvider({ threads: [{ id: 'import_thread', blockId, replies: [], resolved: false }] }))
+    await host.loadComments()
+    expect(host.commentThreads[0].bound).toBe(true)
+    const before = editor.state, abort = new AbortController()
+    const fail = ({ transaction }) => { if (transaction.getMeta(PAGED_IMPORT_META)?.phase === 'complete') throw new Error('final callback failed') }
+    if (mode === 'callback-failure') editor.on('update', fail)
+    try {
+      const pending = doc.setContentAsync('<p>new1</p><p>new2</p><p>new3</p>', { pageBlocks: 1, pagedView: true, signal: abort.signal,
+        yieldToMain: async () => { if (mode === 'cancel' && editor.storage.larkDoc.pagedImport) abort.abort() },
+      })
+      if (mode === 'complete') await pending
+      else await expect(pending).rejects.toThrow()
+      expect(host.commentThreads[0].bound).toBe(mode !== 'complete')
+      if (mode !== 'complete') expect(editor.state).toBe(before)
+    } finally { editor.off('update', fail) }
+  }))
+  it('分页取消导入保留浮层清理后的首提交前完整state', () => withTemplateDocument(async ({ doc, editor }) => {
+    const controller = doc._handle.editorController, beforeReplace = controller.onBeforeContentReplace, abort = new AbortController()
+    let checkpoint
+    controller.onBeforeContentReplace = () => { beforeReplace?.(); editor.view.dispatch(editor.state.tr.setMeta('test-overlay-cleanup', true)) }
+    const capture = ({ transaction }) => { if (!checkpoint && transaction.getMeta(PAGED_IMPORT_META)?.phase === 'page') checkpoint = editor.state }
+    editor.on('beforeTransaction', capture)
+    try {
+      await expect(doc.setContentAsync('<p>replacement1</p><p>replacement2</p>', { pagedView: true, pageBlocks: 1, signal: abort.signal,
+        yieldToMain: async () => { if (editor.storage.larkDoc.pagedImport) abort.abort() },
+      })).rejects.toThrow()
+      expect(checkpoint).toBeTruthy()
+      expect(editor.state).toBe(checkpoint)
+      expect(editor.isEditable).toBe(true)
+    } finally { editor.off('beforeTransaction', capture); controller.onBeforeContentReplace = beforeReplace }
+  }))
+  it.each(['complete', 'abort'])('分页完成视图后让出主线程且保持导入锁：%s', mode => withTemplateDocument(async ({ doc, editor }) => {
+    const abort = new AbortController(), before = doc.getText(), dispatch = editor.view.dispatch
+    let completed = false, yieldedLocked = false
+    const observe = ({ transaction }) => { if (transaction.getMeta(PAGED_IMPORT_META)?.phase === 'complete') completed = true }
+    editor.on('transaction', observe)
+    try {
+      const pending = doc.setContentAsync('<p>replacement</p>'.repeat(80), { pagedView: true, signal: abort.signal, yieldToMain: async () => {
+        if (!completed) return
+        yieldedLocked = !editor.isEditable && editor.storage.larkDoc.pagedImport === false && editor.view.dispatch !== dispatch
+        if (mode === 'abort') abort.abort()
+      } })
+      if (mode === 'abort') { await expect(pending).rejects.toThrow(); expect(doc.getText()).toBe(before) }
+      else { await pending; expect(doc.getText()).toContain('replacement') }
+      expect(yieldedLocked).toBe(true)
+      expect(editor.isEditable).toBe(true)
+      expect(editor.view.dispatch).toBe(dispatch)
+    } finally { editor.off('transaction', observe) }
+  }))
+  it.each(['complete', 'abort'])('分页装饰冷构造在锁内分步准备并复用：%s', mode => withTemplateDocument(async ({ doc, editor }) => {
+    const storage = editor.storage.larkDoc, prepare = storage.prepareDecorations, before = doc.getText(), abort = new AbortController()
+    const samples = { samples: [] }
+    vi.stubGlobal('__larkDocPerf', samples)
+    let warming = false, called = false, preparedCount, completedCount
+    storage.prepareDecorations = async (...args) => {
+      warming = true; called = true
+      try { await prepare(...args); preparedCount = samples.samples.length }
+      finally { warming = false }
+    }
+    const observe = ({ transaction }) => { if (transaction.getMeta(PAGED_IMPORT_META)?.phase === 'complete') completedCount = samples.samples.length }
+    editor.on('transaction', observe)
+    try {
+      const pending = doc.setContentAsync('<h1>prepared heading</h1>' + '<p data-indent="1">row</p>'.repeat(80), { pagedView: true, signal: abort.signal, yieldToMain: async () => {
+        if (warming) { expect(editor.isEditable).toBe(false); expect(storage.pagedImport).toBe(true); if (mode === 'abort') abort.abort() }
+      } })
+      if (mode === 'abort') { await expect(pending).rejects.toThrow(); expect(doc.getText()).toBe(before) }
+      else { await pending; expect(preparedCount).toBeGreaterThan(0); expect(completedCount).toBe(preparedCount); expect(editor.view.dom.querySelector('.lark-doc-heading-fold-toggle')).toBeTruthy() }
+      expect(called).toBe(true)
+      expect(editor.isEditable).toBe(true)
+    } finally { storage.prepareDecorations = prepare; editor.off('transaction', observe); vi.unstubAllGlobals() }
+  }))
+  it('分页无字数上限时不在预解析分配整页码点数组', () => withTemplateDocument(async ({ doc, editor }) => {
+    doc._handle.editorController.getMaxLength = () => 0
+    const count = vi.spyOn(editor.storage.characterCount, 'characters')
+    await doc.setContentAsync('<p>a😀b</p>', { pagedView: true, yieldToMain: async () => {} })
+    expect(count.mock.calls.filter(([options]) => options?.node)).toHaveLength(0)
+    expect(doc.getText()).toBe('a😀b')
+  }))
+  it('分页字数上限保留Unicode码点计数与拒绝时原文', () => withTemplateDocument(async ({ doc, editor }) => {
+    const before = editor.state.doc
+    doc._handle.editorController.getMaxLength = () => 2
+    await expect(doc.setContentAsync('<p>a😀b</p>', { pagedView: true, yieldToMain: async () => {} })).rejects.toThrow('正文不能超过 2 字')
+    expect(editor.state.doc).toBe(before)
+    doc._handle.editorController.getMaxLength = () => 3
+    await doc.setContentAsync('<p>a😀b</p>', { pagedView: true, yieldToMain: async () => {} })
+    expect(doc.getText()).toBe('a😀b')
+  }))
+  it.each(['page-yield', 'decorate-yield', 'complete-yield', 'complete-reentrant'])('分页新异步导入在回滚后接管：%s', mode => withTemplateDocument(async ({ doc, editor }) => {
+    const before = doc.getText()
+    const storage = editor.storage.larkDoc, prepare = storage.prepareDecorations
+    let phase, second, warming = false
+    storage.prepareDecorations = async (...args) => { warming = true; try { return await prepare(...args) } finally { warming = false } }
+    const replace = () => { second = doc.setContentAsync('<p>newest import</p>', { pagedView: true, yieldToMain: async () => {} }).then(() => 'complete', error => error.message) }
+    const observe = ({ transaction }) => {
+      phase = transaction.getMeta(PAGED_IMPORT_META)?.phase
+      if (mode === 'complete-reentrant' && phase === 'complete' && !second) replace()
+    }
+    editor.on('transaction', observe)
+    try {
+      await expect(doc.setContentAsync('<p>superseded import</p>'.repeat(80), { pagedView: true, yieldToMain: async () => {
+        if (!second && (mode === 'page-yield' && phase === 'page' || mode === 'decorate-yield' && warming || mode === 'complete-yield' && phase === 'complete')) replace()
+      } })).rejects.toMatchObject({ name: 'AbortError' })
+      expect(await second).toBe('complete')
+      expect(doc.getText()).toBe('newest import')
+      editor.commands.undo()
+      expect(doc.getText()).toBe(before)
+    } finally { storage.prepareDecorations = prepare; editor.off('transaction', observe) }
+  }))
+  it.each(['abort', 'readonly'])('分页导入锁定中同步%s不会遗留门控dispatch', mode => withTemplateDocument(async ({ doc, editor }) => {
+    const before = editor.state, dispatch = editor.view.dispatch, setEditable = editor.setEditable, abort = new AbortController()
+    let interrupted = false
+    editor.setEditable = function (editable, ...args) {
+      const result = setEditable.call(this, editable, ...args)
+      if (!editable && !interrupted && editor.storage.larkDoc.pagedImport) {
+        interrupted = true
+        if (mode === 'abort') abort.abort()
+        else doc.setReadonly(true)
+      }
+      return result
+    }
+    try {
+      await expect(doc.setContentAsync('<p>replacement1</p><p>replacement2</p>', { pagedView: true, pageBlocks: 1, signal: abort.signal, yieldToMain: async () => {} })).rejects.toThrow()
+      expect(interrupted).toBe(true)
+      expect(editor.view.dispatch).toBe(dispatch)
+      expect(editor.state).toBe(before)
+      expect(editor.isEditable).toBe(mode === 'abort')
+      expect(editor.storage.larkDoc.pagedImport).toBe(false)
+    } finally { editor.setEditable = setEditable }
+  }))
+  it('首次分页投影可同步替换为大平面正文，不提前调用未加载的选区读取器', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>paged-first</p>', { pagedView: true, yieldToMain: async () => {} })
+    const content = '<p>' + 'flat replacement '.repeat(32000) + '</p>'
+    expect(() => doc.setContent(content)).not.toThrow()
+    expect(editor.state.doc.firstChild.type.name).toBe('paragraph')
+    expect(doc.getText()).toContain('flat replacement')
+  }))
+  it('分页容器留白命中只返回当前页可见正文，不爬出编辑器', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>first</p><p>second</p>', { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, page = editor.view.dom.firstElementChild
+    const [first, second] = page.children, previous = document.elementFromPoint
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue({ bottom: 10 })
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue({ bottom: 30 })
+    try {
+      document.elementFromPoint = () => page
+      expect(runtime.blockAtPoint(20, 20)).toBe(second)
+      second.style.display = 'none'
+      expect(runtime.blockAtPoint(20, 20)).toBe(first)
+      first.style.display = 'none'
+      expect(runtime.blockAtPoint(20, 20)).toBeNull()
+      first.style.display = ''
+      document.elementFromPoint = () => first
+      expect(runtime.blockAtPoint(20, 20)).toBe(first)
+      document.elementFromPoint = () => document.documentElement
+      expect(runtime.blockAtPoint(20, 20)).toBeNull()
+    } finally { document.elementFromPoint = previous }
+  }))
+  it('分页滚动窗口未变时保留原生选区与DOM，不重复更新PM视图', () => withTemplateDocument(async ({ doc, editor }) => {
+    const previous = window.ResizeObserver
+    window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+    try {
+      await doc.setContentAsync('<p>stable window</p>'.repeat(80), { pagedView: true, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView
+      runtime.refresh()
+      const state = editor.state, first = runtime.getRenderedBlocks()[0]
+      const update = vi.spyOn(editor.view, 'updateState')
+      runtime.refresh(); runtime.refresh(); runtime.refresh()
+      expect(update).not.toHaveBeenCalled()
+      expect(editor.state).toBe(state)
+      expect(runtime.getRenderedBlocks()[0]).toBe(first)
+      expect(doc.getText()).toContain('stable window')
+      runtime.setActive(false)
+      expect(editor.view.dom.classList.contains('lark-doc-paged-layout')).toBe(false)
+      runtime.setActive(true); runtime.refresh()
+      expect(editor.view.dom.classList.contains('lark-doc-paged-layout')).toBe(true)
+      expect(editor.view.dom.hasAttribute('data-ld-rendered-blocks')).toBe(true)
+    } finally { window.ResizeObserver = previous }
+  }))
+  it('分页缓冲按视口距离挂载，远处滚动不额外保留整页正文', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    runtime.refresh()
+    const targetText = editor.state.doc.child(4).firstChild.textContent
+    const offset = runtime.getScrollCoordinates().logicalTop(4) + 2000
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ top: -offset, bottom: 200000, left: 0, right: 800, width: 800, height: 200000 })
+    runtime.refresh()
+    expect(runtime.getRenderedBlocks().some(node => node.textContent === targetText)).toBe(true)
+    expect(runtime.getRenderedBlocks().length).toBeLessThanOrEqual(96)
+  }))
+  it('分页原生滚动立即挂载当前视口并取消旧帧', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    let top = -100
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top + 200000, left: 0, right: 800, width: 800, height: 200000 }))
+    runtime.refresh()
+    const target = editor.state.doc.child(4).firstChild.textContent
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(98765)
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame')
+    // Drain a preexisting scheduled frame before testing the next queued one.
+    document.dispatchEvent(new Event('scroll'))
+    runtime.schedule()
+    top = -(runtime.getScrollCoordinates().logicalTop(4) + 2000)
+    document.dispatchEvent(new Event('scroll'))
+    expect(frame).toHaveBeenCalled()
+    expect(cancel).toHaveBeenCalledWith(98765)
+    expect(runtime.getRenderedBlocks().some(node => node.textContent === target)).toBe(true)
+  }))
+  it('分页原生滚动忽略正文内独立滚动和导入锁定', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>scroll owner</p>'.repeat(80), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    runtime.refresh()
+    const rect = vi.spyOn(root, 'getBoundingClientRect')
+    root.firstElementChild.firstElementChild.dispatchEvent(new Event('scroll'))
+    expect(rect).not.toHaveBeenCalled()
+    editor.storage.larkDoc.pagedImport = true
+    try { document.dispatchEvent(new Event('scroll')); expect(rect).not.toHaveBeenCalled() }
+    finally { editor.storage.larkDoc.pagedImport = false }
+  }))
+  it('分页滚动事件后同帧继续滚动仍以最新视口绘制', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    let top = -100, queued
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => -top)
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top + 200000, left: 0, right: 800, width: 800, height: 200000 }))
+    runtime.setActive(true); runtime.refresh()
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { queued = callback; return 98766 })
+    document.dispatchEvent(new Event('scroll'))
+    expect(queued).toBeTypeOf('function')
+    const target = editor.state.doc.child(4).firstChild.textContent
+    top = -(runtime.getScrollCoordinates().logicalTop(4) + 2000)
+    queued(0)
+    expect(runtime.getRenderedBlocks().some(node => node.textContent === target)).toBe(true)
+    expect(root.style.clipPath).toContain(`${Math.floor(-top - 256)}px`)
+  }))
+  it.each(['window', 'paper'])('分页冷页缩短同次挂载后一页且校正clip：%s', mode => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom, coordinates = runtime.getScrollCoordinates()
+    const sizes = new Map(editor.state.doc.content.content.map((node, index) => [node.attrs.pageId, index === 4 ? 1000 : coordinates.height(index)]))
+    let native = coordinates.top(4) + coordinates.height(4) / 2
+    const paper = root.closest('.lark-doc-paper')
+    if (mode === 'paper') {
+      paper.style.overflowY = 'auto'
+      Object.defineProperties(paper, { clientHeight: { configurable: true, value: 900 }, scrollHeight: { configurable: true, value: 500000 }, scrollTop: { configurable: true, get: () => native } })
+      paper.scrollTo = options => { native = options.top }
+    }
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => mode === 'paper' ? 0 : native)
+    vi.spyOn(window, 'scrollTo').mockImplementation(options => { native = options.top })
+    const layout = Element.prototype.getBoundingClientRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this === root) return { top: -native, bottom: 200000 - native, left: 0, right: 800, width: 800, height: 200000 }
+      if (this === paper && mode === 'paper') return { top: 0, bottom: 900, left: 0, right: 800, width: 800, height: 900 }
+      if (sizes.has(this.dataset?.ldPageId)) return { top: 0, bottom: sizes.get(this.dataset.ldPageId), height: sizes.get(this.dataset.ldPageId) }
+      return layout.call(this)
+    })
+    const following = editor.state.doc.child(5).firstChild.textContent
+    runtime.setActive(true); runtime.refresh()
+    expect(runtime.getRenderedBlocks().some(node => node.textContent === following)).toBe(true)
+    expect(root.style.clipPath).toContain(`${Math.floor(native - 256)}px`)
+    if (mode === 'paper') expect(paper.style.clipPath).toContain('-256px')
+  }))
+  it('滚动冷页缩短，RO回调在下一RAF前挂载后一页且不强制测高', () => withTemplateDocument(async ({ doc, editor }) => {
+    const previous = window.ResizeObserver
+    let resized, delivering = false
+    const observed = new Set(), disconnect = vi.fn(() => observed.clear())
+    window.ResizeObserver = class { constructor(callback) { resized = callback } observe(node) { expect(delivering).toBe(false); observed.add(node) } unobserve(node) { observed.delete(node) } disconnect() { disconnect() } }
+    try {
+      await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom, coordinates = runtime.getScrollCoordinates()
+      let native = coordinates.top(4) + coordinates.height(4) / 2
+      vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => native)
+      vi.spyOn(window, 'scrollTo').mockImplementation(options => { native = options.top })
+      vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top: -native, bottom: 200000 - native, left: 0, right: 800, width: 800, height: 200000 }))
+      let frameId = 98767
+      const frames = new Map()
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { frames.set(++frameId, callback); return frameId })
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => frames.delete(id))
+      runtime.setActive(true)
+      document.dispatchEvent(new Event('scroll'))
+      const id = editor.state.doc.child(4).attrs.pageId
+      const page = root.querySelector(`[data-ld-page-id="${id}"]`)
+      const measure = vi.spyOn(page, 'getBoundingClientRect')
+      delivering = true
+      resized([{ target: page, borderBoxSize: [{ blockSize: 1000 }], contentRect: { height: 1000 } }])
+      delivering = false
+      expect(disconnect).toHaveBeenCalled()
+      expect(observed.size).toBe(0)
+      expect(measure).not.toHaveBeenCalled()
+      const following = editor.state.doc.child(5).firstChild.textContent
+      expect(runtime.getRenderedBlocks().some(node => node.textContent === following)).toBe(true)
+      expect(root.style.clipPath).toContain(`${Math.floor(native - 256)}px`)
+      const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(16))
+      expect(observed.has(root)).toBe(true)
+      expect([...root.querySelectorAll('[data-ld-page-id]')].filter(node => node.childElementCount).every(node => observed.has(node))).toBe(true)
+    } finally { window.ResizeObserver = previous }
+  }))
+  it('分页二次实测重排不提前消费导航揭示目标', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 10 }, (_, i) => `<p>row${i}</p>`).join(''), { pagedView: true, pageBlocks: 1, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom, coordinates = runtime.getScrollCoordinates()
+    const sizes = new Map(editor.state.doc.content.content.map((node, index) => [node.attrs.pageId, index === 4 ? 5000 : coordinates.height(index)]))
+    let native = coordinates.top(5), target
+    editor.state.doc.forEach((page, pos, index) => { if (index === 3) target = pos + 1 })
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => native)
+    vi.spyOn(window, 'scrollTo').mockImplementation(options => { native = options.top })
+    const layout = Element.prototype.getBoundingClientRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this === root) return { top: -native, bottom: 20000 - native, left: 0, right: 800, width: 800, height: 20000 }
+      if (sizes.has(this.dataset?.ldPageId)) return { top: 0, bottom: sizes.get(this.dataset.ldPageId), height: sizes.get(this.dataset.ldPageId) }
+      return layout.call(this)
+    })
+    expect(runtime.revealPosition(target)?.textContent).toBe('row3')
+  }))
+  it('分页滚动换窗不回写尚未同步的原生选区', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    let top = -100
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => -top)
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top + 200000, left: 0, right: 800, width: 800, height: 200000 }))
+    runtime.refresh(); editor.view.focus()
+    expect(editor.view.hasFocus()).toBe(true)
+    const native = document.getSelection(), text = root.querySelectorAll('p')[1].firstChild
+    native.setBaseAndExtent(text, 2, text, 5)
+    const state = editor.state
+    top = -(runtime.getScrollCoordinates().logicalTop(4) + 2000)
+    document.dispatchEvent(new Event('scroll'))
+    expect(editor.state).toBe(state)
+    expect(native.anchorNode).toBe(text)
+    expect(native.anchorOffset).toBe(2)
+    expect(native.focusNode).toBe(text)
+    expect(native.focusOffset).toBe(5)
+    const target = editor.state.doc.child(4).firstChild.textContent
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, editor.view.posAtDOM(text, 2), editor.view.posAtDOM(text, 5))))
+    runtime.refresh()
+    expect(runtime.getRenderedBlocks().some(node => node.textContent === target)).toBe(true)
+  }))
+  it.each(['boundary', 'print'])('分页原生选区保护不阻断边界等价选区或打印：%s', mode => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    let top = -100
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => -top)
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top + 200000, left: 0, right: 800, width: 800, height: 200000 }))
+    runtime.refresh(); editor.view.focus()
+    const native = document.getSelection(), text = root.querySelectorAll('p')[1].firstChild
+    if (mode === 'print') {
+      native.setBaseAndExtent(text, 2, text, 5)
+      window.dispatchEvent(new Event('beforeprint'))
+      expect(root.querySelectorAll('p')).toHaveLength(256)
+      window.dispatchEvent(new Event('afterprint'))
+    } else {
+      native.setBaseAndExtent(root, 0, root, 0)
+      const target = editor.state.doc.child(4).firstChild.textContent
+      top = -(runtime.getScrollCoordinates().logicalTop(4) + 2000)
+      document.dispatchEvent(new Event('scroll'))
+      expect(runtime.getRenderedBlocks().some(node => node.textContent === target)).toBe(true)
+    }
+  }))
+  it('分页绘制范围在稳定窗口内随滚动更新且不重绘PM', () => withTemplateDocument(async ({ doc, editor }) => {
+    const previous = window.ResizeObserver
+    window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+    try {
+      await doc.setContentAsync('<p>stable window</p>'.repeat(80), { pagedView: true, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+      runtime.setActive(true)
+      let top = -100
+      vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top + 10000, left: 0, right: 800, width: 800, height: 10000 }))
+      runtime.refresh()
+      const before = root.style.clipPath, state = editor.state, update = vi.spyOn(editor.view, 'updateState')
+      expect(before).toContain('inset(')
+      top = -500; runtime.refresh()
+      expect(root.style.clipPath).toContain('244px')
+      expect(root.style.clipPath).not.toBe(before)
+      expect(update).not.toHaveBeenCalled()
+      expect(editor.state).toBe(state)
+      runtime.setActive(false)
+      runtime.refresh()
+      expect(root.style.clipPath).toBe('')
+      expect(root.closest('.lark-doc-paper').style.clipPath).toBe('')
+      runtime.setActive(true); runtime.refresh()
+      expect(root.style.clipPath).toContain('244px')
+      expect(root.closest('.lark-doc-paper').style.clipPath).toContain('inset(')
+    } finally { window.ResizeObserver = previous }
+  }))
+  it.each(['root', 'paper'])('分页绘制不覆盖宿主自有裁剪：%s', surface => withTemplateDocument(async ({ doc, editor }) => {
+    const root = editor.view.dom, paper = root.closest('.lark-doc-paper')
+    const target = surface === 'root' ? root : paper, other = surface === 'root' ? paper : root
+    target.style.clipPath = 'inset(4px)'
+    await doc.setContentAsync('<p>host clip</p>'.repeat(80), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView
+    runtime.setActive(true)
+    runtime.refresh()
+    expect(target.style.clipPath).toBe('inset(4px)')
+    expect(other.style.clipPath).toContain('inset(')
+    runtime.setActive(false)
+    expect(target.style.clipPath).toBe('inset(4px)')
+    expect(other.style.clipPath).toBe('')
+  }))
+  it.each([
+    ['focused', true, false, true, 1], ['blurred', false, false, true, 0],
+    ['composing', true, true, true, 0], ['unchanged', true, false, false, 0],
+    ['focus-lost-during-flush', true, false, true, 1], ['viewport-refresh', true, false, true, 0],
+  ])('分页同步旧投影槽位后按需恢复原生选区：%s', (mode, focused, composing, changed, expectedFocus) => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>slot ownership</p>', { pagedView: true, yieldToMain: async () => {} })
+    let hasFocus = focused
+    const owner = { flushProjection: vi.fn(() => { if (mode === 'focus-lost-during-flush') hasFocus = false; return changed }) }
+    editor.storage.larkDoc.projection = owner
+    const focus = vi.spyOn(editor.view, 'focus').mockImplementation(() => {})
+    vi.spyOn(editor.view, 'hasFocus').mockImplementation(() => hasFocus)
+    vi.spyOn(editor.view, 'composing', 'get').mockReturnValue(composing)
+    const next = mode === 'viewport-refresh' ? editor.state : editor.state.apply(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 3)))
+    editor.view.updateState(next)
+    expect(owner.flushProjection).toHaveBeenCalled()
+    expect(focus).toHaveBeenCalledTimes(expectedFocus)
+  }))
+  it('分页绘制适配CSSOM缩写序列化，稳定范围不重复写样式', () => withTemplateDocument(async ({ doc, editor }) => {
+    const previous = window.ResizeObserver, root = editor.view.dom
+    window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+    let clip = '', writes = 0
+    Object.defineProperty(root.style, 'clipPath', { configurable: true, get: () => clip, set: value => { writes++; clip = value.replace(/ -100vw\)$/, ')') } })
+    try {
+      await doc.setContentAsync('<p>stable CSSOM</p>'.repeat(80), { pagedView: true, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView
+      runtime.setActive(true); runtime.refresh()
+      const before = writes
+      runtime.refresh(); runtime.refresh(); runtime.refresh()
+      expect(writes).toBe(before)
+    } finally { delete root.style.clipPath; window.ResizeObserver = previous }
+  }))
+  it.each(['window-to-pane', 'pane-to-window'])('分页锚点不跨滚动容器复用：%s', direction => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom, parent = root.parentNode, pane = document.createElement('div')
+    pane.style.overflowY = 'auto'
+    Object.defineProperties(pane, { clientHeight: { value: 500 }, scrollHeight: { value: 200000 } })
+    vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 600 })
+    let top = -100
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top + 200000, left: 0, right: 800, width: 800, height: 200000 }))
+    runtime.refresh()
+    const targetText = editor.state.doc.child(4).firstChild.textContent, offset = runtime.getScrollCoordinates().logicalTop(4) + 2000
+    const attach = () => { parent.insertBefore(pane, root); pane.appendChild(root); top = 100 - offset }
+    const detach = () => { parent.insertBefore(root, pane); pane.remove(); top = -100 }
+    try {
+      if (direction === 'pane-to-window') { attach(); runtime.refresh() }
+      runtime.prepareSelection()
+      if (direction === 'window-to-pane') attach()
+      else detach()
+      runtime.refresh()
+      expect(runtime.getRenderedBlocks().some(node => node.textContent === targetText)).toBe(direction === 'window-to-pane')
+    } finally { if (pane.parentNode) detach() }
+  }))
+  it.each(['forward', 'backward'])('分页新原生滚动优先于待处理尺寸锚点：%s', direction => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom, descriptor = Object.getOwnPropertyDescriptor(window, 'scrollY')
+    const targetText = editor.state.doc.child(4).firstChild.textContent, far = runtime.getScrollCoordinates().logicalTop(4) + 2000
+    let native = direction === 'forward' ? 100 : far
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => native })
+    vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => ({ top: -native, bottom: 200000 - native, left: 0, right: 800, width: 800, height: 200000 }))
+    try {
+      runtime.refresh(); runtime.refresh()
+      runtime.prepareSelection()
+      native = direction === 'forward' ? far : 100
+      runtime.refresh()
+      expect(runtime.getRenderedBlocks().some(node => node.textContent === targetText)).toBe(direction === 'forward')
+    } finally { Object.defineProperty(window, 'scrollY', descriptor) }
+  }))
+  it('分页装饰只标记活动页，窗口未变复用同一装饰集', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView
+    runtime.refresh()
+    const first = runtime.decorations(editor.state, DecorationSet.empty)
+    const pageDecorations = first.find().filter(item => item.spec.ldPagedActive !== undefined)
+    expect(pageDecorations.length).toBeGreaterThan(0)
+    expect(pageDecorations.every(item => item.spec.ldPagedActive)).toBe(true)
+    expect(pageDecorations.length).toBeLessThan(editor.state.doc.childCount)
+    expect(runtime.decorations(editor.state, DecorationSet.empty)).toBe(first)
+  }))
+  it('连续离屏页只保留聚合布局占位，物理坐标与完整正文不变', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>bounded layout</p>'.repeat(1000), { pagedView: true, pageBlocks: 1, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom, state = editor.state
+    runtime.refresh()
+    const active = [...root.children].filter(node => node.childElementCount)
+    const boxes = [...root.children].filter(node => node.style.display !== 'none')
+    expect(root.children.length).toBe(1000)
+    expect(boxes.length).toBeLessThanOrEqual(active.length * 2 + 1)
+    let before = 0
+    const coordinates = runtime.getScrollCoordinates()
+    for (let index = 0; index < root.children.length; index++) {
+      const node = root.children[index]
+      if (node.childElementCount) {
+        expect(before).toBeCloseTo(coordinates.top(index), 7)
+        before += coordinates.height(index)
+      } else before += parseFloat(node.style.height) || 0
+    }
+    expect(before).toBeCloseTo(coordinates.physicalHeight, 7)
+    expect(editor.state).toBe(state)
+    expect(editor.getText().match(/bounded layout/g)).toHaveLength(1000)
+    // 1000 段导入 + 全量物理坐标逐页测量，单跑实测 10.02s，默认 5000ms 必然超时
+    // （非偶发抖动：跳过其余 434 项后仍需 10s）。与本文件其它重测量用例同口径给 30000。
+  }), 30000)
+  it('分页占位高度随宽度失效更新，保持正文身份', () => withTemplateDocument(async ({ doc, editor }) => {
+    const previous = window.ResizeObserver, registrations = []
+    window.ResizeObserver = class {
+      constructor(callback) { this.callback = callback }
+      observe(target) { registrations.push({ target, callback: this.callback }) }
+      unobserve() {} disconnect() {}
+    }
+    try {
+      await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+      runtime.refresh()
+      const state = editor.state, spacer = [...root.children].find(node => !node.childNodes.length && parseFloat(node.style.height) > 0), index = [...root.children].indexOf(spacer)
+      const before = parseFloat(spacer.style.height)
+      registrations.find(entry => entry.target === root).callback([{ target: root, contentRect: { width: 400 } }])
+      runtime.refresh()
+      expect(editor.state).toBe(state)
+      const nextActive = [...root.children].findIndex((node, at) => at > index && node.childNodes.length)
+      const coordinates = runtime.getScrollCoordinates()
+      expect(spacer.style.height).toBe(`${coordinates.top(nextActive < 0 ? root.children.length : nextActive) - coordinates.top(index)}px`)
+      expect(parseFloat(spacer.style.height)).toBeGreaterThan(before)
+    } finally { window.ResizeObserver = previous }
+  }))
+  it('分页非空基础装饰下仍保留视口前方的选区页', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 256 }, (_, i) => `<p>row${i} ${'content '.repeat(75)}</p>`).join(''), { pagedView: true, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, root = editor.view.dom
+    editor.commands.setTextSelection(2)
+    runtime.refresh()
+    const offset = runtime.getScrollCoordinates().logicalTop(4) + 2000
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ top: -offset, bottom: 200000, left: 0, right: 800, width: 800, height: 200000 })
+    runtime.refresh()
+    const base = DecorationSet.create(editor.state.doc, [Decoration.node(1, 1 + editor.state.doc.firstChild.firstChild.nodeSize, { class: 'base-decoration' })])
+    const activation = runtime.decorations(editor.state, base).find().filter(item => item.spec.ldPagedActive)
+    expect(activation.some(item => item.from > editor.state.doc.child(0).nodeSize)).toBe(true)
+    expect(activation.some(item => item.from === 0)).toBe(true)
+  }))
+  it('分页同高度编辑仍刷新失效测量，不等待不存在的RO尺寸变化', () => withTemplateDocument(async ({ doc, editor }) => {
+    const previous = window.ResizeObserver, registrations = []
+    window.ResizeObserver = class {
+      constructor(callback) { this.callback = callback }
+      observe(target) { registrations.push({ target, callback: this.callback }) }
+      unobserve() {} disconnect() {}
+    }
+    try {
+      await doc.setContentAsync('<p>same-height</p>', { pagedView: true, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView, page = editor.view.dom.firstElementChild
+      const measured = vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({ height: 1000, top: 0, bottom: 1000 })
+      registrations.find(entry => entry.target === page).callback([{ target: page, borderBoxSize: [{ blockSize: 1000 }], contentRect: { height: 1000 } }])
+      runtime.refresh()
+      expect(runtime.getScrollCoordinates().logicalHeight).toBe(1000)
+      measured.mockClear()
+      runtime.setWindowCallback(() => {}); runtime.refresh()
+      expect(measured).not.toHaveBeenCalled()
+      editor.commands.insertContentAt(2, 'x')
+      runtime.refresh()
+      expect(measured).toHaveBeenCalled()
+      expect(runtime.getScrollCoordinates().logicalHeight).toBe(1000)
+    } finally { window.ResizeObserver = previous }
+  }))
+  it('分页视图释放离屏子DOM并保留公开正文和同一个Editor', () => withTemplateDocument(async ({ doc, editor }) => {
+    const text = Array.from({ length: 40 }, (_, i) => `row${i}`)
+    await doc.setContentAsync(text.map(value => `<p>${value}</p>`).join(''), { pagedView: true, pageBlocks: 4, yieldToMain: async () => {} })
+    expect(doc.getEditor()).toBe(editor)
+    expect(editor.state.doc.childCount).toBe(10)
+    expect(editor.view.dom.querySelectorAll('p').length).toBeLessThan(40)
+    expect(doc.getText()).toBe(text.join('\n\n'))
+    expect(doc.getHTML()).toContain('row39')
+    expect(doc.getJSON().content).toHaveLength(40)
+    expect(JSON.stringify(doc.getJSON())).not.toContain('documentSegment')
+    const imported = editor.state.doc
+    expect(editor.commands.undo()).toBe(true)
+    expect(doc.getText()).toContain('目标正文')
+    expect(editor.commands.redo()).toBe(true)
+    expect(editor.state.doc.eq(imported)).toBe(true)
+    const json = doc.getJSON()
+    const identity = editor.state.doc
+    expect(await doc.setContentAsync(json, { pagedView: true, yieldToMain: async () => {} })).toBe(false)
+    expect(editor.state.doc).toBe(identity)
+    expect(doc.setContent(json)).toBe(false)
+    expect(editor.state.doc).toBe(identity)
+    const record = doc._handle.workspaceController.record()
+    expect(validateDerivedSnapshot(record.derived, record.json)).not.toBeNull()
+  }))
+  it('分页视图打印时挂载全部正文并在结束后恢复窗口与文档身份', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>print row</p>'.repeat(80), { pagedView: true, pageBlocks: 4, yieldToMain: async () => {} })
+    const runtime = editor.storage.larkDoc.pagedView, before = editor.state
+    runtime.setActive(true)
+    runtime.refresh()
+    expect(editor.view.dom.style.clipPath).toContain('inset(')
+    const paper = editor.view.dom.closest('.lark-doc-paper')
+    expect(paper.style.clipPath).toContain('inset(')
+    expect(editor.view.dom.querySelectorAll('p').length).toBeLessThan(80)
+    window.dispatchEvent(new Event('beforeprint'))
+    expect(editor.view.dom.style.clipPath).toBe('')
+    expect(paper.style.clipPath).toBe('')
+    expect(editor.view.dom.querySelectorAll('p')).toHaveLength(80)
+    window.dispatchEvent(new Event('afterprint'))
+    expect(editor.view.dom.style.clipPath).toContain('inset(')
+    expect(paper.style.clipPath).toContain('inset(')
+    expect(editor.view.dom.querySelectorAll('p').length).toBeLessThan(80)
+    expect(editor.state).toBe(before)
+    doc.setContent('<p>flat again</p>'); runtime.refresh()
+    expect(editor.view.dom.style.clipPath).toBe('')
+    expect(paper.style.clipPath).toBe('')
+  }))
+  it.each(['Backspace', 'Delete'])('分页视图 %s 跨边界连接正文且一次撤销恢复', key => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>one</p><p>two</p><p>three</p><p>four</p>', { pagedView: true, pageBlocks: 2, yieldToMain: async () => {} })
+    const before = doc.getJSON(), first = editor.state.doc.firstChild
+    editor.commands.setTextSelection(key === 'Backspace' ? first.nodeSize + 2 : first.nodeSize - 2)
+    expect(editor.storage.larkDoc.pagedView.handleKeyDown(editor.view, { key })).toBe(true)
+    expect(doc.getText()).toBe('one\n\ntwothree\n\nfour')
+    expect(editor.commands.undo()).toBe(true)
+    expect(doc.getJSON()).toEqual(before)
+  }))
+  it.each(['toggleBulletList', 'toggleBlockquote'])('分页视图跨页 %s 保留选区内所有块并可撤销', name => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync(Array.from({ length: 12 }, (_, i) => `<p>row${i}</p>`).join(''), { pagedView: true, pageBlocks: 2, yieldToMain: async () => {} })
+    const before = doc.getJSON(), positions = []
+    editor.state.doc.descendants((node, pos) => { if (node.isTextblock) positions.push(pos) })
+    editor.commands.setTextSelection({ from: positions[0] + 1, to: positions.at(-1) + 6 })
+    expect(editor.commands[name]()).toBe(true)
+    let count = 0
+    editor.state.doc.descendants(node => { if (node.isTextblock && node.textContent) count++ })
+    expect(count).toBe(12)
+    expect(doc.getHTML()).toContain(name === 'toggleBulletList' ? '<ul' : '<blockquote')
+    expect(JSON.stringify(doc.getJSON())).not.toContain('documentSegment')
+    expect(editor.commands.undo()).toBe(true)
+    expect(doc.getJSON()).toEqual(before)
+  }))
+  it('分页视图粘贴超页正文自动拆段且拷贝不泄露内部段', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>original</p><p>end</p>', { pagedView: true, pageBlocks: 1, yieldToMain: async () => {} })
+    const before = doc.getJSON()
+    editor.commands.insertContentAt(1, Array.from({ length: 270 }, (_, i) => `<p>paste${i}</p>`).join(''))
+    expect(editor.state.doc.content.content.every(node => node.type.name === 'documentSegment' && node.childCount <= 64)).toBe(true)
+    expect(doc.getText()).toContain('paste269')
+    const slice = editor.state.doc.slice(0, editor.state.doc.content.size)
+    const copied = editor.view.props.transformCopied(slice, editor.view)
+    expect(JSON.stringify(copied.toJSON())).not.toContain('documentSegment')
+    expect(editor.commands.undo()).toBe(true)
+    expect(doc.getJSON()).toEqual(before)
+  }))
+  it('分页视图跨页折叠和远处块定位仍使用真实正文位置', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<h1>head</h1>' + '<p data-indent="1">body</p>'.repeat(24) + '<h1>tail</h1><p>end</p>', { pagedView: true, pageBlocks: 3, yieldToMain: async () => {} })
+    const positions = []
+    editor.state.doc.descendants((node, pos) => { if (node.isTextblock) positions.push({ node, pos }) })
+    const head = positions[0], tail = positions.at(-2), last = positions.at(-1)
+    expect(foldedRange(editor.state.doc, head.pos).to).toBe(tail.pos)
+    expect(collectFoldRanges(editor.state.doc).get(head.pos).to).toBe(tail.pos)
+    expect(resolveBlockTargetRange(editor.state.doc, positions[3].pos + 1)).toMatchObject({ from: positions[3].pos, to: positions[3].pos + positions[3].node.nodeSize })
+    expect(editor.view.dom.querySelector(`[data-block-id="${last.node.attrs.blockId}"]`)).toBeNull()
+    const located = editor.storage.larkDoc.pagedView.revealBlockId(last.node.attrs.blockId)
+    expect(located?.textContent).toBe('end')
+    expect(editor.commands.toggleLarkDocFold(head.pos)).toBe(true)
+    editor.storage.larkDoc.pagedView.refresh()
+    expect(editor.view.dom.querySelectorAll('.ld-document-page[style*="height: 0px"]').length).toBeGreaterThan(0)
+    expect(editor.commands.toggleLarkDocFold(head.pos)).toBe(true)
+    expect(doc.getText()).toContain('body')
+  }))
+  it('分页视图句柄复制、复制章节及跨页移动不暴露内部段', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    await doc.setContentAsync('<h1>head</h1>' + '<p data-indent="1">body</p>'.repeat(8) + '<h1>tail</h1><p>end</p>', { pagedView: true, pageBlocks: 2, yieldToMain: async () => {} })
+    const positions = []
+    editor.state.doc.descendants((node, pos) => { if (node.isTextblock) positions.push({ node, pos }) })
+    const head = positions[0].pos, tail = positions.at(-2).pos
+    const before = doc.getJSON(), range = { from: head, to: tail }
+    const copied = editor.storage.larkDoc.pagedView.copySlice(editor.state.doc.slice(head, tail))
+    expect(JSON.stringify(copied.toJSON())).not.toContain('documentSegment')
+    expect(resolveBlockTargetRange(editor.state.doc, positions[1].pos + 1, positions[2].pos).to).toBe(positions[2].pos)
+    vi.spyOn(host, 'handleActionRange').mockReturnValue(range)
+    host.blockAction('duplicate')
+    expect(doc.getJSON().content.filter(node => node.type === 'heading' && node.content?.[0]?.text === 'head')).toHaveLength(2)
+    expect(JSON.stringify(doc.getJSON())).not.toContain('documentSegment')
+    editor.commands.undo()
+    expect(doc.getJSON()).toEqual(before)
+    const end = editor.state.doc.content.size - 1
+    expect(moveBlockRange(editor, head, tail, end)).toBe(true)
+    expect(doc.getJSON().content[0].content[0].text).toBe('tail')
+    expect(JSON.stringify(doc.getJSON())).not.toContain('documentSegment')
+    expect(editor.commands.undo()).toBe(true)
+    expect(doc.getJSON()).toEqual(before)
+  }))
+  it('分页视图上方页异步长高后保持非选区阅读页挂载及阅读锚点', () => withTemplateDocument(async ({ doc, editor }) => {
+    let resize, nativeTop = 0, firstHeight = 100
+    const previousObserver = window.ResizeObserver
+    const previousHitTest = document.elementFromPoint
+    document.elementFromPoint = () => null
+    window.ResizeObserver = class { constructor(callback) { resize = callback } observe() {} unobserve() {} disconnect() {} }
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const height = this.classList.contains('ld-document-page') ? (this === editor.view.dom.firstElementChild ? firstHeight : 100) : 100
+      const top = this === editor.view.dom ? -nativeTop : 0
+      return { top, bottom: top + height, height, width: 800, left: 0, right: 800 }
+    })
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(({ top }) => { nativeTop = top })
+    const scrollY = vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => nativeTop)
+    try {
+      await doc.setContentAsync('<p>reading</p>'.repeat(40), { pagedView: true, pageBlocks: 1, yieldToMain: async () => {} })
+      const runtime = editor.storage.larkDoc.pagedView
+      runtime.refresh()
+      nativeTop = runtime.getScrollCoordinates().toPhysical(runtime.getScrollCoordinates().logicalTop(20) + 10)
+      runtime.refresh()
+      const readingId = editor.state.doc.child(20).attrs.pageId
+      firstHeight = 100000
+      resize([{ target: editor.view.dom.firstElementChild, borderBoxSize: [{ blockSize: firstHeight }], contentRect: { height: firstHeight } }])
+      runtime.refresh()
+      const reading = editor.view.dom.querySelector(`[data-ld-page-id="${readingId}"]`)
+      expect(reading?.querySelector('p')?.textContent).toBe('reading')
+      expect(runtime.getScrollCoordinates().anchorAtPhysical(nativeTop).index).toBe(20)
+      expect(editor.state.selection.$from.index(0)).toBe(0)
+    } finally { window.ResizeObserver = previousObserver; document.elementFromPoint = previousHitTest; rect.mockRestore(); scroll.mockRestore(); scrollY.mockRestore() }
+  }))
+  it('分页视图折叠尾部跨多页后End与Shift选中最后可见正文', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>before</p>'.repeat(40) + '<h1>last visible</h1>' + '<p data-indent="1">hidden</p>'.repeat(30), { pagedView: true, pageBlocks: 2, yieldToMain: async () => {} })
+    let heading
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === 'heading') heading = { node, pos } })
+    expect(editor.commands.toggleLarkDocFold(heading.pos)).toBe(true)
+    const runtime = editor.storage.larkDoc.pagedView
+    runtime.refresh()
+    expect(editor.view.dom.querySelector(`[data-block-id="${heading.node.attrs.blockId}"]`)).toBeNull()
+    const anchor = editor.state.selection.anchor
+    expect(runtime.handleKeyDown(editor.view, { key: 'End', ctrlKey: true, shiftKey: true })).toBe(true)
+    expect(editor.state.selection.anchor).toBe(anchor)
+    expect(editor.state.selection.head).toBe(heading.pos + heading.node.nodeSize - 1)
+    expect(editor.view.dom.querySelector(`[data-block-id="${heading.node.attrs.blockId}"]`)).not.toBeNull()
+    expect(runtime.handleKeyDown(editor.view, { key: 'Home', ctrlKey: true })).toBe(true)
+    expect(editor.state.selection.head).toBe(2)
+    expect(editor.state.selection.empty).toBe(true)
+    expect(runtime.handleKeyDown(editor.view, { key: 'End', ctrlKey: true, altKey: true })).toBe(false)
+    expect(runtime.handleKeyDown(editor.view, { key: 'End', ctrlKey: true, isComposing: true })).toBe(false)
+    expect(editor.state.selection.head).toBe(2)
+  }))
+  it('分页Shift+End将图片节点选区规范成有效文本选区', () => withTemplateDocument(async ({ doc, editor }) => {
+    await doc.setContentAsync('<p>before</p><img src="/fixture.png"><p>tail</p>', { pagedView: true, yieldToMain: async () => {} })
+    let imagePos, tailEnd
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === 'image') imagePos = pos; if (node.isTextblock) tailEnd = pos + node.nodeSize - 1 })
+    editor.commands.setNodeSelection(imagePos)
+    const before = editor.state.doc
+    expect(editor.storage.larkDoc.pagedView.handleKeyDown(editor.view, { key: 'End', ctrlKey: true, shiftKey: true })).toBe(true)
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(editor.state.selection.$anchor.parent.isTextblock).toBe(true)
+    expect(editor.state.selection.head).toBe(tailEnd)
+    expect(editor.state.doc).toBe(before)
+  }))
+  it('原生DOM选区滚动只为可见固定工具栏预留高度和触发范围', () => withTemplateDocument(async ({ editor }) => {
+    const toolbar = editor.view.dom.closest('.lark-doc').querySelector('.lark-doc-toolbar')
+    toolbar.style.position = 'sticky'
+    let height = 52
+    vi.spyOn(toolbar, 'getBoundingClientRect').mockImplementation(() => ({ height }))
+    editor.view.props.handleScrollToSelection(editor.view)
+    expect(editor.view.someProp('scrollMargin').top).toBe(57)
+    expect(editor.view.someProp('scrollThreshold').top).toBe(57)
+    toolbar.style.top = '59px'
+    editor.view.props.handleScrollToSelection(editor.view)
+    expect(editor.view.someProp('scrollMargin').top).toBe(116)
+    expect(editor.view.someProp('scrollThreshold').top).toBe(116)
+    toolbar.style.display = 'none'
+    editor.view.props.handleScrollToSelection(editor.view)
+    expect(editor.view.someProp('scrollMargin').top).toBe(5)
+    expect(editor.view.someProp('scrollThreshold').top).toBe(0)
+    toolbar.style.display = 'flex'; height = 0
+    editor.view.props.handleScrollToSelection(editor.view)
+    expect(editor.view.someProp('scrollMargin').top).toBe(5)
+    expect(editor.view.someProp('scrollThreshold').top).toBe(0)
+  }))
+  async function openTemplateLibraryFromToolbar(element) {
+    const insert = element.querySelector('button[aria-label="插入"]')
+    expect(insert).not.toBeNull()
+    insert.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    insert.click()
+    await vi.dynamicImportSettled()
+    const templates = element.querySelector('[data-command-id="template"]')
+    expect(templates).not.toBeNull()
+    templates.click()
+    const more = [...element.querySelectorAll('.lark-doc-command-submenu button')].find(button => button.textContent.includes('更多模板'))
+    expect(more).toBeDefined()
+    more.click()
+    await vi.dynamicImportSettled()
+    const library = element.querySelector('[aria-label="模板库"]')
+    expect(library).not.toBeNull()
+    return library
+  }
+  it('真实工具栏的更多模板按钮插入正文并一次Undo恢复标题和内容', () => withTemplateDocument(async ({ doc, element, editor }) => {
+    editor.commands.setTextSelection(editor.state.doc.firstChild.nodeSize + 1)
+    const before = doc.getJSON(), title = doc.getTitle()
+    const library = await openTemplateLibraryFromToolbar(element)
+    library.querySelector('[data-template-id="reading"] .lark-doc-template-use').click()
+    expect(doc.getText()).toContain('基本信息')
+    expect(doc.getText()).toContain('目标正文')
+    expect(doc.getTitle()).toBe(title)
+    expect(element.querySelector('[aria-label="模板库"]')).toBeNull()
+    expect(editor.commands.undo()).toBe(true)
+    expect(doc.getJSON()).toEqual(before)
+    expect(doc.getTitle()).toBe(title)
+  }))
+  it.each(['actor', '_identityGeneration', '_privateIdentityGeneration', '_authorizationGeneration'])('模板库在同会话%s换代后退休且旧按钮不写入', generation => withTemplateDocument(async ({ doc, host, element }) => {
+    expect(host.openTemplateLibrary()).toBe(true)
+    await vi.dynamicImportSettled()
+    const library = element.querySelector('[aria-label="模板库"]')
+    const stale = library.querySelector('[data-template-id="personal"] .lark-doc-template-use')
+    expect(stale).not.toBeNull()
+    const before = doc.getJSON(), session = doc.getSession()
+    if (generation === 'actor') session.user = { id: 'different-template-owner', name: 'new owner' }
+    else session[generation] = (session[generation] || 0) + 1
+    expect(session.can('canView')).toBe(true)
+    expect(session.can('canEdit')).toBe(true)
+    stale.click()
+    expect(doc.getJSON()).toEqual(before)
+    session.emit('capabilities', session.getCapabilities())
+    await host.$nextTick()
+    expect(element.querySelector('[aria-label="模板库"]')).toBeNull()
+    stale.click()
+    expect(doc.getJSON()).toEqual(before)
+  }))
   it.each([
     ['reading', '基本信息', 'columns', 6], ['personal', '目标完成情况', 'table', 1],
     ['report', '【工作内容】', 'table', 1], ['minutes', '会议主题：简要描述会议主题和目标', 'taskList', 1],
@@ -64,6 +2210,7 @@ describe('源模板插入与更多模板闭环', () => {
     expect(host.openTemplateLibrary()).toBe(true)
     editor.commands.insertContentAt(0, '<p>新前文</p>')
     const before = doc.getJSON()
+    await vi.dynamicImportSettled()
     const library = element.querySelector('[aria-label="模板库"]')
     expect(library).not.toBeNull()
     library.querySelector('[data-template-id="personal"] .lark-doc-template-preview').click()
@@ -78,6 +2225,7 @@ describe('源模板插入与更多模板闭环', () => {
     expect(element.querySelector('[aria-label="模板库"]')).toBeNull()
     expect(doc.getJSON()).toEqual(before)
     expect(host.openTemplateLibrary()).toBe(true)
+    await vi.dynamicImportSettled()
     element.querySelector('[data-template-id="personal"] .lark-doc-template-use').click()
     expect(doc.getText()).toContain('新前文')
     expect(doc.getText()).toContain('目标正文')
@@ -88,6 +2236,7 @@ describe('源模板插入与更多模板闭环', () => {
   }))
   it.each(['host-replace', 'readonly', 'feature-disabled'])('%s 后旧模板按钮不能修改当前正文', action => withTemplateDocument(async ({ doc, host, element }) => {
     expect(host.openTemplateLibrary()).toBe(true)
+    await vi.dynamicImportSettled()
     const stale = element.querySelector('[data-template-id="personal"] .lark-doc-template-use')
     if (action === 'host-replace') doc.setContent('<p>新文档内容</p>')
     if (action === 'readonly') doc.setReadonly(true)
@@ -208,6 +2357,29 @@ describe('表格与链接选区分享真实门面', () => {
     host.copyShareText = vi.fn(async () => true)
     expect(await host.blockAction('copyLink')).toBe(true)
     expect(host.copyShareText.mock.calls[0][0]).toContain('#share-block_share_table')
+  }))
+  it.each([
+    ['paragraph', '<p data-block-id="shared_normal">目标正文</p>'],
+    ['taskItem', '<ul data-type="taskList"><li data-type="taskItem" data-block-id="shared_task"><p>目标任务</p></li></ul>'],
+    ['codeBlock', '<pre data-block-id="shared_code"><code>const value = 1</code></pre>'],
+  ])('六点%s菜单分享和复制链接绑定真实块锚点', (kind, html) => withSelectionShare(async ({ doc, host }) => {
+    const editor = doc.getEditor()
+    doc.setContent(html)
+    let range, blockId
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === kind) { range = { from: pos, to: pos + node.nodeSize }; blockId = node.attrs.blockId } })
+    host.handleRange = range
+    expect(await host.blockAction('share')).toBe(true)
+    expect(host.imageShare.selection.blockId).toBe(blockId)
+    host.closeImageShareDialog(); host.handleRange = range
+    host.copyShareText = vi.fn(async () => true)
+    expect(await host.blockAction('copyLink')).toBe(true)
+    const hash = new URL(host.copyShareText.mock.calls[0][0]).hash
+    expect(hash).toBe(`#share-${blockId}`)
+    const element = editor.view.dom.querySelector(`[data-block-id="${blockId}"]`)
+    element.scrollIntoView = vi.fn()
+    const previous = location.hash
+    try { history.replaceState(null, '', hash); host.jumpSharedBlock(); expect(element.scrollIntoView).toHaveBeenCalledWith({ block: 'center' }) }
+    finally { history.replaceState(null, '', previous || location.pathname) }
   }))
   it.each([false, true])('复制链接等待期间替换正文后忽略旧%s提示', rejected => withSelectionShare(async ({ doc, host }) => {
     doc.getEditor().commands.setContent('<table data-block-id="clipboard_table"><tbody><tr><td><p>复制原表</p></td></tr></tbody></table>')
@@ -486,16 +2658,473 @@ describe('public reference content and asynchronous comments', () => {
     ] } })
     try {
       const editor = doc.getEditor(), host = doc._handle.nativeHost.host
-      const snapshot = { ...editor.state.doc.nodeAt(3).attrs, pos: 3 }
+      await host.$nextTick(); await host.loadComments()
+      editor.commands.setNodeSelection(3)
+      editor.view.nodeDOM(3).querySelector('img').click()
+      const viewer = element.querySelector('[aria-label="图片预览"]')
+      expect(viewer).not.toBeNull()
+      const toggle = viewer.querySelector('[data-viewer-action="comment"]')
+      expect(toggle).not.toBeNull()
       editor.commands.deleteRange({ from: 1, to: 2 })
-      const viewer = document.createElement('div')
-      element.appendChild(viewer)
-      host.openImageComments(snapshot, true, viewer)
-      expect(host.commentSelectionRange().blockId).toBe('image_a')
-      host.setCommentComposerDraft('A 的评论')
-      await host.submitCommentComposer()
-      expect((await comments.list())[0].blockId).toBe('image_a')
+      const before = doc.getJSON()
+      toggle.click(); await vi.dynamicImportSettled()
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+      expect(host.commentComposerContext.blockId).toBe('image_a')
+      const input = viewer.querySelector('[aria-label="新评论"]')
+      expect(input).not.toBeNull(); input.focus()
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'A 的评论' } })
+      input.dispatchEvent(paste)
+      expect(host.commentCreateDraft).toBe('A 的评论')
+      const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+      await vi.waitFor(() => expect(send.disabled).toBe(false))
+      const submit = vi.spyOn(host, 'createCommentFromSelection')
+      send.click()
+      expect(submit).toHaveBeenCalled()
+      await vi.waitFor(async () => expect((await comments.list())[0]?.blockId, host.commentMessage).toBe('image_a'))
+      expect((await comments.list())[0].replies[0].content).toBe('A 的评论')
+      expect(doc.getJSON()).toEqual(before)
+      toggle.click()
+      expect(toggle.getAttribute('aria-pressed')).toBe('false')
+      expect(viewer.querySelector('.lark-doc-comment-layer')).toBeNull()
     } finally { doc.destroy(); element.remove() }
+  })
+
+  async function withImageCommentViewer(run, { beforePreview, viewportWidth, ...options } = {}) {
+    stubRangeLayout()
+    const beforeWidth = window.innerWidth, beforeMedia = window.matchMedia
+    if (viewportWidth) {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth })
+      window.matchMedia = query => Object.assign(new EventTarget(), { media: query,
+        matches: viewportWidth <= 760 && /max-width|pointer: coarse|hover: none/.test(query) })
+    }
+    const element = document.createElement('div'); document.body.appendChild(element)
+    const comments = Object.hasOwn(options, 'comments') ? options.comments : createMemoryCommentsProvider()
+    const doc = new LarkDoc({ element, storage: 'none', user: { id: 'image-owner', name: 'Owner' }, content: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'x' }] },
+      { type: 'image', attrs: { blockId: 'image_a', src: '/a.png' } },
+      { type: 'image', attrs: { blockId: 'image_b', src: '/b.png' } },
+    ] }, ...options, comments })
+    try {
+      const editor = doc.getEditor(), host = doc._handle.nativeHost.host
+      await host.$nextTick(); await host.loadComments()
+      await beforePreview?.({ doc, editor, host })
+      editor.commands.setNodeSelection(3); editor.view.nodeDOM(3).querySelector('img').click()
+      const viewer = element.querySelector('[aria-label="图片预览"]'), toggle = viewer.querySelector('[data-viewer-action="comment"]')
+      expect(toggle).not.toBeNull()
+      return await run({ doc, editor, host, comments, viewer, toggle })
+    } finally {
+      doc.destroy(); element.remove()
+      if (viewportWidth) { Object.defineProperty(window, 'innerWidth', { configurable: true, value: beforeWidth }); window.matchMedia = beforeMedia }
+    }
+  }
+  function pasteImageComment(input, text) {
+    input.focus()
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } })
+    input.dispatchEvent(event)
+  }
+  it('viewer comments isolate each image draft and restore the previous body draft without writing', () => withImageCommentViewer(async ({ doc, host, comments, viewer, toggle }) => {
+    const before = doc.getJSON()
+    toggle.click(); await vi.dynamicImportSettled()
+    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'A image draft')
+    const retired = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+    viewer.querySelector('[data-viewer-action="next"]').click()
+    expect(host.commentCreateDraft).toBe('body draft')
+    expect(retired.isConnected).toBe(false)
+    retired.click(); expect(await comments.list()).toEqual([])
+    toggle.click(); await vi.dynamicImportSettled()
+    expect(host.commentComposerContext.blockId).toBe('image_b')
+    expect(host.commentCreateDraft).toBe('')
+    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'B image draft')
+    viewer.querySelector('[data-viewer-action="previous"]').click()
+    toggle.click(); await vi.dynamicImportSettled()
+    expect(host.commentComposerContext.blockId).toBe('image_a')
+    expect(viewer.querySelector('[aria-label="新评论"]').textContent).toBe('A image draft')
+    viewer.querySelector('[data-viewer-action="close"]').click()
+    expect(host.commentCreateDraft).toBe('body draft')
+    expect(host.commentComposerContext.text).toBe('x')
+    expect(await comments.list()).toEqual([])
+    expect(doc.getJSON()).toEqual(before)
+  }, { beforePreview: ({ editor, host }) => { editor.commands.setTextSelection({ from: 1, to: 2 }); expect(host.openSelectionComment()).toBe(true); host.setCommentCreateDraft('body draft') } }))
+
+  it.each(['normal', 'identity'])('viewer restores both native scroll owners after %s closing', reason => {
+    let main, bodyOverflow
+    return withImageCommentViewer(async ({ host, viewer }) => {
+      expect(document.body.style.overflow).toBe('hidden')
+      expect(main.style.overflow).toBe('hidden')
+      if (reason === 'normal') viewer.querySelector('[data-viewer-action="close"]').click()
+      else host.session.user = { id: 'scroll-lock-next-owner' }
+      expect(viewer.isConnected).toBe(false)
+      expect(main.style.overflow).toBe('scroll')
+      expect(document.body.style.overflow).toBe(bodyOverflow)
+    }, { beforePreview: ({ editor }) => {
+      main = editor.view.dom.closest('.lark-doc-main')
+      expect(main).not.toBeNull(); main.style.overflow = 'scroll'
+      bodyOverflow = document.body.style.overflow
+    } })
+  })
+  it.each([false, true])('viewer releases only its own locks when another layer releases first=%s', releaseFirst => {
+    let main, bodyOverflow, releaseMain, releaseBody
+    return withImageCommentViewer(async ({ viewer }) => {
+      try {
+        if (releaseFirst) { releaseMain(); releaseBody() }
+        expect(main.style.overflow).toBe('hidden')
+        expect(document.body.style.overflow).toBe('hidden')
+        viewer.querySelector('[data-viewer-action="close"]').click()
+        if (!releaseFirst) {
+          expect(main.style.overflow).toBe('hidden')
+          expect(document.body.style.overflow).toBe('hidden')
+          releaseMain(); releaseBody()
+        }
+        expect(main.style.overflow).toBe('scroll')
+        expect(document.body.style.overflow).toBe(bodyOverflow)
+      } finally { releaseMain(); releaseBody() }
+    }, { beforePreview: ({ editor }) => {
+      main = editor.view.dom.closest('.lark-doc-main'); main.style.overflow = 'scroll'
+      bodyOverflow = document.body.style.overflow
+      releaseMain = lockPageScroll(main); releaseBody = lockPageScroll(document.body)
+    } })
+  })
+
+  it.each(['host', 'restore', 'whole-body', 'source', 'crop'])('closed image drafts do not cross a later %s change', action => withImageCommentViewer(async ({ doc, editor, host, viewer, toggle, comments }) => {
+    toggle.click(); await vi.dynamicImportSettled()
+    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'old image private draft')
+    toggle.click()
+    expect(host._imageCommentScope).toBeNull()
+    if (action === 'host' || action === 'whole-body') {
+      const next = doc.getJSON(); next.content[0].content[0].text = 'replacement document'
+      if (action === 'host') doc.setContent(next)
+      else editor.commands.setContent(next)
+    }
+    if (action === 'restore') editor.view.dispatch(setTransactionMetadata(editor.state.tr.insertText('restored ', 1), { origin: TRANSACTION_ORIGINS.RESTORE }))
+    if (action === 'source') editor.commands.updateAttributes('image', { src: '/replacement-a.png' })
+    if (action === 'crop') editor.commands.updateAttributes('image', { crop: [0, 0, .5, 1] })
+    const pos = host.commentBlockPos('image_a')
+    editor.commands.setNodeSelection(pos); editor.view.nodeDOM(pos).querySelector('img').click()
+    const current = editor.view.dom.closest('.lark-doc').querySelector('[aria-label="图片预览"]')
+    expect(current).not.toBeNull()
+    current.querySelector('[data-viewer-action="comment"]').click(); await vi.dynamicImportSettled()
+    expect(host.commentComposerContext.blockId).toBe('image_a')
+    expect(current.querySelector('[aria-label="新评论"]').textContent).toBe('')
+    expect(host.commentCreateDraft).toBe('')
+    expect(await comments.list()).toEqual([])
+  }))
+
+  it.each([1024, 393])('the real PM composing state owns Escape even when the native event flag is false at %spx', async viewportWidth => {
+    const factory = commentComposerModule.createCommentComposer, composers = []
+    vi.spyOn(commentComposerModule, 'createCommentComposer').mockImplementation(options => { const input = factory(options); composers.push(input); return input })
+    await withImageCommentViewer(async ({ viewer, toggle }) => {
+      toggle.click(); await vi.dynamicImportSettled()
+      const input = viewer.querySelector('[aria-label="新评论"]')
+      input.focus()
+      const composer = composers.find(item => item.el === input)
+      expect(composer.view).not.toBeNull()
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      expect(composer.view.composing).toBe(true)
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, which: 27, isComposing: false, bubbles: true, cancelable: true })
+      input.dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(false)
+      expect(toggle.getAttribute('aria-pressed')).toBe('true')
+      expect(input.isConnected).toBe(true)
+      expect(viewer.isConnected).toBe(true)
+      input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    }, { viewportWidth })
+  })
+
+  it('viewer comments resize their numeric portal and reserve the same stage space', () => withImageCommentViewer(async ({ viewer, toggle }) => {
+    const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    try {
+      toggle.click(); await vi.dynamicImportSettled()
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+      window.dispatchEvent(new Event('resize'))
+      expect(viewer.querySelector('.lark-doc-comment-layer').style.width).toBe('294.75px')
+      expect(viewer.querySelector('.lark-doc-image-viewer-stage').style.marginRight).toBe('294.75px')
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+      window.dispatchEvent(new Event('resize'))
+      expect(viewer.querySelector('.lark-doc-comment-layer').style.width).toBe('300px')
+      expect(viewer.querySelector('.lark-doc-image-viewer-stage').style.marginRight).toBe('300px')
+      toggle.click()
+      expect(viewer.querySelector('.lark-doc-image-viewer-stage').style.marginRight).toBe('')
+    } finally { Object.defineProperty(window, 'innerWidth', width) }
+  }))
+
+  it.each(['actor', 'provider', 'permission', 'replace', 'image-source', 'destroy'])('viewer comments retire their controls after %s', action => withImageCommentViewer(async ({ doc, editor, host, comments, viewer, toggle }) => {
+    const writes = vi.spyOn(comments, 'createThread')
+    toggle.click(); await vi.dynamicImportSettled()
+    const input = viewer.querySelector('[aria-label="新评论"]')
+    pasteImageComment(input, 'private image draft')
+    const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    if (action === 'actor') host.session.user = { id: 'new-owner' }
+    if (action === 'provider') host.session.setProvider('comments', createMemoryCommentsProvider())
+    if (action === 'permission') { host.session.setProvider('authorization', { getCapabilities: async () => ({ canView: false }) }); await host.session.refreshCapabilities() }
+    if (action === 'replace') { const next = doc.getJSON(); next.content[0].content[0].text = 'new document'; doc.setContent(next) }
+    if (action === 'image-source') editor.commands.updateAttributes('image', { src: '/changed.png' })
+    if (action === 'destroy') doc.destroy()
+    await host.$nextTick()
+    expect(host._imageCommentScope).toBeNull()
+    expect(input.isConnected).toBe(false)
+    send.click(); pasteImageComment(input, 'late private draft')
+    expect(writes).not.toHaveBeenCalled()
+    if (action !== 'destroy') expect(host.commentCreateDraft).not.toContain('late private draft')
+  }))
+
+  it.each(['actor', 'provider', 'permission', 'session'])('an unopened viewer comment callback cannot cross a later %s', action => withImageCommentViewer(async ({ doc, host, comments, viewer, toggle }) => {
+    const write = vi.spyOn(comments, 'createThread')
+    let replacement
+    try {
+      if (action === 'actor') host.session.user = { id: 'later-owner' }
+      if (action === 'provider') host.session.setProvider('comments', createMemoryCommentsProvider())
+      if (action === 'permission') { host.session.setProvider('authorization', { getCapabilities: async () => ({ canView: false }) }); await host.session.refreshCapabilities() }
+      if (action === 'session') {
+        replacement = createDocumentSession({ documentId: 'later-image-session', user: { id: 'later-owner' }, comments: createMemoryCommentsProvider() })
+        doc.patchProps({ session: replacement }); await host.$nextTick()
+      }
+      expect(viewer.isConnected).toBe(false)
+      toggle.click(); await vi.dynamicImportSettled()
+      expect(toggle.getAttribute('aria-pressed')).toBe('false')
+      expect(viewer.querySelector('.lark-doc-comment-layer')).toBeNull()
+      expect(write).not.toHaveBeenCalled()
+    } finally { await replacement?.dispose() }
+  }))
+
+  it('retiring an unopened viewer removes its listeners and scroll lock without stealing focus', async () => {
+    const stops = []
+    let overflow, off, subscribe, resizeOn, resizeOff
+    await withImageCommentViewer(async ({ host, viewer }) => {
+      expect(document.body.style.overflow).toBe('hidden')
+      const handler = subscribe.mock.calls.find(([name]) => name === 'transaction')[1]
+      const foreign = document.createElement('input'); document.body.appendChild(foreign); foreign.focus()
+      host.session.user = { id: 'next-viewer-owner' }
+      expect(viewer.isConnected).toBe(false)
+      expect(document.activeElement).toBe(foreign)
+      expect(document.body.style.overflow).toBe(overflow)
+      expect(stops).toHaveLength(3)
+      stops.forEach(stop => expect(stop).toHaveBeenCalledOnce())
+      expect(off).toHaveBeenCalledWith('transaction', handler)
+      expect(resizeOff).toHaveBeenCalledWith('resize', resizeOn.mock.calls.find(([name]) => name === 'resize')[1])
+      expect(host._imageViewerRetire.size).toBe(0)
+      foreign.remove()
+    }, { beforePreview: ({ host, editor }) => {
+      overflow = document.body.style.overflow
+      subscribe = vi.spyOn(editor, 'on'); off = vi.spyOn(editor, 'off')
+      resizeOn = vi.spyOn(window, 'addEventListener'); resizeOff = vi.spyOn(window, 'removeEventListener')
+      const actual = host.session.on.bind(host.session)
+      vi.spyOn(host.session, 'on').mockImplementation((...args) => { const stop = vi.fn(actual(...args)); stops.push(stop); return stop })
+    } })
+  })
+
+  it('a late image comment acknowledgement cannot clear a different image draft', () => withImageCommentViewer(async ({ doc, host, comments, viewer, toggle }) => {
+    const before = doc.getJSON(), create = comments.createThread.bind(comments)
+    let complete
+    comments.createThread = vi.fn(input => new Promise(resolve => { complete = async () => resolve(await create(input)) }))
+    toggle.click(); await vi.dynamicImportSettled()
+    viewer.querySelector('[data-viewer-action="next"]').click()
+    toggle.click(); await vi.dynamicImportSettled()
+    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'new B draft')
+    viewer.querySelector('[data-viewer-action="previous"]').click()
+    toggle.click(); await vi.dynamicImportSettled()
+    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'sent on A')
+    const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+    await vi.waitFor(() => expect(send.disabled).toBe(false)); send.click()
+    expect(comments.createThread).toHaveBeenCalledOnce()
+    viewer.querySelector('[data-viewer-action="next"]').click()
+    toggle.click(); await vi.dynamicImportSettled()
+    expect(viewer.querySelector('[aria-label="新评论"]').textContent).toBe('new B draft')
+    expect(viewer.querySelector('[aria-label="新评论"]').getAttribute('aria-readonly')).toBe('true')
+    await complete(); await vi.waitFor(async () => expect((await comments.list())[0]?.blockId).toBe('image_a'))
+    await host.$nextTick()
+    expect(host.commentComposerContext.blockId).toBe('image_b')
+    expect(host.commentCreateDraft).toBe('new B draft')
+    expect(viewer.querySelector('[aria-label="新评论"]').textContent).toBe('new B draft')
+    expect(viewer.querySelector('[data-comment-thread]')).toBeNull()
+    expect(doc.getJSON()).toEqual(before)
+  }))
+
+  it.each([[1024, 'Escape'], [393, 'Escape'], [393, 'header']])('viewer comment Escape respects IME, closes only the comment layer first and preserves foreign focus at %spx via %s', async (width, action) => {
+    const beforeWidth = window.innerWidth, beforeMedia = window.matchMedia
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    window.matchMedia = query => Object.assign(new EventTarget(), { matches: width <= 760 && /max-width|pointer: coarse|hover: none/.test(query), media: query })
+    try {
+      await withImageCommentViewer(async ({ viewer, toggle }) => {
+        toggle.click(); await vi.dynamicImportSettled()
+        const input = viewer.querySelector('[aria-label="新评论"]')
+        input.focus()
+        expect(document.activeElement).toBe(input)
+        for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, ...flags }))
+          expect(toggle.getAttribute('aria-pressed')).toBe('true')
+        }
+        if (action === 'Escape') input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }))
+        else viewer.querySelector('[aria-label="关闭图片评论"]').click()
+        expect(toggle.getAttribute('aria-pressed')).toBe('false')
+        expect(viewer.querySelector('.lark-doc-comment-layer')).toBeNull()
+        expect(viewer.isConnected).toBe(true)
+        const foreign = document.createElement('input'); document.body.appendChild(foreign); foreign.focus()
+        viewer.querySelector('[data-viewer-action="close"]').click()
+        expect(document.activeElement).toBe(foreign); foreign.remove()
+      })
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: beforeWidth }); window.matchMedia = beforeMedia
+    }
+  })
+
+  it('mobile viewer comment child menus consume Escape before the image portal and root', () => withImageCommentViewer(async ({ comments, viewer, toggle }) => {
+    toggle.click(); await vi.dynamicImportSettled()
+    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'image thread')
+    const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    send.click()
+    await vi.waitFor(async () => expect((await comments.list())[0]?.replies[0].content).toBe('image thread'))
+    const more = () => viewer.querySelector('[data-comment-reply-control="more"]')
+    await vi.waitFor(() => expect(more()).not.toBeNull())
+    more().click()
+    await vi.waitFor(() => expect(viewer.querySelector('.lark-doc-comment-reply-menu [role="menuitem"]')).not.toBeNull())
+    const menuItem = viewer.querySelector('.lark-doc-comment-reply-menu [role="menuitem"]')
+    expect(menuItem).not.toBeNull()
+    menuItem.focus()
+    menuItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(viewer.querySelector('.lark-doc-comment-reply-menu')).toBeNull())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(viewer.querySelector('.lark-doc-comment-layer')).not.toBeNull()
+    expect(viewer.isConnected).toBe(true)
+    expect(document.activeElement).toBe(more())
+    const reply = viewer.querySelector('[aria-label="回复"]')
+    reply.focus()
+    expect(document.activeElement).toBe(reply)
+    reply.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }))
+    expect(viewer.querySelector('.lark-doc-comment-layer')).toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(viewer.isConnected).toBe(true)
+    toggle.click(); await vi.dynamicImportSettled()
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    viewer.focus()
+    viewer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }))
+    expect(viewer.isConnected).toBe(false)
+  }, { viewportWidth: 393 }))
+
+  it('readonly viewer comments remain readable while refusing input and old Send controls', () => withImageCommentViewer(async ({ doc, comments, viewer, toggle }) => {
+    const before = doc.getJSON(), write = vi.spyOn(comments, 'createThread')
+    toggle.click(); await vi.dynamicImportSettled()
+    const input = viewer.querySelector('[aria-label="新评论"]'), send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+    expect(input.getAttribute('aria-readonly')).toBe('true')
+    expect(send.disabled).toBe(true)
+    pasteImageComment(input, 'cannot submit readonly'); send.click()
+    expect(input.textContent).toBe('')
+    expect(write).not.toHaveBeenCalled()
+    expect(doc.getJSON()).toEqual(before)
+  }, { readonly: true }))
+
+  it('a viewer with no comments provider shows an unavailable state without opening another composer', () => withImageCommentViewer(async ({ doc, host, viewer, toggle }) => {
+    const before = doc.getJSON()
+    toggle.click(); await vi.dynamicImportSettled()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(viewer.querySelector('.lark-doc-comment-layer')).toBeNull()
+    expect(viewer.querySelector('[role="status"]').textContent).toContain('评论服务')
+    expect(host.commentComposerOpen).toBe(false)
+    expect(doc.getJSON()).toEqual(before)
+  }, { comments: null }))
+
+  it('remote image comments remain unavailable without inventing a nonempty text anchor', () => withImageCommentViewer(async ({ doc, host, comments, viewer, toggle }) => {
+    const before = doc.getJSON(), write = vi.spyOn(comments, 'createThread')
+    toggle.click(); await vi.dynamicImportSettled()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(viewer.querySelector('.lark-doc-comment-layer')).toBeNull()
+    expect(host.commentMessage).toContain('远程评论服务')
+    expect(write).not.toHaveBeenCalled()
+    expect(doc.getJSON()).toEqual(before)
+  }, { comments: { ...createMemoryCommentsProvider(), isRemote: true } }))
+
+  it('routes mobile document quote into the visible rich footer and restores more focus after reaction Escape', async () => {
+    stubRangeLayout()
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    const element = document.createElement('div'); document.body.appendChild(element)
+    const comments = { ...createMemoryCommentsProvider({ threads: [{ id: 't-doc', scope: 'document', visibility: 'document', capabilities: { canReply: true }, author: { id: 'alice' },
+      replies: [{ id: 'r-doc', author: { id: 'alice', name: 'Alice' }, content: 'original comment', capabilities: { canReact: true, canEdit: true } }] }] }), isRemote: true }
+    const session = createDocumentSession({ documentId: 'quote-focus', user: { id: 'alice' }, capabilities: { canView: true, canComment: true }, providers: { comments } })
+    const doc = new LarkDoc({ element, storage: 'none', session, content: '<p>正文</p>' })
+    try {
+      const host = doc._handle.nativeHost.host
+      await host.loadComments(); host.setCommentDocumentDraft('@Bob', [{ from: 0, to: 4, principalId: 'bob' }]); host.refreshPanels()
+      const more = () => element.querySelector('[data-comment-thread="t-doc"] [aria-label="更多菜单"]')
+      const item = text => [...element.querySelectorAll('[role="menuitem"]')].find(node => node.textContent === text)
+      more().click()
+      await vi.waitFor(() => expect(item('引用回复')).toBeTruthy())
+      item('引用回复').click()
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-document-composer-input')?.textContent).toContain('> Alice：original comment'))
+      expect(host.commentDraftOf('t-doc')).toBe('')
+      expect(host.commentDocumentDraft.slice(host.commentDocumentMentions[0].from, host.commentDocumentMentions[0].to)).toBe('@Bob')
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-document-composer-input').contains(document.activeElement)).toBe(true))
+      more().click()
+      await vi.waitFor(() => expect(item('添加表情回复')).toBeTruthy())
+      item('添加表情回复').click()
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-comment-reaction-picker input')).toBeTruthy())
+      element.querySelector('.lark-doc-comment-reaction-picker input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await vi.waitFor(() => expect(document.activeElement).toBe(more()))
+      expect(element.querySelector('.lark-doc-comment-reaction-picker')).toBeNull()
+      more().click()
+      await vi.waitFor(() => expect(item('引用回复')).toBeTruthy())
+      item('引用回复').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await vi.waitFor(() => expect(document.activeElement).toBe(more()))
+      expect(element.querySelector('.lark-doc-comment-reply-menu')).toBeNull()
+    } finally { doc.destroy(); await session.dispose(); element.remove(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }) }
+  })
+
+  it('preserves the current session comment list and rich footer draft during a same-session repaint', async () => {
+    stubRangeLayout()
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    const element = document.createElement('div'); document.body.appendChild(element)
+    const comments = { ...createMemoryCommentsProvider({ threads: [{ id: 'repaint-doc', scope: 'document', capabilities: { canReply: true }, author: { id: 'alice' }, replies: [{ id: 'r', author: { id: 'alice' }, content: 'stored comment' }] }] }), isRemote: true }
+    const session = createDocumentSession({ documentId: 'repaint', user: { id: 'alice' }, capabilities: { canView: true, canComment: true }, providers: { comments } })
+    const doc = new LarkDoc({ element, storage: 'none', session, content: '<p>正文</p>' })
+    try {
+      const host = doc._handle.nativeHost.host
+      await host.loadComments(); host.setCommentDocumentDraft('unsent footer'); host.setCommentDraft('repaint-doc', 'unsent reply'); host.refreshPanels()
+      expect(element.textContent).toContain('stored comment')
+      expect(host.commentDraftOf('repaint-doc')).toBe('unsent reply')
+      host.$forceUpdate()
+      await Promise.resolve(); host.refreshPanels()
+      expect(host.commentThreads.map(thread => thread.id)).toContain('repaint-doc')
+      expect(host.commentDocumentDraft).toBe('unsent footer')
+      expect(host.commentDraftOf('repaint-doc')).toBe('unsent reply')
+      expect(element.textContent).toContain('stored comment')
+      session.setProvider('comments', { ...createMemoryCommentsProvider({ threads: [{ id: 'next-provider', scope: 'document', author: { id: 'alice' }, replies: [{ id: 'r-next', author: { id: 'alice' }, content: 'next provider comment' }] }] }), isRemote: true })
+      await vi.waitFor(() => expect(host.commentThreads.map(thread => thread.id)).toEqual(['next-provider']))
+      expect(host.commentDocumentDraft).toBe('')
+      expect(host.commentDraftOf('repaint-doc')).toBe('')
+      expect(element.textContent).not.toContain('stored comment')
+    } finally { doc.destroy(); await session.dispose(); element.remove(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }) }
+  })
+
+  it('mounts the mobile remote document composer in the paper and replaces its private identity', async () => {
+    stubRangeLayout()
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    const element = document.createElement('div'); document.body.appendChild(element)
+    const provider = () => ({ ...createMemoryCommentsProvider(), isRemote: true })
+    const sessionA = createDocumentSession({ documentId: 'a', user: { id: 'alice' }, capabilities: { canView: true, canComment: true }, providers: { comments: provider() } })
+    const sessionB = createDocumentSession({ documentId: 'b', user: { id: 'bob' }, capabilities: { canView: true, canComment: true }, providers: { comments: provider() } })
+    const doc = new LarkDoc({ element, storage: 'none', session: sessionA, content: '<p>正文</p>' })
+    try {
+      const host = doc._handle.nativeHost.host
+      await host.loadComments(); host.refreshPanels()
+      expect(element.querySelector('.lark-doc-paper .is-inline-document')).not.toBeNull()
+      expect(element.querySelector('.is-inline-document [role="textbox"]')).not.toBeNull()
+      host.commentDocumentDraft = 'Alice private footer'; host.refreshPanels()
+      expect(element.textContent).toContain('Alice private footer')
+      doc.patchProps({ session: sessionB })
+      await vi.waitFor(() => expect(host.session).toBe(sessionB))
+      expect(element.textContent).not.toContain('Alice private footer')
+      expect(host.commentDocumentDraft).toBe('')
+      host.commentMobileScope = 'document'; host.commentHistorical = true; host.commentSidebarOpen = true; host.refreshPanels()
+      expect(element.querySelector('[aria-label="选区评论"][role="dialog"]')).not.toBeNull()
+      expect(host.buildCommentState().documentComposer.open).toBe(false)
+      vi.spyOn(sessionB, 'can').mockReturnValue(false); host.refreshPanels()
+      expect(element.querySelector('.is-inline-document')).toBeNull()
+    } finally { doc.destroy(); await sessionA.dispose(); await sessionB.dispose(); element.remove(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }) }
   })
 
   it('clears and reloads comments, private drafts and edits on session and provider replacement', async () => {
@@ -510,11 +3139,11 @@ describe('public reference content and asynchronous comments', () => {
       const host = doc._handle.nativeHost.host
       await host.loadComments()
       host.commentDrafts = { same: 'A 私有草稿' }
-      host.beginCommentEdit('same', 'r1')
+      host.beginEditComment('same', 'r1')
       doc.patchProps({ session: sessionB })
       await vi.waitFor(() => expect(host.commentThreads[0]?.replies[0]?.content).toBe('B 内容'))
       expect(host.commentDrafts).toEqual({})
-      expect(host.commentEditing).toBeNull()
+      expect(host.commentEditingReply).toBeNull()
       host.commentDrafts = { same: 'B 草稿' }
       sessionB.setProvider('comments', provider('C 新来源'))
       await vi.waitFor(() => expect(host.commentThreads[0]?.replies[0]?.content).toBe('C 新来源'))
@@ -531,20 +3160,26 @@ describe('public reference content and asynchronous comments', () => {
     try {
       const host = doc._handle.nativeHost.host
       await host.loadComments()
-      host.beginCommentEdit('thread', 'r1')
+      host.beginEditComment('thread', 'r1')
       await vi.waitFor(() => expect(element.querySelector('.lark-doc-comment-edit-input')).not.toBeNull())
       const input = element.querySelector('.lark-doc-comment-edit-input')
-      input.value = 'unsaved draft'
-      input.dispatchEvent(new Event('input', { bubbles: true }))
       input.focus()
-      input.setSelectionRange(2, 2)
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true }))
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'unsaved draft' } })
+      input.dispatchEvent(paste)
+      expect(host.commentEditContent).toBe('unsaved draft')
+      const selected = document.getSelection(), text = input.querySelector('p').firstChild
+      selected.setBaseAndExtent(text, 2, text, 2)
+      document.dispatchEvent(new Event('selectionchange'))
       await comments.reply({ threadId: 'thread', author: { id: 'other' }, content: 'remote reply' })
       await host.loadComments()
       expect(element.querySelector('.lark-doc-comment-edit-input')).toBe(input)
-      expect(input.value).toBe('unsaved draft')
-      expect(input.selectionStart).toBe(2)
-      expect(await host.confirmCommentEdit('thread', 'r1', input.value)).toBe(true)
-      expect(host.commentEditing).toBeNull()
+      expect(input.textContent).toBe('unsaved draft')
+      expect(selected.focusNode).toBe(text)
+      expect(selected.focusOffset).toBe(2)
+      expect(await host.saveEditedComment()).toMatchObject({ id: 'r1', content: 'unsaved draft' })
+      expect(host.commentEditingReply).toBeNull()
       expect((await comments.list())[0].replies[0].content).toBe('unsaved draft')
     } finally { doc.destroy(); element.remove() }
   })
@@ -558,13 +3193,15 @@ describe('public reference content and asynchronous comments', () => {
     try {
       const host = doc._handle.nativeHost.host
       await host.loadComments()
-      host.beginCommentComposer(0)
-      host.setCommentComposerDraft('已保存的评论')
+      doc.getEditor().commands.setNodeSelection(0)
+      expect(host.openSelectionComment()).toBe(true)
+      host.setCommentCreateDraft('已保存的评论')
       comments.list = vi.fn(async () => { throw new Error('refresh failed') })
-      expect((await host.submitCommentComposer()).id).toBeTruthy()
-      expect(host.commentComposer).toBeNull()
-      expect(host.error).toContain('已保存')
-      expect(await host.submitCommentComposer()).toBeNull()
+      expect((await host.createCommentFromSelection(host.commentCreateDraft)).id).toBeTruthy()
+      expect(host.commentComposerOpen).toBe(false)
+      expect(host.commentComposerContext).toBeNull()
+      expect(host.commentMessage).toContain('已提交')
+      expect(await host.createCommentFromSelection(host.commentCreateDraft)).toBeNull()
       expect(await listStored()).toHaveLength(1)
     } finally { doc.destroy(); element.remove() }
   })
@@ -763,6 +3400,8 @@ describe('public reference content and asynchronous comments', () => {
       return parts.join('')
     }
     try {
+      await host.$nextTick()
+      await host.loadComments()
       editor.commands.setTextSelection({ from: 7, to: 13 })
       const pending = host.createCommentFromSelection('Review target')
       action({ doc, host, editor })
@@ -1015,6 +3654,7 @@ describe('真实门面图片上传', () => {
   })
 
   it.each([false, true])('撤销上传占位（替换选区=%s）不会撤销先前正文，或让晚结果插回来', async selected => {
+    stubRangeLayout()
     let complete
     const element = document.createElement('div')
     document.body.appendChild(element)
@@ -1475,11 +4115,186 @@ describe('图表菜单交互', () => {
     stubRangeLayout()
     vi.stubGlobal('mermaid', { initialize: vi.fn(), render: vi.fn(async () => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' })) })
     const renderer = createDomRenderer()
-    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p></p>', ...props } })
-    return { root: renderer.getRoot(handle), host: handle.nativeHost.host, editor: handle.editor }
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p></p>', ...props, config: { ...props.config, layout: { toolbarVisible: true, ...props.config?.layout } } } })
+    return { renderer, handle, root: renderer.getRoot(handle), host: handle.nativeHost.host, editor: handle.editor }
   }
 
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it.each(['more', 'color', 'diagram', 'insert'])('跨浮层悬浮到%s时旧标题菜单仍按离开动作关闭', async target => {
+    const { host, root } = fixture()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    host.openHeadingMenuOnHover(); host.scheduleHeadingMenuClose()
+    if (target === 'more') host.openMoreMenuOnHover()
+    if (target === 'color') host.openColorPaletteOnHover()
+    if (target === 'diagram') host.openDiagramMenuOnHover()
+    if (target === 'insert') root.querySelector('button[aria-label="插入"]').dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.headingOpen).toBe(false)
+    if (target !== 'insert') expect(({ more: host.moreMenuOpen, color: host.colorPaletteOpen, diagram: host.diagramMenuOpen })[target]).toBeTruthy()
+  })
+
+  it('查找面板键盘支持反向查找、切换替换和取消续写', async () => {
+    const { root, host, editor } = fixture()
+    host.openSearch('find'); await vi.dynamicImportSettled()
+    const input = root.querySelector('#lark-doc-fr-find')
+    const next = vi.spyOn(host, 'nextMatch').mockImplementation(() => {})
+    for (const key of ['Enter', 'Escape', 'h']) {
+      const event = new KeyboardEvent('keydown', { key, ctrlKey: true, shiftKey: true, isComposing: true, bubbles: true, cancelable: true })
+      input.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(host.searchOpen).toBe(true)
+      expect(host.searchTab).toBe('find')
+    }
+    expect(next).not.toHaveBeenCalled()
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(next).toHaveBeenCalledWith(-1)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+    expect(host.searchTab).toBe('replace')
+    await Promise.resolve()
+    root.querySelector('#lark-doc-fr-replace').focus()
+    root.querySelector('#lark-doc-fr-replace').dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))
+    await Promise.resolve()
+    expect(document.activeElement).toBe(input)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.searchOpen).toBe(false)
+    expect(document.activeElement).toBe(editor.view.dom)
+  })
+
+  it('全部替换禁用按钮后仍可Esc关闭并独立撤销', async () => {
+    const { root, host, editor } = fixture({ initialContent: '<p>目标 目标</p>' })
+    document.body.appendChild(root)
+    host.openSearch('replace'); await vi.dynamicImportSettled()
+    host.setSearchQuery('目标'); host.setReplacement('替换'); host.updateSearch()
+    const replace = root.querySelector('.lark-doc-fr-btn.is-primary')
+    await vi.waitFor(() => expect(replace.disabled).toBe(false))
+    replace.focus(); replace.click()
+    expect(editor.state.doc.textContent).toBe('替换 替换')
+    await vi.waitFor(() => expect(replace.disabled).toBe(true))
+    expect(document.activeElement).toBe(root.querySelector('#lark-doc-fr-find'))
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.searchOpen).toBe(false)
+    expect(document.activeElement).toBe(editor.view.dom)
+    editor.commands.undo()
+    expect(editor.state.doc.textContent).toBe('目标 目标')
+  })
+
+  it('正文持焦时Esc只关闭当前编号菜单并保留编号与正文', async () => {
+    const { root, host, editor } = fixture({ initialContent: '<ol><li><p>编号正文</p></li></ol>' })
+    document.body.appendChild(root); editor.view.focus()
+    const before = editor.state.doc
+    host.openListNumberMenu({ pos: 1, value: 1 }); await vi.dynamicImportSettled()
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.headingNumberMenu.open).toBe(false)
+    expect(editor.state.doc).toBe(before)
+    expect(document.activeElement).toBe(editor.view.dom)
+  })
+
+  it('保存提示在进入本工作区弹窗控件时退出，不拦截下一个操作或立即查看', async () => {
+    const { root, host } = fixture()
+    document.body.appendChild(root)
+    host.versionNotice = '版本已保存'; await vi.dynamicImportSettled()
+    const noticeLink = root.querySelector('.lark-doc-version-notice-link')
+    noticeLink.focus()
+    expect(host.versionNotice).toBe('版本已保存')
+    const outside = document.createElement('button'); outside.setAttribute('aria-haspopup', 'menu'); document.body.appendChild(outside)
+    try {
+      outside.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }))
+      expect(host.versionNotice).toBe('版本已保存')
+      const trigger = root.querySelector('[role="combobox"][aria-label="文档更多操作"]')
+      trigger.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }))
+      expect(host.versionNotice).toBe('')
+      host.versionNotice = '再次保存'; trigger.focus()
+      expect(host.versionNotice).toBe('')
+    } finally { outside.remove() }
+  })
+
+  it('内嵌菜单的普通链接通过书签命令规范化后保留真实卡片', () => {
+    const { host, editor } = fixture()
+    host.openEmbedDialog('figma'); host.setEmbedValue('http://127.0.0.1:58742/local-page'); host.applyEmbedDialog()
+    const bookmark = editor.getJSON().content.find(node => node.type === 'bookmark')
+    expect(bookmark?.attrs.url).toBe('http://127.0.0.1:58742/local-page')
+    expect(bookmark.attrs.recordId).toBeTruthy()
+    expect(host.embedDialog).toBeNull()
+  })
+
+  it('内嵌菜单不因命令拒绝危险协议而关闭或破坏正文', async () => {
+    const { root, host, editor } = fixture({ initialContent: '<p>保留正文</p>' })
+    document.body.appendChild(root)
+    const before = editor.state.doc
+    host.openEmbedDialog('figma'); await vi.dynamicImportSettled()
+    const input = root.querySelector('.lark-doc-embed-dialog-input'); input.focus()
+    host.setEmbedValue('javascript://example.com/x'); host.applyEmbedDialog()
+    expect(host.embedDialog).toBe('figma')
+    expect(host.embedDialogRejected).toBe(true)
+    expect(editor.state.doc).toBe(before)
+    await new Promise(requestAnimationFrame)
+    expect(document.activeElement).toBe(input)
+    input.value = 'http://127.0.0.1:58742/fixed'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(host.embedDialogRejected).toBe(false)
+    host.applyEmbedDialog()
+    expect(editor.getJSON().content.some(node => node.type === 'bookmark' && node.attrs.url.endsWith('/fixed'))).toBe(true)
+  })
+
+  it('内嵌菜单命中的平台链接仍通过现有命令插入网页块', () => {
+    const { host, editor } = fixture()
+    host.openEmbedDialog('figma'); host.setEmbedValue('https://www.figma.com/file/test/Test'); host.applyEmbedDialog()
+    const embed = editor.getJSON().content.find(node => node.type === 'webEmbed')
+    expect(embed?.attrs.providerId).toBe('figma')
+    expect(embed.attrs.src).toContain('https://www.figma.com/embed?')
+    expect(host.embedDialog).toBeNull()
+  })
+
+  it('链接取消同步归还正文焦点且不提交草稿', async () => {
+    const { root, host, editor } = fixture()
+    host.openLinkDialog(); await vi.dynamicImportSettled()
+    const before = editor.state.doc
+    const input = root.querySelector('[aria-label="链接文本"]')
+    input.value = '取消的草稿'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.linkDialog).toBe(false)
+    expect(editor.state.doc).toBe(before)
+    expect(document.activeElement).toBe(editor.view.dom)
+  })
+
+  it('插入搜索框取消同步归还正文焦点且保留选区', async () => {
+    const { root, host, editor } = fixture({ initialContent: '<p>原文</p>' })
+    editor.commands.setTextSelection(3)
+    const before = editor.state.doc
+    host.openCommandMenu('plus'); await vi.dynamicImportSettled()
+    const input = root.querySelector('.lark-doc-command-menu input')
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.menuOpen).toBe(false)
+    expect(editor.state.doc).toBe(before)
+    expect(editor.state.selection.from).toBe(3)
+    expect(document.activeElement).toBe(editor.view.dom)
+  })
+
+  it('链接确认与相邻打字分别撤销，确认同步返回正文', async () => {
+    const { host, editor } = fixture({ initialContent: '<p>原文</p>' })
+    editor.commands.setTextSelection(3); editor.commands.insertContent('前字')
+    host.openLinkDialog(); host.linkText = '链接'; host.linkValue = 'https://example.com/a'
+    host.applyLink()
+    expect(document.activeElement).toBe(editor.view.dom)
+    expect(editor.getText()).toBe('原文前字链接')
+    editor.commands.insertContent('后字'); editor.commands.undo()
+    expect(editor.getText()).toBe('原文前字链接')
+    editor.commands.undo()
+    expect(editor.getText()).toBe('原文前字')
+  })
+
+  it.each([true, false])('替换(all=%s)与前后打字分别撤销', async all => {
+    const { host, editor } = fixture({ initialContent: '<p>目标 目标</p>' })
+    editor.commands.setTextSelection(6); editor.commands.insertContent('前字')
+    const before = editor.getText()
+    host.searchQuery = '目标'; host.replacement = '替换'; host.updateSearch(); host.replace(all)
+    const replaced = editor.getText()
+    expect(replaced).toContain('替换')
+    editor.commands.insertContent('后字'); editor.commands.undo()
+    expect(editor.getText()).toBe(replaced)
+    editor.commands.undo()
+    expect(editor.getText()).toBe(before)
+  })
 
   it('工具栏图表显示文字和箭头，六种菜单项各有不同的 SVG 图标', async () => {
     const { root } = fixture()
@@ -1487,7 +4302,7 @@ describe('图表菜单交互', () => {
     expect(trigger.textContent).toContain('图表')
     expect(trigger.querySelector('.lark-doc-caret svg')).not.toBeNull()
     trigger.click()
-    await Promise.resolve()
+    await vi.dynamicImportSettled()
     const items = [...root.querySelectorAll('.lark-doc-diagram-menu [role="menuitem"]')]
     expect(items.map(item => item.textContent)).toEqual(diagramTypes.map(item => item.label))
     const icons = items.map(item => item.querySelector('.lark-doc-diagram-menu-icon svg'))
@@ -1495,12 +4310,89 @@ describe('图表菜单交互', () => {
     expect(new Set(icons.map(icon => icon.outerHTML)).size).toBe(diagramTypes.length)
   })
 
+  it.each(['disabled', 'allow', 'readonly'])('图表打开后%s配置变化使旧按钮失效并清除浮层', async mode => {
+    const { renderer, handle, root, host, editor } = fixture()
+    root.querySelector('button[aria-label="图表"]').click(); await vi.dynamicImportSettled()
+    const stale = root.querySelector('.lark-doc-diagram-menu button'), before = editor.state.doc
+    renderer.update(handle, mode === 'readonly' ? { readonly: true } : { config: { commands: mode === 'disabled' ? { disabled: ['diagram'] } : { allow: ['blockquote'] } } })
+    await Promise.resolve()
+    stale.click(); host.insertDiagramType('flowchart'); host.toggleDiagramMenu(); host.openDiagramMenuOnHover()
+    await vi.dynamicImportSettled()
+    expect(editor.state.doc).toBe(before)
+    expect(root.querySelector('.lark-doc-diagram-menu')).toBeNull()
+  })
+
+  it.each(['scroll', 'keydown'])('工具栏提示冷加载期间%s取消，空隙无异常，移出与销毁不残留', async dismiss => {
+    const { renderer, handle, root, host } = fixture()
+      const toolbar = root.querySelector('.lark-doc-toolbar'), button = toolbar.querySelector('button[aria-label="加粗"]')
+    const errors = [], capture = event => errors.push(event.error)
+    window.addEventListener('error', capture)
+    try {
+      toolbar.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+      button.getBoundingClientRect = () => ({ left: 100, top: 1, right: 140, bottom: 31, width: 40, height: 30 })
+      button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      if (dismiss === 'scroll') window.dispatchEvent(new Event('scroll'))
+      else button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await vi.dynamicImportSettled(); await new Promise(resolve => setTimeout(resolve, 180))
+      expect(root.querySelector('[role="tooltip"]')).toBeNull()
+      button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await vi.dynamicImportSettled()
+      await vi.waitFor(() => expect(root.querySelector('[role="tooltip"]')?.textContent).toBe('加粗'))
+      window.dispatchEvent(new Event('scroll'))
+      host.refreshToolbar()
+      await new Promise(resolve => setTimeout(resolve, 180))
+      expect(root.querySelector('[role="tooltip"]')).toBeNull()
+      button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+      expect(root.querySelector('[role="tooltip"]')).toBeNull()
+      button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      renderer.destroy(handle)
+      await vi.dynamicImportSettled()
+      expect(root.querySelector('[role="tooltip"]')).toBeNull()
+      expect(errors).toEqual([])
+    } finally { window.removeEventListener('error', capture) }
+  })
+
+  it('图表项已有文字标签，不重复显示提示', async () => {
+    const { root, host } = fixture()
+    root.querySelector('button[aria-label="图表"]').click(); await vi.dynamicImportSettled()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const item = root.querySelector('.lark-doc-diagram-menu button')
+    item.getBoundingClientRect = () => ({ left: 100, top: 120, right: 180, bottom: 150, width: 80, height: 30 })
+    item.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    item.dispatchEvent(new MouseEvent('mouseenter'))
+    await vi.advanceTimersByTimeAsync(150)
+    expect(root.querySelectorAll('[role="tooltip"]')).toHaveLength(0)
+    expect(item.getAttribute('aria-describedby')).toBeNull()
+    host.closeDiagramMenu(); await Promise.resolve()
+    expect(root.querySelector('[role="tooltip"]')).toBeNull()
+  })
+  it.each(['图表', '查找', '页面宽度', '插入表格'])('顶部%s已有文字或弹窗，不再显示原生和自绘tips', async label => {
+    const { root } = fixture()
+    const button = root.querySelector(`button[aria-label="${label}"]`)
+    expect(button).not.toBeNull()
+    button.getBoundingClientRect = () => ({ left: 100, top: 20, right: 140, bottom: 50, width: 40, height: 30 })
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await vi.dynamicImportSettled(); await new Promise(resolve => setTimeout(resolve, 180))
+    expect(button.getAttribute('title')).toBeNull()
+    expect(root.querySelector('[role="tooltip"]')).toBeNull()
+  })
+
+  it('图表冷加载完成前关闭不残留，重新打开正常展示', async () => {
+    const { root, host } = fixture()
+    const trigger = root.querySelector('button[aria-label="图表"]')
+    trigger.click(); host.closeDiagramMenu()
+    await vi.dynamicImportSettled()
+    expect(root.querySelector('.lark-doc-diagram-menu')).toBeNull()
+    trigger.click(); await vi.dynamicImportSettled()
+    expect(root.querySelectorAll('.lark-doc-diagram-menu [role="menuitem"]')).toHaveLength(diagramTypes.length)
+  })
+
   it('图表 hover 后点击保持打开，跨入菜单保活，离开后延迟关闭', async () => {
     const { root, host } = fixture()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const trigger = root.querySelector('button[aria-label="图表"]')
     trigger.dispatchEvent(new MouseEvent('mouseenter'))
-    await Promise.resolve()
+    await vi.dynamicImportSettled()
     expect(host.diagramMenuOpen).toBe(true)
     trigger.click()
     expect(host.diagramMenuOpen).toBe(true)
@@ -1521,8 +4413,9 @@ describe('图表菜单交互', () => {
       if (kind === 'toolbar') root.querySelector('button[aria-label="图表"]').click()
       else if (kind === 'plus') root.querySelector('button[aria-label="插入"]').click()
       else editor.commands.insertContent('/图表')
-      await Promise.resolve()
+      await vi.dynamicImportSettled()
       if (kind !== 'toolbar') {
+        await vi.dynamicImportSettled()
         const item = root.querySelector('.lark-doc-command-menu [aria-label="图表"]')
         expect(item).not.toBeNull()
         item.click()
@@ -1546,7 +4439,7 @@ describe('图表菜单交互', () => {
     editor.commands.insertContent('/图表')
     await Promise.resolve()
     editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    await Promise.resolve()
+    await vi.dynamicImportSettled()
     const menu = root.querySelector('.lark-doc-command-submenu.is-diagram')
     expect(menu).not.toBeNull()
     expect(menu.querySelectorAll('[role="menuitem"]')).toHaveLength(diagramTypes.length)
@@ -1574,7 +4467,7 @@ describe('图表菜单交互', () => {
     editor.commands.insertContent('/' + label)
     await Promise.resolve()
     editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    await Promise.resolve()
+    await vi.dynamicImportSettled()
     expect(root.querySelector('.lark-doc-command-submenu.is-' + kind)).not.toBeNull()
     expect(editor.getText()).toBe('/' + label)
   })
@@ -1585,7 +4478,7 @@ describe('图表菜单交互', () => {
     vi.stubGlobal('innerHeight', 600)
     const trigger = root.querySelector('button[aria-label="图表"]')
     trigger.click()
-    await Promise.resolve()
+    await vi.dynamicImportSettled()
     const menu = root.querySelector('.lark-doc-diagram-menu')
     vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ left: 320, right: 352, top: 560, bottom: 592, width: 32, height: 32 })
     vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue({ left: 0, right: 180, top: 0, bottom: 246, width: 180, height: 246 })
@@ -1600,11 +4493,12 @@ describe('图表菜单交互', () => {
     const { root, host } = fixture()
     host.handleRange = { from: 0, to: 2 }
     await Promise.resolve()
+    await vi.dynamicImportSettled()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const trigger = root.querySelector(kind === 'toolbar' ? 'button[aria-label="插入"]' : '.lark-doc-empty-block-insert')
     if (kind === 'toolbar') trigger.click()
     else trigger.dispatchEvent(new MouseEvent('mouseenter'))
-    await Promise.resolve()
+    await vi.dynamicImportSettled()
     const menu = root.querySelector('.lark-doc-command-menu')
     trigger.dispatchEvent(new MouseEvent('mouseleave'))
     trigger.dispatchEvent(new MouseEvent('mouseenter'))
@@ -1844,7 +4738,7 @@ describe('迁移期 DOM renderer 契约', () => {
       element: host,
       props: {
         initialContent: '<p>正文</p>',
-        config: { toolbar: { marksAllow: ['bold', 'strike'] }, features: { ai: false, outline: false } },
+        config: { layout: { toolbarVisible: true }, toolbar: { marksAllow: ['bold', 'strike'] }, features: { ai: false, outline: false } },
       },
     })
     await Promise.resolve()
@@ -1862,7 +4756,7 @@ describe('迁移期 DOM renderer 契约', () => {
   it('正文标题切换走 setParagraph，清除格式同时清节点', async () => {
     const host = document.createElement('div')
     const renderer = createDomRenderer()
-    const handle = mountRenderer(renderer, { element: host, props: { initialContent: '<p>正文</p>' } })
+    const handle = mountRenderer(renderer, { element: host, props: { initialContent: '<p>正文</p>', config: { layout: { toolbarVisible: true } } } })
     await Promise.resolve()
     const root = renderer.getRoot(handle)
     const editor = handle.editor
@@ -1916,6 +4810,134 @@ describe('迁移期 DOM renderer 契约', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(renderer.getRoot(handle).classList.contains('lark-doc-large-document')).toBe(false)
     renderer.destroy(handle)
+  })
+
+  it.each(['folded', 'unassigned', 'unassigned-legacy'])('未绘制的块%s移除旧句柄，不能留下撑高整页的绝对定位元素', kind => {
+    stubRangeLayout()
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p>句柄锚点</p>' } })
+    const host = handle.nativeHost.host
+    host.selectionBatcher().dispose()
+    const range = host.currentBlockRange(), node = handle.editor.view.nodeDOM(range.from)
+    host.handleRange = range
+    host.blockHandlePosition = { top: 125000, left: 0 }
+    if (kind === 'folded') node.style.display = 'none'
+    else if (kind === 'unassigned') Object.defineProperty(node, 'checkVisibility', { configurable: true, value: () => false })
+    else handle.editor.view.dom.attachShadow({ mode: 'open' })
+    const measure = vi.spyOn(node, 'getBoundingClientRect').mockImplementation(() => { throw new Error('hidden block layout') })
+    try {
+      host.positionBlockHandle(range)
+      expect(host.handleRange).toBeNull()
+      expect(measure).not.toHaveBeenCalled()
+    } finally { renderer.destroy(handle) }
+  })
+
+  it('静止块句柄重复定位不重绘工作台', async () => {
+    stubRangeLayout()
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p>固定位置</p>' } })
+    const host = handle.nativeHost.host
+    host.selectionBatcher().dispose()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    host.positionBlockHandle(host.currentBlockRange())
+    expect(host._blockHandleAnchor).toBe(handle.editor.view.nodeDOM(host.handleRange.from))
+    const visible = vi.fn(() => true)
+    Object.defineProperty(host._blockHandleAnchor, 'checkVisibility', { configurable: true, value: visible })
+    host.syncBlockHandleVisibility()
+    expect(visible).not.toHaveBeenCalled()
+    await Promise.resolve()
+    host.positionBlockHandle(host.handleRange)
+    await Promise.resolve()
+    const update = vi.spyOn(handle.workspaceUi, 'update')
+    const position = { ...host.blockHandlePosition }
+    for (let index = 0; index < 200; index += 1) host.positionBlockHandle({ ...host.handleRange })
+    await Promise.resolve()
+    expect(host.blockHandlePosition).toEqual(position)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('折叠的纯元数据事务清理旧句柄锚点，不依赖再次定位', () => {
+    stubRangeLayout()
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, { element: document.createElement('div') })
+    const host = handle.nativeHost.host, editor = handle.editor
+    host.selectionBatcher().dispose()
+    editor.commands.setContent({ type: 'doc', content: [
+      { type: 'heading', attrs: { level: 1, blockId: 'fold_anchor' }, content: [{ type: 'text', text: '标题' }] },
+      { type: 'paragraph', attrs: { indent: 1 }, content: [{ type: 'text', text: '折叠正文' }] },
+    ] })
+    const range = host.rangeAt(editor.state.doc.firstChild.nodeSize + 1)
+    const node = editor.view.nodeDOM(range.from)
+    host.handleRange = range
+    host._blockHandleAnchor = node
+    host.blockHandlePosition = { top: 125000, left: 0 }
+    try {
+      editor.commands.toggleLarkDocFold(0)
+      expect(node.style.display).toBe('none')
+      expect(host.handleRange).toBeNull()
+      expect(host._blockHandleAnchor).toBeNull()
+    } finally { renderer.destroy(handle) }
+  })
+
+  it('预挂载窗口中的句柄清理延至事务后，不能提前清除prepared选区', async () => {
+    stubRangeLayout()
+    let notifyWindow, preparing = false, completedDuringPrepare = false
+    const projection = {
+      setActive() {}, refresh() {}, destroy() {}, getRenderedBlocks: () => [],
+      prepareSelection() { preparing = true; notifyWindow([]); preparing = false },
+      completeSelection() { if (preparing) completedDuringPrepare = true },
+    }
+    vi.spyOn(segmentedDocument, 'createLargeDocumentProjection').mockImplementation(options => { notifyWindow = options.onRenderWindowChange; return projection })
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p>开始</p>' } })
+    const host = handle.nativeHost.host, editor = handle.editor
+    host.selectionBatcher().dispose()
+    host.updateHandleAndTable = () => {}
+    try {
+      editor.commands.setContent(`<p>${'x'.repeat(500001)}</p>`)
+      await new Promise(resolve => setTimeout(resolve, 50))
+      await vi.dynamicImportSettled()
+      expect(notifyWindow).toBeTypeOf('function')
+      let once = true, clearedDuringPrepare = false
+      const clear = vi.spyOn(host, 'syncBlockHandleVisibility').mockImplementation(() => {
+        if (preparing) clearedDuringPrepare = true
+        if (once) { once = false; editor.commands.setLarkDocHandleHover(null) }
+      })
+      editor.commands.setTextSelection(50000)
+      expect(completedDuringPrepare).toBe(false)
+      expect(clearedDuringPrepare).toBe(false)
+      await Promise.resolve()
+      expect(clear).toHaveBeenCalled()
+      expect(editor.state.selection.from).toBe(50000)
+    } finally { renderer.destroy(handle) }
+  })
+
+  it('段模型加载失败后同一正文不重复报错，换正文可重试且销毁后不补建', async () => {
+    stubRangeLayout()
+    vi.useFakeTimers()
+    const create = vi.fn().mockRejectedValue(new Error('chunk unavailable'))
+    vi.spyOn(segmentedDocument, 'createSegmentedDocumentReader').mockReturnValue({ create })
+    const error = vi.fn()
+    const renderer = createDomRenderer()
+    const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: '<p>正文</p>' }, on: { error } })
+    try {
+      handle.editor.commands.setContent(`<p data-block-id="large_failed">${'x'.repeat(500001)}</p>`)
+      await vi.advanceTimersByTimeAsync(500)
+      await vi.dynamicImportSettled()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(create).toHaveBeenCalledOnce()
+      expect(error).toHaveBeenCalledOnce()
+      handle.nativeHost.host.helpOpen = true
+      await vi.advanceTimersByTimeAsync(500)
+      expect(create).toHaveBeenCalledOnce()
+      handle.editor.commands.insertContentAt(2, '新')
+      await vi.advanceTimersByTimeAsync(500)
+      expect(create).toHaveBeenCalledTimes(2)
+      handle.editor.commands.insertContentAt(2, '未完成')
+      renderer.destroy(handle)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(create).toHaveBeenCalledTimes(2)
+    } finally { renderer.destroy(handle); vi.useRealTimers() }
   })
 
   it('partial config patch 保留未修改的布局与网络段，文档操作入口不丢失', async () => {
@@ -2007,7 +5029,7 @@ describe('真实门面媒体 HTML 回传', () => {
 it('两个真实编辑器之间点击插入按钮会关闭另一个编辑器的菜单', async () => {
   const elements = [document.createElement('div'), document.createElement('div')]
   elements.forEach(element => document.body.appendChild(element))
-  const docs = elements.map(element => new LarkDoc({ element, storage: 'none', content: '<p>正文</p>' }))
+  const docs = elements.map(element => new LarkDoc({ element, storage: 'none', content: '<p>正文</p>', config: { layout: { toolbarVisible: true } } }))
   try {
     const firstHost = docs[0]._handle.nativeHost.host
     firstHost.openCommandMenu('plus')
@@ -2200,5 +5222,179 @@ describe('最终补全：文本与表格AI真实编辑器闭环', () => {
     expect(workspace.state.aiRunning).toBe(false)
     expect(workspace.state.aiPreview).toBe('')
     expect(workspace.state.aiError).toContain('配置')
+  })
+})
+
+describe('T087 image upload operation ownership', () => {
+  async function withOwner(run, makeUploader) {
+    stubRangeLayout()
+    const element = document.createElement('div'); document.body.append(element)
+    const session = createDocumentSession({ documentId: 'image-owner-doc', user: { id: 'actor-A' } })
+    const uploader = makeUploader(session)
+    const doc = new LarkDoc({ element, session, storage: 'none', content: '<p>keep</p>', uploader })
+    try { return await run({ doc, session, element, host: doc._handle.nativeHost.host, uploader }) }
+    finally { doc.destroy(); await session.dispose(); element.remove() }
+  }
+  const file = () => new File(['abcdef'], 'image.png', { type: 'image/png' })
+  const images = doc => doc.getJSON().content.filter(node => node.type === 'image')
+
+  it.each(['resolve', 'reject'])('drops an old actor upload %s while the same Session remains editable and B can upload', async outcome => {
+    const requests = []
+    await withOwner(async ({ doc, host, session, element }) => {
+      const first = host.insertImageFiles([file()])
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      const before = doc.getJSON()
+      expect(session.can('canEdit')).toBe(true)
+      session.user = { id: 'actor-B' }; await host.$nextTick()
+      expect(session.can('canEdit')).toBe(true)
+      if (outcome === 'resolve') requests[0].resolve({ url: '/old-actor.png' })
+      else requests[0].reject(new Error('old actor private error'))
+      await first
+      expect(doc.getJSON()).toEqual(before)
+      expect(element.querySelector('.lark-doc-image-upload-error')).toBeNull()
+      expect(element.querySelector('.lark-doc-image-upload')).toBeNull()
+      const second = host.insertImageFiles([file()])
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      requests[1].resolve({ url: '/new-actor.png' }); await second
+      expect(images(doc)).toHaveLength(1); expect(images(doc)[0].attrs.src).toBe('/new-actor.png')
+    }, () => ({ retry: { attempts: 1 }, upload: (_, context) => new Promise((resolve, reject) => requests.push({ resolve, reject, context })) }))
+  })
+
+  it('retires the old placeholder immediately and cannot abort B when A settles later', async () => {
+    const requests = []
+    await withOwner(async ({ doc, host, session, element }) => {
+      const first = host.insertImageFiles([file()])
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      expect(element.querySelectorAll('.lark-doc-image-upload')).toHaveLength(1)
+      session.user = { id: 'actor-B' }; await host.$nextTick()
+      expect(element.querySelectorAll('.lark-doc-image-upload')).toHaveLength(0)
+      expect(requests[0].context.signal.aborted).toBe(true)
+      const second = host.insertImageFiles([file()])
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      requests[0].resolve({ url: '/late-A.png' }); await first
+      expect(requests[1].context.signal.aborted).toBe(false)
+      expect(element.querySelectorAll('.lark-doc-image-upload')).toHaveLength(1)
+      requests[1].resolve({ url: '/live-B.png' }); await second
+      expect(images(doc)).toHaveLength(1); expect(images(doc)[0].attrs.src).toBe('/live-B.png')
+    }, () => ({ upload: (_, context) => new Promise(resolve => requests.push({ resolve, context })) }))
+  })
+
+  it('does not start an old queue after beforeUpload synchronously changes the actor', async () => {
+    let owner
+    const upload = vi.fn(async () => ({ url: '/unexpected.png' }))
+    const beforeUpload = vi.fn(() => { owner.user = { id: 'actor-B' }; return true })
+    await withOwner(async ({ doc, host, session }) => {
+      owner = session
+      await host.insertImageFiles([file(), file()])
+      expect(upload).not.toHaveBeenCalled(); expect(beforeUpload).toHaveBeenCalledOnce()
+      expect(images(doc)).toHaveLength(0)
+    }, () => ({ upload, beforeUpload }))
+  })
+
+  it.each(['documentId', '_identityGeneration', '_privateIdentityGeneration', '_authorizationGeneration'])('rejects a late upload after the same editable Session changes %s', async field => {
+    let complete
+    await withOwner(async ({ doc, host, session, element }) => {
+      const pending = host.insertImageFiles([file()])
+      const before = doc.getJSON()
+      if (field === 'documentId') session.documentId = 'another-document'
+      else session[field]++
+      expect(session.can('canEdit')).toBe(true)
+      complete({ url: '/stale-scope.png' }); await pending
+      expect(doc.getJSON()).toEqual(before)
+      expect(element.querySelector('.lark-doc-image-upload')).toBeNull()
+      expect(element.querySelector('.lark-doc-image-upload-error')).toBeNull()
+    }, () => ({ upload: () => new Promise(resolve => { complete = resolve }) }))
+  })
+
+  it('does not revive a pending upload after real authorization refresh grants editing again', async () => {
+    const requests = []
+    await withOwner(async ({ doc, host, session, element }) => {
+      const pending = host.insertImageFiles([file()])
+      const before = doc.getJSON()
+      session.setProvider('authorization', { getCapabilities: async () => ({ canView: true, canEdit: true }) })
+      await session._capabilitiesPromise; await host.$nextTick()
+      expect(session.can('canEdit')).toBe(true)
+      expect(requests[0].signal.aborted).toBe(true)
+      requests[0].resolve({ url: '/old-authorization.png' }); await pending
+      expect(doc.getJSON()).toEqual(before)
+      expect(element.querySelector('.lark-doc-image-upload')).toBeNull()
+      const next = host.insertImageFiles([file()])
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      requests[1].resolve({ url: '/authorized-now.png' }); await next
+      expect(images(doc)[0].attrs.src).toBe('/authorized-now.png')
+    }, () => ({ upload: (_, { signal }) => new Promise(resolve => requests.push({ resolve, signal })) }))
+  })
+
+  it('does not publish a retired actor callback rejection to the current facade', async () => {
+    let rejectCallback, complete
+    const error = vi.fn()
+    await withOwner(async ({ doc, host, session, element }) => {
+      doc.on('error', error)
+      const pending = host.insertImageFiles([file()])
+      session.user = { id: 'actor-B' }; await pending
+      rejectCallback(new Error('private callback A')); await Promise.resolve(); await Promise.resolve()
+      complete({ url: '/retired-callback.png' }); await Promise.resolve()
+      expect(error).not.toHaveBeenCalled()
+      expect(images(doc)).toHaveLength(0)
+      expect(element.querySelector('.lark-doc-image-upload-error')).toBeNull()
+    }, () => ({ onStart: () => new Promise((_, reject) => { rejectCallback = reject }),
+      upload: () => new Promise(resolve => { complete = resolve }) }))
+  })
+
+  it.each([false, true])('preserves same-owner resumable chunks with branded provider %s', async branded => {
+    const calls = []
+    let failed = false
+    await withOwner(async ({ host, doc }) => {
+      const image = new File([new Uint8Array(3 * 65536)], 'resume.png', { type: 'image/png', lastModified: 1 })
+      await host.insertImageFiles([image]); await host.insertImageFiles([image])
+      expect(calls).toEqual([0, 1, 1, 2])
+      expect(images(doc)).toHaveLength(1)
+    }, () => {
+      const options = { chunked: true, chunkSize: 65536, retry: { attempts: 1 }, upload: async (_, { chunk }) => {
+        calls.push(chunk.index)
+        if (chunk.index === 1 && !failed) { failed = true; throw new Error('resume this owner') }
+        return { url: '/resumed.png' }
+      } }
+      return branded ? createUploadProvider(options) : options
+    })
+  })
+
+  it('isolates two editors sharing one provider and keeps the other editor resume after actor retirement', async () => {
+    const calls = []
+    const failed = new Set()
+    let phase
+    const provider = createUploadProvider({ chunked: true, chunkSize: 65536, retry: { attempts: 1 }, upload: async (_, { chunk }) => {
+      calls.push([phase, chunk.index])
+      if (chunk.index === 1 && !failed.has(phase)) { failed.add(phase); throw new Error('retain this editor resume') }
+      return { url: '/own-resume.png' }
+    } })
+    await withOwner(async ({ host: first, session: firstSession }) => withOwner(async ({ host: second, doc }) => {
+      const image = new File([new Uint8Array(3 * 65536)], 'shared.png', { type: 'image/png', lastModified: 1 })
+      phase = 'first'; await first.insertImageFiles([image])
+      phase = 'second'; await second.insertImageFiles([image])
+      expect(calls.filter(([editor]) => editor === 'second').map(([, index]) => index)).toEqual([0, 1])
+      firstSession.user = { id: 'new-owner' }
+      calls.length = 0
+      await second.insertImageFiles([image])
+      expect(calls).toEqual([['second', 1], ['second', 2]])
+      expect(images(doc)).toHaveLength(1)
+    }, () => provider), () => provider)
+  })
+
+  it('never resumes actor A chunks in B with an externally shared branded Provider', async () => {
+    const calls = []
+    await withOwner(async ({ host, session, doc }) => {
+      const image = new File([new Uint8Array(3 * 65536)], 'chunked.png', { type: 'image/png', lastModified: 1 })
+      await host.insertImageFiles([image])
+      expect(calls).toEqual([['actor-A', 0], ['actor-A', 1]])
+      session.user = { id: 'actor-B' }; await host.$nextTick()
+      await host.insertImageFiles([image])
+      expect(calls.filter(([actor]) => actor === 'actor-B').map(([, chunk]) => chunk)).toEqual([0, 1, 2])
+      expect(images(doc)).toHaveLength(1)
+    }, session => createUploadProvider({ chunked: true, chunkSize: 65536, retry: { attempts: 1 }, upload: async (_, context) => {
+      calls.push([session.user.id, context.chunk.index])
+      if (session.user.id === 'actor-A' && context.chunk.index === 1) throw new Error('keep resumable A chunk')
+      return { url: '/chunk-result.png' }
+    } }))
   })
 })

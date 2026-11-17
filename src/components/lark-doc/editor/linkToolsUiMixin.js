@@ -16,6 +16,9 @@ export default {
     linkDialog(value) { if (!value) { this._linkDialogTarget = null; this._linkInsertDoc = null; this.linkEditing = false } },
   },
   methods: {
+    // 原生宿主复用既有 root hover 监听；统一到真实链接工具，避免旧浮层和同名动作竞争。
+    onPaperLinkMouseOver(event) { this.onLinkMouseOver(event) },
+    onPaperLinkMouseOut(event) { this.onLinkMouseOut(event) },
     mountLinkTools() {
       this._linkToolsUi = createLinkTools({
         host: this.$refs.panelHost,
@@ -63,10 +66,13 @@ export default {
       this.loadLinkMetadata(target.href)
     },
     onLinkMouseOut(event) {
-      if (this._linkTarget?.element.contains(event.relatedTarget) || this._linkToolsUi?.el.contains(event.relatedTarget)) return
+      if (this._linkTouchOpen) return
+      if (this._linkTarget?.element.contains(event.relatedTarget) || this._linkToolsUi?.el?.contains(event.relatedTarget)) return
+
       this.scheduleLinkHide()
     },
     scheduleLinkHide() {
+      if (this._linkTouchOpen) return
       clearTimeout(this._linkHideTimer)
       this._linkHideTimer = setTimeout(() => this.closeLinkTools(), 180)
     },
@@ -74,6 +80,8 @@ export default {
       const target = this._linkTarget
       if (!target || target.doc !== this.editor?.state.doc || !target.element.isConnected) { this.closeLinkTools(); return }
       const rect = target.element.getBoundingClientRect()
+      const win = target.element.ownerDocument.defaultView
+      if (rect.height > 0 && (rect.bottom <= 0 || rect.top >= win.innerHeight)) { this.closeLinkTools(); return }
       const meta = this._linkMetadata?.get(target.href)
       const extension = this.editor.extensionManager.extensions.find(item => item.name === 'linkEmbed')
       const http = /^https?:\/\//i.test(target.href)
@@ -84,7 +92,7 @@ export default {
       } catch (_) { preview = false }
       const views = ['link', 'title', ...(http ? ['card'] : []), ...(preview ? ['preview'] : [])]
       this._linkToolsUi?.update({ open: true, ...target, views, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, readonly: !this.linkCommandEnabled(),
-        commentVisible: !!this.commentEntryVisible, canComment: !!this.commentEntryAvailable, shareVisible: !!this.selectionShareEntryAvailable })
+        commentVisible: !!this.commentEntryVisible, canComment: !!this.commentEntryAvailable && typeof this.beginCommentComposer === 'function', shareVisible: !!this.selectionShareEntryAvailable })
     },
     shareHoveredLink() {
       const target = this._linkTarget
@@ -98,6 +106,7 @@ export default {
       const target = this._linkTarget
       if (!this.commentEntryAvailable || !target?.node || !['card', 'preview'].includes(target.view)
         || target.doc !== this.editor?.state.doc || !target.element.isConnected || this.editor.state.doc.nodeAt(target.from) !== target.node) return false
+      if (typeof this.beginCommentComposer !== 'function') { this.error = '当前链接卡片的评论锚点暂不可用'; return false }
       const opened = this.beginCommentComposer(target.from)
       if (opened) this.closeLinkTools()
       return opened
@@ -141,8 +150,21 @@ export default {
     },
     closeLinkTools() {
       clearTimeout(this._linkHideTimer)
+      this._linkTouchOpen = false
       this._linkTarget = null
       this._linkToolsUi?.update({ open: false })
+    },
+    onEditorLinkTouchClick(event) {
+      const win = this.editor?.view.dom.ownerDocument.defaultView
+      const touch = event.pointerType === 'touch' || win?.matchMedia?.('(pointer: coarse) and (hover: none)').matches
+      if (!touch || event.button > 0 || !this.editor?.isEditable || this.effectiveReadonly) return
+      const anchor = event.target.closest?.('a[href]')
+      if (anchor?.hasAttribute('download') || !this.linkTargetAt(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const selection = this.editor.state.selection
+      if (selection.empty || selection.node) { this._linkTouchOpen = true; this.onLinkMouseOver(event) }
+      else this.closeLinkTools()
     },
     onEditorLinkClick(event) {
       const anchor = event.target.closest?.('a[href]')
@@ -230,7 +252,8 @@ export default {
       }
       view.dispatch(closeHistory(tr))
       this.linkDialog = false
-      this.editor.commands.focus()
+      view.dispatch(closeHistory(view.state.tr))
+      view.focus()
       return true
     },
     removeHoveredLink(target = this._linkTarget) {
@@ -242,6 +265,7 @@ export default {
       view.dispatch(closeHistory(tr))
       this.closeLinkTools()
       this.linkDialog = false
+      this.editor.commands.focus()
       return true
     },
     setLinkEmbedView(kind) {

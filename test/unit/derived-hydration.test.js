@@ -107,6 +107,7 @@ describe('P7-03 derived snapshot: the pending gate blocks navigation', () => {
       storage: { larkDoc: { folded: new Set() } },
       commands: {
         setTextSelection: (pos) => calls.push(['setTextSelection', pos]),
+        scrollIntoView: () => calls.push(['scrollIntoView']),
         toggleLarkDocFold: (pos) => calls.push(['toggleLarkDocFold', pos]),
       },
       view: {
@@ -154,8 +155,11 @@ describe('P7-03 derived snapshot: the pending gate blocks navigation', () => {
  */
 describe('P7-03 derived snapshot: gate wiring on both sides', () => {
   it('实测目录落地时先落闸，再整批赋值；允许冻结包装', () => {
-    const source = read('src/editor/nativeEditorHost.js')
-    const body = source.match(/\n    refreshDocumentState\(\) \{([\s\S]*?)\n    \},/)[1]
+    const source = read('src/editor/nativeDocumentState.js')
+    const hostSource = read('src/editor/nativeEditorHost.js')
+    expect(hostSource).toContain("import { nativeDocumentStateMethods } from './nativeDocumentState'")
+    expect(hostSource).toContain('...nativeDocumentStateMethods')
+    const body = source.match(/\n    refreshDocumentState\([^)]*\) \{([\s\S]*?)\n    \},/)[1]
     const clearAt = body.search(/this\.outlinePending\s*=\s*false\b/)
     const outlineAt = body.search(/this\.outline\s*=\s*(?:Object\.freeze\(\s*)?collectOutline\(this\.editor\.state\.doc\)/)
     expect(clearAt).toBeGreaterThan(-1)
@@ -204,15 +208,15 @@ describe('P7-03 derived snapshot: gate wiring on both sides', () => {
     }
   })
 
-  it('目录面板的跳转钮在闸门抬起时禁用（阶段 5 批次 4b 后落点改为 src/ui/panels.js）', () => {
+  it('目录面板的跳转钮在闸门抬起时禁用（独立 outlinePanel 原生视图）', () => {
     // 原判据读 OutlinePanel.vue 的 `:disabled="ed.outlinePending"` + `@click="ed.jumpHeading(...)"`。
     // 4b 把目录面板原生化后，同样的两件事变成属性赋值与 handler 回调 —— 判据跟着搬，
     // 语义不变：闸门抬起（pending）则禁用 + 挂提示，点击走后仍直连 jumpHeading。
-    const panel = read('src/ui/panels.js')
+    const panel = read('src/ui/outlinePanel.js')
     expect(panel).toContain('jump.disabled = !!state.pending')
     expect(panel).toContain("setAttr(jump, 'title', state.pending ? '正文还在载入，稍后可跳转' : null)")
     expect(panel).toContain("call('onJump', pos)")
     const wiring = read('src/components/lark-doc/editor/panelsUiMixin.js')
-    expect(wiring).toContain('onJump: (pos) => this.jumpHeading(pos)')
+    expect(wiring).toMatch(/onJump:\s*(?:\(pos\)|pos)\s*=>\s*this\.jumpHeading\(pos\)/)
   })
 })

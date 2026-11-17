@@ -9,6 +9,7 @@
  * 没有任何报错 —— 只有在这里写成不变量才拦得住。
  */
 import { describe, expect, it } from 'vitest'
+import { referenceDocumentMenuItems, runReferenceDocumentMenuAction } from '../../src/components/lark-doc/editor/documentMenuView'
 import topbarMoreMixin, {
   TOPBAR_MORE_CAPABILITY,
   TOPBAR_MORE_DIVIDER_AFTER,
@@ -23,6 +24,32 @@ import topbarMoreMixin, {
 
 const ids = TOPBAR_MORE_ITEMS.map((item) => item.id)
 const idAt = (id) => ids.indexOf(id)
+
+describe('phone document information routing', () => {
+  function phoneOwner(extra = {}) {
+    return { session: { can: () => true, getProvider: () => null }, featureEnabled: () => true, toolbarEnabled: () => true,
+      writable: () => true, shareCan: () => true, modeOptions: [], ...extra }
+  }
+  it('keeps information and page settings reachable without a host, while enforcing canView', () => {
+    const owner = phoneOwner()
+    for (const id of ['information', 'page-settings']) expect(referenceDocumentMenuItems(owner).find(item => item.id === id)?.enabled).toBe(true)
+    owner.session.can = () => false
+    for (const id of ['information', 'page-settings']) expect(referenceDocumentMenuItems(owner).find(item => item.id === id)?.enabled).toBe(false)
+  })
+  it('opens the builtin read views and preserves an explicitly declared host handler', async () => {
+    const calls = [], owner = phoneOwner({ openDocumentInformation: view => { calls.push(view); return true } })
+    expect(await runReferenceDocumentMenuAction(owner, 'information')).toBe(true)
+    expect(await runReferenceDocumentMenuAction(owner, 'page-settings')).toBe(true)
+    expect(calls).toEqual(['information', 'page-settings'])
+    const hostCalls = []
+    owner.onDocumentAction = request => { hostCalls.push(request); return true }
+    owner.onDocumentAction.supportedActions = ['information']
+    expect(await runReferenceDocumentMenuAction(owner, 'information')).toBe(true)
+    expect(hostCalls).toHaveLength(1)
+    expect(hostCalls[0].action).toBe('information')
+    expect(calls).toHaveLength(2)
+  })
+})
 
 /**
  * 造一个能调 mixin 方法的假 `this`。
@@ -370,5 +397,24 @@ describe('顶栏更多 · 命中判定', () => {
     expect(ctx.topbarMoreContains(inside('.lark-doc-more-btn'))).toBe(true)
     expect(ctx.topbarMoreContains(inside('.lark-doc-other'))).toBe(false)
     expect(ctx.topbarMoreContains(null)).toBe(false)
+  })
+})
+
+
+describe('desktop historical comment routing', () => {
+  it('opens the existing panel and rechecks current view capability and service availability', () => {
+    let readable = true, opened = 0, closed = 0
+    const owner = { commentRemote: true, commentCan: key => key === 'canView' && readable,
+      closeTopbarMore: () => { closed++ }, openHistoricalComments: () => { opened++ } }
+    topbarMoreMixin.methods.runTopbarMoreAction.call(owner, 'history-comments')
+    expect(opened).toBe(1); expect(closed).toBe(1)
+    readable = false
+    expect(topbarMoreMixin.methods.runTopbarMoreAction.call(owner, 'history-comments')).toBe(false)
+    const denied = topbarMoreMixin.computed.topbarMoreItems.call(owner).find(item => item.id === 'history-comments')
+    expect(denied.enabled).toBe(false); expect(denied.title).toContain('没有查看权限')
+    readable = true; owner.commentRemote = false
+    expect(topbarMoreMixin.methods.runTopbarMoreAction.call(owner, 'history-comments')).toBe(false)
+    expect(topbarMoreMixin.computed.topbarMoreItems.call(owner).find(item => item.id === 'history-comments').enabled).toBe(false)
+    expect(opened).toBe(1); expect(closed).toBe(1)
   })
 })

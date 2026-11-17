@@ -345,6 +345,162 @@ describe('NodeView：一个块壳三形态', () => {
     } finally { editor.destroy() }
   })
 
+  it.each([true, false])('token-only 换源立即退役旧地址，并在 editable=%s 时预览新文件', async (editable) => {
+    const calls = []
+    const editor = mountFileBlock(
+      { token: 'token-a', src: null, name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' },
+      { resolveFileUrl: (token) => { calls.push(token); return `https://cdn.example.com/${token}.mp4` } },
+    )
+    try {
+      editor.setEditable(editable)
+      await tick()
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      expect(figure.querySelector('video').getAttribute('src')).toBe('https://cdn.example.com/token-a.mp4')
+      const file = editor.state.doc.firstChild
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(0, undefined, { ...file.attrs, token: 'token-b' }))
+      const documentAfterUpdate = editor.getJSON()
+      expect(editor.view.dom.querySelector('figure.lark-doc-file')).toBe(figure)
+      expect(figure.querySelector('video')).toBeNull()
+      expect(figure.querySelector('.lark-doc-file-download').hasAttribute('href')).toBe(false)
+      await tick()
+      expect(calls).toEqual(['token-a', 'token-b'])
+      expect(figure.querySelector('video').getAttribute('src')).toBe('https://cdn.example.com/token-b.mp4')
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('href')).toBe('https://cdn.example.com/token-b.mp4')
+      expect(editor.getJSON()).toEqual(documentAfterUpdate)
+      expect(editor.state.doc.firstChild.attrs.src).toBeNull()
+    } finally { editor.destroy() }
+  })
+
+  it('pending token A 换成 B 后，迟到的 A 不得恢复旧预览或下载地址', async () => {
+    const pending = new Map()
+    const editor = mountFileBlock(
+      { token: 'token-a', src: null, mimeType: 'video/mp4', viewType: 'Preview' },
+      { resolveFileUrl: (token) => new Promise((resolve) => pending.set(token, resolve)) },
+    )
+    try {
+      await tick()
+      const file = editor.state.doc.firstChild
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(0, undefined, { ...file.attrs, token: 'token-b' }))
+      await tick()
+      expect([...pending.keys()]).toEqual(['token-a', 'token-b'])
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      pending.get('token-a')('https://cdn.example.com/a.mp4')
+      await tick()
+      expect(figure.querySelector('video')).toBeNull()
+      expect(figure.querySelector('.lark-doc-file-download').hasAttribute('href')).toBe(false)
+      pending.get('token-b')('https://cdn.example.com/b.mp4')
+      await tick()
+      expect(figure.querySelector('video').getAttribute('src')).toBe('https://cdn.example.com/b.mp4')
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('href')).toBe('https://cdn.example.com/b.mp4')
+    } finally { editor.destroy() }
+  })
+
+  it('pending token 换为直接地址后，旧请求失败不得损坏新文件预览', async () => {
+    let rejectOld
+    const editor = mountFileBlock(
+      { token: 'token-a', src: null, mimeType: 'video/mp4', viewType: 'Preview' },
+      { resolveFileUrl: () => new Promise((resolve, reject) => { rejectOld = reject }) },
+    )
+    try {
+      await tick()
+      const file = editor.state.doc.firstChild
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(0, undefined, { ...file.attrs, token: 'token-b', src: 'https://cdn.example.com/b.mp4' }))
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      const video = figure.querySelector('video')
+      video.dispatchEvent(new Event('loadeddata'))
+      rejectOld(new Error('retired A failed'))
+      await tick()
+      expect(figure.querySelector('video')).toBe(video)
+      expect(video.getAttribute('src')).toBe('https://cdn.example.com/b.mp4')
+      expect(figure.querySelector('.lark-doc-file-fallback')).toBeNull()
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('href')).toBe('https://cdn.example.com/b.mp4')
+    } finally { editor.destroy() }
+  })
+
+  it('销毁后迟到的换票结果不再挂预览或修改原下载入口', async () => {
+    let resolvePending
+    const editor = mountFileBlock(
+      { token: 'token-a', src: null, mimeType: 'video/mp4', viewType: 'Preview' },
+      { resolveFileUrl: () => new Promise((resolve) => { resolvePending = resolve }) },
+    )
+    try {
+      await tick()
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      const beforeDestroy = figure.innerHTML
+      editor.destroy()
+      resolvePending('https://cdn.example.com/late.mp4')
+      await tick()
+      expect(figure.innerHTML).toBe(beforeDestroy)
+      expect(figure.querySelector('video')).toBeNull()
+    } finally { if (!editor.isDestroyed) editor.destroy() }
+  })
+
+  it.each(['error', 'loadeddata'])('换源后旧视频的 %s 事件不得改变新文件状态', async (eventType) => {
+    const editor = mountFileBlock(
+      { token: 'token-a', src: null, mimeType: 'video/mp4', viewType: 'Preview' },
+      { resolveFileUrl: (token) => `https://cdn.example.com/${token}.mp4` },
+    )
+    try {
+      await tick()
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      const oldVideo = figure.querySelector('video')
+      const file = editor.state.doc.firstChild
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(0, undefined, { ...file.attrs, token: 'token-b' }))
+      await tick()
+      const currentVideo = figure.querySelector('video')
+      expect(currentVideo).not.toBe(oldVideo)
+      expect(currentVideo.getAttribute('src')).toBe('https://cdn.example.com/token-b.mp4')
+      if (eventType === 'loadeddata') {
+        currentVideo.dispatchEvent(new Event('error'))
+        expect(figure.querySelector('.lark-doc-file-fallback')).toBeTruthy()
+      }
+      const beforeOldEvent = figure.innerHTML
+      const documentBeforeOldEvent = editor.getJSON()
+      oldVideo.dispatchEvent(new Event(eventType))
+      expect(figure.innerHTML).toBe(beforeOldEvent)
+      expect(editor.getJSON()).toEqual(documentBeforeOldEvent)
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('href')).toBe('https://cdn.example.com/token-b.mp4')
+    } finally { editor.destroy() }
+  })
+
+  it.each(['error', 'loadeddata'])('销毁已挂载视频后，旧 %s 事件不得修改退役 DOM', async (eventType) => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    try {
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      const video = figure.querySelector('video')
+      editor.destroy()
+      const afterDestroy = figure.innerHTML
+      video.dispatchEvent(new Event(eventType))
+      expect(figure.innerHTML).toBe(afterDestroy)
+      expect(figure.querySelector('video')).toBeNull()
+    } finally { if (!editor.isDestroyed) editor.destroy() }
+  })
+
+  it('相同 src 和 token 的元数据更新保留已解析播放器且不重复换票', async () => {
+    const calls = []
+    const editor = mountFileBlock(
+      { token: 'token-a', src: null, name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' },
+      { resolveFileUrl: (token) => { calls.push(token); return 'https://cdn.example.com/a.mp4' } },
+    )
+    try {
+      await tick()
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      const video = figure.querySelector('video')
+      const file = editor.state.doc.firstChild
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(0, undefined, { ...file.attrs, name: 'renamed.mp4' }))
+      await tick()
+      expect(calls).toEqual(['token-a'])
+      expect(figure.querySelector('video')).toBe(video)
+      expect(figure.querySelector('.lark-doc-file-name').textContent).toBe('renamed.mp4')
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('href')).toBe('https://cdn.example.com/a.mp4')
+      video.dispatchEvent(new Event('loadeddata'))
+      expect(figure.querySelector('video')).toBe(video)
+      video.dispatchEvent(new Event('error'))
+      expect(figure.querySelector('video')).toBeNull()
+      expect(figure.querySelector('.lark-doc-file-fallback')).toBeTruthy()
+    } finally { editor.destroy() }
+  })
+
   it('换票失败按失败态处理，不抛错', async () => {
     const editor = mountFileBlock(
       { token: 'boxcn-token', name: 'a.pdf', size: 40016, mimeType: 'application/pdf', viewType: 'Preview' },

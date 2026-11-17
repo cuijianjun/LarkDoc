@@ -26,9 +26,11 @@
  *    旧 `tableFloatOpen` 状态机、`onTableFloatAction()`、`.lark-doc-table-float` 已整体删除。
  */
 import { CellSelection, TableMap, selectedRect, deleteRow, deleteColumn, deleteCellSelection, moveTableRow, moveTableColumn } from '@tiptap/pm/tables'
-import { createTableOverlays } from '../../../ui/tableOverlays'
+import { createLazyView } from '../../../ui/lazy'
 
 const MIN_THUMB = 28
+// T048：触控列宽热区（手指比鼠标粗；插件自身 handleWidth 是 5px，且只算单元格内侧）。
+const TOUCH_RESIZE_TOLERANCE = 12
 
 export default {
   data() {
@@ -179,17 +181,102 @@ export default {
     // （hover 到边缘热区或拖拽中）时 prosemirror 给根节点挂 `resize-cursor` 类，
     // 用它做开关，rAF 节流持续同步 overlay 几何。
     this._tableResizeSyncRaf = null
-    this._tableResizeSyncOnMove = () => {
+    this._tableResizeSyncTick = () => {
       if (this._tableResizeSyncRaf != null) return
-      const viewDom = this.editor?.view?.dom
-      if (!viewDom || !viewDom.classList.contains('resize-cursor')) return
       this._tableResizeSyncRaf = requestAnimationFrame(() => {
         this._tableResizeSyncRaf = null
         this.refreshTableOverlays()
         this.updateTableBoundary()
+        this.syncTableResizeGuide()
       })
     }
+    this._tableResizeSyncOnMove = () => {
+      const viewDom = this.editor?.view?.dom
+      if (!viewDom || !viewDom.classList.contains('resize-cursor')) return
+      this._tableResizeSyncTick()
+    }
     win.addEventListener('pointermove', this._tableResizeSyncOnMove, true)
+    // P1-④：落位线只在 dragging 期间存在；结束态的 class 移除发生在 mouseup 的
+    // transaction 里、晚于 pointerup，故同样走一次 rAF 节流的 tick 收线。
+    this._tableResizeSyncOnEnd = () => this._tableResizeSyncTick()
+    win.addEventListener('pointerup', this._tableResizeSyncOnEnd, true)
+    win.addEventListener('pointercancel', this._tableResizeSyncOnEnd, true)
+    // T048 触控列宽：prosemirror-tables 的 columnResizing 只绑 mousemove / mouseleave /
+    // mousedown（node_modules/prosemirror-tables/dist/index.js 的 handleDOMEvents），
+    // `handleMouseMove` 是唯一 arm `activeHandle` 的路径，`handleMouseDown` 在
+    // activeHandle == -1 时直接 return false。触摸只产生 touch* / pointer*，于是手指拖
+    // 列边界**恒无效**（实测 mousedown / mousemove 计数为 0）。飞书参考实现（
+    // web-scripts/067-page_editable_delay_resource…chunk.js 的 `.resizer-line-hotzone`）
+    // 走 onPointerDown→handleResizeStart / onPointerMove→handleResize，并用
+    // onTouchStart→preventDefault 抢掉这次触摸的滚动。
+    // 这里不动插件、不动 schema：把一次触摸手势翻成插件认的鼠标序列
+    // （mousemove 定位 arm → mousedown 定 startX → mousemove 拖 → mouseup 提交），
+    // 列宽数学 / 最小宽度钳制 / undo 全部沿用插件自身。只接管非鼠标指针。
+    this._tableTouchResize = null
+    this._tableTouchResizeOnStart = (event) => {
+      if (this._tableTouchResize) return
+      if (!event.touches || event.touches.length !== 1) return
+      const view = this.editor?.view
+      const viewDom = view?.dom
+      if (!viewDom || !view.editable) return
+      const target = event.target
+      const cell = target && target.nodeType === 1 && typeof target.closest === 'function'
+        ? target.closest('td, th') : null
+      if (!cell || !viewDom.contains(cell)) return
+      const rect = cell.getBoundingClientRect()
+      const touch = event.touches[0]
+      if (!(touch.clientY >= rect.top - TOUCH_RESIZE_TOLERANCE
+        && touch.clientY <= rect.bottom + TOUCH_RESIZE_TOLERANCE)) return
+      // 手指比鼠标粗：12px 热区。**不改**插件全局 handleWidth（那会同时改动鼠标路径），
+      // 桥接层自己放宽，鼠标行为因此零变化。
+      const fromRight = rect.right - touch.clientX
+      const fromLeft = touch.clientX - rect.left
+      const side = fromRight <= TOUCH_RESIZE_TOLERANCE ? 'right'
+        : (fromLeft <= TOUCH_RESIZE_TOLERANCE ? 'left' : null)
+      if (!side) return
+      // 与飞书 onTouchStart→preventDefault 同位：不抢掉默认行为，这次触摸就是在滚表格。
+      event.preventDefault()
+      this._tableTouchResize = {
+        cell, side, x0: touch.clientX, y0: touch.clientY, x: touch.clientX, y: touch.clientY, dragging: false,
+      }
+      win.addEventListener('pointermove', this._tableTouchResizeOnMove, true)
+      win.addEventListener('pointerup', this._tableTouchResizeOnEnd, true)
+      win.addEventListener('pointercancel', this._tableTouchResizeOnEnd, true)
+    }
+    this._tableTouchResizeOnMove = (event) => {
+      const state = this._tableTouchResize
+      if (!state) return
+      state.x = event.clientX
+      state.y = event.clientY
+      if (!state.dragging) {
+        // 3px 死区：轻点边缘选字不该被当成 resize（插件的 mousedown 会派一次 transaction）。
+        if (Math.abs(event.clientX - state.x0) < 3) return
+        state.dragging = true
+        const rect = state.cell.getBoundingClientRect()
+        const edgeX = state.side === 'right' ? rect.right : rect.left
+        // arm：插件只认「target 是单元格 + 坐标落在单元格边缘 5px 内」的 mousemove，
+        // 取边界内侧 2px 发一次，与手指实际位置无关。
+        this.fireTableResizeMouse(
+          'mousemove', state.side === 'right' ? edgeX - 2 : edgeX + 2, state.y0, state.cell,
+        )
+        // startX 用**手指起始点**而非边界点：宽度增量 = 手指位移，起手不会先跳一下。
+        this.fireTableResizeMouse('mousedown', state.x0, state.y0, state.cell)
+      }
+      this.fireTableResizeMouse('mousemove', state.x, state.y, state.cell)
+    }
+    this._tableTouchResizeOnEnd = (event) => {
+      const state = this._tableTouchResize
+      if (!state) return
+      this._tableTouchResize = null
+      win.removeEventListener('pointermove', this._tableTouchResizeOnMove, true)
+      win.removeEventListener('pointerup', this._tableTouchResizeOnEnd, true)
+      win.removeEventListener('pointercancel', this._tableTouchResizeOnEnd, true)
+      if (!state.dragging) return
+      const x = Number.isFinite(event.clientX) ? event.clientX : state.x
+      const y = Number.isFinite(event.clientY) ? event.clientY : state.y
+      this.fireTableResizeMouse('mouseup', x, y, win)
+    }
+    editorEl.addEventListener('touchstart', this._tableTouchResizeOnStart, { passive: false })
   },
   beforeDestroy() {
     const editorEl = this._tableOverlayScrollTarget
@@ -197,6 +284,8 @@ export default {
     editorEl.removeEventListener('pointerover', this._tableOverlayOnPointerOver)
     editorEl.removeEventListener('pointerout', this._tableOverlayOnPointerOut)
     editorEl.removeEventListener('scroll', this._tableOverlayOnScroll, true)
+    editorEl.removeEventListener('touchstart', this._tableTouchResizeOnStart, { passive: false })
+    this._tableTouchResize = null
     const win = this._tableUiWindow
     if (win) {
       win.removeEventListener('pointermove', this._tableUiOnPointerMove, true)
@@ -218,11 +307,85 @@ export default {
       win.removeEventListener('pointermove', this._tableResizeSyncOnMove, true)
       this._tableResizeSyncOnMove = null
     }
+    if (win && this._tableResizeSyncOnEnd) {
+      win.removeEventListener('pointerup', this._tableResizeSyncOnEnd, true)
+      win.removeEventListener('pointercancel', this._tableResizeSyncOnEnd, true)
+      this._tableResizeSyncOnEnd = null
+    }
+    if (this._tableResizeGuideEl) {
+      this._tableResizeGuideEl.remove()
+      this._tableResizeGuideEl = null
+    }
     this._tableUiWindow = null
     this._tableOverlayScrollTarget = null
     this._tableOverlayHover = null
   },
   methods: {
+    /**
+     * T048：把触摸手势翻成插件认的鼠标事件。用 `win.MouseEvent` 构造、带 bubbles，
+     * 才能既冒泡到 `.ProseMirror`（插件 `handleDOMEvents` 挂在这里）又冒泡到 window
+     * （`handleMouseDown` 拖拽期间自己挂的 mousemove / mouseup 在 window 上）。
+     * `which` 必须为真：拖拽分支是 `if (!event.which) return finish()`，部分引擎给
+     * 合成 mousemove 的 which 是 0，第一帧就会被当成「松手」。
+     */
+    fireTableResizeMouse(type, x, y, target) {
+      const win = this._tableUiWindow
+      if (!win || !Number.isFinite(x) || !Number.isFinite(y)) return null
+      const event = new win.MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: win,
+        detail: 1,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: type === 'mouseup' ? 0 : 1,
+      })
+      try { Object.defineProperty(event, 'which', { value: 1 }) } catch (err) { /* 只读实现下交给引擎 */ }
+      const host = target || win
+      host.dispatchEvent(event)
+      return event
+    },
+    /**
+     * P1-④：飞书拖列宽时画一条 2px 竖线（`.resizer-line`，浅色档 #1456F0）。
+     * 挂载点用插件 dragging 期间给被拖列每个单元格加的 `column-resize-dragging`：
+     * 它同时覆盖鼠标与触控（触控桥接最终也走插件 mouse 序列），且只在拖拽期间存在；
+     * 几何每帧重算 —— 拖拽期间 displayColumnWidth 直改 colgroup，cell 右边界实时移动。
+     * ⚠️ 绝不碰 `.column-resize-handle`：那是被投诉的「每行蓝色小竖条」，常驻 widget。
+     * fixed + viewport 坐标，与既有 overlay 同口径，不随滚动容器漂移。
+     */
+    syncTableResizeGuide() {
+      const root = this.$refs.root
+      if (!root) return
+      const dragging = root.querySelectorAll('.ProseMirror .column-resize-dragging')
+      let guide = this._tableResizeGuideEl
+      if (!dragging.length) {
+        if (guide) guide.style.display = 'none'
+        return
+      }
+      if (!guide || !guide.isConnected) {
+        const doc = root.ownerDocument
+        guide = doc.createElement('div')
+        guide.className = 'lark-doc-table-resize-guide'
+        guide.setAttribute('aria-hidden', 'true')
+        root.appendChild(guide)
+        this._tableResizeGuideEl = guide
+      }
+      let right = null
+      let top = Infinity
+      let bottom = -Infinity
+      dragging.forEach((cell) => {
+        const r = cell.getBoundingClientRect()
+        right = r.right
+        if (r.top < top) top = r.top
+        if (r.bottom > bottom) bottom = r.bottom
+      })
+      if (right == null || !Number.isFinite(top) || !Number.isFinite(bottom)) return
+      guide.style.display = 'block'
+      guide.style.left = `${Math.round(right) - 1}px`
+      guide.style.top = `${Math.round(top)}px`
+      guide.style.height = `${Math.max(1, Math.round(bottom - top))}px`
+    },
     /** 真实指针事件的 target 判定：表格块 / md overlay / 边界 ＋ / 唯一浮窗。 */
     tableUiContainsPointer(target) {
       if (!target || typeof target.closest !== 'function') return false
@@ -297,7 +460,7 @@ export default {
       if (this._tableOverlaysUi) return
       const host = this.$refs.tableOverlayHost
       if (!host) return
-      this._tableOverlaysUi = createTableOverlays({
+      this._tableOverlaysUi = createLazyView(() => import('../../../ui/tableOverlays'), 'createTableOverlays', {
         host,
         handlers: {
           onSelect: (axis, index, event) => this.onTableSelectLine(axis, index, event),
@@ -306,7 +469,7 @@ export default {
           onReorderCancel: () => this.onTableReorderCancel(),
           onScrollRatio: (ratio) => this.onTableScrollRatio(ratio),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, onReady: () => this.refreshTableOverlays() })
       // 飞书删除键清空内容、保留行列结构。overlay 也可获得键盘焦点，故在 window 接线。
       const win = host.ownerDocument.defaultView
       if (win) {
@@ -388,10 +551,8 @@ export default {
         ui.update({ open: false })
         return
       }
-      const firstRow = table.querySelector('tr')
-      const headCells = firstRow ? Array.from(firstRow.cells) : []
-      const columnElements = Array.from(table.querySelectorAll('colgroup > col'))
-      const rowEls = Array.from(table.querySelectorAll('tr'))
+      const columnElements = Array.from(table.querySelectorAll('colgroup > col')).filter(col => col.closest('table') === table)
+      const rowEls = Array.from(table.querySelectorAll('tr')).filter(row => row.closest('table') === table)
       const viewWidth = wrapper.clientWidth
       const scrollWidth = wrapper.scrollWidth
       const scrollLeft = wrapper.scrollLeft
@@ -403,10 +564,54 @@ export default {
         ? Math.round((scrollLeft / overflow) * (viewWidth - thumbWidth))
         : 0
 
-      const columns = (columnElements.length ? columnElements : headCells).map((cell, index) => {
+      let columns = columnElements.map((cell, index) => {
         const cellRect = cell.getBoundingClientRect()
         return { index, left: cellRect.left - rect.left, width: cellRect.width }
       })
+      const found = this.tableOverlayTablePos(table), map = found && TableMap.get(found.node)
+      const tableRect = table.getBoundingClientRect()
+      const validColumns = map && columns.length === map.width && columns.every(item => Number.isFinite(item.left) && Number.isFinite(item.width) && item.width > 0)
+        && Math.abs(columns[0].left - (tableRect.left - rect.left)) < 2
+      if (!validColumns && map) {
+        // WebKit 的 col 可能没有可用布局盒。用真实单元格边界还原逻辑列，不能把 colspan 当成一列。
+        const edges = new Array(map.width + 1)
+        const weights = Array.from({ length: map.width }, (_, i) => {
+          const value = parseFloat(columnElements[i]?.style.width)
+          return Number.isFinite(value) && value > 0 ? value : 0
+        })
+        for (const offset of new Set(map.map)) {
+          const cell = this.editor.view.nodeDOM(found.pos + 1 + offset)
+          if (!(cell instanceof Element) || cell.closest('table') !== table) continue
+          const bounds = cell.getBoundingClientRect()
+          if (!Number.isFinite(bounds.left) || !Number.isFinite(bounds.width) || bounds.width <= 0) continue
+          const span = map.findCell(offset), node = found.node.nodeAt(offset)
+          edges[span.left] = bounds.left - rect.left
+          edges[span.right] = bounds.right - rect.left
+          for (let column = span.left; column < span.right; column++) {
+            const value = Number(node.attrs.colwidth?.[column - span.left])
+            if (!weights[column] && Number.isFinite(value) && value > 0) weights[column] = value
+          }
+        }
+        // 所有真实边界收齐后，只在相邻已知边界之间补未知跨度，估算值不覆盖真实边界。
+        for (let start = 0; start < map.width;) {
+          if (!Number.isFinite(edges[start])) { start++; continue }
+          let end = start + 1
+          while (end <= map.width && !Number.isFinite(edges[end])) end++
+          if (end > map.width) break
+          const width = edges[end] - edges[start], segment = weights.slice(start, end)
+          const known = segment.reduce((sum, value) => sum + value, 0), missing = segment.filter(value => !value).length
+          const fallback = missing ? Math.max(1, (width - known) / missing) : 1
+          const widths = segment.map(value => value || fallback), total = widths.reduce((sum, value) => sum + value, 0)
+          let left = edges[start]
+          for (let column = start; column < end - 1; column++) {
+            left += width * widths[column - start] / total
+            edges[column + 1] = left
+          }
+          start = end
+        }
+        columns = Array.from({ length: map.width }, (_, index) => ({ index, left: edges[index], width: edges[index + 1] - edges[index] }))
+          .filter(item => Number.isFinite(item.left) && Number.isFinite(item.width) && item.width > 0)
+      }
       const rows = rowEls.map((row, index) => {
         const rowRect = row.getBoundingClientRect()
         return { index, top: rowRect.top - rect.top, height: rowRect.height }
@@ -417,7 +622,7 @@ export default {
         .map((item) => ({
           index: item.index,
           left: Math.max(0, item.left),
-          width: Math.max(12, Math.min(item.width, viewWidth - Math.max(0, item.left))),
+          width: Math.min(viewWidth, item.left + item.width) - Math.max(0, item.left),
         }))
       const visibleRows = rows
         .filter((item) => item.top + item.height > 0 && item.top < rect.height)
@@ -465,6 +670,8 @@ export default {
 
       ui.update({
         open: true,
+        tableKey: wrapper,
+        documentKey: this.editor.state.doc,
         style: {
           position: 'fixed',
           left: `${rect.left}px`,
@@ -487,17 +694,19 @@ export default {
       })
     },
     /** 找到表格节点的起始 pos（table node 之前）。 */
-    tableOverlayTablePos() {
+    tableOverlayTablePos(targetTable) {
       const editor = this.editor
       if (!editor) return null
-      const $from = editor.state.selection.$from
-      for (let depth = $from.depth; depth > 0; depth -= 1) {
-        if ($from.node(depth).type.name === 'table') {
-          return { pos: $from.before(depth), node: $from.node(depth) }
+      if (!targetTable) {
+        const $from = editor.state.selection.$from
+        for (let depth = $from.depth; depth > 0; depth -= 1) {
+          if ($from.node(depth).type.name === 'table') {
+            return { pos: $from.before(depth), node: $from.node(depth) }
+          }
         }
       }
       // hover 但光标不在表内：从 DOM 反查 pos。
-      const table = this._tableOverlayHover?.querySelector('table')
+      const table = targetTable || this._tableOverlayHover?.querySelector('table')
       if (!table) return null
       try {
         const pos = editor.view.posAtDOM(table, 0)
@@ -509,10 +718,10 @@ export default {
       return null
     },
     /** 整行 / 整列 CellSelection：moveTableRow/Column 与 deleteRow/Column 都依赖它。 */
-    selectTableLine(axis, index, endIndex = index) {
+    selectTableLine(axis, index, endIndex = index, target) {
       const editor = this.editor
-      const found = this.tableOverlayTablePos()
-      if (!editor || !found) return false
+      const found = target || this.tableOverlayTablePos()
+      if (!editor || !found || editor.state.doc.nodeAt(found.pos) !== found.node) return false
       const map = TableMap.get(found.node)
       const limit = axis === 'column' ? map.width : map.height
       if (![index, endIndex].every(value => Number.isInteger(value) && value >= 0 && value < limit)) return false

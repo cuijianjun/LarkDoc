@@ -4,7 +4,7 @@
  * `headingNumberMixin` 继续持有编号状态、定位和文档命令；本 mixin 只把状态推给
  * `src/ui/headingNumberMenu.js`，并把 DOM 事件原样转回业务方法。
  */
-import { createHeadingNumberMenu } from '../../../ui/headingNumberMenu'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -19,7 +19,7 @@ export default {
       if (this._headingNumberMenuUi) return
       const host = this.$refs.headingNumberMenuHost
       if (!host) return
-      this._headingNumberMenuUi = createHeadingNumberMenu({
+      this._headingNumberMenuUi = createLazyView(() => import('../../../ui/headingNumberMenu'), 'createHeadingNumberMenu', {
         host,
         handlers: {
           onAction: (id) => this.headingNumberAction(id),
@@ -28,7 +28,7 @@ export default {
           onApply: () => this.applyHeadingNumberValue(),
           onStep: (step) => this.stepHeadingNumberDraft(step),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, onReady: () => this.positionHeadingNumberMenu() })
       this.refreshHeadingNumberMenu()
     },
     refreshHeadingNumberMenu() {

@@ -10,8 +10,7 @@
  *      是基线门禁，扫到新增字面色值就报错。所以全部走 `rgb() / rgba()`；飞书实测的原色值
  *      （如 `#BBBFC4`、`#336DF4`、`#E0E9FF`、`#8D55ED`）只写在**注释**里 —— 门禁会先
  *      剥注释，注释里的 hex 不违规。
- *   2. 桌面保持实测双栏几何；T032 移动模拟器验收补充窄屏上下布局，避免固定坐标
- *      将恢复按钮和预览裁出视口，不将移动降级布局宣称为飞书实测像素。
+ *   2. 桌面保持实测双栏几何；窄屏顶栏按可用视窗换行，手机保持列表与只读预览分步。
  *   3. **不画展开箭头 / 删除按钮 / 改备注入口**（⑦-2 / ⑦-3 未采，且没有子记录数据源）。
  *   4. **每条选择器都必须带 `.lark-doc ` 作用域前缀（55 条全部带，别手写裸类名）**。
  *      主样式里有元素级兜底 `.lark-doc button { min-height: 30px; padding: 4px 8px;
@@ -407,6 +406,9 @@
   position: relative;
   width: 420px;
   height: 242px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
   background-color: rgb(255, 255, 255);
   border-radius: 8px;
   box-sizing: border-box;
@@ -476,6 +478,8 @@
 /* 输入框 268 × 22：fs 14 / rgb(31,35,41) / **透明底、无边框（`0px none`）、radius 0**。 */
 .lark-doc .lark-doc-save-version-input {
   width: 268px;
+  min-width: 0;
+  flex: 1 1 auto;
   height: 22px;
   padding: 0;
   margin: 0;
@@ -496,6 +500,7 @@
 /* 底部 420 × 56，padding 0 24px 24px。 */
 .lark-doc .lark-doc-save-version-footer {
   flex: 1 1 auto;
+  min-height: 56px;
   padding: 0 24px 24px;
   box-sizing: border-box;
   display: flex;
@@ -549,6 +554,7 @@
   left: 50%;
   transform: translateX(-50%);
   width: 418px;
+  max-width: calc(100vw - 32px);
   min-height: 54px;
   padding: 0 16px;
   box-sizing: border-box;
@@ -573,3 +579,58 @@
   font-size: 14px;
   cursor: pointer;
 }
+
+/* 窄屏顶栏按行排布，分页不能覆盖返回入口；历史列表仍保留独立滚动。 */
+@media (min-width: 761px) and (max-width: 980px), (max-width: 980px) and (pointer: fine) {
+  .lark-doc .lark-doc-version-left { display: flex; flex-direction: column; }
+  .lark-doc .lark-doc-version-left-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 0 auto; height: auto; min-height: 64px; padding: 12px; box-sizing: border-box; }
+  .lark-doc .lark-doc-version-back, .lark-doc .lark-doc-version-restore { position: static; transform: none; flex-shrink: 0; }
+  .lark-doc .lark-doc-version-restore { margin-left: auto; }
+  .lark-doc .lark-doc-version-pager { position: static; flex: 1 0 100%; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .lark-doc .lark-doc-version-cursor { margin-right: auto; }
+  .lark-doc .lark-doc-version-left-content { flex: 1 1 auto; min-height: 0; height: auto; padding: 16px 12px; }
+  .lark-doc .lark-doc-version-right { flex-basis: 40%; width: 40%; max-width: 294px; min-width: 0; }
+  .lark-doc .lark-doc-version-item, .lark-doc .lark-doc-version-item.selected { width: 100%; padding-left: 14px; overflow-wrap: anywhere; }
+}
+
+/* Captured phone history: list and immutable preview are separate steps. */
+.lark-doc .lark-doc-version-source { display: none; position: absolute; top: 18px; left: 64px; border: 0; background: transparent; color: var(--ld-text); }
+.lark-doc .lark-doc-version-saved-menu { position: absolute; left: 180px; top: 18px; z-index: 1; border-radius: 8px; background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-version-saved-menu summary { padding: 4px 10px; cursor: pointer; }
+.lark-doc .lark-doc-version-saved-menu button { display: block; min-height: 40px; }
+.lark-doc .lark-doc-version-day-label { width: 100%; border: 0; text-align: left; background: transparent; }
+.lark-doc .lark-doc-version-item { display: block; width: 100%; border: 0; text-align: left; background: transparent; }
+.lark-doc .lark-doc-version-more-history { width: 100%; min-height: 40px; border: 0; color: var(--ld-brand-chrome); background: transparent; }
+.lark-doc .lark-doc-version-document .ProseMirror { outline: none; }
+.lark-doc .lark-doc-version-change-pager { display: flex; position: sticky; bottom: 0; z-index: 1; gap: 12px; align-items: center; justify-content: flex-end; min-height: 52px; padding: 0 8px; background: var(--ld-bg-surface-chrome); border-top: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-version-change-pager button { min-height: 40px; }
+.lark-doc .lark-doc-version-changes { padding-left: 24px; }
+.lark-doc .lark-doc-version-change { padding: 12px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; margin: 8px 0; }
+.lark-doc .lark-doc-version-change code { display: block; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-version-change pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-version-change.is-active, .lark-doc .lark-doc-version-document .is-version-change { background: var(--ld-bg-selected); outline: 2px solid var(--ld-brand-chrome); outline-offset: 2px; }
+@media (max-width: 760px) and (pointer: coarse) {
+  .lark-doc .lark-doc-version-source { display: block; }
+  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-left { flex: 0 0 64px; }
+  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-left-header { height: 64px; }
+  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-left-content,
+  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-restore,
+  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-saved-menu,
+  .lark-doc .lark-doc-version-layer .lark-doc-version-pager { display: none; }
+  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-right { flex: 1; }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-left { flex: 1; height: 100%; }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-right { display: none; }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-left-header { height: 64px; }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-left-content { height: calc(100% - 64px); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-restore { width: 92px; right: 8px; transform: none; font-size: 12px; }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-source { left: 54px; padding-inline: 4px; }
+  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-saved-menu { left: 152px; top: 16px; }
+  .lark-doc .lark-doc-version-layer.is-phone-list.is-saved-versions { top: auto; max-height: 65dvh; border-radius: 12px 12px 0 0; box-shadow: var(--ld-shadow-float); }
+  .lark-doc .lark-doc-version-layer.is-phone-list.is-saved-versions .lark-doc-version-right { min-height: 200px; max-height: calc(65dvh - 64px); }
+}
+
+.lark-doc .lark-doc-version-restore-mask { position: fixed; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--ld-mask); }
+.lark-doc .lark-doc-version-restore-dialog { box-sizing: border-box; width: min(420px, 100%); padding: 24px; border-radius: 12px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); box-shadow: var(--ld-shadow-float); }
+.lark-doc .lark-doc-version-restore-dialog h2 { margin: 0 0 16px; font-size: 18px; }
+.lark-doc .lark-doc-version-restore-dialog p { margin: 0 0 20px; line-height: 1.6; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-version-restore-dialog button { min-height: 40px; margin-right: 12px; padding: 8px 20px; }

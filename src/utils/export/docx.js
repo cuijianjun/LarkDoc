@@ -1,3 +1,4 @@
+import { flattenHeadingContainers } from '../../core/documentOperations'
 /**
  * Word（.docx）转换器（P6b-04 导出线）。
  *
@@ -27,7 +28,7 @@
  * 都在构造期通过通用的 `extra` 选项下发 —— 依赖私有字段会在 docx 升级时静默失效。
  */
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, ImageRun,
+  AlignmentType, BorderStyle, CommentRangeStart, CommentRangeEnd, CommentReference, Document, ExternalHyperlink, HeadingLevel, ImageRun,
   LevelFormat, Packer, Paragraph, Shading, Table, TableCell, TableRow,
   TextRun, VerticalAlign, WidthType,
 } from 'docx'
@@ -76,12 +77,7 @@ export const DOCX_LEVEL_FORMATS = Object.freeze({
 })
 
 /** 与 markdown.js 的 `BLOCK_SKIP` 保持一致：不支持的块直接跳过（负结论 3）。 */
-export const DOCX_BLOCK_SKIP = Object.freeze([
-  'fileBlock', 'webEmbed', 'cardEmbed', 'bookmark', 'calendar_event',
-  'isv', 'sheet', 'poll', 'bitable', 'unknownBlock', 'blockMath',
-  // 17 §17.5 的外部服务块：与 markdown.js 的 BLOCK_SKIP 同步新增（两处必须一致）。
-  'externalBlock',
-])
+export const DOCX_BLOCK_SKIP = Object.freeze(['unknownBlock'])
 
 // —— 小工具（风格照 core/blocks/revision.js：Object.freeze 常量 + for 循环）——
 
@@ -243,6 +239,12 @@ export function buildInlineRuns(children, images, inlineOptions) {
       const image = runFromImage(node, images)
       if (image) runs.push(image)
       continue
+    }
+    if (node.type === 'mention' || node.type === 'inlineMath' || node.type === 'emoji') {
+      flushLink()
+      const attrs = node.attrs || {}
+      const text = node.type === 'mention' ? `@${attrs.name || attrs.id || ''}` : String(attrs.latex || attrs.name || '')
+      runs.push(new TextRun({ text, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE })); continue
     }
     if (node.type !== 'text') {
       // 内联原子块（emoji / mention 等）：子节点折上来，拿不到东西就整段跳过。
@@ -423,11 +425,48 @@ function buildHorizontalRule() {
   })]
 }
 
+/**
+ * 会议议程 → Word：一项 = 一段「**时长** 标题」+ 该项自己的内容块。
+ *
+ * 与 markdown.js 的 `- **20 分钟** 标题` 同口径（时长加粗、标题跟在其后、内容挂在项下）。
+ * 为什么**不能走 default 分支**：default 只读 attrs 上的 title/latex，而标题正文在
+ * `agendaTitle` 的文本节点里、时长在 `agendaItem.attrs.durationMinutes` 上 —— 两处都读不到，
+ * 导出的 docx 里只剩内容段落、时长与标题整体消失。
+ */
+function buildAgenda(node, images, depth, extra) {
+  const out = []
+  const items = childrenOf(node)
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i] || {}
+    const kids = childrenOf(item)
+    const minutes = Number(item.attrs && item.attrs.durationMinutes)
+    const runs = []
+    if (Number.isFinite(minutes) && minutes > 0) runs.push(new TextRun({ text: `${minutes} 分钟`, bold: true, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE }))
+    for (let k = 0; k < kids.length; k += 1) {
+      if (kids[k].type !== 'agendaTitle') continue
+      const title = buildInlineRuns(childrenOf(kids[k]), images)
+      if (runs.length && title.length) runs.push(new TextRun({ text: ' ', font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE }))
+      for (let t = 0; t < title.length; t += 1) runs.push(title[t])
+    }
+    if (runs.length) out.push(new Paragraph({ ...paragraphOptions(extra), children: runs }))
+    for (let k = 0; k < kids.length; k += 1) {
+      if (kids[k].type === 'agendaTitle') continue
+      out.push(...buildDocxElements(childrenOf(kids[k]), images, depth + 1, extra))
+    }
+  }
+  return out
+}
+
 /** 单个块节点 → Word 元素数组。空数组 = 这个块不产出任何东西。 */
 function buildBlock(node, images, depth, extra) {
   if (!node || typeof node !== 'object') return []
   if (DOCX_BLOCK_SKIP.indexOf(node.type) !== -1) return []
   switch (node.type) {
+    case 'image': {
+      if (Array.isArray(node.attrs?.crop)) return [new Paragraph({ children: [new TextRun('可见裁剪图：此格式暂不支持安全导出裁剪图')] })]
+      const run = runFromImage(node, images)
+      return run ? [new Paragraph({ children: [run] })] : []
+    }
     case 'paragraph':
       return [buildParagraph(node, images, extra)]
     case 'heading':
@@ -446,8 +485,13 @@ function buildBlock(node, images, depth, extra) {
       return buildHorizontalRule()
     case 'table':
       return buildTable(node, images, depth)
-    default:
-      return []
+    case 'agenda':
+      return buildAgenda(node, images, depth, extra)
+    default: {
+      const attrs = node.attrs || {}, label = attrs.title || attrs.name || attrs.latex || ''
+      const nested = buildDocxElements(childrenOf(node), images, depth, extra)
+      return label ? [new Paragraph({ children: [new TextRun(String(label))] }), ...nested] : nested
+    }
   }
 }
 
@@ -505,9 +549,23 @@ export function buildNumberingConfig() {
 export function buildDocxDocument(docOrNodes, options) {
   const settings = options || {}
   const images = settings.images || {}
-  const nodes = Array.isArray(docOrNodes) ? docOrNodes : childrenOf(docOrNodes)
+  const raw = typeof docOrNodes?.toJSON === 'function' ? docOrNodes.toJSON() : docOrNodes
+  const nodes = childrenOf(flattenHeadingContainers(Array.isArray(raw) ? { type: 'doc', content: raw } : raw))
   const children = buildDocxElements(nodes, images, 0)
+  const comments = []
+  for (const thread of Array.isArray(settings.comments) ? settings.comments : []) {
+    if (!thread || thread.tombstone || thread.deleted) continue
+    for (const reply of Array.isArray(thread.replies) ? thread.replies : []) {
+      if (!reply || reply.tombstone || reply.deleted) continue
+      const id = comments.length, author = reply.author || thread.author || {}
+      const quote = typeof thread.quote === 'string' ? thread.quote : ''
+      comments.push({ id, author: String(author.name || author.id || '作者未提供'), date: new Date(Number.isFinite(reply.createdAt) && reply.createdAt > 0 ? reply.createdAt : 0),
+        children: [new Paragraph({ children: [new TextRun(`引用：${quote || '[块级评论]'}`)] }), new Paragraph({ children: [new TextRun(typeof reply.content === 'string' ? reply.content : '')] })] })
+      children.push(new Paragraph({ children: [new CommentRangeStart(id), new TextRun(`评论引用：${quote || '[块级评论]'}`), new CommentRangeEnd(id), new TextRun({ children: [new CommentReference(id)] })] }))
+    }
+  }
   return new Document({
+    comments: { children: comments },
     title: String(settings.title || ''),
     numbering: buildNumberingConfig(),
     sections: [{

@@ -217,11 +217,18 @@ async function main() {
       return {
         fill: shape ? getComputedStyle(shape).fill : null,
         cardBg: card ? getComputedStyle(card).backgroundColor : null,
-        // 代码块 chrome（T3-02）+ 语法 token 色（M6：两档必须相同）
+        // Code cards follow their surface/text tokens in each theme.
         code: code ? getComputedStyle(code) : null,
         codeToolbar: read(code, '.lark-doc-code-toolbar'),
         codeHighlight: read(code, '.lark-doc-code-highlight'),
+        codeKeyword: read(code, '.hljs-keyword'),
         tokens: root ? {
+          ...Object.fromEntries(['--ld-text', '--ld-text-secondary', '--ld-text-link'].map(name => {
+            const probe = document.createElement('span')
+            probe.style.color = `var(${name})`; code.appendChild(probe)
+            const color = getComputedStyle(probe).color; probe.remove()
+            return [name, color]
+          })),
           content: tokenOf('--ld-bg-content'),
           code: tokenOf('--ld-code-bg'),
           card: tokenOf('--ld-diagram-card-bg'),
@@ -291,9 +298,8 @@ async function main() {
       `纸张=${paperRgb} 块色层=${blockRgb} 描边=${borderRgb} 头部条=${toolbarRgb}`
     )
     record(
-      'M6：语法 token 色两档不变（keyword 仍 #c9a2ee / 默认文字仍 #e3eee7）',
-      Boolean(lightPaint && darkPaint && darkPaint.codeHighlight && lightPaint.codeHighlight &&
-        darkPaint.codeHighlight.color === lightPaint.codeHighlight.color),
+      '代码正文和语法色在浅深两档各自跟随可读 token',
+      [lightPaint, darkPaint].every(paint => paint?.codeHighlight?.color === paint?.tokens?.['--ld-text'] && paint?.codeKeyword?.color === paint?.tokens?.['--ld-text-link']),
       `浅=${lightPaint && lightPaint.codeHighlight && lightPaint.codeHighlight.color} 深=${darkPaint && darkPaint.codeHighlight && darkPaint.codeHighlight.color}`
     )
     await page.screenshot({ path: path.join(SHOT_DIR, '03-dark-mermaid.png'), fullPage: true })

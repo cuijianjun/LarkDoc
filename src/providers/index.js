@@ -27,3 +27,4 @@ export * from './versioning'
 
 export * from './embedded'
 export * from './provider-task'
+export * from './document-host-http'

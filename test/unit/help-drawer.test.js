@@ -21,7 +21,11 @@ import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDis
 import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
+// 浮层样式已抽到 deferred-ui.css（由 src/features/ui.js 加载）；测试须把两份都读进来。
+const css = [
+  fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8'),
+  fs.readFileSync(path.join(root, 'src/styles/deferred-ui.css'), 'utf8'),
+].join('\n')
 // 阶段 5 批次 4：`HelpDialog.vue` 已删除，抽屉 DOM 由 `src/ui/dialogs.js` 的
 // `createHelpDrawer` 产出；这里守的是同一批结构口径（盒子仍是抽屉外壳、仍是 314 宽右贴边）。
 const dialog = fs.readFileSync(path.join(root, 'src/ui/dialogs.js'), 'utf8')
@@ -310,7 +314,9 @@ describe('P4-06 抽屉与圆钮规格（04 §3.5 实测像素）', () => {
   it('P4-06 新增样式零字面色（全部走 token / var）', () => {
     const start = css.indexOf('P4-06 · 快捷键抽屉')
     expect(start).toBeGreaterThan(0)
-    const section = css.slice(start)
+    // 只取「快捷键抽屉 + 圆钮」这一节，避免把后续分节注释里的 #1456F0 误判为字面色。
+    const end = css.indexOf('P4-06 · 文档三态模式', start)
+    const section = css.slice(start, end > start ? end : undefined)
     expect(section).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
     // 只否定「把 white 当颜色值」（white-space: nowrap 是正常写法，不能误伤）。
     expect(section).not.toMatch(/:\s*white\b/)

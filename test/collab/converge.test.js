@@ -20,6 +20,7 @@ import { collectRevisions } from '../../src/core/blocks/revision'
 import { createEditorCommentAnchorCodec } from '../../src/collab/anchors'
 import * as Y from 'yjs'
 import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
+import revisionBehavior from '../../src/components/lark-doc/editor/revisionMixin'
 
 const peers = []
 let network = null
@@ -170,18 +171,49 @@ describe('C3 撤销隔离', () => {
     expect(manager.trackedOrigins.has('collab-harness:remote')).toBe(false)
   })
 
-  it.each(['accept', 'reject'])('协同 %s 不入栈，另一个客户端收到相同决策', (action) => {
+  it.each(['accept', 'reject'])('协同 %s 文档Undo恢复建议且另一客户端收敛', (action) => {
     const [a, b] = pair()
     insertBlock(a, { type: 'paragraph', content: [{ type: 'text', text: '建议', marks: [
       { type: 'revision', attrs: { revisionId: 'r1', kind: 'insert', author: 'a' } },
     ] }] })
     const manager = a.editor.state.plugins.find(item => item.key.startsWith('y-undo$')).getState(a.editor.state).undoManager
     manager.clear()
+    const before = a.editor.getJSON()
     a.editor.view.dispatch(buildRevisionDecisionTr(a.editor.state, 'r1', action))
-    expect(manager.undoStack).toHaveLength(0)
-    expect(a.editor.commands.undo()).toBe(false)
+    const decided = a.editor.getJSON()
+    expect(manager.undoStack).toHaveLength(1)
     expect(b.text).toBe(a.text)
     expect(a.text.includes('建议')).toBe(action === 'accept')
+    expect(a.editor.commands.undo()).toBe(true)
+    expect(a.editor.getJSON()).toEqual(before)
+    expect(b.editor.getJSON()).toEqual(before)
+    expect(b.editor.commands.undo()).toBe(false)
+    expect(a.editor.commands.redo()).toBe(true)
+    expect(a.editor.getJSON()).toEqual(decided)
+    expect(b.editor.getJSON()).toEqual(decided)
+  })
+
+  it.each(['accept', 'reject'])('host %s 决策与前后本地输入保持三个独立Yjs Undo步骤', action => {
+    const [a, b] = pair()
+    insertBlock(a, { type: 'paragraph', content: [{ type: 'text', text: '建议', marks: [
+      { type: 'revision', attrs: { revisionId: 'r-group', kind: 'insert', author: 'a' } },
+    ] }] })
+    const manager = a.editor.state.plugins.find(item => item.key.startsWith('y-undo$')).getState(a.editor.state).undoManager
+    manager.clear()
+    a.editor.commands.insertContentAt(1, '前文')
+    const before = a.editor.getJSON()
+    const host = { ...revisionBehavior.methods, editor: a.editor, writable: () => true, revisionReadonly: false }
+    host.decideRevision('r-group', action)
+    const decided = a.editor.getJSON()
+    expect(manager.undoStack).toHaveLength(2)
+    a.editor.commands.insertContentAt(a.editor.state.doc.content.size - 1, '后文')
+    expect(manager.undoStack).toHaveLength(3)
+    expect(a.editor.commands.undo()).toBe(true)
+    expect(a.editor.getJSON()).toEqual(decided)
+    expect(a.editor.commands.undo()).toBe(true)
+    expect(a.editor.getJSON()).toEqual(before)
+    expect(b.editor.getJSON()).toEqual(before)
+    expect(b.editor.commands.undo()).toBe(false)
   })
 
   it('协同历史严格裁剪到 100 组，远端编辑不入本地栈', () => {

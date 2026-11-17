@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cssInjection, FEATURE_TARGETS, getRollupConfig, inlineCssImports, isRuntimeChunk, MERMAID_FILES, ROLLUP_TARGETS } from '../../rollup.config.mjs'
+import { cssInjection, FEATURE_TARGETS, getRollupConfig, inlineCssImports, isRuntimeChunk, MERMAID_FILES, panelPresentationShape, versioningPresentationShape, commentInteractionShape, ROLLUP_TARGETS } from '../../rollup.config.mjs'
 import { assertStableInputs, canReuseBuild, cleanStaleChunks, inputFingerprint, inputSnapshotPlugin, normalizeOutput, realInputFiles, rollupCacheGroup, targetsFor } from '../../scripts/build-rollup.mjs'
 import pkg from '../../package.json'
 import fs from 'node:fs'
@@ -12,9 +12,102 @@ import { rollup } from 'rollup'
 import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
 import { JSDOM } from 'jsdom'
+import sourceCommentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
 
 const requireHere = createRequire(import.meta.url)
 const pmNames = ['state', 'model', 'view', 'transform', 'commands', 'keymap', 'inputrules', 'schema-list', 'history', 'gapcursor', 'dropcursor', 'tables', 'changeset']
+
+it('external checks recognize static imports and reexports without accepting lazy imports or text', () => {
+  const requests = graph.staticModuleRequests(`
+    import * as Y from 'yjs';
+    export { isChangeOrigin as isRemoteTransaction } from '@tiptap/extension-collaboration';
+    export * from '@tiptap/extension-collaboration-caret';
+    export const misleading = '@hocuspocus/provider';
+    const lazy = () => import('@hocuspocus/provider');
+    // import 'fake-comment';
+  `)
+  expect(requests).toEqual(['yjs', '@tiptap/extension-collaboration', '@tiptap/extension-collaboration-caret'])
+})
+
+it('assembles the CI smoke host with the complete Element loader dependency files', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/e2e.yml'), 'utf8')
+  const block = workflow.match(/name: Assemble smoke host directory\s+run: \|\n([\s\S]*?)(?=\n {6}- name:)/)
+  expect(block).not.toBeNull()
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'lark-doc-ci-host-'))
+  const files = ['lark-doc-element.umd.min.js', 'lark-doc-element.runtime.umd.min.js', 'features/highlight.umd.js', 'fonts/editor.woff2']
+  try {
+    for (const file of files) {
+      const target = path.join(fixture, 'dist', file)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, file)
+    }
+    fs.mkdirSync(path.join(fixture, 'scripts/e2e'), { recursive: true })
+    fs.writeFileSync(path.join(fixture, 'scripts/e2e/host.html'), '<div id="host"></div>')
+    const result = spawnSync('sh', ['-eu', '-c', block[1].split('\n').map(line => line.trim()).join('\n')], { cwd: fixture, encoding: 'utf8' })
+    expect(result.status, result.stderr).toBe(0)
+    for (const file of files) expect(fs.existsSync(path.join(fixture, '.e2e-smoke', file)), file).toBe(true)
+    expect(fs.readFileSync(path.join(fixture, '.e2e-smoke/index.html'), 'utf8')).toContain('id="host"')
+  } finally { fs.rmSync(fixture, { recursive: true, force: true }) }
+})
+
+it('clean Element build includes its eager runtime and every local optional script', () => {
+  const features = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document'].map(name => `feature:${name}:umd`)
+  expect(targetsFor('element')).toEqual(['element', 'elementRuntime', ...features])
+  expect(targetsFor('elementRuntime')).toEqual(['elementRuntime', ...features])
+  expect(new Set(targetsFor('all')).size).toBe(targetsFor('all').length)
+})
+
+it('optional browser collaboration bundles installed peers while sharing the published PM runtime', () => {
+  const config = getRollupConfig('collabBrowser')
+  expect(config.input).toMatch(/src\/collab\/browser\.js$/)
+  expect(config.external('yjs')).toBe(false)
+  expect(config.external('@hocuspocus/provider')).toBe(false)
+  expect(config.external('@tiptap/extension-collaboration')).toBe(false)
+  expect(config.external('@tiptap/pm/state')).toBe(true)
+  expect(config.output.paths('@tiptap/pm/state')).toBe('./pm/state.js')
+  expect(config.output.inlineDynamicImports).toBe(true)
+  expect(config.output.manualChunks).toBeUndefined()
+  expect(targetsFor('collabBrowser')).toEqual(['pm', 'collabBrowser'])
+  expect(targetsFor('all')).toContain('collabBrowser')
+  expect(getRollupConfig('collab').external('yjs')).toBe(true)
+})
+
+it('bundles browser collaboration peers after external ESM and CJS builds reuse their Rollup cache', async () => {
+  const caches = new Map(), peer = 'yjs'
+  for (const target of ['collab', 'collabCjs', 'collabBrowser']) {
+    const config = getRollupConfig(target), group = rollupCacheGroup(target)
+    const bundle = await rollup({ input: 'virtual-entry', external: config.external, cache: caches.get(group), plugins: [{
+      name: 'browser-peer-cache-fixture',
+      resolveId(id) { if (id === 'virtual-entry' || id === peer) return id },
+      load(id) { return id === 'virtual-entry' ? `export {value} from '${peer}'` : id === peer ? 'export const value = 42' : null },
+    }] })
+    try {
+      caches.set(group, bundle.cache)
+      const { output } = await bundle.generate({ format: config.output.format })
+      const imports = output.flatMap(item => item.type === 'chunk' ? item.imports : [])
+      if (target === 'collabBrowser') { expect(imports).not.toContain(peer); expect(output[0].code).toContain('42') }
+      else expect(imports).toContain(peer)
+    } finally { await bundle.close() }
+  }
+})
+
+it('shares PM in native Element ESM after an inline UMD runtime builds first', async () => {
+  const caches = new Map(), peer = '@tiptap/pm/state'
+  for (const target of ['elementRuntime', 'elementEsm']) {
+    const config = getRollupConfig(target), group = rollupCacheGroup(target)
+    const bundle = await rollup({ input: 'virtual-element-entry', external: config.external, cache: caches.get(group), plugins: [{
+      name: 'element-pm-cache-fixture',
+      resolveId(id) { if (id === 'virtual-element-entry' || id === peer) return id },
+      load(id) { return id === 'virtual-element-entry' ? `export {value} from '${peer}'` : id === peer ? 'export const value = 43' : null },
+    }] })
+    try {
+      caches.set(group, bundle.cache)
+      const { output } = await bundle.generate({ format: config.output.format, ...(target === 'elementRuntime' ? { name: 'Fixture' } : {}), paths: config.output.paths })
+      if (target === 'elementEsm') { expect(output[0].imports).toContain('./pm/state.js'); expect(output[0].code).not.toContain('43') }
+      else { expect(output[0].imports).toEqual([]); expect(output[0].code).toContain('43') }
+    } finally { await bundle.close() }
+  }
+})
 
 function evaluateCjsChunks(output, file, external = requireHere) {
   const loaded = new Map()
@@ -91,48 +184,218 @@ describe('公开产物与轻量包边界', () => {
     expect(aliasFor('feature:markdown:umd').resolveId('marked')).toBeNull()
   })
 
-  it('UI 延迟边界只影响 Element 编辑器，目录及其他入口保持同步真实实现', () => {
+  it('编辑器低频 UI 在标准与 Element 入口延迟，目录保留同步且不拉入重面板', () => {
     const importer = path.resolve(__dirname, '../../src/components/lark-doc/editor/commandMenuUiMixin.js')
     const aliasFor = target => getRollupConfig(target).plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
     const alias = aliasFor('element')
-    for (const name of ['panels', 'dialogs', 'extendedOverlays', 'colorPalette', 'revision', 'isvPanel', 'reminder', 'calendarSearch', 'searchPanel', 'commandMenu']) {
+    for (const name of ['panels', 'dialogs', 'extendedOverlays', 'colorPalette', 'revision', 'isvPanel', 'reminder', 'calendarSearch', 'searchPanel', 'commandMenu', 'templateLibrary', 'overlays', 'notifications', 'tableTools', 'tableOverlays', 'linkTools', 'cellPlusTools', 'bubbleBar']) {
       const source = `../../../ui/${name}`
       const id = alias.resolveId(source, importer)
       expect(id).toMatch(/^\0lark-doc-element-ui:/)
       expect(alias.load(id)).toContain('createDeferredUi')
       expect(alias.resolveId(source, path.resolve(__dirname, '../../src/features/ui.js'))).toBeNull()
-      for (const target of ['esm', 'cjs', 'lite', 'elementEsm', 'feature:ui', 'feature:ui:umd']) {
-        expect(aliasFor(target).resolveId(source, importer)).toBeNull()
+      for (const target of ['esm', 'cjs', 'lite', 'elementEsm']) {
+        const deferred = aliasFor(target).resolveId(source, importer)
+        expect(deferred).toMatch(/^\0lark-doc-element-ui:/)
+        expect(aliasFor(target).load(deferred)).toContain('import(')
       }
+      for (const target of ['feature:ui', 'feature:ui:umd']) expect(aliasFor(target).resolveId(source, importer)).toBeNull()
     }
     expect(alias.resolveId('../../../core/blocks/reminder', importer)).toBeNull()
-    expect(alias.load(alias.resolveId('../../../ui/panels', importer))).toContain('export {createOutlinePanel} from')
+    expect(alias.resolveId('../../../ui/shareEntry', importer)).toBeNull()
+    expect(alias.load(alias.resolveId('../../../ui/panels', importer))).toContain('src/ui/outlinePanel.js')
     expect(targetsFor('all')).toContain('feature:ui:umd')
     expect(targetsFor('features')).toContain('feature:ui')
   })
 
+  it('Element历史样式在真实冷UI注册前注入，标准公开样式仍完整', async () => {
+    const root = path.resolve(__dirname, '../..'), styles = [], readyStyles = []
+    const document = { head: { appendChild: node => styles.push(node.textContent) }, createElement: () => ({}) }
+    const registry = new Map(), set = registry.set.bind(registry)
+    registry.set = (name, loader) => { if (name === 'ui.ready') readyStyles.push(styles.join('')); return set(name, loader) }
+    const context = { document, Map, URL, __LARK_DOC_FEATURES__: registry }
+    const hasVersionLayer = css => { let found = false; requireHere('postcss').parse(css).walkRules(rule => { if (rule.selectors?.some(selector => selector.trim() === '.lark-doc .lark-doc-version-layer')) found = true }); return found }
+    for (const target of ['esm', 'elementRuntime']) {
+      const config = getRollupConfig(target), input = '\0styles-boundary-fixture'
+      const bundle = await rollup({ ...config, input, plugins: [{ name: 'styles-boundary-fixture', resolveId: id => id === input ? input : null,
+        load: id => id === input ? `import ${JSON.stringify(path.join(root, 'style.css'))}; export const styleEntry = true` : null }, ...config.plugins] })
+      try {
+        const { output } = await bundle.generate({ ...config.output, plugins: [] })
+        if (target === 'esm') expect(hasVersionLayer(Buffer.from(output.find(item => item.type === 'asset' && item.fileName === 'lark-doc.css').source).toString())).toBe(true)
+        else { runInNewContext(output.find(item => item.type === 'chunk').code, context); expect(hasVersionLayer(styles.join(''))).toBe(false) }
+      } finally { await bundle.close() }
+    }
+    const config = getRollupConfig('feature:ui:umd'), bundle = await rollup(config)
+    try {
+      const { output } = await bundle.generate({ ...config.output, plugins: [] })
+      runInNewContext(output.find(item => item.type === 'chunk').code, context)
+      expect(readyStyles).toHaveLength(1)
+      expect(hasVersionLayer(readyStyles[0])).toBe(true)
+    } finally { await bundle.close() }
+  }, 15000)
+
+  it('标准入口真实构建图保留同步目录，重面板只存在于动态闭包', async () => {
+    const config = getRollupConfig('esm')
+    const alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const input = alias.resolveId('../../../ui/panels', path.resolve(__dirname, '../../src/components/lark-doc/editor/panelsUiMixin.js'))
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'deferred-entry', resolveId: id => id === input ? input : null }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ ...config.output, plugins: [] })
+      const chunks = new Map(output.filter(item => item.type === 'chunk').map(item => [item.fileName, item]))
+      const visited = new Set(), modules = []
+      const visit = name => { if (visited.has(name)) return; visited.add(name); const item = chunks.get(name); if (!item) return; modules.push(...Object.keys(item.modules)); item.imports.forEach(visit) }
+      output.filter(item => item.type === 'chunk' && item.isEntry).forEach(item => visit(item.fileName))
+      expect(modules.some(id => id.endsWith('/src/ui/outlinePanel.js'))).toBe(true)
+      for (const file of ['panels.js', 'dialogs.js', 'commandMenu.js']) expect(modules.some(id => id.endsWith('/src/ui/' + file))).toBe(false)
+      expect(output.some(item => item.type === 'chunk' && item.isDynamicEntry && Object.keys(item.modules).some(id => id.endsWith('/src/ui/panels.js')))).toBe(true)
+    } finally { await bundle.close() }
+  })
+
   it('真实 UI 独立脚本按需去重、失败可重试，面板状态和事件互相隔离', async () => {
-    const dom = new JSDOM('', { url: 'https://assets.test/page', runScripts: 'outside-only' })
+    const dom = new JSDOM('', { url: 'https://assets.test/page', runScripts: 'outside-only', pretendToBeVisual: true })
     const context = dom.getInternalVMContext()
     const { document } = dom.window
+    Object.defineProperty(dom.window, 'innerWidth', { configurable: true, value: 393 })
     const script = document.createElement('script')
     script.src = 'https://assets.test/vendor/lark-doc-element.umd.min.js'
     Object.defineProperty(document, 'currentScript', { value: script, configurable: true })
     const config = getRollupConfig('element')
     const input = '\0element-ui-fixture'
     const root = path.resolve(__dirname, '../..')
-    const source = `import ${JSON.stringify(path.join(root, 'src/features/element.js'))};export {createDeferredUi} from ${JSON.stringify(path.join(root, 'src/features/element-ui.js'))};export {default as commandMenuUiMixin} from ${JSON.stringify(path.join(root, 'src/components/lark-doc/editor/commandMenuUiMixin.js'))}`
-    const bundle = await rollup({ ...config, input, plugins: [{ name: 'element-ui-fixture', resolveId: id => id === input ? id : null, load: id => id === input ? source : null }, ...config.plugins] })
+    const alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const panels = alias.resolveId('../../../ui/panels', path.join(root, 'src/components/lark-doc/editor/panelsUiMixin.js'))
+    const bubble = alias.resolveId('../../../ui/bubbleBar', path.join(root, 'src/components/lark-doc/editor/bubbleMenuMixin.js'))
+    const presentation = alias.resolveId('./panelPresentation', path.join(root, 'src/components/lark-doc/editor/commentPanelView.js'))
+    const tablePresentation = alias.resolveId('./tablePresentation', path.join(root, 'src/components/lark-doc/editor/tableToolsUiMixin.js'))
+    const commentInteraction = alias.resolveId('./commentInteraction', path.join(root, 'src/components/lark-doc/editor/commentsMixin.js'))
+    const calloutPresentation = alias.resolveId('./calloutPresentation', path.join(root, 'src/components/lark-doc/editor/calloutColorMixin.js'))
+    const versioningPresentation = alias.resolveId('./versioningPresentation', path.join(root, 'src/components/lark-doc/editor/versioningMixin.js'))
+    const source = `import ${JSON.stringify(path.join(root, 'src/features/element.js'))};export {createDeferredUi} from ${JSON.stringify(path.join(root, 'src/features/element-ui.js'))};export {default as commandMenuUiMixin} from ${JSON.stringify(path.join(root, 'src/components/lark-doc/editor/commandMenuUiMixin.js'))};export {createCommentPanel} from ${JSON.stringify(panels)};export {createBubbleBar} from ${JSON.stringify(bubble)};export {createPanelPresentation} from ${JSON.stringify(presentation)};export {createTablePresentation} from ${JSON.stringify(tablePresentation)};export {createCommentInteraction} from ${JSON.stringify(commentInteraction)};export {createCalloutPresentation} from ${JSON.stringify(calloutPresentation)};export {createVersioningPresentation} from ${JSON.stringify(versioningPresentation)};export {createNativeOptionsHost} from ${JSON.stringify(path.join(root, 'src/editor/nativeOptionsHost.js'))};export {createWorkspace} from ${JSON.stringify(path.join(root, 'src/ui/workspace.js'))}`
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'element-ui-fixture', resolveId: id => [input, panels, bubble, presentation, tablePresentation, commentInteraction, calloutPresentation, versioningPresentation].includes(id) ? id : null, load: id => id === input ? source : null }, ...config.plugins] })
     const feature = await rollup(getRollupConfig('feature:ui:umd'))
+    const commentHandles = []
+    const presentationHosts = []
+    const workspaces = []
+    let bubbleHandle
     try {
       const main = await bundle.generate(config.output)
       const built = await feature.generate(getRollupConfig('feature:ui:umd').output)
       const code = built.output.find(item => item.type === 'chunk').code
       expect(Object.keys(built.output[0].modules).some(id => /node_modules\/(?:@tiptap|prosemirror-)/.test(id))).toBe(false)
       runInContext(main.output[0].code, context)
+      const visibility = { open: false, documentInline: true }
+      const presenter = dom.window.LarkDoc.createPanelPresentation({ commentModel: {} })
+      class CellSelection {}
+      const table = dom.window.LarkDoc.createTablePresentation({ CellSelection })
+      const commentInteractionMethods = dom.window.LarkDoc.createCommentInteraction({}).methods
+      const commentInteractionHost = { commentMentionPicker: { scope: 'document', status: 'loading' } }
+      expect(commentInteractionMethods.documentMentionKeydown.call(commentInteractionHost, 'document', 'Escape')).toBe(false)
+      expect(commentInteractionHost.commentMentionPicker.scope).toBe('document')
+      const anchor = { left: 12, top: 20 }, selection = new CellSelection()
+      expect(table.methods.buildTableToolsPresentation.call({}, { open: true, anchor, cellKind: 'multi', selection })).toEqual({ open: true, anchor, cellKind: 'multi' })
+      const tableRoot = document.createElement('section'); document.body.append(tableRoot)
+      const tableEvent = vi.fn(); tableRoot.addEventListener('table-command', tableEvent)
+      table.methods.dispatchToolbarAction.call({ $refs: { root: tableRoot } }, 'table-command', { current: 'before-load' })
+      expect(tableEvent).not.toHaveBeenCalled()
+      const runtime = dom.window.LarkDoc.createNativeOptionsHost({ options: { computed: {
+        historical() { return presenter.computed.historicalOnly.call({ ed: this, documentOnly: false }) },
+      }, methods: { buildCommentVisibility: () => visibility } }, state: { panelPresentationRevision: 0, commentHistorical: true } })
+      presentationHosts.push(runtime)
+      const callout = dom.window.LarkDoc.createNativeOptionsHost({ options: { computed: dom.window.LarkDoc.createCalloutPresentation().computed }, state: { calloutPresentationRevision: 0, calloutEmojiQuery: '嘿嘿', calloutEmojiCategory: 'all', calloutEmojiRecent: [] } })
+      presentationHosts.push(callout)
+      expect(callout.host.calloutEmojiCategories).toEqual([])
+      expect(callout.host.filteredCalloutEmojiItems).toEqual([])
+      const versioning = dom.window.LarkDoc.createVersioningPresentation({ groupVersionsByDay: list => list.map(item => ({ key: item.id })) })
+      const versioningRuntime = dom.window.LarkDoc.createNativeOptionsHost({ options: { computed: versioning.computed },
+        state: { panelPresentationRevision: 0, versionList: [{ id: 'current' }] } })
+      presentationHosts.push(versioningRuntime)
+      expect(versioningRuntime.host.versionDayGroups).toEqual([])
+      expect(versioningRuntime.host.versionSelectedDiff).toBeNull()
+      expect(versioningRuntime.host.versionChangeCursor).toBe('')
+      expect(versioningRuntime.host.versionRestoreConfirmText).toBe('')
+      expect(versioning.methods.versionTimelineClass.call({})).toEqual({ selected: false })
+      const previewElement = document.createElement('div')
+      expect(() => versioning.methods.mountVersionDocumentPreview.call({}, previewElement, {})).toThrow('版本预览界面尚未加载')
+      expect(previewElement.childNodes).toHaveLength(0)
+      expect(runtime.host.historical).toBeUndefined()
+      expect(presenter.methods.buildCommentState.call(runtime.host)).toBe(visibility)
       const scripts = []
       const append = document.head.appendChild.bind(document.head)
       document.head.appendChild = node => { if (node.tagName === 'SCRIPT') scripts.push(node); return append(node) }
+      const settle = async () => { for (let i = 0; i < 24; i += 1) await Promise.resolve() }
+      const makeWorkspace = () => {
+        const headerHost = document.createElement('div'), panelHost = document.createElement('div')
+        document.body.append(headerHost, panelHost)
+        const handle = dom.window.LarkDoc.createWorkspace({ headerHost, panelHost })
+        workspaces.push(handle)
+        handle.update({ saveStatus: '同步保存入口', aiEnabled: true, aiOpen: false, historyEnabled: false, templatesEnabled: true, templateOpen: false })
+        return { handle, headerHost, panelHost }
+      }
+      const retiredWorkspace = makeWorkspace(), currentWorkspace = makeWorkspace()
+      await settle()
+      expect(scripts).toHaveLength(0)
+      expect(retiredWorkspace.headerHost.querySelector('[role="status"]').textContent).toBe('同步保存入口')
+      const makeComments = (handlers = {}) => {
+        const root = document.createElement('div'); root.className = 'lark-doc'
+        const inlineHost = document.createElement('main'); inlineHost.className = 'lark-doc-main'
+        const host = document.createElement('div'); root.append(inlineHost, host); document.body.append(root)
+        const ui = dom.window.LarkDoc.createCommentPanel({ host, inlineHost, handlers })
+        commentHandles.push(ui)
+        return { ui, root, inlineHost }
+      }
+      const hiddenState = { open: false, documentInline: false, launcher: { visible: false } }
+      const hidden = makeComments(); hidden.ui.update(hiddenState)
+      const latePanelHost = document.createElement('div'), lateInlineHost = document.createElement('main')
+      document.body.append(latePanelHost, lateInlineHost)
+      const lateOwner = { setCommentDocumentDraft: vi.fn() }
+      const lateHandlers = vi.fn(() => presenter.methods.panelsHandlers.call(lateOwner).comment)
+      const latePanel = dom.window.LarkDoc.createCommentPanel({ host: latePanelHost, inlineHost: lateInlineHost,
+        get handlers() { return lateHandlers() } })
+      commentHandles.push(latePanel)
+      latePanel.update(hiddenState)
+      await settle()
+      expect(scripts).toHaveLength(0)
+      expect(lateHandlers).not.toHaveBeenCalled()
+      retiredWorkspace.handle.update({ aiOpen: true, aiImageChat: true })
+      retiredWorkspace.handle.focusImageAI()
+      retiredWorkspace.handle.update({ aiOpen: false })
+      const templateFocused = vi.fn()
+      currentWorkspace.panelHost.addEventListener('focusin', templateFocused)
+      currentWorkspace.handle.update({ templateOpen: true, templateQuery: '旧查询' })
+      currentWorkspace.handle.focusTemplateSearch()
+      currentWorkspace.handle.update({ templateQuery: '当前查询', readonly: true })
+
+      const { default: panelsUiMixin } = await import('../../src/components/lark-doc/editor/panelsUiMixin')
+      const { createMemoryCommentsProvider } = await import('../../src/core/comments/memory-provider')
+      const provider = createMemoryCommentsProvider()
+      const onDocumentComposerDraft = vi.fn(), onToggleSidebar = vi.fn()
+      const footer = makeComments({ onDocumentComposerDraft })
+      const commentContext = {
+        $refs: { root: footer.root }, _mobileEditorMedia: { matches: true }, commentIdentityGeneration: 1,
+        commentProvider: () => provider, featureEnabled: () => true, commentCan: () => true,
+        commentAllowed: () => true, commentDraftImages: () => [], commentAuthorName: () => 'Alice',
+        commentDocumentDraft: 'Alice 的旧草稿', commentDocumentReplyTarget: { principalId: 'alice', displayName: 'Alice' },
+      }
+      const buildComments = () => panelsUiMixin.methods.buildCommentState.call(commentContext)
+      const initialCommentState = buildComments()
+      expect(initialCommentState.open).toBe(false)
+      expect(initialCommentState.documentInline).toBe(true)
+      expect(initialCommentState.launcher.visible).toBe(true)
+      // Each visibility flag must work independently; one instance cannot hide
+      // a missing predicate branch by loading the shared feature for the other.
+      footer.ui.update({ ...initialCommentState, launcher: { visible: false } })
+      const launcher = makeComments({ onToggleSidebar })
+      launcher.ui.update({ ...initialCommentState, documentInline: false })
+      commentContext.commentIdentityGeneration = 2
+      commentContext.commentDocumentDraft = 'Bob 的当前草稿'
+      commentContext.commentDocumentReplyTarget = { principalId: 'bob', displayName: 'Bob' }
+      const currentCommentState = { ...buildComments(), launcher: { visible: false } }
+      footer.ui.update(currentCommentState)
+      latePanel.update(currentCommentState)
+      expect(lateHandlers).not.toHaveBeenCalled()
+      lateOwner.setCommentDocumentDraft = vi.fn()
+      await settle()
+      expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.ui.js'])
       const hosts = [document.createElement('div'), document.createElement('div')]
       hosts.forEach(host => document.body.appendChild(host))
       const onQuery = vi.fn()
@@ -146,19 +409,90 @@ describe('公开产物与轻量包边界', () => {
         buildCommandMenuState: () => ({ open: true, kind: 'plus', query: '', items: [], templates: [] }),
         refreshCommandMenu() { menuMethods.refreshCommandMenu.call(this) } }
       menuMethods.mountCommandMenu.call(menuContext)
-      const settle = async () => { for (let i = 0; i < 24; i += 1) await Promise.resolve() }
       ui.forEach((panel, index) => panel.update({ open: true, query: `查询${index}` }))
       await settle()
       expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.ui.js'])
       scripts[0].onerror()
       await settle()
       expect(hosts.every(host => host.querySelector('[role="alert"]'))).toBe(true)
+      expect(retiredWorkspace.panelHost.querySelector('[role="alert"]')).toBeNull()
+      currentWorkspace.panelHost.querySelector('[role="alert"]').click()
       ;[...hosts, menuHost].forEach(host => host.querySelector('[role="alert"]').click())
+      footer.ui.update(currentCommentState)
+      latePanel.update(currentCommentState)
+      launcher.ui.update({ ...currentCommentState, documentInline: false, launcher: { visible: true } })
+      const retired = makeComments()
+      retired.ui.update(currentCommentState)
+      retired.ui.update(hiddenState)
       await settle()
       expect(scripts).toHaveLength(2)
       runInContext(code, context)
       scripts[1].onload()
       await settle()
+      expect(lateHandlers).toHaveBeenCalledOnce()
+      const lateDraft = lateInlineHost.querySelector('textarea[aria-label="全文评论"]')
+      lateDraft.value = '当前宿主输入'
+      lateDraft.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      expect(lateOwner.setCommentDocumentDraft).toHaveBeenCalledWith('当前宿主输入', [], [])
+      // UI readiness alone is not reactive: the native panel's onReady revision
+      // invalidates the cold computed cache before painting its full projection.
+      expect(versioningRuntime.host.versionDayGroups).toEqual([])
+      versioningRuntime.host.panelPresentationRevision++
+      expect(versioningRuntime.host.versionDayGroups).toEqual([{ key: 'current' }])
+      versioningRuntime.host.versionList = [{ id: 'new-current' }]
+      expect(versioningRuntime.host.versionDayGroups).toEqual([{ key: 'new-current' }])
+      expect(versioning.methods.versionActorLabel.call({}, { author: '当前作者' })).toBe('当前作者')
+      expect(versioning.methods.versionTimelineClass.call({ versionSelectedId: 'current' }, { id: 'current' })).toEqual({ selected: true })
+      expect(typeof versioning.methods.mountVersionDocumentPreview.call({}, previewElement, {})).toBe('function')
+      expect(previewElement.textContent).toContain('无法预览此版本')
+      callout.host.calloutPresentationRevision++
+      expect(callout.host.calloutEmojiCategories).toHaveLength(9)
+      expect(callout.host.filteredCalloutEmojiItems[0]).toMatchObject({ glyph: '😀', value: 'grinning', label: '嘿嘿' })
+      callout.host.calloutEmojiQuery = 'absent-search-token'
+      expect(callout.host.filteredCalloutEmojiItems).toEqual([])
+      expect(commentInteractionMethods.documentMentionKeydown.call(commentInteractionHost, 'document', 'Escape')).toBe(true)
+      expect(commentInteractionHost.commentMentionPicker).toBeNull()
+      expect(retiredWorkspace.panelHost.childNodes).toHaveLength(0)
+      const templateSearch = currentWorkspace.panelHost.querySelector('input[aria-label="搜索模板"]')
+      expect(templateSearch.value).toBe('当前查询')
+      expect(templateFocused).toHaveBeenCalled()
+      currentWorkspace.handle.focusTemplateSearch()
+      expect(document.activeElement).toBe(templateSearch)
+      currentWorkspace.handle.update({ templateOpen: false })
+      expect(currentWorkspace.panelHost.childNodes).toHaveLength(0)
+      expect(runtime.host.historical).toBeUndefined()
+      table.methods.dispatchToolbarAction.call({ $refs: { root: tableRoot } }, 'table-command', { current: 'loaded' })
+      expect(tableEvent).toHaveBeenCalledOnce()
+      expect(tableEvent.mock.calls[0][0].detail).toEqual({ current: 'loaded' })
+      runtime.host.panelPresentationRevision++
+      expect(runtime.host.historical).toBe(true)
+      runtime.host.commentHistorical = false
+      expect(runtime.host.historical).toBe(false)
+      expect(footer.inlineHost.querySelector('.lark-doc-document-comment-heading')?.textContent).toBe('全文评论')
+      const draft = footer.inlineHost.querySelector('textarea[aria-label="全文评论"]')
+      expect(draft?.value).toBe('Bob 的当前草稿')
+      expect(footer.inlineHost.textContent).toContain('回复：Bob')
+      expect(footer.root.textContent).not.toContain('Alice')
+      draft.value = 'Bob 新输入'; draft.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      expect(onDocumentComposerDraft).toHaveBeenCalledWith('Bob 新输入', expect.anything())
+      const launch = launcher.root.querySelector('[aria-label="展开评论"]')
+      expect(launch?.isConnected).toBe(true)
+      expect(launcher.inlineHost.querySelector('.lark-doc-document-comment-heading')).toBeNull()
+      launch.click(); expect(onToggleSidebar).toHaveBeenCalledOnce()
+      for (const item of [hidden, retired]) {
+        expect(item.ui.el).toBeUndefined()
+        expect(item.root.querySelector('.lark-doc-document-comment-heading, [aria-label="展开评论"]')).toBeNull()
+      }
+      const bubbleHost = document.createElement('div'); document.body.append(bubbleHost)
+      const onCopy = vi.fn(), bubbleConfig = { mobile: true, ai: false, blockStyle: false, marks: [], canCopy: true }
+      bubbleHandle = dom.window.LarkDoc.createBubbleBar(bubbleHost, { config: bubbleConfig, handlers: { onCopy } })
+      expect(bubbleHandle.setConfig({ ...bubbleConfig })).toBe(false)
+      bubbleHandle.update({ open: true, left: 20, top: 30 })
+      expect(bubbleHandle.el?.parentNode).toBe(bubbleHost)
+      bubbleHost.querySelector('[aria-label="复制选中文字"]').click()
+      expect(onCopy).toHaveBeenCalledOnce()
+      bubbleHandle.positionAlignMenu(); bubbleHandle.positionHeadingMenu(); bubbleHandle.hide()
+      expect(bubbleHandle.el.isConnected).toBe(false)
       expect(onReady).toHaveBeenCalledOnce()
       menuMethods.destroyCommandMenu.call(menuContext)
       expect(hosts.map(host => host.querySelector('input').value)).toEqual(['查询0', '查询1'])
@@ -175,8 +509,280 @@ describe('公开产物与轻量包边界', () => {
       expect(hosts[1].querySelector('input').value).toBe('重开')
       expect(scripts).toHaveLength(2)
       ui[1].destroy()
-    } finally { await bundle.close(); await feature.close(); dom.window.close() }
+    } finally { workspaces.forEach(handle => handle.destroy()); presentationHosts.forEach(runtime => runtime.destroy()); commentHandles.forEach(handle => handle.destroy()); bubbleHandle?.destroy(); await bundle.close(); await feature.close(); dom.window.close() }
   }, 30000)
+
+  it('workspace action controls stay synchronous while inactive panels stay outside the initial graph', () => {
+    const importer = path.resolve(__dirname, '../../src/ui/workspace.js')
+    const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./workspacePanels', importer)
+    expect(id).toBe('\0lark-doc-element-ui:workspacePanels')
+    const code = alias.load(id)
+    expect(code).toContain('createWorkspacePanels')
+    expect(code).toContain('templatesEnabled')
+    expect(code).toContain('historyEnabled')
+    expect(code).toContain('aiEnabled')
+    expect(code).toContain('s.notice')
+    expect(alias.resolveId('../ui/workspace', path.resolve(__dirname, '../../src/mount/domRenderer.js'))).toBeNull()
+  })
+
+  it('comment UI interaction is deferred without changing the hot comment write or initial-link handlers', () => {
+    const importer = path.resolve(__dirname, '../../src/components/lark-doc/editor/commentsMixin.js')
+    const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./commentInteraction', importer)
+    expect(id).toBe('\0lark-doc-comment-interaction')
+    const code = alias.load(id)
+    expect(code).toContain('documentMentionKeydown')
+    expect(code).not.toContain('createCommentFromSelection')
+    expect(code).not.toContain('openCommentLink')
+    expect(code).not.toContain('clearUnavailableCommentView')
+  })
+
+  it('compiled comment boundary keeps automatic follow reads hot and cached UI continuations usable after withdrawal', async () => {
+    const root = process.cwd(), importer = path.join(root, 'src/components/lark-doc/editor/commentsMixin.js')
+    const config = getRollupConfig('esm'), alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./commentInteraction', importer), input = '\0comment-recovery-fixture'
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'comment-recovery-fixture', resolveId: source => [input, id].includes(source) ? source : null,
+      load: source => source === input ? `export {createCommentInteraction} from ${JSON.stringify(id)};export {registerFeature} from ${JSON.stringify(path.join(root, 'src/core/features/registry.js'))}` : null }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ format: 'iife', name: 'CommentFixture' }), context = {}
+      runInNewContext(output[0].code, context)
+      const dependencies = { createCommentOperationId: () => 'original-follow-write' }
+      const cold = context.CommentFixture.createCommentInteraction(dependencies).methods, coldNames = commentInteractionShape().methods
+      // This is the production mixin merge boundary: hot own methods override the private cold facade.
+      const hot = Object.fromEntries(Object.entries(sourceCommentsMixin.methods).filter(([name]) => !coldNames.includes(name)))
+      const initial = { threadId: 'thread:1', following: false, muted: false, preferenceRevision: '0' }
+      const acknowledged = { ...initial, following: true, preferenceRevision: '1' }, latest = { ...acknowledged, muted: true, preferenceRevision: '2' }
+      let resolveWrite
+      const provider = { isRemote: true, getFollowPreference: vi.fn().mockResolvedValueOnce(initial).mockResolvedValue(latest),
+        follow: vi.fn(() => new Promise(resolve => { resolveWrite = resolve })), queryFollowOperation: vi.fn().mockResolvedValue(latest) }
+      const owner = { ...sourceCommentsMixin.data(), ...hot, ...cold, commentProvider: () => provider, commentCan: () => true,
+        commentOperationCurrent: () => () => true, $set: (object, key, value) => { object[key] = value }, clearUnavailableCommentView: vi.fn() }
+      const reading = owner.loadCommentFollowPreference('thread:1')
+      expect(provider.getFollowPreference).toHaveBeenCalledWith('thread:1')
+      expect(reading?.then).toBeTypeOf('function')
+      const link = vi.fn(), reconcile = vi.fn()
+      await reading.catch(() => null).then(() => { link(); reconcile() })
+      expect(link).toHaveBeenCalledOnce(); expect(reconcile).toHaveBeenCalledOnce()
+      expect(owner.commentFollowPreferences['thread:1']).toEqual(initial)
+      expect(provider.follow).not.toHaveBeenCalled(); expect(provider.queryFollowOperation).not.toHaveBeenCalled()
+      expect(cold).not.toHaveProperty('loadCommentFollowPreference')
+      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/commentInteraction.js'), 'utf8').replace('export function', 'function') + ';globalThis.commentFactory=createCommentInteraction;', context)
+      const factory = vi.fn(value => {
+        const implementation = context.commentFactory(value), change = implementation.methods.changeCommentFollow
+        implementation.methods.changeCommentFollow = function (...args) { const result = change.apply(this, args); context.originalWritePromise = result; return result }
+        return implementation
+      })
+      const withdraw = context.CommentFixture.registerFeature('ui.ready', () => ({ createCommentInteraction: factory }))
+      const pending = owner.changeCommentFollow('thread:1', 'follow')
+      expect(pending).toBe(context.originalWritePromise)
+      expect(provider.follow).toHaveBeenCalledWith(expect.objectContaining({ operationId: 'original-follow-write', threadId: 'thread:1' }))
+      withdraw()
+      const mention = { commentMentionPicker: { scope: 'document', status: 'loading' } }
+      expect(cold.documentMentionKeydown.call(mention, 'document', 'Escape')).toBe(true)
+      expect(mention.commentMentionPicker).toBeNull()
+      owner.commentLoadGeneration++
+      resolveWrite(acknowledged)
+      await expect(pending).resolves.toEqual(acknowledged)
+      expect(owner.commentFollowPreferences['thread:1']).toEqual(latest)
+      expect(provider.getFollowPreference).toHaveBeenCalledTimes(2)
+      expect(provider.queryFollowOperation).not.toHaveBeenCalled()
+      owner.commentPendingFollowOperation = 'original-pending-follow'
+      await expect(owner.queryPendingCommentFollow()).resolves.toEqual(latest)
+      expect(provider.queryFollowOperation).toHaveBeenCalledExactlyOnceWith('original-pending-follow')
+      expect(owner.commentPendingFollowOperation).toBe('')
+      expect(factory).toHaveBeenCalledTimes(1)
+    } finally { await bundle.close() }
+  })
+
+  it('table presentation is private to the loaded UI and keeps its full hot visibility boundary', () => {
+    const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const importer = path.resolve(__dirname, '../../src/components/lark-doc/editor/tableToolsUiMixin.js')
+    const id = alias.resolveId('./tablePresentation', importer)
+    expect(id).toBe('\0lark-doc-table-presentation')
+    const code = alias.load(id)
+    expect(code).toContain("readFeature('ui.ready')")
+    expect(code).toContain('buildTableToolsPresentation')
+    expect(code).not.toContain('TextSelection')
+    expect(getRollupConfig('feature:ui').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./tablePresentation', importer)).toBeNull()
+  })
+
+  it('private presenter metadata comes from literal functions and rejects an unknown spread', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../src/components/lark-doc/editor/panelPresentation.js'), 'utf8')
+    const shape = panelPresentationShape(source)
+    expect(shape.methods).toEqual(['panelsHandlers', 'buildVersionState', 'buildVersionPreviewState', 'buildSaveVersionState', 'buildCommentState'])
+    expect(shape.commentPanelMethods).toContain('selectCommentParticipant')
+    for (const keys of Object.values(shape)) expect(new Set(keys).size).toBe(keys.length)
+    expect(() => panelPresentationShape(source.replace('const commentPanelMethods = {', 'const commentPanelMethods = { ...unknownRuntime,'))).toThrow('Unsupported private presentation shape')
+  })
+
+  it('version UI moves only literal presentation methods and keeps source/feature factories synchronous', () => {
+    const importer = path.resolve(__dirname, '../../src/components/lark-doc/editor/versioningMixin.js')
+    const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./versioningPresentation', importer)
+    expect(id).toBe('\0lark-doc-versioning-presentation')
+    const shape = versioningPresentationShape()
+    expect(shape.computed).toEqual(['versionRestoreConfirmText', 'versionDayGroups', 'versionChangeCursor', 'versionSelectedDiff'])
+    expect(shape.methods).toEqual(['mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'setSaveVersionName', 'confirmSaveVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
+    const code = alias.load(id)
+    for (const hot of ['restoreVersion', 'queryRestoreVersion', 'saveVersion', 'loadVersions']) expect(code).not.toContain(hot)
+    expect(code).not.toMatch(/import\(|TextSelection|new Editor/)
+    expect(getRollupConfig('feature:ui').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./versioningPresentation', importer)).toBeNull()
+  })
+
+  it('version panel actions keep cached delegates after registry withdrawal and reject actions before first load', async () => {
+    const root = process.cwd(), importer = path.join(root, 'src/components/lark-doc/editor/versioningMixin.js')
+    const config = getRollupConfig('esm'), alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./versioningPresentation', importer), input = '\0version-action-fixture'
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'version-action-fixture', resolveId: source => [input, id].includes(source) ? source : null,
+      load: source => source === input ? `export {createVersioningPresentation} from ${JSON.stringify(id)};export {registerFeature} from ${JSON.stringify(path.join(root, 'src/core/features/registry.js'))}` : null }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ format: 'iife', name: 'VersionFixture' }), context = {}
+      runInNewContext(output[0].code, context)
+      const dependencies = { versionCapabilityGate: () => ({ allowed: true }) }
+      const actions = context.VersionFixture.createVersioningPresentation(dependencies).methods
+      for (const name of ['versionNext', 'confirmVersionRestore', 'confirmSaveVersion', 'purgeDeletedVersion']) expect(() => actions[name].call({})).toThrow('版本界面尚未加载')
+      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/versioningPresentation.js'), 'utf8').replace('export function', 'function') + ';globalThis.versionFactory=createVersioningPresentation;', context)
+      const implementation = context.versionFactory(dependencies), original = Promise.resolve('original result')
+      implementation.methods.restoreSelectedVersion = vi.fn(() => original)
+      const factory = vi.fn(() => implementation), withdraw = context.VersionFixture.registerFeature('ui.ready', () => ({ createVersioningPresentation: factory }))
+      const session = { documentId: 'doc1', _versioningProviderGeneration: 1, _authorizationGeneration: 2, _privateIdentityGeneration: 3 }
+      const readScope = JSON.stringify(['doc1', 1, 2, 3]), record = { id: 'v1', documentId: 'doc1' }
+      let resolveGet
+      const provider = { get: vi.fn(() => new Promise(resolve => { resolveGet = resolve })) }
+      const host = { session, versionNextDisabled: false, stepVersion: () => original, versionPanelOpen: true, versionRestoreDisabled: false,
+        versionRestoreConfirmOpen: true, versionRestoreTargetId: 'v1', versionSelectedId: 'v1', versionPreview: { id: 'v1', readScope }, versionList: [record],
+        _versionRestoreConfirmEpoch: 0, _versionRestoreConfirmation: { id: 'v1', session, provider, editor: {}, documentId: 'doc1', readScope },
+        writable: () => true, versionContextMatches: () => true,
+        closeVersionRestoreConfirm() { this.versionRestoreConfirmOpen = false; this._versionRestoreConfirmEpoch += 1 },
+        restoreSelectedVersion(id) { return actions.restoreSelectedVersion.call(this, id) } }
+      expect(actions.versionNext.call(host)).toBe(original)
+      const pending = actions.confirmVersionRestore.call(host)
+      expect(provider.get).toHaveBeenCalledWith('v1')
+      withdraw()
+      expect(actions.versionNext.call(host)).toBe(original)
+      resolveGet(record)
+      await expect(pending).resolves.toBe('original result')
+      expect(implementation.methods.restoreSelectedVersion).toHaveBeenCalledWith('v1')
+      expect(factory).toHaveBeenCalledTimes(1)
+    } finally { await bundle.close() }
+  })
+
+  it('private sharing actions stay synchronous and retain a pending continuation after the UI registry is withdrawn', async () => {
+    const root = path.resolve(__dirname, '../..')
+    const importer = path.join(root, 'src/components/lark-doc/editor/shareMixin.js')
+    const config = getRollupConfig('element')
+    const alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./shareInteraction', importer)
+    expect(id).toBe('\0lark-doc-share-interaction')
+    for (const target of ['esm', 'lite', 'cjs']) {
+      expect(getRollupConfig(target).plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./shareInteraction', importer)).toBe(id)
+    }
+    expect(getRollupConfig('feature:ui:umd').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./shareInteraction', importer)).toBeNull()
+    const input = '\0share-action-fixture'
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'share-action-fixture', resolveId: source => [input, id].includes(source) ? source : null,
+      load: source => source === input ? `export {createShareInteraction} from ${JSON.stringify(id)};export {registerFeature} from ${JSON.stringify(path.join(root, 'src/core/features/registry.js'))}` : null }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ format: 'iife', name: 'ShareFixture' })
+      const context = {}
+      runInNewContext(output[0].code, context)
+      const deps = { INVITE_SCOPES: { read: ['view'] }, emptyInvitation: () => ({ status: 'idle' }), unresolvedInvitation: () => false, safeUrl: () => true }
+      const actions = context.ShareFixture.createShareInteraction(deps).methods
+      expect(Object.keys(actions)).toEqual(['selectShareInviteCandidate', 'setShareInviteRole', 'cancelShareInvitation', 'submitShareInvitation', 'queryShareInvitation', 'finishShareInvitation', 'toggleImageShareRecipient', 'setImageShareMessage', 'submitSelectionShare', 'submitImageShare'])
+      expect(() => actions.setImageShareMessage.call({}, 'cold')).toThrow('分享界面尚未加载')
+      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/shareInteraction.js'), 'utf8').replace('export function', 'function') + ';globalThis.shareFactory=createShareInteraction;', context)
+      const withdraw = context.ShareFixture.registerFeature('ui.ready', () => ({ createShareInteraction: context.shareFactory }))
+      const current = () => true
+      let acknowledge
+      const requestShare = vi.fn(() => new Promise(resolve => { acknowledge = resolve }))
+      const source = { originType: 'share', sourceGrantKey: 'source-one', sourceRevision: '1', scopes: ['view'] }
+      const host = { ...actions, shareCan: () => true, _shareInviteCurrent: current,
+        shareInvitation: { status: 'confirm', role: 'read', operationId: 'original-operation', sourceGrantKey: 'source-one', candidate: { principalId: 'person-one' } },
+        session: { requestShare }, loadShareMembers: vi.fn(async () => { host.shareMembers = { items: [{ principalId: 'person-one', sources: [source] }] } }),
+        imageShare: { sending: false, message: '', results: [{ id: 'person-one', kind: 'user' }], recipients: [] } }
+      expect(host.toggleImageShareRecipient('person-one', 'user')).toBeUndefined()
+      expect(host.imageShare.recipients).toHaveLength(1)
+      const pending = host.submitShareInvitation()
+      expect(typeof pending.then).toBe('function')
+      expect(requestShare).toHaveBeenCalledOnce()
+      expect(host.shareInvitation.status).toBe('sending')
+      withdraw()
+      expect(host.setImageShareMessage('retained draft')).toBeUndefined()
+      expect(host.imageShare.message).toBe('retained draft')
+      acknowledge({ status: 'committed' })
+      expect(await pending).toBe(true)
+      expect(host.shareInvitation).toMatchObject({ operationId: 'original-operation', verified: true, status: 'committed' })
+      expect(host.loadShareMembers).toHaveBeenCalledOnce()
+    } finally { await bundle.close() }
+  })
+
+  it('private export actions preserve synchronous JSON and the original promise without loading a module early', async () => {
+    const root = path.resolve(__dirname, '../..')
+    const importer = path.join(root, 'src/components/lark-doc/editor/exportMixin.js')
+    const config = getRollupConfig('element')
+    const alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./exportInteraction', importer)
+    expect(id).toBe('\0lark-doc-export-interaction')
+    expect(getRollupConfig('feature:ui:umd').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./exportInteraction', importer)).toBeNull()
+    const input = '\0export-action-fixture'
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'export-action-fixture', resolveId: source => [input, id].includes(source) ? source : null,
+      load: source => source === input ? `export {createExportInteraction} from ${JSON.stringify(id)};export {registerFeature} from ${JSON.stringify(path.join(root, 'src/core/features/registry.js'))}` : null }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ format: 'iife', name: 'ExportFixture' })
+      const context = {}, loadExportModule = vi.fn(), loadRemoteConversionModule = vi.fn()
+      runInNewContext(output[0].code, context)
+      const actions = context.ExportFixture.createExportInteraction({ loadExportModule, loadRemoteConversionModule }).methods
+      expect(Object.keys(actions)).toEqual(['submitExport', 'submitLocalExport', 'selectExportRoute', 'queryRemoteExport', 'submitRemoteExport', 'dispatchExport', 'dispatchMarkdown', 'createExportContext', 'readExportComments', 'dispatchDocx', 'dispatchPdf', 'currentDoc'])
+      expect(() => actions.currentDoc.call({})).toThrow('导出界面尚未加载')
+      expect(loadExportModule).not.toHaveBeenCalled()
+      expect(loadRemoteConversionModule).not.toHaveBeenCalled()
+      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/exportInteraction.js'), 'utf8').replace('export function', 'function') + ';globalThis.exportFactory=createExportInteraction;', context)
+      const withdraw = context.ExportFixture.registerFeature('ui.ready', () => ({ createExportInteraction: context.exportFactory }))
+      const original = Promise.resolve('original result'), json = { type: 'doc', content: [] }
+      const host = { exportRoute: 'local', submitLocalExport: () => original, editor: { getJSON: () => json } }
+      expect(actions.submitExport.call(host)).toBe(original)
+      expect(actions.currentDoc.call(host)).toBe(json)
+      withdraw()
+      expect(actions.currentDoc.call(host)).toBe(json)
+      expect(actions.submitExport.call(host)).toBe(original)
+      expect(loadExportModule).not.toHaveBeenCalled()
+      expect(loadRemoteConversionModule).not.toHaveBeenCalled()
+    } finally { await bundle.close() }
+  })
+
+  it('defers private block rows while preserving source factories and synchronous ready delegation', async () => {
+    const root = process.cwd(), importer = path.join(root, 'src/components/lark-doc/editor/blockMenuMixin.js')
+    const config = getRollupConfig('esm'), alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./blockInteraction', importer)
+    expect(id).toBe('\0lark-doc-block-interaction')
+    for (const target of ['element', 'lite', 'cjs']) {
+      expect(getRollupConfig(target).plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./blockInteraction', importer)).toBe(id)
+    }
+    expect(getRollupConfig('feature:ui:umd').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./blockInteraction', importer)).toBeNull()
+    const input = '\0block-action-fixture'
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'block-action-fixture', resolveId: source => [input, id].includes(source) ? source : null,
+      load: source => source === input ? `export {createBlockInteraction} from ${JSON.stringify(id)};export {registerFeature} from ${JSON.stringify(path.join(root, 'src/core/features/registry.js'))}` : null }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ format: 'iife', name: 'BlockFixture' }), context = {}
+      runInNewContext(output[0].code, context)
+      const dependencies = {}, actions = context.BlockFixture.createBlockInteraction(dependencies).methods
+      expect(Object.keys(actions)).toEqual(['blockTypeAction', 'blockAction', 'tableHandleAction', 'copyBlockLink', 'blockAlignAction', 'blockColorAction', 'openBlockInsertMenu'])
+      expect(() => actions.blockAlignAction.call({}, 'center')).toThrow('块菜单界面尚未加载')
+      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/blockInteraction.js'), 'utf8').replace('export function', 'function') + ';globalThis.blockFactory=createBlockInteraction;', context)
+      const implementation = context.blockFactory(dependencies), original = Promise.resolve('original result'), receiver = {}
+      implementation.methods.copyBlockLink = function (...args) { expect(this).toBe(receiver); expect(args).toEqual(['range']); return original }
+      const factory = vi.fn(value => { expect(value).toBe(dependencies); return implementation })
+      const withdraw = context.BlockFixture.registerFeature('ui.ready', () => ({ createBlockInteraction: factory }))
+      const target = { pos: 4, node: {} }, applyBlockAttribute = vi.fn()
+      const host = { writable: () => true, featureEnabled: () => true, handleActionRange: () => 'range', closeBlockMenu: vi.fn(), blockTextblockTarget: () => target, applyBlockAttribute }
+      expect(actions.blockAlignAction.call(host, 'center')).toBeUndefined()
+      expect(applyBlockAttribute).toHaveBeenCalledWith(target, 'textAlign', 'center')
+      expect(actions.copyBlockLink.call(receiver, 'range')).toBe(original)
+      withdraw()
+      expect(actions.copyBlockLink.call(receiver, 'range')).toBe(original)
+      expect(factory).toHaveBeenCalledTimes(1)
+    } finally { await bundle.close() }
+  })
 
   it('only editor entrypoints create manual runtime chunks; adapters do not create empty tiptap output', () => {
     expect(getRollupConfig('adapters').output.manualChunks).toBeUndefined()
@@ -441,6 +1047,7 @@ describe('公开产物与轻量包边界', () => {
     expect(targetsFor('collab,collabCjs')).toEqual(['collab', 'collabCjs'])
     expect(targetsFor('esm,cjs')).toEqual(['pm', 'mermaidEsm', 'esm', 'mermaidCjs', 'cjs'])
     expect(targetsFor('cjs')).toEqual(['mermaidCjs', 'cjs'])
+    expect(targetsFor('all')).toContain('elementRuntime')
   })
 
   it('normal, legacy, element and feature ESM share one Mermaid module; lite and standalone UMD keep their boundaries', () => {
@@ -474,6 +1081,20 @@ describe('公开产物与轻量包边界', () => {
     graphs.mermaidEsm[file] = { entry: true, imports: [], dynamicImports: [] }; save()
     fs.unlinkSync(path.join(dist, file))
     expect(() => graph.artifactFiles(dist, 'full')).toThrow(/依赖区块缺失/)
+  }))
+
+  it('Element size includes the eagerly loaded runtime and its initial graph, not just the loader', () => cacheFixture(({ dist }) => {
+    const loader = 'lark-doc-element.umd.min.js', runtime = 'lark-doc-element.runtime.umd.min.js'
+    const node = (imports = [], dynamicImports = []) => ({ entry: true, imports, dynamicImports })
+    const graphs = { element: { [loader]: node() }, elementRuntime: { [runtime]: node(['runtime-part.js'], ['lazy.js']), 'runtime-part.js': { ...node(), entry: false }, 'lazy.js': { ...node(), entry: false } } }
+    for (const file of [loader, runtime, 'runtime-part.js', 'lazy.js']) fs.writeFileSync(path.join(dist, file), `/* ${file} */`)
+    const save = () => fs.writeFileSync(path.join(dist, 'lark-doc-graph.json'), JSON.stringify(graphs))
+    fs.writeFileSync(path.join(dist, 'lark-doc-manifest.json'), JSON.stringify({ features: {} }))
+    save()
+    expect(graph.artifactFiles(dist, 'element', false)).toEqual([loader, runtime, 'runtime-part.js'])
+    expect(graph.artifactFiles(dist, 'element', true)).toContain('lazy.js')
+    delete graphs.elementRuntime; save()
+    expect(() => graph.artifactFiles(dist, 'element')).toThrow(/构建图缺少本地区块/)
   }))
 
   it('shared CJS vendor works through real native dynamic import and full static consumer', () => cacheFixture(async ({ root, dist }) => {
@@ -541,7 +1162,7 @@ describe('公开产物与轻量包边界', () => {
     const input = path.join(root, 'src/pm-consumer.js')
     fs.writeFileSync(input, 'export {Node} from "@tiptap/pm/model";export {EditorState} from "@tiptap/pm/state";export {ReplaceStep} from "@tiptap/pm/transform";export {DecorationSet} from "@tiptap/pm/view"')
     const config = getRollupConfig(target)
-    const bundle = await rollup({ ...config, input })
+    const bundle = await rollup({ ...config, input, plugins: [{ name: 'deferred-entry', resolveId: id => id === input ? input : null }, ...config.plugins] })
     try {
       const { output } = await bundle.generate({ ...config.output, plugins: [] })
       const chunks = output.filter(item => item.type === 'chunk')
@@ -780,4 +1401,215 @@ describe('公开产物与轻量包边界', () => {
       expect(() => graph.artifactFiles(dist, 'lite')).toThrow(/依赖区块缺失/)
     } finally { fs.rmSync(dist, { recursive: true, force: true }) }
   })
+})
+
+
+describe('classic segmented document feature boundary', () => {
+  it('maps each existing asynchronous share-link entry to its original namespace only in classic Element', () => {
+    const root = path.resolve(__dirname, '../..')
+    const plugin = getRollupConfig('elementRuntime').plugins.find(item => item.name === 'lark-doc-package-alias')
+    for (const [file, links, access] of [['src/providers/authorization.js', 1, 1], ['src/components/lark-doc/editor/shareMixin.js', 1, 0], ['src/providers/document-business.js', 0, 1]]) {
+      const id = path.join(root, file), source = fs.readFileSync(id, 'utf8'), result = plugin.transform(source, id)
+      expect(result).not.toBeNull()
+      expect((result.code.match(/__larkDocLoadDocumentFeature\('document.shareLinks'\)/g) || []).length).toBe(links)
+      expect((result.code.match(/__larkDocLoadDocumentFeature\('document.shareLinkAccess'\)/g) || []).length).toBe(access)
+      const syntax = "import {x} from './share-links'; const label=\"import('./share-links')\"; const request=()=>import(variable)"
+      expect(plugin.transform(syntax, id)).toBeNull()
+      for (const target of ['esm', 'cjs', 'elementEsm', 'feature:document:umd']) {
+        expect(getRollupConfig(target).plugins.find(item => item.name === 'lark-doc-package-alias').transform(source, id)).toBeNull()
+      }
+    }
+  })
+
+  it('keeps the paged import namespace synchronous while loading its implementation only through existing asynchronous callers', async () => {
+    const root = path.resolve(__dirname, '../..'), source = path.join(root, 'src/editor/pagedDocumentSource.js')
+    const config = getRollupConfig('elementRuntime'), alias = config.plugins.find(item => item.name === 'lark-doc-package-alias')
+    const id = alias.resolveId('./pagedDocumentImportRuntime', source)
+    expect(id).toBe('\0lark-doc-paged-import-runtime')
+    const entry = '\0paged-import-boundary-fixture', registry = path.join(root, 'src/core/features/registry.js')
+    const bundle = await rollup({ ...config, input: entry, plugins: [{ name: 'paged-import-boundary-fixture',
+      resolveId: name => [entry, id].includes(name) ? name : null,
+      load: name => name === entry ? `export {createPagedDocumentImportRuntime} from ${JSON.stringify(id)};export {registerFeature} from ${JSON.stringify(registry)}` : null,
+    }, ...config.plugins] })
+    try {
+      const { output } = await bundle.generate({ format: 'iife', name: 'PagedImportFixture' })
+      const context = { setTimeout, clearTimeout }
+      runInNewContext(output[0].code, context)
+      const api = context.PagedImportFixture.createPagedDocumentImportRuntime({})
+      const arities = { yieldDocumentTask: 0, createPagedDocumentSource: 1, startPagedImport: 4, importPagedContent: 3, importWorkspaceFile: 3 }
+      expect(Object.keys(api).sort()).toEqual(Object.keys(arities).sort())
+      for (const [name, length] of Object.entries(arities)) expect(api[name].length, name).toBe(length)
+      expect(() => api.yieldDocumentTask()).toThrow('分页导入尚未加载')
+      runInNewContext(fs.readFileSync(path.join(root, 'src/editor/pagedDocumentImportRuntime.js'), 'utf8').replace('export function', 'function') + ';globalThis.importFactory=createPagedDocumentImportRuntime;', context)
+      const withdraw = context.PagedImportFixture.registerFeature('document.pagedImport.ready', () => context.importFactory)
+      const pending = api.createPagedDocumentSource('unused')
+      expect(typeof pending.then).toBe('function')
+      await expect(pending).rejects.toThrow('preparePage is required')
+      withdraw()
+      await expect(api.yieldDocumentTask()).resolves.toBeUndefined()
+    } finally { await bundle.close() }
+    for (const file of ['src/editor/EditorController.js', 'src/workspace/WorkspaceController.js']) {
+      const pathName = path.join(root, file), code = fs.readFileSync(pathName, 'utf8')
+      const transformed = alias.transform(code, pathName)
+      expect(transformed.code.match(/__larkDocLoadDocumentFeature\('document.pagedImport'\)\.then/g)).toHaveLength(1)
+      expect(transformed.code).toContain('=>import(')
+      for (const target of ['esm', 'cjs', 'elementEsm', 'feature:document:umd']) {
+        const plugin = getRollupConfig(target).plugins.find(item => item.name === 'lark-doc-package-alias')
+        expect(plugin.transform(code, pathName)).toBeNull()
+      }
+    }
+  })
+
+  it('loads one classic pure model script, retries errors and preserves synchronous namespace functions', async () => {
+    const config = getRollupConfig('elementRuntime'), entry = '\0classic-document-loader-fixture'
+    const registry = path.resolve(__dirname, '../../src/core/features/registry.js')
+    const scriptSource = path.resolve(__dirname, '../../src/features/element.js')
+    const alias = config.plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+    const paged = alias.resolveId('./pagedDocumentViewRuntime', path.resolve(__dirname, '../../src/editor/pagedDocumentView.js'))
+    const loader = await rollup({ ...config, input: entry, plugins: [{ name: 'classic-document-loader-fixture',
+      resolveId: id => [entry, paged].includes(id) ? id : null,
+      load: id => id === entry ? `import ${JSON.stringify(scriptSource)};export{loadFeature}from ${JSON.stringify(registry)};export{createPagedDocumentViewRuntime}from ${JSON.stringify(paged)}` : null,
+    }, ...config.plugins] })
+    const featureConfig = getRollupConfig('feature:document:umd'), feature = await rollup(featureConfig)
+    try {
+      const loaderOutput = await loader.generate({ ...config.output, name: 'FixtureElementLoader' })
+      const featureOutput = await feature.generate(featureConfig.output)
+      const modelPath = path.resolve(__dirname, '../../src/editor/segmentedDocumentModel.js')
+      const chunks = featureOutput.output.filter(item => item.type === 'chunk')
+      expect(chunks).toHaveLength(1)
+      expect(Object.keys(chunks[0].modules)).toContain(modelPath)
+      expect(Object.keys(chunks[0].modules).some(id => /prosemirror-|@tiptap\/pm\//.test(id))).toBe(false)
+      const scripts = [], context = { document: { currentScript: { src: 'https://cdn.example/sdk/lark-doc-element.runtime.umd.min.js' },
+        createElement: () => ({ remove() { this.removed = true } }), head: { appendChild: node => scripts.push(node) } }, URL }
+      runInNewContext(loaderOutput.output.find(item => item.type === 'chunk').code, context)
+      const bridge = context.FixtureElementLoader.createPagedDocumentViewRuntime({})
+      const existingView = {}, editor = { storage: { larkDoc: { pagedView: existingView } } }
+      expect(bridge.preparePagedDocumentView.length).toBe(1)
+      expect(bridge.scrollDocumentSelection.length).toBe(1)
+      expect(() => bridge.preparePagedDocumentView(editor)).toThrow('分页视图尚未加载')
+      expect(scripts).toHaveLength(0)
+      const first = context.FixtureElementLoader.loadFeature('document.shareLinks').catch(error => error)
+      const concurrent = context.FixtureElementLoader.loadFeature('document.segmented').catch(error => error)
+      await vi.waitFor(() => expect(scripts).toHaveLength(1))
+      expect(scripts[0].src).toBe('https://cdn.example/sdk/lark-doc-element.umd.min.document.js')
+      expect(scripts[0].type).toBeUndefined()
+      scripts[0].onerror(); expect((await first).message).toContain('无法加载本地特性包'); expect((await concurrent).message).toContain('无法加载本地特性包')
+      expect(scripts[0].removed).toBe(true)
+      const retry = context.FixtureElementLoader.loadFeature('document.shareLinkAccess')
+      await vi.waitFor(() => expect(scripts).toHaveLength(2))
+      runInNewContext(chunks[0].code, context); scripts[1].onload()
+      await retry
+      const api = await context.FixtureElementLoader.loadFeature('document.segmented')
+      const shareLinks = await context.FixtureElementLoader.loadFeature('document.shareLinks')
+      expect(Object.keys(shareLinks).sort()).toEqual(['createShareLinkAccessPort', 'createShareLinkPort', 'remoteShareLinkAction', 'shareLinkUrl'].sort())
+      expect(shareLinks.then).toBeUndefined()
+      const shareAccess = await context.FixtureElementLoader.loadFeature('document.shareLinkAccess')
+      expect(Object.keys(shareAccess)).toEqual(['createHttpShareLinkAccessProvider'])
+      expect(() => shareAccess.createHttpShareLinkAccessProvider({})).toThrow('SHARE_LINK_CONFIGURATION')
+      expect(scripts).toHaveLength(2)
+      const expected = [...fs.readFileSync(modelPath, 'utf8').matchAll(/^export (?:const|function) (\w+)/gm)].map(match => match[1]).sort()
+      expect(Object.keys(api).sort()).toEqual(expected)
+      expect(api.estimateBlockHeight({ image: true })).toBe(192)
+      const model = api.createSegmentedDocumentModel({ childCount: 0 })
+      expect(model.segmentCount).toBe(0); expect(model.then).toBeUndefined()
+      expect(api.createLogicalScrollCoordinates([40, 80]).logicalHeight).toBe(120)
+      expect(await context.FixtureElementLoader.loadFeature('document.segmented')).toBe(api)
+      const pagedFactory = await context.FixtureElementLoader.loadFeature('document.pagedView')
+      expect(pagedFactory).toBeTypeOf('function')
+      expect(Object.keys(pagedFactory({}))).toEqual(['scrollDocumentSelection', 'preparePagedDocumentView'])
+      expect(bridge.preparePagedDocumentView(editor)).toBe(existingView)
+      expect(bridge.preparePagedDocumentView(editor).then).toBeUndefined()
+      expect(scripts).toHaveLength(2)
+      cacheFixture(({ dist }) => {
+        const runtime = path.join(dist, 'lark-doc-element.runtime.umd.min.js')
+        const payload = path.join(dist, 'lark-doc-element.umd.min.document.js')
+        fs.writeFileSync(runtime, loaderOutput.output.find(item => item.type === 'chunk').code)
+        const result = spawnSync(process.execPath, ['-e', `
+          (async()=>{
+            const fs=require('fs'),api=require(${JSON.stringify(runtime)});
+            let missing=false;try{await api.loadFeature('document.segmented')}catch(error){missing=/Cannot find module/.test(error.message)}
+            if(!missing)throw Error('Node must attempt the adjacent real document feature');
+            fs.writeFileSync(${JSON.stringify(payload)},${JSON.stringify(chunks[0].code)});
+            const model=await api.loadFeature('document.segmented');
+            if(model.createSegmentedDocumentModel({childCount:0}).segmentCount!==0)throw Error('Missing real synchronous model');
+            if(await api.loadFeature('document.segmented')!==model)throw Error('Duplicate model namespace');
+            let classic=false;try{await api.loadFeature('math')}catch(error){classic=/同目录静态托管/.test(error.message)}
+            if(!classic)throw Error('Node fallback must not change the existing six classic groups');
+            console.log('adjacent-document-model-ready');
+          })().catch(error=>{console.error(error);process.exitCode=1})
+        `], { encoding: 'utf8' })
+        expect(result.status, result.stderr).toBe(0)
+        expect(result.stdout).toContain('adjacent-document-model-ready')
+      })
+    } finally { await loader.close(); await feature.close() }
+    // 本用例要跑两次 rollup（loader + feature）再 runInNewContext 起两个 node 子进程，
+    // 全量门禁下 maxWorkers:2 叠加并发文件负载必然越过默认 5000ms —— 与本文件其余重
+    // 构建类用例（513/948/1009/1159 行）同口径，显式给 30000。
+  }, 30000)
+  it('rewrites only the existing awaited model imports for classic Element, preserving source and every synchronous export', () => {
+    const id = path.resolve(__dirname, '../../src/mount/domRenderer.js')
+    const source = fs.readFileSync(id, 'utf8')
+    const plugin = getRollupConfig('elementRuntime').plugins.find(item => item.name === 'lark-doc-package-alias')
+    expect(plugin.transform).toBeTypeOf('function')
+    const result = plugin.transform(source, id)
+    expect(result.code).not.toContain("import('../editor/segmentedDocumentModel')")
+    expect(result.code.match(/__larkDocLoadDocumentFeature\('document.segmented'\)/g)).toHaveLength(2)
+    const syntax = "import { x } from '../editor/segmentedDocumentModel';const label=\"import('../editor/segmentedDocumentModel')\";const request=()=>import(variable)"
+    expect(plugin.transform(syntax, id)).toBeNull()
+    expect(plugin.transform(source, id + '.other')).toBeNull()
+    for (const target of ['esm', 'cjs', 'elementEsm', 'feature:document:umd']) {
+      const other = getRollupConfig(target).plugins.find(item => item.name === 'lark-doc-package-alias')
+      expect(other.transform(source, id)).toBeNull()
+    }
+  })
+  it('gates the existing paged view callers and retains both import actions through the shared loader', () => {
+    const root = path.resolve(__dirname, '../..')
+    const plugin = getRollupConfig('elementRuntime').plugins.find(item => item.name === 'lark-doc-package-alias')
+    for (const [file, count] of [['src/editor/pagedDocumentSource.js', 1], ['src/components/lark-doc/editor/viewModesMixin.js', 1]]) {
+      const id = path.join(root, file), source = fs.readFileSync(id, 'utf8')
+      const result = plugin.transform(source, id)
+      expect(result.code.match(/__larkDocLoadDocumentFeature\('document.pagedView'\)\.then/g)).toHaveLength(count)
+      expect(result.code).toContain('=>import(')
+      for (const target of ['esm', 'cjs', 'elementEsm', 'feature:document:umd']) {
+        expect(getRollupConfig(target).plugins.find(item => item.name === 'lark-doc-package-alias').transform(source, id)).toBeNull()
+      }
+      const unchanged = "import {x} from './pagedDocumentView'; const label=\"import('./pagedDocumentView')\"; const request=()=>import(variable)"
+      expect(plugin.transform(unchanged, id)).toBeNull()
+    }
+    const runtime = fs.readFileSync(path.join(root, 'src/editor/pagedDocumentImportRuntime.js'), 'utf8')
+    expect(runtime.match(/await loadPagedDocumentViewModule\(\)/g)).toHaveLength(2)
+    const importer = path.join(root, 'src/editor/pagedDocumentView.js')
+    expect(plugin.resolveId('./pagedDocumentViewRuntime', importer)).toBe('\0lark-doc-paged-view-runtime')
+    expect(getRollupConfig('feature:document:umd').plugins.find(item => item.name === 'lark-doc-package-alias').resolveId('./pagedDocumentViewRuntime', importer)).toBeNull()
+  })
+
+  it('ships both document feature formats in clean builds and freshness checks', () => {
+    expect(FEATURE_TARGETS).toContain('feature:document:umd')
+    expect(FEATURE_TARGETS).toContain('feature:document')
+    expect(targetsFor('element')).toContain('feature:document:umd')
+    expect(targetsFor('all')).toContain('feature:document')
+    const source = fs.readFileSync(path.resolve(__dirname, '../../scripts/ensure-artifacts.mjs'), 'utf8')
+    expect(source).toContain("file: 'dist/lark-doc-element.umd.min.document.js'")
+    expect(source).toContain("file: 'dist/features/document.js'")
+  })
+  it('accounts for every classic feature in the real dynamic closure and fails closed for missing payloads', () => cacheFixture(({ dist }) => {
+    const node = (entry = true) => ({ entry, imports: [], dynamicImports: [], runtime: false })
+    const loader = 'lark-doc-element.umd.min.js', runtime = 'lark-doc-element.runtime.umd.min.js'
+    const names = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document']
+    const features = Object.fromEntries(names.map(name => [name, { umd: `lark-doc-element.umd.min.${name}.js` }]))
+    const graphs = { element: { [loader]: node() }, elementRuntime: { [runtime]: node() } }
+    for (const [name, feature] of Object.entries(features)) graphs[`feature:${name}:umd`] = { [feature.umd]: node() }
+    const save = () => fs.writeFileSync(path.join(dist, 'lark-doc-graph.json'), JSON.stringify(graphs))
+    fs.writeFileSync(path.join(dist, 'lark-doc-manifest.json'), JSON.stringify({ features })); save()
+    for (const file of [loader, runtime, ...Object.values(features).map(item => item.umd)]) fs.writeFileSync(path.join(dist, file), file)
+    expect(graph.artifactFiles(dist, 'element', false)).toEqual([loader, runtime])
+    expect(graph.artifactFiles(dist, 'element')).toEqual([loader, runtime, ...Object.values(features).map(item => item.umd)])
+    expect(graph.artifactFiles(dist, 'elementRuntime')).toContain(features.document.umd)
+    delete graphs['feature:document:umd']; save()
+    expect(() => graph.artifactFiles(dist, 'element')).toThrow(/构建图缺少/)
+    expect(graph.artifactFiles(dist, 'element', false)).toEqual([loader, runtime])
+    graphs['feature:document:umd'] = { [features.document.umd]: node() }; save()
+    fs.unlinkSync(path.join(dist, features.document.umd))
+    expect(() => graph.artifactFiles(dist, 'element')).toThrow(/依赖区块缺失/)
+  }))
 })

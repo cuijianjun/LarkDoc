@@ -208,7 +208,11 @@ check('Changing the active handle target closes a stale block menu', () => {
     const paragraph = new FakeElement(rect)
     const paper = new FakeElement(rect)
     const context = {
-      editor: { view: { nodeDOM: () => paragraph } },
+      editor: { state: { doc: {} }, view: { dom: { contains: () => true }, nodeDOM: () => paragraph } },
+      tableRangeFor: () => null,
+      blockHandleGeometry: () => ({ left: 10, top: 20 }),
+      refreshBlockHandle() {},
+      blockHandleAnchorHidden: component.methods.blockHandleAnchorHidden,
       $refs: { root: { querySelector: selector => selector === '.lark-doc-paper' ? paper : null } },
       handleRange: { from: 0, to: 2 },
       blockMenuOpen: true,
@@ -257,7 +261,7 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
     menuKind: '',
     menuTrigger: null,
     menuAnchor: null,
-    hoverCloseTimer: setTimeout(() => {}, 1000),
+    _popupHoverClose: { owner: 'command', close() {}, timer: setTimeout(() => {}, 1000) },
     cancelPopupHoverClose: component.methods.cancelPopupHoverClose,
     $nextTick(callback) { callback() },
     positionCommandMenu() { repositionCalls += 1 },
@@ -266,7 +270,7 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   }
   const event = { type: 'mouseenter', currentTarget: firstPlus }
   component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, event)
-  assert.strictEqual(emptyParagraphPlus.hoverCloseTimer, null, 'entering the empty plus cancels a pending hover close')
+  assert.strictEqual(emptyParagraphPlus._popupHoverClose, null, 'entering the empty plus cancels a pending hover close')
   assert.strictEqual(insertCalls, 1)
   assert.deepStrictEqual(emptyParagraphPlus.lastInsert, { kind: 'plus', event }, 'the empty paragraph plus opens the insertion command menu')
   assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 13, to: 13 }, 'insert commands target the empty paragraph even when the editor selection was elsewhere')
@@ -274,16 +278,21 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
   emptyParagraphPlus.menuOpen = true
   emptyParagraphPlus.menuKind = 'plus'
   emptyParagraphPlus.handleRange = { from: 20, to: 22 }
-  emptyParagraphPlus.hoverCloseTimer = setTimeout(() => {}, 1000)
+  emptyParagraphPlus._popupHoverClose = { owner: 'command', close() {}, timer: setTimeout(() => {}, 1000) }
   component.methods.openEmptyBlockInsertMenu.call(emptyParagraphPlus, { type: 'click', currentTarget: secondPlus })
-  assert.strictEqual(emptyParagraphPlus.hoverCloseTimer, null, 'reusing the insertion menu also cancels a pending hover close')
+  assert.strictEqual(emptyParagraphPlus._popupHoverClose, null, 'reusing the insertion menu also cancels a pending hover close')
   assert.strictEqual(insertCalls, 1, 'the click following hover must not close the insertion menu')
   assert.deepStrictEqual(emptyParagraphPlus.savedSelection, { from: 21, to: 21 }, 'a repeated plus event keeps the current empty paragraph as the insertion target')
   assert.strictEqual(emptyParagraphPlus.menuTrigger, secondPlus, 'moving to another empty paragraph retargets the existing insert menu')
   assert.deepStrictEqual(emptyParagraphPlus.menuAnchor, { left: 50, top: 60, bottom: 80 }, 'the insert menu anchor follows the active empty paragraph')
   assert.strictEqual(repositionCalls, 1, 'retargeting the insert menu recalculates its position')
   assert.strictEqual(blockMenuCloses, 2, 'reusing the insertion menu also clears any stale block menu')
-  const listensTo = (eventName, method) => new RegExp(`addEventListener\\('${eventName}',[^\\n]*call\\('${method}'`).test(handleSource)
+  const ast = require('acorn').parse(handleSource, { ecmaVersion: 'latest', sourceType: 'module' })
+  const contains = (node, predicate) => !!node && typeof node === 'object' && (predicate(node)
+    || Object.values(node).some(value => Array.isArray(value) ? value.some(child => contains(child, predicate)) : contains(value, predicate)))
+  const listensTo = (eventName, method) => contains(ast, node => node.type === 'CallExpression'
+    && node.callee.type === 'MemberExpression' && node.callee.property.name === 'addEventListener' && node.arguments[0]?.value === eventName
+    && contains(node.arguments[1], child => child.type === 'CallExpression' && child.callee.name === 'call' && child.arguments[0]?.value === method))
   assert(listensTo('mouseenter', 'openEmptyBlockInsertMenu') && listensTo('click', 'openEmptyBlockInsertMenu'), 'the empty plus must route hover and click to the insertion menu')
   assert(listensTo('mouseenter', 'openBlockMenuOnHover') && listensTo('focus', 'openBlockMenuOnHover'), 'the six-dot handle opens its separate block menu on hover or keyboard focus')
 
@@ -310,7 +319,9 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
     openBlockMenu() { opened += 1 },
   }
   component.methods.openBlockMenuOnHover.call(taskHandle)
-  assert.strictEqual(opened, 0, 'task list handles remain excluded from the block menu')
+  assert.strictEqual(opened, 1, 'task list handles retain the current block-action entry')
+  component.methods.openBlockMenuOnHover.call({ ...taskHandle, writable: () => false })
+  assert.strictEqual(opened, 1, 'readonly task list handles cannot open block actions')
 })
 
 check('Pointer movement over the editor can switch away from an open block menu', () => {
@@ -524,8 +535,8 @@ check('Outline includes nested and ninth-level headings with document positions'
   const document = doc([{ type: 'heading', attrs: { level: 1 }, content: [text('A')] }, p('body'), { type: 'callout', content: [{ type: 'heading', attrs: { level: 9 }, content: [text('B')] }] }])
   assert.deepStrictEqual(collectOutline(document), [{ pos: 0, level: 1, text: 'A' }])
 })
-check('Heading sections follow indentation, never heading levels', () => {
-  // 飞书块模型只有父子（缩进）关系：章节 = 后续缩进更深的连续块。
+check('Heading actions follow indentation while folding follows heading chapters', () => {
+  // 块动作保留缩进子树；dev标题折叠保留至下一个同级/更高标题的章节。
   const h2 = hi(2, '你好我是1', 0)
   const h3 = hi(3, '你好 我是3', 1)
   const rootParagraph = pi('根级文字', 0)
@@ -539,23 +550,23 @@ check('Heading sections follow indentation, never heading levels', () => {
   const section = resolveHeadingSection(document, positions[0].pos)
   assert.deepStrictEqual(section.blocks.map((block) => block.node.type.name), ['heading', 'heading'])
   assert.strictEqual(section.to, positions[2].pos, '回到同级缩进的段落结束章节')
-  assert.deepStrictEqual(foldedRange(document, positions[0].pos), { from: positions[0].pos + positions[0].node.nodeSize, to: positions[2].pos }, '折叠范围与高亮范围是同一段缩进子树')
-  // 用户反馈③：H2 缩进 1、子段落缩进 2、H4 也缩进 1 → 折叠 H2 不带 H4
+  assert.deepStrictEqual(foldedRange(document, positions[0].pos), { from: positions[0].pos + positions[0].node.nodeSize, to: positions[5].pos }, '标题折叠包含平级正文，直到下一个同级标题')
+  // 块动作的缩进边界不影响按标题级别划定的章节折叠。
   const userDocument = doc([hi(2, '我是2', 1), pi('你好 我是标题2', 2), hi(4, '你好 我是3', 1), pi('兄弟正文', 1)])
   const userPositions = []
   userDocument.forEach((node, pos) => userPositions.push({ node, pos }))
   const userSection = resolveHeadingSection(userDocument, userPositions[0].pos)
   assert.deepStrictEqual(userSection.blocks.map((block) => block.node.type.name), ['heading', 'paragraph'], '缩进更深的普通段落属于 H2，同级缩进的 H4 不属于')
-  assert.deepStrictEqual(foldedRange(userDocument, userPositions[0].pos), { from: userPositions[0].pos + userPositions[0].node.nodeSize, to: userPositions[2].pos })
+  assert.deepStrictEqual(foldedRange(userDocument, userPositions[0].pos), { from: userPositions[0].pos + userPositions[0].node.nodeSize, to: userDocument.content.size })
   assert.deepStrictEqual(collectOutline(userDocument).map((item) => item.level), [2, 4], '目录仍按标题级别收集，与折叠范围无关')
   // 缩进段落里插入的代码块（indent 默认 0）沿用上一层，不会把章节截断
   const nestedCode = doc([hi(2, '父标题', 1), pi('子段落', 2), { type: 'codeBlock', attrs: { indent: 0 }, content: [text('代码')] }, pi('同级兄弟', 1)])
   const nestedPositions = []
   nestedCode.forEach((node, pos) => nestedPositions.push({ node, pos }))
-  assert.deepStrictEqual(foldedRange(nestedCode, nestedPositions[0].pos), { from: nestedPositions[0].pos + nestedPositions[0].node.nodeSize, to: nestedPositions[3].pos }, '未显式缩进的代码块仍然留在父标题的子树里')
-  // 老文档：标题之间没有缩进 → 没有可折叠内容，箭头不出现
+  assert.deepStrictEqual(foldedRange(nestedCode, nestedPositions[0].pos), { from: nestedPositions[0].pos + nestedPositions[0].node.nodeSize, to: nestedCode.content.size }, '章节内未显式缩进的代码和正文均随标题折叠')
+  // 平级正文按标题章节折叠；块动作仍仅取显式缩进子树。
   const flat = doc([hi(2, 'A'), hi(3, 'B'), p('C')])
-  assert.strictEqual(foldedRange(flat, 0), null, '同级缩进的标题没有折叠范围')
+  assert.deepStrictEqual(foldedRange(flat, 0), { from: flat.firstChild.nodeSize, to: flat.content.size }, '未视觉缩进的标题仍折叠其章节正文')
   assert.strictEqual(headingActionRange(flat, 0), null, '没有子树的标题不提供章节动作范围')
   // 容器内标题不进页面大纲/折叠模型
   const nestedHeadingDocument = doc([{ type: 'callout', content: [hi(2, '容器标题'), pi('容器正文', 1)] }])

@@ -23,11 +23,36 @@
  */
 
 import { applyStyle, setAttr, syncChildren } from './dom'
-import { diagramIconNode } from './icon'
+import { iconNode, setIcon } from './icon'
+import { diagramIconNode } from './diagramMenu'
+import { createTooltip } from './tooltip'
 import { diagramTypes } from '../components/lark-doc/editor/constants'
 
 /** plus 菜单的前置分段；其余段按命令表里首次出现的顺序追加。 */
-const PLUS_CATEGORIES = ['基础', '常用', '其他标题']
+const PLUS_CATEGORIES = ['基础', '常用', '绘图']
+// Observed in the approved Feishu insert panel; loaded with this menu.
+const MENU_ICON_MARKUP = {
+  heading1: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"H1Outlined\"><path d=\"M2 3a1 1 0 0 0-1 1v16a1 1 0 1 0 2 0v-7h9v7a1 1 0 1 0 2 0V4a1 1 0 1 0-2 0v7H3V4a1 1 0 0 0-1-1Zm15.604 9.91a.4.4 0 0 1-.585-.355c0-.533 0-.774.004-1.582a.4.4 0 0 1 .203-.347l2.769-1.568A.39.39 0 0 1 20.197 9h1.404c.234 0 .423.21.423.468V19.95c0 .593-.483 1.073-1.075 1.073a1.07 1.07 0 0 1-1.07-1.073v-8.228l-2.275 1.19Z\" fill=\"currentColor\"></path></svg>",
+  heading2: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"H2Outlined\"><path d=\"M2 3a1 1 0 0 0-1 1v16a1 1 0 1 0 2 0v-7h9v7a1 1 0 1 0 2 0V4a1 1 0 1 0-2 0v7H3V4a1 1 0 0 0-1-1Zm20.993 16.872c0-.561-.455-1.015-1.017-1.015h-3.121l3.407-4.272a3.35 3.35 0 0 0 .731-2.126c-.01-.992-.347-1.816-1.005-2.464-.647-.651-1.492-.984-2.523-.995-.931.011-1.72.34-2.356.982-.37.386-.941 1.044-.941 1.602 0 .591.48 1.07 1.07 1.07.563 0 .769-.347.993-.726.06-.101.12-.204.19-.304a1.36 1.36 0 0 1 .186-.214c.262-.252.584-.376.982-.376.447.01.784.15 1.02.423.234.28.35.606.35.987 0 .146-.019.303-.057.471-.05.152-.156.341-.315.548l-4.402 5.506a.4.4 0 0 0-.087.25v1.022c0 .221.267.65.606.65h5.272c.562 0 1.017-.457 1.017-1.019Z\" fill=\"currentColor\"></path></svg>",
+  heading3: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"H3Outlined\"><path d=\"M2 3a1 1 0 0 0-1 1v16a1 1 0 1 0 2 0v-7h9v7a1 1 0 1 0 2 0V4a1 1 0 1 0-2 0v7H3V4a1 1 0 0 0-1-1Zm21 14.296c0-.51-.108-.998-.324-1.461a2.923 2.923 0 0 0-.877-1.044c.377-.297.65-.63.816-1.001.17-.44.252-.886.252-1.348a3.48 3.48 0 0 0-.943-2.385C21.274 9.363 20.398 9.01 19.31 9a3.179 3.179 0 0 0-2.251.932c-.349.336-.848.879-.848 1.384a1 1 0 0 0 1 1c.482 0 .767-.352 1.043-.692l.09-.11c.057-.07.121-.132.192-.185.256-.2.53-.296.834-.296.431.01.779.144 1.049.405.267.267.406.61.415 1.04 0 .417-.133.75-.4 1.008-.335.335-.766.387-1.212.387a.958.958 0 1 0 0 1.917h.088c.452-.002.824-.003 1.205.353.29.277.442.674.452 1.201-.01.51-.16.894-.451 1.162-.296.296-.65.44-1.076.44-.4 0-.712-.107-.944-.316l-.008-.008a8.055 8.055 0 0 1-.213-.207c-.1-.099-.178-.207-.254-.31-.193-.264-.366-.5-.81-.5a1 1 0 0 0-1 1c0 .574.543 1.19.954 1.533.635.53 1.35.84 2.174.84 1.057-.01 1.93-.35 2.609-1.018.69-.651 1.04-1.545 1.052-2.664Z\" fill=\"currentColor\"></path></svg>",
+  orderedList: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"OrderListOutlined\"><path d=\"M4.577 1.809a.543.543 0 0 0-.819-.469l-.502.296-.004.003-.309.187c-.342.207-.858.519-1.142.701a.573.573 0 0 0-.261.485c0 .482.544.774.948.522.227-.141.465-.287.642-.395v3.478a.723.723 0 1 0 1.447 0V1.81Zm-.899 7.128c-1.233 0-2.056.817-2.056 1.84a.25.25 0 0 0 .25.251h.891a.259.259 0 0 0 .26-.259c0-.32.227-.589.608-.589a.62.62 0 0 1 .428.15.52.52 0 0 1 .16.396c0 .315-.188.579-.538.949l-1.815 1.968a.672.672 0 0 0 .494 1.127h3.003a.63.63 0 0 0 0-1.26H3.744l.933-1.047c.61-.652.99-1.127.99-1.834a1.57 1.57 0 0 0-.563-1.226c-.356-.3-.852-.466-1.426-.466Zm.015 7.429c-1.006 0-1.692.478-1.946 1.178a.541.541 0 0 0 .107.553c.122.137.307.22.503.22a.773.773 0 0 0 .478-.18c.125-.098.23-.222.312-.33.096-.124.257-.224.511-.224.21 0 .37.063.472.152a.46.46 0 0 1 .16.359v.002a.503.503 0 0 1-.165.391.71.71 0 0 1-.483.16h-.14a.606.606 0 1 0 0 1.213h.168c.275 0 .468.074.59.178a.538.538 0 0 1 .186.42.554.554 0 0 1-.185.435c-.122.107-.314.184-.583.184-.32 0-.528-.114-.644-.264a1.776 1.776 0 0 0-.308-.323.766.766 0 0 0-.47-.174.678.678 0 0 0-.504.22.549.549 0 0 0-.114.55c.244.717.926 1.22 2.012 1.22.602 0 1.161-.168 1.575-.478.416-.311.683-.768.676-1.323-.01-.69-.376-1.122-.793-1.332.34-.231.63-.644.621-1.224-.019-.962-.92-1.583-2.036-1.583ZM8 4a1 1 0 0 1 1-1h13a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Zm0 8a1 1 0 0 1 1-1h13a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Zm0 8a1 1 0 0 1 1-1h13a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Z\" fill=\"currentColor\"></path></svg>",
+  bulletList: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"DisorderListOutlined\"><path d=\"M3.5 5.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM9 3a1 1 0 0 0 0 2h13a1 1 0 1 0 0-2H9Zm0 8a1 1 0 1 0 0 2h13a1 1 0 1 0 0-2H9Zm-1 9a1 1 0 0 1 1-1h13a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Zm-3-8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm-1.5 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z\" fill=\"currentColor\"></path></svg>",
+  taskList: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"TodoOutlined\"><path d=\"M17.207 10.207a1 1 0 0 0-1.414-1.414L11 13.586l-2.293-2.293a1 1 0 0 0-1.414 1.414l3 3a1 1 0 0 0 1.414 0l5.5-5.5Z\" fill=\"currentColor\"></path><path d=\"M2 4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm2 0v16h16V4H4Z\" fill=\"currentColor\"></path></svg>",
+  code: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"CodeblockOutlined\"><path d=\"M7.856 1.753c.49 0 .888.447.888.938 0 .49-.398.84-.888.84h-.644c-.844 0-1.244.46-1.244 1.425v4.301c0 1.086-.41 1.892-1.219 2.407-.23.147-.239.543-.01.694.815.542 1.23 1.33 1.23 2.385v4.322c0 .922.399 1.405 1.243 1.405h.644c.49 0 .888.423.888.914 0 .49-.398.863-.888.863H6.812c-.977 0-1.732-.33-2.266-.944-.488-.57-.733-1.36-.733-2.325v-4.126c0-.636-.133-1.097-.4-1.382-.164-.185-.857-.323-1.494-.418-.531-.08-.933-.523-.923-1.06.01-.533.403-.98.93-1.06.633-.095 1.325-.23 1.488-.402.266-.307.4-.768.4-1.383V5.044c0-.987.244-1.777.732-2.348.534-.636 1.289-.943 2.266-.943h1.044Zm8.434 20.494c-.49 0-.888-.447-.888-.938 0-.49.397-.84.888-.84h.644c.844 0 1.244-.46 1.244-1.425v-4.301c0-1.086.41-1.892 1.219-2.407.23-.147.238-.543.01-.694-.816-.542-1.23-1.33-1.23-2.385V4.935c0-.922-.4-1.405-1.243-1.405h-.644c-.49 0-.888-.423-.888-.914 0-.49.397-.863.888-.863h1.044c.977 0 1.732.33 2.265.944.489.57.733 1.36.733 2.325v4.126c0 .636.134 1.097.4 1.382.16.18.764.32 1.343.419.53.09.932.533.922 1.07a1.1 1.1 0 0 1-.929 1.063c-.575.092-1.177.22-1.336.388-.266.307-.4.768-.4 1.382v4.104c0 .987-.244 1.777-.733 2.348-.533.636-1.288.943-2.265.943H16.29Z\" fill=\"currentColor\"></path></svg>",
+  blockquote: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"ReferenceOutlined\"><path d=\"M6.865 21C4.275 21 2 18.88 2 15.037c0-4.5 3.143-9.725 6.518-12.422a.888.888 0 0 1 1.203.107c.398.424.32 1.11-.112 1.5-2.412 2.17-5.32 6.855-5.153 9.055.215-.113 1.277-.516 2.801-.516 2.197 0 3.845 1.726 3.845 4.002A4.22 4.22 0 0 1 6.865 21Zm10.898 0c-2.59 0-4.865-2.119-4.865-5.963 0-4.5 3.143-9.725 6.518-12.422a.888.888 0 0 1 1.203.107c.398.424.32 1.11-.112 1.5-2.412 2.17-5.32 6.855-5.153 9.055.215-.113 1.277-.516 2.801-.516 2.197 0 3.845 1.726 3.845 4.002A4.22 4.22 0 0 1 17.763 21Z\" fill=\"currentColor\"></path></svg>",
+  callout: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"CalloutOutlined\"><path d=\"M4 2a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4Zm16 2v6H4V4h16ZM3 16a1 1 0 0 1 1-1h16a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm1 4a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H4Z\" fill=\"currentColor\"></path></svg>",
+  divider: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"DividerOutlined\"><path d=\"M9.5 4a1 1 0 0 1 1-1h3a1 1 0 1 1 0 2h-3a1 1 0 0 1-1-1Zm0 16a1 1 0 0 1 1-1h3a1 1 0 1 1 0 2h-3a1 1 0 0 1-1-1ZM3 11a1 1 0 1 0 0 2h18a1 1 0 1 0 0-2H3Zm14-7a1 1 0 0 1 1-1h3a1 1 0 1 1 0 2h-3a1 1 0 0 1-1-1Zm1 15a1 1 0 1 0 0 2h3a1 1 0 1 0 0-2h-3ZM2 4a1 1 0 0 1 1-1h3a1 1 0 0 1 0 2H3a1 1 0 0 1-1-1Zm1 15a1 1 0 1 0 0 2h3a1 1 0 1 0 0-2H3Z\" fill=\"currentColor\"></path></svg>",
+  link: "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" data-icon=\"GlobalLinkOutlined\"><path d=\"M18.849 2.699a5.037 5.037 0 0 0-7.1.97L8.97 7.372a4.784 4.784 0 0 0 .957 6.699l.972.729a1 1 0 0 0 1.2-1.6l-.972-.73a2.784 2.784 0 0 1-.557-3.898l2.777-3.703a3.037 3.037 0 1 1 4.8 3.72l-1.429 1.786a1 1 0 1 0 1.562 1.25l1.43-1.788a5.037 5.037 0 0 0-.862-7.138Z\" fill=\"currentColor\"></path><path d=\"M5.152 21.301a5.037 5.037 0 0 0 7.1-.97l2.777-3.703a4.784 4.784 0 0 0-.957-6.699L13.1 9.2a1 1 0 0 0-1.2 1.6l.973.73a2.784 2.784 0 0 1 .556 3.898l-2.777 3.703a3.037 3.037 0 1 1-4.8-3.72l1.429-1.786a1 1 0 0 0-1.562-1.25l-1.43 1.787a5.037 5.037 0 0 0 .863 7.14Z\" fill=\"currentColor\"></path></svg>",
+}
+const BASIC_ICONS = { heading1: 'block-h1', heading2: 'block-h2', heading3: 'block-h3', orderedList: 'block-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'block-quote', callout: 'block-callout', divider: 'horizontal-rule', link: 'link' }
+const SEMANTIC_COMMAND_ICONS = { taskList: 'block-task', callout: 'block-callout', columns: 'block-columns', columns2: 'block-columns', columns3: 'block-columns', columns4: 'block-columns', columns5: 'block-columns', table: 'block-table', image: 'block-image', file: 'block-file', template: 'block-template', diagram: 'block-diagram' }
+const MOBILE_BASIC = ['heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'heading6', 'heading7', 'heading8', 'heading9', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'link']
+const MOBILE_COMMON = ['image', 'file', 'table', 'callout', 'source_synced', 'inlineMath', 'divider']
+const MOBILE_ICONS = {
+  paragraph: 'block-text', orderedList: 'mobile-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'mobile-quote', link: 'link',
+  image: 'image', file: 'insert-file', table: 'insert-table', callout: 'insert-callout', source_synced: 'insert-synced', inlineMath: 'insert-math', divider: 'insert-divider',
+  columns: 'insert-columns', diagram: 'diagram-gantt', chart: 'diagram-gantt', blockMath: 'insert-math', math: 'insert-math', template: 'insert-template',
+}
 /** 子菜单贴触发器的间距 / 视口留边（与 SFC 完全一致，断言在量）。 */
 const SUBMENU_GAP = 5
 const SUBMENU_MARGIN = 8
@@ -43,10 +68,25 @@ export function createCommandMenu(options = {}) {
   const handlers = options.handlers || {}
   const host = options.host || null
   const anchor = options.anchor || null
+  const tooltip = createTooltip({ host: host || document.body })
 
   const call = (name, ...args) => {
     const fn = handlers[name]
     return typeof fn === 'function' ? fn(...args) : undefined
+  }
+
+  const commandTip = item => {
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform || '')
+    const mod = mac ? '⌘' : 'Ctrl', alt = mac ? '⌥' : 'Alt'
+    const metadata = {
+      code: { shortcut: `${mod} + ${alt} + C`, markdown: '``` 空格 或 ``` 代码语言 空格' },
+      divider: { shortcut: `${mod} + ${alt} + S`, markdown: '--- 或 ***' },
+      heading1: { markdown: '# 空格' }, heading2: { markdown: '## 空格' }, heading3: { markdown: '### 空格' },
+      orderedList: { markdown: '1. 空格' }, bulletList: { markdown: '- 空格 或 * 空格' },
+      taskList: { markdown: '[] 空格' }, blockquote: { markdown: '> 空格' },
+      inlineMath: { markdown: '$公式$' },
+    }
+    return { title: item.label, ...(isSkip(item) ? { description: '需要企业版接入' } : metadata[item.id] || {}) }
   }
 
   // ————————————————— 状态（唯一真相） —————————————————
@@ -58,6 +98,7 @@ export function createCommandMenu(options = {}) {
     diagramTypes,
     query: '',
     activeId: '',
+    activeIndex: null,
     positionStyle: null,
     submenuOpen: '',
     submenuType: '',
@@ -65,11 +106,17 @@ export function createCommandMenu(options = {}) {
     tableHover: { rows: 3, cols: 3 },
   }
   let composing = false
+  let disposed = false
+  let mobileSearchOpen = false
   /** 分段签名：段名 + 每段项 id 顺序。变了才重排段容器。 */
   let sectionSignature = ''
   /** 子菜单节点（开时才存在）；`submenuType` 决定内容分支。 */
   let submenuEl = null
   let submenuTrigger = null
+  let submenuSignature = '', submenuSource = null
+  const activeItem = () => Number.isInteger(state.activeIndex) ? state.items[state.activeIndex] : state.items.find(item => item.id === state.activeId)
+  const submenuData = () => state.submenuType === 'templates' ? state.templates : state.submenuType === 'diagram' ? state.diagramTypes : null
+  const submenuDataSignature = () => JSON.stringify((submenuData() || state.items.filter(item => item.submenu === state.submenuOpen)).map(item => [item.id, item.label, item.title, item.description, item.unavailable, item.tier]))
 
   // ————————————————— 根节点 —————————————————
 
@@ -77,6 +124,7 @@ export function createCommandMenu(options = {}) {
   el.className = 'lark-doc-command-menu'
   el.setAttribute('role', 'menu')
   el.setAttribute('aria-label', '插入内容')
+  const activeTarget = target => !disposed && state.open && el.isConnected && target?.isConnected && el.contains(target)
   el.addEventListener('mouseenter', () => call('onMenuEnter'))
   el.addEventListener('mouseleave', () => call('onMenuLeave'))
   el.addEventListener('keydown', onKeydown)
@@ -96,6 +144,29 @@ export function createCommandMenu(options = {}) {
   input.addEventListener('compositionend', () => { composing = false })
   head.appendChild(headTitle)
   head.appendChild(input)
+  const searchButton = document.createElement('button')
+  searchButton.type = 'button'
+  searchButton.className = 'lark-doc-command-search-toggle'
+  searchButton.setAttribute('aria-label', '搜索命令')
+  searchButton.appendChild(iconNode('search', 20))
+  searchButton.addEventListener('click', () => {
+    if (!state.open) return
+    mobileSearchOpen = !mobileSearchOpen
+    renderRoot()
+    if (mobileSearchOpen) input.focus()
+    else closeButton.focus({ preventScroll: true })
+  })
+  const closeButton = document.createElement('button')
+  closeButton.type = 'button'
+  closeButton.className = 'lark-doc-command-close'
+  closeButton.setAttribute('aria-label', '关闭插入面板')
+  closeButton.textContent = '×'
+  closeButton.addEventListener('click', () => call('onClose'))
+  const backdrop = document.createElement('div')
+  backdrop.className = 'lark-doc-command-backdrop'
+  backdrop.setAttribute('aria-hidden', 'true')
+  backdrop.addEventListener('mousedown', event => event.preventDefault())
+  backdrop.addEventListener('click', () => call('onClose'))
 
   // ————————————————— 空态 / 底部提示 —————————————————
 
@@ -115,15 +186,18 @@ export function createCommandMenu(options = {}) {
   const sectionNodes = new Map()
 
   const isSkip = (item) => item.tier === 'skip'
+  const entryKey = item => `${item.sourceCategory ?? item.category}:${item.id}`
 
   function syncEntry(entry, item) {
     entry.item = item
     const { node, icon, label } = entry
     node.classList.toggle('is-skip', isSkip(item))
-    node.classList.toggle('active', item.id === state.activeId && !isSkip(item))
+    const active = activeItem()
+    node.classList.toggle('active', active && entryKey(active) === entryKey(item) && !isSkip(item))
     node.disabled = isSkip(item)
     const tip = isSkip(item) ? item.reason || '需要企业版接入' : item.label
-    setAttr(node, 'title', tip)
+    setAttr(node, 'title', null)
+    setAttr(node, 'data-tooltip-title', tip)
     setAttr(node, 'aria-label', tip)
     setAttr(node, 'aria-disabled', isSkip(item) ? 'true' : null)
     setAttr(node, 'data-tier', item.tier || null)
@@ -131,7 +205,15 @@ export function createCommandMenu(options = {}) {
     setAttr(node, 'aria-expanded', item.submenu ? String(state.submenuOpen === item.submenu) : null)
 
     const glyph = item.glyph || '·'
-    if (icon.textContent !== glyph) icon.textContent = glyph
+    const iconName = ((state.kind === 'slash' || state.kind === 'plus' && item.category === '基础') && BASIC_ICONS[item.id]) || SEMANTIC_COMMAND_ICONS[item.id]
+    const sourceIcon = MENU_ICON_MARKUP[item.id]
+    if (item.mobileIcon) setIcon(icon, item.mobileIcon, 48)
+    else if (sourceIcon) {
+      icon.style.width = icon.style.height = state.kind === 'plus' && item.category === '基础' ? '20px' : '18px'
+      if (icon.innerHTML !== sourceIcon) icon.innerHTML = sourceIcon
+    }
+    else if (iconName) setIcon(icon, iconName, state.kind === 'plus' && item.category === '基础' ? 20 : 18)
+    else if (icon.textContent !== glyph || icon.querySelector('svg')) { icon.textContent = glyph; icon.removeAttribute('style') }
     const tone = `lark-doc-command-icon is-${item.tone || 'blue'}`
     if (icon.className !== tone) icon.className = tone
     if (label.textContent !== item.label) label.textContent = item.label
@@ -144,9 +226,10 @@ export function createCommandMenu(options = {}) {
         arrow.setAttribute('role', 'button')
         arrow.setAttribute('tabindex', '0')
         arrow.setAttribute('aria-label', `打开${item.submenu}子菜单`)
-        arrow.textContent = '›'
-        arrow.addEventListener('click', (event) => { event.stopPropagation(); event.preventDefault(); openSubmenu(entry.item, node) })
+        arrow.appendChild(iconNode('link-view-caret', 14, 'lark-doc-command-submenu-arrow-icon'))
+        arrow.addEventListener('click', (event) => { if (!activeTarget(arrow)) return; event.stopPropagation(); event.preventDefault(); openSubmenu(entry.item, node) })
         arrow.addEventListener('keydown', (event) => {
+          if (!activeTarget(arrow)) return
           if (event.key !== 'Enter' && event.key !== ' ') return
           event.stopPropagation()
           event.preventDefault()
@@ -164,17 +247,30 @@ export function createCommandMenu(options = {}) {
   }
 
   function buttonFor(item) {
-    let entry = entries.get(item.id)
+    const key = entryKey(item)
+    let entry = entries.get(key)
     if (!entry) {
       const node = document.createElement('button')
       node.type = 'button'
       node.setAttribute('role', 'menuitem')
       node.dataset.commandId = item.id
+      node.dataset.entryKey = key
       // `@mousedown.prevent`：不挡的话按下会先抢焦点、菜单当场关掉。
       node.addEventListener('mousedown', (event) => event.preventDefault())
-      node.addEventListener('mouseenter', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
-      node.addEventListener('focus', () => { if (entry.item.submenu) openSubmenu(entry.item, node) })
+      const activate = () => {
+        if (!activeTarget(node)) return
+        const index = state.items.findIndex(item => entryKey(item) === node.dataset.entryKey)
+        if (index >= 0) call('onActivate', index)
+        if (entry.item.submenu) openSubmenu(entry.item, node)
+        else closeSubmenu()
+      }
+      node.addEventListener('mouseenter', event => {
+        if (event.sourceCapabilities?.firesTouchEvents || node.ownerDocument.defaultView?.matchMedia?.('(hover: none)')?.matches) return
+        activate()
+      })
+      node.addEventListener('focus', activate)
       node.addEventListener('click', () => {
+        if (!activeTarget(node)) return
         const current = entry.item
         // plus 菜单里带子菜单的项一律先展子菜单；斜杠菜单对 分栏/模板/图表 展开，表格直接落 3×3。
         if (current.submenu && (state.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(current.submenuType))) openSubmenu(current, node)
@@ -188,7 +284,8 @@ export function createCommandMenu(options = {}) {
       node.appendChild(icon)
       node.appendChild(label)
       entry = { node, item, icon, label, arrow: null }
-      entries.set(item.id, entry)
+      tooltip.bind(node, () => state.kind === 'plus' && entry.item.category === '基础' ? commandTip(entry.item) : null)
+      entries.set(key, entry)
     }
     syncEntry(entry, item)
     return entry.node
@@ -199,13 +296,14 @@ export function createCommandMenu(options = {}) {
     const seen = []
     items.forEach((item) => { if (seen.indexOf(item.category) === -1) seen.push(item.category) })
     if (state.kind !== 'plus') return seen
-    return PLUS_CATEGORIES.concat(seen.filter((category) => PLUS_CATEGORIES.indexOf(category) === -1))
+    const first = el.ownerDocument.defaultView?.matchMedia?.('(max-width: 760px) and (pointer: coarse)')?.matches ? ['基础', '常用', '其他标题'] : PLUS_CATEGORIES
+    return first.filter(category => seen.includes(category)).concat(seen.filter(category => !first.includes(category)))
   }
 
   /** 段容器按签名重建；按钮本体复用（见文件头第 2 条）。 */
-  function sectionList() {
-    const categories = categoriesOf(state.items)
-    const signature = categories.map((category) => `${category}:${state.items.filter((item) => item.category === category).map((item) => item.id).join(',')}`).join('|')
+  function sectionList(items, touch) {
+    const categories = categoriesOf(items)
+    const signature = `${touch ? 'touch' : 'default'}|` + categories.map((category) => `${category}:${items.filter((item) => item.category === category).map((item) => item.id).join(',')}`).join('|')
     if (signature === sectionSignature) return categories.map((category) => sectionNodes.get(category))
     sectionSignature = signature
     sectionNodes.clear()
@@ -216,7 +314,17 @@ export function createCommandMenu(options = {}) {
       const small = document.createElement('small')
       small.textContent = category
       section.appendChild(small)
-      state.items.filter((item) => item.category === category).forEach((item) => section.appendChild(buttonFor(item)))
+      const categoryItems = items.filter((item) => item.category === category)
+      if (touch && category === '基础') {
+        for (const [label, isHeading] of [['标题快捷项', true], ['列表与块快捷项', false]]) {
+          const row = document.createElement('div')
+          row.className = 'lark-doc-command-basic-row'
+          row.setAttribute('role', 'group')
+          row.setAttribute('aria-label', label)
+          categoryItems.filter((item) => /^heading[1-9]$/.test(item.id) === isHeading).forEach((item) => row.appendChild(buttonFor(item)))
+          section.appendChild(row)
+        }
+      } else categoryItems.forEach((item) => section.appendChild(buttonFor(item)))
       sectionNodes.set(category, section)
       return section
     })
@@ -265,7 +373,7 @@ export function createCommandMenu(options = {}) {
       button.addEventListener('mouseenter', () => setColumnsHover(count))
       button.addEventListener('focus', () => setColumnsHover(count))
       button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', () => call('onChoose', { id: `columns${count}` }))
+      button.addEventListener('click', () => { if (activeTarget(button)) call('onChoose', { id: `columns${count}` }) })
       picker.appendChild(button)
       choices.push({ count, node: button })
     })
@@ -276,34 +384,42 @@ export function createCommandMenu(options = {}) {
   }
 
   function buildTableSubmenu() {
-    const headNode = makePickerHead('选择大小')
-    // 表格分支的 `<output>` **恒在**（SFC 里没有 `v-if`），初值 `3 × 3` 与
-    // `state.tableHover` 的默认值同源。分栏分支相反 —— 那边是 `v-if="columnsHover"`。
+    const headNode = makePickerHead('插入支持富文本的表格')
     const output = document.createElement('output')
-    output.textContent = `${state.tableHover.cols} × ${state.tableHover.rows}`
+    output.setAttribute('aria-live', 'polite')
     headNode.appendChild(output)
     const grid = document.createElement('div')
     grid.className = 'lark-doc-table-submenu-grid'
     grid.setAttribute('role', 'group')
-    grid.setAttribute('aria-label', '选择表格大小')
+    grid.setAttribute('aria-label', '选择表格行列')
     const cells = []
-    for (let cell = 1; cell <= 36; cell += 1) {
-      const rows = Math.floor((cell - 1) / 6) + 1
-      const cols = ((cell - 1) % 6) + 1
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.setAttribute('role', 'menuitem')
-      button.setAttribute('aria-label', `${cols}列${rows}行`)
-      button.addEventListener('mouseenter', () => setTableHover({ rows, cols }))
-      button.addEventListener('focus', () => setTableHover({ rows, cols }))
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', () => call('onChoose', { id: 'table', tableSize: { rows, cols } }))
-      grid.appendChild(button)
-      cells.push({ rows, cols, node: button })
+    for (let row = 1; row <= 9; row += 1) {
+      for (let col = 1; col <= 9; col += 1) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.setAttribute('role', 'menuitem')
+        button.setAttribute('aria-label', `${row}行${col}列`)
+        button.dataset.row = row
+        button.dataset.col = col
+        const preview = () => { state.tableHover = { rows: row, cols: col }; syncSubmenuLive() }
+        button.addEventListener('mouseenter', preview)
+        button.addEventListener('focus', preview)
+        button.addEventListener('mousedown', event => event.preventDefault())
+        button.addEventListener('click', () => { if (activeTarget(button)) call('onChoose', { id: 'table', tableSize: { rows: row, cols: col } }) })
+        button.addEventListener('keydown', event => {
+          const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -9, ArrowDown: 9 }[event.key]
+          if (!delta) return
+          event.preventDefault(); event.stopPropagation()
+          cells[Math.max(0, Math.min(80, (row - 1) * 9 + col - 1 + delta))].node.focus()
+        })
+        cells.push({ row, col, node: button })
+        grid.appendChild(button)
+      }
     }
+    grid.addEventListener('mouseleave', () => { state.tableHover = null; syncSubmenuLive() })
     submenuEl.appendChild(headNode)
     submenuEl.appendChild(grid)
-    return { headNode, cells }
+    return { output, cells }
   }
 
   function buildTemplatesSubmenu() {
@@ -323,7 +439,7 @@ export function createCommandMenu(options = {}) {
       node.setAttribute('role', 'menuitem')
       node.setAttribute('aria-label', template.label || template.title || template.id)
       node.addEventListener('mousedown', (event) => event.preventDefault())
-      node.addEventListener('click', () => call('onChoose', { id: 'template', templateId: template.id }))
+      node.addEventListener('click', () => { if (activeTarget(node)) call('onChoose', { id: 'template', templateId: template.id }) })
       const icon = document.createElement('span')
       icon.className = 'lark-doc-command-icon is-indigo'
       icon.setAttribute('aria-hidden', 'true')
@@ -343,6 +459,13 @@ export function createCommandMenu(options = {}) {
       node.appendChild(label)
       submenuEl.appendChild(node)
     })
+    const more = document.createElement('button'), owner = submenuEl
+    more.type = 'button'; more.className = 'lark-doc-template-more'; more.setAttribute('role', 'menuitem'); more.textContent = '更多模板'
+    more.addEventListener('mousedown', event => event.preventDefault())
+    more.addEventListener('click', () => {
+      if (activeTarget(more) && owner === submenuEl && owner.contains(more)) call('onChoose', { id: 'template', templateLibrary: true })
+    })
+    submenuEl.appendChild(more)
     return {}
   }
 
@@ -357,6 +480,7 @@ export function createCommandMenu(options = {}) {
       node.setAttribute('aria-label', item.label)
       node.addEventListener('mousedown', (event) => event.preventDefault())
       node.addEventListener('click', () => {
+        if (!activeTarget(node)) return
         if (typeof handlers.onChooseDiagram === 'function') call('onChooseDiagram', item.id)
         else call('onChoose', { id: 'diagram', diagramType: item.id })
       })
@@ -382,7 +506,7 @@ export function createCommandMenu(options = {}) {
       node.setAttribute('role', 'menuitem')
       node.setAttribute('aria-label', item.label)
       node.addEventListener('mousedown', (event) => event.preventDefault())
-      node.addEventListener('click', () => call('onChoose', item))
+      node.addEventListener('click', () => { if (activeTarget(node)) call('onChoose', item) })
       const icon = document.createElement('span')
       icon.className = 'lark-doc-command-icon'
       icon.setAttribute('aria-hidden', 'true')
@@ -399,6 +523,12 @@ export function createCommandMenu(options = {}) {
 
   function syncSubmenuLive() {
     if (!submenuEl) return
+    if (state.submenuType === 'table') {
+      const hover = state.tableHover
+      submenuLive.output.textContent = hover ? `${hover.cols} x ${hover.rows}` : ''
+      submenuLive.cells.forEach(cell => cell.node.classList.toggle('is-preview', !!hover && cell.row <= hover.rows && cell.col <= hover.cols))
+      return
+    }
     if (state.submenuType === 'columns') {
       const { headNode, bars, choices } = submenuLive
       const hover = state.columnsHover
@@ -413,24 +543,12 @@ export function createCommandMenu(options = {}) {
       choices.forEach((choice) => choice.node.classList.toggle('is-preview', choice.count === hover))
       return
     }
-    if (state.submenuType === 'table') {
-      const { headNode, cells } = submenuLive
-      const { rows, cols } = state.tableHover
-      const existing = headNode.querySelector('output')
-      if (existing && existing.textContent !== `${cols} × ${rows}`) existing.textContent = `${cols} × ${rows}`
-      cells.forEach((cell) => cell.node.classList.toggle('is-preview', cell.rows <= rows && cell.cols <= cols))
-    }
+
   }
 
   function setColumnsHover(value) {
     if (state.columnsHover === value) return
     state.columnsHover = value
-    syncSubmenuLive()
-  }
-
-  function setTableHover(value) {
-    if (state.tableHover.rows === value.rows && state.tableHover.cols === value.cols) return
-    state.tableHover = value
     syncSubmenuLive()
   }
 
@@ -444,8 +562,10 @@ export function createCommandMenu(options = {}) {
     if (!item || !item.submenu) return
     state.submenuOpen = item.submenu
     state.submenuType = item.submenuType || 'commands'
+    submenuSource = submenuData()
+    submenuSignature = submenuDataSignature()
     if (state.submenuType === 'columns') state.columnsHover = null
-    if (state.submenuType === 'table') state.tableHover = { rows: 3, cols: 3 }
+    if (state.submenuType === 'table') state.tableHover = null
     submenuTrigger = triggerNode || null
 
     submenuEl = document.createElement('div')
@@ -470,10 +590,16 @@ export function createCommandMenu(options = {}) {
     if (!submenuEl || !submenuTrigger) return
     const triggerRect = submenuTrigger.getBoundingClientRect()
     if (!triggerRect || (!triggerRect.width && !triggerRect.height)) return
-    const width = state.submenuType === 'templates' ? 250 : 190
+    const win = submenuEl.ownerDocument.defaultView
+    const viewport = win.visualViewport
+    const x = viewport?.offsetLeft || 0, y = viewport?.offsetTop || 0
+    const viewportWidth = viewport?.width || win.innerWidth, viewportHeight = viewport?.height || win.innerHeight
+    const maxWidth = Math.max(0, viewportWidth - SUBMENU_MARGIN * 2)
+    const maxHeight = Math.max(0, viewportHeight - SUBMENU_MARGIN * 2)
+    const fallbackWidth = state.submenuType === 'templates' ? 250 : 190
     const options = state.items.filter((item) => item.submenu === state.submenuOpen)
     const estimatedHeight = state.submenuType === 'templates'
-      ? Math.min(420, 42 + Math.max(1, state.templates.length) * 40)
+      ? Math.min(420, 42 + (Math.max(1, state.templates.length) + 1) * 40)
       : state.submenuType === 'columns'
         ? 166
         : state.submenuType === 'table'
@@ -481,14 +607,22 @@ export function createCommandMenu(options = {}) {
           : state.submenuType === 'diagram'
             ? Math.min(420, 42 + Math.max(1, state.diagramTypes.length) * 40)
             : Math.min(420, 42 + options.length * 40)
+    const size = { maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`, overflowY: 'auto', boxSizing: 'border-box',
+      ...(state.submenuType === 'templates' ? { width: `${fallbackWidth}px` } : {}) }
+    Object.assign(submenuEl.style, size)
+    // Measure the attached, constrained surface, including variable template
+    // titles and the More row. Estimates only serve non-layout environments.
+    const box = submenuEl.getBoundingClientRect()
+    const width = Math.min(box.width || fallbackWidth, maxWidth), height = Math.min(box.height || estimatedHeight, maxHeight)
     const right = triggerRect.right + SUBMENU_GAP
     const left = triggerRect.left - width - SUBMENU_GAP
-    const leftPosition = right + width + SUBMENU_MARGIN <= window.innerWidth ? right : Math.max(SUBMENU_MARGIN, left)
-    const top = Math.max(SUBMENU_MARGIN, Math.min(window.innerHeight - estimatedHeight - SUBMENU_MARGIN, triggerRect.top))
+    const rightEdge = x + viewportWidth - SUBMENU_MARGIN, bottomEdge = y + viewportHeight - SUBMENU_MARGIN
+    const leftPosition = Math.max(x + SUBMENU_MARGIN, Math.min(rightEdge - width, right + width <= rightEdge ? right : left))
+    const top = Math.max(y + SUBMENU_MARGIN, Math.min(bottomEdge - height, triggerRect.top))
     applyStyle(submenuEl, {
-      left: `${Math.round(leftPosition)}px`,
-      top: `${Math.round(top)}px`,
-      ...(state.submenuType === 'templates' ? { width: `${width}px` } : {}),
+      ...size,
+      left: `${leftPosition}px`,
+      top: `${top}px`,
     })
   }
 
@@ -498,6 +632,7 @@ export function createCommandMenu(options = {}) {
     state.submenuType = ''
     submenuEl = null
     submenuTrigger = null
+    submenuSource = null; submenuSignature = ''
     submenuLive = {}
     renderRoot()
   }
@@ -508,9 +643,34 @@ export function createCommandMenu(options = {}) {
     const plus = state.kind === 'plus'
     const cls = `lark-doc-command-menu${plus ? ' is-plus' : ''}${state.kind === 'slash' ? ' is-slash' : ''}`
     if (el.className !== cls) el.className = cls
+    if (plus && closeButton.parentNode !== head) head.prepend(closeButton)
+    else if (!plus) closeButton.remove()
+    const touch = el.ownerDocument.defaultView?.matchMedia?.('(max-width: 760px) and (pointer: coarse)')?.matches
+    headTitle.textContent = plus && touch ? '添加' : '插入内容'
+    const mobile = plus && touch
+    input.hidden = !!mobile && !mobileSearchOpen
+    if (mobile && searchButton.parentNode !== head) head.appendChild(searchButton)
+    else if (!mobile) searchButton.remove()
+    setAttr(searchButton, 'aria-expanded', String(mobileSearchOpen))
     applyStyle(el, state.positionStyle)
 
-    const sections = state.items.length ? sectionList() : []
+    // 桌面 plus 列表刻意给 任务/高亮块 两个视觉条目，手机重映射后它们会落进同一行撞成重复，
+    // 而源「添加」面板每项只出现一次——按 id 保留首个。
+    const items = mobile ? (() => {
+      const seen = new Set()
+      return state.items.map(item => {
+        const basic = MOBILE_BASIC.indexOf(item.id), common = MOBILE_COMMON.indexOf(item.id)
+        const category = basic >= 0 ? '基础' : common >= 0 ? '常用' : item.id === 'paragraph' ? '其他标题' : item.category
+        return { ...item, sourceCategory: item.category, category, mobileIcon: MOBILE_ICONS[item.id] || (/^heading[1-9]$/.test(item.id) ? `mobile-heading${item.id.slice(-1)}` : null), label: item.id === 'image' ? '图片' : item.id === 'file' ? '文件' : item.label,
+          mobileRank: basic >= 0 ? basic : common >= 0 ? common : 100 }
+      }).sort((a, b) => a.mobileRank - b.mobileRank).filter((item) => {
+        if (seen.has(item.id)) return false
+        seen.add(item.id)
+        return true
+      })
+    })() : state.items
+    const currentItems = new Map(items.map(item => [entryKey(item), item]))
+    const sections = items.length ? sectionList(items, mobile) : []
     const slots = [{ node: head, on: true }]
     slots.push({ node: emptyEl, on: !state.items.length })
     sections.forEach((node) => slots.push({ node, on: true }))
@@ -522,8 +682,8 @@ export function createCommandMenu(options = {}) {
     if (input.value !== state.query) input.value = state.query
     sections.forEach((section) => {
       Array.prototype.forEach.call(section.querySelectorAll('button[data-command-id]'), (node) => {
-        const entry = entries.get(node.dataset.commandId)
-        if (entry) syncEntry(entry, entry.item)
+        const entry = entries.get(node.dataset.entryKey)
+        if (entry && currentItems.has(node.dataset.entryKey)) syncEntry(entry, currentItems.get(node.dataset.entryKey))
       })
     })
   }
@@ -535,6 +695,7 @@ export function createCommandMenu(options = {}) {
    * 位置都收），组字期间一律让给输入法。
    */
   function onKeydown(event) {
+    if (!activeTarget(event.target)) return
     if (composing || event.isComposing || event.keyCode === 229) {
       event.stopPropagation()
       return
@@ -558,10 +719,14 @@ export function createCommandMenu(options = {}) {
 
   /** Enter：有子菜单的项先展开（plus / 分栏 / 模板），其余交给 `onChoose`。 */
   function choose() {
-    const item = state.items.find((entry) => entry.id === state.activeId) || state.items[0]
+    // T086 退役入口：`choose` 是 mixin 键盘路径直调的公开入口，调用方只看 `menuOpen`。
+    // 菜单已关、已卸载或已销毁时 `state.items` 仍是上一份，兜底的 `items[0]` 会插错块，
+    // 所以这里必须自己核 present 状态（与 click 路径的 `activeTarget` 同一套条件）。
+    if (disposed || !state.open || !el.isConnected) return
+    const item = activeItem() || state.items[0]
     if (!item) return
     if (item.submenu && (state.kind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType))) {
-      openSubmenu(item, entries.has(item.id) ? entries.get(item.id).node : null)
+      openSubmenu(item, entries.get(entryKey(item))?.node || null)
       return
     }
     call('onChoose', item)
@@ -571,12 +736,16 @@ export function createCommandMenu(options = {}) {
 
   function mount() {
     if (!host) return
+    if (state.kind === 'plus') host.insertBefore(backdrop, el.parentNode === host ? el : anchor && anchor.parentNode === host ? anchor : null)
+    else backdrop.remove()
     if (el.parentNode !== host) host.insertBefore(el, anchor && anchor.parentNode === host ? anchor : null)
   }
 
   function unmount() {
+    backdrop.remove()
     if (el.parentNode) el.parentNode.removeChild(el)
     closeSubmenu()
+    tooltip.hide()
   }
 
   /**
@@ -586,19 +755,29 @@ export function createCommandMenu(options = {}) {
    * 关闭时子树一并清掉，下次打开是干净的（与 `v-if` 的销毁语义一致）。
    */
   function update(patch) {
-    const previous = { open: state.open, kind: state.kind }
+    if (disposed) return
+    const previous = { open: state.open, kind: state.kind, activeId: state.activeId, activeIndex: state.activeIndex }
     Object.assign(state, patch || {})
     if (!Array.isArray(state.diagramTypes)) state.diagramTypes = []
     if (!state.open) {
+      mobileSearchOpen = false
       if (el.parentNode) unmount()
-      else closeSubmenu()
+      else { closeSubmenu(); tooltip.hide() }
       return
     }
+    if (state.submenuOpen && !state.items.some(item => item.submenu === state.submenuOpen && (item.submenuType || 'commands') === state.submenuType)) closeSubmenu()
     if (previous.kind !== state.kind) {
+      mobileSearchOpen = false
       // 换入口（斜杠 ↔ plus）时分段表完全不同，缓冲的段节点与签名必须清掉。
       sectionSignature = ''
       sectionNodes.clear()
       closeSubmenu()
+    }
+    if (state.submenuOpen && !state.items.some(item => item.submenu === state.submenuOpen && (item.submenuType || 'commands') === state.submenuType && entryKey(item) === submenuTrigger?.dataset.entryKey && !isSkip(item))) closeSubmenu()
+    if (state.submenuOpen && (submenuSource !== submenuData() || submenuSignature !== submenuDataSignature())) closeSubmenu()
+    if (state.submenuOpen && (previous.activeId !== state.activeId || previous.activeIndex !== state.activeIndex)) {
+      const active = activeItem()
+      if (!active || entryKey(active) !== submenuTrigger?.dataset.entryKey) closeSubmenu()
     }
     mount()
     renderRoot()
@@ -608,9 +787,19 @@ export function createCommandMenu(options = {}) {
     el,
     update,
     choose,
-    focusSearch() { if (input && typeof input.focus === 'function') input.focus() },
+    showSubmenu(id) {
+      const item = activeItem()?.id === id ? activeItem() : null
+      if (state.open && item?.submenu) openSubmenu(item, entries.get(entryKey(item))?.node || null)
+    },
+    focusClose() { closeButton.focus({ preventScroll: true }) },
+    focusSearch() { mobileSearchOpen = true; renderRoot(); if (input && typeof input.focus === 'function') input.focus() },
     get submenuEl() { return submenuEl },
     destroy() {
+      if (disposed) return
+      disposed = true
+      state.open = false
+      backdrop.remove()
+      tooltip.destroy()
       if (el.parentNode) el.parentNode.removeChild(el)
       entries.clear()
       sectionNodes.clear()

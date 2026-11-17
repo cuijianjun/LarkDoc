@@ -21,6 +21,7 @@
  */
 import { normalizeSnapshot, createSnapshot } from './snapshot'
 import { createRestoreRecord } from './restore'
+import { encodeVersionDocument, decodeVersionDocument } from './document-codec'
 import { pruneSnapshots } from './retention'
 import {
   E_SNAPSHOT_INVALID, E_VERSION_DELETED, E_VERSION_EVICTED, E_VERSION_GONE,
@@ -89,6 +90,7 @@ export function createMemoryVersioningProvider(options) {
   }
 
   return {
+    documentCodec: { encode: encodeVersionDocument, decode: decodeVersionDocument },
     /** 05 §5.4：列版本，新→旧。`ctx.documentId` 可选（缺省=全部文档，演示用）。 */
     async list(ctx) {
       const documentId = ctx && typeof ctx.documentId === 'string' ? ctx.documentId : ''

@@ -3,19 +3,35 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOverlays } from '../../src/ui/overlays'
 import { createNotifications } from '../../src/ui/notifications'
-import { createCommentPanel, createSaveVersionDialog, createVersionPanel } from '../../src/ui/panels'
+import { createCommentPanel as createPlainCommentPanel, createSaveVersionDialog, createVersionPanel } from '../../src/ui/panels'
 import overlaysUiMixin from '../../src/components/lark-doc/editor/overlaysUiMixin'
+import panelsUiMixin from '../../src/components/lark-doc/editor/panelsUiMixin'
+import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
 import notifyMixin from '../../src/components/lark-doc/editor/notifyMixin'
 import shareMixin from '../../src/components/lark-doc/editor/shareMixin'
 import exportMixin from '../../src/components/lark-doc/editor/exportMixin'
 import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 
+import { createCommentComposer } from '../../src/ui/commentComposer'
+
+const createCommentPanel = options => createPlainCommentPanel({ ...options, composerFactory: createCommentComposer })
 const cleanups = []
 function hostNode() {
   const host = document.createElement('div')
   document.body.appendChild(host)
   return host
+}
+function pasteRich(input, text) {
+  vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
+  input.focus()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', ctrlKey: true, bubbles: true, cancelable: true }))
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } })
+  // JSDOM has no layout Range API; this test covers the renderer callback.
+  Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [{ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 }] })
+  Object.defineProperty(Range.prototype, 'getBoundingClientRect', { configurable: true, value: () => ({ left: 0, right: 1, top: 0, bottom: 1, width: 1, height: 1 }) })
+  input.dispatchEvent(event)
 }
 afterEach(() => {
   cleanups.splice(0).reverse().forEach(cleanup => cleanup())
@@ -36,7 +52,559 @@ function runtimeFor(session) {
   return { ...runtime, container: host }
 }
 
+describe('authoritative share link manager overlay', () => {
+  const snapshot = extra => ({ tenantId: 'tenant', docId: 'doc', revision: '7', audience: 'public', enabled: false, permission: 'read',
+    linkId: 'sl_' + 'b'.repeat(43), password: null, passwordAvailable: false, cryptoReady: true, canManage: true, organizationBypass: 'unavailable', ...extra })
+  const settleLinks = async vm => { for (let i = 0; i < 20; i++) await Promise.resolve(); await vm.$nextTick() }
+  function managerRuntime() {
+    let value = snapshot()
+    const provider = { isRemote: true, shareLink: vi.fn(async (method, input) => {
+      if (method === 'operation') return null
+      if (method === 'get') return value
+      value = snapshot({ ...value, ...input.changes, revision: String(Number(value.revision) + 1),
+        ...(input.changes.audience === 'collaborators' ? { enabled: false, linkId: null, password: null, passwordAvailable: false } : {}),
+        ...(input.changes.audience === 'public' ? { linkId: 'sl_' + 'b'.repeat(43) } : {}),
+        ...(input.changes.enabled === false ? { password: null, passwordAvailable: false } : {}),
+        ...(input.changes.password ? { passwordAvailable: true } : {}) })
+      return { status: 'committed', link: value }
+    }) }
+    const session = { documentId: 'doc', user: { id: 'manager' }, can: () => true, getProvider: name => name === 'authorization' ? provider : null,
+      refreshCapabilities: vi.fn(), getShareLink: vi.fn(async () => 'https://host.example/doc#larkDocument=1&tenantId=tenant&docId=doc') }
+    const runtime = runtimeFor(session)
+    runtime.host.sharePopoverOpen = true
+    return { ...runtime, provider }
+  }
+  it('loads then applies scope/read-edit from native controls without simulating unavailable organization settings', async () => {
+    const { host: vm, provider, container } = managerRuntime()
+    await vm.loadShareLink(); await settleLinks(vm)
+    const scope = container.querySelector('[aria-label="链接范围"]'), permission = container.querySelector('[aria-label="链接权限"]')
+    expect(scope.disabled).toBe(false); expect(permission.disabled).toBe(false)
+    permission.value = '可编辑'; permission.dispatchEvent(new Event('change', { bubbles: true })); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '7', changes: { permission: 'edit' } })
+    expect(vm.shareLinkState.permission).toBe('edit')
+    scope.value = 'collaborators'; scope.dispatchEvent(new Event('change', { bubbles: true })); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '8', changes: { audience: 'collaborators', enabled: false } })
+    expect(vm.shareLinkState.audience).toBe('collaborators')
+    vm.openPermissionDialog(); await settleLinks(vm)
+    expect(container.querySelector('[aria-label="谁可以复制内容"]').disabled).toBe(true)
+    vm.toggleAdvancedSettings(); await settleLinks(vm)
+    expect(container.querySelectorAll('.lark-doc-permission-switch')[1].disabled).toBe(true)
+    const calls = provider.shareLink.mock.calls.length
+    vm.setPermissionValue('ownerLeaderAutoPass', true)
+    expect(provider.shareLink).toHaveBeenCalledTimes(calls)
+  })
+  it('enables password through confirmation and saves a changed password only after authoritative acknowledgement', async () => {
+    const { host: vm, provider, container } = managerRuntime()
+    await vm.loadShareLink(); vm.openPermissionDialog(); await settleLinks(vm)
+    container.querySelector('[aria-label="启用加密链接"]').click(); await settleLinks(vm)
+    expect(vm.secureLinkConfirmOpen).toBe(true); expect(vm.secureLinkEnabled).toBe(false)
+    const calls = provider.shareLink.mock.calls.filter(([method]) => method === 'request').length
+    const confirm = container.querySelector('.lark-doc-share-confirm .lark-doc-share-btn-filled'); confirm.click(); await settleLinks(vm)
+    expect(provider.shareLink.mock.calls.filter(([method]) => method === 'request')).toHaveLength(calls + 1)
+    expect(vm.secureLinkEnabled).toBe(true); expect(vm.secureLinkPassword).toHaveLength(8)
+    container.querySelector('[aria-label="修改密码"]').click(); await settleLinks(vm)
+    const input = container.querySelector('[aria-label="请输入新密码"]'); input.value = 'Next!234'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await settleLinks(vm)
+    container.querySelector('.lark-doc-share-password .lark-doc-share-btn-filled').click(); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '8', changes: { password: 'Next!234' } })
+    expect(vm.secureLinkPassword).toBe('Next!234'); expect(vm.passwordDialogOpen).toBe(false)
+    const written = provider.shareLink.mock.calls.filter(([method]) => method === 'request').length
+    confirm.click(); input.dispatchEvent(new Event('input', { bubbles: true }))
+    await settleLinks(vm)
+    expect(provider.shareLink.mock.calls.filter(([method]) => method === 'request')).toHaveLength(written)
+    container.querySelector('[aria-label="启用加密链接"]').click(); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '9', changes: { enabled: false } })
+    expect(vm.secureLinkEnabled).toBe(false); expect(vm.secureLinkPassword).toBe('')
+  })
+  it('queries the original unknown write from the visible recovery control instead of submitting another request', async () => {
+    const { host: vm, provider, container } = managerRuntime()
+    await vm.loadShareLink(); await settleLinks(vm)
+    const original = provider.shareLink.getMockImplementation()
+    provider.shareLink.mockImplementation(async (method, input) => {
+      if (method === 'request') throw Object.assign(Error('response lost'), { status: 'unknown', operationId: 'visible-original' })
+      if (method === 'query') return { status: 'committed', link: snapshot({ revision: '8', permission: 'edit' }) }
+      return original(method, input)
+    })
+    await vm.setShareLinkPerm('可编辑'); await settleLinks(vm)
+    expect(container.querySelector('[aria-label="链接权限"]').disabled).toBe(true)
+    const query = [...container.querySelectorAll('button')].find(node => node.textContent === '查询原操作')
+    expect(query).toBeTruthy(); query.click(); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('query', 'visible-original')
+    expect(provider.shareLink.mock.calls.filter(([method]) => method === 'request')).toHaveLength(1)
+    expect(vm.shareLinkState.permission).toBe('edit')
+  })
+  it('toggles the authoritative public audience to collaborators and back through two distinct CAS acknowledgements', async () => {
+    const { host: vm, provider, container } = managerRuntime()
+    await vm.loadShareLink(); vm.openPermissionDialog(); await settleLinks(vm)
+    const toggle = container.querySelector('[aria-label="允许内容被分享到组织外"]')
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    toggle.click(); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '7', changes: { audience: 'collaborators', enabled: false } })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    toggle.click(); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '8', changes: { audience: 'public' } })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+  })
+  it('rejects a retired audience switch after only the permission child closes while its share popover remains open', async () => {
+    const { host: vm, provider, container } = managerRuntime()
+    await vm.loadShareLink(); vm.openPermissionDialog(); await settleLinks(vm)
+    const retired = container.querySelector('[aria-label="允许内容被分享到组织外"]')
+    vm.closePermissionDialog(); await settleLinks(vm)
+    expect(vm.sharePopoverOpen).toBe(true); expect(retired.isConnected).toBe(false)
+    const calls = provider.shareLink.mock.calls.length
+    retired.click(); await settleLinks(vm)
+    expect(provider.shareLink).toHaveBeenCalledTimes(calls)
+  })
+})
+
+describe('phone recipient share layout', () => {
+  function recipientView({ mobile = true, available = true } = {}) {
+    const media = Object.assign(new EventTarget(), { matches: mobile })
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => media })
+    cleanups.push(() => { if (descriptor) Object.defineProperty(window, 'matchMedia', descriptor); else delete window.matchMedia })
+    let share = { target: 'selection', selection: { type: 'text', text: 'chosen text' },
+      preview: { width: 120, height: 24 }, excerpt: { before: { text: 'before' }, after: { text: 'after' } },
+      query: '', recipients: [], results: [{ id: 'bob', kind: 'user', name: 'Bob' }, { id: 'team', kind: 'chat', name: 'Team' }],
+      message: '', error: '', loading: false, sending: false }
+    const onImageShareSend = vi.fn(), onImageShareClose = vi.fn()
+    const onImageShareRecipient = vi.fn((id, kind) => {
+      const selected = share.recipients.some(item => item.id === id && item.kind === kind)
+      share = { ...share, recipients: selected ? share.recipients.filter(item => item.id !== id || item.kind !== kind)
+        : [...share.recipients, share.results.find(item => item.id === id && item.kind === kind)] }
+      paint()
+    })
+    const host = hostNode()
+    const ui = createOverlays({ host, handlers: {
+      onImageShareSend, onImageShareClose, onImageShareRecipient,
+      onImageShareQuery: query => { share = { ...share, query }; paint() },
+    } })
+    const paint = () => ui.update({ imageShare: share, imageShareAvailable: available })
+    paint(); cleanups.push(() => ui.destroy())
+    return { ui, host, media, onImageShareSend, onImageShareClose, onImageShareRecipient, paint,
+      set: patch => { share = { ...share, ...patch }; paint() } }
+  }
+
+  it('opens the phone recipient page with observed results, without preview or send controls', async () => {
+    const { host } = recipientView()
+    await Promise.resolve()
+    expect(host.querySelector('.lark-doc-image-share-dialog.is-mobile')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-header strong').textContent).toBe('分享给')
+    expect(host.querySelector('.lark-doc-image-share-header [aria-label="多选接收人"]')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-results').hidden).toBe(false)
+    expect([...host.querySelectorAll('.lark-doc-image-share-result-name')].map(node => node.textContent)).toEqual(['Bob', 'Team'])
+    expect(host.querySelector('.lark-doc-image-share-create-group').disabled).toBe(true)
+    expect(host.querySelector('.lark-doc-image-share-create-group').title).toContain('未配置')
+    expect(host.querySelector('.lark-doc-image-share-preview')).toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-message')).toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-footer')).toBeNull()
+    expect(document.activeElement).not.toBe(host.querySelector('input'))
+  })
+
+  it('requires explicit confirmation after choosing, and returns to recipients without sending', () => {
+    const { host, onImageShareSend } = recipientView()
+    const retiredChoice = host.querySelectorAll('.lark-doc-image-share-result')[1]
+    host.querySelector('.lark-doc-image-share-result').click()
+    expect(host.querySelector('.lark-doc-image-share-dialog').classList.contains('is-confirming')).toBe(true)
+    expect(host.querySelector('.lark-doc-image-share-preview').textContent).toContain('chosen text')
+    expect(host.querySelector('.lark-doc-image-share-summary').textContent).toContain('Bob')
+    retiredChoice.click()
+    expect(host.querySelector('.lark-doc-image-share-summary').textContent).not.toContain('Team')
+    expect(onImageShareSend).not.toHaveBeenCalled()
+    host.querySelector('[aria-label="返回接收人"]').click()
+    expect(host.querySelector('.lark-doc-image-share-preview')).toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-results').hidden).toBe(false)
+    expect(onImageShareSend).not.toHaveBeenCalled()
+    host.querySelector('[aria-label="多选接收人"]').click()
+    host.querySelectorAll('.lark-doc-image-share-result')[1].click()
+    expect(host.querySelector('.lark-doc-image-share-preview')).toBeNull()
+    host.querySelector('[aria-label="确认接收人"]').click()
+    host.querySelector('.lark-doc-image-share-footer .is-primary').click()
+    expect(onImageShareSend).toHaveBeenCalledOnce()
+  })
+
+  it('keeps unavailable sharing and sending controls gated on the recipient page', () => {
+    const { host, set, onImageShareSend } = recipientView({ available: false })
+    host.querySelector('[aria-label="多选接收人"]').click()
+    host.querySelector('.lark-doc-image-share-result').click()
+    host.querySelector('.lark-doc-image-share-dialog').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+    expect(onImageShareSend).not.toHaveBeenCalled()
+    host.querySelector('[aria-label="确认接收人"]').click()
+    const staleSend = host.querySelector('.lark-doc-image-share-footer .is-primary')
+    expect(staleSend.disabled).toBe(true)
+    set({ sending: true })
+    staleSend.click()
+    expect(onImageShareSend).not.toHaveBeenCalled()
+  })
+
+  it('restores the desktop preview and focus contract on media change and releases mobile teardown', async () => {
+    const { ui, host, media } = recipientView({ mobile: false })
+    await Promise.resolve()
+    expect(host.querySelector('.lark-doc-image-share-preview')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-footer')).not.toBeNull()
+    expect(document.activeElement).toBe(host.querySelector('.lark-doc-image-share-selector input'))
+    media.matches = true; media.dispatchEvent(new Event('change'))
+    expect(host.querySelector('.lark-doc-image-share-dialog.is-mobile')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-preview')).toBeNull()
+    expect(document.body.style.overflow).toBe('hidden')
+    media.matches = false; media.dispatchEvent(new Event('change'))
+    expect(host.querySelector('.lark-doc-image-share-preview')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-footer')).not.toBeNull()
+    expect(host.querySelector('.lark-doc-image-share-selector > input')).not.toBeNull()
+    expect(document.body.style.overflow).not.toBe('hidden')
+    media.matches = true; media.dispatchEvent(new Event('change'))
+    ui.destroy()
+    expect(document.body.style.overflow).not.toBe('hidden')
+    media.matches = false; media.dispatchEvent(new Event('change'))
+    expect(host.querySelector('.lark-doc-image-share-dialog')).toBeNull()
+  })
+
+  it('rejects late updates and retired controls after destroy without relocking page scroll', () => {
+    const { ui, host, set, onImageShareRecipient, onImageShareSend } = recipientView()
+    const candidate = host.querySelector('.lark-doc-image-share-result')
+    candidate.click()
+    const send = host.querySelector('.lark-doc-image-share-footer .is-primary')
+    expect(onImageShareRecipient).toHaveBeenCalledOnce()
+    ui.destroy()
+    const overflow = document.body.style.overflow
+    set({ query: 'late response' })
+    expect.soft(host.querySelector('.lark-doc-image-share-dialog')).toBeNull()
+    candidate.click(); send.click()
+    expect.soft(onImageShareRecipient).toHaveBeenCalledOnce()
+    expect.soft(onImageShareSend).not.toHaveBeenCalled()
+    expect.soft(document.body.style.overflow).toBe(overflow)
+    ui.destroy()
+  })
+})
+
 describe('原生浮层迁移契约', () => {
+  function invitationHost() {
+    const provider = { listMembers: vi.fn(), requestShare: vi.fn(), queryShareOperation: vi.fn() }
+    const session = { documentId: 'doc', user: { id: 'alice' }, _privateIdentityGeneration: 1,
+      getProvider: () => provider, listMembers: vi.fn().mockResolvedValue({ authzVersion: '37', members: [] }),
+      requestShare: vi.fn(), queryShareOperation: vi.fn() }
+    const ed = { ...shareMixin.data(), ...shareMixin.methods, session, shareCan: () => true }
+    ed.shareDirectory = { status: 'ready', items: [{ principalId: 'bob', displayName: 'Bob' }] }
+    return { ed, session }
+  }
+
+  it('prepares only an observed collaborator and submits a new share source with the current authz CAS', async () => {
+    const { ed, session } = invitationHost()
+    expect(await ed.selectShareInviteCandidate('forged')).toBe(false)
+    expect(session.listMembers).not.toHaveBeenCalled()
+    expect(await ed.selectShareInviteCandidate('bob')).toBe(true)
+    ed.shareInvitation.operationId = 'share-original'
+    ed.setShareInviteRole('edit')
+    let finish
+    session.requestShare.mockImplementation(input => new Promise(resolve => { finish = () => resolve({ status: 'committed', operationId: 'share-original', authzVersion: '38', sourceGrantKey: input.sourceGrantKey }) }))
+    const pending = ed.submitShareInvitation()
+    await ed.submitShareInvitation()
+    expect(session.requestShare).toHaveBeenCalledOnce()
+    expect(session.requestShare.mock.calls[0][0]).toMatchObject({ subject: 'bob', originType: 'share', expectedRevision: '37', sourceRevision: '1', scopes: ['document.read', 'document.write', 'comment.write', 'comment.resolve', 'version.read', 'version.create', 'document.export'] })
+    expect(session.requestShare.mock.calls[0][0].sourceGrantKey).toMatch(/^ui-share-[a-z0-9-]+$/)
+    const input = session.requestShare.mock.calls[0][0]
+    session.listMembers.mockResolvedValue({ authzVersion: '38', members: [{ principalId: 'bob', sources: [{ originType: 'share', sourceGrantKey: input.sourceGrantKey, sourceRevision: '1', scopes: input.scopes, revoked: false, sourceGap: false }] }] })
+    finish(); await pending
+    expect(ed.shareInvitation).toMatchObject({ status: 'committed', operationId: 'share-original', verified: true })
+    expect(session.listMembers).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an unknown invitation across dismissal and queries the original operation without a new POST', async () => {
+    const { ed, session } = invitationHost()
+    await ed.selectShareInviteCandidate('bob')
+    ed.shareInvitation.operationId = 'share-original'
+    session.requestShare.mockRejectedValue(Object.assign(new Error('lost'), { status: 'unknown', operationId: 'share-original' }))
+    await ed.submitShareInvitation(); ed.closeSharePopover()
+    expect(ed.shareInvitation).toMatchObject({ status: 'unknown', operationId: 'share-original' })
+    await ed.submitShareInvitation()
+    expect(session.requestShare).toHaveBeenCalledOnce()
+    session.queryShareOperation.mockResolvedValue({ status: 'committed', operationId: 'share-original', authzVersion: '38' })
+    await ed.queryShareInvitation()
+    expect(session.queryShareOperation).toHaveBeenCalledExactlyOnceWith('share-original')
+    expect(ed.shareInvitation.status).toBe('committed')
+  })
+
+  it('does not add another source for an existing member or lose the original ID during a temporary permission loss', async () => {
+    const { ed, session } = invitationHost()
+    session.listMembers.mockResolvedValueOnce({ authzVersion: '37', members: [{ principalId: 'bob', scopes: ['document.write'] }] })
+    expect(await ed.selectShareInviteCandidate('bob')).toBe(false)
+    expect(ed.shareInvitation.error).toContain('已是协作者')
+    await ed.selectShareInviteCandidate('bob'); const originalId = ed.shareInvitation.operationId
+    session.requestShare.mockRejectedValue(new Error('identity temporarily unavailable'))
+    await ed.submitShareInvitation()
+    ed.shareCan = () => false; ed.closeSharePopover(); await ed.queryShareInvitation()
+    expect(session.queryShareOperation).not.toHaveBeenCalled()
+    ed.shareCan = () => true; session.queryShareOperation.mockResolvedValue({ status: 'committed', operationId: originalId })
+    await ed.queryShareInvitation()
+    expect(session.queryShareOperation).toHaveBeenCalledExactlyOnceWith(originalId)
+    expect(session.requestShare).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    [{ revoked: true, sourceGap: false }, true],
+    [{ revoked: true, sourceGap: true }, false],
+    [{ revoked: false, sourceGap: false }, false],
+  ])('only reinvites a completely revoked member with no source gap (%j)', async (source, expected) => {
+    const { ed, session } = invitationHost()
+    session.listMembers.mockResolvedValue({ authzVersion: '37', members: [{ principalId: 'bob', scopes: [], sources: [source] }] })
+    expect(await ed.selectShareInviteCandidate('bob')).toBe(expected)
+    expect(session.requestShare).not.toHaveBeenCalled()
+  })
+
+  it('discards late invitation responses after actor or permission invalidation', async () => {
+    const { ed, session } = invitationHost()
+    await ed.selectShareInviteCandidate('bob')
+    let finish
+    session.requestShare.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const pending = ed.submitShareInvitation()
+    session._privateIdentityGeneration++; ed.clearShareReads()
+    finish({ status: 'committed', operationId: 'private-alice' }); await pending
+    expect(ed.shareInvitation.status).toBe('idle')
+    ed.shareCan = () => false
+    await ed.submitShareInvitation(); await ed.queryShareInvitation()
+    expect(session.requestShare).toHaveBeenCalledOnce(); expect(session.queryShareOperation).not.toHaveBeenCalled()
+  })
+
+  it('mobile invitation uses selectable directory results, explicit confirmation and original-operation query controls', () => {
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    const host = hostNode(), select = vi.fn(), send = vi.fn(), query = vi.fn(), role = vi.fn()
+    const ui = createOverlays({ host, handlers: { onSelectShareInviteCandidate: select, onSubmitShareInvitation: send, onQueryShareInvitation: query, onSetShareInviteRole: role } })
+    cleanups.push(() => { ui.destroy(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }) })
+    ui.update({ sharePopoverOpen: true, shareCanManagePermission: true, shareDirectory: { status: 'ready', items: [{ principalId: 'bob', displayName: 'Bob' }] } })
+    host.querySelector('.lark-doc-share-mobile [aria-label="邀请协作者"]').click()
+    const candidate = host.querySelector('[aria-label="选择协作者 Bob"]'); candidate.focus(); candidate.click(); expect(select).toHaveBeenCalledExactlyOnceWith('bob')
+    const invitation = { candidate: { principalId: 'bob', displayName: 'Bob' }, status: 'confirm', role: 'read' }
+    ui.update({ shareInvitation: { ...invitation, status: 'preparing' } })
+    expect(document.activeElement).toBe(host.querySelector('.lark-doc-share-mobile-confirm [role="status"]'))
+    ui.update({ shareInvitation: invitation })
+    const roleSelect = host.querySelector('[aria-label="邀请权限"]'); roleSelect.value = 'edit'; roleSelect.dispatchEvent(new Event('change', { bubbles: true })); expect(role).toHaveBeenCalledExactlyOnceWith('edit')
+    expect(document.activeElement).toBe(roleSelect)
+    const submit = host.querySelector('.lark-doc-share-mobile-send'); submit.click(); expect(send).toHaveBeenCalledOnce()
+    ui.update({ shareInvitation: { ...invitation, status: 'unknown', operationId: 'original' } })
+    expect(document.activeElement.textContent).toBe('查询原邀请操作')
+    expect(submit.hidden).toBe(true); expect(submit.disabled).toBe(true)
+    host.querySelector('.lark-doc-share-mobile-confirm .lark-doc-share-mobile-retry').click(); expect(query).toHaveBeenCalledOnce()
+  })
+
+  it('mobile permission Escape closes the child before editor focus and restores the settings entry', () => {
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    const host = hostNode(), body = document.createElement('button'); host.append(body)
+    host.addEventListener('keydown', event => { if (event.key === 'Escape') body.focus() })
+    const state = { sharePopoverOpen: true, shareCanManagePermission: true }
+    const ui = createOverlays({ host, handlers: { onOpenPermissionDialog: () => ui.update({ ...state, permissionDialogOpen: true }), onClosePermissionDialog: () => ui.update({ ...state, permissionDialogOpen: false }) } })
+    cleanups.push(() => { ui.destroy(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }) })
+    ui.update(state)
+    const trigger = host.querySelector('.lark-doc-share-perm-btn'); trigger.focus(); trigger.click()
+    const close = host.querySelector('.lark-doc-permission-dialog [aria-label="关闭"]')
+    expect(document.activeElement).toBe(close)
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.querySelector('.lark-doc-permission-dialog')).toBeNull()
+    expect(host.querySelector('[aria-label="分享文档"]')).not.toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('loads actual authorized members and discards a late result from a replaced actor', async () => {
+    let finish
+    const provider = { listMembers: vi.fn() }, session = { documentId: 'doc', user: { id: 'alice' }, _privateIdentityGeneration: 1,
+      getProvider: () => provider, listMembers: vi.fn(() => new Promise(resolve => { finish = resolve })) }
+    const ed = { ...shareMixin.data(), ...shareMixin.methods, session, shareCan: () => true }
+    const pending = ed.loadShareMembers()
+    expect(ed.shareMembers.status).toBe('loading')
+    session.user = { id: 'bob' }; session._privateIdentityGeneration++
+    ed.clearShareReads()
+    finish({ authzVersion: '7', members: [{ principalId: 'private-alice', scopes: [] }] }); await pending
+    expect(ed.shareMembers).toEqual({ status: 'idle', items: [], authzVersion: '' })
+    session.listMembers.mockResolvedValue({ authzVersion: '8', members: [{ principalId: 'bob', scopes: ['document.read'] }] })
+    await ed.loadShareMembers()
+    expect(ed.shareMembers).toMatchObject({ status: 'ready', authzVersion: '8', items: [{ principalId: 'bob' }] })
+    ed.shareCan = () => false; await ed.loadShareMembers(); expect(session.listMembers).toHaveBeenCalledTimes(2)
+  })
+
+  it('debounces directory reads, never grants membership from a candidate, and ignores replaced queries', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish
+      const provider = { resolveMentions: vi.fn() }, session = { documentId: 'doc', user: { id: 'alice' }, getProvider: () => provider,
+        resolveMentions: vi.fn(() => new Promise(resolve => { finish = resolve })), requestShare: vi.fn() }
+      const ed = { ...shareMixin.data(), ...shareMixin.methods, session, shareCan: () => true }
+      ed.setShareInviteQuery('B'); ed.setShareInviteQuery('Bob')
+      await vi.advanceTimersByTimeAsync(250)
+      expect(session.resolveMentions).toHaveBeenCalledOnce(); expect(session.resolveMentions).toHaveBeenCalledWith({ query: 'Bob', kinds: ['user'] })
+      ed.setShareInviteQuery('Alice')
+      finish({ status: 'resolved', candidates: [{ principalId: 'bob', displayName: 'Bob' }] }); await Promise.resolve()
+      expect(ed.shareDirectory.items).toEqual([])
+      session.resolveMentions.mockResolvedValue({ status: 'resolved', candidates: [{ principalId: 'alice', displayName: 'Alice' }] })
+      await vi.advanceTimersByTimeAsync(250)
+      expect(ed.shareDirectory).toMatchObject({ status: 'ready', items: [{ principalId: 'alice', displayName: 'Alice' }] })
+      expect(session.requestShare).not.toHaveBeenCalled()
+      ed.clearShareReads()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('mobile document share card navigates into members and invite, and restores focus on dismissal', () => {
+    const width = window.innerWidth, overflow = document.body.style.overflow
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    const host = hostNode(), trigger = document.createElement('button'); host.append(trigger); trigger.focus()
+    const onMembers = vi.fn(), onQuery = vi.fn(), onClose = vi.fn(() => ui.update({ sharePopoverOpen: false }))
+    const ui = createOverlays({ host, handlers: { onLoadShareMembers: onMembers, onSetShareInviteQuery: onQuery, onCloseSharePopover: onClose } })
+    cleanups.push(() => { ui.destroy(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }); document.body.style.overflow = overflow })
+    ui.update({ sharePopoverOpen: true, shareCanManagePermission: true, shareMembers: { status: 'idle', items: [] }, shareDirectory: { status: 'idle', items: [] } })
+    const landing = host.querySelector('[aria-label="分享文档"]')
+    expect(landing).not.toBeNull(); expect(landing.getAttribute('aria-modal')).toBeNull()
+    expect(document.body.style.overflow).toBe(overflow)
+    landing.querySelector('[aria-label="查看协作者"]').click(); expect(onMembers).toHaveBeenCalledOnce()
+    ui.update({ shareMembers: { status: 'ready', items: [{ principalId: 'alice', scopes: ['grant.manage'] }] } })
+    expect(host.querySelector('.lark-doc-share-mobile-members').textContent).toContain('alice')
+    host.querySelector('[aria-label="返回协作者"]').click()
+    host.querySelector('[aria-label="添加协作者"]').click()
+    const input = host.querySelector('.lark-doc-share-mobile input')
+    expect(document.activeElement).toBe(input)
+    input.value = 'Bob'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(onQuery).toHaveBeenCalledWith('Bob')
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(host.querySelector('[aria-label="查看协作者"]')).not.toBeNull()
+    host.querySelector('[aria-label="添加协作者"]').click()
+    host.querySelector('[aria-label="关闭协作者"]').click()
+    expect(onClose).toHaveBeenCalledOnce(); expect(document.body.style.overflow).toBe(overflow); expect(document.activeElement).toBe(trigger)
+  })
+
+  it('原生分享已打开时 resize 保持顶部文档卡并刷新实际浮层', () => {
+    const width = window.innerWidth, height = window.innerHeight
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 852 })
+      const runtime = runtimeFor(createDocumentSession({ capabilities: { canManagePermission: true } }))
+      runtime.mount()
+      runtime.host.toggleSharePopover({ currentTarget: { getBoundingClientRect: () => ({ left: 279, right: 339, top: 16, bottom: 48, width: 60 }) } })
+      runtime.flush()
+      const popover = runtime.container.querySelector('.lark-doc-share-popover')
+      expect(popover.style.bottom).toBe(''); expect(popover.style.top).toBe('54px'); expect(popover.style.left).toBe('24px')
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 520 })
+      window.dispatchEvent(new Event('resize'))
+      runtime.flush()
+      expect(popover.style.bottom).toBe(''); expect(popover.style.top).toBe('54px'); expect(popover.style.left).toBe('24px')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+    }
+  })
+  it('手机分享入口使用顶部文档卡，桌面仍右对齐并清除移动定位', () => {
+    const width = window.innerWidth, height = window.innerHeight
+    const vm = { shareEntryMode: 'manage', sharePopoverOpen: false, shareCan: () => false, loadShareLink: vi.fn() }
+    shareMixin.methods.toggleSharePopover.call(vm)
+    expect(vm.sharePopoverOpen).toBe(false)
+    expect(vm.loadShareLink).not.toHaveBeenCalled()
+    vm.shareCan = () => true
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 852 })
+      shareMixin.methods.toggleSharePopover.call(vm, { currentTarget: { getBoundingClientRect: () => ({ left: 279, right: 339, top: 16, bottom: 48, width: 60 }) } })
+      expect(shareMixin.methods.sharePopoverStyle.call(vm)).toEqual({ left: '24px', right: '0px', top: '54px', bottom: '' })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 520 })
+      expect(shareMixin.methods.sharePopoverStyle.call(vm)).toEqual({ left: '24px', right: '0px', top: '54px', bottom: '' })
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+      vm.sharePopoverOpen = false
+      shareMixin.methods.toggleSharePopover.call(vm, { currentTarget: { getBoundingClientRect: () => ({ left: 996, right: 1076, top: 16, bottom: 48, width: 80 }) } })
+      expect(shareMixin.methods.sharePopoverStyle.call(vm)).toEqual({ left: '', bottom: '', top: '52px', right: '364px' })
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+    }
+  })
+  it.each(['reply', 'document', 'edit/thread/reply'])('原生 Proxy 宿主异步 %s mentions 更新候选并刷新面板', async scope => {
+    let refreshes = 0
+    const runtime = createNativeOptionsHost({ options: { data: commentsMixin.data,
+      methods: { ...commentsMixin.methods, commentCan: () => true, commentAllowed: () => true, refreshPanels() { refreshes++ } }, watch: panelsUiMixin.watch },
+    state: { commentRemote: true, session: { resolveMentions: async () => ({ status: 'resolved', candidates: [{ principalId: 'bob', displayName: 'Bob' }] }) } } })
+    cleanups.push(() => runtime.destroy())
+    const vm = runtime.host
+    if (scope === 'reply') await vm.updateCommentMentionPicker('thread', '@Bo', 3)
+    else await vm.updateDocumentMentionPicker(scope, '@Bo', 3)
+    runtime.flush()
+    expect(vm.commentMentionPicker.candidates).toEqual([{ principalId: 'bob', displayName: 'Bob' }])
+    expect(refreshes).toBeGreaterThan(0)
+  })
+  it('编辑图片草稿显示可移除预览', () => {
+    const onRemoveDraftImage = vi.fn(), onActivate = vi.fn()
+    const ui = createCommentPanel({ host: hostNode(), handlers: { onRemoveDraftImage, onActivate } })
+    cleanups.push(() => ui.destroy())
+    ui.update({ open: true, remote: true, items: [{ id: 'thread', replies: [], edit: { replyId: 'reply', value: '', draftImages: [{ assetId: 'asset', fileName: 'draft.png', previewUrl: 'blob:preview' }] } }] })
+    const remove = ui.el.querySelector('.lark-doc-comment-edit [aria-label="移除图片：draft.png"]')
+    expect(remove).not.toBeNull()
+    remove.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(onActivate).not.toHaveBeenCalled()
+    remove.click()
+    expect(onRemoveDraftImage).toHaveBeenCalledWith('edit/thread/reply', 'asset')
+  })
+  it('编辑输入可删除已有mention字符，失效范围退回纯文本', () => {
+    const vm = { ...commentsMixin.data(), ...commentsMixin.methods, commentEditingReply: { threadId: 'thread', replyId: 'reply' }, commentEditContent: '@Alice',
+      commentEditMentions: [{ principalId: 'alice', from: 0, to: 6 }], updateDocumentMentionPicker: vi.fn() }
+    panelsUiMixin.methods.panelsHandlers.call(vm).comment.onEditDraft('thread', 'reply', '@Alic', { target: { selectionStart: 5 } })
+    expect(vm.commentEditContent).toBe('@Alic')
+    expect(vm.commentEditMentions).toEqual([])
+  })
+  it('删除态富文本不泄漏旧正文，edit候选不投影到普通回复', () => {
+    const owner = { commentRemote: true, commentSidebarOpen: true, commentPanels: [],
+      commentDocumentThreads: [{ id: 'thread', replies: [{ id: 'reply', tombstone: true, content: 'old secret', richContent: { type: 'text', text: 'old secret' } }, { id: 'alive', content: 'visible', reactions: [{ emoji: '❤', users: ['alice'] }] }] }],
+      commentAuthor: { id: 'alice' },
+      commentMentionPicker: { scope: 'edit/thread/reply', threadId: 'thread', candidates: [{ principalId: 'bob', displayName: 'Bob' }] },
+      commentDraftImages: () => [], commentAuthorName: () => 'Alice', commentAllowed: () => false, commentCan: () => true,
+      commentStateText: () => '', commentPrivate: () => false, commentTimeAt: () => '', commentDraftOf: () => '', commentTextareaHeight: () => 50, commentHasDraft: () => false }
+    const state = panelsUiMixin.methods.buildCommentState.call(owner)
+    expect(state.items[0].mentionPicker).toBeNull()
+    expect(state.items[0].replies[0].richSegments).toBeNull()
+    expect(state.items[0].replies[1].reactions[0]).toMatchObject({ count: 1, reactedByMe: true })
+    const ui = createCommentPanel({ host: hostNode() }); cleanups.push(() => ui.destroy())
+    ui.update(state)
+    expect(ui.el.textContent).toContain('评论已删除')
+    expect(ui.el.textContent).not.toContain('old secret')
+  })
+  it('pending 翻译的源 panel 消失后仍可查询原操作，失权时禁用', () => {
+    const onQueryTranslation = vi.fn()
+    const ui = createCommentPanel({ host: hostNode(), handlers: { onQueryTranslation } })
+    cleanups.push(() => ui.destroy())
+    const owner = {
+      commentRemote: true, commentSidebarOpen: true, commentPanels: [], commentDocumentThreads: [],
+      commentPendingTranslationOperation: 'original-translation', commentTranslationContext: { threadId: 'missing-thread', replyId: 'r1', sourceRevision: '2' },
+      commentDraftImages: () => [], commentAuthorName: () => 'Alice', commentAllowed: () => false, commentCan: () => true,
+    }
+    ui.update(panelsUiMixin.methods.buildCommentState.call(owner))
+    const query = ui.el.querySelector('[aria-label="查询翻译结果"]')
+    expect(query).not.toBeNull()
+    query.click()
+    expect(onQueryTranslation).toHaveBeenCalledOnce()
+    owner.commentCan = () => false
+    ui.update(panelsUiMixin.methods.buildCommentState.call(owner))
+    expect(ui.el.querySelector('[aria-label="查询翻译结果"]').disabled).toBe(true)
+    ui.el.querySelector('[aria-label="查询翻译结果"]').click()
+    expect(onQueryTranslation).toHaveBeenCalledOnce()
+  })
+  it('翻译 pending 保留原操作查询入口，忙碌时禁用，ready 后显示译文', () => {
+    const onQueryTranslation = vi.fn(), onSubmitTranslation = vi.fn()
+    const ui = createCommentPanel({ host: hostNode(), handlers: { onQueryTranslation, onSubmitTranslation } })
+    cleanups.push(() => ui.destroy())
+    const render = translation => ui.update({ open: true, remote: true, items: [{ id: 't1', replies: [], translation }] })
+    render({ sourceRevision: '2', language: 'en', current: true, pending: true, busy: false, status: 'pending' })
+    const query = ui.el.querySelector('[aria-label="查询翻译结果"]')
+    expect(query).not.toBeNull()
+    query.click()
+    expect(onQueryTranslation).toHaveBeenCalledOnce()
+    expect(onSubmitTranslation).not.toHaveBeenCalled()
+    render({ sourceRevision: '2', language: 'en', current: true, pending: true, busy: true })
+    expect(ui.el.querySelector('[aria-label="查询翻译结果"]').disabled).toBe(true)
+    ui.el.querySelector('[aria-label="查询翻译结果"]').click()
+    expect(onQueryTranslation).toHaveBeenCalledOnce()
+    render({ sourceRevision: '2', language: 'en', current: true, pending: false, busy: false, status: 'ready', translatedText: 'Translated' })
+    expect(ui.el.querySelector('[aria-label="查询翻译结果"]')).toBeNull()
+    expect(ui.el.querySelector('.lark-doc-comment-translation').textContent).toContain('Translated')
+    ui.update({ items: [], translationRecovery: { pending: true, canQuery: true } })
+    ui.el.querySelector('[aria-label="查询翻译结果"]').click()
+    expect(onQueryTranslation).toHaveBeenCalledTimes(2)
+    ui.update({ translationRecovery: { pending: false, canQuery: false } })
+    expect(ui.el.querySelector('[aria-label="查询翻译结果"]')).toBeNull()
+  })
   it('通知空态、加载、失败和列表互斥，文本不作为 HTML 执行', () => {
     const host = hostNode()
     const ui = createNotifications({ host })
@@ -85,8 +653,18 @@ describe('原生浮层迁移契约', () => {
     mute.dispatchEvent(event)
     readAll.dispatchEvent(new MouseEvent('mousedown'))
     expect(event.defaultPrevented).toBe(true)
+    expect(onToggleMute).not.toHaveBeenCalled()
+    expect(onMarkAllRead).not.toHaveBeenCalled()
+    mute.click()
+    readAll.click()
     expect(onToggleMute).toHaveBeenCalledTimes(1)
     expect(onMarkAllRead).toHaveBeenCalledTimes(1)
+    // Native buttons generate click for Enter/Space and assistive activation.
+    for (const key of ['Enter', ' ']) {
+      mute.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      mute.dispatchEvent(new MouseEvent('click', { detail: 0, bubbles: true }))
+    }
+    expect(onToggleMute).toHaveBeenCalledTimes(3)
     for (const busy of [{ loading: true }, { writing: true }]) {
       ui.update({ ...state, ...busy, allReadDisabled: true })
       expect(ui.el.getAttribute('aria-busy')).toBe('true')
@@ -94,7 +672,8 @@ describe('原生浮层迁移契约', () => {
       expect(readAll.disabled).toBe(true)
       mute.dispatchEvent(new MouseEvent('mousedown'))
       readAll.dispatchEvent(new MouseEvent('mousedown'))
-      expect(onToggleMute).toHaveBeenCalledTimes(1)
+      mute.click(); readAll.click()
+      expect(onToggleMute).toHaveBeenCalledTimes(3)
       expect(onMarkAllRead).toHaveBeenCalledTimes(1)
     }
     ui.update({ ...state, muteLabel: '开启通知' })
@@ -102,6 +681,183 @@ describe('原生浮层迁移契约', () => {
     expect(mute.textContent).toBe('开启通知')
     expect(mute.disabled).toBe(false)
     expect(readAll.classList.contains('is-disabled')).toBe(false)
+  })
+
+  it('new notification popover owns focus while loading and exposes keyboard actions after loading', () => {
+    const host = hostNode(), ui = createNotifications({ host }); cleanups.push(() => ui.destroy())
+    const state = { open: true, loading: true, style: { left: 8, top: 48 }, items: [], allReadDisabled: true }
+    ui.update(state); expect(document.activeElement).toBe(ui.el)
+    ui.update({ ...state, loading: false }); expect(document.activeElement).toBe(ui.el.querySelector('.lark-doc-notify-mute'))
+    ui.update({ ...state, loading: false, writing: true }); expect(document.activeElement).toBe(ui.el)
+    ui.update({ ...state, loading: false, writing: false }); expect(document.activeElement).toBe(ui.el.querySelector('.lark-doc-notify-mute'))
+  })
+
+  it('通知行与历史分页提供原生按钮、忙碌闸门和可重试错误', () => {
+    const onOpenItem = vi.fn(), onLoadMore = vi.fn()
+    const ui = createNotifications({ host: hostNode(), handlers: { onOpenItem, onLoadMore } })
+    cleanups.push(() => ui.destroy())
+    const state = { open: true, style: { left: 0, top: 0 }, items: [{ id: 'n1', title: '回复', body: '正文', read: false }], hasMore: true }
+    ui.update(state)
+    const item = ui.el.querySelector('.lark-doc-notify-item-action')
+    const more = ui.el.querySelector('.lark-doc-notify-more')
+    expect(item.tagName).toBe('BUTTON')
+    item.click(); more.click()
+    expect(onOpenItem).toHaveBeenCalledWith('n1')
+    expect(onLoadMore).toHaveBeenCalledOnce()
+    ui.update({ ...state, historyLoading: true, openingId: 'n1' })
+    expect(item.disabled).toBe(true); expect(more.disabled).toBe(true)
+    item.click(); more.click()
+    expect(onOpenItem).toHaveBeenCalledOnce(); expect(onLoadMore).toHaveBeenCalledOnce()
+    ui.update({ ...state, historyError: '历史读取失败，请重试', items: [{ ...state.items[0], read: true }] })
+    expect(ui.el.textContent).toContain('历史读取失败，请重试')
+    expect(ui.el.querySelector('.is-unread')).toBeNull()
+    expect(more.disabled).toBe(false)
+    ui.update({ ...state, hasMore: false })
+    expect(more.isConnected).toBe(false)
+  })
+
+  it('宿主注入read布尔值时全部已读同步计数和可见状态', async () => {
+    const { host: vm, container } = runtimeFor(null)
+    vm.setNotifications([{ id: 'local', title: '宿主通知', read: false }])
+    vm.notifyOpen = true; await vm.$nextTick()
+    container.querySelector('.lark-doc-notify-readall').click()
+    expect(vm.notifyUnreadCount).toBe(0)
+    await vm.$nextTick()
+    expect(container.querySelector('.is-unread')).toBeNull()
+  })
+
+  it('真实原生宿主通知点击等单条回执/回读后才跳转，分页保留列表并支持重试', async () => {
+    let items = [{ id: 'n1', notificationId: 'n1', threadId: 't1', title: '回复', read: false }]
+    let finishRead, finishMore
+    const provider = { list: vi.fn(async () => ({ items, hasMore: true })),
+      markRead: vi.fn(() => new Promise(resolve => { finishRead = () => { items = [{ ...items[0], read: true }]; resolve({ status: 'committed', viewRefreshRequired: false }) } })),
+      openThread: vi.fn(async () => true), loadMore: vi.fn(() => new Promise(resolve => { finishMore = resolve })) }
+    const session = { documentId: 'doc', user: { id: 'alice' }, can: () => true, getProvider: name => name === 'notifications' ? provider : null }
+    const runtime = runtimeFor(session), vm = runtime.host
+    await vm.bindNotifications(); vm.notifyOpen = true; await vm.$nextTick()
+    runtime.container.querySelector('.lark-doc-notify-item-action').click()
+    expect(provider.markRead).toHaveBeenCalledWith(expect.objectContaining({ notificationId: 'n1', value: true }))
+    expect(provider.openThread).not.toHaveBeenCalled()
+    finishRead()
+    await vi.waitFor(() => expect(provider.openThread).toHaveBeenCalledWith('n1'))
+    await vm.$nextTick()
+    expect(runtime.container.querySelector('.is-unread')).toBeNull()
+    vm.notifyOpen = true; await vm.$nextTick()
+    runtime.container.querySelector('.lark-doc-notify-more').click()
+    expect(provider.loadMore).toHaveBeenCalledOnce()
+    finishMore({ items: [...items, { id: 'n0', title: '历史', read: true }], hasMore: false })
+    await vi.waitFor(() => expect(vm.notifyItems).toHaveLength(2))
+    expect(vm.notifyHasMore).toBe(false)
+    vm.notifyHasMore = true
+    provider.loadMore.mockRejectedValueOnce(new Error('offline'))
+    await vm.loadMoreNotifications()
+    expect(vm.notifyItems).toHaveLength(2)
+    expect(vm.notifyHistoryError).toContain('重试')
+    provider.loadMore.mockResolvedValueOnce({ items, hasMore: false })
+    await vm.loadMoreNotifications()
+    expect(vm.notifyHistoryError).toBe('')
+  })
+
+  it('未知通知写入只查询原操作并在确认后解除入口，不重放写入', async () => {
+    let pending = { operationId: 'original-notify-op', status: 'unknown' }
+    const snapshot = () => ({ status: 'ready', items: [{ id: 'n1', title: '通知', read: true }], hasMore: false })
+    const provider = { list: vi.fn(async () => snapshot()), getState: snapshot, getPendingOperation: () => pending,
+      markRead: vi.fn(), setMuted: vi.fn(), markAllRead: vi.fn(), queryOperation: vi.fn(async id => { expect(id).toBe('original-notify-op'); pending = null; return { status: 'committed', viewRefreshRequired: false } }) }
+    const session = { documentId: 'doc', user: { id: 'alice' }, can: () => true, getProvider: name => name === 'notifications' ? provider : null }
+    const runtime = runtimeFor(session), vm = runtime.host
+    await vm.bindNotifications(); vm.notifyOpen = true; await vm.$nextTick()
+    const button = runtime.container.querySelector('.lark-doc-notify-query')
+    expect(button).not.toBeNull(); button.click()
+    await vi.waitFor(() => expect(vm.notifyPendingId).toBe(''))
+    expect(provider.queryOperation).toHaveBeenCalledOnce()
+    expect(provider.markRead).not.toHaveBeenCalled(); expect(provider.setMuted).not.toHaveBeenCalled(); expect(provider.markAllRead).not.toHaveBeenCalled()
+    expect(runtime.container.querySelector('.lark-doc-notify-query')).toBeNull()
+  })
+
+  it('远端通知按钮使用既有结构化写入契约，Escape 不落回正文或隐藏触发器', async () => {
+    let muted = false, items = [{ notificationId: 'n1', title: '回复', read: false }]
+    const snapshot = () => ({ items, preference: { muted }, hasMore: false })
+    const provider = { isRemote: true, snapshot: vi.fn(async () => snapshot()), list: vi.fn(async () => snapshot()),
+      subscribe: callback => { callback(snapshot()); return () => {} },
+      markRead: vi.fn(), markAllRead: vi.fn(async input => { expect(input).toEqual({}); items = [{ ...items[0], read: true }]; return { status: 'committed', viewRefreshRequired: false } }),
+      setMuted: vi.fn(async input => { expect(input).toEqual({ value: true }); muted = true; return { status: 'committed', viewRefreshRequired: false } }) }
+    const runtime = runtimeFor(createDocumentSession({ notifications: provider })), vm = runtime.host
+    await vm.bindNotifications(); vm.notifyOpen = true; await vm.$nextTick()
+    runtime.container.querySelector('.lark-doc-notify-readall').click()
+    await vi.waitFor(() => expect(vm.notifyUnreadCount).toBe(0))
+    await vi.waitFor(() => expect(vm.notifyWriting).toBe(false))
+    runtime.container.querySelector('.lark-doc-notify-mute').click()
+    await vi.waitFor(() => expect(vm.notifyMuted).toBe(true))
+    const root = document.createElement('section'), mobile = document.createElement('button'), hidden = document.createElement('button')
+    mobile.className = 'lark-doc-mobile-actions-toggle'; hidden.hidden = true
+    root.append(mobile, hidden, runtime.container); document.body.append(root); vm.$refs.root = root
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
+    try {
+      vm.notifyOpen = false
+      vm.toggleNotify({ currentTarget: hidden }); await vm.$nextTick()
+      const bubble = vi.fn(); root.addEventListener('keydown', bubble)
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      runtime.container.querySelector('.lark-doc-notify-mute').dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(true); expect(bubble).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(mobile)
+      expect(vm.notifyOpen).toBe(false)
+    } finally { Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }); root.remove() }
+  })
+
+  it('通知原请求未确认时不重发写入，跳转目标经当前评论视图接线', async () => {
+    const pending = { operationId: 'original' }
+    const provider = { list: vi.fn(async () => [{ id: 'n1', threadId: 't1', title: '回复', read: false }]),
+      markRead: vi.fn(), openThread: vi.fn(async () => ({ target: { threadId: 't1' } })), getPendingOperation: vi.fn(() => pending) }
+    const { host: vm } = runtimeFor({ user: { id: 'alice' }, can: () => true, getProvider: name => name === 'notifications' ? provider : null })
+    await vm.bindNotifications()
+    expect(await vm.openNotification('n1')).toBeNull()
+    expect(provider.markRead).not.toHaveBeenCalled(); expect(provider.openThread).not.toHaveBeenCalled()
+    expect(vm.notifyActionError).toContain('原请求')
+    provider.getPendingOperation.mockReturnValue(null)
+    vm.notifyItems = [{ ...vm.notifyItems[0], read: true }]
+    const comments = {}
+    vm.commentProvider = () => comments
+    vm.loadComments = vi.fn(async () => { vm.commentThreads = [{ id: 't1', scope: 'selection', bound: true, blockId: 'b1' }] })
+    vm.activateComment = vi.fn(); vm.scrollCommentIntoView = vi.fn()
+    expect(await vm.openNotification('n1')).toBe(true)
+    expect(vm.activateComment).toHaveBeenCalledWith('t1')
+    expect(vm.scrollCommentIntoView).toHaveBeenCalledWith('b1')
+  })
+
+  it('分页迟到响应不覆盖较新读取，Provider重置后仍能从错误按钮重新读取', async () => {
+    let finish
+    const provider = { list: vi.fn(async () => ({ items: [{ id: 'new', title: '当前' }], hasMore: true })), loadMore: vi.fn(() => new Promise(resolve => { finish = resolve })) }
+    const { host: vm } = runtimeFor({ user: { id: 'alice' }, can: () => true, getProvider: name => name === 'notifications' ? provider : null })
+    await vm.bindNotifications()
+    const old = vm.loadMoreNotifications()
+    await vm.loadNotifications()
+    finish({ items: [{ id: 'old' }], hasMore: false })
+    expect(await old).toBeNull(); expect(vm.notifyItems[0].id).toBe('new')
+    vm.notifyHasMore = false; vm.notifyHistoryError = '历史读取失败'
+    await vm.loadMoreNotifications()
+    expect(vm.notifyHistoryError).toBe(''); expect(vm.notifyItems[0].id).toBe('new')
+  })
+
+  it.each(['identity', 'provider', 'permission', 'destroy'])('单条通知写入期间 %s 变化不继续旧跳转或回填', async change => {
+    let finish, allowed = true
+    const original = { list: vi.fn(async () => [{ id: 'n1', threadId: 't1', title: '回复', read: false }]),
+      markRead: vi.fn(() => new Promise(resolve => { finish = resolve })), openThread: vi.fn(async () => true) }
+    let provider = original
+    const session = { documentId: 'doc', user: { id: 'alice' }, can: () => allowed, getProvider: name => name === 'notifications' ? provider : null }
+    const { host: vm } = runtimeFor(session)
+    await vm.bindNotifications()
+    const opening = vm.openNotification('n1')
+    if (change === 'identity') session.user = { id: 'bob' }
+    if (change === 'provider') provider = { ...original }
+    if (change === 'permission') allowed = false
+    if (change === 'destroy') vm._notifyDisposed = true
+    vm.notifyItems = [{ id: 'current' }]; vm.error = 'current'
+    finish({ status: 'succeeded' })
+    await opening
+    expect(original.openThread).not.toHaveBeenCalled()
+    expect(vm.notifyItems).toEqual([{ id: 'current' }])
+    expect(vm.error).toBe('current')
   })
 
   it('原生挂载、宿主注入、测量纠偏和关闭都无需 SFC ref', async () => {
@@ -157,6 +913,31 @@ describe('原生浮层迁移契约', () => {
     await vm.$nextTick()
     expect(runtime.container.querySelector('.lark-doc-permission-dialog')).toBeNull()
     expect(runtime.container.querySelector('.lark-doc-share-popover')).toBeNull()
+  })
+
+  it('keeps explicit export routes and pending query reachable after close while rejecting retired controls', () => {
+    const route = vi.fn(), query = vi.fn(), submit = vi.fn()
+    const ui = createOverlays({ host: hostNode(), handlers: { onSelectExportRoute: route, onQueryRemoteExport: query, onSubmitExport: submit } })
+    cleanups.push(() => ui.destroy())
+    const state = { exportOpen: true, exportPanelTitle: '导出Word', exportCanExport: true, exportSubmitDisabled: false,
+      exportRoute: 'remote', exportRemoteAvailable: true, exportRouteDescription: '已保存版本', exportScopeOptions: [{ value: 'contentOnly', label: '不可变正文' }] }
+    ui.update(state)
+    const select = ui.el.querySelector('[aria-label="导出方式"]'), retired = ui.el.querySelector('.lark-doc-export-submit')
+    expect(select.value).toBe('remote')
+    select.value = 'local'; select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(route).toHaveBeenCalledWith('local')
+    ui.update({ ...state, exportOpen: false, exportToast: '结果未确认', exportPendingOperationId: 'export-original' })
+    const button = ui.el.querySelector('.lark-doc-export-query')
+    expect(button.isConnected).toBe(true)
+    button.click(); expect(query).toHaveBeenCalledTimes(1)
+    ui.update({ ...state, exportOpen: false, exportToast: '', exportPendingOperationId: 'export-original' })
+    expect(button.isConnected).toBe(true)
+    expect(ui.el.textContent).toContain('原导出请求待查询')
+    retired.click(); select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(submit).not.toHaveBeenCalled(); expect(route).toHaveBeenCalledTimes(1)
+    ui.update({ ...state, exportOpen: false, exportCanExport: false, exportToast: '无权限', exportPendingOperationId: 'export-original' })
+    expect(button.disabled).toBe(true); button.click(); expect(query).toHaveBeenCalledTimes(1)
+    ui.destroy(); button.click(); expect(query).toHaveBeenCalledTimes(1)
   })
 
   it('导出权限和水印属性迁移，关闭弹窗后仍保留异步 toast', () => {
@@ -269,8 +1050,9 @@ describe('原生浮层迁移契约', () => {
         { assetId: 'ready', fileName: '已就绪.png', url: 'blob:ready', error: false },
       ] }] }
     ui.update({ open: true, items: [item] })
-    const input = ui.el.querySelector('textarea')
-    input.focus(); input.setSelectionRange(2, 2)
+    const input = ui.el.querySelector('[role="textbox"][aria-label="回复"]')
+    input.focus()
+    document.getSelection().collapse(input.querySelector('p').firstChild, 2)
     const images = ui.el.querySelectorAll('.lark-doc-comment-images button')
     expect(images).toHaveLength(3)
     expect(images[0].disabled).toBe(true)
@@ -281,8 +1063,8 @@ describe('原生浮层迁移契约', () => {
     ui.el.querySelector('.lark-doc-comment-image-drafts button').click()
     expect(onRemoveDraftImage).toHaveBeenCalledExactlyOnceWith('t1', 'draft')
     ui.update({ items: [{ ...item, draftImages: [] }] })
-    expect(ui.el.querySelector('textarea')).toBe(input)
-    expect(input.selectionStart).toBe(2)
+    expect(ui.el.querySelector('[role="textbox"][aria-label="回复"]')).toBe(input)
+    expect(document.getSelection().anchorOffset).toBe(2)
     expect(ui.el.querySelector('.lark-doc-comment-image-drafts')).toBeNull()
   })
 
@@ -305,6 +1087,74 @@ describe('原生浮层迁移契约', () => {
     expect(ui.el.querySelector('[aria-label="评论图片预览"]')).toBeNull()
     query.click()
     expect(onQueryImage).toHaveBeenCalledTimes(1)
+  })
+
+  it('评论原生面板投影 mention/文档引用、reaction picker、编辑翻译和全文 composer', () => {
+    const calls = {
+      onDocumentReference: vi.fn(), onReaction: vi.fn(), onChooseReaction: vi.fn(), onReactionQuery: vi.fn(),
+      onReactionCategory: vi.fn(), onMoreReaction: vi.fn(), onReplyControl: vi.fn(), onEditDraft: vi.fn(), onCancelEdit: vi.fn(),
+      onSaveEdit: vi.fn(), onTranslationLanguage: vi.fn(), onCloseTranslation: vi.fn(), onSubmitTranslation: vi.fn(),
+      onDocumentComposerDraft: vi.fn(), onDocumentComposerCancel: vi.fn(), onDocumentComposerPrivate: vi.fn(), onDocumentComposerSubmit: vi.fn(),
+      onDraft: vi.fn(), onMentionKeydown: vi.fn(), onChooseMention: vi.fn(),
+    }
+    const ui = createCommentPanel({ host: hostNode(), handlers: calls })
+    cleanups.push(() => ui.destroy())
+    ui.update({ open: true, remote: true, replyControls: [{ id: 'emoji', label: '添加表情回复', icon: 'sparkle' }],
+      items: [{ id: 't1', textarea: { height: 50 }, replies: [{ id: 'r1', body: 'ignored', segments: [
+        { text: '@Alice', principalId: 'alice', isSelf: false }, { text: ' 参见计划 ' }, { text: 'Plan', docId: 'doc-2', readable: true },
+      ], reactions: [{ emoji: '👍', count: '2', reactedByMe: true, label: '点赞', canReact: true }] }],
+      mentionPicker: { query: 'Al', candidates: [{ principalId: 'alice', displayName: 'Alice' }], index: 0 },
+      edit: { replyId: 'r1', value: '编辑中', readonly: false, canUploadImage: true, draftImages: [] },
+      translation: { sourceRevision: '3', language: 'zh-CN', current: true, busy: false, pending: false, message: '译文已返回；原文未被改写。', translatedText: '计划' } }],
+      reactionPicker: { open: true, query: '', category: '常用', categories: ['常用', '全部'], items: [{ glyph: '🎉', label: '庆祝' }], limit: 120 },
+      documentComposer: { open: true, value: '@Bob', segments: [{ text: '@Bob', principalId: 'bob' }], readonly: false, canSubmit: true, canUploadImage: true, privateOn: false, hasImages: false, draftImages: [], replyTarget: { displayName: 'Alice' } },
+    })
+    expect(ui.el.querySelector('[data-comment-mention="alice"]')).not.toBeNull()
+    const reference = ui.el.querySelector('[data-comment-reference="doc-2"]')
+    expect(reference).not.toBeNull(); reference.click()
+    expect(calls.onDocumentReference).toHaveBeenCalledWith('t1', 'r1', expect.objectContaining({ docId: 'doc-2' }), expect.anything())
+    const reaction = ui.el.querySelector('.lark-doc-comment-reaction')
+    expect(reaction.getAttribute('aria-pressed')).toBe('true'); reaction.click()
+    expect(calls.onReaction).toHaveBeenCalledWith('t1', 'r1', '👍', false)
+    const replyControl = ui.el.querySelector('[aria-label="添加表情回复"]')
+    replyControl.click()
+    expect(calls.onReplyControl).toHaveBeenCalledWith('emoji', 't1', 'r1', expect.any(Event))
+    calls.onReplyControl.mockClear()
+    const touchUp = new Event('pointerup', { bubbles: true, cancelable: true })
+    Object.defineProperty(touchUp, 'pointerType', { value: 'touch' })
+    replyControl.dispatchEvent(touchUp)
+    // Keep the original hit target mounted until the browser's compatibility
+    // click; opening a picker on pointerup can retarget that click into it.
+    expect(calls.onReplyControl).not.toHaveBeenCalled()
+    replyControl.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(calls.onReplyControl).toHaveBeenCalledTimes(1)
+    ui.el.querySelector('.lark-doc-comment-reaction-picker-grid button, .lark-doc-comment-reaction-picker .lark-doc-comment-reaction-grid button')?.click()
+    expect(calls.onChooseReaction).toHaveBeenCalledWith('🎉')
+    const editInput = ui.el.querySelector('.lark-doc-comment-edit [role="textbox"]')
+    pasteRich(editInput, '已编辑')
+    expect(calls.onEditDraft).toHaveBeenCalledWith('t1', 'r1', '已编辑', expect.any(Event))
+    ui.el.querySelector('.lark-doc-comment-edit-actions button:last-child').click()
+    expect(calls.onSaveEdit).toHaveBeenCalledTimes(1)
+    ui.el.querySelector('.lark-doc-comment-translation select').value = 'en'
+    ui.el.querySelector('.lark-doc-comment-translation select').dispatchEvent(new Event('change', { bubbles: true }))
+    expect(calls.onTranslationLanguage).toHaveBeenCalledWith('en')
+    ui.el.querySelector('.lark-doc-comment-translation-actions button:last-child').click()
+    expect(calls.onSubmitTranslation).toHaveBeenCalledTimes(1)
+    const mention = ui.el.querySelector('.lark-doc-comment-mention-picker button')
+    expect(mention.getAttribute('role')).toBe('option'); mention.click()
+    expect(calls.onChooseMention).toHaveBeenCalledWith({ principalId: 'alice', displayName: 'Alice' })
+    const replyInput = ui.el.querySelector('.lark-doc-comment-input-zone')
+    replyInput.focus()
+    replyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    expect(calls.onMentionKeydown).toHaveBeenCalledWith('t1', 'ArrowDown')
+    const documentInput = ui.el.querySelector('.lark-doc-document-composer-input')
+    expect(ui.el.classList.contains('is-remote')).toBe(true)
+    expect(documentInput.closest('.lark-doc-document-comment-input')).not.toBeNull()
+    expect(ui.el.querySelector('.lark-doc-document-composer-actions').hidden).toBe(false)
+    pasteRich(documentInput, '全文')
+    expect(calls.onDocumentComposerDraft).toHaveBeenCalledWith('全文', expect.any(Event))
+    ui.el.querySelector('.lark-doc-document-composer-actions button:last-child').click()
+    expect(calls.onDocumentComposerSubmit).toHaveBeenCalledTimes(1)
   })
 
 })

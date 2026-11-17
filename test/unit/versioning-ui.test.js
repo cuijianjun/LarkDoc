@@ -19,7 +19,10 @@
  */
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createVersionPanel } from '../../src/ui/panels'
+import { createHttpVersioningProvider } from '../../src/providers/versioning'
+import { DocumentSession } from '../../src/session/DocumentSession'
 import {
   E_SNAPSHOT_AUTHOR,
   E_SNAPSHOT_JSON_NOT_ALLOWED,
@@ -35,9 +38,6 @@ import {
   VERSIONING_DAY_LABELS,
   VERSIONING_ERROR_TEXT,
   VERSION_KIND_LABELS,
-  VERSION_RECORD_STATES,
-  VERSION_RECORD_STATE_TEXT,
-  versionRecordState,
   currentProjection,
   defaultVersionLabel,
   describeVersionDiff,
@@ -51,6 +51,7 @@ import {
   versioningErrorMessage,
 } from '../../src/components/lark-doc/editor/versioningMixin'
 import versioningMixin from '../../src/components/lark-doc/editor/versioningMixin'
+import { createVersioningPresentation } from '../../src/components/lark-doc/editor/versioningPresentation'
 
 describe('历史版本窄屏样式覆盖', () => {
   it.each(['layer', 'left', 'right', 'left-header', 'left-content', 'restore', 'pager'])(
@@ -72,6 +73,103 @@ describe('历史版本窄屏样式覆盖', () => {
 })
 
 /* ---------------- 脚手架 ---------------- */
+
+it('named versions retain their saved name in the history timeline with a time fallback', () => {
+  const name = versioningMixin.methods.versionItemName
+  const createdAt = Date.UTC(2026, 10, 15, 6, 0)
+  expect(name({ label: '验收版本', createdAt })).toContain('验收版本')
+  expect(name({ label: '  ', createdAt })).toBe(formatVersionTime(createdAt))
+})
+
+describe('private version presentation boundary', () => {
+  it('keeps the factory and preview synchronous with the supplied editor, schema and live policy references', () => {
+    const dom = new JSDOM('<div id="preview"></div>')
+    const element = dom.window.document.getElementById('preview')
+    const content = { type: 'doc', content: [{ type: 'paragraph' }] }, schema = {}, extensions = []
+    const destroyed = vi.fn(), constructed = []
+    class HostEditor {
+      constructor(options) { constructed.push(options); element.textContent = 'readonly preview' }
+      destroy() { destroyed() }
+    }
+    const validate = vi.fn(value => value)
+    const configureExtensions = vi.fn(() => extensions)
+    const network = vi.fn(settings => ({ applyDocument: value => value, allows: src => src === settings.allowed }))
+    const presentation = createVersioningPresentation({ Editor: HostEditor, createLarkDocExtensions: configureExtensions,
+      validateDocument: validate, createNetworkPolicy: network })
+    try {
+      expect(presentation.then).toBeUndefined()
+      const host = { editor: { schema }, larkDocConfig: { network: { allowed: 'first' } } }
+      const cleanup = presentation.methods.mountVersionDocumentPreview.call(host, element, { content })
+      expect(typeof cleanup).toBe('function')
+      expect(validate).toHaveBeenCalledWith(content, schema)
+      expect(constructed).toHaveLength(1)
+      expect(constructed[0].content).toBe(content)
+      expect(constructed[0].extensions).toBe(extensions)
+      expect(constructed[0].editable).toBe(false)
+      expect(configureExtensions.mock.calls[0][0].config).toBe(host.larkDocConfig)
+      const imageOptions = configureExtensions.mock.calls[0][0].getImageOptions()
+      host.larkDocConfig = { network: { allowed: 'second' } }
+      expect(imageOptions.canLoad('first')).toBe(false)
+      expect(imageOptions.canLoad('second')).toBe(true)
+      expect(network.mock.calls.at(-1)[0]).toBe(host.larkDocConfig.network)
+      cleanup()
+      expect(destroyed).toHaveBeenCalledTimes(1)
+      expect(element.childNodes).toHaveLength(0)
+    } finally { dom.window.close() }
+  })
+
+  it('keeps panel actions synchronous at entry and returns the original delegated promise', async () => {
+    const gate = vi.fn(), errorText = vi.fn(), confirmation = vi.fn(), defaultLabel = vi.fn(), ordinal = vi.fn()
+    const presentation = createVersioningPresentation({ versionCapabilityGate: gate, versioningErrorMessage: errorText,
+      confirmedVersionResult: confirmation, defaultVersionLabel: defaultLabel, nextVersionOrdinal: ordinal, SNAPSHOT_LABEL_MAX: 3 })
+    expect(presentation.then).toBeUndefined()
+    for (const helper of [gate, errorText, confirmation, defaultLabel, ordinal]) expect(helper).not.toHaveBeenCalled()
+    const pending = Promise.resolve({ id: 'selected' }), selectVersion = vi.fn(() => pending)
+    const host = { versionIndex: 1, versionTotal: 2, versionList: [{ id: 'first' }, { id: 'second' }], selectVersion,
+      versionPrevDisabled: false, versionNextDisabled: false, stepVersion: vi.fn(() => pending) }
+    expect(presentation.methods.versionNext.call(host)).toBe(pending)
+    expect(host.stepVersion).toHaveBeenCalledExactlyOnceWith(1)
+    const result = presentation.methods.stepVersion.call(host, 1)
+    expect(host.versionIndex).toBe(2)
+    expect(selectVersion).toHaveBeenCalledExactlyOnceWith('second')
+    expect(await result).toEqual({ id: 'selected' })
+    expect(presentation.methods.setSaveVersionName.call(host, 'abcdef')).toBeUndefined()
+    expect(host.saveVersionName).toBe('abc')
+  })
+
+  it('keeps save busy immediate and ignores a late result after the live actor changes', async () => {
+    let finish
+    const write = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    const session = fakeSession({ provider: {} }); session.user = { id: 'first' }; session.createVersion = write
+    const host = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'original' })
+    const result = host.confirmSaveVersion()
+    expect(host.saveVersionBusy).toBe(true)
+    expect(write).toHaveBeenCalledExactlyOnceWith({ label: 'original', title: undefined })
+    session.user.id = 'second'
+    finish({ id: 'committed-for-first' })
+    expect(await result).toEqual({ id: 'committed-for-first' })
+    expect(host.saveVersionOpen).toBe(true)
+    expect(host.versionNotice).toBe('')
+    expect(host.saveVersionBusy).toBe(false)
+  })
+
+  it('keeps preview failure text inert and returns synchronous cleanup', () => {
+    const dom = new JSDOM('<div id="preview"></div>')
+    try {
+      const element = dom.window.document.getElementById('preview')
+      const presentation = createVersioningPresentation({
+        validateDocument() { throw new Error('<img src=x onerror=alert(1)>') },
+        createNetworkPolicy: () => ({ applyDocument: value => value }),
+      })
+      const cleanup = presentation.methods.mountVersionDocumentPreview.call({ editor: { schema: {} } }, element, { content: {} })
+      expect(typeof cleanup).toBe('function')
+      expect(element.textContent).toContain('无法预览此版本：<img src=x onerror=alert(1)>')
+      expect(element.querySelector('img')).toBeNull()
+      cleanup()
+      expect(element.childNodes).toHaveLength(0)
+    } finally { dom.window.close() }
+  })
+})
 
 /** 假二进制：只关心字节数，不关心是不是合法 Yjs update。 */
 function bytes(length) {
@@ -347,15 +445,44 @@ describe('版本回收站 UI 工作流', () => {
     await expect(denied.openVersionTrash()).resolves.toBe(false)
     expect(denied.versionTrashOpen).toBe(false)
   })
+
+  it('远端缺回收站端口明确不可用，跨文档 id 不进入内存写端口', async () => {
+    const unavailable = mountMixin({ session: fakeSession({ provider: { requiresDurableConfirmation: true } }) })
+    expect(await unavailable.openVersionTrash()).toBe(false)
+    expect(unavailable.versionTrashReason).toContain('尚未配置')
+    const provider = createMemoryVersioningProvider({ author: 'u-1' })
+    const other = await provider.createSnapshot(snapshotInput({ id: 'other', documentId: 'doc-2' }))
+    await provider.remove(other.id)
+    const purge = vi.spyOn(provider, 'purge')
+    const vm = mountMixin({ session: fakeSession({ provider }) })
+    expect(await vm.purgeDeletedVersion(other.id)).toBe(false)
+    expect(purge).not.toHaveBeenCalled()
+    expect(vm.versionTrashError).toContain('当前文档')
+    expect(await provider.listDeleted({ documentId: 'doc-2' })).toHaveLength(1)
+  })
 })
 
 describe('版本状态投影', () => {
-  it('deleted/stale/unavailable 各自保留稳定状态，未知状态默认可用', () => {
-    expect(versionRecordState({ deleted: true })).toBe(VERSION_RECORD_STATES.DELETED)
-    expect(versionRecordState({ status: 'stale' })).toBe(VERSION_RECORD_STATES.STALE)
-    expect(versionRecordState({}, false)).toBe(VERSION_RECORD_STATES.UNAVAILABLE)
-    expect(versionRecordState({ status: 'unknown' }, true)).toBe(VERSION_RECORD_STATES.AVAILABLE)
-    expect(VERSION_RECORD_STATE_TEXT[VERSION_RECORD_STATES.DELETED]).toContain('回收站')
+  it('真实远端 Provider 拒绝 unknown 元数据，面板显示错误而非可恢复版本', async () => {
+    const provider = createHttpVersioningProvider({ tenantId: 'tenant-1', docId: 'doc-1',
+      request: async () => ({ status: 200, json: async () => [{ tenantId: 'tenant-1', docId: 'doc-1', status: 'unknown',
+        versionId: 'v1', operationId: 'op-1', createdBy: 'alice', createdAt: '2026-11-15T00:00:00Z',
+        capturedSeq: '1', sourceRevision: '1', sourceEpoch: '1', schemaVersion: '2', label: 'A', purpose: 'manual', kind: 'manual',
+        contentHash: 'sha256:' + 'a'.repeat(64), stateHash: 'sha256:' + 'b'.repeat(64), protocolVersion: 'editor-crdt-v1', sizeBytes: 16 }] }) })
+    const vm = mountMixin({ session: fakeSession({ provider }) })
+    await vm.openVersionPanel()
+    expect(vm.versionList).toEqual([])
+    expect(vm.versionError).toBe('VERSION_INVALID_RESPONSE')
+    expect(vm.versionRestoreDisabled).toBe(true)
+    const dom = new JSDOM('<div id="host"></div>')
+    vi.stubGlobal('document', dom.window.document)
+    const panel = createVersionPanel({ host: dom.window.document.querySelector('#host') })
+    try {
+      panel.update({ open: true, view: 'error', errorText: vm.versionError, restore: { disabled: vm.versionRestoreDisabled },
+        pager: { cursor: '0/0', prev: { disabled: true }, next: { disabled: true } } })
+      expect(panel.el.textContent).toContain('VERSION_INVALID_RESPONSE')
+      expect(panel.el.querySelector('.lark-doc-version-restore').disabled).toBe(true)
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close(); provider.dispose() }
   })
 })
 
@@ -586,6 +713,72 @@ describe('另存为版本 Dialog（04 §3.4 ⑤-2）', () => {
 /* ---------------- 8. 列表拉取与降级 ---------------- */
 
 describe('列表拉取与降级', () => {
+  function pendingListHost() {
+    const requests = []
+    const provider = { list: vi.fn(() => new Promise((resolve, reject) => { requests.push({ resolve, reject }) })) }
+    const session = Object.assign(fakeSession({ provider }), { user: { id: 'actor' }, _identityGeneration: 1,
+      _privateIdentityGeneration: 1, _authorizationGeneration: 1, _versioningProviderGeneration: 1 })
+    return { vm: mountMixin({ session, documentId: 'doc-1', editor: { isDestroyed: false } }), session, provider, requests }
+  }
+
+  it.each([
+    ['actor', vm => { vm.session.user.id = 'next-actor' }],
+    ['identity generation', vm => { vm.session._identityGeneration += 1 }],
+    ['private identity generation', vm => { vm.session._privateIdentityGeneration += 1 }],
+    ['authorization generation', vm => { vm.session._authorizationGeneration += 1 }],
+    ['versioning provider generation', vm => { vm.session._versioningProviderGeneration += 1 }],
+    ['session document', vm => { vm.session.documentId = 'next-doc' }],
+    ['host document', vm => { vm.documentId = 'next-doc' }],
+  ])('同Session切换%s后，迟到版本列表不能写入新上下文', async (_, change) => {
+    const { vm, provider, requests } = pendingListHost()
+    const pending = vm.loadVersions()
+    expect(provider.list).toHaveBeenCalledExactlyOnceWith({ documentId: 'doc-1' })
+    change(vm)
+    const nextList = [{ id: 'next-visible' }]
+    vm.versionList = nextList
+    vm.versionSelectedId = 'next-visible'
+    vm.versionIndex = 1
+    vm.versionError = 'next-context'
+    requests[0].resolve([{ id: 'retired-private', kind: SNAPSHOT_KIND.MANUAL }])
+    expect(await pending).toEqual([])
+    expect(vm.versionList).toBe(nextList)
+    expect(vm.versionSelectedId).toBe('next-visible')
+    expect(vm.versionIndex).toBe(1)
+    expect(vm.versionError).toBe('next-context')
+    expect(vm.versionLoading).toBe(true)
+  })
+
+  it('身份变化后的旧列表失败与finally均不清除新上下文状态', async () => {
+    const { vm, requests } = pendingListHost()
+    const pending = vm.loadVersions()
+    vm.session.user.id = 'next-actor'
+    const nextList = [{ id: 'next-visible' }]
+    vm.versionList = nextList
+    vm.versionError = 'next-context'
+    requests[0].reject(new Error('retired-private-error'))
+    expect(await pending).toEqual([])
+    expect(vm.versionList).toBe(nextList)
+    expect(vm.versionError).toBe('next-context')
+    expect(vm.versionLoading).toBe(true)
+  })
+
+  it('新scope列表可正常完成，旧请求的finally不清新loading且请求固定原documentId', async () => {
+    const { vm, provider, requests } = pendingListHost()
+    const old = vm.loadVersions()
+    vm.session.documentId = vm.documentId = 'next-doc'
+    const pending = vm.loadVersions()
+    requests[0].resolve([{ id: 'retired-private' }])
+    expect(await old).toEqual([])
+    expect(vm.versionLoading).toBe(true)
+    const visible = [{ id: 'next-visible', kind: SNAPSHOT_KIND.MANUAL }]
+    requests[1].resolve(visible)
+    expect(await pending).toEqual(visible)
+    expect(vm.versionList).toEqual(visible)
+    expect(vm.versionSelectedId).toBe('next-visible')
+    expect(vm.versionLoading).toBe(false)
+    expect(provider.list.mock.calls).toEqual([[{ documentId: 'doc-1' }], [{ documentId: 'next-doc' }]])
+  })
+
   it('没有 Provider 时给降级文案，不白屏也不抛', async () => {
     const vm = mountMixin({ session: fakeSession({ provider: null }) })
     const list = await callOf(vm, 'loadVersions')
@@ -671,14 +864,22 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
   it('首项自动get真实投影，预览保留正文与来源hash，不改活动正文', async () => {
     const calls = []
     let activeWrites = 0
-    const provider = { list: async () => [{ id: 'v1' }], get: async id => { calls.push(id); return record(id, '冻结A') } }
-    const vm = mountMixin({ session: fakeSession({ provider }), editor: { commands: { setContent() { activeWrites++ } } } })
-    await callOf(vm, 'loadVersions')
-    expect(calls).toEqual(['v1'])
-    expect(vm.versionPreview.contentJson).toEqual(projection('冻结A'))
-    expect(vm.versionPreview.sourceRevision).toBe('7')
-    expect(vm.versionPreview.contentHash).toBe(record('v1', '').contentHash)
-    expect(activeWrites).toBe(0)
+    const provider = { list: async () => [{ id: 'v1' }], get: async id => { calls.push(id); return record(id, '冻结A') },
+      createSnapshot: vi.fn(), restore: vi.fn() }
+    const session = new DocumentSession({ documentId: 'doc-1', user: { id: 'alice' }, providers: { versioning: provider } })
+    const read = vi.spyOn(session, 'readVersionDocument')
+    const vm = mountMixin({ session, editor: { commands: { setContent() { activeWrites++ } } } })
+    try {
+      await callOf(vm, 'openVersionPanel')
+      expect(read).toHaveBeenCalledExactlyOnceWith('v1', expect.objectContaining({ documentId: 'doc-1' }))
+      expect(calls).toEqual(['v1', 'v1']) // The authorized read port fetches a fresh provider record.
+      expect(vm.versionPreview.document.content).toEqual(projection('冻结A'))
+      expect(vm.versionPreview.sourceRevision).toBe('7')
+      expect(vm.versionPreview.contentHash).toBe(record('v1', '').contentHash)
+      expect(activeWrites).toBe(0)
+      expect(provider.createSnapshot).not.toHaveBeenCalled()
+      expect(provider.restore).not.toHaveBeenCalled()
+    } finally { read.mockRestore(); await session.dispose() }
   })
 
   it('切换和关闭使旧get失效，不回显旧版本或越权缓存', async () => {
@@ -707,6 +908,9 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
     expect(vm.saveVersionOpen).toBe(true)
     expect(vm.versionNotice).toBe('')
     expect(vm.saveVersionOperationId).toBe('original-op')
+    expect(vm.saveVersionError).toContain('待确认')
+    vm.closeSaveVersionDialog()
+    vm.openSaveVersionDialog()
     vm.saveVersionName = '不能另造此版本'
     await callOf(vm, 'confirmSaveVersion')
     expect(posts).toBe(1)
@@ -718,12 +922,48 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
   it('remote provider未收到durable wrapper不成功，US8接线前恢复置灰', async () => {
     const provider = { requiresDurableConfirmation: true, supportsRestore: false }
     const session = fakeSession({ provider })
-    session.createVersion = async () => ({ id: 'looks-like-version' })
+    session.createVersion = vi.fn(async () => ({ id: 'looks-like-version' }))
     const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A', versionList: [{ id: 'v1' }], versionSelectedId: 'v1' })
     await callOf(vm, 'confirmSaveVersion')
     expect(vm.versionNotice).toBe('')
     expect(vm.saveVersionOpen).toBe(true)
     expect(vm.versionRestoreDisabled).toBe(true)
+    await callOf(vm, 'confirmSaveVersion')
+    expect(session.createVersion).toHaveBeenCalledTimes(1)
+    expect(vm.saveVersionError).toContain('原操作查询服务')
+  })
+
+  it('保存待确认缺查询服务或查询返回异键均不重新 POST 或伪成功', async () => {
+    const provider = { requiresDurableConfirmation: true }
+    const session = fakeSession({ provider })
+    session.createVersion = vi.fn(async () => ({ status: 'unknown', operationId: 'original-op' }))
+    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A' })
+    await vm.confirmSaveVersion()
+    await vm.confirmSaveVersion()
+    expect(vm.saveVersionError).toContain('原操作查询服务')
+    expect(vm.saveVersionOperationId).toBe('original-op')
+    provider.queryOperation = vi.fn(async () => ({ status: 'committed', operationId: 'wrong-op', version: { status: 'durable' } }))
+    await vm.confirmSaveVersion()
+    expect(provider.queryOperation).toHaveBeenCalledExactlyOnceWith('original-op')
+    expect(session.createVersion).toHaveBeenCalledTimes(1)
+    expect(vm.saveVersionOperationId).toBe('original-op')
+    expect(vm.versionNotice).toBe('')
+    expect(vm.saveVersionOpen).toBe(true)
+  })
+
+  it('待确认保存绑定原身份，代际改变后既不查询旧键也不新 POST', async () => {
+    const provider = { requiresDurableConfirmation: true, queryOperation: vi.fn() }
+    const session = fakeSession({ provider })
+    session.createVersion = vi.fn(async () => ({ status: 'unknown', operationId: 'original-op' }))
+    session._privateIdentityGeneration = 0
+    const vm = mountMixin({ session, saveVersionOpen: true, saveVersionName: 'A' })
+    await vm.confirmSaveVersion()
+    session._privateIdentityGeneration += 1
+    await vm.confirmSaveVersion()
+    expect(provider.queryOperation).not.toHaveBeenCalled()
+    expect(session.createVersion).toHaveBeenCalledTimes(1)
+    expect(vm.saveVersionError).toContain('身份或文档已改变')
+    expect(vm.versionNotice).toBe('')
   })
 
   it('远端恢复unknown保原op与只读，后续只query；DBcommitted但未重开不谎称失败', async () => {
@@ -748,5 +988,25 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
     expect(editable).toEqual([false, false])
     expect(vm.versionNotice).toBe('恢复已提交，请重新打开文档')
     expect(vm.versionRestoreNeedsReload).toBe(true)
+    expect(vm.versionRestoreDisabled).toBe(true)
+    await callOf(vm, 'restoreSelectedVersion')
+    expect(restores).toBe(1)
+    expect(queries).toBe(1)
+  })
+
+  it('恢复待确认无查询服务时保持原键和只读，不发第二次恢复', async () => {
+    const provider = { requiresDurableConfirmation: true, supportsRestore: true }
+    const session = fakeSession({ provider })
+    session.restoreVersion = vi.fn(async () => ({ status: 'unknown', operationId: 'restore-original' }))
+    let editable = true
+    const vm = mountMixin({ session, writable: () => editable, editor: { setEditable: value => { editable = value } },
+      versionList: [{ id: 'v1' }], versionSelectedId: 'v1', versionPanelOpen: true })
+    await vm.restoreSelectedVersion()
+    expect(editable).toBe(false)
+    await vm.requestVersionRestore()
+    expect(session.restoreVersion).toHaveBeenCalledTimes(1)
+    expect(vm.versionRestoreOperationId).toBe('restore-original')
+    expect(vm.versionPreviewError).toContain('原操作查询服务')
+    expect(vm.versionNotice).toBe('')
   })
 })

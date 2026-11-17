@@ -108,6 +108,85 @@ describe('fixed 表格边界线的可视范围', () => {
 })
 
 describe('syncTableClip 溢出判定', () => {
+  it('投影窗口只观察已挂载表格，退窗立即解除观察且忽略迟到回调', () => {
+    let deliver
+    const observe = vi.fn(), unobserve = vi.fn(), disconnect = vi.fn()
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback) { deliver = callback; this.observe = observe; this.unobserve = unobserve; this.disconnect = disconnect }
+    })
+    const dom = document.createElement('div'), column = document.createElement('div')
+    const first = wrapperOf(320, 200), next = wrapperOf(320, 200)
+    column.appendChild(first); dom.append(column, next)
+    let rendered = [column]
+    const host = { editor: { state: { doc: { content: { size: 500001 } } }, view: { dom },
+      storage: { larkDoc: { projection: { getRenderedBlocks: () => rendered } } } } }
+    const scan = vi.spyOn(dom, 'querySelectorAll').mockImplementation(() => { throw new Error('whole document scan') })
+    const width = vi.fn(() => 320)
+    Object.defineProperty(first, 'scrollWidth', { get: width, configurable: true })
+    const sync = () => tableToolsMixin.methods.syncTableClip.call(host)
+    try {
+      sync()
+      expect(observe.mock.calls.map(([node]) => node)).toEqual([first])
+      deliver([{ target: first, isIntersecting: true }])
+      expect(clipped(first)).toBe(true)
+      const reads = width.mock.calls.length
+      rendered = [next]
+      sync()
+      expect(unobserve).toHaveBeenCalledWith(first)
+      expect(observe.mock.calls.map(([node]) => node)).toEqual([first, next])
+      deliver([{ target: first, isIntersecting: true }, { target: next, isIntersecting: true }])
+      expect(width).toHaveBeenCalledTimes(reads)
+      expect(clipped(next)).toBe(true)
+      rendered = []
+      sync()
+      expect(host._observedTableClips.size).toBe(0)
+      expect(host._visibleTableClips.size).toBe(0)
+      expect(scan).not.toHaveBeenCalled()
+      scan.mockRestore()
+      rendered = null
+      sync()
+      expect(host._observedTableClips.size).toBe(2)
+    } finally { tableToolsMixin.methods.destroyTableClipObserver.call(host); scan.mockRestore(); vi.unstubAllGlobals() }
+  })
+
+  it('大文档不读取离屏表格布局，进入视口再测量且移除/销毁后不回写', () => {
+    let deliver
+    const observe = vi.fn(), unobserve = vi.fn(), disconnect = vi.fn()
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback) { deliver = callback; this.observe = observe; this.unobserve = unobserve; this.disconnect = disconnect }
+    })
+    const dom = document.createElement('div')
+    const visible = wrapperOf(320, 200), hidden = wrapperOf(320, 200)
+    const width = vi.fn(() => 320), offscreen = vi.fn(() => { throw new Error('offscreen layout forced') })
+    Object.defineProperty(visible, 'scrollWidth', { get: width, configurable: true })
+    Object.defineProperty(hidden, 'scrollWidth', { get: offscreen, configurable: true })
+    dom.append(visible, hidden)
+    const host = { editor: { state: { doc: { content: { size: 500001 } } }, view: { dom } } }
+    const sync = () => tableToolsMixin.methods.syncTableClip.call(host)
+    try {
+      sync()
+      expect(observe).toHaveBeenCalledTimes(2)
+      expect(width).not.toHaveBeenCalled()
+      expect(offscreen).not.toHaveBeenCalled()
+      deliver([{ target: visible, isIntersecting: true }, { target: hidden, isIntersecting: false }])
+      expect(clipped(visible)).toBe(true)
+      expect(width).toHaveBeenCalledOnce()
+      sync()
+      expect(width).toHaveBeenCalledTimes(2)
+      visible.remove()
+      sync()
+      expect(unobserve).toHaveBeenCalledWith(visible)
+      expect(offscreen).not.toHaveBeenCalled()
+      tableToolsMixin.methods.destroyTableClipObserver.call(host)
+      host._isDestroyed = true
+      sync()
+      deliver([{ target: hidden, isIntersecting: true }])
+      expect(disconnect).toHaveBeenCalledOnce()
+      expect(observe).toHaveBeenCalledTimes(2)
+      expect(offscreen).not.toHaveBeenCalled()
+    } finally { tableToolsMixin.methods.destroyTableClipObserver.call(host); vi.unstubAllGlobals() }
+  })
+
   it('溢出才挂 is-clipped，不溢出保持干净', () => {
     const over = wrapperOf(320, 200)
     const fit = wrapperOf(200, 200)

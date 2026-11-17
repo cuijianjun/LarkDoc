@@ -1,6 +1,7 @@
 /** Pure DOM image viewer. Viewing never changes the document or its image attributes. */
 import { safeUrl } from '../documentOperations'
 import { imageCropGeometry, normalizeImageCrop, cropImageBlob } from '../media/image-crop'
+import { lockPageScroll } from '../../ui/dom'
 
 
 const PATHS = {
@@ -37,7 +38,10 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   index = Math.max(0, Math.min(items.length - 1, index))
   let destroyed = false, scale = 1, fitScale = 1, rotation = 0, x = 0, y = 0, drag = null
   let commentOpen = false, downloadGeneration = 0
+  let stopOwner = null
   let downloadAbort = null
+  const phone = window.matchMedia?.('(max-width: 760px) and (pointer: coarse)').matches === true
+  let touch = null, lastTap = null, tapTimer = null
   const previousFocus = document.activeElement
   const root = document.createElement('div')
   root.className = 'lark-doc-image-viewer-shell'
@@ -48,6 +52,7 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   root.tabIndex = -1
   const stage = document.createElement('div')
   stage.className = 'lark-doc-image-viewer-stage'
+  if (phone) stage.style.touchAction = 'none'
   const image = document.createElement('img')
   image.draggable = false
   image.className = 'lark-doc-image-viewer-image'
@@ -75,7 +80,9 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     element.setAttribute('aria-label', label)
     element.title = label
     element.appendChild(icon(name))
-    element.addEventListener('click', action)
+    element.addEventListener('click', event => {
+      if (!destroyed && root.isConnected && element.isConnected && !element.disabled && !element.closest('[hidden], [inert]')) action(event)
+    })
     parent.appendChild(element)
     buttons[name] = element
     return element
@@ -93,24 +100,27 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   const original = button('original', '原始尺寸', () => { scale = Math.abs(scale - 1) < 0.001 ? fitScale : 1; x = 0; y = 0; paint() })
   button('rotate', '旋转', () => { rotation = (rotation + 90) % 360; x = 0; y = 0; paint() })
   button('download', '下载', download)
-  if (typeof onComment === 'function') button('comment', '评论', () => {
-    commentOpen = !commentOpen
-    root.classList.toggle('has-comments', commentOpen)
-    buttons.comment.setAttribute('aria-pressed', String(commentOpen))
-    if (onComment(items[index], commentOpen, root) === false) {
+  function setComments(visible, notify = true) {
+    commentOpen = visible
+    if (notify && onComment?.(items[index], visible, root) === false) {
       commentOpen = false
-      root.classList.remove('has-comments')
-      buttons.comment.setAttribute('aria-pressed', 'false')
-      error.textContent = '暂时无法打开图片评论，请重新打开查看器后重试'
+      error.textContent = '暂时无法打开图片评论，请检查评论服务和当前权限'
     }
+    root.classList.toggle('has-comments', commentOpen)
+    buttons.comment?.setAttribute('aria-pressed', String(commentOpen))
     loaded()
-  })
+  }
+  const closeComments = event => { setComments(false, false); if (event.detail?.retired && buttons.comment) buttons.comment.disabled = true }
+  root.addEventListener('lark-doc-image-comments-close', closeComments)
+  if (typeof onComment === 'function') button('comment', '评论', () => setComments(!commentOpen)).setAttribute('aria-pressed', 'false')
   const close = button('close', '关闭预览', destroy, root)
   close.className = 'lark-doc-image-viewer-close'
   root.appendChild(stage)
   root.appendChild(toolbar)
   root.appendChild(error)
   host.appendChild(root)
+  const scrollOwners = new Set([root.ownerDocument.body, host.closest?.('.lark-doc-main')].filter(Boolean))
+  const unlockScroll = [...scrollOwners].map(owner => lockPageScroll(owner))
 
   function paint() {
     const geometry = imageCropGeometry(image.naturalWidth, image.naturalHeight, items[index].crop)
@@ -134,9 +144,17 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     original.replaceChildren(icon(Math.abs(scale - 1) < 0.001 ? 'fit' : 'original'))
     setButtonDisabled(buttons.out, scale <= 0.1)
     setButtonDisabled(buttons.in, scale >= 5)
+    const touchZoomed = phone && scale > fitScale + 0.001
+    toolbar.hidden = touchZoomed
+    toolbar.style.display = touchZoomed ? 'none' : ''
+    close.hidden = touchZoomed
+    close.style.display = touchZoomed ? 'none' : ''
+    if (touchZoomed && (toolbar.contains(document.activeElement) || document.activeElement === close)) root.focus({ preventScroll: true })
   }
   function loaded() {
     if (destroyed) return
+    if (commentOpen) stage.style.marginRight = `${Math.min(300, root.ownerDocument.defaultView.innerWidth * .75)}px`
+    else stage.style.removeProperty('margin-right')
     // Source viewport measurements: 95% width / 90% height, with observed initial zoom 255%.
     const geometry = imageCropGeometry(image.naturalWidth, image.naturalHeight, items[index].crop)
     fitScale = Math.min(2.55, (stage.getBoundingClientRect().width || window.innerWidth) * 0.95 / (geometry?.width || image.naturalWidth), window.innerHeight * 0.9 / (geometry?.height || image.naturalHeight))
@@ -144,15 +162,21 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     scale = Number.isFinite(initialScale) && initialScale > 0 ? Math.max(.1, Math.min(5, initialScale)) : fitScale
     paint()
   }
+  function resize() {
+    const previous = { scale, x, y }, fitted = Math.abs(scale - fitScale) < .001
+    loaded()
+    if (!fitted) { scale = previous.scale; x = previous.x; y = previous.y; paint() }
+  }
   function show(next) {
     if (destroyed || next < 0 || next >= items.length) return
     if (!allowed(items[next].src)) { error.textContent = '当前网络策略不允许加载此图片'; return }
-    if (commentOpen) { commentOpen = false; root.classList.remove('has-comments'); onComment?.(items[index], false, root); buttons.comment?.setAttribute('aria-pressed', 'false') }
+    cancelTouch()
+    if (commentOpen) setComments(false)
     index = next
     downloadGeneration += 1
     downloadAbort?.abort()
     downloadAbort = null
-    x = 0; y = 0; rotation = 0; scale = 1
+    x = 0; y = 0; rotation = 0; scale = 1; fitScale = 1
     error.textContent = ''
     image.alt = items[index].caption || items[index].alt || '文档图片'
     image.src = items[index].src
@@ -203,12 +227,14 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     finally { if (downloadAbort === controller) downloadAbort = null }
   }
   function keydown(event) {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); destroy() }
-    if (root.contains(event.target.closest('input,textarea,[contenteditable="true"]'))) return
+    if (destroyed || event.defaultPrevented || event.isComposing || event.keyCode === 229) return
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (commentOpen && event.target.closest('.lark-doc-comment-layer')) setComments(false); else destroy(); return }
+    if (event.key !== 'Tab' && root.contains(event.target.closest('input,textarea,[contenteditable="true"]'))) return
     if (event.key === 'ArrowLeft') { event.preventDefault(); show(index - 1) }
     if (event.key === 'ArrowRight') { event.preventDefault(); show(index + 1) }
     if (event.key === 'Tab') {
-      const enabled = [...root.querySelectorAll('button:not(:disabled),textarea,input,[tabindex="0"]')]
+      const enabled = [...root.querySelectorAll('button:not(:disabled),textarea,input,[tabindex="0"]')].filter(element => !element.closest('[hidden]'))
+      if (!enabled.length) { event.preventDefault(); root.focus({ preventScroll: true }); return }
       const current = enabled.indexOf(document.activeElement)
       if (enabled.length && ((event.shiftKey && current <= 0) || (!event.shiftKey && current === enabled.length - 1))) {
         event.preventDefault(); enabled[event.shiftKey ? enabled.length - 1 : 0].focus()
@@ -217,6 +243,57 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   }
   function move(event) { if (drag) { x = drag.x + event.clientX - drag.clientX; y = drag.y + event.clientY - drag.clientY; paint() } }
   function stop() { drag = null; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', stop) }
+  function cancelTouch() {
+    touch = null
+    lastTap = null
+    clearTimeout(tapTimer)
+    tapTimer = null
+  }
+  stage.addEventListener('touchstart', event => {
+    if (!phone || destroyed) return
+    if (event.touches.length !== 1) { cancelTouch(); return }
+    event.preventDefault()
+    clearTimeout(tapTimer)
+    tapTimer = null
+    const point = event.touches[0]
+    touch = { id: point.identifier, clientX: point.clientX, clientY: point.clientY, x, y, zoomed: scale > fitScale + 0.001, moved: false }
+  }, { passive: false })
+  stage.addEventListener('touchmove', event => {
+    if (!touch || destroyed) return
+    if (event.touches.length !== 1) { cancelTouch(); return }
+    const point = event.touches[0]
+    if (point.identifier !== touch.id) { cancelTouch(); return }
+    event.preventDefault()
+    const dx = point.clientX - touch.clientX, dy = point.clientY - touch.clientY
+    if (Math.max(Math.abs(dx), Math.abs(dy)) > 8) { touch.moved = true; lastTap = null }
+    if (touch.zoomed) { x = touch.x + dx; y = touch.y + dy; paint() }
+  }, { passive: false })
+  stage.addEventListener('touchend', event => {
+    if (!touch || destroyed) return
+    const point = [...event.changedTouches].find(item => item.identifier === touch.id)
+    if (!point || event.touches.length) { cancelTouch(); return }
+    event.preventDefault()
+    const gesture = touch
+    touch = null
+    const dx = point.clientX - gesture.clientX, dy = point.clientY - gesture.clientY
+    if (gesture.moved || Math.max(Math.abs(dx), Math.abs(dy)) > 8) {
+      lastTap = null
+      if (!gesture.zoomed && Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.25) show(index + (dx < 0 ? 1 : -1))
+      return
+    }
+    const now = Date.now()
+    if (lastTap && now - lastTap.time <= 300 && Math.hypot(point.clientX - lastTap.x, point.clientY - lastTap.y) <= 36) {
+      lastTap = null
+      scale = gesture.zoomed ? fitScale : Math.min(5, fitScale * 2)
+      x = 0; y = 0
+      paint()
+      return
+    }
+    lastTap = { time: now, x: point.clientX, y: point.clientY }
+    // Wait for a possible second tap before taking the observed fit-state exit path.
+    tapTimer = setTimeout(() => { tapTimer = null; lastTap = null; if (!gesture.zoomed) destroy() }, 300)
+  }, { passive: false })
+  stage.addEventListener('touchcancel', cancelTouch)
   stage.addEventListener('mousedown', event => {
     if (event.target !== image || event.button !== 0) return
     event.preventDefault()
@@ -235,20 +312,29 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     paint()
   }, { passive: false })
   image.addEventListener('load', loaded)
-  function destroy() {
+  window.addEventListener('resize', resize)
+  function destroy(restore = true) {
     if (destroyed) return
+    const restoreFocus = restore !== false && (root.contains(document.activeElement) || document.activeElement === document.body)
     destroyed = true
+    stopOwner?.(); stopOwner = null
     downloadGeneration += 1
     downloadAbort?.abort()
     downloadAbort = null
     stop()
+    cancelTouch()
     if (commentOpen) onComment?.(items[index], false, root)
+    root.removeEventListener('lark-doc-image-comments-close', closeComments)
     image.removeEventListener('load', loaded)
+    window.removeEventListener('resize', resize)
     root.remove()
-    if (previousFocus?.isConnected && previousFocus.focus) previousFocus.focus()
+    unlockScroll.forEach(unlock => unlock())
+    if (restoreFocus && previousFocus?.isConnected && previousFocus.focus) previousFocus.focus()
     onClose?.()
   }
   show(index)
-  root.focus()
+  stopOwner = onComment?.watchViewer?.(() => destroy(false), items)
+  if (destroyed) { stopOwner?.(); stopOwner = null }
+  else root.focus()
   return { dom: root, destroy }
 }

@@ -20,7 +20,11 @@
  *    自动回到停泊位（`topBar.js` 每次 update 都会比对父节点），插槽内容不受影响。
  */
 import { createToolbar } from '../../../ui/toolbar'
+import { captureDocumentSearchScope } from './documentSearchMixin'
+import { openCommentDocumentTarget } from './commentPanelView'
+import { supportsDocumentAction } from './documentMenuView'
 import { createTopBar } from '../../../ui/topBar'
+import { isCommandEnabled } from '../larkDocConfig'
 
 export default {
   // 原生化之后这些字段就是 UI 的唯一输入。Vue 的 watcher 在渲染帧前批量触发，
@@ -45,7 +49,10 @@ export default {
     /* ---------- 工具栏：只读 / 视图态 ---------- */
     effectiveReadonly() { this.refreshToolbar(); this.refreshTopBar() },
     widthMode() { this.refreshToolbar() },
-    outlineOpen() { this.refreshToolbar() },
+    outlineOpen() { this.refreshToolbar(); this.refreshTopBar() },
+    outlineItems() { this.refreshTopBar() },
+    outlinePending() { this.refreshTopBar() },
+    activeHeading() { this.refreshTopBar() },
     reading() { this.refreshToolbar() },
     fullscreen() { this.refreshToolbar() },
     slides() { this.refreshToolbar() },
@@ -60,6 +67,10 @@ export default {
     // 顶栏只在 mode / 标题变化时重推一次状态。
     mode() { this.refreshTopBar() },
     localTitle() { this.refreshTopBar() },
+    user() { this.refreshTopBar() },
+    onDocumentAction() { this.refreshTopBar() },
+    sharePopoverOpen() { this.refreshTopBar() },
+    shareEntryMode() { this.refreshTopBar() },
   },
   methods: {
     /**
@@ -104,14 +115,22 @@ export default {
       if (this._topBarUi) return
       const anchor = this.$refs.topBarHost
       if (!anchor || !anchor.parentNode) return
-      this._topBarUi = createTopBar({
+      let topBar
+      topBar = this._topBarUi = createTopBar({
         host: anchor.parentNode,
         anchor,
         handlers: {
           updateTitle: (value) => this.updateTitle(value),
           setMode: (id) => this.setMode(id),
+          openHome: () => this.onMobileHeaderAction('home'),
+          openProfile: () => this.onMobileHeaderAction('profile'),
+          openMembers: event => { if (this.shareCan('canView')) this.toggleSharePopover(event) },
+          libraryScope: () => this.mobileLibraryScope(), libraryDirectory: () => this.mobileLibraryDirectory(),
+          openLibraryDocument: id => this.openMobileLibraryDocument(id), mobileHostAction: action => this.onMobileHeaderAction(action),
+          toggleOutline: () => { this.toggleOutlineOpen(); this.refreshTopBar() },
         },
         actionsHost: this.$refs.actionsHost || null,
+        onMenusReady: () => this.onTopbarMenusReady(topBar),
       })
       this.refreshTopBar()
       // 首次 `mounted` 时顶栏**可能还没插进文档**（Vue 的插入钩子晚于本方法），
@@ -121,6 +140,17 @@ export default {
       // 整块消失，而顶栏本身（标题 + 模式按钮）看起来完全正常。
       // 插入完成后再补一次（幂等：位置正确时 update 什么都不做）。
       this.$nextTick(() => { if (this._topBarUi) this.refreshTopBar() })
+    },
+    onTopbarMenusReady(topBar) {
+      if (!topBar || this._topBarUi !== topBar || this._isDestroyed || this._isBeingDestroyed) return
+      if (this.createMenuOpen) {
+        if (this.measureCreateMenu) this.measureCreateMenu()
+        else this.positionCreateMenu?.()
+      }
+      if (this.topbarMoreOpen) {
+        this.measureTopbarMore?.()
+        if (this.topbarMoreSubmenu) this.measureTopbarMoreSubmenu?.()
+      }
     },
     destroyTopBar() {
       if (!this._topBarUi) return
@@ -149,7 +179,7 @@ export default {
         scheduleHeadingMenuClose: () => this.scheduleHeadingMenuClose(),
         toggleHeadingMenu: () => this.toggleHeadingMenu(),
         setHeading: (level) => this.setHeading(level),
-        cancelPopupHoverClose: () => this.cancelPopupHoverClose(),
+        cancelPopupHoverClose: (owner) => this.cancelPopupHoverClose(owner),
         /* ---------- 行内格式 ---------- */
         toggleMark: (id) => this.toggleMark(id),
         /* ---------- 文字样式 ---------- */
@@ -173,6 +203,8 @@ export default {
         openDiagramMenuOnHover: () => this.openDiagramMenuOnHover(),
         scheduleDiagramMenuClose: () => this.scheduleDiagramMenuClose(),
         insertDiagramType: (id) => this.insertDiagramType(id),
+        positionDiagramMenu: () => this.positionDiagramMenu(),
+        onDiagramError: () => { this.error = '图表菜单暂时无法打开，请重试' },
         // SFC 是内联表达式 `ed.$emit('ai-request', 'rewrite')`，没有对应方法。
         emitAiRequest: (kind) => this.$emit('ai-request', kind),
         /* ---------- 收尾：视图与工具 ---------- */
@@ -236,7 +268,50 @@ export default {
      * 顶栏 state —— 与 `TopBar.vue` 读的 `ed.xxx` 逐字段对应。
      */
     buildTopBarState() {
+      const readable = !this.session || this.session.can?.('canView') === true
+      const actor = readable ? (this.session ? this.session.user : this.user) : null
+      // A host profile belongs to this actor only. A stale options.user must
+      // never repaint the previous account after a remote identity changes.
+      const profile = actor && this.user?.id === actor.id ? this.user : actor
+      const hostNavigation = action => readable && supportsDocumentAction(this, action)
+      const manageMembers = readable && this.shareCan?.('canManagePermission') === true
+      const suppliedMetadata = this.onDocumentAction?.documentMetadata
+      const currentDocumentId = this.session ? this.session.documentId : this.documentId
+      const documentMetadata = readable && suppliedMetadata && typeof suppliedMetadata === 'object'
+        && typeof currentDocumentId === 'string' && currentDocumentId.trim() !== ''
+        && suppliedMetadata.documentId === currentDocumentId ? suppliedMetadata : null
+      const outlineSession = this.session, documentId = outlineSession?.documentId, identity = outlineSession?._privateIdentityGeneration
+      const outlineCurrent = () => !this._isDestroyed && !this._isBeingDestroyed && this.nativeScopeValid !== false && this.session === outlineSession
+        && this.session?.documentId === documentId && this.session?._privateIdentityGeneration === identity
+        && (!this.session || this.session.can?.('canView') === true)
       return {
+        documentMetadata,
+        currentUser: actor?.id ? { id: actor.id, name: profile?.name || '我' } : null,
+        homeEnabled: hostNavigation('home'),
+        profileEnabled: hostNavigation('profile') && !!actor?.id,
+        hostCreateEnabled: !Array.isArray(this.onDocumentAction?.supportedActions) || hostNavigation('create'),
+        membersEnabled: readable && typeof this.toggleSharePopover === 'function',
+        membersLabel: manageMembers ? '管理成员' : (this.shareEntryLabel || '分享只读链接'),
+        // 按钮可见文字走飞书口径（04 §4.1.1：顶栏分享容器 100×32 实心按钮）；
+        // `membersLabel` 保留「管理成员」语义，供 aria-label 与提示使用。
+        membersText: manageMembers ? '分享' : (this.shareEntryLabel || '分享只读链接'),
+        membersHasPopup: manageMembers,
+        membersExpanded: manageMembers && this.sharePopoverOpen === true,
+        referenceMobileMenu: true,
+        mobileShortcutCapabilities: Object.fromEntries(['add-navigation', 'floating-window', 'offline'].map(action => [action, hostNavigation(action)])),
+        libraryEnabled: typeof this.session?.getProvider === 'function' && !!captureDocumentSearchScope(this),
+        currentDocumentId,
+        outlineOpen: this.outlineOpen,
+        outlineVisible: readable && this.featureEnabled('outline') && this.larkDocConfig.layout.outlineVisible !== false,
+        outlineItems: this.outlineItems || [], outlinePending: this.outlinePending, activeHeading: this.activeHeading,
+        documentContent: readable ? this.editor?.view.dom : null,
+        headingElement: pos => outlineCurrent() ? this.editor?.view.nodeDOM(pos) : null,
+        onOutlineHeading: pos => { if (outlineCurrent()) this.jumpHeading?.(pos) },
+        onOutlineStart: () => { if (outlineCurrent()) this.jumpDocumentStart?.() },
+        mobileHostHandler: this.onDocumentAction,
+        mobileOpenInAppLabel: this.onDocumentAction?.openInAppLabel,
+        mobileAuthority: this.session?.getProvider?.('authorization'),
+        mobileContextKey: [this.session?.documentId, actor?.id, this.session?._identityGeneration, this.session?._privateIdentityGeneration, this.session?._authorizationGeneration, readable].join('|'),
         headerVisible: this.larkDocConfig.layout.headerVisible !== false,
         title: this.localTitle,
         titleLength: this.titleLength,
@@ -249,6 +324,32 @@ export default {
         // `modes.allow` 只剩一项时顶栏按钮退化成静态文字（不弹菜单、不显示 caret）。
         modeSwitchable: this.modeSwitchable,
       }
+    },
+    async onMobileHeaderAction(action) {
+      if (this.nativeScopeValid === false || this._isDestroyed || this._isBeingDestroyed || !['home', 'profile', 'open-in-app', 'report', 'add-navigation', 'floating-window', 'offline'].includes(action) || (this.session && this.session.can?.('canView') !== true) || !supportsDocumentAction(this, action)) return false
+      const actorId = (this.session ? this.session.user?.id : this.user?.id) ?? null
+      if (action === 'profile' && !actorId) return false
+      const handler = this.onDocumentAction
+      const session = this.session, documentId = session?.documentId, identity = session?._identityGeneration, privateIdentity = session?._privateIdentityGeneration, authorization = session?._authorizationGeneration, authority = session?.getProvider?.('authorization')
+      try {
+        const value = await handler(Object.freeze({ action, documentId: session?.documentId ?? null, actorId, source: 'mobile-header' }))
+        return this.nativeScopeValid !== false && !this._isDestroyed && !this._isBeingDestroyed && this.session === session && session?.documentId === documentId && this.onDocumentAction === handler && session?._identityGeneration === identity && session?._privateIdentityGeneration === privateIdentity && session?._authorizationGeneration === authorization && session?.getProvider?.('authorization') === authority &&
+          (!session || session.can?.('canView') === true && session.user?.id === actorId) && (['home', 'profile'].includes(action) || value === true)
+      } catch (_) { return false }
+    },
+    mobileLibraryScope() { return captureDocumentSearchScope(this) },
+    async mobileLibraryDirectory() {
+      const scope = captureDocumentSearchScope(this), handler = this.onDocumentAction
+      if (!scope || !supportsDocumentAction(this, 'list-knowledge-library')) return null
+      const value = await handler(Object.freeze({ action: 'list-knowledge-library', documentId: this.session.documentId, actorId: this.session.user?.id ?? null }))
+      if (!scope.current() || handler !== this.onDocumentAction) throw new Error('LIBRARY_CONTEXT_CHANGED')
+      return value
+    },
+    async openMobileLibraryDocument(id) {
+      const scope = captureDocumentSearchScope(this)
+      if (!scope) return false
+      if (id === this.session.documentId) return scope.current()
+      return openCommentDocumentTarget(this, id, { reportError: false })
     },
 
     /**
@@ -266,8 +367,7 @@ export default {
       const marks = this.visibleMarks
       const active = {}
       marks.forEach((item) => { active[item.id] = this.isActive(item.id) })
-      active.link = this.isActive('link')
-      active.table = this.isActive('table')
+      ;['link', 'table', 'taskList', 'orderedList', 'bulletList', 'codeBlock', 'blockquote'].forEach(id => { active[id] = this.isActive(id) })
 
       return {
         groups: {
@@ -308,7 +408,9 @@ export default {
         features: {
           insert: this.toolbarEnabled('insert'),
           tables: this.toolbarEnabled('tables'),
-          diagram: this.toolbarEnabled('insert') && !!this.larkDocConfig.features.diagram,
+          codeBlocks: isCommandEnabled(this.larkDocConfig, 'code', 'codeBlocks'),
+          blockquote: isCommandEnabled(this.larkDocConfig, 'blockquote'),
+          diagram: this.toolbarEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'diagram', 'diagram'),
           ai: this.toolbarEnabled('ai'),
           search: this.toolbarEnabled('search'),
           outline: this.toolbarEnabled('outline'),
@@ -319,7 +421,7 @@ export default {
           docOps,
         },
         diagram: {
-          open: this.diagramMenuOpen,
+          open: this.diagramMenuOpen && !this.effectiveReadonly && this.toolbarEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'diagram', 'diagram'),
           style: this.diagramMenuStyle,
           types: this.diagramTypes,
         },

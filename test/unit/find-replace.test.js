@@ -17,7 +17,11 @@ import viewModesMixin from '../../src/components/lark-doc/editor/viewModesMixin'
 import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
+// 浮层样式已抽到 deferred-ui.css（由 src/features/ui.js 加载）；测试须把两份都读进来。
+const css = [
+  fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8'),
+  fs.readFileSync(path.join(root, 'src/styles/deferred-ui.css'), 'utf8'),
+].join('\n')
 const darkCss = fs.readFileSync(path.join(root, 'src/components/lark-doc/theme-dark.css'), 'utf8')
 const panel = fs.readFileSync(path.join(root, 'src/ui/searchPanel.js'), 'utf8')
 const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/searchPanelUiMixin.js'), 'utf8')

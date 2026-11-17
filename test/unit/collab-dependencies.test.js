@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { afterEach, expect, it, vi } from 'vitest'
-import { createRequire } from 'node:module'
+import Module, { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -48,6 +49,166 @@ function getArtifactRoot() {
   const builtRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist')
   return process.env.LARK_DOC_ARTIFACT_ROOT || builtRoot
 }
+
+function blockCollabChunks(root, require) {
+  const graph = JSON.parse(readFileSync(resolve(root, 'lark-doc-graph.json'), 'utf8')).collabCjs
+  const deferred = new Set(Object.values(graph).flatMap(chunk => chunk.dynamicImports).filter(file => graph[file]).map(file => resolve(root, file)))
+  expect(deferred.size).toBeGreaterThan(0)
+  for (const file of deferred) delete require.cache[file]
+  const load = Module._load
+  return vi.spyOn(Module, '_load').mockImplementation(function(request, parent, isMain) {
+    const path = request.startsWith('.') && parent?.filename ? resolve(dirname(parent.filename), request) : request
+    if (deferred.has(path)) throw new Error('OWNED_TEST_COLLAB_CHUNK_UNAVAILABLE')
+    return load.call(this, request, parent, isMain)
+  })
+}
+
+it.each(['autoConnect', 'forceSync/READY'])('CJS协作 %s 冷块缺失保原ready，补块后显式入场才恢复', async mode => {
+  const root = getArtifactRoot(), require = createRequire(resolve(root, '../package.json'))
+  const runtime = require(resolve(root, 'lark-doc-collab.common.js'))
+  const blocked = blockCollabChunks(root, require), onError = vi.fn()
+  const bridge = runtime.createDurableCollaborationBridge({ url: 'ws://127.0.0.1:33333', tenantId: 'tenant', docId: 'doc',
+    ...(mode === 'autoConnect' ? {} : { autoConnect: false }), presence: true, onError })
+  const connect = vi.spyOn(bridge.provider.configuration.websocketProvider, 'connect').mockResolvedValue()
+  const wire = vi.spyOn(bridge.provider, 'sendStateless'), originalReady = bridge.ready, awareness = bridge.provider.awareness
+  let settled = false
+  originalReady.then(() => { settled = true }, () => { settled = true })
+  const stale = new runtime.Yjs.Doc(), fresh = new runtime.Yjs.Doc()
+  stale.getText('body').insert(0, 'retired READY must not replay')
+  fresh.getText('body').insert(0, 'fresh authorized READY')
+  const receiveReady = doc => bridge.provider.receiveStateless(JSON.stringify({ type: 'READY', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc',
+    epoch: '1', revision: '0', lastSeq: '0', canWrite: true, principalId: 'alice', field: 'default', presenceProtocol: 'cursor-v1',
+    payloadBase64: Buffer.from(runtime.Yjs.encodeStateAsUpdate(doc)).toString('base64') }))
+  try {
+    if (mode !== 'autoConnect') { bridge.provider.forceSync(); receiveReady(stale) }
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+    expect(onError.mock.calls[0][0].code).toBe('COLLABORATION_MODULE_UNAVAILABLE')
+    expect(bridge.getState()).toMatchObject({ status: 'disconnected', epoch: null, canWrite: false })
+    expect(settled).toBe(false)
+    expect(bridge.ready).toBe(originalReady)
+    expect(connect).not.toHaveBeenCalled()
+    expect(bridge.ydoc.getText('body').toString()).toBe('')
+    blocked.mockRestore()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(connect).not.toHaveBeenCalled()
+    await bridge.connect()
+    expect(connect).toHaveBeenCalledOnce()
+    expect(settled).toBe(false)
+    expect(bridge.provider.awareness).toBe(awareness)
+    expect(bridge.ydoc.getText('body').toString()).toBe('')
+    bridge.provider.forceSync(); receiveReady(fresh)
+    await expect(originalReady).resolves.toMatchObject({ status: 'ready' })
+    expect(bridge.ydoc.getText('body').toString()).toBe('fresh authorized READY')
+    expect(wire.mock.calls.map(([payload]) => JSON.parse(payload)).filter(message => message.type === 'UPDATE')).toEqual([])
+  } finally { blocked.mockRestore(); bridge.destroy(); stale.destroy(); fresh.destroy() }
+})
+
+it('CJS协作默认缺块与显式重试始终保留未知pending原键，绝不自动UPDATE', async () => {
+  const root = getArtifactRoot(), require = createRequire(resolve(root, '../package.json'))
+  const runtime = require(resolve(root, 'lark-doc-collab.common.js'))
+  const blocked = blockCollabChunks(root, require), onError = vi.fn()
+  const bridge = runtime.createDurableCollaborationBridge({ url: 'ws://127.0.0.1:33333', tenantId: 'tenant', docId: 'doc', onError })
+  const baseline = new runtime.Yjs.Doc()
+  const connect = vi.spyOn(bridge.provider.configuration.websocketProvider, 'connect').mockResolvedValue()
+  const wire = vi.spyOn(bridge.provider, 'sendStateless'), originalReady = bridge.ready
+  let settled = false
+  originalReady.then(() => { settled = true }, () => { settled = true })
+  try {
+    bridge.ydoc.getText('offline').insert(0, 'keep original unknown bytes')
+    const snapshot = await bridge.exportPendingSnapshot(), original = snapshot.pending[0]
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+    expect(bridge.getState()).toMatchObject({ status: 'disconnected', canWrite: false })
+    await expect(bridge.connect()).rejects.toMatchObject({ code: 'COLLABORATION_MODULE_UNAVAILABLE' })
+    expect(bridge.exportPending()).toEqual([original])
+    expect(settled).toBe(false)
+    expect(connect).not.toHaveBeenCalled()
+    blocked.mockRestore()
+    await bridge.connect()
+    expect(connect).toHaveBeenCalledOnce()
+    expect(bridge.exportPending()).toEqual([original])
+    expect(bridge.ready).toBe(originalReady)
+    expect(settled).toBe(false)
+    bridge.provider.forceSync()
+    bridge.provider.receiveStateless(JSON.stringify({ type: 'READY', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc',
+      epoch: '1', revision: '0', lastSeq: '0', canWrite: true, principalId: 'alice', field: 'default',
+      payloadBase64: Buffer.from(runtime.Yjs.encodeStateAsUpdate(baseline)).toString('base64') }))
+    await expect(originalReady).rejects.toMatchObject({ code: 'PRE_READY_PENDING' })
+    expect(bridge.exportPending()).toEqual([original])
+    expect(wire.mock.calls.map(([payload]) => JSON.parse(payload)).filter(message => message.type === 'UPDATE')).toEqual([])
+  } finally { blocked.mockRestore(); bridge.destroy(); baseline.destroy() }
+})
+
+it('CJS协作真实异步chunk保持原pending键、同步query与PM/Yjs同实例', async () => {
+  const root = getArtifactRoot(), require = createRequire(resolve(root, '../package.json'))
+  const runtime = require(resolve(root, 'lark-doc-collab.common.js'))
+  expect(runtime.Yjs.Doc).toBe(require('yjs').Doc)
+  const source = new runtime.Yjs.Doc(), baseline = new runtime.Yjs.Doc()
+  const bridge = runtime.createDurableCollaborationBridge({ url: 'ws://127.0.0.1:33333', tenantId: 'tenant', docId: 'doc', autoConnect: false, presence: true })
+  try {
+    const awareness = bridge.provider.awareness
+    expect(awareness).toBeTruthy()
+    const extensions = runtime.createCollabExtensions({ ydoc: bridge.ydoc, provider: bridge.provider, user: { id: 'alice', name: 'Alice' } })
+    expect(extensions[0].options.document).toBe(bridge.ydoc)
+    expect(extensions[Symbol.for('lark-doc.collabRuntime')][0]).toBe(require('@tiptap/pm/state').Plugin)
+    source.getText('restored').insert(0, 'original bytes')
+    const bytes = runtime.Yjs.encodeStateAsUpdate(source)
+    const item = { operationId: 'original-operation', updateId: 'original-update', epoch: '1', expectedRevision: '0', status: 'unknown',
+      payloadBase64: Buffer.from(bytes).toString('base64'), payloadHash: 'sha256:' + Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex') }
+    await bridge.restorePending({ schemaVersion: 'pending-snapshot-v1', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc', epoch: '1', principalId: 'alice', pending: [item] })
+    expect(bridge.exportPending()).toEqual([item])
+    bridge.provider.receiveStateless(JSON.stringify({ type: 'READY', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc',
+      epoch: '1', revision: '0', lastSeq: '0', canWrite: true, principalId: 'alice', field: 'default', presenceProtocol: 'cursor-v1',
+      payloadBase64: Buffer.from(runtime.Yjs.encodeStateAsUpdate(baseline)).toString('base64') }))
+    await bridge.ready
+    expect(bridge.getState()).toMatchObject({ status: 'blocked', canWrite: false })
+    expect(bridge.provider.awareness).toBe(awareness)
+    expect(bridge.queryPending()).toBe(1)
+    bridge.provider.receiveStateless(JSON.stringify({ type: 'RECEIPT', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc',
+      operationId: item.operationId, expectedRevision: '0', receipt: { tenantId: 'tenant', docId: 'doc', protocolVersion: 'editor-crdt-v1',
+        updateId: item.updateId, payloadHash: item.payloadHash, epoch: '1', seq: '1', contentRevision: '1', status: 'durable', committedAt: '2026-11-15T00:00:00Z' } }))
+    await vi.waitFor(() => expect(bridge.exportPending()).toEqual([]))
+    expect(bridge.ydoc.getText('restored').toString()).toBe('')
+  } finally { bridge.destroy(); source.destroy(); baseline.destroy() }
+})
+
+it('CJS协作真实chunk缺失时恢复零写，加载恢复后仍重试原键', async () => {
+  const root = getArtifactRoot(), require = createRequire(resolve(root, '../package.json'))
+  const graph = JSON.parse(readFileSync(resolve(root, 'lark-doc-graph.json'), 'utf8')).collabCjs
+  const deferred = new Set(Object.values(graph).flatMap(chunk => chunk.dynamicImports).filter(file => graph[file]).map(file => resolve(root, file)))
+  expect(deferred.size).toBeGreaterThan(0)
+  for (const file of deferred) delete require.cache[file]
+  const runtime = require(resolve(root, 'lark-doc-collab.common.js')), source = new runtime.Yjs.Doc()
+  const bridge = runtime.createDurableCollaborationBridge({ url: 'ws://127.0.0.1:33333', tenantId: 'tenant', docId: 'doc', autoConnect: false })
+  source.getText('restored').insert(0, 'original bytes')
+  const snapshot = { schemaVersion: 'pending-snapshot-v1', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc', epoch: '1', principalId: 'alice',
+    pending: [{ operationId: 'retry-original-operation', updateId: 'retry-original-update', epoch: '1', payloadBase64: Buffer.from(runtime.Yjs.encodeStateAsUpdate(source)).toString('base64'), status: 'unknown' }] }
+  const load = Module._load
+  const blocked = vi.spyOn(Module, '_load').mockImplementation(function(request, parent, isMain) {
+    const path = request.startsWith('.') && parent?.filename ? resolve(dirname(parent.filename), request) : request
+    if (deferred.has(path)) throw new Error('OWNED_TEST_COLLAB_CHUNK_UNAVAILABLE')
+    return load.call(this, request, parent, isMain)
+  })
+  const offline = runtime.createDurableCollaborationBridge({ url: 'ws://127.0.0.1:33333', tenantId: 'tenant', docId: 'offline', autoConnect: false })
+  try {
+    offline.ydoc.getText('offline').insert(0, 'recover without a network chunk')
+    const cached = await offline.exportPendingSnapshot()
+    expect(cached.pending).toHaveLength(1)
+    expect(cached.pending[0].payloadHash).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(Object.isFrozen(cached.pending[0])).toBe(true)
+    const copy = new runtime.Yjs.Doc()
+    try {
+      runtime.Yjs.applyUpdate(copy, Buffer.from(cached.pending[0].payloadBase64, 'base64'))
+      expect(copy.getText('offline').toString()).toBe('recover without a network chunk')
+    } finally { copy.destroy() }
+    await expect(bridge.restorePending(snapshot)).rejects.toThrow('OWNED_TEST_COLLAB_CHUNK_UNAVAILABLE')
+    expect(bridge.exportPending()).toEqual([])
+    expect(bridge.getState()).toMatchObject({ status: 'connecting', epoch: null })
+    blocked.mockRestore()
+    await bridge.restorePending(snapshot)
+    expect(bridge.exportPending()).toEqual(snapshot.pending)
+    expect(bridge.ydoc.getText('restored').toString()).toBe('')
+  } finally { blocked.mockRestore(); offline.destroy(); bridge.destroy(); source.destroy() }
+})
 
 function loadCjsRuntime() {
   const artifactRoot = getArtifactRoot()

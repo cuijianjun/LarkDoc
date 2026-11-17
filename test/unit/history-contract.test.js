@@ -47,15 +47,20 @@ describe('历史栈契约', () => {
     expect(editor.getText()).toHaveLength(105)
   })
 
-  it.each(['accept', 'reject'])('%s 不进入历史，也不能通过 redo 恢复决策前状态', (action) => {
+  it.each(['accept', 'reject'])('%s 是独立审阅步骤，文档 Undo 恢复建议且 Redo 恢复决策', (action) => {
     const editor = editorOf({ type: 'doc', content: [{ type: 'paragraph', attrs: { blockId: 'p1' }, content: [
       { type: 'text', text: '建议', marks: [{ type: 'revision', attrs: { revisionId: 'r1', kind: 'insert', author: 'a' } }] },
     ] }] })
+    const original = editor.getJSON()
     editor.view.dispatch(buildRevisionDecisionTr(editor.state, 'r1', action))
-    expect(undoDepth(editor.state)).toBe(0)
-    expect(editor.commands.undo()).toBe(false)
-    expect(editor.commands.redo()).toBe(false)
+    const decided = editor.getJSON()
+    expect(undoDepth(editor.state)).toBe(1)
     expect(editor.getText()).toBe(action === 'accept' ? '建议' : '')
+    expect(editor.commands.undo()).toBe(true)
+    expect(editor.getJSON()).toEqual(original)
+    expect(editor.commands.undo()).toBe(false)
+    expect(editor.commands.redo()).toBe(true)
+    expect(editor.getJSON()).toEqual(decided)
   })
 
   it('撤销触发正常 update 保存，刷新加载正文但不恢复历史栈', () => {

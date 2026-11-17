@@ -18,6 +18,41 @@ const mounted = []
 const unregister = []
 const editors = []
 
+describe('optional highlight language service', () => {
+  it('routes grammar definitions through the registered feature service without a runtime vendor fallback', async () => {
+    const java = () => ({ keywords: 'class public' }), loadLanguage = vi.fn(async () => java)
+    unregister.push(registerFeature('highlight.languages', () => ({ loadLanguage })))
+    const grammar = await languageLoaders.java()
+    expect(loadLanguage).toHaveBeenCalledExactlyOnceWith('java')
+    expect(grammar.default || grammar).toBe(java)
+  })
+
+  it('keeps real Java, an uncommon grammar and the eight common languages available with deduplicated definitions', async () => {
+    const { loadLanguage } = await import('../../src/features/highlight')
+    const { loadFeature } = await import('../../src/core/features/registry')
+    const runtime = await loadFeature('highlight')
+    for (const name of ['javascript', 'typescript', 'json', 'css', 'xml', 'python', 'bash', 'sql']) expect(runtime.getLanguage(name), name).toBeTruthy()
+    const first = loadLanguage('java'), second = loadLanguage('java')
+    expect(first).toBe(second)
+    const [java, ada, common] = await Promise.all([first, loadLanguage('ada'), loadLanguage('javascript')])
+    expect(typeof (common.default || common)).toBe('function')
+    runtime.registerLanguage('java', java.default || java); runtime.registerLanguage('ada', ada.default || ada)
+    expect(runtime.highlight('public class Demo {}', { language: 'java' }).value).toContain('hljs-keyword')
+    expect(runtime.highlight('procedure Demo is begin null; end Demo;', { language: 'ada' }).value).toContain('hljs-keyword')
+    await expect(loadLanguage('not-a-language')).rejects.toThrow('不支持')
+    await expect(loadLanguage('__proto__')).rejects.toThrow('不支持')
+  })
+
+  it('retries a failed optional language service without caching a rejected lookup or replacing its definition', async () => {
+    const grammar = () => ({ keywords: 'procedure begin' })
+    const loadLanguage = vi.fn().mockRejectedValueOnce(new Error('feature temporarily missing')).mockResolvedValue(grammar)
+    unregister.push(registerFeature('highlight.languages', () => ({ loadLanguage })))
+    await expect(languageLoaders.ada()).rejects.toThrow('temporarily missing')
+    expect(await languageLoaders.ada()).toBe(grammar)
+    expect(loadLanguage).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('新增语言真实词法', () => {
   const samples = [
     ['abap', `DATA(text) = 'It''s "safe"'. WRITE |Count: { 42 }|.`, { keyword: ['DATA', 'WRITE'], string: [`'It''s "safe"'`], number: ['42'] }],
@@ -100,6 +135,111 @@ describe('Feishu code block closed interaction', () => {
     document.body.appendChild(editor.view.dom)
     return editor
   }
+
+  function phoneCode() {
+    vi.stubGlobal('innerWidth', 393)
+    vi.stubGlobal('matchMedia', () => Object.assign(new EventTarget(), { matches: true }))
+    return realCode('<pre data-block-id="phone_code" data-language="plaintext"><code>const answer = 42</code></pre><p data-block-id="phone_after">after</p>')
+  }
+
+  it('phone code More keeps wrap/copy in its menu and reading mode exposes only copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { platform: navigator.platform, userAgent: navigator.userAgent, clipboard: { writeText } })
+    const editor = phoneCode(), before = editor.getJSON(), code = editor.view.dom.querySelector('.lark-doc-code')
+    const more = code.querySelector('[aria-label="代码块更多"]')
+    expect(more).not.toBeNull()
+    expect(code.querySelector('.lark-doc-code-actions .lark-doc-code-wrap')).toBeNull()
+    more.click()
+    let menu = document.querySelector('[role="menu"][aria-label="代码块操作"]')
+    expect([...menu.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['自动换行', '复制代码'])
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(menu.isConnected).toBe(false)
+    expect(editor.getJSON()).toEqual(before)
+    editor.setEditable(false)
+    expect(code.querySelector('[aria-label="代码语言"]').disabled).toBe(true)
+    more.click(); menu = document.querySelector('[role="menu"][aria-label="代码块操作"]')
+    expect([...menu.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['复制代码'])
+    menu.querySelector('button').click()
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith('const answer = 42'))
+    expect(editor.getJSON()).toEqual(before)
+  })
+
+  it('phone language sheet searches/scrolls/closes without changing content, and a choice is exactly one undoable edit', () => {
+    const editor = phoneCode(), before = editor.getJSON(), source = editor.state.doc, overflow = document.body.style.overflow
+    const trigger = editor.view.dom.querySelector('[aria-label="代码语言"]')
+    trigger.click()
+    let sheet = document.querySelector('[role="dialog"][aria-label="切换代码语言"]')
+    expect(sheet).not.toBeNull()
+    expect(sheet.querySelector('h2').textContent).toBe('切换代码语言')
+    expect(sheet.querySelector('[aria-selected="true"]').textContent).toBe('Plain Text')
+    expect(sheet.querySelector('[aria-selected="true"] svg')).not.toBeNull()
+    const search = sheet.querySelector('input')
+    search.value = 'Java'; search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect([...sheet.querySelectorAll('[role="option"]')].map(item => item.textContent)).toEqual(['Java', 'JavaScript'])
+    const list = sheet.querySelector('.lark-doc-code-language-list')
+    list.scrollTop = 60; list.dispatchEvent(new Event('scroll'))
+    expect(editor.state.doc).toBe(source)
+    const retired = sheet.querySelector('[role="option"]')
+    sheet.querySelector('[aria-label="关闭代码语言"]').click()
+    expect(sheet.isConnected).toBe(false); expect(document.body.style.overflow).toBe(overflow)
+    retired.click(); expect(editor.getJSON()).toEqual(before)
+    trigger.click(); sheet = document.querySelector('[aria-label="切换代码语言"]')
+    const docChanges = []
+    editor.on('transaction', ({ transaction }) => { if (transaction.docChanged) docChanges.push(transaction) })
+    ;[...sheet.querySelectorAll('[role="option"]')].find(item => item.textContent === 'Java').click()
+    expect(editor.getJSON().content[0].attrs.language).toBe('java')
+    expect(docChanges).toHaveLength(1)
+    editor.commands.undo()
+    expect(editor.getJSON()).toEqual(before)
+    expect(document.querySelector('[aria-label="切换代码语言"]')).toBeNull()
+  })
+
+  it('retires phone code popups on readonly/source replacement/destroy and releases their scroll lock', () => {
+    const editor = phoneCode(), overflow = document.body.style.overflow
+    const open = () => editor.view.dom.querySelector('[aria-label="代码语言"]').click()
+    open()
+    let sheet = document.querySelector('[aria-label="切换代码语言"]')
+    expect(sheet).not.toBeNull()
+    sheet.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(sheet.isConnected).toBe(false)
+    open(); sheet = document.querySelector('[aria-label="切换代码语言"]')
+    editor.setEditable(false)
+    expect(sheet.isConnected).toBe(false)
+    editor.setEditable(true); open(); sheet = document.querySelector('[aria-label="切换代码语言"]')
+    const retired = sheet.querySelector('[role="option"]')
+    editor.commands.setContent('<p data-block-id="replaced">new document</p>')
+    const current = editor.getJSON(); retired.click(); expect(editor.getJSON()).toEqual(current)
+    expect(sheet.isConnected).toBe(false); expect(document.body.style.overflow).toBe(overflow)
+    editor.commands.setContent('<pre data-block-id="last_code"><code>last</code></pre>')
+    open(); sheet = document.querySelector('[aria-label="切换代码语言"]')
+    editor.destroy()
+    expect(sheet.isConnected).toBe(false); expect(document.body.style.overflow).toBe(overflow)
+  })
+
+  it.each(['plaintext', 'mermaid'])('selects only %s source before replacing it, then permits document-wide select all', language => {
+    const editor = realCode(`<p>before</p><pre data-language="${language}"><code>source</code></pre><p>after</p>`)
+    const start = editor.state.doc.firstChild.nodeSize + 1
+    const selectAll = () => editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })))
+    editor.commands.setTextSelection(start + 2)
+    selectAll()
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('source')
+    editor.commands.insertContent('replacement')
+    expect(editor.state.doc.textContent).toBe('beforereplacementafter')
+    expect(editor.state.doc.child(1).attrs.language).toBe(language)
+    selectAll()
+    selectAll()
+    expect(editor.state.selection.toJSON().type).toBe('all')
+  })
+  it('keeps empty code select-all scoped and leaves outside text selection unchanged', () => {
+    const editor = realCode('<p>before</p><pre><code></code></pre><p>after</p>')
+    editor.commands.setTextSelection(editor.state.doc.firstChild.nodeSize + 1)
+    editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })))
+    editor.commands.insertContent('source')
+    expect(editor.state.doc.textContent).toBe('beforesourceafter')
+    editor.commands.setTextSelection(2)
+    editor.view.someProp('handleKeyDown', handler => handler(editor.view, new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })))
+    expect(editor.state.selection.toJSON().type).toBe('all')
+  })
 
   it('offers the exact 71 source languages with ordered-subsequence search and literal spaces', async () => {
     const { codeBlockLanguageOptions, filterCodeBlockLanguages } = await import('../../src/core/nodeviews/code-block')
@@ -231,6 +371,30 @@ describe('Feishu code block closed interaction', () => {
     expect(document.querySelector('.lark-doc-code-language-menu')).toBeNull()
   })
 
+  it('closes language search through the owning workspace Escape boundary and cleans up after detachment', () => {
+    const editor = realCode(), root = document.createElement('section')
+    root.className = 'lark-doc'; document.body.appendChild(root); root.appendChild(editor.view.dom)
+    root.addEventListener('keydown', event => event.stopPropagation())
+    const trigger = root.querySelector('[aria-label="代码语言"]')
+    trigger.click()
+    const search = root.querySelector('.lark-doc-code-language-search')
+    for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, ...composing })
+      search.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(root.querySelector('.lark-doc-code-language-menu')).not.toBeNull()
+      expect(document.activeElement).toBe(search)
+    }
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(root.querySelector('.lark-doc-code-language-menu')).toBeNull()
+    expect(document.activeElement).toBe(editor.view.dom)
+    trigger.click()
+    const remove = vi.spyOn(root, 'removeEventListener')
+    editor.view.dom.remove(); editor.destroy()
+    expect(root.querySelector('.lark-doc-code-language-menu')).toBeNull()
+    expect(remove.mock.calls.some(([type, , capture]) => type === 'keydown' && capture === true)).toBe(true)
+  })
+
   it.each([['js', 'JavaScript', 'javascript'], ['ts', 'TypeScript', 'typescript'], ['htm', 'XML', 'xml']])('keeps the active item consistent for legacy %s when pressing Enter', (alias, label, value) => {
     const editor = realCode(`<pre data-language="${alias}"><code>text</code></pre>`)
     editor.view.dom.querySelector('[aria-label="代码语言"]').click()
@@ -261,7 +425,9 @@ describe('Feishu code block closed interaction', () => {
   it('locks the caption in suggest mode while keeping code editable, then unlocks on edit without remounting', () => {
     const editor = realCode()
     const input = editor.view.dom.querySelector('[aria-label="代码块标题"]')
-    const host = { editor, mode: 'suggest', interactionMode: 'suggest', updateRevisionPanels() {} }
+    const host = { editor, mode: 'suggest', interactionMode: 'suggest', revisionActiveId: '',
+      activateRevision: revisionMixin.methods.activateRevision,
+      $nextTick: callback => callback(), placeRevisionPanels() {}, updateRevisionPanels() {} }
     revisionMixin.methods.syncRevisionTracking.call(host)
     expect(editor.isEditable).toBe(true)
     expect(input.disabled).toBe(true)

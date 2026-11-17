@@ -8,6 +8,7 @@ import { BLOCKED_IMAGE_PLACEHOLDER } from '../policy/network'
 import { FULL_IMAGE_CROP, dragImageCrop, imageCropGeometry, imageCropStyles, isImageCrop, normalizeImageCrop } from '../media/image-crop'
 import { createImageViewer } from './image-viewer'
 import { IMAGE_MIME_ALLOWLIST } from '../media/image-insert'
+import { syncAsyncBlockDomState } from '../blocks/shared'
 import { iconNode } from '../../ui/icon'
 
 const WIDTH_MIN = 40
@@ -258,6 +259,12 @@ export function createImageNodeView(props) {
     const attrs = currentNode.attrs
     const blocked = blockedImage(attrs.src)
     dom.setAttribute('data-align', ALIGNMENTS.includes(attrs.align) ? attrs.align : 'center')
+    // 异步状态投影与 renderHTML 同源（data-async-state + is-async-*）：没设状态时
+    // 两者都不出现，免得图片块凭空多出一个 `is-async-*` 去命中占位样式。
+    if (attrs.asyncState === null || attrs.asyncState === undefined || attrs.asyncState === '') {
+      Array.from(dom.classList).forEach(name => { if (name.indexOf('is-async-') === 0) dom.classList.remove(name) })
+      dom.removeAttribute('data-async-state')
+    } else syncAsyncBlockDomState(dom, attrs.asyncState)
     if (typeof attrs.blockId === 'string' && attrs.blockId) dom.setAttribute('data-block-id', attrs.blockId)
     else dom.removeAttribute('data-block-id')
     dom.classList.toggle('is-selected', selected)

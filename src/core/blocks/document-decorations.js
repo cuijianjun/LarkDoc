@@ -1,22 +1,11 @@
 /**
- * 文档级 decorations：搜索高亮、块把手悬停、折叠箭头、标题编号、列表序号/圆点、折叠隐藏。
- *
- * 从 documentExtension 的 decorations props 抽出的纯函数：输入当前 state 与
- * 插件 storage / 编辑器实例 / 功能开关 / 宿主回调，输出 DecorationSet。
- *
- * P7-01 起有两条路径：
- * - `createDocumentDecorations`：全文收集（冷路径 —— 换文档、折叠集合/搜索词变化、
- *   invalidate 兜底）。全文收集仍是 2,000 块约 165 ms 的规模，所以热路径不能走它。
- * - `updateDocumentDecorations`：旧集合已由 DerivedIndex `map` 到新坐标，这里只把
- *   脏区里的装饰摘掉重算（热路径 —— 每次击键）。单次约 2~8 ms，且不重建脏区外的 widget DOM。
- *
- * 两条路径共用 `collectDocumentDecorations` 的同一段收集逻辑（`ranges` 为 null 即全文），
- * 避免「局部重扫」和「全文扫描」各写一份规则后各自漂移。
- *
- * 每条装饰都在 spec 上带 `category`：脏区摘除按类别过滤（悬停不属于文档内容，
- * 编辑后由 plugin 清空，见下面 updateDocumentDecorations 的说明）。
+ * 文档装饰：搜索、悬停、折叠、编号和提醒。
+ * DerivedIndex负责事务分类、坐标映射与缓存；收集器复用同一份全量/窗口规则。
+ * 搜索独立更新，不为activeIndex变化重算结构装饰。
+ * widget行为必须通过getPos读取当前位置，不能捕获首次构造的旧坐标。
  */
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { TextSelection } from '@tiptap/pm/state'
 import {
   canContinueListNumber,
   collectFoldRanges,
@@ -33,7 +22,6 @@ import {
 // 标题传播与区间合并只在 derive 里有一份实现：热路径要在**新文档**上再跑一遍，
 // 重写一份必然与 update(tr) 那套漂移。
 import { extendHeadingRange, mergeRanges } from '../derive/index'
-
 /** 装饰分类：脏区摘除按它过滤，同时把「谁负责哪条装饰」写在数据里。 */
 export const DECORATION_CATEGORY = {
   SEARCH: 'search',
@@ -59,6 +47,7 @@ export const DECORATION_CATEGORY = {
  */
 const resolveBlockPos = (getPos, offset) => getPos() - offset
 
+
 /**
  * 收集装饰（不建 Set）。
  *
@@ -70,16 +59,18 @@ const resolveBlockPos = (getPos, offset) => getPos() - offset
  *
  * @returns {import('@tiptap/pm/view').Decoration[]}
  */
-export function collectDocumentDecorations({ state, storage, editor, enabled, options, ranges = null, includeHover = true }) {
+export function collectDocumentDecorations({ state, storage, editor, enabled, options, ranges = null, includeHover = true, foldRanges: preparedFoldRanges = null, analysis = null }) {
   const doc = state.doc
+  const prepared = analysis?.doc === doc ? analysis : null
   const windows = Array.isArray(ranges) && ranges.length ? ranges : null
   const wholeDoc = windows === null
   const inWindow = (pos) => wholeDoc || windows.some((window) => pos >= window.from && pos < window.to)
   const overlaps = (from, to) => wholeDoc || windows.some((window) => from < window.to && to > window.from)
   const decorations = []
-  const hits = findTextMatches(doc, storage.query, windows).map(({ from, to }, index) => Decoration.inline(from, to, {
-    class: index === storage.activeIndex ? 'lark-doc-search-hit lark-doc-search-active' : 'lark-doc-search-hit',
-  }, { category: DECORATION_CATEGORY.SEARCH }))
+  const hits = storage.pagedView ? storage.pagedView.collectSearchDecorations(storage).filter(hit => overlaps(hit.from, hit.to))
+    : findTextMatches(doc, storage.query, windows).map(({ from, to }, index) => Decoration.inline(from, to, {
+      class: index === storage.activeIndex ? 'lark-doc-search-hit lark-doc-search-active' : 'lark-doc-search-hit',
+    }, { category: DECORATION_CATEGORY.SEARCH }))
   decorations.push(...hits)
   const hover = includeHover ? storage.handleHover : null
   if (hover && hover.from >= 0 && hover.to > hover.from && hover.to <= doc.content.size) {
@@ -97,13 +88,20 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
   // （2,000 块实测 275 ms）。collectFoldRanges 用一趟结构化遍历给同样的结果。
   // 结果留在 foldRanges 里给下面「折叠隐藏」的循环复用 —— 它需要同一份
   // {from,to,node}，再调一次 foldedRange / nodeAt 又是两次 O(n) 随机访问。
-  const foldIndex = new Map()
-  const foldRanges = collectFoldRanges(doc, foldIndex)
-  // Stable block identities survive structural shifts; fall back to positions for
-  // missing ids and earlier duplicates. The last duplicate retains the indexed id.
-  // The fold-range traversal also populated the identity index.
-  const widgetIds = {}
-  foldIndex.forEach((pos, id) => { widgetIds[pos] = `id:${id}` })
+  let foldIndex = prepared?.foldIndex
+  let foldRanges = preparedFoldRanges || prepared?.foldRanges
+  if (!foldIndex || !foldRanges) {
+    foldIndex = new Map()
+    const collected = collectFoldRanges(doc, foldIndex)
+    foldRanges ||= collected
+  }
+  // Stable identities share the paged analysis; ordinary documents collect both
+  // ranges and ids once. Last duplicate wins; missing ids retain position fallback.
+  const widgetIds = prepared?.widgetIds || {}
+  if (!prepared?.widgetIds) {
+    foldIndex.forEach((pos, id) => { widgetIds[pos] = `id:${id}` })
+    if (prepared) prepared.widgetIds = widgetIds
+  }
   foldRanges.forEach(({ node }, pos) => {
     if (!TEXT_FOLD_TYPES.has(node.type.name)) return
     if (!inWindow(pos)) return
@@ -148,13 +146,16 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
         const foldRange = foldedRange(editor.state.doc, at)
         // 光标落在即将隐藏的章节正文里：折叠后把焦点移回调用的标题，
         // 避免选区留在 display:none 的后代中（13.6.1 焦点迁移规则）。
-        const caretInBody = !wasFolded && foldRange && editor.state.selection.from >= foldRange.from && editor.state.selection.from <= foldRange.to
+        const selection = editor.state.selection
+        const caret = selection instanceof TextSelection ? selection.head : selection.from
+        const caretInBody = !wasFolded && foldRange && caret >= foldRange.from && caret < foldRange.to
         if (enabled('folding')) editor.commands.toggleLarkDocFold(at)
         if (caretInBody) editor.commands.setTextSelection(at + 1)
         editor.view.focus()
         // 视口锚定：当前滚动位置落入被折叠内容时，把标题带回可视区。
         if (!wasFolded) {
           const dom = editor.view.nodeDOM(at)
+          editor.storage?.larkDoc?.projection?.revealNode?.(dom)
           if (dom instanceof Element) dom.scrollIntoView({ block: 'nearest' })
         }
       })
@@ -164,7 +165,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
   // 标题编号：和折叠箭头落在同一个行内位置（pos+1）。push 顺序决定 DOM 顺序，
   // 箭头先 push、编号后 push，渲染出来才是飞书的「▾ 2. 标题」。
   // 编号是块级 UI，contenteditable=false，不进正文文本。
-  computeHeadingNumbers(doc).forEach((info, pos) => {
+  ;(prepared?.headingNumbers || computeHeadingNumbers(doc)).forEach((info, pos) => {
     // 位置来自 descendants 遍历，必然是一个块起点；这里只做 O(1) 的越界兜底，
     // 不要再 doc.nodeAt(pos) —— 那是 O(子节点数) 的随机访问。
     if (!Number.isInteger(pos) || pos < 0 || pos >= doc.content.size) return
@@ -255,8 +256,8 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
       return marker
     }, { key: `${className}-${widgetIds[pos] || pos}-${depth}-${value}-${label}`, side: -1, ignoreSelection: true, category: DECORATION_CATEGORY.LIST_MARKER }))
   }
-  computeOrderedListNumbers(doc).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index, info.firstChildIsParagraph))
-  computeBulletItems(doc).forEach((info, pos) => pushListMarker(pos, '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))
+  ;(prepared?.orderedListNumbers || computeOrderedListNumbers(doc)).forEach((info, pos) => pushListMarker(pos, info.label, info.depth, 'lark-doc-list-number', info.index, info.firstChildIsParagraph))
+  ;(prepared?.bulletItems || computeBulletItems(doc)).forEach((info, pos) => pushListMarker(pos, info.depth === 2 ? '◦' : '•', info.depth, 'lark-doc-list-bullet', undefined, info.firstChildIsParagraph))
   // The same identity index also resolves stored fold preferences. An empty
   // preference set needs no hidden-range decorations.
   if (storage.folded.size) {
@@ -276,7 +277,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
       doc.nodesBetween(from, to, (node, at) => {
         // display:none 已退出布局与 Tab 顺序；aria-hidden 让屏幕阅读器
         // 同样认为被折叠的后代不可读（需求 13.6.1）。
-        if (node.isBlock && at >= from && at + node.nodeSize <= to) {
+        if (node.type.name !== 'documentSegment' && node.isBlock && at >= from && at + node.nodeSize <= to) {
           decorations.push(Decoration.node(at, at + node.nodeSize, { class: 'lark-doc-fold-hidden', style: 'display: none', 'aria-hidden': 'true' }, { category: DECORATION_CATEGORY.FOLD_HIDDEN }))
           return false
         }
@@ -313,8 +314,8 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
 }
 
 /** 全文构建（冷路径）：与 P7 之前的语义逐条一致，只是每条装饰多了 category。 */
-export function createDocumentDecorations({ state, storage, editor, enabled, options }) {
-  return DecorationSet.create(state.doc, collectDocumentDecorations({ state, storage, editor, enabled, options }))
+export function createDocumentDecorations({ state, storage, editor, enabled, options, foldRanges, analysis }) {
+  return DecorationSet.create(state.doc, collectDocumentDecorations({ state, storage, editor, enabled, options, foldRanges, analysis }))
 }
 
 /**
@@ -352,17 +353,18 @@ function expandFoldWindows(doc, storage, ranges) {
  * DOM复用时toDOM不会重跑，点击坐标必须通过resolveBlockPos/getPos读取。
  * 真实DOM/坐标回归见test/unit/document-decorations-widget-pos.test.js。
  * @returns {import('@tiptap/pm/view').DecorationSet|null} null表示需要全量重建。
+ * previous已由DerivedIndex映射到新坐标。只摘除脏区装饰并重算，保留窗口外widget身份。
+ * 搜索中的文本编辑暂走完整装饰重建；命中扫描仍按需分片，共享当前doc/query结果。
+ * 格式路径的precise分析已含折叠/编号差异，其他路径继续保守扩张标题与折叠窗口。
+ * 返回null要求调用方全量重建，避免局部搜索序号或未知结构造成错误。
  */
-export function updateDocumentDecorations({ state, storage, editor, enabled, options, previous, ranges }) {
-  // 搜索高亮的 active 项按「全文里的第几个命中」判断，脏区里重扫拿到的是窗口内序号，
-  // 编辑期间会把 active 打到错的那条上（错的是**语义**，不是性能）。搜索是临时态、
-  // 不在击键路径上，直接退回全量最省心。
+export function updateDocumentDecorations({ state, storage, editor, enabled, options, previous, ranges, analysis }) {
   if (storage.query) return null
   const doc = state.doc
   // 新文档上再做一遍标题传播：新插入/新转成的**编号**标题会让它后面所有同类标题改号，
   // 而旧文档上那一遍（DerivedIndex.update 里）只看得到「原来这里是段落」。
   // 未编号标题不传播 —— 理由见 derive/index.js 的 extendHeadingRange。
-  const expanded = mergeRanges(ranges.map((range) => extendHeadingRange(doc, range)))
+  const expanded = mergeRanges(analysis?.precise ? ranges : ranges.map((range) => extendHeadingRange(doc, range)))
   const windows = expandFoldWindows(doc, storage, expanded)
   // 口径差必须在这里抹平：窗口是半开 `[from, to)`（收集侧的 `inWindow`/`nodesBetween`
   // 都是这个口径），而 `DecorationSet.find(start, end)` 是**闭区间**。直接用 `to` 作上界
@@ -383,6 +385,6 @@ export function updateDocumentDecorations({ state, storage, editor, enabled, opt
   // 窗口可能相邻/重叠（折叠窗口是无条件并入的），同一条装饰会被多次 push；
   // 按对象身份去重，`remove` 内部是线性查找，重复项会让它退化成平方级。
   const stripped = stale.length ? previous.remove([...new Set(stale)]) : previous
-  const fresh = collectDocumentDecorations({ state, storage, editor, enabled, options, ranges: windows, includeHover: !!storage.handleHover })
+  const fresh = collectDocumentDecorations({ state, storage, editor, enabled, options, ranges: windows, includeHover: !!storage.handleHover, analysis })
   return fresh.length ? stripped.add(doc, fresh) : stripped
 }

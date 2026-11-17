@@ -5,6 +5,7 @@
  * 连同 katex 一起按需加载（src/components/lark-doc/extensions.js 的 loadKatex）。
  * 没有公式的文档因此不会为这份样式付费。 */
 @import './src/components/lark-doc/lark-doc.css';
+@import './src/styles/mobile-selection.css';
 @import './src/components/lark-doc/template-library.css';
 @import './src/components/lark-doc/theme-preset-feishu.css';
 /* 宿主对齐档（pcvue 墨绿 #1d3d39 系，13 §4.3）—— 宿主加 data-theme-preset="pcvue" 启用。
@@ -28,4 +29,6 @@
 @import './src/styles/reading.css';
 /* 打印态放在最后：@media print 与主屏规则不在同一个媒体，但要压在前面所有打印期
    失效的 chrome 之上（导出 PDF 走的是浏览器打印通道）。 */
+/* Complete public stylesheet; standalone Element defers only this cold UI layer. */
+@import './src/styles/deferred-ui.css';
 @import './src/styles/print.css';

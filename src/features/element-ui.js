@@ -1,13 +1,16 @@
-/** 仅供 Element UMD 使用：同步工厂门面，首次可见时才加载面板实现。 */
+/** Low-frequency UI factories keep a synchronous handle and load only when visible. */
 import { loadFeature, readFeature } from '../core/features/registry'
+import { configSignature } from '../ui/bubbleConfig'
 
-export function createDeferredUi(name, options, visible = state => state.open) {
+export function createDeferredUi(name, options, visible = state => state.open, fallback) {
   let ui
   let state = {}
   let pending
   let destroyed = false
   let focus
   let errorNode
+  let config = options.config
+  let signature = configSignature(config)
   const host = options.host
   const clearError = () => { if (errorNode) errorNode.remove(); errorNode = null }
   const requestFocus = method => {
@@ -18,7 +21,7 @@ export function createDeferredUi(name, options, visible = state => state.open) {
   const mount = api => {
     if (destroyed || !visible(state)) return
     clearError()
-    ui = api[name](options)
+    ui = api[name](config === options.config ? options : { ...options, config })
     ui.update(state)
     if (focus) { const method = focus; focus = null; ui[method]() }
     if (options.onReady) options.onReady()
@@ -33,7 +36,7 @@ export function createDeferredUi(name, options, visible = state => state.open) {
     // 预加载或前一次打开后保持同步，避免已缓存面板也多等一拍。
     const registered = readFeature('ui.ready')
     if (registered) { mount(registered); return }
-    pending = loadFeature('ui').then(mount).catch(error => {
+    pending = loadFeature('ui', fallback).then(mount).catch(error => {
       if (destroyed || !visible(state) || !host) return
       clearError()
       const document = host.ownerDocument
@@ -49,13 +52,34 @@ export function createDeferredUi(name, options, visible = state => state.open) {
   }
   return {
     get el() { return ui && ui.el },
+    get submenuEl() { return ui && ui.submenuEl },
+    // A cold menu keeps the host fallback; once mounted Enter must use the
+    // actual menu chooser so submenu commands retain their synchronous behavior.
+    get choose() { return !destroyed && ui && typeof ui.choose === 'function' ? (...args) => ui.choose(...args) : undefined },
     update,
+    hide() {
+      if (destroyed) return
+      state = { ...state, open: false }; focus = null; clearError()
+      ui?.hide()
+    },
+    setConfig(next) {
+      if (destroyed) return false
+      const nextSignature = configSignature(next)
+      const changed = signature !== nextSignature
+      signature = nextSignature
+      config = next
+      return ui ? ui.setConfig(next) : changed
+    },
+    positionHeadingMenu() { ui?.positionHeadingMenu() },
+    positionAlignMenu() { ui?.positionAlignMenu() },
     focusInput: () => requestFocus('focusInput'),
     focusFirstField: () => requestFocus('focusFirstField'),
     focusTableGrid: () => requestFocus('focusTableGrid'),
     focusClose: () => requestFocus('focusClose'),
     focusText: () => requestFocus('focusText'),
     focusSearch: () => requestFocus('focusSearch'),
+    focusTemplateSearch: () => requestFocus('focusTemplateSearch'),
+    focusImageAI: () => requestFocus('focusImageAI'),
     focus: () => requestFocus('focus'),
     destroy() { destroyed = true; focus = null; state = {}; clearError(); if (ui) ui.destroy(); ui = null },
   }

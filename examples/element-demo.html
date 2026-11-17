@@ -7,23 +7,46 @@
   <link rel="icon" href="data:,">
   <style>
     /* 演示页自身样式：与编辑器无关，证明宿主页面不需要任何框架 */
+    html, body { width: 100%; min-width: 0; }
     body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; color: #1f2329; background: #f5f6f7; }
-    header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e6eb; }
-    h1 { margin: 0 0 4px; font-size: 18px; }
-    header p { margin: 0; color: #86909c; font-size: 13px; }
-    main { max-width: 960px; margin: 0 auto; padding: 20px 24px 60px; }
-    section { margin-bottom: 24px; }
+    body > header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e6eb; }
+    body > header h1 { margin: 0 0 4px; font-size: 18px; }
+    body > header p { margin: 0; color: #86909c; font-size: 13px; }
+    body > main { width: calc(100% - 32px); box-sizing: border-box; margin: 0 auto; padding: 20px 0 60px; }
+    body > main > section { margin-bottom: 24px; }
     .toolbar-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-    button { padding: 5px 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
-    button:hover { background: #f2f6f4; border-color: #b7d3c8; color: #0c7a58; }
+    .toolbar-row button, .backend-tools button, .h5-demo-controls { padding: 5px 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
+    .toolbar-row button:hover, .backend-tools button:hover, .h5-demo-controls:hover { background: #f2f6f4; border-color: #b7d3c8; color: #0c7a58; }
     /* 编辑器容器必须有高度，和任何 CMS 里嵌富文本一样 */
-    lark-doc { display: block; height: 620px; overflow: hidden; border-radius: 10px; background: #fff; box-shadow: 0 2px 12px rgba(31, 35, 41, .08); }
+    lark-doc { display: block; width: 100%; min-width: 0; height: clamp(560px, calc(100vh - 180px), 820px); overflow: hidden; border-radius: 10px; background: #fff; box-shadow: 0 2px 12px rgba(31, 35, 41, .08); }
+    .backend-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+    .backend-status { flex-basis: 100%; min-width: 0; overflow-wrap: anywhere; color: #86909c; font-size: 13px; }
+    @media (max-width: 720px) {
+      body > header { padding: 14px 16px; }
+      body > main { width: calc(100% - 20px); padding-top: 14px; }
+      body > main > section { margin-bottom: 18px; }
+      lark-doc { height: calc(100vh - 150px); min-height: 520px; border-radius: 8px; }
+      .toolbar-row, .backend-tools { gap: 6px; }
+      .toolbar-row button, .backend-tools button, .h5-demo-controls { padding-inline: 9px; }
+    }
     .log { max-height: 160px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: #1f2329; color: #a9d6c2; font: 12px/1.7 ui-monospace, Menlo, monospace; }
     .log div + div { border-top: 1px solid #33383f; }
     .tag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: #0c7a58; color: #fff; }
+    .h5-demo-controls, .h5-demo-tools-close { display: none; }
+    html.h5-demo body > header, html.h5-demo body > main > section:not(:has(#editor-c)), html.h5-demo body > main > section:has(#editor-c) > h2, html.h5-demo body > main > section:has(#editor-c) > p { display: none; }
+    html.h5-demo body > main, html.h5-demo body > main > section:has(#editor-c) { width: 100%; margin: 0; padding: 0; }
+    html.h5-demo #editor-c { height: 100dvh; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+    html.h5-demo .lark-doc-header-actions .h5-demo-controls { display: block; padding: 5px 8px; font-size: 13px; }
+    html.h5-demo.h5-auth-required body > .h5-demo-controls { display: block; position: fixed; top: 8px; right: 8px; z-index: 1201; padding: 5px 8px; }
+    html.h5-demo .h5-demo-tools-close { display: block; min-width: 32px; min-height: 32px; padding: 4px; }
+    html.h5-demo .backend-tools { display: none; }
+    html.h5-demo:has(.lark-doc-comment-mobile-sheet) .h5-demo-controls { display: none; }
+    html.h5-demo.h5-controls-open .backend-tools { display: flex; position: fixed; box-sizing: border-box; z-index: 1201; top: 52px; left: 8px; width: calc(100% - 16px); margin: 0; padding: 12px; border: 1px solid #d9d9d9; border-radius: 8px; background: #fff; box-shadow: 0 4px 12px #0002; }
   </style>
+  <script>document.documentElement.classList.toggle('h5-demo', new URLSearchParams(location.search).get('mobile') === 'h5')</script>
 </head>
 <body>
+  <button type="button" class="h5-demo-controls" aria-expanded="false" onclick="this.setAttribute('aria-expanded', String(document.documentElement.classList.toggle('h5-controls-open')))">测试环境</button>
   <header>
     <h1>Web Component 演示 · 无框架宿主</h1>
     <p>本页只有原生 HTML + JS，没有 Vue / React。编辑器通过 <code>&lt;lark-doc&gt;</code> 标签接入。</p>
@@ -42,6 +65,7 @@
       </div>
       <lark-doc
         id="editor-a"
+        document-id="element-demo-attributes"
         title="属性驱动的文档"
         theme="light"
         placeholder="试着输入正文，或输入 / 唤出命令菜单"
@@ -52,7 +76,23 @@
     <section>
       <h2>2. JS 能力注入（上传 / AI / 持久化）</h2>
       <p style="color:#86909c;margin:0 0 8px">对象型能力无法写进 HTML 属性，通过 element.options 传入（会触发实例重建）。</p>
-      <lark-doc id="editor-b" readonly></lark-doc>
+      <lark-doc id="editor-b" document-id="element-demo-properties" readonly></lark-doc>
+    </section>
+
+    <section>
+      <h2>3. Docker backend 全功能联调 · 评论 / reaction / 编辑 / 翻译</h2>
+      <p style="color:#86909c;margin:0 0 8px">本段只在本地 Docker 链启动时启用 HTTP Provider；页面宽度跟随当前浏览器，登录后可直接打开全文评论、创建评论、回复、编辑、reaction 和翻译菜单。</p>
+      <div class="backend-tools">
+        <button type="button" data-backend-action="login-alice">以 Alice 登录</button>
+        <button type="button" data-backend-action="login-bob">以 Bob 登录</button>
+        <button type="button" data-backend-action="seed-comment">创建后端演示评论</button>
+        <button type="button" data-backend-action="query-collaboration">查询待确认协同更新</button>
+        <button type="button" data-backend-action="query-business" hidden>查询原文档业务操作</button>
+        <button type="button" data-backend-action="restore-document" hidden>恢复已删除文档</button>
+        <button type="button" class="h5-demo-tools-close" aria-label="关闭测试环境" onclick="document.documentElement.classList.remove('h5-controls-open');document.querySelector('.h5-demo-controls').setAttribute('aria-expanded','false')">×</button>
+        <span class="backend-status" id="backend-status">等待 Docker backend…</span>
+      </div>
+      <lark-doc id="editor-c" document-id="local-document" features='{"ai":false,"persistence":false}' title="Docker backend 全功能文档" theme="light" placeholder="登录后可创建评论、回复、reaction 和翻译" toolbar-keys="history,headings,marks,textStyle,blockStyle,insert"><h1>Docker backend 全功能联调</h1><p>登录后，这份文档的评论 Provider、权限 Provider、通知 Provider、版本 Provider、资源 Provider 和附件 Provider 均走当前 dev 分支 HTTP 接口。</p><p>先用上方按钮登录，再点“全文评论”或在正文里创建评论。</p></lark-doc>
     </section>
 
     <section>
@@ -62,7 +102,14 @@
   </main>
 
   <!-- 产物使用原生 DOM，不含 Vue 运行时；样式随 JS 注入 -->
-  <script src="../dist/lark-doc-element.umd.min.js?v=20261109-v12d"></script>
+  <script>
+    // H5 presents editor-c only. Do not initialize two hidden desktop demo editors.
+    if (document.documentElement.classList.contains('h5-demo')) {
+      document.getElementById('editor-a').remove()
+      document.getElementById('editor-b').remove()
+    }
+  </script>
+  <script type="module" src="../dist/lark-doc-element.esm.js"></script>
   <script>
     /**
      * 演示页逻辑：全部走原生 API。
@@ -81,6 +128,7 @@
       log.insertBefore(line, log.firstChild)
     }
 
+    customElements.whenDefined('lark-doc').then(function () {
     // 事件委托：两个实例的事件都在这里接收
     document.addEventListener('lark-doc-ready', function (event) {
       push('ready', event.target.id + ' 已就绪')
@@ -95,6 +143,7 @@
 
     var editorA = document.getElementById('editor-a')
     var editorB = document.getElementById('editor-b')
+    if (!editorA || !editorB) return
 
     /**
      * 对象型能力：挂载前设置即可；命令式调用必须等 ready ——
@@ -135,6 +184,383 @@
         editorA.insert('<p>—— insert() 追加的一段话。</p>')
         push('insert', 'ok')
       }
+    })
+    })
+  </script>
+  <script type="module">
+    import { createHttpIdentityProvider } from '../src/providers/identity.js'
+    import { createHttpDocumentBusinessProvider } from '../src/providers/document-business-http.js'
+    import { createDemoDocumentBusinessHost } from './element-demo-business.js'
+    import * as collaborationRuntime from '../dist/lark-doc-collab.browser.esm.js'
+    import {
+      createHttpAssetProvider,
+      createHttpAuthorizationProvider,
+      createHttpCommentsProvider,
+      createHttpDocumentHost, receiveHttpDocumentHostIdentity,
+      createHttpNotificationsProvider,
+      createHttpResourceProvider,
+      createHttpVersioningProvider,
+    } from '../dist/lark-doc-providers.mjs'
+
+    const tenantId = 'local-production'
+    const docId = new URL(location.href).searchParams.get('docId') || 'local-document'
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(docId)) throw new Error('INVALID_DOCUMENT_ID')
+    const editorC = document.getElementById('editor-c')
+    const h5Controls = document.querySelector('.h5-demo-controls')
+    const statusNode = document.getElementById('backend-status')
+    let session = null
+    let loginBusy = false
+    let seedBusy = false
+    let stopCapabilities = null
+    let bridge = null, bridgePrincipal = null, mountedBridge = null, renewingBridge = null
+    let restoreIsolation = null, pageClosed = false
+    let businessHost = null
+    const isolatedBridges = new Set()
+    const bridgeWaiters = new Set()
+    let capabilities = { canView: false, canEdit: false, canComment: false, canResolveComment: false, canCreateVersion: false, canRestoreVersion: false, canExport: false }
+    const status = value => { statusNode.textContent = value; window.push?.('backend', value) }
+    const getCapabilities = () => session?.getCapabilities?.() || capabilities
+    const csrfToken = () => identity.getCsrfToken()
+    const common = { tenantId, docId, baseUrl: '', csrfToken, getCapabilities,
+      getState: () => bridge?.getState() || { status: 'disconnected', epoch: null, lastSeq: '0', pending: [] },
+      getAnchorCodec: editor => bridge ? collaborationRuntime.createEditorCommentAnchorCodec({ editor, ydoc: bridge.ydoc }) : null,
+    }
+    const identity = createHttpIdentityProvider({ tenantId, docId })
+    const placeTestControls = () => {
+      if (!h5Controls || !document.documentElement.classList.contains('h5-demo')) return
+      const actions = identity.getState().status === 'authenticated' && getCapabilities().canView
+        ? editorC.querySelector('.lark-doc-header-actions') : null
+      const target = actions || document.body
+      if (h5Controls.parentNode !== target) target.appendChild(h5Controls)
+      document.documentElement.classList.toggle('h5-auth-required', !actions)
+    }
+    const updateControls = () => {
+      placeTestControls()
+      if (restoreIsolation && !restoreHandoffCurrent(restoreIsolation)) restoreIsolation.retired = true
+      checkBridgeWaiters()
+      const pending = bridge?.getState().pending.length > 0
+      const isolatedPending = [...isolatedBridges].some(value => value.getState().pending.length)
+      const businessPending = businessHost?.pending.length > 0
+      document.querySelectorAll('[data-backend-action^="login-"]').forEach(button => {
+        const blocked = Boolean(restoreIsolation) || isolatedPending || businessPending || pending && button.dataset.backendAction !== `login-${bridgePrincipal}`
+        button.disabled = loginBusy || seedBusy || blocked
+        button.title = restoreIsolation ? '恢复已隔离；请查询原恢复操作或重新打开文档' : isolatedPending ? '旧代际更新已隔离保留，待人工对账；暂不能切换账号' : businessPending ? '文档业务结果待确认，请先查询原操作' : blocked ? '协同更新尚未确认，请先查询原更新，暂不能切换账号' : ''
+      })
+      document.querySelector('[data-backend-action="seed-comment"]').disabled = loginBusy || seedBusy || identity.getState().status !== 'authenticated' || session !== ownedSession || !getCapabilities().canComment || bridge?.getState().status !== 'ready'
+      const query = document.querySelector('[data-backend-action="query-collaboration"]')
+      if (query) {
+        query.disabled = loginBusy || seedBusy || !pending || identity.getState().status !== 'authenticated'
+        query.textContent = `查询待确认协同更新${pending ? `（${bridge.getState().pending.length}）` : ''}`
+      }
+      businessHost?.sync()
+    }
+    let identityStatus = null
+    identity.subscribe(value => {
+      const next = `${value.status}:${value.principalId || ''}`
+      if (next !== identityStatus) {
+        identityStatus = next
+        if (value.status === 'authenticated') status(`${value.principalId} 已登录，正在确认文档权限…`)
+        else if (value.status === 'authenticating') status('正在登录…')
+        else if (value.status === 'idle') status('Docker backend 已连接，等待登录')
+        else status('登录状态已失效，请重新登录')
+      }
+      updateControls()
+    })
+    const authorization = createHttpAuthorizationProvider(common)
+    const comments = createHttpCommentsProvider(common)
+    const notifications = createHttpNotificationsProvider(common)
+    const versioning = createHttpVersioningProvider({ ...common, isolateDocument: isolateRestoredDocument, reloadDocument: reloadRestoredDocument })
+    const assets = createHttpAssetProvider({ ...common, maxUploadBytes: 20 * 1024 * 1024 })
+    const resources = createHttpResourceProvider(common)
+    const documentBusiness = createHttpDocumentBusinessProvider({ ...common, documentUrl: target => {
+      const url = new URL(location.href); url.searchParams.set('docId', target); return url.href
+    } })
+    const ownedSession = collaborationRuntime.createDocumentSession({ documentId: docId, mode: 'collaborative',
+      providers: { identity, authorization, comments, notifications, versioning, assets, resources, documentBusiness,
+        collaboration: { connect: () => bridge?.connect(), disconnect: () => bridge?.disconnect() },
+      },
+    })
+
+    const documentHost = createHttpDocumentHost({ ...common, getIdentityState: () => identity.getState(), getSession: () => session,
+      documentUrl: (target, { standalone = false } = {}) => { const url = new URL(location.href); url.searchParams.set('docId', target); if (standalone) url.searchParams.set('standalone', '1'); return url.href },
+      reportUrl: () => { const url = new URL('./document-report.html', location.href); url.searchParams.set('tenantId', tenantId); url.searchParams.set('docId', docId); return url.href },
+    })
+
+    const hostActions = ['list-knowledge-library', 'report', 'open-document-reference', 'open-in-app']
+    let handleDocumentAction = event => documentHost.handleAction(event)
+    handleDocumentAction.openInAppLabel = '在浏览器中打开'
+    handleDocumentAction.supportedActions = Object.freeze(hostActions)
+    const backendOptions = {
+      documentId: docId,
+      session: ownedSession,
+      onDocumentAction: handleDocumentAction,
+      readonly: true,
+      themePreset: 'feishu',
+      features: { ai: false, persistence: false },
+    }
+    businessHost = createDemoDocumentBusinessHost({ provider: documentBusiness, getState: common.getState,
+      getContext: () => {
+        const context = commentContext()
+        return !pageClosed && !restoreIsolation && isCurrentContext(context) ? { ...context, documentId: docId,
+          identity: ownedSession._privateIdentityGeneration, authorization: ownedSession._authorizationGeneration } : null
+      },
+      isCurrent: context => context && !pageClosed && !restoreIsolation && isCurrentContext(context) &&
+        context.identity === ownedSession._privateIdentityGeneration && context.authorization === ownedSession._authorizationGeneration,
+      onStatus: status,
+      onChange: () => {
+        const supported = businessHost?.supportedActions || []
+        handleDocumentAction = event => supported.includes(event.action) ? businessHost.run(event) : hostActions.includes(event.action) ? documentHost.handleAction(event) : false
+        handleDocumentAction.openInAppLabel = '在浏览器中打开'
+        handleDocumentAction.supportedActions = Object.freeze([...hostActions, ...supported])
+        backendOptions.onDocumentAction = handleDocumentAction
+        editorC.getInstance?.()?.patchProps?.({ onDocumentAction: handleDocumentAction })
+        const query = document.querySelector('[data-backend-action="query-business"]')
+        if (query) { query.hidden = !businessHost?.pending.length; query.disabled = !businessHost?.pending.length }
+        const restore = document.querySelector('[data-backend-action="restore-document"]')
+        if (restore) restore.hidden = !businessHost?.canRestore
+        updateControls()
+      },
+    })
+    const bindEditorSession = () => {
+      const instance = editorC.getInstance?.()
+      const current = instance?.getSession?.() || null
+      if (current !== session) {
+        stopCapabilities?.()
+        session = current
+      stopCapabilities = session?.on?.('capabilities', () => { updateControls(); applyCollaborationReadonly() }) || null
+      }
+      capabilities = session?.getCapabilities?.() || {}
+      if (identity.getState().status !== 'authenticated') status('Docker backend 已连接，等待登录')
+      updateControls()
+    }
+    editorC.addEventListener('lark-doc-ready', bindEditorSession)
+    bindEditorSession()
+    async function ensureBackendSession() {
+      if (editorC.ready === false || !editorC.getInstance?.()) await new Promise((resolve, reject) => {
+        const done = () => { clearTimeout(timer); resolve() }
+        const timer = setTimeout(() => { editorC.removeEventListener('lark-doc-ready', done); reject(new Error('EDITOR_READY_TIMEOUT')) }, 8000)
+        editorC.addEventListener('lark-doc-ready', done, { once: true })
+      })
+      // Authenticate the host-owned Session without mounting a second remote placeholder/editor.
+      if (session !== ownedSession) {
+        stopCapabilities?.(); session = ownedSession
+        stopCapabilities = session.on('capabilities', () => { updateControls(); applyCollaborationReadonly() })
+      }
+      editorC.getInstance?.()?.setReadonly?.(true)
+      return session
+    }
+    function applyCollaborationReadonly() {
+      const state = bridge?.getState(), app = editorC.getInstance?.()
+      if (app?.getSession?.() === ownedSession) app.patchProps?.({ readonly: pageClosed || Boolean(restoreIsolation) || mountedBridge !== bridge || !state || state.status !== 'ready' || !state.canWrite || !ownedSession.can('canEdit') })
+    }
+    function restoreHandoffCurrent(record) {
+      return !pageClosed && !record.retired && restoreIsolation === record && isCurrentContext(record.context) &&
+        record.authorization === ownedSession._authorizationGeneration && record.identity === ownedSession._privateIdentityGeneration &&
+        ownedSession.can('canView') && ownedSession.can('canRestoreVersion') && record.bridge.getState().epoch === record.epoch
+    }
+    // 只隔离旧连接；unknown 不创建新 bridge，也不把旧 pending 带入新 epoch。
+    function isolateRestoredDocument(result) {
+      if (!result || !['unknown', 'committed'].includes(result.status) || typeof result.operationId !== 'string' || !result.operationId) throw new Error('RESTORE_HANDOFF_INVALID')
+      if (!restoreIsolation) {
+        const context = commentContext(), state = bridge?.getState()
+        if (!isCurrentContext(context) || mountedBridge !== bridge || !state || !/^(0|[1-9][0-9]*)$/.test(state.epoch)) throw new Error('RESTORE_HANDOFF_STALE')
+        restoreIsolation = { context, bridge, epoch: state.epoch, operationId: result.operationId,
+          authorization: ownedSession._authorizationGeneration, identity: ownedSession._privateIdentityGeneration, retired: false }
+      }
+      const record = restoreIsolation
+      if (record.operationId !== result.operationId || !restoreHandoffCurrent(record)) throw new Error('RESTORE_HANDOFF_STALE')
+      if (result.status === 'committed') {
+        if (result.preEpoch !== record.epoch || !/^(0|[1-9][0-9]*)$/.test(result.postEpoch) || BigInt(result.postEpoch) !== BigInt(record.epoch) + 1n) throw new Error('RESTORE_HANDOFF_EPOCH')
+        record.postEpoch = result.postEpoch
+      }
+      record.bridge.isolateEpoch(result.isolationReason || 'RESTORE_RESULT_UNKNOWN')
+      applyCollaborationReadonly(); updateControls()
+      status(result.status === 'committed' ? '恢复已提交；正在重新打开文档…' : '恢复结果待确认；旧正文保持只读，请查询原恢复操作。')
+    }
+    async function reloadRestoredDocument(result) {
+      const record = restoreIsolation
+      if (!record || result?.status !== 'committed' || record.operationId !== result.operationId || record.postEpoch !== result.postEpoch || !restoreHandoffCurrent(record)) throw new Error('RESTORE_HANDOFF_STALE')
+      const old = record.bridge
+      isolatedBridges.add(old)
+      let next
+      try {
+        bridge = next = createDemoBridge(record.context)
+        checkBridgeWaiters()
+        await ensureCollaboration(record.context, record)
+        if (!restoreHandoffCurrent(record) || bridge !== next || next.getState().epoch !== record.postEpoch || next.getState().pending.length) throw new Error('RESTORE_HANDOFF_STALE')
+        restoreIsolation = null
+        if (!old.getState().pending.length) { isolatedBridges.delete(old); old.destroy() }
+        applyCollaborationReadonly(); updateControls()
+        status('恢复已提交；当前文档已重新加载。')
+      } catch (error) {
+        next?.isolateEpoch('RESTORE_REOPEN_REQUIRED')
+        applyCollaborationReadonly(); updateControls()
+        if (isCurrentContext(record.context)) status('恢复已提交，但重新打开尚未完成；保持只读，请重新打开文档。')
+        throw error
+      }
+    }
+    function checkBridgeWaiters() { bridgeWaiters.forEach(check => check()) }
+    function waitForBridge(current, handoff) {
+      return new Promise((resolve, reject) => {
+        const finish = error => { clearTimeout(timer); bridgeWaiters.delete(check); error ? reject(error) : resolve() }
+        const check = () => {
+          const state = current.getState()
+          if (pageClosed || current !== bridge || session !== ownedSession || identity.getState().principalId !== bridgePrincipal || handoff && !restoreHandoffCurrent(handoff)) finish(new Error('IDENTITY_CONTEXT_CHANGED'))
+          else if (state.status === 'ready') finish(handoff && (state.epoch !== handoff.postEpoch || state.pending.length) ? new Error('RESTORE_HANDOFF_EPOCH') : null)
+          else if (['quarantined', 'destroyed'].includes(state.status)) finish(new Error('COLLABORATION_NOT_READY'))
+        }
+        const timer = setTimeout(() => finish(new Error('COLLABORATION_READY_TIMEOUT')), 15000)
+        bridgeWaiters.add(check); check()
+      })
+    }
+    function createDemoBridge(context) {
+      bridgePrincipal = context.principalId
+        let current
+        current = collaborationRuntime.createDurableCollaborationBridge({ tenantId, docId,
+          url: `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/collaboration`, autoConnect: false, presence: true,
+          ticket: async () => (await authorization.issueCollaborationTicket({ requestedScopes: ownedSession.can('canEdit') ? ['document.read', 'document.write'] : ['document.read'], protocolVersion: 'editor-crdt-v1' })).ticket,
+          onState: () => { checkBridgeWaiters(); updateControls(); applyCollaborationReadonly() },
+          onCommentsChanged: () => { if (current === bridge && session === ownedSession) session.emit('comments-changed') },
+          onAuthorizationRequired: () => {
+            if (current !== bridge || renewingBridge || restoreIsolation || pageClosed) return
+            renewingBridge = (async () => {
+              await ownedSession.refreshCapabilities()
+              if (current === bridge && session === ownedSession && ownedSession.can('canView')) await current.connect()
+            })().catch(() => { if (current === bridge) status('协同连接需要重新登录；待确认更新保留。') }).finally(() => { renewingBridge = null })
+          },
+        })
+      return current
+    }
+    async function ensureCollaboration(context, handoff) {
+      const currentContext = () => !pageClosed && isCurrentContext(context) && (!handoff || restoreHandoffCurrent(handoff))
+      if (!currentContext()) throw new Error('IDENTITY_CONTEXT_CHANGED')
+      if (!bridge) bridge = createDemoBridge(context)
+      const current = bridge
+      await Promise.all([current.resumeAuthorization(), waitForBridge(current, handoff)])
+      if (!currentContext()) throw new Error('IDENTITY_CONTEXT_CHANGED')
+      if (mountedBridge !== current) {
+        // 恢复回调内不再刷新身份并退休正在确认的原操作；ticket 已重新核验当前权限。
+        if (!handoff) await identity.refresh()
+        if (!currentContext()) throw new Error('IDENTITY_CONTEXT_CHANGED')
+        const ready = new Promise((resolve, reject) => {
+          const timer = setTimeout(() => { editorC.removeEventListener('lark-doc-ready', done); reject(new Error('EDITOR_READY_TIMEOUT')) }, 8000)
+          const done = () => { clearTimeout(timer); resolve() }
+          editorC.addEventListener('lark-doc-ready', done, { once: true })
+        })
+        // Empty initial content prevents the local placeholder from seeding or overwriting the Y.Doc.
+        editorC.options = { ...backendOptions, content: '', collab: {
+          extensions: collaborationRuntime.createCollabExtensions({ ydoc: current.ydoc, provider: current.provider, user: { id: bridgePrincipal, name: bridgePrincipal } }),
+          isRemoteTransaction: collaborationRuntime.isRemoteTransaction,
+        } }
+        await ready
+        if (!currentContext() || current !== bridge) throw new Error('IDENTITY_CONTEXT_CHANGED')
+        mountedBridge = current
+        // Session authentication precedes this editor mount; refresh its read view after binding.
+        // The signal only coalesces a GET and never creates or replays a comment write.
+        ownedSession.emit('comments-changed', { source: 'editor-mounted' })
+      }
+      applyCollaborationReadonly()
+    }
+    async function login(principal, resumeToken) {
+      if (loginBusy || seedBusy || restoreIsolation || pageClosed || businessHost?.pending.length || [...isolatedBridges].some(value => value.getState().pending.length)) return
+      loginBusy = true
+      updateControls()
+      let context
+      try {
+        if (bridge && bridgePrincipal !== principal) {
+          if (bridge.getState().pending.length) throw new Error('协同更新尚未确认，请先查询原更新，暂不能切换账号')
+          bridge.destroy(); bridge = null; mountedBridge = null
+          checkBridgeWaiters()
+        }
+        await ensureBackendSession()
+        let authenticated
+        if (resumeToken) authenticated = await identity.resumeCurrentSession({ csrfToken: resumeToken })
+        else {
+          const response = await fetch(`/__larkdoc_local_login/${principal}`, { cache: 'no-store' })
+          if (!response.ok) throw new Error('LOGIN_SERVICE_UNAVAILABLE')
+          const value = await response.json()
+          authenticated = await identity.login({ loginCode: value.loginCode, operationId: `element-demo-login-${principal}-${Date.now()}` })
+        }
+        if (authenticated?.principalId !== principal) throw new Error('IDENTITY_CONTEXT_CHANGED')
+        if (authenticated?.status !== 'authenticated' || identity.getState().status !== 'authenticated') throw new Error('IDENTITY_LOGIN_NOT_AUTHENTICATED')
+        context = commentContext()
+        capabilities = session?.getCapabilities?.() || capabilities
+        // Session 在身份事件后自动复权；等待当前公开事件，避免第二次刷新清空评论状态。
+        const current = session
+        capabilities = await new Promise((resolve, reject) => {
+          let stop
+          const timer = setTimeout(() => { stop?.(); reject(new Error('DOCUMENT_ACCESS_NOT_READY')) }, 5000)
+          const check = () => {
+            const value = current?.getCapabilities?.()
+            if (current === session && value?.canView) { clearTimeout(timer); stop?.(); resolve(value) }
+          }
+          stop = current?.on?.('capabilities', check)
+          check()
+        })
+        status(`${principal} 已登录；正在连接协同正文…`)
+        await ensureCollaboration(context)
+        if (isCurrentContext(context)) status(`${principal} 已登录；协同正文已连接，可创建评论。`)
+      } catch (error) {
+        if (!context) status(`${principal} 登录失败：${error.code || error.message}，请重新登录`)
+        else if (isCurrentContext(context)) status(`${principal} 已登录；联调准备失败：${error.code || error.message}`)
+      }
+      finally { loginBusy = false; updateControls() }
+    }
+    function commentContext() {
+      const { principalId, generation } = identity.getState()
+      return { session, principalId, generation }
+    }
+    function isCurrentContext(context) {
+      const state = identity.getState()
+      return context && context.session === ownedSession && context.session === session && state.status === 'authenticated' && state.principalId === context.principalId && state.generation === context.generation
+    }
+    async function createDemoComment(context) {
+      if (!isCurrentContext(context)) throw new Error('IDENTITY_CONTEXT_CHANGED')
+      const result = await context.session.createCommentThread({ operationId: `element-demo-comment-${Date.now()}`, scope: 'document', visibility: 'document', content: 'Docker backend 演示评论：可回复、编辑、reaction、翻译。' })
+      if (isCurrentContext(context)) context.session.emit('comments-changed', { threadId: result.id })
+      return result
+    }
+    async function seedComment() {
+      if (loginBusy || seedBusy) return
+      seedBusy = true
+      updateControls()
+      let context
+      try {
+        session = editorC.getInstance?.()?.getSession?.() || session
+        const identityState = identity.getState()
+        if (identityState.status !== 'authenticated' || !session) throw new Error('请先登录')
+        context = commentContext()
+        await createDemoComment(context)
+        if (isCurrentContext(context)) status(`${identityState.principalId} 已登录；演示评论已创建`)
+      } catch (error) {
+        if (!context || isCurrentContext(context)) {
+          const current = identity.getState()
+          status(`${current.status === 'authenticated' ? `${current.principalId} 已登录；` : ''}创建评论失败：${error.code || error.message}`)
+        }
+      }
+      finally { seedBusy = false; updateControls() }
+    }
+    document.querySelector('[data-backend-action="login-alice"]')?.addEventListener('click', () => void login('alice'))
+    document.querySelector('[data-backend-action="login-bob"]')?.addEventListener('click', () => void login('bob'))
+    document.querySelector('[data-backend-action="seed-comment"]')?.addEventListener('click', () => void seedComment())
+    document.querySelector('[data-backend-action="query-collaboration"]')?.addEventListener('click', () => {
+      if (identity.getState().status !== 'authenticated') return
+      const sent = bridge?.queryPending() || 0
+      status(`已查询 ${sent} 项原协同更新；当前 ${bridge?.getState().status || '未连接'}`)
+    })
+    document.querySelector('[data-backend-action="query-business"]')?.addEventListener('click', () => void businessHost.query())
+    document.querySelector('[data-backend-action="restore-document"]')?.addEventListener('click', () => void businessHost.run({ action: 'delete', actorId: identity.getState().principalId, documentId: docId }))
+    if (new URLSearchParams(location.hash.slice(1)).has('handoff')) {
+      void receiveHttpDocumentHostIdentity().then(value => login(value.principalId, value.csrfToken)).catch(error => status(`无法恢复文档登录：${error.code || error.message}`))
+    }
+    window.addEventListener('pagehide', () => {
+      if (pageClosed) return
+      pageClosed = true; checkBridgeWaiters(); stopCapabilities?.(); businessHost.destroy(); documentHost.destroy()
+      new Set([bridge, ...isolatedBridges]).forEach(value => value?.destroy())
+      isolatedBridges.clear()
+    }, { once: true })
+    window.addEventListener('beforeunload', event => {
+      if (bridge?.getState().pending.length || businessHost?.pending.length || [...isolatedBridges].some(value => value.getState().pending.length)) { event.preventDefault(); event.returnValue = '' }
     })
   </script>
 </body>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>举报文档 · LarkDoc</title>
+  <style>body{margin:0;background:#fff;font:14px/22px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}#loading{margin:16px;color:#646a73}</style>
+</head>
+<body>
+  <p id="loading" role="status">正在确认文档权限…</p>
+  <script type="module">
+    import { createHttpIdentityProvider } from '../src/providers/identity.js'
+    import { createHttpAuthorizationProvider, createHttpDocumentHostProvider, receiveHttpDocumentHostIdentity, mountHttpDocumentReport } from '../dist/lark-doc-providers.mjs'
+    const params = new URL(location.href).searchParams, tenantId = params.get('tenantId'), docId = params.get('docId')
+    const valid = value => typeof value === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(value)
+    let ui, identity, provider, caps = { canView: false }, stopIdentity
+    const initialFragment = new URLSearchParams(location.hash.slice(1))
+    let originalOperationId = initialFragment.get('operationId') || '', originalRequestHash = initialFragment.get('requestHash') || ''
+    const loading = document.querySelector('#loading')
+    try {
+      if (!valid(tenantId) || !valid(docId)) throw new Error('文档参数无效')
+      identity = createHttpIdentityProvider({ tenantId, docId })
+      const common = { tenantId, docId, csrfToken: () => identity.getCsrfToken(), getCapabilities: () => caps }
+      const authorization = createHttpAuthorizationProvider(common)
+      const handoff = await receiveHttpDocumentHostIdentity()
+      const resumed = await identity.resumeCurrentSession({ csrfToken: handoff.csrfToken })
+      if (resumed.principalId !== handoff.principalId) throw new Error('HOST_CONTEXT_CHANGED')
+      const owner = identity.getState()
+      caps = await authorization.getCapabilities()
+      if (!caps.canView) throw new Error('当前文档不可见')
+      provider = createHttpDocumentHostProvider({ ...common, getIdentityState: () => identity.getState(), onPending: ({ operationId }) => {
+        originalOperationId = operationId; originalRequestHash = ''
+        const next = new URL(location.href); const fragment = new URLSearchParams(next.hash.slice(1)); fragment.set('operationId', operationId); next.hash = fragment.toString(); history.replaceState(null, '', next)
+      } })
+      const original = initialFragment
+      if (original.has('operationId')) provider.resumeReport({ operationId: original.get('operationId'), ...(original.has('requestHash') ? { requestHash: original.get('requestHash') } : {}) })
+      const clearOperation = () => { originalOperationId = ''; const next = new URL(location.href); const fragment = new URLSearchParams(next.hash.slice(1)); fragment.delete('operationId'); fragment.delete('requestHash'); next.hash = fragment.toString(); history.replaceState(null, '', next) }
+      ui = await mountHttpDocumentReport({ provider, initialReason: params.get('reason') || '', onReason: reason => {
+        const next = new URL(location.href); if (reason) next.searchParams.set('reason', reason); else next.searchParams.delete('reason'); history.pushState(null, '', next)
+      }, onReceipt: clearOperation, onRejected: clearOperation, onDone: () => window.close() })
+      loading.remove()
+      stopIdentity = identity.subscribe(value => { if (value.status !== 'authenticated' || value.principalId !== owner.principalId || value.generation !== owner.generation) { caps = { canView: false }; provider.reset(); ui.setUnavailable() } })
+      const onHistory = () => {
+        // SPA 后退不触发 beforeunload；未知提交仍须沿原 ID 查询，刷新也不能变成新举报。
+        if (originalOperationId) {
+          const next = new URL(location.href), fragment = new URLSearchParams(next.hash.slice(1))
+          fragment.set('operationId', originalOperationId)
+          if (originalRequestHash) fragment.set('requestHash', originalRequestHash); else fragment.delete('requestHash')
+          next.hash = fragment.toString(); history.replaceState(null, '', next)
+          return
+        }
+        ui.setReason(new URL(location.href).searchParams.get('reason') || '')
+      }
+      window.addEventListener('popstate', onHistory)
+      if (originalOperationId) onHistory()
+      window.addEventListener('pagehide', () => { window.removeEventListener('popstate', onHistory); stopIdentity?.(); ui.destroy(); provider.destroy(); identity.dispose() }, { once: true })
+    } catch (error) { stopIdentity?.(); ui?.destroy(); provider?.destroy(); identity?.dispose(); loading.textContent = '无法打开举报页，请返回原文档确认登录和权限，再重新确认。'; loading.dataset.code = error.code || error.message; const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '重新确认登录'; retry.addEventListener('click', () => location.reload()); loading.after(retry) }
+  </script>
+</body>
+</html>

@@ -126,6 +126,8 @@ const ALIGN_ITEMS = [
 ]
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -487,7 +489,7 @@ const cellDragPoints = () => {
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -511,6 +513,51 @@ const cellDragPoints = () => {
     return !!(h && typeof h.getEditor === 'function' && h.getEditor())
   }, null, { timeout: 20000 })
   await setDoc(page)
+
+  if (process.argv.includes('--selection-only')) {
+    await page.evaluate(html => window.__larkDoc.setContent(html), TABLE_MULTI)
+    const points = await page.evaluate(cellDragPoints)
+    for (const point of points) {
+      await page.mouse.move(point.x, point.y)
+      await page.waitForTimeout(100)
+      const hit = await page.evaluate(points => points.every(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('td,th')), points)
+      record('[句柄命中回归] 悬停' + point.text + '后两格正文均不被句柄遮挡', hit)
+    }
+    const geo = await page.evaluate(tableGeometry)
+    await page.mouse.click(points[0].x, points[0].y)
+    await page.mouse.move(points[0].x, points[0].y)
+    await page.mouse.down()
+    await page.mouse.move(points[1].x, points[1].y, { steps: 10 })
+    await page.mouse.up()
+    await page.waitForTimeout(360)
+    const selection = await page.evaluate(() => ({ type: window.__larkDoc.getEditor().state.selection.toJSON().type, cells: document.querySelectorAll('.selectedCell').length }))
+    record('[句柄命中回归] 真鼠标跨格拖选产生两个单元格选区', selection.type === 'cell' && selection.cells === 2, JSON.stringify(selection))
+    const multi = await page.evaluate(measureToolbar)
+    record('[句柄命中回归] 跨格拖选显示多格工具条', JSON.stringify(multi.node?.cmds) === JSON.stringify(EXPECTED_CMDS_E))
+    const line = await openCellSelection(page, geo, 'row', 0)
+    record('[句柄命中回归] 点击行选择条显示整行工具条', JSON.stringify(line.node?.cmds) === JSON.stringify(EXPECTED_CMDS_B))
+    await page.mouse.click(points[0].x, points[0].y)
+    const ink = await page.locator('.ProseMirror td p').first().evaluate(node => {
+      const range = document.createRange(); range.selectNodeContents(node)
+      const box = range.getBoundingClientRect()
+      return { left: box.left, right: box.right, y: (box.top + box.bottom) / 2 }
+    })
+    await page.mouse.move(ink.left + 1, ink.y); await page.mouse.down()
+    await page.mouse.move(ink.right - 1, ink.y, { steps: 8 }); await page.mouse.up()
+    await page.waitForTimeout(300)
+    const nativeText = await page.evaluate(() => {
+      const editor = window.__larkDoc.getEditor(), { from, to } = editor.state.selection
+      return editor.state.doc.textBetween(from, to)
+    })
+    record('[句柄命中回归] 真鼠标在格内划选两字保持原生文字选区', nativeText === '甲一', nativeText)
+    const text = await page.evaluate(measureToolbar)
+    record('[句柄命中回归] 再点正文划选能从整行切回文字工具条', JSON.stringify(text.node?.cmds) === JSON.stringify(EXPECTED_CMDS_A))
+    record('[句柄命中回归] 无浏览器错误', errors.length === 0, errors.join(' | '))
+    await browser.close()
+    console.log(`RESULT ${results.filter(result => result.ok).length}/${results.length}`)
+    process.exitCode = results.every(result => result.ok) ? 0 : 1
+    return
+  }
 
   // ═════════════ ① 唯一浮窗：默认不常驻 / 折叠光标不显示 ═════════════
   let snap = await page.evaluate(measureToolbar)

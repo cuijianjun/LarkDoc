@@ -13,61 +13,37 @@
  */
 import { EMOJI_DATA } from './data'
 
-// 顺序 = 面板 tab 顺序，必须与 `data.js` 的键顺序、`build-emoji-catalog.js` 的 `GROUPS` 一致。
-// 组名取自 emojibase 的 `zh/messages.json`，其中 4 个原文是繁体（食物飲料 / 旅遊地點 / …），
-// 这里统一成简体 —— tab 上简体繁体混排会显得像没做完。
-const EMOJI_GROUP_META = [
-  { key: 'smileys', label: '笑脸' },
-  { key: 'people', label: '人体' },
-  { key: 'nature', label: '野生动物' },
-  { key: 'food', label: '食物饮料' },
-  { key: 'travel', label: '旅游地点' },
-  { key: 'activity', label: '个人活动' },
-  { key: 'objects', label: '物件' },
-  { key: 'symbols', label: '人的符号' },
-  { key: 'flags', label: '旗帜' },
-]
+import {
+  EMOJI_GROUP_META, EMOJI_NAME_MAX, LEGACY_EMOJI_NAMES,
+  normalizeEmojiName, normalizeEmojiGlyph, isEmojiGlyph,
+} from './identity'
 
-const EMOJI_NAME_MAX = 64
-// VS16（U+FE0F）只是「按 emoji 方式渲染」的修饰符，不带它同样是一个图形字符。
-// 历史数据两种都存过（`❤️` 带、`✅` 不带），所以比对时统一剥掉，**写入时保留原样**。
-const VARIATION_SELECTOR = /\uFE0F/g
-
-// 0.11 及以前落库的 `name` 用的是旧的 11 个短名。其中 4 个已不是 emojibase 的主名
-// （📌=`pushpin`、✅=`white_check_mark`、💬=`speech_balloon`、🎯=`dart`），
-// 不兜住就会把老文档里的图标渲染成 `:pin:` 这样的纯文本。**只读兼容，不进面板**。
-const LEGACY_EMOJI_NAMES = { pin: '📌', check: '✅', comment: '💬', target: '🎯' }
-
-/** 归一化表情名字：去首尾冒号 + 小写 + 截 64 字符。非字符串返回空串。 */
-function normalizeEmojiName(value) {
-  if (typeof value !== 'string') return ''
-  return value.replace(/^:+|:+$/g, '').trim().toLowerCase().slice(0, EMOJI_NAME_MAX)
-}
-
-/** 只用于比对的字形归一化（剥掉 VS16）。 */
-function normalizeEmojiGlyph(value) {
-  return typeof value === 'string' ? value.replace(VARIATION_SELECTOR, '') : ''
-}
-
-// 面板要的扁平列表：`{ value(英文主名), label(中文名), glyph, category(组中文名) }`，
-// 唯一的消费方是高亮块的 emoji 面板（02 §16：飞书没有别的表情入口）。
-const emojiItems = []
-const emojiByGlyph = Object.create(null)
-const emojiByName = Object.create(null)
-
-EMOJI_GROUP_META.forEach((group) => {
-  const rows = EMOJI_DATA[group.key] || []
-  rows.forEach((row) => {
-    const item = { value: row[2], label: row[1], glyph: row[0], category: group.label }
-    emojiItems.push(item)
-    // 同字形/同名只认第一条：emojibase 的短名偶尔被两个码位共用，以分组靠前者为准。
-    if (!emojiByGlyph[normalizeEmojiGlyph(item.glyph)]) emojiByGlyph[normalizeEmojiGlyph(item.glyph)] = item
-    if (!emojiByName[item.value]) emojiByName[item.value] = item
+// Public UI records retain the original full, synchronous catalog shape.
+// Only new local arrays/maps are written; generated identity and label tables stay intact.
+function createCatalogIndex() {
+  const items = []
+  const byGlyph = Object.create(null)
+  const byName = Object.create(null)
+  EMOJI_GROUP_META.forEach((group) => {
+    const rows = EMOJI_DATA[group.key] || []
+    rows.forEach((row) => {
+      const item = { value: row[2], label: row[1], glyph: row[0], category: group.label }
+      items.push(item)
+      // 同字形/同名只认第一条：emojibase 的短名偶尔被两个码位共用，以分组靠前者为准。
+      if (!byGlyph[normalizeEmojiGlyph(item.glyph)]) byGlyph[normalizeEmojiGlyph(item.glyph)] = item
+      if (!byName[item.value]) byName[item.value] = item
+    })
   })
-})
+  return { items, byGlyph, byName }
+}
+
+const catalogIndex = /*#__PURE__*/ createCatalogIndex()
+const emojiItems = catalogIndex.items
+const emojiByGlyph = catalogIndex.byGlyph
+const emojiByName = catalogIndex.byName
 
 /** 面板分类 tab（按组顺序，不含「最近 / 全部」两个固定项）。 */
-const emojiCategories = EMOJI_GROUP_META.map((group) => group.label)
+const emojiCategories = /*#__PURE__*/ EMOJI_GROUP_META.map((group) => group.label)
 
 /** 按名字取条目；查不到返回 null（调用方决定回退文案）。 */
 function findEmojiByName(name) {
@@ -83,11 +59,6 @@ function findEmojiByName(name) {
 function findEmojiByGlyph(glyph) {
   const key = normalizeEmojiGlyph(glyph)
   return key ? emojiByGlyph[key] || null : null
-}
-
-/** 字形是否是一个已知表情 —— 高亮块图标的唯一白名单判断（12 个硬编码已扩到全量）。 */
-function isEmojiGlyph(value) {
-  return !!findEmojiByGlyph(value)
 }
 
 /**

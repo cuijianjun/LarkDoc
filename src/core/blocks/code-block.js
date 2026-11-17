@@ -15,6 +15,20 @@ function codeExtension(config) {
   return CodeBlock.extend({
     // Source code accepts revision suggestions, while ordinary formatting stays disabled.
     marks: 'revision',
+    addKeyboardShortcuts() {
+      return {
+        ...this.parent?.(),
+        'Mod-a': () => {
+          const { $from, $to } = this.editor.state.selection
+          if (!this.editor.isEditable || !$from.sameParent($to) || $from.parent.type.name !== this.name) return false
+          const from = $from.start(), to = $from.end()
+          // A second select-all can expand to the document; an empty source
+          // stays scoped so replacing it cannot remove neighbouring blocks.
+          if (from !== to && $from.pos === from && $to.pos === to) return false
+          return this.editor.commands.setTextSelection({ from, to })
+        },
+      }
+    },
     addAttributes() {
       return {
         language: { default: 'plaintext', parseHTML: (el) => el.getAttribute('data-language') || Array.from(el.firstElementChild?.classList || []).find((name) => name.startsWith('language-'))?.slice(9) || 'plaintext', renderHTML: ({ language }) => ({ 'data-language': /^[\w+-]{0,32}$/.test(language) ? language : 'plaintext' }) },

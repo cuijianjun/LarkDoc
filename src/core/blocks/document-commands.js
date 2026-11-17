@@ -51,13 +51,13 @@ export function createDocumentCommands() {
       return true
     },
     // 给缺号/重号的块补 blockId（初始化与 setContent 后由宿主显式调用一次）。
-    ensureLarkDocBlockIds: () => ({ tr, dispatch }) => {
+    ensureLarkDocBlockIds: () => ({ tr, dispatch, editor }) => {
       if (!dispatch) return collectBlockIdFixes(tr.doc).length > 0
-      return applyBlockIdFixes(tr)
+      return applyBlockIdFixes(tr, undefined, { batch: editor?.storage?.larkDoc?.deferNormalization !== false })
     },
-    normalizeLarkDocIndents: () => ({ tr, dispatch }) => {
+    normalizeLarkDocIndents: () => ({ tr, dispatch, editor }) => {
       if (!dispatch) return collectIndentFixes(tr.doc).length > 0
-      return applyIndentFixes(tr)
+      return applyIndentFixes(tr, undefined, { batch: editor?.storage?.larkDoc?.deferNormalization !== false })
     },
     /**
      * 标题编号的唯一写入口。`patch` 只带需要改的字段：

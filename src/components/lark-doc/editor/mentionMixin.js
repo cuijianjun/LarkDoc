@@ -31,6 +31,46 @@ const PANEL_WIDTH = 362
 const PANEL_MIN_HEIGHT = 168
 const PANEL_GAP = 6
 const VIEWPORT_MARGIN = 8
+const REMOTE_ID = /^[A-Za-z0-9._-]{1,128}(?![\s\S])/
+const REMOTE_DECIMAL = /^(0|[1-9][0-9]*)(?![\s\S])/
+
+function remoteCandidate(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !['user', 'page'].includes(value.kind)) return null
+  const id = value.kind === 'page' ? value.docId : value.principalId
+  if (typeof id !== 'string' || !REMOTE_ID.test(id) || typeof value.displayName !== 'string' || !value.displayName.trim() ||
+    value.displayName.length > (value.kind === 'page' ? 255 : 64) || /\p{Cc}/u.test(value.displayName)) return null
+  return { kind: value.kind, id, name: value.displayName }
+}
+
+function remoteResolution(result, kinds, provider, session) {
+  if (!result || typeof result !== 'object' || Array.isArray(result) || result.status !== 'resolved' ||
+    ['operationId', 'tenantId', 'docId', 'sourceEpoch', 'sourceSeq', 'requestHash'].some(field => typeof result[field] !== 'string') || !REMOTE_ID.test(result.operationId) ||
+    !/^sha256:[a-f0-9]{64}(?![\s\S])/.test(result.requestHash) || !REMOTE_ID.test(result.tenantId) || !REMOTE_ID.test(result.docId) ||
+    !REMOTE_DECIMAL.test(result.sourceEpoch) || !REMOTE_DECIMAL.test(result.sourceSeq) || result.persisted !== true ||
+    result.notified !== false || result.shared !== false || !Array.isArray(result.candidates) || result.candidates.length > MENTION_SEARCH_LIMIT) return null
+  const scope = provider.getScope?.()
+  if (scope && (scope.tenantId !== result.tenantId || scope.docId !== result.docId) || session.documentId && session.documentId !== result.docId) return null
+  const seen = new Set()
+  for (const value of result.candidates) {
+    const item = remoteCandidate(value), key = item && `${item.kind}:${item.id}`
+    if (!item || !kinds.includes(item.kind) || seen.has(key)) return null
+    seen.add(key)
+  }
+  return Object.freeze({ ...result, candidates: Object.freeze(result.candidates.map(value => Object.freeze({ ...value }))) })
+}
+
+function insertMention(editor, range, attrs, focus = false) {
+  const managers = editor.state.plugins.map(plugin => plugin.getState(editor.state)?.undoManager).filter(Boolean)
+  managers.forEach(manager => manager.stopCapturing())
+  try {
+    let chain = editor.chain()
+    if (focus) chain = chain.focus()
+    return chain.command(({ tr }) => { closeHistory(tr); return true }).deleteRange(range).setMention(attrs).run()
+  } finally {
+    editor.view.dispatch(closeHistory(editor.state.tr))
+    managers.forEach(manager => manager.stopCapturing())
+  }
+}
 
 export default {
   data() {
@@ -58,13 +98,6 @@ export default {
       return Boolean(provider && provider.isRemote && typeof provider.resolveMentions === 'function')
     },
   },
-  watch: {
-    mentionSource(value) {
-      this._mentionToken += 1
-      this._mentionProvider = createMentionProvider(value)
-      if (this.mentionOpen) this.refreshMentionItems()
-    },
-  },
   created() {
     // provider 只建一次：宿主传函数时每次访问都会新包一层 timeout 计时器。
     this._mentionProvider = createMentionProvider(this.mentionSource)
@@ -75,22 +108,51 @@ export default {
     this.bindMentionCapabilities()
   },
   watch: {
-    effectiveReadonly(value) { if (value && this.mentionRemote) this.closeMentionPanel() },
+    mentionSource(value) {
+      this._mentionToken += 1
+      this._mentionProvider = createMentionProvider(value)
+      if (this.mentionOpen) this.refreshMentionItems()
+    },
+    effectiveReadonly(value) { if (value) this.closeMentionPanel() },
     session() { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = ''; this.bindMentionCapabilities() },
-    'session.user.id'(value, prior) { if (value !== prior && this.mentionRemote) { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = '' } },
+    'session.user.id'(value, prior) { if (value !== prior) { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = '' } },
   },
   beforeDestroy() {
     this._mentionDisposed = true; this._mentionToken++
     if (this._mentionStopCapabilities) this._mentionStopCapabilities()
   },
   methods: {
+    mentionIsMobile() {
+      return this._mobileEditorMedia?.matches ?? this._mentionMedia?.matches
+        ?? (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px) and (pointer: coarse)')?.matches === true)
+    },
     mentionAuthorization() { return this.session && typeof this.session.getProvider === 'function' ? this.session.getProvider('authorization') : null },
+    remoteMentionContext() {
+      const session = this.session, provider = this.mentionAuthorization(), editor = this.editor, user = session?.user, actor = user?.id
+      const doc = editor?.state?.doc
+      const documentId = session?.documentId, identity = session?._privateIdentityGeneration, identityGeneration = session?._identityGeneration
+      const authorization = session?._authorizationGeneration
+      const owner = () => !this._mentionDisposed && !this._isDestroyed && !this._isBeingDestroyed && !session?._destroyed &&
+        session === this.session && provider === this.mentionAuthorization() && editor === this.editor && !editor?.isDestroyed && user === session?.user &&
+        actor === session?.user?.id && documentId === session?.documentId && identity === session?._privateIdentityGeneration && identityGeneration === session?._identityGeneration
+      return { provider, session, owner, current: () => owner() && doc === editor?.state?.doc && authorization === session?._authorizationGeneration && session.can('canView') }
+    },
     bindMentionCapabilities() {
       if (this._mentionStopCapabilities) this._mentionStopCapabilities()
       const session = this.session
-      this._mentionStopCapabilities = session && typeof session.on === 'function' ? session.on('capabilities', () => {
+      const stops = []
+      const context = this.remoteMentionContext()
+      const capabilityStop = session && typeof session.on === 'function' ? session.on('capabilities', () => {
         if (session === this.session && (this.mentionRemote || !session.can('canView'))) this.closeMentionPanel()
       }) : null
+      if (typeof capabilityStop === 'function') stops.push(capabilityStop)
+      for (const name of ['identity', 'provider-changed']) {
+        const stop = session?.on?.(name, () => {
+          if (!context.owner()) { this.closeMentionPanel(); this.mentionPendingOperation = ''; this._mentionPendingOwner = null }
+        })
+        if (typeof stop === 'function') stops.push(stop)
+      }
+      this._mentionStopCapabilities = () => stops.forEach(stop => stop())
     },
     /**
      * 文档插件每帧回调（同 `onSlash` 口径）。`match === null` = `@` 上下文已消失
@@ -103,6 +165,7 @@ export default {
         return
       }
       const wasOpen = this.mentionOpen
+      if (this.mentionIsMobile() && this.mentionKind === 'all') this.mentionKind = 'user'
       if (!wasOpen && this.mentionRemote) this.mentionNotify = false
       // 面板与斜杠菜单互斥：`@` 是独立入口，两者同时开会抢同一组 ↑↓/Enter。
       if (!wasOpen && this.menuOpen) this.closeCommandMenu()
@@ -124,47 +187,65 @@ export default {
       const apply = (items) => {
         // 面板已关 / 已被更新的一次搜索顶掉 → 丢弃。
         if (token !== this._mentionToken || !this.mentionOpen) return
-        this.mentionItems = (Array.isArray(items) ? items : []).slice(0, MENTION_SEARCH_LIMIT)
+        this.mentionItems = (Array.isArray(items) ? items : []).filter(item => kind === 'all' || item?.kind === kind).slice(0, MENTION_SEARCH_LIMIT)
         if (this.mentionActiveIndex >= this.mentionItems.length) this.mentionActiveIndex = 0
         this.mentionLoading = false
         this.$nextTick(() => this.positionMentionPanel())
       }
       if (this.mentionRemote) {
-        const session = this.session, authorization = this.mentionAuthorization(), identity = session && session.user && session.user.id
-        const current = () => !this._mentionDisposed && token === this._mentionToken && this.mentionOpen && session === this.session &&
-          authorization === this.mentionAuthorization() && identity === (session && session.user && session.user.id) && session.can('canView')
+        const context = this.remoteMentionContext(), { session } = context
+        const current = () => token === this._mentionToken && this.mentionOpen && context.current()
         this.mentionItems = []; this.mentionRequestState = null
+        if (!['all', 'user', 'page'].includes(kind)) {
+          this.mentionLoading = false
+          this.mentionMessage = `${kind === 'page' ? '云文档' : '群名片'}候选服务尚未提供，当前不可用。`
+          return
+        }
+        if (this._mentionPendingOwner && !this._mentionPendingOwner()) { this.mentionPendingOperation = ''; this._mentionPendingOwner = null }
         if (this.mentionPendingOperation) { this.mentionLoading = false; this.mentionMessage = '请查询原目录请求。'; return }
-        this.mentionLoading = true; this.mentionMessage = '查询人员中。'
-        session.resolveMentions({ query }).then(result => {
+        const kinds = kind === 'all' ? ['user', 'page'] : [kind]
+        this.mentionLoading = true; this.mentionMessage = kind === 'page' ? '查询云文档中。' : '查询候选中。'
+        session.resolveMentions({ query, kinds }).then(result => {
           if (!current()) return
-          this.applyRemoteMentionResult(result); this.mentionLoading = false
+          this.applyRemoteMentionResult(result, kinds, context); this.mentionLoading = false
           this.$nextTick(() => this.positionMentionPanel())
         }).catch(error => {
           if (!current()) return
           this.mentionLoading = false
-          if (error.status === 'unknown' && error.operationId) this.mentionPendingOperation = error.operationId
+          if (error.status === 'unknown' && error.operationId) { this.mentionPendingOperation = error.operationId; this._mentionPendingOwner = context.owner; this._mentionPendingKinds = kinds }
           this.mentionMessage = error.status === 'unknown' ? '目录未确认，请查询原请求。' : '目录未接通或来源有变，请重查。'
         })
         return
       }
+      this.mentionMessage = ''
       if (this._mentionProvider) {
         this.mentionLoading = true
-        this._mentionProvider.search(query, { kind }).then(apply)
+        this._mentionProvider.search(query, { kind }).then(apply).catch(() => {
+          if (token !== this._mentionToken || !this.mentionOpen) return
+          this.mentionItems = []; this.mentionLoading = false
+          this.mentionMessage = '候选加载失败，请重试。'
+        })
         return
       }
+      if (!Array.isArray(this.mentionSource)) this.mentionMessage = '尚未配置提及候选服务，当前不可用。'
       apply(searchMentionDirectory(this.mentionDirectory, query, kind, MENTION_SEARCH_LIMIT))
     },
-    applyRemoteMentionResult(result) {
-      this.mentionRequestState = result
-      this.mentionItems = result.status === 'resolved' && ['all', 'user'].includes(this.mentionKind)
-        ? result.candidates.slice(0, MENTION_SEARCH_LIMIT).map(value => ({ id: value.principalId, name: value.displayName, kind: 'user' })) : []
+    applyRemoteMentionResult(result, kinds, context = this.remoteMentionContext()) {
+      kinds ||= this.mentionKind === 'all' ? ['user', 'page'] : [this.mentionKind]
+      const confirmed = remoteResolution(result, kinds, context.provider, context.session)
+      this.mentionRequestState = confirmed || (result?.status !== 'resolved' ? result : null)
+      this._mentionResultCurrent = confirmed ? context.current : null
+      this._mentionResultKinds = kinds
+      this.mentionItems = confirmed ? confirmed.candidates.map(remoteCandidate).filter(item => this.mentionKind === 'all' || item.kind === this.mentionKind) : []
       this.mentionActiveIndex = 0
-      this.mentionMessage = result.status === 'resolved' ? '候选已确认；未发送通知或分享。'
+      this.mentionMessage = confirmed ? '候选已确认；未发送通知或分享。'
         : '目录未接通；未发送通知或分享。'
+      return confirmed
     },
     setMentionKind(kind) {
-      if (this.mentionKind === kind) return
+      if (this.mentionKind === kind || !MENTION_TABS.some(tab => tab.id === kind)) return
+      this.mentionItems = []
+      this.mentionRequestState = null
       this.mentionKind = kind
       this.mentionActiveIndex = 0
       this.refreshMentionItems()
@@ -178,19 +259,26 @@ export default {
     },
     async queryPendingMention() {
       if (!this.mentionPendingOperation || this.mentionLoading) return null
-      const id = this.mentionPendingOperation, token = ++this._mentionToken, session = this.session, authorization = this.mentionAuthorization()
-      const identity = session && session.user && session.user.id
-      const current = () => !this._mentionDisposed && token === this._mentionToken && this.mentionOpen && session === this.session &&
-        authorization === this.mentionAuthorization() && identity === (session && session.user && session.user.id) && session.can('canView')
+      if (this._mentionPendingOwner && !this._mentionPendingOwner()) { this.mentionPendingOperation = ''; this._mentionPendingOwner = null; return null }
+      const id = this.mentionPendingOperation, token = ++this._mentionToken, context = this.remoteMentionContext(), { session } = context
+      const current = () => token === this._mentionToken && this.mentionOpen && context.current()
       this.mentionLoading = true; this.mentionRequestState = null; this.mentionItems = []
       try {
         const result = await session.queryMentionResolution(id)
         if (!current()) return null
-        this.mentionPendingOperation = ''; this.applyRemoteMentionResult(result)
+        const kinds = this._mentionPendingKinds || (this.mentionKind === 'all' || this.mentionKind === 'chat' ? ['user', 'page'] : [this.mentionKind])
+        if (result?.operationId !== id || !this.applyRemoteMentionResult(result, kinds, context)) {
+          this.mentionMessage = '原请求尚未确认，请继续查询原请求。'; return null
+        }
+        this.mentionPendingOperation = ''; this._mentionPendingOwner = null; this._mentionPendingKinds = null
+        if (this.mentionKind === 'chat') this.mentionMessage = '群名片候选服务尚未提供，当前不可用。'
+        else if (!this.mentionItems.length && !kinds.includes(this.mentionKind)) this.mentionMessage = '原目录请求已确认，请重新查询当前分类。'
         return result
       } catch (error) {
         if (current()) {
-          if (error.code === 'MENTION_SOURCE_CONFLICT') this.mentionPendingOperation = ''
+          if (error.code === 'MENTION_SOURCE_CONFLICT' && (error.httpStatus === 409 || error.status === 409)) {
+            this.mentionPendingOperation = ''; this._mentionPendingOwner = null; this._mentionPendingKinds = null
+          }
           this.mentionMessage = '原请求不可用；未通知或分享。'
         }
         return null
@@ -227,29 +315,26 @@ export default {
         notify: entry.kind === 'user' && !!this.mentionNotify,
       }
       this.closeMentionPanel()
-      const editor = this.editor
-      const managers = editor.state.plugins.map(plugin => plugin.getState(editor.state)?.undoManager).filter(Boolean)
-      managers.forEach(manager => manager.stopCapturing())
       // 走 `setMention` 而不是裸 `insertContent`：`mentionId` 由 `normalizeMention`
       // 当场补齐（缺失时造一个 UUID），直接 insertContent 会漏掉这个文档内实例 id。
-      editor.chain().focus().command(({ tr }) => { closeHistory(tr); return true }).deleteRange(range).setMention(attrs).run()
-      editor.view.dispatch(closeHistory(editor.state.tr))
-      managers.forEach(manager => manager.stopCapturing())
+      return insertMention(this.editor, range, attrs, true)
     },
     async chooseRemoteMention(item) {
       const entry = item || this.mentionItems[this.mentionActiveIndex], resolution = this.mentionRequestState
       const editor = this.editor, session = this.session, authorization = this.mentionAuthorization(), range = this.mentionRange
       if (this.mentionLoading || !resolution || resolution.status !== 'resolved' || !entry || !range || !editor ||
-        !this.mentionItems.some(value => value.id === entry.id) || !resolution.candidates.some(value => value.principalId === entry.id)) {
+        !this._mentionResultCurrent?.() || !this.mentionItems.some(value => value.id === entry.id && value.kind === entry.kind && value.name === entry.name) ||
+        !resolution.candidates.some(value => { const candidate = remoteCandidate(value); return candidate?.id === entry.id && candidate.kind === entry.kind })) {
         this.mentionMessage = '尚未验证真实提及目标，请重查。'; return null
       }
       const selection = editor.state && editor.state.selection, doc = editor.state && editor.state.doc
       if (!selection || !Number.isSafeInteger(selection.from) || !Number.isSafeInteger(selection.to)) return null
       const token = ++this._mentionToken, position = { from: range.from, to: range.to }, cursor = { from: selection.from, to: selection.to }
-      const principalId = entry.id, notify = this.mentionNotify === true, identity = session && session.user && session.user.id
+      const context = this.remoteMentionContext(), kinds = this._mentionResultKinds, identity = session && session.user && session.user.id
+      const notifyIntent = this.mentionNotify === true, notify = entry.kind === 'user' && notifyIntent, kind = this.mentionKind
       const current = () => !this._mentionDisposed && !this._isDestroyed && token === this._mentionToken && this.mentionOpen &&
         this.editor === editor && !editor.isDestroyed && session === this.session && authorization === this.mentionAuthorization() &&
-        identity === (this.session && this.session.user && this.session.user.id) && this.mentionNotify === notify &&
+        context.current() && identity === (this.session && this.session.user && this.session.user.id) && (this.mentionNotify === true) === notifyIntent && this.mentionKind === kind &&
         session.can('canView') && session.can('canEdit') && this.writable() && !this.effectiveReadonly && editor.isFocused === true &&
         editor.view && typeof editor.view.hasFocus === 'function' && editor.view.hasFocus() && editor.state.doc === doc &&
         editor.state.selection.from === cursor.from && editor.state.selection.to === cursor.to && this.mentionRange &&
@@ -257,20 +342,20 @@ export default {
       if (!current()) { this.mentionItems = []; this.mentionRequestState = null; return null }
       this.mentionLoading = true; this.mentionItems = []; this.mentionRequestState = null
       try {
-        const result = await session.queryMentionResolution(resolution.operationId)
+        const result = remoteResolution(await session.queryMentionResolution(resolution.operationId), kinds, authorization, session)
         if (!current()) return null
-        const target = result.status === 'resolved' && result.operationId === resolution.operationId && result.requestHash === resolution.requestHash &&
+        const target = result && result.operationId === resolution.operationId && result.requestHash === resolution.requestHash &&
           result.tenantId === resolution.tenantId && result.docId === resolution.docId &&
           result.sourceEpoch === resolution.sourceEpoch && result.sourceSeq === resolution.sourceSeq && result.persisted === true &&
-          result.notified === false && result.shared === false && result.candidates.find(value => value.principalId === principalId && value.kind === 'user')
+          result.notified === false && result.shared === false && result.candidates.map(remoteCandidate).find(value => value.id === entry.id && value.kind === entry.kind)
         if (!target) { this.mentionMessage = '候选已失效，请重查。'; return null }
         this.closeMentionPanel()
-        const inserted = editor.chain().deleteRange(position).setMention({ id: target.principalId, name: target.displayName, kind: 'user', notify }).run()
+        const inserted = insertMention(editor, position, { id: target.id, name: target.name, kind: target.kind, notify })
         this.mentionMessage = inserted ? (notify ? '已插入；等待正文确认与通知处理，未分享。' : '已插入；未请求通知，未分享。') : '提及未插入，请重新查询。'
         return inserted
       } catch (error) {
         if (current()) {
-          if (error.status === 'unknown') this.mentionPendingOperation = resolution.operationId
+          if (error.status === 'unknown') { this.mentionPendingOperation = resolution.operationId; this._mentionPendingOwner = context.owner; this._mentionPendingKinds = kinds }
           this.mentionMessage = '目标或来源未确认，请查原请求。'
         }
         return null
@@ -288,6 +373,7 @@ export default {
       this.mentionLoading = false
       this.mentionStyle = {}
       this.mentionRequestState = null
+      this._mentionResultCurrent = null
     },
     /** 面板固定定位：默认贴 `@` 下方 6px，下方放不下且上方更宽裕时翻到上方。 */
     mentionStyleAt(pos) {

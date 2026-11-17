@@ -3,11 +3,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDomRenderer } from '../../src/mount/domRenderer'
 import { createExtendedOverlays } from '../../src/ui/extendedOverlays'
-import { LINK_HOVER_DELAY, LINK_VIEW_MODES } from '../../src/components/lark-doc/editor/linkHoverMixin'
+import { LINK_VIEW_MODES } from '../../src/components/lark-doc/editor/linkHoverMixin'
 import { TOPBAR_MORE_ITEMS, TOPBAR_MORE_SUBPANELS } from '../../src/components/lark-doc/editor/topbarMoreMixin'
 import { CREATE_MENU_ROWS } from '../../src/components/lark-doc/editor/createMenuMixin'
 import { requestCodeLangPicker } from '../../src/components/lark-doc/editor/codeLangSignal'
 import { registerExternalProvider, resetExternalProviders } from '../../src/core/embed/provider-registry'
+
+// jsdom 不提供 Range 布局几何；`editor.commands.focus()` 走 scrollToSelection 时会读它。
+const zeroRect = () => ({ left: 0, right: 1, top: 0, bottom: 1, width: 1, height: 1 })
+Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [zeroRect()] })
+Object.defineProperty(Range.prototype, 'getBoundingClientRect', { configurable: true, value: zeroRect })
 
 const cleanups = []
 function mount(props = {}, on = {}) {
@@ -71,7 +76,18 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
       await tick()
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"]')).toHaveLength(23)
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(8)
-      root.querySelector(`[data-topbar-more-id="${item.id}"]`).click()
+      const row = root.querySelector(`[data-topbar-more-id="${item.id}"]`)
+      // 历史评论等项受运行时能力门控（远端评论服务 + canView），门控关闭时不派发动作。
+      if (row.disabled) {
+        expect(row.getAttribute('aria-disabled')).toBe('true')
+        row.click()
+        await tick()
+        expect(action).not.toHaveBeenLastCalledWith(item.action, expect.objectContaining({ id: item.id }))
+        vm.closeTopbarMore()
+        await tick()
+        continue
+      }
+      row.click()
       await tick()
       if (item.kind !== 'submenu') {
         expect(action).toHaveBeenLastCalledWith(item.action, expect.objectContaining({ id: item.id }))
@@ -176,48 +192,84 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     expect(root.querySelector('[data-topbar-more-id="delete"]').disabled).toBe(true)
   })
 
-  it('链接延迟悬浮、全部视图、编辑删除与更多动作保持接线', async () => {
-    vi.useFakeTimers()
-    const view = vi.fn()
-    const more = vi.fn()
-    const { vm, root, tick } = mount({ initialContent: '<p><a href="https://example.com">链接文案</a></p>' }, { 'link-view': view, 'link-more': more })
-    const anchor = root.querySelector('.ProseMirror a')
-    anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    await vi.advanceTimersByTimeAsync(LINK_HOVER_DELAY - 1)
-    expect(vm.linkHoverOpen).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
-    await tick()
-    const card = root.querySelector('.lark-doc-link-hover-card')
-    expect(card.querySelector('a').textContent).toBe('链接文案')
-    expect(card.querySelector('a').rel).toBe('noopener noreferrer')
-    for (const mode of LINK_VIEW_MODES) {
-      card.querySelector('[data-name="link-to-title"]').click()
+  it('统一链接工具通过真实视图、复制、编辑删除与只读保护保持接线', async () => {
+    const href = `${window.location.origin}/native-link-views`
+    const { vm, root, tick } = mount({ initialContent: `<p data-block-id="native-link">前文<a href="${href}">链接文案</a>后文</p>` })
+    const openTools = async () => {
+      const target = root.querySelector('.ProseMirror [data-type="bookmark"], .ProseMirror [data-type="link-embed"], .ProseMirror a')
+      expect(target).toBeTruthy()
+      target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
       await tick()
-      const row = [...card.querySelectorAll('[role="menuitemradio"]')].find(item => item.textContent === mode.label)
+      const tools = root.querySelector('.lark-doc-link-tools')
+      expect(tools).toBeTruthy()
+      expect(root.querySelectorAll('.lark-doc-link-tools')).toHaveLength(1)
+      expect(root.querySelector('.lark-doc-link-hover-card')).toBeNull()
+      return tools
+    }
+    let tools = await openTools()
+    expect(tools.querySelector('a').textContent).toBe(href)
+    expect(tools.querySelector('a').rel).toBe('noopener noreferrer')
+    for (const mode of [...LINK_VIEW_MODES, { id: 'title' }]) {
+      tools.querySelector('.lark-doc-link-view-trigger').click()
+      const row = tools.querySelector(`[data-view="${mode.id}"]`)
+      expect(row.hidden).toBe(false)
       row.click()
       await tick()
-      expect(view).toHaveBeenLastCalledWith({ href: anchor.getAttribute('href'), view: mode.id })
-      expect(card.querySelector('.lark-doc-link-hover-view-text').textContent).toBe(mode.label)
+      const json = vm.editor.getJSON()
+      if (mode.id === 'card') expect(json.content.some(n => n.type === 'bookmark' && n.attrs.url === href)).toBe(true)
+      else if (mode.id === 'preview') expect(json.content.some(n => n.type === 'linkEmbed' && n.attrs.href === href && n.attrs.view === 'preview')).toBe(true)
+      else {
+        const links = []
+        vm.editor.state.doc.descendants(node => { links.push(...node.marks.filter(mark => mark.type.name === 'link')) })
+        expect(links.some(mark => mark.attrs.href === href && (mark.attrs.linkView || 'title') === mode.id)).toBe(true)
+      }
+      expect(vm.editor.getText()).toContain('前文')
+      expect(vm.editor.getText()).toContain('后文')
+      tools = await openTools()
     }
-    card.querySelector('[data-name="more"]').click()
-    expect(more).toHaveBeenCalledWith({ href: anchor.getAttribute('href') })
-    vm.openLinkHover(anchor)
+    const copy = vi.spyOn(vm, 'copyShareText').mockResolvedValue(true)
+    vi.spyOn(vm, 'shareDocumentLink').mockReturnValue('https://local.test/document')
+    for (const label of ['复制原始网页链接', '复制链接']) {
+      tools.querySelector('[aria-label="更多链接操作"]').click()
+      const row = [...tools.querySelectorAll('[role="menuitem"]')].find(e => e.textContent === label)
+      row.click()
+      await settle(vm)
+      if (label === '复制原始网页链接') expect(copy).toHaveBeenLastCalledWith(href)
+      else expect(copy.mock.calls.at(-1)[0]).toMatch(/^https:\/\/local\.test\/document#share-/)
+      tools = await openTools()
+    }
+    vm.setMode('read'); await tick(); tools = await openTools()
+    const readonly = vm.editor.getJSON()
+    for (const label of ['编辑链接', '移除链接']) {
+      const control = tools.querySelector(`[aria-label="${label}"]`)
+      expect(control.hidden).toBe(true)
+      control.click()
+    }
+    expect(vm.editor.getJSON()).toEqual(readonly)
+    press(tools, 'Escape'); await tick()
+    expect(root.querySelector('.lark-doc-link-tools')).toBeNull()
+    vm.setMode('edit'); await tick(); tools = await openTools()
+    const originalTitle = root.querySelector('.ProseMirror a').textContent
+    tools.querySelector('[aria-label="编辑链接"]').click()
+    // 链接对话框是惰性模块（dynamic import），需等首次加载完成后再断言。
+    await vi.waitFor(() => expect(root.querySelector('[aria-label="链接地址"]')).not.toBeNull())
+    const address = root.querySelector('[aria-label="链接地址"]'), title = root.querySelector('[aria-label="链接文本"]')
+    expect(address.value).toBe(href)
+    expect(title.value).toBe(originalTitle)
+    title.value = '已编辑链接'; title.dispatchEvent(new Event('input', { bubbles: true }))
+    address.value = `${href}-edited`; address.dispatchEvent(new Event('input', { bubbles: true }))
+    const confirm = root.querySelector('.lark-doc-link-dialog-apply')
+    expect(confirm.disabled).toBe(false)
+    confirm.click(); await tick()
+    expect(root.querySelector('.ProseMirror a').getAttribute('href')).toBe(`${href}-edited`)
+    expect(root.querySelector('.ProseMirror a').textContent).toBe('已编辑链接')
+    tools = await openTools()
+    const before = vm.editor.getJSON(), text = vm.editor.getText()
+    tools.querySelector('[aria-label="移除链接"]').click()
     await tick()
-    const open = vi.spyOn(vm, 'openLinkDialog').mockImplementation(() => {})
-    root.querySelector('[data-name="edit-link"]').click()
-    expect(open).toHaveBeenCalledWith(true)
-    expect(vm.linkValue).toBe(anchor.getAttribute('href'))
-    const run = vi.spyOn(vm, 'run').mockImplementation(() => true)
-    vm.openLinkHover(anchor)
-    await tick()
-    root.querySelector('[data-name="delete-link"]').click()
-    expect(run).toHaveBeenCalledWith('unsetLink')
-    vm.setMode('read')
-    vm.openLinkHover(anchor)
-    await tick()
-    expect(root.querySelector('[data-name="delete-link"]').disabled).toBe(true)
-    expect(press(root.querySelector('[data-name="edit-link"]'), 'Escape').defaultPrevented).toBe(true)
-    expect(vm.linkHoverOpen).toBe(false)
+    expect(root.querySelector('.ProseMirror a')).toBeNull()
+    expect(vm.editor.getText()).toBe(text)
+    expect(vm.editor.getJSON().content.map(n => n.attrs.blockId)).toEqual(before.content.map(n => n.attrs.blockId))
   })
 
   it('确认框完整保留勾选、回调、Promise、三条取消通路与卸载结算', async () => {

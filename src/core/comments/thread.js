@@ -20,6 +20,7 @@
  */
 
 import { isValidBlockId, normalizeAnchor, validateAnchor } from './anchor'
+import { normalizeCommentMetadata } from './mentions'
 
 /** 05 §5.5「Actor」的零值：字段齐、值为空，面板不必再判 undefined。 */
 export const ANONYMOUS_AUTHOR = Object.freeze({ id: '', name: '', avatarUrl: '', color: '' })
@@ -81,6 +82,8 @@ export function normalizeReply(raw) {
     createdAt: toTimestamp(raw.createdAt),
     editedAt: readEditedAt(raw),
   }
+  if (raw.richContent && typeof raw.richContent === 'object' && !Array.isArray(raw.richContent)) result.richContent = raw.richContent
+  else if (raw.content && typeof raw.content === 'object' && !Array.isArray(raw.content)) result.richContent = raw.content
   ;['replyRevision', 'deletedAt', 'tombstone', 'capabilities', 'reactions', 'attachments', 'mentions', 'references'].forEach(key => {
     if (Object.prototype.hasOwnProperty.call(raw, key)) result[key] = raw[key]
   })
@@ -166,17 +169,30 @@ export function buildReply(input, context) {
 export function buildThread(input, context) {
   const source = input || {}
   const options = context || {}
-  const blockId = text(source.blockId)
-  if (!isValidBlockId(blockId)) {
+  const documentOnly = source.scope === 'document'
+  if (documentOnly && (source.blockId != null || source.anchor != null)) throw new Error('全文评论不能包含选区锚点')
+  const blockId = documentOnly ? null : text(source.blockId)
+  if (!documentOnly && !isValidBlockId(blockId)) {
     throw new Error(`评论线程 blockId 不合法：${blockId || '(空)'}`)
   }
   const author = requiredAuthor(source.author)
   const content = requiredContent(source.content != null ? source.content : source.body, '首条评论')
-  const anchor = source.anchor == null
+  const anchor = documentOnly ? null : source.anchor == null
     ? { blockId, offset: 0, length: 0 }
     : { ...validateAnchor(source.anchor), blockId }
   const reply = buildReply({ author: source.author, content }, { id: options.replyId, now: options.now })
+  let documentFields = {}
+  if (documentOnly) {
+    const visibility = source.visibility === undefined ? 'document' : source.visibility
+    const participants = source.participants === undefined ? [] : source.participants
+    if (!['private', 'document'].includes(visibility) || !Array.isArray(participants) || participants.some(value => typeof value !== 'string' || !value.trim() || value !== value.trim())) throw new Error('全文评论可见范围无效')
+    const metadata = normalizeCommentMetadata(content, source.mentions || [], source.references || [])
+    if (source.mentions !== undefined) reply.mentions = metadata.mentions
+    if (source.references !== undefined) reply.references = metadata.references
+    documentFields = { scope: 'document', visibility, participants: [...participants] }
+  }
   return {
+    ...documentFields,
     id: text(options.id),
     blockId,
     anchor,

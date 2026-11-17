@@ -35,6 +35,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -78,10 +80,14 @@ const measureMenu = () => {
   }))
   const buttons = [...menu.querySelectorAll('.lark-doc-command-section > button')].map((button) => {
     const arrow = button.querySelector('.lark-doc-command-submenu-arrow')
+    const bounds = button.getBoundingClientRect()
     return {
       id: button.dataset.commandId,
+      category: button.closest('.lark-doc-command-section').dataset.category,
+      x: bounds.left, y: bounds.top, width: bounds.width,
       label: button.getAttribute('aria-label'),
       title: button.getAttribute('title'),
+      tooltipTitle: button.getAttribute('data-tooltip-title'),
       role: button.getAttribute('role'),
       tier: button.dataset.tier,
       disabled: button.disabled,
@@ -92,7 +98,7 @@ const measureMenu = () => {
       haspopup: button.getAttribute('aria-haspopup'),
       glyph: (button.querySelector('.lark-doc-command-icon') || {}).textContent || '',
       tone: (button.querySelector('.lark-doc-command-icon') || { className: '' }).className,
-      arrow: arrow ? { label: arrow.getAttribute('aria-label'), role: arrow.getAttribute('role'), tabindex: arrow.getAttribute('tabindex'), text: arrow.textContent, open: arrow.classList.contains('is-open') } : null,
+      arrow: arrow ? { label: arrow.getAttribute('aria-label'), role: arrow.getAttribute('role'), tabindex: arrow.getAttribute('tabindex'), svg: !!arrow.querySelector('svg'), open: arrow.classList.contains('is-open') } : null,
       minHeight: getComputedStyle(button).minHeight,
     }
   })
@@ -230,7 +236,7 @@ async function hoverSubmenuTrigger(page, label) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -270,8 +276,8 @@ async function hoverSubmenuTrigger(page, label) {
     !!slash && slash.sections.every((section) => section.label === section.category),
     slash ? slash.sections.filter((section) => section.label !== section.category).map((section) => `${section.category}/${section.label}`).join(' ') : '')
 
-  record('[斜杠] 共 57 项命令按钮（62 定义减4个二级分栏与历史块公式）',
-    !!slash && slash.buttons.length === 57,
+  record('[斜杠] 共 58 项命令按钮（63 定义减4个二级分栏与历史块公式）',
+    !!slash && slash.buttons.length === 58,
     slash ? `${slash.buttons.length} 项` : '')
 
   record('[斜杠] 每段至少一项、总和等于按钮总数',
@@ -291,20 +297,21 @@ async function hoverSubmenuTrigger(page, label) {
 
   // ——————————————————— ③ 斜杠菜单：skip 项 ———————————————————
   const slashSkips = slash ? slash.buttons.filter((button) => button.tier === 'skip') : []
-  record('[斜杠] skip 项：disabled + aria-disabled + title=需要企业版接入 + class is-skip，且不带 active',
+  record('[斜杠] skip 项：disabled + aria-disabled + tooltip=需要企业版接入 + class is-skip，且不带 active',
     slashSkips.length > 0 && slashSkips.every((button) => button.disabled === true
-      && button.ariaDisabled === 'true' && button.title === '需要企业版接入' && button.skip === true && button.active === false),
+      && button.ariaDisabled === 'true' && button.title === null && button.tooltipTitle === '需要企业版接入' && button.skip === true && button.active === false),
     `${slashSkips.length} 条 skip：${slashSkips.map((button) => button.id).join('/')}`)
 
-  record('[斜杠] 非 skip 项不带 aria-disabled / title 用自身文案',
-    !!slash && slash.buttons.filter((button) => button.tier !== 'skip').every((button) => button.ariaDisabled === null && button.title === button.label),
-    slash ? slash.buttons.filter((button) => button.tier !== 'skip' && (button.ariaDisabled !== null || button.title !== button.label)).map((button) => button.id).join(' ') : '')
+  record('[斜杠] 非 skip 项不带 aria-disabled / 富提示用自身文案',
+    !!slash && slash.buttons.filter((button) => button.tier !== 'skip').every((button) => button.ariaDisabled === null && button.title === null && button.tooltipTitle === button.label),
+    slash ? slash.buttons.filter((button) => button.tier !== 'skip' && (button.ariaDisabled !== null || button.title !== null || button.tooltipTitle !== button.label)).map((button) => button.id).join(' ') : '')
 
   // ——————————————————— ④ 斜杠菜单：子菜单箭头 ———————————————————
   const slashArrows = slash ? slash.buttons.filter((button) => button.arrow) : []
-  record('[斜杠] 只有分栏/模板类项带 `›` 箭头（role=button / tabindex=0 / aria-label=打开X子菜单）',
+  record('[斜杠] 图表/分栏/模板子菜单使用 SVG 箭头（role=button / tabindex=0 / aria-label=打开X子菜单）',
     slashArrows.length > 0 && slashArrows.every((button) => button.arrow.role === 'button'
-      && button.arrow.tabindex === '0' && /^打开.+子菜单$/.test(button.arrow.label) && button.arrow.text === '›'),
+      && button.arrow.tabindex === '0' && /^打开.+子菜单$/.test(button.arrow.label) && button.arrow.svg
+      && ['diagram', 'columns', 'template'].includes(button.id)),
     `${slashArrows.length} 条带箭头：${slashArrows.map((button) => `${button.id}=${button.arrow.label}`).join(' ')}`)
 
   record('[斜杠] 带箭头的项 aria-haspopup=menu，未展开时 aria-expanded=false',
@@ -380,13 +387,18 @@ async function hoverSubmenuTrigger(page, label) {
     !!plus && JSON.stringify(plus.sections.map((section) => section.category)) === JSON.stringify(['基础', '常用', '绘图']),
     plus ? plus.sections.map((section) => section.category).join('→') : '')
 
-  record('[plus] 共19个真实入口（任务与高亮块同时有基础快捷图标和常用行）',
-    !!plus && plus.buttons.length === 19,
+  record('[plus] 共20个真实入口（任务与高亮块同时有基础快捷图标和常用行）',
+    !!plus && plus.buttons.length === 20,
     plus ? `${plus.buttons.length} 项` : '')
 
   record('[plus] 基础快捷图标为6列，36px按钮',
     !!plus && plus.sections[0].columns === 6 && plus.buttons[0].minHeight === '36px',
     plus ? `列=${plus.sections[0].columns} minHeight=${plus.buttons[0].minHeight}` : '')
+
+  const secondRow = plus ? plus.buttons.filter(button => button.category === '基础').slice(6) : []
+  record('[plus] 不提供同步块时，第二排图标连续排列、不留中间空位',
+    secondRow.length === 5 && secondRow.every((button, index) => !index || Math.abs(button.x - secondRow[index - 1].x - secondRow[index - 1].width) < 1 && Math.abs(button.y - secondRow[index - 1].y) < 1),
+    secondRow.map(button => `${button.id}@${button.x}`).join(' / '))
 
   record('[plus] 搜索框自动聚焦（打开即可打字）',
     !!plus && plus.head.focused === true,
@@ -530,9 +542,10 @@ async function hoverSubmenuTrigger(page, label) {
   let cellPlusBox = await cellPlusGeometry(0)
   record('[表格] 首列插入按钮31×26、左距48px、垂直居中', cellPlusBox.width === 31 && cellPlusBox.height === 26 && Math.abs(cellPlusBox.offset - 48) < 0.1 && cellPlusBox.centre < 0.1, JSON.stringify(cellPlusBox))
   await clickCellText(1)
-  cellPlusBox = await cellPlusGeometry(1)
-  record('[表格] 后续列左距36px，真实点击可切回前一窄列', Math.abs(cellPlusBox.offset - 36) < 0.1, JSON.stringify(cellPlusBox))
+  await page.locator('[data-block-scope="cell"]').waitFor()
+  record('[表格] 非空单元格显示内容块与整表双句柄，空格才显示PLUS', await page.locator('[data-block-scope="cell"]').count() === 1 && await page.locator('[data-block-scope="table"]').count() === 1 && await page.locator('.lark-doc-cell-plus-btn').count() === 0)
   await clickCellText(0)
+  await page.locator('.lark-doc-cell-plus-btn').waitFor()
   await page.locator('.lark-doc-cell-plus-btn').click()
   record('[表格] 单元格PLUS保留公式，隐藏嵌套表格及模板入口',
     await page.locator('.lark-doc-command-menu [data-command-id="inlineMath"]').count() === 1
@@ -589,6 +602,28 @@ async function hoverSubmenuTrigger(page, label) {
   record('[模板库] 卡片插入保留原文并关闭库', await library.count() === 0 && (await page.locator('.tiptap').innerText()).includes('全年目标'))
   await page.keyboard.press('ControlOrMeta+z')
   record('[模板库] 卡片插入单次撤销完整恢复', await page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === JSON.stringify(before), beforeLibraryInsert))
+
+  await openPlusMenu(page)
+  await hoverSubmenuTrigger(page, '打开模板子菜单')
+  await page.locator('.lark-doc-command-section[data-category="常用"] [data-command-id="callout"]').hover()
+  record('[子菜单] 从模板移动到高亮块时立即关闭旧弹窗', await page.locator('.lark-doc-command-submenu').count() === 0)
+  for (const [id, icon, markdown] of [['code', 'CodeblockOutlined', '```'], ['divider', 'DividerOutlined', '--- 或 ***']]) {
+    const button = page.locator(`.lark-doc-command-menu [data-command-id="${id}"]`).first()
+    await button.hover()
+    const tip = page.getByRole('tooltip'); await tip.waitFor()
+    const box = await tip.boundingBox()
+    record(`[提示] ${id} 使用飞书SVG、快捷键和Markdown提示`, await button.locator(`svg[data-icon="${icon}"]`).count() === 1 && (await tip.innerText()).includes(markdown) && (await tip.innerText()).includes(' + ') && box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440)
+  }
+  await page.keyboard.press('Escape')
+  record('[提示] Esc关闭菜单和提示，无残留浮层', await page.locator('.lark-doc-command-menu,[role="tooltip"]').count() === 0)
+  const diagram = page.getByRole('button', { name: '图表', exact: true })
+  await diagram.hover(); await page.locator('.lark-doc-diagram-menu').waitFor()
+  const types = page.locator('.lark-doc-diagram-menu [role="menuitem"]')
+  for (const item of await types.all()) {
+    await item.hover(); const tip = page.getByRole('tooltip'); await tip.waitFor()
+    record(`[图表提示] ${await item.innerText()}`, await item.locator('svg').count() === 1 && (await tip.innerText()).includes(await item.innerText()))
+  }
+  await page.keyboard.press('Escape')
 
   // ——————————————————— ⑪ plus 菜单：键盘 + 点选 ———————————————————
   await openPlusMenu(page)

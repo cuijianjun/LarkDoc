@@ -8,6 +8,13 @@ const scripts = new Map()
 function loadScript(file) {
   if (scripts.has(file)) return scripts.get(file)
   const promise = new Promise((resolve, reject) => {
+    // Only the pure document group supports direct CommonJS consumers. Keep
+    // Module.require bound to this runtime's real adjacent output directory.
+    const nodeModule = file === 'lark-doc-element.umd.min.document.js' && typeof module === 'object' ? module : null
+    if (nodeModule && typeof nodeModule.require === 'function') {
+      Promise.resolve().then(() => nodeModule.require('./' + file)).then(resolve, error => { scripts.delete(file); reject(error) })
+      return
+    }
     if (!base || typeof document === 'undefined') {
       reject(new Error('Element特性包需要与主文件同目录静态托管；打包器宿主请使用lark-doc主入口'))
       return
@@ -24,7 +31,7 @@ function loadScript(file) {
 
 const groups = {
   math: ['math'], mermaid: ['mermaid'], highlight: ['highlight'], markdown: ['markdown', 'markdown.serialize'],
-  office: ['office.buildDocx', 'office.docx', 'office.mammoth'], ui: ['ui'],
+  office: ['office.buildDocx', 'office.docx', 'office.mammoth'], ui: ['ui'], document: ['document.segmented', 'document.pagedView', 'document.pagedImport', 'document.shareLinks', 'document.shareLinkAccess'],
 }
 for (const group of Object.keys(groups)) {
   for (const name of groups[group]) {

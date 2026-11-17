@@ -22,6 +22,7 @@ export const blockActions = [
 export const blockTypeActions = [
   { id: 'paragraph', label: '正文', icon: 'block-text', glyph: 'T' }, { id: 'heading1', label: '一级标题', icon: 'block-h1', glyph: 'H1' }, { id: 'heading2', label: '二级标题', icon: 'block-h2', glyph: 'H2' }, { id: 'heading3', label: '三级标题', icon: 'block-h3', glyph: 'H3' },
   { id: 'orderedList', label: '有序列表', icon: 'block-ordered', glyph: '1≡' }, { id: 'bulletList', label: '无序列表', icon: 'block-bullet', glyph: '☷' }, { id: 'taskList', label: '任务列表', icon: 'block-task', glyph: '☑' }, { id: 'codeBlock', label: '代码块', icon: 'block-code', glyph: '{}' }, { id: 'blockquote', label: '引用', icon: 'block-quote', glyph: '❝' },
+  { id: 'callout', label: '高亮块', icon: 'block-callout', glyph: '▤' },
 ]
 
 /** 工具栏「图表」下拉的图表类型清单：id 对应 insertDiagramType 的插入分支。 */

@@ -50,8 +50,20 @@ function mountReminderWorkspace(attrs = {}) {
 }
 
 describe('current Feishu reminder popover closure', () => {
-  it('has independent time/notify checkboxes and nine editable lead times', () => {
+  it('repositions the first lazy opening using the rendered compact height', async () => {
+    const { host, editor } = mountReminderWorkspace({ hasTime: false, notify: false })
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ left: 100, right: 100, top: 700, bottom: 722 })
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      return this.classList.contains('lark-doc-reminder-popover') ? 447 : 0
+    })
+    expect(host._reminderUi.el).toBeNull()
+    await vi.dynamicImportSettled()
+    expect(host.reminderStyle).toEqual(host.reminderStyleAt(host.reminderFrom, 447))
+  })
+
+  it('has independent time/notify checkboxes and nine editable lead times', async () => {
     const { host, element, editor } = mountReminderWorkspace()
+    await vi.dynamicImportSettled()
     expect(element.querySelectorAll('.lark-doc-reminder-popover input[type=checkbox]')).toHaveLength(2)
     host.setReminderHasTime(false)
     expect(readReminder(editor.state.doc.firstChild.firstChild.marks.find(mark => mark.type.name === 'reminder')).hasTime).toBe(false)
@@ -116,8 +128,9 @@ describe('current Feishu reminder popover closure', () => {
     expect(doc.getJSON()).toEqual(before)
   })
 
-  it('time input preserves IME composition and Escape closes one layer at a time', () => {
+  it('time input preserves IME composition and Escape closes one layer at a time', async () => {
     const { host, element, editor } = mountReminderWorkspace()
+    await vi.dynamicImportSettled()
     const input = element.querySelector('[data-reminder=time] input')
     input.focus()
     input.value = '9:5'

@@ -5,9 +5,28 @@
  * 采用 mixin 而非子组件：菜单 DOM 挂在主模板的句柄内，依赖 Vue 2 选项合并语义，拆子组件会破坏定位逻辑。
  */
 import { closeHistory } from '@tiptap/pm/history'
+import { TextSelection } from '@tiptap/pm/state'
 import { BLOCK_ID_PATTERN, clampBlockIndent, maxIndentAt, moveBlockRange, nodeAtSafe, safeUrl, stepBlockIndent } from '../documentOperations'
 import { isBlockActionEnabled } from '../larkDocConfig'
+import { normalizeAIProvider } from '../ai'
+import { aiNetworkAllows, createNetworkPolicy } from '../../../core/policy/network'
+import { wrapContainerAllowed } from '../../../core/blocks/container-depth'
+import { loadFeature, readFeature } from '../../../core/features/registry'
+
 import { blockActions, blockTypeActions } from './constants'
+import { createBlockInteraction } from './blockInteraction'
+import { copyBlock as copyBlockContent } from '../../../utils/contentClipboard'
+
+export function blockAiAllowed(ed) {
+  if (!ed.editor || ed.editor.isDestroyed || ed._isBeingDestroyed || ed._isDestroyed || !ed.writable() ||
+    !ed.featureEnabled('ai') || ed.featureEnabled('blockHandle') === false) return false
+  const adapter = normalizeAIProvider(ed.aiProvider)
+  const root = ed.$refs?.root || ed.$el
+  return !!(adapter && (adapter.kind !== 'endpoint' || aiNetworkAllows(adapter.endpoint || adapter.baseURL,
+    createNetworkPolicy(ed.larkDocConfig?.network), root?.ownerDocument?.defaultView?.location?.href)))
+}
+
+const blockInteraction = createBlockInteraction({ closeHistory, isBlockActionEnabled, nodeAtSafe, wrapContainerAllowed, TextSelection, blockAiAllowed, moveBlockRange, BLOCK_ID_PATTERN, safeUrl, stepBlockIndent })
 
 export default {
   data() { return {
@@ -15,7 +34,74 @@ export default {
     blockMenuStyle: {}, blockAlignMenuStyle: {}, blockColorMenuStyle: {}, blockMenuCloseTimer: null, blockMenuHovering: false,
     blockActions, blockTypeActions,
   } },
+  watch: {
+    onSaveTemplate(value) { if (this._templateSaveRequest?.callback !== value) this.closeBlockTemplateSave(); this.refreshBlockMenu() },
+    effectiveReadonly() { if (!this.templateSaveAllowed()) this.closeBlockTemplateSave() },
+    larkDocConfig: { deep: true, handler() { if (!this.templateSaveAllowed()) this.closeBlockTemplateSave() } },
+    session(value) { if (this._templateSaveRequest?.session !== value) this.closeBlockTemplateSave() },
+    documentId(value) { if (this._templateSaveRequest?.documentId !== value) this.closeBlockTemplateSave() },
+  },
+  beforeDestroy() { this.closeBlockTemplateSave() },
   methods: {
+    ...blockInteraction.methods,
+    templateSaveAllowed() {
+      return this.writable() && this.featureEnabled('templates') && isBlockActionEnabled(this.larkDocConfig, 'saveTemplate')
+        && this.shareCan('canView') && this.shareCan('canExport') && typeof this.onSaveTemplate === 'function'
+    },
+    closeBlockTemplateSave() {
+      const request = this._templateSaveRequest, dialog = this._templateSaveDialog
+      this._templateSaveRequest = null
+      this._templateSaveDialog = null
+      request?.stopPending?.()
+      dialog?.destroy()
+    },
+    openBlockTemplateSave(range) {
+      if (!this.templateSaveAllowed() || !range) return false
+      this.closeBlockTemplateSave()
+      const editor = this.editor, doc = editor.state.doc, session = this.session, documentId = session?.documentId, callback = this.onSaveTemplate
+      const request = { callback, session, documentId: this.documentId }
+      const actorId = session?.user?.id, identityGeneration = session?._identityGeneration
+      const privateIdentityGeneration = session?._privateIdentityGeneration, authorizationGeneration = session?._authorizationGeneration
+      this._templateSaveRequest = request
+      const current = () => this._templateSaveRequest === request && this.templateSaveAllowed()
+        && this.editor === editor && !editor.isDestroyed && editor.state.doc === doc && this.session === session && session?.documentId === documentId
+        && this.documentId === request.documentId && this.onSaveTemplate === callback && session?.user?.id === actorId
+        && session?._identityGeneration === identityGeneration && session?._privateIdentityGeneration === privateIdentityGeneration
+        && session?._authorizationGeneration === authorizationGeneration
+      const root = this.$refs?.root || this.$el || editor.view.dom
+      const cancelPending = event => {
+        if (this._templateSaveRequest !== request || !['Escape', 'Esc'].includes(event.key)) return
+        if (editor.isDestroyed) { this.closeBlockTemplateSave(); return }
+        if (event.isComposing || event.keyCode === 229 || editor.composing || editor.view.composing) return
+        const owner = root.closest?.('.lark-doc'), targetOwner = event.target?.closest?.('.lark-doc')
+        if (targetOwner && targetOwner !== owner) return
+        this.closeBlockTemplateSave()
+      }
+      const retirePending = () => {
+        if (this._templateSaveRequest === request && !current()) this.closeBlockTemplateSave()
+      }
+      request.stopPending = () => {
+        root.removeEventListener('keydown', cancelPending, true)
+        editor.off?.('transaction', retirePending)
+      }
+      root.addEventListener('keydown', cancelPending, true)
+      editor.on?.('transaction', retirePending)
+      const ready = readFeature('ui.ready')
+      const loadUi = ready ? Promise.resolve(ready) : loadFeature('ui', () => import('../../../features/ui').then(module => module.uiApi))
+      loadUi.then(api => {
+        if (!current()) return
+        if (!api?.createTemplateSaveDialog) throw new Error('UI特性版本不匹配，请先加载同目录ui特性包')
+        return import('../../../editor/templateSave').then(({ openTemplateSave }) => {
+          if (!current()) return
+          request.stopPending()
+          const dialog = openTemplateSave({ host: this, range, isCurrent: current })
+          if (current()) this._templateSaveDialog = dialog
+          else dialog?.destroy()
+        })
+      }).catch(error => { if (current()) { this.error = error?.message || '模板保存界面无法打开，请重试'; this.closeBlockTemplateSave() } })
+        .finally(() => { request.stopPending(); if (this._templateSaveRequest === request && !current()) this.closeBlockTemplateSave() })
+      return true
+    },
     blockTextblockTarget(range) {
       if (!range || !this.editor) return null
       const doc = this.editor.state.doc
@@ -151,16 +237,19 @@ export default {
         const menuRect = menu.getBoundingClientRect()
         const content = this.$refs.root?.querySelector('.lark-doc-editor-content, .ProseMirror')
         const contentRect = content?.getBoundingClientRect?.() || handleRect
+        const otherRect = this.$refs.root?.querySelector('.lark-doc-block-handle-secondary')?.getBoundingClientRect()
         const viewportGap = 8
+        const headerRect = this.$refs.root?.querySelector('.lark-doc-topbar')?.getBoundingClientRect()
+        const viewportTop = Math.max(viewportGap, headerRect?.height > 0 ? headerRect.bottom + viewportGap : viewportGap)
         const menuWidth = menuRect.width || 230
         const maxViewportLeft = Math.max(viewportGap, window.innerWidth - menuWidth - viewportGap)
-        const preferredViewportLeft = contentRect.left - menuWidth - viewportGap
+        const preferredViewportLeft = (otherRect ? Math.min(contentRect.left, handleRect.left, otherRect.left) : contentRect.left) - menuWidth - viewportGap
         const menuViewportLeft = preferredViewportLeft >= viewportGap && preferredViewportLeft <= maxViewportLeft
           ? preferredViewportLeft
-          : Math.min(Math.max(handleRect.left, viewportGap), maxViewportLeft)
+          : Math.min(Math.max(viewportGap, Math.max(handleRect.right, otherRect?.right || handleRect.right) + viewportGap), maxViewportLeft)
         const top = handleRect.top
         const below = Math.max(0, window.innerHeight - top - 40)
-        const above = Math.max(0, top - 8)
+        const above = Math.max(0, top - viewportGap - viewportTop)
         const useAbove = below < menu.scrollHeight && above > below
         const available = Math.max(32, useAbove ? above : below)
         this.blockMenuStyle = {
@@ -171,13 +260,16 @@ export default {
       })
     },
     openBlockMenuOnHover() {
-      if (!this.writable() || this.handleIsEmptyParagraph || this.handleIsTaskList) return
+      if (!this.writable() || this.handleIsEmptyParagraph) return
       this.handleHovering = true
       this.openBlockMenu()
     },
     toggleBlockTypeMenu() { this.openBlockMenu() },
     openBlockMenu() {
-      if (!this.writable() || this.handleIsEmptyParagraph || this.handleIsTaskList) return
+      if (!this.writable() || this.featureEnabled?.('blockHandle') === false || !this.handleRange) return
+      const mobile = typeof window !== 'undefined' && window.innerWidth <= 760
+      if (!mobile && this.handleIsEmptyParagraph) return
+
       this.clearBlockMenuCloseTimer()
       this.blockMenuOpen = true
       this.setHandleHighlight(true)
@@ -238,67 +330,24 @@ export default {
       const top = Math.max(margin, Math.min(window.innerHeight - submenuRect.height - margin, triggerRect.top))
       this.blockColorMenuStyle = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` }
     },
-    blockAlignAction(id) {
-      if (!this.writable() || !this.featureEnabled('blockStyle')) return
-      const range = this.handleActionRange()
-      if (!range) return
-      this.closeBlockMenu()
-      if (id === 'increaseIndent' || id === 'decreaseIndent') {
-        const target = this.blockIndentTarget(range)
-        if (!target) return
-        const current = Number(target.node.attrs.indent) || 0
-        // 增加受前一个块限制；减少只受 0 下限（可以一路减回文档开头）。
-        const indent = stepBlockIndent(this.editor.state.doc, target.pos, current, id === 'increaseIndent' ? 1 : -1, this.maxBlockIndent)
-        this.applyBlockAttribute(target, 'indent', indent)
-        return
-      }
-      const target = this.blockTextblockTarget(range)
-      if (!target) return
-      this.applyBlockAttribute(target, 'textAlign', id)
-    },
-    blockColorAction(value) {
-      if (!this.writable() || !this.featureEnabled('blockStyle')) return
-      const range = this.handleActionRange()
-      const target = this.blockTextblockTarget(range)
-      if (!target) return
-      const from = target.pos + 1
-      const to = Math.max(from, target.pos + target.node.nodeSize - 1)
-      this.closeBlockMenu()
-      this.editor.commands.setTextSelection({ from, to })
-      if (value) this.editor.chain().focus().setColor(value).run()
-      else this.editor.chain().focus().unsetColor().run()
-      this.editor.view.focus()
-    },
-    blockTypeAction(id) {
-      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
-      const range = this.handleActionRange()
-      const node = nodeAtSafe(this.editor?.state?.doc, range?.from)
-      if (!range || !node || !['paragraph', 'heading'].includes(node.type.name)) return
-      this.closeBlockMenu()
-      this.savedSelection = null
-      this.editor.commands.setTextSelection({ from: range.from + 1, to: Math.max(range.from + 1, range.to - 1) })
-      if (id === 'paragraph') this.run('setParagraph')
-      else if (/^heading[1-9]$/.test(id)) this.run('setHeading', { level: Number(id.slice(-1)) })
-      else if (id === 'bulletList') this.run('toggleBulletList')
-      // 飞书的「给标题加编号」就是「把标题设为有序列表」，所以作用在标题上时走标题编号，
-      // 作用在正文上时才是真的转有序列表。
-      else if (id === 'orderedList') {
-        if (node.type.name === 'heading') this.editor.commands.toggleLarkDocHeadingNumber(range.from)
-        else this.run('toggleOrderedList')
-      }
-      else if (id === 'taskList') this.run('toggleTaskList')
-      else if (id === 'blockquote') this.run('toggleBlockquote')
-      else if (id === 'codeBlock') this.run('setCodeBlock')
+    blockTypeTextRange(range) {
+      const doc = this.editor?.state.doc, node = nodeAtSafe(doc, range?.from)
+      if (!node || !['paragraph', 'heading', 'listItem', 'taskItem', 'bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock', 'callout'].includes(node.type.name)) return null
+      if (!Number.isInteger(range.to) || range.to > doc.content.size) return null
+      // Seek the two text edges instead of scanning a potentially large container.
+      const selection = TextSelection.between(doc.resolve(range.from), doc.resolve(range.to))
+      return selection.from >= range.from && selection.to <= range.to ? { from: selection.from, to: selection.to } : null
     },
     blockTypeActive(id) {
       if (!this.editor || !this.handleRange) return false
       const node = nodeAtSafe(this.editor?.state?.doc, this.handleRange?.from)
       if (!node) return false
+      const type = ['taskItem', 'listItem'].includes(node.type.name) ? this.editor.state.doc.resolve(this.handleRange.from).parent.type.name : node.type.name
       if (id === 'paragraph') return node.type.name === 'paragraph'
       if (/^heading[1-9]$/.test(id)) return node.type.name === 'heading' && Number(node.attrs?.level) === Number(id.slice(-1))
       // heading 上的「有序列表」代表标题编号是否开启
-      if (id === 'orderedList') return node.type.name === 'orderedList' || (node.type.name === 'heading' && node.attrs?.numbering === true)
-      return node.type.name === id
+      if (id === 'orderedList') return type === 'orderedList' || (node.type.name === 'heading' && node.attrs?.numbering === true)
+      return type === id
     },
     // —— 表格句柄菜单（对齐飞书：标题行/标题列开关 + 均分列宽）——
     handleTableNode() {
@@ -318,130 +367,22 @@ export default {
       }).every(Boolean)
       return { row: rowHeader, column: columnHeader }
     },
-    tableHandleAction(id) {
-      if (!this.writable() || !this.featureEnabled('tables')) return
-      const range = this.handleRange
-      if (!range) return
-      // 表格命令都按当前选区定位：先把光标落进表格（isActive('table') 才成立）。
-      const doc = this.editor.state.doc
-      const firstTextPos = () => {
-        let found = null
-        doc.nodesBetween(range.from, Math.min(range.to, doc.content.size), (child, pos) => {
-          if (found === null && child.isTextblock) { found = pos + 1; return false }
-          return true
-        })
-        return found
-      }
-      if (id === 'distributeColumns') {
-        // 整表均分：选区要罩住全表（首格到末格），selectedRect 才覆盖所有列。
-        this.closeBlockMenu()
-        const first = firstTextPos()
-        let last = null
-        doc.nodesBetween(range.from, Math.min(range.to, doc.content.size), (child, pos) => {
-          if (child.isTextblock) last = pos + 1
-          return true
-        })
-        if (first !== null && last !== null) this.editor.commands.setTextSelection({ from: first, to: Math.max(first, last) })
-        this.tableAction('distributeColumns')
-        return
-      }
-      const first = firstTextPos()
-      if (first !== null) this.editor.commands.setTextSelection(Math.min(first, doc.content.size))
-      if (id === 'toggleHeaderRow' || id === 'toggleHeaderColumn') {
-        // 开关保持菜单展开（飞书同款：点了能直接看到开关翻转）。
-        this.tableAction(id)
-        // 表格重渲染会派生一次假的 handle mouseleave：短窗口内忽略它。
-        this._keepMenuThroughRender = true
-        clearTimeout(this._keepMenuTimer)
-        this._keepMenuTimer = setTimeout(() => { this._keepMenuThroughRender = false }, 350)
-        return
-      }
+    requestBlockAI(kind, range = this.handleActionRange()) {
+      if (!blockAiAllowed(this) || !range) return false
       this.closeBlockMenu()
-      this.tableAction(id)
-    },
-    blockAction(id) {
-      if (!this.writable() || !isBlockActionEnabled(this.larkDocConfig, id)) return
-      this.closeBlockMenu()
-      const selectedRange = this.handleActionRange()
-      const sectionRange = ['copy', 'cut', 'duplicate', 'moveUp', 'moveDown'].includes(id) ? this.headingActionRange(selectedRange) : null
-      const range = id === 'delete'
-        ? (this.columnsRangeFor(selectedRange) || this.detailsRangeFor(selectedRange) || selectedRange)
-        : sectionRange || selectedRange
-      if (!range) return
-      if (id === 'share') return this.handleIsTable && this.openSelectionShareDialog(range.from)
-      if (id === 'copyLink') return this.copyBlockLink(range)
-      if (id === 'copy' || id === 'cut') { this.copyBlock(range, id === 'cut'); return }
-      if (id === 'translate') { this.$emit('ai-request', 'translate'); this.editor.view.focus(); return }
-      if (id === 'delete') { this.deleteBlockRange(range); return }
-      const { from, to } = range
-      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
-      const tr = this.editor.state.tr
-      if (id === 'duplicate') { tr.insert(to, this.editor.state.doc.slice(from, to).content); this.editor.view.dispatch(tr) }
-      else if (id === 'addBelow') { const paragraph = this.editor.schema.nodes.paragraph?.createAndFill(); if (paragraph) { tr.insert(to, paragraph); this.editor.view.dispatch(tr); this.editor.commands.setTextSelection(Math.min(to + 1, this.editor.state.doc.content.size)) } }
-      else if (id === 'moveUp' || id === 'moveDown') {
-        const resolved = this.editor.state.doc.resolve(from)
-        const index = resolved.index()
-        const endIndex = this.editor.state.doc.resolve(to).index()
-        const targetIndex = id === 'moveUp' ? index - 1 : endIndex + 1
-        if (targetIndex >= 0 && targetIndex <= resolved.parent.childCount) moveBlockRange(this.editor, from, to, resolved.posAtIndex(targetIndex, resolved.depth))
-      }
-    },
-    async copyBlockLink(range) {
-      if (!this.shareCan('canView')) return false
-      const editor = this.editor, session = this.session, doc = editor?.state.doc
-      const node = nodeAtSafe(doc, range?.from), documentLink = this.shareDocumentLink()
-      if (node?.type.name !== 'table' || !BLOCK_ID_PATTERN.test(node.attrs.blockId || '')) return false
-      const current = () => this.editor === editor && !editor.isDestroyed && this.session === session
-        && editor.state.doc === doc && this.shareCan('canView') && this.shareDocumentLink() === documentLink
-      try {
-        const url = new URL(documentLink, window.location.href)
-        if (!/^https?:$/.test(url.protocol) || !safeUrl(url.href)) return false
-        url.hash = `share-${node.attrs.blockId}`
-        if (!await this.copyShareText(url.href)) throw new Error('复制失败，请检查剪贴板权限')
-        if (!current()) return false
-        this.showShareToast('success', '复制成功')
-        return true
-      } catch (error) { if (current()) this.error = error?.message || '复制失败，请检查剪贴板权限'; return false }
+      this.savedSelection = null
+      const text = this.blockTypeTextRange(range)
+      if (text) this.editor.commands.setTextSelection(text)
+      else this.editor.commands.setNodeSelection(range.from)
+      if (kind === 'translate') this.editor.view.focus()
+      this.$emit('ai-request', kind)
+      return true
     },
     async copyBlock(range, cut = false) {
-      if (!this.writable() || !range) return false
-      const text = this.editor.state.doc.textBetween(range.from, range.to, '\n')
-      const content = this.editor.state.doc.slice(range.from, range.to).content.toJSON()
-      const structured = JSON.stringify({ schemaVersion: 1, type: 'lark-doc-block', content })
-      let copied = false
-      try {
-        if (navigator.clipboard?.write && window.ClipboardItem) {
-          const item = new window.ClipboardItem({
-            'text/plain': new Blob([text], { type: 'text/plain' }),
-            'application/x-lark-doc-block+json': new Blob([structured], { type: 'application/json' }),
-          })
-          await navigator.clipboard.write([item])
-          copied = true
-        }
-      } catch (_) { copied = false }
-      if (!copied) {
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(text)
-            copied = true
-          } else {
-            const textarea = document.createElement('textarea')
-            textarea.value = text
-            textarea.setAttribute('readonly', 'true')
-            textarea.style.position = 'fixed'
-            textarea.style.opacity = '0'
-            document.body.appendChild(textarea)
-            textarea.select()
-            copied = document.execCommand('copy')
-            textarea.remove()
-          }
-        } catch (_) { copied = false }
-      }
-      if (!copied) { this.error = '无法访问剪贴板，区块未被修改；可手动选择后复制'; return false }
-      if (cut && this.writable()) this.deleteBlockRange(range)
-      this.error = cut ? '已剪切区块' : '已复制区块'
-      this.$nextTick(() => this.editor?.view.focus())
-      return true
+      if (!range || !this.contentCopyAllowed() || !isBlockActionEnabled(this.larkDocConfig, cut ? 'cut' : 'copy')
+        || (cut && !this.writable())) return false
+      const context = this.contentCopyContext()
+      return copyBlockContent(context, { ...range }, cut)
     },
   },
 }

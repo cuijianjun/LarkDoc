@@ -35,7 +35,9 @@ import {
 import { applyStyle, mountNode, syncChildren } from '../../../ui/dom'
 import { COVER_PANEL_ITEMS, coverImageStyle } from './coverMixin'
 import { iconNode } from '../../../ui/icon'
-import { uploadCommentImageFiles } from './commentImages'
+import { panelPresentation } from './commentPanelView'
+import { createCommentComposer } from '../../../ui/commentComposer'
+
 
 export default {
   watch: {
@@ -65,7 +67,14 @@ export default {
     versionIndex() { this.refreshPanels() },
     versionSelectedId() { this.refreshPanels() },
     versionPreview: { deep: true, handler() { this.refreshPanels() } },
+    versionChanges: { deep: true, handler() { this.refreshPanels() } },
+    versionChangeIndex() { this.refreshPanels() },
+    versionChangesLoading() { this.refreshPanels() },
+    versionChangesError() { this.refreshPanels() },
     versionPreviewError() { this.refreshPanels() },
+    versionRestoreConfirmOpen() { this.refreshPanels() },
+    versionRestoreTargetId() { this.refreshPanels() },
+    larkDocConfig() { this.refreshPanels() },
     versionError() { this.refreshPanels() },
     versionLoading() { this.refreshPanels() },
     versionRestoreBusy() { this.refreshPanels() },
@@ -85,6 +94,11 @@ export default {
     commentPanels: { deep: true, handler() { this.refreshPanels() } },
     commentDrafts: { deep: true, handler() { this.refreshPanels() } },
     commentSidebarOpen() { this.refreshPanels() },
+    commentMobileScope() { this.refreshPanels() },
+    commentMobileOpen() { this.refreshPanels() },
+    commentActiveThreadId() { this.refreshPanels() },
+    commentIdentityGeneration() { this.refreshPanels() },
+    commentDocumentLike: { deep: true, handler() { this.refreshPanels() } },
     commentComposerOpen() { this.refreshPanels() },
     commentComposerContext: { deep: true, handler() { this.refreshPanels() } },
     commentCreateDraft() { this.refreshPanels() },
@@ -102,20 +116,51 @@ export default {
     commentMoreThreadId() { this.refreshPanels() },
     commentMenuThreadId() { this.refreshPanels() },
     commentMenuCommentId() { this.refreshPanels() },
+    commentReactionContext: { deep: true, handler() { this.refreshPanels() } },
+    commentReactionQuery() { this.refreshPanels() },
+    commentReactionCategory() { this.refreshPanels() },
+    commentReactionLimit() { this.refreshPanels() },
+    commentEditingReply: { deep: true, handler() { this.refreshPanels() } },
+    commentEditContent() { this.refreshPanels() },
+    commentEditMentions: { deep: true, handler() { this.refreshPanels() } },
+    commentEditReferences: { deep: true, handler() { this.refreshPanels() } },
+    commentMentionPicker: { deep: true, handler() { this.refreshPanels() } },
+    commentTranslationContext: { deep: true, handler() { this.refreshPanels() } },
+    commentTranslationLanguage() { this.refreshPanels() },
+    commentTranslationState: { deep: true, handler() { this.refreshPanels() } },
+    commentTranslationBusy() { this.refreshPanels() },
+    commentPendingTranslationOperation() { this.refreshPanels() },
+    commentDocumentDraft() { this.refreshPanels() },
+    commentDocumentMentions: { deep: true, handler() { this.refreshPanels() } },
+    commentDocumentReferences: { deep: true, handler() { this.refreshPanels() } },
+    commentDocumentReplyTarget: { deep: true, handler() { this.refreshPanels() } },
   },
   methods: {
+    ...panelPresentation.methods,
+
     /** 挂载四个面板（由主组件 `mounted` 调用，不依赖编辑器实例）。 */
     mountPanels() {
       if (this._panelsUi) return
       const outlineHost = this.$refs.outlineHost
       const panelHost = this.$refs.panelHost
       if (!outlineHost || !panelHost) return
-      const handlers = this.panelsHandlers()
-      this._panelsUi = {
-        outline: createOutlinePanel({ host: outlineHost, handlers: handlers.outline }),
-        version: createVersionPanel({ host: panelHost, handlers: handlers.version }),
-        saveVersion: createSaveVersionDialog({ host: panelHost, handlers: handlers.saveVersion }),
-        comment: createCommentPanel({ host: panelHost, handlers: handlers.comment }),
+      const owner = this
+      let panels
+      const onReady = () => {
+        if (!panels || this._panelsUi !== panels || this._isDestroyed || this._isBeingDestroyed) return
+        this.panelPresentationRevision = (this.panelPresentationRevision || 0) + 1
+        this.refreshPanels()
+        this.focusImageComment?.()
+      }
+      panels = this._panelsUi = {
+        outline: createOutlinePanel({ host: outlineHost, handlers: {
+          onToggleOpen: () => this.toggleOutlineOpen(), onToggle: pos => this.toggleOutline(pos), onJump: pos => this.jumpHeading(pos),
+        } }),
+        version: createVersionPanel({ host: panelHost, get handlers() { return owner.panelsHandlers().version }, onReady,
+          renderDocument: (element, record) => this.mountVersionDocumentPreview(element, record) }),
+        saveVersion: createSaveVersionDialog({ host: panelHost, get handlers() { return owner.panelsHandlers().saveVersion }, onReady }),
+        comment: createCommentPanel({ host: panelHost, inlineHost: this.$refs.paper, get handlers() { return owner.panelsHandlers().comment }, composerFactory: createCommentComposer, onReady }),
+
       }
       this.mountCover()
       this.refreshPanels()
@@ -264,71 +309,10 @@ export default {
         this._coverUi.layer.remove()
         if (this.$refs.coverPanel === this._coverUi.panel) delete this.$refs.coverPanel
         this._coverUi = null
+
       }
     },
 
-    /** handler 全表（键名与 `src/ui/panels.js` 里的 `call('onXxx')` 一一对应）。 */
-    panelsHandlers() {
-      return {
-        outline: {
-          onToggleOpen: () => this.toggleOutlineOpen(),
-          onToggle: (pos) => this.toggleOutline(pos),
-          onJump: (pos) => this.jumpHeading(pos),
-        },
-        version: {
-          // 唯一关闭出口：`Esc` 在这条线上是「拦冒泡」而不是关闭（SFC 头负结论 1）。
-          onClose: () => this.closeVersionPanel(),
-          onRestore: () => this.restoreSelectedVersion(),
-          onPrev: () => this.versionPrev(),
-          onNext: () => this.versionNext(),
-          onSelect: (id) => this.selectVersion(id),
-          onOpenTrash: () => this.openVersionTrash(),
-          onCloseTrash: () => this.closeVersionTrash(),
-          onRestoreDeleted: (id) => this.restoreDeletedVersion(id),
-          onPurgeDeleted: (id) => this.purgeDeletedVersion(id),
-        },
-        saveVersion: {
-          onClose: () => this.closeSaveVersionDialog(),
-          onInput: (value) => this.setSaveVersionName(value),
-          onConfirm: () => this.confirmSaveVersion(),
-          // toast 的「立即查看」：先开面板再收 toast（顺序与模板里的内联两调用一致）。
-          onNoticeLink: () => { this.openVersionPanel(); this.dismissVersionNotice() },
-        },
-        comment: {
-          onActivate: (id) => this.activateComment(id),
-          onControl: (controlId, threadId) => this.runCommentControl(controlId, threadId),
-          onReplyControl: (ctlId, threadId, replyId) => this.runCommentReplyControl(ctlId, threadId, replyId),
-          onMenuItem: (menuId, threadId, replyId) => this.runCommentMenuItem(menuId, threadId, replyId),
-          onDraft: (threadId, value) => this.setCommentDraft(threadId, value),
-          onClearDraft: (threadId) => this.clearCommentDraft(threadId),
-          onSubmit: (threadId) => this.submitCommentDraft(threadId),
-          onTogglePrivate: (threadId) => this.toggleCommentPrivate(threadId),
-          onCloseMenus: () => this.closeCommentMenus(),
-          onToggleSidebar: () => this.toggleCommentSidebar(),
-          onToggleHistory: () => this.setCommentHistory(!this.commentHistory),
-          onComposerDraft: value => this.setCommentCreateDraft(value),
-          onComposerCancel: () => this.closeCommentComposer(),
-          onComposerPrivate: value => this.setCommentCreatePrivate(value),
-          onComposerSubmit: () => this.createCommentFromSelection(this.commentCreateDraft, this.commentCreatePrivate ? 'private' : 'document'),
-          onChooseImage: (scope) => {
-            if (!this.commentCanUploadImage?.(scope)) return
-            const input = [...(this.$el?.querySelectorAll?.('input[data-comment-image-scope]') || [])].find(node => node.dataset.commentImageScope === scope)
-            input?.click()
-          },
-          onUploadImage: (scope, event) => uploadCommentImageFiles.call(this, scope, event),
-          onRemoveDraftImage: (scope, assetId) => this.removeCommentDraftImage(scope, assetId),
-          onOpenImage: (threadId, replyId, assetId, event) => {
-            const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
-            const reply = thread?.replies.find(item => item.id === replyId && !item.tombstone)
-            const asset = reply?.attachments?.find(item => item.assetId === assetId)
-            if (asset && this.commentCan('canView')) this.openCommentImage(thread, reply, asset, event)
-          },
-          onCloseImage: restoreFocus => this.closeCommentImage(restoreFocus),
-          onCancelImageUpload: () => this.cancelCommentImageUpload(),
-          onQueryImage: () => this.queryPendingCommentImage(),
-        },
-      }
-    },
 
     /** 一份 state 推平（原 `<OutlinePanel :ed>` + `<VersionPanel :ed>` + … 四份绑定）。 */
     buildPanelsState() {
@@ -359,187 +343,65 @@ export default {
       }
     },
 
-    buildVersionState() {
-      const error = this.versionError || ''
-      const total = this.versionTotal
-      const loading = !!this.versionLoading
-      const selected = this.versionSelected
-      const preview = this.versionPreview
-      const diff = this.versionSelectedDiff
-      const restoreDisabled = !!this.versionRestoreDisabled
-      const prevDisabled = !!this.versionPrevDisabled
-      const nextDisabled = !!this.versionNextDisabled
+    // These gates run before the optional presentation is available. They retain
+    // live authority, initial inline content, counters and drafts, without reads
+    // or writes to a provider. The complete projection is refreshed onReady.
+    buildCommentVisibility() {
+      const imageScope = this.imageCommentCurrent?.() ? this._imageCommentScope : null
+      const readable = this.commentCan?.('canView') === true && this.featureEnabled?.('comments') !== false
+      const provider = this.commentProvider?.(), remote = this.commentRemote === true
+      const panels = readable ? this.commentPanels || [] : []
+      const documentThreads = readable ? this.commentDocumentThreads || [] : []
+      const historical = !imageScope && this.commentHistorical === true
+      const sidebarOpen = readable && (!!imageScope || (remote || this._mobileEditorMedia?.matches
+        ? this.commentSidebarOpen === true : panels.length > 0 || this.commentComposerOpen === true))
+      const documentInline = !imageScope && readable && !historical && (remote || !!provider)
+      const canSubmit = readable && this.commentDocumentCanSubmit?.() !== false && this.commentAllowed?.('create') !== false
+      const root = this.$refs?.root, bounds = root?.getBoundingClientRect(), win = root?.ownerDocument.defaultView
+      const header = root?.querySelector('.lark-doc-topbar'), rect = header?.getBoundingClientRect(), style = header && win?.getComputedStyle?.(header)
+      const visibleHeader = header && !header.hidden && rect?.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden'
       return {
-        open: !!this.versionPanelOpen,
-        trash: {
-          open: !!this.versionTrashOpen,
-          busy: !!this.versionTrashBusy,
-          canManage: !!this.versionCanManageTrash,
-          reason: this.versionTrashReason,
-          items: (this.versionDeletedList || []).map(item => ({
-            id: item.id,
-            name: this.versionItemName(item),
-            label: item.label,
-          })),
-        },
-        restore: {
-          disabled: restoreDisabled,
-          // `:title="ed.versionCanRestoreReason"` —— 允许时是空串（属性在、值为空）。
-          title: this.versionCanRestoreReason,
-          style: this.versionDisabledStyle(restoreDisabled),
-        },
-        pager: {
-          cursor: this.versionCursorLabel,
-          prev: { disabled: prevDisabled, style: this.versionDisabledStyle(prevDisabled) },
-          next: { disabled: nextDisabled, style: this.versionDisabledStyle(nextDisabled) },
-        },
-        // 左栏三选一：错误 > 空态 > 预览（`v-if` / `v-else-if` / `v-else` 的顺序）。
-        view: error ? 'error' : (total ? 'preview' : 'empty'),
-        errorText: error,
-        emptyText: loading ? '正在载入历史记录…' : '暂无历史版本',
-        preview: total ? this.buildVersionPreviewState(selected, preview, diff) : null,
-        // 右栏时间线：错误时只留一条降级文案（`v-else` 挂在 for 上）。
-        timelineError: error,
-        days: error ? [] : (this.versionDayGroups || []).map((group) => ({
-          key: group.key,
-          label: group.label,
-          items: (group.items || []).map((item) => ({
-            id: item.id,
-            cls: this.versionTimelineClass(item).selected ? 'selected' : '',
-            name: this.versionItemName(item),
-            desc: this.versionItemDesc(item),
-            user: this.versionActorLabel(item),
-          })),
-        })),
+        open: sidebarOpen, remote, historical, sidebarOpen, documentInline,
+        viewerHost: imageScope?.viewer || null, viewerCurrent: imageScope ? () => this.imageCommentCurrent(imageScope) : null,
+        identityGeneration: this.commentIdentityGeneration || 0,
+        mobileScope: historical || this.commentComposerOpen ? 'selection' : this.commentMobileScope || 'document',
+        mobileOpen: readable && (remote ? sidebarOpen : !!(this.commentMobileOpen || this.commentComposerOpen)),
+        documentCount: documentThreads.length,
+        selectionCount: readable ? (Number.isFinite(Number(this.commentSelectionCount)) ? Number(this.commentSelectionCount) : panels.length) : 0,
+        unread: readable ? Number(this.commentUnread) || 0 : 0,
+        launcher: { visible: !imageScope && readable && !!this._mobileEditorMedia?.matches && !!provider,
+          top: Math.max(0, visibleHeader ? rect.bottom : bounds?.top || 0),
+          right: Math.max(0, (win?.innerWidth || 0) - (bounds?.right || win?.innerWidth || 0)) },
+        like: readable ? { ...this.commentDocumentLike, available: !!provider && this.session?.getProvider?.('authorization')?.isRemote === true
+          && typeof this.session?.getProvider?.('authorization')?.documentInformation === 'function' } : { available: false, snapshot: null, pending: '' },
+        documentComposer: { open: readable && !historical && (sidebarOpen || documentInline) && !this.commentComposerOpen,
+          value: readable ? this.commentDocumentDraft || '' : '',
+          mentions: readable ? this.commentDocumentMentions || [] : [], references: readable ? this.commentDocumentReferences || [] : [],
+          replyTarget: readable ? this.commentDocumentReplyTarget || null : null, readonly: !canSubmit, canSubmit,
+          privateOn: this.commentCreatePrivate === true },
+        composer: { open: readable && this.commentComposerOpen === true,
+          value: readable ? this.commentCreateDraft || '' : '', quote: readable ? this.commentComposerContext?.text || '' : '' },
+        items: [],
       }
     },
-
-    /** 左栏预览：meta 是「前两项恒在 + 后两项随载荷」的前缀序列，这里直接拼成一个数组。 */
-    buildVersionPreviewState(selected, preview, diff) {
-      const meta = [this.versionItemName(selected), this.versionActorLabel(selected)]
-      if (preview) meta.push(`二进制快照 ${preview.byteLength} 字节`)
-      if (preview && Number.isInteger(preview.blockCount)) meta.push(`${preview.blockCount} 个块`)
-      let row = ''
-      if (diff && diff.blockCount) {
-        const { prev, next, delta } = diff.blockCount
-        row = `块数 ${prev} → ${next} （${delta >= 0 ? '+' : ''}${delta}）`
-      }
-      return {
-        title: (preview && preview.label) || '未命名版本',
-        kind: this.versionKindLabel(selected && selected.kind),
-        meta,
-        degraded: this.versionPreviewError || '',
-        diff: diff ? { row } : null,
-        // 有载荷才给文案；空串 = 走「该版本没有可取回的正文」那条兜底。
-        payload: preview && preview.hasPayload
-          ? `该版本正文为二进制快照（${preview.byteLength} 字节），需由协同运行时解码后才能渲染。`
-          : '',
-      }
+    buildVersionVisibility() {
+      const contextKey = JSON.stringify([this.session?.documentId, this.session?._versioningProviderGeneration, this.session?._authorizationGeneration, this.session?._privateIdentityGeneration])
+      const readable = !this.session?.can || this.session.can('canView')
+      const current = !this.versionPreview?.readScope || this.versionPreview.readScope === contextKey
+      return { open: !!this.versionPanelOpen && readable && current, kind: this.versionPanelKind,
+        contextKey, previewPolicyKey: JSON.stringify(this.larkDocConfig?.network || {}),
+        restoreConfirm: { open: false }, trash: { open: false }, days: [], preview: null }
     },
-
-    buildSaveVersionState() {
-      // `:disabled="!versionCanCreate || saveVersionBusy"` —— 两处都要用这一份布尔。
+    buildSaveVersionVisibility() {
       const disabled = !this.versionCanCreate || !!this.saveVersionBusy
-      return {
-        open: !!this.saveVersionOpen,
-        notice: this.versionNotice || '',
-        // 标题带时间戳且 computed 无响应式依赖：只在打开时求值，别在挂载时就冻住。
-        title: this.saveVersionOpen ? this.saveVersionDialogTitle : '',
-        value: this.saveVersionName || '',
-        maxLength: this.versionNameMax,
-        counter: this.versionNameCounter,
-        confirm: {
-          disabled,
-          title: this.versionCanCreateReason,
-          style: this.versionDisabledStyle(disabled),
-        },
-        error: this.saveVersionError || '',
-      }
-    },
-
-    buildCommentState() {
-      const panels = [...(this.commentPanels || []), ...(this.commentDocumentThreads || []).map(item => ({ ...item, documentOnly: true }))]
-      const controls = this.commentControls || []
-      const menus = this.commentMenuItems || []
-      const remote = this.commentRemote === true
-      const sidebarOpen = remote ? this.commentSidebarOpen === true : panels.length > 0
-      const historical = this.commentHistorical === true
-      const emptyText = remote && sidebarOpen && !panels.length && !this.commentComposerOpen
-        ? (historical ? '暂无历史评论' : this.commentHistory ? '暂无已解决评论' : '暂无选区评论，选中文字即可发表评论。') : ''
-      return {
-        open: sidebarOpen,
-        remote,
-        sidebarOpen,
-        title: this.commentPanelTitle,
-        controls,
-        replyControls: this.commentReplyControls || [],
-        moreTitle: this.commentPrivateTitle,
-        moreHint: this.commentPrivateHint,
-        emptyText,
-        imageViewer: this.commentImageViewer,
-        imageStatus: { busy: this.commentImageBusy, pending: !!this.commentPendingImage,
-          canCancel: this.commentImageCanCancel?.() === true, canQuery: !this.commentImageBusy && this.commentCan('canView') },
-        composer: {
-          open: remote && this.commentComposerOpen === true,
-          quote: this.commentComposerContext?.text || '',
-          author: this.commentAuthorName(this.commentAuthor),
-          value: this.commentCreateDraft || '',
-          draftImages: this.commentDraftImages('selection'),
-          hasImages: this.commentDraftImages('selection').length > 0,
-          canUploadImage: this.commentCanUploadImage?.('selection') === true,
-          readonly: !this.commentAllowed('create'),
-          canSubmit: this.commentAllowed('create'),
-          privateOn: this.commentCreatePrivate === true,
-          history: this.commentHistory || historical ? (historical || this.commentHistory ? '返回未解决' : '已解决评论') : '已解决评论',
-        },
-        items: panels.map((item) => ({
-          id: item.id,
-          // 一次合成（SFC 是数组合并语义，`applyStyle` 是替换语义）。
-          style: {
-            ...(item.documentOnly ? { position: 'relative', left: 'auto', top: 'auto', height: 'auto' } : this.commentPanelStyle(item)),
-            ...(item.documentOnly ? {} : { height: `${this.commentPanelHeightOf(item)}px` }),
-          },
-          documentOnly: item.documentOnly === true,
-          quote: item.documentOnly ? '' : this.commentQuoteOf(item),
-          // 置灰而不是隐藏：无权限的按钮照挂，加 `is-disabled`。
-          disabled: controls
-            .filter((control) => !control.split && this.commentControlDisabled(control.id, item.id))
-            .map((control) => control.id),
-          replies: (item.replies || []).map((reply) => ({
-            id: reply.id,
-            name: this.commentAuthorName(reply.author),
-            time: this.commentTimeAt(reply.createdAt),
-            body: reply.content,
-            images: reply.tombstone ? [] : (reply.attachments || []).map(asset => ({
-              assetId: asset.assetId, fileName: asset.fileName,
-              url: this.commentImageUrl(item, reply, asset),
-              error: !!this.commentImageErrors[this.commentImageKey(item, reply, asset)],
-            })),
-            menuOpen: this.commentMenuThreadId === item.id && this.commentMenuCommentId === reply.id,
-            menus: menus.map((menu) => ({
-              id: menu.id,
-              label: menu.label,
-              submenu: !!menu.submenu,
-              visible: this.commentMenuVisible(menu, reply),
-              disabled: this.commentMenuDisabled?.(menu) === true,
-            })),
-          })),
-          textarea: {
-            value: this.commentDraftOf(item.id),
-            readonly: !this.commentAllowed('reply', item.id),
-            height: this.commentTextareaHeight(item),
-          },
-          draftImages: this.commentDraftImages(item.id),
-          hasDraft: this.commentHasDraft(item.id),
-          allowedReply: this.commentAllowed('reply', item.id),
-          canUploadImage: this.commentCanUploadImage?.(item.id) !== false,
-          moreOpen: this.commentMoreThreadId === item.id,
-          privateOn: this.commentPrivate(item.id),
-        })),
-      }
+      return { open: !!this.saveVersionOpen, notice: this.versionNotice || '',
+        title: this.saveVersionOpen ? this.saveVersionDialogTitle : '', value: this.saveVersionName || '',
+        maxLength: this.versionNameMax, counter: this.versionNameCounter,
+        confirm: { disabled, title: this.versionCanCreateReason, style: this.versionDisabledStyle(disabled) }, error: this.saveVersionError || '' }
     },
 
     refreshPanels() {
+      if (this._imageCommentScope && !this.imageCommentCurrent()) { this.closeImageComments(null, false); return }
       this.refreshCover()
       const ui = this._panelsUi
       if (!ui) return
@@ -547,7 +409,22 @@ export default {
       ui.outline.update(state.outline)
       ui.version.update(state.version)
       ui.saveVersion.update(state.saveVersion)
-      ui.comment.update(state.comment)
+      const scope = this._imageCommentScope
+      if (scope) {
+        ui.comment.update({ open: false, documentInline: false, launcher: { visible: false }, composer: { open: false }, documentComposer: { open: false } })
+        if (!scope.ui) {
+          const owner = this
+          scope.ui = createCommentPanel({ host: scope.viewer || this.$refs.panelHost,
+            get handlers() { return owner.panelsHandlers().comment }, composerFactory: createCommentComposer,
+            onReady: () => {
+              if (this._imageCommentScope !== scope || !this.imageCommentCurrent(scope)) return
+              this.panelPresentationRevision = (this.panelPresentationRevision || 0) + 1
+              this.refreshPanels(); this.focusImageComment()
+            },
+          })
+        }
+        scope.ui.update(state.comment)
+      } else ui.comment.update(state.comment)
     },
   },
 }

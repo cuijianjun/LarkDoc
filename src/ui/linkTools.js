@@ -8,6 +8,7 @@ export function createLinkTools({ host, handlers = {} }) {
   el.className = 'lark-doc-link-tools'
   el.setAttribute('role', 'toolbar')
   el.setAttribute('aria-label', '链接工具')
+  el.addEventListener('mousedown', event => event.preventDefault())
   const url = document.createElement('a')
   url.className = 'lark-doc-link-tools-url'
   url.target = '_blank'
@@ -68,6 +69,14 @@ export function createLinkTools({ host, handlers = {} }) {
   }
   const viewMenu = submenu(view, '链接显示视图')
   const moreMenu = submenu(more, '链接复制操作')
+  el.addEventListener('keydown', event => {
+    const opened = menus.find(([menu]) => !menu.hidden)
+    if (event.key !== 'Escape' || !opened) return
+    clearTimeout(hoverTimer)
+    event.preventDefault(); event.stopPropagation()
+    menus.forEach(([menu, trigger]) => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false') })
+    opened[1].focus()
+  })
   function open(menu, trigger) {
     menus.forEach(([node, button]) => { node.hidden = node !== menu; button.setAttribute('aria-expanded', String(node === menu)) })
     const win = el.ownerDocument.defaultView
@@ -150,7 +159,10 @@ export function createLinkTools({ host, handlers = {} }) {
       const minLeft = Math.max(8, (bounds?.left || 0) + 8)
       const maxRight = Math.min(win.innerWidth, bounds?.right || win.innerWidth) - 8
       el.style.left = `${Math.max(minLeft, Math.min((state.left + (state.right ?? state.left)) / 2 - rect.width / 2, maxRight - rect.width))}px`
-      el.style.top = `${state.top >= rect.height + 8 ? state.top - rect.height - 8 : state.bottom + 8}px`
+      const preferredTop = state.top >= rect.height + 8 ? state.top - rect.height - 8 : state.bottom + 8
+      el.style.top = `${Math.max(8, Math.min(preferredTop, win.innerHeight - rect.height - 8))}px`
+      const opened = menus.find(([menu]) => !menu.hidden)
+      if (opened) open(...opened)
     },
     destroy() { clearTimeout(hoverTimer); mountNode(host, el, false) },
   }

@@ -12,7 +12,12 @@
  *   4. 点「添加封面」立刻落默认灰封面，不需要先选图（§1.4.1）。
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import postcss from 'postcss'
 import panelsUiMixin from '../../src/components/lark-doc/editor/panelsUiMixin'
+import readingModeMixin from '../../src/components/lark-doc/editor/readingModeMixin'
+import { createDocumentSession } from '../../src/session/DocumentSession'
+import { LarkDoc } from '../../src/LarkDoc'
 import { createNativeOptionsHost } from '../../src/editor/nativeOptionsHost'
 import { iconMarkup } from '../../src/ui/icon'
 import coverMixin, {
@@ -59,18 +64,20 @@ function mixinCtx(extra = {}) {
   return ctx
 }
 
-const runtimes = []
+const runtimes = [], sessions = [], documents = []
 
 beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440)
   vi.stubGlobal('innerHeight', 900)
 })
 
-afterEach(() => {
+afterEach(async () => {
+  documents.splice(0).forEach(doc => doc.destroy())
   runtimes.splice(0).reverse().forEach(runtime => {
     runtime.host.destroyPanels()
     runtime.destroy()
   })
+  await Promise.all(sessions.splice(0).map(session => session.dispose()))
   document.body.textContent = ''
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -543,5 +550,338 @@ describe('封面 · 增删与图库', () => {
     expect(ctx.coverContains(node('.lark-doc-cover-layer'))).toBe(true)
     expect(ctx.coverContains(node('.other'))).toBe(false)
     expect(ctx.coverContains(null)).toBe(false)
+  })
+})
+
+
+describe('T082 cover upload ownership', () => {
+  function session() {
+    const value = createDocumentSession({ documentId: 'cover-doc', user: { id: 'cover-author' } })
+    sessions.push(value); return value
+  }
+  function scopedCover(extra = {}) {
+    return nativeCover({ session: session(), documentId: 'cover-doc', interactionMode: 'edit',
+      editor: { isEditable: true, isDestroyed: false }, writable: readingModeMixin.methods.writable,
+      coverInternal: { preset: 'ocean', offset: 18 }, ...extra })
+  }
+  function heldReaders() {
+    const readers = [], loads = [], original = FileReader.prototype.readAsDataURL
+    vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (file) {
+      const load = this.onload
+      readers.push(this)
+      this.onload = event => { loads.push(() => load.call(this, event)) }
+      // The real FileReader still reads the real File and produces its data URL;
+      // only delivery to the component is held across a context transition.
+      return original.call(this, file)
+    })
+    return { readers, loads }
+  }
+  async function chooseFile(vm, text = 'cover A') {
+    vm.coverPanelOpen = true; vm.coverStage = 'gallery'; vm.coverTab = 'upload'
+    await vm.$nextTick()
+    const input = vm._coverUi.upload.querySelector('input[type="file"]')
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File([text], 'cover.png', { type: 'image/png' })] })
+    const upload = vi.isMockFunction(vm.uploadCover) ? vm.uploadCover : vi.spyOn(vm, 'uploadCover')
+    input.dispatchEvent(new Event('change'))
+    expect(input.isConnected).toBe(true)
+    expect(upload.mock.results.at(-1)?.value).toBeInstanceOf(Promise)
+    return { pending: upload.mock.results.at(-1).value }
+  }
+  const expected = text => ({ preset: null, url: 'data:image/png;base64,' + btoa(text), offset: 50 })
+
+  async function withLiveCover(run, cover) {
+    const descriptors = ['getClientRects', 'getBoundingClientRect'].map(name => [name, Object.getOwnPropertyDescriptor(Range.prototype, name)])
+    Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [] })
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', { configurable: true, value: () => ({ left: 0, top: 0, right: 1, bottom: 1, width: 1, height: 1 }) })
+    vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
+    let doc
+    try {
+      const element = document.createElement('div'); document.body.append(element)
+      doc = new LarkDoc({ element, session: session(), cover, storage: 'none', content: '<p>正文</p>' }); documents.push(doc)
+      const host = doc._handle.nativeHost.host, editor = doc.getEditor()
+      await host.$nextTick()
+      // Cover is a renderer prop: use the supported hot-prop port before testing
+      // a same-value update rather than assuming it is an AiEditor constructor option.
+      if (cover !== undefined) { doc.patchProps({ cover }); await host.$nextTick(); expect(host.cover).toBe(cover) }
+      return await run({ doc, host, editor })
+    } finally {
+      doc?.destroy()
+      descriptors.forEach(([name, descriptor]) => { if (descriptor) Object.defineProperty(Range.prototype, name, descriptor); else delete Range.prototype[name] })
+    }
+  }
+
+  it('commits one real FileReader result and closes the current panel', async () => {
+    const { host, emit } = scopedCover(), { readers, loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    const abort = vi.spyOn(readers[0], 'abort')
+    loads[0](); loads[0](); await pending
+    expect(abort).not.toHaveBeenCalled()
+    expect(host.coverInternal).toEqual(expected('cover A'))
+    expect(emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([['cover-change', expected('cover A')]])
+    expect(host.coverPanelOpen).toBe(false)
+  })
+
+  it('closes after a synchronous controlled-prop acknowledgement without consuming a second write', async () => {
+    const runtime = scopedCover({ cover: { preset: 'ocean', offset: 18 }, coverInternal: null })
+    runtime.emit.mockImplementation((name, value) => {
+      if (name === 'cover-change') { runtime.host.cover = value; runtime.flush() }
+    })
+    const { loads } = heldReaders(), { pending } = await chooseFile(runtime.host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    loads[0](); await pending
+    expect(runtime.host.coverValue).toEqual(expected('cover A')); expect(runtime.host.coverInternal).toBeNull()
+    expect(runtime.host.coverPanelOpen).toBe(false)
+    expect(runtime.emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([['cover-change', expected('cover A')]])
+  })
+
+  it.each(['readonly', 'readonly-aba', 'session', 'actor', 'actor-aba', 'document', 'component-document', 'component-document-aba', 'authentication', 'authorization', 'credentials', 'editor', 'session-dispose', 'controlled-cover'])('does not commit a late real load after %s changes', async reason => {
+    const { host, emit } = scopedCover(), { loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    const before = host.coverInternal
+    if (reason === 'readonly' || reason === 'readonly-aba') { host.effectiveReadonly = true; await host.$nextTick() }
+    if (reason === 'readonly-aba') { host.effectiveReadonly = false; await host.$nextTick() }
+    if (reason === 'session') host.session = session()
+    if (reason === 'actor' || reason === 'actor-aba') { host.session.user = { id: 'another-author' }; expect(host.session.can('canEdit')).toBe(true) }
+    if (reason === 'actor-aba') host.session.user = { id: 'cover-author' }
+    if (reason === 'document') host.session.documentId = 'another-doc'
+    if (reason === 'component-document' || reason === 'component-document-aba') host.documentId = 'another-doc'
+    if (reason === 'component-document-aba') { await host.$nextTick(); host.documentId = 'cover-doc'; await host.$nextTick() }
+    if (reason === 'authentication') host.session._identityGeneration++
+    if (reason === 'authorization') host.session._authorizationGeneration++
+    if (reason === 'credentials') host.session._privateIdentityGeneration++
+    if (reason === 'editor') host.editor = { isEditable: true, isDestroyed: false }
+    if (reason === 'session-dispose') await host.session.dispose()
+    if (reason === 'controlled-cover') host.cover = { preset: 'rose', offset: 50 }
+    loads[0](); await pending; await host.$nextTick()
+    expect(host.coverInternal).toEqual(before)
+    expect(emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([])
+  })
+
+  it.each(['preset', 'remove'])('retires upload A when the latest intent is %s', async intent => {
+    const { host, emit } = scopedCover(), { loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    if (intent === 'preset') host.pickCover('rose')
+    else host.removeCover()
+    const latest = intent === 'preset' ? { preset: 'rose', offset: 18 } : null
+    loads[0](); await pending
+    expect(host.coverInternal).toEqual(latest)
+    expect(emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([['cover-change', latest]])
+  })
+
+  it.each(['A-first', 'B-first'])('keeps upload B as the latest intent when callbacks finish %s', async order => {
+    const { host, emit } = scopedCover(), { loads } = heldReaders(), a = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    const b = await chooseFile(host, 'cover B')
+    await vi.waitFor(() => expect(loads).toHaveLength(2))
+    if (order === 'A-first') { loads[0](); await a.pending; expect(host.coverInternal).toEqual({ preset: 'ocean', offset: 18 }); loads[1]() }
+    else { loads[1](); await b.pending; loads[0]() }
+    await Promise.all([a.pending, b.pending])
+    expect(host.coverInternal).toEqual(expected('cover B'))
+    expect(emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([['cover-change', expected('cover B')]])
+  })
+
+  it('settles reader errors without cover writes', async () => {
+    const { host, emit } = scopedCover(), { readers, loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    // A fault event on the real reader is an injected IO negative, not a remote service.
+    readers[0].dispatchEvent(new ProgressEvent('error')); await pending
+    expect(host.coverInternal).toEqual({ preset: 'ocean', offset: 18 })
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('settles a synchronous reader failure without cover writes', async () => {
+    vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(() => { throw new Error('reader unavailable') })
+    const { host, emit } = scopedCover(), { pending } = await chooseFile(host)
+    await expect(pending).resolves.toBeUndefined()
+    expect(host.coverInternal).toEqual({ preset: 'ocean', offset: 18 }); expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('retires the real reader through the actual native beforeDestroy hook', async () => {
+    const runtime = scopedCover(), { readers, loads } = heldReaders(), { pending } = await chooseFile(runtime.host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    const abort = vi.spyOn(readers[0], 'abort'), commit = vi.spyOn(runtime.host, 'commitCover')
+    runtime.host.destroyPanels(); runtime.destroy()
+    loads[0](); await pending
+    expect(abort).toHaveBeenCalledOnce(); expect(commit).not.toHaveBeenCalled()
+    expect(runtime.emit).not.toHaveBeenCalled()
+  })
+
+  it.each(['readonly', 'writable', 'authorization', 'editor-destroyed', 'destroyed'])('rechecks direct commit authority at %s', reason => {
+    const { host, emit, destroy } = scopedCover(), before = host.coverInternal
+    if (reason === 'readonly') host.effectiveReadonly = true
+    if (reason === 'writable') host.interactionMode = 'read'
+    if (reason === 'authorization') vi.spyOn(host.session, 'can').mockReturnValue(false)
+    if (reason === 'editor-destroyed') host.editor.isDestroyed = true
+    if (reason === 'destroyed') destroy()
+    host.commitCover(null)
+    expect(host.coverInternal).toEqual(before)
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it.each(['transaction', 'selection'])('keeps a real native reader pending through a benign body %s', change => withLiveCover(async ({ host, editor }) => {
+    host.addCover()
+    const { readers, loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    const abort = vi.spyOn(readers[0], 'abort')
+    if (change === 'transaction') editor.commands.insertContent('编辑')
+    else editor.commands.setTextSelection(2)
+    await host.$nextTick()
+    expect(abort).not.toHaveBeenCalled()
+    const body = editor.getJSON()
+    loads[0](); await pending
+    expect(host.coverInternal).toEqual(expected('cover A'))
+    expect(editor.getJSON()).toEqual(body)
+  }))
+
+  it.each(['patchProps', 'forceUpdate'])('keeps the same controlled cover during a benign native %s', async change => {
+    const cover = { preset: 'ocean', offset: 18 }
+    await withLiveCover(async ({ doc, host, editor }) => {
+      const { readers, loads } = heldReaders(), emit = vi.spyOn(host, '$emit'), { pending } = await chooseFile(host)
+      await vi.waitFor(() => expect(loads).toHaveLength(1))
+      const abort = vi.spyOn(readers[0], 'abort'), body = editor.getJSON()
+      if (change === 'patchProps') expect(doc.patchProps({ cover })).toBe(true)
+      else host.$forceUpdate()
+      await host.$nextTick()
+      expect(host.cover).toBe(cover); expect(abort).not.toHaveBeenCalled()
+      loads[0](); await pending
+      expect(emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([['cover-change', expected('cover A')]])
+      expect(host.coverInternal).toBeNull(); expect(editor.getJSON()).toEqual(body)
+    }, cover)
+  })
+
+  it.each(['preset', 'url', 'offset'])('does not overwrite a real in-place controlled cover %s change', async field => {
+    const cover = { preset: 'ocean', offset: 18 }
+    await withLiveCover(async ({ doc, host }) => {
+      const { loads } = heldReaders(), emit = vi.spyOn(host, '$emit'), { pending } = await chooseFile(host)
+      await vi.waitFor(() => expect(loads).toHaveLength(1))
+      cover[field] = { preset: 'rose', url: 'data:image/png;base64,Qg==', offset: 32 }[field]
+      doc.patchProps({ cover }); await host.$nextTick()
+      loads[0](); await pending
+      expect(host.coverValue).toEqual(cover)
+      expect(emit.mock.calls.filter(([name]) => name === 'cover-change')).toEqual([])
+    }, cover)
+  })
+
+  it('retires the pending real reader when the actual cover backdrop closes the panel', async () => {
+    const { host, emit } = scopedCover(), { readers, loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    const abort = vi.spyOn(readers[0], 'abort')
+    host._coverUi.layer.querySelector('.lark-doc-cover-mask').dispatchEvent(new Event('pointerdown'))
+    await host.$nextTick()
+    expect(abort).toHaveBeenCalledOnce()
+    loads[0](); await pending
+    expect(host.coverPanelOpen).toBe(false); expect(host.coverInternal).toEqual({ preset: 'ocean', offset: 18 })
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('keeps cover upload and crop out of the actual body Undo/Redo history', () => withLiveCover(async ({ doc, host, editor }) => {
+    const before = editor.getJSON()
+    editor.commands.insertContent('新增'); host.addCover()
+    const edited = editor.getJSON(), { loads } = heldReaders(), { pending } = await chooseFile(host)
+    await vi.waitFor(() => expect(loads).toHaveLength(1))
+    loads[0](); await pending
+    host.startCoverReposition(); host.setCoverDraftOffset(21); host.confirmCoverReposition()
+    expect(host.coverInternal).toEqual({ ...expected('cover A'), offset: 21 })
+    expect(editor.getJSON()).toEqual(edited)
+    expect(doc.undo()).toBe(true); expect(editor.getJSON()).toEqual(before)
+    expect(host.coverInternal.offset).toBe(21)
+    expect(doc.redo()).toBe(true); expect(editor.getJSON()).toEqual(edited)
+  }))
+})
+
+
+describe('T096 no-hover phone cover CSS on the native cover DOM', () => {
+  const sheets = []
+  afterEach(() => sheets.splice(0).forEach(sheet => sheet.remove()))
+  function styleFor({ width = 393, height = 852, coarse = true, hover = false } = {}) {
+    vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', height)
+    // JSDOM has no viewport media/layout engine. Select the production cover
+    // rules for this environment, then let its real selector/cascade engine run.
+    // Vitest rewrites `import.meta.url` to an http:// module URL under jsdom, so
+    // resolve the stylesheet from the project root instead of fileURLToPath.
+    const css = postcss.parse(readFileSync(`${process.cwd()}/src/components/lark-doc/lark-doc.css`, 'utf8'))
+    const output = []
+    css.walkRules(rule => {
+      if (!rule.selector.includes('lark-doc-cover-') && !['.lark-doc button', '.lark-doc *, .lark-doc *::before, .lark-doc *::after'].includes(rule.selector)) return
+      for (let parent = rule.parent; parent?.type !== 'root'; parent = parent.parent) {
+        if (parent.type !== 'atrule' || parent.name !== 'media' || /print/.test(parent.params)) return
+        const query = parent.params
+        if ([...query.matchAll(/max-width:\s*(\d+)px/g)].some(match => width > Number(match[1]))) return
+        if ([...query.matchAll(/min-width:\s*(\d+)px/g)].some(match => width < Number(match[1]))) return
+        if (/pointer:\s*coarse/.test(query) && !coarse || /pointer:\s*fine/.test(query) && coarse) return
+        if (/hover:\s*none/.test(query) && hover || /hover:\s*hover/.test(query) && !hover) return
+      }
+      // jsdom 16's nwsapi cascade engine throws on `:focus-within` (the rule
+      // still keeps its `:hover` half); drop only that pseudo-class arm.
+      const selector = rule.selector.split(',').filter(part => !part.includes(':focus-within')).join(',')
+      if (!selector.trim()) return
+      output.push(rule.clone({ selector }).toString())
+    })
+    const sheet = document.createElement('style'); sheet.textContent = output.join('\n'); document.head.append(sheet); sheets.push(sheet)
+  }
+  function styledCover(extra = {}) {
+    const ui = nativeCover(extra), root = document.createElement('div'); root.className = 'lark-doc'
+    ui.paper.className = 'lark-doc-paper'; root.append(ui.paper, ui.panelHost); document.body.append(root)
+    return ui
+  }
+  // Resolve only the px/vw/vh sums used by the production declarations. This is
+  // a declared viewport budget assertion, never a claim about Chrome hit testing.
+  function extent(value) {
+    const text = String(value).replace(/([+-])\s+(?=\d)/g, '$1')
+    const terms = [...text.matchAll(/([+-]?[\d.]+)(px|vw|vh)/g)]
+    if (!terms.length) return Infinity
+    return terms.reduce((sum, match) => sum + Number(match[1]) * (match[2] === 'vw' ? window.innerWidth / 100 : match[2] === 'vh' ? window.innerHeight / 100 : 1), 0)
+  }
+  it('keeps the empty editable entry visible in reserved flow before the title, then exposes edit controls after adding', async () => {
+    styleFor()
+    const { host, paper, title } = styledCover(), ui = host._coverUi
+    const slot = getComputedStyle(ui.slot), entry = getComputedStyle(ui.add)
+    expect(entry.opacity).toBe('1'); expect(entry.position).toBe('static')
+    expect(parseFloat(slot.minHeight)).toBeGreaterThanOrEqual(parseFloat(entry.minHeight))
+    expect(ui.slot.nextElementSibling).toBe(title)
+    ui.add.click(); await host.$nextTick()
+    expect(paper.querySelector('.lark-doc-cover-entry')).toBeNull()
+    expect(getComputedStyle(ui.toolbar).opacity).toBe('1')
+    expect(ui.edit.isConnected).toBe(true); expect(host.coverExists).toBe(true)
+    host.removeCover(); await host.$nextTick()
+    expect(paper.querySelector('.lark-doc-cover-entry')).toBe(ui.add)
+    expect(getComputedStyle(ui.add).opacity).toBe('1')
+  })
+  it('keeps readonly empty cover at zero height without adding a visible control or spacer', () => {
+    styleFor()
+    const { host } = styledCover({ effectiveReadonly: true }), ui = host._coverUi
+    expect(ui.add.isConnected).toBe(false)
+    expect(getComputedStyle(ui.slot).height).toBe('0px')
+    expect(parseFloat(getComputedStyle(ui.slot).minHeight) || 0).toBe(0)
+  })
+  it.each([{ width: 1440, coarse: false, hover: true }, { width: 393, coarse: false, hover: true }])('retains hover-only desktop entry and gallery dimensions for %j', async environment => {
+    styleFor(environment)
+    const { host } = styledCover(), ui = host._coverUi
+    expect(getComputedStyle(ui.slot).height).toBe('0px')
+    expect(getComputedStyle(ui.add).opacity).toBe('0'); expect(getComputedStyle(ui.add).position).toBe('absolute')
+    ui.add.click(); await host.$nextTick(); ui.edit.click(); await host.$nextTick()
+    ui.menu.querySelector('[data-cover-item="pick"]').click(); await host.$nextTick()
+    expect(getComputedStyle(ui.panel).width).toBe('542px')
+    expect(getComputedStyle(ui.panel).height).toBe('522px')
+  })
+  it.each([{ width: 320, height: 852 }, { width: 393, height: 852 }, { width: 393, height: 480 }, { width: 667, height: 375 }])('bounds the gallery declaration budget and keeps tabs/upload/close usable for %j', async environment => {
+    styleFor(environment)
+    const { host, panelHost } = styledCover(), ui = host._coverUi
+    ui.add.click(); await host.$nextTick(); ui.edit.click(); await host.$nextTick()
+    ui.menu.querySelector('[data-cover-item="pick"]').click(); await host.$nextTick()
+    const panel = getComputedStyle(ui.panel)
+    const width = Math.min(extent(panel.width), extent(panel.maxWidth)), height = Math.min(extent(panel.height), extent(panel.maxHeight))
+    expect(Number.isFinite(width)).toBe(true); expect(Number.isFinite(height)).toBe(true)
+    expect(parseFloat(ui.panel.style.left) + width).toBeLessThanOrEqual(environment.width - 8)
+    expect(parseFloat(ui.panel.style.top) + height).toBeLessThanOrEqual(environment.height - 8)
+    expect(getComputedStyle(ui.gallery.querySelector('.lark-doc-cover-gallery-head')).flexWrap).toBe('wrap')
+    expect(getComputedStyle(ui.storehouse.querySelector('.lark-doc-cover-thumbs')).gridTemplateColumns).toContain('auto-fit')
+    expect(ui.storehouse.querySelectorAll('.lark-doc-cover-group')).toHaveLength(host.coverThumbGroups.length)
+    ui.uploadTab.click(); await host.$nextTick()
+    const upload = panelHost.querySelector('.lark-doc-cover-upload')
+    expect(upload.isConnected).toBe(true); expect(getComputedStyle(upload).display).toBe('grid')
+    expect(upload.querySelector('input[type="file"]').accept).toBe('image/*')
+    panelHost.querySelector('.lark-doc-cover-mask').dispatchEvent(new Event('pointerdown'))
+    await host.$nextTick(); expect(host.coverPanelOpen).toBe(false)
   })
 })

@@ -8,6 +8,9 @@
       "defining": true,
       "isolating": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -43,6 +46,9 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "bitable": {
           "default": null
         },
@@ -57,6 +63,9 @@
       "atom": true,
       "selectable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -70,6 +79,9 @@
       "group": "block",
       "defining": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -81,6 +93,9 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -111,6 +126,9 @@
       "content": "listItem+",
       "group": "block list",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -159,6 +177,9 @@
       "group": "block",
       "defining": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "backgroundColor": {
           "default": null
         },
@@ -194,6 +215,9 @@
       "defining": true,
       "marks": "revision",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -232,6 +256,9 @@
       "defining": true,
       "isolating": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -243,6 +270,9 @@
       "defining": true,
       "isolating": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -263,6 +293,9 @@
       "defining": true,
       "isolating": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -271,6 +304,17 @@
     "doc": {
       "content": "block+",
       "attrs": {}
+    },
+    "documentSegment": {
+      "content": "block+",
+      "group": "block",
+      "selectable": false,
+      "isolating": true,
+      "attrs": {
+        "pageId": {
+          "default": null
+        }
+      }
     },
     "emoji": {
       "group": "inline",
@@ -283,12 +327,50 @@
         }
       }
     },
+    "externalBlock": {
+      "group": "block",
+      "atom": true,
+      "selectable": true,
+      "draggable": true,
+      "attrs": {
+        "asyncState": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
+        "kind": {
+          "default": ""
+        },
+        "payload": {
+          "default": ""
+        },
+        "provider": {
+          "default": ""
+        },
+        "reason": {
+          "default": ""
+        },
+        "sourceUrl": {
+          "default": ""
+        },
+        "status": {
+          "default": "unavailable"
+        },
+        "title": {
+          "default": ""
+        }
+      }
+    },
     "fileBlock": {
       "group": "block",
       "atom": true,
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -330,6 +412,9 @@
       "group": "block",
       "defining": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -356,6 +441,9 @@
     "horizontalRule": {
       "group": "block",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -370,6 +458,9 @@
           "default": "center"
         },
         "alt": {
+          "default": null
+        },
+        "asyncState": {
           "default": null
         },
         "attchId": {
@@ -436,6 +527,9 @@
         "appId": {
           "default": null
         },
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -491,6 +585,9 @@
       "content": "paragraph block*",
       "defining": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -529,6 +626,9 @@
       "content": "listItem+",
       "group": "block list",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -547,6 +647,9 @@
       "content": "inline*",
       "group": "block",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -567,6 +670,9 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -596,6 +702,9 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -610,6 +719,9 @@
       "isolating": true,
       "tableRole": "table",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -680,6 +792,9 @@
       "content": "paragraph block*",
       "defining": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         },
@@ -692,6 +807,9 @@
       "content": "taskItem+",
       "group": "block list",
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
         "blockId": {
           "default": null
         }
@@ -706,6 +824,12 @@
       "atom": true,
       "selectable": true,
       "attrs": {
+        "asyncState": {
+          "default": null
+        },
+        "blockId": {
+          "default": null
+        },
         "payload": {
           "default": ""
         },
@@ -721,6 +845,12 @@
       "draggable": true,
       "attrs": {
         "aspect": {
+          "default": null
+        },
+        "asyncState": {
+          "default": null
+        },
+        "blockId": {
           "default": null
         },
         "bridgeVersion": {

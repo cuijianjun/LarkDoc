@@ -1,6 +1,6 @@
 /** 行内 emoji 节点：data-name 记名字，渲染成统一字形，未知名字回退 `:name:`。 */
 import { Node, mergeAttributes } from '@tiptap/core'
-import { findEmojiByName, normalizeEmojiName } from '../emoji/catalog'
+import { findEmojiByName, normalizeEmojiName } from '../emoji/lookup'
 
 // 与 0.11 及以前落库的默认值保持一致，不改 schema 快照。
 const EMOJI_DEFAULT_NAME = 'smile'

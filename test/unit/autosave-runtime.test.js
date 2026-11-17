@@ -5,6 +5,7 @@ import { createWorkspaceController, createWorkspaceState } from '../../src/works
 import { LarkDoc } from '../../src/LarkDoc'
 import { readOptionsFromElement, applyAttributeChange } from '../../src/web-component/attributes'
 import { LarkDocElement } from '../../src/web-component/LarkDocElement'
+import { createDocumentSession } from '../../src/session/DocumentSession'
 
 const controllers = []
 const mounted = []
@@ -329,5 +330,214 @@ describe('自动保存：Web Component 重建时的配置延续', () => {
     vi.advanceTimersByTime(30)
     expect(capture.value.autosave).toBeUndefined()
     capture.el.remove()
+  })
+})
+
+describe('T092 persistence operation ownership', () => {
+  function deferred() {
+    let resolve
+    const promise = new Promise(done => { resolve = done })
+    return { promise, resolve }
+  }
+  const draft = (title, text) => ({ title, schemaVersion: 3, json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] } })
+  async function withOwner(run, adapterA) {
+    const createRange = document.createRange.bind(document)
+    vi.spyOn(document, 'createRange').mockImplementation(() => Object.assign(createRange(), {
+      getClientRects: () => [], getBoundingClientRect: () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    }))
+    // Observe the real lifecycle Promise, including its continuation after load.
+    const probe = createWorkspaceController({ state: createWorkspaceState({}) }); controllers.push(probe)
+    const ready = vi.spyOn(Object.getPrototypeOf(probe), 'onReady')
+    const sessions = []
+    const sessionFor = (documentId, user, persistence) => {
+      const session = createDocumentSession({ documentId, user: { id: user }, persistence })
+      sessions.push(session); return session
+    }
+    const sessionA = sessionFor('autosave-owner-a', 'actor-A', adapterA)
+    const element = document.createElement('div'); document.body.append(element)
+    const doc = new LarkDoc({ element, storage: 'none', session: sessionA, persistence: adapterA,
+      content: '<p>A seed</p>', title: 'A seed title', autosave: { enabled: false } })
+    try {
+      await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce())
+      const controller = doc._handle.workspaceController, initialReady = ready.mock.results[0].value
+      expect(doc.getEditor()).toBeTruthy()
+      return await run({ doc, controller, initialReady, sessionA, sessionFor })
+    } finally { doc.destroy(); await Promise.all(sessions.map(session => session.dispose())); element.remove() }
+  }
+
+  it.each(['actor', 'session-document', 'provider', 'config'])('does not restore A load into current B content/title after %s changes, and reads the current provider next', async reason => {
+    const loadA = deferred(), adapterA = hostAdapter(), adapterB = hostAdapter()
+    adapterA.load.mockReturnValueOnce(loadA.promise)
+    await withOwner(async ({ doc, controller, initialReady, sessionA, sessionFor }) => {
+      expect(adapterA.load).toHaveBeenCalledOnce()
+      if (reason === 'actor') sessionA.user = { id: 'actor-B' }
+      if (reason === 'session-document') expect(doc.patchProps({ session: sessionFor('autosave-owner-b', 'actor-B', adapterB), documentId: 'autosave-owner-b' })).toBe(true)
+      if (reason === 'provider') sessionA.setProvider('persistence', adapterB)
+      if (reason === 'config') doc.patchProps({ config: { features: { persistence: false } } })
+      expect(doc.getSession().can('canEdit')).toBe(true)
+      doc.setContent('<p data-block-id="current_b">B current body</p>')
+      doc.patchProps({ initialTitle: 'B current title' })
+      const current = doc.getJSON()
+      loadA.resolve(draft('Private A title', 'Private A body'))
+      await initialReady
+      expect(doc.getJSON()).toEqual(current)
+      expect(controller.state.title).toBe('B current title')
+      if (reason === 'config') doc.patchProps({ config: { features: { persistence: true } } })
+      const currentAdapter = reason === 'session-document' || reason === 'provider' ? adapterB : adapterA
+      currentAdapter.load.mockResolvedValue(draft('B loaded title', 'B loaded body'))
+      await controller.onReady()
+      expect(currentAdapter.load).toHaveBeenCalledTimes(currentAdapter === adapterA ? 2 : 1)
+      expect(doc.getText()).toBe('B loaded body')
+      expect(controller.state.title).toBe('B loaded title')
+      await doc.save()
+      expect(currentAdapter.save).toHaveBeenCalledOnce()
+      expect(currentAdapter.save.mock.calls[0][0]).toMatchObject({ title: 'B loaded title', documentId: doc.getSession().documentId, json: doc.getJSON() })
+    }, adapterA)
+  })
+
+  it.each(['actor', 'session-document', 'provider', 'config'])('ignores old A save ACK after %s without clearing B feedback or its new save timer, then saves B normally', async reason => {
+    const saveA = deferred(), adapterA = hostAdapter(), adapterB = hostAdapter()
+    adapterA.save.mockReturnValueOnce(saveA.promise)
+    await withOwner(async ({ doc, controller, initialReady, sessionA, sessionFor }) => {
+      await initialReady
+      const receipts = vi.fn(); doc.on('save', receipts)
+      const pendingA = doc.save()
+      expect(adapterA.save).toHaveBeenCalledOnce()
+      if (reason === 'actor') sessionA.user = { id: 'actor-B' }
+      if (reason === 'session-document') doc.patchProps({ session: sessionFor('autosave-owner-b', 'actor-B', adapterB), documentId: 'autosave-owner-b' })
+      if (reason === 'provider') sessionA.setProvider('persistence', adapterB)
+      if (reason === 'config') {
+        doc.patchProps({ config: { features: { persistence: false } } })
+        doc.patchProps({ config: { features: { persistence: true } } })
+      }
+      expect(doc.getSession().can('canEdit')).toBe(true)
+      vi.useFakeTimers()
+      doc.setAutoSave({ enabled: true, delay: 60000 })
+      doc.setContent('<p data-block-id="b_unsaved">B unsaved body</p>')
+      doc.patchProps({ initialTitle: 'B unsaved title' })
+      const timer = controller._saveTimer, status = controller.state.saveStatus, current = doc.getJSON()
+      expect(timer).not.toBeNull(); expect(status).toContain('等待本地保存')
+      // This ACK is local test data. The original save was already submitted.
+      saveA.resolve(null); await pendingA
+      expect(controller.state.saveStatus).toBe(status)
+      expect(controller._saveTimer).toBe(timer)
+      expect(receipts).not.toHaveBeenCalled()
+      expect(doc.getJSON()).toEqual(current); expect(controller.state.title).toBe('B unsaved title')
+      const currentAdapter = reason === 'session-document' || reason === 'provider' ? adapterB : adapterA
+      await doc.save()
+      expect(currentAdapter.save).toHaveBeenCalledTimes(currentAdapter === adapterA ? 2 : 1)
+      expect(currentAdapter.save.mock.calls.at(-1)[0]).toMatchObject({ title: 'B unsaved title', documentId: doc.getSession().documentId, json: current })
+      expect(controller.state.saveStatus).toContain('已保存')
+      expect(receipts).toHaveBeenCalledOnce()
+    }, adapterA)
+  })
+  it('preserves user edits during same-owner initial loading instead of restoring a late draft over them', async () => {
+    const load = deferred(), adapter = hostAdapter()
+    adapter.load.mockReturnValueOnce(load.promise)
+    await withOwner(async ({ doc, controller, initialReady, sessionA }) => {
+      expect(sessionA.can('canEdit')).toBe(true)
+      expect(doc.getEditor().isEditable).toBe(true)
+      doc.setContent('<p data-block-id="same_owner_edit">User current body</p>')
+      doc.patchProps({ initialTitle: 'User current title' })
+      const current = doc.getJSON()
+      load.resolve(draft('Late stored title', 'Late stored body')); await initialReady
+      expect(doc.getJSON()).toEqual(current)
+      expect(controller.state.title).toBe('User current title')
+    }, adapter)
+  })
+  it('still restores a same-owner draft when only selection/meta transactions happened during initial loading', async () => {
+    const load = deferred(), adapter = hostAdapter()
+    adapter.load.mockReturnValueOnce(load.promise)
+    await withOwner(async ({ doc, controller, initialReady }) => {
+      const editor = doc.getEditor(), initialDoc = editor.state.doc
+      editor.commands.setTextSelection(3)
+      editor.view.dispatch(editor.state.tr.setMeta('owner-selection-control', true).setMeta('addToHistory', false))
+      expect(editor.state.doc).toBe(initialDoc)
+      load.resolve(draft('Restored title', 'Restored body')); await initialReady
+      expect(doc.getText()).toBe('Restored body')
+      expect(controller.state.title).toBe('Restored title')
+    }, adapter)
+  })
+  it.each(['actor', 'session-document'])('lets current B publicly save after late initial A load retires without a second onReady (%s)', async reason => {
+    const load = deferred(), adapterA = hostAdapter(), adapterB = hostAdapter()
+    adapterA.load.mockReturnValueOnce(load.promise)
+    await withOwner(async ({ doc, controller, initialReady, sessionA, sessionFor }) => {
+      if (reason === 'actor') sessionA.user = { id: 'actor-B' }
+      else doc.patchProps({ session: sessionFor('autosave-owner-b', 'actor-B', adapterB), documentId: 'autosave-owner-b' })
+      doc.setContent('<p data-block-id="public_b_save">B public save body</p>')
+      doc.patchProps({ initialTitle: 'B public save title' })
+      const current = doc.getJSON()
+      load.resolve(draft('Retired A', 'Retired A body')); await initialReady
+      expect(doc.getJSON()).toEqual(current)
+      await doc.save()
+      const adapter = reason === 'actor' ? adapterA : adapterB
+      expect(adapter.save).toHaveBeenCalledOnce()
+      expect(adapter.save.mock.calls[0][0]).toMatchObject({ title: 'B public save title', documentId: doc.getSession().documentId, json: current })
+      expect(controller.state.initialized).toBe(true)
+    }, adapterA)
+  })
+  it('continues autosaving current same-owner edits after rejecting the old initial draft', async () => {
+    const load = deferred(), adapter = hostAdapter()
+    adapter.load.mockReturnValueOnce(load.promise)
+    await withOwner(async ({ doc, initialReady }) => {
+      doc.setContent('<p data-block-id="same_owner_autosave">Current user body</p>')
+      doc.patchProps({ initialTitle: 'Current user title' })
+      const current = doc.getJSON()
+      load.resolve(draft('Stored old title', 'Stored old body')); await initialReady
+      expect(doc.getJSON()).toEqual(current)
+      doc.setAutoSave({ enabled: true, delay: 0 })
+      doc.patchProps({ initialTitle: 'Current autosaved title' })
+      await vi.waitFor(() => expect(adapter.save).toHaveBeenCalledOnce())
+      expect(adapter.save.mock.calls[0][0]).toMatchObject({ title: 'Current autosaved title', json: current })
+    }, adapter)
+  })
+  it('unlocks current-owner autosaving when the old load remains unresolved after actor retirement', async () => {
+    const load = deferred(), adapter = hostAdapter()
+    let settled = false
+    load.promise.then(() => { settled = true })
+    adapter.load.mockReturnValueOnce(load.promise)
+    try {
+      await withOwner(async ({ doc, controller, sessionA }) => {
+        sessionA.user = { id: 'actor-B' }
+        await vi.waitFor(() => expect(controller.state.initialized).toBe(true))
+        expect(settled).toBe(false)
+        doc.setAutoSave({ enabled: true, delay: 0 })
+        doc.setContent('<p data-block-id="hung_load_current">B live body</p>')
+        doc.patchProps({ initialTitle: 'B live title' })
+        const current = doc.getJSON()
+        await vi.waitFor(() => expect(adapter.save).toHaveBeenCalledOnce())
+        expect(adapter.save.mock.calls[0][0]).toMatchObject({ title: 'B live title', documentId: sessionA.documentId, json: current })
+        expect(settled).toBe(false)
+      }, adapter)
+    } finally { load.resolve(null) }
+  })
+  it('unlocks autosaving after a public documentId-only patch while the old initial load stays unresolved', async () => {
+    const load = deferred(), adapter = hostAdapter()
+    let settled = false
+    load.promise.then(() => { settled = true })
+    adapter.load.mockReturnValueOnce(load.promise)
+    try {
+      await withOwner(async ({ doc, controller, initialReady, sessionA }) => {
+        const ready = vi.spyOn(controller, 'onReady')
+        expect(ready).toHaveBeenCalledOnce()
+        expect(doc.patchProps({ documentId: 'autosave-public-doc-b' })).toBe(true)
+        expect(doc.getSession()).toBe(sessionA)
+        expect(sessionA.user.id).toBe('actor-A')
+        expect(controller.props.documentId).toBe('autosave-public-doc-b')
+        await vi.waitFor(() => expect(controller.state.initialized).toBe(true))
+        await initialReady
+        expect(settled).toBe(false)
+        expect(ready).toHaveBeenCalledOnce()
+        doc.setAutoSave({ enabled: true, delay: 0 })
+        doc.setContent('<p data-block-id="public_doc_b">Public B document body</p>')
+        doc.patchProps({ initialTitle: 'Public B document title' })
+        const current = doc.getJSON()
+        await vi.waitFor(() => expect(adapter.save).toHaveBeenCalledOnce())
+        expect(adapter.save.mock.calls[0][0]).toMatchObject({ title: 'Public B document title', documentId: sessionA.documentId, json: current })
+        expect(doc.getJSON()).toEqual(current)
+        expect(settled).toBe(false)
+        expect(ready).toHaveBeenCalledOnce()
+      }, adapter)
+    } finally { load.resolve(null) }
   })
 })

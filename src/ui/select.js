@@ -25,7 +25,7 @@
  * - `mousedown.preventDefault()` 保选区不丢，所以键盘导航要手动 `focus()`；
  * - hover 即打开（不聚焦、`_hoverOpened` 守卫让「点一下」不误关），离开 150ms 后关；
  * - 键盘 ↑↓ / Enter / Esc；
- * - 打开期间 Esc 在**任何**焦点下都能收起（监听挂在 document 上，不 preventDefault）；
+ * - 打开期间 Esc 在所属工作区内收起；独立挂载时回退 document，不 preventDefault；
  * - 外部 `pointerdown`（捕获阶段）/ 滚动 / 尺寸变化 时重定位或关闭；
  * - 下方放不下翻到触发按钮上方（变高后量，故 SFC 用 `$nextTick`；原生节点同步插入，
  *   直接量 `offsetHeight` 即可，不必等一帧）；
@@ -34,6 +34,7 @@
  */
 
 import { iconNode, setIcon } from './icon'
+import { placeMenu } from './menuLayout'
 
 const HOVER_CLOSE_MS = 150
 
@@ -71,10 +72,11 @@ export function createSelect(options = {}) {
   }
   let iconName = icon || ''
   let open = false
-  let menuStyle = null
   let highlightIndex = 0
   let hoverTimer = null
   let hoverOpened = false
+  let escapeTarget = null
+  let parentMenu = null
 
   const el = document.createElement('span')
   el.className = className ? `lark-doc-select ${className}` : 'lark-doc-select'
@@ -119,6 +121,8 @@ export function createSelect(options = {}) {
   // 弹层常驻创建、按需挂载：v-if 等价语义 = 「不在 DOM 里」，不是 display:none。
   const menu = document.createElement('div')
   menu.className = 'lark-doc-select-menu'
+  menu.id = `lark-doc-select-${Math.random().toString(36).slice(2)}`
+  trigger.setAttribute('aria-controls', menu.id)
   menu.setAttribute('role', 'listbox')
   menu.setAttribute('aria-label', ariaLabel)
 
@@ -148,6 +152,11 @@ export function createSelect(options = {}) {
       const check = document.createElement('span')
       check.className = 'lark-doc-select-check'
       check.setAttribute('aria-hidden', 'true')
+      check.appendChild(iconNode('check', 14, 'lark-doc-check-icon'))
+      const checkText = document.createElement('span')
+      checkText.className = 'sr-only'
+      checkText.textContent = '✓'
+      check.appendChild(checkText)
 
       const text = document.createElement('span')
       text.className = 'lark-doc-select-text'
@@ -184,7 +193,7 @@ export function createSelect(options = {}) {
       row.button.classList.toggle('lark-doc-select-active', active)
       row.button.classList.toggle('is-highlight', index === highlightIndex)
       row.button.setAttribute('aria-selected', active ? 'true' : 'false')
-      row.check.textContent = active ? '✓' : ''
+      row.check.classList.toggle('is-visible', active)
     })
   }
 
@@ -200,47 +209,47 @@ export function createSelect(options = {}) {
     trigger.disabled = config.disabled
     trigger.setAttribute('aria-expanded', open ? 'true' : 'false')
     el.classList.toggle('lark-doc-select-open', open)
+    if (el.closest('.lark-doc-toolbar, .lark-doc-workspace-actions, .lark-doc-header-actions')) trigger.removeAttribute('title')
   }
 
   function position() {
     if (!open) return
     const rect = trigger.getBoundingClientRect()
-    const minWidth = Math.max(rect.width, menuMinWidth)
+    const minWidth = Math.min(Math.max(rect.width, menuMinWidth), Math.max(0, window.innerWidth - 16))
     // 先钉宽、再量高：宽度决定文案折不折行，顺序倒过来会拿到偏高的 offsetHeight，
     // 于是「下方放不放得下」判错，菜单该翻上去的时候不翻。
     menu.style.minWidth = `${minWidth}px`
-    let left = Math.max(8, rect.left)
-    // 右缘越界时整块左移：顶栏「文档模式」按钮贴右边，left = rect.left 会把菜单推出视口。
-    if (left + minWidth > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minWidth - 8)
-    let top = rect.bottom + 4
-    // 下方放不下时翻转到触发按钮上方。节点同步在 DOM 里，可直接量。
-    const height = menu.offsetHeight
-    if (top + height + 8 > window.innerHeight && rect.top - height - 4 >= 0) top = rect.top - height - 4
-    menuStyle = { left: `${left}px`, top: `${top}px`, minWidth: `${minWidth}px` }
-    menu.style.left = menuStyle.left
-    menu.style.top = menuStyle.top
+    placeMenu(menu, trigger, 8, { gap: 4 })
   }
 
   function onOutside(event) {
-    if (!el.contains(event.target)) close()
+    if (!el.contains(event.target) && !menu.contains(event.target)) close()
   }
 
-  // Esc 不依赖焦点：菜单是 fixed 浮层，挂着它的时候焦点常常已经不在触发按钮上。
-  // 只关自己的菜单，不 preventDefault / 不 stopPropagation（Esc 还要关别的浮层）。
+  // 工作区会隔离 Esc 冒泡；在所属根捕获，同时保留多文档之间的隔离。
   function onEscape(event) {
-    if (event.key === 'Escape') close()
+    if (event.key !== 'Escape') return
+    const ownsOption = menu.contains(event.target), ownsTrigger = trigger.contains(event.target)
+    if (event.isComposing || event.keyCode === 229) { if (ownsOption || ownsTrigger) event.stopPropagation(); return }
+    if (ownsOption || ownsTrigger) {
+      if (ownsOption) event.preventDefault()
+      event.stopPropagation(); close()
+      if (ownsOption && trigger.isConnected && !trigger.disabled) trigger.focus({ preventScroll: true })
+    } else close()
   }
 
   function bindGlobal() {
     document.addEventListener('pointerdown', onOutside, true)
-    document.addEventListener('keydown', onEscape)
+    escapeTarget = el.closest('.lark-doc') || el.ownerDocument
+    escapeTarget.addEventListener('keydown', onEscape, true)
     window.addEventListener('scroll', position, true)
     window.addEventListener('resize', position)
   }
 
   function unbindGlobal() {
     document.removeEventListener('pointerdown', onOutside, true)
-    document.removeEventListener('keydown', onEscape)
+    escapeTarget?.removeEventListener('keydown', onEscape, true)
+    escapeTarget = null
     window.removeEventListener('scroll', position, true)
     window.removeEventListener('resize', position)
   }
@@ -252,7 +261,11 @@ export function createSelect(options = {}) {
     highlightIndex = current === -1 ? 0 : current
     paintTrigger()
     paintRows()
-    el.appendChild(menu)
+    // 文档操作中的嵌套下拉浮出滚动区域；普通下拉保留原有结构和变体样式。
+    menu._larkDocSelectOwner = el
+    parentMenu = el.closest('.lark-doc-header-menu')
+    parentMenu?.addEventListener('close', close)
+    ;(parentMenu && el.closest('.lark-doc') || el).appendChild(menu)
     position()
     bindGlobal()
   }
@@ -260,7 +273,8 @@ export function createSelect(options = {}) {
   function close() {
     if (!open) return
     open = false
-    menuStyle = null
+    parentMenu?.removeEventListener('close', close)
+    parentMenu = null
     menu.style.left = ''
     menu.style.top = ''
     menu.style.minWidth = ''
@@ -297,7 +311,7 @@ export function createSelect(options = {}) {
   trigger.addEventListener('click', () => {
     if (config.disabled) return
     // hover 已打开时点击不关闭（飞书行为：hover 弹窗靠移开鼠标关闭）。
-    if (open && hoverOpened) return
+    if (open && hoverOpened) { trigger.focus(); return }
     if (open) {
       close()
       return
@@ -345,6 +359,13 @@ export function createSelect(options = {}) {
     hoverTimer = null
   })
   menu.addEventListener('mouseleave', scheduleHoverClose)
+  menu.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+    trigger.focus()
+  })
 
   rebuildRows(config.options)
   paintTrigger()
@@ -386,7 +407,7 @@ export function createSelect(options = {}) {
     if ('icon' in next) iconName = next.icon || ''
     if (next.ariaLabel) trigger.setAttribute('aria-label', next.ariaLabel)
     // 只读态下弹层若开着，必须收掉 —— 否则禁用按钮上还挂着一个可点的列表。
-    if (config.disabled && open) close()
+    if (open && (config.disabled || parentMenu && (!parentMenu.isConnected || !parentMenu.contains(el)))) close()
     paintTrigger()
     paintRows()
     if (open) position()
@@ -401,7 +422,8 @@ export function createSelect(options = {}) {
     destroy() {
       clearTimeout(hoverTimer)
       hoverTimer = null
-      unbindGlobal()
+      config.disabled = true
+      close()
       if (el.parentNode) el.parentNode.removeChild(el)
     },
   }

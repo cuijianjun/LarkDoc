@@ -59,17 +59,138 @@ const response = (bridge, type, extra) => bridge.provider.receiveStateless(JSON.
   protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc', type, ...extra,
 }))
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+async function prepareConnection(bridge) {
+  const connect = vi.spyOn(bridge.provider.configuration.websocketProvider, 'connect').mockResolvedValue()
+  await bridge.connect()
+  return connect
+}
 
 describe('持久协作桥（真实 provider，注入消息测试）', () => {
+  it('公开真实provider的forceSync在connect前仍同步发送原HELLO', () => {
+    const bridge = mount(), sent = messages(bridge)
+    bridge.provider.forceSync()
+    expect(sent).toEqual([{ protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc', type: 'HELLO' }])
+    expect(bridge.getState()).toMatchObject({ status: 'connecting', pending: [] })
+  })
+  it('公开真实provider的入场拒绝在connect前仍同步请求当前授权', () => {
+    const onAuthorizationRequired = vi.fn(), bridge = mount({ onAuthorizationRequired })
+    bridge.provider.permissionDeniedHandler('stale ticket')
+    expect(bridge.getState().status).toBe('disconnected')
+    expect(onAuthorizationRequired).toHaveBeenCalledOnce()
+  })
+  it('autoConnect 加载期旧票据退休不能让旧Promise隔离新的授权连接', async () => {
+    let reconnect
+    const onError = vi.fn(), onAuthorizationRequired = vi.fn(() => { reconnect = bridge.connect() })
+    const bridge = mount({ autoConnect: true, onError, onAuthorizationRequired })
+    const connect = vi.spyOn(bridge.provider.configuration.websocketProvider, 'connect').mockResolvedValue()
+    bridge.provider.permissionDeniedHandler('retired during module loading')
+    expect(onAuthorizationRequired).toHaveBeenCalledOnce()
+    await expect(reconnect).resolves.toBeUndefined()
+    ready(bridge); await bridge.ready
+    expect(connect).toHaveBeenCalledOnce()
+    expect(onError).not.toHaveBeenCalled()
+    expect(bridge.getState().status).toBe('ready')
+  })
+  it('disconnect 同步保留宿主 transport 的原返回值', () => {
+    const bridge = mount(), result = {}
+    vi.spyOn(bridge.provider.configuration.websocketProvider, 'disconnect').mockReturnValue(result)
+    expect(bridge.disconnect()).toBe(result)
+  })
+  it('disconnect 返回前已收回写入准入，之后本地字节只缓存unknown而不排队UPDATE', async () => {
+    const bridge = mount()
+    ready(bridge); await bridge.ready
+    const sent = messages(bridge)
+    bridge.disconnect()
+    expect(bridge.getState()).toMatchObject({ status: 'disconnected', canWrite: false })
+    bridge.ydoc.getText('offline').insert(0, 'keep local after disconnect')
+    const snapshot = await bridge.exportPendingSnapshot()
+    expect(snapshot.pending).toHaveLength(1)
+    expect(snapshot.pending[0].status).toBe('unknown')
+    expect(sent.filter(message => message.type === 'UPDATE')).toEqual([])
+    expect(bridge.queryPending()).toBe(0)
+  })
+  it.each(['destroy', 'disconnect'])('connect 保持同步真实状态与同一Promise，%s 在加载前取消则零socket', async method => {
+    const bridge = mount(), transport = bridge.provider.configuration.websocketProvider
+    const connect = vi.spyOn(transport, 'connect').mockResolvedValue()
+    const pending = bridge.connect()
+    expect(bridge.connect()).toBe(pending)
+    expect(bridge.getState()).toMatchObject({ status: 'connecting', pending: [], canWrite: false })
+    bridge[method]()
+    await expect(pending).rejects.toThrow(/DESTROYED|COLLABORATION_ISOLATED/)
+    expect(connect).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['isolateEpoch', bridge => bridge.isolateEpoch()], ['destroy', bridge => bridge.destroy()],
+    ['closed', bridge => bridge.provider.onClose()], ['authorization', bridge => bridge.provider.permissionDeniedHandler('retired ticket')],
+  ])('COMMITTED 哈希等待期间 %s 后，迟到正文及 receipt 均不得应用', async (_label, retire) => {
+    const bridge = mount({ onAuthorizationRequired: vi.fn() })
+    bridge.provider.configuration.durable.start()
+    ready(bridge); await bridge.ready
+    const remote = new Y.Doc(), digest = crypto.subtle.digest.bind(crypto.subtle)
+    remote.getText('late').insert(0, 'late committed payload')
+    const payload = Y.encodeStateAsUpdate(remote), receipt = matchingReceipt({ updateId: 'remote-update',
+      payloadHash: 'sha256:' + Buffer.from(await digest('SHA-256', payload)).toString('hex') })
+    let finish
+    vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    response(bridge, 'COMMITTED', { payloadBase64: base64(payload), receipt })
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    retire(bridge)
+    const before = bridge.getState()
+    finish(await digest('SHA-256', payload)); await settle(); await settle()
+    expect(bridge.ydoc.getText('late').toString()).toBe('')
+    expect(bridge.getState()).toEqual(before)
+    expect(bridge.getState().lastReceipt).toBe(null)
+    remote.destroy()
+  })
+  it('旧入场的异步无效帧不能隔离已经开始的新授权入场', async () => {
+    const onError = vi.fn(), bridge = mount({ onError })
+    ready(bridge); await bridge.ready
+    const remote = new Y.Doc(), digest = crypto.subtle.digest.bind(crypto.subtle)
+    remote.getText('late').insert(0, 'retired frame')
+    const payload = Y.encodeStateAsUpdate(remote), receipt = matchingReceipt({ updateId: 'retired-update',
+      payloadHash: 'sha256:' + Buffer.from(await digest('SHA-256', payload)).toString('hex') })
+    let finish
+    vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    response(bridge, 'COMMITTED', { payloadBase64: base64(payload), receipt })
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    bridge.provider.onClose()
+    ready(bridge, { canWrite: false })
+    finish(new Uint8Array(32).buffer)
+    await vi.waitFor(() => expect(bridge.getState()).toMatchObject({ status: 'ready', canWrite: false }))
+    expect(bridge.ydoc.getText('late').toString()).toBe('')
+    expect(onError).not.toHaveBeenCalled()
+    remote.destroy()
+  })
+  it('恢复查询资格不泄漏到公开快照，修改导出副本不能伪造已查询', async () => {
+    const snapshot = await pendingSnapshot(), bridge = mount()
+    await bridge.restorePending(snapshot)
+    const exported = bridge.exportPending()
+    expect(exported).toEqual(snapshot.pending.map(item => ({ ...item, status: 'unknown' })))
+    expect(Object.keys(exported[0])).not.toContain('recovery')
+    exported[0].recovery = 'queried'
+    ready(bridge); await bridge.ready
+    response(bridge, 'RECEIPT', { receipt: matchingReceipt(exported[0]),
+      operationId: exported[0].operationId, expectedRevision: exported[0].expectedRevision })
+    await settle()
+    expect(bridge.exportPending()).toHaveLength(1)
+    expect(await bridge.exportPendingSnapshot()).toEqual({ ...snapshot,
+      pending: snapshot.pending.map(item => ({ ...item, status: 'unknown' })) })
+    expect(bridge.queryPending()).toBe(1)
+    response(bridge, 'RECEIPT', { receipt: matchingReceipt(exported[0]),
+      operationId: exported[0].operationId, expectedRevision: exported[0].expectedRevision })
+    await vi.waitFor(() => expect(bridge.exportPending()).toEqual([]))
+  })
   it('a denied in-flight connection cannot absorb the replacement authorization attempt', async () => {
     const bridge = mount({ onAuthorizationRequired: vi.fn() }), transport = bridge.provider.configuration.websocketProvider
     let finishOld, finishCurrent
     const connect = vi.spyOn(transport, 'connect').mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
       .mockImplementationOnce(() => new Promise(resolve => { finishCurrent = resolve }))
     const old = bridge.connect()
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledOnce())
     bridge.provider.permissionDeniedHandler('the in-flight ticket is stale')
     const current = bridge.connect()
-    expect(current).not.toBe(old); expect(connect).toHaveBeenCalledTimes(2)
+    expect(current).not.toBe(old)
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
     finishOld(); await old
     expect(bridge.connect()).toBe(current)
     finishCurrent(); await current; ready(bridge); await settle()
@@ -78,6 +199,7 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
   it('initial stale ticket keeps the first ready await usable after current authorization succeeds', async () => {
     const onAuthorizationRequired = vi.fn(), bridge = mount({ onAuthorizationRequired })
     const first = bridge.ready.then(value => ({ value }), error => ({ error }))
+    await prepareConnection(bridge)
     bridge.provider.permissionDeniedHandler('stale initial ticket')
     expect(bridge.getState().status).toBe('disconnected'); expect(onAuthorizationRequired).toHaveBeenCalledOnce()
     ready(bridge)
@@ -98,6 +220,7 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     const onAuthorizationRequired = vi.fn(), onError = vi.fn(), bridge = mount({ onAuthorizationRequired, onError })
     const transport = bridge.provider.configuration.websocketProvider
     vi.spyOn(transport, 'connect').mockResolvedValue()
+    await bridge.connect()
     for (let attempt = 0; attempt < 4; attempt++) {
       bridge.provider.permissionDeniedHandler('ticket service unavailable')
       bridge.provider.onClose({ event: { code: 4403 } })
@@ -182,6 +305,7 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
   })
   it('评论信号只触发当前epoch的读刷新，不创建pending或定时轮询', async () => {
     const onCommentsChanged = vi.fn(), bridge = mount({ onCommentsChanged }), sent = messages(bridge)
+    await prepareConnection(bridge)
     bridge.provider.startSync()
     expect(sent[0].commentsProtocol).toBe('comments-v1')
     ready(bridge, { commentsProtocol: 'comments-v1' }); await bridge.ready
@@ -205,11 +329,82 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     expect(bridge.ydoc.share.has('attack')).toBe(false)
     expect(bridge.exportPending()).toEqual([])
   })
+  it.each(['privacyGeneration', 'informationRevision', 'privacyRevision'])('PRESENCE 的 %s 不能把尾换行当作十进制水位', async field => {
+    const bridge = mount({ presence: true })
+    ready(bridge, { presenceProtocol: 'cursor-v1' }); await bridge.ready
+    const cursor = { anchor: { tname: 'default' }, head: { tname: 'default' } }
+    const peer = { peerId: 'peer', principalId: 'bob', cursor }
+    const message = { epoch: '1', peers: [peer] }
+    if (field === 'privacyRevision') peer[field] = '9007199254740993\n'
+    else message[field] = '9007199254740993\n'
+    response(bridge, 'PRESENCE', message)
+    await vi.waitFor(() => expect(bridge.getState().status).toBe('quarantined'))
+    expect(bridge.provider.awareness.getStates().size).toBe(1)
+    expect(bridge.exportPending()).toEqual([])
+  })
+  it.each(['epoch', 'revision', 'lastSeq'])('READY 的 %s 共用十进制校验也拒绝尾换行', async field => {
+    const bridge = mount()
+    ready(bridge, { [field]: '9007199254740993\n' })
+    await expect(bridge.ready).rejects.toMatchObject({ code: 'INVALID_READY' })
+    expect(bridge.exportPending()).toEqual([])
+  })
+  it('ACCEPTED 非规范expectedRevision不覆盖原pending或赋予查询资格', async () => {
+    const bridge = mount()
+    ready(bridge); await bridge.ready
+    bridge.ydoc.getText('draft').insert(0, 'keep original pending')
+    await vi.waitFor(() => expect(bridge.exportPending()[0].payloadHash).toBeTypeOf('string'))
+    const original = bridge.exportPending()[0]
+    response(bridge, 'ACCEPTED', { operationId: original.operationId, updateId: original.updateId, expectedRevision: '0\n' })
+    await vi.waitFor(() => expect(bridge.getState().status).toBe('quarantined'))
+    expect(bridge.exportPending()).toEqual([original])
+    expect(bridge.queryPending()).toBe(0)
+  })
+  it.each(['seq', 'contentRevision'])('receipt 的 %s 尾换行不能确认原pending或提高水位', async field => {
+    const bridge = mount()
+    ready(bridge); await bridge.ready
+    bridge.ydoc.getText('draft').insert(0, 'keep original receipt proof')
+    await vi.waitFor(() => expect(bridge.exportPending()[0].payloadHash).toBeTypeOf('string'))
+    const original = bridge.exportPending()[0]
+    response(bridge, 'RECEIPT', { receipt: { ...matchingReceipt(original), [field]: '1\n' } })
+    await vi.waitFor(() => expect(bridge.getState().status).toBe('quarantined'))
+    expect(bridge.exportPending()).toEqual([original])
+    expect(bridge.getState()).toMatchObject({ revision: '0', lastSeq: '0', lastReceipt: null })
+  })
+  it.each(['snapshotEpoch', 'recordEpoch', 'expectedRevision'])('恢复包 %s 尾换行在提交前原子拒绝', async field => {
+    const snapshot = await pendingSnapshot(), bridge = mount(), sent = messages(bridge)
+    if (field === 'snapshotEpoch') snapshot.epoch = '1\n'
+    else snapshot.pending[0][field === 'recordEpoch' ? 'epoch' : field] = '1\n'
+    await expect(bridge.restorePending(snapshot)).rejects.toThrow('INVALID_PENDING_SNAPSHOT')
+    expect(bridge.exportPending()).toEqual([])
+    expect(bridge.getState()).toMatchObject({ status: 'connecting', epoch: null })
+    expect(bridge.ydoc.getText('test').toString()).toBe('')
+    expect(sent).toEqual([])
+  })
+  it.each(['epoch', 'hash', 'server-code'])('%s 隔离不能被当成本地模块加载失败恢复', async kind => {
+    const onError = vi.fn(), bridge = mount({ onError })
+    ready(bridge); await bridge.ready
+    bridge.ydoc.getText('draft').insert(0, 'retain the original key')
+    await vi.waitFor(() => expect(bridge.exportPending()[0].payloadHash).toBeTypeOf('string'))
+    const original = bridge.exportPending()[0]
+    if (kind === 'epoch') ready(bridge, { epoch: '2' })
+    else if (kind === 'hash') response(bridge, 'COMMITTED', { payloadBase64: original.payloadBase64,
+      receipt: matchingReceipt({ ...original, payloadHash: 'sha256:' + '0'.repeat(64) }) })
+    else response(bridge, 'ERROR', { code: 'COLLABORATION_MODULE_UNAVAILABLE' })
+    await vi.waitFor(() => expect(bridge.getState().status).toBe('quarantined'))
+    await expect(bridge.connect()).rejects.toThrow('COLLABORATION_ISOLATED')
+    await expect(bridge.resumeAuthorization()).rejects.toThrow('COLLABORATION_ISOLATED')
+    expect(onError.mock.calls[0][0].code).toBe(kind === 'epoch' ? 'EPOCH_MISMATCH' : kind === 'hash' ? 'PAYLOAD_HASH_MISMATCH' : 'COLLABORATION_MODULE_UNAVAILABLE')
+    expect(bridge.exportPending()).toEqual([original])
+  })
   it('光标通过受控临时状态发送，远端身份来自服务端且不产生正文pending', async () => {
     const bridge = mount({ presence: true }), sent = messages(bridge)
-    ready(bridge, { presenceProtocol: 'cursor-v1' }); await bridge.ready
-    expect(bridge.provider.awareness).toBeTruthy()
+    const awareness = bridge.provider.awareness
     const cursor = { anchor: { tname: 'default', assoc: 0 }, head: { tname: 'default', assoc: 0 } }
+    expect(awareness).toBeTruthy()
+    awareness.setLocalStateField('cursor', cursor)
+    ready(bridge, { presenceProtocol: 'cursor-v1' }); await bridge.ready
+    expect(bridge.provider.awareness).toBe(awareness)
+    expect(awareness.getLocalState().cursor).toEqual(cursor)
     bridge.provider.awareness.setLocalStateField('cursor', cursor)
     await vi.waitFor(() => expect(sent.some(item => item.type === 'PRESENCE' && item.cursor)).toBe(true))
     expect(sent.every(item => item.type === 'PRESENCE')).toBe(true)
@@ -250,6 +445,7 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     await bridge.restorePending(snapshot)
     expect(bridge.exportPending()).toEqual([{ ...snapshot.pending[0], status: 'unknown' }])
     expect(bridge.ydoc.getText('test').toString()).toBe('')
+    await prepareConnection(bridge)
     bridge.provider.startSync()
     expect(sent).toEqual([{ type: 'HELLO', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc', epoch: '1' }])
     ready(bridge)
@@ -376,13 +572,13 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     let release
     vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
     const importing = bridge.restorePending(snapshot)
+    snapshot.principalId = 'bob'; snapshot.epoch = '2'; snapshot.pending[0].payloadBase64 = 'AAA='; snapshot.pending[0].operationId = 'mutated'
     const connect = vi.spyOn(bridge.provider.configuration.websocketProvider, 'connect')
     try {
-      expect(release).toBeTypeOf('function')
       await expect(bridge.connect()).rejects.toThrow('PENDING_RECOVERY_IN_PROGRESS')
       await expect(bridge.restorePending(expected)).rejects.toThrow('PENDING_RECOVERY_NOT_ALLOWED')
       expect(connect).not.toHaveBeenCalled()
-      snapshot.principalId = 'bob'; snapshot.epoch = '2'; snapshot.pending[0].payloadBase64 = 'AAA='; snapshot.pending[0].operationId = 'mutated'
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'))
     } finally { release(await digest('SHA-256', Buffer.from(expected.pending[0].payloadBase64, 'base64'))) }
     await importing
     expect(bridge.exportPending()).toEqual(expected.pending.map(item => ({ ...item, status: 'unknown' })))
@@ -395,7 +591,7 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     let release
     vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
     const importing = bridge.restorePending(snapshot)
-    try { bridge.provider.startSync(); expect(sent).toEqual([]) }
+    try { bridge.provider.startSync(); expect(sent).toEqual([]); await vi.waitFor(() => expect(release).toBeTypeOf('function')) }
     finally { release(await digest('SHA-256', Buffer.from(snapshot.pending[0].payloadBase64, 'base64'))) }
     await expect(importing).rejects.toThrow('PENDING_RECOVERY_INTERRUPTED')
     await expect(bridge.ready).rejects.toMatchObject({ code: 'PENDING_RECOVERY_IN_PROGRESS' })
@@ -406,13 +602,17 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     const snapshot = await pendingSnapshot(), bridge = mount(), sent = messages(bridge)
     const digest = crypto.subtle.digest.bind(crypto.subtle)
     let release, localBytes
-    vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const importedBytes = Buffer.from(snapshot.pending[0].payloadBase64, 'base64')
+    vi.spyOn(crypto.subtle, 'digest').mockImplementation((algorithm, bytes) => {
+      if (!release && Buffer.from(bytes).equals(importedBytes)) return new Promise(resolve => { release = resolve })
+      return digest(algorithm, bytes)
+    })
     const importing = bridge.restorePending(snapshot)
     bridge.ydoc.on('update', bytes => { localBytes = Uint8Array.from(bytes) })
     try {
-      expect(release).toBeTypeOf('function')
       bridge.ydoc.getText('test').insert(0, '校验中的真实本地修改')
       expect(localBytes).toBeInstanceOf(Uint8Array)
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'))
     } finally { release(await digest('SHA-256', Buffer.from(snapshot.pending[0].payloadBase64, 'base64'))) }
     await expect(importing).rejects.toThrow('PENDING_RECOVERY_INTERRUPTED')
     await expect(bridge.ready).rejects.toMatchObject({ code: 'PENDING_RECOVERY_IN_PROGRESS' })
@@ -502,6 +702,7 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
       readVarString(decoder)
       outgoing.push({ type: readVarUint(decoder), payload: readVarString(decoder) })
     })
+    await prepareConnection(bridge)
     bridge.provider.startSync()
     expect(outgoing.map(x => x.type)).toEqual([5])
     expect(JSON.parse(outgoing[0].payload).type).toBe('HELLO')

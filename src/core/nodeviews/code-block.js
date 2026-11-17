@@ -18,6 +18,7 @@ import { INDENT_STEP_PX, clampBlockIndent } from '../documentOperations'
 import { isDiagramLanguage, renderDiagram } from '../diagram'
 import { readContentTheme, subscribeContentTheme } from '../themeSignal'
 import { loadFeature } from '../features/registry'
+import { lockPageScroll } from '../../ui/dom'
 import { CODE_BLOCK_LANGUAGES, codeBlockLanguageOptions, filterCodeBlockLanguages, languageLoaders, normalizeCodeLanguage } from './code-languages'
 
 export { CODE_BLOCK_LANGUAGES, codeBlockLanguageOptions, filterCodeBlockLanguages, normalizeCodeLanguage }
@@ -152,12 +153,18 @@ export function createCodeBlockNodeView(props) {
   let collapsed = false
   let lineFrame = null
   let languageMenuOpen = false
+  let moreMenuOpen = false
+  let popupDocument = null
+  let releaseLanguageScroll = null
+  let languageEscapeTarget = null
   let languageActive = 0
   let messageTimer = null
 
   /* ---------- DOM 骨架 ---------- */
   const dom = el('div', 'lark-doc-code')
   const ownerWindow = dom.ownerDocument.defaultView
+  const phoneMedia = ownerWindow.matchMedia?.('(max-width: 760px) and (pointer: coarse)')
+  const isPhone = () => Boolean(phoneMedia?.matches && ownerWindow.innerWidth <= 760)
   const requestFrame = ownerWindow.requestAnimationFrame
     ? callback => ownerWindow.requestAnimationFrame(callback)
     : callback => ownerWindow.setTimeout(callback, 16)
@@ -186,12 +193,23 @@ export function createCodeBlockNodeView(props) {
   wrapButton.appendChild(wrapLabel)
   const toggleButton = el('button', null, { type: 'button' })
   const copyButton = el('button', 'lark-doc-code-copy', { type: 'button' })
+  const moreButton = el('button', 'lark-doc-code-more', { type: 'button', 'aria-label': '代码块更多', 'aria-haspopup': 'menu', 'aria-expanded': 'false' })
+  moreButton.textContent = '···'
+  const moreMenu = markUi(el('div', 'lark-doc-code-more-menu', { role: 'menu', 'aria-label': '代码块操作' }))
   const statusNode = el('span', 'lark-doc-code-copy-toast', { role: 'status', 'aria-live': 'polite' })
   const languageMenu = markUi(el('div', 'lark-doc-code-language-menu', { role: 'listbox', 'aria-label': '代码语言' }))
+  const languageHeader = el('header', 'lark-doc-code-language-header')
+  languageHeader.hidden = true
+  const languageClose = el('button', null, { type: 'button', 'aria-label': '关闭代码语言' })
+  languageClose.textContent = '×'
+  const languageTitle = el('h2')
+  languageTitle.textContent = '切换代码语言'
+  languageHeader.append(languageClose, languageTitle, el('span'))
   const languageSearch = el('input', 'lark-doc-code-language-search', { type: 'text', placeholder: '搜索', 'aria-label': '搜索代码语言' })
   const languageSearchRow = el('div', 'lark-doc-code-language-search-row')
   languageSearchRow.append(codeIcon('search'), languageSearch)
   const languageList = el('div', 'lark-doc-code-language-list')
+  languageMenu.appendChild(languageHeader)
   languageMenu.appendChild(languageSearchRow)
   languageMenu.appendChild(languageList)
 
@@ -224,6 +242,7 @@ export function createCodeBlockNodeView(props) {
 
   /* ---------- 工具条 ---------- */
   function buildToolbar() {
+    closeMoreMenu()
     toolbar.textContent = ''
     if (toolbarMode === 'diagram') {
       closeLanguageMenu()
@@ -233,7 +252,7 @@ export function createCodeBlockNodeView(props) {
     } else {
       toolbar.appendChild(foldWrapper)
       toolbar.appendChild(caption)
-      actions.replaceChildren(languageButton, wrapButton, copyButton)
+      actions.replaceChildren(...(isPhone() ? [languageButton, moreButton] : [languageButton, wrapButton, copyButton]))
       toolbar.appendChild(actions)
       copyButton.replaceChildren(codeIcon('copy'), document.createTextNode('复制'))
     }
@@ -244,6 +263,19 @@ export function createCodeBlockNodeView(props) {
   function positionLanguageMenu() {
     if (!languageMenuOpen) return
     const win = dom.ownerDocument.defaultView
+    if (isPhone()) {
+      const viewport = win.visualViewport
+      const height = Math.max(0, Math.min(win.innerHeight, viewport?.height || win.innerHeight))
+      languageMenu.style.left = `${viewport?.offsetLeft || 0}px`
+      languageMenu.style.top = `${viewport?.offsetTop || 0}px`
+      languageMenu.style.width = `${Math.min(win.innerWidth, viewport?.width || win.innerWidth)}px`
+      languageMenu.style.height = `${height}px`
+      languageMenu.style.maxHeight = `${height}px`
+      languageList.style.maxHeight = ''
+      return
+    }
+    languageMenu.style.width = ''
+    languageMenu.style.height = ''
     const rect = languageButton.getBoundingClientRect()
     const below = win.innerHeight - rect.bottom - 12
     const above = rect.top - 12
@@ -256,15 +288,81 @@ export function createCodeBlockNodeView(props) {
   }
 
   function closeLanguageMenu(focus = false) {
+    const wasOpen = languageMenuOpen
     languageMenuOpen = false
+    if (!moreMenuOpen) popupDocument = null
     languageButton.setAttribute('aria-expanded', 'false')
     languageMenu.remove()
     const doc = dom.ownerDocument
     doc.removeEventListener('pointerdown', outsideLanguageMenu, true)
-    doc.removeEventListener('keydown', onLanguageMenuKeydown)
+    languageEscapeTarget?.removeEventListener('keydown', onLanguageMenuKeydown, true)
+    languageEscapeTarget = null
     doc.defaultView.removeEventListener('resize', positionLanguageMenu)
     doc.defaultView.removeEventListener('scroll', positionLanguageMenu, true)
-    if (focus && editable && !editor.isDestroyed) editor.commands?.focus()
+    doc.defaultView.visualViewport?.removeEventListener('resize', positionLanguageMenu)
+    doc.defaultView.visualViewport?.removeEventListener('scroll', positionLanguageMenu)
+    releaseLanguageScroll?.()
+    releaseLanguageScroll = null
+    if (focus && wasOpen) focusAfterLanguageMenu()
+  }
+
+  function focusAfterLanguageMenu() {
+    if (destroyed || !editable || editor?.isDestroyed) return
+    if (isPhone()) languageButton.focus({ preventScroll: true })
+    else editor.view?.focus()
+  }
+
+  function popupIsCurrent() {
+    return !destroyed && !editor?.isDestroyed && popupDocument === editor?.state?.doc
+  }
+
+  function positionMoreMenu() {
+    if (!moreMenuOpen) return
+    const rect = moreButton.getBoundingClientRect()
+    const height = moreMenu.getBoundingClientRect().height
+    moreMenu.style.left = `${Math.max(8, Math.min(rect.right - 180, ownerWindow.innerWidth - 188))}px`
+    moreMenu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, ownerWindow.innerHeight - height - 8))}px`
+  }
+
+  function outsideMoreMenu(event) {
+    if (!moreMenu.contains(event.target) && !moreButton.contains(event.target)) closeMoreMenu()
+  }
+
+  function onMoreMenuKeydown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); closeMoreMenu(true)
+    }
+  }
+
+  function closeMoreMenu(focus = false) {
+    const wasOpen = moreMenuOpen
+    moreMenuOpen = false
+    if (!languageMenuOpen) popupDocument = null
+    moreButton.setAttribute('aria-expanded', 'false')
+    moreMenu.remove()
+    const doc = dom.ownerDocument
+    doc.removeEventListener('pointerdown', outsideMoreMenu, true)
+    doc.removeEventListener('keydown', onMoreMenuKeydown)
+    ownerWindow.removeEventListener('resize', positionMoreMenu)
+    ownerWindow.removeEventListener('scroll', positionMoreMenu, true)
+    if (focus && wasOpen && !destroyed && !editor?.isDestroyed) moreButton.focus({ preventScroll: true })
+  }
+
+  function openMoreMenu() {
+    if (destroyed || editor?.isDestroyed || !isPhone()) return
+    if (moreMenuOpen) { closeMoreMenu(); return }
+    closeLanguageMenu()
+    moreMenuOpen = true
+    popupDocument = editor?.state?.doc
+    moreMenu.replaceChildren(...(editable ? [wrapButton, copyButton] : [copyButton]))
+    ;(dom.closest('.lark-doc') || dom.ownerDocument.body).appendChild(moreMenu)
+    moreButton.setAttribute('aria-expanded', 'true')
+    positionMoreMenu()
+    const doc = dom.ownerDocument
+    doc.addEventListener('pointerdown', outsideMoreMenu, true)
+    doc.addEventListener('keydown', onMoreMenuKeydown)
+    ownerWindow.addEventListener('resize', positionMoreMenu)
+    ownerWindow.addEventListener('scroll', positionMoreMenu, true)
   }
 
   function renderLanguageChoices() {
@@ -286,7 +384,13 @@ export function createCodeBlockNodeView(props) {
         languageActive = index
         Array.from(languageList.children).forEach((node, position) => node.classList.toggle('is-highlight', position === index))
       })
-      item.addEventListener('click', () => { if (setLanguage(choice.value)) closeLanguageMenu(true) })
+      item.addEventListener('click', () => {
+        if (!languageMenuOpen || !item.isConnected || !languageMenu.contains(item) || !popupIsCurrent()) return
+        if (setLanguage(choice.value)) {
+          closeLanguageMenu()
+          focusAfterLanguageMenu()
+        }
+      })
       languageList.appendChild(item)
     })
     positionLanguageMenu()
@@ -297,25 +401,51 @@ export function createCodeBlockNodeView(props) {
   }
 
   function onLanguageMenuKeydown(event) {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeLanguageMenu(true) }
+    if (event.key === 'Escape') { if (event.isComposing || event.keyCode === 229) return; event.preventDefault(); event.stopPropagation(); closeLanguageMenu(true) }
+    else if (isPhone() && event.key === 'Tab') {
+      const controls = [languageClose, languageSearch, ...languageList.querySelectorAll('button')]
+      const active = dom.ownerDocument.activeElement
+      if (event.shiftKey && active === controls[0]) { event.preventDefault(); controls.at(-1)?.focus() }
+      else if (!event.shiftKey && active === controls.at(-1)) { event.preventDefault(); controls[0].focus() }
+    }
   }
 
   function openLanguageMenu() {
-    if (!editable) return
+    if (destroyed || !editable || editor?.isDestroyed) return
     if (languageMenuOpen) { closeLanguageMenu(); return }
+    closeMoreMenu()
     languageMenuOpen = true
+    popupDocument = editor?.state?.doc
+    const phone = isPhone()
+    languageHeader.hidden = !phone
+    languageMenu.classList.toggle('is-phone-sheet', phone)
+    languageMenu.setAttribute('role', phone ? 'dialog' : 'listbox')
+    languageMenu.setAttribute('aria-label', phone ? '切换代码语言' : '代码语言')
+    if (phone) languageMenu.setAttribute('aria-modal', 'true')
+    else languageMenu.removeAttribute('aria-modal')
+    if (phone) languageList.setAttribute('role', 'listbox')
+    else languageList.removeAttribute('role')
     languageSearch.value = ''
     languageActive = CODE_BLOCK_LANGUAGES.indexOf(currentLanguageChoice())
     ;(dom.closest('.lark-doc') || dom.ownerDocument.body).appendChild(languageMenu)
     languageButton.setAttribute('aria-expanded', 'true')
+    if (phone) {
+      const releases = [lockPageScroll(dom.ownerDocument.body)]
+      const main = dom.closest('.lark-doc-main')
+      if (main) releases.push(lockPageScroll(main))
+      releaseLanguageScroll = () => releases.forEach(release => release())
+    }
     renderLanguageChoices()
     languageList.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
     languageSearch.focus()
     const doc = dom.ownerDocument
     doc.addEventListener('pointerdown', outsideLanguageMenu, true)
-    doc.addEventListener('keydown', onLanguageMenuKeydown)
+    languageEscapeTarget = dom.closest('.lark-doc') || doc
+    languageEscapeTarget.addEventListener('keydown', onLanguageMenuKeydown, true)
     doc.defaultView.addEventListener('resize', positionLanguageMenu)
     doc.defaultView.addEventListener('scroll', positionLanguageMenu, true)
+    doc.defaultView.visualViewport?.addEventListener('resize', positionLanguageMenu)
+    doc.defaultView.visualViewport?.addEventListener('scroll', positionLanguageMenu)
   }
 
   function syncLineNumbers() {
@@ -405,7 +535,7 @@ export function createCodeBlockNodeView(props) {
       dom.style.marginLeft = ''
     }
 
-    const nextMode = diagram ? 'diagram' : 'code'
+    const nextMode = diagram ? 'diagram' : (isPhone() ? 'code-phone' : 'code')
     if (nextMode !== toolbarMode) { toolbarMode = nextMode; buildToolbar() }
     if (diagram) {
       toggleButton.textContent = showPreview() ? '编辑源码' : '预览图表'
@@ -539,7 +669,7 @@ export function createCodeBlockNodeView(props) {
 
   /* ---------- 写入文档（NodeView 没有 updateAttributes，自行 setNodeMarkup） ---------- */
   function updateAttributes(patch) {
-    if (!editor || editor.isDestroyed || !editor.isEditable || !view) return false
+    if (destroyed || !editor || editor.isDestroyed || !editor.isEditable || !view) return false
     let pos
     try {
       pos = typeof getPos === 'function' ? getPos() : (getPos && typeof getPos.pos === 'number' ? getPos.pos : null)
@@ -571,6 +701,7 @@ export function createCodeBlockNodeView(props) {
     syncDom()
   }
   function copyCode() {
+    if (destroyed || editor?.isDestroyed) return Promise.resolve()
     const text = currentNode.textContent
     const fallback = () => {
       const input = document.createElement('textarea')
@@ -614,6 +745,8 @@ export function createCodeBlockNodeView(props) {
   wrapButton.addEventListener('mousedown', event => event.preventDefault())
   wrapButton.addEventListener('click', () => {
     if (!editable) return
+    if (isPhone() && (!moreMenuOpen || !wrapButton.isConnected || !popupIsCurrent())) return
+    closeMoreMenu()
     const wrap = !currentNode.attrs.wrap
     if (updateAttributes({ wrap }) && editor.storage?.codeBlock) editor.storage.codeBlock.lastWrap = wrap
   })
@@ -621,6 +754,9 @@ export function createCodeBlockNodeView(props) {
   foldButton.addEventListener('click', () => { collapsed = !collapsed; syncDom() })
   languageButton.addEventListener('mousedown', event => event.preventDefault())
   languageButton.addEventListener('click', openLanguageMenu)
+  moreButton.addEventListener('mousedown', event => event.preventDefault())
+  moreButton.addEventListener('click', openMoreMenu)
+  languageClose.addEventListener('click', () => closeLanguageMenu(true))
   languageSearch.addEventListener('input', () => { languageActive = 0; renderLanguageChoices() })
   languageSearch.addEventListener('keydown', event => {
     const items = Array.from(languageList.querySelectorAll('[role="option"]'))
@@ -634,20 +770,35 @@ export function createCodeBlockNodeView(props) {
     items[languageActive].scrollIntoView?.({ block: 'nearest' })
   })
   toggleButton.addEventListener('click', togglePreview)
-  copyButton.addEventListener('click', () => copyCode())
+  copyButton.addEventListener('click', () => {
+    if (isPhone() && !isDiagram() && (!moreMenuOpen || !copyButton.isConnected || !popupIsCurrent())) return
+    closeMoreMenu()
+    copyCode()
+  })
   body.addEventListener('scroll', () => { lineNumbers.style.transform = `translateX(${body.scrollLeft}px)` })
 
   /* ---------- 生命周期 ---------- */
   function syncEditable() {
+    if ((languageMenuOpen || moreMenuOpen) && !popupIsCurrent()) {
+      closeLanguageMenu()
+      closeMoreMenu()
+    }
     const next = Boolean(editor && !editor.isDestroyed && editor.isEditable)
     const nextCaption = next && !editor.storage?.larkDocRevisionTracker?.active
     if (next === editable && nextCaption === captionEditable) return
+    closeMoreMenu()
     editable = next
     captionEditable = nextCaption
     // 进入只读态时若无预览则渲染一份；回到编辑态保留用户当前的切换选择。
     if (isDiagram() && !previewShown && !next) previewShown = true
     syncDom()
   }
+  function onPhoneMediaChange() {
+    closeLanguageMenu()
+    closeMoreMenu()
+    syncDom()
+  }
+  phoneMedia?.addEventListener?.('change', onPhoneMediaChange)
   if (editor && typeof editor.on === 'function') {
     editor.on('update', syncEditable)
     editor.on('transaction', syncEditable)
@@ -692,6 +843,8 @@ export function createCodeBlockNodeView(props) {
       destroyed = true
       if (messageTimer) { clearTimeout(messageTimer); messageTimer = null }
       closeLanguageMenu()
+      closeMoreMenu()
+      phoneMedia?.removeEventListener?.('change', onPhoneMediaChange)
       lineObserver?.disconnect()
       if (lineFrame != null) { cancelFrame(lineFrame); lineFrame = null }
       diagramVersion += 1

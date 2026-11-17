@@ -36,6 +36,12 @@ const doc = new LarkDoc({
 | 设置右下角问号菜单 | `help` 控制开关、菜单和点击回调，展开下方[帮助菜单](#help)。 |
 | 接入协同、权限与评论 | 见[协同与权限](/guide/collaboration)。 |
 
+## 保存区块为模板
+
+六点菜单保留「保存为模板」。传入 `onSaveTemplate({ name, content, html, documentId, blockId, signal })` 接应用自己的保存服务；`content` 为可独立载入的 Tiptap 文档，`html` 保留区块格式，两者均不带来源区块 ID。保存成功必须返回 `{ id: '实际保存的模板标识' }`，拒绝或抛错会显示失败并允许重试。取消、换文档或权限变化会中止 `signal`，服务端也应处理取消和重复请求。
+
+应用将已保存模板作为 `templates: [{ id, label, html }]` 传入，或用 `doc.patchProps({ templates })` 更新，即可在「插入 → 模板 → 更多模板」预览、再次插入。未配置回调时入口保留并明确禁用；同步块和转子文档不提供入口。
+
 ## 完整参数参考
 
 以下按需展开。配置仍传给 `new LarkDoc({ ... })`；关闭能力会阻止新操作，已有 JSON 内容仍可打开。
@@ -58,6 +64,7 @@ const doc = new LarkDoc({
 | `toolbarKeys` / `toolbarExcludes` | - | 工具栏白名单 / 黑名单，见[工具栏配置](/guide/toolbar)。 |
 | `features` | 全开 | 能力开关，见下表。 |
 | `uploader` | 内置本地读取 | 图片上传钩子，见[上传器](/blocks/uploader)。 |
+| `uploadFile` | 回落到当前 `uploader` 自定义函数 | 附件函数或分片配置对象，见[附件上传](/blocks/uploader#附件上传)。 |
 | `ai` | 内置 Mock | AI 服务接管，见 [AI 组件](/blocks/ai)。 |
 | `network` | `{ mode: 'open' }` | 出网策略，见[网络策略](/blocks/network)。 |
 | `mode` / `documentId` / `user` / `capabilities` | - | 会话与权限，见[协同与权限](/guide/collaboration)。 |

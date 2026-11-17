@@ -62,6 +62,7 @@ export function createColorPalette({ host, handlers } = {}) {
   const state = {
     open: false,
     isText: false,
+    mobile: false,
     title: '颜色',
     style: null,
     letters: [],
@@ -122,8 +123,15 @@ export function createColorPalette({ host, handlers } = {}) {
   el.setAttribute('role', 'menu')
   // ④ `@mousedown.prevent` —— 按下不抢焦点，选区才不会在点色块前丢掉
   el.addEventListener('mousedown', (event) => event.preventDefault())
-  el.addEventListener('mouseenter', () => call('onEnter'))
-  el.addEventListener('mouseleave', () => call('onLeave'))
+  el.addEventListener('mouseenter', () => { if (!state.mobile) call('onEnter') })
+  el.addEventListener('mouseleave', () => { if (!state.mobile) call('onLeave') })
+  const mobileHeader = document.createElement('div')
+  mobileHeader.className = 'lark-doc-color-sheet-head'
+  const back = document.createElement('button')
+  back.type = 'button'; back.textContent = '‹'; back.setAttribute('aria-label', '返回文字格式')
+  back.addEventListener('click', () => { if (state.open && state.mobile) call('onBack') })
+  const mobileTitle = document.createElement('strong'); mobileTitle.textContent = '颜色和高亮'
+  mobileHeader.append(back, mobileTitle)
 
   // —— 各区块的结构指纹：变了才重建 ——
   let lettersSig = ''
@@ -199,6 +207,7 @@ export function createColorPalette({ host, handlers } = {}) {
   function paint() {
     // ⑤ 根：class / aria-label / 定位
     setClass(el, 'lark-doc-color-palette-text', state.isText)
+    setClass(el, 'is-mobile-sheet', state.mobile && state.isText)
     setAttr(el, 'aria-label', `${state.title}面板`)
     applyStyle(el, state.style)
 
@@ -207,7 +216,8 @@ export function createColorPalette({ host, handlers } = {}) {
         const color = state.letters[index]
         if (!color) return
         node.style.color = color.value
-        setClass(node, 'is-active', !!state.activeText && String(state.activeText).toLowerCase() === String(color.value).toLowerCase())
+        const active = state.activeText || (state.mobile ? state.letters[0]?.value : '')
+        setClass(node, 'is-active', !!active && String(active).toLowerCase() === String(color.value).toLowerCase())
       })
       // 背景格子：`is-transparent`（value 为空 = 默认/清除格）+ `is-active`。
       // 默认格「选中」的判据是 `!activeTextBackground` —— 没背景时默认格就是当前项。
@@ -239,9 +249,10 @@ export function createColorPalette({ host, handlers } = {}) {
 
     // 子树顺序：两态各一套（`v-if` / `v-else` 的两支）。
     // `最近`节只在有内容时才进 DOM —— 两个分支的 `v-if` 都挂在「最近列表非空」上。
-    const hasRecent = (state.isText ? state.recentText : state.recent).length > 0
+    const hasRecent = !(state.mobile && state.isText) && (state.isText ? state.recentText : state.recent).length > 0
     const children = state.isText
       ? [
+        { node: mobileHeader, on: state.mobile },
         { node: lettersSection, on: true },
         { node: backgroundSection, on: true },
         { node: recentSection, on: hasRecent },

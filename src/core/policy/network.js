@@ -1,3 +1,5 @@
+import { safeUrl } from './url'
+
 /**
  * 统一的出网策略。
  *
@@ -16,6 +18,18 @@
 export const NETWORK_MODES = Object.freeze(['offline', 'allowlist', 'open'])
 
 export const DEFAULT_NETWORK = Object.freeze({ mode: 'open', allowlist: [] })
+
+/** AI endpoint 与图片引用共用同一 URL/出网策略。 */
+export function aiNetworkAllows(value, network, base, image = false) {
+  if (typeof value !== 'string' || !value || /[\\\s]/.test(value)) return false
+  let target = value
+  if (target.startsWith('//')) {
+    if (image) return false
+    try { target = new URL(target, base || 'https://local.invalid/').href } catch (_) { return false }
+  }
+  if (image ? !safeUrl(value, true) : (/^[a-z][a-z\d+.-]*:/i.test(target) && (!/^https?:\/\//i.test(target) || !safeUrl(target, true)))) return false
+  return network.allows(target)
+}
 
 /**
  * 被拦下的外链图片会换成这个 1x1 透明 GIF：它是本地 data URI，

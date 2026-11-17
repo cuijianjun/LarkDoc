@@ -1,7 +1,7 @@
 /** 高亮块（callout）：emoji 图标 + 背景/边框/文字色，全部经安全校验进 schema。 */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { safeColor } from '../documentOperations'
-import { isEmojiGlyph } from '../emoji/catalog'
+import { isEmojiGlyph } from '../emoji/lookup'
 
 // 0.11 只有 12 个硬编码图标；P4-03 起图标来自 emojibase 全量表，白名单收敛成一次查表。
 // 空块的默认图标沿用 `💡`（02 §654）。

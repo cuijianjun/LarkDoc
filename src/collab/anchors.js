@@ -22,7 +22,7 @@
 
 import * as Y from 'yjs'
 import { ySyncPluginKey, absolutePositionToRelativePosition, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
-import { COLLAB_CONTENT_FIELD } from './protocol'
+import { COLLAB_CONTENT_FIELD, isRecord } from './protocol'
 
 /**
  * 相对位置编解码（P6a 已落地，P6b 才真正被评论用上）。
@@ -41,8 +41,7 @@ export function createCommentAnchors(options = {}) {
     throw new TypeError('createCommentAnchors 需要真实的 Y.Doc')
   }
   const defaultType = options.type || ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
-  let expectedRoot = defaultType
-  while (expectedRoot.parent) expectedRoot = expectedRoot.parent
+  const expectedRoot = rootOf(defaultType)
   return {
     /** 绝对 index → 可编码的相对位置（落库的是它，不是数字）。 */
     encode(index, type) {
@@ -59,9 +58,7 @@ export function createCommentAnchors(options = {}) {
         }
         const absolute = Y.createAbsolutePositionFromRelativePosition(relative, ydoc)
         if (!absolute) return null
-        let root = absolute.type
-        while (root.parent) root = root.parent
-        return root === expectedRoot ? { type: absolute.type, index: absolute.index } : null
+        return rootOf(absolute.type) === expectedRoot ? { type: absolute.type, index: absolute.index } : null
       } catch { return null }
     },
   }
@@ -70,6 +67,10 @@ export function createCommentAnchors(options = {}) {
 /** 纯对象锚点：拿不到 Y 坐标时的降级形态，块级锚定仍然成立。 */
 function plainAnchor(blockId, offset, length) {
   return { blockId, offset, length }
+}
+function decodePlainAnchor(payload) {
+  if (!isRecord(payload) || typeof payload.blockId !== 'string' || !payload.blockId) return null
+  return plainAnchor(payload.blockId, Number(payload.offset) || 0, Number(payload.length) || 0)
 }
 
 /**
@@ -124,11 +125,10 @@ export function createYjsAnchorCodec(options = {}) {
      * （原struct删除由engine额外检查，不把Yjs就近得到的绝对位置当原引用）。
      */
     decode(payload) {
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+      if (!isRecord(payload)) return null
       if (payload.kind !== 'y') {
         // 旧数据 / 降级产物：没有相对位置，按纯对象回读。
-        if (typeof payload.blockId !== 'string' || !payload.blockId) return null
-        return plainAnchor(payload.blockId, Number(payload.offset) || 0, Number(payload.length) || 0)
+        return decodePlainAnchor(payload)
       }
       const start = engine.decode(payload.from)
       const end = engine.decode(payload.to)
@@ -151,9 +151,11 @@ export function createYjsAnchorCodec(options = {}) {
 export function createEditorCommentAnchorCodec({ editor, ydoc }) {
   if (!editor || !ydoc) return null
   const type = ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
-  const mapping = () => ySyncPluginKey.getState(editor.state)?.binding?.mapping
+  const mapping = () => {
+    const state = ySyncPluginKey.getState(editor.state)
+    return state && state.binding && state.binding.mapping
+  }
   const engine = createCommentAnchors({ ydoc, type })
-  const fallback = createYjsAnchorCodec({ ydoc, type })
   const absolute = position => relativePositionToAbsolutePosition(ydoc, type, Y.createRelativePositionFromTypeIndex(position.type, position.index), mapping())
   const locate = position => {
     const resolved = editor.state.doc.resolve(position)
@@ -180,7 +182,7 @@ export function createEditorCommentAnchorCodec({ editor, ydoc }) {
       return { kind: 'y', ...base, from: Y.encodeRelativePosition(start), to: Y.encodeRelativePosition(end) }
     },
     decode(payload) {
-      if (!payload || payload.kind !== 'y') return fallback.decode(payload)
+      if (!payload || payload.kind !== 'y') return decodePlainAnchor(payload)
       if (!mapping()) return null
       const start = engine.decode(payload.from), end = engine.decode(payload.to)
       if (!start || !end) return null
@@ -191,4 +193,9 @@ export function createEditorCommentAnchorCodec({ editor, ydoc }) {
       return plainAnchor(at.blockId, at.offset, to - from)
     },
   }
+}
+
+function rootOf(type) {
+  while (type.parent) type = type.parent
+  return type
 }

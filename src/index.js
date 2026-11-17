@@ -20,6 +20,18 @@ import { createNetworkPolicy, NETWORK_MODES, DEFAULT_NETWORK } from './networkPo
 import { detectLegacyHtml, isVditorHtml, normalizeVditorHtml } from './legacy'
 import { normalizeAIProvider, buildAIRequest, AI_KINDS, AI_CONTENT_FORMATS, AI_PROTOCOLS } from './components/lark-doc/ai'
 import { createOpenAICompatibleProvider, validateAIWriteback } from './providers/ai'
+import {
+  registerExternalProvider,
+  unregisterExternalProvider,
+  resetExternalProviders,
+  resolveExternalProvider,
+  externalProviderNames,
+  externalProviderStatus,
+  externalBlockStatus,
+  externalBlockStatusLabel,
+  externalBlockStatusHint,
+} from './core/embed/provider-registry'
+import { EXTERNAL_STATUS, EXTERNAL_STATUSES, externalBlockMeta, externalBlockCapability, externalBlockCapabilities } from './core/embed/external-block'
 
 /**
  * 默认入口只暴露编辑器核心和无重量的基础配置工具。
@@ -45,6 +57,20 @@ export {
   AI_PROTOCOLS,
   createOpenAICompatibleProvider,
   validateAIWriteback,
+  registerExternalProvider,
+  unregisterExternalProvider,
+  resetExternalProviders,
+  resolveExternalProvider,
+  externalProviderNames,
+  externalProviderStatus,
+  externalBlockStatus,
+  externalBlockStatusLabel,
+  externalBlockStatusHint,
+  EXTERNAL_STATUS,
+  EXTERNAL_STATUSES,
+  externalBlockMeta,
+  externalBlockCapability,
+  externalBlockCapabilities,
 }
 
 export default LarkDoc

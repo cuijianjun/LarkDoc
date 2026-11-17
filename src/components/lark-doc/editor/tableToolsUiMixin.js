@@ -29,10 +29,14 @@
  */
 import { CellSelection, selectedRect } from '@tiptap/pm/tables'
 import { TextSelection } from '@tiptap/pm/state'
+
 import { createCellPlusTools } from '../../../ui/cellPlusTools'
 import { createTableTools, createTableBoundaryTools } from '../../../ui/tableTools'
 import { closeHistory } from '@tiptap/pm/history'
 import { isCommandEnabled } from '../larkDocConfig'
+import { createTablePresentation } from './tablePresentation'
+
+const tablePresentation = createTablePresentation({ CellSelection, TextSelection, selectedRect, closeHistory, isCommandEnabled })
 
 export default {
   watch: {
@@ -47,34 +51,27 @@ export default {
     larkDocConfig() { this.refreshTableTools(); this.refreshTableBoundary() },
   },
   methods: {
-    tableSelectionAlignment(selection) {
-      const horizontal = new Set()
-      const vertical = new Set()
-      const collect = node => {
-        if (node.isTextblock) horizontal.add(node.attrs.textAlign || 'left')
-        if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') vertical.add(node.attrs.verticalAlign || 'top')
-      }
-      if (selection instanceof CellSelection) {
-        selection.forEachCell(node => { collect(node); node.descendants(collect) })
-      } else {
-        this.editor.state.doc.nodesBetween(selection.from, selection.to, collect)
-      }
-      const common = values => values.size === 1 ? values.values().next().value : null
-      return { textAlign: common(horizontal), verticalAlign: common(vertical) }
-    },
+    ...tablePresentation.methods,
     /** 挂载两条浮动条（由主组件 `mounted` 调用；`isActive` 对空编辑器是安全的）。 */
     mountTableTools() {
       if (this._tableToolsUi) return
       const toolsHost = this.$refs.tableToolsHost
       const boundaryHost = this.$refs.tableBoundaryHost
       if (!toolsHost || !boundaryHost) return
+      let tools, boundary, cellPlus
+      const onReady = () => {
+        if (!tools || this._tableToolsUi !== tools || this._tableBoundaryUi !== boundary || this._cellPlusUi !== cellPlus
+          || this._isDestroyed || this._isBeingDestroyed) return
+        this.refreshTableTools()
+        this.refreshTableBoundary()
+      }
       // v11：统一一条飞书工具条，所有按钮（含下拉）走同一个 onCommand 分发。
-      this._tableToolsUi = createTableTools({
-        host: toolsHost,
+      tools = this._tableToolsUi = createTableTools({
+        host: toolsHost, onReady,
         handlers: { onCommand: (id, value) => this.tableToolbarCommand(id, value) },
       })
-      this._tableBoundaryUi = createTableBoundaryTools({
-        host: boundaryHost,
+      boundary = this._tableBoundaryUi = createTableBoundaryTools({
+        host: boundaryHost, onReady,
         handlers: {
           onAction: (id) => this.tableBoundaryAction(id),
           // v6：hover line 跟随边界 hover 常亮（见 buildTableBoundaryState.lineVisible）。
@@ -89,8 +86,8 @@ export default {
       })
       // md 风格交互层（选择条 / 重排 / 横滚）与两条工具条共用挂载时机，
       // 由 tableInteractionMixin 提供实现，这里只负责拉起和销毁。
-      this._cellPlusUi = createCellPlusTools({
-        host: toolsHost,
+      cellPlus = this._cellPlusUi = createCellPlusTools({
+        host: toolsHost, onReady,
         handlers: { onOpen: (button) => {
           if (this.buildCellPlusState().visible) this.openCommandMenu('plus', { currentTarget: button })
         } },
@@ -106,6 +103,11 @@ export default {
      *    表现为「点了正文浮窗还在」，正是用户反馈的「消失逻辑不对」。
      */
     buildTableToolsState() {
+      const visibility = this.buildTableToolsVisibility()
+      return visibility.open ? this.buildTableToolsPresentation(visibility) : visibility
+    },
+    /** Shared eager gate: selection pacing and the bubble must agree before optional UI loads. */
+    buildTableToolsVisibility() {
       if (this.effectiveReadonly || this.writable?.() === false || !this.featureEnabled('tables')) return { open: false }
       // v6：只认离散点击闸门。不再叠加 `tableUiActive() === false` 的 hover 闸门 ——
       // 否则点选择条出浮窗后鼠标移开表格，浮窗会在没有任何点击的情况下自己收起，
@@ -144,185 +146,7 @@ export default {
       }
       if (!anchor) return { open: false }
 
-      // 飞书 `menu-item-actived`：按钮按下沉态 = 该格式在当前选区已生效。
-      const active = {}
-      for (const mark of ['bold', 'strike', 'italic', 'underline', 'code']) {
-        try { active[mark] = !!this.editor.isActive(mark) } catch { active[mark] = false }
-      }
-      // 依赖上下文的命令（合并/拆分需 CellSelection、缩进受前块上限、转换为需非空块）：
-      // 把适用性算进 state，菜单里不适用项置灰 + 当前块类型回填 pressed，
-      // 而不是让用户点一颗「看起来能点、点了没反应」的按钮。
-      const parent = selection.$from?.parent
-      const parentName = parent?.type?.name
-      // 「拆分单元格」只对已合并的单元格有意义；没有 colspan/rowspan>1 时置灰，
-      // 避免用户点到一颗命令合法、但当前文档里什么都拆不了的按钮（v11 全量审计发现）。
-      const canSplitCell = isCommandEnabled(this.larkDocConfig, 'splitCell') && !!this.editor.can().splitCell()
-      const line = selection instanceof CellSelection && cellKind === 'line' ? this.tableCellLineFromRect(selection) : null
-      let hasTextColor = false
-      let hasCellBg = false
-      try {
-        const textStyle = this.editor?.getAttributes?.('textStyle') || {}
-        hasTextColor = !!(textStyle.color || textStyle.backgroundColor) || !!this.editor?.isActive?.('highlight')
-        const cell = this.editor?.getAttributes?.('tableCell') || {}
-        const head = this.editor?.getAttributes?.('tableHeader') || {}
-        hasCellBg = !!(cell.backgroundColor || head.backgroundColor)
-      } catch { /* 扩展未注册 / 非表格态：按「无可清除内容」处理 */ }
-      return {
-        open: true,
-        anchor,
-        active,
-        tableContext: true,
-        aiVisible: this.featureEnabled('ai'),
-        commentVisible: !!this.commentEntryVisible,
-        shareVisible: !!this.selectionShareEntryAvailable,
-        canComment: !!this.commentEntryAvailable,
-        header: this.tableHeaderState,
-        ...this.tableSelectionAlignment(selection),
-        cellTextAlignOptions: this.cellTextAlignOptions,
-        cellVerticalAlignOptions: this.cellVerticalAlignOptions,
-        cellSelection: selection instanceof CellSelection,
-        cellKind,
-        canSplitCell,
-        canMergeCell: isCommandEnabled(this.larkDocConfig, 'mergeCells') && !!this.editor.can().mergeCells(),
-        headerAxis: line?.index === 0 ? line.axis : null,
-        headerEnabled: !!line && isCommandEnabled(this.larkDocConfig, line.axis === 'column' ? 'toggleHeaderColumn' : 'toggleHeaderRow'),
-        hasTextColor,
-        hasCellBg,
-        blockType: parentName === 'heading' ? `heading${parent.attrs?.level || 1}` : parentName,
-      }
-    },
-    /**
-     * v11 统一工具条命令分发。菜单里只留项目真能承接的能力：编辑器命令直接执行，
-     * AI / 搜索走项目已有的面板与事件；v10 那些靠 localStorage / window.open
-     * 伪造的「模板 / 词典 / 子文档 / 网页搜索」已按用户口径从 UI 移除，这里也不再留分支。
-     * 评论走 commentsMixin 的真实 composer/Provider，缺服务不产生本地假评论。
-     * 分享未接通前保持隐藏，不复活旧 #pos 假链接。
-     * 飞书功能栏没有「表格操作」按钮，结构命令由边界 ＋、块句柄菜单与各表格下拉承接。
-     */
-    tableToolbarCommand(id, value) {
-      if (!this.writable() || !this.featureEnabled('tables')) return false
-      const state = this.editor?.state
-      const selection = state?.selection
-      const text = selection && !selection.empty
-        ? state.doc.textBetween(selection.from, selection.to, ' ') : ''
-      const emit = (action, extra = {}) => {
-        const detail = {
-          action, text, from: selection?.from, to: selection?.to, value, ...extra,
-        }
-        // `$emit` 在 native host 只转给构造时传入的 on{} 回调；未接线的宿主**收不到**，
-        // 等于点了没反应。同步再抛一份 bubbling+composed 的 DOM 事件，宿主在任意祖先
-        // 节点都能委托监听（Web Component / Shadow DOM 同样可达）。
-        this.$emit?.('lark-doc-toolbar-action', detail)
-        this.dispatchToolbarAction?.('lark-doc-toolbar-action', detail)
-      }
-      const setCellBg = (color) => {
-        if (!color) this.run('setCellAttribute', 'backgroundColor', null)
-        else this.cellAttribute?.('backgroundColor', color)
-      }
-
-      switch (id) {
-        case 'ask-ai':
-          if (!this.featureEnabled('ai') || !this.buildTableToolsState().open) return false
-          this.$emit?.('ai-request', { action: 'chat', source: 'table' })
-          return true
-        case 'share-link': return this.openSelectionShareDialog()
-        case 'comment':
-          if (!this.commentEntryAvailable || !this.buildTableToolsState().open) return false
-          return this.beginCommentComposer()
-        case 'bold': case 'strike': case 'italic': case 'underline': case 'code':
-          this.toggleMark?.(id); return true
-        case 'link': this.openLinkDialog?.(true); return true
-        case 'table-header': {
-          const line = this.tableCellLineFromRect(selection)
-          if (!line || line.index !== 0) return false
-          const command = line.axis === 'column' ? 'toggleHeaderColumn' : 'toggleHeaderRow'
-          if (!isCommandEnabled(this.larkDocConfig, command)) return false
-          this.editor.view.dispatch(closeHistory(this.editor.state.tr))
-          return this.editor.commands[command]()
-        }
-        case 'merge-cell': {
-          const action = this.editor.can().splitCell() ? 'splitCell' : 'mergeCells'
-          if (!isCommandEnabled(this.larkDocConfig, action)) return false
-          this.editor.view.dispatch(closeHistory(this.editor.state.tr))
-          return this.editor.commands[action]()
-        }
-        case 'cell-bg':
-          setCellBg(String(value || '').startsWith('cellbg:') ? String(value).slice(7) : value)
-          return true
-        case 'turninto': {
-          const id = String(value || '')
-          // ⚠️ 不能复用 `blockTypeAction(id)`：那条链路读「块拖拽句柄」的 handleRange，
-          // 浮窗点击时句柄未激活 → range 为空 → 函数提前 return，命令根本没执行
-          // （v10 独立自测 S12f 实测：heading1 点了但块还是 P）。这里与命令菜单
-          // `executeCommand` 同口径，直接以**当前选区**走 `this.run()`。
-          // Cell conversion excludes container/synced blocks in the source UI.
-          const commands = {
-            paragraph: ['setParagraph'],
-            ...Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`heading${index + 1}`, ['setHeading', { level: index + 1 }]])),
-            orderedList: ['toggleOrderedList'],
-            bulletList: ['toggleBulletList'],
-            taskList: ['toggleTaskList'],
-            codeBlock: ['setCodeBlock'],
-          }
-          const cmd = commands[id]
-          if (!cmd) return false
-          let applied = false
-          try { applied = !!this.run(cmd[0], ...cmd.slice(1)) } catch { applied = false }
-          emit(`turninto:${id}`, { applied })
-          return applied
-        }
-        case 'align': {
-          const [kind, val] = String(value || '').split(':')
-          if (kind === 'align') this.setAlign?.(val)
-          else if (kind === 'valign') this.applyCellAlign?.('verticalAlign', val)
-          else if (kind === 'indent') this.changeIndent?.(Number(val))
-          return true
-        }
-        case 'highlight': {
-          const [kind, ...rest] = String(value || '').split(':')
-          const color = rest.join(':')
-          if (value === 'highlight:clear') { this.run('unsetColor'); this.run('unsetHighlight') }
-          else if (kind === 'color') this.applyTextColor?.(color)
-          else if (kind === 'bg') this.applyTextBackground?.(color)
-          return true
-        }
-        case 'more': {
-          if (value === 'translate') { emit('translate'); this.$emit?.('ai-request', 'translate') }
-          else if (value === 'larkSearch') {
-            emit('larkSearch')
-            // 走包内真实搜索面板（与 ⌘F / 顶部「查找」同一个入口），不再用 window.find 造效果。
-            this.openSearch?.('find')
-            if (text) { this.setSearchQuery?.(text); this.scheduleSearchUpdate?.() }
-          }
-          return true
-        }
-        case 'remove': {
-          // v12：整行 / 整列选区统一走 tableInteractionMixin.deleteSelectedTableLine()，
-          // 只读真实 selectedRect 直接 dispatch，不经过 `this.run()` 的 focus 链，
-          // 也不再靠 `tableSelectedLine.axis` 猜删行还是删列（用户实测会删掉相邻列）。
-          // 局部框选（非完整行列）退回 deleteSelection：CellSelection 会清空单元格内容。
-          if (selection instanceof CellSelection && this.deleteSelectedTableLine?.()) return true
-          this.run('deleteSelection')
-          return true
-        }
-        case 'distributeColumns': return this.distributeColumns()
-        default: emit(`unknown:${id}`); return false
-      }
-    },
-    /**
-     * 抛一份宿主可委托监听的 DOM 事件。native host 的 `$emit` 只认识构造时传入的
-     * `on{}` 白名单，v10 新增的 `lark-doc-toolbar-action` 不在其中 —— 只 $emit
-     * 会让宿主完全收不到，按钮看起来就是死的。
-     */
-    dispatchToolbarAction(name, detail) {
-      try {
-        const root = this.$refs?.root
-        const target = root || (typeof document !== 'undefined' ? document : null)
-        const Ctor = target?.ownerDocument?.defaultView?.CustomEvent
-          || (typeof CustomEvent !== 'undefined' ? CustomEvent : null)
-        if (!target?.dispatchEvent || !Ctor) return
-        target.dispatchEvent(new Ctor(name, { bubbles: true, composed: true, detail }))
-      } catch { /* 非 DOM 环境（单测 / SSR）保持静默 */ }
+      return { open: true, anchor, cellKind, cellSelection: selection instanceof CellSelection, tableContext: true, selection }
     },
     /** 选区两端都落在**同一张**表格内：跨表框选、正文里框选都不算表格内选中文字。 */
     tableTextSelectionInTable(selection) {
@@ -432,14 +256,39 @@ export default {
       if (!rect.width || !rect.height) return null
       const table = wrapper.querySelector('table')
       if (!table) return null
+      const selectorTop = rect.top - (this._mobileEditorMedia?.matches ? 16 : 0)
+      let safeTop = this._mobileEditorMedia?.matches ? this.bubbleSafeTop?.() ?? 8 : 8
+      const fallbackSafeTop = safeTop
+      if (this._mobileEditorMedia?.matches) {
+        const main = wrapper.closest?.('.lark-doc-main') || this.$refs?.main || this.$refs?.root?.querySelector('.lark-doc-main')
+        if (main?.isConnected) {
+          const mainRect = main.getBoundingClientRect()
+          const win = main.ownerDocument.defaultView
+          const style = win?.getComputedStyle(main)
+          const toolbar = this._tableToolsUi?.el
+          const measuredHeight = toolbar?.isConnected ? toolbar.getBoundingClientRect().height : 0
+          const toolbarHeight = Number.isFinite(measuredHeight) && measuredHeight > 0 ? measuredHeight : 56
+          const chromeSafeTop = Math.max(safeTop, mainRect.top + 6)
+          if (mainRect.width > 0 && mainRect.height > 0 && mainRect.bottom > 0 && mainRect.top < (win?.innerHeight || Infinity)
+            && style?.display !== 'none' && !['hidden', 'collapse'].includes(style?.visibility)
+            && chromeSafeTop + toolbarHeight <= (win?.innerHeight || 0) - 8) safeTop = chromeSafeTop
+        }
+      }
+      const avoid = this._mobileEditorMedia?.matches ? [
+        { left: rect.left, right: rect.right, top: selectorTop, bottom: rect.top },
+        { left: rect.left - 16, right: rect.left, top: rect.top, bottom: rect.bottom },
+      ] : null
       if (selected.axis === 'column') {
         const cells = table.querySelector('tr')?.cells
         const cell = cells?.[selected.index] || cells?.[0]
         const cr = cell?.getBoundingClientRect()
         return {
           x: cr ? cr.left + cr.width / 2 : rect.left + rect.width / 2,
-          y: rect.top,
+          y: selectorTop,
           placement: 'top',
+          safeTop,
+          ...(safeTop > fallbackSafeTop ? { fallbackSafeTop } : {}),
+          avoid,
         }
       }
       const row = table.querySelectorAll('tr')[selected.index]
@@ -448,14 +297,18 @@ export default {
         x: rect.left,
         y: rr ? rr.top + rr.height / 2 : rect.top + rect.height / 2,
         fallbackX: rect.left + 2,
-        fallbackY: rect.top,
+        fallbackY: selectorTop,
         placement: 'left',
+        safeTop,
+        ...(safeTop > fallbackSafeTop ? { fallbackSafeTop } : {}),
+        avoid,
       }
     },
     buildCellPlusState() {
       const selection = this.editor?.state.selection
       if (this.blockMenuOpen || this.effectiveReadonly || this.writable?.() === false || !this.featureEnabled('tables') || !this.featureEnabled('insert') || !(selection instanceof TextSelection) || !selection.empty) return { visible: false }
       const $pos = selection.$from
+      if ($pos.parent.type.name !== 'paragraph' || $pos.parent.content.size) return { visible: false }
       for (let depth = $pos.depth; depth > 0; depth -= 1) {
         if (!['tableCell', 'tableHeader'].includes($pos.node(depth).type.name)) continue
         const dom = this.editor.view.nodeDOM($pos.before(depth))

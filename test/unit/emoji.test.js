@@ -17,11 +17,14 @@
  */
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { EMOJI_DATA } from '../../src/core/emoji/data'
 import { Editor, getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { validateDocument } from '../../src/core/documentOperations'
 import { CALLOUT_EMOJI_DEFAULT, safeCalloutEmoji } from '../../src/core/blocks/callout'
 import { EMOJI_DEFAULT_NAME } from '../../src/core/blocks/emoji'
+import * as lookup from '../../src/core/emoji/lookup'
 import {
   EMOJI_GROUP_META, EMOJI_NAME_MAX, emojiCategories, emojiGroupOf, emojiItems,
   findEmojiByGlyph, findEmojiByName, isEmojiGlyph,
@@ -29,6 +32,17 @@ import {
 } from '../../src/core/emoji/catalog'
 
 const mounted = []
+it('compact schema lookup preserves every picker glyph, primary name and legacy alias', () => {
+  expect(lookup.emojiGlyphs).toHaveLength(emojiItems.length)
+  emojiItems.forEach(item => {
+    expect(lookup.findEmojiByName(item.value)?.glyph).toBe(item.glyph)
+    expect(lookup.isEmojiGlyph(item.glyph)).toBe(true)
+  })
+  for (const name of ['pin', 'check', 'comment', 'target', ':SMILE:']) {
+    expect(lookup.findEmojiByName(name)?.glyph).toBe(findEmojiByName(name)?.glyph)
+  }
+  for (const invalid of [null, '', '不是表情', 'javascript:alert(1)', '💡<script>']) expect(lookup.isEmojiGlyph(invalid)).toBe(false)
+})
 afterEach(() => {
   while (mounted.length) mounted.pop()()
 })
@@ -282,5 +296,38 @@ describe('高亮块图标白名单（12 个硬编码 → 全量，两侧同源�
     expect(() => validateDocument(docWith('🎉'), schema)).not.toThrow()
     expect(() => validateDocument(docWith('javascript:alert(1)'), schema)).toThrow(/emoji|图标/)
     expect(() => validateDocument(docWith(''), schema)).toThrow(/emoji|图标/)
+  })
+})
+
+
+describe('emoji synchronous identity and UI data boundary', () => {
+  it('preserves every public triple, group order and label exactly', () => {
+    expect(createHash('sha256').update(JSON.stringify(EMOJI_DATA)).digest('hex')).toBe('fd808a5944d52522bbe5b82c2301ba97c3039065cafdbfc44f4940912732aabb')
+    expect(Object.keys(EMOJI_DATA)).toEqual(EMOJI_GROUP_META.map(group => group.key))
+  })
+  it('keeps all glyph/name identities, legacy aliases and VS16 checks synchronous', async () => {
+    const identity = await import('../../src/core/emoji/identity')
+    expect(identity.emojiIdentityItems).toHaveLength(1898)
+    const firstNames = new Map(), firstGlyphs = new Map()
+    for (const item of emojiItems) {
+      if (!firstNames.has(item.value)) firstNames.set(item.value, item)
+      const glyph = normalizeEmojiGlyph(item.glyph)
+      if (!firstGlyphs.has(glyph)) firstGlyphs.set(glyph, item)
+    }
+    for (const [name, item] of firstNames) expect(identity.findEmojiIdentityByName(name)).toMatchObject({ value: item.value, glyph: item.glyph, category: item.category })
+    for (const [glyph, item] of firstGlyphs) expect(identity.findEmojiIdentityByGlyph(glyph)).toMatchObject({ value: item.value, glyph: item.glyph })
+    for (const alias of ['pin', 'check', 'comment', 'target']) expect(identity.findEmojiIdentityByName(alias)?.glyph).toBe(findEmojiByName(alias).glyph)
+    expect(identity.findEmojiIdentityByGlyph('javascript:alert(1)')).toBeNull()
+  })
+  it('retains full synchronous Chinese and recent-list projections at the source factory', async () => {
+    const { createCalloutPresentation } = await import('../../src/components/lark-doc/editor/calloutPresentation')
+    const api = createCalloutPresentation({})
+    expect(api).not.toBeInstanceOf(Promise)
+    expect(Object.keys(api.computed)).toEqual(['calloutEmojiCategories', 'filteredCalloutEmojiItems'])
+    const vm = { calloutEmojiQuery: '笑', calloutEmojiCategory: 'recent', calloutEmojiRecent: ['smile', 'thumbsup'] }
+    expect(api.computed.filteredCalloutEmojiItems.call(vm)).toEqual([findEmojiByName('smile')])
+    vm.calloutEmojiCategory = '笑脸'
+    expect(api.computed.filteredCalloutEmojiItems.call(vm)).toEqual(searchEmoji('笑', '笑脸'))
+    expect(api.computed.calloutEmojiCategories.call(vm)).toEqual(emojiCategories)
   })
 })

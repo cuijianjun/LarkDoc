@@ -79,6 +79,7 @@ export function createTableOverlays({ host, handlers = {} }) {
   el.appendChild(selectorLayer)
 
   let current = { columns: [], rows: [] }
+  let destroyed = false
   let columns = []
   let columnSignature = ''
   let rows = []
@@ -87,7 +88,7 @@ export function createTableOverlays({ host, handlers = {} }) {
   // 自绘滚动条的键盘等价：方向键 / Home / End / PageUp / PageDown。
   // 原生滚动条被 CSS 藏了，不给键盘入口就等于超宽表格无法用键盘浏览。
   scrollbar.addEventListener('keydown', (event) => {
-    if (!current.scrollVisible) return
+    if (!current.open || !current.scrollVisible || !scrollbar.isConnected) return
     const step = event.key === 'PageUp' || event.key === 'PageDown' ? 0.3 : 0.08
     let ratio = current.scrollRatio || 0
     switch (event.key) {
@@ -114,6 +115,7 @@ export function createTableOverlays({ host, handlers = {} }) {
     node.addEventListener('pointerdown', (event) => startDrag(event, axis, index))
     // 键盘等价：Enter / Space 选中整行整列（与指针单击同一个 handler）。
     node.addEventListener('keydown', (event) => {
+      if (!current.open || !node.isConnected) return
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()
       if (handlers.onSelect) handlers.onSelect(axis, index, event)
@@ -121,10 +123,12 @@ export function createTableOverlays({ host, handlers = {} }) {
     return { node, index }
   }
 
-  function rebuild(kind, items) {
-    const signature = items.map((item) => `${item.index}:${Math.round(item.left ?? item.top)}:${Math.round(item.width ?? item.height)}`).join(SEP)
+  function rebuild(kind, items, state) {
+    const signature = items.map((item) => item.index).join(SEP)
     const bag = kind === 'column' ? { list: columns, sig: columnSignature } : { list: rows, sig: rowSignature }
     if (signature === bag.sig) return bag.list
+    if (drag?.axis === kind && !items.some(item => item.index === drag.index)) cleanupDrag?.()
+    if (destroyed || current !== state) return null
     const next = items.map((item) => makeSelector(kind, item.index))
     if (kind === 'column') { columns = next; columnSignature = signature }
     else { rows = next; rowSignature = signature }
@@ -137,7 +141,7 @@ export function createTableOverlays({ host, handlers = {} }) {
   function startDrag(event, axis, index) {
     // 触屏 / 触控笔的 pointerdown 不保证 button === 0（部分 Safari 版本给 -1），
     // 无条件校验主键会把触屏点选择条整个吞掉；只对鼠标保留主键判断。
-    if (drag || (event.pointerType === 'mouse' && event.button !== 0)) return
+    if (!current.open || !event.currentTarget.isConnected || drag || (event.pointerType === 'mouse' && event.button !== 0)) return
     event.preventDefault()
     const win = el.ownerDocument.defaultView
     if (!win) return
@@ -155,7 +159,7 @@ export function createTableOverlays({ host, handlers = {} }) {
     } catch { captured = false }
 
     const onMove = (moveEvent) => {
-      if (!drag) return
+      if (!drag || moveEvent.pointerId !== event.pointerId) return
       const dx = moveEvent.clientX - drag.startX
       const dy = moveEvent.clientY - drag.startY
       if (!drag.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return
@@ -183,12 +187,14 @@ export function createTableOverlays({ host, handlers = {} }) {
       win.removeEventListener('pointercancel', onCancel, true)
       cleanupDrag = null
     }
-    const onCancel = () => {
+    const onCancel = cancelEvent => {
+      if (cancelEvent.pointerId !== event.pointerId) return
       detach()
       drag = null
       if (handlers.onReorderCancel) handlers.onReorderCancel()
     }
-    const onUp = () => {
+    const onUp = upEvent => {
+      if (upEvent.pointerId !== event.pointerId) return
       detach()
       const done = drag
       drag = null
@@ -209,6 +215,7 @@ export function createTableOverlays({ host, handlers = {} }) {
   }
 
   scrollbar.addEventListener('pointerdown', (event) => {
+    if (!current.open || !current.scrollVisible || !scrollbar.isConnected) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
     // 上一次手势若因窗口失焦没收到 pointerup/cancel，先拆掉再加，避免监听叠加。
     cleanupScroll?.()
@@ -232,7 +239,7 @@ export function createTableOverlays({ host, handlers = {} }) {
       if (handlers.onScrollRatio) handlers.onScrollRatio(ratio)
     }
     apply(event.clientX)
-    const onMove = (moveEvent) => apply(moveEvent.clientX)
+    const onMove = (moveEvent) => { if (moveEvent.pointerId === event.pointerId) apply(moveEvent.clientX) }
     const detach = () => {
       if (captured) {
         try { captureTarget.releasePointerCapture(event.pointerId) } catch { /* 已自动释放 */ }
@@ -243,7 +250,7 @@ export function createTableOverlays({ host, handlers = {} }) {
       win.removeEventListener('pointercancel', onUp, true)
       cleanupScroll = null
     }
-    const onUp = () => detach()
+    const onUp = upEvent => { if (upEvent.pointerId === event.pointerId) detach() }
     win.addEventListener('pointermove', onMove, true)
     win.addEventListener('pointerup', onUp, true)
     win.addEventListener('pointercancel', onUp, true)
@@ -251,11 +258,21 @@ export function createTableOverlays({ host, handlers = {} }) {
   })
 
   function update(state = {}) {
+    if (destroyed) return
+    const previous = current
+    current = state
+    if (previous.tableKey !== state.tableKey || previous.documentKey !== state.documentKey) {
+      cleanupDrag?.()
+      cleanupScroll?.()
+    }
+    if (destroyed || current !== state) return
     if (!state.open) {
+      cleanupDrag?.()
+      cleanupScroll?.()
+      if (destroyed || current !== state) return
       mountNode(host, el, false)
       return
     }
-    current = state
     applyStyle(el, state.style)
     el.classList.toggle('is-visible', true)
     el.classList.toggle('has-left', !!state.hasLeft)
@@ -266,8 +283,10 @@ export function createTableOverlays({ host, handlers = {} }) {
 
     const colItems = state.columns || []
     const rowItems = state.rows || []
-    const colNodes = rebuild('column', colItems)
-    const rowNodes = rebuild('row', rowItems)
+    const colNodes = rebuild('column', colItems, state)
+    if (!colNodes || destroyed || current !== state) return
+    const rowNodes = rebuild('row', rowItems, state)
+    if (!rowNodes || destroyed || current !== state) return
     const markSelected = (node, on) => {
       node.classList.toggle('is-selected', on)
       node.setAttribute('aria-pressed', on ? 'true' : 'false')
@@ -326,6 +345,8 @@ export function createTableOverlays({ host, handlers = {} }) {
     el,
     update,
     destroy() {
+      destroyed = true
+      current = { open: false }
       cleanupDrag?.()
       cleanupScroll?.()
       if (el.parentNode) el.parentNode.removeChild(el)

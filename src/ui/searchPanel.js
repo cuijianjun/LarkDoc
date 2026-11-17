@@ -89,7 +89,8 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
     input.placeholder = '在文档内查找'
     input.addEventListener('input', event => handlers.onQuery?.(event))
     input.addEventListener('keydown', event => {
-      if (event.key === 'Enter') { event.preventDefault(); handlers.onNext?.(1) }
+      if (event.isComposing || event.keyCode === 229) return
+      if (event.key === 'Enter') { event.preventDefault(); handlers.onNext?.(event.shiftKey ? -1 : 1) }
     })
     const counter = document.createElement('span')
     counter.className = 'lark-doc-fr-counter'
@@ -134,11 +135,22 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
     pane.append(findField, replaceField, actions)
     root.append(bar, pane, close)
     root.__ld = { findTab, replaceTab, ink, pane, findField, findLabel, findInputWrap, replaceField, input, replaceInput, counter, actions, replaceAll, replaceOne, previous, next }
-    root.addEventListener('keydown', event => event.stopPropagation())
+    root.addEventListener('keydown', event => {
+      event.stopPropagation()
+      if (event.isComposing || event.keyCode === 229) return
+      if (event.key === 'Escape') { event.preventDefault(); handlers.onClose?.() }
+      else if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        const key = event.key.toLowerCase()
+        if ((key === 'f' && !event.shiftKey) || (key === 'h' && event.shiftKey)) {
+          event.preventDefault(); handlers.onTab?.(key === 'f' ? 'find' : 'replace'); input.focus()
+        }
+      }
+    })
   }
 
   function paint() {
     if (!root) build()
+    const focused = root.contains(document.activeElement) ? document.activeElement : null
     const refs = root.__ld
     root.classList.toggle('is-replace', state.isReplace)
     setAttr(refs.findTab, 'aria-selected', state.isReplace ? 'false' : 'true')
@@ -170,6 +182,7 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
     ])
     if (state.open) {
       mountNode(host, root, true)
+      if (focused && (focused.disabled || focused !== document.activeElement)) (focused.isConnected && !focused.disabled ? focused : refs.input).focus()
       if (!state.wasOpen) {
         refs.input.focus()
         const end = refs.input.value.length

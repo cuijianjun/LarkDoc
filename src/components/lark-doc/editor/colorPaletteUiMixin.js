@@ -20,7 +20,7 @@
  *    `scheduleColorPaletteClose`。定时器只许有一份（在 `toolbarMenusMixin`），这里再攒
  *    一个就会两处各管一半。
  */
-import { createColorPalette } from '../../../ui/colorPalette'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -40,7 +40,7 @@ export default {
       if (this._colorPaletteUi) return
       const host = this.$refs.colorPaletteHost
       if (!host) return
-      this._colorPaletteUi = createColorPalette({
+      this._colorPaletteUi = createLazyView(() => import('../../../ui/colorPalette'), 'createColorPalette', {
         host,
         handlers: {
           // 字色 A 字传 `'textColor'`、背景格与「最近」传 `'textBackground'`、
@@ -48,10 +48,11 @@ export default {
           onApply: (value, target) => this.applyColorPalette(value, target),
           onResetText: () => this.resetTextColors(),
           onResetPalette: () => this.resetColorPalette(),
-          onEnter: () => this.cancelPopupHoverClose(),
+          onEnter: () => this.cancelPopupHoverClose('color'),
           onLeave: () => this.scheduleColorPaletteClose(),
+          onBack: () => this.backFromMobileColors?.(),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       this.refreshColorPalette()
     },
     buildColorPaletteState() {

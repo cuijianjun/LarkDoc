@@ -54,7 +54,7 @@ export default {
     onSelectionUpdate() {
       if (!this.editor) return
       const { selection } = this.editor.state
-      if (this.editor.isFocused) this.savedSelection = { from: selection.from, to: selection.to }
+      if (this.selectionHasFocus()) this.savedSelection = { from: selection.from, to: selection.to }
       // 原来这里是 `[...this.outline].reverse().find(...)`：2,000 个标题时每次按键
       // 复制一个 2,000 元素的数组，纯属白花。
       this.activeHeading = this.headingPosBefore(selection.from)
@@ -66,6 +66,13 @@ export default {
     scheduleSelectionLayout() {
       if (!this.editor) return
       this.selectionBatcher().schedule(SELECTION_LAYOUT_KEY, () => this.runSelectionLayout())
+    },
+    /** 只读正文的浏览器长按选区不会令不可编辑的 PM 根节点获得焦点。 */
+    selectionHasFocus() {
+      if (this.editor?.isFocused) return true
+      if (!this.effectiveReadonly || !this._mobileEditorMedia?.matches) return false
+      const dom = this.editor?.view?.dom, selection = dom?.ownerDocument.getSelection()
+      return !!selection && !selection.isCollapsed && dom.contains(selection.anchorNode) && dom.contains(selection.focusNode)
     },
     /** 本帧唯一一次定位。顺序与合并前保持一致：句柄 → 表格边界 → 高亮块工具 → 气泡条。 */
     runSelectionLayout() {
@@ -79,8 +86,8 @@ export default {
       // 文字 / 点选择条时上下各一条浮窗）。buildTableToolsState() 只读、不挂 DOM，
       // 与 v5 的「唯一浮窗」判定同源，不会出现两套状态机。
       const tableToolsOpen = this.buildTableToolsState?.().open === true
-      const visible = !selection.empty && !selection.node && !this.effectiveReadonly
-        && this.editor.isFocused && !tableToolsOpen
+      const visible = !selection.empty && !selection.node && (!this.effectiveReadonly || this._mobileEditorMedia?.matches)
+        && this.selectionHasFocus() && !tableToolsOpen
       this.bubbleVisible = visible
       if (visible) this.bubblePosition = this.bubbleBarPosition(selection)
       else { this.closeBubbleAlignMenu(); this.closeBubbleHeadingMenu() }

@@ -9,6 +9,8 @@
 const LANGUAGE_NAMES = Object.freeze({
   zh: '简体中文', 'zh-cn': '简体中文', 'zh-tw': '繁体中文', en: '英文', 'en-us': '英文',
   ja: '日文', ko: '韩文', fr: '法文', de: '德文', es: '西班牙文', ru: '俄文', pt: '葡萄牙文',
+  th: '泰语', hi: '印地语', id: '印度尼西亚语', vi: '越南语', it: '意大利语', ar: '阿拉伯语',
+  pl: '波兰语', fil: '菲律宾语', ms: '马来语', tr: '土耳其语', hu: '匈牙利语', my: '缅甸语', bn: '孟加拉语', km: '高棉文',
 })
 
 export const ACTION_PROMPTS = Object.freeze({

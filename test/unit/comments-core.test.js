@@ -12,7 +12,7 @@
  * 断言里刻意区分「05 的命名」与「任务单的命名」：读路径要认 status/comments/from-to，
  * 写路径输出 resolved/replies/offset-length；这条差异写进实现文件头的 待定 条目。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createCommentsProvider } from '../../src/providers/comments'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 import {
@@ -37,6 +37,44 @@ import {
 } from '../../src/core/comments/index'
 
 describe('线程与回复：读路径宽容', () => {
+  it('creates explicit document-scope memory comments with null anchors and isolated metadata', async () => {
+    const provider = createMemoryCommentsProvider(), author = { id: 'alice', name: 'Alice' }
+    const input = { scope: 'document', blockId: null, anchor: null, visibility: 'private', participants: ['bob'], author,
+      content: '@Bob doc', mentions: [{ principalId: 'bob', from: 0, to: 4 }], references: [{ docId: 'doc', from: 5, to: 8 }] }
+    const created = await provider.createThread(input)
+    expect(created).toMatchObject({ scope: 'document', blockId: null, anchor: null, visibility: 'private', participants: ['bob'],
+      replies: [{ content: '@Bob doc', mentions: input.mentions, references: input.references }] })
+    created.participants.push('forged'); created.replies[0].mentions[0].principalId = 'forged'
+    input.references[0].docId = 'changed'
+    expect((await provider.list())[0]).toMatchObject({ participants: ['bob'], anchor: null,
+      replies: [{ mentions: [{ principalId: 'bob' }], references: [{ docId: 'doc' }] }] })
+  })
+  it.each([
+    { content: '   ' }, { author: {} }, { blockId: 'b1' }, { anchor: { blockId: 'b1', offset: 0, length: 1 } },
+    { mentions: [{ principalId: 'bob', from: 0, to: 100 }] }, { references: [{ docId: '', from: 0, to: 2 }] },
+  ])('rejects invalid explicit document-scope input without weakening anchored writes: %j', async patch => {
+    const provider = createMemoryCommentsProvider()
+    await expect(provider.createThread({ scope: 'document', blockId: null, anchor: null, author: { id: 'alice' }, content: 'text', ...patch })).rejects.toThrow()
+    await expect(provider.createThread({ author: { id: 'alice' }, content: 'ordinary thread without block' })).rejects.toThrow('blockId')
+    expect(await provider.list()).toEqual([])
+  })
+  it('local explicit reaction sets remain idempotent under concurrent calls', async () => {
+    const provider = createMemoryCommentsProvider(), author = { id: 'alice' }
+    const thread = await provider.createThread({ blockId: 'b1', author, content: 'text' })
+    const input = { threadId: thread.id, replyId: thread.replies[0].id, author, emoji: '❤', active: true }
+    await Promise.all([provider.react(input), provider.react(input)])
+    expect((await provider.list())[0].replies[0].reactions[0]).toMatchObject({ users: ['alice'] })
+    await Promise.all([provider.react({ ...input, active: false }), provider.react({ ...input, active: false })])
+    expect((await provider.list())[0].replies[0].reactions).toEqual([])
+  })
+  it('plain local edits clear prior richContent and still reject another author', async () => {
+    const richContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'old' }] }] }
+    const provider = createMemoryCommentsProvider({ threads: [{ id: 'thread', blockId: 'b1', author: { id: 'alice' }, replies: [{ id: 'reply', author: { id: 'alice' }, content: 'old', richContent }] }] })
+    await expect(provider.editReply({ threadId: 'thread', replyId: 'reply', author: { id: 'bob' }, content: 'bad' })).rejects.toThrow('只能编辑自己的评论')
+    const edited = await provider.editReply({ threadId: 'thread', replyId: 'reply', author: { id: 'alice' }, content: 'new' })
+    expect(edited.content).toBe('new')
+    expect(edited.richContent).toBeUndefined()
+  })
   it('normalizeThread 对空值 / 非对象给 null，对空对象给安全默认', () => {
     expect(normalizeThread(null)).toBeNull()
     expect(normalizeThread(undefined)).toBeNull()
@@ -436,4 +474,128 @@ describe('内存 Provider：五方法契约', () => {
     expect(retained).toMatchObject({ id: thread.id, blockId: 'paragraph_1', quote: '正文锚点' })
     expect(retained.replies).toEqual([reply])
   })
+})
+
+
+describe('T093 memory comments default ids and seeded threads', () => {
+  const input = { scope: 'document', blockId: null, anchor: null, author: { id: 'author' }, content: 'new comment' }
+  const seed = (id, replyIds) => ({ id, scope: 'document', blockId: null, anchor: null, author: { id: 'seed-author' }, createdAt: 1,
+    replies: replyIds.map(replyId => ({ id: replyId, author: { id: 'seed-author' }, content: `seed ${replyId}`, createdAt: 1 })) })
+  async function freshMemory() {
+    vi.resetModules()
+    return (await import('../../src/core/comments/memory-provider')).createMemoryCommentsProvider
+  }
+
+  it('creates a default-id comment beside c-1/r-2/r-3/r-4 seeds without changing the original thread', async () => {
+    const createMemory = await freshMemory()
+    const provider = createMemory({ threads: [seed('c-1', ['r-2', 'r-3', 'r-4'])] })
+    const before = await provider.list()
+    const created = await provider.createThread(input)
+    expect(created.id).not.toBe('c-1')
+    // Reply ids are scoped by thread: another thread may already have r-3.
+    expect(created.replies[0].id).toBe('r-3')
+    expect(created.id).toMatch(/^c-[0-9a-z]+$/); expect(created.replies[0].id).toMatch(/^r-[0-9a-z]+$/)
+    const stored = await provider.list()
+    expect(stored).toHaveLength(2)
+    expect(stored.find(thread => thread.id === 'c-1')).toEqual(before[0])
+    expect(stored.find(thread => thread.id === created.id)).toEqual(created)
+  })
+
+  it('default replies skip only ids in the target thread and may match another thread reply', async () => {
+    const createMemory = await freshMemory()
+    const provider = createMemory({ threads: [seed('first', ['r-1', 'r-2']), seed('other', ['r-3'])] })
+    const before = await provider.list()
+    const reply = await provider.reply({ threadId: 'first', author: input.author, content: 'new reply' })
+    expect(reply.id).toBe('r-3')
+    const stored = await provider.list()
+    expect(stored.find(thread => thread.id === 'first').replies).toEqual([...before.find(thread => thread.id === 'first').replies, reply])
+    expect(stored.find(thread => thread.id === 'other')).toEqual(before.find(thread => thread.id === 'other'))
+  })
+
+  it('keeps deleted seed ids retired for the default generator', async () => {
+    const createMemory = await freshMemory()
+    const provider = createMemory({ threads: [seed('c-1', ['c-2'])] })
+    await provider.deleteReply({ threadId: 'c-1', commentId: 'c-2' })
+    expect(await provider.list()).toEqual([])
+    const created = await provider.createThread(input)
+    expect(created.id).toBe('c-2')
+  })
+
+  it('retains the ordinary default sequence and monotonic allocation across provider instances', async () => {
+    const createMemory = await freshMemory(), first = createMemory(), second = createMemory()
+    const a = await first.createThread(input), b = await second.createThread(input)
+    const reply = await first.reply({ threadId: a.id, author: input.author, content: 'reply' })
+    expect([a.id, a.replies[0].id, b.id, b.replies[0].id, reply.id]).toEqual(['c-1', 'r-2', 'c-3', 'r-4', 'r-5'])
+  })
+
+  it('rejects an explicit thread-id collision once and preserves the existing store', async () => {
+    const nextId = vi.fn(prefix => prefix === 'c' ? 'existing' : 'new-reply')
+    const provider = createMemoryCommentsProvider({ threads: [seed('existing', ['reply'])], nextId })
+    const before = await provider.list()
+    await expect(provider.createThread(input)).rejects.toThrow('评论线程 id 重复：existing')
+    expect(nextId).toHaveBeenCalledTimes(2); expect(await provider.list()).toEqual(before)
+  })
+
+  it('accepts the same explicit reply id in different threads and keeps compound-id edits separate', async () => {
+    const nextId = vi.fn(() => 'taken')
+    const provider = createMemoryCommentsProvider({ threads: [seed('first', ['one']), seed('other', ['taken'])], nextId })
+    const before = await provider.list()
+    const reply = await provider.reply({ threadId: 'first', author: input.author, content: 'new reply' })
+    expect(reply.id).toBe('taken'); expect(nextId).toHaveBeenCalledOnce()
+    await provider.editReply({ threadId: 'first', commentId: 'taken', author: input.author, content: 'edited in first' })
+    const stored = await provider.list()
+    expect(stored.find(thread => thread.id === 'first').replies.at(-1).content).toBe('edited in first')
+    expect(stored.find(thread => thread.id === 'other')).toEqual(before.find(thread => thread.id === 'other'))
+  })
+
+  it('accepts a new thread whose explicit first reply id is used by another thread', async () => {
+    const nextId = vi.fn(prefix => prefix === 'c' ? 'new-thread' : 'taken')
+    const provider = createMemoryCommentsProvider({ threads: [seed('existing', ['taken'])], nextId })
+    const before = await provider.list(), created = await provider.createThread(input)
+    expect(created.id).toBe('new-thread'); expect(created.replies[0].id).toBe('taken')
+    expect(nextId).toHaveBeenCalledTimes(2)
+    expect((await provider.list()).find(thread => thread.id === 'existing')).toEqual(before[0])
+  })
+
+  it('accepts an explicit same-id thread/reply pair but rejects another same-thread reply id once', async () => {
+    const nextId = vi.fn(() => 'same'), provider = createMemoryCommentsProvider({ nextId })
+    const created = await provider.createThread(input)
+    expect(created.id).toBe('same'); expect(created.replies[0].id).toBe('same')
+    expect(nextId).toHaveBeenCalledTimes(2)
+    const before = await provider.list()
+    await expect(provider.reply({ threadId: 'same', author: input.author, content: 'duplicate' })).rejects.toThrow('评论回复 id 重复：same')
+    expect(nextId).toHaveBeenCalledTimes(3); expect(await provider.list()).toEqual(before)
+  })
+
+  it('rejects an explicit seed reply collision within its own thread without changing the store', async () => {
+    const nextId = vi.fn(() => 'taken'), provider = createMemoryCommentsProvider({ threads: [seed('first', ['taken'])], nextId })
+    const before = await provider.list()
+    await expect(provider.reply({ threadId: 'first', author: input.author, content: 'duplicate' })).rejects.toThrow('评论回复 id 重复：taken')
+    expect(nextId).toHaveBeenCalledOnce(); expect(await provider.list()).toEqual(before)
+  })
+
+  it.each([false, true])('keeps a deleted reply reserved in its own thread, custom factory %s', async custom => {
+    const createMemory = await freshMemory(), nextId = vi.fn(() => 'r-1')
+    const provider = createMemory({ threads: [seed('first', ['r-1', 'r-2'])], ...(custom ? { nextId } : {}) })
+    await provider.deleteReply({ threadId: 'first', commentId: 'r-1' })
+    const before = await provider.list(), value = { threadId: 'first', author: input.author, content: 'after deletion' }
+    if (custom) {
+      await expect(provider.reply(value)).rejects.toThrow('评论回复 id 重复：r-1')
+      expect(nextId).toHaveBeenCalledOnce(); expect(await provider.list()).toEqual(before)
+    } else expect((await provider.reply(value)).id).toBe('r-3')
+  })
+
+  it('reserves explicit ids only after successful writes so invalid-content retries can reuse the same candidates', async () => {
+    const nextId = vi.fn(prefix => prefix === 'c' ? 'retry-thread' : 'retry-reply'), provider = createMemoryCommentsProvider({ nextId })
+    await expect(provider.createThread({ ...input, content: '' })).rejects.toThrow()
+    expect(await provider.list()).toEqual([])
+    const created = await provider.createThread(input)
+    expect(created.id).toBe('retry-thread'); expect(created.replies[0].id).toBe('retry-reply')
+    nextId.mockReturnValue('retry-added')
+    await expect(provider.reply({ threadId: created.id, author: input.author, content: '' })).rejects.toThrow()
+    expect((await provider.list())[0].replies).toHaveLength(1)
+    const reply = await provider.reply({ threadId: created.id, author: input.author, content: 'valid retry' })
+    expect(reply.id).toBe('retry-added'); expect(nextId).toHaveBeenCalledTimes(6)
+  })
+
 })

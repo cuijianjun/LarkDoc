@@ -15,9 +15,13 @@ const nativeHost = read('src/editor/nativeEditorHost.js')
 const shell = read('src/ui/workspaceShell.js')
 const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
 const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
-const overlaysRenderer = read('src/ui/overlays.js')
+const overlaysRenderer = read('src/ui/overlays.js') + read('src/ui/overlayViews.js')
+const shareEntryRenderer = read('src/ui/shareEntry.js')
 const panelsRenderer = read('src/ui/panels.js')
+const panelsUi = read('src/components/lark-doc/editor/panelsUiMixin.js')
+const panelPresentation = read('src/components/lark-doc/editor/panelPresentation.js')
 const topBarRenderer = read('src/ui/topBar.js')
+const topBarMenusRenderer = read('src/ui/topBarMenus.js')
 
 // 宿主和聚合层都可能使用多行 mixins 数组，必须匹配完整数组。
 const hostMixins = nativeHost.match(/mixins:\s*\[([\s\S]*?)\]/)[1]
@@ -33,7 +37,8 @@ describe('P6b · 门面接线', () => {
     expect(shell).toContain('headingNumberMenuHost, overlayHost)')
     expect(nativeHost).toContain("['Overlays', 'refreshOverlays']")
     expect(nativeHost).toContain('host[`mount${domain}`]()')
-    expect(overlaysUi).toContain('createOverlays')
+    expect(overlaysUi).toContain('createDocumentOverlays')
+    expect(overlaysUi).toContain('createShareEntry')
   })
 
   it('原生宿主仍守 P0-03 的 <700 行门禁（含 P6b 全部接线）', () => {
@@ -57,10 +62,13 @@ describe('P6b · 门面接线', () => {
 describe('P6b · 浮层容器', () => {
   it('原生渲染器保留分享 / 权限 / 导出完整结构与语义属性', () => {
     for (const className of [
-      'lark-doc-share-mask', 'lark-doc-share-popover', 'lark-doc-permission-layer',
+      'lark-doc-share-popover', 'lark-doc-permission-layer',
       'lark-doc-share-confirm', 'lark-doc-share-password', 'lark-doc-export-backdrop',
       'lark-doc-export-panel',
     ]) expect(overlaysRenderer).toContain(className)
+    expect(shareEntryRenderer).toContain('lark-doc-share-mask')
+    expect(shareEntryRenderer).toContain('shareViewMaskVisible')
+    expect(overlaysRenderer).toContain('createShareEntry')
     expect(overlaysRenderer).toContain("role', 'dialog'")
     expect(overlaysRenderer).toContain('aria-modal')
     expect(overlaysRenderer).toContain('aria-label')
@@ -91,6 +99,11 @@ describe('P6b · 浮层容器', () => {
     expect(saveVersion).toContain("'data-capability', 'canCreateVersion'")
   })
 
+  it('原生评论菜单把线程 id 传给编辑/删除权限判定', () => {
+    expect(panelsUi).toContain('...panelPresentation.methods')
+    expect(panelPresentation).toContain('visible: this.commentMenuVisible(menu, reply, item.id)')
+  })
+
   it('分享、权限设置和导出控件保留 capability 与禁用态投影', () => {
     for (const control of ['permissionButton', 'toggle', 'submit', 'label']) {
       const capability = control === 'permissionButton' || control === 'toggle' ? 'canManagePermission' : 'canExport'
@@ -104,7 +117,8 @@ describe('P6b · 浮层容器', () => {
 
   it('顶栏更多菜单按权限映射 capability 与禁用态', () => {
     expect(topBarRenderer).toContain('TOPBAR_MORE_CAPABILITY')
-    expect(topBarRenderer).toContain("setAttr(node, 'data-capability', capability || null)")
-    expect(topBarRenderer).toContain("setAttr(node, 'aria-disabled', String(node.disabled))")
+    expect(topBarRenderer).toContain('capabilities: TOPBAR_MORE_CAPABILITY')
+    expect(topBarMenusRenderer).toContain("setAttr(node, 'data-capability', capability || null)")
+    expect(topBarMenusRenderer).toContain("setAttr(node, 'aria-disabled', String(node.disabled))")
   })
 })

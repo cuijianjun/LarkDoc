@@ -13,6 +13,7 @@
  */
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { createImageNodeView, clampImageWidth, imageWidthError } from '../../src/core/nodeviews/image'
@@ -21,6 +22,7 @@ import { sanitizeHTML, validateDocument } from '../../src/core/documentOperation
 import { getNodeView, setNodeView } from '../../src/core/nodeviews/registry'
 import { dragImageCrop, imageCropGeometry, normalizeImageCrop } from '../../src/core/media/image-crop'
 import { createImageViewer } from '../../src/core/nodeviews/image-viewer'
+const viewerStyles = readFileSync('src/components/lark-doc/lark-doc.css', 'utf8')
 
 const SRC = 'https://cdn.example.com/a.png'
 const ORIGINAL = 'https://cdn.example.com/original.png'
@@ -500,6 +502,119 @@ describe('P2-01 图片裁剪与重置', () => {
 })
 
 describe('P2-01 图片预览与销毁', () => {
+  function phoneViewer(options = {}) {
+    const media = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: true }) })
+    const host = document.createElement('div'), origin = document.createElement('button')
+    host.appendChild(origin); document.body.appendChild(host); origin.focus()
+    const images = [{ src: SRC, crop: [0, 0, .8, 1] }, { src: ORIGINAL }]
+    const before = JSON.stringify(images)
+    const viewer = createImageViewer({ host, images, ...options })
+    const root = viewer.dom, image = root.querySelector('img'), stage = root.querySelector('.lark-doc-image-viewer-stage')
+    stage.getBoundingClientRect = () => ({ width: 360, height: 700 })
+    Object.defineProperties(image, { naturalWidth: { value: 1200 }, naturalHeight: { value: 800 } })
+    image.dispatchEvent(new Event('load'))
+    const gesture = (type, points) => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      const touches = points.map(([clientX, clientY], identifier) => ({ clientX, clientY, identifier }))
+      Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : touches }, changedTouches: { value: touches } })
+      image.dispatchEvent(event)
+      return event
+    }
+    const tap = () => { gesture('touchstart', [[180, 300]]); gesture('touchend', [[180, 300]]) }
+    return { root, image, stage, origin, images, before, gesture, tap,
+      scale: () => Number(root.querySelector('.lark-doc-image-viewer-projection').style.transform.match(/scale\(([^)]+)\)/)[1]),
+      cleanup() {
+        viewer.destroy(); host.remove()
+        if (media) Object.defineProperty(window, 'matchMedia', media)
+        else delete window.matchMedia
+      }, viewer,
+    }
+  }
+
+  it('phone gallery double tap zooms, one finger pans without paging, and double tap restores fit without mutating images', () => {
+    vi.useFakeTimers()
+    const ui = phoneViewer(), toolbar = ui.root.querySelector('.lark-doc-image-viewer-toolbar')
+    try {
+      const fit = ui.scale()
+      ui.tap(); vi.advanceTimersByTime(100); ui.tap()
+      expect(ui.scale()).toBeGreaterThan(fit)
+      expect(toolbar.hidden).toBe(true)
+      for (const shiftKey of [false, true]) {
+        const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+        ui.root.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+        expect(document.activeElement).toBe(ui.root)
+      }
+      const projection = ui.root.querySelector('.lark-doc-image-viewer-projection')
+      const before = projection.style.transform
+      ui.gesture('touchstart', [[180, 300]])
+      ui.gesture('touchmove', [[260, 340]])
+      ui.gesture('touchend', [[260, 340]])
+      expect(projection.style.transform).not.toBe(before)
+      expect(ui.image.getAttribute('src')).toBe(SRC)
+      vi.advanceTimersByTime(350)
+      expect(ui.root.isConnected).toBe(true)
+      ui.tap(); vi.advanceTimersByTime(100); ui.tap()
+      expect(ui.scale()).toBe(fit)
+      expect(projection.style.transform).toContain('translate(0px, 0px)')
+      expect(toolbar.hidden).toBe(false)
+      expect(JSON.stringify(ui.images)).toBe(ui.before)
+    } finally { ui.cleanup() }
+  })
+
+  it('phone fit swipes page within the gallery and a separate single tap closes and restores focus', () => {
+    vi.useFakeTimers()
+    const onClose = vi.fn(), ui = phoneViewer({ onClose })
+    try {
+      ui.gesture('touchstart', [[300, 300]])
+      ui.gesture('touchmove', [[50, 310]])
+      ui.gesture('touchend', [[50, 310]])
+      expect(ui.image.getAttribute('src')).toBe(ORIGINAL)
+      expect(ui.root.querySelector('.lark-doc-image-viewer-position').textContent).toBe('2/2')
+      ui.image.dispatchEvent(new Event('load'))
+      ui.gesture('touchstart', [[300, 300]])
+      ui.gesture('touchend', [[50, 300]])
+      vi.advanceTimersByTime(350)
+      expect(ui.root.isConnected).toBe(true)
+      ui.gesture('touchstart', [[50, 300]])
+      ui.gesture('touchmove', [[300, 300]])
+      ui.gesture('touchend', [[300, 300]])
+      expect(ui.image.getAttribute('src')).toBe(SRC)
+      ui.tap(); vi.advanceTimersByTime(350)
+      expect(onClose).toHaveBeenCalledOnce()
+      expect(ui.root.isConnected).toBe(false)
+      expect(document.activeElement).toBe(ui.origin)
+    } finally { ui.cleanup() }
+  })
+
+  it('phone gestures preserve network navigation checks and cancel pending taps on multitouch, cancellation or destroy', () => {
+    vi.useFakeTimers()
+    let allowed = true
+    const onClose = vi.fn(), ui = phoneViewer({ canLoad: () => allowed, onClose })
+    try {
+      allowed = false
+      ui.gesture('touchstart', [[300, 300]])
+      ui.gesture('touchend', [[50, 300]])
+      expect(ui.image.getAttribute('src')).toBe(SRC)
+      expect(ui.root.querySelector('[role="status"]').textContent).toContain('网络策略')
+      ui.tap()
+      ui.gesture('touchstart', [[100, 100], [200, 200]])
+      ui.gesture('touchend', [[100, 100]])
+      vi.advanceTimersByTime(350)
+      expect(ui.root.isConnected).toBe(true)
+      ui.gesture('touchstart', [[100, 100]])
+      ui.gesture('touchcancel', [[100, 100]])
+      ui.gesture('touchend', [[100, 100]])
+      vi.advanceTimersByTime(350)
+      expect(onClose).not.toHaveBeenCalled()
+      ui.tap(); ui.viewer.destroy()
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(350)
+      expect(onClose).toHaveBeenCalledOnce()
+    } finally { ui.cleanup() }
+  })
+
   it.each([[8, 8, null], [323, 275, [0, 0, 0.01, 1]]])('shrinks tiny and thin cropped images all the way to the minimum (%s×%s)', (width, height, crop) => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -707,4 +822,26 @@ describe('P2-01 三端装配', () => {
       editor.destroy()
     }
   })
+})
+
+
+it('applies the shared viewer styles to the actual canvas and direct toolbar controls', () => {
+  const style = document.createElement('style'), host = document.createElement('div')
+  style.textContent = (viewerStyles.match(/[^{}]*\.lark-doc-image-viewer[^{}]*\{[^{}]*\}/g) || []).join('\n')
+  host.className = 'lark-doc'; document.head.append(style); document.body.append(host)
+  const viewer = createImageViewer({ host, images: [{ src: SRC }] })
+  try {
+    const root = viewer.dom, stage = root.querySelector('.lark-doc-image-viewer-stage')
+    const projection = root.querySelector('.lark-doc-image-viewer-projection'), image = root.querySelector('.lark-doc-image-viewer-image')
+    expect(getComputedStyle(stage).position).toBe('absolute')
+    expect(getComputedStyle(stage).display).toBe('flex')
+    expect(getComputedStyle(stage).overflow).toBe('hidden')
+    expect(getComputedStyle(projection).position).toBe('relative')
+    expect(getComputedStyle(projection).overflow).toBe('hidden')
+    expect(getComputedStyle(image).position).toBe('absolute')
+    expect(getComputedStyle(image).maxWidth).toBe('none')
+    expect(getComputedStyle(root).backgroundColor).toBe('rgba(0, 0, 0, 0.8)')
+    expect(getComputedStyle(root.querySelector('[role="toolbar"]')).display).toBe('flex')
+    expect(getComputedStyle(root.querySelector('[data-viewer-action="in"]')).height).toBe('32px')
+  } finally { viewer.destroy(); host.remove(); style.remove() }
 })

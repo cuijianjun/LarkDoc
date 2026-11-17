@@ -1,4 +1,4 @@
-import { createSearchPanel } from '../../../ui/searchPanel'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -15,7 +15,7 @@ export default {
     mountSearchPanel() {
       const host = this.$refs.searchPanelHost
       if (!host) return
-      this._searchUi = createSearchPanel({
+      this._searchUi = createLazyView(() => import('../../../ui/searchPanel'), 'createSearchPanel', {
         host,
         handlers: {
           onTab: (tab) => this.setSearchTab(tab),
@@ -23,10 +23,10 @@ export default {
           onReplacement: (event) => this.setReplacement(event.target.value),
           onNext: (step) => this.nextMatch(step),
           onReplace: (all) => this.replace(all),
-          onClose: () => this.closeSearch(),
+          onClose: () => { this.closeSearch(); this.editor.view.focus() },
           onPosition: (pos) => this.setSearchPanelPos(pos),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       this.refreshSearchPanel()
     },
     buildSearchPanelState() {

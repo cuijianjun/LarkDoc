@@ -46,11 +46,13 @@ export default {
       if (this._commandMenuUi) return
       const host = this.$refs.commandMenuHost
       if (!host) return
-      this._commandMenuUi = createCommandMenu({ host, handlers: this.commandMenuHandlers(), onReady: () => this.onCommandMenuReady(this._commandMenuUi) })
+      const ui = createCommandMenu({ host, handlers: this.commandMenuHandlers(), onReady: () => this.onCommandMenuReady(ui) })
+      this._commandMenuUi = ui
       this.refreshCommandMenu()
       if (this.menuOpen) this.onCommandMenuReady(this._commandMenuUi)
     },
     destroyCommandMenu() {
+      this.menuRevision += 1
       if (!this._commandMenuUi) return
       this._commandMenuUi.destroy()
       this._commandMenuUi = null
@@ -66,10 +68,11 @@ export default {
       return {
         onQuery: (value) => { this.menuQuery = value; this.activeCommandIndex = 0 },
         onMove: (step) => this.moveCommand(step),
+        onActivate: index => { this.activeCommandIndex = index; this.refreshCommandMenu() },
         onChoose: (item) => this.chooseCommand(item),
         onChooseDiagram: (typeId) => this.chooseCommand({ id: 'diagram', diagramType: typeId }),
         onClose: () => this.closeCommandMenu(true),
-        onMenuEnter: () => this.cancelPopupHoverClose(),
+        onMenuEnter: () => this.cancelPopupHoverClose('command'),
         onMenuLeave: () => this.scheduleCommandMenuClose(),
       }
     },
@@ -84,6 +87,7 @@ export default {
         templates: this.templates,
         query: this.menuQuery,
         activeId: this.activeCommandId,
+        activeIndex: this.activeCommandIndex,
         positionStyle: this.menuStyle,
         diagramTypes: this.diagramTypes,
       }

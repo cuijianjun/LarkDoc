@@ -22,17 +22,32 @@ export const MENU_GAP = 6
  * @param {HTMLElement} trigger 触发器（菜单的锚点）
  * @param {number} minTop `bubbleSafeTop()` 的结果
  */
-export function placeMenu(menu, trigger, minTop) {
+export function placeMenu(menu, trigger, minTop = MENU_MARGIN, options = {}) {
   if (!menu || !trigger) return
-  const triggerRect = trigger.getBoundingClientRect()
+  const win = menu.ownerDocument.defaultView
+  const triggerRect = trigger.getBoundingClientRect ? trigger.getBoundingClientRect() : trigger
+  const viewport = win.visualViewport
+  const x = viewport?.offsetLeft || 0, y = viewport?.offsetTop || 0
+  const right = x + (viewport?.width || win.innerWidth) - MENU_MARGIN
+  const bottom = y + (viewport?.height || win.innerHeight) - MENU_MARGIN
+  const safeTop = Math.min(Math.max(y + MENU_MARGIN, minTop), bottom)
+  const maxWidth = Math.max(0, Math.min(options.maxWidth || Infinity, right - x - MENU_MARGIN))
+  const maxHeight = Math.max(0, bottom - safeTop)
+  menu.style.maxWidth = `${maxWidth}px`
+  menu.style.maxHeight = `${maxHeight}px`
+  menu.style.boxSizing = 'border-box'
+  const computed = win.getComputedStyle(menu)
+  const minWidth = parseFloat(computed.minWidth) || 0
+  if (minWidth > maxWidth) menu.style.minWidth = `${maxWidth}px`
   const box = menu.getBoundingClientRect()
-  const width = box.width || 230
-  const below = Math.max(0, window.innerHeight - triggerRect.bottom - MENU_MARGIN)
-  const above = Math.max(0, triggerRect.top - minTop)
-  const useAbove = below < box.height && above > below
-  const naturalTop = useAbove ? triggerRect.top - box.height - MENU_GAP : triggerRect.bottom + MENU_GAP
-  const left = Math.max(MENU_MARGIN, Math.min(window.innerWidth - width - MENU_MARGIN, triggerRect.left))
-  const top = Math.max(minTop, Math.min(window.innerHeight - box.height - MENU_MARGIN, naturalTop))
-  menu.style.left = `${Math.round(left)}px`
-  menu.style.top = `${Math.round(top)}px`
+  const width = Math.min(box.width || parseFloat(computed.width) || Math.max(minWidth, 230), maxWidth)
+  const height = Math.min(box.height || menu.offsetHeight, maxHeight)
+  const gap = options.gap ?? MENU_GAP
+  const below = Math.max(0, bottom - triggerRect.bottom - gap), above = Math.max(0, triggerRect.top - safeTop - gap)
+  const naturalTop = below < height && above > below ? triggerRect.top - height - gap : triggerRect.bottom + gap
+  const left = Math.max(x + MENU_MARGIN, Math.min(right - width, options.align === 'end' ? triggerRect.right - width : triggerRect.left))
+  const top = Math.max(safeTop, Math.min(bottom - height, naturalTop))
+  const style = { left: `${left}px`, top: `${top}px`, right: 'auto', maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+  Object.assign(menu.style, style)
+  return style
 }

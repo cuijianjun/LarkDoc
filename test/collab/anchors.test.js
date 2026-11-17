@@ -82,6 +82,26 @@ describe('BlockAPI 结构操作的评论与折叠身份', () => {
 })
 
 describe('P6b 评论锚点 · Yjs 相对位置', () => {
+  it('nested anchors retain their real Yjs root and reject foreign or deleted subtrees', () => {
+    const ydoc = new Y.Doc({ gc: false })
+    try {
+      const root = ydoc.getXmlFragment(COLLAB_CONTENT_FIELD)
+      const section = new Y.XmlElement('section'), paragraph = new Y.XmlElement('p'), text = new Y.XmlText()
+      text.insert(0, 'nested text'); paragraph.insert(0, [text]); section.insert(0, [paragraph]); root.insert(0, [section])
+      const anchors = createCommentAnchors({ ydoc, type: text })
+      const encoded = anchors.encode(2)
+      expect(anchors.decode(encoded)).toEqual({ type: text, index: 2 })
+
+      const foreign = new Y.XmlText(); foreign.insert(0, 'other root')
+      ydoc.getXmlFragment('foreign').insert(0, [foreign])
+      const roots = [...ydoc.share.keys()]
+      expect(anchors.decode(anchors.encode(1, foreign))).toBeNull()
+      expect([...ydoc.share.keys()]).toEqual(roots)
+      root.delete(0, 1)
+      expect(anchors.decode(encoded)).toBeNull()
+    } finally { ydoc.destroy() }
+  })
+
   it('未知根名称相对位置不能通过解码向正文分配新根', () => {
     const { ydoc } = createBody([{ blockId: 'b1', text: 'hello' }])
     const anchors = createCommentAnchors({ ydoc })
@@ -112,6 +132,21 @@ describe('P6b 评论锚点 · Yjs 相对位置', () => {
     const codec = createAnchorCodec(createYjsAnchorCodec({ ydoc, resolve, locate }))
     const payload = encodeAnchor({ blockId: 'b1', offset: 6, length: 5 }, codec)
     expect(decodeAnchor(payload, codec)).toEqual({ blockId: 'b1', offset: 6, length: 5 })
+  })
+
+  it('resolver metadata cannot replace the anchor kind or expand its public payload', () => {
+    const { ydoc, resolve, locate } = createBody([{ blockId: 'b1', text: 'hello' }])
+    try {
+      const codec = createYjsAnchorCodec({ ydoc, locate, resolve: anchor => {
+        anchor.kind = 'resolver-debug'
+        anchor.debug = 'private resolver state'
+        return resolve(anchor)
+      } })
+      const payload = codec.encode({ blockId: 'b1', offset: 1, length: 3 })
+      expect(payload.kind).toBe('y')
+      expect(Object.keys(payload).sort()).toEqual(['blockId', 'from', 'kind', 'length', 'offset', 'to'])
+      expect(codec.decode(payload)).toEqual({ blockId: 'b1', offset: 1, length: 3 })
+    } finally { ydoc.destroy() }
   })
 
   it('块内并发插入后，offset 跟着内容走而不是停在旧数字上', () => {

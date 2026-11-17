@@ -29,7 +29,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { getSchema } from '@tiptap/core'
 import { EditorState } from '@tiptap/pm/state'
 import { EditorView } from '@tiptap/pm/view'
-import { collectFoldRanges, foldableIdPositions } from '../../src/core/documentOperations'
+import { collectFoldRanges, foldableIdPositions, foldedRange } from '../../src/core/documentOperations'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import {
   createDocumentDecorations,
@@ -46,6 +46,47 @@ const h = (level, value, attrs = {}) => ({
   type: 'heading',
   attrs: { level, numbering: false, numberingStart: null, ...attrs },
   content: [text(value)],
+})
+
+describe('平级正文的标题章节折叠', () => {
+  it('includes ordinary paragraphs and deeper headings until the next same or higher heading', () => {
+    const doc = schema.nodeFromJSON({ type: 'doc', content: [
+      h(1, '第一章', { blockId: 'chapter-1' }), p('正文', { blockId: 'body-1' }),
+      h(2, '子节', { blockId: 'section-1' }), p('子节正文', { blockId: 'body-2' }),
+      h(2, '同级子节', { blockId: 'section-2' }), p('同级正文', { blockId: 'body-3' }),
+      h(1, '第二章', { blockId: 'chapter-2' }), p('后续正文', { blockId: 'body-4' }),
+    ] })
+    const first = posOf(doc, 'chapter-1'), section = posOf(doc, 'section-1')
+    const expected = { from: first + doc.nodeAt(first).nodeSize, to: posOf(doc, 'chapter-2') }
+    expect(foldedRange(doc, first)).toEqual(expected)
+    expect(collectFoldRanges(doc).get(first)).toMatchObject(expected)
+    expect(foldedRange(doc, section)).toEqual({ from: section + doc.nodeAt(section).nodeSize, to: posOf(doc, 'section-2') })
+  })
+
+  it('keeps empty headings empty and preserves paragraph indentation boundaries', () => {
+    const doc = schema.nodeFromJSON({ type: 'doc', content: [
+      h(1, '空章', { blockId: 'empty' }), h(1, '下一章', { blockId: 'next' }),
+      p('父段', { blockId: 'parent' }), p('缩进子段', { blockId: 'child', indent: 1 }), p('同级段', { blockId: 'peer' }),
+    ] })
+    expect(foldedRange(doc, posOf(doc, 'empty'))).toBeNull()
+    const parent = posOf(doc, 'parent')
+    expect(foldedRange(doc, parent)).toEqual({ from: parent + doc.nodeAt(parent).nodeSize, to: posOf(doc, 'peer') })
+  })
+
+  it('stops at its nested parent boundary and preserves isolated-container rules', () => {
+    const doc = schema.nodeFromJSON({ type: 'doc', content: [
+      { type: 'orderedList', content: [
+        { type: 'listItem', attrs: { blockId: 'item' }, content: [p('条目'), h(1, '内部标题', { blockId: 'nested' }), p('内部正文')] },
+        { type: 'listItem', content: [p('下一条目')] },
+      ] },
+      p('外部正文', { blockId: 'outside' }),
+      { type: 'blockquote', content: [h(1, '隔离标题', { blockId: 'isolated' }), p('引用正文')] },
+    ] })
+    const at = posOf(doc, 'nested'), item = posOf(doc, 'item')
+    expect(foldedRange(doc, at)).toEqual({ from: at + doc.nodeAt(at).nodeSize, to: item + doc.nodeAt(item).nodeSize - 1 })
+    expect(collectFoldRanges(doc).get(at)).toMatchObject(foldedRange(doc, at))
+    expect(foldedRange(doc, posOf(doc, 'isolated'))).toBeNull()
+  })
 })
 
 /**
@@ -202,6 +243,22 @@ describe('飞书列表编号与圆点', () => {
     const [, inner] = listPositions(doc)
     expect(previousSiblingOrderedList(doc, inner)).toBeNull()
     expect(computeOrderedListNumbers(doc).get(inner + 1).label).toBe('1.')
+  })
+  it('普通段落保持续号，含列表的其他容器截断同父列表续号', () => {
+    const doc = documentOf([
+      ordered(['一', '二'], { start: 7 }),
+      { type: 'blockquote', content: [ordered(['引用内'], { start: 50 })] },
+      p('分隔正文'), ordered(['九'], { continueFrom: true }),
+      p('另一段'), ordered(['十'], { continueFrom: true }),
+    ])
+    const [first, inner, second, third] = listPositions(doc)
+    expect(previousSiblingOrderedList(doc, second)).toBeNull()
+    expect(previousSiblingOrderedList(doc, third)?.pos).toBe(second)
+    const numbers = computeOrderedListNumbers(doc)
+    expect(numbers.get(first + 1).label).toBe('7.')
+    expect(numbers.get(inner + 1).label).toBe('50.')
+    expect(numbers.get(second + 1).label).toBe('1.')
+    expect(numbers.get(third + 1).label).toBe('2.')
   })
   it('二级无序列表渲染源空心圆，一级保持实心圆', () => {
     const doc = documentOf([{ type: 'bulletList', content: [{ type: 'listItem', content: [p('一级'), { type: 'bulletList', content: [{ type: 'listItem', content: [p('二级')] }] }] }] }])

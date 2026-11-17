@@ -11,8 +11,8 @@
  * 三条硬口径：
  *   - **无二次确认、无 toast**（07 §12.5 逐字要求）。命令只返回事务，弹窗/提示由宿主
  *     自己加，本层不引 UI。
- *   - **不进 undo 栈**（V1 定稿：15 §3.1 / FR-003）：accept/reject 是确认动作，
- *     使用 `addToHistory: false`；不影响原有正文编辑的历史映射。
+ *   - **文档级 Undo 恢复待处理态**（07 §12 的历史交叉表）：accept/reject 独立入栈，
+ *     前后关闭历史组；面板没有额外的撤回按钮。纠正旧 V1 对「不可撤销」的扩大解释。
  *   - **落 `REVISION_SKIP_META`**：删文字 / 摘 mark 都是「宿主动作」，跟踪器见到该 meta
  *     必须放手，否则拒绝一条新增会被再记成一条删除建议（自激）。
  */
@@ -69,7 +69,7 @@ export function buildRevisionDecisionTr(state, revisionId, action) {
     blocks.forEach(block => tr.setNodeMarkup(block.pos, null, { ...block.attrs, deletionRevisionId: '', deletionAuthor: '' }))
     boundaries.reverse().forEach(range => tr.delete(range.from, range.to))
   }
-  tr.setMeta('addToHistory', false)
+  tr.setMeta('addToHistory', true)
   tr.setMeta(REVISION_SKIP_META, true)
   tr.setMeta('larkDocRevisionAction', action)
   return closeHistory(tr)
@@ -103,7 +103,7 @@ export function adjacentRevision(doc, revisionId, direction) {
 /** 复制锚点用的链接片段（与评论面板同形：`#revision-<id>`，宿主负责拼 origin）。 */
 export function revisionAnchor(revisionId) {
   const id = String(revisionId || '')
-  return id ? `#revision-${id}` : ''
+  return id ? `#revision-${encodeURIComponent(id)}` : ''
 }
 
 export default {

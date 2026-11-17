@@ -272,6 +272,7 @@ export function createIsvNodeView(props) {
     if (typeof callbacks.onCatalogJump === 'function') { callbacks.onCatalogJump(pos); return }
     try {
       const clamped = Math.min(Math.max(pos, 0), editor.state.doc.content.size)
+      editor.storage?.larkDoc?.projection?.revealPosition?.(clamped)
       let target = typeof editor.view.nodeDOM === 'function' ? editor.view.nodeDOM(clamped) : null
       if (!target) {
         const found = editor.view.domAtPos(clamped)
@@ -281,6 +282,7 @@ export function createIsvNodeView(props) {
       const heading = target && typeof target.closest === 'function'
         ? target.closest('[data-type="heading"], h1, h2, h3, h4, h5, h6')
         : null
+      editor.storage?.larkDoc?.projection?.revealNode?.(heading || target)
       scrollCatalogTarget(heading || target, dom.closest('.lark-doc') || dom)
     } catch (_) { /* 位置在协同下可能被别人删了，跳不动就保持原样 */ }
   }

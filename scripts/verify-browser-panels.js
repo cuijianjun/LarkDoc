@@ -48,6 +48,8 @@ const TEMPLATE_BASE = templateUrl.href
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -564,7 +566,7 @@ const vueCall = (page, body) => page.evaluate((source) => {
 }, body)
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -692,13 +694,13 @@ const vueCall = (page, body) => page.evaluate((source) => {
       pressed: node.getAttribute('aria-pressed'),
       group: node.parentElement ? node.parentElement.className : '',
       size: { w: Math.round(rect.width), h: Math.round(rect.height) },
-      icon: icon ? { w: Math.round(icon.getBoundingClientRect().width), h: Math.round(icon.getBoundingClientRect().height) } : null,
+      icon: icon ? { svg: !!icon.querySelector('svg'), width: icon.style.width, height: icon.style.height } : null,
     }
   })
-  record('[目录] 工具栏收尾组第 2 个 = 「目录」钮（icon 16×16，无 aria-pressed）',
+  record('[目录] 工具栏收尾组保留目录 SVG 入口（声明 16×16，无 aria-pressed）',
     !!outlineButton && outlineButton.type === 'button' && outlineButton.title === '目录' &&
       outlineButton.pressed === null && outlineButton.group === 'lark-doc-tools-end-inner' &&
-      !!outlineButton.icon && outlineButton.icon.w === 16 && outlineButton.icon.h === 16,
+      !!outlineButton.icon && outlineButton.icon.svg && outlineButton.icon.width === '16px' && outlineButton.icon.height === '16px',
     JSON.stringify(outlineButton))
 
   await page.evaluate(() => document.querySelector('.lark-doc-toolbar button[aria-label="目录"]').click())

@@ -9,11 +9,12 @@
  * 3. 表格骨架里的块不接（`remove` 本来就不动它），交回默认，按键不能没反应。
  */
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { createBlockApi } from '../../src/core/blockApi'
+import { createBlockRemovalApi } from '../../src/core/blockApi/remove'
 import { externalDeleteTargets } from '../../src/core/blocks/external-delete'
 
 const card = (id, kind = 'jira_issue') => ({
@@ -150,5 +151,55 @@ describe('键盘收口：命中即走 BlockModuleAPI.remove', () => {
     ed.commands.setNodeSelection(inCell.from)
     expect(ownHandler(ed, 'Backspace')).toBe(false)
     expect(api.get('x')).not.toBeNull()
+  })
+})
+
+
+describe('shared synchronous block deletion leaf', () => {
+  it('deletes against the live session state, preserves metadata, and keeps one Undo per removal', () => {
+    const ed = setup([para('a', 'A'), para('b', 'B'), para('c', 'C')])
+    const dispatch = vi.fn(tr => ed.view.dispatch(tr))
+    const session = { getEditor: () => ed, can: () => true, dispatch }
+    const removal = createBlockRemovalApi({ session, origin: 'HOST_TEST' })
+    expect(removal).not.toBeInstanceOf(Promise)
+    expect(removal.remove('a')).toBeUndefined()
+    expect(idsOf(ed.state.doc)).toEqual(['b', 'c'])
+    removal.remove('b')
+    expect(idsOf(ed.state.doc)).toEqual(['c'])
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatch.mock.calls[0][1]).toEqual({ origin: 'HOST_TEST' })
+    ed.commands.undo()
+    expect(idsOf(ed.state.doc)).toEqual(['b', 'c'])
+    ed.commands.undo()
+    expect(idsOf(ed.state.doc)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('shares permission denial and does not dispatch an unknown block or table-internal block', () => {
+    const ed = setup([para('a', 'A'), { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [card('nested')] }] }] }])
+    let allowed = false
+    const dispatch = vi.fn(tr => ed.view.dispatch(tr))
+    const removal = createBlockRemovalApi({ session: { getEditor: () => ed, can: () => allowed, dispatch } })
+    expect(() => removal.remove('a')).toThrowError(/没有canEdit权限/)
+    allowed = true
+    removal.remove('missing'); removal.remove('nested')
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(idsOf(ed.state.doc)).toContain('a')
+    expect(idsOf(ed.state.doc)).toContain('nested')
+  })
+
+  it('does not pull non-deletion BlockAPI operations into the external-delete dependency graph', async () => {
+    const { rollup } = await import('rollup')
+    const { nodeResolve } = await import('@rollup/plugin-node-resolve')
+    const { resolve } = await import('node:path')
+    const bundle = await rollup({ input: resolve('src/core/blocks/external-delete.js'),
+      external: id => id.startsWith('@tiptap/'), plugins: [nodeResolve()], onwarn: warning => { if (warning.code !== 'CIRCULAR_DEPENDENCY') throw new Error(warning.message) } })
+    try {
+      const result = await bundle.generate({ format: 'es' })
+      const ids = result.output.filter(value => value.type === 'chunk').flatMap(chunk => Object.keys(chunk.modules))
+      expect(ids.some(id => id.endsWith('/core/blockApi/index.js'))).toBe(false)
+      expect(ids.some(id => id.endsWith('/core/blockApi/remove.js'))).toBe(true)
+      const nodes = result.output.filter(value => value.type === 'chunk').flatMap(chunk => Object.entries(chunk.modules)).find(([id]) => id.endsWith('/core/blockApi/nodes.js'))[1]
+      for (const name of ['convertBlock', 'normalizePayload', 'fitToParent', 'assignIds', 'reassignIds', 'nodeFromJson']) expect(nodes.renderedExports).not.toContain(name)
+    } finally { await bundle.close() }
   })
 })

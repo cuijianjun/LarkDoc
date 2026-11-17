@@ -1,3 +1,7 @@
+import { documentStatistics, referenceDocumentMenuItems, referenceDocumentMenuChildren, runReferenceDocumentMenuAction } from './documentMenuView'
+
+const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.matches === true : typeof window !== 'undefined' && window.innerWidth <= 760
+
 /**
  * 顶栏「更多」菜单（P6b 顶栏四浮层之一）。
  *
@@ -149,6 +153,17 @@ export function topbarMoreMenuStyle(anchor, size, viewport) {
   return { left, top: flip ? anchor.top - height - 4 : below }
 }
 
+/** 窄屏命中区大于26px视觉图标；弹层跟视觉图标定位，给底部系统区域留白。 */
+export function referenceTopbarMoreMenuStyle(anchor, size, viewport) {
+  if (!anchor || !size) return { left: 0, top: 0 }
+  const width = anchor.width || anchor.right - anchor.left, height = anchor.height || anchor.bottom - anchor.top
+  const visualRight = anchor.right - Math.max(0, (width - 26) / 2)
+  const visualBottom = anchor.bottom - Math.max(0, (height - 26) / 2)
+  const left = Math.max(16, Math.min(visualRight - 4 - size.width, viewport.width - size.width - 16))
+  const top = Math.max(8, Math.round(visualBottom + 4))
+  return { left, top, maxHeight: Math.max(32, viewport.height - top - 27) }
+}
+
 /**
  * 定位纯函数：二级子面板。
  *
@@ -205,11 +220,14 @@ export default {
       /** 「在段落前显示作者 / 设为离线可使用」两个 switch 的本地态。 */
       topbarMoreShowAuthor: false,
       topbarMoreOffline: false,
+      topbarMoreMessage: '',
+      topbarMoreBusy: false,
     }
   },
   computed: {
     /** 23 项（含运行时启用态），模板唯一数据源。 */
     topbarMoreItems() {
+      if (referenceMenu(this)) return (this.topbarMoreOpen ? referenceDocumentMenuItems(this) : []).map(item => this.topbarMoreBusy ? { ...item, enabled: false, title: '正在处理文档操作。' } : item)
       const capability = TOPBAR_MORE_CAPABILITY
       return TOPBAR_MORE_ITEMS.map((item) => {
         const key = capability[item.id]
@@ -217,7 +235,8 @@ export default {
         if (key && typeof this.shareCan === 'function' && !this.shareCan(key)) enabled = false
         // 阅读态（只读）下写操作一律置灰：删除/另存为版本/创建副本/转换为模板/翻译。
         if (enabled && this.effectiveReadonly && TOPBAR_MORE_READONLY_DISABLED.indexOf(item.id) >= 0) enabled = false
-        return { ...item, enabled }
+        if (item.id === 'history-comments') enabled = enabled && this.commentRemote === true && this.commentCan?.('canView') === true
+        return { ...item, enabled, ...(!enabled && item.id === 'history-comments' ? { title: '当前评论服务不可用或没有查看权限' } : {}) }
       })
     },
     /** 返回菜单项绑定的 capability，供模板统一投影 disabled/rejected 语义。 */
@@ -226,15 +245,85 @@ export default {
     },
     /** 渲染行（含分隔线）。 */
     topbarMoreRows() {
+      if (referenceMenu(this)) {
+        const rows = []
+        this.topbarMoreItems.forEach(item => {
+          if (item.separator) rows.push({ kind: 'divider', item: { id: 'before-' + item.id } })
+          rows.push({ kind: 'item', item })
+        })
+        if (this.topbarMoreMessage) rows.push({ kind: 'item', item: { id: 'operation-status', label: this.topbarMoreMessage, enabled: false, title: this.topbarMoreMessage } })
+        return rows
+      }
       return topbarMoreRows(this.topbarMoreItems)
     },
     /** 当前子面板项列表；无子面板时为 []。 */
     topbarMoreSubmenuItems() {
       if (!this.topbarMoreSubmenu) return []
+      if (referenceMenu(this)) {
+        const items = referenceDocumentMenuChildren(this, this.topbarMoreSubmenu)
+        if (this.topbarMoreSubmenu === 'saved-versions' && (this.versionLoading || this.versionError || !items.length)) {
+          const label = this.versionLoading ? '正在加载已存版本…' : this.versionError ? '已存版本加载失败，请关闭后重试' : '暂无已存版本'
+          return [{ id: 'saved-versions-status', label, title: label, enabled: false, disabled: true }]
+        }
+        return items
+      }
       return TOPBAR_MORE_SUBPANELS[this.topbarMoreSubmenu] || []
     },
   },
+  watch: {
+    topbarMoreMessage() { this.refreshTopBar?.() },
+    topbarMoreBusy() { this.refreshTopBar?.() },
+    session() { this.closeDocumentInformation(); this.retireSavedVersionsMenu() },
+    'session.user.id'() { this.closeDocumentInformation(); this.retireSavedVersionsMenu() },
+    versionProvider() { this.retireSavedVersionsMenu() },
+  },
+  beforeDestroy() { this.closeDocumentInformation(); this.retireSavedVersionsMenu() },
   methods: {
+    retireSavedVersionsMenu() {
+      this._savedVersionsMenuRead = null
+      if (this.topbarMoreSubmenu === 'saved-versions') this.topbarMoreSubmenu = ''
+    },
+    async loadSavedVersionsMenu() {
+      const ticket = this._savedVersionsMenuRead = {}, epoch = this._referenceMoreEpoch
+      const context = { session: this.session, provider: this.versionProvider, editor: this.editor,
+        documentId: this.documentId, scope: this.versionOperationScope() }
+      const current = () => this._savedVersionsMenuRead === ticket && epoch === this._referenceMoreEpoch
+        && this.topbarMoreOpen && this.topbarMoreSubmenu === 'saved-versions' && !this._isBeingDestroyed
+        && this.versionOperationMatches(context) && this.shareCan('canView')
+      if (!current()) return false
+      await this.loadVersions()
+      if (!current()) return false
+      this.refreshTopBar?.()
+      this.$nextTick(() => { if (current()) this.measureTopbarMoreSubmenu() })
+      return true
+    },
+    closeDocumentInformation() {
+      this._documentInformationTicket = null
+      this._documentInformationOff?.splice(0).forEach(off => off?.())
+      const panel = this._documentInformationPanel; this._documentInformationPanel = null
+      panel?.destroy()
+    },
+    async openDocumentInformation(view = 'information', actionCurrent = () => true) {
+      this.closeDocumentInformation()
+      const ticket = this._documentInformationTicket = {}
+      const session = this.session, editor = this.editor, provider = session?.getProvider?.('authorization'),
+        principal = session?.user?.id, identity = session?._privateIdentityGeneration, auth = session?._authorizationGeneration,
+        documentId = session?.documentId
+      const current = () => this._documentInformationTicket === ticket && !this._isDestroyed && !this._isBeingDestroyed
+        && session === this.session && !session?._destroyed && editor === this.editor && !editor?.isDestroyed && documentId === session?.documentId && principal === session?.user?.id
+        && identity === session?._privateIdentityGeneration && auth === session?._authorizationGeneration
+        && provider === session?.getProvider?.('authorization') && (!session?.can || session.can('canView'))
+      const { createDocumentInformationPanel } = await import('../../../ui/documentInformation')
+      if (!current() || !actionCurrent()) return false
+      if (typeof session?.on === 'function') this._documentInformationOff = ['capabilities', 'identity', 'provider-changed', 'comments-reset'].map(name => session.on(name, () => this.closeDocumentInformation()))
+      this._documentInformationPanel = createDocumentInformationPanel({ host: this.$el, initialView: view, current,
+        statistics: documentStatistics(this), returnFocus: this.$el?.querySelector('.lark-doc-more-btn'),
+        read: typeof provider?.documentInformation === 'function' ? input => provider.documentInformation('read', input) : undefined,
+        onClose: () => { this._documentInformationTicket = null; this._documentInformationPanel = null; this._documentInformationOff?.splice(0).forEach(off => off?.()) },
+      })
+      if (!this._documentInformationPanel) this.closeDocumentInformation()
+      return Boolean(this._documentInformationPanel)
+    },
     /** 顶栏「更多」按钮点击：同一按钮二次点击收起（与分享 popover 同口径）。 */
     toggleTopbarMore(event) {
       if (this.topbarMoreOpen) {
@@ -247,25 +336,58 @@ export default {
       if (!rect) return
       this.topbarMoreAnchor = rect
       this.topbarMoreOpen = true
+      this._referenceMoreEpoch = (this._referenceMoreEpoch || 0) + 1
+      this.topbarMoreMessage = ''
       this.topbarMoreSubmenu = ''
       this.$nextTick(this.measureTopbarMore)
     },
     closeTopbarMore() {
+      this._referenceMoreEpoch = (this._referenceMoreEpoch || 0) + 1
+      this._savedVersionsMenuRead = null
       this.topbarMoreOpen = false
       this.topbarMoreSubmenu = ''
     },
     /** 打开后按实测尺寸定位（宽度自适应 ⇒ 必须先渲染再量）。 */
     measureTopbarMore() {
       const menu = this.$refs && this.$refs.topbarMoreMenu
-      if (!menu) return
+      if (!menu || !this.topbarMoreOpen) return
       const rect = menu.getBoundingClientRect()
-      this.topbarMoreStyle = topbarMoreMenuStyle(this.topbarMoreAnchor, rect, {
+      const viewport = {
         width: window.innerWidth,
         height: window.innerHeight,
-      })
+      }
+      const mobile = referenceMenu(this)
+      this.topbarMoreStyle = (mobile ? referenceTopbarMoreMenuStyle : topbarMoreMenuStyle)(this.topbarMoreAnchor, rect, viewport)
+      const list = menu.querySelector('.lark-doc-topbar-more-list')
+      if (list) {
+        if (mobile) {
+          const css = getComputedStyle(menu)
+          const inset = side => (parseFloat(css[`padding${side}`]) || 0) + (parseFloat(css[`border${side}Width`]) || 0)
+          const offset = list.getBoundingClientRect().top - rect.top
+          const consumed = Number.isFinite(offset) ? Math.max(inset('Top'), offset) : inset('Top')
+          list.style.boxSizing = 'border-box'; list.style.padding = '2px 0'
+          list.style.maxHeight = `${Math.max(0, this.topbarMoreStyle.maxHeight - consumed - inset('Bottom'))}px`
+        } else { list.style.boxSizing = ''; list.style.padding = ''; list.style.maxHeight = '' }
+      }
     },
     /** 一级项：submenu 展开子面板，其余立即执行。 */
-    onTopbarMoreItem(item) {
+    onTopbarMoreItem(item, event) {
+      if (referenceMenu(this)) {
+        if (!this.topbarMoreOpen || this.topbarMoreBusy) return
+        const current = referenceDocumentMenuItems(this).find(entry => entry.id === item?.id)
+        if (!current || !current.enabled) return
+        if (current.id === 'download' && window.matchMedia?.('(max-width:760px) and (pointer:coarse)').matches) {
+          this.closeTopbarMore(); this.openExportFormatPicker(); return
+        }
+        if (current.kind === 'submenu') {
+          this.topbarMoreSubmenu = this.topbarMoreSubmenu === current.id ? '' : current.id
+          this.$nextTick(this.measureTopbarMoreSubmenu)
+          if (this.topbarMoreSubmenu === 'saved-versions') return this.loadSavedVersionsMenu()
+          this._savedVersionsMenuRead = null
+          return
+        }
+        return this.runReferenceMoreAction(current.id, undefined, event)
+      }
       if (!item || item.enabled === false) return
       if (item.kind === 'submenu') {
         this.topbarMoreSubmenu = this.topbarMoreSubmenu === item.id ? '' : item.id
@@ -276,6 +398,7 @@ export default {
     },
     /** hover 一级项时切换子面板（§4.2 ④-3：hover ≥2000ms 才展开，这里简化为即展）。 */
     hoverTopbarMoreItem(item) {
+      if (referenceMenu(this)) return
       if (!item || item.kind !== 'submenu' || item.enabled === false) return
       if (this.topbarMoreSubmenu === item.id) return
       this.topbarMoreSubmenu = item.id
@@ -295,7 +418,13 @@ export default {
       })
     },
     /** 子面板项点击。switch 项只翻本地态，不关菜单（与飞书 Switch 行为一致）。 */
-    onTopbarMoreSubmenuItem(entry) {
+    onTopbarMoreSubmenuItem(entry, event) {
+      if (referenceMenu(this)) {
+        if (!this.topbarMoreOpen || !this.topbarMoreSubmenu || this.topbarMoreBusy) return
+        const current = referenceDocumentMenuChildren(this, this.topbarMoreSubmenu).find(item => item.id === entry?.id && item.value === entry?.value)
+        if (!current || current.enabled === false || current.disabled) return
+        return this.runReferenceMoreAction(current.action.slice('document:'.length), current.value, event)
+      }
       if (!entry) return
       if (entry.kind === 'switch') {
         if (entry.id === 'show-author') this.topbarMoreShowAuthor = !this.topbarMoreShowAuthor
@@ -304,6 +433,23 @@ export default {
         return
       }
       this.runTopbarMoreAction(entry.action, entry)
+    },
+    async runReferenceMoreAction(id, value, event) {
+      if (this.topbarMoreBusy) return false
+      const ticket = {}, epoch = this._referenceMoreEpoch
+      this._referenceMoreTicket = ticket; this.topbarMoreBusy = true
+      const session = this.session, editor = this.editor, handler = this.onDocumentAction,
+        principal = session?.user?.id, identity = session?._privateIdentityGeneration, auth = session?._authorizationGeneration
+      const current = () => this._referenceMoreTicket === ticket && epoch === this._referenceMoreEpoch
+        && !this._isDestroyed && !this._isBeingDestroyed && session === this.session && editor === this.editor
+        && handler === this.onDocumentAction && principal === session?.user?.id && identity === session?._privateIdentityGeneration
+        && auth === session?._authorizationGeneration && this.shareCan('canView')
+      try {
+        const done = await runReferenceDocumentMenuAction(this, id, value, event, current)
+        if (current()) { if (done) this.closeTopbarMore(); else this.topbarMoreMessage = '操作未完成，请在文档服务中核对。' }
+        return done
+      } catch { if (current()) this.topbarMoreMessage = '操作未完成，请在文档服务中核对。'; return false }
+      finally { if (this._referenceMoreTicket === ticket) { this._referenceMoreTicket = null; this.topbarMoreBusy = false } }
     },
     /**
      * action 分发。
@@ -345,6 +491,11 @@ export default {
         case 'save-version':
           this.closeTopbarMore()
           this.openSaveVersionDialog()
+          return
+        case 'history-comments':
+          if (this.commentRemote !== true || this.commentCan?.('canView') !== true) return false
+          this.closeTopbarMore()
+          this.openHistoricalComments()
           return
         case 'version.open':
           this.closeTopbarMore()

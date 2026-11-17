@@ -13,6 +13,14 @@ import { normalizeLinkUrl } from '../core/documentOperations'
 const GRID_COLUMNS = 9
 const GRID_ROWS = 9
 
+// 真机翻译语种页顺序；展示名称与 Provider 的目标语言 code 分开。
+const TRANSLATION_LANGUAGES = [
+  ['zh-CN', '简体中文'], ['en', '英语'], ['ja', '日语'], ['th', '泰语'], ['hi', '印地语'], ['id', '印度尼西亚语'],
+  ['zh-TW', '繁体中文'], ['fr', '法语'], ['es', '西班牙语'], ['pt', '葡萄牙语'], ['ko', '韩语'], ['vi', '越南语'],
+  ['ru', '俄语'], ['de', '德语'], ['it', '意大利语'], ['ar', '阿拉伯语'], ['pl', '波兰语'], ['fil', '菲律宾语'],
+  ['ms', '马来语'], ['tr', '土耳其语'], ['hu', '匈牙利语'], ['my', '缅甸语'], ['bn', '孟加拉语'], ['km', '高棉文'],
+]
+
 /**
  * `:value` —— 与 Vue 一致走 DOM property，且**只在真的变了才写**。
  * 每次 `update()` 都无脑赋值会把光标踢到末尾（输入到一半的公式会跳到行尾）。
@@ -83,6 +91,180 @@ function createDialogHeader(options) {
   ;(options.middle || []).forEach((node) => header.appendChild(node))
   header.appendChild(button)
   return { header, button }
+}
+
+/** 手机划词翻译：只呈现 Provider 返回值，不向正文回写。 */
+export function createSelectionTranslationDialog({ host, handlers = {} } = {}) {
+  let destroyed = false, state = {}, choosingLanguage = false
+  const call = (name, ...args) => { if (!destroyed && el.isConnected) return handlers[name]?.(...args) }
+  const { backdrop: el, section } = createDialogShell('翻译', () => { if (choosingLanguage) closeLanguages(); else call('onClose') })
+  el.classList.add('lark-doc-selection-translation-backdrop')
+  section.classList.add('lark-doc-selection-translation')
+  const { header } = createDialogHeader({ title: '翻译', closeLabel: '关闭翻译', iconSize: 20, onClose: () => call('onClose') })
+  section.appendChild(header)
+  const card = document.createElement('div'); card.className = 'lark-doc-selection-translation-card'
+  const sourceLabel = document.createElement('span'); sourceLabel.textContent = '原文'
+  const source = document.createElement('div')
+  const resultLabel = document.createElement('span'); resultLabel.textContent = '译文'
+  const result = document.createElement('div'); result.setAttribute('aria-live', 'polite')
+  card.append(sourceLabel, source, resultLabel, result); section.appendChild(card)
+  const message = document.createElement('p'); message.setAttribute('role', 'status'); section.appendChild(message)
+  const action = (label, icon, run) => {
+    const button = document.createElement('button'); button.type = 'button'
+    button.className = 'lark-doc-selection-translation-action'
+    const text = document.createElement('span'); text.textContent = label
+    button.append(text, iconNode(icon, 22)); button.addEventListener('click', () => { if (!destroyed && el.isConnected && !button.disabled) run() })
+    section.appendChild(button); return button
+  }
+  const copy = action('复制译文', 'copy', () => call('onCopy'))
+  const languageButton = action('切换语种', 'translate', () => {
+    choosingLanguage = true; section.hidden = true; el.appendChild(languagePage)
+    languageButton.setAttribute('aria-expanded', 'true')
+    languageList.scrollTop = 0
+    languageClose.focus({ preventScroll: true })
+  })
+  languageButton.setAttribute('aria-expanded', 'false')
+  const languagePage = document.createElement('section'); languagePage.className = 'lark-doc-selection-translation-languages'
+  languagePage.setAttribute('role', 'dialog'); languagePage.setAttribute('aria-modal', 'true'); languagePage.setAttribute('aria-label', '将内容翻译为')
+  const { header: languageHeader, button: languageClose } = createDialogHeader({ title: '将内容翻译为', closeLabel: '关闭语种选择', iconSize: 20, onClose: () => {
+    if (!destroyed && choosingLanguage && languagePage.isConnected) closeLanguages()
+  } })
+  const languageList = document.createElement('div'); languageList.className = 'lark-doc-selection-translation-language-list'
+  for (const [value, label] of TRANSLATION_LANGUAGES) {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.language = value
+    button.addEventListener('click', () => {
+      if (destroyed || !choosingLanguage || !languagePage.isConnected) return
+      closeLanguages(); call('onLanguage', value)
+    })
+    languageList.appendChild(button)
+  }
+  languagePage.append(languageHeader, languageList)
+  function closeLanguages() {
+    choosingLanguage = false; languagePage.remove(); section.hidden = false; languageButton.setAttribute('aria-expanded', 'false')
+    if (!destroyed && el.isConnected) languageButton.focus({ preventScroll: true })
+  }
+  action('翻译反馈', 'edit', () => { message.textContent = '当前文档未配置翻译反馈服务。'; message.hidden = false })
+  const onKey = event => {
+    if (event.key !== 'Escape' || !el.isConnected) return
+    event.preventDefault()
+    if (choosingLanguage) closeLanguages()
+    else call('onClose')
+  }
+  el.ownerDocument.addEventListener('keydown', onKey)
+  return {
+    el,
+    update(next) {
+      if (destroyed) return
+      state = next || {}
+      source.textContent = state.source || ''; result.textContent = state.result || ''
+      message.textContent = state.message || ''; message.hidden = !state.message
+      result.setAttribute('aria-busy', String(!!state.busy))
+      copy.disabled = !!state.busy || !state.result
+      languageList.querySelectorAll('button').forEach(button => setAttr(button, 'aria-current', button.dataset.language === (state.language || 'en') ? 'true' : null))
+      if (!el.parentNode) host?.appendChild(el)
+    },
+    destroy() { if (destroyed) return; destroyed = true; el.ownerDocument.removeEventListener('keydown', onKey); el.remove() },
+  }
+}
+
+/** Import confirmation never blocks the renderer's task queue. */
+export function createImportConfirmation({ host, message, fileName }) {
+  const owner = host.ownerDocument, previous = owner.activeElement
+  let settle, settled = false
+  const result = new Promise(resolve => { settle = resolve })
+  const close = accepted => {
+    if (settled) return
+    settled = true
+    el.remove()
+    if (previous?.isConnected) previous.focus({ preventScroll: true })
+    settle(accepted)
+  }
+  const { backdrop: el, section } = createDialogShell('导入并替换正文', () => close(false))
+  section.classList.add('lark-doc-import-confirm')
+  const { header, button: dismiss } = createDialogHeader({ title: '导入文档', closeLabel: '取消导入', onClose: () => close(false) })
+  dismiss.classList.add('lark-doc-import-confirm-close')
+  const text = owner.createElement('p')
+  text.id = `lark-doc-import-description-${Math.random().toString(36).slice(2)}`
+  text.textContent = message
+  section.setAttribute('aria-describedby', text.id)
+  const file = owner.createElement('div')
+  file.className = 'lark-doc-import-confirm-file'
+  if (fileName) file.textContent = fileName
+  const footer = owner.createElement('footer')
+  const cancel = owner.createElement('button'), accept = owner.createElement('button')
+  cancel.type = accept.type = 'button'
+  cancel.textContent = '取消'; accept.textContent = '导入并替换'
+  accept.className = 'primary'
+  cancel.addEventListener('click', () => close(false))
+  accept.addEventListener('click', () => close(true))
+  footer.append(cancel, accept); section.appendChild(header)
+  if (fileName) section.appendChild(file)
+  section.append(text, footer)
+  const controls = [dismiss, cancel, accept]
+  el.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(false) }
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      const index = controls.indexOf(owner.activeElement)
+      controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus()
+    }
+  })
+  host.appendChild(el)
+  cancel.focus({ preventScroll: true })
+  return { result, destroy: () => close(false) }
+}
+
+/** 模板保存只在宿主确认落盘后关闭；取消会由桥接层中止未完成的请求。 */
+export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
+  const owner = host.ownerDocument
+  let destroyed = false, busy = false
+  const close = () => handlers.onClose?.()
+  const { backdrop, section } = createDialogShell('保存为模板', close)
+  section.classList.add('lark-doc-template-save-dialog')
+  const { header } = createDialogHeader({ title: '保存为模板', closeLabel: '取消保存模板', onClose: close })
+  const label = owner.createElement('label'), input = owner.createElement('input')
+  label.textContent = '模板名称'
+  input.setAttribute('aria-label', '模板名称'); input.maxLength = 100; input.value = name
+  label.appendChild(input)
+  const description = owner.createElement('p')
+  description.textContent = '将当前区块保存为模板，正文保持不变。模板由当前应用保存和管理。'
+  const error = owner.createElement('p'); error.setAttribute('role', 'alert')
+  const footer = owner.createElement('footer'), cancel = owner.createElement('button'), save = owner.createElement('button')
+  cancel.type = save.type = 'button'; cancel.textContent = '取消'; save.textContent = '保存'
+  save.className = 'primary'
+  cancel.addEventListener('click', close)
+  const sync = () => {
+    if (busy && owner.activeElement === save) cancel.focus({ preventScroll: true })
+    input.readOnly = busy; save.disabled = busy || !input.value.trim(); save.textContent = busy ? '保存中…' : '保存'
+  }
+  const submit = async () => {
+    if (destroyed || busy || !input.value.trim() || handlers.isCurrent?.() === false) return
+    busy = true; error.textContent = ''; sync()
+    try {
+      const saved = await handlers.onSave?.(input.value.trim())
+      if (!destroyed && handlers.isCurrent?.() !== false && saved) close()
+    } catch (failure) {
+      if (!destroyed && handlers.isCurrent?.() !== false) error.textContent = failure?.message || '模板保存失败，请重试'
+    } finally { if (!destroyed) { busy = false; sync() } }
+  }
+  input.addEventListener('input', sync); save.addEventListener('click', submit)
+  backdrop.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229) {
+      if (event.key === 'Enter' || event.key === 'Escape') event.stopPropagation()
+      return
+    }
+    if (event.key === 'Enter' && event.target === input) { event.preventDefault(); event.stopPropagation(); submit() }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
+    if (event.key === 'Tab') {
+      const controls = [...section.querySelectorAll('input,button')].filter(control => !control.disabled)
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && owner.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && owner.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+  })
+  footer.append(cancel, save); section.append(header, description, label, error, footer)
+  host.appendChild(backdrop); sync(); input.focus(); input.select()
+  return { destroy() { destroyed = true; backdrop.remove() } }
 }
 
 /**
@@ -195,12 +377,7 @@ export function createMathDialog(options = {}) {
 /**
  * 链接对话框（`LinkDialog.vue`）—— 两形态共用一层外壳。
  *
- * 插入模式（空选区）比编辑模式多两段：「链接文本」label 与首段提示；两处都是 `v-if`，
- * 打开 / 关闭时必须真增删（断言 `linkInsert.labels.length === 2` 而
- * `linkEdit.labels.length === 1`）。
- *
- * 两个按钮的 `disabled` 是**算出来的**，不是点出来的：
- * 应用 = 地址非空 且（编辑模式 或 显示文字非空）；解除 = 非插入模式 且 当前在链接上。
+ * 插入/编辑沿用同一份文本和地址；只对现有链接提供移除，触屏可直接取消。
  */
 export function createLinkDialog({ host, handlers = {} } = {}) {
   const el = document.createElement('div')
@@ -208,6 +385,8 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
   el.setAttribute('role', 'dialog')
   el.setAttribute('aria-label', '设置链接')
   const state = {}
+  const submit = () => { if (state.open && normalizeLinkUrl(valueInput.value)) handlers.onApply?.() }
+  const close = () => { if (state.open) handlers.onClose?.() }
   function input(label, name, placeholder, onInput) {
     const row = document.createElement('label')
     row.textContent = label
@@ -215,8 +394,11 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
     field.setAttribute('aria-label', name)
     field.placeholder = placeholder
     field.spellcheck = false
-    field.addEventListener('input', event => onInput?.(event.target.value))
-    onEnter(field, () => handlers.onApply?.())
+    field.addEventListener('input', event => { if (state.open) onInput?.(event.target.value) })
+    field.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
+      event.preventDefault(); submit()
+    })
     row.appendChild(field)
     el.appendChild(row)
     return field
@@ -226,13 +408,19 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
   const apply = document.createElement('button')
   apply.type = 'button'
   apply.textContent = '确认'
-  apply.addEventListener('click', () => handlers.onApply?.())
-  el.appendChild(apply)
+  apply.className = 'lark-doc-link-dialog-apply'
+  apply.addEventListener('click', submit)
+  const actions = document.createElement('footer'), cancel = document.createElement('button'), remove = document.createElement('button')
+  actions.className = 'lark-doc-link-dialog-actions'
+  cancel.type = remove.type = 'button'; cancel.textContent = '取消'; remove.textContent = '移除链接'
+  cancel.addEventListener('click', close)
+  remove.addEventListener('click', () => { if (state.open && !remove.disabled && !remove.hidden) handlers.onRemove?.() })
+  actions.append(remove, cancel, apply); el.appendChild(actions)
   el.addEventListener('keydown', event => {
-    if (event.key !== 'Escape') return
+    if (!state.open || event.key !== 'Escape') return
     event.preventDefault()
     event.stopPropagation()
-    handlers.onClose?.()
+    close()
   })
   return {
     el,
@@ -243,6 +431,7 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
       setInputValue(textInput, state.text)
       setInputValue(valueInput, state.value)
       apply.disabled = !normalizeLinkUrl(state.value)
+      remove.disabled = !state.linkActive || !!state.insertMode; remove.hidden = remove.disabled
       const win = el.ownerDocument.defaultView
       const rect = el.getBoundingClientRect()
       const anchor = state.anchor || { left: (win.innerWidth - rect.width) / 2, top: win.innerHeight / 2, bottom: win.innerHeight / 2 }
@@ -250,7 +439,7 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
       el.style.top = `${Math.max(8, anchor.bottom + rect.height + 4 <= win.innerHeight ? anchor.bottom + 4 : anchor.top - rect.height - 4)}px`
     },
     focusFirstField() { if (el.parentNode) (state.insertMode ? textInput : valueInput).focus() },
-    destroy() { el.remove() },
+    destroy() { state.open = false; el.remove() },
   }
 }
 

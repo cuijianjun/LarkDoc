@@ -13,13 +13,48 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
+import { Schema } from '@tiptap/pm/model'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { flattenHeadingContainers, aggregateHeadingContainers, validateDocument } from '../../src/core/documentOperations'
+import { flattenHeadingContainers, aggregateHeadingContainers, validateDocument, computeHeadingNumbers } from '../../src/core/documentOperations'
 import { migrateDocument, migrateRecordContent } from '../../src/core/migrations'
+
+it('结构编号只跳过行内内容，合法块标题容器中的子标题仍计数', () => {
+  const nestedSchema = new Schema({ nodes: {
+    doc: { content: 'block+' }, text: { group: 'inline' },
+    paragraph: { group: 'block', content: 'inline*' },
+    heading: { group: 'block', content: 'block*', attrs: { level: { default: 1 }, numbering: { default: true } } },
+  } })
+  const child = nestedSchema.node('heading', { level: 2 }, nestedSchema.node('paragraph', null, nestedSchema.text('inner')))
+  const doc = nestedSchema.node('doc', null, nestedSchema.node('heading', { level: 1 }, child))
+  expect([...computeHeadingNumbers(doc).values()].map(item => item.level)).toEqual([1, 2])
+})
 import { DOCUMENT_SCHEMA_VERSION } from '../../src/core/documentSchema'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 
 const schema = getSchema(createLarkDocExtensions())
+
+describe('大文档校验容量', () => {
+  it('52144个带文本段落可通过公开导入必经校验', () => {
+    const input = { type: 'doc', content: Array.from({ length: 52144 }, (_, index) => ({ type: 'paragraph', content: [{ type: 'text', text: `正文${index}` }] })) }
+    const result = validateDocument(input, schema)
+    expect(result.content).toHaveLength(52144)
+    expect(result.content[52143].content[0].text).toBe('正文52143')
+  })
+
+  it('结构节点仍限制十万，不能用空段落绕过', () => {
+    expect(() => validateDocument({ type: 'doc', content: Array.from({ length: 100000 }, () => ({ type: 'paragraph' })) }, schema)).toThrow('文档结构过深或过大')
+  })
+
+  it('文本叶子也独立限制十万，不能靠拆分文本无限扩张', () => {
+    expect(() => validateDocument({ type: 'doc', content: [{ type: 'paragraph', content: Array.from({ length: 100001 }, () => ({ type: 'text', text: '字' })) }] }, schema)).toThrow('文档结构过深或过大')
+  })
+
+  it('深度限制保持100，不能靠少节点的深层容器绕过', () => {
+    let node = { type: 'paragraph' }
+    for (let i = 0; i < 101; i += 1) node = { type: 'blockquote', content: [node] }
+    expect(() => validateDocument({ type: 'doc', content: [node] }, schema)).toThrow('文档结构过深或过大')
+  })
+})
 
 /** 容器形态的标题（v2 预定义：heading.children = 子块数组，嵌套标题同样带 children）。 */
 const containerDoc = () => ({

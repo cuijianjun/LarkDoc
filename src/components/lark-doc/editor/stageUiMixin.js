@@ -1,5 +1,5 @@
 /** Full-document presentation wiring. Closed presentations never scan or clone the document. */
-import { createSlideStage } from '../../../ui/stage'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -14,13 +14,13 @@ export default {
   methods: {
     mountStage() {
       if (this._stageUi || !this.$refs.stageHost) return
-      this._stageUi = createSlideStage({
+      this._stageUi = createLazyView(() => import('../../../ui/stage'), 'createSlideStage', {
         host: this.$refs.stageHost,
         handlers: {
           onExit: () => this.exitSlides(),
           onImageComment: typeof this.openImageComments === 'function' ? (...args) => this.openImageComments(...args) : undefined,
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       this.refreshStage()
     },
     destroyStage() {

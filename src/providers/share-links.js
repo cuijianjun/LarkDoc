@@ -150,9 +150,12 @@ export async function remoteShareLinkAction(ed, action, input) {
   const apply = state => {
     ed.shareLinkState = state; ed.secureLinkEnabled = state.enabled; ed.secureLinkPassword = state.password || ''
     ed.shareLinkPerm = state.permission === 'edit' ? '可编辑' : '可阅读'
+    ed.shareDialogLinkPerm = ed.shareLinkPerm
+    ed._shareLinkSnapshotOwner = scope.owner
   }
   if (action === 'toggle') {
-    if (ed.shareLinkBusy || ed.shareLinkPending || !ed.shareLinkState?.cryptoReady) return null
+    if (ed.shareLinkBusy || ed.shareLinkPending || !ed.shareLinkState) return null
+    if (!ed.secureLinkEnabled && !ed.shareLinkState.cryptoReady) return null
     if (!ed.secureLinkEnabled) { ed.secureLinkConfirmOpen = true; return null }
     return remoteShareLinkAction(ed, 'save', { enabled: false })
   }
@@ -171,13 +174,12 @@ export async function remoteShareLinkAction(ed, action, input) {
   if (ed.shareLinkBusy) return null
   const token = {}; ed._shareLinkToken = token; ed.shareLinkBusy = true; ed.shareLinkError = ''
   const current = () => ed._shareLinkToken === token && scope.current()
-  const owner = () => ed._shareLinkToken === token && scope.owner()
   try {
     let result
     const pending = ed.shareLinkPending || (await provider.shareLink('operation'))?.operationId
     if (!current()) return null
     if (action === 'save') {
-      if (pending || !ed.shareLinkState?.cryptoReady) { ed.shareLinkPending = pending || ''; return null }
+      if (pending || !ed.shareLinkState || (input?.enabled === true || input?.password !== undefined) && !ed.shareLinkState.cryptoReady) { ed.shareLinkPending = pending || ''; return null }
       result = await provider.shareLink('request', { expectedRevision: ed.shareLinkState.revision, changes: input })
     } else if (action === 'copy' || action === 'copy-password') {
       if (pending) { ed.shareLinkPending = pending; return null }
@@ -196,14 +198,16 @@ export async function remoteShareLinkAction(ed, action, input) {
       else result = await provider.shareLink('get')
     }
     if (!current()) return null
+    if (!result || action === 'save' && result.status !== 'committed') throw Error('SHARE_LINK_INVALID')
     apply(result.status === 'committed' ? result.link : result); ed.shareLinkPending = ''
     if (action === 'save') { ed.closePasswordDialog(); ed.showShareToast('success', '链接权限已更新'); void scope.session.refreshCapabilities?.() }
     return result
   } catch (cause) {
-    if (owner()) {
+    if (current()) {
       ed.shareLinkState = null; ed.secureLinkEnabled = false; ed.secureLinkPassword = ''
       if (cause.status === 'unknown' && cause.operationId) ed.shareLinkPending = cause.operationId
-      ed.shareLinkError = ed.shareLinkPending ? '链接操作待确认，请核对原操作。' : cause.code === 'SHARE_LINK_CRYPTO_UNAVAILABLE' ? '链接加密服务尚未配置。' : '链接设置未能完成，请重新载入。'
+      ed.shareLinkError = ed.shareLinkPending ? '链接操作待确认，请核对原操作。' : cause.code === 'SHARE_LINK_CRYPTO_UNAVAILABLE' ? '链接加密服务尚未配置。'
+        : cause.httpStatus === 409 || cause.status === 409 || /CONFLICT|STALE/.test(cause.code || '') ? '链接版本已变化，请重新载入后再设置。' : '链接设置未能完成，请重新载入。'
       ed.showShareToast('warning', ed.shareLinkError)
     }
     return null

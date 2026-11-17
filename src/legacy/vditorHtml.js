@@ -124,7 +124,7 @@ function convertMath(container, report) {
 
 /** 勾选状态：Vditor 用 `vditor-task--done` 类，也可能只保留 input 的 checked。 */
 function isTaskDone(node) {
-  const input = node.querySelector('input[type="checkbox"]')
+  const input = Array.from(node.querySelectorAll('input[type="checkbox"]')).find(input => input.closest('li, div.vditor-task, [data-type="taskItem"]') === node)
   if (input) return input.hasAttribute('checked') || input.checked === true
   return /\bvditor-task--done\b/.test(String(node.className || ''))
 }
@@ -138,7 +138,7 @@ function finishTaskItem(item, checked, report) {
   item.setAttribute('data-type', 'taskItem')
   item.setAttribute('data-checked', checked ? 'true' : 'false')
   item.removeAttribute('class')
-  Array.from(item.querySelectorAll('input')).forEach((input) => input.remove())
+  Array.from(item.querySelectorAll('input')).filter(input => input.closest('li, div.vditor-task, [data-type="taskItem"]') === item).forEach(input => input.remove())
   trimLeadingSpace(item)
   ensureTaskItemContent(item)
   report.taskItem += 1

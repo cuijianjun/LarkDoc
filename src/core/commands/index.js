@@ -10,10 +10,11 @@
  *   3. filterCommands 按 features 开关、commands.disabled/allow 与关键词过滤（逻辑原样保留）。
  * CommandDef 契约见 requirements/09 §3.2：tier = required | skeleton | skip。
  *
- * 🔴 只出菜单里**真的能用**的项。原先挂在这里的 11 条（视频或文件 `file`、电子表格
+ * 🔴 只出菜单里**真的能用**的项。原先挂在这里的 10 条（电子表格
  * `sheet`、多维表格 5 条、绘图 3 条、投票 `poll`）在 master 上只有块定义、没有可用的
  * 插入链路 —— 点了只留一个空段落。功能没落地就不该在菜单里占位，已整段摘掉
  * （块类型与 `editor.commands.setSheet/setPoll/setBitable` 仍保留，老文档正文照样能渲染）。
+ * 附件 file 的上传、插入及取消链路现已实现，恢复入口并受 files 能力控制。
  */
 import { basicCommands } from './basic'
 import { commonCommands } from './common'
@@ -61,7 +62,7 @@ const COMMAND_ORDER = [
   'paragraph',
   ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'template', 'ai',
   'open_link', 'duplicate_page', 'follow_page',
   'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event', 'agenda',
@@ -85,7 +86,7 @@ export const COMMANDS = COMMAND_ORDER.map((id) => {
 
 const COMMAND_FEATURES = {
   table: 'tables', columns: 'columns', columns2: 'columns', columns3: 'columns', columns4: 'columns', columns5: 'columns',
-  image: 'images', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', template: 'templates',
+  image: 'images', file: 'files', code: 'codeBlocks', diagram: 'diagram', inlineMath: 'math', blockMath: 'math', template: 'templates',
   callout: 'callouts', ai: 'ai',
   // P4-01：三条 mention 与「`@` 快捷输入」共用一个开关（document.js 的 reportMention
   // 读的也是 `insert`）。不这么写就落进兜底的 blockStyle，出现「关掉插入还能 @」。
@@ -125,13 +126,19 @@ export function commandFeatureOf(id) {
   return COMMAND_FEATURES[id] || 'blockStyle'
 }
 
-export function filterCommands(query, kind = 'slash', config = null) {
+export function filterCommands(query, kind = 'slash', config = null, context = 'block') {
+  const phone = String(context).startsWith('phone')
+  const cell = context === 'cell' || context === 'phone-cell'
   const needle = String(query || '').trim().toLocaleLowerCase()
   // LarkDoc keeps the column count picker behind the single “分栏” entry.
   // The count options are implementation ids for the secondary picker, not
   // independent slash commands.
   const candidates = COMMANDS.filter((item) => {
     if (/^columns[2-5]$/.test(item.id)) return false
+    // Existing block-math documents stay readable; Feishu has one inline formula entry.
+    if (!phone && item.id === 'blockMath') return false
+    if (!phone && kind === 'plus' && (item.id === 'paragraph' || /^heading[4-9]$/.test(item.id))) return false
+    if (kind === 'plus' && cell && ['table', 'template'].includes(item.id)) return false
     const feature = COMMAND_FEATURES[item.id]
     if (feature && config?.features?.[feature] === false) return false
     if (Array.isArray(config?.commands?.disabled) && config.commands.disabled.includes(item.id)) return false
@@ -139,7 +146,22 @@ export function filterCommands(query, kind = 'slash', config = null) {
     return kind !== 'plus' || item.plus !== false
   })
   const filtered = !needle ? candidates : candidates.filter((item) => `${item.label} ${item.id} ${item.keywords}`.toLocaleLowerCase().includes(needle))
-  // `skip` 项的置灰原因在这里补：菜单每打开一次就重算一次接入状态（provider 是运行时
-  // 注册的，冻在模块初始化里会一直说「未接入」）。见 `core/embed/enterprise.js`。
-  return withSkipReasons(filtered.map((item) => ({ ...item, category: kind === 'plus' ? (item.plusCategory || item.category) : item.category })))
+  if (kind !== 'plus') return withSkipReasons(filtered.map(item => {
+    if (item.id !== 'table') return { ...item }
+    const directTable = { ...item }
+    delete directTable.submenu
+    delete directTable.submenuType
+    return directTable
+  }))
+  // The source plus menu has icon shortcuts followed by normal common rows.
+  // Task and callout have two visual entries, backed by the same command.
+  const basic = [...(phone ? ['paragraph', 'heading4', 'heading5', 'heading6', 'heading7', 'heading8', 'heading9'] : []), 'heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
+  const common = ['taskList', 'image', 'file', 'table', 'columns', 'callout', 'inlineMath', 'template']
+  const byId = new Map(filtered.map(item => [item.id, item]))
+  const entry = (id, category) => ({ ...byId.get(id), category, ...(id === 'taskList' ? { label: '任务' } : id === 'image' ? { label: '图片' } : {}) })
+  return withSkipReasons([
+    ...basic.filter(id => byId.has(id)).map(id => entry(id, '基础')),
+    ...common.filter(id => byId.has(id)).map(id => entry(id, '常用')),
+    ...filtered.filter(item => !basic.includes(item.id) && !common.includes(item.id)).map(item => ({ ...item, category: item.id === 'diagram' ? '绘图' : item.plusCategory || item.category })),
+  ])
 }

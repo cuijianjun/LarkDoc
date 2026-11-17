@@ -24,6 +24,7 @@
 import { iconNode, setIcon } from './icon'
 import { createHeadingMenu } from './headingMenu'
 import { placeMenu } from './menuLayout'
+import { configSignature } from './bubbleConfig'
 
 /** 对齐四项的顺序（与飞书一致：左 → 居中 → 右 → 两端）。 */
 const ALIGN_ORDER = ['left', 'center', 'right', 'justify']
@@ -42,7 +43,11 @@ const DEFAULT_SAFE_TOP = 8
  */
 export function createBubbleBar(host, options = {}) {
   const { handlers = {} } = options
-  const call = (name, ...args) => { const fn = handlers[name]; if (fn) fn(...args) }
+  let destroyed = false, mobileMore = false, activeConfig = options.config || {}
+  const call = (name, ...args) => {
+    if (destroyed || (name.startsWith('on') && !el.isConnected)) return
+    const fn = handlers[name]; if (fn) return fn(...args)
+  }
   const safeTop = () => {
     const value = call('safeTop')
     return typeof value === 'number' && isFinite(value) ? value : DEFAULT_SAFE_TOP
@@ -55,6 +60,9 @@ export function createBubbleBar(host, options = {}) {
   el.setAttribute('aria-label', '划词工具栏')
   // 等价旧模板根节点的 `@mousedown.prevent`：点气泡条（含内边距）不许把选区点塌。
   el.addEventListener('mousedown', (event) => event.preventDefault())
+  el.addEventListener('pointerdown', event => {
+    if (activeConfig.mobile && event.pointerType === 'touch' && event.target.closest('button')) event.preventDefault()
+  })
 
   // ——————————————————— ① AI ———————————————————
   const aiButton = document.createElement('button')
@@ -245,6 +253,8 @@ export function createBubbleBar(host, options = {}) {
   function build(config) {
     const { ai, blockStyle, marks = [], highlightAllowed } = config || {}
     el.textContent = ''
+    el.classList.toggle('is-mobile-selection', !!config?.mobile)
+    if (config?.mobile) { buildMobile(config); return }
     if (ai) {
       el.appendChild(aiButton)
       el.appendChild(aiDivider)
@@ -274,9 +284,37 @@ export function createBubbleBar(host, options = {}) {
     if (config.comment) el.appendChild(commentButton)
   }
 
-  const configSignature = (config) => {
-    const { ai, blockStyle, marks = [], highlightAllowed } = config || {}
-    return `${ai ? 1 : 0}|${blockStyle ? 1 : 0}|${highlightAllowed ? 1 : 0}|${config?.comment ? 1 : 0}|${marks.map((item) => item.id).join(',')}`
+  function mobileButton(label, aria, handler, allowed = true, reason = '') {
+    const button = document.createElement('button')
+    button.type = 'button'; button.textContent = label; button.setAttribute('aria-label', aria)
+    button.disabled = !allowed; button.title = reason || aria
+    button.addEventListener('click', () => {
+      if (destroyed || button.disabled || !button.isConnected || !el.contains(button)) return
+      if (typeof handler === 'function') handler()
+      else call(handler)
+    })
+    el.appendChild(button)
+    return button
+  }
+
+  function buildMobile(config) {
+    markRows = []
+    if (mobileMore) {
+      mobileButton('飞书内搜索', '飞书内搜索', null, false, '未配置应用内搜索服务')
+      mobileButton('网页搜索', '网页搜索', null, false, '未配置网页搜索服务')
+      mobileButton('复制选区链接', '复制选区链接', null, false, '当前文档未提供选区链接服务')
+      mobileButton('全选', '全选正文', 'onSelectAll')
+      mobileButton('‹', '返回选区操作', () => { mobileMore = false; build(activeConfig) })
+      return
+    }
+    if (config.readonly && config.ai) mobileButton('问问AI', '问问AI', 'onAi', config.canAi === true,
+      config.aiUnavailableReason || '当前文档未配置只读问答服务')
+    if (!config.readonly) mobileButton('剪切', '剪切选中文字', 'onCut', config.canCopy !== false)
+    mobileButton('复制', '复制选中文字', 'onCopy', config.canCopy !== false)
+    mobileButton('评论', '添加评论', 'onComment', config.canComment === true)
+    mobileButton('分享', '分享选中文字', 'onShare', config.canShare === true)
+    mobileButton('翻译', '翻译选中文字', 'onTranslate', config.canCopy !== false && config.canTranslate !== false)
+    mobileButton('⋮', '更多选区操作', () => { mobileMore = true; build(activeConfig) })
   }
 
   // ——————————————————— 菜单开合 ———————————————————
@@ -325,6 +363,7 @@ export function createBubbleBar(host, options = {}) {
    * @param {boolean} state.highlightActive
    */
   function update(state) {
+    if (destroyed) return
     // 位置：先落位再量菜单，量到的触发点才是这一帧的真实值。
     el.style.left = `${state.left}px`
     el.style.top = `${state.top}px`
@@ -334,6 +373,12 @@ export function createBubbleBar(host, options = {}) {
     const headingText = state.headingValue || HEADING_FALLBACK
     if (headingValue.textContent !== headingText) headingValue.textContent = headingText
     headingTrigger.setAttribute('aria-expanded', state.headingOpen ? 'true' : 'false')
+    // 用当前文字/特性布局后的真实宽度夹紧；固定 270px 估值会让手机尾部操作越界。
+    const width = el.getBoundingClientRect().width, viewport = el.ownerDocument.defaultView?.innerWidth
+    if (width > 0 && viewport > 0 && viewport <= 760 && Number.isFinite(state.left)) {
+      el.style.left = `${Math.max(8, Math.min(state.left, viewport - width - 8))}px`
+    }
+    if (activeConfig.mobile) { reconcileHeading(false, null); reconcileAlign(false); return }
     if (headingWrap.parentNode) reconcileHeading(state.headingOpen, state.headingLevel)
 
     // ③ 缩进和对齐
@@ -379,6 +424,7 @@ export function createBubbleBar(host, options = {}) {
 
   /** 便宜的隐藏路径：不在文档里就等于 `v-if=false`（断言靠「查不到节点」判显隐）。 */
   function hide() {
+    if (mobileMore) { mobileMore = false; build(activeConfig) }
     reconcileHeading(false, null)
     reconcileAlign(false)
     if (el.parentNode) el.parentNode.removeChild(el)
@@ -393,9 +439,12 @@ export function createBubbleBar(host, options = {}) {
     hide,
     /** @returns {boolean} 是否真的重建了（调用方据此决定要不要重排菜单） */
     setConfig(config) {
+      if (destroyed) return false
+      activeConfig = config || {}
       const signature = configSignature(config)
       if (signature === markSignature) return false
       markSignature = signature
+      mobileMore = false
       build(config)
       return true
     },
@@ -403,6 +452,7 @@ export function createBubbleBar(host, options = {}) {
     positionAlignMenu() { if (alignOpen) placeMenu(alignMenu, alignTrigger, safeTop()) },
     positionHeadingMenu() { if (headingOpen) placeMenu(headingMenu.el, headingTrigger, safeTop()) },
     destroy() {
+      destroyed = true
       reconcileHeading(false, null)
       reconcileAlign(false)
       headingMenu.destroy()

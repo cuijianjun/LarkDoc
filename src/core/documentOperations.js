@@ -1,8 +1,12 @@
 import { Fragment } from '@tiptap/pm/model'
+import { safeUrl } from './policy/url'
+export { safeUrl } from './policy/url'
 import { moveDepthAllowed } from './blocks/container-depth'
 import { MENTION_KINDS } from './blocks/mention'
-import { REMINDER_REPEATS, REMINDER_AT_PATTERN } from './blocks/reminder'
-import { isEmojiGlyph } from './emoji/catalog'
+import { REMINDER_REPEATS, REMINDER_AT_PATTERN, REMINDER_OFFSETS } from './blocks/reminder'
+import { isEmojiGlyph } from './emoji/lookup'
+import { isImageCrop, isImageDimension, parseImageCrop } from './media/image-crop'
+import { safeLinkCardMeta, readBookmarkUrl, BOOKMARK_LIMITS, RECORD_ID_PATTERN } from './embed/bookmark'
 // 外部服务块目录（17 §17.5 tier C / P3 批次）：载入降级要靠它认「这是哪一类外部块」。
 // 判定层不 import 本文件（无环），与 mention / reminder 的常量引入同口径。
 import {
@@ -15,24 +19,13 @@ export const UNKNOWN_PAYLOAD_MAX = 1000000
 
 // HTML 是导入适配器；所有 JSON 在写入编辑器前必须通过完整 schema 校验。
 /** 校验 URL 是否可安全写入 schema：http(s)/mailto/tel/锚点，图片额外放行 data:image 与本地相对路径。返回 boolean。 */
-export function safeUrl(value, image = false) {
-  if (typeof value !== 'string' || !value || Array.from(value).some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return false
-  if (image && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
-  // 图片的相对路径（/、./、../ 开头）是本地资源引用，与 networkPolicy.isLocalUrl 语义一致。
-  // 它们不含 javascript:/data: 等危险协议，可直接进 schema（老系统图床 /note/... 即此类）。
-  // 注意排除协议相对 URL（//host/... 会被浏览器解析为 http(s)://host/...，属外链而非本地资源）。
-  if (image && /^(?:#|\.{1,2}\/|(?:\/(?!\/)))/.test(value)) return true
-  if (/^https?:\/\//i.test(value)) {
-    try { const url = new URL(value); return !!url.hostname && !url.username && !url.password } catch (_) { return false }
-  }
-  return !image && (/^(mailto|tel):[^:<>]+$/i.test(value) || /^#[\w\u0080-\uffff-]+$/.test(value))
-}
 
 /** Normalize link input without weakening the safeUrl gate used by schema writes. */
 export function normalizeLinkUrl(value) {
-  if (typeof value !== 'string') return ''
-  const next = value.trim()
-  return safeUrl(next) ? next : ''
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (safeUrl(text)) return text
+  if (!/^[^\s/:?#]+\.[^\s/:?#]+(?::\d+)?(?:[/?#].*)?$/.test(text)) return null
+  return safeUrl(`http://${text}`) ? `http://${text}` : null
 }
 
 /** 校验颜色值（hex / rgb(a) / hsl(a) / CSS 关键字），防止 style 注入。 */
@@ -60,10 +53,15 @@ function validateAttrs(type, attrs, definition) {
     let valid = true
     if (key === 'src' || key === 'originalSrc') valid = value === '' || safeUrl(value, true)
     else if (key === 'attchId' || key === 'originalAttchId') valid = safeAttachmentId(value)
+    else if (type === 'image' && (key === 'naturalWidth' || key === 'naturalHeight')) valid = isImageDimension(value)
+    else if (type === 'image' && key === 'crop') valid = isImageCrop(value)
     else if (key === 'href') valid = safeUrl(value)
     else if (key === 'level') valid = Number.isInteger(value) && value >= 1 && value <= 9
     else if (key === 'indent') valid = Number.isInteger(value) && value >= 0 && value <= 8
-    else if (key === 'width' || key === 'height') valid = Number.isFinite(value) && value >= (type === 'column' ? 10 : 40) && value <= (type === 'column' ? 90 : 2400)
+    else if (type === 'linkEmbed' && (key === 'width' || key === 'height')) valid = Number.isFinite(value) && value >= 88 && value <= (key === 'width' ? 1060 : 4000)
+    else if (type === 'column' && key === 'width') valid = Number.isFinite(value) && value > 0 && value <= 100
+    else if (type === 'agendaItem' && key === 'durationMinutes') valid = Number.isSafeInteger(value) && value >= 1
+    else if (key === 'width' || key === 'height') valid = Number.isFinite(value) && value >= 40 && value <= 2400
     // 内嵌网页（P3-07）的 `aspect` / `bridgeVersion` 都是**数字**，而本白名单的兜底分支
     // 只收字符串 —— 落进来必被判非法，症状是带这两个字段的 webEmbed 一进 setContent
     // 就整块抛错；`bridgeVersion` 有默认值 1，等于「存一次盘再打开就炸」。
@@ -82,6 +80,7 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'fontFamily') valid = typeof value === 'string' && value.length <= 100 && !/[;{}<>\\]/.test(value)
     else if (key === 'colwidth') valid = Array.isArray(value) && value.every((width) => Number.isInteger(width) && width > 0 && width <= 2400)
     else if (key === 'colspan' || key === 'rowspan' || key === 'start') valid = Number.isInteger(value) && value > 0 && value <= 10000
+    else if (type === 'codeBlock' && key === 'wrap') valid = typeof value === 'boolean'
     else if (key === 'open' || key === 'checked') valid = typeof value === 'boolean'
     // 「继续编号」标记（ordered-list.js 的布尔属性，默认 false）：`toJSON` 会把默认值
     // 一并写出，落进兜底分支（只收字符串）→ 任何带有序列表的文档存一次盘再打开就整篇
@@ -99,6 +98,8 @@ function validateAttrs(type, attrs, definition) {
     // 前两个落进兜底分支必被判非法（兜底只收字符串），`remindAt` 则相反 —— 兜底会
     // 放行任意 10 万字串，这里收紧到 ISO 形状。空串放行：那是 mark 的 schema 默认值。
     else if (type === 'reminder' && key === 'notify') valid = typeof value === 'boolean'
+    else if (type === 'reminder' && key === 'hasTime') valid = typeof value === 'boolean'
+    else if (type === 'reminder' && key === 'notifyOffset') valid = REMINDER_OFFSETS.includes(value)
     else if (type === 'reminder' && key === 'repeat') valid = REMINDER_REPEATS.indexOf(value) !== -1
     else if (type === 'reminder' && key === 'remindAt') valid = value === '' || (typeof value === 'string' && REMINDER_AT_PATTERN.test(value))
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
@@ -167,31 +168,7 @@ export function flattenHeadingContainers(json) {
  * - 纯函数：不修改入参；对已是容器形态的输入幂等（既有 children 原样保留）。
  * - 非 doc 顶层 JSON 直通返回；聚合结果继续由 validateDocument 全量校验。
  */
-export function aggregateHeadingContainers(json) {
-  if (!json || typeof json !== 'object' || json.type !== 'doc' || !Array.isArray(json.content)) return json
-  const headingLevel = (node) => (node && node.type === 'heading' ? Number(node.attrs && node.attrs.level) || 1 : Infinity)
-  const build = (blocks) => {
-    const result = []
-    let index = 0
-    while (index < blocks.length) {
-      const block = blocks[index]
-      if (!block || block.type !== 'heading') { result.push(block); index += 1; continue }
-      const level = headingLevel(block)
-      // 已聚合输入的既有 children 原样保留在前（幂等）；分节内的后续块递归聚合后追加。
-      const children = Array.isArray(block.children) ? block.children.slice() : []
-      let end = index + 1
-      while (end < blocks.length && headingLevel(blocks[end]) > level) end += 1
-      if (end > index + 1) children.push(...build(blocks.slice(index + 1, end)))
-      const next = { ...block }
-      if (children.length) next.children = children
-      else delete next.children
-      result.push(next)
-      index = end
-    }
-    return result
-  }
-  return { ...json, content: build(json.content) }
-}
+export { aggregateHeadingContainers } from './documentJSON'
 
 /**
  * 占位块还原（P1-03 / 17 §17.5）：`unknownBlock` / `externalBlock` → payload 内原始 JSON，
@@ -208,25 +185,30 @@ export function aggregateHeadingContainers(json) {
  * - 还原结果可能仍含未知 type（正是原始形态），消费方不得再过 validateDocument。
  * - 纯函数：不修改入参；heading.children 容器形态同步递归。
  */
-export function restoreUnknownBlocks(json) {
-  if (!json || typeof json !== 'object') return json
-  const walk = (node) => {
-    if (Array.isArray(node)) return node.map(walk)
-    if (!node || typeof node !== 'object') return node
-    const next = { ...node }
-    if (Array.isArray(next.content)) next.content = next.content.map(walk)
-    if (Array.isArray(next.children)) next.children = next.children.map(walk)
-    if (next.type !== 'unknownBlock' && next.type !== 'externalBlock') return next
-    const payload = next.attrs && next.attrs.payload
-    if (typeof payload !== 'string' || !payload) return next
-    try {
-      const restored = JSON.parse(payload)
-      if (restored && typeof restored === 'object' && typeof restored.type === 'string'
-        && restored.type !== 'unknownBlock' && restored.type !== 'externalBlock') return restored
-    } catch (_) { /* payload 损坏 → 保留占位 */ }
-    return next
+export { restoreUnknownBlocks } from './documentJSON'
+
+/** 未知块占位卡：原始 JSON 逐字节进 payload（`JSON.stringify` 保 key 顺序，stringify/parse 幂等）。 */
+function unknownBlockCard(item) {
+  const payload = JSON.stringify(item)
+  return {
+    type: 'unknownBlock',
+    attrs: {
+      payload: payload.length <= UNKNOWN_PAYLOAD_MAX ? payload : '',
+      unknownType: String(item.type).split('\u0000').join('').slice(0, 100) || 'unknown',
+    },
   }
-  return walk(json)
+}
+
+/**
+ * 官方块 payload 用的是本地 schema 不认识的**属性名**（agenda 的 `agendaId` + `items` 之类）。
+ *
+ * 这是一种「形状不同」而不是「取值不合法」：本地同名节点只认自己那套属性，硬校验必拒
+ * （`不支持的属性：agenda.agendaId`），但 §17.5 要求这类 payload 不能丢字段。判定只看
+ * 属性名 —— 已知属性上的非法取值（时长 0、枚举越界）照旧抛错，取值校验一点没放宽。
+ */
+function hasForeignAttrs(item, type) {
+  if (!item.attrs || typeof item.attrs !== 'object') return false
+  return Object.keys(item.attrs).some((key) => !type.attrs || !Object.prototype.hasOwnProperty.call(type.attrs, key))
 }
 
 /** 全量校验 Tiptap JSON（节点/属性/深度/规模白名单）并返回规范化 JSON，导入与快照恢复的必经入口。 */
@@ -235,8 +217,14 @@ export function validateDocument(json, schema) {
   json = flattenHeadingContainers(json)
   if (!json || json.type !== 'doc') throw new Error('请输入有效的 Tiptap 文档 JSON')
   let count = 0
+  let textCount = 0
   function visit(item, depth) {
-    if (!item || typeof item !== 'object' || depth > 100 || ++count > 100000) throw new Error('文档结构过深或过大')
+    if (!item || typeof item !== 'object' || depth > 100) throw new Error('文档结构过深或过大')
+    if (item.type === 'documentSegment') throw new Error('内部文档分段不能作为公开正文导入')
+    // A text paragraph has two nodes. Sharing the structural budget with its
+    // text leaf rejected the supported 52k-block import before rendering began.
+    // Keep both bounded, without increasing the existing structural/depth caps.
+    if (item.type === 'text' ? ++textCount > 100000 : ++count > 100000) throw new Error('文档结构过深或过大')
     const type = schema.nodes[item.type]
     if (!type) {
       // 17 §17.5：登记过但本地没实现的官方块（chat_card / jira_issue / okr* …）降级为
@@ -262,15 +250,11 @@ export function validateDocument(json, schema) {
       // P1-03：未知块就地降级为占位卡，原始 JSON 逐字节存进 payload
       // （JSON.stringify 保 key 顺序，stringify/parse 幂等）。payload 超 1M 时
       // 放弃保真只存占位（载入优先于还原）；unknownType 供副文案展示。
-      const payload = JSON.stringify(item)
-      return {
-        type: 'unknownBlock',
-        attrs: {
-          payload: payload.length <= UNKNOWN_PAYLOAD_MAX ? payload : '',
-          unknownType: String(item.type).split('\u0000').join('').slice(0, 100) || 'unknown',
-        },
-      }
+      return unknownBlockCard(item)
     }
+    // 登记过的官方块用了官方那套属性名（agenda 的 agendaId + items）：本地同名节点只认
+    // 自己那套属性，硬校验必拒。字段不能丢（17 §17.5），走与未知块同一条保真出口。
+    if (isExternalBlockType(item.type) && hasForeignAttrs(item, type)) return unknownBlockCard(item)
     const unknown = Object.keys(item).find((key) => !['type', 'attrs', 'content', 'marks', 'text'].includes(key))
     if (unknown) throw new Error(`不支持的节点字段：${unknown}`)
     validateAttrs(item.type, item.attrs, type)
@@ -308,7 +292,9 @@ export function sanitizeHTML(html) {
   container.innerHTML = html
   const tags = new Set(['P', 'DIV', 'SPAN', 'MARK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'PRE', 'SUB', 'SUP', 'BLOCKQUOTE', 'HR', 'UL', 'OL', 'LI', 'A', 'IMG', 'FIGURE', 'FIGCAPTION', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'DETAILS', 'SUMMARY', 'LABEL', 'INPUT'])
   const dangerous = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META', 'BASE', 'FRAME', 'FRAMESET'])
-  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-caption', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'class'])
+  const linkAttributes = new Set(['data-href', 'data-view', 'data-height', 'data-title', 'data-card-meta', 'data-link-view', 'data-link-title', 'data-link-card-meta', 'data-url', 'data-desc', 'data-favicon', 'data-cover', 'data-record-id'])
+  const revisionAttributes = new Set(['data-revision-id', 'data-revision-author', 'data-revision-kind', 'data-deletion-revision-id', 'data-deletion-author'])
+  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-crop', 'data-natural-width', 'data-natural-height', 'data-caption', 'data-code-wrap', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'data-has-time', 'data-notify-offset', 'data-item-id', 'data-duration-minutes', 'class'])
   Array.from(container.querySelectorAll('*')).forEach((element) => {
     if (!container.contains(element)) return
     const tag = element.tagName.toUpperCase()
@@ -330,6 +316,26 @@ export function sanitizeHTML(html) {
         })
         element.removeAttribute('style')
         Object.keys(allowed).forEach((property) => { element.style.setProperty(property, allowed[property]) })
+      } else if (linkAttributes.has(name) || (name === 'data-width' && element.getAttribute('data-type') === 'link-embed')) {
+        const linkBlock = tag === 'DIV' && element.getAttribute('data-type') === 'link-embed'
+        const bookmark = tag === 'DIV' && element.getAttribute('data-type') === 'bookmark'
+        const text = (limit, codepoints = false) => (codepoints ? Array.from(attribute.value).length : attribute.value.length) <= limit && !attribute.value.includes('\u0000')
+        let valid = false
+        if (name === 'data-href') valid = linkBlock && attribute.value.length <= 100000 && safeUrl(attribute.value)
+        else if (name === 'data-view') valid = linkBlock && ['link', 'title', 'card', 'preview'].includes(attribute.value)
+        else if (name === 'data-width' || name === 'data-height') valid = linkBlock && Number.isFinite(Number(attribute.value)) && Number(attribute.value) >= 88 && Number(attribute.value) <= (name === 'data-width' ? 1060 : 4000)
+        else if (name === 'data-title') valid = (linkBlock || bookmark) && text(bookmark ? BOOKMARK_LIMITS.title : 100000, bookmark)
+        else if (name === 'data-card-meta') valid = linkBlock && safeLinkCardMeta(attribute.value)
+        else if (name === 'data-link-view') valid = tag === 'A' && ['link', 'title'].includes(attribute.value)
+        else if (name === 'data-link-title') valid = (tag === 'A' || bookmark) && text(100000)
+        else if (name === 'data-link-card-meta') valid = tag === 'A' && safeLinkCardMeta(attribute.value)
+        else if (name === 'data-url' || name === 'data-favicon' || name === 'data-cover') valid = bookmark && readBookmarkUrl(attribute.value) !== null
+        else if (name === 'data-desc') valid = bookmark && text(BOOKMARK_LIMITS.desc, true)
+        else if (name === 'data-record-id') valid = bookmark && RECORD_ID_PATTERN.test(attribute.value)
+        if (!valid) element.removeAttribute(name)
+      } else if (revisionAttributes.has(name)) {
+        const validTag = name.startsWith('data-deletion-') ? tag === 'PRE' : tag === 'SPAN'
+        if (!validTag || attribute.value.length > 100000 || attribute.value.includes('\u0000') || name === 'data-revision-kind' && !['insert', 'delete'].includes(attribute.value)) element.removeAttribute(name)
       } else if (!attributes.has(name)) element.removeAttribute(name)
       else if (name === 'data-color' && (tag !== 'MARK' || !safeColor(attribute.value))) element.removeAttribute(name)
       else if (name === 'colwidth') {
@@ -339,6 +345,8 @@ export function sanitizeHTML(html) {
       } else if (name === 'href' && !safeUrl(attribute.value)) element.removeAttribute(name)
       // 列表项起点（等价 <li value>）：只认 li 上的 1..10000 正整数。
       else if (name === 'value' && (tag !== 'LI' || !/^[1-9]\d{0,3}$/.test(attribute.value))) element.removeAttribute(name)
+      else if (name === 'data-crop' && (!['IMG', 'FIGURE'].includes(tag) || !parseImageCrop(attribute.value))) element.removeAttribute(name)
+      else if (['data-natural-width', 'data-natural-height'].includes(name) && (!['IMG', 'FIGURE'].includes(tag) || !isImageDimension(Number(attribute.value)))) element.removeAttribute(name)
       else if ((name === 'src' || name === 'data-original-src') && !safeUrl(attribute.value, true)) element.removeAttribute(name)
       else if ((name === 'data-attch-id' || name === 'data-original-attch-id') && (!['IMG', 'FIGURE'].includes(tag) || !safeAttachmentId(attribute.value))) element.removeAttribute(name)
       else if (name === 'class' && !/^(language-[\w+-]+|tiptap-mathematics-render)$/.test(attribute.value)) element.removeAttribute(name)
@@ -346,6 +354,8 @@ export function sanitizeHTML(html) {
       // 提及（P4-01）：身份属性必须落进 schema 认识的形态 —— 放行一个畸形值，
       // 结果是「粘贴一段带 @ 的富文本 → 整篇 setContent 抛错」，比丢掉 attr 严重得多。
       else if (name === 'data-notify' && !['true', 'false'].includes(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-has-time' && !['true', 'false'].includes(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-notify-offset' && (!/^\d+$/.test(attribute.value) || !REMINDER_OFFSETS.includes(Number(attribute.value)))) element.removeAttribute(name)
       else if (name === 'data-remind-at' && !REMINDER_AT_PATTERN.test(attribute.value)) element.removeAttribute(name)
       else if (name === 'data-repeat' && REMINDER_REPEATS.indexOf(attribute.value) === -1) element.removeAttribute(name)
       else if (name === 'data-mention-kind' && MENTION_KINDS.indexOf(attribute.value) === -1) element.removeAttribute(name)
@@ -440,9 +450,9 @@ export function findTextMatches(doc, query, ranges = null) {
 }
 
 /** 替换查找命中：默认替换当前/首个匹配，all=true 替换全部；返回替换数量。 */
-export function replaceText(editor, query, replacement, all = false) {
+export function replaceText(editor, query, replacement, all = false, preparedMatches = null) {
   if (!editor.isEditable || typeof replacement !== 'string') return 0
-  const matches = findTextMatches(editor.state.doc, query)
+  const matches = preparedMatches || findTextMatches(editor.state.doc, query)
   const selection = editor.state.selection
   const current = matches.find((match) => match.from === selection.from && match.to === selection.to)
     || matches[editor.storage?.larkDoc?.activeIndex || 0] || matches[0]
@@ -460,10 +470,13 @@ export function replaceText(editor, query, replacement, all = false) {
 
 /** 把 [from, to) 的完整块整体移动到 target 位置；结构非法时返回 false 不动文档。 */
 export function moveBlockRange(editor, from, to, target) {
-  const { doc } = editor.state
+  let { doc } = editor.state
   if (!editor.isEditable || ![from, to, target].every(Number.isInteger) || from < 0 || from >= to || to > doc.content.size || target < 0 || target > doc.content.size || (target >= from && target <= to)) return false
+  const tr = editor.state.tr
+  const mapped = editor.storage?.larkDoc?.pagedView?.prepareBlockRange(tr, [from, to, target])
+  if (mapped) { [from, to, target] = mapped; doc = tr.doc }
   // P1-05：容器嵌套深度兜底判定（拖拽 / 上移下移共用入口）。
-  if (!moveDepthAllowed(editor, from, to, target)) return false
+  if (!moveDepthAllowed({ state: { doc } }, from, to, target)) return false
   const start = doc.resolve(from)
   const end = doc.resolve(to)
   const dest = doc.resolve(target)
@@ -480,10 +493,11 @@ export function moveBlockRange(editor, from, to, target) {
     filler = Fragment.from(empty)
     if (!start.parent.canReplace(first, last, filler)) return false
   }
-  const tr = editor.state.tr.replaceWith(from, to, filler)
-  const insertAt = tr.mapping.map(target, target > to ? -1 : 1)
-  const mapped = tr.doc.resolve(insertAt)
-  if (!mapped.parent.canReplace(mapped.index(), mapped.index(), slice.content)) return false
+  const step = tr.steps.length
+  tr.replaceWith(from, to, filler)
+  const insertAt = tr.mapping.slice(step).map(target, target > to ? -1 : 1)
+  const destination = tr.doc.resolve(insertAt)
+  if (!destination.parent.canReplace(destination.index(), destination.index(), slice.content)) return false
   tr.insert(insertAt, slice.content)
   tr.doc.check()
   editor.view.dispatch(tr)
@@ -563,9 +577,8 @@ export function computeHeadingNumbers(doc) {
   if (!doc) return result
   const counters = new Array(10).fill(0)
   doc.descendants((node, pos) => {
-    if (node.type.name !== 'heading' || !node.attrs || !node.attrs.numbering) return true
-    result.set(pos, advanceHeadingCounters(counters, node))
-    return true
+    if (node.type.name === 'heading' && node.attrs?.numbering) result.set(pos, advanceHeadingCounters(counters, node))
+    return !node.isTextblock
   })
   return result
 }
@@ -656,20 +669,23 @@ export function bulletListDepth(doc, pos) {
 }
 
 /**
- * 前一个同层的有序列表（`ol` 的紧邻兄弟节点）。
+ * 同一父容器中最近的前一个有序列表。
  *
  * 「继续编号」要跨列表接号（飞书同款：上一个列表排到 3，这个列表从 4 起），
- * 这里只认**紧邻**兄弟 —— 中间隔着段落/别的块就是两个独立列表，不接号。
+ * 可以跨过普通正文，但不进入别的父容器；是否接号仍由 continueFrom 显式决定。
  */
 export function previousSiblingOrderedList(doc, pos) {
   if (!doc || !Number.isInteger(pos)) return null
   try {
     const $pos = doc.resolve(pos)
-    const index = $pos.index()
-    if (index <= 0) return null
-    const prev = $pos.parent.child(index - 1)
-    if (!prev || prev.type.name !== 'orderedList') return null
-    return { node: prev, pos: pos - prev.nodeSize }
+    let previousPos = pos
+    for (let index = $pos.index() - 1; index >= 0; index -= 1) {
+      const previous = $pos.parent.child(index)
+      previousPos -= previous.nodeSize
+      if (previous.type.name === 'orderedList') return { node: previous, pos: previousPos }
+      if (previous.type.name !== 'paragraph') return null
+    }
+    return null
   } catch (_) {
     return null
   }
@@ -680,7 +696,7 @@ export function previousSiblingOrderedList(doc, pos) {
  *
  * 两种情况可继续：
  * 1. 该 item 自己有显式起点（`numberStart`）→ 清掉即回到接着上一个 item 数；
- * 2. 它是列表首项、且前面紧邻另一个有序列表 → 让这个列表接上前一个列表的序号。
+ * 2. 它是列表首项、且同容器前面还有有序列表 → 让这个列表接上最近列表的序号。
  *
  * 其余情况（孤立的列表、已经处于继续态）禁用 —— 与飞书菜单一致。
  */
@@ -711,25 +727,29 @@ export function canContinueListNumber(doc, pos) {
  * 拉回指定值，后面的兄弟项接着它继续 —— 这是「重新开始编号 / 设置编号的值」
  * 落库的方式：只标一个起点，编号值本身仍然每帧现算。
  *
- * 列表上的 `continueFrom`（「继续编号」写下的标记）让这个列表接着**前面紧邻**
+ * 列表上的 `continueFrom`（「继续编号」写下的标记）让这个列表接着**同容器前面最近的**
  * 有序列表的最后一项继续排；前一个列表增删条目时跟着变，不落死数字。
  */
 /**
- * 一趟结构化遍历所有「同类型列表」，顺路带下嵌套层数与前一个兄弟。
+ * 一趟结构化遍历所有「同类型列表」，顺路带下嵌套层数与同容器前一个同类列表位置。
  *
  * 原实现每个列表都调 `listDepth(doc, pos)` → `doc.resolve(pos)`，扁平文档上是
  * O(块数) 的随机访问，几百个列表叠起来就是 O(n²)（2,000 块实测 30 ms 级）。
- * 前兄弟也不再 resolve：递归时手上就有 parent / index。
+ * 前兄弟位置在每次 walk 内保存，不跨容器，也不为每个列表重扫此前兄弟。
  *
  * 语义与 `listDepth` 一致：层数 = 祖先里同类列表容器的个数 + 1。
  */
 function eachList(doc, typeName, visit) {
   const walk = (parent, parentStart, depth) => {
     let pos = parentStart
+    let previousPos = null
     for (let index = 0; index < parent.childCount; index += 1) {
       const child = parent.child(index)
       const isSame = child.type.name === typeName
-      if (isSame) visit(child, pos, depth + 1, parent, index)
+      if (isSame) {
+        visit(child, pos, depth + 1, previousPos)
+        previousPos = pos
+      } else if (child.type.name !== 'paragraph') previousPos = null
       // 文本块只含行内内容，不可能藏有列表；跳过其正文，避免每次击键的
       // 两遍列表扫描都访问全文文本/marks。块容器与嵌套列表仍按原深度遍历。
       if (!child.isTextblock && child.content.size) walk(child, pos + 1, isSame ? depth + 1 : depth)
@@ -744,11 +764,10 @@ export function computeOrderedListNumbers(doc) {
   if (!doc) return result
   // 每个列表排到第几号（ol 起始 pos → 最后一项的序号），供后面的「继续编号」接号。
   const totals = new Map()
-  eachList(doc, 'orderedList', (node, pos, depth, parent, index) => {
+  eachList(doc, 'orderedList', (node, pos, depth, previousPos) => {
     let start = Number(node.attrs?.start) > 0 ? Number(node.attrs.start) : 1
     if (node.attrs && node.attrs.continueFrom) {
-      const prev = index > 0 ? parent.child(index - 1) : null
-      const prevTotal = prev && prev.type.name === 'orderedList' ? totals.get(pos - prev.nodeSize) : undefined
+      const prevTotal = previousPos === null ? undefined : totals.get(previousPos)
       if (Number.isFinite(prevTotal)) start = prevTotal + 1
     }
     let current = start
@@ -948,6 +967,7 @@ function scanSectionSiblings(parent, startIndex, startChildPos, baseIndent, host
   const hostIsText = hostNode.type.name === 'paragraph' || hostNode.type.name === 'heading'
   let siblingPos = startChildPos
   for (let index = startIndex; index < parent.childCount; index += 1) {
+    if (parent.positionAt) siblingPos = parent.positionAt(index)
     const sibling = parent.child(index)
     const indent = sectionIndent(sibling, previousIndent)
     // 列表在视觉上天然缩进（序号/圆点画在正文列之外），飞书里标题/段落下面
@@ -979,14 +999,14 @@ export function resolveHeadingSectionMode(doc, pos) {
   // 飞书的章节不属于标题：段落、列表、代码块只要下面挂了子块，折叠与悬停高亮
   // 都按同一套「缩进子树」处理（用户实测：段落 + 缩进代码块也是一个整体）。
   if (!heading || !heading.isBlock) return null
-  const parent = resolved.parent
+  const { parent, index, end } = siblingContext(doc, resolved)
   const scan = scanSectionSiblings(
     parent,
-    resolved.index() + 1,
+    index + 1,
     pos + heading.nodeSize,
     nodeIndent(heading),
     heading,
-    resolved.end(),
+    end,
   )
   const blocks = [sectionBlock(heading, pos, 'heading'), ...scan.blocks]
   // hasContent 的语义是「标题下面还有块」——只挂子标题也算有内容，
@@ -1047,16 +1067,31 @@ function foldRangeOf(node, pos, parent, index, parentEnd) {
   // 否则同一段内容会同时挂上 item 的箭头和首段落的箭头（两个 widget 落在同一个
   // 行内位置、互相盖住），点其中一个等于把另一个刚设的状态又切回去。
   if ((parent.type.name === 'listItem' || parent.type.name === 'taskItem') && index === 0) return null
+  if (node.type.name === 'heading') {
+    const from = pos + node.nodeSize
+    let to = parentEnd, siblingPos = from, hasContent = false
+    const level = Number(node.attrs.level) || 1
+    // 标题章节不要求正文有视觉缩进；边界是同一 parent 中下一个同级/更高级标题。
+    // 分页兄弟之间含内部页壳：沿真实位置截断，末章覆盖到真实父内容终点。
+    for (let siblingIndex = index + 1; siblingIndex < parent.childCount; siblingIndex += 1) {
+      if (parent.positionAt) siblingPos = parent.positionAt(siblingIndex)
+      const sibling = parent.child(siblingIndex)
+      if (sibling.type.name === 'heading' && (Number(sibling.attrs.level) || 1) <= level) { to = siblingPos; break }
+      hasContent = true
+      siblingPos += sibling.nodeSize
+    }
+    return hasContent && to > from ? { from, to } : null
+  }
   const scan = scanSectionSiblings(parent, index + 1, pos + node.nodeSize, nodeIndent(node), node, parentEnd)
   const from = pos + node.nodeSize
   // 空范围等于「没有子块」：折叠箭头不该出现，调用方也无事可做。
   return scan.end > from ? { from, to: scan.end } : null
 }
 
-/** 计算某个块的折叠范围 [{ from, to }]；没有缩进子树（无处可折叠）返回 null。
+/** 计算某个块的折叠范围 [{ from, to }]；没有内容时返回 null。
  *
- * 范围语义与飞书一致：**折叠的是「缩进子树」，与块类型/标题级别无关**。
- * - 段落/标题/其它块：同缩进层级的后续兄弟（+ 它们更深缩进的后代）；
+ * - 标题：同一 parent 内直到下一个同级或更高级标题的章节正文；
+ * - 段落/其它块：更深缩进的后续子树，文本宿主保留隐式列表规则；
  * - 列表项：子树在自己内部，从首个子段落之后到 item 结尾。
  */
 export function foldedRange(doc, pos) {
@@ -1064,7 +1099,13 @@ export function foldedRange(doc, pos) {
   const resolved = doc.resolve(pos)
   const node = resolved.nodeAfter
   if (!isFoldableNodeAt(resolved, node)) return null
-  return foldRangeOf(node, pos, resolved.parent, resolved.index(), resolved.end())
+  const { parent, index, end } = siblingContext(doc, resolved)
+  return foldRangeOf(node, pos, parent, index, end)
+}
+
+function siblingContext(doc, resolved) {
+  const parent = doc.type.schema.cached.segmentSiblings?.(doc, resolved) || resolved.parent
+  return { parent, index: parent.positionAt ? parent.indexAt(resolved.pos) : resolved.index(), end: parent.positionAt ? doc.content.size : resolved.end() }
 }
 
 /**
@@ -1099,15 +1140,16 @@ export function collectFoldRanges(doc, idPositions) {
  * 等价于原先每块重算 `doc.resolve(pos)` 再逐层查祖先。
  */
 function walkBlocks(parent, parentStart, isolated, visit) {
+  parent = parent.type.schema.cached.segmentSiblings?.(parent) || parent
   const parentEnd = parentStart + parent.content.size
   let pos = parentStart
   for (let index = 0; index < parent.childCount; index += 1) {
     const child = parent.child(index)
-    const childPos = pos
+    const childPos = parent.positionAt ? parent.positionAt(index) : pos
     pos += child.nodeSize
     const childIsolated = isolated || isolatedHeadingContainers.has(child.type.name)
     visit(child, childPos, index, childIsolated, parent, parentEnd)
-    if (child.content.size) walkBlocks(child, childPos + 1, childIsolated, visit)
+    if (child.content.size && !child.isTextblock) walkBlocks(child, childPos + 1, childIsolated, visit)
   }
 }
 
@@ -1144,11 +1186,18 @@ export function resolveBlockTargetRange(doc, from, to = from) {
       return { from: $from.before(depth), to: $from.after(depth), parentDepth: depth - 1, container: name }
     }
   }
-  const lastIndex = $from.node(0).childCount - 1
-  const startIndex = Math.min($from.index(0), lastIndex)
+  const depth = $from.depth > 0 && $from.node(1).type.name === 'documentSegment' ? 1 : 0
+  const lastIndex = $from.node(depth).childCount - 1
+  const startIndex = Math.min($from.index(depth), lastIndex)
   if (startIndex < 0) return null
-  const endIndex = Math.max(startIndex + 1, Math.min($to.index(0) + Number($to.pos > $to.posAtIndex($to.index(0), 0)), lastIndex + 1))
-  return { from: $from.posAtIndex(startIndex, 0), to: $from.posAtIndex(endIndex, 0), parentDepth: 0, container: null }
+  if (depth && (!$to.depth || $from.node(1) !== $to.node(1))) {
+    const endDepth = $to.depth && $to.node(1).type.name === 'documentSegment' ? 1 : 0
+    const index = $to.index(endDepth), parent = $to.node(endDepth)
+    const end = Math.min(index + Number($to.pos > $to.posAtIndex(index, endDepth)), parent.childCount)
+    return { from: $from.posAtIndex(startIndex, 1), to: $to.posAtIndex(end, endDepth), parentDepth: 0, container: null }
+  }
+  const endIndex = Math.max(startIndex + 1, Math.min($to.index(depth) + Number($to.pos > $to.posAtIndex($to.index(depth), depth)), lastIndex + 1))
+  return { from: $from.posAtIndex(startIndex, depth), to: $from.posAtIndex(endIndex, depth), parentDepth: depth, container: null }
 }
 
 /*
@@ -1188,10 +1237,10 @@ export const BLOCK_ID_TYPES = new Set([
   'bulletList', 'orderedList', 'taskList', 'codeBlock', 'image', 'horizontalRule', 'blockMath', 'table',
   // 文件 / 视频块（P2-04）是原子块，但它自己就是「用户能当作一个块操作」的单位，
   // 折叠与锚点都要能指向它，所以进 id 集合。
-  'fileBlock', 'webEmbed', 'bookmark', 'unknownBlock',
+  'fileBlock', 'webEmbed', 'bookmark', 'linkEmbed', 'unknownBlock',
   // 小组件块（P4-04）：原子块，但折叠与锚点都要能指向它 —— 不进集合就没有 blockId，
   // 导出再导回时实例键与块 id 会一起漂。
-  'isv',
+  'isv', 'agenda',
   // 电子表格块（P5-02）：同上。悬停手柄把 `blockId` 转交给宿主开块菜单，
   // 不给 id 就永远只能传 `null`；折叠/评论锚点也缺一个落点。
   'sheet',
@@ -1228,10 +1277,10 @@ export function createBlockId(taken) {
  * 谁离它更近谁保留原 id —— 这样粘贴在文档**前面**的副本也不会抢走原块的 id，
  * 折叠状态始终留在原来那个块上。
  */
-export function collectBlockIdFixes(doc, previous) {
+export function collectBlockIdFixes(doc, previous, reservedIds) {
   const fixes = []
   if (!doc) return fixes
-  const taken = new Set()
+  const taken = new Set(reservedIds)
   const owner = new Map()
   const oldPositions = new Map()
   if (previous && previous.doc) {
@@ -1253,7 +1302,7 @@ export function collectBlockIdFixes(doc, previous) {
   doc.descendants((node, pos) => {
     if (!BLOCK_ID_TYPES.has(node.type.name)) return true
     const id = node.attrs && node.attrs.blockId
-    if (typeof id !== 'string' || !BLOCK_ID_PATTERN.test(id)) { fixes.push({ pos, id: reissue() }); return true }
+    if (typeof id !== 'string' || !BLOCK_ID_PATTERN.test(id) || reservedIds?.has(id)) { fixes.push({ pos, id: reissue() }); return true }
     if (!owner.has(id)) { taken.add(id); owner.set(id, pos); return true }
     const keeper = owner.get(id)
     const expected = expectedPosition(id)

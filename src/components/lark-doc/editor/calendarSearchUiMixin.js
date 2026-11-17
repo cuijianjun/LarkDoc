@@ -1,4 +1,4 @@
-import { createCalendarSearch } from '../../../ui/calendarSearch'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -13,7 +13,7 @@ export default {
     mountCalendarSearch() {
       const host = this.$refs.calendarSearchHost
       if (!host) return
-      this._calendarSearchUi = createCalendarSearch({
+      this._calendarSearchUi = createLazyView(() => import('../../../ui/calendarSearch'), 'createCalendarSearch', {
         host,
         handlers: {
           onClose: () => this.closeCalendarSearch(),
@@ -23,7 +23,7 @@ export default {
           onActive: index => this.setCalendarActive(index),
           onBlur: () => this.onCalendarBlur(),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, onReady: () => this.positionCalendarSearch() })
       this.refreshCalendarSearch()
     },
     buildCalendarSearchState() {

@@ -59,24 +59,19 @@ export function normalizeUiState(raw) {
     try { input = JSON.parse(raw) } catch (error) { return base }
   }
   if (!input || typeof input !== 'object') return base
-  const collapsed = Array.isArray(input.collapsed)
-    ? input.collapsed.filter((id) => typeof id === 'string' && id).slice(-UI_STATE_COLLAPSED_LIMIT)
-    : base.collapsed
-  return {
-    // 只留最后 500 条：数组顺序即写入顺序，越靠前越旧。
-    collapsed,
-    outlineOpen: typeof input.outlineOpen === 'boolean' ? input.outlineOpen : base.outlineOpen,
-    sidebarWidth: Number.isFinite(input.sidebarWidth) && input.sidebarWidth >= 0 ? input.sidebarWidth : base.sidebarWidth,
-    updatedAt: Number.isFinite(input.updatedAt) ? input.updatedAt : base.updatedAt,
-  }
+  // 只留最后 500 条：数组顺序即写入顺序，越靠前越旧。
+  if (Array.isArray(input.collapsed)) base.collapsed = input.collapsed.filter((id) => typeof id === 'string' && id).slice(-UI_STATE_COLLAPSED_LIMIT)
+  if (typeof input.outlineOpen === 'boolean') base.outlineOpen = input.outlineOpen
+  if (Number.isFinite(input.sidebarWidth) && input.sidebarWidth >= 0) base.sidebarWidth = input.sidebarWidth
+  if (Number.isFinite(input.updatedAt)) base.updatedAt = input.updatedAt
+  return base
 }
 
 /** 折叠集合的写入口：加/删一个 id，顺带守住 500 上限。 */
 export function toggleCollapsed(collapsed, blockId, folded) {
   const id = typeof blockId === 'string' ? blockId : ''
   const list = Array.isArray(collapsed) ? collapsed.filter((item) => item !== id) : []
-  if (!id) return list.slice(-UI_STATE_COLLAPSED_LIMIT)
-  if (folded) list.push(id)
+  if (id && folded) list.push(id)
   return list.slice(-UI_STATE_COLLAPSED_LIMIT)
 }
 
@@ -118,19 +113,16 @@ export function createUiStateStore(options = {}) {
 
   function write(patch, immediate) {
     state = normalizeUiState({ ...state, ...(patch || {}), updatedAt: now() })
-    if (immediate) {
-      if (timer) cancel(timer)
-      flush()
-      return state
-    }
     if (timer) cancel(timer)
-    timer = schedule(flush, UI_STATE_DEBOUNCE_MS)
+    if (immediate) {
+      flush()
+    } else timer = schedule(flush, UI_STATE_DEBOUNCE_MS)
     return state
   }
 
   return {
     get state() { return state },
-    read() { return read() },
+    read,
     write,
     /** 折叠开关：一次调用同时更新内存态并排队落盘。 */
     setCollapsed(blockId, folded) {
@@ -241,13 +233,11 @@ export function resolveCapabilities(clientCapabilities, serverCapabilities) {
   const out = {}
   const a = clientCapabilities || {}
   const b = serverCapabilities || {}
-  new Set([...Object.keys(a), ...Object.keys(b)]).forEach((key) => {
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
     const left = a[key]
     const right = b[key]
-    if (typeof left === 'boolean' && typeof right === 'boolean') out[key] = left && right
-    else if (typeof left === 'boolean') out[key] = left
-    else if (typeof right === 'boolean') out[key] = right
-  })
+    if (typeof left === 'boolean' || typeof right === 'boolean') out[key] = left !== false && right !== false
+  }
   return out
 }
 

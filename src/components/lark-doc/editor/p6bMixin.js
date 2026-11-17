@@ -63,6 +63,7 @@ const nativeCommentPanelMixin = {
 }
 
 export default {
+  data: () => ({ panelPresentationRevision: 0 }),
   computed: nativeCommentPanelMixin.computed,
   methods: nativeCommentPanelMixin.methods,
   mixins: [

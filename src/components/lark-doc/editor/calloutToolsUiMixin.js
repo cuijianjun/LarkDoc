@@ -21,8 +21,15 @@ export default {
       if (this._calloutToolsUi) return
       const host = this.$refs.calloutToolsHost
       if (!host) return
-      this._calloutToolsUi = createCalloutTools({
+      let ui
+      const onReady = () => {
+        if (!ui || this._calloutToolsUi !== ui || this._isDestroyed || this._isBeingDestroyed) return
+        this.calloutPresentationRevision = (this.calloutPresentationRevision || 0) + 1
+        this.refreshCalloutTools()
+      }
+      ui = this._calloutToolsUi = createCalloutTools({
         host,
+        onReady,
         handlers: {
           onPalette: (target, event) => this.toggleColorPalette(target, event),
           onColor: (name, value) => this.setCalloutColor(name, value),
@@ -50,8 +57,8 @@ export default {
         placement: this.calloutEmojiPlacement,
         query: this.calloutEmojiQuery,
         category: this.calloutEmojiCategory,
-        categories: this.calloutEmojiCategories,
-        items: this.filteredCalloutEmojiItems,
+        categories: this.calloutEmojiOpen ? this.calloutEmojiCategories : [],
+        items: this.calloutEmojiOpen ? this.filteredCalloutEmojiItems : [],
       }
     },
     refreshCalloutTools() {

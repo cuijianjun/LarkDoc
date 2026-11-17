@@ -211,6 +211,6 @@ export function printDocument(rootEl, opts) {
 export function exportPdf(rootEl, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
-  const result = printDocument(rootEl, { title: settings.title, onPrinted: settings.onPrinted })
+  const result = printDocument(rootEl, { title: settings.title, onPrinted: settings.onPrinted, comments: settings.comments, shouldPrint: settings.shouldPrint })
   return { ...result, scope }
 }

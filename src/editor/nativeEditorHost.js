@@ -1,8 +1,12 @@
+import { INSERT_TEMPLATES } from '../components/lark-doc/templates'
+import { nativeDocumentStateMethods } from './nativeDocumentState'
+import { bindMobileEditorControls, mobileEditorMethods } from './mobileEditorControls'
 import { TextSelection } from '@tiptap/pm/state'
-import { clampBlockIndent, collectOutline, safeAttachmentId, safeUrl } from '../components/lark-doc/documentOperations'
-import { isBlockActionEnabled, isConfigEnabled } from '../components/lark-doc/larkDocConfig'
-import { nearestInsertPosition } from '../core/media/image-insert'
-import { fileBlockAttrs, sortFileFiles } from '../core/media/file-block'
+import { clampBlockIndent } from '../components/lark-doc/documentOperations'
+import { isBlockActionEnabled, isCommandEnabled, isConfigEnabled } from '../components/lark-doc/larkDocConfig'
+import { isImageMime } from '../core/media/image-insert'
+import { showImageUploadError } from '../ui/imageUploadPlaceholder'
+import { createActivityGate } from '../core/pacing'
 import { createNativeOptionsHost } from './nativeOptionsHost'
 import { createTopBar } from '../ui/topBar'
 import { evaluateOutputPolicy } from '../core/policy/output'
@@ -11,6 +15,7 @@ import selectionPacingMixin from '../components/lark-doc/editor/selectionPacingM
 import commandMenuMixin from '../components/lark-doc/editor/commandMenuMixin'
 import commandMenuUiMixin from '../components/lark-doc/editor/commandMenuUiMixin'
 import tableToolsMixin from '../components/lark-doc/editor/tableToolsMixin'
+import tableInteractionMixin from '../components/lark-doc/editor/tableInteractionMixin'
 import blockHandleMixin from '../components/lark-doc/editor/blockHandleMixin'
 import blockHandleUiMixin from '../components/lark-doc/editor/blockHandleUiMixin'
 import blockMenuMixin from '../components/lark-doc/editor/blockMenuMixin'
@@ -26,6 +31,7 @@ import headingNumberMixin from '../components/lark-doc/editor/headingNumberMixin
 import headingNumberMenuUiMixin from '../components/lark-doc/editor/headingNumberMenuUiMixin'
 import stageUiMixin from '../components/lark-doc/editor/stageUiMixin'
 import tableToolsUiMixin from '../components/lark-doc/editor/tableToolsUiMixin'
+import linkToolsUiMixin from '../components/lark-doc/editor/linkToolsUiMixin'
 import helpFabUiMixin from '../components/lark-doc/editor/helpFabUiMixin'
 import colorPaletteUiMixin from '../components/lark-doc/editor/colorPaletteUiMixin'
 import calloutToolsUiMixin from '../components/lark-doc/editor/calloutToolsUiMixin'
@@ -50,7 +56,7 @@ import extendedOverlaysUiMixin from '../components/lark-doc/editor/extendedOverl
 const uiDomains = [
   ['TopBar', 'refreshTopBar'], ['Dialogs', 'refreshDialogs'], ['Overlays', 'refreshOverlays'],
   ['ExtendedOverlays', 'refreshExtendedOverlays'],
-  ['Panels', 'refreshPanels'], ['Stage', 'refreshStage'], ['TableTools', 'refreshTableTools'],
+  ['Panels', 'refreshPanels'], ['Stage', 'refreshStage'], ['TableTools', 'refreshTableTools'], ['LinkTools', 'refreshLinkTools'],
   ['HelpFab', 'refreshHelpFab'], ['ColorPalette', 'refreshColorPalette'], ['CalloutTools', 'refreshCalloutTools'],
   ['RevisionPanels', 'refreshRevisionPanels'], ['CalendarSearch', 'refreshCalendarSearch'],
   ['MentionPanel', 'refreshMentionPanel'], ['IsvPanel', 'refreshIsvPanel'], ['SearchPanel', 'refreshSearchPanel'],
@@ -59,18 +65,19 @@ const uiDomains = [
 ]
 
 const options = {
-  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin,
+  mixins: [viewModesMixin, selectionPacingMixin, commandMenuMixin, commandMenuUiMixin, tableToolsMixin, tableInteractionMixin,
     blockHandleMixin, blockHandleUiMixin, blockMenuMixin, blockIndentMixin, bubbleMenuMixin, calloutColorMixin,
     toolbarMenusMixin, dialogsUiMixin, panelsUiMixin, toolbarCollapseMixin, toolbarUiMixin, headingNumberMixin,
     headingNumberMenuUiMixin, stageUiMixin, tableToolsUiMixin, helpFabUiMixin, colorPaletteUiMixin,
     calloutToolsUiMixin, revisionUiMixin, calendarSearchUiMixin, overlayDismissMixin, mentionMixin,
     mentionUiMixin, isvPanelUiMixin, searchPanelUiMixin, reminderMixin, reminderUiMixin, calendarMixin,
-    isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin, overlaysUiMixin, extendedOverlaysUiMixin],
+    isvMixin, revisionMixin, foldPersistMixin, collabMixin, p6bMixin, overlaysUiMixin, extendedOverlaysUiMixin, linkToolsUiMixin],
   data() { return {
     editor: null, editorController: null, helpOpen: false, savedSelection: null, error: '',
     alignNames: { left: '左', center: '居中', right: '右', justify: '两端' },
     alignGlyphs: { left: '≡', center: '☷', right: '≣', justify: '▤' },
-    pendingStateFrame: null, pendingChangeTimer: null,
+    pendingStateFrame: null, pendingChangeTimer: null, pendingDerivedIdle: null, pendingDerivedTimer: null, pendingDerivedVersion: 0, _derivedDoc: null,
+    mobileEditorActive: false, mobileEditorStyle: { left: 0, width: 0, bottom: 0 }, isNarrowViewport: false, // 宽度态，口径同 @media (max-width: 760px)
   } },
   computed: {
     larkDocConfig() { return this.editorConfig },
@@ -81,9 +88,9 @@ const options = {
     titleLength() { return this.larkDocConfig.limits.titleLength },
     effectiveReadonly() { return this.interactionMode === 'read' },
     hasTextSelection() { return !!this.editor && !this.editor.state.selection.empty },
-    visibleBlockActions() { return this.blockActions.filter(item => this.isBlockActionEnabled(item.id)) },
+    visibleBlockActions() { return this.blockActions.filter(item => this.isBlockActionEnabled(item.id) && (item.id !== 'translate' || this.featureEnabled('ai'))) },
     visibleBlockTypeActions() {
-      return this.blockTypeActions.filter(item => this.featureEnabled(item.id === 'codeBlock' ? 'codeBlocks' : 'blockStyle') && this.isBlockActionEnabled(item.id))
+      return this.blockTypeActions.filter(item => this.featureEnabled('blockStyle') && this.featureEnabled(item.id === 'codeBlock' ? 'codeBlocks' : item.id === 'callout' ? 'callouts' : /^heading/.test(item.id) ? 'headings' : 'blockStyle') && this.isBlockActionEnabled(item.id))
     },
     visibleBlockListActions() {
       const list = this.visibleBlockActions.filter(item => item.id !== 'duplicate')
@@ -92,10 +99,22 @@ const options = {
     },
   },
   watch: {
+    mobileEditorActive() { this.refreshToolbar() },
+    mobileEditorStyle() { this.refreshToolbar() },
+    colorPaletteOpen() {
+      if (this._mobileEditorMedia?.matches && this.colorPaletteIsText && this.writable()) {
+        this.rememberSelection(true)
+        this.editor.view.dom.blur()
+      }
+      this.refreshToolbar()
+    },
+    menuOpen() { this.refreshToolbar() },
+    isvPanelOpen() { this.refreshToolbar() },
     outlineOpen() { this.syncOutlineReopen() },
     isNarrowViewport() { this.syncViewportClasses() },
     viewportOrientation() { this.syncViewportClasses() },
     session() {
+      this.editor?.storage.inlineMath?.refresh?.(); this.editor?.storage.blockMath?.refresh?.()
       this.applyInteractionMode()
       this.refreshTopBar()
       this.refreshToolbar()
@@ -116,61 +135,120 @@ const options = {
     topbarMoreShowAuthor() { this.refreshTopBar() },
     topbarMoreOffline() { this.refreshTopBar() },
     effectiveReadonly(value) {
-      if (value) this.resolveImageFile.cancelAll?.('readonly')
+      if (value) { this.resolveImageFile.cancelAll?.('readonly'); this.cancelFileUploads('readonly'); this.dropPosition = null }
       if (!this.editor) return
       this.closeEditingOverlays()
       if (value) this.tableBoundary.visible = false
       else this.$nextTick(() => this.updateTableBoundary())
     },
     editorConfig: { deep: true, handler() {
+      if (!this.featureEnabled('files')) this.cancelFileUploads('files-disabled')
+      if (!isCommandEnabled(this.larkDocConfig, 'image', 'images')) {
+        this.resolveImageFile.cancelAll?.('images-disabled')
+        if (!this.dragging) this.dropPosition = null
+      }
+      this.editor?.storage.columns?.refresh?.()
+      this.editor?.storage.agenda?.refresh?.()
+      this.editor?.storage.inlineMath?.refresh?.()
+      this.editor?.storage.blockMath?.refresh?.()
+      if (!isCommandEnabled(this.larkDocConfig, this.isvAction, 'insert')) this.closeIsvPanel()
       this.editor?.storage.characterCount?.setLimit?.(this.effectiveMaxLength)
+      if (this.colorPaletteIsText && !this.toolbarEnabled('textStyle')) {
+        this.colorPaletteOpen = ''
+        this.mobileEditorActive = false
+      }
       this.syncOutlineReopen()
       this.$nextTick(() => this.refreshDocumentState())
     } },
   },
   methods: {
+    async runImageAction(action, image) {
+      const node = this.editor?.state.doc.nodeAt(image.pos)
+      if (node?.type.name !== 'image' || node.attrs.blockId !== image.blockId) return false
+      if (action === 'ai') {
+        if (!this.writable() || this.larkDocConfig.features.ai === false) return false
+        this.$emit('ai-request', { action: 'image', image: { ...node.attrs, pos: image.pos } })
+        return true
+      }
+      if (action === 'comment') return this.openImageComments(image, true)
+      if (action === 'share') {
+        if (this.openImageShareDialog) return this.openImageShareDialog(image)
+        this.error = '当前宿主尚未配置图片分享'
+        return false
+      }
+      if (action === 'copy') {
+        try {
+          const url = new URL(this.shareDocumentLink())
+          url.hash = `share-${image.blockId}`
+          if (!await this.copyShareText(url.href)) { this.error = '复制失败，请检查剪贴板权限'; return false }
+          this.showShareToast('success', '复制成功')
+          return true
+        } catch (error) { this.error = error?.message || '图片链接复制失败'; return false }
+      }
+      return false
+    },
+    jumpSharedBlock() {
+      if (!this.editor || this.editor.isDestroyed) return
+      const hash = window.location.hash
+      if (!hash.startsWith('#share-')) return
+      const blockId = hash.slice(7)
+      const element = this.editor.storage?.larkDoc?.projection?.revealBlockId?.(blockId)
+        || [...this.editor.view.dom.querySelectorAll('[data-block-id]')].find(node => node.dataset.blockId === blockId)
+      this.editor.storage?.larkDoc?.projection?.revealNode?.(element)
+      element?.scrollIntoView({ block: 'center' })
+    },
     featureEnabled(name) { return isConfigEnabled(this.larkDocConfig, name) },
     toolbarEnabled(name) { return this.larkDocConfig.toolbar[name] !== false && this.featureEnabled(name) },
     isBlockActionEnabled(id) { return isBlockActionEnabled(this.larkDocConfig, id) },
     syncViewportClasses() {
-      this.$refs.root.classList.toggle('lark-doc-narrow', this.isNarrowViewport)
-      this.$refs.root.classList.toggle('lark-doc-landscape', this.viewportOrientation === 'landscape')
+      const root = this.$refs.root
+      if (!root) return // 必须是真布尔：传函数引用时 toggle 每次翻转，桌面端会一直带 narrow。
+      root.classList.toggle('lark-doc-narrow', this.isNarrowViewport === true)
+      root.classList.toggle('lark-doc-landscape', this.viewportOrientation === 'landscape')
     },
     mountTopBar() {
       if (this._topBarUi) return
       const anchor = this.$refs.topBarHost
-      this._topBarUi = createTopBar({
+      let topBar
+      topBar = this._topBarUi = createTopBar({
         host: anchor.parentNode, anchor, overlayHost: this.$refs.overlayHost,
+        paperHost: this.$refs.paper,
         actionsHost: this.$refs.actionsHost,
         refs: this.$refs,
+        onMenusReady: () => this.onTopbarMenusReady(topBar),
         handlers: {
           updateTitle: value => this.updateTitle(value),
           setMode: id => this.setMode(id),
+          openHome: () => this.onMobileHeaderAction('home'),
+          openProfile: () => this.onMobileHeaderAction('profile'),
+          openMembers: event => { if (this.shareCan('canView')) this.toggleSharePopover(event) },
+          libraryScope: () => this.mobileLibraryScope(), libraryDirectory: () => this.mobileLibraryDirectory(),
+          openLibraryDocument: id => this.openMobileLibraryDocument(id), mobileHostAction: action => this.onMobileHeaderAction(action),
+          toggleOutline: () => { this.toggleOutlineOpen(); this.refreshTopBar() },
           toggleNotify: event => this.toggleNotify(event),
           toggleCreateMenu: event => this.toggleCreateMenu(event),
           toggleTopbarMore: event => this.toggleTopbarMore(event),
           createMenuItem: item => this.onCreateMenuItem(item),
           closeCreateMenu: () => this.closeCreateMenu(),
           closeTopbarMore: () => this.closeTopbarMore(),
-          topbarMoreItem: item => this.onTopbarMoreItem(item),
+          topbarMoreItem: (item, event) => this.onTopbarMoreItem(item, event),
           hoverTopbarMoreItem: item => this.hoverTopbarMoreItem(item),
-          topbarMoreSubmenuItem: item => this.onTopbarMoreSubmenuItem(item),
+          topbarMoreSubmenuItem: (item, event) => this.onTopbarMoreSubmenuItem(item, event),
         },
       })
       this.refreshTopBar()
     },
-    refreshToolbar() {
-      const ui = this._toolbarUi
-      if (!ui) return
-      const anchor = this.$refs.toolbarHost
-      if (this.larkDocConfig.layout.toolbarVisible === false) ui.el.remove()
-      else if (ui.el.parentNode !== anchor.parentNode) anchor.before(ui.el)
-      toolbarUiMixin.methods.refreshToolbar.call(this)
+    ...nativeDocumentStateMethods,
+    ...mobileEditorMethods,
+    toolbarHandlers() {
+      return { ...toolbarUiMixin.methods.toolbarHandlers.call(this), hideMobileKeyboard: () => this.hideMobileKeyboard() }
     },
     refreshTopBar() {
       if (!this._topBarUi) return
       this._topBarUi.update({
         ...toolbarUiMixin.methods.buildTopBarState.call(this),
+        outlineOpen: this.outlineOpen,
+        outlineVisible: this.larkDocConfig.layout.outlineVisible,
         notifyOpen: this.notifyOpen,
         notifyUnreadCount: this.notifyCurrent(this.notificationContext()) ? this.notifyUnreadCount : 0,
         notifyDisabled: !this.notifyCurrent(this.notificationContext()),
@@ -228,6 +306,8 @@ const options = {
     },
     run(command, ...args) {
       if (!this.writable()) return false
+      if (command === 'undo' && this.editor.storage.imageUploadTasks?.undoPending()) return true
+      if (command === 'redo' && this.editor.storage.imageUploadTasks?.redoPending()) return true
       this.restoreSelection()
       const chain = this.editor.chain().focus()
       return typeof chain[command] === 'function' ? chain[command](...args).run() : false
@@ -256,114 +336,46 @@ const options = {
     cellAttribute(name, value) { if (value) this.run('setCellAttribute', name, value) },
     onImageInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; return this.insertImageFiles(files) },
     onFileInput(event) { const files = Array.from(event.target.files || []); event.target.value = ''; return this.insertFileBlocks(files) },
-    async insertImageFiles(files, pos, source = 'select') {
-      if (!this.writable() || !this.featureEnabled('images')) return
+    onImageDragOver(event) {
+      if (!this.writable() || !isCommandEnabled(this.larkDocConfig, 'image', 'images') || this.dragging) return false
+      const transfer = event.dataTransfer
+      if (Array.from(transfer?.types || []).includes('application/x-prosemirror-slice')) return false
+      const items = [...Array.from(transfer?.items || []), ...Array.from(transfer?.files || [])]
+      if (!items.some(item => isImageMime(item.type))) return false
+      const pos = this.editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
+      const target = this.editor.storage.imageUploadTasks.dropTarget(pos, { x: event.clientX, y: event.clientY })
+      if (!target) return false
+      this.dropPosition = target.pos
+      this.dropLineTop = target.top - this.$refs.paper.getBoundingClientRect().top
+      event.preventDefault()
+      transfer.dropEffect = 'copy'
+      return true
+    },
+    async insertImageFiles(files, pos, source = 'select', dropPoint) {
+      if (!this.writable() || !isCommandEnabled(this.larkDocConfig, 'image', 'images')) return
+      if (source === 'drop') this.dropPosition = null
       this.error = ''
-      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
-      const generation = this.resolveImageFile.generation?.()
-      for (const file of Array.from(files || [])) {
-        try {
-          const pending = this.resolveImageFile(file, { source })
-          const image = await pending
-          if (!this.writable() || generation !== this.resolveImageFile.generation?.()) return
-          if (!image) continue
-          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
-          this.editor.chain().focus().setImage({ ...image, originalSrc: image.src, originalAttchId: image.attchId, alt: file.name }).run()
-          if (anchor !== null) anchor = this.editor.state.selection.to
-        } catch (error) {
-          if (generation !== this.resolveImageFile.generation?.()) return
-          this.error = error?.message || '图片上传失败'
-        }
-      }
+      return this.editor.storage.imageUploadTasks.insertFiles(files, {
+        pos, source, dropPoint, maxSize: this.effectiveImageMaxSize, resolve: this.resolveImageFile,
+        isAllowed: () => this.writable() && isCommandEnabled(this.larkDocConfig, 'image', 'images'),
+        onError: error => {
+          this._imageUploadErrorOff?.()
+          this._imageUploadErrorOff = showImageUploadError(this.$refs.panelHost, error)
+        },
+      })
     },
     async insertFileBlocks(files, pos) {
       if (!this.writable() || !this.featureEnabled('files')) return
-      const { accepted, rejected } = sortFileFiles(files, { maxSize: this.effectiveFileMaxSize })
-      this.error = rejected[0]?.message || ''
-      let anchor = Number.isInteger(pos) ? nearestInsertPosition(this.editor.state.doc, pos) : null
-      for (const file of accepted) {
-        try {
-          if (typeof this.uploadFile !== 'function') throw new Error('未配置文件上传：请通过 uploadFile 传入上传实现')
-          const uploaded = await this.uploadFile(file)
-          if (!this.writable()) return
-          const attrs = fileBlockAttrs(file, uploaded || {})
-          if (!safeAttachmentId(attrs.token) && !(attrs.src && safeUrl(attrs.src, true))) throw new Error('文件上传未返回有效地址或附件 ID')
-          if (anchor !== null) this.editor.commands.setTextSelection(anchor)
-          this.editor.chain().focus().setFileBlock(attrs).run()
-          if (anchor !== null) anchor = this.editor.state.selection.to
-        } catch (error) { this.error = error?.message || '文件上传失败' }
-      }
+      const epoch = this._fileUploadEpoch || 0
+      const { createFileUploadTasks } = await import('../core/media/file-upload-tasks')
+      if (epoch !== (this._fileUploadEpoch || 0) || !this.writable()) return
+      this._fileUploadTasks ||= createFileUploadTasks(this)
+      return this._fileUploadTasks.insert(files, pos)
     },
-    refreshDocumentState() {
-      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-      this.outlinePending = false
-      this.outline = Object.freeze(collectOutline(this.editor.state.doc))
-      this.syncOutlineCollapseState()
-      this.syncFoldState()
-      this.wordCount = this.editor.storage.characterCount.characters()
-      if (this.effectiveMaxLength > 0 && this.wordCount > this.effectiveMaxLength) this.error = `正文不能超过 ${this.effectiveMaxLength} 字，请缩短正文`
-      else if (this.error.startsWith('正文不能超过 ')) this.error = ''
-      if (this.searchQuery) this.scheduleSearchUpdate()
-    },
-    scheduleDocumentState() {
-      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-      if (!this.larkDocConfig.performance.stateUpdateFrame) {
-        this.refreshDocumentState()
-        this.$nextTick(() => this.updateHandleAndTable())
-      } else if (!this.pendingStateFrame) {
-        this.pendingStateFrame = requestAnimationFrame(() => {
-          this.pendingStateFrame = null
-          if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-          this.refreshDocumentState()
-          this.$nextTick(() => this.updateHandleAndTable())
-        })
-      }
-    },
-    updateHandleAndTable() {
-      if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-      this.updateTableBoundary()
-      if (!this.handleRange) return
-      const { from, to } = this.handleRange
-      const doc = this.editor.state.doc
-      if (from < 0 || from >= to || to > doc.content.size) { this.closeBlockMenu(); this.handleRange = null; return }
-      const start = doc.resolve(from)
-      const end = doc.resolve(to)
-      if (!start.sameParent(end) || start.textOffset || end.textOffset || from !== start.posAtIndex(start.index(), start.depth) || to !== end.posAtIndex(end.index(), end.depth)) {
-        this.closeBlockMenu(); this.handleRange = null
-      } else this.positionBlockHandle(this.handleRange)
-    },
-    onDocumentScroll() {
-      if (this._outlineFrame || !this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-      this._outlineFrame = requestAnimationFrame(() => {
-        this._outlineFrame = null
-        if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
-        if (!this.blockMenuOpen && !this.blockTypeMenuOpen && !this.handlePressed) this.positionBlockHandle(this.handleRange || this.currentBlockRange())
-        this.syncHandleHighlightBackdrop()
-        if (this.blockAlignMenuOpen) this.positionBlockAlignMenu()
-        if (this.blockColorMenuOpen) this.positionBlockColorMenu()
-        if (this.bubbleAlignOpen) this.positionBubbleAlignMenu()
-        if (this.bubbleVisible) this.bubblePosition = this.bubbleBarPosition(this.editor.state.selection)
-        this.updateTableBoundary()
-        this.refreshTableOverlays?.()
-        if (this.headingOpen) this.positionHeadingMenu()
-        if (this.menuOpen) this.positionCommandMenu()
-        this.updateCalloutTools()
-        let visible = -1
-        for (const item of this.outline) {
-          const dom = this.editor.view.nodeDOM(item.pos)
-          if (dom instanceof Element && dom.getBoundingClientRect().top <= 170) visible = item.pos
-          else if (visible !== -1) break
-        }
-        if (visible !== -1) this.activeHeading = visible
-      })
-    },
-    onDocumentPointerMove(event) {
-      if (this.$refs.root.contains(event.target)) return
-      if (!event.target.closest?.('.lark-doc-block-handle, .lark-doc-callout-tools')) this.scheduleHandleHide()
-    },
+    cancelFileUploads(reason) { this._fileUploadEpoch = (this._fileUploadEpoch || 0) + 1; this._fileUploadTasks?.cancelAll(reason) },
+
   },
 }
-
 export function createNativeEditorHost({ shell, props, state, emit, onChange, resolveImageFile }) {
   // 文档浮层不能与工作台 syncChildren 共用宿主，也不能放进侧栏的定位上下文。
   const panelHost = shell.root.ownerDocument.createElement('div')
@@ -376,11 +388,12 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       foldPersistKey: { get: (_host, source, input) => input.foldPersistKey ?? source.sessionInstance?.documentId ?? input.documentId ?? 'local' },
       readonly: { get: (_host, source, input) => !!(input.readonly || source.forcedReadonly || source.importing) },
       config: { get: (_host, source) => source.editorConfig },
-      templates: { get: (_host, source) => source.templateItems },
+      templates: { get: (_host, source, input) => Array.isArray(input.templates) ? source.templateItems : INSERT_TEMPLATES },
       resolveImageFile: { get: () => resolveImageFile },
     },
   })
   const host = runtime.host
+  host._backgroundGate = createActivityGate()
   const listeners = []
   let themeUi = null
   function mountThemeUi() {
@@ -402,6 +415,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       if (host.commentSidebarOpen !== true) host.commentSidebarOpen = true
       host.updateCommentPanels?.()
       host.refreshPanels?.()
+      host.updateCommentLayerBounds?.()
     })
     const button = document.createElement('button')
     button.type = 'button'
@@ -414,6 +428,11 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     menu.className = 'lark-doc-dropdown lark-doc-theme-menu'
     menu.setAttribute('role', 'menu')
     menu.setAttribute('aria-label', '主题')
+    const closeTheme = (restore = false) => {
+      menu.hidden = true
+      button.setAttribute('aria-expanded', 'false')
+      if (restore && button.isConnected) button.focus()
+    }
     const choices = [
       ['default', '经典绿色', 'light'],
       ['feishu-light', '飞书浅色', 'light'],
@@ -430,8 +449,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
         const controller = shell.root._larkDocTheme
         if (!controller) return
         controller.setTheme(theme, 'auto', id === 'default' ? 'default' : 'feishu')
-        menu.hidden = true
-        button.setAttribute('aria-expanded', 'false')
+        closeTheme(true)
         refreshThemeUi()
       })
       menu.appendChild(row)
@@ -450,11 +468,23 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       button.setAttribute('aria-expanded', String(!menu.hidden))
       if (!menu.hidden) {
         const rect = button.getBoundingClientRect()
-        menu.style.top = `${Math.round(rect.bottom + 4)}px`
+        menu.style.top = `${Math.max(8, Math.min(Math.round(rect.bottom + 4), document.defaultView.innerHeight - menu.offsetHeight - 8))}px`
         menu.style.left = `${Math.max(8, Math.round(rect.right - 144))}px`
         refreshThemeUi()
+        rows.find(row => row.getAttribute('aria-checked') === 'true')?.focus()
       }
     })
+    listen(actions, 'lark-doc-actions-dismiss', () => closeTheme())
+    listen(actions, 'keydown', event => {
+      if (menu.hidden || (!menu.contains(event.target) && event.target !== button)) return
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeTheme(true); return }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault(); event.stopPropagation()
+      const index = rows.indexOf(document.activeElement)
+      rows[event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + rows.length) % rows.length].focus()
+    })
+    listen(document, 'pointerdown', event => { if (!menu.hidden && !menu.contains(event.target) && event.target !== button) closeTheme() })
+    listen(document.defaultView, 'resize', () => closeTheme())
     menu.hidden = true
     actions.append(readingButton, commentButton, button, menu)
     themeUi = { readingButton, commentButton, button, menu, refresh: refreshThemeUi }
@@ -465,8 +495,10 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     listeners.push(() => target.removeEventListener(type, handler, capture))
   }
   let capabilitiesOff = null
+  let versionProviderOff = null
   let session = null
   let sessionContext = []
+  let initialSessionBound = false
   const refreshSession = () => {
     host.$forceUpdate()
     runtime.flush()
@@ -484,12 +516,23 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     sessionContext = context
     if (current !== session) {
       capabilitiesOff?.()
+      versionProviderOff?.()
       session = current
       capabilitiesOff = current?.on?.('capabilities', () => {
         if (host.session === current && !host._isBeingDestroyed && !host._isDestroyed) refreshSession()
       }) || null
+      versionProviderOff = current?.on?.('provider-changed', event => {
+        if (event?.name === 'versioning' && host.session === current && !host._isBeingDestroyed && !host._isDestroyed) refreshSession()
+      }) || null
     }
-    refreshSession()
+    // Every UI domain has already rendered against the initialized session during
+    // mount. Avoid repainting all domains once more on the first bind; later
+    // session/provider changes still take the full refresh path.
+    if (initialSessionBound) refreshSession()
+    else {
+      initialSessionBound = true
+      host.applyInteractionMode()
+    }
   }
   return {
     ...runtime,
@@ -497,6 +540,11 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     mount(editor, controller) {
       host.editor = editor
       host.editorController = controller
+      const onEditableUpdate = () => {
+        if (host.editor === editor && !editor.isDestroyed && !host._isBeingDestroyed && !host._isDestroyed) runtime.invalidateEditor()
+      }
+      editor.on('editableUpdate', onEditableUpdate)
+      listeners.push(() => editor.off('editableUpdate', onEditableUpdate))
       // 相同正文恢复不会触发 controller 的替换回调，也必须落下早期目录水合闸门。
       const setContent = controller.setContent
       controller.setContent = (...args) => {
@@ -525,6 +573,9 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       bindSession()
       const document = shell.root.ownerDocument
       const window = document.defaultView
+      listen(window, 'hashchange', host.jumpSharedBlock)
+      host.$nextTick(host.jumpSharedBlock)
+      bindMobileEditorControls({ host, editor, shell, listen, listeners })
       // 只有 ProseMirror 自身可编辑；外层成为编辑宿主会吞掉正文焦点和快捷键。
       const syncEditorContainer = () => shell.editorEl.removeAttribute('contenteditable')
       editorContainerObserver = new window.MutationObserver(syncEditorContainer)
@@ -541,26 +592,49 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       listen(shell.editorEl, 'cut', guardCopy, true)
       // 评论快捷键必须在捕获阶段读取 DOM 选区，早于 ProseMirror selectionchange。
       listen(shell.root, 'keydown', event => host.onCommentShortcut?.(event), true)
-      listen(shell.root, 'keydown', event => { if (event.key === 'Escape') host.closeOverlay() })
+      // 链接浮层先消费正文根节点的 Escape；不抢子输入、IME 或更高优先级面板。
+      listen(shell.editorEl, 'keydown', event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229
+          || editor.view.composing || host.versionPanelOpen || !host._linkTarget || event.target !== editor.view.dom) return
+        event.preventDefault()
+        event.stopPropagation()
+        host.closeOverlay()
+      }, true)
+      listen(shell.root, 'keydown', event => { if (event.key === 'Escape' && !event.defaultPrevented) host.closeOverlay() })
+
+      // 成功提示保留「立即查看」，进入其他弹窗控件后让出它们的操作区域。
+      const dismissNoticeForPopup = event => {
+        if (host.versionNotice && event.target.closest?.('[aria-haspopup]')) host.dismissVersionNotice()
+      }
+      listen(shell.root, 'pointerover', dismissNoticeForPopup)
+      listen(shell.root, 'focusin', dismissNoticeForPopup)
       listen(shell.paper, 'pointermove', host.onPaperPointerMove)
       listen(shell.paper, 'pointerdown', host.onReminderChipClick)
       listen(shell.editorEl, 'keydown', host.onEditorKeydown)
       listen(shell.editorEl, 'pointerdown', host.onColumnPointerDown)
+      listen(shell.editorEl, 'pointerdown', host.onEditorPointerDown)
       listen(shell.editorEl, 'pointermove', host.onEditorPointerMove)
-      listen(shell.editorEl, 'dragover', host.onBlockDragOver)
+      listen(shell.editorEl, 'click', host.onEditorLinkTouchClick, true)
+      listen(shell.editorEl, 'click', host.onEditorLinkClick)
+      listen(shell.editorEl, 'dragover', event => { if (!host.onImageDragOver(event)) host.onBlockDragOver(event) })
+      listen(shell.editorEl, 'dragleave', event => { if (!shell.editorEl.contains(event.relatedTarget) && !host.dragging) host.dropPosition = null })
       listen(shell.editorEl, 'drop', host.onBlockDrop)
       listen(shell.imageInput, 'change', host.onImageInput)
       listen(shell.fileInput, 'change', host.onFileInput)
       listen(document, 'fullscreenchange', host.onFullscreenChange)
       listen(window, 'keydown', event => {
         host.onWindowKeydown(event)
-        if (host.slides && ['ArrowLeft', 'ArrowRight'].includes(event.key)) event.preventDefault()
         runtime.flush()
       })
       listen(window, 'scroll', host.onDocumentScroll, true)
+      listen(window, 'scroll', host.refreshLinkTools, true)
       listen(window, 'resize', host.onDocumentScroll)
+      listen(window, 'resize', host.syncTableClip)
       listen(window, 'pointerup', host.onHandlePointerUp)
-      listen(document, 'pointerdown', host.onDocumentPointerDown, true)
+      listen(document, 'pointerdown', event => {
+        if (host.linkDialog && !host._dialogsUi?.link.el?.contains(event.target)) host.linkDialog = false
+        host.onDocumentPointerDown(event)
+      }, true)
       listen(window, 'pointermove', host.onDocumentPointerMove, true)
       editor.commands.ensureLarkDocBlockIds?.()
       editor.commands.normalizeLarkDocIndents?.()
@@ -570,26 +644,33 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
     },
     transaction() {
       runtime.invalidateEditor()
+      host.syncBlockHandleVisibility()
+      host.refreshLinkTools()
       host.syncFoldState()
       host.persistFolds()
       host.updateRevisionPanels()
-      ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel', 'refreshBubbleBar'].forEach(name => host[name]())
+      ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel', 'refreshBubbleBar', 'refreshLinkTools'].forEach(name => host[name]())
       if (host.blockMenuOpen) host.refreshBlockMenu()
       host.$nextTick(() => { host.syncHandleHighlightBackdrop(); host.syncTableClip(); host.refreshTableOverlays?.() })
     },
     selection() {
       runtime.invalidateEditor()
       host.onSelectionUpdate()
-      ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel'].forEach(name => host[name]())
+      ;['refreshToolbar', 'refreshTableTools', 'refreshColorPalette', 'refreshCalloutTools', 'refreshRevisionPanels', 'refreshCalendarSearch', 'refreshMentionPanel', 'refreshIsvPanel', 'refreshLinkTools'].forEach(name => host[name]())
       host.$nextTick(() => host.refreshTableOverlays?.())
     },
     destroy() {
+      host.cancelFileUploads('destroy'); host._fileUploadTasks?.dispose()
+      host._blockHandleAnchor = null
       resolveImageFile.cancelAll?.('destroy')
+      host._imageUploadErrorOff?.()
       editorContainerObserver?.disconnect()
       editorContainerObserver = null
       listeners.splice(0).forEach(remove => remove())
       capabilitiesOff?.()
       capabilitiesOff = null
+      versionProviderOff?.()
+      versionProviderOff = null
       const window = shell.root.ownerDocument.defaultView
       window.removeEventListener('pointermove', host.onColumnPointerMove)
       window.removeEventListener('pointerup', host.onColumnPointerUp)
@@ -598,7 +679,14 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host.cancelBubbleHoverClose()
       host.clearHandleHighlight()
       host.closeCommandMenu()
-      ;['handleHideTimer', 'blockMenuCloseTimer', '_keepMenuTimer', 'pendingChangeTimer'].forEach(key => clearTimeout(host[key]))
+      ;['handleHideTimer', 'blockMenuCloseTimer', '_keepMenuTimer', 'pendingChangeTimer', 'pendingDerivedTimer'].forEach(key => clearTimeout(host[key]))
+      host.pendingDerivedVersion += 1
+      host._backgroundGate.dispose()
+      host.destroyTableClipObserver()
+      if (host.pendingDerivedIdle && typeof cancelIdleCallback === 'function') cancelIdleCallback(host.pendingDerivedIdle)
+      host.pendingDerivedIdle = null
+      clearTimeout(host._activeHeadingTimer)
+      host._activeHeadingTimer = null
       ;['pendingStateFrame', '_outlineFrame'].forEach(key => { if (host[key]) cancelAnimationFrame(host[key]) })
       uiDomains.slice().reverse().forEach(([domain]) => host[`destroy${domain}`]())
       if (themeUi) { themeUi.readingButton.remove(); themeUi.commentButton.remove(); themeUi.button.remove(); themeUi.menu.remove(); themeUi = null }

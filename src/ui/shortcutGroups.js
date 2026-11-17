@@ -1,3 +1,6 @@
+import { HELP_MENU_ITEMS } from './helpMenuItems'
+export { HELP_MENU_ITEMS } from './helpMenuItems'
+
 /**
  * 快捷键抽屉正文（P4-06）。数据来源：需求 07 §7 五组全表 + §8 Markdown 输入规则表，
  * 均为飞书快捷键面板实机抓取，**不要凭印象增删条目**。
@@ -114,12 +117,6 @@ export const DRAWER_GROUPS = SHORTCUT_GROUPS.concat(MARKDOWN_GROUPS)
  * 只有 `shortcuts` 项在本项目内有落点，其余 4 项是外部服务入口：点击仅收起菜单，
  * 不做假的跳转（复刻范围内无对应页面，也不该伪造一个）。
  */
-export const HELP_MENU_ITEMS = [
-  { id: 'upload-log', icon: 'help-log', label: '上传日志' },
-  { id: 'support', icon: 'help-support', label: '联系客服' },
-  { id: 'whats-new', icon: 'help-whatsnew', label: '功能更新' },
-  { id: 'help-center', icon: 'help-center', label: '帮助中心' },
-  { id: 'shortcuts', icon: 'help-keyboard', label: '快捷键' },
-]
+
 
 export default { SHORTCUT_GROUPS, MARKDOWN_GROUPS, DRAWER_GROUPS, HELP_MENU_ITEMS }

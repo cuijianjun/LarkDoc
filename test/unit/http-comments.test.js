@@ -1,15 +1,13 @@
+/* global globalThis */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, webcrypto } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { URL as NodeURL } from 'node:url'
-import { createRequire } from 'node:module'
 import { createHttpAssetProvider } from '../../src/providers/upload'
 import { createHttpCommentsProvider } from '../../src/providers/comments'
 import { createHttpIdentityProvider } from '../../src/providers/identity'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 import { bindThreads } from '../../src/core/comments/binding'
 import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
-import { commentTranslationActions } from '../../src/components/lark-doc/editor/commentTranslation'
+import { createCommentInteraction } from '../../src/components/lark-doc/editor/commentInteraction'
 import { commentPanelComputed, commentPanelMethods } from '../../src/components/lark-doc/editor/commentPanelView'
 
 const HASH = `sha256:${'a'.repeat(64)}`
@@ -611,15 +609,90 @@ describe('评论异步操作的身份归属', () => {
     expect(vm.loadCommentFollowPreference).toHaveBeenCalledWith('thread:1')
     expect(vm.commentFollowBusy).toBe(false); await session.dispose()
   })
+  // Source contract simulation of the compiled pre-ui stub: every cold key returns false.
+  // This does not replace the main agent's generated-stub / artifact verification.
+  function withoutColdCommentUi(vm) {
+    for (const name of Object.keys(createCommentInteraction({}).methods)) vm[name] = vi.fn(() => false)
+  }
+  it.each(['', 'thread:1'])('无冷UI时权限恢复继续原link/reconcile，More ID=%j仅按需GET偏好', async moreId => {
+    const { vm, session, port } = view(), likes = held()
+    withoutColdCommentUi(vm)
+    vm.commentMoreThreadId = moreId
+    vm.commentPendingFollowOperation = 'original-follow-key'
+    const getPreference = vi.spyOn(port, 'getFollowPreference')
+    const openLink = vi.spyOn(vm, 'openCommentLink'), recover = vi.spyOn(vm, 'recoverCommentAfterAuthorization')
+    vm.loadComments.mockImplementation(async () => { vm.commentThreads = [thread()]; return vm.commentThreads })
+    vm.loadDocumentCommentLikes = vi.fn(() => likes.promise)
+    try {
+      session.emit('capabilities', FLAGS)
+      await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce())
+      expect(getPreference).toHaveBeenCalledTimes(moreId ? 1 : 0)
+      if (moreId) expect(getPreference).toHaveBeenCalledWith('thread:1')
+      expect(vm.loadDocumentCommentLikes).toHaveBeenCalledOnce()
+      expect(openLink).toHaveBeenCalledOnce()
+      expect(vm.commentPendingFollowOperation).toBe('original-follow-key')
+      expect(port.queryFollowOperation).not.toHaveBeenCalled()
+    } finally { likes.resolve(null); await session.dispose() }
+  })
+  it('无冷UI时原偏好GET同步启动并返回Promise，actor退休后不发布迟到偏好', async () => {
+    const { vm, session, port } = view(), reading = held()
+    withoutColdCommentUi(vm)
+    port.getFollowPreference = vi.fn(() => reading.promise)
+    try {
+      const result = vm.loadCommentFollowPreference('thread:1')
+      expect(result).toBeInstanceOf(Promise)
+      expect(port.getFollowPreference).toHaveBeenCalledExactlyOnceWith('thread:1')
+      expect(vm.commentFollowPreferences['thread:1']).toBeNull()
+      session.user = { id: 'bob' }
+      reading.resolve(preference())
+      expect(await result).toBeNull()
+      expect(vm.commentFollowPreferences).toEqual({})
+    } finally { reading.resolve(preference()); await session.dispose() }
+  })
+  it('无冷UI时权限恢复列表迟到不会为退休actor启动后续读取', async () => {
+    const { vm, session, port } = view(), listing = held()
+    withoutColdCommentUi(vm)
+    vm.commentMoreThreadId = 'thread:1'
+    vm.loadComments.mockImplementation(() => listing.promise)
+    vm.loadDocumentCommentLikes = vi.fn(async () => null)
+    const getPreference = vi.spyOn(port, 'getFollowPreference'), openLink = vi.spyOn(vm, 'openCommentLink')
+    try {
+      session.emit('capabilities', FLAGS)
+      session.user = { id: 'bob' }
+      listing.resolve(vm.commentThreads = [thread()])
+      await Promise.resolve(); await Promise.resolve()
+      expect(getPreference).not.toHaveBeenCalled()
+      expect(vm.loadDocumentCommentLikes).not.toHaveBeenCalled()
+      expect(openLink).not.toHaveBeenCalled()
+    } finally { listing.resolve([]); await session.dispose() }
+  })
   it('权限恢复后保持打开的更多菜单重新获取偏好', async () => {
     const { vm, session } = view()
     vm.commentThreads = [thread()]; vm.commentMoreThreadId = 'thread:1'
+    const likes = held()
+    vm.loadDocumentCommentLikes = vi.fn(() => likes.promise)
     vm.openCommentLink = vi.fn(async () => null); vm.loadCommentFollowPreference = vi.fn(async () => preference())
+    vm.loadComments.mockImplementation(async () => { vm.commentThreads = [thread()]; return vm.commentThreads })
     session.emit('capabilities', FLAGS)
-    // capabilities先清视图；真实列表请求恢复当前获准线程后才加载偏好。
+    // 点赞读独立于线程偏好；点赞服务迟迟不返回也不能阻塞已打开菜单。
+    await vi.waitFor(() => expect(vm.loadCommentFollowPreference).toHaveBeenCalledWith('thread:1'))
+    expect(vm.loadDocumentCommentLikes).toHaveBeenCalledOnce()
+    likes.resolve(null); await session.dispose()
+  })
+  it('权限恢复列表迟到时，不为已退役身份启动菜单偏好或点赞读取', async () => {
+    const { vm, session } = view(), listing = held()
+    vm.commentMoreThreadId = 'thread:1'
+    vm.loadComments.mockImplementation(() => listing.promise)
+    vm.loadDocumentCommentLikes = vi.fn(async () => null)
+    vm.loadCommentFollowPreference = vi.fn(async () => preference())
+    session.emit('capabilities', FLAGS)
+    session.user = { id: 'bob' }
     vm.commentThreads = [thread()]
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
-    expect(vm.loadCommentFollowPreference).toHaveBeenCalledWith('thread:1'); await session.dispose()
+    listing.resolve(vm.commentThreads)
+    await Promise.resolve(); await Promise.resolve()
+    expect(vm.loadDocumentCommentLikes).not.toHaveBeenCalled()
+    expect(vm.loadCommentFollowPreference).not.toHaveBeenCalled()
+    await session.dispose()
   })
   it.each(['write', 'query'])('%s成功后，先发后到的偏好GET不能回退已确认状态', async action => {
     const { vm, session, port, wait } = view(), read = held()
@@ -643,6 +716,26 @@ describe('评论异步操作的身份归属', () => {
       expect(vm.commentReplyMenuPosition.top).toBeGreaterThan(125)
       anchor.isConnected = false; vm.onCommentViewportChange({ type: 'scroll', target: {} })
       expect(vm.commentMenuThreadId).toBe('')
+    } finally { vi.unstubAllGlobals() }
+  })
+  it('软键盘引起的视口抖动不关闭刚打开的表情选择器，只把固定位置收敛回可视区', () => {
+    vi.stubGlobal('window', { innerWidth: 393, innerHeight: 480 })
+    try {
+      const picker = { getBoundingClientRect: () => ({ left: 22, top: 300, width: 328, height: 340 }), style: { removeProperty: vi.fn() } }
+      const vm = ctx({ commentReactionContext: { threadId: 'thread:1', replyId: 'reply:1', position: { left: 22, top: 300 } },
+        _commentReactionAnchor: { isConnected: true }, $el: { querySelector: () => picker },
+        refreshPanels: vi.fn(), updateCommentLayerBounds: vi.fn() })
+      vm.onCommentViewportChange({ type: 'resize', target: window })
+      expect(vm.commentReactionContext).not.toBeNull()
+      expect(vm.refreshPanels).toHaveBeenCalledOnce()
+      expect(vm.commentReactionContext.position).toEqual({ left: 22, top: 132 })
+      // 已经收敛回可视区后不再重复刷新，避免 resize 抖动期间反复点名渲染。
+      vm.refreshPanels.mockClear()
+      vm.onCommentViewportChange({ type: 'resize', target: window })
+      expect(vm.refreshPanels).not.toHaveBeenCalled()
+      // 真正的滚动仍按原语义关闭选择器。
+      vm.onCommentViewportChange({ type: 'scroll', target: {} })
+      expect(vm.commentReactionContext).toBeNull()
     } finally { vi.unstubAllGlobals() }
   })
 })
@@ -1511,7 +1604,8 @@ describe('comment reaction picker lifecycle', () => {
     expect(vm.commentReactionContext).toBeNull()
   })
   it('closes on Escape/outside and identity reset, with no writes', () => {
-    const run = vi.fn(), vm = ctx({ runCommentWrite: run, cancelCommentEdit: () => {}, refreshCommentDecorations: () => {} })
+    const run = vi.fn(), vm = ctx({ runCommentWrite: run, cancelCommentEdit: () => {}, refreshCommentDecorations: () => {},
+      $nextTick: fn => fn(), $el: { querySelectorAll: () => [], contains: node => node === anchor }, commentOperationCurrent: () => () => true, commentCan: () => true })
     const anchor = { isConnected: true, focus: vi.fn() }
     vm.commentReactionContext = {}; vm._commentReactionAnchor = anchor
     const event = { key: 'Escape', preventDefault: vi.fn(), stopPropagation: vi.fn() }
@@ -1519,6 +1613,18 @@ describe('comment reaction picker lifecycle', () => {
     vm.commentReactionContext = {}; vm.onCommentReactionOutside({ target: { closest: () => null } }); expect(vm.commentReactionContext).toBeNull()
     vm.commentReactionContext = {}; vm.commentReactionQuery = 'private'; vm.resetCommentIdentityView(true)
     expect(vm.commentReactionContext).toBeNull(); expect(vm.commentReactionQuery).toBe(''); expect(run).not.toHaveBeenCalled()
+  })
+  it.each(['owner', 'permission'])('does not restore delayed picker focus after %s invalidation', kind => {
+    let restore, current = true, visible = true
+    const run = vi.fn(), anchor = { isConnected: true, focus: vi.fn() }
+    const vm = ctx({ runCommentWrite: run, $nextTick: fn => { restore = fn }, $el: { querySelectorAll: () => [] },
+      commentOperationCurrent: () => () => current, commentCan: () => visible })
+    vm.commentReactionContext = { threadId: 'thread:1', replyId: 'reply:1' }; vm._commentReactionAnchor = anchor
+    vm.onCommentReactionKeydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} })
+    if (kind === 'owner') current = false
+    else visible = false
+    restore()
+    expect(anchor.focus).not.toHaveBeenCalled(); expect(run).not.toHaveBeenCalled(); expect(vm.commentReactionContext).toBeNull()
   })
 })
 

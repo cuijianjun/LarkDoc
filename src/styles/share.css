@@ -41,64 +41,6 @@
   --ld-share-toast-warning-bg: #FFF3E5; /* 校验失败 toast 底（⑤-9） */
 }
 
-.lark-doc .lark-doc-image-share-layer { position: fixed; z-index: 1052; inset: 0; display: grid; place-items: center; background: var(--ld-mask); }
-.lark-doc .lark-doc-image-share-layer[hidden] { display: none; }
-.lark-doc .lark-doc-image-share-dialog { position: relative; box-sizing: border-box; width: 500px; max-width: calc(100vw - 32px); height: 518px; max-height: calc(100vh - 64px); overflow: auto; border-radius: 8px; background: var(--ld-bg-surface); color: var(--ld-text); box-shadow: var(--ld-shadow-dialog); font-size: 14px; }
-.lark-doc .lark-doc-image-share-header { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 68px; padding: 24px 24px 20px; }
-.lark-doc .lark-doc-image-share-header strong { font-size: 16px; font-weight: 600; line-height: 24px; }
-.lark-doc .lark-doc-image-share-header button { display: grid; place-items: center; width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--ld-text-tertiary); cursor: pointer; }
-.lark-doc .lark-doc-image-share-body { padding: 0 24px; }
-.lark-doc .lark-doc-image-share-selector { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; box-sizing: border-box; min-height: 32px; margin-top: 4px; border: 1px solid var(--ld-border-control); border-radius: 6px; }
-.lark-doc .lark-doc-image-share-selector:focus-within { border-color: var(--ld-brand-chrome); }
-.lark-doc .lark-doc-image-share-selector input { flex: 1; box-sizing: border-box; width: 50px; min-width: 6px; height: 30px; min-height: 30px; padding: 0 12px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
-.lark-doc .lark-doc-image-share-recipients { display: flex; flex-wrap: wrap; gap: 4px; max-width: 75%; }
-.lark-doc .lark-doc-image-share-recipients button { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 6px 2px 2px; border: 0; border-radius: 12px; background: var(--ld-bg-hover-menu); color: var(--ld-text); font: inherit; cursor: pointer; }
-.lark-doc .lark-doc-image-share-recipients .lark-doc-image-share-avatar { flex-basis: 20px; width: 20px; height: 20px; font-size: 10px; }
-.lark-doc .lark-doc-image-share-results { position: absolute; z-index: 2; box-sizing: border-box; top: calc(100% + 4px); left: -1px; width: calc(100% + 2px); max-height: 448px; overflow-y: auto; padding: 4px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); }
-.lark-doc .lark-doc-image-share-results-head { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 8px; color: var(--ld-text-tertiary); font-size: 12px; }
-.lark-doc .lark-doc-image-share-results-head[hidden] { display: none; }
-.lark-doc .lark-doc-image-share-results-head button { min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
-.lark-doc .lark-doc-image-share-result { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); text-align: left; font: inherit; cursor: pointer; }
-.lark-doc .lark-doc-image-share-result:hover, .lark-doc .lark-doc-image-share-result.is-active { background: var(--ld-bg-hover-menu); }
-.lark-doc .lark-doc-image-share-avatar { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; overflow: hidden; border-radius: 50%; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 12px; }
-.lark-doc .lark-doc-image-share-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.lark-doc .lark-doc-image-share-result-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lark-doc .lark-doc-image-share-result-name small { display: block; color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
-.lark-doc .lark-doc-image-share-context { pointer-events: none; }
-.lark-doc .lark-doc-image-share-selected { color: var(--ld-brand-chrome); }
-.lark-doc .lark-doc-image-share-check { display: grid; place-items: center; box-sizing: border-box; width: 16px; height: 16px; border: 1px solid var(--ld-border-control); border-radius: 3px; color: var(--ld-text-on-brand); font-size: 12px; }
-.lark-doc .lark-doc-image-share-check.is-checked { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); }
-.lark-doc .lark-doc-image-share-empty { padding: 16px 8px; color: var(--ld-text-tertiary); }
-.lark-doc .lark-doc-image-share-preview { display: grid; place-items: center; box-sizing: border-box; height: 256px; margin-top: 24px; }
-.lark-doc .lark-doc-image-share-preview-frame { position: relative; box-sizing: border-box; max-width: 100%; height: 254px; margin: 0; overflow: hidden; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); }
-.lark-doc .lark-doc-image-share-excerpt { position: relative; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; width: 400px; padding: 60px 30px; transform-origin: top left; }
-.lark-doc .lark-doc-image-share-excerpt::after { position: absolute; inset: 0; pointer-events: none; content: ''; background: linear-gradient(to bottom, var(--ld-bg-surface) 0%, transparent 18%, transparent 82%, var(--ld-bg-surface) 100%); }
-.lark-doc .lark-doc-image-share-excerpt.is-unsupported { padding: 60px 28px 28px; }
-.lark-doc .lark-doc-image-share-excerpt.is-unsupported::after { display: none; }
-.lark-doc .lark-doc-image-share-excerpt.is-unsupported .lark-doc-image-share-context { right: 28px; left: 28px; }
-.lark-doc .lark-doc-image-share-excerpt.is-unsupported .lark-doc-image-share-context.is-after { bottom: 0; }
-.lark-doc .lark-doc-image-share-preview-frame img { display: block; object-fit: contain; }
-.lark-doc .lark-doc-image-share-preview-frame figcaption { flex-shrink: 0; box-sizing: border-box; height: 28px; padding-top: 8px; color: var(--ld-text-tertiary); font-size: 14px; line-height: 20px; text-align: center; }
-.lark-doc .lark-doc-image-share-preview-frame figcaption:empty { display: none; }
-.lark-doc .lark-doc-image-share-context { position: absolute; right: 30px; left: 30px; height: 26px; overflow: hidden; color: var(--ld-text); font-size: 16px; line-height: 26px; opacity: .15; white-space: nowrap; }
-.lark-doc .lark-doc-image-share-context.is-before { top: 25px; }
-.lark-doc .lark-doc-image-share-context.is-after { bottom: 16px; }
-.lark-doc .lark-doc-image-share-context > * { margin: 0; }
-.lark-doc .lark-doc-selection-share-content { min-height: 0; padding: 0; pointer-events: none; }
-.lark-doc .lark-doc-selection-share-content table { margin: 0; }
-.lark-doc .lark-doc-selection-share-unsupported { position: relative; box-sizing: border-box; height: 198px; overflow: hidden; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); }
-.lark-doc .lark-doc-selection-share-unsupported > header { position: absolute; top: 6px; left: 11px; display: flex; align-items: center; gap: 6px; height: 22px; padding: 0; border: 0; color: var(--ld-text); font-size: 14px; font-weight: 400; line-height: 22px; }
-.lark-doc .lark-doc-selection-share-unsupported > header .lark-doc-icon { flex-shrink: 0; color: var(--ld-brand-chrome); }
-.lark-doc .lark-doc-selection-share-unsupported .lark-doc-selection-share-illustration { position: absolute; top: 51.5px; left: 50%; transform: translateX(-50%); }
-.lark-doc .lark-doc-selection-share-unsupported > div > p { position: absolute; top: 147px; right: 0; left: 0; height: 22px; margin: 0; padding: 0; color: var(--ld-share-text-secondary); font-size: 14px; font-weight: 400; line-height: 22px; text-align: center; }
-.lark-doc .lark-doc-image-share-message { display: block; box-sizing: border-box; width: 100%; height: 30px; min-height: 30px; margin-top: 24px; padding: 3px 8px 3px 11px; resize: none; border: 1px solid var(--ld-border-control); border-radius: 6px; background: transparent; color: var(--ld-text); font: inherit; line-height: 22px; }
-.lark-doc .lark-doc-image-share-footer { display: flex; justify-content: flex-end; gap: 12px; box-sizing: border-box; height: 80px; padding: 24px; }
-.lark-doc .lark-doc-image-share-footer button { box-sizing: border-box; width: 80px; height: 32px; min-height: 32px; padding: 0 12px; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface); color: var(--ld-text); font: inherit; cursor: pointer; }
-.lark-doc .lark-doc-image-share-footer button.is-primary { width: 122px; min-width: 122px; padding: 4px 11px; white-space: nowrap; border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); }
-.lark-doc .lark-doc-image-share-footer button:disabled { opacity: .45; cursor: not-allowed; }
-.lark-doc .lark-doc-image-share-footer button.is-primary:disabled { opacity: 1; border-color: var(--ld-text-disabled); background: var(--ld-text-disabled); }
-.lark-doc .lark-doc-image-share-error { position: absolute; right: 24px; bottom: 68px; left: 24px; color: var(--ld-text-error); font-size: 12px; }
-
 /* ============================================================
  * 0. 包裹层与通用按钮
  * ============================================================ */
@@ -108,23 +50,6 @@
  * 非 static 定位 —— 子级全是 `position: fixed`，祖先一旦 transform 就会劫持 fixed 的
  * 包含块（同 `lark-doc-reminder-layer` 的踩坑）。
  */
-.lark-doc-share-layer {
-  display: inline-block;
-}
-
-.lark-doc-share-member-toggle { border: 0; background: transparent; color: var(--ld-share-brand); cursor: pointer; font: inherit; }
-.lark-doc-share-remote-members { padding: 0 16px; color: var(--ld-share-text); font-size: 14px; }
-.lark-doc-share-candidates { max-height: 180px; overflow-y: auto; border: 1px solid var(--ld-share-border); border-radius: 6px; }
-.lark-doc-share-candidates > button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: var(--ld-share-surface); color: inherit; text-align: left; cursor: pointer; }
-.lark-doc-share-candidates > button:hover { background: var(--ld-share-bg-subtle); }
-.lark-doc-share-candidates small, .lark-doc-share-member-name small { color: var(--ld-share-text-secondary); font-size: 12px; }
-.lark-doc-share-invite-actions, .lark-doc-share-member-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-.lark-doc-share-invite-actions > span, .lark-doc-share-member-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.lark-doc-share-member-name small { display: block; }
-.lark-doc-share-member-list { margin-top: 8px; border-top: 1px solid var(--ld-share-border); }
-.lark-doc-share-remote-members select { max-width: 100px; padding: 5px; border: 1px solid var(--ld-share-border-control); border-radius: 6px; color: var(--ld-share-text); background: var(--ld-share-surface); }
-.lark-doc-share-source-note { color: var(--ld-share-text-secondary); font-size: 12px; line-height: 20px; }
-.lark-doc-share-org-label { font-size: 14px; color: var(--ld-share-text); }
 
 .lark-doc-share-btn-filled {
   width: 80px;
@@ -204,929 +129,140 @@
   flex-shrink: 0;
 }
 .lark-doc-share-entry .lark-doc-share-btn-filled { width: auto; min-width: 80px; white-space: nowrap; }
+/* 顶部已有 `.lark-doc-mobile-members` 承担同一入口（需求 05 §128：分享按钮在顶栏）。
+   双端一律隐藏这份浮动副本 —— 它没有容器定位，留着会落到文档左下角。 */
+.lark-doc.has-mobile-members-entry .lark-doc-share-entry { display: none; }
 
 /* ============================================================
  * 3. 分享 popover（480×331 · z 99 · **无遮罩**）
  * ============================================================ */
 
-.lark-doc-share-popover {
-  position: fixed;
-  z-index: 99;
-  width: min(480px, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
-  height: 331px;
-  padding: 2px 0 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.lark-doc-share-popover-inner {
-  width: 100%;
-  height: 329px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: var(--ld-share-surface);
-  box-shadow: 0 6px 24px rgba(31, 35, 41, 0.12);
-}
-
-@media (max-width: 496px) {
-  .lark-doc .lark-doc-share-header, .lark-doc .lark-doc-share-member-row, .lark-doc .lark-doc-share-lower { width: 100%; }
-  .lark-doc .lark-doc-share-invite, .lark-doc .lark-doc-share-link-card { width: calc(100% - 32px); }
-  .lark-doc .lark-doc-share-invite input { width: 0; min-width: 0; flex: 1; }
-}
-
 /* 标题栏 480×45，pad 13px 16px 8px。 */
-.lark-doc-share-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  width: 480px;
-  height: 45px;
-  padding: 13px 16px 8px;
-}
-
-.lark-doc-share-header-title {
-  margin: 0;
-  color: var(--ld-share-text);
-  font-size: 16px;
-  line-height: 22px;
-}
-
-.lark-doc-share-header-actions {
-  display: flex;
-  align-items: center;
-}
 
 /* 「权限设置」84×24，radius 6，pad 0 4px，图标 20×16。 */
-.lark-doc-share-perm-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: 84px;
-  height: 24px;
-  padding: 0 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.lark-doc-share-perm-btn svg {
-  width: 20px;
-  height: 16px;
-}
 
 /* 协作者行 480×54，pad 0 16px。 */
-.lark-doc-share-member-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  width: 480px;
-  height: 54px;
-  padding: 0 16px;
-}
-
-.lark-doc-share-member-text {
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.lark-doc-share-avatars {
-  display: flex;
-  align-items: center;
-}
-
-.lark-doc-share-avatar {
-  width: 26px;
-  height: 26px;
-  overflow: hidden;
-  border-radius: 50%;
-  background: var(--ld-share-border);
-  color: var(--ld-share-text-secondary);
-  font-size: 12px;
-  line-height: 26px;
-  text-align: center;
-}
 
 /* 人数溢出块 31×26，bg #F5F6F7，radius 29px，pad 4px 8px，fs 12。 */
-.lark-doc-share-avatar-more {
-  box-sizing: border-box;
-  width: 31px;
-  height: 26px;
-  padding: 4px 8px;
-  border-radius: 29px;
-  background: var(--ld-share-bg-subtle);
-  color: var(--ld-share-text-secondary);
-  font-size: 12px;
-  line-height: 18px;
-}
 
 /* 邀请输入框外壳 448×36：聚焦态是**外壳描边**而非 input 自身描边（复刻要点 3）。 */
-.lark-doc-share-invite {
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  width: 448px;
-  height: 36px;
-  margin: 0 16px;
-  padding: 0 0 0 12px;
-  border: 1px solid var(--ld-share-brand);
-  border-radius: 6px;
-}
-
-.lark-doc-share-invite input {
-  box-sizing: border-box;
-  width: 393px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  outline: none;
-  color: var(--ld-share-text);
-  font-size: 14px;
-}
 
 /* 组织选择入口 36×34：外壳内右侧拼接块，靠 `border-left` 分割，圆角只留右侧。 */
-.lark-doc-share-org-entry {
-  box-sizing: border-box;
-  width: 36px;
-  height: 34px;
-  padding: 0;
-  border: none;
-  border-left: 1px solid var(--ld-share-border-control);
-  border-radius: 0 4px 4px 0;
-  background: transparent;
-  color: var(--ld-share-text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-}
 
 /* 下半区 480×194，pad 12px 0 0。 */
-.lark-doc-share-lower {
-  box-sizing: border-box;
-  width: 480px;
-  height: 194px;
-  padding: 12px 0 0;
-}
 
 /* 链接分享卡 480×116，pad 16。 */
-.lark-doc-share-link-card {
-  box-sizing: border-box;
-  width: 480px;
-  height: 116px;
-  padding: 16px;
-}
-
-.lark-doc-share-link-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lark-doc-share-link-title {
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-}
 
 /* 权限标签 bg rgba(20,86,240,0.2) / color #1456F0 / fs 10（内容 span 12）/ radius 4 / pad 0 4px。 */
-.lark-doc-share-link-tag {
-  box-sizing: border-box;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--ld-bg-brand-hover);
-  color: var(--ld-share-brand);
-  font-size: 10px;
-  line-height: 16px;
-}
-
-.lark-doc-share-link-tag span {
-  font-size: 12px;
-}
-
-.lark-doc-share-link-body {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
-}
 
 /* 圆形图标 30×30，bg #336DF4，radius 50%。 */
-.lark-doc-share-link-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--ld-share-avatar-bg);
-  color: var(--ld-share-surface);
-  font-size: 14px;
-}
-
-.lark-doc-share-link-main {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.lark-doc-share-org-btn {
-  align-self: flex-start;
-  padding: 2px 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
-}
 
 /* 权限说明 #646A73 / fs 12。 */
-.lark-doc-share-scope-text {
-  color: var(--ld-share-text-secondary);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.lark-doc-share-perm-select {
-  padding: 2px 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
-}
 
 /* 「复制链接」操作行。 */
-.lark-doc-share-copy-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  box-sizing: border-box;
-  width: 480px;
-  padding: 0 16px;
-}
 
 /* ============================================================
  * 4. 权限设置 Dialog（500×830 · z 1000 · 有遮罩）
  * ============================================================ */
 
-.lark-doc-permission-layer {
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-}
-
 /* 遮罩 rgba(0,0,0,0.55)（§4.1.1 ②）。 */
-.lark-doc-permission-mask {
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-}
 
 /* 500×830，垂直居中偏上（950 视口顶边 60）。用 `margin-left` 而非 translate 居中：
    transform 会改写后代 fixed 的包含块，改密码弹窗是独立 Modal，不能受影响。 */
-.lark-doc-permission-dialog {
-  position: fixed;
-  z-index: 1000;
-  top: 60px;
-  left: 50%;
-  width: 500px;
-  height: 830px;
-  margin-left: -250px;
-  border-radius: 8px;
-  background: var(--ld-share-surface);
-  box-shadow: none;
-}
-
-.lark-doc-permission-header {
-  box-sizing: border-box;
-  width: 500px;
-  height: 72px;
-  padding: 16px 24px;
-}
-
-.lark-doc-permission-crumb {
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.lark-doc-permission-head-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
 /* 标题 420×24，fs 16，#1F2329。 */
-.lark-doc-permission-title {
-  width: 420px;
-  margin: 0;
-  color: var(--ld-share-text);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-}
 
 /* 关闭 ✕ 28×28，radius 6，fs 20，color rgb(100,106,115)。 */
-.lark-doc-share-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0);
-  color: var(--ld-share-text-secondary);
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-}
 
 /* 主体 500×734，overflow-y auto（scrollHeight 925 ⇒ 底部约 192px 需滚动）。 */
-.lark-doc-permission-body {
-  box-sizing: border-box;
-  width: 500px;
-  height: 734px;
-  padding: 0 24px;
-  overflow-y: auto;
-}
 
 /* 内容列 x=530 ⇒ pad-left 24，列宽 437。 */
-.lark-doc-permission-column {
-  box-sizing: border-box;
-  width: 437px;
-}
 
 /* 邀请协作者入口行 394×20。 */
-.lark-doc-permission-invite-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  width: 437px;
-  height: 20px;
-  padding: 24px 0;
-  color: var(--ld-share-text);
-  font-size: 14px;
-}
 
 /* 折叠头的箭头（04 只采了 `.ud__collapse-header` 的矩形，未给图标，这里用字符自绘）。 */
-.lark-doc-permission-caret {
-  width: 10px;
-  color: var(--ld-share-text-secondary);
-  font-size: 10px;
-  line-height: 10px;
-}
-
-.lark-doc-permission-group-title {
-  width: 437px;
-  height: 22px;
-  margin: 16px 0 8px;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-}
 
 /* 组织外成员搜索框 384×26。 */
-.lark-doc-permission-search input {
-  box-sizing: border-box;
-  width: 384px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--ld-share-border);
-  border-radius: 6px;
-  outline: none;
-  font-size: 14px;
-}
-
-.lark-doc-permission-item {
-  width: 437px;
-  padding: 8px 0;
-}
-
-.lark-doc-permission-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 437px;
-  height: 22px;
-}
-
-.lark-doc-permission-item-title {
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-}
 
 /* 值行 437×32，下拉本体 84×29。 */
-.lark-doc-permission-value {
-  display: flex;
-  align-items: center;
-  width: 437px;
-  height: 32px;
-}
-
-.lark-doc-permission-select {
-  box-sizing: border-box;
-  width: 84px;
-  height: 29px;
-  padding: 0 4px;
-  border: 1px solid var(--ld-share-border);
-  border-radius: 6px;
-  background: var(--ld-share-surface);
-  color: var(--ld-share-text);
-  font-size: 14px;
-  cursor: pointer;
-}
 
 /* 次级说明（同 `_ruleset` 层）。 */
-.lark-doc-permission-desc {
-  width: 437px;
-  height: 22px;
-  color: var(--ld-share-text-tertiary);
-  font-size: 12px;
-  line-height: 22px;
-}
 
 /* 开关 12×12 / radius 999999px（04 §4.2 ④-3 同套 Switch）。 */
-.lark-doc-permission-switch {
-  position: relative;
-  width: 26px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 999999px;
-  background: var(--ld-share-border);
-  cursor: pointer;
-}
-
-.lark-doc-permission-switch::after {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 999999px;
-  background: var(--ld-share-surface);
-  content: '';
-  transition: left 0.16s linear;
-}
-
-.lark-doc-permission-switch.is-on {
-  background: var(--ld-share-brand);
-}
-
-.lark-doc-permission-switch.is-on::after {
-  left: 12px;
-}
 
 /* 折叠头「更多高级设置」437×22。 */
-.lark-doc-permission-collapse-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 437px;
-  height: 22px;
-  padding: 24px 0 8px;
-  border: none;
-  background: transparent;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
-}
 
 /* 「链接分享」详情块（§4.1.1 ③ y256/y283）：组织名按钮 + scope 文案，
    缩进 120/124 —— 它在「启用加密链接」行**下面**，不属于 ④ 的配置项全集，别挪位置。 */
-.lark-doc-permission-link-detail {
-  box-sizing: border-box;
-  width: 437px;
-  padding: 8px 0 8px 120px;
-}
 
 /* 组织名 164×26，文字型可点按钮（③ y256）。 */
-.lark-doc-permission-org-btn {
-  display: block;
-  width: 164px;
-  height: 26px;
-  padding: 2px 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-  text-align: left;
-  cursor: pointer;
-}
 
 /* scope 文案 144×18，`#646A73` / fs 12（③ y283，与一级 popover 的 `-scope-text` 同口径）。 */
-.lark-doc-permission-scope-text {
-  display: block;
-  width: 437px;
-  height: 18px;
-  margin-top: 8px;
-  color: var(--ld-share-text-secondary);
-  font-size: 12px;
-  line-height: 18px;
-}
 
 /* ============================================================
  * 5. 加密链接块（§4.1.1 ⑤-3 行级像素）
  * ============================================================ */
 
 /* 勾选前 437×22；勾选后 437×78（下推 56px）。 */
-.lark-doc-secure-link {
-  display: block;
-  box-sizing: border-box;
-  width: 437px;
-  padding: 8px 0;
-}
-
-.lark-doc-secure-link-operation {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 437px;
-  height: 22px;
-}
-
-.lark-doc-secure-link-checkbox {
-  width: 16px;
-  height: 22px;
-  margin: 0;
-}
 
 /* 文案本体与 desc 同矩形（413×20）；desc 额外 `cursor: pointer` —— 点文案等于点勾选框。 */
-.lark-doc-secure-link-info,
-.lark-doc-secure-link-desc {
-  width: 413px;
-  height: 20px;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.lark-doc-secure-link-desc {
-  cursor: pointer;
-}
 
 /* 密码行 437×24，radius 6。整块间距：22 → +8 → 24 → +8 → 18。 */
-.lark-doc-secure-link-password-area {
-  display: block;
-  width: 437px;
-  height: 24px;
-  margin-top: 8px;
-  border-radius: 6px;
-}
-
-.lark-doc-secure-link-password-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 437px;
-  height: 24px;
-}
-
-.lark-doc-secure-link-password-label {
-  width: 42px;
-  height: 18px;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 18px;
-}
 
 /* 密码值：fw **500**（比 label 重一档），`cursor: pointer` —— 点值本身也复制。 */
-.lark-doc-secure-link-password-val {
-  width: 74px;
-  height: 20px;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  cursor: pointer;
-}
 
 /* 铅笔 24×24，radius 6，色 rgb(43,47,54)，内含 16×16 图标。 */
-.lark-doc-secure-link-edit {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-text-strong);
-  font-size: 16px;
-  cursor: pointer;
-}
-
-.lark-doc-secure-link-edit svg {
-  width: 16px;
-  height: 16px;
-}
 
 /* 「复制链接和密码」92×24，fs 12，色 #1456F0，radius 6，pad 2px 4px，bg 透明。 */
-.lark-doc-secure-link-copy-btn {
-  width: 92px;
-  height: 24px;
-  padding: 2px 4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-brand);
-  font-size: 12px;
-  cursor: pointer;
-}
 
 /* tip 437×18，fs 12，色 rgb(143,149,158)。 */
-.lark-doc-secure-link-tip {
-  width: 437px;
-  height: 18px;
-  margin-top: 8px;
-  color: var(--ld-share-text-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-}
 
 /* ============================================================
  * 6. 「提示」二次确认（500×262 @506,344）
  * ============================================================ */
 
-.lark-doc-share-confirm {
-  position: fixed;
-  z-index: 1001;
-  top: 344px;
-  left: 50%;
-  width: 500px;
-  height: 262px;
-  margin-left: -250px;
-  border-radius: 8px;
-  background: var(--ld-share-surface);
-  box-shadow: none;
-}
-
-.lark-doc-share-confirm-header {
-  box-sizing: border-box;
-  width: 500px;
-  height: 72px;
-  padding: 16px 24px;
-}
-
-.lark-doc-share-confirm-title {
-  width: 420px;
-  margin: 0;
-  color: var(--ld-share-text);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-}
-
-.lark-doc-share-confirm-body {
-  box-sizing: border-box;
-  width: 500px;
-  height: 110px;
-  padding: 0 24px;
-}
-
-.lark-doc-share-confirm-text {
-  width: 452px;
-  margin: 0 0 0;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-}
-
 /* 法务链接色 rgb(51,112,255)。 */
-.lark-doc-share-confirm-link {
-  color: var(--ld-share-link);
-  font-size: 14px;
-}
 
 /* 底部 500×56，按钮右对齐。 */
-.lark-doc-share-confirm-footer {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  width: 500px;
-  height: 56px;
-  padding: 0 24px;
-}
 
 /* ============================================================
  * 7. 修改密码弹窗（420×312 @546,319）
  * ============================================================ */
 
-.lark-doc-share-password {
-  position: fixed;
-  z-index: 1001;
-  top: 319px;
-  left: 50%;
-  width: 420px;
-  height: 312px;
-  margin-left: -210px;
-  border-radius: 8px;
-  background: var(--ld-share-surface);
-  box-shadow: none;
-}
-
-.lark-doc-share-password-header {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 420px;
-  height: 72px;
-  padding: 16px 24px;
-}
-
-.lark-doc-share-password-title {
-  width: 340px;
-  margin: 0;
-  color: var(--ld-share-text);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-}
-
-.lark-doc-share-password-body {
-  box-sizing: border-box;
-  width: 420px;
-  height: 160px;
-  padding: 0 24px;
-}
-
-.lark-doc-share-password-content {
-  width: 372px;
-}
-
-.lark-doc-share-password-input-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 /* 输入框 262×32，聚焦态恒为蓝框 1px #1456F0，radius 6。 */
-.lark-doc-share-password-input {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  width: 262px;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--ld-share-brand);
-  border-radius: 6px;
-  background: var(--ld-share-surface);
-}
-
-.lark-doc-share-password-input input {
-  width: 221px;
-  height: 22px;
-  border: none;
-  outline: none;
-  color: var(--ld-share-text);
-  font-size: 14px;
-}
 
 /* 「随机生成」98×32（比通用描边按钮宽 18），前置图标 14×14。 */
-.lark-doc-share-password-random {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  box-sizing: border-box;
-  width: 98px;
-  padding: 4px 11px;
-}
-
-.lark-doc-share-password-random svg {
-  width: 14px;
-  height: 14px;
-}
 
 /* 清除图标 12×12，有内容时才出现。 */
-.lark-doc-share-password-clear {
-  width: 12px;
-  height: 12px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--ld-share-text-secondary);
-  font-size: 12px;
-  line-height: 12px;
-  cursor: pointer;
-}
 
 /* 规则框 372×62，bg #F5F6F7，radius 4，fs 12。 */
-.lark-doc-share-password-rules {
-  box-sizing: border-box;
-  width: 372px;
-  padding: 6px 8px;
-  margin-top: 10px;
-  border-radius: 4px;
-  background: var(--ld-share-bg-subtle);
-}
-
-.lark-doc-share-password-rule {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 356px;
-  height: 26px;
-}
 
 /* error 行是「后插入的裸行」，比 normal/success 矮 6px。 */
-.lark-doc-share-password-rule.is-error {
-  height: 20px;
-}
 
 /* 图标容器恒 21×20（内含 14×14 视觉体）—— 三态换色不换尺寸，行不会抖。 */
-.lark-doc-share-password-rule-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 21px;
-  height: 20px;
-  color: var(--ld-share-text-disabled);
-}
-
-.lark-doc-share-password-rule-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.lark-doc-share-password-rule.is-normal .lark-doc-share-password-rule-icon {
-  color: var(--ld-share-text-disabled);
-}
-
-.lark-doc-share-password-rule.is-success .lark-doc-share-password-rule-icon {
-  color: var(--ld-share-success);
-}
-
-.lark-doc-share-password-rule.is-error .lark-doc-share-password-rule-icon {
-  color: var(--ld-share-danger);
-}
-
-.lark-doc-share-password-rule-text {
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.lark-doc-share-password-rule.is-normal .lark-doc-share-password-rule-text,
-.lark-doc-share-password-rule.is-success .lark-doc-share-password-rule-text {
-  color: var(--ld-share-text);
-}
 
 /* error 态**连文字一起变红**。 */
-.lark-doc-share-password-rule.is-error .lark-doc-share-password-rule-text {
-  color: var(--ld-share-danger);
-}
 
 /* 安全提示 372×28，fs 12，rgb(100,106,115)。 */
-.lark-doc-share-password-hints {
-  width: 372px;
-  height: 28px;
-  margin-top: 8px;
-  color: var(--ld-share-text-secondary);
-  font-size: 12px;
-  line-height: 14px;
-}
 
 /* 底部 372×32，**没有分隔线 / border-top**（⑤-5 末句）。 */
-.lark-doc-share-password-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  width: 372px;
-  height: 32px;
-  margin-top: 24px;
-}
 
 /* ============================================================
  * 8. toast：成功绿 / 校验失败橙（⑤-4 · ⑤-9 两型对照，别都用红色）
  * ============================================================ */
 
+/* 成功 / 复制：414×54，bg rgb(228,250,225)。 */
+
+/* 校验失败：260×54，bg rgb(255,243,229)，rad 6，pad 15px 3px 15px 19px（右侧留 3px 给关闭 ✕）。 */
+/* Mobile viewport bounds; desktop measurements above remain unchanged. */
+
+/* Provider-backed link controls retain compact sizes inside the share surfaces. */
+
+/* Synchronous entry feedback must be styled before the optional UI feature loads.
+ */
+.lark-doc-share-layer {
+  display: inline-block;
+}
 .lark-doc-share-toast {
   position: fixed;
   top: 40px;
@@ -1139,8 +275,6 @@
   font-size: 14px;
   line-height: 22px;
 }
-
-/* 成功 / 复制：414×54，bg rgb(228,250,225)。 */
 .lark-doc-share-toast.is-success {
   width: 414px;
   margin-left: -207px;
@@ -1148,8 +282,6 @@
   border-radius: 6px;
   background: var(--ld-share-toast-success-bg);
 }
-
-/* 校验失败：260×54，bg rgb(255,243,229)，rad 6，pad 15px 3px 15px 19px（右侧留 3px 给关闭 ✕）。 */
 .lark-doc-share-toast.is-warning {
   width: 260px;
   margin-left: -130px;
@@ -1158,7 +290,7 @@
   background: var(--ld-share-toast-warning-bg);
   box-shadow: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 2px 8px 0;
 }
-
-.lark-doc-share-toast-text {
-  padding: 0 32px 0 0;
+@media (max-width: 760px) {
+  .lark-doc-share-toast.is-success,
+.lark-doc-share-toast.is-warning { max-width: calc(100dvw - 24px); height: auto; min-height: 54px; margin-left: 0; transform: translateX(-50%); }
 }

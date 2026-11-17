@@ -1,4 +1,3 @@
-import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import { CellSelection } from '@tiptap/pm/tables'
 import { createPersistenceWorkspace, detectBrowserStorage } from '../providers/persistence'
 import { AI_ACTIONS, AI_CONTEXTS, streamMock, createContextSnapshot, createReviewResult, createToolProposal, mapAnchor, anchorValid } from '../components/lark-doc/mockAI'
@@ -6,34 +5,22 @@ import { normalizeAIProvider, previewToHtml, singleParagraphInner, looksLikeMark
 import { TEMPLATES } from '../components/lark-doc/templates'
 import {
   createLarkDocConfig, isAutoSaveEnabled, resolveAutoSaveDelay,
-  isImportEnabled, isExportEnabled, resolveImportFormatId, resolveMediaOptions,
+  isImportEnabled, isExportEnabled, resolveMediaOptions,
 } from '../components/lark-doc/larkDocConfig'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
-import { sanitizeHTML, validateDocument } from '../components/lark-doc/documentOperations'
+import { validateDocument } from '../components/lark-doc/documentOperations'
 import { migrateRecordContent } from '../core/migrations'
 import { createDerivedSnapshot, validateDerivedSnapshot } from '../core/derive/snapshot'
 import { DOCUMENT_SCHEMA_VERSION } from '../core/documentSchema'
 import { logger } from '../utils/logger'
-import { loadFeature } from '../core/features/registry'
 import { createDocumentSession } from '../session/DocumentSession'
 import { cropImageBlob, normalizeImageCrop, FULL_IMAGE_CROP } from '../core/media/image-crop'
-import { createNetworkPolicy } from '../core/policy/network'
+import { aiNetworkAllows, createNetworkPolicy } from '../core/policy/network'
 import { flattenHeadingContainers, safeUrl } from '../core/documentOperations'
 
 const nextPaintFrame = () => (typeof requestAnimationFrame === 'function'
   ? new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   : Promise.resolve())
-
-function aiNetworkAllows(value, network, base, image = false) {
-  if (typeof value !== 'string' || !value || /[\\\s]/.test(value)) return false
-  let target = value
-  if (target.startsWith('//')) {
-    if (image) return false
-    try { target = new URL(target, base || 'https://local.invalid/').href } catch (_) { return false }
-  }
-  if (image ? !safeUrl(value, true) : (/^[a-z][a-z\d+.-]*:/i.test(target) && (!/^https?:\/\//i.test(target) || !safeUrl(target, true)))) return false
-  return network.allows(target)
-}
 
 export function createWorkspaceState({ initialContent, initialTitle, templates, config }) {
   const templateItems = Array.isArray(templates) ? templates : TEMPLATES
@@ -132,6 +119,17 @@ class WorkspaceController {
   emit(...args) { if (this.host.emit) this.host.emit(...args) }
   confirm(message) { return this.host.confirm ? this.host.confirm(message) : true }
   setContent(content, options) { return this.host.setContent ? this.host.setContent(content, options) : false }
+  async setContentAsync(content, options) {
+    const pendingFile = this._fileImportIntent
+    if (pendingFile && options?.signal !== pendingFile.abort.signal) pendingFile.retire()
+    const fileIntent = this._fileImportIntent
+    const previous = this._asyncImport?.fileIntent === fileIntent ? this._asyncImport?.previous : undefined
+    const job = { previous: previous ?? this.state.importing, fileIntent }
+    this._asyncImport = job
+    this.state.importing = true
+    try { return await (this.host.setContentAsync ? this.host.setContentAsync(content, options) : this.setContent(content, options)) }
+    finally { if (this._asyncImport === job) { this._asyncImport = null; if (!this._disposed && (!fileIntent || this._fileImportIntent === fileIntent)) this.state.importing = job.previous } }
+  }
   focus() { if (this.host.focus) this.host.focus() }
   getHTML() { return this.host.getHTML ? this.host.getHTML() : '' }
   getExportHTML() { return applyMediaHtmlMode(this.getHTML(), resolveMediaOptions(this.state.editorConfig)) }
@@ -182,43 +180,80 @@ class WorkspaceController {
 
   getSession() { return this.state.sessionInstance || this.props.session }
 
+  checkInitialization() { this._initialPersistenceLoad?.check() }
+
   async onReady() {
+    this._initialPersistenceLoad?.retire()
     this.getSession()?.attachEditor(this.getEditor(), this.host.getDocumentAccess?.())
     if (this.props.initialContent && typeof this.props.initialContent === 'object' && !this._contentSeeded) {
       this._contentSeeded = true
       try { this.setContent(this.props.initialContent) } catch (error) { this.storageFailure(error) }
     }
-    if (this.featureEnabled('persistence')) {
-      try {
-        const draft = await this.callWorkspace('load')
-        if (this._disposed) return
-        const preserved = this.props._preserveRuntimeState || {}
-        const restoreDraft = draft && (!preserved.content || !preserved.title)
-        if (draft && !preserved.content) {
-          const editor = this.getEditor()
-          const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), editor.schema)
-          if (this.host.hydrateOutline && this.host.hydrateOutline(validateDerivedSnapshot(draft.derived, content)?.outline)) await nextPaintFrame()
-          if (this._disposed) return
-          this.setContent(content)
-        }
-        if (draft && !preserved.title) this.state.title = draft.title
-        this.state.saveStatus = restoreDraft
-          ? `已恢复${this.persistenceLabel()}草稿`
-          : (this.props.persistence ? '宿主适配器 · 尚未保存' : '本地示例 · 尚未保存')
-      } catch (error) { this.storageFailure(error) }
-    } else this.state.saveStatus = '本地保存已关闭'
-    this.state.initialized = true
-    const editor = this.getEditor()
-    if (editor && this.host.bindAITransaction) this.host.bindAITransaction(this.mapAI)
-    if (this.host.addBeforeUnload) this.host.addBeforeUnload(this.flushOnLeave)
-    logger.info('lifecycle', 'lark-doc.workspace.ready', { status: this.props.persistence ? 'host' : 'local' })
-    // `ready` 必须在 `new LarkDoc()` 返回之后派发：宿主常在回调里访问刚创建的门面实例
-    // （例如 instance.getHTML() 写宿主草稿）。关掉 persistence 后 onReady() 内没有
-    // `await load()`，若这里同步 emit，回调会在构造函数执行期间触发，宿主拿到的还是 null。
-    // 统一补一个微任务边界，让两种持久化配置下的 ready 时序一致。
-    await Promise.resolve()
-    if (this._disposed) return
-    this.emit('ready', { editor, document: this.host.documentApi || this })
+    const scope = this._capturePersistenceScope(), initialEditor = this.getEditor(), initialDoc = initialEditor?.state.doc, initialTitle = this.state.title
+    const retired = Symbol('retired draft load'), stops = []
+    let cancelLoad
+    const cancellation = new Promise(resolve => { cancelLoad = () => resolve(retired) })
+    const load = { completed: false, retired: false,
+      check: () => { if (!scope.current()) load.retire() },
+      retire: () => {
+        if (load.retired) return
+        load.retired = true; cancelLoad()
+        // The old provider may never settle. Finish this live instance's setup,
+        // while the race below prevents its draft from becoming current again.
+        finish()?.catch(() => {})
+      },
+    }
+    const finish = () => {
+      if (load.completed) return load.completion
+      load.completed = true
+      load.completion = (async () => {
+        if (this._disposed || this._initialPersistenceLoad !== load || this.getEditor()?.isDestroyed) return
+        this.state.initialized = true
+        const editor = this.getEditor()
+        if (editor && this.host.bindAITransaction) this.host.bindAITransaction(this.mapAI)
+        if (this.host.addBeforeUnload) this.host.addBeforeUnload(this.flushOnLeave)
+        logger.info('lifecycle', 'lark-doc.workspace.ready', { status: this.props.persistence ? 'host' : 'local' })
+        // Always dispatch after construction, including disabled or retired loads.
+        await Promise.resolve()
+        if (!this._disposed && this._initialPersistenceLoad === load && !this.getEditor()?.isDestroyed) this.emit('ready', { editor: this.getEditor(), document: this.host.documentApi || this })
+      })()
+      return load.completion
+    }
+    this._initialPersistenceLoad = load
+    for (const event of ['identity', 'comments-reset', 'capabilities', 'provider-changed', 'connection']) {
+      const stop = scope.session?.on?.(event, load.check)
+      if (typeof stop === 'function') stops.push(stop)
+    }
+    const stopEditor = scope.session?.on?.('editor', editor => { if (editor !== initialEditor) load.retire(); else load.check() })
+    if (typeof stopEditor === 'function') stops.push(stopEditor)
+    initialEditor?.on?.('destroy', load.retire)
+    stops.push(() => initialEditor?.off?.('destroy', load.retire))
+    try {
+      if (scope.enabled) {
+        try {
+          const draft = await Promise.race([this.callWorkspace('load'), cancellation])
+          if (draft === retired || load.retired || !scope.current()) return
+          const preserved = this.props._preserveRuntimeState || {}
+          let restored = false
+          if (draft && !preserved.content && this.getEditor()?.state.doc === initialDoc) {
+            const editor = this.getEditor()
+            const content = validateDocument(migrateRecordContent(draft.json, draft.schemaVersion), editor.schema)
+            if (this.host.hydrateOutline && this.host.hydrateOutline(validateDerivedSnapshot(draft.derived, content)?.outline)) await nextPaintFrame()
+            if (!scope.current()) return
+            if (editor.state.doc === initialDoc) { this.setContent(content); restored = true }
+          }
+          if (!scope.current()) return
+          if (draft && !preserved.title && this.state.title === initialTitle) { this.state.title = draft.title; restored = true }
+          if (!scope.current()) return
+          this.state.saveStatus = restored
+            ? `已恢复${this.persistenceLabel()}草稿`
+            : (this.props.persistence ? '宿主适配器 · 尚未保存' : '本地示例 · 尚未保存')
+        } catch (error) { if (scope.current()) this.storageFailure(error) }
+      } else this.state.saveStatus = '本地保存已关闭'
+    } finally {
+      try { await finish() }
+      finally { stops.splice(0).forEach(stop => stop()); scope.release(); if (this._initialPersistenceLoad === load) this._initialPersistenceLoad = null }
+    }
   }
 
   record() {
@@ -231,7 +266,7 @@ class WorkspaceController {
     const editor = this.getEditor()
     const doc = editor && editor.state && editor.state.doc
     if (doc) {
-      const derived = createDerivedSnapshot(doc)
+      const derived = createDerivedSnapshot(editor.storage?.larkDoc?.pagedView?.logicalDocument(doc) || doc)
       if (derived) base.derived = derived
     }
     return base
@@ -248,13 +283,40 @@ class WorkspaceController {
   }
 
   getWorkspace() {
-    if (!this._workspace) {
-      this._workspace = this.getSession()?.getProvider('persistence') || this.props.persistence ||
-        createPersistenceWorkspace({ ...detectBrowserStorage(this.getWindow()), maxSnapshots: this.state.editorConfig.limits.maxSnapshots })
-      this.state.storageKind = this._workspace.kind || ''
-      if (!this.getSession()?.getProvider('persistence')) this.getSession()?.setProvider('persistence', this._workspace)
-    }
-    return this._workspace
+    const session = this.getSession(), provider = session?.getProvider('persistence'), installed = this._workspaceInstalled
+    const managed = !!installed && installed.session === session && installed.workspace === provider
+    let source = provider || this.props.persistence
+    const limit = this.state.editorConfig.limits.maxSnapshots
+    if (managed && this.props.persistence !== installed.configured) source = this.props.persistence
+    if (managed && installed.generated && limit !== installed.limit) source = null
+    if (!source && !session && this._workspaceFallback?.limit === limit) source = this._workspaceFallback.workspace
+    const workspace = source || createPersistenceWorkspace({ ...detectBrowserStorage(this.getWindow()), maxSnapshots: limit })
+    this._workspace = workspace
+    this.state.storageKind = workspace.kind || ''
+    if (session && (!provider || managed && workspace !== provider)) {
+      session.setProvider('persistence', workspace)
+      this._workspaceInstalled = { session, workspace, configured: this.props.persistence, generated: !source, limit }
+    } else if (!managed) this._workspaceInstalled = null
+    if (!session && !source) this._workspaceFallback = { workspace, limit }
+    return workspace
+  }
+
+  _capturePersistenceScope() {
+    const enabled = this.featureEnabled('persistence'), workspace = enabled ? this.getWorkspace() : null
+    const session = this.getSession(), editor = this.getEditor(), provider = session?.getProvider?.('persistence')
+    const features = this.state.editorConfig.features, configured = this.props.persistence
+    const key = () => JSON.stringify([session?.documentId, this.props.documentId, session?.user?.id, this.props.user?.id,
+      session?._identityGeneration, session?._privateIdentityGeneration, session?._authorizationGeneration])
+    const captured = key()
+    let retired = false
+    const stop = session?.on?.('provider-changed', event => { if (event?.name === 'persistence') retired = true })
+    return { enabled, workspace, session, current: () => !retired && !this._disposed && !session?._destroyed && !editor?.isDestroyed
+      && session === this.getSession() && editor === this.getEditor()
+      && provider === session?.getProvider?.('persistence') && configured === this.props.persistence
+      && features === this.state.editorConfig.features && enabled === this.featureEnabled('persistence')
+      && (typeof session?._identityCurrent !== 'function' || session._identityCurrent())
+      && (!enabled || typeof session?.can !== 'function' || session.can('canView')) && captured === key(),
+    release: () => { if (typeof stop === 'function') stop() } }
   }
 
   callWorkspace(method, ...args) {
@@ -281,6 +343,7 @@ class WorkspaceController {
   }
 
   queueSave() {
+    this.checkInitialization()
     if (!this.featureEnabled('persistence') || !this.state.initialized || this.state.storageError || this._disposed) return
     if (!this._scheduleSaveTimer()) this.state.saveStatus = '自动保存已关闭'
   }
@@ -320,19 +383,24 @@ class WorkspaceController {
   flushOnLeave() { void this.saveNow() }
 
   async saveNow(manual = false) {
+    this.checkInitialization()
     if (!this.featureEnabled('persistence')) return
     clearTimeout(this._saveTimer)
+    if (this.state.importing || this.getEditor()?.storage?.larkDoc?.pagedImport) return false
     if (!this.state.initialized || !this.getEditor() || (!manual && this.state.storageError)) return
     const generation = ++this._saveGeneration
+    let scope
     try {
+      scope = this._capturePersistenceScope()
       await this.callWorkspace('save', this.record())
-      if (generation !== this._saveGeneration || this._disposed) return
+      if (generation !== this._saveGeneration || !scope.current()) return
       this.state.storageError = false
       this.state.storageKind = this._workspace?.kind || this.state.storageKind
       this.state.saveStatus = `已保存到${this.persistenceLabel()}${this.persistenceCaveat()} ${new Date().toLocaleTimeString()}`
       logger.info('storage', 'lark-doc.draft.saved', { status: this.props.persistence ? 'host' : 'local', kind: this.state.storageKind })
       this.emit('save', { status: 'saved', manual, target: this.persistenceLabel(), kind: this.state.storageKind, savedAt: Date.now() })
-    } catch (error) { if (generation === this._saveGeneration && !this._disposed) this.storageFailure(error) }
+    } catch (error) { if (generation === this._saveGeneration && !this._disposed && (!scope || scope.current())) this.storageFailure(error) }
+    finally { scope?.release() }
   }
 
   storageFailure(error) {
@@ -410,66 +478,57 @@ class WorkspaceController {
     if (!isImportEnabled(this.state.editorConfig)) return
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
-    if (!file || !this.writable()) return
-    // `state.importing` is reflected by the editor host as a temporary lock while the
-    // file is being read. Capture the editor before that lock so the post-read guard
-    // can distinguish a real readonly transition from our own import busy state.
+    if (this._fileImportIntent && !this._fileImportIntent.current()) this._fileImportIntent.retire()
+    if (!file || this.state.importing || !this.writable()) return
     const importingEditor = this.getEditor()
     if (!importingEditor || !importingEditor.isEditable) return
-    if (file.size > 10 * 1024 * 1024) { this.state.notice = '导入文件不能超过 10 MB'; return }
-    const format = resolveImportFormatId(this.state.editorConfig, file.name.split('.').pop())
-    if (!format) {
-      this.state.notice = `不支持的文件格式，可导入：${this.state.editorConfig.importExport.importFormats.join(' / ').toUpperCase()}`
-      return
+    const session = this.getSession(), initialDoc = importingEditor.state.doc
+    const providers = ['identity', 'authorization', 'security'].map(name => session?.getProvider?.(name))
+    const scope = () => JSON.stringify([this.props.documentId, session?.documentId, this.props.user?.id, session?.user?.id,
+      session?._identityGeneration, session?._privateIdentityGeneration, session?._authorizationGeneration])
+    const key = scope(), abort = new AbortController(), cancelled = Symbol('retired file import'), stops = []
+    let cancelWait
+    const cancellation = new Promise(resolve => { cancelWait = () => resolve(cancelled) })
+    const intent = {
+      file, editor: importingEditor, abort, closed: false, committing: false,
+      current: () => !intent.closed && this._fileImportIntent === intent && !this._disposed && !importingEditor.isDestroyed
+        && this.getEditor() === importingEditor && this.getSession() === session && !session?._destroyed
+        && this.state.mode !== 'read' && !this.state.forcedReadonly && isImportEnabled(this.state.editorConfig)
+        && (typeof session?._identityCurrent !== 'function' || session._identityCurrent())
+        && (typeof session?.can !== 'function' || session.can('canView') && session.can('canEdit'))
+        && key === scope() && providers.every((provider, index) => provider === session?.getProvider?.(['identity', 'authorization', 'security'][index])),
+      wait: async promise => {
+        const value = await Promise.race([promise, cancellation])
+        if (value === cancelled || !intent.current()) throw Object.assign(new Error('导入已取消'), { name: 'AbortError' })
+        return value
+      },
     }
+    const release = cancelled => {
+      if (intent.closed) return
+      intent.closed = true
+      if (cancelled) abort.abort()
+      cancelWait(); stops.splice(0).forEach(stop => stop())
+      if (this._fileImportIntent === intent) { this._fileImportIntent = null; if (!this._disposed) this.state.importing = false }
+    }
+    intent.retire = () => release(true)
+    this._fileImportIntent = intent
+    const check = () => { if (!intent.current() || !intent.committing && importingEditor.state.doc !== initialDoc) intent.retire() }
+    for (const event of ['identity', 'comments-reset', 'capabilities', 'provider-changed', 'connection']) {
+      const stop = session?.on?.(event, check)
+      if (typeof stop === 'function') stops.push(stop)
+    }
+    importingEditor.on('transaction', check); importingEditor.on('editableUpdate', check); importingEditor.on('destroy', intent.retire)
+    stops.push(() => importingEditor.off('transaction', check), () => importingEditor.off('editableUpdate', check), () => importingEditor.off('destroy', intent.retire))
     this.state.importing = true
     try {
-      let content
-      let importedTitle
-      if (format === 'docx') {
-        const mammoth = await loadFeature('office.mammoth', () => import(/* webpackChunkName: "office" */ 'mammoth/mammoth.browser'))
-        const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() })
-        content = sanitizeHTML(result.value)
-      } else {
-        const text = await file.text()
-        if (format === 'json') {
-          const value = JSON.parse(text)
-          content = validateDocument(migrateRecordContent(value.document || value, value.schemaVersion), this.getEditor().schema)
-          if (typeof value.title === 'string') importedTitle = value.title
-        } else if (format === 'html') content = sanitizeHTML(text)
-        else if (format === 'md') {
-          const { markdownToHtml } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
-          content = sanitizeHTML(await markdownToHtml(text))
-        } else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
-      }
-      const activeEditor = this.getEditor()
-      // The host aliases `readonly` to `source.importing`, so `effectiveReadonly` is
-      // intentionally true during this read. Only abort for an actual read mode or a
-      // forced readonly prop; otherwise every import would self-cancel here.
-      const actuallyReadonly = this.state.mode === 'read' || this.state.forcedReadonly
-      if (this._disposed || !activeEditor || activeEditor.isDestroyed || actuallyReadonly) return
-      if (typeof content === 'string') {
-        const container = (this.getWindow().document || document).createElement('div')
-        container.innerHTML = content
-        const parsed = ProseMirrorDOMParser.fromSchema(this.getEditor().schema).parse(container)
-        content = validateDocument(parsed.toJSON(), this.getEditor().schema)
-        let hasContent = false
-        parsed.descendants(node => { if (node.isText ? node.text.trim() : !node.isTextblock && node.type.name !== 'hardBreak') hasContent = true })
-        if (!hasContent) throw new Error('文件未包含可导入的正文或内容块')
-      }
-      if (!this.confirm('导入并替换当前正文？原正文可通过撤销恢复。')) return
-      this.closeAI()
-      this.setContent(content)
-      if (importedTitle !== undefined) this.state.title = importedTitle
-      this.state.notice = format === 'docx' || format === 'md' ? '导入完成；复杂布局按正文格式降级，请检查内容' : '导入完成'
-      logger.info('import', 'lark-doc.document.imported', { format, status: 'success' })
-    } catch (error) {
-      if (!this._disposed) this.state.notice = `导入失败，原正文未替换：${error.message}`
-      logger.warn('import', 'lark-doc.document.rejected', { status: 'failed' })
-    } finally { if (!this._disposed) this.state.importing = false }
+      const { importWorkspaceFile } = await intent.wait(import('../editor/pagedDocumentSource'))
+      if (intent.current()) return await importWorkspaceFile(this, file, importingEditor)
+    } catch (error) { if (intent.current() && error.name !== 'AbortError') this.state.notice = `导入失败：${error.message}` }
+    finally { release(false) }
   }
 
   async exportDocument(format) {
+    if (this.state.importing || this.getEditor()?.storage?.larkDoc?.pagedImport) return false
     if (!isExportEnabled(this.state.editorConfig) || !format) return
     if (!this.state.editorConfig.importExport.exportFormats.includes(format)) return
     if (format === 'docx') return this.exportWordDocument()
@@ -581,6 +640,9 @@ class WorkspaceController {
   createAIChatScope() {
     const session = this.getSession()
     return { editor: this.getEditor(), session, sessionDocumentId: session?.documentId, documentId: this.props.documentId,
+      actor: session?.user?.id, user: this.props.user?.id, identity: session?._identityGeneration,
+      privateIdentity: session?._privateIdentityGeneration, authorization: session?._authorizationGeneration,
+      identityProvider: session?.getProvider?.('identity'), authorizationProvider: session?.getProvider?.('authorization'), security: session?.getProvider?.('security'),
       provider: this.host.getAIProvider ? this.host.getAIProvider() : this.props.aiProvider, network: JSON.stringify(this.state.editorConfig.network) }
   }
 
@@ -590,8 +652,23 @@ class WorkspaceController {
       && this.writable() && this.featureEnabled('ai') && this.getEditor() === scope.editor
       && session === scope.session && session?.documentId === scope.sessionDocumentId && this.props.documentId === scope.documentId
       && (typeof session?.can !== 'function' || (session.can('canView') && session.can('canEdit')))
+      && (typeof session?._identityCurrent !== 'function' || session._identityCurrent())
+      && session?.user?.id === scope.actor && this.props.user?.id === scope.user && session?._identityGeneration === scope.identity
+      && session?._privateIdentityGeneration === scope.privateIdentity && session?._authorizationGeneration === scope.authorization
+      && session?.getProvider?.('identity') === scope.identityProvider && session?.getProvider?.('authorization') === scope.authorizationProvider && session?.getProvider?.('security') === scope.security
       && scope.provider === (this.host.getAIProvider ? this.host.getAIProvider() : this.props.aiProvider)
       && scope.network === JSON.stringify(this.state.editorConfig.network)
+  }
+
+  _retireAIResult() {
+    this.closeAI(false)
+    this.state.aiPreview = ''; this.state.aiPrompt = ''; this.state.aiMessages = []; this.state.aiError = ''
+  }
+
+  _aiResultCurrent() {
+    if (this._aiOwnerScope && this.aiChatScopeValid(this._aiOwnerScope)) return true
+    this._retireAIResult()
+    return false
   }
 
   getAIChatAdapter() {
@@ -713,6 +790,7 @@ class WorkspaceController {
   }
 
   syncImageAI() {
+    if (this._aiOwnerScope && !this.aiChatScopeValid(this._aiOwnerScope)) { this._retireAIResult(); return }
     if (this.state.aiSelectionChat) {
       if (!this.aiChatScopeValid(this._aiChatScope)) this.closeAI(false)
       else if (!this.selectionAIReferenceValid()) this.removeAIReference('引用的内容已改变，请重新选择后提问。')
@@ -771,6 +849,16 @@ class WorkspaceController {
     if (!this.featureEnabled('ai') || !this.writable()) return
     if ((this.state.aiImageChat || this.state.aiSelectionChat) && !options.context) this.closeAI(false)
     this.stopAI()
+    this._aiOwnerOffs?.splice(0).forEach(stop => stop())
+    const ownerScope = options.chatScope || this.createAIChatScope()
+    if (!this.aiChatScopeValid(ownerScope)) { this._retireAIResult(); return }
+    this._aiOwnerScope = ownerScope
+    const checkOwner = () => { if (this._aiOwnerScope === ownerScope && !this.aiChatScopeValid(ownerScope)) this._retireAIResult() }
+    this._aiOwnerOffs = ['identity', 'comments-reset', 'capabilities', 'provider-changed', 'connection']
+      .map(event => ownerScope.session?.on?.(event, checkOwner)).filter(stop => typeof stop === 'function')
+    const retireEditor = () => { if (this._aiOwnerScope === ownerScope) this._retireAIResult() }
+    ownerScope.editor.on?.('editableUpdate', checkOwner); ownerScope.editor.on?.('destroy', retireEditor)
+    this._aiOwnerOffs.push(() => ownerScope.editor.off?.('editableUpdate', checkOwner), () => ownerScope.editor.off?.('destroy', retireEditor))
     const allowed = AI_ACTIONS.some(item => item.value === action)
     const previewAction = action === 'chat' ? 'chat' : (allowed ? action : 'rewrite')
     if (previewAction !== 'chat') this.state.aiAction = previewAction
@@ -793,7 +881,8 @@ class WorkspaceController {
     const chatScope = options.chatScope
     const reference = this._aiSelectionReference
     const current = () => {
-      if (settled || this._disposed || generation !== this._aiGeneration) return false
+      if (settled || this._disposed || generation !== this._aiGeneration || this._aiOwnerScope !== ownerScope) return false
+      if (!this.aiChatScopeValid(ownerScope)) { this._retireAIResult(); return false }
       if (chatScope && !this.aiChatScopeValid(chatScope)) { this.closeAI(false); return false }
       if (chatScope && reference && !this.selectionAIReferenceValid(reference)) { this.removeAIReference('引用的内容已改变，请重新选择后提问。'); return false }
       return true
@@ -830,7 +919,7 @@ class WorkspaceController {
         const stream = typeof handle === 'function' ? { cancel: handle } : (handle || { cancel() {} })
         // Provider errors are displayed by onError; consume the optional completion promise.
         stream.done?.catch?.(() => {})
-        if (this._disposed || generation !== this._aiGeneration || !this.state.aiOpen) stream.cancel?.()
+        if (this._disposed || generation !== this._aiGeneration || !this.state.aiOpen || this._aiOwnerScope !== ownerScope || !this.aiChatScopeValid(ownerScope)) stream.cancel?.()
         else this._aiStream = stream
       } catch (error) { callbacks.onError(error) }
     } else if (options.requireProvider) {
@@ -925,6 +1014,8 @@ class WorkspaceController {
   }
 
   closeAI(focus = true) {
+    this._aiOwnerOffs?.splice(0).forEach(stop => stop())
+    this._aiOwnerScope = null
     this.stopAI()
     this.state.aiChatEpoch = Number(this.state.aiChatEpoch || 0) + 1
     if (this.state.aiImageChat || this.state.aiSelectionChat) {
@@ -955,8 +1046,9 @@ class WorkspaceController {
 
   async copyAIPreview() {
     if (!this.state.aiPreview) return
-    const generation = this._aiGeneration, scope = this._aiChatScope || this._aiImageScope
-    const current = () => !this._disposed && generation === this._aiGeneration && (!scope || this.aiChatScopeValid(scope))
+    if (!this._aiResultCurrent()) return
+    const generation = this._aiGeneration, scope = this._aiOwnerScope
+    const current = () => !this._disposed && generation === this._aiGeneration && scope === this._aiOwnerScope && this.aiChatScopeValid(scope)
     if (!current()) { if (scope) this.closeAI(false); return }
     try {
       const clipboard = this.getNavigator().clipboard
@@ -967,6 +1059,7 @@ class WorkspaceController {
   }
 
   acceptAI(mode = 'replace') {
+    if (!this._aiResultCurrent()) return false
     if (this.state.aiImageChat) return
     if (this.state.aiSelectionChat) {
       this.syncImageAI()
@@ -1026,6 +1119,7 @@ class WorkspaceController {
   }
 
   acceptReviewIssue(issue) {
+    if (!this._aiResultCurrent()) return false
     if (!issue || !this.writable() || this.state.aiRunning || !this._aiAnchor) return
     const editor = this.getEditor()
     if (!anchorValid(this._aiAnchor, editor.state.doc)) {
@@ -1047,6 +1141,7 @@ class WorkspaceController {
   ignoreReviewIssue(id) { this.state.aiReviewIssues = this.state.aiReviewIssues.filter(issue => issue.id !== id) }
 
   applyAIProposal() {
+    if (!this._aiResultCurrent()) return false
     if (!this.state.aiProposal || !this.writable()) return
     const content = this.state.aiProposal.operations[0]?.content
     if (!content) return
@@ -1066,6 +1161,7 @@ class WorkspaceController {
   dispose() {
     if (this._disposed) return
     this._disposed = true
+    this._initialPersistenceLoad?.retire()
     this.closeAI(false)
     void this.saveNow()
     clearTimeout(this._saveTimer)

@@ -310,6 +310,28 @@ describe('P7-01 脏区增量重扫与全量重建等价', () => {
     }, { mode: 'rebuild' })
   })
 
+  it('前一列表增项后，跨正文的继续编号链同步更新且增量与全量相同', () => {
+    const ordered = (id, continueFrom = false) => ({ type: 'orderedList', attrs: { continueFrom }, content: [{ type: 'listItem', content: [p(id, { blockId: id })] }] })
+    const base = EditorState.create({ schema, doc: schema.nodeFromJSON({ type: 'doc', content: [ordered('first'), p('间隔'), ordered('second', true), p('间隔'), ordered('third', true)] }) })
+    const storage = fakeStorage(), { index } = buildIndex(base, storage)
+    index.decorations(base)
+    const item = schema.nodes.listItem.create(null, [schema.nodes.paragraph.create({ blockId: 'new-item' }, schema.text('新增'))])
+    const tr = base.tr.insert(base.doc.child(0).nodeSize - 1, item), next = base.apply(tr)
+    index.update(tr)
+    const hot = index.decorations(next)
+    expect(project(hot)).toEqual(project(createDocumentDecorations({ state: next, ...buildContext(storage) })))
+    const numbers = hot.find().filter(d => String(d.type.spec?.key || '').startsWith('lark-doc-list-number')).map(labelOf)
+    expect(numbers).toEqual(['1.', '2.', '3.', '4.'])
+  })
+
+  it('标题级别变化后章节折叠的增量结果仍与全量一致', () => {
+    expectEquivalentAfter((state) => {
+      let at = null
+      state.doc.descendants((node, pos) => { if (at === null && node.type.name === 'heading') at = pos })
+      return state.tr.setNodeMarkup(at, null, { ...state.doc.nodeAt(at).attrs, level: 1 })
+    }, { mode: 'rebuild' })
+  })
+
   it('粘贴多块内容：属结构变更，退回全量重建', () => {
     expectEquivalentAfter((state) => {
       const pos = posOf(state.doc, 'p1')

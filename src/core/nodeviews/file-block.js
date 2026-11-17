@@ -119,8 +119,16 @@ export function createFileBlockNodeView(props) {
     // 它已经是本地透明占位，不会发请求。
     if (safeFileUrl(attrs().coverUrl)) video.setAttribute('poster', attrs().coverUrl)
     // 解码失败 = 视频兜底态（③-octies B 段：45MB mp4 落的块高 268、文案换掉、下载仍在）。
-    video.addEventListener('loadeddata', () => { status = STATUS.READY; syncPreview() })
-    video.addEventListener('error', () => { status = STATUS.ERROR; syncPreview() })
+    video.addEventListener('loadeddata', () => {
+      if (video !== media) return
+      status = STATUS.READY
+      syncPreview()
+    })
+    video.addEventListener('error', () => {
+      if (video !== media) return
+      status = STATUS.ERROR
+      syncPreview()
+    })
     return video
   }
 
@@ -311,11 +319,14 @@ export function createFileBlockNodeView(props) {
     update(newNode) {
       if (!newNode || !newNode.type || newNode.type.name !== currentNode.type.name) return false
       // 换源才复位状态机，否则上一份的 error 会粘住新文件。
-      // 两侧都归一到 null 再比：Tiptap 创建后紧跟的那次 `update()` 会把「未传 src（undefined）」
-      // 补成默认的 null，直接比会让「没换源」被误判成换源（→ 白白重换一次票）。
+      // src/token 两侧都归一到 null 再比，避免 schema 补默认值被误判成换源。
       const previousSrc = attrs().src || null
+      const previousToken = attrs().token || null
       currentNode = newNode
-      if (previousSrc !== (attrs().src || null)) { status = STATUS.LOADING; resolvedSrc = null; attemptedToken = null }
+      if (previousSrc !== (attrs().src || null) || previousToken !== (attrs().token || null)) {
+        generation += 1
+        status = STATUS.LOADING; resolvedSrc = null; attemptedToken = null
+      }
       syncAll()
       maybeResolveToken()
       return true

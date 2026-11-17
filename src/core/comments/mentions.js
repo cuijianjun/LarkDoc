@@ -39,7 +39,11 @@ export function normalizeCommentMetadata(content, mentions = [], references = []
 
 export function commentMentionSegments(content, mentions = [], references = []) {
   let safe
-  try { const value = normalizeCommentMetadata(content, mentions, references, true); safe = [...value.mentions, ...value.references].sort((a, b) => a.from - b.from) } catch { return [{ text: content || '' }] }
+  try {
+    const labeledMentions = mentions.map(item => item && item.displayName ? item : { ...item, displayName: content.slice(item.from, item.to).replace(/^@/, '') })
+    const labeledReferences = references.map(item => item && item.displayName ? item : { ...item, displayName: content.slice(item.from, item.to), readable: item.readable !== false })
+    const value = normalizeCommentMetadata(content, labeledMentions, labeledReferences, true); safe = [...value.mentions, ...value.references].sort((a, b) => a.from - b.from)
+  } catch { return [{ text: content || '' }] }
   const result = []; let at = 0
   safe.forEach(value => {
     if (value.from > at) result.push({ text: content.slice(at, value.from) })
@@ -47,6 +51,32 @@ export function commentMentionSegments(content, mentions = [], references = []) 
   })
   if (at < content.length || !result.length) result.push({ text: content.slice(at) })
   return result
+}
+
+/** Read-only projection for server RichText payloads; marks stay data-only until the UI renderer applies them. */
+export function commentRichContentSegments(value) {
+  const result = []
+  let offset = 0
+  const append = segment => { result.push(segment); offset += segment.text.length }
+  const visit = node => {
+    if (!node || typeof node !== 'object') return
+    if (typeof node.text === 'string') { append({ text: node.text, marks: Array.isArray(node.marks) ? node.marks : [] }); return }
+    if (node.type === 'hardBreak') { append({ text: '\n', marks: [] }); return }
+    if (['commentMention', 'commentDocumentReference'].includes(node.type) && typeof node.attrs?.text === 'string') {
+      const attrs = node.attrs
+      append({ text: attrs.text, marks: [],
+        ...(node.type === 'commentMention' && principal(attrs.principalId) ? { principalId: attrs.principalId, from: offset, to: offset + attrs.text.length } : {}),
+        ...(node.type === 'commentDocumentReference' && principal(attrs.docId) ? { docId: attrs.docId, readable: attrs.readable !== false, from: offset, to: offset + attrs.text.length } : {}) })
+      return
+    }
+    if (node.type === 'doc' && Array.isArray(node.content)) {
+      node.content.forEach((child, index) => { if (index) append({ text: '\n', marks: [] }); visit(child) })
+      return
+    }
+    if (Array.isArray(node.content)) node.content.forEach(visit)
+  }
+  visit(value)
+  return result.length ? result : [{ text: '' }]
 }
 
 export function serializeCommentDocument(doc) {

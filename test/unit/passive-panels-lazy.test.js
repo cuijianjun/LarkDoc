@@ -12,6 +12,19 @@ import calloutToolsUiMixin from '../../src/components/lark-doc/editor/calloutToo
 import toolbarMenusMixin from '../../src/components/lark-doc/editor/toolbarMenusMixin'
 import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDismissMixin'
 import readingModeMixin from '../../src/components/lark-doc/editor/readingModeMixin'
+import overlaysUiMixin from '../../src/components/lark-doc/editor/overlaysUiMixin'
+import { registerFeature } from '../../src/core/features/registry'
+
+vi.mock('../../src/ui/overlays', async () => {
+  const actual = await vi.importActual('../../src/ui/overlays')
+  const { createDeferredUi } = await import('../../src/features/element-ui')
+  return { ...actual, createDocumentOverlays: options => createDeferredUi('createDocumentOverlays', options,
+    state => state.sharePopoverOpen || state.permissionDialogOpen || state.secureLinkConfirmOpen || state.passwordDialogOpen || state.exportOpen || state.exportToast || state.exportPendingOperationId || state.imageShare) }
+})
+vi.mock('../../src/ui/notifications', async () => {
+  const { createDeferredUi } = await import('../../src/features/element-ui')
+  return { createNotifications: options => createDeferredUi('createNotifications', options) }
+})
 
 const schema = getSchema(createLarkDocExtensions())
 const hosts = []
@@ -19,10 +32,10 @@ const item = (id = 'r1', text = '新增') => ({ id, text })
 
 async function tick() {
   await Promise.resolve()
-  await Promise.resolve()
+  await vi.dynamicImportSettled()
 }
 
-// 原生 UI 同步装配、按状态挂载；原异步加载窗口对应宿主待 flush 的微任务窗口。
+// 控制器同步装配；按状态启动真实动态模块，等待导入完成后检查原交互与最新状态。
 function mountPanel(options, domain, state, extraRefs = {}) {
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -129,6 +142,55 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+it('keeps denial/entry synchronous and cancels cold notifications without reviving a closed surface', async () => {
+  const root = document.createElement('div'); document.body.append(root)
+  let resolve
+  const loader = vi.fn(() => new Promise(yes => { resolve = yes }))
+  const stop = registerFeature('ui', loader)
+  const context = {}
+  const request = vi.fn(), measure = vi.fn()
+  const close = vi.fn(function () { this.notifyOpen = false })
+  const runtime = createNativeOptionsHost({ options: { mixins: [overlaysUiMixin], methods: {
+    buildOverlaysState() { return { shareViewMaskVisible: this.denied, shareEntryVisible: true, shareEntryLabel: '分享', imageShare: this.imageShare } },
+    notificationContext: () => context, notifyCurrent: value => value === context,
+    requestShareAccess: request, measureNotify: measure,
+    closeNotify: close,
+    closeImageShareDialog: vi.fn(function () { this.imageShare = null }),
+  } }, refs: { root, overlayHost: root }, state: {
+    denied: true, imageShare: null, notifyOpen: false, notifyItems: [], notifyStyle: {}, notifyEmpty: true,
+  } })
+  const vm = runtime.host
+  hosts.push(() => { vm.destroyOverlays(); runtime.destroy(); stop() })
+  vm.mountOverlays(); runtime.mount()
+  const settle = async () => { for (let i = 0; i < 12; i++) await tick() }
+  await settle()
+  expect(root.querySelector('[aria-label="你没有查看权限"]')).not.toBeNull()
+  root.querySelector('.lark-doc-share-mask button').click()
+  expect(request).toHaveBeenCalledOnce()
+  expect(root.querySelector('button[aria-label="分享"]')).not.toBeNull()
+  expect(loader).not.toHaveBeenCalled()
+  vm.denied = false; vm.notifyOpen = true; await settle()
+  expect(loader).toHaveBeenCalledOnce()
+  expect(root.querySelector('.lark-doc-notify-popover')).toBeNull()
+  const foreign = document.createElement('input'); document.body.append(foreign)
+  foreign.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing: true }))
+  expect(close).not.toHaveBeenCalled()
+  root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  expect(close).toHaveBeenCalledWith(true)
+  await settle()
+  const actual = await vi.importActual('../../src/ui/notifications'), factory = vi.fn(actual.createNotifications)
+  // A real UI module registers readiness even if its first surface was closed.
+  hosts.push(registerFeature('ui.ready', () => ({ createNotifications: factory })))
+  resolve({ createNotifications: factory }); await settle()
+  expect(factory).not.toHaveBeenCalled()
+  expect(root.querySelector('.lark-doc-notify-popover')).toBeNull()
+  vm.notifyOpen = true; await settle()
+  expect(factory).toHaveBeenCalledOnce()
+  expect(root.querySelector('.lark-doc-notify-popover')).not.toBeNull()
+  expect(measure).toHaveBeenCalledOnce()
+})
+
 describe('原生被动面板按状态挂载边界', () => {
   it.each([
     ['修订', mountRevision, '_revisionUi', 'mountRevisionPanels', '.lark-doc-revision-panel'],
@@ -212,8 +274,11 @@ describe('RevisionPanel 原生渲染边界', () => {
     await host.ready()
     const ui = host.vm._revisionUi
     const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
-    host.vm.$el.querySelector(`.is-${action}`).dispatchEvent(event)
+    const button = host.vm.$el.querySelector(`.is-${action}`)
+    button.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
+    expect(host.vm.revisionPanels).toHaveLength(1)
+    button.click()
     expect(host.vm.revisionPanels).toEqual([])
     expect(host.engine.state.doc.textContent).toBe(action === 'accept' ? '新增' : '')
     await tick()
@@ -352,6 +417,35 @@ describe('ColorPalette 原生渲染边界', () => {
 })
 
 describe('CalloutTools 按选区原生挂载边界', () => {
+  it('allows native focus only for the exact emoji search while preserving every tool selection guard', async () => {
+    const host = mountCallout()
+    host.select(); await host.ready()
+    const tools = host.vm.$el.querySelector('.lark-doc-callout-tools')
+    tools.querySelector('[aria-label="更换高亮块图标"]').click()
+    await tick()
+    const search = tools.querySelector('[aria-label="搜索高亮块图标"]')
+    const searchDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    expect(search.dispatchEvent(searchDown)).toBe(true)
+    expect(searchDown.defaultPrevented).toBe(false)
+    search.focus()
+    expect(document.activeElement).toBe(search)
+    search.value = 'smile'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(host.vm.calloutEmojiQuery).toBe('smile')
+    expect(host.vm.run).not.toHaveBeenCalled()
+    expect(host.vm.focus).not.toHaveBeenCalled()
+    const foreignInput = document.createElement('input')
+    foreignInput.type = 'search'; tools.appendChild(foreignInput)
+    const guarded = [foreignInput, tools, search.closest('label'),
+      tools.querySelector('.lark-doc-callout-emoji-picker'),
+      ...tools.querySelectorAll('button, input[type="color"]')]
+    for (const control of guarded) {
+      const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      expect(control.dispatchEvent(down)).toBe(false)
+      expect(down.defaultPrevented).toBe(true)
+    }
+  })
+
   it('非高亮块选区不挂载，首次挂载沿用父级定位且不抢焦点', async () => {
     const host = mountCallout()
     const input = document.createElement('input')
@@ -419,5 +513,142 @@ describe('CalloutTools 按选区原生挂载边界', () => {
     host.vm.$el.querySelector('[aria-label="恢复高亮块默认样式"]').click()
     expect(host.vm.run).toHaveBeenCalledTimes(2)
     expect(host.vm.run.mock.calls[1][0]).toBe('updateAttributes')
+  })
+})
+
+describe('native panel presentation boundary', () => {
+  afterEach(() => vi.doUnmock('../../src/ui/panels'))
+  it('keeps outline actions synchronous without evaluating closed panel handlers before their real factory mounts', async () => {
+    const deferred = []
+    vi.doMock('../../src/ui/panels', () => ({
+      createOutlinePanel: options => ({ options, update: vi.fn(), destroy: vi.fn() }),
+      ...Object.fromEntries(['createVersionPanel', 'createSaveVersionDialog', 'createCommentPanel'].map(name => [name, options => {
+        deferred.push({ name, options })
+        return { update: vi.fn(), destroy: vi.fn() }
+      }])),
+    }))
+    const { default: panels } = await import('../../src/components/lark-doc/editor/panelsUiMixin?panel-handlers-cold')
+    const root = document.createElement('div')
+    const select = vi.fn(), jump = vi.fn()
+    const vm = { $refs: { outlineHost: root, panelHost: root }, mountCover: vi.fn(), refreshPanels: vi.fn(),
+      toggleOutlineOpen: vi.fn(), toggleOutline: vi.fn(), jumpHeading: jump, selectVersion: select,
+      panelsHandlers: vi.fn(panels.methods.panelsHandlers), active: 'first' }
+    panels.methods.mountPanels.call(vm)
+    expect(vm.panelsHandlers).not.toHaveBeenCalled()
+    vm._panelsUi.outline.options.handlers.onJump(23)
+    expect(jump).toHaveBeenCalledWith(23)
+    vm.selectVersion = vi.fn()
+    const options = deferred.find(item => item.name === 'createVersionPanel').options
+    options.handlers.onSelect('current')
+    expect(vm.panelsHandlers).toHaveBeenCalledOnce()
+    expect(vm.selectVersion).toHaveBeenCalledWith('current')
+    expect(select).not.toHaveBeenCalled()
+    panels.methods.destroyPanels.call(vm)
+  })
+  it('keeps inline comments, launcher, drafts and real counts available before a presenter is ready', async () => {
+    const { default: panels } = await import('../../src/components/lark-doc/editor/panelsUiMixin')
+    const root = document.createElement('div')
+    const vm = { commentPanels: [{ id: 'selection' }], commentDocumentThreads: [{ id: 'document' }], commentSelectionCount: 1, commentUnread: 2,
+      commentRemote: true, commentSidebarOpen: false, commentDocumentDraft: 'kept draft', commentDocumentMentions: [], commentDocumentReferences: [],
+      commentDocumentLike: { snapshot: { total: '3', liked: true }, pending: '' }, _mobileEditorMedia: { matches: true }, $refs: { root },
+      featureEnabled: () => true, commentCan: () => true, commentAllowed: () => true, commentDocumentCanSubmit: () => true, commentProvider: () => ({ isRemote: true }) }
+    const state = panels.methods.buildCommentVisibility.call(vm)
+    expect(state).toMatchObject({ open: false, documentInline: true, launcher: { visible: true }, documentCount: 1, selectionCount: 1, unread: 2,
+      documentComposer: { value: 'kept draft', canSubmit: true } })
+    expect(vm.commentDocumentDraft).toBe('kept draft')
+    vm.commentCan = () => false
+    expect(panels.methods.buildCommentVisibility.call(vm)).toMatchObject({ open: false, documentInline: false, launcher: { visible: false }, documentCount: 0, selectionCount: 0,
+      documentComposer: { value: '', canSubmit: false } })
+  })
+  it('supplies real synchronous projection methods while retaining async action guards in their original functions', async () => {
+    const { createPanelPresentation } = await import('../../src/components/lark-doc/editor/panelPresentation')
+    const api = createPanelPresentation({ commentModel: {}, supportsDocumentAction: () => false,
+      formatDocumentCommentTime: () => 'time', openCommentDocumentTarget: () => false })
+    expect(api).not.toBeInstanceOf(Promise)
+    expect(Object.keys(api.methods)).toEqual(['panelsHandlers', 'buildVersionState', 'buildVersionPreviewState', 'buildSaveVersionState', 'buildCommentState'])
+    expect(api.computed.commentPanelTitle.call({ ed: {} })).toBe('评论')
+    const vm = { saveVersionOpen: true, versionNotice: '', saveVersionDialogTitle: '保存点击时的版本', saveVersionName: 'kept', versionCanCreate: true,
+      saveVersionBusy: false, versionDisabledStyle: () => null }
+    expect(api.methods.buildSaveVersionState.call(vm)).toMatchObject({ open: true, title: '保存点击时的版本', value: 'kept', confirm: { disabled: false } })
+    const event = { target: { files: [], value: '' } }
+    const work = api.commentPanelMethods.uploadCommentImageFiles.call({ ed: { commentCanUploadImage: () => false } }, 'document', event)
+    expect(work).toBeInstanceOf(Promise)
+    await work
+  })
+  it('reprojects after a real panel becomes ready and ignores a retired panel callback', async () => {
+    const factories = []
+    vi.doMock('../../src/ui/panels', () => {
+      const create = options => { const ui = { options, update: vi.fn(), destroy: vi.fn() }; factories.push(ui); return ui }
+      return { createOutlinePanel: create, createVersionPanel: create, createSaveVersionDialog: create, createCommentPanel: create }
+    })
+    const { default: panels } = await import('../../src/components/lark-doc/editor/panelsUiMixin?panel-presentation-ready')
+    const root = document.createElement('div')
+    const vm = { $refs: { outlineHost: root, panelHost: root }, panelPresentationRevision: 0,
+      panelsHandlers: () => ({ outline: {}, version: {}, saveVersion: {}, comment: {} }), mountCover: vi.fn(), refreshPanels: vi.fn() }
+    panels.methods.mountPanels.call(vm)
+    expect(vm.refreshPanels).toHaveBeenCalledOnce()
+    const ready = factories.filter(ui => typeof ui.options.onReady === 'function').map(ui => ui.options.onReady)
+    expect(ready).toHaveLength(3)
+    ready.forEach(callback => callback())
+    expect(vm.panelPresentationRevision).toBe(3)
+    expect(vm.refreshPanels).toHaveBeenCalledTimes(4)
+    const original = vm._panelsUi
+    vm._panelsUi = {}
+    ready[0]()
+    vm._panelsUi = original; vm._isDestroyed = true
+    ready[1]()
+    expect(vm.panelPresentationRevision).toBe(3)
+    expect(vm.refreshPanels).toHaveBeenCalledTimes(4)
+  })
+
+})
+
+
+describe('callout label presentation readiness', () => {
+  afterEach(() => vi.doUnmock('../../src/ui/calloutTools'))
+
+  it('reprojects only the live tools handle and never reopens or focuses a canceled picker', async () => {
+    const factories = []
+    vi.doMock('../../src/ui/calloutTools', () => ({ createCalloutTools: options => {
+      const ui = { options, update: vi.fn(), destroy: vi.fn() }; factories.push(ui); return ui
+    } }))
+    const { default: mixin } = await import('../../src/components/lark-doc/editor/calloutToolsUiMixin?label-presentation-ready')
+    const root = document.createElement('div')
+    const vm = { $refs: { calloutToolsHost: root }, calloutPresentationRevision: 0,
+      calloutEmojiOpen: true, calloutEmojiQuery: 'pending query', refreshCalloutTools: vi.fn(), focus: vi.fn() }
+    mixin.methods.mountCalloutTools.call(vm)
+    const first = factories[0]
+    expect(first.options.onReady).toBeTypeOf('function')
+    vm.calloutEmojiOpen = false; vm.calloutEmojiQuery = ''
+    first.options.onReady()
+    expect(vm.calloutPresentationRevision).toBe(1)
+    expect(vm.refreshCalloutTools).toHaveBeenCalledTimes(2)
+    expect(vm.calloutEmojiOpen).toBe(false)
+    expect(vm.calloutEmojiQuery).toBe('')
+    expect(vm.focus).not.toHaveBeenCalled()
+    mixin.methods.destroyCalloutTools.call(vm)
+    mixin.methods.mountCalloutTools.call(vm)
+    first.options.onReady()
+    expect(vm.calloutPresentationRevision).toBe(1)
+    vm._isBeingDestroyed = true
+    factories[1].options.onReady()
+    vm._isBeingDestroyed = false; vm._isDestroyed = true
+    factories[1].options.onReady()
+    expect(vm.calloutPresentationRevision).toBe(1)
+    expect(vm.refreshCalloutTools).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not evaluate UI labels while the picker is closed or edit permission is denied', () => {
+    const categories = vi.fn(() => ['笑脸']), items = vi.fn(() => [{ value: 'smile', glyph: '😄' }])
+    const vm = { activeCalloutVisible: true, featureEnabled: () => true, effectiveReadonly: false,
+      calloutEmojiOpen: false, calloutToolsStyle: {}, calloutColor: () => '',
+      get calloutEmojiCategories() { return categories() }, get filteredCalloutEmojiItems() { return items() } }
+    expect(calloutToolsUiMixin.methods.buildCalloutToolsState.call(vm)).toMatchObject({ visible: true, emojiOpen: false, categories: [], items: [] })
+    expect(categories).not.toHaveBeenCalled(); expect(items).not.toHaveBeenCalled()
+    vm.calloutEmojiOpen = true
+    expect(calloutToolsUiMixin.methods.buildCalloutToolsState.call(vm)).toMatchObject({ categories: ['笑脸'], items: [{ value: 'smile', glyph: '😄' }] })
+    vm.effectiveReadonly = true
+    expect(calloutToolsUiMixin.methods.buildCalloutToolsState.call(vm)).toEqual({ visible: false, emojiOpen: false })
+    expect(categories).toHaveBeenCalledOnce(); expect(items).toHaveBeenCalledOnce()
   })
 })

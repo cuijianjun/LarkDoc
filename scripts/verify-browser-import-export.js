@@ -12,11 +12,11 @@ const BASE = process.argv[2] || 'http://127.0.0.1:58742/lark-doc?verify=1'
 const results = []
 
 async function main() {
-  const browser = await chromium.launch({ headless: true, acceptDownloads: true })
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true, acceptDownloads: true })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.setDefaultTimeout(12000)
   const errors = []
-  let dialogs = 0
+  let dialogs = 0, confirmations = 0
   page.on('pageerror', error => errors.push(error.message))
   page.on('dialog', async dialog => {
     dialogs += 1
@@ -31,20 +31,23 @@ async function main() {
   const text = () => page.evaluate(() => window.__larkDoc.getText())
 
   async function importFile(name, body, mimeType, expectedText) {
-    await page.locator('input[aria-label="导入文档"]').setInputFiles({
-      name,
-      mimeType,
-      buffer: Buffer.from(body),
-    })
-    await page.waitForFunction(expected => window.__larkDoc.getText().includes(expected), expectedText)
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '导入', exact: true }).click()
+    await (await chooser).setFiles({ name, mimeType, buffer: Buffer.from(body) })
+    const confirmation = page.getByRole('dialog', { name: '导入并替换正文', exact: true })
+    await confirmation.waitFor({ state: 'visible' }); confirmations += 1
+    await confirmation.getByRole('button', { name: '导入并替换', exact: true }).click()
+    await confirmation.waitFor({ state: 'detached' })
+    await page.waitForFunction(expected => document.querySelector('.ProseMirror')?.getAttribute('contenteditable') === 'true'
+      && window.__larkDoc.getText().includes(expected), expectedText)
     await waitRender()
   }
 
   async function exportFile(label) {
     const select = page.locator('button[role="combobox"][aria-label="导出文档格式"]')
-    await select.click()
+    await select.hover()
     const option = page.locator('[role="listbox"][aria-label="导出文档格式"] [role="option"]')
-      .filter({ hasText: new RegExp(`^${label}`) }).first()
+      .filter({ has: page.locator('.lark-doc-select-item-label').filter({ hasText: new RegExp(`^${label}`) }) }).first()
     await option.waitFor()
     const downloadPromise = page.waitForEvent('download')
     await option.click()
@@ -97,7 +100,7 @@ async function main() {
 
     await importFile('safe-import.md', '# Markdown 导入标题\n\nMarkdown 正文', 'text/markdown', 'Markdown 导入标题')
     check('Markdown 文件导入转换为可编辑正文', (await text()).includes('Markdown 导入标题') && (await text()).includes('Markdown 正文'), await text())
-    check('导入确认闭环至少触发三次原生确认', dialogs >= 3, { dialogs })
+    check('三种导入均经过页内确认且未触发阻塞式原生确认', confirmations === 3 && dialogs === 0, { confirmations, dialogs })
 
     const html = await exportFile('HTML')
     check('HTML 导出产生下载且保留标题正文', /\.html$/i.test(html.filename) && html.body.includes('Markdown 导入标题') && html.body.includes('Markdown 正文'), { filename: html.filename, bytes: html.body.length })
@@ -114,8 +117,9 @@ async function main() {
 
     let printed = 0
     await page.evaluate(() => { window.__verifyPrintCount = 0; window.print = () => { window.__verifyPrintCount += 1 } })
-    await page.locator('button[role="combobox"][aria-label="导出文档格式"]').click()
-    await page.locator('[role="listbox"][aria-label="导出文档格式"] [role="option"]').filter({ hasText: /^打印 \/ PDF/ }).click()
+    await page.locator('button[role="combobox"][aria-label="导出文档格式"]').hover()
+    await page.locator('[role="listbox"][aria-label="导出文档格式"] [role="option"]')
+      .filter({ has: page.locator('.lark-doc-select-item-label').filter({ hasText: /^打印 \/ PDF$/ }) }).click()
     await page.waitForTimeout(700)
     printed = await page.evaluate(() => window.__verifyPrintCount)
     check('打印/PDF 选项调用浏览器打印入口', printed === 1, { printed })

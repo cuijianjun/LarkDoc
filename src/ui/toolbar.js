@@ -21,8 +21,9 @@
  * 这只是节点搬运，插槽内容始终由 Vue 渲染与更新。
  */
 
-import { iconNode, diagramIconNode } from './icon'
-import { createHeadingMenu } from './headingMenu'
+import { iconNode } from './icon'
+import { createLazyView } from './lazy'
+import { createHeadingMenu, HEADING_MENU_OPTIONS } from './headingMenu'
 import { createSelect } from './select'
 import { applyStyle, setAttr, setVisible, syncChildren } from './dom'
 
@@ -38,6 +39,16 @@ const GROUPS = [
 ]
 
 const ALIGN_ORDER = ['left', 'center', 'right', 'justify']
+const MARK_ICONS = {
+  bold: 'mark-bold',
+  italic: 'mark-italic',
+  underline: 'mark-underline',
+  strike: 'mark-strike',
+  code: 'inlineCode',
+  subscript: 'mark-subscript',
+  superscript: 'mark-superscript',
+  highlight: 'mark-highlight',
+}
 
 /**
  * @param {object} options
@@ -54,6 +65,110 @@ export function createToolbar(options = {}) {
   const call = (name, ...args) => {
     const fn = handlers[name]
     return typeof fn === 'function' ? fn(...args) : undefined
+  }
+
+  let mobileState = {}, mobilePanel = '', mobileUi
+  const mobileMarks = new Map()
+  const mobileHeadingOptions = state => Array.isArray(state.heading?.options) ? state.heading.options : HEADING_MENU_OPTIONS
+  const mobileAllowed = () => mobileState.mobileAccessory && !mobileState.readonly
+  function mobileButton(spec) {
+    const action = spec.onClick
+    return makeButton({ iconSize: 24, ...spec, preventDefault: true, onClick: event => {
+      if (mobileAllowed() && (!spec.enabled || spec.enabled(mobileState))) action?.(event)
+    } })
+  }
+  function renderMobile(next) {
+    if (!mobileUi) {
+      const bar = document.createElement('div')
+      bar.className = 'lark-doc-mobile-edit-bar'
+      const panel = document.createElement('div')
+      panel.className = 'lark-doc-mobile-format-panel'
+      panel.setAttribute('role', 'toolbar')
+      const toggle = id => { mobilePanel = mobilePanel === id ? '' : id; update(mobileState) }
+      const ai = mobileButton({ enabled: s => s.features?.ai === true, label: 'AI 改写', icon: 'sparkle', text: 'AI 改写', onClick: () => call('emitAiRequest', 'rewrite') })
+      const plus = mobileButton({ enabled: s => s.features?.insert !== false, label: '插入内容', icon: 'mobile-insert', onClick: event => { mobilePanel = ''; call('openCommandMenu', 'plus', event) } })
+      const headings = mobileButton({ enabled: s => s.groups?.headings !== false || s.groups?.blockStyle !== false, label: '段落类型', text: 'T', onClick: () => toggle('headings') })
+      const marks = mobileButton({ enabled: s => s.groups?.marks !== false || s.groups?.textStyle !== false, label: '行内格式', text: 'Aa', onClick: () => toggle('marks') })
+      const paragraph = mobileButton({ enabled: s => s.groups?.blockStyle !== false, label: '段落格式', icon: 'align-left', onClick: () => toggle('paragraph') })
+      const keyboard = mobileButton({ label: '收起键盘', icon: 'keyboard-hide', onClick: () => { mobilePanel = ''; call('hideMobileKeyboard') } })
+      const headingRows = HEADING_MENU_OPTIONS.map(option => ({ ...option, button: mobileButton({
+        enabled: s => s.groups?.headings !== false && mobileHeadingOptions(s).some(item => item?.level === option.level && !item.disabled),
+        label: option.label, text: option.glyph, onClick: () => call('setHeading', option.level),
+      }) }))
+      const lists = [['任务列表', 'block-task', 'toggleTaskList'], ['有序列表', 'block-ordered', 'toggleOrderedList'], ['无序列表', 'block-bullet', 'toggleBulletList']].map(([label, icon, command]) => mobileButton({ enabled: s => s.groups?.blockStyle !== false, label, icon, onClick: () => call('run', command) }))
+      const blocks = [['codeBlock', 'codeBlocks', '代码块', 'block-code', 'toggleCodeBlock'], ['blockquote', 'blockquote', '引用', 'block-quote', 'toggleBlockquote']].map(([id, feature, label, icon, command]) => ({
+        id, feature, button: mobileButton({ enabled: s => s.groups?.blockStyle !== false && s.features?.[feature] !== false, label, icon, onClick: () => call('run', command) }),
+      }))
+      const color = mobileButton({ enabled: s => s.groups?.textStyle !== false, label: '文字颜色', text: 'A', onClick: event => call('toggleColorPalette', 'textColor', event) })
+      color.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
+      const decrease = mobileButton({ enabled: s => s.groups?.blockStyle !== false && s.indent?.level > 0, label: '减少缩进', icon: 'indent-dec', onClick: () => call('changeIndent', -1) })
+      const increase = mobileButton({ enabled: s => s.groups?.blockStyle !== false && s.indent?.canIncrease, label: '增加缩进', icon: 'indent-inc', onClick: () => call('changeIndent', 1) })
+      const align = ALIGN_ORDER.map(value => mobileButton({ enabled: s => s.groups?.blockStyle !== false, label: `${alignNames[value] || value}对齐`, icon: `align-${value}`, onClick: () => call('setAlign', value) }))
+      mobileUi = { bar, panel, ai, plus, headings, marks, paragraph, keyboard, headingRows, lists, blocks, color, decrease, increase, align }
+    }
+    const m = mobileUi, disabled = !!next.readonly, groups = next.groups || {}, features = next.features || {}
+    if (disabled) mobilePanel = ''
+    el.setAttribute('aria-label', '手机正文编辑')
+    for (const [key, value] of Object.entries(next.mobileStyle || {})) el.style.setProperty(`--ld-mobile-${key}`, `${value}px`)
+    syncChildren(m.bar, [
+      { node: m.ai, on: features.ai === true }, { node: m.plus, on: features.insert !== false },
+      { node: m.headings, on: groups.headings !== false || groups.blockStyle !== false }, { node: m.marks, on: groups.marks !== false || groups.textStyle !== false },
+      { node: m.paragraph, on: groups.blockStyle !== false }, { node: m.keyboard, on: true },
+    ])
+    ;[m.ai, m.plus, m.headings, m.marks, m.paragraph, m.keyboard].forEach(button => { button.disabled = disabled })
+    ;['headings', 'marks', 'paragraph'].forEach(id => setAttr(m[id], 'aria-expanded', String(mobilePanel === id)))
+    const nodes = []
+    if (mobilePanel === 'headings') {
+      const extendedHeadings = [], levels = new Set()
+      if (groups.headings !== false) mobileHeadingOptions(next).forEach(option => {
+        const row = m.headingRows.find(item => item.level === option?.level)
+        if (!row || levels.has(row.level)) return
+        levels.add(row.level)
+        const button = row.button, glyph = typeof option.glyph === 'string' ? option.glyph : row.glyph
+        button.disabled = disabled || !!option.disabled
+        setAttr(button, 'aria-label', option.label || row.label); setAttr(button, 'title', option.label || row.label)
+        if (button.textContent !== glyph) button.textContent = glyph
+        setAttr(button, 'aria-pressed', String((next.heading?.level ?? null) === row.level))
+        // Higher levels remain supported; only T/H1–H3 were observed in the native first segment.
+        ;(!Array.isArray(next.heading?.options) && row.level > 3 ? extendedHeadings : nodes).push(button)
+      })
+      if (groups.blockStyle !== false) m.lists.forEach((button, index) => {
+        button.disabled = disabled
+        setAttr(button, 'aria-pressed', String(!!next.active?.[['taskList', 'orderedList', 'bulletList'][index]]))
+        nodes.push(button)
+      })
+      if (groups.blockStyle !== false) m.blocks.forEach(({ id, feature, button }) => {
+        if (features[feature] === false) return
+        button.disabled = disabled
+        setAttr(button, 'aria-pressed', String(!!next.active?.[id]))
+        nodes.push(button)
+      })
+      nodes.push(...extendedHeadings)
+    } else if (mobilePanel === 'marks') {
+      const extended = []
+      if (groups.marks !== false) (next.marks || []).forEach(item => {
+        if (!mobileMarks.has(item.id)) mobileMarks.set(item.id, mobileButton({ enabled: s => s.groups?.marks !== false && (s.marks || []).some(mark => mark.id === item.id), cls: `lark-doc-mark-${item.id}`, label: item.label, text: item.glyph, onClick: () => call('toggleMark', item.id) }))
+        const button = mobileMarks.get(item.id)
+        button.disabled = disabled
+        setAttr(button, 'aria-pressed', String(!!next.active?.[item.id]))
+        ;(['bold', 'italic', 'underline', 'strike', 'code'].includes(item.id) ? nodes : extended).push(button)
+      })
+      if (groups.textStyle !== false) { m.color.disabled = disabled; setAttr(m.color, 'aria-expanded', String(next.colorOpenFor === 'textColor')); nodes.push(m.color) }
+      nodes.push(...extended)
+    } else if (mobilePanel === 'paragraph' && groups.blockStyle !== false) {
+      m.decrease.disabled = disabled || !(next.indent?.level > 0)
+      m.increase.disabled = disabled || !next.indent?.canIncrease
+      nodes.push(m.decrease, m.increase)
+      m.align.forEach((button, index) => {
+        button.disabled = disabled
+        setAttr(button, 'aria-pressed', String((next.activeAlign || 'left') === ALIGN_ORDER[index]))
+        nodes.push(button)
+      })
+    }
+    m.panel.dataset.panel = mobilePanel
+    m.panel.setAttribute('aria-label', mobilePanel === 'headings' ? '段落类型' : mobilePanel === 'marks' ? '行内格式' : '段落格式')
+    syncChildren(m.panel, nodes.map(node => ({ node, on: true })))
+    syncChildren(el, [{ node: m.panel, on: nodes.length > 0 }, { node: m.bar, on: true }])
   }
 
   // ————————————————— 基础工厂 —————————————————
@@ -75,6 +190,7 @@ export function createToolbar(options = {}) {
       button.setAttribute('title', spec.title)
     }
     if (spec.icon) button.appendChild(iconNode(spec.icon, spec.iconSize || 16, spec.caret ? 'lark-doc-caret' : ''))
+    if (spec.popup) button.setAttribute('aria-haspopup', spec.popup)
     if (spec.text) button.appendChild(document.createTextNode(spec.text))
     if (spec.preventDefault) button.addEventListener('mousedown', (event) => event.preventDefault())
     if (spec.onClick) button.addEventListener('click', (event) => spec.onClick(event))
@@ -126,7 +242,7 @@ export function createToolbar(options = {}) {
   const headingMenu = createHeadingMenu({
     ariaLabel: '标题级别',
     onChoose: (level) => call('setHeading', level),
-    onKeepOpen: () => call('cancelPopupHoverClose'),
+    onKeepOpen: () => call('cancelPopupHoverClose', 'heading'),
     onScheduleClose: () => call('scheduleHeadingMenuClose'),
   })
 
@@ -145,7 +261,8 @@ export function createToolbar(options = {}) {
     markButtons = list.map((item) => makeButton({
       cls: `lark-doc-mark-${item.id}`,
       label: item.label,
-      text: item.glyph,
+      icon: MARK_ICONS[item.id] || 'inlineCode',
+      iconSize: 18,
       preventDefault: true,
       onClick: () => call('toggleMark', item.id),
     }))
@@ -156,6 +273,7 @@ export function createToolbar(options = {}) {
 
   const linkButton = makeButton({
     label: '设置链接',
+    popup: 'dialog',
     icon: 'link',
     preventDefault: true,
     onClick: () => call('openLinkDialog'),
@@ -177,7 +295,11 @@ export function createToolbar(options = {}) {
   const colorLetter = document.createElement('span')
   colorLetter.className = 'lark-doc-color-letter lark-doc-color-letter-hl'
   colorLetter.setAttribute('aria-hidden', 'true')
-  colorLetter.textContent = 'A'
+  colorLetter.appendChild(iconNode('text-color', 18, 'lark-doc-color-icon'))
+  const colorLetterText = document.createElement('span')
+  colorLetterText.className = 'sr-only'
+  colorLetterText.textContent = 'A'
+  colorLetter.appendChild(colorLetterText)
 
   const textColorInput = document.createElement('input')
   textColorInput.type = 'color'
@@ -224,50 +346,26 @@ export function createToolbar(options = {}) {
 
   const insertButton = makeButton({
     label: '插入',
+    popup: 'menu',
     title: '插入内容',
     icon: 'plus',
     text: '插入',
     onClick: (event) => call('openCommandMenu', 'plus', event),
-    onMouseEnter: () => call('cancelPopupHoverClose'),
+    onMouseEnter: () => call('cancelPopupHoverClose', 'command'),
     onMouseLeave: () => call('scheduleCommandMenuClose'),
   })
   insertButton.setAttribute('aria-haspopup', 'menu')
-  const tableButton = makeButton({ label: '插入表格', icon: 'table', preventDefault: true, onClick: () => call('onTableToolbarClick') })
+  const tableButton = makeButton({ label: '插入表格', icon: 'table', popup: 'dialog', preventDefault: true, onClick: () => call('onTableToolbarClick') })
   const diagramButton = makeButton({ label: '图表', title: '插入图表', icon: 'chart', text: '图表', onClick: () => call('toggleDiagramMenu'), onMouseEnter: () => call('openDiagramMenuOnHover'), onMouseLeave: () => call('scheduleDiagramMenuClose') })
   diagramButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
   diagramButton.setAttribute('aria-haspopup', 'menu')
-  const aiButton = makeButton({ label: 'AI 助手', icon: 'sparkle', text: 'AI', onClick: () => call('emitAiRequest', 'rewrite') })
+  const aiButton = makeButton({ label: 'AI 助手', icon: 'sparkle', text: 'AI', popup: 'dialog', onClick: () => call('emitAiRequest', 'rewrite') })
 
-  const diagramMenu = document.createElement('div')
-  diagramMenu.className = 'lark-doc-dropdown lark-doc-diagram-menu'
-  diagramMenu.setAttribute('role', 'menu')
-  diagramMenu.setAttribute('aria-label', '图表类型')
-  diagramMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose'))
-  diagramMenu.addEventListener('mouseleave', () => call('scheduleDiagramMenuClose'))
-  let diagramButtons = []
-  let diagramSignature = ''
-
-  function syncDiagramItems(types) {
-    const signature = types.map((item) => item.id).join('|')
-    if (signature === diagramSignature) return
-    diagramSignature = signature
-    diagramButtons.forEach((button) => { if (button.parentNode) button.parentNode.removeChild(button) })
-    diagramButtons = types.map((item) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.setAttribute('role', 'menuitem')
-      button.addEventListener('mousedown', (event) => event.preventDefault())
-      button.addEventListener('click', () => call('insertDiagramType', item.id))
-      const icon = diagramIconNode(item.id, 16, 'lark-doc-diagram-menu-icon is-teal')
-      icon.setAttribute('aria-hidden', 'true')
-      const label = document.createElement('span')
-      label.textContent = item.label
-      button.appendChild(icon)
-      button.appendChild(label)
-      diagramMenu.appendChild(button)
-      return button
-    })
-  }
+  const diagramMenuHost = document.createElement('span')
+  diagramMenuHost.style.display = 'contents'
+  const diagramMenu = createLazyView(() => import('./diagramMenu'), 'createDiagramMenu', { host: diagramMenuHost, handlers }, {
+    onReady: () => call('positionDiagramMenu'), onError: () => call('onDiagramError'),
+  })
 
   groupEls.insert.appendChild(insertButton)
   groupEls.insert.appendChild(tableButton)
@@ -279,7 +377,7 @@ export function createToolbar(options = {}) {
   const toolsEndInner = document.createElement('span')
   toolsEndInner.className = 'lark-doc-tools-end-inner'
 
-  const searchButton = makeButton({ label: '查找', icon: 'search', onClick: () => call('openSearchPanel') })
+  const searchButton = makeButton({ label: '查找', icon: 'search', popup: 'dialog', onClick: () => call('openSearchPanel') })
   const outlineButton = makeButton({ label: '目录', icon: 'outline', onClick: () => call('toggleOutlineOpen') })
   const widthSelect = createSelect({ ariaLabel: '页面宽度', onChange: (value) => call('setWidthMode', value) })
 
@@ -287,8 +385,8 @@ export function createToolbar(options = {}) {
   const readingButton = makeButton({ label: '阅读模式', icon: 'reading', onClick: () => call('toggleReading') })
   const fullscreenButton = makeButton({ label: '全屏', icon: 'fullscreen', onClick: () => call('toggleFullscreen') })
   const slidesButton = makeButton({ label: '演示模式', icon: 'slides', onClick: () => call('toggleSlides') })
-  const shortcutsButton = makeButton({ label: '快捷键帮助', text: '?', onClick: () => call('toggleHelpOpen') })
-  const docOpsButton = makeButton({ label: '文档操作', text: '⋯', onClick: () => call('toggleHeaderMenu') })
+  const shortcutsButton = makeButton({ label: '快捷键帮助', icon: 'help-keyboard', popup: 'dialog', iconSize: 18, onClick: () => call('toggleHelpOpen') })
+  const docOpsButton = makeButton({ label: '文档操作', icon: 'more-horizontal', iconSize: 18, onClick: () => call('toggleHeaderMenu') })
 
   toolsEndInner.appendChild(searchButton)
   toolsEndInner.appendChild(outlineButton)
@@ -303,6 +401,7 @@ export function createToolbar(options = {}) {
   headerMenu.className = 'lark-doc-dropdown lark-doc-header-menu'
   headerMenu.setAttribute('role', 'menu')
   headerMenu.setAttribute('aria-label', '文档操作')
+  let headerMenuWasOpen = false
 
   const moreButton = document.createElement('button')
   moreButton.type = 'button'
@@ -319,7 +418,7 @@ export function createToolbar(options = {}) {
   moreMenu.className = 'lark-doc-dropdown lark-doc-more-menu'
   moreMenu.setAttribute('role', 'menu')
   moreMenu.setAttribute('aria-label', '更多工具')
-  moreMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose'))
+  moreMenu.addEventListener('mouseenter', () => call('cancelPopupHoverClose', 'more'))
   moreMenu.addEventListener('mouseleave', () => call('scheduleMoreMenuClose'))
 
   groupEls.toolsEnd.appendChild(toolsEndInner)
@@ -357,7 +456,13 @@ export function createToolbar(options = {}) {
         const check = document.createElement('span')
         check.className = 'lark-doc-select-check'
         check.setAttribute('aria-hidden', 'true')
-        check.textContent = item.checked ? '✓' : ''
+        if (item.checked) {
+          check.appendChild(iconNode('check', 14, 'lark-doc-check-icon'))
+          const checkText = document.createElement('span')
+          checkText.className = 'sr-only'
+          checkText.textContent = '✓'
+          check.appendChild(checkText)
+        }
         button.appendChild(check)
         button.appendChild(document.createTextNode(item.label))
         moreMenu.appendChild(button)
@@ -370,6 +475,10 @@ export function createToolbar(options = {}) {
    */
   function update(state) {
     const next = state || {}
+    mobileState = next
+    el.classList.toggle('is-mobile-accessory', !!next.mobileAccessory)
+    el.classList.toggle('is-keyboard-raised', !!next.mobileAccessory && next.mobileStyle?.bottom > 0)
+    if (!next.mobileAccessory) { mobilePanel = ''; el.setAttribute('aria-label', '文档工具栏') }
     const enabled = next.groups || {}
     const disabled = !!next.readonly
     const collapsed = next.collapsed || []
@@ -388,7 +497,7 @@ export function createToolbar(options = {}) {
       setAttr(button, 'title', label)
     })
 
-    syncChildren(el, GROUPS.map((group) => ({
+    if (!next.mobileAccessory) syncChildren(el, GROUPS.map((group) => ({
       node: groupEls[group.id],
       on: !group.gated || enabled[group.id] !== false,
     })))
@@ -427,7 +536,10 @@ export function createToolbar(options = {}) {
     })
 
     // ④ 文字样式
-    linkButton.disabled = disabled || next.linkAllowed === false
+    // 飞书口径：没有文字选区时「设置链接」置灰（DOM 基线 editor-dom-before.html 里
+    // 就是 `disabled="disabled"`）。`hasSelection` 一直有随 sync 下发，但此前没人消费，
+    // 结果无选区也能点开链接弹窗。`=== false` 让没带该字段的调用方维持原行为。
+    linkButton.disabled = disabled || next.hasSelection === false || next.linkAllowed === false
     setAttr(linkButton, 'aria-pressed', active.link ? 'true' : 'false')
     fontSelect.update({ options: options.fontFamily, value: textStyle.fontFamily, disabled })
     sizeSelect.update({ options: options.fontSize, value: textStyle.fontSize, disabled })
@@ -463,18 +575,17 @@ export function createToolbar(options = {}) {
       { node: tableButton, on: features.tables !== false },
       { node: diagramButton, on: features.diagram === true },
       { node: aiButton, on: features.ai !== false },
-      { node: diagramMenu, on: !!(next.diagram && next.diagram.open) },
+      { node: diagramMenuHost, on: true },
     ])
     const tableLabel = active.table ? '表格工具' : '插入表格'
     setAttr(tableButton, 'aria-label', tableLabel)
-    setAttr(tableButton, 'title', tableLabel)
+    setAttr(tableButton, 'title', null)
     insertButton.disabled = disabled
     tableButton.disabled = disabled
     diagramButton.disabled = disabled
     aiButton.disabled = disabled
     setAttr(diagramButton, 'aria-expanded', next.diagram && next.diagram.open ? 'true' : 'false')
-    syncDiagramItems((next.diagram && next.diagram.types) || [])
-    if (next.diagram && next.diagram.open) applyStyle(diagramMenu, next.diagram.style)
+    diagramMenu.update(next.diagram || { open: false })
 
     // ⑦ 收尾
     setVisible(toolsEndInner, !collapsed.includes('toolsEnd'))
@@ -511,6 +622,8 @@ export function createToolbar(options = {}) {
 
     // 「文档操作」弹层：只读态下它仍要能开（保存/导出/快照都在里面）
     const headerState = next.headerMenu || {}
+    if (headerMenuWasOpen && !headerState.open) headerMenu.dispatchEvent(new el.ownerDocument.defaultView.Event('close'))
+    headerMenuWasOpen = !!headerState.open
     setAttr(docOpsButton, 'aria-expanded', headerState.open ? 'true' : 'false')
     if (headerState.open) applyStyle(headerMenu, headerState.style)
     // 承接插槽：宿主节点由调用方持有，这里只保证它在菜单里（`appendChild` 就是搬运）
@@ -530,14 +643,41 @@ export function createToolbar(options = {}) {
       { node: moreButton, on: !!more.visible },
       { node: moreMenu, on: !!more.open },
     ])
+    if (next.mobileAccessory) renderMobile(next)
+    syncTooltip()
   }
 
   GROUPS.forEach((group) => el.appendChild(groupEls[group.id]))
+  const tooltip = createLazyView(() => import('./tooltip'), 'createTooltipLayer', { host: el })
+  let tooltipAnchor = null
+  const syncTooltip = () => tooltip.update({ open: !!tooltipAnchor, anchor: tooltipAnchor })
+  const tooltipTarget = event => {
+    const node = event.target.closest?.('button, [role=combobox], input[type=color]')
+    if (!node || !el.contains(node)) return null
+    if (node.title) { node.dataset.tooltipTitle = node.title; node.removeAttribute('title') }
+    return node.matches('[aria-haspopup], [aria-expanded]') || /[\u3400-\u9fff]/.test(node.textContent)
+      || node.closest('[role="menu"]') ? null : node
+  }
+  const enterTip = event => { const node = tooltipTarget(event); if (!node || !node.contains(event.relatedTarget)) { tooltipAnchor = node; syncTooltip() } }
+  const leaveTip = event => { const node = tooltipTarget(event); if (node && node === tooltipAnchor && !node.contains(event.relatedTarget)) { tooltipAnchor = null; syncTooltip() } }
+  const hideTip = () => { if (tooltipAnchor) { tooltipAnchor = null; syncTooltip() } }
+  const tooltipEvents = [['mouseover', enterTip], ['focusin', enterTip], ['mouseout', leaveTip], ['focusout', leaveTip], ['mousedown', hideTip]]
+  tooltipEvents.forEach(([name, handler]) => el.addEventListener(name, handler))
+  const tooltipWindow = el.ownerDocument.defaultView
+  tooltipWindow.addEventListener('scroll', hideTip, true)
+  tooltipWindow.addEventListener('resize', hideTip)
+  el.ownerDocument.addEventListener('keydown', hideTip, true)
 
   return {
     el,
     update,
     destroy() {
+      headerMenu.dispatchEvent(new el.ownerDocument.defaultView.Event('close'))
+      tooltipEvents.forEach(([name, handler]) => el.removeEventListener(name, handler))
+      tooltipWindow.removeEventListener('scroll', hideTip, true)
+      tooltipWindow.removeEventListener('resize', hideTip)
+      el.ownerDocument.removeEventListener('keydown', hideTip, true)
+      tooltipAnchor = null; tooltip.destroy(); diagramMenu.destroy()
       // 插槽宿主是 Vue 的资产：交还调用方，不能跟着工具栏一起被丢掉
       if (actionsHost && actionsHost.parentNode === headerMenu) headerMenu.removeChild(actionsHost)
       if (el.parentNode) el.parentNode.removeChild(el)

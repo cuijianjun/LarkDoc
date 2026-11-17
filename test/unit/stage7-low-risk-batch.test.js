@@ -9,10 +9,12 @@ const exists = (relative) => fs.existsSync(path.join(root, relative))
 const editor = source('src/editor/nativeEditorHost.js')
 const workspace = source('src/components/lark-doc/LarkDocWorkspace.js')
 const baseline = source('scripts/architecture-baseline.json')
-const overlays = source('src/ui/overlays.js')
+const overlays = source('src/ui/overlays.js') + source('src/ui/overlayViews.js') + source('src/ui/shareEntry.js')
 const overlaysUi = source('src/components/lark-doc/editor/overlaysUiMixin.js')
 const shareMixin = source('src/components/lark-doc/editor/shareMixin.js')
 const exportMixin = source('src/components/lark-doc/editor/exportMixin.js')
+// 导出派发逻辑已抽到 exportInteraction.js；断言落到实际承载实现的文件。
+const exportInteraction = source('src/components/lark-doc/editor/exportInteraction.js')
 const index = source('src/index.js')
 
 const removed = [
@@ -56,8 +58,8 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
   })
 
   it('移除真实 import/注册，不保留两个旧 SFC 的引用', () => {
-    expect(editor).not.toContain('SharePopover')
-    expect(editor).not.toContain('PermissionDialog')
+    expect(editor).not.toMatch(/\bSharePopover\b/)
+    expect(editor).not.toMatch(/\bPermissionDialog\b/)
     expect(overlaysUi).not.toContain("from '../SharePopover.vue'")
     expect(overlaysUi).not.toContain("from '../PermissionDialog.vue'")
     expect(overlays).toContain('export function createOverlays')
@@ -65,7 +67,7 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
 
   it('原生 renderer 与 overlaysUiMixin 覆盖分享、权限及全部业务回调', () => {
     shareHandlers.forEach((name) => {
-      expect(overlays).toContain(`'${name}'`)
+      expect(overlays).toMatch(new RegExp(`(?:'${name}'|\\.${name})`))
       expect(overlaysUi).toContain(`${name}:`)
     })
     exportHandlers.forEach((name) => expect(overlays).toContain(`'${name}'`))
@@ -96,7 +98,7 @@ describe('阶段7浮层批次 · 分享与权限 SFC 收口', () => {
     expect(shareMixin).toContain('this.secureLinkConfirmOpen')
     expect(shareMixin).toContain('this.permissionDialogOpen')
     expect(shareMixin).toContain('this.sharePopoverOpen')
-    expect(exportMixin).toContain('dispatchExport(format, scope, fileName, context)')
+    expect(exportInteraction).toContain('dispatchExport(format, scope, fileName, context)')
   })
 
   it('补齐 renderer 对动态协作者和二级 scope 的刷新监听', () => {

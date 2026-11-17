@@ -177,3 +177,4 @@ export {
 } from '../core/blocks/bitable'
 
 export { LinkEmbed } from '../core/blocks/link-embed'
+export { LarkDocTable } from '../core/blocks/table'

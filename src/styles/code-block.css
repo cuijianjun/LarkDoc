@@ -6,8 +6,7 @@
  * 挪到这里后：构建零告警，且样式与组件解耦，组件转成原生 NodeView 时不用再搬一次。
  *
  * 说明（T3-02）：
- *   - 代码块是「常暗卡片」：语法配色按 06 §6.5.2 实测 token 色两档不变，刻意写死，不落 token；
- *     换主题只动卡片 chrome 与卡底。
+ *   - 普通代码块沿正文主题使用浅色/深色卡片；图表独立使用纸张颜色。
  *   - 图表块是「纸张上的白卡」：跟着正文纸张走。
  *   - 深色值统一写在 theme-dark.css 的 content 轨，本文件不再出现 [data-content-theme]。
  */
@@ -23,7 +22,7 @@
 .lark-doc .lark-doc-code-input ::selection { background: var(--ld-code-selection); }
 
 /* Source code controls keep the project's code palette and the measured geometry. */
-.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) { padding-bottom: 2px; }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) { --ld-code-bg: var(--ld-bg-code); --ld-code-text: var(--ld-text); --ld-code-caret: var(--ld-text); --ld-code-toolbar-bg: var(--ld-bg-code); --ld-code-toolbar-text: var(--ld-text-secondary); padding-bottom: 2px; }
 .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) > .lark-doc-code-toolbar { position: relative; box-sizing: border-box; flex-wrap: nowrap; gap: 0; height: 32px; margin-bottom: 8px; padding: 8px 8px 0 28px; }
 .lark-doc .lark-doc-code-caption { box-sizing: border-box; flex: 1 1 auto; min-width: 0; min-height: 0; width: 0; height: 30px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-code-toolbar-text); font: 14px/30px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; outline: 0; text-overflow: ellipsis; }
 .lark-doc .lark-doc-code-caption:focus-visible { outline: 0; }
@@ -75,6 +74,10 @@
 /* 图表标签为 SVG 原生 <text>（diagram.js 关闭 htmlLabels），不经过 foreignObject，
    天然不受宿主 CSS 继承影响；overflow 放开只为边标签的测量误差兜底。 */
 .lark-doc .lark-doc-diagram-svg svg { overflow: visible; }
+/* 普通代码卡片使用浅底文字色，避免深底专用语法色在浅底上失去对比。 */
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) :is(.hljs-keyword, .hljs-selector-tag, .hljs-title, .hljs-built_in) { color: var(--ld-text-link); }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) :is(.hljs-string, .hljs-attr) { color: var(--ld-text-accent); }
+.lark-doc .lark-doc-code:not(.lark-doc-code-diagram) :is(.hljs-number, .hljs-literal, .hljs-comment) { color: var(--ld-text-secondary); }
 /* 图表块独立外观：白底卡片，去掉代码框的深色 chrome 与高亮配色。 */
 .lark-doc .lark-doc-code-diagram { background: var(--ld-diagram-card-bg); border-color: var(--ld-diagram-border); }
 .lark-doc .lark-doc-code-diagram .lark-doc-code-toolbar { background: var(--ld-diagram-toolbar-bg); color: var(--ld-diagram-toolbar-text); }
@@ -82,3 +85,13 @@
 .lark-doc .lark-doc-code-diagram .lark-doc-code-body pre { color: var(--ld-diagram-source-text); caret-color: var(--ld-diagram-source-caret); }
 .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight { color: var(--ld-diagram-source-text); }
 .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-keyword, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-string, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-attr, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-number, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-comment, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-title, .lark-doc .lark-doc-code-diagram .lark-doc-code-highlight .hljs-built_in { color: inherit; }
+
+/* 手机下标题独占首行，操作区保留完整入口，避免长语言名称挤空标题。 */
+@media (max-width: 760px) {
+  .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) > .lark-doc-code-toolbar,
+  .lark-doc .lark-doc-code:not(.lark-doc-code-diagram).is-collapsed > .lark-doc-code-toolbar { flex-wrap: wrap; height: auto; min-height: 32px; row-gap: 4px; }
+  .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .lark-doc-code-caption { flex: 1 0 100%; font-size: 16px; }
+  .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .lark-doc-code-actions { flex: 0 0 100%; min-width: 0; width: 100%; justify-content: space-between; gap: 8px; margin-left: 0; }
+  .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .lark-doc-code-actions > .lark-doc-code-language { flex: 1 1 0; min-width: 0; justify-content: flex-start; }
+  .lark-doc .lark-doc-code:not(.lark-doc-code-diagram) .lark-doc-code-language > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

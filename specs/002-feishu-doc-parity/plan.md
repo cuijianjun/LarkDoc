@@ -4,6 +4,14 @@
 
 **Input**: [Feature specification](./spec.md) and [research evidence](./research.md)
 
+## 2026-11-15 phone implementation addendum
+
+Current authorized implementation stays in `/Users/cjjxw/codex/.wt-larkdoc/dev` on native JavaScript/DOM/Tiptap and Rollup; the original Vue/Webpack technical-context snapshot below is historical, not a new selection. Reuse the existing 002 task graph and 003 actor/provider/permission/unknown-operation contracts. `requirements/18-飞书手机端需求采集.md` is the captured reference input; Phase9 tasks separate local changes/affected tests/actual existing-tab checks from external service and physical-device gaps. Preserve all dirty work, original task acceptance, no-new-tab/device-preset rules and production prohibitions.
+
+## 2026-11-15 dev gap implementation addendum
+
+Phase10 in tasks.md implements the audited local gaps without changing the selected stack or replacing the 002/003 graph: clean Element artifact closure, unchanged size budgets, restore epoch handoff, authoritative share-link CAS, production large-document lifecycle/cooperative publication, user/page mentions and undo, revision anchors/data fidelity, demo business actions and controlled conversion. Missing durable revision-discussion contract and genuine company services stay capability-gated; they do not waive ready local work. Large-document metadata is not virtualization, and historical timing is not current acceptance. Main integrates fixed disjoint worker areas, runs affected downstream/mandatory guards/quick and necessary builds, preserves all dirty state and full-task/external gates.
+
 ## Summary
 
 Align the `lark-doc` document surface with the current Feishu Docs web experience and official help guidance. The first correction is the interaction model: contextual `/`, `+`, selection-bubble and block-handle tools become the parity default, while the current fixed formatting toolbar becomes opt-in compatibility behavior. The remaining work closes the document workflow in dependency order: baseline and shared block contracts, editing/history/clipboard, collaboration/permissions/comments, lifecycle/import-export, then provider/embed boundaries and browser evidence. Bitable, Sheets, Slides, Wiki and third-party product pages remain integration contracts rather than parity pages.

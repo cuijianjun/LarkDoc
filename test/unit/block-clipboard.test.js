@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import blockMenuMixin from '../../src/components/lark-doc/editor/blockMenuMixin'
+import bubbleMenuMixin from '../../src/components/lark-doc/editor/bubbleMenuMixin'
+import { copyBlock as copyBlockContent } from '../../src/utils/contentClipboard'
 import { Editor } from '@tiptap/core'
 import { AllSelection, NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
@@ -118,7 +120,8 @@ describe('块级剪贴板真实事件', () => {
     const data = transfer()
     fire(editor, 'copy', data)
     expect(data.getData(BLOCK_CLIPBOARD_MIME)).toBe('')
-    expect(data.getData('text/html')).toBe('')
+    expect(data.getData('text/html')).toContain('data-pm-slice')
+    expect(data.getData('text/html')).toContain('列表')
     expect(editor.getJSON().content[0].type).toBe('bulletList')
   })
 
@@ -203,8 +206,11 @@ describe('块级剪贴板真实事件', () => {
 describe('块菜单剪贴板', () => {
   afterEach(() => vi.unstubAllGlobals())
   function context(editor, extra = {}) {
-    return { editor, writable: () => editor.isEditable, session: { can: () => true },
+    const owner = { editor, writable: () => editor.isEditable, session: { can: () => true },
       deleteBlockRange: vi.fn(), $nextTick: () => {}, ...extra }
+    owner.contentCopyAllowed = () => bubbleMenuMixin.methods.contentCopyAllowed.call(owner)
+    owner.contentCopyContext = () => bubbleMenuMixin.methods.contentCopyContext.call(owner)
+    return owner
   }
   function clipboard(write, supports = () => true) {
     class Item { constructor(values) { this.values = values } static supports(type) { return supports(type) } }
@@ -282,6 +288,174 @@ describe('块菜单剪贴板', () => {
     const vm = context(editor)
     expect(await blockMenuMixin.methods.copyBlock.call(vm, { from: 0, to: editor.state.doc.content.size }, true)).toBe(false)
     expect(vm.deleteBlockRange).not.toHaveBeenCalled()
+  })
+})
+
+describe('块剪贴板唯一执行器', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  function ownerOf(editor, extra = {}) {
+    const owner = { editor, writable: () => editor.isEditable, session: { can: () => true },
+      deleteBlockRange: vi.fn(range => editor.commands.deleteRange(range)), $nextTick: () => {}, ...extra }
+    owner.contentCopyAllowed = () => bubbleMenuMixin.methods.contentCopyAllowed.call(owner)
+    owner.contentCopyContext = () => bubbleMenuMixin.methods.contentCopyContext.call(owner)
+    return owner
+  }
+  function clipboard(write, supports = () => true) {
+    class Item { constructor(values) { this.values = values } static supports(type) { return supports(type) } }
+    vi.stubGlobal('ClipboardItem', Item)
+    vi.stubGlobal('navigator', { clipboard: { write } })
+  }
+  function withCopyEvent(data, run, afterCopy = () => {}) {
+    const original = document.execCommand
+    document.execCommand = vi.fn(() => {
+      const event = new Event('copy', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', { value: data })
+      document.dispatchEvent(event)
+      afterCopy()
+      return true
+    })
+    return Promise.resolve().then(run).finally(() => { document.execCommand = original })
+  }
+  const rangeOf = editor => ({ from: 0, to: editor.state.doc.firstChild.nodeSize })
+  const readBlob = blob => new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsText(blob) })
+
+  it('调用同步启动正式富复制，保留 HTML、原载荷、PM身份和分页 copySlice', async () => {
+    const editor = editorOf([paragraph('selected', '选中'), paragraph('secret', '秘密')])
+    const owner = ownerOf(editor), originalDoc = editor.state.doc, originalCtor = originalDoc.constructor
+    const copySlice = vi.fn(slice => slice)
+    editor.storage.larkDoc ||= {}
+    editor.storage.larkDoc.pagedView = { copySlice }
+    const write = vi.fn().mockResolvedValue(undefined)
+    clipboard(write)
+    const result = copyBlockContent(owner.contentCopyContext(), rangeOf(editor))
+    expect(result).toBeInstanceOf(Promise)
+    expect(write).toHaveBeenCalledOnce()
+    expect(await result).toBe(true)
+    const values = write.mock.calls[0][0][0].values
+    expect(values['text/html']).toBeInstanceOf(Blob)
+    expect(values[`web ${BLOCK_CLIPBOARD_MIME}`]).toBeInstanceOf(Blob)
+    expect(values['application/x-lark-doc-block+json']).toBeUndefined()
+    expect(await readBlob(values['text/html'])).toContain('<strong>选中</strong>')
+    expect(await readBlob(values['text/html'])).not.toContain('秘密')
+    expect(decodeClipboardPayload(await readBlob(values[`web ${BLOCK_CLIPBOARD_MIME}`])).blocks[0].attrs.blockId).toBe('selected')
+    expect(copySlice).toHaveBeenCalledOnce()
+    expect(editor.state.doc).toBe(originalDoc)
+    expect(editor.state.doc.constructor).toBe(originalCtor)
+    delete editor.storage.larkDoc.pagedView
+  })
+
+  it('真实 copy 事件写入正式 MIME 与 HTML 后只剪切一次，一次 Undo 精确恢复', async () => {
+    const editor = editorOf([paragraph('selected', '选中'), paragraph('secret', '秘密')])
+    const owner = ownerOf(editor), before = editor.getJSON(), data = transfer(), range = rangeOf(editor), originalRange = { ...range }
+    await withCopyEvent(data, async () => {
+      expect(await copyBlockContent(owner.contentCopyContext(), range, true)).toBe(true)
+      expect(decodeClipboardPayload(data.getData(BLOCK_CLIPBOARD_MIME)).blocks[0].attrs.blockId).toBe('selected')
+      expect(data.getData('text/html')).toContain('<strong>选中</strong>')
+      expect(data.getData('text/html')).not.toContain('秘密')
+      expect(owner.deleteBlockRange).toHaveBeenCalledOnce()
+      expect(owner.deleteBlockRange).toHaveBeenCalledWith(originalRange)
+      expect(editor.getText()).toBe('秘密')
+      expect(editor.commands.undo()).toBe(true)
+      expect(editor.getJSON()).toEqual(before)
+    }, () => { range.to = editor.state.doc.content.size })
+  })
+
+  it.each(['canView', 'canCopy', 'canEdit', 'policy', 'config'])('%s 拒绝时不碰系统剪贴板', async denied => {
+    const editor = editorOf(), write = vi.fn().mockResolvedValue(undefined)
+    clipboard(write)
+    const security = { policy: { canCopy: denied !== 'policy' } }
+    const owner = ownerOf(editor, { session: { can: key => key !== denied, getProvider: key => key === 'security' ? security : undefined } })
+    if (denied === 'config') owner.larkDocConfig = { blockMenu: { disabled: ['cut'] } }
+    expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor), true)).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    expect(owner.deleteBlockRange).not.toHaveBeenCalled()
+  })
+
+  it.each(['readonly', 'permission'])('仅有复制能力 %s 时保留复制，剪切不写剪贴板也不删除', async kind => {
+    const editor = editorOf(), write = vi.fn().mockResolvedValue(undefined)
+    if (kind === 'readonly') editor.setEditable(false)
+    clipboard(write)
+    const owner = ownerOf(editor, { session: { can: key => kind !== 'permission' || key !== 'canEdit' } }), before = editor.state.doc
+    expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor))).toBe(true)
+    write.mockClear()
+    expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor), true)).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    expect(owner.deleteBlockRange).not.toHaveBeenCalled()
+    expect(editor.state.doc).toBe(before)
+  })
+
+  it('浏览器不支持 custom MIME 时仍可复制 HTML，保留正文', async () => {
+    const editor = editorOf(), owner = ownerOf(editor), write = vi.fn().mockResolvedValue(undefined), before = editor.state.doc
+    clipboard(write, () => false)
+    expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor))).toBe(true)
+    const values = write.mock.calls[0][0][0].values
+    expect(values['text/html']).toBeInstanceOf(Blob)
+    expect(values['text/plain']).toBeInstanceOf(Blob)
+    expect(values[`web ${BLOCK_CLIPBOARD_MIME}`]).toBeUndefined()
+    expect(editor.state.doc).toBe(before)
+  })
+
+  it.each(['custom', 'text'])('只有异步 %s 写入成功时不执行破坏性剪切', async kind => {
+    const editor = editorOf(), write = vi.fn().mockResolvedValue(undefined)
+    if (kind === 'custom') clipboard(write)
+    else vi.stubGlobal('navigator', { clipboard: { writeText: write } })
+    const owner = ownerOf(editor), before = editor.state.doc
+    expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor), true)).toBe(false)
+    expect(write).toHaveBeenCalledOnce()
+    expect(owner.deleteBlockRange).not.toHaveBeenCalled()
+    expect(editor.state.doc).toBe(before)
+  })
+
+  it.each(['permission', 'authorization', 'identity', 'security', 'session', 'document', 'body', 'destroy', 'config'])('await 期间 %s 退役后不删除、不落成功反馈', async kind => {
+    const editor = editorOf()
+    let finish, allowed = true
+    const authorization = {}, security = { policy: { canCopy: true } }
+    const session = { documentId: 'one', user: { id: 'author' }, _authorizationGeneration: 0, _privateIdentityGeneration: 0,
+      can: () => allowed, getProvider: key => key === 'security' ? security : authorization }
+    const owner = ownerOf(editor, { session })
+    clipboard(() => new Promise(resolve => { finish = resolve }))
+    const pending = copyBlockContent(owner.contentCopyContext(), rangeOf(editor), true)
+    expect(typeof finish).toBe('function')
+    if (kind === 'permission') allowed = false
+    if (kind === 'authorization') session._authorizationGeneration++
+    if (kind === 'identity') session._privateIdentityGeneration++
+    if (kind === 'security') {
+      const changedSecurity = {}
+      session.getProvider = key => key === 'security' ? changedSecurity : authorization
+    }
+    if (kind === 'session') owner.session = { ...session }
+    if (kind === 'document') session.documentId = 'two'
+    if (kind === 'body') editor.commands.insertContent('编辑')
+    if (kind === 'destroy') owner._isDestroyed = true
+    if (kind === 'config') owner.larkDocConfig = { blockMenu: { disabled: ['cut'] } }
+    const latest = editor.state.doc
+    finish()
+    expect(await pending).toBe(false)
+    expect(owner.deleteBlockRange).not.toHaveBeenCalled()
+    expect(owner.error).toBeUndefined()
+    expect(editor.state.doc).toBe(latest)
+  })
+
+  it.each(['permission', 'config'])('真实 copy 事件写入后 %s 撤销仍不删除', async kind => {
+    const editor = editorOf(), owner = ownerOf(editor), data = transfer(), before = editor.state.doc
+    await withCopyEvent(data, async () => {
+      expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor), true)).toBe(false)
+      expect(data.getData(BLOCK_CLIPBOARD_MIME)).not.toBe('')
+      expect(owner.deleteBlockRange).not.toHaveBeenCalled()
+      expect(editor.state.doc).toBe(before)
+    }, () => {
+      if (kind === 'permission') owner.session.can = () => false
+      else owner.larkDocConfig = { blockMenu: { disabled: ['cut'] } }
+    })
+  })
+
+  it('正式 MIME 写入失败时不删除原块', async () => {
+    const editor = editorOf(), owner = ownerOf(editor), data = transfer({}, BLOCK_CLIPBOARD_MIME), before = editor.state.doc
+    await withCopyEvent(data, async () => {
+      expect(await copyBlockContent(owner.contentCopyContext(), rangeOf(editor), true)).toBe(false)
+      expect(owner.deleteBlockRange).not.toHaveBeenCalled()
+      expect(editor.state.doc).toBe(before)
+    })
   })
 })
 

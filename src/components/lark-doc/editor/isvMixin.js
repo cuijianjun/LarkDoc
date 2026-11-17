@@ -114,9 +114,9 @@ export default {
     onIsvPanelReady(panel) {
       const revision = this.isvPanelRevision
       this.$nextTick(() => {
-        if (this._isBeingDestroyed || this._isDestroyed || this.effectiveReadonly || !this.isvPanelOpen || revision !== this.isvPanelRevision || panel !== this.$refs.isvPanel) return
+        if (this._isBeingDestroyed || this._isDestroyed || this.effectiveReadonly || !this.isvPanelOpen || revision !== this.isvPanelRevision || panel !== this._isvUi || !panel.el?.isConnected) return
         this.positionIsvPanel()
-        panel.$el.querySelector('[aria-label="按钮文字"]')?.focus()
+        panel.focusText()
       })
     },
     /**

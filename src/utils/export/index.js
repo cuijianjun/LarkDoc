@@ -1,3 +1,4 @@
+/* global globalThis */
 /**
  * 导出统一出口（P6b-04 导出线）。
  *
@@ -14,8 +15,7 @@
  *   3. **不做静默兜底**：图片取不到字节就是取不到，`collectImages` 跳过该图并在返回值里
  *      列出失败清单，由上层决定要不要提示 —— 不伪造占位图，那会让用户以为图还在。
  *   4. **不做格式嗅探**：导出哪种格式由调用方显式指定，不根据标题后缀或内容猜。
- *   5. **「导出正文及评论」不产评论内容**：`scope='withComments'` 只被原样记进返回值，
- *      不参与 docx / pdf 的构建 —— 评论线不在本线范围，伪造一块评论节点比不导更糟。
+ *   5. 正文及评论必须有实际评论数据；附录与原生 Word 评论均来自同一只读投影。
  */
 import { serializeMarkdown } from './markdown.js'
 import { withExtension } from './fileName.js'
@@ -25,15 +25,45 @@ import { withExtension } from './fileName.js'
 // 一条入口，老老实实待在 import-export 按需区块里。
 import { downloadBlob, downloadText } from '../download.js'
 import { loadFeature } from '../../core/features/registry'
+import { safeUrl, flattenHeadingContainers } from '../../core/documentOperations'
+import { createNetworkPolicy } from '../../core/policy/network'
 
 export { safeFileName, withExtension } from './fileName.js'
 export { exportPdf } from './pdf.js'
 
+/** Plain, immutable export projection; never include deleted replies or executable URLs. */
+export function normalizeExportComments(threads) {
+  const author = value => ({ id: typeof value?.id === 'string' ? value.id : '', name: typeof value?.name === 'string' ? value.name : '' })
+  return (Array.isArray(threads) ? threads : []).filter(thread => thread && !thread.tombstone && !thread.deleted).map(thread => ({
+    author: author(thread.author), quote: typeof thread.quote === 'string' ? thread.quote : '', resolved: thread.resolved === true,
+    replies: (Array.isArray(thread.replies) ? thread.replies : []).filter(reply => reply && !reply.tombstone && !reply.deleted).map(reply => ({
+      author: author(reply.author), content: typeof reply.content === 'string' ? reply.content : '',
+      createdAt: Number.isFinite(reply.createdAt) && reply.createdAt > 0 ? reply.createdAt : 0,
+      attachments: (Array.isArray(reply.attachments) ? reply.attachments : []).filter(item => safeUrl(item?.url, true)).map(item => ({ name: typeof item.name === 'string' ? item.name : '', url: item.url })),
+    })),
+  }))
+}
+
+function withCommentAppendix(doc, comments) {
+  if (!comments?.length) return doc
+  const paragraph = text => ({ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] })
+  const content = [{ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: '评论' }] }]
+  normalizeExportComments(comments).forEach((thread, index) => {
+    content.push(paragraph(`${index + 1}. ${thread.author.name || thread.author.id || '作者未提供'}（${thread.resolved ? '已解决' : '未解决'}）`))
+    if (thread.quote) content.push({ type: 'blockquote', content: [paragraph(thread.quote)] })
+    thread.replies.forEach(reply => {
+      content.push(paragraph(`${reply.author.name || reply.author.id || '作者未提供'}：${reply.content}`))
+      reply.attachments.forEach(item => content.push(paragraph(`附件：${item.name || '图片'} ${/^data:/i.test(item.url) ? '[内嵌图片]' : item.url}`)))
+    })
+  })
+  return { type: 'doc', content: [...nodesOf(doc), ...content] }
+}
+
 /** doc → 块数组：兼容 doc JSON、doc 节点实例与裸数组三种输入。 */
 function nodesOf(doc) {
-  if (Array.isArray(doc)) return doc
+  if (Array.isArray(doc)) return flattenHeadingContainers({ type: 'doc', content: doc }).content
   if (!doc || typeof doc !== 'object') return []
-  if (Array.isArray(doc.content)) return doc.content
+  if (Array.isArray(doc.content)) return flattenHeadingContainers(doc).content
   // Fragment 里真正的数组还要再下一层。
   if (doc.content && Array.isArray(doc.content.content)) return doc.content.content
   return []
@@ -86,17 +116,25 @@ function collectImageSources(nodes, found) {
  *
  * @returns {Promise<{ images: object, failed: string[] }>}
  */
-export async function collectImages(doc) {
+export async function collectImages(doc, options = {}) {
   const sources = collectImageSources(nodesOf(doc), [])
   const images = {}
   const failed = []
-  if (typeof fetch !== 'function') {
-    for (let i = 0; i < sources.length; i += 1) failed.push(sources[i])
-    return { images, failed }
-  }
   for (let i = 0; i < sources.length; i += 1) {
     const src = sources[i]
-    if (/^data:/i.test(src)) continue
+    if (/^data:/i.test(src)) {
+      try {
+        const match = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp);base64,([A-Za-z0-9+/]*={0,2})$/i.exec(src)
+        const value = match?.[1]
+        if (!value || value.length % 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw new Error('invalid image data')
+        if (typeof atob === 'function') images[src] = Uint8Array.from(atob(value), char => char.charCodeAt(0))
+        else if (globalThis.Buffer) images[src] = Uint8Array.from(globalThis.Buffer.from(value, 'base64'))
+        else throw new Error('image data decoder unavailable')
+      } catch (_) { failed.push(src) }
+      continue
+    }
+    if (typeof fetch !== 'function') { failed.push(src); continue }
+    if (!safeUrl(src, true) || !createNetworkPolicy(options.network).allows(src) || (options.isCurrent && !options.isCurrent())) { failed.push(src); continue }
     try {
       const response = await fetch(src)
       if (!response.ok) {
@@ -129,6 +167,7 @@ export function exportMarkdown(doc, options) {
   const result = serializeMarkdown(source)
   const fileName = withExtension(settings.fileName, 'md')
   const finish = markdown => {
+    if (typeof settings.shouldDownload === 'function' && !settings.shouldDownload()) return null
     downloadText(markdown, fileName, 'text/markdown;charset=utf-8')
     return { fileName, markdown, scope }
   }
@@ -146,18 +185,19 @@ export function exportMarkdown(doc, options) {
  * @param {string} [options.fileName] 不含扩展名的文件名
  * @param {string} [options.title] 写入 docx 文档属性的标题
  * @param {object} [options.images] src → 字节；不传时自动 `collectImages`
- * @param {string} [options.scope] 内容范围（见负结论 5：只记录，不影响构建）
+ * @param {string} [options.scope] 内容范围；withComments 必须传实际 comments 并构建附录/原生评论。
  * @param {Function} [options.isCurrent] Optional final UI-context guard before download.
  * @returns {Promise<{ fileName: string, blob: Blob, failedImages: string[], scope: string }|null>}
  */
 export async function exportDocx(doc, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
+  if (scope === 'withComments' && !Array.isArray(settings.comments)) throw new Error('未提供实际评论，无法导出正文及评论')
   const fileName = withExtension(settings.fileName, 'docx')
   let images = settings.images
   let failedImages = []
   if (!images) {
-    const collected = await collectImages(doc)
+    const collected = await collectImages(doc, { network: settings.network, isCurrent: settings.isCurrent || settings.shouldDownload })
     images = collected.images
     failedImages = collected.failed
   }
@@ -171,8 +211,8 @@ export async function exportDocx(doc, options) {
   // 宿主加载 lark-doc/features/office.js（自带 buildDocx）后恢复 rich Word 导出。
   const { buildDocx } = await loadFeature('office.buildDocx', () =>
     import(/* webpackChunkName: "office" */ './docx.js'))
-  const blob = await buildDocx(doc, { images, title: settings.title || settings.fileName })
-  if (typeof settings.isCurrent === 'function' && !settings.isCurrent()) return null
+  const blob = await buildDocx(withCommentAppendix(doc, scope === 'withComments' ? settings.comments : null), { images, title: settings.title || settings.fileName, comments: scope === 'withComments' ? normalizeExportComments(settings.comments) : [] })
+  if ((typeof settings.isCurrent === 'function' && !settings.isCurrent()) || (typeof settings.shouldDownload === 'function' && !settings.shouldDownload())) throw new Error('导出条件已改变，已取消下载')
   downloadBlob(blob, fileName)
   return { fileName, blob, failedImages, scope }
 }

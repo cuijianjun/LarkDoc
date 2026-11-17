@@ -15,6 +15,10 @@
  */
 import { computeOrderedListNumbers, maxIndentAt } from '../documentOperations'
 import { createBubbleBar } from '../../../ui/bubbleBar'
+import { evaluateOutputPolicy } from '../../../core/policy/output'
+import { aiNetworkAllows, createNetworkPolicy } from '../../../core/policy/network'
+import { resolveSystemPrompt } from '../ai/prompt'
+
 
 // 飞书气泡条的行内格式顺序：加粗 → 删除线 → 斜体 → 下划线 → 行内代码 → 高亮（带取色）。
 const BUBBLE_MARK_ORDER = [
@@ -59,6 +63,9 @@ export default {
     bubblePosition() { this.refreshBubbleBar() },
     bubbleAlignOpen() { this.refreshBubbleBar() },
     bubbleHeadingOpen() { this.refreshBubbleBar() },
+    aiProvider() { this.closeSelectionTranslation() },
+    session() { this.closeSelectionTranslation() },
+    larkDocConfig() { if (this._selectionTranslation && !this.selectionTranslationCurrent(this._selectionTranslation)) this.closeSelectionTranslation() },
   },
   methods: {
     /**
@@ -87,12 +94,19 @@ export default {
           // 透传原事件：`toggleColorPalette` 要靠 `currentTarget` 定位取色面板。
           onPalette: (event) => this.toggleColorPalette('textBackground', event),
           onCopy: () => this.bubbleCopy(),
-          onComment: () => { if (this.beginCommentComposer()) this.bubbleVisible = false },
+          onCut: () => this.bubbleCopy(true),
+          onShare: () => this.openSelectionShareDialog(),
+          onTranslate: () => this.openSelectionTranslation(),
+          onSelectAll: () => {
+            if (this.contentCopyAllowed()) { this.editor.commands.selectAll(); this.editor.view.focus() }
+          },
+          onComment: () => { if (this.openSelectionComment()) this.bubbleVisible = false },
         },
       })
       this.refreshBubbleBar()
     },
     destroyBubbleBar() {
+      this.closeSelectionTranslation()
       if (!this._bubbleUi) return
       this._bubbleUi.destroy()
       this._bubbleUi = null
@@ -100,8 +114,16 @@ export default {
     /** 特性快照：气泡条哪几段存在由它决定（段序断言依赖于此）。 */
     bubbleBarConfig() {
       return {
+        mobile: !!this._mobileEditorMedia?.matches,
+        readonly: this.effectiveReadonly,
+        canCopy: this.contentCopyAllowed(),
+        canComment: this.commentAllowed?.('create') === true,
+        canShare: this.selectionShareAllowed?.() === true,
+        canTranslate: this.featureEnabled('ai'),
         comment: true,
         ai: this.featureEnabled('ai'),
+        canAi: !this.effectiveReadonly,
+        aiUnavailableReason: this.effectiveReadonly ? '当前文档未配置只读问答服务' : '',
         blockStyle: this.featureEnabled('blockStyle'),
         marks: this.bubbleMarkItems,
         highlightAllowed: this.bubbleHighlightAllowed,
@@ -116,11 +138,12 @@ export default {
       if (!bar) return
       // v7 第二道闸：即便 bubbleVisible 已由选区置真，只要唯一表格浮窗开着
       // （mode=text / table），气泡条必须真从 DOM 摘掉，杜绝两个浮窗并存。
-      if (!this.bubbleVisible || this.effectiveReadonly
+      if (!this.bubbleVisible || (this.effectiveReadonly && !this._mobileEditorMedia?.matches)
         || this.buildTableToolsState?.().open === true) { bar.hide(); return }
       bar.setConfig(this.bubbleBarConfig())
       const alignValue = this.bubbleAlignValue()
       bar.update({
+        open: true,
         left: this.bubblePosition.left,
         top: this.bubblePosition.top,
         headingValue: this.bubbleHeadingValue(),
@@ -360,13 +383,142 @@ export default {
       return true
     },
     /** 复制选中的纯文本（飞书气泡条最右侧的复制入口）。 */
-    bubbleCopy() {
+    contentCopyAllowed() {
+      return !!this.editor && !this.editor.isDestroyed && !this._isDestroyed && !this._isBeingDestroyed
+        && !this.session?._destroyed
+        && this.session?.can?.('canView') !== false && this.session?.can?.('canCopy') !== false
+        && evaluateOutputPolicy(this.session?.getProvider?.('security')?.policy, 'copy').allowed
+    },
+    contentCopyContext() {
+      const session = this.session
+      return { owner: this, editor: this.editor, doc: this.editor.state.doc, session,
+        provider: session?.getProvider?.('authorization'), principal: session?.user?.id,
+        security: session?.getProvider?.('security'),
+        identity: session?._privateIdentityGeneration, auth: session?._authorizationGeneration, documentId: session?.documentId }
+    },
+    bubbleCopy(cut = false) {
       if (!this.contentCopyAllowed()) return false
+      if (cut && !this.writable()) return false
       const context = this.contentCopyContext()
-      const { from, to, empty } = context.editor.state.selection
+      const selection = context.editor.state.selection, { from, to, empty } = selection
       if (empty) return false
       return import(/* webpackChunkName: "content-clipboard" */ '../../../utils/contentClipboard')
-        .then(module => module.copySelection(context, { from, to })).catch(() => false)
+        .then(async module => {
+          const copied = await module.copySelection(context, { from, to }, cut)
+          if (copied && !cut && this._mobileEditorMedia?.matches && module.copyContextCurrent(context)
+            && context.editor.state.selection.eq(selection)) {
+            this.bubbleVisible = false; this.refreshBubbleBar()
+          }
+          return copied
+        }).catch(() => false)
+    },
+    selectionTranslationCurrent(target) {
+      const context = target?.context, session = this.session
+      return !!context && this._selectionTranslation === target && !target.closed && this.contentCopyAllowed() && this.featureEnabled('ai')
+        && context.editor === this.editor && context.doc === this.editor.state.doc && context.session === session
+        && context.provider === session?.getProvider?.('authorization') && context.security === session?.getProvider?.('security')
+        && context.principal === session?.user?.id && context.identity === session?._privateIdentityGeneration
+        && context.auth === session?._authorizationGeneration && context.documentId === session?.documentId
+        && target.provider === this.aiProvider
+        && target.network === JSON.stringify(this.larkDocConfig?.network || {})
+    },
+    closeSelectionTranslation() {
+      const target = this._selectionTranslation
+      this._selectionTranslation = null
+      if (!target) return
+      target.closed = true; target.request += 1
+      try { target.stream?.cancel?.() } catch { /* 宿主取消失败也必须退休旧界面。 */ }
+      target.offs?.forEach(off => { try { off() } catch { /* 继续清除其他订阅。 */ } }); target.ui?.destroy()
+    },
+    async openSelectionTranslation() {
+      if (!this.contentCopyAllowed() || !this.featureEnabled('ai') || this.editor.state.selection.empty || this.editor.state.selection.node) return false
+      const context = this.contentCopyContext(), { from, to } = context.editor.state.selection
+      const text = context.doc.textBetween(from, to, '\n')
+      if (!text.trim()) return false
+      this.closeSelectionTranslation()
+      const target = { context, text, from, to, provider: this.aiProvider, language: 'en', request: 0, offs: [], closed: false,
+        network: JSON.stringify(this.larkDocConfig?.network || {}) }
+      this._selectionTranslation = target
+      const check = () => { if (this._selectionTranslation === target && !this.selectionTranslationCurrent(target)) this.closeSelectionTranslation() }
+      context.editor.on('transaction', check); context.editor.on('destroy', check)
+      target.offs.push(() => context.editor.off('transaction', check), () => context.editor.off('destroy', check))
+      for (const event of ['provider', 'provider-changed', 'identity', 'editor', 'connection', 'capabilities']) {
+        const off = context.session?.on?.(event, check)
+        if (typeof off === 'function') target.offs.push(off)
+      }
+      try {
+        const module = await import(/* webpackChunkName: "dialogs" */ '../../../ui/dialogs')
+        if (!this.selectionTranslationCurrent(target)) { check(); return false }
+        target.ui = module.createSelectionTranslationDialog({ host: this.$refs.root, handlers: {
+          onClose: () => { if (this._selectionTranslation === target) this.closeSelectionTranslation() },
+          onLanguage: language => {
+            if (!this.selectionTranslationCurrent(target)) { check(); return }
+            target.language = language; this.runSelectionTranslation(target)
+          },
+          onCopy: () => this.copySelectionTranslationResult(target),
+        } })
+        this.bubbleVisible = false; this.refreshBubbleBar?.()
+        this.runSelectionTranslation(target)
+        return true
+      } catch {
+        if (this._selectionTranslation === target) this.closeSelectionTranslation()
+        return false
+      }
+    },
+    runSelectionTranslation(target) {
+      if (!this.selectionTranslationCurrent(target)) {
+        if (this._selectionTranslation === target) this.closeSelectionTranslation()
+        return
+      }
+      const request = ++target.request
+      try { target.stream?.cancel?.() } catch { /* 此请求已退休，继续新语种。 */ }
+      target.stream = null; target.result = ''; target.completed = false
+      const current = () => {
+        if (target.request !== request || target.closed || this._selectionTranslation !== target) return false
+        if (!this.selectionTranslationCurrent(target)) { this.closeSelectionTranslation(); return false }
+        return true
+      }
+      const render = (message = '', busy = false) => target.ui.update({ source: target.text, result: target.result,
+        language: target.language, message, busy })
+      if (!target.provider || typeof target.provider.stream !== 'function') { render('未配置翻译服务，请联系文档管理员。'); return }
+      if (target.provider.kind === 'endpoint' && !aiNetworkAllows(target.provider.endpoint || target.provider.baseURL,
+        createNetworkPolicy(this.larkDocConfig?.network), this.$refs.root?.ownerDocument.defaultView?.location?.href)) {
+        render('当前网络策略禁止访问翻译服务。'); return
+      }
+      render('翻译中…', true)
+      let settled = false
+      const valid = () => !settled && current()
+      const callbacks = {
+        onStart: () => { if (valid()) render('翻译中…', true) },
+        onChunk: chunk => { if (valid()) { target.result += String(chunk || ''); render('翻译中…', true) } },
+        onDone: () => { if (valid()) { settled = true; target.completed = !!target.result; render(target.result ? '' : '翻译服务未返回译文。') } },
+        onCancelled: () => { if (valid()) { settled = true; target.result = ''; render('翻译已停止。') } },
+        onError: () => { if (valid()) { settled = true; target.result = ''; render('翻译失败，请切换语种后重试。') } },
+      }
+      try {
+        const handle = target.provider.stream({ action: 'translate', text: target.text, language: target.language,
+          system: resolveSystemPrompt('translate', target.language), prompt: '请翻译以下内容，只输出译文。',
+          range: { from: target.from, to: target.to, source: 'selection' },
+          context: { text: target.text, from: target.from, to: target.to, source: 'selection' }, ...callbacks })
+        const stream = typeof handle === 'function' ? { cancel: handle } : handle
+        stream?.done?.catch?.(() => {})
+        if (!current()) stream?.cancel?.()
+        else target.stream = stream
+      } catch { callbacks.onError() }
+    },
+    async copySelectionTranslationResult(target) {
+      if (!this.selectionTranslationCurrent(target) || !target.completed || !target.result) return false
+      const text = target.result, request = target.request
+      const current = () => this.selectionTranslationCurrent(target) && request === target.request && text === target.result
+      try {
+        const module = await import(/* webpackChunkName: "content-clipboard" */ '../../../utils/contentClipboard')
+        if (!current()) return false
+        const copied = await module.copySelectionTranslation(target.context, text, current)
+        if (current()) target.ui.update({ source: target.text, result: target.result, language: target.language,
+          message: copied ? '已复制译文' : '无法访问剪贴板，请手动选择译文复制。' })
+        return copied
+      } catch { return false }
     },
   },
+  beforeDestroy() { this.closeSelectionTranslation() },
 }

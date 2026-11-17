@@ -1,6 +1,6 @@
 /**
  * 常用组命令（对齐需求 03 §3.4 ②「常用」口径中已实现的项：任务 / 图片 / 表格 / 分栏 / 高亮块 / 模板）。
- * 文件入口已经在 media.js 落位；同步块与子文档当前由引用卡承载，真实外部资源 CRUD 由宿主 provider 接入。
+ * 文件入口复用已实现的附件上传任务；同步块与子文档由引用卡承载，真实外部资源 CRUD 由宿主 provider 接入。
  * columns2–5 是「分栏」二级选择器的实现 id，不作为独立命令暴露（filterCommands 里过滤）。
  */
 export const commonCommands = [
@@ -13,5 +13,6 @@ export const commonCommands = [
   { id: 'columns5', label: '五栏', category: '布局', plus: false, glyph: 'Ⅴ', tone: 'indigo', keywords: 'columns wulan 5', group: 'common', tier: 'required' },
   { id: 'table', label: '表格', category: '插入', plusCategory: '常用', glyph: '▦', tone: 'teal', submenu: '表格', submenuType: 'table', keywords: 'table biaoge', group: 'common', tier: 'required' },
   { id: 'image', label: '本地图片', category: '插入', plusCategory: '常用', glyph: '▧', tone: 'yellow', keywords: 'image tupian photo', group: 'common', tier: 'required' },
+  { id: 'file', label: '视频或文件', category: '插入', plusCategory: '常用', glyph: '📎', tone: 'blue', keywords: 'file video attachment shipin wenjian fujian', group: 'common', tier: 'required' },
   { id: 'template', label: '模板', category: '插入', plusCategory: '常用', glyph: '◇', tone: 'indigo', submenu: '模板', submenuType: 'templates', keywords: 'template moban ben di local', group: 'common', tier: 'required' },
 ]

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { builtinModules } from 'node:module'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const { artifactFiles, gzipBytes } = require('./artifact-graph')
+const { artifactFiles, gzipBytes, staticModuleRequests } = require('./artifact-graph')
 const { parse } = require('acorn')
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname)
@@ -39,7 +39,7 @@ for (const check of checks) {
   }
   const source = readFileSync(path, 'utf8')
   if (check.imports) {
-    const imports = parse(source, { ecmaVersion: 2018, sourceType: 'module' }).body.filter(node => node.type === 'ImportDeclaration').map(node => node.source.value)
+    const imports = staticModuleRequests(source)
     for (const dependency of check.imports) if (!imports.includes(dependency)) {
       console.error(`✗ ${check.file} 未保留 external：${dependency}`)
       failed = true
@@ -56,6 +56,37 @@ for (const check of checks) {
       console.error(`✗ ${check.file} 命中禁用内容：${text}`)
       failed = true
     }
+  }
+}
+
+// The optional native-browser entry must resolve without an import map, through its full closure.
+const browserGraphFile = resolve(DIST, 'lark-doc-graph.json')
+if (existsSync(browserGraphFile)) {
+  const graphs = JSON.parse(readFileSync(browserGraphFile, 'utf8'))
+  for (const target of ['elementEsm', 'collabBrowser']) {
+    const duplicated = Object.entries(graphs[target] || {}).flatMap(([file, item]) => file.startsWith('pm/') ? [] :
+      (item.modules || []).filter(id => /(?:^|\/)node_modules\/(?:@tiptap\/pm\/|prosemirror-[^/]+\/)/.test(id.replace(/\\/g, '/'))))
+    if (duplicated.length) { console.error(`✗ ${target} 内联了 ${duplicated.length} 个 PM 模块，未共享发布的 PM 身份`); failed = true }
+  }
+  const graph = graphs.collabBrowser
+  if (graph) {
+    const visited = new Set()
+    const inspect = file => {
+      if (visited.has(file)) return
+      visited.add(file)
+      const code = readFileSync(file, 'utf8'), ast = parse(code, { ecmaVersion: 2022, sourceType: 'module' })
+      const visit = node => {
+        if (!node || typeof node !== 'object') return
+        const dependency = node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration' ? node.source?.value : node.type === 'ImportExpression' ? node.source?.value : null
+        if (typeof dependency === 'string') {
+          if (!dependency.startsWith('.')) { console.error(`✗ 浏览器协同存在裸导入：${dependency}`); failed = true }
+          else inspect(resolve(dirname(file), dependency))
+        }
+        Object.values(node).forEach(value => { if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === 'object') visit(value) })
+      }
+      visit(ast)
+    }
+    for (const [file, entry] of Object.entries(graph)) if (entry.entry) inspect(resolve(DIST, file))
   }
 }
 

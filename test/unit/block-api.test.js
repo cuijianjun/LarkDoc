@@ -621,6 +621,23 @@ describe('BlockAPI · transform', () => {
 })
 
 describe('BlockAPI · batch：整体一步落地', () => {
+  it('interleaves shared remove and insertion against the same pending transaction', () => {
+    const { api, editor: ed } = setup([para('a', 'A'), para('b', 'B'), para('c', 'C')])
+    const before = ed.getJSON()
+    api.batch(() => {
+      api.remove('a')
+      expect(api.get('a')).toBeNull()
+      expect(idsIn(ed.state.doc)).toEqual(['a', 'b', 'c'])
+      api.insert(para('x', 'X'), { blockId: 'b', position: 'after' })
+      api.remove('b')
+      expect(api.get('x').text).toBe('X')
+      expect(api.get('b')).toBeNull()
+    })
+    expect(idsIn(ed.state.doc)).toEqual(['x', 'c'])
+    expect(ed.commands.undo()).toBe(true)
+    expect(ed.getJSON()).toEqual(before)
+  })
+
   it('batch 内多次写 → 一次 dispatch，一次 undo 全部回退', () => {
     const { api, editor: ed } = setup([para('a', 'A')])
     api.batch(() => {

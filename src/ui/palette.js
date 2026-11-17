@@ -29,6 +29,25 @@ export const TEXT_COLOR_OPTIONS = [
   { label: '蓝色', value: '#3491fa' }, { label: '紫色', value: '#722ed1' },
 ]
 
+// Android Feishu 8.6.9, physical App sheet captured 2026-11-14. Flat swatches
+// and dominant glyph ink sampled from phone-real-native-color-panel.png.
+export const MOBILE_TEXT_COLOR_OPTIONS = TEXT_COLOR_OPTIONS.map((item, index) => ({ ...item, value:
+  ['#1f2329', '#8f959e', '#d83931', '#de7802', '#dc9b04', '#2ea121', '#245bdb', '#6425d0'][index] }))
+export const MOBILE_TEXT_BACKGROUND_ROWS = [
+  [
+    { label: '默认', value: '' }, { label: '浅灰', value: '#e5e6e9' },
+    { label: '浅红', value: '#fbbfbc' }, { label: '浅橙', value: '#feddb6' },
+    { label: '浅黄', value: '#fff895' }, { label: '浅绿', value: '#c5f1c1' },
+    { label: '浅蓝', value: '#cfddfe' }, { label: '浅紫', value: '#dcc9fc' },
+  ],
+  [
+    { label: '灰白', value: '#f2f3f5' }, { label: '灰色', value: '#bbbfc4' },
+    { label: '红色', value: '#f76964' }, { label: '橙色', value: '#ffa53d' },
+    { label: '黄色', value: '#ffe928' }, { label: '绿色', value: '#62d256' },
+    { label: '蓝色', value: '#9ebbfe' }, { label: '紫色', value: '#c4a4fa' },
+  ],
+]
+
 /* ---- 深色档（T3-03 / M5）：整组替换，不与浅色混用 ----
    取值全部落在 06 §1.5.1 batch91 实测的三行深档上，深纸上不发光（低饱和深底）：
      边框档    灰 #434343 红 #9E3836 橙 #BD7017 黄 #C7B300 绿 #339428 蓝 #2851A3 紫 #6533BD
@@ -96,6 +115,24 @@ export const DEFAULT_CELL_BACKGROUND = '#f2faf6'
 export const DEFAULT_BUTTON_COLOR = '#e1eaff'
 
 /* ---- 多色图标资源 ---- */
+/** Multicolor sharing resources keep their measured logo colors. */
+export const SHARE_ICON_COLORS = {
+  larkTeal: "#00D6B9",
+  larkBlue: "#3370FF",
+  larkDeepBlue: "#133C9A",
+  subscriptionWhite: "#fff",
+  subscriptionLightPurple: "#827CFF",
+  subscriptionPurple: "#675FF6",
+  subscriptionMediumPurple: "#5B53F7",
+  subscriptionDeepPurple: "#3B31E2",
+  wechatDarkGreen: "#187E28",
+  wechatGray: "#858C8C",
+  wechatGreen: "#78D431",
+  wechatLightGreen: "#9EEE69",
+  wechatLightGray: "#E4E6E6",
+  wechatWhite: "#F5F5FF",
+}
+
 /** 高亮笔图标：黄色色块打底 + 深褐 A（其余图标一律 currentColor） */
 export const ICON_PALETTE = { highlightSwatch: '#ffd50a', highlightGlyph: '#4a3b06' }
 

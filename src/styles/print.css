@@ -34,230 +34,28 @@
    —————————————————————————————————————————————————— */
 
 /* 包裹层：只为满足 Vue 2 单根，两个子节点都是 fixed，不占流。 */
-.lark-doc .lark-doc-export-layer { display: contents; }
 
 /* 提交后提示条：ud__msg-manager--t 1512×102 @[0,32] z9999，内层 [24,40,1464,70]。
    宽度写 100% 而非 1512 —— 1512 只是实测视口宽，写死会在窄屏横向溢出。 */
-.lark-doc .lark-doc-export-toast {
-  position: fixed;
-  z-index: 9999;
-  top: 32px;
-  left: 0;
-  right: 0;
-  display: flex;
-  box-sizing: border-box;
-  height: 102px;
-  padding: 40px 24px 0;
-  justify-content: center;
-  pointer-events: none;
-}
-.lark-doc .lark-doc-export-toast-inner {
-  display: flex;
-  box-sizing: border-box;
-  max-width: 1464px;
-  height: 70px;
-  padding: 0 16px;
-  align-items: center;
-  border-radius: 8px;
-  background: rgb(31, 35, 41);
-  color: rgb(255, 255, 255);
-  font-size: 14px;
-  line-height: 22px;
-  box-shadow: 0 6px 24px 0 rgba(31, 35, 41, 0.1);
-}
 
 /* 遮罩：z 1000（§4.6.7②），实测全屏无底色描述，取飞书通用遮罩档 rgba(31,35,41,0.5)。 */
-.lark-doc .lark-doc-export-backdrop {
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(31, 35, 41, 0.5);
-}
 
 /* 面板 720×215，radius 8、白底。 */
-.lark-doc .lark-doc-export-panel {
-  display: flex;
-  box-sizing: border-box;
-  width: 720px;
-  max-width: 100%;
-  height: 215px;
-  flex-direction: column;
-  border-radius: 8px;
-  background: rgb(255, 255, 255);
-  box-shadow: 0 6px 24px 0 rgba(31, 35, 41, 0.1);
-  overflow: hidden;
-}
 
 /* 标题行：标题 [420,392,640,24]，关闭 X 28×28 @[1068,390]。 */
-.lark-doc .lark-doc-export-header {
-  position: relative;
-  display: flex;
-  box-sizing: border-box;
-  height: 68px;
-  padding: 24px 24px 0;
-  align-items: flex-start;
-}
-.lark-doc .lark-doc-export-title {
-  overflow: hidden;
-  max-width: 640px;
-  color: rgb(31, 35, 41);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lark-doc .lark-doc-export-close {
-  position: absolute;
-  top: 22px;
-  right: 20px;
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgb(100, 106, 115);
-  cursor: pointer;
-}
-.lark-doc .lark-doc-export-close:hover { background: rgba(31, 35, 41, 0.08); }
 
 /* 内容区：标签 [420,465,56,22] + radio 组 [516,465,…]，两者同一行（y 都是 465）。 */
-.lark-doc .lark-doc-export-body {
-  display: flex;
-  box-sizing: border-box;
-  flex: 1;
-  padding: 29px 24px 0;
-  align-items: flex-start;
-}
-.lark-doc .lark-doc-export-range-label {
-  flex: none;
-  width: 56px;
-  height: 22px;
-  color: rgb(100, 106, 115);
-  font-size: 14px;
-  line-height: 22px;
-}
-.lark-doc .lark-doc-export-radio-group {
-  display: flex;
-  min-height: 22px;
-  margin-left: 40px;
-  gap: 24px; /* 实测两项间距恒 24：PDF/Word 122→66、MD 192→80 都是 24 */
-  align-items: flex-start;
-}
-.lark-doc .lark-doc-export-option {
-  display: inline-flex;
-  height: 22px;
-  align-items: flex-start;
-  font-size: 14px;
-  line-height: 22px;
-  color: rgb(31, 35, 41);
-  cursor: pointer;
-}
 
 /* radio 三层：input 16×16（原生，透明覆盖以便可读 .checked 且可点击）
    + wallpaper 16×16（白底、1px solid rgb(143,149,158)、radius 999999px）
    + checked-ink 6×6 @(x+5, y+8)（实心点，色未实测，取与「导出」按钮同支的 rgb(20,86,240)）。 */
-.lark-doc .lark-doc-export-radio {
-  position: relative;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: 3px; /* @(x, y+3) */
-  margin-right: 8px;
-}
-.lark-doc .lark-doc-export-radio-input {
-  position: absolute;
-  inset: 0;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.lark-doc .lark-doc-export-radio-wallpaper {
-  position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  border: 1px solid rgb(143, 149, 158);
-  border-radius: 999999px;
-  background: rgb(255, 255, 255);
-  pointer-events: none;
-}
-.lark-doc .lark-doc-export-radio-ink {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999999px;
-  background: rgb(20, 86, 240);
-}
 /* 无权限：置灰但**保留 pointer-events**，让 not-allowed 光标能显示出来（不自判角色，
    权限一律来自 session.can('canExport')）。 */
-.lark-doc .lark-doc-export-radio-input:disabled + .lark-doc-export-radio-wallpaper {
-  border-color: rgb(187, 191, 196);
-  background: rgb(245, 246, 247);
-}
-.lark-doc .lark-doc-export-radio-input:disabled { cursor: not-allowed; }
-.lark-doc .lark-doc-export-option.is-disabled {
-  color: rgb(187, 191, 196);
-  cursor: not-allowed;
-}
 
 /* 底栏 [396,527,720,56] → __btns [420,527,672,44]：按钮顶边贴 527，故 flex-start 而非 center。 */
-.lark-doc .lark-doc-export-footer {
-  box-sizing: border-box;
-  height: 56px;
-  padding: 0 24px;
-}
-.lark-doc .lark-doc-export-btns {
-  display: flex;
-  height: 44px;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 12px; /* 920+80=1000 → 1012，间距 12 */
-}
-.lark-doc .lark-doc-export-cancel,
-.lark-doc .lark-doc-export-submit {
-  box-sizing: border-box;
-  width: 80px;
-  height: 32px;
-  padding: 0;
-  border-radius: 6px;
-  font-size: 14px;
-  line-height: 32px;
-  text-align: center;
-  cursor: pointer;
-}
 /* 取消：白底 / 边 rgb(208,211,214) / 文字 rgb(31,35,41) */
-.lark-doc .lark-doc-export-cancel {
-  border: 1px solid rgb(208, 211, 214);
-  background: rgb(255, 255, 255);
-  color: rgb(31, 35, 41);
-}
-.lark-doc .lark-doc-export-cancel:hover { background: rgba(31, 35, 41, 0.04); }
 /* 导出：底 rgb(20,86,240) / 文字白 */
-.lark-doc .lark-doc-export-submit {
-  border: 1px solid rgb(20, 86, 240);
-  background: rgb(20, 86, 240);
-  color: rgb(255, 255, 255);
-}
-.lark-doc .lark-doc-export-submit:hover { background: rgb(51, 109, 244); border-color: rgb(51, 109, 244); }
 /* 置灰：色值取 06 实测的禁用灰 rgb(187,191,196)。保留 pointer-events，只改光标。 */
-.lark-doc .lark-doc-export-submit.is-disabled,
-.lark-doc .lark-doc-export-submit:disabled {
-  border-color: rgb(222, 224, 227);
-  background: rgb(245, 246, 247);
-  color: rgb(187, 191, 196);
-  cursor: not-allowed;
-}
 
 /* ——————————————————————————————————————————————————
    二、打印态（@media print）

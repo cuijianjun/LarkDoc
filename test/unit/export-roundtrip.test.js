@@ -24,8 +24,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   serializeMarkdown,
-  parseMarkdown,
-  htmlToDoc,
   escapeText,
   MD_ESCAPE_CHARS,
   MD_HARD_BREAK,
@@ -39,6 +37,7 @@ import {
   buildNumberingConfig,
   DOCX_BLOCK_SKIP,
 } from '../../src/utils/export/docx.js'
+import { parseMarkdown, htmlToDoc } from '../../src/utils/export/markdown-parse.js'
 import { PRINT_CLASS, printDocument } from '../../src/utils/export/pdf.js'
 import {
   exportMarkdown,

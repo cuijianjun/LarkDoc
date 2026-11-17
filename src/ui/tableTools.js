@@ -22,20 +22,46 @@ function placeFloatingToolbar(el, anchor) {
   if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) return
   const win = el.ownerDocument.defaultView
   if (!win) return
+  el.style.maxWidth = ''
   const rect = el.getBoundingClientRect()
   const vw = win.innerWidth || el.ownerDocument.documentElement.clientWidth || 0
   const vh = win.innerHeight || el.ownerDocument.documentElement.clientHeight || 0
   const gap = 12
   const pad = 8
+  const minTop = Math.max(pad, Number.isFinite(anchor.safeTop) ? anchor.safeTop : pad)
   let left = anchor.placement === 'left' ? anchor.x - gap - rect.width : anchor.x - rect.width / 2
   let top = anchor.placement === 'left' ? anchor.y - rect.height / 2 : anchor.y - gap - rect.height
   // 左侧空间不足时放到表格上方，不能钳回去盖住行选择条并误触颜色菜单。
   if (anchor.placement === 'left' && left < pad) {
     left = anchor.fallbackX ?? anchor.x
-    top = (anchor.fallbackY ?? anchor.y) - rect.height
+    top = (anchor.fallbackY ?? anchor.y) - gap - rect.height
   }
   if (vw) left = Math.max(pad, Math.min(vw - rect.width - pad, left))
-  if (vh) top = Math.max(pad, Math.min(vh - rect.height - pad, top))
+  if (vh) top = Math.max(minTop, Math.min(vh - rect.height - pad, top))
+  const avoids = (Array.isArray(anchor.avoid) ? anchor.avoid : [anchor.avoid]).filter(Boolean)
+  // 行、列选择条共同组成 L 形操作区。避开一条后不能再压住另一条。
+  const clearTop = (x, size) => [top, ...avoids.map(avoid => avoid.top - gap - size.height), ...avoids.map(avoid => Math.max(minTop, avoid.bottom + gap))]
+    .find(y => y >= minTop && (!vh || y + size.height <= vh - pad) && avoids.every(avoid => x >= avoid.right || x + size.width <= avoid.left || y >= avoid.bottom || y + size.height <= avoid.top))
+  if (avoids.length) {
+    let nextTop = clearTop(left, rect)
+    if (nextTop === undefined) {
+      // 高表格上下都放不下时，在行选择条右侧收窄，同时继续避开列选择条。
+      for (const avoid of avoids) {
+        const right = avoid.right + gap, room = vw - pad - right
+        if (room < 64) continue
+        el.style.maxWidth = `${room}px`
+        const size = el.getBoundingClientRect()
+        const candidate = clearTop(right, size)
+        if (candidate !== undefined) { left = right; nextTop = candidate; break }
+      }
+      if (nextTop === undefined) el.style.maxWidth = ''
+    }
+    if (nextTop !== undefined) top = nextTop
+    else if (Number.isFinite(anchor.fallbackSafeTop) && Math.max(pad, anchor.fallbackSafeTop) < minTop) {
+      // Only a raised native-chrome floor may retry the same search at its original floor.
+      return placeFloatingToolbar(el, { ...anchor, safeTop: anchor.fallbackSafeTop, fallbackSafeTop: undefined })
+    }
+  }
   el.style.left = `${Math.round(left)}px`
   el.style.top = `${Math.round(top)}px`
 }
@@ -45,7 +71,7 @@ const FULL_DIV = { divider: true, full: true }
 
 /** Source cell conversion menu, including the nested H4–H9 choices. */
 const TURN_INTO = [
-  { id: 'paragraph', label: '正文', icon: 'table-float-text' },
+  { id: 'paragraph', label: '正文', icon: 'block-text' },
   { id: 'heading1', label: '一级标题', icon: 'block-h1' },
   { id: 'heading2', label: '二级标题', icon: 'block-h2' },
   { id: 'heading3', label: '三级标题', icon: 'block-h3' },
@@ -58,7 +84,7 @@ const TURN_INTO = [
 
 /** Source table alignment menu: three horizontal and three vertical choices. */
 const ALIGN_ITEMS = [
-  { id: 'align:left', label: '左对齐', icon: 'table-float-align' },
+  { id: 'align:left', label: '左对齐', icon: 'align-left' },
   { id: 'align:center', label: '居中对齐', icon: 'align-center' },
   { id: 'align:right', label: '右对齐', icon: 'align-right' },
   DIV,
@@ -81,38 +107,50 @@ const MORE_ITEMS = [
   { id: 'larkSearch', label: '文档内搜索', icon: 'search' },
 ]
 
-const TURN = { id: 'turninto', label: '转换为', icon: 'table-float-text', caret: true, menu: true }
-const ALIGN = { id: 'align', label: '对齐与缩进', icon: 'table-float-align', caret: true, menu: true }
+const TURN = { id: 'turninto', label: '转换为', icon: 'block-text', caret: true, menu: true }
+const ALIGN = { id: 'align', label: '对齐与缩进', icon: 'align-left', caret: true, menu: true }
 const MARKS = [
-  { id: 'bold', label: '加粗', icon: 'table-float-bold', mark: 'bold' },
-  { id: 'strike', label: '删除线', icon: 'table-float-strike', mark: 'strike' },
-  { id: 'italic', label: '斜体', icon: 'table-float-italic', mark: 'italic' },
-  { id: 'underline', label: '下划线', icon: 'table-float-underline', mark: 'underline' },
+  { id: 'bold', label: '加粗', icon: 'mark-bold', mark: 'bold' },
+  { id: 'strike', label: '删除线', icon: 'mark-strike', mark: 'strike' },
+  { id: 'italic', label: '斜体', icon: 'mark-italic', mark: 'italic' },
+  { id: 'underline', label: '下划线', icon: 'mark-underline', mark: 'underline' },
   { id: 'link', label: '插入链接', icon: 'link' },
-  { id: 'code', label: '行内代码', icon: 'table-float-code', mark: 'code' },
-  { id: 'highlight', label: '字体色 / 背景色', icon: 'table-float-highlight', caret: true, menu: true },
+  { id: 'code', label: '行内代码', icon: 'inlineCode', mark: 'code' },
+  { id: 'highlight', label: '字体色 / 背景色', icon: 'mark-highlight', caret: true, menu: true },
 ]
 /** 飞书「标题行列」按钮：只对**整行 / 整列**选区（形态 D/H）出现 —— 多格拖选（形态 E）没有它。 */
 const CELL_LINE = [
-  { id: 'table-header', label: '标题行', icon: 'table-float-header-row' },
+  { id: 'table-header', label: '标题行', icon: 'table-header-row' },
 ]
 /** 飞书表格态共享两颗：合并 / 拆分、单元格背景 —— 整行列与多格拖选都有（形态 C/E/F/G）。 */
 const CELL_SHARED = [
-  { id: 'merge-cell', label: '合并单元格', icon: 'table-float-merge' },
-  { id: 'cell-bg', label: '单元格背景', icon: 'table-float-background', menu: true },
+  { id: 'merge-cell', label: '合并单元格', icon: 'table-merge' },
+  { id: 'cell-bg', label: '单元格背景', icon: 'cell-background', menu: true },
 ]
 /** Comments follow their provider capability; selection sharing has its own transport. */
 const TAIL = [
-  { id: 'more', label: '更多', icon: 'table-float-more', menu: true },
+  { id: 'more', label: '更多', icon: 'more', menu: true },
   { id: 'share-link', label: '分享', icon: 'share-link' },
   { id: 'comment', label: '添加评论', icon: 'mode-comment' },
 ]
-const REMOVE = { id: 'remove', label: '删除', icon: 'table-float-remove' }
-const DISTRIBUTE = { id: 'distributeColumns', label: '均分所选列宽', icon: 'table-float-distribute' }
+const REMOVE = { id: 'remove', label: '删除', icon: 'trash' }
+const DISTRIBUTE = { id: 'distributeColumns', label: '均分所选列宽', icon: 'distribute-cols' }
 const AI = { id: 'ask-ai', label: '问问AI', icon: 'sparkle', text: true }
 
+/**
+ * 飞书 App 移动端「整列选中」浮层：锚定被点列头、白底圆角、四个纯文字按钮
+ * （插入列 / 删除列 / 剪切 / 复制，见真机回执 t048FeishuAppTableReference）。
+ * 只替换 items，不新增浮窗节点 —— 与桌面共用同一条 `.lark-doc-table-tools`。
+ */
+const MOBILE_COLUMN_ITEMS = [
+  { id: 'mobile-insert-col', label: '插入列', text: true },
+  { id: 'mobile-delete-col', label: '删除列', text: true },
+  { id: 'mobile-cut-col', label: '剪切', text: true },
+  { id: 'mobile-copy-col', label: '复制', text: true },
+]
+
 /** Build once; the comment node is mounted only when a readable provider is configured. */
-const ALL_ITEMS = [AI, ...CELL_LINE, DISTRIBUTE, ...CELL_SHARED, TURN, ALIGN, ...MARKS, ...TAIL, REMOVE]
+const ALL_ITEMS = [AI, ...CELL_LINE, DISTRIBUTE, ...CELL_SHARED, TURN, ALIGN, ...MARKS, ...TAIL, REMOVE, ...MOBILE_COLUMN_ITEMS]
 
 /**
  * 同一条浮窗的三种上下文（v12 按飞书真源形态拆分，见 requirements/02 §⑦-3 ★四套形态；
@@ -124,7 +162,10 @@ const ALL_ITEMS = [AI, ...CELL_LINE, DISTRIBUTE, ...CELL_SHARED, TURN, ALIGN, ..
  *            B S I U </> 高亮 | 更多（🔴 无标题行列、🔴 末尾既不是评论也不是删除，
  *            原「末尾评论」的识别信号改为「无 table-header 且无 remove」）。
  */
-function toolbarItems(kind, headerAxis) {
+function toolbarItems(kind, headerAxis, mobileColumnMenu) {
+  // 飞书 App 移动端整列选中：四按钮纯文字浮层（插入列/删除列/剪切/复制）。
+  // 只在 presentation 判定为移动端整列态时进入；桌面应传 false，走下面原有分支。
+  if (mobileColumnMenu) return MOBILE_COLUMN_ITEMS
   if (kind === 'columns' || kind === 'rows') {
     return [...(kind === 'columns' ? [DISTRIBUTE] : []), ...CELL_SHARED, DIV, TURN, ALIGN, DIV,
       ...MARKS.filter((item) => item.id !== 'link'), FULL_DIV, ...TAIL, REMOVE]
@@ -154,7 +195,7 @@ function makeMenuItem(entry, onPick) {
   b.className = 'lark-doc-table-tools-menu-item'
   b.dataset.value = entry.id
   b.setAttribute('role', 'menuitem')
-  if (entry.icon) b.appendChild(iconNode(entry.icon, 16, 'lark-doc-table-tools-menu-icon'))
+  if (entry.icon) b.appendChild(iconNode(entry.icon, 18, 'lark-doc-table-tools-menu-icon'))
   const label = document.createElement('span')
   label.textContent = entry.label
   b.appendChild(label)
@@ -284,7 +325,7 @@ function makeTool(item, onCommand, ui) {
     b.setAttribute('aria-haspopup', 'menu')
     b.setAttribute('aria-expanded', 'false')
   }
-  b.appendChild(iconNode(item.icon, 24, 'lark-doc-table-tools-icon'))
+  if (item.icon) b.appendChild(iconNode(item.icon, 24, 'lark-doc-table-tools-icon'))
   if (item.text) {
     const text = document.createElement('span')
     text.className = 'lark-doc-table-tools-text'
@@ -328,14 +369,17 @@ export function createTableTools({ host, handlers = {} }) {
   let hoverOpened = false
   let closeTimer = null
   let lastState = {}
+  let destroyed = false
   let lastCellSelection = null
-  const command = (id, value) => { if (handlers.onCommand) handlers.onCommand(id, value) }
+  let pointerOrigin = null
+  const command = (id, value) => { if (!destroyed && lastState.open && el.isConnected && buttons.get(id)?.isConnected && handlers.onCommand) handlers.onCommand(id, value) }
 
   /** 顶部功能栏 `cancelPopupHoverClose` / `schedulePopupHoverClose` 的同一套 150ms 语义。 */
   function cancelClose() {
     if (closeTimer) { clearTimeout(closeTimer); closeTimer = null }
   }
   function scheduleClose() {
+    if (destroyed || !lastState.open) return
     cancelClose()
     closeTimer = setTimeout(() => { closeTimer = null; closeMenus() }, 150)
   }
@@ -350,6 +394,7 @@ export function createTableTools({ host, handlers = {} }) {
   }
 
   function openMenu(name, btn, viaHover) {
+    if (destroyed || !lastState.open || !btn.isConnected) return
     // 指针从弹层回到触发按钮时，必须先把 mouseleave 排下的关闭取消掉。
     cancelClose()
     if (openMenuName === name) return
@@ -358,11 +403,12 @@ export function createTableTools({ host, handlers = {} }) {
     hoverOpened = !!viaHover
     btn.classList.add('is-menu-open')
     btn.setAttribute('aria-expanded', 'true')
-    openMenuNode = buildMenu(name, lastState, (value) => {
-      const menu = name
+    const menuNode = buildMenu(name, lastState, (value) => {
+      if (openMenuNode !== menuNode || !menuNode.isConnected) return
       closeMenus()
-      command(menu, value)
+      command(name, value)
     })
+    openMenuNode = menuNode
     // 指针从按钮移到弹层会经过 4px 间隙：进入弹层取消延迟，离开弹层再排延迟。
     openMenuNode.addEventListener('mouseenter', cancelClose)
     openMenuNode.addEventListener('mouseleave', scheduleClose)
@@ -374,10 +420,11 @@ export function createTableTools({ host, handlers = {} }) {
     openMenuNode.style.left = `${Math.max(0, Math.min(er.width - mw, br.left - er.left))}px`
   }
 
-  /** hover / focus 已展开时再点不收起（`toolbarMenusMixin.toggleHeadingMenu` 同款）。 */
+  /** hover / focus 预开后首次点击保留，下一次点击可关闭。 */
   function toggleMenu(name, btn) {
     if (openMenuName === name) {
-      if (!hoverOpened) closeMenus()
+      if (hoverOpened) hoverOpened = false
+      else closeMenus()
       return
     }
     openMenu(name, btn, false)
@@ -389,24 +436,45 @@ export function createTableTools({ host, handlers = {} }) {
     onToggle: toggleMenu,
   }
 
+  const eventButton = (event) => {
+    // Earlier capture refreshes can detach the target SVG; the original event path retains its button.
+    const button = event.composedPath?.().find(node => node?.tagName === 'BUTTON') || event.target?.closest?.('button')
+    return !destroyed && lastState.open && el.isConnected && button?.isConnected && el.contains(button) ? button : null
+  }
   const onDocPointerDown = (event) => {
-    if (openMenuNode && !el.contains(event.target)) closeMenus()
+    pointerOrigin = eventButton(event)
+    if (openMenuNode && !pointerOrigin && !el.contains(event.target)) closeMenus()
+  }
+  const onPointerCancel = () => { pointerOrigin = null }
+  const onClick = (event) => {
+    const origin = pointerOrigin
+    pointerOrigin = null
+    // 选行列的 pointerup 会显示/移动浮窗，Chrome 随后的触控兼容 click
+    // 可能改投到手指下的新按钮。实体点击必须从同一个按钮开始；键盘/辅助点击 detail=0。
+    if (event.detail > 0 && (!origin || eventButton(event) !== origin)) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
   }
   const onKeyDown = (event) => { if (event.key === 'Escape' && openMenuNode) closeMenus() }
   const doc = host?.ownerDocument || document
   doc.addEventListener('pointerdown', onDocPointerDown, true)
+  doc.addEventListener('pointercancel', onPointerCancel, true)
   doc.addEventListener('keydown', onKeyDown, true)
+  el.addEventListener('click', onClick, true)
 
   ALL_ITEMS.forEach((item) => buttons.set(item.id, makeTool(item, command, ui)))
 
   /** 同一条 bar 按上下文真摘除/插入按钮（`toolbar.js` 的 `syncChildren` 语义）。 */
-  function syncBar(kind, headerAxis, commentVisible, shareVisible, aiVisible) {
-    const signature = `${kind}:${headerAxis}:${commentVisible}:${shareVisible}:${aiVisible}`
+  function syncBar(kind, headerAxis, commentVisible, shareVisible, aiVisible, mobileColumnMenu) {
+    const signature = `${kind}:${headerAxis}:${commentVisible}:${shareVisible}:${aiVisible}:${!!mobileColumnMenu}`
     if (lastCellSelection === signature) return
     lastCellSelection = signature
+    el.classList.toggle('is-mobile-column', !!mobileColumnMenu)
     let normal = 0
     let full = 0
-    const items = [...(aiVisible ? [AI, DIV] : []), ...toolbarItems(kind, headerAxis)]
+    const items = mobileColumnMenu ? toolbarItems(kind, headerAxis, true)
+      : [...(aiVisible ? [AI, DIV] : []), ...toolbarItems(kind, headerAxis, false)]
     const spec = items.filter(item => (item.id !== 'comment' || commentVisible) && (item.id !== 'share-link' || shareVisible)).map((item) => {
       if (!item.divider) return { node: buttons.get(item.id), on: true }
       const pool = item.full ? sepPool.full : sepPool.normal
@@ -425,12 +493,14 @@ export function createTableTools({ host, handlers = {} }) {
   syncChildren(el, [{ node: bar, on: true }])
 
   function update(state = {}) {
+    if (destroyed) return
+    lastState = state
     if (!state.open) {
+      pointerOrigin = null
       closeMenus()
       mountNode(host, el, false)
       return
     }
-    lastState = state
     // Transactions can change the selection while a menu stays open (keyboard
     // undo, collaboration). Update checkmarks without replacing focused nodes.
     if (openMenuName === 'align' || openMenuName === 'turninto') {
@@ -441,7 +511,7 @@ export function createTableTools({ host, handlers = {} }) {
       })
     }
     // v12：三种上下文（'text' | 'line' | 'multi'）；旧字段 cellSelection 布尔值兜底为 line。
-    syncBar(state.cellKind || (state.cellSelection ? 'line' : 'text'), state.headerAxis, !!state.commentVisible, !!state.shareVisible, !!state.aiVisible)
+    syncBar(state.cellKind || (state.cellSelection ? 'line' : 'text'), state.headerAxis, !!state.commentVisible, !!state.shareVisible, !!state.aiVisible, !!state.mobileColumnMenu)
     const comment = buttons.get('comment')
     comment.disabled = !state.canComment
     comment.title = state.canComment ? '添加评论' : '当前没有评论权限'
@@ -453,7 +523,7 @@ export function createTableTools({ host, handlers = {} }) {
     header.setAttribute('aria-pressed', String(headerOn))
     header.classList.toggle('is-active', headerOn)
     header.disabled = state.headerEnabled === false
-    setIcon(header.firstElementChild, axis === 'column' ? 'table-float-header-column' : 'table-float-header-row', 24)
+    setIcon(header.firstElementChild, axis === 'column' ? 'table-header-col' : 'table-header-row', 24)
     const merge = buttons.get('merge-cell')
     merge.title = state.canSplitCell ? '拆分单元格' : '合并单元格'
     merge.setAttribute('aria-label', merge.title)
@@ -477,7 +547,10 @@ export function createTableTools({ host, handlers = {} }) {
     el,
     update,
     destroy() {
+      destroyed = true
+      lastState = { open: false }
       doc.removeEventListener('pointerdown', onDocPointerDown, true)
+      doc.removeEventListener('pointercancel', onPointerCancel, true)
       doc.removeEventListener('keydown', onKeyDown, true)
       closeMenus()
       if (el.parentNode) el.parentNode.removeChild(el)
@@ -514,7 +587,7 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
   const plus = document.createElement('button')
   plus.type = 'button'
   plus.className = 'lark-doc-table-col-plus-btn'
-  const glyph = iconNode('table-insert-boundary', 24, 'lark-doc-table-insert-glyph')
+  const glyph = iconNode('plus', 24, 'lark-doc-table-insert-glyph')
   glyph.style.width = '22px'
   plus.appendChild(glyph)
   let actionId = 'addColumnAfter'

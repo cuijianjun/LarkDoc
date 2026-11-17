@@ -31,7 +31,7 @@
  */
 import { mountNode, setAttr, syncChildren } from './dom'
 import { iconNode } from './icon'
-import { HELP_MENU_ITEMS } from './shortcutGroups'
+import { HELP_MENU_ITEMS } from './helpMenuItems'
 
 /** 移开多久才真正收起（ms）。07 §9：与二级子菜单同口径的 160ms 抖动窗口。 */
 const HIDE_DELAY = 160

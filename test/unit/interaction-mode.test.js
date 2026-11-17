@@ -26,6 +26,10 @@ import {
 } from '../../src/core/blocks/interaction-mode'
 import readingModeMixin from '../../src/components/lark-doc/editor/readingModeMixin'
 import revisionMixin from '../../src/components/lark-doc/editor/revisionMixin'
+import revisionUiMixin from '../../src/components/lark-doc/editor/revisionUiMixin'
+import { Schema } from '@tiptap/pm/model'
+import { EditorState } from '@tiptap/pm/state'
+import { buildRevisionActiveTr, revisionActiveKey, revisionHighlightPlugin } from '../../src/core/revision/decorations'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const readingCss = fs.readFileSync(path.join(root, 'src/styles/reading.css'), 'utf8')
@@ -368,18 +372,31 @@ describe('行为层 · revisionMixin 的 read 态分支', () => {
 
   it('syncRevisionTracking 跟着派生结果走：协同只读时 suggest 也要关掉', () => {
     const storage = { active: true }
-    const makeEd = (interactionMode) => ({
-      editor: { storage: { larkDocRevisionTracker: storage } },
+    const schema = new Schema({ nodes: { doc: { content: 'paragraph+' }, paragraph: { content: 'text*' }, text: {} } })
+    let state = EditorState.create({ schema, plugins: [revisionHighlightPlugin] })
+    state = state.apply(buildRevisionActiveTr(state, 'rev-1'))
+    const ed = {
+      editor: { storage: { larkDocRevisionTracker: storage }, state,
+        view: { dispatch(tr) { ed.editor.state = ed.editor.state.apply(tr) } } },
       mode: 'suggest',
-      interactionMode,
-      revisionActiveId: '',
-      revisionHoverId: '',
+      interactionMode: 'read',
+      revisionActiveId: 'rev-1',
+      revisionHoverId: 'rev-1',
+      activateRevision: revisionMixin.methods.activateRevision,
+      $nextTick: fn => fn(),
+      placeRevisionPanels() {},
       updateRevisionPanels() {},
-    })
-    revisionMixin.methods.syncRevisionTracking.call(makeEd('read'))
+    }
+    const before = ed.editor.state.doc.toJSON()
+    revisionMixin.methods.syncRevisionTracking.call(ed)
     expect(storage.active).toBe(false)
-    revisionMixin.methods.syncRevisionTracking.call(makeEd('suggest'))
+    expect(ed.revisionActiveId).toBe('')
+    expect(ed.revisionHoverId).toBe('')
+    expect(revisionActiveKey.getState(ed.editor.state)).toBe('')
+    ed.interactionMode = 'suggest'
+    revisionMixin.methods.syncRevisionTracking.call(ed)
     expect(storage.active).toBe(true)
+    expect(ed.editor.state.doc.toJSON()).toEqual(before)
   })
 })
 
@@ -411,7 +428,18 @@ describe('规格层 · reading.css / 面板 / 接线点', () => {
     expect(panelUi).toContain("state.readonly ? ' is-readonly' : ''")
     expect(panelUi).toContain('item.active && !state.readonly')
     expect(panelMixin).toContain('this.revisionButtonDisabled(button.id, item.revisionId)')
-    expect(panelMixin).toContain('items: this.revisionPanels.map')
+    const ed = { ...revisionMixin.methods, revisionPanelTitle: '修订', revisionReadonly: true,
+      revisionButtons: [{ id: 'accept' }, { id: 'reject' }], revisionActiveId: 'rev-1', revisionHoverId: '',
+      revisionPanels: [{ revisionId: 'rev-1', kind: 'insert', text: '保留', author: 'qa', left: 8, top: 8 }], exportOpen: false }
+    const build = () => revisionUiMixin.methods.buildRevisionPanelsState.call(ed)
+    const visible = build()
+    expect(visible.readonly).toBe(true)
+    expect(visible.items).toHaveLength(1)
+    expect(visible.items[0]).toMatchObject({ id: 'rev-1', disabled: ['accept', 'reject'] })
+    ed.exportOpen = true
+    expect(build().items).toEqual([])
+    ed.exportOpen = false
+    expect(build()).toEqual(visible)
   })
 
   it('既有四条负结论没被改坏（无 title / tooltip / more-btn / 已解决）', () => {

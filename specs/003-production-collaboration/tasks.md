@@ -13,6 +13,8 @@ description: "独立完整编辑器后端；126项按原验收条件分层核对
 
 ## 当前原任务核对（2026-11-08）
 
+2026-11-14 local verification: exact Node22.22.2 compiled successfully; the manifest's 65 compiled test files ran 1396 cases (1374 passed, 20 explicit PG skips, 2 failures). The missing `download` coverage fixture and a recovery test's pre-restore fsync timing assumption were corrected without changing production permission/recovery code or deadlines. The two affected files then passed 18 cases with 1 PG skip; all other valid results are reused. Logs are `/tmp/larkdoc-acceptance-20261113/h5-final-backend-node22-*`. PG environment was cleared; no PG-special flag, real PG connection, Docker restart or production action occurred. This does not satisfy T073/T083's full external acceptance.
+
 **判定**：82项已勾、44项未勾。勾选只表示该行本地实现/测试要求已有可核对实现与证据；不自动满足所在故事的7AC、未勾设计前置或生产批准。原126编号、任务原文与依赖不改，实际实现拆分如下。`backend/`为上文真实同级后端目录，前端路径相对`lark-doc/`；静态/模型、注入端口、真实PG及浏览器合成身份分层记录。
 
 | 已完成原任务 | 实际入口/判定依据 | 验证范围与保留门 |
@@ -136,7 +138,7 @@ Java 接管接口补齐（2026-11-10）：保留现有5条入站集成路由与2
 | T067 | 当前代码/真实执行已独立复核，本地限定无阻塞 | 旧DOM fixture FAIL、旧矩阵BLOCKED和全部失败证据保留；当前23链/107冷安装与六Safari逐项另验，不沿旧快照 | 完整人工安全/生产审阅及真实公司准入不代签 |
 | T068 | 评论契约已有；冷读原键竞态漏测 | 本次定点红绿已补；同ID不二POST；原行本地编写完成 | 本行测试不依赖外部服务 |
 | T069 | 原CAS/参与者竞争及首读原意图修复已具 | 原114受影响回归＋c-54Yd5E真实移动/删除/恢复锚点；测试编写本行结项 | 完整故事后续外验另列，非全AC生产验收 |
-| T073 | 评论HTTP/双页/原操作与当前private已具，新增真实撤参与者和旧reply受控竞争 | 当前c-4Qd8ja：实际holder→manager→reply→unfollow四PG PID链、仅三HTTP请求、200/404/404；旧comment/follow原GET均404，零迟到回复/事件且正文不变；原失败保留 | 竞态用例暂停自有通知流并核PG旧授权已结束，真实流专项另验；全部AC/真实公司身份与批准故障矩阵仍未齐 |
+| T073 | 评论HTTP/双页/原操作与当前private已具，新增真实撤参与者和旧reply受控竞争 | 当前c-4Qd8ja：实际holder→manager→reply→unfollow四PG PID链、仅三HTTP请求、200/404/404；旧comment/follow原GET均404，零迟到回复/事件且正文不变；原失败保留；2026-11-13 dev HTTP+Docker：隔离真实Chrome iPhone16 393×852经.tap完成红心1/已回应、编辑@候选Synthetic alice并保存为chip、图片完整预览1179×2556及关闭、编辑附件2到0并保存0附件；来源replyRevision3。无host直接调用代替，证据 /tmp/larkdoc-acceptance-20261113/mobile-final-verified.png；非真飞书及全部AC验收 | 竞态用例暂停自有通知流并核PG旧授权已结束，真实流专项另验；全部AC/真实公司身份与批准故障矩阵仍未齐 |
 | T074 | 关注/链接契约已有；首读竞态漏测 | 本次同ID/原意图保护已修验；原行本地编写完成 | 本行测试不依赖外部服务 |
 | T075 | 首读/原意图竞态与真实失联链接UI用例均具 | 原114受影响回归＋c-54Yd5E链接/刷新/currentHTTP；本行测试编写结项 | 不以注入DTO替代已列真实UI，完整故事外验另列 |
 | T078 | 私链/关注provider与真实浏览器刷新/撤参与者/同键异payload及取消关注竞争已具 | 新增private-revocation实际刷新原链接：thread/link/preference/op404、受邀前计数基线及评论quote/正文清理，独立document.read保留；c-4Qd8ja实际迟到unfollow404且原偏好/授权/事件不变 | 位置仅刷新后显式重开无跳动，不冒跨reload采样；整故事AC/真实身份与批准模型仍另验 |
@@ -144,7 +146,7 @@ Java 接管接口补齐（2026-11-10）：保留现有5条入站集成路由与2
 | T080 | 在途撤private/源改删、unknown/重复结果/多语言与身份隔离竞态已具 | t-YCEC5M9/9：真实PG撤权/改删、prepare/admit丢COMMIT确认零POST、重复异结果、迟到零send；独审通过本地编写结项 | 合成身份与注入端口只作本地证据，不代表公司F6成功 |
 | T081 | 025持久任务/原键、有限事务外外送及结果前当前private/source CAS、生产mTLS配置已实现 | backend tsc、T079实际mTLS HTTP3/3与T080真实PG9/9；独审本地实现通过 | 无配置保留503整批blocked；真实批准endpoint/凭据与部署未提供，T083仍阻 |
 | T082 | 成功译文、来源/过期/blocked/failed/unknown及原键查询UI已实现 | 每await后核当前Session/身份/provider/语言/原源；失权清缓存和迟到不回填；前端当前959/959及独审，当前SDK七入口/体积/stamp/严格性能已过 | 项目v1本地成功不等真实公司F6服务验收，T083保持独立 |
-| T083 | 生产v1翻译适配、持久task及真实浏览器成功链已具 | e-gf4hYB在实际SDK中创建private comment，经API/mTLS pending→原query→ready并观察Worker/SSE；原PG撤权/源改删范围复用 | 翻译为synthetic固定结果；真实公司内部F6部署/质量/全部AC未验，整批不放行 |
+| T083 | 生产v1翻译适配、持久task及真实浏览器成功链已具 | e-gf4hYB在实际SDK中创建private comment，经API/mTLS pending→原query→ready并观察Worker/SSE；原PG撤权/源改删范围复用；2026-11-13 dev HTTP+Docker：真实Chrome iPhone16经.tap提交pending、关闭面板、恢复按钮查询原任务到ready，页面显示[synthetic] fixture translation且原文不变；截图 /tmp/larkdoc-acceptance-20261113/mobile-final-verified.png。最终全量3293/3607、313既有失败/1待定，失败断言与原基线完全相同；非真实公司翻译验收 | 翻译为synthetic固定结果；真实公司内部F6部署/质量/全部AC未验，整批不放行 |
 | T084 | C09先行契约测试已具 | 本行测试编写已结项；原行本地编写完成 | 不额外要求邮件或HA后才算测试完成 |
 | T085 | 原commit序/唯一资格、ACK未知及自然租约接管测试已具 | t-hXROm5 2/2：原event查询零重复效果、旧process/event token拒绝；本行测试结项 | 非kill-9/跨机HA证明 |
 | T090 | 真实独立Worker/SSE、private与旧cursor撤参与者链已具 | e-gf4hYB先证私有事件存在，撤参与者仍保document.read；旧游标410 expired、无泄漏且计数按当前可见集合；未声称200回放分支执行 | 完整故障矩阵/真实账号与公司源gap轨迹未验 |

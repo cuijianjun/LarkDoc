@@ -22,7 +22,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor, getSchema } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { sanitizeHTML, validateDocument } from '../../src/core/documentOperations'
@@ -40,9 +40,168 @@ import {
 } from '../../src/core/revision/tracker'
 import { adjacentRevision, buildRevisionDecisionTr, revisionAnchor, revisionJumps, revisionTarget } from '../../src/core/revision/commands'
 import { ICONS } from '../../src/ui/icons'
+import { createRevisionPanels } from '../../src/ui/revision'
+import revisionBehavior from '../../src/components/lark-doc/editor/revisionMixin'
+import { LarkDoc } from '../../src/LarkDoc'
+import { revisionActiveKey } from '../../src/core/revision/decorations'
+
+describe('native revision controls', () => {
+  it('suspends revision controls during export and restores the pending revision on cancel', async () => {
+    const hash = window.location.hash, element = document.createElement('div')
+    document.body.append(element)
+    const createRange = document.createRange.bind(document)
+    const layout = vi.spyOn(document, 'createRange').mockImplementation(() => Object.assign(createRange(), {
+      getClientRects: () => [], getBoundingClientRect: () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    }))
+    window.history.replaceState(null, '', '#revision-r-export')
+    const doc = new LarkDoc({ element, storage: 'none', documentId: 'qa-revision-export', content: '<p><span data-revision-id="r-export" data-revision-author="qa" data-revision-kind="insert">待审</span></p>' })
+    try {
+      await vi.waitFor(() => expect(doc._handle.state.initialized).toBe(true))
+      const host = doc._handle.nativeHost.host
+      await vi.waitFor(() => expect(host.revisionActiveId).toBe('r-export'))
+      // 面板是懒加载视图：等动态 import 落地后才有真实按钮。
+      await vi.waitFor(() => expect(element.querySelector('[data-revision-action="accept"]')).not.toBeNull())
+      const original = doc.getJSON(), staleAccept = element.querySelector('[data-revision-action="accept"]')
+      const staleCopy = element.querySelector('[data-revision-action="copyAnchor"]'), run = vi.spyOn(host, 'runRevisionButton')
+      expect(staleAccept).not.toBeNull()
+      host.openExportFormatPicker()
+      // The state guard also rejects the old surface before an async UI refresh.
+      staleAccept.click(); staleCopy.click()
+      expect(run).not.toHaveBeenCalled()
+      expect(doc.getJSON()).toEqual(original)
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-export-formats')).not.toBeNull())
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-revision-panel')).toBeNull())
+      staleAccept.click()
+      staleCopy.click()
+      expect(run).not.toHaveBeenCalled()
+      expect(doc.getJSON()).toEqual(original)
+      expect(host.revisionActiveId).toBe('r-export')
+      expect(revisionActiveKey.getState(doc.getEditor().state)).toBe('r-export')
+      element.querySelector('[data-export-format="word"]').click()
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-export-title').textContent).toBe('导出 Word 设置'))
+      expect(element.querySelector('.lark-doc-revision-panel')).toBeNull()
+      element.querySelector('.lark-doc-export-cancel').click()
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-export-panel')).toBeNull())
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-revision-panel')).not.toBeNull())
+      expect(host.revisionActiveId).toBe('r-export')
+      expect(revisionActiveKey.getState(doc.getEditor().state)).toBe('r-export')
+      expect(doc.getJSON()).toEqual(original)
+      staleAccept.click(); staleCopy.click()
+      expect(run).not.toHaveBeenCalled()
+    } finally { doc.destroy(); element.remove(); layout.mockRestore(); window.history.replaceState(null, '', hash || window.location.pathname) }
+  })
+
+  it('retains the initial revision fragment through real native host initialization', async () => {
+    const hash = window.location.hash, element = document.createElement('div')
+    document.body.append(element)
+    const createRange = document.createRange.bind(document)
+    const layout = vi.spyOn(document, 'createRange').mockImplementation(() => Object.assign(createRange(), {
+      getClientRects: () => [], getBoundingClientRect: () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    }))
+    window.history.replaceState(null, '', '#revision-r-native-initial')
+    const doc = new LarkDoc({ element, storage: 'none', documentId: 'qa-initial-revision', content: '<p><span data-revision-id="r-native-initial" data-revision-author="qa" data-revision-kind="insert">待审</span></p>' })
+    try {
+      await vi.waitFor(() => expect(doc._handle.state.initialized).toBe(true))
+      await vi.waitFor(() => expect(doc._handle.nativeHost.host.revisionActiveId).toBe('r-native-initial'))
+      await vi.waitFor(() => expect(element.querySelector('textarea[aria-label="回复"]')).not.toBeNull())
+      expect(element.querySelector('textarea[aria-label="回复"]').disabled).toBe(true)
+      expect(doc.getEditor().state.doc.textContent).toBe('待审')
+    } finally { doc.destroy(); element.remove(); layout.mockRestore(); window.history.replaceState(null, '', hash || window.location.pathname) }
+  })
+
+  it('keeps revision metadata only on supported sanitized elements and rejects invalid kinds/events', () => {
+    const html = sanitizeHTML('<span data-revision-id="r-safe" data-revision-author="alice" data-revision-kind="bogus" onclick="alert(1)">safe</span><a data-revision-id="wrong" href="javascript:alert(1)">link</a><pre data-deletion-revision-id="r-code" data-deletion-author="alice"><code>text</code></pre>')
+    const root = document.createElement('div'); root.innerHTML = html
+    expect(root.querySelector('span').getAttribute('data-revision-id')).toBe('r-safe')
+    expect(root.querySelector('span').hasAttribute('data-revision-kind')).toBe(false)
+    expect(root.querySelector('span').hasAttribute('onclick')).toBe(false)
+    expect(root.querySelector('a').hasAttribute('data-revision-id')).toBe(false)
+    expect(root.querySelector('a').hasAttribute('href')).toBe(false)
+    expect(root.querySelector('pre').getAttribute('data-deletion-revision-id')).toBe('r-code')
+  })
+
+  it('shows unavailable discussion and unknown metadata without a fake editable reply', () => {
+    const host = document.createElement('div'), ui = createRevisionPanels({ host, handlers: { onEnter() {}, onLeave() {} } })
+    try {
+      ui.update({ buttons: [], items: [{ id: 'r-unavailable', summary: { label: '新增', text: '正文' }, author: 'Alice', height: 169, style: {}, active: true, disabled: [] }] })
+      expect(host.querySelector('textarea[aria-label="回复"]').disabled).toBe(true)
+      expect(host.textContent).toContain('修订讨论服务尚未接入')
+      expect(host.textContent).not.toContain('刚刚')
+      expect(host.querySelector('.lark-doc-revision-input-btn').disabled).toBe(true)
+    } finally { ui.destroy() }
+  })
+
+  it('opens revision fragments on initial load and hash change without mutating document or crossing revoked views', async () => {
+    const editor = new Editor({ extensions: createLarkDocExtensions(), content: '<p><span data-revision-id="r-link" data-revision-author="alice" data-revision-kind="insert">待审</span></p>' })
+    const original = window.location.hash
+    const host = { ...revisionBehavior.data(), ...revisionBehavior.methods, editor, mode: 'edit', session: { can: () => true }, $nextTick: fn => Promise.resolve().then(fn) }
+    Object.keys(revisionBehavior.methods).forEach(key => { host[key] = host[key].bind(host) })
+    const scroll = vi.fn()
+    // 激活修订会重绘标记 DOM，挂在具体元素上的 spy 会随旧节点作废，所以挂到原型上。
+    const originalScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const json = editor.getJSON()
+      window.history.replaceState(null, '', '#revision-r-link')
+      revisionBehavior.mounted.call(host)
+      await Promise.resolve(); await Promise.resolve()
+      expect(host.revisionActiveId).toBe('r-link')
+      host.syncRevisionTracking()
+      expect(host.revisionActiveId).toBe('r-link')
+      expect(editor.getJSON()).toEqual(json)
+      expect(scroll).toHaveBeenCalled()
+      host.session._privateIdentityGeneration = 1
+      host.updateRevisionPanels()
+      expect(host.revisionActiveId).toBe('')
+      expect(editor.getJSON()).toEqual(json)
+      host.onRevisionHashChange()
+      expect(revisionActiveKey.getState(editor.state)).toBe('r-link')
+      host.session.can = () => false
+      host.updateRevisionPanels()
+      expect(host.revisionActiveId).toBe('')
+      expect(revisionActiveKey.getState(editor.state)).toBe('')
+      host.session._privateIdentityGeneration = 2
+      host.session.can = () => true
+      host.updateRevisionPanels()
+      expect(revisionActiveKey.getState(editor.state)).toBe('')
+      expect(editor.getJSON()).toEqual(json)
+      host.onRevisionHashChange()
+      editor.storage.larkDocRevisionTracker.active = true
+      host.syncRevisionTracking()
+      expect(host.revisionActiveId).toBe('')
+      expect(revisionActiveKey.getState(editor.state)).toBe('')
+      window.history.replaceState(null, '', '#revision-missing')
+      window.dispatchEvent(new Event('hashchange'))
+      expect(host.revisionActiveId).toBe('')
+      expect(host.notice).toContain('不存在或当前无权查看')
+      host.session.can = () => false
+      window.history.replaceState(null, '', '#revision-r-link')
+      window.dispatchEvent(new Event('hashchange'))
+      expect(host.revisionActiveId).toBe('')
+      expect(editor.getJSON()).toEqual(json)
+    } finally { Element.prototype.scrollIntoView = originalScrollIntoView; revisionBehavior.beforeDestroy.call(host); editor.destroy(); window.history.replaceState(null, '', original || window.location.pathname) }
+  })
+
+  it('runs each native click once and maps disabled previous navigation by its real ID', () => {
+    const host = document.createElement('div'); document.body.append(host)
+    const onButton = vi.fn(), ui = createRevisionPanels({ host, handlers: { onButton, onEnter() {}, onLeave() {} } })
+    try {
+      ui.update({ title: '修订建议', buttons: REVISION_BUTTONS.map(button => ({ ...button, split: button.tone === 'split' })), items: [{ id: 'rev-native', summary: { label: '新增', text: 'owned' }, author: 'Alice', height: 137, style: {}, active: false, disabled: ['go-previous'] }] })
+      const buttons = [...host.querySelectorAll('button')]
+      expect(buttons[1].disabled).toBe(true)
+      buttons[1].click(); expect(onButton).not.toHaveBeenCalled()
+      buttons[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(onButton).not.toHaveBeenCalled()
+      buttons[0].click(); expect(onButton).toHaveBeenCalledExactlyOnceWith('go-next', 'rev-native')
+      buttons[4].click(); expect(onButton).toHaveBeenLastCalledWith('accept', 'rev-native')
+    } finally { ui.destroy(); host.remove() }
+  })
+})
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const css = fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8')
+// 修订面板规则已随懒加载迁到 deferred-ui.css，规格层断言要覆盖两份样式源。
+const deferredCss = fs.readFileSync(path.join(root, 'src/styles/deferred-ui.css'), 'utf8')
 const panelUi = fs.readFileSync(path.join(root, 'src/ui/revision.js'), 'utf8')
 const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/revisionUiMixin.js'), 'utf8')
 const nativeHost = fs.readFileSync(path.join(root, 'src/editor/nativeEditorHost.js'), 'utf8')
@@ -640,8 +799,9 @@ describe('P4-06 规格层：CSS 与面板结构（07 §12.2 / §12.4 / §12.6）
   })
 
   it('面板三态 + 打印隐藏 + 层壳退出布局', () => {
-    expect(css).toContain('.lark-doc-revision-layer { display: contents')
-    expect(css).toContain('width: 270px; border-radius: 6px')
+    const styles = css + deferredCss
+    expect(styles).toContain('.lark-doc-revision-layer { display: contents')
+    expect(styles).toContain('width: 270px; border-radius: 6px')
     expect(css).toContain('.lark-doc .lark-doc-revision-panel { display: none !important; }')
   })
 

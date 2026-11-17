@@ -6,7 +6,7 @@
  */
 import { MAX_BLOCK_INDENT } from './documentOperations'
 import { normalizeModesConfig } from './editor/docModes'
-import { HELP_MENU_ITEMS } from '../../ui/shortcutGroups'
+import { HELP_MENU_ITEMS } from '../../ui/helpMenuItems'
 
 export const LARK_DOC_FEATURES = Object.freeze([
   'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',

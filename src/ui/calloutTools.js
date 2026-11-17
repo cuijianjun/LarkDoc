@@ -48,7 +48,7 @@ function createPicker(handlers) {
   picker.className = 'lark-doc-callout-emoji-picker'
   picker.setAttribute('role', 'menu')
   picker.setAttribute('aria-label', '高亮块图标')
-  picker.addEventListener('mousedown', (event) => event.preventDefault())
+  picker.addEventListener('mousedown', (event) => { if (event.target !== search) event.preventDefault() })
 
   const head = document.createElement('div')
   head.className = 'lark-doc-callout-emoji-head'
@@ -85,7 +85,7 @@ export function createCalloutTools({ host, handlers = {} } = {}) {
   root.className = 'lark-doc-callout-tools'
   root.setAttribute('role', 'toolbar')
   root.setAttribute('aria-label', '高亮块工具')
-  root.addEventListener('mousedown', (event) => event.preventDefault())
+  root.addEventListener('mousedown', (event) => { if (event.target !== picker.__ld.search) event.preventDefault() })
 
   const labels = [
     colorLabel('高亮块文字颜色', 'A', 'calloutColor', handlers.onPalette, (value) => handlers.onColor && handlers.onColor('color', value)),

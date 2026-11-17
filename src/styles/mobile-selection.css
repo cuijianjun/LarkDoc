@@ -1,0 +1,51 @@
+/* 手机正文划词动作与只读翻译；桌面气泡条沿用原布局。 */
+.lark-doc .lark-doc-bubble.is-mobile-selection {
+  box-sizing: border-box;
+  max-width: calc(100dvw - 16px);
+  gap: 0;
+  padding: 2px 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  border: 0;
+  border-radius: 12px;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+.lark-doc .lark-doc-bubble.is-mobile-selection > button {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 48px;
+  height: 46px;
+  padding: 0 10px;
+  color: var(--ld-text);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.lark-doc .lark-doc-bubble.is-mobile-selection > button:disabled { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-selection-translation-backdrop { z-index: 100; align-items: end; padding: 0; }
+.lark-doc .lark-doc-selection-translation {
+  box-sizing: border-box;
+  width: min(540px, 100%);
+  max-height: calc(100dvh - 32px);
+  padding: 12px 16px max(20px, env(safe-area-inset-bottom));
+  border-radius: 12px 12px 0 0;
+  background: var(--ld-bg-code);
+  color: var(--ld-text);
+}
+.lark-doc .lark-doc-selection-translation header { position: relative; justify-content: center; height: 38px; margin-bottom: 0; font-size: 17px; }
+.lark-doc .lark-doc-selection-translation header > button { position: absolute; left: 0; display: grid; place-items: center; width: 36px; height: 36px; border: 0; background: transparent; color: inherit; }
+.lark-doc .lark-doc-selection-translation-card { display: grid; gap: 8px; margin: 0 0 16px; padding: 16px; border-radius: 8px; background: var(--ld-bg-surface-chrome); font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-selection-translation-card > span { color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-selection-translation-card > div + span { margin-top: 12px; }
+.lark-doc .lark-doc-selection-translation-action { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; min-height: 56px; margin-top: 8px; padding: 12px 16px; border: 0; border-radius: 8px; background: var(--ld-bg-surface-chrome); color: inherit; font: inherit; font-size: 16px; }
+.lark-doc .lark-doc-selection-translation-action:disabled { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-selection-translation > p { margin: 8px 0; color: var(--ld-text-secondary); font-size: 14px; }
+.lark-doc .lark-doc-selection-translation[hidden] { display: none; }
+.lark-doc .lark-doc-selection-translation-languages { display: flex; flex-direction: column; box-sizing: border-box; width: min(540px, 100%); height: calc(100dvh - max(38px, env(safe-area-inset-top))); min-height: 0; padding: 0 0 env(safe-area-inset-bottom); overflow: hidden; border-radius: 12px 12px 0 0; background: var(--ld-bg-surface-chrome); color: var(--ld-text); }
+.lark-doc .lark-doc-selection-translation-languages > header { position: relative; display: flex; flex: 0 0 48px; align-items: center; justify-content: center; box-sizing: border-box; border-bottom: 1px solid var(--ld-border-chrome); font-size: 17px; }
+.lark-doc .lark-doc-selection-translation-languages > header > strong { font-weight: 500; }
+.lark-doc .lark-doc-selection-translation-languages > header > button { position: absolute; left: 12px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; background: transparent; color: inherit; }
+.lark-doc .lark-doc-selection-translation-language-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.lark-doc .lark-doc-selection-translation-language-list > button { display: block; box-sizing: border-box; width: 100%; min-height: 58px; padding: 16px 28px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; font: inherit; font-size: 16px; line-height: 26px; }
+.lark-doc .lark-doc-selection-translation-language-list > button:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: -2px; }

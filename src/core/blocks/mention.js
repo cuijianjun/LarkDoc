@@ -32,7 +32,7 @@ export const MENTION_KINDS = Object.freeze(['user', 'chat', 'page', 'task'])
 export const MENTION_KIND_LABELS = Object.freeze({ user: '人员', chat: '群名片', page: '云文档', task: '任务清单' })
 
 /** 各字段上限：与 `documentOperations.validateAttrs` 的兜底上限解耦，先自己收紧。 */
-export const MENTION_LIMITS = Object.freeze({ id: 256, name: 64, department: 64, mentionId: 64 })
+export const MENTION_LIMITS = Object.freeze({ id: 256, name: 64, pageName: 255, department: 64, mentionId: 64 })
 
 /** 名称解析失败时的回落文案（02 §19.3 ⑥：飞书显示 `@未知`）。 */
 export const MENTION_UNKNOWN_NAME = '未知'
@@ -84,7 +84,7 @@ export function createMentionId() {
 export function normalizeMention(input) {
   const source = input && typeof input === 'object' ? input : {}
   const kind = safeKind(source.kind)
-  const name = clampText(source.name, MENTION_LIMITS.name) || MENTION_UNKNOWN_NAME
+  const name = clampText(source.name, kind === 'page' ? MENTION_LIMITS.pageName : MENTION_LIMITS.name) || MENTION_UNKNOWN_NAME
   return {
     kind,
     id: clampText(source.id, MENTION_LIMITS.id),

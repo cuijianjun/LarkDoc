@@ -12,6 +12,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -32,7 +34,7 @@ function record(name, ok, detail = '') {
 async function main() {
   const executablePath = findChromium()
   if (!executablePath) throw new Error('未找到本机 chromium 缓存')
-  const browser = await chromium.launch({ headless: true, executablePath })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath })
   const page = await browser.newPage({ viewport: { width: 1700, height: 1000 } })
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(String(error)))
@@ -61,6 +63,7 @@ async function main() {
 
     await root.locator('button[aria-label="更换高亮块图标"]').click()
     const picker = page.locator('.lark-doc-callout-emoji-picker')
+    await picker.waitFor()
     record('点击图标按钮打开表情面板', await picker.count() === 1 && await picker.getAttribute('role') === 'menu' && await picker.getAttribute('aria-label') === '高亮块图标')
     record('表情面板包含搜索、随机、tablist、表情分组', await picker.locator('input[type="search"]').count() === 1 && await picker.locator('button[aria-label="随机高亮块图标"]').count() === 1 && await picker.locator('[role="tablist"]').count() === 1 && await picker.locator('[role="group"]').count() === 1)
     const tabs = picker.locator('[role="tab"]')

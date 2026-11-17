@@ -17,7 +17,9 @@
  */
 import { Extension } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
-import { blockEntry, createBlockApi, inTableContext } from '../blockApi'
+import { blockEntry } from '../blockApi/tree'
+import { inTableContext } from '../blockApi/nodes'
+import { createBlockRemovalApi } from '../blockApi/remove'
 
 /**
  * 节点类型名 —— 必须与 `core/blocks/external-block.js` 的 `name: 'externalBlock'` 一致。
@@ -87,7 +89,7 @@ export const LarkDocExternalDelete = Extension.create({
         return entry && !inTableContext(doc, entry)
       })
       if (!ids.length) return false
-      const api = createBlockApi({ editor })
+      const api = createBlockRemovalApi({ editor })
       ids.forEach((id) => api.remove(id))
       return true
     }

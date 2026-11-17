@@ -103,3 +103,20 @@ GitHub Pages 托管静态页面，服务器上传需要填写你自己的接口�
 8. 图片，等媒体在html中的展示方式
 9. 图表渲染不出来
 10. 编辑模式 编辑-修订-只读
+
+
+### H5 knowledge-library and host actions
+
+The mobile directory is separate from document headings. Search uses the current authorization Provider's `searchDocuments({ query })` (up to 20 authorized results); this is not a full-library tree. Without a directory adapter the drawer shows only the current document and an integration notice.
+
+The existing `onDocumentAction` hook can handle `list-knowledge-library` with the current `documentId`/`actorId`. Return `{ status: 'resolved', items: [...] }`; each item has `displayName` and `docId` (document) or `id`/`children` (folder). Documents may also have `children`, with separate expansion and navigation controls. Node IDs must be unique, names bounded to 255 characters, at most 200 nodes and eight nested levels. The host must authorize names and nodes before returning them. Omitted/unsupported results do not imply a complete directory.
+
+Before mounting, the host may attach `onDocumentAction.documentMetadata = { documentId, author: { name }, modifiedAt }` for the mobile header. Supply authorized document metadata: the document ID must exactly match the current, known Session ID, and `modifiedAt` must be an actual modification timestamp (epoch milliseconds or a valid date string). Missing metadata remains unknown; the viewing user and the Session export clock are not substitutes for the document author or modification time. This display metadata does not grant permissions or configure sharing services.
+
+Sharing selected content uses a separate recipient flow, not the document's link-permission card. Its existing `onSelectionShare({ selection, url, recipients, message, signal })` callback must wait for a real send acknowledgement; reject or return `false` on failure. A placeholder callback must not report a completed send. The SDK does not supply an external sender or create real chat groups by default; these integrations remain visibly unavailable until the host configures them. Recipient search uses the authorized mention directory and does not establish a full contact list.
+
+`open-document-reference` retains its existing navigation acknowledgement. `open-in-app` and `report` delegate the mobile more-menu action to the host; return `true` only after successfully opening/handing off that flow. This is not a report-submission receipt. Missing integrations show an unavailable message. `文档功能` in the library drawer (or Shift+Enter on the more button) retains the SDK's modes, host actions and in-document outline.
+
+The HTTP demo wires `createHttpDocumentHost` to a PostgreSQL-backed `knowledge-library` endpoint and a separate `examples/document-report.html` page. The local directory is explicitly a local test library; existing bodies, titles and folder placement are retained. A partial adapter must declare `onDocumentAction.supportedActions` as an array of implemented action names; unsupported host actions stay disabled, while callbacks without this metadata retain their existing behavior. The host callback may supply `openInAppLabel` to describe its configured launch target: the demo says **在浏览器中打开** and opens the same document in a new browser tab. It does not launch a Feishu native client or map the local document to the Feishu reference.
+
+New tabs receive CSRF through an opaque, same-origin BroadcastChannel while the source page remains open; credentials and actor IDs never enter the URL. A report stores an original operation ID in its fragment, keeps it after an uncertain response, and queries that ID after reload. A closed source page requires reopening the flow from an authenticated document; no new submission should replace an uncertain original. Only a durable `committed` receipt displays **举报已接收**. `received` is local persistence, not moderation completion. Image evidence is visibly unavailable pending an upload integration. The Java host can proxy the end-user contract documented in the backend `ops/document-business.openapi.json`; it must not invent actor identity or reuse its service mTLS as a user session.

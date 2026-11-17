@@ -91,9 +91,9 @@ const { COMMANDS } = require(path.resolve(sourceRoot, 'components/lark-doc/comma
 const expectedCommandIds = [
   'paragraph', ...Array.from({ length: 9 }, (_, index) => `heading${index + 1}`),
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
-  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image',
-  // 🔴 这里只列**菜单里真的能用**的项。视频或文件 `file`、电子表格 `sheet`、
-  // 多维表格 5 条、绘图 3 条（思维导图 / 流程图 / UML 图）、投票 `poll` 共 11 条
+  'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
+  // 🔴 这里只列**菜单里真的能用**的项。电子表格 `sheet`、
+  // 多维表格 5 条、绘图 3 条（思维导图 / 流程图 / UML 图）、投票 `poll` 共 10 条
   // 在 master 上只有块定义、没有插入链路，已从命令表摘掉；块类型本身仍在，
   // 老文档正文照旧渲染（见 core/commands/index.js 文件头）。
   'inlineMath', 'blockMath', 'template', 'ai',

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import toolbarCollapseMixin from '../../src/components/lark-doc/editor/toolbarCollapseMixin'
+import toolbarUiMixin from '../../src/components/lark-doc/editor/toolbarUiMixin'
+import { createLarkDocConfig } from '../../src/components/lark-doc/larkDocConfig'
 
 // 用可控布局尺寸和 nextTick 验证调度协议；不冒充浏览器几何/Safari验收。
 function harness({ capacity = 7 } = {}) {
@@ -42,6 +44,26 @@ function harness({ capacity = 7 } = {}) {
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('手机T条状态接线', () => {
+  it.each([
+    [{}, true, true],
+    [{ features: { codeBlocks: false } }, false, true],
+    [{ commands: { disabled: ['code', 'blockquote'] } }, false, false],
+  ])('向实际工具条传递活动类型及原配置门 %j', (config, code, quote) => {
+    const host = {
+      larkDocConfig: createLarkDocConfig(config), $slots: {}, visibleMarks: [],
+      collapsedGroups: [], modesConfig: { allow: ['read', 'edit'] },
+      toolbarEnabled: () => true, isActive: name => name === 'codeBlock',
+      blockIndentLevel: () => 0, canIncreaseIndent: () => true,
+    }
+    const state = toolbarUiMixin.methods.buildToolbarState.call(host)
+    expect(state.active.codeBlock).toBe(true)
+    expect(state.active.blockquote).toBe(false)
+    expect(state.features.codeBlocks).toBe(code)
+    expect(state.features.blockquote).toBe(quote)
+  })
+})
 
 describe('工具栏折叠布局生命周期', () => {
   it('窄栏依优先序收纳，试展开溢出时回填，变宽后逆序恢复', async () => {

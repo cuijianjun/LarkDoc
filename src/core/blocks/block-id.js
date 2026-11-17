@@ -14,8 +14,8 @@ const ASYNC_DOM_TYPES = new Set(['file', 'image', 'sheet', 'web-embed', 'bookmar
 const LarkDocBlockId = Extension.create({
   name: 'larkDocBlockId',
   addGlobalAttributes() {
-    return [{
-      types: Array.from(BLOCK_ID_TYPES),
+    const shared = {
+      types: Array.from(BLOCK_ID_TYPES).filter(type => type !== 'linkEmbed'),
       attributes: {
         blockId: {
           default: null,
@@ -41,7 +41,8 @@ const LarkDocBlockId = Extension.create({
           },
         },
       },
-    }]
+    }
+    return [shared, { types: ['linkEmbed'], attributes: { blockId: shared.attributes.blockId } }]
   },
 })
 

@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getSchema } from '@tiptap/core'
 import { DOMSerializer } from '@tiptap/pm/model'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
+import { registerExternalProvider as publicRegisterExternalProvider, externalBlockStatusLabel as publicExternalBlockStatusLabel } from '../../src/index'
 import { ERR_PROVIDER_REQUIRED, ERR_UNSUPPORTED_OPERATION, EXTERNAL_STATUS } from '../../src/registry/blocks'
 import {
   assertExternalOperation, externalBlockStatus, externalBlockStatusHint, externalBlockStatusLabel,
@@ -28,6 +29,10 @@ beforeAll(() => {
 afterEach(() => { resetExternalProviders() })
 
 describe('注册 / 保留 / 注销', () => {
+  it('默认入口暴露第三方接入注册与可解释状态查询', () => {
+    expect(publicRegisterExternalProvider({ name: 'bitable' })).toBe(true)
+    expect(publicExternalBlockStatusLabel('view')).toBe('')
+  })
   it('注册后可解析，名字按注册顺序列出', () => {
     expect(registerExternalProvider({ name: 'chat' })).toBe(true)
     expect(registerExternalProvider({ name: 'jira', label: '自建 Jira' })).toBe(true)

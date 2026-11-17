@@ -5,7 +5,7 @@
  *
  * 三条负结论（别「补全」）：
  *   1. **接受 / 拒绝都没有二次确认，也没有 toast**（§12.5 原文）。点了就落事务，靠
- *      正文立即生效且不进 undo 栈（V1 定稿：15 §3.1）。不新增「确定吗」流程。
+ *      正文立即生效，文档级 Undo 可恢复待处理态（07 §12.5）。不新增「确定吗」流程。
  *   2. **拒绝不恢复被删原文**（§12.5 两处原文）。所以删除态的两颗按钮结果同为「文字
  *      消失」，差异只在语义 —— 别为了「有区别」去实现片段级还原。
  *   3. **面板没有 more-btn、没有「已解决」**（§12.6）。修订建议不是评论，不建私有 /
@@ -37,7 +37,7 @@ import {
   revisionSummary,
 } from '../../../core/blocks/revision'
 import { adjacentRevision, buildRevisionDecisionTr, revisionAnchor } from '../../../core/revision/commands'
-import { buildRevisionActiveTr } from '../../../core/revision/decorations'
+import { buildRevisionActiveTr, revisionActiveKey } from '../../../core/revision/decorations'
 
 /** 面板与正文右缘的间距（实测 1214 - 1202）。 */
 const REVISION_ANCHOR_GUTTER = 12
@@ -89,6 +89,7 @@ export default {
   mounted() {
     window.addEventListener('scroll', this.onRevisionViewportChange, true)
     window.addEventListener('resize', this.onRevisionViewportChange)
+    window.addEventListener('hashchange', this.onRevisionHashChange)
     // 宿主的 `mounted` 在本钩子之后才建编辑器 —— 延一帧再挂 DOM 监听、补写模式。
     this.$nextTick(() => {
       if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
@@ -96,11 +97,14 @@ export default {
       this._revisionEditorDom.addEventListener('pointerdown', this.onRevisionPointerDown)
       this.syncRevisionTracking()
       this.updateRevisionPanels()
+      this.onRevisionHashChange()
     })
   },
   beforeDestroy() {
     window.removeEventListener('scroll', this.onRevisionViewportChange, true)
     window.removeEventListener('resize', this.onRevisionViewportChange)
+    window.removeEventListener('hashchange', this.onRevisionHashChange)
+    this._revisionHashTarget = ''
     this._revisionEditorDom?.removeEventListener('pointerdown', this.onRevisionPointerDown)
     this._revisionEditorDom = null
   },
@@ -122,8 +126,8 @@ export default {
       if (changed && this.editor.view?.dispatch && this.editor.state?.tr) {
         this.editor.view.dispatch(this.editor.state.tr.setMeta('larkDocRevisionMode', suggest).setMeta('addToHistory', false))
       }
-      if (!storage.active) {
-        this.revisionActiveId = ''
+      if (changed && !storage.active) {
+        this.activateRevision('')
         this.revisionHoverId = ''
       }
       this.updateRevisionPanels()
@@ -136,10 +140,20 @@ export default {
     // —— 收集与定位 ——
     /** 由宿主的 `onTransaction` 调；只做「收建议 + 清理失效 id」，几何交给下一帧。 */
     updateRevisionPanels() {
-      if (!this.editor) {
+      if (!this.editor || this.session?.can && !this.session.can('canView')) {
         this.revisionPanels = []
-        this.revisionActiveId = ''
+        this.revisionHoverId = ''
+        this.activateRevision('')
+        this._revisionHashTarget = ''
         return
+      }
+      const owner = [this.editor, this.session, this.documentId || this.session?.documentId, this.session?._privateIdentityGeneration]
+      const previous = this._revisionPanelOwner
+      this._revisionPanelOwner = owner
+      if (previous && previous.some((value, index) => value !== owner[index])) {
+        this._revisionHashTarget = ''
+        this.revisionHoverId = ''
+        this.activateRevision('')
       }
       const doc = this.editor.state.doc
       if (this._revisionDoc !== doc) {
@@ -149,12 +163,12 @@ export default {
       const items = this._revisionItems
       if (!items.length) {
         this.revisionPanels = []
-        this.revisionActiveId = ''
+        this.activateRevision('')
         this.revisionHoverId = ''
         return
       }
       // 建议被接受 / 拒绝后它的 id 就没了 —— 不清会让输入区挂在一个不存在的标记上。
-      if (this.revisionActiveId && !items.some((item) => item.revisionId === this.revisionActiveId)) this.revisionActiveId = ''
+      if (this.revisionActiveId && !items.some((item) => item.revisionId === this.revisionActiveId)) this.activateRevision('')
       if (this.revisionHoverId && !items.some((item) => item.revisionId === this.revisionHoverId)) this.revisionHoverId = ''
       this.revisionPanels = items.map((item) => ({
         revisionId: item.revisionId,
@@ -166,7 +180,37 @@ export default {
         left: 0,
         top: 0,
       }))
+      this.applyRevisionFragment()
       this.$nextTick(() => this.placeRevisionPanels())
+    },
+    onRevisionHashChange() {
+      let target = ''
+      try { target = decodeURIComponent(window.location.hash.replace(/^#revision-/, '')) } catch (_) { /* malformed fragment has no target */ }
+      this._revisionHashTarget = window.location.hash.startsWith('#revision-') ? target : ''
+      this._revisionHashScope = { editor: this.editor, session: this.session, documentId: this.documentId || this.session?.documentId, identity: this.session?._privateIdentityGeneration }
+      this.activateRevision('')
+      this.applyRevisionFragment()
+    },
+    applyRevisionFragment() {
+      const id = this._revisionHashTarget
+      if (!id || !this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
+      const scope = this._revisionHashScope
+      if (scope && (scope.editor !== this.editor || scope.session !== this.session || scope.documentId !== (this.documentId || this.session?.documentId) || scope.identity !== this.session?._privateIdentityGeneration) || this.session?.can && !this.session.can('canView')) { this._revisionHashTarget = ''; return }
+      const item = this.revisionPanels.find(panel => panel.revisionId === id)
+      if (!item) { this.notice = '修订不存在或当前无权查看。'; return }
+      this._revisionHashTarget = ''
+      this.activateRevision(id)
+      this.scrollRevisionIntoView(item)
+    },
+    scrollRevisionIntoView(item) {
+      try {
+        this.editor.storage?.larkDoc?.projection?.revealPosition?.(item.from)
+        const at = this.editor.view.domAtPos(item.from)
+        const direct = this.editor.view.nodeDOM?.(item.from) || at.node
+        const node = direct?.nodeType === 3 ? direct.parentNode : direct
+        this.editor.storage?.larkDoc?.projection?.revealNode?.(node)
+        node?.scrollIntoView?.({ block: 'center' })
+      } catch (_) { /* a detached view cannot scroll */ }
     },
     placeRevisionPanels() {
       if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
@@ -254,32 +298,32 @@ export default {
       this.activateRevision(target)
       const item = this.revisionPanels.filter((panel) => panel.revisionId === target)[0]
       if (!item) return
-      // 跳到别的建议后要把它滚进视野，否则点「下一个」看起来什么都没发生。
-      try {
-        const at = this.editor.view.domAtPos(item.from)
-        const node = at.node && at.node.nodeType === 3 ? at.node.parentNode : at.node
-        if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center' })
-      } catch (error) {
-        // 滚不动不影响点亮结果，静默。
-      }
+      this.scrollRevisionIntoView(item)
+
     },
     activateRevision(revisionId) {
       const nextId = revisionId || ''
-      if (nextId === this.revisionActiveId) return
+      const editor = this.editor
+      if (nextId && this.session?.can && !this.session.can('canView')) return
+      const active = editor && !editor.isDestroyed ? revisionActiveKey.getState(editor.state) : undefined
+      if (nextId === this.revisionActiveId && (active === undefined || active === nextId)) return
       this.revisionActiveId = nextId
-      if (!this.editor) return
+      if (!editor || editor.isDestroyed) return
       // 高亮走装饰、不进文档 —— 只 `setMeta`，`addToHistory: false` 在 core 里设好了。
       this.editor.view.dispatch(buildRevisionActiveTr(this.editor.state, nextId))
       this.$nextTick(() => this.placeRevisionPanels())
     },
-    /** 接受 / 拒绝：无二次确认、无 toast，按 V1 定稿不进 undo 栈。 */
+    /** 接受 / 拒绝：无二次确认、无 toast，作为独立文档级 Undo 步骤。 */
     decideRevision(revisionId, action) {
       // `writable()` 是宿主既有的口径（含销毁态判定），保留；再加一道 read 态闸门 ——
       // 协同只读时宿主可能还没把 `effectiveReadonly` 接过来，这里先自己守住。
       if (!this.editor || !this.writable() || this.revisionReadonly) return
       const tr = buildRevisionDecisionTr(this.editor.state, revisionId, action)
       if (!tr) return
-      this.editor.view.dispatch(tr)
+      const managers = this.editor.state.plugins.map(plugin => plugin.getState(this.editor.state)?.undoManager).filter(Boolean)
+      managers.forEach(manager => manager.stopCapturing())
+      try { this.editor.view.dispatch(tr) }
+      finally { managers.forEach(manager => manager.stopCapturing()) }
       this.revisionActiveId = ''
       this.revisionHoverId = ''
     },

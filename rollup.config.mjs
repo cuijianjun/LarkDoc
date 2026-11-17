@@ -23,15 +23,245 @@ const collabPeers = new Set([
   'y-protocols',
   'lib0',
 ])
-export const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui']
+export const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document']
 const ELEMENT_UI_ENTRY = '\0lark-doc-element-ui:'
+const UI_FALLBACK_ENTRY = '\0lark-doc-ui-fallback'
+const PANEL_PRESENTATION_ENTRY = '\0lark-doc-panel-presentation'
+const PANEL_PRESENTATION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/panelPresentation.js')
+const TABLE_PRESENTATION_ENTRY = '\0lark-doc-table-presentation'
+const TABLE_PRESENTATION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/tablePresentation.js')
+const COMMENT_INTERACTION_ENTRY = '\0lark-doc-comment-interaction'
+const COMMENT_INTERACTION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/commentInteraction.js')
+const CALLOUT_PRESENTATION_ENTRY = '\0lark-doc-callout-presentation'
+const CALLOUT_PRESENTATION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/calloutPresentation.js')
+const VERSIONING_PRESENTATION_ENTRY = '\0lark-doc-versioning-presentation'
+const VERSIONING_PRESENTATION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/versioningPresentation.js')
+const SHARE_INTERACTION_ENTRY = '\0lark-doc-share-interaction'
+const SHARE_INTERACTION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/shareInteraction.js')
+const EXPORT_INTERACTION_ENTRY = '\0lark-doc-export-interaction'
+const EXPORT_INTERACTION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/exportInteraction.js')
+const BLOCK_INTERACTION_ENTRY = '\0lark-doc-block-interaction'
+const BLOCK_INTERACTION_SOURCE = resolve(ROOT, 'src/components/lark-doc/editor/blockInteraction.js')
+const PAGED_VIEW_ENTRY = '\0lark-doc-paged-view-runtime'
+const PAGED_VIEW_SOURCE = resolve(ROOT, 'src/editor/pagedDocumentView.js')
+const PAGED_VIEW_RUNTIME_SOURCE = resolve(ROOT, 'src/editor/pagedDocumentViewRuntime.js')
+const PAGED_IMPORT_ENTRY = '\0lark-doc-paged-import-runtime'
+const PAGED_IMPORT_SOURCE = resolve(ROOT, 'src/editor/pagedDocumentSource.js')
+const PAGED_IMPORT_RUNTIME_SOURCE = resolve(ROOT, 'src/editor/pagedDocumentImportRuntime.js')
 const elementUiModules = {
   panels: ['createCommentPanel', 'createSaveVersionDialog', 'createVersionPanel'],
   dialogs: ['createEmbedDialog', 'createHelpDrawer', 'createLinkDialog', 'createMathDialog', 'createTablePickerDialog'],
   extendedOverlays: ['createExtendedOverlays'],
   colorPalette: ['createColorPalette'], revision: ['createRevisionPanels'], isvPanel: ['createIsvPanel'],
   reminder: ['createReminder'], calendarSearch: ['createCalendarSearch'], searchPanel: ['createSearchPanel'],
-  commandMenu: ['createCommandMenu'],
+  commandMenu: ['createCommandMenu'], templateLibrary: ['createTemplateLibrary'],
+  overlays: ['createDocumentOverlays'], notifications: ['createNotifications'],
+  tableTools: ['createTableTools', 'createTableBoundaryTools'], tableOverlays: ['createTableOverlays'],
+  cellPlusTools: ['createCellPlusTools'], linkTools: ['createLinkTools'],
+  bubbleBar: ['createBubbleBar'],
+  workspacePanels: ['createWorkspacePanels'],
+  calloutTools: ['createCalloutTools'],
+  topBarMenus: ['createTopBarMenus'],
+  blockHandleMenus: ['createBlockHandleMenus'],
+}
+
+/** Read only literal private presentation keys; never evaluate application code. */
+function privatePresentationShape(source, factoryName, namespaces) {
+  const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' })
+  const factory = ast.body.find(node => node.type === 'ExportNamedDeclaration' && node.declaration?.id?.name === factoryName)?.declaration
+  if (factory?.type !== 'FunctionDeclaration') throw new Error('Missing private panel presentation factory')
+  const definitions = new Map()
+  for (const statement of factory.body.body) if (statement.type === 'VariableDeclaration') {
+    for (const item of statement.declarations) if (item.id.type === 'Identifier' && item.init?.type === 'ObjectExpression') definitions.set(item.id.name, item.init)
+  }
+  const keys = (name, seen = new Set()) => {
+    if (seen.has(name) || !definitions.has(name)) throw new Error(`Unresolved private presentation keys: ${name}`)
+    const next = new Set(seen).add(name)
+    return definitions.get(name).properties.flatMap(property => {
+      if (property.type === 'Property' && !property.computed) return [property.key.name || property.key.value]
+      // The participant adapters preserve exactly the keys of their literal source.
+      const from = property.argument
+      const mapping = from?.arguments?.[0]
+      const entries = mapping?.callee?.object
+      if (property.type === 'SpreadElement' && from?.callee?.object?.name === 'Object' && from.callee.property?.name === 'fromEntries'
+        && mapping?.callee?.property?.name === 'map' && entries?.callee?.object?.name === 'Object' && entries.callee.property?.name === 'entries'
+        && entries.arguments?.[0]?.type === 'Identifier') return keys(entries.arguments[0].name, next)
+      throw new Error(`Unsupported private presentation shape: ${name}`)
+    })
+  }
+  return Object.fromEntries(Object.entries(namespaces).map(([namespace, name]) => [namespace, keys(name)]))
+}
+
+export function panelPresentationShape(source = readFileSync(PANEL_PRESENTATION_SOURCE, 'utf8')) {
+  return privatePresentationShape(source, 'createPanelPresentation', { methods: 'methods', computed: 'commentPanelComputed',
+    commentPanelMethods: 'commentPanelMethods', commentParticipantActions: 'commentParticipantActions' })
+}
+
+export function commentInteractionShape(source = readFileSync(COMMENT_INTERACTION_SOURCE, 'utf8')) {
+  return privatePresentationShape(source, 'createCommentInteraction', { methods: 'methods' })
+}
+
+export function versioningPresentationShape(source = readFileSync(VERSIONING_PRESENTATION_SOURCE, 'utf8')) {
+  return privatePresentationShape(source, 'createVersioningPresentation', { computed: 'computed', methods: 'methods' })
+}
+
+function deferredShareInteraction() {
+  const { methods } = privatePresentationShape(readFileSync(SHARE_INTERACTION_SOURCE, 'utf8'), 'createShareInteraction', { methods: 'methods' })
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createShareInteraction(dependencies){
+ let implementation;
+ function ready(){
+  if(implementation)return implementation;
+  const factory=readFeature('ui.ready')?.createShareInteraction;
+  if(typeof factory!=='function')throw new Error('分享界面尚未加载');
+  return implementation=factory(dependencies);
+ }
+ return {methods:Object.fromEntries(${JSON.stringify(methods)}.map(name=>[name,function(...args){return ready().methods[name].apply(this,args);}]))};
+}`
+}
+
+function deferredExportInteraction() {
+  const { methods } = privatePresentationShape(readFileSync(EXPORT_INTERACTION_SOURCE, 'utf8'), 'createExportInteraction', { methods: 'methods' })
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createExportInteraction(dependencies){
+ let implementation;
+ function ready(){
+  if(implementation)return implementation;
+  const factory=readFeature('ui.ready')?.createExportInteraction;
+  if(typeof factory!=='function')throw new Error('导出界面尚未加载');
+  return implementation=factory(dependencies);
+ }
+ return {methods:Object.fromEntries(${JSON.stringify(methods)}.map(name=>[name,function(...args){return ready().methods[name].apply(this,args);}]))};
+}`
+}
+
+function deferredBlockInteraction() {
+  const { methods } = privatePresentationShape(readFileSync(BLOCK_INTERACTION_SOURCE, 'utf8'), 'createBlockInteraction', { methods: 'methods' })
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createBlockInteraction(dependencies){
+ let implementation;
+ function ready(){
+  if(implementation)return implementation;
+  const factory=readFeature('ui.ready')?.createBlockInteraction;
+  if(typeof factory!=='function')throw new Error('块菜单界面尚未加载');
+  return implementation=factory(dependencies);
+ }
+ return {methods:Object.fromEntries(${JSON.stringify(methods)}.map(name=>[name,function(...args){return ready().methods[name].apply(this,args);}]))};
+}`
+}
+
+function deferredVersioningPresentation(shape) {
+  const actions = shape.methods.filter(name => !['mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass'].includes(name))
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createVersioningPresentation(dependencies){
+ let implementation;
+ return Object.fromEntries(Object.entries(${JSON.stringify(shape)}).map(([namespace,keys])=>[namespace,Object.fromEntries(keys.map(name=>[name,function(...args){
+  void this.panelPresentationRevision;
+  if(implementation)return implementation[namespace][name].apply(this,args);
+  const factory=readFeature('ui.ready')?.createVersioningPresentation;
+  if(typeof factory==='function'){implementation=factory(dependencies);return implementation[namespace][name].apply(this,args);}
+  if(${JSON.stringify(actions)}.includes(name))throw new Error('版本界面尚未加载');
+  if(name==='mountVersionDocumentPreview')throw new Error('版本预览界面尚未加载');
+  if(name==='versionDayGroups')return [];
+  if(name==='versionSelectedDiff')return null;
+  if(name==='versionTimelineClass')return {selected:false};
+  return '';
+ }]))]));
+}`
+}
+
+function deferredPagedViewRuntime() {
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createPagedDocumentViewRuntime(dependencies){
+ let implementation;
+ function ready(){
+  if(implementation)return implementation;
+  const factory=readFeature('document.pagedView.ready');
+  if(typeof factory!=='function')throw new Error('分页视图尚未加载');
+  return implementation=factory(dependencies);
+ }
+ return {
+  scrollDocumentSelection(editor){return ready().scrollDocumentSelection.apply(this,arguments);},
+  preparePagedDocumentView(editor){return ready().preparePagedDocumentView.apply(this,arguments);}
+ };
+}`
+}
+
+function deferredPagedImportRuntime() {
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createPagedDocumentImportRuntime(dependencies){
+ let implementation;
+ function ready(){
+  if(implementation)return implementation;
+  const factory=readFeature('document.pagedImport.ready');
+  if(typeof factory!=='function')throw new Error('分页导入尚未加载');
+  return implementation=factory(dependencies);
+ }
+ return {
+  yieldDocumentTask(){return ready().yieldDocumentTask.apply(this,arguments);},
+  createPagedDocumentSource(content){return ready().createPagedDocumentSource.apply(this,arguments);},
+  startPagedImport(controller,content,options,context){return ready().startPagedImport.apply(this,arguments);},
+  importPagedContent(controller,job,content){return ready().importPagedContent.apply(this,arguments);},
+  importWorkspaceFile(controller,file,importingEditor){return ready().importWorkspaceFile.apply(this,arguments);}
+ };
+}`
+}
+
+function deferredPanelPresentation(shape) {
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createPanelPresentation(dependencies){
+ let implementation;
+ const result={};
+ for(const [namespace,keys] of Object.entries(${JSON.stringify(shape)})) result[namespace]=Object.fromEntries(keys.map(name=>[name,function(...args){
+  const owner=this.ed||this;void owner.panelPresentationRevision;
+  const factory=readFeature('ui.ready')?.createPanelPresentation;
+  if(factory){implementation ||= factory(dependencies);return implementation[namespace][name].apply(this,args);}
+  if(namespace==='methods'){
+   const fallback={buildCommentState:'buildCommentVisibility',buildVersionState:'buildVersionVisibility',buildSaveVersionState:'buildSaveVersionVisibility'}[name];
+   return fallback?this[fallback](...args):null;
+  }
+ } ]));
+ return result;
+}`
+}
+
+function deferredTablePresentation() {
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createTablePresentation(dependencies){
+ let implementation;
+ return {methods:Object.fromEntries(['tableSelectionAlignment','buildTableToolsPresentation','tableToolbarCommand','dispatchToolbarAction'].map(name=>[name,function(...args){
+  const factory=readFeature('ui.ready')?.createTablePresentation;
+  if(factory){implementation ||= factory(dependencies);return implementation.methods[name].apply(this,args);}
+  if(name==='buildTableToolsPresentation'){const {selection,...visibility}=args[0];return visibility;}
+  return false;
+ }]))};
+}`
+}
+
+function deferredCommentInteraction(shape) {
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createCommentInteraction(dependencies){
+ let implementation;
+ return {methods:Object.fromEntries(${JSON.stringify(shape.methods)}.map(name=>[name,function(...args){
+  if(implementation)return implementation.methods[name].apply(this,args);
+  const factory=readFeature('ui.ready')?.createCommentInteraction;
+  if(factory){implementation ||= factory(dependencies);return implementation.methods[name].apply(this,args);}
+  return false;
+ }]))};
+}`
+}
+
+function deferredCalloutPresentation() {
+  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+export function createCalloutPresentation(){
+ let implementation;
+ return {computed:Object.fromEntries(['calloutEmojiCategories','filteredCalloutEmojiItems'].map(name=>[name,function(...args){
+  void this.calloutPresentationRevision;
+  const factory=readFeature('ui.ready')?.createCalloutPresentation;
+  if(factory){implementation ||= factory();return implementation.computed[name].apply(this,args);}
+  return [];
+ }]))};
+}`
 }
 
 export const PM_NAMES = ['state', 'model', 'view', 'transform', 'commands', 'keymap', 'inputrules', 'schema-list', 'history', 'gapcursor', 'dropcursor', 'tables', 'changeset']
@@ -96,10 +326,12 @@ function isBare(id) {
 }
 
 function packageAlias(target = '') {
+  const element = target === 'element' || target === 'elementRuntime'
+  const deferredUi = element || ['esm', 'cjs', 'lite', 'elementEsm', 'legacy', 'legacyEsm', 'full', 'fullCjs'].includes(target)
   const aliases = new Map([
     ['lark-doc/katex.css', resolve(ROOT, 'src/styles/vendor/katex.css')],
     ['lark-doc/mermaid-vendor', resolve(ROOT, 'src/assets/vendor/mermaid/mermaid.min.js')],
-    ...(['lite', 'element'].includes(target) ? [
+    ...(target === 'lite' || element ? [
       ['katex', resolve(ROOT, 'src/core/features/stub.js')],
       ['docx', resolve(ROOT, 'src/core/features/stub.js')],
       ['marked', resolve(ROOT, 'src/core/features/stub.js')],
@@ -132,12 +364,38 @@ function packageAlias(target = '') {
   return {
     name: 'lark-doc-package-alias',
     resolveId(source, importer) {
-      if (target === 'element' && importer?.startsWith(resolve(ROOT, 'src/components/lark-doc/editor') + '/') && source.startsWith('../../../ui/')) {
+      if (element && importer === PAGED_VIEW_SOURCE && source.startsWith('.')) {
+        const file = resolve(dirname(importer), source)
+        if (file === PAGED_VIEW_RUNTIME_SOURCE || `${file}.js` === PAGED_VIEW_RUNTIME_SOURCE) return PAGED_VIEW_ENTRY
+      }
+      if (element && importer === PAGED_IMPORT_SOURCE && source.startsWith('.')) {
+        const file = resolve(dirname(importer), source)
+        if (file === PAGED_IMPORT_RUNTIME_SOURCE || `${file}.js` === PAGED_IMPORT_RUNTIME_SOURCE) return PAGED_IMPORT_ENTRY
+      }
+      if (element && importer === resolve(ROOT, 'src/components/lark-doc/editor/blockMenuMixin.js') && source === '../../../features/ui') return UI_FALLBACK_ENTRY
+      if (deferredUi && importer === resolve(ROOT, 'src/ui/workspace.js') && source === './workspacePanels') return ELEMENT_UI_ENTRY + 'workspacePanels'
+      if (deferredUi && importer === resolve(ROOT, 'src/ui/topBar.js') && source === './topBarMenus') return ELEMENT_UI_ENTRY + 'topBarMenus'
+      if (deferredUi && importer === resolve(ROOT, 'src/ui/blockHandle.js') && source === './blockHandleMenus') return ELEMENT_UI_ENTRY + 'blockHandleMenus'
+      if (deferredUi && importer?.startsWith(resolve(ROOT, 'src/components/lark-doc/editor') + '/') && source.startsWith('.')) {
+        const file = resolve(dirname(importer), source)
+        if (file === PANEL_PRESENTATION_SOURCE || `${file}.js` === PANEL_PRESENTATION_SOURCE) return PANEL_PRESENTATION_ENTRY
+        if (file === TABLE_PRESENTATION_SOURCE || `${file}.js` === TABLE_PRESENTATION_SOURCE) return TABLE_PRESENTATION_ENTRY
+        if (file === COMMENT_INTERACTION_SOURCE || `${file}.js` === COMMENT_INTERACTION_SOURCE) return COMMENT_INTERACTION_ENTRY
+        if (file === CALLOUT_PRESENTATION_SOURCE || `${file}.js` === CALLOUT_PRESENTATION_SOURCE) return CALLOUT_PRESENTATION_ENTRY
+        if (file === VERSIONING_PRESENTATION_SOURCE || `${file}.js` === VERSIONING_PRESENTATION_SOURCE) return VERSIONING_PRESENTATION_ENTRY
+        if (file === SHARE_INTERACTION_SOURCE || `${file}.js` === SHARE_INTERACTION_SOURCE) return SHARE_INTERACTION_ENTRY
+        if (file === EXPORT_INTERACTION_SOURCE || `${file}.js` === EXPORT_INTERACTION_SOURCE) return EXPORT_INTERACTION_ENTRY
+        if (file === BLOCK_INTERACTION_SOURCE || `${file}.js` === BLOCK_INTERACTION_SOURCE) return BLOCK_INTERACTION_ENTRY
+      }
+      if ((target === 'lite' || element) && importer === resolve(ROOT, 'src/core/nodeviews/code-languages.js') && source === '../../features/highlight') {
+        return resolve(ROOT, 'src/core/features/stub.js')
+      }
+      if (deferredUi && importer?.startsWith(resolve(ROOT, 'src/components/lark-doc/editor') + '/') && source.startsWith('../../../ui/')) {
         const name = source.slice('../../../ui/'.length).replace(/\.js$/, '')
         if (elementUiModules[name]) return ELEMENT_UI_ENTRY + name
       }
       // 独立 Element 已注册同目录特性脚本；只替换出口层的重复实现，不影响特性包自身。
-      if (target === 'element' && importer === resolve(ROOT, 'src/utils/export/index.js') &&
+      if (element && importer === resolve(ROOT, 'src/utils/export/index.js') &&
         (source === './markdown.js' || source === './docx.js')) return resolve(ROOT, 'src/core/features/stub.js')
       if (aliases.has(source)) return aliases.get(source)
       if (source.startsWith('lark-doc/')) {
@@ -147,15 +405,109 @@ function packageAlias(target = '') {
       }
       return null
     },
+    transform(code, id) {
+      // These callers already await a module. Classic Element may load its
+      // pure model through the existing script registry without changing any
+      // synchronous model export or introducing another PM instance.
+      if (!element) return null
+      const modelCaller = id === resolve(ROOT, 'src/mount/domRenderer.js')
+      const pagedCaller = [resolve(ROOT, 'src/editor/pagedDocumentSource.js'), resolve(ROOT, 'src/components/lark-doc/editor/viewModesMixin.js')].includes(id)
+      const importCaller = [resolve(ROOT, 'src/editor/EditorController.js'), resolve(ROOT, 'src/workspace/WorkspaceController.js')].includes(id)
+      const shareCaller = [resolve(ROOT, 'src/providers/authorization.js'), resolve(ROOT, 'src/components/lark-doc/editor/shareMixin.js'), resolve(ROOT, 'src/providers/document-business.js')].includes(id)
+      if (!modelCaller && !pagedCaller && !importCaller && !shareCaller) return null
+      const requests = []
+      const visit = node => {
+        if (!node || typeof node !== 'object') return
+        if (node.type === 'ImportExpression' && node.source.type === 'Literal') {
+          if (modelCaller && node.source.value === '../editor/segmentedDocumentModel') requests.push({ node, feature: 'document.segmented', namespace: false })
+          if ((pagedCaller || importCaller) && typeof node.source.value === 'string') {
+            const file = resolve(dirname(id), node.source.value)
+            if (pagedCaller && (file === PAGED_VIEW_SOURCE || `${file}.js` === PAGED_VIEW_SOURCE)) requests.push({ node, feature: 'document.pagedView', namespace: true })
+            if (importCaller && (file === PAGED_IMPORT_SOURCE || `${file}.js` === PAGED_IMPORT_SOURCE)) requests.push({ node, feature: 'document.pagedImport', namespace: true })
+          }
+          if (shareCaller && typeof node.source.value === 'string') {
+            const file = resolve(dirname(id), node.source.value)
+            for (const [source, feature] of [['src/providers/share-links.js', 'document.shareLinks'], ['src/providers/share-link-access.js', 'document.shareLinkAccess']]) {
+              if (file === resolve(ROOT, source) || `${file}.js` === resolve(ROOT, source)) requests.push({ node, feature, namespace: false })
+            }
+          }
+        }
+        for (const value of Object.values(node)) {
+          if (Array.isArray(value)) value.forEach(visit)
+          else if (value && typeof value === 'object') visit(value)
+        }
+      }
+      visit(parse(code, { ecmaVersion: 'latest', sourceType: 'module' }))
+      if (!requests.length) return null
+      for (const { node, feature, namespace } of requests.sort((a, b) => b.node.start - a.node.start)) {
+        const loaded = `__larkDocLoadDocumentFeature('${feature}')`
+        const replacement = namespace ? `${loaded}.then(()=>${code.slice(node.start, node.end)})` : loaded
+        code = code.slice(0, node.start) + replacement + code.slice(node.end)
+      }
+      return { code: `import {loadFeature as __larkDocLoadDocumentFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};\n${code}`, map: null }
+    },
     load(id) {
+      if (id === PAGED_IMPORT_ENTRY) {
+        this.addWatchFile?.(PAGED_IMPORT_RUNTIME_SOURCE)
+        return deferredPagedImportRuntime()
+      }
+      if (id === UI_FALLBACK_ENTRY) return 'export const uiApi = null;'
+      if (id === PAGED_VIEW_ENTRY) {
+        this.addWatchFile?.(PAGED_VIEW_RUNTIME_SOURCE)
+        return deferredPagedViewRuntime()
+      }
+      if (id === PANEL_PRESENTATION_ENTRY) {
+        this.addWatchFile?.(PANEL_PRESENTATION_SOURCE)
+        return deferredPanelPresentation(panelPresentationShape())
+      }
+      if (id === TABLE_PRESENTATION_ENTRY) {
+        this.addWatchFile?.(TABLE_PRESENTATION_SOURCE)
+        return deferredTablePresentation()
+      }
+      if (id === COMMENT_INTERACTION_ENTRY) {
+        this.addWatchFile?.(COMMENT_INTERACTION_SOURCE)
+        return deferredCommentInteraction(commentInteractionShape())
+      }
+      if (id === CALLOUT_PRESENTATION_ENTRY) {
+        this.addWatchFile?.(CALLOUT_PRESENTATION_SOURCE)
+        return deferredCalloutPresentation()
+      }
+      if (id === VERSIONING_PRESENTATION_ENTRY) {
+        this.addWatchFile?.(VERSIONING_PRESENTATION_SOURCE)
+        return deferredVersioningPresentation(versioningPresentationShape())
+      }
+      if (id === SHARE_INTERACTION_ENTRY) {
+        this.addWatchFile?.(SHARE_INTERACTION_SOURCE)
+        return deferredShareInteraction()
+      }
+      if (id === EXPORT_INTERACTION_ENTRY) {
+        this.addWatchFile?.(EXPORT_INTERACTION_SOURCE)
+        return deferredExportInteraction()
+      }
+      if (id === BLOCK_INTERACTION_ENTRY) {
+        this.addWatchFile?.(BLOCK_INTERACTION_SOURCE)
+        return deferredBlockInteraction()
+      }
       if (!id.startsWith(ELEMENT_UI_ENTRY)) return null
       const name = id.slice(ELEMENT_UI_ENTRY.length)
       const visible = name === 'extendedOverlays' ? ',s=>s.linkHoverOpen||s.confirmOpen||s.relationOpen||s.codeLangOpen'
         : name === 'revision' ? ',s=>s.items&&s.items.length>0'
+          : name === 'overlays' ? ',s=>s.sharePopoverOpen||s.permissionDialogOpen||s.secureLinkConfirmOpen||s.passwordDialogOpen||s.exportOpen||s.exportToast||s.exportPendingOperationId||s.imageShare'
+            : name === 'cellPlusTools' || name === 'calloutTools' ? ',s=>s.visible'
+              : name === 'workspacePanels' ? ',s=>(s.templateOpen&&s.templatesEnabled)||(s.historyOpen&&s.historyEnabled)||(s.aiOpen&&s.aiEnabled)||s.notice'
+                : name === 'topBarMenus' ? ',s=>s.headerVisible!==false&&((s.createMenuOpen&&!s.readonly)||(s.topbarMoreOpen&&!s.moreDismissed))'
+                  : name === 'blockHandleMenus' ? ',s=>s.open'
           : ''
       return `import {createDeferredUi} from ${JSON.stringify(resolve(ROOT, 'src/features/element-ui.js'))};` +
-        (name === 'panels' ? `export {createOutlinePanel} from ${JSON.stringify(resolve(ROOT, 'src/ui/panels.js'))};` : '') +
-        elementUiModules[name].map(factory => `export const ${factory}=options=>createDeferredUi(${JSON.stringify(factory)},options${factory === 'createSaveVersionDialog' ? ',s=>s.open||s.notice' : visible});`).join('')
+        (name === 'panels' ? `export {createOutlinePanel} from ${JSON.stringify(resolve(ROOT, 'src/ui/outlinePanel.js'))};` : '') +
+        elementUiModules[name].map(factory => {
+          const predicate = factory === 'createCommentPanel' ? ',s=>s.open||s.documentInline||s.launcher?.visible'
+            : factory === 'createSaveVersionDialog' ? ',s=>s.open||s.notice' : visible
+          const fallback = element ? '' : `${predicate ? '' : ',undefined'},()=>import(${JSON.stringify(resolve(ROOT, 'src/features/ui.js'))}).then(module=>module.uiApi)`
+          const signature = name === 'bubbleBar' ? '(host,options)' : 'options'
+          const options = name === 'bubbleBar' ? '{...options,host}' : 'options'
+          return `export const ${factory}=${signature}=>createDeferredUi(${JSON.stringify(factory)},${options}${predicate}${fallback});`
+        }).join('')
     },
   }
 }
@@ -184,7 +536,7 @@ function externals(target, format) {
   }
 }
 
-export function inlineCssImports() {
+export function inlineCssImports({ deferredVersioning = false } = {}) {
   return {
     postcssPlugin: 'lark-doc-inline-css-imports',
     Once(root, { result }) {
@@ -193,6 +545,7 @@ export function inlineCssImports() {
       const inline = (css, directory, seen = new Set()) => css.replace(/@import\s+["']([^"']+)["']\s*;?/g, (statement, request) => {
         if (!request.startsWith('.') || !request.endsWith('.css')) return statement
         const file = resolve(directory, request)
+        if (deferredVersioning && ['src/styles/versioning.css', 'src/styles/deferred-ui.css', 'src/components/lark-doc/template-library.css'].some(name => file === resolve(ROOT, name))) return ''
         if (!existsSync(file) || seen.has(file)) return statement
         seen.add(file)
         result.messages.push({ type: 'dependency', plugin: 'lark-doc-inline-css-imports', file })
@@ -243,7 +596,7 @@ export function reactionCatalogAssets() {
 }
 
 export function cssInjection(target) {
-  if (!['element', 'elementRuntime', 'elementEsm', 'feature:math:umd'].includes(target)) return false
+  if (!['element', 'elementRuntime', 'elementEsm', 'feature:math:umd', 'feature:ui:umd'].includes(target)) return false
   return (variable, id) => {
     const fonts = [...new Set([...readFileSync(id, 'utf8').matchAll(/url\(["']?(\.\/fonts\/[^"')]+)["']?\)/g)].map(match => match[1]))]
     let rebase = ''
@@ -277,13 +630,13 @@ function plugins(target, cssFile) {
     commonjs({ transformMixedEsModules: true }),
     json(),
     postcss({
-      plugins: [inlineCssImports(), ...(target === 'feature:math' ? [{
+      plugins: [inlineCssImports({ deferredVersioning: target === 'element' || target === 'elementRuntime' }), ...(target === 'feature:math' ? [{
         postcssPlugin: 'lark-doc-feature-font-paths',
         Declaration(declaration) { declaration.value = declaration.value.replace(/url\((["']?)\.\/fonts\//g, 'url($1../fonts/') },
       }] : [])],
       inject: cssInjection(target),
       extract: cssFile || false,
-      minimize: target === 'element' || target === 'elementRuntime' || target === 'elementEsm' || target === 'feature:math:umd',
+      minimize: target === 'element' || target === 'elementRuntime' || target === 'elementEsm' || target === 'feature:math:umd' || target === 'feature:ui:umd',
       sourceMap: false,
     }),
   ]
@@ -390,7 +743,7 @@ const targets = {
     format: 'es',
     file: 'lark-doc-collab.esm.js',
     entryFileNames: 'lark-doc-collab.esm.js',
-    inlineDynamicImports: true,
+    inlineDynamicImports: false,
     css: null,
   },
   collabCjs: {
@@ -398,6 +751,14 @@ const targets = {
     format: 'cjs',
     file: 'lark-doc-collab.common.js',
     entryFileNames: 'lark-doc-collab.common.js',
+    inlineDynamicImports: false,
+    css: null,
+  },
+  collabBrowser: {
+    input: resolve(ROOT, 'src/collab/browser.js'),
+    format: 'es',
+    file: 'lark-doc-collab.browser.esm.js',
+    entryFileNames: 'lark-doc-collab.browser.esm.js',
     inlineDynamicImports: true,
     css: null,
   },
@@ -452,6 +813,7 @@ export function getRollupConfig(target = process.env.ROLLUP_TARGET || 'esm') {
   const output = {
     ...(selected.file && selected.inlineDynamicImports ? { file: resolve(DIST, selected.file) } : { dir: selected.dir || DIST }),
     format: selected.format,
+    ...(normalizedTarget === 'collab' ? { hoistTransitiveImports: false } : {}),
     entryFileNames: selected.entryFileNames,
     chunkFileNames: selected.chunkFileNames || 'lark-doc-[name]-[hash].js',
     inlineDynamicImports: selected.inlineDynamicImports,

@@ -1,4 +1,6 @@
 import { readMention } from '../../../core/blocks/mention'
+import { aiNetworkAllows, createNetworkPolicy } from '../../../core/policy/network'
+import { normalizeAIProvider } from '../ai'
 // Shared presentation of the observed document menu. Business-owned actions are UI intents,
 // never local substitutes for a Java grant, move, deletion or persisted preference.
 const definitions = [
@@ -17,13 +19,79 @@ const definitions = [
 ]
 const separators = new Set(['follow', 'shortcut', 'template', 'print', 'save-version', 'permissions', 'widgets', 'information', 'delete'])
 const can = (ed, capability) => !ed.session || typeof ed.session.can !== 'function' || ed.session.can(capability)
-const host = ed => typeof ed.onDocumentAction === 'function'
+export const supportsDocumentAction = (ed, action) => typeof ed.onDocumentAction === 'function' &&
+  (!Array.isArray(ed.onDocumentAction.supportedActions) || ed.onDocumentAction.supportedActions.includes(action))
+const host = supportsDocumentAction
+
+/** 浏览器窄屏文档菜单；首组来自同一顶栏能力，正文选区分享不在这里路由。 */
+export function referenceDocumentMenuItems(ed) {
+  const readable = can(ed, 'canView')
+  const adapter = normalizeAIProvider(ed.aiProvider)
+  const aiAllowed = adapter && (adapter.kind !== 'endpoint' || aiNetworkAllows(adapter.endpoint || adapter.baseURL,
+    createNetworkPolicy(ed.larkDocConfig?.network), ed.$el?.ownerDocument.defaultView?.location?.href))
+  const modeLabel = ['编辑', '修订', '阅读'].includes(ed.modeLabel) ? `${ed.modeLabel}模式` : ed.modeLabel || '编辑模式'
+  const items = [
+    { id: 'mode', label: modeLabel, icon: 'mode-edit', kind: 'submenu', disabled: !readable || !ed.modeOptions?.length },
+    { id: 'ai', label: '问问AI', icon: 'block-quote', disabled: !readable || !ed.featureEnabled('ai') || !aiAllowed || !ed.writable() },
+    { id: 'notifications', label: '通知', icon: 'bell', disabled: !readable || ed.notifyCurrent?.(ed.notificationContext?.()) !== true },
+    { id: 'workspace-search', label: '搜索', icon: 'search', separator: true, kind: 'host', disabled: !readable || !host(ed, 'search') },
+    { id: 'create', label: '新建', icon: 'plus', kind: 'submenu', disabled: !readable || !ed.writable() || !host(ed, 'create') },
+    ...documentMenuItems(ed).filter(item => item.id !== 'theme').flatMap(item => [
+      { ...item, separator: item.id === 'width' || item.separator },
+      ...(item.id === 'information' ? [{ id: 'page-settings', label: '页面设置', icon: 'block-text', disabled: !readable }] : []),
+    ]),
+  ]
+  return items.map(item => {
+    if (item.id === 'presentation') item = { ...item, kind: 'item' }
+    if (item.id === 'mentions') item = { ...item, kind: 'host', disabled: item.disabled || !host(ed, item.id) }
+    if (['information', 'page-settings'].includes(item.id) && host(ed, item.id)) item = { ...item, kind: 'host' }
+    // 业务 Provider 的 chooser/确认界面尚未挂载时，不把 business intent 当完成执行。
+    if (item.kind === 'business') {
+      if (host(ed, item.id)) item = { ...item, kind: 'host' }
+      else item = { ...item, disabled: true }
+    }
+    return { ...item, kind: ['follow', 'template'].includes(item.id) ? 'switch' : item.kind || 'item',
+      action: 'document:' + item.id, enabled: !item.disabled,
+      affordance: item.kind === 'submenu' || item.id === 'translate' ? 'arrow' : 'none',
+      title: item.disabled ? '当前文档未配置此功能或当前身份无权限。' : item.label }
+  })
+}
+
+export function referenceDocumentMenuChildren(ed, id) {
+  if (id === 'mode') return (ed.modeOptions || []).map(item => ({ id: item.id, value: item.id, label: item.label, action: 'document:mode', checked: ed.mode === item.id }))
+  if (id === 'create') return (ed.createMenuRows || []).filter(item => item.kind === 'item').map(item => ({ ...item, value: item.id, action: 'document:create' }))
+  return documentMenuChildren(ed, id).map(item => {
+    if (item.kind === 'business') item = { ...item, kind: 'host', disabled: item.disabled || !host(ed, item.id) }
+    return { ...item, action: 'document:' + item.id, enabled: item.disabled !== true, affordance: 'none' }
+  })
+}
+
+export async function runReferenceDocumentMenuAction(ed, id, value, event, current = () => true) {
+  const item = referenceDocumentMenuItems(ed).find(item => item.id === id)
+    || referenceDocumentMenuChildren(ed, 'permissions').concat(referenceDocumentMenuChildren(ed, 'more')).find(item => item.id === id)
+  if (!item || item.disabled || item.enabled === false || !current()) return false
+  if (id === 'mode') {
+    if (!(ed.modeOptions || []).some(item => item.id === value)) return false
+    ed.setMode(value)
+  } else if (id === 'notifications') ed.toggleNotify(event)
+  else if (id === 'presentation') { if (ed.toggleSlides() === false) return false }
+  else if (id === 'ai') ed.$emit('ai-request', 'chat')
+  else if (['information', 'page-settings'].includes(id) && item.kind !== 'host') return typeof ed.openDocumentInformation === 'function' && ed.openDocumentInformation(id, current)
+  else if (id === 'workspace-search' || id === 'create' || item.kind === 'host' || (['follow', 'template'].includes(id) && host(ed, id))) {
+    if (id === 'create' && !referenceDocumentMenuChildren(ed, 'create').some(item => item.value === value)) return false
+    if (!host(ed, id === 'workspace-search' ? 'search' : id)) return false
+    const result = await ed.onDocumentAction(Object.freeze({ action: id === 'workspace-search' ? 'search' : id,
+      ...(value === undefined ? {} : { type: value }), documentId: ed.session?.documentId ?? null, actorId: ed.session?.user?.id ?? null }))
+    if (result === false || !current()) return false
+  } else return runDocumentMenuAction(ed, id, value, event, current)
+  return current()
+}
 
 export function documentMenuItems(ed, business = ed.session?.getProvider?.('documentBusiness')?.getState()) {
   const port = ed.session?.getProvider?.('documentBusiness')
   return definitions.map(([id, label, icon, kind = 'item']) => {
     let allowed = can(ed, 'canView')
-    if (kind === 'host') allowed = allowed && host(ed)
+    if (kind === 'host') allowed = allowed && host(ed, id)
     if (['download', 'print'].includes(id)) allowed = allowed && ed.exportCanExport === true
     if (id === 'save-version') allowed = allowed && ed.versionCanCreate === true
     if (['history', 'saved-versions'].includes(id)) allowed = allowed && Boolean(ed.versionProvider)
@@ -55,15 +123,15 @@ export function documentMenuChildren(ed, id, appearance, business = ed.session?.
   if (id === 'presentation') return [{ id: 'presentation', value: 'document', label: '文档模式' }, { id: 'presentation', value: 'slides', label: '幻灯片模式' }, ...(ed.lastSlideIndex > 0 ? [{ id: 'presentation', value: 'resume', label: '回到上次演示位置' }] : [])]
   if (id === 'saved-versions') return (ed.versionList || []).filter(version => version.purpose === 'manual' || version.kind === 'manual').map(version => ({ id: 'saved-versions', value: version.id, label: version.label }))
   if (id === 'permissions') {
-    const port = ed.session?.getProvider?.('documentBusiness'), available = port ? business?.capabilities.canTransferOwnership === true && typeof port.ownershipCandidates === 'function' : host(ed) && ed.shareCan('canManagePermission')
+    const port = ed.session?.getProvider?.('documentBusiness'), available = port ? business?.capabilities.canTransferOwnership === true && typeof port.ownershipCandidates === 'function' : host(ed, 'transfer-ownership') && ed.shareCan('canManagePermission')
     return [{ id: 'manage-members', label: '管理协作者', disabled: !ed.shareCan('canManagePermission') }, { id: 'permission-settings', label: '权限设置', disabled: !ed.shareCan('canManagePermission') }, { id: 'transfer-ownership', label: '转移所有权', kind: port ? 'business' : 'host', disabled: !available }]
   }
-  if (id === 'more') return [['applications', '添加文档应用'], ['references', '显示引用列表'], ['authors', '在段落前显示作者'], ['offline', '设为离线可使用'], ['report', '举报']].map(([id, label]) => ({ id, label, disabled: !host(ed) }))
+  if (id === 'more') return [['applications', '添加文档应用'], ['references', '显示引用列表'], ['authors', '在段落前显示作者'], ['offline', '设为离线可使用'], ['report', '举报']].map(([id, label]) => ({ id, label, disabled: !host(ed, id) }))
   return []
 }
 
 export async function runDocumentMenuAction(ed, id, value, event, current = () => true) {
-  const item = documentMenuItems(ed).find(item => item.id === id) || documentMenuChildren(ed, 'permissions').concat(documentMenuChildren(ed, 'more')).find(item => item.id === id) || (id === 'information-host' && host(ed) && ['访问记录', '操作记录', '隐私设置'].includes(value) ? { id } : null)
+  const item = documentMenuItems(ed).find(item => item.id === id) || documentMenuChildren(ed, 'permissions').concat(documentMenuChildren(ed, 'more')).find(item => item.id === id) || (id === 'information-host' && host(ed, id) && ['访问记录', '操作记录', '隐私设置'].includes(value) ? { id } : null)
   if (!item || item.disabled || (!can(ed, 'canView') && !(id === 'delete' && item.kind === 'business'))) return false
   if (item.kind === 'submenu' && value === undefined) return false
   ed.closeHeaderMenu()
@@ -81,12 +149,12 @@ export async function runDocumentMenuAction(ed, id, value, event, current = () =
   else if (id === 'print') return printEditorDocument(ed)
   else if (id === 'save-version') ed.openSaveVersionDialog()
   else if (id === 'history') await ed.openVersionPanel()
-  else if (id === 'saved-versions') { await ed.openVersionPanel(); if (!current() || !ed.versionPanelOpen || !ed.versionList.some(version => version.id === value)) return false; await ed.selectVersion(value) }
-  else if (id === 'manage-members') ed.openShareFromToolbar(event)
+  else if (id === 'saved-versions') { await ed.openVersionPanel({ kind: 'saved' }); if (!current() || !ed.versionPanelOpen || !ed.versionList.some(version => version.id === value)) return false; await ed.selectVersion(value) }
+  else if (id === 'manage-members') ed.toggleSharePopover(event)
   else if (id === 'permission-settings') ed.openPermissionDialog()
   else if (id === 'history-comments') ed.openHistoricalComments()
   else if (id === 'information' || id === 'mentions') return id
-  else if (host(ed)) await ed.onDocumentAction(Object.freeze({ action: id, ...(id === 'information-host' ? { tab: value } : {}), documentId: ed.session?.documentId ?? null, actorId: ed.session?.user?.id ?? null }))
+  else if (host(ed, id)) { if (await ed.onDocumentAction(Object.freeze({ action: id, ...(id === 'information-host' ? { tab: value } : {}), documentId: ed.session?.documentId ?? null, actorId: ed.session?.user?.id ?? null })) === false) return false }
   else return false
   return true
 }

@@ -95,6 +95,10 @@ export function realInputFiles(files) {
 
 export function rollupCacheGroup(name) {
   if (name === 'full' || name === 'fullCjs' || MERMAID_FILES[name]) return null
+  // Browser 协同内联 peers，不能继承 ESM/CJS 外置 peers 的 resolvedIds。
+  if (name === 'collabBrowser') return 'collabBrowser'
+  // 独立 UMD 内联 PM；Element ESM 与协同浏览器入口必须使用同一个外置 PM。
+  if (name === 'elementRuntime') return 'elementRuntime'
   // UMD 必须内联 vendor，不能沿用 ESM 已缓存的 external 解析结果。
   if (name.endsWith(':umd')) return 'featureUmd'
   return name === 'lite' || name === 'element' || name === 'pm' ? name : name.startsWith('plugin') ? 'plugin' : name.startsWith('collab') ? 'collab' : 'default'
@@ -164,7 +168,8 @@ function assertNodeVersion() {
 export function targetsFor(name) {
   if (name.includes(',')) return [...new Set(name.split(',').map(target => target.trim()).filter(Boolean).flatMap(targetsFor))]
   let names
-  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'plugin', 'pluginCjs', ...featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
+  if (name === 'all') names = ['esm', 'cjs', 'full', 'fullCjs', 'element', 'elementRuntime', 'elementEsm', 'legacy', 'legacyEsm', 'lite', 'adapters', 'collab', 'collabCjs', 'collabBrowser', 'plugin', 'pluginCjs', ...featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])]
+  else if (name === 'element' || name === 'elementRuntime') names = [...(name === 'element' ? ['element'] : []), 'elementRuntime', ...featureNames.map(feature => `feature:${feature}:umd`)]
   else if (name === 'full') names = ['full', 'fullCjs']
   else if (name === 'core') names = ['esm', 'cjs']
   else if (name === 'features') names = featureNames.flatMap((feature) => [`feature:${feature}`, `feature:${feature}:umd`])
@@ -172,7 +177,7 @@ export function targetsFor(name) {
   else if (name === 'vue2' || name === 'legacy') names = ['legacy', 'legacyEsm']
   else if (name === 'collab') names = ['collab', 'collabCjs']
   else names = [name]
-  const needsPM = names.some(target => ['esm', 'full', 'lite', 'legacyEsm', 'elementEsm', 'adapters', 'plugin'].includes(target) ||
+  const needsPM = names.some(target => ['esm', 'full', 'lite', 'legacyEsm', 'elementEsm', 'adapters', 'plugin', 'collabBrowser'].includes(target) ||
     (target.startsWith('feature:') && !target.endsWith(':umd')))
   return [...new Set([...(needsPM ? ['pm'] : []), ...names.map(mermaidTarget).filter(Boolean), ...names])]
 }
@@ -186,12 +191,14 @@ function expectedFiles(name) {
     fullCjs: ['lark-doc-full.common.js'],
     lite: ['lark-doc-lite.esm.js'],
     element: ['lark-doc-element.umd.min.js'],
+    elementRuntime: ['lark-doc-element.runtime.umd.min.js'],
     elementEsm: ['lark-doc-element.esm.js'],
     legacy: ['lark-doc-vue2.common.js'],
     legacyEsm: ['lark-doc-vue2.esm.js'],
     adapters: ['lark-doc-vue3.mjs', 'lark-doc-react.mjs', 'lark-doc-templates.mjs', 'lark-doc-comments.mjs', 'lark-doc-versioning.mjs', 'lark-doc-providers.mjs', 'lark-doc-migrations.mjs'],
     collab: ['lark-doc-collab.esm.js'],
     collabCjs: ['lark-doc-collab.common.js'],
+    collabBrowser: ['lark-doc-collab.browser.esm.js'],
     pm: PM_NAMES.map(name => `pm/${name}.js`),
     plugin: ['plugin.mjs'],
     pluginCjs: ['plugin.cjs'],
@@ -295,7 +302,7 @@ function writeManifest(names) {
   const manifest = {
     version: JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')).version,
     generatedBy: 'rollup',
-    core: { esm: 'lark-doc.esm.js', cjs: 'lark-doc.common.js', element: 'lark-doc-element.umd.min.js', elementEsm: 'lark-doc-element.esm.js' },
+    core: { esm: 'lark-doc.esm.js', cjs: 'lark-doc.common.js', element: 'lark-doc-element.umd.min.js', elementRuntime: 'lark-doc-element.runtime.umd.min.js', elementEsm: 'lark-doc-element.esm.js' },
     vue2: { cjs: 'lark-doc-vue2.common.js', esm: 'lark-doc-vue2.esm.js' },
     adapters: { vue3: 'lark-doc-vue3.mjs', react: 'lark-doc-react.mjs' },
     features: Object.fromEntries(featureNames.map((name) => [name, {
@@ -303,7 +310,7 @@ function writeManifest(names) {
       umd: `lark-doc-element.umd.min.${name}.js`,
     }])),
     full: { esm: 'lark-doc-full.esm.js', cjs: 'lark-doc-full.common.js' },
-    collab: { esm: 'lark-doc-collab.esm.js', cjs: 'lark-doc-collab.common.js' },
+    collab: { esm: 'lark-doc-collab.esm.js', cjs: 'lark-doc-collab.common.js', browser: 'lark-doc-collab.browser.esm.js' },
     pm: Object.fromEntries(PM_NAMES.map(name => [name, `pm/${name}.js`])),
     mermaid: MERMAID_FILES,
     built: names,

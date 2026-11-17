@@ -41,7 +41,7 @@ jobs:
       - name: Assemble smoke host directory
         run: |
           mkdir -p .e2e-smoke
-          cp dist/lark-doc-element.umd.min.js .e2e-smoke/
+          cp -R dist/. .e2e-smoke/
           cp scripts/e2e/host.html .e2e-smoke/index.html
 
       - name: Start static server

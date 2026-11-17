@@ -112,9 +112,12 @@ describe('原生编辑器响应式边界', () => {
       expect(codeView.update).toHaveBeenCalledTimes(1)
       expectRawEditor(vm.editor)
 
-      expect(codeView.setLanguage('mermaid')).toBe(true)
-      expect(codeView.getState().showPreview).toBe(true)
-      expect(codeView.dom.querySelector('.lark-doc-diagram')).not.toBeNull()
+      // 代码块的语言清单只收飞书「代码块」语言选择器里的字面项（CODE_BLOCK_LANGUAGES
+      // 里没有 mermaid），清单外的语言一律拒绝切换 —— 图表语言来自 Vditor/导入的
+      // `div.language-mermaid`，图表预览由 code-block-nodeview 专门覆盖。
+      expect(codeView.setLanguage('mermaid')).toBe(false)
+      expect(codeView.getState().showPreview).toBe(false)
+      expect(codeView.dom.querySelector('.lark-doc-diagram')).toBeNull()
       expect(codeView.setLanguage('plaintext')).toBe(true)
       expect(codeView.getState().showPreview).toBe(false)
       expect(codeView.dom.querySelector('.lark-doc-diagram')).toBeNull()
@@ -214,6 +217,12 @@ describe('原生编辑器响应式边界', () => {
       editor, $nextTick: (callback) => { nextTick = callback },
       [viewport]: vi.fn(), [pointer]: vi.fn(),
       loadComments: vi.fn(), syncRevisionTracking: vi.fn(), updateRevisionPanels: vi.fn(),
+      onRevisionHashChange: vi.fn(),
+      // 清理链里的真实实现要么只碰 `_imageViewerRetire`（retire 走真实代码），要么是
+      // 与本用例无关的评论态重置 —— 后者按本文件既有风格打桩，只保留「不读 view」这条断言。
+      retireImageViewers: commentsMixin.methods.retireImageViewers.bind({ _imageViewerRetire: null }),
+      closeImageComments: vi.fn(), resetCommentImages: vi.fn(),
+      closeCommentReaction: vi.fn(), resetCommentParticipants: vi.fn(),
     }
     mixin.mounted.call(vm)
     editor.isDestroyed = true
@@ -250,6 +259,8 @@ describe('原生编辑器响应式边界', () => {
     const editor = { isDestroyed: false, get view() { return readView() } }
     const vm = { editor, $nextTick: (callback) => callback() }
     vm.syncTableClip = tableToolsMixin.methods.syncTableClip.bind(vm)
+    // beforeDestroy 现在自己收观察器，走真实实现（宿主上是同名 methods 成员）。
+    vm.destroyTableClipObserver = tableToolsMixin.methods.destroyTableClipObserver.bind(vm)
     tableToolsMixin.mounted.call(vm)
     editor.isDestroyed = true
     readView.mockImplementation(() => { throw new Error('不应访问已销毁 view') })
@@ -270,6 +281,10 @@ describe('原生编辑器响应式边界', () => {
       editor, $nextTick: (callback) => callback(),
       [viewport]: vi.fn(), [pointer]: vi.fn(),
       loadComments: vi.fn(), syncRevisionTracking: vi.fn(), updateRevisionPanels: vi.fn(),
+      onRevisionHashChange: vi.fn(),
+      retireImageViewers: commentsMixin.methods.retireImageViewers.bind({ _imageViewerRetire: null }),
+      closeImageComments: vi.fn(), resetCommentImages: vi.fn(),
+      closeCommentReaction: vi.fn(), resetCommentParticipants: vi.fn(),
     }
     mixin.mounted.call(vm)
     expect(vm[domKey]).toBe(dom)

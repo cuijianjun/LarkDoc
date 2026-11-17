@@ -1,5 +1,5 @@
 /** 评论正文独立持久化；远端动作只有数据库原键确认后更新视图。 */
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {
   COMMENT_HEIGHTS,
@@ -15,6 +15,9 @@ import { normalizeCommentMetadata } from '../../../core/comments/mentions'
 import { encodeAnchor, decodeAnchor } from '../../../core/comments/anchor'
 import { createCommentOperationId } from '../../../providers/comments'
 import { projectCapabilityUi } from '../../../core/policy/capability'
+import { getTransactionMetadata, PAGED_IMPORT_META, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
+
+const documentMentionScope = scope => scope === 'document' || (typeof scope === 'string' && /^edit\/[^/]+\/[^/]+$/.test(scope))
 
 let commentImagesPromise
 function loadCommentImages() {
@@ -22,6 +25,7 @@ function loadCommentImages() {
   let timer
   return Promise.race([commentImagesPromise, new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('COMMENT_IMAGE_COMPONENT_TIMEOUT')), 15000) })]).finally(() => clearTimeout(timer))
 }
+
 
 /** 面板与正文右缘的间距（实测 1214 - 1202，与修订面板同口径）。 */
 const COMMENT_ANCHOR_GUTTER = 12
@@ -82,6 +86,12 @@ export function commentSidebarThreads(threads, remote, historical, resolved) {
   return threads.filter(thread => remote ? !thread.tombstone && thread.scope !== 'document' && (historical ? thread.anchorStatus === 'orphaned' : resolved ? thread.resolved : !thread.resolved && thread.anchorStatus !== 'orphaned') : thread.bound && !thread.resolved)
 }
 
+
+
+import { createCommentInteraction } from "./commentInteraction"
+
+const commentInteraction = createCommentInteraction({ documentMentionScope, commentDraftText, COMMENT_MORE_MENU, COMMENT_REPLY_MENU, normalizeCommentMetadata, COMMENT_VIEWPORT_MARGIN, createCommentOperationId })
+
 export default {
   data() {
     return {
@@ -89,6 +99,7 @@ export default {
       commentThreads: [],
       commentSourceThreads: [],
       commentMessage: '',
+      commentDocumentLike: { snapshot: null, busy: false, pending: '', error: '' },
       commentComposerOpen: false,
       commentSidebarOpen: false,
       commentHistory: false,
@@ -142,8 +153,13 @@ export default {
       commentDisposed: false,
       /** 点亮 / 展开输入的线程 id。飞书的面板只对一条线程展开输入区。 */
       commentActiveThreadId: '',
+      commentMobileScope: 'document',
+      commentMobileOpen: false,
       /** threadId → 草稿文本。Vue 2 加新键必须走 `$set`，见 `setCommentDraft`。 */
       commentDrafts: {},
+      commentDraftMentions: {},
+      commentDraftReferences: {},
+      commentMentionPicker: null,
       /** 已读线程 id：未读数按它与 `commentThreads` 做差集。 */
       commentReadIds: [],
       /** 本地Provider保留旧开关；远端使用服务端visibility。 */
@@ -166,18 +182,18 @@ export default {
   },
   computed: {
     commentCapabilityState() { return projectCapabilityUi(this.session, 'canComment') },
-    
-    
-    
+
+
+
     commentDocumentThreads() { return this.commentThreads.filter(thread => thread.scope === 'document' && !thread.tombstone) },
     commentSelectionCount() { return this.commentThreads.filter(thread => thread.scope !== 'document' && !thread.tombstone && !thread.resolved && thread.anchorStatus !== 'orphaned').length },
     commentRemote() { const provider = this.commentProvider(); return Boolean(provider && provider.isRemote) },
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
     /** 未解决且未读的条数（已解决线程不提醒，见 state.js 文件头）。 */
     commentUnread() {
       return unreadCount(this.commentThreads, this.commentReadIds)
@@ -198,7 +214,17 @@ export default {
       return normalizeAuthor(user || { id: 'local-user', name: '我' })
     },
   },
-  watch: { session: { sync: true, handler() { this.resetCommentIdentityView(); this.bindCommentSession() } } },
+  watch: {
+    documentId() { this.retireImageViewers(); this.closeImageComments(null, false) },
+    commentBusy() { this.refreshPanels?.() },
+    commentPendingOperation() { this.refreshPanels?.() },
+    session: { sync: true, handler(next, previous) {
+    // Native repaint invalidates object dependencies even when Session identity is unchanged.
+    // Identity/capability resets have their own Session events; a repaint must retain drafts.
+    if (next === previous && this._commentBoundProvider === this.commentProvider()) return
+    this.resetCommentIdentityView(); this.bindCommentSession()
+    if (this.editor) void this.loadComments()
+  } } },
   mounted() {
     this.bindCommentSession?.()
     document.addEventListener('pointerdown', this.onCommentReactionOutside, true)
@@ -211,13 +237,17 @@ export default {
       this._commentEditorDom.addEventListener('pointerdown', this.onCommentPointerDown)
       if (typeof this.editor.on === 'function') {
         this.editor.on('transaction', this.onCommentTransaction)
+        this.editor.on('update', this.refreshImportedComments)
         this.loadComments?.().then(() => this.openCommentLink?.()).catch(() => {})
       }
+
     })
     window.addEventListener('scroll', this.onCommentViewportChange, true)
     window.addEventListener('resize', this.onCommentViewportChange)
   },
   beforeDestroy() {
+    this.retireImageViewers()
+    this.closeImageComments(null, false)
     this.resetCommentParticipants?.()
     document.removeEventListener('pointerdown', this.onCommentReactionOutside, true)
     window.removeEventListener('keydown', this.onCommentReactionKeydown, true)
@@ -231,16 +261,24 @@ export default {
     if (this._commentStopAssets) this._commentStopAssets()
     if (this.editor) {
       this.editor.off?.('transaction', this.onCommentTransaction)
+      this.editor.off?.('update', this.refreshImportedComments)
       if (this._commentDecorationKey) this.editor.unregisterPlugin?.(this._commentDecorationKey)
     }
     window.removeEventListener('scroll', this.onCommentViewportChange, true)
     window.removeEventListener('resize', this.onCommentViewportChange)
     this._commentEditorDom?.removeEventListener?.('pointerdown', this.onCommentPointerDown)
     this._commentEditorDom = null
+
   },
   methods: {
+    ...commentInteraction.methods,
     setCommentMessage(value) { this.commentMessage = value },
     resetCommentIdentityView(preservePending = false, preserveSidebar = false) {
+      this.retireImageViewers()
+      this.closeImageComments(null, false)
+      this._imageCommentDrafts = null; this._imageCommentDraftOwner = null
+      this._commentLikeGeneration = (this._commentLikeGeneration || 0) + 1
+      this.commentDocumentLike = { snapshot: null, busy: false, pending: '', error: '' }
       this.resetCommentParticipants()
       this.resetCommentImages(preservePending)
       this.closeCommentReaction()
@@ -249,7 +287,7 @@ export default {
       this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
       this.commentComposerContext = null; this.commentComposerOpen = false; this.commentSidebarOpen = preserveSidebar && this.commentSidebarOpen
       if (!preserveSidebar) this.commentHistorical = false
-      this.commentDrafts = {}; this.commentCreateDraft = ''; this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null; this.cancelCommentEdit()
+      this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentMentionPicker = null; this.commentCreateDraft = ''; this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null; this.cancelCommentEdit()
       this.commentFollowPreferences = {}; this.commentMessage = ''
       this.commentFollowReadGeneration++
       this.closeCommentMenus()
@@ -265,9 +303,11 @@ export default {
       this.refreshCommentDecorations()
     },
     bindCommentSession() {
+      this._commentBoundProvider = this.commentProvider()
       for (const key of ['_commentStopCapabilities', '_commentStopProvider', '_commentStopReset', '_commentStopChanges', '_commentStopAssets']) { this[key]?.(); this[key] = null }
       if (this.session && typeof this.session.on === 'function') {
         this._commentStopAssets = this.session.on('provider-changed', event => {
+          if (event.name === 'authorization') { void this.loadDocumentCommentLikes(); return }
           if (event.name !== 'assets') return
           const unresolved = this.commentPendingImage || this._commentImageInFlight
           this.resetCommentImages()
@@ -282,22 +322,34 @@ export default {
           this.closeCommentReaction()
           this.commentLoadGeneration++
           this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
-          this.commentDrafts = {}; this.commentEditingReply = null; this.commentEditContent = ''; this.commentEditMentions = []; this.commentEditReferences = []
+          this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentMentionPicker = null; this.commentEditingReply = null; this.commentEditContent = ''; this.commentEditMentions = []; this.commentEditReferences = []
           this.commentFollowPreferences = {}
           this.commentTranslationContext = null; this.commentTranslationState = null
           this.refreshCommentDecorations()
-          if (this.commentCan('canView')) this.loadComments().then(async () => {
-            await this.openCommentLink()
-            await this.recoverCommentAfterAuthorization()
-            if (this.commentMoreThreadId && this.commentThreads.some(thread => thread.id === this.commentMoreThreadId && !thread.tombstone)) await this.loadCommentFollowPreference(this.commentMoreThreadId)
-          }).catch(() => {})
+          if (this.commentCan('canView')) {
+            const current = this.commentOperationCurrent(), provider = this.commentProvider(), session = this.session
+            const authorization = session?._authorizationGeneration
+            const loading = this.loadComments(), generation = this.commentLoadGeneration
+            const owns = () => current() && generation === this.commentLoadGeneration && provider === this.commentProvider() &&
+              authorization === session?._authorizationGeneration && this.commentCan('canView')
+            loading.then(async () => {
+              if (!owns()) return
+              // Independent reads must not wait for the document-like service.
+              void this.loadDocumentCommentLikes().catch(() => {})
+              if (this.commentMoreThreadId && this.commentThreads.some(thread => thread.id === this.commentMoreThreadId && !thread.tombstone)) void this.loadCommentFollowPreference(this.commentMoreThreadId).catch(() => {})
+              await this.openCommentLink()
+              if (owns()) await this.recoverCommentAfterAuthorization()
+            }).catch(() => {})
+          }
         })
         this._commentStopProvider = this.session.on('comments-provider', () => {
+          this._commentBoundProvider = this.commentProvider()
           this.resetCommentIdentityView(true)
           if (this.commentPendingOperation) this.commentMessage = '评论服务已变更，原操作仍需查询确认。'
           this.loadComments().catch(() => {})
         })
       }
+      void this.loadDocumentCommentLikes()
     },
     // 只响应服务端失效信号；合并到一个当前读，不轮询、不重放未知POST。
     refreshCommentsFromSignal() {
@@ -313,16 +365,27 @@ export default {
       return this._commentSignalWork
     },
     toggleCommentSidebar() {
+      if (this._imageCommentScope) return this.closeImageComments()
+      this.commentMobileScope = this._mobileEditorMedia?.matches ? 'selection' : 'document'
       this.commentSidebarOpen = !this.commentSidebarOpen
-      this.$nextTick(() => this.placeCommentPanels())
+      this.commentMobileOpen = this.commentSidebarOpen
+      this.$nextTick(() => { this.updateCommentLayerBounds(); this.placeCommentPanels() })
     },
     setCommentHistory(value) { this.commentHistorical = false; this.commentHistory = value === true; this.updateCommentPanels() },
-    openHistoricalComments() { this.closeCommentMenus(); this.commentHistorical = true; this.commentHistory = false; this.commentSidebarOpen = true; this.commentComposerOpen = false; this.updateCommentPanels() },
+    openHistoricalComments() { this.closeCommentMenus(); this.commentHistorical = true; this.commentHistory = false; this.commentSidebarOpen = true; this.commentComposerOpen = false; this.updateCommentPanels(); this.$nextTick(() => this.updateCommentLayerBounds()) },
     closeCommentComposer() {
+      const editor = this.editor, current = this.commentOperationCurrent()
       this.clearCommentDraftImages('selection')
       this.commentComposerOpen = false; this.commentComposerContext = null
+      if (!this.commentRemote) { this.commentSidebarOpen = this._commentComposerSidebarOpen === true; this.commentMobileOpen = this.commentSidebarOpen }
       this.refreshCommentDecorations()
-      this.$nextTick(() => this.editor && this.editor.commands.focus())
+      this.$nextTick(() => {
+        if (!current() || editor !== this.editor || editor?.isDestroyed || !editor?.view?.dom) return
+        const document = this.$el.ownerDocument, active = document.activeElement
+        if (active && active !== document.body && active !== document.documentElement && !editor.view.dom.contains(active)) return
+        editor.view.focus()
+
+      })
     },
     toggleCommentComposer() {
       if (this.commentComposerOpen) return this.closeCommentComposer()
@@ -332,13 +395,22 @@ export default {
       if (!this.commentAllowed('create') || !this.editor) return false
       const range = this.commentSelectionRange()
       if (!range) { this.commentMessage = '请先选中要评论的文字。'; return false }
+
       try {
         const anchor = encodeAnchor({ blockId: range.blockId, offset: range.offset, length: range.length }, this.commentAnchorCodec)
         if (this.commentRemote && (!anchor || anchor.kind !== 'y')) throw new Error('COMMENT_ANCHOR_REQUIRED')
         this.commentComposerContext = { ...range, anchor }
-      } catch (error) { this.commentMessage = error.code || error.message; return false }
+      } catch (error) {
+        const code = error.code || error.message
+        this.commentMessage = code === 'COMMENT_ANCHOR_REQUIRED' ? '当前文档尚未连接协同正文，无法创建选区评论。' : code
+        return false
+      }
+      this.commentMessage = ''
+      if (!this.commentComposerOpen) this._commentComposerSidebarOpen = this.commentSidebarOpen
+      this.commentMobileScope = 'selection'
+      this.commentMobileOpen = true
       this.commentSidebarOpen = true; this.commentHistory = false; this.commentHistorical = false; this.commentComposerOpen = true; this.bubbleVisible = false
-      this.updateCommentPanels(); this.refreshCommentDecorations()
+      this.updateCommentPanels(); this.refreshCommentDecorations(); this.$nextTick(() => this.updateCommentLayerBounds())
       this.$nextTick(() => this.$el.querySelector('[aria-label="新评论"]')?.focus())
       return true
     },
@@ -359,32 +431,132 @@ export default {
         this.openSelectionComment()
       }
     },
-    setCommentCreateDraft(value) { this.commentCreateDraft = value },
-    cancelDocumentCommentDraft() { this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null; this.clearCommentDraftImages('document') },
+    setCommentCreateDraft(value) {
+      if (this._imageCommentScope && !this.imageCommentCurrent()) return this.closeImageComments(null, false)
+      this.commentCreateDraft = value
+    },
+    imageCommentCurrent(scope = this._imageCommentScope) {
+      if (!scope || !scope.owner() || (scope.viewer && !scope.viewer.isConnected)) return false
+      const pos = this.commentBlockPos(scope.blockId), node = pos < 0 ? null : this.editor.state.doc.nodeAt(pos)
+      return node?.type.name === 'image' && node.attrs.src === scope.src && JSON.stringify(node.attrs.crop) === scope.crop
+    },
+    imageCommentsHandler() {
+      const current = this.commentOperationCurrent(), editor = this.editor, session = this.session, provider = this.commentProvider()
+      const identity = session?._identityGeneration, authorization = session?._authorizationGeneration, documentId = this.documentId
+      const owner = () => current() && editor === this.editor && identity === session?._identityGeneration && authorization === session?._authorizationGeneration
+        && documentId === this.documentId && provider === this.commentProvider() && this.commentCan('canView')
+      const action = (image, visible, viewer) => {
+        if (!owner()) {
+          if (!visible) this.closeImageComments(viewer, false)
+          return false
+        }
+        return this.openImageComments(image, visible, viewer)
+      }
+      action.watchViewer = (retire, images) => {
+        this._imageViewerRetire ||= new Set()
+        this._imageViewerRetire.add(retire)
+        const targets = images.map(image => ({ image, pos: image.pos }))
+        const guard = () => { if (!owner()) retire() }
+        const transaction = ({ transaction: tr }) => {
+          if (!owner()) { retire(); return }
+          if (!tr.docChanged) return
+          if ([TRANSACTION_ORIGINS.HOST, TRANSACTION_ORIGINS.RESTORE].includes(getTransactionMetadata(tr)?.origin)
+            || tr.steps.some(step => step.from === 0 && step.to >= tr.before.content.size)) { retire(); return }
+          for (const target of targets) {
+            target.pos = tr.mapping.map(target.pos, 1)
+            const node = Number.isInteger(target.pos) && target.pos >= 0 && target.pos < editor.state.doc.content.size ? editor.state.doc.nodeAt(target.pos) : null
+            if (node?.type.name !== 'image' || node.attrs.blockId !== target.image.blockId || node.attrs.src !== target.image.src
+              || JSON.stringify(node.attrs.crop) !== JSON.stringify(target.image.crop)) { retire(); return }
+          }
+        }
+        const stops = ['comments-reset', 'capabilities', 'provider-changed'].map(name => session?.on?.(name, guard))
+        editor?.on('transaction', transaction)
+        guard()
+        return () => { this._imageViewerRetire?.delete(retire); stops.forEach(stop => stop?.()); editor?.off('transaction', transaction) }
+      }
+      return action
+    },
+    retireImageViewers() { this._imageViewerRetire?.forEach(retire => retire()); this._imageViewerRetire?.clear() },
+    openImageComments(image, visible = true, viewer = null) {
+      if (!visible) { this.closeImageComments(viewer); return true }
+      const editor = this.editor, provider = this.commentProvider()
+      if (!editor || editor.isDestroyed || !provider || !this.commentCan('canView') || !this.featureEnabled('comments')) return false
+      // The existing remote wire requires a nonempty text-relative anchor.
+      // A block image has no text span; never invent a length or a new wire kind.
+      if (provider.isRemote) { this.commentMessage = '当前远程评论服务尚未提供图片锚点评论能力'; return false }
+      const blockId = image?.blockId, pos = this.commentBlockPos(blockId), node = pos < 0 ? null : editor.state.doc.nodeAt(pos)
+      if (node?.type.name !== 'image' || node.attrs.src !== image.src || (viewer && (!viewer.isConnected || !this.$el.contains(viewer)))) return false
+      if (this._imageCommentScope?.blockId === blockId && this._imageCommentScope.viewer === viewer && this.imageCommentCurrent()) return true
+      this.closeImageComments()
+      if (!this._imageCommentDraftOwner?.()) this._imageCommentDrafts = new Map()
+      const current = this.commentOperationCurrent(), session = this.session, identity = session?._identityGeneration, authorization = session?._authorizationGeneration
+      const assets = session?.getProvider?.('assets')
+      const owner = () => current() && editor === this.editor && editor.view.dom.isConnected && provider === this.commentProvider()
+        && identity === session?._identityGeneration && authorization === session?._authorizationGeneration
+        && assets === session?.getProvider?.('assets') && this.commentCan('canView') && this.featureEnabled('comments')
+      this._imageCommentDraftOwner = owner
+      const selection = NodeSelection.create(editor.state.doc, pos)
+      const context = { blockId, offset: 0, length: 0, from: pos, to: pos + node.nodeSize,
+        ranges: [{ from: pos, to: pos + node.nodeSize }], text: '[图片]', bookmark: selection.getBookmark(),
+        anchor: encodeAnchor({ blockId, offset: 0, length: 0 }, this.commentAnchorCodec) }
+      const previous = { commentComposerOpen: this.commentComposerOpen, commentComposerContext: this.commentComposerContext,
+        commentCreateDraft: this.commentCreateDraft, commentSidebarOpen: this.commentSidebarOpen, commentMobileScope: this.commentMobileScope,
+        commentMobileOpen: this.commentMobileOpen, commentActiveThreadId: this.commentActiveThreadId,
+        images: this.commentDraftImages('selection') }
+      this.clearCommentDraftImages('selection')
+      const cached = this._imageCommentDrafts.get(blockId)
+      const draft = cached?.src === node.attrs.src && cached?.crop === JSON.stringify(node.attrs.crop) ? cached : null
+      if (cached && !draft) this._imageCommentDrafts.delete(blockId)
+      this._imageCommentScope = { blockId, src: node.attrs.src, crop: JSON.stringify(node.attrs.crop), owner, viewer, context, previous }
+      this.closeCommentMenus()
+      this.commentCreateDraft = draft?.text || ''
+      this.$set(this.commentImageDrafts, 'selection', draft?.images || [])
+      this.commentComposerContext = context; this.commentComposerOpen = true
+      this._imageCommentScope.context = this.commentComposerContext
+      this.commentSidebarOpen = true; this.commentMobileScope = 'selection'; this.commentMobileOpen = true
+      this.updateCommentPanels(); this.refreshPanels?.()
+      this.$nextTick(() => this.focusImageComment())
+      return true
+    },
+    closeImageComments(viewer = null, restore = true) {
+      const scope = this._imageCommentScope
+      if (!scope || (viewer && scope.viewer !== viewer)) return false
+      this._imageCommentScope = null
+      const owned = scope.owner()
+      scope.ui?.destroy()
+      if (owned && this.imageCommentCurrent(scope)) this._imageCommentDrafts?.set(scope.blockId, { src: scope.src, crop: scope.crop, text: this.commentCreateDraft, images: this.commentDraftImages('selection') })
+      else { this._imageCommentDrafts = null; this._imageCommentDraftOwner = null }
+      this.clearCommentDraftImages('selection')
+      this.closeCommentMenus()
+      if (restore && owned) {
+        const { images, ...previous } = scope.previous
+        Object.assign(this, previous)
+        this.$set(this.commentImageDrafts, 'selection', images)
+      } else { this.commentComposerOpen = false; this.commentComposerContext = null; this.commentCreateDraft = ''; this.commentSidebarOpen = false; this.commentMobileOpen = false }
+      scope.viewer?.dispatchEvent(new CustomEvent('lark-doc-image-comments-close', { detail: { retired: !restore || !owned } }))
+      this.refreshPanels?.()
+      return true
+    },
+    focusImageComment() {
+      const scope = this._imageCommentScope
+      if (!this.imageCommentCurrent(scope) || !scope.viewer || !scope.viewer.contains(scope.viewer.ownerDocument.activeElement)) return
+      scope.ui?.el?.querySelector('[aria-label="新评论"]')?.focus()
+    },
+    cancelDocumentCommentDraft() {
+      if (this.commentMentionPicker?.scope === 'document') this.commentMentionPicker = null
+      this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null
+      this.clearCommentDraftImages('document')
+    },
     setCommentDocumentDraft(value, mentions = [], references = []) {
       const next = normalizeCommentMetadata(value, mentions, references)
       this.commentDocumentDraft = value; this.commentDocumentMentions = next.mentions
       this.commentDocumentReferences = next.references.map((item, index) => ({ ...item, ...(references[index].readable === false ? { readable: false } : {}) }))
     },
     commentDocumentCanSubmit() { return this.commentAllowed('create') },
-    beginDocumentCommentReply(threadId, replyId) {
-      if (!this.commentCan('canView') || !this.commentAllowed('create')) return false
-      const reply = this.commentThreads.find(thread => thread.id === threadId)?.replies.find(item => item.id === replyId && !item.tombstone)
-      if (!reply?.author?.id) return false
-      this.commentDocumentReplyTarget = { principalId: reply.author.id, displayName: reply.author.name || reply.author.id,
-        visibility: this.commentThreads.find(thread => thread.id === threadId).visibility }
-      return true
-    },
+
+
     consumeDocumentCommentReplyTarget(target) { if (target === this.commentDocumentReplyTarget) this.commentDocumentReplyTarget = null },
-    async submitDocumentComment(visibility) {
-      const text = this.commentDocumentDraft
-      if (!text.trim() && !this.commentDraftImages('document').length || !this.commentDocumentCanSubmit()) return null
-      const { mentions, references } = normalizeCommentMetadata(text, this.commentDocumentMentions, this.commentDocumentReferences)
-      const participants = visibility === 'private' ? [...new Set(mentions.map(value => value.principalId))].filter(id => id !== this.commentAuthor.id) : []
-      const result = await (references.length ? this.createDocumentComment(text, visibility, participants, mentions, references) : mentions.length ? this.createDocumentComment(text, visibility, participants, mentions) : this.createDocumentComment(text, visibility))
-      if (result) this.cancelDocumentCommentDraft()
-      return result
-    },
+
     setCommentCreatePrivate(value) { this.commentCreatePrivate = value === true },
     setCommentEditContent(value, mentions = [], references = []) {
       const next = normalizeCommentMetadata(value, mentions, references)
@@ -409,8 +581,15 @@ export default {
       const gate = commentGate(action)
       if (!gate) return false
       if (!this.commentCan(gate)) return false
+      if (action === 'create' && (!this.commentCan('canView') || this.featureEnabled?.('comments') === false)) return false
       const provider = this.commentProvider()
-      if (!provider || !provider.isRemote) return action !== 'react'
+      if (!provider || !provider.isRemote) {
+        if (action === 'create') return typeof provider?.createThread === 'function' && this.writable()
+          && !this.commentBusy && !this.commentPendingOperation
+        if (action !== 'react') return true
+        const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
+        return typeof provider?.react === 'function' && !this.commentBusy && !this.commentPendingOperation && !!this.commentAuthor?.id && !!thread?.replies.some(reply => reply.id === replyId && !reply.tombstone)
+      }
       if (this.commentBusy || this.commentPendingOperation || this.commentImageBusy || this.commentPendingImage || (action === 'react' && typeof provider.react !== 'function')) return false
       if (!threadId) return action === 'create'
       const thread = (this.commentThreads || []).find(item => item.id === threadId)
@@ -426,18 +605,58 @@ export default {
       if (!session || typeof session.getProvider !== 'function') return null
       return session.getProvider('comments')
     },
+    commentLikeScope() {
+      const session = this.session, provider = session?.getProvider?.('authorization'), auth = session?._authorizationGeneration
+      const owns = this.commentOperationCurrent(), generation = this._commentLikeGeneration = (this._commentLikeGeneration || 0) + 1
+      return { provider, current: () => owns() && generation === this._commentLikeGeneration && this.commentCan('canView')
+        && session === this.session && !session?._destroyed && provider === session?.getProvider?.('authorization') && auth === session?._authorizationGeneration }
+    },
+    async loadDocumentCommentLikes() {
+      const scope = this.commentLikeScope(), provider = scope.provider
+      this.commentDocumentLike = { snapshot: null, busy: false, pending: '', error: '' }
+      if (!provider?.isRemote || typeof provider.documentInformation !== 'function' || !scope.current()) return
+      this.commentDocumentLike.busy = true
+      let pending
+      try {
+        pending = await provider.documentInformation('operation', 'like')
+        if (!scope.current()) return
+        const snapshot = await provider.documentInformation('read', 'likes')
+        if (scope.current()) this.commentDocumentLike = { snapshot, busy: false, pending: pending?.operationId || '', error: '' }
+      } catch { if (scope.current()) this.commentDocumentLike = { snapshot: null, busy: false, pending: pending?.operationId || '', error: '暂时无法读取点赞状态' } }
+    },
+    async toggleDocumentCommentLike() {
+      const state = this.commentDocumentLike
+      if (!state || state.busy || (!state.snapshot && !state.pending)) return false
+      const scope = this.commentLikeScope(), provider = scope.provider
+      if (!scope.current() || !provider?.isRemote || typeof provider.documentInformation !== 'function') return false
+      this.commentDocumentLike = { ...state, busy: true, error: '' }
+      try {
+        const result = await provider.documentInformation(state.pending ? 'query' : 'request', state.pending || {
+          kind: 'like', expectedRevision: state.snapshot.revision, liked: !state.snapshot.liked,
+        })
+        if (!scope.current()) return false
+        if (result?.status !== 'committed' || !result.like) throw new Error('unconfirmed')
+        this.commentDocumentLike = { snapshot: result.like, busy: false, pending: '', error: '' }
+        return true
+      } catch (error) {
+        if (scope.current()) this.commentDocumentLike = { ...state, busy: false,
+          pending: error.operationId || state.pending, error: error.status === 'unknown' || state.pending ? '点赞结果尚未确认，请查询原操作' : '点赞未完成，请重试' }
+        return false
+      }
+    },
     // 一次异步操作归属于发起时的身份视图；普通列表刷新不改变此归属。
     commentOperationCurrent() {
-      const session = this.session, identity = session && session.user && session.user.id
+      const session = this.session, identity = session && session.user && session.user.id, documentId = session?.documentId
       // Same-principal credential rotation retires authorization, not the owner of an original write/query.
       const generation = this.commentOperationGeneration, identityGeneration = session && session._privateIdentityGeneration
-      return () => !this.commentDisposed && session === this.session && generation === this.commentOperationGeneration &&
-        identityGeneration === (session && session._privateIdentityGeneration) && identity === (this.session && this.session.user && this.session.user.id)
+      return () => !this.commentDisposed && !this.editor?.isDestroyed && session === this.session && generation === this.commentOperationGeneration &&
+        identityGeneration === (session && session._privateIdentityGeneration) && identity === (this.session && this.session.user && this.session.user.id) && documentId === this.session?.documentId
     },
 
     // —— 读取与绑定 ——
     async loadComments() {
       const generation = ++this.commentLoadGeneration
+      const current = this.commentOperationCurrent()
       const provider = this.commentProvider()
       if (!provider || !this.commentCan('canView')) {
         this.resetCommentImages(true)
@@ -448,9 +667,11 @@ export default {
       try {
         const threads = this.session && typeof this.session.listComments === 'function'
           ? await this.session.listComments() : await provider.list({ documentId: this.session && this.session.documentId })
-        if (this.commentDisposed || generation !== this.commentLoadGeneration || provider !== this.commentProvider() || !this.commentCan('canView')) return []
-        this.commentSourceThreads = threads
-        this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, threads, this.commentAnchorCodec)
+        if (!current() || generation !== this.commentLoadGeneration || provider !== this.commentProvider() || !this.commentCan('canView')) return []
+        const visible = provider.isRemote ? threads : threads.filter(thread => thread.scope !== 'document' || thread.visibility !== 'private'
+          || thread.author?.id === this.commentAuthor.id || thread.participants?.includes(this.commentAuthor.id))
+        this.commentSourceThreads = visible
+        this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, visible, this.commentAnchorCodec)
         if (this.commentParticipantThread && !this.commentAllowed('participants', this.commentParticipantThread)) this.resetCommentParticipants()
         if (this.commentReactionContext && !this.commentAllowed('react', this.commentReactionContext.threadId, this.commentReactionContext.replyId)) this.closeCommentReaction()
         if (this.commentTranslationState && !this.commentTranslationIsCurrent(this.commentTranslationState)) this.commentTranslationState = null
@@ -460,6 +681,7 @@ export default {
         this.updateCommentPanels()
         return this.commentThreads
       } catch (error) {
+        if (!current() || generation !== this.commentLoadGeneration || provider !== this.commentProvider() || !this.commentCan('canView')) return []
         if (!this.commentDisposed && generation === this.commentLoadGeneration) {
           this.resetCommentImages(true)
           this.closeCommentReaction()
@@ -475,6 +697,7 @@ export default {
       const provider = this.commentProvider()
       if (!provider || typeof provider[method] !== 'function') return null
       const current = this.commentOperationCurrent()
+      const capability = ['resolve', 'reopen'].includes(method) ? 'canResolveComment' : 'canComment'
       this.commentBusy = true; this.commentMessage = ''
       try {
         // resolve/reopen keep their string threadId contract; only object
@@ -482,9 +705,9 @@ export default {
         if (provider.isRemote && input && typeof input === 'object' && input.operationId === undefined) input = { ...input, operationId: createCommentOperationId() }
         const result = this.session && typeof this.session[sessionMethod] === 'function'
           ? await this.session[sessionMethod](input) : await provider[method](input)
-        if (!current() || !this.commentCan('canView') || provider !== this.commentProvider()) return null
+        if (!current() || !this.commentCan('canView') || !this.commentCan(capability) || provider !== this.commentProvider()) return null
         await this.loadComments().catch(() => { if (current()) this.commentMessage = '评论已提交，列表暂时无法刷新。' })
-        return current() && this.commentCan('canView') && provider === this.commentProvider() ? result : null
+        return current() && this.commentCan('canView') && this.commentCan(capability) && provider === this.commentProvider() ? result : null
       } catch (error) {
         if (!current()) return null
         await this.clearUnavailableCommentView(error)
@@ -534,6 +757,8 @@ export default {
       const text = typeof content === 'string' ? content.trim() : ''
       const captured = this.commentComposerContext
       const range = captured || this.commentSelectionRange()
+      const imageScope = this._imageCommentScope
+      if (imageScope && (range !== imageScope.context || !this.imageCommentCurrent(imageScope))) return null
       if ((!text && !this.commentDraftImages('selection').length) || !range) return null
       this.commentCreateDraft = text
       const provider = this.commentProvider()
@@ -549,19 +774,38 @@ export default {
           if (!decoded || !decoded.length || this.commentBlockPos(decoded.blockId) < 0) throw new Error('COMMENT_ANCHOR_CONFLICT')
         }
       } catch (error) { this.commentMessage = error.code || error.message; return null }
+      if (!provider.isRemote && (range.invalid || this.commentBlockPos(range.blockId) < 0)) return null
+      this._commentSubmittingRange = range
       const thread = await this.runCommentWrite('createThread', {
         scope: 'selection', visibility, ...(this.commentDraftImages('selection').length ? { assetIds: this.commentDraftImages('selection').map(image => image.assetId) } : {}), blockId: range.blockId, author: this.commentAuthor, content: text, anchor, quote: range.text,
       }, 'createCommentThread')
+      if (this._commentSubmittingRange === range) this._commentSubmittingRange = null
+      if (imageScope && (this._imageCommentScope !== imageScope || !this.imageCommentCurrent(imageScope))) return null
+      if (thread && !provider.isRemote && !this.writable()) {
+        this.commentMessage = '评论已提交，正文已切为只读，未写入标记。'
+        return null
+      }
+      if (thread && !provider.isRemote && (range.invalid || this.commentBlockPos(range.blockId) < 0)) {
+        this.commentMessage = '评论已提交，但原引用已被删除，未标记其他正文。'
+        return null
+      }
       if (thread) {
         this.commentCreateDraft = ''; this.clearCommentDraftImages('selection')
         this.commentComposerOpen = false; this.commentComposerContext = null; this.commentSidebarOpen = true
-        if (!provider.isRemote) this.applyCommentMark(thread.id, range.from, range.to)
+        if (!provider.isRemote) {
+          const mark = this.editor.schema.marks.comment?.create({ threadId: thread.id })
+          if (mark) {
+            const transaction = this.editor.state.tr
+            for (const selected of range.ranges || [range]) transaction.addMark(selected.from, selected.to, mark)
+            this.editor.view.dispatch(transaction)
+          }
+        }
         this.activateComment(thread.id)
       }
       return thread
     },
     async createDocumentComment(content, visibility = 'document', participants = [], mentions, references) {
-      if (!this.commentAllowed('create')) return null
+      if (!this.commentDocumentCanSubmit()) return null
       const result = await this.runCommentWrite('createThread', { scope: 'document', visibility, participants, content, ...(mentions === undefined ? {} : { mentions }), ...(references === undefined ? {} : { references }), ...(this.commentDraftImages('document').length ? { assetIds: this.commentDraftImages('document').map(image => image.assetId) } : {}), author: this.commentAuthor,
         blockId: null, anchor: null }, 'createCommentThread')
       if (result) this.activateComment(result.id)
@@ -569,10 +813,12 @@ export default {
     },
     async submitCommentDraft(threadId) {
       if (!this.commentAllowed('reply', threadId)) return null
-      const text = commentDraftText(this.commentDrafts, threadId).trim()
-      if (!text && !this.commentDraftImages(threadId).length) return null
-      const result = await this.runCommentWrite('reply', { threadId, author: this.commentAuthor, content: text, ...(this.commentDraftImages(threadId).length ? { assetIds: this.commentDraftImages(threadId).map(image => image.assetId) } : {}) }, 'replyToComment')
-      if (result) this.clearCommentDraft(threadId)
+      const mentions = this.commentDraftMentions[threadId] || [], references = this.commentDraftReferences[threadId] || []
+      const draft = commentDraftText(this.commentDrafts, threadId)
+      const text = mentions.length || references.length ? draft : draft.trim()
+      if (!text.trim() && !this.commentDraftImages(threadId).length) return null
+      const result = await this.runCommentWrite('reply', { threadId, author: this.commentAuthor, content: text, ...(mentions.length ? { mentions } : {}), ...(references.length ? { references } : {}), ...(this.commentDraftImages(threadId).length ? { assetIds: this.commentDraftImages(threadId).map(image => image.assetId) } : {}) }, 'replyToComment')
+      if (result && this.commentDraftOf(threadId) === draft && (this.commentDraftMentions[threadId] || mentions) === mentions && (this.commentDraftReferences[threadId] || references) === references) this.clearCommentDraft(threadId)
       return result
     },
     async resolveComment(threadId) {
@@ -587,39 +833,12 @@ export default {
       if (!this.commentAllowed('remove', threadId, commentId)) return null
       const provider = this.commentProvider()
       if (provider && typeof provider.deleteReply === 'function') return this.runCommentWrite('deleteReply', { threadId, commentId }, 'deleteCommentReply')
-      if (provider && provider.isRemote) return null
-      this.commentThreads = this.commentThreads.map(thread => thread.id !== threadId ? thread : { ...thread, replies: thread.replies.filter(reply => reply.id !== commentId) })
-      this.updateCommentPanels()
-      return true
+      this.commentMessage = '当前评论服务不支持删除。'
+      return null
     },
-    beginEditComment(threadId, replyId) {
-      if (!this.commentAllowed('edit', threadId, replyId)) return
-      const thread = (this.commentThreads || []).find(item => item.id === threadId)
-      const reply = thread && thread.replies.find(item => item.id === replyId)
-      if (!reply) return
-      this.cancelCommentEdit()
-      this.$set(this.commentImageDrafts, 'edit/' + threadId + '/' + replyId, (reply.attachments || []).map(asset => ({ ...asset, previewUrl: this.commentImageUrl(thread, reply, asset) })))
-      let metadata = { mentions: [], references: [] }
-      try { metadata = normalizeCommentMetadata(reply.content, reply.mentions || [], reply.references || [], true) } catch { /* Invalid legacy ranges remain plain text. */ }
-      this.commentEditGeneration = (this.commentEditGeneration || 0) + 1
-      this.commentEditingReply = { threadId, replyId, generation: this.commentEditGeneration, originalReplyRevision: reply.replyRevision, originalAssets: (reply.attachments || []).map(asset => asset.assetId), ...(reply.references?.length ? { originalReferences: true } : {}) }
-      this.setCommentEditContent(reply.content, metadata.mentions, metadata.references)
-    },
-    async saveEditedComment() {
-      const value = this.commentEditingReply
-      if (!value || !this.commentAllowed('edit', value.threadId, value.replyId)) return null
-      const assetIds = this.commentDraftImages('edit/' + value.threadId + '/' + value.replyId).map(asset => asset.assetId)
-      if (!this.commentEditContent.trim() && !assetIds.length) return null
-      const { mentions, references } = normalizeCommentMetadata(this.commentEditContent, this.commentEditMentions, this.commentEditReferences)
-      const changed = (!this.commentEditContent.trim() && assetIds.length <= 9) || JSON.stringify(assetIds) !== JSON.stringify(value.originalAssets || [])
-      const result = await this.runCommentWrite('editReply', { threadId: value.threadId, replyId: value.replyId, content: this.commentEditContent, mentions, ...(references.length || value.originalReferences ? { references } : {}), ...(changed ? { assetIds } : {}) }, 'editCommentReply')
-      if (result) this.cancelCommentEdit()
-      return result
-    },
-    async setCommentParticipants(threadId, participants, expectedRevision) {
-      if (!this.commentAllowed('participants', threadId)) return null
-      return this.runCommentWrite('setParticipants', { threadId, participants, ...(expectedRevision === undefined ? {} : { expectedRevision }) }, 'setCommentParticipants')
-    },
+
+
+
     resetCommentParticipants() {
       clearTimeout(this._commentParticipantTimer); this._commentParticipantRead = null
       this.commentParticipantThread = ''; this.commentParticipantRevision = ''; this.commentParticipantQuery = ''
@@ -638,21 +857,23 @@ export default {
       const state = this.editor.state
       const selection = state.selection
       if (!selection || selection.empty) return null
-      const from = selection.from
-      const to = selection.to
-      const resolved = state.doc.resolve(from)
+      const ranges = selection.ranges.map(range => ({ from: range.$from.pos, to: range.$to.pos })).sort((a, b) => a.from - b.from)
+      const from = ranges[0].from, to = ranges[ranges.length - 1].to
+      const resolved = selection.$anchorCell || state.doc.resolve(from)
+      const node = selection.node
+      if (node?.attrs?.blockId) {
+        const text = ({ image: '[图片]', linkEmbed: '[网页]', bookmark: '[网页卡片]' })[node.type.name] || node.textContent
+        return { blockId: node.attrs.blockId, offset: 0, length: node.content.size, from, to, ranges, text, bookmark: selection.getBookmark() }
+      }
       for (let depth = resolved.depth; depth > 0; depth -= 1) {
         const node = resolved.node(depth)
         const blockId = node.attrs && typeof node.attrs.blockId === 'string' ? node.attrs.blockId.trim() : ''
-        if (!blockId) continue
+        if (!blockId || (selection.$anchorCell && node.type.name !== 'table')) continue
         const contentStart = resolved.before(depth) + 1
         return {
-          blockId,
-          offset: Math.max(0, from - contentStart),
-          length: Math.max(0, to - from),
-          from,
-          to,
-          text: state.doc.textBetween(from, to, '\n', ' '),
+          blockId, offset: Math.max(0, from - contentStart), length: Math.max(0, to - from), from, to, ranges,
+          text: selection.$anchorCell ? ranges.map(range => state.doc.textBetween(range.from, range.to, ' ', ' ')).join(' ') : state.doc.textBetween(from, to, '\n', ' '),
+          bookmark: selection.getBookmark(),
         }
       }
       return null
@@ -669,15 +890,30 @@ export default {
     },
 
     // —— 草稿 ——
-    setCommentDraft(threadId, text) {
+    setCommentDraft(threadId, text, mentions = this.commentDraftMentions[threadId] || [], references = this.commentDraftReferences[threadId] || []) {
       if (!threadId || !this.commentAllowed('reply', threadId)) return
-      this.$set(this.commentDrafts, threadId, typeof text === 'string' ? text : '')
+      const content = typeof text === 'string' ? text : ''
+      let metadata = { mentions: [], references: [] }
+      try { metadata = normalizeCommentMetadata(content, mentions, references) } catch { /* Text edits can invalidate stale ranges; keep plain text until a new mention is selected. */ }
+      this.$set(this.commentDrafts, threadId, content)
+      this.$set(this.commentDraftMentions, threadId, metadata.mentions)
+      this.$set(this.commentDraftReferences, threadId, metadata.references)
     },
     clearCommentDraft(threadId) {
       if (!threadId) return
       this.clearCommentDraftImages(threadId)
       this.$set(this.commentDrafts, threadId, '')
+      this.$set(this.commentDraftMentions, threadId, [])
+      this.$set(this.commentDraftReferences, threadId, [])
+      if (this.commentMentionPicker?.threadId === threadId) this.commentMentionPicker = null
     },
+
+
+
+
+
+
+
     commentHasDraft(threadId) {
       return commentDraftText(this.commentDrafts, threadId).trim().length > 0 || this.commentDraftImages(threadId).length > 0
     },
@@ -686,7 +922,9 @@ export default {
     activateComment(threadId) {
       const next = threadId || ''
       const thread = this.commentThreads.find(item => item.id === next)
-      if (this.commentRemote && thread && thread.scope !== 'document') { this.commentSidebarOpen = true; this.commentHistorical = thread.anchorStatus === 'orphaned'; this.commentHistory = !this.commentHistorical && thread.resolved === true }
+      if (next) this.commentMobileOpen = true
+      if (thread) this.commentMobileScope = thread.scope === 'document' ? 'document' : 'selection'
+      if ((this.commentRemote || this._mobileEditorMedia?.matches) && thread && thread.scope !== 'document') { this.commentSidebarOpen = true; this.commentHistorical = thread.anchorStatus === 'orphaned'; this.commentHistory = !this.commentHistorical && thread.resolved === true }
       if (next === this.commentActiveThreadId) { this.updateCommentPanels(); return }
       this.commentActiveThreadId = next
       if (next) this.markCommentRead(next)
@@ -713,8 +951,11 @@ export default {
       const pos = this.commentBlockPos(blockId)
       if (pos < 0) return
       try {
+        this.editor.storage?.larkDoc?.projection?.revealPosition?.(pos)
         const at = this.editor.view.domAtPos(pos)
-        const node = at.node && at.node.nodeType === 3 ? at.node.parentNode : at.node
+        const direct = this.editor.view.nodeDOM?.(pos) || at.node
+        const node = direct && direct.nodeType === 3 ? direct.parentNode : direct
+        this.editor.storage?.larkDoc?.projection?.revealNode?.(node)
         if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center' })
       } catch (error) {
         // 滚不动不影响点亮结果，静默（没有 toast 位）。
@@ -735,54 +976,27 @@ export default {
     },
 
     // —— 开关与菜单 ——
-    toggleCommentPrivate(threadId) {
-      if (!threadId) return
-      const provider = this.commentProvider()
-      if (provider && provider.isRemote) {
-        if (!this.commentAllowed('visibility', threadId)) return null
-        return this.runCommentWrite('setVisibility', { threadId, visibility: this.commentPrivate(threadId) ? 'document' : 'private' }, 'setCommentVisibility')
-      }
-      const on = this.commentPrivateIds.indexOf(threadId) !== -1
-      this.commentPrivateIds = on
-        ? this.commentPrivateIds.filter((id) => id !== threadId)
-        : this.commentPrivateIds.concat([threadId])
-    },
+
     commentPrivate(threadId) {
       const provider = this.commentProvider()
-      if (provider && provider.isRemote) {
+      if (provider?.isRemote || this.commentThreads.find(thread => thread.id === threadId)?.scope === 'document') {
         const thread = (this.commentThreads || []).find(item => item.id === threadId)
         return Boolean(thread && thread.visibility === 'private')
       }
       return this.commentPrivateIds.indexOf(threadId) !== -1
     },
-    toggleCommentMoreMenu(threadId, event) {
-      this.resetCommentParticipants()
-      this.commentMoreThreadId = this.commentMoreThreadId === threadId ? '' : threadId
-      this._commentMoreMenuAnchor = this.commentMoreThreadId && event && event.currentTarget || null
-      this.commentMoreMenuPosition = this.commentMoreThreadId ? this.commentMenuPosition(event, COMMENT_MORE_MENU.width, COMMENT_MORE_MENU.height) : null
-      if (this.commentRemote && this.commentMoreThreadId) this.loadCommentFollowPreference(threadId)
+
+
+
+    commentViewport() {
+      const root = typeof document !== 'undefined' ? document.documentElement : null
+      const win = typeof window !== 'undefined' ? window : null
+      const visual = win?.visualViewport
+      const width = Number(visual?.width) || Number(root?.clientWidth) || Number(win?.innerWidth) || 0
+      const height = Number(visual?.height) || Number(root?.clientHeight) || Number(win?.innerHeight) || 0
+      return { width, height }
     },
-    toggleCommentReplyMenu(threadId, commentId, event) {
-      const same = this.commentMenuThreadId === threadId && this.commentMenuCommentId === commentId
-      this.commentMenuThreadId = same ? '' : threadId
-      this.commentMenuCommentId = same ? '' : commentId
-      this._commentReplyMenuAnchor = !same && event && event.currentTarget || null
-      this.commentReplyMenuPosition = same ? null : this.commentMenuPosition(event, COMMENT_REPLY_MENU.width, COMMENT_REPLY_MENU.height)
-    },
-    commentMenuPosition(event, width, height) {
-      const anchor = event && event.currentTarget
-      if (!this.commentRemote || !anchor || typeof anchor.getBoundingClientRect !== 'function') return null
-      this.updateCommentLayerBounds()
-      const rect = anchor.getBoundingClientRect()
-      const floor = Math.min(this.commentLayerTop, Math.max(COMMENT_VIEWPORT_MARGIN, window.innerHeight - 32))
-      return {
-        left: Math.max(COMMENT_VIEWPORT_MARGIN, Math.min(rect.right - width, window.innerWidth - width - COMMENT_VIEWPORT_MARGIN)),
-        top: Math.max(floor, Math.min(rect.bottom + 4, window.innerHeight - height - COMMENT_VIEWPORT_MARGIN)),
-      }
-    },
-    commentFloatingMenuStyle(position) {
-      return this.commentRemote && position ? { position: 'fixed', left: `${position.left}px`, top: `${position.top}px`, right: 'auto', maxHeight: `calc(100vh - ${position.top + COMMENT_VIEWPORT_MARGIN}px)`, overflowY: 'auto' } : null
-    },
+
     closeCommentMenus() {
       this.resetCommentParticipants()
       this.closeCommentReaction()
@@ -825,7 +1039,7 @@ export default {
       if (scope.startsWith('edit/')) { const [, threadId, replyId] = scope.split('/'); return this.commentAllowed('edit', threadId, replyId) }
       return ['document', 'selection'].includes(scope) ? this.commentAllowed('create') : this.commentAllowed('reply', scope)
     },
-    
+
     commentImageScopeCurrent(scope, draftGeneration, context) {
       if ((this.commentImageDraftGenerations[scope] || 0) !== draftGeneration || !this.commentCan('canComment')) return false
       if (scope === 'selection') return this.commentComposerOpen && this.commentComposerContext === context
@@ -883,11 +1097,16 @@ export default {
       })
     },
     closeCommentReaction(restoreFocus = false) {
-      const anchor = this._commentReactionAnchor
+      const anchor = this._commentReactionAnchor, context = this.commentReactionContext
       this.commentReactionContext = null; this._commentReactionAnchor = null
+      if (context?.position) {
+        const style = this.$el?.querySelector?.('.lark-doc-comment-reaction-picker')?.style
+        for (const key of ['position', 'left', 'top']) style?.removeProperty(key)
+      }
       this.commentReactionQuery = ''; this.commentReactionCategory = '常用'; this.commentReactionLimit = 120
-      if (restoreFocus && anchor && anchor.isConnected) anchor.focus()
+      if (restoreFocus) this.restoreCommentReplyFocus(context?.threadId, context?.replyId, anchor)
     },
+
     onCommentReactionOutside(event) {
       const insideMenu = event.target?.closest?.('.lark-doc-comment-more-menu, .lark-doc-comment-reply-menu')
       const trigger = this._commentMoreMenuAnchor?.contains?.(event.target) || this._commentReplyMenuAnchor?.contains?.(event.target)
@@ -898,10 +1117,28 @@ export default {
       this.closeCommentReaction()
     },
     onCommentReactionKeydown(event) {
+      if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229) return
+      const root = this.$refs?.root || this.$el
+      const tree = root?.getRootNode?.()
+      let target = event.target?.nodeType ? event.target : tree?.activeElement || root?.ownerDocument?.activeElement
+      // A closed shadow hides its input from the window's composed path.
+      for (let boundary = tree; boundary?.host; boundary = boundary.host.getRootNode?.()) {
+        if (target === boundary.host && tree.activeElement) { target = tree.activeElement; break }
+      }
+      while (target?.shadowRoot?.activeElement) target = target.shadowRoot.activeElement
+      const input = (event.composedPath?.() || []).find(node => typeof node?.__larkDocCommentComposition === 'function') || target?.closest?.('.lark-doc-comment-rich-input')
+      if (input?.__larkDocCommentComposition?.(event)) return
+      if (event.key === 'Escape' && root && target && target !== root.ownerDocument?.body && target !== root.ownerDocument?.documentElement &&
+          !root.contains(target) && !event.composedPath?.().includes(root)) {
+        if (this.commentImageViewer) this.closeCommentImage()
+        if (this.commentMoreThreadId || this.commentMenuThreadId || this.commentReactionContext) this.closeCommentMenus()
+        return
+      }
       if (this.commentImageViewer && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.closeCommentImage(true); return }
       if (event.key === 'Escape' && (this.commentMoreThreadId || this.commentMenuThreadId)) {
         const anchor = this._commentMoreMenuAnchor || this._commentReplyMenuAnchor
-        event.preventDefault(); event.stopPropagation(); this.closeCommentMenus(); if (anchor?.isConnected) anchor.focus(); return
+        const threadId = this.commentMenuThreadId, replyId = this.commentMenuCommentId
+        event.preventDefault(); event.stopPropagation(); this.closeCommentMenus(); this.restoreCommentReplyFocus(threadId, replyId, anchor); return
       }
       if (!this.commentReactionContext || event.key !== 'Escape') return
       event.preventDefault(); event.stopPropagation(); this.closeCommentReaction(true)
@@ -909,22 +1146,17 @@ export default {
     showMoreCommentReactions() { this.commentReactionLimit += 120 },
     setCommentReactionQuery(value) { this.commentReactionQuery = value; this.commentReactionLimit = 120 },
     setCommentReactionCategory(value) { this.commentReactionCategory = value; this.commentReactionLimit = 120 },
-    openCommentReaction(threadId, replyId, event) {
-      if (!this.commentAllowed('react', threadId, replyId)) return
-      this.closeCommentMenus()
-      this._commentReactionAnchor = event && event.currentTarget
-      this.commentReactionContext = { threadId, replyId, position: this.commentMenuPosition(event, 328, 340) }
-      this.$nextTick(() => this.$el.querySelector('.lark-doc-comment-reaction-picker input')?.focus())
-    },
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
+
+
+
     async loadCommentFollowPreference(threadId) {
       const provider = this.commentProvider()
       if (!provider || !provider.isRemote || !this.commentCan('canView')) return null
@@ -946,58 +1178,9 @@ export default {
       }
     },
     commentFollowPreference(threadId) { return this.commentFollowPreferences[threadId] || null },
-    commentFollowAllowed(threadId) {
-      return this.commentCan('canView') && Boolean(this.commentFollowPreference(threadId)) && !this.commentFollowBusy && !this.commentPendingFollowOperation
-    },
-    async changeCommentFollow(threadId, kind) {
-      if (!this.commentFollowAllowed(threadId)) return null
-      const provider = this.commentProvider()
-      const prior = this.commentFollowPreference(threadId)
-      const method = kind === 'mute' ? 'setMuted' : prior.following ? 'unfollow' : 'follow'
-      const sessionMethod = kind === 'mute' ? 'muteComment' : prior.following ? 'unfollowComment' : 'followComment'
-      const input = { threadId, expectedRevision: prior.preferenceRevision, ...(kind === 'mute' ? { value: !prior.muted } : {}) }
-      const generation = this.commentLoadGeneration
-      const current = this.commentOperationCurrent()
-      this.commentFollowBusy = true
-      try {
-        if (provider.isRemote) input.operationId = createCommentOperationId()
-        const result = this.session && typeof this.session[sessionMethod] === 'function'
-          ? await this.session[sessionMethod](input) : await provider[method](input)
-        if (!current() || !this.commentCan('canView') || provider !== this.commentProvider()) return null
-        this.commentFollowReadGeneration++
-        if (generation === this.commentLoadGeneration) this.$set(this.commentFollowPreferences, threadId, result)
-        else await this.loadCommentFollowPreference(threadId)
-        return current() && this.commentCan('canView') && provider === this.commentProvider() ? result : null
-      } catch (error) {
-        if (!current()) return null
-        await this.clearUnavailableCommentView(error)
-        if (current()) {
-          if (error.status === 'unknown' && error.operationId) { this.commentPendingFollowOperation = error.operationId; this._commentPendingFollowProvider = provider }
-          this.commentMessage = error.status === 'unknown' ? '关注偏好尚未确认，请查询原操作。' : '评论不可见、无权访问或偏好未保存。'
-        }
-        return null
-      } finally { if (current()) this.commentFollowBusy = false }
-    },
-    async queryPendingCommentFollow() {
-      if (!this.commentPendingFollowOperation || this.commentFollowBusy || !this.commentCan('canView')) return null
-      const provider = this._commentPendingFollowProvider || this.commentProvider()
-      const current = this.commentOperationCurrent()
-      this.commentFollowBusy = true
-      try {
-        const result = await provider.queryFollowOperation(this.commentPendingFollowOperation)
-        if (!current() || !this.commentCan('canView')) return null
-        this.commentFollowReadGeneration++
-        this.commentPendingFollowOperation = ''; this._commentPendingFollowProvider = null
-        if (provider === this.commentProvider() && this.commentCan('canView')) this.$set(this.commentFollowPreferences, result.threadId, result)
-        this.commentMessage = '原关注偏好已确认。'
-        return result
-      } catch (error) {
-        if (!current()) return null
-        await this.clearUnavailableCommentView(error)
-        if (current()) this.commentMessage = '原关注偏好仍未确认；评论不可见时无法查询。'
-        return null
-      } finally { if (current()) this.commentFollowBusy = false }
-    },
+
+
+
     async openCommentLink(value) {
       const provider = this.commentProvider()
       if (!provider || !provider.isRemote || !this.commentCan('canView')) return null
@@ -1037,17 +1220,8 @@ export default {
       this.refreshCommentDecorations()
       await this.loadComments().catch(() => {})
     },
-    beginCommentTranslation(threadId, replyId) {
-      if (!this.commentCan('canView') || this.commentTranslationBusy) return
-      if (this.commentPendingTranslationOperation) { this.commentMessage = '请先查询原翻译请求，避免替换未确认的来源。'; return }
-      const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
-      const reply = thread && thread.replies.find(item => item.id === replyId && !item.tombstone)
-      if (!reply || typeof reply.replyRevision !== 'string') return
-      this.commentTranslationContext = { threadId, replyId, sourceRevision: reply.replyRevision }
-      this.commentTranslationLanguage = 'zh-CN'
-      this.commentTranslationState = null
-    },
-    
+
+
 
     // —— 几何 ——
     /** 由宿主的 `onTransaction` 调；只做「过滤 + 清理失效 id」，几何交给下一帧。 */
@@ -1058,7 +1232,7 @@ export default {
         return
       }
       const provider = this.commentProvider()
-      if (provider && provider.isRemote && Array.isArray(this.commentSourceThreads)) {
+      if (provider && Array.isArray(this.commentSourceThreads)) {
         this.commentThreads = bindThreads(this.editor.state.doc, this.commentSourceThreads, this.commentAnchorCodec)
       }
       const remote = provider && provider.isRemote
@@ -1074,6 +1248,23 @@ export default {
       this.updateCommentLayerBounds?.()
       const view = this.editor?.view
       if (!view) return
+      if (this._mobileEditorMedia?.matches && this.commentSidebarOpen && !this.commentComposerOpen && !this.commentHistorical) {
+        const main = this.$refs.root?.querySelector('.lark-doc-main'), bounds = main?.getBoundingClientRect()
+        const cards = [...(this.$el.querySelector('.is-reference-drawer')?.querySelectorAll('[data-comment-thread]') || [])]
+        const at = item => {
+          const pos = this.commentBlockPos(item.blockId), node = pos >= 0 ? view.nodeDOM(pos) : null
+          const top = node?.getBoundingClientRect?.().top
+          return Number.isFinite(top) ? top - (bounds?.top || 0) + (main?.scrollTop || 0) : 65
+        }
+        let floor = 65
+        this.commentPanels = [...this.commentPanels].sort((a, b) => at(a) - at(b)).map(item => {
+          const top = Math.max(floor, at(item)), gap = top - floor
+          const height = cards.find(node => node.dataset.commentThread === item.id)?.getBoundingClientRect().height || this.commentPanelHeightOf(item)
+          floor = top + height + 36
+          return { ...item, top, gap }
+        })
+        return
+      }
       if (this.commentRemote) {
         const layer = this.$el.querySelector('.lark-doc-comment-layer.is-remote')
         let floor = this.commentLayerTop + 52
@@ -1099,9 +1290,10 @@ export default {
       }
       if (!this.commentPanels.length) return
       const bound = view.dom.getBoundingClientRect()
-      const maxLeft = window.innerWidth - COMMENT_PANEL.width - COMMENT_VIEWPORT_MARGIN
+      const viewport = this.commentViewport()
+      const maxLeft = viewport.width - COMMENT_PANEL.width - COMMENT_VIEWPORT_MARGIN
       const left = Math.max(COMMENT_VIEWPORT_MARGIN, Math.min(maxLeft, bound.right + COMMENT_ANCHOR_GUTTER))
-      const bottomLimit = window.innerHeight - COMMENT_VIEWPORT_MARGIN
+      const bottomLimit = viewport.height - COMMENT_VIEWPORT_MARGIN
       let floor = COMMENT_VIEWPORT_MARGIN
       this.commentPanels = this.commentPanels.map((item) => {
         const pos = item.bound ? this.commentBlockPos(item.blockId) : -1
@@ -1121,8 +1313,29 @@ export default {
         return { ...item, left, top }
       })
     },
-    onCommentTransaction() {
-      if (!this.commentDisposed && this.commentProvider() && this.commentProvider().isRemote) this.updateCommentPanels()
+    refreshImportedComments(payload) {
+      if (payload.transaction.getMeta(PAGED_IMPORT_META)) this.onCommentTransaction({ ...payload, imported: true })
+    },
+    onCommentTransaction({ transaction, imported = false } = {}) {
+      const imageScope = this._imageCommentScope
+      const replaced = transaction?.docChanged && ([TRANSACTION_ORIGINS.HOST, TRANSACTION_ORIGINS.RESTORE].includes(getTransactionMetadata(transaction)?.origin)
+        || transaction.steps.some(step => step.from === 0 && step.to >= transaction.before.content.size))
+      if (replaced) { this._imageCommentDrafts = null; this._imageCommentDraftOwner = null }
+      if (imageScope && transaction?.docChanged && (replaced || !this.imageCommentCurrent(imageScope))) this.closeImageComments(null, false)
+      if (transaction?.docChanged) for (const range of new Set([this.commentComposerContext, this._commentSubmittingRange, this._imageCommentScope?.previous.commentComposerContext])) {
+        if (!range || range.invalid) continue
+        const selected = range.ranges || [range]
+        range.ranges = selected.map(item => {
+          const from = transaction.mapping.mapResult(item.from, 1), to = transaction.mapping.mapResult(item.to, -1)
+          if (from.deletedAcross || to.deletedAcross || from.pos >= to.pos) range.invalid = true
+          return { from: from.pos, to: to.pos }
+        })
+        range.from = range.ranges[0].from; range.to = range.ranges[range.ranges.length - 1].to
+        range.bookmark = range.bookmark?.map(transaction.mapping)
+      }
+      if (!imported && transaction?.getMeta(PAGED_IMPORT_META)) return
+      const provider = this.commentProvider()
+      if (!this.commentDisposed && provider && (provider.isRemote || imported)) this.updateCommentPanels()
     },
     installCommentDecorations() {
       const provider = this.commentProvider()
@@ -1160,13 +1373,41 @@ export default {
       if (!root) return
       const bars = Array.from(root.querySelectorAll('.lark-doc-topbar, .lark-doc-toolbar')).filter(node => node.getClientRects().length)
       this.commentLayerTop = Math.max(COMMENT_VIEWPORT_MARGIN, ...bars.map(node => node.getBoundingClientRect().bottom + COMMENT_PANEL_GAP))
-      this.commentLayerHeight = Math.max(0, Math.min(window.innerHeight, root.getBoundingClientRect().bottom) - this.commentLayerTop - 16)
+      const viewport = this.commentViewport()
+      const win = typeof window !== 'undefined' ? window : null
+      const layoutWidth = Number(win?.innerWidth) || viewport.width
+      const layoutHeight = Number(win?.innerHeight) || viewport.height
+      const layer = root.querySelector('.lark-doc-comment-layer.is-remote')
+      if (layer) {
+        layer.style.right = `${layoutWidth <= 760 ? 0 : Math.max(COMMENT_VIEWPORT_MARGIN * 2, layoutWidth - viewport.width + COMMENT_VIEWPORT_MARGIN * 2)}px`
+        layer.style.bottom = `${layoutWidth <= 760 ? 0 : Math.max(COMMENT_VIEWPORT_MARGIN * 2, layoutHeight - viewport.height + COMMENT_VIEWPORT_MARGIN * 2)}px`
+      }
+      this.commentLayerHeight = Math.max(0, Math.min(viewport.height, root.getBoundingClientRect().bottom) - this.commentLayerTop - 16)
+    },
+    // 视口尺寸变化（软键盘弹出、工具栏折叠）不是内容滚动：选择器是 fixed 定位、
+    // 没有可跟随的滚动容器，刚打开就被抖动关掉等于该入口在移动端不可用。
+    // 这里只把选择器收敛回可视区域，真正的滚动仍按原语义关闭。
+    refitCommentReaction() {
+      const context = this.commentReactionContext
+      const root = this.$el
+      const picker = root?.querySelector?.('.lark-doc-comment-reaction-picker')
+        || root?.ownerDocument?.querySelector?.('.lark-doc-comment-reaction-picker')
+      const rect = picker?.getBoundingClientRect?.()
+      if (!context?.position || !rect || !rect.width || !rect.height) return
+      const viewport = this.commentViewport()
+      const left = Math.max(COMMENT_VIEWPORT_MARGIN, Math.min(context.position.left, viewport.width - rect.width - COMMENT_VIEWPORT_MARGIN))
+      const top = Math.max(COMMENT_VIEWPORT_MARGIN, Math.min(context.position.top, viewport.height - rect.height - COMMENT_VIEWPORT_MARGIN))
+      if (left === context.position.left && top === context.position.top) return
+      context.position = { left, top }
+      this.refreshPanels?.()
     },
     onCommentViewportChange(event) {
       const target = event && event.target
       const menuScroll = target && typeof target.closest === 'function' && target.closest('.lark-doc-comment-more-menu, .lark-doc-comment-reply-menu, .lark-doc-comment-reaction-picker')
+      const resized = !!event && event.type === 'resize'
       this.updateCommentLayerBounds?.()
-      if (event && !menuScroll && this.commentReactionContext) this.closeCommentReaction()
+      if (resized) this.refitCommentReaction()
+      else if (event && !menuScroll && this.commentReactionContext) this.closeCommentReaction()
       if (event && !menuScroll && this.commentRemote) {
         for (const [id, anchorKey, position, geometry] of [
           ['commentMoreThreadId', '_commentMoreMenuAnchor', 'commentMoreMenuPosition', COMMENT_MORE_MENU],
@@ -1174,7 +1415,8 @@ export default {
         ]) {
           if (!this[id]) continue
           const anchor = this[anchorKey], rect = anchor && anchor.isConnected && anchor.getBoundingClientRect()
-          if (!rect || rect.bottom < this.commentLayerTop || rect.top > window.innerHeight) {
+          const viewport = this.commentViewport()
+          if (!rect || rect.bottom < this.commentLayerTop || rect.top > viewport.height) {
             this[id] = ''; this[position] = null; this[anchorKey] = null
             if (id === 'commentMenuThreadId') this.commentMenuCommentId = ''
           } else this[position] = this.commentMenuPosition({ currentTarget: anchor }, geometry.width, geometry.height)
@@ -1194,18 +1436,24 @@ export default {
       return commentDraftText(this.commentDrafts, threadId)
     },
     commentTimeAt(at) {
+      if (this._mobileEditorMedia?.matches && at) {
+        const date = new Date(at)
+        if (Number.isFinite(date.getTime())) return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+      }
       return commentRelativeTime(Date.now(), at)
     },
     commentAuthorName(author) {
       const name = author && typeof author.name === 'string' ? author.name.trim() : ''
       return name || '我'
     },
-    
+
     /** 引用头：优先用落库时的快照文本，没有就退回锚点块的第一段（飞书同样是快照）。 */
     commentQuoteOf(item) {
-      return typeof item.quote === 'string' && item.quote ? item.quote : ''
+      if (typeof item.quote === 'string' && item.quote) return item.quote
+      const pos = this.commentBlockPos?.(item.blockId) ?? -1
+      return pos >= 0 && this.editor?.state.doc.nodeAt(pos)?.type.name === 'image' ? '[图片]' : ''
     },
-    
+
     /** 点正文高亮点亮对应线程（与 04 §3.1② 的双向跳转一致）。 */
     onCommentPointerDown(event) {
       const target = event.target

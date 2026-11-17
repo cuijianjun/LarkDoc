@@ -24,6 +24,9 @@
  */
 import { safeFileName } from '../../../utils/export/fileName.js'
 import { isExportEnabled } from '../larkDocConfig'
+import { createOutputAuditEvent, evaluateOutputPolicy } from '../../../core/policy/output'
+import { projectCapabilityUi } from '../../../core/policy/capability'
+import { createExportInteraction } from './exportInteraction'
 
 /**
  * 三档定义。顺序 = 「更多 → 下载为」二级菜单的实测顺序（Word / PDF / Markdown，
@@ -77,6 +80,11 @@ function formatDefOf(id) {
   return null
 }
 
+// Preserve original dynamic module paths, namespace/error identity and request timing.
+const loadExportModule = () => import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
+const loadRemoteConversionModule = () => import(/* webpackChunkName: 'remote-conversion' */ '../../../utils/remoteConversion')
+const exportInteraction = /*#__PURE__*/ createExportInteraction({ EXPORT_FORMATS, EXPORT_TOAST_TEXT, isExportEnabled, createOutputAuditEvent, evaluateOutputPolicy, loadExportModule, loadRemoteConversionModule })
+
 export default {
   data() {
     return {
@@ -90,9 +98,19 @@ export default {
       exportToast: '',
       /** 派发中：只用于挡住重复点击，不用于显示进度（见负结论 4）。 */
       exportBusy: false,
+      exportRoute: '',
+      exportGeneration: 0,
+      exportPendingOperationId: '',
+      exportPendingFormat: '',
+      exportPendingFileName: '',
+      outputAuditEvents: [],
     }
   },
   computed: {
+    /** 与评论/版本同一套视觉投影；`exportCanExport` 仍是唯一的布尔闸门。 */
+    exportCapabilityState() {
+      return projectCapabilityUi(this.session, 'canExport')
+    },
     /**
      * 权限闸门。与 `effectiveReadonly` 同口径：拿不到 session 时视为「无权可证」→ 放行，
      * 而不是一律置灰 —— 编辑器在纯展示 demo 里经常没有 session。
@@ -109,12 +127,13 @@ export default {
     /** 弹窗标题：`导出 X 设置`（§4.6.7② 三档差异表）。 */
     exportPanelTitle() {
       const def = this.exportFormatDef
-      return def ? `导出 ${def.label} 设置` : ''
+      return def ? `导出 ${def.label} 设置` : (this.exportOpen ? '下载为' : '')
     },
     /** 两个 radio 的文案，顺序恒为「选项1 / 选项2」。 */
     exportScopeOptions() {
       const def = this.exportFormatDef
-      return def ? def.options : []
+      if (!def) return []
+      return this.exportRoute === 'remote' ? [{ value: def.id === 'markdown' ? 'all' : 'contentOnly', label: '已保存的不可变版本正文（不含评论）' }] : def.options
     },
     /** 实际生效的范围值：没选过就用该档默认值。 */
     exportScopeValue() {
@@ -128,6 +147,13 @@ export default {
     /** 置灰态：无权限或正在派发。渲染层只加 disabled 类，**不隐藏**（负结论 3）。 */
     exportSubmitDisabled() {
       return !this.exportCanExport || this.exportBusy
+    },
+    exportRouteDescription() {
+      return this.exportRoute === 'remote' ? '由文档服务导出已保存的不可变版本；未确认的任务只能查询。' : '使用当前正文在浏览器导出或打印。'
+    },
+    exportRemoteAvailable() {
+      const provider = this.remoteExportProvider()
+      return !!provider && ['requestExport', 'queryConversion', 'downloadConversion'].every(name => typeof provider[name] === 'function' && typeof this.session?.[name] === 'function')
     },
     /** 导出文件名（不含扩展名）：取编辑器标题，空标题回落到常量。 */
     exportFileBaseName() {
@@ -151,17 +177,28 @@ export default {
   beforeDestroy() {
     this._exportDisposed = true
     this.invalidateExportContext()
+    this.clearRemoteExport()
+    this._exportSessionStops?.forEach(stop => stop())
+    this._exportSessionStops = []
     window.removeEventListener('keydown', this.onExportKeydown, true)
   },
   methods: {
     // —— 开关 ——
+    openExportFormatPicker() {
+      if (!this.exportCanExport) return
+      this.exportFormat = ''
+      this.exportScope = ''
+      this.exportRoute = this.remoteExportProvider() ? 'remote' : 'local'
+      this.exportOpen = true
+    },
     /** 打开某一档。无权限直接 return（置灰态的第二次保险）。 */
     openExportDialog(format) {
       if (!this.exportCanExport) return
       const def = formatDefOf(format)
       if (!def) return
+      this.exportRoute = this.exportOpen && this.exportRoute ? this.exportRoute : this.remoteExportProvider() ? 'remote' : 'local'
       this.exportFormat = def.id
-      this.exportScope = def.defaultScope
+      this.exportScope = this.exportRoute === 'remote' && def.id === 'markdown' ? 'all' : def.defaultScope
       this.exportOpen = true
     },
     closeExportDialog() {
@@ -169,7 +206,9 @@ export default {
     },
     /** 点「取消」：只关弹窗，**零请求**（负结论 2）。 */
     cancelExport() {
-      this.invalidateExportContext()
+      this._remoteExportViewGeneration = (this._remoteExportViewGeneration || 0) + 1
+      this.invalidateExportContext(!this._activeExport)
+      this.exportToast = ''
       this.closeExportDialog()
     },
     /** 切 radio：纯前端状态，不发请求（§4.6.7③）。 */
@@ -180,66 +219,32 @@ export default {
       if (!this.exportOpen) return
       if (event.key !== 'Escape' && event.key !== 'Esc') return
       event.stopPropagation()
-      this.closeExportDialog()
+      this.cancelExport()
     },
-
-    // —— 提交 ——
-    /**
-     * 点「导出」：关弹窗 → 出 toast → 派发 → 产物落盘后 toast 自行消失（§4.6.7④）。
-     *
-     * 顺序刻意是「先关再派发」：实测里弹窗在 toast 出现之前就消失了，反过来做会让
-     * 用户看到弹窗卡在屏幕上直到文件生成完。
-     */
-    async submitExport() {
-      if (!this.exportCanExport || this.exportBusy) return
-      const def = this.exportFormatDef
-      if (!def) return
-      const format = def.id
-      const scope = this.exportScopeValue
-      const fileName = this.exportFileBaseName
-      const context = this.createExportContext(format, scope)
-      if (!context || !context.current()) return
-      this.closeExportDialog()
-      this.exportBusy = true
-      this.exportToast = EXPORT_TOAST_TEXT
-      try {
-        await this.dispatchExport(format, scope, fileName, context)
-      } catch (error) {
-        if (context && this._exportContext === context && context.current()) this.error = `导出失败：${error.message}`
-      } finally {
-        if (context && this._exportContext === context) {
-          this.exportBusy = false
-          if (format !== 'pdf' || !context.cleanup) {
-            context.stop()
-            this._exportContext = null
-            this.exportToast = ''
-          }
-        }
-      }
+    remoteExportProvider() {
+      const provider = this.session?.getProvider?.('versioning')
+      return provider && (provider.isRemote === true || provider.requiresDurableConfirmation === true || ['requestExport', 'queryConversion', 'downloadConversion'].some(name => typeof provider[name] === 'function')) ? provider : null
     },
-    /** 按档派发。返回 Promise（PDF 同步返回，await 一下统一形态）。 */
-    dispatchExport(format, scope, fileName, context) {
-      if (format === 'markdown') return this.dispatchMarkdown(scope, fileName, context)
-      if (format === 'word') return this.dispatchDocx(scope, fileName, context)
-      if (format === 'pdf') return this.dispatchPdf(scope, fileName, context)
-      return Promise.resolve(null)
+    clearRemoteExport() {
+      this.exportGeneration += 1
+      if (this._activeExport) this.exportBusy = false
+      if (!this._exportContext) this.exportToast = ''
+      this._activeExport = null
+      this._pendingExportOwner = null
+      this.exportPendingOperationId = ''; this.exportPendingFormat = ''; this.exportPendingFileName = ''
     },
-    /**
-     * Markdown 档：`textOnly` = 不含图片和附件。
-     *
-     * **范围语义不在这一层解释**：本 mixin 只把 UI 选中的 `scope` 原样传给出口层，
-     * 「textOnly 要丢图片」「附件本来就不落盘」这些规则归 utils/export/index.js，
-     * 否则同一个档位会在两处各判一次，改一处漏一处。
-     */
-    async dispatchMarkdown(scope, fileName, context = this.createExportContext('markdown', scope)) {
-      if (!context || !context.current()) return Promise.resolve(null)
-      try {
-        const { exportMarkdown } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
-        if (!context.current()) throw new Error('导出加载期间文档或权限已改变，请重新导出')
-        return exportMarkdown(context.doc, { fileName, scope })
-      } finally { context.stop() }
+    bindRemoteExportSession() {
+      const session = this.session
+      if (this._exportBoundSession === session) return
+      this._exportSessionStops?.forEach(stop => stop())
+      if (this._exportBoundSession) this.clearRemoteExport()
+      this._exportBoundSession = session
+      this._exportSessionStops = ['comments-reset', 'provider-changed'].map(name => session?.on?.(name, value => {
+        if (this.session === session && (name === 'comments-reset' ? value !== 'authorization-required' : value?.name === 'versioning')) this.clearRemoteExport()
+      })).filter(stop => typeof stop === 'function')
     },
     checkExportContext() {
+      if (this._activeExport && !this._activeExport.owner() || this._pendingExportOwner && !this._pendingExportOwner()) this.clearRemoteExport()
       if (this._exportContext && !this._exportContext.current()) this.invalidateExportContext()
     },
     invalidateExportContext(clearStatus = true) {
@@ -250,105 +255,10 @@ export default {
       context?.cleanup?.()
       if (clearStatus) { this.exportBusy = false; this.exportToast = '' }
     },
-    /** Capture a read-only export snapshot and invalidate it when its host context changes. */
-    createExportContext(format, scope) {
-      const doc = this.currentDoc()
-      if (!doc) return null
-      this.invalidateExportContext(false)
-      const editor = this.editor, session = this.session
-      const documentId = this.documentId, sessionDocumentId = session?.documentId
-      const sourceDoc = editor?.state?.doc
-      const snapshot = sourceDoc ? null : JSON.stringify(doc)
-      const generation = this._exportGeneration
-      const getConfig = () => this.larkDocConfig || this.editorConfig
-      const network = getConfig()?.network, networkKey = JSON.stringify(network)
-      const formatId = format === 'word' ? 'docx' : format === 'markdown' ? 'md' : 'print'
-      const provider = scope === 'withComments' ? session?.getProvider?.('comments') : null
-      const context = { doc, scope, network, provider, documentId: sessionDocumentId || documentId || '' }
-      const matches = () => !this._exportDisposed && generation === this._exportGeneration && !editor?.isDestroyed && !session?._destroyed
-        && this.editor === editor && this.session === session
-        && this.documentId === documentId && session?.documentId === sessionDocumentId
-        && (sourceDoc ? editor?.state?.doc === sourceDoc : JSON.stringify(this.currentDoc()) === snapshot)
-        && (typeof session?.can !== 'function' || (session.can('canView') && session.can('canExport')))
-        && (!getConfig() || isExportEnabled(getConfig()))
-        && (!Array.isArray(getConfig()?.importExport?.exportFormats) || getConfig().importExport.exportFormats.includes(formatId))
-        && JSON.stringify(getConfig()?.network) === networkKey
-        && (scope !== 'withComments' || session?.getProvider?.('comments') === provider)
-      const check = () => this.checkExportContext()
-      const offs = []
-      context.current = () => this._exportContext === context && matches()
-      context.matches = matches
-      context.stop = () => { offs.splice(0).forEach(off => off()) }
-      this._exportContext = context
-      if (!context.current()) { this.invalidateExportContext(false); return null }
-      if (typeof editor?.on === 'function') {
-        editor.on('transaction', check); editor.on('destroy', check)
-        offs.push(() => { editor.off('transaction', check); editor.off('destroy', check) })
-      }
-      for (const event of ['capabilities', 'provider']) {
-        const off = session?.on?.(event, check)
-        if (typeof off === 'function') offs.push(off)
-      }
-      return context
-    },
-    async readExportComments(context) {
-      if (context.scope !== 'withComments') return []
-      if (typeof context.provider?.list !== 'function') throw new Error('尚未配置评论服务，无法导出正文及评论')
-      const comments = await context.provider.list({ documentId: context.documentId })
-      if (!context.current()) throw new Error('评论读取期间文档、权限或服务已改变，请重新导出')
-      if (!Array.isArray(comments)) throw new Error('评论服务未返回有效评论列表')
-      const { normalizeExportComments } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
-      if (!context.current()) throw new Error('导出加载期间文档或权限已改变，请重新导出')
-      return normalizeExportComments(comments.filter(thread => !thread?.documentId || thread.documentId === context.documentId))
-    },
-    async dispatchDocx(scope, fileName, context = this.createExportContext('word', scope)) {
-      if (!context || !context.current()) return null
-      try {
-        const comments = await this.readExportComments(context)
-        if (!context.current()) throw new Error('导出条件已改变，请重新导出')
-        const { exportDocx } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
-        if (!context.current()) throw new Error('导出加载期间文档或权限已改变，请重新导出')
-        return await exportDocx(context.doc, { fileName, title: fileName, scope, comments, network: context.network, shouldDownload: context.current })
-      } finally { context.stop() }
-    },
-    /**
-     * PDF 档走浏览器打印，文件名由用户在系统打印框里定。
-     * `onPrinted` 在打印框关闭（afterprint）时触发，用来收掉 toast。
-     */
-    async dispatchPdf(scope, fileName, context = this.createExportContext('pdf', scope)) {
-      if (!context || !context.current()) return null
-      try {
-        const comments = await this.readExportComments(context)
-        if (!context.current()) throw new Error('导出条件已改变，请重新导出')
-        const { exportPdf } = await import(/* webpackChunkName: "import-export" */ '../../../utils/export/index.js')
-        if (!context.current()) throw new Error('导出加载期间文档或权限已改变，请重新导出')
-        let result, cleaned = false
-        const cleanup = () => {
-          if (cleaned) return
-          cleaned = true
-          context.stop()
-          result?.cleanup?.()
-          if (this._exportContext === context) { this._exportContext = null; this.exportBusy = false; this.exportToast = '' }
-        }
-        context.cleanup = cleanup
-        result = exportPdf(this.$refs ? this.$refs.root : null, { title: fileName, scope, comments, shouldPrint: context.current, onPrinted: cleanup })
-        if (!result?.ok) { cleanup(); if (context.matches() && result?.reason) this.error = `导出失败：${result.reason}` }
-        return result
-      } catch (error) { context.stop(); throw error }
-    },
-
-    // —— 取数 ——
-    /**
-     * 当前文档 JSON。拿 editor 的 `getJSON()` 而不是 `state.doc`：
-     * 序列化层要的是普通对象（单测里也是 JSON），传节点实例会让 Node 侧单测必须伪造实例。
-     */
-    currentDoc() {
-      if (!this.editor || typeof this.editor.getJSON !== 'function') return null
-      return this.editor.getJSON()
-    },
     /** 关掉 toast（宿主想手动收时用；正常路径走「落盘后自行消失」）。 */
     hideExportToast() {
       this.exportToast = ''
     },
+    ...exportInteraction.methods,
   },
 }

@@ -44,6 +44,12 @@ export default {
       notifyLoadError: '',
       notifyWriting: false,
       notifyTaskId: '',
+      notifyHasMore: false,
+      notifyHistoryLoading: false,
+      notifyHistoryError: '',
+      notifyOpeningId: '',
+      notifyActionError: '',
+      notifyPendingId: '',
     }
   },
   computed: {
@@ -51,7 +57,12 @@ export default {
     notifyUnreadCount() {
       const list = this.notifyItems || []
       let count = 0
-      for (let i = 0; i < list.length; i += 1) if (!list[i].readAt) count += 1
+      for (let i = 0; i < list.length; i += 1) {
+        const item = list[i]
+        if (Object.prototype.hasOwnProperty.call(item, 'read')) {
+          if (!item.read) count += 1
+        } else if (!item.readAt) count += 1
+      }
       return count
     },
     /** 「全部已读」的禁用态：0 条未读即 `#BBBFC4`（`04 §4.6.4` 的 `disable-text`）。 */
@@ -67,7 +78,10 @@ export default {
     },
   },
   watch: {
-    notifyContext() { return this.bindNotifications() },
+    notifyContext(next, previous) {
+      if (previous && Object.keys(next).every(key => Object.is(previous[key], next[key]))) return
+      return this.bindNotifications()
+    },
   },
   mounted() { return this.bindNotifications() },
   beforeDestroy() {
@@ -86,6 +100,8 @@ export default {
         provider: session && typeof session.getProvider === 'function' ? session.getProvider('notifications') : null,
         canView: !session || typeof session.can !== 'function' || session.can('canView'),
         destroyed: Boolean(session && session._destroyed),
+        identityGeneration: session?._privateIdentityGeneration,
+        authorizationGeneration: session?._authorizationGeneration,
       }
     },
     notifyCurrent(context) {
@@ -95,6 +111,7 @@ export default {
         && !(context.session && context.session._destroyed)
         && current.session === context.session && current.documentId === context.documentId
         && current.user === context.user && current.userId === context.userId
+        && current.identityGeneration === context.identityGeneration && current.authorizationGeneration === context.authorizationGeneration
         && current.provider === context.provider && current.canView
     },
     setNotifyError(message, kind) {
@@ -129,8 +146,12 @@ export default {
       this._notifyBinding = null
       this._notifyLoadToken = null
       this._notifyWriteToken = null
+      this._notifyMoreToken = null
+      this._notifyOpenToken = null
       this.notifyLoading = false
       this.notifyWriting = false
+      this.notifyHistoryLoading = false
+      this.notifyOpeningId = ''
       const off = this._notifyOff
       this._notifyOff = null
       return this.releaseNotifySubscription(off, context)
@@ -138,14 +159,16 @@ export default {
     async bindNotifications() {
       if (this._notifyDisposed || this._isBeingDestroyed || this._isDestroyed) return null
       const previous = this._notifyBinding
+      const context = this.notificationContext()
       this.clearNotifyError()
       this.releaseNotifications()
-      const context = this.notificationContext()
       // 首次无 Provider 挂载保留宿主注入；切换上下文后不展示上一文档或账号的通知。
       if (previous || context.provider || !context.canView || context.destroyed) {
         this.notifyItems = []
         this.notifyLoadError = ''
         this.notifyMuted = false
+        this.notifyHasMore = false
+        this.notifyHistoryError = ''; this.notifyActionError = ''; this.notifyPendingId = ''
         this.closeNotify()
       }
       this._notifyBinding = context
@@ -153,8 +176,19 @@ export default {
       if (typeof context.provider.subscribe === 'function') {
         let off
         try {
-          off = context.provider.subscribe(() => {
+          off = context.provider.subscribe((value) => {
             if (this._notifyBinding !== context || !this.notifyCurrent(context)) return null
+            // HTTP notifications providers push their complete state. Project it
+            // directly instead of reading the provider again: subscribe() emits
+            // while snapshot() is in flight, so a read-back here recurses into
+            // snapshot -> emit -> listener indefinitely.
+            if (value && typeof value === 'object' && Array.isArray(value.items)) {
+              this.projectNotifySnapshot(value)
+              this.notifyLoading = value.status === 'loading'
+              this.notifyLoadError = value.status === 'error' ? '通知读取失败，请重新打开通知或刷新重试' : ''
+              if (value.status !== 'error') this.clearNotifyError('load')
+              return this.notifyItems
+            }
             return this.loadNotifications()
           }, { documentId: context.documentId, user: context.user })
         } catch (error) {
@@ -166,11 +200,23 @@ export default {
         }
       }
       if (this._notifyBinding !== context || !this.notifyCurrent(context)) return null
+      if (context.provider.isRemote && typeof context.provider.subscribe === 'function') return this.notifyItems
       return this.loadNotifications()
+    },
+    projectNotifySnapshot(result) {
+      const items = Array.isArray(result) ? result : result && result.items
+      if (!Array.isArray(items) || items.some(item => !item || typeof item !== 'object' || Array.isArray(item))) throw new Error('通知列表格式无效')
+      this.notifyItems = items.map(item => ({ ...item, id: item.id || item.notificationId }))
+      this.notifyHasMore = result?.hasMore === true && typeof this.notificationContext().provider?.loadMore === 'function'
+      this.notifyPendingId = this.notificationContext().provider?.getPendingOperation?.()?.operationId || ''
+      if (typeof result?.preference?.muted === 'boolean') this.notifyMuted = result.preference.muted
+      else if (typeof result?.muted === 'boolean') this.notifyMuted = result.muted
+      return this.notifyItems
     },
     async loadNotifications(options = {}) {
       const context = this.notificationContext()
       if (!context.provider || !this.notifyCurrent(context)) return null
+      this._notifyMoreToken = null; this.notifyHistoryLoading = false
       const token = {}
       this._notifyLoadToken = token
       this.notifyLoading = true
@@ -178,15 +224,10 @@ export default {
       try {
         const result = await context.provider.list({ documentId: context.documentId, user: context.user })
         if (!current()) return null
-        const items = Array.isArray(result) ? result : result && result.items
-        if (!Array.isArray(items) || items.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
-          throw new Error('通知列表格式无效')
-        }
-        this.notifyItems = items.map(item => ({ ...item }))
+        this.projectNotifySnapshot(result)
         this.clearNotifyError('load')
         this.notifyLoadError = ''
-        if (result && typeof result.muted === 'boolean') this.notifyMuted = result.muted
-        else if (typeof options.muted === 'boolean') this.notifyMuted = options.muted
+        if (typeof result?.muted !== 'boolean' && typeof result?.preference?.muted !== 'boolean' && typeof options.muted === 'boolean') this.notifyMuted = options.muted
         return this.notifyItems
       } catch (error) {
         if (current()) {
@@ -201,9 +242,13 @@ export default {
         }
       }
     },
-    async writeNotifications(method, muted) {
+    async writeNotifications(method, value) {
       const context = this.notificationContext()
       if (!context.provider || !this.notifyCurrent(context) || this.notifyWriting || this.notifyLoading) return null
+      if (context.provider.getPendingOperation?.()) {
+        this.notifyActionError = '通知操作结果尚未确认，请先核对原请求。'
+        return null
+      }
       const token = {}
       this._notifyWriteToken = token
       this.notifyWriting = true
@@ -212,13 +257,14 @@ export default {
       this.notifyTaskId = `notifications_write_${++notifyWriteId}`
       try {
         const result = await runProviderTask({ taskId: this.notifyTaskId, kind: `notifications.${method}` }, async () => {
-          const result = method === 'setMuted'
-            ? await context.provider.setMuted(muted, input)
-            : await context.provider.markAllRead(input)
+          const structured = typeof context.provider.snapshot === 'function' && typeof context.provider.markRead === 'function'
+          const result = method === 'markRead' ? await context.provider.markRead({ notificationId: value, value: true })
+            : method === 'setMuted' ? await context.provider.setMuted(...(structured ? [{ value }] : [value, input]))
+              : await context.provider.markAllRead(structured ? {} : input)
           const receipt = result && typeof result === 'object' ? result : {}
           const code = receipt.code
           if (result === false || receipt.ok === false || receipt.allowed === false
-            || (receipt.status && !['queued', 'running', 'partial', 'succeeded'].includes(receipt.status))
+            || (receipt.status && !['queued', 'running', 'partial', 'succeeded', 'committed'].includes(receipt.status))
             || (typeof code === 'number' && code !== 0)
             || (typeof code === 'string' && code !== '' && !['0', 'OK', 'SUCCESS'].includes(code.toUpperCase()))) {
             throw new Error('通知写入未获成功确认')
@@ -226,12 +272,16 @@ export default {
           return result
         })
         if (!current()) return null
-        if (result && result.status && result.status !== 'succeeded') {
+        if (result && result.status && !['succeeded', 'committed'].includes(result.status)) {
           this.setNotifyError('通知设置未完成，请稍后重新打开通知回读', 'write')
           this.loadNotifications()
           return null
         }
-        const loading = this.loadNotifications(method === 'setMuted' ? { muted } : {})
+        // The remote receipt already updates its authoritative read model. Keep
+        // loaded history so opening an older notification does not lose its target.
+        const snapshot = typeof context.provider.getState === 'function' ? context.provider.getState() : null
+        const remoteReadback = result?.status === 'committed' && !result.viewRefreshRequired && snapshot?.status === 'ready'
+        const loading = remoteReadback ? Promise.resolve(this.projectNotifySnapshot(snapshot)) : this.loadNotifications(method === 'setMuted' ? { muted: value } : {})
         const loadToken = this._notifyLoadToken
         const items = await loading
         if (!current()) return null
@@ -244,10 +294,11 @@ export default {
           return null
         }
         this.clearNotifyError('write')
-        this.$emit(method === 'setMuted' ? 'notify-mute' : 'notify-read', method === 'setMuted' ? { muted: this.notifyMuted } : { all: true })
+        this.$emit(method === 'setMuted' ? 'notify-mute' : 'notify-read', method === 'setMuted' ? { muted: this.notifyMuted } : method === 'markRead' ? { all: false, id: value } : { all: true })
         return true
       } catch (error) {
         if (!current()) return null
+        this.notifyPendingId = context.provider.getPendingOperation?.()?.operationId || ''
         this.setNotifyError('通知设置未完成，请重新打开通知或刷新后重试', 'write')
         this.loadNotifications()
         return null
@@ -257,6 +308,91 @@ export default {
           this.notifyWriting = false
         }
       }
+    },
+    async queryPendingNotification() {
+      const context = this.notificationContext(), id = this.notifyPendingId
+      if (!id || !this.notifyCurrent(context) || this.notifyWriting || this.notifyLoading || typeof context.provider?.queryOperation !== 'function' || context.provider.getPendingOperation?.()?.operationId !== id) return null
+      const token = {}; this._notifyWriteToken = token; this.notifyWriting = true
+      const current = () => this._notifyWriteToken === token && this.notifyCurrent(context)
+      try {
+        const result = await context.provider.queryOperation(id)
+        if (!current()) return null
+        if (!['committed', 'succeeded'].includes(result?.status)) throw new Error('NOTIFICATION_RESULT_UNCONFIRMED')
+        const snapshot = context.provider.getState?.()
+        const items = snapshot?.status === 'ready' && !result.viewRefreshRequired ? this.projectNotifySnapshot(snapshot) : await this.loadNotifications()
+        if (!current() || items === null) return null
+        this.notifyPendingId = context.provider.getPendingOperation?.()?.operationId || ''
+        this.notifyActionError = ''; this.clearNotifyError('write')
+        return true
+      } catch (_) { if (current()) this.notifyActionError = '原通知操作尚未确认，请稍后再次查询。'; return null }
+      finally { if (this._notifyWriteToken === token) { this._notifyWriteToken = null; this.notifyWriting = false } }
+    },
+    notifyItemAvailable(item) {
+      const context = this.notificationContext(), provider = context.provider
+      const unread = typeof item.read === 'boolean' ? !item.read : !item.readAt
+      return this.notifyCurrent(context) && ((!provider && unread) || (unread && typeof provider?.markRead === 'function') || (!!item.threadId && typeof provider?.openThread === 'function'))
+    },
+    async openNotification(id) {
+      const context = this.notificationContext(), item = this.notifyItems.find(item => item.id === id)
+      if (!item || !this.notifyItemAvailable(item) || this.notifyWriting || this.notifyLoading || this.notifyHistoryLoading || this.notifyOpeningId) return null
+      const token = {}; this._notifyOpenToken = token; this.notifyOpeningId = id; this.notifyActionError = ''
+      const current = () => this._notifyOpenToken === token && this.notifyCurrent(context)
+      try {
+        const unread = typeof item.read === 'boolean' ? !item.read : !item.readAt
+        if (unread) {
+          if (context.provider) {
+            if (typeof context.provider.markRead !== 'function' || await this.writeNotifications('markRead', id) !== true) {
+              if (current() && !this.notifyActionError) this.notifyActionError = '通知已读操作尚未确认，请核对原请求后重试。'
+              return null
+            }
+          }
+          else { this.notifyItems = this.notifyItems.map(value => value.id === id ? { ...value, read: true, readAt: Date.now() } : value); this.$emit('notify-read', { all: false, id }) }
+        }
+        if (!current()) return null
+        if (item.threadId && typeof context.provider?.openThread === 'function') {
+          const comments = this.commentProvider?.()
+          const result = await context.provider.openThread(id)
+          if (!current()) return null
+          if (result === false || result === null) throw new Error('NOTIFICATION_TARGET_UNAVAILABLE')
+          if (result?.target) {
+            if (result.target.threadId !== item.threadId || typeof this.loadComments !== 'function' || typeof this.activateComment !== 'function') throw new Error('NOTIFICATION_TARGET_UNAVAILABLE')
+            await this.loadComments()
+            if (!current() || comments !== this.commentProvider?.()) return null
+            const thread = this.commentThreads?.find(value => value.id === item.threadId && !value.tombstone)
+            if (!thread) throw new Error('NOTIFICATION_TARGET_UNAVAILABLE')
+            this.activateComment(thread.id)
+            if (thread.bound) this.scrollCommentIntoView?.(thread.blockId)
+            await this.$nextTick()
+            if (!current() || comments !== this.commentProvider?.()) return null
+            if (thread.scope === 'document') [...(this.$refs.root?.querySelectorAll('[data-comment-thread]') || [])].find(node => node.dataset.commentThread === thread.id)?.scrollIntoView?.({ block: 'nearest' })
+          }
+          this.closeNotify()
+        }
+        return true
+      } catch (_) {
+        if (current()) this.notifyActionError = '无法打开此通知，请重新读取后重试。'
+        return null
+      } finally { if (this._notifyOpenToken === token) { this._notifyOpenToken = null; this.notifyOpeningId = '' } }
+    },
+    async loadMoreNotifications() {
+      const context = this.notificationContext()
+      if (!this.notifyCurrent(context) || typeof context.provider?.loadMore !== 'function' || this.notifyHistoryLoading || this.notifyLoading || this.notifyWriting || this.notifyOpeningId) return null
+      if (!this.notifyHasMore) {
+        if (!this.notifyHistoryError) return null
+        const items = await this.loadNotifications()
+        if (items !== null && this.notifyCurrent(context)) this.notifyHistoryError = ''
+        return items
+      }
+      const token = {}; this._notifyMoreToken = token; this.notifyHistoryLoading = true; this.notifyHistoryError = ''
+      const current = () => this._notifyMoreToken === token && this.notifyCurrent(context)
+      try {
+        const result = await context.provider.loadMore()
+        if (!current()) return null
+        return this.projectNotifySnapshot(result)
+      } catch (_) {
+        if (current()) this.notifyHistoryError = '历史通知读取失败，请重试。'
+        return null
+      } finally { if (this._notifyMoreToken === token) { this._notifyMoreToken = null; this.notifyHistoryLoading = false } }
     },
     toggleNotify(event) {
       if (this.notifyOpen) {
@@ -268,6 +404,8 @@ export default {
       const rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null
       if (!rect) return
       this.notifyAnchor = rect
+      this._notifyTrigger = el
+      this._notifyOpenContext = this.notificationContext()
       this.notifyOpen = true
       this.notifyStyle = anchorPopoverStyle(rect, NOTIFY_SIZE, {
         width: window.innerWidth,
@@ -277,9 +415,14 @@ export default {
       if (this.notifyContext.provider) this.loadNotifications()
       this.$nextTick(this.measureNotify)
     },
-    closeNotify() {
+    closeNotify(restoreFocus = false) {
+      const context = this._notifyOpenContext
+      const root = this.$refs?.root
+      const trigger = typeof window !== 'undefined' && window.innerWidth <= 760 ? root?.querySelector('.lark-doc-mobile-actions-toggle') : this._notifyTrigger
       this.notifyOpen = false
       this.notifyAnchor = null
+      this._notifyTrigger = null; this._notifyOpenContext = null
+      if (restoreFocus && context && this.notifyCurrent(context) && trigger?.isConnected) trigger.focus({ preventScroll: true })
     },
     measureNotify() {
       const el = this._notificationsUi && this._notificationsUi.el
@@ -298,7 +441,7 @@ export default {
       if (!this.notifyCurrent(this.notifyContext) || this.notifyAllReadDisabled) return null
       if (this.notifyContext.provider) return this.writeNotifications('markAllRead')
       const now = Date.now()
-      this.notifyItems = this.notifyItems.map((item) => (item.readAt ? item : { ...item, readAt: now }))
+      this.notifyItems = this.notifyItems.map(item => ({ ...item, ...(typeof item.read === 'boolean' ? { read: true } : {}), readAt: item.readAt || now }))
       this.$emit('notify-read', { all: true })
     },
     toggleNotifyMute() {

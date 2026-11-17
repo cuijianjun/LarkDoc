@@ -245,6 +245,16 @@ describe('WorkspaceController 阶段7主壳前置', () => {
     expect(events.at(-1)[0]).toBe('error')
   })
 
+  it('导入期间不保存或导出中间页', async () => {
+    const { controller, state, persistence, events } = createHarness()
+    state.initialized = true
+    state.importing = true
+    expect(await controller.saveNow(true)).toBe(false)
+    expect(await controller.exportDocument('json')).toBe(false)
+    expect(persistence.last).toBeUndefined()
+    expect(events.some(event => event[0] === 'save' || event[0] === 'error')).toBe(false)
+  })
+
   it('无 Vue 命令式 API 由 controller 统一处理标题、只读、撤销与正文写入', () => {
     const { controller, state } = createHarness()
     expect(controller.getTitle()).toBe('文档')
@@ -323,6 +333,72 @@ describe('WorkspaceController 阶段7主壳前置', () => {
     expect(file.text).not.toHaveBeenCalled()
   })
 
+  it.each(['cancel', 'changed', 'disposed', 'disabled', 'format', 'session', 'documentId', 'sessionDocumentId', 'permission', 'accepted'])('文件导入在异步确认后重验身份且取消不读文件：%s', async mode => {
+    let answer
+    const confirmImport = vi.fn(() => new Promise(resolve => { answer = resolve }))
+    const setContentAsync = vi.fn(async () => true)
+    const { controller, state, editor } = createHarness({ host: { confirmImport, setContentAsync } })
+    const file = { name: 'local.html', size: 100, text: vi.fn(async () => '<p>new</p>') }
+    const pending = controller.importDocument({ target: { files: [file], value: 'selected' } })
+    await vi.waitFor(() => expect(confirmImport).toHaveBeenCalledOnce())
+    expect(file.text).not.toHaveBeenCalled()
+    expect(state.importing).toBe(true)
+    if (mode === 'changed') editor.state.doc = {}
+    if (mode === 'disabled') state.editorConfig.importExport.importEnabled = false
+    if (mode === 'format') state.editorConfig.importExport.importFormats = ['json']
+    if (mode === 'session') state.sessionInstance = { ...state.sessionInstance }
+    if (mode === 'documentId') controller.props.documentId = 'different'
+    if (mode === 'sessionDocumentId') state.sessionInstance.documentId = 'different'
+    if (mode === 'permission') state.sessionInstance.can = () => false
+    if (mode === 'disposed') controller.dispose()
+    answer(mode !== 'cancel')
+    await pending
+    expect(file.text).toHaveBeenCalledTimes(mode === 'accepted' ? 1 : 0)
+    expect(setContentAsync).toHaveBeenCalledTimes(mode === 'accepted' ? 1 : 0)
+    if (mode === 'changed') expect(state.notice).toContain('正文已发生变化')
+    if (mode !== 'disposed') expect(state.importing).toBe(false)
+  })
+
+  it.each(['permission', 'session'])('等待文件读取期间的上下文撤销阻止替换：%s', async mode => {
+    let release
+    const setContentAsync = vi.fn(async () => true)
+    const { controller, state, editor } = createHarness({ host: { confirmImport: async () => true, setContentAsync } })
+    const before = editor.state.doc
+    const file = { name: 'local.html', size: 100, text: vi.fn(() => new Promise(resolve => { release = resolve })) }
+    const pending = controller.importDocument({ target: { files: [file], value: 'selected' } })
+    await vi.waitFor(() => expect(file.text).toHaveBeenCalledOnce())
+    if (mode === 'permission') state.sessionInstance.can = () => false
+    else state.sessionInstance = { ...state.sessionInstance }
+    release('<p>late content</p>')
+    await pending
+    expect(setContentAsync).not.toHaveBeenCalled()
+    expect(editor.state.doc).toBe(before)
+    expect(state.importing).toBe(false)
+  })
+
+  it.each(['complete', 'cancel'])('大文件流式解码保持UTF-8/BOM且上下文撤销停止后续读取：%s', async mode => {
+    const value = '\uFEFF' + 'a'.repeat(262140) + '😀汉字' + 'z'.repeat(1048576)
+    const blob = new Blob([value, new Uint8Array([0xe2, 0x82])])
+    const expected = await blob.text(), ranges = []
+    const setContentAsync = vi.fn(async () => true)
+    const { controller, state } = createHarness({ host: { confirmImport: async () => true, setContentAsync } })
+    const slice = blob.slice.bind(blob)
+    blob.name = 'stream.html'
+    blob.text = vi.fn(() => { throw new Error('whole-file decode') })
+    blob.slice = (from, to) => {
+      ranges.push([from, to])
+      const part = slice(from, to)
+      if (mode !== 'cancel' || ranges.length !== 2) return part
+      return { arrayBuffer: async () => { const result = await part.arrayBuffer(); state.sessionInstance.can = () => false; return result } }
+    }
+    await controller.importDocument({ target: { files: [blob], value: 'selected' } })
+    expect(blob.text).not.toHaveBeenCalled()
+    expect(ranges.every(([from, to]) => to - from <= 262144)).toBe(true)
+    if (mode === 'complete') expect(setContentAsync).toHaveBeenCalledWith(expected, expect.any(Object))
+    else { expect(ranges).toHaveLength(2); expect(setContentAsync).not.toHaveBeenCalled() }
+    expect(state.importing).toBe(false)
+  })
+
   it('读取文件期间的临时 busy 锁不会把导入误判为只读', async () => {
     const dom = new JSDOM('<!doctype html><html><body></body></html>')
     vi.stubGlobal('document', dom.window.document)
@@ -351,6 +427,39 @@ describe('WorkspaceController 阶段7主壳前置', () => {
     expect(state.notice).toBe('导入完成')
     expect(state.importing).toBe(false)
     dom.window.close()
+  })
+
+  it('动态区块加载前即锁定文件导入，重复选择不读取第二份文件', async () => {
+    const { controller, state } = createHarness()
+    const first = { name: 'unsupported.invalid', size: 100, text: vi.fn() }
+    const second = { name: 'second.html', size: 100, text: vi.fn() }
+    const pending = controller.importDocument({ target: { files: [first], value: 'selected' } })
+    expect(state.importing).toBe(true)
+    await controller.importDocument({ target: { files: [second], value: 'selected' } })
+    expect(second.text).not.toHaveBeenCalled()
+    await pending
+    expect(state.importing).toBe(false)
+  })
+
+  it('导入区块加载失败会解锁并显示失败，不读取文件', async () => {
+    vi.doMock('../../src/editor/pagedDocumentSource', () => { throw new Error('chunk-load-failed') })
+    try {
+      const { controller, state } = createHarness()
+      const file = { name: 'notes.html', size: 100, text: vi.fn() }
+      await expect(controller.importDocument({ target: { files: [file], value: 'selected' } })).resolves.toBeUndefined()
+      expect(file.text).not.toHaveBeenCalled()
+      expect(state.importing).toBe(false)
+      expect(state.notice).toMatch(/^导入失败：.+/)
+    } finally { vi.doUnmock('../../src/editor/pagedDocumentSource') }
+  })
+
+  it('尚未分页转换的MD保留10MB限制，不把超大输入交给同步解析器', async () => {
+    const { controller, state } = createHarness()
+    const file = { name: 'large.md', size: 11 * 1024 * 1024, text: vi.fn() }
+    await controller.importDocument({ target: { files: [file], value: 'selected' } })
+    expect(file.text).not.toHaveBeenCalled()
+    expect(state.notice).toContain('10 MB')
+    expect(state.importing).toBe(false)
   })
 
   it.each([

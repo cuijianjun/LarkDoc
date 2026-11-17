@@ -20,12 +20,7 @@
  *    （内嵌浮层的 `fixed` 由 `embedDialogPos` 给），父级是谁不影响定位，而样式全是
  *    `.lark-doc .lark-doc-dialog*` 后代选择器，多一层空 div 不丢样式。
  */
-import {
-  createEmbedDialog,
-  createHelpDrawer,
-  createLinkDialog,
-  createTablePickerDialog,
-} from '../../../ui/dialogs'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -65,10 +60,10 @@ export default {
       if (!host) return
       const handlers = this.dialogsHandlers()
       this._dialogsUi = {
-        table: createTablePickerDialog({ host, handlers: handlers.table }),
-        link: createLinkDialog({ host, handlers: handlers.link }),
-        help: createHelpDrawer({ host, handlers: handlers.help }),
-        embed: createEmbedDialog({ host, handlers: handlers.embed }),
+        table: createLazyView(() => import('../../../ui/dialogs'), 'createTablePickerDialog', { host, handlers: handlers.table }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
+        link: createLazyView(() => import('../../../ui/dialogs'), 'createLinkDialog', { host, handlers: handlers.link }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
+        help: createLazyView(() => import('../../../ui/dialogs'), 'createHelpDrawer', { host, handlers: handlers.help }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
+        embed: createLazyView(() => import('../../../ui/dialogs'), 'createEmbedDialog', { host, handlers: handlers.embed }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
       }
       this.refreshDialogs()
     },
@@ -99,7 +94,7 @@ export default {
           onValueInput: (value) => this.setLinkValue(value),
           onApply: () => this.applyLink(),
           onRemove: () => this.removeLink(),
-          onClose: () => this.closeOverlay(),
+          onClose: () => { this.linkDialog = false; this.editor.view.focus() },
         },
         help: { onClose: () => this.closeOverlay() },
         embed: {

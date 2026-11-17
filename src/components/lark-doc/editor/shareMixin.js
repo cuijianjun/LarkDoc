@@ -52,7 +52,10 @@ import { searchMentionDirectory } from '../../../core/mention/directory'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import { BLOCK_ID_PATTERN, safeUrl } from '../../../core/documentOperations'
-import { createNetworkPolicy, BLOCKED_IMAGE_PLACEHOLDER } from '../../../core/policy/network'
+import { createNetworkPolicy } from '../../../core/policy/network'
+import { cloneShareExcerpt } from './shareContent'
+import { createShareInteraction } from './shareInteraction'
+export { SECURE_CONFIRM_MESSAGES, SECURE_LINK_TIP, cloneShareExcerpt } from './shareContent'
 
 // —— 几何：分享 popover（04 §4.1 ④-2 实测 batch60/61）——
 
@@ -232,17 +235,6 @@ export const PASSWORD_RULE_COLORS = Object.freeze({
   success: { icon: 'var(--ld-share-success)', text: 'var(--ld-share-text)' },
   error: { icon: 'var(--ld-share-danger)', text: 'var(--ld-share-danger)' },
 })
-
-/** 「提示」二次确认的三句正文（⑤-2）。第 1 句原文在采集日志里被截断，
- *  这里按语义补齐句号（见文件头「待定」），第 2、3 句逐字照抄。 */
-export const SECURE_CONFIRM_MESSAGES = Object.freeze([
-  '当前文档仅内部用户可访问。该功能开启后，互联网上获得链接和密码的人都能够访问该文档。',
-  '注意：有文档分享权限的外部用户，可查看协作者列表，请注意信息安全。',
-  '具体说明及安全事项请查看服务协议和隐私政策。',
-])
-
-/** 加密链接开启后的 tip（⑤-3）。 */
-export const SECURE_LINK_TIP = '已启用密码，组织外非协作者用户需要密码访问，组织内用户无需密码可直接访问'
 
 /** 两型 toast：成功/复制绿 `rgb(228,250,225)`，校验失败橙 `rgb(255,243,229)`（⑤-4 / ⑤-9）。 */
 export const SHARE_TOAST = Object.freeze({
@@ -451,44 +443,6 @@ const SHARE_KEEP_OPEN_SELECTORS = Object.freeze([
   '.lark-doc-share-toast',
 ])
 
-function shareExcerptImageUrl(value, network) {
-  // Browsers treat backslashes as URL separators; the shared policy's relative
-  // path shortcut must not turn /\host into an offline/allowlisted image.
-  return typeof value === 'string' && !value.includes('\\') && safeUrl(value, true) && network.allows(value) ? value : null
-}
-
-/** Inert static excerpts; only the core bookmark's single, gated image resource survives CSS cleanup. */
-export function cloneShareExcerpt(source, network = createNetworkPolicy()) {
-  const inert = source.ownerDocument.implementation.createHTMLDocument('')
-  const clone = inert.importNode(source, true)
-  const removed = 'script,style,link,meta,base,iframe,object,embed,video,audio,source,track,button,input,select,textarea,form,svg,math,template,noscript,canvas,[data-lark-doc-ui],[data-lark-doc-image-ui],[data-lark-doc-link-ui],[data-lark-doc-embed-ui],.column-resize-handle,.lark-doc-link-preview-resize'
-  if (clone.matches(removed)) { const label = inert.createElement('div'); label.textContent = source.textContent; return label }
-  clone.setAttribute('inert', '')
-  clone.setAttribute('draggable', 'false')
-  clone.querySelectorAll(removed).forEach(element => element.remove())
-  for (const element of [clone, ...clone.querySelectorAll('*')]) {
-    const bookmarkMedia = element.classList.contains('lark-doc-bookmark-cover') || element.classList.contains('lark-doc-bookmark-icon')
-    // CSSOM supplies the canonical property, but escaped tokens and composite
-    // images still fail closed. Rebuild one url() instead of retaining a style.
-    const background = bookmarkMedia && element.style.getPropertyValue('background-image')
-    const match = background && /^url\(\s*(?:"([^"\\]*)"|'([^'\\]*)'|([^\s"'()\\]+))\s*\)$/i.exec(background)
-    const imageUrl = match && shareExcerptImageUrl(match[1] ?? match[2] ?? match[3], network)
-    for (const attribute of [...element.attributes]) {
-      const name = attribute.name.toLowerCase()
-      if (/^on/.test(name) || ['id', 'data-block-id', 'data-record-id', 'contenteditable', 'tabindex', 'href', 'xlink:href', 'srcset', 'srcdoc', 'poster', 'background', 'action', 'formaction', 'autofocus'].includes(name) || (name === 'src' && element.tagName !== 'IMG')) element.removeAttribute(attribute.name)
-    }
-    for (const property of Array.from(element.style || [])) {
-      if (/url\s*\(|image-set\s*\(|expression|@import|\\/i.test(element.style.getPropertyValue(property)) || /^(?:background-image|border-image|list-style-image|mask|filter|clip-path|cursor|content)/.test(property)) element.style.removeProperty(property)
-    }
-    if (imageUrl) element.style.setProperty('background-image', `url("${imageUrl.replace(/"/g, '%22')}")`)
-    if (element.tagName === 'IMG') {
-      const src = element.getAttribute('src')
-      if (!shareExcerptImageUrl(src, network)) element.setAttribute('src', BLOCKED_IMAGE_PLACEHOLDER)
-    }
-  }
-  return clone
-}
-
 function shareExcerpt(editor, node, pos, network) {
   if (!node) return null
   const snapshot = { text: node.textContent, type: node.type.name, level: node.attrs.level || null }
@@ -516,6 +470,15 @@ function selectionShareBlock(selection) {
 }
 
 const shareNetworkKey = host => JSON.stringify(host.larkDocConfig?.network || {})
+const INVITE_SCOPES = Object.freeze({
+  read: ['document.read', 'version.read'],
+  edit: ['document.read', 'document.write', 'comment.write', 'comment.resolve', 'version.read', 'version.create', 'document.export'],
+  manage: ['document.read', 'document.write', 'comment.write', 'comment.resolve', 'version.read', 'version.create', 'version.restore', 'document.export', 'grant.manage'],
+})
+const emptyInvitation = () => ({ status: 'idle', candidate: null, role: 'read', operationId: '', error: '' })
+const unresolvedInvitation = value => ['sending', 'querying', 'unknown', 'blocked'].includes(value?.status) || value?.status === 'committed' && !value.verified
+
+const shareInteraction = createShareInteraction({ INVITE_SCOPES, emptyInvitation, unresolvedInvitation, safeUrl })
 
 export default {
   data() {
@@ -524,6 +487,7 @@ export default {
       imageShare: null,
       /** popover 落点：`{ top, right }`，由触发按钮的 rect 反推（见 `toggleSharePopover`）。 */
       sharePopoverPos: { top: 0, right: 0 },
+      sharePopoverAnchor: null,
       permissionDialogOpen: false,
       /** 「更多高级设置」折叠头。 */
       permissionAdvancedOpen: false,
@@ -550,9 +514,12 @@ export default {
       /** 当前 toast：`{ kind: 'success' | 'warning', text }`。 */
       shareToast: null,
       /** 组织名（④-2 实测「北京八人科技有限公司」）。宿主接了组织服务可覆盖。 */
-      shareOrgName: '北京八人科技有限公司',
+      shareOrgName: '链接范围未配置',
       /** 邀请输入框（一级 popover 与二级 Dialog 各有一个，取值分开存）。 */
       shareInviteQuery: '',
+      shareMembers: { status: 'idle', items: [], authzVersion: '' },
+      shareDirectory: { status: 'idle', items: [], error: '' },
+      shareInvitation: emptyInvitation(),
       /** 一级 popover 卡上的链接权限：§4.1 ③ 实测下拉取值为「可编辑」。 */
       shareLinkPerm: '可编辑',
       /** 二级 Dialog 里「链接分享」scope 文案的权限：§4.1.1 ③ 实测是「可阅读」。
@@ -562,6 +529,10 @@ export default {
       shareCollaborators: ['我'],
       /** 文档链接。宿主可通过 prop/赋值覆盖；缺省取当前地址。 */
       shareLink: '',
+      shareLinkState: null,
+      shareLinkBusy: false,
+      shareLinkPending: '',
+      shareLinkError: '',
       _shareToastTimer: null,
     }
   },
@@ -599,15 +570,22 @@ export default {
     },
     /** 卡片上的权限标签与 scope 文案同源：改下拉两处一起变（04 §4.1 ③）。 */
     shareLinkPermLabel() {
-      return this.shareLinkPerm
+      return this.shareLinkState ? this.shareLinkPerm : '未配置'
+    },
+    shareLinkAvailable() {
+      const provider = this.session?.getProvider?.('authorization')
+      return provider?.isRemote === true && typeof provider.shareLink === 'function' && this.shareCan('canView') && this.shareCan('canManagePermission')
+    },
+    shareLinkWritable() {
+      return this.shareLinkAvailable && !!this.shareLinkState && this._shareLinkSnapshotOwner?.() === true && !this.shareLinkBusy && !this.shareLinkPending
     },
     /** 一级 popover 的 scope 文案。 */
     shareScopeText() {
-      return buildLinkScopeText(this.shareLinkPerm)
+      return this.shareLinkState ? `${this.shareLinkState.audience === 'public' ? '互联网用户' : '仅协作者'}${this.shareLinkState.permission === 'edit' ? '可编辑' : '可阅读'}` : '链接范围与权限服务尚未配置'
     },
     /** 二级 Dialog 里的 scope 文案（取值与一级不同，见 data 注释）。 */
     shareDialogScopeText() {
-      return buildLinkScopeText(this.shareDialogLinkPerm)
+      return this.shareScopeText
     },
     /** 头像里显示的字（取首个协作者的首个字符）。04 只采到「+2 聚合」，
      *  真实头像图属宿主数据，这里退化成文字头像，免得留一个空白圆。 */
@@ -619,9 +597,9 @@ export default {
     sharePasswordRules() {
       return passwordRules(this.passwordDraft)
     },
-    /** 「保存」按钮恒可点（⑤-9 九档实测 `disabled:false`），这里只是把结论显式化。 */
+    /** 服务和管理权限有效时保持提交校验；未知写入期间不能再保存。 */
     sharePasswordSaveDisabled() {
-      return false
+      return !this.shareLinkWritable || !this.shareLinkState?.cryptoReady
     },
     /** 加密链接块的高度态：未开启 22，开启 78（⑤-1 步 4 / ⑤-3）。 */
     shareSecureLinkHeight() {
@@ -629,7 +607,8 @@ export default {
     },
   },
   watch: {
-    session(value, previous) { if (value !== previous) this.closeImageShareDialog() },
+    session(value, previous) { if (value !== previous) { this.closeImageShareDialog(); this.resetShareLink(); this.bindShareReads() } },
+    'session.user.id'() { this.closeImageShareDialog(); this.resetShareLink(); this.closePermissionDialog(); this.closeSharePopover() },
     onImageShare() { if (this.imageShare?.target !== 'selection') this.closeImageShareDialog() },
     onSelectionShare() { if (this.imageShare?.target === 'selection') this.closeImageShareDialog() },
     mentionSource() { if (this.imageShare?.target === 'selection') this.closeImageShareDialog() },
@@ -639,22 +618,137 @@ export default {
     } },
   },
   mounted() {
+    this.bindShareReads()
     // 两个浮层的关闭入口与 `overlayDismissMixin` 同源（点外部 / Esc），但那边的互斥链
     // 在本仓由主组件维护、本线不改它，所以这里自建一对监听，避免「新增浮层漏接关闭」。
     document.addEventListener('pointerdown', this.onSharePointerDown, true)
     window.addEventListener('keydown', this.onShareWindowKeydown)
+    window.addEventListener('resize', this.onShareViewportResize)
   },
   beforeDestroy() {
+    this._shareReadsDisposed = true
+    this.resetShareLink()
+    this._shareReadsOff?.()
+    this.clearShareReads()
     this._selectionShareDisposed = true
     this.closeImageShareDialog()
     document.removeEventListener('pointerdown', this.onSharePointerDown, true)
     window.removeEventListener('keydown', this.onShareWindowKeydown)
+    window.removeEventListener('resize', this.onShareViewportResize)
     this.hideShareToast()
   },
   methods: {
+    ...shareInteraction.methods,
+    remoteShareScope() {
+      const session = this.session, provider = session?.getProvider?.('authorization'), user = session?.user
+      const actor = user?.id, documentId = session?.documentId, identity = session?._privateIdentityGeneration
+      const identityGeneration = session?._identityGeneration, authorization = session?._authorizationGeneration
+      const generation = this._shareLinkGeneration
+      const owner = () => !this._shareReadsDisposed && !this._isDestroyed && !this._isBeingDestroyed && !session?._destroyed &&
+        session === this.session && provider === session?.getProvider?.('authorization') && user === session?.user && actor === session?.user?.id &&
+        documentId === session?.documentId && identity === session?._privateIdentityGeneration && identityGeneration === session?._identityGeneration &&
+        authorization === session?._authorizationGeneration && generation === this._shareLinkGeneration
+      return { provider, session, owner, current: () => owner() && provider?.isRemote === true && typeof provider.shareLink === 'function' &&
+        (this.sharePopoverOpen || this.permissionDialogOpen) && this.shareCan('canView') && this.shareCan('canManagePermission') }
+    },
+    resetShareLink() {
+      this._shareLinkGeneration = (this._shareLinkGeneration || 0) + 1
+      this._shareLinkToken = null
+      this._shareLinkSnapshotOwner = null
+      this.shareLinkState = null; this.shareLinkBusy = false; this.shareLinkPending = ''; this.shareLinkError = ''
+      this.secureLinkEnabled = false; this.secureLinkPassword = ''; this.passwordDraft = ''
+      this.secureLinkConfirmOpen = false; this.passwordDialogOpen = false
+    },
+    async shareLinkAction(action, input) {
+      const scope = this.remoteShareScope()
+      if (!scope.current()) {
+        if (scope.owner() && (this.sharePopoverOpen || this.permissionDialogOpen)) {
+          this.shareLinkError = '链接权限服务尚未接入，当前不可用。'
+          this.showShareToast('warning', this.shareLinkError)
+        }
+        return null
+      }
+      try {
+        const module = await import(/* webpackChunkName: "share-links" */ '../../../providers/share-links')
+        if (!scope.current()) return null
+        return await module.remoteShareLinkAction(this, action, input)
+      } catch {
+        if (scope.current()) { this.shareLinkError = '链接设置未能完成，请重试。'; this.showShareToast('warning', this.shareLinkError) }
+        return null
+      }
+    },
+    loadShareLink() { return this.shareLinkAction('load') },
+    queryShareLink() { return this.shareLinkAction('load') },
+    setShareLinkAudience(value) {
+      if (!['collaborators', 'public'].includes(value) || !this.shareLinkWritable) return null
+      return this.shareLinkAction('audience', value)
+    },
+    clearShareReads({ keepInvitation = false } = {}) {
+      clearTimeout(this._shareDirectoryTimer)
+      this._shareReadTokens = keepInvitation ? { invitation: this._shareReadTokens?.invitation } : {}
+      this.shareMembers = { status: 'idle', items: [], authzVersion: '' }
+      this.shareDirectory = { status: 'idle', items: [], error: '' }
+      this.shareInviteQuery = ''
+      if (!keepInvitation) { this.shareInvitation = emptyInvitation(); this._shareInviteCurrent = null }
+    },
+    bindShareReads() {
+      this._shareReadsOff?.()
+      this.clearShareReads()
+      const session = this.session
+      let context = [session?.documentId, session?.user?.id, session?._privateIdentityGeneration, session?.getProvider?.('authorization')]
+      const invalidate = () => {
+        const next = [session?.documentId, session?.user?.id, session?._privateIdentityGeneration, session?.getProvider?.('authorization')]
+        if (this.session === session && next.every((value, index) => value === context[index])) return
+        context = next
+        this.closeImageShareDialog()
+        this.resetShareLink()
+        this.closePermissionDialog()
+        this.clearShareReads()
+        this.closeSharePopover()
+      }
+      // `comments-reset` 是 Session 私有身份视图清理的唯一广播通道（换人、凭据轮换、
+      // provider 替换）；上面的 context 比较保证同身份授权复核不会误清在读的接收人。
+      const stops = ['identity', 'provider-changed', 'comments-reset'].map(name => session?.on?.(name, invalidate)).filter(Boolean)
+      const capabilityStop = session?.on?.('capabilities', () => {
+        this.resetShareLink()
+        if (!this.shareCan('canView') || !this.shareCan('canManagePermission')) { this.closeSharePopover(); this.closePermissionDialog() }
+        else if (this.sharePopoverOpen || this.permissionDialogOpen) void this.loadShareLink()
+      })
+      if (typeof capabilityStop === 'function') stops.push(capabilityStop)
+      this._shareReadsOff = () => stops.forEach(stop => stop())
+    },
+    shareReadCurrent(kind, requirePermission = true) {
+      const session = this.session, provider = session?.getProvider?.('authorization'), actor = session?.user?.id, documentId = session?.documentId, generation = session?._privateIdentityGeneration
+      const token = {}; this._shareReadTokens ||= {}; this._shareReadTokens[kind] = token
+      return () => !this._shareReadsDisposed && this._shareReadTokens[kind] === token && session === this.session && !session?._destroyed && documentId === session?.documentId && actor === session?.user?.id && generation === session?._privateIdentityGeneration && provider === session?.getProvider?.('authorization') && (!requirePermission || this.shareCan('canView') && this.shareCan('canManagePermission'))
+    },
+    async loadShareMembers() {
+      if (!this.shareCan('canView') || !this.shareCan('canManagePermission')) return
+      const current = this.shareReadCurrent('members')
+      this.shareMembers = { status: 'loading', items: [], authzVersion: '' }
+      try {
+        if (typeof this.session?.getProvider?.('authorization')?.listMembers !== 'function') throw new Error('协作者服务尚未接入')
+        const result = await this.session.listMembers()
+        if (current()) this.shareMembers = { status: 'ready', items: result.members, authzVersion: result.authzVersion }
+      } catch (error) { if (current()) this.shareMembers = { status: 'failed', items: [], authzVersion: '', error: error.message === '协作者服务尚未接入' ? error.message : '无法加载协作者，请重试。' } }
+    },
+    async searchShareDirectory() {
+      const query = this.shareInviteQuery.trim()
+      if (!query || !this.shareCan('canView') || !this.shareCan('canManagePermission')) return
+      const current = this.shareReadCurrent('directory')
+      this.shareDirectory = { status: 'loading', items: [], error: '' }
+      try {
+        if (typeof this.session?.getProvider?.('authorization')?.resolveMentions !== 'function') throw new Error('协作者搜索服务尚未接入')
+        const result = await this.session.resolveMentions({ query, kinds: ['user'] })
+        if (current() && query === this.shareInviteQuery.trim()) this.shareDirectory = { status: result.status === 'resolved' ? 'ready' : 'blocked', items: result.status === 'resolved' ? result.candidates : [], error: result.status === 'resolved' ? '' : '协作者目录暂不可用。' }
+      } catch (error) { if (current()) this.shareDirectory = { status: 'failed', items: [], error: error.message === '协作者搜索服务尚未接入' ? error.message : '搜索失败，请重试。' } }
+    },
     selectionShareAllowed() { return !this._selectionShareDisposed && this.shareCan('canView') && this.shareCan('canExport') },
     selectionShareTargetValid(target = this._selectionShareTarget, doc = this.editor?.state.doc) {
       if (!target || !doc || this.editor !== target.editor || target.editor.isDestroyed || this.session !== target.session || this.session?._destroyed || this.session?.documentId !== target.documentId || this.onSelectionShare !== target.callback || this._mentionProvider !== target.directory || !this.selectionShareAllowed() || shareNetworkKey(this) !== target.network || this.shareDocumentLink() !== target.documentLink) return false
+      const session = this.session
+      if (target.actor !== session?.user?.id || target.identity !== session?._privateIdentityGeneration || target.identityGeneration !== session?._identityGeneration ||
+        target.authorizationGeneration !== session?._authorizationGeneration || target.authorizationProvider !== session?.getProvider?.('authorization')) return false
       try {
         const selection = target.bookmark.resolve(doc)
         const block = selectionShareBlock(selection)
@@ -695,7 +789,10 @@ export default {
         const afterNode = index + 1 < parent.childCount ? parent.child(index + 1) : null
         const context = (node, at) => node?.type.name === 'image' ? { type: 'image', text: '[图片]' } : shareExcerpt(editor, node, at, policy)
         const excerpt = { before: context(beforeNode, block.pos - (beforeNode?.nodeSize || 0)), after: context(afterNode, block.pos + block.node.nodeSize) }
-        const target = { editor, session: this.session, documentId: this.session?.documentId, callback: this.onSelectionShare, directory: this._mentionProvider, documentLink: this.shareDocumentLink(), network: shareNetworkKey(this), bookmark: selection.getBookmark(), kind, blockId: block.node.attrs.blockId, node: block.node, slice }
+        const session = this.session
+        const target = { editor, session, documentId: session?.documentId, actor: session?.user?.id, identity: session?._privateIdentityGeneration,
+          identityGeneration: session?._identityGeneration, authorizationGeneration: session?._authorizationGeneration, authorizationProvider: session?.getProvider?.('authorization'),
+          callback: this.onSelectionShare, directory: this._mentionProvider, documentLink: this.shareDocumentLink(), network: shareNetworkKey(this), bookmark: selection.getBookmark(), kind, blockId: block.node.attrs.blockId, node: block.node, slice }
         this.closeImageShareDialog()
         this._selectionShareTarget = target
         const cancel = () => { if (this._selectionShareTarget === target) this.closeImageShareDialog() }
@@ -703,8 +800,8 @@ export default {
         const map = event => { if (this._selectionShareTarget === target) this.mapSelectionShare(event) }
         editor.on('transaction', map); editor.on('destroy', cancel)
         this._selectionShareOffs = [() => editor.off('transaction', map), () => editor.off('destroy', cancel)]
-        for (const event of ['provider', 'editor', 'connection', 'capabilities']) {
-          const off = this.session?.on?.(event, event === 'capabilities' ? check : cancel)
+        for (const event of ['provider', 'editor', 'connection', 'capabilities', 'identity', 'provider-changed', 'comments-reset']) {
+          const off = session?.on?.(event, ['provider', 'editor', 'connection'].includes(event) ? cancel : check)
           if (typeof off === 'function') this._selectionShareOffs.push(off)
         }
         const text = slice.content.textBetween(0, slice.content.size, '\n', node => node.type.name === 'image' ? '[图片]' : String(node.attrs.title || node.attrs.url || node.attrs.href || ''))
@@ -748,6 +845,7 @@ export default {
     },
     async searchImageShareRecipients(query) {
       if (!this.imageShare || this.imageShare.sending) return
+      if (this.imageShare.target === 'selection' && !this.selectionShareTargetValid()) { this.closeImageShareDialog(); return }
       const token = this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
       this.imageShare = { ...this.imageShare, query, loading: true }
       try {
@@ -756,78 +854,10 @@ export default {
         if (this.imageShare.target === 'selection' && !this.selectionShareTargetValid()) { this.closeImageShareDialog(); return }
         this.imageShare = { ...this.imageShare, loading: false, results: items.filter(item => item?.id && ['user', 'chat'].includes(item.kind)) }
       } catch (error) {
-        if (this.imageShare && token === this._imageShareSearchToken) this.imageShare = { ...this.imageShare, loading: false, error: error?.message || '接收人搜索失败，请重试' }
-      }
-    },
-    toggleImageShareRecipient(id, kind) {
-      const state = this.imageShare
-      if (!state || state.sending) return
-      const selected = state.recipients.some(item => item.id === id && item.kind === kind)
-      const item = state.results.find(item => item.id === id && item.kind === kind)
-      const recipients = selected ? state.recipients.filter(item => item.id !== id || item.kind !== kind) : item ? [...state.recipients, item] : state.recipients
-      this.imageShare = { ...state, recipients }
-    },
-    setImageShareMessage(message) { if (this.imageShare && !this.imageShare.sending) this.imageShare = { ...this.imageShare, message } },
-    async submitSelectionShare() {
-      const state = this.imageShare, target = this._selectionShareTarget
-      if (state?.target !== 'selection' || state.sending || !state.recipients.length) return false
-      if (!this.selectionShareTargetValid(target)) { this.closeImageShareDialog(); return false }
-      const callback = target.callback
-      if (typeof callback !== 'function') { this.imageShare = { ...state, error: '当前宿主尚未配置选区分享服务' }; return false }
-      const controller = this._imageShareAbort = new AbortController()
-      this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
-      this.imageShare = { ...state, loading: false, sending: true, error: '' }
-      const pending = this.imageShare
-      try {
-        const url = new URL(target.documentLink)
-        if (!/^https?:$/.test(url.protocol) || !safeUrl(url.href)) throw new Error('文档分享地址无效')
-        url.hash = `share-${target.blockId}`
-        const result = await callback({ selection: JSON.parse(JSON.stringify(state.selection)), url: url.href, recipients: state.recipients.map(item => ({ ...item })), message: state.message, signal: controller.signal })
-        if (controller.signal.aborted || this.imageShare !== pending || this._selectionShareTarget !== target) return false
-        if (!this.selectionShareTargetValid(target)) { this.closeImageShareDialog(); return false }
-        if (result === false) throw new Error('选区分享失败，请重试')
-        this._imageShareAbort = null
-        this.closeImageShareDialog()
-        this.showShareToast('success', '发送成功')
-        return true
-      } catch (error) {
-        if (this.imageShare === pending && !controller.signal.aborted && this._selectionShareTarget === target) {
-          if (!this.selectionShareTargetValid(target)) this.closeImageShareDialog()
-          else { this._imageShareAbort = null; this.imageShare = { ...state, loading: false, sending: false, error: error?.message || '选区分享失败，请重试' } }
+        if (this.imageShare && token === this._imageShareSearchToken) {
+          if (this.imageShare.target === 'selection' && !this.selectionShareTargetValid()) this.closeImageShareDialog()
+          else this.imageShare = { ...this.imageShare, loading: false, error: error?.message || '接收人搜索失败，请重试' }
         }
-        return false
-      }
-    },
-    async submitImageShare() {
-      const state = this.imageShare, callback = this.onImageShare, editor = this.editor, session = this.session
-      if (state?.target === 'selection') return this.submitSelectionShare()
-      if (!state || state.sending || !state.recipients.length) return false
-      if (typeof callback !== 'function') { this.imageShare = { ...state, error: '当前宿主尚未配置图片分享服务' }; return false }
-      const node = editor?.state.doc.nodeAt(state.image.pos)
-      if (node?.type.name !== 'image' || node.attrs.blockId !== state.image.blockId || node.attrs.src !== state.image.src) { this.imageShare = { ...state, error: '原图片已变化，请重新打开分享' }; return false }
-      const controller = this._imageShareAbort = new AbortController()
-      this._imageShareSearchToken = (this._imageShareSearchToken || 0) + 1
-      this.imageShare = { ...state, loading: false, sending: true, error: '' }
-      const pending = this.imageShare
-      try {
-        const url = new URL(this.shareDocumentLink())
-        url.hash = `share-${state.image.blockId}`
-        const result = await callback({ image: { ...node.attrs }, url: url.href, recipients: state.recipients.map(item => ({ ...item })), message: state.message, signal: controller.signal })
-        if (controller.signal.aborted || this.imageShare !== pending || this.editor !== editor || editor?.isDestroyed || this.session !== session || this.onImageShare !== callback) {
-          if (this.imageShare === pending) this.closeImageShareDialog()
-          return false
-        }
-        if (result === false) throw new Error('图片分享失败，请重试')
-        this._imageShareAbort = null
-        this.closeImageShareDialog()
-        this.showShareToast('success', '发送成功')
-        return true
-      } catch (error) {
-        if (this.imageShare === pending && !controller.signal.aborted) {
-          if (this.editor !== editor || editor?.isDestroyed || this.session !== session || this.onImageShare !== callback) this.closeImageShareDialog()
-          else this.imageShare = { ...state, loading: false, sending: false, error: error?.message || '图片分享失败，请重试' }
-        }
-        return false
       }
     },
     // —— 权限读取（唯一入口，禁止在模板里直接读 session 字段）——
@@ -849,6 +879,7 @@ export default {
      * （B24 末行：「只复制链接，不弹权限面板」）。
      */
     toggleSharePopover(event) {
+      if (!this.shareCan('canView')) return
       if (this.shareEntryMode === SHARE_ENTRY_MODES.readonlyLink) {
         this.copyShareLink()
         return
@@ -863,17 +894,32 @@ export default {
       // 实测 popover @(596,52)、按钮本体 @(996,16) 80×32 ⇒ 顶边 = 按钮底边 + 4，
       // 右缘与按钮右缘**对齐**（1076 = 996+80），故 `right` 直接用视口宽减按钮右缘。
       const viewportWidth = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 0
+      this.sharePopoverAnchor = rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width } : null
       this.sharePopoverPos = {
         top: rect ? rect.bottom + 4 : 52,
         right: rect ? Math.max(0, viewportWidth - rect.right) : 436,
       }
       this.sharePopoverOpen = true
+      void this.loadShareLink()
     },
     sharePopoverStyle() {
-      return { top: `${this.sharePopoverPos.top}px`, right: `${this.sharePopoverPos.right}px` }
+      if (typeof window !== 'undefined' && window.innerWidth <= 760) {
+        const anchor = this.sharePopoverAnchor
+        const top = Math.round(Math.min(anchor ? anchor.bottom + 6 : 54, Math.max(8, window.innerHeight - Math.min(329, window.innerHeight - 68) - 8)))
+        return { left: '24px', right: '0px', top: `${top}px`, bottom: '' }
+      }
+      return { left: '', bottom: '', top: `${this.sharePopoverPos.top}px`, right: `${this.sharePopoverPos.right}px` }
+    },
+    onShareViewportResize() {
+      if (this.sharePopoverOpen) this.refreshOverlays?.()
     },
     closeSharePopover() {
       this.sharePopoverOpen = false
+      this.resetShareLink()
+      this.closePermissionDialog()
+      const keepInvitation = unresolvedInvitation(this.shareInvitation)
+      // Reads may be discarded on dismissal; an unresolved write must retain its query guard.
+      this.clearShareReads?.({ keepInvitation })
     },
     /** 点外部关闭。权限 Dialog 打开时**不收 popover**（04 §4.1.1 ①：两层叠加）。 */
     onSharePointerDown(event) {
@@ -897,26 +943,34 @@ export default {
     // —— 二级权限 Dialog ——
     openPermissionDialog() {
       // 降级形态连二级面板都没有，这里再挡一次（入口已经不弹 popover，防的是外部直调）。
-      if (!this.shareCan('canManagePermission')) return
+      if (!this.shareCan('canView') || !this.shareCan('canManagePermission')) return
       this.permissionDialogOpen = true
+      if (!this.shareLinkState && !this.shareLinkBusy) void this.loadShareLink()
     },
     closePermissionDialog() {
       this.permissionDialogOpen = false
       this.secureLinkConfirmOpen = false
       this.passwordDialogOpen = false
       this.passwordDraft = ''
+      if (!this.sharePopoverOpen) this.resetShareLink()
     },
     setPermissionValue(id, value) {
-      if (!this.shareCan('canManagePermission')) return
-      this.permissionValues = { ...this.permissionValues, [id]: value }
+      if (id === 'shareOutsideOrg') return this.setShareLinkAudience(value ? 'public' : 'collaborators')
+      this.showShareToast('warning', '此项组织权限服务尚未接入，当前不可用。')
     },
     /** 邀请输入框。受控写法：模板 `:value` + `@input`，不引 v-model（本仓统一口径）。 */
     setShareInviteQuery(value) {
+      if (unresolvedInvitation(this.shareInvitation)) return
       this.shareInviteQuery = String(value == null ? '' : value)
+      clearTimeout(this._shareDirectoryTimer)
+      if (this._shareReadTokens) delete this._shareReadTokens.directory
+      this.shareDirectory = { status: 'idle', items: [], error: '' }
+      if (this.shareInviteQuery.trim()) this._shareDirectoryTimer = setTimeout(() => this.searchShareDirectory(), 250)
     },
     /** 一级 popover 的链接权限下拉。 */
     setShareLinkPerm(value) {
-      this.shareLinkPerm = String(value == null ? '' : value)
+      if (!LINK_PERM_OPTIONS.includes(value) || !this.shareLinkWritable) return null
+      return this.shareLinkAction('permission', value)
     },
     toggleAdvancedSettings() {
       this.permissionAdvancedOpen = !this.permissionAdvancedOpen
@@ -928,31 +982,25 @@ export default {
      * （04 只记了开启弹确认，关闭只写「`link_share_entity` 回落到普通枚举」）。
      */
     toggleSecureLink() {
-      if (!this.shareCan('canManagePermission')) return
-      if (this.secureLinkEnabled) {
-        this.applySecureLink(false)
-        return
-      }
-      this.secureLinkConfirmOpen = true
+      if (!this.shareLinkWritable) return null
+      return this.shareLinkAction('toggle')
     },
     confirmSecureLink() {
-      this.secureLinkConfirmOpen = false
-      this.applySecureLink(true)
+      if (!this.secureLinkConfirmOpen || !this.shareLinkWritable || !this.shareLinkState?.cryptoReady) return null
+      return this.shareLinkAction('confirm')
     },
     /** 「取消」= 丢弃：复选框回到未勾选，密码区不长出来。 */
     cancelSecureLinkConfirm() {
       this.secureLinkConfirmOpen = false
     },
     applySecureLink(on) {
-      this.secureLinkEnabled = !!on
-      // 密码随「关 → 开」重新生成，旧密码立即失效（⑤-10 实测序列 5 次全不同），
-      // 所以这里刻意不做「记住上次」。
-      this.secureLinkPassword = on ? randomPassword() : ''
+      if (!this.shareLinkWritable || on && !this.shareLinkState?.cryptoReady) return null
+      return on ? this.confirmSecureLink() : this.shareLinkAction('save', { enabled: false })
     },
 
     // —— 修改密码弹窗（⑤-5 / ⑤-9）——
     openPasswordDialog() {
-      if (!this.shareCan('canManagePermission')) return
+      if (!this.shareLinkWritable || !this.shareLinkState?.enabled || !this.shareLinkState?.cryptoReady) return
       this.passwordDraft = ''
       this.passwordDialogOpen = true
     },
@@ -962,35 +1010,50 @@ export default {
       this.passwordDraft = ''
     },
     setPasswordDraft(value) {
+      if (!this.passwordDialogOpen || !this.shareLinkWritable) return
       this.passwordDraft = String(value == null ? '' : value)
     },
     randomizePasswordDraft() {
-      this.passwordDraft = randomPassword()
+      if (!this.passwordDialogOpen || !this.shareLinkWritable) return null
+      return this.shareLinkAction('random')
     },
     /**
      * 保存。按钮恒可点，非法输入**在提交时静默拦截**：弹窗不关、密码值不变、
      * 不做 shake，只出橙色 warning toast（⑤-9）。
      */
     saveSharePassword() {
+      if (!this.passwordDialogOpen || !this.shareLinkWritable || !this.shareLinkState?.enabled || !this.shareLinkState.cryptoReady) return false
       if (!isPasswordValid(this.passwordDraft)) {
         this.showShareToast('warning', SHARE_TOAST_TEXTS.invalidPassword)
         return false
       }
-      this.secureLinkPassword = this.passwordDraft
-      this.closePasswordDialog()
-      return true
+      return this.shareLinkAction('password', this.passwordDraft)
     },
 
     // —— 复制 ——
     /** 复制链接 + 密码（⑤-4 两个入口行为完全等价：复制按钮 / 点密码值本体）。 */
     copyLinkAndPassword() {
-      this.copyShareText(buildShareClipboardText(this.shareDocumentLink(), this.secureLinkPassword))
-      this.showShareToast('success', SHARE_TOAST_TEXTS.copiedLinkAndPassword)
+      return this.shareLinkAction('copy-password', buildShareClipboardText)
     },
     /** 降级路径：只复制链接，不带密码、不弹面板。 */
     copyShareLink() {
-      this.copyShareText(buildShareLinkText(this.shareDocumentLink()))
-      this.showShareToast('success', SHARE_TOAST_TEXTS.copiedLink)
+      if (!this.sharePopoverOpen && !this.permissionDialogOpen) return this.copyReadonlyDocumentLink()
+      if (this.shareCan('canManagePermission')) return this.shareLinkAction('copy', (url, password) => password ? buildShareClipboardText(url, password) : buildShareLinkText(url))
+      return this.copyReadonlyDocumentLink()
+    },
+    async copyReadonlyDocumentLink() {
+      const scope = this.remoteShareScope(), provider = scope.provider
+      const current = () => scope.owner() && this.shareCan('canView') && provider?.isRemote === true
+      if (!current() || typeof this.session?.getShareLink !== 'function') { this.showShareToast('warning', '文档链接服务尚未接入，当前不可用。'); return false }
+      try {
+        const url = await scope.session.getShareLink()
+        if (!current()) return false
+        const clipboard = this.shareClipboardWriter()
+        if (!clipboard?.writeText) throw new Error('clipboard unavailable')
+        await clipboard.writeText(buildShareLinkText(url))
+        if (current()) this.showShareToast('success', SHARE_TOAST_TEXTS.copiedLink)
+        return true
+      } catch { if (current()) this.showShareToast('warning', '链接未能复制，请重试。'); return false }
     },
     /** 文档链接：宿主赋值优先，缺省取当前地址。 */
     shareDocumentLink() {
@@ -1045,7 +1108,10 @@ export default {
      * 所以这里只把点击抛给宿主，不自造审批流。
      */
     requestShareAccess() {
-      if (typeof this.onRequestAccess === 'function') this.onRequestAccess()
+      try { if (this.openDocumentAccessRequests?.() === true) return true }
+      catch { this.showShareToast?.('warning', '权限申请入口暂不可用。'); return false }
+      if (typeof this.onRequestAccess === 'function') return this.onRequestAccess()
+      return false
     },
   },
 }

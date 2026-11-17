@@ -45,8 +45,16 @@ function loadMarkdownApi() {
 }
 
 export function markdownToHtml(markdown) {
-  return loadMarkdownApi().then(({ marked }) =>
-    marked.parse(markdown, { mangle: false, headerIds: false }))
+  return loadMarkdownApi().then(({ marked }) => {
+    const renderer = new marked.Renderer()
+    const listitem = renderer.listitem
+    // 复用既有任务列表规范化：保留混合列表、嵌套与勾选状态，不让 input 被清洗后变成普通项。
+    renderer.listitem = function (text, task, checked) {
+      const html = listitem.call(this, text, task, checked)
+      return task ? html.replace('<li>', '<li class="vditor-task">') : html
+    }
+    return marked.parse(markdown, { mangle: false, headerIds: false, renderer })
+  })
 }
 
 export function htmlToMarkdown(html) {

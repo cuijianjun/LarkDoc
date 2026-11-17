@@ -10,9 +10,11 @@ function makeButton(button, item, handlers) {
   node.className = 'lark-doc-revision-btn'
   if (button.tone === 'danger') node.classList.add('is-reject')
   if (button.tone === 'success') node.classList.add('is-accept')
-  setAttr(node, 'aria-label', button.tooltip)
+  node.dataset.revisionAction = button.id
+  setAttr(node, 'aria-label', button.tooltip || (button.id === 'go-previous' ? '上一个 (↑)' : button.id))
   node.appendChild(iconNode(ICONS[button.id], button.iconSize))
-  node.addEventListener('mousedown', (event) => { event.preventDefault(); handlers.onButton(button.id, item.id) })
+  node.addEventListener('mousedown', event => event.preventDefault())
+  node.addEventListener('click', () => { if (node.isConnected && !node.disabled) handlers.onButton?.(button.id, item.id) })
   return node
 }
 
@@ -37,11 +39,11 @@ function createPanel(item, buttons, handlers) {
   const main = document.createElement('div'); main.className = 'lark-doc-revision-main'
   const meta = document.createElement('div'); meta.className = 'lark-doc-revision-meta'
   const author = document.createElement('span'); author.className = 'lark-doc-revision-author'
-  const time = document.createElement('span'); time.className = 'lark-doc-revision-time'; time.textContent = '刚刚 （编辑过）'; meta.append(author, time)
+  const time = document.createElement('span'); time.className = 'lark-doc-revision-time'; time.textContent = '时间未知'; meta.append(author, time)
   const body = document.createElement('div'); body.className = 'lark-doc-revision-body'; const strong = document.createElement('b'); body.appendChild(strong); main.append(meta, body); reply.append(avatar, main)
   const input = document.createElement('div'); input.className = 'lark-doc-revision-input'
-  const zone = document.createElement('div'); zone.className = 'lark-doc-revision-input-zone'; zone.setAttribute('role', 'textbox'); zone.setAttribute('aria-label', '回复'); zone.tabIndex = 0; zone.textContent = '回复...'
-  const image = document.createElement('button'); image.type = 'button'; image.className = 'lark-doc-revision-input-btn'; image.setAttribute('aria-label', '插入图片'); image.addEventListener('mousedown', (event) => event.preventDefault()); image.appendChild(iconNode('rev-image', 16)); input.append(zone, image)
+  const zone = document.createElement('textarea'); zone.className = 'lark-doc-revision-input-zone'; zone.setAttribute('aria-label', '回复'); zone.placeholder = '回复...'; zone.disabled = true; zone.textContent = '修订讨论服务尚未接入，暂不可用。'
+  const image = document.createElement('button'); image.type = 'button'; image.className = 'lark-doc-revision-input-btn'; image.setAttribute('aria-label', '插入图片'); image.disabled = true; image.addEventListener('mousedown', (event) => event.preventDefault()); image.appendChild(iconNode('rev-image', 16)); input.append(zone, image)
   panel.append(head, reply)
   panel.__ld = { label, controls, buttons: cells.flatMap((cell) => [...cell.querySelectorAll('button')]), author, strong, body, input }
   return panel
@@ -56,7 +58,7 @@ export function createRevisionPanels({ host, handlers = {} } = {}) {
     setAttr(panel, 'aria-label', state.title); applyStyle(panel, { ...item.style, height: `${item.height}px` })
     setText(d.label, state.title); setText(d.author, item.author); setText(d.strong, `${item.summary.label}：`)
     setText(d.body, `“${item.summary.text}”`); d.body.insertBefore(d.strong, d.body.firstChild)
-    d.buttons.forEach((button) => { const id = button.getAttribute('aria-label') === '下一个 (↓)' ? 'go-next' : button.getAttribute('aria-label') === '复制链接' ? 'copyAnchor' : button.classList.contains('is-reject') ? 'reject' : 'accept'; button.disabled = item.disabled.includes(id) })
+    d.buttons.forEach(button => { button.disabled = item.disabled.includes(button.dataset.revisionAction) })
     syncChildren(panel, [{ node: panel.children[0], on: true }, { node: panel.children[1], on: true }, { node: d.input, on: item.active && !state.readonly }])
   }
   return {

@@ -152,6 +152,21 @@ export default {
       coverInternal: null,
     }
   },
+  watch: {
+    session(next, previous) { if (next !== previous) this.retireCoverUpload() },
+    documentId() { this.retireCoverUpload() },
+    'session.documentId'() { this.retireCoverUpload() },
+    editor(next, previous) { if (next !== previous) this.retireCoverUpload() },
+    cover(next, previous) {
+      const context = this._coverUpload
+      if (context?.pending && (next !== previous || !context.current())) this.retireCoverUpload()
+    },
+    effectiveReadonly(readonly) { if (readonly) this.retireCoverUpload() },
+  },
+  beforeDestroy() {
+    this._coverDisposed = true
+    this.retireCoverUpload()
+  },
   computed: {
     /** 当前封面（prop 优先，否则用内部草稿）。 */
     coverValue() {
@@ -189,6 +204,7 @@ export default {
       })
     },
     closeCoverPanel() {
+      if (this._coverUpload?.pending) this.retireCoverUpload()
       this.coverPanelOpen = false
       this.coverStage = 'menu'
       this.coverRepositioning = false
@@ -248,22 +264,64 @@ export default {
       if (!Number.isFinite(next)) return
       this.coverDraftOffset = Math.min(100, Math.max(0, next))
     },
+    coverCanWrite() {
+      return !this._coverDisposed && !this._isBeingDestroyed && !this._isDestroyed && !this.effectiveReadonly
+        && !this.editor?.isDestroyed && !this.session?._destroyed
+        && (typeof this.writable !== 'function' || this.writable())
+        && (typeof this.session?.can !== 'function' || this.session.can('canEdit'))
+    },
+    retireCoverUpload() {
+      const context = this._coverUpload
+      if (!context) return
+      this._coverUpload = null
+      context.pending = false
+      context.cancel?.()
+      context.reader.onload = context.reader.onerror = context.reader.onabort = null
+      try { context.reader.abort?.() } catch { /* Retirement never commits a failed read. */ }
+    },
     /** 本地上传 Tab：读取成 data URL，避免 Demo 依赖外链。 */
     async uploadCover(event) {
       const file = event && event.target && event.target.files ? event.target.files[0] : null
-      if (!file) return
-      if (typeof FileReader !== 'function') return
-      const url = await new Promise((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-        reader.onerror = () => resolve('')
-        reader.readAsDataURL(file)
-      })
-      if (!url) return
-      this.commitCover({ preset: null, url, offset: 50 })
-      this.closeCoverPanel()
+      if (!file || !this.coverCanWrite() || typeof FileReader !== 'function') return
+      this.retireCoverUpload()
+      let reader
+      try { reader = new FileReader() } catch { return }
+      const session = this.session, editor = this.editor
+      const scope = () => JSON.stringify([this.documentId, this.user?.id, session?.documentId, session?.user?.id,
+        session?._identityGeneration, session?._privateIdentityGeneration, session?._authorizationGeneration])
+      const key = scope(), current = () => this.coverCanWrite() && session === this.session && editor === this.editor && key === scope()
+      const cover = this.coverValue, source = { controlled: this.cover !== undefined, preset: cover?.preset, url: cover?.url, offset: cover?.offset }
+      const sameCover = () => {
+        const value = this.coverValue
+        return value === cover && (this.cover !== undefined) === source.controlled
+          && value?.preset === source.preset && value?.url === source.url && value?.offset === source.offset
+      }
+      const context = { reader, pending: true, current: () => this._coverUpload === context && context.pending && current() && sameCover() }
+      this._coverUpload = context
+      try {
+        const url = await new Promise(resolve => {
+          context.cancel = () => resolve('')
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+          reader.onerror = reader.onabort = context.cancel
+          reader.readAsDataURL(file)
+        })
+        if (!url || !context.current()) return
+        this.commitCover({ preset: null, url, offset: 50 }, context)
+        if (this._coverUpload === context && !context.pending && current()) this.closeCoverPanel()
+      } catch { /* A reader failure leaves the current cover and panel untouched. */ }
+      finally {
+        if (this._coverUpload === context) this._coverUpload = null
+        context.pending = false
+        reader.onload = reader.onerror = reader.onabort = null
+        if (reader.readyState === 1) { try { reader.abort() } catch { /* Already retired. */ } }
+      }
     },
-    commitCover(next) {
+    commitCover(next, context = null) {
+      if (!this.coverCanWrite() || (context && !context.current())) return
+      // A newer preset/removal retires any read. An uploaded result consumes its
+      // own token before emitting, so reentrant or repeated callbacks cannot win.
+      if (context) context.pending = false
+      else this.retireCoverUpload()
       if (this.cover === undefined) this.coverInternal = next
       this.$emit('cover-change', next)
     },

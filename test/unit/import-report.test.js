@@ -12,6 +12,7 @@ import { createWorkspaceController, createWorkspaceState } from '../../src/works
 import { sanitizeHTML } from '../../src/components/lark-doc/documentOperations'
 import { normalizeVditorHtml } from '../../src/legacy/vditorHtml'
 import { LarkDoc } from '../../src/LarkDoc'
+import { createDocumentSession } from '../../src/session/DocumentSession'
 
 const VDITOR = '<ul><li class="vditor-task"><input type="checkbox">待办</li>' +
   '<li class="vditor-task vditor-task--done"><input type="checkbox" checked>完成</li></ul>'
@@ -28,6 +29,13 @@ function parseHTML(html) {
   container.innerHTML = html
   return ProseMirrorDOMParser.fromSchema(schema).parse(container)
 }
+
+it.each([false, true])('旧div任务保留自身checkbox状态，checked=%s', checked => {
+  const prepared = prepareHTML(`<div class="vditor-task"><input type="checkbox"${checked ? ' checked' : ''}>旧任务</div>`, 'vditor')
+  const states = []
+  parseHTML(prepared.html).descendants(node => { if (node.type.name === 'taskItem') states.push(node.attrs.checked) })
+  expect(states).toEqual([checked])
+})
 
 function createHarness(options = {}) {
   const emit = vi.fn()
@@ -245,4 +253,140 @@ describe('导入报告 · LarkDoc 门面与控制器接线', () => {
     expect(doc.getImportReport()).toBeNull()
     expect(onImportReport).not.toHaveBeenCalled()
   })
+})
+
+describe('T089 native file import ownership', () => {
+  async function nativeImport(run) {
+    const geometry = ['getClientRects', 'getBoundingClientRect'].map(name => [name, Object.getOwnPropertyDescriptor(Range.prototype, name)])
+    Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [] })
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', { configurable: true, value: () => ({ left: 0, top: 0, right: 1, bottom: 1, width: 1, height: 1 }) })
+    const scroll = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
+    const session = createDocumentSession({ documentId: 'import-owner', user: { id: 'alice' } })
+    const element = document.createElement('div'); document.body.append(element)
+    let doc
+    try {
+      doc = new LarkDoc({ element, session, storage: 'none', content: '<p>原正文</p>' })
+      const controller = doc._handle.workspaceController, editor = doc.getEditor()
+      controller.host.confirmImport = vi.fn(async () => true)
+      return await run({ doc, controller, editor, session })
+    } finally {
+      doc?.destroy(); element.remove(); await session.dispose()
+      geometry.forEach(([name, descriptor]) => { if (descriptor) Object.defineProperty(Range.prototype, name, descriptor); else delete Range.prototype[name] })
+      scroll.mockRestore()
+    }
+  }
+  function pendingFile(text = '<p>旧作者导入</p>') {
+    let resolve, reject
+    const pending = new Promise((accept, fail) => { resolve = accept; reject = fail })
+    const file = new File([text], 'document.html', { type: 'text/html' })
+    const read = vi.fn(() => pending)
+    Object.defineProperty(file, 'text', { configurable: true, value: read })
+    return { file, read, resolve: () => resolve(text), reject }
+  }
+  const select = (controller, file) => controller.importDocument({ target: { files: [file], value: 'owned-test-file' } })
+
+  it('rejects a completed read from the prior actor of the same real Session', () => nativeImport(async ({ doc, controller, session }) => {
+    const source = pendingFile(), before = doc.getJSON(), pending = select(controller, source.file)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledOnce())
+    session.user = { id: 'bob' }; expect(session.can('canEdit')).toBe(true)
+    controller.state.notice = 'Bob当前提示'
+    source.resolve(); await pending
+    expect(doc.getJSON()).toEqual(before)
+    expect(controller.state.notice).toBe('Bob当前提示')
+    expect(controller.state.importing).toBe(false)
+  }))
+
+  it('does not replace the new actor notice with a late read rejection', () => nativeImport(async ({ doc, controller, session }) => {
+    const source = pendingFile(), before = doc.getJSON(), pending = select(controller, source.file)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledOnce())
+    session.user = { id: 'bob' }; controller.state.notice = 'Bob当前提示'
+    source.reject(new Error('Alice旧文件读取失败')); await pending
+    expect(doc.getJSON()).toEqual(before)
+    expect(controller.state.notice).toBe('Bob当前提示')
+  }))
+
+  it('captures the actor before the public entry lazy await', () => nativeImport(async ({ doc, controller, session }) => {
+    const source = pendingFile(), before = doc.getJSON(), pending = select(controller, source.file)
+    session.user = { id: 'bob' }
+    await pending
+    expect(source.read).not.toHaveBeenCalled()
+    expect(doc.getJSON()).toEqual(before); expect(controller.state.importing).toBe(false)
+  }))
+
+  it.each(['actor-aba', 'authentication', 'private', 'authorization', 'readonly-aba'])('retires a real pending file read after %s', reason => nativeImport(async ({ doc, controller, session }) => {
+    const source = pendingFile(), before = doc.getJSON(), pending = select(controller, source.file)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledOnce())
+    if (reason === 'actor-aba') { session.user = { id: 'bob' }; session.user = { id: 'alice' } }
+    if (reason === 'authentication') session._identityGeneration++
+    if (reason === 'private') session._privateIdentityGeneration++
+    if (reason === 'authorization') session._authorizationGeneration++
+    if (reason === 'readonly-aba') { doc.setReadonly(true); doc.setReadonly(false) }
+    source.resolve(); await pending
+    expect(doc.getJSON()).toEqual(before); expect(controller.state.importing).toBe(false)
+  }))
+
+  it('releases a retired read without waiting for it and keeps the new actor import lock and notice', () => nativeImport(async ({ doc, controller, editor, session }) => {
+    const a = pendingFile(), before = doc.getJSON(), first = select(controller, a.file)
+    await vi.waitFor(() => expect(a.read).toHaveBeenCalledOnce())
+    session.user = { id: 'bob' }; await first
+    await vi.waitFor(() => expect(editor.isEditable).toBe(true))
+    const b = pendingFile('<p>Bob新正文</p>'), second = select(controller, b.file)
+    await vi.waitFor(() => expect(b.read).toHaveBeenCalledOnce())
+    controller.state.notice = 'Bob读取中'
+    a.reject(new Error('Alice迟到错误')); await Promise.resolve(); await Promise.resolve()
+    expect(controller.state.importing).toBe(true); expect(controller.state.notice).toBe('Bob读取中')
+    b.resolve(); await second
+    expect(doc.getText()).toBe('Bob新正文'); expect(controller.state.importing).toBe(false)
+    expect(doc.undo()).toBe(true); expect(doc.getJSON()).toEqual(before)
+  }))
+
+  it('aborts and rolls back the actual paged writer without releasing a newer file import lock', () => nativeImport(async ({ doc, controller, editor, session }) => {
+    const before = doc.getJSON(), initialDoc = editor.state.doc
+    let resume, held = false
+    const gate = new Promise(resolve => { resume = resolve }), original = controller.host.setContentAsync
+    vi.spyOn(controller.host, 'setContentAsync').mockImplementation((content, options) => original(content, { ...options, pageBlocks: 1,
+      yieldToMain: async () => {
+        if (!held && editor.state.doc !== initialDoc && editor.storage.larkDoc?.pagedImport) { held = true; await gate }
+        await options.yieldToMain()
+      } }))
+    const a = pendingFile(Array.from({ length: 12 }, (_, index) => `<p>Alice段落${index}</p>`).join('')), first = select(controller, a.file)
+    await vi.waitFor(() => expect(a.read).toHaveBeenCalledOnce()); a.resolve()
+    await vi.waitFor(() => expect(held).toBe(true))
+    session.user = { id: 'bob' }
+    await vi.waitFor(() => expect(editor.isEditable).toBe(true))
+    const b = pendingFile('<p>Bob提交</p>'), second = select(controller, b.file)
+    await vi.waitFor(() => expect(b.read).toHaveBeenCalledOnce())
+    controller.state.notice = 'Bob等待正文'
+    resume(); await first
+    expect(controller.state.importing).toBe(true); expect(controller.state.notice).toBe('Bob等待正文')
+    expect(doc.getJSON()).toEqual(before)
+    b.resolve(); await second
+    expect(doc.getText()).toBe('Bob提交'); expect(controller.state.importing).toBe(false)
+    expect(doc.undo()).toBe(true); expect(doc.getJSON()).toEqual(before)
+  }))
+
+  it('keeps a current selection change and imports once with the existing Undo behavior', () => nativeImport(async ({ doc, controller, editor }) => {
+    const source = pendingFile('<p>当前导入</p>'), before = doc.getJSON(), pending = select(controller, source.file)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledOnce())
+    editor.commands.setTextSelection(2)
+    source.resolve(); await pending
+    expect(doc.getText()).toBe('当前导入'); expect(controller.state.importing).toBe(false)
+    expect(doc.undo()).toBe(true); expect(doc.getJSON()).toEqual(before)
+  }))
+
+  it('lets an independent public async replacement retire the file intent without inheriting its lock', () => nativeImport(async ({ doc, controller }) => {
+    const source = pendingFile(), pending = select(controller, source.file)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledOnce())
+    await doc.setContentAsync('<p>公开替换</p>'); await pending
+    source.resolve(); await Promise.resolve()
+    expect(doc.getText()).toBe('公开替换'); expect(controller.state.importing).toBe(false)
+  }))
+
+  it('retains current-owner read failures and releases the owned busy flag', () => nativeImport(async ({ doc, controller }) => {
+    const source = pendingFile(), before = doc.getJSON(), pending = select(controller, source.file)
+    await vi.waitFor(() => expect(source.read).toHaveBeenCalledOnce())
+    source.reject(new Error('当前文件读取失败')); await pending
+    expect(controller.state.notice).toContain('当前文件读取失败')
+    expect(doc.getJSON()).toEqual(before); expect(controller.state.importing).toBe(false)
+  }))
 })

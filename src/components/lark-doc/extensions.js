@@ -17,7 +17,7 @@ import Highlight from '@tiptap/extension-highlight'
 import Placeholder from '@tiptap/extension-placeholder'
 import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
-import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
+import { TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import TextAlign from '@tiptap/extension-text-align'
@@ -26,17 +26,40 @@ import Typography from '@tiptap/extension-typography'
 import { safeUrl } from '../../core/documentOperations'
 import { createNetworkPolicy } from '../../core/policy/network'
 import { assertCollabRuntime } from '../../core/collabRuntime'
-import { withUnfurlGate } from '../../core/embed/unfurl'
+import { createUnfurlProvider, withUnfurlGate } from '../../core/embed/unfurl'
 import { wrapContainerAllowed } from '../../core/blocks/container-depth'
+import { imageUploadTasksExtension } from '../../core/media/image-upload-tasks'
+import { IMAGE_MIME_ALLOWLIST } from '../../core/media/image-insert'
+import { createImageUploadPlaceholder } from '../../ui/imageUploadPlaceholder'
+import { isCommandEnabled } from './larkDocConfig'
 import { imageUrlPasteExtension } from '../../core/blocks/image-paste'
 import { blockClipboardExtension } from '../../core/blocks/block-clipboard'
 import { LarkDocExternalDelete } from '../../core/blocks/external-delete'
 import {
-  LarkDocHeading, LarkDocOrderedList, Callout, Columns, Column, Formatting,
+  LarkDocHeading, LarkDocOrderedList, LarkDocTable, Callout, Columns, Column, Formatting,
   LarkDocBlockId, LarkDocListItemNumber, LarkDocEmoji, LarkDocMention, LarkDocReminder, LarkDocBlockquote,
-  LarkDocRevision, LarkDocRevisionTracker, LarkDocRevisionHighlight, LarkDocComment, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
-  FileBlock, WebEmbed, CardEmbed, Bookmark, CalendarEvent, Isv, Sheet, Poll, Bitable, ExternalBlock,
+  LarkDocRevision, LarkDocRevisionBoundary, LarkDocRevisionTracker, LarkDocRevisionHighlight, LarkDocComment, UnknownBlock, codeExtension, imageExtension, mathExtension, documentExtension,
+  FileBlock, WebEmbed, CardEmbed, Bookmark, LinkEmbed, CalendarEvent, Isv, Sheet, Poll, Bitable, ExternalBlock,
+  Agenda, AgendaItem, AgendaTitle, AgendaContent,
 } from '../../registry/blocks'
+
+const RuntimeFileHandler = FileHandler.extend({
+  addStorage() { return { dropPoint: null } },
+  addProseMirrorPlugins() {
+    return (this.parent?.() || []).map(plugin => {
+      for (const name of ['handlePaste', 'handleDrop']) {
+        const original = plugin.props[name]
+        if (original) plugin.props[name] = (...args) => {
+          if (!this.options.isEnabled()) return false
+          if (name === 'handleDrop' && this.storage) this.storage.dropPoint = { x: args[1].clientX, y: args[1].clientY }
+          try { return original.apply(plugin, args) }
+          finally { if (name === 'handleDrop' && this.storage) this.storage.dropPoint = null }
+        }
+      }
+      return plugin
+    })
+  },
+})
 
 // prosemirror-history 的 depth 是软上限（额外容忍 20 组）。V1 要严格 100 组，
 // 包装原 state.apply，保留原历史映射/选择书签，不另建历史栈；升级依赖时由真实事务测试守住。
@@ -98,6 +121,7 @@ const LarkDocDetails = Details.extend({
 // 工厂不加载 Vue 单文件组件，可在无 DOM 的 Node 14 中检查 schema。
 export function createLarkDocExtensions(options = {}) {
   const enabled = (name) => options.config?.features?.[name] !== false
+  const imagesEnabled = () => options.getImageOptions?.()?.enabled ?? isCommandEnabled(options.config, 'image', 'images')
   /**
    * 出网策略的**唯一实例**（P3-06）：粘贴过滤（`document.js` 的 `transformPastedHTML`）、
    * 载入降级（`LarkDocEditor.setContent`）、内嵌网页闸门、卡片抓取闸门共用它。
@@ -108,6 +132,8 @@ export function createLarkDocExtensions(options = {}) {
    */
   const network = createNetworkPolicy(options.config?.network)
   const gated = network.mode !== 'open'
+  const unfurl = typeof options.unfurlProvider === 'function' ? createUnfurlProvider(options.unfurlProvider) : options.unfurlProvider || null
+  const gatedUnfurl = gated ? withUnfurlGate(unfurl, network.allows) : unfurl
   /**
    * 协同模式（P6a）：宿主传 `collab = { extensions, isRemoteTransaction }`，
    * 两处行为因此改变 —— 别的什么都不动：
@@ -123,12 +149,13 @@ export function createLarkDocExtensions(options = {}) {
     // blockquote 换成自有 LarkDocBlockquote（P1-01：quote_container 兼容读取），
     // schema 规格与 StarterKit 内置版逐字节一致（content: 'block+' 容器），
     // 仅追加 parseHTML 规则；位置紧随 StarterKit，命令与 inputRule 原样继承。
-    LarkDocStarterKit.configure({ undoRedo: collab ? false : { depth: 100, newGroupDelay: 800 }, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+    LarkDocStarterKit.configure({ undoRedo: collab ? false : { depth: 100, newGroupDelay: 800 }, trailingNode: { notAfter: ['documentSegment'] }, heading: false, codeBlock: false, orderedList: false, blockquote: false, link: { openOnClick: false, autolink: true, isAllowedUri: (url) => safeUrl(url), HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } } }),
+
     // 协同扩展紧跟 StarterKit：`Collaboration` 要接管 doc 的 transaction 过滤，
     // 排在业务块之前才能先看到远端 update。空数组时展开为「没有变化」。
     ...collabExtensions,
     LarkDocBlockquote,
-    LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile),
+    LarkDocHeading, LarkDocOrderedList, codeExtension(options.config), imageExtension(options.resolveImageFile, options.getImageOptions, gated ? network.allows : null),
     // P2-04：文件 / 视频块紧跟在图片之后——两者是同层原子块，schema 顺序沿用
     // 「图片 → 文件」的落位直觉；关掉 features.files 只藏入口，节点仍在 schema 里，
     // 历史 JSON 照样解析（P0-04 约定）。
@@ -159,8 +186,16 @@ export function createLarkDocExtensions(options = {}) {
     // **不阻塞任何能力**；`onOpen` 交出「点了去哪」的决定权，不传就自己 `window.open`。
     // P3-06：抓取同样过出网闸门 —— 被拦的地址不进宿主函数（offline 下零外部请求）。
     Bookmark.configure({
-      unfurl: gated ? withUnfurlGate(options.unfurlProvider, network.allows) : options.unfurlProvider || null,
+      unfurl: gatedUnfurl,
+      canLoadMedia: gated ? (src) => network.allows(src) : null,
       onOpen: options.onBookmarkOpen || null,
+    }),
+    LinkEmbed.configure({
+      canEmbed: options.canEmbed || (gated ? (src) => network.allows(src) : null),
+      canLoadMedia: gated ? (src) => network.allows(src) : null,
+      sandbox: options.embedSandbox || null,
+      allow: options.embedAllow || null,
+      unfurl: gatedUnfurl,
     }),
     // P4-02b：日程卡片紧跟网页卡片 —— 同为「引用外部对象」的同层原子块（一块只存
     // `eventId` + 允许过期的快照）。`onJoin` 是「加入日程」按钮的通道：不传就是个
@@ -169,14 +204,17 @@ export function createLarkDocExtensions(options = {}) {
     CalendarEvent.configure({
       onJoin: options.onCalendarEventJoin || null,
       refetch: options.calendarEventRefetch || null,
+      getRuntimeOptions: options.getCalendarEventOptions || null,
     }),
     // P4-04：文档小组件紧跟日程卡片 —— 同为「外部对象引用」的同层原子块，区别在它一个
     // 节点背两种形态（目录导航 / 按钮，`kind` 分叉）。两个回调都是**宿主能力通道**：
     // `onIsvButtonAction` 管「创建副本 / 关注文档更新」（core 不认文档系统，不自己发明）；
     // `onIsvCatalogJump` 管目录项跳转（不传就自己 scrollIntoView，④-5 实测行为）。
+    Agenda.configure({ isEnabled: options.isAgendaEnabled || (() => isCommandEnabled(options.config, 'agenda', 'insert')) }), AgendaItem, AgendaTitle, AgendaContent,
     Isv.configure({
       onButtonAction: options.onIsvButtonAction || null,
       onCatalogJump: options.onIsvCatalogJump || null,
+      getRuntimeOptions: options.getIsvOptions || null,
     }),
     // P5-02：电子表格紧跟文档小组件 —— 同为「落在正文里的独立块」，区别在它画 canvas
     // （§25 ④ 的像素直方图就是它的绘制契约）。两个回调都是可选宿主通道：
@@ -203,7 +241,7 @@ export function createLarkDocExtensions(options = {}) {
       onChange: options.onBitableChange || null,
     }),
     LarkDocDetails.configure({ persist: true }), DetailsSummary, DetailsContent,
-    Callout, Columns, Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
+    Callout, Columns.configure({ isEnabled: options.isColumnsEnabled || (() => enabled('columns')) }), Column, Formatting, LarkDocBlockId, LarkDocListItemNumber, Highlight.configure({ multicolor: true }),
     TaskList, TaskItem.configure({ nested: true }), TextAlign.configure({ types: ['paragraph', 'heading'] }),
     // P4-02a：日期提醒紧跟提及之后 —— 同为「行内小物件」，但它是 **mark**（挂在文本上，
     // 文案即 chip 文字），不是 atom。位置放这里只为可读性：mark 注册在 schema.marks 里，
@@ -216,7 +254,7 @@ export function createLarkDocExtensions(options = {}) {
     // P6b-01：评论 mark 与修订同层注册（两者都是「挂在文本上的标记」）。它只带
     // `threadId`，不落位置 —— 位置是块内相对偏移，由 `core/comments/anchor.js` 管。
     // 注册进 schema 才有 `setComment` 命令，正文高亮与面板连线才成立。
-    LarkDocRevision, LarkDocComment, UnknownBlock,
+    LarkDocRevision, LarkDocRevisionBoundary, LarkDocComment, UnknownBlock,
     // 17 §17.5 的 tier C / P3 批次（11 块族 / 22 个官方 type）紧跟未知块 —— 同为
     // 「认不出或接不上的外部内容」的降级形态：unknownBlock = 认不出，
     // externalBlock = 认得出但没接服务。目录与能力判定在 core/embed/external-block.js，
@@ -230,16 +268,18 @@ export function createLarkDocExtensions(options = {}) {
     // 退格并补 mark，其余模式零行为；`highlight` 只画激活态那一条的底色。
     LarkDocRevisionTracker.configure({ isRemoteTransaction: collab && collab.isRemoteTransaction }), LarkDocRevisionHighlight,
     LarkDocCharacterCount.configure({ limit: options.maxLength > 0 ? options.maxLength : 0, autoTrim: false, textCounter: (text) => Array.from(text).length }),
-    FileHandler.configure({
-      allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], consumePasteEvent: true,
-      onPaste: (editor, files) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, editor.state.selection.from, 'paste') },
-      onDrop: (editor, files, pos) => { if (enabled('images') && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos, 'drop') },
+    imageUploadTasksExtension(createImageUploadPlaceholder),
+    RuntimeFileHandler.configure({
+      isEnabled: imagesEnabled,
+      allowedMimeTypes: IMAGE_MIME_ALLOWLIST, consumePasteEvent: true,
+      onPaste: (editor, files) => { if (imagesEnabled() && editor.isEditable && options.onImageFiles) options.onImageFiles(files, editor.state.selection.from, 'paste') },
+      onDrop: (editor, files, pos) => { if (imagesEnabled() && editor.isEditable && options.onImageFiles) options.onImageFiles(files, pos, 'drop', editor.storage?.fileHandler?.dropPoint) },
     }),
     // P2-03：没有文件、只有一个图片地址的粘贴走这里（见 core/blocks/image-paste.js）。
     blockClipboardExtension({ canCopy: options.canCopy, onError: options.onError, filterDocument: network.applyDocument }),
-    imageUrlPasteExtension({ enabled: () => enabled('images'), onImageFiles: options.onImageFiles }),
-    mathExtension('inlineMath', options.onError), mathExtension('blockMath', options.onError),
-    Table.configure({ resizable: true }), TableRow, TableCell, TableHeader,
+    imageUrlPasteExtension({ enabled: imagesEnabled, onImageFiles: options.onImageFiles }),
+    mathExtension('inlineMath', options.onError, options.getMathOptions || (() => ({ enabled: enabled('math') }))), mathExtension('blockMath', options.onError, options.getMathOptions || (() => ({ enabled: enabled('math') }))),
+    LarkDocTable.configure({ resizable: true, cellMinWidth: 50, canInsert: () => enabled('tables') }), TableRow, TableCell, TableHeader,
     Placeholder.configure({ placeholder: (options.config && options.config.text && options.config.text.placeholder) || '输入正文，或输入 / 插入内容' }),
     documentExtension({ ...options, isRemoteTransaction: collab && collab.isRemoteTransaction }, network),
   ]

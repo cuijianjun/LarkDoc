@@ -140,3 +140,23 @@ export function mountNode(host, node, on) {
   }
   if (host && node.parentNode !== host) host.appendChild(node)
 }
+
+const scrollLocks = new WeakMap()
+/** Overlapping native layers release only their own scroll lock. */
+export function lockPageScroll(node) {
+  let lock = scrollLocks.get(node)
+  if (!lock) {
+    lock = { count: 0, overflow: node.style.overflow }
+    scrollLocks.set(node, lock)
+    node.style.overflow = 'hidden'
+  }
+  lock.count++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    if (--lock.count) return
+    if (node.style.overflow === 'hidden') node.style.overflow = lock.overflow
+    scrollLocks.delete(node)
+  }
+}

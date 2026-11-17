@@ -240,20 +240,21 @@ async function main() {
   check('图表块出现「编辑源码」按钮', blockButtons().indexOf('编辑源码') !== -1)
   check('图表块隐藏语言下拉（独立外观，不与代码框共用）', firstBlock.querySelectorAll('.lark-doc-code-toolbar select').length === 0 && firstBlock.querySelectorAll('.lark-doc-code-toolbar .lark-doc-select').length === 0)
   check('图表块携带独立外观类', firstBlock.className.indexOf('lark-doc-code-diagram') !== -1)
-  // 代码块语言下拉由 core 的原生 NodeView 渲染，直接检查 select 的选项。
-  const langSelect = host.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
+  // 原生 NodeView 使用可搜索的 DOM listbox；通过按钮打开，验证真实菜单选项。
+  const langSelect = host.querySelector('.lark-doc-code-toolbar button[aria-label="代码语言"]')
   check('代码块使用原生语言下拉', Boolean(langSelect))
+  if (langSelect) langSelect.click()
   const langMenuItems = langSelect
-    ? Array.from(langSelect.options).map((option) => option.textContent.trim())
+    ? Array.from(host.querySelectorAll('[role="listbox"][aria-label="代码语言"] [role="option"]')).map(option => option.textContent.trim())
     : []
-  check('语言下拉含 Mermaid 图表项', langMenuItems.some((text) => text.indexOf('Mermaid 图表') !== -1))
-  // 71 项语言（04 §2.2 ⑤）+ 图表开启时追加的「Mermaid 图表」。
-  check('语言下拉 71 项语言 + 图表项', langMenuItems.length === 72, `实际 ${langMenuItems.length} 项`)
+  // 当前原生菜单与 code-block-nodeview 契约为 71 项语言；图表保留独立插入/源码入口。
+  check('普通语言菜单不混入 Mermaid 图表功能项', !langMenuItems.some(text => text.indexOf('Mermaid 图表') !== -1))
+  check('语言下拉精确包含 71 项语言', langMenuItems.length === 71, `实际 ${langMenuItems.length} 项`)
   check('语言下拉首项为 Plain Text', langMenuItems[0] === 'Plain Text')
   const jsBlock = Array.from(host.querySelectorAll('.lark-doc-code')).find((block) =>
     block.querySelector('.lark-doc-code-input').textContent === 'console.log(1)')
-  const jsSelect = jsBlock && jsBlock.querySelector('select[aria-label="代码语言"]')
-  check('历史 js 别名回填 JavaScript 且不改写落库值', Boolean(jsSelect) && jsSelect.value === 'javascript'
+  const jsSelect = jsBlock && jsBlock.querySelector('button[aria-label="代码语言"]')
+  check('历史 js 别名回填 JavaScript 且不改写落库值', Boolean(jsSelect) && jsSelect.textContent.trim() === 'JavaScript'
     && collect(doc.getJSON(), 'codeBlock').some((node) => node.attrs.language === 'js'))
   let blockButton = Array.from(firstBlock.querySelectorAll('.lark-doc-code-toolbar button')).find((button) => button.textContent.trim() === '编辑源码')
   if (blockButton) blockButton.click()
@@ -315,24 +316,27 @@ async function main() {
   const buttons2 = Array.from(host2.querySelectorAll('.lark-doc-code-toolbar button')).map((button) => button.textContent.trim())
   check('关闭 features.diagram 无预览按钮', buttons2.indexOf('预览图表') === -1)
   check('关闭后无预览层', host2.querySelectorAll('.lark-doc-diagram').length === 0)
-  const langSelect2 = host2.querySelector('.lark-doc-code-toolbar select[aria-label="代码语言"]')
+  const langSelect2 = host2.querySelector('.lark-doc-code-toolbar button[aria-label="代码语言"]')
   check('关闭后仍使用原生语言下拉', Boolean(langSelect2))
+  if (langSelect2) langSelect2.click()
+  const languageOptions2 = () => Array.from(host2.querySelectorAll('[role="listbox"][aria-label="代码语言"] [role="option"]'))
   const langMenuItems2 = langSelect2
-    ? Array.from(langSelect2.options).map((option) => option.textContent.trim())
+    ? languageOptions2().map(option => option.textContent.trim())
     : []
   check('关闭后语言下拉保留 71 项语言', langMenuItems2.length === 71, `实际 ${langMenuItems2.length} 项`)
   check('关闭后下拉无 Mermaid 图表功能项', Boolean(langSelect2)
-    && !Array.from(langSelect2.options).some((option) => option.value === 'mermaid'
-      || option.textContent.indexOf('Mermaid 图表') !== -1))
+    && !langMenuItems2.some(label => label.indexOf('Mermaid 图表') !== -1))
   check('关闭后保留已有 Mermaid 源码及语言', collect(doc2.getJSON(), 'codeBlock').some((node) =>
     node.attrs.language === 'mermaid' && node.content[0].text === 'graph TD\n  A --> B'))
   // HTML / Shell 都有独立落库值，不能因高亮别名归一化而回填成 XML / Bash。
-  const languageChanges = ['html', 'shell', 'rust', 'abap', 'plaintext'].map((language) => {
+  const languageChanges = [['html', 'HTML'], ['shell', 'Shell'], ['rust', 'Rust'], ['abap', 'ABAP'], ['plaintext', 'Plain Text']].map(([language, label]) => {
     if (!langSelect2) return false
-    langSelect2.value = language
-    langSelect2.dispatchEvent(new window.Event('change', { bubbles: true }))
+    if (langSelect2.getAttribute('aria-expanded') !== 'true') langSelect2.click()
+    const option = languageOptions2().find(option => option.textContent.trim() === label)
+    if (!option) return false
+    option.click()
     const block = collect(doc2.getJSON(), 'codeBlock')[0]
-    return langSelect2.value === language && block && block.attrs.language === language
+    return langSelect2.textContent.trim() === label && langSelect2.getAttribute('aria-expanded') === 'false' && block && block.attrs.language === language
       && block.content[0].text === 'graph TD\n  A --> B'
   })
   check('原生下拉切换语言保留落库值、当前选项及正文', languageChanges.every(Boolean))

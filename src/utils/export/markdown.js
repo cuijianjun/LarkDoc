@@ -1,3 +1,4 @@
+import { flattenHeadingContainers, safeUrl } from '../../core/documentOperations'
 /**
  * Markdown 往返 codec（P6b-04 导出线·核心）。
  *
@@ -99,13 +100,7 @@ export const INLINE_FALLBACK = Object.freeze({
 })
 
 /** 直接跳过（不落任何 Markdown）的块级节点 —— 见负结论 2。 */
-export const BLOCK_SKIP = Object.freeze([
-  'fileBlock', 'webEmbed', 'cardEmbed', 'bookmark', 'calendar_event',
-  'isv', 'sheet', 'poll', 'bitable', 'unknownBlock', 'blockMath',
-  // 17 §17.5 的外部服务块：未接入时是一张钥匙卡，落 Markdown 只会得到一行乱码式文案，
-  // 与 unknownBlock 同口径跳过（保真走 JSON 通道，不走文本导出）。
-  'externalBlock',
-])
+export const BLOCK_SKIP = Object.freeze(['unknownBlock'])
 
 /** HTML 里「不产生节点、直接下钻」的容器（marked 的 thead/tbody 就是这种）。 */
 export const HTML_TRANSPARENT = Object.freeze(['thead', 'tbody', 'tfoot', 'colgroup', 'html', 'body'])
@@ -238,6 +233,7 @@ export function prefixLines(text, firstPrefix, restPrefix, emptyPrefix) {
 // —— 序列化：doc → Markdown ——
 
 function serializeImage(node) {
+  if (Array.isArray(node.attrs?.crop)) return `[${escapeText(String(node.attrs.alt || '可见裁剪图'), false)}：此格式暂不支持安全导出裁剪图]`
   // escapeText 已经处理过 `[` `]`，这里别再转一次（会变成 `\\[`）。
   const alt = escapeText(String(attrOf(node, 'alt', '') || ''), false)
   const src = linkHref({ attrs: { href: attrOf(node, 'src', '') } })
@@ -490,6 +486,41 @@ function serializeTableRow(node) {
 }
 
 /**
+ * 会议议程 → Markdown。
+ *
+ * Markdown 没有议程语法，按「一项一条列表项」投影：`- **20 分钟** 标题`，议程内容作为
+ * 该项的续行块挂在下面。为什么**不能走 default 分支**：default 只拼 attrs 上的
+ * title/latex 再下钻子块，而标题正文挂在 `agendaTitle` 的**文本节点**上（块层拿不到）、
+ * 时长在 `agendaItem.attrs.durationMinutes` 上（default 不看 attrs 数字）——
+ * 两步都不覆盖，导出的 md 里整块议程直接变成空串。
+ */
+function serializeAgenda(node, indent) {
+  const items = childrenOf(node)
+  const lines = []
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i] || {}
+    const minutes = Number(item.attrs && item.attrs.durationMinutes)
+    const head = Number.isFinite(minutes) && minutes > 0 ? `**${minutes} 分钟**` : ''
+    const kids = childrenOf(item)
+    const parts = []
+    let title = ''
+    for (let k = 0; k < kids.length; k += 1) {
+      if (kids[k].type === 'agendaTitle') title = serializeInline(childrenOf(kids[k]))
+      else {
+        const block = serializeChildren(childrenOf(kids[k]), '')
+        if (block !== '') parts.push(block)
+      }
+    }
+    const lead = [head, title].filter(Boolean).join(' ')
+    if (lead) parts.unshift(lead)
+    if (!parts.length) continue
+    // 续行不空行：空行会把续行判成列表项之外的段落，内容与议程项脱钩。
+    lines.push(prefixLines(parts.join('\n'), `${indent}- `, `${indent}  `))
+  }
+  return lines.join('\n')
+}
+
+/**
  * 单块序列化。返回**已带缩进前缀**的字符串；返回 `''` 表示这块不落 Markdown
  * （调用方会把它剔除，不留空行）。
  */
@@ -497,6 +528,13 @@ function serializeBlock(node, indent) {
   if (!node || typeof node !== 'object') return ''
   if (BLOCK_SKIP.indexOf(node.type) !== -1) return ''
   switch (node.type) {
+    case 'linkEmbed': {
+      const href = attrOf(node, 'href', '')
+      if (!href) return ''
+      const text = serializeInline([{ type: 'text', text: attrOf(node, 'title', '') || href, marks: [{ type: 'link', attrs: { href } }] }])
+      return prefixLines(text, indent, indent)
+    }
+    case 'image': return serializeImage(node)
     case 'paragraph': {
       const text = serializeInline(childrenOf(node))
       // 全空段落不落空行，否则文档里会出现一串无意义的分隔。
@@ -527,8 +565,14 @@ function serializeBlock(node, indent) {
       return `${indent}---`
     case 'table':
       return serializeTable(node, indent)
-    default:
-      return ''
+    case 'agenda':
+      return serializeAgenda(node, indent)
+    default: {
+      const attrs = node.attrs || {}, label = attrs.title || attrs.name || attrs.latex || ''
+      const href = attrs.href || attrs.src || attrs.url || ''
+      const inner = serializeChildren(childrenOf(node), indent)
+      return [label ? escapeText(String(label), false) : '', safeUrl(href) ? String(href) : '', inner].filter(Boolean).join('\n\n')
+    }
   }
 }
 
@@ -551,6 +595,7 @@ function serializeChildren(nodes, indent) {
  */
 export function serializeMarkdown(doc) {
   if (!doc || typeof doc !== 'object') return ''
-  const nodes = Array.isArray(doc) ? doc : childrenOf(doc)
-  return serializeChildren(nodes, '')
+  const raw = typeof doc.toJSON === 'function' ? doc.toJSON() : doc
+  const flat = flattenHeadingContainers(Array.isArray(raw) ? { type: 'doc', content: raw } : raw)
+  return serializeChildren(childrenOf(flat), '')
 }

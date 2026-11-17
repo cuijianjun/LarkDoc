@@ -1,28 +1,161 @@
 import { DOMSerializer, Fragment } from '@tiptap/pm/model'
 import { getTextBetween, getTextSerializersFromSchema } from '@tiptap/core'
-import { aggregateHeadingContainers, restoreUnknownBlocks } from '../core/documentOperations'
+import { createDocumentJSONCodec } from '../core/documentJSON'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
 
-export const LARGE_DOCUMENT_SIZE = 500000
-const isolated = new Set(['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'])
+export { LARGE_DOCUMENT_SIZE } from './documentStats'
+
 const clock = () => typeof performance === 'undefined' ? Date.now() : performance.now()
 const yieldTask = () => new Promise(resolve => setTimeout(resolve, 0))
 
-// JSON transformations have no DOM/schema dependency. Keep the implementation
-// shared with the synchronous public API, including unknown-block roundtrips.
+// This runtime is serialized into a Blob: all dependencies are explicit arguments.
+function snapshotWorker(createCodec) {
+  const codec = createCodec()
+  const parentOf = codec.createGrouping()
+  self.onmessage = ({ data }) => {
+    if (data.type === 'append') {
+      for (let offset = 0; offset < data.content.length; offset += 128) {
+        const content = data.content.slice(offset, offset + 128).map(codec.restore)
+        const parents = new Int32Array(content.map(parentOf))
+        self.postMessage({ type: 'chunk', content, parents }, [parents.buffer])
+      }
+    } else if (data.type === 'finish') self.postMessage({ type: 'done' })
+  }
+}
+
+export function documentSnapshotWorkerSource() {
+  return `(${snapshotWorker.toString()})(${createDocumentJSONCodec.toString()});`
+}
+
 function createJSONWorker() {
   if (typeof Worker === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return null
-  const source = `let content=[];
-self.onmessage=({data})=>{
-  if(data.type==='append') content.push(...data.content);
-  if(data.type==='finish') {
-    self.postMessage({type:'doc',content});
-    content=[];
-  }
-};`
+  const source = documentSnapshotWorkerSource()
   const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }))
   try { return new Worker(url) } finally { URL.revokeObjectURL(url) }
 }
+
+
+/**
+ * Serialize unchanged immutable blocks once, in bounded tasks. JSON heading
+ * aggregation/unknown restoration runs in a real Worker where available.
+ * CSP/SSR environments use the same codec in the cooperative fallback.
+ */
+export function createDocumentSnapshotReader({ workerFactory = createJSONWorker } = {}) {
+  const cache = new WeakMap()
+  return {
+    async read(editor, { signal, media } = {}) {
+      const originalDoc = editor.state.doc
+      const doc = editor.storage?.larkDoc?.pagedView?.logicalDocument(originalDoc) || originalDoc
+      const current = () => !signal?.aborted && !editor.isDestroyed && editor.state.doc === originalDoc
+      if (!current()) return null
+      let worker = null
+      try { worker = workerFactory() } catch (_) { /* CSP: use the shared codec below. */ }
+      let result
+      let resolveWorker
+      let workerFailed = false
+      let workerFinished = false
+      let workerStopped = false
+      let workerBlockCount = 0
+      const stopWorker = () => { if (worker && !workerStopped) { workerStopped = true; worker.terminate() } }
+      const codec = createDocumentJSONCodec()
+      const assembler = codec.createAssembler()
+      const waitForBackground = editor.storage?.larkDoc?.backgroundGate
+        ? active => editor.storage.larkDoc.backgroundGate.wait(active) : null
+      const workerResult = worker ? new Promise(resolve => {
+        resolveWorker = resolve
+        const fail = () => { workerFailed = true; workerFinished = true; stopWorker(); resolve(null) }
+        worker.onmessage = ({ data }) => {
+          if (workerFinished) return
+          if (!current()) { workerFinished = true; stopWorker(); resolve(null); return }
+          try {
+            if (data?.type === 'chunk' && data.content.length <= 128 && data.parents.length === data.content.length) {
+              assembler.append(data.content, data.parents)
+              workerBlockCount += data.content.length
+            } else if (data?.type === 'done' && workerBlockCount === doc.childCount) {
+              workerFinished = true
+              resolve({ type: 'doc', content: assembler.content })
+            }
+            else fail()
+          } catch (_) { fail() }
+        }
+        worker.onerror = event => { event.preventDefault?.(); fail() }
+      }) : null
+      const cancel = () => { workerFinished = true; stopWorker(); resolveWorker?.(null) }
+      signal?.addEventListener('abort', cancel, { once: true })
+      const serializer = DOMSerializer.fromSchema(editor.schema)
+      let singleDoc
+      let blockPosition = 0
+      let blockIndex = 0
+      const textSerializers = Object.fromEntries(Object.entries(getTextSerializersFromSchema(editor.schema)).map(([name, serialize]) => [name, args => serialize({
+        ...args, pos: args.pos + blockPosition, parent: args.parent === singleDoc ? doc : args.parent,
+        index: args.parent === singleDoc ? blockIndex : args.index, range: { from: 0, to: doc.content.size },
+      })]))
+      const container = document.implementation.createHTMLDocument().createElement('div')
+      const html = []
+      const text = []
+      const json = []
+      let batch = []
+      let index = 0
+      let pos = 0
+      try {
+        while (index < doc.childCount) {
+          if (!current()) return null
+          if (waitForBackground && !await waitForBackground(current)) return null
+          const start = clock()
+          do {
+            const node = doc.child(index)
+            let block = cache.get(node)
+            if (!block) {
+              container.replaceChildren(serializer.serializeFragment(Fragment.from(node)))
+              block = { html: container.innerHTML, json: node.toJSON() }
+              cache.set(node, block)
+            }
+            html.push(applyMediaHtmlMode(block.html, media))
+            // Pass the original document and absolute range to preserve custom
+            // toText serializers' parent/index/position contracts.
+            singleDoc = doc.copy(Fragment.from(node))
+            blockPosition = pos
+            blockIndex = index
+            text.push((index && node.isBlock ? '\n\n' : '') + getTextBetween(singleDoc, { from: 0, to: singleDoc.content.size }, { textSerializers }))
+            json.push(block.json)
+            if (worker && !workerFailed) batch.push(block.json)
+            pos += node.nodeSize
+            index += 1
+          } while (index < doc.childCount && clock() - start < 6 && index % 128 !== 0)
+          if (batch.length) {
+            try { worker.postMessage({ type: 'append', content: batch }) } catch (_) { workerFailed = true; resolveWorker?.(null) }
+            batch = []
+          }
+          if (index < doc.childCount) await yieldTask()
+        }
+        if (!current()) return null
+        if (worker && !workerFailed) {
+          try { worker.postMessage({ type: 'finish' }) } catch (_) { workerFailed = true; resolveWorker?.(null) }
+          result = await workerResult
+        }
+        if (!result && current()) {
+          // CSP/worker failure keeps the original cached blocks; never serialize the DOM twice.
+          const iterator = codec.normalize({ type: 'doc', content: json })
+          let step
+          do {
+            if (!current() || (waitForBackground && !await waitForBackground(current))) return null
+            const start = clock()
+            do { step = iterator.next() } while (!step.done && clock() - start < 6)
+            if (!step.done) await yieldTask()
+          } while (!step.done)
+          result = step.value
+        }
+        return current() ? { html: html.join(''), text: text.join(''), json: result } : null
+      } finally {
+        signal?.removeEventListener('abort', cancel)
+        stopWorker()
+      }
+    },
+  }
+}
+
+const isolated = new Set(['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'])
+
 
 /** A cooperative, cached walk; a giant list/table is traversed leaf by leaf. */
 export function createDocumentStatsReader() {
@@ -70,102 +203,17 @@ export function createDocumentStatsReader() {
     return result
   }
   return {
-    async read(doc, current = () => true) {
+    async read(doc, current = () => true, waitForBackground) {
       const iterator = visit(doc)
       let next
       do {
         if (!current()) return null
+        if (waitForBackground && !await waitForBackground(current)) return null
         const start = clock()
         do { next = iterator.next() } while (!next.done && clock() - start < 6)
         if (!next.done) await yieldTask()
       } while (!next.done)
       return current() ? next.value : null
-    },
-  }
-}
-
-/**
- * Serialize unchanged immutable blocks once, in bounded tasks. JSON heading
- * aggregation/unknown restoration runs in a real Worker where available.
- * CSP/SSR environments use the same codec in the cooperative fallback.
- */
-export function createDocumentSnapshotReader({ workerFactory = createJSONWorker } = {}) {
-  const cache = new WeakMap()
-  return {
-    async read(editor, { signal, media } = {}) {
-      const doc = editor.state.doc
-      const current = () => !signal?.aborted && !editor.isDestroyed && editor.state.doc === doc
-      if (!current()) return null
-      let worker = null
-      try { worker = workerFactory() } catch (_) { /* CSP: use the shared codec below. */ }
-      let result
-      let resolveWorker
-      const workerResult = worker ? new Promise(resolve => {
-        resolveWorker = resolve
-        worker.onmessage = event => resolve(event.data)
-        worker.onerror = event => { event.preventDefault?.(); resolve(null) }
-      }) : null
-      const cancel = () => { worker?.terminate(); resolveWorker?.(null) }
-      signal?.addEventListener('abort', cancel, { once: true })
-      const serializer = DOMSerializer.fromSchema(editor.schema)
-      let singleDoc
-      let blockPosition = 0
-      let blockIndex = 0
-      const textSerializers = Object.fromEntries(Object.entries(getTextSerializersFromSchema(editor.schema)).map(([name, serialize]) => [name, args => serialize({
-        ...args, pos: args.pos + blockPosition, parent: args.parent === singleDoc ? doc : args.parent,
-        index: args.parent === singleDoc ? blockIndex : args.index, range: { from: 0, to: doc.content.size },
-      })]))
-      const container = document.implementation.createHTMLDocument().createElement('div')
-      const html = []
-      const text = []
-      const json = []
-      let batch = []
-      let index = 0
-      let pos = 0
-      try {
-        while (index < doc.childCount) {
-          if (!current()) return null
-          const start = clock()
-          do {
-            const node = doc.child(index)
-            let block = cache.get(node)
-            if (!block) {
-              container.replaceChildren(serializer.serializeFragment(Fragment.from(node)))
-              block = { html: container.innerHTML, json: node.toJSON() }
-              cache.set(node, block)
-            }
-            html.push(applyMediaHtmlMode(block.html, media))
-            // Pass the original document and absolute range to preserve custom
-            // toText serializers' parent/index/position contracts.
-            singleDoc = doc.copy(Fragment.from(node))
-            blockPosition = pos
-            blockIndex = index
-            text.push((index && node.isBlock ? '\n\n' : '') + getTextBetween(singleDoc, { from: 0, to: singleDoc.content.size }, { textSerializers }))
-            if (worker) batch.push(block.json)
-            else json.push(restoreUnknownBlocks(block.json))
-            pos += node.nodeSize
-            index += 1
-          } while (index < doc.childCount && clock() - start < 6 && batch.length < 128)
-          if (batch.length) { worker.postMessage({ type: 'append', content: batch }); batch = [] }
-          if (index < doc.childCount) await yieldTask()
-        }
-        if (!current()) return null
-        if (worker) {
-          worker.postMessage({ type: 'finish' })
-          result = await workerResult
-          if (result?.type === 'doc') result = aggregateHeadingContainers(restoreUnknownBlocks(result))
-          if (!result && current()) {
-            // A worker may be blocked asynchronously by worker-src CSP.
-            // Retry the codec with yielding, without changing the API result.
-            worker.terminate()
-            return createDocumentSnapshotReader({ workerFactory: () => null }).read(editor, { signal, media })
-          }
-        } else result = aggregateHeadingContainers({ type: 'doc', content: json })
-        return current() ? { html: html.join(''), text: text.join(''), json: result } : null
-      } finally {
-        signal?.removeEventListener('abort', cancel)
-        worker?.terminate()
-      }
     },
   }
 }

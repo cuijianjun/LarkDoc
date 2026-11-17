@@ -13,7 +13,7 @@
  * 只接受一个「这笔事务是不是远端来的」谓词（§5.7.2-1 的 blockId 冲突就靠它）。
  */
 import * as Y from 'yjs'
-import { Collaboration, isChangeOrigin } from '@tiptap/extension-collaboration'
+import { Collaboration } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { HocuspocusProvider } from '@hocuspocus/provider'
 import { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD } from './protocol'
@@ -37,9 +37,7 @@ export * from './durable-bridge'
  * y-prosemirror 的远端更新会带 `y-sync` 插件 meta，官方给了 `isChangeOrigin` 判定。
  * core 侧只认这个谓词，不 import 任何协同包 —— 不装协同的宿主也跑同一套 core。
  */
-export function isRemoteTransaction(transaction) {
-  return isChangeOrigin(transaction)
-}
+export { isChangeOrigin as isRemoteTransaction } from '@tiptap/extension-collaboration'
 
 /**
  * 协同编辑器扩展集合。

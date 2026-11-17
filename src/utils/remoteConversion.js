@@ -194,50 +194,47 @@ export const remoteConversionMethods = {
         if (this._conversionActiveScope === scope) { this.conversionBusy = false; this._conversionActiveScope = null }
       }
     },
-    async submitRemoteExport(format) {
-      if (this.exportBusy || !this.exportCanExport) return null
-      const session = this.session
-      // 首次导出才绑定同步失效监听；同tick ABA不依赖Vue合并后的user.id watcher。
-      if (this._exportBoundSession !== session) {
-        this._exportSessionStops?.forEach(stop => stop()); this._exportBoundSession = session
-        this._exportSessionStops = typeof session?.on === 'function' ? [
-          session.on('comments-reset', reason => { if (session === this.session && reason !== 'authorization-required') this.clearRemoteExport() }),
-          session.on('provider-changed', event => { if (session === this.session && event.name === 'versioning') this.clearRemoteExport() }),
-        ] : []
+    async submitRemoteExport(scope) {
+      const current = () => this._activeExport === scope && scope.current()
+      const owner = () => this._activeExport === scope && scope.owner()
+      const remember = operationId => {
+        if (typeof operationId !== 'string' || !operationId || operationId.includes('\0') || operationId.length > 128) throw new Error('CONVERSION_OPERATION_INVALID')
+        this.exportPendingOperationId = operationId; this.exportPendingFormat = scope.format; this.exportPendingFileName = scope.fileName
+        this._pendingExportOwner = scope.owner
       }
-      const provider = this.remoteExportProvider(), generation = this.exportGeneration, sessionGeneration = session && session._conversionGeneration, identity = session && session.user && session.user.id
-      const identityGeneration = session && session._privateIdentityGeneration
-      const identityOwner = () => !this._exportDisposed && generation === this.exportGeneration && session === this.session && provider === this.remoteExportProvider() &&
-        identityGeneration === (session && session._privateIdentityGeneration) && identity === (session && session.user && session.user.id)
-      const current = () => !this._exportDisposed && generation === this.exportGeneration && sessionGeneration === (session && session._conversionGeneration) && session === this.session && provider === this.remoteExportProvider() &&
-        identity === (session && session.user && session.user.id)
-      this.exportBusy = true; this._activeExport = current
       try {
-        if (this._pendingExportProvider && this._pendingExportProvider !== provider) { this.exportPendingOperationId = ''; this._pendingExportProvider = null }
-        const result = this.exportPendingOperationId ? await this.session.queryConversion(this.exportPendingOperationId)
-          : await this.session.requestExport({ format })
+        const result = scope.operationId ? await scope.session.queryConversion(scope.operationId) : await scope.session.requestExport({ format: scope.format })
+        // Dismissal may retire output, but a sent operation still needs its original query key.
+        if (!owner()) return null
+        const valid = result && result.operation === 'export' && (result.requestedFormat === scope.format || result.status === 'unknown' && result.requestedFormat === undefined) &&
+          (!scope.operationId || result.operationId === scope.operationId)
+        if (valid && ['pending', 'unknown', 'ready'].includes(result.status)) remember(result.operationId)
         if (!current()) return null
+        if (!valid) throw new Error('CONVERSION_RESULT_INVALID')
         if (result.status === 'ready') {
-          this.exportPendingOperationId = result.operationId; this._pendingExportProvider = provider
-          const output = await this.session.downloadConversion(result.operationId)
-          if (!current() || !this.exportCanExport) return null
-          downloadBlob(new Blob([output.bytes], { type: output.mimeType }), `${this.exportFileBaseName}.${result.requestedFormat}`)
-          this.exportPendingOperationId = ''; this._pendingExportProvider = null; this.exportToast = ''
+          const output = await scope.session.downloadConversion(result.operationId)
+          if (!current()) return null
+          if (output?.status !== 'downloaded' || output.operationId !== result.operationId || !(output.bytes instanceof Uint8Array) || !output.bytes.byteLength ||
+            typeof output.mimeType !== 'string' || !output.mimeType || /[\r\n]/.test(output.mimeType)) throw new Error('CONVERSION_OUTPUT_INVALID')
+          downloadBlob(new Blob([output.bytes], { type: output.mimeType }), `${scope.fileName}.${scope.format}`)
+          this.exportPendingOperationId = ''; this.exportPendingFormat = ''; this.exportPendingFileName = ''
+          this._pendingExportOwner = null
+          this.exportToast = '受控导出文件已校验，已发起下载。'
         } else if (['pending', 'unknown'].includes(result.status)) {
-          this.exportPendingOperationId = result.operationId; this._pendingExportProvider = provider
-          this.exportToast = result.status === 'pending' ? '导出任务处理中；再次点击查询原任务。' : '导出结果尚未确认；再次点击只查询原任务。'
-        } else {
-          this.exportPendingOperationId = ''; this._pendingExportProvider = null
-          this.exportToast = result.status === 'failed' ? '导出任务失败，未生成文件；可重新选择格式发起新请求。' : '导出依赖未接通：批准格式、内部转换与对象存储尚未供给；未创建任务，未生成文件。'
-        }
+          this.exportToast = result.status === 'pending' ? '导出任务处理中；仅可查询原任务。' : '导出结果尚未确认；仅可查询原任务。'
+        } else if (['failed', 'blocked'].includes(result.status)) {
+          this.exportPendingOperationId = ''; this.exportPendingFormat = ''; this.exportPendingFileName = ''
+          this._pendingExportOwner = null
+          this.exportToast = result.status === 'failed' ? '导出任务失败，未生成文件；可显式发起新请求。' : '受控导出依赖尚未接通，未创建任务或生成文件；可显式选择本地导出。'
+        } else throw new Error('CONVERSION_RESULT_INVALID')
         return result
       } catch (error) {
-        if (identityOwner()) {
-          if (error.status === 'unknown' && error.operationId) { this.exportPendingOperationId = error.operationId; this._pendingExportProvider = provider }
-          this.exportToast = error.status === 'unknown' ? '导出结果尚未确认；再次点击只查询原请求，未生成文件。'
-            : '导出未接通或缺少匹配当前正文的不可变版本/权限；未生成文件。'
+        if (owner()) {
+          if (error.status === 'unknown' && error.operationId) remember(scope.operationId || error.operationId)
+          if (current()) this.exportToast = this.exportPendingOperationId ? '导出或下载尚未确认；仅可查询原请求，未生成文件。'
+            : '导出未完成或缺少匹配正文的不可变版本/权限；未生成文件。'
         }
         return null
-      } finally { if (this._activeExport === current) { this.exportBusy = false; this._activeExport = null } }
+      }
     },
 }

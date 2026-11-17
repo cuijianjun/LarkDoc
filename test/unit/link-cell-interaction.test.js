@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
+/* global globalThis */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Editor } from '@tiptap/core'
+import { Editor, getSchema } from '@tiptap/core'
+import { Table } from '@tiptap/extension-table'
+import { createRequire } from 'module'
 import { CellSelection, selectedRect } from '@tiptap/pm/tables'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import tableTools from '../../src/components/lark-doc/editor/tableToolsUiMixin'
@@ -18,6 +21,8 @@ import { createCommandMenu } from '../../src/ui/commandMenu'
 import { filterCommands } from '../../src/core/commands'
 import commandMenu from '../../src/components/lark-doc/editor/commandMenuMixin'
 import blockHandleUi from '../../src/components/lark-doc/editor/blockHandleUiMixin'
+import { createTooltip } from '../../src/ui/tooltip'
+import { createDiagramMenu } from '../../src/ui/diagramMenu'
 import viewModes from '../../src/components/lark-doc/editor/viewModesMixin'
 
 const editors = []
@@ -256,6 +261,131 @@ describe('v12e link and cell interactions', () => {
     expect(filterCommands('', 'plus', { features: { tables: false } }).some(item => item.id === 'table')).toBe(false)
   })
 
+  it.each(['plus', 'slash'])('普通命令的悬浮、焦点和键盘活动项关闭旧子菜单：%s', kind => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host })
+    const items = filterCommands('', kind)
+    menu.update({ open: true, kind, items, templates: [{ id: 'one', label: '示例模板' }] })
+    const template = menu.el.querySelector('[data-command-id="template"]')
+    const ordinary = [...menu.el.querySelectorAll('[data-command-id="callout"]')].at(-1)
+    template.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.el.querySelector('.lark-doc-command-submenu')).not.toBeNull()
+    ordinary.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.el.querySelector('.lark-doc-command-submenu')).toBeNull()
+    template.focus(); ordinary.focus()
+    expect(menu.el.querySelector('.lark-doc-command-submenu')).toBeNull()
+    template.dispatchEvent(new MouseEvent('mouseenter'))
+    menu.update({ activeId: 'callout', activeIndex: items.findIndex(item => item.id === 'callout') })
+    expect(menu.el.querySelector('.lark-doc-command-submenu')).toBeNull()
+    menu.destroy(); host.remove()
+  })
+  it('模板条目原地更新会清除旧子菜单且重新打开显示新列表', () => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host }), templates = [{ id: 'one', label: '旧模板' }]
+    menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus'), templates })
+    const trigger = menu.el.querySelector('[data-command-id="template"]')
+    trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.el.querySelector('.lark-doc-command-submenu').textContent).toContain('旧模板')
+    templates[0] = { id: 'two', label: '新模板' }
+    menu.update({ templates })
+    expect(menu.el.querySelector('.lark-doc-command-submenu')).toBeNull()
+    trigger.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(menu.el.querySelector('.lark-doc-command-submenu').textContent).toContain('新模板')
+    menu.destroy(); host.remove()
+  })
+
+  it('重复命令别名仅激活当前分类，Enter遵循当前索引', () => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const onChoose = vi.fn(), menu = createCommandMenu({ host, handlers: { onChoose } }), items = filterCommands('', 'plus')
+    const activeIndex = items.findIndex(item => item.id === 'taskList' && item.category === '常用')
+    menu.update({ open: true, kind: 'plus', items, activeId: 'taskList', activeIndex })
+    expect([...menu.el.querySelectorAll('button.active')].map(node => node.dataset.entryKey)).toEqual(['常用:taskList'])
+    menu.choose()
+    expect(onChoose).toHaveBeenCalledWith(items[activeIndex])
+    menu.destroy(); host.remove()
+  })
+  it('相同菜单顺序的新对象同步最新内容和鼠标活动索引', () => {
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const onActivate = vi.fn(), onChoose = vi.fn(), menu = createCommandMenu({ host, handlers: { onActivate, onChoose } })
+    const items = filterCommands('', 'plus')
+    menu.update({ open: true, kind: 'plus', items })
+    const node = menu.el.querySelector('[data-entry-key="常用:taskList"]')
+    const next = items.map(item => ({ ...item, label: item.id === 'taskList' ? '更新后的任务' : item.label }))
+    menu.update({ items: next })
+    expect(menu.el.querySelector('[data-entry-key="常用:taskList"]')).toBe(node)
+    expect(node.textContent).toContain('更新后的任务')
+    node.dispatchEvent(new MouseEvent('mouseenter')); node.click()
+    expect(onActivate).toHaveBeenCalledWith(next.findIndex(item => item.id === 'taskList' && item.category === '常用'))
+    expect(onChoose).toHaveBeenCalledWith(next.find(item => item.id === 'taskList' && item.category === '常用'))
+    menu.destroy(); host.remove()
+  })
+
+  it('代码块和分隔线提示包含快捷键与Markdown，关闭时清除延迟提示', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host })
+    try {
+      menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus') })
+      for (const [id, markdown, shortcut] of [['code', '``` 空格 或 ``` 代码语言 空格', 'C'], ['divider', '--- 或 ***', 'S']]) {
+        const node = menu.el.querySelector(`[data-command-id="${id}"]`)
+        node.getBoundingClientRect = () => ({ left: 100, top: 120, right: 140, bottom: 150, width: 40, height: 30 })
+        node.dispatchEvent(new MouseEvent('mouseenter')); vi.advanceTimersByTime(150)
+        expect(host.querySelector('[role="tooltip"]').textContent).toContain(`Markdown: ${markdown}`)
+        expect(host.querySelector('[role="tooltip"]').textContent).toContain(` + ${shortcut})`)
+        expect(node.hasAttribute('title')).toBe(false)
+        expect(node.getAttribute('aria-describedby')).toBe(host.querySelector('[role="tooltip"]').id)
+        node.dispatchEvent(new MouseEvent('mouseleave'))
+        expect(host.querySelector('[role="tooltip"]')).toBeNull()
+        expect(node.hasAttribute('aria-describedby')).toBe(false)
+      }
+      menu.el.querySelector('[data-command-id="code"]').dispatchEvent(new MouseEvent('mouseenter'))
+      menu.update({ open: false }); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { menu.destroy(); host.remove(); vi.useRealTimers() }
+  })
+  it('提示支持焦点、翻转、滚动关闭与销毁', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); host.className = 'lark-doc'; document.body.appendChild(host)
+    const tips = createTooltip({ host }), button = document.createElement('button')
+    tips.bind(button)
+    try {
+      button.title = '查找'; button.setAttribute('aria-describedby', 'existing-description'); host.appendChild(button)
+      button.getBoundingClientRect = () => ({ left: 2, top: 1, right: 32, bottom: 31, width: 30, height: 30 })
+      button.focus(); vi.advanceTimersByTime(150)
+      const tip = host.querySelector('[role="tooltip"]')
+      expect(tip.textContent).toBe('查找'); expect(tip.classList.contains('is-below')).toBe(true)
+      expect(parseFloat(tip.style.left)).toBeGreaterThanOrEqual(8)
+      expect(button.title).toBe('')
+      window.dispatchEvent(new Event('scroll'))
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+      expect(button.getAttribute('aria-describedby')).toBe('existing-description')
+      button.dispatchEvent(new MouseEvent('mouseenter'))
+      tips.destroy(); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { tips.destroy(); host.remove(); vi.useRealTimers() }
+  })
+  it('每个图表入口保留独立SVG和点击，文字行不额外显示tips', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const insertDiagramType = vi.fn(), menu = createDiagramMenu({ host, handlers: { insertDiagramType } })
+    try {
+      const types = ['flowchart', 'sequence', 'gantt', 'pie', 'state', 'class'].map(id => ({ id, label: id }))
+      menu.update({ open: true, types })
+      expect(new Set([...host.querySelectorAll('button svg')].map(node => node.outerHTML)).size).toBe(6)
+      for (const node of host.querySelectorAll('button')) {
+        node.getBoundingClientRect = () => ({ left: 100, top: 120, right: 140, bottom: 150, width: 40, height: 30 })
+        node.dispatchEvent(new MouseEvent('mouseenter')); vi.advanceTimersByTime(150)
+        expect(host.querySelector('[role="tooltip"]')).toBeNull()
+        expect(node.getAttribute('aria-label')).toBe(node.textContent)
+        node.click(); expect(insertDiagramType).toHaveBeenLastCalledWith(node.textContent)
+        node.dispatchEvent(new MouseEvent('mouseleave'))
+      }
+      host.querySelector('button').dispatchEvent(new MouseEvent('mouseenter'))
+      menu.update({ open: false }); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { menu.destroy(); host.remove(); vi.useRealTimers() }
+  })
+
   it('renders source plus icon slots and common aliases as separate stable buttons', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -273,6 +403,29 @@ describe('v12e link and cell interactions', () => {
     menu.destroy(); host.remove()
   })
 
+  it('inserts a live plus table-size choice and rejects a retired callback', () => {
+    const ed = editor('<p>正文</p>')
+    const host = { editor: ed, menuKind: 'plus', menuOpen: true, writable: () => true, featureEnabled: () => true,
+      larkDocConfig: {}, filteredCommands: filterCommands('', 'plus'), insertTable: vi.fn(), closeCommandMenu: vi.fn(), restoreSelection: vi.fn() }
+    const pick = { id: 'table', tableSize: { rows: 3, cols: 3 } }
+    commandMenu.methods.chooseCommand.call(host, pick)
+    expect(host.insertTable).toHaveBeenCalledWith(3, 3)
+    host.menuOpen = false; commandMenu.methods.chooseCommand.call(host, pick)
+    expect(host.insertTable).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a retired plus table-size callback after switching to the direct slash table action', () => {
+    const ed = editor('<p>/正文</p>'), before = ed.getJSON()
+    const host = { editor: ed, menuKind: 'slash', menuOpen: true, slashMatch: { from: 1, to: 2 }, writable: () => true,
+      featureEnabled: () => true, larkDocConfig: {}, filteredCommands: filterCommands('', 'slash'),
+      insertTable: vi.fn(), closeCommandMenu: vi.fn(), restoreSelection: vi.fn() }
+    commandMenu.methods.chooseCommand.call(host, { id: 'table', tableSize: { rows: 3, cols: 3 } })
+    expect(host.insertTable).not.toHaveBeenCalled()
+    expect(host.restoreSelection).not.toHaveBeenCalled()
+    expect(host.closeCommandMenu).not.toHaveBeenCalled()
+    expect(ed.getJSON()).toEqual(before)
+  })
+
   it('previews and inserts a selected 9x9 plus table size with keyboard access', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -283,6 +436,9 @@ describe('v12e link and cell interactions', () => {
     const grid = menu.el.querySelector('.lark-doc-table-submenu-grid')
     expect(grid?.querySelectorAll('button')).toHaveLength(81)
     const cell = grid.querySelector('[data-row="2"][data-col="3"]')
+    cell.focus()
+    cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(grid.querySelector('[data-row="3"][data-col="3"]'))
     cell.focus()
     expect(menu.el.querySelector('.lark-doc-submenu-picker-head output').textContent).toBe('3 x 2')
     expect(grid.querySelectorAll('.is-preview')).toHaveLength(6)
@@ -344,6 +500,26 @@ describe('v12e link and cell interactions', () => {
     for (let depth = $from.depth; depth > 0; depth -= 1) if ($from.node(depth).type.name === 'table') { inserted = $from.node(depth); break }
     expect(inserted.childCount).toBe(4)
     expect(inserted.firstChild.childCount).toBe(2)
+  })
+
+  it('validates native table size without changing a dry run, readonly body or disabled feature', () => {
+    const ed = editor('<p>正文</p>'), before = ed.getJSON()
+    expect(ed.can().insertLarkDocTable({ rows: 3, cols: 3 })).toBe(true)
+    expect(ed.getJSON()).toEqual(before)
+    for (const input of [{ rows: 0 }, { cols: -1 }, { rows: 101 }, { cols: 2.5 }, { rows: NaN }]) expect(ed.commands.insertLarkDocTable(input)).toBe(false)
+    expect(ed.getJSON()).toEqual(before)
+    ed.setEditable(false); expect(ed.commands.insertLarkDocTable()).toBe(false)
+    const disabled = editor('<p>原文</p>', { features: { tables: false } })
+    expect(disabled.schema.nodes.table).toBeDefined(); expect(disabled.commands.insertLarkDocTable()).toBe(false)
+  })
+
+  it('preserves the registered schema when adding the native table command', () => {
+    const extensions = createLarkDocExtensions()
+    const standard = getSchema(extensions.map(extension => extension.name === 'table' ? Table.configure({ resizable: true }) : extension))
+    const native = getSchema(extensions)
+    const { serializeMap } = createRequire(import.meta.url)('../../scripts/lib/schema-contract.js')
+    expect(serializeMap(native.spec.nodes)).toEqual(serializeMap(standard.spec.nodes))
+    expect(serializeMap(native.spec.marks)).toEqual(serializeMap(standard.spec.marks))
   })
 
   it('opens the real table block menu from the toolbar and closes it on the next click', () => {
@@ -461,6 +637,35 @@ describe('v12e link and cell interactions', () => {
     ui.destroy()
   })
 
+  it('keeps eager table visibility independent of optional projection and live editing guards', () => {
+    const ed = editor('<p>outside</p>' + tableHTML), host = tableHost(ed)
+    const p = ed.view.dom.querySelector('td p'), from = ed.view.posAtDOM(p, 0)
+    const anchor = { x: 100, y: 100, placement: 'top' }
+    host.tableTextAnchor = host.tableToolbarAnchor = () => anchor
+    host.tableSelectionAlignment = vi.fn(() => { throw new Error('cold projection must not run') })
+    ed.commands.setTextSelection({ from, to: from + 1 })
+    const baseline = ed.getJSON()
+    expect(host.buildTableToolsVisibility()).toMatchObject({ open: true, anchor, selection: ed.state.selection, cellSelection: false })
+    host.onTableSelectLine('column', 0)
+    expect(host.buildTableToolsVisibility()).toMatchObject({ open: true, anchor, cellKind: 'line', cellSelection: true })
+    expect(host.tableSelectionAlignment).not.toHaveBeenCalled()
+    for (const change of ['readonly', 'writable', 'feature', 'dismissed']) {
+      host.effectiveReadonly = change === 'readonly'
+      host.writable = () => change !== 'writable'
+      host.featureEnabled = () => change !== 'feature'
+      host.tableToolsDismissed = () => change === 'dismissed'
+      expect(host.buildTableToolsVisibility().open, change).toBe(false)
+    }
+    host.effectiveReadonly = false; host.writable = host.featureEnabled = () => true; host.tableToolsDismissed = () => false
+    ed.commands.setTextSelection(from)
+    expect(host.buildTableToolsVisibility().open).toBe(false)
+    ed.commands.setTextSelection({ from: 1, to: 3 })
+    expect(host.buildTableToolsVisibility().open).toBe(false)
+    ed.commands.setTextSelection({ from, to: from + 1 }); host.tableTextAnchor = () => null
+    expect(host.buildTableToolsVisibility().open).toBe(false)
+    expect(ed.getJSON()).toEqual(baseline)
+  })
+
   it.each(['Delete', 'Backspace'])('clears a selected column with %s without deleting its structure', key => {
     const ed = editor(tableHTML)
     const host = tableHost(ed)
@@ -551,9 +756,10 @@ describe('v12e link and cell interactions', () => {
   it('matches link form confirmation eligibility for blank text and unsafe protocols', () => {
     const ui = createLinkDialog({ host: document.body })
     ui.update({ open: true, text: '', value: 'https://example.com' })
-    expect(ui.el.querySelector('button').disabled).toBe(false)
+    const confirm = [...ui.el.querySelectorAll('button')].find(button => button.textContent === '确认')
+    expect(confirm.disabled).toBe(false)
     ui.update({ text: 'text', value: 'javascript:alert(1)' })
-    expect(ui.el.querySelector('button').disabled).toBe(true)
+    expect(confirm.disabled).toBe(true)
     ui.destroy()
   })
 
@@ -705,6 +911,22 @@ describe('v12e link and cell interactions', () => {
     expect(host.updateHoveredLink()).toBe(true)
     target = host.linkTargetAt(ed.view.dom.querySelector('a'))
     expect(target).toMatchObject({ view: 'link', title: 'http://www.a.com', href: 'http://www.a.com' })
+  })
+
+  it('editing a link restores focus immediately and stays separate from following typing undo', () => {
+    const ed = editor('<p><a href="https://example.com">old</a></p>'), host = hostFor(ed)
+    const scroll = vi.spyOn(ed.view, 'scrollToSelection').mockImplementation(() => {})
+    host._linkTarget = host.linkTargetAt(ed.view.dom.querySelector('a'))
+    host.editHoveredLink(); host.linkText = 'changed'
+    const input = document.createElement('input'); document.body.appendChild(input); input.focus()
+    try {
+      expect(host.updateHoveredLink()).toBe(true)
+      expect(document.activeElement).toBe(ed.view.dom)
+      ed.commands.setTextSelection(8); ed.commands.insertContent('next'); ed.commands.undo()
+      expect(ed.getText()).toBe('changed')
+      ed.commands.undo()
+      expect(ed.getText()).toBe('old')
+    } finally { input.remove(); scroll.mockRestore() }
   })
 
   it('resolves a pending webpage title without overwriting later user edits', async () => {
@@ -866,8 +1088,8 @@ describe('v12e link and cell interactions', () => {
     } finally { open.mockRestore(); selection.removeAllRanges() }
   })
 
-  it('shows the cell plus only for a collapsed cursor inside one editable cell', () => {
-    const ed = editor('<p>outside</p><table><tr><td><p>cell</p></td><td><p>next</p></td></tr></table>')
+  it('shows the cell plus only for a collapsed cursor inside one empty editable block', () => {
+    const ed = editor('<p>outside</p><table><tr><td><p></p></td><td><p>next</p></td></tr></table>')
     const host = { editor: ed, featureEnabled: () => true, effectiveReadonly: false }
     const build = tableTools.methods.buildCellPlusState
     expect(typeof build).toBe('function')
@@ -880,7 +1102,7 @@ describe('v12e link and cell interactions', () => {
     expect(build.call(host)).toMatchObject({ visible: true, left: 72, top: 87 })
     ed.view.nodeDOM(cells[1]).getBoundingClientRect = () => ({ left: 220, top: 80, width: 100, height: 40, right: 320, bottom: 120 })
     ed.commands.setTextSelection(cells[1] + 2)
-    expect(build.call(host)).toMatchObject({ visible: true, left: 184, top: 87 })
+    expect(build.call(host).visible).toBe(false)
     host.blockMenuOpen = true
     expect(build.call(host).visible).toBe(false)
     host.blockMenuOpen = false
@@ -1045,18 +1267,39 @@ describe('v12e link and cell interactions', () => {
     }
   })
 
-  it('removes links but preserves their text for inline and block views', () => {
+  it('removes links but preserves their text for inline and block views', async () => {
     const ed = editor('<p>before <a href="https://example.com">Example</a> after</p>')
     const host = hostFor(ed)
     host._linkTarget = host.linkTargetAt(ed.view.dom.querySelector('a'))
+    const focus = vi.spyOn(ed.view, 'focus')
+    // jsdom has no Range layout; retain real focus while excluding layout-only scrolling.
+    vi.spyOn(ed.view, 'scrollToSelection').mockImplementation(() => {})
+    const outside = document.createElement('input'); document.body.appendChild(outside); outside.focus()
     expect(host.removeHoveredLink()).toBe(true)
+    await vi.waitFor(() => expect(focus).toHaveBeenCalled())
+    expect(document.activeElement).toBe(ed.view.dom)
     expect(ed.state.doc.textContent).toBe('before Example after')
     expect(ed.view.dom.querySelector('a')).toBeNull()
     ed.commands.setLinkEmbed({ href: 'https://example.com', title: 'Block', view: 'card' })
     host._linkTarget = host.linkTargetAt(ed.view.dom.querySelector('[data-type="link-embed"]'))
+    outside.focus()
     expect(host.removeHoveredLink()).toBe(true)
     expect(ed.state.doc.textContent).toContain('Block')
     expect(ed.view.dom.querySelector('[data-type="link-embed"]')).toBeNull()
+    await vi.waitFor(() => expect(focus).toHaveBeenCalledTimes(2))
+    expect(document.activeElement).toBe(ed.view.dom)
+    outside.remove()
+  })
+
+  it('strips oversized UTF-16 link titles before schema parsing while preserving a 300-codepoint bookmark title', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `<div data-type="link-embed" data-href="https://example.com" data-title="${'😀'.repeat(50001)}"></div><a href="https://example.com" data-link-title="${'😀'.repeat(50001)}">link</a><div data-type="bookmark" data-url="https://example.com" data-title="${'😀'.repeat(300)}"></div>`
+    const clean = sanitizeHTML(root.innerHTML)
+    root.innerHTML = clean
+    expect(root.querySelector('[data-type="link-embed"]').hasAttribute('data-title')).toBe(false)
+    expect(root.querySelector('a').hasAttribute('data-link-title')).toBe(false)
+    expect(root.querySelector('[data-type="bookmark"]').getAttribute('data-title')).toBe('😀'.repeat(300))
+    expect(() => editor(clean)).not.toThrow()
   })
 
   it('rejects stale hover edits, unsafe URLs, malformed attributes and readonly mutations', () => {

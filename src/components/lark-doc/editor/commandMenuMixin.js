@@ -30,19 +30,19 @@ function commandEnabled(config, id) {
 
 export default {
   data() { return {
-    menuOpen: false, menuKind: '', menuQuery: '', menuPosition: { left: 20, top: 120 }, menuMaxHeight: '', menuAnchor: null, activeCommandIndex: 0, slashMatch: null, menuTrigger: null,
+    menuOpen: false, menuKind: '', menuQuery: '', menuPosition: { left: 20, top: 120 }, menuMaxHeight: '', menuAnchor: null, activeCommandIndex: 0, slashMatch: null, menuTrigger: null, menuRevision: 0,
     // 工具栏「图表」下拉：按类型插入 mermaid 图表块，承接图表的全部插入入口。
     diagramMenuOpen: false, diagramMenuStyle: {}, diagramTypes,
   } },
   computed: {
-    filteredCommands() { return filterCommands(this.menuQuery, this.menuKind || 'slash', this.larkDocConfig, this.editor?.isActive('table') ? 'cell' : 'block') },
+    filteredCommands() { return filterCommands(this.menuQuery, this.menuKind || 'slash', this.larkDocConfig, this._mobileEditorMedia?.matches ? (this.editor?.isActive('table') ? 'phone-cell' : 'phone') : (this.editor?.isActive('table') ? 'cell' : 'block')) },
     activeCommandId() { return this.filteredCommands[this.activeCommandIndex]?.id || '' },
     menuStyle() { return { left: `${this.menuPosition.left}px`, top: `${this.menuPosition.top}px`, ...(this.menuMaxHeight ? { maxHeight: `${this.menuMaxHeight}px` } : {}) } },
   },
   watch: {
-    session(value, previous) { if (value !== previous) this.closeTemplateLibrary(false) },
+    session(value, previous) { if (value !== previous) this.closeTemplateLibrary(false); else this.reconcileTemplateLibrary() },
     documentId() { this.closeTemplateLibrary(false) },
-    effectiveReadonly() { this.reconcileTemplateLibrary() },
+    effectiveReadonly(value) { if (value) this.menuRevision += 1; this.reconcileTemplateLibrary() },
     larkDocConfig: { deep: true, handler() { this.reconcileTemplateLibrary() } },
     templates() { this.reconcileTemplateLibrary() },
   },
@@ -62,6 +62,8 @@ export default {
       try {
         const selection = TextSelection.create(doc, range.from, range.to)
         return { editor, session: this.session, documentId: this.documentId, sessionDocumentId: this.session?.documentId,
+          actorId: this.session?.user?.id, identityGeneration: this.session?._identityGeneration,
+          privateIdentityGeneration: this.session?._privateIdentityGeneration, authorizationGeneration: this.session?._authorizationGeneration,
           templates: this.templates, network: JSON.stringify(this.larkDocConfig.network || {}), imageProxy: this.larkDocConfig.network?.imageProxy,
           bookmark: selection.getBookmark(), doc, library: false }
       } catch (_) { return null }
@@ -70,6 +72,8 @@ export default {
       return !!scope && !scope.invalid && (!scope.library || this._templateInsertion === scope) && this.templateInsertionAllowed()
         && this.editor === scope.editor && this.session === scope.session && this.documentId === scope.documentId
         && this.session?.documentId === scope.sessionDocumentId && this.templates === scope.templates
+        && this.session?.user?.id === scope.actorId && this.session?._identityGeneration === scope.identityGeneration
+        && this.session?._privateIdentityGeneration === scope.privateIdentityGeneration && this.session?._authorizationGeneration === scope.authorizationGeneration
         && JSON.stringify(this.larkDocConfig.network || {}) === scope.network && this.larkDocConfig.network?.imageProxy === scope.imageProxy
     },
     prepareEditorTemplate(templateId) {
@@ -170,7 +174,21 @@ export default {
       this._templateMapListener = ({ transaction }) => { if (!this.mapTemplateInsertion(scope, transaction)) this.closeTemplateLibrary(false) }
       scope.editor.on('transaction', this._templateMapListener)
       const document = scope.editor.view.dom.ownerDocument
+      const root = this.$refs.root || scope.editor.view.dom
+      const cancelPending = event => {
+        if (!['Escape', 'Esc'].includes(event.key) || event.defaultPrevented || event.isComposing || scope.editor.view.composing || this._templateInsertion !== scope ||
+          !this.templateInsertionCurrent(scope) || !root.isConnected || this._templateLibraryUi?.el?.isConnected) return
+        const target = event.target?.nodeType === 1 ? event.target : document.activeElement
+        const owned = node => !node || node === document.body || node === document.documentElement || root.contains(node)
+        if (!owned(target) || !owned(document.activeElement)) return
+        const input = document.activeElement?.closest?.('input,textarea,select,[contenteditable="true"],[role="dialog"]')
+        if (input && !scope.editor.view.dom.contains(input)) return
+        event.preventDefault(); event.stopPropagation(); this.closeTemplateLibrary(true)
+      }
+      document.defaultView?.addEventListener('keydown', cancelPending, true)
+      this._templateLibraryKeyStop = () => document.defaultView?.removeEventListener('keydown', cancelPending, true)
       this._templateLibraryUi = createTemplateLibrary({ host: this.$refs.panelHost || this.$refs.root, mode: 'insert',
+
         renderDocument: (element, template) => {
           if (!this.templateInsertionCurrent(scope)) return
           const content = this.prepareEditorTemplate(template.id)
@@ -186,7 +204,7 @@ export default {
           onInsert: template => this.insertEditorTemplate(template.id, scope),
           isCurrent: () => this.templateInsertionCurrent(scope),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       this._templateLibraryUi.update({ open: true, templates: (this.templates || []).map(item => ({ ...item, name: item.label || item.title || item.id })) })
       this._templateLibraryUi.focusSearch()
       return true
@@ -195,6 +213,7 @@ export default {
       if (this._templateInsertion && !this.templateInsertionCurrent(this._templateInsertion)) this.closeTemplateLibrary(false)
     },
     closeTemplateLibrary(restoreFocus = false) {
+      this._templateLibraryKeyStop?.(); this._templateLibraryKeyStop = null
       const scope = this._templateInsertion
       const editor = scope?.editor
       const restore = restoreFocus && this.templateInsertionCurrent(scope)
@@ -212,8 +231,9 @@ export default {
     },
     openCommandMenu(kind, event) {
       if (!this.writable() || !this.featureEnabled('insert')) return
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('command')
       if (this.menuOpen && this.menuKind === kind) { this.closeCommandMenu(true); return }
+      this.menuRevision += 1
       this.rememberSelection(kind === 'plus')
       this.menuKind = kind
       this.menuTrigger = event?.currentTarget || null
@@ -228,17 +248,25 @@ export default {
       this.headingStyle = {}
       this.closeBlockMenu()
       this.trackTemplateMenu()
+      this.onCommandMenuReady(this._commandMenuUi)
+    },
+    onCommandMenuReady(ui) {
+      if (!ui) return
+      const revision = this.menuRevision, kind = this.menuKind
       this.$nextTick(() => {
+        if (this._isBeingDestroyed || this._isDestroyed || this.effectiveReadonly || !this.menuOpen
+          || revision !== this.menuRevision || kind !== this.menuKind || ui !== this._commandMenuUi || !ui.el?.isConnected) return
         this.positionCommandMenu()
-        // plus 菜单打开即可打字：焦点交给搜索框。
-        // 阶段 5 批次 3：菜单 DOM 已由 `src/ui/commandMenu.js` 建（不再有子组件实例），
-        // 原来靠 `$children.find(name === 'LarkDocCommandMenu')` 摸子组件，现在直接问原生层。
-        if (kind === 'plus') this._commandMenuUi?.focusSearch()
+        if (kind === 'plus') {
+          const touch = ui.el.ownerDocument.defaultView?.matchMedia?.('(max-width: 760px) and (pointer: coarse)')?.matches
+          if (touch) ui.focusClose()
+          else ui.focusSearch()
+        }
       })
     },
     openEmptyBlockInsertMenu(event) {
       if (!this.writable() || !this.handleIsEmptyParagraph) return
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('command')
       this.closeBlockMenu()
       const cursor = this.handleRange.from + 1
       // Hover opens this menu before the pointer click event; keep the same
@@ -306,9 +334,10 @@ export default {
     scheduleCommandMenuClose() {
       this.schedulePopupHoverClose(() => {
         if (this.menuOpen && this.menuKind === 'plus') this.closeCommandMenu()
-      })
+      }, 'command')
     },
     closeCommandMenu(restoreFocus = false) {
+      this.menuRevision += 1
       this.cancelPopupHoverClose()
       this.stopTemplateMenuTracking()
       this.menuOpen = false
@@ -318,9 +347,9 @@ export default {
       this.menuMaxHeight = ''
       this.slashMatch = null
       if (restoreFocus) {
-        // 菜单按钮点击会先夺走焦点；结构命令提交前同步回到编辑器，避免紧接着输入落到 body。
-        this.focus()
-        this.$nextTick(() => this.focus())
+        // Tiptap commands.focus 会排入下一帧，可能抢走刚重开的面板焦点。
+        this.editor?.view.focus()
+
       }
     },
     /**
@@ -352,7 +381,11 @@ export default {
       else if (event.key === 'Enter') {
         event.preventDefault()
         if (typeof this._commandMenuUi?.choose === 'function') this._commandMenuUi.choose()
-        else this.chooseCommand(this.filteredCommands[this.activeCommandIndex])
+        else {
+          const item = this.filteredCommands[this.activeCommandIndex]
+          if (item?.submenu && (this.menuKind === 'plus' || ['columns', 'templates', 'diagram'].includes(item.submenuType))) this._commandMenuUi?.showSubmenu(item.id)
+          else this.chooseCommand(item)
+        }
       } else if (event.key === 'Escape') { event.preventDefault(); this.closeCommandMenu() }
     },
     chooseCommand(item) {
@@ -360,7 +393,7 @@ export default {
       if (!this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, item.id)) return
       // Picker callbacks may outlive a config or selection change. Apply the
       // same execution gate as direct commands before restoring/deleting text.
-      if (item.id === 'table' && item.tableSize && (this.menuKind !== 'plus' || !this.filteredCommands.some(entry => entry.id === 'table' && entry.submenuType === 'table'))) return
+      if (item.id === 'table' && item.tableSize && (!this.menuOpen || !['plus', 'slash'].includes(this.menuKind) || !this.filteredCommands.some(entry => entry.id === 'table' && entry.submenuType === 'table'))) return
       if (item.id === 'template') return item.templateLibrary ? this.openTemplateLibrary() : this.insertEditorTemplate(item.templateId)
       /**
        * P5-06：skip 项不可执行。菜单里它们本来就 `disabled`（鼠标点不动），
@@ -396,15 +429,11 @@ export default {
       this.closeCommandMenu(focusAfter)
       if (isTableSize) this.insertTable(item.tableSize.rows, item.tableSize.cols)
       else this.executeCommand(item.id, item.templateId, item.diagramType)
-      if (focusAfter) {
-        this.focus()
-        this.$nextTick(() => this.focus())
-      }
     },
     /** 工具栏「图表」按钮：打开类型下拉（fixed 定位贴按钮下方）。 */
     openDiagramMenuOnHover() {
-      if (!this.writable() || !this.featureEnabled('diagram')) return
-      this.cancelPopupHoverClose()
+      if (!this.writable() || !this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, 'diagram')) return
+      this.cancelPopupHoverClose('diagram')
       if (this.diagramMenuOpen) return
       this._diagramHoverOpened = true
       this.diagramMenuOpen = true
@@ -415,13 +444,13 @@ export default {
       this.schedulePopupHoverClose(() => {
         this._diagramHoverOpened = false
         if (this.diagramMenuOpen) this.closeDiagramMenu()
-      })
+      }, 'diagram')
     },
     toggleDiagramMenu() {
-      if (!this.writable() || !this.featureEnabled('diagram')) return
+      if (!this.writable() || !this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, 'diagram')) return
       if (this._diagramHoverOpened && this.diagramMenuOpen) return
       this._diagramHoverOpened = false
-      this.cancelPopupHoverClose()
+      this.cancelPopupHoverClose('diagram')
       this.diagramMenuOpen = !this.diagramMenuOpen
       this.diagramMenuStyle = {}
       if (this.diagramMenuOpen) this.$nextTick(() => this.positionDiagramMenu())
@@ -430,29 +459,12 @@ export default {
     positionDiagramMenu() {
       if (!this.diagramMenuOpen) return
       const root = this.$refs.root
-      const trigger = root?.querySelector('button[aria-label="图表"]')
-      const menu = root?.querySelector('.lark-doc-diagram-menu')
-      if (!trigger || !menu) return
-      const margin = 8
-      const triggerRect = trigger.getBoundingClientRect()
-      const menuRect = menu.getBoundingClientRect()
-      const naturalHeight = Math.max(menu.scrollHeight, menuRect.height)
-      const viewportSpace = Math.max(120, window.innerHeight - margin * 2)
-      const desiredHeight = Math.min(naturalHeight, viewportSpace)
-      const below = Math.max(0, window.innerHeight - triggerRect.bottom - margin)
-      const above = Math.max(0, triggerRect.top - margin)
-      const useAbove = below < desiredHeight && above > below
-      const available = useAbove ? above : below
-      const maxHeight = Math.max(120, Math.min(desiredHeight, available || viewportSpace))
-      const rawTop = useAbove ? triggerRect.top - maxHeight - 6 : triggerRect.bottom + 6
-      const top = Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, rawTop))
-      const left = Math.max(margin, Math.min(window.innerWidth - menuRect.width - margin, triggerRect.left))
-      this.diagramMenuStyle = { top: `${top}px`, left: `${left}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+      this.diagramMenuStyle = this.positionToolbarPopup(root?.querySelector('button[aria-label="图表"]'), root?.querySelector('.lark-doc-diagram-menu'), 120)
     },
     /** 按类型插入 mermaid 图表块；插入菜单「图表」命令也走这里（默认流程图）。 */
     insertDiagramType(typeId) {
       const item = (this.diagramTypes || diagramTypes).find((entry) => entry.id === typeId)
-      if (!item || !this.writable() || !this.featureEnabled('diagram')) return
+      if (!item || !this.writable() || !this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, 'diagram')) return
       this.closeDiagramMenu()
       this.run('insertContent', { type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: item.source }] })
     },

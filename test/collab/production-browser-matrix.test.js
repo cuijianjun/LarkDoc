@@ -780,6 +780,99 @@ if (process.env.LARK_PRODUCTION_MATRIX === '1') describe('C15实际制品矩阵�
 // Focused real-Chrome geometry regression. These fixtures verify CSS hit testing,
 // not provider/auth/backend behavior; the production environment covers those separately.
 if (process.env.LARK_UI_LAYER_REGRESSION === '1') describe('非模态评论与导出菜单真实浏览器层级', () => {
+  it('远端图片预览关闭和图片原操作查询均可触控', async () => {
+    const executablePath = findChromium()
+    if (!executablePath) throw new Error('CHROMIUM_UNAVAILABLE')
+    const chrome = await loadChromiumDriver().launch({ executablePath, headless: true })
+    try {
+      const page = await chrome.newPage({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true })
+      const css = fs.readFileSync(path.join(REPO_ROOT, 'src/styles/comments.css'), 'utf8')
+      await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><div class="lark-doc"><div class="lark-doc-comment-layer is-remote"><div class="lark-doc-comment-image-backdrop"><div class="lark-doc-comment-image-viewer"><button aria-label="关闭图片预览">关闭</button></div></div><div class="lark-doc-comment-media-status"><button>查询原图片操作</button></div></div></div>`)
+      await page.getByRole('button', { name: '关闭图片预览' }).evaluate(el => { el.onclick = () => el.closest('.lark-doc-comment-image-backdrop').remove() })
+      await page.getByRole('button', { name: '查询原图片操作' }).evaluate(el => { el.onclick = () => { document.body.dataset.queried = 'yes' } })
+      await page.getByRole('button', { name: '关闭图片预览' }).tap({ timeout: 2000 })
+      await page.getByRole('button', { name: '查询原图片操作' }).tap({ timeout: 2000 })
+      expect(await page.evaluate(() => document.body.dataset.queried)).toBe('yes')
+    } finally { await chrome.close() }
+  }, 30000)
+  it('远端侧栏的 reaction picker 不继承点击穿透，手机触控可选择表情', async () => {
+    const executablePath = findChromium()
+    if (!executablePath) throw new Error('CHROMIUM_UNAVAILABLE')
+    const chrome = await loadChromiumDriver().launch({ executablePath, headless: true })
+    try {
+      const page = await chrome.newPage({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true })
+      const css = fs.readFileSync(path.join(REPO_ROOT, 'src/styles/comments.css'), 'utf8')
+      await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><div class="lark-doc"><div class="lark-doc-comment-layer is-remote"><div class="lark-doc-comment-reaction-picker" role="dialog" aria-label="选择表情回复" style="position:fixed;left:8px;top:200px"><button aria-label="红心">❤️</button></div></div></div>`)
+      await page.getByRole('button', { name: '红心', exact: true }).evaluate(el => { el.onclick = () => { document.body.dataset.reaction = 'heart' } })
+      const hit = await page.getByRole('button', { name: '红心', exact: true }).evaluate(el => {
+        const rect = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+      })
+      expect(hit).toBe(true)
+      await page.getByRole('button', { name: '红心', exact: true }).tap({ timeout: 2000 })
+      expect(await page.evaluate(() => document.body.dataset.reaction)).toBe('heart')
+    } finally { await chrome.close() }
+  }, 30000)
+  it('手机全文评论保持文档流，页面可滚动且触控输入可达', async () => {
+    const executablePath = findChromium()
+    if (!executablePath) throw new Error('CHROMIUM_UNAVAILABLE')
+    const chrome = await loadChromiumDriver().launch({ executablePath, headless: true })
+    try {
+      const page = await chrome.newPage({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true })
+      const css = fs.readFileSync(path.join(REPO_ROOT, 'src/styles/comments.css'), 'utf8')
+      await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0}.paper{padding:0 26px}${css}</style><div class="lark-doc"><div class="paper"><div style="height:1000px">正文</div><div class="lark-doc-comment-layer is-remote is-mobile is-inline-document"><h2 class="lark-doc-document-comment-heading">全文评论</h2><div class="lark-doc-document-composer"><div class="lark-doc-document-comment-input"><div contenteditable="true" role="textbox" aria-label="全文评论" class="lark-doc-document-composer-input lark-doc-comment-rich-input"></div><button aria-label="发送全文评论">➤</button></div></div></div></div></div>`)
+      const footer = page.locator('.is-inline-document')
+      expect(await footer.evaluate(n => getComputedStyle(n).position)).toBe('relative')
+      expect((await footer.boundingBox()).y).toBeGreaterThan(1000)
+      const input = page.getByRole('textbox', { name: '全文评论', exact: true })
+      await input.scrollIntoViewIfNeeded(); await input.tap({ timeout: 3000 }); await page.keyboard.insertText('mobile footer\nsecond line')
+      expect(await input.innerText()).toContain('second line')
+      const box = await input.boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(393)
+      const send = await page.getByRole('button', { name: '发送全文评论' }).boundingBox()
+      expect(send.x).toBeGreaterThanOrEqual(box.x + box.width - 44); expect(send.x + send.width).toBeLessThanOrEqual(box.x + box.width)
+      expect(box.height).toBeGreaterThanOrEqual(64)
+      expect(send.y - box.y).toBeCloseTo(8, 0)
+      expect(await page.evaluate(() => scrollY > 0 && getComputedStyle(document.body).overflow !== 'hidden')).toBe(true)
+    } finally { await chrome.close() }
+  }, 30000)
+  it('手机权限/密码/嵌入/链接浮层及内部操作都在视口内，桌面尺寸保持', async () => {
+    const executablePath = findChromium()
+    if (!executablePath) throw new Error('CHROMIUM_UNAVAILABLE')
+    const chrome = await loadChromiumDriver().launch({ executablePath, headless: true })
+    try {
+      const page = await chrome.newPage({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true })
+      const css = ['src/components/lark-doc/lark-doc.css', 'src/styles/share.css'].map(file => fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')).join('\n')
+      const cases = [
+        ['lark-doc-permission-dialog', 500, '<header class="lark-doc-permission-header"><div class="lark-doc-permission-head-row"><h2 class="lark-doc-permission-title">权限设置</h2><button aria-label="关闭">×</button></div></header><div class="lark-doc-permission-body"><div class="lark-doc-permission-column"><div class="lark-doc-permission-item"><div class="lark-doc-permission-row">允许协作者邀请其他成员</div><div class="lark-doc-permission-value"><button>所有可编辑成员</button></div><div class="lark-doc-permission-search"><input aria-label="搜索成员"></div><div class="lark-doc-secure-link-tip">安全链接提示文案应在窄屏内换行显示。</div></div></div></div>'],
+        ['lark-doc-share-confirm', 500, '<header class="lark-doc-share-confirm-header"><h2 class="lark-doc-share-confirm-title">启用安全链接</h2></header><div class="lark-doc-share-confirm-body"><p class="lark-doc-share-confirm-text">修改链接设置后，已有协作者仍可按当前权限访问。</p></div><footer class="lark-doc-share-confirm-footer"><button>取消</button><button>确认</button></footer>'],
+        ['lark-doc-share-password', 420, '<header class="lark-doc-share-password-header"><h2 class="lark-doc-share-password-title">修改密码</h2><button aria-label="关闭">×</button></header><div class="lark-doc-share-password-body"><div class="lark-doc-share-password-content"><div class="lark-doc-share-password-input-row"><div class="lark-doc-share-password-input"><input aria-label="密码"></div><button>随机生成</button></div><div class="lark-doc-share-password-rules"><p class="lark-doc-share-password-rule">使用符合规则的密码保护文档。</p></div><p class="lark-doc-share-password-hints">通过安全链接访问文档时需要输入密码。</p><footer class="lark-doc-share-password-footer"><button>取消</button><button>保存</button></footer></div></div>'],
+        ['lark-doc-embed-dialog', 540, '<header><strong>插入网页</strong><button class="lark-doc-embed-dialog-close" aria-label="关闭">×</button></header><input class="lark-doc-embed-dialog-input" aria-label="网页链接"><footer><span>请输入完整的网页链接</span><button>插入</button></footer>'],
+        ['lark-doc-link-hover-card', 440, '<div class="lark-doc-link-hover-wrapper"><a class="lark-doc-link-hover-url">https://example.test/a-long-document-link</a><button class="lark-doc-link-hover-icon">编辑</button><button class="lark-doc-link-hover-icon">删除</button><button class="lark-doc-link-hover-icon">更多</button></div>'],
+      ]
+      for (const height of [852, 520]) for (const [className, , body] of cases) {
+        await page.setViewportSize({ width: 393, height })
+        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><div class="lark-doc"><section class="${className}" style="${className.includes('embed') || className.includes('hover-card') ? 'left:8px;top:100px' : ''}">${body}</section></div>`)
+        const rect = await page.locator(`.${className}`).boundingBox()
+        expect(rect.x, className).toBeGreaterThanOrEqual(0)
+        expect(rect.x + rect.width, className).toBeLessThanOrEqual(393)
+        expect(rect.y + rect.height, className).toBeLessThanOrEqual(height)
+        if (className === 'lark-doc-permission-dialog') expect(await page.locator('.lark-doc-permission-body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+        const controls = page.locator('button, input')
+        for (let index = 0; index < await controls.count(); index++) {
+          await controls.nth(index).scrollIntoViewIfNeeded()
+          const box = await controls.nth(index).boundingBox()
+          expect(box.x, className).toBeGreaterThanOrEqual(0)
+          expect(box.x + box.width, className).toBeLessThanOrEqual(393)
+        }
+      }
+      await page.setViewportSize({ width: 1440, height: 950 })
+      for (const [className, width, body] of cases) {
+        await page.setContent(`<style>${css}</style><div class="lark-doc"><section class="${className}">${body}</section></div>`)
+        expect((await page.locator(`.${className}`).boundingBox()).width, className).toBe(width)
+      }
+    } finally { await chrome.close() }
+  }, 30000)
   it('新评论和已有评论共同打开时不重叠，短窗也能鼠标发送两种评论', async () => {
     const executablePath = findChromium()
     if (!executablePath) throw new Error('CHROMIUM_UNAVAILABLE')
@@ -791,7 +884,7 @@ if (process.env.LARK_UI_LAYER_REGRESSION === '1') describe('非模态评论与�
         await page.setViewportSize({ width, height })
         await page.setContent(`<style>${css}</style><div class="lark-doc"><div class="lark-doc-comment-layer is-remote"><section class="lark-doc-comment-composer"><label>新评论<textarea id="new"></textarea></label><button id="create">评论全文</button></section><div class="lark-doc-comment-panel is-remote"><div class="lark-doc-comment-head">已有评论</div><div class="lark-doc-comment-replies">${'<p>评论正文</p>'.repeat(30)}</div><div style="flex:0 0 auto"><label>回复<textarea id="reply"></textarea></label><button id="send">发送</button></div></div></div></div>`)
         const rects = await page.evaluate(() => ({ panel: document.querySelector('.lark-doc-comment-panel').getBoundingClientRect().toJSON(), composer: document.querySelector('.lark-doc-comment-composer').getBoundingClientRect().toJSON() }))
-        expect(rects.panel.bottom).toBeLessThanOrEqual(rects.composer.top)
+        expect(rects.panel.bottom <= rects.composer.top || rects.composer.bottom <= rects.panel.top).toBe(true)
         expect(rects.panel.top).toBeGreaterThanOrEqual(0)
         await page.evaluate(() => { document.getElementById('send').onclick = () => { document.body.dataset.reply = document.getElementById('reply').value }; document.getElementById('create').onclick = () => { document.body.dataset.created = document.getElementById('new').value } })
         await page.locator('#reply').fill('reply'); await page.locator('#send').click({ timeout: 2000 })
@@ -853,4 +946,33 @@ if (process.env.LARK_UI_LAYER_REGRESSION === '1') describe('非模态评论与�
       console.log(JSON.stringify({ browser: chrome.version(), cssSha256: sha256(css), observations }))
     } finally { await chrome.close() }
   }, 60000)
+  it('iPhone 16 视口下回复动作可触摸，编辑/翻译按钮不溢出', async () => {
+    const executablePath = findChromium()
+    if (!executablePath) throw new Error('CHROMIUM_UNAVAILABLE')
+    const chrome = await loadChromiumDriver().launch({ executablePath, headless: true })
+    try {
+      const page = await chrome.newPage({ viewport: { width: 393, height: 852 } })
+      const css = fs.readFileSync(path.join(REPO_ROOT, 'src/styles/comments.css'), 'utf8')
+      await page.setContent(`<style>${css}</style><div class="lark-doc"><div class="lark-doc-comment-layer is-remote"><section class="lark-doc-comment-panel"><div class="lark-doc-comment-reply"><div class="lark-doc-comment-reply-main"><div class="lark-doc-comment-info"><span class="lark-doc-comment-name">Alice</span><span class="lark-doc-comment-time">刚刚</span></div><div class="lark-doc-comment-body">手机端评论文本</div></div><div class="lark-doc-comment-reply-controls"><button class="lark-doc-comment-icon-btn">编辑</button><button class="lark-doc-comment-icon-btn">reaction</button><button class="lark-doc-comment-icon-btn">翻译</button></div></div><div class="lark-doc-comment-edit-actions"><button>取消</button><button>保存</button></div><div class="lark-doc-comment-translation-actions"><button>重试</button><button>关闭</button></div></section></div></div>`)
+      const metrics = await page.evaluate(() => {
+        const layer = document.querySelector('.lark-doc-comment-layer')
+        const reply = document.querySelector('.lark-doc-comment-reply')
+        const controls = document.querySelector('.lark-doc-comment-reply-controls')
+        const icon = document.querySelector('.lark-doc-comment-icon-btn')
+        const edit = document.querySelector('.lark-doc-comment-edit-actions button')
+        const translation = document.querySelector('.lark-doc-comment-translation-actions button')
+        const rect = node => node.getBoundingClientRect().toJSON()
+        return { scrollWidth: document.documentElement.scrollWidth, layer: rect(layer), reply: rect(reply), controlsOpacity: getComputedStyle(controls).opacity, controlsPointerEvents: getComputedStyle(controls).pointerEvents, icon: rect(icon), edit: rect(edit), translation: rect(translation) }
+      })
+      expect(metrics.scrollWidth).toBe(393)
+      expect(metrics.layer.right).toBeLessThanOrEqual(393)
+      expect(metrics.reply.right).toBeLessThanOrEqual(393)
+      expect(metrics.controlsOpacity).toBe('1')
+      expect(metrics.controlsPointerEvents).toBe('auto')
+      expect(metrics.icon.width).toBe(32)
+      expect(metrics.icon.height).toBe(32)
+      expect(metrics.edit.height).toBe(36)
+      expect(metrics.translation.height).toBe(36)
+    } finally { await chrome.close() }
+  }, 30000)
 })

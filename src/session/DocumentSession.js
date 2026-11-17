@@ -1,6 +1,7 @@
 import { isIdentityPrincipal } from '../providers/identity'
-import { createDocumentRecord } from '../core/documentSchema'
-import { aggregateHeadingContainers, restoreUnknownBlocks } from '../core/documentOperations'
+import { createDocumentRecord, normalizeDocumentRecord } from '../core/documentSchema'
+import { decodeVersionDocument } from '../core/versioning/document-codec'
+import { aggregateHeadingContainers, restoreUnknownBlocks, validateDocument } from '../core/documentOperations'
 import { setTransactionMetadata, TRANSACTION_ORIGINS } from '../core/transactionMetadata'
 import { createAuthorizationProvider, normalizeCapabilities, normalizeRemoteCapabilities, DENIED_CAPABILITIES } from '../providers/authorization'
 import { createCollaborationProvider } from '../providers/collaboration'
@@ -241,16 +242,19 @@ export class DocumentSession {
   }
 
   /** 绑定 Tiptap 实例，使记录、事务和版本操作共享同一正文。 */
-  attachEditor(editor) {
+  attachEditor(editor, documentAccess = null) {
     if (this._destroyed) throw new Error('DocumentSession 已销毁')
     this._editor = editor || null
+    this._documentAccess = documentAccess
+    this._currentVersion = null
+    this._pendingLocalRestore = null
     this.emit('editor', this._editor)
     return this._editor
   }
 
   /** 在 Vue 子组件销毁前解除绑定，防止旧编辑器继续接收事件。 */
   detachEditor(editor) {
-    if (!editor || this._editor === editor) this._editor = null
+    if (!editor || this._editor === editor) { this._editor = null; this._documentAccess = null; this._currentVersion = null; this._pendingLocalRestore = null }
     this.emit('editor', null)
   }
 
@@ -270,12 +274,13 @@ export class DocumentSession {
   getDocumentRecord(extra = {}) {
     if (this._identityRequired && !this.can('canView')) throw this._identityError()
     const editor = this._editor
+    if (!extra.content && editor?.storage?.larkDoc?.pagedImport) throw new Error('导入提交中，暂不可读取部分正文')
     return createDocumentRecord({
       documentId: this.documentId,
       // 内部 ProseMirror 文档恒为扁平模型；记录出口统一聚合为 v2 容器形态
       // （与组件 getJSON 同口径，避免「标 v2 写 v1」）。
       content: extra.content || (editor && editor.getJSON ? aggregateHeadingContainers(restoreUnknownBlocks(editor.getJSON())) : undefined),
-      title: extra.title,
+      title: extra.title === undefined ? this._documentAccess?.getTitle?.() : extra.title,
       revisionId: extra.revisionId,
       schemaVersion: extra.schemaVersion,
       updatedAt: extra.updatedAt,
@@ -330,7 +335,24 @@ export class DocumentSession {
     if (!this.can('canCreateVersion')) throw new Error('当前用户没有创建版本的权限')
     const provider = this.providers.versioning
     if (!provider) throw new Error('未配置 versioning Provider')
-    return this._identityAction(() => provider.createSnapshot({ ...this.getDocumentRecord(), ...meta }))
+    if (provider.isRemote || typeof provider.documentCodec?.encode !== 'function') {
+      return this._identityAction(() => provider.createSnapshot({ ...this.getDocumentRecord(), ...meta }))
+    }
+    const scope = this._localVersionScope('canCreateVersion')
+    if (meta.documentId !== undefined && meta.documentId !== scope.documentId) throw new Error('版本不属于当前文档')
+    const body = scope.editor?.state.doc
+    const currentContent = !Object.prototype.hasOwnProperty.call(meta, 'payload') && !Object.prototype.hasOwnProperty.call(meta, 'content')
+    const record = { ...this.getDocumentRecord(meta), ...meta }
+    if (record.author === undefined) record.author = scope.actor
+    if (record.kind === undefined) record.kind = 'manual'
+    if (record.payload === undefined) record.payload = await provider.documentCodec.encode(record)
+    scope.check()
+    const result = await this._identityAction(() => provider.createSnapshot(record))
+    const created = await this._confirmLocalVersion(result, scope, record.kind)
+    scope.check()
+    if (currentContent && scope.editor?.state.doc === body) this._currentVersion = { id: created.id, body, scope }
+    this.emit('version-created', created)
+    return created
   }
 
   /** 请求恢复版本；Provider 应把恢复实现为新的 revision。 */
@@ -338,13 +360,150 @@ export class DocumentSession {
     if (!this.can('canRestoreVersion')) throw new Error('当前用户没有恢复版本的权限')
     const provider = this.providers.versioning
     if (!provider) throw new Error('未配置 versioning Provider')
-    return this._identityAction(() => provider.restore(versionId, { documentId: this.documentId }))
+    if (provider.isRemote || typeof provider.documentCodec?.encode !== 'function') {
+      return this._identityAction(() => provider.restore(versionId, { documentId: this.documentId }))
+    }
+    const scope = this._localVersionScope('canRestoreVersion')
+    if (this.mode === 'collaborative') throw new Error('协作文档须通过持久版本服务还原')
+    if (this._pendingLocalRestore) {
+      try { this._pendingLocalRestore.scope.check() } catch (_) { this._pendingLocalRestore = null }
+      if (this._pendingLocalRestore) throw this._localVersionUnknown(this._pendingLocalRestore.operationId)
+    }
+    const access = this._documentAccess, context = { scope, access, versionId, body: scope.editor?.state.doc, ownsReadonly: false }
+    this._checkLocalRestore(context)
+    if (scope.editor && (typeof access?.prepareContent !== 'function' || typeof access?.applyPreparedContent !== 'function')) throw new Error('本地版本还原缺少文档访问端口')
+    context.document = await this.readVersionDocument(versionId)
+    this._checkLocalRestore(context)
+    if (access) access.prepareContent(context.document.content)
+    this._checkLocalRestore(context)
+    try {
+      const result = await this._identityAction(() => provider.restore(versionId, { documentId: scope.documentId, author: scope.actor }))
+      return await this._applyLocalRestore(context, result)
+    } catch (error) {
+      const operationId = this._localVersionUnknown(error.operationId).operationId
+      if (error.status === 'unknown' && operationId) {
+        try {
+          this._checkLocalRestore(context)
+          context.operationId = operationId
+          this._pendingLocalRestore = context
+          if (scope.editor?.isEditable) { context.ownsReadonly = true; scope.editor.setEditable(false) }
+        } catch (_) { /* The original unknown fact survives a retired view. */ }
+      }
+      throw error
+    }
+  }
+  _checkLocalRestore(context) {
+    const { scope, access, body, ownsReadonly } = context, editor = scope.editor
+    const readonly = access?.isReadonly?.()
+    scope.check()
+    if (editor && (editor.state.doc !== body || readonly === true || !this.can('canEdit')
+      || (!editor.isEditable && !(ownsReadonly && readonly === false)))) throw new Error('正文已更改或当前为只读，版本还原已失效')
+  }
+  async _applyLocalRestore(context, result) {
+    const { scope, access, versionId } = context
+    const created = await this._confirmLocalVersion(result, scope, 'restore', versionId)
+    this._checkLocalRestore(context)
+    if (access) {
+      const prepared = access.prepareContent(context.document.content)
+      this._checkLocalRestore(context)
+      access.applyPreparedContent(prepared, { origin: TRANSACTION_ORIGINS.RESTORE })
+      scope.check()
+      if (access.isReadonly?.() === true) throw new Error('版本还原视图已变为只读')
+      if ((scope.editor.storage?.larkDoc?.pagedView?.logicalDocument(scope.editor.state.doc) || scope.editor.state.doc).eq(prepared.next)) this._currentVersion = { id: created.id, body: scope.editor.state.doc, scope }
+    }
+    if (this._pendingLocalRestore === context) this._pendingLocalRestore = null
+    if (context.ownsReadonly && (!this.can('canEdit') || access?.isReadonly?.() !== false)) throw new Error('版本还原视图仍为只读')
+    if (context.ownsReadonly && scope.editor && !scope.editor.isEditable) scope.editor.setEditable(true)
+    scope.check()
+    this.emit('version-restored', created)
+    return created
+  }
+  async queryLocalVersionRestore(operationId) {
+    const context = this._pendingLocalRestore
+    if (!context || context.operationId !== operationId || typeof context.scope.provider.queryRestoreOperation !== 'function') throw this._localVersionUnknown(operationId)
+    this._checkLocalRestore(context)
+    context.document = await this.readVersionDocument(context.versionId)
+    this._checkLocalRestore(context)
+    const result = await context.scope.provider.queryRestoreOperation(operationId)
+    this._checkLocalRestore(context)
+    if (result?.operationId !== operationId) throw this._localVersionUnknown(operationId)
+    return this._applyLocalRestore(context, result)
+  }
+  async queryLocalVersionCreation(operationId) {
+    const scope = this._localVersionScope('canCreateVersion')
+    if (!this._localVersionUnknown(operationId).operationId || scope.provider.isRemote || typeof scope.provider.documentCodec?.encode !== 'function'
+      || typeof scope.provider.queryOperation !== 'function') throw this._localVersionUnknown(operationId)
+    const result = await scope.provider.queryOperation(operationId)
+    scope.check()
+    if (result?.operationId !== operationId) throw this._localVersionUnknown(operationId)
+    return this._confirmLocalVersion(result, scope, 'manual')
+  }
+  _localVersionScope(capability) {
+    const provider = this.providers.versioning, editor = this._editor, access = this._documentAccess
+    const documentId = this.documentId, actor = this.user?.id
+    const authorization = this._authorizationGeneration, identity = this._privateIdentityGeneration, authentication = this._identityGeneration
+    const versioning = this._versioningProviderGeneration, conversion = this._conversionGeneration
+    const check = () => {
+      if (!this.can(capability) || provider !== this.providers.versioning || editor !== this._editor || access !== this._documentAccess
+        || documentId !== this.documentId || actor !== this.user?.id || authorization !== this._authorizationGeneration
+        || identity !== this._privateIdentityGeneration || authentication !== this._identityGeneration || versioning !== this._versioningProviderGeneration || conversion !== this._conversionGeneration) {
+        throw new Error('版本操作权限或文档上下文已失效')
+      }
+    }
+    check()
+    return { provider, editor, documentId, actor, check }
+  }
+  async _confirmLocalVersion(result, scope, kind, sourceId) {
+    const unavailable = cause => this._localVersionUnknown(result?.operationId, cause)
+    const { createSnapshot } = await import('../core/versioning/snapshot')
+    scope.check()
+    if (!result || (result.status !== undefined && result.status !== 'committed') || typeof result.id !== 'string'
+      || !result.id.trim() || result.id.includes('\0') || result.id === sourceId || result.documentId !== scope.documentId || result.kind !== kind) throw unavailable()
+    let confirmed
+    try { confirmed = createSnapshot(result) } catch (error) { throw unavailable(error) }
+    scope.check()
+    return { ...result, ...confirmed }
+  }
+  _localVersionUnknown(operationId, cause) {
+    return Object.assign(new Error('本地版本结果待确认，不会自动重试或替换正文'), { status: 'unknown', cause },
+      typeof operationId === 'string' && operationId.length && !operationId.includes('\0') ? { operationId } : {})
+  }
+  getCurrentVersionId() {
+    const current = this._currentVersion
+    if (!current || current.body !== this._editor?.state.doc) return null
+    try { current.scope.check(); return current.id || null } catch (_) { return null }
   }
   _conversionProvider(capability) {
     if (this._destroyed || !this.can(capability)) throw new Error('当前用户没有该版本或转换操作权限')
     const provider = this.providers.versioning
     if (!provider) throw new Error('未配置 versioning Provider')
     return provider
+  }
+  /** Decode only a fresh authorized provider result, never a caller-supplied projection. */
+  async readVersionDocument(versionId) {
+    if (typeof versionId !== 'string' || !versionId || versionId.includes('\0')) throw new Error('版本标识无效')
+    const provider = this._conversionProvider('canView'), documentId = this.documentId
+    const authorization = this._authorizationGeneration, identity = this._privateIdentityGeneration
+    const providerGeneration = this._versioningProviderGeneration, conversion = this._conversionGeneration
+    const current = () => !this._destroyed && this.can('canView') && this.providers.versioning === provider && this.documentId === documentId
+      && this._authorizationGeneration === authorization && this._privateIdentityGeneration === identity
+      && this._versioningProviderGeneration === providerGeneration && this._conversionGeneration === conversion
+    const check = () => { if (!current()) throw new Error('版本读取权限或文档上下文已失效') }
+    return this._identityAction(async () => {
+      const record = await provider.get(versionId)
+      check()
+      if (!record || record.id !== versionId || record.documentId !== documentId) throw new Error('版本不属于当前文档')
+      const decoded = record.contentJson
+        ? normalizeDocumentRecord({ documentId, schemaVersion: record.schemaVersion, content: record.contentJson, title: record.title })
+        : provider.documentCodec?.decode
+          ? await provider.documentCodec.decode(record.payload)
+          : decodeVersionDocument(record.payload)
+      check()
+      if (!decoded || decoded.documentId !== documentId) throw new Error('版本正文不属于当前文档')
+      const document = normalizeDocumentRecord(decoded)
+      if (this._editor?.schema) validateDocument(document.content, this._editor.schema)
+      return document
+    })
   }
   diffVersions(fromVersionId, toVersionId) { const provider = this._conversionProvider('canView'); return this._identityAction(() => provider.diff(fromVersionId, toVersionId)) }
   _resetVersions(reason) { this._conversionGeneration++; const port = this.providers.versioning; if (typeof port?.reset === 'function') port.reset(reason); else port?.resetConversions?.(reason) }
@@ -621,6 +780,9 @@ export class DocumentSession {
     this._retiredCommentProviders.clear()
     if (this._destroyed) return
     this._destroyed = true
+    this._documentAccess = null
+    this._currentVersion = null
+    this._pendingLocalRestore = null
     if (this._identityRequired) {
       this._identityGeneration++; this._identityStop?.(); this._identityStop = null; this.providers.identity?.dispose?.()
       this._capabilities = { ...DENIED_CAPABILITIES }; this._identityState = null; this._user = null; this._resourceOperations.clear()

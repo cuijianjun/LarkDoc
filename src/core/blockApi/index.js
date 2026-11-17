@@ -15,12 +15,10 @@
  * 事务出口走 `DocumentSession.dispatch(tr, meta)`（§5.12.6），元信息里的 `origin`
  * 默认 `HOST`：BlockAPI 是给宿主（块菜单、拖拽、AI 提案）用的，不是用户输入。
  */
-import { closeHistory } from '@tiptap/pm/history'
-import { TRANSACTION_ORIGINS } from '../transactionMetadata'
 import { assertExternalOperation, externalOperationState } from '../embed/provider-registry'
-import { BLOCK_API_ERRORS, blockApiError } from './errors'
+import { createBlockMutationContext, createBlockRemoval } from './remove'
 import {
-  BLOCK_LIST_TYPES, blockEntry, blockTree, isContainerType, posAtId, snapshotOf,
+  blockEntry, blockTree, isContainerType, posAtId, snapshotOf,
 } from './tree'
 import {
   assignIds, collectIds, convertBlock, directParentType, expandDeletion, fitToParent,
@@ -148,27 +146,6 @@ function resolveTarget(doc, anchor) {
   return null
 }
 
-/** `keepChildren` 能上提的子块：容器只认 callout/blockquote，列表项只认嵌套子列表。 */
-function hoistedChildren(entry) {
-  const type = entry.node.type.name
-  const node = entry.node
-  if (type === 'callout' || type === 'blockquote') {
-    const out = []
-    for (let i = 0; i < node.childCount; i += 1) out.push(node.child(i))
-    return out.length ? out : null
-  }
-  if (type === 'listItem' || type === 'taskItem') {
-    const items = []
-    for (let i = 0; i < node.childCount; i += 1) {
-      const child = node.child(i)
-      if (!BLOCK_LIST_TYPES.has(child.type.name)) continue
-      for (let j = 0; j < child.childCount; j += 1) items.push(child.child(j))
-    }
-    return items.length ? items : null
-  }
-  return null
-}
-
 /**
  * 建 BlockAPI。
  *
@@ -176,43 +153,8 @@ function hoistedChildren(entry) {
  *   `editor` 与 `session` 给一个就行；两个都给时事务走 `session`（元信息更全）。
  */
 export function createBlockApi(options = {}) {
-  const editor = options.editor || null
-  const session = options.session || null
-  const origin = options.origin || TRANSACTION_ORIGINS.HOST
-  /** `batch` 期间共享的事务；非 null 时所有写操作都落在它上面、且不 dispatch。 */
-  let pending = null
-
-  const baseState = () => {
-    const target = editor || (session && session.getEditor())
-    const state = target && target.state
-    if (!state) throw new Error('createBlockApi：需要 editor，或已 attachEditor 的 session')
-    return state
-  }
-  const currentDoc = () => (pending ? pending.tr.doc : baseState().doc)
-  const newTr = () => (pending ? pending.tr : baseState().tr)
-
-  const capabilityFor = (action) => ({
-    insert: 'canEdit', update: 'canEdit', remove: 'canEdit', move: 'canEdit',
-    duplicate: 'canEdit', transform: 'canEdit', batch: 'canEdit',
-  }[action] || 'canEdit')
-  const assertCapability = (action) => {
-    if (!session || typeof session.can !== 'function') return
-    const capability = capabilityFor(action)
-    if (session.can(capability)) return
-    throw blockApiError(BLOCK_API_ERRORS.PERMISSION_DENIED, `当前用户没有${capability}权限`, { action, capability })
-  }
-
-  const send = (tr) => {
-    if (session) { session.dispatch(tr, { origin }); return }
-    editor.view.dispatch(tr)
-  }
-  const commit = (tr) => {
-    if (pending) return { ok: true, committed: false }
-    if (!tr || !tr.steps.length) return { ok: false, committed: false }
-    closeHistory(tr)
-    send(tr)
-    return { ok: true, committed: true }
-  }
+  const context = createBlockMutationContext(options)
+  const { baseState, currentDoc, newTr, assertCapability, commit } = context
 
   /** 把一批 payload 插到同一个落点，按文档顺序依次排开。 */
   const insertAll = (payloads, at) => {
@@ -295,8 +237,8 @@ export function createBlockApi(options = {}) {
      *   `expandDeletion` 兜底，父块空了自己跟着走。
      */
     selected() {
-      const state = pending ? null : baseState()
-      const selection = state ? state.selection : pending.tr.selection
+      const state = context.pending ? null : baseState()
+      const selection = state ? state.selection : context.pending.tr.selection
       const tree = blockTree(currentDoc())
       const from = selection.from
       const to = selection.to
@@ -371,30 +313,7 @@ export function createBlockApi(options = {}) {
       tr.setNodeMarkup(entry.pos, null, attrs)
       commit(tr)
     },
-    remove(blockId, opts) {
-      assertCapability('remove')
-      const doc = currentDoc()
-      const entry = blockEntry(doc, blockId)
-      if (!entry || inTableContext(doc, entry)) return
-      const tr = newTr()
-      if (opts && opts.keepChildren) {
-        const lifted = hoistedChildren(entry)
-        if (lifted) {
-          tr.replaceWith(entry.pos, entry.end, lifted)
-          commit(tr)
-          return
-        }
-      }
-      const range = expandDeletion(doc, entry)
-      // 删光整篇会造出空 doc（本仓库 doc 的 content 是 1*），留一个空段落兜底。
-      if (range.from === 0 && range.to === doc.content.size) {
-        const empty = baseState().schema.nodes.paragraph.create()
-        tr.replaceWith(range.from, range.to, empty)
-      } else {
-        tr.delete(range.from, range.to)
-      }
-      commit(tr)
-    },
+    remove: createBlockRemoval(context),
     move(blockId, to) {
       assertCapability('move')
       const doc = currentDoc()
@@ -488,16 +407,16 @@ export function createBlockApi(options = {}) {
     batch(fn) {
       assertCapability('batch')
       if (typeof fn !== 'function') return
-      if (pending) { fn(); return }
-      pending = { tr: baseState().tr }
+      if (context.pending) { fn(); return }
+      context.pending = { tr: baseState().tr }
       try {
         fn()
       } catch (error) {
-        pending = null
+        context.pending = null
         throw error
       }
-      const tr = pending.tr
-      pending = null
+      const tr = context.pending.tr
+      context.pending = null
       commit(tr)
     },
 

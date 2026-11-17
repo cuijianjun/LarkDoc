@@ -1,3 +1,4 @@
+/* global globalThis */
 /**
  * 协同协议版本（P6a / 09 §5.7.3）。
  *
@@ -20,3 +21,26 @@ export const COLLAB_PROTOCOL_VERSION = 1
  * 与编辑器实际写库的 fragment 不是同一个。
  */
 export const COLLAB_CONTENT_FIELD = 'default'
+export const PRESENCE_PROTOCOL = 'cursor-v1'
+
+/** 已验证的十进制水位按位数/字典序比较，不经 Number 丢失大整数精度。 */
+export const laterRevision = (value, floor) => value.length > floor.length || (value.length === floor.length && value > floor)
+
+export const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
+export const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+export const matches = (value, expected) => Object.keys(expected).every(key => value[key] === expected[key])
+export const project = (value, fields) => {
+  const result = {}
+  for (const key of fields) result[key] = value[key]
+  return result
+}
+
+export const validResourceId = value => typeof value === 'string' && /^[A-Za-z0-9._-]{1,128}(?![\s\S])/.test(value)
+
+export const hex = bytes => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+export async function payloadHash(bytes) {
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes))
+  return 'sha256:' + hex(digest)
+}
+
+export const sendFrame = (provider, scope, message) => provider.sendStateless(JSON.stringify({ ...scope, ...message }))

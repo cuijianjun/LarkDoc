@@ -17,10 +17,12 @@
  *    `getBoundingClientRect()` 当场可量 —— SFC 里那串 `$nextTick` 就此消失。
  */
 import { createBlockHandle } from '../../../ui/blockHandle'
+import { blockAiAllowed } from './blockMenuMixin'
+
 
 export default {
   watch: {
-    handleRange() { this.refreshBlockHandle() },
+    handleRange() { if (!this.handleRange) { this._blockHandleAnchor = null; this._tableHandleContext = null } this.refreshBlockHandle() },
     effectiveReadonly() { this.refreshBlockHandle(); this.refreshBlockMenu() },
     larkDocConfig() { this.refreshBlockHandle(); this.refreshBlockMenu() },
     // 颜色子菜单的色板来自内容主题（深/浅色），主题一换选项就换。
@@ -52,11 +54,30 @@ export default {
       if (this._blockHandleUi) return
       const anchor = this.$refs.blockHandleHost
       if (!anchor || !anchor.parentNode) return
-      this._blockHandleUi = createBlockHandle({
+      let ui
+      let menuReadyScheduled = false
+      const onMenuReady = () => {
+        if (menuReadyScheduled) return
+        menuReadyScheduled = true
+        this.$nextTick(() => {
+          const root = this.$refs.root
+          if (!ui || this._blockHandleUi !== ui || this._isDestroyed || this._isBeingDestroyed || this.nativeScopeValid === false
+            || !root?.isConnected || !ui.el.isConnected || !root.contains(ui.el) || !this.editor || this.editor.isDestroyed
+            || this.effectiveReadonly || !this.featureEnabled('blockHandle') || (this.writable && !this.writable())
+            || !(this.blockMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) return
+          this.refreshBlockMenu()
+          if (this.blockMenuOpen) this.positionBlockMenu('.lark-doc-block-menu')
+          if (this.blockAlignMenuOpen) this.positionBlockAlignMenu()
+          if (this.blockColorMenuOpen) this.positionBlockColorMenu()
+        })
+      }
+      ui = createBlockHandle({
         host: anchor.parentNode,
         anchor,
         handlers: this.blockHandleHandlers(),
+        onMenuReady,
       })
+      this._blockHandleUi = ui
       this.refreshBlockHandle()
       this.refreshBlockMenu()
     },
@@ -64,6 +85,9 @@ export default {
       if (!this._blockHandleUi) return
       this._blockHandleUi.destroy()
       this._blockHandleUi = null
+      this._blockHandleChrome = null
+      this._blockHandleMenu = null
+      this._tableHandleContext = null
     },
 
     /**
@@ -88,13 +112,16 @@ export default {
         pressHandle: () => this.pressHandle(),
         startBlockDrag: (event) => this.startBlockDrag(event),
         endBlockDrag: () => this.endBlockDrag(),
+        activateSecondary: (target, event) => this.activateSecondaryHandle(target, event),
         onBlockMenuEnter: () => this.onBlockMenuEnter(),
         onBlockMenuLeave: (event) => this.onBlockMenuLeave(event),
         onBlockMenuFocusIn: () => this.onBlockMenuFocusIn(),
         onBlockMenuFocusOut: (event) => this.onBlockMenuFocusOut(event),
-        emitAiRequest: (kind) => this.$emit('ai-request', kind),
+        emitAiRequest: (kind) => this.requestBlockAI(kind),
+
         blockTypeAction: (id) => this.blockTypeAction(id),
         blockAction: (id) => this.blockAction(id),
+        openBlockInsertMenu: (event) => this.openBlockInsertMenu(event),
         openBlockAlignMenuOnHover: (event) => this.openBlockAlignMenuOnHover(event),
         openBlockColorMenuOnHover: (event) => this.openBlockColorMenuOnHover(event),
         blockColorAction: (value) => this.blockColorAction(value),
@@ -106,16 +133,31 @@ export default {
     /** 句柄本体 state（热路径，字段越少越好）。 */
     buildBlockHandleState() {
       const blockStyle = this.featureEnabled('blockStyle')
+      const mobile = typeof window !== 'undefined' && window.innerWidth <= 760
+      const context = this._tableHandleContext?.doc === this.editor?.state?.doc ? this._tableHandleContext : null
+      const otherNode = context && this.handleNodeFor(context.other)
+      const emptyCellBlock = context && this.handleIsEmptyParagraph
+
       return {
         // 模板条件：`ed.editor && !ed.effectiveReadonly && featureEnabled('blockHandle') && handleRange`
         // Keep the table six-dot handle beside the active-cell plus control.
         visible: !!(this.editor && !this.effectiveReadonly && this.featureEnabled('blockHandle') && this.handleRange),
+        mobile,
         style: this.blockHandleStyle,
         menuOpen: this.blockMenuOpen,
         alignOpen: !!this.blockAlignMenuOpen && blockStyle,
         blockStyle,
-        buttonKind: this.handleIsEmptyParagraph ? 'empty' : this.handleIsTaskList ? 'none' : 'main',
+        buttonKind: emptyCellBlock ? 'none' : mobile ? 'main' : this.handleIsEmptyParagraph ? 'empty' : 'main',
+        scope: this.handleIsTable ? 'table' : context ? 'cell' : null,
+        secondary: context?.position && !(otherNode?.type.name === 'paragraph' && !otherNode.content.size) ? {
+          doc: context.doc, range: context.other,
+          scope: context.other.from === context.table.from ? 'table' : 'cell',
+          icon: this.handleIconFor(context.other),
+          style: { top: `${context.position.top}px`, left: `${context.position.left}px` },
+        } : null,
+
         glyph: this.handleGlyph,
+        icon: this.handleIcon,
         isCallout: this.handleBlockNode()?.type?.name === 'callout',
         draggable: this.featureEnabled('blockDrag'),
       }
@@ -124,31 +166,41 @@ export default {
     /** 菜单内容 state（只在开合、配置、文档/选区变化时算）。 */
     buildBlockMenuState() {
       const blockStyle = this.featureEnabled('blockStyle')
+      const aiAllowed = blockAiAllowed(this)
+      const commentTarget = this.commentAllowed?.('create') ? this.blockTypeTextRange(this.handleActionRange()) : null
+      const commentAllowed = !!commentTarget && commentTarget.from < commentTarget.to
+      const aiTitle = aiAllowed ? '问问AI' : 'AI 服务未配置或当前不可用'
       return {
         menuOpen: this.blockMenuOpen,
         alignOpen: !!this.blockAlignMenuOpen && blockStyle,
         colorOpen: !!this.blockColorMenuOpen && blockStyle,
         blockStyle,
+        aiAllowed,
+        aiTitle,
         features: {
           ai: this.featureEnabled('ai'),
           blockStyle,
           tables: this.featureEnabled('tables'),
         },
-        typeActions: this.visibleBlockTypeActions.map((item) => ({
+        typeActions: (this.blockTypeTextRange(this.handleRange) ? this.visibleBlockTypeActions : []).map((item) => ({
           id: item.id,
           label: item.label,
           icon: item.icon,
           active: this.blockTypeActive(item.id),
         })),
         listActions: [
-          ...this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon })),
-          ...(this.handleIsTable && this.selectionShareAllowed?.() && this.isBlockActionEnabled('share') ? [{ id: 'share', label: '分享', icon: 'share-link' }] : []),
-          ...(this.handleIsTable && this.shareCan('canView') && this.isBlockActionEnabled('copyLink') ? [{ id: 'copyLink', label: '复制链接', icon: 'link' }] : []),
+          ...(this.isBlockActionEnabled('comment') ? [{ id: 'comment', label: '评论', icon: 'mode-comment', disabled: !commentAllowed, hint: commentAllowed ? '' : '当前文档暂不支持评论' }] : []),
+          ...this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon,
+            ...(item.id === 'translate' ? { disabled: !aiAllowed, title: aiAllowed ? item.label : aiTitle } : {}) })),
+          ...(this.selectionShareAllowed?.() && this.isBlockActionEnabled('share') ? [{ id: 'share', label: '分享', icon: 'share-link' }] : []),
+          ...(this.featureEnabled('templates') && this.isBlockActionEnabled('saveTemplate') ? [{ id: 'saveTemplate', label: '保存为模板', icon: 'block-template', disabled: !this.templateSaveAllowed(), hint: this.templateSaveAllowed() ? '' : typeof this.onSaveTemplate === 'function' ? '当前权限无法保存模板' : '当前应用未配置模板保存' }] : []),
+          ...(this.shareCan('canView') && this.isBlockActionEnabled('copyLink') ? [{ id: 'copyLink', label: '复制链接', icon: 'link' }] : []),
+
         ],
         table: this.handleIsTable,
         tableHeader: this.handleTableHeaderState(),
         canDuplicate: this.isBlockActionEnabled('duplicate'),
-        canAddBelow: this.isBlockActionEnabled('addBelow'),
+        canAddBelow: this.featureEnabled('insert') && this.isBlockActionEnabled('addBelow'),
         menuStyle: this.blockMenuStyle,
         alignMenuStyle: this.blockAlignMenuStyle,
         colorMenuStyle: this.blockColorMenuStyle,
@@ -166,13 +218,15 @@ export default {
     refreshBlockHandle() {
       const ui = this._blockHandleUi
       if (!ui) return
-      ui.updateChrome(this.buildBlockHandleState())
+      this._blockHandleChrome = this.buildBlockHandleState()
+      ui.update({ chrome: this._blockHandleChrome, menu: this._blockHandleMenu })
     },
 
     refreshBlockMenu() {
       const ui = this._blockHandleUi
       if (!ui) return
-      ui.updateMenu(this.buildBlockMenuState())
+      this._blockHandleMenu = this.buildBlockMenuState()
+      ui.update({ chrome: this._blockHandleChrome, menu: this._blockHandleMenu })
     },
   },
 }

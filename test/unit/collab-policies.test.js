@@ -50,6 +50,38 @@ function manualScheduler() {
   }
 }
 
+describe('capability input contracts', () => {
+  it('reads overlapping capability getters once in source order without retaining the returned projection', () => {
+    const reads = [], client = {}, server = {}
+    let editable = false
+    Object.defineProperties(client, {
+      canEdit: { enumerable: true, get() { reads.push('client.canEdit'); return true } },
+      ignored: { enumerable: true, get() { reads.push('client.ignored'); return 1 } },
+    })
+    Object.defineProperties(server, {
+      canEdit: { enumerable: true, get() { reads.push('server.canEdit'); return editable } },
+      canView: { enumerable: true, get() { reads.push('server.canView'); return true } },
+    })
+    const resolved = resolveCapabilities(client, server)
+    expect(resolved).toEqual({ canEdit: false, canView: true })
+    expect(reads).toEqual(['client.canEdit', 'server.canEdit', 'client.ignored', 'server.canView'])
+    editable = true
+    const next = resolveCapabilities(client, server)
+    expect(next).not.toBe(resolved)
+    expect(next.canEdit).toBe(true)
+    expect(resolved.canEdit).toBe(false)
+  })
+
+  it('propagates the original capability getter error without converting it into permission success', () => {
+    const error = Object.assign(new Error('capability unavailable'), { code: 'CAPABILITY_UNAVAILABLE' })
+    const source = Object.defineProperty({}, 'canEdit', { enumerable: true, get() { throw error } })
+    let caught
+    try { resolveCapabilities(source, { canEdit: true }) } catch (failure) { caught = failure }
+    expect(caught).toBe(error)
+    expect(caught.code).toBe('CAPABILITY_UNAVAILABLE')
+  })
+})
+
 describe('P6a B22 · UI 状态（折叠/大纲/侧栏）不进 Y.Doc', () => {
   it('key 是「单文档一个」，前缀固定', () => {
     expect(uiStateKey('ws1/doc1')).toBe(`${UI_STATE_PREFIX}ws1/doc1`)
@@ -241,6 +273,17 @@ describe('P6a B24 · capability 取交集（握手 ∩ 打开文档）', () => {
 
   it('非 boolean 字段不进结果（不猜语义）', () => {
     expect(resolveCapabilities({ role: 'owner' }, {})).toEqual({})
+  })
+
+  it('能力交集只读取每侧一次，拒绝不能被非布尔或 getter 的后续结果抬高', () => {
+    const read = vi.fn().mockReturnValueOnce(false).mockReturnValue(true)
+    const client = Object.defineProperty({}, 'canEdit', { enumerable: true, get: read })
+    expect(resolveCapabilities(client, { canEdit: true })).toEqual({ canEdit: false })
+    expect(read).toHaveBeenCalledOnce()
+    for (const value of [undefined, null, 0, 1, '', 'false', {}, []]) {
+      expect(resolveCapabilities({ canEdit: false }, { canEdit: value })).toEqual({ canEdit: false })
+      expect(resolveCapabilities({ canEdit: value }, { canEdit: true })).toEqual({ canEdit: true })
+    }
   })
 })
 

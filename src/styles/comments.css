@@ -91,14 +91,16 @@
 .lark-doc .lark-doc-comment-layer.is-remote {
   position: fixed;
   z-index: 18;
-  right: 16px;
-  bottom: 16px;
+  /* Chrome iPhone emulation can expose a wider layout viewport than the
+     dynamic visual viewport. Keep the fixed drawer inside the visible area. */
+  right: calc(100vw - 100dvw + 16px);
+  bottom: calc(100vh - 100dvh + 16px);
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 296px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 145px);
+  max-width: calc(100dvw - 32px);
+  max-height: calc(100dvh - 145px);
   overflow-y: auto;
   pointer-events: none;
   box-sizing: border-box;
@@ -106,6 +108,7 @@
   border-left: 1px solid var(--ld-comment-border);
   background: var(--ld-comment-surface);
 }
+.lark-doc .lark-doc-comment-layer.is-remote > * { pointer-events: auto; }
 .lark-doc .lark-doc-comment-layer.is-remote > .lark-doc-comment-composer {
   position: relative;
   z-index: auto;
@@ -148,6 +151,12 @@
 .lark-doc .lark-doc-comment-panel.is-remote .lark-doc-comment-avatar,
 .lark-doc .lark-doc-comment-composer .lark-doc-comment-avatar { background: var(--ld-comment-switch-on); color: var(--ld-comment-surface); font-size: 12px; }
 .lark-doc .lark-doc-comment-composer .lark-doc-comment-input-zone { width: 100%; min-height: 32px; }
+.lark-doc .lark-doc-document-comment-input { min-height: 40px; }
+.lark-doc .lark-doc-document-comment-input textarea { display: block; box-sizing: border-box; width: 100%; min-height: 40px; max-height: 40vh; margin: 0; padding: 8px 10px; border: 1px solid var(--ld-comment-border); border-radius: 6px; background: var(--ld-comment-surface); color: var(--ld-text); font: inherit; line-height: 22px; resize: none; }
+.lark-doc .lark-doc-document-comment-input textarea:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: 1px; }
+.lark-doc .lark-doc-comment-layer.is-remote > .lark-doc-document-composer { gap: 8px; padding: 0; pointer-events: auto; }
+.lark-doc .lark-doc-comment-layer.is-remote > .lark-doc-document-composer .lark-doc-document-composer-actions,
+.lark-doc .lark-doc-comment-layer.is-remote > .lark-doc-document-composer .lark-doc-document-comment-tools { pointer-events: auto; }
 .lark-doc .lark-doc-comment-panel.is-document .lark-doc-comment-input-zone { width: calc(100% - 32px); }
 @media (min-width: 1000px) { .lark-doc.lark-doc-comments-open .lark-doc-body { padding-right: 312px; box-sizing: border-box; } }
 
@@ -301,6 +310,32 @@
   line-height: 22px;
   word-break: break-word;
 }
+.lark-doc .lark-doc-comment-mention-chip,
+.lark-doc .lark-doc-comment-document-reference {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 3px;
+  border-radius: 3px;
+  color: var(--ld-text-accent);
+  background: var(--ld-bg-accent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lark-doc .lark-doc-comment-mention-chip.is-self { color: var(--ld-text); }
+.lark-doc .lark-doc-comment-document-reference { cursor: pointer; text-decoration: none; }
+.lark-doc .lark-doc-comment-rich-link { color: var(--ld-text-accent); text-decoration: underline; }
+.lark-doc .lark-doc-comment-rich-link.is-bold { font-weight: 600; }
+.lark-doc .lark-doc-comment-rich-link.is-italic { font-style: italic; }
+.lark-doc .lark-doc-comment-rich-link.is-strike { text-decoration: line-through; }
+.lark-doc .lark-doc-comment-rich-link.is-code { padding: 0 2px; border-radius: 2px; background: var(--ld-bg-hover-menu); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lark-doc .lark-doc-comment-body .is-bold { font-weight: 600; }
+.lark-doc .lark-doc-comment-body .is-italic { font-style: italic; }
+.lark-doc .lark-doc-comment-body .is-strike { text-decoration: line-through; }
+.lark-doc .lark-doc-comment-body .is-code { padding: 0 2px; border-radius: 2px; background: var(--ld-bg-hover-menu); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lark-doc .lark-doc-comment-document-reference:hover,
+.lark-doc .lark-doc-comment-document-reference:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: 1px; }
+.lark-doc .lark-doc-comment-document-reference.is-disabled { color: var(--ld-text-disabled); background: var(--ld-bg-hover-menu); cursor: not-allowed; }
 /* hover 三按钮 14×14、步进 25（= 14 + 间隙 11），紧贴信息行右端。 */
 .lark-doc .lark-doc-comment-reply-controls {
   position: absolute;
@@ -330,7 +365,7 @@
 }
 .lark-doc .lark-doc-comment-icon-btn:hover:not(:disabled) { background: var(--ld-bg-hover-menu); color: var(--ld-text-secondary); }
 
-/* —— B 套「更多」：152 × 134，项 144 × 30 × 4 —— */
+/* —— B 套「更多」：宽 152、项高 30，按可见项数包住菜单 —— */
 .lark-doc .lark-doc-comment-reply-menu {
   position: absolute;
   top: 34px;
@@ -338,18 +373,19 @@
   z-index: 1041;
   box-sizing: border-box;
   width: 152px;
-  height: 134px;
+  height: auto;
   padding: 7px 4px;
   border: 1px solid var(--ld-comment-border);
   border-radius: 6px;
   background: var(--ld-comment-surface);
   box-shadow: var(--ld-shadow-float);
 }
-.lark-doc .lark-doc-comment-menu-list { margin: 0; padding: 0; list-style: none; }
+.lark-doc .lark-doc-comment-reply-menu .lark-doc-comment-menu-list[role="menu"] { margin: 0; padding: 0; list-style: none; }
+.lark-doc .lark-doc-comment-reply-menu .lark-doc-comment-menu-list > .lark-doc-comment-menu-item { margin: 0; }
 .lark-doc .lark-doc-comment-menu-item {
   box-sizing: border-box;
   display: flex;
-  width: 144px;
+  width: 100%;
   height: 30px;
   align-items: center;
   justify-content: space-between;
@@ -537,7 +573,7 @@
 .lark-doc .lark-doc-comment-reaction { display: inline-flex; align-items: center; gap: 5px; min-height: 25px; padding: 1px 8px; border: 1px solid var(--ld-border); border-radius: 14px; background: var(--ld-bg-surface); color: var(--ld-text-secondary); cursor: pointer; font-size: 12px; }
 .lark-doc .lark-doc-comment-reaction[aria-pressed="true"] { color: var(--ld-brand-chrome); border-color: var(--ld-brand-chrome); background: var(--ld-bg-accent); }
 .lark-doc .lark-doc-comment-reaction:disabled { cursor: default; }
-.lark-doc .lark-doc-comment-reaction-picker { box-sizing: border-box; z-index: 1160; width: min(328px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--ld-border); border-radius: 8px; background: var(--ld-bg-surface); color: var(--ld-text); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-comment-reaction-picker { box-sizing: border-box; pointer-events: auto; z-index: 1160; width: min(328px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--ld-border); border-radius: 8px; background: var(--ld-bg-surface); color: var(--ld-text); box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-comment-reaction-picker-head { display: flex; gap: 8px; }
 .lark-doc .lark-doc-comment-reaction-picker-head input { min-width: 0; flex: 1; height: 30px; padding: 0 8px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface); color: inherit; }
 .lark-doc .lark-doc-comment-reaction-picker-head button { border: 0; background: transparent; color: var(--ld-text-secondary); cursor: pointer; font-size: 20px; }
@@ -549,6 +585,41 @@
 .lark-doc .lark-doc-comment-reaction-grid button:hover, .lark-doc .lark-doc-comment-reaction-grid button:focus-visible { background: var(--ld-bg-accent); }
 .lark-doc .lark-doc-comment-reaction-grid p { grid-column: 1 / -1; font-size: 12px; color: var(--ld-text-secondary); }
 .lark-doc .lark-doc-comment-reaction-more { display: block; width: 100%; margin-top: 8px; padding: 5px; border: 0; background: transparent; color: var(--ld-brand-chrome); cursor: pointer; }
+.lark-doc .lark-doc-comment-edit { display: grid; gap: 8px; }
+.lark-doc .lark-doc-comment-rich-input { box-sizing: border-box; min-width: 0; min-height: 36px; max-height: 40dvh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; cursor: text; }
+.lark-doc .lark-doc-comment-rich-input p { margin: 0; padding: 0; min-height: 1.5em; }
+.lark-doc .lark-doc-comment-rich-input[data-empty="true"]::before { content: attr(data-placeholder); float: left; height: 0; color: var(--ld-text-tertiary); pointer-events: none; }
+.lark-doc .lark-doc-comment-rich-input[aria-readonly="true"] { color: var(--ld-text-disabled); cursor: default; }
+.lark-doc .lark-doc-comment-edit-input { width: 100%; padding: 8px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); }
+@media (max-width: 760px) { .lark-doc .lark-doc-comment-rich-input { font-size: 16px; line-height: 1.5; } }
+.lark-doc .lark-doc-comment-mention-picker { display: grid; gap: 2px; max-height: 180px; margin: 4px 0; padding: 4px; overflow-y: auto; border: 1px solid var(--ld-comment-border); border-radius: 5px; background: var(--ld-comment-surface); box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
+.lark-doc .lark-doc-comment-mention-picker button { min-height: 28px; padding: 4px 8px; border: 0; border-radius: 3px; background: transparent; color: var(--ld-text); text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-comment-mention-picker button:hover,
+.lark-doc .lark-doc-comment-mention-picker button[aria-selected="true"] { background: var(--ld-bg-accent); color: var(--ld-text-accent); }
+.lark-doc .lark-doc-document-mention-head { display: none; }
+.lark-doc .lark-doc-comment-mention-avatar { display: none; }
+.lark-doc .lark-doc-comment-mention-status { margin: 0; padding: 16px 8px; font-size: 14px; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-comment-mention-skeleton { display: grid; gap: 12px; padding: 0 8px 16px; }
+.lark-doc .lark-doc-comment-mention-skeleton > span { display: block; position: relative; height: 38px; margin-left: 40px; background: linear-gradient(var(--ld-bg-bookmark-skeleton), var(--ld-bg-bookmark-skeleton)) 0 2px / 72px 12px no-repeat, linear-gradient(var(--ld-bg-bookmark-skeleton), var(--ld-bg-bookmark-skeleton)) 0 22px / 180px 10px no-repeat; }
+.lark-doc .lark-doc-comment-mention-skeleton > span::before { content: ''; position: absolute; left: -40px; top: 2px; width: 32px; height: 32px; border-radius: 50%; background: var(--ld-bg-bookmark-skeleton); }
+.lark-doc .lark-doc-comment-edit textarea,
+.lark-doc .lark-doc-comment-edit input { min-height: 30px; padding: 6px 8px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); color: var(--ld-text); font: inherit; }
+.lark-doc .lark-doc-comment-translation select { min-height: 36px; margin-left: 8px; padding: 4px 8px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); color: var(--ld-text); font: inherit; }
+.lark-doc .lark-doc-comment-edit-actions,
+.lark-doc .lark-doc-document-composer-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.lark-doc .lark-doc-comment-edit-actions button,
+.lark-doc .lark-doc-document-composer-actions button { min-height: 28px; padding: 3px 8px; border: 1px solid var(--ld-comment-border); border-radius: 5px; background: var(--ld-comment-surface); color: var(--ld-text); cursor: pointer; }
+.lark-doc .lark-doc-comment-edit-actions button:last-child,
+.lark-doc .lark-doc-document-composer-actions button:last-child { color: var(--ld-text-inverse); border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-comment-translation { display: grid; gap: 8px; padding: 8px 12px; color: var(--ld-comment-time); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-comment-translation p { margin: 0; }
+.lark-doc .lark-doc-comment-translation-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.lark-doc .lark-doc-comment-translation-actions button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); color: var(--ld-text); cursor: pointer; }
+.lark-doc .lark-doc-comment-translation-actions button:last-child { color: var(--ld-text-inverse); border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-document-composer { display: grid; gap: 8px; box-sizing: border-box; width: 100%; padding: 12px 0 0; }
+.lark-doc .lark-doc-document-composer-input { box-sizing: border-box; width: 100%; min-height: 40px; max-height: 40vh; padding: 8px 10px; border: 1px solid var(--ld-comment-border); border-radius: 6px; background: var(--ld-comment-surface); color: var(--ld-text); font: inherit; line-height: 22px; resize: vertical; }
+.lark-doc .lark-doc-document-composer-input:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: 1px; }
+.lark-doc .lark-doc-document-composer-rich-preview { padding: 4px 8px; color: var(--ld-comment-time); font-size: 12px; }
 
 .lark-doc .lark-doc-comment-images, .lark-doc .lark-doc-comment-image-drafts { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .lark-doc .lark-doc-comment-images button { display: inline-flex; justify-content: center; align-items: center; max-width: 100%; min-width: 72px; min-height: 54px; padding: 0; overflow: hidden; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-hover); color: var(--ld-text-secondary); cursor: pointer; }
@@ -560,11 +631,58 @@
 .lark-doc .lark-doc-comment-image-drafts button { position: absolute; top: -6px; right: -6px; width: 19px; height: 19px; padding: 0; border: 1px solid var(--ld-border); border-radius: 50%; color: var(--ld-text-secondary); background: var(--ld-bg-surface); cursor: pointer; }
 .lark-doc .lark-doc-comment-media-status { position: fixed; z-index: 1170; right: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; padding: 10px 14px; border: 1px solid var(--ld-border); border-radius: 6px; color: var(--ld-text-secondary); background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); font-size: 12px; }
 .lark-doc .lark-doc-comment-media-status button { border: 0; background: transparent; color: var(--ld-text-accent); cursor: pointer; }
+.lark-doc .lark-doc-comment-notice { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; max-width: min(360px, calc(100vw - 32px)); overflow-wrap: anywhere; pointer-events: none; }
 .lark-doc .lark-doc-comment-image-backdrop { position: fixed; z-index: 2000; inset: 0; display: flex; align-items: center; justify-content: center; padding: 32px; background: var(--ld-mask); }
 .lark-doc .lark-doc-comment-image-viewer { position: relative; max-width: 100%; max-height: 100%; padding: 16px; border-radius: 8px; background: var(--ld-bg-surface); color: var(--ld-text); }
 .lark-doc .lark-doc-comment-image-viewer > button { position: absolute; right: 4px; top: 0; border: 0; background: var(--ld-bg-surface); color: var(--ld-text-secondary); cursor: pointer; font-size: 24px; }
 .lark-doc .lark-doc-comment-image-viewer > img { display: block; max-width: calc(100vw - 96px); max-height: calc(100vh - 150px); object-fit: contain; }
 .lark-doc .lark-doc-comment-image-viewer > p { max-width: calc(100vw - 96px); margin: 8px 0 0; overflow-wrap: anywhere; font-size: 12px; }
+
+/* 触摸端没有 hover：回复操作必须始终可见，并提供足够的触摸热区。 */
+.lark-doc .lark-doc-comment-layer [hidden] { display: none !important; }
+.lark-doc .lark-doc-document-comment-heading { margin: 0 0 12px; color: var(--ld-text); font-size: 16px; font-weight: 600; line-height: 24px; }
+@media (max-width: 760px) {
+  .lark-doc .lark-doc-comment-layer.is-remote.is-mobile.is-inline-document { position: relative; inset: auto; z-index: auto; display: block; box-sizing: border-box; width: 100%; max-width: none; height: auto; max-height: none; margin: 32px 0 0; padding: 0; overflow: visible; background: transparent; pointer-events: auto; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document > .lark-doc-comment-panel { position: relative !important; inset: auto !important; width: 100% !important; height: auto !important; max-height: none; margin: 0; padding: 0; border: 0; box-shadow: none; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply { padding: 12px 0; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-avatar { width: 40px; min-width: 40px; height: 40px; font-size: 14px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply-right { flex: 1; width: auto; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input { position: relative; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer-input { padding: 7px 44px 7px 16px; line-height: 24px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input > button { position: absolute; right: 8px; top: 8px; display: grid; place-items: center; width: 24px; height: 24px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--ld-brand-content); cursor: pointer; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input > button:disabled { opacity: .3; cursor: default; }
+  .lark-doc .lark-doc-comment-layer.is-mobile, .lark-doc .lark-doc-comment-layer.is-remote.is-mobile { position: fixed; z-index: 1100; inset: 0; display: flex; align-items: center; justify-content: flex-end; flex-direction: column; width: auto; max-width: none; height: auto; max-height: none; padding: 0 0 max(24px, env(safe-area-inset-bottom)); border: 0; overflow: visible; background: rgba(0,0,0,.28); pointer-events: auto; }
+  .lark-doc .lark-doc-comment-mobile-sheet { position: relative; display: flex; flex-direction: column; box-sizing: border-box; flex: 0 1 auto; width: calc(100% - 42px); height: min(422px, calc(100dvh - 116px)); min-height: 0; border-radius: 6px; color: var(--ld-text); background: var(--ld-comment-surface); box-shadow: 1.5px 4.7px 16.8px 3.1px rgba(0,0,0,.08); }
+  .lark-doc .lark-doc-comment-mobile-sheet.is-document { width: calc(100% - 24px); height: min(720px, calc(100dvh - 96px)); }
+  .lark-doc .lark-doc-comment-mobile-head { display: flex; align-items: center; flex: 0 0 44px; gap: 4px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--ld-comment-border); font-size: 14px; }
+  .lark-doc .lark-doc-comment-mobile-head > span { flex: 1; }
+  .lark-doc .lark-doc-comment-mobile-head button { width: 32px; min-width: 32px; height: 36px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 22px; }
+  .lark-doc .lark-doc-comment-mobile-head button[hidden] { display: none; }
+  .lark-doc .lark-doc-comment-mobile-head button:disabled { opacity: .35; }
+  .lark-doc .lark-doc-comment-mobile-carousel { display: flex; flex: 1 1 auto; min-height: 0; width: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior: contain; scrollbar-width: none; touch-action: pan-x pan-y; }
+  .lark-doc .lark-doc-comment-mobile-carousel::-webkit-scrollbar { display: none; }
+  .lark-doc .lark-doc-comment-mobile-carousel > .lark-doc-comment-panel { position: relative !important; inset: auto !important; display: flex; flex-direction: column; box-sizing: border-box; flex: 0 0 100%; width: 100% !important; height: 100% !important; min-height: 0; margin: 0; border: 0; border-radius: 0 0 6px 6px; box-shadow: none; scroll-snap-align: start; scroll-snap-stop: always; }
+  .lark-doc .lark-doc-comment-mobile-carousel .lark-doc-comment-replies { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-x pan-y; }
+  .lark-doc .lark-doc-comment-layer .lark-doc-comment-rich-input { font-size: 16px; resize: none; }
+  .lark-doc .lark-doc-comment-mobile-carousel .lark-doc-comment-head { flex: 0 0 auto; }
+  .lark-doc .lark-doc-comment-mobile-carousel .lark-doc-comment-textarea { flex: 0 0 auto; height: auto !important; max-height: 45%; padding: 8px 12px; border-top: 1px solid var(--ld-comment-border); }
+  .lark-doc .lark-doc-comment-mobile-carousel .lark-doc-comment-input-zone { flex: 1; width: 100%; min-height: 36px; height: auto; padding: 6px 8px; border: 0; background: var(--ld-bg-hover); }
+  .lark-doc .lark-doc-comment-mobile-sheet > .lark-doc-comment-composer { position: relative; inset: auto; width: auto; flex: 1; min-height: 0; overflow-y: auto; padding: 12px; border: 0; box-shadow: none; }
+  .lark-doc .lark-doc-comment-mobile-document-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px; overscroll-behavior: contain; }
+  .lark-doc .lark-doc-comment-mobile-document-list .lark-doc-comment-panel { position: relative !important; inset: auto !important; width: 100% !important; height: auto !important; margin: 0; box-shadow: none; }
+  .lark-doc .lark-doc-comment-mobile-sheet > .lark-doc-document-composer { flex: 0 0 auto; max-height: 50%; overflow-y: auto; padding: 8px 12px 12px; border-top: 1px solid var(--ld-comment-border); }
+  .lark-doc .lark-doc-comment-reply { padding: 8px 10px; }
+  .lark-doc .lark-doc-comment-reply-controls { top: 4px; right: 4px; gap: 2px; opacity: 1; pointer-events: auto; }
+  .lark-doc .lark-doc-comment-reply-main { padding-right: 0; padding-top: 32px; }
+  .lark-doc .lark-doc-comment-icon-btn { width: 32px; min-width: 32px; height: 32px; min-height: 32px; }
+  .lark-doc .lark-doc-comment-edit-actions,
+  .lark-doc .lark-doc-document-composer-actions,
+  .lark-doc .lark-doc-comment-translation-actions { flex-wrap: wrap; }
+  .lark-doc .lark-doc-comment-edit-actions button,
+  .lark-doc .lark-doc-document-composer-actions button,
+  .lark-doc .lark-doc-comment-translation-actions button { min-height: 36px; }
+  .lark-doc .lark-doc-comment-reaction { min-height: 32px; padding-inline: 10px; }
+}
 
 /* 全文评论是正文页内平铺流：不继承选区侧栏的卡片、引用头与逐线程输入。 */
 .lark-doc .lark-doc-comments-root.is-document-root { display: block; box-sizing: border-box; width: min(100%, 870px); margin: 0 auto; padding: 0 24px 30px; border: 1px solid var(--ld-border-paper); border-top: 0; background: var(--ld-bg-content); }
@@ -590,6 +708,86 @@
 .lark-doc .lark-doc-comment-layer.is-document > .lark-doc-document-composer { margin-top: 24px; }
 @media (max-width: 760px) { .lark-doc .lark-doc-comments-root.is-document-root { padding-inline: 12px; } }
 
+/* H5 393×852 live reference: body x26, 0.4rem avatar, author/time/more on one line.
+   Extra SDK actions remain keyboard/touch reachable through the same more menu. */
+@media (max-width: 760px) {
+  .lark-doc { --ld-h5-unit: min(.2666667vw, 1.28px); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-mention-sheet { position: fixed; z-index: 1044; inset: 120px 0 0; background: var(--ld-comment-surface); border-radius: 16px 16px 0 0; box-shadow: 0 -4px 24px rgb(0 0 0 / 6%); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer.is-mention-open::before { content: ''; position: fixed; z-index: 1043; top: 44px; left: 0; right: 0; height: 76px; background: var(--ld-comment-surface); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer.is-mention-open .lark-doc-document-comment-input { position: fixed; z-index: 1044; top: 44px; left: 26px; right: 26px; max-height: 76px; overflow: auto; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer.is-mention-open .lark-doc-document-composer-input { max-height: 76px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-mention-head { display: flex; position: relative; box-sizing: border-box; align-items: center; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--ld-comment-border); font-size: 16px; line-height: 22px; }
+  .lark-doc .lark-doc-document-mention-head > button { position: relative; z-index: 1; flex: 0 0 auto; min-width: 44px; height: 44px; margin-left: -6px; padding: 0 6px; border: 0; background: transparent; color: var(--ld-text); font: inherit; cursor: pointer; }
+  .lark-doc .lark-doc-document-mention-head > span { position: absolute; inset-inline: 64px; text-align: center; font-weight: 600; pointer-events: none; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-mention-sheet > .lark-doc-comment-mention-picker { display: block; box-sizing: border-box; max-height: min(300px, calc(100dvh - 164px)); margin: 0; padding: 8px; border-radius: 6px; overflow-y: auto; overscroll-behavior: contain; box-shadow: none; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-mention-sheet .lark-doc-comment-mention-picker > button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 50px; padding: 8px; color: var(--ld-text); font-size: 14px; line-height: 20px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-mention-avatar { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 50%; background: var(--ld-brand-content); color: var(--ld-text-inverse); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer-input { min-height: calc(37.5 * var(--ld-h5-unit) + 2px); padding: 6.5px calc(41 * var(--ld-h5-unit)) 6.5px calc(16 * var(--ld-h5-unit)); border-radius: calc(6 * var(--ld-h5-unit)); font-size: calc(16 * var(--ld-h5-unit)); line-height: calc(24 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input > button { top: calc(8 * var(--ld-h5-unit)); right: calc(16 * var(--ld-h5-unit)); width: calc(24 * var(--ld-h5-unit)); height: calc(24 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-heading { margin: 0; padding-bottom: calc(10 * var(--ld-h5-unit)); font-size: calc(16 * var(--ld-h5-unit)); line-height: calc(22 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply { min-height: 0; padding: calc(10 * var(--ld-h5-unit)) 0; border-radius: 0; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply:hover,
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply:focus-within { background: transparent; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply-main { padding: 0; gap: calc(12 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-avatar { width: calc(40 * var(--ld-h5-unit)); min-width: calc(40 * var(--ld-h5-unit)); height: calc(40 * var(--ld-h5-unit)); margin-top: calc(3 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-avatar.has-initials { background: var(--ld-brand-content); font-size: calc(14 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-info { height: calc(24 * var(--ld-h5-unit)); padding-right: 32px; gap: calc(8 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-name,
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-time { font-size: calc(14 * var(--ld-h5-unit)); line-height: calc(24 * var(--ld-h5-unit)); font-weight: 400; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-time { color: var(--ld-text-secondary); overflow: hidden; text-overflow: ellipsis; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-body { min-height: 0; margin-top: 0; font-size: calc(16 * var(--ld-h5-unit)); line-height: calc(24 * var(--ld-h5-unit)); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply-controls { top: calc(10 * var(--ld-h5-unit) - 3px); right: 0; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-dots { width: 24px; height: 24px; background-size: 8px 24px; background-image: radial-gradient(circle, currentColor 2px, transparent 2.1px); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images { margin-top: 8px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images button { width: 92px; height: 92px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images img { width: 100%; height: 100%; object-fit: contain; }
+}
+
+/* 手机参考：页内全文评论与并排选区侧栏，后者不占用模态遮罩。 */
+@media (max-width: 760px) {
+  .lark-doc .lark-doc-comment-launcher { position: fixed; z-index: 25; width: 40px; height: 41px; overflow: hidden; }
+  .lark-doc .lark-doc-comment-launcher > button { display: flex; box-sizing: border-box; align-items: center; justify-content: center; width: 100%; min-width: 0; max-width: 100%; height: 36px; margin-top: 5px; padding: 0; border: 1px solid var(--ld-comment-border); border-radius: 18px; background: var(--ld-bg-content); color: var(--ld-text-secondary); cursor: pointer; }
+  .lark-doc .lark-doc-comment-layer.is-mobile.is-inline-document { position: relative; inset: auto; z-index: auto; display: block; width: 100%; height: auto; max-height: none; margin: 0; padding: 0; overflow: visible; background: transparent; pointer-events: auto; }
+  .lark-doc .lark-doc-document-like { position: relative; display: grid; box-sizing: border-box; min-height: 190px; grid-template-rows: 60px 20px; align-content: start; justify-items: center; gap: 24px; padding: 24px 0 30px; color: var(--ld-text-tertiary); }
+  .lark-doc .lark-doc-document-like > button { display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 1px solid var(--ld-brand-content); border-radius: 50%; color: var(--ld-brand-content); background: transparent; }
+  .lark-doc .lark-doc-document-like > button[aria-pressed="true"] { background: var(--ld-bg-accent); }
+  .lark-doc .lark-doc-document-like > button:disabled { cursor: default; }
+  .lark-doc .lark-doc-document-like > span:not([role]) { position: absolute; top: 44px; left: calc(50% + 38px); font-size: 12px; }
+  .lark-doc .lark-doc-document-like p { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; line-height: 20px; }
+  .lark-doc .lark-doc-document-like p::before, .lark-doc .lark-doc-document-like p::after { content: ''; width: 42px; border-top: 1px solid var(--ld-border-paper); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-heading { margin: 0 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--ld-comment-border); font-size: 24px; font-weight: 500; line-height: 40.32px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-avatar { width: 32px; min-width: 32px; height: 32px; margin-top: 0; font-size: 12px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply { padding: 14px 12px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-name, .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-time { font-size: 14px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images button { width: 64px; height: 64px; border: 1px solid var(--ld-comment-border); border-radius: 5px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer { margin-top: 28px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer-input { min-height: 40px; padding: 8px 70px 8px 12px; font-size: 14px; line-height: 22px; }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input > .lark-doc-comment-operation { right: 36px; color: var(--ld-text-secondary); }
+  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input > .lark-doc-document-comment-more { right: 8px; color: var(--ld-text-secondary); }
+  .lark-doc .lark-doc-comment-back-top { position: fixed; z-index: 25; right: 28px; bottom: 78px; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid var(--ld-comment-border); border-radius: 50%; color: var(--ld-text); background: var(--ld-bg-content); box-shadow: var(--ld-shadow-menu); }
+  .lark-doc .lark-doc-comment-layer.is-mobile.is-reference-drawer { position: absolute; z-index: 80; inset: 0 0 auto auto; display: block; box-sizing: border-box; width: var(--ld-comment-drawer-width, min(300px, 75vw)); height: auto; padding: 0 13px 24px 12px; border: 0; box-shadow: inset 1px 0 0 var(--ld-comment-border); overflow: visible; background: var(--ld-bg-content); }
+  .lark-doc .lark-doc-main:has(> .is-reference-drawer) { position: relative; }
+  /* 393px reference: main stays 393, content starts at 44 and is 175 wide;
+     the 295px comments rail overlaps part of the 174px reserved right side. */
+  .lark-doc .lark-doc-main:has(> .is-reference-drawer) > .lark-doc-paper { box-sizing: border-box; width: calc(100% - 174px); max-width: calc(100% - 174px); margin-left: 0; margin-right: 174px; padding-left: 44px; padding-right: 0; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer > .lark-doc-comment-sidebar-head { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 41px; min-height: 41px; max-height: 41px; margin: 0 -13px 24px -12px; padding: 8px 12px; border-bottom: 1px solid var(--ld-comment-border); background: var(--ld-bg-content); font-size: 14px; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-panel { position: relative !important; z-index: 0; inset: auto !important; box-sizing: border-box; width: 100%; height: auto !important; margin: 0 0 36px; padding: 12px; border: 1px solid var(--ld-comment-border); border-radius: 6px; box-shadow: none; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-head { height: auto; min-height: 20px; margin-bottom: 12px; padding: 0; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-reply { min-height: 0; padding: 0; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-quote { padding-left: 8px; border-left: 2px solid var(--ld-comment-border); cursor: pointer; }
+  .lark-doc .lark-doc-comment-drawer-actions { position: relative; margin-left: auto; }
+  .lark-doc .lark-doc-comment-drawer-actions > summary { display: grid; place-items: center; width: 28px; height: 28px; list-style: none; cursor: pointer; }
+  .lark-doc .lark-doc-comment-drawer-actions:not([open]) > .lark-doc-comment-controls { display: none; }
+  .lark-doc .lark-doc-comment-drawer-actions[open] .lark-doc-comment-controls { position: absolute; z-index: 3; left: auto; right: 0; top: 28px; display: flex; width: max-content; min-width: 0; max-width: min(244px, calc(100vw - 48px)); height: auto; flex-wrap: wrap; padding: 6px; border: 1px solid var(--ld-comment-border); border-radius: 6px; background: var(--ld-bg-content); box-shadow: var(--ld-shadow-menu); }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-avatar.has-initials { display: grid; place-items: center; border-radius: 50%; background: var(--ld-brand-content); color: var(--ld-text-inverse); font-size: 12px; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-reply-main { width: 100%; padding: 0; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-panel.is-active .lark-doc-comment-reply-main { padding-top: 32px; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-reply-controls { top: 0; right: 0; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-reply-right { flex: 1; min-width: 0; width: auto; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-reactions { margin-top: 8px; }
+  .lark-doc .lark-doc-comment-layer.is-reference-drawer .lark-doc-comment-reaction { min-height: 24px; padding: 0 8px; border: 0; border-radius: 12px; background: var(--ld-bg-hover-menu); color: var(--ld-text-secondary); font-size: 12px; }
+}
+
 /* 面板主题色与本组件同步加载，保证首次暗色渲染。 */
 .lark-doc[data-theme-preset="feishu"][data-theme="dark"] {
   --ld-comment-surface: var(--ld-bg-surface);
@@ -598,4 +796,82 @@
   --ld-comment-quote: var(--ld-text-secondary);
   --ld-comment-time: var(--ld-text-tertiary);
   --ld-comment-switch-off: var(--ld-bg-switch-off);
+}
+
+@media (max-width: 760px) and (pointer: coarse) {
+  .lark-doc .is-vertical-thread .lark-doc-comment-mobile-carousel { display: flex; overflow: hidden; scroll-snap-type: none; }
+  .lark-doc .is-vertical-thread .lark-doc-comment-panel { display: flex; flex-direction: column; height: 100% !important; min-height: 0; }
+  .lark-doc .is-vertical-thread .lark-doc-comment-thread-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y; }
+  .lark-doc .is-vertical-thread .lark-doc-comment-replies { overflow: visible; flex: none; }
+  .lark-doc .is-vertical-thread .lark-doc-comment-textarea { flex-shrink: 0; }
+}
+
+/* Phone reply menus use the measured viewport rather than the card's list flow. */
+.lark-doc .lark-doc-comment-reply-menu.is-mobile-menu {
+  position: fixed;
+  width: 328px;
+  padding: 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.lark-doc .is-mobile-menu .lark-doc-comment-menu-list[role="menu"] {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+.lark-doc .is-mobile-menu .lark-doc-comment-menu-item {
+  height: auto;
+  min-height: 64px;
+  padding: 6px 1px;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+.lark-doc .is-mobile-menu .lark-doc-comment-menu-label { white-space: normal; overflow: visible; }
+/* Full-document nine-action density measured from the real-device capture
+   native-comment-more-verified.{png,xml} (1080×2400 @2.75 → 393 CSS px).
+   XML bounds: card 325 CSS wide, first label 52 CSS below the card top
+   (1234→1377 device), label rows 91.3 CSS apart (1377→1628), column pitch
+   52.7 CSS, labels 11px/15px. 解决并隐藏 is five glyphs, so it wraps 4+1
+   inside the 49.3px label box; 复制链接 is four glyphs (120 device = 43.6 CSS)
+   and stays on one line. Keeping the box at 49.3px is what prevents the
+   复制链接 wrap, so do not narrow the item padding below 1px. */
+.lark-doc .lark-doc-comment-reply-menu.is-mobile-menu.is-mobile-document-menu {
+  width: 326px;
+  max-width: 326px;
+  padding: 19px 4px 2px;
+}
+.lark-doc .is-mobile-document-menu .lark-doc-comment-menu-list[role="menu"] {
+  row-gap: 27px;
+  column-gap: 2px;
+}
+.lark-doc .is-mobile-document-menu .lark-doc-comment-menu-item {
+  padding: 0 1px;
+  gap: 12px;
+  font-size: 11px;
+  line-height: 15px;
+}
+.lark-doc .is-mobile-document-menu .lark-doc-comment-quick-reactions { margin-top: 0px; }
+.lark-doc .lark-doc-comment-quick-reactions { display: flex; gap: 2px; padding-top: 8px; border-top: 1px solid var(--ld-comment-border); }
+.lark-doc .lark-doc-comment-quick-reactions button {
+  flex: 1; min-width: 0; height: 40px; padding: 0; border: 0; border-radius: 4px;
+  background: transparent; color: var(--ld-text); font-size: 22px; cursor: pointer;
+}
+.lark-doc .lark-doc-comment-quick-reactions button[aria-pressed="true"] { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-comment-quick-reactions button:disabled { opacity: .45; cursor: not-allowed; }
+.lark-doc .lark-doc-comment-delete-mask {
+  position: fixed; inset: 0; z-index: 1101; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; background: var(--ld-mask);
+}
+.lark-doc .lark-doc-comment-delete-dialog {
+  box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 100%; padding: 0; border: 0;
+  background: transparent; color: var(--ld-text); box-shadow: none;
+}
+.lark-doc .lark-doc-comment-delete-dialog button {
+  box-sizing: border-box; width: 100%; min-height: 52px; padding: 12px; margin: 0; border: 0; border-radius: 12px;
+  font-size: 18px; line-height: 24px;
+  background: var(--ld-comment-surface); color: var(--ld-text); cursor: pointer;
 }

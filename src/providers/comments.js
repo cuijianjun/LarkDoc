@@ -1,5 +1,5 @@
 /* global globalThis */
-import { isEmojiGlyph, normalizeEmojiGlyph } from '../core/emoji/catalog'
+import { isEmojiGlyph, normalizeEmojiGlyph } from '../core/emoji/identity'
 import { normalizeCommentMetadata } from '../core/comments/mentions'
 /**
  * 评论数据独立于正文保存。anchor 由 blockId 和 Provider 位置抽象组成，
