@@ -5245,7 +5245,12 @@ describe('最终补全：文本与表格AI真实编辑器闭环', () => {
     expect(requests).toHaveLength(1)
     expect(requests[0].action).toBe('rewrite')
     expect(requests[0].text).toBe('需要改写的文字')
-    await vi.waitFor(() => expect(root.querySelectorAll('.lark-doc-ai-actions .lark-doc-ai-action')).toHaveLength(11))
+    // 「操作」是下拉单选：11 个动作收在菜单里（select 的菜单按需挂载，点开才落 DOM）。
+    await vi.waitFor(() => expect(root.querySelector('.lark-doc-ai-action-select .lark-doc-select-trigger')).not.toBeNull())
+    const actionTrigger = root.querySelector('.lark-doc-ai-action-select .lark-doc-select-trigger')
+    expect(actionTrigger.textContent).toContain('改写')
+    actionTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(root.querySelectorAll('.lark-doc-ai-action-select [role="option"]')).toHaveLength(11)
   })
 
   it('切动作清空旧结果并按新动作重跑一次', async () => {

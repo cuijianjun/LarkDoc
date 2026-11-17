@@ -3,6 +3,7 @@ import { createSelect } from './select'
 import { iconNode } from './icon'
 import { mountNode, setAttr, setText, syncChildren } from './dom'
 import { createImageAiChat } from './imageAiChat'
+import { makeDraggable } from './draggable'
 
 function call(handlers, name, ...args) {
   const handler = handlers[name]
@@ -113,6 +114,8 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiTitle.appendChild(aiMock)
   aiHeading.appendChild(aiTitle)
   aiHeading.appendChild(closeButton('关闭 AI 预览', () => call(handlers, 'closeAI')))
+  // 标题栏当拖动条：面板默认贴右侧槽位，用户可以把它挪到不挡正文的位置。
+  const disposeAIDrag = makeDraggable(aiPanel, aiHeading)
   const aiDescription = document.createElement('p')
   aiDescription.textContent = '配置 AI 服务后，生成结果会流式显示；只有明确接受、插入或替换才修改正文。'
   const aiContext = document.createElement('div')
@@ -130,13 +133,12 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiContext.appendChild(aiContextSummary)
   const aiActionLabel = document.createElement('label')
   aiActionLabel.textContent = '操作'
-  // 11 个动作平铺成胶囊，而不是塞进原生下拉：下拉一合上就只剩一个「改写」，
-  // 「续写」「扩写」这些高频动作每次都要多两次点击才找得到。
-  const aiActionGroup = document.createElement('div')
-  aiActionGroup.className = 'lark-doc-ai-actions'
-  aiActionGroup.setAttribute('role', 'radiogroup')
-  aiActionGroup.setAttribute('aria-label', 'AI 操作')
-  const aiActionButtons = new Map()
+  // 单选下拉：11 个动作收在菜单里，收起时只占一行。
+  const aiActionSelect = createSelect({
+    ariaLabel: 'AI 操作',
+    className: 'lark-doc-ai-action-select',
+    onChange: value => call(handlers, 'setAIAction', value),
+  })
   const aiLanguageLabel = document.createElement('label')
   aiLanguageLabel.textContent = '目标语言'
   const aiLanguageSelect = createSelect({
@@ -216,7 +218,7 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiPanel.appendChild(aiDescription)
   aiPanel.appendChild(aiContext)
   aiPanel.appendChild(aiActionLabel)
-  aiPanel.appendChild(aiActionGroup)
+  aiPanel.appendChild(aiActionSelect.el)
   aiPanel.appendChild(aiLanguageLabel)
   aiPanel.appendChild(aiLanguageSelect.el)
   aiPanel.appendChild(aiPromptLabel)
@@ -310,31 +312,6 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     syncChildren(aiMessages, children)
   }
 
-  function updateActions(options, value, disabled) {
-    const list = Array.isArray(options) ? options : []
-    const alive = new Set()
-    const children = []
-    list.forEach(option => {
-      alive.add(option.value)
-      let node = aiActionButtons.get(option.value)
-      if (!node) {
-        node = button(option.label, () => call(handlers, 'setAIAction', option.value), 'lark-doc-ai-action')
-        node.setAttribute('role', 'radio')
-        aiActionButtons.set(option.value, node)
-      }
-      setText(node, option.label)
-      const active = option.value === value
-      node.classList.toggle('is-active', active)
-      node.setAttribute('aria-checked', active ? 'true' : 'false')
-      // 只读才整组禁用：生成中切动作是允许的（会取消当前流，按新动作重跑），
-      // 否则用户想改主意得等上一段流跑完。
-      setDisabled(node, !!disabled)
-      children.push({ node, on: true })
-    })
-    Array.from(aiActionButtons.keys()).forEach(key => { if (!alive.has(key)) aiActionButtons.delete(key) })
-    syncChildren(aiActionGroup, children)
-  }
-
   function updateReviewIssues(items, readonly, running) {
     const list = Array.isArray(items) ? items : []
     const alive = new Set()
@@ -407,7 +384,8 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     setText(aiContextSummary, state.aiContextSummary)
     imageAi.update(state)
     aiContextSelect.update({ options: state.aiContextOptions, value: state.aiContextScope, disabled: state.aiRunning || state.readonly })
-    updateActions(state.aiActions, state.aiAction, state.readonly)
+    // 生成中允许切动作（会取消当前流、按新动作重跑），只读才整组禁用。
+    aiActionSelect.update({ options: state.aiActions, value: state.aiAction, disabled: state.readonly })
     aiLanguageLabel.style.display = state.aiAction === 'translate' ? '' : 'none'
     aiLanguageSelect.el.style.display = state.aiAction === 'translate' ? '' : 'none'
     aiLanguageSelect.update({ options: state.aiLanguageOptions, value: state.aiLanguage, disabled: state.aiRunning || state.readonly })
@@ -446,9 +424,9 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
       { node: aiHeading, on: true },
       { node: aiDescription, on: true },
       { node: aiContext, on: true },
-      // 「操作」标签只跟着胶囊组一起进退，省得只剩一个孤零零的 label。
+      // 「操作」标签只跟着下拉一起进退，省得只剩一个孤零零的 label。
       { node: aiActionLabel, on: true },
-      { node: aiActionGroup, on: true },
+      { node: aiActionSelect.el, on: true },
       { node: aiLanguageLabel, on: state.aiAction === 'translate' },
       { node: aiLanguageSelect.el, on: state.aiAction === 'translate' },
       { node: aiPromptLabel, on: true },
@@ -480,7 +458,9 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     focusTemplateSearch() { templateSearch.focus() },
     focusImageAI() { imageAi.focus() },
     destroy() {
+      disposeAIDrag()
       aiContextSelect.destroy()
+      aiActionSelect.destroy()
       aiLanguageSelect.destroy()
       el.remove()
     },

@@ -71,6 +71,7 @@
   --ld-bg-brand-solid: #06A17D;
   --ld-bg-brand-pressed: #058C6C;      /* C：主色压暗一档，13 无实测 */
   --ld-focus-ring: rgba(6, 161, 125, 0.40);     /* C */
+  --ld-focus-ring-brand: rgba(6, 161, 125, 0.26); /* 品牌色焦点环，同本档主色 */
   --ld-danger: #ff4949;                /* $--color-danger */
   --ld-warning: #ffba00;               /* $--color-warning */
   --ld-success: #13ce66;               /* $--color-success */
@@ -173,6 +174,7 @@
   --ld-accent-control: #1FD6A5;
   --ld-focus-ring: rgba(31, 214, 165, 0.40);
   --ld-focus-ring-picker: #1FD6A5;
+  --ld-focus-ring-brand: rgba(31, 214, 165, 0.30);
   --ld-focus-ring-number: rgba(31, 214, 165, 0.20);
   --ld-border-number-focus: #1FD6A5;
   --ld-brand-subtle: rgba(31, 214, 165, 0.26);

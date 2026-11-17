@@ -70,9 +70,8 @@ function createDialogShell(label, onClose) {
 /**
  * `<header><strong>{title}</strong>[middle…]<button aria-label=…>×</button></header>`
  *
- * 表格选择器要在 strong 与「×」之间插一个 `span.lark-doc-table-grid-size`
- * （CSS 用 `margin-left: auto` 把它推到中间，断言量的 `sizeRightGap === 12`
- * 来自 `header` 的 `gap`），其余三个只有 strong + 关闭钮。
+ * `middle` 是插在标题与关闭钮之间的可选节点。表格选择器不走这里 —— 它是贴按钮的
+ * 非模态浮层（自带标题 / 网格 / 尺寸三段），不是带背板的 dialog。
  */
 function createDialogHeader(options) {
   const header = document.createElement('header')
@@ -225,16 +224,13 @@ export function createTablePickerDialog(options = {}) {
     onClose()
   })
 
+  // 三段竖排照飞书原版：标题独占一行、网格、尺寸贴右下。
   const title = document.createElement('p')
   title.className = 'lark-doc-table-picker-title'
   title.textContent = '插入支持富文本的表格'
 
   const sizeLabel = document.createElement('span')
   sizeLabel.className = 'lark-doc-table-grid-size'
-
-  const footer = document.createElement('div')
-  footer.className = 'lark-doc-table-picker-footer'
-  footer.appendChild(sizeLabel)
 
   const grid = document.createElement('div')
   grid.className = 'lark-doc-table-grid'
@@ -246,7 +242,6 @@ export function createTablePickerDialog(options = {}) {
     cell.type = 'button'
     // 口径照抄 SFC：先列后行，且都是「数字 + 行/列」的中文单位。
     cell.setAttribute('aria-label', `${col}行${row}列`)
-    cell.appendChild(document.createTextNode('▦'))
     // mouseenter 与 focus 走同一个入口：键盘 Tab 与鼠标划过都要预览。
     cell.addEventListener('mouseenter', () => call('onPreview', row, col))
     cell.addEventListener('focus', () => call('onPreview', row, col))
@@ -257,7 +252,7 @@ export function createTablePickerDialog(options = {}) {
 
   el.appendChild(title)
   el.appendChild(grid)
-  el.appendChild(footer)
+  el.appendChild(sizeLabel)
 
   function render() {
     const text = `${state.cols} × ${state.rows}`

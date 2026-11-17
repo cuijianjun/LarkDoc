@@ -84,6 +84,7 @@
   --ld-accent-control: #4C88FF;           /* A */
   --ld-focus-ring: rgba(76, 136, 255, 0.40);       /* C */
   --ld-focus-ring-picker: #4C88FF;                 /* A */
+  --ld-focus-ring-brand: rgba(31, 214, 165, 0.30); /* 品牌色焦点环（同 --ld-brand-chrome 派生） */
   /* --ld-danger / --ld-warning 不覆盖：11 §4.4 实测 R600/G600 深色不变 */
   --ld-text-error: #E26A64;               /* C：#D83931 +25% 白（深底需够对比） */
   --ld-stroke-swatch-clear: #E26A64;      /* C：同 error */
@@ -118,12 +119,12 @@
   --ld-border-color-grid: rgba(207, 207, 207, 0.12); /* B */
   --ld-border-columns-picker: #434343;    /* B */
   --ld-border-grid-table: #434343;        /* B */
-  --ld-border-grid-table-active: #4C88FF; /* A */
+  --ld-border-grid-table-active: #1FD6A5; /* 品牌绿（与 --ld-brand-chrome 同值） */
   --ld-stroke-swatch-empty: #757575;      /* B */
   --ld-bg-switch-off: #5F5F5F;            /* B */
   --ld-bg-switch-thumb: #F0F0F0;          /* B */
   --ld-bg-grid-table: rgba(207, 207, 207, 0.08);       /* B */
-  --ld-bg-grid-table-active: #4C88FF;                  /* A */
+  --ld-bg-grid-table-active: rgba(31, 214, 165, 0.24); /* 品牌绿浅底（对齐默认档 ~20% 浓度） */
   --ld-bg-grid-submenu: #292929;                       /* A：浮起表面 */
   --ld-bg-columns-preview: rgba(207, 207, 207, 0.08);  /* B */
   --ld-bg-columns-picker: rgba(76, 136, 255, 0.45);    /* C */

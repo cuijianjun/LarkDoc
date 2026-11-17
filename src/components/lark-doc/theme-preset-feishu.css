@@ -125,6 +125,7 @@
   --ld-accent-control: #1456F0;
   --ld-focus-ring: rgba(20, 86, 240, 0.4);
   --ld-focus-ring-picker: #C2D4FF;
+  --ld-focus-ring-brand: rgba(20, 86, 240, 0.26);  /* 品牌色焦点环（飞书档主色 #1456F0） */
   --ld-icon-callout: #646A73;         /* 飞书块句柄图标统一中性灰，无彩色类型图标 */
   /* ---- B5 阴影：聚拢到 06 §3 的 5 个档位 ---- */
   --ld-shadow-menu-sm: rgba(31, 35, 41, 0.1) 0 4px 8px 0;       /* = --shadow-popover */
