@@ -278,8 +278,11 @@ describe('公开产物与轻量包边界', () => {
       const visit = name => { if (visited.has(name)) return; visited.add(name); const item = chunks.get(name); if (!item) return; modules.push(...Object.keys(item.modules)); item.imports.forEach(visit) }
       output.filter(item => item.type === 'chunk' && item.isEntry).forEach(item => visit(item.fileName))
       expect(modules.some(id => id.endsWith('/src/ui/outlinePanel.js'))).toBe(true)
-      for (const file of ['panels.js', 'dialogs.js', 'commandMenu.js']) expect(modules.some(id => id.endsWith('/src/ui/' + file))).toBe(false)
-      expect(output.some(item => item.type === 'chunk' && item.isDynamicEntry && Object.keys(item.modules).some(id => id.endsWith('/src/ui/panels.js')))).toBe(true)
+      for (const file of ['panels.js', 'commentPanel.js', 'versionPanel.js', 'dialogs.js', 'commandMenu.js']) expect(modules.some(id => id.endsWith('/src/ui/' + file))).toBe(false)
+      // panels.js 现在只是出口文件（纯 re-export），rollup 会把它摊平，重面板实现落在
+      // commentPanel.js / versionPanel.js 这两个动态入口里。
+      expect(output.some(item => item.type === 'chunk' && item.isDynamicEntry &&
+        Object.keys(item.modules).some(id => /\/src\/ui\/(commentPanel|versionPanel)\.js$/.test(id)))).toBe(true)
     } finally { await bundle.close() }
   })
 
@@ -1362,15 +1365,17 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
     expect(result.messages).toContainEqual(expect.objectContaining({ type: 'dependency', file: child }))
   }))
 
-  it('an input changed during the build or absent from the before snapshot cannot be cached', () => cacheFixture(({ root, previous }) => {
+  it('an input changed during the build cannot be cached; absent ones are hashed on the spot', () => cacheFixture(({ root, previous }) => {
     const started = Object.fromEntries(previous.inputs.map(file => [file, {
       size: fs.statSync(path.join(root, file)).size,
       hash: createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex'),
     }]))
     expect(assertStableInputs(started, previous.inputs, root)).toBe(previous.fingerprint)
+    // 输入指纹收窄后，watchFiles 里会有「插件 addWatchFile 但从不 load」的文件（虚拟入口的源文件），
+    // 它们没有基线读数。这类输入按当前读数补基线即可 —— 若在这里判死，每次全量构建都会失败。
+    expect(() => assertStableInputs({}, previous.inputs, root)).not.toThrow()
     fs.writeFileSync(path.join(root, previous.inputs[0]), 'changed while building')
     expect(() => assertStableInputs(started, previous.inputs, root)).toThrow(/构建期间输入发生变化/)
-    expect(() => assertStableInputs({}, previous.inputs, root)).toThrow(/构建期间输入发生变化/)
   }))
 
   it('math UMD injects CSS and resolves fonts beside the current script', () => cacheFixture(({ root }) => {

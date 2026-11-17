@@ -71,7 +71,9 @@ module.exports = {
      */
     isolate: true,
     pool: 'forks',
-    maxWorkers: 2,
+    // 缺省仍是最稳的 2；本机想跑快一点用 `VITEST_MAX_WORKERS=6 npx vitest run`。
+    // 上界不要超过「能全部跑完」的那个数：调大前先确认输出里的文件数与总数没少。
+    maxWorkers: Number(process.env.VITEST_MAX_WORKERS) || 2,
     minWorkers: 1,
   },
 }

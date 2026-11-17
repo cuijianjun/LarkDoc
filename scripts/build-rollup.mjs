@@ -20,6 +20,8 @@ try {
 } catch (_) { /* 首次构建或缓存损坏时重新生成。 */ }
 const rollupCaches = new Map()
 const verifiedBuilds = new Map()
+// 构建图的单一写入者：所有目标往这份对象上记，main 末尾一次落盘。
+let graphState = null
 const runtimeAssets = [
   ['src/styles', 'src/styles'],
   ['src/components/lark-doc', 'src/components/lark-doc'],
@@ -156,11 +158,12 @@ export function canReuseBuild(name, previous, { root = ROOT, dist = DIST } = {})
 }
 
 export function assertStableInputs(started, inputs, root = ROOT) {
-  const before = Object.fromEntries(inputs.map(file => [file, started[file]]))
+  // watchFiles 里可能有插件显式 addWatchFile 但从不 load 的文件（虚拟入口的源文件），
+  // 它们在 started 里没有读数；补一次当场读数，当作基线。
+  const before = Object.fromEntries(inputs.map(file => [file, started[file] || fileHash(resolve(root, file))]))
   const after = fileRecords(root, inputs)
-  if (inputs.some(file => !before[file]) || recordsFingerprint(before) !== recordsFingerprint(after)) {
-    throw new Error('构建期间输入发生变化，未写入缓存；请在文件稳定后重新构建')
-  }
+  const moved = inputs.filter(file => before[file].hash !== after[file].hash)
+  if (moved.length) throw new Error(`构建期间输入发生变化（${moved.slice(0, 3).join('、')}${moved.length > 3 ? ` 等 ${moved.length} 个` : ''}），未写入缓存；请在文件稳定后重新构建`)
   return recordsFingerprint(after)
 }
 
@@ -228,10 +231,15 @@ async function buildOne(name) {
   }
   const sources = filesUnder(ROOT, 'src')
   const started = fileRecords(ROOT, [...commonInputs, ...sources])
+  // 指纹只记真正读到的文件。`started` 仍然从 src 全集起手，那是为了在「读取前就已被
+  // 改动」时留下基线；若把它整体写进指纹，任何一个 src 文件的变化都会让 38 个目标全部
+  // 失效——实测每个目标的 inputs 因此都是 492~792 条，而真实依赖面中位数只有 5~10 个目标。
+  const captured = new Set(commonInputs)
   const scannedCss = new Set()
   const captureInput = file => {
     if (!existsSync(file) || !statSync(file).isFile()) return
     const key = relative(ROOT, file)
+    captured.add(key)
     if (!started[key]) started[key] = fileHash(file)
     // 内联器会直接读子 CSS，必须在读取前记录，不能只依赖 Rollup 的模块 load。
     if (file.endsWith('.css') && !scannedCss.has(file)) {
@@ -258,11 +266,12 @@ async function buildOne(name) {
     const outputs = output.map(item => item.fileName)
     assertExpectedOutputs(name, outputs, DIST)
     if (JSON.stringify(filesUnder(ROOT, 'src')) !== JSON.stringify(sources)) throw new Error('构建期间源码文件清单发生变化，未写入缓存')
-    const inputs = [...new Set([...Object.keys(started), ...realInputFiles(bundle.watchFiles).map(file => relative(ROOT, file))])].sort()
+    // 直接读源码的插件（presentation 形状、共享宿主 shim、reaction catalog）都调了
+    // addWatchFile，所以 watchFiles 就是完整闭包；captured 补充 load 之外的内联 CSS。
+    const inputs = [...new Set([...captured, ...realInputFiles(bundle.watchFiles).map(file => relative(ROOT, file))])].sort()
     const fingerprint = assertStableInputs(started, inputs)
     if (cacheGroup !== null) rollupCaches.set(cacheGroup, bundle.cache)
-    const graph = readGraph()
-    graph[name] = Object.fromEntries(output.filter(item => item.type === 'chunk' || item.type === 'asset').map(item => [item.fileName,
+    const chunkGraph = Object.fromEntries(output.filter(item => item.type === 'chunk' || item.type === 'asset').map(item => [item.fileName,
       item.type === 'chunk'
         ? {
             entry: item.isEntry, runtime: isRuntimeChunk(item), modules: Object.keys(item.modules).map(id => id.replace(`${ROOT}/`, '')).sort(),
@@ -272,8 +281,9 @@ async function buildOne(name) {
         // 不能挂到入口链上，否则内核预算会把并行下载的样式一起吞进去。
         : { entry: false, asset: true, modules: [], imports: [], dynamicImports: [] },
     ]))
-    writeFileSync(resolve(DIST, 'lark-doc-graph.json'), `${JSON.stringify(graph, null, 2)}\n`)
-    verifiedBuilds.set(name, { inputs, sources, fingerprint, outputs, graphHash: graphFingerprint(graph[name]) })
+    // 图上账走内存：38 个目标各自 read-modify-write 一次既慢，并行时还会互相覆盖。
+    graphState[name] = chunkGraph
+    verifiedBuilds.set(name, { inputs, sources, fingerprint, outputs, graphHash: graphFingerprint(chunkGraph) })
   } finally {
     await bundle.close()
   }
@@ -333,15 +343,44 @@ function writeManifest(names) {
   writeFileSync(resolve(DIST, 'lark-doc-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 }
 
+function writeGraphFile() {
+  writeFileSync(resolve(DIST, 'lark-doc-graph.json'), `${JSON.stringify(graphState, null, 2)}\n`)
+}
+
+/**
+ * 目标按 cacheGroup 串行执行。
+ *
+ * 同一 cacheGroup 的目标共用一份 rollup cache，后一个靠前一个的 AST 省掉解析与转换，
+ * 组内顺序不能打乱。组与组之间理论上可以并行，但实测并发（同进程 Promise 并发、以及
+ * 2~4 个子进程）都会把沙箱的文件服务 IPC 打崩：`write EPIPE`，50~100 秒内必现；
+ * 串行则稳定。所以这里不并行，构建速度的收益改由「按目标收窄输入指纹」提供——
+ * 改一个文件只重建真正依赖它的那几个目标，那才是日常改动的主场景。
+ */
+async function runBuilds(names) {
+  const units = new Map()
+  const heavy = []
+  for (const name of names) {
+    const group = rollupCacheGroup(name)
+    if (group === null) heavy.push(name)
+    else units.set(group, [...(units.get(group) || []), name])
+  }
+  for (const list of units.values()) for (const name of list) await buildOne(name)
+  // full / fullCjs / mermaid 厂商包会 clear() 全局 rollup 缓存，必须排在最后。
+  for (const name of heavy) await buildOne(name)
+}
+
 async function main() {
   assertNodeVersion()
   mkdirSync(DIST, { recursive: true })
+  graphState = readGraph()
   const recorded = [
-    ...Object.values(readGraph()).flatMap(graph => graph && typeof graph === 'object' ? Object.keys(graph) : []),
+    ...Object.values(graphState).flatMap(graph => graph && typeof graph === 'object' ? Object.keys(graph) : []),
     ...Object.values(inputCache).flatMap(entry => Array.isArray(entry?.outputs) ? entry.outputs : []),
   ]
   const names = targetsFor(target)
-  for (const name of names) await buildOne(name)
+  await runBuilds(names)
+  // 先落图：后面的复用校验要按磁盘上的图核对产物与图是否一致。
+  writeGraphFile()
   copyRuntimeAssets()
   inlinePublishedCssImports()
   writeManifest(names)
@@ -350,7 +389,9 @@ async function main() {
   // 每次 prepack 都误判成「产物变脏」而重跑三分钟。
   compressDelivery({ allowMissing: true, prune: target === 'all' })
   const assets = runtimeAssets.flatMap(([source, target]) => filesUnder(ROOT, source).map(file => `${target}${file.slice(source.length)}`))
-  for (const [name, entry] of verifiedBuilds) {
+  for (const name of names) {
+    const entry = verifiedBuilds.get(name) || inputCache[name]
+    if (!entry || !Array.isArray(entry.outputs) || !entry.fingerprint) continue
     if (JSON.stringify(filesUnder(ROOT, 'src')) !== JSON.stringify(entry.sources) || inputFingerprint(entry.inputs) !== entry.fingerprint) {
       throw new Error(`Rollup ${name} 构建期间输入发生变化，未写入缓存`)
     }

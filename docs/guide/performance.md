@@ -370,3 +370,65 @@ curl -sI -H 'Accept-Encoding: br' \
 
 
 
+## 2026-11-17：工程效能（增量构建 / 校验链 / 可读性）
+
+前三轮都在压首屏字节，这一轮量的是**开发者侧的代价**：一次改动要多久才能被验证。
+
+### 根因：每个构建目标的输入指纹都含整个 `src`
+
+`scripts/build-rollup.mjs` 的 `buildOne` 用 `fileRecords([...commonInputs, ...sources])` 起手
+（`sources` = `filesUnder('src')`，431 个文件），再与 `watchFiles` 合并写进
+`_codex/rollup-inputs.json`。实测 38 个目标的 `inputs` 长度是 492~792，**都含全部 431 个 src 文件**，
+于是任何一个文件变化都让 38 个目标全部失效。
+
+按 `dist/lark-doc-graph.json` 逐目标统计 411 个 src 文件的真实归属：出现在 >20 个目标里的只有 1 个
+（`core/features/registry.js`，27 个），≤5 个目标的有 73 个，`ui/panels.js` 10 个、
+`core/documentOperations.js` 19 个、`features/math.js` 4 个 —— 中位数落在 5~10。
+
+**改法**：区分两份集合。`started`（src 全集 + commonInputs）只承担两件事——文件清单是否变化、
+「读取前已被改动」的守卫；写进指纹的 `inputs` 换成 `captured`（真正 load 到的文件 + CSS 内联器递归读到的）
+∪ `realInputFiles(watchFiles)`。安全性来自一条实测结论：全仓绕过 `load()` 直接读源码的只有
+presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，**它们都调了 `addWatchFile`**。
+
+顺带把构建图改成内存累积、末尾单写（原来是 38 次 read-modify-write）。
+
+| 场景 | 改前 | 改后 |
+| --- | --- | --- |
+| 改 `src/ui/panels.js` 后 `build:all` | 38 个目标全重建 | **复用 28 / 重建 10** |
+| 改 `src/features/uiExtra.js` | 同上 | 复用 27 / 重建 11（它经 `features/ui.js` 进 esm 图，属真实依赖） |
+| 冷态全量 `build:all` | 38 个目标 | 38 个目标，525s |
+
+### 目标级并行：试过，在这个环境里不可用
+
+组与组之间理论上没有共享状态，所以先做了进程内 Promise 并发：**两个 rollup 同时读文件必崩**，
+`write EPIPE` 出现在 50~70 秒，栈落在沙箱文件服务的 IPC 客户端上；串行则完全正常。
+改成一 cache group 一子进程后，2 个子进程能跑完 `element` 批次（241s），但 `all` 在 4 个子进程下
+3 分 45 秒仍旧 EPIPE。结论：**并行留给没有这层沙箱的机器自行评估**，默认保持串行，
+增量收益全部由指纹收窄承担——毕竟日常主场景是「改一个文件」，不是「反复全量」。
+
+### 校验链
+
+- `lint` 加磁盘缓存（`node_modules/.cache/eslint/`）。
+- `vitest` 的 `maxWorkers` 支持 `VITEST_MAX_WORKERS` 覆盖，缺省仍是 2（原有的「4 会导致 worker 启动超时、
+  那些文件一条用例都没跑」的警告保留）。
+- **体检发现 lint 门禁在 HEAD 就是红的**：`src/features/ui-registry.js` 用了 `globalThis` 却没有
+  `/* global globalThis */`（仓库既有 21 个文件都带），从 `f61d295` 起 `npm run lint` 一直失败。
+  按既有约定补声明，不改 eslint 配置（改配置会牵连那 21 处的 `no-redeclare`）。
+
+### 可读性：`src/ui/panels.js` 2,244 行 → 4 个文件
+
+| 文件 | 行 | 内容 |
+| --- | ---: | --- |
+| `ui/panels.js` | 83 | 只剩出口；文件头那份「结构即契约」的长注释保留在这里 |
+| `ui/versionPanel.js` | 616 | 历史记录全屏层 + 版本提示 toast |
+| `ui/commentPanel.js` | 1,506 | 评论面板层（含它独占的受控输入与富文本片段渲染） |
+| `ui/panelShared.js` | 31 | handler 取值 / 受控输入回写 / 按钮抢焦点 |
+
+只搬不改：函数体、类名、`aria-*`、断言口径逐字未动，4 个导出名与 10 个构建目标的 import 路径都没变。
+`panels.js` 现在是纯 re-export，rollup 会把它摊平，所以契约用例里「重面板只在动态闭包」那条断言
+从 `panels.js` 改成了 `commentPanel.js` / `versionPanel.js` —— 量的还是同一件事。
+
+### 门禁
+
+`check:artifacts` 全绿（10 条体积预算不变，首屏仍为 601,740 B）；`build-contract` 73 passed、
+`shared-host` 3 passed；`test:affected` 44 文件 / 2,002 用例通过。

@@ -1,3 +1,4 @@
+/* global globalThis */
 /**
  * Element 面板包的跨包注册桥。
  *

@@ -12,7 +12,7 @@
     "build:adapters": "ROLLUP_TARGET=adapters node scripts/build-rollup.mjs",
     "build:plugin": "ROLLUP_TARGET=plugin node scripts/build-rollup.mjs",
     "build:analyze": "ROLLUP_TARGET=all node scripts/build-rollup.mjs",
-    "lint": "eslint --ext .js,.vue src scripts",
+    "lint": "eslint --ext .js,.vue --cache --cache-location node_modules/.cache/eslint/ src scripts",
     "check": "npm run check:gate && npm run check:artifacts",
     "check:gate": "npm run check:deploy && npm run check:code && npm run check:ui && npm run lint",
     "check:quick": "npm run check:architecture && npm run contract:check && npm run lint",
