@@ -496,7 +496,28 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 别的域用到的（`nodeIndent`、`isolatedHeadingContainers`）提成了导出，导出集合从 61 变 63，
 其余逐字未动。162 个单测文件 / 4,950 用例全绿。
 
+### `ui/commentPanel.js` 再拆三份（1,562 → 713 / 375 / 630 / 65）
+
+面板里最重的闭包按「谁真的需要可变状态」切开：
+
+| 文件 | 行数 | 职责 |
+| --- | --- | --- |
+| `commentPanel.js` | 713 | state、移动端/抽屉分支、滚动锁、删除确认、回复菜单悬停计时器、`render` / `update` |
+| `commentPanelThread.js` | 630 | 单张卡的建节点 / 控件条 / 回复流 / `renderPanel` |
+| `commentPanelChrome.js` | 375 | 只建一次的静态骨架（壳体、侧栏头、两个输入区、图片预览、表情选择器） |
+| `commentPanelParts.js` | 65 | 两段无闭包依赖的纯函数（富文本输入兜底、评论分段渲染） |
+
+跨模块的可变状态一律留在主文件：`nativeThreadOpen` 用 `isNativeThreadOpen()` 读，悬停标记收成
+`trackReplyHover()`，富文本注册表与删除确认直接以函数形式传入。另两份实现不持副本，只走 `ctx`。
+
+**代价是实测出来的，不是估的**：`feature:uiPanels:umd` raw 324,465 → 328,172、gzip 96,113 →
+97,449（+1.34%）。增量几乎全在「78 个节点的回参 + 63 个节点的出参」这两份名单上（约 2.7 KB raw），
+逻辑一行没多。该包懒加载，首屏四个分项（引导 1,579 / 内核 542,353 / 首屏样式 41,247 / 补丁 17,224）
+逐项未变；`uiPanels` 预算余量从 ~2.9 KB 降到 952 B（98,048 / 99,000）。要收回这 1.3 KB，把
+`commentPanelChrome.js` 合回主文件即可，主文件回到约 1,040 行。
+
 ### 门禁
 
 `check:artifacts` 全绿（10 条体积预算不变，首屏仍为 601,740 B）；`build-contract` 73 passed、
-`shared-host` 3 passed；`test:affected` 44 文件 / 2,002 用例通过。
+`shared-host` 3 passed；`test:affected` 44 文件 / 2,002 用例通过。C07 之后：`lint`、`check:architecture`、
+`contract:check`、`check:artifacts`（442s）全绿，`build` 项目 133 passed。

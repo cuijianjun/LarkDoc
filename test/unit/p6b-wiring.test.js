@@ -22,8 +22,10 @@ const overlaysRenderer = read('src/ui/overlays.js') +
     .map((name) => read(`src/ui/${name}.js`)).join('\n')
 const shareEntryRenderer = read('src/ui/shareEntry.js')
 // 面板实现已从 ui/panels.js 拆到 commentPanel / versionPanel（panels.js 只剩出口），
+// 评论面板内部再按「静态骨架 / 线程卡片 / 纯函数」拆成三份实现文件；
 // 这里直接读实现文件，切片锚点仍是那两个导出函数。
-const panelsRenderer = read('src/ui/commentPanel.js') + read('src/ui/versionPanel.js')
+const commentPanelFiles = ['commentPanel', 'commentPanelChrome', 'commentPanelThread', 'commentPanelParts']
+const panelsRenderer = [...commentPanelFiles, 'versionPanel'].map(name => read(`src/ui/${name}.js`)).join('\n')
 const panelsUi = read('src/components/lark-doc/editor/panelsUiMixin.js')
 const panelPresentation = read('src/components/lark-doc/editor/panelPresentation.js')
 const topBarRenderer = read('src/ui/topBar.js')
@@ -87,7 +89,7 @@ describe('P6b · 浮层容器', () => {
   })
 
   it('评论、历史版本控件保留 capability 与禁用态投影', () => {
-    const commentPanel = panelsRenderer.slice(panelsRenderer.indexOf('export function createCommentPanel('))
+    const commentPanel = commentPanelFiles.map(name => read(`src/ui/${name}.js`)).join('\n')
     const versionPanel = panelsRenderer.slice(
       panelsRenderer.indexOf('export function createVersionPanel('),
       panelsRenderer.indexOf('export function createVersionToast('),

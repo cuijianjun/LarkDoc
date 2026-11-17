@@ -32,6 +32,9 @@
 - [x] **C05 删除 `src/components/lark-doc/editor/uploadMixin.js`**：145 行，no-Vue 迁移遗留（`specs/002` T087 已写明「未被任何模块引用」），实测不在任何产物的模块表里。
 - [x] **C06 `core/documentOperations.js` 拆分**：1,374 行 / 61 导出 / 19 个目标引用 → `documentValidation`(379) + `documentTextEdits`(154) + `headingNumbering`(89) + `listNumbering`(212) + `blockIndent`(110) + `documentSections`(474) + 25 行出口。
       拆前先算跨域引用：`validation → {heading, sections}`、`sections → {text, heading, indent}`、`list → indent`，**无回边**，拆后不产生循环依赖。导出 61 → 63（`nodeIndent`、`isolatedHeadingContainers` 从文件内私有提为共享），其余逐字未动；162 文件 / 4,950 用例全绿。
+- [x] **C07 `ui/commentPanel.js` 拆分**：1,562 行 → `commentPanel.js`(713，有状态层：state / 移动端与抽屉分支 / 滚动锁 / 删除确认 / 回复菜单悬停计时器 / `render` / `update`) + `commentPanelChrome.js`(375，只建一次的静态骨架) + `commentPanelThread.js`(630，单卡建节点 / 控件条 / 回复流 / `renderPanel`) + `commentPanelParts.js`(65，两段无闭包依赖的纯函数)。DOM 结构、类名、ARIA、事件接线逐字未改；跨模块的可变状态（悬停计时器、删除确认、富文本输入注册表）全部留在主文件，另两份实现只走 `ctx` 回调，不持有副本（`nativeThreadOpen` 用 `isNativeThreadOpen()` 读、`dismissedReplyHover` 收成 `trackReplyHover()`）。
+      **代价实测**：`feature:uiPanels:umd` raw 324,465 → 328,172、gzip 96,113 → 97,449（+1.34%）。增量几乎全在两份名单上（78 个节点的回参 + 63 个节点的出参，合计约 2.7 KB raw），不是逻辑变多。该包**懒加载**，首屏四个分项（引导 1,579 / 内核 542,353 / 首屏样式 41,247 / 补丁 17,224）逐项未变；预算余量从 ~2.9 KB 降到 **952 B**（98,048 / 99,000）。要收回这 1.3 KB，把 `commentPanelChrome.js` 合回主文件即可（主文件回到 ~1,040 行）。
+      验证：评论面板四支 277 用例（`mobile-reference-comments` / `comments-ui` / `comment-composer` / `overlays-native`）+ 接线两支 15 + 产物两支 57 + `build` 项目 133 全绿；`lint` / `check:architecture` / `contract:check` / `check:artifacts`（442s）全绿。
 
 ## Phase D — 首屏（P2）
 
@@ -53,7 +56,8 @@
 | `lint` | 每次全量重扫 | 命中 eslint 磁盘缓存；且 HEAD 起就红的问题已修 |
 | 单测并发 | 固定 2 | 默认 2，可用 `VITEST_MAX_WORKERS` 覆盖 |
 | 单测编排 | 单趟全量，构建用例与普通用例同池（改上游枢纽时白付 118s，且 4 条假超时） | `unit` 162 支 / `build` 3 支，两趟串行；`test:affected` 只走 `unit` |
-| 最大单文件 | `ui/panels.js` 2,244 行 | 拆成 4 个文件，最大 1,506 行；随后 `ui/commentPanel.js` 仍是 1,562 |
+| 最大单文件 | `ui/panels.js` 2,244 行 | 拆成 4 个文件（最大 1,506）→ 再拆成 4 个（最大 713，`commentPanelThread.js` 630、`commentPanelChrome.js` 375） |
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
-| 首屏 | 601,740 B（内核 542,353） | 未变（D01 已按数据否决） |
+| 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
+| 首屏 | 601,740 B（内核 542,353） | 未变（D01 已按数据否决；C07 四个分项逐项相同） |
