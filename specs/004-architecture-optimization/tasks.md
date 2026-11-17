@@ -35,6 +35,11 @@
 - [x] **C07 `ui/commentPanel.js` 拆分**：1,562 行 → `commentPanel.js`(713，有状态层：state / 移动端与抽屉分支 / 滚动锁 / 删除确认 / 回复菜单悬停计时器 / `render` / `update`) + `commentPanelChrome.js`(375，只建一次的静态骨架) + `commentPanelThread.js`(630，单卡建节点 / 控件条 / 回复流 / `renderPanel`) + `commentPanelParts.js`(65，两段无闭包依赖的纯函数)。DOM 结构、类名、ARIA、事件接线逐字未改；跨模块的可变状态（悬停计时器、删除确认、富文本输入注册表）全部留在主文件，另两份实现只走 `ctx` 回调，不持有副本（`nativeThreadOpen` 用 `isNativeThreadOpen()` 读、`dismissedReplyHover` 收成 `trackReplyHover()`）。
       **代价实测**：`feature:uiPanels:umd` raw 324,465 → 328,172、gzip 96,113 → 97,449（+1.34%）。增量几乎全在两份名单上（78 个节点的回参 + 63 个节点的出参，合计约 2.7 KB raw），不是逻辑变多。该包**懒加载**，首屏四个分项（引导 1,579 / 内核 542,353 / 首屏样式 41,247 / 补丁 17,224）逐项未变；预算余量从 ~2.9 KB 降到 **952 B**（98,048 / 99,000）。要收回这 1.3 KB，把 `commentPanelChrome.js` 合回主文件即可（主文件回到 ~1,040 行）。
       验证：评论面板四支 277 用例（`mobile-reference-comments` / `comments-ui` / `comment-composer` / `overlays-native`）+ 接线两支 15 + 产物两支 57 + `build` 项目 133 全绿；`lint` / `check:architecture` / `contract:check` / `check:artifacts`（442s）全绿。
+- [x] **C08 `editor/commentsMixin.js` 拆分**：1,469 行 → `commentsMixin.js`(208，只剩 data/computed/watch/生命周期 + 方法域展开) + `commentsSessionMethods.js`(308) + `commentsCapabilityMethods.js`(288) + `commentsThreadMethods.js`(358) + `commentsLayoutMethods.js`(305) + `commentMixinShared.js`(71，纯函数与面板几何常量)。86 个方法按领域切开后**以对象展开按原顺序并入 `methods`**，方法体一行未改。
+      两处必须留在原处的接线：`./commentInteraction` 的 import 仍在 `commentsMixin.js`（`rollup.config.mjs` 的 alias 规则按**导入方路径**限定），因此 `...commentInteraction.methods` 也留在那里；`loadCommentImages` 里的 `import('./commentImages')` 搬到线程域，但 shared-host 映射按**目标路径**匹配、且两份文件同目录，`'./commentImages'` 解析结果不变。
+      公开导出 5 个（`COMMENT_GATES` / `commentGate` / `commentDraftText` / `commentRelativeTime` / `commentSidebarThreads`）改为从 `commentMixinShared.js` 重新导出，对外签名不变；四个方法域从 `commentMixinShared.js` 取判定，避免与 mixin 本体成环。
+      **体积**：内核 gzip 542,353 → **542,320**（−33 B，首屏同步 −33）；esm 384,221 → 384,231（+10）、lite 384,259 → 384,286（+27），均在预算内。`feature:uiPanels:umd` 未受影响（98,048）。
+      验证：`comments-ui` + `editor-reactivity` + `mobile-reference-comments` 168 用例全绿；`build` 项目 133 passed；`lint` / `check:architecture`（R1 446 → 451 文件）/ `contract:check` / `check:artifacts`（560s）全绿。
 
 ## Phase D — 首屏（P2）
 
@@ -60,4 +65,4 @@
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
 | 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
-| 首屏 | 601,740 B（内核 542,353） | 未变（D01 已按数据否决；C07 四个分项逐项相同） |
+| 内核（首屏） | gzip 542,353 | C07 未动；C08 拆 `commentsMixin` 后 **542,320**（−33 B），首屏分项同步 −33 |

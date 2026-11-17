@@ -516,6 +516,28 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 逐项未变；`uiPanels` 预算余量从 ~2.9 KB 降到 952 B（98,048 / 99,000）。要收回这 1.3 KB，把
 `commentPanelChrome.js` 合回主文件即可，主文件回到约 1,040 行。
 
+### `editor/commentsMixin.js` 按方法域拆开（1,469 → 208 + 四域 + 共享）
+
+86 个方法按领域切成四份，**以对象展开按原顺序并入 `methods`**，方法体一行未改；纯函数与面板几何
+常量落到 `commentMixinShared.js`，公开的五个导出由 mixin 本体重新导出，对外签名不变。
+
+| 文件 | 行数 | 职责 |
+| --- | --- | --- |
+| `commentsMixin.js` | 208 | data / computed / watch / 生命周期 + 方法域展开 |
+| `commentsSessionMethods.js` | 308 | 会话绑定、输入区开关、选区评论、图片评论入口、草稿 / 编辑 / 翻译 |
+| `commentsCapabilityMethods.js` | 288 | capability 闸门、Provider、operation 代际、授权后恢复、参与者 |
+| `commentsThreadMethods.js` | 358 | 选区锚点、草稿写入、线程跳转、草稿图片上传、图片查看器、表情、跟随偏好 |
+| `commentsLayoutMethods.js` | 305 | 面板拓扑、锚点定位、装饰重建、事务与视口投影、指针高亮 |
+| `commentMixinShared.js` | 71 | 纯函数与面板几何常量（五个公开导出的真实位置） |
+
+两条接线必须留在原处，已用构建契约锁住：`./commentInteraction` 的 import 留在 `commentsMixin.js`
+（alias 规则按**导入方路径**限定，搬走就失效）；`loadCommentImages` 里的 `import('./commentImages')`
+搬到线程域，但 shared-host 按**目标路径**匹配、两份文件同目录，解析结果不变。
+
+体积：内核 gzip 542,353 → **542,320**（−33 B，首屏同步 −33），esm +10、lite +27，均在预算内；
+`uiPanels` 不受影响。`lint` / `check:architecture`（R1 446 → 451 文件）/ `contract:check` /
+`check:artifacts`（560s）全绿，`build` 项目 133 passed。
+
 ### 门禁
 
 `check:artifacts` 全绿（10 条体积预算不变，首屏仍为 601,740 B）；`build-contract` 73 passed、
