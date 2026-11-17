@@ -516,6 +516,29 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 逐项未变；`uiPanels` 预算余量从 ~2.9 KB 降到 952 B（98,048 / 99,000）。要收回这 1.3 KB，把
 `commentPanelChrome.js` 合回主文件即可，主文件回到约 1,040 行。
 
+### `workspace/WorkspaceController.js` 按方法域拆开（1,173 → 305 + 五域 + 共享）
+
+最大的手写类不是状态机难点，而是「九个领域混在一个类体里」。按职责切开后仍然是同一个类，
+方法以对象字面量 `Object.assign` 回原型，方法体、执行顺序、`this` 绑定逐字未变：
+
+| 文件 | 行数 | 职责 |
+| --- | --- | --- |
+| `WorkspaceController.js` | 305 | 状态工厂、宿主访问器、`onReady` 生命周期、`dispose` |
+| `workspaceAIRunMethods.js` | 324 | 起流 / 停止 / 关闭、会话发送与重试、写回正文、审阅建议、工具提案 |
+| `workspaceAIContextMethods.js` | 249 | 事务映射与锚点、会话作用域校验、选区 / 图片引用、上下文摘要 |
+| `workspacePersistenceMethods.js` | 169 | 落盘判定、适配器安装、作用域快照、快照预算、失败上报 |
+| `workspaceTransferMethods.js` | 148 | 文件导入、导出（HTML/JSON/TXT/MD/打印）、Word 导出 |
+| `workspaceTemplateMethods.js` | 75 | 模板选择器、套用模板、快照列表与恢复 |
+| `workspaceShared.js` | 10 | `nextPaintFrame`（`onReady` 与 `restoreSnapshot` 共用，不能各写一份） |
+
+AST 比对确认 86 个方法 86/86 无重复、无遗漏；对象字面量方法相对类方法的唯一差别是原型成员
+变为可枚举，仓库里没有任何 `for...in` 遍历控制器实例。
+
+**第三次踩到「按 importer 路径」的白名单**，这次先查后改：`LAZY_PACKAGE_CALLERS` 与 transform
+的 `importCaller` 都按 `WorkspaceController.js` 匹配，Word 导出与分页导入的实现搬进
+`workspaceTransferMethods.js` 后两处名单同步替换，`build-contract` 的 transform 断言文件名跟着改。
+体积代价只有 **+117 B gzip**（内核 542,482 → 542,599）。
+
 ### `editor/commentsMixin.js` 按方法域拆开（1,469 → 208 + 四域 + 共享）
 
 86 个方法按领域切成四份，**以对象展开按原顺序并入 `methods`**，方法体一行未改；纯函数与面板几何

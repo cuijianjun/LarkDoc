@@ -43,6 +43,10 @@
 - [x] **C09 `editor/shareMixin.js` 拆分**：1,117 行 → `shareMixin.js`(262，只剩 data/computed/watch/生命周期 + 方法域展开) + `shareModel.js`(436，纯逻辑层：几何常量、B24 capability 映射、密码规则、剪贴板文本) + `shareDialogMethods.js`(264) + `shareLinkMethods.js`(236)。38 个具名导出逐名从 `shareModel.js` 重新导出，对外签名一字不变；两个方法域以对象展开按原顺序并入 `methods`。
       **踩到并修掉的一次真实回归**：`shareLinkAction` 里的 `import('../../../providers/share-links')` 原本靠 `rollup.config.mjs` 的 `shareCaller` **按导入方文件路径**白名单改写成 `loadFeature('document.shareLinks')`。方法搬进 `shareLinkMethods.js` 后白名单失配，provider 被**急切打进内核**：raw +11,589 B、gzip +3,929 B（内核 542,320 → 546,250）。把新文件加进 `shareCaller` 后回到 raw +22 B / gzip **+162 B**。同一处白名单也被 `build-contract` 的 transform 断言锁着，该用例的文件名随之改成 `shareLinkMethods.js`；`stage7-low-risk-batch` 改读 mixin + 两个方法域。
       **体积**：内核 gzip 542,320 → **542,482**（+162 B）；esm 384,378、lite 384,426、`uiPanels` 98,048 均未受影响。`check:artifacts`（425s）、`build` 项目 133 passed、相关 5 支单测 109 用例全绿。
+- [x] **C10 `workspace/WorkspaceController.js` 拆分**：1,173 行 → `WorkspaceController.js`(305，状态工厂 + 访问器 + 生命周期 `onReady` + `dispose`) + `workspacePersistenceMethods.js`(169) + `workspaceAIContextMethods.js`(249) + `workspaceAIRunMethods.js`(324) + `workspaceTransferMethods.js`(148) + `workspaceTemplateMethods.js`(75) + `workspaceShared.js`(10)。86 个方法按对象字面量 `Object.assign` 回原型，方法体、执行顺序与 `this` 绑定逐字未变；AST 比对确认 86/86 无重复无遗漏。
+      **两处按 importer 路径的白名单同步**（第三次踩同一个坑，这次是先查再改）：`LAZY_PACKAGE_CALLERS` 与 transform 的 `importCaller` 原本都按 `WorkspaceController.js` 匹配，把 Word 导出与分页导入的实现搬进 `workspaceTransferMethods.js` 后名单跟着改；`build-contract` 里那条 transform 断言的文件名同步替换。`nextPaintFrame` 有两个使用者（`onReady` 与 `restoreSnapshot`）且不能各写一份，落到 `workspaceShared.js`。
+      **体积**：内核 gzip 542,482 → **542,599**（+117 B）；esm / lite / `uiPanels` 未动。
+      验证：工作区六支单测 186 用例、`build` 项目 133、`lint` / `check:architecture`（R1 460 文件）/ `contract:check` 全绿。
 
 ## Phase D — 首屏（P2）
 

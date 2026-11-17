@@ -1530,7 +1530,8 @@ describe('classic segmented document feature boundary', () => {
       withdraw()
       await expect(api.yieldDocumentTask()).resolves.toBeUndefined()
     } finally { await bundle.close() }
-    for (const file of ['src/editor/EditorController.js', 'src/workspace/WorkspaceController.js']) {
+    // 文件导入在 `WorkspaceController.js` 的「文件导入导出域」里，白名单按导入方路径匹配。
+    for (const file of ['src/editor/EditorController.js', 'src/workspace/workspaceTransferMethods.js']) {
       const pathName = path.join(root, file), code = fs.readFileSync(pathName, 'utf8')
       const transformed = alias.transform(code, pathName)
       expect(transformed.code.match(/__larkDocLoadDocumentFeature\('document.pagedImport'\)\.then/g)).toHaveLength(1)

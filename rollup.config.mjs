@@ -438,7 +438,9 @@ export const LAZY_PACKAGE_CALLERS = new Map([
     ['src/utils/export/index.js', 'export.api'],
     ['src/utils/remoteConversion.js', 'export.remoteConversion'],
   ]],
-  [resolve(ROOT, 'src/workspace/WorkspaceController.js'), [
+  // Word 导出从 `WorkspaceController.js` 搬进了「文件导入导出域」，
+  // 名单按**导入方文件路径**匹配，跟着换。
+  [resolve(ROOT, 'src/workspace/workspaceTransferMethods.js'), [
     ['src/utils/export/index.js', 'export.api'],
   ]],
   [resolve(ROOT, 'src/session/DocumentSession.js'), [
@@ -557,7 +559,7 @@ function packageAlias(target = '') {
       if (!element) return null
       const modelCaller = id === resolve(ROOT, 'src/mount/domRenderer.js')
       const pagedCaller = [resolve(ROOT, 'src/editor/pagedDocumentSource.js'), resolve(ROOT, 'src/components/lark-doc/editor/viewModesMixin.js')].includes(id)
-      const importCaller = [resolve(ROOT, 'src/editor/EditorController.js'), resolve(ROOT, 'src/workspace/WorkspaceController.js')].includes(id)
+      const importCaller = [resolve(ROOT, 'src/editor/EditorController.js'), resolve(ROOT, 'src/workspace/workspaceTransferMethods.js')].includes(id)
       // 分享链接的两条异步入口按**导入方文件**白名单改写；`shareLinkAction` 现住在
       // `editor/shareLinkMethods.js`（`shareMixin.js` 拆出的方法域），名单里跟着换。
       const shareCaller = [
