@@ -4,10 +4,24 @@ import { hasFeature, loadFeature, registerFeature } from '../core/features/regis
 const script = typeof document !== 'undefined' ? document.currentScript : null
 const base = script && script.src ? new URL('.', script.src).href : null
 const scripts = new Map()
+// ui 组的样式独立成表，跟脚本同目录同位部署；这里只负责把 <link> 提前塞进去，
+// 让样式与 JS 并行下载。样式缺失不影响功能，绝不 reject。
+const stylesheets = { 'lark-doc-element.umd.min.ui.js': 'lark-doc-element.ui.css' }
+
+function loadStyle(file) {
+  if (!file || !base || typeof document === 'undefined') return
+  if (document.querySelector(`link[data-lark-doc-feature="${file}"]`)) return
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = new URL(file, base).href
+  link.dataset.larkDocFeature = file
+  ;(document.head || document.documentElement).appendChild(link)
+}
 
 function loadScript(file) {
   if (scripts.has(file)) return scripts.get(file)
   const promise = new Promise((resolve, reject) => {
+    loadStyle(stylesheets[file])
     // Only the pure document group supports direct CommonJS consumers. Keep
     // Module.require bound to this runtime's real adjacent output directory.
     const nodeModule = file === 'lark-doc-element.umd.min.document.js' && typeof module === 'object' ? module : null

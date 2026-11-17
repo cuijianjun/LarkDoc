@@ -209,7 +209,9 @@ function expectedFiles(name) {
   }
   if (name.startsWith('feature:')) {
     const [, feature, variant] = name.split(':')
-    return [variant === 'umd' ? `lark-doc-element.umd.min.${feature}.js` : `features/${feature}.js`]
+    if (variant !== 'umd') return [`features/${feature}.js`]
+    // ui 组的样式独立成表，由 element 通道在拉脚本时同目录注入 <link>。
+    return [`lark-doc-element.umd.min.${feature}.js`, ...(feature === 'ui' ? ['lark-doc-element.ui.css'] : [])]
   }
   return files[name] || []
 }
@@ -259,10 +261,16 @@ async function buildOne(name) {
     const fingerprint = assertStableInputs(started, inputs)
     if (cacheGroup !== null) rollupCaches.set(cacheGroup, bundle.cache)
     const graph = readGraph()
-    graph[name] = Object.fromEntries(output.filter(item => item.type === 'chunk').map(item => [item.fileName, {
-      entry: item.isEntry, runtime: isRuntimeChunk(item), modules: Object.keys(item.modules).map(id => id.replace(`${ROOT}/`, '')).sort(),
-      imports: item.imports, dynamicImports: item.dynamicImports,
-    }]))
+    graph[name] = Object.fromEntries(output.filter(item => item.type === 'chunk' || item.type === 'asset').map(item => [item.fileName,
+      item.type === 'chunk'
+        ? {
+            entry: item.isEntry, runtime: isRuntimeChunk(item), modules: Object.keys(item.modules).map(id => id.replace(`${ROOT}/`, '')).sort(),
+            imports: item.imports, dynamicImports: item.dynamicImports,
+          }
+        // 样式表是真实产物但不是入口：单独记账，供体积门禁按单文件计量，
+        // 不能挂到入口链上，否则内核预算会把并行下载的样式一起吞进去。
+        : { entry: false, asset: true, modules: [], imports: [], dynamicImports: [] },
+    ]))
     writeFileSync(resolve(DIST, 'lark-doc-graph.json'), `${JSON.stringify(graph, null, 2)}\n`)
     verifiedBuilds.set(name, { inputs, sources, fingerprint, outputs, graphHash: graphFingerprint(graph[name]) })
   } finally {

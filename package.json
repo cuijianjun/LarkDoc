@@ -355,6 +355,27 @@
       "scope": "lazy"
     },
     {
+      "name": "Element 首屏样式 (gzip)（与 runtime 并行下载，不阻塞脚本求值）",
+      "path": "dist/lark-doc-element.css",
+      "limit": "45 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element UI 面板包 (gzip)（首次打开任一低频面板才拉；样式已独立成表）",
+      "path": "dist/lark-doc-element.umd.min.ui.js",
+      "limit": "168 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element UI 面板样式 (gzip)（与上面板包并行下载，不阻塞脚本求值）",
+      "path": "dist/lark-doc-element.ui.css",
+      "limit": "20 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
       "path": "dist/lark-doc.common.js",
       "limit": "1080 KB",
       "gzip": true,

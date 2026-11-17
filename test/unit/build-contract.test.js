@@ -209,10 +209,9 @@ describe('公开产物与轻量包边界', () => {
   })
 
   it('Element历史样式在真实冷UI注册前注入，标准公开样式仍完整', async () => {
-    const root = path.resolve(__dirname, '../..'), styles = [], readyStyles = []
+    const root = path.resolve(__dirname, '../..'), styles = []
     const document = { head: { appendChild: node => styles.push(node.textContent) }, createElement: () => ({}) }
-    const registry = new Map(), set = registry.set.bind(registry)
-    registry.set = (name, loader) => { if (name === 'ui.ready') readyStyles.push(styles.join('')); return set(name, loader) }
+    const registry = new Map()
     const context = { document, Map, URL, __LARK_DOC_FEATURES__: registry }
     const hasVersionLayer = css => { let found = false; requireHere('postcss').parse(css).walkRules(rule => { if (rule.selectors?.some(selector => selector.trim() === '.lark-doc .lark-doc-version-layer')) found = true }); return found }
     for (const target of ['esm', 'elementRuntime']) {
@@ -229,8 +228,10 @@ describe('公开产物与轻量包边界', () => {
     try {
       const { output } = await bundle.generate({ ...config.output, plugins: [] })
       runInNewContext(output.find(item => item.type === 'chunk').code, context)
-      expect(readyStyles).toHaveLength(1)
-      expect(hasVersionLayer(readyStyles[0])).toBe(true)
+      // 面板样式改成同目录独立表：脚本求值不再写 <style>，样式由 element 通道注入 <link>。
+      expect(styles).toHaveLength(0)
+      const css = output.find(item => item.type === 'asset' && item.fileName === 'lark-doc-element.ui.css')
+      expect(hasVersionLayer(Buffer.from(css.source).toString())).toBe(true)
     } finally { await bundle.close() }
   }, 15000)
 
@@ -396,6 +397,9 @@ describe('公开产物与轻量包边界', () => {
       lateOwner.setCommentDocumentDraft = vi.fn()
       await settle()
       expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.ui.js'])
+      // 面板样式独立成表，在脚本 append 之前就已注入，样式与 JS 并行下载。
+      expect([...document.querySelectorAll('link[data-lark-doc-feature]')].map(node => node.href))
+        .toEqual(['https://assets.test/vendor/lark-doc-element.ui.css'])
       const hosts = [document.createElement('div'), document.createElement('div')]
       hosts.forEach(host => document.body.appendChild(host))
       const onQuery = vi.fn()
@@ -412,6 +416,8 @@ describe('公开产物与轻量包边界', () => {
       ui.forEach((panel, index) => panel.update({ open: true, query: `查询${index}` }))
       await settle()
       expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.ui.js'])
+      // 多实例共享同一组脚本，样式表也必须只注入一次。
+      expect(document.querySelectorAll('link[data-lark-doc-feature]')).toHaveLength(1)
       scripts[0].onerror()
       await settle()
       expect(hosts.every(host => host.querySelector('[role="alert"]'))).toBe(true)

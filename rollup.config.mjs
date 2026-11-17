@@ -596,9 +596,10 @@ export function reactionCatalogAssets() {
 }
 
 export function cssInjection(target) {
-  // elementRuntime 不再内联：265 KB 的样式字符串改成 dist/lark-doc-element.css，
-  // 由 loader 注入 <link>。样式因此可以边下载边解析，不必等 594 KB 的内核求值。
-  if (!['element', 'elementEsm', 'feature:math:umd', 'feature:ui:umd'].includes(target)) return false
+  // elementRuntime / feature:ui 不再内联：样式字符串改成同目录独立 .css，
+  // 由各自的加载器注入 <link>。样式因此可以边下载边解析，不必等 JS 求值；
+  // 面板样式也只在面板真正要出现时才拉，首次打开前后没有第二份样式往返。
+  if (!['element', 'elementEsm', 'feature:math:umd'].includes(target)) return false
   return (variable, id) => {
     const fonts = [...new Set([...readFileSync(id, 'utf8').matchAll(/url\(["']?(\.\/fonts\/[^"')]+)["']?\)/g)].map(match => match[1]))]
     let rebase = ''
@@ -814,7 +815,9 @@ function featureTarget(name, format = 'es') {
     entryFileNames: format === 'umd' ? `lark-doc-element.umd.min.${name}.js` : `features/${name}.js`,
     inlineDynamicImports: true,
     name: format === 'umd' ? `LarkDocFeature${name[0].toUpperCase()}${name.slice(1)}` : undefined,
-    css: name === 'math' && format === 'es' ? 'features/math.css' : null,
+    css: format === 'umd'
+      ? (name === 'ui' ? 'lark-doc-element.ui.css' : null)
+      : (name === 'math' ? 'features/math.css' : null),
   }
 }
 

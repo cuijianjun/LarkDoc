@@ -124,7 +124,7 @@ function externalPmFiles(graph) {
 
 if (process.argv.includes('--size')) {
   const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'))
-  const targets = { 'lark-doc.esm.js': 'esm', 'lark-doc.common.js': 'cjs', 'lark-doc-element.umd.min.js': 'element', 'lark-doc-element.runtime.umd.min.js': 'elementRuntime', 'lark-doc-element.polyfills.umd.min.js': 'elementPolyfills', 'lark-doc-collab.esm.js': 'collab', 'lark-doc-lite.esm.js': 'lite' }
+  const targets = { 'lark-doc.esm.js': 'esm', 'lark-doc.common.js': 'cjs', 'lark-doc-element.umd.min.js': 'element', 'lark-doc-element.runtime.umd.min.js': 'elementRuntime', 'lark-doc-element.polyfills.umd.min.js': 'elementPolyfills', 'lark-doc-collab.esm.js': 'collab', 'lark-doc-lite.esm.js': 'lite', 'lark-doc-element.umd.min.ui.js': 'feature:ui:umd', 'lark-doc-element.ui.css': 'feature:ui:umd', 'lark-doc-element.css': 'elementRuntime' }
   // Element 拆两条预算：引导文件走应用加载路径，runtime 惰性拉取。两者分开卡，
   // 否则把 runtime 移出加载路径的改动会让单文件口径看起来毫无收益。
   const RUNTIME_FILE = 'lark-doc-element.runtime.umd.min.js'
@@ -134,6 +134,15 @@ if (process.argv.includes('--size')) {
     const file = budget.path.replace(/^dist\//, '')
     const target = targets[file]
     if (!target) { console.error(`✗ size-limit 条目没有对应的构建图：${budget.path}`); failed = true; continue }
+    const match = budget.limit.match(/^([\d.]+)\s*(KB|MB|B)$/i)
+    const limit = Number(match[1]) * ({ B: 1, KB: 1000, MB: 1000000 }[match[2].toUpperCase()])
+    // 单文件预算：样式表等非入口产物单独记账，只量自己，不并入任何入口图。
+    if (graphs[target]?.[file] && !graphs[target][file].entry) {
+      const gz = gzipSync(readFileSync(resolve(DIST, file))).length
+      console.log(`${target}: ${budget.name || file} ${gz} B gzip / ${limit} B（单文件）`)
+      if (gz > limit) { console.error(`✗ ${budget.name || file} 超过预算`); failed = true }
+      continue
+    }
     const initial = artifactFiles(DIST, target, false)
     const all = artifactFiles(DIST, target, true)
     const external = target === 'cjs' ? externalPmFiles(graphs[target]) : []
@@ -145,8 +154,6 @@ if (process.argv.includes('--size')) {
         ? initial.filter(file => file !== RUNTIME_FILE)
         : initial
     const budgetBytes = gzipBytes(DIST, measured) + (budget.scope === 'editor' ? 0 : externalBytes)
-    const match = budget.limit.match(/^([\d.]+)\s*(KB|MB|B)$/i)
-    const limit = Number(match[1]) * ({ B: 1, KB: 1000, MB: 1000000 }[match[2].toUpperCase()])
     console.log(`${target}: ${SCOPE_LABEL[budget.scope] || '初始图'}预算对象 ${budgetBytes} B gzip / ${limit} B；全部初始 ${bytes} B；含动态区块 ${gzipBytes(DIST, all) + externalBytes} B；${measured.length}/${all.length} 文件${external.length ? `，含外部 PM ${external.length} 文件/${externalBytes} B` : ''}`)
     if (budgetBytes > limit) { console.error(`✗ ${target} 超过预算`); failed = true }
   }
