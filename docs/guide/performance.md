@@ -279,7 +279,7 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 | `documentOperations` / `WorkspaceController` / `DocumentSession` | 196,989 | 4.3% | ~24 KB | 核心状态机，首帧必需 |
 | `linkifyjs`（仅 `@tiptap/extension-link` 使用，src 内零引用） | 63,515 | 1.4% | ~7.7 KB | 关掉 autolink 才能删 |
 
-> 唯一还有 `await import()` 的大块是 `ui/dialogs`（30,073）及其独占依赖 `select`/`tooltip`/`headingMenu`/`diagramMenu`（合计约 59 KB ≈ 7 KB gzip），但实测有两条硬堵点：`editor/templateSave.js` **静态** `import { createTemplateSaveDialog } from '../ui/dialogs'`，而 templateSave 自己又是 `blockMenuMixin` 动态导入的 —— 搬出去就是跨包反向依赖；且 dialogs 经 `documentOperations` 拉住 `@tiptap/pm/model`，包内会再打一份 PM（见「拆分边界实测」第 6 条）。
+> 唯一还有 `await import()` 的大块是 `ui/dialogs`（30,073）及其独占依赖 `select`/`tooltip`/`headingMenu`/`diagramMenu`（合计约 59 KB ≈ 7 KB gzip），但实测有两条硬堵点：`editor/templateSave.js` **静态** `import { createTemplateSaveDialog } from '../ui/dialogs'`，而 templateSave 自己又是 `blockMenuMixin` 动态导入的 —— 搬出去就是跨包反向依赖；且 dialogs 经 `documentOperations` 拉住 `@tiptap/pm/model`，包内会再打一份 PM（见「拆分边界实测」第 6 条）。**这两条后来都绕开了，收益却只有 2,076 B** —— 这里的 ~7 KB 同样是从源码字节折算的，见 6b 的实测。
 
 > **L1.5 已废弃**：原方案称「295 个模块（含 prosemirror 全家）只经 `import()` 到达，外置成 `engine` 组可省 196,457 B / 32%」。关掉 `inlineDynamicImports` 重新生成 chunk 图后，这条前提不成立——单静态 chunk 就有 `3,963,848 B / 523 模块`，`prosemirror-*` 与 `@tiptap/*` 全部在里面；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip` 这类小功能，合计约 120 KB。当初「仅动态可达」的结论是拿 `bundle.cache.modules[].dependencies` 做 BFS 得出的，而折叠模式下 cache 不含动态边，会把动态入口整棵子树误判成静态不可达。
 
@@ -316,7 +316,17 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 
 `uiExtra` 先按 5 个名字（含 `stage` / `dialogs` / `templateSave`）做过一版，实测包体 **88,014 raw / 29,491 gzip**，其中 `node_modules/prosemirror-model` 26,694 raw 是与内核重复的一份；`background` 装 `editor.documentSnapshot` 时 **176,610 raw / 55,407 gzip**，PM 全家（model 124,663 / tiptap core 93,767 / transform 84,671 / state 36,011 / commands 21,157 / history 10,127 / schema-list 7,077）都在包里。首屏只省 6,747 B（gzip），代价是点开时多下 25~35 KB，还多一份 `Fragment` / `Node` 类身份 —— 撤回，`uiExtra` 收成 2 个名字、`background` 收成 4 个。真要再进一步，前提是把 PM 也登记进 `sharedHostModules` 让包读内核那一份身份；那要给 `prosemirror-model` 这类包逐个枚举导出名，属独立改动，不在「只改写既有 `import()`」的范围内。
 
-**结论**：首屏 gzip 现为 **601,740**，其中第三方固定成本 131 KB。继续下降只能靠「新增特性包 + 每个域手写语义降级」，属于逐域推进的工作，不存在一次性的大跳变点。文档此前记的 264 / 240 KB 阶梯是在 L1.5（外置 PM 全家）成立的前提下算的，该前提已废弃，阶梯同步作废。
+**6b. 上一条的 6,747 B 是按源码折算的，实测只有 2,076 B —— 动态导入会按取值点摇树。**
+
+后续补做了一次完整 A/B：不止步于「PM 会再打一份」，而是先绕开它 —— `ui/dialogs` 与 `editor/templateSave` 在两支 `import()` 调用点上改写成 `loadFeature('ui.dialogs')` / `loadFeature('document.templateSave')`，由本来就持有 dialogs 的 `uiPanels` 包注册（面板工厂要用 `create*Dialog`，包内几乎不增长），完全不需要 PM 共享宿主。
+
+实测内核实打实只掉 **2,076 B gzip**（raw 1,831,330 → 1,824,798、gzip 541,266 → 539,190）；拆开量 `templateSave` −1,425、导入确认对话框 −651。原因：rollup 会按**实际取用的属性**摇掉动态导入模块的其余导出 —— 内核里那句 `import('../ui/dialogs')` 只解构 `createImportConfirmation`，所以 30,073 B 里除它和对话框外壳之外的部分早就没进过首屏。**源码字节不是首屏份额的估算口径**，这条和 C07 那次「按节点名单源码字节估 gzip 增量」是同一类误判，下次要先量渲染后长度。
+
+代价侧也反过来：`registerFeature('ui.dialogs', () => dialogs)` 要求命名空间整体存活，`uiPanels` 从 328,172 / 97,449 涨到 344,821 / **103,470**（+6,021），直接顶穿 99,000；收窄成只注册用到的两个函数可压到 +1.7 KB 左右，仍超 —— 门禁口径余量只有 952 B。首屏 −2.0 KB 换一个懒包超预算，不划算，改动撤回，工作树不留痕。
+
+**结论：首屏的懒边界到此为止。** 剩下三支的源码量（`ui/stage` 16,308、`editor/documentSnapshot` 9,889、`ui/dialogs` 的残余）都只能落进没有余量的包：`uiExtra` 4,930 / 5,000、`background` 19,278 / 20,000（构建表 gzip 口径）、`uiPanels` 98,048 / 99,000（门禁口径）。要再往下走，得先有一个包能腾出空间，或先真正删掉代码而不是搬代码。
+
+**结论**：首屏 gzip 现为 **601,829**（内核 542,701），其中第三方固定成本 131 KB。继续下降只能靠「新增特性包 + 每个域手写语义降级」，属于逐域推进的工作，不存在一次性的大跳变点。文档此前记的 264 / 240 KB 阶梯是在 L1.5（外置 PM 全家）成立的前提下算的，该前提已废弃，阶梯同步作废。
 
 ### 传输层：brotli 比任何剩余拆分都值钱
 

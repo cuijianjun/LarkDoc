@@ -69,8 +69,12 @@
 
 ## Phase D — 首屏（P2）
 
-- [~] **D01 试装 PM 共享宿主**：**本轮不做**。收益上限是内核 −6,747 B gzip（即 `ui/dialogs` 30,073、`ui/stage` 16,308、`editor/templateSave` 3,140、`editor/documentSnapshot` 9,889 四支源码之和在 gzip 下的份额），代价是把 `prosemirror-model` 逐个枚举导出挂进 `sharedHostModules`，并让 4 支懒包读内核那一份身份。属独立改动，风险与收益比不划算，留作后续单独评估（spec 里已写明「否则撤回」）。
-- 首屏数字本轮未变：**601,740 B**（内核 542,353）。
+- [~] **D01 首屏残留懒边界**：**实测后否决**（做了完整 A/B 再撤回，工作树不留改动）。原估「四支合计 −6,747 B gzip」是按**源码体积折算**的，实测远小于此。
+      做法：把 `ui/dialogs`（`mount/domRenderer.js` 的导入确认）与 `editor/templateSave`（`blockMenuMixin.js` 的「保存为模板」）两处 `import()` 加进 `LAZY_PACKAGE_CALLERS`，改写成 `loadFeature('ui.dialogs')` / `loadFeature('document.templateSave')`，再让 `uiPanels` 包注册这两个特性 —— 它本来就持有 dialogs（面板工厂要用 `create*Dialog`），所以包内几乎不增长。
+      **实测**：内核 raw 1,831,330 → 1,824,798、gzip 541,266 → **539,190**，只掉 **2,076 B**。拆开量：`templateSave` −1,425、导入确认对话框 −651。原因是 rollup 对**动态导入按取值点摇树** —— 内核那句 `import('../ui/dialogs')` 只取 `createImportConfirmation`，那 30,073 B 里除它和对话框外壳早被摇掉了。**源码体积在这里不是首屏份额的可靠估算口径**（与 C07「节点名单按源码字节估增量」是同一类误判）。
+      代价侧同样实测：`registerFeature('ui.dialogs', () => dialogs)` 要求整个命名空间存活，反而把 `uiPanels` 从 328,172 / 97,449 撑到 344,821 / **103,470**（+6,021），直接顶穿 99,000；收窄成只注册用到的两个函数可压到 +1.7 KB 左右，仍超（门禁口径余量只有 952 B）。首屏 −2.0 KB 换一个懒包超预算，撤回。
+      **结论**：首屏剩下的懒边界不值得动。`ui/stage`（16,308）与 `editor/documentSnapshot`（9,889）同理，且各自只能落进一个没有余量的包（`uiExtra` 4,930 / 5,000、`background` 19,278 / 20,000，构建表 gzip 口径）。
+- 首屏数字本轮未变：**601,829 B**（内核 542,701）。
 
 ## Phase E — 收尾
 
@@ -91,7 +95,7 @@
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
 | 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
-| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B）→ C12 拆 `tableInteractionMixin` **542,669**（+19 B）→ C13 摘纯素材 **542,701**（+32 B，首屏同步 +32） |
+| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B）→ C12 拆 `tableInteractionMixin` **542,669**（+19 B）→ C13 摘纯素材 **542,701**（+32 B，首屏同步 +32）；D01 两处懒边界 A/B 实测只值 −2,076 B，懒包反向超预算，否决 |
 | esm / lite | 384,221 / 384,259 | 384,615 / 384,656（+394 / +397，预算 395,000 仍有余量） |
 | 体积预算 | — | 10 条全过；`elementRuntime` 542,701 / 550,000，`esm` 384,622 / 395,000，`uiPanels` 98,048 / 99,000，`feature:ui` 41,960 / 43,000 |
 | 全量单测 | 162 文件 / 4,950 用例 | 162 文件 / 4,950 用例全绿（252s）；`build` 项目 133 用例（31s） |
