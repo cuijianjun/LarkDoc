@@ -40,3 +40,7 @@ perf/.perf-result.json
 
 # Real framework previews are rebuilt from docs/examples/apps, never committed.
 /docs/public/examples-runtime/
+
+# WorkBuddy 本地应用注册产生的元数据（appId/localDir 指向本机临时目录），
+# 入库对他人无意义
+.wbapp_*.genie
