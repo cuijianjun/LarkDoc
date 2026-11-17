@@ -17,7 +17,9 @@ const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
 const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
 const overlaysRenderer = read('src/ui/overlays.js') + read('src/ui/overlayViews.js')
 const shareEntryRenderer = read('src/ui/shareEntry.js')
-const panelsRenderer = read('src/ui/panels.js')
+// 面板实现已从 ui/panels.js 拆到 commentPanel / versionPanel（panels.js 只剩出口），
+// 这里直接读实现文件，切片锚点仍是那两个导出函数。
+const panelsRenderer = read('src/ui/commentPanel.js') + read('src/ui/versionPanel.js')
 const panelsUi = read('src/components/lark-doc/editor/panelsUiMixin.js')
 const panelPresentation = read('src/components/lark-doc/editor/panelPresentation.js')
 const topBarRenderer = read('src/ui/topBar.js')
