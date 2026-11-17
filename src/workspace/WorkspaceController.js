@@ -724,6 +724,19 @@ class WorkspaceController {
     this.state.aiContextSummary = this.currentAIContext().summary
   }
 
+  /**
+   * 切动作 = 换一次生成，不是只换一个下拉值。
+   * 旧结果一定对不上新动作（摘要的文案当扩写结果插进正文就是事故），所以先清空；
+   * 面板已经开着、又不是问答/图片态，就直接按新动作重跑一遍 —— 点「扩写」当场出结果，
+   * 省掉「选动作 → 再点生成预览」这一步。
+   */
+  switchAIAction(action) {
+    if (!AI_ACTIONS.some(item => item.value === action) || this.state.aiAction === action) return
+    this.state.aiAction = action
+    this.resetAIPreview()
+    if (this.state.aiOpen && !this.state.aiRunning && !this.state.aiSelectionChat && !this.state.aiImageChat) this.startAI(action)
+  }
+
   startAI(action = 'rewrite', options = {}) {
     if (!this.featureEnabled('ai') || !this.writable()) return
     if ((this.state.aiImageChat || this.state.aiSelectionChat) && !options.context) this.closeAI(false)

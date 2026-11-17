@@ -4222,7 +4222,10 @@ describe('图表菜单交互', () => {
   })
 
   it('保存提示在进入本工作区弹窗控件时退出，不拦截下一个操作或立即查看', async () => {
-    const { root, host } = fixture()
+    // 「版本已保存，可在 ··· 更多菜单中找到」这条提示只在版本历史入口打开时才有意义：
+    // `features.versionHistory` 缺省 false 时 ⋯ 菜单整个不挂载（workspace.js 的
+    // `versionMenu.el` 显隐由 historyEnabled / commentHistoryAvailable 决定）。
+    const { root, host } = fixture({ config: { features: { versionHistory: true } } })
     document.body.appendChild(root)
     host.versionNotice = '版本已保存'; await vi.dynamicImportSettled()
     const noticeLink = root.querySelector('.lark-doc-version-notice-link')
@@ -4397,7 +4400,8 @@ describe('图表菜单交互', () => {
     host.closeDiagramMenu(); await Promise.resolve()
     expect(root.querySelector('[role="tooltip"]')).toBeNull()
   })
-  it.each(['图表', '查找', '页面宽度', '插入表格'])('顶部%s已有文字或弹窗，不再显示原生和自绘tips', async label => {
+  // 「插入表格」已改成带 caret 的下拉（与「图表」同一套交互），因此也落进「真下拉」这一组。
+  it.each(['图表', '页面宽度', '插入表格'])('顶部%s是下拉，不再显示原生和自绘tips', async label => {
     const { root } = fixture()
     const button = root.querySelector(`button[aria-label="${label}"]`)
     expect(button).not.toBeNull()
@@ -4406,6 +4410,51 @@ describe('图表菜单交互', () => {
     await vi.dynamicImportSettled(); await new Promise(resolve => setTimeout(resolve, 180))
     expect(button.getAttribute('title')).toBeNull()
     expect(root.querySelector('[role="tooltip"]')).toBeNull()
+  })
+
+  // 口径：没有下拉、又不是中文文字按钮的，一律要 tips。`aria-haspopup="dialog"`
+  // 打开的是模态（弹窗里没有替代文案），不能像 menu / listbox 那样跳过。
+  it.each(['查找', '设置链接', 'AI 助手'])('顶部纯图标按钮 %s 没有下拉，显示自绘tips', async label => {
+    const { root } = fixture()
+    const button = root.querySelector(`button[aria-label="${label}"]`)
+    expect(button).not.toBeNull()
+    button.getBoundingClientRect = () => ({ left: 100, top: 20, right: 140, bottom: 50, width: 40, height: 30 })
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await vi.dynamicImportSettled()
+    await vi.waitFor(() => expect(root.querySelector('[role="tooltip"]')?.textContent).toBe(label))
+    expect(button.getAttribute('title')).toBeNull()
+  })
+
+  // 飞书口径：工具栏表格按钮先出 9×9 选择器，不静默插 2×3（`tablePicker` 曾被打回
+  // `insertTable()`，弹窗组件挂着却没人调）。
+  it('工具栏表格按钮先开 9×9 选择器，选 4 列 2 行才真正插入', async () => {
+    const { root, host, editor } = fixture()
+    root.querySelector('button[aria-label="插入表格"]').click()
+    await vi.dynamicImportSettled()
+    expect(host.tablePicker).toBe(true)
+    await vi.waitFor(() => expect(root.querySelectorAll('.lark-doc-table-grid button')).toHaveLength(81))
+    expect(root.querySelector('.lark-doc-table-grid-size').textContent).toBe('1 × 1')
+    // 单元格 aria-label 是「先列后行」，索引 = (row-1)*9 + (col-1)：点第 2 行第 4 列。
+    root.querySelectorAll('.lark-doc-table-grid button')[12].click()
+    expect(host.tablePicker).toBe(false)
+    await vi.waitFor(() => expect(editor.view.dom.querySelector('table')).not.toBeNull())
+    const rows = editor.view.dom.querySelectorAll('table tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].children.length).toBe(4)
+  })
+
+  // 纯点击（没有 hover 预热，键盘 Enter 就是这条路径）走 toggle：再一次收起。
+  it('表格下拉再次点击收起，不走 hover 标志', async () => {
+    const { root, host } = fixture()
+    const trigger = root.querySelector('button[aria-label="插入表格"]')
+    trigger.click()
+    await vi.dynamicImportSettled()
+    expect(host.tablePicker).toBe(true)
+    await vi.waitFor(() => expect(root.querySelectorAll('.lark-doc-table-grid button')).toHaveLength(81))
+    trigger.click()
+    await vi.dynamicImportSettled()
+    expect(host.tablePicker).toBe(false)
+    expect(root.querySelector('.lark-doc-table-picker')).toBeNull()
   })
 
   it('图表冷加载完成前关闭不残留，重新打开正常展示', async () => {
@@ -5187,11 +5236,36 @@ describe('最终补全：文本与表格AI真实编辑器闭环', () => {
     const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: content, aiProvider, storage: 'none' } })
     return { renderer, handle, root: renderer.getRoot(handle), editor: handle.editor, workspace: handle.workspaceController, requests, cancel }
   }
-  it('UI改写入口先引用后提问，流式回复可替换映射后的选区且撤销保留前文', async () => {
+  it('工具栏 AI 入口直接按动作进结果面板，不再先开问答', async () => {
     const { handle, editor, workspace, requests, root } = chatFixture()
     const start = editor.state.doc.firstChild.nodeSize + 1
     editor.commands.setTextSelection({ from: start, to: start + '需要改写的文字'.length })
     handle.nativeHost.host.$emit('ai-request', 'rewrite')
+    expect(workspace.state.aiSelectionChat).toBe(false)
+    expect(requests).toHaveLength(1)
+    expect(requests[0].action).toBe('rewrite')
+    expect(requests[0].text).toBe('需要改写的文字')
+    await vi.waitFor(() => expect(root.querySelectorAll('.lark-doc-ai-actions .lark-doc-ai-action')).toHaveLength(11))
+  })
+
+  it('切动作清空旧结果并按新动作重跑一次', async () => {
+    const { handle, workspace, requests } = chatFixture()
+    handle.nativeHost.host.$emit('ai-request', 'rewrite')
+    expect(requests).toHaveLength(1)
+    requests[0].onChunk('旧结果'); requests[0].onDone()
+    expect(workspace.state.aiPreview).toBe('旧结果')
+    workspace.switchAIAction('expand')
+    expect(workspace.state.aiAction).toBe('expand')
+    expect(requests).toHaveLength(2)
+    expect(requests[1].action).toBe('expand')
+    expect(workspace.state.aiPreview).toBe('')
+  })
+
+  it('UI改写入口先引用后提问，流式回复可替换映射后的选区且撤销保留前文', async () => {
+    const { handle, editor, workspace, requests, root } = chatFixture()
+    const start = editor.state.doc.firstChild.nodeSize + 1
+    editor.commands.setTextSelection({ from: start, to: start + '需要改写的文字'.length })
+    handle.nativeHost.host.$emit('ai-request', { action: 'chat' })
     expect(workspace.state.aiSelectionChat).toBe(true)
     expect(requests).toHaveLength(0)
     await vi.waitFor(() => expect(root.querySelector('[aria-label="AI 问答"]')).not.toBeNull())

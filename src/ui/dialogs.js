@@ -187,7 +187,12 @@ export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
 }
 
 /**
- * 表格选择器（`TablePickerDialog.vue`）。
+ * 表格选择器（`TablePickerDialog.vue`）—— 工具栏「插入表格」的**下拉面板**。
+ *
+ * 形态是贴按钮的非模态浮层（`position: fixed`，落点由 `positionTablePicker()` 算好塞进
+ * `style`），不是居中遮罩弹窗：工具栏按钮带 caret，点/悬停展开、点外部收起，与相邻的
+ * 「图表」下拉同一套交互。`.lark-doc-table-picker` 因此**没有** backdrop，
+ * `aria-modal` 也不加 —— 它是浮层，不该锁住整页。
  *
  * 🔴 稳态是 **1 × 1**，不是 3 × 3：打开时先把 hover 复位成 3×3，紧跟着聚焦网格首格，
  * 首格的 `focus` 又调一次 `preview(1, 1)`。原生化照抄这条链路 —— `focusTableGrid()`
@@ -202,18 +207,34 @@ export function createTablePickerDialog(options = {}) {
     return typeof fn === 'function' ? fn(...args) : undefined
   }
 
-  const state = { open: false, rows: 3, cols: 3 }
+  const state = { open: false, rows: 3, cols: 3, style: null }
 
   const onClose = () => call('onClose')
-  const { backdrop: el, section } = createDialogShell('插入表格', onClose)
+
+  const el = document.createElement('div')
+  el.className = 'lark-doc-table-picker'
+  el.setAttribute('role', 'dialog')
+  el.setAttribute('aria-label', '插入表格')
+  // 从按钮移进面板不该判成「离开」—— 与「图表」下拉同一条 hover 接力。
+  el.addEventListener('mouseenter', () => call('onHoverIn'))
+  el.addEventListener('mouseleave', () => call('onHoverOut'))
+  // Esc 只在焦点落在网格里时才会到这儿（焦点在正文时由全局 `onWindowKeydown` 收）。
+  el.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return
+    event.stopPropagation()
+    onClose()
+  })
+
+  const title = document.createElement('p')
+  title.className = 'lark-doc-table-picker-title'
+  title.textContent = '插入支持富文本的表格'
 
   const sizeLabel = document.createElement('span')
   sizeLabel.className = 'lark-doc-table-grid-size'
 
-  const { header } = createDialogHeader({ title: '插入表格', closeLabel: '关闭表格选择', iconSize: 14, onClose, middle: [sizeLabel] })
-
-  const hint = document.createElement('p')
-  hint.textContent = '插入支持富文本的表格'
+  const footer = document.createElement('div')
+  footer.className = 'lark-doc-table-picker-footer'
+  footer.appendChild(sizeLabel)
 
   const grid = document.createElement('div')
   grid.className = 'lark-doc-table-grid'
@@ -234,9 +255,9 @@ export function createTablePickerDialog(options = {}) {
     grid.appendChild(cell)
   }
 
-  section.appendChild(header)
-  section.appendChild(hint)
-  section.appendChild(grid)
+  el.appendChild(title)
+  el.appendChild(grid)
+  el.appendChild(footer)
 
   function render() {
     const text = `${state.cols} × ${state.rows}`
@@ -255,6 +276,8 @@ export function createTablePickerDialog(options = {}) {
       return
     }
     if (host && el.parentNode !== host) host.appendChild(el)
+    // 落点由外层 `positionTablePicker()` 算好推进来；没有就不写，交给 CSS 的兜底位置。
+    applyStyle(el, state.style)
     render()
   }
 

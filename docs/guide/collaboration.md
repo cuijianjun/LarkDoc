@@ -112,6 +112,27 @@ await session.createVersion({ label: '发布前快照' })   // 检查 canCreateV
 await session.restoreVersion('rev-42')                 // 检查 canRestoreVersion
 ```
 
+顶栏的「另存为版本」与「历史记录」两个入口默认不渲染，要开得显式置 `features.versionHistory: true`；开关、`autoSnapshot` 频率与默认值见[配置总览 / 版本历史](/guide/configuration#versionhistory-版本历史)。
+
+### 自动记录
+
+历史记录是编辑过程中自己攒的，不需要用户点保存：编辑器 `update` → 防抖（默认 2.5s）→ 落一条 `kind: 'auto'`；同一分钟最多一条，正文没变不重复写（选中、滚动这类非正文事务不会造出空记录）。
+
+```ts
+const doc = new LarkDoc({
+  element,
+  versioning: myVersioningProvider,
+  features: { versionHistory: true },
+  autoSnapshot: { debounce: 2500, minInterval: 60000 },   // 也可传 true / false
+})
+
+doc.getSession().on('version-created', ({ kind, version }) => console.log('记了一条', kind, version.id))
+doc.getSession().on('version-error', (error) => report(error))   // 后台失败不打断编辑
+doc.getSession().setAutoSnapshot({ enabled: false })             // 运行中开关
+```
+
+三个前提缺一个就静默跳过：注入了 `versioning` Provider、`canCreateVersion` 为真、编辑器可编辑（只读态不记录）。编辑中换编辑器或换 Provider 会重置基线，第一次改动立即落盘，不受上一条的 `minInterval` 约束。
+
 ::: tip 事务来源
 会话的 `dispatch(transaction, { origin, actorId })` 会给每次 ProseMirror 事务写入来源元数据（host / import / ai / remote…），协同实现可据此区分本地与远端变更，避免回环。常量见 `TRANSACTION_ORIGINS`。
 :::

@@ -570,7 +570,7 @@ describe('v12e link and cell interactions', () => {
   })
 
   it('opens the real table block menu from the toolbar and closes it on the next click', () => {
-    const host = { writable: () => true, featureEnabled: () => true, isActive: () => true, currentBlockRange: () => ({ from: 0, to: 50 }), positionBlockHandle: vi.fn(), openBlockMenu: vi.fn(), closeBlockMenu: vi.fn(), blockMenuOpen: false }
+    const host = { writable: () => true, featureEnabled: () => true, isActive: () => true, currentBlockRange: () => ({ from: 0, to: 50 }), positionBlockHandle: vi.fn(), openBlockMenu: vi.fn(), closeBlockMenu: vi.fn(), blockMenuOpen: false, cancelPopupHoverClose: vi.fn() }
     tableCommands.methods.onTableToolbarClick.call(host)
     expect(host.positionBlockHandle).toHaveBeenCalledWith({ from: 0, to: 50 })
     expect(host.openBlockMenu).toHaveBeenCalledOnce()
@@ -578,10 +578,13 @@ describe('v12e link and cell interactions', () => {
     host.handleIsTable = true
     tableCommands.methods.onTableToolbarClick.call(host)
     expect(host.closeBlockMenu).toHaveBeenCalledOnce()
+    // 表外点击不再是静默插 2×3，而是打开 9×9 行列选择下拉（飞书口径）。
     host.isActive = () => false
     host.insertTable = vi.fn()
+    host.openTablePicker = vi.fn()
     tableCommands.methods.onTableToolbarClick.call(host)
-    expect(host.insertTable).toHaveBeenCalledOnce()
+    expect(host.openTablePicker).toHaveBeenCalledOnce()
+    expect(host.insertTable).not.toHaveBeenCalled()
   })
 
   it('keeps the own table trigger state until its click can close the open menu', () => {

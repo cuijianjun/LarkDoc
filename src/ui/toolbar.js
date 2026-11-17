@@ -251,7 +251,13 @@ export function createToolbar(options = {}) {
     onMouseLeave: () => call('scheduleCommandMenuClose'),
   })
   insertButton.setAttribute('aria-haspopup', 'menu')
-  const tableButton = makeButton({ label: '插入表格', icon: 'table', popup: 'dialog', preventDefault: true, onClick: () => call('onTableToolbarClick') })
+  const tableButton = makeButton({ label: '插入表格', icon: 'table', preventDefault: true, onClick: () => call('onTableToolbarClick'), onMouseEnter: () => call('openTablePickerOnHover'), onMouseLeave: () => call('scheduleTablePickerClose') })
+  tableButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
+  tableButton.setAttribute('aria-haspopup', 'menu')
+  // 与「图表」同一口径：真下拉不叠原生 tips。`update()` 每帧都会重刷这条按钮的
+  // `aria-label`（表内切成「表格工具」），若同时写 `title`，`tooltipTarget` 首次
+  // 摘掉后会被重刷回来，悬停一秒又冒一个原生提示，和展开的面板打架。
+  tableButton.removeAttribute('title')
   const diagramButton = makeButton({ label: '图表', title: '插入图表', icon: 'chart', text: '图表', onClick: () => call('toggleDiagramMenu'), onMouseEnter: () => call('openDiagramMenuOnHover'), onMouseLeave: () => call('scheduleDiagramMenuClose') })
   diagramButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
   diagramButton.setAttribute('aria-haspopup', 'menu')
@@ -468,12 +474,12 @@ export function createToolbar(options = {}) {
     ])
     const tableLabel = active.table ? '表格工具' : '插入表格'
     setAttr(tableButton, 'aria-label', tableLabel)
-    setAttr(tableButton, 'title', tableLabel)
     insertButton.disabled = disabled
     tableButton.disabled = disabled
     diagramButton.disabled = disabled
     aiButton.disabled = disabled
     setAttr(diagramButton, 'aria-expanded', next.diagram && next.diagram.open ? 'true' : 'false')
+    setAttr(tableButton, 'aria-expanded', next.table && next.table.open ? 'true' : 'false')
     diagramMenu.update(next.diagram || { open: false })
 
     // ⑦ 收尾
@@ -543,7 +549,11 @@ export function createToolbar(options = {}) {
     const node = event.target.closest?.('button, [role=combobox], input[type=color]')
     if (!node || !el.contains(node)) return null
     if (node.title) { node.dataset.tooltipTitle = node.title; node.removeAttribute('title') }
-    return node.matches('[aria-haspopup], [aria-expanded]') || /[\u3400-\u9fff]/.test(node.textContent)
+    // 只有「真下拉」跳过：弹 menu / listbox 的，或靠 aria-expanded 折叠的触发器 ——
+    // 选项本身带文字，再叠一层提示是重复。`aria-haspopup="dialog"` 不在此列：
+    // 链接、表格、查找、AI、快捷键都是纯图标，弹窗里没有替代文案，必须给 tips。
+    return node.matches('[aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-expanded]')
+      || /[\u3400-\u9fff]/.test(node.textContent)
       || node.closest('[role="menu"]') ? null : node
   }
   const enterTip = event => { const node = tooltipTarget(event); if (!node || !node.contains(event.relatedTarget)) { tooltipAnchor = node; syncTooltip() } }

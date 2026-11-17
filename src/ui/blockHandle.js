@@ -225,7 +225,8 @@ export function createBlockHandle(options = {}) {
   aiButton.setAttribute('role', 'menuitem')
   aiButton.className = 'lark-doc-block-menu-ai'
   aiButton.setAttribute('aria-label', '问问AI')
-  aiButton.addEventListener('click', () => call('emitAiRequest', 'rewrite'))
+  // 「问问AI」语义是**对话**（对着这一块问），与工具栏/气泡的「一次性动作」分开。
+  aiButton.addEventListener('click', () => call('emitAiRequest', { action: 'chat' }))
   aiButton.appendChild(iconNode('sparkle', 16, 'lark-doc-block-menu-icon'))
   const aiText = document.createElement('span')
   aiText.textContent = '问问AI'

@@ -174,8 +174,12 @@ export function createDomRenderer() {
         }
         if (name === 'ai-request' && typeof on[name] !== 'function') {
           if (payload?.action === 'image') workspaceController?.openImageAI(payload.image)
-          else if (payload === 'rewrite' || payload?.action === 'chat') workspaceController?.openSelectionAI()
-          else workspaceController?.startAI(payload)
+          // 只有显式要「对话」的入口（块菜单「问问AI」、表格 AI）才开问答面板；
+          // 其余 —— 工具栏 AI、气泡、命令菜单、块菜单翻译 —— 都是**一次性生成**
+          // （续写/扩写/精简/翻译…），直接按动作进结果面板，别再让用户先对着
+          // 「今天有什么工作要处理？」重打一遍需求。
+          else if (payload?.action === 'chat') workspaceController?.openSelectionAI()
+          else workspaceController?.startAI(typeof payload === 'string' ? payload : payload?.action || 'rewrite')
         }
         const result = typeof on[name] === 'function' ? on[name](payload) : undefined
         requestRender()
@@ -347,7 +351,7 @@ export function createDomRenderer() {
         removeAIImage: () => workspaceController.removeAIImage(),
         removeAIReference: () => workspaceController.removeAIReference(),
         setAIContext: value => { state.aiContextScope = value; workspaceController.resetAIPreview() },
-        setAIAction: value => { state.aiAction = value },
+        setAIAction: value => workspaceController.switchAIAction(value),
         setAILanguage: value => { state.aiLanguage = value },
         setAIPrompt: value => { state.aiPrompt = value },
         isAIChatCurrent: epoch => !destroyed && state.aiOpen && state.aiChatEpoch === epoch

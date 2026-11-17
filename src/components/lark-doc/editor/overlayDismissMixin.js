@@ -68,6 +68,9 @@ export default {
       // Esc 故意不管它（04 §4.3 ⑤ 实测 Esc ×1、×2 都关不掉），所以下面 onWindowKeydown
       // 和 closeOverlay 里都没有它的分支，这里就是它唯一的全局关闭点。
       if (this.embedDialog && !target.closest?.('.lark-doc-embed-dialog')) this.closeEmbedDialog()
+      // 表格行列选择下拉：面板是贴按钮的浮层（没有背板），所以「点外部」是它的主关闭入口。
+      // 点按钮自己留给它的 click 切换（hover 已开时点击不关）。
+      if (this.tablePicker && !target.closest?.('.lark-doc-table-picker') && !target.closest?.('button[aria-label="插入表格"]') && !target.closest?.('button[aria-label="表格工具"]')) this.closeTablePicker()
       // P4-06 模式下拉不在这里：它是共享下拉原语（`ui/select.js`）的实例，
       // 「外部 pointerdown 关」由原语自己挂在 document 上，别再判一遍（两处会抢着关）。
       if (!this.$refs.root?.contains(target)) {
@@ -106,6 +109,6 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.headingNumberMenu.open) this.closeHeadingNumberMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen || this._calloutEmojiOpening) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.headingNumberMenu.open) this.closeHeadingNumberMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.linkDialog) this.linkDialog = false; else if (this.tablePicker) this.closeTablePicker(); else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen || this._calloutEmojiOpening) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
   },
 }

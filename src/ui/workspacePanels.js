@@ -130,10 +130,13 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiContext.appendChild(aiContextSummary)
   const aiActionLabel = document.createElement('label')
   aiActionLabel.textContent = '操作'
-  const aiActionSelect = createSelect({
-    ariaLabel: 'AI 操作',
-    onChange: value => call(handlers, 'setAIAction', value),
-  })
+  // 11 个动作平铺成胶囊，而不是塞进原生下拉：下拉一合上就只剩一个「改写」，
+  // 「续写」「扩写」这些高频动作每次都要多两次点击才找得到。
+  const aiActionGroup = document.createElement('div')
+  aiActionGroup.className = 'lark-doc-ai-actions'
+  aiActionGroup.setAttribute('role', 'radiogroup')
+  aiActionGroup.setAttribute('aria-label', 'AI 操作')
+  const aiActionButtons = new Map()
   const aiLanguageLabel = document.createElement('label')
   aiLanguageLabel.textContent = '目标语言'
   const aiLanguageSelect = createSelect({
@@ -213,7 +216,7 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiPanel.appendChild(aiDescription)
   aiPanel.appendChild(aiContext)
   aiPanel.appendChild(aiActionLabel)
-  aiPanel.appendChild(aiActionSelect.el)
+  aiPanel.appendChild(aiActionGroup)
   aiPanel.appendChild(aiLanguageLabel)
   aiPanel.appendChild(aiLanguageSelect.el)
   aiPanel.appendChild(aiPromptLabel)
@@ -307,6 +310,31 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     syncChildren(aiMessages, children)
   }
 
+  function updateActions(options, value, disabled) {
+    const list = Array.isArray(options) ? options : []
+    const alive = new Set()
+    const children = []
+    list.forEach(option => {
+      alive.add(option.value)
+      let node = aiActionButtons.get(option.value)
+      if (!node) {
+        node = button(option.label, () => call(handlers, 'setAIAction', option.value), 'lark-doc-ai-action')
+        node.setAttribute('role', 'radio')
+        aiActionButtons.set(option.value, node)
+      }
+      setText(node, option.label)
+      const active = option.value === value
+      node.classList.toggle('is-active', active)
+      node.setAttribute('aria-checked', active ? 'true' : 'false')
+      // 只读才整组禁用：生成中切动作是允许的（会取消当前流，按新动作重跑），
+      // 否则用户想改主意得等上一段流跑完。
+      setDisabled(node, !!disabled)
+      children.push({ node, on: true })
+    })
+    Array.from(aiActionButtons.keys()).forEach(key => { if (!alive.has(key)) aiActionButtons.delete(key) })
+    syncChildren(aiActionGroup, children)
+  }
+
   function updateReviewIssues(items, readonly, running) {
     const list = Array.isArray(items) ? items : []
     const alive = new Set()
@@ -379,7 +407,7 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     setText(aiContextSummary, state.aiContextSummary)
     imageAi.update(state)
     aiContextSelect.update({ options: state.aiContextOptions, value: state.aiContextScope, disabled: state.aiRunning || state.readonly })
-    aiActionSelect.update({ options: state.aiActions, value: state.aiAction, disabled: state.readonly })
+    updateActions(state.aiActions, state.aiAction, state.readonly)
     aiLanguageLabel.style.display = state.aiAction === 'translate' ? '' : 'none'
     aiLanguageSelect.el.style.display = state.aiAction === 'translate' ? '' : 'none'
     aiLanguageSelect.update({ options: state.aiLanguageOptions, value: state.aiLanguage, disabled: state.aiRunning || state.readonly })
@@ -397,7 +425,9 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     ])
     setText(aiStatus, state.aiStatus)
     aiStatus.style.display = state.aiStatus ? '' : 'none'
-    setText(aiResult, state.aiPreview || '选择正文或将光标放入段落，再生成预览。')
+    // 空态两副面孔：正在跑却还没吐第一帧（切动作重跑会经过这里）说「选择正文」是撒谎，
+    // 用户明明是选了正文才点进来的；只有真没在跑、也没结果时才提示去选正文。
+    setText(aiResult, state.aiPreview || (state.aiRunning ? '生成中…' : '选择正文或将光标放入段落，再生成预览。'))
     setText(aiRichResult, '')
     if (state.aiPreviewHtml) aiRichResult.innerHTML = state.aiPreviewHtml
     syncChildren(aiResultHost, [
@@ -416,8 +446,9 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
       { node: aiHeading, on: true },
       { node: aiDescription, on: true },
       { node: aiContext, on: true },
+      // 「操作」标签只跟着胶囊组一起进退，省得只剩一个孤零零的 label。
       { node: aiActionLabel, on: true },
-      { node: aiActionSelect.el, on: true },
+      { node: aiActionGroup, on: true },
       { node: aiLanguageLabel, on: state.aiAction === 'translate' },
       { node: aiLanguageSelect.el, on: state.aiAction === 'translate' },
       { node: aiPromptLabel, on: true },
@@ -450,7 +481,6 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     focusImageAI() { imageAi.focus() },
     destroy() {
       aiContextSelect.destroy()
-      aiActionSelect.destroy()
       aiLanguageSelect.destroy()
       el.remove()
     },
