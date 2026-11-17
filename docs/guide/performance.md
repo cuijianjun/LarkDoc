@@ -258,25 +258,49 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 | L0 | `loader.js` 把 `runtimeReady` 从模块顶层常量改为视口观察后触发 | 应用加载路径上只有 1.5 KB 引导器 | 614,339 → 0（加载路径） |
 | L2a | core-js 6 个 API 拆成 `lark-doc-element.polyfills.umd.min.js`，引导器按特性检测决定拉不拉 | 现代浏览器零请求 | runtime −17,447（614,339 → 596,892），模块 556 → 382 |
 | L2b | CSS 从 JS 字符串改为独立 `lark-doc-element.css`，loader 注入 `<link>` 与内核并行 | 样式边下边解析，不阻塞内核求值 | runtime −41,522（596,892 → 555,370），JS 内不再有 265 KB 字符串 |
+| L2c | `ui` 组的样式同样拆成 `lark-doc-element.ui.css`，由内核在拉面板脚本时同目录注入 `<link>`，与脚本并行下载；样式缺失不 reject | 面板包 JS −19,380；样式可独立缓存，不阻塞脚本求值 | `ui` 183,728 → 164,348；`ui.css` 18,852 新增 |
 
-现代浏览器实际支付：**引导器 1,579 B + 内核 555,370 B**，样式 40,601 B 独立可缓存、可并行解析；旧浏览器额外拉 17,224 B 补丁包。
+现代浏览器实际支付：**引导器 1,579 B + 内核 555,482 B + 内核样式 41,247 B + 补丁 17,224 B = 615,532 B**；旧浏览器补丁包按特性检测决定拉不拉，现代浏览器零请求。首次打开任意面板再拉 `ui` 165,177 B + `ui.css` 19,226 B。
 
-### 下一步（按实测收益排序）
+### 下一步（按本会话实测重排）
 
-| 靶点 | `renderedLength` | 占比 | 手段 |
-| --- | ---: | ---: | --- |
-| `src/components/editor` | 801,558 | 19.6% | 按 mixin / presentation 继续侧载 |
-| `src/core/blocks` + `src/core/nodeviews` | 507,443 | 12.4% | 块定义与渲染器分离 |
-| `src/ui` | 268,959 | 6.6% | 扩 `elementUiModules` 延迟表 |
-| `@tiptap:core` | 253,665 | 6.2% | 静态可达，只能靠 treeshake 与替身裁剪 |
-| `dep:linkifyjs` / `documentOperations.js` | 118,384 | 2.9% | 单模块，查替代或按需 |
+内核源码 4,559,415 B / 381 模块，折算 gzip 555,482（源码:gzip ≈ 12.2%）。各域实测：
+
+| 靶点 | 源码 B | 占比 | gzip 折算 | 可行性 |
+| --- | ---: | ---: | ---: | --- |
+| `src/components/lark-doc/editor` | 942,076 | 20.7% | ~115 KB | 仅能逐域外置 + 手写降级（见上节第 2、3 条） |
+| `@tiptap/*` + prosemirror 全家 | 1,076,809 | 23.6% | ~131 KB | 不可搬，形态固定成本 |
+| `src/ui` | 317,271 | 7.0% | ~39 KB | 常显 chrome 占多数，`dialogs` 等少数可按需 |
+| `src/core/blocks` + `core/nodeviews` | ~507,000 | 11.1% | ~62 KB | PM schema 与 nodeView 同步解析，不可延迟 |
+| `documentOperations` / `WorkspaceController` / `DocumentSession` | 196,989 | 4.3% | ~24 KB | 核心状态机，首帧必需 |
+| `linkifyjs`（仅 `@tiptap/extension-link` 使用，src 内零引用） | 63,515 | 1.4% | ~7.7 KB | 关掉 autolink 才能删 |
+
+> 现存的唯一低风险小口子是 `ui/dialogs`（30,073）及其独占依赖 `select`/`tooltip`/`headingMenu`/`diagramMenu`（合计约 59 KB ≈ 7 KB gzip）：它只被「保存为模板」「导入确认」触发，但两个调用点都是同步取工厂，改成按需必须把 `openTemplateSave` 与 `confirmImport` 改成 await，属行为改动，收益 1.3%，暂不做。
 
 > **L1.5 已废弃**：原方案称「295 个模块（含 prosemirror 全家）只经 `import()` 到达，外置成 `engine` 组可省 196,457 B / 32%」。关掉 `inlineDynamicImports` 重新生成 chunk 图后，这条前提不成立——单静态 chunk 就有 `3,963,848 B / 523 模块`，`prosemirror-*` 与 `@tiptap/*` 全部在里面；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip` 这类小功能，合计约 120 KB。当初「仅动态可达」的结论是拿 `bundle.cache.modules[].dependencies` 做 BFS 得出的，而折叠模式下 cache 不含动态边，会把动态入口整棵子树误判成静态不可达。
 
-> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成三条：引导文件卡 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核卡 `560 KB`（`scope: lazy`）、补丁包卡 `18 KB`（`scope: lazy`）。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）**。
+> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成**六条**，各自量一个交付单元：引导文件 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核 `560 KB`（`scope: lazy`）、补丁包 `18 KB`、内核样式 `45 KB`、面板包 `168 KB`、面板样式 `20 KB`。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）**。
+>
+> 六条里只有前两条走「入口图」计量，后四条（补丁包、内核样式、面板包、面板样式）是**单文件计量**：样式表在构建图里记 `asset: true / entry: false`，不挂入口链，否则并行的样式会被内核预算一起吞掉，看起来像回退。
 >
 > **语义变化（L0 引入）**：`LarkDoc.runtimeReady` 从「模块顶层常量（Promise）」改为「函数」。`await LarkDoc.runtimeReady` 拿到的会是一个函数对象而不是 runtime，正确写法是 `await LarkDoc.runtimeReady()`。
 >
-> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）与 `lark-doc-element.css`（内核样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。
+> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）与 `lark-doc-element.ui.css`（面板样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。
+
+### 拆分边界实测：为什么剩下的部分搬不动
+
+这一轮把「还能拆什么」逐条实测到边界，结论和证据一并记下来，避免下次重复试探。
+
+**1. 内核是单文件 UMD，`inlineDynamicImports: true`。** 因此内核里任何 `import()` **都不是分割点**，会被内联进同一个文件。真正的分割只发生在 `packageAlias.resolveId` 的显式重定向上——把某个源文件换成虚拟入口，再由 `element.js` 用 `<script>` 侧载对应特性包。这条决定了「拆分 = 新增特性包」，而不是「多加几个 `import()`」。
+
+**2. `src/components/lark-doc/editor`（942 KB / 65 文件 / 内核源码 20.7%）不能整体外置。** 常显的工具栏在**首帧渲染**就读这些 mixin 的 computed：`toolbarUiMixin` 读 `this.shareCan('canView')` 与 `this.topbarMoreOpen`，`blockHandleUiMixin` 也读 `shareCan`。把它们换成延迟转发壳，首帧拿到的是降级值，工具栏按钮会先错位再跳变——比多下 100 KB 更糟。
+
+**3. `privatePresentationShape` 只抽键名，语义降级必须每个域手写。** 现有 8 个 `deferredXxx()` 之所以能用，是因为每个域都配了一份「UI 未到时的默认答案」：`buildCommentState → buildCommentVisibility`、`buildTableToolsPresentation` 只回可见性、`tableToolbarCommand` 回 `false`。要再搬一个域，就得先回答「没有这个面板时界面长什么样」——这是产品行为设计，不是构建配置，所以不能用脚本批量生成。
+
+**4. 第三方已经搬到头。** `@tiptap/*` 523 KB + prosemirror 全家 553 KB 在 UMD 下只能内联（宿主没有模块加载器可以共享），折算 gzip 约 131 KB，占内核 23.6%。这不是「还没优化」，是形态决定的固定成本。
+
+**5. 跨包重复 23 个模块 / 292,805 B 源码（≈35 KB gzip）。** `documentOperations`、`emoji/identity-data`、`ui/dialogs`、`ui/icons`、`ui/select`、`ui/palette`、`ui/tooltip`、`ui/menuLayout` 在内核与 `ui` 包里各有一份。内核侧是首帧静态引用（删不掉），`ui` 侧是这些原子的第二份拷贝。要消掉得给两个独立 bundle 加一条共享模块桥——`core/features/registry.js` 已经用 `globalThis` 上的 `__LARK_DOC_FEATURES__` 做过同样的事，范式可用；但它只减**总下载量**，不减首屏。
+
+**结论**：首屏 gzip 现为 **615,532**，其中第三方固定成本 131 KB。继续下降只能靠「新增特性包 + 每个域手写语义降级」，属于逐域推进的工作，不存在一次性的大跳变点。文档此前记的 264 / 240 KB 阶梯是在 L1.5（外置 PM 全家）成立的前提下算的，该前提已废弃，阶梯同步作废。
 
 
