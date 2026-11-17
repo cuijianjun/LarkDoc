@@ -73,8 +73,11 @@
 | `lint` | 每次全量重扫 | 命中 eslint 磁盘缓存；且 HEAD 起就红的问题已修 |
 | 单测并发 | 固定 2 | 默认 2，可用 `VITEST_MAX_WORKERS` 覆盖 |
 | 单测编排 | 单趟全量，构建用例与普通用例同池（改上游枢纽时白付 118s，且 4 条假超时） | `unit` 162 支 / `build` 3 支，两趟串行；`test:affected` 只走 `unit` |
-| 最大单文件 | `ui/panels.js` 2,244 行 | 拆成 4 个文件（最大 1,506）→ 再拆成 4 个（最大 713，`commentPanelThread.js` 630、`commentPanelChrome.js` 375） |
+| 最大单文件（手写代码） | `ui/panels.js` 2,244 行 | 拆成 4 个（最大 1,506）→ 再拆 4 个（最大 713）→ `editor/commentsMixin` 1,469 → 208 → `editor/shareMixin` 1,117 → 262 → `workspace/WorkspaceController` 1,173 → **305** → `session/DocumentSession` 940 → **302** |
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
 | 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
-| 内核（首屏） | gzip 542,353 | C07 未动 → C08 拆 `commentsMixin` **542,320**（−33 B）→ C09 拆 `shareMixin` **542,482**（+162 B） |
+| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B） |
+| esm / lite | 384,221 / 384,259 | 384,615 / 384,656（+394 / +397，预算 395,000 仍有余量） |
+| 体积预算 | — | 10 条全过；`elementRuntime` 542,650 / 550,000，`esm` 384,615 / 395,000，`uiPanels` 98,048 / 99,000 |
+| 全量单测 | 162 文件 / 4,950 用例 | 162 文件 / 4,950 用例全绿（294s）；`build` 项目 133 用例（50s） |
