@@ -564,6 +564,19 @@ export default {
       return describeVersionDiff(pair.prev, pair.current)
     },
 
+    /**
+     * 飞书时间线：条目只放时间与摘要，版本名留在左预览（1:1 对齐飞书右栏）。
+     * 与 `versionItemName` 共用 `formatVersionTime`，保证两处时间口径不打架。
+     */
+    versionItemTime(record) {
+      return formatVersionTime(record ? record.createdAt : 0) || VERSIONING_DAY_LABELS.unknown
+    },
+
+    /** 飞书参考图里选中项摘要固定为「最近更新」；无子记录数据源，不伪造差异文案。 */
+    versionItemSummary(record) {
+      return record ? '最近更新' : ''
+    },
+
     /** `kind` 徽标文案（09 §5.8 要求区分「自动 / 手动 / 恢复产生」）。 */
     versionKindLabel(kind) {
       return VERSION_KIND_LABELS[kind] || VERSION_KIND_LABELS[SNAPSHOT_KIND.MANUAL]

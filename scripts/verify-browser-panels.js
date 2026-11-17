@@ -259,7 +259,11 @@ const measureVersions = () => {
     leftHeaderChildren: leftHeader ? [...leftHeader.children].map((n) => n.className) : [],
     back: (() => {
       const btn = el.querySelector('.lark-doc-version-back')
-      return btn ? { label: btn.getAttribute('aria-label'), type: btn.getAttribute('type'), iconSize: size(backIcon) } : null
+      const text = btn && btn.querySelector('.lark-doc-version-back-text')
+      return btn ? {
+        label: btn.getAttribute('aria-label'), type: btn.getAttribute('type'),
+        text: text ? text.textContent.trim() : null, iconSize: size(backIcon),
+      } : null
     })(),
     restore: (() => {
       const btn = el.querySelector('.lark-doc-version-restore')
@@ -308,12 +312,21 @@ const measureVersions = () => {
       label: day.querySelector('.lark-doc-version-day-label') ? day.querySelector('.lark-doc-version-day-label').textContent.trim() : null,
       items: [...day.querySelectorAll('.lark-doc-version-item')].map((item) => ({
         cls: item.className,
-        name: item.querySelector('.lark-doc-version-item-name') ? item.querySelector('.lark-doc-version-item-name').textContent.trim() : null,
-        desc: item.querySelector('.lark-doc-version-item-desc') ? item.querySelector('.lark-doc-version-item-desc').textContent.trim() : null,
-        user: item.querySelector('.lark-doc-version-item-user') ? item.querySelector('.lark-doc-version-item-user').textContent.trim() : null,
+        time: item.querySelector('.lark-doc-version-item-time') ? item.querySelector('.lark-doc-version-item-time').textContent.trim() : null,
+        summary: item.querySelector('.lark-doc-version-item-summary') ? item.querySelector('.lark-doc-version-item-summary').textContent.trim() : null,
+        actor: item.querySelector('.lark-doc-version-item-author-name') ? item.querySelector('.lark-doc-version-item-author-name').textContent.trim() : null,
+        caret: !!item.querySelector('.lark-doc-version-item-caret .lark-doc-icon'),
+        dot: !!item.querySelector('.lark-doc-version-item-dot'),
       })),
     })),
     footer: el.querySelector('.lark-doc-version-right-footer') ? el.querySelector('.lark-doc-version-right-footer').textContent.trim() : null,
+    footerSwitch: (() => {
+      const btn = el.querySelector('.lark-doc-version-show-changes')
+      return btn ? {
+        role: btn.getAttribute('role'), checked: btn.getAttribute('aria-checked'),
+        on: btn.classList.contains('is-on'), bg: getComputedStyle(btn).backgroundColor,
+      } : null
+    })(),
   }
 }
 
@@ -647,7 +660,7 @@ async function verifyOutlineHandleHitTargets(page, width) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -848,9 +861,10 @@ async function verifyOutlineHandleHitTargets(page, width) {
     ]),
     degraded ? degraded.leftHeaderChildren.join(',') : '没渲染')
 
-  record('[版本] 返回钮 aria-label=返回文档 + undo 图标 24×24',
+  record('[版本] 返回钮 aria-label=返回文档 + 细左箭头 16 + 文字「返回文档」',
     !!degraded && degraded.back.label === '返回文档' && degraded.back.type === 'button' &&
-      degraded.back.iconSize.w === 24 && degraded.back.iconSize.h === 24,
+      degraded.back.text === '返回文档' &&
+      degraded.back.iconSize.w === 16 && degraded.back.iconSize.h === 16,
     degraded ? JSON.stringify(degraded.back) : '没渲染')
 
   record('[版本] 无 provider → 还原钮 disabled + aria-label 说明 + 无原生 title + 灰底 rgb(187,191,196)',
@@ -873,10 +887,13 @@ async function verifyOutlineHandleHitTargets(page, width) {
       degraded.preview === null,
     degraded ? degraded.empties.join(' | ') : '没渲染')
 
-  record('[版本] 右栏标题「历史记录」+ chevronDown 24 + 底栏「显示更改」',
-    !!degraded && degraded.rightTitle === '历史记录' && degraded.rightIconSize.w === 24 &&
-      degraded.rightIconSize.h === 24 && degraded.footer === '显示更改' && degraded.days.length === 0,
-    degraded ? `${degraded.rightTitle}/${degraded.footer}` : '没渲染')
+  record('[版本] 右栏标题「历史记录」+ ⓘ 信息图标 16 + 底栏「显示更改」+ 飞书蓝开关（默认开）',
+    !!degraded && degraded.rightTitle === '历史记录' && degraded.rightIconSize.w === 16 &&
+      degraded.rightIconSize.h === 16 && degraded.footer === '显示更改' && degraded.days.length === 0 &&
+      !!degraded.footerSwitch && degraded.footerSwitch.role === 'switch' &&
+      degraded.footerSwitch.checked === 'true' && degraded.footerSwitch.on === true &&
+      degraded.footerSwitch.bg === 'rgb(51, 109, 244)',
+    degraded ? `${degraded.rightTitle}/${degraded.footer}/${JSON.stringify(degraded.footerSwitch)}` : '没渲染')
 
   // Esc 关不掉（与另存为 Dialog 相反）
   await page.keyboard.press('Escape')
@@ -921,21 +938,25 @@ async function verifyOutlineHandleHitTargets(page, width) {
       filled.preview.binary[0] === '该版本正文为二进制快照（1024 字节），需由协同运行时解码后才能渲染。',
     filled && filled.preview ? filled.preview.binary.join(' | ') : '没渲染')
 
-  record('[版本] 时间线条目 = 名称 / 描述 / 作者三行，最新一条带 selected',
+  record('[版本] 时间线选中项 = 展开三角 + 时间 + 摘要「最近更新」+ 作者（圆点），带 selected',
     !!filled && filled.days[0].items[0].cls.indexOf('selected') !== -1 &&
-      /^\d+月\d+日 \d{2}:\d{2}$/.test(filled.days[0].items[0].name) &&
-      filled.days[0].items[0].desc === '新增 2 个块' &&
-      filled.days[0].items[0].user === '张三',
+      filled.days[0].items[0].caret === true && filled.days[0].items[0].dot === true &&
+      /^\d+月\d+日 \d{2}:\d{2}$/.test(filled.days[0].items[0].time) &&
+      filled.days[0].items[0].summary === '最近更新' &&
+      filled.days[0].items[0].actor === '张三',
     filled ? JSON.stringify(filled.days[0].items[0]) : '没渲染')
 
-  record('[版本] 最早一条的 desc = 「最早一条记录，无更早版本可比」',
-    !!filled && filled.days[1].items[0].desc === '最早一条记录，无更早版本可比',
-    filled ? filled.days[1].items[0].desc : '没渲染')
-
-  record('[版本] 块数相同 → desc「块数无变化」，作者缺失回落「未知作者」',
-    !!filled && filled.days[0].items[1].desc === '块数无变化' &&
-      filled.days[0].items[1].user === '未知作者',
+  record('[版本] 非选中项不显示摘要，作者缺失回落「未知作者」（飞书右栏只有选中项有「最近更新」）',
+    !!filled && filled.days[0].items[1].summary === '' &&
+      filled.days[0].items[1].actor === '未知作者' &&
+      /^\d+月\d+日 \d{2}:\d{2}$/.test(filled.days[0].items[1].time) &&
+      filled.days[0].items[1].caret === true && filled.days[0].items[1].dot === true,
     filled ? JSON.stringify(filled.days[0].items[1]) : '没渲染')
+
+  record('[版本] 最早一条作者李四、无摘要（差异文案移交左预览，不在右栏重复）',
+    !!filled && filled.days[1].items[0].summary === '' &&
+      filled.days[1].items[0].actor === '李四',
+    filled ? JSON.stringify(filled.days[1].items[0]) : '没渲染')
 
   // 选中一条 → 预览换成真实的版本名与降级文案
   await page.evaluate(() => document.querySelectorAll('.lark-doc-version-item')[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
@@ -960,6 +981,27 @@ async function verifyOutlineHandleHitTargets(page, width) {
       selected.preview.diff.title === '与更早版本的差异' &&
       /^块数 5 → 7\s*（\+2）$/.test(selected.preview.diff.row),
     selected && selected.preview && selected.preview.diff ? JSON.stringify(selected.preview.diff.row) : '没渲染')
+
+  // 「显示更改」开关：默认蓝底开；点一下转灰底关，并隐藏 diff 段。
+  await page.evaluate(() => document.querySelector('.lark-doc-version-show-changes').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  await page.waitForTimeout(120)
+  const toggled = await page.evaluate(() => {
+    const btn = document.querySelector('.lark-doc-version-show-changes')
+    const diff = document.querySelector('.lark-doc-version-diff')
+    return {
+      checked: btn ? btn.getAttribute('aria-checked') : null,
+      on: btn ? btn.classList.contains('is-on') : null,
+      bg: btn ? getComputedStyle(btn).backgroundColor : null,
+      diffHidden: diff ? getComputedStyle(diff).display === 'none' : null,
+    }
+  })
+  record('[版本] 点「显示更改」开关 → 关态灰底 rgb(208,211,214) + aria-checked=false + diff 隐藏',
+    !!toggled && toggled.checked === 'false' && toggled.on === false &&
+      toggled.bg === 'rgb(208, 211, 214)' && toggled.diffHidden === true,
+    toggled ? JSON.stringify(toggled) : '没渲染')
+  // 切回开态，避免影响后续面板关闭前的状态。
+  await page.evaluate(() => document.querySelector('.lark-doc-version-show-changes').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  await page.waitForTimeout(120)
 
   record('[版本] 正文只有二进制快照 → 只说「需由协同运行时解码」，不假装能渲染',
     !!selected && !!selected.preview && selected.preview.binary.length === 1 &&

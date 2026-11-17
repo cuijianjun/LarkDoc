@@ -60,6 +60,9 @@ export const ICONS = {
   chevronDown: wrap('<path d="m4.2 6.2 3.8 3.8 3.8-3.8"/>'),
   // 实心小三角：下拉触发器尾部的「▾」（飞书菜单用实心，比 chevron 更紧凑）
   caretSolid: wrap('<path d="M4.6 6.2h6.8L8 10.7z" fill="currentColor" stroke="none"/>'),
+  // 历史记录 1:1：返回文档的细左箭头 + 时间线未展开项的实心右三角 ▸
+  chevronLeft: wrap('<path d="m9.8 3.8-3.8 3.8 3.8 3.8"/>'),
+  caretRight: wrap('<path d="M5.6 3.4v9.2L12.4 8z" fill="currentColor" stroke="none"/>'),
   chevronUp: wrap('<path d="m4.2 9.8 3.8-3.8 3.8 3.8"/>'),
   close: wrap('<path d="m4.6 4.6 6.8 6.8"/><path d="m11.4 4.6-6.8 6.8"/>'),
   // 编号菜单三项：对齐飞书（编号类图标都是「1.」+ 动作符号的组合，不是抽象线条）。

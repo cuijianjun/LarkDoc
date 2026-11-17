@@ -93,7 +93,7 @@ export { createOutlinePanel } from './outlinePanel'
  *   view: 'error' | 'empty' | 'preview',
  *   errorText, emptyText,
  *   preview: null | { title, kind, meta: [String], degraded, diff: null | { row }, payload },
- *   timelineError, days: [{ key, label, items: [{ id, cls, name, desc, user }] }],
+ *   timelineError, days: [{ key, label, items: [{ id, cls, expanded, time, summary, actor }] }],
  * }
  * ```
  */
@@ -112,6 +112,8 @@ export function createVersionPanel(options = {}) {
     timelineError: '',
     days: [],
   }
+  // 「显示更改」开关是面板自持的视图态（不进宿主 state）：默认开，与飞书一致。
+  let showChanges = true
 
   const el = document.createElement('div')
   el.className = 'lark-doc-version-layer'
@@ -158,7 +160,11 @@ export function createVersionPanel(options = {}) {
   backButton.type = 'button'
   backButton.className = 'lark-doc-version-back'
   backButton.setAttribute('aria-label', '返回文档')
-  backButton.appendChild(iconNode('undo', 24))
+  backButton.appendChild(iconNode('chevronLeft', 16))
+  const backText = document.createElement('span')
+  backText.className = 'lark-doc-version-back-text'
+  backText.textContent = '返回文档'
+  backButton.appendChild(backText)
   onMouseDownPrevent(backButton, () => call('onClose'))
 
   const restoreButton = document.createElement('button')
@@ -302,7 +308,8 @@ export function createVersionPanel(options = {}) {
   rightTitle.textContent = '历史记录'
   const rightIcon = document.createElement('span')
   rightIcon.className = 'lark-doc-version-right-icon'
-  rightIcon.appendChild(iconNode('chevronDown', 24))
+  rightIcon.setAttribute('aria-label', '历史记录说明')
+  rightIcon.appendChild(iconNode('comment-history-info', 16))
   rightHeader.appendChild(rightTitle)
   rightHeader.appendChild(rightIcon)
 
@@ -313,7 +320,25 @@ export function createVersionPanel(options = {}) {
 
   const rightFooter = document.createElement('div')
   rightFooter.className = 'lark-doc-version-right-footer'
-  rightFooter.textContent = '显示更改'
+  const rightFooterText = document.createElement('span')
+  rightFooterText.textContent = '显示更改'
+  const changesSwitch = document.createElement('button')
+  changesSwitch.type = 'button'
+  changesSwitch.className = 'lark-doc-version-show-changes is-on'
+  changesSwitch.setAttribute('role', 'switch')
+  changesSwitch.setAttribute('aria-label', '显示更改')
+  changesSwitch.setAttribute('aria-checked', 'true')
+  const changesKnob = document.createElement('span')
+  changesKnob.className = 'lark-doc-version-show-changes-knob'
+  changesKnob.setAttribute('aria-hidden', 'true')
+  changesSwitch.appendChild(changesKnob)
+  onMouseDownPrevent(changesSwitch, () => {
+    showChanges = !showChanges
+    changesSwitch.classList.toggle('is-on', showChanges)
+    changesSwitch.setAttribute('aria-checked', showChanges ? 'true' : 'false')
+    diffBox.classList.toggle('is-hidden', !showChanges)
+  })
+  rightFooter.append(rightFooterText, changesSwitch)
 
   right.appendChild(rightHeader)
   right.appendChild(timeline)
@@ -335,18 +360,33 @@ export function createVersionPanel(options = {}) {
       const row = document.createElement('div')
       row.className = item.cls ? `lark-doc-version-item ${item.cls}` : 'lark-doc-version-item'
       onMouseDownPrevent(row, () => call('onSelect', item.id))
-      const name = document.createElement('div')
-      name.className = 'lark-doc-version-item-name'
-      name.textContent = item.name == null ? '' : String(item.name)
-      const desc = document.createElement('div')
-      desc.className = 'lark-doc-version-item-desc'
-      desc.textContent = item.desc == null ? '' : String(item.desc)
-      const user = document.createElement('div')
-      user.className = 'lark-doc-version-item-user'
-      user.textContent = item.user == null ? '' : String(item.user)
-      row.appendChild(name)
-      row.appendChild(desc)
-      row.appendChild(user)
+
+      // 飞书时间线：展开三角 / 时间 / 摘要（仅选中项）/ 作者圆点。
+      const caret = document.createElement('span')
+      caret.className = 'lark-doc-version-item-caret'
+      caret.setAttribute('aria-hidden', 'true')
+      caret.appendChild(iconNode(item.expanded ? 'caretSolid' : 'caretRight', 12))
+
+      const main = document.createElement('div')
+      main.className = 'lark-doc-version-item-main'
+      const time = document.createElement('div')
+      time.className = 'lark-doc-version-item-time'
+      time.textContent = item.time == null ? '' : String(item.time)
+      const summary = document.createElement('div')
+      summary.className = 'lark-doc-version-item-summary'
+      summary.textContent = item.summary == null ? '' : String(item.summary)
+      const author = document.createElement('div')
+      author.className = 'lark-doc-version-item-author'
+      const dot = document.createElement('span')
+      dot.className = 'lark-doc-version-item-dot'
+      dot.setAttribute('aria-hidden', 'true')
+      const authorName = document.createElement('span')
+      authorName.className = 'lark-doc-version-item-author-name'
+      authorName.textContent = item.actor == null ? '' : String(item.actor)
+      author.append(dot, authorName)
+
+      main.append(time, summary, author)
+      row.append(caret, main)
       box.appendChild(row)
     })
     return box
@@ -385,6 +425,8 @@ export function createVersionPanel(options = {}) {
       { node: bodyBox, on: true },
     ])
     if (preview.diff) setText(diffRow, preview.diff.row)
+    // 「显示更改」是面板自持态：切版本重挂 diffBox 后要把开关状态补回去。
+    diffBox.classList.toggle('is-hidden', !showChanges)
     // `payload` 非空 = 该版本正文是可解码的二进制快照（模板里的 `v-if`）；空则走兜底文案。
     const payload = preview.payload || ''
     if (payload) setText(binaryPayload, payload)

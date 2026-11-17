@@ -11,7 +11,7 @@
  *      （如 `#BBBFC4`、`#336DF4`、`#E0E9FF`、`#8D55ED`）只写在**注释**里 —— 门禁会先
  *      剥注释，注释里的 hex 不违规。
  *   2. 桌面保留 1512 × 950 实测口径；窄屏按当前可用视窗排布顶栏，避免控件互相遮挡。
- *   3. **不画展开箭头 / 删除按钮 / 改备注入口**（⑦-2 / ⑦-3 未采，且没有子记录数据源）。
+ *   3. **不画删除按钮 / 改备注入口**（⑦-3 未采，且没有子记录数据源）；展开三角按飞书 1:1 补齐（⑦-2 采）。
  *   4. **每条选择器都必须带 `.lark-doc ` 作用域前缀（55 条全部带，别手写裸类名）**。
  *      主样式里有元素级兜底 `.lark-doc button { min-height: 30px; padding: 4px 8px;
  *      background: transparent; border-radius: 5px }`（权重 0,1,1），单个类名（0,1,0）
@@ -74,27 +74,36 @@
 
 /* ── B. 左栏顶栏 4 个控件 ── */
 
-/* 返回文档（纯图标）24 × 24 @(16,20)。 */
+/* 返回文档：细左箭头 + 文字（飞书「‹ 返回文档」）。 */
 .lark-doc .lark-doc-version-back {
   position: absolute;
   left: 16px;
-  top: 20px;
-  width: 24px;
-  height: 24px;
+  top: 18px;
+  min-height: 0;
+  height: 28px;
   padding: 0;
   border: 0 none;
-  border-radius: 0;
+  border-radius: 4px;
   background-color: transparent;
-  color: rgb(31, 35, 41);
+  color: rgb(100, 106, 115);
+  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
+}
+
+.lark-doc .lark-doc-version-back-text {
+  line-height: 20px;
+}
+
+.lark-doc .lark-doc-version-back:hover {
+  color: rgb(31, 35, 41);
 }
 
 /* 还原此历史记录 122 × 32 @(548,16)，radius 6，白字 14。
-   实测底色是禁用灰 `rgb(187,191,196)`（= #BBBFC4）+ `not-allowed` —— 启用态底色
-   未采（⑦-1），沿用主色 `rgb(20,86,240)`（= #1456F0），与「下一项」同源。 */
+   飞书 1:1：禁用态灰 `rgb(187,191,196)`（= #BBBFC4）+ `not-allowed`；启用态飞书蓝
+   `rgb(51,109,244)`（= #336DF4），与「下一项」同源，不跟随宿主主题档位。 */
 .lark-doc .lark-doc-version-restore {
   position: absolute;
   left: 50%;
@@ -105,7 +114,7 @@
   padding: 0;
   border: 0 none;
   border-radius: 6px;
-  background-color: var(--ld-brand-chrome);
+  background-color: rgb(51, 109, 244);
   color: rgb(255, 255, 255);
   font-size: 14px;
   cursor: pointer;
@@ -139,19 +148,20 @@
 }
 
 .lark-doc .lark-doc-version-step {
+  min-height: 0;
   width: 66px;
   height: 28px;
   padding: 0;
   border: 0 none;
   border-radius: 6px;
-  background-color: var(--ld-brand-chrome);
+  background-color: rgb(51, 109, 244);
   color: rgb(255, 255, 255);
   font-size: 12px;
   cursor: pointer;
 }
 
 .lark-doc .lark-doc-version-step:hover:not([disabled]) {
-  background-color: var(--ld-brand-chrome);
+  background-color: rgb(51, 109, 244);
 }
 
 .lark-doc .lark-doc-version-step[disabled] {
@@ -308,52 +318,94 @@
   color: rgb(100, 106, 115);
 }
 
-/* 单条记录 293 宽，padding 12px 13px 12px 40px。 */
+/* 单条记录 293 宽，padding 10px 13px 10px 30px；三角 / 主体横向排布。 */
 .lark-doc .lark-doc-version-item {
+  position: relative;
   width: 293px;
-  padding: 12px 13px 12px 40px;
+  padding: 10px 13px 10px 30px;
   box-sizing: border-box;
   background-color: transparent;
   cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF），文字 `rgb(51,109,244)`（= #336DF4），
+/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF）+ 左侧 3px 蓝色竖条 `rgb(51,109,244)`（= #336DF4），
    条目宽 293 → 278（右侧让出 15px 滚动条）。 */
 .lark-doc .lark-doc-version-item.selected {
   width: 278px;
-  background-color: var(--ld-bg-badge);
+  background-color: rgb(224, 233, 255);
 }
 
-/* 条目名：fs 14 / fw 500 / **`rgb(51,109,244)`**（反直觉 2：不是正文色）。 */
-.lark-doc .lark-doc-version-item-name {
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  color: var(--ld-brand-chrome);
+.lark-doc .lark-doc-version-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: rgb(51, 109, 244);
 }
 
-/* 描述：fs 12 / rgb(31,35,41)，选中时转 `rgb(51,109,244)`。 */
-.lark-doc .lark-doc-version-item-desc {
-  margin-top: 4px;
+/* 展开三角：未展开 ▸ 右三角、展开 ▾ 下三角，飞书蓝。 */
+.lark-doc .lark-doc-version-item-caret {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 18px;
+  margin-top: 1px;
+  color: rgb(51, 109, 244);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 主体（时间 / 摘要 / 作者）竖排。 */
+.lark-doc .lark-doc-version-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 时间「11月16日 22:38」：fs 12 / fw 500 / 飞书蓝 `rgb(51,109,244)`。 */
+.lark-doc .lark-doc-version-item-time {
   font-size: 12px;
-  line-height: 18px;
-  color: rgb(31, 35, 41);
-}
-
-.lark-doc .lark-doc-version-item.selected .lark-doc-version-item-desc {
-  color: var(--ld-brand-chrome);
-}
-
-/* 作者：fs 12 / fw 500 / rgb(31,35,41)。 */
-.lark-doc .lark-doc-version-item-user {
-  margin-top: 4px;
-  font-size: 12px;
   font-weight: 500;
   line-height: 18px;
-  color: rgb(31, 35, 41);
+  color: rgb(51, 109, 244);
 }
 
-/* 底栏 293 × 42 @(1219,908)，文案「显示更改」—— 行为未采（⑦-4），不绑事件。 */
+/* 摘要「最近更新」：仅选中项有（state 侧保证），fs 12 / 灰。 */
+.lark-doc .lark-doc-version-item-summary {
+  margin-top: 1px;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgb(100, 106, 115);
+}
+
+/* 作者「• 崔健军」：圆点 + 名字，fs 12 / 飞书蓝。 */
+.lark-doc .lark-doc-version-item-author {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgb(51, 109, 244);
+}
+
+.lark-doc .lark-doc-version-item-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: rgb(141, 85, 237);
+}
+
+.lark-doc .lark-doc-version-item.selected .lark-doc-version-item-dot {
+  background-color: rgb(51, 109, 244);
+}
+
+/* 底栏 293 × 42 @(1219,908)：文案「显示更改」+ 右侧飞书蓝 switch。 */
 .lark-doc .lark-doc-version-right-footer {
   flex: 0 0 42px;
   height: 42px;
@@ -361,8 +413,50 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   font-size: 12px;
   color: rgb(100, 106, 115);
+}
+
+/* 飞书 switch：28 × 16 胶囊，开启蓝底白钮在右，关闭灰底白钮在左。 */
+.lark-doc .lark-doc-version-show-changes {
+  flex: 0 0 auto;
+  position: relative;
+  min-height: 0;
+  width: 28px;
+  height: 16px;
+  padding: 0;
+  border: 0 none;
+  border-radius: 8px;
+  background-color: rgb(208, 211, 214);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.lark-doc .lark-doc-version-show-changes.is-on {
+  background-color: rgb(51, 109, 244);
+}
+
+.lark-doc .lark-doc-version-show-changes-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: rgb(255, 255, 255);
+  box-shadow: 0 1px 2px rgba(31, 35, 41, 0.16);
+  transition: transform 0.15s;
+}
+
+.lark-doc .lark-doc-version-show-changes.is-on .lark-doc-version-show-changes-knob {
+  transform: translateX(12px);
+}
+
+/* 关闭「显示更改」时隐藏 diff 摘要区。 */
+.lark-doc .lark-doc-version-diff.is-hidden {
+  display: none;
 }
 
 /* ── ⑤-2 「另存为版本」Dialog ── */

@@ -275,13 +275,17 @@ export default {
         days: error ? [] : (this.versionDayGroups || []).map((group) => ({
           key: group.key,
           label: group.label,
-          items: (group.items || []).map((item) => ({
-            id: item.id,
-            cls: this.versionTimelineClass(item).selected ? 'selected' : '',
-            name: this.versionItemName(item),
-            desc: this.versionItemDesc(item),
-            user: this.versionActorLabel(item),
-          })),
+          items: (group.items || []).map((item) => {
+            const selected = this.versionTimelineClass(item).selected
+            return {
+              id: item.id,
+              cls: selected ? 'selected' : '',
+              expanded: selected,
+              time: this.versionItemTime(item),
+              summary: selected ? this.versionItemSummary(item) : '',
+              actor: this.versionActorLabel(item),
+            }
+          }),
         })),
       }
     },
