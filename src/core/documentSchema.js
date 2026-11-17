@@ -46,12 +46,3 @@ export function normalizeDocumentRecord(value, options = {}) {
 export function getDocumentContent(value, options = {}) {
   return normalizeDocumentRecord(value, options).content
 }
-
-/**
- * 节点 ID 是评论和 AI 锚点的长期身份。旧 Schema 没有 id 属性时返回 null，
- * 由后续 Schema 迁移为支持 id 的节点后再启用，不向当前节点强行注入未知属性。
- */
-export function getNodeId(node) {
-  const id = node && node.attrs && node.attrs.id
-  return typeof id === 'string' && id ? id : null
-}

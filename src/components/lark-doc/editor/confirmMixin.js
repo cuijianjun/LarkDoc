@@ -30,7 +30,6 @@
  *
  * 「点主按钮执行后无 toast」也是实测结论 —— 别顺手加 `exportToast` 那种提示。
  */
-export const CONFIRM_SIZE = Object.freeze({ width: 420, height: 180 })
 
 export default {
   data() {

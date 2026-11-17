@@ -208,7 +208,7 @@ export default {
      *  真实头像图属宿主数据，这里退化成文字头像，免得留一个空白圆。 */
     shareCollaboratorInitial() {
       const first = this.shareCollaborators && this.shareCollaborators.length ? this.shareCollaborators[0] : ''
-      return String(first || '').charAt(0)
+      return Array.from(String(first || ''))[0] || ''
     },
     /** 规则框行：长度 / 字符类 /（不支持字符）。 */
     sharePasswordRules() {

@@ -98,5 +98,3 @@ export function copyAssets(input, maybeOptions) {
   }
   return entries.map((entry) => entry.to)
 }
-
-export const findAssets = discoverAssets

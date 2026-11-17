@@ -29,34 +29,6 @@ export function formatDocumentCommentTime(at, now = Date.now()) {
   return date.getFullYear() === today.getFullYear() ? `${date.getMonth() + 1}月${date.getDate()}日 ${clock}` : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
 }
 
-export const commentPanelClock = {
-  data: () => ({ documentCommentNow: Date.now() }),
-  mounted() { if (this.documentOnly) this.startDocumentCommentClock() },
-  watch: { documentOnly(value) { if (value) this.startDocumentCommentClock(); else this.stopDocumentCommentClock() } },
-  beforeDestroy() { this._documentCommentClockDisposed = true; this.stopDocumentCommentClock() },
-  methods: {
-    stopDocumentCommentClock() {
-      clearInterval(this._documentCommentTimer); this._documentCommentTimer = null
-      this._documentCommentClockDocument?.removeEventListener('visibilitychange', this._documentCommentVisibility)
-      this._documentCommentClockDocument = null; this._documentCommentVisibility = null
-    },
-    startDocumentCommentClock() {
-      this.stopDocumentCommentClock()
-      if (this._documentCommentClockDisposed || typeof document === 'undefined') return
-      const target = document
-      const current = () => !this._documentCommentClockDisposed && !this._isDestroyed && !this._isBeingDestroyed && this.documentOnly && this._documentCommentVisibility === visibility
-      const tick = () => { if (current() && target.visibilityState === 'visible') this.documentCommentNow = Date.now() }
-      const visibility = () => {
-        if (!current()) return
-        clearInterval(this._documentCommentTimer); this._documentCommentTimer = null
-        if (target.visibilityState === 'visible') { tick(); this._documentCommentTimer = setInterval(tick, 60000) }
-      }
-      this._documentCommentClockDocument = target; this._documentCommentVisibility = visibility
-      target.addEventListener('visibilitychange', visibility); visibility()
-    },
-  },
-}
-
 /** This navigation helper is also called by the synchronous top-bar controller. */
 export async function openCommentDocumentTarget(ed, docId, { reportError = true } = {}) {
   if (typeof docId !== 'string' || !/^[A-Za-z0-9._-]{1,128}(?![\s\S])/.test(docId) || !ed.commentCan('canView')) return false

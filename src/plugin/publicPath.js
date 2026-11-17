@@ -20,5 +20,3 @@ export function normalizeBasePath(basePath) {
 
   return value.endsWith('/') ? value : `${value}/`
 }
-
-export const normalizePublicPath = normalizeBasePath

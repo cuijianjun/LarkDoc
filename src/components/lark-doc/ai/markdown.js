@@ -1,5 +1,5 @@
 /**
- * 轻量 markdown → HTML。零依赖，只产出 Tiptap schema 认识的标签，
+ * 轻量 markdown → HTML。不引第三方依赖，只产出 Tiptap schema 认识的标签，
  * 避免为了渲染 AI 结果把 marked 之类的整包拉进产物（ESM 预算 110KB）。
  *
  * 覆盖范围：标题、段落、有序/无序列表、引用、代码块、分隔线、行内
@@ -7,17 +7,20 @@
  * 之外的扩展语法——这些在 AI 输出里出现频率低，误判代价却很高。
  */
 
+import { safeUrl as allowedUrl } from '../../../core/policy/url'
+import { sanitizeHTML } from '../../../core/documentValidation'
+
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }
 
 function escapeHtml(input) {
   return String(input).replace(/[&<>"']/g, char => HTML_ESCAPES[char])
 }
 
+/** 与 schema 同一条 URL 口径（拒 userinfo / 控制字符 / 协议相对）；相对路径与纯锚点预览仍放行。 */
 function safeUrl(url) {
   const value = String(url || '').trim()
   if (!value) return ''
-  if (/^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(value)) return value
-  return ''
+  return allowedUrl(value) || /^(?:#|\.{1,2}\/|(?:\/(?!\/)))/.test(value) ? value : ''
 }
 
 /** 行内标记。先按反引号切段，保证代码里的 * 和 _ 不被当成强调语法。 */
@@ -159,14 +162,14 @@ export function plainTextToHtml(text) {
 
 /**
  * 预览内容 → 可直接进 Tiptap 的 HTML。
- * - format = 'html'：原样返回（宿主已渲染好）
+ * - format = 'html'：宿主已渲染好，但仍过一次清洗闸门（宿主适配器可声明 html，模型输出不可信）
  * - format = 'text'：纯文本段落化
  * - format = 'markdown' / 未指定：自动判断是否含 markdown 语法
  */
 export function previewToHtml(text, format) {
   const source = String(text == null ? '' : text)
   if (!source.trim()) return ''
-  if (format === 'html') return source
+  if (format === 'html') return sanitizeHTML(source)
   if (format === 'text') return plainTextToHtml(source)
   if (format === 'markdown') return markdownToHtml(source) || plainTextToHtml(source)
   return looksLikeMarkdown(source) ? markdownToHtml(source) : plainTextToHtml(source)

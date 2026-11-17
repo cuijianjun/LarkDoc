@@ -11,7 +11,7 @@ import { IMAGE_MIME_ALLOWLIST } from './image-insert'
  *   ① 超限：类型 / 大小在调用前拦掉，错误信息可读，别等传到服务端；
  *   ② 重试：只重试「确定安全」的失败（网络中断 / 5xx / 429 / 显式
  *      error.retryable === true）。业务错误（4xx、校验失败）不重试，避免
- *      重复写入；重试间隔递减抖动，最多 DEFAULT_RETRY.attempts 次。
+ *      重复写入；重试间隔按 factor 递增（默认 300 / 900 / 2700 ms），最多 DEFAULT_RETRY.attempts 次。
  *   ③ 取消：每个任务一个 AbortSignal，宿主可透传给 fetch/XHR；
  *      也支持 provider.cancel(taskId) 从外部喊停，错误码统一 UPLOAD_ABORTED。
  *   ④ 断点：宿主声明 uploader.chunked === true 时按 chunkSize 切片上传，

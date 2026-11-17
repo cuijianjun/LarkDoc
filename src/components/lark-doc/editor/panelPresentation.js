@@ -447,7 +447,7 @@ export function createPanelPresentation(dependencies) {
         const input = [...this.ed.$el.querySelectorAll('input[data-comment-image-scope]')].find(node => node.dataset.commentImageScope === scope)
         if (input) input.click()
       },
-  commentAuthorInitial(author) { return this.ed.commentAuthorName(author).slice(0, 1).toUpperCase() }
+  commentAuthorInitial(author) { return (Array.from(this.ed.commentAuthorName(author))[0] || '').toUpperCase() }
   ,
   async copyRemoteCommentLink(threadId, menuCurrent = () => true) {
         const provider = this.ed.commentProvider()

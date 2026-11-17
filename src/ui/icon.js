@@ -45,6 +45,8 @@ export function setIcon(node, name, size = 16) {
   if (!node) return
   node.style.width = `${size}px`
   node.style.height = `${size}px`
-  const svg = ICONS[name] || ''
-  if (node.innerHTML !== svg) node.innerHTML = svg
+  // 不能拿 innerHTML 比：序列化会把自闭合的 <path/> 补成 <path></path>，永远不相等。
+  if (node.__icon === name) return
+  node.__icon = name
+  node.innerHTML = ICONS[name] || ''
 }

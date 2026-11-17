@@ -49,5 +49,3 @@ export function normalizePluginOptions(options = {}) {
 
   return normalized
 }
-
-export const resolvePluginOptions = normalizePluginOptions

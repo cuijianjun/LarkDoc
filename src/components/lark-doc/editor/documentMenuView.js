@@ -1,4 +1,3 @@
-import { readMention } from '../../../core/blocks/mention'
 import { aiNetworkAllows, createNetworkPolicy } from '../../../core/policy/network'
 import { normalizeAIProvider } from '../ai'
 // Shared presentation of the observed document menu. Business-owned actions are UI intents,
@@ -176,46 +175,4 @@ export function printEditorDocument(ed) {
     finally { if (current()) folded.forEach(id => editor.commands.toggleLarkDocFoldById(id)) }
   })
   return true
-}
-
-export const documentMenuRequestMethods = {
-    invalidateRequest() { this._requestToken = null; this.busy = false; this.information = false; this.error = ''; this.submenu = '' },
-    async run(item, event) {
-      const session = this.ed.session, documentId = session?.documentId, identity = session?.user?.id, generation = session?._privateIdentityGeneration, auth = session?._authorizationGeneration, handler = this.ed.onDocumentAction
-      const token = {}; this._requestToken = token
-      const current = () => !this._isDestroyed && this._requestToken === token && session === this.ed.session && documentId === session?.documentId && handler === this.ed.onDocumentAction && identity === session?.user?.id && generation === session?._privateIdentityGeneration && auth === session?._authorizationGeneration && (this.canView || (item.id === 'delete' && this.businessState?.capabilities.canRestore))
-      this.busy = true; this.error = ''
-      try {
-        const result = await runDocumentMenuAction(this.ed, item.id, item.value, event, current)
-        if (current() && typeof result === 'string' && result.startsWith('business:')) this.businessAction = result.slice(9)
-        if (current() && ['information', 'mentions'].includes(result)) { this.information = result; this.$nextTick(() => this.$refs.information?.focus()) }
-      } catch { if (current()) this.error = '操作暂未完成，请在文档业务系统中核对。' }
-      finally { if (!this._isDestroyed && this._requestToken === token) this.busy = false }
-    },
-}
-
-// The lazy stage owns its local bookmark/scroll lifecycle; it never writes shared content.
-export function restorePresentationView(ed, bookmark) {
-  const previous = ed._presentationPrevious, session = ed.session, editor = ed.editor, generation = session?._privateIdentityGeneration
-  ed._presentationPrevious = null
-  const current = () => !ed._isDestroyed && !ed._isBeingDestroyed && session === ed.session && session === previous?.session && editor === ed.editor && generation === previous?.generation && generation === session?._privateIdentityGeneration && previous?.principal === session?.user?.id && can(ed, 'canView')
-  if (!previous || ed.slides || !current()) return
-  ed.commentSidebarOpen = previous.sidebar
-  if (bookmark && editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setSelection(bookmark.resolve(editor.state.doc)).setMeta('addToHistory', false))
-  ed.$nextTick(() => { if (current() && !ed.slides) { const main = ed.$refs?.mainScroll; if (main) { main.scrollTop = previous.mainTop || 0; main.scrollLeft = previous.mainLeft || 0 } window.scrollTo(previous.x, previous.y) } })
-}
-
-export function setPresentationMode(ed, mode) {
-  if (['document', 'slides'].includes(mode)) { ed.presentationMode = mode; if (mode === 'slides') ed.commentSidebarOpen = false }
-}
-
-export function documentMentions(ed) {
-  if (!can(ed, 'canView') || !ed.editor || ed.editor.isDestroyed) return []
-  const people = new Map()
-  ed.editor.state.doc.descendants(node => {
-    const mention = readMention(node)
-    if (!mention || mention.kind !== 'user' || !mention.id || people.has(mention.id)) return
-    people.set(mention.id, { id: mention.id, name: mention.name || '未知', department: mention.department })
-  })
-  return [...people.values()]
 }

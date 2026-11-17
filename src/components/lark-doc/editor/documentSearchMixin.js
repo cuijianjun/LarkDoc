@@ -12,66 +12,6 @@ export function captureDocumentSearchScope(ed) {
     session.getProvider('authorization') === provider && session.can('canView') }
 }
 
-// Both native surfaces remain siblings of other fixed overlays. No global portal or document listener survives close.
-export const nativePanelSurface = {
-  props: { visible: { type: Boolean, default: false }, anchor: { type: Function, default: () => null } },
-  data: () => ({ nativeSurfaceStyle: {} }),
-  watch: { visible(value) { if (value) this.$nextTick(() => this.startNativeSurface()); else this.stopNativeSurface() } },
-  mounted() { if (this.visible) this.$nextTick(() => this.startNativeSurface()) },
-  beforeDestroy() { this._nativeSurfaceDisposed = true; this.stopNativeSurface() },
-  methods: {
-    startNativeSurface() {
-      this.stopNativeSurface()
-      if (this._nativeSurfaceDisposed || !this.visible || typeof window === 'undefined') return
-      const outside = event => {
-        const node = this.$refs.surface, anchor = this.anchor()
-        const path = typeof event.composedPath === 'function' ? event.composedPath() : []
-        if (node && !node.contains(event.target) && !path.includes(node) && !(anchor && (anchor.contains(event.target) || path.includes(anchor)))) this.$emit('close', false)
-      }
-      const position = () => this.positionNativeSurface()
-      const keydown = event => { if (event.key === 'Escape' && this.visible && this.$refs.surface) this.nativeSurfaceKeydown(event) }
-      document.addEventListener('pointerdown', outside, true)
-      document.addEventListener('focusin', outside, true)
-      document.addEventListener('keydown', keydown, true)
-      window.addEventListener('resize', position)
-      window.addEventListener('scroll', position, true)
-      const viewport = window.visualViewport
-      if (viewport) { viewport.addEventListener('resize', position); viewport.addEventListener('scroll', position) }
-      const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(position) : null
-      if (observer && this.$refs.surface) observer.observe(this.$refs.surface)
-      if (observer && this.anchor()) observer.observe(this.anchor())
-      this._nativeSurfaceStop = () => {
-        document.removeEventListener('pointerdown', outside, true); document.removeEventListener('focusin', outside, true)
-        document.removeEventListener('keydown', keydown, true)
-        window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true)
-        if (viewport) { viewport.removeEventListener('resize', position); viewport.removeEventListener('scroll', position) }
-        if (observer) observer.disconnect()
-      }
-      this.positionNativeSurface()
-      const focus = this.$refs.searchInput || this.$refs.surface
-      if (focus && this.visible) focus.focus({ preventScroll: true })
-    },
-    stopNativeSurface() { if (this._nativeSurfaceStop) this._nativeSurfaceStop(); this._nativeSurfaceStop = null },
-    positionNativeSurface() {
-      const anchor = this.anchor(), surface = this.$refs.surface
-      if (!this.visible || !surface || !anchor || !anchor.isConnected) { if (this.visible) this.$emit('close', false); return }
-      const rect = anchor.getBoundingClientRect(), viewport = window.visualViewport,
-        left = viewport ? viewport.offsetLeft : 0, top = viewport ? viewport.offsetTop : 0,
-        width = viewport ? viewport.width : document.documentElement.clientWidth,
-        height = viewport ? viewport.height : document.documentElement.clientHeight
-      if (rect.bottom < top || rect.top > top + height || rect.right < left || rect.left > left + width) { this.$emit('close', false); return }
-      const panelWidth = Math.min(this.nativePanelWidth || 402, Math.max(0, width - 16))
-      const x = this.nativePanelWidth === 540 ? left + (width - panelWidth) / 2 : rect.right - panelWidth
-      const y = Math.min(Math.max(top + 8, rect.bottom + 3), Math.max(top + 8, top + height - Math.min(surface.scrollHeight, this.nativePanelHeight || 555) - 8))
-      this.nativeSurfaceStyle = { position: 'fixed', left: `${Math.max(left + 8, Math.min(x, left + width - panelWidth - 8))}px`, top: `${y}px`,
-        width: `${panelWidth}px`, maxHeight: `${Math.max(0, top + height - y - 8)}px` }
-    },
-    nativeSurfaceKeydown(event) {
-      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); event.stopPropagation(); this.$emit('close', true) }
-    },
-  },
-}
-
 export default {
   data: () => ({ query: '', results: [], searchStatus: 'idle', searchMessage: '', activeResult: -1, composingSearch: false }),
   watch: {

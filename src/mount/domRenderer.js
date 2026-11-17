@@ -14,7 +14,6 @@ import { createWorkspaceShell } from '../ui/workspaceShell'
 import { createEditorUiRegistry } from '../ui/editorUiRegistry'
 import { createWorkspaceViewState } from '../core/workspace/workspace-view-state'
 import { createNetworkPolicy } from '../networkPolicy'
-import { previewToHtml, looksLikeMarkdown } from '../components/lark-doc/ai'
 import { LARGE_DOCUMENT_SIZE } from '../editor/documentStats'
 
 function isPlainObject(value) {
@@ -468,7 +467,6 @@ export function createDomRenderer() {
           aiMessages: state.aiMessages,
           aiStatus: state.aiStatus,
           aiPreview: state.aiPreview,
-          aiPreviewHtml: state.aiPreview && (state.aiContentFormat !== 'text' || looksLikeMarkdown(state.aiPreview)) ? previewToHtml(state.aiPreview, state.aiContentFormat) : '',
           aiReviewIssues: state.aiReviewIssues,
           aiProposal: state.aiProposal,
           aiError: state.aiError,

@@ -65,7 +65,8 @@ function createImageShareView(handlers) {
     renderResults()
   }
   function recipientAvatar(item) {
-    const avatar = text('span', 'lark-doc-image-share-avatar', item.kind === 'chat' ? '群' : String(item.name || '').slice(0, 1))
+    // 代理对安全：emoji 昵称按码点取首字，不裂成半个字符（同 core/blocks/mention.js）。
+    const avatar = text('span', 'lark-doc-image-share-avatar', item.kind === 'chat' ? '群' : Array.from(String(item.name || ''))[0] || '')
     if (safeUrl(item.avatar, true) && network.allows(item.avatar)) {
       const img = document.createElement('img')
       img.src = item.avatar; img.alt = ''

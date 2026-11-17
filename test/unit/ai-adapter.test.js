@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import {
   ACTION_PROMPTS,
@@ -163,6 +164,11 @@ describe('AI 适配层 · 提示词与结果渲染', () => {
     expect(previewToHtml('**粗体**', 'text')).toBe('<p>**粗体**</p>')
     expect(previewToHtml('<p>已渲染</p>', 'html')).toBe('<p>已渲染</p>')
     expect(previewToHtml('   ')).toBe('')
+    // 链接与图片共用 schema 的 URL 口径：带 userinfo 的钓鱼链接不渲染成链接。
+    expect(previewToHtml('[x](https://user:pass@evil.example/)')).toBe('<p>x</p>')
+    expect(previewToHtml('![x](javascript:alert(1))')).toBe('<p>x</p>')
+    // html 交给宿主的适配器渲染，但模型输出不可信：仍过一次清洗闸门。
+    expect(previewToHtml('<img src="x" onerror="alert(1)">', 'html')).not.toContain('onerror')
   })
 
   it('singleParagraphInner：单段取段内 HTML，多块返回 null 交给插入逻辑', () => {

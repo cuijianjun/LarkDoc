@@ -141,9 +141,4 @@ const LinkEmbed = Node.create({
   addNodeView() { return getNodeView('linkEmbed') || createLinkEmbedNodeView },
 })
 
-/** 一份块属性能不能渲染出东西 —— 插入侧与 NodeView 共用同一判据。 */
-export function canRenderLinkEmbed(attrs) {
-  return !!(attrs && safeHref(attrs.href))
-}
-
 export { LinkEmbed }

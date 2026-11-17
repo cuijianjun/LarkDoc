@@ -50,9 +50,3 @@ export function isLarkDocElementReady(tagName = DEFAULT_TAG) {
   if (typeof window === 'undefined' || !window.customElements) return false
   return Boolean(window.customElements.get(tagName))
 }
-
-/** 仅供测试复位探测状态。 */
-export function __resetAssertState() {
-  verified = false
-  warned = false
-}

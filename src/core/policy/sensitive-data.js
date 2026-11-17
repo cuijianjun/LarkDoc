@@ -9,5 +9,3 @@ export function redactSensitive(value) {
   })
   return output
 }
-
-export function isSensitiveKey(key) { return SENSITIVE_KEYS.has(key) }

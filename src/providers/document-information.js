@@ -147,22 +147,3 @@ export function createDocumentInformationPort(context) {
     },
   }
 }
-
-// 每个实际编辑器/身份挂载只记一次，不把短租续期当成新访问。
-export async function recordEditorVisit(ed) {
-  const session = ed.session, provider = session?.getProvider?.('authorization'), principal = session?.user?.id, identity = session?._privateIdentityGeneration
-  if (ed._isDestroyed || ed._isBeingDestroyed || !provider?.isRemote || typeof provider.documentInformation !== 'function' || !session.can('canView') || !ed.editor || ed.editor.isDestroyed) return
-  const previous = ed._documentVisit
-  const same = previous && previous.session === session && previous.provider === provider && previous.principal === principal && previous.identity === identity
-  if (same && previous.status !== 'unknown') return
-  const visit = same ? previous : { session, provider, principal, identity }
-  visit.status = 'pending'; ed._documentVisit = visit
-  const current = () => !ed._isDestroyed && !ed._isBeingDestroyed && visit === ed._documentVisit && session === ed.session && provider === session.getProvider('authorization') && principal === session.user?.id && identity === session._privateIdentityGeneration
-  try {
-    const pending = await provider.documentInformation('operation', 'visit')
-    if (!current()) return
-    if (same && !pending) { visit.status = 'rejected'; return }
-    await provider.documentInformation(pending ? 'query' : 'request', pending ? pending.operationId : { kind: 'visit' })
-    if (current()) visit.status = 'committed'
-  } catch (cause) { if (current()) visit.status = cause.status === 'rejected' ? 'rejected' : 'unknown' }
-}

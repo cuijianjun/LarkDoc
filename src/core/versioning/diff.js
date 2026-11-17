@@ -61,8 +61,6 @@ export function normalizeRemoteVersionDiff(raw, expected) {
     identical: raw.identical, changes: Object.freeze(changes), persisted: false, taskId: null })
 }
 
-export function formatVersionDiffValue(value) { return JSON.stringify(value, null, 2) }
-
 /** 用 Projection 算三项指标；输入不认识就当空文档（读路径宽容，不抛）。 */
 export function projectionMetrics(input) {
   const doc = parseProjection(input)

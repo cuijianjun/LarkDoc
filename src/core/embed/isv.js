@@ -97,8 +97,6 @@ export const ISV_PANEL = {
 export const CATALOG_INDENT_BASE = 6
 export const CATALOG_INDENT_STEP = 16
 export const CATALOG_PADDING_RIGHT = 6
-export const CATALOG_ITEM_HEIGHT = 32
-export const CATALOG_CONTAINER_PADDING = '25px 26px 20px'
 
 /** 缩进像素：L1 6 / L2 22 / L3 38（④-5 实测三档）。 */
 export function catalogIndent(level) {
