@@ -53,4 +53,7 @@
 | `lint` | 每次全量重扫 | 命中 eslint 磁盘缓存；且 HEAD 起就红的问题已修 |
 | 单测并发 | 固定 2 | 默认 2，可用 `VITEST_MAX_WORKERS` 覆盖 |
 | 单测编排 | 单趟全量，构建用例与普通用例同池（改上游枢纽时白付 118s，且 4 条假超时） | `unit` 162 支 / `build` 3 支，两趟串行；`test:affected` 只走 `unit` |
-| 最大单文件 | `ui/panels.js` 2,244 行 | 拆成 4 个文件，最大 1,506 行 |
+| 最大单文件 | `ui/panels.js` 2,244 行 | 拆成 4 个文件，最大 1,506 行；随后 `ui/commentPanel.js` 仍是 1,562 |
+| 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
+| 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
+| 首屏 | 601,740 B（内核 542,353） | 未变（D01 已按数据否决） |
