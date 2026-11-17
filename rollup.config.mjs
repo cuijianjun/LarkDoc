@@ -75,6 +75,46 @@ const elementUiModules = {
 const uiPanelPackGroups = new Set(['panels', 'dialogs', 'overlays', 'templateLibrary', 'workspacePanels',
   'reminder', 'searchPanel', 'revision', 'isvPanel', 'calendarSearch', 'notifications'])
 
+/**
+ * 内核已完整持有、特性包只需转发的模块（阶段 5）。
+ *
+ * 拆 ui 子包后同一个模块会同时落在内核与两个包里。登记到这里，包内就只剩一段
+ * 只列导出名的 shim，实现体读内核发布在宿主全局的那一份（见
+ * src/core/features/shared-host.js）。
+ *
+ * 登记条件很硬：**内核里该模块的渲染长度必须不小于包里的需求**。内核是
+ * tree-shaken 的，`segmentedDocumentModel` 内核只留 2,348 B 而 document 包要
+ * 54,707 B —— 这种一提上来就是往首屏塞 52 KB，绝不能登记。判定方法见
+ * docs/guide/performance.md「跨包重复」一节。
+ *
+ * 值必须是 src/web-component/standalone.js 发布时的同一个名字；
+ * test/unit/build-contract.test.js 守着这条对齐。
+ */
+export const sharedHostModules = {
+  'src/ui/icons.js': 'ui.icons',
+  'src/ui/icon.js': 'ui.icon',
+  'src/ui/dom.js': 'ui.dom',
+  'src/ui/palette.js': 'ui.palette',
+  'src/ui/menuLayout.js': 'ui.menuLayout',
+  'src/ui/headingMenu.js': 'ui.headingMenu',
+  'src/ui/diagramMenu.js': 'ui.diagramMenu',
+  'src/ui/tooltip.js': 'ui.tooltip',
+  'src/ui/select.js': 'ui.select',
+  'src/core/emoji/identity-data.js': 'core.emojiIdentityData',
+  'src/core/emoji/identity.js': 'core.emojiIdentity',
+  'src/core/policy/url.js': 'core.policyUrl',
+  'src/core/policy/network.js': 'core.policyNetwork',
+  'src/core/media/image-crop.js': 'core.imageCrop',
+  'src/components/lark-doc/editor/commentImages.js': 'editor.commentImages',
+  'src/components/lark-doc/editor/constants.js': 'editor.constants',
+}
+const SHARED_HOST_ENTRY = '\0lark-doc-shared-host:'
+// 只有这两支包与内核同版本同目录部署，其余构建（es 特性包、element 单文件）
+// 必须自带实现，否则打包器宿主拿不到内核。
+const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd'])
+const sharedHostPaths = new Map(Object.entries(sharedHostModules).map(([file, name]) => [resolve(ROOT, file), name]))
+const sharedHostNames = new Map(Object.entries(sharedHostModules).map(([file, name]) => [name, resolve(ROOT, file)]))
+
 /** Read only literal private presentation keys; never evaluate application code. */
 function privatePresentationShape(source, factoryName, namespaces) {
   const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' })
@@ -335,6 +375,49 @@ function isBare(id) {
   return !id.startsWith('.') && !isAbsolute(id) && !id.startsWith('\0')
 }
 
+/**
+ * 从源码里读出导出名：shim 只转发这些名字，不复制实现。
+ * 认不出来就报错，宁可构建失败，也不要在运行时少一个导出变成 undefined。
+ */
+export function declaredExports(source, name) {
+  const names = []
+  const collect = pattern => {
+    if (pattern.type === 'Identifier') return names.push(pattern.name)
+    if (pattern.type === 'ObjectPattern') return pattern.properties.forEach(property => collect(property.value || property.argument))
+    if (pattern.type === 'ArrayPattern') return pattern.elements.forEach(element => element && collect(element))
+    if (pattern.type === 'AssignmentPattern') return collect(pattern.left)
+    if (pattern.type === 'RestElement') return collect(pattern.argument)
+    throw new Error(`共享模块 ${name}：无法识别的导出模式 ${pattern.type}`)
+  }
+  for (const node of parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body) {
+    if (node.type === 'ExportAllDeclaration') throw new Error(`共享模块 ${name}：不支持 export *，请改成具名导出`)
+    if (node.type === 'ExportDefaultDeclaration') { names.push('default'); continue }
+    if (node.type !== 'ExportNamedDeclaration') continue
+    if (node.declaration) {
+      const declaration = node.declaration
+      if (declaration.type === 'VariableDeclaration') declaration.declarations.forEach(item => collect(item.id))
+      else names.push(declaration.id.name)
+    } else for (const specifier of node.specifiers) names.push(specifier.exported.name || specifier.exported.value)
+  }
+  return names
+}
+
+/** 生成转发 shim：包内只剩导出名清单，实现体由内核发布的那一份提供。 */
+function sharedHostShim(name) {
+  const names = declaredExports(readFileSync(sharedHostNames.get(name), 'utf8'), name)
+  const lines = [
+    'const __sharedTable = (typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : self).__LARK_DOC_SHARED__',
+    `const __sharedModule = __sharedTable && __sharedTable[${JSON.stringify(name)}]`,
+    `if (!__sharedModule) throw new Error("[lark-doc] 内核与特性包版本不匹配：缺少共享模块 ${name}。请让特性包与 lark-doc-element.runtime.umd.min.js 同版本同目录部署。")`,
+  ]
+  names.forEach((exportName, index) => {
+    if (exportName === 'default') lines.push('export default __sharedModule.default')
+    else if (/^[A-Za-z_$][\w$]*$/.test(exportName)) lines.push(`export const ${exportName} = __sharedModule.${exportName}`)
+    else lines.push(`const __sharedExport${index} = __sharedModule[${JSON.stringify(exportName)}]\nexport { __sharedExport${index} as ${JSON.stringify(exportName)} }`)
+  })
+  return lines.join('\n')
+}
+
 function packageAlias(target = '') {
   const element = target === 'element' || target === 'elementRuntime'
   const deferredUi = element || ['esm', 'cjs', 'lite', 'elementEsm', 'legacy', 'legacyEsm', 'full', 'fullCjs'].includes(target)
@@ -374,6 +457,12 @@ function packageAlias(target = '') {
   return {
     name: 'lark-doc-package-alias',
     resolveId(source, importer) {
+      // 与内核同版本部署的两支 UI 包：重复模块只留转发 shim，实现体读内核那一份。
+      if (SHARED_HOST_TARGETS.has(target) && importer && source.startsWith('.') && !importer.startsWith('\0')) {
+        const file = resolve(dirname(importer), source)
+        const shared = sharedHostPaths.get(file) || sharedHostPaths.get(`${file}.js`)
+        if (shared) return SHARED_HOST_ENTRY + shared
+      }
       if (element && importer === PAGED_VIEW_SOURCE && source.startsWith('.')) {
         const file = resolve(dirname(importer), source)
         if (file === PAGED_VIEW_RUNTIME_SOURCE || `${file}.js` === PAGED_VIEW_RUNTIME_SOURCE) return PAGED_VIEW_ENTRY
@@ -457,6 +546,11 @@ function packageAlias(target = '') {
       return { code: `import {loadFeature as __larkDocLoadDocumentFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};\n${code}`, map: null }
     },
     load(id) {
+      if (id.startsWith(SHARED_HOST_ENTRY)) {
+        const name = id.slice(SHARED_HOST_ENTRY.length)
+        this.addWatchFile?.(sharedHostNames.get(name))
+        return sharedHostShim(name)
+      }
       if (id === PAGED_IMPORT_ENTRY) {
         this.addWatchFile?.(PAGED_IMPORT_RUNTIME_SOURCE)
         return deferredPagedImportRuntime()

@@ -364,16 +364,16 @@
       "scope": "lazy"
     },
     {
-      "name": "Element UI 交互包 (gzip)（选区/悬浮/表格/顶栏，鼠标一动就要用；168 → 50 的理由见 performance.md）",
+      "name": "Element UI 交互包 (gzip)（选区/悬浮/表格/顶栏，鼠标一动就要用；164 → 42 的理由见 performance.md）",
       "path": "dist/lark-doc-element.umd.min.ui.js",
-      "limit": "52 KB",
+      "limit": "43 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
       "name": "Element UI 面板包 (gzip)（侧栏面板/对话框/浮层，点了才用；与交互包共用同一张样式表）",
       "path": "dist/lark-doc-element.umd.min.uiPanels.js",
-      "limit": "126 KB",
+      "limit": "99 KB",
       "gzip": true,
       "scope": "lazy"
     },

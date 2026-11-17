@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cssInjection, FEATURE_TARGETS, getRollupConfig, inlineCssImports, isRuntimeChunk, MERMAID_FILES, panelPresentationShape, versioningPresentationShape, commentInteractionShape, ROLLUP_TARGETS } from '../../rollup.config.mjs'
+import { cssInjection, FEATURE_TARGETS, getRollupConfig, inlineCssImports, isRuntimeChunk, MERMAID_FILES, panelPresentationShape, versioningPresentationShape, commentInteractionShape, ROLLUP_TARGETS, sharedHostModules } from '../../rollup.config.mjs'
 import { assertStableInputs, canReuseBuild, cleanStaleChunks, inputFingerprint, inputSnapshotPlugin, normalizeOutput, realInputFiles, rollupCacheGroup, targetsFor } from '../../scripts/build-rollup.mjs'
 import pkg from '../../package.json'
 import fs from 'node:fs'
@@ -232,6 +232,15 @@ describe('公开产物与轻量包边界', () => {
     const document = { head: { appendChild: node => styles.push(node.textContent) }, createElement: () => ({}) }
     const registry = new Map()
     const context = { document, Map, URL, __LARK_DOC_FEATURES__: registry }
+    // 两支 UI 包的基础模块已换成转发 shim（见 rollup.config.mjs 的 sharedHostModules），
+    // 求值时要能找到内核发布的表。这条用例只关心包有没有写 <style>，一次函数调用都不该发生，
+    // 所以给一个可任意取属性 / 调用 / 迭代的桩 —— 真拿实现还得解决跨 realm 的 document 归属。
+    const sharedStub = new Proxy(function () {}, {
+      get: (_, key) => key === Symbol.iterator ? function* () {} : key === Symbol.toPrimitive ? () => '' : sharedStub,
+      apply: () => sharedStub,
+      construct: () => sharedStub,
+    })
+    context.__LARK_DOC_SHARED__ = new Proxy({}, { get: () => sharedStub })
     const hasVersionLayer = css => { let found = false; requireHere('postcss').parse(css).walkRules(rule => { if (rule.selectors?.some(selector => selector.trim() === '.lark-doc .lark-doc-version-layer')) found = true }); return found }
     for (const target of ['esm', 'elementRuntime']) {
       const config = getRollupConfig(target), input = '\0styles-boundary-fixture'
@@ -309,6 +318,22 @@ describe('公开产物与轻量包边界', () => {
       // 两支都必须是纯 UI 代码：编辑器内核（tiptap / prosemirror）一份都不能混进来。
       for (const built of [coreBuilt, panelsBuilt]) {
         expect(Object.keys(built.output[0].modules).some(id => /node_modules\/(?:@tiptap|prosemirror-)/.test(id))).toBe(false)
+      }
+      // 两支 UI 包的基础模块已换成转发 shim（rollup.config.mjs 的 sharedHostModules），
+      // 求值前必须先有内核发布的共享表。线上这张表由 runtime 发布；这里把同一份源码打进
+      // fixture 并在同一 realm 里执行，而不是把主 realm 的模块对象塞进 vm —— 那些函数闭包里
+      // 的 document 属于另一个 jsdom 实例，真调起来会往错文档里建节点。
+      const sharedInput = '\0shared-host-fixture'
+      const sharedExports = Object.entries(sharedHostModules)
+      const sharedSource = `${sharedExports.map(([file], index) => `import * as shared${index} from ${JSON.stringify(path.join(root, file))};`).join('\n')}
+import { publishSharedModules } from ${JSON.stringify(path.join(root, 'src/core/features/shared-host.js'))};
+publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify(name)}: shared${index}`).join(', ')}});`
+      const sharedBundle = await rollup({ ...config, input: sharedInput, plugins: [{ name: 'shared-host-fixture', resolveId: id => id === sharedInput ? sharedInput : null, load: id => id === sharedInput ? sharedSource : null }, ...config.plugins] })
+      try {
+        const sharedBuilt = await sharedBundle.generate(config.output)
+        runInContext(sharedBuilt.output.find(item => item.type === 'chunk').code, context)
+      } finally {
+        await sharedBundle.close()
       }
       runInContext(main.output[0].code, context)
       const visibility = { open: false, documentInline: true }
