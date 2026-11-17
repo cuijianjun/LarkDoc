@@ -285,7 +285,7 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 >
 > **语义变化（L0 引入）**：`LarkDoc.runtimeReady` 从「模块顶层常量（Promise）」改为「函数」。`await LarkDoc.runtimeReady` 拿到的会是一个函数对象而不是 runtime，正确写法是 `await LarkDoc.runtimeReady()`。
 >
-> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）与 `lark-doc-element.ui.css`（面板样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。
+> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）与 `lark-doc-element.ui.css`（面板样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。每个交付产物旁边还会多出一对 `<file>.br` / `<file>.gz` 预压缩文件，服务器开 `gzip_static` / `brotli_static` 即可直接命中，见下文「传输层」。
 
 ### 拆分边界实测：为什么剩下的部分搬不动
 
@@ -305,19 +305,52 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 
 ### 传输层：brotli 比任何剩余拆分都值钱
 
-预算一律按 gzip 计量（`size-limit` 口径），但实际传输格式由 CDN 决定。同一批产物用 brotli quality 11 实测：
+预算一律按 gzip 计量（`size-limit` 口径），但实际传输格式由静态服务器决定。构建现在直接产出预压缩文件（`scripts/compress-dist.mjs`；brotli 质量 11 + `MODE_TEXT`，gzip level 9 且 `mtime` 归零，保证同一份输入产出同一份字节），与源文件同目录：
 
-| 产物 | raw | gzip | brotli | brotli/gzip |
+```
+dist/lark-doc-element.runtime.umd.min.js
+dist/lark-doc-element.runtime.umd.min.js.br
+dist/lark-doc-element.runtime.umd.min.js.gz
+```
+
+只压浏览器会请求的 **12 个交付产物**（引导器 / 内核 / 补丁包 / 7 个特性包 / 2 份样式）。ESM 分块、manifest、graph 不压——那些是给 bundler 和门禁读的，压了只让发布目录膨胀。
+
+| 产物 | raw | gzip | brotli | br 比 gzip |
 | --- | ---: | ---: | ---: | ---: |
-| 引导器 | 4,171 | 1,577 | 1,367 | 86.7% |
-| 内核 | 1,870,731 | 554,009 | 431,538 | 77.9% |
-| 内核样式 | 264,734 | 40,618 | 32,536 | 80.1% |
-| 补丁包 | 41,005 | 17,192 | 15,517 | 90.3% |
-| 面板包 | 540,218 | 164,348 | 131,611 | 80.1% |
-| 面板样式 | 134,880 | 18,852 | 16,043 | 85.1% |
+| 引导器 | 4,171 | 1,577 | 1,367 | −13.3% |
+| **内核** | 1,870,731 | 554,009 | **431,538** | −22.1% |
+| 内核样式 | 264,734 | 40,618 | 32,536 | −19.9% |
+| 补丁包 | 41,005 | 17,192 | 15,517 | −9.7% |
+| 面板包 | 540,218 | 164,348 | 131,611 | −19.9% |
+| 面板样式 | 134,880 | 18,852 | 16,043 | −14.9% |
+| mermaid | 3,371,763 | 1,004,679 | 762,391 | −24.1% |
+| office | 865,551 | 218,791 | 155,549 | −28.9% |
+| math | 285,388 | 80,625 | 65,991 | −18.2% |
+| highlight | 206,856 | 68,368 | 56,616 | −17.2% |
+| document | 91,980 | 30,750 | 27,267 | −11.3% |
+| markdown | 57,067 | 18,898 | 16,838 | −10.9% |
 
-**首屏 gzip 615,532 → brotli 480,958（−21.9%）**，全部产物 796,596 → 628,612（−21.1%）。这一步不改一行产品代码，也低于原定的 475 KB 单文件目标。
+首屏 **615,532 → 480,958（−21.9%）**；12 份交付产物合计 gzip 2,218,707 → brotli 1,713,264（−22.8%）。按需包省得更多，因为它们的原始体积更大：`mermaid` 少 242 KB、`office` 少 63 KB。
 
-前提是宿主侧对 `.js` / `.css` 开 `br`（nginx `brotli on` / `brotli_static`，或对象存储的 Brotli 压缩开关）。内核 raw 已 1.87 MB，重复出现的内容（prosemirror 与业务里同名的工具函数、类名字符串）压缩率明显低于引导器，所以收益集中在内核这一档，正好是首屏最贵的那一块。
+**宿主一侧不需要任何运行时模块**，只要服务器能直接读预压缩文件：
+
+| 宿主 | 配置 | 说明 |
+| --- | --- | --- |
+| nginx | `gzip_static on;` | 内置模块，各发行版都有 |
+| nginx | `brotli_static on;` | 需编译 libbrotli 或用 nginx-plus |
+| 对象存储 / CDN | 上传整个 `dist/`，开「静态压缩 / 预压缩文件」 | 多数厂商只认同目录 `.br`，不认运行时压缩 |
+
+生效校验（`content-length` 应接近 431,538）：
+
+```bash
+curl -sI -H 'Accept-Encoding: br' \
+  https://host/lark-doc-element.runtime.umd.min.js \
+  | grep -i 'content-encoding\|content-length'
+```
+
+**为什么收益集中在内核**：内核 raw 1.87 MB，里面 prosemirror 与业务存在同名工具函数、重复类名字符串这类跨模块片段。brotli 的滑动窗口默认 4 MB，能一次看到整个文件；gzip 的窗口只有 32 KB，只能压局部。这也解释了为什么 terser 已经跑 3 轮 passes 再压不出东西，而传输层还能再省 22% —— 前者消除的是语法冗余，后者利用的是全文件重复。
+
+门禁：`npm run compress:check` 校验 12 份 `.br` / `.gz` 都在且新于源文件，已挂进 `check:artifacts`。预压缩放在构建流程内部而不是单独的 npm script，因为 `ensure-artifacts` 的产物指纹覆盖整个 `dist/`，拿到构建之外写 `.br` 会让指纹与目录内容永远对不上，每次 `prepack` 都误判成「产物变脏」重跑三分钟。
+
 
 

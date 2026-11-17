@@ -14,7 +14,12 @@ const vendor = path.join(root, 'docs/public/demo/vendor')
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version
 const check = process.argv.includes('--check')
 const quiet = process.argv.includes('--quiet')
-const bundles = ['lark-doc-element.umd.min.js', 'lark-doc.css',
+// 引导器按「自己所在的目录」去找内核、样式与补丁包（见 src/web-component/loader.js），
+// 所以这几个兄弟文件必须和它放在同一层。少任何一个，demo 页上的 <lark-doc>
+// 都只会停在占位高度，看上去像「组件没注册」。
+const bundles = ['lark-doc-element.umd.min.js', 'lark-doc-element.runtime.umd.min.js',
+  'lark-doc-element.polyfills.umd.min.js', 'lark-doc-element.css', 'lark-doc-element.ui.css',
+  'lark-doc.css',
   ...featureNames.map(name => `lark-doc-element.umd.min.${name}.js`)]
 const expected = new Map()
 for (const name of bundles) expected.set(name, path.join(dist, name))

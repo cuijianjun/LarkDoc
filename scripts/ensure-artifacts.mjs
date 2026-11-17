@@ -67,7 +67,7 @@ const ARTIFACTS = [
 ]
 
 /** 整文件参与指纹的构建配置 */
-const CONFIG_FILES = ['rollup.config.mjs', 'package-lock.json', 'style.css', 'scripts/build-rollup.mjs', 'scripts/element-renderer.js', 'scripts/check-rollup-artifacts.mjs', 'scripts/artifact-graph.js']
+const CONFIG_FILES = ['rollup.config.mjs', 'package-lock.json', 'style.css', 'scripts/build-rollup.mjs', 'scripts/compress-dist.mjs', 'scripts/element-renderer.js', 'scripts/check-rollup-artifacts.mjs', 'scripts/artifact-graph.js']
 
 /** package.json 里只取真正影响产物的字段 */
 const PKG_FIELDS = ['version', 'dependencies', 'devDependencies', 'peerDependencies', 'engines', 'browserslist', 'sideEffects', 'exports', 'browser', 'collabDependencies']

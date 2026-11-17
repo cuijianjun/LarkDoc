@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { featureNames, getRollupConfig, isRuntimeChunk, mermaidTarget, MERMAID_FILES, PM_NAMES } from '../rollup.config.mjs'
+import { compressDelivery } from './compress-dist.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DIST = resolve(ROOT, 'dist')
@@ -342,6 +343,10 @@ async function main() {
   copyRuntimeAssets()
   inlinePublishedCssImports()
   writeManifest(names)
+  // 预压缩放在构建里、而不是单独的 npm script：ensure-artifacts 的产物指纹覆盖
+  // 整个 dist 目录，拿到构建之外去写 .br 会让指纹和目录内容永远对不上，
+  // 每次 prepack 都误判成「产物变脏」而重跑三分钟。
+  compressDelivery({ allowMissing: true, prune: target === 'all' })
   const assets = runtimeAssets.flatMap(([source, target]) => filesUnder(ROOT, source).map(file => `${target}${file.slice(source.length)}`))
   for (const [name, entry] of verifiedBuilds) {
     if (JSON.stringify(filesUnder(ROOT, 'src')) !== JSON.stringify(entry.sources) || inputFingerprint(entry.inputs) !== entry.fingerprint) {
