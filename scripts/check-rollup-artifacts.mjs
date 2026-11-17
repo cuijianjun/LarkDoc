@@ -124,21 +124,30 @@ function externalPmFiles(graph) {
 
 if (process.argv.includes('--size')) {
   const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'))
-  const targets = { 'lark-doc.esm.js': 'esm', 'lark-doc.common.js': 'cjs', 'lark-doc-element.umd.min.js': 'element', 'lark-doc-collab.esm.js': 'collab', 'lark-doc-lite.esm.js': 'lite' }
+  const targets = { 'lark-doc.esm.js': 'esm', 'lark-doc.common.js': 'cjs', 'lark-doc-element.umd.min.js': 'element', 'lark-doc-element.runtime.umd.min.js': 'elementRuntime', 'lark-doc-collab.esm.js': 'collab', 'lark-doc-lite.esm.js': 'lite' }
+  // Element 拆两条预算：引导文件走应用加载路径，runtime 惰性拉取。两者分开卡，
+  // 否则把 runtime 移出加载路径的改动会让单文件口径看起来毫无收益。
+  const RUNTIME_FILE = 'lark-doc-element.runtime.umd.min.js'
+  const SCOPE_LABEL = { editor: '编辑器', bootstrap: '引导文件', lazy: '惰性 runtime' }
   const graphs = JSON.parse(readFileSync(resolve(DIST, 'lark-doc-graph.json'), 'utf8'))
   for (const budget of pkg['size-limit']) {
     const file = budget.path.replace(/^dist\//, '')
     const target = targets[file]
+    if (!target) { console.error(`✗ size-limit 条目没有对应的构建图：${budget.path}`); failed = true; continue }
     const initial = artifactFiles(DIST, target, false)
     const all = artifactFiles(DIST, target, true)
     const external = target === 'cjs' ? externalPmFiles(graphs[target]) : []
     const externalBytes = external.reduce((total, file) => total + gzipSync(readFileSync(file)).length, 0)
     const bytes = gzipBytes(DIST, initial) + externalBytes
-    const measured = budget.scope === 'editor' ? initial.filter(file => !(graphs[target][file] || graphs.pm?.[file]).runtime) : initial
+    const measured = budget.scope === 'editor'
+      ? initial.filter(file => !(graphs[target][file] || graphs.pm?.[file]).runtime)
+      : budget.scope === 'bootstrap'
+        ? initial.filter(file => file !== RUNTIME_FILE)
+        : initial
     const budgetBytes = gzipBytes(DIST, measured) + (budget.scope === 'editor' ? 0 : externalBytes)
     const match = budget.limit.match(/^([\d.]+)\s*(KB|MB|B)$/i)
     const limit = Number(match[1]) * ({ B: 1, KB: 1000, MB: 1000000 }[match[2].toUpperCase()])
-    console.log(`${target}: ${budget.scope === 'editor' ? '编辑器' : '初始图'}预算对象 ${budgetBytes} B gzip / ${limit} B；全部初始 ${bytes} B；含动态区块 ${gzipBytes(DIST, all) + externalBytes} B；${initial.length}/${all.length} 文件${external.length ? `，含外部 PM ${external.length} 文件/${externalBytes} B` : ''}`)
+    console.log(`${target}: ${SCOPE_LABEL[budget.scope] || '初始图'}预算对象 ${budgetBytes} B gzip / ${limit} B；全部初始 ${bytes} B；含动态区块 ${gzipBytes(DIST, all) + externalBytes} B；${measured.length}/${all.length} 文件${external.length ? `，含外部 PM ${external.length} 文件/${externalBytes} B` : ''}`)
     if (budgetBytes > limit) { console.error(`✗ ${target} 超过预算`); failed = true }
   }
 }

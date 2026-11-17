@@ -94,7 +94,7 @@ export default defineConfig({
   // 显式设置 srcExclude 会覆盖默认值，因此保留默认的三条。
   srcExclude: [
     'superpowers/**', 'examples/apps/**',
-    'guide/development.md', 'guide/performance.md', 'guide/deployment-docs-site.md',
+    'guide/development.md', 'guide/performance.md', 'guide/performance-split-plan.md', 'guide/deployment-docs-site.md',
     '**/README.md', '**/CHANGELOG.md', '**/CONTRIBUTING.md',
   ],
 

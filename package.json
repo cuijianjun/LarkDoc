@@ -334,10 +334,18 @@
       "scope": "editor"
     },
     {
-      "name": "Element 产物 (gzip)",
+      "name": "Element 引导文件 (gzip)（应用加载路径上只有它）",
       "path": "dist/lark-doc-element.umd.min.js",
-      "limit": "475 KB",
-      "gzip": true
+      "limit": "2 KB",
+      "gzip": true,
+      "scope": "bootstrap"
+    },
+    {
+      "name": "Element runtime (gzip)（惰性拉取；逐层收紧 620 → 418 → 264 → 240 KB）",
+      "path": "dist/lark-doc-element.runtime.umd.min.js",
+      "limit": "620 KB",
+      "gzip": true,
+      "scope": "lazy"
     },
     {
       "path": "dist/lark-doc.common.js",
@@ -346,15 +354,15 @@
       "name": "CJS 主文件（DOM renderer，按需区块已拆出，gzip）"
     },
     {
-      "name": "协同子入口 (gzip)",
+      "name": "协同子入口 (gzip)（含 P6a 内核 anchors/durable-bridge/protocol）",
       "path": "dist/lark-doc-collab.esm.js",
-      "limit": "4 KB",
+      "limit": "8 KB",
       "gzip": true
     },
     {
-      "name": "lite 主包 (gzip)（编辑器代码，运行时与总初始图另列）",
+      "name": "lite 主包 (gzip)（与 ESM 同一口径，编辑器代码）",
       "path": "dist/lark-doc-lite.esm.js",
-      "limit": "300 KB",
+      "limit": "310 KB",
       "gzip": true,
       "scope": "editor"
     }

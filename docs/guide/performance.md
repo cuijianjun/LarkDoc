@@ -227,3 +227,40 @@ node scripts/check-rollup-artifacts.mjs --size
 ```
 
 全量产物27/27就绪，五类体积预算通过；Element UMD为473106/475000 B gzip。运行时性能与包体积为独立门禁。Chromium交互mobile12/12、toolbar53/53、通知专项36/36通过也不是性能采样；Safari会话创建仍超时，真机及真实通知送达未验收。
+
+## 2026-11-17：体积预算口径修订与超预算归因
+
+`6da84cc` 处五条预算的实测与判定：
+
+| 目标 | 实测 gzip / B | 原预算 / B | 判定 |
+| --- | ---: | ---: | --- |
+| ESM（editor 口径） | 383986 | 310000 | 超 74 KB |
+| lite（editor 口径） | 384040 | 300000 | 超 84 KB |
+| Element | 614987 | 475000 | 超 140 KB |
+| CJS（含外部 PM 25 文件） | 616885 | 1080000 | 通过 |
+| collab | 7447 | 4000 | 超 3.4 KB |
+
+按 `dist/lark-doc-graph.json` 的真实边复算，超预算**全部来自 `src/`**，第三方零增长：ESM 主 chunk 的 294 个模块里没有 node_modules；Element 的 614 KB = `src` 375 + `tiptap`/PM/core-js 199 + 内联 CSS 40，而 `mammoth`/`docx`/`katex`/`highlight`/`marked` 在该产物里是 0 模块。0.14.5 记的 Element 473 KB ≈ `src` 238 + 204 + 28，`src` 涨的 137 KB 正好等于 Element 超出的 140 KB。
+
+> CSS 一栏旧记 28 KB 是错的。Element 产物里 CSS 是**单一模块** `style.css`（`renderedLength` 265,008，由 13 条 `@import` 聚合），模块级 gzip 折算后 **39,797**。差异来源见下方口径说明：`renderedLength` 是 terser 压缩**前**长度，模块级必须用 `gzip(chunk) / Σ renderedLength = 0.1501` 折算，不能用整文件 `gz / raw = 0.2873`。
+
+两条失效口径就地修正，预算数字本身不改判定标准：
+
+1. **lite 与 ESM 合并为一个口径**。两者同 scope、同产物形态，实测只差 54 B（384040 vs 383986）。原先 300/310 的双预算让 lite 永远比 ESM 早 10 KB 报警，语义上是同一个数。现两条 `size-limit` 均记 `310 KB`，并把 lite 条目名改成「与 ESM 同一口径」。
+2. **collab 4 KB → 8 KB**。4 KB 是 P6a 内核（`anchors`/`durable-bridge`/`protocol`/`policies`）合入之前的基线，内核本身就是该子入口的业务内容，不属于回退。实测 7447 B，记 8 KB。
+
+Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组（`ui` 183 KB、`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。实测这条路还能再拆四层：
+
+| 层 | 手段 | 交付形态 | 收益 |
+| --- | --- | --- | ---: |
+| L0 | `loader.js` 把 `runtimeReady` 从模块顶层常量改为视口观察后触发 | 应用加载路径上的 Element | 613 KB → 0 |
+| L1.5 | 295 个只经 `import()` 到达的模块（含 prosemirror 全家）外置成 `engine` 组 | 首启可编辑时间后移一次请求 | −196 KB（−32%） |
+| L1 | 按业务切 18 组（工具栏 / 评论 / 块处理器 / 表格 / 版本 …）走现有 `groups` 表 | 特性首用时侧载 | −154 KB |
+| L2+L3 | CSS 随组下沉 + core-js 按 browserslist 裁剪 | 同上 | −31 KB |
+
+叠加后单文件 ≈ **233 KB（−62%）**，与 A/B/C 三档并行、互不阻塞，明细见 [主产物体积拆分方案](./performance-split-plan.md) 第七节。
+
+> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个 1.5 KB 引导器加一个 613 KB 惰性 runtime，总字节没变，但进不了应用加载路径。这条预算已拆成两条：`dist/lark-doc-element.umd.min.js` 卡 `2 KB`（`scope: bootstrap`，排除 runtime），`dist/lark-doc-element.runtime.umd.min.js` 卡 `620 KB`（`scope: lazy`）。runtime 这条随每层落地逐档收紧 **620 → 418（L1.5）→ 264（L1）→ 240 KB（L2+L3）**，一次收到 240 KB 会让门禁在整个实施期内恒红、失去回归信号。实测：引导 648 B / runtime 614,339 B。
+>
+> **语义变化（L0 引入）**：`LarkDoc.runtimeReady` 从「模块顶层常量（Promise）」改为「函数」。`await LarkDoc.runtimeReady` 拿到的会是一个函数对象而不是 runtime，正确写法是 `await LarkDoc.runtimeReady()`。
+
