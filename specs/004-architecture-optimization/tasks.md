@@ -56,6 +56,16 @@
       接线层能整体搬走的前提是**这一段里没有任何裸 `this`**（全部是 `this.x`），所以 `this.` → `vm.` 的机械替换是安全的；`CONST` 侧 `MIN_THUMB` 随几何域、`TOUCH_RESIZE_TOLERANCE` 随接线层，两者各自只有单一使用者，不额外开共享文件。
       **体积**：内核 gzip 542,650 → **542,669**（+19 B）；esm / lite / `uiPanels` / `ui` 未动。
       验证：表格四支（`link-cell-interaction` / `mobile-table-gesture` / `table-clip` / `bitable`）248 用例、`element-ui` 18 用例、`lint` / `check:architecture`（R1 471 文件）/ `contract:check` 全绿。
+- [x] **C13 把纯素材与纯工具从两个大闭包里摘出来**：`ui/commandMenu.js` 808 → **784**（+ `commandMenuAssets.js` 33：`PLUS_CATEGORIES`、12 条 `MENU_ICON_MARKUP`、三张图标名映射、两张移动端名单）；`core/nodeviews/code-block.js` 873 → **774**（+ `codeHighlight.js` 78：`loadHighlighter` / `ensureLanguage` / `escapeHTML` / `renderHighlighted` 与三份懒加载状态；+ `codeBlockDom.js` 44：`UI_ATTR` / `el` / `markUi` / `CODE_ICONS` / `codeIcon`）。
+      两处都只搬「没有闭包依赖」的东西，工厂函数签名与对外导出一字未改。唯一需要改的调用点是 `refreshHighlighted` 里原本直接读模块级 `hljs` 的判定（`if (language !== 'plaintext' && !(hljs && hljs.getLanguage(language)))`），改成 `hasLanguage(language)` —— 否则高亮状态得跟着闭包一起留在主文件，等于白搬。
+      **行数只减 123 行，但摘下的是最挡阅读的两块**：`MENU_ICON_MARKUP` 是 8.6 KB 的单行 SVG（每屏两三行代码、其余全是 path 数据），高亮器那 60 行则被注释与三重兜底占满。
+      **体积**：内核 gzip 542,669 → **542,701**（+32 B）；`feature:ui:umd` 41,960 未变（纯数据移动，rollup 只是多了模块边界）。
+      验证：`code-block-nodeview` / `code-block-diagram-scheduling` / `command-menu-retire` / `command-menu-lazy` / `mobile-authoring` 170 用例 + `build` 项目 133 全绿；`lint` / `check:architecture`（R1 474 文件）/ `contract:check` 全绿。
+- [~] **C14 剩余大文件的闭包拆分**：**本轮否决**，四个文件各有硬理由。
+      ① `core/nodeviews/code-block.js`（774，C13 已摘走纯素材）与 `ui/commandMenu.js`（784）：两者主体都是**单个闭包**，内部共享 40+ 个 DOM 节点引用与十来份可变状态（`currentNode` / `previewShown` / `folded` / `submenuEl` / `sectionSignature` / `composing` …）。要拆只能把整份闭包状态装进一个 `ctx` 对象逐个转手，与 C07 那次「78 个节点回参 + 63 个节点出参」是同一笔账 —— 而那一次实测是 **+1.34% 包体**换可读性，这两个文件比评论面板更依赖共享状态，代价只会更大。它们的收益边界已经在 C13 拿到：没有闭包依赖的那部分（懒加载、图标、素材）已经搬走了。
+      ② `editor/segmentedDocumentModel.js`（1,114）：它的导出面就是 `document.segmented` 的 API，内部件（`descriptorIterator` / `metadataIterator`）必须提为导出才能拆，且 `build-contract` 按正则读该文件推导期望导出列表 —— 为拆文件而扩大导出面并改断言不划算。
+      ③ `editor/panelPresentation.js`（912）：构建侧 `PANEL_PRESENTATION_SOURCE` 按它推 presentation 形状，源码即契约。
+      ④ `mount/domRenderer.js`（748）：shared-host 引导路径，改动风险与收益不匹配。
 
 ## Phase D — 首屏（P2）
 
@@ -77,11 +87,11 @@
 | `lint` | 每次全量重扫 | 命中 eslint 磁盘缓存；且 HEAD 起就红的问题已修 |
 | 单测并发 | 固定 2 | 默认 2，可用 `VITEST_MAX_WORKERS` 覆盖 |
 | 单测编排 | 单趟全量，构建用例与普通用例同池（改上游枢纽时白付 118s，且 4 条假超时） | `unit` 162 支 / `build` 3 支，两趟串行；`test:affected` 只走 `unit` |
-| 最大单文件（手写代码） | `ui/panels.js` 2,244 行 | 拆成 4 个（最大 1,506）→ 再拆 4 个（最大 713）→ `editor/commentsMixin` 1,469 → 208 → `editor/shareMixin` 1,117 → 262 → `workspace/WorkspaceController` 1,173 → **305** → `session/DocumentSession` 940 → **302** → `editor/tableInteractionMixin` 870 → **50**（最大单文件现为 `editor/segmentedDocumentModel.js` 1,114，已按数据否决拆分理由） |
+| 最大单文件（手写代码） | `ui/panels.js` 2,244 行 | 拆成 4 个（最大 1,506）→ 再拆 4 个（最大 713）→ `editor/commentsMixin` 1,469 → 208 → `editor/shareMixin` 1,117 → 262 → `workspace/WorkspaceController` 1,173 → **305** → `session/DocumentSession` 940 → **302** → `editor/tableInteractionMixin` 870 → **50** → `editor/code-block` 873 → **774** / `ui/commandMenu` 808 → **784**（两者余下部分是单个闭包，见 C14 的否决理由） |
 | 第二大杂物抽屉 | `core/documentOperations.js` 1,374 行 / 61 导出 / 19 目标 | 6 个域文件 + 25 行出口，导出 61 → 63 |
 | 死代码 | — | 删 `ui/overlayViews.js` 748 行（整份副本）+ `editor/uploadMixin.js` 145 行 |
 | 懒加载面板包 | `uiPanels` raw 324,465 / gzip 96,113 | C07 拆出三份实现后 raw 328,172 / gzip 97,449（+1.34%，全是节点名单的出/回参） |
-| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B）→ C12 拆 `tableInteractionMixin` **542,669**（+19 B） |
+| 内核（首屏） | gzip 542,353 | C07 未动 → C08 **542,320**（−33 B）→ C09 **542,482**（+162 B）→ C10 拆 `WorkspaceController` **542,599**（+117 B）→ C11 拆 `DocumentSession` **542,650**（+51 B）→ C12 拆 `tableInteractionMixin` **542,669**（+19 B）→ C13 摘纯素材 **542,701**（+32 B） |
 | esm / lite | 384,221 / 384,259 | 384,615 / 384,656（+394 / +397，预算 395,000 仍有余量） |
 | 体积预算 | — | 10 条全过；`elementRuntime` 542,650 / 550,000，`esm` 384,615 / 395,000，`uiPanels` 98,048 / 99,000 |
 | 全量单测 | 162 文件 / 4,950 用例 | 162 文件 / 4,950 用例全绿（294s）；`build` 项目 133 用例（50s） |

@@ -516,6 +516,27 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 逐项未变；`uiPanels` 预算余量从 ~2.9 KB 降到 952 B（98,048 / 99,000）。要收回这 1.3 KB，把
 `commentPanelChrome.js` 合回主文件即可，主文件回到约 1,040 行。
 
+### 把纯素材与纯工具从两个大闭包里摘出来（commandMenu 808 → 784+33，code-block 873 → 774+78+44）
+
+到这一轮，剩下的大文件基本都是**单个闭包**：`code-block.js` 与 `commandMenu.js` 的主体各自
+共享几十个 DOM 节点与十来份可变状态，整体拆要通过一个 `ctx` 对象转手四十多次（C07 那次实测
+是 +1.34% 包体换可读性）。所以只摘「本来就没有闭包依赖」的那部分：
+
+| 新文件 | 行数 | 装什么 |
+| --- | --- | --- |
+| `ui/commandMenuAssets.js` | 33 | `PLUS_CATEGORIES`、12 条 `MENU_ICON_MARKUP`（8.6 KB 单行 SVG）、三张图标名映射、两张移动端名单 |
+| `core/nodeviews/codeHighlight.js` | 78 | `loadHighlighter` / `ensureLanguage` / `escapeHTML` / `renderHighlighted` 与三份懒加载状态 |
+| `core/nodeviews/codeBlockDom.js` | 44 | `UI_ATTR` / `el` / `markUi` / `CODE_ICONS` / `codeIcon` |
+
+行数只减 123 行，摘掉的却是最挡阅读的两块：`MENU_ICON_MARKUP` 每屏只有两三行代码、其余全是
+path 数据；高亮器那 60 行被注释与三重兜底占满。
+
+唯一必须改的调用点：`refreshHighlighted` 里原本直接读模块级 `hljs`（
+`!(hljs && hljs.getLanguage(language))`），改成 `hasLanguage(language)` —— 不这么改，
+懒加载状态就得跟闭包一起留在主文件，等于白搬。
+
+体积 +32 B gzip（内核 542,701），`feature:ui:umd` 41,960 一动没动。
+
 ### `editor/tableInteractionMixin.js` 拆成接线层 + 三域（870 → 50 / 293 / 298 / 139 / 102）
 
 这个 mixin 的 870 行里有 238 行是 `mounted` 里的一整段监听接线（window capture 上的
