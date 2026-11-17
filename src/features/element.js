@@ -55,6 +55,15 @@ const groups = {
   // 与对话框。加载槽位与包名一一对应，createDeferredUi 只拉自己那一个。
   ui: ['ui'], uiPanels: ['ui.panels'],
   document: ['document.segmented', 'document.pagedView', 'document.pagedImport', 'document.shareLinks', 'document.shareLinkAccess'],
+  // 导出/导入编排与远程转换：源码里就是点「导出」「导入」才 import()，单文件 UMD
+  // 会把它压回首屏，所以单独出包，等真正点下去再拉。
+  export: ['export.api', 'export.remoteConversion'],
+  // 点了才出现的顶栏「文档信息」与标题编号菜单。幻灯片、模板保存对话框留在内核：
+  // 它们经 documentOperations 静态拉住 @tiptap/pm/model，搬进包就得多下一份 PM。
+  uiExtra: ['ui.documentInformation', 'ui.headingNumberMenu'],
+  // 字节上传通道与转换/版本回执。后台统计（editor.documentSnapshot）留在内核，
+  // 理由同上：documentSnapshot → documentStats → documentOperations 会带进 PM 全家。
+  background: ['media.httpUpload', 'media.fileUploadTasks', 'session.resourceOutcome', 'versioning.snapshot'],
 }
 for (const group of Object.keys(groups)) {
   for (const name of groups[group]) {

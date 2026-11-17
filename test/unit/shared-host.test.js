@@ -30,9 +30,9 @@ describe('跨产物共享模块', () => {
     }
   })
 
-  it('两支 UI 包内不再含登记模块的实现体', async () => {
+  it('三支 UI 包内不再含登记模块的实现体', async () => {
     const replaced = new Set()
-    for (const target of ['feature:ui:umd', 'feature:uiPanels:umd']) {
+    for (const target of ['feature:ui:umd', 'feature:uiPanels:umd', 'feature:uiExtra:umd']) {
       const config = getRollupConfig(target)
       const bundle = await rollup(config)
       const { output } = await bundle.generate(config.output)

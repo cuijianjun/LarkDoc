@@ -26,7 +26,10 @@ const collabPeers = new Set([
 export const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document']
 // Element 侧的面板包：`ui` 守选区/悬浮/表格/顶栏，`uiPanels` 守侧栏面板与对话框。
 // uiPanels 只有 UMD 形态——非 Element 宿主统一走 features/ui.js 全量出口。
-export const elementPackNames = [...featureNames, 'uiPanels']
+// export / uiExtra / background 同样只有 UMD 形态：它们装的是源码里本就写成
+// `await import()` 的懒边界（点导出、开浮层、发起上传与转换），非 Element 宿主的
+// es/cjs 产物本来就是多 chunk，那条边界天生成立，不需要包。
+export const elementPackNames = [...featureNames, 'uiPanels', 'export', 'uiExtra', 'background']
 // UMD 入口未必与特性同名：ui 的两半各有一个入口，es 形态仍用 ui.js 全集。
 const FEATURE_UMD_ENTRY = { ui: 'ui-core', uiPanels: 'ui-panels' }
 const ELEMENT_UI_ENTRY = '\0lark-doc-element-ui:'
@@ -111,7 +114,7 @@ export const sharedHostModules = {
 const SHARED_HOST_ENTRY = '\0lark-doc-shared-host:'
 // 只有这两支包与内核同版本同目录部署，其余构建（es 特性包、element 单文件）
 // 必须自带实现，否则打包器宿主拿不到内核。
-const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd'])
+const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd', 'feature:uiExtra:umd'])
 const sharedHostPaths = new Map(Object.entries(sharedHostModules).map(([file, name]) => [resolve(ROOT, file), name]))
 const sharedHostNames = new Map(Object.entries(sharedHostModules).map(([file, name]) => [name, resolve(ROOT, file)]))
 
@@ -418,8 +421,51 @@ function sharedHostShim(name) {
   return lines.join('\n')
 }
 
+/**
+ * 「点下去才走」的懒边界 → 同名特性脚本。
+ *
+ * 这些 `import()` 在源码里本来就是按需的：点导出、开幻灯片、粘贴图片、发起转换、
+ * 后台算统计才走。内核实为单文件 UMD，`inlineDynamicImports` 会把被 import 的实现
+ * 压回首屏；换成正表里的加载器后，实现搬进同目录特性包（export / uiExtra /
+ * background），首屏不再背它们。
+ *
+ * 换的只是**调用点本来就在 await 的那句 import()**，返回值仍是模块命名空间，
+ * 调用方（命名空间解构、.then(module => ...)、createLazyView 的工厂入参）一行都不用改，
+ * 因此不产生任何「UI 未到时显示什么」的新语义。
+ */
+export const LAZY_PACKAGE_CALLERS = new Map([
+  [resolve(ROOT, 'src/components/lark-doc/editor/exportMixin.js'), [
+    ['src/utils/export/index.js', 'export.api'],
+    ['src/utils/remoteConversion.js', 'export.remoteConversion'],
+  ]],
+  [resolve(ROOT, 'src/workspace/WorkspaceController.js'), [
+    ['src/utils/export/index.js', 'export.api'],
+  ]],
+  [resolve(ROOT, 'src/session/DocumentSession.js'), [
+    ['src/utils/remoteConversion.js', 'export.remoteConversion'],
+    ['src/core/versioning/snapshot.js', 'versioning.snapshot'],
+    ['src/session/resourceOutcome.js', 'session.resourceOutcome'],
+  ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/headingNumberMenuUiMixin.js'), [
+    ['src/ui/headingNumberMenu.js', 'ui.headingNumberMenu'],
+  ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/topbarMoreMixin.js'), [
+    ['src/ui/documentInformation.js', 'ui.documentInformation'],
+  ]],
+  [resolve(ROOT, 'src/core/media/upload.js'), [
+    ['src/core/media/http-upload.js', 'media.httpUpload'],
+  ]],
+  [resolve(ROOT, 'src/editor/nativeEditorHost.js'), [
+    ['src/core/media/file-upload-tasks.js', 'media.fileUploadTasks'],
+  ]],
+])
+
 function packageAlias(target = '') {
   const element = target === 'element' || target === 'elementRuntime'
+  // export 特性包只服务 Element：它装的是内核首屏那两块懒代码。包内不再打包 markdown
+  // 序列化与 docx —— Element 里这两条边本来就走 markdown / office 特性包，内核留的那份
+  // import 只是给非 Element 宿主的兜底；照抄进包会白白多下一次 docx（gzip ~90 KiB）。
+  const exportFeature = target === 'feature:export' || target === 'feature:export:umd'
   const deferredUi = element || ['esm', 'cjs', 'lite', 'elementEsm', 'legacy', 'legacyEsm', 'full', 'fullCjs'].includes(target)
   const aliases = new Map([
     ['lark-doc/katex.css', resolve(ROOT, 'src/styles/vendor/katex.css')],
@@ -494,7 +540,7 @@ function packageAlias(target = '') {
         if (elementUiModules[name]) return ELEMENT_UI_ENTRY + name
       }
       // 独立 Element 已注册同目录特性脚本；只替换出口层的重复实现，不影响特性包自身。
-      if (element && importer === resolve(ROOT, 'src/utils/export/index.js') &&
+      if ((element || exportFeature) && importer === resolve(ROOT, 'src/utils/export/index.js') &&
         (source === './markdown.js' || source === './docx.js')) return resolve(ROOT, 'src/core/features/stub.js')
       if (aliases.has(source)) return aliases.get(source)
       if (source.startsWith('lark-doc/')) {
@@ -513,7 +559,9 @@ function packageAlias(target = '') {
       const pagedCaller = [resolve(ROOT, 'src/editor/pagedDocumentSource.js'), resolve(ROOT, 'src/components/lark-doc/editor/viewModesMixin.js')].includes(id)
       const importCaller = [resolve(ROOT, 'src/editor/EditorController.js'), resolve(ROOT, 'src/workspace/WorkspaceController.js')].includes(id)
       const shareCaller = [resolve(ROOT, 'src/providers/authorization.js'), resolve(ROOT, 'src/components/lark-doc/editor/shareMixin.js'), resolve(ROOT, 'src/providers/document-business.js')].includes(id)
-      if (!modelCaller && !pagedCaller && !importCaller && !shareCaller) return null
+      // 导出、浮层、上传、转换与后台统计：见 LAZY_PACKAGE_CALLERS 的注释。
+      const lazyPackages = LAZY_PACKAGE_CALLERS.get(id)
+      if (!modelCaller && !pagedCaller && !importCaller && !shareCaller && !lazyPackages) return null
       const requests = []
       const visit = node => {
         if (!node || typeof node !== 'object') return
@@ -527,6 +575,12 @@ function packageAlias(target = '') {
           if (shareCaller && typeof node.source.value === 'string') {
             const file = resolve(dirname(id), node.source.value)
             for (const [source, feature] of [['src/providers/share-links.js', 'document.shareLinks'], ['src/providers/share-link-access.js', 'document.shareLinkAccess']]) {
+              if (file === resolve(ROOT, source) || `${file}.js` === resolve(ROOT, source)) requests.push({ node, feature, namespace: false })
+            }
+          }
+          if (lazyPackages && typeof node.source.value === 'string') {
+            const file = resolve(dirname(id), node.source.value)
+            for (const [source, feature] of lazyPackages) {
               if (file === resolve(ROOT, source) || `${file}.js` === resolve(ROOT, source)) requests.push({ node, feature, namespace: false })
             }
           }
@@ -997,6 +1051,6 @@ export function getRollupConfig(target = process.env.ROLLUP_TARGET || 'esm') {
 export const ROLLUP_TARGETS = Object.keys(targets)
 // uiPanels 只有 UMD 形态（非 Element 宿主从 features/ui.js 取全集），所以它不进
 // featureNames 的 es/umd 成对展开，单独挂在最后。
-export const FEATURE_TARGETS = [...featureNames.flatMap((name) => [`feature:${name}`, `feature:${name}:umd`]), 'feature:uiPanels:umd']
+export const FEATURE_TARGETS = [...featureNames.flatMap((name) => [`feature:${name}`, `feature:${name}:umd`]), 'feature:uiPanels:umd', 'feature:export:umd', 'feature:uiExtra:umd', 'feature:background:umd']
 const defaultTarget = process.env.ROLLUP_TARGET?.split(',')[0].trim() || undefined
 export default getRollupConfig(['features', 'all', 'core'].includes(defaultTarget) ? 'esm' : defaultTarget)

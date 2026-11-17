@@ -250,7 +250,7 @@ node scripts/check-rollup-artifacts.mjs --size
 2. **collab 4 KB → 8 KB**。4 KB 是 P6a 内核（`anchors`/`durable-bridge`/`protocol`/`policies`）合入之前的基线，内核本身就是该子入口的业务内容，不属于回退。实测 7447 B，记 8 KB。
 3. **ESM / lite 310 KB → 395 KB**。310 KB 是 L1.5「把 prosemirror 全家外置成 `engine` 组」成立时的目标值，而 L1.5 已经废弃（见下节末条）：关掉 `inlineDynamicImports` 复算后单静态 chunk 就有 3,963,848 B / 523 模块，第三方一行也搬不走，这个目标值的前提不复存在。实测 383,983 / 384,040，抬到 395 KB 留 11 KB（2.9%）回归余量。**这不等于放过回退**——门禁量的是「相对上一次是否变差」，不是「离一个已作废的目标还有多远」；长期恒红的条目等于没有信号，比不设这条预算更糟。真要回到 310 KB 只能走「逐域语义降级」（见「拆分边界实测」第 2、3 条），那是逐域推进的产品行为设计，不是构建配置能给出来的。
 
-Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 7 个组、8 个特性包（`ui` 已拆成 42 KB + 96 KB 两半，`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB）已经这么搬走了 1.5 MB。
+Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：**`import()` 走不通，不等于无法拆分**。`src/features/element.js` 用的是运行时 `<script>` 侧载，这条路不经过 Rollup，能把任意业务块搬出单文件——现有 11 个组、11 个特性包（`ui` 已拆成 42 KB + 96 KB 两半，`math` 81 KB、`highlight` 68 KB、`mermaid` 1 MB、`office` 220 KB、`document` 31 KB、`markdown` 19 KB，L2f 的 `export` / `uiExtra` / `background` 合计 34 KB）已经这么搬走了约 1.6 MB。
 
 ### 已落地
 
@@ -262,8 +262,9 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 | L2c | `ui` 组的样式同样拆成 `lark-doc-element.ui.css`，由内核在拉面板脚本时同目录注入 `<link>`，与脚本并行下载；样式缺失不 reject | 面板包 JS −19,380；样式可独立缓存，不阻塞脚本求值 | `ui` 183,728 → 164,348；`ui.css` 18,852 新增 |
 | L2d | `ui` 再按**触发时机**拆成两包：`ui`（选区 / 悬浮块 / 表格 / 顶栏，鼠标一动就要用）与 `uiPanels`（侧栏面板 / 对话框 / 浮层，点了才用）。两个独立 UMD 各带一份 registry 副本，靠 `globalThis` 上的 `__LARK_DOC_UI_API__`（可增长的表）与只注册一次的 `ui.ready` 合成同一张工厂表；样式仍共用 `lark-doc-element.ui.css`，`data-lark-doc-feature` 去重只下一次 | 高频交互不再为 40 多个面板付钱 | `ui` 164,348 → **49,678**（−69.8%）；新增 `uiPanels` 122,159；两条路径合计 171,837（+4.5%） |
 | L2e | 跨包共享模块桥：内核在 `globalThis.__LARK_DOC_SHARED__` 上发布已完整持有的模块，两支 UI 包在构建期把登记过的源文件换成转发 shim，实现体只有内核一份（登记条件与验证方式见下文第 5 条） | 拆包付出的重复字节原路退回；`icons`/`select`/`emoji` 身份表不再各持一份状态 | `ui` 49,678 → **41,754**（−16.0%）；`uiPanels` 122,159 → **96,115**（−21.3%）；内核 +785（发布表）；两包合计 137,869，比拆前单文件 164,348 **少 16.1%** |
+| L2f | 三支「点下去才走」的特性包：`export`（导出 / 导入编排 + 远程转换）、`uiExtra`（顶栏「文档信息」+ 标题编号菜单）、`background`（字节上传通道 + 转换 / 版本回执）。内核里对应的 `await import()` 在 `rollup.config.mjs` 的 `LAZY_PACKAGE_CALLERS` 里按「调用方文件 + 目标文件 → 特性名」改写成 `loadFeature(...)`；返回值仍是模块命名空间，调用点（`await` 解构、`.then(module => …)`、`createLazyView` 的工厂入参）一行不改 | 首屏不再背这些实现，真正点导出 / 上传 / 看文档信息时才按需拉；不新增任何「UI 未到时显示什么」的产品决策 | 内核 554,989 → **542,353**（−12,636，−2.3%）；新增 `export` 9,625、`uiExtra` 4,930、`background` 19,249（合计 33,804，只在对应动作发生时才下） |
 
-现代浏览器实际支付：**引导器 1,577 B + 内核 554,989 B + 内核样式 40,618 B + 补丁 17,192 B = 614,376 B**；旧浏览器补丁包按特性检测决定拉不拉，现代浏览器零请求。此后分两档：选中文字 / 悬浮块 / 顶栏菜单一动就拉 `ui` **41,754 B**（+ 与它同目录的 `ui.css` 18,852 B，共用一张样式表）；真正点开侧栏面板或对话框再补 `uiPanels` 96,115 B。两包都到齐合计 137,869 B，比拆前单文件 164,348 B 还少 16.1% —— 拆的是「什么时候付」，顺手把重复也退了。
+现代浏览器实际支付：**引导器 1,577 B + 内核 542,353 B + 内核样式 40,618 B + 补丁 17,192 B = 601,740 B**；旧浏览器补丁包按特性检测决定拉不拉，现代浏览器零请求。此后分两档：选中文字 / 悬浮块 / 顶栏菜单一动就拉 `ui` **41,754 B**（+ 与它同目录的 `ui.css` 18,852 B，共用一张样式表）；真正点开侧栏面板或对话框再补 `uiPanels` 96,115 B。两包都到齐合计 137,869 B，比拆前单文件 164,348 B 还少 16.1% —— 拆的是「什么时候付」，顺手把重复也退了。再往后是 L2f 的三支：点「导出 / 导入」拉 `export` 9,625 B、粘贴图片或拖文件拉 `background` 19,249 B、开顶栏「文档信息」拉 `uiExtra` 4,930 B，互不牵连。
 
 ### 下一步（按本会话实测重排）
 
@@ -278,17 +279,17 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 | `documentOperations` / `WorkspaceController` / `DocumentSession` | 196,989 | 4.3% | ~24 KB | 核心状态机，首帧必需 |
 | `linkifyjs`（仅 `@tiptap/extension-link` 使用，src 内零引用） | 63,515 | 1.4% | ~7.7 KB | 关掉 autolink 才能删 |
 
-> 现存的唯一低风险小口子是 `ui/dialogs`（30,073）及其独占依赖 `select`/`tooltip`/`headingMenu`/`diagramMenu`（合计约 59 KB ≈ 7 KB gzip）：它只被「保存为模板」「导入确认」触发，但两个调用点都是同步取工厂，改成按需必须把 `openTemplateSave` 与 `confirmImport` 改成 await，属行为改动，收益 1.3%，暂不做。
+> 唯一还有 `await import()` 的大块是 `ui/dialogs`（30,073）及其独占依赖 `select`/`tooltip`/`headingMenu`/`diagramMenu`（合计约 59 KB ≈ 7 KB gzip），但实测有两条硬堵点：`editor/templateSave.js` **静态** `import { createTemplateSaveDialog } from '../ui/dialogs'`，而 templateSave 自己又是 `blockMenuMixin` 动态导入的 —— 搬出去就是跨包反向依赖；且 dialogs 经 `documentOperations` 拉住 `@tiptap/pm/model`，包内会再打一份 PM（见「拆分边界实测」第 6 条）。
 
 > **L1.5 已废弃**：原方案称「295 个模块（含 prosemirror 全家）只经 `import()` 到达，外置成 `engine` 组可省 196,457 B / 32%」。关掉 `inlineDynamicImports` 重新生成 chunk 图后，这条前提不成立——单静态 chunk 就有 `3,963,848 B / 523 模块`，`prosemirror-*` 与 `@tiptap/*` 全部在里面；42 条动态边只指向 `remoteConversion`、`stage`、`dialogs`、`tooltip` 这类小功能，合计约 120 KB。当初「仅动态可达」的结论是拿 `bundle.cache.modules[].dependencies` 做 BFS 得出的，而折叠模式下 cache 不含动态边，会把动态入口整棵子树误判成静态不可达。
 
-> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成**七条**，各自量一个交付单元：引导文件 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核 `560 KB`（`scope: lazy`）、补丁包 `18 KB`、内核样式 `45 KB`、交互包 `43 KB`、面板包 `99 KB`、UI 样式 `20 KB`（两包共用）。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）**。
+> **475 KB 这条预算衡量不到 L0 的收益**——L0 之后 Element 是一个引导器加一个惰性内核，总字节没变，但进不了应用加载路径。这条预算已拆成**十条**，各自量一个交付单元：引导文件 `1.7 KB`（`scope: bootstrap`，排除 runtime）、内核 `550 KB`（`scope: lazy`）、补丁包 `18 KB`、内核样式 `45 KB`、交互包 `43 KB`、面板包 `99 KB`、UI 样式 `20 KB`（两包共用）、导出包 `10 KB`、浮层包 `5 KB`、后台上传包 `20 KB`。内核这条随每层落地逐档收紧 **620 → 600（core-js）→ 560（CSS）→ 550（L2f）**。
 >
-> 七条里只有前两条走「入口图」计量，后五条（补丁包、内核样式、交互包、面板包、UI 样式）是**单文件计量**：样式表在构建图里记 `asset: true / entry: false`，不挂入口链，否则并行的样式会被内核预算一起吞掉，看起来像回退。
+> 十条里只有前两条走「入口图」计量，后八条（补丁包、内核样式、交互包、面板包、UI 样式、三个 L2f 包）是**单文件计量**：样式表在构建图里记 `asset: true / entry: false`，不挂入口链，否则并行的样式会被内核预算一起吞掉，看起来像回退。
 >
 > **语义变化（L0 引入）**：`LarkDoc.runtimeReady` 从「模块顶层常量（Promise）」改为「函数」。`await LarkDoc.runtimeReady` 拿到的会是一个函数对象而不是 runtime，正确写法是 `await LarkDoc.runtimeReady()`。
 >
-> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）、`lark-doc-element.umd.min.ui.js`（交互包）、`lark-doc-element.umd.min.uiPanels.js`（面板包）与 `lark-doc-element.ui.css`（两个 UI 包共用的样式表）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。每个交付产物旁边还会多出一对 `<file>.br` / `<file>.gz` 预压缩文件，服务器开 `gzip_static` / `brotli_static` 即可直接命中，见下文「传输层」。
+> **产物清单变化**：`dist/` 新增 `lark-doc-element.polyfills.umd.min.js`（仅旧浏览器请求）、`lark-doc-element.css`（内核样式表）、`lark-doc-element.umd.min.ui.js`（交互包）、`lark-doc-element.umd.min.uiPanels.js`（面板包）、`lark-doc-element.ui.css`（两个 UI 包共用的样式表），以及 L2f 的 `lark-doc-element.umd.min.export.js` / `.uiExtra.js` / `.background.js`（都在首次触发对应动作时才拉）。宿主**无需**改动 `<script>` 标签——引导器自己按同目录定位并注入。每个交付产物旁边还会多出一对 `<file>.br` / `<file>.gz` 预压缩文件，服务器开 `gzip_static` / `brotli_static` 即可直接命中，见下文「传输层」。
 
 ### 拆分边界实测：为什么剩下的部分搬不动
 
@@ -304,7 +305,18 @@ Element 475 KB 同理是 0.14.5 的基线，但它不等于「只能少拆」：
 
 **5. 跨包重复已用共享模块桥消掉（23 个模块 / 292,805 B 源码）。** 拆 ui 子包后同一个 `ui/icons` 一度有三份（内核 / `ui` / `uiPanels`）。做法与 `core/features/registry.js` 一个范式：内核在求值时把已完整持有的模块命名空间挂到 `globalThis.__LARK_DOC_SHARED__`（`core/features/shared-host.js`），两支 UI 包在**构建期**把登记过的源文件换成只列导出名的转发 shim（`rollup.config.mjs` 的 `sharedHostModules`），实现体读内核那一份。收获：`ui` 49,678 → **41,754**（−16.0%）、`uiPanels` 122,159 → **96,115**（−21.3%），内核 +785（发布表本身），首屏基本不动。**登记条件必须逐个核对**——内核是 tree-shaken 的，`segmentedDocumentModel` 内核只留 2,348 B 而 document 包要 54,707 B，一提上来就是往首屏塞 52 KB。`test/unit/shared-host.test.js` 守着三条：名字对齐、导出集合不缺不重、包内实现体确实消失。`ui/icons` 会从替换名单里自然掉出：唯一引用它的 `ui/icon` 已换成 shim，包内再没人要它。
 
-**结论**：首屏 gzip 现为 **614,376**，其中第三方固定成本 131 KB。继续下降只能靠「新增特性包 + 每个域手写语义降级」，属于逐域推进的工作，不存在一次性的大跳变点。文档此前记的 264 / 240 KB 阶梯是在 L1.5（外置 PM 全家）成立的前提下算的，该前提已废弃，阶梯同步作废。
+**6. 能搬的懒边界已经搬完，剩下四支卡在「第二份 prosemirror」上。** 逐条实测内核里剩下的 `import()` 目标，源码体积都不小，但全部经 `documentOperations` 静态拉住 `@tiptap/pm/model`：
+
+| 目标 | 源码 B | 触发动作 |
+| --- | ---: | --- |
+| `ui/dialogs` | 30,073 | 保存为模板 / 导入确认 |
+| `ui/stage` | 16,308 | 打开幻灯片 |
+| `editor/documentSnapshot` | 9,889 | 挂载后算大纲与字数 |
+| `editor/templateSave` | 3,140 | 区块菜单「保存为模板」 |
+
+`uiExtra` 先按 5 个名字（含 `stage` / `dialogs` / `templateSave`）做过一版，实测包体 **88,014 raw / 29,491 gzip**，其中 `node_modules/prosemirror-model` 26,694 raw 是与内核重复的一份；`background` 装 `editor.documentSnapshot` 时 **176,610 raw / 55,407 gzip**，PM 全家（model 124,663 / tiptap core 93,767 / transform 84,671 / state 36,011 / commands 21,157 / history 10,127 / schema-list 7,077）都在包里。首屏只省 6,747 B（gzip），代价是点开时多下 25~35 KB，还多一份 `Fragment` / `Node` 类身份 —— 撤回，`uiExtra` 收成 2 个名字、`background` 收成 4 个。真要再进一步，前提是把 PM 也登记进 `sharedHostModules` 让包读内核那一份身份；那要给 `prosemirror-model` 这类包逐个枚举导出名，属独立改动，不在「只改写既有 `import()`」的范围内。
+
+**结论**：首屏 gzip 现为 **601,740**，其中第三方固定成本 131 KB。继续下降只能靠「新增特性包 + 每个域手写语义降级」，属于逐域推进的工作，不存在一次性的大跳变点。文档此前记的 264 / 240 KB 阶梯是在 L1.5（外置 PM 全家）成立的前提下算的，该前提已废弃，阶梯同步作废。
 
 ### 传输层：brotli 比任何剩余拆分都值钱
 

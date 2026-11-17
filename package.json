@@ -343,9 +343,9 @@
       "scope": "bootstrap"
     },
     {
-      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 KB；core-js 与 CSS 均已移出）",
+      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 → 550 KB；导出/浮层/上传已移到同目录特性包）",
       "path": "dist/lark-doc-element.runtime.umd.min.js",
-      "limit": "560 KB",
+      "limit": "550 KB",
       "gzip": true,
       "scope": "lazy"
     },
@@ -380,6 +380,27 @@
     {
       "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载）",
       "path": "dist/lark-doc-element.ui.css",
+      "limit": "20 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element 导出包 (gzip)（点「导出/导入」才拉；不含 docx/markdown，那两块走 office / markdown 包）",
+      "path": "dist/lark-doc-element.umd.min.export.js",
+      "limit": "10 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element 浮层包 (gzip)（顶栏「文档信息」与标题编号菜单，点了才拉；ui/dom、ui/icon 读内核那一份）",
+      "path": "dist/lark-doc-element.umd.min.uiExtra.js",
+      "limit": "5 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element 后台上传包 (gzip)（粘贴图片/拖文件/远程转换才拉；不含后台统计，那条会把 PM 全家拖进来）",
+      "path": "dist/lark-doc-element.umd.min.background.js",
       "limit": "20 KB",
       "gzip": true,
       "scope": "lazy"

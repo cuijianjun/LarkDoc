@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { cssInjection, FEATURE_TARGETS, getRollupConfig, inlineCssImports, isRuntimeChunk, MERMAID_FILES, panelPresentationShape, versioningPresentationShape, commentInteractionShape, ROLLUP_TARGETS, sharedHostModules } from '../../rollup.config.mjs'
+import { cssInjection, elementPackNames, FEATURE_TARGETS, getRollupConfig, inlineCssImports, isRuntimeChunk, LAZY_PACKAGE_CALLERS, MERMAID_FILES, panelPresentationShape, versioningPresentationShape, commentInteractionShape, ROLLUP_TARGETS, sharedHostModules } from '../../rollup.config.mjs'
 import { assertStableInputs, canReuseBuild, cleanStaleChunks, inputFingerprint, inputSnapshotPlugin, normalizeOutput, realInputFiles, rollupCacheGroup, targetsFor } from '../../scripts/build-rollup.mjs'
 import pkg from '../../package.json'
 import fs from 'node:fs'
@@ -51,8 +51,11 @@ it('assembles the CI smoke host with the complete Element loader dependency file
 })
 
 it('clean Element build includes its eager runtime and every local optional script', () => {
-  // uiPanels 只有 UMD 形态，跟随 element / elementRuntime 一起构建，但不进 esm 特性清单。
-  const features = ['math', 'mermaid', 'highlight', 'markdown', 'office', 'ui', 'document', 'uiPanels'].map(name => `feature:${name}:umd`)
+  // uiPanels / export / uiExtra / background 只有 UMD 形态（都是「点下去才走」的懒边界，
+  // 非 Element 宿主各自有自己的入口），跟随 element / elementRuntime 一起构建，
+  // 但不进 esm 特性清单。清单本身就在 elementPackNames 里，避免两处各写一遍走偏。
+  const features = elementPackNames.map(name => `feature:${name}:umd`)
+  expect(features).toHaveLength(11)
   expect(targetsFor('element')).toEqual(['element', 'elementRuntime', 'elementPolyfills', ...features])
   expect(targetsFor('elementRuntime')).toEqual(['elementRuntime', 'elementPolyfills', ...features])
   expect(new Set(targetsFor('all')).size).toBe(targetsFor('all').length)
@@ -1655,6 +1658,48 @@ describe('classic segmented document feature boundary', () => {
     const importer = path.join(root, 'src/editor/pagedDocumentView.js')
     expect(plugin.resolveId('./pagedDocumentViewRuntime', importer)).toBe('\0lark-doc-paged-view-runtime')
     expect(getRollupConfig('feature:document:umd').plugins.find(item => item.name === 'lark-doc-package-alias').resolveId('./pagedDocumentViewRuntime', importer)).toBeNull()
+  })
+
+  it('rewrites only the lazy call sites that a shipped feature pack actually registers', () => {
+    const root = path.resolve(__dirname, '../..')
+    const groups = fs.readFileSync(path.join(root, 'src/features/element.js'), 'utf8')
+    // 名字必须真在 element.js 的 groups 里。改写成一个没人注册的名字，点下去拿到的是
+    // 「特性包未注册」而不是回落到内核那份实现 —— 构建期看不出来，只能在这里卡住。
+    const registered = new Set([...groups.matchAll(/'([\w.]+)'/g)].map(match => match[1]))
+    expect(LAZY_PACKAGE_CALLERS.size).toBeGreaterThan(0)
+    for (const [caller, requests] of LAZY_PACKAGE_CALLERS) {
+      expect(fs.existsSync(caller), caller).toBe(true)
+      for (const [source, feature] of requests) {
+        expect(fs.existsSync(path.join(root, source)), source).toBe(true)
+        expect(registered.has(feature), `${path.relative(root, caller)} → ${feature}`).toBe(true)
+      }
+    }
+  })
+
+  it('keeps docx and markdown out of the lazily loaded export pack', () => {
+    const root = path.resolve(__dirname, '../..'), index = path.join(root, 'src/utils/export/index.js')
+    const stub = path.join(root, 'src/core/features/stub.js')
+    const alias = target => getRollupConfig(target).plugins.find(item => item.name === 'lark-doc-package-alias')
+    // 包内照抄这两条边会把真 docx（raw 639 KB）拖进懒包，而 Element 里它们本来
+    // 就走 office / markdown 特性包，包的实现由 loadFeature 兜住。
+    for (const target of ['feature:export:umd', 'feature:export', 'elementRuntime', 'element']) {
+      for (const request of ['./markdown.js', './docx.js']) expect(alias(target).resolveId(request, index), target).toBe(stub)
+    }
+    // 非 Element 宿主照旧拿真实现：这两条边是它们导出的唯一来源。
+    for (const target of ['esm', 'cjs', 'lite', 'elementEsm']) {
+      for (const request of ['./markdown.js', './docx.js']) expect(alias(target).resolveId(request, index), target).toBeNull()
+    }
+  })
+
+  it('routes the deferred uiExtra pack through the shared host modules instead of repacking them', () => {
+    const root = path.resolve(__dirname, '../..')
+    const alias = getRollupConfig('feature:uiExtra:umd').plugins.find(item => item.name === 'lark-doc-package-alias')
+    // 与内核同版本同目录部署，所以只留转发 shim；否则光 ui/icons 就要在包里再打一份 27 KB。
+    expect(alias.resolveId('./dom', path.join(root, 'src/ui/documentInformation.js'))).toBe('\0lark-doc-shared-host:ui.dom')
+    expect(alias.resolveId('./icon', path.join(root, 'src/ui/headingNumberMenu.js'))).toBe('\0lark-doc-shared-host:ui.icon')
+    // 不在集合里的包必须自带实现，否则打包器宿主拿不到内核那一份。
+    expect(getRollupConfig('feature:export:umd').plugins.find(item => item.name === 'lark-doc-package-alias')
+      .resolveId('./dom', path.join(root, 'src/ui/documentInformation.js'))).toBeNull()
   })
 
   it('ships both document feature formats in clean builds and freshness checks', () => {
