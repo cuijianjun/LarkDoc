@@ -473,6 +473,29 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 零引用，只有两条契约用例把它当源码文本拼进断言 —— 也就是说那些断言一直在读一份死代码，
 删掉后反而更严（现在只认真正打进产物的实现）。两条用例的拼接清单同步改成五个实现文件。
 
+同一轮还删了 `src/components/lark-doc/editor/uploadMixin.js`（145 行）：no-Vue 迁移后的遗留，
+`specs/002` 的 T087 已经写明「未被任何模块引用」，实测也确认它不在任何产物的模块表里。
+
+### 可读性：`src/core/documentOperations.js` 1,374 行 / 61 导出 → 6 个域文件 + 出口
+
+这是全仓最像杂物抽屉的一个文件：被 19 个构建目标引用，`scripts/check-lark-doc-core.js`
+一次解构 27 个名字，里面塞着校验、文本改写、标题编号、列表编号、缩进、章节折叠六件事。
+
+| 文件 | 行 | 内容 |
+| --- | ---: | --- |
+| `core/documentOperations.js` | 25 | 出口：`export *` 六个域 + 原有的 `safeUrl` / `documentJSON` 转出 |
+| `core/documentValidation.js` | 379 | JSON schema 校验、未知块占位、HTML 清洗 |
+| `core/documentTextEdits.js` | 154 | slash / mention 匹配、查找替换、块移动、目录 |
+| `core/headingNumbering.js` | 89 | 标题复合编号 `1.1.1` |
+| `core/listNumbering.js` | 212 | 有序 / 无序列表的层级编号 |
+| `core/blockIndent.js` | 110 | 缩进步长、上限、按位置夹取 |
+| `core/documentSections.js` | 474 | 章节切分、折叠范围、blockId 维护 |
+
+拆之前先算过跨域引用：`validation → {heading, sections}`、`sections → {text, heading, indent}`、
+`list → indent`，**没有回边**，所以拆完不会产生循环依赖。两处原本是文件内私有函数、现在被
+别的域用到的（`nodeIndent`、`isolatedHeadingContainers`）提成了导出，导出集合从 61 变 63，
+其余逐字未动。162 个单测文件 / 4,950 用例全绿。
+
 ### 门禁
 
 `check:artifacts` 全绿（10 条体积预算不变，首屏仍为 601,740 B）；`build-contract` 73 passed、

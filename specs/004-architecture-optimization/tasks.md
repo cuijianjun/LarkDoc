@@ -29,6 +29,9 @@
 - [x] **C02 受影响验证**：`test:affected` 44 个文件 / 2,002 用例；契约用例随图变化同步更新（见下）。
 - [x] **C03 `ui/overlays.js` 拆分**：1,131 行 → `overlayShared.js`(109) + `shareView.js`(324) + `permissionView.js`(317) + `exportView.js`(90) + `imageShareView.js`(299) + `overlays.js`(57，纯出口)。产物 `feature:uiPanels:umd` raw 324,465 / gzip 94,925 与拆前同长（标识符按新模块顺序重排）；41 文件 / 1,798 用例通过。
 - [x] **C04 删除 `src/ui/overlayViews.js`**：**748 行死副本**，`src/` 零引用，只有 `p6b-wiring` / `stage7-low-risk-batch` 把它当源码文本拼进断言（等于在量死代码）。删掉后两条用例改读五个实现文件，断言随之变严。
+- [x] **C05 删除 `src/components/lark-doc/editor/uploadMixin.js`**：145 行，no-Vue 迁移遗留（`specs/002` T087 已写明「未被任何模块引用」），实测不在任何产物的模块表里。
+- [x] **C06 `core/documentOperations.js` 拆分**：1,374 行 / 61 导出 / 19 个目标引用 → `documentValidation`(379) + `documentTextEdits`(154) + `headingNumbering`(89) + `listNumbering`(212) + `blockIndent`(110) + `documentSections`(474) + 25 行出口。
+      拆前先算跨域引用：`validation → {heading, sections}`、`sections → {text, heading, indent}`、`list → indent`，**无回边**，拆后不产生循环依赖。导出 61 → 63（`nodeIndent`、`isolatedHeadingContainers` 从文件内私有提为共享），其余逐字未动；162 文件 / 4,950 用例全绿。
 
 ## Phase D — 首屏（P2）
 
