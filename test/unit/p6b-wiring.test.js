@@ -15,7 +15,11 @@ const nativeHost = read('src/editor/nativeEditorHost.js')
 const shell = read('src/ui/workspaceShell.js')
 const aggregator = read('src/components/lark-doc/editor/p6bMixin.js')
 const overlaysUi = read('src/components/lark-doc/editor/overlaysUiMixin.js')
-const overlaysRenderer = read('src/ui/overlays.js') + read('src/ui/overlayViews.js')
+// 浮层实现已从 ui/overlays.js 拆到同目录五个文件（overlays.js 只剩出口），
+// 这里直接读实现文件：断言口径不变，量的还是同一批 DOM 结构与语义属性。
+const overlaysRenderer = read('src/ui/overlays.js') +
+  ['overlayShared', 'shareView', 'permissionView', 'exportView', 'imageShareView']
+    .map((name) => read(`src/ui/${name}.js`)).join('\n')
 const shareEntryRenderer = read('src/ui/shareEntry.js')
 // 面板实现已从 ui/panels.js 拆到 commentPanel / versionPanel（panels.js 只剩出口），
 // 这里直接读实现文件，切片锚点仍是那两个导出函数。

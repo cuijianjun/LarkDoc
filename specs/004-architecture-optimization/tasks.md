@@ -27,6 +27,8 @@
 
 - [x] **C01 `ui/panels.js` 拆分**：2,244 行 / 4 个导出 → `panelShared.js`(31) + `versionPanel.js`(616) + `commentPanel.js`(1,506) + `panels.js`(83，纯出口)。函数体、类名、断言口径一行未改；4 个导出名不变，10 个构建目标的 import 路径不变。
 - [x] **C02 受影响验证**：`test:affected` 44 个文件 / 2,002 用例；契约用例随图变化同步更新（见下）。
+- [x] **C03 `ui/overlays.js` 拆分**：1,131 行 → `overlayShared.js`(109) + `shareView.js`(324) + `permissionView.js`(317) + `exportView.js`(90) + `imageShareView.js`(299) + `overlays.js`(57，纯出口)。产物 `feature:uiPanels:umd` raw 324,465 / gzip 94,925 与拆前同长（标识符按新模块顺序重排）；41 文件 / 1,798 用例通过。
+- [x] **C04 删除 `src/ui/overlayViews.js`**：**748 行死副本**，`src/` 零引用，只有 `p6b-wiring` / `stage7-low-risk-batch` 把它当源码文本拼进断言（等于在量死代码）。删掉后两条用例改读五个实现文件，断言随之变严。
 
 ## Phase D — 首屏（P2）
 

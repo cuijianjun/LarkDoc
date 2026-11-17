@@ -453,6 +453,26 @@ presentation 形状、共享宿主 shim、reaction catalog 与 CSS 内联器，*
 `panels.js` 现在是纯 re-export，rollup 会把它摊平，所以契约用例里「重面板只在动态闭包」那条断言
 从 `panels.js` 改成了 `commentPanel.js` / `versionPanel.js` —— 量的还是同一件事。
 
+### 可读性：`src/ui/overlays.js` 1,131 行 → 6 个文件，并删掉 748 行死副本
+
+同一套拆法。浮层这块原本是 4 个视图挤一个作用域，共享一组建 DOM 的小工具：
+
+| 文件 | 行 | 内容 |
+| --- | ---: | --- |
+| `ui/overlays.js` | 57 | 只剩出口：把三块挂进同一个层、转发 `update` |
+| `ui/overlayShared.js` | 109 | 建元素 / 按钮 / 属性 / 内联 SVG（含图标映射）/ 受控输入 / 下拉 |
+| `ui/shareView.js` | 324 | 分享浮层（分享对象、链接权限、服务入口、二维码） |
+| `ui/permissionView.js` | 317 | 权限浮层 + 安全确认 + 密码校验 + 三组候选行 |
+| `ui/exportView.js` | 90 | 导出浮层 |
+| `ui/imageShareView.js` | 299 | 图片分享浮层（裁剪、样式、下载） |
+
+拆完实测 `feature:uiPanels:umd` 产物 **raw 324,465 / gzip 94,925，与拆前逐字节同长**（标识符
+按新模块顺序重排，字符多重集不同、长度与 gzip 完全一致）。41 个受影响文件 / 1,798 用例通过。
+
+顺带删掉 `src/ui/overlayViews.js`（**748 行**）：它是这套渲染层早期的另一份副本，`src/` 里
+零引用，只有两条契约用例把它当源码文本拼进断言 —— 也就是说那些断言一直在读一份死代码，
+删掉后反而更严（现在只认真正打进产物的实现）。两条用例的拼接清单同步改成五个实现文件。
+
 ### 门禁
 
 `check:artifacts` 全绿（10 条体积预算不变，首屏仍为 601,740 B）；`build-contract` 73 passed、

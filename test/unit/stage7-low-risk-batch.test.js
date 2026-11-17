@@ -9,7 +9,11 @@ const exists = (relative) => fs.existsSync(path.join(root, relative))
 const editor = source('src/editor/nativeEditorHost.js')
 const workspace = source('src/components/lark-doc/LarkDocWorkspace.js')
 const baseline = source('scripts/architecture-baseline.json')
-const overlays = source('src/ui/overlays.js') + source('src/ui/overlayViews.js') + source('src/ui/shareEntry.js')
+// 浮层实现已从 ui/overlays.js 拆到同目录五个文件（overlays.js 只剩出口）。
+const overlays = source('src/ui/overlays.js') +
+  ['overlayShared', 'shareView', 'permissionView', 'exportView', 'imageShareView']
+    .map((name) => source(`src/ui/${name}.js`)).join('\n') +
+  source('src/ui/shareEntry.js')
 const overlaysUi = source('src/components/lark-doc/editor/overlaysUiMixin.js')
 const shareMixin = source('src/components/lark-doc/editor/shareMixin.js')
 const exportMixin = source('src/components/lark-doc/editor/exportMixin.js')
