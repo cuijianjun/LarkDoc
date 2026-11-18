@@ -151,26 +151,30 @@ const DIAGRAM_DARK_VARIABLES = Object.freeze({
   noteBorderColor: '--ld-diagram-node-border',
 })
 
-/** 读一个 token 的已解析值；非浏览器环境或未定义时返回空串。 */
-function readThemeVariable(name) {
+/**
+ * 读一个 token 的已解析值；非浏览器环境或未定义时返回空串。
+ * `root` 传编辑器自己的 DOM：同页可能有多个不同主题的编辑器，全局取
+ * `.lark-doc` 只会拿到第一个。token 定义在祖先上，自定义属性会继承下来。
+ */
+function readThemeVariable(name, root) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return ''
-  const host = document.querySelector('.lark-doc') || document.documentElement
+  const host = root || document.querySelector('.lark-doc') || document.documentElement
   if (!host || typeof window.getComputedStyle !== 'function') return ''
   const value = window.getComputedStyle(host).getPropertyValue(name)
   return value ? value.trim() : ''
 }
 
 /** 组装深色一组 themeVariables（只放进读得到的键）。 */
-function readDarkThemeVariables() {
+function readDarkThemeVariables(root) {
   const variables = {}
   Object.keys(DIAGRAM_DARK_VARIABLES).forEach((key) => {
-    const value = readThemeVariable(DIAGRAM_DARK_VARIABLES[key])
+    const value = readThemeVariable(DIAGRAM_DARK_VARIABLES[key], root)
     if (value) variables[key] = value
   })
   return variables
 }
 
-function buildConfig(theme) {
+function buildConfig(theme, root) {
   const config = {
     startOnLoad: false,
     securityLevel: 'strict',
@@ -190,7 +194,7 @@ function buildConfig(theme) {
     return config
   }
   config.theme = 'dark'
-  config.themeVariables = readDarkThemeVariables()
+  config.themeVariables = readDarkThemeVariables(root)
   return config
 }
 
@@ -200,20 +204,20 @@ function buildConfig(theme) {
  */
 const appliedSignatures = new WeakMap()
 
-function applyConfig(mermaid, theme) {
-  const config = buildConfig(theme)
+function applyConfig(mermaid, theme, root) {
+  const config = buildConfig(theme, root)
   const signature = JSON.stringify(config)
   if (signature === appliedSignatures.get(mermaid)) return
   mermaid.initialize(config)
   appliedSignatures.set(mermaid, signature)
 }
 
-function loadRenderer(scriptUrl, theme) {
+function loadRenderer(scriptUrl, theme, root) {
   const key = scriptUrl ? String(scriptUrl) : ''
   let rendererPromise = rendererPromises.get(key)
   if (!rendererPromise) {
     rendererPromise = (key ? loadMermaidScript(key) : loadMermaidModule()).then((mermaid) => {
-      applyConfig(mermaid, theme)
+      applyConfig(mermaid, theme, root)
       return mermaid
     })
     rendererPromises.set(key, rendererPromise)
@@ -224,7 +228,7 @@ function loadRenderer(scriptUrl, theme) {
   }
   // 每次渲染前对齐主题，配置签名按实际运行时隔离。
   return rendererPromise.then((mermaid) => {
-    applyConfig(mermaid, theme)
+    applyConfig(mermaid, theme, root)
     return mermaid
   })
 }
@@ -234,14 +238,15 @@ function loadRenderer(scriptUrl, theme) {
  * 每次调用生成独立 id，避免 mermaid 内部注册表冲突。
  *
  * @param {string} source 图表源码
- * @param {{ scriptUrl?: string, theme?: 'light'|'dark' }} options 自定义渲染器地址
- *   （宿主自托管时用）；theme 缺省时读当前正文轨主题。默认走动态 import() 懒
- *   chunk，由构建工具统一接管寻址，无需任何配置。
+ * @param {{ scriptUrl?: string, theme?: 'light'|'dark', root?: Element }} options 自定义渲染器地址
+ *   （宿主自托管时用）；theme 缺省时读当前正文轨主题；root 传调用方的编辑器 DOM，
+ *   用于按该编辑器自己的 token 配色（多编辑器同页时不能取全局第一个 `.lark-doc`）。
+ *   默认走动态 import() 懒 chunk，由构建工具统一接管寻址，无需任何配置。
  */
 export function renderDiagram(source, options = {}) {
   const id = 'lark-doc-diagram-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
   const theme = options.theme || readContentTheme()
-  return loadRenderer(options.scriptUrl, theme)
+  return loadRenderer(options.scriptUrl, theme, options.root || null)
     .then((mermaid) => mermaid.render(id, String(source || '')))
     .then((result) => {
       const svg = result && result.svg

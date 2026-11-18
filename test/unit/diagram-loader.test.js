@@ -92,6 +92,22 @@ describe('图表渲染器加载隔离', () => {
     expect(old.render).not.toHaveBeenCalled()
   })
 
+  it('多编辑器同页时按传入 root 读 token，缺省才退回全局第一个 .lark-doc', async () => {
+    const first = document.createElement('div')
+    first.className = 'lark-doc'
+    first.style.setProperty('--ld-diagram-node', '#111111')
+    const second = document.createElement('div')
+    second.className = 'lark-doc'
+    second.style.setProperty('--ld-diagram-node', '#222222')
+    document.body.append(first, second)
+    const renderer = runtime('scoped')
+    disposers.push(registerFeature('mermaid', () => renderer))
+    await renderDiagram('graph TD\n A --> B', { theme: 'dark', root: second })
+    expect(renderer.initialize.mock.calls.at(-1)[0].themeVariables.primaryColor).toBe('#222222')
+    await renderDiagram('graph TD\n A --> B', { theme: 'dark' })
+    expect(renderer.initialize.mock.calls.at(-1)[0].themeVariables.primaryColor).toBe('#111111')
+  })
+
   it('不同地址并发时串行捕获导出，空导出不能误用旧全局，缓存身份保持独立', async () => {
     const old = runtime('host')
     window.mermaid = old

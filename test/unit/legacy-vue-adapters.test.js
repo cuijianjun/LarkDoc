@@ -107,6 +107,21 @@ describe('无SFC Vue2 options 薄适配器', () => {
     await vi.waitFor(() => expect(host.calendarEvents[0]?.eventId).toBe('new-event'))
   })
 
+  it('真实 renderer 下 Vue2 代理的每个方法名都能在 instance 上解析', { timeout: 60000 }, async () => {
+    const createRange = document.createRange.bind(document)
+    vi.spyOn(document, 'createRange').mockImplementation(() => Object.assign(createRange(), {
+      getClientRects: () => [],
+      getBoundingClientRect: () => ({ top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 }),
+    }))
+    mocks.realRenderer = (await vi.importActual('../../src/mount/domRenderer')).createDomRenderer
+    const { vm } = mount(LarkDocWorkspace, { initialContent: '<p>正文</p>' })
+    const names = Object.keys(LarkDocWorkspace.methods)
+    const instance = vm._nativeHandle.instance
+    // 名单是手抄的：元素/getInstance 侧改名后适配层只会静默返回 undefined。
+    expect(names.length).toBeGreaterThan(30)
+    expect(names.filter(name => typeof instance[name] !== 'function')).toEqual([])
+  })
+
   it('保留组件名、v-model、标题事件与命令式转发，不自行创建业务状态', async () => {
     const { vm, handle } = mount(LarkDocEditor, { value: '<p>正文</p>', title: '初始', maxLength: 12 })
     expect(typeof LarkDocEditor).toBe('object')

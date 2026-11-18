@@ -542,6 +542,7 @@ export function createCodeBlockNodeView(props) {
     renderDiagram(source, {
       scriptUrl: options.diagramScriptUrl || undefined,
       theme: contentTheme,
+      root: view?.dom || undefined,
     }).then((svg) => {
       if (version !== diagramVersion || destroyed) return
       diagramSvg = svg

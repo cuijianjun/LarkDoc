@@ -28,8 +28,11 @@ import { EVENT_MAP } from '../../web-component/events'
 // 元素是 HTMLUnknownElement，ref 上方法全是 undefined 且控制台干净 —— 必须报出来。
 import { assertLarkDocElement } from '../../web-component/assert'
 
-/** 元素上可直接透传的快捷方法（与 web-component PROXIED_METHODS 的宿主常用子集保持一致）。 */
-const PROXY_METHODS = Object.freeze([
+/**
+ * 元素上可直接透传的快捷方法（与 web-component PROXIED_METHODS 的宿主常用子集保持一致）。
+ * 导出只为让单测锁住「代理名单 ⊆ 元素实际方法」，宿主不必使用。
+ */
+export const PROXY_METHODS = Object.freeze([
   'getHTML', 'getJSON', 'getText', 'getTitle', 'setTitle', 'getConfig', 'getSession',
   'setReadonly', 'isReadonly', 'focus', 'undo', 'redo', 'setContent', 'insert',
   'insertText', 'save',

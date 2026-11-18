@@ -8,12 +8,10 @@
  * semantics unchanged.
  */
 
+/** 模型索引的段大小。注意与 createLargeDocumentProjection 的 DOM 分组大小（默认 16）不是同一个量。 */
 export const LARGE_DOCUMENT_SEGMENT_BLOCKS = 128
 
-const MIN_HEIGHT = 40
-const MAX_HEIGHT = 4096
-
-function clamp(value, min = MIN_HEIGHT, max = MAX_HEIGHT) {
+function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Math.round(value)))
 }
 
@@ -27,6 +25,11 @@ function blockFlags(node) {
   }
 }
 
+/**
+ * 模型侧高度标尺（结构估算）：只按节点类型与文本长度推，用于建索引、算段偏移。
+ * 与 DOM 侧 `estimate`（createLargeDocumentProjection 内部）是两套独立标尺，
+ * 一处调大不会带动另一处 —— 那边量的是渲染后的实际盒高。
+ */
 export function estimateBlockHeight({ type = '', textLength = 0, heading = 0, image = 0, table = 0, container = 0 } = {}) {
   if (image) return 192
   if (table) return 112
@@ -363,6 +366,9 @@ export function createProjectionSelectionReader(view) {
  * Manual slots leave NodeViewDesc ownership, DOMObserver and document positions
  * intact. Two levels let the browser skip an offscreen page before visiting
  * its small render windows, instead of checking thousands of flat windows.
+ *
+ * segmentBlocks 是 DOM 分组大小（每组一段占位盒），与模型索引的
+ * LARGE_DOCUMENT_SEGMENT_BLOCKS（128）不是同一个量。
  */
 export function createLargeDocumentProjection({ editorDom, segmentBlocks = 16, getSelectionNodes, onRenderWindowChange, initialActive = false, logicalHeightLimit = 1000000 } = {}) {
   const document = editorDom?.ownerDocument
@@ -644,6 +650,8 @@ export function createLargeDocumentProjection({ editorDom, segmentBlocks = 16, g
     pages.forEach(updatePageSize)
     refreshViewport()
   }
+  // DOM 侧高度标尺：虚拟滚动时给未渲染的段落垫高度，数值比模型侧估算大，
+  // 因为这里对的是真实盒高而不是结构推断。两套标尺互不引用。
   const estimate = node => {
     const tag = node.nodeName
     return tag === 'P' ? 360 : tag === 'H1' ? 102 : /^H[2-6]$/.test(tag) ? 90 : tag === 'IMG' || tag === 'FIGURE' ? 212 : tag === 'TABLE' ? 132 : 200
@@ -750,7 +758,7 @@ export function createLargeDocumentProjection({ editorDom, segmentBlocks = 16, g
       if (windowed) updatePageSize(page)
       next.push(page)
     }
-    pages.slice(next.length).forEach(page => { resizeObserver?.unobserve(page.element); visiblePages.delete(page); page.element.remove() })
+    pages.slice(next.length).forEach(page => { visiblePages.delete(page); page.element.remove() })
     pages.splice(0, pages.length, ...next)
     const count = String(pages.length)
     if (editorDom.getAttribute('data-ld-render-pages') !== count) editorDom.setAttribute('data-ld-render-pages', count)
@@ -1010,7 +1018,6 @@ export function createLargeDocumentProjection({ editorDom, segmentBlocks = 16, g
 /** Keep segment metadata on the ProseMirror root; never mutate child nodes. */
 export function createLargeDocumentViewportController({ editorDom, model, viewWindow: providedViewWindow } = {}) {
   let destroyed = false
-  let generation = 0
   let currentModel = model
   const viewWindow = providedViewWindow || editorDom?.ownerDocument?.defaultView || (typeof window !== 'undefined' ? window : null)
   const overscanSegments = 2
@@ -1052,7 +1059,6 @@ export function createLargeDocumentViewportController({ editorDom, model, viewWi
   const apply = () => {
     frame = null
     if (destroyed || !currentModel || !editorDom) return
-    const run = ++generation
     const segmentCount = String(currentModel.segmentCount)
     const segmentBlocks = String(currentModel.segmentBlocks)
     if (editorDom.getAttribute('data-ld-segment-count') !== segmentCount) editorDom.setAttribute('data-ld-segment-count', segmentCount)
@@ -1062,7 +1068,6 @@ export function createLargeDocumentViewportController({ editorDom, model, viewWi
     const first = segmentAtOffset(viewportTop)
     const last = segmentAtOffset(viewportBottom)
     setActiveRange(first - overscanSegments, last + overscanSegments)
-    if (destroyed || run !== generation) return
     if (!editorDom.classList.contains('lark-doc-viewport-managed')) editorDom.classList.add('lark-doc-viewport-managed')
   }
   const schedule = () => {
@@ -1083,7 +1088,6 @@ export function createLargeDocumentViewportController({ editorDom, model, viewWi
       if (nextModel !== currentModel) {
         activeStart = -1
         activeEnd = -1
-        currentModel = nextModel || currentModel
       }
       currentModel = nextModel || currentModel
       updateRootTop()
@@ -1097,7 +1101,6 @@ export function createLargeDocumentViewportController({ editorDom, model, viewWi
     },
     destroy() {
       destroyed = true
-      generation += 1
       if (frame != null) {
         if (viewWindow?.cancelAnimationFrame && typeof frame === 'number') viewWindow.cancelAnimationFrame(frame)
         else clearTimeout(frame)

@@ -62,8 +62,6 @@ function operationId() {
 }
 export { operationId as createCommentOperationId }
 
-const translationHash = value => typeof value === 'string' && /^sha256:[a-f0-9]{64}(?![\s\S])/.test(value)
-const translationInteger = value => typeof value === 'string' && /^(0|[1-9][0-9]*)(?![\s\S])/.test(value)
 const translationRecord = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === keys.length && keys.every(key => Object.prototype.hasOwnProperty.call(value, key))
 async function translationDigest(text) {
   if (!globalThis.crypto?.subtle || typeof globalThis.TextEncoder !== 'function') throw failure('TRANSLATION_SOURCE_HASH_UNAVAILABLE')
@@ -492,12 +490,12 @@ export function createHttpCommentsProvider(options = {}) {
     if (!translationRecord(data, keys) || !['unknown', 'pending', 'ready', 'failed'].includes(data.status) || data.batchBlocked !== false ||
       status !== (data.status === 'pending' ? 202 : data.status === 'unknown' ? 503 : 200) ||
       (keys.includes('tenantId') && (data.tenantId !== tenantId || data.docId !== docId)) ||
-      (keys.includes('requestHash') && (!translationHash(data.requestHash) || !translationHash(data.sourceHash)))) throw failure('TRANSLATION_RESULT_UNKNOWN')
+      (keys.includes('requestHash') && (!hash(data.requestHash) || !hash(data.sourceHash)))) throw failure('TRANSLATION_RESULT_UNKNOWN')
     if (uncertain) {
       if (data.taskId !== null || data.translatedText !== null || data.code !== (data.persisted === null ? 'COMMIT_UNKNOWN' : 'OPERATION_UNKNOWN') ||
-        (data.persisted === false && !translationHash(data.requestHash))) throw failure('TRANSLATION_RESULT_UNKNOWN')
+        (data.persisted === false && !hash(data.requestHash))) throw failure('TRANSLATION_RESULT_UNKNOWN')
     } else {
-      if (data.persisted !== true || !translationHash(data.requestHash) || !translationHash(data.sourceHash) || data.tenantId !== tenantId || data.docId !== docId ||
+      if (data.persisted !== true || !hash(data.requestHash) || !hash(data.sourceHash) || data.tenantId !== tenantId || data.docId !== docId ||
         typeof data.taskId !== 'string' || !/^translation-[A-Za-z0-9-]{1,64}(?![\s\S])/.test(data.taskId) ||
         data.code !== (data.status === 'unknown' ? 'OPERATION_UNKNOWN' : data.status === 'failed' ? 'TRANSLATION_FAILED' : null)) throw failure('TRANSLATION_RESULT_UNKNOWN')
       if (data.status === 'ready') {
@@ -651,7 +649,7 @@ export function createHttpCommentsProvider(options = {}) {
         const reply = thread.replies.find(item => item.id === replyId && !item.tombstone)
         if (!reply || thread.tombstone) throw failure('COMMENT_NOT_VISIBLE', 404)
         const sourceRevision = input.sourceRevision === undefined ? reply.replyRevision : input.sourceRevision
-        if (!translationInteger(sourceRevision)) throw failure('TRANSLATION_SOURCE_INVALID')
+        if (!decimal(sourceRevision)) throw failure('TRANSLATION_SOURCE_INVALID')
         const record = { operationId: id, threadId, replyId,
           body: Object.freeze({ operationId: id, sourceRevision, targetLanguage }), status: 'pending' }
         checkContext(epoch, id); translationOperations.set(id, record)
