@@ -61,7 +61,9 @@ const READ_PAGE = `(() => {
   }
   const root = document.querySelector('.lark-doc')
   return {
-    tdBorder: cs('.ProseMirror tr:first-child > :first-child', 'borderTopColor'),
+    // 单元格只画右/下两条线（border: 0; border-right/bottom: 1px solid var(--ld-table-line)），
+    // 取 borderTopColor 会落到 currentColor 上。
+    tdBorder: cs('.ProseMirror tr:first-child > :first-child', 'borderRightColor'),
     thBg: cs('.ProseMirror th', 'backgroundColor'),
     tdBg: cs('.ProseMirror td', 'backgroundColor'),
     imgFilter: cs('.lark-doc-image-frame img, .lark-doc-image-img', 'filter'),

@@ -160,11 +160,11 @@ async function main() {
     record('第二个图表块自动渲染 SVG（渲染器全局复用）', true)
 
     // ---- 8. 图表按钮命令（executeCommand('diagram')，与插入菜单「图表」同路径） ----
+    // workspace 现在是原生 DOM 实例，不再有 Vue 的 $refs.document；命令直接挂在实例上。
     const thirdOk = await page.evaluate(() => {
       const workspace = window.__larkDoc.getWorkspace()
-      const editorComponent = workspace && workspace.$refs && workspace.$refs.document
-      if (!editorComponent || typeof editorComponent.executeCommand !== 'function') return false
-      editorComponent.executeCommand('diagram')
+      if (!workspace || typeof workspace.executeCommand !== 'function') return false
+      workspace.executeCommand('diagram')
       return true
     })
     await page.waitForTimeout(1200)
@@ -234,6 +234,18 @@ async function main() {
           card: tokenOf('--ld-diagram-card-bg'),
           codeBorder: tokenOf('--ld-code-border'),
           codeToolbarText: tokenOf('--ld-code-toolbar-text'),
+          // 普通代码块会在自己身上把 --ld-code-toolbar-text 覆写为 --ld-text-secondary，
+          // 与根节点同名 token 不同；且 getPropertyValue 不做 var() 展开，所以用探针
+          // 在块内解析一次，直接拿 computed 颜色。
+          codeToolbarTextScoped: (() => {
+            if (!code) return ''
+            const probe = document.createElement('span')
+            probe.style.color = 'var(--ld-code-toolbar-text)'
+            code.appendChild(probe)
+            const rgb = getComputedStyle(probe).color
+            probe.remove()
+            return rgb
+          })(),
         } : null,
       }
     })
@@ -271,6 +283,7 @@ async function main() {
     const blockRgb = hexToCssRgb(t.code)
     const borderRgb = hexToCssRgb(t.codeBorder)
     const toolbarRgb = hexToCssRgb(t.codeToolbarText)
+    const toolbarScopedRgb = t.codeToolbarTextScoped
     record(
       '深色下图表卡片跟随正文纸张（background = --ld-diagram-card-bg = --ld-bg-content）',
       Boolean(darkPaint && darkPaint.cardBg && paperRgb && darkPaint.cardBg === paperRgb && darkPaint.cardBg === hexToCssRgb(t.card)),
@@ -284,9 +297,9 @@ async function main() {
     )
     record(
       '深色下代码块 chrome 中性化（描边 --ld-code-border / 头部条 --ld-code-toolbar-text）',
-      Boolean(darkPaint && darkPaint.code && borderRgb && toolbarRgb &&
+      Boolean(darkPaint && darkPaint.code && borderRgb && toolbarScopedRgb &&
         darkPaint.code.borderTopColor === borderRgb &&
-        darkPaint.codeToolbar && darkPaint.codeToolbar.color === toolbarRgb),
+        darkPaint.codeToolbar && darkPaint.codeToolbar.color === toolbarScopedRgb),
       JSON.stringify(darkPaint && { bg: darkPaint.code && darkPaint.code.backgroundColor, border: darkPaint.code && darkPaint.code.borderTopColor, toolbar: darkPaint.codeToolbar })
     )
     // 基线钉住：以后 T-series 再改色，只改这一条（和 verify-browser-theme.js 的

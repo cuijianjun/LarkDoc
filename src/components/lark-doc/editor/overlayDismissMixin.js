@@ -104,6 +104,9 @@ export default {
       // P4-04：按钮配置面板 Esc 可关（02 §22 ⑤-1），关了就不建块 —— 与「日程面板 Esc 无效」相反。
       else if (event.key === 'Escape' && this.isvPanelOpen) this.closeIsvPanel()
       else if (event.key === 'Escape' && this.slides) this.toggleSlides()
+      // 气泡条的对齐下拉：原生宿主没有根元素 `@keydown.esc`，Esc 只走这条链；
+      // closeOverlay 里的同名分支只在 SFC 挂载路径生效，少了这里 Esc 就关不掉（P4-01 同款写法）。
+      else if (event.key === 'Escape' && this.bubbleAlignOpen) this.closeBubbleAlignMenu()
       else if (event.key === 'Escape' && (this.blockMenuOpen || this.blockTypeMenuOpen || this.blockAlignMenuOpen || this.blockColorMenuOpen)) this.closeBlockMenu()
     },
     /**

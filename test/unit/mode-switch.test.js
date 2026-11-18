@@ -519,6 +519,14 @@ describe('P4-06 模式入口派发（overlayDismissMixin）', () => {
     expect(event.prevented).toBe(true)
   })
 
+  it('Esc 走 onWindowKeydown 也能关气泡条对齐下拉（原生宿主没有根元素 @keydown.esc）', () => {
+    const ed = createEd()
+    ed.bubbleAlignOpen = true
+    ed.closeBubbleAlignMenu = () => { ed.bubbleAlignClosed = true }
+    overlayDismissMixin.methods.onWindowKeydown.call(ed, keyEvent('Escape'))
+    expect(ed.bubbleAlignClosed).toBe(true)
+  })
+
   it('⌘+F / ⌘+Shift+H / ⌘+/ 未被模式分支挤掉（P4-05、P4-06 第 1 条回归）', () => {
     const find = createEd()
     find.openSearch = (tab) => { find.opened = tab }

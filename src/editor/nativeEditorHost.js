@@ -600,7 +600,8 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
         event.stopPropagation()
         host.closeOverlay()
       }, true)
-      listen(shell.root, 'keydown', event => { if (event.key === 'Escape' && !event.defaultPrevented) host.closeOverlay() })
+      // 与 SFC 根元素 `@keydown.esc="closeOverlay"` 语义对齐：PM keymap（如表格选中取消）preventDefault 但不拦冒泡，已消费的 Esc 仅当事件源自 PM 正文时放行；子输入框消费的不放行（dom-renderer-contract 用例锁定）。
+      listen(shell.root, 'keydown', event => { if (event.key === 'Escape' && (!event.defaultPrevented || editor.view.dom.contains(event.target))) host.closeOverlay() })
 
       // 成功提示保留「立即查看」，进入其他弹窗控件后让出它们的操作区域。
       const dismissNoticeForPopup = event => {

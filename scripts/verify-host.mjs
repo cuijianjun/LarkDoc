@@ -73,7 +73,8 @@ for (const [route, file, wc] of [
       document.head.appendChild(script)
     })`, file)
   } else {
-    script = replaceOnce(script, "import { LarkDoc } from 'lark-doc'", "const { LarkDoc } = window.LarkDoc", file)
+    // 引导文件只导出懒加载 API，命名空间（含 LarkDoc 类）要等内核脚本注入完。
+    script = replaceOnce(script, "import { LarkDoc } from 'lark-doc'", "const { LarkDoc } = await window.LarkDoc.loadLarkDocRuntime()", file)
     script = replaceOnce(script, "import 'lark-doc/style.css'", '', file)
   }
   script = replaceOnce(script, 'export default {', 'const HostView = {', file)
