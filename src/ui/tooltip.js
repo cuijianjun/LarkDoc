@@ -1,14 +1,22 @@
 /** Shared, non-interactive tooltip. Content is always rendered as plain text. */
 const inPopup = element => !!element.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]')
 
-export function createTooltip({ host, delay = 150 }) {
+/**
+ * @param {object} options
+ * @param {HTMLElement} options.host 提示层的挂载宿主（会挪到最近的 `.lark-doc` 里）
+ * @param {number} [options.delay] 悬停多久出现
+ * @param {boolean} [options.allowInPopup] 允许在 `role="menu"` 等弹层**内部**出提示。
+ *   缺省关闭：弹层里的控件靠自身 label / `aria-description` 表达，不叠提示。
+ *   但「➕ 菜单的纯图标格」这类**本身就是功能栏**的弹层需要开它（见 `hoverTips.js`）。
+ */
+export function createTooltip({ host, delay = 150, allowInPopup = false }) {
   const owner = host.ownerDocument, win = owner.defaultView
   const tip = owner.createElement('div')
   tip.className = 'lark-doc-tooltip'
   tip.id = `lark-doc-tip-${Math.random().toString(36).slice(2)}`
   tip.setAttribute('role', 'tooltip')
   const bindings = new Set()
-  let anchor = null, read = null, timer = null, destroyed = false
+  let anchor = null, read = null, timer = null, destroyed = false, globals = false
   const hide = () => {
     win.clearTimeout(timer); timer = null
     if (anchor) {
@@ -20,7 +28,7 @@ export function createTooltip({ host, delay = 150 }) {
   }
   const render = () => {
     timer = null
-    if (destroyed || !anchor?.isConnected || inPopup(anchor)) { hide(); return }
+    if (destroyed || !anchor?.isConnected || (!allowInPopup && inPopup(anchor))) { hide(); return }
     const nativeTitle = anchor.getAttribute('title')
     if (nativeTitle) { anchor.dataset.tooltipTitle = nativeTitle; anchor.removeAttribute('title') }
     const content = read()
@@ -46,18 +54,34 @@ export function createTooltip({ host, delay = 150 }) {
     tip.style.top = `${Math.max(8, below ? a.bottom + 10 : a.top - b.height - 10)}px`
     tip.style.setProperty('--ld-tip-arrow', `${Math.max(10, Math.min(b.width - 10, center - left))}px`)
   }
+  /**
+   * 全局收起监听**首次出提示时**才挂：没有悬停就没有 window 监听，
+   * 宿主里成百个 UI 实例（句柄、表格浮窗、命令菜单）不会各占一份。
+   */
+  const bindGlobals = () => {
+    if (globals || destroyed) return
+    globals = true
+    win.addEventListener('scroll', hide, true)
+    win.addEventListener('resize', hide)
+    owner.addEventListener('keydown', hide, true)
+  }
+  const unbindGlobals = () => {
+    if (!globals) return
+    globals = false
+    win.removeEventListener('scroll', hide, true)
+    win.removeEventListener('resize', hide)
+    owner.removeEventListener('keydown', hide, true)
+  }
   const show = (element, getContent = () => ({})) => {
     if (destroyed) return
     // Keep both native and custom hints out of popup controls.
     if (element.title) { element.dataset.tooltipTitle = element.title; element.removeAttribute('title') }
-    if (inPopup(element)) { hide(); return }
+    if (!allowInPopup && inPopup(element)) { hide(); return }
     if (anchor === element) return
     hide(); anchor = element; read = getContent
+    bindGlobals()
     timer = win.setTimeout(render, delay)
   }
-  win.addEventListener('scroll', hide, true)
-  win.addEventListener('resize', hide)
-  owner.addEventListener('keydown', hide, true)
   return {
     show, hide,
     refresh() { if (anchor && !timer) render() },
@@ -70,7 +94,7 @@ export function createTooltip({ host, delay = 150 }) {
       bindings.add(unbind)
       return unbind
     },
-    destroy() { destroyed = true; hide(); [...bindings].forEach(unbind => unbind()); win.removeEventListener('scroll', hide, true); win.removeEventListener('resize', hide); owner.removeEventListener('keydown', hide, true) },
+    destroy() { destroyed = true; hide(); [...bindings].forEach(unbind => unbind()); unbindGlobals() },
   }
 }
 

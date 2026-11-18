@@ -27,8 +27,13 @@ export const FILE_REJECT = Object.freeze({ EMPTY: 'FILE_EMPTY', SIZE: 'FILE_SIZE
  */
 export const DEFAULT_FILE_MAX_SIZE = 10 * 1024 * 1024 * 1024
 
-/** `data-view-type` 的两个合法值（02 L3930–3951）。 */
-export const FILE_VIEW_TYPES = Object.freeze(['Preview', 'Card'])
+/**
+ * `data-view-type` 合法值：Preview / Card 来自 02 L3930–3951；
+ * Inline（文本视图）来自飞书三态视图（文本视图 / 卡片视图 / 预览视图，
+ * 见 obs/b10-04-file-click.json 的 inline/card/preview view 与官方文档原文 :1449）。
+ * schema 快照只序列化 default，新增合法值不影响契约。
+ */
+export const FILE_VIEW_TYPES = Object.freeze(['Preview', 'Card', 'Inline'])
 
 /** MIME → 呈现形态。大小写不敏感，空值兜底为卡片。 */
 export function fileKindOf(mimeType) {

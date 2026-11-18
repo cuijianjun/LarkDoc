@@ -414,7 +414,7 @@ describe('v12e link and cell interactions', () => {
     } finally { tips.destroy(); host.remove(); vi.useRealTimers() }
   })
 
-  it('v58 插入菜单代码块和分隔线不显示黑色tips', () => {
+  it('v59 ➕ 菜单「基础」纯图标格出提示，收起菜单时提示一并收掉', () => {
     vi.useFakeTimers()
     const host = document.createElement('div'); document.body.appendChild(host)
     const menu = createCommandMenu({ host })
@@ -422,17 +422,36 @@ describe('v12e link and cell interactions', () => {
       menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus') })
       for (const id of ['code', 'divider']) {
         const node = menu.el.querySelector(`[data-command-id="${id}"]`)
+        // 「基础」格的中文名由样式表的 `clip-path: inset(50%)` 藏起来 ——
+        // jsdom 不跑样式表，这里内联同一句，等价复现浏览器里的计算值。
+        node.querySelector('.lark-doc-command-label').style.clipPath = 'inset(50%)'
         node.getBoundingClientRect = () => ({ left: 100, top: 120, right: 140, bottom: 150, width: 40, height: 30 })
-        node.dispatchEvent(new MouseEvent('mouseenter')); vi.advanceTimersByTime(150)
+        node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+        vi.advanceTimersByTime(200)
+        expect(host.querySelector('[role="tooltip"]').textContent).toBe(node.dataset.tooltipTitle)
+        node.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: menu.el }))
         expect(host.querySelector('[role="tooltip"]')).toBeNull()
         expect(node.hasAttribute('title')).toBe(false)
-        expect(node.hasAttribute('aria-describedby')).toBe(false)
-        node.dispatchEvent(new MouseEvent('mouseleave'))
-        expect(host.querySelector('[role="tooltip"]')).toBeNull()
-        expect(node.hasAttribute('aria-describedby')).toBe(false)
       }
-      menu.el.querySelector('[data-command-id="code"]').dispatchEvent(new MouseEvent('mouseenter'))
+      // 菜单收起：锚点没了，提示不能留在文档上。
+      const node = menu.el.querySelector('[data-command-id="code"]')
+      node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).not.toBeNull()
       menu.update({ open: false }); vi.advanceTimersByTime(200)
+      expect(host.querySelector('[role="tooltip"]')).toBeNull()
+    } finally { menu.destroy(); host.remove(); vi.useRealTimers() }
+  })
+  it('v59 斜杠菜单与带中文名的项不出提示（名称已经写在行上）', () => {
+    vi.useFakeTimers()
+    const host = document.createElement('div'); document.body.appendChild(host)
+    const menu = createCommandMenu({ host })
+    try {
+      menu.update({ open: true, kind: 'slash', items: filterCommands('', 'slash') })
+      const node = menu.el.querySelector('[data-command-id="code"]')
+      node.getBoundingClientRect = () => ({ left: 100, top: 120, right: 140, bottom: 150, width: 40, height: 30 })
+      node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      vi.advanceTimersByTime(200)
       expect(host.querySelector('[role="tooltip"]')).toBeNull()
     } finally { menu.destroy(); host.remove(); vi.useRealTimers() }
   })
@@ -486,11 +505,12 @@ describe('v12e link and cell interactions', () => {
     const state = { open: true, kind: 'plus', items: filterCommands('', 'plus') }
     menu.update(state)
     const basic = menu.el.querySelector('[data-category="基础"]')
-    expect([...basic.querySelectorAll('button')].map(button => button.dataset.commandId)).toEqual(['heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link'])
+    // 飞书 plus「基础」段是 H1~H5 五个标题图标（原实现只到 H3）。
+    expect([...basic.querySelectorAll('button')].map(button => button.dataset.commandId)).toEqual(['heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link'])
     const tasks = [...menu.el.querySelectorAll('[data-command-id="taskList"]')]
     expect(tasks).toHaveLength(2)
     expect(tasks[0]).not.toBe(tasks[1])
-    expect(basic.querySelectorAll('svg')).toHaveLength(11)
+    expect(basic.querySelectorAll('svg')).toHaveLength(13)
     menu.update({ ...state, activeId: 'taskList' })
     expect([...menu.el.querySelectorAll('[data-command-id="taskList"]')]).toEqual(tasks)
     menu.destroy(); host.remove()

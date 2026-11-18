@@ -130,7 +130,9 @@ export default {
     /** 特性快照：气泡条哪几段存在由它决定（段序断言依赖于此）。 */
     bubbleBarConfig() {
       return {
-        comment: true,
+        // 评论走「没接入就隐藏」：`commentEntryVisible` = 有 provider 且 canView。
+        // 之前这里硬编码 true，会把按钮摆出来、点下去报「尚未配置评论服务」。
+        comment: this.commentEntryVisible,
         ai: this.featureEnabled('ai'),
         blockStyle: this.featureEnabled('blockStyle'),
         marks: this.bubbleMarkItems,

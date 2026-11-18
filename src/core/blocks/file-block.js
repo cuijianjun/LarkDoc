@@ -12,8 +12,12 @@
  * 两个都缺的块无法渲染，parseHTML 直接拒收（退化成 unknown-block，不静默丢内容）。
  *
  * 已知偏离（记入 09 §5.3 P2-04 注记）：
- *   - 上传中态不做：③-quinquies 实测飞书 90 秒窗口内 DOM 零命中、零进度条，
- *     上传完成前页面什么都不变就是 1:1 行为；
+ *   - 上传中态**不在 schema 里**：`fileBlock` 的 attrs 是 1:1 契约（`test/fixtures/schema-v1.json`
+ *     逐字段比对），加 `uploading` / `percent` 等于改契约。现在的做法是「占位节点只带已有
+ *     attrs（`name` / `size` / `mimeType` / `viewType`，无 `src`）+ 一层纯展示 DOM 覆盖」，
+ *     进度靠直接改 `style.width` 推进，见 `core/media/file-upload-tasks.js`；
+ *     （早先 ③-quinquies 的实测结论「飞书 90 秒窗口内 DOM 零命中、零进度条」已被推翻，
+ *     那是采样时机太靠后，不是飞书没有上传中态。）
  *   - 失败态**照常落块**（与图片相反）：预览元素一报错就切兜底文案 + 保留下载入口；
  *   - `status` 不进 schema：③-ter 三条判据要求状态由预览元素事件驱动，运行时态留在 NodeView。
  */

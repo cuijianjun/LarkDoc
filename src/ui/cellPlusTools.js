@@ -18,6 +18,7 @@
  */
 import { applyStyle, mountNode } from './dom'
 import { iconNode } from './icon'
+import { bindHoverTips } from './hoverTips'
 
 export function createCellPlusTools({ host, handlers = {} }) {
   const el = document.createElement('div')
@@ -27,14 +28,21 @@ export function createCellPlusTools({ host, handlers = {} }) {
   btn.type = 'button'
   btn.className = 'lark-doc-cell-plus-btn'
   btn.setAttribute('aria-label', '插入内容')
+  // ➕ 是插入命令菜单的触发器（下一级弹窗）：标 aria-haspopup 让 tips 判据跳过。
+  // 本按钮不设原生 title，因此不会有浏览器 tooltip 残留。
+  btn.setAttribute('aria-haspopup', 'menu')
   btn.appendChild(iconNode('plus', 14))
   el.appendChild(btn)
+
+  // 委托挂在按钮容器上（本文件按钮为静态，不重建）；➕ 已被 aria-haspopup 排除。
+  const tips = bindHoverTips(el)
 
   btn.addEventListener('pointerdown', (event) => event.preventDefault())
   btn.addEventListener('click', () => { if (handlers.onOpen) handlers.onOpen(btn) })
 
   function update(state = {}) {
     if (!state.visible) {
+      tips.hide()
       mountNode(host, el, false)
       el.classList.remove('is-visible')
       return
@@ -47,7 +55,10 @@ export function createCellPlusTools({ host, handlers = {} }) {
     el.classList.add('is-visible')
   }
 
-  function destroy() { mountNode(host, el, false) }
+  function destroy() {
+    tips.destroy()
+    mountNode(host, el, false)
+  }
 
   return { el, update, destroy }
 }

@@ -104,6 +104,7 @@ const measureHandle = () => {
     insertTitle: insert ? insert.getAttribute('title') : null,
     mainLabel: main ? main.getAttribute('aria-label') : null,
     mainTitle: main ? main.getAttribute('title') : null,
+    mainNoTip: main ? main.hasAttribute('data-tooltip-none') : false,
     draggable: main ? main.getAttribute('draggable') : null,
     position: getComputedStyle(handle).position,
     zIndex: getComputedStyle(handle).zIndex,
@@ -710,9 +711,9 @@ async function verifySiblingMenusV58(page, width = 1536, mode = 'standard', sect
       ? `句柄中心 ${((handle.button.top + handle.button.bottom) / 2).toFixed(1)} / 行盒中心 ${((line.top + line.bottom) / 2).toFixed(1)}`
       : '')
 
-  record('[句柄] 主按钮 aria-label=块操作 / title=块操作与拖动 / draggable=true',
-    !!handle && handle.hasMain && handle.mainLabel === '块操作' && handle.mainTitle === '块操作与拖动' && handle.draggable === 'true',
-    handle ? `${handle.mainLabel} / ${handle.mainTitle} / draggable=${handle.draggable}` : '')
+  record('[句柄] 主按钮 aria-label=块操作 / 无原生 title / data-tooltip-none / draggable=true',
+    !!handle && handle.hasMain && handle.mainLabel === '块操作' && !handle.mainTitle && handle.mainNoTip && handle.draggable === 'true',
+    handle ? `${handle.mainLabel} / title=${handle.mainTitle} / noTip=${handle.mainNoTip} / draggable=${handle.draggable}` : '')
 
   record('[句柄] 主按钮由「18px 类型 SVG + 飞书六点 SVG」两段组成',
     !!handle && handle.glyph === 'T' && handle.icon?.name === 'block-text' && handle.icon.svg && handle.icon.size === 18

@@ -472,7 +472,10 @@ check('Public text-style empty attributes roundtrip as unset formatting', () => 
   assert.strictEqual(canonical.content[0].content[0].marks[0].attrs.backgroundColor, '')
 })
 check('URL policy blocks obfuscated scripts and persistent blob/SVG images', () => {
-  for (const value of ['javascript:alert(1)', ' java\nscript:alert(1)', '//host/image', 'data:text/html,x', 'blob:http://host/a']) assert(!safeUrl(value, true), value)
+  for (const value of ['javascript:alert(1)', ' java\nscript:alert(1)', '//host/image', 'data:text/html,x', 'blob:javascript:alert(1)', 'blob:http://host/../a']) assert(!safeUrl(value, true), value)
+  // blob: 只放行「同源对象地址 + 图片/媒体位」，供上传 mock 与本地预览用（见 safeUrl 注记）。
+  assert(safeUrl('blob:http://host/0b7c1f2e-aa', true))
+  assert(!safeUrl('blob:http://host/0b7c1f2e-aa'))
   assert(!safeUrl('data:image/svg+xml;base64,PHN2Zz4=', true))
   assert(safeUrl('data:image/png;base64,aGVsbG8=', true))
   assert(safeUrl('https://example.com/image.png', true))

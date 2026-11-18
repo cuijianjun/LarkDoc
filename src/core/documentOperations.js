@@ -19,6 +19,11 @@ export function safeUrl(value, image = false) {
   if (typeof value !== 'string' || !value || Array.from(value).some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return false
   if (image && /^data:image\/(png|jpe?g|gif|webp|bmp|x-bmp|x-ms-bmp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value)) return true
   if (image && MEDIA_DATA_RE.test(value)) return true
+  // blob: 是宿主内存里的本地对象引用（URL.createObjectURL），同源、无网络请求、
+  // 无脚本执行面，networkPolicy.isLocalUrl 也已把它当本地资源放行。上传 mock /
+  // 本地预览返回的媒体地址用它承载大视频，避免把上百 MB 的 base64 塞进 schema。
+  // 严格限定格式：blob:<origin 或 uuid>/<uuid>，拒绝 blob:javascript: 之类的拼接。
+  if (image && /^blob:(?:https?:\/\/[^/\s]+|null)\/[\w-]+$/i.test(value)) return true
   // 图片的相对路径（/、./、../ 开头）是本地资源引用，与 networkPolicy.isLocalUrl 语义一致。
   // 它们不含 javascript:/data: 等危险协议，可直接进 schema（老系统图床 /note/... 即此类）。
   // 注意排除协议相对 URL（//host/... 会被浏览器解析为 http(s)://host/...，属外链而非本地资源）。

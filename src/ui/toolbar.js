@@ -545,16 +545,28 @@ export function createToolbar(options = {}) {
   const tooltip = createLazyView(() => import('./tooltip'), 'createTooltipLayer', { host: el })
   let tooltipAnchor = null
   const syncTooltip = () => tooltip.update({ open: !!tooltipAnchor, anchor: tooltipAnchor })
+  /**
+   * 「带下拉箭头的真下拉」判据 —— 只看结构，不看文案。
+   *
+   * caret 统一是 `chevronDown` 12px，类名分两族：`lark-doc-caret`（makeButton 的
+   * `spec.caret`、正文块、颜色、插入表格、图表、更多）与 `lark-doc-select-caret`
+   * （createSelect 的触发器），所以按 `[class*="caret"]` 一次覆盖。
+   *
+   * 这里刻意**不把** `aria-haspopup` / `aria-expanded` 当判据：
+   *   - 「插入」弹的是命令菜单但按钮上没有箭头 → 用户要求给 tips；
+   *   - 「目录」「文档操作」只是折叠面板的 `aria-expanded`，也不是下拉；
+   *   - 表格 / 图表 / 正文 / 颜色是真下拉，靠 caret 这条已经拦住；
+   *   - `aria-haspopup="dialog"` 的查找 / AI / 快捷键是纯图标，弹窗里没有替代文案，必须给 tips。
+   * 曾经还有一条「`textContent` 含中文就跳过」，它把「插入」「图表」这类有中文标签的
+   * 普通按钮一并排除了 —— 而前面已经把 `title` 摘走，结果是既没自绘 tips 也没原生提示。
+   */
+  const hasPopupCaret = node => !!node.querySelector('[class*="caret"]')
   const tooltipTarget = event => {
     const node = event.target.closest?.('button, [role=combobox], input[type=color]')
     if (!node || !el.contains(node)) return null
     if (node.title) { node.dataset.tooltipTitle = node.title; node.removeAttribute('title') }
-    // 只有「真下拉」跳过：弹 menu / listbox 的，或靠 aria-expanded 折叠的触发器 ——
-    // 选项本身带文字，再叠一层提示是重复。`aria-haspopup="dialog"` 不在此列：
-    // 链接、表格、查找、AI、快捷键都是纯图标，弹窗里没有替代文案，必须给 tips。
-    return node.matches('[aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-expanded]')
-      || /[\u3400-\u9fff]/.test(node.textContent)
-      || node.closest('[role="menu"]') ? null : node
+    if (node.getAttribute('role') === 'combobox' || hasPopupCaret(node) || node.closest('[role="menu"]')) return null
+    return node
   }
   const enterTip = event => { const node = tooltipTarget(event); if (!node || !node.contains(event.relatedTarget)) { tooltipAnchor = node; syncTooltip() } }
   const leaveTip = event => { const node = tooltipTarget(event); if (node && node === tooltipAnchor && !node.contains(event.relatedTarget)) { tooltipAnchor = null; syncTooltip() } }

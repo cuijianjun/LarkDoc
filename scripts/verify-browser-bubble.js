@@ -186,8 +186,21 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
 
   // ——————————————————— ② 六段结构 ———————————————————
   const segments = await page.evaluate(bubbleSegments)
-  const expected = ['ai', 'divider', 'heading', 'align', 'divider', 'mark:加粗', 'mark:删除线', 'mark:斜体', 'mark:下划线', 'mark:行内代码', 'highlight', 'highlight-caret', 'divider', 'copy', 'mark:添加评论']
+  // demo 没有接评论 provider：按「评论没接入就先隐藏 UI」，末尾不该再出现 `divider` + 评论按钮，
+  // 否则就是留了一个永远点不动的空位（需求 2）。
+  const expected = ['ai', 'divider', 'heading', 'align', 'divider', 'mark:加粗', 'mark:删除线', 'mark:斜体', 'mark:下划线', 'mark:行内代码', 'highlight', 'highlight-caret', 'divider', 'copy']
   record('[结构] 六段顺序与 demo 全量特性下的按钮序列一致', JSON.stringify(segments) === JSON.stringify(expected), segments ? segments.join(' | ') : '未取到')
+  record('[结构] 未接评论 provider 时末尾不渲染评论按钮与多余分隔符',
+    Array.isArray(segments) && !segments.includes('mark:添加评论') && segments[segments.length - 1] === 'copy',
+    Array.isArray(segments) ? segments.slice(-3).join(' | ') : '未取到')
+  const copyIconOk = await page.evaluate(() => {
+    const button = [...document.querySelectorAll('.lark-doc-bubble button')].find((el) => el.getAttribute('aria-label') === '复制选中文字')
+    if (!button) return null
+    const svg = button.querySelector('svg')
+    return { hasSvg: !!svg, paths: button.innerHTML.length }
+  })
+  record('[结构] 复制按钮有实际图标（不再留空位）', !!copyIconOk && copyIconOk.hasSvg && copyIconOk.paths > 40,
+    copyIconOk ? `svg=${copyIconOk.hasSvg} html=${copyIconOk.paths}` : '缺按钮')
   record('[结构] 三个分隔符把气泡条分成「AI / 块级与行内格式 / 复制」三段',
     Array.isArray(segments) && segments.filter((item) => item === 'divider').length === 3,
     Array.isArray(segments) ? `${segments.filter((item) => item === 'divider').length} 个` : '')

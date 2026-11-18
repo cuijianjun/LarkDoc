@@ -185,6 +185,13 @@ export function createDomRenderer() {
         requestRender()
         return result
       }
+      // 视频块外部工具条的「分享 / 评论」是纯 DOM NodeView，够不到 Vue $emit；
+      // 冒泡的 lark-doc:file-action 在这里转成同一个 emit('file-action') 出口给宿主。
+      const onFileAction = (event) => {
+        event.stopPropagation()
+        emit('file-action', event.detail || {})
+      }
+      shell.root.addEventListener('lark-doc:file-action', onFileAction)
       const resetLargeDocumentLayout = () => {
         if (largeDocumentViewportFrame != null) {
           if (typeof viewWindow.cancelAnimationFrame === 'function') viewWindow.cancelAnimationFrame(largeDocumentViewportFrame)
@@ -659,6 +666,7 @@ export function createDomRenderer() {
         helpFabUi: documentHost._helpFabUi, outlineUi: documentHost._panelsUi?.outline,
         editorUiRegistry, viewWindow, props, requestRender, nativeHost: runtime,
         cleanup: () => {
+          shell.root.removeEventListener('lark-doc:file-action', onFileAction)
           importConfirmation?.destroy()
           editor?.off('beforeTransaction', prepareProjectionSelection)
           resolveImageFile.cancelAll('destroy')

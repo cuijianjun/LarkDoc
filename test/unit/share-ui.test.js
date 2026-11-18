@@ -54,7 +54,9 @@ function deniedAllSession() {
  * 不引 Vue 运行时 —— 本文件断言的是逻辑分支，不是渲染。
  */
 function createVm(session, overrides = {}) {
-  const vm = { ...shareMixin.data(), ...shareMixin.methods, ...overrides }
+  // `featureEnabled` 是编辑器的公共开关（`larkDocConfig.features`），默认全开；
+  // 单独验证「整组下线」时在 overrides 里覆盖。
+  const vm = { featureEnabled: () => true, ...shareMixin.data(), ...shareMixin.methods, ...overrides }
   vm.session = session == null ? null : session
   const keys = Object.keys(shareMixin.computed)
   for (let i = 0; i < keys.length; i += 1) {
@@ -221,6 +223,17 @@ describe('分享入口降级（B24 末行）', () => {
     vm.openPermissionDialog()
     expect(vm.permissionDialogOpen).toBe(false)
     vm.hideShareToast()
+  })
+
+  it('features.share=false 时整组下线：入口与选区尾按钮都不出，但 canView 遮罩不受影响', () => {
+    const off = feature => feature !== 'share'
+    const vm = createVm(fakeSession({ canManagePermission: true }), { featureEnabled: off })
+    expect(vm.shareEntryVisible).toBe(false)
+    // 选区尾按钮是另一条入口，走 selectionShareAllowed，也得一起关。
+    expect(vm.selectionShareAllowed()).toBe(false)
+    // 「没开这个功能」不等于「没有查看权限」：遮罩只看 canView，不能被 feature 开关牵连
+    // （否则关掉分享会把整页变成只读，等于把一个可写文档锁死）。
+    expect(vm.shareViewMaskVisible).toBe(false)
   })
 
   it('canView:false 时入口不挂载、整页只读遮罩生效', () => {

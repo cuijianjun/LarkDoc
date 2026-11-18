@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
@@ -472,6 +474,26 @@ describe('源模板插入与更多模板闭环', () => {
     expect(editor.state.doc.nodeAt(from)).toBe(before)
     host.closeBlockMenu()
   }))
+  // 文档级 JSON：TipTap 只收 {type:'doc'} 或 HTML 字符串，裸数组会被当成空文档。
+  const fileBlockDocument = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '前文' }] }, {
+    type: 'fileBlock', attrs: { src: '/files/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' },
+  }] }
+  it('文件 / 视频块句柄与飞书一致：回形针类型图标、与块顶齐平、左贴 6px', () => withTemplateDocument(async ({ host, editor, element }) => {
+    const range = host.rangeAt(editor.state.doc.firstChild.nodeSize)
+    expect(editor.state.doc.nodeAt(range.from).type.name).toBe('fileBlock')
+    host.handleRange = range
+    // 左槽是 AttachmentOutlined（b10-03 实测），不是正文的 T
+    expect(host.handleIcon).toBe('block-attachment')
+    expect(host.buildBlockHandleState().buttonKind).toBe('main')
+    const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
+    const figure = editor.view.nodeDOM(range.from)
+    vi.spyOn(element.querySelector('.lark-doc-paper'), 'getBoundingClientRect').mockReturnValue(box(50, 20, 800, 800))
+    vi.spyOn(figure, 'getBoundingClientRect').mockReturnValue(box(120, 300, 600, 340))
+    vi.spyOn(figure.querySelector('.lark-doc-file-preview'), 'getBoundingClientRect').mockReturnValue(box(120, 300, 600, 340))
+    host.positionBlockHandle(range)
+    expect(host.blockHandlePosition.top).toBe(280)   // 块顶 300 - 纸面 20，不按首行居中
+    expect(host.blockHandlePosition.left).toBe(22)   // 120 - 42 - 6 - 50
+  }, { content: fileBlockDocument }))
   it.each([false, true])('任务句柄对齐可见正文，不计入复选框隐藏标签，checked=%s', checked => withTemplateDocument(async ({ doc, editor, host, element }) => {
     doc.setContent(`<ul data-type="taskList"><li data-type="taskItem" data-checked="${checked}"><p>任务正文</p></li></ul>`)
     const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height })
@@ -1227,11 +1249,11 @@ describe('源模板插入与更多模板闭环', () => {
     editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
   }))
 
-  it('块菜单评论接真实composer并指向句柄块，未配置服务时明确禁用', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
+  it('块菜单评论接真实composer并指向句柄块，未配置服务时整项不出现', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
     host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.openBlockMenu()
     await vi.dynamicImportSettled()
-    const unavailable = [...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === '评论')
-    expect(unavailable).toBeTruthy(); expect(unavailable.disabled).toBe(true)
+    // 没接评论能力就别摆一个永远点不动的按钮：整项不渲染（需求「评论没有接入就先隐藏 UI」）。
+    expect([...element.querySelectorAll('.lark-doc-block-menu button')].find(b => b.textContent === '评论')).toBeUndefined()
     host.session.setProvider('comments', createMemoryCommentsProvider())
     host.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }; host.openBlockMenu()
     await vi.dynamicImportSettled()
@@ -1690,11 +1712,13 @@ describe('源模板插入与更多模板闭环', () => {
     let finish
     host.uploadFile = () => new Promise(resolve => { finish = resolve })
     editor.commands.setTextSelection(2)
+    // 占位在**选文件当帧**就落进正文，所以「插入之前」要在调用前取。
+    const before = editor.state.doc
     const pending = host.insertFileBlocks([new File(['file'], 'anchor.pdf', { type: 'application/pdf' })])
     await vi.waitFor(() => expect(finish).toBeTruthy())
     editor.commands.insertContent('X')
     editor.commands.setTextSelection(editor.state.doc.content.size - 1)
-    const before = editor.state.doc, selection = editor.state.selection.getBookmark()
+    const selection = editor.state.selection.getBookmark()
     let transaction
     const observe = payload => { if (payload.transaction.docChanged) transaction = payload.transaction }
     editor.on('transaction', observe)
@@ -1702,19 +1726,126 @@ describe('源模板插入与更多模板闭环', () => {
     editor.off('transaction', observe)
     expect(editor.state.selection.eq(selection.map(transaction.mapping).resolve(editor.state.doc))).toBe(true)
     expect(fileNodes(editor)).toHaveLength(1)
-    editor.commands.undo(); expect(editor.state.doc.eq(before)).toBe(true)
+    // 换真身走 `addToHistory:false`：撤销次数只该是「'X' 一次 + 整批占位一次」。
+    // 多一次就说明换真身另起了一条历史（老 bug：撤销一次只退掉进度，块还在）。
+    let undos = 0
+    while (!editor.state.doc.eq(before) && undos < 6) { editor.commands.undo(); undos += 1 }
+    expect(undos).toBe(2)
+    expect(editor.state.doc.eq(before)).toBe(true)
   }))
-  it('附件锚点被删除时取消，不向后来光标落块', () => withTemplateDocument(async ({ host, editor }) => {
+  it('附件占位被删除时取消上传，不向后来光标落块', () => withTemplateDocument(async ({ host, editor }) => {
     let finish, context
     host.uploadFile = (file, ctx) => { context = ctx; return new Promise(resolve => { finish = resolve }) }
     editor.commands.setTextSelection(2)
     const pending = host.insertFileBlocks([new File(['file'], 'anchor.pdf', { type: 'application/pdf' })])
     await vi.waitFor(() => expect(context).toBeTruthy())
-    editor.view.dispatch(editor.state.tr.delete(0, editor.state.doc.firstChild.nodeSize))
+    // 现在「锚点」就是那块占位本身：删掉它等于用户撤掉了这次插入。
+    const placeholder = fileNodes(editor)[0]
+    let at = null
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === 'fileBlock') { at = pos; return false } })
+    expect(placeholder).toBeTruthy(); expect(at).not.toBeNull()
+    editor.view.dispatch(editor.state.tr.delete(at, at + placeholder.nodeSize))
     await pending; expect(context.signal.aborted).toBe(true)
     finish({ token: 'late_anchor' }); await Promise.resolve()
     expect(fileNodes(editor)).toHaveLength(0)
   }))
+  it('上传期间先落占位并挂进度覆盖层，进度只改 DOM 不进历史', () => withTemplateDocument(async ({ host, editor }) => {
+    let finish, uploadCtx
+    host.uploadFile = (file, context) => { uploadCtx = context; return new Promise(resolve => { finish = resolve }) }
+    editor.commands.setTextSelection(2)
+    const before = editor.state.doc
+    const payload = new Uint8Array(100)
+    const pending = host.insertFileBlocks([new File([payload], 'progress.pdf', { type: 'application/pdf' })])
+    await vi.waitFor(() => expect(uploadCtx).toBeTruthy())
+    // 选完文件当帧就有块：只带渲染得出来的字段，没有可打开的地址，但必须有 blockId 当锚点。
+    const placeholders = fileNodes(editor)
+    expect(placeholders).toHaveLength(1)
+    expect(placeholders[0].attrs.src).toBeFalsy()
+    expect(placeholders[0].attrs.token).toBeFalsy()
+    expect(placeholders[0].attrs.blockId).toBeTruthy()
+    const bar = () => editor.view.dom.querySelector('.lark-doc-file.is-uploading [role="progressbar"]')
+    expect(bar()).not.toBeNull()
+    expect(bar().getAttribute('aria-valuenow')).toBe('0')
+    // 飞书三段配色：0% 灰（idle）→ 进行中蓝（uploading）→ 100% 绿（done）。
+    expect(bar().dataset.state).toBe('idle')
+    // 进度靠直接改 DOM：产生事务就会污染历史，撤销要多按几次（老毛病）。
+    // 走上传实现真正拿到的那个回调（`{loaded,total}`），和真实分片上传同一条路。
+    const docBeforeProgress = editor.view.state.doc
+    let transactions = 0
+    const count = () => { transactions += 1 }
+    editor.on('transaction', count)
+    uploadCtx.onProgress({ loaded: 42, total: 100 })
+    editor.off('transaction', count)
+    expect(transactions).toBe(0)
+    expect(editor.view.state.doc).toBe(docBeforeProgress)
+    expect(bar().getAttribute('aria-valuenow')).toBe('42')
+    expect(bar().dataset.state).toBe('uploading')
+    expect(bar().querySelector('.lark-doc-file-uploading-fill').style.width).toBe('42%')
+    expect(bar().querySelector('.lark-doc-file-uploading-meta').textContent).toBe('上传中 42%')
+    uploadCtx.onProgress({ loaded: 100, total: 100 })
+    expect(bar().dataset.state).toBe('done')
+    finish({ token: 'progress_file' }); await pending
+    // 换真身：覆盖层与上传中样式一起收走，块拿到可用地址。
+    expect(editor.view.dom.querySelector('.lark-doc-file.is-uploading')).toBeNull()
+    expect(editor.view.dom.querySelector('[role="progressbar"]')).toBeNull()
+    expect(fileNodes(editor)).toHaveLength(1)
+    expect(fileNodes(editor)[0].attrs.token).toBe('progress_file')
+    // 整批占位算一条历史，换真身不另记：撤销一次就回到上传前。
+    let undos = 0
+    while (!editor.state.doc.eq(before) && undos < 6) { editor.commands.undo(); undos += 1 }
+    expect(undos).toBe(1)
+  }))
+  // 飞书 `box.uploader.button.cancel = 取消上传`：点取消 abort 这一路并删占位。
+  it('上传中覆盖层带「取消上传」按钮，点击 abort 请求并删占位', () => withTemplateDocument(async ({ host, editor }) => {
+    let context
+    host.uploadFile = (file, ctx) => { context = ctx; return new Promise(() => {}) }
+    editor.commands.setTextSelection(2)
+    const pending = host.insertFileBlocks([new File([new Uint8Array(32)], 'cancel.mp4', { type: 'video/mp4' })])
+    await vi.waitFor(() => expect(context).toBeTruthy())
+    expect(fileNodes(editor)).toHaveLength(1)
+    const bar = editor.view.dom.querySelector('.lark-doc-file.is-uploading [role="progressbar"]')
+    expect(bar).not.toBeNull()
+    const cancel = bar.querySelector('.lark-doc-file-uploading-cancel')
+    expect(cancel).toBeTruthy()
+    expect(cancel.textContent).toBe('取消上传')
+    expect(cancel.getAttribute('data-lark-doc-file-ui')).toBe('')
+    cancel.click()
+    await pending
+    expect(context.signal.aborted).toBe(true)
+    expect(fileNodes(editor)).toHaveLength(0)
+    expect(editor.view.dom.querySelector('.lark-doc-file.is-uploading')).toBeNull()
+  }))
+  // 进度条宽度必须和文字百分比同帧：分片上传每几毫秒更新一次，
+  // 若给 width 加 transition（.18s ease-out），过渡会被反复重启，
+  // 实测出现「94% 文字 / 46% 条」。这条闸门防止有人把过渡加回来。
+  it('上传进度条 fill 的 CSS 规则不含 width transition', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/components/lark-doc/lark-doc.css'), 'utf8')
+    const rule = css.match(/\.lark-doc \.lark-doc-file-uploading-fill\s*\{[^}]*\}/)
+    expect(rule).not.toBeNull()
+    expect(rule[0]).not.toMatch(/transition\s*:/)
+  })
+  // 上传卡高度 1:1 对齐完成态播放器：预览区按 16:9 撑开（532→299），
+  // 传完不跳版，也不再「高度不够」。这条闸门防止有人把它改回自适应塌陷高度。
+  it('视频上传卡预览区按 16:9 撑开，与完成态播放器等高', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/components/lark-doc/lark-doc.css'), 'utf8')
+    const rule = css.match(/\.lark-doc \.lark-doc-file\[data-upload-kind="video"\]\.is-uploading \.lark-doc-file-preview\s*\{[^}]*\}/)
+    expect(rule).not.toBeNull()
+    expect(rule[0]).toMatch(/aspect-ratio\s*:\s*16\s*\/\s*9/)
+    // 完成态播放器同样声明了 16:9，两者几何一致。
+    const ready = css.match(/\.lark-doc \.lark-doc-video-player\s*\{[^}]*\}/)
+    expect(ready).not.toBeNull()
+    expect(ready[0]).toMatch(/aspect-ratio\s*:\s*16\s*\/\s*9/)
+  })
+  // 本地上传 mock 用 blob: 承载大视频（O(1)，避免 100MB base64 进 schema 卡 5 秒）。
+  // 宽松档必须放行合法 blob，但仍拒绝拼进协议内容的畸形串。
+  it('safeUrl 宽松档放行合法 blob: 地址，拒绝畸形拼接', () => {
+    expect(documentOperations.safeUrl('blob:https://example.com/550e8400-e29b-41d4-a716-446655440000', true)).toBe(true)
+    expect(documentOperations.safeUrl('blob:null/550e8400-e29b-41d4-a716-446655440000', true)).toBe(true)
+    expect(documentOperations.safeUrl('blob:javascript:alert(1)', true)).toBe(false)
+    expect(documentOperations.safeUrl('blob:https://example.com/a b', true)).toBe(false)
+    // 严格档（链接表单）仍不放行 blob。
+    expect(documentOperations.safeUrl('blob:https://example.com/abc', false)).toBe(false)
+  })
   it.each(['raw', 'duplicate', 'forged-complete'])('分页ID快速路径不信任未经验证的原始state：%s', mode => withTemplateDocument(async ({ editor }) => {
     const paragraph = text => editor.schema.node('paragraph', { blockId: mode === 'duplicate' ? 'duplicate_id' : null }, editor.schema.text(text))
     const invalid = editor.schema.node('doc', null, mode === 'duplicate' ? [paragraph('legacy'), paragraph('other')] : paragraph('legacy'))
@@ -2862,7 +2993,8 @@ describe('图片 AI 真实门面接线', () => {
       const nodeView = doc.getEditor().view.docView.children.find(child => child.node.type.name === 'image').spec
       nodeView.mountToolbar()
       nodeView.dom.querySelector('[data-action="ai"]').click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      // 侧面板是懒加载模块：首次打开要等动态 import 落地，固定一次 setTimeout 会 flaky。
+      await vi.waitFor(() => expect(element.querySelector('[aria-label="图片问答"]')).not.toBeNull())
       const panel = element.querySelector('[aria-label="图片问答"]')
       panel.querySelector('[aria-label="移除图片引用"]').click()
       const prompt = panel.querySelector('textarea')
@@ -2901,16 +3033,17 @@ describe('图片 AI 真实门面接线', () => {
       const ask = nodeView.dom.querySelector('[data-action="ai"]')
       expect(ask.textContent).toBe('问问AI')
       ask.click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      // 侧面板是懒加载模块：首次打开要等动态 import 落地，固定一次 setTimeout 会 flaky
+      // （AI 只剩一张表单面板后模块变大，单 tick 已不够）。
+      await vi.waitFor(() => expect(element.querySelector('[aria-label="图片问答"]')).not.toBeNull())
       const panel = element.querySelector('[aria-label="图片问答"]')
-      expect(panel).not.toBeNull()
-      expect(panel.querySelector('.lark-doc-image-ai-reference').hidden).toBe(false)
+      expect(panel.querySelector('.lark-doc-ai-reference').hidden).toBe(false)
       expect(panel.querySelector('[aria-label="发送图片问答"]').disabled).toBe(true)
       expect(document.activeElement).toBe(panel.querySelector('textarea'))
       expect(stream).not.toHaveBeenCalled()
       panel.querySelector('[aria-label="移除图片引用"]').click()
       await new Promise(resolve => setTimeout(resolve, 0))
-      expect(panel.querySelector('.lark-doc-image-ai-reference').hidden).toBe(true)
+      expect(panel.querySelector('.lark-doc-ai-reference').hidden).toBe(true)
       expect(JSON.stringify(doc.getJSON())).toBe(before)
       doc.patchProps({ config: { features: { ai: false } } })
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -5324,21 +5457,22 @@ describe('最终补全：文本与表格AI真实编辑器闭环', () => {
   it('关闭重开问答后旧输入与IME事件不能写入新会话，流式更新保留当前输入节点', async () => {
     const { workspace, root } = chatFixture()
     workspace.openSelectionAI()
-    await vi.waitFor(() => expect(root.querySelector('[aria-label="AI 问答消息"]')).not.toBeNull())
-    const previous = root.querySelector('[aria-label="AI 问答消息"]')
+    // 统一表单面板后要求输入框是 `<label for>` 命名的，不再挂 `aria-label`「AI 问答消息」。
+    await vi.waitFor(() => expect(root.querySelector('#lark-doc-ai-prompt')).not.toBeNull())
+    const previous = root.querySelector('#lark-doc-ai-prompt')
     workspace.closeAI(); workspace.openSelectionAI()
-    await vi.waitFor(() => expect(root.querySelector('[aria-label="AI 问答消息"]')).not.toBe(previous))
+    await vi.waitFor(() => expect(root.querySelector('#lark-doc-ai-prompt')).not.toBe(previous))
     previous.value = '旧会话迟到输入'
     previous.dispatchEvent(new Event('input', { bubbles: true }))
     previous.dispatchEvent(new Event('compositionend', { bubbles: true }))
     expect(workspace.state.aiPrompt).toBe('')
-    const current = root.querySelector('[aria-label="AI 问答消息"]')
+    const current = root.querySelector('#lark-doc-ai-prompt')
     current.value = '当前问题'
     current.dispatchEvent(new Event('input', { bubbles: true }))
     expect(workspace.state.aiPrompt).toBe('当前问题')
     await workspace.sendAIChat()
     await Promise.resolve()
-    expect(root.querySelector('[aria-label="AI 问答消息"]')).toBe(current)
+    expect(root.querySelector('#lark-doc-ai-prompt')).toBe(current)
   })
   it('未配置provider的新问答不执行mock生成', async () => {
     const { workspace, handle } = chatFixture()

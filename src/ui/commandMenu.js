@@ -7,12 +7,13 @@ import { applyStyle, setAttr, syncChildren } from './dom'
 import { iconNode, setIcon } from './icon'
 import { diagramIconNode } from './diagramMenu'
 import { MENU_ICON_MARKUP } from './commandIcons'
+import { bindHoverTips } from './hoverTips'
 
 /** plus 菜单的前置分段；其余段按命令表里首次出现的顺序追加。 */
 const PLUS_CATEGORIES = ['基础', '常用', '绘图']
 // Observed in the approved Feishu insert panel; loaded with this menu.
 
-const BASIC_ICONS = { heading1: 'block-h1', heading2: 'block-h2', heading3: 'block-h3', orderedList: 'block-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'block-quote', callout: 'block-callout', divider: 'horizontal-rule', link: 'link' }
+const BASIC_ICONS = { heading1: 'block-h1', heading2: 'block-h2', heading3: 'block-h3', heading4: 'block-h4', heading5: 'block-h5', orderedList: 'block-ordered', bulletList: 'block-bullet', taskList: 'block-task', code: 'block-code', blockquote: 'block-quote', callout: 'block-callout', divider: 'horizontal-rule', link: 'link' }
 const SEMANTIC_COMMAND_ICONS = { sheet: 'block-table', bitable: 'block-table', whiteboard: 'block-diagram', mindMap: 'block-diagram', flowChart: 'block-diagram', umlDiagram: 'block-diagram', poll: 'block-diagram', taskList: 'block-task', callout: 'block-callout', columns: 'block-columns', columns2: 'block-columns', columns3: 'block-columns', columns4: 'block-columns', columns5: 'block-columns', table: 'block-table', image: 'block-image', file: 'block-file', template: 'block-template', diagram: 'block-diagram' }
 /** 子菜单贴触发器的间距 / 视口留边（与 SFC 完全一致，断言在量）。 */
 const SUBMENU_GAP = 5
@@ -73,6 +74,12 @@ export function createCommandMenu(options = {}) {
   el.addEventListener('mouseenter', () => call('onMenuEnter'))
   el.addEventListener('mouseleave', () => call('onMenuLeave'))
   el.addEventListener('keydown', onKeydown)
+  /**
+   * 图标提示。➕ 菜单「基础」那一格的中文名被 `clip-path` 藏了，是纯图标 → 出提示；
+   * 带中文名的行与带 `aria-haspopup` 的子菜单项按判据自动不出。
+   * 绑在 `el` 上：条目节点是复用的（`syncEntry` 只改属性），委托一次就够。
+   */
+  const tips = bindHoverTips(el)
 
   // ————————————————— 头部（`<strong>` + 搜索框） —————————————————
 
@@ -623,6 +630,8 @@ export function createCommandMenu(options = {}) {
   }
 
   function unmount() {
+    // 菜单收起时把提示一并收掉：锚点已经不可见了，留着会飘在文档上。
+    tips.hide()
     if (listening) {
       listening = false
       viewWindow.removeEventListener('resize', positionSubmenu)
@@ -676,6 +685,7 @@ export function createCommandMenu(options = {}) {
     get submenuEl() { return submenuEl },
     destroy() {
       unmount()
+      tips.destroy()
       entries.clear()
       sectionNodes.clear()
     },

@@ -11,6 +11,9 @@ export const wrap = (inner, extra = '') => `<svg ${S} ${extra}>${inner}</svg>`
 
 export const ICONS = {
   'block-file': wrap('<path d="m6.5 9.5 4-4a2.1 2.1 0 0 1 3 3l-6 6a3.5 3.5 0 0 1-5-5l6-6a1.4 1.4 0 0 1 2 2l-6 6a.7.7 0 0 1-1-1l5-5"/>'),
+  // 文件 / 视频块的**句柄**类型图标：飞书 AttachmentOutlined（24 viewBox 实心回形针，
+  // b10-03-file-hover 实测 svg data-icon="AttachmentOutlined"，句柄左槽 22×22）。
+  'block-attachment': '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.304 7.315a1 1 0 0 1 1.414 1.414L8.13 14.317a1.485 1.485 0 0 0 0 2.1l.01.011a1.5 1.5 0 0 0 2.117-.005l7.43-7.43a3.5 3.5 0 0 0 0-4.95l-.036-.037a3.5 3.5 0 0 0-4.95 0l-7.778 7.777a5.521 5.521 0 0 0 7.808 7.809l7.07-7.07a1 1 0 0 1 1.415 1.414l-7.07 7.07A7.521 7.521 0 0 1 3.509 10.37l7.778-7.778a5.5 5.5 0 0 1 7.778 0l.037.037a5.5 5.5 0 0 1 0 7.778l-7.43 7.43a3.5 3.5 0 0 1-4.939.012l-.006-.006-.012-.012a3.485 3.485 0 0 1 0-4.928l5.589-5.588Z" fill="currentColor"/></svg>',
   'share-embed-compass': '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="6.75" stroke="currentColor" stroke-width="1.25"/><path d="m11.15 4.85-1.94 4.36-4.36 1.94 1.94-4.36 4.36-1.94Z" fill="currentColor"/></svg>',
   // Vector redrawn from the source's unsupported-preview raster, not an embedded screenshot.
   'share-unsupported-illustration': '<svg viewBox="0 0 150 140" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -98,6 +101,11 @@ export const ICONS = {
   "refresh": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M9.93 4.273a8 8 0 0 1 8.683 3.224h-3.11a1 1 0 0 0 0 2h5.496a1 1 0 0 0 1.001-1V3a1 1 0 1 0-2 0v3a10 10 0 1 0 .66 11 1 1 0 0 0-1.732-1A8 8 0 1 1 9.93 4.273Z\" fill=\"currentColor\"></path></svg>",
   "open-external": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 2C5.925 23 1 18.075 1 12S5.925 1 12 1s11 4.925 11 11-4.925 11-11 11Zm2.325-9.726a2 2 0 0 1-1.056 1.056l-5.113 2.178c-.41.175-.828-.26-.654-.66l2.213-5.082a2 2 0 0 1 1.033-1.034l5.098-2.228c.41-.179.831.253.66.655l-2.181 5.115Z\" fill=\"currentColor\"></path></svg>",
   cut: wrap('<circle cx="4.4" cy="11.6" r="1.8"/><circle cx="11.6" cy="11.6" r="1.8"/><path d="M5.7 10.3 11.6 2.8"/><path d="m10.3 10.3-5.9-7.5"/>'),
+  // 气泡条「复制选中文字」用。此前这个键缺失，`iconNode('copy')` 落到兜底分支只留一个
+  // 空 span —— 尺寸被 CSS 撑开但没有图形，就是截图里那个红框空白位。
+  // 语义与 `blockHandle.BLOCK_MENU_ICONS.copy` 一致（同一「两页重叠」意象），
+  // 只是那套是 24×24 填充版、这里是 16×16 线性版，跟工具栏其余图标同一口径。
+  copy: wrap('<rect x="2.6" y="2.6" width="8" height="9.4" rx="1.6"/><path d="M12.4 5.4c.6 0 1 .4 1 1v6.4c0 .6-.4 1-1 1H6.6c-.6 0-1-.4-1-1"/>'),
   translate: wrap('<path d="M2.6 4.6h5"/><path d="M5 2.8v1.8"/><path d="M7 4.6c-.4 2.6-2 4.4-4.4 5.4"/><path d="M3.2 6.6c1 1.6 2.3 2.7 4 3.2"/><path d="M8.6 13.2 11 7.4l2.4 5.8"/><path d="M9.4 11.4h3.3"/>'),
   trash: wrap('<path d="M3 4.6h10"/><path d="M6.4 4.6V3.4c0-.6.4-1 1-1h1.2c.6 0 1 .4 1 1v1.2"/><path d="M4.4 4.6l.6 8c0 .6.5 1 1 1h4c.5 0 1-.4 1-1l.6-8"/><path d="M6.7 7.4v3.6"/><path d="M9.3 7.4v3.6"/>'),
   'move-up': wrap('<path d="M8 13V3.6"/><path d="M4.4 7.2 8 3.6l3.6 3.6"/>'),

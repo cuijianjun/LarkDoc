@@ -54,6 +54,12 @@ describe('P3-07 内嵌网页命令接线', () => {
     expect(filterCommands('', 'plus').some(item => item.id === 'diagram')).toBe(true)
     expect(filterCommands('', 'plus').some(item => item.id === 'table')).toBe(true)
   })
+  // 飞书「➕ 插入菜单」基础段是 H1~H5；我们曾只有 H1~H3（用户截图反馈）。
+  it('plus 菜单基础段含 H1~H5 五级标题，且顺序连续', () => {
+    const basics = filterCommands('', 'plus').filter(item => item.category === '基础').map(item => item.id)
+    expect(basics.slice(0, 5)).toEqual(['heading1', 'heading2', 'heading3', 'heading4', 'heading5'])
+    expect(basics.filter(id => /^heading\d+$/.test(id))).toHaveLength(5)
+  })
   it('restores the working attachment picker in slash and common menus, respecting files configuration', () => {
     expect(filterCommands('视频或文件', 'slash').map(item => item.id)).toEqual(['file'])
     expect(filterCommands('', 'plus').filter(item => item.category === '常用').map(item => item.id)).toContain('file')

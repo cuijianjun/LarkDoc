@@ -17,6 +17,9 @@ export const LARK_DOC_FEATURES = Object.freeze([
   'files',
   // 内嵌网页 15 项（P3-07）：15 条命令共用这一个开关，关掉后斜杠菜单不再出现「内嵌网页」组。
   'embed',
+  // 分享入口（气泡条尾部「分享」/ 表格工具 share-link / 链接浮窗分享）。
+  // 默认保持开启（现状不变），宿主不需要分享时置 false 即可整组下线。
+  'share',
 ])
 
 /**
@@ -64,6 +67,9 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     files: true,
     // 内嵌网页 15 项：关闭后斜杠菜单不再出现「内嵌网页」组。
     embed: true,
+    // 分享入口：默认 true = 与历史行为一致；置 false 后选区尾按钮、表格工具
+    // 「分享」与链接浮窗分享一起消失，且不留分隔符。
+    share: true,
   },
   toolbar: {
     history: true, headings: true, marks: true, textStyle: true, blockStyle: true,

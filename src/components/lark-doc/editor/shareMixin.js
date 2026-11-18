@@ -567,9 +567,12 @@ export default {
   },
   computed: {
     selectionShareEntryAvailable() { return this.selectionShareAllowed() },
-    /** 入口显隐：只有 `canView:false` 才不挂（B24 交叉约束 3）；其余一律挂载。 */
+    /**
+     * 入口显隐：`features.share` 关掉 = 整个分享入口不挂；`canView:false` 才不挂
+     * 是历史约束（B24 交叉约束 3），两者取与。只读遮罩 `shareViewMaskVisible` 不受影响。
+     */
     shareEntryVisible() {
-      return this.shareCan('canView')
+      return this.featureEnabled('share') && this.shareCan('canView')
     },
     /** `canView:false` 的整页只读遮罩。这是 8 项里唯一「替换整页」的一项。 */
     shareViewMaskVisible() {
@@ -652,7 +655,17 @@ export default {
     this.hideShareToast()
   },
   methods: {
-    selectionShareAllowed() { return !this._selectionShareDisposed && this.shareCan('canView') && this.shareCan('canExport') },
+    /**
+     * 分享入口的总开关。
+     *
+     * `features.share` 是**显式配置项**（默认 true，与历史行为一致）：不需要分享的宿主
+     * 置 false 后，选区尾按钮、表格工具 `share-link`、链接浮窗分享一起下线 —— 三处都
+     * 派生自这一个方法 / 它派生出的 `selectionShareEntryAvailable`，不会各留一半。
+     * capability（canView + canExport）仍然照旧判，配置只做「整组下线」，不放松权限。
+     */
+    selectionShareAllowed() {
+      return this.featureEnabled('share') && !this._selectionShareDisposed && this.shareCan('canView') && this.shareCan('canExport')
+    },
     selectionShareTargetValid(target = this._selectionShareTarget, doc = this.editor?.state.doc) {
       if (!target || !doc || this.editor !== target.editor || target.editor.isDestroyed || this.session !== target.session || this.session?._destroyed || this.session?.documentId !== target.documentId || this.onSelectionShare !== target.callback || this._mentionProvider !== target.directory || !this.selectionShareAllowed() || shareNetworkKey(this) !== target.network || this.shareDocumentLink() !== target.documentLink) return false
       try {

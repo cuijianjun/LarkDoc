@@ -10,7 +10,7 @@ import { moveDepthAllowed } from '../../../core/blocks/container-depth'
 
 // 整框高亮的块：容器与原子对象对完整外框高亮，不给内部每行重复叠加背景。
 // tableWrapper 是 ProseMirror 表格节点的实际 DOM（nodeDOM 返回包装层），必须一起识别。
-const FRAME_BLOCK_SELECTOR = '.lark-doc-code, [data-type="codeBlock"], [data-type="callout"], blockquote, [data-type="columns"], [data-type="column"], table, .tableWrapper, figure[data-type="image"], hr'
+const FRAME_BLOCK_SELECTOR = '.lark-doc-code, [data-type="codeBlock"], [data-type="callout"], blockquote, [data-type="columns"], [data-type="column"], table, .tableWrapper, figure[data-type="image"], figure[data-type="file"], hr'
 
 export default {
   data() { return {
@@ -34,7 +34,7 @@ export default {
       const doc = this.editor.state.doc
       const directNode = nodeAtSafe(doc, this.handleRange.from)
       const node = this.handleBlockNode() || directNode
-      const glyphs = { paragraph: 'T', heading: 'H', bulletList: '•', orderedList: '1≡', taskList: '☑', listItem: '•', blockquote: '❝', codeBlock: '{}', horizontalRule: '≡', callout: '▤', details: '▾', columns: 'Ⅱ', table: '▦', image: '▧' }
+      const glyphs = { paragraph: 'T', heading: 'H', bulletList: '•', orderedList: '1≡', taskList: '☑', listItem: '•', blockquote: '❝', codeBlock: '{}', horizontalRule: '≡', callout: '▤', details: '▾', columns: 'Ⅱ', table: '▦', image: '▧', fileBlock: '附件', file: '附件' }
       if (['listItem', 'taskItem'].includes(node?.type.name)) {
         const $pos = doc.resolve(Math.min(doc.content.size, this.handleRange.from + 1))
         for (let depth = $pos.depth; depth > 0; depth -= 1) {
@@ -68,6 +68,8 @@ export default {
         paragraph: 'block-text', bulletList: 'block-bullet', orderedList: 'block-ordered', taskList: 'block-task',
         blockquote: 'block-quote', codeBlock: 'block-code', horizontalRule: 'horizontal-rule', callout: 'block-callout',
         details: 'block-details', columns: 'block-columns', column: 'block-columns', table: 'block-table', image: 'block-image',
+        // 文件 / 视频块：飞书句柄左槽是 AttachmentOutlined（回形针），不是正文的 T。
+        fileBlock: 'block-attachment', file: 'block-attachment',
       }[type] || 'block-text'
     },
     currentBlockRange() {
@@ -210,6 +212,11 @@ export default {
       if (anchor.matches('figure[data-type="image"]')) {
         const frame = (anchor.querySelector('.lark-doc-image-frame') || anchor).getBoundingClientRect()
         return position(frame.top, cellLeft ?? domRect.left - handleWidth - 12)
+      }
+      // 文件 / 视频块：句柄与块顶齐平、贴块左 6px（b10-03 实测 handle 634..676 / 块 682）。
+      if (anchor.matches('figure[data-type="file"]')) {
+        const frame = (anchor.querySelector('.lark-doc-file-preview') || anchor).getBoundingClientRect()
+        return position(frame.top, cellLeft ?? domRect.left - handleWidth - 6)
       }
       const foldToggle = anchor.querySelector('.lark-doc-heading-fold-toggle')
       const foldRect = foldToggle?.getBoundingClientRect()
@@ -399,7 +406,7 @@ export default {
     },
     blockShellElement(element) {
       if (!(element instanceof Element)) return null
-      const shell = element.closest('.lark-doc-code, [data-type="codeBlock"], blockquote, [data-type="callout"], [data-type="columns"], [data-type="column"], table, figure[data-type="image"], hr')
+      const shell = element.closest('.lark-doc-code, [data-type="codeBlock"], blockquote, [data-type="callout"], [data-type="columns"], [data-type="column"], table, figure[data-type="image"], figure[data-type="file"], hr')
       const cell = element.closest('td,th')
       return cell && shell && !cell.contains(shell) ? null : shell
     },

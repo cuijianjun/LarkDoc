@@ -751,7 +751,7 @@
 .lark-doc .lark-doc-notice button { flex: 0 0 auto; }
 .lark-doc .lark-doc-side-panel { padding: 14px; margin-bottom: 10px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-panel); }
 .lark-doc .lark-doc-panel-heading { display: flex; align-items: center; justify-content: space-between; }.lark-doc .lark-doc-panel-heading h2 { margin: 0; font-size: 15px; }.lark-doc .lark-doc-side-panel p { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-side-panel button { border-color: var(--ld-border-chrome); }.lark-doc .lark-doc-side-panel input, .lark-doc .lark-doc-side-panel select { width: 100%; max-width: 100%; }.lark-doc .lark-doc-panel-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }.lark-doc .lark-doc-ai-result { min-height: 95px; max-height: 250px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--lark-doc-soft); padding: 10px; border-radius: 5px; }.lark-doc .lark-doc-snapshot-list { padding-left: 16px; }
-.lark-doc .lark-doc-ai-panel { display: grid; gap: 7px; }.lark-doc .lark-doc-ai-panel h2 small { color: var(--lark-doc-muted); font-size: 11px; font-weight: 500; }.lark-doc .lark-doc-ai-panel label { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-context { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-context); }.lark-doc .lark-doc-ai-context-summary, .lark-doc .lark-doc-ai-status { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-status { margin: 0; }.lark-doc .lark-doc-ai-messages, .lark-doc .lark-doc-ai-review-list { display: grid; gap: 6px; max-height: 150px; margin: 0; padding: 0; overflow: auto; list-style: none; }.lark-doc .lark-doc-ai-messages li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--lark-doc-soft); }.lark-doc .lark-doc-ai-messages li.is-user { background: var(--ld-bg-accent); }.lark-doc .lark-doc-ai-messages span { white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-review-list li, .lark-doc .lark-doc-ai-proposal { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-review); }.lark-doc .lark-doc-ai-review-list small { color: var(--lark-doc-muted); }.lark-doc .lark-doc-ai-review-list button { justify-self: start; }.lark-doc .lark-doc-ai-proposal { background: var(--ld-bg-ai-proposal); }.lark-doc .lark-doc-ai-proposal p { margin: 0; }.lark-doc .lark-doc-ai-proposal pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-ai-panel { display: flex; flex-direction: column; gap: 12px; }.lark-doc .lark-doc-ai-panel h2 small { color: var(--lark-doc-muted); font-size: 11px; font-weight: 500; }.lark-doc .lark-doc-ai-panel label { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-context { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-context); }.lark-doc .lark-doc-ai-context-summary, .lark-doc .lark-doc-ai-status { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-status { margin: 0; }.lark-doc .lark-doc-ai-messages, .lark-doc .lark-doc-ai-review-list { display: grid; gap: 6px; max-height: 150px; margin: 0; padding: 0; overflow: auto; list-style: none; }.lark-doc .lark-doc-ai-messages li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--lark-doc-soft); }.lark-doc .lark-doc-ai-messages li.is-user { background: var(--ld-bg-accent); }.lark-doc .lark-doc-ai-messages span { white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-review-list li, .lark-doc .lark-doc-ai-proposal { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-review); }.lark-doc .lark-doc-ai-review-list small { color: var(--lark-doc-muted); }.lark-doc .lark-doc-ai-review-list button { justify-self: start; }.lark-doc .lark-doc-ai-proposal { background: var(--ld-bg-ai-proposal); }.lark-doc .lark-doc-ai-proposal p { margin: 0; }.lark-doc .lark-doc-ai-proposal pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* 「给 AI 的要求」输入框：之前是裸 textarea（只有 width + resize），贴边、无描边、跟上下
    两个下拉格格不入。改成和下拉同高的输入皮肤：1px 描边 + 6 圆角 + 8/10 内距，
    聚焦时描边换品牌色并补一圈 focus-ring —— 和 `.lark-doc-math-editor textarea` 一个路子。 */
@@ -1256,32 +1256,38 @@
 .lark-doc.lark-doc-has-image-ai .lark-doc-external-panel { top: 64px; right: 0; bottom: 0; width: 400px; max-width: 100vw; max-height: none; overflow: hidden; border-left: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface); z-index: 89; }
 .lark-doc.lark-doc-has-image-ai .lark-doc-external-panel > div { height: 100%; }
 .lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-save-version-mask, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
-.lark-doc .lark-doc-image-ai { height: 100%; display: flex; flex-direction: column; color: var(--ld-text); }
-.lark-doc .lark-doc-image-ai button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; color: var(--ld-text); background: transparent; cursor: pointer; }
-.lark-doc .lark-doc-image-ai button:hover:not(:disabled) { background: var(--ld-bg-menu-item-active); }
-.lark-doc .lark-doc-image-ai-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; height: 56px; padding: 0 16px; font-size: 14px; }
-.lark-doc .lark-doc-image-ai-body { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px 20px; overflow: auto; gap: 12px; }
-.lark-doc .lark-doc-image-ai-hero { display: grid; place-items: center; align-content: center; flex: 1; gap: 28px; padding-bottom: 96px; color: var(--ld-brand-chrome); }
-.lark-doc .lark-doc-image-ai-hero h2 { font-size: 28px; font-weight: 600; line-height: 42px; color: var(--ld-text); margin: 0; white-space: nowrap; }
-.lark-doc .lark-doc-image-ai-composer { flex-shrink: 0; display: grid; gap: 10px; margin: 12px 16px 16px; padding: 11px; border: 1px solid var(--ld-border-chrome); border-radius: 24px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-panel); }
-.lark-doc .lark-doc-image-ai-reference { display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 6px 0 10px; border-radius: 12px; background: var(--lark-doc-soft); color: var(--lark-doc-muted); font-size: 14px; }
-.lark-doc .lark-doc-image-ai-reference[hidden] { display: none; }
-.lark-doc .lark-doc-image-ai-reference > span { padding-left: 8px; border-left: 3px solid var(--ld-border-chrome); }
-.lark-doc .lark-doc-image-ai-reference button { width: 22px; height: 22px; color: var(--lark-doc-muted); }
-.lark-doc .lark-doc-image-ai-composer textarea { box-sizing: border-box; display: block; width: 100%; min-height: 24px; max-height: 160px; padding: 6px 8px; border: 0; outline: 0; background: transparent; color: var(--ld-text); font: inherit; font-size: 14px; line-height: 24px; resize: none; }
-.lark-doc .lark-doc-image-ai-controls { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
-.lark-doc .lark-doc-image-ai-controls small { max-width: 280px; color: var(--lark-doc-muted); font-size: 12px; }
-.lark-doc .lark-doc-image-ai-controls button { border-radius: 50%; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 24px; }
-.lark-doc .lark-doc-image-ai-controls button:disabled { background: var(--ld-border-chrome); color: var(--ld-text-on-brand); cursor: default; }
-.lark-doc .lark-doc-image-ai-messages { display: grid; gap: 20px; }
-.lark-doc .lark-doc-image-ai-message, .lark-doc .lark-doc-image-ai-answer { font-size: 14px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.lark-doc .lark-doc-image-ai-message.is-user { justify-self: end; max-width: 90%; padding: 10px 14px; border-radius: 16px; background: var(--lark-doc-soft); }
-.lark-doc .lark-doc-image-ai-status, .lark-doc .lark-doc-image-ai-error { margin: 0; font-size: 12px; }
-.lark-doc .lark-doc-image-ai-status { color: var(--lark-doc-muted); }
-.lark-doc .lark-doc-image-ai-error { color: var(--ld-text-error); }
-.lark-doc .lark-doc-image-ai-reference > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lark-doc .lark-doc-image-ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.lark-doc .lark-doc-image-ai-actions button { width: auto; min-height: 32px; padding: 0 8px; font: inherit; font-size: 12px; }
+/* AI 面板 = 一张表单（specs/004 FR-205，对齐参考图里的「AI 助手」）：
+   标题行 / 说明 / 配置栏 / 引用条 / 要求框 / 动作行 / 结果区 / 决策行，一行一件事。
+   对话式外壳（`.lark-doc-image-ai-*`）已连同 src/ui/imageAiChat.js 一起下线。 */
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-heading { flex: 0 0 auto; }
+.lark-doc .lark-doc-ai-panel h2 { display: flex; align-items: baseline; gap: 6px; font-size: 15px; font-weight: 600; }
+/* 标题行右侧的关闭键做成圆形控件：参考图里它是个 28px 的灰底圆，不是描边按钮。 */
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-heading > button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-heading > button:hover:not(:disabled) { background: var(--ld-bg-menu-item-active); color: var(--ld-text); }
+/* 配置栏：上下文范围 / 操作 /（翻译时）目标语言。三块同款字段卡，label 常显压在控件上方。 */
+.lark-doc .lark-doc-ai-actionbar { display: grid; gap: 8px; min-width: 0; }
+.lark-doc .lark-doc-ai-actionbar > label { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip-path: none; white-space: normal; }
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-context,
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-field { display: grid; gap: 4px; min-width: 0; padding: 8px 10px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-ai-context); }
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-context > label,
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-field > label { margin: 0; color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+/* 引用条：单行胶囊，文字过长就省略，移除键固定贴右。 */
+.lark-doc .lark-doc-ai-reference { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 10px; border-radius: 8px; background: var(--lark-doc-soft); color: var(--lark-doc-muted); font-size: 12px; }
+.lark-doc .lark-doc-ai-reference[hidden] { display: none; }
+.lark-doc .lark-doc-ai-reference-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-ai-reference-remove { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--lark-doc-muted); cursor: pointer; }
+.lark-doc .lark-doc-ai-reference-remove:hover:not(:disabled) { background: var(--ld-bg-menu-item-active); color: var(--ld-text); }
+/* 底部按钮：换行而不是裁字（FR-205 的硬要求），等宽铺满一行。 */
+/* 用两列网格而不是 flex 自动换行：动作行有 4 个按钮（复制/插入/替换/重新生成），
+   面板宽 399 时 flex 会排成「3 + 1」，最后一个按钮独占一行又被 flex:1 撑满，
+   看起来像排版错位。固定两列让换行点可预期（4 个 → 2×2，2 个 → 一行）。 */
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-buttons:not(.lark-doc-panel-buttons--decision) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-buttons:not(.lark-doc-panel-buttons--decision) > button { min-width: 0; min-height: 32px; padding: 0 12px; font: inherit; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 决策行（接受 / 拒绝）贴右、按内容宽度，不跟上面的动作行一起均分（选择器要压过上面那条）。 */
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-buttons--decision { justify-content: flex-end; }
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-buttons--decision > button { flex: 0 0 auto; min-width: 72px; }
+/* 结果区：软底卡片，和参考图里的预览块一致。 */
+.lark-doc .lark-doc-ai-panel .lark-doc-ai-result { min-height: 96px; max-height: 280px; padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.7; }
 @media (max-width: 800px) { .lark-doc.lark-doc-has-image-ai .lark-doc-body { padding-right: 0; } }
 
 
@@ -1358,6 +1364,60 @@
 /* 高恒 409：失败态与成功态同一个壳，所以「块高」不能当成败判据（③-ter）。 */
 .lark-doc .lark-doc-file-preview { position: relative; box-sizing: border-box; display: flex; align-items: center; justify-content: center; height: 409px; min-height: 409px; overflow: hidden; }
 .lark-doc .lark-doc-file-video { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; border: 0; object-fit: contain; }
+
+/* ==================================================================
+   视频完成态播放器（飞书式）
+   旧形态：video 塞进固定 409 的 preview + object-fit contain → 上下灰留白。
+   飞书形态：容器按视频真实宽高比自适应，画面 cover 铺满 → 零留白；
+   静态给中央播放键 + 右下角时长，悬浮给文件名 + 自绘控制条。
+   只在 `is-video-ready` + `.lark-doc-video-player` 生效：PDF / 卡片 / 失败态
+   仍走 409 preview + 42 footer 的 453 契约，一处不动。
+   ================================================================== */
+/* 解码成功后释放固定高：preview 由播放器内容撑开。 */
+.lark-doc .lark-doc-file.is-video-ready .lark-doc-file-preview { height: auto; min-height: 0; display: block; }
+.lark-doc .lark-doc-file.is-video-ready .lark-doc-file-footer { display: none; }
+/* 播放器壳：aspect-ratio 由 JS 按 videoWidth/Height 写入内联 style；默认 16:9 兜底。 */
+.lark-doc .lark-doc-video-player { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--ld-bg-file-preview); }
+/* 原生 controls 留作无障碍回退，但视觉交给自绘条。 */
+.lark-doc .lark-doc-video-player .lark-doc-file-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lark-doc .lark-doc-video-player .lark-doc-file-video::-webkit-media-controls { display: none !important; }
+/* 静态态：中央大播放键（半透明灰圆 + 白三角）+ 右下角时长徽标。 */
+.lark-doc .lark-doc-video-center-play { position: absolute; left: 50%; top: 50%; z-index: 2; display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; padding: 0; transform: translate(-50%, -50%); border: 0; border-radius: 50%; background: rgba(255, 255, 255, .72); box-shadow: 0 2px 12px rgba(0, 0, 0, .12); color: var(--ld-text-file); cursor: pointer; transition: background .15s, transform .15s; }
+.lark-doc .lark-doc-video-center-play:hover { background: rgba(255, 255, 255, .9); transform: translate(-50%, -50%) scale(1.05); }
+.lark-doc .lark-doc-video-center-play .lark-doc-icon { width: 26px !important; height: 26px !important; }
+.lark-doc .lark-doc-video-duration { position: absolute; right: 12px; bottom: 12px; z-index: 2; padding: 2px 7px; border-radius: 4px; background: rgba(0, 0, 0, .68); color: rgba(255, 255, 255, .95); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.lark-doc .lark-doc-video-duration:empty { display: none; }
+/* 播放后：静态徽标退场。 */
+.lark-doc .lark-doc-video-player.is-playing .lark-doc-video-center-play,
+.lark-doc .lark-doc-video-player.is-playing .lark-doc-video-duration { opacity: 0; pointer-events: none; }
+/* 左上角文件名：悬浮才出现，渐变遮罩保证深/浅视频上都可读。 */
+.lark-doc .lark-doc-video-name { position: absolute; left: 0; right: 0; top: 0; z-index: 3; box-sizing: border-box; overflow: hidden; padding: 14px 16px 26px; background: linear-gradient(rgba(0, 0, 0, .5), rgba(0, 0, 0, 0)); color: rgba(255, 255, 255, .96); font-size: 14px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; opacity: 0; transition: opacity .15s; pointer-events: none; }
+/* 底部控制条：悬浮或聚焦（键盘可达）时出现。进度条走绝对定位，贴在控制栏顶部通栏（飞书图1）。 */
+.lark-doc .lark-doc-video-controls { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; box-sizing: border-box; display: flex; align-items: center; gap: 10px; height: 44px; padding: 8px 12px 0; background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, .72)); color: rgba(255, 255, 255, .96); opacity: 0; transition: opacity .15s; }
+.lark-doc .lark-doc-video-player:hover .lark-doc-video-name,
+.lark-doc .lark-doc-video-player:hover .lark-doc-video-controls,
+.lark-doc .lark-doc-video-player:focus-within .lark-doc-video-name,
+.lark-doc .lark-doc-video-player:focus-within .lark-doc-video-controls { opacity: 1; }
+/* 悬浮/聚焦后控制条顶上来占住底边，独立时长徽标让位（时间已进控制条内的 -time）。 */
+.lark-doc .lark-doc-video-player:hover .lark-doc-video-duration,
+.lark-doc .lark-doc-video-player:focus-within .lark-doc-video-duration,
+.lark-doc .lark-doc-video-player.is-playing .lark-doc-video-duration { opacity: 0; pointer-events: none; }
+.lark-doc .lark-doc-video-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.lark-doc .lark-doc-video-btn:hover { background: rgba(255, 255, 255, .16); }
+.lark-doc .lark-doc-video-btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.lark-doc .lark-doc-video-btn.is-muted { opacity: .5; }
+.lark-doc .lark-doc-video-btn .lark-doc-icon { width: 18px !important; height: 18px !important; }
+.lark-doc .lark-doc-video-time { flex: 0 0 auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+/* 进度条：飞书图1 是控制栏顶部一条通栏细线（浅底 + 蓝填充），不占按钮行。 */
+.lark-doc .lark-doc-video-seek { position: absolute; left: 0; right: 0; top: 0; height: 3px; border-radius: 0; background: rgba(255, 255, 255, .34); cursor: pointer; }
+.lark-doc .lark-doc-video-seek:focus-visible { outline: 2px solid var(--ld-brand-content); outline-offset: 2px; }
+.lark-doc .lark-doc-video-seek-fill { width: 0; height: 100%; border-radius: 0; background: var(--ld-brand-content); }
+.lark-doc .lark-doc-video-spacer { flex: 1 1 auto; }
+.lark-doc .lark-doc-video-text-btn { flex: 0 0 auto; min-width: 30px; height: 22px; padding: 0 6px; border: 1px solid rgba(255, 255, 255, .34); border-radius: 4px; background: transparent; color: inherit; font-size: 11px; line-height: 20px; text-align: center; cursor: pointer; }
+.lark-doc .lark-doc-video-text-btn:hover { background: rgba(255, 255, 255, .16); }
+
+/* 视频框内不再有工具条：飞书文档的视频块只有「块外」那条浮动工具条
+   （见 .lark-doc-file-block-toolbar），画面上只保留底部控制条。 */
 .lark-doc .lark-doc-file-frame { display: block; box-sizing: border-box; width: 100%; height: 100%; border: 0; border-radius: 8px 8px 0 0; background: var(--ld-bg-surface); }
 
 /* 卡片形态：不可内嵌预览的附件（zip / docx / 无 src）走这里。 */
@@ -1385,6 +1445,84 @@
 /* 没有可下载地址时链接退成灰字占位，不能变成「点了没反应」。 */
 .lark-doc .lark-doc-file-download[aria-disabled="true"] { color: var(--ld-text-icon); cursor: not-allowed; }
 .lark-doc .lark-doc-file.is-selected { outline: 2px solid var(--ld-text-menu-active); outline-offset: -1px; }
+
+/* 上传中：占位块盖一层纯展示 DOM（`creating` 阶段只带已有 attrs，不加 schema 属性）。
+   盖满整块（含 footer），高度沿用 453 的壳，传完不跳版；进度只改 `-fill` 的 width，
+   不写事务 → 不重建 NodeView、不重排 iframe/video。 */
+.lark-doc .lark-doc-file.is-uploading { position: relative; }
+/* 内容靠上而不是垂直居中：附件壳 453px 高，居中会把它推到壳的中部，
+   插在文档末尾时正好落在视口之外 —— 进度条等于白画。 */
+.lark-doc .lark-doc-file-uploading { position: absolute; z-index: 2; inset: 0; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; padding: 32px 24px 24px; background: var(--ld-bg-surface); }
+.lark-doc .lark-doc-file-uploading-name { max-width: 100%; overflow: hidden; color: var(--ld-text-file); font-size: 14px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-file-uploading-track { box-sizing: border-box; width: 240px; max-width: 100%; height: 4px; overflow: hidden; border-radius: 2px; background: var(--ld-border); }
+/* 进度条宽度**刻意不加 transition**：分片读取时进度每几毫秒更新一次，
+   width 过渡会被反复重启，渲染宽度永远追不上同步更新的文字百分比
+   （实测 94% 文字 / 46% 条）。去掉后条与数字严格同帧。 */
+.lark-doc .lark-doc-file-uploading-fill { width: 0; height: 100%; border-radius: 2px; background: var(--ld-brand-content); }
+.lark-doc .lark-doc-file-uploading-meta { color: var(--ld-text-tertiary); font-size: 12px; line-height: 1.5; }
+/* 覆盖层期间不让底下的「下载」可点：还没地址，点了必然没反应。 */
+.lark-doc .lark-doc-file.is-uploading .lark-doc-file-download { pointer-events: none; }
+
+/* 视频上传：飞书式浅灰大卡（用户第四轮截图）。
+   飞书上传卡与完成态视频块**等高**（453），进度条与「上传中 X%」在卡正中 ——
+   既不会传完跳版，也不存在「进度条被晾在上方、上下留白」的问题。
+    uploaded 态的 453 是正式壳；这里只是在同一块壳上盖浅灰卡 + 垂直居中内容。
+   只在 `is-uploading` 期间生效：传完 / 失败立刻露出正式播放器，`453` 契约不动。 */
+.lark-doc .lark-doc-file[data-upload-kind="video"].is-uploading .lark-doc-file-footer { display: none; }
+/* 高度 1:1 对齐完成态播放器：预览区按 16:9 撑开（532 宽 → 299 高），
+   与 `is-video-ready` 的 `.lark-doc-video-player`（aspect-ratio 16/9）等高，
+   传完不跳版；覆盖层 inset:0 盖满整块，内容由 `.is-video` 垂直居中。 */
+.lark-doc .lark-doc-file[data-upload-kind="video"].is-uploading .lark-doc-file-preview { flex: 0 0 auto; display: block; width: 100%; height: auto; min-height: 0; aspect-ratio: 16 / 9; }
+/* 浅灰大卡 + 居中：飞书上传中态是一整块浅灰，文案在上、进度条在下，整体垂直居中。 */
+.lark-doc .lark-doc-file-uploading.is-video { justify-content: center; gap: 16px; padding: 24px; background: var(--ld-bg-file-preview); }
+.lark-doc .lark-doc-file-uploading.is-video .lark-doc-file-uploading-meta { color: var(--ld-text-file); font-size: 14px; }
+/* 飞书三段配色：0% 灰底空轨 / 进行中蓝 / 100% 绿。轨色恒灰，填充色按状态切换。 */
+.lark-doc .lark-doc-file-uploading.is-video .lark-doc-file-uploading-track { width: 240px; height: 4px; background: var(--ld-border); }
+.lark-doc .lark-doc-file-uploading.is-video .lark-doc-file-uploading-fill { background: var(--ld-brand-content); }
+.lark-doc .lark-doc-file-uploading.is-video[data-state="idle"] .lark-doc-file-uploading-fill { background: var(--ld-border); }
+.lark-doc .lark-doc-file-uploading.is-video[data-state="done"] .lark-doc-file-uploading-fill { background: var(--ld-success); }
+/* 飞书 `box.uploader.button.cancel = 取消上传`：进度下方的小文字按钮，不抢主视觉。 */
+.lark-doc .lark-doc-file-uploading-cancel { flex: 0 0 auto; margin-top: 2px; padding: 2px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-tertiary); font-size: 12px; line-height: 18px; cursor: pointer; }
+.lark-doc .lark-doc-file-uploading-cancel:hover { background: var(--ld-bg-menu-item-active); color: var(--ld-text); }
+
+/* ==================================================================
+   视频块外部浮动工具条（飞书 obs/b10-04-file-click.json）：
+   `.block-toolbar__overlay` 浮在块**上方**、块外（块 y=474 / 条 y=424 高 42），
+   选中 / 悬浮 / 聚焦出现。与播放器内嵌 topbar 是两条独立的条。
+   ================================================================== */
+/* 视频块要让外部工具条浮出块外，不能给整块裁 overflow；圆角交给 preview 兜住。 */
+/* 块壳必须 position:relative，否则工具条的 bottom:calc(100% + 4px) 会以 .ProseMirror 为参照飞到页顶。 */
+.lark-doc .lark-doc-file { position: relative; }
+.lark-doc .lark-doc-file.has-block-toolbar { overflow: visible; }
+.lark-doc .lark-doc-file.has-block-toolbar .lark-doc-file-preview { border-radius: 7px; }
+/* 尺寸按飞书实测（obs/b10-04-file-click.json）：容器 301×42、条内高 40、按钮 24×24、
+   图标 18px、项间距 8px、块与条之间留 8px；组内分隔线 1×20，三态视图后那条贴满 40。 */
+.lark-doc .lark-doc-file-block-toolbar { position: absolute; z-index: 88; left: 50%; bottom: calc(100% + 8px); box-sizing: border-box; display: flex; align-items: center; gap: 8px; height: 42px; max-width: calc(100% + 120px); padding: 8px; transform: translateX(-50%); border: 1px solid var(--ld-border-control); border-radius: 8px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-float); opacity: 0; pointer-events: none; transition: opacity .12s; white-space: nowrap; }
+.lark-doc .lark-doc-file:hover > .lark-doc-file-block-toolbar,
+.lark-doc .lark-doc-file.is-toolbar-open > .lark-doc-file-block-toolbar,
+.lark-doc .lark-doc-file.is-selected > .lark-doc-file-block-toolbar,
+.lark-doc .lark-doc-file:focus-within > .lark-doc-file-block-toolbar { opacity: 1; pointer-events: auto; }
+/* 全局 `.lark-doc button` 带 min-height:30px / padding:4px 8px，这里必须压回去，
+   否则 24×24 的命中区会被撑成 24×30、图标也跟着偏移（飞书实测是正 24 方）。 */
+.lark-doc .lark-doc-block-tool-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; min-width: 0; height: 24px; min-height: 0; box-sizing: border-box; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-menu); cursor: pointer; }
+.lark-doc .lark-doc-block-tool-btn:hover,
+.lark-doc .lark-doc-block-tool-btn:focus-visible { background: var(--ld-bg-menu-item-active); outline: 0; }
+/* 激活态 = 飞书 `menu-item-actived`：浅蓝底 + 主色图标。 */
+.lark-doc .lark-doc-block-tool-btn[aria-pressed="true"] { background: var(--ld-bg-accent); color: var(--ld-brand-content); outline: 0; }
+.lark-doc .lark-doc-block-tool-btn svg { width: 18px; height: 18px; display: block; }
+.lark-doc .lark-doc-block-tool-divider { flex: 0 0 1px; width: 1px; height: 20px; margin: 0; background: var(--ld-border-control); }
+/* 飞书 `override-full-height`：贴满条内 40 高。 */
+.lark-doc .lark-doc-block-tool-divider.is-full { height: 40px; margin: -8px 0; }
+
+/* 文本视图（inline view）：一行紧凑的「图标 + 文件名 + 大小」，整行点击下载。 */
+.lark-doc .lark-doc-file-preview.is-inline { display: flex; align-items: center; justify-content: flex-start; height: 64px; min-height: 64px; padding: 0 16px; }
+.lark-doc .lark-doc-file.is-video-ready .lark-doc-file-preview.is-inline { height: 64px; min-height: 64px; display: flex; }
+.lark-doc .lark-doc-file-inline { display: flex; align-items: center; gap: 8px; width: 100%; }
+.lark-doc .lark-doc-file-inline-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 5px; background: var(--ld-bg-soft); color: var(--ld-text-icon); }
+.lark-doc .lark-doc-file-inline-link { overflow: hidden; color: var(--ld-brand-content); font-size: 14px; line-height: 20px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-file-inline-link:hover { text-decoration: underline; }
+.lark-doc .lark-doc-file-inline-link[aria-disabled="true"] { color: var(--ld-text-icon); cursor: not-allowed; text-decoration: none; }
+.lark-doc .lark-doc-file-inline-size { flex: 0 0 auto; color: var(--ld-text-tertiary); font-size: 12px; }
 
 /* ==================================================================
    内嵌网页块（P3-01 / 04 §4.3 实测规格）

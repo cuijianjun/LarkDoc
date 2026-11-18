@@ -24,6 +24,7 @@
 import { iconNode, setIcon } from './icon'
 import { createHeadingMenu } from './headingMenu'
 import { placeMenu } from './menuLayout'
+import { bindHoverTips } from './hoverTips'
 
 /** 对齐四项的顺序（与飞书一致：左 → 居中 → 右 → 两端）。 */
 const ALIGN_ORDER = ['left', 'center', 'right', 'justify']
@@ -369,6 +370,7 @@ export function createBubbleBar(host, options = {}) {
 
   /** 便宜的隐藏路径：不在文档里就等于 `v-if=false`（断言靠「查不到节点」判显隐）。 */
   function hide() {
+    tips.hide()
     reconcileHeading(false, null)
     reconcileAlign(false)
     if (el.parentNode) el.parentNode.removeChild(el)
@@ -376,6 +378,13 @@ export function createBubbleBar(host, options = {}) {
 
   build(options.config)
   markSignature = configSignature(options.config)
+  /**
+   * 图标提示。绑在 `el` 上而不是逐个按钮上：`build()` 会清空 children 重建，
+   * `update()` 又按签名重建行内格式按钮，委托一次就不用管重建。
+   * 纯图标（行内格式 / 高亮 / 复制 / 评论）出提示；带中文名的「问问AI」、
+   * 带 caret 的标题级别与取色、带 `aria-haspopup` 的缩进对齐，按判据自动不出。
+   */
+  const tips = bindHoverTips(el)
 
   return {
     el,
@@ -395,6 +404,7 @@ export function createBubbleBar(host, options = {}) {
     destroy() {
       reconcileHeading(false, null)
       reconcileAlign(false)
+      tips.destroy()
       headingMenu.destroy()
       if (el.parentNode) el.parentNode.removeChild(el)
     },

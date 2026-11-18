@@ -333,7 +333,8 @@ describe('P2-01 图片工具条', () => {
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
     expect(toolbar.getAttribute('role')).toBe('toolbar')
-    expect(toolbar.querySelectorAll('button')).toHaveLength(8)
+    // 评论按钮暂时隐藏（宿主未接评论服务），工具条 7 个动作按钮。
+    expect(toolbar.querySelectorAll('button')).toHaveLength(7)
     expect(toolbar.querySelectorAll('.lark-doc-image-toolbar-divider')).toHaveLength(2)
 
     const pressed = Array.from(toolbar.querySelectorAll('button[data-align-value]'))
@@ -341,8 +342,8 @@ describe('P2-01 图片工具条', () => {
       .map((button) => button.getAttribute('data-align-value'))
     expect(pressed).toEqual(['center'])
 
-    expect([...toolbar.querySelectorAll('button')].map(button => button.dataset.action)).toEqual(['crop', 'caption', 'left', 'center', 'right', 'copy', 'share', 'comment'])
-    expect(toolbar.querySelectorAll('svg')).toHaveLength(8)
+    expect([...toolbar.querySelectorAll('button')].map(button => button.dataset.action)).toEqual(['crop', 'caption', 'left', 'center', 'right', 'copy', 'share'])
+    expect(toolbar.querySelectorAll('svg')).toHaveLength(7)
 
   })
 
@@ -350,11 +351,11 @@ describe('P2-01 图片工具条', () => {
     const { nodeView, attrs } = mount({ src: SRC, width: 463, crop: [0, 0, 0.8704, 1], naturalWidth: 323, naturalHeight: 275 })
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
-    expect(toolbar.querySelectorAll('button')).toHaveLength(9)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(8)
     expect(toolbar.classList.contains('has-reset')).toBe(true)
     toolbar.querySelector('[data-action="reset"]').click()
     expect(attrs()).toMatchObject({ src: SRC, width: 463, crop: null })
-    expect(toolbar.querySelectorAll('button')).toHaveLength(8)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(7)
     expect(toolbar.querySelector('[data-action="reset"]')).toBeNull()
   })
 
@@ -362,7 +363,8 @@ describe('P2-01 图片工具条', () => {
     const { nodeView } = mount()
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
-    for (const action of ['copy', 'share', 'comment']) expect(toolbar.querySelector(`[data-action="${action}"]`).disabled).toBe(true)
+    for (const action of ['copy', 'share']) expect(toolbar.querySelector(`[data-action="${action}"]`).disabled).toBe(true)
+    expect(toolbar.querySelector('[data-action="comment"]')).toBeNull()
     // 工具条自己的事件不能漏进 ProseMirror 的 keymap。
     expect(nodeView.stopEvent({ target: toolbar.querySelector('button') })).toBe(true)
     expect(nodeView.stopEvent({ target: nodeView.dom.querySelector('.lark-doc-image-img') })).toBe(false)

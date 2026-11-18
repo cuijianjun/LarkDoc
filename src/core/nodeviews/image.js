@@ -9,6 +9,7 @@ import { FULL_IMAGE_CROP, dragImageCrop, imageCropGeometry, imageCropStyles, isI
 import { createImageViewer } from './image-viewer'
 import { IMAGE_MIME_ALLOWLIST } from '../media/image-insert'
 import { iconNode } from '../../ui/icon'
+import { bindHoverTips } from '../../ui/hoverTips'
 
 const WIDTH_MIN = 40
 const WIDTH_MAX = 2400
@@ -25,6 +26,10 @@ const TOOLBAR_ITEMS = [
   { action: 'crop', label: '裁剪', icon: 'image-crop' },
   { action: 'caption', label: '编辑图片说明', icon: 'block-text' },
 ]
+
+/** 评论：宿主还没接评论服务，图片工具条上的评论按钮先只隐藏 UI。
+    按钮构建与 `onAction('comment')` 出口保留，把这个开关打开即恢复。 */
+const SHOW_COMMENT = false
 const TOOLBAR_ALIGN_ITEMS = [
   { action: 'left', value: 'left', label: '左对齐', icon: 'align-left' },
   { action: 'center', value: 'center', label: '居中对齐', icon: 'align-center' },
@@ -154,6 +159,7 @@ export function createImageNodeView(props) {
 
   /* ---------- 工具条：hover 挂载 / 离开卸载 ---------- */
   let toolbar = null
+  let toolbarTips = null
   let cropResetButton = null
   let cropUi = null
 
@@ -187,7 +193,12 @@ export function createImageNodeView(props) {
       mountButton({ ...item, label: item.label }, { 'data-role': `align-${item.value}`, 'data-align-value': item.value })
     })
     bar.appendChild(el('span', 'lark-doc-image-toolbar-divider', { 'aria-hidden': 'true' }))
-    ;[{ action: 'copy', label: '复制图片链接', icon: 'link' }, { action: 'share', label: '分享图片', icon: 'share-link' }, { action: 'comment', label: '添加评论', icon: 'mode-comment' }].forEach(item => mountButton(item))
+    ;[
+      { action: 'copy', label: '复制图片链接', icon: 'link' },
+      { action: 'share', label: '分享图片', icon: 'share-link' },
+      // 评论暂时隐藏 UI（见 SHOW_COMMENT），动作分支留在 runToolbarAction 里。
+      ...(SHOW_COMMENT ? [{ action: 'comment', label: '添加评论', icon: 'mode-comment' }] : []),
+    ].forEach(item => mountButton(item))
     return bar
   }
 
@@ -208,12 +219,16 @@ export function createImageNodeView(props) {
     if (toolbar || !editable) return
     toolbar = buildToolbar()
     dom.appendChild(toolbar)
+    // 图片功能栏与顶部/气泡/菜单用同一套 tips 判据：纯图标（裁剪、对齐、复制链接…）
+    // 出提示；「问问AI」有可见中文名自动跳过；带下一级弹窗的也不会误出。
+    toolbarTips = bindHoverTips(toolbar)
     syncToolbarState()
   }
 
   function unmountToolbar() {
     cancelHide()
     if (!toolbar) return
+    if (toolbarTips) { toolbarTips.destroy(); toolbarTips = null }
     toolbar.remove()
     toolbar = null
   }
@@ -675,7 +690,7 @@ export function createImageNodeView(props) {
       closePreview()
       replaceGeneration += 1
       closeDialog(false)
-      if (toolbar) { toolbar.remove(); toolbar = null }
+      unmountToolbar()
     },
     // 测试与宿主联调通道：等价于工具条各按钮。
     setWidth,

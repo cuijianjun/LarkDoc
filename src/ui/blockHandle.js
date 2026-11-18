@@ -24,6 +24,7 @@
 import { iconNode as defaultIconNode } from './icon'
 import { BLOCK_TYPE_ICONS } from './commandIcons'
 import { applyStyle, setAttr, syncChildren } from './dom'
+import { bindHoverTips } from './hoverTips'
 
 // Same SVG paths as the observed Feishu block menu; keep overrides local.
 const BLOCK_MENU_ICONS = {
@@ -51,6 +52,12 @@ function iconNode(name, size = 18, className = '') {
 }
 
 const ALIGN_ORDER = ['left', 'center', 'right', 'justify']
+
+// 句柄左槽类型图标的边长。飞书 b10-03 实测：左槽 span 22×22、里面 svg 14×14，
+// 与右侧 drag-handle（14×14）等重；文件/视频的回形针按飞书给 14，其余类型沿用 18。
+const HANDLE_ICON_SIZE = { 'block-attachment': 14 }
+
+const handleIconNode = (name) => iconNode(name, HANDLE_ICON_SIZE[name] || 18, 'lark-doc-block-handle-icon')
 
 /**
  * @param {object} options
@@ -134,12 +141,22 @@ export function createBlockHandle(options = {}) {
   el.addEventListener('mouseenter', (event) => call('onHandleEnter', event))
   el.addEventListener('mouseleave', (event) => call('onHandleLeave', event))
 
+  /**
+   * 图标提示。绑在句柄根节点上：块菜单与对齐/颜色子菜单都是它的子节点，
+   * 一次委托就覆盖「六点句柄 + 块菜单 + 子菜单」，菜单内容重渲染也不用重绑。
+   * 带可见中文名的行（问问AI、对齐项、操作清单）与带 `aria-haspopup` 的触发器按判据不出。
+   */
+  const tips = bindHoverTips(el)
+
   // 空段落：句柄换成「＋」，点开的是插入内容命令菜单（不是块菜单）。
   const emptyButton = preventMouseDown(document.createElement('button'))
   emptyButton.type = 'button'
   emptyButton.className = 'lark-doc-empty-block-insert'
   emptyButton.setAttribute('aria-label', '插入内容')
-  emptyButton.setAttribute('title', '插入内容')
+  // ➕ 点开的是插入命令菜单（下一级弹窗）：语义上标 aria-haspopup，
+  // bindHoverTips 的 hasNextLevelPopup() 会跳过它；同时不设原生 title，
+  // 避免被跳过后浏览器仍弹出原生 tooltip（用户：➕ 号不需要 tips）。
+  emptyButton.setAttribute('aria-haspopup', 'menu')
   emptyButton.appendChild(iconNode('plus', 18, 'lark-doc-empty-block-icon'))
   const emptyText = document.createElement('span')
   emptyText.className = 'sr-only'
@@ -153,7 +170,9 @@ export function createBlockHandle(options = {}) {
   mainButton.type = 'button'
   mainButton.className = 'lark-doc-block-handle-main'
   mainButton.setAttribute('aria-label', '块操作')
-  mainButton.setAttribute('title', '块操作与拖动')
+  // 句柄自身不出悬停提示（用户：六点句柄不要 tips）。`aria-label` 留着给读屏，
+  // 视觉提示靠 `data-tooltip-none` 关掉，也不设原生 `title`（否则浏览器仍会弹灰框）。
+  mainButton.setAttribute('data-tooltip-none', '')
   mainButton.setAttribute('draggable', 'true')
   mainButton.addEventListener('mouseenter', (event) => call('openBlockMenuOnHover', event))
   mainButton.addEventListener('focus', (event) => call('openBlockMenuOnHover', event))
@@ -164,7 +183,7 @@ export function createBlockHandle(options = {}) {
 
   const glyphNode = document.createElement('span')
   glyphNode.className = 'lark-doc-block-handle-type'
-  let glyphIcon = iconNode('block-text', 18, 'lark-doc-block-handle-icon')
+  let glyphIcon = handleIconNode('block-text')
   glyphIcon.dataset.icon = 'block-text'
   const glyphText = document.createElement('span')
   glyphText.className = 'sr-only'
@@ -532,7 +551,7 @@ export function createBlockHandle(options = {}) {
       setAttr(secondaryButton, 'aria-label', target.scope === 'table' ? '整表块操作' : '单元格块操作')
       setAttr(secondaryButton, 'draggable', String(!!state.draggable))
       const glyph = secondaryButton.querySelector('.lark-doc-block-handle-type')
-      if (glyph.dataset.icon !== target.icon) { glyph.textContent = ''; glyph.appendChild(iconNode(target.icon, 18)); glyph.dataset.icon = target.icon }
+      if (glyph.dataset.icon !== target.icon) { glyph.textContent = ''; glyph.appendChild(handleIconNode(target.icon)); glyph.dataset.icon = target.icon }
       if (!secondary.parentNode && host) host.insertBefore(secondary, anchor || null)
     }
     el.classList.toggle('is-menu-open', !!state.menuOpen)
@@ -627,7 +646,7 @@ export function createBlockHandle(options = {}) {
       glyphText.textContent = String(state.glyph)
     }
     if (patch && patch.icon !== undefined && glyphIcon.dataset.icon !== state.icon) {
-      const svg = iconNode(state.icon || 'block-text', 18, 'lark-doc-block-handle-icon')
+      const svg = handleIconNode(state.icon || 'block-text')
       svg.dataset.icon = state.icon || 'block-text'
       glyphNode.replaceChild(svg, glyphIcon)
       glyphIcon = svg
@@ -645,6 +664,8 @@ export function createBlockHandle(options = {}) {
     Object.assign(state, patch || {})
     renderRoot()
     renderMenu()
+    // 菜单收起时提示一并收掉；否则提示会挂在已被移出文档的锚点旁边。
+    if (!state.menuOpen) tips.hide()
   }
 
   let lastMenu = null
@@ -665,6 +686,7 @@ export function createBlockHandle(options = {}) {
     get alignTrigger() { return alignTrigger },
     get colorTrigger() { return colorTrigger },
     destroy() {
+      tips.destroy()
       secondary.remove()
       if (el.parentNode) el.parentNode.removeChild(el)
     },
@@ -692,7 +714,9 @@ function blockMenuState() {
           active: this.blockTypeActive(item.id),
         })),
         listActions: [
-          ...(this.isBlockActionEnabled('comment') ? [{ id: 'comment', label: '评论', icon: 'mode-comment', disabled: !this.commentEntryAvailable, hint: this.commentEntryAvailable ? '' : '当前文档暂不支持评论' }] : []),
+          // 没接评论服务时整项不出现 —— 渲染成 disabled 等于把「这个文档不支持评论」
+          // 一直摆在用户面前，比没有入口更糟（用户要求：没接入就先隐藏 UI）。
+          ...(this.isBlockActionEnabled('comment') && this.commentEntryVisible ? [{ id: 'comment', label: '评论', icon: 'mode-comment', disabled: !this.commentEntryAvailable, hint: this.commentEntryAvailable ? '' : '当前文档暂不支持评论' }] : []),
           ...this.visibleBlockListActions.map((item) => ({ id: item.id, label: item.label, icon: item.icon })),
           ...(this.selectionShareAllowed?.() && this.isBlockActionEnabled('share') ? [{ id: 'share', label: '分享', icon: 'share-link' }] : []),
           ...(this.featureEnabled('templates') && this.isBlockActionEnabled('saveTemplate') ? [{ id: 'saveTemplate', label: '保存为模板', icon: 'block-template', disabled: !this.templateSaveAllowed(), hint: this.templateSaveAllowed() ? '' : typeof this.onSaveTemplate === 'function' ? '当前权限无法保存模板' : '当前应用未配置模板保存' }] : []),

@@ -137,7 +137,8 @@ export function filterCommands(query, kind = 'slash', config = null, context = '
     if (/^columns[2-5]$/.test(item.id)) return false
     // Existing block-math documents stay readable; Feishu has one inline formula entry.
     if (item.id === 'blockMath') return false
-    if (kind === 'plus' && (item.id === 'paragraph' || /^heading[4-9]$/.test(item.id))) return false
+    // 飞书 plus 菜单「基础」段显示 H1~H5；正文与 H6~H9 不进图标网格（仍可从标题下拉选）。
+    if (kind === 'plus' && (item.id === 'paragraph' || /^heading[6-9]$/.test(item.id))) return false
     if (kind === 'plus' && context === 'cell' && ['table', 'template'].includes(item.id)) return false
     const feature = COMMAND_FEATURES[item.id]
     if (feature && config?.features?.[feature] === false) return false
@@ -155,7 +156,7 @@ export function filterCommands(query, kind = 'slash', config = null, context = '
   })
   // The source plus menu has icon shortcuts followed by normal common rows.
   // Task and callout have two visual entries, backed by the same command.
-  const basic = ['heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
+  const basic = ['heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
   const common = ['taskList', 'image', 'file', 'table', 'columns', 'callout', 'inlineMath', 'template']
   const byId = new Map(filtered.map(item => [item.id, item]))
   const entry = (id, category) => ({ ...byId.get(id), category, ...(id === 'taskList' ? { label: '任务' } : id === 'image' ? { label: '图片' } : {}) })
