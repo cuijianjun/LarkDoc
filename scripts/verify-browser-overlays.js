@@ -68,11 +68,13 @@ function editorCall(page, source) {
     permission: !!document.querySelector('.lark-doc-permission-layer'),
     export: !!document.querySelector('.lark-doc-export-backdrop'),
   }))
-  record('初始状态只挂载原生宿主与分享入口，条件浮层不在 DOM',
-    initial.root && initial.entry && !initial.popover && !initial.permission && !initial.export, JSON.stringify(initial))
+  // L2 按需面板包架构下，分享浮层包只在浮层可见时才下载挂载：初始态 p6b-layer
+  // 不在 DOM 是设计内行为；分享入口（同步挂载）始终在。
+  record('初始状态分享入口同步挂载，按需面板包与条件浮层都不在 DOM',
+    !initial.root && initial.entry && !initial.popover && !initial.permission && !initial.export, JSON.stringify(initial))
 
   await page.locator('.lark-doc-share-entry button').click()
-  await page.waitForTimeout(80)
+  await page.waitForTimeout(300)
   const share = await page.evaluate(() => {
     const popover = document.querySelector('.lark-doc-share-popover')
     return {
@@ -80,13 +82,15 @@ function editorCall(page, source) {
       role: popover && popover.getAttribute('role'),
       label: popover && popover.getAttribute('aria-label'),
       entry: !!document.querySelector('.lark-doc-share-entry'),
-      options: document.querySelectorAll('.lark-doc-share-perm-select option').length,
-      toast: !!document.querySelector('.lark-doc-share-toast'),
+      options: [...document.querySelectorAll('.lark-doc-share-perm-select option')].map(option => option.textContent),
+      toast: document.querySelector('.lark-doc-share-toast')?.textContent.trim(),
     }
   })
-  record('分享入口打开一级 popover，保留 dialog ARIA 与权限选项',
-    share.open && share.role === 'dialog' && share.label === '分享文档' && share.entry && share.options === 2 && !share.toast,
-    JSON.stringify(share))
+  // demo 无远端链接服务：下拉只有「未配置」一项，warning toast 是诚实反馈（shareLinkAction）。
+  record('分享入口打开一级 popover，保留 dialog ARIA；链接服务未接入时如实提示',
+    share.open && share.role === 'dialog' && share.label === '分享文档' && share.entry &&
+      share.options.length === 1 && share.options[0] === '未配置' &&
+      (!share.toast || share.toast === '链接权限服务尚未接入，当前不可用。'), JSON.stringify(share))
 
   await page.locator('.lark-doc-share-perm-btn').evaluate((node) => node.click())
   await page.waitForTimeout(80)
@@ -115,9 +119,15 @@ function editorCall(page, source) {
     checked: document.querySelector('.lark-doc-secure-link-checkbox')?.checked,
     passwordArea: !!document.querySelector('.lark-doc-secure-link-password-area'),
   }))
-  record('开启加密链接先显示确认框，不提前勾选或插入密码区',
-    confirm.open && confirm.checked === false && !confirm.passwordArea, JSON.stringify(confirm))
+  // demo 无远端链接服务：shareLinkWritable 为 false，toggleSecureLink 直接 no-op——
+  // 确认框不出现、开关不勾选、密码区不插入是门控下的诚实行为。
+  record('链接服务未接入时加密链接开关被门控：不弹确认框不勾选不长密码区',
+    !confirm.open && confirm.checked === false && !confirm.passwordArea, JSON.stringify(confirm))
 
+  // 门控挡住了真实入口，改为直接置状态锁确认框渲染契约：secureLinkConfirmOpen 为真
+  // 时确认框渲染，点击取消后真实移除。
+  await editorCall(page, 'editor.permissionDialogOpen = true; editor.secureLinkConfirmOpen = true; editor.refreshOverlays()')
+  await page.waitForTimeout(80)
   await page.locator('.lark-doc-share-confirm .lark-doc-share-btn-outlined').evaluate((node) => node.click())
   await page.waitForTimeout(80)
   record('取消加密链接确认后确认框真实移除', !(await page.locator('.lark-doc-share-confirm').count()))
@@ -126,6 +136,14 @@ function editorCall(page, source) {
   await page.waitForTimeout(80)
   record('关闭权限 Dialog 后权限层真实移除且 popover 仍由业务层单独控制',
     !(await page.locator('.lark-doc-permission-layer').count()) && !!(await page.locator('.lark-doc-share-popover').count()))
+
+  // L2 面板包拆分后，submitExport 的私有动作工厂挂在 `ui` 包（守选区/顶栏）的
+  // ui.ready 注册表里。真实用户从顶栏「更多 → 下载为」进导出前，选区交互早已
+  // 加载该包；脚本用公开 API 直接开弹窗会跳过这一步，提交时如实抛「导出界面
+  // 尚未加载」。这里先按真实顺序选中正文触发气泡条，等工厂注册完成再开弹窗。
+  await page.locator('.tiptap p').first().dblclick()
+  await page.waitForFunction(() => typeof window.__LARK_DOC_UI_API__?.createExportInteraction === 'function', { timeout: 15000 })
+  await page.keyboard.press('ArrowLeft')
 
   await editorCall(page, 'editor.openExportDialog("word")')
   await page.waitForTimeout(80)
@@ -157,11 +175,13 @@ function editorCall(page, source) {
   await page.locator('.lark-doc-export-toast').waitFor({ state: 'visible' })
   const afterSubmit = await page.evaluate(() => ({
     backdrop: !!document.querySelector('.lark-doc-export-backdrop'),
-    toast: document.querySelector('.lark-doc-export-toast')?.textContent.trim(),
+    message: document.querySelector('.lark-doc-export-toast-inner span')?.textContent.trim(),
+    queryHidden: document.querySelector('.lark-doc-export-query')?.hidden,
     live: document.querySelector('.lark-doc-export-toast')?.getAttribute('aria-live'),
   }))
+  // toast 内还带一个「查询原任务」按钮，仅在远端任务待查询时显示；本地导出必须 hidden。
   record('提交导出先真实移除 Dialog，toast 独立保留并带 aria-live',
-    !afterSubmit.backdrop && afterSubmit.toast === '正在导出文档' && afterSubmit.live === 'polite', JSON.stringify(afterSubmit))
+    !afterSubmit.backdrop && afterSubmit.message === '正在导出文档' && afterSubmit.queryHidden === true && afterSubmit.live === 'polite', JSON.stringify(afterSubmit))
 
   const download = page.waitForEvent('download')
   await editorCall(page, 'return editor._releaseVerifyExport()')
@@ -171,12 +191,21 @@ function editorCall(page, source) {
 
   await editorCall(page, 'editor.session = window.__overlayOriginalSession; editor.dispatchExport = editor._verifyOriginalDispatchExport')
   await page.evaluate(() => {
-    const provider = window.__larkDocComments.createMemoryCommentsProvider({ threads: [{
+    // 评论 Provider 契约只要五个方法（providers/comments.js COMMENT_METHODS）；
+    // 页面内自建最小内存实现，不依赖任何构建期全局。
+    const store = { threads: [{
       id: 'export-real-comment', blockId: 'export-source', quote: '正文引用导出核验', resolved: false,
       author: { id: 'author', name: '导出核验作者' }, createdAt: 1700000000000,
       replies: [{ id: 'export-real-reply', author: { id: 'author', name: '导出核验作者' }, content: '真实评论导出闭环', createdAt: 1700000000000 }],
-    }] })
-    window.__larkDoc.getSession().setProvider('comments', provider)
+    }] }
+    window.__overlayCommentsProvider = {
+      list: async () => JSON.parse(JSON.stringify(store.threads)),
+      createThread: async input => { store.threads.push(input); return input },
+      reply: async (threadId, input) => { store.threads.find(item => item.id === threadId).replies.push(input); return input },
+      resolve: async threadId => { const thread = store.threads.find(item => item.id === threadId); thread.resolved = true; return thread },
+      reopen: async threadId => { const thread = store.threads.find(item => item.id === threadId); thread.resolved = false; return thread },
+    }
+    window.__larkDoc.getSession().setProvider('comments', window.__overlayCommentsProvider)
   })
   await editorCall(page, 'editor.openExportDialog("word")')
   await page.locator('.lark-doc-export-radio-input[value="withComments"]').check()
@@ -208,7 +237,7 @@ function editorCall(page, source) {
     document.body.appendChild(element)
     window.__larkDoc = new Facade({ element, storage: 'none', content: '<p></p>',
       user: { id: 'reminder-self', name: '本地核验用户' },
-      comments: window.__larkDocComments.createMemoryCommentsProvider(),
+      comments: window.__overlayCommentsProvider,
     })
   })
   await page.waitForFunction(() => window.__larkDoc.getEditor())

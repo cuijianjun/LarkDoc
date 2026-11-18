@@ -587,7 +587,7 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
   const plus = document.createElement('button')
   plus.type = 'button'
   plus.className = 'lark-doc-table-col-plus-btn'
-  const glyph = iconNode('plus', 24, 'lark-doc-table-insert-glyph')
+  const glyph = iconNode('table-insert-boundary', 24, 'lark-doc-table-insert-glyph')
   glyph.style.width = '22px'
   plus.appendChild(glyph)
   let actionId = 'addColumnAfter'

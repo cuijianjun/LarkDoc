@@ -1781,6 +1781,8 @@
   cursor: pointer;
   user-select: none;
 }
+.lark-doc .lark-doc-reminder-chip[data-reminder-tone="past"] { color: var(--ld-danger); }
+.lark-doc .lark-doc-reminder-chip[data-reminder-tone="future"] { color: var(--ld-brand-chrome); }
 
 /* 日历图标：mask + currentColor —— 抄 `.lark-doc-unknown-card-icon` 的双写手法，
    换档只改 `color` 就跟着变色，不必再备一份彩色 SVG。 */

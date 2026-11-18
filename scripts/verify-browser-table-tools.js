@@ -489,7 +489,9 @@ const cellDragPoints = () => {
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  // 本地 Chrome for Testing 环境开 Chromium 沙箱必崩（Target crashed）；
+  // Playwright 默认就是关沙箱，与 verify-browser-overlays.js 等脚本保持一致。
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []

@@ -1,8 +1,8 @@
 /* Low-frequency UI only. Element loads this before publishing ui.ready.
  * Body nodes, first-frame chrome, access masks and shared tokens stay eager. */
 /*  src/components/lark-doc/lark-doc.css — original declarations, loaded with the UI feature.  */
-.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; max-width: calc(100vw - 16px); padding: 5px 8px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
-.lark-doc .lark-doc-table-tools-bar { display: flex; align-items: center; height: 30px; gap: 8px; }
+.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-table-float-border); border-radius: 6px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
+.lark-doc .lark-doc-table-tools-bar { display: flex; align-items: center; height: 24px; gap: 0; }
 .lark-doc .lark-doc-fr { position: fixed; z-index: 100; right: 16px; top: 72px; box-sizing: border-box; display: flex; flex-direction: column; width: 406px; max-width: calc(100vw - 32px); padding: 0 24px; border: 1px solid var(--ld-fr-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; box-shadow: var(--ld-fr-shadow); }
 .lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 28px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
 .lark-doc .lark-doc-fr .lark-doc-fr-tab { width: 32px; min-width: 32px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 16px; line-height: 48px; cursor: pointer; }
@@ -210,7 +210,7 @@
   position: fixed;
   z-index: 46;
   width: 280px;
-  padding: 5px 0 10px;
+  padding: 0;
   color: var(--ld-text);
   font-size: 14px;
 }
@@ -229,7 +229,19 @@
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.lark-doc .lark-doc-reminder-calendar { padding: 16px; }
+/* 日历区：左右内边距 16（选项组是 24，飞书两处刻意不统一，别合并）→ 278 − 32 = 246。 */
+.lark-doc .lark-doc-reminder-calendar { box-sizing: border-box; height: 312px; padding: 16px; }
+.lark-doc .lark-doc-reminder-calendar-title { display: inline-flex; align-items: center; gap: 4px; }
+.lark-doc .lark-doc-reminder-calendar-title button { height: 32px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-reminder-calendar-title button:hover { background: var(--ld-reminder-option); }
+.lark-doc .lark-doc-reminder-periods { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(4, 32px); align-content: space-between; justify-content: space-between; height: 248px; }
+.lark-doc .lark-doc-reminder-periods.is-year { grid-template-columns: repeat(4, 48px); grid-template-rows: repeat(5, 32px); }
+.lark-doc .lark-doc-reminder-period { width: 48px; height: 32px; min-height: 0; padding: 0; border: 0; border-radius: 16px; background: transparent; color: var(--ld-text); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-reminder-period:hover { background: var(--ld-reminder-option); }
+.lark-doc .lark-doc-reminder-popover { --ld-reminder-selection: var(--ld-reminder-text); }
+.lark-doc .lark-doc-reminder-popover[data-reminder-tone="past"] { --ld-reminder-selection: var(--ld-danger); }
+.lark-doc .lark-doc-reminder-popover[data-reminder-tone="future"] { --ld-reminder-selection: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-reminder-period.is-selected { background: var(--ld-reminder-selection); color: var(--ld-text-inverse); }
 
 .lark-doc .lark-doc-reminder-calendar-head {
   display: flex;
@@ -265,8 +277,9 @@
 .lark-doc .lark-doc-reminder-week,
 .lark-doc .lark-doc-reminder-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(7, 32px);
+  justify-content: space-between;
+  row-gap: 4px;
 }
 
 .lark-doc .lark-doc-reminder-week span {
@@ -277,6 +290,7 @@
   font-size: 12px;
   line-height: 1;
 }
+.lark-doc .lark-doc-reminder-week { margin-bottom: 4px; }
 
 .lark-doc .lark-doc-reminder-day {
   display: grid;
@@ -285,13 +299,15 @@
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  width: 32px;
+  border-radius: 16px;
   background: transparent;
   color: var(--ld-text);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
+.lark-doc .lark-doc-reminder-day.is-today:not(.is-selected) { border: 1px solid var(--ld-brand-chrome); color: var(--ld-brand-chrome); }
 
 .lark-doc .lark-doc-reminder-day:hover:not(:disabled) {
   border-color: transparent;
@@ -300,12 +316,12 @@
 }
 .lark-doc .lark-doc-reminder-day.is-outside { color: var(--ld-text-tertiary); opacity: .45; cursor: default; }
 .lark-doc .lark-doc-reminder-day.is-selected {
-  background: var(--ld-reminder-text);
+  background: var(--ld-reminder-selection);
   color: var(--ld-bg-surface-chrome);
 }
 
 .lark-doc .lark-doc-reminder-day.is-selected:hover:not(:disabled) {
-  background: var(--ld-reminder-text);
+  background: var(--ld-reminder-selection);
   color: var(--ld-bg-surface-chrome);
 }
 .lark-doc .lark-doc-reminder-options {
@@ -317,27 +333,33 @@
 .lark-doc .lark-doc-reminder-row.is-repeat { margin-top: 16px; }
 
 .lark-doc .lark-doc-reminder-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   height: 22px;
+  margin-bottom: 8px;
   color: var(--ld-text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 22px;
+  cursor: pointer;
 }
+.lark-doc .lark-doc-reminder-label.is-collapsed { margin-bottom: 0; }
+.lark-doc .lark-doc-reminder-label input { width: 16px; height: 16px; margin: 0; accent-color: var(--ld-brand-chrome); }
 
 .lark-doc .lark-doc-reminder-select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  width: 174px;
   height: 32px;
   min-height: 0;
   padding: 0 8px;
   border: 1px solid var(--ld-reminder-border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--ld-bg-surface-chrome);
   color: var(--ld-text);
-  font-size: 13px;
-  line-height: 1;
+  font-size: 14px;
+  line-height: 20px;
   cursor: pointer;
 }
 
@@ -346,13 +368,15 @@
   background: var(--ld-bg-surface-chrome);
   color: var(--ld-text);
 }
+.lark-doc .lark-doc-reminder-select input { flex: 1; width: 100%; min-width: 0; height: 28px; margin: 0; padding: 0; outline: none; border: 0; background: transparent; color: inherit; font: inherit; }
+.lark-doc .lark-doc-reminder-select input::-webkit-search-cancel-button { display: none; }
 
 .lark-doc .lark-doc-reminder-select:disabled { opacity: 1; cursor: default; }
 
 .lark-doc .lark-doc-reminder-select-caret { color: var(--ld-text-tertiary); font-size: 10px; line-height: 1; }
 
 .lark-doc .lark-doc-reminder-user {
-  margin: 12px 24px 0;
+  margin: 12px 24px;
   color: var(--ld-reminder-meta);
   font-size: 12px;
   line-height: 20px;
@@ -734,9 +758,10 @@
 .lark-doc .lark-doc-table-drag-card { display: none; z-index: 6; min-width: 108px; padding: 6px 9px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-table-card-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-card-text); font-size: 12px; line-height: 1.5; pointer-events: none; }
 .lark-doc .lark-doc-table-overlay.is-reordering .lark-doc-table-drag-card { display: block; }
 .lark-doc .lark-doc-table-drag-card-head { font-size: 11px; opacity: .7; }
-.lark-doc .lark-doc-table-tools-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 30px; height: 30px; min-height: 30px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-table-float-text); font-size: 13px; line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-table-tools-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 0; width: 24px; height: 24px; min-width: 24px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-table-float-text); font-size: 12px; line-height: 16px; margin-left: 8px; cursor: pointer; }
 .lark-doc .lark-doc-table-tools-btn:hover:not(:disabled) { background: var(--ld-bg-hover); }
 .lark-doc .lark-doc-table-tools-btn:focus-visible { outline: 2px solid var(--ld-table-accent); outline-offset: -2px; }
+.lark-doc .lark-doc-table-tools-btn:first-child { margin-left: 0; }
 @media (max-width: 760px) {
   .lark-doc .lark-doc-table-tools-bar { height: 44px; max-width: 100%; overflow-x: auto; overflow-y: hidden; gap: 4px; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
   .lark-doc .lark-doc-table-tools-bar::-webkit-scrollbar { display: none; }
@@ -747,23 +772,32 @@
 .lark-doc .lark-doc-table-tools.is-mobile-column .lark-doc-table-tools-btn.is-text { flex: 1 1 0; min-width: 0; height: 44px; min-height: 44px; padding: 0 8px; }
 .lark-doc .lark-doc-table-tools.is-mobile-column .lark-doc-table-tools-text { font-size: 14px; }
 .lark-doc .lark-doc-table-tools-btn .lark-doc-icon { flex: none; }
-.lark-doc .lark-doc-table-tools-btn .lark-doc-caret { flex: 0 0 12px; width: 12px; height: 12px; margin-left: 2px; }
+.lark-doc .lark-doc-table-tools-btn > .lark-doc-icon:not(.lark-doc-caret) svg { width: 18px; height: 18px; }
+.lark-doc .lark-doc-table-tools-btn[data-cmd="highlight"] > .lark-doc-icon:not(.lark-doc-caret) svg { width: 14px; height: 14px; }
+.lark-doc .lark-doc-table-tools-btn .lark-doc-caret { flex: 0 0 12px; width: 12px; height: 12px; margin-left: 0; }
 .lark-doc .lark-doc-table-tools-btn.is-active { background: var(--ld-bg-accent); color: var(--ld-text-accent); }
 .lark-doc .lark-doc-table-tools-btn.is-menu-open { background: var(--ld-bg-hover-strong); }
 .lark-doc .lark-doc-table-tools-btn:disabled { opacity: .4; cursor: not-allowed; }
-.lark-doc .lark-doc-table-tools-btn.has-caret { min-width: 48px; }
+.lark-doc .lark-doc-table-tools-btn.has-caret { width: 44px; min-width: 44px; gap: 8px; }
 .lark-doc .lark-doc-table-tools-btn.is-text { min-width: 92px; gap: 6px; }
 .lark-doc .lark-doc-table-tools-text { font-size: 13px; font-weight: 500; }
-.lark-doc .lark-doc-table-tools-sep { flex: none; width: 1px; height: 22px; background: var(--ld-table-float-border); }
-.lark-doc .lark-doc-table-tools-sep.is-full { height: 40px; margin: -5px 4px; }
+.lark-doc .lark-doc-table-tools-sep { flex: none; width: 1px; height: 20px; margin: 2px 0 2px 8px; background: var(--ld-table-float-border); }
+.lark-doc .lark-doc-table-tools-sep.is-full { height: 40px; margin: -8px 4px -8px 12px; }
 .lark-doc .lark-doc-table-tools-menu { position: absolute; top: calc(100% + 4px); z-index: 41; box-sizing: border-box; min-width: 200px; max-height: min(60vh, 420px); overflow-y: auto; padding: 6px; border: 1px solid var(--ld-table-float-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu-sm); color: var(--ld-table-float-text); white-space: nowrap; }
+.lark-doc .lark-doc-table-tools-menu[data-menu="turninto"], .lark-doc .lark-doc-table-tools-menu[data-menu="align"], .lark-doc .lark-doc-table-tools-menu.is-heading-submenu { width: 232px; padding: 8px; border-radius: 6px; }
+.lark-doc .lark-doc-table-tools-menu[data-menu="turninto"] .lark-doc-table-tools-menu-item, .lark-doc .lark-doc-table-tools-menu[data-menu="align"] .lark-doc-table-tools-menu-item { height: 32px; min-height: 32px; padding: 4px; font-size: 14px; }
+.lark-doc .lark-doc-table-tools-submenu { position: relative; }
+.lark-doc .lark-doc-table-tools-submenu > button { width: 100%; }
+.lark-doc .lark-doc-table-tools-submenu-caret { margin-left: auto; transform: rotate(-90deg); }
+.lark-doc .lark-doc-table-tools-menu.is-heading-submenu { position: fixed; min-width: 180px; margin: 0; }
+.lark-doc .lark-doc-table-tools-menu.is-heading-submenu[hidden] { display: none; }
 .lark-doc .lark-doc-table-tools-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 .lark-doc .lark-doc-table-tools-menu-item:hover:not(:disabled),
 .lark-doc .lark-doc-table-tools-menu-item:focus-visible { background: var(--ld-bg-hover); outline: 0; }
 .lark-doc .lark-doc-table-tools-menu-item[aria-pressed="true"] { background: var(--ld-bg-accent); border-color: transparent; color: var(--ld-text-accent); }
 .lark-doc .lark-doc-table-tools-menu-item:disabled,
 .lark-doc .lark-doc-table-tools-menu-item.is-disabled { background: transparent; border-color: transparent; color: var(--ld-text-disabled); opacity: .65; cursor: not-allowed; }
-.lark-doc .lark-doc-table-tools-menu-icon { color: var(--ld-text-secondary); width: 18px; height: 18px; flex: 0 0 18px; }
+.lark-doc .lark-doc-table-tools-menu-icon { flex: none; color: var(--ld-text-secondary); }
 .lark-doc .lark-doc-table-tools-menu-item[aria-pressed="true"] .lark-doc-table-tools-menu-icon,
 .lark-doc .lark-doc-table-tools-menu-item:hover:not(:disabled) .lark-doc-table-tools-menu-icon { color: inherit; }
 .lark-doc .lark-doc-table-tools-menu-divider { display: block; height: 1px; margin: 4px 2px; background: var(--ld-table-float-border); }

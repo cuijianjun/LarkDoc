@@ -28,6 +28,7 @@ export const ICONS = {
   })),
   ...Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`mobile-heading${i + 7}`, wrap(`<text x="8" y="11.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" text-anchor="middle">H<tspan font-size="7">${i + 7}</tspan></text>`)])),
   'table-merge': wrap('<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 8h4m4 0h4M4.5 6.5 6 8 4.5 9.5m7-3L10 8l1.5 1.5"/>'),
+  'table-insert-boundary': '<svg viewBox="0 0 22 24" fill="none"><path d="M16.153 20.721A10.999 10.999 0 0022 11c0-6.075-4.925-11-11-11S0 4.925 0 11c0 4.213 2.369 7.873 5.847 9.721L11 24l5.153-3.279z" fill="currentColor"/><path d="M10.45 6a.2.2 0 00-.2.2v4.05H6.2a.2.2 0 00-.2.2v1.1c0 .11.09.2.2.2h4.05v4.05c0 .11.09.2.2.2h1.1a.2.2 0 00.2-.2v-4.05h4.05a.2.2 0 00.2-.2v-1.1a.2.2 0 00-.2-.2h-4.05V6.2a.2.2 0 00-.2-.2h-1.1z" fill="var(--ld-table-plus-fg)"/></svg>',
   'cell-background': wrap('<rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M6 2v12M10 2v12M2 10h12"/><path d="M6 6h4v4H6Z" fill="currentColor" stroke="none"/>'),
   'valign-top': wrap('<path d="M2 3h12M8 13V6m-3 3 3-3 3 3"/>'),
   'valign-middle': wrap('<path d="M2 8h12M8 1v4M6 3l2 2 2-2M8 15v-4m-2 2 2-2 2 2"/>'),
