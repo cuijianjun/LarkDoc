@@ -1,6 +1,6 @@
 # lark-doc 开发与维护手册
 
-根目录只维护两份文档：[README](./README.md) 面向使用者，本文汇总当前开发约束、交付流程和上线记录。具体模块规格与可运行示例仍在各自目录维护。
+第一次修改 LarkDoc，先按[本地开发与验证](./docs/guide/development.md)安装、预览和检查。将编辑器接入自己的应用请看 [README](./README.md)。本手册保留开发约束、交付流程和上线记录。
 
 - [当前架构与维护约束](#architecture)
 - [本地开发与验证](#development)
@@ -23,26 +23,17 @@
 
 ## 本地开发与验证
 
-**只想在应用里使用编辑器**：打开[统一示例中心](https://cuijianjun.github.io/LarkDoc/examples/)，选择一个环境。安装、引入、配置和可运行代码都在对应页面。
+[本地开发与验证](./docs/guide/development.md)有当前分支预览、Vue 3 示例、Docker 后端和提交前检查的操作步骤。
 
-**准备修改本仓库源码**：按[本地开发与验证](./docs/guide/development.md)依次完成安装、库构建、六环境预览和检查。完整操作集中在这一页。
-
-| 目录 | 内容 |
+| 想找什么 | 位置 |
 | --- | --- |
-| `src/` | 编辑器、工作台、上传器和框架适配器 |
-| `docs/examples/` | 六个环境的说明页和真实最小应用源码 |
-| `docs/` | 使用手册与文档站 |
-| `dev/` | 修改各模块时需要遵守的开发约束 |
-| `test/`、`scripts/` | 测试、构建与发布工具 |
+| 编辑器、工作台、上传器与框架适配器 | `src/` |
+| 单测、构建与发布工具 | `test/`、`scripts/` |
+| 六个接入环境和可运行示例 | [示例中心源码](./docs/examples/index.md) |
+| 模块约束与回归清单 | [开发导航](./dev/00-INDEX.md) |
+| 需求、任务与验收标准 | `requirements/`、`specs/` |
 
-库兼容构建使用 Node 14.21.3；完整测试和 Vite 示例使用 Node 22.13.0+；文档站独立使用 Node 20。
-应用继续使用自己的工具链。具体命令与顺序见上面的开发页，不要直接用 Node 14 跑 Vitest 或 Vite 7。
-
-日常按[开发导航](./dev/00-INDEX.md)选择相关章节。发布规则见[发布说明](./dev/07-发布.md)，当前版本以 `package.json` 为准。
-
-线上文档面向 SDK 调用者。本地开发、[历史性能验收](./docs/guide/performance.md)与[文档站部署](./docs/guide/deployment-docs-site.md)只在仓库维护，不编译进线上页面或搜索索引；修改相关能力时仍需同步这些源文件。
-
-Windows 内网交付按[两环境迁移](./docs/guide/intranet-migration.md)操作：两个 Windows 包各含 SDK、对应最小 demo、Git Bash 说明和校验清单，Linux 静态文档单独打包。Vue2 使用 npm，Vue3 使用 pnpm 9/10。SDK 自包含只覆盖其运行依赖，原应用的 Vue、Webpack/Vite 和业务依赖由原项目准备。
+[历史性能验收](./docs/guide/performance.md)和[文档站部署](./docs/guide/deployment-docs-site.md)在仓库维护。Windows 内网交付见[两环境迁移](./docs/guide/intranet-migration.md)。
 
 <a id="distribution"></a>
 
@@ -111,6 +102,7 @@ bash scripts/pack-docs.sh --base / --skip-install --out /tmp/larkdoc-docs
 
 ### 未发布
 
+- **开发文档**。更新当前分支预览、Vue 3 示例、Docker 后端联调和提交前检查的入门步骤。
 - **master合入说明（2026-11-15）**：下列v5–v23是master原工作区的历史测量；本轮合入dev后需重新验证，不能当作新集成结果。合并前dev路径说明另保留如下。
 - **大文档与图片交互增量（历史测量与当前路径分列）**：此前 30M 本地压测为 31,891,759 bytes、52,144 blocks、408 段、mount 7.79s、input 1.45s、程序化滚动 6 FPS、toolbar 1.23s、pageErrors 0；这是历史版本/CSS 的记录，不是当前 dev 的性能验收，固定 intrinsic CSS 曾退至 4 FPS 并已撤回。2026-11-15 T072 将 128 顶层块段模型/typed-array Worker 接回生产挂载、替换、刷新和销毁路径，补 abort/旧文档隔离；大文档默认 debounce 的 change 使用现有缓存合作快照，显式 changeDebounce:0 保持同步。根节点仍只保留段元数据，完整 ProseMirror DOM 与选区映射保留；这不是虚拟化，也不代表 60 FPS 已达标。当前路径的 2000 块 jsdom 无布局样本及不变块只序列化一次由 document-snapshot 测试记录；30M 真浏览器当前帧率仍待独立验收。
 - **2026-11-14 视口一致性与导入分时（本地未发布）**：冷页实测高度低于估算时，原挂载范围可能把已经进入视口的下一页留作占位；现在在既有第二轮协调前按实测重选窗口，导航揭示页也保留到最终窗口确定后再消费。滚动事件立即刷新并保留一次合并帧回调，处理同帧后续滚动；待同步的原生文本选区按公共位置接口归一后比较，避免覆盖拖选，打印路径完整挂载后恢复窗口。导入无限额时跳过无效码点数组分配；有上限时保留 Unicode 计数。分页装饰在提交锁内分步准备折叠、标题编号、有序和无序列表分析，复用既有 DerivedIndex 缓存；默认让行使用 8ms 协作预算、帧后独立任务和 32ms 后台兜底。取消、只读和替代异步导入均保留回滚及文档身份检查。
