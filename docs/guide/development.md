@@ -41,6 +41,8 @@ curl --fail http://127.0.0.1:8793/readyz
 
 回到前端仓库根目录。修改文档先检查链接、命令和 Git 差异。修改源码时先运行 `npm run test:affected -- 路径`，把「路径」替换成改动的文件，再运行 `npm run check:quick`。合并或提交代码前运行 `npm run check:code`。发布前运行 `npm run check` 和 `npm run verify:all`。
 
+前端和后端分开检出时，将环境变量 `LARK_DOC_BACKEND_ROOT` 设为后端仓库的绝对路径。证据检查需要读取该仓库的 `test/evidence/schema.json`。
+
 ```bash
 git status --short
 git diff --check
