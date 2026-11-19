@@ -9,7 +9,7 @@
  *
  *   ai: 'https://api.example.com/ai'                 // L1 只给地址
  *   ai: { endpoint: '/api/ai', protocol: 'auto' }    // L1 显式协议
- *   ai: { protocol: 'openai', baseURL, apiKey, model }  // L2 直连模型服务
+ *   ai: { baseurl, api_key }                          // L2 直连模型服务
  *   ai: { endpoint: '/api/ai', request(request, args) { ... } } // L2 宿主请求
  *   ai: { stream(args) { ... return { cancel } } }    // L3 旧钩子，完全自管
  *   ai: (args) => ({ cancel })                       // L3 函数简写
@@ -27,6 +27,7 @@ export const AI_CONTENT_FORMATS = Object.freeze(['auto', 'markdown', 'html', 'te
 export const AI_PROTOCOLS = Object.freeze(['auto', 'openai', 'chatStream', 'json'])
 
 const OPENAI_DEFAULT_PATH = '/chat/completions'
+const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini'
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -145,7 +146,10 @@ export function buildAIRequest(config, protocol, args) {
         : buildMessages(args.action, args.text, args.prompt, args.language, args.images),
       ...(isPlainObject(config.params) ? config.params : {}),
     }
-    if (body.model === undefined) delete body.model
+    if (body.model === undefined) {
+      if (config.baseURL) body.model = OPENAI_DEFAULT_MODEL
+      else delete body.model
+    }
     request = { url, method: 'POST', headers, body, protocol: 'openai' }
   } else {
     const body = {
@@ -160,8 +164,12 @@ export function buildAIRequest(config, protocol, args) {
     request = { url: config.endpoint, method: 'POST', headers, body, protocol }
   }
   if (typeof config.transformRequest === 'function') {
-    const patched = config.transformRequest(request, args)
-    if (isPlainObject(patched)) request = { ...request, ...patched }
+    try {
+      const patched = config.transformRequest(request, args)
+      if (isPlainObject(patched)) request = { ...request, ...patched }
+    } catch (error) {
+      throw redactProviderError(error, config, request)
+    }
   }
   return request
 }
@@ -198,7 +206,7 @@ function runEndpointStream(config, protocol, args) {
   try {
     request = buildRequest(config, protocol, callbacks)
   } catch (error) {
-    if (onError) onError(error)
+    if (onError) onError(redactProviderError(error, config))
     return { cancel() {} }
   }
 
@@ -242,7 +250,7 @@ function runEndpointStream(config, protocol, args) {
   function fail(error) {
     if (settled) return
     settled = true
-    if (onError) onError(error)
+    if (onError) onError(redactProviderError(error, config, request))
   }
 
   function feed(chunk) {
@@ -316,12 +324,15 @@ function runEndpointStream(config, protocol, args) {
   }
 }
 
-function redactProviderError(error, config) {
-  const key = resolveApiKey(config)
-  const message = String(error?.message || 'AI 请求失败')
-    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
-    .replace(key ? new RegExp(String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g') : /$^/g, '[redacted]')
-  const normalized = new Error(message)
+function redactProviderError(error, config, request) {
+  const authorization = Object.entries(request?.headers || {}).find(([name]) => name.toLowerCase() === 'authorization')?.[1]
+  const token = typeof authorization === 'string' ? authorization.replace(/^Bearer\s+/i, '') : ''
+  const key = config.apiKey ?? config.api_key
+  let message = String(error?.message || 'AI 请求失败').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+  for (const secret of new Set([token, key])) {
+    if (typeof secret === 'string' && secret) message = message.split(secret).join('[redacted]')
+  }
+  const normalized = new Error(message.slice(0, 256))
   normalized.code = error?.name === 'AbortError' ? 'AI_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR')
   normalized.status = error?.status
   return normalized
@@ -384,7 +395,7 @@ function runDirectRequestStream(config, protocol, args) {
   const start = () => { if (!started) { started = true; onStart?.() } }
   const emit = text => { if (text) { start(); onChunk?.(text) } }
   const complete = () => { if (!settled) { settled = true; start(); callbacks.onDone?.() } }
-  const fail = error => { if (!settled) { settled = true; onError?.(redactProviderError(error, config)) } }
+  const fail = error => { if (!settled) { settled = true; onError?.(redactProviderError(error, config, request)) } }
   const feed = chunk => {
     if (settled) return
     if (mode === 'sse') { decoder.push(chunk); return }
@@ -419,6 +430,7 @@ function runDirectRequestStream(config, protocol, args) {
         withCredentials: config.withCredentials === true,
         timeout: Number(config.timeout) || 0,
       }, callbacks)
+      if (settled || cancelled) return
       if (response?.ok === false || Number(response?.status) >= 400) {
         const error = new Error(`AI 接口返回 HTTP ${response?.status || 0}`)
         error.status = response?.status

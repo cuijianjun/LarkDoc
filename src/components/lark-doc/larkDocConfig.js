@@ -67,9 +67,10 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     files: true,
     // 内嵌网页 15 项：关闭后斜杠菜单不再出现「内嵌网页」组。
     embed: true,
-    // 分享入口：默认 true = 与历史行为一致；置 false 后选区尾按钮、表格工具
-    // 「分享」与链接浮窗分享一起消失，且不留分隔符。
-    share: true,
+    // 分享入口：**暂时默认关闭**（产品口径：分享服务未接入前，所有分享按钮一律隐藏 UI）。
+    // 置 true 后选区尾按钮、表格工具「分享」、块菜单「分享」、链接浮窗与顶栏分享一起恢复；
+    // 关闭时不留分隔符、不留空位。图片工具条的分享走 `image.js` 的 SHOW_SHARE 同步开关。
+    share: false,
   },
   toolbar: {
     history: true, headings: true, marks: true, textStyle: true, blockStyle: true,

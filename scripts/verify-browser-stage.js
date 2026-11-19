@@ -9,6 +9,7 @@ const results = []
 async function main() {
   const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } })
+  await context.route('**/__larkdoc-preview-fixture*', route => route.fulfill({ contentType: 'text/html', body: '<title>演示链接验证</title><p>Local link target</p>' }))
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
   const errors = []

@@ -52,8 +52,12 @@ export function postStream(options) {
     if (callback) callback(value)
   }
 
+  function isSuccessful() {
+    return (xhr.status >= 200 && xhr.status < 300) || xhr.status === 304
+  }
+
   function drain() {
-    if (settled && cancelled) return
+    if (settled || !isSuccessful()) return
     let text
     try {
       text = xhr.responseText
@@ -72,29 +76,22 @@ export function postStream(options) {
     }
   }
 
-  xhr.open(method, url, true)
-  if (timeout > 0) xhr.timeout = timeout
-  xhr.withCredentials = Boolean(withCredentials)
-  Object.keys(finalHeaders).forEach(name => {
-    if (finalHeaders[name] != null) xhr.setRequestHeader(name, String(finalHeaders[name]))
-  })
-
   xhr.onreadystatechange = () => {
-    if (cancelled) return
-    if (xhr.readyState === 3) {
+    if (settled || cancelled) return
+    if (xhr.readyState === 3 && isSuccessful()) {
       if (onOpen) { try { onOpen(xhr.status, xhr) } catch (ignored) { /* 宿主钩子异常不影响流 */ } }
       drain()
       // IE11 / 部分旧内核不派发 onprogress，用轮询兜底保证增量不丢。
-      if (!pollTimer) pollTimer = setInterval(drain, 120)
+      if (!settled && !pollTimer) pollTimer = setInterval(drain, 120)
     } else if (xhr.readyState === 4) {
       stopPolling()
-      if (cancelled) return
-      drain()
       const status = xhr.status
-      if ((status >= 200 && status < 300) || status === 304) {
+      if (isSuccessful()) {
         if (onOpen) { try { onOpen(status, xhr) } catch (ignored) { /* 同上 */ } }
+        drain()
         finish(onDone)
-      } else {
+      } else if (status) {
+        // 状态 0 由 error / timeout / abort 事件给出具体原因。
         const raw = (() => { try { return xhr.responseText || '' } catch (error) { return '' } })()
         finish(onError, buildHttpError(status, raw))
       }
@@ -116,6 +113,12 @@ export function postStream(options) {
   }
 
   try {
+    xhr.open(method, url, true)
+    if (timeout > 0) xhr.timeout = timeout
+    xhr.withCredentials = Boolean(withCredentials)
+    Object.keys(finalHeaders).forEach(name => {
+      if (finalHeaders[name] != null) xhr.setRequestHeader(name, String(finalHeaders[name]))
+    })
     xhr.send(payload === undefined ? null : payload)
   } catch (error) {
     finish(onError, error)
@@ -141,7 +144,8 @@ function buildHttpError(status, raw) {
       detail = json.message || json.error?.message || json.error || json.msg || ''
       if (detail && typeof detail === 'object') detail = JSON.stringify(detail)
     } catch (error) {
-      detail = text.slice(0, 200)
+      // The adapter redacts the sent credential before shortening the message.
+      detail = text
     }
   }
   const error = new Error(`AI 接口返回 HTTP ${status}${detail ? `：${detail}` : ''}`)

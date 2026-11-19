@@ -368,6 +368,18 @@ FakeXHR.last.responseText = 'upstream exploded'
 FakeXHR.last.close(502)
 assert.ok(plainError[0].message.includes('upstream exploded'), '非 JSON 错误体截断进文案')
 
+for (const [eventName, detail] of [['onerror', '网络异常'], ['ontimeout', '请求超时']]) {
+  const response = startStream(normalizeAIProvider('/api/ai'), { action: 'rewrite', text: 'x' })
+  response.xhr.readyState = 4
+  response.xhr.status = 0
+  response.xhr.onreadystatechange()
+  assert.strictEqual(response.record.errors.length, 0, '状态 0 等待具体网络事件')
+  response.xhr[eventName]()
+  assert.strictEqual(response.record.errors.length, 1)
+  assert.ok(response.record.errors[0].message.includes(detail))
+  assert.strictEqual(response.record.done, 0)
+}
+
 // ---------------------------------------------------------------------------
 // 4. endpoint provider 端到端：四种响应形态自适应
 // ---------------------------------------------------------------------------
@@ -457,7 +469,7 @@ assert.strictEqual(cancelRun.record.cancelled, 1, '重复取消不重复回调')
 
 // OpenAI 直连：URL / 鉴权 / messages 组装
 const openaiProvider = normalizeAIProvider({
-  baseURL: 'https://api.openai.com/v1/', apiKey: 'sk-test', model: 'gpt-4o-mini',
+  baseurl: 'https://api.openai.com/v1/', api_key: 'sk-test',
 })
 const openaiRun = startStream(openaiProvider, { action: 'translate', text: 'hello', language: 'en' })
 assert.strictEqual(openaiRun.xhr.sentUrl, 'https://api.openai.com/v1/chat/completions', '默认拼 /chat/completions')
@@ -475,6 +487,32 @@ openaiRun.xhr.push('data: [DONE]\n\n')
 openaiRun.xhr.close()
 assert.deepStrictEqual(openaiRun.record.chunks, ['hel', 'lo'], 'OpenAI 帧走 choices[0].delta.content')
 assert.strictEqual(openaiRun.record.done, 1)
+
+let keyReads = 0
+const protectedProvider = normalizeAIProvider({
+  baseurl: '/models/v1', api_key: () => `rotating-key-${++keyReads}`, model: 'compatible-model',
+})
+const failedRun = startStream(protectedProvider, { action: 'rewrite', text: 'x' })
+assert.strictEqual(JSON.parse(failedRun.xhr.sentBody).model, 'compatible-model', '宿主可覆盖默认模型')
+failedRun.xhr.push('upstream denied rotating-key-1\n', 401).close(401)
+assert.strictEqual(failedRun.record.started, 0, 'HTTP 失败不进入生成态')
+assert.deepStrictEqual(failedRun.record.chunks, [], 'HTTP 失败正文不进入预览')
+assert.strictEqual(failedRun.record.done, 0)
+assert.strictEqual(failedRun.record.errors.length, 1)
+assert.strictEqual(failedRun.record.errors[0].status, 401)
+assert.ok(failedRun.record.errors[0].message.includes('upstream denied [redacted]'))
+assert.strictEqual(failedRun.record.errors[0].body, undefined, '面板错误不带原始密钥响应体')
+assert.strictEqual(keyReads, 1, '报错时使用发送出去的动态密钥')
+
+const edgeRun = startStream(protectedProvider, { action: 'rewrite', text: 'x' })
+edgeRun.xhr.push(`${'x'.repeat(195)}rotating-key-2`, 401).close(401)
+assert.ok(edgeRun.record.errors[0].message.includes('[redacted]') && !edgeRun.record.errors[0].message.includes('rotat'))
+
+const transformRun = startStream(normalizeAIProvider({
+  baseurl: '/models/v1', api_key: () => 'transform-secret',
+  transformRequest() { throw new Error('transform-secret 被宿主转换器拒绝') },
+}), { action: 'rewrite', text: 'x' })
+assert.strictEqual(transformRun.record.errors[0].message, '[redacted] 被宿主转换器拒绝')
 
 // 宿主的 messages / transformRequest / params 覆盖
 const customProvider = normalizeAIProvider({
@@ -582,4 +620,16 @@ assert.strictEqual(singleParagraphInner(null), null)
 const richText = '## 方案\n\n**要点** 一\n\n- 子项'
 assert.strictEqual(normalizePreviewHtml(richText, 'auto'), previewToHtml(richText, 'auto'))
 
-console.log(`AI adapter checks passed: normalization, protocol frames, SSE transport, prompt actions, markdown rendering (${AI_ACTIONS.length} actions covered)`)
+let resolveLateRequest
+let lateReads = 0
+const lateRun = startStream(normalizeAIProvider({
+  endpoint: '/api/ai',
+  request: () => new Promise(resolve => { resolveLateRequest = resolve }),
+}), { action: 'rewrite', text: 'x' })
+lateRun.handle.cancel()
+resolveLateRequest({ ok: true, text: () => { lateReads += 1; return 'late' } })
+Promise.resolve().then(() => {
+  assert.strictEqual(lateReads, 0)
+  assert.deepStrictEqual(lateRun.record, { chunks: [], started: 0, done: 0, cancelled: 1, errors: [] })
+  console.log(`AI adapter checks passed: normalization, protocol frames, SSE transport, prompt actions, markdown rendering (${AI_ACTIONS.length} actions covered)`)
+}).catch(error => { console.error(error); process.exitCode = 1 })

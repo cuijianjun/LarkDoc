@@ -349,6 +349,7 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
       setInputValue(textInput, state.text)
       setInputValue(valueInput, state.value)
       apply.disabled = !normalizeLinkUrl(state.value)
+      valueInput.setAttribute('aria-invalid', String(apply.disabled && Boolean(state.value?.trim())))
       position()
     },
     focusFirstField() { if (el.parentNode) (state.insertMode && !state.onlyLink ? textInput : valueInput).focus() },
@@ -547,7 +548,7 @@ export function createEmbedDialog(options = {}) {
     setAttr(el, 'aria-label', state.title)
     el.classList.toggle('is-application', !!state.application)
     input.setAttribute('aria-label', state.application ? '应用链接' : '内嵌网页链接')
-    input.setAttribute('aria-invalid', state.application && state.rejected ? 'true' : 'false')
+    input.setAttribute('aria-invalid', String(!!state.rejected))
     closeBtn.setAttribute('aria-label', state.application ? '关闭应用预览链接' : '关闭内嵌网页链接')
     error.textContent = state.application && state.rejected ? '请输入有效的 http(s) 应用链接' : ''
     error.hidden = !error.textContent

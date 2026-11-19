@@ -640,6 +640,27 @@ describe('P4-06 三态规格（03 顶栏 #2 / 06 §6.2 §6.3 实测）', () => {
     expect(ui.host.querySelector('header')).toBe(ui.bar.el)
   })
 
+  it('双吸顶时测量实际顶栏高度，隐藏后停止观察并清除偏移', () => {
+    const { bar, host } = createModeBar()
+    let notify
+    let observing = false
+    window.ResizeObserver = class ResizeObserver {
+      constructor(callback) { notify = callback }
+      observe() { observing = true }
+      disconnect() { observing = false }
+    }
+    let height = 59.5
+    bar.el.getBoundingClientRect = () => ({ height })
+    bar.update({ headerVisible: true, stackToolbar: true })
+    expect(host.style.getPropertyValue('--ld-titlebar-height')).toBe('59.5px')
+    height = 114.5
+    notify()
+    expect(host.style.getPropertyValue('--ld-titlebar-height')).toBe('114.5px')
+    bar.update({ headerVisible: false, stackToolbar: true })
+    expect(observing).toBe(false)
+    expect(host.style.getPropertyValue('--ld-titlebar-height')).toBe('')
+  })
+
   it('主组件挂提示条、根 class 带修订态、mounted 里先 restoreMode', () => {
     expect(shell).toContain("modeToast.className = 'lark-doc-mode-toast'")
     expect(renderer).toContain("shell.root.classList.toggle('lark-doc-mode-suggest', state.mode === 'suggest')")

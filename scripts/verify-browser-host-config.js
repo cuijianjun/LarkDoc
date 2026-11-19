@@ -12,7 +12,10 @@ const BASE = process.argv[2] || 'http://127.0.0.1:58742/lark-doc?verify=1'
 const results = []
 
 async function main() {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({
+    headless: true, chromiumSandbox: true,
+    executablePath: process.env.PERF_BROWSER_EXECUTABLE || (process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined),
+  })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.setDefaultTimeout(10000)
   const errors = []
@@ -48,6 +51,7 @@ async function main() {
       config: window.__larkDoc.getConfig()?.features || null,
     }))
     check('运行时关闭目录/插入功能会立即移除入口和目录侧栏', !disabled.outline && !disabled.outlineAside && !disabled.insert, disabled)
+    check('热更新功能保持宿主原有的持久化配置', disabled.config.persistence === initial.config.persistence)
 
     await page.evaluate(() => window.__larkDoc.patchProps({ config: { features: { outline: true, insert: true } } }))
     await waitRender()
@@ -62,6 +66,7 @@ async function main() {
     await waitRender()
     const readonly = await page.evaluate(() => ({
       api: window.__larkDoc.isReadonly(),
+      headerVisible: window.__larkDoc.getConfig().layout.headerVisible,
       editable: document.querySelector('.ProseMirror')?.getAttribute('contenteditable'),
       writeDisabled: [...document.querySelectorAll('.lark-doc-toolbar .lark-doc-tools button')]
         .filter(button => button.disabled).length,
@@ -69,7 +74,8 @@ async function main() {
         .filter(button => !button.disabled)
         .map(button => button.getAttribute('aria-label') || button.textContent.trim()),
     }))
-    const readonlyViewers = ['查找', '目录', '页面宽度', '阅读模式', '全屏', '演示模式', '快捷键帮助', '文档操作']
+    const readonlyViewers = ['查找', '目录', '页面宽度', '阅读模式', '全屏', '演示模式', '快捷键帮助']
+    if (!readonly.headerVisible) readonlyViewers.push('文档操作')
     check('只读切换立即锁正文并保留查看类入口', readonly.api && readonly.editable === 'false' && readonly.writeDisabled >= 1 && JSON.stringify(readonly.enabled) === JSON.stringify(readonlyViewers), readonly)
 
     await page.evaluate(() => window.__larkDoc.setReadonly(false))
@@ -116,6 +122,36 @@ async function main() {
       patch: window.__larkDoc.patchProps({ readonly: false }),
     }))
     check('当前演示实例卸载后移除 DOM、编辑器和配置且 patchProps 拒绝写入', !destroyed.root && !destroyed.editor && destroyed.config === null && destroyed.patch === false, destroyed)
+
+    await page.evaluate(() => {
+      const Facade = window.__larkDoc.constructor
+      const element = document.createElement('section')
+      element.id = 'browser-storage-probe'
+      document.body.appendChild(element)
+      window.__mountStorageProbe = content => new Facade({
+        element, documentId: 'browser-storage-probe', storage: 'local', themeStorage: 'local',
+        theme: 'light', config: { autosave: { enabled: false } },
+        ...(content ? { content } : {}),
+      })
+      window.__storageProbe = window.__mountStorageProbe('<p>本地保存探针</p>')
+    })
+    const storageProbe = page.locator('#browser-storage-probe')
+    await storageProbe.locator('.lark-doc-save-status').filter({ hasText: '尚未保存' }).waitFor()
+    const text = storageProbe.locator('.ProseMirror p').first()
+    await text.click()
+    await page.keyboard.press('End')
+    await page.keyboard.insertText('持久化')
+    await storageProbe.getByRole('button', { name: '保存', exact: true }).click()
+    await storageProbe.locator('.lark-doc-save-status').filter({ hasText: '已保存到' }).waitFor()
+    await page.evaluate(() => {
+      window.__storageProbe.setTheme('dark', 'dark')
+      window.__storageProbe.destroy()
+      window.__storageProbe = window.__mountStorageProbe()
+    })
+    await storageProbe.getByText('本地保存探针持久化', { exact: true }).waitFor()
+    check('手动保存后重开同一文档，恢复实际正文', await storageProbe.locator('.ProseMirror').innerText() === '本地保存探针持久化')
+    check('配置主题持久化时重开直接恢复双轨深色', await storageProbe.locator('.lark-doc[data-theme="dark"][data-content-theme="dark"]').count() === 1)
+    await page.evaluate(() => window.__storageProbe.destroy())
     check('宿主生命周期无脚本错误', errors.length === 0, errors)
   } finally {
     await browser.close()

@@ -102,6 +102,7 @@ export class LarkDoc {
     this.networkPolicy = createNetworkPolicy(this.config.network)
     this._ownsSession = false
     this._session = this._resolveSession(source)
+    this._storageTarget = { persistence: this._resolvePersistence(source), session: this._session }
 
     this._renderer = createRenderer({
       renderer: source.renderer,
@@ -116,7 +117,7 @@ export class LarkDoc {
         _preserveRuntimeState: source._preserveRuntimeState,
         contentFormat: this.options.contentFormat,
         readonly: Boolean(source.readonly),
-        persistence: this._resolvePersistence(source),
+        persistence: this._storageTarget.persistence,
         saveHtml: this.options.saveHtml === true,
         uploader: source.uploader,
         uploadImage: source.uploadImage,
@@ -534,7 +535,21 @@ export class LarkDoc {
    */
   patchProps(props) {
     if (this._destroyed || !this._renderer || !this._handle) return false
-    if (props && typeof props === 'object') this._renderer.update(this._handle, props)
+    if (props && typeof props === 'object') {
+      const config = props.config || {}
+      const replacesFeatures = Object.prototype.hasOwnProperty.call(config, 'features')
+      let storageTarget = this._storageTarget
+      for (const key of ['session', 'persistence']) {
+        if (Object.prototype.hasOwnProperty.call(props, key)) storageTarget = { ...storageTarget, [key]: props[key] }
+      }
+      // The active session or adapter is the only host destination after construction.
+      if (this.options.storage === 'none' && (replacesFeatures || storageTarget !== this._storageTarget) && !this._hasHostPersistence(storageTarget)) {
+        const features = replacesFeatures ? config.features : this.getConfig()?.features
+        props = { ...props, config: { ...config, features: { ...features, persistence: false } } }
+      }
+      this._renderer.update(this._handle, props)
+      this._storageTarget = storageTarget
+    }
     return true
   }
 
@@ -646,6 +661,7 @@ export class LarkDoc {
       })
     }
     this._session = null
+    this._storageTarget = null
     // 主题监听器（matchMedia / MutationObserver / storage）随实例释放。
     if (this._themeController) {
       this._themeController.destroy()

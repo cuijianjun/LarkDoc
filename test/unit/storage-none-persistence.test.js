@@ -126,6 +126,49 @@ describe('storage: none 是持久化总闸', () => {
     expect(doc.getText()).toBe('本次传入的正文')
   })
 
+  it('热更新可见功能时不重新启用浏览器保存或覆盖草稿', async () => {
+    const seeded = seedDraft('上一次的旧草稿正文')
+    const { doc, element, ready } = mount({ storage: 'none', autosave: { delay: 0 } })
+    await ready
+    doc.patchProps({ config: { features: { outline: false, persistence: true } } })
+    expect(doc.getConfig().features.outline).toBe(false)
+    expect(doc.getConfig().features.persistence).toBe(false)
+    expect(element.querySelector('button[aria-label="保存"]')).toBeNull()
+    doc.setContent('<p>新正文仍由宿主保存</p>')
+    await tick()
+    expect(localStorage.getItem(DRAFT_KEY)).toBe(seeded)
+  })
+
+  it('解绑宿主持久化会话立即关闭保存，不回落到浏览器', async () => {
+    const seeded = seedDraft('保留的浏览器草稿')
+    const adapter = hostAdapter()
+    const { doc, ready } = mount({ storage: 'none', providers: { persistence: adapter }, autosave: { delay: 0 } })
+    await ready
+    expect(doc.getConfig().features.persistence).toBe(true)
+    doc.patchProps({ session: null })
+    expect(doc.getConfig().features.persistence).toBe(false)
+    doc.patchProps({ providers: { persistence: adapter }, config: { features: { outline: false } } })
+    expect(doc.getConfig().features.persistence).toBe(false)
+    doc.setContent('<p>独立文档</p>')
+    await tick()
+    expect(adapter.save).not.toHaveBeenCalled()
+    expect(localStorage.getItem(DRAFT_KEY)).toBe(seeded)
+  })
+
+  it('自定义渲染器不公开句柄属性时仍记得已解绑的会话', () => {
+    const renderer = {
+      mount: ({ element }) => element,
+      getRoot: element => element,
+      getInstance: () => null,
+      update: vi.fn(),
+      destroy() {},
+    }
+    const { doc } = mount({ storage: 'none', providers: { persistence: hostAdapter() }, rendererFactory: () => renderer })
+    doc.patchProps({ session: null })
+    doc.patchProps({ config: { features: { outline: false } } })
+    expect(renderer.update).toHaveBeenLastCalledWith(expect.any(HTMLElement), { config: { features: { outline: false, persistence: false } } })
+  })
+
   it('默认 storage:local 仍按原语义恢复草稿（对照组）', async () => {
     seedDraft('上一次的旧草稿正文')
     const { doc, ready } = mount()
@@ -149,6 +192,10 @@ describe('storage: none 是持久化总闸', () => {
     expect(adapter.load).toHaveBeenCalledTimes(1)
     expect(doc.getText()).toBe('后端返回的正文')
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull()
+    doc.patchProps({ config: { features: { outline: false } } })
+    expect(doc.getConfig().features.persistence).toBe(true)
+    await doc.save()
+    expect(adapter.save).toHaveBeenCalledTimes(1)
   })
 
   it('有适配器时宿主仍可用 features.persistence:false 主动关闭', async () => {

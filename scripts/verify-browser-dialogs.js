@@ -47,6 +47,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -137,7 +139,8 @@ const measureEmbedDialog = () => {
     confirmText: confirm ? confirm.textContent.trim() : null,
     confirmBg: confirm ? getComputedStyle(confirm).backgroundColor : null,
     rejected: confirm ? confirm.classList.contains('is-rejected') : null,
-    hasAlert: !!dialog.querySelector('[role="alert"], .lark-doc-error'),
+    hasAlert: !!dialog.querySelector('[role="alert"]:not([hidden]), .lark-doc-error:not([hidden])'),
+    inputInvalid: input?.getAttribute('aria-invalid') === 'true',
   }
 }
 
@@ -214,6 +217,9 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
 ;(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const href = new URL('/__larkdoc-preview-fixture?link-v12e=1', BASE).href
+  await context.route(href, route => route.fulfill({ contentType: 'text/html', body: '<title>Example</title><p>Local link preview fixture</p>' }))
+  await context.route('https://www.figma.com/embed?**', route => route.fulfill({ contentType: 'text/html', body: '<title>Figma embed fixture</title>' }))
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -310,9 +316,19 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
   const formShape = await form.evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight, labels: [...el.querySelectorAll('label')].map(e => e.firstChild.textContent), modal: el.getAttribute('aria-modal'), placeholder: [...el.querySelectorAll('input')].map(e => e.placeholder) }))
   record('[链接] Cmd+K打开470×126非模态双字段表单，与飞书实页一致', formShape.width === 470 && formShape.height === 126 && !formShape.modal && formShape.labels.join('/') === '文本/链接', JSON.stringify(formShape))
   record('[链接] 空文本/地址时确认禁用，焦点在文本框', await form.getByRole('button', { name: '确认', exact: true }).isDisabled() && await form.getByRole('textbox', { name: '链接文本' }).evaluate(el => el === document.activeElement))
-  const href = new URL('/__larkdoc-preview-fixture?link-v12e=1', BASE).href
+  const linkAddress = form.getByRole('textbox', { name: '链接地址' })
+  const confirmLink = form.getByRole('button', { name: '确认', exact: true })
+  const beforeLink = await page.evaluate(() => window.__larkDoc.getEditor().getJSON())
   await form.getByRole('textbox', { name: '链接文本' }).fill('示例站')
-  await form.getByRole('textbox', { name: '链接地址' }).fill(href)
+  await linkAddress.fill('javascript:alert(1)')
+  await linkAddress.press('Enter')
+  record('[链接] 非法协议拒绝写入，保留原正文、输入值和焦点',
+    await confirmLink.isDisabled() && await linkAddress.getAttribute('aria-invalid') === 'true'
+    && await linkAddress.inputValue() === 'javascript:alert(1)'
+    && await linkAddress.evaluate(el => el === document.activeElement)
+    && await page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === JSON.stringify(before), beforeLink))
+  await linkAddress.fill(href)
+  record('[链接] 原表单改成合法地址可重新提交', await confirmLink.isEnabled() && await linkAddress.getAttribute('aria-invalid') === 'false')
   record('[链接] 焦点边框与确认按钮沿用项目品牌色', await form.evaluate(el => getComputedStyle(el.querySelector('input:focus')).borderTopColor === getComputedStyle(el.querySelector('button')).backgroundColor))
   await form.getByRole('button', { name: '确认', exact: true }).click()
   record('[链接] 真实鼠标确认后插入文本及安全链接，并关闭表单', await page.locator('.ProseMirror a').first().getAttribute('href') === href && await form.count() === 0)
@@ -577,27 +593,24 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
     embed ? `${embed.confirmText} rejected=${embed.rejected}` : '')
 
   // 空值点确认 → 静默拒绝：不报错、不落块、浮层留着、按钮底色变化
-  const blocksBefore = await page.evaluate(() => (window.__larkDoc.getEditor().getJSON().content || []).length)
-  await page.evaluate(() => document.querySelector('.lark-doc-embed-dialog-confirm').click())
+  const docBeforeEmbed = await page.evaluate(() => window.__larkDoc.getEditor().getJSON())
+  const embedInput = page.getByRole('textbox', { name: '内嵌网页链接' })
+  await page.locator('.lark-doc-embed-dialog-confirm').click()
   await page.waitForTimeout(420)
   const embedEmpty = await page.evaluate(measureEmbedDialog)
-  const embedEmptyBlocks = await page.evaluate(() => (window.__larkDoc.getEditor().getJSON().content || []).length)
+  const unchangedEmbed = (snapshot = docBeforeEmbed) => page.evaluate(before => JSON.stringify(window.__larkDoc.getEditor().getJSON()) === JSON.stringify(before), snapshot)
   record('[内嵌] 空值点「确认」→ 浮层留着 + is-rejected（无文案提示、不落块）',
     !!embedEmpty && embedEmpty.rejected === true && embedEmpty.inputValue === ''
-    && embedEmpty.hasAlert === false && embedEmptyBlocks === blocksBefore,
-    embedEmpty ? `rejected=${embedEmpty.rejected} alert=${embedEmpty.hasAlert} 块数=${blocksBefore}→${embedEmptyBlocks}` : '浮层被关掉了')
+    && embedEmpty.inputInvalid && !embedEmpty.hasAlert && await unchangedEmbed())
 
   // 非法值（abc）→ 仍然拒绝
-  await page.evaluate(() => {
-    const input = document.querySelector('.lark-doc-embed-dialog-input')
-    input.value = 'abc'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('.lark-doc-embed-dialog-confirm').click()
-  })
+  await embedInput.fill('abc')
+  const resetRejection = await embedInput.getAttribute('aria-invalid') === 'false'
+  await embedInput.press('Enter')
   await page.waitForTimeout(420)
   const embedInvalid = await page.evaluate(measureEmbedDialog)
   record('[内嵌] 非法值「abc」点「确认」→ 仍拒绝（重新输入即复位过一次）',
-    !!embedInvalid && embedInvalid.rejected === true,
+    resetRejection && !!embedInvalid && embedInvalid.rejected && embedInvalid.inputInvalid && await unchangedEmbed(),
     embedInvalid ? `rejected=${embedInvalid.rejected}` : '浮层被关掉了')
 
   // Esc ×2 关不掉（04 §4.3 ③ 实测）
@@ -616,12 +629,13 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
 
   // 合法链接 → 落 webEmbed 块并关闭
   await chooseCommand(page, 'figma')
-  await page.evaluate(() => {
-    const input = document.querySelector('.lark-doc-embed-dialog-input')
-    input.value = 'https://www.figma.com/file/abc/Design'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector('.lark-doc-embed-dialog-confirm').click()
-  })
+  const beforeUnsafeEmbed = await page.evaluate(() => window.__larkDoc.getEditor().getJSON())
+  await embedInput.fill('javascript:alert(1)')
+  await embedInput.press('Enter')
+  record('[内嵌] 协议不安全时保留输入和正文，允许原位重试',
+    await embedInput.inputValue() === 'javascript:alert(1)' && await embedInput.getAttribute('aria-invalid') === 'true' && await unchangedEmbed(beforeUnsafeEmbed))
+  await embedInput.fill('https://www.figma.com/file/abc/Design')
+  await embedInput.press('Enter')
   await page.waitForTimeout(700)
   const embedApplied = await page.evaluate(() => {
     const json = window.__larkDoc.getEditor().getJSON()

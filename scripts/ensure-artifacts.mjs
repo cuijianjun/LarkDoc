@@ -104,8 +104,11 @@ function inputFingerprint() {
   for (const name of Object.keys(pkg.scripts).filter((name) => /^build(?::|$)/.test(name)).sort()) {
     hash.update(name + '=' + pkg.scripts[name] + '\n')
   }
-  // 5) npm 用户代理也是输入；裸 node 调用与 npm run 的口径不同，保持保守失效。
-  hash.update('npm=' + npmAgent + '\n')
+  // 5) npm 用户代理**不**进指纹：它不改变产物内容，却让同一份源码在
+  // `npm run`（npm 11）、发布链路的 Node 14 构建 npm（npm 8）和裸 node 之间
+  // 得到三个不同指纹，打包时会误报「源码有变动」。真正的产物漂移由下面的
+  // outputFingerprint 兜住（`dist/` 内容与构建记录不一致就重建），
+  // 所以这里只留一条提示，不参与 hash。
   return hash.digest('hex')
 }
 
@@ -148,10 +151,10 @@ else if (stamp.fingerprint !== fingerprint) reasons.push('源码/依赖/构建�
 
 if (CHECK_ONLY) {
   console.log(`✗ 需要重建产物：${reasons.join('；')}（当前指纹 ${fingerprint}）`)
-  // 指纹含 npm 用户代理，绕过 npm 直调时这一项为空 —— 这时「源码有变动」是误报，
-  // 会把人引去重建那 3 分钟的产物。点明口径，省一次白跑。
+  // 指纹只看源码/依赖/构建脚本，与调用方是谁无关；这里留一条调用方式提示，
+  // 方便判断是「真的改过源码」还是「产物被别的构建覆盖过」。
   if (!npmAgent) {
-    console.log('  提示：本次未经 npm 调用（用户代理为空），指纹与 npm 口径不同；复验请用 `npm run artifacts:check`')
+    console.log('  提示：本次未经 npm 调用；需要产物请用 `npm run artifacts:check`（会按 .nvmrc 的 Node 14 重建）')
   }
   process.exit(1)
 }

@@ -181,8 +181,12 @@ export default {
     toggleColorPalette(target, event) {
       if (!this.writable()) return
       // hover 已打开时点击不关闭（飞书行为：hover 弹窗靠移开鼠标关闭）。
-      if (this._paletteHoverOpened && target === 'textColor' && this.colorPaletteOpen === 'textColor') return
-      if (this.colorPaletteOpen === target) { this.colorPaletteOpen = ''; return }
+      this.cancelPopupHoverClose('color')
+      if (this.colorPaletteOpen === target) {
+        if (!this._paletteHoverOpened || !this.colorPaletteIsText) this.colorPaletteOpen = ''
+        return
+      }
+      this._paletteHoverOpened = false
       const rect = event?.currentTarget?.getBoundingClientRect?.()
       this.colorPaletteOpen = target
       this.colorPalettePosition = { top: (rect?.bottom || 80) + 6, left: rect?.left || 16 }

@@ -10,6 +10,7 @@ import { createImageViewer } from './image-viewer'
 import { IMAGE_MIME_ALLOWLIST } from '../media/image-insert'
 import { iconNode } from '../../ui/icon'
 import { bindHoverTips } from '../../ui/hoverTips'
+import { editorChromeSafeTop, MENU_MARGIN } from '../../ui/menuLayout'
 
 const WIDTH_MIN = 40
 const WIDTH_MAX = 2400
@@ -30,6 +31,10 @@ const TOOLBAR_ITEMS = [
 /** 评论：宿主还没接评论服务，图片工具条上的评论按钮先只隐藏 UI。
     按钮构建与 `onAction('comment')` 出口保留，把这个开关打开即恢复。 */
 const SHOW_COMMENT = false
+
+/** 分享：产品口径「分享服务未接入前一律隐藏 UI」。暗号与 `features.share=false` 同源，
+    只是图片工具条不读全局配置，所以在本地留一个同步开关；打开即恢复「分享图片」。 */
+const SHOW_SHARE = false
 const TOOLBAR_ALIGN_ITEMS = [
   { action: 'left', value: 'left', label: '左对齐', icon: 'align-left' },
   { action: 'center', value: 'center', label: '居中对齐', icon: 'align-center' },
@@ -158,8 +163,10 @@ export function createImageNodeView(props) {
   dom.appendChild(errorLine)
 
   /* ---------- 工具条：hover 挂载 / 离开卸载 ---------- */
+  const win = dom.ownerDocument.defaultView
   let toolbar = null
   let toolbarTips = null
+  let toolbarPositionFrame = null
   let cropResetButton = null
   let cropUi = null
 
@@ -195,8 +202,9 @@ export function createImageNodeView(props) {
     bar.appendChild(el('span', 'lark-doc-image-toolbar-divider', { 'aria-hidden': 'true' }))
     ;[
       { action: 'copy', label: '复制图片链接', icon: 'link' },
-      { action: 'share', label: '分享图片', icon: 'share-link' },
-      // 评论暂时隐藏 UI（见 SHOW_COMMENT），动作分支留在 runToolbarAction 里。
+      // 分享 / 评论暂时隐藏 UI（见 SHOW_SHARE / SHOW_COMMENT），动作分支留在 runToolbarAction 里。
+      // 条件为假时**不挂节点**（不是 `hidden`）—— 功能栏宽度是 auto，隐藏即自动收拢，不留空位。
+      ...(SHOW_SHARE ? [{ action: 'share', label: '分享图片', icon: 'share-link' }] : []),
       ...(SHOW_COMMENT ? [{ action: 'comment', label: '添加评论', icon: 'mode-comment' }] : []),
     ].forEach(item => mountButton(item))
     return bar
@@ -222,12 +230,50 @@ export function createImageNodeView(props) {
     // 图片功能栏与顶部/气泡/菜单用同一套 tips 判据：纯图标（裁剪、对齐、复制链接…）
     // 出提示；「问问AI」有可见中文名自动跳过；带下一级弹窗的也不会误出。
     toolbarTips = bindHoverTips(toolbar)
-    syncToolbarState()
+    syncToolbarState(true)
+    win?.addEventListener('resize', positionToolbar)
+    win?.addEventListener('scroll', scheduleToolbarPosition, { capture: true, passive: true })
+  }
+
+  function positionToolbar() {
+    const viewportWidth = dom.ownerDocument.documentElement.clientWidth
+    if (viewportWidth) {
+      toolbar.style.maxWidth = `${viewportWidth - MENU_MARGIN * 2}px`
+      const width = toolbar.offsetWidth
+      const { left, right } = dom.getBoundingClientRect()
+      const centered = (left + right - width) / 2
+      const fitted = Math.max(MENU_MARGIN, Math.min(centered, viewportWidth - width - MENU_MARGIN))
+      toolbar.style.marginLeft = `${fitted - centered}px`
+    }
+    positionToolbarVertically()
+  }
+
+  function positionToolbarVertically() {
+    const { top, bottom } = dom.getBoundingClientRect()
+    const height = toolbar.offsetHeight
+    const above = top - height - MENU_MARGIN
+    const safeTop = editorChromeSafeTop(dom.closest('.lark-doc'))
+    const shift = Math.max(0, Math.min(safeTop - above, bottom - height - MENU_MARGIN - above))
+    toolbar.style.bottom = shift ? `calc(100% + ${MENU_MARGIN}px - ${shift}px)` : ''
+  }
+
+  function scheduleToolbarPosition() {
+    if (toolbarPositionFrame !== null) return
+    toolbarPositionFrame = win.requestAnimationFrame(() => {
+      toolbarPositionFrame = null
+      positionToolbarVertically()
+    })
   }
 
   function unmountToolbar() {
     cancelHide()
     if (!toolbar) return
+    win?.removeEventListener('resize', positionToolbar)
+    win?.removeEventListener('scroll', scheduleToolbarPosition, true)
+    if (toolbarPositionFrame !== null) {
+      win.cancelAnimationFrame(toolbarPositionFrame)
+      toolbarPositionFrame = null
+    }
     if (toolbarTips) { toolbarTips.destroy(); toolbarTips = null }
     toolbar.remove()
     toolbar = null
@@ -256,7 +302,7 @@ export function createImageNodeView(props) {
   })
 
   /* ---------- 状态同步 ---------- */
-  function syncToolbarState() {
+  function syncToolbarState(opening = false) {
     if (!toolbar) return
     const align = ALIGNMENTS.includes(currentNode.attrs.align) ? currentNode.attrs.align : 'center'
     toolbar.querySelectorAll('button[data-align-value]').forEach((button) => {
@@ -264,9 +310,11 @@ export function createImageNodeView(props) {
     })
     const cropped = !blockedImage(currentNode.attrs.src) && (!!normalizeImageCrop(currentNode.attrs.crop) || (allowsImage(currentNode.attrs.originalSrc) && currentNode.attrs.originalSrc !== currentNode.attrs.src))
     toolbar.classList.toggle('has-reset', !!cropped)
-    if (cropped && cropResetButton.parentNode !== toolbar) toolbar.insertBefore(cropResetButton, toolbar.querySelector('[data-action="caption"]'))
-    else if (!cropped) cropResetButton.remove()
-
+    const resetVisible = cropResetButton.parentNode === toolbar
+    if (cropped && !resetVisible) toolbar.insertBefore(cropResetButton, toolbar.querySelector('[data-action="caption"]'))
+    else if (!cropped && resetVisible) cropResetButton.remove()
+    if (!opening && cropped === resetVisible) return
+    positionToolbar()
   }
 
   function syncDom() {
@@ -464,7 +512,11 @@ export function createImageNodeView(props) {
       if (pos === currentPos) index = images.length
       images.push({ ...node.attrs, pos })
     })
-    viewerShell = createImageViewer({ host: dom, images, index, canLoad: allowsImage, onComment: imageOptions().onComment, onDownload: imageOptions().onDownload, onClose: () => { viewerShell = null } })
+    // 全屏查看器必须挂在 `.lark-doc` 根下，不能挂在图片 figure 里：
+    // 块级容器可能带 content-visibility / contain（长文档分页、裁剪投影），
+    // 那会让 `position: fixed` 相对块而不是视口 → 看图时画面被推到底部、下半张看不到。
+    const viewerHost = dom.closest('.lark-doc') || dom.ownerDocument.body
+    viewerShell = createImageViewer({ host: viewerHost, images, index, canLoad: allowsImage, onComment: imageOptions().onComment, onDownload: imageOptions().onDownload, onClose: () => { viewerShell = null } })
     return Boolean(viewerShell)
   }
 

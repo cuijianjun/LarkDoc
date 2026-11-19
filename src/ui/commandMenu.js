@@ -183,12 +183,15 @@ export function createCommandMenu(options = {}) {
       // `@mousedown.prevent`：不挡的话按下会先抢焦点、菜单当场关掉。
       node.addEventListener('mousedown', (event) => event.preventDefault())
       const activate = () => {
+        if (activeItem() === entry.item && (!entry.item.submenu || submenuTrigger === node)) return
         const index = state.items.findIndex(item => `${item.category}:${item.id}` === node.dataset.entryKey)
-        if (index >= 0) call('onActivate', index)
+        if (index >= 0 && index !== state.activeIndex) call('onActivate', index)
         if (entry.item.submenu) openSubmenu(entry.item, node)
         else closeSubmenu()
       }
-      node.addEventListener('mouseenter', activate)
+      node.addEventListener('mouseenter', () => { if (state.kind !== 'slash') activate() })
+      // Opening or repositioning the slash menu can put a new row under a stationary pointer.
+      node.addEventListener('mousemove', () => { if (state.kind === 'slash') activate() })
       node.addEventListener('focus', activate)
       node.addEventListener('click', () => {
         const current = entry.item
@@ -617,14 +620,19 @@ export function createCommandMenu(options = {}) {
 
   // ————————————————— 对外 —————————————————
 
+  function onViewportResize(event) {
+    if (state.kind === 'plus') call('onViewportResize')
+    positionSubmenu(event)
+  }
+
   function mount() {
     if (!host) return
     if (el.parentNode !== host) host.insertBefore(el, anchor && anchor.parentNode === host ? anchor : null)
     if (!listening) {
       listening = true
-      viewWindow.addEventListener('resize', positionSubmenu)
+      viewWindow.addEventListener('resize', onViewportResize)
       viewWindow.addEventListener('scroll', positionSubmenu, true)
-      viewWindow.visualViewport?.addEventListener('resize', positionSubmenu)
+      viewWindow.visualViewport?.addEventListener('resize', onViewportResize)
       viewWindow.visualViewport?.addEventListener('scroll', positionSubmenu)
     }
   }
@@ -634,9 +642,9 @@ export function createCommandMenu(options = {}) {
     tips.hide()
     if (listening) {
       listening = false
-      viewWindow.removeEventListener('resize', positionSubmenu)
+      viewWindow.removeEventListener('resize', onViewportResize)
       viewWindow.removeEventListener('scroll', positionSubmenu, true)
-      viewWindow.visualViewport?.removeEventListener('resize', positionSubmenu)
+      viewWindow.visualViewport?.removeEventListener('resize', onViewportResize)
       viewWindow.visualViewport?.removeEventListener('scroll', positionSubmenu)
     }
     if (el.parentNode) el.parentNode.removeChild(el)

@@ -34,7 +34,10 @@ it('评论附件可指定100%初始预览，正文继续默认适应窗口', () 
       const image = host.querySelector('.lark-doc-image-viewer-image')
       Object.defineProperties(image, { naturalWidth: { value: 323 }, naturalHeight: { value: 275 } })
       image.dispatchEvent(new Event('load'))
-      expect(host.querySelector('.lark-doc-image-viewer-toolbar').textContent).toContain(initialScale ? '100%' : '251%')
+      // 未指定初始缩放 = 适应窗口（比例由视口算，不同环境数值不同，但一定不是 100%）；指定 1 = 原始尺寸 100%。
+      const text = host.querySelector('.lark-doc-image-viewer-toolbar').textContent
+      if (initialScale) expect(text).toContain('100%')
+      else expect(text).not.toContain('100%')
     } finally { viewer.destroy(); host.remove() }
   }
 })
@@ -328,13 +331,44 @@ describe('P2-01 图片属性写入走文档', () => {
 })
 
 describe('P2-01 图片工具条', () => {
+  it('高图工具条避开双吸顶栏，滚回时回到块顶锚点，销毁后停止跟随', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] })
+    const { nodeView } = mount()
+    const root = document.createElement('div')
+    root.className = 'lark-doc'
+    root.innerHTML = '<header class="lark-doc-topbar" style="position:sticky;top:0"></header><div class="lark-doc-toolbar" style="position:sticky;top:59px"></div>'
+    document.body.appendChild(root)
+    root.appendChild(nodeView.dom)
+    const [topbar, tools] = root.children
+    vi.spyOn(topbar, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 59 })
+    vi.spyOn(tools, 'getBoundingClientRect').mockReturnValue({ top: 59, bottom: 104 })
+    const measure = vi.spyOn(nodeView.dom, 'getBoundingClientRect').mockReturnValue({ top: -400, bottom: 830 })
+    try {
+      nodeView.mountToolbar()
+      const toolbar = root.querySelector('.lark-doc-image-toolbar')
+      Object.defineProperty(toolbar, 'offsetHeight', { value: 42 })
+      window.dispatchEvent(new Event('scroll'))
+      await vi.advanceTimersByTimeAsync(20)
+      expect(toolbar.style.bottom).toBe('calc(100% + 8px - 560px)')
+      measure.mockReturnValue({ top: 205, bottom: 1435 })
+      window.dispatchEvent(new Event('scroll'))
+      await vi.advanceTimersByTimeAsync(20)
+      expect(toolbar.style.bottom).toBe('')
+      nodeView.unmountToolbar()
+      measure.mockClear()
+      window.dispatchEvent(new Event('scroll'))
+      await vi.advanceTimersByTimeAsync(20)
+      expect(measure).not.toHaveBeenCalled()
+    } finally { root.remove() }
+  })
+
   it('源工具条八项动作和分隔符，对齐状态跟随文档', () => {
     const { nodeView } = mount({ src: SRC, originalSrc: SRC, width: 320 })
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
     expect(toolbar.getAttribute('role')).toBe('toolbar')
-    // 评论按钮暂时隐藏（宿主未接评论服务），工具条 7 个动作按钮。
-    expect(toolbar.querySelectorAll('button')).toHaveLength(7)
+    // 分享/评论按钮暂时隐藏 UI，工具条 6 个动作按钮（隐藏即不挂节点，不留空位）。
+    expect(toolbar.querySelectorAll('button')).toHaveLength(6)
     expect(toolbar.querySelectorAll('.lark-doc-image-toolbar-divider')).toHaveLength(2)
 
     const pressed = Array.from(toolbar.querySelectorAll('button[data-align-value]'))
@@ -342,8 +376,8 @@ describe('P2-01 图片工具条', () => {
       .map((button) => button.getAttribute('data-align-value'))
     expect(pressed).toEqual(['center'])
 
-    expect([...toolbar.querySelectorAll('button')].map(button => button.dataset.action)).toEqual(['crop', 'caption', 'left', 'center', 'right', 'copy', 'share'])
-    expect(toolbar.querySelectorAll('svg')).toHaveLength(7)
+    expect([...toolbar.querySelectorAll('button')].map(button => button.dataset.action)).toEqual(['crop', 'caption', 'left', 'center', 'right', 'copy'])
+    expect(toolbar.querySelectorAll('svg')).toHaveLength(6)
 
   })
 
@@ -351,11 +385,11 @@ describe('P2-01 图片工具条', () => {
     const { nodeView, attrs } = mount({ src: SRC, width: 463, crop: [0, 0, 0.8704, 1], naturalWidth: 323, naturalHeight: 275 })
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
-    expect(toolbar.querySelectorAll('button')).toHaveLength(8)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(7)
     expect(toolbar.classList.contains('has-reset')).toBe(true)
     toolbar.querySelector('[data-action="reset"]').click()
     expect(attrs()).toMatchObject({ src: SRC, width: 463, crop: null })
-    expect(toolbar.querySelectorAll('button')).toHaveLength(7)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(6)
     expect(toolbar.querySelector('[data-action="reset"]')).toBeNull()
   })
 
@@ -363,8 +397,9 @@ describe('P2-01 图片工具条', () => {
     const { nodeView } = mount()
     nodeView.mountToolbar()
     const toolbar = nodeView.dom.querySelector('.lark-doc-image-toolbar')
-    for (const action of ['copy', 'share']) expect(toolbar.querySelector(`[data-action="${action}"]`).disabled).toBe(true)
-    expect(toolbar.querySelector('[data-action="comment"]')).toBeNull()
+    expect(toolbar.querySelector('[data-action="copy"]').disabled).toBe(true)
+    // 分享与评论整颗下线（不挂节点、不留空位）。
+    for (const action of ['share', 'comment']) expect(toolbar.querySelector(`[data-action="${action}"]`)).toBeNull()
     // 工具条自己的事件不能漏进 ProseMirror 的 keymap。
     expect(nodeView.stopEvent({ target: toolbar.querySelector('button') })).toBe(true)
     expect(nodeView.stopEvent({ target: nodeView.dom.querySelector('.lark-doc-image-img') })).toBe(false)
@@ -543,16 +578,16 @@ describe('P2-01 图片预览与销毁', () => {
       expect(scale()).toBeCloseTo(210 / 275, 6)
     } finally { viewer.destroy(); host.remove() }
   })
-  it('预览挂进块内（能读到 .lark-doc 的主题 token）并可关闭', () => {
+  it('预览挂到 .lark-doc 根 / body（脱离图片块，fixed 不被块容器包含）并可关闭', () => {
     const { nodeView } = mount()
     expect(nodeView.openPreview()).toBe(true)
-    const shell = nodeView.dom.querySelector('.lark-doc-image-viewer-shell')
+    const shell = document.querySelector('.lark-doc-image-viewer-shell')
     expect(shell).not.toBeNull()
     expect(shell.getAttribute('role')).toBe('dialog')
     expect(shell.querySelector('img').getAttribute('src')).toBe(SRC)
-    expect(nodeView.dom.querySelector('.lark-doc-image-viewer-close')).not.toBeNull()
+    expect(document.querySelector('.lark-doc-image-viewer-close')).not.toBeNull()
     nodeView.closePreview()
-    expect(nodeView.dom.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
+    expect(document.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
   })
 
   it('viewer navigates images, zooms, restores fit, rotates and releases its drag listeners on Escape', () => {
@@ -565,7 +600,7 @@ describe('P2-01 图片预览与销毁', () => {
       Object.defineProperties(image, { naturalWidth: { value: 323 }, naturalHeight: { value: 275 } })
       image.dispatchEvent(new Event('load'))
       const button = action => root.querySelector(`[data-viewer-action="${action}"]`)
-      expect(root.querySelectorAll('.lark-doc-image-viewer-toolbar button')).toHaveLength(8)
+      expect(root.querySelectorAll('.lark-doc-image-viewer-toolbar button')).toHaveLength(7)
       expect(button('previous').disabled).toBe(true)
       button('next').click()
       expect(image.getAttribute('src')).toBe(ORIGINAL)
@@ -586,23 +621,19 @@ describe('P2-01 图片预览与销毁', () => {
       expect(root.querySelector('.lark-doc-image-viewer-percentage').textContent).toBe('100%')
       button('rotate').click()
       expect(root.querySelector('.lark-doc-image-viewer-projection').style.transform).toContain('rotate(90deg)')
-      button('comment').click()
-      expect(onComment).toHaveBeenLastCalledWith(expect.objectContaining({ src: ORIGINAL }), true, root)
-      expect(root.classList.contains('has-comments')).toBe(true)
-      button('previous').click()
-      expect(root.classList.contains('has-comments')).toBe(false)
-      expect(button('comment').getAttribute('aria-pressed')).toBe('false')
-      button('comment').click()
-      button('original').click()
+      // 评论按钮按产品口径整颗下线（不留空位）：即便宿主传了 onComment 也不挂节点。
+      expect(button('comment')).toBeNull()
+      expect(onComment).not.toHaveBeenCalled()
+      const zoomBeforeDrag = root.querySelector('.lark-doc-image-viewer-percentage').textContent
       image.dispatchEvent(new MouseEvent('mousedown', { clientX: 100, clientY: 100, bubbles: true }))
       window.dispatchEvent(new MouseEvent('mousemove', { clientX: 140, clientY: 120 }))
-      expect(root.querySelector('.lark-doc-image-viewer-projection').style.transform).toContain('translate(0px, 0px)')
+      expect(root.querySelector('.lark-doc-image-viewer-projection').style.transform).toContain('translate(-50%, -50%) translate(0px,')
+      // 滚轮只平移，不改缩放。
       root.querySelector('.lark-doc-image-viewer-stage').dispatchEvent(new WheelEvent('wheel', { deltaY: -200, bubbles: true, cancelable: true }))
-      expect(root.querySelector('.lark-doc-image-viewer-percentage').textContent).toBe('100%')
+      expect(root.querySelector('.lark-doc-image-viewer-percentage').textContent).toBe(zoomBeforeDrag)
       root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       expect(host.children).toHaveLength(0)
       expect(onClose).toHaveBeenCalledTimes(1)
-      expect(onComment).toHaveBeenLastCalledWith(expect.objectContaining({ src: SRC }), false, root)
       viewer.destroy()
       expect(onClose).toHaveBeenCalledTimes(1)
     } finally { viewer.destroy(); host.remove() }
@@ -615,10 +646,10 @@ describe('P2-01 图片预览与销毁', () => {
       image.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, detail: 1 }))
       nodeView.selectNode()
       image.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
-      expect(nodeView.dom.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
+      expect(document.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
       image.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, detail: 1 }))
       image.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
-      expect(nodeView.dom.querySelector('.lark-doc-image-viewer-shell')).toBeTruthy()
+      expect(document.querySelector('.lark-doc-image-viewer-shell')).toBeTruthy()
     } finally { nodeView.destroy(); editor.destroy() }
   })
 
@@ -673,12 +704,12 @@ describe('P2-01 图片预览与销毁', () => {
     expect(nodeView.openPreview()).toBe(false)
     nodeView.closeDialog()
     nodeView.openPreview()
-    expect(nodeView.dom.querySelector('.lark-doc-image-viewer-shell')).not.toBeNull()
+    expect(document.querySelector('.lark-doc-image-viewer-shell')).not.toBeNull()
 
     nodeView.destroy()
     expect(nodeView.dom.querySelector('.lark-doc-image-toolbar')).toBeNull()
     expect(nodeView.dom.querySelector('[data-crop-handle]')).toBeNull()
-    expect(nodeView.dom.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
+    expect(document.querySelector('.lark-doc-image-viewer-shell')).toBeNull()
     expect(nodeView.openCrop()).toBe(false)
     expect(nodeView.openPreview()).toBe(false)
   })

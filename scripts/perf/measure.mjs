@@ -3,7 +3,7 @@
  *
  * 环境口径：element UMD 产物 + 静态宿主页（与 e2e 冒烟同构，Node 22 + playwright-core）。
  * 7 指标中 6 项在此采集，主包 gzip 由 `npm run size`（size-limit）已在 check 链覆盖：
- *   1. mountToTypeableMs   首屏可输入：setContent(2000 块) → focus → 首次键入事务提交（浏览器时钟打点）
+ *   1. mountToTypeableMs   兼容历史门禁：从 setContent 开始到第一笔事务。
  *   2. keystrokeP95Ms/P99  击键 → 下一帧渲染：insertContent + 双 rAF，30 次采样取分位
  *   3. decorationIncrementalMs 击键路径上的装饰耗时：发文本块内纯文字改动，取 derive 层打点中位数
  *      （P7-01 之后装饰走脏区增量；全量重建只在首次装配/换文档/invalidate 时发生）
@@ -11,6 +11,8 @@
  *   5. saveProxyMs         整篇保存代理：全篇 getJSON() 序列化 10 次中位数
  *      （element 宿主无 workspace.save；落库口径就是 JSON 序列化，见 workspace 落库 json）
  *   6. heapMB              打开 2,000 块静置后 CDP 强制 GC + Runtime.getHeapUsage
+ *   补充观测：editorReadyObservedMs 从导航到探针观察编辑器就绪，
+ *   mountToFirstInputMs 从 setContent 开始到真实首字插入事务。两项单独记录。
  *
  * 产出 perf/.perf-result.json；基线更新走 report.mjs --update（不许手填）。
  *
@@ -180,32 +182,43 @@ async function main() {
   try {
     const executablePath = findChromium()
     if (!executablePath) throw new Error('未找到本机 chromium 缓存，无法采集性能基线')
-    activeBrowser = await loadChromiumDriver().launch({ headless: true, executablePath })
+    activeBrowser = await loadChromiumDriver().launch({ headless: true, executablePath, chromiumSandbox: process.platform === 'darwin' })
     const browser = activeBrowser
     const page = await (await browser.newContext()).newPage()
 
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded', timeout: 60000 })
     await waitForHostReady(page)
+    const editorReadyObservedMs = await page.evaluate(() => performance.now())
 
-    // 1. 首屏可输入：灌 2000 块 → focus → 真键盘敲第一个字 → 事务提交（浏览器时钟 mark 对 mark）
+    // 1. 保留历史第一笔事务的打点，再单独测量真实键入。
     console.log(`[measure] 1/6 首屏灌入 ${BLOCKS} 块（${Math.round(html.length / 1024)} KB）...`)
-    await page.evaluate((contentHtml) => {
+    const firstInput = '测'
+    await page.evaluate(({ contentHtml, firstInput }) => {
       const editor = window.__larkDoc.getEditor()
-      window.__perfFirstTyped = false
-      editor.on('transaction', () => {
-        if (!window.__perfFirstTyped) {
-          window.__perfFirstTyped = true
-          performance.mark('perf:first-typed')
-        }
-      })
+      const markFirstTransaction = () => {
+        performance.mark('perf:first-transaction')
+        editor.off('transaction', markFirstTransaction)
+      }
+      editor.on('transaction', markFirstTransaction)
       performance.mark('perf:mount-start')
       editor.commands.setContent(contentHtml)
+      const markFirstInput = ({ transaction }) => {
+        if (!transaction.steps.some(step => {
+          const inserted = step.slice?.content
+          return inserted?.textBetween(0, inserted.size) === firstInput
+        })) return
+        performance.mark('perf:first-input')
+        editor.off('transaction', markFirstInput)
+      }
+      editor.on('transaction', markFirstInput)
       editor.commands.focus('start')
-    }, html)
-    await page.keyboard.type('测')
-    const mountToTypeableMs = await page.evaluate(() => {
-      return performance.measure('perf:mount', 'perf:mount-start', 'perf:first-typed').duration
-    })
+    }, { contentHtml: html, firstInput })
+    await page.keyboard.type(firstInput)
+    await page.waitForFunction(() => performance.getEntriesByName('perf:first-input', 'mark').length > 0, null, { timeout: 5000 })
+    const { mountToTypeableMs, mountToFirstInputMs } = await page.evaluate(() => ({
+      mountToTypeableMs: performance.measure('perf:mount', 'perf:mount-start', 'perf:first-transaction').duration,
+      mountToFirstInputMs: performance.measure('perf:mount-input', 'perf:mount-start', 'perf:first-input').duration,
+    }))
 
     // 2. 击键 → 下一帧渲染：连续 30 次，事务分发 + 双 rAF
     console.log('[measure] 2/6 击键延迟采样...')
@@ -348,6 +361,8 @@ async function main() {
       samples: { keystroke: KEYSTROKE_SAMPLES, decorations: DECORATION_SAMPLES, save: 10 },
       metrics: {
         mountToTypeableMs: round1(mountToTypeableMs),
+        editorReadyObservedMs: round1(editorReadyObservedMs),
+        mountToFirstInputMs: round1(mountToFirstInputMs),
         keystrokeP95Ms: round1(percentile(keystrokeSamples, 0.95)),
         keystrokeP99Ms: round1(percentile(keystrokeSamples, 0.99)),
         decorationIncrementalMs: round1(median(incrementalSamples)),

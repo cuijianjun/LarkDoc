@@ -93,7 +93,10 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   const original = button('original', '原始尺寸', () => { scale = Math.abs(scale - 1) < 0.001 ? fitScale : 1; x = 0; y = 0; paint() })
   button('rotate', '旋转', () => { rotation = (rotation + 90) % 360; x = 0; y = 0; paint() })
   button('download', '下载', download)
-  if (typeof onComment === 'function') button('comment', '评论', () => {
+  // 评论：产品口径「评论服务未接入前一律隐藏 UI」，查看器里也不留按钮、不留空位。
+  // 面板逻辑保留在下方（onComment 仍可传），把这个开关打开即恢复。
+  const SHOW_COMMENT = false
+  if (SHOW_COMMENT && typeof onComment === 'function') button('comment', '评论', () => {
     commentOpen = !commentOpen
     root.classList.toggle('has-comments', commentOpen)
     buttons.comment.setAttribute('aria-pressed', String(commentOpen))
@@ -127,7 +130,9 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     const maxY = Math.max(0, ((rotated ? naturalWidth : naturalHeight) * scale - height) / 2)
     x = Math.max(-maxX, Math.min(maxX, x))
     y = Math.max(-maxY, Math.min(maxY, y))
-    projection.style.transform = `translate(${x}px, ${y}px) scale(${scale}) rotate(${rotation}deg)`
+    // 用 `translate(-50%, -50%)` 自己居中，而不是靠 stage 的 `place-items:center`：
+    // 投影盒（原图尺寸）比视口高时，grid 居中会把它摆到顶部，再按中心缩放就把图推到底部。
+    projection.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${scale}) rotate(${rotation}deg)`
     percentage.textContent = `${Math.round(scale * 100)}%`
     original.title = Math.abs(scale - 1) < 0.001 ? '适应窗口' : '原始尺寸'
     original.setAttribute('aria-label', original.title)
@@ -137,9 +142,17 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   }
   function loaded() {
     if (destroyed) return
-    // Source viewport measurements: 95% width / 90% height, with observed initial zoom 255%.
+    // 视口口径：横向留 48、纵向扣掉底部工具条（48 高 + 20 底距）与上下留白。
+    // 之前的 `innerHeight * 0.9` 没扣工具条，竖图「适应窗口」后下半张会被工具条盖住。
+    const bounds = stage.getBoundingClientRect()
+    const width = bounds.width || window.innerWidth
+    const height = bounds.height || window.innerHeight
+    const toolbarHeight = toolbar.getBoundingClientRect().height || 48
+    const availableWidth = Math.max(1, width - 48)
+    // 上下各留「工具条高度 + 20 底距 + 8 间隙」：整图居中后底边仍然落在工具条上方。
+    const availableHeight = Math.max(1, height - 2 * (toolbarHeight + 28))
     const geometry = imageCropGeometry(image.naturalWidth, image.naturalHeight, items[index].crop)
-    fitScale = Math.min(2.55, (stage.getBoundingClientRect().width || window.innerWidth) * 0.95 / (geometry?.width || image.naturalWidth), window.innerHeight * 0.9 / (geometry?.height || image.naturalHeight))
+    fitScale = Math.min(2.55, availableWidth / (geometry?.width || image.naturalWidth), availableHeight / (geometry?.height || image.naturalHeight))
     if (!Number.isFinite(fitScale) || fitScale <= 0) fitScale = 1
     scale = Number.isFinite(initialScale) && initialScale > 0 ? Math.max(.1, Math.min(5, initialScale)) : fitScale
     paint()

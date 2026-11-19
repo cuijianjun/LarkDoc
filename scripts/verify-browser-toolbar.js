@@ -57,10 +57,10 @@ function record(name, ok, detail = '') {
 const safeTop = () => {
   let bottom = 8
   document.querySelectorAll('.lark-doc-topbar, .lark-doc-toolbar').forEach((bar) => {
-    const position = getComputedStyle(bar).position
-    if (position !== 'sticky' && position !== 'fixed') return
+    const style = getComputedStyle(bar)
+    if (style.position !== 'sticky' && style.position !== 'fixed') return
     const rect = bar.getBoundingClientRect()
-    if (rect.top <= 1 && rect.bottom > bottom) bottom = rect.bottom
+    if (rect.top <= (parseFloat(style.top) || 0) + 1 && rect.bottom > bottom) bottom = rect.bottom
   })
   return Math.round(bottom) + 6
 }
@@ -177,6 +177,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(BASE, { waitUntil: 'networkidle' })
+  await page.waitForFunction(() => window.__larkDoc?.getEditor?.())
+  await page.evaluate(() => window.__larkDoc.patchProps({ config: { layout: { headerVisible: false, toolbarFixed: true } } }))
   await page.waitForTimeout(1000)
 
   // 固定文档，避免 demo 从 localStorage 读草稿导致首块类型漂移
@@ -227,8 +229,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   const buttons = await page.evaluate(measureButtons)
   record('[结构] 工具栏共 34 个按钮（2+1+8+3+8+4+8）', !!buttons && buttons.count === 34, buttons ? `${buttons.count} 个` : '')
 
-  record('[结构] 每个按钮都有 aria-label 与 title',
-    !!buttons && buttons.rows.every((row) => !!row.aria && !!row.title),
+  record('[结构] 每个按钮都有 aria-label；表格下拉无需原生 title',
+    !!buttons && buttons.rows.every(row => !!row.aria && (!!row.title || row.aria === '插入表格')),
     buttons ? buttons.rows.filter((row) => !row.aria || !row.title).map((row) => row.label).join(' | ') || '全部齐全' : '')
 
   // ——————————————————— ② 盒模型与图标对齐 ———————————————————
@@ -352,7 +354,7 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
       top: Math.round(rect.top),
       right: Math.round(rect.right),
       titles: [...menu.querySelectorAll('.lark-doc-more-title')].map((el) => el.textContent.trim()),
-      items: [...menu.querySelectorAll('button[role="menuitem"]')].map((b) => b.textContent.trim()),
+      items: [...menu.querySelectorAll('button')].map(b => b.textContent.replace(/^✓/, '').trim()),
       vuewport: { w: window.innerWidth, h: window.innerHeight },
     }
   })
@@ -364,8 +366,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!moreMenu && JSON.stringify(moreMenu.titles) === JSON.stringify(['段落', '插入', '视图与工具']),
     moreMenu ? moreMenu.titles.join(' | ') : '')
 
-  record('[折叠] 弹层承接被收纳组的全部功能（行高 1.75 / 增加缩进 / 插入表格 / 查找 均在）',
-    !!moreMenu && ['行高 1.75', '减少缩进', '增加缩进', '清除格式', '插入内容…', '插入表格', 'AI 助手', '查找'].every((label) => moreMenu.items.includes(label)),
+  record('[折叠] 弹层保留行高、对齐、缩进、清除格式、插入和查找入口',
+    !!moreMenu && ['行高 1.75', '对齐左', '对齐居中', '对齐右', '对齐两端', '减少缩进', '增加缩进', '清除格式', '插入内容…', '插入表格', 'AI 助手', '查找'].every(label => moreMenu.items.includes(label)),
     moreMenu ? `${moreMenu.items.length} 项` : '')
 
   record('[折叠] 弹层不溢出视口', !!moreMenu && moreMenu.right <= moreMenu.vuewport.w && moreMenu.top >= 0,
@@ -408,8 +410,10 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!headerMenu && headerMenu.role === 'menu' && headerMenu.label === '文档操作' && headerMenu.expanded === 'true',
     headerMenu ? `${headerMenu.role}/${headerMenu.label} expanded=${headerMenu.expanded}` : '未打开')
 
-  record('[承接] 弹层内含字数上限 / 保存 / 模板 / 导入 / 导出 五个入口',
-    !!headerMenu && ['字数上限', '保存', '选择文档模板', '导入', '导出文档格式'].every((label) => headerMenu.labels.includes(label)),
+  const persistence = await page.evaluate(() => window.__larkDoc.getConfig().features.persistence)
+  record('[承接] 文档操作保留字数上限、模板、导入、导出及宿主启用的保存',
+    !!headerMenu && ['字数上限', '选择文档模板', '导入', '导出文档格式'].every(label => headerMenu.labels.includes(label))
+    && headerMenu.labels.includes('保存') === persistence,
     headerMenu ? headerMenu.labels.join(' | ') : '')
   record('[对齐飞书] 本地快照入口已隐藏（飞书只有本地记录，无用户可见快照列表）',
     !!headerMenu && !headerMenu.labels.includes('本地快照'),
@@ -459,6 +463,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     `仍禁用 ${(writable.disabled.join(' | ') || '无')}，editable=${writable.editable}`)
 
   // ——————————————————— ⑧ 安全线（气泡条依赖的吸顶口径） ———————————————————
+  await setDoc(page, '<p>吸顶滚动探针</p>'.repeat(90))
+  await page.locator('.ProseMirror p').nth(50).scrollIntoViewIfNeeded()
   const demoTop = await page.evaluate(safeTop)
   record('[安全线] 顶栏隐藏时安全线 = 工具栏 sticky 底边 45 + 6 = 51', demoTop === 51, `实得 ${demoTop}`)
 
@@ -503,7 +509,7 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
       const style = getComputedStyle(node)
       if (style.position !== 'sticky' && style.position !== 'fixed') return
       const rect = node.getBoundingClientRect()
-      if (rect.top <= 1 && rect.bottom > safe) safe = rect.bottom
+      if (rect.top <= (parseFloat(style.top) || 0) + 1 && rect.bottom > safe) safe = rect.bottom
     })
     return {
       bar: {
@@ -518,12 +524,13 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
       mode: modeBtn ? { label: modeBtn.getAttribute('aria-label'), haspopup: modeBtn.getAttribute('aria-haspopup'), text: modeBtn.textContent.trim(), expanded: modeBtn.getAttribute('aria-expanded') } : null,
       toolbarTop: toolbar ? getComputedStyle(toolbar).top : null,
       toolbarRectTop: toolbar ? Math.round(toolbar.getBoundingClientRect().top) : null,
+      toolbarRectBottom: toolbar ? Math.round(toolbar.getBoundingClientRect().bottom) : null,
       safeTop: Math.round(safe) + 6,
     }
   })
 
-  record('[顶栏] headerVisible=true 时渲染 sticky 顶栏，高 58px',
-    !!topbar.bar && topbar.bar.tag === 'HEADER' && topbar.bar.cls === 'lark-doc-topbar' && topbar.bar.position === 'sticky' && topbar.bar.h === 58,
+  record('[顶栏] headerVisible=true 时渲染至少 58px 高的 sticky 顶栏',
+    !!topbar.bar && topbar.bar.tag === 'HEADER' && topbar.bar.cls === 'lark-doc-topbar' && topbar.bar.position === 'sticky' && topbar.bar.h >= 58,
     topbar.bar ? `${topbar.bar.tag}/${topbar.bar.position}/${topbar.bar.h}px` : '未渲染')
 
   record('[顶栏] 三段结构：品牌 / 标题 / 操作区（顺序固定）',
@@ -542,8 +549,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!topbar.mode && topbar.mode.haspopup === 'listbox' && topbar.mode.text.includes('编辑') && String(topbar.mode.label).includes('切换文档模式'),
     topbar.mode ? `${topbar.mode.label} / ${topbar.mode.text}` : '缺模式按钮')
 
-  record('[顶栏] 顶栏可见时工具栏让位到 59px（58 + 1）',
-    topbar.toolbarTop === '59px' && topbar.toolbarRectTop === 59,
+  record('[顶栏] 双吸顶时工具栏跟随顶栏实际高度',
+    Math.round(parseFloat(topbar.toolbarTop)) === topbar.bar.h && topbar.toolbarRectTop === topbar.bar.h,
     `top=${topbar.toolbarTop} rectTop=${topbar.toolbarRectTop}`)
 
   // 模式下拉走共享下拉原语（与工具栏「字号」同一套）：这里量的就是原语产出的结构，
@@ -619,7 +626,38 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
       && modeMenu.activeLabelColor === modeMenu.expectedActiveLabel,
     modeMenu ? `bg=${modeMenu.activeBg}(期望 ${modeMenu.expectedActiveBg}) label=${modeMenu.activeLabelColor}(期望 ${modeMenu.expectedActiveLabel})` : '')
 
-  record('[安全线] 顶栏可见时安全线 = 顶栏 sticky 底边 58 + 6 = 64', topbar.safeTop === 64, `实得 ${topbar.safeTop}`)
+  record('[安全线] 双吸顶时气泡安全线取工具栏底边 + 6', topbar.safeTop === topbar.toolbarRectBottom + 6, `实得 ${topbar.safeTop}`)
+
+  await page.setViewportSize({ width: 393, height: 852 })
+  await setDoc(page, '<p>第一段</p><p>调整对齐</p>')
+  await page.locator('.ProseMirror p').filter({ hasText: '调整对齐' }).click()
+  const narrowMore = page.getByRole('button', { name: '更多', exact: true })
+  await narrowMore.click()
+  const narrowMenu = page.getByRole('menu', { name: '更多工具' })
+  const narrowCenter = narrowMenu.getByRole('menuitemradio', { name: '对齐居中', exact: true })
+  await narrowCenter.click()
+  record('[折叠] 393px 真实点击将当前段落居中',
+    await page.locator('.ProseMirror p').filter({ hasText: '调整对齐' }).evaluate(el => el.style.textAlign === 'center'))
+  await narrowMore.click()
+  const visibleCheck = await narrowCenter.locator('.lark-doc-check-icon').evaluate(el => getComputedStyle(el).opacity === '1')
+  record('[折叠] 当前对齐有可见勾、语义状态和功能图标',
+    visibleCheck && await narrowCenter.getAttribute('aria-checked') === 'true' && await narrowCenter.locator('.lark-doc-tool-icon svg').count() === 1)
+  await narrowCenter.press('Escape')
+  record('[折叠] Escape 关闭菜单并将焦点交还「更多」',
+    await narrowMenu.count() === 0 && await narrowMore.evaluate(el => el === document.activeElement))
+
+  await page.evaluate(() => window.__larkDoc.patchProps({ config: { layout: { headerVisible: true, toolbarFixed: true, titleBarFixed: true } } }))
+  await setDoc(page, '<p>双栏吸顶滚动探针</p>'.repeat(90))
+  for (const width of [320, 393, 1440]) {
+    await page.setViewportSize({ width, height: 852 })
+    await page.locator('.ProseMirror p').nth(50).scrollIntoViewIfNeeded()
+    const positions = await page.evaluate(() => {
+      const bar = document.querySelector('.lark-doc-toolbar')
+      const end = document.querySelector('.lark-doc-topbar').getBoundingClientRect().bottom
+      return { end, next: bar.getBoundingClientRect().top, inset: parseFloat(getComputedStyle(bar).top) }
+    })
+    record(`[安全线] ${width}px 滚动后两栏各自可见且相接`, Math.abs(positions.end - positions.next) <= 0.5 && Math.abs(positions.inset - positions.end) <= 0.5, JSON.stringify(positions))
+  }
 
   // 清理探针实例
   await topPage.evaluate(() => {

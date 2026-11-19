@@ -1,6 +1,7 @@
 /** 首屏目录；低频版本和评论面板单独按需加载。 */
 import { applyStyle, mountNode, setAttr, setText, syncChildren } from './dom'
 import { iconNode } from './icon'
+import { bindHoverTips } from './hoverTips'
 
 /** 统一取 handler：缺项静默（与 `dialogs.js` 同口径，漏接线不该炸在渲染里）。 */
 function handlerCaller(handlers) {
@@ -44,9 +45,9 @@ export function createOutlinePanel(options = {}) {
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
   closeButton.setAttribute('aria-label', '收起目录')
-  closeButton.setAttribute('data-tooltip', '收起目录')
   closeButton.appendChild(iconNode('outline-collapse', 14))
-  closeButton.addEventListener('click', () => call('onToggleOpen'))
+  const tips = bindHoverTips(heading)
+  closeButton.addEventListener('click', () => { tips.hide(); call('onToggleOpen') })
   heading.appendChild(headingTitle)
   heading.appendChild(closeButton)
 
@@ -127,14 +128,14 @@ export function createOutlinePanel(options = {}) {
   function update(patch) {
     Object.assign(state, patch || {})
     mountNode(host, el, !!state.open)
-    if (!state.open) return
+    if (!state.open) { tips.hide(); return }
     render()
   }
 
   return {
     el,
     update,
-    destroy() { if (el.parentNode) el.parentNode.removeChild(el) },
+    destroy() { tips.destroy(); el.remove() },
   }
 }
 

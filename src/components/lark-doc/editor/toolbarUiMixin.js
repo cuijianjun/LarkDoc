@@ -243,8 +243,10 @@ export default {
      * 顶栏 state —— 与 `TopBar.vue` 读的 `ed.xxx` 逐字段对应。
      */
     buildTopBarState() {
+      const layout = this.larkDocConfig.layout
       return {
-        headerVisible: this.larkDocConfig.layout.headerVisible !== false,
+        headerVisible: layout.headerVisible !== false,
+        stackToolbar: layout.titleBarFixed && layout.toolbarFixed,
         title: this.localTitle,
         titleLength: this.titleLength,
         readonly: this.effectiveReadonly,

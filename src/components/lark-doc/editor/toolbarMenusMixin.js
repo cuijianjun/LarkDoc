@@ -83,9 +83,12 @@ export default {
       this.$nextTick(() => this.positionHeadingMenu())
     },
     scheduleHeadingMenuClose() { this.schedulePopupHoverClose(() => { this._headingHoverOpened = false; if (this.headingOpen) this.toggleHeadingMenu() }, 'heading') },
-    openColorPaletteOnHover(event) {
+    openColorPaletteOnHover(event, target = 'textColor') {
+      if (!this.writable()) return
       this.cancelPopupHoverClose('color')
-      if (this.colorPaletteOpen !== 'textColor') { this._paletteHoverOpened = true; this.toggleColorPalette('textColor', event) }
+      if (this.colorPaletteOpen === target) return
+      this.toggleColorPalette(target, event)
+      this._paletteHoverOpened = true
     },
     scheduleColorPaletteClose() { this.schedulePopupHoverClose(() => { this._paletteHoverOpened = false; if (this.colorPaletteOpen) this.colorPaletteOpen = '' }, 'color') },
     setHeading(level) { if (!this.featureEnabled('headings')) return; this.headingOpen = false; this.headingStyle = {}; if (level) this.run('setHeading', { level }); else this.run('setParagraph') },

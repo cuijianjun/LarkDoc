@@ -42,7 +42,9 @@ export function createTooltip({ host, delay = 150, allowInPopup = false }) {
       if (!line) continue
       const row = owner.createElement('div'); row.textContent = line; tip.appendChild(row)
     }
-    (host.closest('.lark-doc') || host).appendChild(tip)
+    const fullscreen = owner.fullscreenElement
+    const container = fullscreen?.contains(anchor) ? fullscreen : host.closest('.lark-doc') || host
+    container.appendChild(tip)
     const ids = new Set((anchor.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean))
     ids.add(tip.id); anchor.setAttribute('aria-describedby', [...ids].join(' '))
     const b = tip.getBoundingClientRect()

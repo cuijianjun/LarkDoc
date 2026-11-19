@@ -49,6 +49,10 @@ Markdown/DOCX 按现有导出契约跳过卡片与预览块。
 
 ### 分享选区
 
+::: tip 分享入口默认关闭
+`features.share` 默认 `false`：选区气泡条、表格浮窗、图片工具条、链接卡片 / 预览条上的分享按钮一律真摘除（不留占位、不留孤立分隔线），块句柄菜单里的选区分享项同步隐藏。接线（`onSelectionShare` / `onImageShare`）与权限判断全部保留，把 `features.share` 设为 `true` 即恢复；图片侧另有 `SHOW_SHARE` 常量，两处需同时打开。
+:::
+
 表格选区、链接卡片和链接预览的分享入口复用“分享给”弹窗。表格缩略图保留整表及选中单元格，网页预览只显示静态“不支持预览”卡片，不加载网页。缺少分享服务时仍可查看和取消，发送按钮禁用。
 
 标准门面及两个 Vue2 组件支持可选 `onSelectionShare(payload)`。它与 `onImageShare` 分开，参数为 `{ selection: { type, blockId, text, content }, url, recipients, message, signal }`：`type` 是 `node`、`text` 或 `cell`，`content` 是真实 ProseMirror Selection 的 Slice JSON 快照；`blockId` 定位主块（单元格选区使用表格标识），`url` 使用文档的 `#share-blockId` 定位。`recipients` 为已选择的用户/会话记录，`signal` 在取消或目标失效时中止。

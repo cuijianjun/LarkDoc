@@ -17,6 +17,7 @@ export function makeDraggable(panel, handle) {
   if (!panel || !handle) return () => {}
   const win = panel.ownerDocument.defaultView || window
   let origin = null
+  let pinnedWidth = 0
 
   // 面板固定后自己接管滚动：父容器（槽位）的 max-height / overflow 管不到 fixed 子元素，
   // 不在这里补 overflow-y，超出 maxHeight 的内容会直接溢出到面板框外。
@@ -27,18 +28,21 @@ export function makeDraggable(panel, handle) {
     panel.style.top = `${top}px`
   }
 
-  function onMove(event) {
-    if (!origin) return
-    const width = panel.offsetWidth
-    const height = panel.offsetHeight
+  function pinInViewport(left, top) {
+    // A tall panel must be able to move down by shrinking its scroll area.
     pin(
-      clamp(origin.left + event.clientX - origin.x, EDGE, win.innerWidth - width - EDGE),
-      clamp(origin.top + event.clientY - origin.y, EDGE, win.innerHeight - Math.min(height, win.innerHeight - EDGE * 2) - EDGE),
+      clamp(left, EDGE, Math.max(EDGE, win.innerWidth - pinnedWidth - EDGE)),
+      clamp(top, EDGE, win.innerHeight - MIN_HEIGHT - EDGE),
     )
   }
 
-  function stop() {
-    if (!origin) return
+  function onMove(event) {
+    if (!origin || event.pointerId !== origin.pointerId) return
+    pinInViewport(origin.left + event.clientX - origin.x, origin.top + event.clientY - origin.y)
+  }
+
+  function stop(event) {
+    if (!origin || (event && event.pointerId !== origin.pointerId)) return
     origin = null
     handle.classList.remove('is-dragging')
     win.removeEventListener('pointermove', onMove)
@@ -46,39 +50,38 @@ export function makeDraggable(panel, handle) {
     win.removeEventListener('pointercancel', stop)
   }
 
-  handle.addEventListener('pointerdown', event => {
+  function start(event) {
     if (event.button !== 0 || origin) return
     // 标题栏上的按钮（关闭 / 动作）照常点，不当拖动起点。
     if (event.target.closest?.('button, a, input, textarea, select')) return
     const rect = panel.getBoundingClientRect()
+    pinnedWidth = rect.width
     panel.style.position = 'fixed'
     panel.style.right = 'auto'
     panel.style.bottom = 'auto'
     panel.style.margin = '0'
-    panel.style.width = `${rect.width}px`
-    origin = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
-    pin(rect.left, rect.top)
+    panel.style.width = `min(${rect.width}px, calc(100vw - ${EDGE * 2}px))`
+    origin = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
+    pinInViewport(rect.left, rect.top)
     handle.classList.add('is-dragging')
     try { handle.setPointerCapture(event.pointerId) } catch { /* 指针已释放：不拖也罢 */ }
     win.addEventListener('pointermove', onMove)
     win.addEventListener('pointerup', stop)
     win.addEventListener('pointercancel', stop)
     event.preventDefault()
-  })
+  }
+  handle.addEventListener('pointerdown', start)
 
   // 拖过的面板要在窗口变小时收回视口，否则缩小窗口后面板整块留在屏幕外。
   function onResize() {
-    if (!panel.style.position || panel.style.position !== 'fixed') return
-    const rect = panel.getBoundingClientRect()
-    pin(
-      clamp(rect.left, EDGE, Math.max(EDGE, win.innerWidth - rect.width - EDGE)),
-      clamp(rect.top, EDGE, Math.max(EDGE, win.innerHeight - MIN_HEIGHT - EDGE)),
-    )
+    if (!pinnedWidth) return
+    pinInViewport(parseFloat(panel.style.left), parseFloat(panel.style.top))
   }
   win.addEventListener('resize', onResize)
 
   return () => {
     stop()
+    handle.removeEventListener('pointerdown', start)
     win.removeEventListener('resize', onResize)
   }
 }

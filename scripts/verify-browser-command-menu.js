@@ -94,6 +94,7 @@ const measureMenu = () => {
       disabled: button.disabled,
       ariaDisabled: button.getAttribute('aria-disabled'),
       active: button.classList.contains('active'),
+      background: getComputedStyle(button).backgroundColor,
       skip: button.classList.contains('is-skip'),
       expanded: button.getAttribute('aria-expanded'),
       haspopup: button.getAttribute('aria-haspopup'),
@@ -289,7 +290,12 @@ async function hoverSubmenuTrigger(page, label) {
   record('[斜杠] 首项是 `paragraph`「正文」且带 active、data-tier=required',
     !!slash && slash.buttons[0].id === 'paragraph' && slash.buttons[0].label === '正文'
     && slash.buttons[0].active === true && slash.buttons[0].tier === 'required',
-    slash ? `${slash.buttons[0].id}/${slash.buttons[0].label} active=${slash.buttons[0].active} tier=${slash.buttons[0].tier}` : '')
+    slash ? `${slash.buttons[0].id}/${slash.buttons[0].label} active=${slash.activeId} tier=${slash.buttons[0].tier}` : '')
+
+  await page.locator('.lark-doc-command-menu [data-command-id="heading1"]').hover()
+  await page.mouse.move(20, 20)
+  const afterHover = await page.evaluate(measureMenu)
+  record('[斜杠] 实际移入更新高亮，移出保留最后导航项', afterHover?.activeId === 'heading1')
 
   record('[斜杠] 项是 `<button type=button role=menuitem>`，图标签 aria-hidden、文字进 `.lark-doc-command-label`',
     !!slash && slash.buttons.every((button) => button.role === 'menuitem')
@@ -389,18 +395,23 @@ async function hoverSubmenuTrigger(page, label) {
     !!plus && JSON.stringify(plus.sections.map((section) => section.category)) === JSON.stringify(['基础', '常用', '绘图']),
     plus ? plus.sections.map((section) => section.category).join('→') : '')
 
-  record('[plus] 共20个真实入口（6 个待接入应用按设计不出现在插入菜单）',
-    !!plus && plus.buttons.length === 20,
+  record('[plus] 共22个已实现入口含两组共享的任务与高亮快捷项',
+    !!plus && plus.buttons.length === 22,
     plus ? `${plus.buttons.length} 项` : '')
 
   record('[plus] 基础快捷图标为6列，36px按钮',
     !!plus && plus.sections[0].columns === 6 && plus.buttons[0].minHeight === '36px',
     plus ? `列=${plus.sections[0].columns} minHeight=${plus.buttons[0].minHeight}` : '')
 
-  const secondRow = plus ? plus.buttons.filter(button => button.category === '基础').slice(6) : []
-  record('[plus] 不提供同步块时，第二排图标连续排列、不留中间空位',
-    secondRow.length === 5 && secondRow.every((button, index) => !index || Math.abs(button.x - secondRow[index - 1].x - secondRow[index - 1].width) < 1 && Math.abs(button.y - secondRow[index - 1].y) < 1),
-    secondRow.map(button => `${button.id}@${button.x}`).join(' / '))
+  const shortcuts = plus?.buttons.filter(button => button.category === '基础') || []
+  const expectedShortcuts = ['heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
+  record('[plus] 13 个快捷项顺序正确，六列按 6/6/1 紧凑排列',
+    shortcuts.map(button => button.id).join('/') === expectedShortcuts.join('/') && shortcuts.every((button, index) => {
+      const col = index % 6
+      const row = Math.floor(index / 6)
+      return Math.abs(button.x - shortcuts[col].x) < 1 && Math.abs(button.y - shortcuts[0].y - row * 36) < 1
+    }), shortcuts.map(button => `${button.id}@${button.x},${button.y}`).join(' / '))
+  record('[plus] 首次展开无选中项，保留键盘焦点', plus?.activeId === '' && plus.head.focused)
 
   record('[plus] 搜索框自动聚焦（打开即可打字）',
     !!plus && plus.head.focused === true,
@@ -635,14 +646,16 @@ async function hoverSubmenuTrigger(page, label) {
 
   // ——————————————————— ⑪ plus 菜单：键盘 + 点选 ———————————————————
   await openPlusMenu(page)
+  const beforePlusDown = await page.evaluate(measureMenu)
   await page.keyboard.press('ArrowDown')
   await page.waitForTimeout(90)
   const plusMoved = await page.evaluate(() => {
     const button = document.querySelector('.lark-doc-command-section > button.active')
     return button ? button.dataset.commandId : ''
   })
-  record('[plus] 搜索框内按 ↓ 移动高亮（不被输入框吃掉）',
-    !!plusMoved && plusMoved !== 'paragraph',
+  const afterPlusDown = await page.evaluate(measureMenu)
+  record('[plus] 首次 ↓ 高亮第一个快捷项且有可见背景',
+    plusMoved === 'heading1' && afterPlusDown?.buttons[0].background !== beforePlusDown?.buttons[0].background,
     `高亮=${plusMoved}`)
 
   await page.keyboard.press('Escape')

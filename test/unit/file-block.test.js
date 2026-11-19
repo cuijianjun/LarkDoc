@@ -315,6 +315,38 @@ describe('NodeView：一个块壳三形态', () => {
     } finally { editor.destroy() }
   })
 
+  it('视频控制悬停切换弹层，进入菜单可选倍速，离开后收起', () => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    vi.useFakeTimers()
+    try {
+      const shell = editor.view.dom.querySelector('.lark-doc-video-player')
+      const rate = shell.querySelector('[aria-label="播放速度"]')
+      const quality = shell.querySelector('[aria-label="清晰度"]')
+      rate.dispatchEvent(new Event('pointerenter'))
+      const rateMenu = shell.querySelector('[role="menu"]')
+      expect(rateMenu?.getAttribute('aria-label')).toBe('播放速度')
+      rate.dispatchEvent(new Event('pointerleave'))
+      rateMenu.dispatchEvent(new Event('pointerenter'))
+      vi.advanceTimersByTime(300)
+      expect(rateMenu.parentElement).toBe(shell)
+      Array.from(rateMenu.children).find(item => item.textContent.includes('1.5x')).click()
+      expect(shell.querySelector('video').playbackRate).toBe(1.5)
+      expect(rate.getAttribute('aria-expanded')).toBe('false')
+      rate.dispatchEvent(new Event('pointerenter'))
+      quality.dispatchEvent(new Event('pointerenter'))
+      expect(shell.querySelectorAll('[role="menu"]')).toHaveLength(1)
+      expect(shell.querySelector('[role="menu"]').getAttribute('aria-label')).toBe('清晰度')
+      quality.dispatchEvent(new Event('pointerleave'))
+      vi.advanceTimersByTime(300)
+      expect(shell.querySelector('[role="menu"]')).toBeNull()
+      const volume = shell.querySelector('[aria-label="静音"]')
+      const touch = Object.assign(new MouseEvent('click'), { pointerType: 'touch' })
+      volume.dispatchEvent(touch)
+      expect(shell.querySelector('[aria-label="音量"][role="slider"]')).toBeTruthy()
+      expect(shell.querySelector('video').volume).toBe(1)
+    } finally { editor.destroy(); vi.useRealTimers() }
+  })
+
   it('下载真落盘：fetch 取字节 → a[download=文件名] 点击，仍不开新页', async () => {
     const source = readFileSync(resolve(process.cwd(), 'src/core/nodeviews/file-block.js'), 'utf8')
     expect(source).not.toMatch(/window\.open\s*\(/)
