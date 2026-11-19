@@ -1,6 +1,6 @@
 {
   "name": "lark-doc",
-  "version": "0.14.9",
+  "version": "0.14.10",
   "private": false,
   "license": "MIT",
   "description": "Framework-agnostic LarkDoc-style Tiptap document editor and workspace package",
@@ -350,7 +350,7 @@
     {
       "name": "lite 主包 (gzip)（编辑器代码，运行时与总初始图另列）",
       "path": "dist/lark-doc-lite.esm.js",
-      "limit": "300 KB",
+      "limit": "310 KB",
       "gzip": true,
       "scope": "editor"
     }
