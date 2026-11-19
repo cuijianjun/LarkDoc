@@ -93,6 +93,12 @@ export default {
     commentCreatePrivate() { this.refreshPanels() },
     commentHistory() { this.refreshPanels() },
     commentHistorical() { this.refreshPanels() },
+    // 历史评论弹层：基线是模板绑定，靠响应式自己重渲染；这里的 DOM 由 refreshPanels 推，
+    // 这几个字段变化必须显式进来，否则 openCommentHistory() 只改了标志、界面不动。
+    commentHistoryOpen() { this.refreshPanels() },
+    commentHistoryStyle: { deep: true, handler() { this.refreshPanels() } },
+    commentDeleting: { deep: true, handler() { this.refreshPanels() } },
+    commentTranslations: { deep: true, handler() { this.refreshPanels() } },
     commentMessage() { this.refreshPanels() },
     commentImageDrafts: { deep: true, handler() { this.refreshPanels() } },
     commentImageUrls: { deep: true, handler() { this.refreshPanels() } },
@@ -105,9 +111,8 @@ export default {
     commentMenuThreadId() { this.refreshPanels() },
     commentMenuCommentId() { this.refreshPanels() },
     commentReactionContext: { deep: true, handler() { this.refreshPanels() } },
-    commentReactionQuery() { this.refreshPanels() },
-    commentReactionCategory() { this.refreshPanels() },
-    commentReactionLimit() { this.refreshPanels() },
+    commentReactionCatalog() { this.refreshPanels() },
+    commentReactionRecent: { deep: true, handler() { this.refreshPanels() } },
     commentEditingReply: { deep: true, handler() { this.refreshPanels() } },
     commentEditContent() { this.refreshPanels() },
     commentEditMentions: { deep: true, handler() { this.refreshPanels() } },
@@ -386,16 +391,23 @@ export default {
       this.refreshCover()
       const ui = this._panelsUi
       if (!ui) return
+      // 查看器里的评论是固定 295px 的右栏（0facf05 的 `lark-doc-image-viewer-comments`），
+      // 面板再挂进右栏里。右栏要先建好，`buildCommentState` 才能把引用一起算进 state。
+      const scope = this._imageCommentScope
+      if (scope?.viewer && !scope.column) {
+        const column = scope.viewer.querySelector('.lark-doc-image-viewer-comments') || scope.viewer.appendChild(document.createElement('aside'))
+        column.className = 'lark-doc-image-viewer-comments'
+        scope.column = column
+      }
       const state = this.buildPanelsState()
       ui.outline.update(state.outline)
       ui.version.update(state.version)
       ui.versionToast.update(state.versionToast)
-      const scope = this._imageCommentScope
       if (scope) {
         ui.comment.update({ open: false, documentInline: false, launcher: { visible: false }, composer: { open: false }, documentComposer: { open: false } })
         if (!scope.ui) {
           const owner = this
-          scope.ui = createCommentPanel({ host: scope.viewer || this.$refs.panelHost,
+          scope.ui = createCommentPanel({ host: scope.column || scope.viewer || this.$refs.panelHost,
             get handlers() { return owner.panelsHandlers().comment }, composerFactory: createCommentComposer,
             onReady: () => {
               if (this._imageCommentScope !== scope || !this.imageCommentCurrent(scope)) return
@@ -406,6 +418,12 @@ export default {
         }
         scope.ui.update(state.comment)
       } else ui.comment.update(state.comment)
+      // 卡片高度随内容变（草稿、回复、编辑态、表情都会改），排完 DOM 再按实测高度重排一次，
+      // 否则上收量按旧高度算，卡片底部会溢出视口。
+      if (this.commentPanels?.length && !this._commentPlacePending) {
+        this._commentPlacePending = true
+        this.$nextTick(() => { this._commentPlacePending = false; this.placeCommentPanels() })
+      }
     },
   },
 }

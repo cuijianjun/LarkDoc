@@ -120,7 +120,7 @@ export default {
         canComment: this.commentAllowed?.('create') === true,
         canShare: this.selectionShareAllowed?.() === true,
         canTranslate: this.featureEnabled('ai'),
-        comment: true,
+        comment: this.commentEntryVisible && this.featureEnabled('comments'),
         ai: this.featureEnabled('ai'),
         canAi: !this.effectiveReadonly,
         aiUnavailableReason: this.effectiveReadonly ? '当前文档未配置只读问答服务' : '',

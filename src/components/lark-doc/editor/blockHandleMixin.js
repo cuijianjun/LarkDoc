@@ -10,7 +10,7 @@ import { moveDepthAllowed } from '../../../core/blocks/container-depth'
 
 // 整框高亮的块：容器与原子对象对完整外框高亮，不给内部每行重复叠加背景。
 // tableWrapper 是 ProseMirror 表格节点的实际 DOM（nodeDOM 返回包装层），必须一起识别。
-const FRAME_BLOCK_SELECTOR = '.lark-doc-code, [data-type="codeBlock"], [data-type="callout"], blockquote, [data-type="columns"], [data-type="column"], table, .tableWrapper, figure[data-type="image"], hr'
+const FRAME_BLOCK_SELECTOR = '.lark-doc-code, [data-type="codeBlock"], [data-type="callout"], blockquote, [data-type="columns"], [data-type="column"], table, .tableWrapper, figure[data-type="image"], figure[data-type="file"], hr'
 
 export default {
   data() { return {

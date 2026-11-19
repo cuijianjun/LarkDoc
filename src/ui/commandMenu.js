@@ -171,10 +171,13 @@ export function createCommandMenu(options = {}) {
     const active = activeItem()
     node.classList.toggle('active', active && entryKey(active) === entryKey(item) && !isSkip(item))
     node.disabled = isSkip(item)
-    const tip = isSkip(item) ? item.reason || '需要企业版接入' : item.label
+    // 0facf05:107 口径——skip 项提示统一为「需要企业版接入」，不读 item.reason；
+    // aria-label 仍是命令自己的名字（每个 skip 项都叫「需要企业版接入」的话，
+    // 读屏器就分不出是哪一条了），原因只走浮层提示。
+    const tip = isSkip(item) ? '需要企业版接入' : item.label
     setAttr(node, 'title', null)
     setAttr(node, 'data-tooltip-title', tip)
-    setAttr(node, 'aria-label', tip)
+    setAttr(node, 'aria-label', item.label)
     setAttr(node, 'aria-disabled', isSkip(item) ? 'true' : null)
     setAttr(node, 'data-tier', item.tier || null)
     setAttr(node, 'aria-haspopup', item.submenu ? 'menu' : null)
@@ -399,9 +402,7 @@ export function createCommandMenu(options = {}) {
   }
 
   function buildTemplatesSubmenu() {
-    const title = document.createElement('strong')
-    title.textContent = '选择模板插入文档'
-    submenuEl.appendChild(title)
+    // 0facf05 口径：无标题行、无装饰图标，条目只有纯文字 label。
     if (!state.templates.length) {
       const empty = document.createElement('div')
       empty.className = 'lark-doc-command-empty'
@@ -416,22 +417,11 @@ export function createCommandMenu(options = {}) {
       node.setAttribute('aria-label', template.label || template.title || template.id)
       node.addEventListener('mousedown', (event) => event.preventDefault())
       node.addEventListener('click', () => { if (activeTarget(node)) call('onChoose', { id: 'template', templateId: template.id }) })
-      const icon = document.createElement('span')
-      icon.className = 'lark-doc-command-icon is-indigo'
-      icon.setAttribute('aria-hidden', 'true')
-      icon.textContent = '◇'
       const label = document.createElement('span')
       label.className = 'lark-doc-command-label'
       const main = document.createElement('span')
       main.textContent = template.label || template.title || template.id
       label.appendChild(main)
-      // 短名 + 长标题并存时，长标题降级成 `<small>`（SFC 同一套判据）。
-      if (template.label && template.title && template.label !== template.title) {
-        const sub = document.createElement('small')
-        sub.textContent = template.title
-        label.appendChild(sub)
-      }
-      node.appendChild(icon)
       node.appendChild(label)
       submenuEl.appendChild(node)
     })
@@ -572,10 +562,13 @@ export function createCommandMenu(options = {}) {
     const viewportWidth = viewport?.width || win.innerWidth, viewportHeight = viewport?.height || win.innerHeight
     const maxWidth = Math.max(0, viewportWidth - SUBMENU_MARGIN * 2)
     const maxHeight = Math.max(0, viewportHeight - SUBMENU_MARGIN * 2)
-    const fallbackWidth = state.submenuType === 'templates' ? 250 : 190
+    // 0facf05:457 口径——子菜单固有宽度按类型区分，templates 弹窗需内联宽高（位测量前写入）。
+    const fallbackWidth = state.submenuType === 'table' ? 314
+      : state.submenuType === 'templates' ? Math.min(250, win.innerWidth - 16)
+        : state.submenuType === 'columns' ? 196 : 190
     const options = state.items.filter((item) => item.submenu === state.submenuOpen)
     const estimatedHeight = state.submenuType === 'templates'
-      ? Math.min(420, 42 + (Math.max(1, state.templates.length) + 1) * 40)
+      ? 12 + (Math.max(1, state.templates.length) + 1) * 30
       : state.submenuType === 'columns'
         ? 166
         : state.submenuType === 'table'
@@ -583,8 +576,11 @@ export function createCommandMenu(options = {}) {
           : state.submenuType === 'diagram'
             ? Math.min(420, 42 + Math.max(1, state.diagramTypes.length) * 40)
             : Math.min(420, 42 + options.length * 40)
+    // 0facf05:473 口径——仅 templates 写内联 width/height/maxHeight，其余类型交给 CSS。
     const size = { maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`, overflowY: 'auto', boxSizing: 'border-box',
-      ...(state.submenuType === 'templates' ? { width: `${fallbackWidth}px` } : {}) }
+      ...(state.submenuType === 'templates'
+        ? { width: `${fallbackWidth}px`, height: `${estimatedHeight}px`, maxHeight: `${Math.max(40, viewportHeight - 16)}px` }
+        : {}) }
     Object.assign(submenuEl.style, size)
     // Measure the attached, constrained surface, including variable template
     // titles and the More row. Estimates only serve non-layout environments.
@@ -647,7 +643,7 @@ export function createCommandMenu(options = {}) {
     })() : state.items
     const currentItems = new Map(items.map(item => [entryKey(item), item]))
     const sections = items.length ? sectionList(items, mobile) : []
-    const slots = [{ node: head, on: true }]
+    const slots = [{ node: head, on: state.kind !== 'slash' }]
     slots.push({ node: emptyEl, on: !state.items.length })
     sections.forEach((node) => slots.push({ node, on: true }))
     if (submenuEl) slots.push({ node: submenuEl, on: true })

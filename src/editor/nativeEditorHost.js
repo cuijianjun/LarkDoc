@@ -89,9 +89,6 @@ const options = {
     effectiveReadonly() { return this.interactionMode === 'read' },
     hasTextSelection() { return !!this.editor && !this.editor.state.selection.empty },
     visibleBlockActions() { return this.blockActions.filter(item => this.isBlockActionEnabled(item.id) && (item.id !== 'translate' || this.featureEnabled('ai'))) },
-    visibleBlockTypeActions() {
-      return this.blockTypeActions.filter(item => this.featureEnabled('blockStyle') && this.featureEnabled(item.id === 'codeBlock' ? 'codeBlocks' : item.id === 'callout' ? 'callouts' : /^heading/.test(item.id) ? 'headings' : 'blockStyle') && this.isBlockActionEnabled(item.id))
-    },
     visibleBlockListActions() {
       const list = this.visibleBlockActions.filter(item => item.id !== 'duplicate')
       const duplicate = this.blockActions.find(item => item.id === 'duplicate')
@@ -143,6 +140,7 @@ const options = {
     },
     editorConfig: { deep: true, handler() {
       if (!this.featureEnabled('files')) this.cancelFileUploads('files-disabled')
+      if (!this.toolbarEnabled('tables') || this.larkDocConfig.layout.toolbarVisible === false) this.closeTablePicker()
       if (!isCommandEnabled(this.larkDocConfig, 'image', 'images')) {
         this.resolveImageFile.cancelAll?.('images-disabled')
         if (!this.dragging) this.dropPosition = null
@@ -367,13 +365,15 @@ const options = {
     async insertFileBlocks(files, pos) {
       if (!this.writable() || !this.featureEnabled('files')) return
       const epoch = this._fileUploadEpoch || 0
+      const session = this.session
+      const identity = session?._identityGeneration, actor = session?._privateIdentityGeneration, authorization = session?._authorizationGeneration
       const { createFileUploadTasks } = await import('../core/media/file-upload-tasks')
-      if (epoch !== (this._fileUploadEpoch || 0) || !this.writable()) return
+      if (epoch !== (this._fileUploadEpoch || 0) || !this.writable() || this.session !== session || session?._destroyed ||
+        identity !== session?._identityGeneration || actor !== session?._privateIdentityGeneration || authorization !== session?._authorizationGeneration) return
       this._fileUploadTasks ||= createFileUploadTasks(this)
       return this._fileUploadTasks.insert(files, pos)
     },
     cancelFileUploads(reason) { this._fileUploadEpoch = (this._fileUploadEpoch || 0) + 1; this._fileUploadTasks?.cancelAll(reason) },
-
   },
 }
 export function createNativeEditorHost({ shell, props, state, emit, onChange, resolveImageFile }) {
@@ -600,10 +600,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
         event.stopPropagation()
         host.closeOverlay()
       }, true)
-      // 与 SFC 根元素 `@keydown.esc="closeOverlay"` 语义对齐：PM keymap（如表格选中取消）preventDefault 但不拦冒泡，已消费的 Esc 仅当事件源自 PM 正文时放行；子输入框消费的不放行（dom-renderer-contract 用例锁定）。
-      listen(shell.root, 'keydown', event => { if (event.key === 'Escape' && (!event.defaultPrevented || editor.view.dom.contains(event.target))) host.closeOverlay() })
-
-      // 成功提示保留「立即查看」，进入其他弹窗控件后让出它们的操作区域。
+      listen(shell.root, 'keydown', host.onEditorRootEscape)
       const dismissNoticeForPopup = event => {
         if (host.versionNotice && event.target.closest?.('[aria-haspopup]')) host.dismissVersionNotice()
       }
@@ -633,9 +630,12 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       listen(window, 'resize', host.syncTableClip)
       listen(window, 'pointerup', host.onHandlePointerUp)
       listen(document, 'pointerdown', event => {
+        host.onNotifyPointerDown(event)
         if (host.linkDialog && !host._dialogsUi?.link.el?.contains(event.target)) host.linkDialog = false
         host.onDocumentPointerDown(event)
       }, true)
+      const owner = shell.root.getRootNode()
+      if (owner.mode === 'closed') listen(owner, 'pointerdown', host.onNotifyPointerDown, true)
       listen(window, 'pointermove', host.onDocumentPointerMove, true)
       editor.commands.ensureLarkDocBlockIds?.()
       editor.commands.normalizeLarkDocIndents?.()

@@ -89,37 +89,55 @@ function loadPolyfills() {
   return polyfillPromise
 }
 
+function adoptRuntime(runtime) {
+  const namespace = window.LarkDoc
+  if (!runtime || !namespace || typeof namespace !== 'object' || namespace === runtime) return runtime
+  for (const key of Object.keys(runtime)) {
+    if (key !== '__esModule') namespace[key] = runtime[key]
+  }
+  return namespace
+}
+
 export function loadLarkDocRuntime() {
   if (runtimePromise) return runtimePromise
   if (typeof document === 'undefined') {
     runtimePromise = Promise.resolve(null)
     return runtimePromise
   }
-  const existing = document.querySelector('script[data-lark-doc-runtime="true"]')
-  if (existing) {
-    runtimePromise = existing.__larkDocRuntimePromise || Promise.resolve(window.LarkDocRuntime || null)
-    return runtimePromise
-  }
   const src = new URL(RUNTIME_FILE, runtimeBase()).href
-  let script = null
   loadStyles()
   // 先补 polyfill 再注入内核，顺序不能反。
-  const promise = loadPolyfills().then(() => new Promise((resolve, reject) => {
-    script = document.createElement('script')
+  runtimePromise = loadPolyfills().then(() => {
+    const existing = document.querySelector('script[data-lark-doc-runtime="true"]')
+    if (existing?.__larkDocRuntimePromise) return existing.__larkDocRuntimePromise
+    const registered = () => [window.LarkDocRuntime, window.LarkDoc].find(value => typeof value?.LarkDoc === 'function')
+    const previousRuntime = existing && registered()
+    if (previousRuntime) return adoptRuntime(previousRuntime)
+    existing?.remove()
+    const script = document.createElement('script')
     script.async = false
     script.src = src
     script.dataset.larkDocRuntime = 'true'
-    script.onload = () => resolve(window.LarkDocRuntime || window.LarkDoc || null)
-    script.onerror = () => reject(new Error(`无法加载 Web Component runtime：${src}`))
+    script.__larkDocRuntimePromise = new Promise((resolve, reject) => {
+      const fail = () => reject(new Error(`无法加载 Web Component runtime：${src}`))
+      script.onload = () => {
+        const runtime = registered()
+        if (runtime) resolve(runtime)
+        else fail()
+      }
+      script.onerror = fail
+    }).then(runtime => {
+      const namespace = adoptRuntime(runtime)
+      announce('lark-doc:runtime-ready')
+      return namespace
+    }).catch(error => {
+      script.remove()
+      throw error
+    })
     ;(document.head || document.documentElement).appendChild(script)
-  }))
-  runtimePromise = promise.then(runtime => {
-    announce('lark-doc:runtime-ready')
-    return runtime
-  }, error => {
-    // 失败后允许重试：清掉缓存的 rejecting promise 与占位脚本。
+    return script.__larkDocRuntimePromise
+  }).catch(error => {
     runtimePromise = null
-    script?.remove()
     throw error
   })
   return runtimePromise

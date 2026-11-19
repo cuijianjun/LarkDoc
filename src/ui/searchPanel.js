@@ -21,6 +21,8 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
   let state = { open: false, isReplace: false, height: 186, style: {}, query: '', replacement: '', counterText: '0 / 0', readonly: false, hasMatches: false }
   let drag = null
   let input = null
+  let composing = false
+  let committedQuery = null
   let bar = null
 
   function endDrag() {
@@ -87,7 +89,14 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
     input.id = 'lark-doc-fr-find'
     input.setAttribute('aria-label', '查找内容')
     input.placeholder = '在文档内查找'
-    input.addEventListener('input', event => handlers.onQuery?.(event))
+    const queryChanged = event => {
+      if (composing || event.isComposing || committedQuery === input.value) return
+      committedQuery = input.value
+      handlers.onQuery?.(event)
+    }
+    input.addEventListener('compositionstart', () => { composing = true })
+    input.addEventListener('compositionend', event => { composing = false; queryChanged(event) })
+    input.addEventListener('input', queryChanged)
     input.addEventListener('keydown', event => {
       if (event.isComposing || event.keyCode === 229) return
       if (event.key === 'Enter') { event.preventDefault(); handlers.onNext?.(event.shiftKey ? -1 : 1) }
@@ -139,7 +148,7 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
       event.stopPropagation()
       if (event.isComposing || event.keyCode === 229) return
       if (event.key === 'Escape') { event.preventDefault(); handlers.onClose?.() }
-      else if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+      else if (!!event.metaKey !== !!event.ctrlKey && !event.altKey) {
         const key = event.key.toLowerCase()
         if ((key === 'f' && !event.shiftKey) || (key === 'h' && event.shiftKey)) {
           event.preventDefault(); handlers.onTab?.(key === 'f' ? 'find' : 'replace'); input.focus()
@@ -158,7 +167,10 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
     refs.findTab.classList.toggle('is-active', !state.isReplace)
     refs.replaceTab.classList.toggle('is-active', state.isReplace)
     applyStyle(root, { ...(state.style || {}), height: `${state.height}px` })
-    if (refs.input.value !== (state.query || '')) refs.input.value = state.query || ''
+    if (!composing) {
+      if (refs.input.value !== (state.query || '')) refs.input.value = state.query || ''
+      committedQuery = refs.input.value
+    }
     if (refs.replaceInput.value !== (state.replacement || '')) refs.replaceInput.value = state.replacement || ''
     setText(refs.counter, state.counterText)
     setDisabled(refs.replaceAll, state.readonly || !state.hasMatches)

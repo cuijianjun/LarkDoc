@@ -136,10 +136,9 @@ export function createWorkspace(options = {}) {
     saveStatus.classList.toggle('is-error', !!state.storageError)
     setText(saveStatus, state.saveStatus)
     setDisabled(saveButton, state.readonly || state.importing)
-    setAttr(saveButton, 'title', state.persistenceLabel ? `保存到${state.persistenceLabel}` : null)
+    setAttr(saveButton, 'aria-description', state.persistenceLabel ? `保存到${state.persistenceLabel}` : null)
     templateSelect.update({ options: state.templateOptions, value: '', disabled: state.readonly || state.importing })
     setDisabled(importButton, state.readonly || state.importing)
-    setAttr(importButton, 'title', state.importing ? '导入中' : (state.importLabel || '导入'))
     const progress = state.importProgressState
     setText(importButton, state.importing ? (progress ? `导入中 ${progress.progress || 0}%` : '导入中…') : (state.importLabel || '导入'))
     setText(importProgress, progress ? (progress.failed ? `导入 ${progress.progress}% · 失败 ${progress.failed} 项` : `导入 ${progress.progress}% · ${progress.completed}/${progress.total}`) : '')

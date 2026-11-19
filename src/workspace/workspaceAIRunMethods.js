@@ -9,6 +9,13 @@ import { previewToHtml, singleParagraphInner, looksLikeMarkdown } from '../compo
 import { logger } from '../utils/logger'
 
 export const aiRunMethods = {
+  switchAIAction(action) {
+    if (!AI_ACTIONS.some(item => item.value === action) || this.state.aiAction === action || this.state.aiRunning) return
+    this.state.aiAction = action
+    this.resetAIPreview()
+    if (this.state.aiOpen && !this.state.aiSelectionChat && !this.state.aiImageChat) this.startAI(action)
+  },
+
   startAI(action = 'rewrite', options = {}) {
     if (!this.featureEnabled('ai') || !this.writable()) return
     if ((this.state.aiImageChat || this.state.aiSelectionChat) && !options.context) this.closeAI(false)

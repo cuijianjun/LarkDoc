@@ -84,9 +84,10 @@
   height: 24px;
   padding: 0;
   border: 0 none;
-  border-radius: 0;
+  border-radius: 4px;
   background-color: transparent;
-  color: rgb(31, 35, 41);
+  color: rgb(100, 106, 115);
+  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -101,8 +102,8 @@
 }
 
 /* 还原此历史记录 122 × 32 @(548,16)，radius 6，白字 14。
-   实测底色是禁用灰 `rgb(187,191,196)`（= #BBBFC4）+ `not-allowed` —— 启用态底色
-   未采（⑦-1），沿用主色 `rgb(20,86,240)`（= #1456F0），与「下一项」同源。 */
+   飞书 1:1：禁用态灰 `rgb(187,191,196)`（= #BBBFC4）+ `not-allowed`；启用态飞书蓝
+   `rgb(51,109,244)`（= #336DF4），与「下一项」同源，不跟随宿主主题档位。 */
 .lark-doc .lark-doc-version-restore {
   position: absolute;
   left: 50%;
@@ -113,7 +114,7 @@
   padding: 0;
   border: 0 none;
   border-radius: 6px;
-  background-color: var(--ld-brand-chrome);
+  background-color: rgb(51, 109, 244);
   color: rgb(255, 255, 255);
   font-size: 14px;
   cursor: pointer;
@@ -124,9 +125,9 @@
   cursor: not-allowed;
 }
 
-/* 上一项 / 下一项：66 × 28，y=18，radius 6，白字 12。
-   坐标系换算：容器 `right: 24px` + `gap: 16px` ⇒ 下一项 left = 1218 - 24 - 66 = 1128，
-   上一项 left = 1128 - 16 - 66 = 1046，与实测一致。
+/* 上一页 / 下一页：66 × 28，y=18，radius 6，白字 12。
+   坐标系换算：容器 `right: 24px` + `gap: 16px` ⇒ 下一页 left = 1218 - 24 - 66 = 1128，
+   上一页 left = 1128 - 16 - 66 = 1046，与实测一致。
    hover 实测 `rgb(51,109,244)`（= #336DF4）。 */
 .lark-doc .lark-doc-version-pager {
   position: absolute;
@@ -138,8 +139,8 @@
 }
 
 /* 页码文案「编辑记录 1/10」。
-   04 §3.4-B 只给了相对描述「上一项右侧」，没给坐标；右缘到「下一项」只剩 24px 放不下，
-   所以右对齐排在「上一项」左侧，间距沿用 16px。 */
+   04 §3.4-B 只给了相对描述「上一页右侧」，没给坐标；右缘到「下一页」只剩 24px 放不下，
+   所以右对齐排在「上一页」左侧，间距沿用 16px。 */
 .lark-doc .lark-doc-version-cursor {
   font-size: 12px;
   color: rgb(31, 35, 41);
@@ -147,19 +148,20 @@
 }
 
 .lark-doc .lark-doc-version-step {
+  min-height: 0;
   width: 66px;
   height: 28px;
   padding: 0;
   border: 0 none;
   border-radius: 6px;
-  background-color: var(--ld-brand-chrome);
+  background-color: rgb(51, 109, 244);
   color: rgb(255, 255, 255);
   font-size: 12px;
   cursor: pointer;
 }
 
 .lark-doc .lark-doc-version-step:hover:not([disabled]) {
-  background-color: var(--ld-brand-chrome);
+  background-color: rgb(51, 109, 244);
 }
 
 .lark-doc .lark-doc-version-step[disabled] {
@@ -206,6 +208,15 @@
   margin-top: 8px;
   font-size: 12px;
   color: rgb(100, 106, 115);
+}
+
+@media (min-width: 1025px) {
+  .lark-doc .lark-doc-version-left-content:has(.has-document) { padding: 48px 32px; }
+  .lark-doc .lark-doc-version-preview.has-document { max-width: 820px; margin: 0 auto; padding: 0; border: 0; border-radius: 0; }
+  .lark-doc .has-document .lark-doc-version-preview-title { font-size: 34px; line-height: 55.25px; font-weight: 600; }
+  .lark-doc .has-document .lark-doc-version-preview-kind { display: none; }
+  .lark-doc .has-document .lark-doc-version-body { margin-top: 24px; }
+  .lark-doc .lark-doc-version-document { width: 100%; min-height: 56vh; }
 }
 
 /* 降级文案：取不到正文 / 取不到版本时的统一落点，保证永不白屏。 */
@@ -336,28 +347,34 @@
   color: rgb(100, 106, 115);
 }
 
-/* 单条记录 293 宽，padding 12px 13px 12px 40px。 */
+/* 单条记录 293 宽，padding 10px 13px 10px 30px；三角 / 主体横向排布。 */
 .lark-doc .lark-doc-version-item {
+  position: relative;
   width: 293px;
-  padding: 12px 13px 12px 40px;
+  padding: 10px 13px 10px 30px;
   box-sizing: border-box;
   background-color: transparent;
   cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 }
 
-/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF），文字 `rgb(51,109,244)`（= #336DF4），
+/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF）+ 左侧 3px 蓝色竖条 `rgb(51,109,244)`（= #336DF4），
    条目宽 293 → 278（右侧让出 15px 滚动条）。 */
 .lark-doc .lark-doc-version-item.selected {
   width: 278px;
-  background-color: var(--ld-bg-badge);
+  background-color: rgb(224, 233, 255);
 }
 
-/* 条目名：fs 14 / fw 500 / **`rgb(51,109,244)`**（反直觉 2：不是正文色）。 */
-.lark-doc .lark-doc-version-item-name {
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  color: var(--ld-brand-chrome);
+.lark-doc .lark-doc-version-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: rgb(51, 109, 244);
 }
 
 /* 第二行：「最近更新」绿标 + 改动描述（飞书是「最近更新编辑了封面」这种「标签 + 做了什么」）。 */
@@ -400,8 +417,10 @@
   color: rgb(31, 35, 41);
 }
 
-.lark-doc .lark-doc-version-item.selected .lark-doc-version-item-desc {
-  color: var(--ld-brand-chrome);
+/* 主体（时间 / 摘要 / 作者）竖排。 */
+.lark-doc .lark-doc-version-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* 作者：fs 12 / fw 500 / rgb(31,35,41)，独占第三行。 */
@@ -410,7 +429,7 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
-  color: rgb(31, 35, 41);
+  color: rgb(51, 109, 244);
 }
 
 /* 选中态整条转蓝（含作者），但绿标保持原色 —— 它是状态标识，不该跟着选中变色。 */
@@ -538,10 +557,6 @@
 }
 
 /* Captured phone history: list and immutable preview are separate steps. */
-.lark-doc .lark-doc-version-source { display: none; position: absolute; top: 18px; left: 64px; border: 0; background: transparent; color: var(--ld-text); }
-.lark-doc .lark-doc-version-saved-menu { position: absolute; left: 180px; top: 18px; z-index: 1; border-radius: 8px; background: var(--ld-bg-surface-chrome); }
-.lark-doc .lark-doc-version-saved-menu summary { padding: 4px 10px; cursor: pointer; }
-.lark-doc .lark-doc-version-saved-menu button { display: block; min-height: 40px; }
 .lark-doc .lark-doc-version-day-label { width: 100%; border: 0; text-align: left; background: transparent; }
 .lark-doc .lark-doc-version-item { display: block; width: 100%; border: 0; text-align: left; background: transparent; }
 /* 展开箭头 = 飞书 `history-timeline-open-icon`：20 × 20 @(1235,106)、radius 4、cursor pointer。
@@ -575,7 +590,6 @@
   .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-left-header { height: 64px; }
   .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-left-content,
   .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-restore,
-  .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-saved-menu,
   .lark-doc .lark-doc-version-layer .lark-doc-version-pager { display: none; }
   .lark-doc .lark-doc-version-layer.is-phone-list .lark-doc-version-right { flex: 1; }
   .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-left { flex: 1; height: 100%; }
@@ -583,8 +597,6 @@
   .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-left-header { height: 64px; }
   .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-left-content { height: calc(100% - 64px); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
   .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-restore { width: 92px; right: 8px; transform: none; font-size: 12px; }
-  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-source { left: 54px; padding-inline: 4px; }
-  .lark-doc .lark-doc-version-layer.is-phone-preview .lark-doc-version-saved-menu { left: 152px; top: 16px; }
   .lark-doc .lark-doc-version-layer.is-phone-list.is-saved-versions { top: auto; max-height: 65dvh; border-radius: 12px 12px 0 0; box-shadow: var(--ld-shadow-float); }
   .lark-doc .lark-doc-version-layer.is-phone-list.is-saved-versions .lark-doc-version-right { min-height: 200px; max-height: calc(65dvh - 64px); }
 }

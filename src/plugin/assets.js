@@ -46,7 +46,7 @@ export function discoverAssets(input, maybeOptions) {
   })()
 
   const elementFiles = fs.readdirSync(distDir)
-    .filter((name) => ELEMENT_ASSET_RE.test(name))
+    .filter((name) => ELEMENT_ASSET_RE.test(name) || name === 'comment-reaction-catalog.json')
     .map((name) => path.join(distDir, name))
     .sort()
   const main = elementFiles.find((file) => path.basename(file) === 'lark-doc-element.umd.min.js')

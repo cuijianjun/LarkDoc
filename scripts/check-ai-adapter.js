@@ -15,6 +15,7 @@
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
+const { JSDOM } = require('jsdom')
 
 const sourceRoot = path.resolve(__dirname, '../src')
 const originalLoader = require.extensions['.js']
@@ -563,7 +564,17 @@ assert.strictEqual(plainTextToHtml(''), '')
 
 assert.strictEqual(previewToHtml('## 标题', 'text'), '<p>## 标题</p>', 'format=text 不做 markdown 解析')
 assert.strictEqual(previewToHtml('# 标题', 'markdown'), '<h1>标题</h1>')
-assert.strictEqual(previewToHtml('<h1>已渲染</h1>', 'html'), '<h1>已渲染</h1>', 'format=html 原样透传')
+const previewDom = new JSDOM()
+const originalDocument = global.document
+try {
+  global.document = previewDom.window.document
+  assert.strictEqual(previewToHtml('<h1 onclick="alert(1)">已渲染</h1><script>alert(1)</script>', 'html'),
+    '<h1>已渲染</h1>', 'format=html 保留安全结构并清洗危险内容')
+} finally {
+  if (originalDocument === undefined) delete global.document
+  else global.document = originalDocument
+  previewDom.window.close()
+}
 assert.strictEqual(previewToHtml('## 标题', 'auto'), '<h2>标题</h2>', 'auto 识别 markdown')
 assert.strictEqual(previewToHtml('普通正文', 'auto'), '<p>普通正文</p>', 'auto 对纯文本段落化')
 assert.strictEqual(previewToHtml('', 'auto'), '')

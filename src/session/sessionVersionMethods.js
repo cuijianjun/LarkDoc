@@ -10,6 +10,7 @@ import { validateDocument } from '../core/documentOperations'
 import { TRANSACTION_ORIGINS } from '../core/transactionMetadata'
 
 export const AUTO_VERSION_INTERVAL_MS = 60000
+export const AUTO_SNAPSHOT_DEBOUNCE_MS = 2500
 
 /**
  * `purpose`（服务端口径）→ 本地快照 `kind`（`core/versioning` 的三分类）。
@@ -32,6 +33,24 @@ export const versionMethods = {
     return this._autoVersionEnabled
   },
 
+  setAutoSnapshot(patch) {
+    if (patch && typeof patch === 'object') {
+      if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) this.setAutoVersion(patch.enabled)
+      if (Object.prototype.hasOwnProperty.call(patch, 'debounce')) {
+        this._autoVersionDebounce = Number.isFinite(patch.debounce) && patch.debounce >= 0 ? patch.debounce : AUTO_SNAPSHOT_DEBOUNCE_MS
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'minInterval')) {
+        this._autoVersionMinInterval = Number.isFinite(patch.minInterval) && patch.minInterval >= 0 ? patch.minInterval : AUTO_VERSION_INTERVAL_MS
+      }
+      if (this._autoVersionDirty && this._autoVersionEnabled) {
+        clearTimeout(this._autoVersionTimer)
+        this._autoVersionTimer = null
+        this._armAutoVersion(this._autoVersionDebounce)
+      }
+    }
+    return { enabled: this._autoVersionEnabled, debounce: this._autoVersionDebounce, minInterval: this._autoVersionMinInterval }
+  },
+
   /**
    * 编辑器每次 `update` 只做两件事：标记「正文脏了」，确保有一个尾部定时器在跑。
    *
@@ -44,7 +63,10 @@ export const versionMethods = {
     this._autoVersionListener = () => {
       if (!this._autoVersionEnabled) return
       this._autoVersionDirty = true
-      this._armAutoVersion(AUTO_VERSION_INTERVAL_MS)
+      clearTimeout(this._autoVersionTimer)
+      this._autoVersionTimer = null
+      const wait = this._autoVersionAt ? this._autoVersionAt + this._autoVersionMinInterval - Date.now() : 0
+      this._armAutoVersion(Math.max(wait, this._autoVersionDebounce))
     }
     editor.on('update', this._autoVersionListener)
   },
@@ -75,7 +97,7 @@ export const versionMethods = {
     // 已在提交中：保留「正文仍然是脏的」这个标记，等这次落地后再补一次，绝不并发发两条。
     if (this._autoVersionRunning) { this._autoVersionDirty = true; return null }
     const now = Date.now()
-    const wait = this._autoVersionAt + AUTO_VERSION_INTERVAL_MS - now
+    const wait = this._autoVersionAt + this._autoVersionMinInterval - now
     if (this._autoVersionAt && wait > 0) { this._autoVersionDirty = true; this._armAutoVersion(wait); return null }
     // 先清脏标记再取正文：请求期间的新编辑会重新置脏，由 finally 决定是否补下一轮。
     this._autoVersionDirty = false
@@ -98,11 +120,11 @@ export const versionMethods = {
       return null
     } finally {
       this._autoVersionRunning = false
-      if (this._autoVersionDirty) this._armAutoVersion(AUTO_VERSION_INTERVAL_MS)
+      if (this._autoVersionDirty) this._armAutoVersion(this._autoVersionDebounce)
     }
   },
 
-  /** 单个尾部定时器：窗口内的后续输入不重排，避免「一直打字一直不落」。 */
+  /** 尾部定时器到期时再次核对节流和权限。 */
   _armAutoVersion(delay) {
     if (this._autoVersionTimer || this._destroyed || !this._autoVersionEnabled) return
     this._autoVersionTimer = setTimeout(() => {

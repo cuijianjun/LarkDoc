@@ -2,7 +2,7 @@
 import { createSelect } from './select'
 import { iconNode } from './icon'
 import { mountNode, setAttr, setText, syncChildren } from './dom'
-import { createImageAiChat } from './imageAiChat'
+import { makeDraggable } from './draggable'
 
 function call(handlers, name, ...args) {
   const handler = handlers[name]
@@ -38,7 +38,6 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   const state = {}
   const el = document.createElement('div')
   el.style.display = 'contents'
-  const imageAi = createImageAiChat(handlers)
   const templatePanel = document.createElement('section')
   templatePanel.className = 'lark-doc-side-panel lark-doc-template-panel'
   templatePanel.setAttribute('role', 'dialog')
@@ -100,7 +99,9 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
 
   const aiPanel = document.createElement('section')
   aiPanel.className = 'lark-doc-side-panel lark-doc-ai-panel'
-  aiPanel.setAttribute('aria-label', 'AI 模拟预览')
+  // 名字随形态变（AI 助手 / 图片问答 / AI 问答），与结果区、发送按钮保持一致，
+  // 也让外部按 `[aria-label=…]` 就能拿到面板（走查脚本与单测都靠它）。
+  aiPanel.setAttribute('aria-label', 'AI 助手')
   aiPanel.addEventListener('keydown', event => {
     if (event.key === 'Escape') call(handlers, 'closeAI')
   })
@@ -112,7 +113,10 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiMock.textContent = '未配置'
   aiTitle.appendChild(aiMock)
   aiHeading.appendChild(aiTitle)
-  aiHeading.appendChild(closeButton('关闭 AI 预览', () => call(handlers, 'closeAI')))
+  const aiHeadingClose = closeButton('关闭 AI 助手', () => call(handlers, 'closeAI'))
+  aiHeading.appendChild(aiHeadingClose)
+  // 标题栏当拖动条：面板默认贴右侧槽位，用户可以把它挪到不挡正文的位置。
+  const disposeAIDrag = makeDraggable(aiPanel, aiHeading)
   const aiDescription = document.createElement('p')
   aiDescription.textContent = '配置 AI 服务后，生成结果会流式显示；只有明确接受、插入或替换才修改正文。'
   const aiContext = document.createElement('div')
@@ -130,8 +134,10 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiContext.appendChild(aiContextSummary)
   const aiActionLabel = document.createElement('label')
   aiActionLabel.textContent = '操作'
+  // 单选下拉：11 个动作收在菜单里，收起时只占一行。
   const aiActionSelect = createSelect({
     ariaLabel: 'AI 操作',
+    className: 'lark-doc-ai-action-select',
     onChange: value => call(handlers, 'setAIAction', value),
   })
   const aiLanguageLabel = document.createElement('label')
@@ -140,14 +146,80 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     ariaLabel: '目标语言',
     onChange: value => call(handlers, 'setAILanguage', value),
   })
+  /**
+   * 「操作」「目标语言」跟「上下文范围」同款字段卡：label 压在上、控件在下。
+   * 三者样式必须同源 —— 之前「操作」是裸 label + 全宽 select 直接落在 12px 流里，
+   * 跟上面那张 8px 内边距的卡片对不齐，就是截图里看着「错位」的那一块。
+   */
+  function field(control, labelNode) {
+    const wrap = document.createElement('div')
+    wrap.className = 'lark-doc-ai-field'
+    wrap.appendChild(labelNode)
+    wrap.appendChild(control)
+    return wrap
+  }
+  const aiActionField = field(aiActionSelect.el, aiActionLabel)
+  const aiLanguageField = field(aiLanguageSelect.el, aiLanguageLabel)
+  /**
+   * 配置栏：上下文范围 / 操作 /（翻译时的）目标语言。
+   *
+   * 004 起 AI 只有一个形态 —— 这张表单面板。003 为了保住这 11 个动作，把它们塞进了
+   * 对话式外壳的 composer（`imageAi.setActionBar`），外壳长表单控件必然错位，也就是
+   * 用户看到的「原来的弹窗样式全乱了」。现在控件回到面板自己身上，顺序按参考图重排。
+   */
+  const aiActionBar = document.createElement('div')
+  aiActionBar.className = 'lark-doc-ai-actionbar'
   const aiPromptLabel = document.createElement('label')
   aiPromptLabel.setAttribute('for', 'lark-doc-ai-prompt')
   aiPromptLabel.textContent = '给 AI 的要求（可选）'
-  const aiPrompt = document.createElement('textarea')
-  aiPrompt.id = 'lark-doc-ai-prompt'
-  aiPrompt.rows = 2
-  aiPrompt.placeholder = '例如：请用更简洁的语气重写'
-  aiPrompt.addEventListener('input', event => call(handlers, 'setAIPrompt', event.target.value))
+  /**
+   * 要求输入框**每个会话换一个新节点**。
+   *
+   * 对话式面板下线前的硬约束，别图省事改成复用同一个 textarea：关面板时中文输入法还在
+   * composition 里，`compositionend` / 迟到的 `input` 会打到旧节点上；节点是新的，
+   * 旧事件就落在被换掉的那个节点上，写不进新会话。`aiChatEpoch` 由 controller 每次
+   * 开新会话自增，这里只负责跟着换。
+   */
+  let aiPromptEpoch = -1
+  let aiPromptOpen = null
+  let aiPromptSelection = null
+  let aiPrompt = makePrompt(0)
+  function makePrompt(epoch) {
+    const node = document.createElement('textarea')
+    node.id = 'lark-doc-ai-prompt'
+    node.rows = 2
+    node.placeholder = '例如：请用更简洁的语气重写'
+    node.addEventListener('input', event => {
+      if (node !== aiPrompt || epoch !== aiPromptEpoch) return
+      if (typeof handlers.isAIChatCurrent === 'function' && !handlers.isAIChatCurrent(epoch)) return
+      call(handlers, 'setAIPrompt', event.target.value)
+    })
+    node.addEventListener('keydown', event => {
+      if (node !== aiPrompt || epoch !== aiPromptEpoch || !(state.aiSelectionChat || state.aiImageChat)) return
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
+      if (typeof handlers.isAIChatCurrent === 'function' && !handlers.isAIChatCurrent(epoch)) return
+      event.preventDefault()
+      if (!sendButton.disabled) call(handlers, 'sendAIChat')
+    })
+    return node
+  }
+  /**
+   * 引用条：图片 / 选区上下文。对话式面板下线后这条能力必须留在原处 ——
+   * 否则「删掉引用」只能靠关面板重开。
+   */
+  const aiReference = document.createElement('div')
+  aiReference.className = 'lark-doc-ai-reference'
+  aiReference.hidden = true
+  const aiReferenceText = document.createElement('span')
+  aiReferenceText.className = 'lark-doc-ai-reference-text'
+  const aiReferenceRemove = button('', () => {
+    call(handlers, state.aiSelectionChat ? 'removeAIReference' : 'removeAIImage')
+    aiPrompt.focus({ preventScroll: true })
+  })
+  aiReferenceRemove.className = 'lark-doc-ai-reference-remove'
+  aiReferenceRemove.appendChild(iconNode('close', 12))
+  aiReference.appendChild(aiReferenceText)
+  aiReference.appendChild(aiReferenceRemove)
   const aiMessages = document.createElement('ul')
   aiMessages.className = 'lark-doc-ai-messages'
   aiMessages.setAttribute('aria-label', 'AI 对话记录')
@@ -203,19 +275,21 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   const regenerateButton = button('重新生成', () => call(handlers, 'regenerateAI'))
   const acceptButton = button('接受结果', () => call(handlers, 'acceptAI'), 'lark-doc-primary')
   const rejectButton = button('拒绝', () => call(handlers, 'closeAI'))
+  // 六个按钮挤一行会在窄面板里被裁掉半个字：动作（复制/插入/替换/重新生成）与
+  // 决策（接受/拒绝）分两行，各自随宽度换行。
   aiResultButtons.appendChild(copyButton)
   aiResultButtons.appendChild(insertButton)
   aiResultButtons.appendChild(replaceButton)
   aiResultButtons.appendChild(regenerateButton)
-  aiResultButtons.appendChild(acceptButton)
-  aiResultButtons.appendChild(rejectButton)
+  const aiDecisionButtons = document.createElement('div')
+  aiDecisionButtons.className = 'lark-doc-panel-buttons lark-doc-panel-buttons--decision'
+  aiDecisionButtons.appendChild(acceptButton)
+  aiDecisionButtons.appendChild(rejectButton)
   aiPanel.appendChild(aiHeading)
   aiPanel.appendChild(aiDescription)
-  aiPanel.appendChild(aiContext)
-  aiPanel.appendChild(aiActionLabel)
-  aiPanel.appendChild(aiActionSelect.el)
-  aiPanel.appendChild(aiLanguageLabel)
-  aiPanel.appendChild(aiLanguageSelect.el)
+  // 顺序对齐参考图：说明 → 上下文范围 → 操作 →（目标语言）→ 引用 → 要求 → 按钮 → 状态 → 结果。
+  aiPanel.appendChild(aiActionBar)
+  aiPanel.appendChild(aiReference)
   aiPanel.appendChild(aiPromptLabel)
   aiPanel.appendChild(aiPrompt)
   aiPanel.appendChild(aiMessages)
@@ -226,6 +300,7 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
   aiPanel.appendChild(aiProposal)
   aiPanel.appendChild(aiError)
   aiPanel.appendChild(aiResultButtons)
+  aiPanel.appendChild(aiDecisionButtons)
 
   function updateTemplateItems(items) {
     const list = Array.isArray(items) ? items : []
@@ -351,8 +426,8 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
       syncChildren(el, [
         { node: templatePanel, on: templateOpen },
         { node: historyPanel, on: historyOpen },
-        { node: aiPanel, on: aiOpen && !(state.aiImageChat || state.aiSelectionChat) },
-        { node: imageAi.el, on: aiOpen && !!(state.aiImageChat || state.aiSelectionChat) },
+        // AI 只有一个形态：这张表单面板（对话式外壳已退出显隐，见 specs/004 FR-201/203）。
+        { node: aiPanel, on: aiOpen },
       ])
     }
 
@@ -378,19 +453,51 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     updateSnapshots(snapshots, state.readonly || state.importing)
 
     setText(aiContextSummary, state.aiContextSummary)
-    imageAi.update(state)
+    // 配置栏：上下文范围在前，操作在后；翻译时才把「目标语言」放出来，别的时候不占位。
+    syncChildren(aiActionBar, [
+      { node: aiContext, on: true },
+      { node: aiActionField, on: true },
+      { node: aiLanguageField, on: state.aiAction === 'translate' },
+    ])
     aiContextSelect.update({ options: state.aiContextOptions, value: state.aiContextScope, disabled: state.aiRunning || state.readonly })
+    // 生成中允许切动作（会取消当前流、按新动作重跑），只读才整组禁用。
     aiActionSelect.update({ options: state.aiActions, value: state.aiAction, disabled: state.readonly })
-    aiLanguageLabel.style.display = state.aiAction === 'translate' ? '' : 'none'
-    aiLanguageSelect.el.style.display = state.aiAction === 'translate' ? '' : 'none'
     aiLanguageSelect.update({ options: state.aiLanguageOptions, value: state.aiLanguage, disabled: state.aiRunning || state.readonly })
+    // 三态标签与对话式面板同源：选区问答 / 图片问答 / 普通 AI 助手。
+    const selectionChat = !!state.aiSelectionChat
+    const imageChat = !!(state.aiImageChat || state.aiImage)
+    const chat = selectionChat || imageChat
+    const canReplace = !imageChat && (!selectionChat || state.aiReference?.replaceable === true)
+    const canSend = !chat || (state.aiServiceAvailable && (!state.aiImage || state.aiImageAvailable))
+    const aiLabel = selectionChat ? 'AI 问答' : (imageChat ? '图片问答' : 'AI 助手')
+    setAttr(aiPanel, 'aria-label', aiLabel)
+    setAttr(aiHeadingClose, 'aria-label', `关闭${aiLabel}`)
+    setText(aiReferenceText, state.aiImage ? '[图片]' : state.aiReference?.label || '')
+    aiReferenceText.title = state.aiReference?.text || ''
+    aiReference.hidden = !state.aiImage && !state.aiReference
+    setAttr(aiReferenceRemove, 'aria-label', selectionChat ? '移除内容引用' : '移除图片引用')
+    setAttr(sendButton, 'aria-label', `发送${aiLabel}`)
+    setAttr(stopButton, 'aria-label', chat ? '停止生成' : null)
+    setAttr(copyButton, 'aria-label', chat ? '复制 AI 回复' : null)
+    // 换会话（或开关面板、切换问答形态）时换一个全新的要求输入框，见 makePrompt 的注释。
+    const promptEpoch = Number(state.aiChatEpoch) || 0
+    const promptOpen = state.aiOpen !== false
+    if (promptEpoch !== aiPromptEpoch || promptOpen !== aiPromptOpen || selectionChat !== aiPromptSelection) {
+      const next = makePrompt(promptEpoch)
+      if (aiPrompt.parentNode) aiPrompt.parentNode.replaceChild(next, aiPrompt)
+      else aiPanel.appendChild(next)
+      aiPrompt = next
+      aiPromptEpoch = promptEpoch
+      aiPromptOpen = promptOpen
+      aiPromptSelection = selectionChat
+    }
     setInputValue(aiPrompt, state.aiPrompt)
     setDisabled(aiPrompt, state.aiRunning || state.readonly)
     updateMessages(state.aiMessages)
     setText(generateButton, state.aiRunning ? '重新生成' : '生成预览')
     setDisabled(generateButton, state.readonly || state.aiRunning)
     setDisabled(stopButton, false)
-    setDisabled(sendButton, state.readonly || state.aiRunning || !String(state.aiPrompt || '').trim())
+    setDisabled(sendButton, !canSend || state.readonly || state.aiRunning || !String(state.aiPrompt || '').trim())
     syncChildren(aiButtons, [
       { node: generateButton, on: true },
       { node: stopButton, on: !!state.aiRunning },
@@ -398,7 +505,16 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     ])
     setText(aiStatus, state.aiStatus)
     aiStatus.style.display = state.aiStatus ? '' : 'none'
-    setText(aiResult, state.aiPreview || '选择正文或将光标放入段落，再生成预览。')
+    // 空态三副面孔：正在跑却还没吐第一帧（切动作重跑会经过这里）说「选择正文」是撒谎，
+    // 用户明明是选了正文才点进来的；无结果的提示按当下形态说，别在「AI 问答」里让人去选正文。
+    const emptyHint = state.aiSelectionChat
+      ? (state.aiReference
+        ? `已把${state.aiReference.kind === 'table' ? '所选单元格' : '当前选区'}作为上下文，点「生成预览」开始。`
+        : '把光标放进段落或选中正文，再生成预览。')
+      : ((state.aiImageChat || state.aiImage)
+        ? '已添加图片，点「生成预览」开始。'
+        : '选中正文或将光标放入段落，再生成预览。')
+    setText(aiResult, state.aiPreview || (state.aiRunning ? '生成中…' : emptyHint))
     setText(aiRichResult, '')
     if (state.aiPreviewHtml) aiRichResult.innerHTML = state.aiPreviewHtml
     syncChildren(aiResultHost, [
@@ -416,11 +532,10 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     syncChildren(aiPanel, [
       { node: aiHeading, on: true },
       { node: aiDescription, on: true },
-      { node: aiContext, on: true },
-      { node: aiActionLabel, on: true },
-      { node: aiActionSelect.el, on: true },
-      { node: aiLanguageLabel, on: state.aiAction === 'translate' },
-      { node: aiLanguageSelect.el, on: state.aiAction === 'translate' },
+      { node: aiActionBar, on: true },
+      // 引用条常驻 DOM，显隐只走 `hidden`：移除引用后要能读回「已经隐藏」的状态，
+      // 也免得 syncChildren 反复摘除/插回导致已渲染的引用文字闪一下。
+      { node: aiReference, on: true },
       { node: aiPromptLabel, on: true },
       { node: aiPrompt, on: true },
       { node: aiMessages, on: !!(state.aiMessages && state.aiMessages.length) },
@@ -431,14 +546,19 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
       { node: aiProposal, on: !!state.aiProposal },
       { node: aiError, on: !!state.aiError },
       { node: aiResultButtons, on: true },
+      { node: aiDecisionButtons, on: true },
     ])
     setText(aiError, state.aiError)
+    syncChildren(aiResultButtons, [
+      { node: copyButton, on: true }, { node: insertButton, on: !imageChat },
+      { node: replaceButton, on: canReplace }, { node: regenerateButton, on: true },
+    ])
     setDisabled(copyButton, !state.aiPreview || state.aiRunning)
     setDisabled(insertButton, !state.aiPreview || state.aiRunning || state.readonly)
     setDisabled(replaceButton, !state.aiPreview || state.aiRunning || state.readonly || state.aiReplaceDisabled)
     setAttr(replaceButton, 'title', state.aiReplaceDisabled ? '上下文超预算时只能插入到光标' : '替换生成时的上下文范围')
     setDisabled(regenerateButton, state.readonly || state.aiRunning)
-    setDisabled(acceptButton, !state.aiPreview || state.aiRunning || state.readonly || state.aiReplaceDisabled)
+    setDisabled(acceptButton, !canReplace || !state.aiPreview || state.aiRunning || state.readonly || state.aiReplaceDisabled)
     setText(aiMock, state.aiServiceAvailable ? '已接入' : '未配置')
     setText(aiDescription, state.aiServiceAvailable
       ? '当前使用宿主配置的 AI 服务；只有明确接受、插入或替换才修改正文。'
@@ -448,8 +568,10 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     el,
     update,
     focusTemplateSearch() { templateSearch.focus() },
-    focusImageAI() { imageAi.focus() },
+    // 所有 AI 入口都落这张面板：「聚焦 AI」= 聚焦要求输入框。
+    focusImageAI() { aiPrompt.focus({ preventScroll: true }) },
     destroy() {
+      disposeAIDrag()
       aiContextSelect.destroy()
       aiActionSelect.destroy()
       aiLanguageSelect.destroy()

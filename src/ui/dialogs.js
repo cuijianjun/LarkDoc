@@ -283,18 +283,29 @@ export function createTablePickerDialog(options = {}) {
     return typeof fn === 'function' ? fn(...args) : undefined
   }
 
-  const state = { open: false, rows: 3, cols: 3 }
+  const state = { open: false, rows: 3, cols: 3, style: null }
 
-  const onClose = () => call('onClose')
-  const { backdrop: el, section } = createDialogShell('插入表格', onClose)
+  const el = document.createElement('div')
+  el.className = 'lark-doc-table-picker'
+  el.setAttribute('role', 'dialog')
+  el.setAttribute('aria-label', '插入表格')
+  // 从按钮移进面板不该判成「离开」—— 与「图表」下拉同一条 hover 接力。
+  el.addEventListener('mouseenter', () => call('onHoverIn'))
+  el.addEventListener('mouseleave', () => call('onHoverOut'))
+  // Esc 只在焦点落在网格里时才会到这儿（焦点在正文时由全局 `onWindowKeydown` 收）。
+  el.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229) return
+    event.stopPropagation()
+    call('onClose', true)
+  })
+
+  // 三段竖排照飞书原版：标题独占一行、网格、尺寸贴右下。
+  const title = document.createElement('p')
+  title.className = 'lark-doc-table-picker-title'
+  title.textContent = '插入支持富文本的表格'
 
   const sizeLabel = document.createElement('span')
   sizeLabel.className = 'lark-doc-table-grid-size'
-
-  const { header } = createDialogHeader({ title: '插入表格', closeLabel: '关闭表格选择', iconSize: 14, onClose, middle: [sizeLabel] })
-
-  const hint = document.createElement('p')
-  hint.textContent = '插入支持富文本的表格'
 
   const grid = document.createElement('div')
   grid.className = 'lark-doc-table-grid'
@@ -306,7 +317,6 @@ export function createTablePickerDialog(options = {}) {
     cell.type = 'button'
     // 口径照抄 SFC：先列后行，且都是「数字 + 行/列」的中文单位。
     cell.setAttribute('aria-label', `${col}行${row}列`)
-    cell.appendChild(document.createTextNode('▦'))
     // mouseenter 与 focus 走同一个入口：键盘 Tab 与鼠标划过都要预览。
     cell.addEventListener('mouseenter', () => call('onPreview', row, col))
     cell.addEventListener('focus', () => call('onPreview', row, col))
@@ -315,9 +325,9 @@ export function createTablePickerDialog(options = {}) {
     grid.appendChild(cell)
   }
 
-  section.appendChild(header)
-  section.appendChild(hint)
-  section.appendChild(grid)
+  el.appendChild(title)
+  el.appendChild(grid)
+  el.appendChild(sizeLabel)
 
   function render() {
     const text = `${state.cols} × ${state.rows}`
@@ -336,6 +346,8 @@ export function createTablePickerDialog(options = {}) {
       return
     }
     if (host && el.parentNode !== host) host.appendChild(el)
+    // 落点由外层 `positionTablePicker()` 算好推进来；没有就不写，交给 CSS 的兜底位置。
+    applyStyle(el, state.style)
     render()
   }
 

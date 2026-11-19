@@ -226,20 +226,61 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
   await page.evaluate(() => { if (!window.__larkDoc) window.__larkDoc = document.querySelector('lark-doc') })
   await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
 
-  /* Source table insertion is direct, with the real block menu inside tables. */
+  /* 表格：按钮带 caret，点开的是贴按钮的**非模态下拉**（与「图表」同一套交互），不是居中模态。 */
   await resetTo(page, '<p>preserve before table</p><p></p>')
   await clickBlockEnd(page)
-  await page.locator('.lark-doc-toolbar button[aria-label="插入表格"]').click()
+  const tableTrigger = page.locator('.lark-doc-toolbar button[aria-label="插入表格"]')
+  record('[表格] 工具栏按钮带 caret 与 aria-haspopup，未展开时 aria-expanded=false',
+    await tableTrigger.locator('.lark-doc-caret').count() === 1
+      && await tableTrigger.getAttribute('aria-haspopup') === 'dialog'
+      && await tableTrigger.getAttribute('aria-expanded') === 'false')
+  const tablePicker = page.locator('.lark-doc-table-picker')
+  await tableTrigger.hover()
+  await tablePicker.waitFor({ state: 'visible' })
+  record('[表格] 悬停展开，焦点保留在正文，面板为非模态对话框',
+    await page.locator('.ProseMirror').first().evaluate(node => node === node.ownerDocument.activeElement)
+      && await tablePicker.getAttribute('role') === 'dialog'
+      && await tablePicker.getAttribute('aria-modal') === null)
+  await tableTrigger.click()
+  await page.waitForFunction(() => document.activeElement === document.querySelector('.lark-doc-table-picker .lark-doc-table-grid button'))
+  const pickerBox = await tablePicker.evaluate(panel => {
+    const rect = panel.getBoundingClientRect()
+    const cell = panel.querySelector('.lark-doc-table-grid button').getBoundingClientRect()
+    const trigger = document.querySelector('.lark-doc-toolbar button[aria-label="插入表格"]').getBoundingClientRect()
+    return { top: rect.top, left: rect.left, width: rect.width, triggerBottom: trigger.bottom,
+      triggerLeft: trigger.left, cellHeight: cell.height, cells: panel.querySelectorAll('.lark-doc-table-grid button').length,
+      size: panel.querySelector('.lark-doc-table-grid-size')?.textContent }
+  })
+  record('[表格] 点击弹出下拉：81格、稳态 1 × 1、贴按钮下沿且左对齐',
+    pickerBox.cells === 81 && pickerBox.cellHeight === 25 && pickerBox.size === '1 × 1'
+      && pickerBox.top >= pickerBox.triggerBottom - 1
+      && Math.abs(pickerBox.left - pickerBox.triggerLeft) <= 1
+      && await page.locator('.lark-doc-dialog-backdrop').count() === 0
+      && await tableTrigger.getAttribute('aria-expanded') === 'true', JSON.stringify(pickerBox))
+  await page.keyboard.press('Escape')
+  await tablePicker.waitFor({ state: 'detached' })
+  record('[表格] Esc 关闭下拉，回到触发按钮且不插入表格',
+    await page.locator('.ProseMirror table').count() === 0
+      && await tableTrigger.evaluate(button => button === button.ownerDocument.activeElement))
+  await tableTrigger.click()
+  await tablePicker.waitFor({ state: 'visible' })
+  await page.locator('.ProseMirror').first().click({ position: { x: 2, y: 2 } })
+  await tablePicker.waitFor({ state: 'detached' })
+  record('[表格] 点外部关闭下拉', await page.locator('.ProseMirror table').count() === 0)
+  await tableTrigger.click()
+  await tablePicker.waitFor({ state: 'visible' })
+  // 单元格 aria-label 是「先列后行」，索引 = (row-1)*9 + (col-1)：点第 2 行第 3 列。
+  await tablePicker.locator('.lark-doc-table-grid button').nth(11).click()
   await page.locator('.ProseMirror table').waitFor()
   const inserted = await page.locator('.ProseMirror table').evaluate(table => ({
     rows: table.rows.length, cols: table.rows[0].cells.length,
     headers: table.querySelectorAll('th').length,
     widths: [...table.querySelectorAll('col')].map(col => parseFloat(col.style.width)),
   }))
-  record('[表格] 真人点击直接插入2×3、100px、无标题行，不弹大小选择器',
+  record('[表格] 选 3 列 2 行后插入 2×3、100px、无标题行，下拉自动收起',
     inserted.rows === 2 && inserted.cols === 3 && inserted.headers === 0
       && inserted.widths.length === 3 && inserted.widths.every(width => width === 100)
-      && await page.locator('.lark-doc-dialog-backdrop').count() === 0, JSON.stringify(inserted))
+      && await page.locator('.lark-doc-table-picker').count() === 0, JSON.stringify(inserted))
   await page.locator('.lark-doc-toolbar button[aria-label="表格工具"]').click()
   await page.locator('.lark-doc-block-menu').waitFor({ state: 'visible' })
   record('[表格] 表内顶部工具按钮打开真实表格块菜单',
@@ -281,7 +322,10 @@ const open = (page, selector) => page.evaluate((sel) => !!document.querySelector
   const href = new URL('/__larkdoc-preview-fixture?link-v12e=1', BASE).href
   await form.getByRole('textbox', { name: '链接文本' }).fill('示例站')
   await form.getByRole('textbox', { name: '链接地址' }).fill(href)
-  record('[链接] 焦点边框与确认按钮沿用项目品牌色', await form.evaluate(el => getComputedStyle(el.querySelector('input:focus')).borderTopColor === getComputedStyle(el.querySelector('button')).backgroundColor))
+  record('[链接] 焦点边框与确认按钮沿用项目品牌色', await form.getByRole('button', { name: '确认', exact: true }).evaluate(button => {
+    const field = button.closest('.lark-doc-link-dialog').querySelector('input:focus')
+    return !!field && !button.disabled && getComputedStyle(field).borderTopColor === getComputedStyle(button).backgroundColor
+  }))
   await form.getByRole('button', { name: '确认', exact: true }).click()
   record('[链接] 真实鼠标确认后插入文本及安全链接，并关闭表单', await page.locator('.ProseMirror a').first().getAttribute('href') === href && await form.count() === 0)
   const openPage = async locator => {

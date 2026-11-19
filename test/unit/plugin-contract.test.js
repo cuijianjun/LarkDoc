@@ -58,6 +58,7 @@ describe('阶段6-B · plugin contract', () => {
     }, {}, {})
 
     expect(emitted.map((asset) => asset.fileName)).toEqual([
+      'comment-reaction-catalog.json',
       'lark-doc-element.umd.min.js',
       'lark-doc-element.umd.min.math.js',
     ])
@@ -70,10 +71,11 @@ describe('阶段6-B · plugin contract', () => {
     const emitted = []
     instance.generateBundle.call({ emitFile: (asset) => emitted.push(asset) }, {}, {})
     expect(emitted.map((asset) => asset.fileName)).toEqual([
+      'comment-reaction-catalog.json',
       'lark-doc-element.umd.min.js',
       'lark-doc.css',
     ])
-    expect(emitted[1].source.equals(fs.readFileSync(path.resolve(dist, '../style.css')))).toBe(true)
+    expect(emitted.find(asset => asset.fileName === 'lark-doc.css').source.equals(fs.readFileSync(path.resolve(dist, '../style.css')))).toBe(true)
   })
 
   it('copyAs=none 不发射资源', () => {

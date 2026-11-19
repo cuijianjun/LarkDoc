@@ -28,6 +28,7 @@ import { docmanageCommands } from './docmanage'
 import { inlineCommands } from './inline'
 import { EMBED_MENU_ITEMS } from '../embed/presets'
 import { withSkipReasons } from '../embed/enterprise'
+import { APP_PREVIEW_ITEMS } from '../embed/app-preview'
 
 const GROUPS = [
   basicCommands, commonCommands, embedCommands, collabCommands,
@@ -64,8 +65,9 @@ const COMMAND_ORDER = [
   'orderedList', 'bulletList', 'taskList', 'code', 'diagram', 'blockquote', 'divider', 'link',
   'callout', 'columns', 'columns2', 'columns3', 'columns4', 'columns5', 'table', 'image', 'file',
   'inlineMath', 'blockMath', 'template', 'ai',
+  'sheet', 'bitable', 'whiteboard', 'mindMap', 'flowChart', 'umlDiagram',
   'open_link', 'duplicate_page', 'follow_page',
-  'mentionUser', 'mentionChat', 'mentionPage', 'reminder', 'calendar_event', 'agenda',
+  'mentionUser', 'mentionChat', 'mentionPage', 'poll', 'reminder', 'calendar_event', 'agenda',
   'folderManager', 'wikiRecent',
   'jiraIssue', 'jiraFilter', 'meegoView', 'meegoDetail',
   'subscribeArticle',
@@ -114,6 +116,9 @@ const COMMAND_FEATURES = {
 // 15 项内嵌网页共用一个 `embed` 开关（`LARK_DOC_FEATURES` 白名单里同名）：
 // 逐条手写 15 个键必然与 `EMBED_MENU_ITEMS` 漂移。
 for (const { id } of EMBED_MENU_ITEMS) COMMAND_FEATURES[id] = 'embed'
+// 外部应用预览属于插入能力，不能绕过宿主的 insert 开关。
+for (const { id } of APP_PREVIEW_ITEMS) COMMAND_FEATURES[id] = 'insert'
+COMMAND_FEATURES.poll = 'insert'
 
 /**
  * 命令 id → 它受哪个 feature 开关管（没有专属开关的落 `blockStyle`）。
@@ -134,10 +139,11 @@ export function filterCommands(query, kind = 'slash', config = null, context = '
   // The count options are implementation ids for the secondary picker, not
   // independent slash commands.
   const candidates = COMMANDS.filter((item) => {
+    if (item.menu === false) return false
     if (/^columns[2-5]$/.test(item.id)) return false
     // Existing block-math documents stay readable; Feishu has one inline formula entry.
     if (!phone && item.id === 'blockMath') return false
-    if (!phone && kind === 'plus' && (item.id === 'paragraph' || /^heading[4-9]$/.test(item.id))) return false
+    if (!phone && kind === 'plus' && (item.id === 'paragraph' || /^heading[6-9]$/.test(item.id))) return false
     if (kind === 'plus' && cell && ['table', 'template'].includes(item.id)) return false
     const feature = COMMAND_FEATURES[item.id]
     if (feature && config?.features?.[feature] === false) return false
@@ -155,7 +161,7 @@ export function filterCommands(query, kind = 'slash', config = null, context = '
   }))
   // The source plus menu has icon shortcuts followed by normal common rows.
   // Task and callout have two visual entries, backed by the same command.
-  const basic = [...(phone ? ['paragraph', 'heading4', 'heading5', 'heading6', 'heading7', 'heading8', 'heading9'] : []), 'heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
+  const basic = [...(phone ? ['paragraph', 'heading4', 'heading5', 'heading6', 'heading7', 'heading8', 'heading9'] : []), 'heading1', 'heading2', 'heading3', ...(phone ? [] : ['heading4', 'heading5']), 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
   const common = ['taskList', 'image', 'file', 'table', 'columns', 'callout', 'inlineMath', 'template']
   const byId = new Map(filtered.map(item => [item.id, item]))
   const entry = (id, category) => ({ ...byId.get(id), category, ...(id === 'taskList' ? { label: '任务' } : id === 'image' ? { label: '图片' } : {}) })

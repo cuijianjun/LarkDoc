@@ -450,14 +450,14 @@ describe('local mobile selection composer', () => {
     const { element, comments, createThread, editor, host } = await localComment()
     const baseline = editor.getJSON(), overflow = document.body.style.overflow
     expect(host.openSelectionComment()).toBe(true)
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]')).not.toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]')).not.toBeNull())
     expect(element.querySelector('[role="dialog"][aria-label="选区评论"]')).not.toBeNull()
     expect(element.querySelector('.lark-doc-comment-quote').textContent).toBe('分隔')
     host.setCommentCreateDraft('local draft')
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]').textContent).toBe('local draft'))
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]').textContent).toBe('local draft'))
     const send = element.querySelector('.lark-doc-comment-composer .is-filled')
     element.querySelector('[aria-label="取消新评论"]').click()
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]')).toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]')).toBeNull())
     expect(host.commentCreateDraft).toBe('local draft')
     send.click()
     expect(createThread).not.toHaveBeenCalled()
@@ -465,7 +465,7 @@ describe('local mobile selection composer', () => {
     expect(editor.getJSON()).toEqual(baseline)
     expect(document.body.style.overflow).toBe(overflow)
     expect(host.openSelectionComment()).toBe(true)
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]').textContent).toBe('local draft'))
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]').textContent).toBe('local draft'))
   })
 
   it('submits through the real local memory provider and binds only the selected text', async () => {
@@ -489,18 +489,18 @@ describe('local mobile selection composer', () => {
     if (reason === 'feature') host.editorConfig.features.comments = false
     if (reason === 'capability') vi.spyOn(host.session, 'can').mockImplementation(capability => capability !== 'canComment')
     if (reason === 'provider') host.session.providers.comments = null
-    expect(host.commentAllowed('create')).toBe(false)
+    expect(host.commentAllowed('create')).toBe(reason === 'readonly')
     expect(host.openSelectionComment()).toBe(false)
-    expect(element.querySelector('[aria-label="新评论"]')).toBeNull()
+    expect(element.querySelector('[aria-label="输入评论"]')).toBeNull()
     expect(createThread).not.toHaveBeenCalled()
   })
 
   it('retires the local composer and draft when its provider identity changes', async () => {
     const { element, createThread, host } = await localComment()
     expect(host.openSelectionComment()).toBe(true); host.setCommentCreateDraft('private local draft')
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]')).not.toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]')).not.toBeNull())
     host.session.setProvider('comments', createMemoryCommentsProvider())
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]')).toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]')).toBeNull())
     expect(host.commentComposerContext).toBeNull(); expect(host.commentCreateDraft).toBe('')
     expect(createThread).not.toHaveBeenCalled()
   })
@@ -616,16 +616,16 @@ describe('mobile comment projection', () => {
     const overflow = document.body.style.overflow
     const ui = createCommentPanel({ host }); editors.push(ui)
     ui.update({ remote: true, open: false, message: '请先选中要评论的文字。' })
-    const notice = host.querySelector('[role="status"]')
+    const notice = host.querySelector('[role="alert"]')
     expect(notice?.textContent).toBe('请先选中要评论的文字。')
-    expect(notice.getAttribute('aria-live')).toBe('polite')
+    expect(notice.getAttribute('aria-live')).toBe('assertive')
     expect(ui.el.isConnected).toBe(false)
     expect(document.activeElement).toBe(trigger)
     expect(document.body.style.overflow).toBe(overflow)
     ui.update({ identityGeneration: 2 })
-    expect(host.querySelector('[role="status"]')).toBeNull()
+    expect(host.querySelector('[role="alert"]')).toBeNull()
     ui.update({ message: 'new context' }); ui.destroy()
-    expect(host.querySelector('[role="status"]')).toBeNull()
+    expect(host.querySelector('[role="alert"]')).toBeNull()
     trigger.remove()
   })
 
@@ -1068,7 +1068,7 @@ describe('T095 mobile local reaction picker', () => {
       button.dispatchEvent(event)
     }
   }
-  async function localPicker({ shadow: shadowMode } = {}) {
+  async function localPicker({ shadow: shadowMode, loadCatalog = false } = {}) {
     const element = document.createElement('div')
     let shadow = null
     if (shadowMode) {
@@ -1081,6 +1081,7 @@ describe('T095 mobile local reaction picker', () => {
     const host = doc._handle.nativeHost.host
     await vi.waitFor(() => expect(doc.getWorkspace().state.initialized).toBe(true))
     await host.loadComments(); await host.$nextTick()
+    if (!loadCatalog) host.commentReactionCatalog = { items: [] }
     host.commentSidebarOpen = true; host.commentMobileScope = 'document'; host.refreshPanels()
     const more = () => element.querySelector('[data-comment-reply="picker-reply"] [data-comment-reply-control="more"]')
     await vi.waitFor(() => expect(more()).not.toBeNull())
@@ -1095,30 +1096,20 @@ describe('T095 mobile local reaction picker', () => {
     }
     return { doc, host, element, comments, more, open, shadow, main: element.querySelector('.lark-doc-main') }
   }
-  it('keeps the first touched picker fixed in the viewport and searchable without focus scrolling the main page', async () => {
-    const { doc, host, element, comments, open, main } = await localPicker()
+  it('keeps the first touched picker fixed and does not shift focus or scroll', async () => {
+    const { doc, host, element, comments, open, main } = await localPicker({ loadCatalog: true })
     const before = doc.getJSON(), threads = await comments.list(), plus = await open()
     main.scrollTop = 1456.5
-    const original = HTMLElement.prototype.focus
-    const calls = []
-    // JSDOM does not perform browser focus scrolling. Model that observed event
-    // only when the actual picker input is focused without preventScroll.
-    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (options) {
-      if (this.matches('.lark-doc-comment-reaction-picker input')) {
-        calls.push(options)
-        if (!options?.preventScroll) { main.scrollTop -= 76; main.dispatchEvent(new Event('scroll')) }
-      }
-      return original.call(this, options)
-    })
-    tap(plus); await host.$nextTick(); await Promise.resolve()
+    const editor = doc.getEditor().view.dom
+    editor.focus({ preventScroll: true })
+    tap(plus); await host.$nextTick()
     const picker = element.querySelector('.lark-doc-comment-reaction-picker')
     expect(picker).not.toBeNull(); expect(picker.isConnected).toBe(true)
-    expect(picker.style.position).toBe('fixed'); expect(calls).toEqual([{ preventScroll: true }])
+    expect(picker.style.position).toBe('fixed')
+    expect(picker.querySelector('input')).toBeNull()
+    expect(document.activeElement).toBe(editor)
     expect(main.scrollTop).toBe(1456.5)
-    const input = picker.querySelector('input'); expect(document.activeElement).toBe(input)
-    input.value = '👍'; input.dispatchEvent(new Event('input', { bubbles: true })); await host.$nextTick()
-    expect(host.commentReactionQuery).toBe('👍')
-    expect(element.querySelector('.lark-doc-comment-reaction-grid button')).not.toBeNull()
+    await vi.waitFor(() => expect(element.querySelector('.lark-doc-comment-reaction-grid button')).not.toBeNull())
     expect(doc.getJSON()).toEqual(before); expect(await comments.list()).toEqual(threads)
   })
   it('captures the plus geometry before closing the menu removes it', async () => {
@@ -1127,20 +1118,20 @@ describe('T095 mobile local reaction picker', () => {
     vi.spyOn(host, 'closeCommentMenus').mockImplementation(function (...args) { const result = close.apply(this, args); this.refreshPanels(); return result })
     tap(plus); await host.$nextTick()
     expect(plus.isConnected).toBe(false)
-    expect(host.commentReactionContext.position).toEqual({ left: 54, top: 504 })
+    expect(host.commentReactionContext.position).toEqual({ left: 36, top: 362 })
     const picker = element.querySelector('.lark-doc-comment-reaction-picker')
-    expect(picker.style.left).toBe('54px'); expect(picker.style.top).toBe('504px')
+    expect(picker.style.left).toBe('36px'); expect(picker.style.top).toBe('362px')
   })
   it('keeps composition Escape inside the picker, then returns ordinary Escape focus to More', async () => {
     const { host, element, more, open } = await localPicker()
     tap(await open()); await host.$nextTick()
-    const input = element.querySelector('.lark-doc-comment-reaction-picker input')
+    const picker = element.querySelector('.lark-doc-comment-reaction-picker')
     for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
       const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, ...flags })
-      input.dispatchEvent(escape)
-      expect(escape.defaultPrevented).toBe(false); expect(input.isConnected).toBe(true)
+      picker.dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(false); expect(picker.isConnected).toBe(true)
     }
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }))
+    picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }))
     await host.$nextTick(); expect(host.commentReactionContext).toBeNull()
     expect(document.activeElement).toBe(more())
   })
@@ -1156,47 +1147,51 @@ describe('T095 mobile local reaction picker', () => {
     expect(doc.getJSON()).toEqual(before); expect(await comments.list()).toEqual(threads)
   })
   it('does not run a queued picker focus after a newer foreign focus or actor retirement', async () => {
-    const { host, element, doc, open } = await localPicker(), plus = await open()
+    const { host, element, doc, more, open } = await localPicker(), plus = await open()
     const foreign = document.createElement('textarea'); document.body.append(foreign)
     tap(plus); foreign.focus(); await host.$nextTick()
     expect(document.activeElement).toBe(foreign)
     host.closeCommentReaction(); host.refreshPanels()
-    tap(await open()); doc.getSession().user = { id: 'bob' }; await host.$nextTick()
+    host.openCommentReaction('picker-thread', 'picker-reply', { currentTarget: more() })
+    expect(host.commentReactionContext).not.toBeNull()
+    doc.getSession().user = { id: 'bob' }; await host.$nextTick()
     expect(host.commentReactionContext).toBeNull()
     expect(document.activeElement).toBe(foreign)
     expect(element.querySelector('.lark-doc-comment-reaction-picker')).toBeNull()
   })
   it.each([false, true])('uses the real closed ShadowRoot focus owner, newer same-host foreign focus %s', async foreignWins => {
-    const { host, element, open, shadow } = await localPicker({ shadow: 'closed' })
-    const plus = await open(); plus.focus(); tap(plus)
+    const { doc, host, element, open, shadow } = await localPicker({ shadow: 'closed' })
+    const plus = await open(), editor = doc.getEditor().view.dom
+    editor.focus({ preventScroll: true }); tap(plus)
     const foreign = document.createElement('textarea'); shadow.append(foreign)
     if (foreignWins) foreign.focus()
     await host.$nextTick()
-    const input = element.querySelector('.lark-doc-comment-reaction-picker input')
-    expect(input.isConnected).toBe(true)
+    const picker = element.querySelector('.lark-doc-comment-reaction-picker')
+    expect(picker.isConnected).toBe(true)
     expect(document.activeElement).toBe(shadow.host)
-    expect(shadow.activeElement).toBe(foreignWins ? foreign : input)
+    expect(shadow.activeElement).toBe(foreignWins ? foreign : editor)
   })
   it('does not focus a picker after its real native owner is destroyed before the queued tick', async () => {
     const { doc, host, open } = await localPicker(), plus = await open(), focus = HTMLElement.prototype.focus, calls = []
     vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (options) {
-      if (this.matches('.lark-doc-comment-reaction-picker input')) calls.push(options)
+      if (this.closest('.lark-doc-comment-reaction-picker')) calls.push(options)
       return focus.call(this, options)
     })
     tap(plus); doc.destroy(); await host.$nextTick()
     expect(calls).toEqual([])
   })
-  it('clears mobile fixed geometry on close before reopening the unchanged desktop local picker', async () => {
+  it('recomputes fixed geometry when reopening the desktop local picker', async () => {
     expect(createCommentInteraction({}).methods.commentMenuPosition.length).toBe(3)
-    const { host, element, open, more } = await localPicker()
-    tap(await open()); await host.$nextTick()
+    const { host, element, more } = await localPicker()
+    host.openCommentReaction('picker-thread', 'picker-reply', { currentTarget: more() }); await host.$nextTick()
     expect(element.querySelector('.lark-doc-comment-reaction-picker').style.position).toBe('fixed')
     host.closeCommentReaction(); host.refreshPanels()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
+    vi.spyOn(more(), 'getBoundingClientRect').mockReturnValue({ left: 894, right: 922, top: 615, bottom: 643, width: 28, height: 28 })
     host.openCommentReaction('picker-thread', 'picker-reply', { currentTarget: more() }); await host.$nextTick()
-    expect(host.commentReactionContext.position).toBeNull()
+    expect(host.commentReactionContext.position).toEqual({ left: 576, top: 265 })
     const picker = element.querySelector('.lark-doc-comment-reaction-picker')
-    expect(picker.style.position).toBe(''); expect(picker.style.left).toBe(''); expect(picker.style.top).toBe('')
+    expect(picker.style.position).toBe('fixed'); expect(picker.style.left).toBe('576px'); expect(picker.style.top).toBe('265px')
   })
 
 })

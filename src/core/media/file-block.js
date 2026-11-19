@@ -14,6 +14,14 @@
  * L3853（损坏态文案）、L4188（限值区间）。
  */
 
+import { safeUrl } from '../policy/url'
+
+const MEDIA_DATA_RE = /^data:(?:video\/(?:mp4|webm|ogg|quicktime|x-m4v)|audio\/(?:mpeg|mp3|mp4|wav|ogg|x-wav|aac|flac|webm)|application\/(?:pdf|octet-stream));base64,[A-Za-z0-9+/]+={0,2}$/i
+
+export function safeFileUrl(value) {
+  return typeof value === 'string' && (MEDIA_DATA_RE.test(value) || safeUrl(value, true))
+}
+
 /** 块内三种呈现形态；`CARD` 是兜底（不在上面两类的任何东西）。 */
 export const FILE_KIND = Object.freeze({ VIDEO: 'video', PDF: 'pdf', CARD: 'card' })
 
@@ -27,8 +35,13 @@ export const FILE_REJECT = Object.freeze({ EMPTY: 'FILE_EMPTY', SIZE: 'FILE_SIZE
  */
 export const DEFAULT_FILE_MAX_SIZE = 10 * 1024 * 1024 * 1024
 
-/** `data-view-type` 的两个合法值（02 L3930–3951）。 */
-export const FILE_VIEW_TYPES = Object.freeze(['Preview', 'Card'])
+/**
+ * `data-view-type` 合法值：Preview / Card 来自 02 L3930–3951；
+ * Inline（文本视图）来自飞书三态视图（文本视图 / 卡片视图 / 预览视图，
+ * 见 obs/b10-04-file-click.json 的 inline/card/preview view 与官方文档原文 :1449）。
+ * schema 快照只序列化 default，新增合法值不影响契约。
+ */
+export const FILE_VIEW_TYPES = Object.freeze(['Preview', 'Card', 'Inline'])
 
 /** MIME → 呈现形态。大小写不敏感，空值兜底为卡片。 */
 export function fileKindOf(mimeType) {
@@ -135,7 +148,7 @@ export function sortFileFiles(files, options = {}) {
  */
 export function fileBlockAttrs(file, uploaded = {}) {
   const url = typeof uploaded.url === 'string' && uploaded.url ? uploaded.url : null
-  const rawToken = uploaded.attchId ?? uploaded.token ?? url
+  const rawToken = uploaded.attchId ?? uploaded.token ?? (url?.startsWith('data:') ? null : url)
   const token = rawToken === null || rawToken === undefined ? null : String(rawToken)
   const mimeType = String(uploaded.mimeType || (file && file.type) || '')
   const kind = fileKindOf(mimeType)

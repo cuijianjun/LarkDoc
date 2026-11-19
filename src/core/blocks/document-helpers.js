@@ -69,7 +69,7 @@ export function applyLineStartMarker(view, from) {
   const tr = state.tr.delete(markerStart, from)
   if (parent.type.name === 'heading') {
     // 标题不能包进列表：保留标题（文字不动），把标记换成真的标题编号。
-    tr.setNodeMarkup(blockPos, parent.type, { ...parent.attrs, numbering: true, numberingStart: startNumber })
+    tr.setNodeMarkup(blockPos, parent.type, { ...parent.attrs, numbering: true, numberingStart: startNumber, numberingLevel: 1 })
     tr.setSelection(TextSelection.create(tr.doc, Math.min(markerStart, tr.doc.content.size)))
     view.dispatch(tr.scrollIntoView())
     return true

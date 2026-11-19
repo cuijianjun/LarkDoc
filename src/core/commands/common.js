@@ -4,6 +4,9 @@
  * columns2–5 是「分栏」二级选择器的实现 id，不作为独立命令暴露（filterCommands 里过滤）。
  */
 export const commonCommands = [
+  // 接入前仅隐藏菜单；命令、已有卡片和宿主链接预览继续可用。
+  { id: 'sheet', label: '电子表格', menu: false, category: '数据', plusCategory: '数据', glyph: '▦', tone: 'teal', keywords: 'sheet spreadsheet dianzi biaoge', group: 'common', tier: 'required' },
+  { id: 'bitable', label: '多维表格', menu: false, category: '数据', plusCategory: '数据', glyph: '▦', tone: 'blue', keywords: 'bitable duowei database', group: 'common', tier: 'required' },
   { id: 'taskList', label: '任务列表', category: '列表', plusCategory: '常用', glyph: '☑', tone: 'indigo', keywords: 'todo task renwu checkbox', group: 'common', tier: 'required' },
   { id: 'callout', label: '高亮块', category: '布局', plusCategory: '常用', glyph: '▤', tone: 'orange', keywords: 'callout gaoliang highlight', group: 'common', tier: 'required' },
   { id: 'columns', label: '分栏', category: '布局', plusCategory: '常用', glyph: 'Ⅱ', tone: 'indigo', submenu: '分栏', submenuType: 'columns', keywords: 'columns fenlan lianglan shuanglan sanlan 2 3 4 5', group: 'common', tier: 'required' },

@@ -9,7 +9,7 @@ import { normalizeModesConfig } from './editor/docModes'
 import { HELP_MENU_ITEMS } from '../../ui/helpMenuItems'
 
 export const LARK_DOC_FEATURES = Object.freeze([
-  'history', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
+  'history', 'versionHistory', 'headings', 'marks', 'textStyle', 'blockStyle', 'tables', 'images',
   'codeBlocks', 'math', 'emoji', 'templates', 'callouts', 'columns', 'search',
   'outline', 'folding', 'blockHandle', 'blockDrag', 'ai', 'viewModes', 'shortcuts', 'insert',
   'persistence', 'importExport', 'diagram',
@@ -17,6 +17,9 @@ export const LARK_DOC_FEATURES = Object.freeze([
   'files',
   // 内嵌网页 15 项（P3-07）：15 条命令共用这一个开关，关掉后斜杠菜单不再出现「内嵌网页」组。
   'embed',
+  // 分享入口（气泡条尾部「分享」/ 表格工具 share-link / 链接浮窗分享）。
+  // 默认保持开启（现状不变），宿主不需要分享时置 false 即可整组下线。
+  'share',
 ])
 
 /**
@@ -36,7 +39,7 @@ export const LARK_DOC_EXPORT_FORMATS = Object.freeze([
   Object.freeze({ value: 'json', label: 'JSON（完整正文）', hint: '保留全部块属性，可无损再导入' }),
   Object.freeze({ value: 'md', label: 'Markdown（简化）', hint: '字体、分栏、公式与图片裁剪会降级' }),
   Object.freeze({ value: 'txt', label: '纯文本', hint: '只保留文字' }),
-  Object.freeze({ value: 'docx', label: 'Word（简化）', hint: '保留正文、表格与图片，复杂块可能降级' }),
+  Object.freeze({ value: 'docx', label: 'Word', hint: '保留分栏、公式与图表；无法转换的公式和图表以源码保留并提示' }),
   Object.freeze({ value: 'print', label: '打印 / PDF', hint: '调用浏览器打印，可选「另存为 PDF」' }),
 ])
 
@@ -45,7 +48,14 @@ export const LARK_DOC_MEDIA_HTML_MODES = Object.freeze(['inline', 'link'])
 
 export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
   features: {
-    history: true, headings: true, marks: true, textStyle: true, blockStyle: true,
+    history: true,
+    // 版本历史（顶栏「另存为版本」+「历史记录」）入口**暂缓上线，默认关闭**。
+    //
+    // 为什么不复用 `history`：那个开关还兼管工具栏的撤销/重做（`toolbarKeys.js` 把
+    // undo / redo 归到 history 组），拿它关版本历史会把 undo/redo 一起下线。
+    // 待按飞书真实语义（无手动创建、服务端时间线、异步还原任务）重做后再置 true。
+    versionHistory: false,
+    headings: true, marks: true, textStyle: true, blockStyle: true,
     tables: true, images: true, codeBlocks: true, math: true, emoji: true,
     templates: true, callouts: true, columns: true, search: true, outline: true,
     folding: true, blockHandle: true, blockDrag: true, ai: true, viewModes: true,
@@ -57,6 +67,9 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
     files: true,
     // 内嵌网页 15 项：关闭后斜杠菜单不再出现「内嵌网页」组。
     embed: true,
+    // 分享入口：默认 true = 与历史行为一致；置 false 后选区尾按钮、表格工具
+    // 「分享」与链接浮窗分享一起消失，且不留分隔符。
+    share: true,
   },
   toolbar: {
     history: true, headings: true, marks: true, textStyle: true, blockStyle: true,

@@ -9,7 +9,7 @@ const evidenceDir = process.env.LARK_DOC_EVIDENCE_DIR || '/tmp/lark-doc-v12e'
 const results = []
 
 async function main() {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined })
   const context = await browser.newContext({ viewport: { width: 1680, height: 1050 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
@@ -82,10 +82,15 @@ async function main() {
     await panel().locator('.lark-doc-comment-reaction').press('Enter')
     await page.waitForFunction(async () => (await window.__commentProvider.list())[0].replies[0].reactions.length === 0)
     check('Keyboard Enter on a persisted reaction removes it through the provider', await panel().locator('.lark-doc-comment-reaction').count() === 0)
-    await reply.getByRole('button', { name: '添加表情回复', exact: true }).click()
+    const reactionTrigger = reply.getByRole('button', { name: '添加表情回复', exact: true })
+    await reactionTrigger.hover()
+    await picker().waitFor()
+    await page.mouse.down()
+    await page.mouse.up()
     await page.waitForFunction(async () => (await window.__commentProvider.list())[0].replies[0].reactions[0]?.emoji === 'thumbsup_v2')
     check('Clicking the reaction control performs source quick Like', (await threads())[0].replies[0].reactions[0].users[0] === 'browser-owner')
-    await reply.getByRole('button', { name: '添加表情回复', exact: true }).hover()
+    await page.mouse.move(500, 90)
+    await reactionTrigger.hover()
     await picker().waitFor()
     await page.keyboard.press('Escape')
     check('Escape closes the palette while preserving its persisted reaction', await picker().count() === 0 && (await threads())[0].replies[0].reactions.length === 1)
@@ -94,10 +99,8 @@ async function main() {
     check('Keyboard reply inserts a structured noneditable author mention and focuses the input', await input.locator('[data-user-id="browser-owner"]').innerText() === '@我' && await input.evaluate(e => document.activeElement === e))
     await page.keyboard.insertText('引用回复正文')
     await page.keyboard.press('Meta+Enter')
-    check('The draft keeps source behavior without submitting on Command+Enter', (await threads())[0].replies.length === 1)
-    await panel().getByRole('button', { name: '回复', exact: true }).click()
     await waitReplies(2)
-    check('Reply submission persists content and the referenced reply identity', (await threads())[0].replies[1].replyTo.commentId === (await threads())[0].replies[0].id && (await threads())[0].replies[1].content.includes('引用回复正文'))
+    check('Command+Enter submits the reply with content and the referenced reply identity', (await threads())[0].replies[1].replyTo.commentId === (await threads())[0].replies[0].id && (await threads())[0].replies[1].content.includes('引用回复正文'))
     await panel().getByRole('button', { name: '复制锚点', exact: true }).click()
     const copied = new URL(await page.evaluate(() => navigator.clipboard.readText()))
     check('Copying the comment produces the source permalink query instead of quote text', copied.searchParams.get('comment_id') === (await threads())[0].id && copied.searchParams.get('comment_type') === '0' && copied.searchParams.get('comment_anchor') === 'true')
@@ -247,7 +250,10 @@ async function main() {
     check('View-permission revocation closes preview and removes image elements', await page.locator('.lark-doc-comment-attachment img').count() === 0)
     await page.evaluate(async () => {
       const session = window.__commentDoc.getSession()
-      session.setProvider('authorization', { getCapabilities: async () => ({ canView: true, canEdit: true, canComment: true }) })
+      // 远端能力只认显式 true（normalizeRemoteCapabilities），恢复时要写全，
+      // 否则漏写的 canResolveComment 会退回 false。
+      session.setProvider('authorization', { getCapabilities: async () => ({ canView: true, canEdit: true, canComment: true,
+        canResolveComment: true, canCreateVersion: true, canRestoreVersion: true, canExport: true, canCopy: true, canManagePermission: false }) })
       await session.refreshCapabilities()
       window.__commentDeleteFail = true
       const remove = window.__commentProvider.deleteThread.bind(window.__commentProvider)
@@ -271,7 +277,9 @@ async function main() {
     check('The offline reaction catalog makes no Feishu CDN requests', remoteRequests.length === 0, remoteRequests)
     check('No uncaught page errors', errors.length === 0, errors)
   } catch (error) {
-    await page.screenshot({ path: path.join(evidenceDir, 'master-parity-local-comments-failure.png') })
+    // 截图超时不该盖住真实报错：证据拿不到就只丢证据。
+    await page.screenshot({ path: path.join(evidenceDir, 'master-parity-local-comments-failure.png') }).catch(() => {})
+    console.error(error)
     throw error
   } finally {
     fs.writeFileSync(path.join(evidenceDir, 'master-parity-local-comments.json'), JSON.stringify(results, null, 2))
@@ -343,7 +351,7 @@ async function verifySelectionEntries(page, check) {
   check('Table comment draft quotes all four selected cells in document order', (await composer.innerText()).includes('A1 B1 A2 B2'))
   await composer.getByRole('textbox', { name: '输入评论', exact: true }).fill('矩形四格评论')
   await composer.getByRole('button', { name: '发送', exact: true }).click()
-  await panel.waitFor()
+  await panel.waitFor({ timeout: 8000 })
   const marked = await page.locator('.tiptap td').evaluateAll(cells => cells.map((cell, index) => cell.querySelector('.lark-doc-comment') ? index : -1).filter(index => index >= 0))
   const saved = (await threads())[0]
   check('Comment persistence anchors the real table and marks exactly A1/B1/A2/B2', JSON.stringify(marked) === '[0,1,3,4]' && saved.quote === 'A1 B1 A2 B2' && saved.anchor.blockId === 'browser_rectangle', { marked, anchor: saved.anchor })

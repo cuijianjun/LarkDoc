@@ -2,6 +2,8 @@ import { DOMSerializer, Fragment } from '@tiptap/pm/model'
 import { getTextBetween, getTextSerializersFromSchema } from '@tiptap/core'
 import { createDocumentJSONCodec } from '../core/documentJSON'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
+import { headingOutlineText } from '../core/documentTextEdits'
+import { iterateHeadingNumbers, HEADING_NUMBER_CONTAINERS, isolatedHeadingContainers } from '../core/headingNumbering'
 
 export { LARGE_DOCUMENT_SIZE } from './documentStats'
 
@@ -154,9 +156,6 @@ export function createDocumentSnapshotReader({ workerFactory = createJSONWorker 
   }
 }
 
-const isolated = new Set(['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'])
-
-
 /** A cooperative, cached walk; a giant list/table is traversed leaf by leaf. */
 export function createDocumentStatsReader() {
   const cache = new WeakMap()
@@ -165,7 +164,7 @@ export function createDocumentStatsReader() {
     let characters = 0
     let first = ''
     let last = ''
-    const outline = []
+    const headings = []
     if (node.isText) {
       first = node.text.charAt(0)
       last = node.text.slice(-1)
@@ -190,21 +189,41 @@ export function createDocumentStatsReader() {
         characters += stats.characters
         if (!first) first = stats.first
         if (stats.last) last = stats.last
-        if (!isolated.has(node.type.name)) {
-          stats.outline.forEach(item => outline.push({ ...item, pos: pos + item.pos }))
+        for (let heading = 0; heading < stats.headings.length; heading += 1) {
+          const item = stats.headings[heading]
+          headings.push({ ...item, pos: pos + item.pos, hidden: item.hidden || isolatedHeadingContainers.has(node.type.name), scope: item.scope || (HEADING_NUMBER_CONTAINERS.has(node.type.name) ? node : null) })
+          if (heading % 128 === 127) yield
         }
         pos += child.nodeSize
         if (index % 128 === 0) yield
       }
     }
-    if (node.type.name === 'heading') outline.unshift({ pos: 0, level: node.attrs.level, text: node.textContent })
-    const result = { characters, outline, first, last }
+    if (node.type.name === 'heading') headings.unshift({ pos: 0, level: node.attrs.level, text: headingOutlineText(node), attrs: node.attrs })
+    const result = { characters, headings, first, last }
     cache.set(node, result)
     return result
   }
+  function* summarize(doc) {
+    const stats = yield* visit(doc)
+    // 缓存中只存原始标题；前文删改后，未变节点也必须按新的前序重排编号。
+    const numbers = new Map(), outline = []
+    let maxHeadingLevel = 0
+    for (const item of iterateHeadingNumbers(stats.headings)) {
+      if (item) numbers.set(item.pos, item.info.label)
+      yield
+    }
+    for (let index = 0; index < stats.headings.length; index += 1) {
+      const item = stats.headings[index]
+      maxHeadingLevel = Math.max(maxHeadingLevel, item.level)
+      const label = numbers.get(item.pos)
+      if (!item.hidden) outline.push({ pos: item.pos, level: item.level, text: label ? `${label} ${item.text || '无标题'}` : item.text })
+      if (index % 128 === 0) yield
+    }
+    return { characters: stats.characters, outline, maxHeadingLevel, first: stats.first, last: stats.last }
+  }
   return {
     async read(doc, current = () => true, waitForBackground) {
-      const iterator = visit(doc)
+      const iterator = summarize(doc)
       let next
       do {
         if (!current()) return null

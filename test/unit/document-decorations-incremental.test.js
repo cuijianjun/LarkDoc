@@ -125,7 +125,7 @@ const project = (set) => set.find().map((decoration) => {
 })
 
 /** 编号 label（`lark-doc-heading-number-<pos>-<label>` 的尾段）。 */
-const labelOf = (decoration) => String(decoration.type.spec?.key || '').split('-').pop()
+const labelOf = (decoration) => String(decoration.type.spec?.key || '').replace(/-(?:true|false)$/, '').split('-').pop()
 
 /** 造一个带 rebuild / incremental 计数的索引，沿真实装配路径跑。 */
 const buildIndex = (state, storage, options = {}) => {

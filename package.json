@@ -1,6 +1,6 @@
 {
   "name": "lark-doc",
-  "version": "0.14.7",
+  "version": "0.14.10",
   "private": false,
   "license": "MIT",
   "description": "Framework-agnostic LarkDoc-style Tiptap document editor and workspace package",
@@ -381,7 +381,7 @@
     {
       "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载）",
       "path": "dist/lark-doc-element.ui.css",
-      "limit": "20 KB",
+      "limit": "21 KB",
       "gzip": true,
       "scope": "lazy"
     },

@@ -55,10 +55,9 @@ describe('跨产物共享模块', () => {
       // 每支包只换它真正用到的那些；两个包合起来必须覆盖整张登记表。
       expect(shimCount, `${target} 一个共享模块都没换`).toBeGreaterThan(0)
     }
-    // icon 换成 shim 后，包内再没人引用 icons，它的 shim 也就不会生成 —— 这是期望结果：
-    // 两头都读内核那一份，只剩一份实现和一份状态。
+    // 表格专用图标直接引用 icons 的 wrap，两条导入都应走运行时共享表。
     expect(replaced).toContain('ui.icon')
-    expect(replaced).not.toContain('ui.icons')
+    expect(replaced).toContain('ui.icons')
     expect(replaced.size).toBeGreaterThan(12)
   }, 180_000)
 })

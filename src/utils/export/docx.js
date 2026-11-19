@@ -1,4 +1,3 @@
-import { flattenHeadingContainers } from '../../core/documentOperations'
 /**
  * Word（.docx）转换器（P6b-04 导出线）。
  *
@@ -14,12 +13,8 @@ import { flattenHeadingContainers } from '../../core/documentOperations'
  * 五条负结论（别实现）：
  *   1. **不做分页 / 版式控制**：章节一律用默认页边距与纸型，纸张方向与页码交给 Word；
  *      打印分页是 print.css 的事，不在这里重复。
- *   2. **不猜字体**：只用 `DOCX_FONT_*` 里写死的两个字体族（正文、等宽），不读用户主题、
- *      不做系统字体探测 —— 探测结果在不同机器上不一致，同一份文档导出两份排版不同更难查。
- *   3. **不支持的块不静默降级成段落**：fileBlock / webEmbed / cardEmbed / bookmark /
- *      calendar_event / isv / sheet / poll / bitable / unknownBlock / blockMath 一律跳过
- *      （与 markdown.js 的 `BLOCK_SKIP` 保持一致），宁可少一段，也不产出「看着是正文、
- *      其实丢了结构」的内容。
+ *   2. **不猜字体**：保留正文显式字体，缺省用 `DOCX_FONT_*`；不探测系统字体或用户主题。
+ *   3. 分栏用可编辑无边框表格、公式用原生数学结构；不支持的结构保留可读源码。
  *   4. **不做网络请求**：图片**只接受调用方给的字节**（`options.images`）。身为纯工具层，
  *      这里不 fetch、不读 canvas；取字节（含跨域兜底与失败占位）由 index.js 负责。
  *   5. **不做文件名 / 落盘**：只产出 Document 实例与 Blob，命名与下载在 index.js。
@@ -28,11 +23,17 @@ import { flattenHeadingContainers } from '../../core/documentOperations'
  * 都在构造期通过通用的 `extra` 选项下发 —— 依赖私有字段会在 docx 升级时静默失效。
  */
 import {
-  AlignmentType, BorderStyle, CommentRangeStart, CommentRangeEnd, CommentReference, Document, ExternalHyperlink, HeadingLevel, ImageRun,
+  AlignmentType, BorderStyle, Document, ExternalHyperlink, HeadingLevel, ImageRun,
   LevelFormat, Packer, Paragraph, Shading, Table, TableCell, TableRow,
-  TextRun, VerticalAlign, WidthType,
+  TextRun, VerticalAlign, WidthType, TableLayoutType, CommentRangeStart, CommentRangeEnd, CommentReference,
 } from 'docx'
-import { MD_HEADING_MAX, MD_HEADING_MIN } from './markdown.js'
+import { MD_HEADING_MAX, MD_HEADING_MIN, BLOCK_SKIP, normalizeExportDocument } from './markdown.js'
+import { mentionPlainText } from '../../core/blocks/mention'
+import { clampBlockIndent, INDENT_STEP_PX, safeUrl } from '../../core/documentOperations'
+import { CONTENT_NAMED_RGB } from '../../ui/palette'
+import { isImageDimension } from '../../core/media/image-crop'
+import { wordMath } from './docx-math'
+import { prepareWordDiagrams } from './docx-visuals'
 
 /** 正文字号（half-points）：21 = 10.5pt。 */
 export const DOCX_BODY_SIZE = 21
@@ -56,7 +57,7 @@ export const DOCX_BORDER_COLOR = 'BFBFBF'
 /** 引用块缩进（twips）。 */
 export const DOCX_QUOTE_INDENT = 720
 
-/** 高亮色：marked → docx 只保留「有/无高亮」两态，颜色不跟着走。 */
+/** 未指定颜色的高亮使用此缺省；显式颜色转为 Word 底纹。 */
 export const DOCX_HIGHLIGHT_COLOR = 'yellow'
 
 /** 标题层级 → HeadingLevel + 字号（half-points）。 */
@@ -77,7 +78,7 @@ export const DOCX_LEVEL_FORMATS = Object.freeze({
 })
 
 /** 与 markdown.js 的 `BLOCK_SKIP` 保持一致：不支持的块直接跳过（负结论 3）。 */
-export const DOCX_BLOCK_SKIP = Object.freeze(['unknownBlock'])
+export const DOCX_BLOCK_SKIP = BLOCK_SKIP
 
 // —— 小工具（风格照 core/blocks/revision.js：Object.freeze 常量 + for 循环）——
 
@@ -163,6 +164,33 @@ function consumeExtra(extra) {
 
 // —— 行内 ——
 
+/** 编辑器颜色转换为 Word RGB；不把任意 CSS 字符串写进 OpenXML。 */
+function wordColor(value) {
+  const source = typeof value === 'string' ? value.trim() : ''
+  if (/^#[\da-f]{6}$/i.test(source)) return source.slice(1).toUpperCase()
+  if (/^#[\da-f]{3}$/i.test(source)) return source.slice(1).split('').map(char => char + char).join('').toUpperCase()
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i.exec(source)
+  if (rgb && rgb.slice(1, 4).every(channel => Number(channel) <= 255)) {
+    const alpha = rgb[4] === undefined ? 1 : Number(rgb[4])
+    if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) return null
+    return rgb.slice(1, 4).map(channel => Math.round(Number(channel) * alpha + 255 * (1 - alpha)).toString(16).padStart(2, '0')).join('').toUpperCase()
+  }
+  const named = CONTENT_NAMED_RGB[source.toLowerCase()]
+  return typeof named === 'string' ? named : null
+}
+
+function explicitParagraphStyle(node, options) {
+  const attrs = node.attrs || {}
+  if (['left', 'center', 'right', 'justify'].includes(attrs.textAlign)) {
+    options.alignment = attrs.textAlign === 'justify' ? AlignmentType.JUSTIFIED : attrs.textAlign
+  }
+  const lineHeight = Number(attrs.lineHeight)
+  if (/^[1-4](\.\d{1,2})?$/.test(String(attrs.lineHeight))) options.spacing = { line: Math.round(lineHeight * 240) }
+  const indent = clampBlockIndent(attrs.indent)
+  if (indent) options.indent = { ...options.indent, left: (options.indent?.left || 0) + indent * INDENT_STEP_PX * 15 }
+  return options
+}
+
 /**
  * 单个 text 节点 → TextRun（可能带 link 归属信息）。
  *
@@ -183,7 +211,19 @@ function runFromText(node, inlineOptions) {
   if (findMark(node, 'italic')) options.italics = true
   if (findMark(node, 'strike')) options.strike = true
   if (findMark(node, 'underline')) options.underline = {}
-  if (findMark(node, 'highlight')) options.highlight = DOCX_HIGHLIGHT_COLOR
+  const style = findMark(node, 'textStyle')?.attrs || {}
+  const font = typeof style.fontFamily === 'string' ? style.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '') : ''
+  if (font && font.length <= 100 && !Array.from(font).some(char => char.charCodeAt(0) < 32)) options.font = font
+  const size = /^(\d+(?:\.\d+)?)(px|pt)?$/.exec(String(style.fontSize || '').trim())
+  if (size && Number(size[1]) > 0 && Number(size[1]) <= 400) options.size = Math.round(Number(size[1]) * (size[2] === 'pt' ? 2 : 1.5))
+  const color = wordColor(style.color)
+  if (color) options.color = color
+  const highlight = findMark(node, 'highlight')
+  const fill = wordColor(highlight?.attrs?.color || style.backgroundColor)
+  if (fill) options.shading = { type: 'clear', fill }
+  else if (highlight) options.highlight = DOCX_HIGHLIGHT_COLOR
+  if (findMark(node, 'subscript')) options.subScript = true
+  if (findMark(node, 'superscript')) options.superScript = true
   if (findMark(node, 'code')) {
     options.font = DOCX_FONT_CODE
     options.size = DOCX_CODE_SIZE
@@ -191,7 +231,7 @@ function runFromText(node, inlineOptions) {
   options.text = String(node.text === null || node.text === undefined ? '' : node.text)
   const link = findMark(node, 'link')
   const href = link && link.attrs ? String(link.attrs.href || '') : ''
-  return href ? { href, run: new TextRun(options) } : { run: new TextRun(options) }
+  return href && !href.includes('\\') && safeUrl(href) ? { href, run: new TextRun(options) } : { run: new TextRun(options) }
 }
 
 /**
@@ -199,17 +239,48 @@ function runFromText(node, inlineOptions) {
  * 跳过 —— 见负结论 4，这里不发请求。宽高缺省用 320×180，避免图片节点没写 attrs 时
  * ImageRun 因缺 transformation 报错。
  */
-function runFromImage(node, images) {
+function imageSize(data) {
+  const bytes = data instanceof Uint8Array ? data : data instanceof ArrayBuffer ? new Uint8Array(data) : null
+  if (!bytes) return null
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (bytes.length >= 24 && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71) return [view.getUint32(16), view.getUint32(20)]
+  if (bytes.length >= 10 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70) return [view.getUint16(6, true), view.getUint16(8, true)]
+  if (bytes.length >= 26 && bytes[0] === 66 && bytes[1] === 77) return [Math.abs(view.getInt32(18, true)), Math.abs(view.getInt32(22, true))]
+  if (bytes[0] === 255 && bytes[1] === 216) {
+    let offset = 2
+    while (offset + 3 < bytes.length && bytes[offset] === 255) {
+      const marker = bytes[offset + 1]
+      if (marker === 255) { offset += 1; continue }
+      if (marker === 217 || marker === 218) break
+      const length = view.getUint16(offset + 2)
+      if (length < 2 || offset + length + 2 > bytes.length) break
+      if ([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(marker) && length >= 7) return [view.getUint16(offset + 7), view.getUint16(offset + 5)]
+      offset += length + 2
+    }
+  }
+  return null
+}
+
+function runFromImage(node, images, extra) {
   const src = String(attrOf(node, 'src', ''))
   const data = src ? images[src] : null
+  // The public collector clears crop only after producing cropped bytes. Never embed hidden pixels.
+  if (Array.isArray(node.attrs?.crop)) return new TextRun('可见裁剪图：此格式暂不支持安全导出裁剪图')
   if (!data) return null
+  const measured = imageSize(data)
+  const naturalWidth = Number(node.attrs?.naturalWidth ?? measured?.[0])
+  const naturalHeight = Number(node.attrs?.naturalHeight ?? measured?.[1])
+  const requestedWidth = Number(node.attrs?.width)
+  const requestedHeight = Number(node.attrs?.height)
+  const width = isImageDimension(requestedWidth) ? requestedWidth : 320
+  const knownRatio = isImageDimension(naturalWidth) && isImageDimension(naturalHeight)
+  const height = isImageDimension(requestedHeight) ? requestedHeight : knownRatio ? width * naturalHeight / naturalWidth : 180
+  const scale = Math.min(1, (extra?.maxWidth || 600) / width)
   return new ImageRun({
     type: 'png',
     data,
-    transformation: {
-      width: Number(attrOf(node, 'width', 320)) || 320,
-      height: Number(attrOf(node, 'height', 180)) || 180,
-    },
+    transformation: { width: width * scale, height: height * scale },
+    altText: { title: String(node.attrs?.alt || node.attrs?.caption || '图片'), description: String(node.attrs?.caption || node.attrs?.alt || ''), name: '文档图片' },
   })
 }
 
@@ -217,7 +288,7 @@ function runFromImage(node, images) {
  * 一段行内内容 → runs 数组。相邻且**指向同一地址**的文本合并进一个 ExternalHyperlink ——
  * 逐个包会把一句话拆成多个超链接对象，Word 里编辑与撤销行为都不一样。
  */
-export function buildInlineRuns(children, images, inlineOptions) {
+export function buildInlineRuns(children, images, inlineOptions, extra) {
   const runs = []
   let pending = null
   let pendingHref = ''
@@ -228,7 +299,16 @@ export function buildInlineRuns(children, images, inlineOptions) {
     pendingHref = ''
   }
   for (let i = 0; i < children.length; i += 1) {
-    const node = children[i]
+    const source = children[i]
+    if (!source || typeof source !== 'object') continue
+    if (source.type === 'inlineMath') {
+      flushLink()
+      runs.push(wordMath(source.attrs?.latex, false, extra?.report))
+      continue
+    }
+    const fallback = source.type === 'mention' ? mentionPlainText({ type: { name: 'mention' }, attrs: source.attrs })
+      : source.type === 'emoji' ? (source.attrs?.name || '') : null
+    const node = fallback == null ? source : { ...source, type: 'text', text: fallback }
     if (node.type === 'hardBreak') {
       flushLink()
       runs.push(new TextRun({ break: 1, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE }))
@@ -236,20 +316,14 @@ export function buildInlineRuns(children, images, inlineOptions) {
     }
     if (node.type === 'image') {
       flushLink()
-      const image = runFromImage(node, images)
+      const image = runFromImage(node, images, extra)
       if (image) runs.push(image)
       continue
-    }
-    if (node.type === 'mention' || node.type === 'inlineMath' || node.type === 'emoji') {
-      flushLink()
-      const attrs = node.attrs || {}
-      const text = node.type === 'mention' ? `@${attrs.name || attrs.id || ''}` : String(attrs.latex || attrs.name || '')
-      runs.push(new TextRun({ text, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE })); continue
     }
     if (node.type !== 'text') {
       // 内联原子块（emoji / mention 等）：子节点折上来，拿不到东西就整段跳过。
       flushLink()
-      const kids = buildInlineRuns(childrenOf(node), images, inlineOptions)
+      const kids = buildInlineRuns(childrenOf(node), images, inlineOptions, extra)
       for (let k = 0; k < kids.length; k += 1) runs.push(kids[k])
       continue
     }
@@ -281,9 +355,9 @@ function withFallbackRun(runs) {
 
 function buildParagraph(node, images, extra) {
   const taken = consumeExtra(extra)
-  let runs = buildInlineRuns(childrenOf(node), images)
+  let runs = buildInlineRuns(childrenOf(node), images, undefined, extra)
   if (taken.prefix) runs = [new TextRun({ text: taken.prefix, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE })].concat(runs)
-  const options = paragraphOptions(extra)
+  const options = explicitParagraphStyle(node, paragraphOptions(extra))
   if (taken.numbering) options.numbering = taken.numbering
   options.children = withFallbackRun(runs)
   return new Paragraph(options)
@@ -291,9 +365,9 @@ function buildParagraph(node, images, extra) {
 
 function buildHeading(node, images, extra) {
   const taken = consumeExtra(extra)
-  let runs = buildInlineRuns(childrenOf(node), images)
+  let runs = buildInlineRuns(childrenOf(node), images, undefined, extra)
   if (taken.prefix) runs = [new TextRun({ text: taken.prefix })].concat(runs)
-  const options = paragraphOptions(extra)
+  const options = explicitParagraphStyle(node, paragraphOptions(extra))
   if (taken.numbering) options.numbering = taken.numbering
   options.children = withFallbackRun(runs)
   const preset = DOCX_HEADINGS[headingIndex(attrOf(node, 'level', DOCX_HEADINGS.length))]
@@ -322,8 +396,8 @@ function buildCodeBlock(node) {
 }
 
 /** 引用：所有后代元素统一缩进 + 左边线，`extra.quote` 会一直往下传。 */
-function buildBlockquote(node, images, depth) {
-  const extra = { quote: true }
+function buildBlockquote(node, images, depth, context) {
+  const extra = { ...context, quote: true }
   const kids = buildDocxElements(childrenOf(node), images, depth + 1, extra)
   if (!kids.length) kids.push(new Paragraph(buildEmptyOptions(extra)))
   return kids
@@ -344,14 +418,15 @@ function buildEmptyOptions(extra) {
  * 不能在不启用开发工具的情况下编辑。这里改用 `[x] ` / `[ ] ` 文本前缀表达勾选态 ——
  * 代价是不能点击勾选，换来的是任何地方打开都长得一样。
  */
-function buildList(node, images, depth, kind) {
+function buildList(node, images, depth, kind, context) {
   const items = childrenOf(node)
-  const reference = `${kind}-${depth}`
   const out = []
   for (let i = 0; i < items.length; i += 1) {
     const checked = Boolean(attrOf(items[i], 'checked', false))
     const extra = {
-      numbering: { reference, level: 0 },
+      ...context,
+      numbering: { reference: `${kind}-0`, level: Math.min(context?.listDepth || 0, 8) },
+      listDepth: (context?.listDepth || 0) + 1,
       prefix: kind === 'task' ? (checked ? '[x] ' : '[ ] ') : '',
       used: false,
     }
@@ -371,7 +446,7 @@ function buildList(node, images, depth, kind) {
  * 飞书文档里的表格是有边线的，保不住边线等于丢了一半信息。
  * 列宽优先取单元格的 `colwidth`，取不到时按列数平分。
  */
-function buildTable(node, images, depth) {
+function buildTable(node, images, depth, extra) {
   const rows = childrenOf(node)
   if (!rows.length) return []
   const firstRow = childrenOf(rows[0])
@@ -387,7 +462,7 @@ function buildTable(node, images, depth) {
   for (let r = 0; r < rows.length; r += 1) {
     const cells = childrenOf(rows[r])
     const builtCells = []
-    for (let c = 0; c < cells.length; c += 1) builtCells.push(buildTableCell(cells[c], images, depth))
+    for (let c = 0; c < cells.length; c += 1) builtCells.push(buildTableCell(cells[c], images, depth, { ...extra, maxWidth: (extra?.maxWidth || 600) / columnCount }))
     // tableHeader 会让 Word 在跨页时重复表头行 —— 飞书表格首行即表头。
     tableRows.push(new TableRow({ children: builtCells, tableHeader: r === 0 }))
   }
@@ -407,14 +482,39 @@ function buildTable(node, images, depth) {
  * 单元格：多个子块 → 多个段落；一个子块都没有时补空段落 —— 空 children 的 TableCell
  * 会让 Word 报「表格结构损坏」并尝试修复文档。
  */
-function buildTableCell(node, images, depth) {
-  let paragraphs = buildDocxElements(childrenOf(node), images, depth + 1)
-  if (!paragraphs.length) paragraphs = [new Paragraph(buildEmptyOptions())]
+function buildTableCell(node, images, depth, extra) {
+  const paragraphs = buildDocxElements(childrenOf(node), images, depth + 1, extra)
+  if (!(paragraphs[paragraphs.length - 1] instanceof Paragraph)) paragraphs.push(new Paragraph(buildEmptyOptions()))
   const attrs = node.attrs || {}
   const options = { children: paragraphs, verticalAlign: VerticalAlign.CENTER }
   const background = String(attrs.backgroundColor || '').replace('#', '')
   if (background) options.shading = { type: Shading.CLEAR, fill: background, color: 'auto' }
   return new TableCell(options)
+}
+
+/** Word 的分栏单元格保留富文本与宽度比例，嵌套表格之后必须有结束段落。 */
+function buildColumns(node, images, depth, extra) {
+  const columns = childrenOf(node)
+  if (!columns.length) return []
+  const weights = columns.map(column => {
+    const width = Number(column.attrs?.width)
+    return Number.isFinite(width) && width > 0 ? width : 100 / columns.length
+  })
+  const total = weights.reduce((sum, value) => sum + value, 0)
+  const maxWidth = extra?.maxWidth || 600
+  const widths = weights.map(value => value / total)
+  const none = { style: BorderStyle.NIL, size: 0, color: 'auto' }
+  return [new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED,
+    columnWidths: widths.map(value => Math.round(value * maxWidth * 15)),
+    borders: { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none },
+    rows: [new TableRow({ children: columns.map((column, index) => {
+      const children = buildDocxElements(childrenOf(column), images, depth + 1, { report: extra?.report, maxWidth: Math.max(1, widths[index] * maxWidth - 16) })
+      if (!(children[children.length - 1] instanceof Paragraph)) children.push(new Paragraph(buildEmptyOptions()))
+      return new TableCell({ children, width: { size: widths[index] * 100, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP,
+        borders: { top: none, bottom: none, left: none, right: none }, margins: { left: 120, right: 120 } })
+    }) })],
+  })]
 }
 
 /** 分隔线：一个底下带 border 的空段落。docx 没有 native hr，这是通行做法。 */
@@ -444,7 +544,7 @@ function buildAgenda(node, images, depth, extra) {
     if (Number.isFinite(minutes) && minutes > 0) runs.push(new TextRun({ text: `${minutes} 分钟`, bold: true, font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE }))
     for (let k = 0; k < kids.length; k += 1) {
       if (kids[k].type !== 'agendaTitle') continue
-      const title = buildInlineRuns(childrenOf(kids[k]), images)
+      const title = buildInlineRuns(childrenOf(kids[k]), images, undefined, extra)
       if (runs.length && title.length) runs.push(new TextRun({ text: ' ', font: DOCX_FONT_BODY, size: DOCX_BODY_SIZE }))
       for (let t = 0; t < title.length; t += 1) runs.push(title[t])
     }
@@ -462,29 +562,34 @@ function buildBlock(node, images, depth, extra) {
   if (!node || typeof node !== 'object') return []
   if (DOCX_BLOCK_SKIP.indexOf(node.type) !== -1) return []
   switch (node.type) {
-    case 'image': {
-      if (Array.isArray(node.attrs?.crop)) return [new Paragraph({ children: [new TextRun('可见裁剪图：此格式暂不支持安全导出裁剪图')] })]
-      const run = runFromImage(node, images)
-      return run ? [new Paragraph({ children: [run] })] : []
-    }
     case 'paragraph':
       return [buildParagraph(node, images, extra)]
+    case 'image': {
+      const image = runFromImage(node, images, extra)
+      return image ? [new Paragraph({ ...paragraphOptions(extra), children: [image] })] : []
+    }
     case 'heading':
       return [buildHeading(node, images, extra)]
     case 'blockquote':
-      return buildBlockquote(node, images, depth)
+      return buildBlockquote(node, images, depth, extra)
     case 'bulletList':
-      return buildList(node, images, depth, 'bullet')
+      return buildList(node, images, depth, 'bullet', extra)
     case 'orderedList':
-      return buildList(node, images, depth, 'ordered')
+      return buildList(node, images, depth, 'ordered', extra)
     case 'taskList':
-      return buildList(node, images, depth, 'task')
+      return buildList(node, images, depth, 'task', extra)
     case 'codeBlock':
       return [buildCodeBlock(node)]
     case 'horizontalRule':
       return buildHorizontalRule()
     case 'table':
-      return buildTable(node, images, depth)
+      return buildTable(node, images, depth, extra)
+    case 'columns':
+      return buildColumns(node, images, depth, extra)
+    case 'column':
+      return buildDocxElements(childrenOf(node), images, depth, extra)
+    case 'blockMath':
+      return [new Paragraph({ ...paragraphOptions(extra), alignment: AlignmentType.CENTER, children: [wordMath(node.attrs?.latex, true, extra?.report)] })]
     case 'agenda':
       return buildAgenda(node, images, depth, extra)
     default: {
@@ -520,15 +625,15 @@ export function buildNumberingConfig() {
     config: [
       {
         reference: 'bullet-0',
-        levels: [{ level: 0, format: DOCX_LEVEL_FORMATS.bullet, text: '\u2022', alignment: AlignmentType.LEFT }],
+        levels: Array.from({ length: 9 }, (_, level) => ({ level, format: DOCX_LEVEL_FORMATS.bullet, text: '\u2022', alignment: AlignmentType.LEFT })),
       },
       {
         reference: 'ordered-0',
-        levels: [{ level: 0, format: DOCX_LEVEL_FORMATS.ordered, text: '%1.', alignment: AlignmentType.LEFT }],
+        levels: Array.from({ length: 9 }, (_, level) => ({ level, format: DOCX_LEVEL_FORMATS.ordered, text: `%${level + 1}.`, alignment: AlignmentType.LEFT })),
       },
       {
         reference: 'task-0',
-        levels: [{ level: 0, format: DOCX_LEVEL_FORMATS.task, text: '\u2022', alignment: AlignmentType.LEFT }],
+        levels: Array.from({ length: 9 }, (_, level) => ({ level, format: DOCX_LEVEL_FORMATS.task, text: '\u2022', alignment: AlignmentType.LEFT })),
       },
     ],
   }
@@ -549,9 +654,8 @@ export function buildNumberingConfig() {
 export function buildDocxDocument(docOrNodes, options) {
   const settings = options || {}
   const images = settings.images || {}
-  const raw = typeof docOrNodes?.toJSON === 'function' ? docOrNodes.toJSON() : docOrNodes
-  const nodes = childrenOf(flattenHeadingContainers(Array.isArray(raw) ? { type: 'doc', content: raw } : raw))
-  const children = buildDocxElements(nodes, images, 0)
+  const flat = normalizeExportDocument(docOrNodes, { format: 'word' })
+  const children = buildDocxElements(flat.content, images, 0, { report: settings.report, maxWidth: 600 })
   const comments = []
   for (const thread of Array.isArray(settings.comments) ? settings.comments : []) {
     if (!thread || thread.tombstone || thread.deleted) continue
@@ -578,6 +682,10 @@ export function buildDocxDocument(docOrNodes, options) {
  * ProseMirror doc → docx Blob（`Packer.toBlob`，浏览器可用）。
  */
 export async function buildDocx(docOrNodes, options) {
-  const document = buildDocxDocument(docOrNodes, options)
+  const settings = options || {}
+  const source = normalizeExportDocument(docOrNodes, { format: 'word' })
+  const report = settings.report || {}
+  const images = await prepareWordDiagrams(source, settings.images, settings, report)
+  const document = buildDocxDocument(source, { ...settings, images, report })
   return Packer.toBlob(document)
 }

@@ -1,4 +1,4 @@
-import { createMentionPanel } from '../../../ui/mention'
+import { createLazyView } from '../../../ui/lazy'
 
 export default {
   watch: {
@@ -17,7 +17,7 @@ export default {
     mountMentionPanel() {
       const host = this.$refs.mentionHost
       if (!host) return
-      this._mentionUi = createMentionPanel({ host, handlers: {
+      this._mentionUi = createLazyView(() => import('../../../ui/mention'), 'createMentionPanel', { host, handlers: {
         onKind: (kind) => this.setMentionKind(kind),
         onActive: (index) => this.setMentionActive(index),
         onNotify: (value) => this.setMentionNotify(value),

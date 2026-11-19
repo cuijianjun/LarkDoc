@@ -136,9 +136,11 @@ export const transferMethods = {
       // Supplying even an empty map keeps the canonical exporter from fetching on its own.
       const result = await exportDocx(doc, { fileName: title, title, scope: 'contentOnly', images, shouldDownload: allowed })
       for (const src of result?.failedImages || []) failed.add(src)
-      if (allowed()) this.state.notice = failed.size
-        ? `Word 已导出；${failed.size} 张图片因网络策略或读取失败未导出`
-        : 'Word 已导出'
+      if (allowed()) {
+        const warnings = [...(result?.warnings || [])]
+        if (failed.size) warnings.push(`${failed.size} 张图片因网络策略或读取失败未导出`)
+        this.state.notice = ['Word 已导出', ...warnings].join('；')
+      }
       return result
     } catch (error) {
       if (current()) this.state.notice = `导出失败：${error.message}`

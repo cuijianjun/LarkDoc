@@ -8,16 +8,20 @@
  */
 
 import { applyStyle, setAttr, setText, syncChildren } from './dom'
+import { COMMENT_IMAGE_ACCEPT } from '../components/lark-doc/editor/commentImages'
 import { iconNode } from './icon'
-import { setInputValue } from './panelShared'
+import { placeMenu } from './menuLayout'
+import { setInputValue, reactionIcon, onMouseDownPrevent } from './panelShared'
 import { renderCommentSegments } from './commentPanelParts'
+import { commentAttachmentNodes } from './commentAttachments'
 
 export function createThreadCard(ctx) {
   const {
     state, call, onAction, richInput, updateRichInput, bindSubmitShortcut, bindViewerEscape,
     imageDraftNodes, renderMentionPicker, isReferenceDrawer, hasInlineDocument, isMobile,
     moveMobile, requestDeleteConfirmation, cancelReplyMenuClose, hoverReply, enterReplyMenu,
-    leaveReplyMenu, trackReplyHover, isNativeThreadOpen,
+    leaveReplyMenu, trackReplyHover, cancelReactionClose, scheduleReactionClose,
+    isNativeThreadOpen,
   } = ctx
 
   function createPanelNode(id) {
@@ -82,7 +86,7 @@ export function createThreadCard(ctx) {
     const imageInput = document.createElement('input')
     imageInput.type = 'file'
     imageInput.multiple = true
-    imageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'
+    imageInput.accept = COMMENT_IMAGE_ACCEPT
     imageInput.className = 'lark-doc-file-input'
     imageInput.dataset.commentImageScope = id
     imageInput.setAttribute('aria-label', '选择评论图片')
@@ -92,7 +96,7 @@ export function createThreadCard(ctx) {
     inputRow.appendChild(imageInput)
 
     const draftImages = document.createElement('div')
-    draftImages.className = 'lark-doc-comment-image-drafts'
+    draftImages.className = 'lark-doc-comment-attachments'
     const actions = document.createElement('div')
     actions.className = 'lark-doc-comment-actions'
     const cancelAction = document.createElement('button')
@@ -103,7 +107,7 @@ export function createThreadCard(ctx) {
     const sendAction = document.createElement('button')
     sendAction.type = 'button'
     sendAction.className = 'lark-doc-comment-action is-filled'
-    sendAction.textContent = '发送'
+    sendAction.textContent = '回复'
     onAction(sendAction, () => call('onSubmit', id))
     bindSubmitShortcut(textarea, sendAction)
     actions.appendChild(cancelAction)
@@ -137,17 +141,17 @@ export function createThreadCard(ctx) {
     editImageButton.type = 'button'; editImageButton.textContent = '图片'; editImageButton.setAttribute('aria-label', '编辑评论插入图片')
     onAction(editImageButton, () => call('onChooseImage', edit.dataset.scope || ''))
     const editImageInput = document.createElement('input')
-    editImageInput.type = 'file'; editImageInput.multiple = true; editImageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'; editImageInput.className = 'lark-doc-file-input'
+    editImageInput.type = 'file'; editImageInput.multiple = true; editImageInput.accept = COMMENT_IMAGE_ACCEPT; editImageInput.className = 'lark-doc-file-input'
     editImageInput.addEventListener('change', event => call('onUploadImage', edit.dataset.scope || '', event))
     editTools.append(editImageButton, editImageInput)
     const editActions = document.createElement('div')
     const editDraftImages = document.createElement('div')
-    editDraftImages.className = 'lark-doc-comment-image-drafts'
+    editDraftImages.className = 'lark-doc-comment-attachments'
     editActions.className = 'lark-doc-comment-edit-actions'
     const editCancel = document.createElement('button')
-    editCancel.type = 'button'; editCancel.textContent = '取消编辑'; onAction(editCancel, () => call('onCancelEdit'))
+    editCancel.type = 'button'; editCancel.textContent = '取消'; onAction(editCancel, () => call('onCancelEdit'))
     const editSave = document.createElement('button')
-    editSave.type = 'button'; editSave.textContent = '保存编辑'; onAction(editSave, () => call('onSaveEdit'))
+    editSave.type = 'button'; editSave.textContent = '确定'; onAction(editSave, () => call('onSaveEdit'))
     editActions.append(editCancel, editSave)
     edit.append(editInput, editMentionPicker, editTools, editActions)
 
@@ -305,7 +309,7 @@ export function createThreadCard(ctx) {
     })
   }
 
-  function buildReplies(entry, item) {
+  function buildReplies(item) {
     const nodes = []
     const controlId = control => control.id || ({ '添加表情回复': 'emoji', '引用回复': 'quote', '更多菜单': 'more' }[control.label] || '')
     const compactControls = hasInlineDocument() && item.documentOnly === true && state.replyControls.some(control => controlId(control) === 'more')
@@ -338,38 +342,62 @@ export function createThreadCard(ctx) {
       info.appendChild(time)
       const body = document.createElement('div')
       body.className = 'lark-doc-comment-body'
-      if (Array.isArray(reply.richSegments)) renderCommentSegments(body, reply.richSegments, (reference, event) => call('onDocumentReference', item.id, reply.id, reference, event))
+      // 译文只在「译文来源等于当前正文」时生效 —— 原文一改，展示立即回落。
+      const translation = reply.translation?.source === reply.body ? reply.translation : null
+      if (translation?.content) body.textContent = translation.content
+      else if (Array.isArray(reply.richSegments)) renderCommentSegments(body, reply.richSegments, (reference, event) => call('onDocumentReference', item.id, reply.id, reference, event))
       else if (Array.isArray(reply.segments)) renderCommentSegments(body, reply.segments, (reference, event) => call('onDocumentReference', item.id, reply.id, reference, event))
       else body.textContent = reply.body == null ? '' : String(reply.body)
+      if (reply.attachments?.length) {
+        const attachments = document.createElement('div')
+        attachments.className = 'lark-doc-comment-body-attachments'
+        attachments.append(...commentAttachmentNodes(reply.attachments, false,
+          (name, index) => call(name, item.id, reply.id, index)))
+        body.classList.toggle('is-image-only', !reply.body)
+        body.appendChild(attachments)
+      }
+      if (translation?.content && !reply.editing) {
+        const label = document.createElement('span')
+        label.className = 'lark-doc-comment-translation-label'
+        label.textContent = 'Translated by AI'
+        const original = document.createElement('button')
+        original.type = 'button'
+        original.className = 'lark-doc-comment-original'
+        original.textContent = '查看原文'
+        original.setAttribute('aria-label', '查看原文')
+        const originalText = document.createElement('span')
+        originalText.className = 'lark-doc-comment-original-text'
+        originalText.textContent = translation.source
+        original.appendChild(originalText)
+        onMouseDownPrevent(original, () => call('onCancelTranslation', item.id, reply.id))
+        body.append(label, original)
+      }
+      if (reply.edited) {
+        const edited = document.createElement('span')
+        edited.className = 'lark-doc-comment-edited'
+        edited.textContent = '（已编辑）'
+        body.appendChild(edited)
+      }
       right.appendChild(info)
       right.appendChild(body)
-      if (reply.images?.length) {
-        const images = document.createElement('div'); images.className = 'lark-doc-comment-images'
-        reply.images.forEach(image => {
-          const button = document.createElement('button'); button.type = 'button'
-          button.setAttribute('aria-label', '查看评论图片：' + (image.fileName || ''))
-          button.disabled = !image.url && !image.error
-          onAction(button, event => call('onOpenImage', item.id, reply.id, image.assetId, event))
-          const preview = document.createElement(image.url ? 'img' : 'span')
-          if (image.url) { preview.src = image.url; preview.alt = image.fileName || '' }
-          else preview.textContent = image.error ? '图片加载失败，点击重试' : '图片加载中…'
-          button.appendChild(preview); images.appendChild(button)
-        })
-        right.appendChild(images)
-      }
       if (!reply.tombstone && Array.isArray(reply.reactions) && reply.reactions.length) {
+        root.classList.add('has-reactions')
         const reactions = document.createElement('div')
         reactions.className = 'lark-doc-comment-reactions'
         reactions.setAttribute('aria-label', '表情回复')
         reply.reactions.forEach(reaction => {
           const button = document.createElement('button')
-          button.type = 'button'; button.className = 'lark-doc-comment-reaction'
+          button.type = 'button'
+          button.className = `lark-doc-comment-reaction${reaction.reactedByMe === true ? ' is-mine' : ''}`
           const emoji = reaction.emoji == null ? '' : String(reaction.emoji)
-          const count = reaction.count == null ? '' : String(reaction.count)
+          const names = reaction.people || ''
           button.setAttribute('aria-pressed', String(reaction.reactedByMe === true))
-          button.setAttribute('aria-label', `${reaction.label || emoji} ${count} 人${reaction.reactedByMe ? '，已回应，点击取消' : '，点击回应'}`)
+          button.setAttribute('aria-label', `${reaction.label || emoji}: ${names}`)
+          button.title = button.getAttribute('aria-label')
           button.disabled = reaction.canReact === false
-          button.append(document.createTextNode(emoji), document.createTextNode(reaction.people ? `｜${reaction.people}` : count ? ` ${count}` : ''))
+          // 飞书的表情胶囊是「👍｜崔健军」：emoji 与名单之间有一条全角竖线，
+          // 名单为空时不补分隔符。
+          button.append(reactionIcon(state.reactionCatalog, emoji, 18), document.createTextNode(names ? `｜${names}` : ''))
           onAction(button, () => call('onReaction', item.id, reply.id, emoji, reaction.reactedByMe !== true))
           reactions.appendChild(button)
         })
@@ -401,10 +429,25 @@ export function createThreadCard(ctx) {
           dots.setAttribute('aria-hidden', 'true')
           button.appendChild(dots)
         }
-        onAction(button, event => {
-          trackReplyHover(id, item.id, reply.id, button, event)
-          call('onReplyControl', id, item.id, reply.id, event)
-        })
+        if (id === 'emoji') {
+          // 悬停开表情板、按下就是快捷点赞 —— 与源站分工一致。
+          button.dataset.commentReactionTrigger = ''
+          button.setAttribute('aria-haspopup', 'menu')
+          button.addEventListener('mouseenter', (event) => {
+            if (button.disabled) return
+            cancelReactionClose()
+            call('onReplyControl', id, item.id, reply.id, event)
+          })
+          button.addEventListener('mouseleave', scheduleReactionClose)
+          button.addEventListener('mousedown', () => { if (!button.disabled) call('onQuickReaction', item.id, reply.id) })
+          // 键盘激活（`detail === 0` 的 click）没有悬停前奏，补一条开板路径。
+          button.addEventListener('click', event => { if (event.detail === 0) call('onReplyControl', id, item.id, reply.id, event) })
+        } else {
+          onAction(button, event => {
+            trackReplyHover(id, item.id, reply.id, button, event)
+            call('onReplyControl', id, item.id, reply.id, event)
+          })
+        }
         if (id === 'more') {
           button.setAttribute('aria-haspopup', 'menu'); button.setAttribute('aria-expanded', String(!!reply.menuOpen))
           button.addEventListener('mouseenter', event => enterReplyMenu(button, item.id, reply.id, event))
@@ -415,13 +458,13 @@ export function createThreadCard(ctx) {
 
       const menuBox = document.createElement('div')
       menuBox.className = 'lark-doc-comment-reply-menu'
+      menuBox.setAttribute('role', 'menu')
+      menuBox.setAttribute('aria-label', '评论更多菜单')
       menuBox.classList.toggle('is-mobile-menu', reply.mobileMenu === true)
       menuBox.addEventListener('mouseenter', event => { if (hoverReply(menuBox, item.id, reply.id, event)) cancelReplyMenuClose() })
       menuBox.addEventListener('mouseleave', event => leaveReplyMenu(menuBox, item.id, reply.id, event))
       const menuList = document.createElement('ul')
       menuList.className = 'lark-doc-comment-menu-list'
-      menuList.setAttribute('role', 'menu')
-      menuList.setAttribute('aria-label', '评论操作')
       menuBox.addEventListener('keydown', event => {
         if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229 && !event.defaultPrevented) {
           if (reply.mobileMenu && (!menuBox.isConnected || !reply.menuScope?.current())) return
@@ -498,6 +541,17 @@ export function createThreadCard(ctx) {
         { node: replyControls, on: !isReferenceDrawer() || state.activeThreadId === item.id },
         { node: menuBox, on: !!reply.menuOpen && (!isReferenceDrawer() || state.activeThreadId === item.id) },
       ])
+      if (reply.menuOpen && !reply.mobileMenu) queueMicrotask(() => {
+        if (!menuBox.isConnected) return
+        const win = menuBox.ownerDocument.defaultView
+        const viewport = win.visualViewport
+        const bottom = (viewport?.offsetTop || 0) + (viewport?.height || win.innerHeight)
+        if (menuBox.getBoundingClientRect().bottom <= bottom - 8) return
+        const trigger = replyControls.querySelector('[data-comment-reply-control="more"]')
+        if (!trigger?.isConnected) return
+        Object.assign(menuBox.style, { position: 'fixed', overflowY: 'auto' })
+        placeMenu(menuBox, trigger, 8, { align: 'end' })
+      })
       nodes.push(root)
     })
     return nodes
@@ -539,17 +593,34 @@ export function createThreadCard(ctx) {
       setAttr(button, 'data-capability', control.id === 'resolve' ? 'canResolveComment' : 'canComment')
     })
 
+    const editState = item.edit || null
     const repliesSignature = JSON.stringify([hasInlineDocument(), item.documentOnly === true, interactive, state.replyControls, item.replies || []])
     if (repliesSignature !== entry.repliesSignature) {
       entry.repliesSignature = repliesSignature
-      syncChildren(entry.replies, buildReplies(entry, item).map((node) => ({ node, on: true })))
+      const replies = buildReplies(item)
+      const editing = interactive && editState?.replyId ? entry.edit.parentElement : null
+      const editedIndex = editing && editing.dataset.commentReply === editState.replyId
+        ? replies.findIndex(reply => reply.dataset.commentReply === editState.replyId) : -1
+      if (editedIndex >= 0) {
+        // Keep the editor and its reply attached while replacing the other controls.
+        for (const child of [...editing.children]) {
+          if (child !== entry.edit) child.remove()
+        }
+        editing.prepend(...replies[editedIndex].children)
+        replies[editedIndex] = editing
+        for (const reply of [...entry.replies.children]) {
+          if (reply !== editing) reply.remove()
+        }
+      }
+      syncChildren(entry.replies, replies.map(node => ({ node, on: true })))
     }
 
     const textareaState = item.textarea || {}
     applyStyle(entry.textareaWrap, { height: `${textareaState.height}px` })
     updateRichInput(entry.textarea, textareaState, `reply/${item.id}`)
-    entry.sendAction.classList.toggle('is-disabled', !item.allowedReply)
-    entry.sendAction.disabled = !item.allowedReply
+    const sendDisabled = !item.allowedReply || item.draftReady === false
+    entry.sendAction.classList.toggle('is-disabled', sendDisabled)
+    entry.sendAction.disabled = sendDisabled
     entry.cancelAction.disabled = !item.hasDraft
     entry.operation.disabled = item.canUploadImage === false
     const draftImagesSignature = JSON.stringify(item.draftImages || [])
@@ -565,7 +636,6 @@ export function createThreadCard(ctx) {
     ])
     renderMentionPicker(entry.mentionPicker, item.mentionPicker, entry.textarea, `reply/${item.id}`)
 
-    const editState = item.edit || null
     if (!editState) updateRichInput(entry.editInput, { value: '' }, `closed-edit/${item.id}`)
     if (editState) {
       entry.edit.dataset.replyId = editState.replyId || ''
@@ -615,7 +685,7 @@ export function createThreadCard(ctx) {
 
     const threadContent = [
       { node: entry.head, on: !item.documentOnly }, { node: entry.replies, on: true },
-      { node: entry.edit, on: !!editState && interactive }, { node: entry.translation, on: !!translationState && interactive },
+      { node: entry.edit, on: !!editState && interactive && !editState.replyId }, { node: entry.translation, on: !!translationState && interactive },
     ]
     if (isNativeThreadOpen() && !item.documentOnly) syncChildren(entry.threadScroll, threadContent)
     syncChildren(entry.root, [
@@ -623,8 +693,23 @@ export function createThreadCard(ctx) {
       { node: entry.textareaWrap, on: !item.documentOnly && interactive },
       { node: entry.moreMenu, on: !!item.moreOpen && interactive },
     ])
+    // 与源站一致：编辑态长在被编辑的那条回复里，且编辑时回复正文让位给输入框。
+    const editReply = editState && interactive && editState.replyId
+      ? [...entry.replies.children].find(reply => reply.dataset.commentReply === editState.replyId) : null
+    entry.replies.querySelectorAll('.lark-doc-comment-reply.is-editing').forEach((node) => {
+      if (node === editReply) return
+      node.classList.remove('is-editing')
+      const body = node.querySelector('.lark-doc-comment-body')
+      if (body) body.hidden = false
+    })
+    if (editReply) {
+      editReply.classList.add('is-editing')
+      const body = editReply.querySelector('.lark-doc-comment-body')
+      if (body) body.hidden = true
+      if (entry.edit.parentNode !== editReply) editReply.appendChild(entry.edit)
+    } else if (entry.edit.parentNode) entry.edit.remove()
   }
 
 
-  return { createPanelNode, renderPanel }
+  return { createPanelNode, renderPanel, buildReplies }
 }

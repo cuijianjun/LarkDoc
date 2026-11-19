@@ -98,6 +98,7 @@ const measureHandle = () => {
     insertTitle: insert ? insert.getAttribute('title') : null,
     mainLabel: main ? main.getAttribute('aria-label') : null,
     mainTitle: main ? main.getAttribute('title') : null,
+    mainTooltipOmitted: main?.hasAttribute('data-tooltip-none') === true,
     draggable: main ? main.getAttribute('draggable') : null,
     position: getComputedStyle(handle).position,
     zIndex: getComputedStyle(handle).zIndex,
@@ -416,7 +417,7 @@ async function verifyTableScopes(page) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: process.argv.includes('--narrow') ? { width: 1000, height: 723 } : { width: 1440, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   const errors = []
@@ -459,8 +460,8 @@ async function verifyTableScopes(page) {
       ? `句柄中心 ${((handle.button.top + handle.button.bottom) / 2).toFixed(1)} / 行盒中心 ${((line.top + line.bottom) / 2).toFixed(1)}`
       : '')
 
-  record('[句柄] 主按钮 aria-label=块操作 / title=块操作与拖动 / draggable=true',
-    !!handle && handle.hasMain && handle.mainLabel === '块操作' && handle.mainTitle === '块操作与拖动' && handle.draggable === 'true',
+  record('[句柄] 主按钮可拖动，读屏名称为块操作，悬停只打开菜单',
+    !!handle && handle.hasMain && handle.mainLabel === '块操作' && handle.mainTitle === null && handle.mainTooltipOmitted && handle.draggable === 'true',
     handle ? `${handle.mainLabel} / ${handle.mainTitle} / draggable=${handle.draggable}` : '')
 
   record('[句柄] 主按钮由「18px 类型 SVG + 飞书六点 SVG」两段组成',

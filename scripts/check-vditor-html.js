@@ -28,6 +28,12 @@ Object.getOwnPropertyNames(window).forEach((key) => {
 })
 global.window = window
 global.document = window.document
+// Node ≥18 自带 undici 的 Event/EventTarget/CustomEvent，上面的「仅补 undefined」循环不会覆盖它们，
+// 于是 `new Event(...)` 得到 Node 的 Event，传给 jsdom 元素的 dispatchEvent 会抛
+// "parameter 1 is not of type 'Event'"。这里强制换成 jsdom 实现。
+;['Event', 'CustomEvent', 'EventTarget', 'MessageEvent'].forEach((name) => {
+  if (window[name]) global[name] = window[name]
+})
 if (!window.Element.prototype.scrollIntoView) window.Element.prototype.scrollIntoView = () => {}
 if (!window.Range.prototype.getClientRects) window.Range.prototype.getClientRects = () => []
 if (!window.Range.prototype.getBoundingClientRect) {
@@ -85,6 +91,15 @@ function collect(json, type) {
   return found
 }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)) }
+// 语言菜单、图表插入命令都已改成按需加载，点完要等模块到位再断言。
+async function waitFor(predicate, timeout = 1200) {
+  const started = Date.now()
+  while (Date.now() - started < timeout) {
+    if (predicate()) return true
+    await delay(25)
+  }
+  return Boolean(predicate())
+}
 
 async function main() {
   /* ---------- 1. 指纹识别 ---------- */
@@ -284,6 +299,7 @@ async function main() {
   check('命令清单含「图表」插入项', /(?:\bid|["']id["'])\s*:\s*["']diagram["']/.test(bundle))
   doc.setContent('<p>图表命令验证</p>')
   doc.getWorkspace().executeCommand('diagram')
+  await waitFor(() => collect(doc.getJSON(), 'codeBlock').length === 1)
   const insertedDiagrams = collect(doc.getJSON(), 'codeBlock')
   check('插入命令携带 mermaid 示例源码', insertedDiagrams.length === 1 && insertedDiagrams[0].attrs.language === 'mermaid'
     && insertedDiagrams[0].content.some(node => node.type === 'text' && node.text.indexOf('A[开始]') !== -1))

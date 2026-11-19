@@ -40,7 +40,7 @@ const PROVIDER_FACTORIES = {
  * 协同、版本、评论和权限服务之间替换，而不改变 Vue 组件 API。
  */
 import { identityMethods } from './sessionIdentityMethods'
-import { versionMethods } from './sessionVersionMethods'
+import { versionMethods, AUTO_VERSION_INTERVAL_MS, AUTO_SNAPSHOT_DEBOUNCE_MS } from './sessionVersionMethods'
 import { assetMethods } from './sessionAssetMethods'
 import { commentMethods } from './sessionCommentMethods'
 import { permissionMethods } from './sessionPermissionMethods'
@@ -73,13 +73,17 @@ export class DocumentSession {
     this._identityDisconnect = Promise.resolve()
     // 自动历史版本：默认开启（飞书同样没有「手动保存版本」这个动作），
     // 宿主可用 `autoVersion: false` 关掉 —— 例如只读预览或测试。
-    this._autoVersionEnabled = options.autoVersion !== false
+    this._autoVersionEnabled = options.autoVersion !== false && options.autoSnapshot !== false
+    this._autoVersionDebounce = AUTO_SNAPSHOT_DEBOUNCE_MS
+    this._autoVersionMinInterval = AUTO_VERSION_INTERVAL_MS
     this._autoVersionTimer = null
     this._autoVersionListener = null
     this._autoVersionRunning = false
     this._autoVersionDirty = false
     this._autoVersionAt = 0
     this._autoVersionSignature = ''
+    this.setAutoSnapshot(options.autoSnapshot)
+    if (options.autoVersion === false) this.setAutoVersion(false)
     this.providers = {}
     const input = options.providers || {}
     Object.keys(PROVIDER_FACTORIES).forEach((name) => {

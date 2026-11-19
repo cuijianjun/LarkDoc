@@ -71,6 +71,13 @@ function readEditedAt(raw) {
   return null
 }
 
+/** 引用回复的目标：缺任一侧身份就当没引用，避免面板渲染出半截 `replyTo`。 */
+function readReplyTarget(raw) {
+  const value = raw && raw.replyTo
+  if (!value || typeof value !== 'object' || !text(value.commentId) || !text(value.authorId)) return null
+  return { commentId: text(value.commentId).slice(0, 256), authorId: text(value.authorId).slice(0, 256), authorName: text(value.authorName).slice(0, 256) }
+}
+
 /** 读路径：null / 非对象 / 数组都是「没有这条回复」，返回 null 让调用方过滤。 */
 export function normalizeReply(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
@@ -87,6 +94,8 @@ export function normalizeReply(raw) {
   ;['replyRevision', 'deletedAt', 'tombstone', 'capabilities', 'reactions', 'attachments', 'mentions', 'references'].forEach(key => {
     if (Object.prototype.hasOwnProperty.call(raw, key)) result[key] = raw[key]
   })
+  const replyTo = readReplyTarget(raw)
+  if (replyTo) result.replyTo = replyTo
   return result
 }
 
@@ -130,11 +139,24 @@ export function normalizeThread(raw) {
   return result
 }
 
-/** 写路径的公共校验：内容不能是空白（`'   '` 与 `''` 等价）。 */
-function requiredContent(value, label) {
+/** 写路径的公共校验：内容不能是空白（`'   '` 与 `''` 等价）；带图片时可空正文。 */
+function requiredContent(value, label, attachments = []) {
   const content = typeof value === 'string' ? value : bodyText(value)
-  if (!content.trim()) throw new Error(`${label}内容不能为空`)
+  if (!content.trim() && !attachments.length) throw new Error(`${label}内容不能为空`)
   return content
+}
+
+/** 写路径的图片附件：只留有可用地址的项（本地 provider 不做远端资产校验）。 */
+function readAttachments(raw) {
+  const list = Array.isArray(raw?.attachments) ? raw.attachments : []
+  return list.filter(item => item && typeof item === 'object' && typeof item.url === 'string' && item.url)
+    .map(item => ({
+      url: item.url,
+      ...(item.name ? { name: item.name } : {}),
+      ...(item.mime ? { mime: item.mime } : {}),
+      ...(Number.isFinite(item.size) && item.size >= 0 ? { size: item.size } : {}),
+      ...(item.attchId != null ? { attchId: String(item.attchId) } : {}),
+    }))
 }
 
 /**
@@ -152,13 +174,17 @@ export function buildReply(input, context) {
   const source = input || {}
   const options = context || {}
   const author = requiredAuthor(source.author)
-  const content = requiredContent(source.content != null ? source.content : source.body, '回复')
+  const attachments = readAttachments(source)
+  const content = requiredContent(source.content != null ? source.content : source.body, '回复', attachments)
+  const replyTo = readReplyTarget(source)
   return {
     id: text(options.id),
     author,
     content,
     createdAt: toTimestamp(options.now),
     editedAt: null,
+    ...(attachments.length ? { attachments } : {}),
+    ...(replyTo ? { replyTo } : {}),
   }
 }
 
@@ -176,11 +202,12 @@ export function buildThread(input, context) {
     throw new Error(`评论线程 blockId 不合法：${blockId || '(空)'}`)
   }
   const author = requiredAuthor(source.author)
-  const content = requiredContent(source.content != null ? source.content : source.body, '首条评论')
+  const attachments = readAttachments(source)
+  const content = requiredContent(source.content != null ? source.content : source.body, '首条评论', attachments)
   const anchor = documentOnly ? null : source.anchor == null
     ? { blockId, offset: 0, length: 0 }
     : { ...validateAnchor(source.anchor), blockId }
-  const reply = buildReply({ author: source.author, content }, { id: options.replyId, now: options.now })
+  const reply = buildReply({ author: source.author, content, attachments }, { id: options.replyId, now: options.now })
   let documentFields = {}
   if (documentOnly) {
     const visibility = source.visibility === undefined ? 'document' : source.visibility

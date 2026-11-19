@@ -152,7 +152,7 @@ const bubbleVisible = (page) => page.evaluate(() => !!document.querySelector('.l
 const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.lark-doc-bubble-align-menu'))
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   const errors = []
@@ -186,8 +186,21 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
 
   // ——————————————————— ② 六段结构 ———————————————————
   const segments = await page.evaluate(bubbleSegments)
-  const expected = ['ai', 'divider', 'heading', 'align', 'divider', 'mark:加粗', 'mark:删除线', 'mark:斜体', 'mark:下划线', 'mark:行内代码', 'highlight', 'highlight-caret', 'divider', 'copy', 'mark:添加评论']
+  // demo 没有接评论 provider：按「评论没接入就先隐藏 UI」，末尾不该再出现 `divider` + 评论按钮，
+  // 否则就是留了一个永远点不动的空位（需求 2）。
+  const expected = ['ai', 'divider', 'heading', 'align', 'divider', 'mark:加粗', 'mark:删除线', 'mark:斜体', 'mark:下划线', 'mark:行内代码', 'highlight', 'highlight-caret', 'divider', 'copy']
   record('[结构] 六段顺序与 demo 全量特性下的按钮序列一致', JSON.stringify(segments) === JSON.stringify(expected), segments ? segments.join(' | ') : '未取到')
+  record('[结构] 未接评论 provider 时末尾不渲染评论按钮与多余分隔符',
+    Array.isArray(segments) && !segments.includes('mark:添加评论') && segments[segments.length - 1] === 'copy',
+    Array.isArray(segments) ? segments.slice(-3).join(' | ') : '未取到')
+  const copyIconOk = await page.evaluate(() => {
+    const button = [...document.querySelectorAll('.lark-doc-bubble button')].find((el) => el.getAttribute('aria-label') === '复制选中文字')
+    if (!button) return null
+    const svg = button.querySelector('svg')
+    return { hasSvg: !!svg, paths: button.innerHTML.length }
+  })
+  record('[结构] 复制按钮有实际图标（不再留空位）', !!copyIconOk && copyIconOk.hasSvg && copyIconOk.paths > 40,
+    copyIconOk ? `svg=${copyIconOk.hasSvg} html=${copyIconOk.paths}` : '缺按钮')
   record('[结构] 三个分隔符把气泡条分成「AI / 块级与行内格式 / 复制」三段',
     Array.isArray(segments) && segments.filter((item) => item === 'divider').length === 3,
     Array.isArray(segments) ? `${segments.filter((item) => item === 'divider').length} 个` : '')
@@ -334,7 +347,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
     return {
       role: menu.getAttribute('role'),
       label: menu.getAttribute('aria-label'),
-      pressed: [...menu.querySelectorAll('button[role="menuitem"]')].map((item) => ({ text: item.textContent.trim(), pressed: item.getAttribute('aria-pressed'), tooltip: item.getAttribute('data-tooltip'), disabled: item.disabled })).slice(0, 4),
+      pressed: [...menu.querySelectorAll('button[role="menuitem"]')].map((item) => ({ text: item.textContent.trim(), pressed: item.getAttribute('aria-pressed'), tooltip: item.getAttribute('aria-description'), disabled: item.disabled })).slice(0, 4),
       separator: !!menu.querySelector('.lark-doc-block-submenu-divider[role="separator"]'),
       box: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, h: window.innerHeight, w: window.innerWidth },
     }
@@ -343,7 +356,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
   record('[对齐] 四项对齐里恰好一个 aria-pressed=true 且是「左对齐」',
     !!alignSnapshot && alignSnapshot.pressed.length === 4 && alignSnapshot.pressed.filter((item) => item.pressed === 'true').length === 1 && alignSnapshot.pressed[0].pressed === 'true' && alignSnapshot.pressed[0].text.includes('左对齐'),
     alignSnapshot ? alignSnapshot.pressed.map((item) => `${item.text}:${item.pressed}`).join(' | ') : '')
-  record('[对齐] 四项对齐都带快捷键 data-tooltip',
+  record('[对齐] 四项对齐都带快捷键无障碍说明',
     !!alignSnapshot && ['⌘ + Shift + L', '⌘ + Shift + E', '⌘ + Shift + R', '⌘ + Shift + J'].every((shortcut, index) => alignSnapshot.pressed[index].tooltip === shortcut),
     alignSnapshot ? alignSnapshot.pressed.map((item) => item.tooltip).join(' | ') : '')
   record('[对齐] 对齐项与缩进项之间有分隔符', !!alignSnapshot && alignSnapshot.separator)
@@ -376,9 +389,9 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
     const decrease = find('减少缩进')
     return {
       increaseDisabled: increase?.disabled,
-      increaseTooltip: increase?.getAttribute('data-tooltip'),
+      increaseTooltip: increase?.getAttribute('aria-description'),
       decreaseDisabled: decrease?.disabled,
-      decreaseTooltip: decrease?.getAttribute('data-tooltip'),
+      decreaseTooltip: decrease?.getAttribute('aria-description'),
       help: !!increase?.querySelector('.lark-doc-block-align-help'),
       helpLabel: increase?.querySelector('.lark-doc-block-align-help')?.getAttribute('aria-label'),
     }
@@ -416,7 +429,7 @@ const alignMenuOpen = (page) => page.evaluate(() => !!document.querySelector('.l
     const buttons = [...document.querySelectorAll('.lark-doc-bubble-align-menu button[role="menuitem"]')]
     const increase = buttons.find((item) => item.textContent.includes('增加缩进'))
     const help = increase?.querySelector('.lark-doc-block-align-help')
-    return { disabled: increase?.disabled, tooltip: increase?.getAttribute('data-tooltip'), help: !!help, ariaLabel: help?.getAttribute('aria-label') }
+    return { disabled: increase?.disabled, tooltip: increase?.getAttribute('aria-description'), help: !!help, ariaLabel: help?.getAttribute('aria-label') }
   })
   record('[缩进] 达到最大缩进时「增加缩进」disabled 并给出上限说明',
     maxIndent.disabled === true && maxIndent.tooltip === '当前内容块已达最大缩进层级',

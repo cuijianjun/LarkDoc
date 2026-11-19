@@ -46,7 +46,7 @@ export default {
         })) })
       }
       if (this.toolbarEnabled('textStyle')) {
-        const items = [{ label: '设置链接…', disabled: ro || !this.hasTextSelection, run: () => this.openLinkDialog() }]
+        const items = [{ label: '设置链接…', disabled: ro || this.linkCommandEnabled?.() === false, run: () => this.openLinkDialog() }]
         this.fontFamilyOptions.filter((option) => option.value).forEach((option) => items.push({
           label: option.label, disabled: ro, checked: this.appliedTextStyle.fontFamily === option.value,
           run: () => this.applyTextStyle('fontFamily', option.value),

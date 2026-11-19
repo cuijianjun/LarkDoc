@@ -1611,8 +1611,8 @@ describe('comment reaction picker lifecycle', () => {
     const event = { key: 'Escape', preventDefault: vi.fn(), stopPropagation: vi.fn() }
     vm.onCommentReactionKeydown(event); expect(anchor.focus).toHaveBeenCalledOnce(); expect(vm.commentReactionContext).toBeNull()
     vm.commentReactionContext = {}; vm.onCommentReactionOutside({ target: { closest: () => null } }); expect(vm.commentReactionContext).toBeNull()
-    vm.commentReactionContext = {}; vm.commentReactionQuery = 'private'; vm.resetCommentIdentityView(true)
-    expect(vm.commentReactionContext).toBeNull(); expect(vm.commentReactionQuery).toBe(''); expect(run).not.toHaveBeenCalled()
+    vm.commentReactionContext = {}; vm.resetCommentIdentityView(true)
+    expect(vm.commentReactionContext).toBeNull(); expect(run).not.toHaveBeenCalled()
   })
   it.each(['owner', 'permission'])('does not restore delayed picker focus after %s invalidation', kind => {
     let restore, current = true, visible = true
@@ -1689,11 +1689,15 @@ describe('comment media ownership regressions', () => {
   })
   it('does not attach a late successful upload to a cancelled and reopened selection', async () => {
     let release; const waiting = new Promise(resolve => { release = resolve })
-    const port = { uploadCommentImage() {} }, session = { user: { id: 'alice' }, getProvider: () => port,
-      uploadCommentImage: vi.fn(async () => { await waiting; return { status: 'committed', ready: true, asset: { ...image, ready: true }, assetId: image.assetId } }) }
-    const vm = ctx({ session, commentRemote: true, commentCan: () => true, commentCanUploadImage: () => true, commentComposerOpen: true, commentComposerContext: { text: 'A' } })
-    const work = vm.uploadCommentImageFiles('selection', { target: { value: '', files: [{ type: 'image/png', size: 3 }] } })
-    await vi.waitFor(() => expect(session.uploadCommentImage).toHaveBeenCalledOnce())
+    // 评论图片走宿主的 uploader（与正文插图同一条传输），不经 assets Provider：
+    // 桩就挂在 uploader 上，`supportsAttachments` 决定 `commentCanAttach()`。
+    const upload = vi.fn(async () => { await waiting; return { url: 'blob:late-ready.png', assetId: image.assetId } })
+    // provider 必须是同一个实例：批次里 `current()` 用引用比对判断「上下文是否被换掉」。
+    const port = { isRemote: true, supportsAttachments: true }
+    const vm = ctx({ uploader: { upload }, commentRemote: true, commentCan: () => true, commentProvider: () => port,
+      commentComposerOpen: true, commentComposerContext: { text: 'A' } })
+    const work = vm.uploadCommentImageFiles('selection', { target: { value: '', files: [{ name: 'late.png', type: 'image/png', size: 3 }] } })
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
     vm.clearCommentDraftImages('selection'); vm.commentComposerContext = { text: 'B' }
     release(); await work; expect(vm.commentDraftImages('selection')).toEqual([]); expect(vm.commentPendingImage).toBeNull()
   })

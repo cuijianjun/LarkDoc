@@ -93,6 +93,9 @@
       "selectable": true,
       "draggable": true,
       "attrs": {
+        "appKind": {
+          "default": null
+        },
         "asyncState": {
           "default": null
         },
@@ -431,6 +434,9 @@
           "default": false
         },
         "numberingStart": {
+          "default": null
+        },
+        "numberingLevel": {
           "default": null
         },
         "textAlign": {

@@ -12,8 +12,7 @@
  * 两个都缺的块无法渲染，parseHTML 直接拒收（退化成 unknown-block，不静默丢内容）。
  *
  * 已知偏离（记入 09 §5.3 P2-04 注记）：
- *   - 上传中态不做：③-quinquies 实测飞书 90 秒窗口内 DOM 零命中、零进度条，
- *     上传完成前页面什么都不变就是 1:1 行为；
+ *   - 上传中的进度与取消操作留在本地视图装饰，只有上传成功的附件才进入正文。
  *   - 失败态**照常落块**（与图片相反）：预览元素一报错就切兜底文案 + 保留下载入口；
  *   - `status` 不进 schema：③-ter 三条判据要求状态由预览元素事件驱动，运行时态留在 NodeView。
  */
@@ -22,11 +21,11 @@ import { BLOCK_ID_PATTERN, safeAttachmentId, safeUrl } from '../documentOperatio
 import { asyncBlockDomAttributes, validateAttribute } from './shared'
 import { getNodeView } from '../nodeviews/registry'
 import { createFileBlockNodeView } from '../nodeviews/file-block'
-import { FILE_VIEW_TYPES, fileKindOf, isPreviewableKind } from '../media/file-block'
+import { FILE_VIEW_TYPES, fileKindOf, isPreviewableKind, safeFileUrl } from '../media/file-block'
 
 // 文件地址走 `safeUrl(value, true)`（宽松档）：同时放行 http(s) 与 `/files/x.pdf`
 // 这类同源相对路径（老系统附件目录常见），但依旧挡掉 `javascript:` 与协议相对 `//host`。
-const safeFileUrl = (value) => value === null || value === undefined || value === '' || safeUrl(value, true)
+const optionalFileUrl = value => value == null || value === '' || safeFileUrl(value)
 const text = (value) => typeof value === 'string' && value.length <= 512 && !value.includes('\u0000')
 const safeText = (value) => value === null || value === undefined || text(value)
 
@@ -54,7 +53,7 @@ const FileBlock = Node.create({
   // 宿主只存附件 token、不存直链时，由适配层注入 `resolveFileUrl(token, node)`
   // 换出可渲染地址（本仓库没有飞书那套预览 SDK，`src` 仍是 V1 主路径）。
   addOptions() {
-    return { resolveFileUrl: null }
+    return { resolveFileUrl: null, allowFileAction: null, captureFileOwner: null }
   },
 
   addAttributes() {
@@ -70,7 +69,7 @@ const FileBlock = Node.create({
       },
       src: {
         default: null,
-        validate: validateAttribute('fileBlock.src', safeFileUrl),
+        validate: validateAttribute('fileBlock.src', optionalFileUrl),
         parseHTML: (el) => {
           const value = el.getAttribute('data-src')
           return safeFileUrl(value) && value ? value : null
@@ -81,7 +80,7 @@ const FileBlock = Node.create({
       // NodeView 据此判定「不是缺地址，是被策略挡住」，不再去换票，也方便宿主后补上传。
       originalSrc: {
         default: null,
-        validate: validateAttribute('fileBlock.originalSrc', safeFileUrl),
+        validate: validateAttribute('fileBlock.originalSrc', optionalFileUrl),
         parseHTML: (el) => {
           const value = el.getAttribute('data-original-src')
           return safeFileUrl(value) && value ? value : null
@@ -114,10 +113,10 @@ const FileBlock = Node.create({
       },
       coverUrl: {
         default: null,
-        validate: validateAttribute('fileBlock.coverUrl', safeFileUrl),
+        validate: validateAttribute('fileBlock.coverUrl', value => value == null || value === '' || safeUrl(value, true)),
         parseHTML: (el) => {
           const value = el.getAttribute('data-cover-url')
-          return safeFileUrl(value) && value ? value : null
+          return safeUrl(value, true) && value ? value : null
         },
         rendered: false,
       },
@@ -132,7 +131,7 @@ const FileBlock = Node.create({
       getAttrs: (el) => {
         const token = el.getAttribute('data-token')
         const src = el.getAttribute('data-src')
-        return (safeAttachmentId(token) || safeUrl(src, true)) ? null : false
+        return (safeAttachmentId(token) || safeFileUrl(src)) ? null : false
       },
     }]
   },
@@ -142,7 +141,7 @@ const FileBlock = Node.create({
       setFileBlock: (attrs) => ({ state, commands }) => {
         const token = attrs && attrs.token
         const src = attrs && attrs.src
-        if (!safeAttachmentId(token) && !safeUrl(src, true)) return false
+        if (!safeAttachmentId(token) && !safeFileUrl(src)) return false
         // 属性合不合法交给 schema 的 validator 判：`validator` 抛错才算拒，
         // 而 `insertContent` 遇到非法属性只会打一条 warning 然后**照常返回 true**
         // —— 不自己兜这一层就会出现「命令说成功、正文里什么都没有」。
@@ -168,7 +167,7 @@ const FileBlock = Node.create({
     if (Number.isFinite(Number(attrs.size)) && Number(attrs.size) >= 0) figure['data-size'] = String(attrs.size)
     if (attrs.mimeType) figure['data-mime-type'] = attrs.mimeType
     figure['data-view-type'] = FILE_VIEW_TYPES.includes(attrs.viewType) ? attrs.viewType : 'Card'
-    if (attrs.coverUrl && safeFileUrl(attrs.coverUrl)) figure['data-cover-url'] = attrs.coverUrl
+    if (attrs.coverUrl && safeUrl(attrs.coverUrl, true)) figure['data-cover-url'] = attrs.coverUrl
     return ['figure', mergeAttributes(figure)]
   },
 

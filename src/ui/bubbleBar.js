@@ -25,6 +25,7 @@ import { iconNode, setIcon } from './icon'
 import { createHeadingMenu } from './headingMenu'
 import { placeMenu } from './menuLayout'
 import { configSignature } from './bubbleConfig'
+import { bindHoverTips } from './hoverTips'
 
 /** 对齐四项的顺序（与飞书一致：左 → 居中 → 右 → 两端）。 */
 const ALIGN_ORDER = ['left', 'center', 'right', 'justify']
@@ -68,7 +69,6 @@ export function createBubbleBar(host, options = {}) {
   const aiButton = document.createElement('button')
   aiButton.type = 'button'
   aiButton.className = 'lark-doc-bubble-ai'
-  aiButton.title = '问问AI'
   aiButton.setAttribute('aria-label', '问问AI')
   aiButton.appendChild(iconNode('block-quote', 16))
   const aiLabel = document.createElement('span')
@@ -86,7 +86,6 @@ export function createBubbleBar(host, options = {}) {
   const headingTrigger = document.createElement('button')
   headingTrigger.type = 'button'
   headingTrigger.className = 'lark-doc-bubble-heading-trigger'
-  headingTrigger.title = '标题级别'
   headingTrigger.setAttribute('aria-label', '标题级别')
   headingTrigger.setAttribute('aria-haspopup', 'menu')
   headingTrigger.setAttribute('aria-expanded', 'false')
@@ -120,7 +119,6 @@ export function createBubbleBar(host, options = {}) {
   alignTrigger.type = 'button'
   alignTrigger.className = 'lark-doc-bubble-align-trigger'
   alignTrigger.setAttribute('aria-label', '缩进和对齐')
-  alignTrigger.title = '缩进和对齐'
   alignTrigger.setAttribute('aria-haspopup', 'menu')
   alignTrigger.setAttribute('aria-expanded', 'false')
   alignTrigger.addEventListener('focus', () => call('onAlignOpen'))
@@ -208,7 +206,6 @@ export function createBubbleBar(host, options = {}) {
   highlightButton.type = 'button'
   highlightButton.className = 'lark-doc-bubble-mark-highlight'
   highlightButton.setAttribute('aria-label', '高亮')
-  highlightButton.title = '高亮'
   highlightButton.setAttribute('aria-pressed', 'false')
   highlightButton.addEventListener('click', () => call('onToggleMark', 'highlight'))
   highlightButton.appendChild(iconNode('mark-highlight', 16))
@@ -217,7 +214,6 @@ export function createBubbleBar(host, options = {}) {
   paletteButton.type = 'button'
   paletteButton.className = 'lark-doc-bubble-caret-button'
   paletteButton.setAttribute('aria-label', '选择高亮颜色')
-  paletteButton.title = '选择高亮颜色'
   // 🔴 必须把**原事件**转出去：`toggleColorPalette` 用 `event.currentTarget.getBoundingClientRect()`
   // 算取色面板位置，自己造事件对象会让面板退回默认的 80/16。
   paletteButton.addEventListener('click', (event) => { event.preventDefault(); call('onPalette', event) })
@@ -229,13 +225,11 @@ export function createBubbleBar(host, options = {}) {
   const copyButton = document.createElement('button')
   copyButton.type = 'button'
   copyButton.setAttribute('aria-label', '复制选中文字')
-  copyButton.title = '复制选中文字'
   copyButton.addEventListener('click', () => call('onCopy'))
   copyButton.appendChild(iconNode('copy', 16))
   const commentButton = document.createElement('button')
   commentButton.type = 'button'
   commentButton.setAttribute('aria-label', '添加评论')
-  commentButton.title = '添加评论'
   commentButton.appendChild(iconNode('mode-comment', 16))
   commentButton.addEventListener('click', () => call('onComment'))
 
@@ -267,7 +261,6 @@ export function createBubbleBar(host, options = {}) {
       const button = document.createElement('button')
       button.type = 'button'
       button.setAttribute('aria-label', item.label)
-      button.title = item.label
       button.setAttribute('aria-pressed', 'false')
       button.addEventListener('click', () => call('onToggleMark', item.id))
       button.appendChild(iconNode(item.icon, 16))
@@ -392,8 +385,7 @@ export function createBubbleBar(host, options = {}) {
       row.label.textContent = `${item.name}对齐`
       row.button.classList.toggle('active', !!item.active)
       row.button.setAttribute('aria-pressed', item.active ? 'true' : 'false')
-      row.button.setAttribute('data-tooltip', item.tooltip)
-      row.button.title = item.tooltip
+      row.button.setAttribute('aria-description', item.tooltip)
       // 选中项的 ✓ 只插一次（等价 `v-if`），不重建按钮。
       if (item.active && !row.check.parentNode) row.button.appendChild(row.check)
       else if (!item.active && row.check.parentNode) row.check.remove()
@@ -416,8 +408,7 @@ export function createBubbleBar(host, options = {}) {
 
   function applyIndentRow(row, disabled, tooltip) {
     row.button.disabled = disabled
-    row.button.setAttribute('data-tooltip', tooltip)
-    row.button.title = tooltip
+    row.button.setAttribute('aria-description', tooltip)
     if (disabled && !row.help.parentNode) row.button.appendChild(row.help)
     else if (!disabled && row.help.parentNode) row.help.remove()
   }
@@ -432,6 +423,13 @@ export function createBubbleBar(host, options = {}) {
 
   build(options.config)
   markSignature = configSignature(options.config)
+  /**
+   * 图标提示。绑在 `el` 上而不是逐个按钮上：`build()` 会清空 children 重建，
+   * `update()` 又按签名重建行内格式按钮，委托一次就不用管重建。
+   * 纯图标（行内格式 / 高亮 / 复制 / 评论）出提示；带中文名的「问问AI」、
+   * 带 caret 的标题级别与取色、带 `aria-haspopup` 的缩进对齐，按判据自动不出。
+   */
+  const tips = bindHoverTips(el)
 
   return {
     el,
@@ -455,6 +453,7 @@ export function createBubbleBar(host, options = {}) {
       destroyed = true
       reconcileHeading(false, null)
       reconcileAlign(false)
+      tips.destroy()
       headingMenu.destroy()
       if (el.parentNode) el.parentNode.removeChild(el)
     },

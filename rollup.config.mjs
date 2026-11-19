@@ -114,9 +114,15 @@ export const sharedHostModules = {
 const SHARED_HOST_ENTRY = '\0lark-doc-shared-host:'
 // 只有这两支包与内核同版本同目录部署，其余构建（es 特性包、element 单文件）
 // 必须自带实现，否则打包器宿主拿不到内核。
-const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd', 'feature:uiExtra:umd'])
+const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd', 'feature:uiExtra:umd', 'feature:export:umd'])
 const sharedHostPaths = new Map(Object.entries(sharedHostModules).map(([file, name]) => [resolve(ROOT, file), name]))
 const sharedHostNames = new Map(Object.entries(sharedHostModules).map(([file, name]) => [name, resolve(ROOT, file)]))
+const uploadPmExports = {
+  '@tiptap/pm/history': ['closeHistory'],
+  '@tiptap/pm/state': ['Plugin', 'PluginKey', 'TextSelection'],
+  '@tiptap/pm/view': ['Decoration', 'DecorationSet'],
+}
+const uploadPmImporters = new Set(['file-upload-tasks.js', 'image-insert.js'].map(file => resolve(ROOT, 'src/core/media', file)))
 
 /** Read only literal private presentation keys; never evaluate application code. */
 function privatePresentationShape(source, factoryName, namespaces) {
@@ -322,7 +328,6 @@ const PM_ENTRY = '\0lark-doc-pm:'
 const MERMAID_ENTRY = '\0lark-doc-mermaid'
 const REACTION_CATALOG = resolve(ROOT, 'src/core/comments/reaction-catalog.json')
 const REACTION_CATALOG_ENTRY = '\0lark-doc-reaction-catalog-assets'
-const REACTION_ASSET_BASE = '__larkDocReactionAssetBase'
 export const MERMAID_FILES = { mermaidEsm: 'lark-doc-mermaid-runtime.esm.js', mermaidCjs: 'lark-doc-mermaid-runtime.common.js' }
 const mermaidEsmTargets = new Set(['esm', 'full', 'legacyEsm', 'elementEsm', 'feature:mermaid'])
 const mermaidCjsTargets = new Set(['cjs', 'fullCjs', 'legacy'])
@@ -406,8 +411,7 @@ export function declaredExports(source, name) {
 }
 
 /** 生成转发 shim：包内只剩导出名清单，实现体由内核发布的那一份提供。 */
-function sharedHostShim(name) {
-  const names = declaredExports(readFileSync(sharedHostNames.get(name), 'utf8'), name)
+function sharedHostShim(name, names = declaredExports(readFileSync(sharedHostNames.get(name), 'utf8'), name)) {
   const lines = [
     'const __sharedTable = (typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : self).__LARK_DOC_SHARED__',
     `const __sharedModule = __sharedTable && __sharedTable[${JSON.stringify(name)}]`,
@@ -475,7 +479,8 @@ function packageAlias(target = '') {
   const deferredUi = element || ['esm', 'cjs', 'lite', 'elementEsm', 'legacy', 'legacyEsm', 'full', 'fullCjs'].includes(target)
   const aliases = new Map([
     ['lark-doc/katex.css', resolve(ROOT, 'src/styles/vendor/katex.css')],
-    ['lark-doc/mermaid-vendor', resolve(ROOT, 'src/assets/vendor/mermaid/mermaid.min.js')],
+    ['lark-doc/mermaid-vendor', resolve(ROOT, exportFeature || target === 'feature:office:umd'
+      ? 'src/core/features/stub.js' : 'src/assets/vendor/mermaid/mermaid.min.js')],
     ...(target === 'lite' || element ? [
       ['katex', resolve(ROOT, 'src/core/features/stub.js')],
       ['docx', resolve(ROOT, 'src/core/features/stub.js')],
@@ -509,6 +514,7 @@ function packageAlias(target = '') {
   return {
     name: 'lark-doc-package-alias',
     resolveId(source, importer) {
+      if (target === 'feature:background:umd' && uploadPmImporters.has(importer) && Object.hasOwn(uploadPmExports, source)) return SHARED_HOST_ENTRY + source
       // 与内核同版本部署的两支 UI 包：重复模块只留转发 shim，实现体读内核那一份。
       if (SHARED_HOST_TARGETS.has(target) && importer && source.startsWith('.') && !importer.startsWith('\0')) {
         const file = resolve(dirname(importer), source)
@@ -615,6 +621,7 @@ function packageAlias(target = '') {
     load(id) {
       if (id.startsWith(SHARED_HOST_ENTRY)) {
         const name = id.slice(SHARED_HOST_ENTRY.length)
+        if (Object.hasOwn(uploadPmExports, name)) return sharedHostShim(name, uploadPmExports[name])
         this.addWatchFile?.(sharedHostNames.get(name))
         return sharedHostShim(name)
       }
@@ -733,9 +740,8 @@ export function inlineCssImports({ deferredVersioning = false } = {}) {
 }
 inlineCssImports.postcss = true
 
-/** UMD cannot split dynamic imports; retain the catalog while emitting its original PNG bytes. */
+/** UMD inlines dynamic imports, so the reaction catalogue ships as a same-directory asset. */
 export function reactionCatalogAssets() {
-  const references = new Set()
   return {
     name: 'lark-doc-reaction-catalog-assets',
     resolveId(id, importer) {
@@ -747,25 +753,12 @@ export function reactionCatalogAssets() {
     transform(_code, id) {
       if (id !== REACTION_CATALOG_ENTRY) return null
       this.addWatchFile(REACTION_CATALOG)
-      const catalog = JSON.parse(readFileSync(REACTION_CATALOG, 'utf8'))
-      let sequence = 0
-      const literal = value => {
-        if (typeof value === 'string') {
-          const image = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value)
-          if (image) {
-            const reference = this.emitFile({ type: 'asset', name: `lark-doc-reaction-${sequence++}.png`, source: Buffer.from(image[1], 'base64') })
-            references.add(reference)
-            return `assetUrl(import.meta.ROLLUP_FILE_URL_${reference})`
-          }
-        }
-        if (Array.isArray(value)) return `[${value.map(literal).join(',')}]`
-        if (value && typeof value === 'object') return `{${Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}:${literal(item)}`).join(',')}}`
-        return JSON.stringify(value)
-      }
-      return `function assetUrl(file){try{return ${REACTION_ASSET_BASE}?new URL(file,${REACTION_ASSET_BASE}).href:file}catch(_){return file}}\nexport default ${literal(catalog)};`
-    },
-    resolveFileUrl({ referenceId, relativePath }) {
-      return references.has(referenceId) ? JSON.stringify(relativePath) : null
+      this.emitFile({ type: 'asset', fileName: 'comment-reaction-catalog.json', source: readFileSync(REACTION_CATALOG, 'utf8') })
+      return `const base = typeof document === 'undefined' ? '' : document.currentScript?.src || document.baseURI;
+export default () => fetch(new URL('comment-reaction-catalog.json', base)).then(response => {
+  if (!response.ok) throw new Error('表情加载失败，请重试');
+  return response.json();
+});`
     },
   }
 }
@@ -791,7 +784,7 @@ export function cssInjection(target) {
 
 function plugins(target, cssFile) {
   return [
-    ...(target === 'element' || target.endsWith(':umd') ? [reactionCatalogAssets()] : []),
+    ...(['element', 'elementRuntime'].includes(target) || target.endsWith(':umd') ? [reactionCatalogAssets()] : []),
     ...(MERMAID_FILES[target] ? [{
       name: 'lark-doc-mermaid-entry',
       resolveId(id) { return id === MERMAID_ENTRY ? id : null },
@@ -1015,8 +1008,6 @@ export function getRollupConfig(target = process.env.ROLLUP_TARGET || 'esm') {
     // host instead of rewriting the import to a static require and pulling
     // all highlight grammars into the first screen.
     ...(selected.format === 'cjs' && !selected.inlineDynamicImports ? { dynamicImportInCjs: false } : {}),
-    // Capture per IIFE before an inlined dynamic catalog is evaluated on a later user click.
-    ...(selected.format === 'umd' ? { intro: `var ${REACTION_ASSET_BASE}=typeof document!=="undefined"&&document.currentScript&&document.currentScript.src||null;` } : {}),
     paths(id) {
       if (id === 'lark-doc/mermaid-vendor' && mermaidTarget(normalizedTarget)) {
         return `${normalizedTarget.startsWith('feature:') ? '..' : '.'}/${MERMAID_FILES[mermaidTarget(normalizedTarget)]}`

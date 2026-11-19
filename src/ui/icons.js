@@ -7,7 +7,7 @@
 import { ICON_PALETTE } from './palette'
 
 const S = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"'
-const wrap = (inner, extra = '') => `<svg ${S} ${extra}>${inner}</svg>`
+export const wrap = (inner, extra = '') => `<svg ${S} ${extra}>${inner}</svg>`
 
 export const ICONS = {
   'block-file': wrap('<path d="m6.5 9.5 4-4a2.1 2.1 0 0 1 3 3l-6 6a3.5 3.5 0 0 1-5-5l6-6a1.4 1.4 0 0 1 2 2l-6 6a.7.7 0 0 1-1-1l5-5"/>'),
@@ -27,12 +27,10 @@ export const ICONS = {
     return [`block-h${level}`, wrap(`<text x="8" y="12" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="650" text-anchor="middle">H<tspan font-size="8.5">${level}</tspan></text>`)]
   })),
   ...Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`mobile-heading${i + 7}`, wrap(`<text x="8" y="11.6" fill="currentColor" stroke="none" font-family="Helvetica, Arial, sans-serif" font-size="9.5" font-weight="600" text-anchor="middle">H<tspan font-size="7">${i + 7}</tspan></text>`)])),
+  "table-float-remove": "<svg viewBox=\"0 0 24 24\" fill=\"none\"><path d=\"M8 4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2h5a1 1 0 1 1 0 2h-1v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6H3a1 1 0 0 1 0-2h5ZM6 6v14h12V6H6Zm4 3a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1Zm4 0a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0v-6a1 1 0 0 1 1-1Z\" fill=\"currentColor\"></path></svg>",
+
   'table-merge': wrap('<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 8h4m4 0h4M4.5 6.5 6 8 4.5 9.5m7-3L10 8l1.5 1.5"/>'),
-  'table-insert-boundary': '<svg viewBox="0 0 22 24" fill="none"><path d="M16.153 20.721A10.999 10.999 0 0022 11c0-6.075-4.925-11-11-11S0 4.925 0 11c0 4.213 2.369 7.873 5.847 9.721L11 24l5.153-3.279z" fill="currentColor"/><path d="M10.45 6a.2.2 0 00-.2.2v4.05H6.2a.2.2 0 00-.2.2v1.1c0 .11.09.2.2.2h4.05v4.05c0 .11.09.2.2.2h1.1a.2.2 0 00.2-.2v-4.05h4.05a.2.2 0 00.2-.2v-1.1a.2.2 0 00-.2-.2h-4.05V6.2a.2.2 0 00-.2-.2h-1.1z" fill="var(--ld-table-plus-fg)"/></svg>',
   'cell-background': wrap('<rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M6 2v12M10 2v12M2 10h12"/><path d="M6 6h4v4H6Z" fill="currentColor" stroke="none"/>'),
-  'valign-top': wrap('<path d="M2 3h12M8 13V6m-3 3 3-3 3 3"/>'),
-  'valign-middle': wrap('<path d="M2 8h12M8 1v4M6 3l2 2 2-2M8 15v-4m-2 2 2-2 2 2"/>'),
-  'valign-bottom': wrap('<path d="M2 13h12M8 3v7M5 7l3 3 3-3"/>'),
   'share-link': wrap('<path d="M9 2h5v5M14 2 7 9M5 4H2v10h10v-3"/>'),
   'image-crop': wrap('<path d="M5 1v10h10M1 5h10v10M8 2h6v6"/>'),
   'insert-file': wrap('<path d="m6 10 4.6-4.6a2 2 0 0 1 2.8 2.8L7 14.6a3.5 3.5 0 0 1-5-5l6.4-6.4a2.5 2.5 0 0 1 3.6 3.6L5.6 13"/>'),
@@ -52,6 +50,9 @@ export const ICONS = {
   'mobile-outline': '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="2.5" cy="2.5" r="1.5" fill="currentColor" stroke="none"/><path d="M2.5 4v3H4M4 16H2.5v-4H1M8 2.5h8M8 9h8M8 15.5h8"/></svg>',
   'mobile-members': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="8.5" cy="7" r="3.5"/><path d="M1.5 20.5v-2.6a4.4 4.4 0 0 1 4.3-4.4h5.4a4.4 4.4 0 0 1 4.3 4.4v2.6ZM18.5 15h1a3 3 0 0 1 3 3v2.5h-4"/><circle cx="17.5" cy="9.5" r="2"/></svg>',
   'mobile-menu': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 6h14M5 12h14M5 18h14"/></svg>',
+  'comment-history-info': '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 2C5.925 23 1 18.075 1 12S5.925 1 12 1s11 4.925 11 11-4.925 11-11 11Zm-1-7.5v-4a1 1 0 1 1 0-2h1.004c.55 0 .998.445.998.996.003 1.668-.002 3.336-.002 5.004h.5a1 1 0 1 1 0 2h-3a1 1 0 1 1 0-2h.5Zm1-7a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" fill="currentColor"/></svg>',
+  'comment-history-empty': '<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M103.587 73.962V64c5.142 1.573 10.804 3.656 12.077 6.592.176.4.262.796.262 1.184h.002v5.856c0-.388-.088-.785-.262-1.185-.108-.246-.249.29-.423.949-.241.912-.544 2.062-.908 1.707-.618-.606-1.43-1.23-2.408-1.857-1.983-1.27-5.114-2.34-8.34-3.284ZM22.423 35.486v8.518c-8.445-2.616-17.634-6.317-17.634-10.67V22.628c0 7.267 9.214 10.845 17.634 12.86Z" fill="var(--ld-text)"/><path d="M4.788 33.63c0-.075.001-.15.005-.226.288-6.747 14.759-13.693 19.854-14.66V9.836c-4.376.83-19.86 7.503-19.86 13.906v9.889Z" fill="var(--ld-text-check)"/><path d="M103.587 26.174a4 4 0 0 0-4-4H26.423a4 4 0 0 0-4 4V72.48a4 4 0 0 0 4 4h66.261l10.903 10.507V26.174Z" fill="var(--ld-text-disabled)" fill-opacity=".45"/><path d="M33.508 37.654a.5.5 0 0 1 .5-.5h46.814a.5.5 0 0 1 0 1H34.008a.5.5 0 0 1-.5-.5Zm0 10.52a.5.5 0 0 0 .5.5h27.1a.5.5 0 1 0 0-1h-27.1a.5.5 0 0 0-.5.5Z" fill="var(--ld-text-icon)"/><path d="M100.759 35.023c6.373 0 11.54-5.167 11.54-11.541 0-6.374-5.167-11.54-11.54-11.54-6.374 0-11.541 5.166-11.541 11.54 0 6.374 5.167 11.54 11.541 11.54Z" fill="var(--ld-brand-chrome)"/><path d="M11.45 67.418v28.593a.5.5 0 0 0 .845.361l5.043-4.82h31.231a2.5 2.5 0 0 0 2.5-2.5V67.418a2.5 2.5 0 0 0-2.5-2.5H13.95a2.5 2.5 0 0 0-2.5 2.5Zm2.5-1.5h34.62a1.5 1.5 0 0 1 1.5 1.5v21.633a1.5 1.5 0 0 1-1.5 1.5H17.136a.5.5 0 0 0-.345.139l-4.342 4.151V67.418a1.5 1.5 0 0 1 1.5-1.5Z" fill="var(--ld-text)"/><path d="M115.928 71.686c-.061 8.424-34.561 13.433-54.424 14.171v9.09c20.95-.576 54.424-5.725 54.424-13.466v-9.795Z" fill="var(--ld-text-check)"/><path d="M57.415 111.165v-9.088c14.542-.532 36.808-3.283 48.133-7.933v9.453c-11.09 4.389-32.867 7.156-48.133 7.568Z" fill="var(--ld-brand-chrome)"/><path d="M52.122 12.786V3.938C41.949 4.545 38.111 5.96 32.247 7.8v9.092c5.823-1.572 10.217-2.94 19.875-4.106Z" fill="var(--ld-text-check)"/></svg>',
+
   'comment-send': '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 13.75c-.4.13-.5.49-.5.75L2.5 22a1 1 0 0 0 1.48.88l18.5-10a1 1 0 0 0 0-1.76l-18.5-10A1 1 0 0 0 2.5 2L3 9.5c0 .27.06.66.5.76l7.13 1.25a.5.5 0 0 1 0 .98L3.5 13.75Z" fill="currentColor"/></svg>',
   'diagram-flowchart': '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="1.5" width="6" height="3.5" rx="1"/><path d="m10 7 3 3-3 3-3-3Z"/><rect x="1.5" y="14.5" width="6" height="3.5" rx="1"/><rect x="12.5" y="14.5" width="6" height="3.5" rx="1"/><path d="M10 5v2M10 13v1.5M7.8 10H4.5v4.5M12.2 10h3.3v4.5"/></svg>',
   'diagram-sequence': '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v16M16 2v16"/><rect x="2" y="2" width="4" height="3" rx=".8"/><rect x="14" y="2" width="4" height="3" rx=".8"/><path d="M6 7h8l-2-2M14 11H6l2 2M6 15h8l-2-2"/></svg>',
@@ -85,6 +86,7 @@ export const ICONS = {
   sparkle: wrap('<path d="M8 2l1.4 4.1L13.5 7.5 9.4 8.9 8 13 6.6 8.9 2.5 7.5 6.6 6.1z" fill="currentColor" stroke="none"/><path d="M12.5 11.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z" fill="currentColor" stroke="none"/>'),
   search: wrap('<circle cx="7" cy="7" r="4.4"/><path d="m10.4 10.4 3.4 3.4"/>'),
   outline: wrap('<path d="M3 4h10"/><path d="M3 8h10"/><path d="M3 12h6"/>'),
+  'outline-expand': wrap('<path d="M2.5 4h11"/><path d="M2.5 8h11"/><path d="M2.5 12h11"/>'),
   reading: wrap('<path d="M8 5.2A2.2 2.2 0 0 0 5.8 3H2.8v9.5h3.4A1.8 1.8 0 0 1 8 13.7"/><path d="M8 5.2A2.2 2.2 0 0 1 10.2 3h3v9.5h-3.4A1.8 1.8 0 0 0 8 13.7"/>'),
   fullscreen: wrap('<path d="M2.5 6V3.9a1.4 1.4 0 0 1 1.4-1.4H6"/><path d="M10 2.5h2.1a1.4 1.4 0 0 1 1.4 1.4V6"/><path d="M13.5 10v2.1a1.4 1.4 0 0 1-1.4 1.4H10"/><path d="M6 13.5H3.9a1.4 1.4 0 0 1-1.4-1.4V10"/>'),
   slides: wrap('<rect x="2.5" y="3" width="11" height="7.6" rx="1.3"/><path d="M7 5.6 9.6 6.8 7 8z" fill="currentColor" stroke="none"/><path d="M8 10.6v2"/><path d="M5.6 13h4.8"/>'),

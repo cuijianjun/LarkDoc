@@ -27,6 +27,7 @@ import { downloadBlob, downloadText } from '../download.js'
 import { loadFeature } from '../../core/features/registry'
 import { safeUrl, flattenHeadingContainers } from '../../core/documentOperations'
 import { createNetworkPolicy } from '../../core/policy/network'
+import { cropImageBlob, normalizeImageCrop } from '../../core/media/image-crop'
 
 export { safeFileName, withExtension } from './fileName.js'
 export { exportPdf } from './pdf.js'
@@ -56,7 +57,38 @@ function withCommentAppendix(doc, comments) {
       reply.attachments.forEach(item => content.push(paragraph(`附件：${item.name || '图片'} ${/^data:/i.test(item.url) ? '[内嵌图片]' : item.url}`)))
     })
   })
-  return { type: 'doc', content: [...nodesOf(doc), ...content] }
+  return { type: 'doc', content: [...doc.content, ...content] }
+}
+
+async function prepareWordCrops(doc, images, failed, assertCurrent) {
+  const prepared = { ...images }
+  let sequence = 0
+  async function visit(node) {
+    if (node?.type === 'image' && Array.isArray(node.attrs?.crop)) {
+      const { src, width, height } = node.attrs
+      const crop = normalizeImageCrop(node.attrs.crop)
+      assertCurrent()
+      if (crop && Object.prototype.hasOwnProperty.call(prepared, src) && prepared[src]) {
+        try {
+          const blob = await cropImageBlob(new Blob([prepared[src]]), crop)
+          const bytes = new Uint8Array(await blob.arrayBuffer())
+          assertCurrent()
+          let croppedSrc
+          do { croppedSrc = `lark-doc-export-crop:${++sequence}` } while (Object.prototype.hasOwnProperty.call(prepared, croppedSrc))
+          prepared[croppedSrc] = bytes
+          node.attrs = { ...node.attrs, src: croppedSrc, crop: null, naturalWidth: null, naturalHeight: null,
+            width: (Number(width) || 320) * (crop[2] - crop[0]),
+            height: Number(height) > 0 ? Number(height) * (crop[3] - crop[1]) : null }
+          return
+        } catch (_) { assertCurrent() }
+      }
+      // The untouched crop stays a visible placeholder in the builder when cropping fails.
+      if (typeof src === 'string' && src && !failed.includes(src)) failed.push(src)
+    }
+    if (Array.isArray(node?.content)) for (const child of node.content) await visit(child)
+  }
+  await visit(doc)
+  return prepared
 }
 
 /** doc → 块数组：兼容 doc JSON、doc 节点实例与裸数组三种输入。 */
@@ -134,9 +166,9 @@ export async function collectImages(doc, options = {}) {
       continue
     }
     if (typeof fetch !== 'function') { failed.push(src); continue }
-    if (!safeUrl(src, true) || !createNetworkPolicy(options.network).allows(src) || (options.isCurrent && !options.isCurrent())) { failed.push(src); continue }
+    if (src.includes('\\') || !safeUrl(src, true) || !createNetworkPolicy(options.network).allows(src) || (options.isCurrent && !options.isCurrent())) { failed.push(src); continue }
     try {
-      const response = await fetch(src)
+      const response = await fetch(src, { credentials: 'same-origin', redirect: 'error' })
       if (!response.ok) {
         failed.push(src)
         continue
@@ -187,20 +219,32 @@ export function exportMarkdown(doc, options) {
  * @param {object} [options.images] src → 字节；不传时自动 `collectImages`
  * @param {string} [options.scope] 内容范围；withComments 必须传实际 comments 并构建附录/原生评论。
  * @param {Function} [options.isCurrent] Optional final UI-context guard before download.
- * @returns {Promise<{ fileName: string, blob: Blob, failedImages: string[], scope: string }|null>}
+ * @returns {Promise<{ fileName: string, blob: Blob, failedImages: string[], scope: string, warnings: string[] }>}
  */
 export async function exportDocx(doc, options) {
   const settings = options || {}
   const scope = typeof settings.scope === 'string' ? settings.scope : ''
   if (scope === 'withComments' && !Array.isArray(settings.comments)) throw new Error('未提供实际评论，无法导出正文及评论')
+  const current = () => (typeof settings.isCurrent !== 'function' || !!settings.isCurrent())
+    && (typeof settings.shouldDownload !== 'function' || !!settings.shouldDownload())
+  const assertCurrent = () => {
+    if (!current()) throw new Error('导出条件已改变，已取消下载')
+  }
+  assertCurrent()
   const fileName = withExtension(settings.fileName, 'docx')
+  const input = typeof doc?.toJSON === 'function' ? doc.toJSON() : doc
+  const blocks = Array.isArray(input) ? input.map(node => typeof node?.toJSON === 'function' ? node.toJSON() : node) : input
+  const source = { type: 'doc', content: nodesOf(blocks) }
   let images = settings.images
   let failedImages = []
   if (!images) {
-    const collected = await collectImages(doc, { network: settings.network, isCurrent: settings.isCurrent || settings.shouldDownload })
+    const collected = await collectImages(source, { network: settings.network, isCurrent: current })
     images = collected.images
     failedImages = collected.failed
   }
+  assertCurrent()
+  images = await prepareWordCrops(source, images, failedImages, assertCurrent)
+  const report = {}
   // webpackChunkName 必须是 **"office"**：`utils/importExport.js` 里那条 `await import('docx')`
   // 已经占了这个名字，Rollup 的 office feature target 也按这个名字把 docx 收成一个
   // 按需区块。这里不标（或标别的名字）webpack 会另开一个自动命名的 async chunk 装 docx，
@@ -211,8 +255,13 @@ export async function exportDocx(doc, options) {
   // 宿主加载 lark-doc/features/office.js（自带 buildDocx）后恢复 rich Word 导出。
   const { buildDocx } = await loadFeature('office.buildDocx', () =>
     import(/* webpackChunkName: "office" */ './docx.js'))
-  const blob = await buildDocx(withCommentAppendix(doc, scope === 'withComments' ? settings.comments : null), { images, title: settings.title || settings.fileName, comments: scope === 'withComments' ? normalizeExportComments(settings.comments) : [] })
-  if ((typeof settings.isCurrent === 'function' && !settings.isCurrent()) || (typeof settings.shouldDownload === 'function' && !settings.shouldDownload())) throw new Error('导出条件已改变，已取消下载')
+  assertCurrent()
+  const comments = scope === 'withComments' ? normalizeExportComments(settings.comments) : []
+  const blob = await buildDocx(withCommentAppendix(source, comments), { images, title: settings.title || settings.fileName, comments, report, shouldDownload: current })
+  assertCurrent()
   downloadBlob(blob, fileName)
-  return { fileName, blob, failedImages, scope }
+  const warnings = []
+  if (report.mathFallbacks) warnings.push(`${report.mathFallbacks} 个公式以源码保留`)
+  if (report.chartFallbacks) warnings.push(`${report.chartFallbacks} 个图表以源码保留`)
+  return { fileName, blob, failedImages, scope, warnings }
 }

@@ -10,6 +10,8 @@ import { closeHistory } from '@tiptap/pm/history'
 import { placeMenu } from '../../../ui/menuLayout'
 import { openMathAt } from '../../../core/nodeviews/math'
 import { EMBED_MENU_ITEMS, EMBED_HELP_URL } from '../../../core/embed/presets'
+import { appPreviewOf } from '../../../core/embed/app-preview'
+import { isCommandEnabled } from '../larkDocConfig'
 import { readHost, resolveEmbed } from '../../../core/embed/resolve'
 import {
   marks, fontFamilyOptions, fontSizeOptions, lineHeightOptions,
@@ -68,7 +70,8 @@ export default {
     // 内嵌网页浮层当前项：15 条里按 id 现查（未命中给 null，模板里 v-if 已先拦一层）。
     embedDialogItem() {
       if (!this.embedDialog) return null
-      return EMBED_MENU_ITEMS.find((item) => item.id === this.embedDialog) || null
+      const app = appPreviewOf(this.embedDialog)
+      return app ? { ...app, dialogTitle: `插入${app.label}预览`, placeholder: '粘贴应用的 http(s) 链接' } : EMBED_MENU_ITEMS.find((item) => item.id === this.embedDialog) || null
     },
     embedDialogTitle() { return this.embedDialogItem ? this.embedDialogItem.dialogTitle : '' },
     embedDialogPlaceholder() { return this.embedDialogItem ? this.embedDialogItem.placeholder : '' },
@@ -276,7 +279,6 @@ export default {
       this.linkText = ''
       this.editor.view.focus()
     },
-    removeLink() { if (this._linkDialogTarget) return this.removeHoveredLink(this._linkDialogTarget); if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
     insertMathAtSelection() {
       if (!this.writable() || !this.featureEnabled('math')) return false
       this.restoreSelection()
@@ -292,11 +294,13 @@ export default {
      * 打开浮层。落点跟着插入位置走 —— 04 §4.3 ④ 实测「跟随插入块位置」，
      * 所以取光标当前**视口**坐标换算（浮层是 position: fixed），算不出就退回视口居中。
      */
+    removeLink() { if (this._linkDialogTarget) return this.removeHoveredLink(this._linkDialogTarget); if (this.writable() && !this.linkInsertMode) { this.run('unsetLink'); this.linkDialog = false } },
     openEmbedDialog(embedId) {
       if (!this.writable()) return
       this.embedDialog = embedId
       this.embedValue = ''
       this.embedDialogRejected = false
+      this._embedDialogDoc = this.editor?.state?.doc
       this.embedDialogPos = this.computeEmbedDialogPos()
     },
     computeEmbedDialogPos() {
@@ -325,7 +329,7 @@ export default {
     },
     // 模板经 ed. 调用（同 setLinkValue），避免 vue/no-mutating-props；重输即复位拒绝态。
     setEmbedValue(value) { this.embedValue = value; this.embedDialogRejected = false },
-    closeEmbedDialog() { this.embedDialog = null; this.embedValue = ''; this.embedDialogRejected = false },
+    closeEmbedDialog() { this.embedDialog = null; this.embedValue = ''; this.embedDialogRejected = false; this._embedDialogDoc = null },
     /**
      * 「确认」。04 §4.3 ⑤ 三条实测行为：
      * - 合法链接 → 浮层消失 + 落块；
@@ -337,6 +341,9 @@ export default {
      */
     applyEmbedDialog() {
       if (!this.writable()) return
+      const app = appPreviewOf(this.embedDialog)
+      if (app && !isCommandEnabled(this.larkDocConfig, app.id, 'insert')) return
+      if (this._embedDialogDoc && this._embedDialogDoc !== this.editor.state.doc) { this.error = '正文已变化，请重新插入链接预览'; return }
       const url = String(this.embedValue || '').trim()
       // 与 resolve.js 共用同一个 host 口径：readHost 为 null 就是「这压根不是一个链接」。
       if (!url || !readHost(url)) { this.embedDialogRejected = true; return }

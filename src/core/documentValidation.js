@@ -9,6 +9,7 @@ import { MENTION_KINDS } from './blocks/mention'
 import { REMINDER_REPEATS, REMINDER_AT_PATTERN, REMINDER_OFFSETS } from './blocks/reminder'
 import { isEmojiGlyph } from './emoji/lookup'
 import { isImageCrop, isImageDimension, parseImageCrop } from './media/image-crop'
+import { FILE_VIEW_TYPES, safeFileUrl } from './media/file-block'
 import { safeLinkCardMeta, readBookmarkUrl, BOOKMARK_LIMITS, RECORD_ID_PATTERN } from './embed/bookmark'
 // 外部服务块目录（17 §17.5 tier C / P3 批次）：载入降级要靠它认「这是哪一类外部块」。
 // 判定层不 import 本文件（无环），与 mention / reminder 的常量引入同口径。
@@ -16,7 +17,7 @@ import {
   EXTERNAL_BLOCK_KINDS, EXTERNAL_PAYLOAD_MAX, EXTERNAL_STATUS,
   externalBlockPreview, isExternalBlockType, safeExternalTitle,
 } from './embed/external-block'
-import { HEADING_NUMBER_MAX } from './headingNumbering'
+import { HEADING_NUMBER_MAX, HEADING_VALUE_MAX } from './headingNumbering'
 import { BLOCK_ID_PATTERN } from './documentSections'
 
 // 未知块占位卡 payload 上限（P1-03）：payload 可能承载替代整个子树的原始块 JSON。
@@ -56,7 +57,8 @@ function validateAttrs(type, attrs, definition) {
       return
     }
     let valid = true
-    if (key === 'src' || key === 'originalSrc') valid = value === '' || safeUrl(value, true)
+    if (key === 'src' || key === 'originalSrc') valid = value === '' || (type === 'fileBlock' ? safeFileUrl(value) : safeUrl(value, true))
+    else if (type === 'fileBlock' && key === 'size') valid = Number.isFinite(value) && value >= 0
     else if (key === 'attchId' || key === 'originalAttchId') valid = safeAttachmentId(value)
     else if (type === 'image' && (key === 'naturalWidth' || key === 'naturalHeight')) valid = isImageDimension(value)
     else if (type === 'image' && key === 'crop') valid = isImageCrop(value)
@@ -110,7 +112,8 @@ function validateAttrs(type, attrs, definition) {
     else if (key === 'blockId') valid = BLOCK_ID_PATTERN.test(String(value))
     // 标题编号：开关是布尔，起点是 1..999 的整数或不设（null = 继续）。
     else if (key === 'numbering') valid = typeof value === 'boolean'
-    else if (key === 'numberingStart') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= HEADING_NUMBER_MAX)
+    else if (key === 'numberingStart') valid = Number.isInteger(value) && value >= 1 && value <= HEADING_VALUE_MAX
+    else if (type === 'heading' && key === 'numberingLevel') valid = Number.isInteger(value) && value >= 1 && value <= 9
     // 列表项起点（等价 <li value>）：null = 继续前序，数字 = 从该值起算。
     else if (key === 'numberStart') valid = value === null || (Number.isInteger(value) && value >= 1 && value <= HEADING_NUMBER_MAX)
     else if (key === 'target') valid = ['_blank', '_self'].includes(value)
@@ -298,8 +301,17 @@ export function sanitizeHTML(html) {
   const tags = new Set(['P', 'DIV', 'SPAN', 'MARK', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'PRE', 'SUB', 'SUP', 'BLOCKQUOTE', 'HR', 'UL', 'OL', 'LI', 'A', 'IMG', 'FIGURE', 'FIGCAPTION', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'COLGROUP', 'COL', 'DETAILS', 'SUMMARY', 'LABEL', 'INPUT'])
   const dangerous = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META', 'BASE', 'FRAME', 'FRAMESET'])
   const linkAttributes = new Set(['data-href', 'data-view', 'data-height', 'data-title', 'data-card-meta', 'data-link-view', 'data-link-title', 'data-link-card-meta', 'data-url', 'data-desc', 'data-favicon', 'data-cover', 'data-record-id'])
+  const fileAttributes = {
+    'data-src': safeFileUrl,
+    'data-original-src': safeFileUrl,
+    'data-token': safeAttachmentId,
+    'data-cover-url': value => safeUrl(value, true),
+    'data-mime-type': value => /^[\w+.-]+\/[\w+.-]+$/.test(value),
+    'data-size': value => value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0,
+    'data-view-type': value => FILE_VIEW_TYPES.includes(value),
+  }
   const revisionAttributes = new Set(['data-revision-id', 'data-revision-author', 'data-revision-kind', 'data-deletion-revision-id', 'data-deletion-author'])
-  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-crop', 'data-natural-width', 'data-natural-height', 'data-caption', 'data-code-wrap', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'data-has-time', 'data-notify-offset', 'data-item-id', 'data-duration-minutes', 'class'])
+  const attributes = new Set(['href', 'src', 'alt', 'title', 'width', 'colspan', 'rowspan', 'colwidth', 'start', 'value', 'open', 'type', 'checked', 'disabled', 'data-type', 'data-level', 'data-width', 'data-align', 'data-original-src', 'data-attch-id', 'data-original-attch-id', 'data-crop', 'data-natural-width', 'data-natural-height', 'data-caption', 'data-code-wrap', 'data-latex', 'data-name', 'data-emoji', 'data-checked', 'data-colwidth', 'data-color', 'data-language', 'data-indent', 'data-block-id', 'data-numbering', 'data-numbering-start', 'data-numbering-level', 'data-continue-from', 'data-token', 'data-mention-kind', 'data-mention-id', 'data-department', 'data-notify', 'data-remind-at', 'data-repeat', 'data-has-time', 'data-notify-offset', 'data-item-id', 'data-duration-minutes', 'class'])
   Array.from(container.querySelectorAll('*')).forEach((element) => {
     if (!container.contains(element)) return
     const tag = element.tagName.toUpperCase()
@@ -341,6 +353,8 @@ export function sanitizeHTML(html) {
       } else if (revisionAttributes.has(name)) {
         const validTag = name.startsWith('data-deletion-') ? tag === 'PRE' : tag === 'SPAN'
         if (!validTag || attribute.value.length > 100000 || attribute.value.includes('\u0000') || name === 'data-revision-kind' && !['insert', 'delete'].includes(attribute.value)) element.removeAttribute(name)
+      } else if (tag === 'FIGURE' && element.getAttribute('data-type') === 'file' && Object.prototype.hasOwnProperty.call(fileAttributes, name)) {
+        if (!fileAttributes[name](attribute.value)) element.removeAttribute(name)
       } else if (!attributes.has(name)) element.removeAttribute(name)
       else if (name === 'data-color' && (tag !== 'MARK' || !safeColor(attribute.value))) element.removeAttribute(name)
       else if (name === 'colwidth') {
@@ -355,6 +369,7 @@ export function sanitizeHTML(html) {
       else if ((name === 'src' || name === 'data-original-src') && !safeUrl(attribute.value, true)) element.removeAttribute(name)
       else if ((name === 'data-attch-id' || name === 'data-original-attch-id') && (!['IMG', 'FIGURE'].includes(tag) || !safeAttachmentId(attribute.value))) element.removeAttribute(name)
       else if (name === 'class' && !/^(language-[\w+-]+|tiptap-mathematics-render)$/.test(attribute.value)) element.removeAttribute(name)
+      else if (name === 'data-numbering-level' && !/^[1-9]$/.test(attribute.value)) element.removeAttribute(name)
       else if (name === 'data-align' && !['left', 'center', 'right'].includes(attribute.value)) element.removeAttribute(name)
       // 提及（P4-01）：身份属性必须落进 schema 认识的形态 —— 放行一个畸形值，
       // 结果是「粘贴一段带 @ 的富文本 → 整篇 setContent 抛错」，比丢掉 attr 严重得多。

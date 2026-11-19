@@ -95,6 +95,12 @@ describe('工作区 Word 下载闭环', () => {
     expect(JSON.stringify(doc)).toBe(before)
     expect(state.notice).not.toContain('纯文本')
   })
+  it('宿主入口显示公式与图表源码回退，不用单一成功提示掩盖格式损失', async () => {
+    richExportDocx.mockResolvedValueOnce({ failedImages: [], warnings: ['1 个公式以源码保留', '2 个图表以源码保留'] })
+    const { controller, state } = createHarness({ host: { getJSON: content } })
+    await controller.exportDocument('docx')
+    expect(state.notice).toBe('Word 已导出；1 个公式以源码保留；2 个图表以源码保留')
+  })
   it.each(['canView', 'canExport'])('缺少%s时不读取图片或下载Word', async denied => {
     const fetchImage = vi.fn()
     const { controller, state } = createHarness({ host: { getJSON: content, getWindow: () => ({ fetch: fetchImage }) } })

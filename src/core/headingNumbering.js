@@ -21,6 +21,8 @@ export const isolatedHeadingContainers = new Set(['callout', 'blockquote', 'deta
  * 编号值本身不落库：由前序同级标题算出来，删除/移动/插入会自动更新（飞书同款行为）。
  */
 export const HEADING_NUMBER_MAX = 999
+export const HEADING_VALUE_MAX = 999999999
+export const HEADING_NUMBER_CONTAINERS = new Set(['callout', 'table', 'tableCell', 'tableHeader'])
 
 /**
  * 把一串层级计数拼成飞书样式的编号。
@@ -36,38 +38,81 @@ export function formatHeadingNumber(numbers) {
   return `${parts.join('.')}${parts.length === 1 ? '.' : ''}`
 }
 
-/**
- * 推进一个编号标题对计数器的影响，返回该标题的编号信息。
- *
- * 这是「编号怎么长」的**唯一**实现：全文扫描（computeHeadingNumbers）与
- * P7-01 的局部重扫（按脏区续算）都调它，避免两套规则各自漂移。
- * `counters[0]` 不使用（层级从 1 起），长度固定 10。
- */
-export function advanceHeadingCounters(counters, node) {
-  const level = Math.max(1, Math.min(9, Number(node.attrs?.level) || 1))
-  // 更深层的计数归零：出现 H2 之后，之前的 H3 序列不再影响新的 H3。
-  for (let deeper = level + 1; deeper <= 9; deeper += 1) counters[deeper] = 0
-  const start = node.attrs?.numberingStart
-  if (Number.isInteger(start) && start > 0) counters[level] = Math.min(HEADING_NUMBER_MAX, start) - 1
-  counters[level] += 1
-  const numbers = counters.slice(1, level + 1)
-  return { label: formatHeadingNumber(numbers), level, counters: numbers.slice() }
+export function collectHeadingEntries(doc) {
+  const result = []
+  const walk = (parent, start, scope, hidden) => parent.forEach((node, offset) => {
+    const pos = start + offset
+    if (node.type.name === 'heading') result.push({ pos, level: node.attrs.level, attrs: node.attrs, node, scope, hidden })
+    if (!node.isTextblock && !node.isLeaf) walk(node, pos + 1, HEADING_NUMBER_CONTAINERS.has(node.type.name) ? node : scope, hidden || isolatedHeadingContainers.has(node.type.name))
+  })
+  if (doc) walk(doc, 0, null, false)
+  return result
 }
 
 /**
- * 扫描整篇文档，返回 `Map<pos, { label, level, counters }>`。
- *
- * 只统计「带编号的标题」：正文有序列表由浏览器 list-style 自己排，两者互不干扰。
- * `numberingStart` 生效时把该层计数器压回起点，后续同级兄弟从它继续（飞书语义）。
+ * REA v52：字号 level 与编号层级 numberingLevel 分离。按隔离容器分队列，
+ * 队列内实际出现的标题级别密集映射；独立重启队列不消费外层续号。
+ * 只存原始元信息；同步调用排空，异步目录通过 yield 保持可取消与分片。
  */
-export function computeHeadingNumbers(doc) {
+export function* iterateHeadingNumbers(headings) {
+  const scopes = new Map(), numbers = new Map(), items = []
+  for (let index = 0; index < headings.length; index++) {
+    const entry = headings[index], attrs = entry.attrs
+    if (attrs.numbering) {
+      let context = scopes.get(entry.scope)
+      if (!context) { context = { queues: [], active: 0 }; scopes.set(entry.scope, context) }
+      const { queues } = context
+      const item = { entry }
+      items.push(item)
+      if (attrs.numberingLevel || !queues.length) {
+        queues.push({ items: [item], levels: 1 << entry.level }); context.active = queues.length - 1
+      } else {
+        for (let at = context.active; at >= 0; at--) {
+          const first = queues[at].items[0].entry
+          const accepts = entry.level >= first.level || !first.attrs.numberingLevel
+          const independent = entry.level === first.level && first.attrs.numberingLevel && attrs.numberingStart
+          if (accepts && !independent) { queues[at].items.push(item); queues[at].levels |= 1 << entry.level; context.active = at; break }
+          if (!at) { queues.push({ items: [item], levels: 1 << entry.level }); context.active = queues.length - 1 }
+        }
+      }
+    }
+    if (index % 128 === 127) yield
+  }
+  for (const { queues } of scopes.values()) {
+    let regular = [], independent = []
+    for (const queue of queues) {
+      // 收集时记录九级位图；预处理最多九步，避免巨型队列一次map/sort。
+      const depths = new Map()
+      let base = queue.items[0].entry.attrs.numberingLevel || 1
+      for (let level = 1; level <= 9; level++) if (queue.levels & (1 << level)) depths.set(level, base++)
+      let custom = false
+      for (const item of queue.items) {
+        const { entry } = item, { attrs } = entry
+        if (attrs.numberingLevel) custom = true
+        const next = [...(custom ? independent : regular)], depth = depths.get(entry.level)
+        if (next.length < depth) while (next.length < depth) next.push(1)
+        else { next.length = depth; next[depth - 1]++ }
+        if (attrs.numberingStart) next[depth - 1] = Math.min(HEADING_VALUE_MAX, attrs.numberingStart)
+        numbers.set(item, next)
+        if (custom) independent = next
+        else regular = next
+        yield
+      }
+    }
+  }
+  // 队列处理顺序不同于正文顺序，落定后再按正文顺序产出。
+  for (const item of items) {
+    const next = numbers.get(item), { entry } = item
+    // 「继续编号」只在块自己带起点/层级时可点：不带就是天然连续，点了也没有可清的东西。
+    // 不能拿「前一个同级是否连续」判——首块没有前项，设过起点后会被误禁用。
+    const canContinue = !!(entry.attrs.numberingLevel || entry.attrs.numberingStart)
+    yield { pos: entry.pos, info: { label: formatHeadingNumber(next), level: entry.level, counters: next, canContinue } }
+  }
+}
+
+export function computeHeadingNumbers(doc, headings = collectHeadingEntries(doc)) {
   const result = new Map()
-  if (!doc) return result
-  const counters = new Array(10).fill(0)
-  doc.descendants((node, pos) => {
-    if (node.type.name === 'heading' && node.attrs?.numbering) result.set(pos, advanceHeadingCounters(counters, node))
-    return !node.isTextblock
-  })
+  for (const item of iterateHeadingNumbers(headings)) if (item) result.set(item.pos, item.info)
   return result
 }
 
@@ -80,10 +125,10 @@ export function headingNumberAt(doc, pos) {
 }
 
 /** 把越界的编号起点压回合法区间（1..999），null/空串表示「继续」（返回 null）。 */
-export function clampHeadingNumberStart(value) {
+export function clampHeadingNumberStart(value, maximum = HEADING_NUMBER_MAX) {
   // 必须先挡 null：Number(null) === 0 会被误判成合法数字并夹成 1。
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)
   if (!Number.isFinite(number)) return null
-  return Math.max(1, Math.min(HEADING_NUMBER_MAX, Math.round(number)))
+  return Math.max(1, Math.min(maximum, Math.round(number)))
 }

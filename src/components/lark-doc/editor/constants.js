@@ -20,19 +20,14 @@ export const blockActions = [
   { id: 'duplicate', label: '创建副本', icon: 'copy' }, { id: 'moveUp', label: '上移区块', icon: 'move-up' }, { id: 'moveDown', label: '下移区块', icon: 'move-down' }, { id: 'delete', label: '删除', icon: 'trash' },
 ]
 export const blockTypeActions = [
-  { id: 'paragraph', label: '正文', icon: 'block-text', glyph: 'T' }, { id: 'heading1', label: '一级标题', icon: 'block-h1', glyph: 'H1' }, { id: 'heading2', label: '二级标题', icon: 'block-h2', glyph: 'H2' }, { id: 'heading3', label: '三级标题', icon: 'block-h3', glyph: 'H3' },
+  { id: 'paragraph', label: '正文', icon: 'block-text', glyph: 'T' },
+  ...Array.from({ length: 9 }, (_, index) => { const n = index + 1; return { id: `heading${n}`, label: `${'一二三四五六七八九'[index]}级标题`, icon: `block-h${n}`, glyph: `H${n}` } }),
   { id: 'orderedList', label: '有序列表', icon: 'block-ordered', glyph: '1≡' }, { id: 'bulletList', label: '无序列表', icon: 'block-bullet', glyph: '☷' }, { id: 'taskList', label: '任务列表', icon: 'block-task', glyph: '☑' }, { id: 'codeBlock', label: '代码块', icon: 'block-code', glyph: '{}' }, { id: 'blockquote', label: '引用', icon: 'block-quote', glyph: '❝' },
   { id: 'callout', label: '高亮块', icon: 'block-callout', glyph: '▤' },
 ]
 
 /** 工具栏「图表」下拉的图表类型清单：id 对应 insertDiagramType 的插入分支。 */
-export const diagramTypes = [  { id: 'flowchart', label: '流程图', source: 'graph TD\n  A[开始] --> B{条件判断}\n  B -->|是| C[流程一]\n  B -->|否| D[流程二]\n  C --> E[结束]\n  D --> E' },
-  { id: 'sequence', label: '时序图', source: 'sequenceDiagram\n  participant U as 用户\n  participant S as 服务端\n  U->>S: 发起请求\n  S-->>U: 返回响应' },
-  { id: 'gantt', label: '甘特图', source: 'gantt\n  title 项目计划\n  section 阶段一\n  需求评审 :a1, 2026-01-01, 3d\n  开发实现 :a2, after a1, 5d\n  section 阶段二\n  测试验收 :a3, after a2, 4d' },
-  { id: 'pie', label: '饼图', source: 'pie title 数据占比\n  "类别 A" : 40\n  "类别 B" : 35\n  "类别 C" : 25' },
-  { id: 'state', label: '状态图', source: 'stateDiagram-v2\n  [*] --> 空闲\n  空闲 --> 运行中: 启动\n  运行中 --> 已暂停: 暂停\n  已暂停 --> 运行中: 恢复\n  运行中 --> [*]: 停止' },
-  { id: 'class', label: '类图', source: 'classDiagram\n  class 动物 {\n    +String 名称\n    +吃()\n  }\n  class 狗\n  动物 <|-- 狗' },
-]
+export const diagramTypes = [{"id":"flowchart","label":"流程图"},{"id":"sequence","label":"时序图"},{"id":"gantt","label":"甘特图"},{"id":"pie","label":"饼图"},{"id":"state","label":"状态图"},{"id":"class","label":"类图"}]
 
 /** 工具栏字体下拉：value 为 '' 时表示清空字体（恢复默认）。 */
 export const fontFamilyOptions = [

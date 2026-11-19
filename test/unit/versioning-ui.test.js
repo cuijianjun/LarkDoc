@@ -221,7 +221,18 @@ function fakeSession(options) {
  * 方法内部拿到的会是 undefined，测出来的就不是同一条分支。
  */
 function mountMixin(state) {
-  const vm = Object.assign({}, versioningMixin.data(), state || {})
+  /**
+   * 默认打开版本历史入口（`features.versionHistory` 缺省 false，见 `larkDocConfig`）。
+   *
+   * 本文件测的是「版本能力 + UI 纯函数」本身，入口开关不该参与其中；「缺省关闭」由
+   * `workspace-view-state.test.js` 覆盖，入口闸门另有一条显式 `versionHistory: false`
+   * 的用例（见「另存为版本 Dialog」段末）。放在最前面，让 `state` 能覆盖它。
+   */
+  const vm = Object.assign(
+    { larkDocConfig: { features: { versionHistory: true } } },
+    versioningMixin.data(),
+    state || {},
+  )
   /**
    * computed 与 methods 都装到实例上：`this.versionProvider` / `this.indexOfVersion`
    * 这类内部互调必须能走通，否则测到的不是同一条分支。

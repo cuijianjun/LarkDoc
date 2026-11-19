@@ -40,9 +40,12 @@ export function createPagedDocumentViewRuntime(dependencies) {
 
 
   /** Scroll the actual selected line without moving focus out of a search field. */
-  function scrollDocumentSelection(editor) {
+  function scrollDocumentSelection(editor, match = null) {
     const root = editor.view.dom, owner = root.ownerDocument, win = owner.defaultView
-    const rect = editor.view.coordsAtPos(editor.state.selection.head)
+    const shell = match?.attribute ? editor.view.nodeDOM(match.from) : null
+    const caption = shell?.querySelector?.('.lark-doc-code-caption, .lark-doc-image-caption-text')
+    const captionRect = caption?.getBoundingClientRect()
+    const rect = captionRect?.height ? captionRect : editor.view.coordsAtPos(editor.state.selection.head)
     if (rect.bottom <= rect.top) return
     let scrollOwner = root.parentElement
     while (scrollOwner && scrollOwner !== owner.body && !(scrollOwner.scrollHeight > scrollOwner.clientHeight + 1 && /(auto|scroll|overlay)/.test(win.getComputedStyle(scrollOwner).overflowY))) scrollOwner = scrollOwner.parentElement
@@ -600,8 +603,8 @@ export function createPagedDocumentViewRuntime(dependencies) {
         const result = runtime.find(storage.query), matches = Array.isArray(result) ? result : []
         storage.decoratedQuery = storage.query; storage.decoratedIndex = storage.activeIndex; storage.decoratedMatches = matches
         return (indices || matches.map((_, index) => index)).map(index => {
-          const { from, to } = matches[index]
-          return Decoration.inline(from, to, { class: index === storage.activeIndex ? 'lark-doc-search-hit lark-doc-search-active' : 'lark-doc-search-hit' }, { category: 'search', index })
+          const { from, to, attribute } = matches[index]
+          return Decoration[attribute ? 'node' : 'inline'](from, to, { class: index === storage.activeIndex ? 'lark-doc-search-hit lark-doc-search-active' : 'lark-doc-search-hit' }, { category: 'search', index })
         })
       },
       updateSearchDecorations(state, storage, previous) {
@@ -655,14 +658,14 @@ export function createPagedDocumentViewRuntime(dependencies) {
         for (const node of doc.content.content) {
           if (destroyed || editor.state.doc !== doc || !current()) return null
           const hits = isPage(node) ? findTextMatches(node, query) : findTextMatches(doc, query, [{ from: offset, to: offset + node.nodeSize }])
-          for (const hit of hits) matches.push(isPage(node) ? { from: hit.from + offset + 1, to: hit.to + offset + 1 } : hit)
+          for (const hit of hits) matches.push(isPage(node) ? { ...hit, from: hit.from + offset + 1, to: hit.to + offset + 1 } : hit)
           offset += node.nodeSize
           if (Date.now() - started >= 4) { await new Promise(resolve => win.setTimeout(resolve, 0)); started = Date.now() }
         }
         return destroyed || editor.state.doc !== doc || !current() ? null : matches
         })()
       },
-      navigate(scroll) {
+      navigate(scroll, match) {
         if (navigationFrame !== null) win.cancelAnimationFrame(navigationFrame)
         const doc = editor.state.doc
         let remaining = 2, expected, scrollOwner
@@ -672,7 +675,7 @@ export function createPagedDocumentViewRuntime(dependencies) {
           if (destroyed || editor.state.doc !== doc || expected !== undefined && Math.abs(position() - expected) > 1) return
           // Mount and measure first, then keep the requested text block as the
           // anchor. A queued reading anchor must not undo explicit navigation.
-          anchor = null; refresh(); scroll(); scrollDocumentSelection(editor); refresh(); scroll(); scrollDocumentSelection(editor)
+          anchor = null; refresh(); scroll(); scrollDocumentSelection(editor, match); refresh(); scroll(); scrollDocumentSelection(editor, match)
           scrollOwner = findOwner(); expected = position()
           if (remaining-- > 0) navigationFrame = win.requestAnimationFrame(run)
         }

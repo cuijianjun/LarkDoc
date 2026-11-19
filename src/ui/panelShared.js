@@ -28,4 +28,29 @@ function onMouseDownPrevent(node, run) {
   })
 }
 
-export { handlerCaller, setInputValue, onMouseDownPrevent }
+/**
+ * 评论表情图标 —— 目录里那张离线雪碧图的一格。
+ *
+ * 目录还没加载到（或 id 不在目录里）就退化成文字：chip 仍要读得出来，不能因为
+ * 一张按需加载的图没到就炸掉整张卡。
+ */
+function reactionIcon(catalog, key, size, spriteImage) {
+  const item = catalog?.items?.find(entry => entry.id === key)
+  const icon = document.createElement('span')
+  icon.className = 'lark-doc-comment-reaction-icon'
+  icon.setAttribute('role', 'img')
+  icon.setAttribute('aria-label', item?.name || key)
+  icon.style.height = `${size}px`
+  if (!item) { icon.textContent = key; return icon }
+  const scale = size / item.height
+  icon.style.width = `${item.width * scale}px`
+  icon.style.backgroundImage = !item.image && spriteImage ? spriteImage : `url("${item.image || catalog.sprite}")`
+  if (item.image) icon.style.backgroundSize = 'contain'
+  else {
+    icon.style.backgroundSize = item.size.split(' ').map(value => `${parseFloat(value) * scale}px`).join(' ')
+    icon.style.backgroundPosition = item.pos.split(' ').map(value => `${parseFloat(value) * scale}px`).join(' ')
+  }
+  return icon
+}
+
+export { handlerCaller, setInputValue, onMouseDownPrevent, reactionIcon }

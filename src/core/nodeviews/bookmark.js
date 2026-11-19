@@ -27,7 +27,7 @@ const CARD_SELECTOR = '.lark-doc-bookmark-card'
 const CONTAINER_SELECTOR = '.lark-doc-bookmark-container'
 
 /** 参与渲染的 attrs；其余（如 `blockId` 之外的扩展字段）变化不必重造 DOM。 */
-const RENDER_KEYS = ['url', 'title', 'desc', 'favicon', 'cover', 'linkTitle', 'recordId', 'blockId']
+const RENDER_KEYS = ['url', 'title', 'desc', 'favicon', 'cover', 'linkTitle', 'recordId', 'blockId', 'appKind']
 
 function clearChildren(element) {
   while (element.firstChild) element.removeChild(element.firstChild)

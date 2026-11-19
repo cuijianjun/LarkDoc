@@ -1,5 +1,8 @@
 /** CDN直挂入口：特性从当前脚本的同目录UMD资源按需加载。 */
 import '../features/element'
+import { closeHistory } from '@tiptap/pm/history'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { publishSharedModules } from '../core/features/shared-host'
 import * as uiIcons from '../ui/icons'
 import * as uiIcon from '../ui/icon'
@@ -25,6 +28,9 @@ export { default } from './index'
 // 包内不再各打一份 icons / select / emoji 身份表。名字必须与构建期登记一致，
 // test/unit/build-contract.test.js 守着这条对齐。
 publishSharedModules({
+  '@tiptap/pm/history': { closeHistory },
+  '@tiptap/pm/state': { Plugin, PluginKey, TextSelection },
+  '@tiptap/pm/view': { Decoration, DecorationSet },
   'ui.icons': uiIcons,
   'ui.icon': uiIcon,
   'ui.dom': uiDom,

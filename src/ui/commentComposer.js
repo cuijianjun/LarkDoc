@@ -16,7 +16,7 @@ const schema = new Schema({ nodes: {
   commentMention: {
     inline: true, group: 'inline', atom: true,
     attrs: { principalId: {}, text: {} },
-    toDOM: node => ['span', { 'data-comment-mention': node.attrs.principalId, class: 'lark-doc-comment-mention', contenteditable: 'false' }, node.attrs.text],
+    toDOM: node => ['span', { 'data-comment-mention': node.attrs.principalId, 'data-user-id': node.attrs.principalId, class: 'lark-doc-comment-mention', contenteditable: 'false' }, node.attrs.text],
   },
   commentDocumentReference: {
     inline: true, group: 'inline', atom: true,

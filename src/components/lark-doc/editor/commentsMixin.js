@@ -61,9 +61,8 @@ export default {
       commentPendingImage: null,
       commentImageViewer: null,
       commentReactionContext: null,
-      commentReactionQuery: '',
-      commentReactionCategory: '常用',
-      commentReactionLimit: 120,
+      commentReactionCatalog: null,
+      commentReactionRecent: [],
       commentEditingReply: null,
       commentEditContent: '',
       commentEditGeneration: 0,
@@ -87,6 +86,8 @@ export default {
       commentDrafts: {},
       commentDraftMentions: {},
       commentDraftReferences: {},
+      /** threadId → 引用目标（点「引用回复」时记录），提交时随 payload 落到 `replyTo`。 */
+      commentReplyTargets: {},
       commentMentionPicker: null,
       /** 已读线程 id：未读数按它与 `commentThreads` 做差集。 */
       commentReadIds: [],
@@ -104,6 +105,13 @@ export default {
       commentMenuCommentId: '',
       /** 带几何的面板列表（bound 且未解决），与 `revisionPanels` 同形态。 */
       commentPanels: [],
+      /** 飞书历史评论弹层（表格头「历史评论」）：锚点样式由触发元素算出。 */
+      commentHistoryOpen: false,
+      commentHistoryStyle: {},
+      /** threadId → 删除请求标记；同一条线程只允许一次删除在飞。 */
+      commentDeleting: {},
+      /** `threadId:replyId` → `{ source, content }`：译文只在 source 仍等于正文时展示。 */
+      commentTranslations: {},
       /** 协同宿主注入 yjs codec 工厂的入口；不注入就走 plain（core 不 import yjs）。 */
       commentAnchorOptions: {},
     }
@@ -136,6 +144,9 @@ export default {
       const codec = provider && typeof provider.getAnchorCodec === 'function' ? provider.getAnchorCodec(this.editor) : null
       return codec || resolveAnchorCodec(this.editor, this.commentAnchorOptions)
     },
+    /** 表格 / 链接预览工具栏里的评论入口：有可读 provider 且身份可查看评论。 */
+    commentEntryVisible() { return !!this.editor && !!this.commentProvider() && this.commentCan('canView') },
+    commentEntryAvailable() { return this.commentEntryVisible && this.commentAllowed('create') },
     /** 当前用户（写路径的 author）。没有 session 时回落本地作者，`buildReply` 要非空 id。 */
     commentAuthor() {
       const user = this.session && this.session.user ? this.session.user : null
@@ -204,5 +215,54 @@ export default {
     ...commentsCapabilityMethods,
     ...commentsThreadMethods,
     ...commentsLayoutMethods,
+    /** 飞书历史评论弹层的门槛：有评论服务，且可查看且可编辑（方法而非 computed，调用方统一 `()`）。 */
+    commentCanViewHistory() { return !!this.commentProvider() && this.commentCan('canView') && this.commentCan('canEdit') },
+    /** 飞书「历史评论」弹层：贴着触发元素右下角开，最大高度贴底。 */
+    openCommentHistory(event) {
+      if (!this.commentCanViewHistory()) return false
+      this.closeCommentMenus()
+      this.commentHistoryOpen = true
+      const rect = event?.currentTarget?.getBoundingClientRect?.()
+      const top = Math.max(8, Math.min(window.innerHeight - 215, rect?.bottom || 47))
+      this.commentHistoryStyle = {
+        left: `${Math.max(8, Math.min(window.innerWidth - 368, (rect?.right || window.innerWidth - 16) - 360))}px`,
+        top: `${top}px`,
+        maxHeight: `${Math.max(80, window.innerHeight - top - 8)}px`,
+      }
+      return true
+    },
+    closeCommentHistory() { this.commentHistoryOpen = false },
+    /** 删除整条线程：只有历史弹层能给这个入口，权限与可编辑性同弹层门槛。 */
+    async deleteCommentThread(threadId) {
+      if (!threadId || !this.commentCanViewHistory() || !this.commentAllowed('remove') || this.commentDeleting?.[threadId]) return null
+      if (typeof this.commentProvider()?.deleteThread !== 'function') { this.commentMessage = '当前评论服务不支持删除线程'; return null }
+      const pending = Symbol('delete-comment-thread')
+      if (!this.commentDeleting) this.commentDeleting = {}
+      this.$set(this.commentDeleting, threadId, pending)
+      try {
+        const result = await this.runCommentWrite('deleteThread', { threadId, author: this.commentAuthor }, 'deleteCommentThread')
+        if (this.commentDeleting[threadId] !== pending || !this.commentCanViewHistory() || !this.commentAllowed('remove')) return null
+        if (result === true) {
+          this.commentThreads = this.commentThreads.filter(thread => thread.id !== threadId)
+          this.updateCommentPanels()
+          this.clearCommentDraft(threadId)
+        }
+        return result
+      } finally {
+        if (this.commentDeleting[threadId] === pending) this.$set(this.commentDeleting, threadId, null)
+      }
+    },
+    /** Vue2 的 `$delete` 只存在于真宿主；单测/桥接对象可能没有，退化成普通 delete。 */
+    commentDropKey(object, key) {
+      if (typeof this.$delete === 'function') this.$delete(object, key)
+      else delete object[key]
+    },
+    /** 「查看原文」：撤掉译文展示，正文与 provider 记录都不动。 */
+    cancelCommentTranslation(threadId, replyId) {
+      const key = `${threadId}:${replyId}`
+      if (!this.commentTranslations || !(key in this.commentTranslations)) return false
+      this.commentDropKey(this.commentTranslations, key)
+      return true
+    },
   },
 }

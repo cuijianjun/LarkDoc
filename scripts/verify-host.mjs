@@ -56,14 +56,20 @@ function replaceOnce(source, from, to, file) {
   return source.replace(from, to)
 }
 
-for (const [route, file, wc] of [
-  ['/lark-doc', 'src/views/LarkDocView.vue', false],
-  ['/lark-doc-wc', 'src/views/LarkDocWcView.vue', true],
+// `templates` 是真宿主里的独立页（`src/router/index.js` 的 `/lark-doc-templates`）：
+// 模板库按产品决策「不归编辑器管」，这里只把弹层工厂挂到普通页面上，不加载编辑器内核。
+for (const [route, file, wc, templates] of [
+  ['/lark-doc', 'src/views/LarkDocView.vue', false, false],
+  ['/lark-doc-wc', 'src/views/LarkDocWcView.vue', true, false],
+  ['/lark-doc-templates', 'src/views/TemplateLibraryView.vue', false, true],
 ]) {
   hostFiles.push(file)
   const component = parseComponent(readFileSync(join(demoRoot, file), 'utf8'))
   let script = component.script.content
-  if (wc) {
+  if (templates) {
+    script = replaceOnce(script, "import { LarkDocTemplateLibrary } from 'lark-doc/templates'", "const { LarkDocTemplateLibrary } = await import('/dist/lark-doc-templates.mjs')", file)
+    script = replaceOnce(script, "import 'lark-doc/style.css'", '', file)
+  } else if (wc) {
     script = replaceOnce(script, "import Vue from 'vue'", 'const Vue = window.Vue', file)
     script = replaceOnce(script, "await import('lark-doc/element')", `await new Promise((resolve, reject) => {
       const script = document.createElement('script')
@@ -78,6 +84,13 @@ for (const [route, file, wc] of [
     script = replaceOnce(script, "import 'lark-doc/style.css'", '', file)
   }
   script = replaceOnce(script, 'export default {', 'const HostView = {', file)
+  // 0facf05 的 image/comments 验收脚本依赖宿主页面暴露 __larkDocComments
+  // （原 webpack 宿主由库入口提供）；回环宿主只加载独立评论数据入口。
+  // 放在 Vue 启动之前：验收脚本看到 getEditor 后立即取用，不能再晚。
+  script = `try {
+  const commentsModule = await import('/dist/lark-doc-comments.mjs')
+  window.__larkDocComments = { createMemoryCommentsProvider: commentsModule.createMemoryCommentsProvider }
+} catch (error) { console.error('comments provider 注入失败：', error) }\n` + script
   // 只适配加载入口；原页面的正文、选项、适配器及生命周期逐字复用。
   script += `\nconst compiled = window.Vue.compile(${JSON.stringify(component.template.content)})
 Object.assign(HostView, compiled)
@@ -89,7 +102,7 @@ window.Vue.config.errorHandler = (error) => {
 window.__verifyHostVm = new window.Vue({ render: (h) => h(HostView) }).$mount('#route')
 window.addEventListener('pagehide', () => window.__verifyHostVm.$destroy(), { once: true })\n`
   const styles = component.styles.map((style) => style.content).join('\n')
-  routes.set(route, { script, styles, wc })
+  routes.set(route, { script, styles, wc, templates })
 }
 
 const artifactFiles = ['dist/lark-doc-element.umd.min.js', 'dist/lark-doc-element.runtime.umd.min.js', 'dist/lark-doc-element.polyfills.umd.min.js', 'dist/lark-doc-element.css', 'dist/lark-doc-element.umd.min.ui.js', 'dist/lark-doc-element.umd.min.uiPanels.js', 'dist/lark-doc-element.umd.min.export.js', 'dist/lark-doc-element.umd.min.uiExtra.js', 'dist/lark-doc-element.umd.min.background.js', 'dist/lark-doc-element.ui.css', 'dist/lark-doc.css']
@@ -119,11 +132,11 @@ function send(res, code, type, body) {
 
 function serveFile(res, base, name) {
   const file = resolve(base, name)
-  // 只开放明确挂载目录，连同符号链接也不能越界，不暴露源码、.git 或 node_modules。
+  // 只开放明确挂载的产物与演示模块，连同符号链接也不能越界。
   if (!file.startsWith(base + sep) || !existsSync(file) || !statSync(file).isFile() || !realpathSync(file).startsWith(realpathSync(base) + sep)) {
     return send(res, 404, 'text/plain; charset=utf-8', '未找到资源')
   }
-  const types = { '.js': 'text/javascript', '.css': 'text/css', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.svg': 'image/svg+xml' }
+  const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.svg': 'image/svg+xml' }
   res.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream', 'Content-Length': statSync(file).size, 'Cache-Control': 'no-store' })
   createReadStream(file).pipe(res)
 }
@@ -140,6 +153,10 @@ const server = http.createServer((req, res) => {
   if (pathname === '/__verify__/vue.js') return send(res, 200, 'text/javascript', readFileSync(vueFile))
   if (pathname === '/__verify__/app.css') return send(res, 200, 'text/css', readFileSync(join(demoRoot, 'src/styles/app.css')))
   if (pathname === '/examples/element-demo.html') return send(res, 200, 'text/html; charset=utf-8', readFileSync(join(ROOT, 'examples/element-demo.html')))
+  if (pathname === '/examples/element-demo-business.js') return serveFile(res, join(ROOT, 'examples'), 'element-demo-business.js')
+  if (['/src/providers/identity.js', '/src/providers/document-business-http.js'].includes(pathname)) {
+    return serveFile(res, join(ROOT, 'src/providers'), pathname.split('/').pop())
+  }
   for (const prefix of ['/js/', '/dist/']) {
     if (pathname.startsWith(prefix)) return serveFile(res, join(ROOT, 'dist'), pathname.slice(prefix.length))
   }
@@ -151,7 +168,7 @@ const server = http.createServer((req, res) => {
 <title>独立验证宿主</title><link rel="stylesheet" href="/__verify__/app.css">
 ${host.wc ? '' : '<link rel="stylesheet" href="/js/lark-doc.css">'}<style>${host.styles}</style>
 </head><body><div id="app"><main><div id="route"></div></main></div>
-<script src="/__verify__/vue.js"></script>${host.wc ? '' : '<script src="/js/lark-doc-element.umd.min.js"></script>'}
+<script src="/__verify__/vue.js"></script>${host.wc || host.templates ? '' : '<script src="/js/lark-doc-element.umd.min.js"></script>'}
 <script type="module" src="/__verify__${route}.js"></script></body></html>`)
     }
   }

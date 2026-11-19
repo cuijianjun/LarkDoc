@@ -84,22 +84,11 @@ export function createVersionPanel(options = {}) {
   backLabel.className = 'lark-doc-version-back-label'
   backLabel.textContent = '返回文档'
   backButton.appendChild(backLabel)
-  backButton.addEventListener('click', () => {
+  backButton.addEventListener('mousedown', (event) => {
+    event.preventDefault()
     if (mobile() && mobileView === 'preview') { mobileView = 'list'; render(); return }
     call('onClose')
   })
-  const sourceButton = document.createElement('button')
-  sourceButton.type = 'button'; sourceButton.className = 'lark-doc-version-source'; sourceButton.textContent = '回到源文档'
-  sourceButton.addEventListener('click', () => { if (!destroyed) call('onClose') })
-  const savedMenu = document.createElement('details'); savedMenu.className = 'lark-doc-version-saved-menu'
-  const savedSummary = document.createElement('summary'); savedSummary.setAttribute('aria-label', '版本更多操作'); savedSummary.textContent = '···'
-  savedMenu.appendChild(savedSummary)
-  for (const label of ['分享版本', '添加到导航栏', '浮窗', '查找', '目录', '翻译', '下载为', '打印', '重命名版本', '删除版本']) {
-    const action = document.createElement('button'); action.type = 'button'; action.textContent = label; action.disabled = true
-    action.title = '尚未配置版本操作服务'; savedMenu.appendChild(action)
-  }
-  const savedSource = sourceButton.cloneNode(true); savedSource.addEventListener('click', () => { if (!destroyed) call('onClose') }); savedMenu.appendChild(savedSource)
-
   const restoreButton = document.createElement('button')
   restoreButton.type = 'button'
   restoreButton.className = 'lark-doc-version-restore'
@@ -114,6 +103,8 @@ export function createVersionPanel(options = {}) {
   const prevButton = document.createElement('button')
   prevButton.type = 'button'
   prevButton.className = 'lark-doc-version-step'
+  // 飞书这排是版本翻页（66×28），文案是「上一页 / 下一页」；「上一项 / 下一项」留给
+  // 差异游标那两颗（`aria-label="上一项编辑"`）。两者语义不同，别混用。
   prevButton.textContent = '上一页'
   onMouseDownPrevent(prevButton, () => call('onPrev'))
   const nextButton = document.createElement('button')
@@ -131,7 +122,6 @@ export function createVersionPanel(options = {}) {
   leftHeader.appendChild(backButton)
   leftHeader.appendChild(restoreButton)
   leftHeader.appendChild(pager)
-  leftHeader.append(sourceButton, savedMenu)
   leftHeader.appendChild(headerDivider)
 
   const leftContent = document.createElement('div')
@@ -194,6 +184,7 @@ export function createVersionPanel(options = {}) {
   const changesList = document.createElement('ol'); changesList.className = 'lark-doc-version-changes'
   let changesSignature = '', lastChangeIndex = -1
   const restoreConfirmMask = document.createElement('div'); restoreConfirmMask.className = 'lark-doc-version-restore-mask'
+  restoreConfirmMask.addEventListener('mousedown', event => { if (event.target === restoreConfirmMask) event.preventDefault() })
   const restoreConfirm = document.createElement('section'); restoreConfirm.className = 'lark-doc-version-restore-dialog'
   restoreConfirm.setAttribute('role', 'alertdialog'); restoreConfirm.setAttribute('aria-modal', 'true'); restoreConfirm.setAttribute('aria-label', '还原历史版本确认')
   const restoreConfirmTitle = document.createElement('h2'); restoreConfirmTitle.textContent = '还原此历史版本？'
@@ -442,6 +433,8 @@ export function createVersionPanel(options = {}) {
 
   function renderPreview() {
     const preview = mobile() && mobileView === 'preview' && mobileSelectedId && state.preview?.id !== mobileSelectedId ? {} : state.preview || {}
+    const decoded = !!preview.document && typeof options.renderDocument === 'function'
+    previewBox.classList.toggle('has-document', decoded)
     setText(previewTitle, preview.title || '未命名版本')
     setText(previewKind, preview.kind)
     const meta = preview.meta || []
@@ -460,9 +453,9 @@ export function createVersionPanel(options = {}) {
     // `v-if` / 组件外的兄弟：降级文案与 diff 段各自独立。
     syncChildren(previewBox, [
       { node: previewHead, on: true },
-      { node: previewMeta, on: true },
+      { node: previewMeta, on: !decoded },
       { node: degradedNode, on: degradedOn },
-      { node: diffBox, on: showChanges && !!preview.diff },
+      { node: diffBox, on: !decoded && showChanges && !!preview.diff },
       { node: bodyBox, on: true },
       { node: changesMessage, on: showChanges }, { node: changesList, on: showChanges && !!preview.changes?.length }, { node: changePager, on: showChanges },
     ])
@@ -470,7 +463,6 @@ export function createVersionPanel(options = {}) {
     // `payload` 非空 = 该版本正文是可解码的二进制快照（模板里的 `v-if`）；空则走兜底文案。
     const payload = preview.payload || ''
     if (payload) setText(binaryPayload, payload)
-    const decoded = preview.document && typeof options.renderDocument === 'function'
     if (previewRecord !== preview.document || mountedPolicy !== state.previewPolicyKey || !decoded) {
       clearDocument()
       if (decoded) { previewRecord = preview.document; mountedPolicy = state.previewPolicyKey; releasePreview = options.renderDocument(documentBody, preview.document) || null }
@@ -520,7 +512,6 @@ export function createVersionPanel(options = {}) {
     el.classList.toggle('is-saved-versions', state.kind === 'saved')
     backButton.setAttribute('aria-label', mobile() && mobileView === 'preview' ? '返回版本列表' : '返回文档')
     backLabel.textContent = mobile() && mobileView === 'preview' ? '返回列表' : '返回文档'
-    savedMenu.hidden = state.kind !== 'saved'
     setText(rightTitle, state.kind === 'saved' ? '已存版本' : '历史记录')
     // 对话框名跟着视图走：`查看已存版本` 打开的仍是这个层，但读屏不能报成「历史记录」。
     el.setAttribute('aria-label', state.kind === 'saved' ? '已存版本' : '历史记录')
@@ -545,7 +536,7 @@ export function createVersionPanel(options = {}) {
       { node: emptyNode, on: state.view === 'empty' },
       { node: previewBox, on: state.view === 'preview' },
     ])
-    if (state.view === 'preview') renderPreview(); else clearDocument()
+    if (state.view === 'preview') renderPreview(); else { clearDocument(); previewBox.classList.remove('has-document') }
     renderTimeline()
     renderTrash()
     renderRestoreConfirm()

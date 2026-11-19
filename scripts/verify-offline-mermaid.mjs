@@ -66,18 +66,33 @@ function serve() {
   })
 }
 
-async function main() {
-  // ESM 不走 NODE_PATH，playwright-core 按共享目录绝对路径解析
+async function loadPlaywright() {
   const { createRequire } = await import('node:module')
-  const sharedRequire = createRequire(path.join(repoRoot, 'package.json'))
-  const { chromium } = sharedRequire('/Users/cjjxw/.workbuddy/binaries/node/workspace/node_modules/playwright-core')
-  // 1.64.1 需要的 headless_shell-1248 未下载，复用本机已有的 chromium-1228
-  const executablePath = '/Users/cjjxw/Library/Caches/ms-playwright/chromium-1228/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+  const req = createRequire(path.join(repoRoot, 'package.json'))
+  // 1) 显式指定（CI / 本机共享安装都可用）：PLAYWRIGHT_CORE_PATH=/abs/path/to/playwright-core
+  const explicit = process.env.PLAYWRIGHT_CORE_PATH
+  if (explicit) return req(explicit)
+  // 2) 仓库/上级 node_modules 里的 playwright-core（npm i --no-save playwright-core）
+  try {
+    return req('playwright-core')
+  } catch {
+    throw new Error(
+      '缺少 playwright-core：请 `npm i --no-save playwright-core` 后重试，'
+      + '或用 PLAYWRIGHT_CORE_PATH 指向已有安装目录',
+    )
+  }
+}
+
+async function main() {
+  const { chromium } = await loadPlaywright()
+  // 不指定 executablePath 时用 playwright 自带下载的浏览器；本机复用别的版本时用 PLAYWRIGHT_CHROMIUM_PATH 覆盖
+  const launchOptions = { headless: true }
+  if (process.env.PLAYWRIGHT_CHROMIUM_PATH) launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH
   const server = await serve()
   const blocked = []
   let browser
   try {
-    browser = await chromium.launch({ headless: true, executablePath })
+    browser = await chromium.launch(launchOptions)
     const page = await browser.newPage()
     // 断网模拟：本机请求放行，其余一律 abort 并记账
     await page.route('**/*', (route) => {

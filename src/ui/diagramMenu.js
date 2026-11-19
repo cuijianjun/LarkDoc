@@ -29,6 +29,8 @@ export function createDiagramMenu({ host, handlers = {} }) {
   const el = document.createElement('div')
   el.className = 'lark-doc-dropdown lark-doc-diagram-menu'
   el.setAttribute('role', 'menu'); el.setAttribute('aria-label', '图表类型')
+  // 图表类型条目不带独立提示（基线 0facf05 的 syncDiagramItems 也没有）：
+  // 文字行本身就是类型名，再挂一层浮层只是重复。
   let signature = ''
   el.addEventListener('mouseenter', () => handlers.cancelPopupHoverClose?.('diagram'))
   el.addEventListener('mouseleave', () => handlers.scheduleDiagramMenuClose?.())
@@ -52,4 +54,13 @@ export function createDiagramMenu({ host, handlers = {} }) {
     },
     destroy() { el.remove() },
   }
+}
+
+export const DIAGRAM_SOURCES = {
+  "flowchart": "graph TD\n  A[开始] --> B{条件判断}\n  B -->|是| C[流程一]\n  B -->|否| D[流程二]\n  C --> E[结束]\n  D --> E",
+  "sequence": "sequenceDiagram\n  participant U as 用户\n  participant S as 服务端\n  U->>S: 发起请求\n  S-->>U: 返回响应",
+  "gantt": "gantt\n  title 项目计划\n  section 阶段一\n  需求评审 :a1, 2026-01-01, 3d\n  开发实现 :a2, after a1, 5d\n  section 阶段二\n  测试验收 :a3, after a2, 4d",
+  "pie": "pie title 数据占比\n  \"类别 A\" : 40\n  \"类别 B\" : 35\n  \"类别 C\" : 25",
+  "state": "stateDiagram-v2\n  [*] --> 空闲\n  空闲 --> 运行中: 启动\n  运行中 --> 已暂停: 暂停\n  已暂停 --> 运行中: 恢复\n  运行中 --> [*]: 停止",
+  "class": "classDiagram\n  class 动物 {\n    +String 名称\n    +吃()\n  }\n  class 狗\n  动物 <|-- 狗"
 }

@@ -72,10 +72,10 @@ async function main() {
       await page.keyboard.type(' persisted')
       const before = await page.evaluate(() => window.__mobileEditor.editor.getJSON())
       await page.setViewportSize({ width: options.viewport.height, height: options.viewport.width })
-      await page.waitForFunction(() => window.__mobileEditor.viewportOrientation === 'landscape')
+      await page.waitForFunction(() => matchMedia('(orientation: landscape)').matches)
       assert.deepEqual(await page.evaluate(() => window.__mobileEditor.editor.getJSON()), before)
       await page.setViewportSize(options.viewport)
-      await page.waitForFunction(() => window.__mobileEditor.viewportOrientation === 'portrait')
+      await page.waitForFunction(() => matchMedia('(orientation: portrait)').matches)
       assert.deepEqual(await page.evaluate(() => window.__mobileEditor.editor.getJSON()), before)
       console.log(`PASS ${name}: keyboard input and portrait/landscape preserve full document identity`)
       passed++
@@ -105,10 +105,11 @@ async function main() {
         await vm.loadComments()
         vm.activateComment('mobile-thread')
       })
-      await page.getByRole('dialog', { name: '评论', exact: true }).waitFor()
+      const comment = page.locator('[role="dialog"][data-comment-thread="mobile-thread"]')
+      await comment.waitFor()
       assert.ok(await page.getByText('Emulated account reply', { exact: true }).isVisible())
       await page.getByRole('textbox', { name: '回复', exact: true }).fill('Mobile reply roundtrip')
-      await page.getByRole('button', { name: '发送', exact: true }).tap()
+      await comment.getByRole('button', { name: '回复', exact: true }).tap()
       await page.getByText('Mobile reply roundtrip', { exact: true }).waitFor()
       const comments = await page.evaluate(async () => { const vm = window.__mobileEditor; await vm.loadComments(); return { bound: vm.commentThreads[0].bound, replies: vm.commentThreads[0].replies.length } })
       assert.equal(comments.bound, true)
@@ -121,7 +122,7 @@ async function main() {
         await vm.session.refreshCapabilities()
         await vm.$nextTick()
       })
-      assert.equal(await page.getByRole('textbox', { name: '回复', exact: true }).evaluate(el => el.readOnly), true)
+      assert.equal(await comment.getByRole('textbox', { name: '回复', exact: true }).getAttribute('aria-readonly'), 'true')
       const denied = await page.evaluate(async () => {
         const vm = window.__mobileEditor
         vm.setCommentDraft('mobile-thread', 'DENIED')
@@ -150,6 +151,8 @@ async function main() {
         await vm.selectVersion(record.id)
       })
       await page.locator('.lark-doc-version-layer').waitFor()
+      await page.locator('.lark-doc-version-item').first().tap()
+      await page.locator('.lark-doc-version-preview-title').getByText('Mobile saved version', { exact: true }).waitFor()
       const version = await page.evaluate(async () => {
         const vm = window.__mobileEditor
         const before = JSON.stringify(vm.editor.getJSON())
@@ -169,7 +172,8 @@ async function main() {
         await page.screenshot({ path: path.join(dir, `mobile-${name}-version-overflow.png`) })
         console.error(`FAIL ${name}: 版本恢复控件越界 ${JSON.stringify(failure)}`)
       }
-      assert.ok(await page.getByText('Mobile saved version', { exact: true }).first().isVisible())
+      const backFromPreview = page.getByRole('button', { name: '返回版本列表', exact: true })
+      if (await backFromPreview.isVisible()) await backFromPreview.tap()
       await page.getByRole('button', { name: '返回文档', exact: true }).tap()
       await page.waitForFunction(() => !document.querySelector('.lark-doc-version-layer'))
       console.log(`${interactionFailures.some(f => f.name === name) ? 'FAIL' : 'PASS'} ${name}: 版本面板、快照元数据及禁止恢复不改文档；恢复控件边界单独记录`)

@@ -43,7 +43,12 @@ var SAMPLE_HTML = [
 ].join('\n')
 
 var NS = window.LarkDoc || {}
-var LarkDocCtor = NS.LarkDoc || NS.default
+window.__result = null
+window.__errors = []
+
+// 主入口只负责加载 runtime，解析到这里时构造器通常还没挂上来，先等 `runtimeReady`。
+Promise.resolve(NS.runtimeReady || NS).then(function (ns) {
+var LarkDocCtor = (ns && ns.LarkDoc) || NS.LarkDoc || NS.default
 var doc = new LarkDocCtor({
   element: '#host',
   content: SAMPLE_HTML,
@@ -52,8 +57,6 @@ var doc = new LarkDocCtor({
   storage: 'none'
 })
 
-window.__result = null
-window.__errors = []
 doc.on('ready', function () {
   setTimeout(function () {
     var json = doc.getJSON()
@@ -62,6 +65,7 @@ doc.on('ready', function () {
   }, 300)
 })
 setTimeout(function () { if (!window.__done) { window.__result = doc.getJSON(); window.__done = true; window.__late = true } }, 6000)
+}, function (error) { window.__errors.push(String(error && error.message)) })
 window.onerror = function (msg) { window.__errors.push(String(msg)) }
 </script>
 </body>

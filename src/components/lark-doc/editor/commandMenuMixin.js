@@ -371,6 +371,16 @@ export default {
       this.activeCommandIndex = index
     },
     onEditorKeydown(event) {
+      if (!event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !this.editor?.view.composing
+        && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.key || '').toLowerCase() === 'k'
+        && this.featureEnabled('shortcuts') && this.writable() && this.linkCommandEnabled?.() !== false) {
+        const field = event.target?.closest?.('input, textarea, select, [role="textbox"], [contenteditable="true"], [contenteditable="plaintext-only"]')
+        if (!field || field === this.editor?.view.dom) {
+          event.preventDefault()
+          this.openLinkDialog(true)
+          return
+        }
+      }
       // P4-01：`@` 面板先接管。两者互斥（onMention 打开时会关掉斜杠菜单），
       // 所以顺序只影响「同一帧谁先看到 ↑↓/Enter」，交给面板就够了。
       if (typeof this.onMentionKeydown === 'function' && this.onMentionKeydown(event)) return
@@ -462,11 +472,22 @@ export default {
       this.diagramMenuStyle = this.positionToolbarPopup(root?.querySelector('button[aria-label="图表"]'), root?.querySelector('.lark-doc-diagram-menu'), 120)
     },
     /** 按类型插入 mermaid 图表块；插入菜单「图表」命令也走这里（默认流程图）。 */
-    insertDiagramType(typeId) {
-      const item = (this.diagramTypes || diagramTypes).find((entry) => entry.id === typeId)
-      if (!item || !this.writable() || !this.featureEnabled('insert') || !commandEnabled(this.larkDocConfig, 'diagram')) return
+    async insertDiagramType(typeId) {
+      const allowed = () => this.writable() && this.featureEnabled('insert') && commandEnabled(this.larkDocConfig, 'diagram')
+      if (!(this.diagramTypes || diagramTypes).some(item => item.id === typeId) || !allowed()) return false
+      const editor = this.editor, doc = editor.state.doc, selection = editor.state.selection
+      const request = this._diagramInsertRequest = {}
+      const current = () => this._diagramInsertRequest === request && this.editor === editor && !editor.isDestroyed &&
+        editor.state.doc === doc && editor.state.selection.eq(selection) && allowed()
       this.closeDiagramMenu()
-      this.run('insertContent', { type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: item.source }] })
+      try {
+        const { DIAGRAM_SOURCES } = await import('../../../ui/diagramMenu')
+        if (!current()) return false
+        return this.run('insertContent', { type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: DIAGRAM_SOURCES[typeId] }] })
+      } catch (_) {
+        if (current()) this.error = '图表加载失败，请重试'
+        return false
+      }
     },
     /**
      * 执行一条菜单命令。

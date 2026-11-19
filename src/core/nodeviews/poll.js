@@ -18,7 +18,7 @@
  *   5. **三态由 `pollStatus()` 决定，不由 DOM 决定**：编辑态（draft）/ 已发布（open）/
  *      已投票（voted）/ 已截止（closed）。已投票**优先于**已截止（投过的人永远看结果条）。
  *
- * 🔴 V1 不做（§23 已拍板）：日期选择器日历、header「更多」菜单三态、真实请求。
+ * 更多操作按需加载；投票数据本地落库，真实协同交给宿主。
  */
 
 import { DOMSerializer } from '@tiptap/pm/model'
@@ -57,6 +57,7 @@ export function createPollNodeView(props) {
   const { node, extension, getPos } = props
   const options = (extension && extension.options) || {}
   const editor = props.editor || null
+  const editable = () => !editor || editor.isEditable !== false
 
   let currentNode = node
   let serializer = null
@@ -68,6 +69,7 @@ export function createPollNodeView(props) {
   /** 提示条文案；空串表示隐藏。 */
   let hintText = ''
   let hintTimer = null
+  let deadlineTimer = null
 
   /* ---------- 数据通道 ---------- */
 
@@ -101,7 +103,7 @@ export function createPollNodeView(props) {
 
   /** 跑一次状态机。无变化（如「最少保留两项」被拒）直接返回 false，不产生 transaction。 */
   function apply(action) {
-    if (destroyed) return false
+    if (destroyed || !editable()) return false
     const before = current()
     const after = pollReducer(before, action, Date.now())
     if (JSON.stringify(before) === JSON.stringify(after)) return false
@@ -150,6 +152,36 @@ export function createPollNodeView(props) {
   const labelsBox = createElement('div', 'lark-doc-poll-labels')
   header.appendChild(titleRow)
   header.appendChild(labelsBox)
+  const more = createElement('button', 'lark-doc-poll-more')
+  more.type = 'button'
+  more.textContent = '⋯'
+  more.setAttribute('aria-label', '投票更多操作')
+  more.setAttribute('aria-expanded', 'false')
+  header.appendChild(more)
+  let toolsView = null
+  let toolsOpen = false
+  let toolsPending = false
+  more.addEventListener('click', () => {
+    if (destroyed || !editable()) return
+    toolsOpen = !toolsOpen
+    more.setAttribute('aria-expanded', String(toolsOpen))
+    if (toolsOpen && !toolsView && !toolsPending) {
+      toolsPending = true
+      import('./poll-tools').then(({ createPollTools }) => {
+        if (destroyed) return
+        toolsView = createPollTools({ current, editable, apply, showHint })
+        header.appendChild(toolsView.el)
+        toolsView.update(toolsOpen)
+      }).catch(() => {
+        if (!destroyed) {
+          toolsOpen = false
+          more.setAttribute('aria-expanded', 'false')
+          showHint('投票操作加载失败，请重试')
+        }
+      }).finally(() => { toolsPending = false })
+    }
+    toolsView?.update(toolsOpen)
+  })
 
   const content = createElement('div', 'lark-doc-poll-content')
   const rowsBox = createElement('div', 'lark-doc-poll-options')
@@ -282,13 +314,13 @@ export function createPollNodeView(props) {
       if (typeof document === 'undefined' || document.activeElement !== row.input) {
         if (row.input.value !== option.text) row.input.value = option.text
       }
-      row.input.readOnly = published
+      row.input.readOnly = published || !editable()
       row.input.tabIndex = published ? -1 : 0
       const chosen = picked.includes(option.id) || poll.voted.includes(option.id)
       setToggle(row.root, 'is-chosen', chosen && state !== POLL_STATUS.DRAFT)
       setToggle(row.choice, 'is-checked', chosen)
       // 删除按钮：编辑态且多于两项时才给（最少保留两项，§23 未实测，V1 按此收敛）。
-      const canRemove = !published && poll.options.length > 2
+      const canRemove = editable() && !published && poll.options.length > 2
       row.remove.style.display = canRemove ? '' : 'none'
       row.remove.disabled = !canRemove
       // 结果条只在投过票时出现。
@@ -328,6 +360,7 @@ export function createPollNodeView(props) {
   }
 
   function onRowsClick(event) {
+    if (!editable()) return
     const target = event && event.target
     if (!target || typeof target.closest !== 'function') return
     if (target.closest('.lark-doc-poll-option-remove')) {
@@ -369,6 +402,7 @@ export function createPollNodeView(props) {
   }
 
   function onSubmitClick() {
+    if (!editable()) return
     const poll = current()
     const state = status()
     if (state === POLL_STATUS.DRAFT) {
@@ -427,6 +461,9 @@ export function createPollNodeView(props) {
     if (destroyed) return
     const poll = current()
     const state = status()
+    if (deadlineTimer) { clearTimeout(deadlineTimer); deadlineTimer = null }
+    const remaining = poll.deadline ? Date.parse(poll.deadline) - Date.now() : 0
+    if (poll.published && remaining > 0) deadlineTimer = setTimeout(paint, Math.min(remaining + 1, 2147483647))
 
     dom.setAttribute('data-poll-status', state)
     if (typeof poll.published === 'boolean') dom.setAttribute('data-poll-published', poll.published ? 'true' : 'false')
@@ -435,6 +472,9 @@ export function createPollNodeView(props) {
 
     // 标题：编辑态与发布态各显一个，同处一行。
     const editing = state === POLL_STATUS.DRAFT
+    titleInput.readOnly = !editable()
+    more.disabled = !editable()
+    toolsView?.update(toolsOpen)
     titleInput.style.display = editing ? '' : 'none'
     titlePreview.style.display = editing ? 'none' : ''
     if (editing) {
@@ -470,6 +510,8 @@ export function createPollNodeView(props) {
       setToggle(entry.track, 'is-disabled', locked)
       setToggle(entry.line, 'is-disabled', locked)
       entry.track.setAttribute('aria-checked', switchState[row.key] ? 'true' : 'false')
+      entry.track.setAttribute('aria-disabled', locked || !editable() ? 'true' : 'false')
+      entry.track.tabIndex = locked || !editable() ? -1 : 0
     })
 
     // 配置区：发布后整块 display:none（DOM 保留，与 §23 一致）；分隔线同理。
@@ -477,7 +519,7 @@ export function createPollNodeView(props) {
     config.style.display = showConfig ? '' : 'none'
     line.style.display = showConfig ? '' : 'none'
     adder.style.display = editing ? '' : 'none'
-    adder.disabled = poll.options.length >= POLL_LIMITS.options
+    adder.disabled = !editable() || poll.options.length >= POLL_LIMITS.options
 
     // footer：投票结果态整块消失（§23 实测 rect 高 0）。
     const showFooter = poll.voted.length === 0
@@ -487,6 +529,7 @@ export function createPollNodeView(props) {
       const blocked = poll.published && (state === POLL_STATUS.CLOSED || !picked.length)
       setToggle(submit, 'is-disabled', blocked)
       submit.setAttribute('aria-disabled', blocked ? 'true' : 'false')
+      submit.disabled = !editable()
     }
   }
 
@@ -502,6 +545,14 @@ export function createPollNodeView(props) {
   }
 
   paint()
+  let previousEditable = editable()
+  const onEditorUpdate = () => { if (editable() !== previousEditable) { previousEditable = editable(); paint() } }
+  if (editor && typeof editor.on === 'function') editor.on('update', onEditorUpdate)
+  config.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key) || !event.target.closest('.lark-doc-poll-switch')) return
+    event.preventDefault()
+    onSwitchClick(event)
+  })
 
   return {
     dom,
@@ -545,10 +596,14 @@ export function createPollNodeView(props) {
 
     destroy() {
       destroyed = true
+      if (editor && typeof editor.off === 'function') editor.off('update', onEditorUpdate)
       cleanups.slice().forEach((fn) => fn())
       cleanups = []
       serializer = null
+      toolsView?.destroy()
+      toolsView = null
       if (hintTimer) { clearTimeout(hintTimer); hintTimer = null }
+      if (deadlineTimer) { clearTimeout(deadlineTimer); deadlineTimer = null }
     },
 
     /* ---------- 测试与宿主联调通道 ---------- */

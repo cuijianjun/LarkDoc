@@ -53,6 +53,19 @@ const CONTENT = `
 const readNumbers = (page) => page.evaluate(() => {
   const editor = window.__larkDoc.getEditor()
   const buttons = Array.from(document.querySelectorAll('.lark-doc-heading-number'))
+  const geometry = buttons.map(el => {
+    const heading = el.closest('h1, h2, h3, h4, h5, h6')
+    if (!heading) return null
+    const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode()
+    while (node && (!node.textContent.trim() || el.contains(node))) node = walker.nextNode()
+    if (!node) return null
+    const range = document.createRange(), start = node.textContent.search(/\S/)
+    range.setStart(node, start); range.setEnd(node, start + 1)
+    const textRect = range.getBoundingClientRect(), box = el.getBoundingClientRect()
+    return { level: heading.tagName, offset: textRect.left - heading.getBoundingClientRect().left,
+      gap: textRect.left - box.right, sameRow: box.bottom > textRect.top + 2 && box.top < textRect.bottom - 2 }
+  })
   return {
     labels: buttons.map((el) => el.textContent),
     levels: buttons.map((el) => el.getAttribute('data-level')),
@@ -61,22 +74,8 @@ const readNumbers = (page) => page.evaluate(() => {
     contentEditable: buttons.map((el) => el.getAttribute('contenteditable')),
     // 编号必须在标题文字之前、同一行（飞书是「▾ 2. 标题」）：
     // 用文字首字符的实测矩形比对，避免依赖具体 DOM 包装层。
-    beforeContent: buttons.map((el) => {
-      const heading = el.closest('h1, h2, h3, h4, h5, h6')
-      if (!heading) return false
-      const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT)
-      let node = walker.nextNode()
-      while (node && (!node.textContent.trim() || el.contains(node))) node = walker.nextNode()
-      if (!node) return false
-      const text = node.textContent
-      const range = document.createRange()
-      range.setStart(node, text.search(/\S/))
-      range.setEnd(node, text.search(/\S/) + 1)
-      const textRect = range.getBoundingClientRect()
-      const box = el.getBoundingClientRect()
-      const sameRow = box.bottom > textRect.top + 2 && box.top < textRect.bottom - 2
-      return sameRow && box.right <= textRect.left + 4
-    }),
+    beforeContent: geometry.map(item => !!item && item.sameRow && item.gap >= -4),
+    geometry,
     text: editor.getText(),
     headingFontSizes: Array.from(document.querySelectorAll('.ProseMirror h1, .ProseMirror h2')).map((el) => Math.round(parseFloat(getComputedStyle(el).fontSize))),
     html: editor.getHTML(),
@@ -160,6 +159,11 @@ async function main() {
   // 1. 多级格式与渲染
   await setContent(page, CONTENT)
   const first = await readNumbers(page)
+  const h1Offsets = first.geometry.filter(item => item?.level === 'H1').map(item => item.offset)
+  record('[排版] 同级一位编号的标题首字对齐，编号与正文间距6px',
+    h1Offsets.length === 2 && Math.abs(h1Offsets[0] - h1Offsets[1]) < 0.1
+      && first.geometry.every(item => item && Math.abs(item.gap - 6) < 0.1),
+    JSON.stringify(first.geometry))
   record('[编号] 一级带尾点、二级多级不带点', JSON.stringify(first.labels) === JSON.stringify(['1.', '1.1', '1.2', '2.']), first.labels.join(' '))
   record('[编号] 编号是块级按钮，不在正文文本里', first.contentEditable.every((value) => value === 'false') && !/\d\./.test(first.text.replace(/第[一二]章|第[一二]节/g, '')),
     `contentEditable=${first.contentEditable.join(',')} / text=${JSON.stringify(first.text)}`)
@@ -259,10 +263,12 @@ async function main() {
   record('[自动更新] 删掉「第二节」后不留空号', JSON.stringify(afterDelete.labels) === JSON.stringify(['1.', '1.1', '2.']), afterDelete.labels.join(' '))
 
   // 6. 块菜单「有序列表」作用在标题上 = 开启编号
+  await page.evaluate(() => window.__larkDoc.getEditor().commands.setContent('<h2>块菜单标题</h2><p>块菜单正文</p>'))
+  await page.locator('.ProseMirror h2').hover()
+  await page.locator('.lark-doc-block-handle-main').hover()
+  await page.locator('.lark-doc-block-menu').waitFor()
   const blockMenu = await page.evaluate(async () => {
     const editor = window.__larkDoc.getEditor()
-    editor.commands.setContent('<h2>块菜单标题</h2><p>块菜单正文</p>')
-    await new Promise((resolve) => setTimeout(resolve, 400))
     const vm = (window.__larkDoc._handle?.nativeHost?.host || window.__larkDoc.getWorkspace().$refs.document)
     editor.commands.setTextSelection(1)
     vm.handleRange = { from: 0, to: editor.state.doc.firstChild.nodeSize }

@@ -17,11 +17,13 @@
 
 import { applyStyle, lockPageScroll, mountNode, setAttr, setText, syncChildren } from './dom'
 import { iconNode } from './icon'
-import { handlerCaller, setInputValue } from './panelShared'
+import { handlerCaller, reactionIcon } from './panelShared'
 import { placeMenu } from './menuLayout'
 import { createPlainCommentInput, renderCommentSegments } from './commentPanelParts'
 import { createCommentChrome } from './commentPanelChrome'
 import { createThreadCard } from './commentPanelThread'
+import { createCommentHistory } from './commentHistory'
+import { commentAttachmentNodes } from './commentAttachments'
 
 /* ═══════════════════════ ④ 评论面板层 ═══════════════════════ */
 
@@ -107,18 +109,8 @@ export function createCommentPanel(options = {}) {
     event.preventDefault(); event.stopPropagation()
     call('onToggleSidebar')
   })
-  const imageDraftNodes = (scope, images = []) => images.map(image => {
-    const row = document.createElement('div')
-    const preview = document.createElement(image.previewUrl ? 'img' : 'span')
-    if (image.previewUrl) { preview.src = image.previewUrl; preview.alt = image.fileName || '' }
-    else preview.textContent = image.fileName || ''
-    const remove = document.createElement('button')
-    remove.type = 'button'; remove.textContent = '×'
-    remove.setAttribute('aria-label', '移除图片：' + (image.fileName || ''))
-    onAction(remove, () => call('onRemoveDraftImage', scope, image.assetId))
-    row.append(preview, remove)
-    return { node: row, on: true }
-  })
+  const imageDraftNodes = (scope, images = []) => commentAttachmentNodes(images, true,
+    (name, id) => call(name, scope, id)).map(node => ({ node, on: true }))
   const renderMentionPicker = (node, picker, input, scope = 'document') => {
     const editable = () => !input.readOnly && input.getAttribute('aria-readonly') !== 'true'
     const ownedFocus = node.contains(node.ownerDocument.activeElement)
@@ -178,6 +170,9 @@ export function createCommentPanel(options = {}) {
     moreHint: '',
     emptyText: '',
     sidebarOpen: false,
+    historyOpen: false,
+    historyStyle: {},
+    historyItems: [],
     composer: { open: false },
     items: [],
   }
@@ -352,10 +347,8 @@ export function createCommentPanel(options = {}) {
     imageViewer,
     viewerImage,
     reactionPicker,
-    reactionSearch,
-    reactionTabs,
     reactionGrid,
-    reactionMore,
+    reactionRecent,
     mobileNext,
     mobileClose,
     likeStatus,
@@ -367,6 +360,20 @@ export function createCommentPanel(options = {}) {
   })
 
   onAction(mobileClose, dismissMobile)
+  // 悬停打开的表情板要留 180ms 过桥时间：从「添加表情回复」挪到板子上的路上
+  // 会经过面板空白，立刻关就等于不给点。
+  let reactionCloseTimer = null
+  const cancelReactionClose = () => { clearTimeout(reactionCloseTimer); reactionCloseTimer = null }
+  const scheduleReactionClose = () => {
+    cancelReactionClose()
+    const identity = state.identityGeneration
+    reactionCloseTimer = setTimeout(() => {
+      reactionCloseTimer = null
+      if (identity === state.identityGeneration && state.reactionPicker?.open) call('onCloseReaction')
+    }, 180)
+  }
+  reactionPicker.addEventListener('mouseenter', cancelReactionClose)
+  reactionPicker.addEventListener('mouseleave', scheduleReactionClose)
   const moveMobile = delta => {
     const index = mobileIds.indexOf(mobileActive), next = mobileIds[index + delta]
     if (next) call('onActivate', next)
@@ -425,12 +432,43 @@ export function createCommentPanel(options = {}) {
   menuViewport?.addEventListener('scroll', positionReplyMenus)
 
 
-  const { createPanelNode, renderPanel } = createThreadCard({
+  const { createPanelNode, renderPanel, buildReplies } = createThreadCard({
     state, call, onAction, richInput, updateRichInput, bindSubmitShortcut, bindViewerEscape,
     imageDraftNodes, renderMentionPicker, isReferenceDrawer, hasInlineDocument, isMobile,
     moveMobile, requestDeleteConfirmation, cancelReplyMenuClose, hoverReply, enterReplyMenu,
-    leaveReplyMenu, trackReplyHover, isNativeThreadOpen: () => nativeThreadOpen,
+    leaveReplyMenu, trackReplyHover, cancelReactionClose, scheduleReactionClose,
+    isNativeThreadOpen: () => nativeThreadOpen,
   })
+
+  const historyLayer = createCommentHistory({ createPanelNode, buildReplies, call, ownerDocument: el.ownerDocument })
+
+  // 目录近 1MB、188 项：只在目录对象换了才重建网格；「最近使用」按 key 序列去抖。
+  let reactionGridCatalog = null, reactionRecentSignature = ''
+  function reactionButton(catalog, item, size) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.setAttribute('role', 'menuitem')
+    button.setAttribute('aria-label', item.name)
+    button.title = item.name
+    button.appendChild(reactionIcon(catalog, item.id, size, 'var(--ld-comment-reaction-sprite)'))
+    onAction(button, () => call('onChooseReaction', item.id))
+    return button
+  }
+  function renderReactionPicker(catalog, recent) {
+    if (!catalog) { reactionGridCatalog = null; reactionRecentSignature = ''; return }
+    if (catalog !== reactionGridCatalog) {
+      reactionGridCatalog = catalog
+      reactionPicker.style.setProperty('--ld-comment-reaction-sprite', `url("${catalog.sprite}")`)
+      reactionGrid.replaceChildren(...catalog.items.map(item => reactionButton(catalog, item, 24)))
+    }
+    const keys = [...new Set([...(recent || []), 'applaud_v2', 'thumbsup_v2', 'typing', 'fighton_v2', 'ok_v2', 'heart', 'plusone'])].slice(0, 7)
+    const signature = keys.join('|')
+    if (signature === reactionRecentSignature) return
+    reactionRecentSignature = signature
+    reactionRecent.replaceChildren(...keys
+      .map(key => catalog.items.find(item => item.id === key)).filter(Boolean)
+      .map(item => reactionButton(catalog, item, 28)))
+  }
 
   function render() {
     if (!state.open || !isMobile()) nativeThreadOpen = false
@@ -534,24 +572,7 @@ export function createCommentPanel(options = {}) {
       left: `${picker.position.left}px`,
       top: `${picker.position.top}px`,
     })
-    setInputValue(reactionSearch, picker.query || '')
-    syncChildren(reactionTabs, (picker.categories || []).map(category => {
-      const button = document.createElement('button')
-      button.type = 'button'; button.textContent = category
-      button.setAttribute('aria-selected', String(category === picker.category))
-      onAction(button, () => call('onReactionCategory', category))
-      return { node: button, on: true }
-    }))
-    reactionGrid.textContent = ''
-    ;(picker.items || []).forEach(item => {
-      const button = document.createElement('button')
-      button.type = 'button'; button.textContent = item.glyph || item.emoji || ''
-      button.setAttribute('aria-label', item.label || item.value || item.glyph || item.emoji || '')
-      onAction(button, () => call('onChooseReaction', item.glyph || item.emoji))
-      reactionGrid.appendChild(button)
-    })
-    const hasMore = (picker.items || []).length >= (picker.limit || 120)
-    reactionMore.hidden = !hasMore
+    renderReactionPicker(picker.catalog, picker.recent)
     queryTranslation.disabled = !state.translationRecovery?.canQuery
     let content = [...chrome, ...slots], documentContent = []
     if (inlineDocument) {
@@ -626,8 +647,10 @@ export function createCommentPanel(options = {}) {
       slots.forEach(slot => { slot.node.inert = false; slot.node.removeAttribute('aria-hidden') })
       wasMobileOpen = false
     }
+    historyLayer.render(state)
     syncChildren(el, [...content, { node: imageStatus, on: !!media.busy || !!media.pending },
       { node: translationRecovery, on: !!state.translationRecovery?.pending },
+      { node: historyLayer.history, on: !!state.historyOpen },
       { node: imageBackdrop, on: !!viewer }, { node: reactionPicker, on: picker.open === true }])
     // Measure soft wrapping only after the composer is attached in its current scope.
     const composerStyle = inlineDocument ? documentComposerInput.ownerDocument.defaultView?.getComputedStyle(documentComposerInput) : null
@@ -696,12 +719,15 @@ export function createCommentPanel(options = {}) {
     const viewerBounds = state.viewerHost?.getBoundingClientRect()
     const viewerClose = state.viewerHost?.querySelector('[data-viewer-action="close"]')?.getBoundingClientRect()
     const viewerToolbar = state.viewerHost?.querySelector('.lark-doc-image-viewer-toolbar')?.getBoundingClientRect()
-    applyStyle(el, state.viewerHost ? { position: 'absolute', left: 'auto', right: '0',
+    // 查看器评论栏（295px 的 `lark-doc-image-viewer-comments`）由外面建好，面板只是它里面的一张卡；
+    // 没有右栏时才退回「面板自己绝对定位成右栏」的老路子。
+    const viewerSidebar = !!state.viewerHost && !state.viewerColumn
+    applyStyle(el, viewerSidebar ? { position: 'absolute', left: 'auto', right: '0',
       top: `${viewerClose?.height ? Math.max(0, viewerClose.bottom - viewerBounds.top + 8) : 56}px`,
       bottom: `${viewerToolbar?.height ? Math.max(0, viewerBounds.bottom - viewerToolbar.top + 8) : 95}px`, width: `${Math.min(300, el.ownerDocument.defaultView.innerWidth * .75)}px`, maxWidth: '100%',
       display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', boxSizing: 'border-box', overflow: 'auto', overscrollBehavior: 'contain',
       background: 'var(--ld-comment-surface)', color: 'var(--ld-text)', pointerEvents: 'auto', zIndex: '1003' } : {})
-    mountNode(state.viewerHost || (inline ? options.inlineHost : drawerHost || host), el, visible)
+    mountNode(state.viewerColumn || state.viewerHost || (inline ? options.inlineHost : drawerHost || host), el, visible)
     if (drawerHost) el.style.minHeight = `${Math.max(drawerHost.clientHeight, options.inlineHost.scrollHeight)}px`
     else el.style.minHeight = ''
     if (!visible) {
@@ -718,6 +744,6 @@ export function createCommentPanel(options = {}) {
   return {
     el,
     update,
-    destroy() { if (destroyed) return; destroyed = true; closeDeleteConfirmation(); menuViewport?.removeEventListener('resize', positionReplyMenus); menuViewport?.removeEventListener('scroll', positionReplyMenus); cancelReplyMenuClose(); dismissedReplyHover = null; syncScrollLock(false); launcher.remove(); notice.remove(); documentFlow.remove(); window.removeEventListener('resize', resizeMobile); cancelAnimationFrame(scrollFrame); richInputs.forEach(input => input.destroy()); richInputs.clear(); if (el.parentNode) el.parentNode.removeChild(el) },
+    destroy() { if (destroyed) return; destroyed = true; closeDeleteConfirmation(); historyLayer.destroy(); menuViewport?.removeEventListener('resize', positionReplyMenus); menuViewport?.removeEventListener('scroll', positionReplyMenus); cancelReplyMenuClose(); dismissedReplyHover = null; syncScrollLock(false); launcher.remove(); notice.remove(); documentFlow.remove(); window.removeEventListener('resize', resizeMobile); cancelAnimationFrame(scrollFrame); richInputs.forEach(input => input.destroy()); richInputs.clear(); if (el.parentNode) el.parentNode.removeChild(el) },
   }
 }

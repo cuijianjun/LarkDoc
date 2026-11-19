@@ -234,7 +234,7 @@ export default {
         if (key && typeof this.shareCan === 'function' && !this.shareCan(key)) enabled = false
         // 阅读态（只读）下写操作一律置灰：删除/创建副本/转换为模板/翻译。
         if (enabled && this.effectiveReadonly && TOPBAR_MORE_READONLY_DISABLED.indexOf(item.id) >= 0) enabled = false
-        if (item.id === 'history-comments') enabled = enabled && this.commentRemote === true && this.commentCan?.('canView') === true
+        if (item.id === 'history-comments') enabled = enabled && this.commentCanViewHistory?.() === true
         return { ...item, enabled, ...(!enabled && item.id === 'history-comments' ? { title: '当前评论服务不可用或没有查看权限' } : {}) }
       })
     },
@@ -488,9 +488,9 @@ export default {
           })
           return
         case 'history-comments':
-          if (this.commentRemote !== true || this.commentCan?.('canView') !== true) return false
+          if (this.commentCanViewHistory?.() !== true) return false
           this.closeTopbarMore()
-          this.openHistoricalComments()
+          this.openCommentHistory()
           return
         case 'version.open':
           this.closeTopbarMore()
@@ -508,6 +508,12 @@ export default {
           this.closeTopbarMore()
           this.printDocument()
           return
+        case 'history':
+          if (this.larkDocConfig?.features?.versionHistory && this.versionProvider && this.shareCan('canView')) {
+            this.closeTopbarMore()
+            return this.openVersionPanel()
+          }
+          // Falls through to the host-owned action when no local history is configured.
         default:
           // 未接线的能力：抛给宿主；宿主没监听就是静默失败（飞书在无权限/无数据时同样不弹窗）。
           this.$emit('topbar-more', { action, item: payload || null })

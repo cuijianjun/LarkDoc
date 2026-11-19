@@ -83,7 +83,7 @@ export default {
           onKeep: () => this.keepTableBoundaryHover(),
           onClear: () => this.clearTableBoundaryHover(),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
       // md 风格交互层（选择条 / 重排 / 横滚）与两条工具条共用挂载时机，
       // 由 tableInteractionMixin 提供实现，这里只负责拉起和销毁。
       cellPlus = this._cellPlusUi = createCellPlusTools({
@@ -91,7 +91,7 @@ export default {
         handlers: { onOpen: (button) => {
           if (this.buildCellPlusState().visible) this.openCommandMenu('plus', { currentTarget: button })
         } },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, isOpen: state => !!state.visible })
       this.mountTableOverlays?.()
       this.refreshTableTools()
       this.refreshTableBoundary()

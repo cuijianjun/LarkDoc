@@ -573,10 +573,19 @@ describe('native panel presentation boundary', () => {
     handlers.versionToast.onNoticeLink()
     expect(opened).toEqual([true])
     expect(dismissed).toEqual([true])
-    const event = { target: { files: [], value: '' } }
-    const work = api.commentPanelMethods.uploadCommentImageFiles.call({ ed: { commentCanUploadImage: () => false } }, 'document', event)
+    // 上传入口只是「读 input → 清值 → 交给 addCommentAttachments」的一层包装，
+    // 能力判断在被调方（`commentCanAttach`），所以这里给个记录桩验证转交本身。
+    const delegated = []
+    const event = { target: { files: [], value: 'chosen' } }
+    // 桶里的方法都以 `this.ed` 为接收者转交（`uploadImages.call(this.ed, …)`），
+    // 所以桩要挂在 ed 上，而不是外层 owner。
+    const work = api.commentPanelMethods.uploadCommentImageFiles.call({
+      ed: { commentCanUploadImage: () => false, addCommentAttachments: async (scope, files) => { delegated.push([scope, files]) } },
+    }, 'document', event)
     expect(work).toBeInstanceOf(Promise)
     await work
+    expect(event.target.value).toBe('')
+    expect(delegated).toEqual([['document', []]])
   })
   it('reprojects after a real panel becomes ready and ignores a retired panel callback', async () => {
     const factories = []

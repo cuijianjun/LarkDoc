@@ -10,16 +10,16 @@ import { createTrailingDebounce, SEARCH_DEBOUNCE_MS } from '../../../core/pacing
 import { getTransactionMetadata, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
 import { DEFAULT_MODES_CONFIG, MODE_ICONS, MODE_STORAGE_KEY, MODE_TOAST_MS, isDocMode, isEditableTarget, modeFromShortcut, modeMeta, modeToastText, normalizeModesConfig, resolveModeOptions } from './docModes'
 
-function scrollDocumentPosition(editor) {
+function scrollDocumentPosition(editor, match) {
   // PM scrolls the selected text range, including a hit inside a tall block,
   // and honors nested scroll owners plus the toolbar margin from the renderer.
-  const scroll = () => editor.commands.scrollIntoView()
-  if (editor.storage?.larkDoc?.pagedView?.navigate) editor.storage.larkDoc.pagedView.navigate(scroll)
+  const scroll = () => { if (!match?.attribute) editor.commands.scrollIntoView() }
+  if (editor.storage?.larkDoc?.pagedView?.navigate) editor.storage.larkDoc.pagedView.navigate(scroll, match)
   else {
     scroll()
     const root = editor.view.dom, selection = editor.state.selection, doc = editor.state.doc
-    if (root && !root.contains(root.ownerDocument.getSelection()?.focusNode)) return import('../../../editor/pagedDocumentView').then(module => {
-      if (!editor.isDestroyed && editor.state.doc === doc && selection.eq(editor.state.selection)) module.scrollDocumentSelection(editor)
+    if (root && (match?.attribute || !root.contains(root.ownerDocument.getSelection()?.focusNode))) return import('../../../editor/pagedDocumentView').then(module => {
+      if (!editor.isDestroyed && editor.state.doc === doc && selection.eq(editor.state.selection)) module.scrollDocumentSelection(editor, match)
     })
   }
 }
@@ -32,7 +32,7 @@ export default {
     slides: false, fullscreen: false, widthMode: 'standard',
     // `outlinePending`：目录是**水合的占位值**时的闸门（见 hydrateOutline）。为 true 时
     // 面板照常显示，但不允许按目录跳转 —— 正文还没灌进去，`pos` 指向的是空文档。
-    outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
+    maxHeadingLevel: 0, outlineOpen: window.innerWidth > 760, outline: [], outlinePending: false, outlineCollapsed: new Set(), activeHeading: -1, folded: new Set(), wordCount: 0,
     searchOpen: false, searchQuery: '', replacement: '', searchMatches: [], searchIndex: 0, slideIndex: 0,
     // P4-05 查找替换浮层：tab 决定面板高度（find 186 / replace 286，04 §3.2）；
     // pos 是拖拽后的 fixed 坐标，null 表示用 CSS 默认位（右上角）。
@@ -183,8 +183,9 @@ export default {
       const match = this.searchMatches[this.searchIndex]
       this.editor.commands.revealLarkDocMatch(match.from, match.to)
       this.editor.commands.setLarkDocSearch(this.searchQuery, this.searchIndex)
-      this.editor.commands.setTextSelection(match)
-      return scrollDocumentPosition(this.editor)
+      if (match.attribute) this.editor.commands.setNodeSelection(match.from)
+      else this.editor.commands.setTextSelection(match)
+      return scrollDocumentPosition(this.editor, match)
     },
     replace(all) {
       if (!this.writable() || !this.featureEnabled('search') || !this.searchQuery) return
@@ -198,11 +199,7 @@ export default {
         this.updateSearch()
         const match = this.searchMatches[this.searchIndex]
         if (!match) return
-        const tr = this.editor.state.tr
-        const marks = tr.doc.resolve(match.from).marks()
-        if (this.replacement) tr.replaceWith(match.from, match.to, this.editor.schema.text(this.replacement, marks))
-        else tr.delete(match.from, match.to)
-        this.editor.view.dispatch(tr)
+        replaceText(this.editor, this.searchQuery, this.replacement, false, [match])
       }
       this.editor.view.dispatch(closeHistory(this.editor.state.tr))
       this.updateSearch()

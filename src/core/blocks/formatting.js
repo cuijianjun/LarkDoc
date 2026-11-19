@@ -19,6 +19,7 @@ export function nextBlockIndent(doc, $from, currentIndent, delta) {
 
 const Formatting = Extension.create({
   name: 'larkDocFormatting',
+  priority: 1100,
   addGlobalAttributes() {
     return [
       { types: ['paragraph', 'heading'], attributes: {
@@ -51,16 +52,12 @@ const Formatting = Extension.create({
       return this.editor.commands[command](type)
     }
     const indentCommand = (delta) => {
-      if (!this.editor.isEditable || this.editor.view.composing) return false
+      if (!this.editor.isEditable || this.editor.view.composing) return this.editor.isActive('codeBlock')
+      if (this.editor.isActive('codeBlock')) return this.editor.commands.editCode(delta > 0 ? 'tab' : 'untab')
       if (this.editor.isActive('taskItem') || this.editor.isActive('listItem')) return listCommand(delta > 0 ? 'sinkListItem' : 'liftListItem')
 
       const { selection } = this.editor.state
       if (['table', 'tableCell', 'tableHeader'].some((type) => this.editor.isActive(type))) return false
-      // 代码块里 Tab 是缩进代码（飞书同样是插入空格），块级缩进走菜单或 ⌘] / ⌘[。
-      if (this.editor.isActive('codeBlock')) {
-        if (delta < 0) return false
-        return this.editor.commands.insertContent('  ')
-      }
 
       const blockType = selection.$from.parent.type.name
       if (!['paragraph', 'heading'].includes(blockType)) return false

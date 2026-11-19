@@ -55,7 +55,14 @@ async function main() {
         await page.waitForFunction(() => !!window.__notifyProbe?._handle?.nativeHost?.host?.editor)
         const defaults = await page.evaluate(() => ({ native: !!window.__notifyProbe._handle.nativeHost, toolbarVisible: window.__notifyProbe.getConfig().layout.toolbarVisible, toolbarCount: document.querySelectorAll('.lark-doc-toolbar').length, viewport: innerWidth, overflow: document.documentElement.scrollWidth - innerWidth }))
         record(`${name} 原生默认工具栏隐藏且页面无横向溢出`, defaults.native && defaults.toolbarVisible === false && defaults.toolbarCount === 0 && defaults.viewport === viewport.width && defaults.overflow <= 1, defaults)
-        await page.getByRole('button', { name: '当前文档通知', exact: true }).click()
+        const mobile = viewport.width <= 760
+        const mobileActions = page.getByRole('button', { name: '更多文档操作', exact: true })
+        const notify = page.getByRole('button', { name: '当前文档通知', exact: true })
+        const openNotify = async () => {
+          if (mobile) await mobileActions.press('Shift+Enter')
+          await notify.click()
+        }
+        await openNotify()
         await page.getByRole('dialog', { name: '当前文档通知', exact: true }).waitFor()
         await page.evaluate(() => window.__notifyProbe._handle.nativeHost.host.$nextTick())
         const panel = await bounds(page, '.lark-doc-notify-popover')
@@ -71,8 +78,10 @@ async function main() {
         await page.screenshot({ path: path.join(OUT, `${name}-notification.png`) })
         await page.keyboard.press('Escape')
         await page.waitForFunction(() => !document.querySelector('.lark-doc-notify-popover'))
-        record(`${name} 通知 Esc 实际关闭并复位 aria-expanded`, await page.getByRole('button', { name: '当前文档通知', exact: true }).getAttribute('aria-expanded') === 'false', {})
-        await page.getByRole('button', { name: '当前文档通知', exact: true }).click()
+        const returnTrigger = mobile ? mobileActions : notify
+        record(`${name} 通知 Esc 关闭并将焦点还给入口`, await returnTrigger.getAttribute('aria-expanded') === 'false'
+          && await returnTrigger.evaluate(el => el.ownerDocument.activeElement === el), {})
+        await openNotify()
         await page.getByRole('dialog', { name: '当前文档通知', exact: true }).waitFor()
         const outside = { x: 2, y: viewport.height - 2 }
         assert.equal(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.lark-doc-notify-popover, .lark-doc-notify-btn'), outside), false)
@@ -109,7 +118,9 @@ async function main() {
           await page.keyboard.press('Escape')
           record(`${name} 更多工具 Esc 关闭`, await page.locator('.lark-doc-more-menu').count() === 0, {})
           await page.evaluate(async () => { const host = window.__notifyProbe._handle.nativeHost.host; host.editorConfig.layout.toolbarVisible = false; await host.$nextTick() })
-          record(`${name} 工具栏重新隐藏后通知入口仍可用`, await page.locator('.lark-doc-toolbar').count() === 0 && await page.getByRole('button', { name: '当前文档通知', exact: true }).isVisible(), {})
+          await openNotify()
+          record(`${name} 工具栏重新隐藏后通知入口仍可用`, await page.locator('.lark-doc-toolbar').count() === 0
+            && await page.getByRole('dialog', { name: '当前文档通知', exact: true }).isVisible(), {})
         }
         record(`${name} 无页面脚本错误`, errors.length === 0, errors)
         await page.evaluate(() => window.__notifyProbe.destroy())

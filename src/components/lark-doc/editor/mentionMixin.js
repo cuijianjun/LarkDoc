@@ -114,7 +114,10 @@ export default {
       if (this.mentionOpen) this.refreshMentionItems()
     },
     effectiveReadonly(value) { if (value) this.closeMentionPanel() },
-    session() { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = ''; this.bindMentionCapabilities() },
+    session(value, prior) {
+      if (value === prior) return
+      this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = ''; this.bindMentionCapabilities()
+    },
     'session.user.id'(value, prior) { if (value !== prior) { this.closeMentionPanel(); this.mentionPendingOperation = ''; this.mentionMessage = '' } },
   },
   beforeDestroy() {

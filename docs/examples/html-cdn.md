@@ -31,7 +31,7 @@ HTML 使用普通 script 引入：
 <script src="./vendor/lark-doc-element.umd.min.js"></script>
 ```
 
-这个 UMD 主入口会从同目录加载 runtime；runtime 提供 `window.LarkDoc` 命名空间并自动注入样式，构造器是其中的 `LarkDoc`。先准备容器，再创建实例；无需另加 CSS。请保持主入口和 `lark-doc-element.runtime.umd.min.js` 同目录。
+这个 UMD 主入口会从同目录加载 runtime；runtime 到达后把构造器与工具函数挂到 `window.LarkDoc` 上，并自动注入样式，构造器是其中的 `LarkDoc`。**主入口是异步的**：runtime 有 10 MB 以上，`<script>` 之后 `window.LarkDoc.LarkDoc` 通常还是 `undefined`，创建实例前先等 `window.LarkDoc.runtimeReady`（解析为同一个命名空间）。先准备容器，再创建实例；无需另加 CSS。请保持主入口和 `lark-doc-element.runtime.umd.min.js` 同目录。
 
 页面离开时调用实例的 `destroy()`，释放编辑器监听和未完成的图片任务。示例设置 `storage: 'none'`，刷新后恢复初始内容。
 

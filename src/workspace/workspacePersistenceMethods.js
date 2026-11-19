@@ -9,6 +9,7 @@ import { createPersistenceWorkspace, detectBrowserStorage } from '../providers/p
 import { createLarkDocConfig, isAutoSaveEnabled, resolveAutoSaveDelay } from '../components/lark-doc/larkDocConfig'
 import { createDerivedSnapshot } from '../core/derive/snapshot'
 import { DOCUMENT_SCHEMA_VERSION } from '../core/documentSchema'
+import { LARGE_DOCUMENT_SIZE } from '../editor/documentStats'
 import { logger } from '../utils/logger'
 
 export const persistenceMethods = {
@@ -93,7 +94,7 @@ export const persistenceMethods = {
     this.state.saveStatus = '等待本地保存…'
     this._saveTimer = setTimeout(() => {
       this._saveTimer = null
-      void this.saveNow()
+      void this.saveNow(false, true)
     }, resolveAutoSaveDelay(this.state.editorConfig))
     return true
   },
@@ -138,16 +139,22 @@ export const persistenceMethods = {
 
   flushOnLeave() { void this.saveNow() },
 
-  async saveNow(manual = false) {
+  async saveNow(manual = false, deferred = false) {
     this.checkInitialization()
     if (!this.featureEnabled('persistence')) return
     clearTimeout(this._saveTimer)
     if (this.state.importing || this.getEditor()?.storage?.larkDoc?.pagedImport) return false
-    if (!this.state.initialized || !this.getEditor() || (!manual && this.state.storageError)) return
+    const editor = this.getEditor()
+    if (!this.state.initialized || !editor || (!manual && this.state.storageError)) return
     const generation = ++this._saveGeneration
     let scope
     try {
       scope = this._capturePersistenceScope()
+      const gate = deferred && editor.state?.doc?.content?.size > LARGE_DOCUMENT_SIZE && editor.storage?.larkDoc?.backgroundGate
+      if (gate) {
+        const current = () => generation === this._saveGeneration && scope.current() && isAutoSaveEnabled(this.state.editorConfig)
+        if (!await gate.wait(current) || !current()) return
+      }
       await this.callWorkspace('save', this.record())
       if (generation !== this._saveGeneration || !scope.current()) return
       this.state.storageError = false

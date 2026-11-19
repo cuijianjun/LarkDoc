@@ -39,6 +39,8 @@ export default {
     headerMenuStyle() { this.refreshToolbar() },
     diagramMenuOpen() { this.refreshToolbar() },
     diagramMenuStyle() { this.refreshToolbar() },
+    // 表格选择下拉只影响按钮的 aria-expanded（面板本体由 dialogsUiMixin 挂）。
+    tablePicker() { this.refreshToolbar() },
     moreMenuOpen() { this.refreshToolbar() },
     moreMenuStyle() { this.refreshToolbar() },
     /* ---------- 工具栏：取色面板 ---------- */
@@ -199,6 +201,8 @@ export default {
         openCommandMenu: (kind, event) => this.openCommandMenu(kind, event),
         scheduleCommandMenuClose: () => this.scheduleCommandMenuClose(),
         onTableToolbarClick: () => this.onTableToolbarClick(),
+        openTablePickerOnHover: () => this.openTablePickerOnHover(),
+        scheduleTablePickerClose: () => this.scheduleTablePickerClose(),
         toggleDiagramMenu: () => this.toggleDiagramMenu(),
         openDiagramMenuOnHover: () => this.openDiagramMenuOnHover(),
         scheduleDiagramMenuClose: () => this.scheduleDiagramMenuClose(),
@@ -420,6 +424,7 @@ export default {
           shortcuts: this.toolbarEnabled('shortcuts'),
           docOps,
         },
+        table: { open: !!this.tablePicker && !this.effectiveReadonly && this.toolbarEnabled('tables') },
         diagram: {
           open: this.diagramMenuOpen && !this.effectiveReadonly && this.toolbarEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'diagram', 'diagram'),
           style: this.diagramMenuStyle,

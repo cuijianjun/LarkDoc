@@ -77,12 +77,28 @@ export const commentsThreadMethods = {
     this.$set(this.commentDraftMentions, threadId, metadata.mentions)
     this.$set(this.commentDraftReferences, threadId, metadata.references)
   },
+  /** 引用回复：把被引用作者写成结构化 mention（文本仍是 `@名字 `，但带身份），再顺延既有区间。 */
+  quoteCommentReply(threadId, replyId) {
+    const reply = this.commentThreads.find(thread => thread.id === threadId)?.replies.find(item => item.id === replyId)
+    if (!reply) return false
+    const name = this.commentAuthorName(reply.author), prefix = `@${name} `
+    this.$set(this.commentReplyTargets, threadId, { commentId: reply.id, authorId: reply.author.id, authorName: name })
+    const draft = this.commentDraftOf(threadId)
+    if (draft.startsWith(prefix)) return true
+    const shift = prefix.length
+    const mentions = [{ principalId: reply.author.id, from: 0, to: 1 + name.length },
+      ...(this.commentDraftMentions[threadId] || []).map(item => ({ ...item, from: item.from + shift, to: item.to + shift }))]
+    const references = (this.commentDraftReferences[threadId] || []).map(item => ({ ...item, from: item.from + shift, to: item.to + shift }))
+    this.setCommentDraft(threadId, prefix + draft, mentions, references)
+    return true
+  },
   clearCommentDraft(threadId) {
     if (!threadId) return
     this.clearCommentDraftImages(threadId)
     this.$set(this.commentDrafts, threadId, '')
     this.$set(this.commentDraftMentions, threadId, [])
     this.$set(this.commentDraftReferences, threadId, [])
+    this.commentDropKey(this.commentReplyTargets, threadId)
     if (this.commentMentionPicker?.threadId === threadId) this.commentMentionPicker = null
   },
 
@@ -186,6 +202,19 @@ export const commentsThreadMethods = {
     this._commentMoreMenuAnchor = null; this._commentReplyMenuAnchor = null
   },
   commentDraftImages(scope) { return this.commentImageDrafts?.[scope] || [] },
+  /** 本地 provider 的图片附件：与远端 `assetIds` 对应，取已上传完成的 uploader 结果。 */
+  commentDraftAttachments(scope) {
+    return this.commentDraftImages(scope).filter(image => image.status === 'ready' && (image.attachment?.url || image.url))
+      // 编辑态里的已存附件是扁平 `{ url, name }`（没有 uploader 结果），照原样送回才能保住这张图。
+      .map(image => {
+        const attachment = image.attachment || image
+        return { url: attachment.url, name: image.name || attachment.fileName || '', ...(attachment.attchId != null ? { attchId: String(attachment.attchId) } : {}) }
+      })
+  },
+  /** 远端 provider 的 `assetIds`：与 `commentDraftAttachments` 同一批已就绪草稿。 */
+  commentDraftAssetIds(scope) {
+    return this.commentDraftImages(scope).filter(image => image.status === 'ready' && image.assetId).map(image => image.assetId)
+  },
   invalidateCommentImageUpload(scope) {
     if (!this.commentImageDraftGenerations) this.commentImageDraftGenerations = {}
     this.$set(this.commentImageDraftGenerations, scope, (this.commentImageDraftGenerations[scope] || 0) + 1)
@@ -203,17 +232,33 @@ export const commentsThreadMethods = {
   },
   clearCommentDraftImages(scope) {
     this.invalidateCommentImageUpload(scope)
-    this.commentDraftImages(scope).forEach(image => { if (image.previewUrl && image.previewOwned) URL.revokeObjectURL(image.previewUrl) })
+    this.dropCommentAttachmentTasks(scope)
+    this.commentDraftImages(scope).forEach(image => {
+      this._commentAttachmentFiles?.delete(image.id)
+      if (image.previewUrl) URL.revokeObjectURL(image.previewUrl)
+    })
     this.$set(this.commentImageDrafts, scope, [])
   },
-  removeCommentDraftImage(scope, assetId) {
-    const list = this.commentDraftImages(scope)
-    list.filter(image => image.assetId === assetId).forEach(image => { if (image.previewUrl && image.previewOwned) URL.revokeObjectURL(image.previewUrl) })
-    this.$set(this.commentImageDrafts, scope, list.filter(image => image.assetId !== assetId))
+  /** 撤掉这个草稿作用域还没结束的上传（清草稿 / 换文档 / 移除单张都走这里）。 */
+  dropCommentAttachmentTasks(scope, id = '') {
+    this._commentAttachmentTasks?.forEach((task, taskId) => {
+      if (task.scope !== scope || (id && taskId !== id)) return
+      task.controller?.abort('draft-cleared')
+      if (task.previewUrl) URL.revokeObjectURL(task.previewUrl)
+      this._commentAttachmentTasks.delete(taskId)
+    })
   },
+  removeCommentDraftImage(scope, id) {
+    const list = this.commentDraftImages(scope)
+    this.dropCommentAttachmentTasks(scope, id)
+    list.filter(image => image.id === id).forEach(image => { if (image.previewUrl) URL.revokeObjectURL(image.previewUrl) })
+    this._commentAttachmentFiles?.delete(id)
+    this.$set(this.commentImageDrafts, scope, list.filter(image => image.id !== id))
+  },
+  /** 与基线一致：图片能力只看评论服务是否声明 supportAttachments，不依赖 assets Provider。 */
+  commentCanAttach() { return this.commentCan('canView') && this.commentProvider?.()?.supportsAttachments === true },
   commentCanUploadImage(scope) {
-    if (!this.commentRemote || !this.commentCan('canComment') || this.commentImageBusy || this.commentPendingImage || this.commentBusy || this.commentPendingOperation ||
-      typeof this.session?.getProvider?.('assets')?.uploadCommentImage !== 'function' || this.commentDraftImages(scope).length >= 9) return false
+    if (!this.commentCanAttach() || this.commentImageBusy || this.commentDraftImages(scope).length >= 9) return false
     if (scope.startsWith('edit/')) { const [, threadId, replyId] = scope.split('/'); return this.commentAllowed('edit', threadId, replyId) }
     return ['document', 'selection'].includes(scope) ? this.commentAllowed('create') : this.commentAllowed('reply', scope)
   },
@@ -238,6 +283,11 @@ export const commentsThreadMethods = {
     this._commentImageEntries?.forEach(entry => { entry.controller.abort(); if (entry.url) URL.revokeObjectURL(entry.url) })
     this._commentImageEntries = new Map()
     Object.keys(this.commentImageDrafts).forEach(scope => this.clearCommentDraftImages(scope))
+    this._commentAttachmentFiles = new Map(); this._commentUploader = null; this._commentUploaderInput = null
+    // 指针一清，权限回收时就再也找不到这块预览层了：先销毁，再撤掉切换文档时的回收钩子。
+    this._commentAttachmentViewer?.destroy?.(false)
+    if (this._commentAttachmentRetire) this._imageViewerRetire?.delete(this._commentAttachmentRetire)
+    this._commentAttachmentViewer = null; this._commentAttachmentRetire = null
     this.commentImageDrafts = {}; this.commentImageDraftGenerations = {}; this.commentImageUrls = {}; this.commentImageErrors = {}; this.commentImageViewer = null; this._commentImageViewerAnchor = null; this.commentImageBusy = false
     this.commentPendingImage = preservePending && original ? { operationId: original.operationId, kind: original.kind, ...(original.beginOperationId ? { beginOperationId: original.beginOperationId } : {}), scope: null } : null
   },
@@ -281,7 +331,6 @@ export const commentsThreadMethods = {
       const style = this.$el?.querySelector?.('.lark-doc-comment-reaction-picker')?.style
       for (const key of ['position', 'left', 'top']) style?.removeProperty(key)
     }
-    this.commentReactionQuery = ''; this.commentReactionCategory = '常用'; this.commentReactionLimit = 120
     if (restoreFocus) this.restoreCommentReplyFocus(context?.threadId, context?.replyId, anchor)
   },
 
@@ -321,9 +370,6 @@ export const commentsThreadMethods = {
     if (!this.commentReactionContext || event.key !== 'Escape') return
     event.preventDefault(); event.stopPropagation(); this.closeCommentReaction(true)
   },
-  showMoreCommentReactions() { this.commentReactionLimit += 120 },
-  setCommentReactionQuery(value) { this.commentReactionQuery = value; this.commentReactionLimit = 120 },
-  setCommentReactionCategory(value) { this.commentReactionCategory = value; this.commentReactionLimit = 120 },
 
 
 

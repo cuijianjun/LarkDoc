@@ -44,10 +44,23 @@ export function placeMenu(menu, trigger, minTop = MENU_MARGIN, options = {}) {
   const height = Math.min(box.height || menu.offsetHeight, maxHeight)
   const gap = options.gap ?? MENU_GAP
   const below = Math.max(0, bottom - triggerRect.bottom - gap), above = Math.max(0, triggerRect.top - safeTop - gap)
-  const naturalTop = below < height && above > below ? triggerRect.top - height - gap : triggerRect.bottom + gap
+  const placeAbove = below < height && above > below
+  // 弹层高度不能超过所选方向的可用空间：否则 `top` 会被下界夹回 `safeTop`，弹层
+  // 铺满整屏、反过来盖住自己的触发按钮（工具栏「更多」菜单比视口还高时就是这样，
+  // 鼠标移到按钮上菜单先弹出，随后按钮被盖住，点击永远打不中）。
+  const space = placeAbove ? above : below
+  // 只有「自然高度装不下」时才把高度收到可用空间：否则菜单会越过所选方向铺满整屏，
+  // 反过来盖住自己的触发按钮（工具栏「更多」菜单比视口还高时就是这样，鼠标移到按钮
+  // 上菜单先弹出，随后按钮被盖住，点击永远打不中）。本来就装得下时保留视口上限，
+  // 不要把它压成当前自然高度 —— 内容一变就再也撑不开了。
+  const capped = height > space
+  const fittedHeight = capped ? space : height
+  const appliedMaxHeight = capped ? Math.min(maxHeight, space) : maxHeight
+  if (capped) menu.style.maxHeight = `${appliedMaxHeight}px`
+  const naturalTop = placeAbove ? triggerRect.top - fittedHeight - gap : triggerRect.bottom + gap
   const left = Math.max(x + MENU_MARGIN, Math.min(right - width, options.align === 'end' ? triggerRect.right - width : triggerRect.left))
-  const top = Math.max(safeTop, Math.min(bottom - height, naturalTop))
-  const style = { left: `${left}px`, top: `${top}px`, right: 'auto', maxWidth: `${maxWidth}px`, maxHeight: `${maxHeight}px`, marginTop: '0px' }
+  const top = Math.max(safeTop, Math.min(bottom - fittedHeight, naturalTop))
+  const style = { left: `${left}px`, top: `${top}px`, right: 'auto', maxWidth: `${maxWidth}px`, maxHeight: `${appliedMaxHeight}px`, marginTop: '0px' }
   Object.assign(menu.style, style)
   return style
 }

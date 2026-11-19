@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
@@ -11,6 +13,7 @@ import { createRenderer, setRenderer } from '../../src/mount'
 import { LarkDoc } from '../../src/LarkDoc'
 import { createUploadProvider } from '../../src/core/media/upload'
 import { diagramTypes } from '../../src/components/lark-doc/editor/constants'
+import { DIAGRAM_SOURCES } from '../../src/ui/diagramMenu'
 import { createMemoryCommentsProvider } from '../../src/core/comments/memory-provider'
 import { createDocumentSession } from '../../src/session/DocumentSession'
 import { BLOCKED_IMAGE_PLACEHOLDER, createNetworkPolicy } from '../../src/core/policy/network'
@@ -1324,6 +1327,37 @@ describe('源模板插入与更多模板闭环', () => {
     expect(contexts[0].documentId).toBe('business-doc')
     expect(contexts[0].resumeScope).toMatch(/:/)
   }, { documentId: 'business-doc' }))
+  it('上传的视频数据地址通过 JSON 和 HTML 正文往返', () => withTemplateDocument(async ({ host, editor, doc }) => {
+    const url = 'data:video/mp4;base64,' + 'YWJj'.repeat(300)
+    host.uploadFile = async () => ({ url })
+    await host.insertFileBlocks([new File(['video'], 'inline.mp4', { type: 'video/mp4' })])
+    const saved = doc.getJSON()
+    const html = doc.getHTML()
+    expect(fileNodes(editor)[0].attrs).toMatchObject({ src: url, token: null, mimeType: 'video/mp4' })
+    doc.setContent(saved)
+    expect(doc.getJSON()).toEqual(saved)
+    doc.setContent(html)
+    expect(fileNodes(editor)[0].attrs).toMatchObject({ src: url, token: null, mimeType: 'video/mp4', viewType: 'Preview' })
+  }))
+  it('视频上传显示实际进度，取消后迟到结果不修改正文', () => withTemplateDocument(async ({ host, editor }) => {
+    let finish, context
+    host.uploadFile = (file, ctx) => { context = ctx; return new Promise(resolve => { finish = resolve }) }
+    const before = editor.state.doc
+    const pending = host.insertFileBlocks([new File(['video data'], 'pending.mp4', { type: 'video/mp4' })])
+    await vi.waitFor(() => expect(context).toBeTruthy())
+    const card = editor.view.dom.querySelector('.lark-doc-file-uploading.is-video')
+    expect(card).toBeTruthy()
+    expect(editor.state.doc).toBe(before)
+    context.onProgress({ loaded: 5 })
+    await vi.waitFor(() => expect(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('50'))
+    card.querySelector('button').click()
+    await pending
+    expect(context.signal.aborted).toBe(true)
+    finish({ token: 'late_video' })
+    await Promise.resolve()
+    expect(editor.state.doc).toBe(before)
+    expect(editor.view.dom.contains(card)).toBe(false)
+  }))
   it('附件上传期间锚点映射，完成保留当前光标并单次撤销插入', () => withTemplateDocument(async ({ host, editor }) => {
     let finish
     host.uploadFile = () => new Promise(resolve => { finish = resolve })
@@ -2350,6 +2384,7 @@ describe('表格与链接选区分享真实门面', () => {
   it('表格块菜单提供真实分享和可解析的区块定位链接', () => withSelectionShare(async ({ doc, host }) => {
     doc.getEditor().commands.setContent('<table data-block-id="block_share_table"><tbody><tr><td><p>表格内容</p></td></tr></tbody></table>')
     host.handleRange = { from: 0, to: doc.getEditor().state.doc.firstChild.nodeSize }
+    host.openBlockMenu(); await vi.dynamicImportSettled()
     expect(host.buildBlockMenuState().listActions.map(item => item.id)).toEqual(expect.arrayContaining(['share', 'copyLink']))
     expect(await host.blockAction('share')).toBe(true)
     expect(host.imageShare).toMatchObject({ target: 'selection', selection: { blockId: 'block_share_table', type: 'cell' } })
@@ -2552,7 +2587,8 @@ describe('图片 AI 真实门面接线', () => {
       const nodeView = doc.getEditor().view.docView.children.find(child => child.node.type.name === 'image').spec
       nodeView.mountToolbar()
       nodeView.dom.querySelector('[data-action="ai"]').click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      // 侧面板是懒加载模块：首次打开要等动态 import 落地，固定一次 setTimeout 会 flaky。
+      await vi.waitFor(() => expect(element.querySelector('[aria-label="图片问答"]')).not.toBeNull())
       const panel = element.querySelector('[aria-label="图片问答"]')
       panel.querySelector('[aria-label="移除图片引用"]').click()
       const prompt = panel.querySelector('textarea')
@@ -2591,16 +2627,17 @@ describe('图片 AI 真实门面接线', () => {
       const ask = nodeView.dom.querySelector('[data-action="ai"]')
       expect(ask.textContent).toBe('问问AI')
       ask.click()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      // 侧面板是懒加载模块：首次打开要等动态 import 落地，固定一次 setTimeout 会 flaky
+      // （AI 只剩一张表单面板后模块变大，单 tick 已不够）。
+      await vi.waitFor(() => expect(element.querySelector('[aria-label="图片问答"]')).not.toBeNull())
       const panel = element.querySelector('[aria-label="图片问答"]')
-      expect(panel).not.toBeNull()
-      expect(panel.querySelector('.lark-doc-image-ai-reference').hidden).toBe(false)
+      expect(panel.querySelector('.lark-doc-ai-reference').hidden).toBe(false)
       expect(panel.querySelector('[aria-label="发送图片问答"]').disabled).toBe(true)
       expect(document.activeElement).toBe(panel.querySelector('textarea'))
       expect(stream).not.toHaveBeenCalled()
       panel.querySelector('[aria-label="移除图片引用"]').click()
       await new Promise(resolve => setTimeout(resolve, 0))
-      expect(panel.querySelector('.lark-doc-image-ai-reference').hidden).toBe(true)
+      expect(panel.querySelector('.lark-doc-ai-reference').hidden).toBe(true)
       expect(JSON.stringify(doc.getJSON())).toBe(before)
       doc.patchProps({ config: { features: { ai: false } } })
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -2670,7 +2707,7 @@ describe('public reference content and asynchronous comments', () => {
       toggle.click(); await vi.dynamicImportSettled()
       expect(toggle.getAttribute('aria-pressed')).toBe('true')
       expect(host.commentComposerContext.blockId).toBe('image_a')
-      const input = viewer.querySelector('[aria-label="新评论"]')
+      const input = viewer.querySelector('[aria-label="输入评论"]')
       expect(input).not.toBeNull(); input.focus()
       const paste = new Event('paste', { bubbles: true, cancelable: true })
       Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'A 的评论' } })
@@ -2727,7 +2764,7 @@ describe('public reference content and asynchronous comments', () => {
   it('viewer comments isolate each image draft and restore the previous body draft without writing', () => withImageCommentViewer(async ({ doc, host, comments, viewer, toggle }) => {
     const before = doc.getJSON()
     toggle.click(); await vi.dynamicImportSettled()
-    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'A image draft')
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), 'A image draft')
     const retired = viewer.querySelector('.lark-doc-comment-composer .is-filled')
     viewer.querySelector('[data-viewer-action="next"]').click()
     expect(host.commentCreateDraft).toBe('body draft')
@@ -2736,11 +2773,11 @@ describe('public reference content and asynchronous comments', () => {
     toggle.click(); await vi.dynamicImportSettled()
     expect(host.commentComposerContext.blockId).toBe('image_b')
     expect(host.commentCreateDraft).toBe('')
-    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'B image draft')
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), 'B image draft')
     viewer.querySelector('[data-viewer-action="previous"]').click()
     toggle.click(); await vi.dynamicImportSettled()
     expect(host.commentComposerContext.blockId).toBe('image_a')
-    expect(viewer.querySelector('[aria-label="新评论"]').textContent).toBe('A image draft')
+    expect(viewer.querySelector('[aria-label="输入评论"]').textContent).toBe('A image draft')
     viewer.querySelector('[data-viewer-action="close"]').click()
     expect(host.commentCreateDraft).toBe('body draft')
     expect(host.commentComposerContext.text).toBe('x')
@@ -2789,7 +2826,7 @@ describe('public reference content and asynchronous comments', () => {
 
   it.each(['host', 'restore', 'whole-body', 'source', 'crop'])('closed image drafts do not cross a later %s change', action => withImageCommentViewer(async ({ doc, editor, host, viewer, toggle, comments }) => {
     toggle.click(); await vi.dynamicImportSettled()
-    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'old image private draft')
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), 'old image private draft')
     toggle.click()
     expect(host._imageCommentScope).toBeNull()
     if (action === 'host' || action === 'whole-body') {
@@ -2806,7 +2843,7 @@ describe('public reference content and asynchronous comments', () => {
     expect(current).not.toBeNull()
     current.querySelector('[data-viewer-action="comment"]').click(); await vi.dynamicImportSettled()
     expect(host.commentComposerContext.blockId).toBe('image_a')
-    expect(current.querySelector('[aria-label="新评论"]').textContent).toBe('')
+    expect(current.querySelector('[aria-label="输入评论"]').textContent).toBe('')
     expect(host.commentCreateDraft).toBe('')
     expect(await comments.list()).toEqual([])
   }))
@@ -2816,7 +2853,7 @@ describe('public reference content and asynchronous comments', () => {
     vi.spyOn(commentComposerModule, 'createCommentComposer').mockImplementation(options => { const input = factory(options); composers.push(input); return input })
     await withImageCommentViewer(async ({ viewer, toggle }) => {
       toggle.click(); await vi.dynamicImportSettled()
-      const input = viewer.querySelector('[aria-label="新评论"]')
+      const input = viewer.querySelector('[aria-label="输入评论"]')
       input.focus()
       const composer = composers.find(item => item.el === input)
       expect(composer.view).not.toBeNull()
@@ -2832,27 +2869,29 @@ describe('public reference content and asynchronous comments', () => {
     }, { viewportWidth })
   })
 
-  it('viewer comments resize their numeric portal and reserve the same stage space', () => withImageCommentViewer(async ({ viewer, toggle }) => {
+  it('viewer comments retain the same sidebar and layout state through resize', () => withImageCommentViewer(async ({ viewer, toggle }) => {
     const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')
     try {
       toggle.click(); await vi.dynamicImportSettled()
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
-      window.dispatchEvent(new Event('resize'))
-      expect(viewer.querySelector('.lark-doc-comment-layer').style.width).toBe('294.75px')
-      expect(viewer.querySelector('.lark-doc-image-viewer-stage').style.marginRight).toBe('294.75px')
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
-      window.dispatchEvent(new Event('resize'))
-      expect(viewer.querySelector('.lark-doc-comment-layer').style.width).toBe('300px')
-      expect(viewer.querySelector('.lark-doc-image-viewer-stage').style.marginRight).toBe('300px')
+      const column = viewer.querySelector('.lark-doc-image-viewer-comments')
+      const panel = column.querySelector('.lark-doc-comment-layer')
+      expect(panel).not.toBeNull()
+      for (const value of [393, 1280]) {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value })
+        window.dispatchEvent(new Event('resize'))
+        expect(viewer.classList.contains('has-comments')).toBe(true)
+        expect(column.querySelector('.lark-doc-comment-layer')).toBe(panel)
+      }
       toggle.click()
-      expect(viewer.querySelector('.lark-doc-image-viewer-stage').style.marginRight).toBe('')
+      expect(viewer.classList.contains('has-comments')).toBe(false)
+      expect(column.isConnected).toBe(false)
     } finally { Object.defineProperty(window, 'innerWidth', width) }
   }))
 
   it.each(['actor', 'provider', 'permission', 'replace', 'image-source', 'destroy'])('viewer comments retire their controls after %s', action => withImageCommentViewer(async ({ doc, editor, host, comments, viewer, toggle }) => {
     const writes = vi.spyOn(comments, 'createThread')
     toggle.click(); await vi.dynamicImportSettled()
-    const input = viewer.querySelector('[aria-label="新评论"]')
+    const input = viewer.querySelector('[aria-label="输入评论"]')
     pasteImageComment(input, 'private image draft')
     const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
     await vi.waitFor(() => expect(send.disabled).toBe(false))
@@ -2922,22 +2961,22 @@ describe('public reference content and asynchronous comments', () => {
     toggle.click(); await vi.dynamicImportSettled()
     viewer.querySelector('[data-viewer-action="next"]').click()
     toggle.click(); await vi.dynamicImportSettled()
-    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'new B draft')
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), 'new B draft')
     viewer.querySelector('[data-viewer-action="previous"]').click()
     toggle.click(); await vi.dynamicImportSettled()
-    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'sent on A')
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), 'sent on A')
     const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
     await vi.waitFor(() => expect(send.disabled).toBe(false)); send.click()
     expect(comments.createThread).toHaveBeenCalledOnce()
     viewer.querySelector('[data-viewer-action="next"]').click()
     toggle.click(); await vi.dynamicImportSettled()
-    expect(viewer.querySelector('[aria-label="新评论"]').textContent).toBe('new B draft')
-    expect(viewer.querySelector('[aria-label="新评论"]').getAttribute('aria-readonly')).toBe('true')
+    expect(viewer.querySelector('[aria-label="输入评论"]').textContent).toBe('new B draft')
+    expect(viewer.querySelector('[aria-label="输入评论"]').getAttribute('aria-readonly')).toBe('true')
     await complete(); await vi.waitFor(async () => expect((await comments.list())[0]?.blockId).toBe('image_a'))
     await host.$nextTick()
     expect(host.commentComposerContext.blockId).toBe('image_b')
     expect(host.commentCreateDraft).toBe('new B draft')
-    expect(viewer.querySelector('[aria-label="新评论"]').textContent).toBe('new B draft')
+    expect(viewer.querySelector('[aria-label="输入评论"]').textContent).toBe('new B draft')
     expect(viewer.querySelector('[data-comment-thread]')).toBeNull()
     expect(doc.getJSON()).toEqual(before)
   }))
@@ -2949,7 +2988,7 @@ describe('public reference content and asynchronous comments', () => {
     try {
       await withImageCommentViewer(async ({ viewer, toggle }) => {
         toggle.click(); await vi.dynamicImportSettled()
-        const input = viewer.querySelector('[aria-label="新评论"]')
+        const input = viewer.querySelector('[aria-label="输入评论"]')
         input.focus()
         expect(document.activeElement).toBe(input)
         for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
@@ -2972,7 +3011,7 @@ describe('public reference content and asynchronous comments', () => {
 
   it('mobile viewer comment child menus consume Escape before the image portal and root', () => withImageCommentViewer(async ({ comments, viewer, toggle }) => {
     toggle.click(); await vi.dynamicImportSettled()
-    pasteImageComment(viewer.querySelector('[aria-label="新评论"]'), 'image thread')
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), 'image thread')
     const send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
     await vi.waitFor(() => expect(send.disabled).toBe(false))
     send.click()
@@ -3004,17 +3043,20 @@ describe('public reference content and asynchronous comments', () => {
     expect(viewer.isConnected).toBe(false)
   }, { viewportWidth: 393 }))
 
-  it('readonly viewer comments remain readable while refusing input and old Send controls', () => withImageCommentViewer(async ({ doc, comments, viewer, toggle }) => {
+  it('viewer comments remain readable when the session can view but cannot comment', () => withImageCommentViewer(async ({ doc, comments, viewer, toggle }) => {
     const before = doc.getJSON(), write = vi.spyOn(comments, 'createThread')
     toggle.click(); await vi.dynamicImportSettled()
-    const input = viewer.querySelector('[aria-label="新评论"]'), send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
+    const input = viewer.querySelector('[aria-label="输入评论"]'), send = viewer.querySelector('.lark-doc-comment-composer .is-filled')
     expect(input.getAttribute('aria-readonly')).toBe('true')
     expect(send.disabled).toBe(true)
     pasteImageComment(input, 'cannot submit readonly'); send.click()
     expect(input.textContent).toBe('')
     expect(write).not.toHaveBeenCalled()
     expect(doc.getJSON()).toEqual(before)
-  }, { readonly: true }))
+  }, { readonly: true, async beforePreview({ host }) {
+    host.session.setProvider('authorization', { getCapabilities: async () => ({ canView: true, canComment: false }) })
+    await host.session.refreshCapabilities()
+  } }))
 
   it('a viewer with no comments provider shows an unavailable state without opening another composer', () => withImageCommentViewer(async ({ doc, host, viewer, toggle }) => {
     const before = doc.getJSON()
@@ -3060,8 +3102,9 @@ describe('public reference content and asynchronous comments', () => {
       more().click()
       await vi.waitFor(() => expect(item('添加表情回复')).toBeTruthy())
       item('添加表情回复').click()
-      await vi.waitFor(() => expect(element.querySelector('.lark-doc-comment-reaction-picker input')).toBeTruthy())
-      element.querySelector('.lark-doc-comment-reaction-picker input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      const picker = () => element.querySelector('.lark-doc-comment-reaction-picker[role="menu"]')
+      await vi.waitFor(() => expect(picker()).toBeTruthy())
+      picker().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await vi.waitFor(() => expect(document.activeElement).toBe(more()))
       expect(element.querySelector('.lark-doc-comment-reaction-picker')).toBeNull()
       more().click()
@@ -4201,7 +4244,7 @@ describe('图表菜单交互', () => {
     try {
       outside.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }))
       expect(host.versionNotice).toBe('版本已保存')
-      const trigger = root.querySelector('[role="combobox"][aria-label="文档更多操作"]')
+      const trigger = root.querySelector('button[aria-haspopup="menu"][aria-label="插入"]')
       trigger.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }))
       expect(host.versionNotice).toBe('')
       host.versionNotice = '再次保存'; trigger.focus()
@@ -4406,6 +4449,18 @@ describe('图表菜单交互', () => {
     expect(host.diagramMenuOpen).toBe(false)
   })
 
+  it.each(['doc', 'selection', 'permission'])('图表示例冷加载期间%s变化不插入旧目标', async mode => {
+    const { host, editor } = fixture({ initialContent: '<p>seed</p>' })
+    const pending = host.insertDiagramType('pie')
+    if (mode === 'doc') editor.commands.setContent('<p>new document</p>')
+    else if (mode === 'selection') editor.commands.setTextSelection(3)
+    else host.writable = () => false
+    const current = editor.state.doc
+    await pending
+    expect(editor.state.doc).toBe(current)
+    expect(editor.getJSON().content.some(node => node.type === 'codeBlock')).toBe(false)
+  })
+
   it.each(['toolbar', 'plus', 'slash'])('%s 入口选择六种类型均插入对应 Mermaid 源码', async kind => {
     const { root, host, editor } = fixture()
     for (const type of diagramTypes) {
@@ -4426,9 +4481,9 @@ describe('图表菜单交互', () => {
       expect(menu.querySelectorAll('svg')).toHaveLength(diagramTypes.length)
       const item = [...menu.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === type.label)
       item.click()
-      await Promise.resolve()
+      await vi.dynamicImportSettled()
       const block = editor.getJSON().content.find(node => node.type === 'codeBlock')
-      expect(block).toMatchObject({ attrs: { language: 'mermaid' }, content: [{ type: 'text', text: type.source }] })
+      expect(block).toMatchObject({ attrs: { language: 'mermaid' }, content: [{ type: 'text', text: DIAGRAM_SOURCES[type.id] }] })
       expect(host.diagramMenuOpen).toBe(false)
       expect(host.menuOpen).toBe(false)
     }
@@ -4447,8 +4502,9 @@ describe('图表菜单交互', () => {
     expect(editor.getText()).toBe('/图表')
     menu.querySelector('[aria-label="时序图"]').click()
     await Promise.resolve()
+    await vi.dynamicImportSettled()
     const block = editor.getJSON().content.find(node => node.type === 'codeBlock')
-    expect(block).toMatchObject({ attrs: { language: 'mermaid' }, content: [{ type: 'text', text: diagramTypes.find(type => type.id === 'sequence').source }] })
+    expect(block).toMatchObject({ attrs: { language: 'mermaid' }, content: [{ type: 'text', text: DIAGRAM_SOURCES.sequence }] })
     expect(root.querySelector('.lark-doc-command-menu')).toBeNull()
   })
 
@@ -4982,7 +5038,11 @@ describe('真实工作台导入导出配置', () => {
     try {
       const editor = doc.getEditor()
       await vi.waitFor(() => expect(element.querySelector('input[aria-label="导入文档"]')?.accept).toBe('.json'))
-      expect(element.querySelector('button[title="读取 JSON"]')?.textContent).toBe('读取 JSON')
+      // 「文档操作」弹窗内不放原生 title（会弹黑底提示）：导入按钮只靠可见文案标识。
+      const importButton = Array.from(element.querySelectorAll('.lark-doc-workspace-actions button'))
+        .find(b => b.textContent.trim() === '读取 JSON')
+      expect(importButton).toBeTruthy()
+      expect(importButton.getAttribute('title')).toBeNull()
       const trigger = element.querySelector('[role="combobox"][aria-label="导出文档格式"]')
       expect(trigger.textContent).toContain('保存 JSON')
       trigger.click()
@@ -5139,11 +5199,41 @@ describe('最终补全：文本与表格AI真实编辑器闭环', () => {
     const handle = mountRenderer(renderer, { element: document.createElement('div'), props: { initialContent: content, aiProvider, storage: 'none' } })
     return { renderer, handle, root: renderer.getRoot(handle), editor: handle.editor, workspace: handle.workspaceController, requests, cancel }
   }
-  it('UI改写入口先引用后提问，流式回复可替换映射后的选区且撤销保留前文', async () => {
+  it('工具栏 AI 入口直接按动作进结果面板，不再先开问答', async () => {
     const { handle, editor, workspace, requests, root } = chatFixture()
     const start = editor.state.doc.firstChild.nodeSize + 1
     editor.commands.setTextSelection({ from: start, to: start + '需要改写的文字'.length })
     handle.nativeHost.host.$emit('ai-request', 'rewrite')
+    expect(workspace.state.aiSelectionChat).toBe(false)
+    expect(requests).toHaveLength(1)
+    expect(requests[0].action).toBe('rewrite')
+    expect(requests[0].text).toBe('需要改写的文字')
+    // 「操作」是下拉单选：11 个动作收在菜单里（select 的菜单按需挂载，点开才落 DOM）。
+    await vi.waitFor(() => expect(root.querySelector('.lark-doc-ai-action-select .lark-doc-select-trigger')).not.toBeNull())
+    const actionTrigger = root.querySelector('.lark-doc-ai-action-select .lark-doc-select-trigger')
+    expect(actionTrigger.textContent).toContain('改写')
+    actionTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(root.querySelectorAll('.lark-doc-ai-action-select [role="option"]')).toHaveLength(11)
+  })
+
+  it('切动作清空旧结果并按新动作重跑一次', async () => {
+    const { handle, workspace, requests } = chatFixture()
+    handle.nativeHost.host.$emit('ai-request', 'rewrite')
+    expect(requests).toHaveLength(1)
+    requests[0].onChunk('旧结果'); requests[0].onDone()
+    expect(workspace.state.aiPreview).toBe('旧结果')
+    workspace.switchAIAction('expand')
+    expect(workspace.state.aiAction).toBe('expand')
+    expect(requests).toHaveLength(2)
+    expect(requests[1].action).toBe('expand')
+    expect(workspace.state.aiPreview).toBe('')
+  })
+
+  it('UI改写入口先引用后提问，流式回复可替换映射后的选区且撤销保留前文', async () => {
+    const { handle, editor, workspace, requests, root } = chatFixture()
+    const start = editor.state.doc.firstChild.nodeSize + 1
+    editor.commands.setTextSelection({ from: start, to: start + '需要改写的文字'.length })
+    handle.nativeHost.host.$emit('ai-request', { action: 'chat' })
     expect(workspace.state.aiSelectionChat).toBe(true)
     expect(requests).toHaveLength(0)
     await vi.waitFor(() => expect(root.querySelector('[aria-label="AI 问答"]')).not.toBeNull())
@@ -5197,21 +5287,22 @@ describe('最终补全：文本与表格AI真实编辑器闭环', () => {
   it('关闭重开问答后旧输入与IME事件不能写入新会话，流式更新保留当前输入节点', async () => {
     const { workspace, root } = chatFixture()
     workspace.openSelectionAI()
-    await vi.waitFor(() => expect(root.querySelector('[aria-label="AI 问答消息"]')).not.toBeNull())
-    const previous = root.querySelector('[aria-label="AI 问答消息"]')
+    // 统一表单面板后要求输入框是 `<label for>` 命名的，不再挂 `aria-label`「AI 问答消息」。
+    await vi.waitFor(() => expect(root.querySelector('#lark-doc-ai-prompt')).not.toBeNull())
+    const previous = root.querySelector('#lark-doc-ai-prompt')
     workspace.closeAI(); workspace.openSelectionAI()
-    await vi.waitFor(() => expect(root.querySelector('[aria-label="AI 问答消息"]')).not.toBe(previous))
+    await vi.waitFor(() => expect(root.querySelector('#lark-doc-ai-prompt')).not.toBe(previous))
     previous.value = '旧会话迟到输入'
     previous.dispatchEvent(new Event('input', { bubbles: true }))
     previous.dispatchEvent(new Event('compositionend', { bubbles: true }))
     expect(workspace.state.aiPrompt).toBe('')
-    const current = root.querySelector('[aria-label="AI 问答消息"]')
+    const current = root.querySelector('#lark-doc-ai-prompt')
     current.value = '当前问题'
     current.dispatchEvent(new Event('input', { bubbles: true }))
     expect(workspace.state.aiPrompt).toBe('当前问题')
     await workspace.sendAIChat()
     await Promise.resolve()
-    expect(root.querySelector('[aria-label="AI 问答消息"]')).toBe(current)
+    expect(root.querySelector('#lark-doc-ai-prompt')).toBe(current)
   })
   it('未配置provider的新问答不执行mock生成', async () => {
     const { workspace, handle } = chatFixture()

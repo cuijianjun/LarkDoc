@@ -114,15 +114,19 @@ describe('reference page six document comments', () => {
 
   it('preserves authoritative image and mention content in the flat footer', () => {
     const paper = document.createElement('div'), host = document.createElement('div'); document.body.append(paper, host)
-    const onOpenImage = vi.fn(), onBackToTop = vi.fn()
-    const ui = createCommentPanel({ host, inlineHost: paper, composerFactory: createCommentComposer, handlers: { onOpenImage, onBackToTop } }); mounted.push(ui)
+    const onPreviewAttachment = vi.fn(), onBackToTop = vi.fn()
+    const ui = createCommentPanel({ host, inlineHost: paper, composerFactory: createCommentComposer, handlers: { onPreviewAttachment, onBackToTop } }); mounted.push(ui)
     ui.update({ documentInline: true, documentComposer: { open: true, value: '', canUploadImage: true }, items: [{ id: 'doc', documentOnly: true,
       replies: [{ id: 'reply', name: '崔健军', time: '11月12日 15:51', segments: [{ text: '@崔健军', principalId: 'alice', isSelf: true }, { text: ' 你好' }],
-        images: [{ assetId: 'image', fileName: 'photo.png', url: '/fixtures/photo.png' }] }] }] })
+        attachments: [{ attchId: 'image', name: 'photo.png', url: '/fixtures/photo.png' }] }] }] })
     expect(ui.el.querySelector('.lark-doc-comment-avatar').textContent).toBe('健军')
     expect(ui.el.querySelector('[data-comment-mention]')?.textContent).toBe('@崔健军')
-    ui.el.querySelector('[aria-label="查看评论图片：photo.png"]').click()
-    expect(onOpenImage).toHaveBeenCalledWith('doc', 'reply', 'image', expect.any(Event))
+    // 已存附件与基线同口径：图包在 `.lark-doc-comment-attachment-preview` 按钮里，
+    // aria 是「预览评论图片N」，且绑的是 mousedown（`onMouseDownPrevent`），不是 click。
+    const preview = ui.el.querySelector('[aria-label="预览评论图片1"]')
+    expect(preview.className).toBe('lark-doc-comment-attachment-preview')
+    preview.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(onPreviewAttachment).toHaveBeenCalledWith('doc', 'reply', 0)
     ui.el.querySelector('[aria-label="返回顶部"]').click(); expect(onBackToTop).toHaveBeenCalledOnce()
     ui.update({ identityGeneration: 2, documentInline: false, open: false, items: [], documentComposer: { open: false } })
     expect(ui.el.textContent).not.toContain('@崔健军')
@@ -277,9 +281,9 @@ describe('reference page seven anchored comments drawer', () => {
     expect(element.querySelector('.is-reference-drawer')).toBeNull()
     editor.commands.setTextSelection({ from: 1, to: 3 })
     expect(host.openSelectionComment()).toBe(true); host.setCommentCreateDraft('保留草稿')
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]')).not.toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]')).not.toBeNull())
     element.querySelector('[aria-label="取消新评论"]').click()
-    await vi.waitFor(() => expect(element.querySelector('[aria-label="新评论"]')).toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('[aria-label="输入评论"]')).toBeNull())
     expect(host.commentCreateDraft).toBe('保留草稿')
   })
 
@@ -306,6 +310,9 @@ describe('reference page seven anchored comments drawer', () => {
       commentPanels: [{ id: 'image', blockId: 'image' }, { id: 'heading', blockId: 'heading' }],
       $refs: { root: { querySelector: () => main } }, $el: { querySelector: () => null }, updateCommentLayerBounds: vi.fn(),
       commentBlockPos: id => id === 'image' ? 1 : 2, commentPanelHeightOf: () => 100,
+      // 重排结果经 `commitCommentPanels` 写回（生产由 `commentsMixin.methods` 合并进来），
+      // 手工 owner 直接取真实现，免得再抄一份「只在变了才写」的比较逻辑。
+      commitCommentPanels: commentsMixin.methods.commitCommentPanels,
       editor: { view: { nodeDOM: pos => ({ getBoundingClientRect: () => ({ top: pos === 1 ? 400 : 600 }) }) } } }
     commentsMixin.methods.placeCommentPanels.call(owner)
     expect(owner.commentPanels.map(item => ({ top: item.top, gap: item.gap }))).toEqual([{ top: 536, gap: 471 }, { top: 736, gap: 64 }])
@@ -549,6 +556,7 @@ describe('M20 mobile reply More actions', () => {
 
   it('projects nine full-document actions, six real reactions and the existing picker while keeping drafts on reply', async () => {
     const { element, host, comments, editor } = await nativeComments([row()])
+    host.commentReactionCatalog = { items: [] }
     const baseline = editor.getJSON(), react = vi.spyOn(comments, 'react')
     host.setCommentDocumentDraft('保留草稿')
     let menu = await more(element)
@@ -557,13 +565,14 @@ describe('M20 mobile reply More actions', () => {
     expect(action(menu, '转发').title).toContain('未接入')
     expect(action(menu, '复制链接').getAttribute('aria-disabled')).toBe('true')
     expect(action(menu, '翻译').title).toContain('未接通')
-    expect(action(menu, '举报').title).toContain('自己')
+    expect(action(menu, '举报').title).toBe('举报服务未接入')
     const reportIcon = action(menu, '举报').querySelector('[data-comment-menu-glyph]')
     expect(reportIcon?.textContent).toBe('⚠︎'); expect(reportIcon?.getAttribute('aria-hidden')).toBe('true')
     const quick = menu.parentElement.querySelectorAll('[data-comment-quick-reaction]')
     expect(quick).toHaveLength(6)
     quick[0].click(); quick[0].click()
     await vi.waitFor(async () => expect((await comments.list())[0].replies[0].reactions[0].users).toEqual(['alice']))
+    await vi.waitFor(() => expect(host.commentBusy).toBe(false))
     expect(react).toHaveBeenCalledOnce()
     menu = await more(element)
     const mine = menu.parentElement.querySelector('[data-comment-quick-reaction]')
@@ -682,7 +691,9 @@ describe('M20 mobile reply More actions', () => {
     })
     try {
       const { element } = await nativeComments([row()])
-      const menu = (await more(element)).parentElement
+      // `placeMenu` 定位的就是 `.lark-doc-comment-reply-menu.is-mobile-menu` 这个盒子本身
+      //（上面 mock 的 328×220 也是它的 rect），父节点是回复容器，不参与定位。
+      const menu = await more(element)
       expect(menu.style.top).toBe('244px'); expect(menu.style.left).toBe('38px')
       expect(menu.style.maxWidth).toBe('326px')
       const css = postcss.parse(readFileSync(resolve(__dirname, '../../src/styles/comments.css'), 'utf8')), rules = new Map()

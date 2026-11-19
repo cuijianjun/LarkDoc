@@ -21,7 +21,8 @@
  */
 import { collectOutline } from '../documentOperations'
 
-export const DERIVED_SNAPSHOT_VERSION = 1
+// v3 使用独立编号层级与密集队列；旧算法的目录快照不可水合。
+export const DERIVED_SNAPSHOT_VERSION = 3
 
 /**
  * 大纲条数上限。超过就不落快照：截断会给出半份目录（比没有更糟），
@@ -31,7 +32,7 @@ export const DERIVED_SNAPSHOT_MAX_OUTLINE = 2000
 
 /** 参与指纹的 attrs 白名单：只有它们会改变大纲位置/折叠边界，其余（对齐、颜色、
  *  行距…）改了也不该让快照作废。 */
-const FINGERPRINT_ATTRS = ['blockId', 'indent', 'level']
+const FINGERPRINT_ATTRS = ['blockId', 'indent', 'level', 'numbering', 'numberingStart', 'numberingLevel', 'name', 'latex']
 
 /** 大纲条目与顶层字段都按「精确键集」校验：格式受版本号管辖，不做宽容匹配。 */
 const OUTLINE_KEYS = ['blockId', 'level', 'pos', 'text']

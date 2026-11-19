@@ -7,7 +7,7 @@
 
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { COMMENT_HEIGHTS, COMMENT_PANEL, COMMENT_MORE_MENU, COMMENT_REPLY_MENU, commentPanelHeight } from '../../../core/blocks/comment'
+import { COMMENT_HEIGHTS, COMMENT_PANEL, COMMENT_MORE_MENU, COMMENT_REPLY_MENU, commentPanelHeight, setCommentMarkStates } from '../../../core/blocks/comment'
 import { bindThreads } from '../../../core/comments/binding'
 import { decodeAnchor } from '../../../core/comments/anchor'
 import { getTransactionMetadata, PAGED_IMPORT_META, TRANSACTION_ORIGINS } from '../../../core/transactionMetadata'
@@ -78,7 +78,34 @@ export const commentsLayoutMethods = {
       this.commentActiveThreadId = ''
     }
     this.commentPanels = items.map((thread) => ({ ...thread, left: 0, top: 0 }))
+    this.syncCommentMarkState()
     this.$nextTick(() => this.placeCommentPanels())
+  },
+  /**
+   * 已解决/失联状态直接落在正文标记上（与基线一致）：CSS 与验收都读这两个属性。
+   *
+   * 独立成方法是因为它不能只挂在 `updateCommentPanels()` 上：`loadComments()` 里那条
+   * 刷新链会因为身份/文档代次判定而提前返回，解决评论后正文标记就停在 `data-resolved`
+   * 缺失的状态 —— 高亮既不会转灰，`pointer-events: none` 也不会生效。
+   *
+   * 先把状态写进 mark 的状态表（`renderHTML` 据此产出属性，重排不丢），再对现存的
+   * 标记补写一次让状态变更当场生效。补写只写有变化的属性：属性一变就稳定，不会反复。
+   */
+  syncCommentMarkState() {
+    const marks = this.editor?.view?.dom?.querySelectorAll?.('.lark-doc-comment[data-thread-id]')
+    if (!marks?.length) { setCommentMarkStates(new Map()); return }
+    const states = new Map(this.commentThreads.map(thread => [thread.id, { resolved: !!thread.resolved, missing: false }]))
+    marks.forEach(mark => {
+      const threadId = mark.getAttribute('data-thread-id')
+      if (!states.has(threadId)) states.set(threadId, { resolved: false, missing: true })
+    })
+    setCommentMarkStates(states)
+    marks.forEach(mark => {
+      const expected = states.get(mark.getAttribute('data-thread-id'))
+      const resolved = String(expected.resolved), missing = String(expected.missing)
+      if (mark.getAttribute('data-resolved') !== resolved) mark.setAttribute('data-resolved', resolved)
+      if (mark.getAttribute('data-comment-missing') !== missing) mark.setAttribute('data-comment-missing', missing)
+    })
   },
   placeCommentPanels() {
     if (this._isBeingDestroyed || this._isDestroyed || this.editor?.isDestroyed) return
@@ -94,12 +121,12 @@ export const commentsLayoutMethods = {
         return Number.isFinite(top) ? top - (bounds?.top || 0) + (main?.scrollTop || 0) : 65
       }
       let floor = 65
-      this.commentPanels = [...this.commentPanels].sort((a, b) => at(a) - at(b)).map(item => {
+      this.commitCommentPanels([...this.commentPanels].sort((a, b) => at(a) - at(b)).map(item => {
         const top = Math.max(floor, at(item)), gap = top - floor
         const height = cards.find(node => node.dataset.commentThread === item.id)?.getBoundingClientRect().height || this.commentPanelHeightOf(item)
         floor = top + height + 36
         return { ...item, top, gap }
-      })
+      }))
       return
     }
     if (this.commentRemote) {
@@ -116,13 +143,13 @@ export const commentsLayoutMethods = {
         floor += this.commentComposerGap + (layer?.querySelector('.lark-doc-comment-composer')?.getBoundingClientRect().height || COMMENT_HEIGHTS.empty) + COMMENT_PANEL_GAP
       }
       const nodes = layer ? [...layer.querySelectorAll('[data-comment-thread]')] : []
-      this.commentPanels = [...this.commentPanels].sort((a, b) => at(a.anchor) - at(b.anchor)).map(item => {
+      this.commitCommentPanels([...this.commentPanels].sort((a, b) => at(a.anchor) - at(b.anchor)).map(item => {
         const top = Math.max(floor, item.bound ? at(item.anchor) : floor)
         const gap = Math.max(0, top - floor)
         const height = nodes.find(node => node.dataset.commentThread === item.id)?.getBoundingClientRect().height || this.commentPanelHeightOf(item)
         floor = top + height + COMMENT_PANEL_GAP
         return { ...item, top, gap }
-      })
+      }))
       return
     }
     if (!this.commentPanels.length) return
@@ -131,8 +158,9 @@ export const commentsLayoutMethods = {
     const maxLeft = viewport.width - COMMENT_PANEL.width - COMMENT_VIEWPORT_MARGIN
     const left = Math.max(COMMENT_VIEWPORT_MARGIN, Math.min(maxLeft, bound.right + COMMENT_ANCHOR_GUTTER))
     const bottomLimit = viewport.height - COMMENT_VIEWPORT_MARGIN
+    const cards = [...this.$el.querySelectorAll('[data-comment-thread]')]
     let floor = COMMENT_VIEWPORT_MARGIN
-    this.commentPanels = this.commentPanels.map((item) => {
+    this.commitCommentPanels(this.commentPanels.map((item) => {
       const pos = item.bound ? this.commentBlockPos(item.blockId) : -1
       let anchorTop = bound.top
       if (pos >= 0) {
@@ -142,16 +170,35 @@ export const commentsLayoutMethods = {
           anchorTop = bound.top
         }
       }
-      const height = commentPanelHeight(item.replies.length, this.commentHasDraft(item.id))
+      // 优先用实测高度：编辑态/带表情时内容比公式高，否则上收量算小了会溢出视口。
+      const height = cards.find(node => node.dataset.commentThread === item.id)?.getBoundingClientRect().height
+        || this.commentPanelHeightOf(item)
       let top = Math.max(floor, anchorTop)
       // 放不下就上收，但**不收过前一块**，否则两个面板会叠在一起。
       if (top + height > bottomLimit) top = Math.max(floor, bottomLimit - height)
       floor = top + height + COMMENT_PANEL_GAP
       return { ...item, left, top }
-    })
+    }))
+  },
+  /**
+   * 写回面板位置；位置没变就不写。
+   *
+   * `commentPanels` 上有 deep watch 会触发 `refreshPanels()`，而重排又是从 `refreshPanels()`
+   * 排的 —— 无条件写回会变成「重排 → 刷新 → 重排」的死循环。
+   */
+  commitCommentPanels(next) {
+    const prev = this.commentPanels || []
+    const same = prev.length === next.length && next.every((item, index) => item.top === prev[index].top
+      && item.left === prev[index].left && (item.gap || 0) === (prev[index].gap || 0))
+    if (!same) this.commentPanels = next
   },
   refreshImportedComments(payload) {
     if (payload.transaction.getMeta(PAGED_IMPORT_META)) this.onCommentTransaction({ ...payload, imported: true })
+    // `data-resolved` / `data-comment-missing` 挂在标记外层 span 上，是纯运行时属性：
+    // 文档或装饰重算后 ProseMirror 会重建这些 span，属性随之丢失（解决评论过程中就是
+    // 这样丢的）。这里挂在 view 更新之后补一次（幂等、无差异不写），否则高亮既不变灰，
+    // 也拿不到 `pointer-events: none`，表格里跨高亮的矩形拖选会退化成单格文本选区。
+    this.$nextTick(() => this.syncCommentMarkState())
   },
   onCommentTransaction({ transaction, imported = false } = {}) {
     const imageScope = this._imageCommentScope
@@ -172,7 +219,15 @@ export const commentsLayoutMethods = {
     }
     if (!imported && transaction?.getMeta(PAGED_IMPORT_META)) return
     const provider = this.commentProvider()
-    if (!this.commentDisposed && provider && (provider.isRemote || imported)) this.updateCommentPanels()
+    if (this.commentDisposed) return
+    if (provider && (provider.isRemote || imported)) {
+      this.updateCommentPanels()
+      return
+    }
+    // 只在文档变更后补一次（幂等）：行内标记只在重建 DOM 时丢属性。
+    // 纯选区事务不能写 —— 表格矩形拖选中途改正文属性会触发 ProseMirror 的 DOM observer，
+    // 它随即把浏览器原生 Range 读回 state，CellSelection 被 TextSelection 覆盖，拖选当场消失。
+    if (transaction?.docChanged) this.$nextTick(() => this.syncCommentMarkState())
   },
   installCommentDecorations() {
     const provider = this.commentProvider()
@@ -264,7 +319,9 @@ export const commentsLayoutMethods = {
 
   // —— 渲染给面板的取值 ——
   commentPanelHeightOf(item) {
+    // 表情回复每条多占 26px（0facf05 口径）。
     return commentPanelHeight(item.replies.length, this.commentHasDraft(item.id))
+      + item.replies.filter(reply => reply.reactions?.length).length * 26
   },
   commentPanelStyle(item) {
     return { left: `${item.left}px`, top: `${item.top}px` }

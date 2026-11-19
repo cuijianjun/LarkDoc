@@ -30,6 +30,18 @@ export function deriveWorkspaceFeatureFlags(state = {}, props = {}, names = WORK
   return result
 }
 
+/**
+ * 版本历史入口（顶栏「另存为版本」+「历史记录」）的开关。
+ *
+ * 不复用 `features.history` 的原因：那个开关还兼管工具栏的撤销/重做
+ * （`toolbarKeys.js` 把 undo / redo 归到 history 组），拿它关版本历史会顺手
+ * 把 undo/redo 一起下线。这里只认显式的 `features.versionHistory`，缺省关闭。
+ */
+export function deriveVersionHistoryEnabled(state = {}, props = {}) {
+  const features = sourceConfig(state, props).features
+  return !!features && features.versionHistory === true
+}
+
 export function deriveWorkspaceReadonly(state = {}, props = {}) {
   const mode = deriveInteractionMode({
     readonly: props.readonly === true || state.forcedReadonly === true || state.effectiveReadonly === true,
@@ -69,7 +81,7 @@ export function createWorkspaceViewState(state = {}, props = {}) {
     importLabel: config.importExport.importLabel,
     exportOptions: resolveExportOptions(config),
     templatesEnabled: featureFlags.templates,
-    historyEnabled: featureFlags.history,
+    historyEnabled: deriveVersionHistoryEnabled(state, props),
     aiEnabled: featureFlags.ai,
     aiSelectionChat: !!state.aiSelectionChat,
     aiChatEpoch: state.aiChatEpoch || 0,

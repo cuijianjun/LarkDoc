@@ -34,9 +34,12 @@ export default {
     tablePicker(value) {
       if (value) this.tablePickerHover = { rows: 3, cols: 3 }
       this.refreshDialogs()
-      if (value) this._dialogsUi?.table.focusTableGrid()
+      if (!value) return
+      this.positionTablePicker()
+      if (!this._tablePickerHoverOpened) this._dialogsUi?.table.focusTableGrid()
     },
     tablePickerHover: { deep: true, handler() { this.refreshDialogs() } },
+    tablePickerStyle: { deep: true, handler() { this.refreshDialogs() } },
     // 链接：插入 / 编辑两形态差两段（v-if），两个按钮的 disabled 也得跟着算。
     linkDialog(value) { this.refreshDialogs(); if (value) this._dialogsUi?.link.focusFirstField() },
     linkDialogAnchor: { deep: true, handler() { this.refreshDialogs() } },
@@ -59,8 +62,11 @@ export default {
       const host = this.$refs.dialogHost
       if (!host) return
       const handlers = this.dialogsHandlers()
+      const positionTable = () => this.positionTablePicker()
       this._dialogsUi = {
-        table: createLazyView(() => import('../../../ui/dialogs'), 'createTablePickerDialog', { host, handlers: handlers.table }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
+        table: createLazyView(() => import('../../../ui/dialogs'), 'createTablePickerDialog',
+          { host, handlers: handlers.table, onReady: positionTable },
+          { onReady: positionTable, onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
         link: createLazyView(() => import('../../../ui/dialogs'), 'createLinkDialog', { host, handlers: handlers.link }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
         help: createLazyView(() => import('../../../ui/dialogs'), 'createHelpDrawer', { host, handlers: handlers.help }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
         embed: createLazyView(() => import('../../../ui/dialogs'), 'createEmbedDialog', { host, handlers: handlers.embed }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } }),
@@ -87,7 +93,9 @@ export default {
         table: {
           onPreview: (rows, cols) => this.previewTableSize(rows, cols),
           onInsert: (rows, cols) => this.insertTable(rows, cols),
-          onClose: () => this.closeOverlay(),
+          onClose: restoreFocus => this.closeTablePicker({ restoreFocus }),
+          onHoverIn: () => this.cancelPopupHoverClose('tablePicker'),
+          onHoverOut: () => this.scheduleTablePickerClose(),
         },
         link: {
           onTextInput: (value) => this.setLinkText(value),
@@ -109,7 +117,7 @@ export default {
     /** 一份 state 推平（原 `<table-picker-dialog :ed :math-dialog :link-dialog :help-dialog :embed-link-dialog>`）。 */
     buildDialogsState() {
       return {
-        table: { open: !!this.tablePicker, rows: this.tablePickerHover.rows, cols: this.tablePickerHover.cols },
+        table: { open: !!this.tablePicker, rows: this.tablePickerHover.rows, cols: this.tablePickerHover.cols, style: this.tablePickerStyle },
         link: {
           open: !!this.linkDialog,
           insertMode: !!this.linkInsertMode,

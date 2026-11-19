@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
-import { collectOutline, aggregateHeadingContainers, restoreUnknownBlocks, createBlockId, collectFoldRanges, computeHeadingNumbers, computeOrderedListNumbers, computeBulletItems, findTextMatches } from '../../src/core/documentOperations'
+import { collectOutline, aggregateHeadingContainers, restoreUnknownBlocks, createBlockId, collectFoldRanges, computeHeadingNumbers, computeOrderedListNumbers, computeBulletItems, findTextMatches, moveBlockRange } from '../../src/core/documentOperations'
 import { createDocumentSnapshotReader, createDocumentStatsReader, documentSnapshotWorkerSource } from '../../src/editor/documentSnapshot'
 import { runInNewContext } from 'node:vm'
 import { createSegmentedDocumentModel, createSegmentedDocumentReader, createLargeDocumentViewportController, createLargeDocumentProjection, createLogicalScrollCoordinates, segmentedDocumentWorkerSource } from '../../src/editor/segmentedDocumentModel'
@@ -830,6 +830,78 @@ describe('large document snapshots preserve the public codecs', () => {
       expect(result.outline).toEqual(collectOutline(editor.state.doc))
     }
     expect(await reader.read(editor.state.doc, () => false)).toBeNull()
+  })
+
+  it('v54 keeps maximum heading level from hidden containers through cached edits', async () => {
+    const editor = makeEditor('<h4>four</h4><div data-type="callout"><h6>six</h6></div><p>body</p>')
+    const reader = createDocumentStatsReader()
+    const first = await reader.read(editor.state.doc)
+    expect(first.maxHeadingLevel).toBe(6)
+    expect(first.outline.map(item => item.text)).toEqual(['four'])
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, 'x')
+    expect((await reader.read(editor.state.doc)).maxHeadingLevel).toBe(6)
+    editor.commands.setContent('<p>body only</p>')
+    expect((await reader.read(editor.state.doc)).maxHeadingLevel).toBe(0)
+    expect(await reader.read(editor.state.doc, () => false)).toBeNull()
+  })
+
+  it('keeps outline labels aligned with body numbering across cached edits, restart and levels', async () => {
+    const editor = makeEditor('<h1 data-numbering="true">你好</h1><h2 data-numbering="true"><strong>子标题😀</strong></h2><blockquote><h1 data-numbering="true">容器标题</h1></blockquote><h1 data-numbering="true" data-numbering-start="7">我也好</h1><h1>3. 原文编号</h1><h1 data-numbering="true">她也好</h1>')
+    const reader = createDocumentStatsReader()
+    const check = async expected => {
+      const doc = editor.state.doc, numbers = computeHeadingNumbers(doc)
+      const outline = collectOutline(doc)
+      expect(outline.map(item => item.text)).toEqual(expected)
+      expect(outline.map(item => item.text)).toEqual(outline.map(item => {
+        const text = doc.nodeAt(item.pos).textContent
+        return numbers.has(item.pos) ? `${numbers.get(item.pos).label} ${text || '无标题'}` : text
+      }))
+      const result = await reader.read(doc)
+      expect(result.outline).toEqual(outline)
+      expect(result.characters).toBe(editor.storage.characterCount.characters())
+    }
+    await check(['1. 你好', '1.1 子标题😀', '7. 我也好', '3. 原文编号', '8. 她也好'])
+    editor.view.dispatch(editor.state.tr.insertText('新版', 1, 3))
+    await check(['1. 新版', '1.1 子标题😀', '7. 我也好', '3. 原文编号', '8. 她也好'])
+    const immutableLast = editor.state.doc.nodeAt(collectOutline(editor.state.doc).at(-1).pos)
+    editor.view.dispatch(editor.state.tr.delete(0, editor.state.doc.firstChild.nodeSize))
+    expect(editor.state.doc.nodeAt(collectOutline(editor.state.doc).at(-1).pos)).toBe(immutableLast)
+    await check(['1.1 子标题😀', '7. 我也好', '3. 原文编号', '8. 她也好'])
+    const second = collectOutline(editor.state.doc)[1].pos
+    editor.view.dispatch(editor.state.tr.setNodeMarkup(second, undefined, { ...editor.state.doc.nodeAt(second).attrs, level: 2, numberingStart: null }))
+    await check(['1.1 子标题😀', '2.1 我也好', '3. 原文编号', '3. 她也好'])
+    editor.view.dispatch(editor.state.tr.setNodeMarkup(second, undefined, { ...editor.state.doc.nodeAt(second).attrs, numbering: false }))
+    await check(['1.1 子标题😀', '我也好', '3. 原文编号', '3. 她也好'])
+    expect(await reader.read(editor.state.doc, () => false)).toBeNull()
+  })
+
+  it('does not drop inline heading text or merge words across soft breaks', async () => {
+    const editor = makeEditor('<h1 data-numbering="true">前文<br>后文 <span data-type="mention" data-name="小明" data-token="person"></span> <span data-type="emoji" data-name="check"></span> <span data-type="inline-math" data-latex="x^2"></span></h1>')
+    const reader = createDocumentStatsReader()
+    expect(collectOutline(editor.state.doc)[0].text).toBe('1. 前文 后文 小明 ✅\uFE0F x^2')
+    expect((await reader.read(editor.state.doc)).outline).toEqual(collectOutline(editor.state.doc))
+  })
+  it('async statistics renumber independent queues from raw cached metadata', async () => {
+    const editor = makeEditor('<h1 data-numbering="true">甲</h1><h1 data-numbering="true">乙</h1><h3 data-numbering="true" data-numbering-level="1" data-numbering-start="2">丙</h3><h3 data-numbering="true">丁</h3><div data-type="callout"><h1 data-numbering="true">高亮块</h1></div><h1 data-numbering="true">戊</h1>')
+    const reader = createDocumentStatsReader()
+    expect((await reader.read(editor.state.doc)).outline.map(item => item.text)).toEqual(['1. 甲', '2. 乙', '2. 丙', '3. 丁', '3. 戊'])
+    const target = collectOutline(editor.state.doc)[2].pos
+    editor.commands.setLarkDocHeadingNumber(target, { numberingLevel: null, numberingStart: null })
+    expect((await reader.read(editor.state.doc)).outline.map(item => item.text)).toEqual(['1. 甲', '2. 乙', '2.1 丙', '2.2 丁', '3. 戊'])
+    expect((await reader.read(editor.state.doc)).outline).toEqual(collectOutline(editor.state.doc))
+  })
+
+  it('keeps paged outline positions and numbering aligned after a cross-page move', async () => {
+    const editor = makeEditor(), controller = createEditorController({ editor }), reader = createDocumentStatsReader()
+    await controller.setContentAsync('<h1 data-numbering="true">首节</h1>' + '<p>正文</p>'.repeat(65) + '<h1 data-numbering="true">末节</h1>', { pagedView: true, yieldToMain: async () => {} })
+    const before = collectOutline(editor.state.doc)
+    expect(before.map(item => item.text)).toEqual(['1. 首节', '2. 末节'])
+    expect((await reader.read(editor.state.doc)).outline).toEqual(before)
+    expect(editor.storage.larkDoc.pagedView.isDocument(editor.state.doc)).toBe(true)
+    const last = before[1], node = editor.state.doc.nodeAt(last.pos)
+    expect(moveBlockRange(editor, last.pos, last.pos + node.nodeSize, before[0].pos)).toBe(true)
+    expect(collectOutline(editor.state.doc).map(item => item.text)).toEqual(['1. 末节', '2. 首节'])
+    expect((await reader.read(editor.state.doc)).outline).toEqual(collectOutline(editor.state.doc))
   })
 
   it('indexes top-level blocks into stable segments and maps document positions', () => {

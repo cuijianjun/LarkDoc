@@ -41,7 +41,7 @@ afterEach(() => {
 function runtimeFor(session) {
   const host = hostNode()
   const runtime = createNativeOptionsHost({
-    options: { mixins: [shareMixin, exportMixin, notifyMixin, overlaysUiMixin] },
+    options: { mixins: [shareMixin, exportMixin, notifyMixin, overlaysUiMixin], methods: { featureEnabled: () => true } },
     state: { sessionInstance: session, error: '' },
     aliases: { session: { get: (_host, state) => state.sessionInstance } },
     refs: { overlayHost: host },
@@ -527,16 +527,23 @@ describe('原生浮层迁移契约', () => {
     expect(refreshes).toBeGreaterThan(0)
   })
   it('编辑图片草稿显示可移除预览', () => {
-    const onRemoveDraftImage = vi.fn(), onActivate = vi.fn()
-    const ui = createCommentPanel({ host: hostNode(), handlers: { onRemoveDraftImage, onActivate } })
+    const onRemoveAttachment = vi.fn()
+    const ui = createCommentPanel({ host: hostNode(), handlers: { onRemoveAttachment } })
     cleanups.push(() => ui.destroy())
-    ui.update({ open: true, remote: true, items: [{ id: 'thread', replies: [], edit: { replyId: 'reply', value: '', draftImages: [{ assetId: 'asset', fileName: 'draft.png', previewUrl: 'blob:preview' }] } }] })
-    const remove = ui.el.querySelector('.lark-doc-comment-edit [aria-label="移除图片：draft.png"]')
+    // 编辑态长在被编辑的那条回复里（飞书同款）：replyId 指向真实回复节点，
+    // 没有这条回复时整个编辑块会被摘掉。
+    ui.update({ open: true, remote: true, items: [{ id: 'thread', replies: [{ id: 'reply', body: '原文' }], edit: { replyId: 'reply', value: '', draftImages: [{ id: 'asset', name: 'draft.png', previewUrl: 'blob:preview' }] } }] })
+    // 草稿附件与基线同口径：`.lark-doc-comment-attachment.is-draft` 里那颗 × 才是移除按钮，
+    // aria 固定「移除评论图片」（不拼文件名），回调拿的是上传 id。
+    const chip = ui.el.querySelector('.lark-doc-comment-edit .lark-doc-comment-attachments .lark-doc-comment-attachment.is-draft')
+    expect(chip.querySelector('img').getAttribute('src')).toBe('blob:preview')
+    const remove = chip.querySelector('[aria-label="移除评论图片"]')
     expect(remove).not.toBeNull()
-    remove.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    expect(onActivate).not.toHaveBeenCalled()
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    remove.dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
     remove.click()
-    expect(onRemoveDraftImage).toHaveBeenCalledWith('edit/thread/reply', 'asset')
+    expect(onRemoveAttachment).toHaveBeenCalledWith('edit/thread/reply', 'asset')
   })
   it('编辑输入可删除已有mention字符，失效范围退回纯文本', () => {
     const vm = { ...commentsMixin.data(), ...commentsMixin.methods, commentEditingReply: { threadId: 'thread', replyId: 'reply' }, commentEditContent: '@Alice',
@@ -1038,34 +1045,37 @@ describe('原生浮层迁移契约', () => {
     expect(onControl).toHaveBeenCalledTimes(1)
   })
 
-  it('评论图片区分加载/失败/可预览，图片草稿可移除，刷新保留回复输入光标', () => {
-    const onOpenImage = vi.fn(), onRemoveDraftImage = vi.fn()
-    const ui = createCommentPanel({ host: hostNode(), handlers: { onOpenImage, onRemoveDraftImage } })
+  it('评论图片区分可预览与不可见占位，图片草稿可移除，刷新保留回复输入光标', () => {
+    const onPreviewAttachment = vi.fn(), onRemoveAttachment = vi.fn()
+    const ui = createCommentPanel({ host: hostNode(), handlers: { onPreviewAttachment, onRemoveAttachment } })
     cleanups.push(() => ui.destroy())
     const item = { id: 't1', hasDraft: true, allowedReply: true, textarea: { value: '继续输入', height: 80 },
-      draftImages: [{ assetId: 'draft', fileName: '草稿.png', previewUrl: 'blob:draft' }],
-      replies: [{ id: 'r1', body: '图片', images: [
-        { assetId: 'loading', fileName: '加载.png', url: '', error: false },
-        { assetId: 'retry', fileName: '重试.png', url: '', error: true },
-        { assetId: 'ready', fileName: '已就绪.png', url: 'blob:ready', error: false },
+      draftImages: [{ id: 'draft', name: '草稿.png', previewUrl: 'blob:draft' }],
+      replies: [{ id: 'r1', body: '图片', attachments: [
+        { attchId: 'blocked', name: '加载.png', url: '', blocked: true, blockedReason: '图片被当前网络策略拦截' },
+        { attchId: 'ready', name: '已就绪.png', url: 'blob:ready' },
       ] }] }
     ui.update({ open: true, items: [item] })
     const input = ui.el.querySelector('[role="textbox"][aria-label="回复"]')
     input.focus()
     document.getSelection().collapse(input.querySelector('p').firstChild, 2)
-    const images = ui.el.querySelectorAll('.lark-doc-comment-images button')
-    expect(images).toHaveLength(3)
-    expect(images[0].disabled).toBe(true)
-    expect(images[1].textContent).toContain('点击重试')
-    images[1].click(); images[2].click()
-    expect(onOpenImage.mock.calls.map(call => call.slice(0, 3))).toEqual([['t1', 'r1', 'retry'], ['t1', 'r1', 'ready']])
-    expect(images[2].querySelector('img').getAttribute('src')).toBe('blob:ready')
-    ui.el.querySelector('.lark-doc-comment-image-drafts button').click()
-    expect(onRemoveDraftImage).toHaveBeenCalledExactlyOnceWith('t1', 'draft')
+    // 已存附件：有 url 的包进 `.lark-doc-comment-attachment-preview`（aria「预览评论图片N」，
+    // mousedown 触发），没有 url 的只留一行原因 —— 已存图片没有重试入口，重试只活在草稿里。
+    const previews = ui.el.querySelectorAll('[data-comment-thread="t1"] .lark-doc-comment-body-attachments button')
+    expect(previews).toHaveLength(1)
+    expect(previews[0].getAttribute('aria-label')).toBe('预览评论图片2')
+    expect(previews[0].querySelector('img').getAttribute('src')).toBe('blob:ready')
+    previews[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(onPreviewAttachment).toHaveBeenCalledWith('t1', 'r1', 1)
+    expect(ui.el.querySelector('[data-comment-thread="t1"] .lark-doc-comment-body-attachments').textContent).toContain('图片被当前网络策略拦截')
+    // 草稿上的 × 和 × 一样走 `onMouseDownPrevent`：只认 mousedown，不认 click。
+    ui.el.querySelector('[data-comment-thread="t1"] .lark-doc-comment-attachments [aria-label="移除评论图片"]')
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(onRemoveAttachment).toHaveBeenCalledExactlyOnceWith('t1', 'draft')
     ui.update({ items: [{ ...item, draftImages: [] }] })
     expect(ui.el.querySelector('[role="textbox"][aria-label="回复"]')).toBe(input)
     expect(document.getSelection().anchorOffset).toBe(2)
-    expect(ui.el.querySelector('.lark-doc-comment-image-drafts')).toBeNull()
+    expect(ui.el.querySelectorAll('.lark-doc-comment-attachments .lark-doc-comment-attachment')).toHaveLength(0)
   })
 
   it('图片预览可关闭并约束键盘焦点，上传未知状态可查询原操作', () => {
@@ -1106,7 +1116,12 @@ describe('原生浮层迁移契约', () => {
       mentionPicker: { query: 'Al', candidates: [{ principalId: 'alice', displayName: 'Alice' }], index: 0 },
       edit: { replyId: 'r1', value: '编辑中', readonly: false, canUploadImage: true, draftImages: [] },
       translation: { sourceRevision: '3', language: 'zh-CN', current: true, busy: false, pending: false, message: '译文已返回；原文未被改写。', translatedText: '计划' } }],
-      reactionPicker: { open: true, query: '', category: '常用', categories: ['常用', '全部'], items: [{ glyph: '🎉', label: '庆祝' }], limit: 120 },
+      // 选择器网格来自离线表情目录（`commentReactionCatalog`），不是内联列表：
+      // 按钮 aria 取 `item.name`，回调给的是 `item.id`。
+      reactionPicker: { open: true, recent: [], catalog: { sprite: 'blob:sprite', items: [
+        { id: 'tada_v2', name: '庆祝', pos: '0px 0px', size: '24px 24px', width: 24, height: 24 },
+        { id: 'thumbsup_v2', name: '赞', pos: '-24px 0px', size: '24px 24px', width: 24, height: 24 },
+      ] } },
       documentComposer: { open: true, value: '@Bob', segments: [{ text: '@Bob', principalId: 'bob' }], readonly: false, canSubmit: true, canUploadImage: true, privateOn: false, hasImages: false, draftImages: [], replyTarget: { displayName: 'Alice' } },
     })
     expect(ui.el.querySelector('[data-comment-mention="alice"]')).not.toBeNull()
@@ -1128,8 +1143,8 @@ describe('原生浮层迁移契约', () => {
     expect(calls.onReplyControl).not.toHaveBeenCalled()
     replyControl.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(calls.onReplyControl).toHaveBeenCalledTimes(1)
-    ui.el.querySelector('.lark-doc-comment-reaction-picker-grid button, .lark-doc-comment-reaction-picker .lark-doc-comment-reaction-grid button')?.click()
-    expect(calls.onChooseReaction).toHaveBeenCalledWith('🎉')
+    ui.el.querySelector('.lark-doc-comment-reaction-grid button[aria-label="庆祝"]').click()
+    expect(calls.onChooseReaction).toHaveBeenCalledWith('tada_v2')
     const editInput = ui.el.querySelector('.lark-doc-comment-edit [role="textbox"]')
     pasteRich(editInput, '已编辑')
     expect(calls.onEditDraft).toHaveBeenCalledWith('t1', 'r1', '已编辑', expect.any(Event))

@@ -68,7 +68,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
   const overlaps = (from, to) => wholeDoc || windows.some((window) => from < window.to && to > window.from)
   const decorations = []
   const hits = storage.pagedView ? storage.pagedView.collectSearchDecorations(storage).filter(hit => overlaps(hit.from, hit.to))
-    : findTextMatches(doc, storage.query, windows).map(({ from, to }, index) => Decoration.inline(from, to, {
+    : findTextMatches(doc, storage.query, windows).map(({ from, to, attribute }, index) => Decoration[attribute ? 'node' : 'inline'](from, to, {
       class: index === storage.activeIndex ? 'lark-doc-search-hit lark-doc-search-active' : 'lark-doc-search-hit',
     }, { category: DECORATION_CATEGORY.SEARCH }))
   decorations.push(...hits)
@@ -195,7 +195,7 @@ export function collectDocumentDecorations({ state, storage, editor, enabled, op
             label: info.label,
             level: info.level,
             // 「继续」在已经处于继续态时禁用 —— 与飞书菜单一致。
-            canContinue: Number.isInteger(nodeAtSafe(editor.state.doc, at)?.attrs?.numberingStart),
+            canContinue: info.canContinue,
             rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
           })
         }

@@ -7,6 +7,7 @@
  */
 
 import { iconNode } from './icon'
+import { COMMENT_IMAGE_ACCEPT } from '../components/lark-doc/editor/commentImages'
 
 export function createCommentChrome(ctx) {
   const {
@@ -29,8 +30,8 @@ export function createCommentChrome(ctx) {
   const documentHeading = document.createElement('h2')
   const notice = document.createElement('div')
   notice.className = 'lark-doc-comment-media-status lark-doc-comment-notice'
-  notice.setAttribute('role', 'status')
-  notice.setAttribute('aria-live', 'polite')
+  notice.setAttribute('role', 'alert')
+  notice.setAttribute('aria-live', 'assertive')
   notice.setAttribute('aria-atomic', 'true')
   documentHeading.className = 'lark-doc-document-comment-heading'
   documentHeading.textContent = '全文评论'
@@ -86,7 +87,8 @@ export function createCommentChrome(ctx) {
 
   const composer = document.createElement('section')
   composer.className = 'lark-doc-comment-composer is-selection'
-  composer.setAttribute('aria-label', '发表选区评论')
+  composer.setAttribute('role', 'dialog')
+  composer.setAttribute('aria-label', '添加评论')
   const callComposer = (name, ...args) => {
     if (el.isConnected && state.open && state.composer?.open && composer.isConnected) return call(name, ...args)
   }
@@ -103,7 +105,7 @@ export function createCommentChrome(ctx) {
   composerHead.append(composerQuote, composerCancelEmpty)
   const composerAuthor = document.createElement('div')
   composerAuthor.className = 'lark-doc-comment-composer-author'
-  const composerInput = richInput('lark-doc-comment-input-zone', '新评论', '输入评论', value => callComposer('onComposerDraft', value))
+  const composerInput = richInput('lark-doc-comment-input-zone', '输入评论', '输入评论', value => callComposer('onComposerDraft', value))
   const composerInputRow = document.createElement('div')
   composerInputRow.className = 'lark-doc-comment-input'
   composerInputRow.appendChild(composerInput)
@@ -115,17 +117,17 @@ export function createCommentChrome(ctx) {
   onAction(composerImageButton, () => callComposer('onChooseImage', 'selection'))
   const composerImageInput = document.createElement('input')
   composerImageInput.type = 'file'; composerImageInput.multiple = true
-  composerImageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'
+  composerImageInput.accept = COMMENT_IMAGE_ACCEPT
   composerImageInput.className = 'lark-doc-file-input'
   composerImageInput.dataset.commentImageScope = 'selection'
   composerImageInput.setAttribute('aria-label', '选择评论图片')
   composerImageInput.addEventListener('change', event => callComposer('onUploadImage', 'selection', event))
   composerInputRow.append(composerImageButton, composerImageInput)
   const composerImageDrafts = document.createElement('div')
-  composerImageDrafts.className = 'lark-doc-comment-image-drafts'
+  composerImageDrafts.className = 'lark-doc-comment-attachments'
 
   const composerActions = document.createElement('div')
-  composerActions.className = 'lark-doc-comment-compose-actions'
+  composerActions.className = 'lark-doc-comment-edit-actions'
   const composerPrivateLabel = document.createElement('label')
   const composerPrivate = document.createElement('input')
   composerPrivate.type = 'checkbox'
@@ -204,7 +206,7 @@ export function createCommentChrome(ctx) {
   documentComposerImageButton.type = 'button'; documentComposerImageButton.className = 'lark-doc-comment-operation'; documentComposerImageButton.appendChild(iconNode('rev-image', 20)); documentComposerImageButton.setAttribute('aria-label', '全文评论插入图片')
   onAction(documentComposerImageButton, () => callDocumentComposer('onChooseImage', 'document'))
   const documentComposerImageInput = document.createElement('input')
-  documentComposerImageInput.type = 'file'; documentComposerImageInput.multiple = true; documentComposerImageInput.accept = 'image/png,image/jpeg,image/gif,image/webp'; documentComposerImageInput.className = 'lark-doc-file-input'; documentComposerImageInput.dataset.commentImageScope = 'document'; documentComposerImageInput.setAttribute('aria-label', '选择全文评论图片')
+  documentComposerImageInput.type = 'file'; documentComposerImageInput.multiple = true; documentComposerImageInput.accept = COMMENT_IMAGE_ACCEPT; documentComposerImageInput.className = 'lark-doc-file-input'; documentComposerImageInput.dataset.commentImageScope = 'document'; documentComposerImageInput.setAttribute('aria-label', '选择全文评论图片')
   documentComposerImageInput.addEventListener('change', event => callDocumentComposer('onUploadImage', 'document', event))
   documentComposerTools.append(documentComposerImageButton, documentComposerImageInput)
   const documentComposerMore = document.createElement('button'); documentComposerMore.type = 'button'
@@ -219,7 +221,7 @@ export function createCommentChrome(ctx) {
   backToTop.className = 'lark-doc-comment-back-top'; backToTop.setAttribute('aria-label', '返回顶部'); backToTop.title = '返回顶部'
   backToTop.appendChild(iconNode('move-up', 22)); onAction(backToTop, () => { if (el.isConnected && hasInlineDocument()) call('onBackToTop') })
   const documentComposerImages = document.createElement('div')
-  documentComposerImages.className = 'lark-doc-comment-image-drafts'
+  documentComposerImages.className = 'lark-doc-comment-attachments'
   const documentComposerActions = document.createElement('div')
   documentComposerActions.className = 'lark-doc-document-composer-actions'
   const documentComposerPrivateLabel = document.createElement('label')
@@ -269,27 +271,27 @@ export function createCommentChrome(ctx) {
   const viewerImage = document.createElement('img'), viewerCaption = document.createElement('p')
   imageViewer.append(imageClose, viewerImage, viewerCaption); imageBackdrop.append(imageViewer)
 
+  // 表情选择器：一张 346×342 的固定板子 —— 上段 276px 可滚的九列网格，下段最近使用。
+  // 根节点吃掉 mousedown 的默认行为，别让点表情把焦点从面板里挪走。
   const reactionPicker = document.createElement('div')
   reactionPicker.className = 'lark-doc-comment-reaction-picker'
-  reactionPicker.setAttribute('role', 'dialog')
-  reactionPicker.setAttribute('aria-label', '选择表情回复')
-  const reactionPickerHead = document.createElement('div')
-  reactionPickerHead.className = 'lark-doc-comment-reaction-picker-head'
-  const reactionSearch = document.createElement('input')
-  reactionSearch.type = 'search'; reactionSearch.placeholder = '搜索表情'; reactionSearch.setAttribute('aria-label', '搜索表情')
-  reactionSearch.addEventListener('input', event => call('onReactionQuery', event.target.value))
-  const reactionClose = document.createElement('button')
-  reactionClose.type = 'button'; reactionClose.textContent = '×'; reactionClose.setAttribute('aria-label', '关闭表情回复')
-  onAction(reactionClose, () => call('onCloseReaction', true))
-  reactionPickerHead.append(reactionSearch, reactionClose)
-  const reactionTabs = document.createElement('div')
-  reactionTabs.className = 'lark-doc-comment-reaction-tabs'
+  reactionPicker.setAttribute('role', 'menu')
+  reactionPicker.setAttribute('aria-label', '评论表情回复')
+  reactionPicker.addEventListener('mousedown', event => event.preventDefault())
+  const reactionScroll = document.createElement('div')
+  reactionScroll.className = 'lark-doc-comment-reaction-scroll'
+  const reactionTitle = document.createElement('div')
+  reactionTitle.className = 'lark-doc-comment-reaction-title'
+  reactionTitle.textContent = '默认表情'
   const reactionGrid = document.createElement('div')
   reactionGrid.className = 'lark-doc-comment-reaction-grid'
-  const reactionMore = document.createElement('button')
-  reactionMore.type = 'button'; reactionMore.className = 'lark-doc-comment-reaction-more'; reactionMore.textContent = '查看更多'
-  onAction(reactionMore, () => call('onMoreReaction'))
-  reactionPicker.append(reactionPickerHead, reactionTabs, reactionGrid, reactionMore)
+  reactionScroll.append(reactionTitle, reactionGrid)
+  const reactionRecentTitle = document.createElement('div')
+  reactionRecentTitle.className = 'lark-doc-comment-reaction-title'
+  reactionRecentTitle.textContent = '最近使用'
+  const reactionRecent = document.createElement('div')
+  reactionRecent.className = 'lark-doc-comment-reaction-recent'
+  reactionPicker.append(reactionScroll, reactionRecentTitle, reactionRecent)
 
 
   return {
@@ -361,12 +363,9 @@ export function createCommentChrome(ctx) {
     imageClose,
     viewerImage,
     reactionPicker,
-    reactionPickerHead,
-    reactionSearch,
-    reactionClose,
-    reactionTabs,
+    reactionScroll,
     reactionGrid,
-    reactionMore,
+    reactionRecent,
     mobileNext,
     mobileClose,
     likeStatus,

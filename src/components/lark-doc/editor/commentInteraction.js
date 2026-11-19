@@ -1,4 +1,6 @@
 /** Private interactions that are reachable from the mounted comment UI. */
+import { loadReactionCatalog } from '../../../core/comments/reactionCatalog'
+
 async function resolveMentionPicker(token, request, current) {
   if (!current()) return null
   token.status = 'loading'; token.candidates = []
@@ -59,7 +61,12 @@ export function createCommentInteraction(dependencies) {
       const reply = thread && thread.replies.find(item => item.id === replyId)
       if (!reply) return
       this.cancelCommentEdit()
-      this.$set(this.commentImageDrafts, 'edit/' + threadId + '/' + replyId, (reply.attachments || []).map(asset => ({ ...asset, previewUrl: this.commentImageUrl(thread, reply, asset) })))
+      // 已存附件在编辑态是「已就绪草稿」：带 id 才能用 × 移除（`onRemoveAttachment` 传的就是 id），
+      // 带 status=ready 才会被 `commentDraftAssetIds` 收进本次提交。
+      this.$set(this.commentImageDrafts, 'edit/' + threadId + '/' + replyId, (reply.attachments || []).map((asset, index) => ({
+        ...asset, id: asset.assetId || (asset.attchId != null ? 'attch-' + asset.attchId : 'saved-' + index), status: 'ready',
+        previewUrl: this.commentImageUrl(thread, reply, asset),
+      })))
       let metadata = { mentions: [], references: [] }
       try { metadata = normalizeCommentMetadata(reply.content, reply.mentions || [], reply.references || [], true) } catch { /* Invalid legacy ranges remain plain text. */ }
       this.commentEditGeneration = (this.commentEditGeneration || 0) + 1
@@ -69,11 +76,16 @@ export function createCommentInteraction(dependencies) {
     async saveEditedComment() {
       const value = this.commentEditingReply
       if (!value || !this.commentAllowed('edit', value.threadId, value.replyId)) return null
-      const assetIds = this.commentDraftImages('edit/' + value.threadId + '/' + value.replyId).map(asset => asset.assetId)
-      if (!this.commentEditContent.trim() && !assetIds.length) return null
+      const scope = 'edit/' + value.threadId + '/' + value.replyId
+      const assetIds = this.commentDraftAssetIds(scope), remote = this.commentProvider()?.isRemote
+      // 原来有图、草稿里一张没剩 = 用户主动移除，要显式发空附件，否则服务端按「本次没提交附件」保留原图。
+      const cleared = !assetIds.length && Boolean(value.originalAssets?.length)
+      if (!this.commentEditContent.trim() && !assetIds.length && !cleared) return null
+      const local = remote ? [] : this.commentDraftAttachments(scope)
+      const attachmentPayload = remote ? (assetIds.length || cleared ? { assetIds } : {})
+        : (local.length ? { attachments: local, ...(assetIds.length ? { assetIds } : {}) } : cleared ? { attachments: [] } : {})
       const { mentions, references } = normalizeCommentMetadata(this.commentEditContent, this.commentEditMentions, this.commentEditReferences)
-      const changed = (!this.commentEditContent.trim() && assetIds.length <= 9) || JSON.stringify(assetIds) !== JSON.stringify(value.originalAssets || [])
-      const result = await this.runCommentWrite('editReply', { threadId: value.threadId, replyId: value.replyId, content: this.commentEditContent, mentions, ...(this.commentProvider()?.isRemote ? {} : { author: this.commentAuthor }), ...(references.length || value.originalReferences ? { references } : {}), ...(changed ? { assetIds } : {}) }, 'editCommentReply')
+      const result = await this.runCommentWrite('editReply', { threadId: value.threadId, replyId: value.replyId, content: this.commentEditContent, mentions, ...(remote ? {} : { author: this.commentAuthor }), ...(references.length || value.originalReferences ? { references } : {}), ...attachmentPayload }, 'editCommentReply')
       if (result) this.cancelCommentEdit()
       return result
     },
@@ -248,32 +260,34 @@ export function createCommentInteraction(dependencies) {
     },
     openCommentReaction(threadId, replyId, event) {
       if (!this.commentAllowed('react', threadId, replyId)) return
-      const root = this.$el, doc = root?.ownerDocument
+      const doc = this.$el?.ownerDocument
       const view = doc?.defaultView || (typeof window !== 'undefined' ? window : null)
-      const focused = () => {
-        const tree = root?.getRootNode?.()
-        let active = tree?.activeElement || doc?.activeElement
-        while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement
-        return tree?.host && active === tree.host ? null : active
-      }
-      const owner = focused(), current = this.commentOperationCurrent()
       const anchor = event && event.currentTarget
-      // Closing More may synchronously detach its plus button.
-      const position = this.commentMenuPosition(event, 328, 340, !this.commentRemote && !!view && view.innerWidth <= 760)
+      // 与基线一致：板子贴在锚点上方，本地与远端同一套视口坐标（fixed 定位）。
+      const rect = anchor?.getBoundingClientRect?.() || this.$el?.getBoundingClientRect?.()
+      const position = rect && view ? {
+        left: Math.max(8, Math.min(view.innerWidth - 354, rect.right - 346)),
+        top: Math.max(8, Math.min(view.innerHeight - 350, rect.top - 350)),
+      } : null
       this.closeCommentMenus()
       this._commentReactionAnchor = anchor
       this.commentReactionContext = { threadId, replyId, position }
       const context = this.commentReactionContext
+      // 目录近 1MB：第一次开板才拉，拉到再进 state，板子自己按目录建网格。
+      if (!this.commentReactionCatalog) {
+        void loadReactionCatalog().then((catalog) => {
+          if (this.commentReactionContext !== context) return
+          this.commentReactionCatalog = catalog
+        }, (error) => {
+          if (this.commentReactionContext !== context) return
+          this.closeCommentReaction()
+          this.error = error?.message || '表情加载失败，请重试'
+        })
+      }
       // Native DOM hosts do not always flush Vue-style watchers for this
       // transient state. Refresh immediately so a mobile tap mounts the
       // picker before a subsequent pointer/scroll event can dismiss it.
       this.refreshPanels?.()
-      this.$nextTick(() => {
-        if (this.commentReactionContext !== context || !current() || !root?.isConnected || !this.commentAllowed('react', threadId, replyId)) return
-        const active = focused()
-        if (active && active !== owner && active !== doc?.body && active !== doc?.documentElement) return
-        root.querySelector('.lark-doc-comment-reaction-picker input')?.focus({ preventScroll: true })
-      })
     },
     commentFollowAllowed(threadId) {
       return this.commentCan('canView') && Boolean(this.commentFollowPreference(threadId)) && !this.commentFollowBusy && !this.commentPendingFollowOperation
@@ -329,13 +343,37 @@ export function createCommentInteraction(dependencies) {
     },
     beginCommentTranslation(threadId, replyId) {
       if (!this.commentCan('canView') || this.commentTranslationBusy) return
-      if (this.commentPendingTranslationOperation) { this.commentMessage = '请先查询原翻译请求，避免替换未确认的来源。'; return }
       const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
       const reply = thread && thread.replies.find(item => item.id === replyId && !item.tombstone)
-      if (!reply || typeof reply.replyRevision !== 'string') return
+      if (!reply) return
+      // 飞书：翻译只替换展示，原文留在 provider 记录里。服务只提供一次性译文时直接取，
+      // 长任务链路（远端 requestTranslation + 待确认查询）仍走下面的独立面板。
+      const provider = this.commentProvider()
+      if (typeof provider?.translateReply === 'function' && provider.isRemote !== true) return this.translateCommentReply(threadId, replyId)
+      if (this.commentPendingTranslationOperation) { this.commentMessage = '请先查询原翻译请求，避免替换未确认的来源。'; return }
+      if (typeof reply.replyRevision !== 'string') return
       this.commentTranslationContext = { threadId, replyId, sourceRevision: reply.replyRevision }
       this.commentTranslationLanguage = 'zh-CN'
       this.commentTranslationState = null
+    },
+    async translateCommentReply(threadId, replyId) {
+      const provider = this.commentProvider(), current = this.commentOperationCurrent()
+      const reply = this.commentThreads.find(item => item.id === threadId && !item.tombstone)?.replies.find(item => item.id === replyId && !item.tombstone)
+      if (!reply || typeof provider?.translateReply !== 'function') return null
+      this.commentTranslationBusy = true
+      try {
+        const result = await provider.translateReply({ threadId, commentId: replyId, author: this.commentAuthor })
+        if (!current() || !this.commentCan('canView') || provider !== this.commentProvider()) return null
+        const content = typeof result?.content === 'string' ? result.content : ''
+        if (!content) { this.commentMessage = result?.message || '翻译失败，请重试'; return null }
+        this.$set(this.commentTranslations, `${threadId}:${replyId}`, { source: reply.content, content })
+        return result
+      } catch (error) {
+        if (!current()) return null
+        await this.clearUnavailableCommentView(error)
+        if (current() && this.commentCan('canView')) this.commentMessage = error?.code || error?.message || '翻译失败，请重试'
+        return null
+      } finally { if (current()) this.commentTranslationBusy = false }
     },
   }
   return { methods }

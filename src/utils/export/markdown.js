@@ -587,6 +587,25 @@ function serializeChildren(nodes, indent) {
   return blocks.join(MD_BLOCK_SEPARATOR)
 }
 
+/** Build an export snapshot without changing editor JSON or ProseMirror nodes. */
+export function normalizeExportDocument(doc, options) {
+  const source = typeof doc?.toJSON === 'function' ? doc.toJSON() : doc
+  const content = childrenOf(Array.isArray(source) ? { content: source } : source)
+  const flat = flattenHeadingContainers({
+    type: 'doc',
+    content: content.map(node => typeof node?.toJSON === 'function' ? node.toJSON() : node),
+  })
+  if (options?.format === 'word') return flat
+  function flattenColumns(node) {
+    if (!node || typeof node !== 'object') return []
+    if (node.type === 'columns' || node.type === 'column') return childrenOf(node).flatMap(flattenColumns)
+    if (Array.isArray(node.content)) node.content = node.content.flatMap(flattenColumns)
+    return [node]
+  }
+  flat.content = flat.content.flatMap(flattenColumns)
+  return flat
+}
+
 /**
  * 从 ProseMirror doc 直接序列化 Markdown。
  *
@@ -595,7 +614,99 @@ function serializeChildren(nodes, indent) {
  */
 export function serializeMarkdown(doc) {
   if (!doc || typeof doc !== 'object') return ''
-  const raw = typeof doc.toJSON === 'function' ? doc.toJSON() : doc
-  const flat = flattenHeadingContainers(Array.isArray(raw) ? { type: 'doc', content: raw } : raw)
-  return serializeChildren(childrenOf(flat), '')
+  return serializeChildren(normalizeExportDocument(doc).content, '')
+}
+
+function decodeEntities(value) {
+  return String(value || '').replace(/&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, body) => {
+    if (body[0] === '#') {
+      const isHex = body[1] === 'x' || body[1] === 'X'
+      const code = isHex ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10)
+      return code <= 0x10FFFF ? String.fromCodePoint(code) : match
+    }
+    const named = HTML_ENTITIES[body]
+    return named === undefined ? match : named
+  })
+}
+
+/** 极简 HTML 扫描器：只认「标签 / 文本 / 注释」，不建 DOM、不引依赖。 */
+export function scanHtml(html) {
+  const source = String(html || '')
+  const roots = []
+  const stack = []
+  let cursor = 0
+  while (cursor < source.length) {
+    const open = source.indexOf('<', cursor)
+    if (open === -1) {
+      pushText(source.slice(cursor))
+      break
+    }
+    pushText(source.slice(cursor, open))
+    if (source.startsWith('<!--', open)) {
+      const end = source.indexOf('-->', open)
+      cursor = end === -1 ? source.length : end + 3
+      continue
+    }
+    if (source.startsWith('<!', open) || source.startsWith('<?', open)) {
+      const end = source.indexOf('>', open)
+      cursor = end === -1 ? source.length : end + 1
+      continue
+    }
+    if (source.startsWith('</', open)) {
+      const end = source.indexOf('>', open)
+      const name = source.slice(open + 2, end === -1 ? source.length : end).trim().toLowerCase()
+      cursor = end === -1 ? source.length : end + 1
+      // 只闭合「同名的、仍开着的」标签，容忍 marked 之外的坏输入。
+      for (let i = stack.length - 1; i >= 0; i -= 1) {
+        if (stack[i].tag === name) {
+          stack.length = i
+          break
+        }
+      }
+      continue
+    }
+    const end = source.indexOf('>', open)
+    const raw = source.slice(open + 1, end === -1 ? source.length : end)
+    cursor = end === -1 ? source.length : end + 1
+    const selfClose = /\/$/.test(raw)
+    const body = selfClose ? raw.slice(0, -1) : raw
+    const spaceAt = body.search(/[\s]/)
+    const tag = (spaceAt === -1 ? body : body.slice(0, spaceAt)).toLowerCase()
+    const node = { tag, attrs: parseAttributes(spaceAt === -1 ? '' : body.slice(spaceAt)), children: [] }
+    // 块级标签开始时，把**仍未闭合的行内标签强制收口**：marked 会把用户手写的裸 HTML
+    // （`<p>a <b> c</p>` 里的 `<b>`）原样透传，它的闭合标签根本不存在，不收口的话
+    // 这个加粗会一直蔓延到文档末尾。正常嵌套的 HTML 在块边界前早闭合了，不受影响。
+    if (isBlockTag(tag)) {
+      while (stack.length && !isBlockTag(stack[stack.length - 1].tag)) stack.pop()
+    }
+    if (stack.length) stack[stack.length - 1].children.push(node)
+    else roots.push(node)
+    if (!selfClose && HTML_VOID.indexOf(tag) === -1) stack.push(node)
+  }
+  return roots
+
+  function pushText(value) {
+    if (!value) return
+    const text = decodeEntities(value)
+    if (text === '') return
+    if (stack.length) stack[stack.length - 1].children.push({ tag: '#text', text })
+    else roots.push({ tag: '#text', text })
+  }
+}
+
+/** 属性串 → 对象。实体统一解码，布尔属性（如 `checked`）落成空串。 */
+function parseAttributes(input) {
+  const attrs = {}
+  const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g
+  let match = pattern.exec(input)
+  while (match !== null) {
+    const value = match[3] !== undefined ? match[3] : (match[4] !== undefined ? match[4] : (match[5] !== undefined ? match[5] : ''))
+    attrs[match[1].toLowerCase()] = decodeEntities(value)
+    match = pattern.exec(input)
+  }
+  return attrs
+}
+
+export function isBlockTag(tag) {
+  return HTML_BLOCK.indexOf(tag) !== -1
 }

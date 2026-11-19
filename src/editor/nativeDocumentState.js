@@ -1,5 +1,5 @@
 /** Native document-derived state and scroll geometry; commands remain on the host. */
-import { collectOutline } from '../components/lark-doc/documentOperations'
+import { collectOutlineState } from '../components/lark-doc/documentOperations'
 
 export const nativeDocumentStateMethods = {
     refreshDocumentState(transaction = null) {
@@ -17,7 +17,9 @@ export const nativeDocumentStateMethods = {
         return
       }
       this.outlinePending = false
-      this.outline = Object.freeze(collectOutline(this.editor.state.doc))
+      const { outline, maxHeadingLevel } = collectOutlineState(doc)
+      this.outline = Object.freeze(outline)
+      this.maxHeadingLevel = maxHeadingLevel
       this.syncOutlineCollapseState()
       this.syncFoldState()
       this.wordCount = this.editor.storage.characterCount.characters()
@@ -39,6 +41,7 @@ export const nativeDocumentStateMethods = {
       }).then(result => {
         if (!result || !current()) return
         this.outline = result.outline
+        this.maxHeadingLevel = result.maxHeadingLevel
         this.wordCount = result.characters
         this.outlinePending = false
         this.syncOutlineCollapseState()
@@ -94,7 +97,7 @@ export const nativeDocumentStateMethods = {
       // refresh its anchor, while engaged controls and resize still need it.
       const handleGeometry = !largeDocument || this._handleResizePending || handleEngaged
       const needsGeometry = (handleGeometry && this.handleRange) || handleEngaged
-        || this.bubbleVisible || this.bubbleAlignOpen || this.linkDialog || this.tableToolsOpen
+        || this.bubbleVisible || this.bubbleAlignOpen || this.linkDialog || this.tableToolsOpen || this.tablePicker
         || this.tableBoundary?.visible || this._tableOverlayHover || this.headingOpen || this.menuOpen
         || this.calloutEmojiOpen || this.headerMenuOpen || this.moreMenuOpen
       this.scheduleActiveHeading()
@@ -116,6 +119,7 @@ export const nativeDocumentStateMethods = {
         if (this.bubbleVisible) this.bubblePosition = this.bubbleBarPosition(this.editor.state.selection)
         this.updateTableBoundary()
         this.refreshTableOverlays?.()
+        if (this.tablePicker) this.positionTablePicker()
         if (this.headingOpen) this.positionHeadingMenu()
         if (this.headerMenuOpen) this.positionHeaderMenu()
         if (this.moreMenuOpen) this.positionMoreMenu()

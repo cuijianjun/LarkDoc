@@ -1,7 +1,7 @@
 /** 标题块：一~九级标题 + 飞书式标题编号（numbering / numberingStart）。 */
 import { mergeAttributes } from '@tiptap/core'
 import Heading from '@tiptap/extension-heading'
-import { clampHeadingNumberStart } from '../documentOperations'
+import { clampHeadingNumberStart, HEADING_VALUE_MAX } from '../documentOperations'
 import { levels, validateAttribute } from './shared'
 
 const LarkDocHeading = Heading.extend({
@@ -17,11 +17,17 @@ const LarkDocHeading = Heading.extend({
       // 「重新开始编号 / 设置编号的值」的起点；null = 继续（跟着前序同级标题排）。
       numberingStart: {
         default: null,
-        parseHTML: (el) => clampHeadingNumberStart(el.getAttribute('data-numbering-start')),
+        parseHTML: (el) => clampHeadingNumberStart(el.getAttribute('data-numbering-start'), HEADING_VALUE_MAX),
         renderHTML: ({ numberingStart }) => {
-          const start = clampHeadingNumberStart(numberingStart)
+          const start = clampHeadingNumberStart(numberingStart, HEADING_VALUE_MAX)
           return start ? { 'data-numbering-start': start } : {}
         },
+      },
+      numberingLevel: {
+        default: null,
+        validate: validateAttribute('heading.numberingLevel', value => value === null || (Number.isInteger(value) && levels.includes(value))),
+        parseHTML: el => { const value = Number(el.getAttribute('data-numbering-level')); return levels.includes(value) ? value : null },
+        renderHTML: ({ numberingLevel }) => numberingLevel ? { 'data-numbering-level': numberingLevel } : {},
       },
     }
   },

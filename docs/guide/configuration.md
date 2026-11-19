@@ -21,6 +21,24 @@ const doc = new LarkDoc({
 ```
 
 示例由应用保存正文，`storage: 'none'` 会关闭浏览器草稿。需要浏览器记住草稿时使用默认的 `storage: 'local'`；它不会替你把正文保存到业务服务器。
+
+### 外部应用预览
+
+电子表格、多维表格、画板/思维导图/流程图/UML、子页面列表/知识库动态、Jira/Meego 和订阅号文章入口只插入链接预览卡片，点击卡片跳转真实应用。应用内编辑和协同由对应业务系统处理。旧 `sheet`、`bitable` 和企业 `cardEmbed` 节点继续兼容读取。
+
+后端已有链接与预览信息时直接插卡；只给链接时，现有 `unfurlProvider(url)` 可异步返回 `{ title, desc, cover, favicon }`。抓取失败保留可跳转的简卡，不丢链接。媒体仍受编辑器网络策略约束。
+
+```js
+doc.getEditor().commands.setBookmark({
+  appKind: 'bitable', // sheet / whiteboard / mindMap / flowChart / umlDiagram / folderManager / wikiRecent / jiraIssue / jiraFilter / meegoView / meegoDetail / subscribeArticle
+  url: application.url,
+  title: application.title,
+  desc: application.summary,
+  cover: application.previewImage,
+})
+```
+
+这些入口统一受 `features.insert` 与 `commands.disabled/allow` 控制，不会因链接域名匹配播放器而插入 iframe。同步块和转子文档仍不提供入口。
 离开页面时调用 `doc.destroy()`。Vue、React 等环境的创建和销毁位置，见对应环境的完整示例。
 
 ## 按要做的事查配置
@@ -31,6 +49,7 @@ const doc = new LarkDoc({
 | 上传图片到服务器，再用返回地址插图 | `uploader.action`、`response` 与回调，见[上传器](/blocks/uploader)。 |
 | 减少工具栏按钮 | `toolbarKeys` / `toolbarExcludes`，见[工具栏配置](/guide/toolbar)。 |
 | 开关 AI、图表等功能 | `features`，展开下方[功能开关](#features-能力开关)。 |
+| 打开/隐藏版本历史入口，调自动记录频率 | `features.versionHistory` + `autoSnapshot`，见[版本历史](#versionhistory-版本历史)。 |
 | 设置只读、修订或阅读模式 | `readonly` / `modes`，见[视图模式](/blocks/view-modes)。 |
 | 限制导入或导出格式 | `importExport`，见[导入导出](/blocks/import-export)。 |
 | 设置右下角问号菜单 | `help` 控制开关、菜单和点击回调，展开下方[帮助菜单](#help)。 |
@@ -62,7 +81,8 @@ const doc = new LarkDoc({
 | `autofocus` | `false` | 挂载后自动聚焦。 |
 | `contentFormat` | `'auto'` | 旧数据归一化：`'auto'` / `'vditor'` / `'html'`，见[旧数据导入](/guide/vditor-import)。 |
 | `toolbarKeys` / `toolbarExcludes` | - | 工具栏白名单 / 黑名单，见[工具栏配置](/guide/toolbar)。 |
-| `features` | 全开 | 能力开关，见下表。 |
+| `features` | 全开（`versionHistory` 例外，默认关） | 能力开关，见下表。 |
+| `autoSnapshot` | 跟随 `features.versionHistory` | 版本历史自动记录，见[版本历史](#versionhistory-版本历史)。 |
 | `uploader` | 内置本地读取 | 图片上传钩子，见[上传器](/blocks/uploader)。 |
 | `uploadFile` | 回落到当前 `uploader` 自定义函数 | 附件函数或分片配置对象，见[附件上传](/blocks/uploader#附件上传)。 |
 | `ai` | 内置 Mock | AI 服务接管，见 [AI 组件](/blocks/ai)。 |
@@ -93,7 +113,7 @@ const doc = new LarkDoc({
 | `emoji` | 表情 | `persistence` | 草稿持久化 |
 | `templates` | 模板 | `importExport` | 导入导出 |
 | `callouts` | 高亮块 | `diagram` | 图表（mermaid） |
-| `columns` | 分栏 | | |
+| `columns` | 分栏 | `versionHistory` | 版本历史入口（默认关） |
 
 ::::
 
@@ -137,6 +157,41 @@ doc.getAutoSave()                        // { enabled, delay, effective }
 ```
 
 `autosave` 是整段 JSON（变更后重建实例），`autosave-enabled` / `autosave-delay` 是 live 属性，运行中修改走 `setAutoSave()` 原地热更；同名字段以标量为准。属性被移除时回落默认值（`enabled:true` / `delay:650`）。命令式 API 与属性映射见[实例与事件](/guide/instance)、[Web Component](/guide/web-component)。
+
+::::
+
+<span id="versionhistory-版本历史"></span>
+
+:::: details 版本历史：入口开关与自动记录
+
+顶栏两个入口——「另存为版本」（手动存一版）和「历史记录」（按天时间线）——由**独立开关** `features.versionHistory` 管，**默认关闭**：
+
+```js
+new LarkDoc({ element, features: { versionHistory: true } })   // 打开两个入口
+```
+
+关闭时两个入口都不渲染，对应的公开方法 `openVersionPanel()` / `openSaveVersionDialog()` / `confirmSaveVersion()` 也直接返回，宿主直调绕不过开关。**不要用 `features.history` 代替**：那个开关同时管工具栏的撤销 / 重做，拿它关版本历史会把 undo/redo 一起下线。
+
+历史记录按飞书语义自动攒，用户不需要点保存：编辑停止 `debounce` 毫秒后落一条 `kind: 'auto'`，`minInterval` 内最多一条，正文没变不重复写。
+
+| `autoSnapshot` | 默认 | 说明 |
+| --- | --- | --- |
+| 缺省 | 跟随 `features.versionHistory` | 入口关着就不在后台攒：面板打不开，写进 Provider 的也没人看。 |
+| `true` / `{ enabled: true }` | - | 面板仍关着也强制后台记录（宿主自建时间线时用）。 |
+| `false` / `{ enabled: false }` | - | 只读预览、按次数断言的自动化测试用。 |
+| `debounce` | `2500` | 编辑停止多久后落一条。 |
+| `minInterval` | `60000` | 两条自动快照的最小间隔；没到点不丢改动，定时器推到窗口尾部再落。 |
+
+```js
+new LarkDoc({ element, features: { versionHistory: true }, autoSnapshot: { debounce: 3000, minInterval: 300000 } })
+doc.getSession().setAutoSnapshot({ enabled: false })   // 运行中关掉
+```
+
+落盘还有两个前提，缺一个就静默跳过（不打断编辑）：注入了 `versioning` Provider，且 `canCreateVersion` 为真。结果走会话事件 `version-created` / `version-error`，见[协同与权限](/guide/collaboration#版本与评论)。
+
+::: tip 自动快照不是你手动存的版本
+`kind: 'auto'` 的条目可被保留策略淘汰（默认按 `keepAuto` 留最近 20 份）；`manual`（手动命名）与 `restore`（恢复点）永久保留。见 `pruneSnapshots` / `DEFAULT_POLICY`。
+:::
 
 ::::
 

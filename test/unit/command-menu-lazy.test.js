@@ -94,7 +94,9 @@ describe('命令菜单原生 options host', () => {
     h.host.onSlash({ from: 1, to: 2, query: '标题' })
     await settle()
     expect(document.activeElement).toBe(input)
-    expect(h.host._commandMenuUi.el.querySelector('input').value).toBe('标题')
+    // slash 菜单不挂搜索头（`head` 只在非 slash 时进插槽，0facf05:496 同款）：
+    // 查询来自正文里的 `/标题`，焦点全程留在正文。
+    expect(h.host._commandMenuUi.el.querySelector('.lark-doc-command-head')).toBeNull()
   })
   it.each(['close', 'readonly', 'destroy', 'reopen'])('打开回调排队后 %s 不抢旧焦点', async action => {
     const h = menuHost()
@@ -324,12 +326,15 @@ describe('命令菜单原生 options host', () => {
     const handlers = { onChoose: vi.fn(), onMenuEnter: vi.fn(), onMenuLeave: vi.fn() }
     const ui = createCommandMenu({ host: root, handlers })
     const diagram = { id: 'diagram', label: '图表', category: '基础', submenu: '图表', submenuType: 'diagram' }
-    ui.update({ open: true, kind: 'slash', items: [diagram, { id: 'jira', label: 'Jira', category: '基础', tier: 'skip', reason: '未接入 Jira' }], activeId: 'diagram' })
+    // plus 入口才挂搜索头（`head` 的 `on: state.kind !== 'slash'`，基线 0facf05:496 同款），
+    // 而 Enter 只在搜索框内生效（`fromSearch = event.target === input`），所以这条用例走 plus。
+    ui.update({ open: true, kind: 'plus', items: [diagram, { id: 'jira', label: 'Jira', category: '基础', tier: 'skip', reason: '未接入 Jira' }], activeId: 'diagram' })
     const skip = root.querySelector('[data-command-id="jira"]')
     expect(skip.disabled).toBe(true)
     expect(skip.title).toBe('')
-    expect(skip.getAttribute('data-tooltip-title')).toBe('未接入 Jira')
-    expect(skip.getAttribute('aria-label')).toBe('未接入 Jira')
+    expect(skip.getAttribute('data-tooltip-title')).toBe('需要企业版接入')
+    // 原因只进浮层提示，aria-label 还是这条命令自己的名字（见 commandMenu.js 的注释）。
+    expect(skip.getAttribute('aria-label')).toBe('Jira')
     ui.el.dispatchEvent(new MouseEvent('mouseenter'))
     ui.el.dispatchEvent(new MouseEvent('mouseleave'))
     root.querySelector('[data-command-id="diagram"]').click()

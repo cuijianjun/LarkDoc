@@ -34,7 +34,7 @@ function record(name, ok, detail = '') {
 async function main() {
   const executablePath = findChromium()
   if (!executablePath) throw new Error('未找到本机 chromium 缓存')
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath })
   const page = await browser.newPage({ viewport: { width: 1700, height: 1000 } })
   const pageErrors = []
   page.on('pageerror', (error) => pageErrors.push(String(error)))

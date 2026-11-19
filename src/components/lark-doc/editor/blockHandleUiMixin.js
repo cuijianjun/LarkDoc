@@ -21,18 +21,31 @@ import { blockAiAllowed } from './blockMenuMixin'
 
 
 export default {
+  computed: {
+    visibleBlockTypeActions() {
+      const maxHeading = Math.min(9, Math.max(3, (this.maxHeadingLevel || 0) + 1))
+      return this.blockTypeActions.filter(item => {
+        const heading = /^heading/.test(item.id)
+        const feature = heading ? 'headings' : { codeBlock: 'codeBlocks', callout: 'callouts' }[item.id] || 'blockStyle'
+        return (!heading || Number(item.id.slice(-1)) <= maxHeading)
+          && this.featureEnabled('blockStyle') && this.featureEnabled(feature) && this.isBlockActionEnabled(item.id)
+      })
+    },
+  },
   watch: {
     handleRange() { if (!this.handleRange) { this._blockHandleAnchor = null; this._tableHandleContext = null } this.refreshBlockHandle() },
     effectiveReadonly() { this.refreshBlockHandle(); this.refreshBlockMenu() },
     larkDocConfig() { this.refreshBlockHandle(); this.refreshBlockMenu() },
     // 颜色子菜单的色板来自内容主题（深/浅色），主题一换选项就换。
     contentTheme() { this.refreshBlockMenu() },
+    maxHeadingLevel() { this.refreshBlockMenu() },
     alignNames: { deep: true, handler() { this.refreshBlockMenu() } },
     alignGlyphs: { deep: true, handler() { this.refreshBlockMenu() } },
     // —— 开合与定位：SFC 时代这些是模板插值，Vue 渲染 watcher 自动跟进；原生层必须显式推。
     // 时序也与 SFC 等价：watcher 在 DOM flush 前跑（菜单因此入 DOM），mixin 里
     // `positionBlockMenu` 包的 `$nextTick` 回调晚于 flush，量的就是已布局好的盒子。
     blockMenuOpen() { this.refreshBlockMenu() },
+    menuOpen() { this.refreshBlockMenu() },
     blockAlignMenuOpen() { this.refreshBlockMenu() },
     blockColorMenuOpen() { this.refreshBlockMenu() },
     blockMenuStyle() { this.refreshBlockMenu() },
@@ -103,6 +116,7 @@ export default {
      */
     blockHandleHandlers() {
       return {
+        onMenuRuntime: (runtime, insert, current, position) => { this._blockMenuState = runtime; this._blockInsertRuntime = insert; this._blockInsertCurrent = current; this._blockMenuPosition = position },
         onHandleEnter: (event) => this.onBlockHandleEnter(event),
         onHandleLeave: (event) => this.onBlockHandleLeave(event),
         openEmptyBlockInsertMenu: (event) => this.openEmptyBlockInsertMenu(event),
@@ -145,6 +159,7 @@ export default {
         mobile,
         style: this.blockHandleStyle,
         menuOpen: this.blockMenuOpen,
+        insertOpen: !!this._blockInsertContext && this.menuOpen,
         alignOpen: !!this.blockAlignMenuOpen && blockStyle,
         blockStyle,
         buttonKind: emptyCellBlock ? 'none' : mobile ? 'main' : this.handleIsEmptyParagraph ? 'empty' : 'main',

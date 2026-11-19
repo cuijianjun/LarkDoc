@@ -211,6 +211,62 @@ describe('Element 引导器只在需要时拉 runtime（L0）', () => {
 })
 
 describe('polyfill 门禁（core-js 已移出内核）', () => {
+  it.each([false, true])('runtime exports join the UMD namespace without replacing the bootstrap (existing script: %s)', async existing => {
+    const loader = await freshLoader()
+    class RuntimeLarkDoc {}
+    const namespace = { loadLarkDocRuntime: loader.loadLarkDocRuntime }
+    const runtime = { LarkDoc: RuntimeLarkDoc, mountLarkDoc: vi.fn(), __esModule: true }
+    vi.stubGlobal('LarkDoc', namespace)
+    vi.stubGlobal('LarkDocRuntime', runtime)
+    if (existing) {
+      const script = document.createElement('script')
+      script.dataset.larkDocRuntime = 'true'
+      document.head.append(script)
+    }
+    const pending = loader.loadLarkDocRuntime()
+    await flush()
+    if (!existing) runtimeScripts()[0].onload()
+    expect(await pending).toBe(namespace)
+    expect(window.LarkDoc.LarkDoc).toBe(RuntimeLarkDoc)
+    expect(window.LarkDoc.mountLarkDoc).toBe(runtime.mountLarkDoc)
+    expect(window.LarkDoc.loadLarkDocRuntime).toBe(loader.loadLarkDocRuntime)
+    expect(window.LarkDocRuntime).toBe(runtime)
+    expect(namespace).not.toHaveProperty('__esModule')
+    expect(runtimeScripts()).toHaveLength(1)
+  })
+
+  it.each(['onerror', 'onload'])('releases a failed runtime load shared by two loaders through %s', async event => {
+    const first = await freshLoader()
+    const second = await freshLoader()
+    const namespace = { loadLarkDocRuntime: second.loadLarkDocRuntime }
+    vi.stubGlobal('LarkDoc', namespace)
+    const ready = vi.fn()
+    document.addEventListener('lark-doc:runtime-ready', ready)
+    try {
+      const firstLoad = first.loadLarkDocRuntime()
+      const secondLoad = second.loadLarkDocRuntime()
+      const failed = Promise.allSettled([firstLoad, secondLoad])
+      await flush()
+      expect(runtimeScripts()).toHaveLength(1)
+      runtimeScripts()[0][event]()
+      expect((await failed).map(result => result.status)).toEqual(['rejected', 'rejected'])
+      expect(runtimeScripts()).toHaveLength(0)
+      expect(ready).not.toHaveBeenCalled()
+
+      const retried = second.loadLarkDocRuntime()
+      await flush()
+      class RuntimeLarkDoc {}
+      vi.stubGlobal('LarkDocRuntime', { LarkDoc: RuntimeLarkDoc })
+      runtimeScripts()[0].onload()
+      await expect(retried).resolves.toBe(namespace)
+      await expect(first.loadLarkDocRuntime()).resolves.toBe(namespace)
+      expect(namespace.LarkDoc).toBe(RuntimeLarkDoc)
+      expect(ready).toHaveBeenCalledOnce()
+    } finally {
+      document.removeEventListener('lark-doc:runtime-ready', ready)
+    }
+  })
+
   it('现代环境完全不请求 polyfill 包', async () => {
     appendTag()
     const loader = await freshLoader()

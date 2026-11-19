@@ -16,6 +16,14 @@
  */
 export default {
   methods: {
+    onNotifyPointerDown(event) {
+      if (!this.notifyOpen) return
+      const owner = this.$refs.root?.getRootNode()
+      // document 无法区分封闭 ShadowRoot 内部的点击，交给该树上的监听器。
+      if (owner?.mode === 'closed' && owner !== event.currentTarget && owner.host === event.target) return
+      const path = event.composedPath()
+      if (!path.includes(this._notificationsUi?.el) && !path.includes(this._notifyTrigger)) this.closeNotify()
+    },
     /**
      * 点外部关闭。用 `closest?.()` 而不是 `contains()`：浮层多挂在 body 上的
      * teleport 容器里（不在 `$refs.root` 里），`contains` 判断会反过来把
@@ -46,6 +54,9 @@ export default {
       // 所以它在下面的 `onWindowKeydown` 与 `closeOverlay` 里都有分支（日历两者都没有）。
       // 点外部同样生效，且只有这三个入口：面板自身、它的下拉、色板都在 `.lark-doc-isv-overlay` 内。
       if (this.isvPanelOpen && !target.closest?.('.lark-doc-isv-overlay')) this.closeIsvPanel()
+      const insertTableTrigger = target.closest?.('button[aria-label="插入表格"]')
+      const ownInsertTable = insertTableTrigger && this.$refs.root?.contains(insertTableTrigger)
+      if (this.tablePicker && !ownTableTrigger && !ownInsertTable && !this.$refs.root?.querySelector('.lark-doc-table-picker')?.contains(target)) this.closeTablePicker()
       if (this.blockMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
       if (this.blockTypeMenuOpen && !target.closest?.('.lark-doc-block-type-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.blockTypeMenuOpen = false
       if (this.blockAlignMenuOpen && !target.closest?.('.lark-doc-block-menu') && !target.closest?.('.lark-doc-block-handle') && !ownTableTrigger) this.closeBlockMenu()
@@ -77,6 +88,15 @@ export default {
       }
     },
     /** 全局 Esc、⌘+F / ⌘+Shift+H / ⌘+/ 与模式键位；演示方向键由浏览器滚动全文。 */
+    onEditorRootEscape(event) {
+      const view = this.editor.view
+      if (event.key !== 'Escape' || event.isComposing || event.keyCode === 229 || view.composing) return
+      // ProseMirror may consume Escape to clear its table selection while still allowing editor chrome to close.
+      if (event.defaultPrevented && !view.dom.contains(event.target)) return
+      const tableTrigger = event.target.closest?.('.lark-doc-toolbar [aria-label="插入表格"]')
+      if (this.tablePicker && (tableTrigger || (this._tablePickerHoverOpened && event.target === view.dom))) this.closeTablePicker()
+      else this.closeOverlay()
+    },
     onWindowKeydown(event) {
       if (this.versionPanelOpen) return
       if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && this._linkTarget
@@ -92,7 +112,7 @@ export default {
       if (this.applyModeShortcut(event)) return
       // P4-05：⌘+F 开「查找」、⌘+Shift+H 开「替换」（04 §3.2 实测键位）。必须 preventDefault，
       // 否则浏览器原生查找条会压在浮层上。Ctrl 一并认（Windows/Linux 同键位）。
-      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+      if (!!event.metaKey !== !!event.ctrlKey && !event.altKey) {
         const key = (event.key || '').toLowerCase()
         if (key === 'f' && !event.shiftKey) { event.preventDefault(); this.openSearch('find'); return }
         if (key === 'h' && event.shiftKey) { event.preventDefault(); this.openSearch('replace'); return }
@@ -102,6 +122,7 @@ export default {
       }
       if (event.key === 'Escape' && this.headingNumberMenu?.open) this.closeHeadingNumberMenu({ restoreFocus: true })
       // P4-04：按钮配置面板 Esc 可关（02 §22 ⑤-1），关了就不建块 —— 与「日程面板 Esc 无效」相反。
+      else if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && this.tablePicker) this.closeTablePicker({ restoreFocus: true })
       else if (event.key === 'Escape' && this.isvPanelOpen) this.closeIsvPanel()
       else if (event.key === 'Escape' && this.slides) this.toggleSlides()
       // 气泡条的对齐下拉：原生宿主没有根元素 `@keydown.esc`，Esc 只走这条链；
@@ -116,7 +137,7 @@ export default {
      * 内嵌网页浮层（P3-07）故意不进这条链——04 §4.3 ⑤ 实测「Esc ×1/×2 都关不掉」，
      * 它只认「点外部」和「点 ×」，所以由 `onDocumentPointerDown` 单独管。
      */
-    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.headingNumberMenu?.open) this.closeHeadingNumberMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.linkDialog) this.linkDialog = false; else if (this._linkTarget) this.closeLinkTools(); else if (this.tablePicker) { this.tablePicker = false; this.tablePickerHover = { rows: 3, cols: 3 } } else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen || this._calloutEmojiOpening) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
+    closeOverlay() { if (this.menuOpen) this.closeCommandMenu(); else if (this.headingNumberMenu?.open) this.closeHeadingNumberMenu(); else if (this.isvPanelOpen) this.closeIsvPanel(); else if (this.mentionOpen) this.closeMentionPanel(); else if (this.reminderOpen) this.closeReminderPopover(); else if (this.colorPaletteOpen) this.colorPaletteOpen = ''; else if (this.linkDialog) this.linkDialog = false; else if (this._linkTarget) this.closeLinkTools(); else if (this.tablePicker) this.closeTablePicker(); else if (this.helpOpen) this.helpOpen = false; else if (this.headingOpen) { this.headingOpen = false; this.headingStyle = {} } else if (this.headerMenuOpen) this.closeHeaderMenu(); else if (this.diagramMenuOpen) this.closeDiagramMenu(); else if (this.bubbleAlignOpen) this.closeBubbleAlignMenu(); else if (this.blockAlignMenuOpen || this.blockColorMenuOpen || this.blockTypeMenuOpen || this.blockMenuOpen) this.closeBlockMenu(); else if (this.calloutEmojiOpen || this._calloutEmojiOpening) this.closeCalloutEmoji(); else if (this.tableToolsOpen) this.tableToolsOpen = false; else if (this.searchOpen) this.closeSearch(); this.focus() },
 
   },
 }

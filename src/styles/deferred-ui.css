@@ -125,6 +125,10 @@
 .lark-doc .lark-doc-table-boundary-tools button:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; }
 .lark-doc .lark-doc-table-boundary-tools button:hover::before,
 .lark-doc .lark-doc-table-boundary-tools button:focus-visible::before { background: var(--ld-bg-brand-hover); }
+/* 单元格 PLUS 按钮（0facf05，403442a 拆分时丢失）：31×26 贴单元格左缘、垂直居中。 */
+.lark-doc .lark-doc-cell-plus { position: fixed; z-index: 35; height: 26px; line-height: 26px; }
+.lark-doc .lark-doc-cell-plus-btn { display: grid; place-items: center; width: 31px; height: 26px; min-height: 0; padding: 0; border: 1px solid var(--ld-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-secondary); cursor: pointer; }
+.lark-doc .lark-doc-cell-plus-btn:hover { color: var(--ld-text-accent); }
 .lark-doc .lark-doc-table-boundary-line { position: absolute; z-index: -1; background: var(--ld-accent-control); opacity: .42; pointer-events: none; }
 .lark-doc .lark-doc-table-boundary-line.is-column-line { top: 0; width: 2px; transform: translateX(-50%); }
 .lark-doc .lark-doc-table-boundary-line.is-row-line { left: 0; height: 2px; transform: translateY(-50%); }
@@ -132,14 +136,11 @@
   .lark-doc .lark-doc-bubble { box-sizing: border-box; max-width: calc(100dvw - 16px); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
   .lark-doc .lark-doc-bubble > * { flex-shrink: 0; }
   .lark-doc .lark-doc-bubble::-webkit-scrollbar { display: none; }
-  .lark-doc .lark-doc-link-dialog { max-height: calc(100dvh - 16px); overflow-y: auto; position: fixed; z-index: 600; display: grid; box-sizing: border-box; grid-template-columns: 316px 80px; grid-template-rows: 32px 32px; gap: 12px 24px; width: 470px; max-width: calc(100vw - 16px); padding: 24px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-colorpanel); font-size: 14px; line-height: 22px; color: var(--ld-text); }
-  .lark-doc .lark-doc-link-dialog > label { display: grid; gap: 4px; font-size: 14px; line-height: 20px; }
-  .lark-doc .lark-doc-link-dialog input { min-width: 0; font: inherit; box-sizing: border-box; width: 280px; height: 32px; padding: 6px 12px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); color: var(--ld-text); font-size: 14px; line-height: 18px; outline: none; }
   .lark-doc .lark-doc-link-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
   .lark-doc .lark-doc-link-dialog-actions button { min-height: 32px; padding: 0 10px; }
   .lark-doc .lark-doc-link-dialog-apply { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-inverse); }
 }
-.lark-doc .lark-doc-command-submenu-arrow { display: inline-grid; width: 28px; height: 28px; min-width: 28px; flex: 0 0 28px; margin-left: auto; place-items: center; border-radius: 5px; color: var(--lark-doc-muted); line-height: 1; cursor: pointer; }.lark-doc .lark-doc-command-submenu-arrow:hover,
+.lark-doc .lark-doc-command-submenu-arrow { display: inline-grid; width: 28px; height: 28px; min-width: 28px; flex: 0 0 28px; margin-left: auto; place-items: center; border-radius: 5px; color: var(--lark-doc-muted); font-size: 18px; line-height: 1; cursor: pointer; }.lark-doc .lark-doc-command-submenu-arrow:hover,
 .lark-doc .lark-doc-command-submenu-arrow.is-open { background: var(--ld-bg-accent); color: var(--ld-text-accent); }.lark-doc .lark-doc-command-submenu-arrow:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 2px; border-radius: 3px; }
 .lark-doc .lark-doc-command-submenu { position: fixed; z-index: 82; display: grid; width: 190px; gap: 2px; padding: 7px; border: 1px solid var(--ld-border-chrome); border-radius: 9px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); }
 .lark-doc .lark-doc-command-submenu strong { padding: 4px 7px; color: var(--lark-doc-muted); font-size: 12px; }
@@ -149,6 +150,45 @@
 .lark-doc .lark-doc-command-submenu.is-table { width: 196px; padding: 10px; }.lark-doc .lark-doc-command-submenu .lark-doc-columns-choice { position: absolute; z-index: 1; top: 0; bottom: 0; width: 25%; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: transparent; font-size: 0; }.lark-doc .lark-doc-command-submenu .lark-doc-columns-choice:hover,
 .lark-doc .lark-doc-command-submenu .lark-doc-columns-choice.is-preview,
 .lark-doc .lark-doc-command-submenu .lark-doc-columns-choice:focus-visible { border: 0; background: transparent; outline: 0; color: transparent; }
+
+/* 斜杠/plus 菜单飞书实测覆盖段（0facf05 930-949，403442a 拆分时丢失） */
+.lark-doc .lark-doc-command-menu.is-slash { box-sizing: border-box; width: min(232px, calc(100vw - 16px)); padding: 8px; border-radius: 6px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-hint { display: none; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-section { gap: 0; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-section small { padding: 8px 4px 4px; font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-section button { box-sizing: border-box; display: flex; height: 32px; min-height: 32px; padding: 0 4px; gap: 14px; border-radius: 4px; font-size: 14px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-icon { width: 18px; height: 18px; flex-basis: 18px; font-size: 18px; }
+.lark-doc .lark-doc-command-menu.is-slash .lark-doc-command-submenu-arrow { width: 16px; min-width: 16px; height: 24px; flex-basis: 16px; }
+.lark-doc .lark-doc-command-menu.is-plus { width: min(232px, calc(100vw - 16px)); max-height: min(643px, calc(100vh - 16px)); padding: 8px; border-radius: 6px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-hint { display: none; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section { gap: 0; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section small { padding: 8px 4px 4px; font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button { height: 32px; min-height: 32px; padding: 0 4px; gap: 14px; border-radius: 4px; font-size: 14px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-icon { width: 18px; height: 18px; flex-basis: 18px; font-size: 16px; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] { gap: 0; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] button { display: grid; height: 36px; min-height: 36px; padding: 0; gap: 0; place-items: center; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] .lark-doc-command-icon { color: var(--lark-doc-ink); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] .lark-doc-command-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active { background: transparent; color: inherit; }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active:focus-visible,
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-submenu-arrow { width: 16px; min-width: 16px; height: 24px; flex-basis: 16px; }
+/* 模板/表格子菜单飞书实测覆盖段（0facf05 893-896、950-958，403442a 拆分时丢失） */
+.lark-doc .lark-doc-command-submenu.is-templates { gap: 0; padding: 5px; box-shadow: var(--ld-shadow-chrome); }
+.lark-doc .lark-doc-command-submenu.is-templates button { box-sizing: border-box; justify-content: center; gap: 6px; min-height: 30px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--lark-doc-ink); font-size: 13px; line-height: 18px; cursor: pointer; transition: background-color .12s linear, color .12s linear; }
+/* 悬停/聚焦与「字体」下拉同款：浅绿底 + 深绿字（与 `.lark-doc-template-list` 同口径）。
+   注意别退回 `--ld-bg-hover-select`：飞书主题预设把它压成 5% 灰，悬停几乎看不出反馈。 */
+.lark-doc .lark-doc-command-submenu.is-templates button:hover:not(:disabled), .lark-doc .lark-doc-command-submenu.is-templates button:focus-visible:not(:disabled) { background: var(--ld-bg-accent); color: var(--ld-text-accent); outline: 0; }
+.lark-doc .lark-doc-command-submenu.is-templates .lark-doc-command-label { display: block; }
+.lark-doc .lark-doc-command-submenu.is-templates button:disabled { background: transparent; color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-command-submenu.is-table { display: block; width: 314px; height: 348px; padding: 0; border-radius: 6px; }
+.lark-doc .lark-doc-command-submenu.is-table .lark-doc-submenu-picker-head { display: flex; justify-content: space-between; height: 20px; margin: 12px 0; padding: 0 12px; font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-command-submenu.is-table .lark-doc-submenu-picker-head output { color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(9, 24px); gap: 6px; width: 288px; height: 290px; margin: 0 12px 12px; padding: 12px; border: 1px solid var(--ld-border-control); border-radius: 2px; }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid button { width: 100%; height: 24px; min-height: 0; padding: 0; border: 1px solid var(--ld-border-chrome); border-radius: 0; background: var(--ld-bg-hover); }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid button.is-preview { border-color: var(--ld-text-accent); background: var(--ld-bg-accent); }
+.lark-doc .lark-doc-command-submenu .lark-doc-table-submenu-grid button:focus-visible { outline: 2px solid var(--ld-focus-ring); outline-offset: 1px; }
 .lark-doc .lark-doc-color-palette { position: fixed; z-index: 95; display: grid; width: 232px; gap: 8px; padding: 10px; border: 1px solid var(--ld-border-chrome); border-radius: 9px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-colorpanel); }
 .lark-doc .lark-doc-color-palette > strong { font-size: 12px; }
 .lark-doc .lark-doc-color-palette-section { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
@@ -816,19 +856,23 @@
   .lark-doc .lark-doc-link-hover-url { flex: 1; }
 }
 
-.lark-doc .lark-doc-link-tools { position: fixed; z-index: 75; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: max-content; max-width: calc(100dvw - 16px); padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-bubble); box-shadow: var(--ld-shadow-bubble); font-size: 14px; line-height: 20px; }
-.lark-doc .lark-doc-link-tools [hidden] { display: none !important; }
-.lark-doc .lark-doc-link-tools-url { flex: 0 1 240px; min-width: 0; max-width: 240px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ld-text-accent-hover); }
-.lark-doc .lark-doc-link-tools > button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 4px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; }
-.lark-doc .lark-doc-link-tools > .lark-doc-link-view-trigger { padding: 0 8px; }
-.lark-doc .lark-doc-link-tools-divider { flex: 0 0 1px; height: 20px; margin: 0 2px; border-left: 1px solid var(--ld-border-chrome); }
-.lark-doc .lark-doc-link-tools .lark-doc-link-view-menu { position: fixed; z-index: 76; min-width: 150px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-bubble); box-shadow: var(--ld-shadow-menu); }
-.lark-doc .lark-doc-link-tools .lark-doc-link-view-menu > button { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; white-space: nowrap; }
-.lark-doc .lark-doc-link-tools button:hover,
-.lark-doc .lark-doc-link-tools button:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); }
-.lark-doc .lark-doc-link-tools .lark-doc-link-view-check { margin-left: auto; visibility: hidden; }
-.lark-doc .lark-doc-link-tools .lark-doc-link-view-menu [aria-checked="true"] .lark-doc-link-view-check { visibility: visible; }
 @media (max-width: 760px) {
+  .lark-doc .lark-doc-link-tools { position: fixed; z-index: 75; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: max-content; max-width: calc(100dvw - 16px); padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-bubble); box-shadow: var(--ld-shadow-bubble); font-size: 14px; line-height: 20px; }
+  .lark-doc .lark-doc-link-tools [hidden] { display: none !important; }
+  .lark-doc .lark-doc-link-tools-url { flex: 0 1 240px; min-width: 0; max-width: 240px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ld-text-accent-hover); }
+  .lark-doc .lark-doc-link-tools > button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 4px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; }
+  /* 预览态总宽对齐源端 321×42：预览比卡片多「刷新预览 / 打开原网页 / 分隔线」三项，
+   * 在 4px 间隙下多出 8px。预览态列间隙收到 3px（8 个间隙各紧 1px），卡片态仍是 4px
+   * 的 248×42，两态高度都由 32px 按钮 + 4px 内边距构成，保持 42 不变。 */
+  .lark-doc .lark-doc-link-tools.is-preview { column-gap: 3px; }
+  .lark-doc .lark-doc-link-tools > .lark-doc-link-view-trigger { padding: 0 8px; }
+  .lark-doc .lark-doc-link-tools-divider { flex: 0 0 1px; height: 20px; margin: 0 2px; border-left: 1px solid var(--ld-border-chrome); }
+  .lark-doc .lark-doc-link-tools .lark-doc-link-view-menu { position: fixed; z-index: 76; min-width: 150px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-bubble); box-shadow: var(--ld-shadow-menu); }
+  .lark-doc .lark-doc-link-tools .lark-doc-link-view-menu > button { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; white-space: nowrap; }
+  .lark-doc .lark-doc-link-tools button:hover,
+  .lark-doc .lark-doc-link-tools button:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); }
+  .lark-doc .lark-doc-link-tools .lark-doc-link-view-check { margin-left: auto; visibility: hidden; }
+  .lark-doc .lark-doc-link-tools .lark-doc-link-view-menu [aria-checked="true"] .lark-doc-link-view-check { visibility: visible; }
   .lark-doc .lark-doc-link-tools-url { flex: 1 0 100%; box-sizing: border-box; width: 100%; max-width: none; padding: 4px 6px; }
 }
 @media (max-width: 760px) and (pointer: coarse) {
@@ -2061,16 +2105,66 @@
 .lark-doc .lark-doc-template-save-dialog label { display: grid; gap: 8px; }
 .lark-doc .lark-doc-template-save-dialog input { box-sizing: border-box; height: 36px; padding: 6px 10px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); }
 .lark-doc .lark-doc-template-save-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
-.lark-doc .lark-doc-image-toolbar button:hover:not(:disabled),
-.lark-doc .lark-doc-image-toolbar button:focus-visible,
-.lark-doc .lark-doc-image-toolbar button[aria-pressed="true"] { background: var(--ld-bg-menu-item-active); color: var(--ld-text-menu-active); outline: 0; }
-.lark-doc.lark-doc-has-image-ai .lark-doc-body { box-sizing: border-box; padding-right: 400px; }
 .lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
-.lark-doc .lark-doc-image-ai-reference > span { padding-left: 8px; border-left: 3px solid var(--ld-border-chrome); }
+@media (min-width: 761px) {
+  .lark-doc .lark-doc-link-tools { position: fixed; z-index: 600; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 440px; height: 42px; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-bubble); color: var(--ld-text); font-size: 14px; }
+  .lark-doc .lark-doc-link-tools-url { flex: 0 1 184px; width: 184px; height: 24px; margin-right: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 24px; color: var(--ld-text); text-decoration: none; }
+  .lark-doc .lark-doc-link-tools button { display: flex; box-sizing: border-box; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); cursor: pointer; font: inherit; }
+  .lark-doc .lark-doc-link-tools button:hover { background: var(--ld-bg-active); }
+  .lark-doc .lark-doc-link-tools [hidden] { display: none; }
+  .lark-doc .lark-doc-link-tools .lark-doc-link-view-trigger { width: 108px; gap: 0; justify-content: flex-start; }
+  .lark-doc .lark-doc-link-view-trigger > .lark-doc-icon { margin: 0 3px; }
+  .lark-doc .lark-doc-link-view-trigger > span:nth-child(2) { box-sizing: border-box; width: 64px; padding-left: 4px; white-space: nowrap; }
+  .lark-doc .lark-doc-link-view-caret { display: grid; place-items: center; width: 20px; color: var(--ld-text-submenu-arrow); }
+  .lark-doc .lark-doc-link-tools-divider { width: 1px; height: 20px; flex: 0 0 1px; background: var(--ld-border-cell); }
+  .lark-doc .lark-doc-link-view-menu { position: fixed; z-index: 999; box-sizing: border-box; width: 232px; padding: 8px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-bubble); }
+  .lark-doc .lark-doc-link-view-menu button { width: 214px; height: 32px; padding: 4px; gap: 16px; justify-content: flex-start; text-align: left; }
+  .lark-doc .lark-doc-link-menu-icon { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; }
+  .lark-doc .lark-doc-link-view-check { margin-left: auto; visibility: hidden; color: var(--ld-text-accent); }
+  .lark-doc .lark-doc-link-view-menu [aria-checked="true"] .lark-doc-link-view-check { visibility: visible; }
+}
+.lark-doc .lark-doc-link-dialog { position: fixed; z-index: 600; display: grid; box-sizing: border-box; grid-template-columns: 316px 80px; grid-template-rows: 32px 32px; gap: 12px 24px; width: 470px; max-width: calc(100vw - 16px); overflow: auto; padding: 24px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-colorpanel); font-size: 14px; line-height: 22px; color: var(--ld-text); }
 .lark-doc .lark-doc-link-dialog label { grid-column: 1; display: grid; grid-template-columns: 28px 280px; gap: 8px; align-items: center; margin: 0; }
+.lark-doc .lark-doc-link-dialog input { box-sizing: border-box; width: 280px; height: 32px; padding: 6px 12px; border: 1px solid var(--ld-border-cell); border-radius: 4px; background: var(--ld-bg-surface); color: var(--ld-text); font-size: 14px; line-height: 18px; outline: none; }
+.lark-doc .lark-doc-link-dialog input:focus { border-color: var(--ld-brand-chrome); }
 .lark-doc .lark-doc-link-dialog button { grid-column: 2; grid-row: 2; width: 80px; height: 32px; padding: 0 12px; border: 0; border-radius: 4px; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 14px; line-height: 32px; cursor: pointer; }
+.lark-doc .lark-doc-link-dialog button:disabled { background: var(--ld-text-disabled); cursor: default; }
+.lark-doc .lark-doc-link-dialog.is-only-link { display: grid; width: 434px; grid-template-columns: minmax(0, 1fr) 80px; grid-template-rows: 32px; }
+.lark-doc .lark-doc-link-dialog.is-only-link label { display: block; }
+.lark-doc .lark-doc-link-dialog.is-only-link input { display: block; width: 100%; }
+.lark-doc .lark-doc-link-dialog.is-only-link button { grid-row: 1; }
+.lark-doc .lark-doc-link-embed { margin: 8px 0; border-radius: 6px; }
+.lark-doc .lark-doc-link-embed.is-selected { outline: 2px solid var(--ld-brand-chrome); }
+.lark-doc .lark-doc-link-embed a { color: var(--ld-text-link); text-decoration: none; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-link-embed-row { display: block; padding: 8px 12px; }
+.lark-doc .lark-doc-link-tools.is-preview,
+.lark-doc .lark-doc-link-tools.is-card { width: auto; }
+.lark-doc .lark-doc-link-tools-divider.is-full { height: 40px; margin: -8px 0 -8px 8px; }
+.lark-doc .lark-doc-link-view-trigger[aria-expanded="true"] .lark-doc-link-view-caret { transform: rotate(180deg); }
+.lark-doc .lark-doc-link-embed[data-view="preview"] { display: flex; justify-content: center; }
+.lark-doc .lark-doc-link-embed[data-view="preview"].is-selected { outline: none; }
+.lark-doc .lark-doc-link-preview-body:hover,
+.lark-doc .lark-doc-link-preview-body.is-resizing { border-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-link-preview-body { position: relative; flex: none; overflow: visible; box-sizing: content-box; border: 1px solid var(--ld-border-cell); border-radius: 8px; box-shadow: none; }
+.lark-doc .lark-doc-link-preview-resize { position: absolute; z-index: 3; display: none; width: 20px; height: 20px; touch-action: none; }
+.lark-doc .lark-doc-link-preview-resize::after { content: ''; position: absolute; top: 7px; left: 7px; width: 6px; height: 6px; box-sizing: border-box; border: 1px solid var(--ld-brand-chrome); border-radius: 50%; background: var(--ld-bg-content); }
+.lark-doc .lark-doc-link-preview-body:hover .lark-doc-link-preview-resize,
+.lark-doc .lark-doc-link-preview-body:focus-within .lark-doc-link-preview-resize,
+.lark-doc .lark-doc-link-preview-body.is-resizing .lark-doc-link-preview-resize { display: block; }
+.lark-doc .is-readonly .lark-doc-link-preview-resize,
+.lark-doc .ProseMirror[contenteditable="false"] .lark-doc-link-preview-resize,
+.lark-doc [data-embed-state="blocked"] .lark-doc-link-preview-resize { display: none !important; }
+.lark-doc .lark-doc-link-preview-body.is-resizing iframe { pointer-events: none; }
+.lark-doc .lark-doc-link-preview-resize.is-w { left: -10px; top: calc(50% - 10px); cursor: ew-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-e { right: -10px; top: calc(50% - 10px); cursor: ew-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-n { top: -10px; left: calc(50% - 10px); cursor: ns-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-s { bottom: -10px; left: calc(50% - 10px); cursor: ns-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-nw { left: -10px; top: -10px; cursor: nwse-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-ne { right: -10px; top: -10px; cursor: nesw-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-sw { left: -10px; bottom: -10px; cursor: nesw-resize; }
+.lark-doc .lark-doc-link-preview-resize.is-se { right: -10px; bottom: -10px; cursor: nwse-resize; }
 @media (max-width: 760px) {
-  .lark-doc .lark-doc-link-dialog { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; column-gap: 0; }
+  .lark-doc .lark-doc-link-dialog { max-height: calc(100dvh - 16px); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; column-gap: 0; }
   .lark-doc .lark-doc-link-dialog > label { min-width: 0; grid-template-columns: 28px minmax(0, 1fr); }
   .lark-doc .lark-doc-link-dialog input { min-width: 0; width: 100%; }
   .lark-doc .lark-doc-link-dialog-actions { min-width: 0; grid-column: 1; grid-row: auto; }

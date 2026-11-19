@@ -21,7 +21,7 @@ async function main() {
     console.log(`${passed ? 'PASS' : 'FAIL'} ${name}${detail === undefined ? '' : ` ${JSON.stringify(detail)}`}`)
     assert(passed, name)
   }
-  const panel = () => page.locator('[aria-label="AI 模拟预览"]')
+  const panel = () => page.getByRole('region', { name: 'AI 助手', exact: true })
   const result = () => panel().locator('.lark-doc-ai-result').first().innerText()
 
   try {

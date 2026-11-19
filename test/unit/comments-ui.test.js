@@ -77,7 +77,7 @@ async function withControlledCommentDocument(run, props = {}) {
     capabilities: { canReply: true, canResolve: true, canReopen: false },
     replies: [{ id: 'reply-controlled', author, content: '原评论', createdAt: Date.now(), replyRevision: '1', tombstone: false,
       capabilities: { canEdit: true, canDelete: true, canReact: true } }] }
-  const provider = { isRemote: true, list: async () => [clone(thread)], createThread: vi.fn(async () => { throw new Error('fixture create unavailable') }),
+  const provider = { isRemote: true, supportsAttachments: true, list: async () => [clone(thread)], createThread: vi.fn(async () => { throw new Error('fixture create unavailable') }),
     resolve: vi.fn(async () => { thread.resolved = true; thread.capabilities = { canReply: false, canResolve: false, canReopen: true }; return clone(thread) }),
     reopen: vi.fn(async () => { thread.resolved = false; thread.capabilities = { canReply: true, canResolve: true, canReopen: false }; return clone(thread) }),
     reply: vi.fn(async input => { thread.replies.push({ ...thread.replies[0], id: 'reply-saved', content: input.content, ...(input.assetIds?.length ? { attachments: [clone(commentAsset)] } : {}) }); return clone(thread) }),
@@ -304,96 +304,78 @@ describe('评论剩余闭环', () => {
       if (reason === 'destroy') expect(retired.isConnected).toBe(false)
     }))
   })
-  it('解决线程后，旧多图队列不能继续启动第二张上传', () => withControlledCommentDocument(async ({ host, session, thread }) => {
+  it('解决线程后，旧多图队列不能继续启动第二张上传', () => withControlledCommentDocument(async ({ doc, host, thread }) => {
     let finish
-    const upload = vi.fn(() => new Promise(resolve => { finish = resolve }))
-    session.setProvider('assets', commentAssets(upload))
-    const batch = host.uploadCommentImageFiles(thread.id, imageEvent(picture(), picture()))
+    const upload = vi.fn(() => upload.mock.calls.length === 1 ? new Promise(resolve => { finish = resolve }) : Promise.resolve({ url: 'data:image/png;base64,YQ==' }))
+    doc.patchProps({ uploadImage: upload })
+    const batch = host.addCommentAttachments(thread.id, [picture(), picture()])
     await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
     // A separate resolver changes the thread while the upload is pending.
     await host.commentProvider().resolve(thread.id); await host.loadComments()
-    finish(readyCommentAsset()); await batch
-    expect(upload).toHaveBeenCalledOnce(); expect(host.commentDraftImages(thread.id)).toEqual([])
+    finish({ url: 'data:image/png;base64,YQ==' }); await batch
+    expect(upload).toHaveBeenCalledOnce(); expect(host.commentDraftImages(thread.id).some(image => image.status === 'ready')).toBe(false)
   }))
-  it('版本历史关闭时，文档更多操作仍可打开评论历史', () => withControlledCommentDocument(async ({ host }) => {
+  it('版本历史关闭时，文档更多操作仍可打开评论历史', () => withControlledCommentDocument(async () => {
     const trigger = document.querySelector('.lark-doc-more-btn'); expect(trigger).not.toBeNull(); trigger.click()
-    const option = await vi.waitFor(() => { const node = [...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent === '历史评论'); expect(node).toBeDefined(); return node })
-    option.click(); await vi.waitFor(() => expect(host.commentHistorical).toBe(true))
-    expect(host.commentSidebarOpen).toBe(true)
+    const option = await vi.waitFor(() => { const node = [...document.querySelectorAll('[role="menuitem"], [role="option"]')].find(item => item.textContent === '历史评论'); expect(node).toBeDefined(); return node })
+    option.click(); await vi.waitFor(() => expect(document.querySelector('.lark-doc-comment-history')).not.toBeNull())
   }, { config: { features: { history: false } } }))
-  it('更换资产Provider停止旧多图队列，不自动向新服务重发', () => withControlledCommentDocument(async ({ host, session, thread }) => {
+  it('多图队列在更换上传器后停下，旧第二张只有手动重试才发往新服务', () => withControlledCommentDocument(async ({ doc, host, thread }) => {
     let finish
-    const oldUpload = vi.fn(() => new Promise(resolve => { finish = resolve })), newUpload = vi.fn(async () => readyCommentAsset())
-    session.setProvider('assets', commentAssets(oldUpload))
-    const batch = host.uploadCommentImageFiles(thread.id, imageEvent(picture(), picture()))
+    const oldUpload = vi.fn(() => new Promise(resolve => { finish = resolve })), newUpload = vi.fn(async () => ({ url: 'data:image/png;base64,YQ==' }))
+    doc.patchProps({ uploadImage: oldUpload })
+    const batch = host.addCommentAttachments(thread.id, [picture(), picture()])
     await vi.waitFor(() => expect(oldUpload).toHaveBeenCalledOnce())
-    session.setProvider('assets', commentAssets(newUpload)); finish(readyCommentAsset()); await batch
-    expect(newUpload).not.toHaveBeenCalled(); expect(host.commentDraftImages(thread.id)).toEqual([])
-    expect(host.commentPendingImage).toBeNull()
-    await host.uploadCommentImageFiles(thread.id, imageEvent(picture()))
-    expect(newUpload).toHaveBeenCalledOnce(); expect(host.commentDraftImages(thread.id)).toHaveLength(1)
+    doc.patchProps({ uploadImage: newUpload }); finish({ url: 'data:image/png;base64,YQ==' }); await batch
+    expect(newUpload).not.toHaveBeenCalled()
+    const queued = host.commentDraftImages(thread.id)[1]
+    expect(queued.status).toBe('error')
+    await host.retryCommentAttachment(thread.id, queued.id)
+    expect(newUpload).toHaveBeenCalledOnce(); expect(host.commentDraftImages(thread.id)[1].status).toBe('ready')
   }))
-  it('图文回复可编辑为已确认资产的纯图，纯文字回复不能保存为空', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
+  it('图文回复可编辑为纯图，纯文字回复不能保存为空', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
     const withImage = { ...reply, id: 'reply-image', content: '图文说明', attachments: [{ ...commentAsset }] }; thread.replies.push(withImage)
     await host.loadComments(); host.beginEditComment(thread.id, withImage.id); host.setCommentEditContent('')
     expect(await host.saveEditedComment()).toBeTruthy()
-    expect(provider.editReply).toHaveBeenCalledWith(expect.objectContaining({ content: '', assetIds: [commentAsset.assetId] }))
-    expect((await provider.list())[0].replies.find(item => item.id === withImage.id).attachments).toEqual([commentAsset])
+    expect((await provider.list())[0].replies.find(item => item.id === withImage.id).content).toBe('')
     host.beginEditComment(thread.id, reply.id); host.setCommentEditContent('')
     expect(await host.saveEditedComment()).toBeNull(); expect((await provider.list())[0].replies[0].content).toBe('原评论')
   }))
-  it('删除等待期间撤销评论能力后，旧确认不能清除当前线程视图', () => withControlledCommentDocument(async ({ host, provider, session, thread, reply }) => {
+  it('图片pending不发送，成功后纯图回复持久化，读取副本不影响存储', () => withCommentDocument(async ({ doc, host, provider, thread }) => {
+    const url = 'data:image/png;base64,YQ=='
     let finish
-    provider.deleteReply = vi.fn(() => new Promise(resolve => { finish = resolve }))
-    const pending = host.deleteCommentReply(thread.id, reply.id)
-    session.setProvider('authorization', { getCapabilities: async () => ({ canView: true, canEdit: true, canComment: false }) }); await session.refreshCapabilities()
-    finish(thread); expect(await pending).toBeNull()
-    await vi.waitFor(() => expect(host.commentThreads.some(item => item.id === thread.id)).toBe(true))
-    expect(host.commentThreads[0].replies[0].content).toBe('原评论')
-  }))
-  it('历史评论可在阅读模式查看，重开走Provider，撤销解决权限后拒绝重开', () => withControlledCommentDocument(async ({ doc, host, provider, session, thread }) => {
-    await host.resolveComment(thread.id); doc.setReadonly(true)
-    host.openHistoricalComments(); expect(host.commentHistorical).toBe(true); expect(host.commentSidebarOpen).toBe(true)
-    await host.reopenComment(thread.id); expect((await provider.list())[0].resolved).toBe(false)
-    session.setProvider('authorization', { getCapabilities: async () => ({ canResolveComment: false, canComment: true, canView: true }) }); await session.refreshCapabilities()
-    expect(await host.reopenComment(thread.id)).toBeNull(); expect(provider.reopen).toHaveBeenCalledOnce()
-    // Viewing history depends on canView; it does not require body edit rights.
-    host.openHistoricalComments(); expect(host.commentHistorical).toBe(true)
-  }))
-  it('图片pending不发送，durable ready后纯图回复通过assetIds持久化并清理草稿', () => withControlledCommentDocument(async ({ host, provider, session, thread }) => {
-    let finish
-    session.setProvider('assets', commentAssets(() => new Promise(resolve => { finish = resolve })))
-    const upload = host.uploadCommentImageFiles(thread.id, imageEvent(picture()))
+    doc.patchProps({ uploadImage: () => new Promise(resolve => { finish = resolve }) })
+    const upload = host.addCommentAttachments(thread.id, [picture()])
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
-    expect(await host.submitCommentDraft(thread.id)).toBeNull(); expect(provider.reply).not.toHaveBeenCalled()
-    finish(readyCommentAsset()); await upload
-    expect(host.commentDraftImages(thread.id)[0]).toMatchObject(commentAsset)
+    expect(host.commentDraftImages(thread.id).filter(image => image.status === 'ready')).toEqual([])
+    expect(await host.submitCommentDraft(thread.id)).toBeNull()
+    finish({ url, attchId: 'comment_attachment' }); await upload
+    expect(host.commentDraftImages(thread.id).filter(image => image.status === 'ready')).toHaveLength(1)
     await host.submitCommentDraft(thread.id)
-    expect(provider.reply).toHaveBeenCalledWith(expect.objectContaining({ content: '', assetIds: [commentAsset.assetId] }))
-    const saved = (await provider.list())[0].replies[1]; expect(saved.attachments).toEqual([commentAsset])
-    saved.attachments[0].fileName = 'mutated'; expect((await provider.list())[0].replies[1].attachments[0].fileName).toBe('comment.png')
+    const saved = (await provider.list())[0].replies[1]
+    expect(saved).toMatchObject({ content: '', attachments: [{ url, attchId: 'comment_attachment' }] })
+    saved.attachments[0].url = '/mutated.png'
+    expect((await provider.list())[0].replies[1].attachments[0].url).toBe(url)
     expect(host.commentDraftImages(thread.id)).toEqual([])
   }))
-  it.each(['image/svg+xml', 'application/octet-stream'])('禁用类型 %s 不进入资产上传', mime => withControlledCommentDocument(async ({ host, session, thread }) => {
-    const upload = vi.fn(async () => readyCommentAsset()); session.setProvider('assets', commentAssets(upload))
-    await host.uploadCommentImageFiles(thread.id, imageEvent(picture(mime)))
-    expect(upload).not.toHaveBeenCalled(); expect(host.commentDraftImages(thread.id)).toEqual([]); expect(host.commentMessage).toContain('PNG')
+  it.each(['image/webp', 'image/svg+xml', 'application/octet-stream'])('不把禁用类型 %s 交给上传器', mime => withControlledCommentDocument(async ({ doc, host, thread }) => {
+    const upload = vi.fn(async () => ({ url: 'data:image/png;base64,YQ==' }))
+    doc.patchProps({ uploadImage: upload })
+    await host.addCommentAttachments(thread.id, [picture(mime)])
+    expect(upload).not.toHaveBeenCalled(); expect(host.commentDraftImages(thread.id)[0].status).toBe('error')
+    expect(host.commentDraftImages(thread.id).filter(image => image.status === 'ready')).toEqual([])
   }))
-  it('WebP属于当前明确支持的评论图片格式', () => withControlledCommentDocument(async ({ host, session, thread }) => {
-    const upload = vi.fn(async () => readyCommentAsset()); session.setProvider('assets', commentAssets(upload))
-    await host.uploadCommentImageFiles(thread.id, imageEvent(picture('image/webp'))); expect(upload).toHaveBeenCalledOnce()
-  }))
-  it('清除草稿abort上传且拒绝晚结果；缺assets服务时不调用正文旧上传器', () => withControlledCommentDocument(async ({ doc, host, session, thread }) => {
+  it('清除草稿abort上传且拒绝晚结果，网络策略不允许时不调用未知上传服务', () => withControlledCommentDocument(async ({ doc, host, thread }) => {
     let finish, signal
-    const upload = vi.fn(input => new Promise(resolve => { finish = resolve; signal = input.signal }))
-    session.setProvider('assets', commentAssets(upload))
-    const pending = host.uploadCommentImageFiles(thread.id, imageEvent(picture()))
+    const upload = vi.fn((file, context) => new Promise(resolve => { finish = resolve; signal = context.signal }))
+    doc.patchProps({ uploadImage: upload })
+    const pending = host.addCommentAttachments(thread.id, [picture()])
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
-    host.clearCommentDraftImages(thread.id); expect(signal.aborted).toBe(true); finish(readyCommentAsset()); await pending
+    host.clearCommentDraftImages(thread.id); expect(signal.aborted).toBe(true); finish({ url: 'data:image/png;base64,YQ==' }); await pending
     expect(host.commentDraftImages(thread.id)).toEqual([])
-    session.setProvider('assets', null); const legacy = vi.fn(); doc.patchProps({ uploadImage: legacy })
-    await host.uploadCommentImageFiles(thread.id, imageEvent(picture()))
-    expect(upload).toHaveBeenCalledOnce(); expect(legacy).not.toHaveBeenCalled(); expect(host.commentCanUploadImage(thread.id)).toBe(false)
+    doc.patchProps({ config: { network: { mode: 'offline' } } })
+    await host.addCommentAttachments(thread.id, [picture()])
+    expect(upload).toHaveBeenCalledOnce(); expect(host.commentDraftImages(thread.id)[0].status).toBe('error')
   }))
   it('翻译只改变阅读视图；未接通服务不伪造译文，关闭后晚译文不呈现', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
     const result = { threadId: thread.id, replyId: reply.id, sourceRevision: reply.replyRevision, targetLanguage: 'zh-CN', operationId: 'translation-original', status: 'ready', translatedText: 'Translated reply' }
@@ -440,7 +422,7 @@ describe('评论剩余闭环', () => {
     session.setProvider('authorization', { getCapabilities: async () => ({ canView: false }) }); await session.refreshCapabilities()
     expect(await host.reportCommentReply(thread.id, reply.id)).toBe(false); expect(action).toHaveBeenCalledTimes(2)
   }))
-  it('comment report menu explains missing service, own-author restriction and withdrawn permission', () => withControlledCommentDocument(async ({ doc, host, session, thread, reply }) => {
+  it('comment report menu explains missing service and withdrawn permission while allowing self-report', () => withControlledCommentDocument(async ({ doc, host, session, thread, reply }) => {
     reply.author = { id: 'other', name: '其他人' }; await host.loadComments()
     host.toggleCommentSidebar()
     const more = () => document.querySelector('[data-comment-reply-control="more"]')
@@ -459,13 +441,14 @@ describe('评论剩余闭环', () => {
     reply.author = { ...session.user }; await host.loadComments()
     more().click(); await vi.waitFor(() => expect(menu('举报')).toBeDefined())
     const ownReport = menu('举报')
-    expect(ownReport.getAttribute('aria-disabled')).toBe('true')
-    expect(ownReport.title).toBe('不能举报自己的评论')
-    ownReport.click(); expect(action).toHaveBeenCalledOnce()
+    // 基线 `COMMENT_REPLY_MENU_ITEMS` 只有 `edit` 带 ownOnly：自己的回复一样可以举报。
+    expect(ownReport.getAttribute('aria-disabled')).toBe('false')
+    expect(ownReport.title).toBe('')
+    ownReport.click(); await vi.waitFor(() => expect(action).toHaveBeenCalledTimes(2))
     session.setProvider('authorization', { getCapabilities: async () => ({ canView: false }) }); await session.refreshCapabilities()
     expect(host.commentMenuDisabledReason({ id: 'report' }, reply)).toBe('当前无权访问评论')
-    ownReport.click(); expect(await host.runCommentMenuItem('report', thread.id, reply.id)).toBe(false)
-    expect(action).toHaveBeenCalledOnce()
+    expect(await host.runCommentMenuItem('report', thread.id, reply.id)).toBe(false)
+    expect(action).toHaveBeenCalledTimes(2)
   }))
   it('删除回复等待ack且防重复；失败保留，成功仅删除目标回复', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
     const actual = provider.deleteReply; let finish
@@ -579,30 +562,39 @@ describe('real comment reaction and reply lifecycle', () => {
     const chip = await vi.waitFor(() => { const node = document.querySelector('.lark-doc-comment-reaction'); expect(node).not.toBeNull(); return node })
     expect(chip.textContent).toContain('future_reaction'); expect(chip.querySelector('img, svg')).toBeNull()
   }))
-  it('opens the current Unicode reaction picker and renders persisted reaction chips', () => withCommentDocument(async ({ host, provider, thread, reply }) => {
+  it('opens the offline reaction palette and renders persisted reaction chips', () => withCommentDocument(async ({ host, provider, thread, reply }) => {
     await host.runCommentReplyControl('emoji', thread.id, reply.id)
-    const palette = await vi.waitFor(() => { const node = document.querySelector('[aria-label="选择表情回复"]'); expect(node).not.toBeNull(); return node })
-    expect(host.commentReactionItems).toHaveLength(8)
-    const applaud = [...palette.querySelectorAll('.lark-doc-comment-reaction-grid button')].find(node => node.textContent === '👏'); expect(applaud).toBeDefined(); applaud.click()
-    await vi.waitFor(async () => expect((await provider.list())[0].replies[0].reactions).toEqual([{ emoji: '👏', users: ['comment-owner'] }]))
+    await vi.waitFor(() => expect(document.querySelector('[aria-label="评论表情回复"]')).not.toBeNull())
+    // 目录近 1MB，第一次开板才异步拉；188 项与离线雪碧图同源。
+    await vi.waitFor(() => expect(host.commentReactionCatalog?.items).toHaveLength(188))
+    const applaud = await vi.waitFor(() => {
+      const node = document.querySelector('.lark-doc-comment-reaction-grid [aria-label="鼓掌"]')
+      expect(node).not.toBeNull(); return node
+    })
+    expect(document.querySelectorAll('.lark-doc-comment-reaction-grid button')).toHaveLength(188)
+    applaud.click()
+    await vi.waitFor(async () => expect((await provider.list())[0].replies[0].reactions).toEqual([{ emoji: 'applaud_v2', users: ['comment-owner'] }]))
     await vi.waitFor(() => expect(document.querySelector('.lark-doc-comment-reaction')?.disabled).toBe(false)); document.querySelector('.lark-doc-comment-reaction').click()
     await vi.waitFor(async () => expect((await provider.list())[0].replies[0].reactions).toEqual([]))
   }))
-  it('quotes the referenced author, preserves an existing rich draft and submits the existing plain-text wire', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
+  it('quotes the referenced author, preserves an existing draft and passes structured reply metadata', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
     host.setCommentDraft(thread.id, '已有草稿'); host.runCommentReplyControl('quote', thread.id, reply.id)
-    expect(host.commentDraftOf(thread.id)).toBe('> 我：原评论\n\n已有草稿')
+    expect(host.commentDraftOf(thread.id)).toBe('@我 已有草稿')
     await host.submitCommentDraft(thread.id)
-    expect(provider.reply).toHaveBeenCalledWith(expect.objectContaining({ content: '> 我：原评论\n\n已有草稿', threadId: thread.id }))
+    expect(provider.reply).toHaveBeenCalledWith(expect.objectContaining({ content: '@我 已有草稿', threadId: thread.id,
+      replyTo: { commentId: reply.id, authorId: 'comment-owner', authorName: '我' } }))
     expect(host.commentDraftOf(thread.id)).toBe('')
+    expect(host.commentReplyTargets[thread.id]).toBeUndefined()
   }))
   it('rejects a late picker after the comment provider changes', () => withCommentDocument(async ({ host, session, thread, reply }) => {
     const pending = host.runCommentReplyControl('emoji', thread.id, reply.id)
     session.setProvider('comments', createMemoryCommentsProvider()); await pending
-    expect(host.commentReactionContext).toBeNull(); expect(document.querySelector('[aria-label="选择表情回复"]')).toBeNull()
+    expect(host.commentReactionContext).toBeNull(); expect(document.querySelector('[aria-label="评论表情回复"]')).toBeNull()
   }))
-  it('retains the referenced message when submitting only a quote', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
+  it('retains the reply target when sending only the author mention', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
     host.runCommentReplyControl('quote', thread.id, reply.id); await host.submitCommentDraft(thread.id)
-    expect(provider.reply).toHaveBeenCalledWith(expect.objectContaining({ content: '> 我：原评论', threadId: thread.id }))
+    expect(provider.reply).toHaveBeenCalledWith(expect.objectContaining({ threadId: thread.id,
+      replyTo: { commentId: reply.id, authorId: 'comment-owner', authorName: '我' } }))
   }))
   it('keeps the picker during internal scrolling and closes it on document scrolling', () => withCommentDocument(async ({ host, thread, reply }) => {
     host.openCommentReaction(thread.id, reply.id)

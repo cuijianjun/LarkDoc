@@ -20,15 +20,16 @@ import { ICONS } from './icons'
  * @param {string} className 额外类名（如 `lark-doc-bubble-caret lark-doc-caret`）
  * @returns {HTMLSpanElement}
  */
-export function iconMarkup(name) {
-  return ICONS[name] || ''
+export function iconMarkup(name, icons = ICONS) {
+  if (Object.prototype.hasOwnProperty.call(icons, name)) return icons[name]
+  return Object.prototype.hasOwnProperty.call(ICONS, name) ? ICONS[name] : ''
 }
 
 
-export function iconNode(name, size = 16, className = '') {
+export function iconNode(name, size = 16, className = '', icons = ICONS) {
   const span = document.createElement('span')
   span.className = className ? `${className} lark-doc-icon` : 'lark-doc-icon'
-  const svg = iconMarkup(name)
+  const svg = iconMarkup(name, icons)
   // 未收录的图标只留空 span（与旧组件的空 span 兼容）。
   if (!svg) return span
   span.style.width = `${size}px`
@@ -41,12 +42,13 @@ export function iconNode(name, size = 16, className = '') {
  * 原地换图标：对齐按钮的图形随 `textAlign` 变，必须换 `innerHTML` 而不是
  * 重建节点 —— 重建会把 `flex: 0 0 12px` 的 caret 兄弟节点顺序与焦点一起打乱。
  */
-export function setIcon(node, name, size = 16) {
+export function setIcon(node, name, size = 16, icons = ICONS) {
   if (!node) return
   node.style.width = `${size}px`
   node.style.height = `${size}px`
   // 不能拿 innerHTML 比：序列化会把自闭合的 <path/> 补成 <path></path>，永远不相等。
-  if (node.__icon === name) return
-  node.__icon = name
-  node.innerHTML = ICONS[name] || ''
+  const svg = iconMarkup(name, icons)
+  if (node.__icon === svg) return
+  node.__icon = svg
+  node.innerHTML = svg
 }

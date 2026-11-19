@@ -222,10 +222,10 @@ async function main() {
 
     // ---- A 字行 8 颗 ----
     const letterRows = await page.evaluate(letters)
-    record('字体颜色 A 字行 8 颗、文案 A、aria-label/title 拼 `字体颜色 X`',
+    record('字体颜色 A 字行 8 颗、文案 A、aria-label 拼 `字体颜色 X` 且无原生 title',
       letterRows.length === 8
-      && letterRows.every((item) => item.text === 'A' && item.title && item.label === `字体颜色 ${item.title}`)
-      && letterRows[0].title === '黑色' && letterRows[2].title === '红色',
+      && letterRows.every((item) => item.text === 'A' && item.title === null && /^字体颜色 \S+$/.test(item.label || ''))
+      && letterRows[0].label === '字体颜色 黑色' && letterRows[2].label === '字体颜色 红色',
       `计数=${letterRows.length} 首项=${letterRows[0] && letterRows[0].label}`)
     record('A 字自身 inline color 与该色一致（红色 = rgb(245, 74, 69)）',
       letterRows[2] && letterRows[2].color === 'rgb(245, 74, 69)', letterRows[2] && letterRows[2].color)
@@ -281,9 +281,9 @@ async function main() {
     recent = await page.evaluate(recentSnapshot)
     record('应用后最近节出现且带 text-recent 类（字色态专属）',
       recent.exists === true && recent.textRecentClass === true, `exists=${recent.exists} class=${recent.textRecentClass}`)
-    record('最近项 aria-label/title 为 `最近颜色 #xxxxxx` 且写死该底色',
+    record('最近项 aria-label 为 `最近颜色 #xxxxxx`、无原生 title 且写死该底色',
       recent.exists && recent.items.length >= 1
-      && recent.items[0].label === '最近颜色 #f54a45' && recent.items[0].title === '#f54a45'
+      && recent.items[0].label === '最近颜色 #f54a45' && recent.items[0].title === null
       && recent.items[0].bg === 'rgb(245, 74, 69)',
       recent.items[0] && `${recent.items[0].label} bg=${recent.items[0].bg}`)
 
@@ -410,9 +410,10 @@ async function main() {
     record('高亮块态的最近节**不带** text-recent 类（两态 class 不同）',
       calloutRecent.exists === true && calloutRecent.textRecentClass === false,
       `exists=${calloutRecent.exists} class=${calloutRecent.textRecentClass}`)
-    record('高亮块态最近项记的是刚应用的色（#263b35）',
-      calloutRecent.exists && calloutRecent.items[0] && calloutRecent.items[0].title === '#263b35',
-      calloutRecent.items && calloutRecent.items[0] && calloutRecent.items[0].title)
+    const recentColor = calloutRecent.items?.[0]
+    record('高亮块态最近项记的是刚应用的色（#263b35），只提供读屏标签',
+      calloutRecent.exists && recentColor?.label === '最近颜色 #263b35' && recentColor.title === null,
+      recentColor?.label)
 
     await page.screenshot({ path: path.join(__dirname, '..', '.verify-shots', 'color-palette-01-callout.png') }).catch(() => {})
     record('无页面脚本错误', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '))

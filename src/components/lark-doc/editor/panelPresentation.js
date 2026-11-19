@@ -1,8 +1,9 @@
 /** Private native panel presentation. No model or public command is initialized here. */
 import { commentMentionSegments, commentRichContentSegments } from '../../../core/comments/mentions'
-import { emojiCategories, searchEmoji, findEmojiByGlyph, normalizeEmojiGlyph } from '../../../core/emoji/catalog'
+import { findEmojiByGlyph, normalizeEmojiGlyph } from '../../../core/emoji/catalog'
 import { commentTranslationActions } from './commentTranslation'
-import { uploadCommentImageFiles as uploadImages, queryPendingCommentImage as queryImage } from './commentImages'
+import { createNetworkPolicy } from '../../../core/policy/network'
+import { uploadCommentImageFiles as uploadImages, queryPendingCommentImage as queryImage, addCommentAttachments as addAttachments, retryCommentAttachment as retryAttachment, previewCommentAttachment as previewAttachment, closeCommentAttachmentViewer as closeAttachmentViewer } from './commentImages'
 
 const reactionIsMine = (reaction, author) => typeof reaction?.reactedByMe === 'boolean' ? reaction.reactedByMe : !!reaction?.users?.includes(author?.id)
 
@@ -60,25 +61,81 @@ const COMMENT_CONTROL_LABELS = Object.freeze({
 
 const COMMENT_REPLY_CONTROL_LABELS = Object.freeze({ emoji: '添加表情回复', quote: '引用回复', more: '更多菜单' })
 
+/** 单条回复的渲染数据：线程卡与历史弹层共用同一份字段。
+ * 纯投影：`buildCommentState` 只带一个纯 `this` 对象调进来（见 passive-panels-lazy
+ * 与 overlays-native 的契约），所以不能挂在展示器 `methods` 桶里靠兄弟方法取数据。 */
+function commentReplyState(item, reply) {
+        const menus = this.commentMenuItems || []
+        const menuScope = this._mobileEditorMedia?.matches ? mobileCommentMenuScope(this, item.id, reply.id) : null
+        return {
+          mobileMenu: !!this._mobileEditorMedia?.matches,
+          menuScope,
+          quickReactions: menuScope ? ['\u{1F44D}', '\u2764\uFE0F', '\u{1F604}', '\u{1F44F}', '\u{1F389}', '\u{1F440}'].map(findEmojiByGlyph).filter(Boolean).map(emoji => ({
+            emoji: emoji.glyph, label: emoji.label,
+            active: reactionIsMine(reply.reactions?.find(reaction => normalizeEmojiGlyph(reaction.emoji) === normalizeEmojiGlyph(emoji.glyph)), this.commentAuthor),
+          })) : [],
+          id: reply.id,
+          tombstone: reply.tombstone === true,
+          canReact: this.commentAllowed('react', item.id, reply.id),
+          reactionDisabledReason: this.commentAllowed('react', item.id, reply.id) ? '' : '当前无表情回复权限或评论服务不可用',
+          canReply: this.commentAllowed('reply', item.id),
+          name: this.commentAuthorName(reply.author),
+          time: this.commentTimeAt(reply.createdAt),
+          body: reply.content,
+          // 与基线一致：译文只替换展示，原文仍留在 provider 记录里；来源一改即回落。
+          translation: this.commentTranslations?.[`${item.id}:${reply.id}`] || null,
+          richSegments: !reply.tombstone && reply.richContent ? commentRichContentSegments(reply.richContent) : null,
+          segments: reply.tombstone ? [{ text: '评论已删除' }] : commentMentionSegments(reply.content || '', reply.mentions || [], reply.references || []).map(segment => ({
+            ...segment,
+            ...(segment.principalId ? { isSelf: segment.principalId === this.commentAuthor?.id } : {}),
+          })),
+          edited: reply.editedAt != null,
+          reactions: reply.tombstone ? [] : (reply.reactions || []).map(reaction => ({
+            ...reaction,
+            count: reaction.count ?? (Array.isArray(reaction.users) ? reaction.users.length : 0),
+            reactedByMe: typeof reaction.reactedByMe === 'boolean' ? reaction.reactedByMe : !!reaction.users?.includes(this.commentAuthor?.id),
+            label: this.commentReactionLabel?.(reaction.emoji) || reaction.emoji,
+            canReact: this.commentAllowed('react', item.id, reply.id),
+            people: Array.isArray(reaction.users) ? reaction.users.map(id => id === this.commentAuthor?.id ? this.commentAuthorName(this.commentAuthor) : id === reply.author?.id ? this.commentAuthorName(reply.author) : id).join('\u3001') : '',
+          })),
+          editing: !!this.commentEditingReply && this.commentEditingReply.threadId === item.id && this.commentEditingReply.replyId === reply.id,
+          // 与基线一致：已存附件原样透传给线程卡，`url` 由 provider 直接给出；失去查看权限时连图都不挂。
+          attachments: reply.tombstone || !this.commentCan('canView') ? [] : (reply.attachments || []).map(asset => ({
+            attchId: asset.attchId,
+            name: asset.name || asset.fileName || '评论图片',
+            url: asset.url || '',
+            blocked: asset.blocked === true,
+            blockedReason: asset.blockedReason || '',
+          })),
+          menuOpen: this.commentMenuThreadId === item.id && this.commentMenuCommentId === reply.id,
+          menus: this._mobileEditorMedia?.matches ? this.mobileCommentMenuItems(item, reply, menuScope) : menus.map((menu) => {
+            // 置灰有两层：作用域能力（`commentMenuDisabled`）与**这一条**回复的具体原因
+            // （`commentMenuDisabledReason`：举报自己、翻译服务未接通…）。只取前者的话，
+            // 后者只能挂在 title 上 —— 菜单看着可点，`runCommentMenuItem` 却在点下去之后
+            // 才拦下来，等于把「为什么不能点」放在动作之后说。
+            const reason = this.commentMenuDisabledReason?.(menu, reply) || ''
+            return {
+              id: menu.id,
+              label: menu.label,
+              submenu: !!menu.submenu,
+              visible: this.commentMenuVisible(menu, reply, item.id),
+              disabled: reason !== '' || this.commentMenuDisabled?.(menu, reply) === true,
+              reason,
+            }
+          }),
+        }
+}
+
 /** Shared model constants and host capability helpers keep their original identity. */
 export function createPanelPresentation(dependencies) {
   const { commentModel, supportsDocumentAction, formatDocumentCommentTime, openCommentDocumentTarget } = dependencies
   const { COMMENT_HEIGHTS, COMMENT_CONTROLS, COMMENT_PRIVATE_SWITCH, COMMENT_REPLY_CONTROLS, COMMENT_REPLY_CONTROL_IDS, COMMENT_REPLY_MENU_ITEMS } = commentModel
 
+  /** 举报是否接通：基线走 `provider.reportReply`，本地宿主也可能只给文档动作。两路任一存在即算可用。 */
+  const reportServiceAvailable = ed => supportsDocumentAction(ed, 'report-comment') || typeof ed.commentProvider?.()?.reportReply === 'function'
+
   const commentPanelComputed = {
   historicalOnly() { return !this.documentOnly && this.ed.commentHistorical === true },
-  commentReactionCategories() { return ['常用', '全部', ...emojiCategories] },
-  commentReactionItems() {
-        const query = this.ed.commentReactionQuery
-        if (!query && this.ed.commentReactionCategory === '常用') return ['👍', '❤️', '😄', '👏', '🎉', '👀', '✅', '🙏'].map(findEmojiByGlyph).filter(Boolean)
-        return searchEmoji(query, ['常用', '全部'].includes(this.ed.commentReactionCategory) ? undefined : this.ed.commentReactionCategory)
-      },
-  commentReactionVisibleItems() {
-        // Native p6b projection evaluates each getter with an `{ ed }` adapter;
-        // read the sibling projection from the editor instead of relying on a
-        // Vue computed context that does not exist in the DOM host.
-        return (this.ed?.commentReactionItems || this.commentReactionItems || []).slice(0, this.ed.commentReactionLimit)
-      },
   commentPanelTitle() {
         return '评论'
       },
@@ -89,7 +146,9 @@ export function createPanelPresentation(dependencies) {
         return this.ed.commentRemote ? '开启后，仅提及的协作者、文档所有者、有文档管理权限的用户可见。' : COMMENT_PRIVATE_SWITCH.hint
       },
   commentControls() {
-        return COMMENT_CONTROLS.filter(item => !this.historicalOnly || item.id === 'copyAnchor').map((item) => ({
+        // 当前飞书头部只有四颗按钮（下一条 / 上一条 / 复制锚点 / 解决）+ 一条分隔；
+        // `more` 仍是模型里的一格，但头部不再渲染，线程级操作留在回复行菜单里。
+        return COMMENT_CONTROLS.filter(item => item.id !== 'more' && (!this.historicalOnly || item.id === 'copyAnchor')).map((item) => ({
           id: item.id,
           label: COMMENT_CONTROL_LABELS[item.id] || item.id,
           split: item.tone === 'split',
@@ -203,6 +262,10 @@ export function createPanelPresentation(dependencies) {
     queryPendingCommentTranslation() { return commentTranslationActions.queryPendingCommentTranslation.call(this.ed) },
     commentTranslationMessage(...args) { return commentTranslationActions.commentTranslationMessage.call(this.ed, ...args) },
     uploadCommentImageFiles(scope, event) { return uploadImages.call(this.ed, scope, event) },
+    addCommentAttachments(scope, files) { return addAttachments.call(this.ed, scope, files) },
+    retryCommentAttachment(scope, id) { return retryAttachment.call(this.ed, scope, id) },
+    previewCommentAttachment(threadId, replyId, index) { return previewAttachment.call(this.ed, threadId, replyId, index) },
+    closeCommentAttachmentViewer() { return closeAttachmentViewer.call(this.ed) },
     queryPendingCommentImage() { return queryImage.call(this.ed) },
   commentReactionLabel(emoji) { return findEmojiByGlyph(emoji)?.label || emoji },
   async setCommentReaction(threadId, replyId, emoji, active) {
@@ -222,7 +285,18 @@ export function createPanelPresentation(dependencies) {
         if (!context) return
         const reply = this.ed.commentThreads.find(item => item.id === context.threadId)?.replies.find(item => item.id === context.replyId)
         const mine = reactionIsMine(reply?.reactions?.find(item => normalizeEmojiGlyph(item.emoji) === normalizeEmojiGlyph(emoji)), this.ed.commentAuthor)
-        return this.ed.setCommentReaction(context.threadId, context.replyId, emoji, !mine)
+        const written = this.ed.setCommentReaction(context.threadId, context.replyId, emoji, !mine)
+        // 选过的表情进「最近使用」，最多留 7 个 —— 只记目录里真有的 id。
+        void Promise.resolve(written).then((result) => {
+          if (!result) return
+          this.ed.commentReactionRecent = [emoji, ...(this.ed.commentReactionRecent || []).filter(id => id !== emoji)].slice(0, 7)
+        }, () => {})
+        return written
+      },
+  quickCommentReaction(threadId, replyId) {
+        const reply = this.ed.commentThreads.find(item => item.id === threadId)?.replies.find(item => item.id === replyId)
+        const mine = reactionIsMine(reply?.reactions?.find(item => normalizeEmojiGlyph(item.emoji) === 'thumbsup_v2'), this.ed.commentAuthor)
+        return this.ed.setCommentReaction(threadId, replyId, 'thumbsup_v2', !mine)
       },
   mobileCommentMenuItems(thread, reply, scope) {
         const actions = thread.documentOnly || thread.scope === 'document' ? [
@@ -340,11 +414,11 @@ export function createPanelPresentation(dependencies) {
         }
         if (id === 'emoji') return this.ed.openCommentReaction(threadId, commentId, event)
         if (id === 'more') return this.ed.toggleCommentReplyMenu(threadId, commentId, event)
-        if (id === 'quote' && this.ed.commentRemote && this.ed.commentAllowed('reply', threadId)) {
+        if (id === 'quote' && this.ed.commentAllowed('reply', threadId)) {
           const reply = this.ed.commentThreads.find(item => item.id === threadId)?.replies.find(item => item.id === commentId)
           if (!reply || reply.tombstone) return
           this.ed.activateComment(threadId)
-          this.ed.setCommentDraft(threadId, `> ${this.ed.commentAuthorName(reply.author)}：${reply.content}\n\n${this.ed.commentDraftOf(threadId)}`)
+          this.ed.quoteCommentReply(threadId, commentId)
           this.ed.$nextTick(() => [...this.ed.$el.querySelectorAll('[data-comment-thread]')].find(node => node.dataset.commentThread === threadId)?.querySelector('[aria-label="回复"]')?.focus())
         }
         return undefined
@@ -369,7 +443,7 @@ export function createPanelPresentation(dependencies) {
         if (id === 'report') return this.ed.reportCommentReply(threadId, commentId)
         if (id === 'delete') return this.ed.deleteCommentReply(threadId, commentId)
         if (id === 'edit') return this.ed.beginEditComment(threadId, commentId)
-        if (id === 'translate' && this.ed.commentRemote) return this.ed.beginCommentTranslation(threadId, commentId)
+        if (id === 'translate') return this.ed.beginCommentTranslation(threadId, commentId)
         return undefined
       },
   commentMenuDisabledReason(item, reply) {
@@ -379,23 +453,27 @@ export function createPanelPresentation(dependencies) {
         if (!reply || reply.tombstone) return '评论已不可用'
         if (item.id === 'translate') {
           const provider = ed.commentProvider()
-          if (provider?.isRemote !== true || typeof provider.requestTranslation !== 'function') return '当前评论服务未接通翻译'
-          if (typeof reply.replyRevision !== 'string') return '评论来源修订不可用'
+          // 一次性译文（translateReply）与远端长任务链路（requestTranslation）都算接通。
+          const direct = typeof provider?.translateReply === 'function'
+          if (!direct && !(provider?.isRemote === true && typeof provider.requestTranslation === 'function')) return '当前评论服务未接通翻译'
           if (ed.commentTranslationBusy) return '翻译请求处理中'
+          if (direct) return ''
           if (ed.commentPendingTranslationOperation) return '请先查询原翻译请求'
+          if (typeof reply.replyRevision !== 'string') return '评论来源修订不可用'
           return ''
         }
         if (!reply.author?.id) return '无法识别评论作者'
-        if (reply.author.id === ed.commentAuthor?.id) return '不能举报自己的评论'
-        return supportsDocumentAction(ed, 'report-comment') ? '' : '举报服务未接入'
+        // 基线的 `COMMENT_REPLY_MENU_ITEMS` 只给 `edit` 挂了 `ownOnly`：自己的评论照样能举报，
+        // 这里只按「举报服务是否接通」给原因，不再拦本人。
+        return reportServiceAvailable(ed) ? '' : '举报服务未接入'
       },
   /** 菜单项是否置灰：只看本作用域是否具备该能力；逐条回复的具体原因走 `commentMenuDisabledReason`。 */
   commentMenuDisabled(item) {
     const ed = this.ed
-    if (item.id === 'report') return !supportsDocumentAction(ed, 'report-comment')
+    if (item.id === 'report') return !reportServiceAvailable(ed)
     if (item.id === 'translate') {
       const provider = ed.commentProvider()
-      return !(provider?.isRemote === true && typeof provider.requestTranslation === 'function')
+      return !(typeof provider?.translateReply === 'function' || (provider?.isRemote === true && typeof provider.requestTranslation === 'function'))
     }
     return false
   },
@@ -403,8 +481,28 @@ export function createPanelPresentation(dependencies) {
         const ed = this.ed, handler = ed.onDocumentAction
         const thread = ed.commentThreads?.find(item => item.id === threadId)
         const reply = thread?.replies.find(item => item.id === replyId)
-        if (!supportsDocumentAction(ed, 'report-comment') || !ed.commentCan('canView') || !reply || thread.tombstone || reply.tombstone ||
-            !reply.author?.id || reply.author.id === ed.commentAuthor.id) return false
+        if (!ed.commentCan('canView') || !reply || thread.tombstone || reply.tombstone || !reply.author?.id) return false
+        // 基线口径：举报先开空白页再换地址，供 `reportReply` 返回到位；没有该能力才退回宿主文档动作。
+        const provider = ed.commentProvider?.()
+        if (typeof provider?.reportReply === 'function') {
+          const tab = (() => { try { return window.open('about:blank', '_blank') } catch { return null } })()
+          try {
+            if (!tab) throw new Error('举报页面未打开，请允许弹出窗口后重试')
+            tab.opener = null
+            const result = await provider.reportReply({ documentId: ed.session?.documentId || '', threadId, commentId: replyId,
+              author: ed.commentAuthor, replyAuthor: { ...reply.author }, content: reply.content })
+            if (!result || typeof result.url !== 'string' || !/^https?:\/\//i.test(result.url)) throw new Error('举报服务未返回有效页面地址')
+            if (!createNetworkPolicy(ed.larkDocConfig?.network).allows(result.url)) throw new Error('举报页面被当前网络策略拦截')
+            if (tab.closed) throw new Error('举报页面已关闭，请重试')
+            tab.location.replace(result.url)
+            return true
+          } catch (error) {
+            if (tab && !tab.closed) tab.close()
+            ed.commentMessage = error?.message || '举报页面未打开，请重试'
+            return false
+          }
+        }
+        if (!supportsDocumentAction(ed, 'report-comment')) return false
         const current = ed.commentOperationCurrent(), auth = ed.session?._authorizationGeneration
         try {
           const result = await handler(Object.freeze({ action: 'report', target: 'comment', documentId: ed.session?.documentId ?? null,
@@ -431,11 +529,15 @@ export function createPanelPresentation(dependencies) {
   copyCommentAnchor(threadId) {
         if (this.ed.commentRemote) return this.ed.copyRemoteCommentLink(threadId)
         const item = (this.ed.commentThreads || []).find((thread) => thread.id === threadId)
-        const text = item ? this.ed.commentQuoteOf(item) : ''
-        if (!text) return false
+        if (!item || typeof window === 'undefined') return false
         const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null
         if (!clipboard || typeof clipboard.writeText !== 'function') return false
-        clipboard.writeText(text).catch(() => {})
+        // 与基线一致：本地也复制带锚点的规范链接，而不是引用原文。
+        const url = new URL(window.location.href)
+        url.searchParams.set('comment_id', item.id)
+        url.searchParams.set('comment_type', '0')
+        url.searchParams.set('comment_anchor', 'true')
+        clipboard.writeText(url.href).catch(() => {})
         return true
       },
   commentTextareaHeight(item) {
@@ -520,10 +622,8 @@ export function createPanelPresentation(dependencies) {
           onRequestDelete: (threadId, replyId, scope) => this.requestMobileCommentDelete(threadId, replyId, scope),
           onDocumentReference: (threadId, replyId, reference, event) => this.openCommentDocumentReference(threadId, replyId, reference, event),
           onReaction: (threadId, replyId, emoji, active) => this.setCommentReaction(threadId, replyId, emoji, active),
+          onQuickReaction: (threadId, replyId) => this.quickCommentReaction(threadId, replyId),
           onChooseReaction: emoji => this.chooseCommentReaction(emoji),
-          onReactionQuery: value => this.setCommentReactionQuery(value),
-          onReactionCategory: value => this.setCommentReactionCategory(value),
-          onMoreReaction: () => this.showMoreCommentReactions(),
           onCloseReaction: restoreFocus => this.closeCommentReaction(restoreFocus),
           onEditDraft: (threadId, replyId, value, event) => {
             const current = this.commentEditingReply
@@ -562,7 +662,7 @@ export function createPanelPresentation(dependencies) {
             }
           },
           onDocumentLike: () => this.toggleDocumentCommentLike(),
-          onBackToTop: () => this.$refs.root?.querySelector('.lark-doc-main')?.scrollTo?.({ top: 0, behavior: 'smooth' }),
+          onBackToTop: () => { const root = this.$refs.root; const win = root?.ownerDocument?.defaultView; (win || root?.querySelector('.lark-doc-main'))?.scrollTo?.({ top: 0, behavior: 'smooth' }) },
           onCloseMobile: () => { this.commentSidebarOpen = false; this.commentMobileOpen = false; this.closeCommentMenus() },
           onToggleHistory: () => this.setCommentHistory(!this.commentHistory),
           onComposerDraft: value => this.setCommentCreateDraft(value),
@@ -585,16 +685,17 @@ export function createPanelPresentation(dependencies) {
             input?.click()
           },
           onUploadImage: (scope, event) => this.uploadCommentImageFiles(scope, event),
-          onRemoveDraftImage: (scope, assetId) => this.removeCommentDraftImage(scope, assetId),
-          onOpenImage: (threadId, replyId, assetId, event) => {
-            const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
-            const reply = thread?.replies.find(item => item.id === replyId && !item.tombstone)
-            const asset = reply?.attachments?.find(item => item.assetId === assetId)
-            if (asset && this.commentCan('canView')) this.openCommentImage(thread, reply, asset, event)
-          },
+          // 与基线一致：草稿用 onRetryAttachment / onRemoveAttachment，已存附件用 onPreviewAttachment。
+          onRetryAttachment: (scope, id) => this.retryCommentAttachment(scope, id),
+          onRemoveAttachment: (scope, id) => this.removeCommentDraftImage(scope, id),
+          onPreviewAttachment: (threadId, replyId, index) => this.previewCommentAttachment(threadId, replyId, index),
           onCloseImage: restoreFocus => this.closeCommentImage(restoreFocus),
           onCancelImageUpload: () => this.cancelCommentImageUpload(),
           onQueryImage: () => this.queryPendingCommentImage(),
+          onCloseHistory: () => this.closeCommentHistory(),
+          onDeleteThread: threadId => this.deleteCommentThread(threadId),
+          // 「查看原文」：撤掉译文展示（远端长任务链路有自己的关闭出口）。
+          onCancelTranslation: (threadId, replyId) => this.cancelCommentTranslation(threadId, replyId),
         },
       }
     },
@@ -703,7 +804,6 @@ export function createPanelPresentation(dependencies) {
         const panels = imageScope ? (this.commentPanels || []).filter(item => item.blockId === imageScope.blockId)
           : [...(this.commentPanels || []), ...(this.commentDocumentThreads || []).map(item => ({ ...item, documentOnly: true }))]
         const controls = this.commentControls || []
-        const menus = this.commentMenuItems || []
         const remote = this.commentRemote === true
         const sidebarOpen = !!imageScope || (remote || this._mobileEditorMedia?.matches ? this.commentSidebarOpen === true : panels.length > 0 || this.commentComposerOpen === true)
         const historical = !imageScope && this.commentHistorical === true
@@ -714,11 +814,8 @@ export function createPanelPresentation(dependencies) {
         const reactionPicker = this.commentReactionContext ? {
           open: true,
           position: this.commentReactionContext.position || null,
-          query: this.commentReactionQuery || '',
-          category: this.commentReactionCategory || '常用',
-          categories: this.commentReactionCategories || [],
-          items: this.commentReactionVisibleItems || [],
-          limit: this.commentReactionLimit || 120,
+          catalog: this.commentReactionCatalog || null,
+          recent: this.commentReactionRecent || [],
         } : { open: false }
         // 进入“全文评论”侧栏后即显示空态输入框；草稿/回复目标只决定
         // 操作区是否出现，不能把输入入口本身隐藏掉。
@@ -727,9 +824,22 @@ export function createPanelPresentation(dependencies) {
         const header = root?.querySelector('.lark-doc-topbar'), headerBounds = header?.getBoundingClientRect()
         const headerStyle = header && win?.getComputedStyle?.(header)
         const headerVisible = header && !header.hidden && headerBounds?.height > 0 && headerStyle?.display !== 'none' && headerStyle?.visibility !== 'hidden'
+        const historyOpen = this.commentHistoryOpen === true && this.commentCanViewHistory?.() === true
         return {
-          open: sidebarOpen,
-          viewerHost: imageScope?.viewer || null, viewerCurrent: imageScope ? () => this.imageCommentCurrent(imageScope) : null,
+          open: sidebarOpen || historyOpen,
+          historyOpen,
+          historyStyle: this.commentHistoryStyle || {},
+          // 历史弹层只收已解决线程；条目复用线程卡的引用与回复流。
+          historyItems: historyOpen ? (this.commentThreads || []).filter(item => item.resolved === true && !item.tombstone).map(item => ({
+            id: item.id,
+            quote: item.quote || '',
+            canReopen: !this.commentHistorical && this.commentAllowed('reopen', item.id),
+            canDelete: typeof this.commentProvider?.()?.deleteThread === 'function' && this.commentAllowed('remove', item.id),
+            deleteBusy: !!this.commentDeleting?.[item.id],
+            replies: (item.replies || []).map(reply => commentReplyState.call(this, item, reply)),
+          })) : [],
+          viewerHost: imageScope?.viewer || null, viewerColumn: imageScope?.column || null,
+          viewerCurrent: imageScope ? () => this.imageCommentCurrent(imageScope) : null,
           remote,
           documentInline,
           historical,
@@ -754,6 +864,7 @@ export function createPanelPresentation(dependencies) {
           imageStatus: { busy: this.commentImageBusy, pending: !!this.commentPendingImage,
             canCancel: this.commentImageCanCancel?.() === true, canQuery: !this.commentImageBusy && this.commentCan('canView') },
           reactionPicker,
+          reactionCatalog: this.commentReactionCatalog || null,
           translationRecovery: { pending: !!this.commentPendingTranslationOperation && !panels.some(item => item.id === this.commentTranslationContext?.threadId),
             canQuery: !this.commentTranslationBusy && this.commentCan('canView') },
           documentComposer: {
@@ -763,7 +874,7 @@ export function createPanelPresentation(dependencies) {
             references: this.commentDocumentReferences || [],
             segments: commentMentionSegments(this.commentDocumentDraft || '', this.commentDocumentMentions || [], this.commentDocumentReferences || []),
             draftImages: this.commentDraftImages('document'),
-            hasImages: this.commentDraftImages('document').length > 0,
+            hasImages: this.commentDraftImages('document').some(image => image.status === 'ready'),
             canUploadImage: this.commentCanUploadImage?.('document') === true,
             readonly: this.commentDocumentCanSubmit?.() === false || !this.commentAllowed('create'),
             canSubmit: this.commentDocumentCanSubmit?.() !== false && this.commentAllowed('create'),
@@ -777,10 +888,10 @@ export function createPanelPresentation(dependencies) {
             author: this.commentAuthorName(this.commentAuthor),
             value: this.commentCreateDraft || '',
             draftImages: this.commentDraftImages('selection'),
-            hasImages: this.commentDraftImages('selection').length > 0,
+            hasImages: this.commentDraftImages('selection').some(image => image.status === 'ready'),
             canUploadImage: this.commentCanUploadImage?.('selection') === true,
-            readonly: !this.commentAllowed('create') || (!!imageScope && !this.writable()),
-            canSubmit: this.commentAllowed('create') && (!imageScope || this.writable()),
+            readonly: !this.commentAllowed('create'),
+            canSubmit: this.commentAllowed('create'),
             privateOn: this.commentCreatePrivate === true,
             history: this.commentHistory || historical ? (historical || this.commentHistory ? '返回未解决' : '已解决评论') : '已解决评论',
           },
@@ -789,7 +900,10 @@ export function createPanelPresentation(dependencies) {
             // 一次合成（SFC 是数组合并语义，`applyStyle` 是替换语义）。
             style: {
               ...(item.documentOnly || inViewer ? { position: 'relative', left: 'auto', top: 'auto', height: 'auto', ...(inViewer ? { width: '100%', margin: '0' } : {}) } : this.commentPanelStyle(item)),
-              ...(item.documentOnly || inViewer ? {} : { height: `${this.commentPanelHeightOf(item)}px` }),
+              // 编辑态内容比公式高，改成 min-height 让卡片跟着撑开（否则按钮会被顶出卡片）。
+              ...(item.documentOnly || inViewer ? {} : (this.commentEditingReply?.threadId === item.id
+                ? { minHeight: `${this.commentPanelHeightOf(item)}px` }
+                : { height: `${this.commentPanelHeightOf(item)}px` })),
               ...(drawer && !item.documentOnly ? { marginTop: `${item.gap || 0}px` } : {}),
             },
             documentOnly: item.documentOnly === true,
@@ -829,60 +943,7 @@ export function createPanelPresentation(dependencies) {
                 translatedText: state?.status === 'ready' ? state.translatedText || '' : '',
               }
             })(),
-            replies: (item.replies || []).map((reply) => {
-              const menuScope = this._mobileEditorMedia?.matches ? mobileCommentMenuScope(this, item.id, reply.id) : null
-              return ({
-              mobileMenu: !!this._mobileEditorMedia?.matches,
-              menuScope,
-              quickReactions: menuScope ? ['👍', '❤️', '😄', '👏', '🎉', '👀'].map(findEmojiByGlyph).filter(Boolean).map(emoji => ({
-                emoji: emoji.glyph, label: emoji.label,
-                active: reactionIsMine(reply.reactions?.find(reaction => normalizeEmojiGlyph(reaction.emoji) === normalizeEmojiGlyph(emoji.glyph)), this.commentAuthor),
-              })) : [],
-              id: reply.id,
-              tombstone: reply.tombstone === true,
-              canReact: this.commentAllowed('react', item.id, reply.id),
-              reactionDisabledReason: this.commentAllowed('react', item.id, reply.id) ? '' : '当前无表情回复权限或评论服务不可用',
-              canReply: this.commentAllowed('reply', item.id),
-              name: this.commentAuthorName(reply.author),
-              time: this.commentTimeAt(reply.createdAt),
-              body: reply.content,
-              richSegments: !reply.tombstone && reply.richContent ? commentRichContentSegments(reply.richContent) : null,
-              segments: reply.tombstone ? [{ text: '评论已删除' }] : commentMentionSegments(reply.content || '', reply.mentions || [], reply.references || []).map(segment => ({
-                ...segment,
-                ...(segment.principalId ? { isSelf: segment.principalId === this.commentAuthor?.id } : {}),
-              })),
-              edited: reply.editedAt != null,
-              reactions: reply.tombstone ? [] : (reply.reactions || []).map(reaction => ({
-                ...reaction,
-                count: reaction.count ?? (Array.isArray(reaction.users) ? reaction.users.length : 0),
-                reactedByMe: typeof reaction.reactedByMe === 'boolean' ? reaction.reactedByMe : !!reaction.users?.includes(this.commentAuthor?.id),
-                label: this.commentReactionLabel?.(reaction.emoji) || reaction.emoji,
-                canReact: this.commentAllowed('react', item.id, reply.id),
-                people: Array.isArray(reaction.users) ? reaction.users.map(id => id === this.commentAuthor?.id ? this.commentAuthorName(this.commentAuthor) : id === reply.author?.id ? this.commentAuthorName(reply.author) : id).join('、') : '',
-              })),
-              editing: !!this.commentEditingReply && this.commentEditingReply.threadId === item.id && this.commentEditingReply.replyId === reply.id,
-              images: reply.tombstone ? [] : (reply.attachments || []).map(asset => ({
-                assetId: asset.assetId, fileName: asset.fileName,
-                url: this.commentImageUrl(item, reply, asset),
-                error: !!this.commentImageErrors[this.commentImageKey(item, reply, asset)],
-              })),
-              menuOpen: this.commentMenuThreadId === item.id && this.commentMenuCommentId === reply.id,
-              menus: this._mobileEditorMedia?.matches ? this.mobileCommentMenuItems(item, reply, menuScope) : menus.map((menu) => {
-                // 置灰有两层：作用域能力（`commentMenuDisabled`）与**这一条**回复的具体原因
-                // （`commentMenuDisabledReason`：举报自己、翻译服务未接通…）。只取前者的话，
-                // 后者只能挂在 title 上 —— 菜单看着可点，`runCommentMenuItem` 却在点下去之后
-                // 才拦下来，等于把「为什么不能点」放在动作之后说。
-                const reason = this.commentMenuDisabledReason?.(menu, reply) || ''
-                return {
-                  id: menu.id,
-                  label: menu.label,
-                  submenu: !!menu.submenu,
-                  visible: this.commentMenuVisible(menu, reply, item.id),
-                  disabled: reason !== '' || this.commentMenuDisabled?.(menu, reply) === true,
-                  reason,
-                }
-              }),
-            }) }),
+            replies: (item.replies || []).map((reply) => commentReplyState.call(this, item, reply)),
             textarea: {
               value: this.commentDraftOf(item.id),
               mentions: this.commentDraftMentions?.[item.id] || [],
@@ -892,6 +953,8 @@ export function createPanelPresentation(dependencies) {
             },
             draftImages: this.commentDraftImages(item.id),
             hasDraft: this.commentHasDraft(item.id),
+            // 与基线一致：有草稿附件但还没全部就绪（上传中/失败）时不允许发送。
+            draftReady: this.commentDraftImages(item.id).every(image => image.status === 'ready'),
             mentionPicker: this.commentMentionPicker && !this.commentMentionPicker.scope && this.commentMentionPicker.threadId === item.id ? {
               query: this.commentMentionPicker.query,
               candidates: this.commentMentionPicker.candidates,

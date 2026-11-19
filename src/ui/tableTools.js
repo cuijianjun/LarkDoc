@@ -6,7 +6,9 @@
  * 颜色复用项目token；鼠标不抢编辑器焦点，菜单支持hover/键盘与点击外部关闭。
  */
 import { applyStyle, mountNode, syncChildren } from './dom'
+import { bindHoverTips } from './hoverTips'
 import { iconNode, setIcon } from './icon'
+import { TABLE_ICONS } from './tableToolsIcons'
 import { TEXT_COLOR_OPTIONS, TEXT_BACKGROUND_ROWS, CALLOUT_COLOR_OPTIONS } from './palette'
 
 function setVar(node, name, value) {
@@ -195,7 +197,7 @@ function makeMenuItem(entry, onPick) {
   b.className = 'lark-doc-table-tools-menu-item'
   b.dataset.value = entry.id
   b.setAttribute('role', 'menuitem')
-  if (entry.icon) b.appendChild(iconNode(entry.icon, 18, 'lark-doc-table-tools-menu-icon'))
+  if (entry.icon) b.appendChild(iconNode(entry.icon, 18, 'lark-doc-table-tools-menu-icon', TABLE_ICONS))
   const label = document.createElement('span')
   label.textContent = entry.label
   b.appendChild(label)
@@ -257,7 +259,6 @@ function makeColorRow(menu, title, colors, prefix, onPick) {
     b.type = 'button'
     b.className = 'lark-doc-table-tools-color'
     b.dataset.value = `${prefix}:${color.value}`
-    b.title = color.label
     b.setAttribute('aria-label', `${title} ${color.label}`)
     if (color.value) b.style.background = color.value
     else b.classList.add('is-none')
@@ -316,7 +317,8 @@ function makeTool(item, onCommand, ui) {
   b.type = 'button'
   b.className = 'lark-doc-table-tools-btn'
   b.dataset.cmd = item.id
-  b.title = item.label
+  // 浮窗是弹层：不放原生 title（会和自绘气泡叠成两层）；按钮名只走 aria-label，
+  // 纯图标按钮的悬停提示由 `bindHoverTips` 统一出。
   b.setAttribute('aria-label', item.label)
   if (item.mark) b.dataset.mark = item.mark
   if (item.text) b.classList.add('is-text')
@@ -325,7 +327,7 @@ function makeTool(item, onCommand, ui) {
     b.setAttribute('aria-haspopup', 'menu')
     b.setAttribute('aria-expanded', 'false')
   }
-  if (item.icon) b.appendChild(iconNode(item.icon, 24, 'lark-doc-table-tools-icon'))
+  if (item.icon) b.appendChild(iconNode(item.icon, 24, 'lark-doc-table-tools-icon', TABLE_ICONS))
   if (item.text) {
     const text = document.createElement('span')
     text.className = 'lark-doc-table-tools-text'
@@ -359,6 +361,13 @@ export function createTableTools({ host, handlers = {} }) {
   el.setAttribute('aria-label', '表格工具')
   // 真源 `onMouseDown:H=>H.preventDefault()`：按下不转移焦点，选区才不会被浏览器清掉。
   el.addEventListener('mousedown', (event) => event.preventDefault())
+
+  /**
+   * 图标提示。浮窗是弹层，`tooltip.js` 缺省会拦掉，这里显式放行。
+   * 带 `text` 的项（问问AI、分享、评论、标题行/列）名称已写在行上 → 不出；
+   * 带 `menu` 的触发器有 `aria-haspopup` → 不出；其余纯图标按钮按 `aria-label` 出。
+   */
+  const tips = bindHoverTips(el)
 
   const bar = document.createElement('div')
   bar.className = 'lark-doc-table-tools-bar'
@@ -498,6 +507,7 @@ export function createTableTools({ host, handlers = {} }) {
     if (!state.open) {
       pointerOrigin = null
       closeMenus()
+      tips.hide()
       mountNode(host, el, false)
       return
     }
@@ -514,19 +524,17 @@ export function createTableTools({ host, handlers = {} }) {
     syncBar(state.cellKind || (state.cellSelection ? 'line' : 'text'), state.headerAxis, !!state.commentVisible, !!state.shareVisible, !!state.aiVisible, !!state.mobileColumnMenu)
     const comment = buttons.get('comment')
     comment.disabled = !state.canComment
-    comment.title = state.canComment ? '添加评论' : '当前没有评论权限'
+    comment.setAttribute('aria-label', state.canComment ? '添加评论' : '当前没有评论权限')
     const header = buttons.get('table-header')
     const axis = state.headerAxis === 'column' ? 'column' : 'row'
     const headerOn = !!state.header?.[axis]
-    header.title = `${headerOn ? '取消' : ''}标题${axis === 'column' ? '列' : '行'}`
-    header.setAttribute('aria-label', header.title)
+    header.setAttribute('aria-label', `${headerOn ? '取消' : ''}标题${axis === 'column' ? '列' : '行'}`)
     header.setAttribute('aria-pressed', String(headerOn))
     header.classList.toggle('is-active', headerOn)
     header.disabled = state.headerEnabled === false
     setIcon(header.firstElementChild, axis === 'column' ? 'table-header-col' : 'table-header-row', 24)
     const merge = buttons.get('merge-cell')
-    merge.title = state.canSplitCell ? '拆分单元格' : '合并单元格'
-    merge.setAttribute('aria-label', merge.title)
+    merge.setAttribute('aria-label', state.canSplitCell ? '拆分单元格' : '合并单元格')
     merge.disabled = !(state.canSplitCell || (state.canMergeCell ?? state.cellSelection))
     merge.setAttribute('aria-pressed', String(!!state.canSplitCell))
     merge.classList.toggle('is-active', !!state.canSplitCell)
@@ -587,7 +595,7 @@ export function createTableBoundaryTools({ host, handlers = {} }) {
   const plus = document.createElement('button')
   plus.type = 'button'
   plus.className = 'lark-doc-table-col-plus-btn'
-  const glyph = iconNode('table-insert-boundary', 24, 'lark-doc-table-insert-glyph')
+  const glyph = iconNode('table-insert-boundary', 24, 'lark-doc-table-insert-glyph', TABLE_ICONS)
   glyph.style.width = '22px'
   plus.appendChild(glyph)
   let actionId = 'addColumnAfter'

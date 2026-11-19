@@ -51,6 +51,7 @@ export function createIsvPanel({ host, onReady, handlers = {} } = {}) {
     const { actionControl, select } = refs
     if (!actionControl || !select) return
     select.classList.toggle('is-open', !!state.selectOpen)
+    setAttr(select, 'aria-expanded', String(!!state.selectOpen))
     if (!state.selectOpen) {
       if (refs.menu) { refs.menu.remove(); refs.menu = null }
       return
@@ -64,7 +65,7 @@ export function createIsvPanel({ host, onReady, handlers = {} } = {}) {
       setText(option, action.label)
       activate(option, () => handlers.onAction?.(action.id))
       option.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { e.preventDefault(); handlers.onToggleAction?.(); select.focus() } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); focusOption(e.key === 'ArrowDown' ? 1 : -1) }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); handlers.onToggleAction?.(); select.focus() } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); focusOption(e.key === 'ArrowDown' ? 1 : -1) }
       })
       menu.appendChild(option)
     })
@@ -86,6 +87,15 @@ export function createIsvPanel({ host, onReady, handlers = {} } = {}) {
     const text = document.createElement('div'); text.className = 'lark-doc-isv-field-control'; const input = document.createElement('input'); input.className = 'lark-doc-isv-input'; input.type = 'text'; input.maxLength = 20; setAttr(input, 'aria-label', '按钮文字'); setAttr(input, 'placeholder', '请输入按钮'); input.value = state.text || ''; input.classList.toggle('is-error', state.errorField === 'buttonText'); input.addEventListener('input', handlers.onText); input.addEventListener('keydown', (e) => { if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return; e.preventDefault(); handlers.onConfirm?.() }); text.appendChild(input); slots.push({ node: field('按钮文字', text), on: true })
     const colorControl = document.createElement('div'); colorControl.className = 'lark-doc-isv-field-control'; const picker = document.createElement('div'); picker.className = 'lark-doc-isv-color-picker'; (state.colors || []).forEach((row) => { const rowNode = document.createElement('div'); rowNode.className = 'lark-doc-isv-color-row'; (row || []).forEach((color) => { const swatch = makeButton('lark-doc-isv-color-item'); swatch.style.backgroundColor = color.value; setAttr(swatch, 'aria-label', color.label); setAttr(swatch, 'title', color.label); swatch.classList.toggle('is-active', state.color === color.value); activate(swatch, () => handlers.onColor?.(color.value)); rowNode.appendChild(swatch) }); picker.appendChild(rowNode) }); colorControl.appendChild(picker); slots.push({ node: field('按钮颜色', colorControl, 'is-color'), on: true })
     const actionControl = document.createElement('div'); actionControl.className = 'lark-doc-isv-field-control'; const select = makeButton('lark-doc-isv-select'); setAttr(select, 'aria-label', '执行操作'); const value = document.createElement('span'); value.className = 'lark-doc-isv-select-value'; setText(value, state.actionLabel); const arrow = document.createElement('span'); arrow.className = 'lark-doc-isv-select-arrow'; setAttr(arrow, 'aria-hidden', 'true'); select.append(value, arrow); activate(select, () => handlers.onToggleAction?.()); actionControl.appendChild(select)
+    setAttr(select, 'aria-haspopup', 'listbox')
+    select.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      event.preventDefault()
+      if (!state.selectOpen) handlers.onToggleAction?.()
+      queueMicrotask(() => {
+        if (state.selectOpen && select.isConnected) (event.key === 'ArrowUp' ? refs.menu?.lastElementChild : refs.menu?.firstElementChild)?.focus()
+      })
+    })
     // 内容区重建会换掉 `select`，下拉浮层必须跟着重新挂到新节点上。
     refs.select = select; refs.actionControl = actionControl; refs.menu = null
     slots.push({ node: field('执行操作', actionControl), on: true })

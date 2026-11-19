@@ -19,8 +19,9 @@
  * 本脚本只经由 DOM 与公开门面断言，不碰 Vue 实例内部字段，原生化之后同一份断言仍然有效。
  *
  * 量法说明（以实测 + CSS 为准）：
- * - 斜杠菜单宽 **232px**，`position: fixed`、`z-index: 80`；模板分支358×197。
- * - 斜杠菜单共 **15** 个分类段 / **69** 项按钮；plus 菜单 **3** 段 / **32** 项。
+ * - 斜杠菜单宽 **232px**，`position: fixed`、`z-index: 80`；模板分支250×192（与字体下拉同款）。
+ * - 斜杠菜单共 **12** 个分类段 / **59** 项按钮；plus 菜单 **2** 段 / **20** 项。
+ *   （6 个待接入应用 menu:false：不进任何插入菜单，只保留命令与链接预览契约。）
  * - 分段顺序是契约：`文字 → 列表 → 插入 → 布局 → 数据 → 多维表格 → 绘图 → 智能 →
  *   按钮 → 团队协作 → 文档管理 → 项目管理 → 进阶 → 文档小组件 → 内嵌网页`。
  *
@@ -236,7 +237,7 @@ async function hoverSubmenuTrigger(page, label) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -276,8 +277,8 @@ async function hoverSubmenuTrigger(page, label) {
     !!slash && slash.sections.every((section) => section.label === section.category),
     slash ? slash.sections.filter((section) => section.label !== section.category).map((section) => `${section.category}/${section.label}`).join(' ') : '')
 
-  record('[斜杠] 共 58 项命令按钮（63 定义减4个二级分栏与历史块公式）',
-    !!slash && slash.buttons.length === 58,
+  record('[斜杠] 共 59 项可见命令按钮',
+    !!slash && slash.buttons.length === 59,
     slash ? `${slash.buttons.length} 项` : '')
 
   record('[斜杠] 每段至少一项、总和等于按钮总数',
@@ -296,10 +297,11 @@ async function hoverSubmenuTrigger(page, label) {
     slash ? `${slash.buttons[0].role} glyph=${slash.buttons[0].glyph} tone=${slash.buttons[0].tone}` : '')
 
   // ——————————————————— ③ 斜杠菜单：skip 项 ———————————————————
+  // 企业版条目（Jira / Meego / 知识库 / 订阅号）已接链接预览：tier 从 skip 升为 required，
+  // 点了打开「插入 X 预览」弹窗，不再置灰。菜单里因此不该再有 skip 占位项。
   const slashSkips = slash ? slash.buttons.filter((button) => button.tier === 'skip') : []
-  record('[斜杠] skip 项：disabled + aria-disabled + tooltip=需要企业版接入 + class is-skip，且不带 active',
-    slashSkips.length > 0 && slashSkips.every((button) => button.disabled === true
-      && button.ariaDisabled === 'true' && button.title === null && button.tooltipTitle === '需要企业版接入' && button.skip === true && button.active === false),
+  record('[斜杠] 已有链接预览的企业版入口没有 skip 占位项',
+    !!slash && slashSkips.length === 0,
     `${slashSkips.length} 条 skip：${slashSkips.map((button) => button.id).join('/')}`)
 
   record('[斜杠] 非 skip 项不带 aria-disabled / 富提示用自身文案',
@@ -348,14 +350,14 @@ async function hoverSubmenuTrigger(page, label) {
   await page.keyboard.type('jira')
   await page.waitForTimeout(360)
   const filtered = await page.evaluate(measureMenu)
-  record('[过滤] 敲关键词只剩命中项（`jira` → jiraIssue / jiraFilter 两条，都是 skip）',
+  record('[过滤] 敲关键词只剩命中项（`jira` → jiraIssue / jiraFilter 两条，均为链接预览入口）',
     !!filtered && filtered.buttons.length === 2
     && JSON.stringify(filtered.buttons.map((button) => button.id)) === JSON.stringify(['jiraIssue', 'jiraFilter'])
-    && filtered.buttons.every((button) => button.tier === 'skip'),
+    && filtered.buttons.every((button) => button.tier === 'required'),
     filtered ? `${filtered.buttons.length} 项：${filtered.buttons.map((button) => button.id).join('/')}` : '菜单关了')
 
-  record('[过滤] 命中项全是 skip 时仍 disabled（可见但不可执行）',
-    !!filtered && filtered.buttons.every((button) => button.disabled === true && button.skip === true),
+  record('[过滤] 命中项可直接执行（应用预览不再置灰）',
+    !!filtered && filtered.buttons.every((button) => button.disabled === false && button.skip === false),
     filtered ? filtered.buttons.map((button) => `${button.id}:${button.disabled}`).join(' ') : '')
 
   await openSlashMenu(page)
@@ -387,18 +389,21 @@ async function hoverSubmenuTrigger(page, label) {
     !!plus && JSON.stringify(plus.sections.map((section) => section.category)) === JSON.stringify(['基础', '常用', '绘图']),
     plus ? plus.sections.map((section) => section.category).join('→') : '')
 
-  record('[plus] 共20个真实入口（任务与高亮块同时有基础快捷图标和常用行）',
-    !!plus && plus.buttons.length === 20,
+  record('[plus] 共22个真实入口，包含四级与五级标题',
+    !!plus && plus.buttons.length === 22,
     plus ? `${plus.buttons.length} 项` : '')
 
   record('[plus] 基础快捷图标为6列，36px按钮',
     !!plus && plus.sections[0].columns === 6 && plus.buttons[0].minHeight === '36px',
     plus ? `列=${plus.sections[0].columns} minHeight=${plus.buttons[0].minHeight}` : '')
 
-  const secondRow = plus ? plus.buttons.filter(button => button.category === '基础').slice(6) : []
-  record('[plus] 不提供同步块时，第二排图标连续排列、不留中间空位',
-    secondRow.length === 5 && secondRow.every((button, index) => !index || Math.abs(button.x - secondRow[index - 1].x - secondRow[index - 1].width) < 1 && Math.abs(button.y - secondRow[index - 1].y) < 1),
-    secondRow.map(button => `${button.id}@${button.x}`).join(' / '))
+  const basic = plus ? plus.buttons.filter(button => button.category === '基础') : []
+  const expectedBasic = ['heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link']
+  record('[plus] 13 个基础图标连续占据三个六列网格行',
+    JSON.stringify(basic.map(button => button.id)) === JSON.stringify(expectedBasic) && basic.every((button, index) => index % 6 === 0
+      ? Math.abs(button.x - basic[0].x) < 1 && (index === 0 || button.y > basic[index - 1].y)
+      : Math.abs(button.x - basic[index - 1].x - basic[index - 1].width) < 1 && Math.abs(button.y - basic[index - 1].y) < 1),
+    basic.map(button => `${button.id}@${button.x}`).join(' / '))
 
   record('[plus] 搜索框自动聚焦（打开即可打字）',
     !!plus && plus.head.focused === true,
@@ -558,8 +563,8 @@ async function hoverSubmenuTrigger(page, label) {
   await openPlusMenu(page)
   await hoverSubmenuTrigger(page, '打开模板子菜单')
   const templateMenu = await page.evaluate(measureSubmenu)
-  record('[模板] 源快捷菜单is-templates、358×197、六行',
-    !!templateMenu && templateMenu.cls.includes('is-templates') && templateMenu.width === 358 && templateMenu.height === 197 && templateMenu.items.length === 6,
+  record('[模板] 源快捷菜单is-templates、250×192、六行',
+    !!templateMenu && templateMenu.cls.includes('is-templates') && templateMenu.width === 250 && templateMenu.height === 192 && templateMenu.items.length === 6,
     templateMenu ? `${templateMenu.cls} w=${templateMenu.width}` : '子菜单没开')
 
   record('[模板] 五个真实模板与更多模板，无旧标题或装饰图标',
@@ -620,8 +625,10 @@ async function hoverSubmenuTrigger(page, label) {
   await diagram.hover(); await page.locator('.lark-doc-diagram-menu').waitFor()
   const types = page.locator('.lark-doc-diagram-menu [role="menuitem"]')
   for (const item of await types.all()) {
-    await item.hover(); const tip = page.getByRole('tooltip'); await tip.waitFor()
-    record(`[图表提示] ${await item.innerText()}`, await item.locator('svg').count() === 1 && (await tip.innerText()).includes(await item.innerText()))
+    await item.hover(); await page.waitForTimeout(350)
+    const label = await item.innerText()
+    record(`[图表入口] ${label} 有图标和文字，悬停无额外提示`, !!label && await item.locator('svg').count() === 1
+      && await item.getAttribute('title') === null && await page.getByRole('tooltip').count() === 0)
   }
   await page.keyboard.press('Escape')
 

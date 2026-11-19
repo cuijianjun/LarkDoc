@@ -8,7 +8,9 @@
  *    「一个块壳三形态」「失败态照常落块且换文案」这两条 02 §19.5 的硬要求。
  */
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Editor, getSchema } from '@tiptap/core'
 import { createLarkDocExtensions } from '../../src/components/lark-doc/extensions'
 import { BLOCKED_IMAGE_PLACEHOLDER, createNetworkPolicy } from '../../src/core/policy/network'
@@ -277,6 +279,205 @@ describe('NodeView：一个块壳三形态', () => {
     } finally { editor.destroy() }
   })
 
+  it('视频落飞书式播放器：静态键/时长徽标 + 悬浮文件名/控制条齐全，且默认 aspect-ratio 兜底', () => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    try {
+      const shell = editor.view.dom.querySelector('.lark-doc-video-player')
+      expect(shell).toBeTruthy()
+      // 中央播放键 + 右下角时长（静态态）都走 markUi，事件不进 ProseMirror。
+      const centerPlay = shell.querySelector('.lark-doc-video-center-play')
+      expect(centerPlay).toBeTruthy()
+      expect(centerPlay.getAttribute('data-lark-doc-file-ui')).toBe('')
+      expect(shell.querySelector('.lark-doc-video-duration')).toBeTruthy()
+      // 悬浮文件名来自 attrs.name。
+      expect(shell.querySelector('.lark-doc-video-name').textContent).toBe('a.mp4')
+      // 控制条（飞书图1）：播放/时间(mm:ss/mm:ss)/倍速/清晰度/画中画/音量/全屏 + 顶部通栏进度条，下载已移到顶部功能栏。
+      const controls = shell.querySelector('.lark-doc-video-controls')
+      expect(controls).toBeTruthy()
+      expect(controls.querySelector('.lark-doc-video-toggle')).toBeTruthy()
+      expect(controls.querySelector('.lark-doc-video-time').textContent).toMatch(/^\d{2}:\d{2}\/\d{2}:\d{2}$/)
+      const seek = controls.querySelector('.lark-doc-video-seek')
+      expect(seek.getAttribute('role')).toBe('slider')
+      // 进度条是控制栏第一子节点（绝对定位到顶部通栏），不是嵌在按钮行里的 flex 项。
+      expect(controls.firstElementChild).toBe(seek)
+      expect(controls.querySelector('.lark-doc-video-download')).toBeNull()
+      // 控制栏按钮顺序按飞书：播放 → 时间 → 留白 → 1x → 480p → 画中画 → 音量 → 全屏。
+      const order = [...controls.children].filter(node => node !== seek).map(node => node.className)
+      expect(order.some(name => name.includes('lark-doc-video-toggle'))).toBe(true)
+      expect(order.some(name => name.includes('lark-doc-video-fullscreen'))).toBe(true)
+
+      // 飞书文档里的视频块**没有**框内功能栏：画面上只有底部控制条，
+      // 下载/全屏/三态等动作都挂在块外那条工具条上。
+      expect(shell.querySelector('.lark-doc-video-topbar')).toBeNull()
+      expect(shell.querySelectorAll('[role="toolbar"]').length).toBe(0)
+      // 默认 aspect-ratio 交给 CSS 兜底，JS 只在读到真实尺寸后才写内联。
+      expect(shell.style.aspectRatio || '').toBe('')
+    } finally { editor.destroy() }
+  })
+
+  it('下载真落盘：fetch 取字节 → a[download=文件名] 点击，仍不开新页', async () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/core/nodeviews/file-block.js'), 'utf8')
+    expect(source).not.toMatch(/window\.open\s*\(/)
+    expect(source).not.toMatch(/_blank/)
+
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    const win = editor.view.dom.ownerDocument.defaultView
+    const fetchStub = vi.fn(async () => ({ ok: true, blob: async () => new Blob(['mp4'], { type: 'video/mp4' }) }))
+    const createObjectURL = vi.fn(() => 'blob:mock-url')
+    const revokeObjectURL = vi.fn()
+    const created = []
+    const clickSpy = vi.spyOn(win.HTMLAnchorElement.prototype, 'click').mockImplementation(function () { created.push(this) })
+    win.fetch = fetchStub
+    win.URL.createObjectURL = createObjectURL
+    win.URL.revokeObjectURL = revokeObjectURL
+    try {
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      figure.querySelector('.lark-doc-file-block-toolbar [data-name="download"]').click()
+      await tick()
+      expect(fetchStub).toHaveBeenCalledWith('https://cdn.example.com/a.mp4', { credentials: 'same-origin' })
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      expect(created).toHaveLength(1)
+      expect(created[0].getAttribute('download')).toBe('a.mp4')
+      expect(created[0].getAttribute('href')).toBe('blob:mock-url')
+      // 交完给浏览器就摘掉，不留隐形节点
+      expect(editor.view.dom.ownerDocument.body.contains(created[0])).toBe(false)
+      expect(editor.view.dom.ownerDocument.body.querySelectorAll('iframe')).toHaveLength(0)
+    } finally {
+      clickSpy.mockRestore()
+      delete win.fetch
+      delete win.URL.createObjectURL
+      delete win.URL.revokeObjectURL
+      editor.destroy()
+    }
+  })
+
+  it('取不到字节（跨域无 CORS）时退回隐藏 iframe，不导航当前页', async () => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    const win = editor.view.dom.ownerDocument.defaultView
+    const fetchStub = vi.fn(async () => { throw new Error('cors') })
+    win.fetch = fetchStub
+    try {
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      figure.querySelector('.lark-doc-file-block-toolbar [data-name="download"]').click()
+      await tick()
+      const frames = [...editor.view.dom.ownerDocument.body.querySelectorAll('iframe')]
+      expect(frames.some(f => f.src === 'https://cdn.example.com/a.mp4' && f.style.display === 'none')).toBe(true)
+      frames.forEach(f => f.remove())
+    } finally {
+      delete win.fetch
+      editor.destroy()
+    }
+  })
+
+  it('下载文件名：attrs.name 优先，缺扩展名按 mimeType 补', async () => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/download?id=9', name: '未命名', mimeType: 'video/mp4', viewType: 'Preview' })
+    try {
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      // footer 的 <a download> 带完整文件名（右键/中键另存时不至于落成 "download"）
+      expect(figure.querySelector('.lark-doc-file-download').getAttribute('download')).toBe('未命名.mp4')
+    } finally { editor.destroy() }
+  })
+
+  it('选中块外部浮动工具条：块外浮出、顺序按飞书、三态 aria-pressed、delete 齐全', () => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    try {
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      expect(figure.classList.contains('has-block-toolbar')).toBe(true)
+      const bar = figure.querySelector('.lark-doc-file-block-toolbar')
+      expect(bar).toBeTruthy()
+      expect(bar.getAttribute('role')).toBe('toolbar')
+      expect(bar.getAttribute('data-lark-doc-file-ui')).toBe('')
+      const names = [...bar.querySelectorAll('.lark-doc-block-tool-btn')].map(b => b.getAttribute('data-name'))
+      // 分享 / 评论宿主未接面板，暂时隐藏 UI（功能仍保留在代码里）。
+      expect(names).toEqual([
+        'fullscreen', 'download',
+        'text view', 'card view', 'preview view',
+        'copyAnchorLink', 'delete',
+      ])
+      expect(bar.querySelector('[data-name="shareTextLink"]')).toBeNull()
+      expect(bar.querySelector('[data-name="comment"]')).toBeNull()
+      expect(bar.querySelectorAll('.lark-doc-block-tool-divider').length).toBe(3) // 下载组 / 三态组（贴满） / 删除前
+      // 飞书 `override-full-height`：三态视图后那条贴满 40 高。
+      expect(bar.querySelectorAll('.lark-doc-block-tool-divider.is-full').length).toBe(1)
+      // 图标对齐飞书 universe-icon：24 viewBox（渲染 18px 由 CSS 定）。
+      for (const svg of bar.querySelectorAll('.lark-doc-block-tool-btn svg')) {
+        expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
+      }
+      // 功能留着：按钮构建与事件出口还在，只是没挂进 DOM。
+      const source = readFileSync(resolve(process.cwd(), 'src/core/nodeviews/file-block.js'), 'utf8')
+      expect(source).toMatch(/fireFileAction\('share'\)/)
+      expect(source).toMatch(/fireFileAction\('comment'\)/)
+      expect(source).toMatch(/const SHOW_SHARE = false/)
+      expect(source).toMatch(/const SHOW_COMMENT = false/)
+      // 三态：默认 Preview 激活（宿主传 viewType='Preview'）。
+      expect(bar.querySelector('[data-name="preview view"]').getAttribute('aria-pressed')).toBe('true')
+      expect(bar.querySelector('[data-name="card view"]').getAttribute('aria-pressed')).toBe('false')
+      // CSS 闸门：浮在块外 8px、与飞书同尺寸（24×24 按钮 / 18px 图标 / 8px 间距 / 8px 内边距）。
+      const css = readFileSync(resolve(process.cwd(), 'src/components/lark-doc/lark-doc.css'), 'utf8')
+      const rule = css.match(/\.lark-doc \.lark-doc-file-block-toolbar\s*\{[^}]*\}/)
+      expect(rule).not.toBeNull()
+      expect(rule[0]).toMatch(/bottom:\s*calc\(100% \+ 8px\)/)
+      expect(rule[0]).toMatch(/gap:\s*8px/)
+      expect(rule[0]).toMatch(/height:\s*42px/)
+      const btnRule = css.match(/\.lark-doc \.lark-doc-block-tool-btn\s*\{[^}]*\}/)
+      expect(btnRule[0]).toMatch(/width:\s*24px/)
+      expect(btnRule[0]).toMatch(/height:\s*24px/)
+      expect(css).toMatch(/\.lark-doc \.lark-doc-block-tool-btn svg\s*\{[^}]*width:\s*18px/)
+      expect(css).toMatch(/\.lark-doc \.lark-doc-file\.has-block-toolbar\s*\{\s*overflow:\s*visible/)
+    } finally { editor.destroy() }
+  })
+
+  it('工具条「点不住」回归：跨 8px 间隙时保持可点（进入即开、离开延时关）', () => {
+    const editor = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Preview' })
+    try {
+      const figure = editor.view.dom.querySelector('figure.lark-doc-file')
+      const bar = figure.querySelector('.lark-doc-file-block-toolbar')
+      const css = readFileSync(resolve(process.cwd(), 'src/components/lark-doc/lark-doc.css'), 'utf8')
+      // 显隐类必须能单独把条点亮（不依赖 :hover），否则穿空隙那几帧就点不住。
+      expect(css).toContain('.lark-doc .lark-doc-file.is-toolbar-open > .lark-doc-file-block-toolbar')
+      expect(css).toMatch(/\.lark-doc-file\.is-toolbar-open[^{]*\{[^}]*pointer-events:\s*auto/)
+
+      vi.useFakeTimers()
+      figure.dispatchEvent(new Event('pointerenter'))
+      expect(figure.classList.contains('is-toolbar-open')).toBe(true)
+      // 移出到空隙：延时关，期间仍可点。
+      figure.dispatchEvent(new Event('pointerleave'))
+      expect(figure.classList.contains('is-toolbar-open')).toBe(true)
+      // 没进条 → 到点才关。
+      vi.advanceTimersByTime(179)
+      expect(figure.classList.contains('is-toolbar-open')).toBe(true)
+      vi.advanceTimersByTime(1)
+      expect(figure.classList.contains('is-toolbar-open')).toBe(false)
+      // 进了条 → 取消关闭，一直可点。
+      figure.dispatchEvent(new Event('pointerenter'))
+      figure.dispatchEvent(new Event('pointerleave'))
+      bar.dispatchEvent(new Event('pointerenter'))
+      vi.advanceTimersByTime(400)
+      expect(figure.classList.contains('is-toolbar-open')).toBe(true)
+      // 条上也移出后照旧延时关。
+      bar.dispatchEvent(new Event('pointerleave'))
+      vi.advanceTimersByTime(200)
+      expect(figure.classList.contains('is-toolbar-open')).toBe(false)
+    } finally { vi.useRealTimers(); editor.destroy() }
+  })
+
+  it('三态视图：Inline 落文本视图行，Card 落卡片，Preview 落播放器', () => {
+    const inline = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', size: 40016, mimeType: 'video/mp4', viewType: 'Inline' })
+    try {
+      const preview = inline.view.dom.querySelector('.lark-doc-file-preview')
+      expect(preview.classList.contains('is-inline')).toBe(true)
+      expect(preview.querySelector('.lark-doc-file-inline-link').textContent).toBe('a.mp4')
+      expect(preview.querySelector('video')).toBeNull()
+    } finally { inline.destroy() }
+
+    const card = mountFileBlock({ src: 'https://cdn.example.com/a.mp4', name: 'a.mp4', mimeType: 'video/mp4', viewType: 'Card' })
+    try {
+      const preview = card.view.dom.querySelector('.lark-doc-file-preview')
+      expect(preview.classList.contains('is-card')).toBe(true)
+      expect(preview.querySelector('.lark-doc-file-card')).toBeTruthy()
+    } finally { card.destroy() }
+  })
+
   it('application/pdf 落 iframe viewer，且没有播放器', () => {
     const editor = mountFileBlock({ src: 'https://cdn.example.com/recon-doc.pdf', name: 'recon-doc.pdf', size: 40016, mimeType: 'application/pdf', viewType: 'Preview' })
     try {
@@ -426,11 +627,11 @@ describe('NodeView：一个块壳三形态', () => {
     try {
       await tick()
       const figure = editor.view.dom.querySelector('figure.lark-doc-file')
-      const beforeDestroy = figure.innerHTML
       editor.destroy()
+      const afterDestroy = figure.innerHTML
       resolvePending('https://cdn.example.com/late.mp4')
       await tick()
-      expect(figure.innerHTML).toBe(beforeDestroy)
+      expect(figure.innerHTML).toBe(afterDestroy)
       expect(figure.querySelector('video')).toBeNull()
     } finally { if (!editor.isDestroyed) editor.destroy() }
   })

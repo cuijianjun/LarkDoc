@@ -16,9 +16,7 @@ export const collabCommands = [
   { id: 'mentionUser', label: '人员', category: '团队协作', plus: false, glyph: '@', tone: 'blue', keywords: 'mention at renyuan user tiji atuser', group: 'collab', tier: 'required' },
   { id: 'mentionChat', label: '群名片', category: '团队协作', plus: false, glyph: '#', tone: 'teal', keywords: 'mention qunmingpian chat group qun', group: 'collab', tier: 'required' },
   { id: 'mentionPage', label: '云文档', category: '团队协作', plus: false, glyph: '▤', tone: 'indigo', keywords: 'mention yunwendang page doc docs wenjian', group: 'collab', tier: 'required' },
-  // 🔴 P5-03 的 `poll`（投票）已从菜单摘掉：master 上只有投票块定义与 `setPoll`，
-  // 没有可用的插入链路（点了只留空段落），功能没落地就不占菜单位。
-  // 块类型仍在（`core/blocks/poll.js`），老文档里的投票卡照样渲染。
+  { id: 'poll', label: '投票', category: '团队协作', plus: false, glyph: '▥', tone: 'blue', keywords: 'poll vote toupiao', group: 'collab', tier: 'required' },
   // P4-02a 日期提醒：真飞书斜杠项文案正是「日期提醒」（`data-name="slash reminder"`，
   // 不能猜 `reminder` / `date reminder`）。与 mention 同为**行内**物件 → `plus: false`。
   // 插完 chip 会自动弹日历浮层（02 §19.4 ⑤「插入 → 立即弹浮层」），所以它还必须在

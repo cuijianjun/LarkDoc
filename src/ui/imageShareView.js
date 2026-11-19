@@ -261,7 +261,8 @@ function createImageShareView(handlers) {
       serviceNotice.textContent = unavailableReason
       network = createNetworkPolicy(state.imageShareNetwork)
       root.hidden = !current
-      if (!current) { searchOpen = false; multi = false; confirming = false; renderLayout(); return }
+      // 多选是偏好，关掉再打开要保留（0facf05 口径）；其余会话态清空。
+      if (!current) { searchOpen = false; confirming = false; renderLayout(); return }
       if (opening) activeIndex = 0
       if (input.value !== current.query) input.value = current.query
       input.placeholder = current.recipients.length ? '' : '搜索'

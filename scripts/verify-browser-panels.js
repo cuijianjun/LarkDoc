@@ -241,7 +241,9 @@ const measureVersions = () => {
   const leftHeader = el.querySelector('.lark-doc-version-left-header')
   const pager = el.querySelector('.lark-doc-version-pager')
   const rightHeader = el.querySelector('.lark-doc-version-right-header')
-  const rightIcon = rightHeader ? rightHeader.querySelector('.lark-doc-icon') : null
+  // 标题旁还有一个 16px 的 info 图标（「历史记录 ⓘ」是一个整体），所以必须限定到
+  // chevron 容器里取，否则量到的是 info 而不是 chevronDown。
+  const rightIcon = rightHeader ? rightHeader.querySelector('.lark-doc-version-right-icon .lark-doc-icon') : null
   const backIcon = el.querySelector('.lark-doc-version-back .lark-doc-icon')
   const size = (node) => {
     if (!node) return null
@@ -277,6 +279,7 @@ const measureVersions = () => {
       cursor: pager.querySelector('.lark-doc-version-cursor') ? pager.querySelector('.lark-doc-version-cursor').textContent.trim() : null,
       steps: [...pager.querySelectorAll('.lark-doc-version-step')].map((b) => ({
         text: b.textContent.trim(),
+        label: b.getAttribute('aria-label'),
         disabled: b.disabled,
         bg: getComputedStyle(b).backgroundColor,
       })),
@@ -566,7 +569,7 @@ const vueCall = (page, body) => page.evaluate((source) => {
 }, body)
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -665,15 +668,16 @@ const vueCall = (page, body) => page.evaluate((source) => {
       label: button.getAttribute('aria-label'),
       title: button.getAttribute('title'),
       text: button.textContent.trim(),
+      svg: !!button.querySelector('svg'),
       position: cs.position,
       zIndex: cs.zIndex,
       size: { w: Math.round(rect.width), h: Math.round(rect.height) },
       aside: !!document.querySelector('.lark-doc-outline'),
     }
   })
-  record('[目录] 关闭后侧栏真出 DOM，父级出现 ☰ 展开钮（fixed / z44 / 34×34）',
-    !!reopen && reopen.aside === false && reopen.label === '展开目录' && reopen.title === '展开目录' &&
-      reopen.text === '☰' && reopen.position === 'fixed' && reopen.zIndex === '44' &&
+  record('[目录] 关闭后移除侧栏，展开按钮保留图标与读屏名称（fixed / z44 / 34×34）',
+    !!reopen && reopen.aside === false && reopen.label === '展开目录' && reopen.title === null &&
+      reopen.svg && reopen.position === 'fixed' && reopen.zIndex === '44' &&
       reopen.size.w === 34 && reopen.size.h === 34,
     JSON.stringify(reopen))
 
@@ -771,8 +775,8 @@ const vueCall = (page, body) => page.evaluate((source) => {
 
   record('[版本] 页码恒为「编辑记录 N/M」，无数据时 0/0 且两个翻页钮都禁用',
     !!degraded && degraded.pager.cursor === '编辑记录 0/0' &&
-      degraded.pager.steps.length === 2 && degraded.pager.steps[0].text === '上一项' &&
-      degraded.pager.steps[1].text === '下一项' &&
+      degraded.pager.steps.length === 2 && degraded.pager.steps[0].text === '上一页' &&
+      degraded.pager.steps[1].text === '下一页' &&
       degraded.pager.steps[0].disabled && degraded.pager.steps[1].disabled,
     degraded ? `${degraded.pager.cursor}/${degraded.pager.steps.map((s) => s.disabled).join(',')}` : '没渲染')
 
@@ -831,9 +835,11 @@ const vueCall = (page, body) => page.evaluate((source) => {
       filled.preview.binary[0] === '该版本正文为二进制快照（1024 字节），需由协同运行时解码后才能渲染。',
     filled && filled.preview ? filled.preview.binary.join(' | ') : '没渲染')
 
+  // 命名版本在时间线上保留名称（`终稿 · 11月19日 05:49`），未命名才只有时间；
+  // 两种形态都要求以「月日 时:分」收尾。
   record('[版本] 时间线条目 = 名称 / 描述 / 作者三行，最新一条带 selected',
     !!filled && filled.days[0].items[0].cls.indexOf('selected') !== -1 &&
-      /^\d+月\d+日 \d{2}:\d{2}$/.test(filled.days[0].items[0].name) &&
+      /^(?:.+ · )?\d+月\d+日 \d{2}:\d{2}$/.test(filled.days[0].items[0].name) &&
       filled.days[0].items[0].desc === '新增 2 个块' &&
       filled.days[0].items[0].user === '张三',
     filled ? JSON.stringify(filled.days[0].items[0]) : '没渲染')
@@ -998,70 +1004,10 @@ const vueCall = (page, body) => page.evaluate((source) => {
     !!cleared.panel && cleared.rect.h === 156 && cleared.actions === null,
     cleared.panel ? `h=${cleared.rect.h} actions=${cleared.actions}` : '没渲染')
 
-  /* ═══════════════════ ⑤ 另存为版本 Dialog + 恢复 toast ═══════════════════ */
+  /* ═══════════════════ ⑤ 恢复 toast ═══════════════════ */
 
-  const opened = await vueCall(page, 'const ok = vue.openSaveVersionDialog(); await sleep(360); return ok')
-  record('[版本弹窗] openSaveVersionDialog() 在 Provider 就绪后返回 true',
-    opened === true, String(opened))
-
-  const save = await page.evaluate(measureSaveDialog)
-  record('[版本弹窗] 遮罩 + `role=dialog[aria-modal][tabindex=-1]` 外壳（aria-label 跟 h3 标题同值）',
-    !!save.mask && !!save.wrap && save.wrap.role === 'dialog' && save.wrap.ariaModal === 'true' &&
-      save.wrap.tabindex === '-1' && !!save.dialog &&
-      save.wrap.ariaLabel === save.dialog.title &&
-      /^保存 .+ 的文档版本$/.test(save.wrap.ariaLabel),
-    save.wrap ? JSON.stringify(save.wrap) : '没渲染')
-
-  record('[版本弹窗] 卡片 420 宽 / h3 标题 / 关闭钮 aria-label=关闭 + 20×20 图标',
-    !!save.dialog && save.dialog.w === 420 && save.dialog.titleTag === 'h3' &&
-      !!save.close && save.close.label === '关闭' && save.close.type === 'button' &&
-      save.close.iconSize.w === 20,
-    save.dialog ? `${save.dialog.w}px ${save.dialog.title}` : '没渲染')
-
-  record('[版本弹窗] `label[for]` 指向输入框 id，输入框 maxlength=1000 / placeholder=请输入名称',
-    !!save.label && save.label.tag === 'label' && save.label.text === '版本名称' &&
-      !!save.input && !!save.input.id && save.label.for === save.input.id &&
-      save.input.type === 'text' && save.input.maxlength === '1000' &&
-      save.input.placeholder === '请输入名称',
-    save.input ? JSON.stringify(save.input) : '没渲染')
-
-  record('[版本弹窗] 计数随输入**替换**而非追加（N/1000 与输入框同步）',
-    /^\d+\/1000$/.test(String(save.counter)) &&
-      String(save.counter).split('/')[0] === String(save.input ? save.input.value.length : -1),
-    `counter=${save.counter} value=${save.input ? save.input.value : '?'}`)
-
-  record('[版本弹窗] 底栏 = 取消（is-* 描边）+ 确定（:disabled 跟 versionCanCreate）',
-    save.footer.length === 2 && save.footer[0].text === '取消' &&
-      save.footer[0].cls.indexOf('lark-doc-save-version-cancel') !== -1 &&
-      save.footer[1].text === '确定' && save.footer[1].disabled === false &&
-      save.footer[1].title === '',
-    save.footer.map((b) => `${b.text}:${b.disabled}`).join(','))
-
-  record('[版本弹窗] 无错误时 `-error` 段不在 DOM 里',
-    save.error === null, String(save.error))
-
-  // 输入 → 计数更新；Esc 关闭（与历史记录面板相反）
-  await page.evaluate(() => {
-    const input = document.querySelector('.lark-doc-save-version-input')
-    input.focus()
-    input.value = '周报 第 3 版'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-  await page.waitForTimeout(300)
-  const typed = await page.evaluate(measureSaveDialog)
-  record('[版本弹窗] 输入 8 字 → 计数变 8/1000',
-    typed.counter === '8/1000', String(typed.counter))
-
-  // 点遮罩**不关**
-  await page.mouse.click(20, 20)
-  await page.waitForTimeout(320)
-  record('[版本弹窗] 点遮罩**不关闭**（与常规弹窗口径不同）', await open(page, '.lark-doc-save-version-wrap'))
-
-  await page.evaluate(() => document.querySelector('.lark-doc-save-version-input').focus())
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(320)
-  record('[版本弹窗] `Esc` 关闭（与历史记录面板正好相反）',
-    !(await open(page, '.lark-doc-save-version-wrap')))
+  // 「另存为版本」Dialog 已在 6da84cc 随「飞书式自动历史版本」下线（D-24 产品决策偏离），
+  // 手动入口不复存在，这里只保留仍在上游的恢复成功 toast。
 
   // 恢复成功 toast
   await vueCall(page, 'vue.versionNotice = "已恢复为新版本，原版本仍保留在历史记录中"; await sleep(320)')

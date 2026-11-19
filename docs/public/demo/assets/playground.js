@@ -19,6 +19,19 @@
   // Rollup UMD 暴露命名空间 window.LarkDoc，其中 LarkDoc 是编辑器构造器。
   var NS = window.LarkDoc || {}
   var LarkDocCtor = NS.LarkDoc || null
+
+  // 主入口只是 loader：它负责把同目录的 runtime（10 MB+）挂到 window.LarkDoc 上。
+  // 这个脚本解析时 runtime 往往还没到位，必须等 `runtimeReady` 再取构造器，
+  // 否则会在首次渲染时误报「没加载到 lark-doc」。
+  function whenReady() {
+    if (LarkDocCtor) return Promise.resolve(LarkDocCtor)
+    var ready = NS.runtimeReady || Promise.resolve(NS)
+    return Promise.resolve(ready).then(function (ns) {
+      var ctor = (ns && ns.LarkDoc) || (window.LarkDoc && window.LarkDoc.LarkDoc) || null
+      if (ctor) LarkDocCtor = ctor
+      return LarkDocCtor
+    }, function () { return LarkDocCtor })
+  }
   var SAMPLE = window.__LARK_DOC_SAMPLE__ || { type: 'doc', content: [{ type: 'paragraph' }] }
   var tokenize = window.__larkDocHighlight || function (s) { return s.replace(/[&<>]/g, '') }
   var esc = window.__larkDocEscape || function (s) { return String(s) }
@@ -621,14 +634,16 @@
     initLayout()
     initEvents()
     loadVersion()
-    run('boot')
-
-    // 存下来的代码可能已经不能用（比如上次写坏了），回落到默认代码重跑一次。
-    if (!instance && saved) {
-      ta.value = DEFAULT_CODE
-      renderHighlight()
+    whenReady().then(function () {
       run('boot')
-    }
+
+      // 存下来的代码可能已经不能用（比如上次写坏了），回落到默认代码重跑一次。
+      if (!instance && saved) {
+        ta.value = DEFAULT_CODE
+        renderHighlight()
+        run('boot')
+      }
+    })
   }
 
   boot()

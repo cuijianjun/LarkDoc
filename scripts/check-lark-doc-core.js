@@ -19,6 +19,7 @@ require.extensions['.js'] = (module, filename) => {
 assert(fs.existsSync(path.join(root, 'extensions.js')), 'Missing LarkDoc schema: H9 and serializable blocks are not implemented')
 const { createLarkDocExtensions, applyLineStartMarker } = require(path.join(root, 'extensions.js'))
 const { safeUrl, validateDocument, getSlashMatch, findTextMatches, replaceText, moveBlockRange, collectOutline, resolveHeadingSection, foldedRange, headingActionRange, isPageHeading, isFoldableBlock, foldableIdPositions, TEXT_FOLD_TYPES, formatHeadingNumber, computeHeadingNumbers, headingNumberAt, clampHeadingNumberStart, formatOrderedIndex, computeOrderedListNumbers, computeBulletItems, alphaListLabel, romanListLabel, mapHeadingFoldKeys, resolveBlockTargetRange } = require(path.join(root, 'documentOperations.js'))
+const { safeFileUrl } = require(path.join(sourceRoot, 'core/media/file-block.js'))
 const { createLarkDocConfig, isCommandEnabled, isBlockActionEnabled } = require(path.join(root, 'larkDocConfig.js'))
 const { filterCommands } = require(path.join(root, 'commands.js'))
 const { getSchema, getExtensionField } = require('@tiptap/core')
@@ -207,6 +208,10 @@ check('Changing the active handle target closes a stale block menu', () => {
     const rect = { left: 10, top: 20, right: 40, bottom: 40, width: 30, height: 20 }
     const paragraph = new FakeElement(rect)
     const paper = new FakeElement(rect)
+    // positionBlockHandle 现在从 editor.state.doc 解析目标块并读 selection，
+    // 只给 view 的旧 mock 会直接抛 "Cannot read properties of undefined (reading 'doc')"。
+    const handleEditor = editorFor(doc([p('第一段'), p('第二段')]))
+    handleEditor.view = { ...handleEditor.view, dom: { contains: () => true }, nodeDOM: () => paragraph }
     const context = {
       editor: { state: { doc: {} }, view: { dom: { contains: () => true }, nodeDOM: () => paragraph } },
       tableRangeFor: () => null,
@@ -318,6 +323,8 @@ check('Empty block plus opens the insert menu while six-dot handles open block a
     handleHovering: false,
     openBlockMenu() { opened += 1 },
   }
+  // e6aecb4 起 `handleIsTaskList` 已移除：任务列表句柄与普通句柄共用同一条块菜单入口，
+  // 唯一排除条件只剩空段。这里守住空段那条底线，任务列表放开后不再断言拦截。
   component.methods.openBlockMenuOnHover.call(taskHandle)
   assert.strictEqual(opened, 1, 'task list handles retain the current block-action entry')
   component.methods.openBlockMenuOnHover.call({ ...taskHandle, writable: () => false })
@@ -465,7 +472,12 @@ check('Public text-style empty attributes roundtrip as unset formatting', () => 
   assert.strictEqual(canonical.content[0].content[0].marks[0].attrs.backgroundColor, '')
 })
 check('URL policy blocks obfuscated scripts and persistent blob/SVG images', () => {
-  for (const value of ['javascript:alert(1)', ' java\nscript:alert(1)', '//host/image', 'data:text/html,x', 'blob:http://host/a']) assert(!safeUrl(value, true), value)
+  for (const value of ['javascript:alert(1)', ' java\nscript:alert(1)', '//host/image', 'data:text/html,x', 'blob:javascript:alert(1)', 'blob:http://host/../a']) assert(!safeUrl(value, true), value)
+  assert(!safeUrl('blob:http://host/0b7c1f2e-aa', true))
+  assert(!safeFileUrl('blob:http://host/0b7c1f2e-aa'))
+  assert(safeFileUrl('data:video/mp4;base64,aGVsbG8='))
+  assert(!safeFileUrl('data:text/html;base64,aGVsbG8='))
+  assert(!safeUrl('data:video/mp4;base64,aGVsbG8=', true))
   assert(!safeUrl('data:image/svg+xml;base64,PHN2Zz4=', true))
   assert(safeUrl('data:image/png;base64,aGVsbG8=', true))
   assert(safeUrl('https://example.com/image.png', true))
@@ -535,8 +547,8 @@ check('Outline includes nested and ninth-level headings with document positions'
   const document = doc([{ type: 'heading', attrs: { level: 1 }, content: [text('A')] }, p('body'), { type: 'callout', content: [{ type: 'heading', attrs: { level: 9 }, content: [text('B')] }] }])
   assert.deepStrictEqual(collectOutline(document), [{ pos: 0, level: 1, text: 'A' }])
 })
-check('Heading actions follow indentation while folding follows heading chapters', () => {
-  // 块动作保留缩进子树；dev标题折叠保留至下一个同级/更高标题的章节。
+check('Indented headings fold their subtree and unindented headings fold their chapter', () => {
+  // 块动作保留缩进子树，无缩进标题仍提供章节折叠。
   const h2 = hi(2, '你好我是1', 0)
   const h3 = hi(3, '你好 我是3', 1)
   const rootParagraph = pi('根级文字', 0)
@@ -551,19 +563,19 @@ check('Heading actions follow indentation while folding follows heading chapters
   assert.deepStrictEqual(section.blocks.map((block) => block.node.type.name), ['heading', 'heading'])
   assert.strictEqual(section.to, positions[2].pos, '回到同级缩进的段落结束章节')
   assert.deepStrictEqual(foldedRange(document, positions[0].pos), { from: positions[0].pos + positions[0].node.nodeSize, to: positions[5].pos }, '标题折叠包含平级正文，直到下一个同级标题')
-  // 块动作的缩进边界不影响按标题级别划定的章节折叠。
+  // 已明确缩进的父标题沿用缩进边界，同级 H4 不在其子树内。
   const userDocument = doc([hi(2, '我是2', 1), pi('你好 我是标题2', 2), hi(4, '你好 我是3', 1), pi('兄弟正文', 1)])
   const userPositions = []
   userDocument.forEach((node, pos) => userPositions.push({ node, pos }))
   const userSection = resolveHeadingSection(userDocument, userPositions[0].pos)
   assert.deepStrictEqual(userSection.blocks.map((block) => block.node.type.name), ['heading', 'paragraph'], '缩进更深的普通段落属于 H2，同级缩进的 H4 不属于')
-  assert.deepStrictEqual(foldedRange(userDocument, userPositions[0].pos), { from: userPositions[0].pos + userPositions[0].node.nodeSize, to: userDocument.content.size })
+  assert.deepStrictEqual(foldedRange(userDocument, userPositions[0].pos), { from: userPositions[0].pos + userPositions[0].node.nodeSize, to: userPositions[2].pos })
   assert.deepStrictEqual(collectOutline(userDocument).map((item) => item.level), [2, 4], '目录仍按标题级别收集，与折叠范围无关')
   // 缩进段落里插入的代码块（indent 默认 0）沿用上一层，不会把章节截断
   const nestedCode = doc([hi(2, '父标题', 1), pi('子段落', 2), { type: 'codeBlock', attrs: { indent: 0 }, content: [text('代码')] }, pi('同级兄弟', 1)])
   const nestedPositions = []
   nestedCode.forEach((node, pos) => nestedPositions.push({ node, pos }))
-  assert.deepStrictEqual(foldedRange(nestedCode, nestedPositions[0].pos), { from: nestedPositions[0].pos + nestedPositions[0].node.nodeSize, to: nestedCode.content.size }, '章节内未显式缩进的代码和正文均随标题折叠')
+  assert.deepStrictEqual(foldedRange(nestedCode, nestedPositions[0].pos), { from: nestedPositions[0].pos + nestedPositions[0].node.nodeSize, to: nestedPositions[3].pos }, '未显式缩进的代码块仍属于缩进子树')
   // 平级正文按标题章节折叠；块动作仍仅取显式缩进子树。
   const flat = doc([hi(2, 'A'), hi(3, 'B'), p('C')])
   assert.deepStrictEqual(foldedRange(flat, 0), { from: flat.firstChild.nodeSize, to: flat.content.size }, '未视觉缩进的标题仍折叠其章节正文')
@@ -680,10 +692,11 @@ check('Heading numbering attributes round-trip through HTML and pass the sanitiz
   const plain = schema.nodes.heading.spec.toDOM(schema.nodeFromJSON(hd(2, 'Y')))
   assert.strictEqual(plain[1]['data-numbering'], undefined, '没开编号的标题不输出编号属性')
   assert.strictEqual(plain[1]['data-numbering-start'], undefined)
-  // 越界起点被 JSON 校验拦下（sanitize 白名单由 check-vditor-html 的 jsdom 用例覆盖）
-  assert.throws(() => validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 99999 })] }, schema), /不安全或无效|numberingStart/, '越界起点被 JSON 校验拦下')
-  const imported = validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 3 })] }, schema)
-  assert.strictEqual(imported.content[0].attrs.numberingStart, 3)
+  // 标题编号起始值是九位上限（HEADING_VALUE_MAX = 999999999），99999 合法；
+  // 列表入口的 999 上限由 clampHeadingNumberStart 单独守（见上一条检查）。
+  assert.throws(() => validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 1000000000 })] }, schema), /不安全或无效|numberingStart/, '越界起点被 JSON 校验拦下')
+  const imported = validateDocument({ type: 'doc', content: [hd(1, 'Z', { numbering: true, numberingStart: 99999 })] }, schema)
+  assert.strictEqual(imported.content[0].attrs.numberingStart, 99999, '九位以内的起始编号不再被旧上限拦下')
 })
 check('Heading numbering commands toggle, restart and skip empty transactions', () => {
   const extension = createLarkDocExtensions().find((ext) => ext.name === 'larkDoc')
@@ -1185,7 +1198,7 @@ check('Code blocks indent as a box, capped at the LarkDoc nesting limit', () => 
   assert.strictEqual(createLarkDocConfig({}).limits.maxIndent, 5)
   // 块菜单的「增加缩进」要能找到代码块目标（文本对齐仍只认段落/标题）。
   const document = doc([{ type: 'codeBlock', content: [text('nested')] }])
-  const context = { editor: { state: { doc: document } }, blockTextblockTarget: component.methods.blockTextblockTarget }
+  const context = { editor: { state: { doc: document } }, blockTextblockTarget: component.methods.blockTextblockTarget, blockTypeTextRange: component.methods.blockTypeTextRange }
   const target = component.methods.blockIndentTarget.call(context, { from: 0, to: document.firstChild.nodeSize })
   assert(target && target.node.type.name === 'codeBlock', 'code blocks are valid indent targets')
   assert.strictEqual(component.methods.blockTextblockTarget.call(context, { from: 0, to: document.firstChild.nodeSize }), null, 'text alignment stays limited to text blocks')

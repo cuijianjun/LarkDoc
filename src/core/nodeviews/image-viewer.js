@@ -153,8 +153,6 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   }
   function loaded() {
     if (destroyed) return
-    if (commentOpen) stage.style.marginRight = `${Math.min(300, root.ownerDocument.defaultView.innerWidth * .75)}px`
-    else stage.style.removeProperty('margin-right')
     // Source viewport measurements: 95% width / 90% height, with observed initial zoom 255%.
     const geometry = imageCropGeometry(image.naturalWidth, image.naturalHeight, items[index].crop)
     fitScale = Math.min(2.55, (stage.getBoundingClientRect().width || window.innerWidth) * 0.95 / (geometry?.width || image.naturalWidth), window.innerHeight * 0.9 / (geometry?.height || image.naturalHeight))

@@ -161,9 +161,11 @@ describe('P7-03 derived snapshot: gate wiring on both sides', () => {
     expect(hostSource).toContain('...nativeDocumentStateMethods')
     const body = source.match(/\n    refreshDocumentState\([^)]*\) \{([\s\S]*?)\n    \},/)[1]
     const clearAt = body.search(/this\.outlinePending\s*=\s*false\b/)
-    const outlineAt = body.search(/this\.outline\s*=\s*(?:Object\.freeze\(\s*)?collectOutline\(this\.editor\.state\.doc\)/)
+    const collectAt = body.search(/const \{ outline, maxHeadingLevel \}\s*=\s*collectOutlineState\(doc\)/)
+    const outlineAt = body.search(/this\.outline\s*=\s*Object\.freeze\(outline\)/)
     expect(clearAt).toBeGreaterThan(-1)
-    expect(outlineAt).toBeGreaterThan(clearAt)
+    expect(collectAt).toBeGreaterThan(clearAt)
+    expect(outlineAt).toBeGreaterThan(collectAt)
     expect(body.indexOf('this.syncOutlineCollapseState()')).toBeGreaterThan(outlineAt)
   })
 

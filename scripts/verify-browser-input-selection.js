@@ -114,7 +114,7 @@ async function auditInteractions(page, check) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: false, headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)

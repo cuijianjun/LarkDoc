@@ -13,7 +13,7 @@ const results = []
 const source = `const value = 42;\nconsole.log(value);\n${'long-line-code-'.repeat(40)}\n// logical fourth line`
 
 async function main() {
-  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: false, headless: true })
   const context = await browser.newContext({ viewport: { width: 1680, height: 1050 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)

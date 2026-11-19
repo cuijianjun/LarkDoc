@@ -46,6 +46,7 @@ async function main() {
     const target = await context.newPage()
     for (const page of [source, target]) {
       page.on('pageerror', error => errors.push(String(error)))
+      await page.bringToFront()
       await page.goto(BASE, { waitUntil: 'networkidle' })
       await page.waitForFunction(() => window.__larkDoc?.getEditor?.())
       await page.evaluate(() => {
@@ -115,20 +116,10 @@ async function main() {
     passed++
     // Async Clipboard API custom formats use a different browser representation.
     await set(source, [paragraph('menu bold', 'menu-id')])
-    const menuResult = await source.evaluate(async () => {
-      const root = document.querySelector('.lark-doc-editor')
-      const queue = [root?.__vue__, window.__larkDoc.getWorkspace(), window.__verifyHostVm]
-      const seen = new Set()
-      while (queue.length) {
-        const vm = queue.shift()
-        if (!vm || seen.has(vm)) continue
-        seen.add(vm)
-        if (typeof vm.copyBlock === 'function') return vm.copyBlock({ from: 0, to: vm.editor.state.doc.firstChild.nodeSize })
-        queue.push(...(vm.$children || []))
-      }
-      throw new Error('Menu component unavailable')
-    })
-    assert.equal(menuResult, true)
+    await source.locator('.ProseMirror > p').first().hover()
+    await source.getByRole('button', { name: '块操作', exact: true }).hover()
+    await source.locator('.lark-doc-block-menu').getByRole('menuitem', { name: '复制', exact: true }).click()
+    await source.waitForFunction(async () => (await navigator.clipboard.readText()) === 'menu bold')
     await set(target, [{ type: 'paragraph' }])
     await target.keyboard.press('ControlOrMeta+v')
     await target.waitForFunction(() => window.__larkDoc.getEditor().state.doc.textContent === 'menu bold')

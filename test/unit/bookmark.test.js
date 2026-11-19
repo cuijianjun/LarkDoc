@@ -29,6 +29,21 @@ afterEach(() => {
 
 const SAMPLE = 'https://www.example.com/'
 
+describe('application preview cards', () => {
+  it('keeps the application identity with backend metadata through JSON and HTML roundtrips', () => {
+    const editor = new Editor({ extensions: createLarkDocExtensions({}), content: '<p></p>' })
+    mounted.push({ cleanup: () => editor.destroy() })
+    expect(editor.commands.setBookmark({ url: SAMPLE, appKind: 'bitable', title: '后端项目表', desc: '2 条记录', cover: `${SAMPLE}cover.png` })).toBe(true)
+    expect(editor.getJSON().content.find(node => node.type === 'bookmark').attrs.appKind).toBe('bitable')
+    const html = editor.getHTML()
+    expect(html).toContain('多维表格')
+    expect(html).toContain('后端项目表')
+    editor.commands.setContent(html)
+    expect(editor.getJSON().content.find(node => node.type === 'bookmark').attrs.appKind).toBe('bitable')
+    expect(normalizeBookmark({ url: SAMPLE, appKind: 'unknown' }).appKind).toBeUndefined()
+  })
+})
+
 function mountEditor(attrs, options = {}) {
   const editor = new Editor({
     extensions: createLarkDocExtensions({

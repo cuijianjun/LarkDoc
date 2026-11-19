@@ -111,6 +111,7 @@ const measureButtons = () => {
         label: b.getAttribute('aria-label') || b.textContent.trim(),
         aria: b.getAttribute('aria-label'),
         title: b.getAttribute('title'),
+        popup: b.getAttribute('aria-haspopup'),
         h: Math.round(rect.height),
         w: Math.round(rect.width),
         // 图标中心相对按钮中心的偏移；marks 组是纯文字字形，没有图标 → null
@@ -171,7 +172,7 @@ const triggerText = (page) => page.evaluate(() => document.querySelector('.lark-
 const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lark-doc-heading-tool .lark-doc-heading-menu'))
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1920, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -227,9 +228,9 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   const buttons = await page.evaluate(measureButtons)
   record('[结构] 工具栏共 34 个按钮（2+1+8+3+8+4+8）', !!buttons && buttons.count === 34, buttons ? `${buttons.count} 个` : '')
 
-  record('[结构] 每个按钮都有 aria-label 与 title',
-    !!buttons && buttons.rows.every((row) => !!row.aria && !!row.title),
-    buttons ? buttons.rows.filter((row) => !row.aria || !row.title).map((row) => row.label).join(' | ') || '全部齐全' : '')
+  const badLabels = buttons?.rows.filter(row => !row.aria || (row.aria === '插入表格' ? row.title !== null || row.popup !== 'dialog' : !row.title))
+  record('[结构] 按钮都有 aria-label，插入表格用下拉反馈，其余保留 title',
+    !!badLabels && badLabels.length === 0, badLabels?.map(row => row.label).join(' | ') || '')
 
   // ——————————————————— ② 盒模型与图标对齐 ———————————————————
   const heights = buttons ? [...new Set(buttons.rows.map((row) => row.h))] : []
@@ -408,8 +409,11 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!headerMenu && headerMenu.role === 'menu' && headerMenu.label === '文档操作' && headerMenu.expanded === 'true',
     headerMenu ? `${headerMenu.role}/${headerMenu.label} expanded=${headerMenu.expanded}` : '未打开')
 
-  record('[承接] 弹层内含字数上限 / 保存 / 模板 / 导入 / 导出 / 快照 六个入口',
-    !!headerMenu && ['字数上限', '保存', '选择文档模板', '导入', '导出文档格式', '本地快照'].every((label) => headerMenu.labels.includes(label)),
+  record('[承接] 弹层内含字数上限 / 保存 / 模板 / 导入 / 导出 五个入口',
+    !!headerMenu && ['字数上限', '保存', '选择文档模板', '导入', '导出文档格式'].every((label) => headerMenu.labels.includes(label)),
+    headerMenu ? headerMenu.labels.join(' | ') : '')
+  record('[对齐飞书] 本地快照入口已隐藏（飞书只有本地记录，无用户可见快照列表）',
+    !!headerMenu && !headerMenu.labels.includes('本地快照'),
     headerMenu ? headerMenu.labels.join(' | ') : '')
 
   await page.mouse.click(720, 780)
@@ -508,7 +512,7 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
         cls: bar.className,
         h: Math.round(barRect.height),
         position: cs.position,
-        children: [...bar.children].map((el) => ({ tag: el.tagName, cls: el.className })),
+        children: [...bar.children].map((el) => ({ tag: el.tagName, cls: el.className, hidden: getComputedStyle(el).display === 'none' })),
       },
       brand: brand ? { label: brand.getAttribute('aria-label'), text: brand.textContent.trim() } : null,
       title: titleInput ? { label: titleInput.getAttribute('aria-label'), value: titleInput.value } : null,
@@ -523,9 +527,12 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!topbar.bar && topbar.bar.tag === 'HEADER' && topbar.bar.cls === 'lark-doc-topbar' && topbar.bar.position === 'sticky' && topbar.bar.h === 58,
     topbar.bar ? `${topbar.bar.tag}/${topbar.bar.position}/${topbar.bar.h}px` : '未渲染')
 
+  // 移动端钩子（返 library / 大纲 / 头像 / 溢出开关）与桌面分享按钮也是顶栏子节点，
+  // 但它们在宽屏由 CSS 收起；规格约束的是「可见的三段顺序」，所以只取可见项。
+  const visibleSections = topbar.bar ? topbar.bar.children.filter((child) => !child.hidden).map((child) => child.cls) : []
   record('[顶栏] 三段结构：品牌 / 标题 / 操作区（顺序固定）',
-    !!topbar.bar && topbar.bar.children.length === 3 && topbar.bar.children[0].cls === 'lark-doc-brand' && topbar.bar.children[1].cls === 'lark-doc-title-wrap' && topbar.bar.children[2].cls === 'lark-doc-header-actions',
-    topbar.bar ? topbar.bar.children.map((child) => child.cls).join(' | ') : '')
+    visibleSections[0] === 'lark-doc-brand' && visibleSections[1] === 'lark-doc-title-wrap' && visibleSections[2] === 'lark-doc-header-actions',
+    visibleSections.join(' | '))
 
   record('[顶栏] 品牌区 aria-label=文档 且渲染 ✦ 文档',
     !!topbar.brand && topbar.brand.label === '文档' && topbar.brand.text.includes('✦') && topbar.brand.text.includes('文档'),

@@ -6,14 +6,16 @@ import { isAbortError, normalizeUploader } from '../core/media/upload'
 import { normalizeVditorHtml } from '../legacy'
 import { createEditorController } from '../editor/EditorController'
 import { createNativeEditorHost } from '../editor/nativeEditorHost'
-import { createLarkDocConfig, resolveMediaOptions, isCommandEnabled } from '../components/lark-doc/larkDocConfig'
+import { createLarkDocConfig, resolveMediaOptions, isCommandEnabled, isBlockActionEnabled } from '../components/lark-doc/larkDocConfig'
 import { applyMediaHtmlMode } from '../core/media/htmlMode'
 import { createWorkspaceState, createWorkspaceController } from '../workspace/WorkspaceController'
 import { createWorkspace } from '../ui/workspace'
+import { iconNode } from '../ui/icon'
 import { createWorkspaceShell } from '../ui/workspaceShell'
 import { createEditorUiRegistry } from '../ui/editorUiRegistry'
 import { createWorkspaceViewState } from '../core/workspace/workspace-view-state'
 import { createNetworkPolicy } from '../networkPolicy'
+import { evaluateOutputPolicy } from '../core/policy/output'
 import { LARGE_DOCUMENT_SIZE } from '../editor/documentStats'
 
 function isPlainObject(value) {
@@ -205,13 +207,30 @@ export function createDomRenderer() {
         }
         if (name === 'ai-request' && typeof on[name] !== 'function') {
           if (payload?.action === 'image') workspaceController?.openImageAI(payload.image)
-          else if (payload === 'rewrite' || payload?.action === 'chat') workspaceController?.openSelectionAI()
-          else workspaceController?.startAI(payload)
+          // 只有显式要「对话」的入口（块菜单「问问AI」、表格 AI）才开问答面板；
+          // 其余 —— 工具栏 AI、气泡、命令菜单、块菜单翻译 —— 都是**一次性生成**
+          // （续写/扩写/精简/翻译…），直接按动作进结果面板，别再让用户先对着
+          // 「今天有什么工作要处理？」重打一遍需求。
+          else if (payload?.action === 'chat') workspaceController?.openSelectionAI()
+          else workspaceController?.startAI(typeof payload === 'string' ? payload : payload?.action || 'rewrite')
         }
         const result = typeof on[name] === 'function' ? on[name](payload) : undefined
         requestRender()
         return result
       }
+      // 视频块外部工具条的「分享 / 评论」是纯 DOM NodeView，够不到 Vue $emit；
+      // 冒泡的 lark-doc:file-action 在这里转成同一个 emit('file-action') 出口给宿主。
+      const onFileAction = (event) => {
+        event.stopPropagation()
+        if (event.detail?.action === 'copyLink') {
+          if (isBlockActionEnabled(state.editorConfig, 'copyLink') && documentHost.session?.can?.('canCopy') !== false && evaluateOutputPolicy(documentHost.session?.getProvider?.('security')?.policy, 'copy').allowed) {
+            void documentHost.copyBlockLink({ from: event.detail.pos })
+          }
+          return
+        }
+        emit('file-action', event.detail || {})
+      }
+      shell.root.addEventListener('lark-doc:file-action', onFileAction)
       const resetLargeDocumentLayout = () => {
         if (largeDocumentViewportFrame != null) {
           if (typeof viewWindow.cancelAnimationFrame === 'function') viewWindow.cancelAnimationFrame(largeDocumentViewportFrame)
@@ -377,7 +396,7 @@ export function createDomRenderer() {
         exportDocument: value => workspaceController.exportDocument(value),
         toggleHistory: () => workspaceController.toggleHistory(),
         openVersionHistory: renderNow(() => documentHost.openVersionPanel()),
-        openCommentHistory: renderNow(() => documentHost.openHistoricalComments()),
+        openCommentHistory: renderNow(() => { documentHost.closeHeaderMenu(); documentHost.openCommentHistory() }),
         closeTemplate: () => workspaceController.closeTemplatePicker(),
         setTemplateQuery: value => { state.templateQuery = value },
         chooseTemplate: id => workspaceController.chooseTemplate(id),
@@ -388,7 +407,7 @@ export function createDomRenderer() {
         removeAIImage: () => workspaceController.removeAIImage(),
         removeAIReference: () => workspaceController.removeAIReference(),
         setAIContext: value => { state.aiContextScope = value; workspaceController.resetAIPreview() },
-        setAIAction: value => { state.aiAction = value },
+        setAIAction: value => workspaceController.switchAIAction(value),
         setAILanguage: value => { state.aiLanguage = value },
         setAIPrompt: value => { state.aiPrompt = value },
         isAIChatCurrent: epoch => !destroyed && state.aiOpen && state.aiChatEpoch === epoch
@@ -417,8 +436,8 @@ export function createDomRenderer() {
       reopenOutline.type = 'button'
       reopenOutline.className = 'lark-doc-outline-reopen'
       reopenOutline.setAttribute('aria-label', '展开目录')
-      reopenOutline.title = '展开目录'
-      reopenOutline.textContent = '☰'
+      reopenOutline.setAttribute('data-tooltip', '展开目录')
+      reopenOutline.appendChild(iconNode('outline-expand', 20))
       reopenOutline.addEventListener('click', () => { state.outlineOpen = true })
       shell.outlineHost.parentNode.insertBefore(reopenOutline, shell.outlineHost)
 
@@ -433,7 +452,7 @@ export function createDomRenderer() {
         const query = String(state.templateQuery || '').trim().toLocaleLowerCase()
         workspaceUi.update({
           ...projected,
-          commentHistoryAvailable: documentHost.featureEnabled('comments') && documentHost.commentCan('canView'),
+          commentHistoryAvailable: documentHost.commentCanViewHistory?.() === true,
           maxLength: state.editorConfig.limits.maxLength,
           maxLengthOptions: state.maxLengthOptions,
           saveStatus: state.saveStatus,
@@ -565,7 +584,27 @@ export function createDomRenderer() {
             ...props,
             getCalendarEventOptions: () => ({ onJoin: props.onCalendarEventJoin, refetch: props.calendarEventRefetch }),
             getIsvOptions: () => ({ onButtonAction: props.onIsvButtonAction, onCatalogJump: props.onIsvCatalogJump }),
-            getImageOptions: () => ({ enabled: isCommandEnabled(state.editorConfig, 'image', 'images'), aiEnabled: state.editorConfig.features.ai !== false, onAction: documentHost.runImageAction, onComment: documentHost.imageCommentsHandler(), canLoad: src => createNetworkPolicy(state.editorConfig.network).allows(src) }),
+            getImageOptions: () => {
+              const comments = documentHost.commentProvider()
+              return { enabled: isCommandEnabled(state.editorConfig, 'image', 'images'), aiEnabled: state.editorConfig.features.ai !== false,
+                commentEnabled: !!comments && !comments.isRemote && documentHost.commentAllowed('create'),
+                onAction: documentHost.runImageAction, onComment: documentHost.imageCommentsHandler(), canLoad: src => createNetworkPolicy(state.editorConfig.network).allows(src) }
+            },
+            captureFileOwner() {
+              const session = documentHost.session, documentId = session?.documentId
+              const identity = session?._identityGeneration, actor = session?._privateIdentityGeneration, authorization = session?._authorizationGeneration
+              return () => !destroyed && documentHost.session === session && !session?._destroyed && session?.documentId === documentId &&
+                session?._identityGeneration === identity && session?._privateIdentityGeneration === actor && session?._authorizationGeneration === authorization
+            },
+            allowFileAction(action, url) {
+              const session = documentHost.session
+              if (action === 'edit' || action === 'delete') return documentHost.writable() && documentHost.featureEnabled('files') &&
+                (action !== 'delete' || isBlockActionEnabled(state.editorConfig, 'delete'))
+              if (action === 'copy' && !isBlockActionEnabled(state.editorConfig, 'copyLink')) return false
+              if (url && !createNetworkPolicy(state.editorConfig.network).allows(url)) return false
+              const capability = action === 'copy' ? 'canCopy' : 'canExport'
+              return session?.can?.(capability) !== false && evaluateOutputPolicy(session?.getProvider?.('security')?.policy, action).allowed
+            },
             isColumnsEnabled: () => state.editorConfig.features.columns,
             isAgendaEnabled: () => isCommandEnabled(state.editorConfig, 'agenda', 'insert'),
             isDividerEnabled: () => isCommandEnabled(state.editorConfig, 'divider', 'blockStyle'),
@@ -635,6 +674,7 @@ export function createDomRenderer() {
         scheduleLargeDocumentLayout()
         editorController.setImportReport(preparedInitial?.converted ? preparedInitial.report : null)
       } catch (error) {
+        shell.root.removeEventListener('lark-doc:file-action', onFileAction)
         resetLargeDocumentLayout()
         runtime.destroy()
         editorController?.destroy()
@@ -685,6 +725,7 @@ export function createDomRenderer() {
         helpFabUi: documentHost._helpFabUi, outlineUi: documentHost._panelsUi?.outline,
         editorUiRegistry, viewWindow, props, requestRender, nativeHost: runtime,
         cleanup: () => {
+          shell.root.removeEventListener('lark-doc:file-action', onFileAction)
           importConfirmation?.destroy()
           editor?.off('beforeTransaction', prepareProjectionSelection)
           resolveImageFile.cancelAll('destroy')

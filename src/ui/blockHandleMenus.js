@@ -19,7 +19,7 @@ export function createBlockHandleMenus(options) {
   aiButton.type = 'button'
   aiButton.setAttribute('role', 'menuitem')
   aiButton.className = 'lark-doc-block-menu-ai'
-  aiButton.setAttribute('title', '问问AI')
+  aiButton.setAttribute('aria-label', '问问AI')
   aiButton.addEventListener('click', () => { if (state.aiAllowed !== false) call('emitAiRequest', 'rewrite') })
   aiButton.appendChild(iconNode('sparkle', 16, 'lark-doc-block-menu-icon'))
   const aiText = document.createElement('span')
@@ -67,7 +67,6 @@ export function createBlockHandleMenus(options) {
   duplicateButton.setAttribute('role', 'menuitem')
   duplicateButton.className = 'lark-doc-block-menu-duplicate'
   duplicateButton.classList.add('lark-doc-block-menu-row')
-  duplicateButton.setAttribute('title', '创建副本')
   duplicateButton.setAttribute('aria-label', '创建副本')
   duplicateButton.addEventListener('click', () => call('blockAction', 'duplicate'))
   duplicateButton.append(...makeIconLabel('copy', 18, '创建副本'))
@@ -285,7 +284,7 @@ export function createBlockHandleMenus(options) {
     aiButton.disabled = state.aiAllowed === false
     aiButton.classList.toggle('is-disabled', aiButton.disabled)
     setAttr(aiButton, 'aria-disabled', String(aiButton.disabled))
-    aiButton.title = state.aiTitle || '问问AI'
+    setAttr(aiButton, 'aria-description', state.aiTitle || null)
     applyStyle(menuEl, state.menuStyle)
     applyStyle(alignMenu, state.alignMenuStyle)
     applyStyle(colorMenu, state.colorMenuStyle)

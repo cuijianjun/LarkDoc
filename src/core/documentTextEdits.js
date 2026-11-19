@@ -5,6 +5,7 @@
  */
 import { Fragment } from '@tiptap/pm/model'
 import { moveDepthAllowed } from './blocks/container-depth'
+import { collectHeadingEntries, computeHeadingNumbers } from './headingNumbering'
 
 
 /** 检测段落中未完成的 slash 输入；返回 { from, to, query } 或 null（代码内不触发）。 */
@@ -57,31 +58,22 @@ export function findTextMatches(doc, query, ranges = null) {
   if (typeof query !== 'string' || !query) return []
   const matches = []
   const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-  const scan = (node, pos) => {
-    // 文本 Mark 不改变位置；叶节点占位防止跨公式/Emoji 错配。
-    const value = node.textBetween(0, node.content.size, '', '\ufffc')
+  const occurrences = (value, push) => {
     pattern.lastIndex = 0
-    let match = pattern.exec(value)
-    while (match) {
-      matches.push({ from: pos + 1 + match.index, to: pos + 1 + match.index + match[0].length })
-      match = pattern.exec(value)
+    let match
+    while ((match = pattern.exec(value))) push(match.index, match[0].length)
+  }
+  const scan = (node, pos) => {
+    if (['image', 'codeBlock'].includes(node.type?.name) && typeof node.attrs?.caption === 'string') {
+      occurrences(node.attrs.caption, (textFrom, length) => matches.push({ from: pos, to: pos + node.nodeSize, attribute: 'caption', textFrom, textTo: textFrom + length }))
     }
+    if (!node.isTextblock) return true
+    // Inline atoms occupy one position and cannot join two text fragments.
+    occurrences(node.textBetween(0, node.content.size, '', '\ufffc'), (index, length) => matches.push({ from: pos + 1 + index, to: pos + 1 + index + length }))
+    return false
   }
-  if (Array.isArray(ranges) && ranges.length) {
-    // nodesBetween 会带出与区间相交的**整个**文本块，边界半截的块也在内 —— 与脏区
-    // 已经扩张到块边界的前提一致，不会漏算半块里的命中。
-    ranges.forEach((range) => {
-      doc.nodesBetween(range.from, range.to, (node, pos) => {
-        if (node.isTextblock) { scan(node, pos); return false }
-        return true
-      })
-    })
-    return matches
-  }
-  doc.descendants((node, pos) => {
-    if (!node.isTextblock) return
-    scan(node, pos)
-  })
+  if (Array.isArray(ranges) && ranges.length) ranges.forEach(range => doc.nodesBetween(range.from, range.to, scan))
+  else doc.descendants(scan)
   return matches
 }
 
@@ -95,13 +87,24 @@ export function replaceText(editor, query, replacement, all = false, preparedMat
   const selected = all ? matches : current ? [current] : []
   if (!selected.length) return 0
   const tr = editor.state.tr
-  selected.slice().reverse().forEach(({ from, to }) => {
+  let count = 0
+  selected.slice().reverse().forEach(({ from, to, attribute, textFrom, textTo }) => {
+    if (attribute) {
+      const node = tr.doc.nodeAt(from), value = node?.attrs.caption
+      if (attribute !== 'caption' || !['image', 'codeBlock'].includes(node?.type.name) || typeof value !== 'string' || editor.storage?.larkDocRevisionTracker?.active) return
+      const caption = value.slice(0, textFrom) + replacement + value.slice(textTo)
+      if (caption.length > 100000 || caption.includes('\u0000')) return
+      tr.setNodeMarkup(from, null, { ...node.attrs, caption })
+      count += 1
+      return
+    }
+    count += 1
     const marks = tr.doc.resolve(from).marks()
     if (replacement) tr.replaceWith(from, to, editor.state.schema.text(replacement, marks))
     else tr.delete(from, to)
   })
-  editor.view.dispatch(tr)
-  return selected.length
+  if (count) editor.view.dispatch(tr)
+  return count
 }
 
 /** 把 [from, to) 的完整块整体移动到 target 位置；结构非法时返回 false 不动文档。 */
@@ -140,15 +143,29 @@ export function moveBlockRange(editor, from, to, target) {
   return true
 }
 
-/** 收集页面级标题大纲（排除容器内标题）；返回 [{ pos, level, text }]。 */
-export function collectOutline(doc) {
-  const result = []
-  doc.descendants((node, pos) => {
-    if (node.type.name !== 'heading') return
-    const resolved = doc.resolve(pos)
-    const hiddenByContainer = Array.from({ length: resolved.depth }, (_, index) => resolved.node(index + 1).type.name)
-      .some((type) => ['callout', 'blockquote', 'detailsContent', 'column', 'tableCell', 'tableHeader'].includes(type))
-    if (!hiddenByContainer) result.push({ pos, level: node.attrs.level, text: node.textContent })
+export function headingOutlineText(node) {
+  return node.textBetween(0, node.content.size, ' ', leaf => {
+    const type = leaf.type.name, attrs = leaf.attrs
+    if (type === 'emoji') return leaf.type.spec.toDOM(leaf)[2]
+    return attrs.name || attrs.latex || (type === 'mention' ? '未知' : ' ')
   })
-  return result
+}
+
+/** 目录与正文共用编号，容器内标题不进入目录。 */
+export function collectOutline(doc) {
+  return collectOutlineState(doc).outline
+}
+
+export function collectOutlineState(doc) {
+  const headings = collectHeadingEntries(doc)
+  const numbers = computeHeadingNumbers(doc, headings)
+  let maxHeadingLevel = 0
+  const outline = []
+  for (const { node, pos, level, hidden } of headings) {
+    maxHeadingLevel = Math.max(maxHeadingLevel, level)
+    if (hidden) continue
+    const text = headingOutlineText(node), label = numbers.get(pos)?.label
+    outline.push({ pos, level, text: label ? `${label} ${text || '无标题'}` : text })
+  }
+  return { outline, maxHeadingLevel }
 }

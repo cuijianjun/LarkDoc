@@ -7,7 +7,7 @@ const base = process.argv[2] || 'http://127.0.0.1:58742/lark-doc?verify=1'
 const evidence = process.env.LARK_DOC_EVIDENCE_DIR || '/tmp/lark-doc-v12e'
 const results = []
 async function main() {
-  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: true, headless: true })
+  const browser = await chromium.launch({ executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined, chromiumSandbox: false, headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 } })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)

@@ -125,6 +125,10 @@ export function createNativeOptionsHost({ options, state: initialState = {}, pro
     $data: state,
     $emit: (...args) => { if (!destroying && !destroyed) emit?.(...args) },
     $set: (object, key, value) => { if (!destroying && !destroyed) object[key] = value },
+    // Vue 2 的 `$delete`：组件里删响应式键（`commentsMixin.cancelCommentTranslation`、
+    // `commentsThreadMethods` 的回复目标）都走它。数据容器已被 wrap 成带 deleteProperty
+    // 陷阱的 Proxy，`delete` 一样会 notify 到对应 `data:<root>`。
+    $delete: (object, key) => { if (!destroying && !destroyed) delete object[key] },
     $nextTick: callback => Promise.resolve().then(() => {
       if (destroying || destroyed) return undefined
       flush()

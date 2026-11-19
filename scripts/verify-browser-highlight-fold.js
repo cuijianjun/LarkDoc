@@ -85,10 +85,10 @@ async function readHighlight(page) {
   })
 }
 
-async function hoverTarget(page, box) {
+async function hoverTarget(page, box, scope) {
   await page.mouse.move(box.x + Math.min(6, box.width / 2), box.y + box.height / 2)
   await page.waitForTimeout(240)
-  const handle = page.locator('.lark-doc-block-handle-main').first()
+  const handle = page.locator(`.lark-doc-block-handle-main${scope ? `[data-block-scope="${scope}"]` : ''}`).first()
   const handleBox = await handle.boundingBox()
   if (!handleBox) throw new Error('block handle not visible')
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
@@ -96,10 +96,10 @@ async function hoverTarget(page, box) {
   return readHighlight(page)
 }
 
-async function hoverSelector(page, selector) {
+async function hoverSelector(page, selector, scope) {
   const box = await page.locator(selector).first().boundingBox()
   if (!box) throw new Error(`missing target ${selector}`)
-  return hoverTarget(page, box)
+  return hoverTarget(page, box, scope)
 }
 
 async function main() {
@@ -173,8 +173,10 @@ async function main() {
   // 列表标记（• / 1.）现在是装饰层的 span，textContent 会带上它，断言只看正文文字。
   record('[高亮] 嵌套项只命中自己（父项不同时高亮）', nested.count === 1 && nested.targets[0].text.includes('嵌套项'), `${nested.count} 个目标 / ${nested.targets[0]?.text.trim()}`)
 
-  // 6. 表格：整表一个目标，单元格不抢句柄
-  const table = await hoverSelector(page, 'td p')
+  // 6. 单元格内的块有自己的句柄，整表句柄仍单独高亮表格外框。
+  const cell = await hoverSelector(page, 'td p')
+  record('[高亮] 单元格内容句柄只命中当前段落', cell.count === 1 && cell.targets[0]?.tag === 'P')
+  const table = await hoverSelector(page, 'td p', 'table')
   const tableTarget = table.targets[0] || {}
   record('[高亮] 表格按整表命中', table.count === 1 && (tableTarget.tag === 'TABLE' || /tableWrapper/.test(tableTarget.className)),
     `${tableTarget.tag}.${tableTarget.className}`)

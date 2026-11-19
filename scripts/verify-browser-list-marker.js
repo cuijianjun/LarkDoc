@@ -133,7 +133,7 @@ const readGutter = (page, selector, index) => page.evaluate(({ selector, index }
   return {
     item: box(item),
     handle: box(handle),
-    glyph: handle ? (handle.querySelector('.lark-doc-block-handle-type')?.textContent || '').trim() : null,
+    glyph: handle?.querySelector('.lark-doc-block-handle-type [data-icon]')?.dataset.icon || null,
     arrow: box(item?.querySelector('.lark-doc-heading-fold-toggle')),
     marker: box(item?.querySelector('.lark-doc-list-number, .lark-doc-list-bullet')),
   }
@@ -207,7 +207,7 @@ async function main() {
     `箭头右=${nested.arrow?.right} 序号左=${nested.marker?.left}`)
   record('[间距] 句柄不盖住序号', nested.handle && nested.marker && nested.handle.right <= nested.marker.left - 8,
     `句柄右=${nested.handle?.right} 序号左=${nested.marker?.left}`)
-  record('[句柄] 列表项句柄显示列表图标', nested.glyph === '1≡', nested.glyph)
+  record('[句柄] 列表项句柄显示有序列表 SVG', nested.glyph === 'block-ordered', nested.glyph)
 
   await hoverItem(page, '.ProseMirror ul:not([data-type="taskList"]) > li', 0)
   const bullet = await readGutter(page, '.ProseMirror ul:not([data-type="taskList"]) > li', 0)

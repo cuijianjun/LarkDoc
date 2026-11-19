@@ -13,6 +13,7 @@ import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
 import { JSDOM } from 'jsdom'
 import sourceCommentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
+import { createCommentInteraction as sourceCommentInteraction } from '../../src/components/lark-doc/editor/commentInteraction'
 
 const requireHere = createRequire(import.meta.url)
 const pmNames = ['state', 'model', 'view', 'transform', 'commands', 'keymap', 'inputrules', 'schema-list', 'history', 'gapcursor', 'dropcursor', 'tables', 'changeset']
@@ -647,9 +648,8 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
       expect(owner.commentFollowPreferences['thread:1']).toEqual(initial)
       expect(provider.follow).not.toHaveBeenCalled(); expect(provider.queryFollowOperation).not.toHaveBeenCalled()
       expect(cold).not.toHaveProperty('loadCommentFollowPreference')
-      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/commentInteraction.js'), 'utf8').replace('export function', 'function') + ';globalThis.commentFactory=createCommentInteraction;', context)
       const factory = vi.fn(value => {
-        const implementation = context.commentFactory(value), change = implementation.methods.changeCommentFollow
+        const implementation = sourceCommentInteraction(value), change = implementation.methods.changeCommentFollow
         implementation.methods.changeCommentFollow = function (...args) { const result = change.apply(this, args); context.originalWritePromise = result; return result }
         return implementation
       })
@@ -1703,8 +1703,10 @@ describe('classic segmented document feature boundary', () => {
     // 与内核同版本同目录部署，所以只留转发 shim；否则光 ui/icons 就要在包里再打一份 27 KB。
     expect(alias.resolveId('./dom', path.join(root, 'src/ui/documentInformation.js'))).toBe('\0lark-doc-shared-host:ui.dom')
     expect(alias.resolveId('./icon', path.join(root, 'src/ui/headingNumberMenu.js'))).toBe('\0lark-doc-shared-host:ui.icon')
-    // 不在集合里的包必须自带实现，否则打包器宿主拿不到内核那一份。
+    // 经典导出包也由同版本运行时加载，ESM 独立构建无这个运行时前提。
     expect(getRollupConfig('feature:export:umd').plugins.find(item => item.name === 'lark-doc-package-alias')
+      .resolveId('./dom', path.join(root, 'src/ui/documentInformation.js'))).toBe('\0lark-doc-shared-host:ui.dom')
+    expect(getRollupConfig('elementEsm').plugins.find(item => item.name === 'lark-doc-package-alias')
       .resolveId('./dom', path.join(root, 'src/ui/documentInformation.js'))).toBeNull()
   })
 

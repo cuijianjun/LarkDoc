@@ -355,7 +355,13 @@ export function createToolbar(options = {}) {
     onMouseLeave: () => call('scheduleCommandMenuClose'),
   })
   insertButton.setAttribute('aria-haspopup', 'menu')
-  const tableButton = makeButton({ label: '插入表格', icon: 'table', popup: 'dialog', preventDefault: true, onClick: () => call('onTableToolbarClick') })
+  const tableButton = makeButton({ label: '插入表格', icon: 'table', preventDefault: true, onClick: () => call('onTableToolbarClick'), onMouseEnter: () => call('openTablePickerOnHover'), onMouseLeave: () => call('scheduleTablePickerClose') })
+  tableButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
+  tableButton.setAttribute('aria-haspopup', 'dialog')
+  // 与「图表」同一口径：真下拉不叠原生 tips。`update()` 每帧都会重刷这条按钮的
+  // `aria-label`（表内切成「表格工具」），若同时写 `title`，`tooltipTarget` 首次
+  // 摘掉后会被重刷回来，悬停一秒又冒一个原生提示，和展开的面板打架。
+  tableButton.removeAttribute('title')
   const diagramButton = makeButton({ label: '图表', title: '插入图表', icon: 'chart', text: '图表', onClick: () => call('toggleDiagramMenu'), onMouseEnter: () => call('openDiagramMenuOnHover'), onMouseLeave: () => call('scheduleDiagramMenuClose') })
   diagramButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret'))
   diagramButton.setAttribute('aria-haspopup', 'menu')
@@ -386,7 +392,9 @@ export function createToolbar(options = {}) {
   const fullscreenButton = makeButton({ label: '全屏', icon: 'fullscreen', onClick: () => call('toggleFullscreen') })
   const slidesButton = makeButton({ label: '演示模式', icon: 'slides', onClick: () => call('toggleSlides') })
   const shortcutsButton = makeButton({ label: '快捷键帮助', icon: 'help-keyboard', popup: 'dialog', iconSize: 18, onClick: () => call('toggleHelpOpen') })
-  const docOpsButton = makeButton({ label: '文档操作', icon: 'more-horizontal', iconSize: 18, onClick: () => call('toggleHeaderMenu') })
+  // 图标键是 icons.js 里的 `more`（三点横排，飞书「⋯」）；写成 `more-horizontal` 会
+  // 拿不到 SVG，只留一个空 span，按钮宽度归零、点不到。
+  const docOpsButton = makeButton({ label: '文档操作', icon: 'more', iconSize: 18, onClick: () => call('toggleHeaderMenu') })
 
   toolsEndInner.appendChild(searchButton)
   toolsEndInner.appendChild(outlineButton)
@@ -580,6 +588,7 @@ export function createToolbar(options = {}) {
     const tableLabel = active.table ? '表格工具' : '插入表格'
     setAttr(tableButton, 'aria-label', tableLabel)
     setAttr(tableButton, 'title', null)
+    setAttr(tableButton, 'aria-expanded', next.table?.open ? 'true' : 'false')
     insertButton.disabled = disabled
     tableButton.disabled = disabled
     diagramButton.disabled = disabled

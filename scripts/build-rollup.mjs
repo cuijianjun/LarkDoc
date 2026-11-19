@@ -104,8 +104,8 @@ export function rollupCacheGroup(name) {
   if (name === 'elementRuntime') return 'elementRuntime'
   // polyfill 包只装 core-js，与 featureUmd 无共享解析，单独成组避免污染缓存。
   if (name === 'elementPolyfills') return 'elementPolyfills'
-  // UMD 必须内联 vendor，不能沿用 ESM 已缓存的 external 解析结果。
-  if (name.endsWith(':umd')) return 'featureUmd'
+  // UMD 特性包各自选择 vendor、stub 或宿主转发，不能复用其它目标的 resolvedIds。
+  if (name.endsWith(':umd')) return null
   return name === 'lite' || name === 'element' || name === 'pm' ? name : name.startsWith('plugin') ? 'plugin' : name.startsWith('collab') ? 'collab' : 'default'
 }
 
@@ -365,7 +365,7 @@ async function runBuilds(names) {
     else units.set(group, [...(units.get(group) || []), name])
   }
   for (const list of units.values()) for (const name of list) await buildOne(name)
-  // full / fullCjs / mermaid 厂商包会 clear() 全局 rollup 缓存，必须排在最后。
+  // 无缓存的目标会清理共享 AST，放在最后执行。
   for (const name of heavy) await buildOne(name)
 }
 

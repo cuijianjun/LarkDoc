@@ -71,8 +71,12 @@ export function createDocumentCommands() {
       if (!node || node.type.name !== 'heading') return false
       const next = { ...node.attrs }
       if (typeof patch?.numbering === 'boolean') next.numbering = patch.numbering
-      if (patch && 'numberingStart' in patch) next.numberingStart = patch.numberingStart === null ? null : clampHeadingNumberStart(patch.numberingStart)
-      if (next.numbering === node.attrs.numbering && next.numberingStart === node.attrs.numberingStart) return false
+      if (patch && 'numberingStart' in patch) next.numberingStart = patch.numberingStart === null ? null : clampHeadingNumberStart(patch.numberingStart, 999999999)
+      if (patch && 'numberingLevel' in patch) {
+        if (patch.numberingLevel !== null && (!Number.isInteger(patch.numberingLevel) || patch.numberingLevel < 1 || patch.numberingLevel > 9)) return false
+        next.numberingLevel = patch.numberingLevel
+      }
+      if (next.numbering === node.attrs.numbering && next.numberingStart === node.attrs.numberingStart && next.numberingLevel === node.attrs.numberingLevel) return false
       if (dispatch) tr.setNodeMarkup(pos, node.type, next)
       return true
     },
@@ -81,7 +85,7 @@ export function createDocumentCommands() {
       const node = nodeAtSafe(tr.doc, pos)
       if (!node || node.type.name !== 'heading') return false
       const next = { ...node.attrs, numbering: !node.attrs.numbering }
-      if (!next.numbering) next.numberingStart = null
+      if (!next.numbering) { next.numberingStart = null; next.numberingLevel = null }
       if (dispatch) tr.setNodeMarkup(pos, node.type, next)
       return true
     },

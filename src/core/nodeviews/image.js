@@ -10,6 +10,7 @@ import { createImageViewer } from './image-viewer'
 import { IMAGE_MIME_ALLOWLIST } from '../media/image-insert'
 import { syncAsyncBlockDomState } from '../blocks/shared'
 import { iconNode } from '../../ui/icon'
+import { bindHoverTips } from '../../ui/hoverTips'
 
 const WIDTH_MIN = 40
 const WIDTH_MAX = 2400
@@ -26,6 +27,7 @@ const TOOLBAR_ITEMS = [
   { action: 'crop', label: '裁剪', icon: 'image-crop' },
   { action: 'caption', label: '编辑图片说明', icon: 'block-text' },
 ]
+
 const TOOLBAR_ALIGN_ITEMS = [
   { action: 'left', value: 'left', label: '左对齐', icon: 'align-left' },
   { action: 'center', value: 'center', label: '居中对齐', icon: 'align-center' },
@@ -155,6 +157,7 @@ export function createImageNodeView(props) {
 
   /* ---------- 工具条：hover 挂载 / 离开卸载 ---------- */
   let toolbar = null
+  let toolbarTips = null
   let cropResetButton = null
   let cropUi = null
 
@@ -188,7 +191,11 @@ export function createImageNodeView(props) {
       mountButton({ ...item, label: item.label }, { 'data-role': `align-${item.value}`, 'data-align-value': item.value })
     })
     bar.appendChild(el('span', 'lark-doc-image-toolbar-divider', { 'aria-hidden': 'true' }))
-    ;[{ action: 'copy', label: '复制图片链接', icon: 'link' }, { action: 'share', label: '分享图片', icon: 'share-link' }, { action: 'comment', label: '添加评论', icon: 'mode-comment' }].forEach(item => mountButton(item))
+    ;[
+      { action: 'copy', label: '复制图片链接', icon: 'link' },
+      { action: 'share', label: '分享图片', icon: 'share-link' },
+      ...(imageOptions().commentEnabled ? [{ action: 'comment', label: '添加评论', icon: 'mode-comment' }] : []),
+    ].forEach(item => mountButton(item))
     return bar
   }
 
@@ -198,8 +205,10 @@ export function createImageNodeView(props) {
     else if (action === 'caption') { enterCaptionEdit() }
     else if (ALIGNMENTS.includes(action)) setAlign(action)
     else if (['ai', 'copy', 'share', 'comment'].includes(action)) {
+      const options = imageOptions()
+      if (action === 'comment' && options.commentEnabled !== true) return
       const pos = typeof getPos === 'function' ? getPos() : getPos?.pos
-      imageOptions().onAction?.(action, { ...currentNode.attrs, pos })
+      options.onAction?.(action, { ...currentNode.attrs, pos })
     }
   }
 
@@ -209,12 +218,16 @@ export function createImageNodeView(props) {
     if (toolbar || !editable) return
     toolbar = buildToolbar()
     dom.appendChild(toolbar)
+    // 图片功能栏与顶部/气泡/菜单用同一套 tips 判据：纯图标（裁剪、对齐、复制链接…）
+    // 出提示；「问问AI」有可见中文名自动跳过；带下一级弹窗的也不会误出。
+    toolbarTips = bindHoverTips(toolbar)
     syncToolbarState()
   }
 
   function unmountToolbar() {
     cancelHide()
     if (!toolbar) return
+    if (toolbarTips) { toolbarTips.destroy(); toolbarTips = null }
     toolbar.remove()
     toolbar = null
   }
@@ -619,7 +632,13 @@ export function createImageNodeView(props) {
   /* ---------- 生命周期 ---------- */
   function syncEditable() {
     const next = Boolean(editor && !editor.isDestroyed && editor.isEditable)
-    if (toolbar && toolbar.classList.contains('has-image-ai') !== (imageOptions().aiEnabled === true)) { unmountToolbar(); if (next) mountToolbar() }
+    if (toolbar) {
+      const { aiEnabled, commentEnabled } = imageOptions()
+      if (toolbar.classList.contains('has-image-ai') !== (aiEnabled === true)
+        || !!toolbar.querySelector('[data-action="comment"]') !== (commentEnabled === true)) {
+        unmountToolbar(); if (next) mountToolbar()
+      }
+    }
     if (next === editable) return
     editable = next
     if (!editable) {
@@ -682,7 +701,7 @@ export function createImageNodeView(props) {
       closePreview()
       replaceGeneration += 1
       closeDialog(false)
-      if (toolbar) { toolbar.remove(); toolbar = null }
+      unmountToolbar()
     },
     // 测试与宿主联调通道：等价于工具条各按钮。
     setWidth,

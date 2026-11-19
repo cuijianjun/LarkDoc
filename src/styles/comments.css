@@ -40,9 +40,18 @@
   background: var(--ld-comment-halo);
   cursor: pointer;
 }
+/*
+ * 已解决的高亮不再接收指针事件，两个原因：
+ * ① 已解决线程不进 `commentPanels`，点它本来就不会有任何反应，`onCommentPointerDown`
+ *    只会在「没有可点亮目标」的情况下空转；
+ * ② 高亮是正文里的 inline `span`，`posAtCoords` 拿到的 hit 元素是这层 span 而不是文本节点，
+ *    选区端点会退化到单元格边界 —— 表格矩形拖选因此只落一格（prosemirror-tables 的
+ *    `cellUnderMouse` 拿不到对侧单元）。放开指针事件让位置计算回到文本节点。
+ */
 .lark-doc .lark-doc-comment[data-resolved="true"] {
   background: var(--ld-comment-halo-resolved);
   color: var(--ld-text-disabled);
+  pointer-events: none;
 }
 
 /* 评论表情沿用原主题；数据只来自当前私密评论读端口。 */
@@ -55,11 +64,11 @@
 .lark-doc .lark-doc-comments-root { display: contents; }
 
 
-/* Nonmodal comments sit below the toolbar (20/34) and sticky titlebar (35).
-   A child menu cannot escape those stacking contexts by increasing its own z-index. */
+/* Nonmodal comments sit above page chrome（0facf05 基线：panel 1040 / composer 1051，
+   高于 help-fab z60 等浮动件，避免面板按钮被拦截）。 */
 .lark-doc .lark-doc-comment-composer {
   position: fixed;
-  z-index: 19;
+  z-index: 1051;
   right: 16px;
   bottom: 16px;
   width: 270px;
@@ -90,7 +99,7 @@
 /* 远端线程和新评论共用一列；短窗先缩小线程并滚动，不能互相盖住发送按钮。 */
 .lark-doc .lark-doc-comment-layer.is-remote {
   position: fixed;
-  z-index: 18;
+  z-index: 1040;
   /* Chrome iPhone emulation can expose a wider layout viewport than the
      dynamic visual viewport. Keep the fixed drawer inside the visible area. */
   right: calc(100vw - 100dvw + 16px);
@@ -138,8 +147,8 @@
 .lark-doc .lark-doc-comment-composer.is-selection,
 .lark-doc .lark-doc-comment-panel.is-remote.is-active { border-top: 4px solid var(--ld-cat-yellow); }
 .lark-doc .lark-doc-comment-composer-author { display: flex; align-items: center; gap: 8px; margin: 8px 0 20px; font-size: 12px; color: var(--ld-comment-name); }
-.lark-doc .lark-doc-comment-compose-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
-.lark-doc .lark-doc-comment-compose-actions label { margin-right: auto; font-size: 12px; }
+.lark-doc .lark-doc-comment-composer .lark-doc-comment-edit-actions { align-items: center; margin-top: 8px; }
+.lark-doc .lark-doc-comment-composer .lark-doc-comment-edit-actions label { margin-right: auto; font-size: 12px; }
 .lark-doc .lark-doc-comment-feedback { padding: 8px; font-size: 12px; pointer-events: auto; }
 .lark-doc .lark-doc-comment-layer.is-document { display: flex; position: relative; flex-direction: column; width: min(870px, calc(100% - 48px)); margin: 0 auto 48px; gap: 12px; }
 .lark-doc .lark-doc-comment-layer.is-document > .lark-doc-comment-composer { position: relative; order: 1; right: auto; bottom: auto; width: 100%; box-sizing: border-box; box-shadow: none; }
@@ -162,7 +171,7 @@
 
 .lark-doc .lark-doc-comment-panel {
   position: fixed;
-  z-index: 18;
+  z-index: 1040;
   box-sizing: border-box;
   display: flex;
   width: 270px;
@@ -302,6 +311,7 @@
   white-space: nowrap;
 }
 /* 正文 200 × 28（单行 22）：17 + 4 + 28 = 49。 */
+.lark-doc .lark-doc-comment-edited { margin-left: 4px; color: var(--ld-comment-time); font-size: 12px; }
 .lark-doc .lark-doc-comment-body {
   min-height: 28px;
   margin-top: 4px;
@@ -569,22 +579,22 @@
 
 
 .lark-doc .lark-doc-comment-body { white-space: pre-wrap; }
-.lark-doc .lark-doc-comment-reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.lark-doc .lark-doc-comment-reaction { display: inline-flex; align-items: center; gap: 5px; min-height: 25px; padding: 1px 8px; border: 1px solid var(--ld-border); border-radius: 14px; background: var(--ld-bg-surface); color: var(--ld-text-secondary); cursor: pointer; font-size: 12px; }
-.lark-doc .lark-doc-comment-reaction[aria-pressed="true"] { color: var(--ld-brand-chrome); border-color: var(--ld-brand-chrome); background: var(--ld-bg-accent); }
-.lark-doc .lark-doc-comment-reaction:disabled { cursor: default; }
-.lark-doc .lark-doc-comment-reaction-picker { box-sizing: border-box; pointer-events: auto; z-index: 1160; width: min(328px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--ld-border); border-radius: 8px; background: var(--ld-bg-surface); color: var(--ld-text); box-shadow: var(--ld-shadow-menu); }
-.lark-doc .lark-doc-comment-reaction-picker-head { display: flex; gap: 8px; }
-.lark-doc .lark-doc-comment-reaction-picker-head input { min-width: 0; flex: 1; height: 30px; padding: 0 8px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface); color: inherit; }
-.lark-doc .lark-doc-comment-reaction-picker-head button { border: 0; background: transparent; color: var(--ld-text-secondary); cursor: pointer; font-size: 20px; }
-.lark-doc .lark-doc-comment-reaction-tabs { display: flex; gap: 5px; overflow-x: auto; margin: 10px 0; }
-.lark-doc .lark-doc-comment-reaction-tabs button { flex: 0 0 auto; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); cursor: pointer; }
-.lark-doc .lark-doc-comment-reaction-tabs button[aria-selected="true"] { color: var(--ld-brand-chrome); background: var(--ld-bg-accent); }
-.lark-doc .lark-doc-comment-reaction-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; max-height: 210px; overflow-y: auto; }
-.lark-doc .lark-doc-comment-reaction-grid button { height: 34px; border: 0; border-radius: 4px; background: transparent; cursor: pointer; font-size: 22px; }
-.lark-doc .lark-doc-comment-reaction-grid button:hover, .lark-doc .lark-doc-comment-reaction-grid button:focus-visible { background: var(--ld-bg-accent); }
-.lark-doc .lark-doc-comment-reaction-grid p { grid-column: 1 / -1; font-size: 12px; color: var(--ld-text-secondary); }
-.lark-doc .lark-doc-comment-reaction-more { display: block; width: 100%; margin-top: 8px; padding: 5px; border: 0; background: transparent; color: var(--ld-brand-chrome); cursor: pointer; }
+/* 带表情的回复行必须放高：49px 是源站的量，别把 chip 挤进名字行。 */
+.lark-doc .lark-doc-comment-reply.has-reactions,
+.lark-doc .lark-doc-comment-reply.has-reactions .lark-doc-comment-reply-main,
+.lark-doc .lark-doc-comment-reply.has-reactions .lark-doc-comment-reply-right { height: auto; min-height: 49px; }
+.lark-doc .lark-doc-comment-reactions { display: flex; flex-wrap: wrap; gap: 4px; min-height: 26px; padding-top: 4px; }
+.lark-doc .lark-doc-comment-reaction { display: inline-flex; align-items: center; gap: 10px; box-sizing: border-box; min-height: 22px; padding: 1px 5px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-comment-reaction.is-mine { border-color: var(--ld-brand-chrome); background: var(--ld-bg-badge); }
+.lark-doc .lark-doc-comment-reaction-icon { display: inline-block; flex: 0 0 auto; background-repeat: no-repeat; font-size: 18px; line-height: 18px; vertical-align: middle; }
+.lark-doc .lark-doc-comment-reaction-picker { position: fixed; z-index: 1060; display: flex; flex-direction: column; box-sizing: border-box; width: 346px; height: 342px; overflow: hidden; border: 1px solid var(--ld-border); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-comment-reaction-scroll { flex: 0 0 276px; height: 276px; overflow: auto; }
+.lark-doc .lark-doc-comment-reaction-title { box-sizing: border-box; height: 28px; padding: 4px 8px; font-size: 12px; line-height: 20px; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-comment-reaction-grid { display: grid; grid-template-columns: repeat(9, 36px); padding: 0 6px 6px; }
+.lark-doc .lark-doc-comment-reaction-picker button { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 36px; min-width: 36px; height: 36px; padding: 0; border: 0; border-radius: 4px; background: transparent; }
+.lark-doc .lark-doc-comment-reaction-picker button:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-comment-reaction-recent { display: flex; justify-content: space-between; height: 28px; padding: 0 8px 8px; }
+.lark-doc .lark-doc-comment-reaction-recent button { height: 28px; }
 .lark-doc .lark-doc-comment-edit { display: grid; gap: 8px; }
 .lark-doc .lark-doc-comment-rich-input { box-sizing: border-box; min-width: 0; min-height: 36px; max-height: 40dvh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; cursor: text; }
 .lark-doc .lark-doc-comment-rich-input p { margin: 0; padding: 0; min-height: 1.5em; }
@@ -621,14 +631,19 @@
 .lark-doc .lark-doc-document-composer-input:focus-visible { outline: 2px solid var(--ld-brand-chrome); outline-offset: 1px; }
 .lark-doc .lark-doc-document-composer-rich-preview { padding: 4px 8px; color: var(--ld-comment-time); font-size: 12px; }
 
-.lark-doc .lark-doc-comment-images, .lark-doc .lark-doc-comment-image-drafts { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-.lark-doc .lark-doc-comment-images button { display: inline-flex; justify-content: center; align-items: center; max-width: 100%; min-width: 72px; min-height: 54px; padding: 0; overflow: hidden; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-hover); color: var(--ld-text-secondary); cursor: pointer; }
-.lark-doc .lark-doc-comment-images img { display: block; max-width: 220px; max-height: 180px; object-fit: contain; }
-.lark-doc .lark-doc-comment-images span { padding: 8px; font-size: 12px; }
-.lark-doc .lark-doc-comment-image-drafts > div { position: relative; display: inline-flex; align-items: center; width: 64px; height: 64px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-hover); }
-.lark-doc .lark-doc-comment-image-drafts img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
-.lark-doc .lark-doc-comment-image-drafts span { overflow: hidden; padding: 4px; font-size: 11px; overflow-wrap: anywhere; }
-.lark-doc .lark-doc-comment-image-drafts button { position: absolute; top: -6px; right: -6px; width: 19px; height: 19px; padding: 0; border: 1px solid var(--ld-border); border-radius: 50%; color: var(--ld-text-secondary); background: var(--ld-bg-surface); cursor: pointer; }
+.lark-doc .lark-doc-comment-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; margin: 8px 0; }
+.lark-doc .lark-doc-comment-attachment { position: relative; display: inline-flex; box-sizing: border-box; width: 64px; height: 64px; flex: 0 0 64px; border: 1px solid var(--ld-comment-border); border-radius: 6px; color: var(--ld-comment-time); font-size: 12px; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-comment-attachment img { display: block; width: 62px; height: 62px; border-radius: 5px; object-fit: cover; }
+.lark-doc .lark-doc-comment-attachment button { padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-attachment .lark-doc-comment-attachment-preview { display: block; width: 62px; height: 62px; }
+.lark-doc .lark-doc-comment-attachment .lark-doc-comment-attachment-remove { position: absolute; top: 0; right: 0; z-index: 2; width: 24px; height: 24px; border-radius: 50%; background: var(--ld-mask); color: var(--ld-text-on-brand); font-size: 18px; line-height: 24px; }
+.lark-doc .lark-doc-comment-attachment-status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 5px; background: var(--ld-mask); color: var(--ld-text-on-brand); }
+.lark-doc .lark-doc-comment-attachment-status progress { width: 42px; height: 4px; accent-color: var(--ld-brand-chrome); }
+.lark-doc .lark-doc-comment-attachment .lark-doc-comment-attachment-retry { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--ld-comment-surface); }
+.lark-doc .lark-doc-comment-attachment-viewer { z-index: 1061; }
+.lark-doc .lark-doc-comment-composer > .lark-doc-comment-operation { margin-left: 12px; }
+.lark-doc .lark-doc-comment-composer > .lark-doc-comment-attachments { padding: 4px 12px; }
+.lark-doc .lark-doc-comment-operation:disabled { color: var(--ld-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-comment-media-status { position: fixed; z-index: 1170; right: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; padding: 10px 14px; border: 1px solid var(--ld-border); border-radius: 6px; color: var(--ld-text-secondary); background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-menu); font-size: 12px; }
 .lark-doc .lark-doc-comment-media-status button { border: 0; background: transparent; color: var(--ld-text-accent); cursor: pointer; }
 .lark-doc .lark-doc-comment-notice { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; max-width: min(360px, calc(100vw - 32px)); overflow-wrap: anywhere; pointer-events: none; }
@@ -738,9 +753,6 @@
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-body { min-height: 0; margin-top: 0; font-size: calc(16 * var(--ld-h5-unit)); line-height: calc(24 * var(--ld-h5-unit)); }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply-controls { top: calc(10 * var(--ld-h5-unit) - 3px); right: 0; }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-dots { width: 24px; height: 24px; background-size: 8px 24px; background-image: radial-gradient(circle, currentColor 2px, transparent 2.1px); }
-  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images { margin-top: 8px; }
-  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images button { width: 92px; height: 92px; }
-  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images img { width: 100%; height: 100%; object-fit: contain; }
 }
 
 /* 手机参考：页内全文评论与并排选区侧栏，后者不占用模态遮罩。 */
@@ -759,7 +771,6 @@
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-avatar { width: 32px; min-width: 32px; height: 32px; margin-top: 0; font-size: 12px; }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-reply { padding: 14px 12px; }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-name, .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-time { font-size: 14px; }
-  .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-comment-images button { width: 64px; height: 64px; border: 1px solid var(--ld-comment-border); border-radius: 5px; }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer { margin-top: 28px; }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-composer-input { min-height: 40px; padding: 8px 70px 8px 12px; font-size: 14px; line-height: 22px; }
   .lark-doc .lark-doc-comment-layer.is-inline-document .lark-doc-document-comment-input > .lark-doc-comment-operation { right: 36px; color: var(--ld-text-secondary); }
@@ -875,3 +886,41 @@
   font-size: 18px; line-height: 24px;
   background: var(--ld-comment-surface); color: var(--ld-text); cursor: pointer;
 }
+
+/* 飞书「历史评论」弹层：已解决线程的只读归档，条目复用线程卡骨架。 */
+.lark-doc .lark-doc-comment-history { position: fixed; z-index: 1050; display: flex; flex-direction: column; box-sizing: border-box; width: 360px; max-width: calc(100vw - 16px); border: 0; border-radius: 6px; outline: 1px solid var(--ld-comment-border); background: var(--ld-comment-surface); box-shadow: var(--ld-shadow-float); }
+.lark-doc .lark-doc-comment-history-head { display: flex; box-sizing: border-box; height: 48px; min-height: 48px; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--ld-comment-border); color: var(--ld-comment-name); font-size: 16px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-info { position: relative; display: grid; box-sizing: border-box; width: 16px; height: 16px; min-height: 16px; padding: 0; place-items: center; border: 0; border-radius: 0; background: transparent; color: var(--ld-comment-quote); font-size: 12px; line-height: 14px; cursor: help; }
+.lark-doc .lark-doc-comment-history-hint { position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 1; display: none; padding: 8px 12px; border-radius: 6px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); font-size: 12px; line-height: 20px; white-space: nowrap; transform: translateX(-50%); }
+.lark-doc .lark-doc-comment-history-info:hover .lark-doc-comment-history-hint,
+.lark-doc .lark-doc-comment-history-info:focus-visible .lark-doc-comment-history-hint { display: block; }
+.lark-doc .lark-doc-comment-history-list { box-sizing: border-box; min-height: 0; max-height: calc(100vh - 112px); padding: 0 16px 12px; overflow: auto; }
+.lark-doc .lark-doc-comment-history-empty { margin: 0 -16px -12px; padding: 140px 0; color: var(--ld-comment-time); text-align: center; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-illustration { height: 126px; }
+.lark-doc .lark-doc-comment-history-illustration .lark-doc-icon { display: block; margin: 0 auto; }
+.lark-doc .lark-doc-comment-history-empty-text { margin-top: 16px; }
+.lark-doc .lark-doc-comment-history-item { position: relative; width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+.lark-doc .lark-doc-comment-history-item > .lark-doc-comment-quote { position: relative; display: block; box-sizing: border-box; height: 38px; padding: 8px 16px 8px 26px; border-radius: 6px; background: var(--ld-bg-hover-menu); color: var(--ld-comment-time); font-size: 12px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-item > .lark-doc-comment-quote::before { position: absolute; top: 8px; bottom: 8px; left: 16px; border-left: 2px solid var(--ld-comment-time); content: ''; }
+.lark-doc .lark-doc-comment-history-item .lark-doc-comment-reply-main { width: 100%; }
+.lark-doc .lark-doc-comment-history-item .lark-doc-comment-reply-right { width: calc(100% - 44px); }
+.lark-doc .lark-doc-comment-history-resolved { display: flex; box-sizing: border-box; height: 48px; align-items: center; justify-content: space-between; padding: 16px 0 10px; color: var(--ld-comment-quote); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-comment-history-resolved button { padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-history-resolved button[aria-disabled="true"] { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-history-actions { display: inline-flex; align-items: center; gap: 8px; }
+.lark-doc .lark-doc-comment-history-actions .lark-doc-comment-history-reopen { font-size: 12px; }
+.lark-doc .lark-doc-comment-history-split { width: 1px; height: 14px; background: var(--ld-comment-border); }
+.lark-doc .lark-doc-comment-history-actions .lark-doc-comment-history-delete { display: grid; width: 18px; height: 20px; place-items: center; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-comment-history-actions .lark-doc-comment-history-delete[aria-disabled="true"] { color: var(--ld-text-disabled); cursor: not-allowed; }
+.lark-doc .lark-doc-comment-translation-label { display: block; color: var(--ld-comment-time); font-size: 12px; }
+.lark-doc .lark-doc-comment-original { position: relative; padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; font-size: 12px; cursor: pointer; }
+.lark-doc .lark-doc-comment-original-text { position: absolute; right: 0; bottom: 100%; z-index: 1; display: none; box-sizing: border-box; width: 200px; padding: 8px; border: 1px solid var(--ld-comment-border); border-radius: 4px; background: var(--ld-comment-surface); box-shadow: var(--ld-shadow-float); color: var(--ld-comment-name); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-comment-original:hover .lark-doc-comment-original-text,
+.lark-doc .lark-doc-comment-original:focus-visible .lark-doc-comment-original-text { display: block; }
+.lark-doc .lark-doc-comment-service-status { display: flex; gap: 8px; color: var(--ld-comment-time); font-size: 12px; }
+.lark-doc .lark-doc-comment-service-status[role="alert"] { color: var(--ld-text-error); }
+.lark-doc .lark-doc-comment-service-status button { padding: 0; border: 0; background: transparent; color: var(--ld-brand-chrome); font: inherit; cursor: pointer; }
+.lark-doc .lark-doc-comment-attachments,
+.lark-doc .lark-doc-comment-body-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.lark-doc .lark-doc-comment-body-attachments { margin-top: 6px; padding: 0; }
+.lark-doc .lark-doc-comment-body.is-image-only { margin-top: 0; }

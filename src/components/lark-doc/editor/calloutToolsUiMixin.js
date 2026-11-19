@@ -43,7 +43,7 @@ export default {
           onRandom: () => this.setCalloutEmoji(this.pickRandomCalloutEmoji()),
           onEmoji: (value) => this.setCalloutEmoji(value),
         },
-      })
+      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' }, isOpen: state => !!state.visible, onReady: () => this.updateCalloutTools() })
       this.refreshCalloutTools()
     },
     buildCalloutToolsState() {

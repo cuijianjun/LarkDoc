@@ -38,6 +38,15 @@ describe('workspace view state 纯函数', () => {
     })
   })
 
+  it('版本历史入口缺省关闭，且不受 features.history 影响', () => {
+    // 缺省没有任何 config → 入口隐藏。
+    expect(createWorkspaceViewState({}).historyEnabled).toBe(false)
+    // `features.history` 兼管工具栏撤销/重做，打开它不该把版本历史入口带出来。
+    expect(createWorkspaceViewState({ editorConfig: { features: { history: true } } }).historyEnabled).toBe(false)
+    // 只有显式打开 versionHistory 才放行（dev 分支实现后由宿主或默认值打开）。
+    expect(createWorkspaceViewState({ editorConfig: { features: { versionHistory: true } } }).historyEnabled).toBe(true)
+  })
+
   it('只在富文本预览条件满足时计算 aiPreviewHtml', () => {
     expect(deriveAIPreviewHtml({ aiPreview: '' })).toBe('')
     expect(deriveAIPreviewHtml({ aiPreview: '普通文本', aiContentFormat: 'text' })).toBe('')

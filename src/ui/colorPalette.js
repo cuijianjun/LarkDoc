@@ -37,13 +37,12 @@ function handlerCaller(handlers) {
 const signatureOfColors = (list) => (list || []).map((item) => (item && item.value !== undefined ? `${item.value}:${item.label}` : String(item))).join('|')
 const signatureOfRows = (rows) => (rows || []).map((row) => signatureOfColors(row)).join('/')
 
-/** 造一颗色块按钮（`<button type="button" role="menuitem" aria-label title>`）。 */
-function makeSwatch({ ariaLabel, title, className }) {
+/** 造一颗色块按钮（`<button type="button" role="menuitem" aria-label>`）。色名只走 aria-label：弹窗内放原生 title 会弹黑底提示。 */
+function makeSwatch({ ariaLabel, className }) {
   const button = document.createElement('button')
   button.type = 'button'
   button.setAttribute('role', 'menuitem')
   setAttr(button, 'aria-label', ariaLabel)
-  setAttr(button, 'title', title)
   if (className) button.className = className
   return button
 }
@@ -148,7 +147,7 @@ export function createColorPalette({ host, handlers } = {}) {
     if (next === lettersSig) return
     lettersSig = next
     letterNodes = state.letters.map((color) => {
-      const button = makeSwatch({ ariaLabel: `字体颜色 ${color.label}`, title: color.label })
+      const button = makeSwatch({ ariaLabel: `字体颜色 ${color.label}` })
       button.textContent = 'A'
       button.addEventListener('click', () => call('onApply', color.value, 'textColor'))
       return button
@@ -164,7 +163,7 @@ export function createColorPalette({ host, handlers } = {}) {
       const grid = document.createElement('div')
       grid.className = 'lark-doc-color-grid'
       const cells = row.map((color) => {
-        const button = makeSwatch({ ariaLabel: `背景颜色 ${color.label}`, title: color.label })
+        const button = makeSwatch({ ariaLabel: `背景颜色 ${color.label}` })
         button.addEventListener('click', () => call('onApply', color.value, 'textBackground'))
         return { node: button, color }
       })
@@ -180,7 +179,7 @@ export function createColorPalette({ host, handlers } = {}) {
     if (next === optionsSig) return
     optionsSig = next
     optionNodes = state.options.map((color) => {
-      const button = makeSwatch({ ariaLabel: color.label, title: color.label })
+      const button = makeSwatch({ ariaLabel: color.label })
       button.addEventListener('click', () => call('onApply', color.value))
       return { node: button, color }
     })
@@ -193,7 +192,7 @@ export function createColorPalette({ host, handlers } = {}) {
     if (next === recentSig) return
     recentSig = next
     recentNodes = list.map((color) => {
-      const button = makeSwatch({ ariaLabel: `最近颜色 ${color}`, title: color })
+      const button = makeSwatch({ ariaLabel: `最近颜色 ${color}` })
       // 最近的每一项都是具体色值（没有「默认」格），所以底色直接在建节点时写死
       button.style.backgroundColor = color
       // 字色态的「最近」是**背景色**最近（SFC 里传的是 `'textBackground'`）；

@@ -41,6 +41,24 @@ export const COMMENT_MARK_NAME = 'comment'
 /** 正文高亮的外层类名（本项目统一 `lark-doc-` 前缀，见文件头负结论）。 */
 export const COMMENT_HIGHLIGHT_CLASS = 'lark-doc-comment'
 
+/**
+ * 线程状态（已解决 / 已失联）→ 正文高亮属性。
+ *
+ * 这两个属性是纯运行时信息，不能进文档 JSON；但它必须**由 mark 的 renderHTML 一起产出**，
+ * 不能事后 `setAttribute`：写属性会触发 ProseMirror 的 DOM observer → 它派发一次事务把
+ * 浏览器 Range 读回选区（表格矩形拖选当场从 `CellSelection` 退化成 `TextSelection`），
+ * 同时重排会把事后写上的属性整段丢弃 —— 写完就丢、丢了再写，永远收敛不了。
+ * 放进 renderHTML 后，每次重排都按状态表重新产出属性，属性一变就稳定下来。
+ *
+ * 表由 mixin 每次同步时整体替换（见 `syncCommentMarkState`），这里只读。
+ */
+const commentMarkStates = new Map()
+
+export function setCommentMarkStates(states) {
+  commentMarkStates.clear()
+  states.forEach((state, threadId) => commentMarkStates.set(threadId, state))
+}
+
 /** 没有作者信息时的兜底（面板名、头像色都用它，不能崩）。 */
 export const COMMENT_AUTHOR_NAME_FALLBACK = '我'
 
@@ -332,10 +350,12 @@ const LarkDocComment = Mark.create({
   },
   renderHTML({ mark }) {
     const attrs = normalizeComment(mark.attrs)
+    const state = commentMarkStates.get(attrs.threadId)
     return ['span', {
       class: COMMENT_HIGHLIGHT_CLASS,
       'data-inline-wrapper': 'true',
       'data-thread-id': attrs.threadId,
+      ...(state ? { 'data-resolved': String(!!state.resolved), 'data-comment-missing': String(!!state.missing) } : {}),
     }, ['span', {
       class: `${COMMENT_HIGHLIGHT_CLASS}-inner`,
       'data-string': 'true',

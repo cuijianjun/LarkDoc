@@ -674,14 +674,14 @@ const cellDragPoints = () => {
       && (await page.evaluate(() => document.querySelectorAll('.lark-doc-table-tools-btn[data-cmd="table-header"], .lark-doc-table-tools-btn[data-cmd="remove"]').length)) === 0,
     nodeA ? `[${nodeA.cmds.join(',')}]` : '没渲染')
 
-  record('[状态 A] 每颗按钮 type=button / title / aria-label / data-cmd 齐全且 title===aria-label',
-    !!nodeA && nodeA.buttons.every((b) => b.type === 'button' && b.title && b.ariaLabel === b.title && b.cmd),
-    nodeA ? `buttons=${nodeA.buttons.length} 齐全` : '没渲染')
+  record('[状态 A] 每颗按钮 type=button / aria-label / data-cmd 齐全且无原生 title（弹层内不弹黑底提示）',
+    !!nodeA && nodeA.buttons.every((b) => b.type === 'button' && b.ariaLabel && b.title === null && b.cmd),
+    nodeA ? `buttons=${nodeA.buttons.length} 齐全 titles=${nodeA.buttons.filter((b) => b.title !== null).length}` : '没渲染')
 
   record('[状态 A] bar 内无平铺的 13 项表格操作按钮 / 无 label>input[type=color] / 无 .lark-doc-select 旧下拉',
-    // 必须整串精确匹配：v11 的下拉触发按钮 title 是「合并 / 拆分单元格」，
-    // 用无锚点正则会把它误判成旧版平铺的「拆分单元格」按钮。
-    !!nodeA && !nodeA.buttons.some((b) => /^(上方加行|下方加行|删行|左侧加列|右侧加列|删列|合并单元格|拆分单元格|表头行|表头列|清空单元格|均分列宽|删除表格)$/.test(b.title || ''))
+    // 必须整串精确匹配：v11 的下拉触发按钮文案是「合并 / 拆分单元格」，
+    // 用无锚点正则会把它误判成旧版平铺的「拆分单元格」按钮。title 已移除，按 aria-label 判。
+    !!nodeA && !nodeA.buttons.some((b) => /^(上方加行|下方加行|删行|左侧加列|右侧加列|删列|合并单元格|拆分单元格|表头行|表头列|清空单元格|均分列宽|删除表格)$/.test(b.title || b.ariaLabel || ''))
       && !nodeA.hasLabel && nodeA.colorInputs === 0 && nodeA.selectCount === 0,
     nodeA ? `titles=[${nodeA.buttons.map((b) => b.title).join(' / ')}] label=${nodeA.hasLabel} colorInputs=${nodeA.colorInputs} selects=${nodeA.selectCount}` : '没渲染')
 
@@ -1181,9 +1181,9 @@ const cellDragPoints = () => {
     !!nodeB && JSON.stringify(nodeB.cmds) === JSON.stringify(EXPECTED_CMDS_B),
     nodeB ? nodeB.cmds.join(',') : '没渲染')
 
-  record('[状态 B] 每颗按钮 type=button / title===aria-label / data-cmd 非空',
-    !!nodeB && nodeB.buttons.every((b) => b.type === 'button' && b.title === b.ariaLabel && b.cmd),
-    nodeB ? `buttons=${nodeB.buttons.length} 齐全` : '没渲染')
+  record('[状态 B] 每颗按钮 type=button / aria-label 非空 / 无原生 title / data-cmd 非空',
+    !!nodeB && nodeB.buttons.every((b) => b.type === 'button' && b.ariaLabel && b.title === null && b.cmd),
+    nodeB ? `buttons=${nodeB.buttons.length} 齐全 titles=${nodeB.buttons.filter((b) => b.title !== null).length}` : '没渲染')
 
   record('[状态 B] 5 个 mark 按钮带 aria-pressed="true|false"（共 5 个）',
     !!nodeB && MARK_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd && b.hasPressed && (b.pressed === 'true' || b.pressed === 'false')))

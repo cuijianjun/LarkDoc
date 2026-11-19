@@ -234,7 +234,7 @@ describe('phone body mention categories', () => {
     expect(view.vm.buildMentionPanelState().style).toEqual({ left: '12px', top: '34px' })
   })
 
-  it('refreshes visible viewport resize/scroll without resetting list position and removes closed/destroyed listeners', () => {
+  it('refreshes visible viewport resize/scroll without resetting list position and removes closed/destroyed listeners', async () => {
     vi.stubGlobal('innerHeight', 852)
     const viewport = Object.assign(new window.EventTarget(), { height: 400, offsetTop: 0 })
     const media = Object.assign(new window.EventTarget(), { matches: true })
@@ -247,6 +247,7 @@ describe('phone body mention categories', () => {
     view.vm.$refs.mentionHost = view.host
     view.vm.mountMentionPanel()
     cleanups.push(() => view.vm.destroyMentionPanel())
+    await vi.dynamicImportSettled()
     const list = view.host.querySelector('[role="listbox"]')
     list.scrollTop = 125; list.dispatchEvent(new Event('scroll'))
     viewport.height = 200

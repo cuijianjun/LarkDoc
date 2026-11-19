@@ -401,19 +401,16 @@ describe('顶栏更多 · 命中判定', () => {
 
 
 describe('desktop historical comment routing', () => {
-  it('opens the existing panel and rechecks current view capability and service availability', () => {
-    let readable = true, opened = 0, closed = 0
-    const owner = { commentRemote: true, commentCan: key => key === 'canView' && readable,
-      closeTopbarMore: () => { closed++ }, openHistoricalComments: () => { opened++ } }
+  it('opens the history popup and rechecks the view plus edit gate', () => {
+    let available = true, opened = 0, closed = 0
+    const owner = { commentCanViewHistory: () => available,
+      closeTopbarMore: () => { closed++ }, openCommentHistory: () => { opened++ } }
     topbarMoreMixin.methods.runTopbarMoreAction.call(owner, 'history-comments')
     expect(opened).toBe(1); expect(closed).toBe(1)
-    readable = false
+    available = false
     expect(topbarMoreMixin.methods.runTopbarMoreAction.call(owner, 'history-comments')).toBe(false)
     const denied = topbarMoreMixin.computed.topbarMoreItems.call(owner).find(item => item.id === 'history-comments')
     expect(denied.enabled).toBe(false); expect(denied.title).toContain('没有查看权限')
-    readable = true; owner.commentRemote = false
-    expect(topbarMoreMixin.methods.runTopbarMoreAction.call(owner, 'history-comments')).toBe(false)
-    expect(topbarMoreMixin.computed.topbarMoreItems.call(owner).find(item => item.id === 'history-comments').enabled).toBe(false)
     expect(opened).toBe(1); expect(closed).toBe(1)
   })
 })

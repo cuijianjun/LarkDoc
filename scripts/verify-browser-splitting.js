@@ -112,12 +112,12 @@ async function runRoute(page, url, label, isWc) {
 
   // 3. WC：element 运行时 chunk 寻址正确（publicPath:'auto' 能解析到 /js/）
   if (isWc) {
-    const chunk = firstScreen.find((entry) => /lark-doc-element\.umd\.min\.(math|office|highlight|markdown)\.js(\?|$)/.test(entry))
+    const chunk = firstScreen.find(entry => new URL(entry).pathname === '/js/lark-doc-element.umd.min.math.js')
     let ok = false
     let detail = '首屏未请求按需区块'
     if (chunk) {
       const response = await page.request.get(chunk)
-      ok = response.status() === 200
+      ok = response.status() === 200 && new URL(chunk).origin === new URL(url).origin
       detail = `${response.status()} ${chunk.split('/').pop()}`
     }
     record(`[${label}] element 按需区块按 publicPath:'auto' 正确寻址`, ok, detail)
@@ -154,19 +154,16 @@ async function runRoute(page, url, label, isWc) {
 
   // 5. 代码块 → highlight 区块按需加载
   scripts.length = 0
-  const hasApi = await page.evaluate(() => !!(window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor()))
-  if (hasApi) {
-    await page.evaluate(() => {
-      window.__larkDoc.getEditor().commands.setContent('<pre><code class="language-javascript">const answer = 42</code></pre>')
-    })
-    await page.waitForTimeout(2000)
-    const highlighted = await page.locator('.lark-doc-code [class^="hljs-"]').count()
-    const pulled = scripts.filter((entry) => /highlight/i.test(entry))
-    record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, highlighted > 0 && pulled.length > 0,
-      `高亮节点=${highlighted}，新增 highlight 脚本=${pulled.length}`)
-  } else {
-    record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, true, '该路由未暴露 window.__larkDoc，跳过')
-  }
+  const key = isWc ? '__larkDocWc' : '__larkDoc'
+  await page.waitForFunction(key => window[key]?.getEditor?.(), key)
+  await page.evaluate(key => {
+    window[key].getEditor().commands.setContent('<pre><code class="language-javascript">const answer = 42</code></pre>')
+  }, key)
+  await page.locator('.lark-doc-code [class^="hljs-"]').first().waitFor()
+  const highlighted = await page.locator('.lark-doc-code [class^="hljs-"]').count()
+  const pulled = scripts.filter((entry) => /highlight/i.test(entry))
+  record(`[${label}] 代码块触发 highlight 区块下载并渲染高亮`, highlighted > 0 && pulled.length > 0,
+    `高亮节点=${highlighted}，新增 highlight 脚本=${pulled.length}`)
 
   // 6. 无 404 / 无脚本错误
   record(`[${label}] 无 404 / 无页面脚本错误`, failures.length === 0 && pageErrors.length === 0,

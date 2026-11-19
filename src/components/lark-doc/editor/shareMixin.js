@@ -155,9 +155,12 @@ export default {
   },
   computed: {
     selectionShareEntryAvailable() { return this.selectionShareAllowed() },
-    /** 入口显隐：只有 `canView:false` 才不挂（B24 交叉约束 3）；其余一律挂载。 */
+    /**
+     * 入口显隐：`features.share` 关掉 = 整个分享入口不挂；`canView:false` 才不挂
+     * 是历史约束（B24 交叉约束 3），两者取与。只读遮罩 `shareViewMaskVisible` 不受影响。
+     */
     shareEntryVisible() {
-      return this.shareCan('canView')
+      return this.featureEnabled('share') && this.shareCan('canView')
     },
     /** `canView:false` 的整页只读遮罩。这是 8 项里唯一「替换整页」的一项。 */
     shareViewMaskVisible() {

@@ -93,10 +93,14 @@ function buildContent() {
   const errors = []
   const segmentRequests = []
   page.on('pageerror', (error) => errors.push(error.message))
-  page.on('request', request => { if (/segmentedDocumentModel[^/]*\.(?:js|mjs)/.test(request.url())) segmentRequests.push(request.url()) })
+  page.on('request', request => {
+    const pathname = new URL(request.url()).pathname
+    if (/\/(?:[^/]*segmentedDocumentModel[^/]*\.(?:js|mjs)|lark-doc-element\.umd\.min\.document\.js)$/.test(pathname)) segmentRequests.push(pathname)
+  })
   await page.goto(BASE, { waitUntil: 'networkidle' })
   await page.waitForSelector('.ProseMirror', { timeout: 20000 })
   await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
+  record('[分段] 初始普通文档不下载段模型区块', segmentRequests.length === 0, segmentRequests.join(', '))
 
   await page.evaluate((html) => { window.__larkDoc.getEditor().commands.setContent(html) }, buildContent())
   await page.waitForTimeout(700)
@@ -274,7 +278,6 @@ function buildContent() {
 
   // A bounded large-document fixture, not a 30M pressure run: verify the real
   // Blob Worker protocol and that foreground scrolling pauses background work.
-  record('[分段] 普通文档不加载段模型区块', segmentRequests.length === 0)
   await page.evaluate(() => {
     const NativeWorker = window.Worker
     const editor = window.__p7.editor
@@ -387,8 +390,8 @@ function buildContent() {
     const NativeWorker = window.Worker
     const first = window.__p7.editor.state.doc.firstChild
     const toJSON = first.toJSON
-    const state = window.__p7Background = { serialized: 0, packets: [], done: false, NativeWorker, first, toJSON }
-    first.toJSON = function () { state.serialized += 1; return toJSON.call(this) }
+    const state = window.__p7Background = { serialized: 0, packets: [], scrolls: [], done: false, NativeWorker, first, toJSON }
+    first.toJSON = function () { state.serialized += 1; state.firstSerializedAt ??= performance.now(); return toJSON.call(this) }
     window.Worker = class extends NativeWorker {
       constructor(...args) {
         super(...args)
@@ -402,13 +405,19 @@ function buildContent() {
   await page.evaluate(() => {
     const state = window.__p7Background
     window.addEventListener('scroll', event => {
-      state.startedByScroll = event.isTrusted
-      state.task = window.__larkDoc._handle.editorController.getSnapshotAsync().then(result => { state.result = result })
-    }, { capture: true, once: true })
+      if (event.isTrusted) state.scrolls.push(performance.now())
+      if (state.task || !event.isTrusted) return
+      state.task = new Promise(resolve => requestAnimationFrame(resolve))
+        .then(() => window.__larkDoc._handle.editorController.getSnapshotAsync())
+        .then(result => { state.result = result })
+    }, { capture: true })
   })
   for (let index = 0; index < 4; index += 1) { await page.mouse.wheel(0, 80); await page.waitForTimeout(25) }
-  const paused = await page.evaluate(() => ({ serialized: window.__p7Background.serialized, trusted: window.__p7Background.startedByScroll }))
-  record('[后台] 连续滚动时快照尚未序列化首块', paused.serialized === 0 && paused.trusted, JSON.stringify(paused))
+  const paused = await page.evaluate(() => {
+    const { serialized, scrolls, firstSerializedAt, task } = window.__p7Background
+    return { serialized, scrolls, firstSerializedAt, started: !!task }
+  })
+  record('[后台] 连续滚动时快照尚未序列化首块', paused.started && paused.serialized === 0 && paused.scrolls.length >= 2, JSON.stringify(paused))
   const snapshot = await page.evaluate(async () => {
     const state = window.__p7Background
     try {

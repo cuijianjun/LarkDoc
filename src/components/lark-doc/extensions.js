@@ -159,7 +159,7 @@ export function createLarkDocExtensions(options = {}) {
     // P2-04：文件 / 视频块紧跟在图片之后——两者是同层原子块，schema 顺序沿用
     // 「图片 → 文件」的落位直觉；关掉 features.files 只藏入口，节点仍在 schema 里，
     // 历史 JSON 照样解析（P0-04 约定）。
-    FileBlock.configure({ resolveFileUrl: options.resolveFileUrl || null }),
+    FileBlock.configure({ resolveFileUrl: options.resolveFileUrl || null, allowFileAction: options.allowFileAction || null, captureFileOwner: options.captureFileOwner || null }),
     // P3-01：内嵌网页紧跟文件块——同为「外部内容占位」的同层原子块。
     // `canEmbed` 是出网策略闸门（P3-06 接线）：offline / allowlist 下返回 false 的
     // src 连 iframe 都不造（`STATUS.BLOCKED`），有 poster 就只显示快照图。

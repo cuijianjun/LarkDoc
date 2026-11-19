@@ -11,7 +11,10 @@
  * **不弹面板**，选完就地插块；但仍然 `plus: false`：真飞书「文档小组件」是斜杠菜单的
  * 分类，`+` 菜单的块级入口不承诺这块（目录要读全篇标题才有内容，空文档插了是个空灰底）。
  */
+import { BOARD_DIAGRAM_ITEMS } from '../embed/board-diagram'
+
 export const widgetCommands = [
+  ...[{ id: 'whiteboard', label: '画板' }, ...BOARD_DIAGRAM_ITEMS].map(({ id, label }) => ({ id, label, menu: false, category: '绘图', plusCategory: '绘图', glyph: '◇', tone: 'teal', keywords: `${id} ${label} board drawing`, group: 'widget', tier: 'required' })),
   { id: 'diagram', label: '图表', category: '插入', plusCategory: '常用', glyph: '▥', tone: 'teal', submenu: '图表', submenuType: 'diagram', keywords: 'diagram mermaid chart tubiao flowchart liuchengtu 图', group: 'widget', tier: 'required' },
   { id: 'catalogue', label: '目录导航', category: '文档小组件', plus: false, glyph: '☰', tone: 'gray', keywords: 'catalogue mulu daohang toc table of contents catalog outline widget', group: 'widget', tier: 'required' },
 ]

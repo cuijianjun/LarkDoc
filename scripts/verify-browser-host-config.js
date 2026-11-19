@@ -69,7 +69,7 @@ async function main() {
         .filter(button => !button.disabled)
         .map(button => button.getAttribute('aria-label') || button.textContent.trim()),
     }))
-    const readonlyViewers = ['查找', '目录', '页面宽度', '阅读模式', '全屏', '演示模式', '快捷键帮助', '文档操作']
+    const readonlyViewers = ['查找', '目录', '页面宽度', '阅读模式', '全屏', '演示模式', '快捷键帮助', '文档操作', '更多']
     check('只读切换立即锁正文并保留查看类入口', readonly.api && readonly.editable === 'false' && readonly.writeDisabled >= 1 && JSON.stringify(readonly.enabled) === JSON.stringify(readonlyViewers), readonly)
 
     await page.evaluate(() => window.__larkDoc.setReadonly(false))

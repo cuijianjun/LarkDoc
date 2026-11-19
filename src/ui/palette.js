@@ -101,6 +101,8 @@ export const BUTTON_COLOR_ROWS = [
 
 /* ---- 组件默认值（原生 color input 的初值 / 未应用状态的回填） ---- */
 /** 行内文字默认色 = 正文主文字（与 --ld-text-content 同值，但用于写 inline style，不能取 var） */
+/** CSS 内容色名称在 Word 等无 CSS 环境中的 RGB 对照，不随 UI 主题变化。 */
+export const CONTENT_NAMED_RGB = Object.freeze({ black: '000000', white: 'FFFFFF', red: 'FF0000', blue: '0000FF', green: '008000', yellow: 'FFFF00' })
 export const DEFAULT_TEXT_COLOR = '#263b35'
 /** 行内背景默认色 = 高亮盘「暖黄」（未应用时气泡条高亮按钮的展示色） */
 export const DEFAULT_TEXT_BACKGROUND = '#fff2a8'

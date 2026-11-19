@@ -7,6 +7,7 @@
 
 import { bindThreads } from '../../../core/comments/binding'
 import { encodeAnchor, decodeAnchor } from '../../../core/comments/anchor'
+import { loadReactionCatalog } from '../../../core/comments/reactionCatalog'
 import { createCommentOperationId } from '../../../providers/comments'
 import { projectCapabilityUi } from '../../../core/policy/capability'
 import { commentGate, commentDraftText } from './commentMixinShared'
@@ -30,7 +31,9 @@ export const commentsCapabilityMethods = {
     if (action === 'create' && (!this.commentCan('canView') || this.featureEnabled?.('comments') === false)) return false
     const provider = this.commentProvider()
     if (!provider || !provider.isRemote) {
-      if (action === 'create') return typeof provider?.createThread === 'function' && this.writable()
+      // 只读文档也能发评论（图片/全文评论不落 mark）；真正的文本区间建线程由
+      // `createCommentFromSelection` 里的 `!writable() && !range.blockOnly` 兜住。
+      if (action === 'create') return typeof provider?.createThread === 'function'
         && !this.commentBusy && !this.commentPendingOperation
       if (action !== 'react') return true
       const thread = this.commentThreads.find(item => item.id === threadId && !item.tombstone)
@@ -118,6 +121,14 @@ export const commentsCapabilityMethods = {
         || thread.author?.id === this.commentAuthor.id || thread.participants?.includes(this.commentAuthor.id))
       this.commentSourceThreads = visible
       this.commentThreads = bindThreads(this.editor ? this.editor.state.doc : null, visible, this.commentAnchorCodec)
+      // 列表里已有表情回复时预取目录，否则重开文档的 chip 只能退化成文字。
+      if (!this.commentReactionCatalog && this.commentThreads.some(thread => thread.replies.some(reply => reply.reactions?.length))) {
+        try {
+          const catalog = await loadReactionCatalog()
+          if (!current() || generation !== this.commentLoadGeneration || provider !== this.commentProvider() || !this.commentCan('canView')) return this.commentThreads || []
+          this.commentReactionCatalog = catalog
+        } catch (_) { /* Replies stay readable if an optional icon chunk cannot be loaded. */ }
+      }
       if (this.commentParticipantThread && !this.commentAllowed('participants', this.commentParticipantThread)) this.resetCommentParticipants()
       if (this.commentReactionContext && !this.commentAllowed('react', this.commentReactionContext.threadId, this.commentReactionContext.replyId)) this.closeCommentReaction()
       if (this.commentTranslationState && !this.commentTranslationIsCurrent(this.commentTranslationState)) this.commentTranslationState = null
@@ -210,7 +221,8 @@ export const commentsCapabilityMethods = {
     const provider = this.commentProvider()
     if (!provider) return null
     // 评论专属权限不依赖正文可写；远端始终使用真实相对位置。
-    if (!provider.isRemote && !this.writable()) return null
+    // 整块（图片/网页卡片）评论不落 mark，只读文档里同样可以发。
+    if (!provider.isRemote && !this.writable() && !range.blockOnly) return null
     let anchor
     try {
       anchor = captured ? captured.anchor : encodeAnchor({ blockId: range.blockId, offset: range.offset, length: range.length }, this.commentAnchorCodec)
@@ -223,11 +235,11 @@ export const commentsCapabilityMethods = {
     if (!provider.isRemote && (range.invalid || this.commentBlockPos(range.blockId) < 0)) return null
     this._commentSubmittingRange = range
     const thread = await this.runCommentWrite('createThread', {
-      scope: 'selection', visibility, ...(this.commentDraftImages('selection').length ? { assetIds: this.commentDraftImages('selection').map(image => image.assetId) } : {}), blockId: range.blockId, author: this.commentAuthor, content: text, anchor, quote: range.text,
+      scope: 'selection', visibility, ...(this.commentDraftImages('selection').length ? { assetIds: this.commentDraftAssetIds('selection'), ...(provider.isRemote ? {} : { attachments: this.commentDraftAttachments('selection') }) } : {}), blockId: range.blockId, author: this.commentAuthor, content: text, anchor, quote: range.text,
     }, 'createCommentThread')
     if (this._commentSubmittingRange === range) this._commentSubmittingRange = null
     if (imageScope && (this._imageCommentScope !== imageScope || !this.imageCommentCurrent(imageScope))) return null
-    if (thread && !provider.isRemote && !this.writable()) {
+    if (thread && !provider.isRemote && !this.writable() && !range.blockOnly) {
       this.commentMessage = '评论已提交，正文已切为只读，未写入标记。'
       return null
     }
@@ -238,7 +250,7 @@ export const commentsCapabilityMethods = {
     if (thread) {
       this.commentCreateDraft = ''; this.clearCommentDraftImages('selection')
       this.commentComposerOpen = false; this.commentComposerContext = null; this.commentSidebarOpen = true
-      if (!provider.isRemote) {
+      if (!provider.isRemote && !range.blockOnly) {
         const mark = this.editor.schema.marks.comment?.create({ threadId: thread.id })
         if (mark) {
           const transaction = this.editor.state.tr
@@ -252,7 +264,7 @@ export const commentsCapabilityMethods = {
   },
   async createDocumentComment(content, visibility = 'document', participants = [], mentions, references) {
     if (!this.commentDocumentCanSubmit()) return null
-    const result = await this.runCommentWrite('createThread', { scope: 'document', visibility, participants, content, ...(mentions === undefined ? {} : { mentions }), ...(references === undefined ? {} : { references }), ...(this.commentDraftImages('document').length ? { assetIds: this.commentDraftImages('document').map(image => image.assetId) } : {}), author: this.commentAuthor,
+    const result = await this.runCommentWrite('createThread', { scope: 'document', visibility, participants, content, ...(mentions === undefined ? {} : { mentions }), ...(references === undefined ? {} : { references }), ...(this.commentDraftImages('document').length ? { assetIds: this.commentDraftAssetIds('document'), ...(this.commentProvider()?.isRemote ? {} : { attachments: this.commentDraftAttachments('document') }) } : {}), author: this.commentAuthor,
       blockId: null, anchor: null }, 'createCommentThread')
     if (result) this.activateComment(result.id)
     return result
@@ -263,17 +275,22 @@ export const commentsCapabilityMethods = {
     const draft = commentDraftText(this.commentDrafts, threadId)
     const text = mentions.length || references.length ? draft : draft.trim()
     if (!text.trim() && !this.commentDraftImages(threadId).length) return null
-    const result = await this.runCommentWrite('reply', { threadId, author: this.commentAuthor, content: text, ...(mentions.length ? { mentions } : {}), ...(references.length ? { references } : {}), ...(this.commentDraftImages(threadId).length ? { assetIds: this.commentDraftImages(threadId).map(image => image.assetId) } : {}) }, 'replyToComment')
+    const replyTo = this.commentReplyTargets[threadId]
+    const result = await this.runCommentWrite('reply', { threadId, author: this.commentAuthor, content: text, ...(mentions.length ? { mentions } : {}), ...(references.length ? { references } : {}), ...(this.commentDraftImages(threadId).length ? { assetIds: this.commentDraftAssetIds(threadId), ...(this.commentProvider()?.isRemote ? {} : { attachments: this.commentDraftAttachments(threadId) }) } : {}), ...(replyTo && draft.startsWith(`@${replyTo.authorName} `) ? { replyTo } : {}) }, 'replyToComment')
     if (result && this.commentDraftOf(threadId) === draft && (this.commentDraftMentions[threadId] || mentions) === mentions && (this.commentDraftReferences[threadId] || references) === references) this.clearCommentDraft(threadId)
     return result
   },
   async resolveComment(threadId) {
     if (!this.commentAllowed('resolve', threadId)) return null
-    return this.runCommentWrite('resolve', threadId, 'resolveComment')
+    const result = await this.runCommentWrite('resolve', threadId, 'resolveComment')
+    if (result) this.syncCommentMarkState()
+    return result
   },
   async reopenComment(threadId) {
     if (!this.commentAllowed('reopen', threadId)) return null
-    return this.runCommentWrite('reopen', threadId, 'reopenComment')
+    const result = await this.runCommentWrite('reopen', threadId, 'reopenComment')
+    if (result) this.syncCommentMarkState()
+    return result
   },
   async deleteCommentReply(threadId, commentId) {
     if (!this.commentAllowed('remove', threadId, commentId)) return null

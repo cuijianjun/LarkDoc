@@ -94,7 +94,7 @@ export function documentMenuItems(ed, business = ed.session?.getProvider?.('docu
     if (['download', 'print'].includes(id)) allowed = allowed && ed.exportCanExport === true
     if (['history', 'saved-versions'].includes(id)) allowed = allowed && Boolean(ed.versionProvider)
     if (id === 'search') allowed = allowed && ed.featureEnabled('search')
-    if (id === 'history-comments') allowed = allowed && ed.commentRemote === true
+    if (id === 'history-comments') allowed = allowed && ed.commentCanViewHistory?.() === true
     if (['width', 'presentation'].includes(id)) allowed = allowed && ed.toolbarEnabled('viewModes')
     let checked
     if (port && ['follow', 'favorite', 'pin', 'shortcut', 'move', 'duplicate', 'delete'].includes(id)) {
@@ -151,7 +151,7 @@ export async function runDocumentMenuAction(ed, id, value, event, current = () =
   else if (id === 'saved-versions') { await ed.openVersionPanel({ kind: 'saved' }); if (!current() || !ed.versionPanelOpen || !ed.versionList.some(version => version.id === value)) return false; await ed.selectVersion(value) }
   else if (id === 'manage-members') ed.toggleSharePopover(event)
   else if (id === 'permission-settings') ed.openPermissionDialog()
-  else if (id === 'history-comments') ed.openHistoricalComments()
+  else if (id === 'history-comments') { if (!ed.openCommentHistory(event)) return false }
   else if (id === 'information' || id === 'mentions') return id
   else if (host(ed, id)) { if (await ed.onDocumentAction(Object.freeze({ action: id, ...(id === 'information-host' ? { tab: value } : {}), documentId: ed.session?.documentId ?? null, actorId: ed.session?.user?.id ?? null })) === false) return false }
   else return false

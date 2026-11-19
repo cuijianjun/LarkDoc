@@ -165,7 +165,7 @@ function foldRangeOf(node, pos, parent, index, parentEnd) {
   // 否则同一段内容会同时挂上 item 的箭头和首段落的箭头（两个 widget 落在同一个
   // 行内位置、互相盖住），点其中一个等于把另一个刚设的状态又切回去。
   if ((parent.type.name === 'listItem' || parent.type.name === 'taskItem') && index === 0) return null
-  if (node.type.name === 'heading') {
+  if (node.type.name === 'heading' && nodeIndent(node) === 0) {
     const from = pos + node.nodeSize
     let to = parentEnd, siblingPos = from, hasContent = false
     const level = Number(node.attrs.level) || 1
@@ -188,8 +188,8 @@ function foldRangeOf(node, pos, parent, index, parentEnd) {
 
 /** 计算某个块的折叠范围 [{ from, to }]；没有内容时返回 null。
  *
- * - 标题：同一 parent 内直到下一个同级或更高级标题的章节正文；
- * - 段落/其它块：更深缩进的后续子树，文本宿主保留隐式列表规则；
+ * - 无缩进的标题：同一 parent 内直到下一个同级或更高级标题的章节正文；
+ * - 有缩进的标题、段落和其它块：缩进子树，文本宿主保留隐式列表规则；
  * - 列表项：子树在自己内部，从首个子段落之后到 item 结尾。
  */
 export function foldedRange(doc, pos) {

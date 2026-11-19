@@ -17,7 +17,7 @@
 import { createCommentsProvider } from '../../providers/comments'
 import { buildReply, buildThread, normalizeAuthor, normalizeThread } from './thread'
 import { reopenThread, resolveThread, sortThreads } from './state'
-import { isEmojiGlyph, normalizeEmojiGlyph } from '../emoji/identity'
+import { normalizeEmojiGlyph } from '../emoji/identity'
 
 /** 默认 id：进程内自增，跨 Provider 也不重号；需要固定序列时用 options.nextId 覆盖。 */
 let sequence = 0
@@ -82,6 +82,8 @@ export function createMemoryCommentsProvider(options) {
   })
 
   const provider = {
+    supportsAttachments: true,
+
     async list() {
       return sortThreads(Array.from(store.values())).map(cloneThread)
     },
@@ -117,7 +119,8 @@ export function createMemoryCommentsProvider(options) {
       const author = normalizeAuthor(source.author)
       if (!author.id || author.id !== current.author.id) throw new Error('只能编辑自己的评论')
       const content = source.content != null ? source.content : source.body
-      const validated = buildReply({ author, content }, { id: current.id, now: current.createdAt })
+      // 编辑允许「只剩图片」的正文：附件未随本次提交时沿用原回复的图片再校验。
+      const validated = buildReply({ author, content, attachments: source.attachments !== undefined ? source.attachments : current.attachments }, { id: current.id, now: current.createdAt })
       const next = { ...current, content: validated.content, editedAt: clock() }
       if (!Object.prototype.hasOwnProperty.call(source, 'richContent')) delete next.richContent
       ;['richContent', 'mentions', 'references', 'attachments'].forEach(key => {
@@ -137,8 +140,11 @@ export function createMemoryCommentsProvider(options) {
       const current = thread.replies[index]
       const author = normalizeAuthor(source.author)
       if (!author.id) throw new Error('reaction 缺少作者 id')
-      if (!isEmojiGlyph(source.emoji)) throw new Error('reaction 表情无效')
-      const emoji = normalizeEmojiGlyph(source.emoji)
+      // 目录里的 id（`applaud_v2` 这类）与原生 emoji 字形走同一条路：只挡空串、
+      // 超长与控制字符，不要求它一定能在 emoji 表里查到。
+      const raw = typeof source.emoji === 'string' ? source.emoji.trim() : ''
+      if (!raw || Array.from(raw).length > 64 || /[\r\n]/.test(raw) || raw.includes('\u0000')) throw new Error('reaction 表情无效')
+      const emoji = normalizeEmojiGlyph(raw)
       const reactions = Array.isArray(current.reactions) ? cloneValue(current.reactions) : []
       const reactionIndex = reactions.findIndex(reaction => normalizeEmojiGlyph(reaction && reaction.emoji) === emoji)
       const reaction = reactionIndex === -1 ? { emoji, users: [] } : reactions[reactionIndex]
@@ -179,6 +185,15 @@ export function createMemoryCommentsProvider(options) {
       if (replies.length === thread.replies.length) return
       if (replies.length) store.set(thread.id, { ...thread, replies })
       else store.delete(thread.id)
+    },
+
+    /** 删除整条线程：与 `deleteReply` 同属本地演示路径，只删内存存储。 */
+    async deleteThread(input) {
+      const source = input || {}
+      const id = source.threadId || source.id
+      if (!id || !store.has(id)) return false
+      store.delete(id)
+      return true
     },
 
     /** 05 §5.5.1：同一 id 重放要幂等，所以这里直接复用 resolveThread 的判定。 */

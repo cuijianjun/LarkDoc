@@ -54,7 +54,7 @@ function syncTableColWidths(view, editorDom) {
 
 export default {
   data() { return {
-    tableToolsOpen: false, tablePicker: false, tablePickerHover: { rows: 3, cols: 3 },
+    tableToolsOpen: false, tablePicker: false, tablePickerStyle: {}, tablePickerHover: { rows: 3, cols: 3 },
     // v4（WorkBuddy `nearestIdx` 1:1）：一条**内部**边线 = 一颗 ＋。`actionId` 由最近的
     // 内部边线决定（统一 `addColumnAfter` / `addRowAfter`，光标落在边线左/上侧单元格）。
     // `plusActive` 只在 ＋ 被 hover / focus 时为真 —— hover line 仅在此时挂进 DOM
@@ -91,16 +91,72 @@ export default {
   beforeDestroy() { window.removeEventListener('resize', this.syncTableClip); this.destroyTableClipObserver() },
   methods: {
     // P0-03：工具栏表格按钮的三态行为收敛为方法——拆出的子组件模板经 ed. 调用，避免 vue/no-mutating-props。
+    // 光标在表格内 → 表格工具块菜单；光标在表外 → 9×9 行列选择下拉（飞书口径：点表格按钮先选行列，
+    // 不静默插 2×3）。
     onTableToolbarClick() {
       if (!this.writable() || !this.featureEnabled('tables')) return
-      if (!this.isActive('table')) return this.insertTable()
-      if (this.blockMenuOpen && this.handleIsTable) return this.closeBlockMenu()
-      this.positionBlockHandle(this.currentBlockRange())
-      if (this._tableHandleContext) this.positionBlockHandle(this._tableHandleContext.table)
-      this.openBlockMenu()
+      if (this.isActive('table')) {
+        if (this.blockMenuOpen && this.handleIsTable) return this.closeBlockMenu()
+        this.positionBlockHandle(this.currentBlockRange())
+        if (this._tableHandleContext) this.positionBlockHandle(this._tableHandleContext.table)
+        this.openBlockMenu()
+        return
+      }
+      // hover 已经展开时点击不关（飞书行为：hover 弹层靠移开鼠标收），与「图表」下拉一致。
+      if (this._tablePickerHoverOpened && this.tablePicker) { this._dialogsUi?.table.focusTableGrid(); return }
+      this._tablePickerHoverOpened = false
+      this.cancelPopupHoverClose('tablePicker')
+      if (this.tablePicker) this.closeTablePicker()
+      else this.openTablePicker()
+    },
+    /** 直接置态而非复用 toggle：避免把 hover 标志清掉，导致紧随的 click 又关掉面板。 */
+    openTablePicker() {
+      if (!this.writable() || !this.featureEnabled('tables')) return
+      // 定位交给 `dialogsUiMixin` 的 `tablePicker` watcher（面板挂进文档之后才量得到）。
+      this.tablePicker = true
+    },
+    openTablePickerOnHover() {
+      if (!this.writable() || !this.featureEnabled('tables') || this.isActive('table')) return
+      this.cancelPopupHoverClose('tablePicker')
+      if (this.tablePicker) return
+      this._tablePickerHoverOpened = true
+      this.openTablePicker()
+    },
+    scheduleTablePickerClose() {
+      // 表内按钮是「表格工具」，不参与下拉的 hover 收起。
+      if (this.isActive('table')) return
+      this.schedulePopupHoverClose(() => { this._tablePickerHoverOpened = false; if (this.tablePicker) this.closeTablePicker() }, 'tablePicker')
+    },
+    closeTablePicker({ restoreFocus = false } = {}) {
+      if (!this.tablePicker && !this._tablePickerHoverOpened) return
+      const root = this.$refs.root
+      const panel = root?.querySelector('.lark-doc-table-picker')
+      const focusOwner = root?.getRootNode().activeElement
+      this.cancelPopupHoverClose('tablePicker')
+      this._tablePickerHoverOpened = false
+      this.tablePicker = false
+      this.tablePickerStyle = {}
+      if (restoreFocus && focusOwner && panel?.contains(focusOwner)) {
+        const trigger = root?.querySelector('.lark-doc-toolbar button[aria-label="插入表格"], .lark-doc-toolbar button[aria-label="表格工具"]')
+          || root?.querySelector('.lark-doc-toolbar button[aria-label="更多"]')
+        trigger?.focus({ preventScroll: true })
+      }
+    },
+    /** 贴按钮下沿定位，（与「图表」下拉同一套 `positionToolbarPopup`：向下优先、不够翻上）。 */
+    positionTablePicker() {
+      if (!this.tablePicker) return
+      const root = this.$refs.root
+      // 表格按钮收进「更多」后不在 DOM 里（`syncChildren` 直接摘节点）：改贴「更多」按钮，
+      // 否则面板会落在 `positionToolbarPopup` 的兜底位置（左上角）。
+      const trigger = root?.querySelector('button[aria-label="插入表格"], button[aria-label="表格工具"]')
+        || root?.querySelector('button[aria-label="更多"]')
+      const panel = root?.querySelector('.lark-doc-table-picker')
+      // 首次打开时懒加载可能还没把面板插进文档：`onReady` 会再调一次，这里静默跳过。
+      if (!trigger || !panel) return
+      this.tablePickerStyle = this.positionToolbarPopup(trigger, panel, 120)
     },
     previewTableSize(rows, cols) { if (!this.tablePicker) return; this.tablePickerHover = { rows, cols } },
-    insertTable(rows = 2, cols = 3) { if (!this.writable() || !this.featureEnabled('tables')) return false; this.tablePicker = false; this.tablePickerHover = { rows: 2, cols: 3 }; const inserted = this.run('insertLarkDocTable', { rows, cols }); this.$nextTick(() => this.updateTableBoundary()); return inserted },
+    insertTable(rows = 2, cols = 3) { if (!this.writable() || !this.featureEnabled('tables')) return false; this.closeTablePicker(); this.tablePickerHover = { rows: 2, cols: 3 }; const inserted = this.run('insertLarkDocTable', { rows, cols }); this.$nextTick(() => this.updateTableBoundary()); return inserted },
     activeTableElement() {
       if (!this.editor || !this.editor.isActive('table')) return null
       const { $from } = this.editor.state.selection

@@ -16,7 +16,7 @@ import tableInteraction from '../../src/components/lark-doc/editor/tableInteract
 import tableCommands from '../../src/components/lark-doc/editor/tableToolsMixin'
 import overlayDismiss from '../../src/components/lark-doc/editor/overlayDismissMixin'
 import { createTableTools } from '../../src/ui/tableTools'
-import { createLinkDialog } from '../../src/ui/dialogs'
+import { createLinkDialog, createEmbedDialog } from '../../src/ui/dialogs'
 import { createCommandMenu } from '../../src/ui/commandMenu'
 import { filterCommands } from '../../src/core/commands'
 import commandMenu from '../../src/components/lark-doc/editor/commandMenuMixin'
@@ -24,6 +24,7 @@ import blockHandleUi from '../../src/components/lark-doc/editor/blockHandleUiMix
 import { createTooltip } from '../../src/ui/tooltip'
 import { createDiagramMenu } from '../../src/ui/diagramMenu'
 import viewModes from '../../src/components/lark-doc/editor/viewModesMixin'
+import { createSearchPanel } from '../../src/ui/searchPanel'
 
 const editors = []
 function editor(content, config, options = {}) {
@@ -32,6 +33,26 @@ function editor(content, config, options = {}) {
   return value
 }
 afterEach(() => editors.splice(0).forEach(value => value.destroy()))
+
+it('search input preserves native Ctrl+Cmd+F while retaining single-modifier find shortcuts', () => {
+  const host = document.createElement('div'), onTab = vi.fn()
+  document.body.appendChild(host)
+  const panel = createSearchPanel({ host, handlers: { onTab } })
+  try {
+    panel.update({ open: true })
+    const input = panel.el.querySelector('input')
+    const native = new KeyboardEvent('keydown', { key: 'f', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true })
+    input.dispatchEvent(native)
+    expect(native.defaultPrevented).toBe(false)
+    expect(onTab).not.toHaveBeenCalled()
+    for (const key of ['metaKey', 'ctrlKey']) {
+      const find = new KeyboardEvent('keydown', { key: 'f', [key]: true, bubbles: true, cancelable: true })
+      input.dispatchEvent(find)
+      expect(find.defaultPrevented).toBe(true)
+    }
+    expect(onTab.mock.calls).toEqual([['find'], ['find']])
+  } finally { panel.destroy(); host.remove() }
+})
 
 function hostFor(ed) {
   document.body.appendChild(ed.view.dom)
@@ -393,11 +414,12 @@ describe('v12e link and cell interactions', () => {
     const state = { open: true, kind: 'plus', items: filterCommands('', 'plus') }
     menu.update(state)
     const basic = menu.el.querySelector('[data-category="基础"]')
-    expect([...basic.querySelectorAll('button')].map(button => button.dataset.commandId)).toEqual(['heading1', 'heading2', 'heading3', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link'])
+    // 飞书 plus「基础」段是 H1~H5 五个标题图标（原实现只到 H3）。
+    expect([...basic.querySelectorAll('button')].map(button => button.dataset.commandId)).toEqual(['heading1', 'heading2', 'heading3', 'heading4', 'heading5', 'orderedList', 'bulletList', 'taskList', 'code', 'blockquote', 'callout', 'divider', 'link'])
     const tasks = [...menu.el.querySelectorAll('[data-command-id="taskList"]')]
     expect(tasks).toHaveLength(2)
     expect(tasks[0]).not.toBe(tasks[1])
-    expect(basic.querySelectorAll('svg')).toHaveLength(11)
+    expect(basic.querySelectorAll('svg')).toHaveLength(13)
     menu.update({ ...state, activeId: 'taskList' })
     expect([...menu.el.querySelectorAll('[data-command-id="taskList"]')]).toEqual(tasks)
     menu.destroy(); host.remove()
@@ -433,7 +455,7 @@ describe('v12e link and cell interactions', () => {
     const menu = createCommandMenu({ host, handlers: { onChoose: choose } })
     menu.update({ open: true, kind: 'plus', items: filterCommands('', 'plus') })
     menu.el.querySelector('[data-command-id="table"]').dispatchEvent(new MouseEvent('mouseenter'))
-    const grid = menu.el.querySelector('.lark-doc-table-submenu-grid')
+    const grid = menu.submenuEl?.querySelector('.lark-doc-table-submenu-grid')
     expect(grid?.querySelectorAll('button')).toHaveLength(81)
     const cell = grid.querySelector('[data-row="2"][data-col="3"]')
     cell.focus()
@@ -523,7 +545,7 @@ describe('v12e link and cell interactions', () => {
   })
 
   it('opens the real table block menu from the toolbar and closes it on the next click', () => {
-    const host = { writable: () => true, featureEnabled: () => true, isActive: () => true, currentBlockRange: () => ({ from: 0, to: 50 }), positionBlockHandle: vi.fn(), openBlockMenu: vi.fn(), closeBlockMenu: vi.fn(), blockMenuOpen: false }
+    const host = { writable: () => true, featureEnabled: () => true, isActive: () => true, currentBlockRange: () => ({ from: 0, to: 50 }), positionBlockHandle: vi.fn(), openBlockMenu: vi.fn(), closeBlockMenu: vi.fn(), blockMenuOpen: false, cancelPopupHoverClose: vi.fn() }
     tableCommands.methods.onTableToolbarClick.call(host)
     expect(host.positionBlockHandle).toHaveBeenCalledWith({ from: 0, to: 50 })
     expect(host.openBlockMenu).toHaveBeenCalledOnce()
@@ -531,10 +553,13 @@ describe('v12e link and cell interactions', () => {
     host.handleIsTable = true
     tableCommands.methods.onTableToolbarClick.call(host)
     expect(host.closeBlockMenu).toHaveBeenCalledOnce()
+    // 表外点击不再是静默插 2×3，而是打开 9×9 行列选择下拉（飞书口径）。
     host.isActive = () => false
     host.insertTable = vi.fn()
+    host.openTablePicker = vi.fn()
     tableCommands.methods.onTableToolbarClick.call(host)
-    expect(host.insertTable).toHaveBeenCalledOnce()
+    expect(host.openTablePicker).toHaveBeenCalledOnce()
+    expect(host.insertTable).not.toHaveBeenCalled()
   })
 
   it('keeps the own table trigger state until its click can close the open menu', () => {
@@ -1488,4 +1513,62 @@ describe('链接预览尺寸观察器生命周期', () => {
       window.cancelAnimationFrame = previousCancel
     }
   })
+})
+
+describe('REA search composition and compact link parity', () => {
+  it('publishes only committed query text and keeps the composition draft during unrelated paint', () => {
+    const host = document.createElement('div'); document.body.append(host)
+    const queries = [], ui = createSearchPanel({ host, handlers: { onQuery: e => queries.push(e.target.value) } })
+    try {
+      const state = { open: true, query: '', height: 186 }
+      ui.update(state)
+      const input = host.querySelector('input')
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      input.value = 'zhong'; input.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+      ui.update({ ...state, counterText: '0 / 0' })
+      expect(input.value).toBe('zhong')
+      expect(queries).toEqual([])
+      input.value = '中'; input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+      input.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      expect(queries).toEqual(['中'])
+    } finally { ui.destroy(); host.remove() }
+  })
+})
+
+describe('caption search is a structured attribute match', () => {
+  it('finds, replaces and undoes image/code captions alongside formatted body without treating attributes as text positions', async () => {
+    const { findTextMatches, replaceText } = await import('../../src/core/documentOperations')
+    const ed = editor({ type: 'doc', content: [
+      { type: 'codeBlock', attrs: { blockId: 'bcode53', caption: 'needle needle' }, content: [{ type: 'text', text: 'needle' }] },
+      { type: 'image', attrs: { src: 'https://example.test/a.png', blockId: 'bimage53', caption: 'needle image' } },
+      { type: 'paragraph', attrs: { blockId: 'btext53' }, content: [{ type: 'text', text: 'needle', marks: [{ type: 'bold' }] }] },
+    ] })
+    const original = ed.getJSON(), matches = findTextMatches(ed.state.doc, 'needle')
+    expect(matches).toHaveLength(5)
+    expect(matches.filter(m => m.attribute === 'caption')).toHaveLength(3)
+    expect(replaceText(ed, 'needle', 'X', true, matches)).toBe(5)
+    expect(ed.state.doc.child(0).attrs.caption).toBe('X X')
+    expect(ed.state.doc.child(0).textContent).toBe('X')
+    expect(ed.state.doc.child(1).attrs.caption).toBe('X image')
+    expect(ed.state.doc.child(2).firstChild.marks[0].type.name).toBe('bold')
+    ed.commands.undo(); expect(ed.getJSON()).toEqual(original)
+  })
+})
+
+it.each(['code', 'image'])('scrolls the actual %s caption inside its scroll owner without using the node selection end', async kind => {
+  const { scrollDocumentSelection } = await import('../../src/editor/pagedDocumentView')
+  const owner = document.createElement('div'); owner.style.overflowY = 'auto'
+  Object.defineProperties(owner, { scrollHeight: { value: 2000 }, clientHeight: { value: 400 } })
+  owner.getBoundingClientRect = () => ({ top: 100, bottom: 500 })
+  owner.scrollBy = vi.fn()
+  const root = document.createElement('div'), shell = document.createElement('div'), caption = document.createElement(kind === 'code' ? 'input' : 'figcaption')
+  caption.className = kind === 'code' ? 'lark-doc-code-caption' : 'lark-doc-image-caption-text'
+  caption.getBoundingClientRect = () => ({ top: 600, bottom: 620, height: 20 })
+  shell.append(caption); root.append(shell); owner.append(root); document.body.append(owner)
+  const coords = vi.fn(() => { throw new Error('must not use block end') })
+  try {
+    scrollDocumentSelection({ view: { dom: root, nodeDOM: () => shell, coordsAtPos: coords }, state: { selection: { head: 999 } } }, { from: 0, attribute: 'caption' })
+    expect(coords).not.toHaveBeenCalled()
+    expect(owner.scrollBy).toHaveBeenCalledWith({ top: 307.5, behavior: 'instant' })
+  } finally { owner.remove() }
 })

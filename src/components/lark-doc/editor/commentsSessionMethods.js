@@ -26,7 +26,7 @@ export const commentsSessionMethods = {
     this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
     this.commentComposerContext = null; this.commentComposerOpen = false; this.commentSidebarOpen = preserveSidebar && this.commentSidebarOpen
     if (!preserveSidebar) this.commentHistorical = false
-    this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentMentionPicker = null; this.commentCreateDraft = ''; this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null; this.cancelCommentEdit()
+    this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentReplyTargets = {}; this.commentMentionPicker = null; this.commentCreateDraft = ''; this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null; this.cancelCommentEdit()
     this.commentFollowPreferences = {}; this.commentMessage = ''
     this.commentFollowReadGeneration++
     this.closeCommentMenus()
@@ -57,11 +57,12 @@ export const commentsSessionMethods = {
       this._commentStopReset = this.session.on('comments-reset', reason => this.resetCommentIdentityView(reason === 'authorization-required', reason === 'authorization-required'))
       this._commentStopCapabilities = this.session.on('capabilities', () => {
         this.resetCommentParticipants()
+        // 预览层回收由 resetCommentImages 统一负责（先 destroy 再清指针），不再单独调一次。
         this.resetCommentImages(true)
         this.closeCommentReaction()
         this.commentLoadGeneration++
         this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
-        this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentMentionPicker = null; this.commentEditingReply = null; this.commentEditContent = ''; this.commentEditMentions = []; this.commentEditReferences = []
+        this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentReplyTargets = {}; this.commentMentionPicker = null; this.commentEditingReply = null; this.commentEditContent = ''; this.commentEditMentions = []; this.commentEditReferences = []
         this.commentFollowPreferences = {}
         this.commentTranslationContext = null; this.commentTranslationState = null
         this.refreshCommentDecorations()
@@ -130,9 +131,16 @@ export const commentsSessionMethods = {
     if (this.commentComposerOpen) return this.closeCommentComposer()
     return this.openSelectionComment()
   },
+  /** 工具栏入口（表格多格 / 链接卡片）：可选地把选区落到指定原子块，再走统一的选区评论。 */
+  beginCommentComposer(pos) {
+    if (!this.editor || !this.commentCan('canView') || !this.commentAllowed('create')) return false
+    if (Number.isInteger(pos)) this.editor.view.dispatch(this.editor.state.tr.setSelection(NodeSelection.create(this.editor.state.doc, pos)))
+    return this.openSelectionComment()
+  },
   openSelectionComment() {
     if (!this.commentAllowed('create') || !this.editor) return false
     const range = this.commentSelectionRange()
+    if (range && !this.commentRemote && !range.blockOnly && this.writable?.() === false) return false
     if (!range) { this.commentMessage = '请先选中要评论的文字。'; return false }
 
     try {
@@ -235,8 +243,9 @@ export const commentsSessionMethods = {
       && assets === session?.getProvider?.('assets') && this.commentCan('canView') && this.featureEnabled('comments')
     this._imageCommentDraftOwner = owner
     const selection = NodeSelection.create(editor.state.doc, pos)
+    // `blockOnly`：整块评论（图片没有文字区间）不落 mark，只读文档里也能发。
     const context = { blockId, offset: 0, length: 0, from: pos, to: pos + node.nodeSize,
-      ranges: [{ from: pos, to: pos + node.nodeSize }], text: '[图片]', bookmark: selection.getBookmark(),
+      ranges: [{ from: pos, to: pos + node.nodeSize }], text: '[图片]', blockOnly: true, bookmark: selection.getBookmark(),
       anchor: encodeAnchor({ blockId, offset: 0, length: 0 }, this.commentAnchorCodec) }
     const previous = { commentComposerOpen: this.commentComposerOpen, commentComposerContext: this.commentComposerContext,
       commentCreateDraft: this.commentCreateDraft, commentSidebarOpen: this.commentSidebarOpen, commentMobileScope: this.commentMobileScope,
@@ -263,6 +272,7 @@ export const commentsSessionMethods = {
     this._imageCommentScope = null
     const owned = scope.owner()
     scope.ui?.destroy()
+    scope.column?.remove()
     if (owned && this.imageCommentCurrent(scope)) this._imageCommentDrafts?.set(scope.blockId, { src: scope.src, crop: scope.crop, text: this.commentCreateDraft, images: this.commentDraftImages('selection') })
     else { this._imageCommentDrafts = null; this._imageCommentDraftOwner = null }
     this.clearCommentDraftImages('selection')

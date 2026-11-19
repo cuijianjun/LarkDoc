@@ -23,6 +23,7 @@
 
 import { iconNode } from './icon'
 import { createBlockHandleMenus } from './blockHandleMenus'
+import { bindHoverTips } from './hoverTips'
 import { applyStyle, setAttr, syncChildren } from './dom'
 
 /**
@@ -106,7 +107,7 @@ export function createBlockHandle(options = {}) {
   emptyButton.type = 'button'
   emptyButton.className = 'lark-doc-empty-block-insert'
   emptyButton.setAttribute('aria-label', '插入内容')
-  emptyButton.setAttribute('title', '插入内容')
+  emptyButton.setAttribute('aria-haspopup', 'menu')
   emptyButton.appendChild(iconNode('plus', 18, 'lark-doc-empty-block-icon'))
   const emptyText = document.createElement('span')
   emptyText.className = 'sr-only'
@@ -123,7 +124,8 @@ export function createBlockHandle(options = {}) {
   mainButton.type = 'button'
   mainButton.className = 'lark-doc-block-handle-main'
   mainButton.setAttribute('aria-label', '块操作')
-  mainButton.setAttribute('title', '块操作与拖动')
+  mainButton.setAttribute('data-tooltip-none', '')
+  mainButton.setAttribute('aria-haspopup', 'menu')
   mainButton.setAttribute('draggable', 'true')
   mainButton.addEventListener('mouseenter', (event) => { if (!state.mobile) call('openBlockMenuOnHover', event) })
   mainButton.addEventListener('focus', (event) => { if (!state.mobile) call('openBlockMenuOnHover', event) })
@@ -246,6 +248,7 @@ export function createBlockHandle(options = {}) {
 
   alignMenu.setAttribute('aria-label', '缩进和对齐')
 
+  const tips = bindHoverTips(menuEl)
   const menusVisible = () => !!(state.visible && (state.menuOpen || state.alignOpen || state.colorOpen))
   let menuReadyNotified = false
   const menus = createBlockHandleMenus({
@@ -260,6 +263,7 @@ export function createBlockHandle(options = {}) {
   })
 
   function renderRoot() {
+    if (!state.menuOpen || !state.visible) tips.hide()
     if (!el.parentNode && state.visible && host) host.insertBefore(el, anchor || null)
     if (el.parentNode && !state.visible) el.parentNode.removeChild(el)
     if (secondary.parentNode && (!state.visible || !state.secondary)) secondary.remove()
@@ -346,6 +350,7 @@ export function createBlockHandle(options = {}) {
     get colorTrigger() { return colorTrigger },
     destroy() {
       destroyed = true; state.visible = false
+      tips.destroy()
       menus.destroy()
       secondary.remove()
       if (el.parentNode) el.parentNode.removeChild(el)
