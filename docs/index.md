@@ -2,32 +2,30 @@
 layout: home
 hero:
   name: lark-doc
-  text: 选好环境，一页接入编辑器
-  tagline: 安装、引入、配置、最小代码和真实预览放在同一页。支持 Vue2、Vue3、React、HTML 和 Web Component。
+  text: 在你的项目里运行 LarkDoc 编辑器
+  tagline: 先跑一个示例，再接入 Vue、React 或普通 HTML。当前示例使用 lark-doc 0.14.10。
   actions:
     - theme: brand
-      text: 选择环境与运行 demo
+      text: 快速开始
+      link: /guide/getting-started
+    - theme: alt
+      text: 选择示例
       link: /examples/
     - theme: alt
-      text: 功能与 API
-      link: /guide/configuration
-    - theme: alt
-      text: 在线改代码
+      text: 在线试用
       link: /demo/
       target: _blank
 features:
   - icon: 🧩
-    title: 每个环境一个路由
-    details: Vue2 的 Webpack4/5、Vue3、React、HTML 和 Web Component 各有完整独立示例。
+    title: 运行完整示例
+    details: 每个环境都包含可复制的代码、启动命令和编辑预览。
   - icon: 🖼️
-    title: 图片流程可配置
-    details: 先用 base64 运行，再填服务器地址和返回字段，观察上传回调。
+    title: 测试图片上传
+    details: 先在浏览器试选图，再按需接入自己的上传接口。
   - icon: 📝
-    title: 内容由应用管理
-    details: 读取 JSON、监听正文变化，在自己的应用中保存，离开页面时释放编辑器。
+    title: 读取文档内容
+    details: 获取标题和正文 JSON，监听更新并保存到自己的应用。
 ---
-
-需要调整更多编辑器配置时，可打开<a href="./demo/" target="_blank" rel="noopener">配置 Playground</a>。
 
 ::: warning 项目声明
 本项目为**个人学习用途**的开源练习项目，界面与交互模仿飞书文档（Lark Docs），

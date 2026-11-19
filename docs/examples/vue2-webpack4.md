@@ -4,7 +4,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 # Vue2 + Webpack4
 
-适合使用 Vue2 和 Webpack4（包括 Vue CLI4）的应用。本页最小工程使用 **Node 14.21.3、npm 8.19.4、lark-doc 0.14.6**；Vue 与模板编译器版本由下面的 `package.json` 配对固定。
+适合使用 Vue2 和 Webpack4（包括 Vue CLI4）的应用。本页最小工程使用 **Node 14.21.3、npm 8.19.4、lark-doc 0.14.10**；Vue 与模板编译器版本由下面的 `package.json` 配对固定。
 
 <EnvironmentPreview env="vue2-webpack4" title="Vue2 + Webpack4" />
 
@@ -15,7 +15,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 已有应用在项目根目录执行：
 
 ```bash
-npm install lark-doc@0.14.6 --save-exact
+npm install lark-doc@0.14.10 --save-exact
 ```
 
 保留已有的 Vue2、Vue CLI、Webpack 和 loader 配置。下面的完整工程用于从空目录练习，不需要拿它覆盖已有项目的配置。
@@ -78,44 +78,4 @@ npm run dev
 
 ## 可选：改为服务器上传
 
-::: details 配置上传地址、响应字段与完整回调
-
-在 `src/App.vue` 的 `mounted` 中、`new LarkDoc(...)` 之前定义下面的 `uploader`，再把初始化参数中的 `uploader: { ... }` 替换为 `uploader`。这里的回调输出到浏览器控制台；可按应用需要改成页面提示。
-
-```js
-const uploader = {
-  action: 'https://your-api.example.com/upload', // 换成你的上传接口
-  fieldName: 'file',
-  response: {
-    success: { path: 'code', equals: 0 },
-    url: 'data.url',
-    attchId: 'data.id',
-    message: 'message',
-  },
-  beforeUpload: (file, ctx) => {
-    console.log('上传前检查', ctx.taskId, file.name)
-    return true // 返回 false 可取消本次任务
-  },
-  onStart: event => console.log('开始', event.taskId),
-  onProgress: event => console.log('进度', event.taskId, event.percent),
-  onRetry: event => console.log('重试', event.taskId, event.nextAttempt),
-  onSuccess: event => console.log('取得图片结果', event.taskId),
-  onError: event => console.error('失败', event.taskId, event.error.message),
-  onCancel: event => console.log('取消', event.taskId, event.reason),
-  onReject: event => console.log('拒绝', event.taskId),
-  onSettled: event => console.log('结束', event.taskId, event.status),
-  onCallbackError: error => console.error('应用回调异常', error.message),
-}
-```
-
-后端应返回：
-
-```json
-{ "code": 0, "message": "上传成功", "data": { "url": "https://your-api.example.com/images/a.png", "id": "123" } }
-```
-
-库会发送 multipart 文件，等待 HTTP 与业务成功、提取并校验地址后写入图片。不要在 `onSuccess` 里再插图；它表示取得合法结果，不表示业务后端已保存文档。选图、粘贴文件、拖拽、替换和裁剪共用这套回调；粘贴已有图片 URL 不触发文件上传回调。
-
-文档站没有上传后端。请使用自己的 HTTPS 接口，跨域时由后端允许页面来源；图片地址也要能被页面访问。服务器失败会触发错误回调，不会自动改成本地 base64。重试、请求头和取消的更多选项见[上传器 API](/blocks/uploader)。
-
-:::
+在 `mounted` 中初始化编辑器时传入 `uploader`。 完整配置、返回字段和回调在[图片上传](/blocks/uploader#初始化配置-http-上传)。接口由应用后端提供。

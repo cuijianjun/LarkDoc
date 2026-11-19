@@ -28,10 +28,12 @@ const examples = [
 // 调用者先跑通接入，再按需求展开参考；guide 和 blocks 使用同一份导航。
 const callerSidebar = [
   { text: '开始使用', items: [
-    { text: '1. 选环境，运行最小 demo', link: '/examples/' },
-    { text: '2. 常用配置', link: '/guide/configuration' },
-    { text: '3. 读取内容与事件', link: '/guide/instance' },
-    { text: '4. 服务器上传与回调', link: '/blocks/uploader' },
+    { text: '快速开始', link: '/guide/getting-started' },
+    { text: '选择示例', link: '/examples/' },
+    { text: '常用配置', link: '/guide/configuration' },
+    { text: '读取内容与事件', link: '/guide/instance' },
+    { text: '图片上传', link: '/blocks/uploader' },
+    { text: '功能总览', link: '/blocks/' },
   ] },
   { text: '按需配置功能', collapsed: true, items: [
     { text: '工具栏配置', link: '/guide/toolbar' },
@@ -63,6 +65,7 @@ const callerSidebar = [
     { text: '全量与按需加载', link: '/guide/build-artifacts' },
     { text: 'View 层与 Provider 接入', link: '/guide/view-integration' },
     { text: '协同与权限', link: '/guide/collaboration' },
+    { text: '评论', link: '/blocks/comment' },
     { text: '协同服务端契约', link: '/guide/collab-server' },
     { text: '旧数据导入（Vditor）', link: '/guide/vditor-import' },
     { text: 'Web Component 参考', link: '/guide/web-component' },
@@ -100,8 +103,8 @@ export default defineConfig({
 
     nav: [
       { text: '示例中心', link: '/examples/', activeMatch: '/examples/' },
-      { text: '配置与 API', link: '/guide/configuration', activeMatch: '/(guide|blocks)/' },
-      { text: '在线改代码', link: '/demo/', target: '_blank' },
+      { text: '使用指南', link: '/guide/getting-started', activeMatch: '/(guide|blocks)/' },
+      { text: '在线试用', link: '/demo/', target: '_blank' },
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/cuijianjun/LarkDoc' }],
 

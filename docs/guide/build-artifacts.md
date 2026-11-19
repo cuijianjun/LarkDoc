@@ -1,6 +1,6 @@
 # 打包产物与按需加载
 
-库包统一使用 Rollup。默认、full、lite、Element 和 Vue2 options 兼容入口均不导入、内联或 external Vue，不依赖 Webpack runtime；宿主应用继续使用自身的 Vue CLI、Webpack、Vite 或其他工具链。
+普通应用从 `lark-doc` 导入编辑器，并加载 `lark-doc/style.css`。静态 HTML 选 Element UMD，还可以按场景选 full、lite 或协同入口。
 
 ## 入口与样式
 
@@ -15,9 +15,9 @@
 | `lark-doc/vue2` / `lark-doc/legacy` | `dist/lark-doc-vue2.{esm,common}.js`；普通 options 对象，渲染仍为原生 DOM | 显式引随包的 `dist/lark-doc.css` |
 | `lark-doc/vue3` / `lark-doc/react` | `dist/lark-doc-{vue3,react}.mjs`；属性、property、事件和方法桥接，需先注册 Element | 不含编辑器样式 |
 | `lark-doc/collab` | `dist/lark-doc-collab.esm.js` / `dist/lark-doc-collab.common.js`；协同依赖保持 external，由宿主提供单例 | 无 |
+| `lark-doc/plugin` | `dist/plugin.{mjs,cjs}`；宿主资源构建辅助 | 无 |
 
 显式协同入口面向支持 package exports 的现代 bundler 与 Node22；webpack4 的验证范围是普通主入口，不包含外部协同栈。
-| `lark-doc/plugin` | `dist/plugin.{mjs,cjs}`；宿主资源构建辅助 | 无 |
 
 full 会立即初始化包括 Mermaid 在内的浏览器特性；在 SSR 中将 full / Element 的导入放到客户端生命周期。Node14 构建及 DOM 测试不代表支持无 DOM 渲染。
 

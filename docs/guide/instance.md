@@ -1,6 +1,6 @@
 # 实例与事件
 
-`new LarkDoc()` 返回一个无框架控制器，方法覆盖内容读写、选区操作、只读切换与销毁；事件既支持 `onReady/onUpdate` 这类构造参数，也支持 `doc.on('save', fn)` 这类订阅式写法。销毁顺序固定为：停止 AI → 触发事件 → 销毁编辑器 → 释放控制器与 UI 监听 → 移除 DOM。
+`new LarkDoc()` 返回编辑器实例。用 `getJSON()` 读取正文，用 `getTitle()` 读取标题，离开页面时调用 `destroy()`。需要监听变化时，用初始化参数 `onUpdate` 或订阅 `update` 事件。
 
 ## 方法速览
 
@@ -33,8 +33,9 @@ doc.getWorkspace()       // 无框架工作台控制器
 doc.getConfig()          // 当前归一化后的配置
 
 // 事件
-doc.on('update', (payload) => {})
-doc.off('update', handler)
+const onUpdate = ({ json }) => console.log(json)
+doc.on('update', onUpdate)
+doc.off('update', onUpdate)
 
 // 销毁
 doc.destroy()
@@ -51,6 +52,7 @@ doc.destroy()
 | `getText()` | `string` | 纯文本内容。 |
 | `getTitle()` / `setTitle(v)` | `string` / `void` | 读写文档标题。 |
 | `setContent(v)` | `void` | 替换正文，支持 HTML / JSON / DocumentRecord。 |
+| `setContentAsync(content, options?)` | `Promise` | 分批导入 HTML 或 JSON。大文档可传入 `{ format, signal }` 并用 `AbortController` 取消。 |
 | `insert(html)` | `void` | 在光标处插入 HTML 片段。 |
 | `insertText(text)` | `void` | 在光标处插入纯文本。 |
 | `focus()` | `void` | 聚焦正文。 |
