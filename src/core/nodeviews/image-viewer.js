@@ -1,6 +1,6 @@
 /** Pure DOM image viewer. Viewing never changes the document or its image attributes. */
 import { safeUrl } from '../documentOperations'
-import { imageCropGeometry, normalizeImageCrop, cropImageBlob } from '../media/image-crop'
+import { imageCropGeometry, normalizeImageCrop } from '../media/image-crop'
 import { lockPageScroll } from '../../ui/dom'
 
 
@@ -29,7 +29,7 @@ function icon(name) {
   return svg
 }
 
-export function createImageViewer({ host, images, index = 0, initialScale, onClose, onComment, onDownload, canLoad } = {}) {
+export function createImageViewer({ host, images, index = 0, initialScale, onClose, onComment, onDownload, canLoad, scrollOwner } = {}) {
   const allowed = src => {
     try { return safeUrl(src, true) && (!canLoad || canLoad(src)) } catch (_) { return false }
   }
@@ -119,7 +119,7 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   root.appendChild(toolbar)
   root.appendChild(error)
   host.appendChild(root)
-  const scrollOwners = new Set([root.ownerDocument.body, host.closest?.('.lark-doc-main')].filter(Boolean))
+  const scrollOwners = new Set([root.ownerDocument.body, scrollOwner || host.closest?.('.lark-doc-main')].filter(Boolean))
   const unlockScroll = [...scrollOwners].map(owner => lockPageScroll(owner))
 
   function paint() {
@@ -137,7 +137,9 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     const maxY = Math.max(0, ((rotated ? naturalWidth : naturalHeight) * scale - height) / 2)
     x = Math.max(-maxX, Math.min(maxX, x))
     y = Math.max(-maxY, Math.min(maxY, y))
-    projection.style.transform = `translate(${x}px, ${y}px) scale(${scale}) rotate(${rotation}deg)`
+    // 用 `translate(-50%, -50%)` 自己居中，而不是靠 stage 的 `place-items:center`：
+    // 投影盒（原图尺寸）比视口高时，grid 居中会把它摆到顶部，再按中心缩放就把图推到底部。
+    projection.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${scale}) rotate(${rotation}deg)`
     percentage.textContent = `${Math.round(scale * 100)}%`
     original.title = Math.abs(scale - 1) < 0.001 ? '适应窗口' : '原始尺寸'
     original.setAttribute('aria-label', original.title)
@@ -153,9 +155,17 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
   }
   function loaded() {
     if (destroyed) return
-    // Source viewport measurements: 95% width / 90% height, with observed initial zoom 255%.
+    // 视口口径：横向留 48、纵向扣掉底部工具条（48 高 + 20 底距）与上下留白。
+    // 之前的 `innerHeight * 0.9` 没扣工具条，竖图「适应窗口」后下半张会被工具条盖住。
+    const bounds = stage.getBoundingClientRect()
+    const width = bounds.width || window.innerWidth
+    const height = bounds.height || window.innerHeight
+    const toolbarHeight = toolbar.getBoundingClientRect().height || 48
+    const availableWidth = Math.max(1, width - 48)
+    // 上下各留「工具条高度 + 20 底距 + 8 间隙」：整图居中后底边仍然落在工具条上方。
+    const availableHeight = Math.max(1, height - 2 * (toolbarHeight + 28))
     const geometry = imageCropGeometry(image.naturalWidth, image.naturalHeight, items[index].crop)
-    fitScale = Math.min(2.55, (stage.getBoundingClientRect().width || window.innerWidth) * 0.95 / (geometry?.width || image.naturalWidth), window.innerHeight * 0.9 / (geometry?.height || image.naturalHeight))
+    fitScale = Math.min(2.55, availableWidth / (geometry?.width || image.naturalWidth), availableHeight / (geometry?.height || image.naturalHeight))
     if (!Number.isFinite(fitScale) || fitScale <= 0) fitScale = 1
     scale = Number.isFinite(initialScale) && initialScale > 0 ? Math.max(.1, Math.min(5, initialScale)) : fitScale
     paint()
@@ -206,21 +216,9 @@ export function createImageViewer({ host, images, index = 0, initialScale, onClo
     const controller = downloadAbort = new AbortController()
     try {
       if (onDownload) { if (await onDownload(item, { signal: controller.signal }) === false) throw new Error('图片下载失败'); return }
-      const response = await fetch(item.src, { signal: controller.signal })
-      if (!response.ok) throw new Error('下载失败')
-      let blob = await response.blob()
-      if (destroyed || generation !== downloadGeneration || !allowed(item.src)) return
-      const crop = normalizeImageCrop(item.crop)
-      if (crop) blob = await cropImageBlob(blob, crop)
-      if (destroyed || generation !== downloadGeneration || !allowed(item.src)) return
-      const url = URL.createObjectURL(blob), anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = Array.from(String(item.alt || '文档图片'), character => character.charCodeAt(0) < 32 ? '_' : character).join('').replace(/[/\\]/g, '_')
-      if (crop) anchor.download = `${anchor.download.replace(/\.[a-z0-9]{1,8}$/i, '')}.png`
-      root.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 0)
+      const { downloadViewerImage } = await import('../media/image-output')
+      const current = () => !destroyed && generation === downloadGeneration && allowed(item.src)
+      await downloadViewerImage(item, { root, signal: controller.signal, crop: normalizeImageCrop(item.crop), current })
     } catch (reason) { if (!destroyed && generation === downloadGeneration) error.textContent = reason?.message || '图片下载失败，请重试' }
     finally { if (downloadAbort === controller) downloadAbort = null }
   }

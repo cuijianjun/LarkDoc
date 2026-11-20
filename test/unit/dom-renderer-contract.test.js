@@ -2316,8 +2316,11 @@ describe('表格与链接选区分享真实门面', () => {
     const element = document.createElement('div')
     document.body.appendChild(element)
     const onImageShare = vi.fn(), onSelectionShare = options.onSelectionShare || vi.fn(async () => true)
+    // 分享入口默认关闭（产品口径），这一组用例专门验真实分享门面，显式打开。
+    const { features, ...rest } = options
     const doc = new LarkDoc({ element, storage: 'none', onImageShare, onSelectionShare,
-      mentionSource: [{ kind: 'user', id: 'recipient', name: '接收人' }], content: { type: 'doc', content: [target] }, ...options })
+      mentionSource: [{ kind: 'user', id: 'recipient', name: '接收人' }], content: { type: 'doc', content: [target] }, ...rest,
+      features: { share: true, ...(features || {}) } })
     try { return await run({ doc, host: doc._handle.nativeHost.host, element, onSelectionShare, onImageShare }) }
     finally { doc.destroy(); element.remove() }
   }
@@ -4163,6 +4166,66 @@ describe('图表菜单交互', () => {
   }
 
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it('折叠工具栏保留对齐图标、当前项和缩进可用状态，Escape 返回入口', async () => {
+    const { root, host, editor } = fixture({ initialContent: '<p>对齐样本</p>' })
+    vi.spyOn(host, 'evaluateToolbarFit').mockResolvedValue()
+    host.collapsedGroups = ['blockStyle', 'toolsEnd']
+    host.toggleMoreMenu()
+    await Promise.resolve()
+    const trigger = root.querySelector('button[aria-label="更多"]')
+    const getItem = label => [...root.querySelectorAll('.lark-doc-more-menu button')].find(node => node.textContent.replace('✓', '') === label)
+    expect(getItem('对齐左').querySelector('.lark-doc-select-check.is-visible')).not.toBeNull()
+    expect(getItem('对齐左').getAttribute('role')).toBe('menuitemradio')
+    expect(getItem('对齐左').getAttribute('aria-checked')).toBe('true')
+    expect(getItem('对齐居中').querySelector('.lark-doc-tool-icon svg')).not.toBeNull()
+    expect(getItem('减少缩进').disabled).toBe(true)
+    getItem('对齐居中').click()
+    expect(editor.state.doc.firstChild.attrs.textAlign).toBe('center')
+    host.toggleMoreMenu()
+    await Promise.resolve()
+    const centered = getItem('对齐居中')
+    expect(centered.querySelector('.lark-doc-select-check.is-visible')).not.toBeNull()
+    expect(centered.getAttribute('aria-checked')).toBe('true')
+    centered.focus()
+    centered.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(host.moreMenuOpen).toBe(false)
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('折叠后的插入工具沿用常驻图表命令的禁用配置', async () => {
+    const { root, host } = fixture({ config: { commands: { disabled: ['diagram'] } } })
+    vi.spyOn(host, 'evaluateToolbarFit').mockResolvedValue()
+    host.collapsedGroups = ['insert']
+    host.toggleMoreMenu()
+    await Promise.resolve()
+    const menu = root.querySelector('.lark-doc-more-menu')
+    expect(menu.textContent).toContain('插入表格')
+    expect(menu.textContent).not.toContain('图表 ·')
+  })
+
+  it('加号菜单纵向放不下时改到左侧，缩窗后回到上方', async () => {
+    const { root } = fixture()
+    const trigger = root.querySelector('button[aria-label="插入"]')
+    let anchor = { left: 423, top: 350, bottom: 380 }
+    vi.spyOn(trigger, 'getBoundingClientRect').mockImplementation(() => anchor)
+    trigger.click()
+    await vi.dynamicImportSettled()
+    const menu = root.querySelector('.lark-doc-command-menu.is-plus')
+    vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue({ width: 232, height: 336 })
+    vi.spyOn(menu, 'scrollHeight', 'get').mockReturnValue(588)
+    vi.stubGlobal('innerWidth', 1440)
+    vi.stubGlobal('innerHeight', 700)
+    window.dispatchEvent(new Event('resize'))
+    await vi.waitFor(() => expect(menu.style.left).toBe('187px'))
+    expect(parseFloat(menu.style.maxHeight)).toBeGreaterThan(550)
+
+    anchor = { ...anchor, left: 71 }
+    vi.stubGlobal('innerWidth', 393)
+    window.dispatchEvent(new Event('resize'))
+    await vi.waitFor(() => expect(menu.style.left).toBe('71px'))
+    expect(parseFloat(menu.style.top) + parseFloat(menu.style.maxHeight)).toBeLessThan(anchor.top)
+  })
 
   it.each(['more', 'color', 'diagram', 'insert'])('跨浮层悬浮到%s时旧标题菜单仍按离开动作关闭', async target => {
     const { host, root } = fixture()

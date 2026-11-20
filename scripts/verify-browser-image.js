@@ -514,7 +514,7 @@ async function main() {
     const aiSend = () => ai.getByRole('button', { name: '发送图片问答', exact: true })
     check('Image AI opens with a reference and focused composer, without any provider call', await ai.locator('.lark-doc-ai-reference').isVisible() && await aiPrompt.evaluate(node => document.activeElement === node) && await aiSend().isDisabled() && await page.evaluate(() => window.__imageAiRequests.length) === 0)
     const aiLayout = await ai.evaluate(node => ({ panel: node.closest('.lark-doc-external-panel').getBoundingClientRect().toJSON(), reference: node.querySelector('.lark-doc-ai-reference').getBoundingClientRect().toJSON() }))
-    check('Image chat matches the source 400px side panel and 32px reference row', aiLayout.panel.width === 400 && aiLayout.reference.height === 32, aiLayout)
+    check('Image chat uses the master 270px side panel and preserves the 32px reference row', aiLayout.panel.width === 270 && aiLayout.reference.height === 32, aiLayout)
     await page.screenshot({ path: path.join(evidenceDir, 'master-parity-local-image-ai-entry.png') })
     await page.keyboard.type('描述图片')
     await page.keyboard.press('Shift+Enter')

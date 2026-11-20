@@ -492,6 +492,27 @@ export function createTopBar(options = {}) {
   // ——————————————————— 状态推入 ———————————————————
   // `modes.allow` 是否给了不止一项。只有一项时：按钮退化成静态文字（禁用 + 藏 caret）。
   let switchable = true
+  let stopMeasuring = null
+
+  function trackToolbarOffset(stacked) {
+    if (!stacked) {
+      stopMeasuring?.()
+      stopMeasuring = null
+      return
+    }
+    if (!host || stopMeasuring) return
+    const measure = () => host.style.setProperty('--ld-titlebar-height', `${el.getBoundingClientRect().height}px`)
+    const win = el.ownerDocument.defaultView
+    const observer = win.ResizeObserver ? new win.ResizeObserver(measure) : null
+    measure()
+    if (observer) observer.observe(el, { box: 'border-box' })
+    else win.addEventListener('resize', measure)
+    stopMeasuring = () => {
+      observer?.disconnect()
+      win.removeEventListener('resize', measure)
+      host.style.removeProperty('--ld-titlebar-height')
+    }
+  }
 
   /**
    * 唯一写入口。`state` 由 `toolbarUiMixin` 算好，字段与 `TopBar.vue` 里读的
@@ -616,10 +637,12 @@ export function createTopBar(options = {}) {
     setAttr(modeTrigger, 'aria-haspopup', switchable ? 'listbox' : null)
     if (modeSelect.el.classList.contains('is-static') !== !switchable) modeSelect.el.classList.toggle('is-static', !switchable)
     if (mobileOpen && window.innerWidth <= 760 && focusedAction && !focusableActions().includes(focusedAction)) focusableActions()[0]?.focus()
+    trackToolbarOffset(visible && state.stackToolbar)
   }
 
   function destroy() {
     if (disposed) return
+    trackToolbarOffset(false)
     dismissFloatOutline(false, false)
     scrollNavigator?.destroy()
     library.destroy(); setReferenceOpen(false)

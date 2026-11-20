@@ -596,10 +596,10 @@ describe('mobile body floating controls', () => {
     expect(ui.el.querySelector('[aria-label="划词标题级别"]').style.left).toBe('13px')
   })
 
-  it('preserves the existing desktop positioning contract', () => {
+  it('keeps the desktop floating bar inside the viewport', () => {
     const ui = bar(418, 1280)
     ui.update({ left: 160, top: 100 }); expect(ui.el.style.left).toBe('160px')
-    ui.update({ left: 1100, top: 100 }); expect(ui.el.style.left).toBe('1100px')
+    ui.update({ left: 1100, top: 100 }); expect(ui.el.style.left).toBe('854px')
   })
 })
 

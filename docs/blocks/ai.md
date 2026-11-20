@@ -17,7 +17,7 @@ AI 组件提供选区 / 整块的 AI 交互面板，内置 11 种动作（续写
 | 档次 | 写法 | 谁负责发请求 | 谁负责显示 | 适合 |
 | --- | --- | --- | --- | --- |
 | **L1 只给地址** | `ai: '/api/ai'` | 组件内置（XHR + SSE 解析） | 组件内置 | 后端自己封装了 AI 网关 |
-| **L2 直连模型** | `ai: { protocol: 'openai', baseURL, apiKey, model }` | 组件内置 | 组件内置 | 有 OpenAI 兼容服务，想省掉后端 |
+| **L2 直连模型** | `ai: { baseurl, api_key }` | 组件内置 | 组件内置 | 支持浏览器请求的 OpenAI 兼容服务 |
 | **L2.5 宿主请求** | `ai: { endpoint, request(request, args) { … } }` | 宿主请求函数 | 组件内置 | 需要 fetch、签名、SDK 或自定义网关 |
 | **L3 自管传输** | `ai: { stream(args) { … } }` | 宿主 | 组件内置 | 已有 SDK / 签名 / 加密 / 特殊协议 |
 
@@ -118,21 +118,19 @@ message.{…} / data.{…} / result.{…}
 new LarkDoc({
   element: '#editor',
   ai: {
-    protocol: 'openai',
-    baseURL: process.env.VUE_APP_AI_BASE_URL, // 如 https://api.openai.com/v1
-    apiKey: process.env.VUE_APP_AI_KEY,       // 自动补 Authorization: Bearer …
-    model: process.env.VUE_APP_AI_MODEL,
-    contentFormat: 'markdown',
+    baseurl: runtimeConfig.aiBaseURL,
+    api_key: runtimeConfig.aiKey,
   },
 })
 ```
 
-- 实际地址 = `baseURL` 去掉末尾斜杠 + `/chat/completions`，可用 `urlPath` 覆盖。
+- `baseurl` 是服务基址，组件会去掉末尾斜杠并拼接 `/chat/completions`。完整宿主接口地址可直接传 `ai: '/api/ai'`。
+- 直连默认模型为 `gpt-4o-mini`。服务使用其他模型名时，可传 `model`，或在 `params.model` 覆盖。
 - 请求体 = `{ model, stream, messages }`，`messages` 是 `[{role:'system'},{role:'user'}]` 两条，指令由组件按动作生成（11 个动作的指令内置在 `prompt.js`，翻译会把目标语言拼进去）。
 - 需要自己控制 `messages` 时传 `messages: (args) => [...]`。
 
 ::: tip 密钥不要进仓库
-`apiKey` 支持传函数，渲染时再取值；也可以整体走宿主后端代理，用方式一。前端直连模型服务意味着密钥会进浏览器，仅建议内网或自用场景。
+`api_key` 支持传函数，每次请求组装时取值。跨域直连要求服务允许页面来源以及 `Authorization` 和 `Content-Type` 请求头。生产接入可使用方式一的宿主接口，在服务端保存密钥。
 :::
 
 ### 方式三：自管传输（兼容旧写法）
@@ -202,7 +200,7 @@ ai: (args) => ({ cancel() {} })
 | `ai.baseURL` | `string` | — | OpenAI 兼容服务基址；别名 `baseUrl`、`baseurl`、`base_url`。配了它且没配 `endpoint` 时协议默认 `openai`。 |
 | `ai.urlPath` | `string` | `/chat/completions` | `openai` 协议拼接的路径。 |
 | `ai.apiKey` | `string \| () => string` | — | 自动补 `Authorization: Bearer …`；别名 `api_key`；已有同名头则跳过。 |
-| `ai.model` | `string` | — | 仅 `openai` 协议，写进请求体。 |
+| `ai.model` | `string` | 直连时 `gpt-4o-mini` | 仅 `openai` 协议，写进请求体。 |
 | `ai.supportsImages` | `boolean` | `false` | 确认服务和模型支持图片时置 `true`，启用图片引用发送。独立 `createOpenAICompatibleProvider` 默认支持，可设为 `false`。 |
 | `ai.protocol` | `'auto' \| 'openai' \| 'chatStream' \| 'json'` | `auto` | 决定请求体形状与帧解析方式。 |
 | `ai.contentFormat` | `'auto' \| 'markdown' \| 'html' \| 'text'` | `auto` | 结果按什么格式渲染预览并落正文。 |

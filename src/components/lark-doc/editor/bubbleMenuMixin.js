@@ -18,6 +18,7 @@ import { createBubbleBar } from '../../../ui/bubbleBar'
 import { evaluateOutputPolicy } from '../../../core/policy/output'
 import { aiNetworkAllows, createNetworkPolicy } from '../../../core/policy/network'
 import { resolveSystemPrompt } from '../ai/prompt'
+import { editorChromeSafeTop } from '../../../ui/menuLayout'
 
 
 // 飞书气泡条的行内格式顺序：加粗 → 删除线 → 斜体 → 下划线 → 行内代码 → 高亮（带取色）。
@@ -66,6 +67,8 @@ export default {
     aiProvider() { this.closeSelectionTranslation() },
     session() { this.closeSelectionTranslation() },
     larkDocConfig() { if (this._selectionTranslation && !this.selectionTranslationCurrent(this._selectionTranslation)) this.closeSelectionTranslation() },
+    colorPaletteOpen() { this.refreshBubbleBar() },
+    appliedTextStyle: { deep: true, handler() { this.refreshBubbleBar() } },
   },
   methods: {
     /**
@@ -91,8 +94,9 @@ export default {
           onAlignLeave: () => this.scheduleBubbleAlignClose(),
           onAlignAction: (id) => this.bubbleAlignAction(id),
           onToggleMark: (id) => this.toggleMark(id),
-          // 透传原事件：`toggleColorPalette` 要靠 `currentTarget` 定位取色面板。
           onPalette: (event) => this.toggleColorPalette('textBackground', event),
+          onPaletteEnter: (event) => this.openColorPaletteOnHover(event, 'textBackground'),
+          onPaletteLeave: () => this.scheduleColorPaletteClose(),
           onCopy: () => this.bubbleCopy(),
           onCut: () => this.bubbleCopy(true),
           onShare: () => this.openSelectionShareDialog(),
@@ -144,8 +148,7 @@ export default {
       const alignValue = this.bubbleAlignValue()
       bar.update({
         open: true,
-        left: this.bubblePosition.left,
-        top: this.bubblePosition.top,
+        ...this.bubblePosition,
         headingValue: this.bubbleHeadingValue(),
         headingOpen: this.bubbleHeadingOpen,
         headingLevel: this.bubbleHeadingLevel(),
@@ -158,6 +161,8 @@ export default {
         decreaseTooltip: this.bubbleAlignTooltip('decreaseIndent'),
         marks: this.bubbleMarkItems.map((item) => ({ id: item.id, active: this.isActive(item.id) })),
         highlightActive: this.isActive('highlight'),
+        paletteOpen: this.colorPaletteOpen === 'textBackground',
+        textStyle: this.appliedTextStyle,
       })
     },
     /**
@@ -165,19 +170,7 @@ export default {
      * 气泡条下拉是 `position: fixed`，必须让下界至少排到这些栏的底边之下，
      * 否则菜单会压到功能栏上（飞书里弹层永远在工具栏下面）。
      */
-    bubbleSafeTop() {
-      const root = this.$refs.root
-      if (!root) return 8
-      let bottom = 8
-      root.querySelectorAll('.lark-doc-topbar, .lark-doc-toolbar').forEach((bar) => {
-        const position = getComputedStyle(bar).position
-        if (position !== 'sticky' && position !== 'fixed') return
-        const rect = bar.getBoundingClientRect()
-        // 只认真正吸在视口上沿的那些栏；正常文档流里的顶栏不该压住弹层。
-        if (rect.top <= 1 && rect.bottom > bottom) bottom = rect.bottom
-      })
-      return Math.round(bottom) + 6
-    },
+    bubbleSafeTop() { return editorChromeSafeTop(this.$refs.root) },
     cancelBubbleHoverClose() { if (this.bubbleCloseTimer) { clearTimeout(this.bubbleCloseTimer); this.bubbleCloseTimer = null } },
     /** 鼠标离开触发器或弹层：延时关闭（进入另一侧会取消，跨间隙不闪）。 */
     scheduleBubbleHoverClose(close) {

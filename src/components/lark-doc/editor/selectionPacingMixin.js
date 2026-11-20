@@ -96,14 +96,10 @@ export default {
     bubbleBarPosition(selection) {
       const view = this.editor.view
       const coords = view.coordsAtPos(selection.from)
-      // 顶部避让：选区贴近视口顶部时，气泡条不能钻进吸顶工具栏（飞书同样会把浮条翻到选区下方）。
-      const safeTop = this.bubbleSafeTop()
-      const endCoords = view.coordsAtPos(selection.to)
-      const naturalTop = coords.top - 50
-      const top = naturalTop >= safeTop ? naturalTop : endCoords.bottom + 10
       return {
-        left: Math.max(8, Math.min(window.innerWidth - 270, coords.left)),
-        top: Math.max(safeTop, Math.min(top, window.innerHeight - 60)),
+        left: coords.left,
+        above: coords.top,
+        below: view.coordsAtPos(selection.to).bottom,
       }
     },
   },

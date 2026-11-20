@@ -72,6 +72,7 @@ export default {
         onChoose: (item) => this.chooseCommand(item),
         onChooseDiagram: (typeId) => this.chooseCommand({ id: 'diagram', diagramType: typeId }),
         onClose: () => this.closeCommandMenu(true),
+        onViewportResize: () => this.positionCommandMenu(),
         onMenuEnter: () => this.cancelPopupHoverClose('command'),
         onMenuLeave: () => this.scheduleCommandMenuClose(),
       }

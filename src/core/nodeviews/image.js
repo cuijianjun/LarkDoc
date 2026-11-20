@@ -11,6 +11,7 @@ import { IMAGE_MIME_ALLOWLIST } from '../media/image-insert'
 import { syncAsyncBlockDomState } from '../blocks/shared'
 import { iconNode } from '../../ui/icon'
 import { bindHoverTips } from '../../ui/hoverTips'
+import { editorChromeSafeTop, MENU_MARGIN } from '../../ui/menuLayout'
 
 const WIDTH_MIN = 40
 const WIDTH_MAX = 2400
@@ -156,8 +157,10 @@ export function createImageNodeView(props) {
   dom.appendChild(errorLine)
 
   /* ---------- 工具条：hover 挂载 / 离开卸载 ---------- */
+  const win = dom.ownerDocument.defaultView
   let toolbar = null
   let toolbarTips = null
+  let toolbarPositionFrame = null
   let cropResetButton = null
   let cropUi = null
 
@@ -221,12 +224,50 @@ export function createImageNodeView(props) {
     // 图片功能栏与顶部/气泡/菜单用同一套 tips 判据：纯图标（裁剪、对齐、复制链接…）
     // 出提示；「问问AI」有可见中文名自动跳过；带下一级弹窗的也不会误出。
     toolbarTips = bindHoverTips(toolbar)
-    syncToolbarState()
+    syncToolbarState(true)
+    win?.addEventListener('resize', positionToolbar)
+    win?.addEventListener('scroll', scheduleToolbarPosition, { capture: true, passive: true })
+  }
+
+  function positionToolbar() {
+    const viewportWidth = dom.ownerDocument.documentElement.clientWidth
+    if (viewportWidth) {
+      toolbar.style.maxWidth = `${viewportWidth - MENU_MARGIN * 2}px`
+      const width = toolbar.offsetWidth
+      const { left, right } = dom.getBoundingClientRect()
+      const centered = (left + right - width) / 2
+      const fitted = Math.max(MENU_MARGIN, Math.min(centered, viewportWidth - width - MENU_MARGIN))
+      toolbar.style.marginLeft = `${fitted - centered}px`
+    }
+    positionToolbarVertically()
+  }
+
+  function positionToolbarVertically() {
+    const { top, bottom } = dom.getBoundingClientRect()
+    const height = toolbar.offsetHeight
+    const above = top - height - MENU_MARGIN
+    const safeTop = editorChromeSafeTop(dom.closest('.lark-doc'))
+    const shift = Math.max(0, Math.min(safeTop - above, bottom - height - MENU_MARGIN - above))
+    toolbar.style.bottom = shift ? `calc(100% + ${MENU_MARGIN}px - ${shift}px)` : ''
+  }
+
+  function scheduleToolbarPosition() {
+    if (toolbarPositionFrame !== null) return
+    toolbarPositionFrame = win.requestAnimationFrame(() => {
+      toolbarPositionFrame = null
+      positionToolbarVertically()
+    })
   }
 
   function unmountToolbar() {
     cancelHide()
     if (!toolbar) return
+    win?.removeEventListener('resize', positionToolbar)
+    win?.removeEventListener('scroll', scheduleToolbarPosition, true)
+    if (toolbarPositionFrame !== null) {
+      win.cancelAnimationFrame(toolbarPositionFrame)
+      toolbarPositionFrame = null
+    }
     if (toolbarTips) { toolbarTips.destroy(); toolbarTips = null }
     toolbar.remove()
     toolbar = null
@@ -255,7 +296,7 @@ export function createImageNodeView(props) {
   })
 
   /* ---------- 状态同步 ---------- */
-  function syncToolbarState() {
+  function syncToolbarState(opening = false) {
     if (!toolbar) return
     const align = ALIGNMENTS.includes(currentNode.attrs.align) ? currentNode.attrs.align : 'center'
     toolbar.querySelectorAll('button[data-align-value]').forEach((button) => {
@@ -263,9 +304,11 @@ export function createImageNodeView(props) {
     })
     const cropped = !blockedImage(currentNode.attrs.src) && (!!normalizeImageCrop(currentNode.attrs.crop) || (allowsImage(currentNode.attrs.originalSrc) && currentNode.attrs.originalSrc !== currentNode.attrs.src))
     toolbar.classList.toggle('has-reset', !!cropped)
-    if (cropped && cropResetButton.parentNode !== toolbar) toolbar.insertBefore(cropResetButton, toolbar.querySelector('[data-action="caption"]'))
-    else if (!cropped) cropResetButton.remove()
-
+    const resetVisible = cropResetButton.parentNode === toolbar
+    if (cropped && !resetVisible) toolbar.insertBefore(cropResetButton, toolbar.querySelector('[data-action="caption"]'))
+    else if (!cropped && resetVisible) cropResetButton.remove()
+    if (!opening && cropped === resetVisible) return
+    positionToolbar()
   }
 
   function syncDom() {
@@ -469,7 +512,11 @@ export function createImageNodeView(props) {
       if (pos === currentPos) index = images.length
       images.push({ ...node.attrs, pos })
     })
-    viewerShell = createImageViewer({ host: dom, images, index, canLoad: allowsImage, onComment: imageOptions().onComment, onDownload: imageOptions().onDownload, onClose: () => { viewerShell = null } })
+    // 全屏查看器必须挂在 `.lark-doc` 根下，不能挂在图片 figure 里：
+    // 块级容器可能带 content-visibility / contain（长文档分页、裁剪投影），
+    // 那会让 `position: fixed` 相对块而不是视口 → 看图时画面被推到底部、下半张看不到。
+    const viewerHost = dom.closest('.lark-doc') || dom.ownerDocument.body
+    viewerShell = createImageViewer({ host: viewerHost, scrollOwner: dom.closest('.lark-doc-main'), images, index, canLoad: allowsImage, onComment: imageOptions().onComment, onDownload: imageOptions().onDownload, onClose: () => { viewerShell = null } })
     return Boolean(viewerShell)
   }
 

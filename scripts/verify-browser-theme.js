@@ -19,7 +19,7 @@
  *  G3/G4 由 check-theme-tokens / check-theme-contrast 在 Node 侧承担（不进浏览器）
  *  G5/G7 见 verify-browser-mermaid.js 与 T5 宿主接入（pcvue）
  *
- * 前置：demo（vue2-webpack-node14）必须以 themeStorage:'local' 启动，
+ * 前置：默认以 themeStorage:'local' 验持久化；不启用持久化的宿主加 --theme-none。
  *       否则 storage 事件不落盘、多标签同步与首屏复原都无从测起。
  */
 
@@ -29,8 +29,11 @@ const { chromium } = require('playwright-core')
 
 const BASE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
 const SHOT_DIR = process.env.LARK_DOC_EVIDENCE_DIR || path.join(__dirname, '..', '.verify-shots')
+const THEME_NONE = process.argv.includes('--theme-none')
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache)
@@ -124,7 +127,7 @@ const INIT_FLASH_PROBE = `(() => {
 async function main() {
   const executablePath = findChromium()
   if (!executablePath) throw new Error('未找到本机 chromium 缓存')
-  const browser = await chromium.launch({ headless: true, executablePath })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath })
   // 显式 context：多标签同步依赖同源共享的 localStorage（browser.newPage 会各建一个 context）。
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   const page = await context.newPage()
@@ -262,8 +265,9 @@ async function main() {
     await flashPage.waitForSelector('.ProseMirror', { timeout: 30000 })
     await flashPage.waitForTimeout(600)
     const probe = await flashPage.evaluate(() => ({ seq: window.__themeSeq || [], first: window.__themeFirst }))
-    record('G6 首屏无闪烁：挂载后 data-theme 直接是 dark（无 light→dark 翻转）',
-      probe.first === 'dark' && probe.seq.length > 0 && probe.seq.every((value) => value === 'dark'),
+    const firstTheme = THEME_NONE ? 'light' : 'dark'
+    record(`G6 新标签首屏直接呈现 ${firstTheme}，没有主题闪烁`,
+      probe.first === firstTheme && probe.seq.length > 0 && probe.seq.every((value) => value === firstTheme),
       JSON.stringify(probe))
     await flashPage.close()
 
@@ -278,8 +282,8 @@ async function main() {
     await page.evaluate(() => { window.__larkDoc.setTheme('dark', 'auto') })
     await page.waitForTimeout(800)
     const bAfter = await tabB.evaluate(READ_CONTRACT)
-    record('G6 多标签同步：A 换档后 B 页跟随（light→dark）',
-      !!bBefore && !!bAfter && bBefore.theme === 'light' && bAfter.theme === 'dark',
+    record(THEME_NONE ? 'G6 当前实例换档，其他标签保留宿主主题' : 'G6 多标签同步：A 换档后 B 页跟随（light→dark）',
+      !!bBefore && !!bAfter && bBefore.theme === 'light' && bAfter.theme === firstTheme,
       `${bBefore && bBefore.theme} → ${bAfter && bAfter.theme}`)
     await tabB.close()
 

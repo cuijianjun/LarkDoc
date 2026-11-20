@@ -11,6 +11,7 @@
  */
 import { diagramTypes } from './constants'
 import { placeMenu } from '../../../ui/menuLayout'
+import { isCommandEnabled } from '../larkDocConfig'
 
 /** 收纳优先序：靠前的组先收进「更多」（核心的文本格式/历史最后收）。 */
 const TOOLBAR_COLLAPSE_ORDER = ['toolsEnd', 'insert', 'blockStyle', 'textStyle', 'marks', 'headings', 'history']
@@ -48,11 +49,11 @@ export default {
       if (this.toolbarEnabled('textStyle')) {
         const items = [{ label: '设置链接…', disabled: ro || this.linkCommandEnabled?.() === false, run: () => this.openLinkDialog() }]
         this.fontFamilyOptions.filter((option) => option.value).forEach((option) => items.push({
-          label: option.label, disabled: ro, checked: this.appliedTextStyle.fontFamily === option.value,
+          label: option.label, disabled: ro, radio: true, checked: this.appliedTextStyle.fontFamily === option.value,
           run: () => this.applyTextStyle('fontFamily', option.value),
         }))
         this.fontSizeOptions.filter((option) => option.value).forEach((option) => items.push({
-          label: `字号 ${option.label}`, disabled: ro, checked: this.appliedTextStyle.fontSize === option.value,
+          label: `字号 ${option.label}`, disabled: ro, radio: true, checked: this.appliedTextStyle.fontSize === option.value,
           run: () => this.applyTextStyle('fontSize', option.value),
         }))
         items.push(
@@ -62,13 +63,16 @@ export default {
         sections.push({ id: 'textStyle', title: '文本样式', items })
       }
       if (this.toolbarEnabled('blockStyle')) {
+        const alignValue = this.bubbleAlignValue()
         sections.push({ id: 'blockStyle', title: '段落', items: this.lineHeightOptions.filter((option) => option.value).map((option) => ({
-          label: `行高 ${option.label}`, disabled: ro, checked: this.appliedTextStyle.lineHeight === option.value,
+          label: `行高 ${option.label}`, disabled: ro, radio: true, checked: this.appliedTextStyle.lineHeight === option.value,
           run: () => this.applyLineHeight(option.value),
-        })).concat([
-          { label: '减少缩进', disabled: ro, run: () => this.changeIndent(-1) },
-          { label: '增加缩进', disabled: ro, run: () => this.changeIndent(1) },
-          { label: '清除格式', disabled: ro, run: () => this.clearFormatting() },
+        })).concat(Object.entries(this.alignNames).map(([id, name]) => ({
+          label: `对齐${name}`, icon: `align-${id}`, disabled: ro, radio: true, checked: alignValue === id, run: () => this.setAlign(id),
+        })), [
+          { label: '减少缩进', icon: 'indent-dec', disabled: ro || this.blockIndentLevel() <= 0, run: () => this.changeIndent(-1) },
+          { label: '增加缩进', icon: 'indent-inc', disabled: ro || !this.canIncreaseIndent(), run: () => this.changeIndent(1) },
+          { label: '清除格式', icon: 'clear', disabled: ro, run: () => this.clearFormatting() },
         ]) })
       }
       const insertItems = []
@@ -77,24 +81,24 @@ export default {
         label: this.isActive('table') ? '表格工具' : '插入表格', disabled: ro,
         run: () => this.onTableToolbarClick(),
       })
-      if (this.toolbarEnabled('insert') && this.larkDocConfig.features.diagram) {
+      if (this.toolbarEnabled('insert') && isCommandEnabled(this.larkDocConfig, 'diagram', 'diagram')) {
         diagramTypes.forEach((type) => insertItems.push({ label: `图表 · ${type.label}`, disabled: ro, run: () => this.insertDiagramType(type.id) }))
       }
       if (this.toolbarEnabled('ai')) insertItems.push({ label: 'AI 助手', disabled: ro, run: () => this.$emit('ai-request', 'rewrite') })
       if (insertItems.length) sections.push({ id: 'insert', title: '插入', items: insertItems })
       const toolItems = []
-      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', run: () => { this.searchOpen = !this.searchOpen; this.$nextTick(() => this.focusSearchPanel()) } })
-      if (this.toolbarEnabled('outline')) toolItems.push({ label: '目录', checked: this.outlineOpen, run: () => { this.outlineOpen = !this.outlineOpen } })
+      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', icon: 'search', run: () => { this.toggleSearchOpen(); this.$nextTick(() => this.focusSearchPanel()) } })
+      if (this.toolbarEnabled('outline')) toolItems.push({ label: '目录', icon: 'outline', checked: this.outlineOpen, run: () => this.toggleOutlineOpen() })
       if (this.toolbarEnabled('viewModes')) {
-        this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, checked: this.widthMode === option.value, run: () => { this.widthMode = option.value } }))
+        this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, radio: true, checked: this.widthMode === option.value, run: () => this.setWidthMode(option.value) }))
         // `modes.allow` 摘掉 read 后这条没有意义（`setMode('read')` 会被拦），跟着隐藏。
-        if (this.modesConfig.allow.indexOf('read') >= 0) toolItems.push({ label: this.reading ? '退出阅读' : '阅读模式', run: () => this.toggleReading() })
+        if (this.modesConfig.allow.indexOf('read') >= 0) toolItems.push({ label: this.reading ? '退出阅读' : '阅读模式', icon: 'reading', run: () => this.toggleReading() })
         toolItems.push(
-          { label: this.fullscreen ? '退出全屏' : '全屏', run: () => this.toggleFullscreen() },
-          { label: this.slides ? '退出演示' : '演示模式', run: () => this.toggleSlides() },
+          { label: this.fullscreen ? '退出全屏' : '全屏', icon: 'fullscreen', run: () => this.toggleFullscreen() },
+          { label: this.slides ? '退出演示' : '演示模式', icon: 'slides', run: () => this.toggleSlides() },
         )
       }
-      if (this.toolbarEnabled('shortcuts')) toolItems.push({ label: '快捷键帮助', run: () => { this.helpOpen = !this.helpOpen } })
+      if (this.toolbarEnabled('shortcuts')) toolItems.push({ label: '快捷键帮助', icon: 'help-keyboard', run: () => this.toggleHelpOpen() })
       if (!this.larkDocConfig.layout.headerVisible) toolItems.push({ label: '文档操作…', run: (event) => this.openHeaderMenuFrom(event) })
       if (toolItems.length) sections.push({ id: 'toolsEnd', title: '视图与工具', items: toolItems })
       return sections
@@ -238,7 +242,12 @@ export default {
       this.closeMoreMenu()
     },
     onMoreMenuKeydown(event) {
-      if (event.key === 'Escape') { event.stopPropagation(); this.closeMoreMenu() }
+      if (event.key !== 'Escape') return
+      const root = this.$refs.root
+      const returnFocus = root?.querySelector('.lark-doc-more-menu')?.contains(document.activeElement)
+      event.stopPropagation()
+      this.closeMoreMenu()
+      if (returnFocus) root.querySelector('button[aria-label="更多"]')?.focus()
     },
     /** 执行「更多」弹层菜单项：先缓存点击位置（供颜色盘/插入菜单定位），关弹层再执行。 */
     runMoreItem(item, event) {

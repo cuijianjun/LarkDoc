@@ -11,6 +11,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const configured = process.env.LARK_DOC_CHROMIUM
+  if (configured && fs.existsSync(configured)) return configured
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter(name => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -57,6 +59,16 @@ async function main() {
     record('输入触发业务搜索且计数器更新', await root.locator('.lark-doc-fr-counter').textContent() === '1 / 2' && await root.locator('button').filter({ hasText: '下一处' }).isEnabled())
     await root.locator('.lark-doc-fr-tab').filter({ hasText: '替换' }).click()
     record('替换页保留结构并真实插入条件节点', await root.locator('#lark-doc-fr-replace').count() === 1 && await root.locator('.lark-doc-fr-field').count() === 2 && await root.locator('.lark-doc-fr-btn').count() === 4 && await root.evaluate(node => node.style.height) === '286px')
+    await page.setViewportSize({ width: 393, height: 850 })
+    const narrowButtons = await root.locator('.lark-doc-fr-btn').evaluateAll(buttons => buttons.every(button => {
+      const rect = button.getBoundingClientRect()
+      const panel = button.closest('.lark-doc-fr').getBoundingClientRect()
+      return rect.left >= panel.left && rect.right <= Math.min(panel.right, window.innerWidth)
+    }))
+    record('393px 窄屏替换页可触达全部操作', narrowButtons)
+    await root.getByRole('button', { name: '下一处', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('.lark-doc-fr-counter')?.textContent === '2 / 2', { timeout: 5000 })
+    record('393px 窄屏点击下一处切换命中', await root.locator('.lark-doc-fr-counter').textContent() === '2 / 2')
     await root.locator('#lark-doc-fr-replace').fill('替换')
     await root.locator('.lark-doc-fr-btn').filter({ hasText: '替换' }).last().click()
     record('替换按钮调用业务回调', (await page.evaluate(() => window.__larkDoc.getText())).includes('替换'))

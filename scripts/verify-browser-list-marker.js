@@ -21,6 +21,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -112,17 +114,9 @@ const markerBeforeText = (page) => page.evaluate(() => {
 })
 
 const hoverItem = async (page, selector, index) => {
-  const point = await page.evaluate(({ selector, index }) => {
-    const el = document.querySelectorAll(selector)[index]
-    if (!el) return null
-    el.scrollIntoView({ block: 'center' })
-    const rect = el.getBoundingClientRect()
-    // 有子块的 li 矩形会覆盖整棵子树，必须贴首行取点，否则命中的是后代块。
-    return { x: rect.left + 24, y: rect.top + Math.min(12, rect.height / 2) }
-  }, { selector, index })
-  if (!point) throw new Error(`没有第 ${index} 个 ${selector}`)
-  await page.mouse.move(point.x, point.y)
-  await page.waitForTimeout(500)
+  // 带后代的 li 覆盖整个子树，直接悬停其首段才能命中当前项。
+  await page.locator(selector).nth(index).locator(':scope > p').first().hover()
+  await page.locator('.lark-doc-block-handle-main').waitFor()
 }
 
 const readGutter = (page, selector, index) => page.evaluate(({ selector, index }) => {
@@ -170,11 +164,12 @@ const typeAtStart = async (page, html, chars) => {
 async function main() {
   const executablePath = findChromium()
   if (!executablePath) throw new Error('未找到本机 chromium 缓存，无法运行浏览器验证')
-  const browser = await chromium.launch({ headless: true, executablePath })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const errors = []
   page.on('pageerror', (error) => errors.push(String(error)))
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.route('**/favicon.ico', route => route.fulfill({ status: 204 }))
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(`${message.text()} ${message.location().url}`) })
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 90000 })
   await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
 

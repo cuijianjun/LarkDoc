@@ -443,6 +443,7 @@ export function createLinkDialog({ host, handlers = {} } = {}) {
       setInputValue(textInput, state.text)
       setInputValue(valueInput, state.value)
       apply.disabled = !normalizeLinkUrl(state.value)
+      valueInput.setAttribute('aria-invalid', String(apply.disabled && Boolean(state.value?.trim())))
       remove.disabled = !state.linkActive || !!state.insertMode; remove.hidden = remove.disabled
       const win = el.ownerDocument.defaultView
       const rect = el.getBoundingClientRect()
@@ -621,6 +622,7 @@ export function createEmbedDialog(options = {}) {
   function render() {
     // `:aria-label="ed.embedDialogTitle"` + header 里的同一个标题（两处共用一份文案）。
     setAttr(el, 'aria-label', state.title)
+    input.setAttribute('aria-invalid', String(!!state.rejected))
     if (title.textContent !== state.title) title.textContent = state.title || ''
     setAttr(input, 'placeholder', state.placeholder)
     setInputValue(input, state.value)

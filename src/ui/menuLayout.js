@@ -17,6 +17,19 @@
 export const MENU_MARGIN = 8
 export const MENU_GAP = 6
 
+export function editorChromeSafeTop(root) {
+  const win = root?.ownerDocument.defaultView
+  if (!win) return MENU_MARGIN
+  let bottom = MENU_MARGIN
+  root.querySelectorAll('.lark-doc-topbar, .lark-doc-toolbar').forEach(bar => {
+    const style = win.getComputedStyle(bar)
+    if (style.position !== 'sticky' && style.position !== 'fixed') return
+    const rect = bar.getBoundingClientRect()
+    if (rect.top <= (parseFloat(style.top) || 0) + 1 && rect.bottom > bottom) bottom = rect.bottom
+  })
+  return Math.round(bottom) + MENU_GAP
+}
+
 /**
  * @param {HTMLElement} menu 已插入文档的弹层
  * @param {HTMLElement} trigger 触发器（菜单的锚点）

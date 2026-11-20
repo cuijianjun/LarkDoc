@@ -29,6 +29,8 @@ const BASE_URL = process.argv[2] || 'http://localhost:8080/lark-doc'
 const SHOT_DIR = process.env.LARK_DOC_EVIDENCE_DIR || path.join(__dirname, '..', '.verify-shots')
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME || '', 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache)
@@ -55,7 +57,7 @@ function record(name, ok, detail) {
 async function main() {
   const executablePath = findChromium()
   if (!executablePath) throw new Error('未找到本机 chromium 缓存')
-  const browser = await chromium.launch({ headless: true, executablePath })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath })
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const pageErrors = []
   const externalRequests = []
@@ -69,6 +71,8 @@ async function main() {
   try {
     // ---- 1. 页面加载 + 编辑器挂载 ----
     await page.goto(BASE_URL, { waitUntil: 'networkidle', timeout: 60000 })
+    await page.waitForFunction(() => window.__larkDoc?.getEditor?.())
+    await page.evaluate(() => window.__larkDoc.setContent('<pre><code class="language-mermaid">flowchart TD\nA[开始] --&gt; B[结束]</code></pre><p></p>'))
     await page.waitForSelector('.lark-doc-code', { timeout: 30000 })
     record('页面加载且 mermaid 代码块存在', true)
 
@@ -202,7 +206,7 @@ async function main() {
     const readDiagramPaint = () => page.evaluate(() => {
       const svg = document.querySelector('.lark-doc-diagram-svg svg')
       const card = document.querySelector('.lark-doc-code-diagram')
-      const code = document.querySelector('.lark-doc-code:not(.lark-doc-code-diagram)')
+      const code = [...document.querySelectorAll('.lark-doc-code:not(.lark-doc-code-diagram)')].find(el => el.textContent.includes('const answer = 42'))
       const read = (root, sel) => {
         const el = root && root.querySelector(sel)
         if (!el) return null
@@ -221,7 +225,8 @@ async function main() {
         code: code ? getComputedStyle(code) : null,
         codeToolbar: read(code, '.lark-doc-code-toolbar'),
         codeHighlight: read(code, '.lark-doc-code-highlight'),
-        codeKeyword: read(code, '.hljs-keyword'),
+        codeKeyword: read(code, '.hljs-keyword:not(.hljs-kw-const,.hljs-kw-function)'),
+        codeConst: read(code, '.hljs-kw-const'),
         tokens: root ? {
           ...Object.fromEntries(['--ld-text', '--ld-text-secondary', '--ld-text-link'].map(name => {
             const probe = document.createElement('span')
@@ -265,7 +270,7 @@ async function main() {
         content: [{ type: 'text', text: 'const answer = 42 // note\nfunction greet(n) { return "hi" }' }],
       })
     })
-    await page.waitForTimeout(1200)
+    await page.locator('.lark-doc-code:not(.lark-doc-code-diagram) .hljs-kw-const').waitFor()
 
     const lightPaint = await readDiagramPaint()
     record('浅色档图表已着色', Boolean(lightPaint && lightPaint.fill), JSON.stringify({ fill: lightPaint.fill, cardBg: lightPaint.cardBg }))
@@ -312,7 +317,8 @@ async function main() {
     )
     record(
       '代码正文和语法色在浅深两档各自跟随可读 token',
-      [lightPaint, darkPaint].every(paint => paint?.codeHighlight?.color === paint?.tokens?.['--ld-text'] && paint?.codeKeyword?.color === paint?.tokens?.['--ld-text-link']),
+      [lightPaint, darkPaint].every(paint => paint?.codeHighlight?.color === paint?.tokens?.['--ld-text']
+        && paint?.codeKeyword?.color === paint?.tokens?.['--ld-text-link'] && paint?.codeConst?.color === 'rgb(198, 120, 221)'),
       `浅=${lightPaint && lightPaint.codeHighlight && lightPaint.codeHighlight.color} 深=${darkPaint && darkPaint.codeHighlight && darkPaint.codeHighlight.color}`
     )
     await page.screenshot({ path: path.join(SHOT_DIR, '03-dark-mermaid.png'), fullPage: true })

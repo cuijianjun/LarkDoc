@@ -61,28 +61,6 @@ export function dragImageCrop(value, handle, dx, dy, minWidth = 0.0001, minHeigh
 }
 
 export async function cropImageBlob(blob, crop) {
-  let bitmap, objectUrl
-  try {
-    if (typeof createImageBitmap === 'function') bitmap = await createImageBitmap(blob)
-    else {
-      objectUrl = URL.createObjectURL(blob)
-      const image = new Image()
-      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('无法读取图片')); image.src = objectUrl })
-      bitmap = image
-    }
-    const width = bitmap.width || bitmap.naturalWidth, height = bitmap.height || bitmap.naturalHeight
-    const [left, top, right, bottom] = crop
-    const outputWidth = Math.max(1, Math.floor(width * (right - left))), outputHeight = Math.max(1, Math.floor(height * (bottom - top)))
-    if (outputWidth * outputHeight > 32000000 || outputWidth > 32767 || outputHeight > 32767) throw new Error('图片过大，暂时无法下载裁剪图')
-    const canvas = document.createElement('canvas')
-    canvas.width = outputWidth
-    canvas.height = outputHeight
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('无法导出裁剪图')
-    context.drawImage(bitmap, width * left, height * top, width * (right - left), height * (bottom - top), 0, 0, outputWidth, outputHeight)
-    return await new Promise((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('无法导出裁剪图')), 'image/png'))
-  } finally {
-    bitmap?.close?.()
-    if (objectUrl) URL.revokeObjectURL(objectUrl)
-  }
+  const { renderImageCrop } = await import('./image-output')
+  return renderImageCrop(blob, crop)
 }

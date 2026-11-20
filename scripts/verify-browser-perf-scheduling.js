@@ -971,9 +971,14 @@ function buildContent() {
   await page.locator('.lark-doc-block-handle-main').first().hover()
   const blockMenu = page.locator('.lark-doc-block-menu').first()
   await blockMenu.waitFor({ state: 'visible' })
-  await blockMenu.locator('.lark-doc-block-submenu-trigger[title="缩进和对齐"]').hover()
-  await page.locator('.lark-doc-block-submenu:not(.lark-doc-block-color-submenu) button').first().click()
-  record('[分页浮层] 块主菜单与缩进对齐子菜单可真实点击', true)
+  const alignTrigger = blockMenu.getByRole('menuitem', { name: '缩进和对齐', exact: true })
+  await alignTrigger.hover()
+  const alignMenu = page.getByRole('menu', { name: '缩进和对齐', exact: true })
+  const alignCenter = alignMenu.getByRole('menuitem', { name: '居中对齐', exact: true })
+  const expanded = await alignTrigger.getAttribute('aria-expanded') === 'true'
+  await alignCenter.click()
+  const centered = await pagedHeading.evaluate(el => el.style.textAlign === 'center')
+  record('[分页浮层] 块柄的缩进对齐子菜单能将当前标题居中', expanded && centered && !await alignMenu.isVisible())
   await page.keyboard.press('Escape')
   await page.evaluate(async () => {
     await window.__larkDoc.setContentAsync('<p>before</p><div data-type="callout" data-emoji="💡"><p>高亮浮层</p></div>' + '<p>filler</p>'.repeat(80) + `<p>${'background'.repeat(60000)}</p>`, { pagedView: true })

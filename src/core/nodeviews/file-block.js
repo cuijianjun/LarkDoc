@@ -60,6 +60,7 @@ const VIDEO_ICON = {
   play: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.6 2.9v10.2l8-5.1z"/></svg>',
   pause: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx=".6"/><rect x="9.4" y="3" width="2.6" height="10" rx=".6"/></svg>',
   volume: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 6h2.3L8 3.2v9.6L4.3 10H2zM10.4 5.4a3.6 3.6 0 0 1 0 5.2l.9.9a4.9 4.9 0 0 0 0-7z"/></svg>',
+  muted: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 6h2.3L8 3.2v9.6L4.3 10H2z"/><path d="m10.3 5.6 1.2 1.2 1.2-1.2.8.8L12.3 7.6l1.2 1.2-.8.8-1.2-1.2-1.2 1.2-.8-.8 1.2-1.2-1.2-1.2z"/></svg>',
   pip: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.9" y="2.9" width="12.2" height="10.2" rx="1.3"/><rect x="7.7" y="7.6" width="5.4" height="4" rx=".6" fill="currentColor" stroke="none"/></svg>',
 }
 
@@ -126,6 +127,49 @@ function resolveTokenOnce(editor, token, resolver, node) {
   return cache.get(token)
 }
 
+/** Keep the first control action while the optional video menu module arrives. */
+function loadVideoPopups(options) {
+  const triggers = [options.rate, options.quality, options.volume]
+  const events = ['pointerenter', 'pointerleave', 'click', 'keydown']
+  let active = true
+  let loading = false
+  let pending = null
+  let unbind
+
+  const detach = () => {
+    triggers.forEach(trigger => events.forEach(name => trigger.removeEventListener(name, queue)))
+  }
+  function load() {
+    if (loading) return
+    loading = true
+    import('./video-popups').then(({ bindVideoPopups }) => {
+      if (!active) return
+      detach()
+      unbind = bindVideoPopups(options)
+      if (pending) {
+        const { trigger, event } = pending
+        trigger.dispatchEvent(new event.constructor(event.type, event))
+      }
+      pending = null
+    }, () => { loading = false; pending = null })
+  }
+  function queue(event) {
+    if (event.type === 'pointerleave') {
+      if (pending?.event.type === 'pointerenter' && pending.trigger === event.currentTarget) pending = null
+      return
+    }
+    if (event.type === 'keydown' && (event.currentTarget !== options.volume || !['ArrowUp', 'ArrowDown'].includes(event.key))) return
+    if (event.type === 'pointerenter' && event.pointerType === 'touch') return
+    if (event.type === 'keydown') event.preventDefault()
+    event.stopPropagation()
+    if (event.type !== 'pointerenter' || !pending || pending.event.type === 'pointerenter') pending = { trigger: event.currentTarget, event }
+    load()
+  }
+  triggers.forEach(trigger => events.forEach(name => trigger.addEventListener(name, queue)))
+  load()
+  return () => { active = false; pending = null; detach(); unbind?.() }
+}
+
 export function createFileBlockNodeView(props) {
 
   const { editor, node, extension, getPos } = props
@@ -167,6 +211,8 @@ export function createFileBlockNodeView(props) {
   let mediaSrc = null
   /** 当前视频播放器控制条引用的 video（自绘 UI 的事件挂它；destroy 时一并清空）。 */
   let videoEl = null
+  /** 播放器弹层挂的 document 级监听 / 提示句柄：随 media 一起销毁，换源也不残留。 */
+  const videoCleanups = []
 
   /** 下载文件名：优先块 attrs.name，其次 URL 尾段；没扩展名时按 mimeType 补。 */
   function downloadName(url) {
@@ -266,6 +312,10 @@ export function createFileBlockNodeView(props) {
 
   function teardownMedia() {
     if (!media) return
+    while (videoCleanups.length) {
+      const dispose = videoCleanups.pop()
+      try { dispose() } catch (_) { /* 已失效的监听/句柄不影响换源 */ }
+    }
     media.remove()
     media = null
     mediaKind = null
@@ -317,15 +367,16 @@ export function createFileBlockNodeView(props) {
     const time = el('span', 'lark-doc-video-time')
     time.textContent = '00:00/00:00'
     const spacer = el('span', 'lark-doc-video-spacer')
-    const rate = markUi(el('button', 'lark-doc-video-text-btn', { type: 'button', 'aria-label': '播放速度' }))
+    const rate = markUi(el('button', 'lark-doc-video-text-btn', { type: 'button', 'aria-label': '播放速度', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }))
     rate.textContent = '1x'
-    const quality = markUi(el('button', 'lark-doc-video-text-btn', { type: 'button', 'aria-label': '清晰度' }))
+    const quality = markUi(el('button', 'lark-doc-video-text-btn', { type: 'button', 'aria-label': '清晰度', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }))
     quality.textContent = '480p'
     const pip = markUi(el('button', 'lark-doc-video-btn', { type: 'button', 'aria-label': '画中画' }))
     pip.innerHTML = VIDEO_ICON.pip
-    const volume = markUi(el('button', 'lark-doc-video-btn', { type: 'button', 'aria-label': '静音' }))
+    const volume = markUi(el('button', 'lark-doc-video-btn', { type: 'button', 'aria-label': '静音', 'aria-expanded': 'false', 'data-tooltip-none': '' }))
+    volume.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown')
     volume.innerHTML = VIDEO_ICON.volume
-    const fullscreen = markUi(el('button', 'lark-doc-video-btn lark-doc-video-fullscreen', { type: 'button', 'aria-label': '全屏' }))
+    const fullscreen = markUi(el('button', 'lark-doc-video-btn lark-doc-video-fullscreen', { type: 'button', 'aria-label': '进入全屏' }))
     fullscreen.appendChild(iconNode('fullscreen', 16))
 
     // 进度条先入 DOM（绝对定位在控制栏顶部），再放一排按钮。
@@ -346,8 +397,6 @@ export function createFileBlockNodeView(props) {
     shell.appendChild(controls)
 
     /* ---- 播放态切换：中央键 ↔ 暂停键，静态徽标 ↔ 悬浮条 ---- */
-    const RATES = [1, 1.25, 1.5, 2, 0.75]
-    let rateIndex = 0
     const syncPlaying = () => {
       const playing = !video.paused && !video.ended
       shell.classList.toggle('is-playing', playing)
@@ -396,28 +445,35 @@ export function createFileBlockNodeView(props) {
       video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + (event.key === 'ArrowRight' ? step : -step)))
     })
 
-    rate.addEventListener('click', (event) => {
-      event.stopPropagation()
-      rateIndex = (rateIndex + 1) % RATES.length
-      video.playbackRate = RATES[rateIndex]
-      rate.textContent = `${RATES[rateIndex]}x`
-    })
-    quality.addEventListener('click', (event) => { event.stopPropagation() }) // 清晰度占位：本地源无多档，保留入口不误点。
+    const doc = dom.ownerDocument
+    videoCleanups.push(loadVideoPopups({ shell, video, rate, quality, volume, el, markUi, icons: VIDEO_ICON }))
+
     pip.addEventListener('click', (event) => {
       event.stopPropagation()
-      if (typeof video.requestPictureInPicture === 'function') video.requestPictureInPicture().catch(() => {})
+      if (doc.pictureInPictureElement === video) doc.exitPictureInPicture?.().catch(() => {})
+      else video.requestPictureInPicture?.().catch(() => {})
     })
-    volume.addEventListener('click', (event) => {
-      event.stopPropagation()
-      video.muted = !video.muted
-      volume.setAttribute('aria-label', video.muted ? '取消静音' : '静音')
-      volume.classList.toggle('is-muted', video.muted)
-    })
+    video.addEventListener('enterpictureinpicture', () => pip.setAttribute('aria-label', '退出画中画'))
+    video.addEventListener('leavepictureinpicture', () => pip.setAttribute('aria-label', '画中画'))
     fullscreen.addEventListener('click', (event) => {
       event.stopPropagation()
-      if (shell.requestFullscreen) shell.requestFullscreen().catch(() => {})
+      if (doc.fullscreenElement === shell) doc.exitFullscreen?.().catch(() => {})
+      else if (video.webkitDisplayingFullscreen) video.webkitExitFullscreen?.()
+      else if (shell.requestFullscreen) shell.requestFullscreen().catch(() => {})
       else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen()
     })
+    // 全屏按钮的中文提示随状态切换（飞书：进入全屏 / 退出全屏）。
+    const syncFullscreenLabel = () => {
+      const active = doc.fullscreenElement === shell || Boolean(video.webkitDisplayingFullscreen)
+      fullscreen.setAttribute('aria-label', active ? '退出全屏' : '进入全屏')
+    }
+    doc.addEventListener('fullscreenchange', syncFullscreenLabel)
+    videoCleanups.push(() => doc.removeEventListener('fullscreenchange', syncFullscreenLabel))
+    video.addEventListener('webkitbeginfullscreen', syncFullscreenLabel)
+    video.addEventListener('webkitendfullscreen', syncFullscreenLabel)
+    // 播放、画中画和全屏悬停时显示动作提示。
+    const controlTips = bindHoverTips(controls)
+    videoCleanups.push(() => controlTips.destroy())
 
     // 封面走 `coverUrl`（⑤ 的既有属性，此前没有任何消费者）。被出网策略拦下时
     // 它已经是本地透明占位，不会发请求。

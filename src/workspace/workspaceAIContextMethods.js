@@ -6,7 +6,7 @@
  */
 import { CellSelection } from '@tiptap/pm/tables'
 import { mapAnchor, createContextSnapshot } from '../components/lark-doc/mockAI'
-import { normalizeImageCrop, cropImageBlob, FULL_IMAGE_CROP } from '../core/media/image-crop'
+import { normalizeImageCrop } from '../core/media/image-crop'
 import { aiNetworkAllows, createNetworkPolicy } from '../core/policy/network'
 
 export const aiContextMethods = {
@@ -212,23 +212,9 @@ export const aiContextMethods = {
   },
 
   async prepareAIImage(image, signal) {
+    const { prepareAIImageData } = await import('../core/media/image-output')
     if (!this.imageAIValid(image) || !aiNetworkAllows(image.src, createNetworkPolicy(this.state.editorConfig.network), this.getWindow().location?.href, true)) throw new Error('无法读取引用的图片')
-    const viewWindow = this.getWindow()
-    const response = await (viewWindow.fetch || fetch)(image.src, { signal, credentials: 'same-origin', redirect: 'error' })
-    if (!response.ok) throw new Error('读取图片失败，请重试')
-    let blob = await response.blob()
-    if (blob.size > 20 * 1024 * 1024) throw new Error('图片超过 20 MB，请使用较小的图片')
-    // Encode the visible crop only. Never send originalSrc or hidden pixels to an AI provider.
-    blob = await cropImageBlob(blob, image.crop || FULL_IMAGE_CROP)
-    if (blob.size > 20 * 1024 * 1024) throw new Error('图片超过 20 MB，请使用较小的图片')
-    if (signal.aborted) throw new Error('已停止')
-    const url = await new Promise((resolve, reject) => {
-      const reader = new (viewWindow.FileReader || FileReader)()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = () => reject(new Error('读取图片失败，请重试'))
-      reader.readAsDataURL(blob)
-    })
-    return { url, blockId: image.blockId, alt: image.alt }
+    return prepareAIImageData(image, this.getWindow(), signal)
   },
 
   currentAIContext() {

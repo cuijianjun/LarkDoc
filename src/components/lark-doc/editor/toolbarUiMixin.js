@@ -288,6 +288,7 @@ export default {
       const outlineCurrent = () => !this._isDestroyed && !this._isBeingDestroyed && this.nativeScopeValid !== false && this.session === outlineSession
         && this.session?.documentId === documentId && this.session?._privateIdentityGeneration === identity
         && (!this.session || this.session.can?.('canView') === true)
+      const layout = this.larkDocConfig.layout
       return {
         documentMetadata,
         currentUser: actor?.id ? { id: actor.id, name: profile?.name || '我' } : null,
@@ -316,7 +317,8 @@ export default {
         mobileOpenInAppLabel: this.onDocumentAction?.openInAppLabel,
         mobileAuthority: this.session?.getProvider?.('authorization'),
         mobileContextKey: [this.session?.documentId, actor?.id, this.session?._identityGeneration, this.session?._privateIdentityGeneration, this.session?._authorizationGeneration, readable].join('|'),
-        headerVisible: this.larkDocConfig.layout.headerVisible !== false,
+        headerVisible: layout.headerVisible !== false,
+        stackToolbar: layout.titleBarFixed && layout.toolbarFixed,
         title: this.localTitle,
         titleLength: this.titleLength,
         readonly: this.effectiveReadonly,

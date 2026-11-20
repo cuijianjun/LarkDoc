@@ -25,8 +25,12 @@ import * as httpUpload from '../core/media/http-upload'
 import * as fileUploadTasks from '../core/media/file-upload-tasks'
 import * as resourceOutcome from '../session/resourceOutcome'
 import * as versionSnapshot from '../core/versioning/snapshot'
+import { bindVideoPopups } from '../core/nodeviews/video-popups'
+import { renderImageCrop, downloadViewerImage, prepareAIImageData } from '../core/media/image-output'
 
 registerFeature('media.httpUpload', () => httpUpload)
 registerFeature('media.fileUploadTasks', () => fileUploadTasks)
 registerFeature('session.resourceOutcome', () => resourceOutcome)
 registerFeature('versioning.snapshot', () => versionSnapshot)
+registerFeature('media.videoPopups', () => ({ bindVideoPopups }))
+registerFeature('media.imageOutput', () => ({ renderImageCrop, downloadViewerImage, prepareAIImageData }))

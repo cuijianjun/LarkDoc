@@ -443,7 +443,7 @@ export function createToolbar(options = {}) {
   function syncMoreSections(sections) {
     const signature = sections.map((section) => [
       section.id,
-      section.items.map((item) => `${item.label}\u0002${item.disabled ? 1 : 0}\u0002${item.checked ? 1 : 0}`).join('\u0001'),
+      section.items.map((item) => `${item.label}\u0002${item.icon || ''}\u0002${item.disabled ? 1 : 0}\u0002${item.checked}\u0002${item.radio}`).join('\u0001'),
     ].join('\u0003')).join('\u0004')
     if (signature === moreSignature) return
     moreSignature = signature
@@ -456,7 +456,9 @@ export function createToolbar(options = {}) {
       section.items.forEach((item) => {
         const button = document.createElement('button')
         button.type = 'button'
-        button.setAttribute('role', 'menuitem')
+        const role = item.radio ? 'menuitemradio' : typeof item.checked === 'boolean' ? 'menuitemcheckbox' : 'menuitem'
+        button.setAttribute('role', role)
+        if (role !== 'menuitem') button.setAttribute('aria-checked', String(!!item.checked))
         if (item.disabled) button.disabled = true
         if (item.checked) button.classList.add('lark-doc-more-active')
         button.addEventListener('mousedown', (event) => event.preventDefault())
@@ -465,6 +467,7 @@ export function createToolbar(options = {}) {
         check.className = 'lark-doc-select-check'
         check.setAttribute('aria-hidden', 'true')
         if (item.checked) {
+          check.classList.add('is-visible')
           check.appendChild(iconNode('check', 14, 'lark-doc-check-icon'))
           const checkText = document.createElement('span')
           checkText.className = 'sr-only'
@@ -472,6 +475,7 @@ export function createToolbar(options = {}) {
           check.appendChild(checkText)
         }
         button.appendChild(check)
+        if (item.icon) button.appendChild(iconNode(item.icon, 16, 'lark-doc-tool-icon'))
         button.appendChild(document.createTextNode(item.label))
         moreMenu.appendChild(button)
       })

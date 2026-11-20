@@ -238,7 +238,7 @@ export default {
       this.menuKind = kind
       this.menuTrigger = event?.currentTarget || null
       this.menuQuery = kind === 'slash' ? this.slashMatch?.query || '' : ''
-      this.activeCommandIndex = 0
+      this.activeCommandIndex = kind === 'plus' ? -1 : 0
       const rect = event?.currentTarget?.getBoundingClientRect()
       this.menuAnchor = { left: rect?.left ?? 30, top: rect?.top ?? 90, bottom: rect?.bottom ?? 120 }
       this.menuPosition = { left: Math.max(8, this.menuAnchor.left), top: Math.max(8, this.menuAnchor.bottom + 6) }
@@ -313,21 +313,38 @@ export default {
       const menu = this.$refs.root?.querySelector('.lark-doc-command-menu')
       if (!menu) return
       const margin = 8
+      const plus = this.menuKind === 'plus'
+      const win = menu.ownerDocument.defaultView
+      const viewport = plus ? win.visualViewport : null
+      const viewLeft = (viewport?.offsetLeft || 0) + margin
+      const viewTop = (viewport?.offsetTop || 0) + margin
+      const viewRight = viewLeft + (viewport?.width || win.innerWidth) - 2 * margin
+      const viewBottom = viewTop + (viewport?.height || win.innerHeight) - 2 * margin
       const rect = menu.getBoundingClientRect()
-      const viewportSpace = Math.max(40, window.innerHeight - margin * 2)
-      const naturalHeight = Math.max(menu.scrollHeight, rect.height)
+      const viewportSpace = Math.max(40, viewBottom - viewTop)
+      const borderHeight = plus ? menu.offsetHeight - menu.clientHeight : 0
+      const naturalHeight = Math.max(menu.scrollHeight + borderHeight, rect.height)
       const desiredHeight = Math.min(naturalHeight, viewportSpace)
-      const below = Math.max(0, window.innerHeight - this.menuAnchor.bottom - margin)
-      const above = Math.max(0, this.menuAnchor.top - margin)
+      const { left: anchorLeft, top: anchorTop, bottom: anchorBottom } = this.menuAnchor
+      const below = Math.max(0, viewBottom - anchorBottom)
+      const above = Math.max(0, anchorTop - viewTop)
+      const width = Math.min(rect.width || 232, viewRight - viewLeft)
+      const sideLeft = anchorLeft - width - 4
+      if (plus && sideLeft >= viewLeft && Math.max(above, below) < desiredHeight + 6) {
+        const centeredTop = (anchorTop + anchorBottom - desiredHeight) / 2
+        const top = Math.max(viewTop, Math.min(viewBottom - desiredHeight, centeredTop))
+        this.menuPosition = { left: sideLeft, top }
+        this.menuMaxHeight = Math.floor(desiredHeight)
+        return
+      }
       // 飞书在视口底部向上展开斜杠菜单，不能把可点击项裁在屏幕外。
       const useAbove = below < desiredHeight && above > below
       const gap = useAbove && this.menuKind === 'slash' ? 2 : 6
       const available = Math.max(0, Math.min(viewportSpace, (useAbove ? above : below) - gap))
       const maxHeight = Math.max(40, Math.min(desiredHeight, available || viewportSpace))
-      const rawTop = useAbove ? this.menuAnchor.top - maxHeight - gap : this.menuAnchor.bottom + gap
-      const top = Math.max(margin, Math.min(window.innerHeight - maxHeight - margin, rawTop))
-      const width = Math.min(rect.width || 232, window.innerWidth - margin * 2)
-      const left = Math.max(margin, Math.min(window.innerWidth - width - margin, this.menuAnchor.left))
+      const rawTop = useAbove ? anchorTop - maxHeight - gap : anchorBottom + gap
+      const top = Math.max(viewTop, Math.min(viewBottom - maxHeight, rawTop))
+      const left = Math.max(viewLeft, Math.min(viewRight - width, anchorLeft))
       this.menuPosition = { left, top }
       this.menuMaxHeight = Math.round(maxHeight)
     },
@@ -363,7 +380,7 @@ export default {
       const items = this.filteredCommands
       const length = items.length
       if (!length) return
-      let index = this.activeCommandIndex
+      let index = this.activeCommandIndex < 0 && step < 0 ? 0 : this.activeCommandIndex
       for (let hop = 0; hop < length; hop += 1) {
         index = (index + step + length) % length
         if (items[index].tier !== 'skip') break

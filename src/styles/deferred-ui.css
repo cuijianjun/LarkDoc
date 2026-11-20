@@ -1,8 +1,8 @@
 /* Low-frequency UI only. Element loads this before publishing ui.ready.
  * Body nodes, first-frame chrome, access masks and shared tokens stay eager. */
 /*  src/components/lark-doc/lark-doc.css — original declarations, loaded with the UI feature.  */
-.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-table-float-border); border-radius: 6px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
-.lark-doc .lark-doc-table-tools-bar { display: flex; align-items: center; height: 24px; gap: 0; }
+.lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; width: max-content; max-width: calc(100% - 16px); padding: 8px; border: 1px solid var(--ld-table-float-border); border-radius: 6px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
+.lark-doc .lark-doc-table-tools-bar { display: flex; flex-wrap: wrap; align-items: center; min-height: 24px; row-gap: 4px; }
 .lark-doc .lark-doc-fr { position: fixed; z-index: 100; right: 16px; top: 72px; box-sizing: border-box; display: flex; flex-direction: column; width: 406px; max-width: calc(100vw - 32px); padding: 0 24px; border: 1px solid var(--ld-fr-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; box-shadow: var(--ld-fr-shadow); }
 .lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 28px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
 .lark-doc .lark-doc-fr .lark-doc-fr-tab { width: 32px; min-width: 32px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 16px; line-height: 48px; cursor: pointer; }
@@ -22,6 +22,11 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
 .lark-doc .lark-doc-fr.is-replace .lark-doc-fr-actions { justify-content: flex-start; }
 .lark-doc .lark-doc-fr .lark-doc-fr-btn { box-sizing: border-box; width: 80px; min-width: 80px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--ld-fr-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; line-height: 30px; }
+@media (max-width: 438px) {
+  .lark-doc .lark-doc-fr { padding-inline: 16px; }
+  .lark-doc .lark-doc-fr .lark-doc-fr-actions { gap: 6px; }
+  .lark-doc .lark-doc-fr .lark-doc-fr-btn { min-width: max-content; padding-inline: 2px; white-space: nowrap; }
+}
 .lark-doc .lark-doc-fr .lark-doc-fr-btn:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: var(--ld-fr-border-control); color: var(--ld-fr-text); }
 .lark-doc .lark-doc-fr .lark-doc-fr-btn:disabled { opacity: 1; border-color: var(--ld-fr-border-disabled); background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary { border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-code-bg); }
@@ -31,7 +36,7 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-close:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--ld-fr-text-muted); }
 .lark-doc .lark-doc-table-tools label { display: flex; align-items: center; gap: 4px; }
 .lark-doc .lark-doc-table-tools input[type="color"] { width: 31px; height: 27px; padding: 1px; }
-.lark-doc .lark-doc-bubble { position: fixed; z-index: 70; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-bubble); }.lark-doc .lark-doc-bubble > button { display: inline-flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-bubble); }
+.lark-doc .lark-doc-bubble { position: fixed; z-index: 70; display: flex; flex-wrap: wrap; align-items: center; box-sizing: border-box; width: max-content; max-width: calc(100% - 16px); gap: 2px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-bubble); }.lark-doc .lark-doc-bubble > button { display: inline-flex; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-bubble); }
 .lark-doc .lark-doc-bubble > button:hover,
 .lark-doc .lark-doc-bubble > button:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
 .lark-doc .lark-doc-bubble > button[aria-pressed="true"] { background: var(--ld-bg-accent-active); color: var(--ld-text-accent-hover); }
@@ -39,6 +44,8 @@
 .lark-doc .lark-doc-bubble-divider { width: 1px; height: 18px; margin: 0 4px; background: var(--ld-border-bubble-divider); }
 .lark-doc .lark-doc-bubble-caret { flex: 0 0 12px; width: 12px; height: 12px; color: var(--ld-text-icon-tertiary); }
 .lark-doc .lark-doc-bubble-caret-button { width: 20px !important; min-width: 20px !important; margin-left: -3px; }
+.lark-doc .lark-doc-bubble > .lark-doc-bubble-caret-button[aria-expanded="true"],
+.lark-doc .lark-doc-color[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); }
 .lark-doc .lark-doc-bubble-heading,
 .lark-doc .lark-doc-bubble-align { display: flex; align-items: center; }
 .lark-doc .lark-doc-bubble-heading-trigger,
@@ -133,7 +140,7 @@
 .lark-doc .lark-doc-table-boundary-line.is-column-line { top: 0; width: 2px; transform: translateX(-50%); }
 .lark-doc .lark-doc-table-boundary-line.is-row-line { left: 0; height: 2px; transform: translateY(-50%); }
 @media (max-width: 760px) {
-  .lark-doc .lark-doc-bubble { box-sizing: border-box; max-width: calc(100dvw - 16px); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
+  .lark-doc .lark-doc-bubble { box-sizing: border-box; flex-wrap: nowrap; max-width: calc(100dvw - 16px); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
   .lark-doc .lark-doc-bubble > * { flex-shrink: 0; }
   .lark-doc .lark-doc-bubble::-webkit-scrollbar { display: none; }
   .lark-doc .lark-doc-link-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
@@ -170,9 +177,7 @@
 .lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] button { display: grid; height: 36px; min-height: 36px; padding: 0; gap: 0; place-items: center; }
 .lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] .lark-doc-command-icon { color: var(--lark-doc-ink); }
 .lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section[data-category="基础"] .lark-doc-command-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active { background: transparent; color: inherit; }
-.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active:focus-visible,
-.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-section button.active { background: var(--ld-bg-hover-menu); color: inherit; }
 .lark-doc .lark-doc-command-menu.is-plus .lark-doc-command-submenu-arrow { width: 16px; min-width: 16px; height: 24px; flex-basis: 16px; }
 /* 模板/表格子菜单飞书实测覆盖段（0facf05 893-896、950-958，403442a 拆分时丢失） */
 .lark-doc .lark-doc-command-submenu.is-templates { gap: 0; padding: 5px; box-shadow: var(--ld-shadow-chrome); }
@@ -803,7 +808,7 @@
 .lark-doc .lark-doc-table-tools-btn:focus-visible { outline: 2px solid var(--ld-table-accent); outline-offset: -2px; }
 .lark-doc .lark-doc-table-tools-btn:first-child { margin-left: 0; }
 @media (max-width: 760px) {
-  .lark-doc .lark-doc-table-tools-bar { height: 44px; max-width: 100%; overflow-x: auto; overflow-y: hidden; gap: 4px; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
+  .lark-doc .lark-doc-table-tools-bar { flex-wrap: nowrap; height: 44px; max-width: 100%; overflow-x: auto; overflow-y: hidden; gap: 4px; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
   .lark-doc .lark-doc-table-tools-bar::-webkit-scrollbar { display: none; }
   .lark-doc .lark-doc-table-tools-bar > button { min-width: 44px; height: 44px; min-height: 44px; }
 }

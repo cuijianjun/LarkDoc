@@ -82,6 +82,8 @@ export function createCommandMenu(options = {}) {
     tableHover: { rows: 3, cols: 3 },
   }
   let composing = false
+  let listening = false
+  const viewWindow = (host?.ownerDocument || document).defaultView
   let disposed = false
   let mobileSearchOpen = false
   /** 分段签名：段名 + 每段项 id 顺序。变了才重排段容器。 */
@@ -238,15 +240,19 @@ export function createCommandMenu(options = {}) {
       node.addEventListener('mousedown', (event) => event.preventDefault())
       const activate = () => {
         if (!activeTarget(node)) return
+        if (activeItem() === entry.item && (!entry.item.submenu || submenuTrigger === node)) return
         const index = state.items.findIndex(item => entryKey(item) === node.dataset.entryKey)
-        if (index >= 0) call('onActivate', index)
+        if (index >= 0 && index !== state.activeIndex) call('onActivate', index)
         if (entry.item.submenu) openSubmenu(entry.item, node)
         else closeSubmenu()
       }
-      node.addEventListener('mouseenter', event => {
+      const activateFromPointer = event => {
         if (event.sourceCapabilities?.firesTouchEvents || node.ownerDocument.defaultView?.matchMedia?.('(hover: none)')?.matches) return
         activate()
-      })
+      }
+      node.addEventListener('mouseenter', event => { if (state.kind !== 'slash') activateFromPointer(event) })
+      // 移动鼠标才改变斜杠菜单高亮，菜单重新定位时保留键盘选择。
+      node.addEventListener('mousemove', event => { if (state.kind === 'slash') activateFromPointer(event) })
       node.addEventListener('focus', activate)
       node.addEventListener('click', () => {
         if (!activeTarget(node)) return
@@ -706,15 +712,34 @@ export function createCommandMenu(options = {}) {
 
   // ————————————————— 对外 —————————————————
 
+  function onViewportResize(event) {
+    if (state.kind === 'plus') call('onViewportResize')
+    positionSubmenu(event)
+  }
+
   function mount() {
     if (!host) return
     if (state.kind === 'plus') host.insertBefore(backdrop, el.parentNode === host ? el : anchor && anchor.parentNode === host ? anchor : null)
     else backdrop.remove()
     if (el.parentNode !== host) host.insertBefore(el, anchor && anchor.parentNode === host ? anchor : null)
+    if (!listening) {
+      listening = true
+      viewWindow.addEventListener('resize', onViewportResize)
+      viewWindow.addEventListener('scroll', positionSubmenu, true)
+      viewWindow.visualViewport?.addEventListener('resize', onViewportResize)
+      viewWindow.visualViewport?.addEventListener('scroll', positionSubmenu)
+    }
   }
 
   function unmount() {
     backdrop.remove()
+    if (listening) {
+      listening = false
+      viewWindow.removeEventListener('resize', onViewportResize)
+      viewWindow.removeEventListener('scroll', positionSubmenu, true)
+      viewWindow.visualViewport?.removeEventListener('resize', onViewportResize)
+      viewWindow.visualViewport?.removeEventListener('scroll', positionSubmenu)
+    }
     if (el.parentNode) el.parentNode.removeChild(el)
     closeSubmenu()
     tooltip.hide()

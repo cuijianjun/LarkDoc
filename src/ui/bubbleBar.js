@@ -212,12 +212,18 @@ export function createBubbleBar(host, options = {}) {
 
   const paletteButton = document.createElement('button')
   paletteButton.type = 'button'
-  paletteButton.className = 'lark-doc-bubble-caret-button'
+  paletteButton.className = 'lark-doc-bubble-caret-button lark-doc-color'
   paletteButton.setAttribute('aria-label', '选择高亮颜色')
-  // 🔴 必须把**原事件**转出去：`toggleColorPalette` 用 `event.currentTarget.getBoundingClientRect()`
-  // 算取色面板位置，自己造事件对象会让面板退回默认的 80/16。
+  paletteButton.setAttribute('aria-haspopup', 'menu')
+  paletteButton.setAttribute('aria-expanded', 'false')
+  const colorLetter = document.createElement('span')
+  colorLetter.className = 'lark-doc-color-letter'
+  colorLetter.appendChild(iconNode('text-color', 18, 'lark-doc-color-icon'))
+  paletteButton.appendChild(colorLetter)
+  paletteButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-caret lark-doc-color-arrow'))
+  paletteButton.addEventListener('mouseenter', (event) => call('onPaletteEnter', event))
+  paletteButton.addEventListener('mouseleave', () => call('onPaletteLeave'))
   paletteButton.addEventListener('click', (event) => { event.preventDefault(); call('onPalette', event) })
-  paletteButton.appendChild(iconNode('chevronDown', 12, 'lark-doc-bubble-caret lark-doc-caret'))
 
   const tailDivider = createDivider()
 
@@ -340,8 +346,9 @@ export function createBubbleBar(host, options = {}) {
    * 唯一的写入口。
    *
    * @param {object} state
-   * @param {number} state.left 气泡条 left（视口坐标，`position: fixed`）
-   * @param {number} state.top 气泡条 top
+   * @param {number} state.left 选区左缘（视口坐标）
+   * @param {number} state.above 选区起点顶边
+   * @param {number} state.below 选区终点底边
    * @param {string} state.headingValue 「正文」/「H2」
    * @param {boolean} state.headingOpen
    * @param {number|null} state.headingLevel
@@ -357,20 +364,29 @@ export function createBubbleBar(host, options = {}) {
    */
   function update(state) {
     if (destroyed) return
-    // 位置：先落位再量菜单，量到的触发点才是这一帧的真实值。
-    el.style.left = `${state.left}px`
-    el.style.top = `${state.top}px`
-    if (!el.parentNode) host.appendChild(el)
-
-    // ② 标题级别
     const headingText = state.headingValue || HEADING_FALLBACK
     if (headingValue.textContent !== headingText) headingValue.textContent = headingText
-    headingTrigger.setAttribute('aria-expanded', state.headingOpen ? 'true' : 'false')
-    // 用当前文字/特性布局后的真实宽度夹紧；固定 270px 估值会让手机尾部操作越界。
-    const width = el.getBoundingClientRect().width, viewport = el.ownerDocument.defaultView?.innerWidth
-    if (width > 0 && viewport > 0 && viewport <= 760 && Number.isFinite(state.left)) {
-      el.style.left = `${Math.max(8, Math.min(state.left, viewport - width - 8))}px`
+    if (!el.parentNode) host.appendChild(el)
+    const { width, height } = el.getBoundingClientRect()
+    const win = el.ownerDocument.defaultView
+    const viewportWidth = el.ownerDocument.documentElement.clientWidth || win.innerWidth
+    const rightLimit = viewportWidth - width - 8
+    const bottomLimit = Math.max(8, win.innerHeight - height - 8)
+    const topLimit = Math.min(safeTop(), bottomLimit)
+    const above = state.above - height - 8
+    const top = Number.isFinite(above) && Number.isFinite(state.below)
+      ? (above >= topLimit ? above : state.below + 8)
+      : state.top
+    el.style.left = `${Math.max(8, Math.min(state.left, rightLimit))}px`
+    el.style.top = `${Math.max(topLimit, Math.min(top, bottomLimit))}px`
+    paletteButton.setAttribute('aria-expanded', String(!!state.paletteOpen))
+    if (state.textStyle) {
+      colorLetter.style.color = state.textStyle.textColor || ''
+      colorLetter.style.background = `linear-gradient(transparent 52%, ${state.textStyle.backgroundColor} 52%)`
     }
+
+    // ② 标题级别
+    headingTrigger.setAttribute('aria-expanded', state.headingOpen ? 'true' : 'false')
     if (activeConfig.mobile) { reconcileHeading(false, null); reconcileAlign(false); return }
     if (headingWrap.parentNode) reconcileHeading(state.headingOpen, state.headingLevel)
 

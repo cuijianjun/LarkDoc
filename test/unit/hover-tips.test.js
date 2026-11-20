@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindHoverTips, hasNextLevelPopup, hasVisibleText, resolveTarget, tipText } from '../../src/ui/hoverTips'
 import { createBubbleBar } from '../../src/ui/bubbleBar'
+import { createOutlinePanel } from '../../src/ui/outlinePanel'
 import { createBlockHandle } from '../../src/ui/blockHandle'
 import { createTableTools } from '../../src/ui/tableTools'
 import { createCellPlusTools } from '../../src/ui/cellPlusTools'
@@ -260,6 +261,37 @@ describe('接入 · 气泡条', () => {
       expect(host.querySelector('[role="tooltip"]').textContent).toBe('加粗')
     } finally { ui.destroy() }
   })
+
+  it('按实际浮条尺寸避开右边缘，顶部空间不足时翻到选区下方', () => {
+    const { ui, el } = buildBar()
+    try {
+      el.getBoundingClientRect = () => ({ width: 370, height: 76 })
+      ui.update({ left: window.innerWidth - 150, above: 42, below: 70 })
+      expect(el.style.left).toBe(`${window.innerWidth - 378}px`)
+      expect(el.style.top).toBe('78px')
+      ui.update({ left: 24, above: 230, below: 258 })
+      expect(el.style.left).toBe('24px')
+      expect(el.style.top).toBe('146px')
+    } finally { ui.destroy() }
+  })
+})
+
+it('收起目录提示挂在目录滚动区外，目录关闭时清理提示', () => {
+  vi.useFakeTimers()
+  const root = mount()
+  const outline = createOutlinePanel({ host: root })
+  try {
+    outline.update({ open: true })
+    const trigger = outline.el.querySelector('[aria-label="收起目录"]')
+    trigger.getBoundingClientRect = RECT
+    hover(trigger, root)
+    vi.advanceTimersByTime(200)
+    const tip = root.querySelector(':scope > [role="tooltip"]')
+    expect(tip?.textContent).toBe('收起目录')
+    expect(trigger.getAttribute('aria-describedby')).toBe(tip.id)
+    outline.update({ open: false })
+    expect(root.querySelector('[role="tooltip"]')).toBeNull()
+  } finally { outline.destroy() }
 })
 
 describe('接入 · 六点句柄与块菜单', () => {
@@ -430,12 +462,11 @@ describe('接入 · 图片功能栏', () => {
     const { view, bar } = buildImageToolbar()
     try {
       expect(bar, '图片工具条').not.toBeNull()
-      for (const label of ['裁剪', '编辑图片说明', '左对齐', '居中对齐', '右对齐', '复制图片链接', '分享图片']) {
+      for (const label of ['裁剪', '编辑图片说明', '左对齐', '居中对齐', '右对齐', '分享图片', '复制图片链接']) {
         const node = bar.querySelector(`[aria-label="${label}"]`)
         expect(node, label).not.toBeNull()
         expect(resolveTarget(node), label).toBe(node)
       }
-      // 评论按钮暂时隐藏（宿主未接评论服务）。
       expect(bar.querySelector('[aria-label="添加评论"]')).toBeNull()
       const ask = bar.querySelector('[aria-label="问问AI"]')
       expect(ask, '问问AI').not.toBeNull()

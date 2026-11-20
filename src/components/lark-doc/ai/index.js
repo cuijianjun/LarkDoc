@@ -9,7 +9,7 @@
  *
  *   ai: 'https://api.example.com/ai'                 // L1 只给地址
  *   ai: { endpoint: '/api/ai', protocol: 'auto' }    // L1 显式协议
- *   ai: { protocol: 'openai', baseURL, apiKey, model }  // L2 直连模型服务
+ *   ai: { baseurl, api_key }                          // L2 直连模型服务
  *   ai: { endpoint: '/api/ai', request(request, args) { ... } } // L2 宿主请求
  *   ai: { stream(args) { ... return { cancel } } }    // L3 旧钩子，完全自管
  *   ai: (args) => ({ cancel })                       // L3 函数简写
@@ -19,7 +19,7 @@
  */
 import { buildMessages } from './prompt'
 import { createFrameParser, extractWholeBody, httpAcceptFor } from './protocol'
-import { createSseDecoder, postStream } from './transport'
+import { createSseDecoder } from './transport'
 import { previewToHtml } from './markdown'
 
 export const AI_KINDS = Object.freeze(['stream', 'endpoint'])
@@ -27,6 +27,7 @@ export const AI_CONTENT_FORMATS = Object.freeze(['auto', 'markdown', 'html', 'te
 export const AI_PROTOCOLS = Object.freeze(['auto', 'openai', 'chatStream', 'json'])
 
 const OPENAI_DEFAULT_PATH = '/chat/completions'
+const OPENAI_DEFAULT_MODEL = 'gpt-4o-mini'
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -145,7 +146,10 @@ export function buildAIRequest(config, protocol, args) {
         : buildMessages(args.action, args.text, args.prompt, args.language, args.images),
       ...(isPlainObject(config.params) ? config.params : {}),
     }
-    if (body.model === undefined) delete body.model
+    if (body.model === undefined) {
+      if (config.baseURL) body.model = OPENAI_DEFAULT_MODEL
+      else delete body.model
+    }
     request = { url, method: 'POST', headers, body, protocol: 'openai' }
   } else {
     const body = {
@@ -160,13 +164,15 @@ export function buildAIRequest(config, protocol, args) {
     request = { url: config.endpoint, method: 'POST', headers, body, protocol }
   }
   if (typeof config.transformRequest === 'function') {
-    const patched = config.transformRequest(request, args)
-    if (isPlainObject(patched)) request = { ...request, ...patched }
+    try {
+      const patched = config.transformRequest(request, args)
+      if (isPlainObject(patched)) request = { ...request, ...patched }
+    } catch (error) {
+      throw redactProviderError(error, config, request)
+    }
   }
   return request
 }
-
-const buildRequest = buildAIRequest
 
 function decideMode(text, forceWhole) {
   if (forceWhole) return 'whole'
@@ -186,142 +192,54 @@ function decideMode(text, forceWhole) {
   return text.length >= 4096 ? 'plain' : null
 }
 
+let nativeAiTransport
+
+export function loadNativeAiTransport() {
+  return import('./http.js').then(module => { nativeAiTransport = module; return module })
+}
+
 function runEndpointStream(config, protocol, args) {
   const callbacks = args || {}
-  const onStart = typeof callbacks.onStart === 'function' ? callbacks.onStart : null
-  const onChunk = typeof callbacks.onChunk === 'function' ? callbacks.onChunk : null
-  const onDone = typeof callbacks.onDone === 'function' ? callbacks.onDone : null
-  const onCancelled = typeof callbacks.onCancelled === 'function' ? callbacks.onCancelled : null
-  const onError = typeof callbacks.onError === 'function' ? callbacks.onError : null
-
+  const fail = error => {
+    if (typeof callbacks.onError === 'function') callbacks.onError(redactProviderError(error, config, request))
+  }
   let request
   try {
-    request = buildRequest(config, protocol, callbacks)
+    request = buildAIRequest(config, protocol, callbacks)
   } catch (error) {
-    if (onError) onError(error)
+    fail(error)
     return { cancel() {} }
   }
+  const start = module => module.runHttpStream(config, request, callbacks, { decideMode, redactProviderError })
+  if (nativeAiTransport) return start(nativeAiTransport)
 
-  const parser = createFrameParser(request.protocol)
-  const decoder = createSseDecoder({
-    onEvent(event) {
-      if (settled) return
-      const result = parser.parse(event.data, event.event)
-      if (result.error) { fail(result.error); return }
-      if (result.delta) emit(result.delta)
-      if (result.done) complete()
-    },
+  let handle, pending = true
+  loadNativeAiTransport().then(module => {
+    if (pending) handle = start(module)
+  }).catch(error => {
+    if (!pending) return
+    pending = false
+    fail(error)
   })
-
-  let settled = false
-  let cancelled = false
-  let started = false
-  let mode = config.stream === false ? 'whole' : null
-  let pending = ''
-  let raw = ''
-
-  function start() {
-    if (started) return
-    started = true
-    if (onStart) onStart()
-  }
-
-  function emit(text) {
-    if (!text) return
-    start()
-    if (onChunk) onChunk(text)
-  }
-
-  function complete() {
-    if (settled) return
-    settled = true
-    start()
-    if (onDone) onDone()
-  }
-
-  function fail(error) {
-    if (settled) return
-    settled = true
-    if (onError) onError(error)
-  }
-
-  function feed(chunk) {
-    if (settled) return
-    if (mode === 'sse') { decoder.push(chunk); return }
-    if (mode === 'whole') { raw += chunk; return }
-    if (mode === 'plain') { emit(chunk); return }
-    pending += chunk
-    const decided = decideMode(pending, false)
-    if (!decided) return
-    mode = decided
-    const buffered = pending
-    pending = ''
-    if (mode === 'sse') decoder.push(buffered)
-    else if (mode === 'whole') raw += buffered
-    else emit(buffered)
-  }
-
-  const handle = postStream({
-    url: request.url,
-    method: request.method || 'POST',
-    headers: request.headers,
-    body: request.body,
-    withCredentials: config.withCredentials === true,
-    timeout: Number(config.timeout) || 0,
-    onOpen() { start() },
-    onText: feed,
-    onDone() {
-      if (settled) return
-      if (cancelled) {
-        settled = true
-        if (onCancelled) onCancelled()
-        return
-      }
-      try {
-        if (mode === 'sse') {
-          decoder.end()
-        } else if (mode === 'whole' || mode === null) {
-          const whole = extractWholeBody(raw || pending)
-          if (whole) emit(whole)
-        }
-      } catch (error) {
-        fail(error)
-        return
-      }
-      complete()
-    },
-    onError(error) {
-      if (cancelled) {
-        if (onCancelled) onCancelled()
-        settled = true
-        return
-      }
-      if (error && error.name === 'AbortError') {
-        settled = true
-        if (onCancelled) onCancelled()
-        return
-      }
-      fail(error)
-    },
-  })
-
   return {
     cancel() {
-      if (settled) return
-      cancelled = true
-      settled = true
-      handle.cancel()
-      if (onCancelled) onCancelled()
+      if (handle) { handle.cancel(); return }
+      if (!pending) return
+      pending = false
+      if (typeof callbacks.onCancelled === 'function') callbacks.onCancelled()
     },
   }
 }
 
-function redactProviderError(error, config) {
-  const key = resolveApiKey(config)
-  const message = String(error?.message || 'AI 请求失败')
-    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
-    .replace(key ? new RegExp(String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g') : /$^/g, '[redacted]')
-  const normalized = new Error(message)
+function redactProviderError(error, config, request) {
+  const authorization = Object.entries(request?.headers || {}).find(([name]) => name.toLowerCase() === 'authorization')?.[1]
+  const token = typeof authorization === 'string' ? authorization.replace(/^Bearer\s+/i, '') : ''
+  const key = config.apiKey ?? config.api_key
+  let message = String(error?.message || 'AI 请求失败').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+  for (const secret of new Set([token, key])) {
+    if (typeof secret === 'string' && secret) message = message.split(secret).join('[redacted]')
+  }
+  const normalized = new Error(message.slice(0, 256))
   normalized.code = error?.name === 'AbortError' ? 'AI_CANCELLED' : (error?.code || 'AI_PROVIDER_ERROR')
   normalized.status = error?.status
   return normalized
@@ -384,7 +302,7 @@ function runDirectRequestStream(config, protocol, args) {
   const start = () => { if (!started) { started = true; onStart?.() } }
   const emit = text => { if (text) { start(); onChunk?.(text) } }
   const complete = () => { if (!settled) { settled = true; start(); callbacks.onDone?.() } }
-  const fail = error => { if (!settled) { settled = true; onError?.(redactProviderError(error, config)) } }
+  const fail = error => { if (!settled) { settled = true; onError?.(redactProviderError(error, config, request)) } }
   const feed = chunk => {
     if (settled) return
     if (mode === 'sse') { decoder.push(chunk); return }
@@ -419,6 +337,7 @@ function runDirectRequestStream(config, protocol, args) {
         withCredentials: config.withCredentials === true,
         timeout: Number(config.timeout) || 0,
       }, callbacks)
+      if (settled || cancelled) return
       if (response?.ok === false || Number(response?.status) >= 400) {
         const error = new Error(`AI 接口返回 HTTP ${response?.status || 0}`)
         error.status = response?.status
@@ -454,5 +373,5 @@ export function normalizePreviewHtml(text, contentFormat) {
 
 export { previewToHtml, markdownToHtml, looksLikeMarkdown, plainTextToHtml, singleParagraphInner } from './markdown'
 export { buildMessages, buildUserPrompt, resolveSystemPrompt, ACTION_PROMPTS } from './prompt'
-export { createSseDecoder, postStream, looksLikeSse } from './transport'
+export { createSseDecoder, looksLikeSse } from './transport'
 export { createFrameParser, extractWholeBody, pickText, PROTOCOL_NAMES } from './protocol'

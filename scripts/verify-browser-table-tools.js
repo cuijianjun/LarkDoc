@@ -21,8 +21,8 @@
  *      用 syncChildren 在同一条 bar 上真摘除/插入：v12c 后文字态 11 个 data-cmd、
  *      选择条态 14 个 data-cmd（B 比 A 多 3 颗表格专属按钮、去掉 link、末尾多 remove）。
  *      v12 反馈④（「选中两个单元格或者多个，功能栏浮窗的按钮不对」）后共有**三种上下文**
- *      （`buildTableToolsState().cellKind`）：文字态 text 10 项 / 整行整列 line 13 项 /
- *      **拖选两个及以上单元格 multi 11 项**（局部 CellSelection，飞书形态 E：开头 合并/背景、
+ *      （`buildTableToolsState().cellKind`）：文字态 text 11 项 / 整行整列 line 14 项 /
+ *      **拖选两个及以上单元格 multi 12 项**（局部 CellSelection，飞书形态 E：开头 合并/背景、
  *      没有 table-header、没有 remove、末尾收在 more）。
  *      ⚠️ v12c：`share-link`（假 `#pos=` 链接、无 hash 解析 / 无宿主接线）与 `comment`
  *      （无 Provider 时只有本地 mark、无评论面板）都已下线，全页不得再出现这两个
@@ -77,22 +77,22 @@ const results = []
 // 两态菜单按钮集合、「更多」保留 2 项与被删 5 项、「转换为」11 个菜单项、对齐 8 个菜单项。
 const EXPECTED_CMDS_A = [
   'ask-ai',   'turninto', 'align', 'bold', 'strike', 'italic', 'underline',
-  'link', 'code', 'highlight', 'more', 'share-link',
+  'link', 'code', 'highlight', 'more',
 ]
 const EXPECTED_CMDS_B = [
   'ask-ai',   'table-header', 'merge-cell', 'cell-bg', 'turninto', 'align',
-  'bold', 'strike', 'italic', 'underline', 'code', 'highlight', 'more', 'share-link', 'remove',
+  'bold', 'strike', 'italic', 'underline', 'code', 'highlight', 'more', 'remove',
 ]
 // toolbarItems('text') = [TURN, ALIGN, DIV, ...MARKS, FULL_DIV, ...TAIL]
 // → 10 button + 2 span（其中 1 条 .is-full）；toolbarItems('line') 多一组 CELL_* 与前置
 // DIV、末尾 REMOVE → 13 button + 3 span。条数由 tag 序列推导，不沿用 v10 的 18 按钮 / 4 分隔线。
 const EXPECTED_BAR_TAGS_A = [
   'button', 'span',   'button', 'button', 'span', 'button', 'button', 'button', 'button', 'button',
-  'button', 'button', 'span', 'button', 'button',
+  'button', 'button', 'span', 'button',
 ]
 const EXPECTED_BAR_TAGS_B = [
   'button', 'span',   'button', 'button', 'button', 'span', 'button', 'button', 'span', 'button',
-  'button', 'button', 'button', 'button', 'button', 'span', 'button', 'button', 'button',
+  'button', 'button', 'button', 'button', 'button', 'span', 'button', 'button',
 ]
 const SEP_A = EXPECTED_BAR_TAGS_A.filter((t) => t === 'span').length
 const SEP_B = EXPECTED_BAR_TAGS_B.filter((t) => t === 'span').length
@@ -100,13 +100,13 @@ const SEP_B = EXPECTED_BAR_TAGS_B.filter((t) => t === 'span').length
 // 开头是 合并单元格 / 单元格背景（🔴 没有 table-header），末尾是 more（🔴 不是 remove、也不是已下线的评论）。
 const EXPECTED_CMDS_E = [
   'ask-ai',   'merge-cell', 'cell-bg', 'turninto', 'align', 'bold', 'strike',
-  'italic', 'underline', 'code', 'highlight', 'more', 'share-link',
+  'italic', 'underline', 'code', 'highlight', 'more',
 ]
 // toolbarItems('multi') = [MERGE, BG, DIV, TURN, ALIGN, DIV, ...MARKS(去 link),
 // FULL_DIV, ...TAIL] → 11 button + 3 span（其中 1 条 .is-full）。
 const EXPECTED_BAR_TAGS_E = [
   'button', 'span',   'button', 'button', 'span', 'button', 'button', 'span', 'button', 'button',
-  'button', 'button', 'button', 'button', 'span', 'button', 'button',
+  'button', 'button', 'button', 'button', 'span', 'button',
 ]
 const SEP_E = EXPECTED_BAR_TAGS_E.filter((t) => t === 'span').length
 const MARK_CMDS = ['bold', 'strike', 'italic', 'underline', 'code']
@@ -651,7 +651,7 @@ const cellDragPoints = () => {
       && nodeA.rootChildTags.every((t) => t === 'div'),
     nodeA ? `mode=${nodeA.mode} hasModeAttr=${nodeA.hasModeAttr} [${nodeA.classes.join('.')}] root=[${nodeA.rootChildClasses.join(' | ')}] menu=${nodeA.menuCount}` : '没渲染')
 
-  record('[状态 A] 12 个 data-cmd 齐全且顺序 = v12c 文字态工具条（含分享，无未配置的评论）',
+  record('[状态 A] 11 个 data-cmd 齐全且顺序符合默认文字态',
     !!nodeA && JSON.stringify(nodeA.cmds) === JSON.stringify(EXPECTED_CMDS_A),
     nodeA ? nodeA.cmds.join(',') : '没渲染')
 
@@ -663,14 +663,14 @@ const cellDragPoints = () => {
   record('[当前飞书] 工具条首项为唯一问问AI入口',
     askAiAudit.count === 1 && askAiAudit.first === 'ask-ai' && askAiAudit.label === '问问AI', JSON.stringify(askAiAudit))
 
-  record('[状态 A] bar 内 12 按钮 + 3 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(text)',
+  record('[状态 A] bar 内 11 按钮 + 3 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(text)',
     !!nodeA && JSON.stringify(nodeA.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_A)
       && nodeA.buttons.length === EXPECTED_CMDS_A.length && nodeA.separators === SEP_A && nodeA.fullSeparators === 1,
     nodeA ? `${nodeA.barChildTags.join(',')} sep=${nodeA.separators} full=${nodeA.fullSeparators}` : '没渲染')
 
   record('[状态 A syncChildren] 文字态真摘除表格专属 3 颗与 remove（不在 DOM），link 挂在（B 态才反）',
     !!nodeA && TABLE_ONLY_CMDS.every((cmd) => !nodeA.cmds.includes(cmd)) && !nodeA.cmds.includes('remove')
-      && nodeA.cmds.includes('link') && nodeA.cmds.includes('share-link') && !nodeA.cmds.includes('comment')
+      && nodeA.cmds.includes('link') && !nodeA.cmds.includes('share-link') && !nodeA.cmds.includes('comment')
       && (await page.evaluate(() => document.querySelectorAll('.lark-doc-table-tools-btn[data-cmd="table-header"], .lark-doc-table-tools-btn[data-cmd="remove"]').length)) === 0,
     nodeA ? `[${nodeA.cmds.join(',')}]` : '没渲染')
 
@@ -696,7 +696,7 @@ const cellDragPoints = () => {
       && nodeA.buttons.filter((b) => b.haspopup === 'menu' && b.hasCaretSpan).length === 3,
     nodeA ? `[${nodeA.buttons.filter((b) => b.haspopup === 'menu').map((b) => `${b.cmd}:${b.expanded}`).join(',')}]` : '没渲染')
 
-  record('[v11 图标] 所有按钮都是 SVG 图标（span.lark-doc-table-tools-icon.lark-doc-icon > svg，16×16），无字符 .lark-doc-table-tools-glyph 节点',
+  record('[v11 图标] 所有按钮都是 SVG 图标（span.lark-doc-table-tools-icon.lark-doc-icon > svg），无字符 .lark-doc-table-tools-glyph 节点',
     !!nodeA && nodeA.buttons.length === EXPECTED_CMDS_A.length && nodeA.buttons.every((b) => b.iconOk)
       && nodeA.buttons.every((b) => !b.hasGlyph) && nodeA.glyphNodes === 0,
     nodeA ? `iconOk=${nodeA.buttons.filter((b) => b.iconOk).length}/${nodeA.buttons.length} glyph=${nodeA.glyphNodes}` : '没渲染')
@@ -742,8 +742,8 @@ const cellDragPoints = () => {
         || (b.getAttribute('aria-label') || '').trim() === label).length)
     return { byCmd, byLabel, cmds, names }
   })
-  record('[配置门禁] 分享入口可查看，未配置评论服务不显示评论，不存在旧复制选区链接伪入口',
-    JSON.stringify(v12cRemoved.byCmd) === '[1,0]' && v12cRemoved.byLabel.every((n) => n === 0),
+  record('[配置门禁] 默认未挂载分享、评论和旧复制选区链接',
+    JSON.stringify(v12cRemoved.byCmd) === '[0,0]' && v12cRemoved.byLabel.every((n) => n === 0),
     `byCmd=${JSON.stringify(v12cRemoved.cmds.map((c, i) => `${c}:${v12cRemoved.byCmd[i]}`))} byLabel=${JSON.stringify(v12cRemoved.names.map((c, i) => `${c}:${v12cRemoved.byLabel[i]}`))}`)
 
   record('[v11 图标] 4 个 caret 按钮的箭头是 12px SVG（span.lark-doc-caret.lark-doc-icon > svg），无字符 .lark-doc-table-tools-caret 节点',
@@ -953,8 +953,8 @@ const cellDragPoints = () => {
       || (b.getAttribute('aria-label') || '').trim() === label).length)
     return { byCmd, menuCopy, commentMenu, labelControls }
   })
-  record('[配置门禁复查] more打开仍保留独立分享按钮，无未配置评论与旧复制伪入口',
-    moreSnap.node?.menuName === 'more' && JSON.stringify(downlineAudit.byCmd) === '[1,0]'
+  record('[配置门禁复查] 打开更多时分享、评论和旧复制入口均为零',
+    moreSnap.node?.menuName === 'more' && JSON.stringify(downlineAudit.byCmd) === '[0,0]'
       && downlineAudit.menuCopy === 0 && downlineAudit.commentMenu === 0
       && downlineAudit.labelControls.every((n) => n === 0),
     `menu=${moreSnap.node?.menuName} byCmd=[${downlineAudit.byCmd.join(',')}] menuCopy=${downlineAudit.menuCopy} commentMenu=${downlineAudit.commentMenu} labelControls=[${downlineAudit.labelControls.join(',')}]`)
@@ -1171,9 +1171,9 @@ const cellDragPoints = () => {
     nodeB ? `marker=${nodeB.rootMarker} A=[${cmdsA.join(',')}] B=[${nodeB.cmds.join(',')}] mode=${nodeB.mode} [${nodeB.classes.join('.')}]` : '没渲染')
 
   const boldSameNode = await page.evaluate(() => !!document.querySelector('.lark-doc-table-tools-btn[data-cmd="bold"][data-verify-btn="1"]'))
-  record('[状态 B syncChildren] 按钮节点一次建好、按上下文挂摘：A 标记的 bold 仍是同一节点，link 真摘除、share-link保持可用、未配置comment隐藏、表格专属 3 颗 + remove 真插入',
+  record('[状态 B syncChildren] 按钮节点一次建好、按上下文挂摘：A 标记的 bold 仍是同一节点，link 真摘除、分享和评论入口为零、表格专属 3 颗 + remove 真插入',
     !!nodeB && boldSameNode
-      && !nodeB.cmds.includes('link') && nodeB.cmds.includes('share-link') && !nodeB.cmds.includes('comment')
+      && !nodeB.cmds.includes('link') && !nodeB.cmds.includes('share-link') && !nodeB.cmds.includes('comment')
       && TABLE_ONLY_CMDS.every((cmd) => nodeB.cmds.includes(cmd)) && nodeB.cmds.includes('remove'),
     nodeB ? `boldSame=${boldSameNode} A=[${cmdsA.join(',')}] B=[${nodeB.cmds.join(',')}]` : '没渲染')
 
@@ -1236,7 +1236,7 @@ const cellDragPoints = () => {
       && TABLE_ONLY_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd && !b.hasCaret && !b.hasCaretSpan)),
     nodeB ? `caret=[${nodeB.buttons.filter((b) => b.hasCaret).map((b) => b.cmd).join(',')}] tableOnly=[${TABLE_ONLY_CMDS.map((c) => `${c}:${nodeB.buttons.find((b) => b.cmd === c)?.hasCaret}`).join(',')}]` : '没渲染')
 
-  record('[状态 B 统一] 13 按钮 + 3 条 sep（其中 1 条 .is-full），bar 子节点序列精确 = toolbarItems(line)',
+  record('[状态 B 统一] 14 按钮 + 4 条 sep（其中 1 条 .is-full），bar 子节点序列精确 = toolbarItems(line)',
     !!nodeB && nodeB.buttons.length === EXPECTED_CMDS_B.length && nodeB.separators === SEP_B && nodeB.fullSeparators === 1
       && JSON.stringify(nodeB.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_B)
       && MARK_CMDS.every((cmd) => nodeB.buttons.some((b) => b.cmd === cmd))
@@ -1314,14 +1314,14 @@ const cellDragPoints = () => {
   // 从 B 切回 A：syncChildren 真摘除表格专属 3 颗 + remove、插回 link；
   // v12c 已下线的 share-link / comment 不得被 syncBar 顺手挂回来。
   const snapBack = await openTextSelection(page, geoB3)
-  record('[统一浮窗] B → A → 回到 11 个 data-cmd、items 真摘除/插回、无 mode 属性、bar 序列精确、分享仍可见、未配置评论隐藏',
+  record('[统一浮窗] B → A → 回到 11 个 data-cmd、items 真摘除/插回、无 mode 属性、bar 序列精确、分享与评论入口为零',
     snapBack.count === 1 && !!snapBack.node && snapBack.node.mode === null && !snapBack.node.hasModeAttr
       && JSON.stringify(snapBack.node.cmds) === JSON.stringify(cmdsA)
       && JSON.stringify(snapBack.node.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_A)
       && snapBack.node.buttons.length === EXPECTED_CMDS_A.length && snapBack.node.separators === SEP_A
       && !snapBack.node.cmds.includes('remove') && TABLE_ONLY_CMDS.every((c) => !snapBack.node.cmds.includes(c))
       && snapBack.node.cmds.includes('link')
-      && snapBack.node.cmds.includes('share-link') && !snapBack.node.cmds.includes('comment')
+      && !snapBack.node.cmds.includes('share-link') && !snapBack.node.cmds.includes('comment')
       && !snapBack.node.hasLabel && snapBack.node.selectCount === 0,
     snapBack.node ? `mode=${snapBack.node.mode} cmds=${snapBack.node.cmds.length} sep=${snapBack.node.separators} [${snapBack.node.cmds.join(',')}]` : '没渲染')
 
@@ -1368,18 +1368,18 @@ const cellDragPoints = () => {
       dragInfo.selectedCells >= 2 && snap.count === 1 && snap.legacy === 0,
       `selectedCell=${dragInfo.selectedCells} tools=${snap.count} legacy=${snap.legacy}`)
 
-    record('[状态 E] 13 个 data-cmd 齐全且顺序 = 当前多格拖选形态 E（开头 合并/背景、无 table-header、末尾 more）',
+    record('[状态 E] 12 个 data-cmd 齐全且顺序 = 当前多格拖选形态 E（开头 合并/背景、无 table-header、末尾 more）',
       !!nodeE && JSON.stringify(cmdsE) === JSON.stringify(EXPECTED_CMDS_E),
       nodeE ? nodeE.cmds.join(',') : `没渲染（selectedCell=${dragInfo.selectedCells} tools=${snap.count}）`)
 
-    record('[状态 E] 末尾为独立share-link；未配置评论隐藏，table-header与remove不出现在multi态',
-      !!nodeE && cmdsE[cmdsE.length - 1] === 'share-link'
+    record('[状态 E] 末尾为更多；分享、评论、table-header 和 remove 数量为零',
+      !!nodeE && cmdsE[cmdsE.length - 1] === 'more'
         && !cmdsE.includes('table-header') && !cmdsE.includes('remove')
-        && !cmdsE.includes('comment') && cmdsE.includes('share-link')
+        && !cmdsE.includes('comment') && !cmdsE.includes('share-link')
         && (await page.evaluate(() => document.querySelectorAll('.lark-doc-table-tools-btn[data-cmd="table-header"], .lark-doc-table-tools-btn[data-cmd="remove"]').length)) === 0,
       nodeE ? `末尾=${cmdsE[cmdsE.length - 1]} header/remove/下线两按钮皆无` : '没渲染')
 
-    record('[状态 E] bar 内 13 按钮 + 4 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(multi)',
+    record('[状态 E] bar 内 12 按钮 + 4 条 sep（其中 1 条 .is-full），子节点序列精确 = toolbarItems(multi)',
       !!nodeE && nodeE.buttons.length === EXPECTED_CMDS_E.length && nodeE.separators === SEP_E && nodeE.fullSeparators === 1
         && JSON.stringify(nodeE.barChildTags) === JSON.stringify(EXPECTED_BAR_TAGS_E),
       nodeE ? `${nodeE.barChildTags.join(',')} sep=${nodeE.separators} full=${nodeE.fullSeparators}` : '没渲染')
@@ -1781,6 +1781,39 @@ const cellDragPoints = () => {
     `before=${printBefore} count=${printSnap.count} display=${printSnap.display} rects=${printSnap.clientRects}`)
   await page.emulateMedia({ media: 'screen' })
   await page.waitForTimeout(160)
+
+  const desktop = page.viewportSize()
+  await page.setViewportSize({ width: 393, height: 850 })
+  await setDoc(page)
+  const narrowGeo = await page.evaluate(tableGeometry)
+  await openTextSelection(page, narrowGeo)
+  const narrowToolbar = page.locator('.lark-doc-table-tools')
+  const narrowLayout = await narrowToolbar.evaluate(el => {
+    const bar = el.querySelector('.lark-doc-table-tools-bar')
+    const edge = el.getBoundingClientRect().right
+    return {
+      fits: bar.scrollWidth <= bar.clientWidth + 1 && [...bar.querySelectorAll('button')]
+        .every(button => button.getBoundingClientRect().right <= edge && button.getBoundingClientRect().right <= innerWidth),
+      barHeight: Math.round(bar.getBoundingClientRect().height),
+    }
+  })
+  record('[窄屏] 表格工具条换行，全部按钮位于浮窗内', narrowLayout.fits && narrowLayout.barHeight > 24, JSON.stringify(narrowLayout))
+  const convert = narrowToolbar.locator('[data-cmd="turninto"]')
+  const convertMenu = narrowToolbar.locator('[data-menu="turninto"]')
+  await convert.hover()
+  const convertBox = await convert.boundingBox()
+  const convertMenuBox = await convertMenu.boundingBox()
+  const gapFromButton = convertMenuBox.y - convertBox.y - convertBox.height
+  record('[窄屏] 第一行下拉紧贴实际按钮', gapFromButton >= 3 && gapFromButton <= 6, `gap=${gapFromButton}`)
+  const paragraph = await convertMenu.locator('[data-value="paragraph"]').boundingBox()
+  await page.mouse.move(paragraph.x + paragraph.width / 2, paragraph.y + paragraph.height / 2, { steps: 12 })
+  await page.waitForTimeout(200)
+  record('[窄屏] 连续移入第一行下拉菜单，保持当前菜单可选', await convertMenu.isVisible())
+  await page.mouse.click(paragraph.x + paragraph.width / 2, paragraph.y + paragraph.height / 2)
+  await narrowToolbar.locator('[data-cmd="more"]').click()
+  record('[窄屏] 点击末尾更多打开菜单', await narrowToolbar.locator('[data-menu="more"]').isVisible())
+  await page.keyboard.press('Escape')
+  await page.setViewportSize(desktop)
 
   // ═════════════ ⑦ 只读态 ═════════════
   await page.evaluate(selectCell, 0)

@@ -30,6 +30,8 @@ const BASE = process.argv[2] || 'http://localhost:8080/lark-doc'
 const results = []
 
 function findChromium() {
+  const installed = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (process.platform === 'darwin' && fs.existsSync(installed)) return installed
   const cache = path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright')
   if (!fs.existsSync(cache)) return null
   const dirs = fs.readdirSync(cache).filter((name) => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1]))
@@ -141,11 +143,6 @@ const measureFab = () => {
 
 const readFab = (page) => page.evaluate(measureFab)
 
-const moveTo = async (page, x, y) => {
-  await page.mouse.move(x, y)
-  await page.waitForTimeout(60)
-}
-
 /** 把指针挪到远处正文上（mouseleave → hideLater），并等够 160ms 窗口。 */
 const parkPointer = async (page) => {
   await page.mouse.move(600, 500)
@@ -161,22 +158,16 @@ const parkPointer = async (page) => {
  */
 const hoverFab = async (page) => {
   await parkPointer(page)
-  const snap = await readFab(page)
-  await moveTo(page, snap.button.centerX, snap.button.centerY)
-  await page.waitForTimeout(140)
+  await page.getByRole('button', { name: '帮助', exact: true }).hover()
+  await page.getByRole('menu', { name: '帮助菜单' }).waitFor()
 }
 
 const clickMenuItem = async (page, label) => {
-  await page.evaluate((text) => {
-    const item = [...document.querySelectorAll('.lark-doc-help-menu-item')]
-      .find((node) => node.textContent.trim() === text)
-    if (item) item.click()
-  }, label)
-  await page.waitForTimeout(280)
+  await page.getByRole('menuitem', { name: label, exact: true }).click()
 }
 
 ;(async () => {
-  const browser = await chromium.launch({ headless: true, executablePath: findChromium() || undefined })
+  const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath: findChromium() || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const errors = []
@@ -357,8 +348,15 @@ const clickMenuItem = async (page, label) => {
     afterNoop.menu === null && afterNoop.drawerInDom === false,
     `menu=${afterNoop.menu} drawer=${afterNoop.drawerInDom}`)
 
+  await page.evaluate(() => window.__larkDoc.patchProps({ config: { help: { onAction: action => { window.__helpAction = action } } } }))
+  await hoverFab(page)
+  await clickMenuItem(page, '帮助中心')
+  const helpAction = await page.evaluate(() => window.__helpAction)
+  record('[落点] 宿主配置帮助动作后，真实点击通知宿主 ID 和文案', helpAction?.id === 'help-center' && helpAction?.label === '帮助中心')
+
   await hoverFab(page)
   await clickMenuItem(page, '快捷键')
+  await page.locator('.lark-doc-help-drawer').waitFor()
   const afterShortcuts = await readFab(page)
   record('[落点] 点「快捷键」→ 菜单收起 + 快捷键抽屉打开（`.lark-doc-help-drawer`）',
     afterShortcuts.menu === null && afterShortcuts.drawerInDom === true,

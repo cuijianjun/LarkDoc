@@ -26,7 +26,7 @@ function placeFloatingToolbar(el, anchor) {
   if (!win) return
   el.style.maxWidth = ''
   const rect = el.getBoundingClientRect()
-  const vw = win.innerWidth || el.ownerDocument.documentElement.clientWidth || 0
+  const vw = el.ownerDocument.documentElement.clientWidth || win.innerWidth || 0
   const vh = win.innerHeight || el.ownerDocument.documentElement.clientHeight || 0
   const gap = 12
   const pad = 8
@@ -402,6 +402,18 @@ export function createTableTools({ host, handlers = {} }) {
     syncChildren(el, [{ node: bar, on: true }])
   }
 
+  function positionOpenMenu() {
+    if (!openMenuNode) return
+    const trigger = buttons.get(openMenuName)
+    if (!bar.contains(trigger)) { closeMenus(); return }
+    const toolbarRect = el.getBoundingClientRect()
+    const triggerRect = trigger.getBoundingClientRect()
+    const menuWidth = openMenuNode.getBoundingClientRect().width
+    openMenuNode.style.left = `${Math.max(0, Math.min(toolbarRect.width - menuWidth, triggerRect.left - toolbarRect.left))}px`
+    const aboveLastRow = triggerRect.bottom < bar.getBoundingClientRect().bottom - 1
+    openMenuNode.style.top = aboveLastRow ? `${triggerRect.bottom - toolbarRect.top - el.clientTop + 4}px` : ''
+  }
+
   function openMenu(name, btn, viaHover) {
     if (destroyed || !lastState.open || !btn.isConnected) return
     // 指针从弹层回到触发按钮时，必须先把 mouseleave 排下的关闭取消掉。
@@ -422,11 +434,7 @@ export function createTableTools({ host, handlers = {} }) {
     openMenuNode.addEventListener('mouseenter', cancelClose)
     openMenuNode.addEventListener('mouseleave', scheduleClose)
     syncChildren(el, [{ node: bar, on: true }, { node: openMenuNode, on: true }])
-    // 菜单贴触发按钮左沿，右侧不越出浮窗；宽度量完再钳一次。
-    const er = el.getBoundingClientRect()
-    const br = btn.getBoundingClientRect()
-    const mw = openMenuNode.getBoundingClientRect().width || 220
-    openMenuNode.style.left = `${Math.max(0, Math.min(er.width - mw, br.left - er.left))}px`
+    positionOpenMenu()
   }
 
   /** hover / focus 预开后首次点击保留，下一次点击可关闭。 */
@@ -549,6 +557,7 @@ export function createTableTools({ host, handlers = {} }) {
     })
     mountNode(host, el, true)
     placeFloatingToolbar(el, state.anchor)
+    positionOpenMenu()
   }
 
   return {

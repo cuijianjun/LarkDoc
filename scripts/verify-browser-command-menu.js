@@ -94,6 +94,7 @@ const measureMenu = () => {
       disabled: button.disabled,
       ariaDisabled: button.getAttribute('aria-disabled'),
       active: button.classList.contains('active'),
+      background: getComputedStyle(button).backgroundColor,
       skip: button.classList.contains('is-skip'),
       expanded: button.getAttribute('aria-expanded'),
       haspopup: button.getAttribute('aria-haspopup'),
@@ -289,7 +290,12 @@ async function hoverSubmenuTrigger(page, label) {
   record('[斜杠] 首项是 `paragraph`「正文」且带 active、data-tier=required',
     !!slash && slash.buttons[0].id === 'paragraph' && slash.buttons[0].label === '正文'
     && slash.buttons[0].active === true && slash.buttons[0].tier === 'required',
-    slash ? `${slash.buttons[0].id}/${slash.buttons[0].label} active=${slash.buttons[0].active} tier=${slash.buttons[0].tier}` : '')
+    slash ? `${slash.buttons[0].id}/${slash.buttons[0].label} active=${slash.activeId} tier=${slash.buttons[0].tier}` : '')
+
+  await page.locator('.lark-doc-command-menu [data-command-id="heading1"]').hover()
+  await page.mouse.move(20, 20)
+  const afterHover = await page.evaluate(measureMenu)
+  record('[斜杠] 实际移入更新高亮，移出保留最后导航项', afterHover?.activeId === 'heading1')
 
   record('[斜杠] 项是 `<button type=button role=menuitem>`，图标签 aria-hidden、文字进 `.lark-doc-command-label`',
     !!slash && slash.buttons.every((button) => button.role === 'menuitem')
@@ -634,14 +640,16 @@ async function hoverSubmenuTrigger(page, label) {
 
   // ——————————————————— ⑪ plus 菜单：键盘 + 点选 ———————————————————
   await openPlusMenu(page)
+  const beforePlusDown = await page.evaluate(measureMenu)
   await page.keyboard.press('ArrowDown')
   await page.waitForTimeout(90)
   const plusMoved = await page.evaluate(() => {
     const button = document.querySelector('.lark-doc-command-section > button.active')
     return button ? button.dataset.commandId : ''
   })
-  record('[plus] 搜索框内按 ↓ 移动高亮（不被输入框吃掉）',
-    !!plusMoved && plusMoved !== 'paragraph',
+  const afterPlusDown = await page.evaluate(measureMenu)
+  record('[plus] 首次 ↓ 高亮第一个快捷项且有可见背景',
+    plusMoved === 'heading1' && afterPlusDown?.buttons[0].background !== beforePlusDown?.buttons[0].background,
     `高亮=${plusMoved}`)
 
   await page.keyboard.press('Escape')

@@ -53,7 +53,7 @@ const groups = {
   office: ['office.buildDocx', 'office.docx', 'office.mammoth'],
   // 面板包按触发时机拆成两支：ui 守选区/悬浮/表格/顶栏，ui.panels 守侧栏面板
   // 与对话框。加载槽位与包名一一对应，createDeferredUi 只拉自己那一个。
-  ui: ['ui'], uiPanels: ['ui.panels'],
+  ui: ['ui'], uiPanels: ['ui.panels', 'ui.aiHttp'],
   document: ['document.segmented', 'document.pagedView', 'document.pagedImport', 'document.shareLinks', 'document.shareLinkAccess'],
   // 导出/导入编排与远程转换：源码里就是点「导出」「导入」才 import()，单文件 UMD
   // 会把它压回首屏，所以单独出包，等真正点下去再拉。
@@ -63,7 +63,7 @@ const groups = {
   uiExtra: ['ui.documentInformation', 'ui.headingNumberMenu'],
   // 字节上传通道与转换/版本回执。后台统计（editor.documentSnapshot）留在内核，
   // 理由同上：documentSnapshot → documentStats → documentOperations 会带进 PM 全家。
-  background: ['media.httpUpload', 'media.fileUploadTasks', 'session.resourceOutcome', 'versioning.snapshot'],
+  background: ['media.videoPopups', 'media.imageOutput', 'media.httpUpload', 'media.fileUploadTasks', 'session.resourceOutcome', 'versioning.snapshot'],
 }
 for (const group of Object.keys(groups)) {
   for (const name of groups[group]) {

@@ -438,6 +438,9 @@ function sharedHostShim(name, names = declaredExports(readFileSync(sharedHostNam
  * 因此不产生任何「UI 未到时显示什么」的新语义。
  */
 export const LAZY_PACKAGE_CALLERS = new Map([
+  [resolve(ROOT, 'src/components/lark-doc/ai/index.js'), [
+    ['src/components/lark-doc/ai/http.js', 'ui.aiHttp'],
+  ]],
   [resolve(ROOT, 'src/components/lark-doc/editor/exportMixin.js'), [
     ['src/utils/export/index.js', 'export.api'],
     ['src/utils/remoteConversion.js', 'export.remoteConversion'],
@@ -461,6 +464,18 @@ export const LAZY_PACKAGE_CALLERS = new Map([
   ]],
   [resolve(ROOT, 'src/components/lark-doc/editor/topbarMoreMixin.js'), [
     ['src/ui/documentInformation.js', 'ui.documentInformation'],
+  ]],
+  [resolve(ROOT, 'src/workspace/workspaceAIContextMethods.js'), [
+    ['src/core/media/image-output.js', 'media.imageOutput'],
+  ]],
+  [resolve(ROOT, 'src/core/media/image-crop.js'), [
+    ['src/core/media/image-output.js', 'media.imageOutput'],
+  ]],
+  [resolve(ROOT, 'src/core/nodeviews/image-viewer.js'), [
+    ['src/core/media/image-output.js', 'media.imageOutput'],
+  ]],
+  [resolve(ROOT, 'src/core/nodeviews/file-block.js'), [
+    ['src/core/nodeviews/video-popups.js', 'media.videoPopups'],
   ]],
   [resolve(ROOT, 'src/core/media/upload.js'), [
     ['src/core/media/http-upload.js', 'media.httpUpload'],
@@ -514,7 +529,7 @@ function packageAlias(target = '') {
   return {
     name: 'lark-doc-package-alias',
     resolveId(source, importer) {
-      if (target === 'feature:background:umd' && uploadPmImporters.has(importer) && Object.hasOwn(uploadPmExports, source)) return SHARED_HOST_ENTRY + source
+      if (target === 'feature:background:umd' && uploadPmImporters.has(importer) && Object.prototype.hasOwnProperty.call(uploadPmExports, source)) return SHARED_HOST_ENTRY + source
       // 与内核同版本部署的两支 UI 包：重复模块只留转发 shim，实现体读内核那一份。
       if (SHARED_HOST_TARGETS.has(target) && importer && source.startsWith('.') && !importer.startsWith('\0')) {
         const file = resolve(dirname(importer), source)
@@ -621,7 +636,7 @@ function packageAlias(target = '') {
     load(id) {
       if (id.startsWith(SHARED_HOST_ENTRY)) {
         const name = id.slice(SHARED_HOST_ENTRY.length)
-        if (Object.hasOwn(uploadPmExports, name)) return sharedHostShim(name, uploadPmExports[name])
+        if (Object.prototype.hasOwnProperty.call(uploadPmExports, name)) return sharedHostShim(name, uploadPmExports[name])
         this.addWatchFile?.(sharedHostNames.get(name))
         return sharedHostShim(name)
       }
