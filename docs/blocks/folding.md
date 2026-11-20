@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="folding" />
@@ -75,28 +58,6 @@ import 'lark-doc/style.css'
 - 删除某个块只带走它自己的折叠状态，不会串到相邻的同名块上。
 
 折叠偏好按文档（`documentId`，无则 `local`）写入 `localStorage`，刷新 / 重新打开后自动恢复。
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { folding: true },   // 关闭后箭头与菜单项隐藏
-  documentId: 'doc-42',          // 决定折叠偏好存哪个键；Web Component 用 document-id 属性
-  // 子块靠 data-indent 缩进挂在父块下面（= 飞书块模型里的父子关系）
-  content: '<h2>第一节</h2><p data-indent="1">…</p><h2>第二节</h2><p data-indent="1">…</p>',
-})
-```
-
-```ts
-// 命令式（editor 是 Tiptap 实例）
-const editor = doc.getEditor()
-
-editor.commands.toggleLarkDocFold(pos)         // 按文档位置切换（内部换算成 blockId）
-editor.commands.toggleLarkDocFoldById(id)      // 已知 blockId 时直接切换
-editor.commands.resetLarkDocFolds()            // 全部展开
-editor.commands.foldLarkDocByIds(['b1', 'b2']) // 按 id 批量折叠（宿主自建大纲 / 书签时用）
-```
 
 ## 配置与用法
 

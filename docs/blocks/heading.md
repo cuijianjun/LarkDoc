@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="heading" />
@@ -56,18 +39,6 @@ import 'lark-doc/style.css'
 折叠与高亮**不是标题专属**：段落、列表项只要挂了缩进子块，同样能折叠并整块高亮；详见[折叠块](/blocks/folding)。
 
 标题还能挂**编号**（飞书的「标题编号」= 给标题挂有序列表编号），编号是块级 UI、不在正文文本里，详见[标题编号](#标题编号)。
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  title: '未命名文档',          // 文档标题
-  features: { headings: true }, // 关闭后标题菜单不可用
-  toolbarKeys: ['headings'],    // 工具栏保留标题分组
-  content: '<h2>二级标题</h2><p>正文…</p>',
-})
-```
 
 ## 配置与用法
 

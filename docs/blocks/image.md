@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="image" />
@@ -46,25 +29,6 @@ import 'lark-doc/style.css'
 | `uploader.upload` | 宿主接管上传；不提供时转 base64 本地预览。 | `(file, ctx) => Promise<UploadResult>` | — | 内置本地读取 |
 | `network.mode` | 外链图片策略，见[网络策略](/blocks/network)。 | `string` | open / allowlist / offline | `'open'` |
 | `network.imageProxy` | 把外链图转存成本地地址。 | `(url) => Promise<string>` | — | — |
-
-## 配置
-
-```js
-new LarkDoc({
-  element: '#editor',
-  features: { images: true },
-  limits: { maxImageSize: 5 * 1024 * 1024 },     // 单张 5MB
-  uploader: {
-    upload: async (file, ctx) => {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', body: form, signal: ctx.signal })
-      const data = await res.json()
-      return { url: data.url, attchId: data.id }   // attchId 可选，会随 JSON 一起保存
-    },
-  },
-})
-```
 
 ## 上传生命周期
 

@@ -1,11 +1,24 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { withBase } from 'vitepress'
-import { demoSource, featureDemos } from './feature-demos.js'
+import { demoModes, demoSource, examplesFor, featureDemos, requiredFeatures } from './feature-demos.js'
 
 const props = defineProps({ name: { type: String, required: true } })
-const demo = computed(() => featureDemos[props.name])
-const runner = computed(() => withBase('/examples/feature-runner.html?demo=' + encodeURIComponent(props.name)))
+const examples = computed(() => examplesFor(featureDemos[props.name]))
+const mode = ref('full')
+const example = ref('basic')
+const demo = computed(() => examples.value.find(item => item.example === example.value))
+const runner = computed(() => {
+  const query = new URLSearchParams({ demo: props.name, mode: mode.value, example: example.value })
+  return withBase('/examples/feature-runner.html?' + query)
+})
+const importCode = computed(() => {
+  const imports = [`import { LarkDoc } from '${demoModes[mode.value].entry}'`, "import 'lark-doc/style.css'"]
+  const features = requiredFeatures(demo.value, mode.value)
+  if (features.includes('math')) imports.push("import 'lark-doc/dist/features/math.css'")
+  for (const feature of features) imports.push(`await import('lark-doc/features/${feature}')`)
+  return imports.join('\n')
+})
 const showCode = ref(false)
 const feedback = ref('')
 
@@ -16,7 +29,7 @@ function toggleCode() {
 
 async function copyCode() {
   try {
-    await navigator.clipboard.writeText(demoSource(demo.value))
+    await navigator.clipboard.writeText(demoSource(demo.value, mode.value))
     feedback.value = '已复制 Vue 代码'
   } catch {
     feedback.value = '请选中上方 Vue 代码进行复制。'
@@ -25,13 +38,28 @@ async function copyCode() {
 </script>
 
 <template>
+  <p>在已有的 Vue 3 项目中安装 <code>npm install lark-doc@0.14.12</code>，展开代码后复制到 <code>App.vue</code>。</p>
+  <div class="demo-modes" role="group" aria-label="引入方式">
+    <button v-for="(option, key) in demoModes" :key="key" type="button" :aria-pressed="mode === key" @click="mode = key; feedback = ''">
+      {{ option.label }}
+    </button>
+  </div>
+  <p class="demo-entry">{{ mode === 'full' ? '一次引入可选模块，适合快速接入。' : '使用轻量入口，在挂载时加载该示例依赖的模块。' }}</p>
+  <label v-if="examples.length > 1" class="demo-scenarios">
+    配置场景
+    <select v-model="example" @change="feedback = ''">
+      <option v-for="item in examples" :key="item.example" :value="item.example">{{ item.label }}</option>
+    </select>
+  </label>
+  <pre class="demo-import"><code v-text="importCode" /></pre>
+  <p v-if="demo.note" class="demo-note">{{ demo.note }}</p>
   <ol class="feature-steps">
     <li v-for="step in demo.steps" :key="step">{{ step }}</li>
   </ol>
   <section class="feature-demo" :aria-label="`${demo.title}基础用法演示`">
     <iframe :src="runner + '&embed=1'" :title="`${demo.title}互动演示`" loading="lazy" :class="{ tall: demo.tall }" />
     <div v-show="showCode" :id="'vue-code-' + name" class="demo-code">
-      <slot />
+      <slot :name="example + '-' + mode" />
     </div>
     <div class="demo-actions">
       <button type="button" :aria-controls="'vue-code-' + name" :aria-expanded="showCode" @click="toggleCode">
@@ -45,6 +73,32 @@ async function copyCode() {
 </template>
 
 <style scoped>
+.demo-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.demo-modes button, .demo-scenarios select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+.demo-modes button[aria-pressed="true"] {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  border-color: var(--vp-c-brand-1);
+}
+.demo-modes button:focus-visible, .demo-scenarios select:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+.demo-import {
+  overflow-x: auto;
+  padding: 12px 16px;
+  background: var(--vp-code-block-bg);
+  border-radius: 8px;
+}
+.demo-import code { padding: 0; color: var(--vp-c-text-1); background: transparent; }
+.demo-scenarios { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.demo-scenarios select { background: var(--vp-c-bg); max-width: 100%; }
+.demo-note { color: var(--vp-c-text-2); }
 .feature-demo {
   margin: 20px 0 32px;
   overflow: hidden;

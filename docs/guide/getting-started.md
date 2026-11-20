@@ -20,7 +20,7 @@ npm run dev -- --host 127.0.0.1
 在已有项目根目录安装 SDK。
 
 ```bash
-npm install lark-doc@0.14.10 --save-exact
+npm install lark-doc@0.14.12 --save-exact
 ```
 
 在页面放一个 `<div id="editor"></div>`，容器挂载后执行以下代码。离开页面时调用 `doc.destroy()`。

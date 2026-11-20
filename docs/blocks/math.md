@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="math" />
@@ -43,18 +26,6 @@ import 'lark-doc/style.css'
 | --- | --- | --- | --- | --- |
 | `features.math` | 关闭后公式入口隐藏（公式节点实际挂载时才加载 KaTeX 样式）。 | `boolean` | true / false | `true` |
 | `commands.disabled: ['setInlineMath', 'setBlockMath']` | 按命令禁用。 | `string[]` | — | `[]` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { math: true },
-  toolbarKeys: ['insert'],        // 公式入口在插入分组（别名 math / formula）
-  content: '<p>质能方程 <span data-type="inline-math" data-latex="E=mc^2"></span></p>'
-    + '<div data-type="block-math" data-latex="\\int_a^b f(x)dx"></div>',
-})
-```
 
 ## 配置与用法
 

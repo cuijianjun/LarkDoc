@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="outline" />
@@ -44,17 +27,6 @@ import 'lark-doc/style.css'
 | `features.outline` | 关闭后目录面板与工具栏入口隐藏。 | `boolean` | true / false | `true` |
 | `features.headings` | 目录依赖标题；标题能力关闭时目录为空。 | `boolean` | true / false | `true` |
 | `commands.disabled: ['toggleOutline']` | 禁用面板开关命令。 | `string[]` | — | `[]` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { outline: true },
-  toolbarKeys: ['outline'],       // 目录面板开关（别名 toc）
-  content: '<h1>章节一</h1><h2>小节</h2><h1>章节二</h1>',
-})
-```
 
 ## 配置与用法
 

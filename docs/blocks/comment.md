@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="comment" />
@@ -45,7 +28,7 @@ import 'lark-doc/style.css'
 | `documentId` | 评论所属文档标识 | `string` | — | — |
 | `user` | 评论作者，至少包含 id | `object` | — | — |
 
-活动评论解决后进入“历史评论”；文档顶栏更多菜单调用 `openCommentHistory(event?)`。
+活动评论解决后进入“历史评论”。桌面端顶栏更多菜单调用 `openCommentHistory(event?)`，dev 的移动端隐藏历史和恢复入口。
 历史弹层宽 360px、头部高 48px，按 `canEdit` 与 `canView` 能力开放（切换阅读模式不等于失去权限），
 显示“已解决此评论”和“重新打开”。重新打开使用已有
 `reopen(threadId)`，成功刷新后恢复活动卡。失败保留历史条目，不以本地改状态冒充保存成功。
@@ -87,6 +70,8 @@ URL 经过现有安全校验；已保存图片按当前网络策略决定是否�
 切换文档、评论 Provider、上传器或网络策略，以及权限撤销，会取消或隔离旧任务。编辑器只读模式不会
 授权正文写入；评论独立遵守 `canComment`。
 
+内置本地服务支持全文私有评论。选区私有评论的提交需要接入支持相应访问范围的远端服务。
+
 ## 翻译和举报
 
 现有五个必需方法不变。以下可选方法存在且有 `canView` 时菜单才启用。未配置时不使用模拟结果或默认远程接口。
@@ -103,7 +88,7 @@ reportReply({ documentId, threadId, commentId, author, replyAuthor, content, sig
 // => Promise<{ url: string }>
 ```
 
-翻译结果只改变阅读呈现，保留源内容，显示 `Translated by AI`，悬停或聚焦“查看原文”查看源文；点击返回原文。
+dev 的移动端评论翻译沿用当前编辑器最近选择的段落翻译语言，初始为英语。翻译结果只改变阅读呈现，保留源内容，显示 `Translated by AI`，悬停或聚焦“查看原文”查看源文；点击返回原文。
 空译文视为失败，保留原文；翻译进行中可取消。举报菜单在用户点击时先打开隔离 opener 的空白页，收到安全的
 HTTP(S) URL 且当前网络策略允许后才导航到举报服务页面。被阻止的弹窗、失败、空结果或无效 URL 均不报成功；
 失败会关闭该空白页。返回 URL 代表打开举报表单，不代表举报已提交。举报的原因选择和实际提交由宿主服务页面负责。

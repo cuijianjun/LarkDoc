@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="block-handle" />
@@ -45,20 +28,6 @@ import 'lark-doc/style.css'
 | `features.blockDrag` | 关闭后禁止拖拽移动（把手仍可用）。 | `boolean` | true / false | `true` |
 | `blockMenu.disabled` | 禁用指定动作。 | `string[]` | — | `[]` |
 | `blockMenu.allow` | 动作白名单，`null` 为全部。 | `string[] \| null` | — | `null` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { blockHandle: true, blockDrag: true },
-  blockMenu: {
-    // 可选：裁剪块菜单动作
-    disabled: ['translate'],   // 隐藏「翻译」
-    allow: null,               // null = 全部动作；数组为白名单
-  },
-})
-```
 
 ## 配置与用法
 

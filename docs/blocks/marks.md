@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="marks" />
@@ -43,19 +26,6 @@ import 'lark-doc/style.css'
 | --- | --- | --- | --- | --- |
 | `features.marks` | 关闭后整组不可用。 | `boolean` | true / false | `true` |
 | `toolbar.marksAllow` | 内部分组直传：`null` 展示全部 mark，数组为白名单（由 `toolbarKeys` 翻译生成）。 | `string[] \| null` | — | `null` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  // 只保留加粗 / 斜体 / 高亮，marks 分组自动打开
-  toolbarKeys: ['bold', 'italic', 'highlight'],
-  // 或：保留整组但剔除高亮
-  // toolbarExcludes: ['highlight'],
-  content: '<p><strong>加粗</strong> 与 <code>行内代码</code></p>',
-})
-```
 
 ## 配置与用法
 

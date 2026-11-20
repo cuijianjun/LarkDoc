@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="toolbar" />
@@ -43,23 +26,12 @@ import 'lark-doc/style.css'
 | --- | --- | --- | --- | --- |
 | `toolbarKeys` | 只显示指定按钮或分组 | `string[]` | 见下方 key 表 | 默认工具栏 |
 | `toolbarExcludes` | 从当前工具栏排除指定按钮或分组 | `string[]` | 见下方 key 表 | — |
+| `layout.toolbarVisible` | 显示兼容格式工具栏 | `boolean` | true / false | false |
 | `layout.toolbarFixed` | 将格式工具栏固定在顶部 | `boolean` | true / false | false |
 
-::: details dev 源码的工具栏显示
-dev 分支的格式工具栏默认隐藏。用 `layout: { toolbarVisible: true }` 显示，或在 `layout` 中设置 `toolbarFixed: true` 显示并吸顶。显式设置 `toolbarVisible: false` 时隐藏。按钮组仍通过 `toolbarKeys` 和 `toolbarExcludes` 选择。
+::: details 显示格式工具栏
+格式工具栏默认隐藏。用 `layout: { toolbarVisible: true }` 显示，或在 `layout` 中设置 `toolbarFixed: true` 显示并吸顶。显式设置 `toolbarVisible: false` 时隐藏。按钮组仍通过 `toolbarKeys` 和 `toolbarExcludes` 选择。
 :::
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  // 只保留这些分组（按顺序不生效，顺序由内部分组决定）
-  toolbarKeys: ['history', 'headings', 'bold', 'italic', 'insert', 'tables', 'ai'],
-  // 再剔除个别分组或 mark
-  toolbarExcludes: ['shortcuts', 'highlight'],
-})
-```
 
 ## key 表与规则
 

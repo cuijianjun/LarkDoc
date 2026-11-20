@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="network" />
@@ -46,22 +29,6 @@ import 'lark-doc/style.css'
 | `network.imageProxy` | 外链图片转存钩子；返回本地地址后编辑器自动替换原外链。 | `(url) => Promise<string>` | — | — |
 
 示例通过 JSON 传入图片地址，交给编辑器应用离线策略。外链原址仍保留在文档数据中。
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  // 默认可省略；显式写成下面这样等价于默认行为
-  network: { mode: 'open' },
-
-  // 只放行内网图床
-  // network: { mode: 'allowlist', allowlist: ['20.200.174.87', 'oss.internal.example'] },
-
-  // 完全离线
-  // network: { mode: 'offline' },
-})
-```
 
 ## 配置与用法
 

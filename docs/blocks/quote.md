@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="quote" />
@@ -43,16 +26,6 @@ import 'lark-doc/style.css'
 | --- | --- | --- | --- | --- |
 | `features.insert` | 插入菜单总开关。 | `boolean` | true / false | `true` |
 | `blockMenu.disabled: ['blockquote']` | 禁用块菜单「转为引用」。 | `string[]` | — | `[]` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  toolbarKeys: ['insert'],      // 引用入口在插入分组（别名 blockquote）
-  content: '<blockquote><p>清晰的表达，让复杂的事变得简单。</p></blockquote>',
-})
-```
 
 ## 配置与用法
 

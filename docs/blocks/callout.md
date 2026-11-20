@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="callout" />
@@ -43,16 +26,6 @@ import 'lark-doc/style.css'
 | --- | --- | --- | --- | --- |
 | `features.callouts` | 关闭后插入菜单中高亮块入口隐藏。 | `boolean` | true / false | `true` |
 | `commands.disabled: ['setCallout']` | 按命令禁用。 | `string[]` | — | `[]` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { callouts: true },
-  content: '<div data-type="callout" data-emoji="warning"><p>注意：发布前检查清单。</p></div>',
-})
-```
 
 ## 配置与用法
 

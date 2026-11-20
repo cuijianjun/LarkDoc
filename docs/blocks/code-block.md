@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="code-block" />
@@ -52,18 +35,6 @@ import 'lark-doc/style.css'
 图表块使用**独立外观**（白底卡片），不与深色代码框共用样式；工具栏提供独立的「图表」按钮，下拉可选流程图 / 时序图 / 甘特图 / 饼图 / 状态图 / 类图直接插入。
 
 工具栏、插入「＋」和斜杠菜单使用同一套六类型选择，每种类型都有独立图标。鼠标移入图表按钮可展开菜单，进入菜单后保持展开，离开后稍延迟收起。键入 `/图表` 后按 Enter，也会先展开类型选择。
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { codeBlocks: true, diagram: true },
-  config: { performance: { syntaxHighlight: true } }, // false 时纯文本渲染
-  toolbarKeys: ['insert'],                 // 图表入口在插入分组（斜杠命令 / 加号菜单搜「图表」）
-  content: '<pre><code class="language-js">console.log("hi")</code></pre>',
-})
-```
 
 ## 配置与用法
 

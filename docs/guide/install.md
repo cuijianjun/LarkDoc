@@ -7,7 +7,7 @@
 Vue2、Vue3、React 和无框架应用使用相同命令：
 
 ```bash
-npm install lark-doc@0.14.10 --save-exact
+npm install lark-doc@0.14.12 --save-exact
 npm ls lark-doc
 ```
 

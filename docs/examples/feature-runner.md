@@ -7,7 +7,7 @@ title: LarkDoc 功能演示
 <script setup>
 import { shallowRef, ref, onMounted } from 'vue'
 import { withBase } from 'vitepress'
-import { featureDemos } from './feature-demos.js'
+import { demoModes, examplesFor, featureDemos } from './feature-demos.js'
 import { loaders } from 'virtual:larkdoc-feature-loaders'
 
 const component = shallowRef()
@@ -15,18 +15,22 @@ const demo = shallowRef()
 const embedded = ref(true)
 const error = ref('')
 const version = ref(0)
+const mode = ref('full')
 
 onMounted(async () => {
   const params = new URLSearchParams(location.search)
   const name = params.get('demo')
   embedded.value = params.get('embed') === '1'
-  if (!Object.hasOwn(loaders, name)) {
+  mode.value = params.get('mode') || 'full'
+  const example = params.get('example') || 'basic'
+  const id = `${name}--${example}--${mode.value}`
+  if (!Object.hasOwn(loaders, id)) {
     error.value = '请从功能文档进入对应的演示。'
     return
   }
-  demo.value = featureDemos[name]
+  demo.value = examplesFor(featureDemos[name]).find(item => item.example === example)
   try {
-    component.value = (await loaders[name]()).default
+    component.value = (await loaders[id]()).default
   } catch {
     error.value = '演示加载失败，请刷新重试。'
   }
@@ -37,8 +41,9 @@ onMounted(async () => {
   <header v-if="!embedded && demo">
     <a :href="withBase((demo.route || '/blocks/' + demo.id) + '.html#demo')">返回功能文档</a>
     <h1>{{ demo.title }}</h1>
-    <p v-if="component">可以直接操作下方编辑器。重置会清空本次演示改动。</p>
-    <button v-if="component" type="button" @click="version++">重置演示</button>
+    <p v-if="component">{{ demoModes[mode].label }} · {{ demo.label }}。{{ demo.id === 'persistence' ? '重新载入会恢复已保存的草稿。' : '重置会清空本次演示改动。' }}</p>
+    <p v-if="demo.note">{{ demo.note }}</p>
+    <button v-if="component" type="button" @click="version++">{{ demo.id === 'persistence' ? '重新载入示例' : '重置演示' }}</button>
   </header>
   <component v-if="component" :is="component" :key="version" />
   <p v-else class="runner-status" role="status">{{ error || '正在加载演示…' }}</p>

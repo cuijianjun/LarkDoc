@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="view-modes" />
@@ -42,20 +25,12 @@ import 'lark-doc/style.css'
 | 参数 | 说明 | 类型 | 可选值 | 默认值 |
 | --- | --- | --- | --- | --- |
 | `features.viewModes` | 关闭后视图切换入口隐藏。 | `boolean` | true / false | `true` |
+| `theme` | 编辑器界面主题 | `string` | `light` / `dark` / `system` / `host` | `light` |
+| `contentTheme` | 正文主题 | `string` | `auto` / `light` / `dark` | `auto` |
 | `readonly` | 从构造参数或 `doc.setReadonly()` 传入。 | `boolean` | true / false | `false` |
 | `layout.titleBarFixed` | 标题栏是否吸附顶端（配合长文阅读）。 | `boolean` | true / false | `false` |
 | `layout.toolbarFixed` | 格式工具栏是否吸附顶端；与 `titleBarFixed` 同开时固定在标题栏下方。 | `boolean` | true / false | `false` |
 | `layout.headerVisible` | 是否显示顶部标题栏。置 `false` 时整行隐藏，原 `header-actions` 插槽内容（保存 / 模板 / 导入导出等）自动移入格式工具栏右侧「⋯」下拉弹窗。 | `boolean` | true / false | `true` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { viewModes: true },
-  toolbarKeys: ['viewModes'],     // 别名 fullscreen / read / preview / slides / theme
-})
-```
 
 ## 配置与用法
 

@@ -11,6 +11,6 @@
 | 普通 HTML，使用 script 或 CDN | [原生 HTML / CDN](/examples/html-cdn) | 等待 `runtimeReady` 后创建 |
 | 希望使用 `<lark-doc>` 标签 | [Web Component](/examples/web-component) | property 传对象，DOM 事件读变化 |
 
-示例使用已发布的 `lark-doc@0.14.10`。先编辑正文并读取 JSON，再选图试用浏览器本地预览。Vue 2 示例的 Vue 与模板编译器版本需要匹配。
+此处是固定依赖的六环境兼容工程，使用 `lark-doc@0.14.10`。功能页演示使用 `lark-doc@0.14.12`。先编辑正文并读取 JSON，再选图试用浏览器本地预览。Vue 2 示例的 Vue 与模板编译器版本需要匹配。
 
 接入自己的上传接口时看[图片上传](/blocks/uploader)。Vue2 + Vite、SSR 或 Node 测试见[兼容与排错](/guide/environments)。

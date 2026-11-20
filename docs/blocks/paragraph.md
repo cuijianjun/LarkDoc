@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="paragraph" />
@@ -44,18 +27,6 @@ import 'lark-doc/style.css'
 | `features.blockStyle` | 关闭后整组入口隐藏。 | `boolean` | true / false | `true` |
 | `limits.maxIndent` | 缩进层级硬上限，只能往下调（传 99 也是 5）。 | `number` | — | `5` |
 | `blockMenu.disabled` | 可禁用块菜单中的对齐 / 缩进动作。 | `string[]` | — | `[]` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { blockStyle: true },
-  toolbarKeys: ['blockStyle'],  // 别名 align / indent / lineHeight / clear 均落到此分组
-  limits: { maxIndent: 5 },     // 缩进层级硬上限（飞书是 6 层 = 5 级缩进）
-  content: '<p style="text-align:center">居中段落</p>',
-})
-```
 
 ## 配置与用法
 

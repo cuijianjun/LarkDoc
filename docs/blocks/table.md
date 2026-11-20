@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="table" />
@@ -44,18 +27,6 @@ import 'lark-doc/style.css'
 | `features.tables` | 关闭后表格入口与工具条隐藏。 | `boolean` | true / false | `true` |
 | `limits.maxTableRows` | 行数上限（硬上限 9）。 | `number` | 1–9 | `9` |
 | `limits.maxTableColumns` | 列数上限（硬上限 9）。 | `number` | 1–9 | `9` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { tables: true },
-  toolbarKeys: ['tables'],             // 表格工具条分组（别名 table）
-  limits: { maxTableRows: 9, maxTableColumns: 9 },
-  content: '<table><tr><th>事项</th><th>状态</th></tr><tr><td><p>…</p></td><td><p>进行中</p></td></tr></table>',
-})
-```
 
 ## 配置与用法
 

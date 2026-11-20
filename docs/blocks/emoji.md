@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="emoji" />
@@ -43,17 +26,6 @@ import 'lark-doc/style.css'
 | --- | --- | --- | --- | --- |
 | `features.emoji` | 关闭后插入菜单中的表情入口隐藏。 | `boolean` | true / false | `true` |
 | `commands.disabled: ['setEmoji']` | 按命令禁用表情插入。 | `string[]` | — | `[]` |
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { emoji: true },
-  toolbarKeys: ['insert'],       // 表情入口在插入分组（别名 emoji）
-  content: '<p><span data-type="emoji" data-name="tada"></span> 发布成功</p>',
-})
-```
 
 ## 配置与用法
 

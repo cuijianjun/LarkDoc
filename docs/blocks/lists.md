@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="lists" />
@@ -45,16 +28,6 @@ import 'lark-doc/style.css'
 | `blockMenu.disabled: ['bulletList', 'orderedList', 'taskList']` | 按动作禁用块菜单转换。 | `string[]` | — | `[]` |
 
 块菜单的「转为有序列表」用在**标题**上时不转列表，而是给标题开启编号（飞书的「标题编号」就是给标题挂有序列表），见[标题 · 标题编号](/blocks/heading#标题编号)。
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  toolbarKeys: ['insert'],        // 列表入口在插入分组（别名 bulletList / orderedList / taskList）
-  content: '<ul><li><p>事项一</p></li><li><p>事项二</p></li></ul>',
-})
-```
 
 ## 配置与用法
 

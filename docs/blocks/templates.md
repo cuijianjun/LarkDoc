@@ -16,23 +16,6 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 </div>
 
-<div class="feature-summary">
-
-## 引入
-
-在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
-
-```bash
-npm install lark-doc@0.14.10
-```
-
-```js
-import { LarkDoc } from 'lark-doc'
-import 'lark-doc/style.css'
-```
-
-</div>
-
 ## 基础用法 {#demo}
 
 <FeatureDemo name="templates" />
@@ -48,7 +31,7 @@ import 'lark-doc/style.css'
 - 工作台顶部模板选择器在确认后替换整篇正文并更新标题，继续使用原 `TEMPLATES` 示例集。
 - 独立的云盘模板库默认只回调 `onPreview` / `onUse`，由宿主预览或复制新文档；不会自动写入编辑器。
 
-## 配置示例
+## Vue 2 工作台与独立模板库
 
 下面的示例用于已有 Vue2 应用。工作台兼容组件从 `lark-doc/vue2` 引入，由宿主 Vue2 注册；库自身不导入 Vue，默认主入口不再导出 Vue2 组件。
 
