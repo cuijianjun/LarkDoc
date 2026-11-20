@@ -1,14 +1,51 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 图片
 
+<div class="feature-summary">
+
+## 介绍
+
 支持本地上传、拖拽 / 粘贴插入、拖宽、裁剪、替换、说明文字、点开预览。上传优先走宿主 `uploader.upload`；外链图片默认按原地址加载（`network.mode: 'open'`），切到 `offline` 后显示占位块。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="image" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.images` | 关闭后图片入口隐藏。 | `boolean` | true / false | `true` |
+| `limits.maxImageSize` | 单张大小上限，可按宿主要求收紧。 | `number` | — | `20MB` |
+| `uploader.upload` | 宿主接管上传；不提供时转 base64 本地预览。 | `(file, ctx) => Promise<UploadResult>` | — | 内置本地读取 |
+| `network.mode` | 外链图片策略，见[网络策略](/blocks/network)。 | `string` | open / allowlist / offline | `'open'` |
+| `network.imageProxy` | 把外链图转存成本地地址。 | `(url) => Promise<string>` | — | — |
 
 ## 配置
 
@@ -28,14 +65,6 @@ new LarkDoc({
   },
 })
 ```
-
-| 配置项 | 默认值 | 说明 |
-| --- | --- | --- |
-| `features.images` | `true` | 关闭后图片入口隐藏。 |
-| `limits.maxImageSize` | `20MB` | 单张大小上限，可按宿主要求收紧。 |
-| `uploader.upload` | 内置本地读取 | 宿主接管上传；不提供时转 base64 本地预览。 |
-| `network.mode` | `'open'` | 外链图片策略，见[网络策略](/blocks/network)。 |
-| `network.imageProxy` | - | 把外链图转存成本地地址。 |
 
 ## 上传生命周期
 

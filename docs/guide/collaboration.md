@@ -1,14 +1,51 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 协同与权限
 
+<div class="feature-summary">
+
+## 介绍
+
 单人编辑可直接使用[快速开始](/guide/getting-started)。要让多个用户同时编辑同一份正文，应用需要接入 `lark-doc/collab`、Yjs 和自己的实时服务。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="collaboration" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `documentId` | 业务文档标识 | `string` | — | — |
+| `user` | 当前用户，至少包含 id | `object` | — | — |
+| `session` | 由应用创建并管理的文档会话 | `DocumentSession` | — | — |
+| `authorization` | 用 getCapabilities 返回当前用户权限 | `AuthorizationProvider` | — | — |
+| `collaboration` | 实现连接、断开等会话操作 | `CollaborationProvider` | — | — |
 
 | 你需要的能力 | 接入哪一层 |
 | --- | --- |

@@ -171,7 +171,7 @@ return doc.getEditor().chain().focus("end").setImage({
         steps: ['编辑正文后点「读取正文 JSON」。', '在下方查看数据。可通过文档菜单试用内置导入和导出。'],
         content: '<h2>交接清单</h2><p>编辑这段正文，然后读取 JSON。</p>',
         config: { features: { importExport: true }, toolbarKeys: ['history'] },
-        button: '读取正文 JSON', action: 'output.textContent = JSON.stringify(doc.getJSON(), null, 2)',
+        button: '读取正文 JSON', action: 'output.value = JSON.stringify(doc.getJSON(), null, 2)',
       },
     ],
   },
@@ -179,13 +179,13 @@ return doc.getEditor().chain().focus("end").setImage({
     text: '应用接入',
     items: [
       {
-        id: 'uploader', title: '图片与附件上传',
+        id: 'uploader', title: '图片上传',
         steps: ['把本地 PNG 或 JPG 拖到正文，或用「插入」菜单选择图片。', '查看图片插入结果和回调信息。本例在浏览器内读取文件。'],
         content: '<p>把本地图片拖到这份文档。</p>',
         config: { features: { images: true }, toolbarKeys: ['insert'] },
         options: `uploader: {
   onSettled(event) {
-    output.textContent = "图片：" + event.status + "（" + event.mode + "）"
+    output.value = "图片：" + event.status + "（" + event.mode + "）"
   },
 },`,
       },
@@ -233,7 +233,7 @@ return doc.getEditor().chain().focus("end").setImage({
   },
 },`,
         button: '读取会话权限',
-        action: 'output.textContent = JSON.stringify({ canView: doc.can("canView"), canEdit: doc.can("canEdit"), canComment: doc.can("canComment") }, null, 2)',
+        action: 'output.value = JSON.stringify({ canView: doc.can("canView"), canEdit: doc.can("canEdit"), canComment: doc.can("canComment") }, null, 2)',
       },
       {
         id: 'ai', title: 'AI 组件',
@@ -264,7 +264,7 @@ return doc.getEditor().chain().focus("end").setImage({
         },
         config: { network: { mode: 'offline' }, features: { images: true } },
         button: '读取图片数据',
-        action: 'output.textContent = JSON.stringify(doc.getJSON().content.find(node => node.type === "image") || doc.getJSON(), null, 2)',
+        action: 'output.value = JSON.stringify(doc.getJSON().content.find(node => node.type === "image") || doc.getJSON(), null, 2)',
       },
     ],
   },
@@ -274,69 +274,101 @@ export const featureDemos = Object.fromEntries(
   featureGroups.flatMap(group => group.items.map(demo => [demo.id, demo])),
 )
 
-export const publishedLoader = 'https://unpkg.com/lark-doc@0.14.10/dist/lark-doc-element.umd.min.js'
-
-export function demoMarkup(demo, loader) {
+// Generate the Vue example and its site preview from the same scenario.
+export function demoSource(demo, preview = false) {
   const config = { storage: 'none', title: demo.title, content: demo.content, ...demo.config }
   config.features = { ai: false, ...config.features }
-  const options = Object.entries(config).map(([key, value]) => `      ${key}: ${JSON.stringify(value)},`)
-  if (demo.options) options.push(demo.options.split('\n').map(line => `      ${line}`).join('\n'))
-  const button = demo.button ? `<button id="run" type="button" disabled>${demo.button}</button>` : ''
+  const indent = (code, size) => code.split('\n').map(line => ' '.repeat(size) + line).join('\n')
+  const options = Object.entries(config).map(([key, value]) => `    ${key}: ${JSON.stringify(value)},`)
+  if (demo.options) options.push(indent(demo.options, 4))
+  const runtime = preview ? `import { withBase } from 'vitepress'
+
+async function loadRuntime() {
+  if (!window.LarkDoc?.runtimeReady) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = withBase('/demo/vendor/lark-doc-element.umd.min.js')
+      script.onload = resolve
+      script.onerror = () => reject(new Error('无法加载编辑器资源'))
+      document.head.append(script)
+    })
+  }
+  return window.LarkDoc.runtimeReady
+}` : `import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'`
   const action = demo.action ? `
-    button.onclick = async () => {
-      try {
-        const apply = () => {
-${demo.action.split('\n').map(line => `          ${line}`).join('\n')}
-        }
-        status.textContent = ''
-        if (await apply() === false) status.textContent = '请把光标放在正文后再试。'
-      } catch (error) {
-        status.textContent = error.message
-      }
-    }` : ''
+function apply() {
+${indent(demo.action, 2)}
+}
 
-  return `<!doctype html>
-<html lang="zh-CN">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${demo.title}演示</title>
-<style>
-  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; }
-  #controls { padding: 8px 12px; border-bottom: 1px solid #e6e8eb; }
-  button { min-height: 44px; padding: 0 12px; border: 1px solid #b9c8c5; border-radius: 6px; background: #f3f8f7; color: #135b51; cursor: pointer; }
-  #status { margin: 8px 12px; color: #3b4b54; }
-  #output { margin: 8px 12px; max-height: 140px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-  #status:empty, #output:empty { margin: 0; }
-</style>
-<body>
-  ${button ? `<div id="controls">${button}</div>` : ''}
-  <p id="status" role="status">正在加载编辑器…</p>
-  <pre id="output" aria-live="polite"></pre>
-  <div id="editor"></div>
-  <script src="${loader}"></script>
-  <script>
-  const button = document.querySelector('#run')
-  const status = document.querySelector('#status')
-  const output = document.querySelector('#output')
+async function run() {
+  status.value = ''
+  try {
+    if (await apply() === false) status.value = '请把光标放在正文后再试。'
+  } catch (error) {
+    status.value = error.message
+  }
+}
+` : ''
+  const hasOutput = Boolean(demo.action?.includes('output.') || demo.options?.includes('output.'))
+  const lifecycle = preview ? `  try {
+    const { LarkDoc } = await loadRuntime()
+    if (!editor.value) return
+${indent('mount(LarkDoc)', 4)}
+  } catch (error) {
+    status.value = error.message
+    failed.value = true
+  }` : '  mount(LarkDoc)'
+  return `<script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+${runtime}
 
-  Promise.resolve().then(() => window.LarkDoc.runtimeReady).then(({ LarkDoc }) => {
-    const doc = new LarkDoc({
-      element: '#editor',
+const editor = ref(null)
+const status = ref('正在加载编辑器…')
+${demo.button ? 'const ready = ref(false)\n' : ''}${hasOutput ? "const output = ref('')\n" : ''}${preview ? "const failed = ref(false)\nconst retry = () => window.location.reload()\n" : ''}let doc
+
+function mount(Editor) {
+  doc = new Editor({
+    element: editor.value,
 ${options.join('\n')}
-      onReady() {
-        document.body.dataset.demoReady = 'true'
-        status.textContent = ''
-        if (button) button.disabled = false
-      },
-    })
-${action}
-    window.addEventListener('pagehide', event => {
-      if (!event.persisted) doc.destroy()
-    })
-  }).catch(error => {
-    status.textContent = '编辑器加载失败，请刷新重试。' + error.message
+    onReady() {
+      status.value = ''
+${demo.button ? '      ready.value = true\n' : ''}    },
   })
-  </script>
-</body>
-</html>`
+}
+
+onMounted(${preview ? 'async ' : ''}() => {
+${lifecycle}
+})
+onBeforeUnmount(() => doc?.destroy())
+${action}</script>
+
+<template>
+  <section class="demo">
+${demo.button ? `    <div class="demo-controls">
+      <button type="button" :disabled="!ready" @click="run">${demo.button}</button>
+    </div>
+` : ''}    <p v-if="status" class="demo-status" role="status">{{ status }}</p>
+${preview ? '    <button v-if="failed" class="retry" type="button" @click="retry">重新加载</button>\n' : ''}    <div ref="editor"></div>
+${hasOutput ? '    <pre v-if="output" class="demo-output" aria-live="polite">{{ output }}</pre>\n' : ''}  </section>
+</template>
+
+<style scoped>
+.demo-controls { padding: 12px; border-bottom: 1px solid var(--vp-c-divider, #dce6e2); }
+button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--vp-c-divider, #b9c8c5);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft, #f3f8f7);
+  color: var(--vp-c-brand-1, #135b51);
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.6; cursor: wait; }
+button:focus-visible { outline: 2px solid var(--vp-c-brand-1, #135b51); outline-offset: 2px; }
+.demo-status, .demo-output, .retry { margin: 12px; }
+.demo-output { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+`
 }

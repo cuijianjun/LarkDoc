@@ -1,14 +1,51 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 代码块
 
+<div class="feature-summary">
+
+## 介绍
+
 代码块组件提供语言选择、语法高亮（highlight.js 按需动态加载，本地 chunk 无外网请求）、行内复制与编辑态切换。可通过 `config.performance.syntaxHighlight` 关闭语法高亮。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="code-block" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.codeBlocks` | 关闭后代码块入口与命令不可用。 | `boolean` | true / false | `true` |
+| `features.diagram` | 关闭后语言下拉不再提供 Mermaid 图表，预览按钮与渲染器加载一并禁用；已有 mermaid 代码块退化为纯源码展示。 | `boolean` | true / false | `true` |
+| `config.performance.diagramScriptUrl` | 显式给出自托管 mermaid UMD 地址时，改为运行时加载该脚本。默认 `null` 使用包内按需区块，内网无需另配地址。 | `string \| null` | — | `null` |
+| `config.performance.syntaxHighlight` | 关闭后不做语法高亮。 | `boolean` | true / false | `true` |
+| `config.blockMenu.disabled: ['codeBlock']` | 禁用块菜单「转为代码块」。 | `string[]` | — | `[]` |
 
 语言选为 **Mermaid 图表** 时，代码块升级为图表块：**默认直接渲染图表**（与 Vditor 行为一致），点「编辑源码」可切回源码编辑。渲染器（mermaid，打包进产物、不请求外网）是 `import()` 懒 chunk，只在首次渲染时按需加载。
 
@@ -29,14 +66,6 @@ new LarkDoc({
 ```
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.codeBlocks` | `boolean` | `true` | 关闭后代码块入口与命令不可用。 |
-| `features.diagram` | `boolean` | `true` | 关闭后语言下拉不再提供 Mermaid 图表，预览按钮与渲染器加载一并禁用；已有 mermaid 代码块退化为纯源码展示。 |
-| `config.performance.diagramScriptUrl` | `string \| null` | `null` | 显式给出自托管 mermaid UMD 地址时，改为运行时加载该脚本。默认 `null` 使用包内按需区块，内网无需另配地址。 |
-| `config.performance.syntaxHighlight` | `boolean` | `true` | 关闭后不做语法高亮。 |
-| `config.blockMenu.disabled: ['codeBlock']` | `string[]` | `[]` | 禁用块菜单「转为代码块」。 |
 
 ### 数据契约
 

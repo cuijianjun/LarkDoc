@@ -1,14 +1,50 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 标题
 
+<div class="feature-summary">
+
+## 介绍
+
 标题组件覆盖文档标题与正文章节标题。正文标题支持 H1–H9 九个层级（H7–H9 渲染为带 `data-level` 的 `div`，导出 HTML 时 H1–H6 落到语义化标签）。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="heading" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `title` | 文档标题，长度受 `limits.titleLength`（默认 120）约束。 | `string` | — | `'未命名文档'` |
+| `features.headings` | 关闭后工具栏与块菜单的标题入口隐藏。 | `boolean` | true / false | `true` |
+| `toolbarKeys` 含 `headings` | 工具栏裁剪，别名 `heading` / `title` / `paragraph` 等价。 | `string[]` | — | 全部展示 |
+| `limits.titleLength` | 标题最大长度。 | `number` | — | `120` |
 
 要区分两套结构：
 
@@ -34,13 +70,6 @@ new LarkDoc({
 ```
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `title` | `string` | `'未命名文档'` | 文档标题，长度受 `limits.titleLength`（默认 120）约束。 |
-| `features.headings` | `boolean` | `true` | 关闭后工具栏与块菜单的标题入口隐藏。 |
-| `toolbarKeys` 含 `headings` | `string[]` | 全部展示 | 工具栏裁剪，别名 `heading` / `title` / `paragraph` 等价。 |
-| `limits.titleLength` | `number` | `120` | 标题最大长度。 |
 
 ### 使用方式
 

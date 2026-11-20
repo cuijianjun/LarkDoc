@@ -1,14 +1,48 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 查找替换
 
+<div class="feature-summary">
+
+## 介绍
+
 查找替换组件提供全文检索、命中计数、上一个 / 下一个导航与逐个 / 全部替换。命中项以高亮装饰渲染；命中被折叠块内的内容时自动展开它。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="search" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.search` | 关闭后查找替换面板隐藏。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['openSearch']` | 禁用打开命令。 | `string[]` | — | `[]` |
 
 ## 配置示例
 
@@ -21,11 +55,6 @@ new LarkDoc({
 ```
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.search` | `boolean` | `true` | 关闭后查找替换面板隐藏。 |
-| `commands.disabled: ['openSearch']` | `string[]` | `[]` | 禁用打开命令。 |
 
 ### 使用方式
 

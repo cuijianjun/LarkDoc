@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitepress'
-import { featureGroups } from '../examples/feature-demos.js'
+import { demoSource, featureDemos, featureGroups } from '../examples/feature-demos.js'
 
 // 部署路径可注入：
 //   GitHub Pages 项目页 → 默认 '/LarkDoc/'（cuijianjun.github.io/LarkDoc/）
@@ -34,11 +35,50 @@ const featureSidebar = [
   })),
 ]
 
+const runnerId = 'virtual:larkdoc-feature-loaders'
+const previewPrefix = 'virtual:larkdoc-feature/'
+const previewFile = (name: string) => fileURLToPath(new URL(`../examples/_feature-${name}.vue`, import.meta.url))
+const previews = Object.fromEntries(Object.entries(featureDemos).map(([name, demo]) => [
+  previewFile(name), demoSource(demo, true),
+]))
+
 export default defineConfig({
   base: BASE,
   lang: 'zh-CN',
   title: 'lark-doc',
   description: 'LarkDoc 编辑器 · 安装、配置与 API 调用指南',
+  vite: {
+    plugins: [{
+      name: 'larkdoc-feature-examples',
+      enforce: 'pre',
+      resolveId(id) {
+        if (id === runnerId) return '\0' + id
+        if (id.startsWith(previewPrefix)) {
+          const name = id.slice(previewPrefix.length)
+          if (Object.hasOwn(featureDemos, name)) return previewFile(name)
+        }
+      },
+      load(id) {
+        if (id === '\0' + runnerId) {
+          const entries = Object.keys(featureDemos).map(name =>
+            `${JSON.stringify(name)}: () => import(${JSON.stringify(previewPrefix + name)})`)
+          return `export const loaders = { ${entries.join(', ')} }`
+        }
+        return previews[id]
+      },
+    }],
+  },
+  markdown: {
+    codeCopyButtonTitle: '复制代码',
+    config(md) {
+      md.core.ruler.before('normalize', 'larkdoc-feature-source', state => {
+        state.src = state.src.replace(/^<FeatureDemo name="([a-z-]+)" \/>$/gm, (_, name) => {
+          if (!Object.hasOwn(featureDemos, name)) throw new Error(`未知的功能演示 ${name}`)
+          return `<FeatureDemo name="${name}">\n\n~~~~vue\n${demoSource(featureDemos[name]).trimEnd()}\n~~~~\n\n</FeatureDemo>`
+        })
+      })
+    },
+  },
   // head 里是裸 HTML，不会自动套 base，必须手动拼 BASE。
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: BASE + 'logo.svg' }]],
 

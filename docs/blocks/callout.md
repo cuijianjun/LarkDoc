@@ -1,14 +1,48 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 高亮块
 
+<div class="feature-summary">
+
+## 介绍
+
 高亮块（Callout）是带底色与图标的提示容器，适合注意事项、要点强调。图标复用表情选择器（分类 + 搜索 + 最近使用），块内可承载任意块级内容。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="callout" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.callouts` | 关闭后插入菜单中高亮块入口隐藏。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['setCallout']` | 按命令禁用。 | `string[]` | — | `[]` |
 
 ## 配置示例
 
@@ -21,11 +55,6 @@ new LarkDoc({
 ```
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.callouts` | `boolean` | `true` | 关闭后插入菜单中高亮块入口隐藏。 |
-| `commands.disabled: ['setCallout']` | `string[]` | `[]` | 按命令禁用。 |
 
 ### 使用方式
 

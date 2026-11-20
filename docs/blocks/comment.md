@@ -1,14 +1,49 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 评论
 
-评论由 `comments` Provider 保存，正文只保存线程锚点。原绿色主题使用现有语义色。
+<div class="feature-summary">
 
-## 代码演示 {#demo}
+## 介绍
+
+选中内容或从块菜单发起评论。评论由应用的 `comments` Provider 保存，正文保留与评论关联的位置。
+
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="comment" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `comments` | 加载和持久化评论线程 | `CommentsProvider` | — | — |
+| `documentId` | 评论所属文档标识 | `string` | — | — |
+| `user` | 评论作者，至少包含 id | `object` | — | — |
 
 活动评论解决后进入“历史评论”；文档顶栏更多菜单调用 `openCommentHistory(event?)`。
 历史弹层宽 360px、头部高 48px，按 `canEdit` 与 `canView` 能力开放（切换阅读模式不等于失去权限），

@@ -1,14 +1,51 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 导入导出
 
+<div class="feature-summary">
+
+## 介绍
+
 顶部「导入」「导出」两个入口，**各自能单独关、格式能逐项配**。转换全在本地完成，DOCX 依赖按需动态加载，不进首包。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="import-export" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.importExport` | 一起开关导入、导出入口 | `boolean` | true / false | true |
+| `importExport.importEnabled` | 显示导入入口 | `boolean` | true / false | true |
+| `importExport.exportEnabled` | 显示导出入口 | `boolean` | true / false | true |
+| `importExport.importFormats` | 可导入的格式和排列顺序 | `string[]` | html / json / md / docx | 全部 |
+| `importExport.exportFormats` | 可导出的格式和排列顺序 | `string[]` | html / json / md / txt / docx / print | 全部 |
 
 ## 配置
 

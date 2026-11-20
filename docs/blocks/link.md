@@ -1,14 +1,48 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 链接
 
+<div class="feature-summary">
+
+## 介绍
+
 链接组件提供插入与编辑对话框，支持自定义链接文字、目标为选区或新插入。外链地址不做连通性校验；配合[网络策略](/blocks/network)可在渲染侧拦截外部资源。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="link" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.textStyle` | 关闭后链接入口隐藏。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['setLink', 'unsetLink']` | 按命令禁用。 | `string[]` | — | `[]` |
 
 ## 配置示例
 
@@ -24,11 +58,6 @@ doc.getEditor().commands.setLink({ href: 'https://example.com' })
 ```
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.textStyle` | `boolean` | `true` | 关闭后链接入口隐藏。 |
-| `commands.disabled: ['setLink', 'unsetLink']` | `string[]` | `[]` | 按命令禁用。 |
 
 ### 使用方式
 

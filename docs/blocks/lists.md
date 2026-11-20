@@ -1,14 +1,48 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 列表
 
+<div class="feature-summary">
+
+## 介绍
+
 列表组件包含无序列表、有序列表与任务列表三种形态，支持相互转换与嵌套。斜杠命令、工具栏插入菜单与块句柄「转为列表」均可触发。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="lists" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.insert` | 插入菜单总开关（含列表入口）。 | `boolean` | true / false | `true` |
+| `blockMenu.disabled: ['bulletList', 'orderedList', 'taskList']` | 按动作禁用块菜单转换。 | `string[]` | — | `[]` |
 
 块菜单的「转为有序列表」用在**标题**上时不转列表，而是给标题开启编号（飞书的「标题编号」就是给标题挂有序列表），见[标题 · 标题编号](/blocks/heading#标题编号)。
 
@@ -29,11 +63,6 @@ new LarkDoc({
 | 无序列表 | `<ul><li>` | `bulletList / listItem` | 插入菜单、`/` 命令、块菜单「转为无序列表」 |
 | 有序列表 | `<ol><li>` | `orderedList / listItem` | 插入菜单、`/` 命令、块菜单「转为有序列表」 |
 | 任务列表 | `<ul data-type="taskList">` | `taskList / taskItem` | 插入菜单、`/` 命令 |
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.insert` | `boolean` | `true` | 插入菜单总开关（含列表入口）。 |
-| `blockMenu.disabled: ['bulletList', 'orderedList', 'taskList']` | `string[]` | `[]` | 按动作禁用块菜单转换。 |
 
 ### 使用方式
 

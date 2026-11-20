@@ -1,14 +1,48 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 折叠块
 
+<div class="feature-summary">
+
+## 介绍
+
 折叠范围是块的**缩进子树**，与块类型、标题级别都无关：块模型里每个块只有一个父块，子块靠缩进挂在父块下面，所以折叠一个块只带走缩进比它更深的块。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="folding" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.folding` | 关闭后折叠箭头与菜单项隐藏，已有折叠状态保留在 storage 里。 | `boolean` | true / false | `true` |
+| `documentId` | 折叠偏好的分键依据；不传时落到 `local`，同一浏览器共用一个键。 | `string` | — | `''` |
 
 这一点与飞书一致，也是它与直觉最容易冲突的地方：
 
@@ -65,11 +99,6 @@ editor.commands.foldLarkDocByIds(['b1', 'b2']) // 按 id 批量折叠（宿主�
 ```
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.folding` | `boolean` | `true` | 关闭后折叠箭头与菜单项隐藏，已有折叠状态保留在 storage 里。 |
-| `documentId` | `string` | `''` | 折叠偏好的分键依据；不传时落到 `local`，同一浏览器共用一个键。 |
 
 ### 使用方式
 

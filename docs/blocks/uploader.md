@@ -1,14 +1,51 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 图片上传：接口配置与完整回调
 
+<div class="feature-summary">
+
+## 介绍
+
 你可以让库直接把图片上传到服务器，也可以先用本地 base64。Vue2、Vue3、React、Web Component 和原生页面共用同一条图片管线。
 
-## 代码演示 {#demo}
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="uploader" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `uploader.action` | 图片表单上传地址，未设置 action 和 upload 时在浏览器内读取图片 | `string` | — | — |
+| `uploader.upload` | 应用自定义图片上传，优先于 action | `(file, ctx) => Promise<UploadResult>` | — | — |
+| `uploadFile` | 附件上传配置或函数 | `object \| function` | — | — |
+| `limits.maxImageSize` | 单张图片上限，单位字节 | `number` | 正整数 | 20 MiB |
+| `limits.maxFileSize` | 单个附件上限，单位字节 | `number` | 正整数 | 10 GiB |
 
 ## 先选择保存方式
 
@@ -220,7 +257,7 @@ el.options = { ...el.options, uploader: nextUploader }
 
 ## 拒绝、失败和生命周期边界
 
-- 默认图片大小上限 5 MB；`limits.maxImageSize` 和 Provider 自身 limits 可以收紧。SVG、不支持 MIME、可识别为图片但缺 MIME 的文件会被拒绝。
+- 默认图片大小上限 20 MiB；`limits.maxImageSize` 和 Provider 自身 limits 可以收紧。SVG、不支持 MIME、可识别为图片但缺 MIME 的文件会被拒绝。
 - 上传失败不产生半截节点；替换/裁剪失败保留旧图。PDF 等非图片附件走原有附件处理，不属于图片回调。
 - 编辑器销毁、切文档或变只读时，取消自身任务并阻止晚写回。同一 Provider 被多个编辑器使用时，销毁一个不取消另一个。
 - 取消是幂等的，终态后不再改变状态；异步 beforeUpload 等待期间也能取消，晚到返回不能复活任务。

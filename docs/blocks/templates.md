@@ -1,14 +1,48 @@
+---
+pageClass: feature-guide
+---
+
 <script setup>
 import FeatureDemo from '../examples/FeatureDemo.vue'
 </script>
 
 # 模板
 
-模板有三条独立流程：
+<div class="feature-summary">
 
-## 代码演示 {#demo}
+## 介绍
+
+用模板快速填充内容。可以在当前光标位置插入，也可以在工作台确认后替换整篇正文。
+
+</div>
+
+<div class="feature-summary">
+
+## 引入
+
+在已有的 Vue 3 项目中安装示例版本，将基础用法里的完整组件代码复制到 `App.vue`。
+
+```bash
+npm install lark-doc@0.14.10
+```
+
+```js
+import { LarkDoc } from 'lark-doc'
+import 'lark-doc/style.css'
+```
+
+</div>
+
+## 基础用法 {#demo}
 
 <FeatureDemo name="templates" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.templates` | 关闭后模板选择入口隐藏。 | `boolean` | true / false | `true` |
+| `templates` | 未传或非数组时，编辑器使用 `INSERT_TEMPLATES`，工作台整文替换仍使用 `TEMPLATES`。空数组表示空模板集，初始内容回退为空段落。 | `TemplateItem[]` | — | 按入口区分 |
 
 - 编辑器 `/` 或 `＋` →「模板」在当前选区插入正文，不改文档标题；「更多模板」打开同页模板库，可搜索、只读预览并插入。
 - 工作台顶部模板选择器在确认后替换整篇正文并更新标题，继续使用原 `TEMPLATES` 示例集。
@@ -46,11 +80,6 @@ export default {
 Webpack4 不读取短子路径 exports：组件改从 `lark-doc/dist/lark-doc-vue2.common.js` 引入，样式改为 `lark-doc/dist/lark-doc.css`。组件会在销毁时释放自身编辑器；框架生命周期示例见[各环境接入](/guide/environments#env-vue2-sfc)。
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.templates` | `boolean` | `true` | 关闭后模板选择入口隐藏。 |
-| `templates` | `TemplateItem[]` | 按入口区分 | 未传或非数组时，编辑器使用 `INSERT_TEMPLATES`，工作台整文替换仍使用 `TEMPLATES`。空数组表示空模板集，初始内容回退为空段落。 |
 
 ### TemplateItem
 
