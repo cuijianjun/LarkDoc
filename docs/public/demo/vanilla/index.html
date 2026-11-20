@@ -23,18 +23,23 @@
   <header><strong>lark-doc</strong><span>原生 UMD</span><a href="../">返回 Playground</a></header>
   <main>
     <section class="card"><div id="editor" aria-label="原生 UMD 编辑器预览"></div></section>
-    <pre>&lt;script src="./vendor/vue.min.js"&gt;&lt;/script&gt;
-&lt;script src="./vendor/lark-doc.umd.min.js"&gt;&lt;/script&gt;
-&lt;script&gt;new LarkDoc({ element: '#editor', storage: 'none' })&lt;/script&gt;</pre>
+    <p id="error" role="alert" hidden></p>
+    <pre>&lt;script src="../vendor/lark-doc-element.umd.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  window.LarkDoc.runtimeReady.then(({ LarkDoc }) =&gt; {
+    new LarkDoc({ element: '#editor', storage: 'none' })
+  })
+&lt;/script&gt;</pre>
   </main>
-  <script src="../vendor/vue.min.js"></script>
-  <script src="../vendor/lark-doc.umd.min.js"></script>
+  <script src="../vendor/lark-doc-element.umd.min.js"></script>
   <script>
-    (function () {
-      var ns = window['lark-doc'] || window.larkDoc || {}
-      var Ctor = ns.LarkDoc || ns.default
-      if (Ctor) new Ctor({ element: '#editor', title: '原生 UMD 示例', storage: 'none' })
-    }())
+    Promise.resolve().then(() => window.LarkDoc.runtimeReady).then(({ LarkDoc }) => {
+      new LarkDoc({ element: '#editor', title: '原生 UMD 示例', storage: 'none' })
+    }).catch(error => {
+      const message = document.getElementById('error')
+      message.textContent = '编辑器加载失败：' + error.message
+      message.hidden = false
+    })
   </script>
 </body>
 </html>

@@ -70,7 +70,7 @@ const collab = {
 // <LarkDocEditor :collab="collab" />
 ```
 
-`Yjs` 是协同入口实际使用的 Yjs 运行时导出。公开 `0.14.6` 保留原有宿主共享依赖方式：只要宿主 `import * as Y from 'yjs'` 与 SDK 解析到同一模块实例，仍可传入它创建的真实 `Y.Doc`。内网 `0.14.6-intranet.1` 自带依赖，推荐按上例从 SDK 导出创建文档，或使用 `createHocuspocusBridge` 创建文档与 Provider。
+公开 npm 版与宿主共享 Yjs。使用 `lark-doc/collab` 导出的 `Yjs` 创建 `Y.Doc`，或确认宿主的 `yjs` 与 SDK 解析到同一个模块实例。内网 `0.14.6-intranet.1` 自带依赖，可从 SDK 导出创建文档，也可用 `createHocuspocusBridge` 创建文档与 Provider。
 
 不同物理副本的 Yjs 即使版本相同也不能混用；同一物理包的 ESM/CJS 加载也可能产生不同实例，仅统一模块格式不足以保证身份一致。`ydoc` 必须是协同入口实际运行时的真实 `Y.Doc`，不能用形似对象绕过检查。接入自建 Provider 时也需验证它与 SDK 共享 Yjs 实例。
 

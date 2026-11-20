@@ -1,33 +1,17 @@
----
-layout: home
-hero:
-  name: lark-doc
-  text: 选好环境，一页接入编辑器
-  tagline: 安装、引入、配置、最小代码和真实预览放在同一页。支持 Vue2、Vue3、React、HTML 和 Web Component。
-  actions:
-    - theme: brand
-      text: 选择环境与运行 demo
-      link: /examples/
-    - theme: alt
-      text: 功能与 API
-      link: /guide/configuration
-    - theme: alt
-      text: 在线改代码
-      link: /demo/
-      target: _blank
-features:
-  - icon: 🧩
-    title: 每个环境一个路由
-    details: Vue2 的 Webpack4/5、Vue3、React、HTML 和 Web Component 各有完整独立示例。
-  - icon: 🖼️
-    title: 图片流程可配置
-    details: 先用 base64 运行，再填服务器地址和返回字段，观察上传回调。
-  - icon: 📝
-    title: 内容由应用管理
-    details: 读取 JSON、监听正文变化，在自己的应用中保存，离开页面时释放编辑器。
----
+# LarkDoc 开发文档
 
-需要调整更多编辑器配置时，可打开<a href="./demo/" target="_blank" rel="noopener">配置 Playground</a>。
+从左侧选择功能，在当前页按步骤试用，再复制完整 HTML。站点示例使用 `lark-doc@0.14.10`。
+
+第一次接入可以先跑一个最小工程。[快速开始](/guide/getting-started) · [选择接入环境](/examples/)
+
+## 常用功能
+
+| 要完成的事 | 步骤和代码 |
+| --- | --- |
+| 给文字加格式 | [标题](/blocks/heading#demo)、[加粗与斜体](/blocks/marks#demo) |
+| 在正文里组织内容 | [表格](/blocks/table#demo)、[列表](/blocks/lists#demo)、[分栏](/blocks/columns#demo) |
+| 加入图片和公式 | [图片](/blocks/image#demo)、[图片上传](/blocks/uploader#demo)、[数学公式](/blocks/math#demo) |
+| 接入应用能力 | [评论](/blocks/comment#demo)、[协同与权限](/guide/collaboration#demo)、[导入导出](/blocks/import-export#demo) |
 
 ::: warning 项目声明
 本项目为**个人学习用途**的开源练习项目，界面与交互模仿飞书文档（Lark Docs），

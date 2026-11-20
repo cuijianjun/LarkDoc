@@ -30,23 +30,22 @@
       onError: event => { upload.textContent = `图片：${event.error.message}` },
       onSettled: event => { upload.textContent = `图片：${event.status}（${event.mode}）` },
     }
-    // 主入口只负责加载 runtime（同目录 10 MB+），构造器要等它到位再取。
-    window.LarkDoc.runtimeReady.then(() => {
-    const doc = new window.LarkDoc.LarkDoc({
-      element: '#host',
-      title: 'HTML / CDN',
-      content: '<p>开始编辑，也可以选图、粘贴或拖入图片。</p>',
-      storage: 'none',
-      uploader,
-      onReady: () => { read.disabled = false },
-      onUpdate: () => { document.getElementById('updates').textContent = `正文更新：${++updates}` },
-    })
-    read.onclick = () => {
-      output.hidden = false
-      output.textContent = JSON.stringify({ title: doc.getTitle(), content: doc.getJSON() }, null, 2)
-    }
-    // 单页应用离开该页面时同样需要调用 doc.destroy()。
-    window.addEventListener('pagehide', event => { if (!event.persisted) doc.destroy() })
+    // runtimeReady 返回可用的 SDK 命名空间。
+    window.LarkDoc.runtimeReady.then(({ LarkDoc }) => {
+      const doc = new LarkDoc({
+        element: '#host',
+        title: 'HTML / CDN',
+        content: '<p>开始编辑，也可以选图、粘贴或拖入图片。</p>',
+        storage: 'none',
+        uploader,
+        onReady: () => { read.disabled = false },
+        onUpdate: () => { document.getElementById('updates').textContent = `正文更新：${++updates}` },
+      })
+      read.onclick = () => {
+        output.hidden = false
+        output.textContent = JSON.stringify({ title: doc.getTitle(), content: doc.getJSON() }, null, 2)
+      }
+      window.addEventListener('pagehide', event => { if (!event.persisted) doc.destroy() })
     }).catch((error) => {
       output.hidden = false
       output.textContent = `runtime 加载失败：${error && error.message}`

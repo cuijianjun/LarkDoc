@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 折叠块
 
 折叠范围是块的**缩进子树**，与块类型、标题级别都无关：块模型里每个块只有一个父块，子块靠缩进挂在父块下面，所以折叠一个块只带走缩进比它更深的块。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="folding" />
 
 这一点与飞书一致，也是它与直觉最容易冲突的地方：
 

@@ -1,8 +1,16 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 视图模式
 
 视图模式组件提供阅读模式、演示（幻灯）模式、全屏与文档宽度切换，均归属工具栏 `viewModes` 分组。只读预览可配合 `readonly` 实现纯展示页。
 
-## 基本用法
+## 代码演示 {#demo}
+
+<FeatureDemo name="view-modes" />
+
+## 配置示例
 
 ```ts
 new LarkDoc({

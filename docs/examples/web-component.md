@@ -4,7 +4,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 # Web Component
 
-使用 `<lark-doc>` 自定义标签，通过 property 传递对象和函数；不需要 Vue、React 或打包器。本页使用 **lark-doc 0.14.6**，Node/npm 只用于获取 SDK，Python 3 用于启动本地静态服务。
+使用 `<lark-doc>` 自定义标签，通过 property 传递对象和函数；不需要 Vue、React 或打包器。本页使用 **lark-doc 0.14.10**，Node/npm 只用于获取 SDK，Python 3 用于启动本地静态服务。
 
 <EnvironmentPreview env="web-component" title="Web Component" />
 
@@ -16,7 +16,7 @@ import EnvironmentPreview from './EnvironmentPreview.vue'
 
 ```bash
 npm init -y
-npm install lark-doc@0.14.6 --save-exact
+npm install lark-doc@0.14.10 --save-exact
 mkdir -p public/vendor
 cp -R node_modules/lark-doc/dist/. public/vendor/
 ```
@@ -63,44 +63,4 @@ python3 -m http.server 4177 --directory public
 
 ## 可选：改为服务器上传
 
-::: details 配置上传地址、响应字段与完整回调
-
-在 `public/index.html` 中，用下面的完整对象替换原有的 `const uploader = { ... }`，保留初始化中的 `uploader` 引用。仍在 `element.options` 赋值和元素插入 DOM 之前完成配置。这里的回调输出到浏览器控制台；可按应用需要改成页面提示。
-
-```js
-const uploader = {
-  action: 'https://your-api.example.com/upload', // 换成你的上传接口
-  fieldName: 'file',
-  response: {
-    success: { path: 'code', equals: 0 },
-    url: 'data.url',
-    attchId: 'data.id',
-    message: 'message',
-  },
-  beforeUpload: (file, ctx) => {
-    console.log('上传前检查', ctx.taskId, file.name)
-    return true // 返回 false 可取消本次任务
-  },
-  onStart: event => console.log('开始', event.taskId),
-  onProgress: event => console.log('进度', event.taskId, event.percent),
-  onRetry: event => console.log('重试', event.taskId, event.nextAttempt),
-  onSuccess: event => console.log('取得图片结果', event.taskId),
-  onError: event => console.error('失败', event.taskId, event.error.message),
-  onCancel: event => console.log('取消', event.taskId, event.reason),
-  onReject: event => console.log('拒绝', event.taskId),
-  onSettled: event => console.log('结束', event.taskId, event.status),
-  onCallbackError: error => console.error('应用回调异常', error.message),
-}
-```
-
-后端应返回：
-
-```json
-{ "code": 0, "message": "上传成功", "data": { "url": "https://your-api.example.com/images/a.png", "id": "123" } }
-```
-
-库会发送 multipart 文件，等待 HTTP 与业务成功、提取并校验地址后写入图片。不要在 `onSuccess` 里再插图；它表示取得合法结果，不表示业务后端已保存文档。选图、粘贴文件、拖拽、替换和裁剪共用这套回调；粘贴已有图片 URL 不触发文件上传回调。
-
-文档站没有上传后端。请使用自己的 HTTPS 接口，跨域时由后端允许页面来源；图片地址也要能被页面访问。服务器失败会触发错误回调，不会自动改成本地 base64。重试、请求头和取消的更多选项见[上传器 API](/blocks/uploader)。
-
-:::
+修改 `public/index.html` 中的 `uploader`，再通过 `element.options` 传给组件。 完整配置、返回字段和回调在[图片上传](/blocks/uploader#初始化配置-http-上传)。接口由应用后端提供。

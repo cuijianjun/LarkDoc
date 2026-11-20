@@ -1,8 +1,18 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 网络策略
 
 网络策略组件控制编辑器的运行时出网行为。默认 `open`：图片等媒体按原地址加载，**老系统的 http 图床开箱即可显示**。需要内网 / 公文 / 隐私场景时显式切到 `allowlist` 或 `offline`，`offline` 下外链图片降级为占位块并保留原地址。策略在粘贴、`setContent()`、图片渲染三个接线点统一生效。
 
-## 基本用法
+## 代码演示 {#demo}
+
+<FeatureDemo name="network" />
+
+示例通过 JSON 传入图片地址，交给编辑器应用离线策略。外链原址仍保留在文档数据中。
+
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -18,7 +28,7 @@ new LarkDoc({
 })
 ```
 
-## 配置参考
+## 配置与用法
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |

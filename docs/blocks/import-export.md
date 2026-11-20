@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 导入导出
 
 顶部「导入」「导出」两个入口，**各自能单独关、格式能逐项配**。转换全在本地完成，DOCX 依赖按需动态加载，不进首包。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="import-export" />
 
 ## 配置
 

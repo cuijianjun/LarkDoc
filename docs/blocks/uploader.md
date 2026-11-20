@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 图片上传：接口配置与完整回调
 
 你可以让库直接把图片上传到服务器，也可以先用本地 base64。Vue2、Vue3、React、Web Component 和原生页面共用同一条图片管线。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="uploader" />
 
 ## 先选择保存方式
 

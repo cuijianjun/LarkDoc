@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 标题
 
 标题组件覆盖文档标题与正文章节标题。正文标题支持 H1–H9 九个层级（H7–H9 渲染为带 `data-level` 的 `div`，导出 HTML 时 H1–H6 落到语义化标签）。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="heading" />
 
 要区分两套结构：
 

@@ -1,8 +1,16 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 链接
 
 链接组件提供插入与编辑对话框，支持自定义链接文字、目标为选区或新插入。外链地址不做连通性校验；配合[网络策略](/blocks/network)可在渲染侧拦截外部资源。
 
-## 基本用法
+## 代码演示 {#demo}
+
+<FeatureDemo name="link" />
+
+## 配置示例
 
 ```ts
 new LarkDoc({
@@ -15,7 +23,14 @@ new LarkDoc({
 doc.getEditor().commands.setLink({ href: 'https://example.com' })
 ```
 
-## 使用方式
+## 配置与用法
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `features.textStyle` | `boolean` | `true` | 关闭后链接入口隐藏。 |
+| `commands.disabled: ['setLink', 'unsetLink']` | `string[]` | `[]` | 按命令禁用。 |
+
+### 使用方式
 
 | 入口 | 操作 |
 | --- | --- |
@@ -27,13 +42,6 @@ doc.getEditor().commands.setLink({ href: 'https://example.com' })
 | 打开 | 单击行内链接或整张卡片打开新页；预览工具条提供“打开原网页”，内容区可滚动和操作。 |
 | 复制 | 更多菜单提供富文本链接与原始网页 URL 两种复制。 |
 | 粘贴 | 粘贴带超链接的 HTML 保留 `href` 与 `rel`。 |
-
-## 配置参考
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.textStyle` | `boolean` | `true` | 关闭后链接入口隐藏。 |
-| `commands.disabled: ['setLink', 'unsetLink']` | `string[]` | `[]` | 按命令禁用。 |
 
 ### HTML 契约
 

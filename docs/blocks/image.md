@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 图片
 
 支持本地上传、拖拽 / 粘贴插入、拖宽、裁剪、替换、说明文字、点开预览。上传优先走宿主 `uploader.upload`；外链图片默认按原地址加载（`network.mode: 'open'`），切到 `offline` 后显示占位块。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="image" />
 
 ## 配置
 

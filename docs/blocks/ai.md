@@ -1,4 +1,12 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # AI 组件
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="ai" />
 
 ## 概述
 

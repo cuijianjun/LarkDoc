@@ -1,12 +1,21 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 协同与权限
 
-lark-doc 的协同、权限、版本、评论能力都收敛在 `DocumentSession` 会话层。编辑器组件只依赖会话，宿主通过替换 Provider 接入自己的后端，UI 代码零改动。
+单人编辑可直接使用[快速开始](/guide/getting-started)。要让多个用户同时编辑同一份正文，应用需要接入 `lark-doc/collab`、Yjs 和自己的实时服务。
 
-> **两条链路的分工**：本页讲的是**会话层抽象**（`providers.collaboration` 的 `connect/disconnect`，宿主接自己的后端）。
-> P6a 起另有一条**基于 Yjs 的实时链路**——`lark-doc/collab` 子入口 + `@hocuspocus/provider`，
-> 编辑器侧通过 `<LarkDocEditor :collab="...">` 接入。它不经过 `providers.collaboration`，
-> 服务端契约见 [collab-server.md](./collab-server.md)。两条链路可以并存：前者管「连接态/在线人数」，
-> 后者管「正文收敛」。
+## 代码演示 {#demo}
+
+<FeatureDemo name="collaboration" />
+
+| 你需要的能力 | 接入哪一层 |
+| --- | --- |
+| 权限、评论、版本和连接状态 | 本页的 `DocumentSession` 与各类 Provider |
+| 多人实时同步正文 | [协同服务端契约](./collab-server.md)中的 Yjs 接入 |
+
+会话层的 `providers.collaboration` 管理连接状态，正文通过 Yjs 实时链路同步。
 
 ## 架构分层
 

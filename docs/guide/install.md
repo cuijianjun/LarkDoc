@@ -1,27 +1,23 @@
 # 安装与离线
 
-首次接入请直接选择[示例中心](/examples/)中的环境；安装、引入、配置和最小 demo 都在同一页。本文补充锁版本、内网依赖和静态资源搬运。
+从[示例中心](/examples/)选择你的框架。这里说明如何安装 npm 版、使用内网包或把资源放到静态服务器。
 
 ## 在线安装 {#do-install-online}
 
 Vue2、Vue3、React 和无框架应用使用相同命令：
 
 ```bash
-npm install lark-doc@0.14.6 --save-exact
+npm install lark-doc@0.14.10 --save-exact
 npm ls lark-doc
 ```
 
-锁定版本并提交应用锁文件，保证本地和 CI 安装一致。普通编辑不声明 Vue 或协同 optional peer，不需要 `--legacy-peer-deps`；应用本身的依赖冲突应按实际报错处理。
-
-Node14.21.3 的契约是库构建与普通 CJS 消费，应用仍遵守自身 Vite、Webpack 或 Vue CLI 的 Node 要求。源码开发工具与显式协同的要求见[开发说明](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md)。
+提交应用的锁文件，让本地和 CI 安装同一版本。Node 版本按应用的 Vite、Webpack 或 Vue CLI 要求选择。
 
 ## 内网安装 {#do-install-intranet}
 
-公开 npm 版 `0.14.6` 保持由宿主共享运行依赖。完全离线安装使用基于它单独构建的 `0.14.6-intranet.1` 自包含 tgz，已带齐 SDK 所需的运行依赖。将已校验的内网 tgz 复制到应用 `vendor/`，Vue2 使用 npm，Vue3 使用 pnpm 9/10；具体 Git Bash 命令和最小组件见[内网接入](/guide/intranet-migration)。不需要另带缓存，也不需要迁移应用工具链。
+如果收到的是独立交付的 `0.14.6-intranet.1`，将校验过的 tgz 放进应用的 `vendor/`，按[内网迁移](/guide/intranet-migration)安装。内网包带齐 SDK 的运行依赖，框架和业务依赖仍需由应用准备。
 
-SDK 自包含只覆盖 SDK 运行依赖。原应用的框架、构建工具和业务依赖仍由原项目准备；整个应用从空 `node_modules` 完全离线重装，需要另备应用自身依赖。
-
-维护者使用 `npm run pack:sdk` 默认生成公开包；加 `--intranet-version 0.14.6-intranet.1` 才生成内网自包含包，接收方直接安装该 tgz。普通 `npm pack lark-doc@0.14.6` 不能当作完全离线包，历史 `pack-intranet.sh` 也不用于当前发行。
+源码出包及版本规则见[开发手册的 SDK 与内网交付](https://github.com/cuijianjun/LarkDoc/blob/master/DEVELOPMENT.md#distribution)。
 
 ## 引入方式 {#do-import}
 
