@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 模板
 
 模板有三条独立流程：
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="templates" />
 
 - 编辑器 `/` 或 `＋` →「模板」在当前选区插入正文，不改文档标题；「更多模板」打开同页模板库，可搜索、只读预览并插入。
 - 工作台顶部模板选择器在确认后替换整篇正文并更新标题，继续使用原 `TEMPLATES` 示例集。

@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 数学公式
 
 数学公式组件提供行内公式（inlineMath）与块级公式（blockMath）两种节点，语法为 LaTeX，渲染引擎为 KaTeX。KaTeX 样式与字体随包本地发布，离线可用；公式 JSON 契约始终保留，即使渲染失败也不丢内容。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="math" />
 
 ## 配置示例
 

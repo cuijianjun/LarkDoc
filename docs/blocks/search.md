@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 查找替换
 
 查找替换组件提供全文检索、命中计数、上一个 / 下一个导航与逐个 / 全部替换。命中项以高亮装饰渲染；命中被折叠块内的内容时自动展开它。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="search" />
 
 ## 配置示例
 

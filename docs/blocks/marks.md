@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 文字格式
 
 行内格式组件包含 8 种 mark：加粗、斜体、下划线、删除线、行内代码、下标、上标、高亮。支持整组开关，也可通过 `toolbarKeys` 精确到单个 mark。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="marks" />
 
 ## 配置示例
 

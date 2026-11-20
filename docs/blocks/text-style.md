@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 文字样式
 
 文字样式组件提供颜色（文字色与高亮色）调色板，带最近使用记录。颜色应用于选区或当前块，工具栏归属 `textStyle` 分组。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="text-style" />
 
 ## 配置示例
 

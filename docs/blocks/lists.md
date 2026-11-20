@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 列表
 
 列表组件包含无序列表、有序列表与任务列表三种形态，支持相互转换与嵌套。斜杠命令、工具栏插入菜单与块句柄「转为列表」均可触发。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="lists" />
 
 块菜单的「转为有序列表」用在**标题**上时不转列表，而是给标题开启编号（飞书的「标题编号」就是给标题挂有序列表），见[标题 · 标题编号](/blocks/heading#标题编号)。
 

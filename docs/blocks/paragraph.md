@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 段落样式
 
 段落样式组件控制块级排版：对齐（左 / 居中 / 右 / 两端）、缩进（层级由前一个块决定，最深 5 级）、行高与清除格式。气泡菜单与块句柄菜单同步提供入口。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="paragraph" />
 
 ## 配置示例
 

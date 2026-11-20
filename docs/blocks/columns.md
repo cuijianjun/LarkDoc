@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 分栏
 
 分栏组件把一段内容切分为多列排版，适合对比展示、图文并排。列间支持拖拽分隔线调整宽度，列内可放任意块级内容。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="columns" />
 
 ## 配置示例
 

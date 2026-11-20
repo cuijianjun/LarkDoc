@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 块句柄与拖拽
 
 块句柄组件在悬停块左侧显示把手，提供块级操作菜单：剪切 / 复制 / 翻译 / 创建副本 / 上下移动 / 删除，以及「转为…」类型切换、整块对齐与整块配色。按住把手可拖拽整块移动，拖拽过程显示落点指示线。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="block-handle" />
 
 ## 配置示例
 

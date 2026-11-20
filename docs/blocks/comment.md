@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 评论
 
 评论由 `comments` Provider 保存，正文只保存线程锚点。原绿色主题使用现有语义色。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="comment" />
 
 活动评论解决后进入“历史评论”；文档顶栏更多菜单调用 `openCommentHistory(event?)`。
 历史弹层宽 360px、头部高 48px，按 `canEdit` 与 `canView` 能力开放（切换阅读模式不等于失去权限），

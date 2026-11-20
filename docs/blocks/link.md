@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 链接
 
 链接组件提供插入与编辑对话框，支持自定义链接文字、目标为选区或新插入。外链地址不做连通性校验；配合[网络策略](/blocks/network)可在渲染侧拦截外部资源。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="link" />
 
 ## 配置示例
 

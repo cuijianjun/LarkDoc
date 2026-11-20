@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 表格
 
 表格组件支持行列增删、单元格合并 / 拆分、表头行 / 表头列切换、均分列宽与拖拽调宽，上限 9×9。工具条按当前光标所在单元格动态显示。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="table" />
 
 ## 配置示例
 

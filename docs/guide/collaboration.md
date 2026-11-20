@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 协同与权限
 
 单人编辑可直接使用[快速开始](/guide/getting-started)。要让多个用户同时编辑同一份正文，应用需要接入 `lark-doc/collab`、Yjs 和自己的实时服务。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="collaboration" />
 
 | 你需要的能力 | 接入哪一层 |
 | --- | --- |

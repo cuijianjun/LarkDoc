@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 表情
 
 表情组件提供分类标签、搜索过滤与最近使用记录，插入的是内联 atom 节点（`span[data-type="emoji"]`）。内置 11 个基础表情，按「常用 / 提示」等分类组织；数据为内置字符表，离线可用。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="emoji" />
 
 ## 配置示例
 

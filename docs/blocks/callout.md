@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 高亮块
 
 高亮块（Callout）是带底色与图标的提示容器，适合注意事项、要点强调。图标复用表情选择器（分类 + 搜索 + 最近使用），块内可承载任意块级内容。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="callout" />
 
 ## 配置示例
 

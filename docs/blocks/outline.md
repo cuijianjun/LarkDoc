@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 目录
 
 目录组件根据正文标题层级实时生成大纲，支持跳转定位、当前章节高亮、章节收起。面板默认在宽屏（>760px）自动展开，可整体收起为图标。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="outline" />
 
 ## 配置示例
 

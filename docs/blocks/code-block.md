@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 代码块
 
 代码块组件提供语言选择、语法高亮（highlight.js 按需动态加载，本地 chunk 无外网请求）、行内复制与编辑态切换。可通过 `config.performance.syntaxHighlight` 关闭语法高亮。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="code-block" />
 
 语言选为 **Mermaid 图表** 时，代码块升级为图表块：**默认直接渲染图表**（与 Vditor 行为一致），点「编辑源码」可切回源码编辑。渲染器（mermaid，打包进产物、不请求外网）是 `import()` 懒 chunk，只在首次渲染时按需加载。
 

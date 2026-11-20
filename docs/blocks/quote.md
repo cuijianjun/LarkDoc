@@ -1,6 +1,14 @@
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 引用
 
 引用组件渲染块级引文（`<blockquote>`），常用于摘录、风险提示。与[高亮块](/blocks/callout)的区别：引用是纯排版语义，不带图标与底色。
+
+## 代码演示 {#demo}
+
+<FeatureDemo name="quote" />
 
 ## 配置示例
 
