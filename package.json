@@ -379,16 +379,16 @@
       "scope": "lazy"
     },
     {
-      "name": "Element UI 浮层与对话框 (gzip)",
+      "name": "Element UI 浮层与对话框 (gzip)（32 → 32.1：扫码分享浮层与查换面板浮层归此包）",
       "path": "dist/lark-doc-element.umd.min.uiOverlays.js",
-      "limit": "32 KB",
+      "limit": "32.1 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载）",
+      "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载；21 → 21.1 查换禁用档与关注卡 token，21.1 → 21.25 通知面板单行条目 + 标题后状态铃铛 + 顶栏铃铛取色，首屏样式零增长）",
       "path": "dist/lark-doc-element.ui.css",
-      "limit": "21 KB",
+      "limit": "21.25 KB",
       "gzip": true,
       "scope": "lazy"
     },
