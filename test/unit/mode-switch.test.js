@@ -177,11 +177,14 @@ describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
     expect(MODE_MENU_MIN_WIDTH).toBe(340)
   })
 
-  it('图标映射：阅读复用既有 reading，另两个是新画的', () => {
-    expect(MODE_ICONS).toEqual({ edit: 'mode-edit', suggest: 'mode-comment', read: 'reading' })
-    // 三个 key 都必须真的在 ICONS 表里（键名带连字符的加了引号，reading 是裸标识符），
+  it('图标映射与飞书截图一致：编辑铅笔 / 修订方框带笔 / 阅读眼睛', () => {
+    expect(MODE_ICONS).toEqual({ edit: 'mode-edit', suggest: 'mode-suggest', read: 'mode-read' })
+    // 三个 key 都必须真的在 ICONS 表里（键名带连字符的加了引号），
     // 否则原生 icon renderer 查不到会静默渲染空 span —— 按钮上就只剩文字。
     expect(icons).toContain("'mode-edit': wrap(")
+    expect(icons).toContain("'mode-suggest': wrap(")
+    expect(icons).toContain("'mode-read': wrap(")
+    // 被替换的两个旧键仍被评论入口 / 工具栏阅读模式复用，不能一起删掉。
     expect(icons).toContain("'mode-comment': wrap(")
     expect(icons).toContain('reading: wrap(')
   })
@@ -357,9 +360,9 @@ describe('P4-06 模式切换行为（viewModesMixin）', () => {
     expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('mode-edit')
     ed.mode = 'suggest'
     expect(viewModesMixin.computed.modeLabel.call(ed)).toBe('修订')
-    expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('mode-comment')
+    expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('mode-suggest')
     ed.mode = 'read'
-    expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('reading')
+    expect(viewModesMixin.computed.modeIcon.call(ed)).toBe('mode-read')
     expect(viewModesMixin.computed.modeOptions.call(ed)).toEqual(DOC_MODES)
   })
 

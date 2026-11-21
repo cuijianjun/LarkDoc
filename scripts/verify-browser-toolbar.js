@@ -569,14 +569,14 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     const rect = menu.getBoundingClientRect()
     const btnRect = btn.getBoundingClientRect()
     const rows = [...menu.querySelectorAll('[role="option"]')]
-    // 选中行配色必须等于本档的激活 token。变量值（如 #e3f2ea）与 computed 的
-    // rgb() 写法不同，所以借一个临时元素把 token 解析成 computed 色再比。
-    // 必须挂在 `.lark-doc` 内部：token 定义在根容器上，挂到 host（根容器的父亲）
-    // 上取不到，会变成空串。
+    // 飞书对齐：选中行不铺底色（透明），只把主标题染成本档激活 token。
+    // 变量值（如 #4c6ef5）与 computed 的 rgb() 写法不同，所以借一个临时元素
+    // 把 token 解析成 computed 色再比。必须挂在 `.lark-doc` 内部：token 定义在
+    // 根容器上，挂到 host（根容器的父亲）上取不到，会变成空串。
     const tokenHost = menu.closest('.lark-doc') || menu
     const probe = document.createElement('span')
     tokenHost.appendChild(probe)
-    probe.style.backgroundColor = 'var(--ld-bg-accent-active)'
+    probe.style.backgroundColor = 'transparent'
     const expectedActiveBg = getComputedStyle(probe).backgroundColor
     probe.style.backgroundColor = 'var(--ld-text-accent-hover)'
     const expectedActiveLabel = getComputedStyle(probe).backgroundColor
@@ -621,10 +621,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!modeMenu && modeMenu.hints.filter(Boolean).length === 3 && modeMenu.rowH >= 46 && modeMenu.checkHidden === 'none',
     modeMenu ? `hints=${modeMenu.hints.join(' / ')} rowH=${modeMenu.rowH} check=${modeMenu.checkHidden}` : '')
 
-  // 选中底色/文字**必须跟着当前主题走**（与块菜单 .lark-doc-menu-active 同一套激活 token）。
-  // 曾经的坑：写死 --ld-bg-selected / --ld-brand-content，那两枚在默认绿档是飞书蓝字面量，
-  // 菜单底下半截就冒出两片外来蓝，用户实测反馈「选中的背景色不符合当前主题」。
-  record('[顶栏] 模式菜单选中行取本档激活 token（底色 / 主标题色都跟着主题变）',
+  // 飞书口径：选中行白底、不加强调底色，选中态靠蓝字/蓝图标/蓝勾；主标题色仍随主题 token 走。
+  record('[顶栏] 模式菜单选中行不铺底色、主标题取本档激活 token',
     !!modeMenu && !!modeMenu.activeBg
       && modeMenu.activeBg === modeMenu.expectedActiveBg
       && modeMenu.activeLabelColor === modeMenu.expectedActiveLabel,

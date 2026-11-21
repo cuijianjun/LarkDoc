@@ -27,11 +27,11 @@ export const DOC_MODES = [
 export const DOC_MODE_IDS = ['edit', 'suggest', 'read']
 
 /**
- * 顶栏按钮图标：阅读复用工具栏已有的 `reading`（书本），另两个是 P4-06 新画。
- * 只借来「语义最贴」的线性符号 —— 03 只采集了图标位尺寸（16×22 位置框、字形 16），
- * 没采集字形路径，所以这里不声称与飞书逐像素一致。
+ * 三态图标与飞书前台截图逐项对齐：编辑=铅笔、修订=方框带笔、阅读=眼睛。
+ * `mode-edit` 沿用旧键；后两枚是为模式菜单新画的线性符号，不替换 `mode-comment`
+ * / `reading`（它们仍被评论入口和工具栏阅读模式复用）。
  */
-export const MODE_ICONS = { edit: 'mode-edit', suggest: 'mode-comment', read: 'reading' }
+export const MODE_ICONS = { edit: 'mode-edit', suggest: 'mode-suggest', read: 'mode-read' }
 
 /**
  * 下拉最小宽度。旧实现是手搓的 180×160 定宽弹层（每项 170×50、副标题居中两行）；

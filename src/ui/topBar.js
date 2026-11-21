@@ -33,7 +33,7 @@ import { createScrollNavigator } from './scrollNavigator'
 import { createTopBarMenus } from './topBarMenus'
 import { createDesktopHeaderDetails } from './desktopHeaderDetails'
 import { TOPBAR_MORE_CAPABILITY } from '../components/lark-doc/editor/topbarMoreMixin'
-import { MODE_MENU_MIN_WIDTH } from '../components/lark-doc/editor/docModes'
+import { MODE_ICONS, MODE_MENU_MIN_WIDTH } from '../components/lark-doc/editor/docModes'
 import { createMobileLibrary } from './mobileLibrary'
 
 /** 缺省副标题（`effectiveReadonly` 为假时的文案）。 */
@@ -664,7 +664,7 @@ export function createTopBar(options = {}) {
     switchable = state.modeSwitchable !== false
     modeSelect.update({
       options: items.map((item) => ({ value: item.id, label: item.label, hint: item.hint,
-        ...(state.compactHeader ? { icon: { edit: 'mode-edit', suggest: 'mode-comment', read: 'reading' }[item.id] } : {}) })),
+        ...(state.compactHeader ? { icon: MODE_ICONS[item.id] } : {}) })),
       value: state.mode,
       disabled: !switchable,
       icon: state.modeIcon || '',

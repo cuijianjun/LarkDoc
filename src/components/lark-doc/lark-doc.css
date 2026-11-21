@@ -2419,15 +2419,13 @@
 .lark-doc .lark-doc-mode-select .lark-doc-select-menu { z-index: 1050; padding: 5px; border-radius: 9px; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-menu button { gap: 0; padding: 5px 10px; border-radius: 6px; color: var(--ld-text); }
 .lark-doc .lark-doc-mode-select .lark-doc-select-menu button:hover:not(:disabled), .lark-doc .lark-doc-mode-select .lark-doc-select-menu button.is-highlight { color: var(--ld-text); }
-/* 选中行 = 「已生效」语义：底与字都取本档激活 token，跟 `.lark-doc-menu-active`（块菜单）
-   完全同一套。绿档解析成浅绿底 + 深绿字，飞书档自动解析成浅蓝底 + 蓝字（与截图一致）。
-   本选择器 (0,4,1) 高于原语里 `button:hover` / `.is-highlight` 的 (0,3,1)，
-   所以鼠标扫过选中行时底色不会被冲淡成 --ld-bg-hover-select（实测已验证，别再加
-   一串 :hover 补丁）。 */
-.lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active { background: var(--ld-bg-accent-active); }
+/* 选中行对齐飞书前台截图：整行保持菜单白底，选中态只靠蓝色图标 + 蓝字 + 右侧蓝勾，
+   不铺强调底色。本选择器 (0,4,1) 高于原语 `button:hover` / `.is-highlight` 的 (0,3,1)，
+   鼠标扫过选中行也不会冒出 --ld-bg-hover-select 底色（别再加一串 :hover 补丁）。 */
+.lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active { background: transparent; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-menu button.lark-doc-select-active .lark-doc-select-item-label { color: var(--ld-text-accent-hover); }
-/* 这份菜单不画勾选列（截图口径）：整行宽度全给文案，选中态靠底色；
-   副标题保持原语的 --ld-text-secondary，只给主标题上强调色。 */
+/* 共享下拉原语默认给每项留勾选列；模式菜单沿用飞书口径：未选中项不画勾，
+   只有当前项由 select 的 paintRows 加 .is-visible 露出蓝勾（紧凑顶栏下才排这一列）。 */
 .lark-doc .lark-doc-mode-select .lark-doc-select-check { display: none; }
 .lark-doc .lark-doc-mode-select .lark-doc-select-item-label { font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-mode-toast { position: fixed; z-index: 9999; top: 32px; left: 50%; display: inline-flex; width: max-content; box-sizing: border-box; min-height: 32px; max-width: min(420px, calc(100vw - 32px)); align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--ld-border); border-radius: 4px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); color: var(--ld-text-secondary); font-size: 14px; line-height: 20px; pointer-events: none; transform: translateX(-50%); animation: lark-doc-message-in 160ms ease-out; }
