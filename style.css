@@ -30,5 +30,6 @@
 /* 打印态放在最后：@media print 与主屏规则不在同一个媒体，但要压在前面所有打印期
    失效的 chrome 之上（导出 PDF 走的是浏览器打印通道）。 */
 /* Complete public stylesheet; standalone Element defers only this cold UI layer. */
+@import './src/styles/panel-tools.css';
 @import './src/styles/deferred-ui.css';
 @import './src/styles/print.css';

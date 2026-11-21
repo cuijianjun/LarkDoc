@@ -225,7 +225,7 @@ function loadCjsRuntime() {
   }
 }
 
-function mountSharedEditors(runtime, { caret = false } = {}) {
+function mountSharedEditors(runtime, { caret = false, bridge } = {}) {
   const websocket = vi.fn(() => { throw new Error('本测试不允许 WebSocket') })
   const fetch = vi.fn(() => { throw new Error('本测试不允许 HTTP 请求') })
   vi.stubGlobal('WebSocket', websocket)
@@ -237,8 +237,8 @@ function mountSharedEditors(runtime, { caret = false } = {}) {
     getClientRects: () => [],
     getBoundingClientRect: () => ({ top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 }),
   }))
-  const ydoc = new runtime.Y.Doc({ gc: false })
-  const awareness = caret ? new runtime.Awareness(ydoc) : null
+  const ydoc = bridge?.ydoc || new runtime.Y.Doc({ gc: false })
+  const awareness = bridge?.provider.awareness || (caret ? new runtime.Awareness(ydoc) : null)
   const elements = [document.createElement('div'), document.createElement('div')]
   elements.forEach(element => document.body.appendChild(element))
   const docs = []
@@ -246,9 +246,9 @@ function mountSharedEditors(runtime, { caret = false } = {}) {
   const destroy = () => {
     docs.forEach(doc => doc.destroy())
     editors.forEach(editor => expect(editor.isDestroyed).toBe(true))
-    awareness?.destroy()
+    if (bridge) bridge.destroy()
+    else { awareness?.destroy(); ydoc.destroy() }
     elements.forEach(element => element.remove())
-    ydoc.destroy()
     expect(websocket).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
     expect(xhr).not.toHaveBeenCalled()
@@ -257,7 +257,7 @@ function mountSharedEditors(runtime, { caret = false } = {}) {
     for (const [index, element] of elements.entries()) {
       const extensions = runtime.createCollabExtensions({
         ydoc,
-        ...(awareness ? { provider: { awareness }, user: { name: `User ${index}`, color: '#336699' } } : {}),
+        ...(awareness ? { provider: bridge?.provider || { awareness }, user: { name: `User ${index}`, color: '#336699' } } : {}),
       })
       const doc = new runtime.LarkDoc({
         element, documentId: 'published-shared-doc', content: '<p></p>', storage: 'none', network: { mode: 'offline' },
@@ -398,6 +398,65 @@ it('真实 Awareness/caret 使用同实例 DecorationSet，远端光标可渲染
     remoteDoc.destroy()
     fixture.destroy()
   }
+})
+
+it('桌面持久协作区分整块与文字选区，并让重合的本地输入光标优先', async () => {
+  const runtime = loadCjsRuntime()
+  const bridge = runtime.createDurableCollaborationBridge({ url: 'ws://127.0.0.1:33333', tenantId: 'tenant', docId: 'doc', autoConnect: false, presence: true })
+  bridge.provider.receiveStateless(JSON.stringify({
+    type: 'READY', protocolVersion: 'editor-crdt-v1', tenantId: 'tenant', docId: 'doc', epoch: '1', revision: '0',
+    lastSeq: '0', canWrite: true, principalId: 'alice', field: 'default', presenceProtocol: 'cursor-v1',
+    payloadBase64: Buffer.from(runtime.Y.encodeStateAsUpdate(bridge.ydoc)).toString('base64'),
+  }))
+  await bridge.ready
+  const fixture = mountSharedEditors(runtime, { bridge })
+  const remoteDoc = new runtime.Y.Doc(), remote = new runtime.Awareness(remoteDoc)
+  const [editor] = fixture.editors
+  const moveRemote = (from, to) => {
+    const sync = runtime.ySyncPluginKey.getState(editor.state)
+    const relative = position => runtime.absolutePositionToRelativePosition(position, sync.type, sync.binding.mapping)
+    remote.setLocalState({ user: { id: 'remote', name: '远端用户', colorIndex: 1 }, cursor: { anchor: relative(from), head: relative(to) } })
+    runtime.applyAwarenessUpdate(fixture.awareness, runtime.encodeAwarenessUpdate(remote, [remoteDoc.clientID]), 'in-memory-peer')
+  }
+  try {
+    expect(editor.commands.setContent({ type: 'doc', content: [
+      { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: '前一行' }] },
+      { type: 'fileBlock', attrs: { token: 'fixture-media', name: '视频.mp4', mimeType: 'video/mp4', viewType: 'Preview' } },
+      { type: 'paragraph', content: [{ type: 'text', text: '后一行' }] },
+    ] })).toBe(true)
+    await vi.waitFor(() => expect(editor.getJSON().content.map(node => node.type)).toContain('fileBlock'))
+    const file = editor.view.dom.querySelector('figure[data-type="file"]')
+    expect(file).not.toBeNull()
+    const filePos = editor.state.doc.firstChild.nodeSize
+    editor.view.focus()
+    editor.view.dispatch(editor.state.tr.setSelection(runtime.TextSelection.create(editor.state.doc, 2)))
+    moveRemote(filePos, filePos + 1)
+    await vi.waitFor(() => expect(file.getAttribute('data-collaboration-name')).toBe('远端用户'))
+    expect(file.classList.contains('collaboration-carets__block')).toBe(true)
+    expect(editor.view.dom.querySelector('.collaboration-carets__caret')).toBeNull()
+    expect(editor.state.selection.head).toBe(2)
+    expect(editor.view.hasFocus()).toBe(true)
+
+    moveRemote(1, filePos + 3)
+    await vi.waitFor(() => expect(editor.view.dom.querySelector('.collaboration-carets__label')?.textContent).toBe('远端用户'))
+    expect(editor.view.dom.querySelector('h1 .collaboration-carets__selection')?.textContent).toBe('前一行')
+    expect(editor.state.selection.head).toBe(2)
+
+    moveRemote(2, 2)
+    await vi.waitFor(() => expect(editor.view.dom.querySelector('.collaboration-carets__caret')).toBeNull())
+    editor.view.dispatch(editor.state.tr.setSelection(runtime.TextSelection.create(editor.state.doc, 3)))
+    await vi.waitFor(() => expect(editor.view.dom.querySelector('.collaboration-carets__label')?.textContent).toBe('远端用户'))
+    expect(editor.state.selection.head).toBe(3)
+
+    const media = editor.state.doc.nodeAt(filePos)
+    const move = editor.state.tr.delete(filePos, filePos + media.nodeSize)
+    editor.view.dispatch(move.insert(move.doc.content.size, media))
+    expect(editor.state.doc.lastChild.type.name).toBe('paragraph')
+    const trailing = editor.state.doc.content.size - editor.state.doc.lastChild.nodeSize
+    moveRemote(trailing - media.nodeSize, trailing)
+    await vi.waitFor(() => expect(editor.view.dom.querySelector('figure[data-type="file"]')?.getAttribute('data-collaboration-name')).toBe('远端用户'))
+    expect(editor.state.selection.head).toBe(3)
+  } finally { remote.destroy(); remoteDoc.destroy(); fixture.destroy() }
 })
 
 const extensionArrayForms = [

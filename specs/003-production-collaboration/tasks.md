@@ -13,6 +13,8 @@ description: "独立完整编辑器后端；126项按原验收条件分层核对
 
 ## 当前原任务核对（2026-11-08）
 
+2026-11-19 前端回归（T039、T072）。文档切换关闭旧历史评论弹层，异步回复、全文、编辑和选区评论只处理原提交的草稿。会话先收尾旧身份的协同握手，再在同一适配器连接新身份。最后一条待确认更新结清后，演示宿主按当前权限补发 HELLO，收到新 READY 才恢复编辑。受影响检查 2670 项通过、1 项跳过。Chrome 手机模拟器验证 12/12，双 iPhone 16 模拟会话通过双向编辑、断线补齐、评论锚点和本地撤销。运行日志见 `/tmp/larkdoc-dev-sync-20261119/comments-*.log`。真实后端账号及 PostgreSQL 验收仍由 T040、T073 跟踪。
+
 2026-11-14 local verification: exact Node22.22.2 compiled successfully; the manifest's 65 compiled test files ran 1396 cases (1374 passed, 20 explicit PG skips, 2 failures). The missing `download` coverage fixture and a recovery test's pre-restore fsync timing assumption were corrected without changing production permission/recovery code or deadlines. The two affected files then passed 18 cases with 1 PG skip; all other valid results are reused. Logs are `/tmp/larkdoc-acceptance-20261113/h5-final-backend-node22-*`. PG environment was cleared; no PG-special flag, real PG connection, Docker restart or production action occurred. This does not satisfy T073/T083's full external acceptance.
 
 **判定**：82项已勾、44项未勾。勾选只表示该行本地实现/测试要求已有可核对实现与证据；不自动满足所在故事的7AC、未勾设计前置或生产批准。原126编号、任务原文与依赖不改，实际实现拆分如下。`backend/`为上文真实同级后端目录，前端路径相对`lark-doc/`；静态/模型、注入端口、真实PG及浏览器合成身份分层记录。
@@ -764,3 +766,45 @@ US4/014完整评论PG端口、真实相对锚点、POST线程统一operations、
 - 真实HTTP就绪暂停gate位于PG检查之前；只证明真实HTTP+注入暂停原探针+随后真实PG，不冒称数据库中途挂起。浏览器新增独立runtime B共享PG、HTTP变更→A空闲WS关闭，要求无新HELLO/UPDATE/QUERY，5秒从请求开始计保守预算，非跨机/生产SLA；独立read保留、sourcegap原CAS授权resync、合成principal/session撤销均留真实事实检查。
 - 最终同源build/typecheck通过，受影响47/47；backend938total=932pass/0fail/6历史stock expected-red跳过。真实HTTP/PG **13/13** backend`.workbuddy/s-uIpESu/evidence.json`，80src/56compiled current；实际双Vue2/HTTP/WS/SSE/独立Worker/PG/正常重启 **34/34** `.workbuddy/c-qLTUlu/evidence.json`，393inputs current/11normalcleanup/无页面异常或外部请求。四次idle关闭1743/1808/1792/1783ms，无新业务type5消息且正文水位不变；独立read再准入与gap期间拒读/原受限HTTP resync/恢复后GET通过。
 - closure_review独立 **APPROVE仅本地slice / No blocking findings / Simplicity与Correctness双PASS**，亲读原JSON和日志并重算80/56/393全部current，两个P2闭合。PG数据保留、pid/socket消失、无本轮测试进程、宿主PG54630未碰。B为同一Node进程内独立runtime/池，不冒跨OS进程/跨机HA；WS无本轮before、backend非Git不能作完整Gitdiff审计，已全读新增函数/hooks/相关测试。日志`/tmp/lark-doc-lifecycle-20261108/`可后续清理，原JSON/.workbuddy保留，无新依赖/前端源码或锁修改、无commit/push/npm发布/部署。
+
+## 2026-11-19 dev 前后端联合验收
+
+| 范围 | 当次结果 |
+|---|---|
+| 后端编译和全套 Node 测试 | 锁定 Node 22.13.0 编译通过。1,416 通过，6 个协同提交前可见性探索用例按原标记跳过。覆盖文档资源和生命周期、身份和权限、版本、导入导出、附件、评论、分享链接、通知、Worker、Java 集成契约、协同和恢复守卫。 |
+| 隔离 PostgreSQL | 实跑公开链接、文档业务、评论提及/可见性、通知全部已读、点赞、权限申请、格式转换、文档宿主/引用、分享设置和文档信息。通知全部已读后的 100 条回放超时复现两次。迁移 054 按原可见性入参复用检查，保留游标哈希、原权限和原超时，原真库用例转绿并通过独立审查。 |
+| HTTP 会话和服务生命周期 | 14 项通过，含 Cookie 与 CSRF 跨实例、拒绝跨主体/文档及错误 Origin、正常重启后读回、过期/撤销拒绝、就绪和排空。 |
+| 实际发布包接本地后端 | 产物 `011137ff` 的两个 Chrome iPhone 16 会话使用 Cookie、CSRF、协同票据和实际 WebSocket。双向输入均收到持久化回执，PostgreSQL 验证每个主体的更新，重新打开正文正确。评论通过真实 HTTP 建立和回复，私密线程对另一账号不可见。另一账号在原文前插入两个字后，已持久化的选区评论仍准确定位原来两个字。 |
+| Java 接口和文档操作 | 合成客户端通过实际回环 mTLS 验证 15 项。另在隔离库验证账号之间的原操作键、旧数据迁移拒绝、文档偏好、文件夹权限、并发、复制、回放和软删除恢复。 |
+
+日志位于 `/tmp/larkdoc-full-audit-20261119/`，含 `backend-tests-final.log`、`backend-http-sessions.log`、`browser-pg-smoke-closure.log`、`backend-java-mtls.log`、`backend-resource-actors.log` 和 `backend-document-business.log`。使用合成身份及隔离 PostgreSQL。真实公司身份和组织目录、生产 Java/对象存储/翻译及通知送达、生产 HA 与容量需要对应环境验收。本记录保留原验收勾选状态。
+
+### Docker、Kubernetes 和 Vue 3 本地预览
+
+保留现有 Compose 数据卷，补齐本地 054 迁移并重建后端。旧实例的合成证书已过期。后端现在在证书期满前排空并由编排器续启，已有附件目录在启动时复用。Docker 代理 20 项通过，当前镜像 `0942813fed85` 在 Chrome 通过合成登录、WebSocket 连接和评论权限检查。
+
+同一镜像在临时 kind v1.32.2 通过服务端清单验证、冷启动迁移和部署重启，数据库和合成样本文档保留，复用一个附件目录。Kubernetes 使用单副本、本地合成身份与 Pod 回环入口。独立 Chrome 验证现有 Vue 3 宿主在 [本地预览](http://127.0.0.1:5183/lark-doc) 加载 dev 产物 `011137ff`，并实测编辑和读取 JSON。Compose 的 [后端联调页](http://127.0.0.1:8793/examples/element-demo.html) 保持运行。证据集中 `/tmp/larkdoc-local-preview-20261119/`。
+
+### 2026-11-21 · 双身份与 120 人同文档协同
+
+- [x] 在同一个 Chrome 会话复现两个身份共享 Cookie，旧身份鉴权被拒。预览采用两个独立浏览器会话，保留同源登录机制。桌面 Alice 与手机模拟 Bob 连续两分钟可编辑，多次续票、远端光标移动和单方主动断开后重连均通过。
+- [x] REA 静态解析本机 Lark 的 `ccm-offline/ccm-worklet.js`，源码 SHA-256 `e8ec8cc51eed92ac2be2996684fe806ad51c801553f52db2ee599c7dc83e0bdd`，证据 `ev_2006bde67de68e471dc397fdee260d25c21dd88dc50aebf2c211809d2aa8ef96`。工作线程含块级 changeset、缺失块拉取和提交确认，与既有飞书浏览器观察一致。LarkDoc 保持 Yjs、顺序回执和当前授权，集中优化续票、读取准入和分发。
+- [x] REA 解析 `space.asar` 中两个发布包，证据 `ev_fbfab3b536c2dcdcdbd0e02d15ad2b60e27fbe0828dac36fae2be490d4560ca2`。客户端光标 `ENGAGEMENT_CURSOR` 和正文 `USER_CHANGES` 走独立路径。LarkDoc 只在已提交正文能解析 Yjs 相对锚点时渲染光标，前文插入时定位随原字符移动，段落删除时收起光标。代际过期和临时准入失败只丢光标帧。
+- [x] 隔离 PostgreSQL 和真实 WebSocket 实测，120 个独立身份同段突发写入，120 个持久化回执、120 份客户端状态与数据库重放一致，重连恢复，拒绝身份错配和已撤销票据。最终回执 P95 21.52 秒，最长 23.34 秒。证据 `lark-doc-backend/.workbuddy/c-eC2PJv/capacity-evidence.json`。生产容量、持续编辑和多实例仍按 T121 验收。
+- [x] Chrome 故障注入复现 5 次握手失败即停止；客户端保留单轮超时与退避，临时网络失败后继续连接。隔离试验断开 Alice 的 HTTP 和 WebSocket 26 秒，恢复网络后 2.80 秒重回可编辑，Bob 保持在线。手动断开保持断开，不可恢复的协议或代际错误退出自动重试。
+- [x] 单独的 Docker 安装真实写入后拦截原回执、重启后端。Chrome 桌面 Alice 和手机模拟 Bob 9.10 秒内恢复。Vue 3 预览为原合成身份重新登录；只发送一次 UPDATE，按原键、哈希、代际及版本查询一次，取回相同 PostgreSQL 回执，两边正文一致且只保留一份编辑。无原版本或数据库结果未知的更新继续保留待查。
+
+### 2026-11-21 · 桌面协作光标与整块选区
+
+- REA 只读浏览器证据 `ev_b29a9de032047f707ec5310ab29b1f81d54b70272fdfa044cd4fdd9e094fc420` 定位普通文档发布资产。`module_modules_sync-cursor_es6.a7be86ad.chunk.js` 区分文字选区与整块选区，并在正文远端更新后重算显示。`common_shared_vendors_merged_small_files_es6.a5ca4c52.chunk.js` 的模块 `306118` 对文件、图片等使用块边缘坐标，本地折叠光标同点时隐藏远端光标。用户确认本轮范围为普通文档的光标与选区同步。
+- LarkDoc 桌面持久协作复用 Yjs 和 ProseMirror 已映射的选区装饰。文字按选区显示，整块选中时在块缘显示身份标记，同点时优先本地插入光标。投影只生成显示装饰，不调用本地聚焦、选择或滚动命令。原有权限、协议和正文提交链路继续生效。
+- 隔离 Docker 上两个独立 Chrome 通过空标题光标、同点优先、三段选择、移到屏外段落时本端视口与选区稳定、同段并发与中文 IME 提交、视频块边缘标签。视频使用合成 MP4，只验证选择与显示。文档末尾视频后的尾随段落覆盖在制品单测中。窄屏切换后的即时重绘记录在后续手机适配范围内。
+- 架构、契约、lint 与受影响测试通过，14 个文件共 819 通过、1 跳过。`check:artifacts` 通过，40 个产物指纹 `0035f35a`，现有 16 项体积预算全过。协同入口 7,963 B / 8,000 B gzip，Element 首屏 CSS 44,994 B / 45,000 B gzip。隔离 Docker 已清理，8793 预览保持可用。
+
+### 2026-11-21 · 同段并发输入与本地选区
+
+- 飞书普通文档访客页在 Chrome 只读核对，REA 请求证据 `ev_674de9c782891c1e3c028560e271220ad0fea1c426157f53c2e81cec7a34eb4f`。发布的光标模块证据 `ev_07cd6c6bb6b119f9884f4ab086beaa657b8b954622b3ed6d3b1b94863289dd30` 显示协作者选区有独立队列，正文远端变更后按帧重绘。正文发布包证据 `ev_8918472d044d150a5cfac29bdaaa14b09d4e5e022f222a3ead01e472093f18cb` 中，`287108` 保护原生组字，`977826` 在应用同编辑区远端内容时映射原选区，`630758` 根据焦点和来源决定何时同步浏览器选区及滚动。这些证据确认客户端行为，LarkDoc 继续使用自身的持久协议。
+- 旧版通过独立身份复现两条失败。另一人加入后收到组字中的拼音，随后同段远端更新打断 Chrome 的组字范围，候选字和拼音同时进入正文。远端在当前段的光标前插字后，Yjs 相对锚点已映射，编辑器的结构变更兜底仍使用旧偏移。
+- 持久协作桥在组字提交前暂缓应用远端正文，合并并提交本地组字结果，恢复快照同步浏览器待处理输入。远端正文应用前刷新本地选区，只在原文字块身份仍匹配时使用映射后的两个端点。远端光标装饰与角色进出继续独立绘制。连接代际在等待本地输入后再次核验。
+- 隔离 Docker、实际 WebSocket、两个独立桌面 Chrome 会话验证角色加入、光标移动、同段并发、中文组字确认、光标前插字、反向选区和退出重进。浏览器组字经 Chrome DevTools Protocol 触发。组字期间同一 DOM 文本节点内的新标识等待组字结束后绘制。本次覆盖上述桌面交互。
+- `check:quick` 通过。受影响测试 14 个文件，823 项通过、1 项原有跳过，其中持久桥 81 项通过。40 个交付产物指纹 `3b1c2f13`，原 16 项体积预算均通过，协同入口 7,858 B / 8,000 B gzip。测试容器和卷已清理，原 8793 预览继续运行，并返回与构建一致的浏览器协同产物。

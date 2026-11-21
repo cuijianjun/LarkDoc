@@ -673,6 +673,25 @@ describe('源模板插入与更多模板闭环', () => {
     host.onEditorPointerMove({ buttons: 1, clientX: 100, clientY: 100 })
     expect(position).not.toHaveBeenCalled()
   }))
+  it('原生光标尚未同步时不会提交句柄装饰', () => withTemplateDocument(async ({ doc, editor, host }) => {
+    doc.setContent('<p>上一段</p><p>新光标</p>')
+    editor.commands.setTextSelection(2)
+    vi.spyOn(editor.view, 'hasFocus').mockReturnValue(true)
+    const text = editor.view.dom.querySelectorAll('p')[1].firstChild
+    const native = document.getSelection()
+    native.collapse(text, 1)
+    host.handleHovering = true
+    const before = editor.state
+    host.runSelectionLayout()
+    expect(editor.state).toBe(before)
+    expect(native.anchorNode).toBe(text)
+    const position = editor.view.posAtDOM(text, 1)
+    editor.commands.setTextSelection(position)
+    host.runSelectionLayout()
+    expect(editor.storage.larkDoc.handleHover).toMatchObject({ from: host.handleRange.from, to: host.handleRange.to })
+    host.clearHandleHighlight()
+    expect(editor.storage.larkDoc.handleHover).toBeNull()
+  }))
   it('表格内块拥有独立范围和双句柄，删除段落不删除整表', () => withTemplateDocument(async ({ doc, editor, host, element }) => {
     doc.setContent('<p>前文</p><table><tbody><tr><td><p>A1</p><p>A-next</p></td><td><p>B1</p></td></tr><tr><td><p>A2</p></td><td><p>B2</p></td></tr></tbody></table><p>后文</p>')
     let pos
@@ -2984,6 +3003,31 @@ describe('public reference content and asynchronous comments', () => {
     expect(doc.getJSON()).toEqual(before)
   }))
 
+  it('a body comment acknowledgement preserves the open image draft and clears the submitted body draft', () => withImageCommentViewer(async ({ host, comments, viewer, toggle }) => {
+    const create = comments.createThread.bind(comments), bodyBlock = host.commentComposerContext.blockId
+    let complete
+    comments.createThread = vi.fn(input => new Promise(resolve => { complete = async () => resolve(await create(input)) }))
+    toggle.click(); await vi.dynamicImportSettled()
+    pasteImageComment(viewer.querySelector('[aria-label="输入评论"]'), '图片草稿')
+    toggle.click()
+
+    const pending = host.createCommentFromSelection(host.commentCreateDraft)
+    expect(comments.createThread).toHaveBeenCalledOnce()
+    toggle.click(); await vi.dynamicImportSettled()
+    await complete()
+    const thread = await pending
+    expect(thread.blockId).toBe(bodyBlock)
+    expect(host.commentComposerContext.blockId).toBe('image_a')
+    expect(viewer.querySelector('[aria-label="输入评论"]').textContent).toBe('图片草稿')
+    toggle.click()
+    expect(host.commentCreateDraft).toBe('')
+    expect(host.commentComposerOpen).toBe(false)
+  }, { beforePreview: ({ editor, host }) => {
+    editor.commands.setTextSelection({ from: 1, to: 2 })
+    expect(host.openSelectionComment()).toBe(true)
+    host.setCommentCreateDraft('已提交的正文评论')
+  } }))
+
   it.each([[1024, 'Escape'], [393, 'Escape'], [393, 'header']])('viewer comment Escape respects IME, closes only the comment layer first and preserves foreign focus at %spx via %s', async (width, action) => {
     const beforeWidth = window.innerWidth, beforeMedia = window.matchMedia
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
@@ -3186,8 +3230,14 @@ describe('public reference content and asynchronous comments', () => {
       await host.loadComments()
       host.commentDrafts = { same: 'A 私有草稿' }
       host.beginEditComment('same', 'r1')
+      expect(host.openCommentHistory()).toBe(true)
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-comment-history')).not.toBeNull())
       doc.patchProps({ session: sessionB })
       await vi.waitFor(() => expect(host.commentThreads[0]?.replies[0]?.content).toBe('B 内容'))
+      expect(element.querySelector('.lark-doc-comment-history')).toBeNull()
+      expect(host.commentHistoryStyle).toEqual({})
+      expect(host.openCommentHistory()).toBe(true)
+      await vi.waitFor(() => expect(element.querySelector('.lark-doc-comment-history')).not.toBeNull())
       expect(host.commentDrafts).toEqual({})
       expect(host.commentEditingReply).toBeNull()
       host.commentDrafts = { same: 'B 草稿' }
@@ -4231,7 +4281,11 @@ describe('图表菜单交互', () => {
     const { host, root } = fixture()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     host.openHeadingMenuOnHover(); host.scheduleHeadingMenuClose()
-    if (target === 'more') host.openMoreMenuOnHover()
+    if (target === 'more') {
+      vi.spyOn(host, 'evaluateToolbarFit').mockResolvedValue()
+      host.collapsedGroups = ['blockStyle']
+      host.openMoreMenuOnHover()
+    }
     if (target === 'color') host.openColorPaletteOnHover()
     if (target === 'diagram') host.openDiagramMenuOnHover()
     if (target === 'insert') root.querySelector('button[aria-label="插入"]').dispatchEvent(new MouseEvent('mouseenter'))
@@ -4472,7 +4526,7 @@ describe('图表菜单交互', () => {
     host.closeDiagramMenu(); await Promise.resolve()
     expect(root.querySelector('[role="tooltip"]')).toBeNull()
   })
-  it.each(['图表', '查找', '页面宽度', '插入表格'])('顶部%s已有文字或弹窗，不再显示原生和自绘tips', async label => {
+  it.each(['图表', '页面宽度', '插入表格'])('顶部下拉按钮%s展开时不叠加提示', async label => {
     const { root } = fixture()
     const button = root.querySelector(`button[aria-label="${label}"]`)
     expect(button).not.toBeNull()

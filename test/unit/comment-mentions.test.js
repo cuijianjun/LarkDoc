@@ -220,7 +220,7 @@ describe('whole document reply action uses the shared rich composer', () => {
 describe('explicit private comment audiences', () => {
   it('submits selected targets as an explicit private audience, separately from mention ranges', async () => {
     const content = '@Bob @Bob @Alice', mentions = [{principalId:'bob',from:0,to:4},{principalId:'bob',from:5,to:9},{principalId:'alice',from:10,to:16}], calls=[]
-    const vm = {commentAuthor:{id:'alice'},commentDocumentDraft:content,commentDocumentMentions:mentions,commentDraftImages:()=>[],commentDocumentCanSubmit:()=>true,
+    const vm = {...commentsMixin.methods,commentAuthor:{id:'alice'},commentDocumentDraft:content,commentDocumentMentions:mentions,commentDocumentCanSubmit:()=>true,
       createDocumentComment:async(...args)=>{calls.push(args);return {}},cancelDocumentCommentDraft() {}}
     await commentsMixin.methods.submitDocumentComment.call(vm,'private')
     expect(calls[0]).toEqual([content,'private',['bob'],mentions])

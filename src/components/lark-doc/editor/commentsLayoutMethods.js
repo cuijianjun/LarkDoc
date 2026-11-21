@@ -236,8 +236,9 @@ export const commentsLayoutMethods = {
     const key = new PluginKey('lark-doc-private-comment-view')
     this._commentDecorationKey = key
     this.editor.registerPlugin(new Plugin({ key, props: { decorations(state) {
-      if (vm.commentDisposed || !vm.commentCan('canView')) return DecorationSet.empty
+      if (vm.commentDisposed || !vm.commentCan('canView') || vm.featureEnabled?.('comments') === false || !vm.commentProvider()?.isRemote) return DecorationSet.empty
       const decorations = []
+      const badges = vm.compactHeader ? new Map() : null
       const highlight = (anchor, attributes) => state.doc.descendants((node, pos) => {
         if (!node.attrs || node.attrs.blockId !== anchor.blockId) return
         const from = pos + 1 + anchor.offset, to = from + anchor.length
@@ -251,6 +252,30 @@ export const commentsLayoutMethods = {
       bindThreads(state.doc, vm.commentSourceThreads, vm.commentAnchorCodec).forEach(thread => {
         if (!thread.bound || thread.tombstone || thread.resolved || !thread.anchor.length) return
         highlight(thread.anchor, { class: `lark-doc-comment${thread.id === vm.commentActiveThreadId ? ' is-active' : ''}`, 'data-thread-id': thread.id })
+        if (!badges || thread.anchorStatus === 'orphaned' || thread.scope === 'document') return
+        const badge = badges.get(thread.blockId)
+        if (badge) badge.count++
+        else badges.set(thread.blockId, { thread, count: 1 })
+      })
+      if (badges?.size) state.doc.descendants((node, pos) => {
+        const badge = badges.get(node.attrs.blockId)
+        if (!badge) return
+        const { thread, count } = badge
+        decorations.push(Decoration.widget(pos + 1, view => {
+          const button = view.dom.ownerDocument.createElement('button')
+          button.type = 'button'
+          button.className = 'lark-doc-comment-count'
+          button.textContent = String(count)
+          button.setAttribute('aria-label', `查看此处的 ${count} 条评论`)
+          button.addEventListener('mousedown', event => event.preventDefault())
+          button.addEventListener('click', event => {
+            event.stopPropagation()
+            if (button.isConnected && vm.compactHeader && vm.commentCan('canView')
+              && vm.featureEnabled?.('comments') !== false && vm.commentProvider()?.isRemote && vm.commentThreads.some(item =>
+              item.id === thread.id && item.bound && !item.resolved && !item.tombstone)) vm.activateComment(thread.id)
+          })
+          return button
+        }, { key: `comment-count:${thread.id}:${count}`, side: -1, stopEvent: () => true }))
       })
       return DecorationSet.create(state.doc, decorations)
     } } }))

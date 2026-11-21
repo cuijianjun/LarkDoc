@@ -205,11 +205,11 @@ describe('mobile body floating controls', () => {
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => media })
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
     const element = document.createElement('div'); document.body.append(element)
-    const doc = new LarkDoc({ element, storage: 'none', content: '<p>手机正文</p>', config: { layout: { toolbarVisible: false } } })
+    const doc = new LarkDoc({ element, storage: 'none', content: '<p>手机正文</p>' })
     mounted.push(doc)
     const editor = doc.getEditor(), host = doc._handle.nativeHost.host
     host.$refs.root.getBoundingClientRect = () => ({ left: 0, right: 393 })
-    expect(element.querySelector('.lark-doc-mobile-edit-bar')).toBeNull()
+    expect(element.querySelector('.lark-doc-toolbar')).toBeNull()
     editor.view.dom.focus()
     await vi.waitFor(() => expect(element.querySelector('.lark-doc-mobile-edit-bar')).not.toBeNull())
     expect(element.querySelector('.lark-doc-toolbar').style.getPropertyValue('--ld-mobile-bottom')).toBe('300px')
@@ -223,7 +223,7 @@ describe('mobile body floating controls', () => {
     await vi.waitFor(() => expect(element.querySelector('.lark-doc-toolbar').style.getPropertyValue('--ld-mobile-bottom')).toBe('0px'))
     expect(element.querySelector('.lark-doc-toolbar').classList.contains('is-keyboard-raised')).toBe(false)
     media.matches = false; media.dispatchEvent(new Event('change'))
-    await vi.waitFor(() => expect(element.querySelector('.lark-doc-toolbar')).toBeNull())
+    await vi.waitFor(() => expect(element.querySelector('.lark-doc-toolbar button[aria-label="插入表格"]')).not.toBeNull())
     await vi.waitFor(() => expect(element.querySelector('.lark-doc-block-handle')).not.toBeNull())
     host.blockMenuOpen = true
     media.matches = true; media.dispatchEvent(new Event('change'))

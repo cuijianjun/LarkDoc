@@ -92,7 +92,6 @@ export default {
       /** 已读线程 id：未读数按它与 `commentThreads` 做差集。 */
       commentReadIds: [],
       /** 本地Provider保留旧开关；远端使用服务端visibility。 */
-      commentPrivateIds: [],
       /** 面板头「更多」下拉打开的线程 id（同时只允许一个，关别的靠它互斥）。 */
       commentMoreThreadId: '',
       /** 回复行「更多」菜单：`{ threadId, commentId }`，空串 = 关着。 */
@@ -121,7 +120,10 @@ export default {
 
 
 
-    commentDocumentThreads() { return this.commentThreads.filter(thread => thread.scope === 'document' && !thread.tombstone) },
+    commentDocumentThreads() {
+      const mobile = this._mobileEditorMedia?.matches
+      return this.commentThreads.filter(thread => thread.scope === 'document' && !thread.tombstone && (!mobile || !thread.resolved))
+    },
     commentSelectionCount() { return this.commentThreads.filter(thread => thread.scope !== 'document' && !thread.tombstone && !thread.resolved && thread.anchorStatus !== 'orphaned').length },
     commentRemote() { const provider = this.commentProvider(); return Boolean(provider && provider.isRemote) },
 
@@ -216,7 +218,7 @@ export default {
     ...commentsThreadMethods,
     ...commentsLayoutMethods,
     /** 飞书历史评论弹层的门槛：有评论服务，且可查看且可编辑（方法而非 computed，调用方统一 `()`）。 */
-    commentCanViewHistory() { return !!this.commentProvider() && this.commentCan('canView') && this.commentCan('canEdit') },
+    commentCanViewHistory() { return !this._mobileEditorMedia?.matches && !!this.commentProvider() && this.commentCan('canView') && this.commentCan('canEdit') },
     /** 飞书「历史评论」弹层：贴着触发元素右下角开，最大高度贴底。 */
     openCommentHistory(event) {
       if (!this.commentCanViewHistory()) return false

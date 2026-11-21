@@ -366,6 +366,7 @@ describe('NodeView：一个块壳三形态', () => {
     try {
       const figure = editor.view.dom.querySelector('figure.lark-doc-file')
       figure.querySelector('.lark-doc-file-block-toolbar [data-name="download"]').click()
+      await vi.dynamicImportSettled()
       await tick()
       expect(fetchStub).toHaveBeenCalledWith('https://cdn.example.com/a.mp4', { credentials: 'same-origin' })
       expect(createObjectURL).toHaveBeenCalledTimes(1)
@@ -392,6 +393,7 @@ describe('NodeView：一个块壳三形态', () => {
     try {
       const figure = editor.view.dom.querySelector('figure.lark-doc-file')
       figure.querySelector('.lark-doc-file-block-toolbar [data-name="download"]').click()
+      await vi.dynamicImportSettled()
       await tick()
       const frames = [...editor.view.dom.ownerDocument.body.querySelectorAll('iframe')]
       expect(frames.some(f => f.src === 'https://cdn.example.com/a.mp4' && f.style.display === 'none')).toBe(true)

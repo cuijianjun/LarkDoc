@@ -25,6 +25,18 @@ import { createFrameBatcher } from '../../../core/pacing'
 /** 选区定位只有一个任务，不需要细分 key；补一层 key 是为了将来加「只重排某一块」。 */
 const SELECTION_LAYOUT_KEY = 'selection-layout'
 
+function nativeTextSelectionPending(view) {
+  if (!view?.hasFocus?.()) return false
+  const { dom, state } = view
+  const native = view.root?.getSelection?.() ?? dom.ownerDocument.getSelection()
+  const anchor = native?.anchorNode, focus = native?.focusNode
+  if (anchor?.nodeType !== Node.TEXT_NODE || focus?.nodeType !== Node.TEXT_NODE || !dom.contains(anchor) || !dom.contains(focus)) return false
+  try {
+    return view.posAtDOM(anchor, native.anchorOffset) !== state.selection.anchor ||
+      view.posAtDOM(focus, native.focusOffset) !== state.selection.head
+  } catch (_) { return false }
+}
+
 export default {
   methods: {
     /**
@@ -77,6 +89,8 @@ export default {
     /** 本帧唯一一次定位。顺序与合并前保持一致：句柄 → 表格边界 → 高亮块工具 → 气泡条。 */
     runSelectionLayout() {
       if (!this.editor || this._isBeingDestroyed || this._isDestroyed) return
+      // A hover decoration must not write the old caret back before ProseMirror observes the click.
+      if (nativeTextSelectionPending(this.editor.view)) return
       const { selection } = this.editor.state
       if (!this.handlePressed && !this.blockMenuOpen && !this.blockTypeMenuOpen) this.positionBlockHandle(this.currentBlockRange())
       this.updateTableBoundary()

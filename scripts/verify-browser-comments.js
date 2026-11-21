@@ -3,10 +3,20 @@
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
+const { setTimeout: delay } = require('node:timers/promises')
 const { chromium } = require('playwright-core')
 const baseUrl = process.argv[2] || 'http://127.0.0.1:58742/lark-doc?verify=1'
 const evidenceDir = process.env.LARK_DOC_EVIDENCE_DIR || '/tmp/lark-doc-v12e'
 const results = []
+
+async function waitForThreads(page, predicate, label) {
+  const deadline = performance.now() + 10000
+  do {
+    if (predicate(await page.evaluate(() => window.__commentProvider.list()))) return
+    await delay(30)
+  } while (performance.now() < deadline)
+  assert.fail('Comment provider did not settle: ' + label)
+}
 
 async function main() {
   const browser = await chromium.launch({ headless: true, chromiumSandbox: false, executablePath: process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined })
@@ -20,7 +30,7 @@ async function main() {
   const panel = () => page.getByRole('dialog', { name: '评论', exact: true })
   const picker = () => page.getByRole('menu', { name: '评论表情回复', exact: true })
   const threads = () => page.evaluate(() => window.__commentProvider.list())
-  const waitReplies = count => page.waitForFunction(async count => (await window.__commentProvider.list())[0]?.replies.length === count, count)
+  const waitReplies = count => waitForThreads(page, threads => threads[0]?.replies.length === count, count + ' replies')
   const snapshot = () => page.evaluate(() => window.__commentDoc.getJSON())
   const mount = async () => page.evaluate(() => {
     const element = document.createElement('div')
@@ -80,14 +90,14 @@ async function main() {
     check('Selecting an emoji persists the actor and displays the source 18px reaction chip', (await threads())[0].replies[0].reactions[0].emoji === 'applaud_v2' && await panel().locator('.lark-doc-comment-reaction-icon').evaluate(e => e.getBoundingClientRect().height === 18))
     check('A reaction expands the card by the measured 26px without editing document content', (await panel().boundingBox()).height === baselineHeight + 26 && JSON.stringify(await snapshot()) === JSON.stringify(baseline))
     await panel().locator('.lark-doc-comment-reaction').press('Enter')
-    await page.waitForFunction(async () => (await window.__commentProvider.list())[0].replies[0].reactions.length === 0)
+    await waitForThreads(page, threads => threads[0]?.replies[0]?.reactions.length === 0, 'reaction removal')
     check('Keyboard Enter on a persisted reaction removes it through the provider', await panel().locator('.lark-doc-comment-reaction').count() === 0)
     const reactionTrigger = reply.getByRole('button', { name: '添加表情回复', exact: true })
     await reactionTrigger.hover()
     await picker().waitFor()
     await page.mouse.down()
     await page.mouse.up()
-    await page.waitForFunction(async () => (await window.__commentProvider.list())[0].replies[0].reactions[0]?.emoji === 'thumbsup_v2')
+    await waitForThreads(page, threads => threads[0]?.replies[0]?.reactions[0]?.emoji === 'thumbsup_v2', 'quick reaction')
     check('Clicking the reaction control performs source quick Like', (await threads())[0].replies[0].reactions[0].users[0] === 'browser-owner')
     await page.mouse.move(500, 90)
     await reactionTrigger.hover()
@@ -111,9 +121,10 @@ async function main() {
     check('Canceling a reply edit preserves the provider version', (await threads())[0].replies[1].content.includes('引用回复正文'))
     const editingAgain = await more(1)
     await editingAgain.getByText('编辑', { exact: true }).click()
-    await editingAgain.getByRole('textbox', { name: '编辑评论', exact: true }).fill('修改后回复')
+    await editingAgain.getByRole('textbox', { name: '编辑评论', exact: true }).press('ControlOrMeta+a')
+    await page.keyboard.insertText('修改后回复')
     await editingAgain.getByRole('button', { name: '确定', exact: true }).click()
-    await page.waitForFunction(async () => (await window.__commentProvider.list())[0].replies[1].content === '修改后回复')
+    await waitForThreads(page, threads => threads[0]?.replies[1]?.content === '修改后回复', 'reply edit')
     check('Confirming a reply edit preserves identity and records the edited time', (await threads())[0].replies[1].editedAt > 0)
     await page.evaluate(async () => {
       window.__commentSeed = await window.__commentProvider.list()
@@ -181,7 +192,7 @@ async function main() {
     check('Reply More matches hover-open and pointer-leave-close behavior', await panel().getByRole('menu', { name: '评论更多菜单', exact: true }).count() === 0)
     const pureBody = JSON.stringify(await snapshot())
     await panel().getByRole('button', { name: '解决评论', exact: true }).click()
-    await page.waitForFunction(async () => (await window.__commentProvider.list())[0].resolved)
+    await waitForThreads(page, threads => threads[0]?.resolved === true, 'resolve')
     check('Resolve updates the runtime highlight without rewriting document JSON', await page.locator('.tiptap .lark-doc-comment[data-resolved="true"]').count() > 0 && JSON.stringify(await snapshot()) === pureBody)
     const history = page.getByRole('dialog', { name: '历史评论', exact: true })
     const openHistory = async () => {
@@ -199,7 +210,7 @@ async function main() {
     check('History Info shows the source edit-permission explanation', await history.getByText('仅支持可编辑文档的用户查看', { exact: true }).isVisible())
     await page.screenshot({ path: path.join(evidenceDir, 'master-parity-local-comments-history-attachment.png') })
     await history.getByRole('button', { name: '重新打开', exact: true }).click()
-    await page.waitForFunction(async () => !(await window.__commentProvider.list())[0].resolved)
+    await waitForThreads(page, threads => threads[0]?.resolved === false, 'reopen')
     await panel().waitFor()
     check('Reopen restores the active thread and its image', await panel().locator('.lark-doc-comment-attachment img').count() === 1)
     check('Reopen retains the history popup at its empty state', await history.getByText('在这可查看所有已解决的评论', { exact: true }).isVisible())
@@ -226,6 +237,7 @@ async function main() {
     await popup.getByText('举报表单核验', { exact: true }).waitFor()
     check('Report opens the configured form in a separate page without an opener', await popup.evaluate(() => window.opener === null))
     await popup.close()
+    await page.bringToFront()
     const savedUrl = (await threads())[0].replies[0].attachments[0].url
     await page.evaluate(() => window.__commentDoc.setUploader({ retry: { attempts: 1 }, upload: async () => { throw new Error('评论图片上传故障核验') } }))
     chooser = page.waitForEvent('filechooser')
@@ -338,9 +350,13 @@ async function verifySelectionEntries(page, check) {
   const hoverLink = async () => {
     const link = page.locator('.tiptap [data-type="link-embed"], .tiptap [data-type="bookmark"]')
     await link.scrollIntoViewIfNeeded()
-    const box = await link.boundingBox()
     await page.mouse.move(1500, 90)
-    await page.mouse.move(box.x + 1, box.y + 1)
+    if (await link.getAttribute('data-view') === 'preview') {
+      // Stay on the preview border so the embedded frame does not capture hover.
+      const box = await link.locator('.lark-doc-link-preview-body').boundingBox()
+      await page.mouse.move(box.x - 8, box.y + box.height / 2, { steps: 12 })
+      await page.mouse.move(box.x + 0.25, box.y + box.height / 2, { steps: 4 })
+    } else await link.hover()
     await linkTools.waitFor()
   }
   const before = await content()
@@ -356,7 +372,7 @@ async function verifySelectionEntries(page, check) {
   const saved = (await threads())[0]
   check('Comment persistence anchors the real table and marks exactly A1/B1/A2/B2', JSON.stringify(marked) === '[0,1,3,4]' && saved.quote === 'A1 B1 A2 B2' && saved.anchor.blockId === 'browser_rectangle', { marked, anchor: saved.anchor })
   await panel.getByRole('button', { name: '解决评论', exact: true }).click()
-  await page.waitForFunction(async () => (await window.__commentProvider.list())[0].resolved)
+  await waitForThreads(page, threads => threads[0]?.resolved === true, 'resolve table comment')
   await dragRectangle()
   await tableTools.getByRole('button', { name: '分享', exact: true }).click()
   await share.waitFor()
@@ -381,7 +397,7 @@ async function verifySelectionEntries(page, check) {
   check('Preview comment uses the exact source quote without inserting fake inline text', (await composer.innerText()).includes('[网页]'))
   await composer.getByRole('textbox', { name: '输入评论', exact: true }).fill('预览网页评论')
   await composer.getByRole('button', { name: '发送', exact: true }).click()
-  await page.waitForFunction(async () => (await window.__commentProvider.list()).length === 2)
+  await waitForThreads(page, threads => threads.length === 2, 'link comment')
   const linkThread = (await threads()).find(thread => thread.quote === '[网页]')
   check('Preview comment persists as an atom-block anchor', linkThread?.anchor.blockId === 'browser_link' && (await content()).content.find(node => node.type === 'linkEmbed').type === 'linkEmbed')
   await page.mouse.click(1500, 90)

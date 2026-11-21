@@ -29,8 +29,8 @@ export const LARK_DOC_FEATURES = Object.freeze([
 export const LARK_DOC_IMPORT_FORMATS = Object.freeze([
   Object.freeze({ value: 'html', extensions: Object.freeze(['html', 'htm']), label: 'HTML' }),
   Object.freeze({ value: 'json', extensions: Object.freeze(['json']), label: 'JSON' }),
-  Object.freeze({ value: 'md', extensions: Object.freeze(['md', 'markdown']), label: 'Markdown' }),
-  Object.freeze({ value: 'docx', extensions: Object.freeze(['docx']), label: 'Word（.docx）' }),
+  Object.freeze({ value: 'md', extensions: Object.freeze(['md', 'markdown', 'mark', 'txt']), label: 'Markdown' }),
+  Object.freeze({ value: 'docx', extensions: Object.freeze(['doc', 'docx']), label: 'Word' }),
 ])
 
 /** 导出格式目录：`label` 进下拉菜单文案，`hint` 进 `title` 气泡（降级说明）。 */
@@ -90,12 +90,12 @@ export const DEFAULT_LARK_DOC_CONFIG = Object.freeze({
   layout: {
     // 标题栏默认跟随文档滚动，宿主可按页面场景开启顶端吸附。
     titleBarFixed: false,
-    // spec002 默认只保留上下文格式入口；旧宿主可显式开启兼容工具栏。
-    toolbarVisible: false,
-    // 原有吸附开关仍兼作显示工具栏的兼容入口，显式 toolbarVisible 优先。
+    // 桌面默认显示格式工具栏，吸顶由 toolbarFixed 单独控制。
+    toolbarVisible: true,
     toolbarFixed: false,
     // 标题栏隐藏时，header-actions 由兼容工具栏的「⋯」或独立操作行承接。
     headerVisible: true,
+    compactHeader: false,
   },
   /**
    * 文档三态（编辑 / 修订 / 阅读）—— 顶栏「编辑」下拉、工具栏「阅读模式」按钮、
@@ -249,10 +249,9 @@ export function createLarkDocConfig(overrides = {}) {
   config.help.onAction = typeof config.help.onAction === 'function' ? config.help.onAction : null
   config.layout.titleBarFixed = config.layout.titleBarFixed === true
   config.layout.toolbarFixed = config.layout.toolbarFixed === true
-  config.layout.toolbarVisible = source.layout && typeof source.layout.toolbarVisible === 'boolean'
-    ? source.layout.toolbarVisible
-    : config.layout.toolbarFixed
+  config.layout.toolbarVisible = config.layout.toolbarVisible !== false
   config.layout.headerVisible = config.layout.headerVisible !== false
+  config.layout.compactHeader = config.layout.headerVisible && config.layout.compactHeader === true
   config.toolbar.marksAllow = Array.isArray(config.toolbar.marksAllow) ? config.toolbar.marksAllow.filter((id) => typeof id === 'string') : null
   config.network.mode = ['offline', 'allowlist', 'open'].includes(config.network.mode) ? config.network.mode : DEFAULT_LARK_DOC_CONFIG.network.mode
   config.network.allowlist = Array.isArray(config.network.allowlist)

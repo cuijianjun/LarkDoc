@@ -1,4 +1,4 @@
-import { documentStatistics, referenceDocumentMenuItems, referenceDocumentMenuChildren, runReferenceDocumentMenuAction } from './documentMenuView'
+import { documentStatistics, documentMenuChildren, referenceDocumentMenuItems, referenceDocumentMenuChildren, runDocumentMenuAction, runReferenceDocumentMenuAction } from './documentMenuView'
 
 const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.matches === true : typeof window !== 'undefined' && window.innerWidth <= 760
 
@@ -33,30 +33,33 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
 
 /** 一级菜单 22 项。顺序与 §4.2.1 一致（去掉了已下线的 `另存为版本`）；`order` 从 1 起。 */
 export const TOPBAR_MORE_ITEMS = Object.freeze([
-  { id: 'width', label: '页宽设置', order: 1, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'width' },
-  { id: 'slides', label: '演示模式', order: 2, kind: 'item', enabled: true, affordance: 'none', action: 'slides' },
-  { id: 'follow', label: '关注文档更新', order: 3, kind: 'item', enabled: true, affordance: 'none', action: 'follow' },
-  { id: 'find', label: '查找和替换', order: 4, kind: 'item', enabled: true, affordance: 'none', action: 'find' },
-  { id: 'shortcut', label: '添加快捷方式到', order: 5, kind: 'item', enabled: true, affordance: 'none', action: 'shortcut' },
-  { id: 'move', label: '移动到', order: 6, kind: 'item', enabled: true, affordance: 'none', action: 'move' },
-  { id: 'pin', label: '添加到“置顶”', order: 7, kind: 'item', enabled: true, affordance: 'none', action: 'pin' },
-  { id: 'favorite', label: '添加到收藏', order: 8, kind: 'item', enabled: true, affordance: 'none', action: 'favorite' },
-  { id: 'template', label: '转换为模板', order: 9, kind: 'item', enabled: true, affordance: 'none', action: 'template' },
-  { id: 'duplicate', label: '创建副本', order: 10, kind: 'item', enabled: true, affordance: 'none', action: 'duplicate' },
-  { id: 'download-as', label: '下载为', order: 11, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'download-as' },
-  // §4.2 ④-3：类名是 submenu，但实测无子面板，点击直接进翻译模式 ⇒ kind 记 route。
-  { id: 'translate', label: '翻译为英语', order: 12, kind: 'route', enabled: true, affordance: 'arrow', action: 'translate' },
-  { id: 'print', label: '打印', order: 13, kind: 'item', enabled: true, affordance: 'none', action: 'print' },
-  { id: 'view-versions', label: '查看已存版本', order: 14, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'view-versions' },
-  { id: 'doc-permission', label: '文档权限', order: 15, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'doc-permission' },
-  { id: 'widgets', label: '文档小组件', order: 16, kind: 'item', enabled: true, affordance: 'none', action: 'widgets' },
-  { id: 'doc-info', label: '文档信息', order: 17, kind: 'item', enabled: true, affordance: 'none', action: 'doc-info' },
-  { id: 'mentioned', label: '提及的人', order: 18, kind: 'item', enabled: true, affordance: 'none', action: 'mentioned' },
-  { id: 'history', label: '历史记录', order: 19, kind: 'item', enabled: true, affordance: 'none', action: 'history' },
-  { id: 'history-comments', label: '历史评论', order: 20, kind: 'item', enabled: true, affordance: 'none', action: 'history-comments' },
-  { id: 'more', label: '更多', order: 21, kind: 'submenu', enabled: true, affordance: 'arrow', action: 'more' },
-  { id: 'delete', label: '删除', order: 22, kind: 'item', enabled: true, affordance: 'none', action: 'delete' },
-])
+  ['width', '页宽设置', 'submenu'],
+  ['slides', '演示模式'],
+  ['follow', '关注文档更新'],
+  ['find', '查找和替换'],
+  ['shortcut', '添加快捷方式到'],
+  ['move', '移动到'],
+  ['pin', '添加到“置顶”'],
+  ['favorite', '添加到收藏'],
+  ['template', '转换为模板'],
+  ['duplicate', '创建副本'],
+  ['download-as', '下载为', 'submenu'],
+  // 翻译点击后进入翻译模式，右侧箭头指向该操作。
+  ['translate', '翻译为英语', 'route'],
+  ['print', '打印'],
+  ['view-versions', '查看已存版本', 'submenu'],
+  ['doc-permission', '文档权限', 'submenu'],
+  ['widgets', '文档小组件'],
+  ['doc-info', '文档信息'],
+  ['mentioned', '提及的人'],
+  ['history', '历史记录'],
+  ['history-comments', '历史评论'],
+  ['more', '更多', 'submenu'],
+  ['delete', '删除'],
+].map(([id, label, kind = 'item'], index) => ({
+  id, label, kind, order: index + 1, enabled: true, action: id,
+  affordance: kind === 'item' ? 'none' : 'arrow',
+})))
 
 /**
  * 分隔线：标记「哪一项之后画线」。
@@ -226,9 +229,9 @@ export default {
   computed: {
     /** 23 项（含运行时启用态），模板唯一数据源。 */
     topbarMoreItems() {
-      if (referenceMenu(this)) return (this.topbarMoreOpen ? referenceDocumentMenuItems(this) : []).map(item => this.topbarMoreBusy ? { ...item, enabled: false, title: '正在处理文档操作。' } : item)
+      if (referenceMenu(this) || this.compactHeader) return (this.topbarMoreOpen ? referenceDocumentMenuItems(this) : []).map(item => this.topbarMoreBusy ? { ...item, enabled: false, title: '正在处理文档操作。' } : item)
       const capability = TOPBAR_MORE_CAPABILITY
-      return TOPBAR_MORE_ITEMS.map((item) => {
+      return [...TOPBAR_MORE_ITEMS, { id: 'theme', label: '主题', kind: 'submenu', icon: 'sparkle', enabled: true }].map((item) => {
         const key = capability[item.id]
         let enabled = item.enabled
         if (key && typeof this.shareCan === 'function' && !this.shareCan(key)) enabled = false
@@ -238,13 +241,9 @@ export default {
         return { ...item, enabled, ...(!enabled && item.id === 'history-comments' ? { title: '当前评论服务不可用或没有查看权限' } : {}) }
       })
     },
-    /** 返回菜单项绑定的 capability，供模板统一投影 disabled/rejected 语义。 */
-    topbarMoreCapability(item) {
-      return item && TOPBAR_MORE_CAPABILITY[item.id] ? TOPBAR_MORE_CAPABILITY[item.id] : ''
-    },
     /** 渲染行（含分隔线）。 */
     topbarMoreRows() {
-      if (referenceMenu(this)) {
+      if (referenceMenu(this) || this.compactHeader) {
         const rows = []
         this.topbarMoreItems.forEach(item => {
           if (item.separator) rows.push({ kind: 'divider', item: { id: 'before-' + item.id } })
@@ -258,14 +257,15 @@ export default {
     /** 当前子面板项列表；无子面板时为 []。 */
     topbarMoreSubmenuItems() {
       if (!this.topbarMoreSubmenu) return []
-      if (referenceMenu(this)) {
+      if (referenceMenu(this) || this.compactHeader) {
         const items = referenceDocumentMenuChildren(this, this.topbarMoreSubmenu)
-        if (this.topbarMoreSubmenu === 'saved-versions' && (this.versionLoading || this.versionError || !items.length)) {
+        if (this.topbarMoreSubmenu === 'saved-versions' && (this.versionLoading || this.versionError || !items.some(item => item.id === 'saved-versions'))) {
           const label = this.versionLoading ? '正在加载已存版本…' : this.versionError ? '已存版本加载失败，请关闭后重试' : '暂无已存版本'
-          return [{ id: 'saved-versions-status', label, title: label, enabled: false, disabled: true }]
+          items.unshift({ id: 'saved-versions-status', label, title: label, enabled: false, disabled: true })
         }
         return items
       }
+      if (this.topbarMoreSubmenu === 'theme') return documentMenuChildren(this, 'theme')
       return TOPBAR_MORE_SUBPANELS[this.topbarMoreSubmenu] || []
     },
   },
@@ -329,10 +329,10 @@ export default {
         this.closeTopbarMore()
         return
       }
-      const rect = event && event.currentTarget && event.currentTarget.getBoundingClientRect
-        ? event.currentTarget.getBoundingClientRect()
-        : null
+      const trigger = event?.currentTarget
+      const rect = trigger?.getBoundingClientRect?.()
       if (!rect) return
+      this._topbarMoreTrigger = trigger
       this.topbarMoreAnchor = rect
       this.topbarMoreOpen = true
       this._referenceMoreEpoch = (this._referenceMoreEpoch || 0) + 1
@@ -371,16 +371,24 @@ export default {
     },
     /** 一级项：submenu 展开子面板，其余立即执行。 */
     onTopbarMoreItem(item, event) {
-      if (referenceMenu(this)) {
+      if (referenceMenu(this) || this.compactHeader) {
         if (!this.topbarMoreOpen || this.topbarMoreBusy) return
         const current = referenceDocumentMenuItems(this).find(entry => entry.id === item?.id)
         if (!current || !current.enabled) return
-        if (current.id === 'download' && window.matchMedia?.('(max-width:760px) and (pointer:coarse)').matches) {
+        if (!this.compactHeader && current.id === 'download' && window.matchMedia?.('(max-width:760px) and (pointer:coarse)').matches) {
           this.closeTopbarMore(); this.openExportFormatPicker(); return
+        }
+        if (current.id === 'translate' && event?.type === 'click' && !event.target?.closest?.('.lark-doc-topbar-more-item-arrow')) {
+          return this.runReferenceMoreAction('translate', 'en', event)
         }
         if (current.kind === 'submenu') {
           this.topbarMoreSubmenu = this.topbarMoreSubmenu === current.id ? '' : current.id
-          this.$nextTick(this.measureTopbarMoreSubmenu)
+          this.$nextTick(() => {
+            this.measureTopbarMoreSubmenu()
+            if (this.compactHeader && event?.detail === 0 && this.topbarMoreSubmenu === current.id) {
+              this.$refs.topbarMoreSubmenu?.querySelector('button:not(:disabled)')?.focus()
+            }
+          })
           if (this.topbarMoreSubmenu === 'saved-versions') return this.loadSavedVersionsMenu()
           this._savedVersionsMenuRead = null
           return
@@ -397,7 +405,7 @@ export default {
     },
     /** hover 一级项时切换子面板（§4.2 ④-3：hover ≥2000ms 才展开，这里简化为即展）。 */
     hoverTopbarMoreItem(item) {
-      if (referenceMenu(this)) return
+      if (referenceMenu(this) || this.compactHeader) return
       if (!item || item.kind !== 'submenu' || item.enabled === false) return
       if (this.topbarMoreSubmenu === item.id) return
       this.topbarMoreSubmenu = item.id
@@ -418,13 +426,14 @@ export default {
     },
     /** 子面板项点击。switch 项只翻本地态，不关菜单（与飞书 Switch 行为一致）。 */
     onTopbarMoreSubmenuItem(entry, event) {
-      if (referenceMenu(this)) {
+      if (referenceMenu(this) || this.compactHeader) {
         if (!this.topbarMoreOpen || !this.topbarMoreSubmenu || this.topbarMoreBusy) return
         const current = referenceDocumentMenuChildren(this, this.topbarMoreSubmenu).find(item => item.id === entry?.id && item.value === entry?.value)
         if (!current || current.enabled === false || current.disabled) return
         return this.runReferenceMoreAction(current.action.slice('document:'.length), current.value, event)
       }
       if (!entry) return
+      if (this.topbarMoreSubmenu === 'theme') { this.closeTopbarMore(); return runDocumentMenuAction(this, 'theme', entry.value, event) }
       if (entry.kind === 'switch') {
         if (entry.id === 'show-author') this.topbarMoreShowAuthor = !this.topbarMoreShowAuthor
         if (entry.id === 'offline') this.topbarMoreOffline = !this.topbarMoreOffline
@@ -445,7 +454,12 @@ export default {
         && auth === session?._authorizationGeneration && this.shareCan('canView')
       try {
         const done = await runReferenceDocumentMenuAction(this, id, value, event, current)
-        if (current()) { if (done) this.closeTopbarMore(); else this.topbarMoreMessage = '操作未完成，请在文档服务中核对。' }
+        if (current()) {
+          if (done) {
+            this.closeTopbarMore()
+            if (id === 'width' && event?.detail === 0) this._topbarMoreTrigger?.focus({ preventScroll: true })
+          } else this.topbarMoreMessage = '操作未完成，请在文档服务中核对。'
+        }
         return done
       } catch { if (current()) this.topbarMoreMessage = '操作未完成，请在文档服务中核对。'; return false }
       finally { if (this._referenceMoreTicket === ticket) { this._referenceMoreTicket = null; this.topbarMoreBusy = false } }

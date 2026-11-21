@@ -28,6 +28,12 @@ import {
 
 const PANEL_GAP = 6
 const VIEWPORT_MARGIN = 8
+const documentWidgets = [
+  { id: 'catalogue', label: '目录导航', description: '在正文插入标题目录' },
+  { id: 'diagram', label: '文本绘图', description: '用 Mermaid 绘制流程图' },
+  { id: 'timeline', label: '时间轴', description: '用 Mermaid 甘特图展示任务时间' },
+  { id: 'open_link', label: '链接按钮', description: '在正文插入打开链接的按钮' },
+]
 
 export default {
   data() {
@@ -56,9 +62,18 @@ export default {
       /** 「执行操作」下拉：常驻在面板里展开（244×102），不是二级浮层。 */
       isvActionSelectOpen: false,
       isvPanelStyle: {},
+      documentWidgetPreferences: null,
     }
   },
   computed: {
+    documentWidgetItems() {
+      const widgets = this.availableDocumentWidgets()
+      if (!widgets.length || !this.editor || this.session?.can?.('canView') === false) return []
+      const installed = this.installedDocumentWidgets()
+      return widgets.filter(widget => installed.includes(widget.id)).map(widget => ({
+        id: 'widgets', value: widget.id, label: widget.label, disabled: !this.writable(),
+      })).concat([{ id: 'widgets', value: 'discover', label: '更多小组件' }, { id: 'widgets', value: 'manage', label: '管理小组件' }])
+    },
     /** 落块时真正写进 attr 的颜色（色板没动过就写空串，上文注释说明为什么）。 */
     isvResolvedButtonColor() {
       return this.isvColorPristine ? '' : this.isvButtonColor
@@ -89,7 +104,39 @@ export default {
       return this.isvAction === 'open_link'
     },
   },
+  beforeDestroy() { this.closeDocumentWidgets() },
   methods: {
+    availableDocumentWidgets() {
+      return documentWidgets.filter(widget => isCommandEnabled(this.larkDocConfig, widget.id === 'timeline' ? 'diagram' : widget.id, 'insert'))
+    },
+    documentWidgetStorageKey() {
+      return 'lark-doc:widgets:' + JSON.stringify([this.session?.documentId || this.documentId, this.session?.user?.id])
+    },
+    installedDocumentWidgets() {
+      const key = this.documentWidgetStorageKey()
+      if (this.documentWidgetPreferences?.key === key) return this.documentWidgetPreferences.installed
+      try {
+        const value = JSON.parse(this.$el.ownerDocument.defaultView.localStorage.getItem(key))
+        if (Array.isArray(value)) return value
+      } catch (_) { /* Browser storage can be unavailable in embedded documents. */ }
+      return documentWidgets.map(widget => widget.id)
+    },
+    closeDocumentWidgets() {
+      this._documentWidgetsDialog?.destroy()
+      this._documentWidgetsDialog = null
+    },
+    async runDocumentWidget(value, event, actionCurrent = () => true) {
+      if (!this.documentWidgetItems.some(item => item.value === value && !item.disabled) || !actionCurrent()) return false
+      if (value === 'catalogue') return this.startCatalogue()
+      if (value === 'diagram' || value === 'timeline') return this.insertDiagramType(value === 'timeline' ? 'gantt' : 'flowchart')
+      if (value === 'open_link') { this.startIsvButton(value); return this.isvPanelOpen }
+
+      const session = this.session, opener = this._topbarMoreTrigger || event?.currentTarget
+      const context = { editor: this.editor, session, key: this.documentWidgetStorageKey(),
+        identity: session?._privateIdentityGeneration, authorization: session?._authorizationGeneration }
+      const { openDocumentWidgetsDialog } = await import('../../../ui/dialogs')
+      return openDocumentWidgetsDialog(this, value, opener, context, actionCurrent)
+    },
     /**
      * 命令菜单「打开超链接 / 创建副本 / 关注文档更新」入口。
      * 🔴 这里只开面板，**不往正文写任何东西** —— 定判是「先弹窗后落块」。
@@ -127,7 +174,7 @@ export default {
       if (!this.editor || !this.writable() || this.effectiveReadonly) return
       if (this.menuOpen) this.closeCommandMenu()
       this.closeIsvPanel()
-      this.editor.chain().focus().setIsv({ kind: ISV_KINDS.catalog }).run()
+      return this.editor.chain().focus().setIsv({ kind: ISV_KINDS.catalog }).run()
     },
     onIsvButtonTextInput(event) {
       const value = event && event.target ? event.target.value : ''

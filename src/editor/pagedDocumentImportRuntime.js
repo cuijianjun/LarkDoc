@@ -587,7 +587,8 @@ export function createPagedDocumentImportRuntime(dependencies) {
 
   async function importWorkspaceFile(controller, file, importingEditor) {
     if (!importingEditor || controller.getEditor() !== importingEditor || controller._disposed) return
-    const format = resolveImportFormatId(controller.state.editorConfig, file.name.split('.').pop())
+    const extension = file.name.split('.').pop().toLowerCase()
+    const format = resolveImportFormatId(controller.state.editorConfig, extension)
     if (!format) {
       controller.state.notice = `不支持的文件格式，可导入：${controller.state.editorConfig.importExport.importFormats.join(' / ').toUpperCase()}`
       return
@@ -610,7 +611,7 @@ export function createPagedDocumentImportRuntime(dependencies) {
       if (!await wait(controller.host.confirmImport ? controller.host.confirmImport(message, { fileName: file.name }) : controller.confirm(message))) return
       const checkCurrent = () => {
         if (!owned()) return false
-        if (!isImportEnabled(controller.state.editorConfig) || resolveImportFormatId(controller.state.editorConfig, file.name.split('.').pop()) !== format) return false
+        if (!isImportEnabled(controller.state.editorConfig) || resolveImportFormatId(controller.state.editorConfig, extension) !== format) return false
         if (typeof session?.can === 'function' && (!session.can('canView') || !session.can('canEdit'))) return false
         if (importingEditor.state.doc !== initialDoc) throw new Error('正文已发生变化，已取消本次导入')
         return controller.state.mode !== 'read' && !controller.state.forcedReadonly
@@ -620,7 +621,16 @@ export function createPagedDocumentImportRuntime(dependencies) {
       let importedTitle
       let compatibilityWarnings = []
       let sourceReport = null
-      if (format === 'docx') {
+      if (extension === 'doc') {
+        const { readLegacyWord } = await wait(import('../utils/legacyWord'))
+        const text = readLegacyWord(await wait(file.arrayBuffer()))
+        if (!checkCurrent()) return
+        content = { type: 'doc', content: text.split('\n').map(line => ({
+          type: 'paragraph',
+          ...(line ? { content: [{ type: 'text', text: line }] } : {}),
+        })) }
+        compatibilityWarnings = ['旧版 Word 已导入正文文字，版式与媒体请转存为 .docx 后导入。']
+      } else if (format === 'docx') {
         const mammoth = await wait(loadFeature('office.mammoth', () => loadMammothModule()))
         const result = await wait(mammoth.convertToHtml({ arrayBuffer: await wait(file.arrayBuffer()) }, { styleMap: ['u => u'] }))
         content = sanitizeHTML(result.value)
@@ -640,7 +650,7 @@ export function createPagedDocumentImportRuntime(dependencies) {
           const prepared = normalizeVditorHtml(await wait(markdownToHtml(text)))
           content = sanitizeHTML(prepared.html)
           if (prepared.converted) sourceReport = { ...prepared.report, source: 'markdown' }
-        } else throw new Error('只支持 HTML / JSON / Markdown / DOCX')
+        } else throw new Error('只支持 HTML / JSON / Markdown / Word')
       }
       const activeEditor = controller.getEditor()
       // The host aliases `readonly` to `source.importing`, so `effectiveReadonly` is

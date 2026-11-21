@@ -20,7 +20,10 @@ export default {
           onExit: () => this.exitSlides(),
           onImageComment: typeof this.openImageComments === 'function' ? (...args) => this.openImageComments(...args) : undefined,
         },
-      }, { onError: () => { this.error = '界面暂时无法打开，请关闭后重试' } })
+      }, { onError: () => {
+        this.exitSlides()
+        this.error = '演示界面暂时无法打开，请重试'
+      } })
       this.refreshStage()
     },
     destroyStage() {

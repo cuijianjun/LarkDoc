@@ -255,6 +255,31 @@ describe('reference mobile menu placement delta', () => {
   })
 })
 describe('browser reference mobile document menus', () => {
+  it('keeps the compact mobile import entry working independently of the desktop upload submenu', async () => {
+    const ed = editorHost()
+    ed.compactHeader = true
+    ed.createMenuRows = [{ kind: 'item', id: 'import', label: '上传及导入', arrow: true, children: [{ id: 'upload-file' }] }]
+    ed.larkDocConfig = { importExport: { enabled: true, importEnabled: true, exportEnabled: false } }
+    expect(referenceDocumentMenuChildren(ed, 'create')[0]).toMatchObject({ enabled: true, arrow: false, children: undefined })
+    await runReferenceDocumentMenuAction(ed, 'create', 'import')
+    expect(ed.$emit).toHaveBeenCalledExactlyOnceWith('workspace-import')
+    ed.larkDocConfig.importExport.importEnabled = false
+    expect(referenceDocumentMenuChildren(ed, 'create')[0].enabled).toBe(false)
+    expect(await runReferenceDocumentMenuAction(ed, 'create', 'import')).toBe(false)
+    expect(ed.$emit).toHaveBeenCalledOnce()
+  })
+
+  it('keeps comment history available on desktop only', async () => {
+    const ed = editorHost()
+    ed._mobileEditorMedia.matches = false
+    ed.commentCanViewHistory = () => true
+    ed.openCommentHistory = vi.fn(() => true)
+    expect(referenceDocumentMenuItems(ed).find(item => item.id === 'history-comments')?.enabled).toBe(true)
+    ed._mobileEditorMedia = { matches: true }
+    expect(referenceDocumentMenuItems(ed).some(item => item.id === 'history-comments')).toBe(false)
+    expect(await runReferenceDocumentMenuAction(ed, 'history-comments')).toBe(false)
+    expect(ed.openCommentHistory).not.toHaveBeenCalled()
+  })
   it('keeps the pictured groups and exposes unsupported host operations as disabled', () => {
     const ed = editorHost(), items = referenceDocumentMenuItems(ed)
     expect(items.slice(0, 5).map(item => item.id)).toEqual(['mode', 'ai', 'notifications', 'workspace-search', 'create'])
@@ -289,6 +314,32 @@ describe('browser reference mobile document menus', () => {
     expect(referenceDocumentMenuItems(ed).find(item => item.id === 'information').enabled).toBe(true)
     for (const id of ['mentions', 'follow']) expect(referenceDocumentMenuItems(ed).find(item => item.id === id).enabled).toBe(false)
     expect(referenceDocumentMenuChildren(ed, 'permissions').find(item => item.id === 'transfer-ownership').enabled).toBe(false)
+  })
+  it('routes enabled desktop business, version, widget and translation actions', async () => {
+    const ed = editorHost()
+    ed.compactHeader = true
+    ed.$el = document.body
+    ed.larkDocConfig = { importExport: { importLabel: '导入', exportFormats: [] } }
+    ed.versionCanSave = true
+    ed.openSaveVersion = vi.fn(() => true)
+    ed.documentWidgetItems = [{ id: 'widgets', value: 'discover', label: '更多小组件' }]
+    ed.runDocumentWidget = vi.fn(() => true)
+    ed.onDocumentAction = vi.fn(() => true)
+    ed.onDocumentAction.supportedActions = ['template', 'translate', 'mentions']
+    ed.session.getProvider = name => name === 'documentBusiness' ? { getState: () => ({
+      isTemplate: true, capabilities: { canConvertTemplate: true },
+    }) } : null
+    const items = referenceDocumentMenuItems(ed)
+    expect(items.find(item => item.id === 'template')).toMatchObject({ enabled: true, checked: true, kind: 'switch' })
+    expect(items.find(item => item.id === 'translate')).toMatchObject({ enabled: true, kind: 'submenu' })
+    expect(referenceDocumentMenuChildren(ed, 'translate')).toContainEqual(expect.objectContaining({ value: 'ja', enabled: true }))
+    expect(await runReferenceDocumentMenuAction(ed, 'translate', 'invalid')).toBe(false)
+    expect(await runReferenceDocumentMenuAction(ed, 'translate', 'ja')).toBe(true)
+    expect(ed.onDocumentAction).toHaveBeenCalledWith({ action: 'translate', type: 'ja', documentId: 'document', actorId: 'actor' })
+    expect(await runReferenceDocumentMenuAction(ed, 'save-version')).toBe(true)
+    expect(ed.openSaveVersion).toHaveBeenCalledOnce()
+    expect(await runReferenceDocumentMenuAction(ed, 'widgets', 'discover')).toBe(true)
+    expect(ed.runDocumentWidget).toHaveBeenCalledWith('discover', undefined, expect.any(Function))
   })
   it('keeps an offline AI endpoint disabled and never emits a document AI request', async () => {
     const ed = editorHost(); ed.aiProvider = { kind: 'endpoint', endpoint: 'https://external.example.test/ai' }; ed.larkDocConfig = { network: { mode: 'offline' } }

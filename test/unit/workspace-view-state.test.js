@@ -81,7 +81,7 @@ describe('workspace view state 纯函数', () => {
     const view = createWorkspaceViewState()
     expect(view.importEnabled).toBe(true)
     expect(view.exportEnabled).toBe(true)
-    expect(view.importAccept).toBe('.html,.htm,.json,.md,.markdown,.docx')
+    expect(view.importAccept).toBe('.html,.htm,.json,.md,.markdown,.mark,.txt,.doc,.docx')
     expect(view.importLabel).toBe('导入')
     expect(view.exportOptions[0]).toEqual({ value: '', label: '导出' })
     expect(view.exportOptions.map(item => item.value)).toEqual(['', 'html', 'json', 'md', 'txt', 'docx', 'print'])

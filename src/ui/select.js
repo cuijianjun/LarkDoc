@@ -175,6 +175,7 @@ export function createSelect(options = {}) {
       }
 
       button.appendChild(check)
+      if (item.icon) button.appendChild(iconNode(item.icon, 17, 'lark-doc-select-option-icon'))
       button.appendChild(text)
       menu.appendChild(button)
       rows.push({ button, check, value: item.value, labelEl, hintEl })

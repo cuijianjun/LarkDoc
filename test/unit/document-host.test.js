@@ -7,7 +7,7 @@ import { createHttpDocumentHostProvider, createHttpDocumentHost, receiveHttpDocu
 import { createDocumentReport } from '../../src/ui/documentHost'
 import { documentMenuItems, documentMenuChildren, runDocumentMenuAction } from '../../src/components/lark-doc/editor/documentMenuView'
 import toolbarUiMixin from '../../src/components/lark-doc/editor/toolbarUiMixin'
-import toolbarMenusMixin from '../../src/components/lark-doc/editor/toolbarMenusMixin'
+import createMenuMixin from '../../src/components/lark-doc/editor/createMenuMixin'
 import { commentPanelMethods } from '../../src/components/lark-doc/editor/commentPanelView'
 
 const hash = 'sha256:' + 'a'.repeat(64), docNode = 'd-' + '1'.repeat(64), folderNode = 'f-' + '2'.repeat(64)
@@ -132,7 +132,7 @@ describe('same-origin foreground-free new-page handoff', () => {
     expect(documentMenuChildren(ed, 'more').find(i => i.id === 'report').disabled).toBe(false)
     expect(documentMenuChildren(ed, 'more').find(i => i.id === 'offline').disabled).toBe(true)
     expect(await runDocumentMenuAction(ed, 'move')).toBe(false)
-    toolbarMenusMixin.methods.toggleCreateMenu.call(ed)
+    createMenuMixin.methods.toggleCreateMenu.call(ed)
     expect(await toolbarUiMixin.methods.onMobileHeaderAction.call(ed, 'profile')).toBe(false)
     expect(handler).not.toHaveBeenCalled(); expect(ed.createMenuOpen).toBeUndefined()
     expect(await runDocumentMenuAction(ed, 'report')).toBe(false)

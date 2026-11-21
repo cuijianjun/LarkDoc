@@ -10,6 +10,7 @@ import { isImportEnabled, isExportEnabled } from '../components/lark-doc/larkDoc
 import { DOCUMENT_SCHEMA_VERSION } from '../core/documentSchema'
 import { flattenHeadingContainers, safeUrl } from '../core/documentOperations'
 import { createNetworkPolicy } from '../core/policy/network'
+import { evaluateOutputPolicy } from '../core/policy/output'
 
 export const transferMethods = {
   async importDocument(event) {
@@ -70,25 +71,48 @@ export const transferMethods = {
     if (!isExportEnabled(this.state.editorConfig) || !format) return
     if (!this.state.editorConfig.importExport.exportFormats.includes(format)) return
     if (format === 'docx') return this.exportWordDocument()
+    const editor = this.getEditor(), session = this.getSession(), principal = session?.user?.id
+    const generation = session?._privateIdentityGeneration, auth = session?._authorizationGeneration
+    const documentId = this.props.documentId, sessionDocumentId = session?.documentId, source = editor?.state?.doc
+    const action = format === 'print' ? 'print' : 'download'
+    const ports = ['identity', 'authorization', 'security']
+    const providers = ports.map(name => session?.getProvider?.(name))
+    const allowed = () => !this._disposed && !editor?.isDestroyed && !session?._destroyed
+      && !this.state.importing && !editor?.storage?.larkDoc?.pagedImport
+      && ports.every((name, index) => session?.getProvider?.(name) === providers[index])
+      && this.getEditor() === editor && this.getSession() === session && session?.user?.id === principal
+      && session?._privateIdentityGeneration === generation && session?._authorizationGeneration === auth
+      && this.props.documentId === documentId && session?.documentId === sessionDocumentId && editor?.state?.doc === source
+      && (typeof session?._identityCurrent !== 'function' || session._identityCurrent())
+      && (typeof session?.can !== 'function' || (session.can('canView') && session.can('canExport')))
+      && evaluateOutputPolicy(session?.getProvider?.('security')?.policy, action).allowed
+      && isExportEnabled(this.state.editorConfig) && this.state.editorConfig.importExport.exportFormats.includes(format)
+    if (!allowed()) return false
     try {
       const { downloadText, htmlToMarkdown, safeFileName } = await import(/* webpackChunkName: "import-export" */ '../utils/importExport')
+      if (!allowed()) return false
       const filename = safeFileName(this.state.title)
       if (format === 'html') downloadText(this.getExportHTML(), `${filename}.html`, 'text/html;charset=utf-8')
       else if (format === 'json') downloadText(JSON.stringify({ schemaVersion: DOCUMENT_SCHEMA_VERSION, title: this.state.title, document: this.getJSON() }, null, 2), `${filename}.json`, 'application/json')
       else if (format === 'txt') downloadText(this.getText(), `${filename}.txt`, 'text/plain;charset=utf-8')
       else if (format === 'md') {
-        downloadText(await htmlToMarkdown(this.getExportHTML()), `${filename}.md`, 'text/markdown;charset=utf-8')
+        const markdown = await htmlToMarkdown(this.getExportHTML())
+        if (!allowed()) return false
+        downloadText(markdown, `${filename}.md`, 'text/markdown;charset=utf-8')
         this.state.notice = 'Markdown 为简化导出，字体、分栏、公式和图片裁剪布局可能降级；JSON 可保留完整正文'
       } else if (format === 'print') {
-        const editor = this.getEditor()
         const folded = Array.from(editor.storage.larkDoc.folded)
         folded.forEach(id => editor.commands.toggleLarkDocFoldById(id))
         if (this.host.nextTick) this.host.nextTick(() => {
-          this.getWindow().print()
-          if (!this._disposed) folded.forEach(id => editor.commands.toggleLarkDocFoldById(id))
+          try { if (allowed()) this.getWindow().print() }
+          finally { if (!editor.isDestroyed) folded.forEach(id => editor.commands.toggleLarkDocFoldById(id)) }
         })
       }
-    } catch (error) { this.state.notice = `导出失败：${error.message}` }
+      return true
+    } catch (error) {
+      if (allowed()) this.state.notice = `导出失败：${error.message}`
+      return false
+    }
   },
 
   async exportWordDocument() {

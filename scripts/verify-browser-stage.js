@@ -12,6 +12,20 @@ async function main() {
   await context.route('**/__larkdoc-preview-fixture*', route => route.fulfill({ contentType: 'text/html', body: '<title>演示链接验证</title><p>Local link target</p>' }))
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
+  await page.addInitScript(() => {
+    const request = HTMLElement.prototype.requestFullscreen
+    HTMLElement.prototype.requestFullscreen = function (...options) {
+      const attempt = { target: this, activation: navigator.userActivation.isActive, result: 'pending' }
+      window.__stageFullscreenAttempt = attempt
+      const outcome = request.apply(this, options)
+      outcome.then(() => { attempt.result = 'accepted' }, error => {
+        attempt.result = 'denied'
+        attempt.error = error.name
+        attempt.message = error.message
+      })
+      return outcome
+    }
+  })
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   const check = (name, ok, detail) => {
@@ -22,6 +36,7 @@ async function main() {
   const stage = () => page.locator('.lark-doc-slide-stage')
   const snapshot = () => page.evaluate(() => JSON.stringify(window.__larkDoc.getJSON()))
   const enter = async () => {
+    await page.evaluate(() => { window.__stageFullscreenAttempt = null })
     const button = page.locator('.lark-doc-toolbar button[aria-label="演示模式"]')
     if (await button.isVisible()) await button.click()
     else {
@@ -29,7 +44,18 @@ async function main() {
       await page.getByRole('menu', { name: '更多工具', exact: true }).getByRole('menuitem', { name: '演示模式', exact: true }).click()
     }
     await stage().waitFor()
-    await page.waitForFunction(() => !!document.fullscreenElement && document.querySelector('.lark-doc-slide-stage strong')?.textContent === '粗体正文')
+    await page.waitForFunction(() => window.__stageFullscreenAttempt?.result !== 'pending' && !!window.__stageFullscreenAttempt
+      && document.querySelector('.lark-doc-slide-stage strong')?.textContent === '粗体正文')
+    const attempt = await stage().evaluate(root => {
+      const { target, ...result } = window.__stageFullscreenAttempt
+      return { ...result, workspace: target === root.closest('.lark-doc'), fullscreen: document.fullscreenElement === target,
+        anyFullscreen: !!document.fullscreenElement }
+    })
+    assert(attempt.activation && attempt.workspace && (attempt.result === 'accepted'
+      ? attempt.fullscreen
+      : attempt.result === 'denied' && (attempt.error === 'NotAllowedError' || attempt.error === 'TypeError' && attempt.message === 'not granted')
+        && !attempt.anyFullscreen), JSON.stringify(attempt))
+    console.log('Browser fullscreen result: ' + attempt.result)
   }
   const exited = async () => {
     await stage().waitFor({ state: 'detached' })
@@ -71,7 +97,7 @@ async function main() {
       const scrollers = [root, ...root.querySelectorAll('*')].filter(node => /auto|scroll/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 100)
       return { position: css.position, rect: rect.toJSON(), header: header?.getBoundingClientRect().toJSON(), scrollers: scrollers.length, fullscreen: !!document.fullscreenElement }
     })
-    check('演示为铺满视口的固定全屏层', geometry.position === 'fixed' && geometry.rect.x === 0 && geometry.rect.y === 0 && geometry.rect.width === 1440 && geometry.rect.height === 1050 && geometry.fullscreen, geometry)
+    check('演示为铺满视口的固定全屏层', geometry.position === 'fixed' && geometry.rect.x === 0 && geometry.rect.y === 0 && geometry.rect.width === 1440 && geometry.rect.height === 1050, geometry)
     check('返回顶栏高64px且无旧分页控件', geometry.header?.height === 64 && await stage().getByRole('button', { name: '返回', exact: true }).count() === 1 && await stage().getByRole('button', { name: /上一页|下一页|退出演示/ }).count() === 0)
     check('同一演示文档保留两个章节及全文末尾', await stage().getByText('第一节演示', { exact: true }).count() === 1 && await stage().getByText('第二节演示', { exact: true }).count() === 1 && await stage().getByText('全文结束标记', { exact: true }).count() === 1)
     check('正文粗体、表格及代码均保留', await stage().locator('strong').filter({ hasText: '粗体正文' }).count() === 1 && await stage().locator('td').count() === 2 && (await stage().innerText()).includes('const presentation = 1;'))
@@ -94,9 +120,10 @@ async function main() {
       const popupPending = context.waitForEvent('page')
       await target.click()
       const popup = await popupPending
-      await popup.waitForLoadState('domcontentloaded')
+      await popup.waitForURL(url => url.pathname === '/__larkdoc-preview-fixture', { waitUntil: 'domcontentloaded' })
       check('演示内容点击在新页打开：' + selector, popup.url().includes('/__larkdoc-preview-fixture'))
       await popup.close()
+      await page.bringToFront()
     }
     check('内嵌网页仍有实际预览而非纯文字标题', await stage().locator('iframe').count() === 1)
     check('完整文档有独立滚动区域', geometry.scrollers > 0)

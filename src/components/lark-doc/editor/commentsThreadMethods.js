@@ -92,9 +92,9 @@ export const commentsThreadMethods = {
     this.setCommentDraft(threadId, prefix + draft, mentions, references)
     return true
   },
-  clearCommentDraft(threadId) {
+  clearCommentDraft(threadId, submittedImages) {
     if (!threadId) return
-    this.clearCommentDraftImages(threadId)
+    this.clearCommentDraftImages(threadId, submittedImages)
     this.$set(this.commentDrafts, threadId, '')
     this.$set(this.commentDraftMentions, threadId, [])
     this.$set(this.commentDraftReferences, threadId, [])
@@ -177,7 +177,7 @@ export const commentsThreadMethods = {
       const thread = (this.commentThreads || []).find(item => item.id === threadId)
       return Boolean(thread && thread.visibility === 'private')
     }
-    return this.commentPrivateIds.indexOf(threadId) !== -1
+    return false
   },
 
 
@@ -215,6 +215,12 @@ export const commentsThreadMethods = {
   commentDraftAssetIds(scope) {
     return this.commentDraftImages(scope).filter(image => image.status === 'ready' && image.assetId).map(image => image.assetId)
   },
+  submittedCommentImageIds(scope) {
+    const remote = this.commentProvider()?.isRemote
+    return this.commentDraftImages(scope)
+      .filter(image => image.status === 'ready' && (image.assetId || (!remote && (image.attachment?.url || image.url))))
+      .map(image => image.id)
+  },
   invalidateCommentImageUpload(scope) {
     if (!this.commentImageDraftGenerations) this.commentImageDraftGenerations = {}
     this.$set(this.commentImageDraftGenerations, scope, (this.commentImageDraftGenerations[scope] || 0) + 1)
@@ -230,7 +236,13 @@ export const commentsThreadMethods = {
     const scope = this._commentImageUploadScope
     if (scope) this.invalidateCommentImageUpload(scope)
   },
-  clearCommentDraftImages(scope) {
+  clearCommentDraftImages(scope, submittedImages) {
+    if (submittedImages) {
+      for (const image of this.commentDraftImages(scope)) {
+        if (submittedImages.includes(image.id)) this.removeCommentDraftImage(scope, image.id)
+      }
+      return
+    }
     this.invalidateCommentImageUpload(scope)
     this.dropCommentAttachmentTasks(scope)
     this.commentDraftImages(scope).forEach(image => {

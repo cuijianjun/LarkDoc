@@ -213,6 +213,7 @@
     let seedBusy = false
     let stopCapabilities = null
     let bridge = null, bridgePrincipal = null, mountedBridge = null, renewingBridge = null
+    let receiptHelloBridge = null
     let restoreIsolation = null, pageClosed = false
     let businessHost = null
     const isolatedBridges = new Set()
@@ -350,7 +351,14 @@
       return session
     }
     function applyCollaborationReadonly() {
-      const state = bridge?.getState(), app = editorC.getInstance?.()
+      const current = bridge, state = current?.getState(), app = editorC.getInstance?.()
+      if (receiptHelloBridge && receiptHelloBridge !== current) receiptHelloBridge = null
+      if (receiptHelloBridge && state.status !== 'blocked') receiptHelloBridge = null
+      if (receiptHelloBridge && state.pending.length === 0 && ownedSession.can('canView') &&
+        receiptHelloBridge === current && current === bridge && session === ownedSession && !restoreIsolation && !pageClosed) {
+        receiptHelloBridge = null
+        current.provider.forceSync()
+      }
       if (app?.getSession?.() === ownedSession) app.patchProps?.({ readonly: pageClosed || Boolean(restoreIsolation) || mountedBridge !== bridge || !state || state.status !== 'ready' || !state.canWrite || !ownedSession.can('canEdit') })
     }
     function restoreHandoffCurrent(record) {
@@ -421,6 +429,13 @@
           ticket: async () => (await authorization.issueCollaborationTicket({ requestedScopes: ownedSession.can('canEdit') ? ['document.read', 'document.write'] : ['document.read'], protocolVersion: 'editor-crdt-v1' })).ticket,
           onState: () => { checkBridgeWaiters(); updateControls(); applyCollaborationReadonly() },
           onCommentsChanged: () => { if (current === bridge && session === ownedSession) session.emit('comments-changed') },
+          onReceipt: () => {
+            const state = current.getState()
+            if (current === bridge && state.status === 'blocked' && state.pending.length === 0) {
+              receiptHelloBridge = current
+              applyCollaborationReadonly()
+            }
+          },
           onAuthorizationRequired: () => {
             if (current !== bridge || renewingBridge || restoreIsolation || pageClosed) return
             renewingBridge = (async () => {

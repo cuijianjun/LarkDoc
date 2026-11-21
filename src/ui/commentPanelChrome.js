@@ -12,7 +12,7 @@ import { COMMENT_IMAGE_ACCEPT } from '../components/lark-doc/editor/commentImage
 export function createCommentChrome(ctx) {
   const {
     el, state, call, onAction, richInput, richInputs, bindSubmitShortcut, bindViewerEscape,
-    isMobile, isInlineDocument, hasInlineDocument, isDocumentMentionOpen, isReferenceDrawer,
+    isInlineDocument, hasInlineDocument, isDocumentMentionOpen, isReferenceDrawer,
     update, setNativeThreadOpen, isDestroyed,
   } = ctx
 
@@ -25,7 +25,7 @@ export function createCommentChrome(ctx) {
   launcherButton.appendChild(iconNode('mode-comment', 18)); launcher.appendChild(launcherButton)
   launcherButton.addEventListener('mousedown', event => event.preventDefault())
   launcherButton.addEventListener('click', () => {
-    if (!isDestroyed() && launcherButton.isConnected && isMobile() && state.launcher?.visible && !state.sidebarOpen && !state.composer?.open) call('onToggleSidebar')
+    if (!isDestroyed() && launcherButton.isConnected && state.launcher?.visible && !state.sidebarOpen && !state.composer?.open) call('onToggleSidebar')
   })
   const documentHeading = document.createElement('h2')
   const notice = document.createElement('div')
@@ -66,7 +66,7 @@ export function createCommentChrome(ctx) {
   collapseButton.type = 'button'
   collapseButton.className = 'lark-doc-comment-sidebar-collapse'
   collapseButton.setAttribute('aria-label', '收起评论侧栏')
-  collapseButton.textContent = '»'
+  collapseButton.appendChild(iconNode('chevron-right', 18))
   collapseButton.addEventListener('click', () => call('onToggleSidebar'))
   const threadReader = document.createElement('button')
   threadReader.type = 'button'; threadReader.textContent = '逐条查看'; threadReader.setAttribute('aria-label', '逐条查看评论')

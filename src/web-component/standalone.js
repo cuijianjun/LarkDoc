@@ -1,9 +1,13 @@
 /** CDN直挂入口：特性从当前脚本的同目录UMD资源按需加载。 */
 import '../features/element'
+import { getTextBetween, getTextSerializersFromSchema } from '@tiptap/core'
 import { closeHistory } from '@tiptap/pm/history'
+import { DOMSerializer, Fragment } from '@tiptap/pm/model'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { publishSharedModules } from '../core/features/shared-host'
+import { registerFeature } from '../core/features/registry'
+import { createImageViewer } from '../core/nodeviews/image-viewer'
 import * as uiIcons from '../ui/icons'
 import * as uiIcon from '../ui/icon'
 import * as uiDom from '../ui/dom'
@@ -12,6 +16,7 @@ import * as uiMenuLayout from '../ui/menuLayout'
 import * as uiHeadingMenu from '../ui/headingMenu'
 import * as uiDiagramMenu from '../ui/diagramMenu'
 import * as uiTooltip from '../ui/tooltip'
+import * as uiHoverTips from '../ui/hoverTips'
 import * as uiSelect from '../ui/select'
 import * as emojiIdentityData from '../core/emoji/identity-data'
 import * as emojiIdentity from '../core/emoji/identity'
@@ -28,17 +33,22 @@ export { default } from './index'
 // 包内不再各打一份 icons / select / emoji 身份表。名字必须与构建期登记一致，
 // test/unit/build-contract.test.js 守着这条对齐。
 publishSharedModules({
+  '@tiptap/core': { getTextBetween, getTextSerializersFromSchema },
   '@tiptap/pm/history': { closeHistory },
+  '@tiptap/pm/model': { DOMSerializer, Fragment },
   '@tiptap/pm/state': { Plugin, PluginKey, TextSelection },
   '@tiptap/pm/view': { Decoration, DecorationSet },
   'ui.icons': uiIcons,
   'ui.icon': uiIcon,
+  'ui.imageViewer': { createImageViewer },
+  'core.featureRegistration': { registerFeature },
   'ui.dom': uiDom,
   'ui.palette': uiPalette,
   'ui.menuLayout': uiMenuLayout,
   'ui.headingMenu': uiHeadingMenu,
   'ui.diagramMenu': uiDiagramMenu,
   'ui.tooltip': uiTooltip,
+  'ui.hoverTips': uiHoverTips,
   'ui.select': uiSelect,
   'core.emojiIdentityData': emojiIdentityData,
   'core.emojiIdentity': emojiIdentity,

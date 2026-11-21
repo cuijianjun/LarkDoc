@@ -429,7 +429,8 @@ export default {
       const text = context.doc.textBetween(from, to, '\n')
       if (!text.trim()) return false
       this.closeSelectionTranslation()
-      const target = { context, text, from, to, provider: this.aiProvider, language: 'en', request: 0, offs: [], closed: false,
+      const target = { context, text, from, to, provider: this.aiProvider,
+        language: (this._mobileEditorMedia?.matches && this._preferredTranslationLanguage) || 'en', request: 0, offs: [], closed: false,
         network: JSON.stringify(this.larkDocConfig?.network || {}) }
       this._selectionTranslation = target
       const check = () => { if (this._selectionTranslation === target && !this.selectionTranslationCurrent(target)) this.closeSelectionTranslation() }
@@ -446,7 +447,9 @@ export default {
           onClose: () => { if (this._selectionTranslation === target) this.closeSelectionTranslation() },
           onLanguage: language => {
             if (!this.selectionTranslationCurrent(target)) { check(); return }
-            target.language = language; this.runSelectionTranslation(target)
+            target.language = language
+            if (this._mobileEditorMedia?.matches) this._preferredTranslationLanguage = language
+            this.runSelectionTranslation(target)
           },
           onCopy: () => this.copySelectionTranslationResult(target),
         } })

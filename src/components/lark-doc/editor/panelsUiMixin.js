@@ -30,6 +30,7 @@ import { applyStyle, mountNode, syncChildren } from '../../../ui/dom'
 import { COVER_PANEL_ITEMS, coverImageStyle } from './coverMixin'
 import { iconNode } from '../../../ui/icon'
 import { panelPresentation } from './commentPanelView'
+import { commentLauncher } from './commentMixinShared'
 import { createCommentComposer } from '../../../ui/commentComposer'
 
 
@@ -106,7 +107,6 @@ export default {
     commentImageViewer() { this.refreshPanels() },
     commentImageBusy() { this.refreshPanels() },
     commentPendingImage() { this.refreshPanels() },
-    commentPrivateIds() { this.refreshPanels() },
     commentMoreThreadId() { this.refreshPanels() },
     commentMenuThreadId() { this.refreshPanels() },
     commentMenuCommentId() { this.refreshPanels() },
@@ -350,9 +350,6 @@ export default {
         ? this.commentSidebarOpen === true : panels.length > 0 || this.commentComposerOpen === true))
       const documentInline = !imageScope && readable && !historical && (remote || !!provider)
       const canSubmit = readable && this.commentDocumentCanSubmit?.() !== false && this.commentAllowed?.('create') !== false
-      const root = this.$refs?.root, bounds = root?.getBoundingClientRect(), win = root?.ownerDocument.defaultView
-      const header = root?.querySelector('.lark-doc-topbar'), rect = header?.getBoundingClientRect(), style = header && win?.getComputedStyle?.(header)
-      const visibleHeader = header && !header.hidden && rect?.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden'
       return {
         open: sidebarOpen, remote, historical, sidebarOpen, documentInline,
         viewerHost: imageScope?.viewer || null, viewerCurrent: imageScope ? () => this.imageCommentCurrent(imageScope) : null,
@@ -362,9 +359,7 @@ export default {
         documentCount: documentThreads.length,
         selectionCount: readable ? (Number.isFinite(Number(this.commentSelectionCount)) ? Number(this.commentSelectionCount) : panels.length) : 0,
         unread: readable ? Number(this.commentUnread) || 0 : 0,
-        launcher: { visible: !imageScope && readable && !!this._mobileEditorMedia?.matches && !!provider,
-          top: Math.max(0, visibleHeader ? rect.bottom : bounds?.top || 0),
-          right: Math.max(0, (win?.innerWidth || 0) - (bounds?.right || win?.innerWidth || 0)) },
+        launcher: commentLauncher(this, imageScope),
         like: readable ? { ...this.commentDocumentLike, available: !!provider && this.session?.getProvider?.('authorization')?.isRemote === true
           && typeof this.session?.getProvider?.('authorization')?.documentInformation === 'function' } : { available: false, snapshot: null, pending: '' },
         documentComposer: { open: readable && !historical && (sidebarOpen || documentInline) && !this.commentComposerOpen,

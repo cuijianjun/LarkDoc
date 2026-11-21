@@ -68,13 +68,14 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     expect(create).toHaveBeenCalledTimes(11)
   })
 
-  it('更多的 22 个一级项和全部子项仍分发至原 mixin 动作', async () => {
+  it('更多收纳主题并保留原有 22 个一级项和分发动作', async () => {
     const { vm, root, tick } = mount({ capabilities: { canManagePermission: true } })
     const action = vi.spyOn(vm, 'runTopbarMoreAction').mockImplementation(() => vm.closeTopbarMore())
     for (const item of TOPBAR_MORE_ITEMS) {
       root.querySelector('.lark-doc-more-btn').click()
       await tick()
-      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"]')).toHaveLength(22)
+      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"]')).toHaveLength(TOPBAR_MORE_ITEMS.length + 1)
+      expect(root.querySelector('[data-topbar-more-id="theme"]').textContent).toBe('主题')
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(8)
       const row = root.querySelector(`[data-topbar-more-id="${item.id}"]`)
       // 历史评论等项受运行时能力门控（远端评论服务 + canView），门控关闭时不派发动作。
@@ -168,7 +169,7 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     press(menu, 'Home')
     expect(document.activeElement.dataset.topbarMoreId).toBe('width')
     press(document.activeElement, 'End')
-    expect(document.activeElement.dataset.topbarMoreId).toBe('delete')
+    expect(document.activeElement.dataset.topbarMoreId).toBe('theme')
     vm.linkHoverOpen = true
     const event = press(document.activeElement, 'Escape')
     await tick()

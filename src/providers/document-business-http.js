@@ -18,7 +18,10 @@ export function createHttpDocumentBusinessProvider(options = {}) {
       !['active', 'deleted'].includes(value.status) || ![value.revision, value.preferenceRevision, value.epoch, value.contentRevision].every(decimal) ||
       typeof value.followed !== 'boolean' || typeof value.favorite !== 'boolean' || flags.some(flag => typeof value.capabilities?.[flag] !== 'boolean')) throw fail('BUSINESS_INVALID_RESPONSE')
     const c = context(); if (value.principalId !== c?.principalId) throw fail('BUSINESS_CONTEXT_CHANGED')
-    if (['canPin', 'canShortcut', 'canTransferOwnership'].some(flag => value.capabilities[flag] !== undefined && typeof value.capabilities[flag] !== 'boolean') ||
+    if (['canPin', 'canShortcut', 'canTransferOwnership', 'canConvertTemplate'].some(flag => value.capabilities[flag] !== undefined && typeof value.capabilities[flag] !== 'boolean') ||
+      (value.isTemplate !== undefined && typeof value.isTemplate !== 'boolean') ||
+      (value.capabilities.canConvertTemplate !== undefined && typeof value.isTemplate !== 'boolean') ||
+      (value.capabilities.canConvertTemplate === true && (value.ownerId !== value.principalId || value.status !== 'active')) ||
       (value.pinned !== undefined && typeof value.pinned !== 'boolean') || (value.capabilities.canPin === true && typeof value.pinned !== 'boolean') ||
       (value.capabilities.canShortcut === true && !Array.isArray(value.shortcuts)) || (value.authzVersion !== undefined && !decimal(value.authzVersion)) ||
       (value.capabilities.canTransferOwnership === true && (!decimal(value.authzVersion) || !id(value.ownershipEligibilityRevision) || value.ownerId !== value.principalId))) throw fail('BUSINESS_INVALID_RESPONSE')
@@ -27,7 +30,7 @@ export function createHttpDocumentBusinessProvider(options = {}) {
       new Set(shortcuts.map(item => item.id)).size !== shortcuts.length || new Set(shortcuts.map(item => item.folderId)).size !== shortcuts.length) throw fail('BUSINESS_INVALID_RESPONSE')
     return Object.freeze({ ...value, shortcuts: Object.freeze(shortcuts.map(item => Object.freeze({ ...item }))),
       capabilities: Object.freeze({ ...value.capabilities, canPin: value.capabilities.canPin === true, canShortcut: value.capabilities.canShortcut === true,
-        canTransferOwnership: value.capabilities.canTransferOwnership === true }) })
+        canTransferOwnership: value.capabilities.canTransferOwnership === true, canConvertTemplate: value.capabilities.canConvertTemplate === true }) })
   }
   function getState() { return owner() && stateOwner === owner() && state?.principalId === context()?.principalId ? state : null }
   async function json(suffix, body, csrf) {
@@ -107,6 +110,7 @@ export function createHttpDocumentBusinessProvider(options = {}) {
     const personal = ['pin', 'shortcut', 'transfer-ownership'].includes(record.body.kind)
     if (status === 200 && data?.status === 'committed' && data.operationId === record.body.operationId && data.kind === record.body.kind &&
       /^sha256:[a-f0-9]{64}(?![\s\S])/.test(data.requestHash) && decimal(data.revision) && typeof data.replayed === 'boolean' &&
+      (record.body.kind !== 'template' || (data.isTemplate === record.body.value && data.revision === String(BigInt(record.body.expectedRevision) + BigInt(1)))) &&
       (record.body.kind !== 'duplicate' || id(data.newDocId)) && (!personal || (data.revision === String(BigInt(record.body.expectedRevision) + BigInt(1)) &&
         (!record.requestHash || record.requestHash === data.requestHash) && (record.body.kind === 'pin' ? data.pinned === record.body.value : record.body.kind === 'shortcut' ? id(data.shortcutId) && data.folderId === record.body.folderId :
           data.ownerId === record.body.targetPrincipalId && data.targetPrincipalId === record.body.targetPrincipalId && data.oldOwnerId === JSON.parse(record.owner)[0] &&
@@ -122,6 +126,15 @@ export function createHttpDocumentBusinessProvider(options = {}) {
     getScope: () => Object.freeze({ tenantId: options.tenantId, docId: options.docId }),
     getDocumentUrl(docId) { if (!id(docId) || typeof options.documentUrl !== 'function') return null; const url = new URL(options.documentUrl(docId), globalThis.location.href); return url.origin === globalThis.location.origin && ['http:', 'https:'].includes(url.protocol) ? url.href : null },
     async folders() { const { status, data } = await json('/business-folders'); if (status !== 200 || !Array.isArray(data?.items) || data.items.some(f => !id(f.id) || typeof f.name !== 'string' || typeof f.canWrite !== 'boolean')) throw fail(data?.code || 'BUSINESS_INVALID_RESPONSE', { status }); return data.items.map(f => Object.freeze({ ...f })) },
+    async templates(cursor) {
+      if (cursor !== undefined && !id(cursor)) throw fail('BUSINESS_INVALID_INPUT')
+      const { status, data } = await json('/business-templates' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''))
+      if (status !== 200 || !Array.isArray(data?.items) || data.items.length > 100 || (data.cursor !== null && !id(data.cursor)) ||
+        data.items.some(item => !item || !id(item.docId) || typeof item.title !== 'string' || !['mine', 'shared'].includes(item.category))) {
+        throw fail(data?.code || 'BUSINESS_INVALID_RESPONSE', { status })
+      }
+      return Object.freeze({ cursor: data.cursor, items: Object.freeze(data.items.map(item => Object.freeze({ docId: item.docId, title: item.title, category: item.category }))) })
+    },
     async ownershipCandidates() {
       const { status, data } = await json('/business-ownership-candidates')
       if (status !== 200) throw fail(data?.code || 'BUSINESS_UNAVAILABLE', { status })
@@ -134,7 +147,7 @@ export function createHttpDocumentBusinessProvider(options = {}) {
     async execute(value) {
       const key = owner(), body = JSON.parse(JSON.stringify(value))
       if (!key || !id(body.operationId) || retired.has(body.operationId) || !decimal(body.expectedRevision)) throw fail('BUSINESS_INVALID_INPUT')
-      if ((body.kind === 'pin' && (Object.keys(body).length !== 4 || typeof body.value !== 'boolean')) ||
+      if ((['pin', 'template'].includes(body.kind) && (Object.keys(body).length !== 4 || typeof body.value !== 'boolean')) ||
         (body.kind === 'shortcut' && (Object.keys(body).length !== 4 || !id(body.folderId)))) throw fail('BUSINESS_INVALID_INPUT')
       if (body.kind === 'transfer-ownership' && (Object.keys(body).length !== 9 || !id(body.targetPrincipalId) || !decimal(body.expectedAuthzVersion) || !id(body.expectedEligibilityRevision) ||
         typeof body.removeOldOwner !== 'boolean' || !['full_access', 'edit', 'view'].includes(body.oldOwnerPerm) || body.stayPut !== true)) throw fail('BUSINESS_INVALID_INPUT')

@@ -4,7 +4,6 @@
  * （主组件方法）协作；commandMenuMixin 的 executeCommand 复用这里的插入方法。
  * 采用 mixin 而非子组件：工具栏与对话框模板留在主 SFC，依赖 Vue 2 选项合并语义。
  */
-import { supportsDocumentAction } from './documentMenuView'
 import { normalizeLinkUrl } from '../../../core/documentOperations'
 import { closeHistory } from '@tiptap/pm/history'
 import { placeMenu } from '../../../ui/menuLayout'
@@ -18,21 +17,6 @@ import {
   widthModeOptions, cellTextAlignOptions, cellVerticalAlignOptions,
 } from './constants'
 import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_BACKGROUND } from '../../../ui/palette'
-
-const CREATE_MENU_ITEMS = Object.freeze([
-  { id: 'bitable', label: '多维表格', glyph: '▦' },
-  { id: 'document', label: '文档', glyph: '▤' },
-  { id: 'sheet', label: '表格', glyph: '▥' },
-  { id: 'slides', label: '幻灯片', glyph: '▧' },
-  { id: 'poll', label: '问卷', glyph: '☷' },
-  { id: 'mindnote', label: '思维笔记', glyph: '✎' },
-  { id: 'knowledge', label: '知识库', glyph: '⌘' },
-  { id: 'app', label: '文档应用', glyph: '▣' },
-  { id: 'board', label: '画板', glyph: '□' },
-  { id: 'mindmap', label: '思维导图', glyph: '◎' },
-  { id: 'flowchart', label: '流程图', glyph: '◇' },
-  { id: 'upload', label: '上传及导入', glyph: '↑' },
-])
 
 export default {
   data() { return {
@@ -49,10 +33,6 @@ export default {
     cellTextAlignOptions, cellVerticalAlignOptions,
     appliedTextStyle: { fontFamily: '', fontSize: '', lineHeight: '', textColor: DEFAULT_TEXT_COLOR, backgroundColor: DEFAULT_TEXT_BACKGROUND },
     cellAlignState: { textAlign: '', verticalAlign: '' },
-    // 飞书式 hover 弹窗：鼠标离开触发器/弹层后延迟关闭（跨过 6px 间隙时不误关）。
-    hoverCloseTimer: null,
-    createMenuOpen: false, createMenuStyle: {}, createMenuItems: CREATE_MENU_ITEMS,
-
   } },
   computed: {
     visibleMarks() {
@@ -77,44 +57,6 @@ export default {
     embedDialogPlaceholder() { return this.embedDialogItem ? this.embedDialogItem.placeholder : '' },
   },
   methods: {
-    toggleCreateMenu(event) {
-      if (Array.isArray(this.onDocumentAction?.supportedActions) && !supportsDocumentAction(this, 'create')) return
-      this.createMenuOpen = !this.createMenuOpen
-      this._createMenuTrigger = event?.currentTarget || null
-      this.createMenuStyle = {}
-      if (this.createMenuOpen) this.$nextTick(() => { this.positionCreateMenu(); this.$el?.querySelector('.lark-doc-create-menu button')?.focus() })
-    },
-    closeCreateMenu(restoreFocus = false) {
-      this.createMenuOpen = false; this.createMenuStyle = {}
-      if (restoreFocus) this._createMenuTrigger?.focus?.()
-    },
-    onCreateMenuFocusout(event) {
-      if (!event.currentTarget.contains(event.relatedTarget)) this.closeCreateMenu()
-    },
-    openCreateMenuFrom(event) {
-      if (!this.createMenuOpen) {
-        this.createMenuOpen = true; this._createMenuTrigger = event?.currentTarget || null; this.createMenuStyle = {}
-        this.$nextTick(() => { this.positionCreateMenu(); this.$el?.querySelector('.lark-doc-create-menu button')?.focus() })
-      }
-    },
-    positionCreateMenu() {
-      if (!this.createMenuOpen) return
-      const trigger = this.$el?.querySelector('button[aria-label="创建"]'), menu = this.$el?.querySelector('.lark-doc-create-menu')
-      if (!trigger || !menu) return
-      const margin = 8, rect = trigger.getBoundingClientRect(), width = Math.min(220, window.innerWidth - margin * 2)
-      const left = Math.max(margin, Math.min(window.innerWidth - width - margin, rect.right - width))
-      const top = Math.min(rect.bottom + 6, Math.max(margin, window.innerHeight - menu.getBoundingClientRect().height - margin))
-      this.createMenuStyle = { top: `${top}px`, left: `${left}px`, width: `${width}px`, marginTop: '0px' }
-    },
-    async runCreateMenuItem(item, event) {
-      if (!item || !this.createMenuOpen) return
-      const handler = this.onDocumentAction, session = this.session, documentId = session?.documentId ?? null, actorId = session?.user?.id ?? null
-      this.closeCreateMenu(true)
-      if (!supportsDocumentAction(this, 'create')) return
-      // Creation is a host-owned navigation/creation intent. Do not hold the
-      // menu open while a host application waits for its own route or dialog.
-      void Promise.resolve(handler(Object.freeze({ action: 'create', createType: item.id, label: item.label, documentId, actorId, source: 'feishu-create-menu', eventType: event?.type || 'click' }))).catch(() => {})
-    },
     /** hover 弹窗公共：取消延迟关闭 / 离开后延迟关闭（进入弹层会取消）。 */
     cancelPopupHoverClose(owner) {
       const pending = this._popupHoverClose

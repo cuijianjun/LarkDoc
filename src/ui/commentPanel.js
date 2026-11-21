@@ -195,48 +195,56 @@ export function createCommentPanel(options = {}) {
     else if (!enabled && unlockScroll) { unlockScroll(); unlockScroll = null }
   }
   const isMobile = () => !state.viewerHost && el.ownerDocument.defaultView.innerWidth <= 760
-  let deleteConfirmation = null
-  const closeDeleteConfirmation = (restore = false) => {
-    const confirmation = deleteConfirmation
+  let confirmationDialog = null
+  const closeCommentConfirmation = (restore = false) => {
+    const confirmation = confirmationDialog
     if (!confirmation) return
     const ownedFocus = confirmation.ownedFocus()
-    deleteConfirmation = null; confirmation.el.remove(); confirmation.unlock()
+    confirmationDialog = null; confirmation.el.remove(); confirmation.unlock()
     if (restore && confirmation.intent.current() && ownedFocus) {
       const entry = panelNodes.get(confirmation.threadId)
       const reply = [...(entry?.replies.querySelectorAll('[data-comment-reply]') || [])].find(node => node.dataset.commentReply === confirmation.replyId)
-      reply?.querySelector('[data-comment-reply-control="more"]')?.focus({ preventScroll: true })
+      const trigger = confirmation.trigger || reply?.querySelector('[data-comment-reply-control="more"]')
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true })
     }
   }
   const requestDeleteConfirmation = (threadId, replyId, scope) => {
     if (!scope?.current()) return
-    const intent = call('onRequestDelete', threadId, replyId, scope)
+    openCommentConfirmation(threadId, replyId, call('onRequestDelete', threadId, replyId, scope))
+  }
+  const requestResolveConfirmation = (threadId, trigger) => {
+    openCommentConfirmation(threadId, '', call('onRequestResolve', threadId), trigger)
+  }
+  const openCommentConfirmation = (threadId, replyId, intent, trigger) => {
     if (!intent?.current()) return
-    closeDeleteConfirmation()
+    closeCommentConfirmation()
     call('onCloseMenus')
     const backdrop = document.createElement('div'); backdrop.className = 'lark-doc-comment-delete-mask'
     const dialog = document.createElement('section'); dialog.className = 'lark-doc-comment-delete-dialog'
-    dialog.setAttribute('role', 'alertdialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', '删除评论')
-    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'; cancel.setAttribute('aria-label', '取消删除评论')
-    const confirm = document.createElement('button'); confirm.type = 'button'; confirm.textContent = '删除评论'; confirm.setAttribute('aria-label', '确认删除评论')
+    const label = replyId ? '删除评论' : '解决并隐藏'
+    dialog.setAttribute('role', 'alertdialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', label)
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'; cancel.setAttribute('aria-label', replyId ? '取消删除评论' : '取消解决评论')
+    const confirm = document.createElement('button'); confirm.type = 'button'; confirm.textContent = label; confirm.setAttribute('aria-label', '确认' + label)
     const focus = () => dialog.getRootNode().activeElement || dialog.ownerDocument.activeElement
     const targets = [el.ownerDocument.body, options.inlineHost?.closest('.lark-doc-main')].filter(Boolean)
     const release = [...new Set(targets)].map(lockPageScroll)
-    const confirmation = { el: backdrop, intent, threadId, replyId,
+    const confirmation = { el: backdrop, intent, threadId, replyId, trigger,
       ownedFocus: () => dialog.contains(focus()), unlock: () => release.reverse().forEach(unlock => unlock()) }
-    onAction(cancel, () => closeDeleteConfirmation(true))
+    onAction(cancel, () => closeCommentConfirmation(true))
     onAction(confirm, () => {
-      if (deleteConfirmation !== confirmation || !intent.current() || (state.viewerHost && state.viewerCurrent?.() !== true)) { closeDeleteConfirmation(); return }
-      closeDeleteConfirmation()
+      if (confirmationDialog !== confirmation) return
+      if (!intent.current() || (state.viewerHost && state.viewerCurrent?.() !== true)) { closeCommentConfirmation(); return }
+      closeCommentConfirmation()
       void intent.confirm()
     })
     dialog.addEventListener('keydown', event => {
       if (event.isComposing || event.keyCode === 229) return
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeDeleteConfirmation(true) }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeCommentConfirmation(true) }
       if (event.key === 'Tab') { event.preventDefault(); (focus() === cancel ? confirm : cancel).focus() }
     })
-    backdrop.addEventListener('click', event => { if (event.target === backdrop) closeDeleteConfirmation(true) })
+    backdrop.addEventListener('click', event => { if (event.target === backdrop && confirmationDialog === confirmation) closeCommentConfirmation(true) })
     dialog.append(confirm, cancel); backdrop.append(dialog)
-    deleteConfirmation = confirmation
+    confirmationDialog = confirmation
     ;(state.viewerHost || host || el.parentElement).append(backdrop)
     cancel.focus({ preventScroll: true })
   }
@@ -318,6 +326,7 @@ export function createCommentPanel(options = {}) {
     composerImageButton,
     composerImageDrafts,
     composerPrivate,
+    composerPrivateLabel,
     composerCancel,
     composerSend,
     documentComposer,
@@ -435,7 +444,7 @@ export function createCommentPanel(options = {}) {
   const { createPanelNode, renderPanel, buildReplies } = createThreadCard({
     state, call, onAction, richInput, updateRichInput, bindSubmitShortcut, bindViewerEscape,
     imageDraftNodes, renderMentionPicker, isReferenceDrawer, hasInlineDocument, isMobile,
-    moveMobile, requestDeleteConfirmation, cancelReplyMenuClose, hoverReply, enterReplyMenu,
+    moveMobile, requestDeleteConfirmation, requestResolveConfirmation, cancelReplyMenuClose, hoverReply, enterReplyMenu,
     leaveReplyMenu, trackReplyHover, cancelReactionClose, scheduleReactionClose,
     isNativeThreadOpen: () => nativeThreadOpen,
   })
@@ -509,7 +518,8 @@ export function createCommentPanel(options = {}) {
     setText(composerAuthor, nextComposer.author || '')
     updateRichInput(composerInput, nextComposer, 'selection')
     composerPrivate.checked = !!nextComposer.privateOn
-    composerPrivate.disabled = !!nextComposer.readonly
+    composerPrivate.disabled = !!nextComposer.readonly || (nextComposer.privateAvailable === false && !nextComposer.privateOn)
+    composerPrivateLabel.lastChild.nodeValue = nextComposer.privateAvailable === false ? '私密评论（仅全文支持）' : '私密评论'
     composerSend.disabled = !nextComposer.canSubmit || (!String(nextComposer.value || '').trim() && !nextComposer.hasImages)
     composerCancel.disabled = false
     composerImageButton.disabled = nextComposer.canUploadImage === false
@@ -674,8 +684,12 @@ export function createCommentPanel(options = {}) {
     if (destroyed) return
     const identityChanged = patch && Object.hasOwn(patch, 'identityGeneration') && patch.identityGeneration !== state.identityGeneration
     Object.assign(state, patch || {})
-    const confirmationReply = deleteConfirmation && state.items?.find(item => item.id === deleteConfirmation.threadId)?.replies?.find(reply => reply.id === deleteConfirmation.replyId && !reply.tombstone)
-    if (identityChanged || (deleteConfirmation && (!confirmationReply || !deleteConfirmation.intent.current() || (state.viewerHost && state.viewerCurrent?.() !== true)))) closeDeleteConfirmation()
+    if (confirmationDialog) {
+      const { threadId, replyId, intent } = confirmationDialog
+      const thread = state.items?.find(item => item.id === threadId)
+      if (identityChanged || !thread || (replyId && !thread.replies?.some(reply => reply.id === replyId && !reply.tombstone)) ||
+        !intent.current() || (state.viewerHost && state.viewerCurrent?.() !== true)) closeCommentConfirmation()
+    }
     if (identityChanged || state.open === false) { cancelReplyMenuClose(); dismissedReplyHover = null }
     if (identityChanged) {
       if (!Object.hasOwn(patch, 'message')) state.message = ''
@@ -699,7 +713,7 @@ export function createCommentPanel(options = {}) {
     launcher.style.top = `${Math.max(0, state.launcher?.top || 0)}px`
     launcher.style.right = `${Math.max(0, state.launcher?.right || 0)}px`
     launcherButton.setAttribute('aria-expanded', String(!!state.sidebarOpen))
-    mountNode(options.inlineHost?.closest('.lark-doc') || host, launcher, isMobile() && state.launcher?.visible === true && !state.sidebarOpen && !state.composer?.open)
+    mountNode(options.inlineHost?.closest('.lark-doc') || host, launcher, (isMobile() || state.launcher?.desktop) && state.launcher?.visible === true && !state.sidebarOpen && !state.composer?.open)
     setText(notice, message)
     mountNode(state.viewerHost || host, notice, Boolean(message))
     el.classList.toggle('is-remote', state.remote === true)
@@ -731,7 +745,7 @@ export function createCommentPanel(options = {}) {
     if (drawerHost) el.style.minHeight = `${Math.max(drawerHost.clientHeight, options.inlineHost.scrollHeight)}px`
     else el.style.minHeight = ''
     if (!visible) {
-      closeDeleteConfirmation()
+      closeCommentConfirmation()
       syncScrollLock(false)
       if (wasMobileOpen && restoreMobileFocus?.isConnected) restoreMobileFocus.focus({ preventScroll: true })
       wasMobileOpen = false
@@ -744,6 +758,6 @@ export function createCommentPanel(options = {}) {
   return {
     el,
     update,
-    destroy() { if (destroyed) return; destroyed = true; closeDeleteConfirmation(); historyLayer.destroy(); menuViewport?.removeEventListener('resize', positionReplyMenus); menuViewport?.removeEventListener('scroll', positionReplyMenus); cancelReplyMenuClose(); dismissedReplyHover = null; syncScrollLock(false); launcher.remove(); notice.remove(); documentFlow.remove(); window.removeEventListener('resize', resizeMobile); cancelAnimationFrame(scrollFrame); richInputs.forEach(input => input.destroy()); richInputs.clear(); if (el.parentNode) el.parentNode.removeChild(el) },
+    destroy() { if (destroyed) return; destroyed = true; closeCommentConfirmation(); historyLayer.destroy(); menuViewport?.removeEventListener('resize', positionReplyMenus); menuViewport?.removeEventListener('scroll', positionReplyMenus); cancelReplyMenuClose(); dismissedReplyHover = null; syncScrollLock(false); launcher.remove(); notice.remove(); documentFlow.remove(); window.removeEventListener('resize', resizeMobile); cancelAnimationFrame(scrollFrame); richInputs.forEach(input => input.destroy()); richInputs.clear(); if (el.parentNode) el.parentNode.removeChild(el) },
   }
 }

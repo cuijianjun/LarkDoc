@@ -28,7 +28,7 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileS
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib'
-import { elementPackNames } from '../rollup.config.mjs'
+import { elementPackNames, elementPackStyles } from '../rollup.config.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = join(ROOT, 'dist')
@@ -40,7 +40,7 @@ export const DELIVERY_FILES = [
   'lark-doc-element.polyfills.umd.min.js',
   ...elementPackNames.map(name => `lark-doc-element.umd.min.${name}.js`),
   'lark-doc-element.css',
-  'lark-doc-element.ui.css',
+  ...Object.values(elementPackStyles),
 ]
 
 /** 太小的文件压缩后会更大（帧头开销），静态压缩对它们没意义。 */

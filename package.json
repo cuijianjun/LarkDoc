@@ -379,9 +379,23 @@
       "scope": "lazy"
     },
     {
+      "name": "Element UI 浮层与对话框 (gzip)",
+      "path": "dist/lark-doc-element.umd.min.uiOverlays.js",
+      "limit": "32 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
       "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载）",
       "path": "dist/lark-doc-element.ui.css",
       "limit": "21 KB",
+      "gzip": true,
+      "scope": "lazy"
+    },
+    {
+      "name": "Element 按需面板和工具样式 (gzip)",
+      "path": "dist/lark-doc-element.panels.css",
+      "limit": "6 KB",
       "gzip": true,
       "scope": "lazy"
     },
@@ -400,7 +414,7 @@
       "scope": "lazy"
     },
     {
-      "name": "Element 后台上传包 (gzip)（粘贴图片/拖文件/远程转换才拉；不含后台统计，那条会把 PM 全家拖进来）",
+      "name": "Element 后台处理包 (gzip)（上传、资源回执与大文档快照）",
       "path": "dist/lark-doc-element.umd.min.background.js",
       "limit": "20 KB",
       "gzip": true,

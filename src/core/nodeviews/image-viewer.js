@@ -1,5 +1,5 @@
 /** Pure DOM image viewer. Viewing never changes the document or its image attributes. */
-import { safeUrl } from '../documentOperations'
+import { safeUrl } from '../policy/url'
 import { imageCropGeometry, normalizeImageCrop } from '../media/image-crop'
 import { lockPageScroll } from '../../ui/dom'
 

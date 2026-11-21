@@ -509,6 +509,10 @@
 }
 
 /* ── 版本提示 toast 418 × 54（04 §⑤-2 末尾；手动另存为下线后只剩还原成功等提示） ── */
+.lark-doc .lark-doc-save-version-dialog label { position: relative; }
+.lark-doc .lark-doc-dialog.lark-doc-save-version-dialog input { padding-inline-end: 78px; }
+.lark-doc .lark-doc-version-name-count { position: absolute; inset-inline-end: 10px; bottom: 9px; color: var(--ld-text-secondary); }
+
 .lark-doc .lark-doc-version-notice {
   position: fixed;
   top: 40px;

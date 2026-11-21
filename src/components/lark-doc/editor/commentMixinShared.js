@@ -65,6 +65,22 @@ export function commentRelativeTime(now, at) {
   return `${date.getMonth() + 1}-${date.getDate()}`
 }
 
+export function commentLauncher(ed, imageScope) {
+  const root = ed.$refs?.root, win = root?.ownerDocument.defaultView
+  const bounds = root?.getBoundingClientRect()
+  const header = root?.querySelector('.lark-doc-topbar'), rect = header?.getBoundingClientRect()
+  const style = header && win?.getComputedStyle(header)
+  const visibleHeader = header && rect.height > 0 && !header.hidden && style?.display !== 'none' && style?.visibility !== 'hidden'
+  const desktop = !ed._mobileEditorMedia?.matches
+  const toolbar = desktop && root?.querySelector('.lark-doc-toolbar')
+  return {
+    desktop,
+    visible: !imageScope && ed.commentCan?.('canView') === true && ed.featureEnabled?.('comments') !== false && !!ed.commentProvider?.(),
+    top: Math.max(0, toolbar?.getBoundingClientRect?.().bottom || 0, visibleHeader ? rect.bottom : bounds?.top || 0),
+    right: Math.max(0, (win?.innerWidth || 0) - (bounds?.right || win?.innerWidth || 0)),
+  }
+}
+
 export function commentSidebarThreads(threads, remote, historical, resolved) {
   return threads.filter(thread => remote ? !thread.tombstone && thread.scope !== 'document' && (historical ? thread.anchorStatus === 'orphaned' : resolved ? thread.resolved : !thread.resolved && thread.anchorStatus !== 'orphaned') : thread.bound && !thread.resolved)
 }

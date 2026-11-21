@@ -1,7 +1,9 @@
 /** Async server-frame processing; the synchronous bridge owns admission and pending bytes. */
 /* global globalThis */
 import * as Y from 'yjs'
-import { createDurablePresence, validRevision as integer } from './presence'
+import { TextSelection } from '@tiptap/pm/state'
+import { relativePositionToAbsolutePosition, ySyncPluginKey } from '@tiptap/y-tiptap'
+import { createDurablePresence, projectCarets, validRevision as integer } from './presence'
 import { laterRevision, validResourceId as identifier, own, matches, project, payloadHash, sendFrame } from './protocol'
 
 const hashPattern = /^sha256:[0-9a-f]{64}(?![\s\S])/
@@ -20,7 +22,81 @@ export function createDurableOperations(context) {
   const { data, options, pending, scope, active, changed, ydoc, provider, awareness, state, resolveReady, renewAuthorization, authorized, authority, closeWaiters, fail } = context
   const receipts = new Map(), recovered = new Set(), queriedRecovered = new Set()
   const send = message => sendFrame(provider, scope, message)
-  const presence = awareness ? createDurablePresence(ydoc, send, state, awareness) : null
+  let composition = []
+  const durable = provider.configuration.durable
+  durable.projectCarets = projectCarets
+  const inputOwner = () => data.status !== 'destroyed' && data.status !== 'quarantined'
+  const activeComposition = view => view?.composing && view.hasFocus()
+  const getView = () => {
+    const editor = durable.editor
+    return editor && !editor.isDestroyed ? editor.view : null
+  }
+  const presence = awareness ? createDurablePresence(ydoc, send, state, awareness, () => composition.length > 0) : null
+
+  async function settleLocalInput(current) {
+    while (current()) {
+      const view = getView()
+      if (!activeComposition(view)) {
+        // Save the native selection and final IME mutation before Yjs captures its relative position.
+        view?.domObserver.forceFlush()
+        view?.domObserver.flush()
+        return current()
+      }
+      await new Promise(resolve => setTimeout(resolve, 24))
+    }
+    return false
+  }
+  function applyRemote(bytes) {
+    const view = getView()
+    const binding = view && ySyncPluginKey.getState(view.state)?.binding
+    const selection = view?.state?.selection
+    if (!binding || !(selection instanceof TextSelection)) return Y.applyUpdate(ydoc, bytes, provider)
+
+    function resolve(tr, endpoint, previous) {
+      const position = relativePositionToAbsolutePosition(ydoc, binding.type, endpoint, binding.mapping)
+      if (position === null || position < 0 || position > tr.doc.content.size) return null
+      const resolved = tr.doc.resolve(position)
+      const id = previous.parent.attrs.blockId
+      return id && resolved.parent.type === previous.parent.type && resolved.parent.attrs.blockId === id ? resolved : null
+    }
+
+    const dispatch = view.dispatch
+    view.dispatch = tr => {
+      // The stock structural fallback can keep the old offset after a text edit in the same block.
+      const bookmark = binding.beforeTransactionSelection
+      if (tr.docChanged && tr.getMeta(ySyncPluginKey)?.isChangeOrigin && bookmark?.type === 'text' && bookmark.anchor && bookmark.head) {
+        const anchor = resolve(tr, bookmark.anchor, selection.$anchor)
+        const head = resolve(tr, bookmark.head, selection.$head)
+        if (anchor && head && (tr.selection.anchor !== anchor.pos || tr.selection.head !== head.pos)) {
+          tr.setSelection(TextSelection.between(anchor, head))
+        }
+      }
+      dispatch(tr)
+    }
+    try { return Y.applyUpdate(ydoc, bytes, provider) }
+    finally { view.dispatch = dispatch }
+  }
+
+  function commitComposition() {
+    const updates = composition
+    composition = []
+    durable.local(Y.mergeUpdates(updates))
+  }
+  function queueComposition(update) {
+    const composing = activeComposition(getView())
+    if (!composition.length && !composing) return false
+    const batch = composition
+    batch.push(update)
+    if (!composing) commitComposition()
+    else if (batch.length === 1) void finishComposition().catch(error => fail(error.message))
+    return true
+  }
+  async function finishComposition() {
+    const batch = composition
+    if (!batch.length && (!inputOwner() || !getView())) return
+    if (!await settleLocalInput(inputOwner) || !inputOwner()) throw new Error('COMPOSITION_RETIRED')
+    if (batch === composition && batch.length) commitComposition()
+  }
   const pendingOperation = operationId => {
     for (const item of pending.values()) if (item.operationId === operationId) return item
   }
@@ -43,6 +119,7 @@ export function createDurableOperations(context) {
     if (item && (!recovered.has(item.updateId) || (fromQuery && queriedRecovered.has(item.updateId)))) {
       pending.delete(item.updateId)
       recovered.delete(item.updateId); queriedRecovered.delete(item.updateId)
+      if (!pending.size) presence?.resume()
       if (options.onReceipt) options.onReceipt(receipt)
     }
   }
@@ -55,9 +132,12 @@ export function createDurableOperations(context) {
         message.field !== 'default' || typeof message.canWrite !== 'boolean' || !principal(message.principalId)) throw new Error('INVALID_READY')
       if (data.epoch !== null && message.epoch !== data.epoch) throw new Error('EPOCH_MISMATCH')
       if (data.principalId !== null && message.principalId !== data.principalId) throw new Error('PRINCIPAL_MISMATCH')
-      if (data.epoch === null && pending.size) throw new Error('PRE_READY_PENDING')
+      if (data.epoch === null && (pending.size || composition.length)) throw new Error('PRE_READY_PENDING')
+      const bytes = fromBase64(message.payloadBase64)
+      if (!await settleLocalInput(current) || !current()) return
+      if (data.epoch === null && (pending.size || composition.length)) throw new Error('PRE_READY_PENDING')
       data.epoch = message.epoch; data.principalId = message.principalId
-      Y.applyUpdate(ydoc, fromBase64(message.payloadBase64), provider)
+      applyRemote(bytes)
       data.revision = latest(data.revision, message.revision); data.lastSeq = latest(data.lastSeq, message.lastSeq); data.canWrite = message.canWrite
       data.status = pending.size ? 'blocked' : 'ready'
       authorized()
@@ -85,8 +165,9 @@ export function createDurableOperations(context) {
       if (!message.receipt || await payloadHash(bytes) !== message.receipt.payloadHash) throw new Error('PAYLOAD_HASH_MISMATCH')
       if (!current()) return
       // 无效元数据不能修改正文，应用失败也不能清除本地 pending。
-      validateReceipt(message.receipt)
-      Y.applyUpdate(ydoc, bytes, provider)
+      if (!validateReceipt(message.receipt) && (!await settleLocalInput(current) || !current())) return
+      applyRemote(bytes)
+      presence?.committed()
       acknowledge(message.receipt)
       changed()
     } else if (message.type === 'RECEIPT') {
@@ -138,7 +219,7 @@ export function createDurableOperations(context) {
     if (data.status === 'ready' && data.canWrite && item.epoch === data.epoch && item.status === 'pending') send({ type: 'UPDATE', ...item, status: undefined })
     else if (data.status === 'ready' && !data.canWrite) fail('WRITE_FORBIDDEN')
   }
-  return { receive, queryPending, presence, connect, sendLocal,
+  return { receive, queryPending, presence, connect, sendLocal, queueComposition, finishComposition,
     lastReceipt: () => Array.from(receipts.values()).slice(-1)[0] || null,
     retireQueries: () => queriedRecovered.clear(),
     recover(records) { for (const copy of records) { pending.set(copy.updateId, copy); recovered.add(copy.updateId) } },

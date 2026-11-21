@@ -1,0 +1,165 @@
+/* Panels and tools loaded on demand by the classic Element build. */
+
+/* Workspace AI */
+.lark-doc .lark-doc-ai-panel { display: flex; flex-direction: column; gap: 12px; }.lark-doc .lark-doc-ai-panel h2 small { color: var(--lark-doc-muted); font-size: 11px; font-weight: 500; }.lark-doc .lark-doc-ai-panel label { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-context { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-context); }.lark-doc .lark-doc-ai-context-summary, .lark-doc .lark-doc-ai-status { color: var(--lark-doc-muted); font-size: 12px; }.lark-doc .lark-doc-ai-status { margin: 0; }.lark-doc .lark-doc-ai-messages, .lark-doc .lark-doc-ai-review-list { display: grid; gap: 6px; max-height: 150px; margin: 0; padding: 0; overflow: auto; list-style: none; }.lark-doc .lark-doc-ai-messages li { display: grid; grid-template-columns: 28px 1fr; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--lark-doc-soft); }.lark-doc .lark-doc-ai-messages li.is-user { background: var(--ld-bg-accent); }.lark-doc .lark-doc-ai-messages span { white-space: pre-wrap; overflow-wrap: anywhere; }.lark-doc .lark-doc-ai-review-list li, .lark-doc .lark-doc-ai-proposal { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-ai-review); }.lark-doc .lark-doc-ai-review-list small { color: var(--lark-doc-muted); }.lark-doc .lark-doc-ai-review-list button { justify-self: start; }.lark-doc .lark-doc-ai-proposal { background: var(--ld-bg-ai-proposal); }.lark-doc .lark-doc-ai-proposal p { margin: 0; }.lark-doc .lark-doc-ai-proposal pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 「给 AI 的要求」输入框：之前是裸 textarea（只有 width + resize），贴边、无描边、跟上下
+   两个下拉格格不入。改成和下拉同高的输入皮肤：1px 描边 + 6 圆角 + 8/10 内距，
+   聚焦时描边换品牌色并补一圈 focus-ring —— 和 `.lark-doc-math-editor textarea` 一个路子。 */
+.lark-doc .lark-doc-ai-panel textarea { display: block; box-sizing: border-box; width: 100%; min-height: 56px; max-height: 160px; padding: 7px 9px; border: 1px solid var(--ld-border-control); border-radius: 6px; outline: 0; resize: vertical; background: var(--ld-bg-surface); color: var(--ld-text); font: inherit; font-size: 13px; line-height: 20px; transition: border-color .15s ease, box-shadow .15s ease; }
+.lark-doc .lark-doc-ai-panel textarea::placeholder { color: var(--lark-doc-muted); }
+.lark-doc .lark-doc-ai-panel textarea:hover:not(:disabled) { border-color: var(--ld-border-strong); }
+/* `:not(:disabled)` 让 hover 那条涨到 (0,4,1)，单写 `:focus` 只有 (0,3,1) —— 鼠标停在已聚焦的
+   输入框上会一直是灰描边。这里补同样的 `:not(:disabled)` 持平，再靠「写在后面」拿下焦点态。 */
+.lark-doc .lark-doc-ai-panel textarea:focus:not(:disabled) { border-color: var(--ld-brand-chrome); box-shadow: 0 0 0 3px var(--ld-focus-ring-brand); }
+.lark-doc .lark-doc-ai-panel textarea:disabled { background: var(--lark-doc-soft); color: var(--ld-text-disabled); cursor: not-allowed; }
+/* 标题栏当拖动条（makeDraggable 挂在 .lark-doc-panel-heading 上）：抓手光标 + 拖动中禁选文字。 */
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-heading { cursor: grab; user-select: none; }
+.lark-doc .lark-doc-ai-panel > .lark-doc-panel-heading.is-dragging { cursor: grabbing; }
+.lark-doc .lark-doc-ai-actionbar { display: grid; gap: 8px; min-width: 0; }
+.lark-doc .lark-doc-ai-actionbar > label { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip-path: none; white-space: normal; }
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-context,
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-field { display: grid; gap: 4px; min-width: 0; padding: 8px 10px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-ai-context); }
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-context > label,
+.lark-doc .lark-doc-ai-actionbar .lark-doc-ai-field > label { margin: 0; color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+/* 引用条：单行胶囊，文字过长就省略，移除键固定贴右。 */
+.lark-doc .lark-doc-ai-reference { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 10px; border-radius: 8px; background: var(--lark-doc-soft); color: var(--lark-doc-muted); font-size: 12px; }
+.lark-doc .lark-doc-ai-reference[hidden] { display: none; }
+.lark-doc .lark-doc-ai-reference-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-ai-reference-remove { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--lark-doc-muted); cursor: pointer; }
+.lark-doc .lark-doc-ai-reference-remove:hover:not(:disabled) { background: var(--ld-bg-menu-item-active); color: var(--ld-text); }
+/* AI 动作是单选下拉（共享 createSelect，加 `.lark-doc-ai-action-select` 根类名便于定位），
+   外观与相邻的「上下文范围」「目标语言」两个下拉一致，不再单独画胶囊。 */
+
+/* AI 预览富文本：markdown 渲染后与正文同构，避免 <pre> 里直接露出 ** 和 # */
+.lark-doc .lark-doc-ai-result--rich { white-space: normal; color: var(--ld-ai-rich-text); font-size: 13px; line-height: 1.7; }
+.lark-doc .lark-doc-ai-result--rich > :first-child { margin-top: 0; }
+.lark-doc .lark-doc-ai-result--rich > :last-child { margin-bottom: 0; }
+.lark-doc .lark-doc-ai-result--rich h1 { margin: 10px 0 6px; font-size: 18px; line-height: 1.4; }
+.lark-doc .lark-doc-ai-result--rich h2 { margin: 10px 0 6px; font-size: 16px; line-height: 1.45; }
+.lark-doc .lark-doc-ai-result--rich h3 { margin: 8px 0 5px; font-size: 15px; line-height: 1.5; }
+.lark-doc .lark-doc-ai-result--rich h4 { margin: 8px 0 4px; font-size: 14px; line-height: 1.55; }
+.lark-doc .lark-doc-ai-result--rich h5 { margin: 8px 0 4px; font-size: 13px; }
+.lark-doc .lark-doc-ai-result--rich h6 { margin: 8px 0 4px; font-size: 12px; }
+.lark-doc .lark-doc-ai-result--rich p { margin: 0 0 6px; color: inherit; font-size: inherit; }
+.lark-doc .lark-doc-ai-result--rich ul { margin: 0 0 6px; padding-left: 20px; list-style: disc; }
+.lark-doc .lark-doc-ai-result--rich ol { margin: 0 0 6px; padding-left: 20px; list-style: decimal; }
+.lark-doc .lark-doc-ai-result--rich li { margin: 2px 0; }
+.lark-doc .lark-doc-ai-result--rich li > p { margin: 0; }
+.lark-doc .lark-doc-ai-result--rich code { padding: 1px 4px; border-radius: 3px; background: var(--ld-ai-rich-code-bg); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+.lark-doc .lark-doc-ai-result--rich pre { margin: 6px 0; padding: 8px 10px; border-radius: 5px; background: var(--ld-ai-rich-pre-bg); overflow: auto; }
+.lark-doc .lark-doc-ai-result--rich pre code { padding: 0; background: none; font-size: .92em; }
+.lark-doc .lark-doc-ai-result--rich blockquote { margin: 6px 0; padding: 2px 0 2px 10px; border-left: 3px solid var(--ld-ai-rich-quote-border); color: var(--ld-ai-rich-quote-text); }
+.lark-doc .lark-doc-ai-result--rich blockquote p { margin: 0; }
+.lark-doc .lark-doc-ai-result--rich hr { margin: 10px 0; border: 0; border-top: 1px solid var(--ld-ai-rich-divider); }
+.lark-doc .lark-doc-ai-result--rich strong { font-weight: 650; }
+.lark-doc .lark-doc-ai-result--rich a { color: var(--ld-ai-rich-link); text-decoration: underline; }
+
+/* Presentation is a full rich document with a fixed return bar, not paginated text. */
+.lark-doc .lark-doc-slide-stage { position: fixed; z-index: 1100; inset: 0; display: block; width: 100vw; height: 100vh; min-height: 0; margin: 0; padding: 0; overflow: auto; overscroll-behavior: contain; scroll-padding-top: 64px; background: var(--ld-bg-content); color: var(--ld-text); outline: 0; box-shadow: none; }
+.lark-doc .lark-doc-presentation-header { position: fixed; z-index: 1; top: 0; left: 0; display: flex; align-items: center; width: 100%; height: 64px; padding: 0 48px; background: var(--ld-bg-content); }
+.lark-doc .lark-doc-presentation-header > button { display: inline-flex; align-items: center; gap: 16px; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); font-size: 16px; font-weight: 400; line-height: 22px; }
+.lark-doc .lark-doc-presentation-header > button:hover { background: var(--ld-bg-hover); color: var(--ld-text); }
+.lark-doc .lark-doc-presentation-back-icon { flex: none; transform: rotate(90deg); }
+.lark-doc .lark-doc-presentation-content { position: relative; width: 80vw; margin: 64px auto 72px; }
+.lark-doc .lark-doc-presentation-zoom { display: flow-root; width: 55.55555556%; transform: scale(1.8); transform-origin: top left; }
+.lark-doc .lark-doc-presentation-title { margin: 0 0 24px; padding: 0; color: var(--ld-text); font-size: 34px; font-weight: 700; line-height: 47.6px; overflow-wrap: anywhere; }
+.lark-doc .lark-doc-presentation-document { min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; font-size: 16px; line-height: 26px; caret-color: transparent; outline: 0; }
+.lark-doc .lark-doc-presentation-document [data-presentation-image], .lark-doc .lark-doc-presentation-document [data-presentation-href] { cursor: pointer; }
+.lark-doc .lark-doc-presentation-document .lark-doc-code-caption { display: block; overflow: hidden; white-space: nowrap; }
+
+/* Import confirmation */
+.lark-doc .lark-doc-import-confirm { width: min(460px, 100%); padding: 24px; border: 1px solid var(--ld-border-chrome); border-radius: 12px; }
+.lark-doc .lark-doc-import-confirm header strong { font-size: 16px; line-height: 24px; }
+.lark-doc .lark-doc-import-confirm .lark-doc-import-confirm-close { display: grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-color: transparent; }
+.lark-doc .lark-doc-import-confirm-file { margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: var(--ld-bg-soft); color: var(--ld-text-content); overflow-wrap: anywhere; }
+.lark-doc .lark-doc-import-confirm p { margin: 16px 0 0; font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-import-confirm footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.lark-doc .lark-doc-import-confirm footer button { min-height: 32px; padding: 4px 16px; }
+.lark-doc .lark-doc-import-confirm footer .primary { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); }
+
+/* Heading numbering menu */
+.lark-doc .lark-doc-heading-number-menu { position: fixed; z-index: 80; display: grid; width: 192px; padding: 2px 0; border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-megamenu); box-sizing: border-box; }
+.lark-doc .lark-doc-heading-number-item { display: flex; width: 100%; height: 32px; align-items: center; gap: 10px; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--ld-text-number-menu); font-size: 14px; line-height: 1; text-align: left; white-space: nowrap; cursor: pointer; box-sizing: border-box; }
+/* 注意：必须显式声明 color —— 通用规则 `.lark-doc button:hover:not(:disabled)`（165 行，权重 0,3,1）
+   会把菜单项文字刷成强调色；本条权重 0,4,1 才能压住。同块菜单 362/368 行的写法。 */
+.lark-doc .lark-doc-heading-number-item:hover:not(:disabled), .lark-doc .lark-doc-heading-number-item:focus-visible:not(:disabled) { background: var(--ld-bg-number-item-hover); color: var(--ld-text-number-menu); outline: 0; }
+.lark-doc .lark-doc-heading-number-item.is-disabled, .lark-doc .lark-doc-heading-number-item:disabled { color: var(--ld-text-disabled); cursor: default; }
+.lark-doc .lark-doc-heading-number-icon { display: inline-flex; width: 18px; min-width: 18px; height: 18px; align-items: center; justify-content: center; color: currentColor; }
+.lark-doc .lark-doc-heading-number-icon svg { width: 18px; height: 18px; }
+.lark-doc .lark-doc-heading-number-text { flex: 1; }
+.lark-doc .lark-doc-heading-number-menu.is-editing { width: auto; padding: 6px; }
+.lark-doc .lark-doc-heading-number-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: min(420px, calc(100vw - 28px)); }
+.lark-doc .lark-doc-heading-number-caption { flex-basis: 100%; font-size: 12px; }
+.lark-doc .lark-doc-heading-number-prefix { overflow-wrap: anywhere; }
+.lark-doc .lark-doc-heading-number-input { width: 11ch; min-width: 56px; height: 28px; padding: 0 7px; border: 1px solid var(--ld-border-number-focus); border-radius: 4px; background: var(--ld-bg-surface-chrome); color: var(--ld-text-number-menu); font-size: 14px; line-height: 1; text-align: left; box-sizing: border-box; }
+.lark-doc .lark-doc-heading-number-input:focus { outline: 0; box-shadow: 0 0 0 3px var(--ld-focus-ring-number); }
+.lark-doc .lark-doc-heading-number-spinner { display: inline-grid; width: 16px; height: 28px; grid-template-rows: 14px 14px; }
+.lark-doc .lark-doc-heading-number-spinner button { display: grid; width: 16px; height: 14px; min-height: 0; padding: 0; place-items: center; border: 1px solid var(--ld-border-control); background: var(--ld-bg-surface-chrome); color: var(--ld-text-number-spinner); line-height: 1; cursor: pointer; }
+.lark-doc .lark-doc-heading-number-spinner button .lark-doc-icon { display: inline-flex; width: 10px; height: 10px; }
+.lark-doc .lark-doc-heading-number-spinner button:first-child { border-radius: 3px 3px 0 0; border-bottom: 0; }
+.lark-doc .lark-doc-heading-number-spinner button:last-child { border-radius: 0 0 3px 3px; }
+.lark-doc .lark-doc-heading-number-spinner button:hover { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); }
+
+/* Document information */
+.lark-doc-document-information [hidden] { display: none !important; }
+.lark-doc-document-information { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: center; justify-content: center; }
+.lark-doc .lark-doc-document-information-mask[aria-label] { min-width: 0; min-height: 0; display: block; position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: var(--ld-mask); }
+.lark-doc-document-information-sheet { position: relative; display: flex; flex-direction: column; width: min(600px, 100%); max-height: 80dvh; min-height: 320px; border-radius: 12px; color: var(--ld-text); background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); overflow: hidden; }
+.lark-doc-document-information-head { display: grid; grid-template-columns: 64px 1fr 64px; flex-shrink: 0; align-items: center; min-height: 56px; border-bottom: 1px solid var(--ld-border-chrome); }
+.lark-doc-document-information-head strong { grid-column: 2; grid-row: 1; font-size: 18px; text-align: center; }
+.lark-doc .lark-doc-document-information-head button { min-height: 44px; border: 0; background: transparent; color: var(--ld-text); font-size: 16px; }
+.lark-doc-document-information-head button:first-child { grid-column: 1; grid-row: 1; }
+.lark-doc .lark-doc-document-information-head button[aria-label] { width: 100%; min-width: 44px; height: 44px; min-height: 44px; }
+.lark-doc-document-information-head button:last-child { grid-column: 3; grid-row: 1; font-size: 24px; }
+.lark-doc-document-information-head:has(button:first-child[hidden]) button:last-child { grid-column: 1; }
+.lark-doc-document-information-tabs { display: flex; flex-shrink: 0; overflow-x: auto; white-space: nowrap; border-bottom: 1px solid var(--ld-border-chrome); }
+.lark-doc-document-information-tabs button { flex-shrink: 0; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--ld-text-secondary); }
+.lark-doc-document-information-tabs [aria-selected="true"] { color: var(--ld-brand-chrome); border-bottom: 2px solid currentColor; }
+.lark-doc-document-information-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 20px 24px; overscroll-behavior: contain; }
+.lark-doc-document-information-body h3 { font-size: 16px; margin: 20px 0 8px; }
+.lark-doc-document-information-row { box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; gap: 16px; width: 100%; min-height: 44px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--ld-border-chrome); background: transparent; color: var(--ld-text); font-size: 15px; text-align: left; }
+.lark-doc-document-information-row > :last-child { overflow-wrap: anywhere; }
+.lark-doc-document-information-notice { color: var(--ld-text-secondary); font-size: 14px; line-height: 1.7; }
+@media (max-width: 760px) and (pointer: coarse) {
+  .lark-doc-document-information { align-items: flex-end; }
+  .lark-doc-document-information-sheet { width: 100%; min-height: 55dvh; max-height: 85dvh; padding-bottom: env(safe-area-inset-bottom); border-radius: 12px 12px 0 0; }
+}
+
+@media (min-width: 761px) {
+  .lark-doc.lark-doc-compact-header .lark-doc-mobile-document-header { display: block; margin-bottom: 28px; }
+  .lark-doc.lark-doc-compact-header .lark-doc-mobile-document-title { margin: 0 0 14px; font-size: clamp(25px, 3vw, 34px); line-height: 1.25; overflow-wrap: anywhere; }
+  .lark-doc.lark-doc-compact-header .lark-doc-document-outline-pin { display: none; }
+  .lark-doc-paper-meta-row, .lark-doc-mobile-document-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--ld-text-secondary); font-size: 13px; }
+  .lark-doc-paper-info-settings { position: relative; z-index: 4; }
+  .lark-doc-paper-info-settings summary { list-style: none; display: grid; place-items: center; width: 28px; height: 28px; cursor: pointer; border-radius: 6px; }
+  .lark-doc-paper-info-settings summary::-webkit-details-marker { display: none; }
+  .lark-doc-paper-info-settings summary:hover, .lark-doc-paper-info-settings[open] summary { background: var(--ld-bg-hover-chrome); color: var(--ld-brand-chrome); }
+  .lark-doc-paper-info-settings > div { position: absolute; z-index: 1; top: calc(100% + 4px); left: 0; width: 180px; padding: 6px; background: var(--ld-bg-surface-chrome); border: 1px solid var(--ld-border-chrome); border-radius: 8px; box-shadow: var(--ld-shadow-float); }
+  .lark-doc-paper-info-settings label, .lark-doc-paper-info-settings button { display: flex; align-items: center; gap: 8px; min-height: 30px; padding-inline: 8px; width: 100%; }
+  .lark-doc-paper-info-settings label:has(:disabled) { color: var(--ld-text-disabled); }
+  .lark-doc-paper-info-settings button { border-top: 1px solid var(--ld-border-chrome); }
+  .lark-doc-document-author-avatar { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 9px; }
+  .lark-doc-online-peers { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .lark-doc-online-peer { position: relative; display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: var(--ld-text); background: color-mix(in srgb, var(--ld-peer-color) 23%, var(--ld-bg-content)); cursor: default; }
+  .lark-doc-online-peer::before { position: absolute; right: 0; bottom: 0; width: 7px; height: 7px; border: 1px solid var(--ld-bg-content); border-radius: 50%; background: var(--ld-peer-color); content: ''; }
+  .lark-doc .is-compact-header .lark-doc-mobile-members { position: relative; }
+  .lark-doc-header-tip { position: absolute; z-index: 1070; inset: calc(100% + 6px) auto auto 50%; transform: translateX(-50%); padding: 6px 10px; border-radius: 6px; color: var(--ld-text-inverse); background: var(--ld-bg-tooltip); font-size: 12px; font-weight: normal; line-height: 18px; white-space: nowrap; pointer-events: none; visibility: hidden; }
+  :is(.lark-doc-online-peer, .lark-doc-mobile-members):is(:hover, :focus-visible) > .lark-doc-header-tip:not(:empty) { visibility: visible; }
+  .lark-doc-header-tip::before { position: absolute; bottom: 100%; left: calc(50% - 4px); border: 4px solid transparent; border-bottom-color: var(--ld-bg-tooltip); content: ''; }
+  .lark-doc .is-compact-header .lark-doc-mode-select .lark-doc-select-menu button { gap: 9px; min-height: 46px; }
+  .lark-doc .is-compact-header .lark-doc-mode-select .lark-doc-select-check { display: inline-flex; order: 2; margin-inline-start: auto; }
+  .lark-doc .is-compact-header .lark-doc-mode-select .lark-doc-select-option-icon { color: var(--ld-text-secondary); align-self: start; margin-top: 4px; }
+  .lark-doc .is-compact-header .lark-doc-mode-select .lark-doc-select-active .lark-doc-select-option-icon { color: var(--ld-brand-chrome); }
+  .lark-doc .is-compact-header .lark-doc-mode-select [aria-expanded="true"] .lark-doc-select-caret { transform: rotate(180deg); }
+}
+@media (max-width: 760px) { .lark-doc-header-tip { display: none; } }
+.lark-doc .lark-doc-create-menu [data-create-submenu] { margin-top: 4px; padding: 4px 5px 4px 12px; border-top: 1px solid var(--ld-border-chrome); background: var(--ld-bg-hover-chrome); }
+
+.lark-doc .lark-doc-import-dialog { box-sizing: border-box; width: min(530px, calc(100% - 32px)); max-height: 90vh; padding: 22px; border: 1px solid var(--ld-border-chrome); border-radius: 12px; background: var(--ld-bg-surface); color: var(--ld-text); }
+.lark-doc-import-dialog::backdrop { background: rgb(20 24 30 / 44%); }
+.lark-doc .lark-doc-import-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.lark-doc .lark-doc-import-dialog h2 { margin: 0; font-size: 19px; }
+.lark-doc .lark-doc-import-formats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 10px; }
+.lark-doc .lark-doc-import-formats button { display: flex; align-items: center; min-height: 64px; gap: 10px; padding: 10px; text-align: start; color: inherit; border: 1px solid var(--ld-border-control); border-radius: 8px; background: transparent; }
+.lark-doc .lark-doc-import-formats button:hover { background: var(--ld-bg-menu-item-active); }
+.lark-doc .lark-doc-import-formats small { display: block; color: var(--ld-text-secondary); margin-top: 4px; }

@@ -260,6 +260,93 @@ describe('DocumentSession production identity boundary', () => {
     const pending = value.connect().catch(error => error); await entered.promise; proof.publish(null); deferred.release({ status: 'connected', private: 'old-room' })
     expect(await pending).toMatchObject({ code: 'IDENTITY_CONTEXT_CHANGED' }); expect(collaboration.disconnect.mock.calls.length).toBeGreaterThanOrEqual(2); expect(events).not.toHaveBeenCalled()
   })
+  it('retires a late authenticated transport before connecting the next identity on the same provider', async () => {
+    const deferred = held(), entered = held()
+    let active = null
+    const collaboration = {
+      connect: vi.fn(async ({ user }) => {
+        if (user.id === 'alice') { entered.release(); await deferred.promise }
+        else expect(active).toBeNull()
+        active = user.id
+        return { status: 'connected', user: user.id }
+      }),
+      disconnect: vi.fn(async () => { active = null }),
+    }
+    const { value, proof } = await session({ mode: 'collaborative', collaboration }), events = vi.fn()
+    value.on('connection', events)
+    const old = value.connect().catch(error => error)
+    await entered.promise
+    proof.publish('bob')
+    await value._capabilitiesPromise
+    const replacement = value.connect()
+    await Promise.resolve()
+    expect(collaboration.connect).toHaveBeenCalledOnce()
+    deferred.release()
+    expect(await old).toMatchObject({ code: 'IDENTITY_CONTEXT_CHANGED' })
+    await expect(replacement).resolves.toMatchObject({ user: 'bob' })
+    expect(active).toBe('bob')
+    expect(events.mock.calls).toEqual([[{ status: 'connected', user: 'bob' }]])
+  })
+  it('reports a retired handshake even while the new one is waiting, then leaves no connection if the replacement fails', async () => {
+    const alice = held(), aliceEntered = held(), bob = held()
+    let active = null
+    const collaboration = {
+      async connect({ user }) {
+        if (user.id === 'bob') {
+          await bob.promise
+          throw new Error('CONNECT_FAILED')
+        }
+        aliceEntered.release()
+        await alice.promise
+        active = user.id
+        return { status: 'connected' }
+      },
+      async disconnect() { active = null },
+    }
+    const { value, proof } = await session({ mode: 'collaborative', collaboration }), events = vi.fn()
+    value.on('connection', events)
+    const old = value.connect().catch(error => error)
+    await aliceEntered.promise
+    proof.publish('bob')
+    await value._capabilitiesPromise
+    const replacement = value.connect().catch(error => error)
+    alice.release()
+    expect(await old).toMatchObject({ code: 'IDENTITY_CONTEXT_CHANGED' })
+    expect(active).toBeNull()
+    bob.release()
+    expect(await replacement).toMatchObject({ message: 'CONNECT_FAILED' })
+    expect(active).toBeNull()
+    expect(events).not.toHaveBeenCalled()
+  })
+  it('blocks dialing the next identity until a failed retired disconnect can be retried', async () => {
+    const late = held(), entered = held()
+    let active = null, cleanupUnavailable = false
+    const collaboration = {
+      connect: vi.fn(async ({ user }) => {
+        if (user.id === 'alice') { entered.release(); await late.promise }
+        active = user.id
+        return { status: 'connected', user: user.id }
+      }),
+      async disconnect() {
+        if (cleanupUnavailable) throw new Error('DISCONNECT_UNAVAILABLE')
+        active = null
+      },
+    }
+    const { value, proof } = await session({ mode: 'collaborative', collaboration })
+    const old = value.connect().catch(error => error)
+    await entered.promise
+    proof.publish('bob')
+    await value._capabilitiesPromise
+    cleanupUnavailable = true
+    const replacement = value.connect().catch(error => error)
+    late.release()
+    expect(await old).toMatchObject({ code: 'IDENTITY_CONTEXT_CHANGED' })
+    expect(await replacement).toMatchObject({ code: 'IDENTITY_CONTEXT_CHANGED' })
+    expect(collaboration.connect).toHaveBeenCalledOnce()
+    cleanupUnavailable = false
+    await expect(value.connect()).resolves.toMatchObject({ user: 'bob' })
+    expect(active).toBe('bob')
+  })
   it('private chunk callbacks and resource outcomes cannot slip through after identity invalidation or repopulate a cleared ledger', async () => {
     let captured; const deferred = held(), entered = held(), chunks = vi.fn(), assets = assetsPort({ getContent: vi.fn(input => { captured = input.onChunk; entered.release(); return deferred.promise }) })
     const { value, proof } = await session({ assets }), pending = value.getAssetContent({ assetId: 'asset', onChunk: chunks }).catch(error => error); await entered.promise; proof.publish(null)

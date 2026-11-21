@@ -548,10 +548,7 @@ export function createToolbar(options = {}) {
     })
 
     // ④ 文字样式
-    // 飞书口径：没有文字选区时「设置链接」置灰（DOM 基线 editor-dom-before.html 里
-    // 就是 `disabled="disabled"`）。`hasSelection` 一直有随 sync 下发，但此前没人消费，
-    // 结果无选区也能点开链接弹窗。`=== false` 让没带该字段的调用方维持原行为。
-    linkButton.disabled = disabled || next.hasSelection === false || next.linkAllowed === false
+    linkButton.disabled = disabled || next.linkAllowed === false
     setAttr(linkButton, 'aria-pressed', active.link ? 'true' : 'false')
     fontSelect.update({ options: options.fontFamily, value: textStyle.fontFamily, disabled })
     sizeSelect.update({ options: options.fontSize, value: textStyle.fontSize, disabled })
@@ -603,14 +600,14 @@ export function createToolbar(options = {}) {
     // ⑦ 收尾
     setVisible(toolsEndInner, !collapsed.includes('toolsEnd'))
     syncChildren(toolsEndInner, [
-      { node: searchButton, on: features.search !== false },
-      { node: outlineButton, on: features.outline !== false },
-      { node: widthSelect.el, on: features.viewModes !== false },
+      { node: searchButton, on: !next.compactHeader && features.search !== false },
+      { node: outlineButton, on: !next.compactHeader && features.outline !== false },
+      { node: widthSelect.el, on: !next.compactHeader && features.viewModes !== false },
       // 「阅读模式」还要 `modes.allow` 含 read —— 配置摘掉这一项后按钮点了也不会切。
       { node: readingButton, on: features.viewModes !== false && features.read !== false },
-      { node: fullscreenButton, on: features.viewModes !== false },
-      { node: slidesButton, on: features.viewModes !== false },
-      { node: shortcutsButton, on: features.shortcuts !== false },
+      { node: fullscreenButton, on: features.viewModes !== false && !next.compactHeader },
+      { node: slidesButton, on: !next.compactHeader && features.viewModes !== false },
+      { node: shortcutsButton, on: !next.compactHeader && features.shortcuts !== false },
       // `v-if="!headerVisible && $slots['header-actions']"` —— 有没有插槽由调用方算好传进来
       { node: docOpsButton, on: features.docOps === true },
     ])
@@ -668,8 +665,8 @@ export function createToolbar(options = {}) {
     const node = event.target.closest?.('button, [role=combobox], input[type=color]')
     if (!node || !el.contains(node)) return null
     if (node.title) { node.dataset.tooltipTitle = node.title; node.removeAttribute('title') }
-    return node.matches('[aria-haspopup], [aria-expanded]') || /[\u3400-\u9fff]/.test(node.textContent)
-      || node.closest('[role="menu"]') ? null : node
+    if (node.matches('[role="combobox"]') || node.querySelector('[class*="caret"]') || node.closest('[role="menu"]')) return null
+    return node
   }
   const enterTip = event => { const node = tooltipTarget(event); if (!node || !node.contains(event.relatedTarget)) { tooltipAnchor = node; syncTooltip() } }
   const leaveTip = event => { const node = tooltipTarget(event); if (node && node === tooltipAnchor && !node.contains(event.relatedTarget)) { tooltipAnchor = null; syncTooltip() } }

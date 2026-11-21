@@ -2,6 +2,7 @@
 import { commentMentionSegments, commentRichContentSegments } from '../../../core/comments/mentions'
 import { findEmojiByGlyph, normalizeEmojiGlyph } from '../../../core/emoji/catalog'
 import { commentTranslationActions } from './commentTranslation'
+import { commentLauncher } from './commentMixinShared'
 import { createNetworkPolicy } from '../../../core/policy/network'
 import { uploadCommentImageFiles as uploadImages, queryPendingCommentImage as queryImage, addCommentAttachments as addAttachments, retryCommentAttachment as retryAttachment, previewCommentAttachment as previewAttachment, closeCommentAttachmentViewer as closeAttachmentViewer } from './commentImages'
 
@@ -143,7 +144,7 @@ export function createPanelPresentation(dependencies) {
         return COMMENT_PRIVATE_SWITCH.title
       },
   commentPrivateHint() {
-        return this.ed.commentRemote ? '开启后，仅提及的协作者、文档所有者、有文档管理权限的用户可见。' : COMMENT_PRIVATE_SWITCH.hint
+        return COMMENT_PRIVATE_SWITCH.hint
       },
   commentControls() {
         // 当前飞书头部只有四颗按钮（下一条 / 上一条 / 复制锚点 / 解决）+ 一条分隔；
@@ -312,7 +313,8 @@ export function createPanelPresentation(dependencies) {
           if (!reason && action.id === 'copy' && !scope.text.trim()) reason = '评论没有可复制的文字内容'
           if (!reason && action.id === 'edit' && (!ed.commentAllowed('edit', thread.id, reply.id) || !ed.commentMenuVisible(action, reply, thread.id))) reason = '当前无编辑权限'
           if (!reason && action.id === 'delete' && !ed.commentAllowed('remove', thread.id, reply.id)) reason = '当前无删除权限'
-          if (!reason && action.id === 'resolve' && !ed.commentAllowed(thread.resolved ? 'reopen' : 'resolve', thread.id)) reason = '当前无解决评论权限'
+          if (!reason && action.id === 'resolve' && thread.resolved) reason = '请在桌面端或网页版恢复已解决的评论'
+          if (!reason && action.id === 'resolve' && !ed.commentAllowed('resolve', thread.id)) reason = '当前无解决评论权限'
           if (!reason && action.id === 'forward') reason = '评论转发服务未接入'
           if (!reason && action.id === 'copy-link' && (ed.commentProvider()?.isRemote !== true || typeof ed.commentProvider()?.getLink !== 'function')) reason = '当前评论服务未提供规范评论链接'
           if (!reason && ['translate', 'report'].includes(action.id)) reason = ed.commentMenuDisabledReason(action, reply)
@@ -377,6 +379,24 @@ export function createPanelPresentation(dependencies) {
           return ed.deleteCommentReply(threadId, replyId)
         } }
       },
+  requestMobileCommentResolve(threadId) {
+        const ed = this.ed, session = ed.session, provider = ed.commentProvider(), authorization = session?._authorizationGeneration
+        const thread = ed.commentThreads.find(item => item.id === threadId), owns = ed.commentOperationCurrent()
+        if (!thread || thread.scope === 'document' || thread.resolved || thread.tombstone) return null
+        const revision = thread.threadRevision
+        let used = false
+        const current = () => {
+          if (used || !ed._mobileEditorMedia?.matches || !owns() || provider !== ed.commentProvider() ||
+            authorization !== session?._authorizationGeneration || !ed.commentCan('canView') || !ed.commentAllowed('resolve', threadId)) return false
+          const live = ed.commentThreads.find(item => item.id === threadId)
+          return !!live && !live.resolved && !live.tombstone && live.threadRevision === revision
+        }
+        return { current, confirm() {
+          if (!current()) return false
+          used = true
+          return ed.resolveComment(threadId)
+        } }
+      },
   commentMenuVisible(item, reply, threadId) {
         const provider = this.ed.commentProvider()
         if (provider && provider.isRemote && item.id === 'translate') return this.ed.commentCan('canView') && !reply.tombstone
@@ -398,6 +418,7 @@ export function createPanelPresentation(dependencies) {
         }
         if (id === 'resolve' || id === 'reopen') {
           const thread = (this.ed.commentThreads || []).find(item => item.id === threadId)
+          if (thread?.resolved && this.ed._mobileEditorMedia?.matches) return true
           return !this.ed.commentAllowed(thread && thread.resolved ? 'reopen' : id, threadId)
         }
         return false
@@ -519,9 +540,11 @@ export function createPanelPresentation(dependencies) {
         if (id === 'go-previous') return this.ed.goComment(threadId, -1)
         if (id === 'resolve') {
           const thread = (this.ed.commentThreads || []).find(item => item.id === threadId)
-          return thread && thread.resolved ? this.ed.reopenComment(threadId) : this.ed.resolveComment(threadId)
+          if (!thread?.resolved) return this.ed.resolveComment(threadId)
+          if (this.ed._mobileEditorMedia?.matches) return false
+          return this.ed.reopenComment(threadId)
         }
-        if (id === 'reopen') return this.ed.reopenComment(threadId)
+        if (id === 'reopen') return !this.ed._mobileEditorMedia?.matches && this.ed.reopenComment(threadId)
         if (id === 'copyAnchor') return this.ed.copyCommentAnchor(threadId)
         if (id === 'more') return this.ed.toggleCommentMoreMenu(threadId, event)
         return undefined
@@ -600,7 +623,15 @@ export function createPanelPresentation(dependencies) {
         },
         versionToast: {
           // 提示里的「立即查看」：先开面板再收提示（与模板里的内联两调用顺序一致）。
-          onNoticeLink: () => { this.openVersionPanel(); this.dismissVersionNotice() },
+          onNoticeLink: async () => {
+            const id = this.versionNotice?.startsWith('版本已保存') ? this._versionNoticeVersion : null
+            const scope = id ? this.versionOperationScope() : null
+            const opening = this.openVersionPanel(id ? { kind: 'saved' } : undefined)
+            this.dismissVersionNotice()
+            if (!id) return opening
+            await opening
+            if (id && this.versionPanelOpen && scope === this.versionOperationScope() && this.versionList.some(record => record.id === id)) await this.selectVersion(id)
+          },
         },
         comment: {
           onActivate: (id) => this.activateComment(id),
@@ -620,6 +651,7 @@ export function createPanelPresentation(dependencies) {
           onMenuItem: (menuId, threadId, replyId) => this.runCommentMenuItem(menuId, threadId, replyId),
           onMobileMenuItem: (menuId, threadId, replyId, scope) => this.runMobileCommentMenuItem(menuId, threadId, replyId, scope),
           onRequestDelete: (threadId, replyId, scope) => this.requestMobileCommentDelete(threadId, replyId, scope),
+          onRequestResolve: threadId => this.requestMobileCommentResolve(threadId),
           onDocumentReference: (threadId, replyId, reference, event) => this.openCommentDocumentReference(threadId, replyId, reference, event),
           onReaction: (threadId, replyId, emoji, active) => this.setCommentReaction(threadId, replyId, emoji, active),
           onQuickReaction: (threadId, replyId) => this.quickCommentReaction(threadId, replyId),
@@ -667,7 +699,7 @@ export function createPanelPresentation(dependencies) {
           onToggleHistory: () => this.setCommentHistory(!this.commentHistory),
           onComposerDraft: value => this.setCommentCreateDraft(value),
           onComposerCancel: () => this.closeCommentComposer(),
-          onComposerPrivate: value => this.setCommentCreatePrivate(value),
+          onComposerPrivate: value => { if (!value || this.commentRemote) this.setCommentCreatePrivate(value) },
           onComposerSubmit: () => this.createCommentFromSelection(this.commentCreateDraft, this.commentCreatePrivate ? 'private' : 'document'),
           onDocumentComposerDraft: (value, event) => {
             try {
@@ -820,13 +852,10 @@ export function createPanelPresentation(dependencies) {
         // 进入“全文评论”侧栏后即显示空态输入框；草稿/回复目标只决定
         // 操作区是否出现，不能把输入入口本身隐藏掉。
         const documentComposerOpen = !imageScope && !historical && (sidebarOpen || documentInline) && !this.commentComposerOpen
-        const root = this.$refs?.root, rootBounds = root?.getBoundingClientRect(), win = root?.ownerDocument.defaultView
-        const header = root?.querySelector('.lark-doc-topbar'), headerBounds = header?.getBoundingClientRect()
-        const headerStyle = header && win?.getComputedStyle?.(header)
-        const headerVisible = header && !header.hidden && headerBounds?.height > 0 && headerStyle?.display !== 'none' && headerStyle?.visibility !== 'hidden'
         const historyOpen = this.commentHistoryOpen === true && this.commentCanViewHistory?.() === true
         return {
           open: sidebarOpen || historyOpen,
+          confirmAnchoredResolution: !!this._mobileEditorMedia?.matches,
           historyOpen,
           historyStyle: this.commentHistoryStyle || {},
           // 历史弹层只收已解决线程；条目复用线程卡的引用与回复流。
@@ -843,9 +872,7 @@ export function createPanelPresentation(dependencies) {
           remote,
           documentInline,
           historical,
-          launcher: { visible: !imageScope && !!this._mobileEditorMedia?.matches && !!this.commentProvider?.() && this.commentCan?.('canView') === true && this.featureEnabled?.('comments') !== false,
-            top: Math.max(0, headerVisible ? headerBounds.bottom : rootBounds?.top || 0),
-            right: Math.max(0, (win?.innerWidth || 0) - (rootBounds?.right || win?.innerWidth || 0)) },
+          launcher: commentLauncher(this, imageScope),
           like: { ...(this.commentDocumentLike || {}), available: this.commentProvider?.() && this.commentCan?.('canView') === true
             && this.session?.getProvider?.('authorization')?.isRemote === true && typeof this.session?.getProvider?.('authorization')?.documentInformation === 'function' },
           identityGeneration: this.commentIdentityGeneration || 0,
@@ -857,7 +884,8 @@ export function createPanelPresentation(dependencies) {
           controls,
           replyControls: this.commentReplyControls || [],
           moreTitle: this.commentPrivateTitle,
-          moreHint: this.commentPrivateHint,
+          moreHint: !remote && panels.find(item => item.id === this.commentMoreThreadId)?.scope !== 'document'
+            ? '当前服务仅支持全文私有评论。' : this.commentPrivateHint,
           emptyText,
           message: this.commentCan('canView') ? this.commentMessage || '' : '',
           imageViewer: this.commentImageViewer,
@@ -891,7 +919,8 @@ export function createPanelPresentation(dependencies) {
             hasImages: this.commentDraftImages('selection').some(image => image.status === 'ready'),
             canUploadImage: this.commentCanUploadImage?.('selection') === true,
             readonly: !this.commentAllowed('create'),
-            canSubmit: this.commentAllowed('create'),
+            canSubmit: this.commentAllowed('create') && (remote || !this.commentCreatePrivate),
+            privateAvailable: remote,
             privateOn: this.commentCreatePrivate === true,
             history: this.commentHistory || historical ? (historical || this.commentHistory ? '返回未解决' : '已解决评论') : '已解决评论',
           },
@@ -935,6 +964,7 @@ export function createPanelPresentation(dependencies) {
               return {
                 ...context,
                 language: this.commentTranslationLanguage || '',
+                fixedLanguage: !!this._mobileEditorMedia?.matches,
                 busy: this.commentTranslationBusy === true,
                 pending: !!this.commentPendingTranslationOperation,
                 current: this.commentTranslationIsCurrent?.(context) !== false,
@@ -966,7 +996,8 @@ export function createPanelPresentation(dependencies) {
             canUploadImage: this.commentCanUploadImage?.(item.id) !== false,
             moreOpen: this.commentMoreThreadId === item.id,
             privateOn: this.commentPrivate(item.id),
-            privateEnabled: item.scope !== 'document' || remote || typeof this.commentProvider?.()?.setVisibility === 'function',
+            privateEnabled: remote ? this.commentAllowed('visibility', item.id)
+              : item.scope === 'document' && typeof this.commentProvider?.()?.setVisibility === 'function',
           })),
         }
       },

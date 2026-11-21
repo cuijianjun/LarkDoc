@@ -1,7 +1,7 @@
 /** Full-document presentation. It only clones the live readonly view while open. */
 import { mountNode, setText } from './dom'
 import { iconNode } from './icon'
-import { safeUrl } from '../core/documentOperations'
+import { safeUrl } from '../core/policy/url'
 import { createNetworkPolicy, BLOCKED_IMAGE_PLACEHOLDER } from '../core/policy/network'
 import { createImageViewer } from '../core/nodeviews/image-viewer'
 

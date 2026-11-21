@@ -74,11 +74,19 @@ export function createHttpVersioningProvider(options = {}) {
   function checkContext(epoch) { if (disposed || epoch !== generation) throw contextChanged() }
   function reset(reason) {
     generation++
-    operations.forEach((record, id) => retiredOperations.add(id))
+    operations.forEach((record, id) => {
+      if (reason === 'authorization-required' && record.recoverAfterAuthorization) {
+        // Retain the original intent for a fresh authorized query. Invalidate every old continuation.
+        operations.set(id, { body: record.body, requestHash: record.requestHash, context: generation, recoverAfterAuthorization: true })
+      } else {
+        retiredOperations.add(id)
+        operations.delete(id)
+      }
+    })
     restoreOperations.forEach((record, id) => retiredRestores.add(id))
     restoringIds.forEach(id => retiredRestores.add(id)); restoringIds.clear()
     exportingIds.forEach(id => retiredConversions.add(id)); exportingIds.clear()
-    operations.clear(); restoreOperations.clear(); knownContentHashes.clear()
+    restoreOperations.clear(); knownContentHashes.clear()
     provider.resetConversions(reason)
     controllers.forEach(controller => controller.abort()); controllers.clear()
   }
@@ -574,7 +582,7 @@ export function createHttpVersioningProvider(options = {}) {
         return prior.result || unknown(operationId, prior)
       }
       checkContext(context)
-      const pending = { body, requestHash: null, context }
+      const pending = { body, requestHash: null, context, recoverAfterAuthorization: body.purpose === 'manual' && record.recoverAfterAuthorization === true }
       operations.set(operationId, pending)
       let response
       try { response = await send(`${documentApi}/version-operations`, body) }

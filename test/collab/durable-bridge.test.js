@@ -438,6 +438,113 @@ describe('持久协作桥（真实 provider，注入消息测试）', () => {
     expect(bridge.exportPending()).toEqual([])
   })
 
+  it('组字期间暂缓远端正文并合并本地草稿，结束后保留两边编辑', async () => {
+    const bridge = mount(), sent = messages(bridge)
+    await prepareConnection(bridge)
+    ready(bridge); await bridge.ready
+    const view = { state: {}, composing: true, hasFocus: () => true, domObserver: { forceFlush: vi.fn(), flush: vi.fn() } }
+    bridge.provider.configuration.durable.editor = { view }
+    const local = bridge.ydoc.getText('local-input')
+    local.insert(0, 'zhong')
+    const remote = await pendingSnapshot()
+    const update = remote.pending[0]
+    response(bridge, 'COMMITTED', { receipt: matchingReceipt(update), payloadBase64: update.payloadBase64 })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(sent.filter(frame => frame.type === 'UPDATE')).toHaveLength(0)
+      expect(bridge.getState().lastSeq).toBe('0')
+      const snapshot = bridge.exportPendingSnapshot()
+      local.delete(0, 5)
+      local.insert(0, '中')
+      view.composing = false
+      await vi.waitFor(() => {
+        expect(sent.filter(frame => frame.type === 'UPDATE')).toHaveLength(1)
+        expect(bridge.getState().lastSeq).toBe('1')
+      })
+      const peer = new Y.Doc()
+      try {
+        const [saved] = (await snapshot).pending
+        expect(saved.payloadBase64).toBe(sent.find(frame => frame.type === 'UPDATE').payloadBase64)
+        Y.applyUpdate(peer, Buffer.from(saved.payloadBase64, 'base64'))
+        expect(peer.getText('local-input').toString()).toBe('中')
+      } finally { peer.destroy() }
+      expect(bridge.ydoc.getText('test').toString()).toBe('隔离待对账内容')
+      expect(view.domObserver.flush).toHaveBeenCalled()
+    } finally { view.composing = false }
+  })
+
+  it.each([true, false])('恢复快照包含尚未进入 Y.Doc 的原生输入（composing=%s）', async composing => {
+    const bridge = mount()
+    ready(bridge); await bridge.ready
+    const local = bridge.ydoc.getText('local-input')
+    const flush = vi.fn(() => { if (!local.length) local.insert(0, '中') })
+    const view = { composing, hasFocus: () => true, domObserver: { forceFlush: vi.fn(), flush } }
+    bridge.provider.configuration.durable.editor = { view }
+
+    const exporting = bridge.exportPendingSnapshot()
+    if (composing) {
+      await settle()
+      view.composing = false
+    }
+    const snapshot = await exporting
+    expect(flush).toHaveBeenCalled()
+    expect(snapshot.pending).toHaveLength(1)
+    const peer = new Y.Doc()
+    try {
+      Y.applyUpdate(peer, Buffer.from(snapshot.pending[0].payloadBase64, 'base64'))
+      expect(peer.getText('local-input').toString()).toBe('中')
+    } finally { peer.destroy() }
+  })
+
+  it('本地光标刷新触发断开时，旧连接正文不能继续应用', async () => {
+    const bridge = mount()
+    ready(bridge); await bridge.ready
+    const flush = vi.fn(() => queueMicrotask(() => bridge.provider.onClose()))
+    bridge.provider.configuration.durable.editor = {
+      view: { state: {}, domObserver: { forceFlush: vi.fn(), flush } },
+    }
+    const update = (await pendingSnapshot()).pending[0]
+    response(bridge, 'COMMITTED', { receipt: matchingReceipt(update), payloadBase64: update.payloadBase64 })
+    await vi.waitFor(() => expect(bridge.getState().status).toBe('disconnected'))
+    expect(flush).toHaveBeenCalledOnce()
+    expect(bridge.ydoc.share.has('test')).toBe(false)
+    expect(bridge.getState().lastSeq).toBe('0')
+  })
+
+  it('远端光标等到锚点提交后再显示，删除目标段落后收起光标', async () => {
+    const bridge = mount({ presence: true })
+    const source = new Y.Doc({ gc: false })
+    const awareness = bridge.provider.awareness
+    const projected = () => [...awareness.getStates().values()].find(peer => peer.user?.id === 'bob')
+    try {
+      ready(bridge, { presenceProtocol: 'cursor-v1' }); await bridge.ready
+      const fragment = source.getXmlFragment('default')
+      const node = new Y.XmlElement('paragraph'), text = new Y.XmlText()
+      text.insert(0, '协同段落'); node.insert(0, [text]); fragment.insert(0, [node])
+      const head = Y.createRelativePositionFromTypeIndex(text, 2)
+      response(bridge, 'PRESENCE', { epoch: '1', peers: [{ peerId: 'bob-peer', principalId: 'bob', cursor: { anchor: head, head } }] })
+      await vi.waitFor(() => expect(projected()?.cursor).toBeNull())
+      const commit = async (bytes, seq) => {
+        const payloadHash = 'sha256:' + Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex')
+        response(bridge, 'COMMITTED', { payloadBase64: base64(bytes), receipt: {
+          ...matchingReceipt({ updateId: 'remote-' + seq, payloadHash }), seq, contentRevision: seq,
+        } })
+        await vi.waitFor(() => expect(bridge.getState().lastSeq).toBe(seq))
+      }
+      await commit(Y.encodeStateAsUpdate(source), '1')
+      expect(projected()?.cursor?.head).toBeTruthy()
+      let vector = Y.encodeStateVector(source)
+      text.insert(0, '前缀')
+      await commit(Y.encodeStateAsUpdate(source, vector), '2')
+      const relative = Y.createRelativePositionFromJSON(projected().cursor.head)
+      expect(Y.createAbsolutePositionFromRelativePosition(relative, bridge.ydoc)?.index).toBe(4)
+      vector = Y.encodeStateVector(source)
+      fragment.delete(0, 1)
+      await commit(Y.encodeStateAsUpdate(source, vector), '3')
+      expect(projected()?.cursor).toBeNull()
+    } finally { source.destroy() }
+  })
+
   it('AC03Q宿主恢复包在新bridge保留原pending，只用服务器baseline且不自动重发', async () => {
     const snapshot = await pendingSnapshot()
     const bridge = mount()

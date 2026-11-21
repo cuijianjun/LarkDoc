@@ -85,8 +85,15 @@ export class EditorController {
     const editor = this.editor
     const doc = editor.state.doc
     if (!this._snapshotReader) {
-      const { createDocumentSnapshotReader } = await import('./documentSnapshot')
-      if (this.editor !== editor || this._destroyed || editor.state.doc !== doc || options?.signal?.aborted) return null
+      const current = () => this.editor === editor && !this._destroyed && editor.state.doc === doc && !options?.signal?.aborted
+      let createDocumentSnapshotReader
+      try {
+        ({ createDocumentSnapshotReader } = await import('./documentSnapshot'))
+      } catch (_) {
+        // A missing optional bundle must not drop the current edit or its autosave.
+        return current() ? { html: this.getHTML(options), json: this.getJSON(), text: this.getText() } : null
+      }
+      if (!current()) return null
       if (!this._snapshotReader) this._snapshotReader = createDocumentSnapshotReader()
     }
     return this._snapshotReader.read(editor, options)

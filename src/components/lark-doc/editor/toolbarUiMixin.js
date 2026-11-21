@@ -23,7 +23,6 @@ import { createToolbar } from '../../../ui/toolbar'
 import { captureDocumentSearchScope } from './documentSearchMixin'
 import { openCommentDocumentTarget } from './commentPanelView'
 import { supportsDocumentAction } from './documentMenuView'
-import { createTopBar } from '../../../ui/topBar'
 import { isCommandEnabled } from '../larkDocConfig'
 
 export default {
@@ -72,6 +71,7 @@ export default {
     user() { this.refreshTopBar() },
     onDocumentAction() { this.refreshTopBar() },
     sharePopoverOpen() { this.refreshTopBar() },
+    shareLinkState() { this.refreshTopBar() },
     shareEntryMode() { this.refreshTopBar() },
   },
   methods: {
@@ -106,49 +106,9 @@ export default {
       this._toolbarUi.destroy()
       this._toolbarUi = null
     },
-    /**
-     * 挂载原生顶栏（由主组件 `mounted` 调用）。
-     * 顶栏整行是 `v-if`（`layout.headerVisible === false` 时真的不在 DOM 里），
-     * 显隐由 `topBar.update()` 自己管，所以这里只给挂载点、不给条件。
-     * 与工具栏同理：`host` 是 `<section class="lark-doc">` 本身、`anchor` 是模板里那个
-     * 空 div —— 插在锚点前面，避免多包一层让 sticky 失效。
-     */
-    mountTopBar() {
-      if (this._topBarUi) return
-      const anchor = this.$refs.topBarHost
-      if (!anchor || !anchor.parentNode) return
-      let topBar
-      topBar = this._topBarUi = createTopBar({
-        host: anchor.parentNode,
-        anchor,
-        handlers: {
-          updateTitle: (value) => this.updateTitle(value),
-          setMode: (id) => this.setMode(id),
-          openHome: () => this.onMobileHeaderAction('home'),
-          openProfile: () => this.onMobileHeaderAction('profile'),
-          openMembers: event => { if (this.shareCan('canView')) this.toggleSharePopover(event) },
-          libraryScope: () => this.mobileLibraryScope(), libraryDirectory: () => this.mobileLibraryDirectory(),
-          openLibraryDocument: id => this.openMobileLibraryDocument(id), mobileHostAction: action => this.onMobileHeaderAction(action),
-          toggleOutline: () => { this.toggleOutlineOpen(); this.refreshTopBar() },
-        },
-        actionsHost: this.$refs.actionsHost || null,
-        onMenusReady: () => this.onTopbarMenusReady(topBar),
-      })
-      this.refreshTopBar()
-      // 首次 `mounted` 时顶栏**可能还没插进文档**（Vue 的插入钩子晚于本方法），
-      // 这时 `refreshTopBar()` 里的 `parkActionsHost()` 会把 `header-actions` 宿主
-      // 判成「已游离」搬回停泊位（`.lark-doc-actions-park` 是 `display:none`），
-      // 之后再没有 update 把它搬回来 —— 表现就是顶栏右侧的「导入 / 导出 / 模板」
-      // 整块消失，而顶栏本身（标题 + 模式按钮）看起来完全正常。
-      // 插入完成后再补一次（幂等：位置正确时 update 什么都不做）。
-      this.$nextTick(() => { if (this._topBarUi) this.refreshTopBar() })
-    },
     onTopbarMenusReady(topBar) {
       if (!topBar || this._topBarUi !== topBar || this._isDestroyed || this._isBeingDestroyed) return
-      if (this.createMenuOpen) {
-        if (this.measureCreateMenu) this.measureCreateMenu()
-        else this.positionCreateMenu?.()
-      }
+      if (this.createMenuOpen) this.measureCreateMenu()
       if (this.topbarMoreOpen) {
         this.measureTopbarMore?.()
         if (this.topbarMoreSubmenu) this.measureTopbarMoreSubmenu?.()
@@ -234,22 +194,6 @@ export default {
     },
 
     /**
-     * 工具栏 DOM 的唯一写入口：分组显隐、折叠、选中态、四个下拉、取色、宽度模式
-     * 一次推平。纯读状态，不碰文档。
-     */
-    refreshToolbar() {
-      const ui = this._toolbarUi
-      if (!ui) return
-      ui.update(this.buildToolbarState())
-      this.parkActionsHost()
-    },
-    refreshTopBar() {
-      const ui = this._topBarUi
-      if (!ui) return
-      ui.update(this.buildTopBarState())
-      this.parkActionsHost()
-    },
-    /**
      * `header-actions` 宿主的归属只有一个真相：**在 DOM 里就行**。
      * 顶栏可见 → 在顶栏右侧；「⋯」菜单开 → 在下拉里；两者都不成立（顶栏被隐藏、
      * 菜单又没开）→ 宿主的祖先已被整体摘掉，这时搬回停泊位，让 Vue 的插槽内容
@@ -289,8 +233,13 @@ export default {
         && this.session?.documentId === documentId && this.session?._privateIdentityGeneration === identity
         && (!this.session || this.session.can?.('canView') === true)
       const layout = this.larkDocConfig.layout
+      const information = outlineSession?.getProvider?.('authorization')
       return {
         documentMetadata,
+        readDocumentMetadata: readable && typeof information?.documentInformation === 'function'
+          ? async () => { const value = await information.documentInformation('read', 'information'); return outlineCurrent() ? value : null }
+          : null,
+        collaborationUsers: readable ? this.collaborationUsers : [],
         currentUser: actor?.id ? { id: actor.id, name: profile?.name || '我' } : null,
         homeEnabled: hostNavigation('home'),
         profileEnabled: hostNavigation('profile') && !!actor?.id,
@@ -301,6 +250,7 @@ export default {
         // `membersLabel` 保留「管理成员」语义，供 aria-label 与提示使用。
         membersText: manageMembers ? '分享' : (this.shareEntryLabel || '分享只读链接'),
         membersHasPopup: manageMembers,
+        membersHint: manageMembers ? (this.shareLinkState && this._shareLinkSnapshotOwner?.() ? this.shareScopeText : '查看链接范围与访问权限') : '复制只读链接',
         membersExpanded: manageMembers && this.sharePopoverOpen === true,
         referenceMobileMenu: true,
         mobileShortcutCapabilities: Object.fromEntries(['add-navigation', 'floating-window', 'offline'].map(action => [action, hostNavigation(action)])),
@@ -385,6 +335,7 @@ export default {
           insert: this.toolbarEnabled('insert') || this.toolbarEnabled('tables') || this.toolbarEnabled('ai'),
         },
         readonly: this.effectiveReadonly,
+        compactHeader: this.compactHeader,
         collapsed: this.collapsedGroups,
         alignNames: this.alignNames,
         heading: {
@@ -395,9 +346,6 @@ export default {
         },
         marks,
         active,
-        // 链接按钮的可用性：`effectiveReadonly || !hasTextSelection` 时禁用。
-        // `hasTextSelection` 读编辑器实时选区，非响应式 —— 选区变化由主组件显式刷新。
-        hasSelection: this.hasTextSelection,
         linkAllowed: this.linkCommandEnabled?.() !== false,
         textStyle: this.appliedTextStyle,
         colorOpenFor: this.colorPaletteOpen,
@@ -422,7 +370,7 @@ export default {
           outline: this.toolbarEnabled('outline'),
           viewModes: this.toolbarEnabled('viewModes'),
           // `modes.allow` 不含 read 时，「阅读模式」按钮没有意义（点了也不会切）→ 一并隐藏。
-          read: this.modesConfig.allow.indexOf('read') >= 0,
+          read: !this.compactHeader && this.modesConfig.allow.indexOf('read') >= 0,
           shortcuts: this.toolbarEnabled('shortcuts'),
           docOps,
         },

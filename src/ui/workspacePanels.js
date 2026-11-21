@@ -3,6 +3,7 @@ import { createSelect } from './select'
 import { iconNode } from './icon'
 import { mountNode, setAttr, setText, syncChildren } from './dom'
 import { makeDraggable } from './draggable'
+import { LARK_DOC_IMPORT_FORMATS } from '../components/lark-doc/larkDocConfig'
 
 function call(handlers, name, ...args) {
   const handler = handlers[name]
@@ -34,8 +35,48 @@ function setInputValue(node, value) {
   if (node.value !== next) node.value = next
 }
 
-export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
+function createImportDialog(close, pick) {
+  const dialog = document.createElement('dialog')
+  dialog.className = 'lark-doc-import-dialog'
+  dialog.setAttribute('aria-label', '导入文档')
+  dialog.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || event.isComposing) return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  })
+  dialog.addEventListener('cancel', event => { event.preventDefault(); close() })
+  dialog.addEventListener('click', event => { if (event.target === dialog) close() })
+  const header = document.createElement('header')
+  const heading = document.createElement('h2')
+  heading.textContent = '导入文档'
+  header.append(heading, closeButton('关闭导入', close))
+  const formats = document.createElement('div')
+  formats.className = 'lark-doc-import-formats'
+  const choices = LARK_DOC_IMPORT_FORMATS.map(({ value, label, extensions }) => {
+    const accept = extensions.map(ext => `.${ext}`)
+    const item = button(undefined, () => pick(accept.join(',')))
+    const text = document.createElement('span'), suffix = document.createElement('small')
+    text.textContent = label
+    suffix.textContent = accept.join(' / ')
+    text.append(suffix)
+    item.append(iconNode(({ docx: 'doc', md: 'block-text', html: 'block-code', json: 'block-file' })[value], 20), text)
+    return { node: item, extension: accept[0] }
+  })
+  dialog.append(header, formats)
+  return {
+    dialog,
+    update(accept) {
+      const active = accept.split(',')
+      syncChildren(formats, choices.map(item => ({ node: item.node, on: active.includes(item.extension) })))
+      if (!dialog.open && dialog.isConnected) dialog.showModal()
+    },
+  }
+}
+
+export function createWorkspacePanels({ host: panelHost, handlers = {}, closeImport, pickImport } = {}) {
   const state = {}
+  let importPicker
   const el = document.createElement('div')
   el.style.display = 'contents'
   const templatePanel = document.createElement('section')
@@ -418,7 +459,17 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
 
   function update(next = {}) {
     Object.assign(state, next)
-    mountNode(panelHost, el, !!((state.templateOpen && state.templatesEnabled) || (state.historyOpen && state.historyEnabled) || (state.aiOpen && state.aiEnabled)))
+    const importOpen = !!state.importOpener
+    if (importOpen && !importPicker) {
+      const dismissImport = () => {
+        const opener = state.importOpener
+        closeImport()
+        if (opener?.isConnected) opener.focus({ preventScroll: true })
+      }
+      importPicker = createImportDialog(dismissImport, accept => { dismissImport(); pickImport(accept) })
+    }
+    if (!importOpen && importPicker?.dialog.open) importPicker.dialog.close()
+    mountNode(panelHost, el, !!(importOpen || (state.templateOpen && state.templatesEnabled) || (state.historyOpen && state.historyEnabled) || (state.aiOpen && state.aiEnabled)))
     if (el) {
       const templateOpen = !!(state.templateOpen && state.templatesEnabled)
       const historyOpen = !!(state.historyOpen && state.historyEnabled)
@@ -428,7 +479,9 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
         { node: historyPanel, on: historyOpen },
         // AI 只有一个形态：这张表单面板（对话式外壳已退出显隐，见 specs/004 FR-201/203）。
         { node: aiPanel, on: aiOpen },
+        ...(importPicker ? [{ node: importPicker.dialog, on: importOpen }] : []),
       ])
+      if (importOpen) importPicker.update(state.importAccept)
     }
 
     setInputValue(templateSearch, state.templateQuery)
@@ -571,6 +624,7 @@ export function createWorkspacePanels({ host: panelHost, handlers = {} } = {}) {
     // 所有 AI 入口都落这张面板：「聚焦 AI」= 聚焦要求输入框。
     focusImageAI() { aiPrompt.focus({ preventScroll: true }) },
     destroy() {
+      if (importPicker?.dialog.open) importPicker.dialog.close()
       disposeAIDrag()
       aiContextSelect.destroy()
       aiActionSelect.destroy()

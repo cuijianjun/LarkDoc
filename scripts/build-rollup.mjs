@@ -5,7 +5,7 @@ import { rollup } from 'rollup'
 import { createHash } from 'node:crypto'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { elementPackNames, FEATURE_TARGETS, featureNames, getRollupConfig, isRuntimeChunk, mermaidTarget, MERMAID_FILES, PM_NAMES } from '../rollup.config.mjs'
+import { elementPackNames, elementPackStyles, FEATURE_TARGETS, featureNames, getRollupConfig, isRuntimeChunk, mermaidTarget, MERMAID_FILES, PM_NAMES } from '../rollup.config.mjs'
 import { compressDelivery } from './compress-dist.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -215,7 +215,8 @@ function expectedFiles(name) {
     const [, feature, variant] = name.split(':')
     if (variant !== 'umd') return [`features/${feature}.js`]
     // ui 组的样式独立成表，由 element 通道在拉脚本时同目录注入 <link>。
-    return [`lark-doc-element.umd.min.${feature}.js`, ...(feature === 'ui' ? ['lark-doc-element.ui.css'] : [])]
+    const stylesheet = elementPackStyles[feature]
+    return [`lark-doc-element.umd.min.${feature}.js`, ...(stylesheet ? [stylesheet] : [])]
   }
   return files[name] || []
 }

@@ -16,6 +16,7 @@ import * as Y from 'yjs'
 import { Collaboration } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import { HocuspocusProvider } from '@hocuspocus/provider'
+import { yCursorPlugin, ySyncPluginKey } from '@tiptap/y-tiptap'
 import { COLLAB_PROTOCOL_VERSION, COLLAB_CONTENT_FIELD } from './protocol'
 import { markCollabRuntime } from '../core/collabRuntime'
 
@@ -49,7 +50,18 @@ export { isChangeOrigin as isRemoteTransaction } from '@tiptap/extension-collabo
  */
 const LarkDocCollaboration = Collaboration.extend({
   addProseMirrorPlugins() {
+    const { editor, options: { durable } } = this
+    if (durable) {
+      durable.editor = editor
+      editor.on('destroy', () => { if (durable.editor === editor) delete durable.editor })
+    }
     return this.parent().map((plugin) => {
+      if (durable && plugin.key === ySyncPluginKey.key) {
+        plugin.props.handleScrollToSelection = view => {
+          const sync = ySyncPluginKey.getState(view.state)
+          return sync?.isChangeOrigin === true && !sync.isUndoRedoOperation
+        }
+      }
       if (!plugin.key.startsWith('y-undo$')) return plugin
       const init = plugin.spec.state.init
       plugin.spec.state.init = (config, state) => {
@@ -71,12 +83,30 @@ const LarkDocCollaboration = Collaboration.extend({
   },
 })
 
+const DesktopCollaborationCaret = CollaborationCaret.extend({
+  addProseMirrorPlugins() {
+    const [identity] = this.parent(), { provider, render, selectionRender } = this.options
+    const { awareness, configuration: { durable } } = provider
+    const caret = yCursorPlugin(awareness, {
+      cursorBuilder: render,
+      selectionBuilder: (user, client) => ({ ...selectionRender(user), 'data-collaboration-peer': String(client) }),
+    })
+    const decorations = caret.props.decorations
+    caret.props.decorations = state => {
+      const base = decorations(state)
+      return durable.projectCarets?.(base, state, this.editor, awareness) || base
+    }
+    return [identity, caret]
+  },
+})
+
 export function createCollabExtensions(options = {}) {
   const { ydoc, provider, user } = options
   if (!(ydoc instanceof Y.Doc)) {
     throw new TypeError('createCollabExtensions 需要同模块格式、同一运行时的真实 Y.Doc；可使用 lark-doc/collab 导出的 Yjs.Doc')
   }
-  const extensions = [LarkDocCollaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD })]
+  const durable = provider?.configuration?.durable
+  const extensions = [LarkDocCollaboration.configure({ document: ydoc, field: COLLAB_CONTENT_FIELD, durable })]
   if (provider && provider.awareness && user && user.name) {
     const cursorClass = value => `lark-doc-peer-color-${Number.isInteger(value.colorIndex) ? value.colorIndex : 0}`
     const render = value => {
@@ -86,9 +116,8 @@ export function createCollabExtensions(options = {}) {
       label.className = 'collaboration-carets__label'; label.textContent = value.name
       cursor.appendChild(label); return cursor
     }
-    const controlled = Boolean(provider.configuration && provider.configuration.durable)
-    const localUser = controlled ? { ...user, colorIndex: [...(user.id || user.name)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 3 } : user
-    extensions.push(CollaborationCaret.configure({ provider, user: localUser, ...(controlled ? {
+    const localUser = durable ? { ...user, colorIndex: [...(user.id || user.name)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 3 } : user
+    extensions.push((durable ? DesktopCollaborationCaret : CollaborationCaret).configure({ provider, user: localUser, ...(durable ? {
       render, selectionRender: value => ({ class: `collaboration-carets__selection ${cursorClass(value)}` }),
     } : {}) }))
   }

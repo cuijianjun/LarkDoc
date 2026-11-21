@@ -41,7 +41,18 @@ export function createWorkspace(options = {}) {
   const noticeHost = options.noticeHost || panelHost
   const handlers = options.handlers || {}
   const state = {}
-  const panels = createWorkspacePanels({ host: panelHost, handlers })
+  const canImport = () => state.importEnabled && !state.readonly && !state.importing && state.importAccept
+  const panels = createWorkspacePanels({
+    host: panelHost, handlers, pickImport,
+    closeImport() { state.importOpener = null; panels.update(state) },
+  })
+
+  function pickImport(accept = state.importAccept) {
+    if (!canImport()) return false
+    importInput.accept = accept
+    importInput.click()
+    return true
+  }
 
   const header = document.createElement('div')
   header.className = 'lark-doc-workspace-actions'
@@ -64,7 +75,8 @@ export function createWorkspace(options = {}) {
   })
   // 导入 / 导出是两个独立入口：显隐各由 config.importExport.importEnabled /
   // exportEnabled 决定，文案与 accept 也跟着配置走（默认值仍是不传配置时的老样子）。
-  const importButton = button('导入', () => importInput.click())
+  const importButton = button('导入', () => pickImport())
+  const importStatus = document.createElement('div')
   const importProgress = document.createElement('span')
   importProgress.className = 'lark-doc-import-progress'
   importProgress.setAttribute('role', 'status')
@@ -74,7 +86,6 @@ export function createWorkspace(options = {}) {
   const importInput = document.createElement('input')
   importInput.className = 'lark-doc-file-input'
   importInput.type = 'file'
-  importInput.accept = '.html,.htm,.json,.md,.markdown,.docx'
   importInput.setAttribute('aria-label', '导入文档')
   importInput.addEventListener('change', event => call(handlers, 'importDocument', event))
   const exportSelect = createSelect({
@@ -92,16 +103,23 @@ export function createWorkspace(options = {}) {
     },
   })
   function syncHeader() {
-    syncChildren(header, [
-      { node: localBadge, on: true },
-      { node: maxLengthSelect.el, on: true },
-      { node: saveStatus, on: true },
-      { node: saveButton, on: !!state.persistenceEnabled },
-      { node: templateSelect.el, on: !!state.templatesEnabled },
-      { node: importButton, on: !!state.importEnabled },
+    const statusHost = state.compactHeader ? importStatus : header
+    const feedback = [
+      { node: saveStatus, on: !state.compactHeader || !!state.storageError },
       { node: importProgress, on: !!state.importEnabled && !!state.importProgressState },
       { node: retryImport, on: !!state.importEnabled && !!state.importProgressState?.canRetry },
       { node: rollbackImport, on: !!state.importEnabled && !!state.importProgressState?.canRollback },
+    ]
+    if (state.compactHeader) syncChildren(importStatus, feedback)
+    mountNode(noticeHost, importStatus, state.compactHeader && feedback.some(item => item.on))
+    syncChildren(header, [
+      { node: localBadge, on: true },
+      { node: maxLengthSelect.el, on: true },
+      ...(statusHost === header ? feedback.slice(0, 1) : []),
+      { node: saveButton, on: !!state.persistenceEnabled },
+      { node: templateSelect.el, on: !!state.templatesEnabled },
+      { node: importButton, on: !!state.importEnabled },
+      ...(statusHost === header ? feedback.slice(1) : []),
       { node: importInput, on: !!state.importEnabled },
       { node: exportSelect.el, on: !!state.exportEnabled },
       { node: historyButton, on: !!state.historyEnabled },
@@ -126,6 +144,7 @@ export function createWorkspace(options = {}) {
     if (headerHost) mountNode(headerHost, header, true)
     mountNode(noticeHost, notice, !!state.notice)
     setText(noticeText, state.notice)
+    if (!canImport() || !state.importOpener?.isConnected) state.importOpener = null
     panels.update(state)
 
     maxLengthSelect.update({ options: state.maxLengthOptions, value: state.maxLength })
@@ -144,7 +163,7 @@ export function createWorkspace(options = {}) {
     setText(importProgress, progress ? (progress.failed ? `导入 ${progress.progress}% · 失败 ${progress.failed} 项` : `导入 ${progress.progress}% · ${progress.completed}/${progress.total}`) : '')
     setDisabled(retryImport, state.importing || typeof handlers.retryImport !== 'function')
     setDisabled(rollbackImport, state.importing || typeof handlers.rollbackImport !== 'function')
-    if (state.importAccept) importInput.accept = state.importAccept
+    importInput.accept = state.importAccept || ''
     exportSelect.update({ options: state.exportOptions, value: '' })
     setAttr(historyButton, 'aria-expanded', state.historyOpen ? 'true' : 'false')
     setAttr(historyButton, 'title', '本地快照')
@@ -154,6 +173,13 @@ export function createWorkspace(options = {}) {
   return {
     el: header,
     update,
+    requestImport(opener) {
+      if (!canImport()) return false
+      if (!opener || !panelHost?.isConnected || !document.defaultView?.HTMLDialogElement?.prototype.showModal) return pickImport()
+      state.importOpener = opener
+      panels.update(state)
+      return true
+    },
     focusTemplateSearch() { panels.focusTemplateSearch() },
     focusImageAI() { panels.focusImageAI() },
     destroy() {
@@ -163,6 +189,7 @@ export function createWorkspace(options = {}) {
       exportSelect.destroy()
       panels.destroy()
       header.remove()
+      importStatus.remove()
       notice.remove()
     },
   }

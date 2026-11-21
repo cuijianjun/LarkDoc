@@ -23,6 +23,8 @@
  * （飞书自己也是跳到 wiki/doc/sheet 路由）。
  */
 import { anchorPopoverStyle } from './popoverPosition'
+import { isImportEnabled } from '../larkDocConfig'
+import { supportsDocumentAction } from './documentMenuView'
 
 /** 外壳尺寸（实测 182×509；内层 180×503）。先渲染再量也能用，这个值用于首帧不闪。 */
 export const CREATE_MENU_SIZE = Object.freeze({ width: 182, height: 509 })
@@ -66,7 +68,18 @@ export default {
   },
   computed: {
     createMenuRows() {
-      return CREATE_MENU_ROWS
+      if (!this.compactHeader) return CREATE_MENU_ROWS
+      const colors = ['indigo', 'blue', 'green', 'orange', 'yellow', 'teal', 'blue']
+      const children = [
+        { kind: 'item', id: 'upload-file', label: '上传文件', icon: 'upload', enabled: this.isBlockActionEnabled?.('file') === true },
+        { kind: 'item', id: 'import-document', label: '导入为在线文档', icon: 'doc', enabled: isImportEnabled(this.larkDocConfig) && !this.importing },
+      ]
+      let index = 0
+      return CREATE_MENU_ROWS.map(row => {
+        if (row.id === 'import') return { ...row, children, enabled: children.some(item => item.enabled) }
+        if (row.iconColor !== MONO) return row
+        return { ...row, iconColor: `var(--ld-cat-${colors[index++]})` }
+      })
     },
   },
   methods: {
@@ -76,7 +89,7 @@ export default {
         this.closeCreateMenu()
         return
       }
-      if (this.effectiveReadonly) return
+      if (this.effectiveReadonly || (Array.isArray(this.onDocumentAction?.supportedActions) && !supportsDocumentAction(this, 'create'))) return
       const el = event && event.currentTarget
       const rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null
       if (!rect) return
@@ -108,8 +121,16 @@ export default {
      * 顺序不能反 —— 宿主若同步弹出自己的模态，先派发会让本菜单压在模态上（与导出线同坑）。
      */
     onCreateMenuItem(row) {
-      if (!row || row.kind !== 'item') return
+      if (!row || row.kind !== 'item' || row.enabled === false) return
       this.closeCreateMenu()
+      if (this.compactHeader && row.id === 'upload-file') {
+        if (this.writable() && this.isBlockActionEnabled?.('file')) this.$refs.fileInput?.click()
+        return
+      }
+      if (this.compactHeader && row.id === 'import-document') {
+        if (this.writable() && !this.importing && isImportEnabled(this.larkDocConfig)) this.$emit('workspace-import')
+        return
+      }
       this.$emit('create-menu', { id: row.id, label: row.label, action: row.action })
     },
     createMenuContains(node) {

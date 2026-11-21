@@ -69,11 +69,12 @@ function fixture({ initialLocal = false } = {}) {
       if (failReopen && bridges.indexOf(value)) throw new Error('REOPEN_UNAVAILABLE')
       if (autoReady && (!holdReopen || !bridges.indexOf(value))) ready()
     }
-    const value = { ydoc: {}, provider: {}, getState: () => bridgeState,
+    const value = { ydoc: {}, provider: { forceSync: vi.fn() }, getState: () => bridgeState,
       connect: vi.fn(connect), resumeAuthorization: vi.fn(connect),
       isolateEpoch: vi.fn(() => setState({ status: 'quarantined', canWrite: false })),
       disconnect: vi.fn(), destroy: vi.fn(() => setState({ status: 'destroyed', canWrite: false })), queryPending: vi.fn(),
-      ready, setState, configure: options => { bridgeOptions = options }, requireAuthorization: () => bridgeOptions.onAuthorizationRequired() }
+      ready, setState, configure: options => { bridgeOptions = options }, requireAuthorization: () => bridgeOptions.onAuthorizationRequired(),
+      receiveReceipt: () => bridgeOptions.onReceipt?.() }
     bridges.push(value); return value
   }
   const bridge = makeBridge('1'), readyBridge = bridge.ready
@@ -393,6 +394,34 @@ describe('Docker demo 身份与评论入口', () => {
     expect(f.session.refreshCapabilities).toHaveBeenCalledOnce()
     expect(f.bridge.connect).toHaveBeenCalledOnce()
     expect(f.bridge.resumeAuthorization).toHaveBeenCalledOnce()
+  })
+
+  it('renews writability with HELLO after the final pending update is confirmed', async () => {
+    const f = fixture(); f.tap('login-alice'); await settle()
+    f.setCaps({ canView: true, canComment: true, canEdit: true })
+    f.pendingBridge(); f.blockBridge()
+    f.bridge.receiveReceipt()
+    expect(f.bridge.provider.forceSync).not.toHaveBeenCalled()
+    f.bridge.setState({ pending: [] })
+    f.bridge.receiveReceipt()
+    expect(f.bridge.provider.forceSync).toHaveBeenCalledOnce()
+    expect(f.readonly()).toBe(true)
+    f.readyBridge()
+    expect(f.readonly()).toBe(false)
+  })
+
+  it('retries the post-receipt HELLO when view capability finishes refreshing', async () => {
+    const f = fixture(); f.tap('login-alice'); await settle()
+    f.pendingBridge(); f.blockBridge()
+    f.setCaps({ canView: false, canComment: false, canEdit: false })
+    f.bridge.setState({ pending: [] }); f.bridge.receiveReceipt()
+    expect(f.bridge.provider.forceSync).not.toHaveBeenCalled()
+    f.setCaps({ canView: true, canComment: true, canEdit: true })
+    f.setCaps({ canView: true, canComment: true, canEdit: true })
+    expect(f.bridge.provider.forceSync).toHaveBeenCalledOnce()
+    expect(f.readonly()).toBe(true)
+    f.readyBridge()
+    expect(f.readonly()).toBe(false)
   })
 
   it('uses a real collaboration state/codec and waits for ready before mounting or seeding', async () => {

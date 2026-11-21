@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { elementPackNames } from '../rollup.config.mjs'
+import { elementPackNames, elementPackStyles } from '../rollup.config.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
@@ -18,8 +18,8 @@ const quiet = process.argv.includes('--quiet')
 // 所以这几个兄弟文件必须和它放在同一层。少任何一个，demo 页上的 <lark-doc>
 // 都只会停在占位高度，看上去像「组件没注册」。
 const bundles = ['lark-doc-element.umd.min.js', 'lark-doc-element.runtime.umd.min.js',
-  'lark-doc-element.polyfills.umd.min.js', 'lark-doc-element.css', 'lark-doc-element.ui.css',
-  'lark-doc.css',
+  'lark-doc-element.polyfills.umd.min.js', 'lark-doc-element.css', ...Object.values(elementPackStyles),
+  'lark-doc.css', 'comment-reaction-catalog.json',
   ...elementPackNames.map(name => `lark-doc-element.umd.min.${name}.js`)]
 const expected = new Map()
 for (const name of bundles) expected.set(name, path.join(dist, name))

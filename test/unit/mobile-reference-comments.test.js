@@ -159,6 +159,17 @@ describe('reference page six document comments', () => {
     await vi.waitFor(() => expect(element.querySelector('.is-inline-document [data-comment-mention]')?.textContent).toBe('@Bob'))
   })
 
+  it('keeps a local private selection draft unsent when the service cannot protect it', async () => {
+    const { host, editor, comments } = await nativeComments()
+    editor.commands.setTextSelection({ from: 1, to: 3 })
+    expect(host.openSelectionComment()).toBe(true)
+    const create = vi.spyOn(comments, 'createThread')
+    expect(await host.createCommentFromSelection('私有选区草稿', 'private')).toBeNull()
+    expect(create).not.toHaveBeenCalled()
+    expect(host.commentCreateDraft).toBe('私有选区草稿')
+    expect(host.commentMessage).toContain('全文私有评论')
+  })
+
   it('projects local private document threads only for their real author or listed participant', async () => {
     const row = (id, participants) => ({ id, scope: 'document', visibility: 'private', participants, author: { id: 'bob', name: 'Bob' },
       replies: [{ id: 'reply-' + id, author: { id: 'bob', name: 'Bob' }, content: id }] })
@@ -678,6 +689,41 @@ describe('M20 mobile reply More actions', () => {
     expect(host.commentDraftOf(thread.id)).toBe('锚点草稿')
   })
 
+  it.each(['touch', 'mouse'])('resolves the anchored thread with the correct confirmation for %s', async input => {
+    if (input === 'mouse') {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 700 })
+      window.matchMedia = () => Object.assign(new EventTarget(), { matches: false })
+    }
+    const { element, host, editor, comments } = await nativeComments()
+    const blockId = editor.state.doc.firstChild.attrs.blockId
+    const thread = await comments.createThread({ blockId, anchor: { blockId, offset: 0, length: 2 }, quote: '正文',
+      author: { id: 'alice', name: 'Alice' }, content: '待处理评论' })
+    const resolveComment = vi.spyOn(comments, 'resolve')
+    await host.loadComments(); host.activateComment(thread.id)
+    host.commentSidebarOpen = true; host.commentMobileOpen = true; host.commentMobileScope = 'selection'; host.refreshPanels()
+    const menuTrigger = element.querySelector('[aria-label="评论操作"]')
+    if (input === 'touch') {
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      expect(menuTrigger.dispatchEvent(press)).toBe(false)
+    }
+    menuTrigger?.click()
+    const trigger = element.querySelector('[data-comment-thread] [aria-label="解决评论"]')
+    trigger.click()
+    const sheet = () => element.querySelector('[role="alertdialog"][aria-label="解决并隐藏"]')
+    if (input === 'touch') {
+      expect(resolveComment).not.toHaveBeenCalled()
+      expect(sheet()).not.toBeNull()
+      sheet().querySelector('[aria-label="取消解决评论"]').click()
+      expect(sheet()).toBeNull()
+      expect(document.activeElement).toBe(trigger)
+      trigger.click()
+      const confirm = sheet().querySelector('[aria-label="确认解决并隐藏"]')
+      confirm.click(); confirm.click()
+    } else expect(sheet()).toBeNull()
+    await vi.waitFor(async () => expect((await comments.list())[0].resolved).toBe(true))
+    expect(resolveComment).toHaveBeenCalledOnce()
+  })
+
   it('clamps the measured nine-action menu to the visible viewport and repositions after viewport scrolling', async () => {
     const viewport = Object.assign(new EventTarget(), { width: 393, height: 400, offsetLeft: 0, offsetTop: 120 })
     const prior = Object.getOwnPropertyDescriptor(window, 'visualViewport')
@@ -815,6 +861,7 @@ describe('M20 mobile reply More actions', () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith('富文本@Bob\n第二段')
     action(await more(element), '解决并隐藏').click()
     await vi.waitFor(async () => expect((await comments.list())[0].resolved).toBe(true))
+    await vi.waitFor(() => expect(element.querySelector('[data-comment-thread="m20"]')).toBeNull())
     expect(editor.getJSON()).toEqual(before)
   })
 

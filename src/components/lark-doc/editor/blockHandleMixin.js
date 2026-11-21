@@ -497,7 +497,7 @@ export default {
       if (!this.editor || this.editor.isDestroyed || !this.editor.commands?.setLarkDocHandleHover) return
       const next = active ? this.handleHighlightRange() : null
       const current = this.editor.storage.larkDoc?.handleHover
-      if (current?.from === next?.from && current?.to === next?.to && current?.section === next?.section) return
+      if (current?.from === next?.from && current?.to === next?.to && (current?.section === true) === (next?.section === true)) return
       this.editor.commands.setLarkDocHandleHover(next)
       this.$nextTick(() => this.syncHandleHighlightBackdrop())
     },
@@ -534,7 +534,11 @@ export default {
       if (event.target?.closest?.('.ProseMirror, .lark-doc-table-boundary-tools')) return
       this.clearTableBoundaryHover()
     },
-    onHandlePointerUp() { this.handlePressed = false; this.refreshHandleHighlight() },
+    onHandlePointerUp() {
+      if (!this.handlePressed) return
+      this.handlePressed = false
+      this.refreshHandleHighlight()
+    },
     // P0-03：句柄按下/拖拽结束的模板级赋值收敛为方法——子组件模板经 ed. 调用，避免 vue/no-mutating-props。
     pressHandle() { this.handlePressed = true },
     endBlockDrag() { this.handlePressed = false; this.dragging = null; this.dropPosition = null; this.refreshHandleHighlight() },

@@ -33,7 +33,7 @@ import {
   createMemoryVersioningProvider,
 } from '../../src/core/versioning/index'
 import {
-  VERSIONING_CURSOR_LABEL,
+  createVersioningPresentation,
   VERSIONING_DAY_LABELS,
   VERSIONING_ERROR_TEXT,
   currentProjection,
@@ -44,11 +44,9 @@ import {
   groupVersionsByDay,
   historyDiffSummary,
   recordMetrics,
-  versionCapabilityGate,
   versioningErrorMessage,
-} from '../../src/components/lark-doc/editor/versioningMixin'
-import versioningMixin from '../../src/components/lark-doc/editor/versioningMixin'
-import { createVersioningPresentation } from '../../src/components/lark-doc/editor/versioningPresentation'
+} from '../../src/components/lark-doc/editor/versioningPresentation'
+import versioningMixin, { VERSIONING_CURSOR_LABEL, versionCapabilityGate } from '../../src/components/lark-doc/editor/versioningMixin'
 
 describe('历史版本窄屏样式覆盖', () => {
   it.each(['layer', 'left', 'right', 'left-header', 'left-content', 'restore', 'pager'])(
@@ -268,6 +266,133 @@ function callOf(vm, name, ...args) {
 }
 
 /* ---------------- 1. 时间格式化 ---------------- */
+
+it('opens a named version dialog and saves a separate manual version', async () => {
+  const dom = new JSDOM('<section></section>')
+  const host = dom.window.document.querySelector('section')
+  vi.stubGlobal('document', dom.window.document)
+  const session = fakeSession()
+  const vm = mountMixin({ session, documentId: session.documentId, localTitle: '协同文档', $el: host })
+  const opener = dom.window.document.createElement('button')
+  opener.setAttribute('aria-haspopup', 'menu')
+  host.append(opener)
+  host.addEventListener('focusin', event => {
+    if (event.target === opener && vm.versionNotice) vm.dismissVersionNotice()
+  })
+  try {
+    expect(vm.versionCanSave).toBe(true)
+    expect(await vm.openSaveVersion(opener)).toBe(true)
+    const dialog = host.querySelector('[role="dialog"]')
+    const input = dialog.querySelector('input')
+    expect(input.value).toBe('协同文档 第 1 版')
+    expect(input.maxLength).toBe(1000)
+    input.value = '评审版'
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    Array.from(dialog.querySelectorAll('button')).find(button => button.textContent === '确定').click()
+    await vi.waitFor(() => expect(dialog.isConnected).toBe(false))
+    const versions = await session.getProvider('versioning').list({ documentId: session.documentId })
+    expect(versions.map(({ label, kind }) => ({ label, kind }))).toEqual([{ label: '评审版', kind: 'manual' }])
+    expect(dom.window.document.activeElement).toBe(opener)
+    expect(vm.versionNotice).toMatch(/版本已保存/)
+  } finally { vi.unstubAllGlobals(); dom.window.close() }
+})
+
+it('keeps the named version draft and checks the original operation after an unknown outcome', async () => {
+  const dom = new JSDOM('<section></section>')
+  const host = dom.window.document.querySelector('section')
+  vi.stubGlobal('document', dom.window.document)
+  const provider = {
+    isRemote: true, requiresDurableConfirmation: true, createSnapshot: vi.fn(), list: vi.fn(async () => []),
+    queryOperation: vi.fn(async operationId => ({ operationId, status: 'committed', version: { id: 'snapshot-1', status: 'durable' } })),
+  }
+  const session = fakeSession({ provider })
+  session.createVersion = vi.fn(async ({ operationId }) => ({ operationId, status: 'unknown' }))
+  const vm = mountMixin({ session, documentId: session.documentId, localTitle: '协同文档', $el: host })
+  const click = label => Array.from(host.querySelectorAll('button')).find(button => button.textContent === label)?.click()
+  try {
+    expect(await vm.openSaveVersion()).toBe(true)
+    click('确定')
+    await vi.waitFor(() => expect(host.querySelector('input').readOnly).toBe(true))
+    await vi.waitFor(() => expect(host.querySelector('[role="alert"]').textContent).toMatch(/待确认/))
+    expect(vm.versionNotice).toBe('')
+    click('取消')
+    expect(await vm.openSaveVersion()).toBe(true)
+    expect(host.querySelector('input').value).toBe('协同文档 第 1 版')
+    click('查询原操作')
+    await vi.waitFor(() => expect(vm.versionNotice).toMatch(/版本已保存/))
+    expect(session.createVersion).toHaveBeenCalledTimes(1)
+    expect(provider.queryOperation).toHaveBeenCalledWith(session.createVersion.mock.calls[0][0].operationId)
+  } finally { vm.closeSaveVersion(); vi.unstubAllGlobals(); dom.window.close() }
+})
+
+it.each(['alice', 'bob'])('handles a pending named version after authorization resumes as %s', async principal => {
+  const dom = new JSDOM('<section></section>')
+  const host = dom.window.document.querySelector('section')
+  vi.stubGlobal('document', dom.window.document)
+  const posts = [], queries = []
+  let admitted
+  const admission = new Promise(resolve => { admitted = resolve })
+  const provider = createHttpVersioningProvider({
+    tenantId: 'tenant-1', docId: 'doc-1', csrfToken: () => 'current',
+    getState: () => ({ status: 'ready', pending: [], revision: '1' }),
+    async request(url, options) {
+      if (options.method === 'POST') {
+        posts.push(JSON.parse(options.body))
+        admitted()
+        return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(new Error('续权前已保存，回执中断')), { once: true }))
+      }
+      if (url.endsWith('/versions')) return { status: 200, json: async () => [] }
+      queries.push(url)
+      if (queries.length === 1) return { status: 401, json: async () => ({ code: 'AUTHENTICATION_REQUIRED' }) }
+      const { operationId, label, purpose } = posts[0]
+      return { status: 200, json: async () => ({ status: 'committed', operationId, requestHash: 'sha256:' + 'd'.repeat(64),
+        version: { tenantId: 'tenant-1', docId: 'doc-1', status: 'durable', versionId: 'original-version', operationId,
+          createdBy: 'alice', createdAt: '2026-11-21T00:00:00.000Z', capturedSeq: '1', sourceRevision: '1', sourceEpoch: '1',
+          schemaVersion: '1', label, purpose, kind: purpose, contentHash: 'sha256:' + 'a'.repeat(64), stateHash: 'sha256:' + 'b'.repeat(64),
+          protocolVersion: 'editor-crdt-v1', sizeBytes: 1 } }) }
+    },
+  })
+  const session = new DocumentSession({ documentId: 'doc-1', user: { id: 'alice' }, providers: { versioning: provider,
+    authorization: { async getCapabilities() { return { canView: true, canCreateVersion: true } } } } })
+  const vm = mountMixin({ session, documentId: session.documentId, localTitle: '协作记录', $el: host })
+  const button = label => Array.from(host.querySelectorAll('button')).find(item => item.textContent === label)
+  try {
+    await session._capabilitiesPromise
+    expect(await vm.openSaveVersion()).toBe(true)
+    const input = host.querySelector('input')
+    input.value = 'Alice 的原草稿'
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    button('确定').click()
+    await admission
+    expect(Object.keys(posts[0])).toEqual(['operationId', 'expectedRevision', 'label', 'purpose'])
+    if (principal === 'bob') session.user = { id: 'bob' }
+    await session.refreshCapabilities()
+    expect(host.querySelector('[role="dialog"]')).toBeNull()
+    expect(vm.versionNotice).toBe('')
+    expect(await vm.openSaveVersion()).toBe(true)
+    if (principal === 'alice') {
+      expect(host.querySelector('input').value).toBe('Alice 的原草稿')
+      button('查询原操作').click()
+      await vi.waitFor(() => expect(host.querySelector('[role="alert"]').textContent).toMatch(/待确认/))
+      await session.refreshCapabilities()
+      expect(await vm.openSaveVersion()).toBe(true)
+      button('查询原操作').click()
+      await vi.waitFor(() => expect(vm.versionNotice).toMatch(/版本已保存/))
+      expect(queries).toEqual(Array(2).fill(`/editor/v1/tenants/tenant-1/operations/${posts[0].operationId}?commandType=version`))
+    } else {
+      expect(host.querySelector('input').value).toBe('协作记录 第 1 版')
+      expect(button('查询原操作')).toBeUndefined()
+      await expect(provider.queryOperation(posts[0].operationId)).rejects.toMatchObject({ code: 'VERSION_CONTEXT_CHANGED' })
+      expect(queries).toEqual([])
+    }
+    expect(posts).toHaveLength(1)
+  } finally {
+    vm.closeSaveVersion()
+    await session.dispose()
+    vi.unstubAllGlobals()
+    dom.window.close()
+  }
+})
 
 describe('版本时间格式化', () => {
   it('条目名是「M月D日 HH:mm」，时与分都补零（04 §3.4-C 实测 10月25日 00:04）', () => {

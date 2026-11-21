@@ -214,6 +214,24 @@ export function createImportConfirmation({ host, message, fileName }) {
   return { result, destroy: () => close(false) }
 }
 
+function bindNameDialogKeys(backdrop, section, input, submit, close) {
+  const owner = backdrop.ownerDocument
+  backdrop.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229) {
+      if (event.key === 'Enter' || event.key === 'Escape') event.stopPropagation()
+      return
+    }
+    if (event.key === 'Enter' && event.target === input) { event.preventDefault(); event.stopPropagation(); submit() }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
+    if (event.key === 'Tab') {
+      const controls = [...section.querySelectorAll('input,button')].filter(control => !control.disabled)
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && owner.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && owner.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+  })
+}
+
 /** 模板保存只在宿主确认落盘后关闭；取消会由桥接层中止未完成的请求。 */
 export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
   const owner = host.ownerDocument
@@ -248,23 +266,147 @@ export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
     } finally { if (!destroyed) { busy = false; sync() } }
   }
   input.addEventListener('input', sync); save.addEventListener('click', submit)
-  backdrop.addEventListener('keydown', event => {
-    if (event.isComposing || event.keyCode === 229) {
-      if (event.key === 'Enter' || event.key === 'Escape') event.stopPropagation()
-      return
-    }
-    if (event.key === 'Enter' && event.target === input) { event.preventDefault(); event.stopPropagation(); submit() }
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
-    if (event.key === 'Tab') {
-      const controls = [...section.querySelectorAll('input,button')].filter(control => !control.disabled)
-      const first = controls[0], last = controls[controls.length - 1]
-      if (event.shiftKey && owner.activeElement === first) { event.preventDefault(); last?.focus() }
-      else if (!event.shiftKey && owner.activeElement === last) { event.preventDefault(); first?.focus() }
-    }
-  })
+  bindNameDialogKeys(backdrop, section, input, submit, close)
   footer.append(cancel, save); section.append(header, description, label, error, footer)
   host.appendChild(backdrop); sync(); input.focus(); input.select()
   return { destroy() { destroyed = true; backdrop.remove() } }
+}
+
+export function createSaveVersionDialog({ host, name, title, maxLength, handlers }) {
+  const owner = host.ownerDocument
+  let destroyed = false, busy = false
+  const close = () => { if (!busy) handlers.onClose?.() }
+  const { backdrop, section } = createDialogShell(title, close)
+  section.classList.add('lark-doc-template-save-dialog', 'lark-doc-save-version-dialog')
+  const { header, button: dismiss } = createDialogHeader({ title, closeLabel: '关闭另存为版本', onClose: close })
+  const label = owner.createElement('label'), input = owner.createElement('input')
+  label.textContent = '版本名称'
+  input.setAttribute('aria-label', '版本名称'); input.maxLength = maxLength; input.value = name
+  input.placeholder = '请输入名称'
+  const counter = owner.createElement('small')
+  counter.className = 'lark-doc-version-name-count'
+  label.append(input, counter)
+  const error = owner.createElement('p'); error.setAttribute('role', 'alert')
+  const footer = owner.createElement('footer'), cancel = owner.createElement('button'), save = owner.createElement('button')
+  cancel.type = save.type = 'button'; cancel.textContent = '取消'
+  save.className = 'primary'
+  cancel.addEventListener('click', close)
+  const sync = () => {
+    const pending = handlers.isPending?.()
+    counter.textContent = `${input.value.length}/${input.maxLength}`
+    if (busy && owner.activeElement === save) input.focus({ preventScroll: true })
+    cancel.disabled = dismiss.disabled = busy
+    input.readOnly = Boolean(busy || pending)
+    save.disabled = busy || !input.value.trim() || Boolean(pending && handlers.canQuery?.() !== true)
+    save.textContent = busy ? (pending ? '查询中…' : '保存中…') : pending ? '查询原操作' : '确定'
+  }
+  const submit = async () => {
+    if (destroyed || save.disabled || handlers.isCurrent?.() === false) return
+    busy = true; error.textContent = ''; sync()
+    try {
+      const saved = await handlers.onSave?.(input.value.trim())
+      if (!destroyed && handlers.isCurrent?.() !== false && saved) handlers.onClose?.()
+    } catch (failure) {
+      if (!destroyed && handlers.isCurrent?.() !== false) error.textContent = failure?.message || '版本保存失败，请重试'
+    } finally { if (!destroyed) { busy = false; sync() } }
+  }
+  input.addEventListener('input', sync); save.addEventListener('click', submit)
+  bindNameDialogKeys(backdrop, section, input, submit, close)
+  footer.append(cancel, save); section.append(header, label, error, footer)
+  host.appendChild(backdrop); sync(); input.focus()
+  input.setSelectionRange(input.value.length, input.value.length)
+  return { destroy() { destroyed = true; backdrop.remove() } }
+}
+
+export function openDocumentWidgetsDialog(editorHost, value, opener, context, actionCurrent) {
+  const { editor, session, key, identity, authorization } = context
+  const current = () => !editorHost._isBeingDestroyed && !editorHost._isDestroyed && editorHost.editor === editor && !editor.isDestroyed &&
+    editorHost.session === session && editorHost.documentWidgetStorageKey() === key && session?._privateIdentityGeneration === identity &&
+    session?._authorizationGeneration === authorization && session?.can?.('canView') !== false
+  if (!current() || !actionCurrent()) return false
+  editorHost.closeDocumentWidgets()
+  const listeners = []
+  const close = () => {
+    editorHost.closeDocumentWidgets()
+    if (current() && opener?.isConnected) opener.focus({ preventScroll: true })
+  }
+  const view = createDocumentWidgetsDialog({
+    host: editorHost.$refs?.dialogHost || editorHost.$el,
+    widgets: editorHost.availableDocumentWidgets(),
+    initialView: value,
+    installed: () => editorHost.installedDocumentWidgets(),
+    onClose: close,
+    setInstalled: (id, enabled) => {
+      if (!current() || !editorHost.availableDocumentWidgets().some(widget => widget.id === id)) return false
+      const all = new Set(editorHost.installedDocumentWidgets())
+      if (enabled) all.add(id)
+      else all.delete(id)
+      const installed = Array.from(all)
+      editorHost.$el.ownerDocument.defaultView.localStorage.setItem(key, JSON.stringify(installed))
+      editorHost.documentWidgetPreferences = { key, installed }
+      return true
+    },
+  })
+  for (const event of ['identity', 'capabilities', 'editor']) {
+    const off = session?.on?.(event, () => { if (!current()) editorHost.closeDocumentWidgets() })
+    if (typeof off === 'function') listeners.push(off)
+  }
+  editorHost._documentWidgetsDialog = { destroy() { listeners.forEach(off => off()); view.destroy() } }
+  return true
+}
+
+function createDocumentWidgetsDialog({ host, widgets, initialView, installed, setInstalled, onClose }) {
+  const owner = host.ownerDocument
+  const { backdrop, section } = createDialogShell('管理小组件', onClose)
+  section.classList.add('lark-doc-widget-dialog', 'lark-doc-template-save-dialog')
+  const { header, button: dismiss } = createDialogHeader({ title: '管理小组件', closeLabel: '关闭小组件管理', onClose })
+  const navigation = owner.createElement('div'), list = owner.createElement('div'), status = owner.createElement('p')
+  status.setAttribute('role', 'status')
+  let view = initialView
+  const views = [['discover', '更多小组件'], ['manage', '已添加']]
+  const buttons = views.map(([id, label]) => {
+    const button = owner.createElement('button')
+    button.type = 'button'; button.textContent = label
+    button.addEventListener('click', () => { view = id; render() })
+    return button
+  })
+  function render() {
+    const active = new Set(installed())
+    buttons.forEach((button, index) => button.setAttribute('aria-pressed', String(views[index][0] === view)))
+    const rows = widgets.filter(widget => view === 'discover' || active.has(widget.id))
+    list.replaceChildren(...rows.map(widget => {
+      const row = owner.createElement('div'), text = owner.createElement('div'), label = owner.createElement('strong')
+      const description = owner.createElement('p'), button = owner.createElement('button')
+      const enabled = active.has(widget.id)
+      label.textContent = widget.label; description.textContent = widget.description
+      button.type = 'button'; button.textContent = enabled ? '移除' : '添加'; button.setAttribute('aria-label', button.textContent + widget.label)
+      button.addEventListener('click', () => {
+        try {
+          if (!setInstalled(widget.id, !enabled)) return
+          status.textContent = enabled ? `已移除${widget.label}` : `已添加${widget.label}`
+          render()
+          const nextLabel = (enabled ? '添加' : '移除') + widget.label
+          const next = Array.from(list.querySelectorAll('button')).find(item => item.getAttribute('aria-label') === nextLabel)
+          ;(next || buttons[view === 'discover' ? 0 : 1]).focus({ preventScroll: true })
+        } catch (_) { status.textContent = '当前浏览器无法保存小组件设置' }
+      })
+      text.append(label, description); row.append(text, button)
+      return row
+    }))
+    if (!rows.length) list.textContent = '暂无已添加的小组件'
+  }
+  backdrop.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose() }
+    if (event.key === 'Tab') {
+      const controls = section.querySelectorAll('button')
+      if (event.shiftKey && owner.activeElement === controls[0]) { event.preventDefault(); controls[controls.length - 1].focus() }
+      else if (!event.shiftKey && owner.activeElement === controls[controls.length - 1]) { event.preventDefault(); controls[0].focus() }
+    }
+  })
+  navigation.append(...buttons); section.append(header, navigation, list, status)
+  navigation.className = 'lark-doc-widget-navigation'; list.className = 'lark-doc-widget-list'
+  host.appendChild(backdrop); render(); dismiss.focus({ preventScroll: true })
+  return { destroy() { backdrop.remove() } }
 }
 
 /**

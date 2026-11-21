@@ -87,18 +87,16 @@ export default {
       if (this.toolbarEnabled('ai')) insertItems.push({ label: 'AI 助手', disabled: ro, run: () => this.$emit('ai-request', 'rewrite') })
       if (insertItems.length) sections.push({ id: 'insert', title: '插入', items: insertItems })
       const toolItems = []
-      if (this.toolbarEnabled('search')) toolItems.push({ label: '查找', icon: 'search', run: () => { this.toggleSearchOpen(); this.$nextTick(() => this.focusSearchPanel()) } })
-      if (this.toolbarEnabled('outline')) toolItems.push({ label: '目录', icon: 'outline', checked: this.outlineOpen, run: () => this.toggleOutlineOpen() })
+      if (!this.compactHeader && this.toolbarEnabled('search')) toolItems.push({ label: '查找', icon: 'search', run: () => { this.toggleSearchOpen(); this.$nextTick(() => this.focusSearchPanel()) } })
+      if (!this.compactHeader && this.toolbarEnabled('outline')) toolItems.push({ label: '目录', icon: 'outline', checked: this.outlineOpen, run: () => this.toggleOutlineOpen() })
       if (this.toolbarEnabled('viewModes')) {
-        this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, radio: true, checked: this.widthMode === option.value, run: () => this.setWidthMode(option.value) }))
+        if (!this.compactHeader) this.widthModeOptions.forEach((option) => toolItems.push({ label: option.label, radio: true, checked: this.widthMode === option.value, run: () => this.setWidthMode(option.value) }))
         // `modes.allow` 摘掉 read 后这条没有意义（`setMode('read')` 会被拦），跟着隐藏。
-        if (this.modesConfig.allow.indexOf('read') >= 0) toolItems.push({ label: this.reading ? '退出阅读' : '阅读模式', icon: 'reading', run: () => this.toggleReading() })
-        toolItems.push(
-          { label: this.fullscreen ? '退出全屏' : '全屏', icon: 'fullscreen', run: () => this.toggleFullscreen() },
-          { label: this.slides ? '退出演示' : '演示模式', icon: 'slides', run: () => this.toggleSlides() },
-        )
+        if (!this.compactHeader && this.modesConfig.allow.indexOf('read') >= 0) toolItems.push({ label: this.reading ? '退出阅读' : '阅读模式', icon: 'reading', run: () => this.toggleReading() })
+        if (!this.compactHeader) toolItems.push({ label: this.fullscreen ? '退出全屏' : '全屏', icon: 'fullscreen', run: () => this.toggleFullscreen() })
+        if (!this.compactHeader) toolItems.push({ label: this.slides ? '退出演示' : '演示模式', icon: 'slides', run: () => this.toggleSlides() })
       }
-      if (this.toolbarEnabled('shortcuts')) toolItems.push({ label: '快捷键帮助', icon: 'help-keyboard', run: () => this.toggleHelpOpen() })
+      if (!this.compactHeader && this.toolbarEnabled('shortcuts')) toolItems.push({ label: '快捷键帮助', icon: 'help-keyboard', run: () => this.toggleHelpOpen() })
       if (!this.larkDocConfig.layout.headerVisible) toolItems.push({ label: '文档操作…', run: (event) => this.openHeaderMenuFrom(event) })
       if (toolItems.length) sections.push({ id: 'toolsEnd', title: '视图与工具', items: toolItems })
       return sections
@@ -133,7 +131,8 @@ export default {
       if (this._toolbarRO) { this._toolbarRO.disconnect(); this._toolbarRO = null }
       if (this._fitRaf) { cancelAnimationFrame(this._fitRaf); this._fitRaf = null }
       if (this._toolbarDisposed || this._isBeingDestroyed || this._isDestroyed) return
-      const bar = this.larkDocConfig?.layout?.toolbarVisible === false ? null : this.$refs.root && this.$refs.root.querySelector('.lark-doc-toolbar')
+      const bar = this._mobileEditorMedia?.matches || this.larkDocConfig?.layout?.toolbarVisible === false
+        ? null : this.$refs.root?.querySelector('.lark-doc-toolbar')
       if (!bar) {
         this.closeMoreMenu()
         this.collapsedGroups = []
@@ -171,7 +170,7 @@ export default {
       try {
         const root = this.$refs.root
         const bar = root && root.querySelector('.lark-doc-toolbar')
-        if (!bar || this.larkDocConfig?.layout?.toolbarVisible === false) return
+        if (!bar || this._mobileEditorMedia?.matches || this.larkDocConfig?.layout?.toolbarVisible === false) return
         const current = () => !this._toolbarDisposed && !this._isBeingDestroyed && !this._isDestroyed
           && this.larkDocConfig?.layout?.toolbarVisible !== false && epoch === this._toolbarFitEpoch && this.$refs.root === root
           && root.querySelector('.lark-doc-toolbar') === bar
@@ -193,6 +192,7 @@ export default {
           if (!current()) return
           if (overflow()) { this.collapsedGroups.push(last); await this.$nextTick(); break }
         }
+        if (!this.collapsedGroups.length) this.closeMoreMenu()
       } finally {
         this._fitRunning = false
         if (this._fitPending) { this._fitPending = false; this.evaluateToolbarFit() }
@@ -229,6 +229,8 @@ export default {
       this.teardownMoreMenu()
     },
     teardownMoreMenu() {
+      this._moreHoverOpened = false
+      if (this._popupHoverClose?.owner === 'more') this.cancelPopupHoverClose('more')
       document.removeEventListener('pointerdown', this.onMoreMenuOutside, true)
       document.removeEventListener('keydown', this.onMoreMenuKeydown, true)
     },

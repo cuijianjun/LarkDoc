@@ -158,10 +158,10 @@ export const COMMENT_MORE_MENU = Object.freeze({
   hintLineHeight: 20,
 })
 
-/** 「私有评论」的标题与说明文案（04 §3.1④-3 A 原文，一字不改）。 */
+/** 「私有评论」的标题及当前访问规则。 */
 export const COMMENT_PRIVATE_SWITCH = Object.freeze({
   title: '私有评论',
-  hint: '开启后，仅提及的协作者、文档所有者、有文档管理权限的用户、内容编写者可见。',
+  hint: '仅有当前文档访问权的评论作者和已授权参与者可见。',
 })
 
 /**

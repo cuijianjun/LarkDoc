@@ -29,9 +29,11 @@ export const featureNames = ['math', 'mermaid', 'highlight', 'markdown', 'office
 // export / uiExtra / background 同样只有 UMD 形态：它们装的是源码里本就写成
 // `await import()` 的懒边界（点导出、开浮层、发起上传与转换），非 Element 宿主的
 // es/cjs 产物本来就是多 chunk，那条边界天生成立，不需要包。
-export const elementPackNames = [...featureNames, 'uiPanels', 'export', 'uiExtra', 'background']
+const elementOnlyPackNames = ['uiPanels', 'uiOverlays', 'export', 'uiExtra', 'background']
+export const elementPackNames = [...featureNames, ...elementOnlyPackNames]
+export const elementPackStyles = { ui: 'lark-doc-element.ui.css', uiPanels: 'lark-doc-element.panels.css' }
 // UMD 入口未必与特性同名：ui 的两半各有一个入口，es 形态仍用 ui.js 全集。
-const FEATURE_UMD_ENTRY = { ui: 'ui-core', uiPanels: 'ui-panels' }
+const FEATURE_UMD_ENTRY = { ui: 'ui-core', uiPanels: 'ui-panels', uiOverlays: 'ui-overlays' }
 const ELEMENT_UI_ENTRY = '\0lark-doc-element-ui:'
 const UI_FALLBACK_ENTRY = '\0lark-doc-ui-fallback'
 const PANEL_PRESENTATION_ENTRY = '\0lark-doc-panel-presentation'
@@ -70,13 +72,16 @@ const elementUiModules = {
   workspacePanels: ['createWorkspacePanels'],
   calloutTools: ['createCalloutTools'],
   topBarMenus: ['createTopBarMenus'],
+  desktopHeaderDetails: ['createDesktopHeaderDetails'],
+  scrollNavigator: ['createScrollNavigator'],
   blockHandleMenus: ['createBlockHandleMenus'],
 }
 // 侧栏面板/对话框/浮层：只有显式点击后才会变成可见，可以多等一个脚本。
 // 其余（选区、悬浮块、表格工具、顶栏菜单、命令面板、callout 工具）都要在
 // 鼠标一动时立刻出现，留在 ui 包。
-const uiPanelPackGroups = new Set(['panels', 'dialogs', 'overlays', 'templateLibrary', 'workspacePanels',
-  'reminder', 'searchPanel', 'revision', 'isvPanel', 'calendarSearch', 'notifications'])
+const uiPanelPackGroups = new Set(['panels', 'dialogs', 'templateLibrary', 'workspacePanels',
+  'reminder', 'searchPanel', 'revision', 'isvPanel', 'calendarSearch', 'notifications', 'desktopHeaderDetails', 'scrollNavigator'])
+const uiOverlayPackGroups = new Set(['extendedOverlays', 'colorPalette', 'overlays'])
 
 /**
  * 内核已完整持有、特性包只需转发的模块（阶段 5）。
@@ -102,6 +107,7 @@ export const sharedHostModules = {
   'src/ui/headingMenu.js': 'ui.headingMenu',
   'src/ui/diagramMenu.js': 'ui.diagramMenu',
   'src/ui/tooltip.js': 'ui.tooltip',
+  'src/ui/hoverTips.js': 'ui.hoverTips',
   'src/ui/select.js': 'ui.select',
   'src/core/emoji/identity-data.js': 'core.emojiIdentityData',
   'src/core/emoji/identity.js': 'core.emojiIdentity',
@@ -112,17 +118,22 @@ export const sharedHostModules = {
   'src/components/lark-doc/editor/constants.js': 'editor.constants',
 }
 const SHARED_HOST_ENTRY = '\0lark-doc-shared-host:'
-// 只有这两支包与内核同版本同目录部署，其余构建（es 特性包、element 单文件）
-// 必须自带实现，否则打包器宿主拿不到内核。
-const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd', 'feature:uiExtra:umd', 'feature:export:umd'])
+// 与内核同版本部署的按需包复用内核实现。标准构建仍自带实现。
+const SHARED_HOST_TARGETS = new Set(['feature:ui:umd', 'feature:uiPanels:umd', 'feature:uiOverlays:umd', 'feature:uiExtra:umd', 'feature:export:umd', 'feature:background:umd'])
 const sharedHostPaths = new Map(Object.entries(sharedHostModules).map(([file, name]) => [resolve(ROOT, file), name]))
 const sharedHostNames = new Map(Object.entries(sharedHostModules).map(([file, name]) => [name, resolve(ROOT, file)]))
-const uploadPmExports = {
+const lazyRuntimeExports = {
+  '@tiptap/core': ['getTextBetween', 'getTextSerializersFromSchema'],
   '@tiptap/pm/history': ['closeHistory'],
+  '@tiptap/pm/model': ['DOMSerializer', 'Fragment'],
   '@tiptap/pm/state': ['Plugin', 'PluginKey', 'TextSelection'],
   '@tiptap/pm/view': ['Decoration', 'DecorationSet'],
+  'ui.imageViewer': ['createImageViewer'],
+  'core.featureRegistration': ['registerFeature'],
 }
-const uploadPmImporters = new Set(['file-upload-tasks.js', 'image-insert.js'].map(file => resolve(ROOT, 'src/core/media', file)))
+const backgroundRuntimeImporters = new Set([
+  'src/core/media/file-upload-tasks.js', 'src/core/media/image-insert.js', 'src/editor/documentSnapshot.js',
+].map(file => resolve(ROOT, file)))
 
 /** Read only literal private presentation keys; never evaluate application code. */
 function privatePresentationShape(source, factoryName, namespaces) {
@@ -209,9 +220,10 @@ export function createBlockInteraction(dependencies){
 }`
 }
 
-function deferredVersioningPresentation(shape) {
+function deferredVersioningPresentation(shape, element) {
   const actions = shape.methods.filter(name => !['mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass'].includes(name))
-  return `import {readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
+  const loader = element ? 'loadFeature("ui.panels")' : 'loadFeature("ui",dependencies.loadVersionUi)'
+  return `import {loadFeature,readFeature} from ${JSON.stringify(resolve(ROOT, 'src/core/features/registry.js'))};
 export function createVersioningPresentation(dependencies){
  let implementation;
  return Object.fromEntries(Object.entries(${JSON.stringify(shape)}).map(([namespace,keys])=>[namespace,Object.fromEntries(keys.map(name=>[name,function(...args){
@@ -219,10 +231,22 @@ export function createVersioningPresentation(dependencies){
   if(implementation)return implementation[namespace][name].apply(this,args);
   const factory=readFeature('ui.ready')?.createVersioningPresentation;
   if(typeof factory==='function'){implementation=factory(dependencies);return implementation[namespace][name].apply(this,args);}
+  if(name==='loadVersions'||name==='selectVersion'){
+   const scope=this.versionOperationScope(), session=this.session, editor=this.editor;
+   const current=()=>!this._isBeingDestroyed&&this.session===session&&this.editor===editor&&this.versionContextMatches(session,this.versionProvider,editor)&&scope===this.versionOperationScope();
+   return ${loader}.then(api=>{
+    if(!current())return name==='loadVersions'?[]:null;
+    implementation||=api.createVersioningPresentation(dependencies);
+    return implementation.methods[name].apply(this,args);
+   },()=>{
+    if(current())this[name==='loadVersions'?'versionError':'versionPreviewError']='版本界面暂时无法加载，请重试';
+    return name==='loadVersions'?[]:null;
+   });
+  }
   if(${JSON.stringify(actions)}.includes(name))throw new Error('版本界面尚未加载');
   if(name==='mountVersionDocumentPreview')throw new Error('版本预览界面尚未加载');
   if(name==='versionDayGroups')return [];
-  if(name==='versionSelectedDiff')return null;
+  if(name==='versionSelectedDiff'||name==='versionCurrentProjection')return null;
   if(name==='versionTimelineClass')return {selected:false};
   return '';
  }]))]));
@@ -465,6 +489,22 @@ export const LAZY_PACKAGE_CALLERS = new Map([
   [resolve(ROOT, 'src/components/lark-doc/editor/topbarMoreMixin.js'), [
     ['src/ui/documentInformation.js', 'ui.documentInformation'],
   ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/bubbleMenuMixin.js'), [
+    ['src/ui/dialogs.js', 'ui.panels'],
+  ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/versioningMixin.js'), [
+    ['src/ui/dialogs.js', 'ui.panels'],
+    ['src/features/ui.js', 'ui.panels'],
+  ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/isvMixin.js'), [
+    ['src/ui/dialogs.js', 'ui.panels'],
+  ]],
+  [resolve(ROOT, 'src/core/media/upload.js'), [
+    ['src/core/media/http-upload.js', 'media.httpUpload'],
+  ]],
+  [resolve(ROOT, 'src/editor/nativeEditorHost.js'), [
+    ['src/core/media/file-upload-tasks.js', 'media.fileUploadTasks'],
+  ]],
   [resolve(ROOT, 'src/workspace/workspaceAIContextMethods.js'), [
     ['src/core/media/image-output.js', 'media.imageOutput'],
   ]],
@@ -476,12 +516,25 @@ export const LAZY_PACKAGE_CALLERS = new Map([
   ]],
   [resolve(ROOT, 'src/core/nodeviews/file-block.js'), [
     ['src/core/nodeviews/video-popups.js', 'media.videoPopups'],
+    ['src/core/nodeviews/file-download.js', 'media.fileDownload'],
   ]],
-  [resolve(ROOT, 'src/core/media/upload.js'), [
-    ['src/core/media/http-upload.js', 'media.httpUpload'],
+  [resolve(ROOT, 'src/core/nodeviews/poll.js'), [
+    ['src/core/nodeviews/poll-tools.js', 'ui.pollTools'],
   ]],
-  [resolve(ROOT, 'src/editor/nativeEditorHost.js'), [
-    ['src/core/media/file-upload-tasks.js', 'media.fileUploadTasks'],
+  [resolve(ROOT, 'src/editor/EditorController.js'), [
+    ['src/editor/documentSnapshot.js', 'document.snapshot'],
+  ]],
+  [resolve(ROOT, 'src/editor/nativeDocumentState.js'), [
+    ['src/editor/documentSnapshot.js', 'document.snapshot'],
+  ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/stageUiMixin.js'), [
+    ['src/ui/stage.js', 'ui.stage'],
+  ]],
+  [resolve(ROOT, 'src/components/lark-doc/editor/blockMenuMixin.js'), [
+    ['src/editor/templateSave.js', 'ui.templateSave'],
+  ]],
+  [resolve(ROOT, 'src/mount/domRenderer.js'), [
+    ['src/ui/dialogs.js', 'ui.importConfirmation'],
   ]],
 ])
 
@@ -529,7 +582,14 @@ function packageAlias(target = '') {
   return {
     name: 'lark-doc-package-alias',
     resolveId(source, importer) {
-      if (target === 'feature:background:umd' && uploadPmImporters.has(importer) && Object.prototype.hasOwnProperty.call(uploadPmExports, source)) return SHARED_HOST_ENTRY + source
+      if (SHARED_HOST_TARGETS.has(target) && importer === resolve(ROOT, 'src/features/ui-registry.js') && source === '../core/features/registry') return SHARED_HOST_ENTRY + 'core.featureRegistration'
+      if (target === 'feature:background:umd') {
+        if (backgroundRuntimeImporters.has(importer) && Object.prototype.hasOwnProperty.call(lazyRuntimeExports, source)) return SHARED_HOST_ENTRY + source
+      }
+      if (target === 'feature:uiOverlays:umd') {
+        if (importer === resolve(ROOT, 'src/editor/templateSave.js') && source === '@tiptap/pm/model') return SHARED_HOST_ENTRY + source
+        if (importer === resolve(ROOT, 'src/ui/stage.js') && source === '../core/nodeviews/image-viewer') return SHARED_HOST_ENTRY + 'ui.imageViewer'
+      }
       // 与内核同版本部署的两支 UI 包：重复模块只留转发 shim，实现体读内核那一份。
       if (SHARED_HOST_TARGETS.has(target) && importer && source.startsWith('.') && !importer.startsWith('\0')) {
         const file = resolve(dirname(importer), source)
@@ -547,6 +607,8 @@ function packageAlias(target = '') {
       if (element && importer === resolve(ROOT, 'src/components/lark-doc/editor/blockMenuMixin.js') && source === '../../../features/ui') return UI_FALLBACK_ENTRY
       if (deferredUi && importer === resolve(ROOT, 'src/ui/workspace.js') && source === './workspacePanels') return ELEMENT_UI_ENTRY + 'workspacePanels'
       if (deferredUi && importer === resolve(ROOT, 'src/ui/topBar.js') && source === './topBarMenus') return ELEMENT_UI_ENTRY + 'topBarMenus'
+      if (deferredUi && importer === resolve(ROOT, 'src/ui/topBar.js') && source === './desktopHeaderDetails') return ELEMENT_UI_ENTRY + 'desktopHeaderDetails'
+      if (deferredUi && importer === resolve(ROOT, 'src/ui/topBar.js') && source === './scrollNavigator') return ELEMENT_UI_ENTRY + 'scrollNavigator'
       if (deferredUi && importer === resolve(ROOT, 'src/ui/blockHandle.js') && source === './blockHandleMenus') return ELEMENT_UI_ENTRY + 'blockHandleMenus'
       if (deferredUi && importer?.startsWith(resolve(ROOT, 'src/components/lark-doc/editor') + '/') && source.startsWith('.')) {
         const file = resolve(dirname(importer), source)
@@ -564,6 +626,9 @@ function packageAlias(target = '') {
       }
       if (deferredUi && importer?.startsWith(resolve(ROOT, 'src/components/lark-doc/editor') + '/') && source.startsWith('../../../ui/')) {
         const name = source.slice('../../../ui/'.length).replace(/\.js$/, '')
+        // These async callers await the original dialog factory before opening.
+        if (name === 'dialogs' && ['bubbleMenuMixin.js', 'versioningMixin.js', 'isvMixin.js'].some(file =>
+          importer === resolve(ROOT, 'src/components/lark-doc/editor', file))) return null
         if (elementUiModules[name]) return ELEMENT_UI_ENTRY + name
       }
       // 独立 Element 已注册同目录特性脚本；只替换出口层的重复实现，不影响特性包自身。
@@ -636,7 +701,7 @@ function packageAlias(target = '') {
     load(id) {
       if (id.startsWith(SHARED_HOST_ENTRY)) {
         const name = id.slice(SHARED_HOST_ENTRY.length)
-        if (Object.prototype.hasOwnProperty.call(uploadPmExports, name)) return sharedHostShim(name, uploadPmExports[name])
+        if (Object.prototype.hasOwnProperty.call(lazyRuntimeExports, name)) return sharedHostShim(name, lazyRuntimeExports[name])
         this.addWatchFile?.(sharedHostNames.get(name))
         return sharedHostShim(name)
       }
@@ -667,7 +732,7 @@ function packageAlias(target = '') {
       }
       if (id === VERSIONING_PRESENTATION_ENTRY) {
         this.addWatchFile?.(VERSIONING_PRESENTATION_SOURCE)
-        return deferredVersioningPresentation(versioningPresentationShape())
+        return deferredVersioningPresentation(versioningPresentationShape(), element)
       }
       if (id === SHARE_INTERACTION_ENTRY) {
         this.addWatchFile?.(SHARE_INTERACTION_SOURCE)
@@ -687,18 +752,18 @@ function packageAlias(target = '') {
         : name === 'revision' ? ',s=>s.items&&s.items.length>0'
           : name === 'overlays' ? ',s=>s.sharePopoverOpen||s.permissionDialogOpen||s.secureLinkConfirmOpen||s.passwordDialogOpen||s.exportOpen||s.exportToast||s.exportPendingOperationId||s.imageShare'
             : name === 'cellPlusTools' || name === 'calloutTools' ? ',s=>s.visible'
-              : name === 'workspacePanels' ? ',s=>(s.templateOpen&&s.templatesEnabled)||(s.historyOpen&&s.historyEnabled)||(s.aiOpen&&s.aiEnabled)||s.notice'
+              : name === 'workspacePanels' ? ',s=>(s.templateOpen&&s.templatesEnabled)||(s.historyOpen&&s.historyEnabled)||(s.aiOpen&&s.aiEnabled)||s.importOpener||s.notice'
                 : name === 'topBarMenus' ? ',s=>s.headerVisible!==false&&((s.createMenuOpen&&!s.readonly)||(s.topbarMoreOpen&&!s.moreDismissed))'
-                  : name === 'blockHandleMenus' ? ',s=>s.open'
+                  : name === 'scrollNavigator' ? ',s=>s.enabled&&s.content?.isConnected&&window.matchMedia?.("(max-width: 760px) and (pointer: coarse)").matches'
+                    : name === 'blockHandleMenus' ? ',s=>s.open'
           : ''
       return `import {createDeferredUi} from ${JSON.stringify(resolve(ROOT, 'src/features/element-ui.js'))};` +
         (name === 'panels' ? `export {createOutlinePanel} from ${JSON.stringify(resolve(ROOT, 'src/ui/outlinePanel.js'))};` : '') +
         elementUiModules[name].map(factory => {
           const predicate = factory === 'createCommentPanel' ? ',s=>s.open||s.documentInline||s.launcher?.visible'
             : factory === 'createVersionToast' ? ',s=>s.open||s.notice' : visible
-          // Element 侧只认自己那一个包：B 包的工厂绝不去触发 A 包的加载槽位。
-          // 非 Element 宿主没有拆包，两半都从 features/ui.js 全量出口拿。
-          const pack = element ? (uiPanelPackGroups.has(name) ? 'ui.panels' : 'ui') : 'ui'
+          const elementPack = uiOverlayPackGroups.has(name) ? 'ui.overlays' : uiPanelPackGroups.has(name) ? 'ui.panels' : 'ui'
+          const pack = element ? elementPack : 'ui'
           const fallback = element ? 'undefined' : `()=>import(${JSON.stringify(resolve(ROOT, 'src/features/ui.js'))}).then(module=>module.uiApi)`
           const signature = name === 'bubbleBar' ? '(host,options)' : 'options'
           const options = name === 'bubbleBar' ? '{...options,host}' : 'options'
@@ -733,6 +798,9 @@ function externals(target, format) {
   }
 }
 
+const deferredElementStyles = new Set(['src/styles/versioning.css', 'src/styles/deferred-ui.css',
+  'src/styles/panel-tools.css', 'src/components/lark-doc/template-library.css'].map(file => resolve(ROOT, file)))
+
 export function inlineCssImports({ deferredVersioning = false } = {}) {
   return {
     postcssPlugin: 'lark-doc-inline-css-imports',
@@ -742,7 +810,7 @@ export function inlineCssImports({ deferredVersioning = false } = {}) {
       const inline = (css, directory, seen = new Set()) => css.replace(/@import\s+["']([^"']+)["']\s*;?/g, (statement, request) => {
         if (!request.startsWith('.') || !request.endsWith('.css')) return statement
         const file = resolve(directory, request)
-        if (deferredVersioning && ['src/styles/versioning.css', 'src/styles/deferred-ui.css', 'src/components/lark-doc/template-library.css'].some(name => file === resolve(ROOT, name))) return ''
+        if (deferredVersioning && deferredElementStyles.has(file)) return ''
         if (!existsSync(file) || seen.has(file)) return statement
         seen.add(file)
         result.messages.push({ type: 'dependency', plugin: 'lark-doc-inline-css-imports', file })
@@ -822,7 +890,7 @@ function plugins(target, cssFile) {
       }] : [])],
       inject: cssInjection(target),
       extract: cssFile || false,
-      minimize: target === 'element' || target === 'elementRuntime' || target === 'elementEsm' || target === 'feature:math:umd' || target === 'feature:ui:umd',
+      minimize: ['element', 'elementRuntime', 'elementEsm', 'feature:math:umd', 'feature:ui:umd', 'feature:uiPanels:umd'].includes(target),
       sourceMap: false,
     }),
   ]
@@ -1000,7 +1068,7 @@ function featureTarget(name, format = 'es') {
     inlineDynamicImports: true,
     name: format === 'umd' ? `LarkDocFeature${name[0].toUpperCase()}${name.slice(1)}` : undefined,
     css: format === 'umd'
-      ? (name === 'ui' ? 'lark-doc-element.ui.css' : null)
+      ? (elementPackStyles[name] || null)
       : (name === 'math' ? 'features/math.css' : null),
   }
 }
@@ -1068,8 +1136,6 @@ export function getRollupConfig(target = process.env.ROLLUP_TARGET || 'esm') {
 }
 
 export const ROLLUP_TARGETS = Object.keys(targets)
-// uiPanels 只有 UMD 形态（非 Element 宿主从 features/ui.js 取全集），所以它不进
-// featureNames 的 es/umd 成对展开，单独挂在最后。
-export const FEATURE_TARGETS = [...featureNames.flatMap((name) => [`feature:${name}`, `feature:${name}:umd`]), 'feature:uiPanels:umd', 'feature:export:umd', 'feature:uiExtra:umd', 'feature:background:umd']
+export const FEATURE_TARGETS = [...featureNames.flatMap(name => [`feature:${name}`, `feature:${name}:umd`]), ...elementOnlyPackNames.map(name => `feature:${name}:umd`)]
 const defaultTarget = process.env.ROLLUP_TARGET?.split(',')[0].trim() || undefined
 export default getRollupConfig(['features', 'all', 'core'].includes(defaultTarget) ? 'esm' : defaultTarget)

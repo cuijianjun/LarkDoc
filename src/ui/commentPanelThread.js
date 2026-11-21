@@ -19,7 +19,7 @@ export function createThreadCard(ctx) {
   const {
     state, call, onAction, richInput, updateRichInput, bindSubmitShortcut, bindViewerEscape,
     imageDraftNodes, renderMentionPicker, isReferenceDrawer, hasInlineDocument, isMobile,
-    moveMobile, requestDeleteConfirmation, cancelReplyMenuClose, hoverReply, enterReplyMenu,
+    moveMobile, requestDeleteConfirmation, requestResolveConfirmation, cancelReplyMenuClose, hoverReply, enterReplyMenu,
     leaveReplyMenu, trackReplyHover, cancelReactionClose, scheduleReactionClose,
     isNativeThreadOpen,
   } = ctx
@@ -41,6 +41,8 @@ export function createThreadCard(ctx) {
     controls.className = 'lark-doc-comment-controls'
     const drawerActions = document.createElement('details'); drawerActions.className = 'lark-doc-comment-drawer-actions'
     const drawerSummary = document.createElement('summary'); drawerSummary.setAttribute('aria-label', '评论操作'); drawerSummary.appendChild(iconNode('more', 18))
+    // A focus-driven render during the compatibility press can retarget the touch click.
+    drawerSummary.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation() })
     drawerActions.appendChild(drawerSummary)
     head.appendChild(quote)
     head.appendChild(controls)
@@ -249,6 +251,7 @@ export function createThreadCard(ctx) {
       editSave,
       translation,
       translationHint,
+      translationLabel,
       translationSelect,
       translationLanguages,
       translationInput,
@@ -301,7 +304,10 @@ export function createThreadCard(ctx) {
           dots.setAttribute('aria-hidden', 'true')
           button.appendChild(dots)
         }
-        onAction(button, () => call('onControl', control.id, entry.threadId))
+        onAction(button, () => {
+          if (control.id === 'resolve' && state.confirmAnchoredResolution && isMobile()) requestResolveConfirmation(entry.threadId, button)
+          else call('onControl', control.id, entry.threadId)
+        })
         cell.appendChild(button)
       }
       entry.controls.appendChild(cell)
@@ -668,6 +674,8 @@ export function createThreadCard(ctx) {
       entry.translationInput.hidden = !customLanguage
       setInputValue(entry.translationInput, translationState.language || '')
       entry.translationInput.readOnly = !!translationState.busy || !!translationState.pending
+      if (translationState.fixedLanguage) entry.translationLabel.remove()
+      else if (!entry.translationLabel.isConnected) entry.translationHint.after(entry.translationLabel)
       setText(entry.translationMessage, translationState.current === false ? '来源已失效或当前不可见，请重新选择回复。' : (translationState.message || ''))
       setText(entry.translationResult, translationState.translatedText || '')
       entry.translationSubmit.disabled = !!translationState.busy || !!translationState.pending || translationState.current === false

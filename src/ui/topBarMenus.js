@@ -14,6 +14,10 @@ export function createTopBarMenus(options) {
   createMenu.setAttribute('aria-label', '新建')
   const createList = document.createElement('div')
   createList.className = 'lark-doc-create-menu-list'
+  const createChildren = document.createElement('div')
+  createChildren.dataset.createSubmenu = ''
+  createChildren.setAttribute('role', 'menu')
+  createChildren.setAttribute('aria-label', '上传及导入')
   createMenu.appendChild(createList)
   const moreMenu = document.createElement('div')
   moreMenu.className = 'lark-doc-topbar-more'
@@ -85,13 +89,17 @@ export function createTopBarMenus(options) {
     if (shortcuts.parentNode !== moreMenu) moreMenu.insertBefore(shortcuts, moreList)
   }
   const menuRows = new Map()
+  let createChildrenOpen = false, submenuHover
   ;[createMenu, moreMenu, submenu].forEach(menu => {
     menu.addEventListener('keydown', event => {
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
         if (menu !== createMenu) dismissMore(true)
-        else { call('closeCreateMenu'); (window.innerWidth <= 760 ? mobileButton : createButton).focus() }
+        else if (createChildrenOpen && createChildren.contains(event.target)) {
+          createChildrenOpen = false; update()
+          createList.querySelector('[data-create-menu-id="import"]')?.focus()
+        } else { call('closeCreateMenu'); (window.innerWidth <= 760 ? mobileButton : createButton).focus() }
         return
       }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -108,7 +116,7 @@ export function createTopBarMenus(options) {
   function updateMenu(parent, entries, kind, state) {
     const children = entries.map((entry, index) => {
       const item = entry.item || entry
-      const id = `${kind}:${item.id || index}`
+      const id = `${kind}:${item.id || index}:${item.value ?? ''}`
       let node = menuRows.get(id)
       if (!node) {
         node = document.createElement(entry.kind === 'divider' || entry.kind === 'group' ? 'div' : 'button')
@@ -116,14 +124,30 @@ export function createTopBarMenus(options) {
           node.type = 'button'
           node.setAttribute('role', 'menuitem')
           node.addEventListener('click', event => {
-            if (!node.disabled && node.isConnected) call(kind === 'create' ? 'createMenuItem' : kind === 'more' ? 'topbarMoreItem' : 'topbarMoreSubmenuItem', node._item, event)
+            clearTimeout(submenuHover)
+            if (node.disabled || !node.isConnected) return
+            if (kind === 'create' && node._item.children) {
+              createChildrenOpen = !createChildrenOpen
+              update()
+              if (createChildrenOpen) createChildren.querySelector('button:not(:disabled)')?.focus({ preventScroll: true })
+            } else call(kind.startsWith('create') ? 'createMenuItem' : kind === 'more' ? 'topbarMoreItem' : 'topbarMoreSubmenuItem', node._item, event)
           })
-          if (kind === 'more') node.addEventListener('mouseenter', () => call('hoverTopbarMoreItem', node._item))
+          if (kind === 'more') {
+            node.addEventListener('mouseenter', () => { if (!options.readState().compactHeader) call('hoverTopbarMoreItem', node._item) })
+            node.addEventListener('pointerenter', event => {
+              if (!options.readState().compactHeader || event.pointerType !== 'mouse' || node._item.kind !== 'submenu' || node.disabled) return
+              clearTimeout(submenuHover)
+              submenuHover = setTimeout(() => {
+                if (node.isConnected && !node.disabled && node.getAttribute('aria-expanded') !== 'true') call('topbarMoreItem', node._item, { detail: 1 })
+              }, 450)
+            })
+            node.addEventListener('pointerleave', () => clearTimeout(submenuHover))
+          }
         }
         menuRows.set(id, node)
       }
       node._item = item
-      node.className = entry.kind === 'divider' ? (kind === 'create' ? 'lark-doc-create-menu-divider' : 'lark-doc-topbar-more-divider') : entry.kind === 'group' ? 'lark-doc-create-menu-group' : kind === 'create' ? 'lark-doc-create-menu-item' : kind === 'sub' ? 'lark-doc-topbar-more-submenu-item' : 'lark-doc-topbar-more-item'
+      node.className = entry.kind === 'divider' ? (kind === 'create' ? 'lark-doc-create-menu-divider' : 'lark-doc-topbar-more-divider') : entry.kind === 'group' ? 'lark-doc-create-menu-group' : kind.startsWith('create') ? 'lark-doc-create-menu-item' : kind === 'sub' ? 'lark-doc-topbar-more-submenu-item' : 'lark-doc-topbar-more-item'
       const label = entry.kind === 'divider' ? '' : item.label
       const renderLabel = `${label}|${item.icon || ''}|${item.arrow || item.affordance || ''}`
       if (node._renderLabel !== renderLabel) {
@@ -153,7 +177,7 @@ export function createTopBarMenus(options) {
       if (node.tagName === 'BUTTON') {
         node.classList.toggle('is-submenu', item.kind === 'submenu')
         node.classList.toggle('is-switch', item.kind === 'switch')
-        setAttr(node, 'data-create-menu-id', kind === 'create' ? item.id : null)
+        setAttr(node, 'data-create-menu-id', kind.startsWith('create') ? item.id : null)
         const parentItem = (state.topbarMoreRows || []).find(row => row.item?.id === state.topbarMoreSubmenu)?.item
         node.disabled = item.enabled === false || item.disabled === true || (kind === 'create' && !!state.readonly) || (kind === 'sub' && parentItem?.enabled === false)
         node.title = item.title || item.label || ''
@@ -164,8 +188,12 @@ export function createTopBarMenus(options) {
         setAttr(node, 'data-topbar-more-id', kind === 'more' ? item.id : null)
         const capability = options.capabilities[kind === 'sub' ? state.topbarMoreSubmenu : item.id]
         setAttr(node, 'data-capability', capability || null)
-        setAttr(node, 'aria-haspopup', item.kind === 'submenu' ? 'menu' : null)
-        setAttr(node, 'aria-expanded', item.kind === 'submenu' ? String(state.topbarMoreSubmenu === item.id) : null)
+        setAttr(node, 'aria-haspopup', item.kind === 'submenu' || item.children ? 'menu' : null)
+        setAttr(node, 'aria-expanded', item.children ? String(createChildrenOpen) : item.kind === 'submenu' ? String(state.topbarMoreSubmenu === item.id) : null)
+        if (item.kind !== 'switch' && typeof item.checked === 'boolean') {
+          node.setAttribute('role', 'menuitemradio')
+          setAttr(node, 'aria-checked', String(item.checked))
+        }
         if (item.kind === 'switch') {
           node.setAttribute('role', 'menuitemcheckbox')
           const checked = typeof item.checked === 'boolean' ? item.checked : item.id === 'show-author' ? !!state.topbarMoreShowAuthor : !!state.topbarMoreOffline
@@ -191,8 +219,14 @@ export function createTopBarMenus(options) {
   function update() {
     if (isDisposed()) return
     const state = options.readState(), visible = state.headerVisible !== false
+    const createOpen = state.createMenuOpen && (!state.compactHeader || window.innerWidth <= 760)
+    if (!createOpen || !visible || state.readonly) createChildrenOpen = false
     const moreWasOpen = moreMenu.isConnected
+    submenu.classList.toggle('is-width-settings', state.compactHeader === true && state.topbarMoreSubmenu === 'width')
     updateMenu(createList, state.createMenuRows || [], 'create', state)
+    const children = (state.createMenuRows || []).find(row => row.children)?.children
+    if (createChildrenOpen && children) updateMenu(createChildren, children, 'create-child', state)
+    mountNode(createMenu, createChildren, createChildrenOpen && !!children)
     updateMenu(moreList, state.topbarMoreRows || [], 'more', state)
     syncShortcuts(state)
     setAttr(submenu, 'aria-label', `更多-${state.topbarMoreSubmenu || ''}`)
@@ -202,7 +236,7 @@ export function createTopBarMenus(options) {
     applyStyle(submenu, Object.fromEntries(Object.entries(state.topbarMoreSubmenuStyle || {}).map(([key, value]) => [key, typeof value === 'number' ? `${value}px` : value])))
     mountNode(moreMenu, submenu, !!state.topbarMoreSubmenu && !!state.topbarMoreSubmenuItems?.length)
     syncChildren(menus, [
-      { node: createMenu, on: visible && !!state.createMenuOpen && !state.readonly },
+      { node: createMenu, on: visible && !!createOpen && !state.readonly },
       { node: moreMenu, on: visible && !!state.topbarMoreOpen && !options.getMoreDismissed() },
     ])
     if (options.host) mountNode(options.host, menus, menus.children.length > 0)
@@ -214,6 +248,7 @@ export function createTopBarMenus(options) {
   function destroy() {
     if (destroyed) return
     destroyed = true
+    clearTimeout(submenuHover)
     menuDocument.removeEventListener('pointerdown', closeMoreOutside)
     menuDocument.removeEventListener('keydown', closeMoreEscape)
     if (activeMoreMenus.get(menuDocument) === moreMenu) activeMoreMenus.delete(menuDocument)

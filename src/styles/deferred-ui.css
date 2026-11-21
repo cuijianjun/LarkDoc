@@ -2110,6 +2110,12 @@
 .lark-doc .lark-doc-template-save-dialog label { display: grid; gap: 8px; }
 .lark-doc .lark-doc-template-save-dialog input { box-sizing: border-box; height: 36px; padding: 6px 10px; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-text); }
 .lark-doc .lark-doc-template-save-dialog footer { display: flex; justify-content: flex-end; gap: 8px; }
+.lark-doc .lark-doc-widget-dialog { width: min(560px, 100%); }
+.lark-doc .lark-doc-widget-navigation { display: flex; gap: 8px; }
+.lark-doc .lark-doc-widget-navigation button[aria-pressed="true"] { color: var(--ld-brand-content); background: var(--ld-bg-selected); }
+.lark-doc .lark-doc-widget-list > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-widget-list button { flex: 0 0 auto; }
+.lark-doc .lark-doc-widget-dialog p[role="status"]:empty { display: none; }
 .lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
 @media (min-width: 761px) {
   .lark-doc .lark-doc-link-tools { position: fixed; z-index: 600; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 440px; height: 42px; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-bubble); color: var(--ld-text); font-size: 14px; }

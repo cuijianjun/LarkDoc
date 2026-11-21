@@ -12,7 +12,7 @@ import FeatureDemo from '../examples/FeatureDemo.vue'
 
 ## 显示策略
 
-格式工具栏默认隐藏。设置 `layout.toolbarVisible: true` 显式显示；只设置 `layout.toolbarFixed: true` 时兼容显示并吸顶。显式 `toolbarVisible: false` 优先，即使 `toolbarFixed: true` 也不显示。`toolbarKeys` 和 `toolbarExcludes` 只裁剪按钮，不负责开启工具栏。
+桌面默认显示顶部格式工具栏。用 `layout.toolbarVisible: false` 隐藏，用 `layout.toolbarFixed: true` 吸顶。手机窄屏触控时，底部工具栏在编辑正文时出现。`toolbarKeys` 和 `toolbarExcludes` 控制显示的按钮。
 
 动态切换可见性时，尺寸观察器随工具栏重新绑定或释放；隐藏时关闭「更多」菜单。
 

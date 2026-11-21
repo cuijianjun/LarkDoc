@@ -1,4 +1,4 @@
-import { INSERT_TEMPLATES } from '../components/lark-doc/templates'
+import { INSERT_TEMPLATES, TEMPLATES } from '../components/lark-doc/templates'
 import { nativeDocumentStateMethods } from './nativeDocumentState'
 import { bindMobileEditorControls, mobileEditorMethods } from './mobileEditorControls'
 import { TextSelection } from '@tiptap/pm/state'
@@ -53,6 +53,9 @@ import p6bMixin from '../components/lark-doc/editor/p6bMixin'
 import overlaysUiMixin from '../components/lark-doc/editor/overlaysUiMixin'
 import extendedOverlaysUiMixin from '../components/lark-doc/editor/extendedOverlaysUiMixin'
 
+const compactTemplates = [...INSERT_TEMPLATES, ...TEMPLATES.filter(template =>
+  !INSERT_TEMPLATES.some(item => item.id === template.id || item.label === template.label))]
+
 const uiDomains = [
   ['TopBar', 'refreshTopBar'], ['Dialogs', 'refreshDialogs'], ['Overlays', 'refreshOverlays'],
   ['ExtendedOverlays', 'refreshExtendedOverlays'],
@@ -81,6 +84,7 @@ const options = {
   } },
   computed: {
     larkDocConfig() { return this.editorConfig },
+    compactHeader() { return this.larkDocConfig.layout.compactHeader === true },
     maxBlockIndent() { return clampBlockIndent(this.larkDocConfig.limits.maxIndent) },
     effectiveMaxLength() { return Math.max(0, Number(this.larkDocConfig.limits.maxLength) || 0) },
     effectiveImageMaxSize() { return this.larkDocConfig.limits.maxImageSize },
@@ -96,6 +100,8 @@ const options = {
     },
   },
   watch: {
+    'larkDocConfig.features.comments'() { this.refreshCommentDecorations(); this.refreshPanels() },
+    compactHeader() { this.refreshCommentDecorations() },
     mobileEditorActive() { this.refreshToolbar() },
     mobileEditorStyle() { this.refreshToolbar() },
     colorPaletteOpen() {
@@ -224,6 +230,7 @@ const options = {
           openLibraryDocument: id => this.openMobileLibraryDocument(id), mobileHostAction: action => this.onMobileHeaderAction(action),
           toggleOutline: () => { this.toggleOutlineOpen(); this.refreshTopBar() },
           toggleNotify: event => this.toggleNotify(event),
+          openSearch: () => { if (this.shareCan('canView') && this.toolbarEnabled('search')) this.openSearch('find') },
           toggleCreateMenu: event => this.toggleCreateMenu(event),
           toggleTopbarMore: event => this.toggleTopbarMore(event),
           createMenuItem: item => this.onCreateMenuItem(item),
@@ -243,8 +250,18 @@ const options = {
     },
     refreshTopBar() {
       if (!this._topBarUi) return
+      const awareness = this.collab?.extensions?.find(extension => extension.name === 'collaborationCaret')?.options?.provider?.awareness
+      if (this._headerAwareness !== awareness) {
+        this._headerAwareness?.off('change', this.refreshTopBar)
+        this._headerAwareness = awareness
+        awareness?.on('change', this.refreshTopBar)
+      }
+      this.$refs.root.classList.toggle('lark-doc-compact-header', this.compactHeader)
       this._topBarUi.update({
         ...toolbarUiMixin.methods.buildTopBarState.call(this),
+        ...(awareness && this.shareCan('canView') ? { collaborationUsers: [...awareness.getStates().values()].map(state => state.user).filter(Boolean) } : {}),
+        compactHeader: this.compactHeader,
+        searchEnabled: this.shareCan('canView') && this.toolbarEnabled('search'),
         outlineOpen: this.outlineOpen,
         outlineVisible: this.larkDocConfig.layout.outlineVisible,
         notifyOpen: this.notifyOpen,
@@ -265,8 +282,8 @@ const options = {
       this.parkActionsHost()
     },
     parkActionsHost() {
-      const { actionsHost, actionsPark, toolbarHost } = this.$refs
-      if (!this.larkDocConfig.layout.headerVisible && !this.larkDocConfig.layout.toolbarVisible) {
+      const { actionsHost, actionsPark } = this.$refs
+      if (!this.larkDocConfig.layout.headerVisible && (this._mobileEditorMedia?.matches || !this.larkDocConfig.layout.toolbarVisible)) {
         actionsPark.classList.add('lark-doc-header-actions')
         actionsPark.style.display = 'flex'
         if (actionsHost.parentNode !== actionsPark) actionsPark.appendChild(actionsHost)
@@ -274,8 +291,8 @@ const options = {
       }
       actionsPark.classList.remove('lark-doc-header-actions')
       actionsPark.style.display = ''
-      if (this.larkDocConfig.layout.toolbarVisible !== false && this._toolbarUi && this._toolbarUi.el.parentNode !== toolbarHost.parentNode) toolbarHost.before(this._toolbarUi.el)
-      toolbarUiMixin.methods.parkActionsHost.call(this)
+      if (this.compactHeader && actionsHost.parentNode !== actionsPark) actionsPark.appendChild(actionsHost)
+      else toolbarUiMixin.methods.parkActionsHost.call(this)
     },
     syncOutlineReopen() {
       const button = this._outlineReopen || this.$refs.root.querySelector('.lark-doc-outline-reopen')
@@ -388,107 +405,16 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       foldPersistKey: { get: (_host, source, input) => input.foldPersistKey ?? source.sessionInstance?.documentId ?? input.documentId ?? 'local' },
       readonly: { get: (_host, source, input) => !!(input.readonly || source.forcedReadonly || source.importing) },
       config: { get: (_host, source) => source.editorConfig },
-      templates: { get: (_host, source, input) => Array.isArray(input.templates) ? source.templateItems : INSERT_TEMPLATES },
+      templates: { get: (_host, source, input) => {
+        if (Array.isArray(input.templates)) return source.templateItems
+        return source.editorConfig.layout.compactHeader ? compactTemplates : INSERT_TEMPLATES
+      } },
       resolveImageFile: { get: () => resolveImageFile },
     },
   })
   const host = runtime.host
   host._backgroundGate = createActivityGate()
   const listeners = []
-  let themeUi = null
-  function mountThemeUi() {
-    const actions = shell.actionsHost
-    if (!actions || themeUi) return
-    const document = shell.root.ownerDocument
-    const readingButton = document.createElement('button')
-    readingButton.type = 'button'
-    readingButton.className = 'lark-doc-reading-entry-button'
-    readingButton.setAttribute('aria-label', '阅读模式')
-    readingButton.textContent = '阅读'
-    readingButton.addEventListener('click', () => { host.toggleReading?.(); refreshThemeUi?.() })
-    const commentButton = document.createElement('button')
-    commentButton.type = 'button'
-    commentButton.className = 'lark-doc-comment-entry-button'
-    commentButton.setAttribute('aria-label', '全文评论')
-    commentButton.textContent = '评论'
-    commentButton.addEventListener('click', () => {
-      if (host.commentSidebarOpen !== true) host.commentSidebarOpen = true
-      host.updateCommentPanels?.()
-      host.refreshPanels?.()
-      host.updateCommentLayerBounds?.()
-    })
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'lark-doc-theme-button'
-    button.setAttribute('aria-label', '主题')
-    button.setAttribute('aria-haspopup', 'menu')
-    button.setAttribute('aria-expanded', 'false')
-    button.textContent = '主题'
-    const menu = document.createElement('div')
-    menu.className = 'lark-doc-dropdown lark-doc-theme-menu'
-    menu.setAttribute('role', 'menu')
-    menu.setAttribute('aria-label', '主题')
-    const closeTheme = (restore = false) => {
-      menu.hidden = true
-      button.setAttribute('aria-expanded', 'false')
-      if (restore && button.isConnected) button.focus()
-    }
-    const choices = [
-      ['default', '经典绿色', 'light'],
-      ['feishu-light', '飞书浅色', 'light'],
-      ['feishu-dark', '飞书暗色', 'dark'],
-    ]
-    const rows = choices.map(([id, label, theme]) => {
-      const row = document.createElement('button')
-      row.type = 'button'
-      row.className = 'lark-doc-theme-item'
-      row.setAttribute('role', 'menuitemradio')
-      row.dataset.themeChoice = id
-      row.textContent = label
-      row.addEventListener('click', () => {
-        const controller = shell.root._larkDocTheme
-        if (!controller) return
-        controller.setTheme(theme, 'auto', id === 'default' ? 'default' : 'feishu')
-        closeTheme(true)
-        refreshThemeUi()
-      })
-      menu.appendChild(row)
-      return row
-    })
-    const refreshThemeUi = () => {
-      readingButton.textContent = host.reading ? '退出阅读' : '阅读'
-      readingButton.setAttribute('aria-label', host.reading ? '退出阅读' : '阅读模式')
-      const controller = shell.root._larkDocTheme
-      const snapshot = controller?.getTheme?.()
-      const choice = snapshot?.preset === 'feishu' ? (snapshot.resolved?.theme === 'dark' ? 'feishu-dark' : 'feishu-light') : 'default'
-      rows.forEach(row => row.setAttribute('aria-checked', String(row.dataset.themeChoice === choice)))
-    }
-    button.addEventListener('click', () => {
-      menu.hidden = !menu.hidden
-      button.setAttribute('aria-expanded', String(!menu.hidden))
-      if (!menu.hidden) {
-        const rect = button.getBoundingClientRect()
-        menu.style.top = `${Math.max(8, Math.min(Math.round(rect.bottom + 4), document.defaultView.innerHeight - menu.offsetHeight - 8))}px`
-        menu.style.left = `${Math.max(8, Math.round(rect.right - 144))}px`
-        refreshThemeUi()
-        rows.find(row => row.getAttribute('aria-checked') === 'true')?.focus()
-      }
-    })
-    listen(actions, 'lark-doc-actions-dismiss', () => closeTheme())
-    listen(actions, 'keydown', event => {
-      if (menu.hidden || (!menu.contains(event.target) && event.target !== button)) return
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeTheme(true); return }
-      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-      event.preventDefault(); event.stopPropagation()
-      const index = rows.indexOf(document.activeElement)
-      rows[event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + rows.length) % rows.length].focus()
-    })
-    listen(document, 'pointerdown', event => { if (!menu.hidden && !menu.contains(event.target) && event.target !== button) closeTheme() })
-    listen(document.defaultView, 'resize', () => closeTheme())
-    menu.hidden = true
-    actions.append(readingButton, commentButton, button, menu)
-    themeUi = { readingButton, commentButton, button, menu, refresh: refreshThemeUi }
-  }
   let editorContainerObserver = null
   const listen = (target, type, handler, capture = false) => {
     target.addEventListener(type, handler, capture)
@@ -567,7 +493,6 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
         editor.off('blur', onEditorBlur)
         editor.on('blur', onBlur)
       })
-      mountThemeUi()
       uiDomains.forEach(([domain]) => host[`mount${domain}`]())
       runtime.mount()
       bindSession()
@@ -661,6 +586,7 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host.$nextTick(() => host.refreshTableOverlays?.())
     },
     destroy() {
+      host._headerAwareness?.off('change', host.refreshTopBar)
       host.cancelFileUploads('destroy'); host._fileUploadTasks?.dispose()
       host._blockHandleAnchor = null
       resolveImageFile.cancelAll?.('destroy')
@@ -690,7 +616,6 @@ export function createNativeEditorHost({ shell, props, state, emit, onChange, re
       host._activeHeadingTimer = null
       ;['pendingStateFrame', '_outlineFrame'].forEach(key => { if (host[key]) cancelAnimationFrame(host[key]) })
       uiDomains.slice().reverse().forEach(([domain]) => host[`destroy${domain}`]())
-      if (themeUi) { themeUi.readingButton.remove(); themeUi.commentButton.remove(); themeUi.button.remove(); themeUi.menu.remove(); themeUi = null }
       runtime.destroy()
       panelHost.remove()
     },

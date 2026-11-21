@@ -4,29 +4,40 @@ import { hasFeature, loadFeature, registerFeature } from '../core/features/regis
 const script = typeof document !== 'undefined' ? document.currentScript : null
 const base = script && script.src ? new URL('.', script.src).href : null
 const scripts = new Map()
-// ui 组的样式独立成表，跟脚本同目录同位部署；这里只负责把 <link> 提前塞进去，
-// 让样式与 JS 并行下载。样式缺失不影响功能，绝不 reject。
-// 面板包拆成两半（选区/悬浮与侧栏面板），但共用同一张样式表：先到的那个把
-// <link> 塞进 head，后到的靠 data-lark-doc-feature 去重，不会重复下载。
-const stylesheets = {
-  'lark-doc-element.umd.min.ui.js': 'lark-doc-element.ui.css',
-  'lark-doc-element.umd.min.uiPanels.js': 'lark-doc-element.ui.css',
+const stylesheets = new Map()
+const sharedUiStylesheet = 'lark-doc-element.ui.css'
+const panelToolsStylesheet = 'lark-doc-element.panels.css'
+const sharedUiPacks = new Set(['ui', 'uiPanels', 'uiOverlays'])
+const panelToolsPacks = new Set(['uiPanels', 'uiOverlays', 'uiExtra'])
+
+function loadStyle(file, before) {
+  if (stylesheets.has(file)) return stylesheets.get(file)
+  const existing = document.querySelector(`link[data-lark-doc-feature="${file}"]`)
+  const link = existing || document.createElement('link')
+  const ready = existing ? Promise.resolve(true) : new Promise(resolve => {
+    link.addEventListener('load', () => resolve(true), { once: true })
+    link.addEventListener('error', () => {
+      link.remove()
+      stylesheets.delete(file)
+      resolve(false)
+    }, { once: true })
+  })
+  const stylesheet = { link, ready }
+  stylesheets.set(file, stylesheet)
+  if (!existing) {
+    link.rel = 'stylesheet'
+    link.href = new URL(file, base).href
+    link.dataset.larkDocFeature = file
+    const head = document.head || document.documentElement
+    head.insertBefore(link, before?.parentNode === head ? before : null)
+  }
+  return stylesheet
 }
 
-function loadStyle(file) {
-  if (!file || !base || typeof document === 'undefined') return
-  if (document.querySelector(`link[data-lark-doc-feature="${file}"]`)) return
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = new URL(file, base).href
-  link.dataset.larkDocFeature = file
-  ;(document.head || document.documentElement).appendChild(link)
-}
-
-function loadScript(file) {
+function loadScript(group) {
+  const file = `lark-doc-element.umd.min.${group}.js`
   if (scripts.has(file)) return scripts.get(file)
   const promise = new Promise((resolve, reject) => {
-    loadStyle(stylesheets[file])
     // Only the pure document group supports direct CommonJS consumers. Keep
     // Module.require bound to this runtime's real adjacent output directory.
     const nodeModule = file === 'lark-doc-element.umd.min.document.js' && typeof module === 'object' ? module : null
@@ -42,7 +53,20 @@ function loadScript(file) {
     node.src = new URL(file, base).href
     node.onload = resolve
     node.onerror = () => { node.remove(); scripts.delete(file); reject(new Error(`无法加载本地特性包 ${file}`)) }
-    document.head.appendChild(node)
+    const shared = sharedUiPacks.has(group) ? loadStyle(sharedUiStylesheet) : null
+    // Optional factories can mount as soon as the script registers them. Keep
+    // panel styles ahead of shared dialog overrides and wait for both sheets.
+    if (panelToolsPacks.has(group)) {
+      const sharedLink = stylesheets.get(sharedUiStylesheet)?.link
+      const panels = loadStyle(panelToolsStylesheet, sharedLink)
+      Promise.all([panels.ready, shared?.ready]).then(([panelsLoaded, sharedLoaded]) => {
+        if (!panelsLoaded || sharedLoaded === false) throw new Error(`无法加载 ${group} 界面样式`)
+        document.head.appendChild(node)
+      }).catch(error => {
+        scripts.delete(file)
+        reject(error)
+      })
+    } else document.head.appendChild(node)
   })
   scripts.set(file, promise)
   return promise
@@ -51,19 +75,16 @@ function loadScript(file) {
 const groups = {
   math: ['math'], mermaid: ['mermaid'], highlight: ['highlight'], markdown: ['markdown', 'markdown.serialize'],
   office: ['office.buildDocx', 'office.docx', 'office.mammoth'],
-  // 面板包按触发时机拆成两支：ui 守选区/悬浮/表格/顶栏，ui.panels 守侧栏面板
-  // 与对话框。加载槽位与包名一一对应，createDeferredUi 只拉自己那一个。
+  // 加载槽位与包名一一对应，createDeferredUi 只拉对应的工厂表。
   ui: ['ui'], uiPanels: ['ui.panels', 'ui.aiHttp'],
+  uiOverlays: ['ui.overlays', 'ui.templateSave', 'ui.importConfirmation', 'ui.stage'],
   document: ['document.segmented', 'document.pagedView', 'document.pagedImport', 'document.shareLinks', 'document.shareLinkAccess'],
   // 导出/导入编排与远程转换：源码里就是点「导出」「导入」才 import()，单文件 UMD
   // 会把它压回首屏，所以单独出包，等真正点下去再拉。
   export: ['export.api', 'export.remoteConversion'],
-  // 点了才出现的顶栏「文档信息」与标题编号菜单。幻灯片、模板保存对话框留在内核：
-  // 它们经 documentOperations 静态拉住 @tiptap/pm/model，搬进包就得多下一份 PM。
+  // 点了才出现的顶栏「文档信息」与标题编号菜单。
   uiExtra: ['ui.documentInformation', 'ui.headingNumberMenu'],
-  // 字节上传通道与转换/版本回执。后台统计（editor.documentSnapshot）留在内核，
-  // 理由同上：documentSnapshot → documentStats → documentOperations 会带进 PM 全家。
-  background: ['media.videoPopups', 'media.imageOutput', 'media.httpUpload', 'media.fileUploadTasks', 'session.resourceOutcome', 'versioning.snapshot'],
+  background: ['media.videoPopups', 'media.imageOutput', 'media.httpUpload', 'media.fileUploadTasks', 'session.resourceOutcome', 'versioning.snapshot', 'document.snapshot', 'media.fileDownload', 'ui.pollTools'],
 }
 for (const group of Object.keys(groups)) {
   for (const name of groups[group]) {
@@ -71,7 +92,7 @@ for (const group of Object.keys(groups)) {
     let loaded = false
     registerFeature(name, () => {
       if (loaded) throw new Error(`特性包未注册 ${name}`)
-      return loadScript(`lark-doc-element.umd.min.${group}.js`).then(() => {
+      return loadScript(group).then(() => {
         loaded = true
         return loadFeature(name)
       })

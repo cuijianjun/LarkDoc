@@ -345,7 +345,7 @@ describe('原生编辑器响应式边界', () => {
     expect(vm.currentBlockLabel).toBe('正文')
     expect(vm.headingActiveLevel).toBeNull()
     expect(boldChecked(vm)).toBe(false)
-    expect(button(vm, '设置链接').disabled).toBe(true)
+    expect(button(vm, '设置链接').disabled).toBe(false)
     const headingPos = outline[0].pos + 1
     editor.commands.setTextSelection({ from: headingPos, to: headingPos + 2 })
     expect(vm.hasTextSelection).toBe(true)
@@ -363,7 +363,7 @@ describe('原生编辑器响应式边界', () => {
     expect(boldChecked(vm)).toBe(true)
     await tick()
     expect(button(vm, '加粗').getAttribute('aria-pressed')).toBe('true')
-    expect(button(vm, '设置链接').disabled).toBe(true)
+    expect(button(vm, '设置链接').disabled).toBe(false)
     expect(editor.state.doc).toBe(doc)
     expect(vm.outline).toBe(outline)
     expect(vm.wordCount).toBe(count)

@@ -200,6 +200,8 @@ export function createDomRenderer() {
       }
       const emit = (name, payload) => {
         if (destroyed) return
+        if (name === 'workspace-import') return workspaceUi?.requestImport(payload)
+        if (name === 'workspace-export') return workspaceController?.exportDocument(payload)
         if (name === 'update:title') workspaceController?.setTitle(payload)
         if (name === 'mode-change') {
           if (payload.readonly) resolveImageFile.cancelAll('readonly')
@@ -452,6 +454,7 @@ export function createDomRenderer() {
         const query = String(state.templateQuery || '').trim().toLocaleLowerCase()
         workspaceUi.update({
           ...projected,
+          compactHeader: documentHost.compactHeader,
           commentHistoryAvailable: documentHost.commentCanViewHistory?.() === true,
           maxLength: state.editorConfig.limits.maxLength,
           maxLengthOptions: state.maxLengthOptions,

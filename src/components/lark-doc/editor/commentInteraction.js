@@ -49,10 +49,18 @@ export function createCommentInteraction(dependencies) {
     async submitDocumentComment(visibility) {
       const text = this.commentDocumentDraft
       if (!text.trim() && !this.commentDraftImages('document').length || !this.commentDocumentCanSubmit()) return null
-      const { mentions, references } = normalizeCommentMetadata(text, this.commentDocumentMentions, this.commentDocumentReferences)
+      const draftMentions = this.commentDocumentMentions, draftReferences = this.commentDocumentReferences
+      const replyTarget = this.commentDocumentReplyTarget
+      const submittedImages = this.submittedCommentImageIds('document')
+      const { mentions, references } = normalizeCommentMetadata(text, draftMentions, draftReferences)
       const participants = visibility === 'private' ? [...new Set(mentions.map(value => value.principalId))].filter(id => id !== this.commentAuthor.id) : []
       const result = await (references.length ? this.createDocumentComment(text, visibility, participants, mentions, references) : mentions.length ? this.createDocumentComment(text, visibility, participants, mentions) : this.createDocumentComment(text, visibility))
-      if (result) this.cancelDocumentCommentDraft()
+      if (result) {
+        if (this.commentDocumentDraft === text && this.commentDocumentMentions === draftMentions &&
+          this.commentDocumentReferences === draftReferences && this.commentDocumentReplyTarget === replyTarget) {
+          this.cancelDocumentCommentDraft(submittedImages)
+        } else this.clearCommentDraftImages('document', submittedImages)
+      }
       return result
     },
     beginEditComment(threadId, replyId) {
@@ -77,16 +85,20 @@ export function createCommentInteraction(dependencies) {
       const value = this.commentEditingReply
       if (!value || !this.commentAllowed('edit', value.threadId, value.replyId)) return null
       const scope = 'edit/' + value.threadId + '/' + value.replyId
+      const content = this.commentEditContent, draftMentions = this.commentEditMentions, draftReferences = this.commentEditReferences
+      const draftImages = this.commentImageDrafts?.[scope]
       const assetIds = this.commentDraftAssetIds(scope), remote = this.commentProvider()?.isRemote
       // 原来有图、草稿里一张没剩 = 用户主动移除，要显式发空附件，否则服务端按「本次没提交附件」保留原图。
       const cleared = !assetIds.length && Boolean(value.originalAssets?.length)
-      if (!this.commentEditContent.trim() && !assetIds.length && !cleared) return null
+      if (!content.trim() && !assetIds.length && !cleared) return null
       const local = remote ? [] : this.commentDraftAttachments(scope)
       const attachmentPayload = remote ? (assetIds.length || cleared ? { assetIds } : {})
         : (local.length ? { attachments: local, ...(assetIds.length ? { assetIds } : {}) } : cleared ? { attachments: [] } : {})
-      const { mentions, references } = normalizeCommentMetadata(this.commentEditContent, this.commentEditMentions, this.commentEditReferences)
-      const result = await this.runCommentWrite('editReply', { threadId: value.threadId, replyId: value.replyId, content: this.commentEditContent, mentions, ...(remote ? {} : { author: this.commentAuthor }), ...(references.length || value.originalReferences ? { references } : {}), ...attachmentPayload }, 'editCommentReply')
-      if (result) this.cancelCommentEdit()
+      const { mentions, references } = normalizeCommentMetadata(content, draftMentions, draftReferences)
+      const result = await this.runCommentWrite('editReply', { threadId: value.threadId, replyId: value.replyId, content, mentions, ...(remote ? {} : { author: this.commentAuthor }), ...(references.length || value.originalReferences ? { references } : {}), ...attachmentPayload }, 'editCommentReply')
+      if (result && this.commentEditingReply === value && this.commentEditContent === content &&
+        this.commentEditMentions === draftMentions && this.commentEditReferences === draftReferences &&
+        this.commentImageDrafts?.[scope] === draftImages) this.cancelCommentEdit()
       return result
     },
     async setCommentParticipants(threadId, participants, expectedRevision) {
@@ -200,10 +212,8 @@ export function createCommentInteraction(dependencies) {
         if (!this.commentAllowed('visibility', threadId)) return null
         return this.runCommentWrite('setVisibility', { threadId, visibility: this.commentPrivate(threadId) ? 'document' : 'private' }, 'setCommentVisibility')
       }
-      const on = this.commentPrivateIds.indexOf(threadId) !== -1
-      this.commentPrivateIds = on
-        ? this.commentPrivateIds.filter((id) => id !== threadId)
-        : this.commentPrivateIds.concat([threadId])
+      this.commentMessage = '当前服务仅支持全文私有评论。'
+      return false
     },
     toggleCommentMoreMenu(threadId, event) {
       this.resetCommentParticipants()
@@ -349,20 +359,23 @@ export function createCommentInteraction(dependencies) {
       // 飞书：翻译只替换展示，原文留在 provider 记录里。服务只提供一次性译文时直接取，
       // 长任务链路（远端 requestTranslation + 待确认查询）仍走下面的独立面板。
       const provider = this.commentProvider()
-      if (typeof provider?.translateReply === 'function' && provider.isRemote !== true) return this.translateCommentReply(threadId, replyId)
+      const mobile = this._mobileEditorMedia?.matches
+      const targetLanguage = mobile ? this._preferredTranslationLanguage || 'en' : undefined
+      if (typeof provider?.translateReply === 'function' && provider.isRemote !== true) return this.translateCommentReply(threadId, replyId, targetLanguage)
       if (this.commentPendingTranslationOperation) { this.commentMessage = '请先查询原翻译请求，避免替换未确认的来源。'; return }
       if (typeof reply.replyRevision !== 'string') return
       this.commentTranslationContext = { threadId, replyId, sourceRevision: reply.replyRevision }
-      this.commentTranslationLanguage = 'zh-CN'
+      this.commentTranslationLanguage = targetLanguage || 'zh-CN'
       this.commentTranslationState = null
+      if (mobile && typeof provider?.requestTranslation === 'function') return this.submitCommentTranslation()
     },
-    async translateCommentReply(threadId, replyId) {
+    async translateCommentReply(threadId, replyId, targetLanguage) {
       const provider = this.commentProvider(), current = this.commentOperationCurrent()
       const reply = this.commentThreads.find(item => item.id === threadId && !item.tombstone)?.replies.find(item => item.id === replyId && !item.tombstone)
       if (!reply || typeof provider?.translateReply !== 'function') return null
       this.commentTranslationBusy = true
       try {
-        const result = await provider.translateReply({ threadId, commentId: replyId, author: this.commentAuthor })
+        const result = await provider.translateReply({ threadId, commentId: replyId, author: this.commentAuthor, ...(targetLanguage ? { targetLanguage } : {}) })
         if (!current() || !this.commentCan('canView') || provider !== this.commentProvider()) return null
         const content = typeof result?.content === 'string' ? result.content : ''
         if (!content) { this.commentMessage = result?.message || '翻译失败，请重试'; return null }

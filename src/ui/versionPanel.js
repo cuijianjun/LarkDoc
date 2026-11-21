@@ -587,6 +587,7 @@ export function createVersionToast(options = {}) {
   noticeLink.className = 'lark-doc-version-notice-link'
   noticeLink.textContent = '立即查看'
   onMouseDownPrevent(noticeLink, () => call('onNoticeLink'))
+  noticeLink.addEventListener('click', event => { if (event.detail === 0) call('onNoticeLink') })
   notice.appendChild(noticeText)
   notice.appendChild(noticeLink)
   el.appendChild(notice)

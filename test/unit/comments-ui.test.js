@@ -97,6 +97,31 @@ async function withControlledCommentDocument(run, props = {}) {
     for (const [key, descriptor] of [['createObjectURL', createUrl], ['revokeObjectURL', revokeUrl]]) { if (descriptor) Object.defineProperty(URL, key, descriptor); else delete URL[key] }
   }
 }
+it('桌面正文的评论数字只跟随当前可见且有效的评论锚点', () => withControlledCommentDocument(async ({ doc, host, provider, session, thread }) => {
+  const anchor = { blockId: 'comment_body', offset: 0, length: 4 }
+  Object.assign(thread, { scope: 'selection', visibility: 'private', anchorStatus: 'bound', anchor, blockId: anchor.blockId })
+  provider.list = async () => [thread, { ...thread, id: 'resolved', resolved: true }, { ...thread, id: 'orphan', anchorStatus: 'orphaned' }]
+  await host.loadComments()
+  const root = doc.getEditor().view.dom.closest('.lark-doc')
+  const badge = root.querySelector('.lark-doc-comment-count')
+  expect(badge?.textContent).toBe('1')
+  expect(root.querySelector('.lark-doc-comment[data-thread-id="thread-controlled"]')?.textContent).toBe('评论原文')
+  doc.patchProps({ config: { layout: { compactHeader: true }, features: { comments: false } } })
+  await vi.waitFor(() => expect(root.querySelector('.lark-doc-comment-count')).toBeNull())
+  badge.click()
+  expect(host.commentSidebarOpen).toBe(false)
+  doc.patchProps({ config: { layout: { compactHeader: true }, features: { comments: true } } })
+  await vi.waitFor(() => expect(root.querySelector('.lark-doc-comment-count')?.textContent).toBe('1'))
+  root.querySelector('.lark-doc-comment-count').click()
+  expect(host.commentActiveThreadId).toBe(thread.id)
+  vi.spyOn(session, 'can').mockImplementation(capability => capability !== 'canView')
+  host.refreshCommentDecorations()
+  expect(root.querySelector('.lark-doc-comment-count')).toBeNull()
+  expect(root.querySelector('.lark-doc-comment[data-thread-id="thread-controlled"]')).toBeNull()
+  badge.click()
+  expect(badge.isConnected).toBe(false)
+}, { config: { layout: { compactHeader: true } } }))
+
 const readyCommentAsset = () => ({ status: 'committed', ready: true, assetId: commentAsset.assetId, asset: { ...commentAsset, ready: true } })
 const imageEvent = (...files) => ({ target: { value: 'chosen', files } })
 const commentAssets = uploadCommentImage => ({ uploadCommentImage, begin() {}, complete() {}, getStatus() {}, async getContent() { throw new Error('fixture bytes unavailable') } })
@@ -389,6 +414,22 @@ describe('评论剩余闭环', () => {
     provider.requestTranslation = () => new Promise(resolve => { finish = resolve })
     host.closeCommentTranslation(); host.beginCommentTranslation(thread.id, reply.id); const pending = host.submitCommentTranslation()
     host.closeCommentTranslation(); finish(result); expect(await pending).toBeNull(); expect(host.commentTranslationState).toBeNull()
+  }))
+  it('uses the selected passage language for mobile comment translation and sends only one request', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
+    host._mobileEditorMedia = { matches: true }
+    host._preferredTranslationLanguage = 'ja'
+    provider.requestTranslation = vi.fn(async input => ({ ...input, operationId: 'mobile-translation', status: 'ready', translatedText: '翻訳' }))
+    expect(await host.beginCommentTranslation(thread.id, reply.id)).toMatchObject({ targetLanguage: 'ja', status: 'ready' })
+    expect(provider.requestTranslation).toHaveBeenCalledExactlyOnceWith({ threadId: thread.id, replyId: reply.id, sourceRevision: reply.replyRevision, targetLanguage: 'ja' })
+    expect(document.querySelector('.lark-doc-comment-translation [aria-label="翻译语言"]')).toBeNull()
+    expect(reply.content).toBe('原评论')
+  }))
+  it('passes the selected passage language to a mobile host translation port', () => withCommentDocument(async ({ host, provider, thread }) => {
+    host._mobileEditorMedia = { matches: true }
+    host._preferredTranslationLanguage = 'ja'
+    provider.translateReply = vi.fn(async () => ({ content: '翻訳' }))
+    await host.beginCommentTranslation(thread.id, thread.replies[0].id)
+    expect(provider.translateReply).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'ja' }))
   }))
   it('remote comment translation More remains enabled with the declared port and preserves its original pending query', () => withControlledCommentDocument(async ({ host, provider, thread, reply }) => {
     provider.requestTranslation = vi.fn(async () => ({ threadId: thread.id, replyId: reply.id, sourceRevision: reply.replyRevision,
@@ -730,6 +771,59 @@ describe('comment provider response identity', () => {
     complete({ id: 'reply' })
     expect(await pending).toEqual({ id: 'reply' })
     expect(ctx.commentDrafts.thread).toBe('新的草稿')
+  })
+
+  it('clears the submitted reply and image while preserving an attachment added during the request', async () => {
+    let complete
+    const provider = { supportsAttachments: true, reply: vi.fn(() => new Promise(resolve => { complete = resolve })) }
+    const sent = { id: 'sent', status: 'ready', url: '/sent.png' }
+    const added = { id: 'added', status: 'uploading', name: 'new.png' }
+    const controller = new AbortController()
+    const ctx = mixinCtx({ session: { can: () => true, getProvider: () => provider }, commentAuthor: { id: 'me' },
+      commentDrafts: { thread: '已发内容' }, commentImageDrafts: { thread: [sent] }, loadComments: vi.fn(async () => []) })
+    const pending = ctx.submitCommentDraft('thread')
+    expect(ctx.commentCanUploadImage('thread')).toBe(true)
+    ctx.commentImageDrafts.thread = [sent, added]
+    ctx._commentAttachmentTasks = new Map([['added', { scope: 'thread', controller }]])
+    complete({ id: 'reply' })
+    await pending
+    expect(provider.reply.mock.calls[0][0].attachments).toEqual([{ url: '/sent.png', name: '' }])
+    expect(ctx.commentDraftOf('thread')).toBe('')
+    expect(ctx.commentDraftImages('thread')).toEqual([added])
+    expect(controller.signal.aborted).toBe(false)
+  })
+
+  it('preserves the next document comment draft when an earlier submission completes', async () => {
+    let complete
+    const provider = { createThread: vi.fn(() => new Promise(resolve => { complete = resolve })) }
+    const ctx = mixinCtx({ session: { can: () => true, getProvider: () => provider },
+      commentAuthor: { id: 'me' }, commentDocumentDraft: '第一条全文评论',
+      loadComments: vi.fn(async () => []), activateComment: vi.fn() })
+    const pending = ctx.submitDocumentComment('document')
+    ctx.setCommentDocumentDraft('下一条全文评论')
+    complete({ id: 'thread' })
+    await pending
+    expect(provider.createThread.mock.calls[0][0].content).toBe('第一条全文评论')
+    expect(ctx.commentDocumentDraft).toBe('下一条全文评论')
+  })
+
+  it.each(['same reply', 'another reply'])('preserves newer edits to %s after an earlier save completes', async (target) => {
+    let complete
+    const provider = { editReply: vi.fn(() => new Promise(resolve => { complete = resolve })) }
+    const replies = [{ id: 'first', content: '第一条' }, { id: 'second', content: '第二条' }]
+    const ctx = mixinCtx({ session: { can: () => true, getProvider: () => provider },
+      commentAuthor: { id: 'me' }, commentThreads: [{ id: 'thread', replies }], loadComments: vi.fn(async () => []) })
+    ctx.beginEditComment('thread', 'first')
+    ctx.setCommentEditContent('保存时的文字')
+    const pending = ctx.saveEditedComment()
+    const replyId = target === 'same reply' ? 'first' : 'second'
+    if (replyId === 'second') ctx.beginEditComment('thread', replyId)
+    ctx.setCommentEditContent('继续编辑的新草稿')
+    complete({ id: 'first' })
+    await pending
+    expect(provider.editReply.mock.calls[0][0]).toMatchObject({ replyId: 'first', content: '保存时的文字' })
+    expect(ctx.commentEditingReply?.replyId).toBe(replyId)
+    expect(ctx.commentEditContent).toBe('继续编辑的新草稿')
   })
 
   it.each(['newer-load', 'provider', 'session', 'destroy'])('does not paint a late list after %s', async action => {

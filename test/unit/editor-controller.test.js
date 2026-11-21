@@ -31,6 +31,23 @@ describe('EditorController 阶段7前置', () => {
     expect(editor.commands.focus).toHaveBeenCalledTimes(1)
   })
 
+  it('快照包加载失败时仍发布当前正文，取消的快照不回退', async () => {
+    vi.doMock('../../src/editor/documentSnapshot', () => { throw new Error('optional bundle unavailable') })
+    try {
+      const editor = { ...createEditor(), state: { doc: {} } }
+      const controller = createEditorController({ editor })
+      await expect(controller.getSnapshotAsync()).resolves.toEqual({
+        html: '<p>正文</p>', json: { type: 'doc', content: [] }, text: '正文',
+      })
+      const abort = new AbortController()
+      const cancelled = controller.getSnapshotAsync({ signal: abort.signal })
+      abort.abort()
+      await expect(cancelled).resolves.toBeNull()
+    } finally {
+      vi.doUnmock('../../src/editor/documentSnapshot')
+    }
+  })
+
   it('集中 readonly 与 title 的无 Vue 状态逻辑', () => {
     const editor = createEditor()
     const controller = createEditorController({ editor, title: '旧标题' })

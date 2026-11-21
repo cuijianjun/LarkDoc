@@ -31,6 +31,7 @@ import { lockPageScroll, mountNode, setAttr, setText } from './dom'
 import { iconNode } from './icon'
 import { createScrollNavigator } from './scrollNavigator'
 import { createTopBarMenus } from './topBarMenus'
+import { createDesktopHeaderDetails } from './desktopHeaderDetails'
 import { TOPBAR_MORE_CAPABILITY } from '../components/lark-doc/editor/topbarMoreMixin'
 import { MODE_MENU_MIN_WIDTH } from '../components/lark-doc/editor/docModes'
 import { createMobileLibrary } from './mobileLibrary'
@@ -64,7 +65,10 @@ export function createTopBar(options = {}) {
   const paperTitle = document.createElement('h1')
   paperTitle.className = 'lark-doc-mobile-document-title'
   const paperHeader = document.createElement('section'), paperHeading = document.createElement('div'), paperMeta = document.createElement('div')
+  const paperMetaRow = document.createElement('div')
   paperHeader.className = 'lark-doc-mobile-document-header'; paperHeading.className = 'lark-doc-mobile-document-heading'; paperMeta.className = 'lark-doc-mobile-document-meta'
+  paperMetaRow.className = 'lark-doc-paper-meta-row'
+  paperMetaRow.appendChild(paperMeta)
   const documentOutline = document.createElement('button')
   const outlinePin = document.createElement('div'); outlinePin.className = 'lark-doc-document-outline-pin'
   documentOutline.type = 'button'; documentOutline.className = 'lark-doc-document-outline-trigger'
@@ -90,7 +94,7 @@ export function createTopBar(options = {}) {
   floatOutlineSheet.append(floatOutlineHead, floatOutlineList); floatOutlineLayer.append(floatOutlineMask, floatOutlineSheet)
   floatOutlineMask.addEventListener('click', event => { if (!floatOutlineLayer.isConnected) return; event.preventDefault(); event.stopPropagation(); dismissFloatOutline(true) })
   floatOutlineClose.addEventListener('click', () => { if (floatOutlineLayer.isConnected && floatOutlineCurrent()) dismissFloatOutline(true) })
-  outlinePin.appendChild(documentOutline); paperHeading.append(outlinePin, paperTitle); paperHeader.append(paperHeading, paperMeta)
+  outlinePin.appendChild(documentOutline); paperHeading.append(outlinePin, paperTitle); paperHeader.append(paperHeading, paperMetaRow)
   // 顶栏分享按钮文字：手机与参考壳恒「分享」；桌面按权限态取「分享」或「分享只读链接」
   // （需求 05 §128：无管理权限时降级为只复制链接，而不是置灰）。
   const membersText = () => (window.innerWidth <= 760 || latestState.referenceMobileMenu === true)
@@ -102,17 +106,19 @@ export function createTopBar(options = {}) {
       if (titleInput.parentNode !== breadcrumb) breadcrumb.appendChild(titleInput)
       if (breadcrumb.parentNode !== titleWrap) titleWrap.prepend(breadcrumb)
       if (modifiedLine.parentNode !== titleWrap) titleWrap.appendChild(modifiedLine)
-      membersButton.replaceChildren(document.createTextNode(membersText()))
     } else {
       if (outlineButton.parentNode !== el) el.insertBefore(outlineButton, brand)
       if (titleInput.parentNode !== titleWrap) titleWrap.prepend(titleInput)
       breadcrumb.remove(); modifiedLine.remove()
-      membersButton.replaceChildren(document.createTextNode(membersText()))
     }
-    if (options.paperHost && mobile) {
+    const shareLabel = membersText()
+    setText(membersLabel, shareLabel)
+    mountNode(membersButton, membersIcon, !mobile && latestState.compactHeader)
+    if (membersIcon.parentNode === membersButton && membersButton.firstChild !== membersIcon) membersButton.prepend(membersIcon)
+    if (options.paperHost && (mobile || latestState.compactHeader)) {
       const body = options.paperHost.querySelector('.lark-doc-editor-content')
       if (paperHeader.parentNode !== options.paperHost || paperHeader.nextSibling !== body) options.paperHost.insertBefore(paperHeader, body)
-      options.paperHost.classList.add('has-mobile-title')
+      options.paperHost.classList.toggle('has-mobile-title', mobile)
     } else { paperHeader.remove(); options.paperHost?.classList.remove('has-mobile-title') }
     syncDocumentOutline()
   }
@@ -183,6 +189,7 @@ export function createTopBar(options = {}) {
     return button
   }
   const createButton = actionButton('lark-doc-create-btn', '新建', 'plus', 'menu', 'toggleCreateMenu')
+  const searchButton = actionButton('lark-doc-topbar-search', '查找', 'search', 'dialog', 'openSearch', 18)
   const notifyButton = actionButton('lark-doc-notify-btn', '当前文档通知', 'bell', 'dialog', 'toggleNotify')
   const notifyDot = document.createElement('span')
   notifyDot.className = 'lark-doc-notify-dot'
@@ -259,7 +266,7 @@ export function createTopBar(options = {}) {
     }
     releaseFloatOutline()
     if (!latestState.outlineOpen) { outlineSource = 'paper'; floatOutlineScope = null; outlineDismissed = false }
-    const open = !disposed && !outlineDismissed && paperHeader.isConnected && latestState.outlineOpen && latestState.outlineVisible !== false
+    const open = !disposed && window.innerWidth <= 760 && !outlineDismissed && paperHeader.isConnected && latestState.outlineOpen && latestState.outlineVisible !== false
     documentOutline.disabled = latestState.outlineVisible === false
     setAttr(documentOutline, 'aria-expanded', String(!!open))
     if (!open) { if (outlinePin.parentNode !== paperHeading) paperHeading.prepend(outlinePin); outlinePopup.remove(); outlineSignature = ''; return }
@@ -292,7 +299,13 @@ export function createTopBar(options = {}) {
   const avatarBadge = document.createElement('span')
   avatarBadge.className = 'lark-doc-mobile-avatar-badge'
   avatarButton.replaceChildren(avatarBadge)
-  const membersButton = actionButton('lark-doc-mobile-members', '管理成员', 'mobile-members', 'dialog', 'openMembers', 20)
+  const membersButton = actionButton('lark-doc-mobile-members', '管理成员', 'share-link', 'dialog', 'openMembers', 16)
+  const membersIcon = membersButton.firstChild, membersLabel = document.createElement('span')
+  const membersTip = document.createElement('span')
+  membersTip.className = 'lark-doc-header-tip'
+  membersTip.setAttribute('aria-hidden', 'true')
+  membersButton.append(membersLabel, membersTip)
+  const desktopDetails = createDesktopHeaderDetails({ el, paperMetaRow, paperMeta, membersButton })
   const breadcrumb = document.createElement('div'), modifiedLine = document.createElement('span'), headerDivider = document.createElement('span')
   breadcrumb.className = 'lark-doc-mobile-breadcrumb'; modifiedLine.className = 'lark-doc-mobile-modified'; headerDivider.className = 'lark-doc-mobile-header-divider'
   const breadcrumbArrow = iconNode('chevron-right', 14, 'lark-doc-mobile-breadcrumb-arrow')
@@ -434,7 +447,23 @@ export function createTopBar(options = {}) {
   }
   document.addEventListener('keydown', closeDocumentOutline)
   el.addEventListener('keydown', closeMobileEscape, true)
-  const resizeMobile = () => { if (disposed) return; if (floatOutlineScope && !phoneOutline()) dismissFloatOutline(false, false); syncMobileTitle(); library.update(latestState); if (window.innerWidth > 760) { if (mobileOpen) setMobileOpen(false, true); setReferenceOpen(false) } }
+  let desktopViewport = window.innerWidth > 760
+  const resizeMobile = () => {
+    if (disposed) return
+    const desktop = window.innerWidth > 760
+    if (floatOutlineScope && !phoneOutline()) dismissFloatOutline(false, false)
+    if (desktop) {
+      if (mobileOpen) setMobileOpen(false, true)
+      setReferenceOpen(false)
+    }
+    if (desktop !== desktopViewport) {
+      desktopViewport = desktop
+      update(latestState)
+      return
+    }
+    syncMobileTitle()
+    library.update(latestState)
+  }
   window.addEventListener('resize', resizeMobile)
 
   const menuDocument = el.ownerDocument
@@ -546,9 +575,10 @@ export function createTopBar(options = {}) {
     if (!visible) setMobileOpen(false)
     homeButton.disabled = state.homeEnabled !== true
     membersButton.disabled = state.membersEnabled !== true
+    setText(membersTip, state.membersHint || '')
     host?.classList.toggle('has-mobile-members-entry', visible && !membersButton.disabled && typeof handlers.openMembers === 'function')
     membersButton.setAttribute('aria-label', window.innerWidth <= 760 && state.referenceMobileMenu ? '分享文档' : state.membersLabel || '分享只读链接')
-    if (membersButton.textContent !== membersText()) membersButton.replaceChildren(document.createTextNode(membersText()))
+    mountNode(headerActions, searchButton, state.compactHeader && state.searchEnabled)
     setAttr(membersButton, 'aria-haspopup', state.membersHasPopup === true ? 'dialog' : null)
     setAttr(membersButton, 'aria-expanded', state.membersHasPopup === true ? String(state.membersExpanded === true) : null)
     const currentUser = state.currentUser?.id ? state.currentUser : null
@@ -566,10 +596,14 @@ export function createTopBar(options = {}) {
     // 插槽宿主固定紧跟模式切换。每次 update 都对齐一次而不是只在构造时搬：
     // 顶栏隐藏期间调用方会把宿主搬回停泊位（否则 DOM 更新会落进游离子树），
     // 重新显示时必须搬回来，否则宿主控件整块消失。
-    if (visible && actionsHost) {
+    el.classList.toggle('is-compact-header', state.compactHeader === true)
+    if (visible && actionsHost && !state.compactHeader) {
       const hostAnchor = modeSelect.el.parentNode === headerActions ? modeSelect.el.nextSibling : headerActions.firstChild
       if (actionsHost.parentNode !== headerActions || actionsHost.previousSibling !== modeSelect.el) headerActions.insertBefore(actionsHost, hostAnchor || null)
     }
+    const compactDesktop = state.compactHeader && window.innerWidth > 760
+    if (compactDesktop) createButton.remove()
+    else if (createButton.parentNode !== headerActions) headerActions.insertBefore(createButton, notifyButton)
     setAttr(createButton, 'aria-expanded', String(!!state.createMenuOpen))
     createButton.disabled = !!state.readonly || state.hostCreateEnabled === false
     notifyButton.disabled = !!state.notifyDisabled
@@ -585,13 +619,14 @@ export function createTopBar(options = {}) {
     if (nextPendingMore && !pendingMoreOpen) activeMoreMenus.set(menuDocument, pendingMoreToken)
     if (!nextPendingMore && activeMoreMenus.get(menuDocument) === pendingMoreToken) activeMoreMenus.delete(menuDocument)
     pendingMoreOpen = nextPendingMore
-    pendingCreateOpen = !menusUi.el && visible && !!state.createMenuOpen && !state.readonly
+    pendingCreateOpen = !compactDesktop && !menusUi.el && visible && !!state.createMenuOpen && !state.readonly
 
     // ② 标题：只在真变了才写 value，否则用户输入时光标会被重置到末尾
     const title = state.title == null ? '' : String(state.title)
     setText(paperTitle, title || DEFAULT_TITLE_PLACEHOLDER)
     const metadata = state.documentMetadata || {}, author = typeof metadata.author?.name === 'string' ? metadata.author.name.trim() : ''
-    const stamp = typeof metadata.modifiedAt === 'number' ? metadata.modifiedAt : Date.parse(metadata.modifiedAt)
+    const modifiedAt = metadata.modifiedAt
+    const stamp = typeof modifiedAt === 'number' ? modifiedAt : Date.parse(modifiedAt)
     const modified = Number.isFinite(stamp) && stamp > 0 ? new Date(stamp) : null
     let recent = '未提供', bodyTime = '修改时间未提供'
     if (modified) {
@@ -600,11 +635,13 @@ export function createTopBar(options = {}) {
       bodyTime = modified.toDateString() === new Date().toDateString() ? '今天修改' : `${modified.toLocaleDateString('zh-CN')}修改`
     }
     setText(modifiedLine, `最近修改：${recent}`)
-    paperMeta.replaceChildren()
-    const authorBadge = document.createElement('span'), authorLabel = document.createElement('span'), metaDivider = document.createElement('span'), modifiedLabel = document.createElement('span')
-    authorBadge.className = 'lark-doc-document-author-avatar'; authorBadge.setAttribute('aria-hidden', 'true'); authorBadge.textContent = author ? Array.from(author).slice(-2).join('') : '?'
-    authorLabel.className = 'lark-doc-document-author-name'; authorLabel.textContent = author || '作者未提供'; metaDivider.className = 'lark-doc-document-meta-divider'; metaDivider.setAttribute('aria-hidden', 'true'); modifiedLabel.className = 'lark-doc-document-modified'; modifiedLabel.textContent = bodyTime
-    paperMeta.append(authorBadge, authorLabel, metaDivider, modifiedLabel)
+    if (!compactDesktop) {
+      const authorBadge = document.createElement('span'), authorLabel = document.createElement('span'), metaDivider = document.createElement('span'), modifiedLabel = document.createElement('span')
+      authorBadge.className = 'lark-doc-document-author-avatar'; authorBadge.setAttribute('aria-hidden', 'true'); authorBadge.textContent = author ? Array.from(author).slice(-2).join('') : '?'
+      authorLabel.className = 'lark-doc-document-author-name'; authorLabel.textContent = author || '作者未提供'; metaDivider.className = 'lark-doc-document-meta-divider'; metaDivider.setAttribute('aria-hidden', 'true'); modifiedLabel.className = 'lark-doc-document-modified'; modifiedLabel.textContent = bodyTime
+      paperMeta.replaceChildren(authorBadge, authorLabel, metaDivider, modifiedLabel)
+    }
+    desktopDetails.update({ ...state, open: visible && compactDesktop })
     syncMobileTitle()
     if (titleInput.value !== title) titleInput.value = title
     setAttr(titleInput, 'maxlength', state.titleLength == null ? null : state.titleLength)
@@ -626,7 +663,8 @@ export function createTopBar(options = {}) {
     const items = Array.isArray(state.modeOptions) ? state.modeOptions : []
     switchable = state.modeSwitchable !== false
     modeSelect.update({
-      options: items.map((item) => ({ value: item.id, label: item.label, hint: item.hint })),
+      options: items.map((item) => ({ value: item.id, label: item.label, hint: item.hint,
+        ...(state.compactHeader ? { icon: { edit: 'mode-edit', suggest: 'mode-comment', read: 'reading' }[item.id] } : {}) })),
       value: state.mode,
       disabled: !switchable,
       icon: state.modeIcon || '',
@@ -648,6 +686,7 @@ export function createTopBar(options = {}) {
     library.destroy(); setReferenceOpen(false)
     setMobileOpen(false)
     disposed = true
+    desktopDetails.destroy()
     host?.classList.remove('has-mobile-members-entry')
     host?.classList.remove('has-reference-mobile-menu')
     paperHeader.remove(); outlinePopup.remove(); options.paperHost?.classList.remove('has-mobile-title')

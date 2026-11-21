@@ -10,11 +10,15 @@ export const mobileEditorMethods = {
       const ui = this._toolbarUi
       if (!ui) return
       const anchor = this.$refs.toolbarHost
-      const mobile = !!(this.mobileEditorActive && this._mobileEditorMedia?.matches && this.writable()
+      const touch = this._mobileEditorMedia?.matches === true
+      const { toolbarVisible, headerVisible } = this.larkDocConfig.layout
+      const desktop = !touch && toolbarVisible
+      if (this.headerMenuOpen && (!desktop || headerVisible)) this.closeHeaderMenu()
+      const mobile = !!(touch && this.mobileEditorActive && this.writable()
         && this.editor.state.selection instanceof TextSelection && !this.menuOpen && !this.isvPanelOpen)
       const colorSheet = mobile && !!this.colorPaletteOpen && this.colorPaletteIsText
       this.$refs.root.classList.toggle('has-mobile-editor-bar', mobile && !colorSheet)
-      if (colorSheet || (this.larkDocConfig.layout.toolbarVisible === false && !mobile)) ui.el.remove()
+      if (colorSheet || (!desktop && !mobile)) ui.el.remove()
       else if (ui.el.parentNode !== anchor.parentNode) anchor.before(ui.el)
       ui.update({ ...this.buildToolbarState(), mobileAccessory: mobile, mobileStyle: this.mobileEditorStyle,
         activeAlign: this.editor?.getAttributes?.(this.editor.isActive('heading') ? 'heading' : 'paragraph')?.textAlign || 'left' })
@@ -70,9 +74,15 @@ export function bindMobileEditorControls({ host, editor, shell, listen, listener
   }
   const mobileFocus = () => { if (mobileMedia?.matches && host.writable()) { host.mobileEditorActive = true; mobileViewport() } }
   const mobileMediaChanged = () => {
-    if (mobileMedia?.matches) host.closeBlockMenu()
+    if (mobileMedia?.matches) {
+      host.closeBlockMenu()
+      if (host.tablePicker) host.closeTablePicker()
+    }
     mobileViewport()
     if (editor.isFocused) mobileFocus()
+    host.refreshToolbar()
+    host.parkActionsHost()
+    host.bindToolbarObserver()
     host.refreshBlockHandle()
     host.refreshBlockMenu()
     host.refreshCommandMenu()

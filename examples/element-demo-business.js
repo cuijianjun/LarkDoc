@@ -1,8 +1,8 @@
 /** Demo-only host for the existing documentBusiness port; dialogs never write by themselves. */
-export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent, getState, onChange, onStatus, ownerDocument = document }) {
-  const actions = ['follow', 'favorite', 'pin', 'shortcut', 'move', 'duplicate', 'delete', 'transfer-ownership']
+export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent, getState, onChange, onStatus, onCommitted, ownerDocument = document }) {
+  const actions = ['follow', 'favorite', 'pin', 'shortcut', 'move', 'duplicate', 'template', 'delete', 'transfer-ownership']
   const personal = ['follow', 'favorite', 'pin', 'shortcut']
-  const labels = { follow: '关注', favorite: '收藏', pin: '置顶', shortcut: '添加快捷方式', move: '移动文档', duplicate: '创建副本', delete: '删除文档', restore: '恢复文档', 'transfer-ownership': '转移所有权' }
+  const labels = { follow: '关注', favorite: '收藏', pin: '置顶', shortcut: '添加快捷方式', move: '移动文档', duplicate: '创建副本', template: '转换为模板', delete: '删除文档', restore: '恢复文档', 'transfer-ownership': '转移所有权' }
   let scope = null, key = null, unsubscribe = null, cancelChooser = null, busy = false, ready = false, disposed = false
   const contextKey = value => value && JSON.stringify([value.principalId, value.generation, value.identity, value.authorization])
   const current = value => !disposed && value === scope && isCurrent(value)
@@ -14,7 +14,7 @@ export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent
   const kindFor = action => action === 'delete' && snapshot()?.status === 'deleted' ? 'restore' : action
   function allowed(action) {
     const state = snapshot(), kind = kindFor(action)
-    const capability = kind === 'transfer-ownership' ? 'canTransferOwnership' : `can${kind[0]?.toUpperCase()}${kind.slice(1)}`
+    const capability = kind === 'transfer-ownership' ? 'canTransferOwnership' : kind === 'template' ? 'canConvertTemplate' : `can${kind[0]?.toUpperCase()}${kind.slice(1)}`
     return actions.includes(action) && state?.capabilities?.[capability] === true &&
       (kind === 'restore' ? state.status === 'deleted' : state.status === 'active')
   }
@@ -38,6 +38,7 @@ export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent
     if (!sameSource(value, state)) return null
     return new Promise(resolve => {
       const previous = ownerDocument.activeElement, dialog = ownerDocument.createElement('dialog'), form = ownerDocument.createElement('form')
+      dialog.className = 'larkdoc-host-dialog'
       dialog.setAttribute('aria-label', labels[kind]); form.method = 'dialog'
       const heading = ownerDocument.createElement('h3'); heading.textContent = labels[kind]; form.appendChild(heading)
       const subject = ownerDocument.createElement('p'); subject.textContent = state.title || value.documentId; form.appendChild(subject)
@@ -97,6 +98,7 @@ export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent
     notify(value, `${labels[result.kind] || '业务操作'}已提交。`)
     try { await provider.load() } catch { notify(value, '业务操作已提交，但当前读回尚未完成；请核对原操作。') }
     if (!current(value)) return false
+    onCommitted?.(result)
     changed(); return true
   }
   return {
@@ -113,18 +115,27 @@ export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent
       void provider.load().then(() => { if (current(next)) { ready = true; changed() } }).catch(() => { notify(next, '文档业务信息未接通或当前无权读取。'); changed() })
     },
     async run(event) {
-      const value = scope, state = snapshot(), action = event.action
+      const value = scope, action = event.action
+      let state = snapshot()
       if (!current(value) || busy || pending().length || !allowed(action) || event.actorId != null && event.actorId !== value.principalId || event.documentId != null && event.documentId !== value.documentId) return false
-      const kind = kindFor(action), source = getState()
-      if (kind === 'duplicate' && (!source || source.status !== 'ready' || source.pending?.length || source.epoch !== state.epoch || source.revision !== state.contentRevision)) { notify(value, '正文水位未确认，不能创建副本。'); return false }
+      const kind = kindFor(action)
       busy = true; changed()
       try {
-        const input = personal.includes(kind) && kind !== 'shortcut'
+        let source
+        if (kind === 'duplicate') {
+          await provider.load()
+          state = snapshot(); source = getState()
+          if (!current(value) || !allowed(action) || !source || source.status !== 'ready' || source.pending?.length || source.epoch !== state.epoch || source.revision !== state.contentRevision) {
+            notify(value, '正文水位未确认，不能创建副本。'); return false
+          }
+        }
+        const input = kind === 'template' ? { value: !state.isTemplate } : personal.includes(kind) && kind !== 'shortcut'
           ? { value: !state[kind === 'follow' ? 'followed' : kind === 'favorite' ? 'favorite' : 'pinned'] } : await choose(kind, state, value)
         if (input === null || !sameSource(value, state) || !allowed(action)) return false
-        const result = await provider.execute({ kind, operationId: operationId(), expectedRevision: personal.includes(kind) ? state.preferenceRevision : state.revision, ...input,
+        const submitted = provider.execute({ kind, operationId: operationId(), expectedRevision: personal.includes(kind) ? state.preferenceRevision : state.revision, ...input,
           ...(kind === 'duplicate' ? { sourceEpoch: source.epoch, sourceRevision: source.revision } : {}) })
-        return await publishOutcome(value, result)
+        changed()
+        return await publishOutcome(value, await submitted)
       } catch { notify(value, '业务操作未确认完成；请核对权限或查询保留的原操作。'); return false }
       finally { busy = false; changed() }
     },

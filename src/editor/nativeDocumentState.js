@@ -2,7 +2,7 @@
 import { collectOutlineState } from '../components/lark-doc/documentOperations'
 
 export const nativeDocumentStateMethods = {
-    refreshDocumentState(transaction = null) {
+    refreshDocumentState(transaction = null, allowBackground = true) {
       if (!this.editor || this.editor.isDestroyed || this._isBeingDestroyed || this._isDestroyed) return
       const doc = this.editor.state.doc
       // Selection/meta transactions do not change outline, character count or
@@ -12,7 +12,7 @@ export const nativeDocumentStateMethods = {
         this.syncFoldState()
         return
       }
-      if (doc.content.size > 500000) {
+      if (allowBackground && doc.content.size > 500000) {
         this.startLargeDerivedRefresh(doc)
         return
       }
@@ -50,7 +50,12 @@ export const nativeDocumentStateMethods = {
         else if (this.error.startsWith('正文不能超过 ')) this.error = ''
         if (this.searchQuery) this.scheduleSearchUpdate()
         this.$nextTick(() => this.updateHandleAndTable())
-      }).catch(error => { if (current()) { this.outlinePending = false; this.error = error.message } })
+      }).catch(error => {
+        if (current()) {
+          this.refreshDocumentState(null, false)
+          this.error = error.message
+        }
+      })
     },
     scheduleDocumentState(transaction = null) {
       if (!this.editor) return

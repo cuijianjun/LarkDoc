@@ -34,6 +34,18 @@
 
 .lark-doc .lark-doc-comment.is-active { background: color-mix(in srgb, var(--ld-cat-yellow) 18%, var(--ld-comment-surface)); border-bottom: 1px solid var(--ld-cat-yellow); }
 
+.lark-doc .lark-doc-comment-launcher { position: fixed; z-index: 25; width: 40px; height: 41px; overflow: hidden; }
+.lark-doc .lark-doc-comment-launcher > button { display: flex; box-sizing: border-box; align-items: center; justify-content: center; width: 100%; min-width: 0; max-width: 100%; height: 36px; margin-top: 5px; padding: 0; border: 1px solid var(--ld-comment-border); border-radius: 18px; background: var(--ld-bg-content); color: var(--ld-text-secondary); cursor: pointer; }
+.lark-doc .lark-doc-comment-count { display: none; }
+@media (min-width: 761px) {
+  .lark-doc.lark-doc-compact-header .lark-doc-comment-count { display: inline-grid; position: absolute; right: -12px; transform: translateX(100%); place-items: center; min-width: 23px; height: 23px; padding: 0 5px; border: 1px solid var(--ld-cat-yellow); border-radius: 9px 9px 9px 3px; background: color-mix(in srgb, var(--ld-cat-yellow) 28%, var(--ld-comment-surface)); color: var(--ld-text); font: inherit; font-size: 12px; cursor: pointer; }
+  .lark-doc.lark-doc-compact-header .lark-doc-comment-launcher > button { border-radius: 10px 3px 3px 10px; color: var(--ld-text); }
+  .lark-doc.lark-doc-compact-header .lark-doc-comment-launcher > button:hover:not(:disabled) { background: var(--ld-comment-halo); }
+  .lark-doc.lark-doc-compact-header .lark-doc-comment-panel.is-active { border-top-color: var(--ld-cat-yellow); box-shadow: var(--ld-shadow-float); }
+  .lark-doc.lark-doc-compact-header .lark-doc-comment:not(.is-active):not([data-resolved="true"]) { background: transparent; border-bottom: 2px solid var(--ld-cat-yellow); }
+}
+@media print { .lark-doc .lark-doc-comment-count, .lark-doc .lark-doc-comment-launcher { display: none !important; } }
+
 /* —— 正文高亮（mark 的外层 span）—— */
 .lark-doc .lark-doc-comment {
   border-radius: 2px;
@@ -757,8 +769,6 @@
 
 /* 手机参考：页内全文评论与并排选区侧栏，后者不占用模态遮罩。 */
 @media (max-width: 760px) {
-  .lark-doc .lark-doc-comment-launcher { position: fixed; z-index: 25; width: 40px; height: 41px; overflow: hidden; }
-  .lark-doc .lark-doc-comment-launcher > button { display: flex; box-sizing: border-box; align-items: center; justify-content: center; width: 100%; min-width: 0; max-width: 100%; height: 36px; margin-top: 5px; padding: 0; border: 1px solid var(--ld-comment-border); border-radius: 18px; background: var(--ld-bg-content); color: var(--ld-text-secondary); cursor: pointer; }
   .lark-doc .lark-doc-comment-layer.is-mobile.is-inline-document { position: relative; inset: auto; z-index: auto; display: block; width: 100%; height: auto; max-height: none; margin: 0; padding: 0; overflow: visible; background: transparent; pointer-events: auto; }
   .lark-doc .lark-doc-document-like { position: relative; display: grid; box-sizing: border-box; min-height: 190px; grid-template-rows: 60px 20px; align-content: start; justify-items: center; gap: 24px; padding: 24px 0 30px; color: var(--ld-text-tertiary); }
   .lark-doc .lark-doc-document-like > button { display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 1px solid var(--ld-brand-content); border-radius: 50%; color: var(--ld-brand-content); background: transparent; }

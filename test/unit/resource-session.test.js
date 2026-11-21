@@ -256,6 +256,24 @@ function business(request, overrides = {}) {
 }
 describe('document business original key and push state', () => {
   it('requires a complete replaceable contract', () => { expect(createDocumentBusinessProvider(null)).toBeNull(); expect(() => createDocumentBusinessProvider({})).toThrow(/契约/); const { provider } = business(vi.fn()); expect(createDocumentBusinessProvider(provider)).toBe(provider); provider.reset('disposed') })
+  it('preserves the live template state and only confirms matching template receipts', async () => {
+    const snap = bizSnapshot('3', { isTemplate: true, ownerId: 'alice' })
+    snap.capabilities.canConvertTemplate = true
+    const body = { kind: 'template', operationId: 'convert-template', expectedRevision: '3', value: false }
+    const result = { operationId: body.operationId, kind: body.kind, status: 'committed',
+      revision: '4', requestHash: 'sha256:' + 'a'.repeat(64), replayed: false }
+    const request = vi.fn().mockResolvedValueOnce(jsonBusiness(200, snap))
+      .mockResolvedValueOnce(jsonBusiness(200, { ...result, isTemplate: true }))
+      .mockResolvedValueOnce(jsonBusiness(200, { ...result, isTemplate: false, replayed: true }))
+      .mockResolvedValueOnce(jsonBusiness(200, { items: [{ docId: 'peer-template', title: '同事模板', category: 'shared' }], cursor: null }))
+    const { provider } = business(request)
+    expect(await provider.load()).toMatchObject({ isTemplate: true, capabilities: { canConvertTemplate: true } })
+    expect(await provider.execute(body)).toMatchObject({ status: 'unknown' })
+    expect(await provider.query(body.operationId)).toMatchObject({ status: 'committed', isTemplate: false })
+    expect(await provider.templates()).toEqual({ items: [{ docId: 'peer-template', title: '同事模板', category: 'shared' }], cursor: null })
+    expect(request.mock.calls.filter(([, init]) => init.method === 'POST')).toHaveLength(1)
+    provider.reset('disposed')
+  })
   it.each([401, 403, 404, 503])('query %s keeps original unknown and never repeats POST', async status => {
     const request = vi.fn(async (url, init) => init.method === 'POST' ? Promise.reject(Error('lost ACK')) : jsonBusiness(status, { code: 'CURRENT_QUERY_DENIED' }))
     const { provider } = business(request)

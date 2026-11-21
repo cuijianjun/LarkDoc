@@ -7,7 +7,6 @@
  */
 import '../styles/versioning.css'
 import '../styles/deferred-ui.css'
-import '../components/lark-doc/template-library.css'
 import { registerUiApi } from './ui-registry'
 import { uiCoreFactories } from './ui-core-factories'
 

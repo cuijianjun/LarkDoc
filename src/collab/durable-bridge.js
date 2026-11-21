@@ -53,7 +53,7 @@ export function createDurableCollaborationBridge(options = {}) {
   let helloStarted = false, restoring = false, restoredScope = false
   let outgoing = Promise.resolve(), incoming = Promise.resolve(), resolveReady, rejectReady
   const authority = { notified: false, attempts: 0, timer: null }
-  let connecting = null, failureCode = null, connectionGeneration = 0
+  let connecting = null, failureCode = null, connectionGeneration = 0, retryTimer
   const closeWaiters = new Set()
   const isolated = () => data.status === 'destroyed' || data.status === 'quarantined'
   const active = () => data.status === 'ready' || data.status === 'blocked'
@@ -64,7 +64,7 @@ export function createDurableCollaborationBridge(options = {}) {
     pending: Array.from(pending.values(), item => project(item, ['updateId', 'status', 'epoch'])),
     lastReceipt: operations ? operations.lastReceipt() : null })
   const changed = () => { if (options.onState) options.onState(state()) }
-  const resetConnection = () => { connectionGeneration++; connecting = null }
+  const resetConnection = () => { connectionGeneration++; connecting = null; clearTimeout(retryTimer) }
   const awareness = options.presence === true ? new Awareness(ydoc) : null
   let presence
   const closePresence = () => {
@@ -121,7 +121,7 @@ export function createDurableCollaborationBridge(options = {}) {
     if (isolated() || (current && !current())) return null
     if (!operations) {
       operations = module.createDurableOperations({ data, options, pending, scope, active, changed, ydoc, provider, awareness, state, resolveReady, renewAuthorization, authority, closeWaiters, fail,
-        authorized() { clearAuthorizationTimer(); authority.notified = false; authority.attempts = 0 },
+        authorized() { clearAuthorizationTimer(); clearTimeout(retryTimer); authority.notified = false; authority.attempts = 0 },
       })
       presence = operations.presence
     }
@@ -149,7 +149,7 @@ export function createDurableCollaborationBridge(options = {}) {
       changed()
     },
     local(update) {
-      if (isolated()) return
+      if (isolated() || operations?.queueComposition(update)) return
       const id = updateId(), bytes = Uint8Array.from(update)
       const item = { operationId: id, updateId: id, epoch: data.epoch, payloadBase64: toBase64(bytes), payloadHash: null,
         status: data.status === 'ready' ? 'pending' : 'unknown' }
@@ -168,6 +168,14 @@ export function createDurableCollaborationBridge(options = {}) {
     url, name: `${tenantId}/${docId}`, document: ydoc, awareness, token: options.ticket || '', durable, sessionAwareness: false,
     autoConnect: false, WebSocketPolyfill: options.WebSocketPolyfill,
     maxAttempts: 5, timeout: 15000,
+    onMaxAttemptsFailed: () => {
+      clearTimeout(retryTimer)
+      const transport = provider.configuration.websocketProvider
+      if (!transport.shouldConnect || isolated()) return
+      retryTimer = setTimeout(() => {
+        if (transport.shouldConnect && !isolated()) void transport.connect()
+      }, 5000)
+    },
     onMessage: ({ message }) => {
       // 配置也传给socket层，其原始事件尚无message；随后provider层才做帧校验。
       if (!message) return
@@ -192,6 +200,7 @@ export function createDurableCollaborationBridge(options = {}) {
     exportPending: () => Array.from(pending.values(), item => ({ ...item })),
     async exportPendingSnapshot() {
       if (restoring) throw new Error('PENDING_RECOVERY_IN_PROGRESS')
+      await operations?.finishComposition()
       await outgoing
       return Object.freeze({ schemaVersion: pendingSchema, ...scope, epoch: data.epoch, principalId: data.principalId,
         pending: Object.freeze(Array.from(pending.values(), item => Object.freeze({ ...item }))) })

@@ -391,7 +391,10 @@ function buildContent() {
     const first = window.__p7.editor.state.doc.firstChild
     const toJSON = first.toJSON
     const state = window.__p7Background = { serialized: 0, packets: [], scrolls: [], done: false, NativeWorker, first, toJSON }
-    first.toJSON = function () { state.serialized += 1; state.firstSerializedAt ??= performance.now(); return toJSON.call(this) }
+    first.toJSON = function () {
+      if (state.task) { state.serialized += 1; state.firstSerializedAt ??= performance.now() }
+      return toJSON.call(this)
+    }
     window.Worker = class extends NativeWorker {
       constructor(...args) {
         super(...args)
@@ -984,8 +987,19 @@ function buildContent() {
     await window.__larkDoc.setContentAsync('<p>before</p><div data-type="callout" data-emoji="💡"><p>高亮浮层</p></div>' + '<p>filler</p>'.repeat(80) + `<p>${'background'.repeat(60000)}</p>`, { pagedView: true })
   })
   const pagedCallout = page.locator('.ProseMirror [data-type="callout"]').first()
-  await pagedCallout.locator('p').click()
   await pagedCallout.evaluate(node => window.scrollBy(0, node.getBoundingClientRect().top - 70))
+  const textPoint = await page.waitForFunction(() => {
+    const paragraph = document.querySelector('.ProseMirror [data-type="callout"] p')
+    if (!paragraph?.firstChild) return null
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    const rect = range.getBoundingClientRect()
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2
+    return paragraph.contains(document.elementFromPoint(x, y)) ? { x, y } : null
+  })
+  const { x: textX, y: textY } = await textPoint.jsonValue()
+  await page.mouse.click(textX, textY)
+  await page.waitForFunction(() => window.__p7.editor.isActive('callout'))
   const changeCalloutIcon = page.locator('.lark-doc-callout-tools button[aria-label="更换高亮块图标"]')
   await changeCalloutIcon.waitFor({ state: 'visible' })
   const iconBox = await changeCalloutIcon.boundingBox()
@@ -1000,11 +1014,17 @@ function buildContent() {
     const api = window.__larkDoc, editor = api.getEditor(), abort = new AbortController()
     api.setContent('<p data-block-id="cancel_before">取消之前的正文</p>')
     const originalDoc = editor.state.doc
-    let original = null
+    let original = null, restored = false
     // Preflight may yield to a native selection transaction. Rollback must
     // restore the exact state immediately before the first owned mutation.
     const captureOriginal = ({ transaction }) => {
       if (!original && transaction.getMeta('larkDocPagedImport')?.phase === 'page') original = editor.state
+    }
+    const view = editor.view, updateState = view.updateState
+    // Observe the exact rollback before unrelated pointer decorations create another state.
+    view.updateState = function (state) {
+      updateState.call(this, state)
+      if (abort.signal.aborted && state === original) restored = true
     }
     editor.on('beforeTransaction', captureOriginal)
     let blocked = false, cancelled = false
@@ -1017,9 +1037,9 @@ function buildContent() {
         await new Promise(resolve => setTimeout(resolve, 0))
       } })
     } catch (error) { cancelled = error.name === 'AbortError' }
-    finally { editor.off('beforeTransaction', captureOriginal) }
+    finally { view.updateState = updateState; editor.off('beforeTransaction', captureOriginal) }
     delete window.__p7.asyncHtml
-    return { blocked, cancelled, stateRestored: editor.state === original && editor.state.doc === originalDoc, editable: editor.isEditable }
+    return { blocked, cancelled, stateRestored: restored && editor.state.doc === originalDoc && editor.state.selection.eq(original.selection), editable: editor.isEditable }
   })
   record('[分页导入] 提交中拒绝部分快照，取消完整恢复原state和可编辑性', Object.values(cancelledImport).every(Boolean), JSON.stringify(cancelledImport))
   await page.evaluate(() => window.__larkDoc.setContent('<p>恢复小文档</p>'))

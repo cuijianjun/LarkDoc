@@ -87,7 +87,7 @@ export default {
       root.addEventListener('keydown', cancelPending, true)
       editor.on?.('transaction', retirePending)
       const ready = readFeature('ui.ready')
-      const loadUi = ready ? Promise.resolve(ready) : loadFeature('ui', () => import('../../../features/ui').then(module => module.uiApi))
+      const loadUi = ready?.createBlockHandleMenus ? Promise.resolve(ready) : loadFeature('ui', () => import('../../../features/ui').then(module => module.uiApi))
       loadUi.then(api => {
         if (!current()) return
         // 面板包已拆成两支，这里只校验随 A 包必然下发的工厂——拿 B 包的工厂

@@ -551,4 +551,46 @@ T017本地版本创建/授权读取/正文恢复与一次Undo已有实现/证据
 
 - [x] T096 [US1] T084实际手机验收发现封面触达缺口：no-hover空封面入口opacity0且中心被64px顶栏挡住，gallery固定542px在393px屏横向溢出。仅响应式CSS修可见完整入口和图库/本地选择控制范围，保桌面hover/542px、readonly/能力门及正文Undo；真实CSS/DOM最小RED、原cover增量/独审及主新包实际点击/本地FileReader/移除验收。不得把本地data URL读图当真实上传服务成功。
 
+### 2026-11-19 手机评论与协同对照
+
+使用 Chrome 打开飞书帮助的移动端页签，结合已保存的 Android 选区、全文入口与菜单记录。当前 Android 设备仅采集了前台状态。对照采用 LarkDoc 自有界面。[飞书评论说明](https://www.feishu.cn/hc/zh-CN/articles/360033768533) · [飞书离线编辑说明](https://www.feishu.cn/hc/zh-CN/articles/369694430610)
+
+| 场景 | 对照结果 |
+|---|---|
+| 全文评论、选区评论、定位原文 | 两边均可从页尾和选中文字后的工具栏进入。LarkDoc 可通过正文标记或右侧评论入口查看，布局沿用现有组件。 |
+| 回复、编辑、表情、删除 | 基本操作已有。移动端删除须确认，随后使用当前 Provider 和权限执行。 |
+| 解决评论与历史 | 修复选区「评论操作」首触丢点击、解决缺二次确认、手机历史入口和已解决全文仍显示。已解决项退出手机列表，历史与恢复留在桌面。 |
+| 翻译 | 修复手机评论另选目标语言、一次性宿主接口丢失选项，以及发布包遗漏段落翻译弹层的按需入口。两条评论翻译入口采用本编辑器最近选择的段落语言；真实内部译文仍依赖已配置服务。 |
+| 私有范围 | 飞书会按文档角色和内容作者纳入额外可见者；LarkDoc 003 只给有当前文档访问权的作者及显式授权参与者。修复本地选区私有标记被丢弃后仍可发送，以及会让人误以为管理者自动可见的提示。 |
+| 图片与回复附件 | LarkDoc 有普通附件入口和预览。飞书手机版可框选图片区域并插入回复；区域标注、远端图片锚点与对象存储仍缺受支持的链路。 |
+| 评论链接、转发与举报 | 已接入规范链接的远端 Provider 可生成链接并在打开时复权。飞书联系人转发尚缺评论级发送服务；举报走显式宿主能力。 |
+| @ 提及、通知与参与者 | 本地可验结构化权限和通知投影。真实组织目录、飞书端通知送达及跨账号外验仍待。飞书移动端的文档评论关注入口由桌面或网页版提供。 |
+| 实时协作、评论锚点及撤销 | 本地可用双浏览器回环检验文档同步、重连、锚点与撤销。真实飞书手机版多人在线头像、指示和到达时序尚需可只读观察的多人样本。 |
+| 离线编辑 | 飞书支持预下载并在联网后自动同步。LarkDoc 的受控持久协同断线保护正文，未确认更新走原键查询。持久离线缓存、跨账号隔离和恢复后授权提交需要独立的 003 契约。 |
+
+定向回归覆盖手机触控确认与细指针窄窗、历史边界、已解决全文列表、两种翻译接口和本地私有选区保护。最终产物指纹 `d6b31ead`。Chrome iPhone 16 模拟器完成首触、解决确认与取消、历史入口、私有草稿、翻译语言继承以及按需加载失败后重试；移动矩阵 12/12，双端协同及锚点复验通过。受影响主批次 3486 项通过，末批受影响 1921 项通过，两次各跳过 1 项且计数重叠。构建契约 133 项通过，原 gzip 门限通过。浏览器与构建证据在 `/tmp/larkdoc-dev-sync-20261119/mobile-parity-final-*.log`。原 003 T040、T073 的生产验收范围保持。
+
 资源及业务清单见[需求18§18](../../requirements/18-飞书手机端需求采集.md)。固定隔离区和单写入者继续沿用；原生安装包/脚本/manifest/REA摘要/本批截图日志统一位于`/tmp/larkdoc-acceptance-20261113/rea-reference/mobile-20261115/`，后续验收仍需这些原件，不自动清理。
+
+### 2026-11-19 dev 逐功能回归
+
+验证范围使用仓库的 45 个浏览器目标。移动交互采用 Chrome iPhone 16 模拟，后端结果见 [003 联合验收](../003-production-collaboration/tasks.md#2026-11-19-dev-前后端联合验收)。
+
+| 功能 | 浏览器目标 |
+|---|---|
+| 文字编辑、选区和长文档 | `input-selection`、`splitting`、`clipboard`、`bubble`、`perf-scheduling` |
+| 工作区、工具栏与浮层 | `element`、`host-config`、`theme`、`toolbar`、`overlays`、`panels`、`help-fab` |
+| 插入、格式、表格与块操作 | `block-menu`、`command-menu`、`color-palette`、`colors`、`columns`、`heading-menu`、`heading-number`、`highlight-fold`、`list-marker`、`list-number-menu`、`table-tools`、`callout-tools`、`code-block` |
+| 媒体、公式、图表、导入导出和 AI | `image`、`math`、`mermaid`、`import-export`、`ai-api`、`isv-panel`、`icon-align` |
+| 评论、提及、通知、移动协作和历史 | `comments`、`notify-mobile`、`mention-panel`、`mobile`、`revision-panel`、`versions`、`search-panel` |
+| 目录、日程、提醒、对话框和演示 | `agenda`、`calendar-panel`、`catalogue`、`dialogs`、`reminder`、`stage` |
+
+首轮 41/45。长文档高亮块真实点击会被同一帧的悬停装饰事务改回上一段。收紧句柄释放和重复范围判定。被动布局等待 ProseMirror 接收新原生选区，显式手柄、拖拽和清理继续走原入口。回归保留实际点击、选区和高亮工具断言。取消导入在实际回滚时核对原 EditorState，结束后另核对原正文、选区和可编辑性。后台快照计数使用本次滚动触发的任务起点。
+
+评论与图片脚本等待实际写入，并通过原生键盘选区验证编辑，链接预览从边缘触发真实悬停。演示脚本记录浏览器的原生全屏准入，两种结果均核对应用铺满视口、正文和退出恢复。新标签页等待实际地址。
+
+最终产物 `011137ff`。前端测试 5,068 通过、1 跳过，构建契约 133 通过，40 个制品与源码匹配，18 个交付压缩文件的检查和原 gzip 预算通过。三个浏览器组分别通过 15、15、14 项，最后在同一指纹定向复验长文档 72/72，合计 45 个目标通过。手机矩阵 12/12，移动通知 36/36。独立 Chrome 手机模拟脚本通过确认与取消、翻译语言与重试、双会话协同、重连、批注锚点和撤销。
+
+证据在 `/tmp/larkdoc-full-audit-20261119/`，含 `frontend-gate-acceptance.log`、`frontend-release-acceptance.log`、`frontend-matrix-closure-1.log` 至 `frontend-matrix-closure-3.log`、`frontend-perf-final-recheck.log`、`frontend-mobile-closure.log` 和 `frontend-collab-closure.log`。
+
+该轮合成服务与已有功能断言用于验证 LarkDoc 本地行为。完整飞书操作对照、原生真机、Safari 和真实公司服务的验收状态见上节与 003 记录。

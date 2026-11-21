@@ -5,18 +5,6 @@
  * Escape cancels that confirmation, backdrop clicks keep it open; restoring retains history.
  * The outer history view still closes through 返回文档. Summary helpers remain independently usable.
  */
-import {
-  E_SNAPSHOT_AUTHOR,
-  E_SNAPSHOT_JSON_NOT_ALLOWED,
-  E_SNAPSHOT_PAYLOAD_MISSING,
-  E_VERSION_EVICTED,
-  E_VERSION_NOT_FOUND,
-  SNAPSHOT_KIND,
-  diffSummary,
-  payloadSize,
-  projectionMetrics,
-  toBytes,
-} from '../../../core/versioning'
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../extensions'
 import { validateDocument } from '../../../core/documentOperations'
@@ -24,120 +12,11 @@ import { createNetworkPolicy } from '../../../core/policy/network'
 import { projectCapabilityUi } from '../../../core/policy/capability'
 import { createVersioningPresentation } from './versioningPresentation'
 
-/** 时间线日期分组文案（实测只有「今天」「昨天」两级，再往前是 `M月D日`）。 */
-export const VERSIONING_DAY_LABELS = Object.freeze({
-  today: '今天',
-  yesterday: '昨天',
-  unknown: '未知时间',
-})
-
-/**
- * 错误码 → 降级文案。
- *
- * 为什么必须逐条映射而不是直接把 `error.message` 甩给用户：
- *   `E_VERSION_NOT_FOUND` 与 `E_VERSION_EVICTED` 在用户眼里是两件完全不同的事 ——
- *   前者可以要求重试，后者必须告诉他「这份版本被保留策略删了，回不去了」。混成一句
- *   「操作失败」会让用户反复点一个永远不可能成功的按钮。
- */
-export const VERSIONING_ERROR_TEXT = Object.freeze({
-  [E_VERSION_NOT_FOUND]: '该版本不存在或已被移除，请刷新历史记录后重试',
-  [E_VERSION_EVICTED]: '该版本已被保留策略淘汰，无法预览或恢复',
-  [E_SNAPSHOT_PAYLOAD_MISSING]: '该版本的正文快照缺失，只能查看元信息',
-  [E_SNAPSHOT_AUTHOR]: '无法确定操作者：宿主未向 versioning Provider 传入当前作者',
-  [E_SNAPSHOT_JSON_NOT_ALLOWED]: '版本快照只接受二进制正文（Yjs update），不接受 JSON',
-})
-
-/** 拿不到具体错误码时的兜底（拼上原文，方便宿主排查，但不裸抛给面板标题区）。 */
-const VERSIONING_ERROR_FALLBACK = '版本操作失败'
-
 /** 「编辑记录 N/M」的分隔口径：**版本条目** = `provider.list()` 的一条。 */
 export const VERSIONING_CURSOR_LABEL = '编辑记录'
 
-/** `kind` 徽标文案（09 §5.8：自动 / 手动 / 恢复产生，三个都要能认）。 */
-export const VERSION_KIND_LABELS = Object.freeze({
-  [SNAPSHOT_KIND.AUTO]: '自动快照',
-  [SNAPSHOT_KIND.MANUAL]: '手动保存',
-  [SNAPSHOT_KIND.RESTORE]: '恢复产生',
-})
-
 /** 无能力（权限 / 未配 Provider）时的置灰色 —— 04 §3.4-B 实测 `rgb(187,191,196)`。 */
 const DISABLED_FILL = 'rgb(187, 191, 196)'
-
-/** 补零到两位（`00:04` 是实测口径，不能写成 `0:4`）。 */
-function pad2(value) {
-  return value < 10 ? `0${value}` : String(value)
-}
-
-/**
- * 时间线条目名：04 §3.4-C 实测「10月25日 00:04」，`M月D日 HH:mm`，HH / mm 都补零。
- *
- * @param {number} createdAt 毫秒时间戳
- * @returns {string} 非有限值返回空串（面板自己有兜底文案，这里不伪造时间）。
- */
-export function formatVersionTime(createdAt) {
-  if (!Number.isFinite(createdAt) || createdAt <= 0) return ''
-  const date = new Date(createdAt)
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
-}
-
-/** 只取 `HH:mm`（§⑤-2 的 Dialog 标题「保存 今天 00:18 的文档版本」用的就是这段）。 */
-export function formatVersionClock(value) {
-  const ts = Number.isFinite(value) && value > 0 ? value : Date.now()
-  const date = new Date(ts)
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
-}
-
-/** 某一天的自然日 `YYYY-MM-DD` 键（本地时区；跨时区不是本面对的问题）。 */
-function dayKeyOf(createdAt) {
-  const date = new Date(createdAt)
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
-}
-
-/**
- * 日期分组标题：今天 / 昨天 / `M月D日`。
- *
- * @param {number} createdAt
- * @param {number} [now] 注入的「当前时间」，便于单测；缺省 `Date.now()`。
- */
-export function formatVersionDayLabel(createdAt, now) {
-  if (!Number.isFinite(createdAt) || createdAt <= 0) return VERSIONING_DAY_LABELS.unknown
-  const base = Number.isFinite(now) ? now : Date.now()
-  const key = dayKeyOf(createdAt)
-  if (key === dayKeyOf(base)) return VERSIONING_DAY_LABELS.today
-  if (key === dayKeyOf(base - 86400000)) return VERSIONING_DAY_LABELS.yesterday
-  const date = new Date(createdAt)
-  return `${date.getMonth() + 1}月${date.getDate()}日`
-}
-
-/**
- * 按天分组（04 §3.4-C）。
- *
- * **不做二次排序**：`provider.list()` 已保证新→旧（同毫秒按写入次序），面板再排一次
- * 就是两处口径打架。分组只做「连续同日切一段」，这样同一天不会跨到两个组里。
- *
- * @param {Array} records `provider.list()` 的返回
- * @param {number} [now] 注入的「当前时间」
- * @returns {Array<{ key: string, label: string, items: Array }>}
- */
-export function groupVersionsByDay(records, now) {
-  const groups = []
-  if (!Array.isArray(records)) return groups
-  for (let i = 0; i < records.length; i += 1) {
-    const record = records[i]
-    if (!record || typeof record !== 'object') continue
-    const createdAt = Number.isFinite(record.createdAt) ? record.createdAt : 0
-    // `createdAt <= 0` 是 `normalizeSnapshot` 给缺失时间的兜底；单独归到「未知时间」组，
-    // 否则 `new Date(0)` 会让它掉进 1970-01-01，看着像一份真实的远古版本。
-    const key = createdAt > 0 ? dayKeyOf(createdAt) : ''
-    const tail = groups.length ? groups[groups.length - 1] : null
-    if (tail && tail.key === key) {
-      tail.items.push(record)
-      continue
-    }
-    groups.push({ key, label: formatVersionDayLabel(createdAt, now), items: [record] })
-  }
-  return groups
-}
 
 /**
  * capability 闸门（唯一入口）。
@@ -162,90 +41,10 @@ export function versionCapabilityGate(session, capability) {
   return { allowed: true, reason: '', missingProvider: false }
 }
 
-/** 错误对象 → 面板可读文案。优先吃 `code`，没有 code 时退回原文（`session` 抛的是裸 Error）。 */
-export function versioningErrorMessage(error) {
-  if (!error) return ''
-  if (error.code && VERSIONING_ERROR_TEXT[error.code]) return VERSIONING_ERROR_TEXT[error.code]
-  const message = typeof error.message === 'string' ? error.message : ''
-  return message || VERSIONING_ERROR_FALLBACK
-}
-
-/**
- * 元字段 → `projectionMetrics` 认识的指标对象。
- *
- * `charCount` 与 `headings` 恒为 `0` / `[]`：**历史侧不提供**，不是「该版本是空文档」。
- * 面板因此只读 `blockCount.delta`，不读这两项。
- */
-export function recordMetrics(record) {
-  const input = record && typeof record === 'object' ? record : {}
-  return {
-    blockCount: Number.isInteger(input.blockCount) && input.blockCount >= 0 ? input.blockCount : 0,
-    charCount: 0,
-    headings: [],
-  }
-}
-
-/**
- * 相邻两个版本的差异摘要（复用 `core/versioning` 的 `diffSummary`，不自己再算一遍）。
- *
- * @param {object} prevRecord **更早**的那份（new → old 序列里靠后的那个）
- * @param {object} nextRecord **更晚**的那份
- */
-export function historyDiffSummary(prevRecord, nextRecord) {
-  return diffSummary(recordMetrics(prevRecord), recordMetrics(nextRecord))
-}
-
-/**
- * 时间线 `-item-desc` 的文案（实测「最近更新编辑了封面」是飞书自己的运营文案，我们
- * 拿不到，所以用**真实指标**换一句话）。
- *
- * 两个分支都在说真话：块数已知就报差值，未知就明说未知 —— 不补0 假装「无变化」。
- */
-export function describeVersionDiff(prevRecord, nextRecord) {
-  const target = nextRecord && typeof nextRecord === 'object' ? nextRecord : null
-  if (!target) return '暂无可选中的版本'
-  // 序列是 new → old，所以「找不到 prev」发生在**最早**那条上。
-  if (!prevRecord) return '最早一条记录，无更早版本可比'
-  const prevKnown = Number.isInteger(prevRecord.blockCount)
-  const nextKnown = Number.isInteger(target.blockCount)
-  if (!prevKnown || !nextKnown) return '相邻版本的块数未知，无法生成摘要'
-  const delta = historyDiffSummary(prevRecord, target).blockCount.delta
-  if (delta > 0) return `新增 ${delta} 个块`
-  if (delta < 0) return `减少 ${Math.abs(delta)} 个块`
-  return '块数无变化'
-}
-
-/** 当前正文的投影（多维指标都真实：`projectionMetrics` 吃的就是 doc JSON）。 */
-export function currentProjection(editor) {
-  if (!editor || typeof editor.getJSON !== 'function') return null
-  try {
-    return projectionMetrics(editor.getJSON())
-  } catch (error) {
-    // 编辑器被销毁后 `getJSON` 会抛；面板此时该显示空，而不是跟着崩。
-    return null
-  }
-}
-
-function pairOf(records, index) {
-  if (!Array.isArray(records) || index < 0) return { prev: null, current: null }
-  // `records` 是 new → old，所以「更早的那份」是 index + 1。
-  return { prev: records[index + 1] || null, current: records[index] || null }
-}
-
-function confirmedVersionResult(result, provider, field) {
-  if (!result || ['unknown', 'pending', 'coordinating'].includes(result.status)) return false
-  if (provider?.requiresDurableConfirmation) {
-    return result.status === 'committed' && result[field]?.status === 'durable'
-      && typeof result.operationId === 'string' && result.operationId.length > 0
-  }
-  return typeof result.id === 'string' && result.id.length > 0
-}
-
 const versionPresentation = /*#__PURE__*/ createVersioningPresentation({
   Editor, createLarkDocExtensions, validateDocument, createNetworkPolicy,
-  formatVersionClock, formatVersionTime, groupVersionsByDay, historyDiffSummary, describeVersionDiff, pairOf,
-  VERSIONING_DAY_LABELS, VERSION_KIND_LABELS, SNAPSHOT_KIND,
-  versionCapabilityGate, versioningErrorMessage, confirmedVersionResult,
+  versionCapabilityGate,
+  loadVersionUi: () => import('../../../features/ui').then(module => module.uiApi),
 })
 
 export default {
@@ -309,6 +108,7 @@ export default {
     versionRestoreDisabled(disabled) { if (disabled) this.closeVersionRestoreConfirm() },
   },
   beforeDestroy() {
+    this.closeSaveVersion()
     this.closeVersionRestoreConfirm()
     this.closeVersionTrash()
     this._versionLoadToken = (this._versionLoadToken || 0) + 1
@@ -321,6 +121,10 @@ export default {
     /** 与评论/导出同一套视觉投影，供时间线按钮复用 visible/gray/downgrade 语义。 */
     versionCreateCapabilityState() {
       return projectCapabilityUi(this.session, 'canCreateVersion')
+    },
+    versionCanSave() {
+      return versionCapabilityGate(this.session, 'canCreateVersion').allowed && Boolean(this.versionProvider?.createSnapshot) &&
+        typeof this.session?.createVersion === 'function' && (!this.writable || this.writable())
     },
     versionRestoreCapabilityState() {
       return projectCapabilityUi(this.session, 'canRestoreVersion')
@@ -383,14 +187,20 @@ export default {
     versionNextDisabled() {
       return this.versionTotal === 0 || this.versionIndex >= this.versionTotal
     },
-    /** 当前正文投影：这是 `projectionMetrics` 唯一能拿到真字数、真标题的输入。 */
-    versionCurrentProjection() {
-      return currentProjection(this.editor)
-    },
   },
 
   methods: {
     ...versionPresentation.methods,
+    async openSaveVersion(opener, actionCurrent = () => true) {
+      if (!this.versionCanSave) return false
+      const scope = this.versionOperationScope()
+      const { createSaveVersionDialog } = await import('../../../ui/dialogs')
+      return scope === this.versionOperationScope() && actionCurrent() && this.openNamedVersion(createSaveVersionDialog, opener, actionCurrent)
+    },
+    closeSaveVersion() {
+      this._namedVersionDialog?.destroy()
+      this._namedVersionDialog = null
+    },
     versionOperationScope() {
       const session = this.session
       return JSON.stringify([session?.documentId, session?.user?.id, session?._identityGeneration,
@@ -404,6 +214,9 @@ export default {
       return !this._isDestroyed && !editor?.isDestroyed && (!session?.can || session.can('canView')) && this.session === session && this.versionProvider === provider && this.editor === editor
     },
     resetVersionContext() {
+      this.closeSaveVersion()
+      this._namedVersionPending = null
+      this._versionNoticeVersion = null
       this._versionLoadToken = (this._versionLoadToken || 0) + 1
       this._versionPreviewToken = (this._versionPreviewToken || 0) + 1
       this._versionRestoreToken = (this._versionRestoreToken || 0) + 1
@@ -460,130 +273,6 @@ export default {
       this.versionPreviewError = ''
       this.versionSelectedId = ''
       this.versionError = ''
-    },
-
-    /** 拉列表；拉不动时右栏显示降级文案而不是空白（面板自己不抛、不白屏）。 */
-    async loadVersions() {
-      const provider = this.versionProvider
-      const session = this.session, editor = this.editor
-      const context = { session, provider, editor, documentId: this.documentId, scope: this.versionOperationScope() }
-      const documentId = session ? session.documentId : ''
-      const token = (this._versionLoadToken || 0) + 1
-      this._versionLoadToken = token
-      const current = () => token === this._versionLoadToken && this.versionOperationMatches(context)
-      if (!provider) {
-        this.versionList = []
-        this.versionError = '未配置 versioning Provider，历史记录不可用'
-        return []
-      }
-      this.versionLoading = true
-      this.versionError = ''
-      try {
-        const list = await provider.list({ documentId })
-        if (!current()) return []
-        this.versionList = Array.isArray(list) ? list.filter(item => this.versionPanelKind !== 'saved' || item.pinned || ['manual', 'approval'].includes(item.kind)) : []
-        this.versionIndex = this.versionList.length ? 1 : 0
-        this.versionSelectedId = this.versionList.length ? this.versionList[0].id : ''
-        return this.versionList
-      } catch (error) {
-        if (!current()) return []
-        this.versionList = []
-        this.versionError = versioningErrorMessage(error) || VERSIONING_ERROR_FALLBACK
-        return []
-      } finally {
-        if (current()) this.versionLoading = false
-      }
-    },
-
-    /** 选中某个版本 → 拉全文。`get()` 失败只降级这一屏，列表还在。 */
-    async selectVersion(versionId) {
-      this.closeVersionRestoreConfirm()
-      const id = typeof versionId === 'string' ? versionId : ''
-      if (!id) return null
-      this.versionSelectedId = id
-      const index = this.indexOfVersion(id)
-      if (index >= 0) this.versionIndex = index + 1
-      const provider = this.versionProvider
-      const session = this.session, editor = this.editor
-      const readScope = JSON.stringify([session?.documentId, session?._versioningProviderGeneration, session?._authorizationGeneration, session?._privateIdentityGeneration])
-      const token = (this._versionPreviewToken || 0) + 1
-      this._versionPreviewToken = token
-      const current = () => token === this._versionPreviewToken && this.versionContextMatches(session, provider, editor) && this.versionSelectedId === id && readScope === JSON.stringify([session?.documentId, session?._versioningProviderGeneration, session?._authorizationGeneration, session?._privateIdentityGeneration])
-      if (!provider) {
-        this.versionPreview = null
-        this.versionPreviewError = VERSIONING_ERROR_TEXT[E_SNAPSHOT_PAYLOAD_MISSING]
-        return null
-      }
-      this.versionPreviewError = ''
-      this.versionPreview = null
-      this.versionPreviewLoading = true
-      this.versionChanges = []
-      this.versionChangeIndex = 0
-      this.versionChangesError = ''
-      this.versionChangesLoading = false
-      try {
-        const record = await provider.get(id)
-        if (!current()) return null
-        const bytes = toBytes(record && record.payload)
-        let document = null, contentError = ''
-        if (bytes && session?.readVersionDocument) {
-          try {
-            document = await session.readVersionDocument(id, record)
-            if (editor?.schema) validateDocument(document.content, editor.schema)
-          } catch (error) { document = null; contentError = versioningErrorMessage(error) }
-        }
-        if (!current()) return null
-        this.versionPreview = {
-          id: record.id,
-          readScope,
-          label: record.label,
-          createdAt: record.createdAt,
-          author: record.author,
-          kind: record.kind,
-          pinned: Boolean(record.pinned),
-          sizeBytes: record.sizeBytes,
-          blockCount: record.blockCount,
-          sourceRevision: record.sourceRevision,
-          sourceEpoch: record.sourceEpoch,
-          capturedSeq: record.capturedSeq,
-          contentHash: record.contentHash,
-          stateHash: record.stateHash,
-          // 有没有正文，决定左栏画「只读预览」还是「二进制快照 N 字节」的降级卡。
-          hasPayload: Boolean(bytes),
-          byteLength: payloadSize(record && record.payload),
-          restore: record.kind === SNAPSHOT_KIND.RESTORE,
-          document,
-        }
-        this.versionPreviewError = contentError
-        await this.loadVersionChanges(id, current)
-        return current() ? this.versionPreview : null
-      } catch (error) {
-        if (!current()) return null
-        this.versionPreview = null
-        this.versionPreviewError = versioningErrorMessage(error)
-        return null
-      } finally {
-        if (current()) this.versionPreviewLoading = false
-      }
-    },
-
-    async loadVersionChanges(id, current) {
-      const index = this.indexOfVersion(id), older = this.versionList[index + 1]
-      if (!older) { this.versionChangesError = '没有更早版本可比较'; return }
-      if (typeof this.versionProvider?.diff !== 'function' || typeof this.session?.diffVersions !== 'function') {
-        this.versionChangesError = '尚未配置版本差异服务'; return
-      }
-      this.versionChangesLoading = true
-      try {
-        const result = await this.session.diffVersions(older.id, id)
-        if (!current()) return
-        if (result?.algorithm !== 'json-pointer-v1' || result.from?.versionId !== older.id || result.to?.versionId !== id || !Array.isArray(result.changes)) throw new Error('版本差异结果无效')
-        this.versionChanges = result.changes
-      } catch (error) {
-        if (current()) this.versionChangesError = versioningErrorMessage(error)
-      } finally {
-        if (current()) this.versionChangesLoading = false
-      }
     },
 
     indexOfVersion(versionId) {

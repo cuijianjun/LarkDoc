@@ -52,30 +52,38 @@ it('assembles the CI smoke host with the complete Element loader dependency file
 })
 
 it('clean Element build includes its eager runtime and every local optional script', () => {
-  // uiPanels / export / uiExtra / background 只有 UMD 形态（都是「点下去才走」的懒边界，
+  // uiPanels / uiOverlays / export / uiExtra / background 只有 UMD 形态（按需加载，
   // 非 Element 宿主各自有自己的入口），跟随 element / elementRuntime 一起构建，
   // 但不进 esm 特性清单。清单本身就在 elementPackNames 里，避免两处各写一遍走偏。
   const features = elementPackNames.map(name => `feature:${name}:umd`)
-  expect(features).toHaveLength(11)
+  expect(features).toHaveLength(12)
   expect(targetsFor('element')).toEqual(['element', 'elementRuntime', 'elementPolyfills', ...features])
   expect(targetsFor('elementRuntime')).toEqual(['elementRuntime', 'elementPolyfills', ...features])
+  for (const target of ['features', 'all']) expect(targetsFor(target)).toEqual(expect.arrayContaining(features))
   expect(new Set(targetsFor('all')).size).toBe(targetsFor('all').length)
 })
 
-it('splits the Element UI feature into disjoint interaction and panel factory tables', async () => {
+it('splits the Element UI feature into disjoint factory tables', async () => {
   const { uiCoreFactories } = await import('../../src/features/ui-core-factories')
   const { uiPanelFactories } = await import('../../src/features/ui-panels-factories')
-  const core = Object.keys(uiCoreFactories), panels = Object.keys(uiPanelFactories)
+  const { uiOverlayFactories } = await import('../../src/features/ui-overlays-factories')
+  const factories = [uiCoreFactories, uiPanelFactories, uiOverlayFactories].flatMap(Object.keys)
   // 重叠就是同一个工厂被打进两个包：谁先到谁生效，另一份纯属白下。
-  expect(core.filter(name => panels.includes(name))).toEqual([])
-  // 非 Element 宿主只有 features/ui.js 一个出口，它必须正好是两半之和。
-  const uiSource = fs.readFileSync(path.resolve(__dirname, '../../src/features/ui.js'), 'utf8')
-  expect(uiSource).toContain('...uiCoreFactories, ...uiPanelFactories')
+  expect(new Set(factories).size).toBe(factories.length)
+  expect(typeof uiOverlayFactories.createShareInteraction).toBe('function')
+  const { uiApi } = await import('../../src/features/ui')
+  expect(Object.keys(uiApi).sort()).toEqual(factories.sort())
   // 虚拟入口按组名钉死加载槽位：面板类去 ui.panels，选区/悬浮类留在 ui。
   const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
   const editorDir = path.resolve(__dirname, '../../src/components/lark-doc/editor')
   const generated = (source, importer) => alias.load(alias.resolveId(source, path.join(editorDir, importer)))
   expect(generated('../../../ui/panels', 'panelsUiMixin.js')).toContain('"ui.panels"')
+  const translationImporter = path.join(editorDir, 'bubbleMenuMixin.js')
+  expect(alias.transform('const module = await import("../../../ui/dialogs")', translationImporter).code).toContain("__larkDocLoadDocumentFeature('ui.panels')")
+  const standardAlias = getRollupConfig('esm').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
+  expect(standardAlias.resolveId('../../../ui/dialogs', translationImporter)).toBeNull()
+  expect(uiPanelFactories.createSelectionTranslationDialog).toBeTypeOf('function')
+  expect(generated('../../../ui/overlays', 'overlaysUiMixin.js')).toContain('"ui.overlays"')
   expect(generated('../../../ui/commandMenu', 'commandMenuUiMixin.js')).not.toContain('ui.panels')
   expect(generated('../../../ui/bubbleBar', 'bubbleMenuMixin.js')).not.toContain('ui.panels')
 })
@@ -245,15 +253,21 @@ describe('公开产物与轻量包边界', () => {
       construct: () => sharedStub,
     })
     context.__LARK_DOC_SHARED__ = new Proxy({}, { get: () => sharedStub })
-    const hasVersionLayer = css => { let found = false; requireHere('postcss').parse(css).walkRules(rule => { if (rule.selectors?.some(selector => selector.trim() === '.lark-doc .lark-doc-version-layer')) found = true }); return found }
+    const hasSelector = (css, selector) => { let found = false; requireHere('postcss').parse(css).walkRules(rule => { if (rule.selectors?.includes(selector)) found = true }); return found }
+    const versionLayer = '.lark-doc .lark-doc-version-layer'
+    const slideStage = '.lark-doc .lark-doc-slide-stage'
+    const templateLibrary = '.lark-doc-template-library'
     for (const target of ['esm', 'elementRuntime']) {
       const config = getRollupConfig(target), input = '\0styles-boundary-fixture'
       const bundle = await rollup({ ...config, input, plugins: [{ name: 'styles-boundary-fixture', resolveId: id => id === input ? input : null,
         load: id => id === input ? `import ${JSON.stringify(path.join(root, 'style.css'))}; export const styleEntry = true` : null }, ...config.plugins] })
       try {
         const { output } = await bundle.generate({ ...config.output, plugins: [] })
-        if (target === 'esm') expect(hasVersionLayer(Buffer.from(output.find(item => item.type === 'asset' && item.fileName === 'lark-doc.css').source).toString())).toBe(true)
-        else { runInNewContext(output.find(item => item.type === 'chunk').code, context); expect(hasVersionLayer(styles.join(''))).toBe(false) }
+        const file = target === 'esm' ? 'lark-doc.css' : 'lark-doc-element.css'
+        const css = String(output.find(item => item.type === 'asset' && item.fileName === file).source)
+        for (const selector of [versionLayer, slideStage, templateLibrary]) {
+          expect(hasSelector(css, selector), selector).toBe(target === 'esm')
+        }
       } finally { await bundle.close() }
     }
     const config = getRollupConfig('feature:ui:umd'), bundle = await rollup(config)
@@ -263,8 +277,16 @@ describe('公开产物与轻量包边界', () => {
       // 面板样式改成同目录独立表：脚本求值不再写 <style>，样式由 element 通道注入 <link>。
       expect(styles).toHaveLength(0)
       const css = output.find(item => item.type === 'asset' && item.fileName === 'lark-doc-element.ui.css')
-      expect(hasVersionLayer(Buffer.from(css.source).toString())).toBe(true)
+      expect(hasSelector(String(css.source), versionLayer)).toBe(true)
+      expect(hasSelector(String(css.source), templateLibrary)).toBe(false)
     } finally { await bundle.close() }
+    const panelConfig = getRollupConfig('feature:uiPanels:umd'), panelBundle = await rollup(panelConfig)
+    try {
+      const { output } = await panelBundle.generate({ ...panelConfig.output, plugins: [] })
+      const css = String(output.find(item => item.type === 'asset' && item.fileName === 'lark-doc-element.panels.css').source)
+      expect(hasSelector(css, slideStage)).toBe(true)
+      expect(hasSelector(css, templateLibrary)).toBe(true)
+    } finally { await panelBundle.close() }
   }, 15000)
 
   it('标准入口真实构建图保留同步目录，重面板只存在于动态闭包', async () => {
@@ -334,7 +356,8 @@ describe('公开产物与轻量包边界', () => {
       const sharedExports = Object.entries(sharedHostModules)
       const sharedSource = `${sharedExports.map(([file], index) => `import * as shared${index} from ${JSON.stringify(path.join(root, file))};`).join('\n')}
 import { publishSharedModules } from ${JSON.stringify(path.join(root, 'src/core/features/shared-host.js'))};
-publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify(name)}: shared${index}`).join(', ')}});`
+import { registerFeature } from ${JSON.stringify(path.join(root, 'src/core/features/registry.js'))};
+publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify(name)}: shared${index}`).join(', ')}, 'core.featureRegistration': { registerFeature }});`
       const sharedBundle = await rollup({ ...config, input: sharedInput, plugins: [{ name: 'shared-host-fixture', resolveId: id => id === sharedInput ? sharedInput : null, load: id => id === sharedInput ? sharedSource : null }, ...config.plugins] })
       try {
         const sharedBuilt = await sharedBundle.generate(config.output)
@@ -455,10 +478,16 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
       expect(lateHandlers).not.toHaveBeenCalled()
       lateOwner.setCommentDocumentDraft = vi.fn()
       await settle()
-      expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.uiPanels.js'])
-      // 面板样式独立成表，在脚本 append 之前就已注入，样式与 JS 并行下载。
+      expect(scripts).toHaveLength(0)
+      const panelStyles = document.querySelector('link[data-lark-doc-feature="lark-doc-element.panels.css"]')
       expect([...document.querySelectorAll('link[data-lark-doc-feature]')].map(node => node.href))
-        .toEqual(['https://assets.test/vendor/lark-doc-element.ui.css'])
+        .toEqual(['https://assets.test/vendor/lark-doc-element.panels.css', 'https://assets.test/vendor/lark-doc-element.ui.css'])
+      panelStyles.dispatchEvent(new dom.window.Event('load'))
+      await settle()
+      expect(scripts).toHaveLength(0)
+      document.querySelector('link[data-lark-doc-feature="lark-doc-element.ui.css"]').dispatchEvent(new dom.window.Event('load'))
+      await settle()
+      expect(scripts.map(node => node.src)).toEqual(['https://assets.test/vendor/lark-doc-element.umd.min.uiPanels.js'])
       const hosts = [document.createElement('div'), document.createElement('div')]
       hosts.forEach(host => document.body.appendChild(host))
       const onQuery = vi.fn()
@@ -482,7 +511,7 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
         'https://assets.test/vendor/lark-doc-element.umd.min.ui.js',
       ])
       // 多实例共享同一组脚本，样式表也必须只注入一次。
-      expect(document.querySelectorAll('link[data-lark-doc-feature]')).toHaveLength(1)
+      expect(document.querySelectorAll('link[data-lark-doc-feature]')).toHaveLength(2)
       scripts[0].onerror()
       await settle()
       expect(hosts.every(host => host.querySelector('[role="alert"]'))).toBe(true)
@@ -696,16 +725,17 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
     expect(() => panelPresentationShape(source.replace('const commentPanelMethods = {', 'const commentPanelMethods = { ...unknownRuntime,'))).toThrow('Unsupported private presentation shape')
   })
 
-  it('version UI moves only literal presentation methods and keeps source/feature factories synchronous', () => {
+  it('keeps version UI factories synchronous and loads the read paths on first use', () => {
     const importer = path.resolve(__dirname, '../../src/components/lark-doc/editor/versioningMixin.js')
     const alias = getRollupConfig('element').plugins.find(plugin => plugin.name === 'lark-doc-package-alias')
     const id = alias.resolveId('./versioningPresentation', importer)
     expect(id).toBe('\0lark-doc-versioning-presentation')
     const shape = versioningPresentationShape()
-    expect(shape.computed).toEqual(['versionRestoreConfirmText', 'versionDayGroups', 'versionChangeCursor', 'versionSelectedDiff'])
-    expect(shape.methods).toEqual(['mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionItemBadge', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'toggleVersionShowChanges', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
+    expect(shape.computed).toEqual(['versionRestoreConfirmText', 'versionDayGroups', 'versionChangeCursor', 'versionSelectedDiff', 'versionCurrentProjection'])
+    expect(shape.methods).toEqual(['loadVersions', 'selectVersion', 'loadVersionChanges', 'openNamedVersion', 'mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionItemBadge', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'toggleVersionShowChanges', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
     const code = alias.load(id)
-    for (const hot of ['restoreVersion', 'queryRestoreVersion', 'loadVersions']) expect(code).not.toContain(hot)
+    for (const hot of ['restoreVersion', 'queryRestoreVersion']) expect(code).not.toContain(hot)
+    expect(code).toContain('loadFeature("ui.panels")')
     expect(code).not.toMatch(/import\(|TextSelection|new Editor/)
     expect(getRollupConfig('feature:ui').plugins.find(plugin => plugin.name === 'lark-doc-package-alias').resolveId('./versioningPresentation', importer)).toBeNull()
   })
@@ -722,8 +752,8 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
       const dependencies = { versionCapabilityGate: () => ({ allowed: true }) }
       const actions = context.VersionFixture.createVersioningPresentation(dependencies).methods
       for (const name of ['versionNext', 'confirmVersionRestore', 'purgeDeletedVersion']) expect(() => actions[name].call({})).toThrow('版本界面尚未加载')
-      runInNewContext(fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/versioningPresentation.js'), 'utf8').replace('export function', 'function') + ';globalThis.versionFactory=createVersioningPresentation;', context)
-      const implementation = context.versionFactory(dependencies), original = Promise.resolve('original result')
+      const { createVersioningPresentation } = await import('../../src/components/lark-doc/editor/versioningPresentation')
+      const implementation = createVersioningPresentation(dependencies), original = Promise.resolve('original result')
       implementation.methods.restoreSelectedVersion = vi.fn(() => original)
       const factory = vi.fn(() => implementation), withdraw = context.VersionFixture.registerFeature('ui.ready', () => ({ createVersioningPresentation: factory }))
       const session = { documentId: 'doc1', _versioningProviderGeneration: 1, _authorizationGeneration: 2, _privateIdentityGeneration: 3 }

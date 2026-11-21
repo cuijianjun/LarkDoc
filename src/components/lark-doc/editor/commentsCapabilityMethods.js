@@ -220,6 +220,10 @@ export const commentsCapabilityMethods = {
     this.commentCreateDraft = text
     const provider = this.commentProvider()
     if (!provider) return null
+    if (visibility === 'private' && !provider.isRemote) {
+      this.commentMessage = '当前服务仅支持全文私有评论。'
+      return null
+    }
     // 评论专属权限不依赖正文可写；远端始终使用真实相对位置。
     // 整块（图片/网页卡片）评论不落 mark，只读文档里同样可以发。
     if (!provider.isRemote && !this.writable() && !range.blockOnly) return null
@@ -233,6 +237,7 @@ export const commentsCapabilityMethods = {
       }
     } catch (error) { this.commentMessage = error.code || error.message; return null }
     if (!provider.isRemote && (range.invalid || this.commentBlockPos(range.blockId) < 0)) return null
+    const submittedImages = this.submittedCommentImageIds('selection')
     this._commentSubmittingRange = range
     const thread = await this.runCommentWrite('createThread', {
       scope: 'selection', visibility, ...(this.commentDraftImages('selection').length ? { assetIds: this.commentDraftAssetIds('selection'), ...(provider.isRemote ? {} : { attachments: this.commentDraftAttachments('selection') }) } : {}), blockId: range.blockId, author: this.commentAuthor, content: text, anchor, quote: range.text,
@@ -248,8 +253,20 @@ export const commentsCapabilityMethods = {
       return null
     }
     if (thread) {
-      this.commentCreateDraft = ''; this.clearCommentDraftImages('selection')
-      this.commentComposerOpen = false; this.commentComposerContext = null; this.commentSidebarOpen = true
+      const previous = !imageScope && this._imageCommentScope?.previous
+      const ownsComposer = !previous && this.commentComposerContext === captured
+      if (previous && previous.commentComposerContext === captured) {
+        previous.images = previous.images.filter(image => !submittedImages.includes(image.id))
+        if (previous.commentCreateDraft === text) {
+          previous.commentCreateDraft = ''; previous.commentComposerOpen = false; previous.commentComposerContext = null
+          previous.commentSidebarOpen = true; previous.commentActiveThreadId = thread.id
+        }
+      } else if (ownsComposer) {
+        this.clearCommentDraftImages('selection', submittedImages)
+        if (this.commentCreateDraft === text) {
+          this.commentCreateDraft = ''; this.commentComposerOpen = false; this.commentComposerContext = null; this.commentSidebarOpen = true
+        }
+      }
       if (!provider.isRemote && !range.blockOnly) {
         const mark = this.editor.schema.marks.comment?.create({ threadId: thread.id })
         if (mark) {
@@ -258,7 +275,7 @@ export const commentsCapabilityMethods = {
           this.editor.view.dispatch(transaction)
         }
       }
-      this.activateComment(thread.id)
+      if (ownsComposer) this.activateComment(thread.id)
     }
     return thread
   },
@@ -276,8 +293,14 @@ export const commentsCapabilityMethods = {
     const text = mentions.length || references.length ? draft : draft.trim()
     if (!text.trim() && !this.commentDraftImages(threadId).length) return null
     const replyTo = this.commentReplyTargets[threadId]
+    const submittedImages = this.submittedCommentImageIds(threadId)
     const result = await this.runCommentWrite('reply', { threadId, author: this.commentAuthor, content: text, ...(mentions.length ? { mentions } : {}), ...(references.length ? { references } : {}), ...(this.commentDraftImages(threadId).length ? { assetIds: this.commentDraftAssetIds(threadId), ...(this.commentProvider()?.isRemote ? {} : { attachments: this.commentDraftAttachments(threadId) }) } : {}), ...(replyTo && draft.startsWith(`@${replyTo.authorName} `) ? { replyTo } : {}) }, 'replyToComment')
-    if (result && this.commentDraftOf(threadId) === draft && (this.commentDraftMentions[threadId] || mentions) === mentions && (this.commentDraftReferences[threadId] || references) === references) this.clearCommentDraft(threadId)
+    if (result) {
+      if (this.commentDraftOf(threadId) === draft && (this.commentDraftMentions[threadId] || mentions) === mentions &&
+        (this.commentDraftReferences[threadId] || references) === references && this.commentReplyTargets[threadId] === replyTo) {
+        this.clearCommentDraft(threadId, submittedImages)
+      } else this.clearCommentDraftImages(threadId, submittedImages)
+    }
     return result
   },
   async resolveComment(threadId) {

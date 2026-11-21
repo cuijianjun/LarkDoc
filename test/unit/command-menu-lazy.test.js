@@ -409,10 +409,10 @@ describe('块菜单与工具栏增量迁移', () => {
     expect(ctx.scheduleDiagramMenuClose).toHaveBeenCalledTimes(2)
     ui.destroy()
   })
-  it('默认隐藏配置下不对暂存的工具栏绑定 observer，目录水合保持冻结', async () => {
+  it('显式隐藏时不对暂存的工具栏绑定 observer，目录水合保持冻结', async () => {
     const root = rootNode(); const bar = document.createElement('div'); bar.className = 'lark-doc-toolbar'; root.appendChild(bar)
     const observer = vi.fn(); vi.stubGlobal('ResizeObserver', observer)
-    const config = createLarkDocConfig()
+    const config = createLarkDocConfig({ layout: { toolbarVisible: false } })
     expect(config.layout.toolbarVisible).toBe(false)
     const r = runtime({ mixins: [toolbarCollapseMixin, viewModesMixin] }, { larkDocConfig: config }, { root })
     r.host.bindToolbarObserver()
@@ -615,6 +615,31 @@ describe('块菜单私有 owner 冷边界', () => {
 })
 
 describe('ISV 原生面板 ready', () => {
+  it('manages document widget shortcuts and invokes a real editor command', async () => {
+    const h = isvHost(), key = h.host.documentWidgetStorageKey()
+    const catalogue = () => h.host.documentWidgetItems.find(item => item.value === 'catalogue')
+    localStorage.removeItem(key)
+    try {
+      expect(catalogue().label).toBe('目录导航')
+      expect(await h.host.runDocumentWidget('catalogue')).toBe(true)
+      expect(h.chain.setIsv).toHaveBeenCalledWith({ kind: 'catalog' })
+      expect(await h.host.runDocumentWidget('manage')).toBe(true)
+      h.root.querySelector('[aria-label="移除目录导航"]').click()
+      expect(catalogue()).toBeUndefined()
+      expect(JSON.parse(localStorage.getItem(key))).not.toContain('catalogue')
+      Array.from(h.root.querySelectorAll('button')).find(button => button.textContent === '更多小组件').click()
+      h.root.querySelector('[aria-label="添加目录导航"]').click()
+      expect(catalogue().label).toBe('目录导航')
+      expect(JSON.parse(localStorage.getItem(key))).toContain('catalogue')
+      h.host.effectiveReadonly = true
+      expect(await h.host.runDocumentWidget('catalogue')).toBe(false)
+      expect(h.chain.setIsv).toHaveBeenCalledTimes(1)
+    } finally {
+      h.host.closeDocumentWidgets()
+      localStorage.removeItem(key)
+    }
+  })
+
   it('首次打开按最新选区定位聚焦，输入更新不重复抢焦点，确认同步插块', async () => {
     const h = isvHost()
     h.host.startIsvButton('open_link')

@@ -213,7 +213,25 @@ export class DocumentSession {
     if (this._destroyed) throw new Error('DocumentSession 已销毁')
     const provider = this.providers.collaboration, generation = this._identityGeneration
     if (this.mode !== 'collaborative' || !provider) return { status: 'local' }
-    if (this._identityRequired) { this._assertIdentity(generation); await this._identityDisconnect; this._assertIdentity(generation); if (!this.can('canView')) throw this._identityError() }
+    if (!this._identityRequired) return this._connectCollaborationProvider(provider, generation)
+    this._assertIdentity(generation)
+    // A provider-wide disconnect cannot retire one handshake while another is in flight.
+    const connections = this._collaborationConnections ||= new WeakMap()
+    const connect = () => this._connectCollaborationProvider(provider, generation)
+    const pending = (connections.get(provider) || Promise.resolve()).then(connect, connect)
+    connections.set(provider, pending)
+    try { return await pending }
+    finally { if (connections.get(provider) === pending) connections.delete(provider) }
+  }
+
+  async _connectCollaborationProvider(provider, generation) {
+    if (this._identityRequired) {
+      this._assertIdentity(generation)
+      await this._identityDisconnect
+      if (this._collaborationRetirement?.has(provider)) await this._retireCollaborationProvider(provider)
+      this._assertIdentity(generation)
+      if (provider !== this.providers.collaboration || !this.can('canView')) throw this._identityError()
+    }
     try {
       const result = await this._identityAction(() => provider.connect({ documentId: this.documentId, user: this.user, session: this }), generation)
       this._assertIdentity(generation)
@@ -221,8 +239,21 @@ export class DocumentSession {
       this._emitIdentityBound('connection', result || { status: 'connected' }, generation); this._assertIdentity(generation)
       return result
     } catch (error) {
-      if (this._identityRequired && (!this._identityCurrent(generation) || !this.can('canView'))) { try { await provider.disconnect({ documentId: this.documentId, session: this }) } catch (_) { /* Stale handshakes cannot supply an error to the new identity. */ } throw this._identityError() }
+      if (this._identityRequired && (!this._identityCurrent(generation) || !this.can('canView'))) {
+        await this._retireCollaborationProvider(provider)
+        throw this._identityError()
+      }
       throw error
+    }
+  }
+
+  async _retireCollaborationProvider(provider) {
+    try {
+      await provider.disconnect({ documentId: this.documentId, session: this })
+      this._collaborationRetirement?.delete(provider)
+    } catch (_) {
+      (this._collaborationRetirement ||= new WeakSet()).add(provider)
+      throw this._identityError()
     }
   }
 

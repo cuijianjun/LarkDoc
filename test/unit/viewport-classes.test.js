@@ -74,7 +74,8 @@ describe('宽度态：桌面目录与纸张内边距不被手机规则接管', (
     document.body.append(shell.root)
     const host = { isNarrowViewport: undefined, mobileEditorStyle: { left: 0, width: 0, bottom: 0 }, mobileEditorActive: false,
       menuOpen: false, colorPaletteOpen: '', isvPanelOpen: false, writable: () => true,
-      closeBlockMenu() {}, refreshBlockHandle() {}, refreshBlockMenu() {}, refreshCommandMenu() {}, refreshColorPalette() {} }
+      closeBlockMenu() {}, refreshToolbar() {}, parkActionsHost() {}, bindToolbarObserver() {},
+      refreshBlockHandle() {}, refreshBlockMenu() {}, refreshCommandMenu() {}, refreshColorPalette() {} }
     const listeners = []
     const listen = (target, type, handler, capture = false) => {
       target.addEventListener(type, handler, capture)

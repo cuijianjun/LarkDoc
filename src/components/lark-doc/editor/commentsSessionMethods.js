@@ -25,7 +25,8 @@ export const commentsSessionMethods = {
     this.commentLoadGeneration++
     this.commentSourceThreads = []; this.commentThreads = []; this.commentPanels = []
     this.commentComposerContext = null; this.commentComposerOpen = false; this.commentSidebarOpen = preserveSidebar && this.commentSidebarOpen
-    if (!preserveSidebar) this.commentHistorical = false
+    this.commentHistoryOpen = false; this.commentHistoryStyle = {}
+    if (!preserveSidebar) { this.commentHistorical = false; this.commentHistory = false }
     this.commentDrafts = {}; this.commentDraftMentions = {}; this.commentDraftReferences = {}; this.commentReplyTargets = {}; this.commentMentionPicker = null; this.commentCreateDraft = ''; this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null; this.cancelCommentEdit()
     this.commentFollowPreferences = {}; this.commentMessage = ''
     this.commentFollowReadGeneration++
@@ -291,10 +292,10 @@ export const commentsSessionMethods = {
     if (!this.imageCommentCurrent(scope) || !scope.viewer || !scope.viewer.contains(scope.viewer.ownerDocument.activeElement)) return
     scope.ui?.el?.querySelector('[aria-label="新评论"]')?.focus()
   },
-  cancelDocumentCommentDraft() {
+  cancelDocumentCommentDraft(submittedImages) {
     if (this.commentMentionPicker?.scope === 'document') this.commentMentionPicker = null
     this.commentDocumentDraft = ''; this.commentDocumentMentions = []; this.commentDocumentReferences = []; this.commentDocumentReplyTarget = null
-    this.clearCommentDraftImages('document')
+    this.clearCommentDraftImages('document', submittedImages)
   },
   setCommentDocumentDraft(value, mentions = [], references = []) {
     const next = normalizeCommentMetadata(value, mentions, references)
