@@ -1,4 +1,6 @@
 /** Demo-only host for the existing documentBusiness port; dialogs never write by themselves. */
+import { openHostFormDialog } from './host-dialog.js'
+
 export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent, getState, onChange, onStatus, onCommitted, ownerDocument = document }) {
   const actions = ['follow', 'favorite', 'pin', 'shortcut', 'move', 'duplicate', 'template', 'delete', 'transfer-ownership']
   const personal = ['follow', 'favorite', 'pin', 'shortcut']
@@ -36,61 +38,53 @@ export function createDemoDocumentBusinessHost({ provider, getContext, isCurrent
       }
     }
     if (!sameSource(value, state)) return null
-    return new Promise(resolve => {
-      const previous = ownerDocument.activeElement, dialog = ownerDocument.createElement('dialog'), form = ownerDocument.createElement('form')
-      dialog.className = 'larkdoc-host-dialog'
-      dialog.setAttribute('aria-label', labels[kind]); form.method = 'dialog'
-      const heading = ownerDocument.createElement('h3'); heading.textContent = labels[kind]; form.appendChild(heading)
-      const subject = ownerDocument.createElement('p'); subject.textContent = state.title || value.documentId; form.appendChild(subject)
-      const fields = {}
-      const field = (name, label, node) => {
-        const row = ownerDocument.createElement('label'); row.textContent = label; node.name = name; node.setAttribute('aria-label', label)
-        row.appendChild(node); form.appendChild(row); fields[name] = node; return node
-      }
-      const select = (name, label, items) => {
-        const node = ownerDocument.createElement('select'); node.required = true
-        const empty = ownerDocument.createElement('option'); empty.value = ''; empty.textContent = '请选择'; node.appendChild(empty)
-        for (const item of items) { const option = ownerDocument.createElement('option'); option.value = item.id; option.textContent = item.name; node.appendChild(option) }
-        return field(name, label, node)
-      }
-      if (folders) select('folderId', '目标目录', folders)
-      if (kind === 'duplicate') { const input = field('name', '副本名称', ownerDocument.createElement('input')); input.required = true; input.maxLength = 100; input.value = `${state.title || '文档'} 副本`.slice(0, 100) }
-      if (candidates) {
-        select('targetPrincipalId', '新所有者', candidates.items.map(item => ({ id: item.principalId, name: item.displayName })))
-        const remove = field('removeOldOwner', '移除原所有者权限', ownerDocument.createElement('input')); remove.type = 'checkbox'
-        const permission = select('oldOwnerPerm', '保留原所有者权限', [{ id: 'full_access', name: '完整管理' }, { id: 'edit', name: '编辑' }, { id: 'view', name: '查看' }]); permission.value = 'full_access'
-      }
-      const confirmation = ['delete', 'transfer-ownership'].includes(kind) ? kind === 'delete' ? '删除' : '转移' : null
-      if (confirmation) { const input = field('confirmation', `输入“${confirmation}”确认`, ownerDocument.createElement('input')); input.required = true; input.autocomplete = 'off' }
-      const cancel = ownerDocument.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'
-      const submit = ownerDocument.createElement('button'); submit.type = 'submit'; submit.textContent = '确认'
-      form.append(cancel, submit); dialog.appendChild(form); ownerDocument.body.appendChild(dialog)
-      let closed = false
-      const close = result => {
-        if (closed) return; closed = true
-        cancelChooser = null; dialog.remove()
-        if (current(value) && previous?.isConnected) previous.focus?.()
-        resolve(result)
-      }
-      cancelChooser = () => close(null)
-      cancel.addEventListener('click', () => close(null))
-      dialog.addEventListener('cancel', event => { event.preventDefault(); close(null) })
-      dialog.addEventListener('close', () => close(null))
-      form.addEventListener('submit', event => {
-        event.preventDefault()
-        if (!sameSource(value, state)) return close(null)
-        if (!form.checkValidity() || confirmation && fields.confirmation.value !== confirmation) return
-        if (kind === 'duplicate' && !fields.name.value.trim()) return
-        if (folders && !folders.some(item => item.id === fields.folderId.value)) return
-        if (candidates && !candidates.items.some(item => item.principalId === fields.targetPrincipalId.value)) return
-        close({ ...(folders ? { folderId: fields.folderId.value } : {}), ...(kind === 'duplicate' ? { name: fields.name.value.trim() } : {}),
-          ...(candidates ? { targetPrincipalId: fields.targetPrincipalId.value, expectedAuthzVersion: candidates.authzVersion, expectedEligibilityRevision: candidates.eligibilityRevision,
-            removeOldOwner: fields.removeOldOwner.checked, oldOwnerPerm: fields.oldOwnerPerm.value, stayPut: true } : {}) })
-      })
-      if (typeof dialog.showModal === 'function') dialog.showModal()
-      else dialog.setAttribute('open', '')
-      ;(form.querySelector('select, input') || submit).focus()
+    // 弹窗按飞书 UD Modal 版式：标题 16/24、说明行、字段纵向、底部右对齐「取消 / 确认」。
+    // 控件全部走 `host-dialog.js`（原生 `<select>` 保留为真身，视觉是自绘层）。
+    const previous = ownerDocument.activeElement
+    const confirmation = ['delete', 'transfer-ownership'].includes(kind) ? (kind === 'delete' ? '删除' : '转移') : null
+    const dialogFields = []
+    if (folders) dialogFields.push({ type: 'select', name: 'folderId', label: '目标目录', required: true,
+      options: [{ value: '', label: '请选择' }, ...folders.map(item => ({ value: item.id, label: item.name }))] })
+    if (kind === 'duplicate') dialogFields.push({ type: 'input', name: 'name', label: '副本名称', required: true, maxLength: 100,
+      value: `${state.title || '文档'} 副本`.slice(0, 100) })
+    if (candidates) {
+      dialogFields.push({ type: 'select', name: 'targetPrincipalId', label: '新所有者', required: true,
+        options: [{ value: '', label: '请选择' }, ...candidates.items.map(item => ({ value: item.principalId, label: item.displayName }))] })
+      dialogFields.push({ type: 'checkbox', name: 'removeOldOwner', label: '移除原所有者权限', value: false })
+      dialogFields.push({ type: 'select', name: 'oldOwnerPerm', label: '保留原所有者权限', value: 'full_access',
+        options: [{ value: 'full_access', label: '完整管理' }, { value: 'edit', label: '编辑' }, { value: 'view', label: '查看' }] })
+    }
+    if (confirmation) dialogFields.push({ type: 'input', name: 'confirmation', label: `输入“${confirmation}”确认`, required: true, autocomplete: 'off' })
+
+    const chooser = openHostFormDialog({
+      doc: ownerDocument,
+      title: labels[kind],
+      description: state.title || value.documentId,
+      fields: dialogFields,
+      confirmText: '确定',
+      cancelText: '取消',
+      danger: kind === 'delete' || kind === 'transfer-ownership',
+      // 焦点恢复放在下面：只有身份/上下文仍然有效时才还给触发者。
+      returnFocus: false,
+      validate: (input) => {
+        if (confirmation && input.confirmation !== confirmation) return { field: 'confirmation', message: `请输入“${confirmation}”以确认` }
+        if (folders && !folders.some(item => item.id === input.folderId)) return { field: 'folderId', message: '请选择可写的目标目录' }
+        if (candidates && !candidates.items.some(item => item.principalId === input.targetPrincipalId)) return { field: 'targetPrincipalId', message: '请选择新所有者' }
+        return null
+      },
     })
+    cancelChooser = () => chooser.close(null)
+    const input = await chooser.result
+    cancelChooser = null
+    if (input && current(value) && previous?.isConnected) previous.focus?.()
+    if (!input || !sameSource(value, state)) return null
+    return {
+      ...(folders ? { folderId: input.folderId } : {}),
+      ...(kind === 'duplicate' ? { name: input.name.trim() } : {}),
+      ...(candidates ? { targetPrincipalId: input.targetPrincipalId, expectedAuthzVersion: candidates.authzVersion,
+        expectedEligibilityRevision: candidates.eligibilityRevision, removeOldOwner: input.removeOldOwner,
+        oldOwnerPerm: input.oldOwnerPerm, stayPut: true } : {}),
+    }
   }
   async function publishOutcome(value, result) {
     if (!current(value)) return false

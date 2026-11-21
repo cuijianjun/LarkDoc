@@ -137,7 +137,10 @@
 .lark-doc .lark-doc-command-section button.is-skip:focus-visible { background: transparent; color: var(--ld-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-command-section button.is-skip .lark-doc-command-icon { opacity: .6; }
 
-.lark-doc .lark-doc-dialog-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--ld-mask); }.lark-doc .lark-doc-dialog { width: min(420px, 100%); max-height: 90vh; overflow: auto; padding: 19px; border-radius: 10px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-dialog); }.lark-doc .lark-doc-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.lark-doc .lark-doc-dialog input { width: 100%; }.lark-doc .lark-doc-dialog p { color: var(--lark-doc-muted); }.lark-doc .lark-doc-dialog button { border-color: var(--ld-border-chrome); }
+.lark-doc .lark-doc-dialog-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--ld-mask); }.lark-doc .lark-doc-dialog { width: min(480px, 100%); max-height: 90vh; overflow: auto; padding: 24px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-dialog); }
+/* 版式照飞书 UD Modal（`.ud__modal__*` 注入样式）：内容 480 宽、内边距 24、圆角 8、标题 16/24 500。
+   6 个居中弹窗（翻译 / 导入替换 / 存模板 / 小组件 / 公式 / 表格选择器）共用这套外壳。 */
+.lark-doc .lark-doc-dialog header strong { color: var(--ld-text); font-size: 16px; font-weight: 500; line-height: 24px; }.lark-doc .lark-doc-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.lark-doc .lark-doc-dialog input { width: 100%; }.lark-doc .lark-doc-dialog p { color: var(--lark-doc-muted); }.lark-doc .lark-doc-dialog button { border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-table-boundary-tools { position: absolute; z-index: 18; pointer-events: none; }
 .lark-doc .lark-doc-table-boundary-tools button { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: transparent; font-size: 0; line-height: 1; pointer-events: auto; }
 .lark-doc .lark-doc-table-boundary-tools button:hover:not(:disabled),
