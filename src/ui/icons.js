@@ -185,6 +185,7 @@ export const ICONS = {
   // currentColor，这样彩色/单色两态共用同一份路径，不用画两套。
   'chevron-right': wrap('<path d="m6.2 4.2 3.8 3.8-3.8 3.8"/>'),
   bell: wrap('<path d="M8 2.2a4 4 0 0 0-4 4v2.6L2.9 11h10.2L12 8.8V6.2a4 4 0 0 0-4-4z"/><path d="M6.4 13.2a1.7 1.7 0 0 0 3.2 0"/>'),
+  subscribe: wrap('<path d="M3.6 2.4h8.8v11.2L8 11l-4.4 2.6z"/><path d="M8 4.8v3.6"/><path d="M6.2 6.6h3.6"/>'),
   doc: wrap('<path d="M4.2 2.4h4.6l3 3v8.2H4.2z"/><path d="M8.6 2.4v3.2h3.2"/><path d="M6.2 8.6h3.6"/><path d="M6.2 11h3.6"/>'),
   'doc-grid': wrap('<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6"/><path d="M2.6 6.4h10.8"/><path d="M2.6 10.2h10.8"/><path d="M6.4 2.6v10.8"/>'),
   form: wrap('<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6"/><path d="M5.4 6.2h5.2"/><path d="M5.4 8.6h5.2"/><path d="M5.4 11h2.6"/>'),

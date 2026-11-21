@@ -401,6 +401,20 @@ describe('mobile reference document shell', () => {
     expect(button.getAttribute('aria-checked')).toBe('false')
   })
 
+  it('shows the Feishu follow guide on hover and renders the document toast', () => {
+    const follow = { id: 'follow', label: '关注文档更新', kind: 'switch', checked: false, icon: 'subscribe', enabled: true }
+    const { host, set } = shell({ topbarMoreOpen: true, topbarMoreRows: [{ kind: 'item', item: follow }] })
+    host.querySelector('[data-topbar-more-id="follow"]').dispatchEvent(new MouseEvent('mouseenter'))
+    const tip = host.querySelector('.lark-doc-follow-tip')
+    expect(tip?.textContent).toContain('云文档助手')
+    expect(tip?.textContent).toContain('开启后，云文档助手将在文档更新时通知你，时刻掌握文档动态。')
+    expect(tip?.textContent).toContain('查看变更详情')
+    set({ docToast: '已关注，你将会收到该文档的内容更新提醒' })
+    expect(host.querySelector('.lark-doc-doc-toast')?.textContent).toContain('已关注，你将会收到该文档的内容更新提醒')
+    set({ docToast: '' })
+    expect(host.querySelector('.lark-doc-doc-toast')).toBeNull()
+  })
+
   it('opens a heading popup beside the body title independently of the document library', () => {
     const { host, onHeading } = shell({ outlineItems: [{ pos: 10, level: 2, text: 'Section two' }, { pos: 30, level: 1, text: 'Next section' }] })
     host.querySelector('.lark-doc-document-outline-trigger').click()

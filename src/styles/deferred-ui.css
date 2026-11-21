@@ -718,6 +718,28 @@
 .lark-doc .lark-doc-notify-item-body { color: var(--ld-text-tertiary); font-size: 12px; line-height: 18px; }
 .lark-doc .lark-doc-notify-more,
 .lark-doc .lark-doc-notify-query { flex: 0 0 auto; min-height: 44px; margin: 4px 8px 8px; color: var(--ld-text-accent); }
+/* 「更多」菜单的关注引导卡（飞书 subscribe_guide）与关注成功 toast。两者都挂在菜单上，
+   随 ui 特性包一起到，所以样式放这里，不进首屏样式。
+   卡内 5 支取色是飞书通知卡预览的固有色（实测截图取样），只服务这张卡，
+   故就近声明成作用域内自定义属性，不上抬到 lark-doc.css 的全局 --ld-* 表。 */
+.lark-doc .lark-doc-follow-tip { --tip-preview: #F3F6FE; --tip-tag-bg: #FFF1E0; --tip-tag-fg: #B8741A; --tip-msg-bg: #F7F9FF; --tip-accent: #3370FF; position: fixed; z-index: 1060; box-sizing: border-box; width: 360px; padding: 16px; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); visibility: hidden; pointer-events: none; }
+.lark-doc .lark-doc-follow-tip-preview { padding: 16px; border-radius: 8px; background: var(--tip-preview); }
+.lark-doc .lark-doc-follow-tip-app,
+.lark-doc .lark-doc-follow-tip-feed { display: flex; gap: 8px; background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-follow-tip-app { align-items: center; padding: 10px 12px; border-radius: 8px 8px 0 0; }
+.lark-doc .lark-doc-follow-tip-feed { padding: 12px; border-top: 1px solid var(--ld-border-chrome); border-radius: 0 0 8px 8px; }
+.lark-doc .lark-doc-follow-tip-name,
+.lark-doc .lark-doc-follow-tip-msg b { color: var(--ld-text); font-size: 14px; font-weight: 500; }
+.lark-doc .lark-doc-follow-tip-tag { padding: 0 4px; border-radius: 3px; background: var(--tip-tag-bg); color: var(--tip-tag-fg); font-size: 10px; line-height: 16px; }
+.lark-doc .lark-doc-follow-tip-msg { flex: 1; min-width: 0; padding: 0 12px 12px; border-radius: 6px; background: var(--tip-msg-bg); }
+.lark-doc .lark-doc-follow-tip-msg b { display: block; padding-top: 10px; }
+.lark-doc .lark-doc-follow-tip-msg p { margin: 4px 0 10px; color: var(--ld-text-secondary); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-follow-tip-msg em { color: var(--tip-accent); font-style: normal; }
+.lark-doc .lark-doc-follow-tip-btn { display: inline-block; padding: 3px 8px; border: 1px solid var(--tip-accent); border-radius: 4px; color: var(--tip-accent); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-follow-tip-desc { margin: 12px 0 0; color: var(--ld-text); font-size: 16px; line-height: 26px; }
+/* toast 成功底同样是飞书实测固有色（rgb(228,250,225)），与 --ld-bg-notice 的绿不同源。 */
+.lark-doc .lark-doc-doc-toast { --toast-bg: #E4FAE1; position: fixed; z-index: 1040; top: 56px; left: 50%; display: flex; align-items: center; gap: 8px; box-sizing: border-box; max-width: 420px; padding: 10px 20px; border-radius: 8px; background: var(--toast-bg); color: var(--ld-text); box-shadow: 0 4px 12px rgba(31,35,41,.08); transform: translateX(-50%); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-doc-toast-icon { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; }
 .lark-doc .lark-doc-relation-layer { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; }
 .lark-doc .lark-doc-relation-mask { position: absolute; inset: 0; background-color: var(--ld-mask-solid); }
 .lark-doc .lark-doc-relation-content { position: relative; z-index: 1; display: flex; flex-direction: column; box-sizing: border-box; width: 1080px; max-width: calc(100vw - 32px); height: 676px; max-height: calc(100vh - 32px); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); overflow: hidden; }

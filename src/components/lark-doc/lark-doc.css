@@ -2767,10 +2767,12 @@
 .lark-doc .lark-doc-topbar-more-submenu-item { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 34px; padding: 0 12px; border-radius: 4px; color: var(--ld-text-menu); font-size: 13px; line-height: 1; white-space: nowrap; cursor: pointer; }
 .lark-doc .lark-doc-topbar-more-submenu-item:hover, .lark-doc .lark-doc-topbar-more-submenu-item:focus-visible { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); outline: 0; }
 /* 「在段落前显示作者 / 设为离线可使用」两个 switch（§4.2.1 前台复核项）。 */
-.lark-doc .lark-doc-topbar-more-switch { position: relative; flex: 0 0 auto; width: 28px; height: 16px; margin-left: 6px; border-radius: 8px; background: var(--ld-bg-switch-off); transition: background .15s ease; }
+.lark-doc .lark-doc-topbar-more-switch { position: relative; flex: 0 0 auto; width: 32px; height: 18px; margin-left: 6px; border-radius: 9px; background: var(--ld-bg-switch-off); transition: background .15s ease; }
 .lark-doc .lark-doc-topbar-more-switch.is-on { background: var(--ld-brand-content); }
-.lark-doc .lark-doc-topbar-more-switch-handler { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ld-bg-switch-thumb); box-shadow: var(--ld-shadow-thumb); transition: left .15s ease; }
-.lark-doc .lark-doc-topbar-more-switch.is-on .lark-doc-topbar-more-switch-handler { left: 14px; }
+.lark-doc .lark-doc-topbar-more-switch-handler { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ld-bg-switch-thumb); box-shadow: var(--ld-shadow-thumb); transition: left .15s ease; }
+.lark-doc .lark-doc-topbar-more-switch.is-on .lark-doc-topbar-more-switch-handler { left: 16px; }
+/* 关注引导卡与关注成功 toast 的样式在 deferred-ui.css：它们随「更多」菜单所在的
+   ui 特性包一起到，首屏样式不必为未点开的菜单先背上这 2.4 KB。 */
 
 /* —— 链接悬浮卡（04 §1.6 A 态 440×42；§1.6.1 四种视图菜单 232×146）——
    外层 z600 / 内层 z999：§1.6.1 红字强调的两层结构，缺一层卡片会被正文纸张盖住。 */

@@ -138,6 +138,24 @@ export const SHARE_ICON_COLORS = {
 /** 高亮笔图标：黄色色块打底 + 深褐 A（其余图标一律 currentColor） */
 export const ICON_PALETTE = { highlightSwatch: '#ffd50a', highlightGlyph: '#4a3b06' }
 
+/** 通知类多色图标资源（飞书截图实测取色）：云文档助手 logo、文档更新成功勾、通知空态插图。
+ *  三处共用同一支「品牌蓝底 + 白前景」——这是图标资产的固有色，不是皮肤色，故不进 --ld-*。
+ *  刻意拆成扁平字符串常量而不是一个对象：打包时字符串常量会在使用处被内联，
+ *  对象字面量则会把整个对象搬进每个引用它的特性包（实测 uiOverlays 因此超预算 12 B）。 */
+export const NOTIFY_BRAND_BLUE = '#3370FF'
+export const NOTIFY_DEEP_BLUE = '#1F55D8'
+export const NOTIFY_TEAL = '#00D6A5'
+export const NOTIFY_SUCCESS_GREEN = '#34A853'
+export const NOTIFY_CARD = '#D8DADE'
+export const NOTIFY_CARD_LINE = '#F7F8FA'
+/** 品牌色底上的白（logo 页面 / 成功勾）。 */
+export const NOTIFY_ON_BRAND = '#fff'
+
+/** 二维码模块色：内容色而不是皮肤色——两档主题都不得反色，否则相机扫不出。
+ *  所以不取 --ld-bg-*，刻意写死（与 SAMPLE_CONTENT_BRAND 同理）。 */
+export const QR_CODE_LIGHT = '#ffffff'
+export const QR_CODE_DARK = '#000000'
+
 /* ---- 示例文档内容色（templates.js 的 sample 模板） ---- */
 /** 示例段落里「绿色主题」四字的行内色（= 品牌绿）。属用户内容色：写进文档 inline style，随文档走不随主题变。 */
 export const SAMPLE_CONTENT_BRAND = '#00b887'

@@ -35,7 +35,7 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
 export const TOPBAR_MORE_ITEMS = Object.freeze([
   ['width', '页宽设置', 'submenu'],
   ['slides', '演示模式'],
-  ['follow', '关注文档更新'],
+  ['follow', '关注文档更新', 'switch'],
   ['find', '查找和替换'],
   ['shortcut', '添加快捷方式到'],
   ['move', '移动到'],
@@ -58,7 +58,8 @@ export const TOPBAR_MORE_ITEMS = Object.freeze([
   ['delete', '删除'],
 ].map(([id, label, kind = 'item'], index) => ({
   id, label, kind, order: index + 1, enabled: true, action: id,
-  affordance: kind === 'item' ? 'none' : 'arrow',
+  // switch 项（关注文档更新）右侧是开关，不画子面板箭头。
+  affordance: kind === 'submenu' || kind === 'route' ? 'arrow' : 'none',
 })))
 
 /**
@@ -224,13 +225,24 @@ export default {
       topbarMoreOffline: false,
       topbarMoreMessage: '',
       topbarMoreBusy: false,
+      /** 关注状态来自 Provider（非 Vue 响应式），成功后靠 revision 强制刷新开关。 */
+      topbarMoreRevision: 0,
+      docToast: '',
     }
   },
   computed: {
     /** 23 项（含运行时启用态），模板唯一数据源。 */
     topbarMoreItems() {
-      if (referenceMenu(this) || this.compactHeader) return (this.topbarMoreOpen ? referenceDocumentMenuItems(this) : []).map(item => this.topbarMoreBusy ? { ...item, enabled: false, title: '正在处理文档操作。' } : item)
+      if (referenceMenu(this) || this.compactHeader) {
+        const items = this.topbarMoreOpen ? referenceDocumentMenuItems(this) : []
+        // 读取 revision 建立依赖：关注写入后开关必须立刻反映新状态。
+        if (this.topbarMoreRevision < 0) return []
+        return items.map(item => this.topbarMoreBusy ? { ...item, enabled: false, title: '正在处理文档操作。' } : item)
+      }
       const capability = TOPBAR_MORE_CAPABILITY
+      // 读取 revision 建立依赖：关注写入后开关必须立刻反映新状态（Provider 状态不是响应式的）。
+      if (this.topbarMoreRevision < 0) return []
+      const followed = this.session?.getProvider?.('documentBusiness')?.getState?.()?.followed
       return [...TOPBAR_MORE_ITEMS, { id: 'theme', label: '主题', kind: 'submenu', icon: 'sparkle', enabled: true }].map((item) => {
         const key = capability[item.id]
         let enabled = item.enabled
@@ -238,6 +250,9 @@ export default {
         // 阅读态（只读）下写操作一律置灰：删除/创建副本/转换为模板/翻译。
         if (enabled && this.effectiveReadonly && TOPBAR_MORE_READONLY_DISABLED.indexOf(item.id) >= 0) enabled = false
         if (item.id === 'history-comments') enabled = enabled && this.commentCanViewHistory?.() === true
+        // 关注是开关：勾选态来自 documentBusiness，写入期间整行禁用（飞书同款）。
+        if (item.id === 'follow') return { ...item, enabled: enabled && !this.topbarMoreBusy,
+          ...(this.topbarMoreBusy ? { title: '正在处理文档操作。' } : {}), checked: followed === true }
         return { ...item, enabled, ...(!enabled && item.id === 'history-comments' ? { title: '当前评论服务不可用或没有查看权限' } : {}) }
       })
     },
@@ -276,8 +291,23 @@ export default {
     'session.user.id'() { this.closeDocumentInformation(); this.retireSavedVersionsMenu() },
     versionProvider() { this.retireSavedVersionsMenu() },
   },
-  beforeDestroy() { this.closeDocumentInformation(); this.retireSavedVersionsMenu() },
+  beforeDestroy() {
+    this.closeDocumentInformation(); this.retireSavedVersionsMenu()
+    if (this._docToastTimer) { clearTimeout(this._docToastTimer); this._docToastTimer = null }
+  },
   methods: {
+    /** 飞书文档级提示条（关注/取消关注）。3s 后自收，复用顶栏浮层宿主。 */
+    showDocumentToast(text = '') {
+      if (this._docToastTimer) { clearTimeout(this._docToastTimer); this._docToastTimer = null }
+      this.docToast = text
+      this.refreshTopBar?.()
+      if (!text) return
+      this._docToastTimer = setTimeout(() => {
+        this._docToastTimer = null
+        this.docToast = ''
+        this.refreshTopBar?.()
+      }, 3000)
+    },
     retireSavedVersionsMenu() {
       this._savedVersionsMenuRead = null
       if (this.topbarMoreSubmenu === 'saved-versions') this.topbarMoreSubmenu = ''
@@ -396,6 +426,8 @@ export default {
         return this.runReferenceMoreAction(current.id, undefined, event)
       }
       if (!item || item.enabled === false) return
+      // 关注文档更新：原地翻开关并写 documentBusiness，菜单不关（飞书同款）。
+      if (item.kind === 'switch') return this.runReferenceMoreAction(item.id, undefined, event)
       if (item.kind === 'submenu') {
         this.topbarMoreSubmenu = this.topbarMoreSubmenu === item.id ? '' : item.id
         this.$nextTick(this.measureTopbarMoreSubmenu)
@@ -447,7 +479,8 @@ export default {
       const ticket = {}, epoch = this._referenceMoreEpoch
       this._referenceMoreTicket = ticket; this.topbarMoreBusy = true
       const session = this.session, editor = this.editor, handler = this.onDocumentAction,
-        principal = session?.user?.id, identity = session?._privateIdentityGeneration, auth = session?._authorizationGeneration
+        principal = session?.user?.id, identity = session?._privateIdentityGeneration, auth = session?._authorizationGeneration,
+        business = session?.getProvider?.('documentBusiness'), followedBefore = business?.getState?.()?.followed
       const current = () => this._referenceMoreTicket === ticket && epoch === this._referenceMoreEpoch
         && !this._isDestroyed && !this._isBeingDestroyed && session === this.session && editor === this.editor
         && handler === this.onDocumentAction && principal === session?.user?.id && identity === session?._privateIdentityGeneration
@@ -456,8 +489,17 @@ export default {
         const done = await runReferenceDocumentMenuAction(this, id, value, event, current)
         if (current()) {
           if (done) {
-            this.closeTopbarMore()
-            if (id === 'width' && event?.detail === 0) this._topbarMoreTrigger?.focus({ preventScroll: true })
+            if (id === 'follow') {
+              // 关注开关留在菜单里（飞书同款），只刷新开关并给文档级提示。
+              this.topbarMoreRevision += 1
+              const followed = business?.getState?.()?.followed
+              if (typeof followedBefore === 'boolean' && typeof followed === 'boolean' && followedBefore !== followed) {
+                this.showDocumentToast(followed ? '已关注，你将会收到该文档的内容更新提醒' : '已取消关注，你将不再收到该文档的内容更新提醒。')
+              }
+            } else {
+              this.closeTopbarMore()
+              if (id === 'width' && event?.detail === 0) this._topbarMoreTrigger?.focus({ preventScroll: true })
+            }
           } else this.topbarMoreMessage = '操作未完成，请在文档服务中核对。'
         }
         return done

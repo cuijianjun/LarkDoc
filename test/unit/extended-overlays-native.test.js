@@ -71,10 +71,12 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
   it('更多收纳主题并保留原有 22 个一级项和分发动作', async () => {
     const { vm, root, tick } = mount({ capabilities: { canManagePermission: true } })
     const action = vi.spyOn(vm, 'runTopbarMoreAction').mockImplementation(() => vm.closeTopbarMore())
+    // 「关注文档更新」是开关项（role=menuitemcheckbox），走参考动作通道而不是 runTopbarMoreAction。
+    const reference = vi.spyOn(vm, 'runReferenceMoreAction').mockImplementation(async () => { vm.closeTopbarMore(); return true })
     for (const item of TOPBAR_MORE_ITEMS) {
       root.querySelector('.lark-doc-more-btn').click()
       await tick()
-      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"]')).toHaveLength(TOPBAR_MORE_ITEMS.length + 1)
+      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"], .lark-doc-topbar-more-list [role="menuitemcheckbox"]')).toHaveLength(TOPBAR_MORE_ITEMS.length + 1)
       expect(root.querySelector('[data-topbar-more-id="theme"]').textContent).toBe('主题')
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(8)
       const row = root.querySelector(`[data-topbar-more-id="${item.id}"]`)
@@ -90,6 +92,13 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
       }
       row.click()
       await tick()
+      if (item.kind === 'switch') {
+        // 开关项：原地翻开关并写 documentBusiness，菜单不关（飞书同款），所以直接收菜单再继续。
+        expect(reference).toHaveBeenLastCalledWith(item.id, undefined, expect.anything())
+        vm.closeTopbarMore()
+        await tick()
+        continue
+      }
       if (item.kind !== 'submenu') {
         expect(action).toHaveBeenLastCalledWith(item.action, expect.objectContaining({ id: item.id }))
         continue
@@ -144,7 +153,8 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     await tick()
     root.querySelector('[data-topbar-more-id="more"]').dispatchEvent(new MouseEvent('mouseenter'))
     await tick()
-    const switches = root.querySelectorAll('[role="menuitemcheckbox"]')
+    // 「更多」子面板里的两个开关；一级项里的「关注文档更新」也是 menuitemcheckbox，故限定子面板范围。
+    const switches = root.querySelectorAll('.lark-doc-topbar-more-submenu [role="menuitemcheckbox"]')
     switches[0].click()
     switches[1].click()
     await tick()

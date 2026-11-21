@@ -1,6 +1,7 @@
 /** Private create/More surfaces. The top bar supplies live state and shared menu ownership. */
 import { applyStyle, mountNode, setAttr, syncChildren } from './dom'
 import { iconNode } from './icon'
+import { NOTIFY_BRAND_BLUE, NOTIFY_ON_BRAND, NOTIFY_SUCCESS_GREEN } from './palette'
 
 export function createTopBarMenus(options) {
   const { el, mobileButton, moreButton, createButton, call, activeMoreMenus } = options
@@ -31,12 +32,37 @@ export function createTopBarMenus(options) {
   submenu.className = 'lark-doc-topbar-more-submenu'
   submenu.setAttribute('role', 'menu')
   moreMenu.appendChild(submenu)
+  // 飞书「关注文档更新」hover 引导卡：静态预览 + 说明，不接收指针事件。
+  const followTip = document.createElement('div')
+  followTip.className = 'lark-doc-follow-tip'
+  followTip.setAttribute('role', 'tooltip')
+  const followLogo = `<span class="lark-doc-follow-tip-logo"><svg width="24" height="24" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="${NOTIFY_BRAND_BLUE}"/><path d="M11 8h7l4 4v12H11z" fill="${NOTIFY_ON_BRAND}"/><path d="M15 13h4M15 16.5h4M15 20h2" stroke="${NOTIFY_BRAND_BLUE}" stroke-width="1.5" stroke-linecap="round"/></svg></span>`
+  followTip.innerHTML = `<div class="lark-doc-follow-tip-preview"><div class="lark-doc-follow-tip-app">${followLogo}<span class="lark-doc-follow-tip-name">云文档助手</span><span class="lark-doc-follow-tip-tag">机器人</span></div><div class="lark-doc-follow-tip-feed">${followLogo}<div class="lark-doc-follow-tip-msg"><b>文档内容变更提醒</b><p><em>@李天天</em> 编辑了文档 <em>项目进展</em></p><span class="lark-doc-follow-tip-btn">查看变更详情</span></div></div></div><p class="lark-doc-follow-tip-desc">开启后，云文档助手将在文档更新时通知你，时刻掌握文档动态。</p>`
+  const tipHost = () => options.host || el
+  const hideFollowTip = () => { followTip.remove() }
+  function showFollowTip(node) {
+    if (isDisposed() || !node.isConnected) return
+    followTip._owner = node
+    if (followTip.parentNode !== tipHost()) tipHost().appendChild(followTip)
+    const rect = node.getBoundingClientRect(), tip = followTip.getBoundingClientRect()
+    applyStyle(followTip, {
+      left: `${Math.max(8, rect.left - tip.width - 12)}px`,
+      top: `${Math.max(8, Math.min(rect.top + rect.height / 2 - tip.height / 2, window.innerHeight - tip.height - 8))}px`,
+      visibility: 'visible',
+    })
+  }
+  const docToast = document.createElement('div')
+  docToast.className = 'lark-doc-doc-toast'
+  docToast.setAttribute('role', 'status')
+  docToast.innerHTML = `<span class="lark-doc-doc-toast-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="8" fill="${NOTIFY_SUCCESS_GREEN}"/><path d="m4.8 8.1 2 2 4.4-4.5" stroke="${NOTIFY_ON_BRAND}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lark-doc-doc-toast-text"></span>`
+  const docToastText = docToast.querySelector('.lark-doc-doc-toast-text')
   const refs = options.refs || {}
   Object.assign(refs, { createMenu, createMenuList: createList, topbarMoreMenu: moreMenu, topbarMoreSubmenu: submenu })
   const menuDocument = el.ownerDocument
   const moreTriggerNode = options.moreTriggerNode
   function dismissMore(restoreFocus = false) {
     if (isDisposed() || !moreMenu.isConnected) return
+    hideFollowTip()
     options.setMoreDismissed(true)
     moreMenu.remove()
     if (!menus.children.length) menus.remove()
@@ -134,6 +160,10 @@ export function createTopBarMenus(options) {
           })
           if (kind === 'more') {
             node.addEventListener('mouseenter', () => { if (!options.readState().compactHeader) call('hoverTopbarMoreItem', node._item) })
+            node.addEventListener('mouseenter', () => { if (node._item?.id === 'follow' && !node.disabled) showFollowTip(node) })
+            node.addEventListener('mouseleave', hideFollowTip)
+            node.addEventListener('focus', () => { if (node._item?.id === 'follow' && !node.disabled) showFollowTip(node) })
+            node.addEventListener('blur', hideFollowTip)
             node.addEventListener('pointerenter', event => {
               if (!options.readState().compactHeader || event.pointerType !== 'mouse' || node._item.kind !== 'submenu' || node.disabled) return
               clearTimeout(submenuHover)
@@ -180,6 +210,7 @@ export function createTopBarMenus(options) {
         setAttr(node, 'data-create-menu-id', kind.startsWith('create') ? item.id : null)
         const parentItem = (state.topbarMoreRows || []).find(row => row.item?.id === state.topbarMoreSubmenu)?.item
         node.disabled = item.enabled === false || item.disabled === true || (kind === 'create' && !!state.readonly) || (kind === 'sub' && parentItem?.enabled === false)
+        if (item.id === 'follow' && (node.disabled || item.kind !== 'switch')) hideFollowTip()
         node.title = item.title || item.label || ''
         node.classList.toggle('is-disabled', node.disabled)
         node.style.width = '100%'
@@ -219,6 +250,11 @@ export function createTopBarMenus(options) {
   function update() {
     if (isDisposed()) return
     const state = options.readState(), visible = state.headerVisible !== false
+    if (!state.topbarMoreOpen) hideFollowTip()
+    if (state.docToast) {
+      if (docToast.parentNode !== tipHost()) tipHost().appendChild(docToast)
+      docToastText.textContent = state.docToast
+    } else if (docToast.parentNode) { docToast.remove(); docToastText.textContent = '' }
     const createOpen = state.createMenuOpen && (!state.compactHeader || window.innerWidth <= 760)
     if (!createOpen || !visible || state.readonly) createChildrenOpen = false
     const moreWasOpen = moreMenu.isConnected
@@ -252,7 +288,7 @@ export function createTopBarMenus(options) {
     menuDocument.removeEventListener('pointerdown', closeMoreOutside)
     menuDocument.removeEventListener('keydown', closeMoreEscape)
     if (activeMoreMenus.get(menuDocument) === moreMenu) activeMoreMenus.delete(menuDocument)
-    menus.remove()
+    menus.remove(); followTip.remove(); docToast.remove()
     menuRows.clear(); shortcutNodes.clear(); shortcuts.remove()
     ;['createMenu', 'createMenuList', 'topbarMoreMenu', 'topbarMoreSubmenu'].forEach(key => {
       if ([createMenu, createList, moreMenu, submenu].includes(refs[key])) delete refs[key]

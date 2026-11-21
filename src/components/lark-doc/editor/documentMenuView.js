@@ -5,7 +5,7 @@ import { isExportEnabled, isImportEnabled, resolveExportOptions } from '../larkD
 // never local substitutes for a Java grant, move, deletion or persisted preference.
 const definitions = [
   ['width', '页宽设置', 'link-view-preview', 'submenu'], ['presentation', '演示模式', 'slides', 'submenu'],
-  ['follow', '关注文档更新', 'bell', 'host'], ['search', '查找和替换', 'search'],
+  ['follow', '关注文档更新', 'subscribe', 'host'], ['search', '查找和替换', 'search'],
   ['shortcut', '添加快捷方式到', 'link', 'host'], ['move', '移动到', 'move-down', 'host'],
   ['pin', '添加到“置顶”', 'outline', 'host'], ['favorite', '添加到收藏', 'sparkle', 'host'],
   ['template', '转换为模板', 'copy', 'host'], ['duplicate', '创建副本', 'copy', 'host'],
@@ -66,7 +66,7 @@ export function referenceDocumentMenuItems(ed) {
     return { ...item, kind: ['follow', 'template'].includes(item.id) ? 'switch' : item.id === 'translate' ? 'submenu' : item.kind || 'item',
       action: 'document:' + item.id, enabled: !item.disabled,
       affordance: item.kind === 'submenu' || item.id === 'translate' ? 'arrow' : 'none',
-      title: item.disabled ? '当前文档未配置此功能或当前身份无权限。' : item.id === 'follow' ? '开启后接收本文档的更新通知' : item.label }
+      title: item.disabled ? '当前文档未配置此功能或当前身份无权限。' : item.id === 'follow' ? '' : item.label }
   })
 }
 
