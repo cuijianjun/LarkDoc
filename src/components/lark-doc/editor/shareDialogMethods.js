@@ -178,6 +178,55 @@ export const shareDialogMethods = {
       return this.shareLinkAction('password', this.passwordDraft)
     },
 
+    // —— 底部渠道（web-scripts/279-33888.b3a2968c.js 真实 handler 口径）——
+    /** `handleLark` 聚焦邀请搜索框（渲染层完成）；`subscriptionConfig.handler` 交给宿主；
+     *  `handleWechat` / `handleQrcode` / `handlePasswordSetting` 进入各自面板。 */
+    async shareViaChannel(id) {
+      if (!this.shareCan('canView')) return false
+      if (id === 'lark') return true
+      if (id === 'favorite') {
+        const config = this.larkDocConfig?.shareMethodConfig?.subscriptionConfig
+        if (!config?.enable || typeof config.handler !== 'function') {
+          this.showShareToast('warning', '订阅号服务尚未接入。')
+          return false
+        }
+        try { await config.handler(); return true }
+        catch { this.showShareToast('warning', '订阅号操作失败，请重试。'); return false }
+      }
+      if (id === 'wechat' || id === 'qrcode') return this.showShareQrCode(id)
+      if (id === 'secure') return this.handleSharePasswordSetting()
+      return false
+    },
+    /** `handlePasswordSetting`：未开放互联网链接时先开链接，再进密码面板。 */
+    async handleSharePasswordSetting() {
+      if (!this.shareCan('canView') || !this.shareCan('canManagePermission')) return false
+      if (this.shareLinkState?.audience !== 'public') {
+        const changed = await this.setShareLinkAudience('public')
+        if (!changed) return false
+      }
+      if (!this.shareLinkState?.passwordAvailable) this.openPasswordDialog()
+      else this.openPermissionDialog()
+      return true
+    },
+    /** 面板二维码：动态加载本地编码器（不进首屏预算）；飞书服务端二维码未接入。 */
+    async showShareQrCode(type = 'qrcode') {
+      const url = this.shareDocumentLink()
+      if (!url) { this.showShareToast('warning', '当前没有可分享的文档链接'); return false }
+      try {
+        const module = await import(/* webpackChunkName: "share-qrcode" */ '../../../utils/shareQrCode')
+        const qr = module.encodeQrMatrix(url)
+        if (!qr) { this.showShareToast('warning', '链接过长，无法生成二维码'); return false }
+        const wechat = type === 'wechat'
+        this.shareQr = {
+          url, type, size: qr.size, modules: qr.modules,
+          title: wechat ? '分享到微信' : '扫码分享',
+          tip: this.shareLinkState?.audience === 'public' ? '' : '需开启“互联网上获得链接的人可阅读”',
+        }
+        return true
+      } catch { this.showShareToast('warning', '二维码生成失败，请重试。'); return false }
+    },
+    closeShareQrCode() { this.shareQr = null },
+
     // —— 复制 ——
     /** 复制链接 + 密码（⑤-4 两个入口行为完全等价：复制按钮 / 点密码值本体）。 */
     copyLinkAndPassword() {

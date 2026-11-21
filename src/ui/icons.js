@@ -32,6 +32,7 @@ export const ICONS = {
   'table-merge': wrap('<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 8h4m4 0h4M4.5 6.5 6 8 4.5 9.5m7-3L10 8l1.5 1.5"/>'),
   'cell-background': wrap('<rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M6 2v12M10 2v12M2 10h12"/><path d="M6 6h4v4H6Z" fill="currentColor" stroke="none"/>'),
   'share-link': wrap('<path d="M9 2h5v5M14 2 7 9M5 4H2v10h10v-3"/>'),
+  'share-globe': wrap('<circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.8 1.7 2.8 3.9 2.8 6.2S9.8 12.5 8 14.2C6.2 12.5 5.2 10.3 5.2 8S6.2 3.5 8 1.8Z"/>'),
   'image-crop': wrap('<path d="M5 1v10h10M1 5h10v10M8 2h6v6"/>'),
   'insert-file': wrap('<path d="m6 10 4.6-4.6a2 2 0 0 1 2.8 2.8L7 14.6a3.5 3.5 0 0 1-5-5l6.4-6.4a2.5 2.5 0 0 1 3.6 3.6L5.6 13"/>'),
   'insert-table': wrap('<rect x="2" y="2" width="12" height="12" rx=".8"/><path d="M2 6h12M2 10h12M6 2v12"/>'),

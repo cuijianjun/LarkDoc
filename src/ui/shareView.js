@@ -7,6 +7,7 @@ import { applyStyle, setAttr, setText, syncChildren } from './dom'
 import { iconNode } from './icon'
 import { attr, button, callHandler, setInputValue, svgIcon, text } from './overlayShared'
 import { createPermissionView } from './permissionView'
+import { createShareQrView } from './shareQrView'
 
 function createShareView(options) {
   const handlers = options.handlers || {}
@@ -66,11 +67,16 @@ function createShareView(options) {
   const lower = text('div', 'lark-doc-share-lower')
   const linkCard = text('div', 'lark-doc-share-link-card')
   const linkHead = text('div', 'lark-doc-share-link-head')
-  linkHead.appendChild(text('span', 'lark-doc-share-link-title', '链接分享'))
+  const linkHeadMain = text('div', 'lark-doc-share-link-head-main')
+  linkHeadMain.appendChild(text('span', 'lark-doc-share-link-title', '链接分享'))
   const linkTag = text('span', 'lark-doc-share-link-tag')
   const linkTagValue = text('span')
   linkTag.appendChild(linkTagValue)
-  linkHead.appendChild(linkTag)
+  linkHeadMain.appendChild(linkTag)
+  const passwordLink = button('lark-doc-share-pwd-link', '启用密码', () => {
+    if (popover.isConnected && state.sharePopoverOpen) callHandler(handlers, 'onPasswordSetting')
+  })
+  linkHead.append(linkHeadMain, passwordLink)
   linkCard.appendChild(linkHead)
   const linkBody = text('div', 'lark-doc-share-link-body')
   const linkIcon = text('span', 'lark-doc-share-link-icon')
@@ -106,15 +112,22 @@ function createShareView(options) {
   linkCard.appendChild(linkFeedback)
   const copyRow = text('div', 'lark-doc-share-copy-row')
   const copyLink = button('lark-doc-share-copy-link', '', () => { if (popover.isConnected && state.sharePopoverOpen) callHandler(handlers, 'onCopyShareLink') })
-  copyLink.append(iconNode('link', 14), text('span', '', '复制链接')); copyRow.appendChild(copyLink)
-  for (const [label, icon, size] of [['通过飞书分享', 'LarkLogoColorful', 18], ['分享至收藏', 'SubscriptionShareColorful', 20], ['通过微信分享', 'WechatColorful', 20], ['分享二维码', 'QrOutlined', 16], ['加密链接分享', 'LinkLockOutlined', 16]]) {
-    const channel = button('lark-doc-share-channel', ''); channel.disabled = true
-    attr(channel, 'aria-label', label); channel.title = label + '服务尚未配置'; channel.appendChild(svgIcon(icon, size)); copyRow.appendChild(channel)
+  const copyLabel = text('span', '', '复制链接')
+  copyLink.append(iconNode('link', 14), copyLabel); copyRow.appendChild(copyLink)
+  // 飞书真实渠道行：lark=会话、subscriptionConfig.handler=订阅号、wechat/qrcode=面板、
+  // passwordSetting=密码面板（web-scripts/279-33888.b3a2968c.js）；data-share-channel 供验收定位。
+  const onChannel = (event) => {
+    if (popover.isConnected && state.sharePopoverOpen) {
+      const channel = event.currentTarget.dataset.shareChannel
+      if (channel === 'lark') inviteInput.focus()
+      callHandler(handlers, 'onShareChannel', channel)
+    }
   }
-  for (const [label, icon] of [['图片分享', 'image'], ['朋友圈', 'share-link'], ['QQ', 'share-link'], ['微博', 'share-link'], ['更多分享方式', 'more']]) {
-    const channel = button('lark-doc-share-channel', '')
-    channel.disabled = true; channel.title = `${label}服务尚未配置，暂不可用`; attr(channel, 'aria-label', channel.title)
-    channel.appendChild(iconNode(icon, 18)); copyRow.appendChild(channel)
+  for (const [channelId, label, icon, size] of [['lark', '飞书会话', 'LarkLogoColorful', 18], ['favorite', '订阅号', 'SubscriptionShareColorful', 20], ['wechat', '微信', 'WechatColorful', 20], ['qrcode', '二维码', 'QrOutlined', 16], ['secure', '加密链接', 'LinkLockOutlined', 16]]) {
+    const channel = button('lark-doc-share-channel', '', onChannel)
+    attr(channel, 'aria-label', label); channel.title = label
+    attr(channel, 'data-share-channel', channelId)
+    channel.appendChild(svgIcon(icon, size)); copyRow.appendChild(channel)
   }
   linkCard.appendChild(copyRow)
   lower.appendChild(linkCard)
@@ -190,8 +203,15 @@ function createShareView(options) {
   })
 
   const permissionLayer = createPermissionView({ handlers })
+
+  const shareQr = createShareQrView(handlers)
+
   const childStates = {}, childFocus = new Map()
   layer.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && state.shareQr) {
+      event.preventDefault(); event.stopPropagation()
+      callHandler(handlers, 'onCloseShareQrCode'); return
+    }
     if (!mobileVisible || !state.permissionDialogOpen || !permissionLayer.el.contains(event.target)) return
     const dialog = permissionLayer.el.querySelector(state.passwordDialogOpen ? '.lark-doc-share-password' : state.secureLinkConfirmOpen ? '.lark-doc-share-confirm' : '.lark-doc-permission-dialog')
     if (event.key === 'Escape') {
@@ -220,8 +240,9 @@ function createShareView(options) {
     popover.classList.toggle('is-mobile-reference', visible)
     if (visible && copyRow.parentNode !== popoverInner) popoverInner.appendChild(copyRow)
     else if (!visible && copyRow.parentNode !== linkCard) linkCard.appendChild(copyRow)
-    copyLink.className = visible ? 'lark-doc-share-copy-link' : 'lark-doc-share-btn-filled'
-    copyRow.querySelectorAll('.lark-doc-share-channel').forEach(node => { node.hidden = !visible; node.style.display = visible ? '' : 'none' })
+    // 桌面与手机都展示渠道行：新版飞书底部是「复制链接 + 5 渠道」整行（图2），
+    // 不再按手机态隐藏；两种形态的几何差异由 CSS 的 is-mobile-reference 区分。
+    copyLink.className = 'lark-doc-share-copy-link'
     popoverInner.hidden = state.sharePopoverOpen && !['index', 'settings'].includes(mobilePage)
     mobile.hidden = !state.sharePopoverOpen || mobilePage === 'index'
     attr(popover, 'aria-label', visible && mobilePage !== 'index' ? '协作者' : '分享文档')
@@ -266,10 +287,12 @@ function createShareView(options) {
     mobileQuery.hidden = !(['unknown', 'blocked'].includes(invitation.status) || invitation.status === 'committed' && !invitation.verified)
     mobileReselect.hidden = !(invitation.status === 'failed' || invitation.status === 'committed' && invitation.verified)
     setText(mobileInviteFeedback, invitation.error || (invitation.status === 'preparing' ? '正在确认协作者版本…' : invitation.status === 'sending' ? '正在发送邀请…' : invitation.status === 'querying' ? '正在查询原邀请操作…' : invitation.status === 'committed' && invitation.verified ? '协作者权限已保存' : '确认邀请后，将为此协作者授予所选权限。'))
+    shareQr.update(state.shareQr)
     syncChildren(layer, [
       { node: mobileMask, on: false },
       { node: popover, on: !!state.sharePopoverOpen },
       { node: permissionLayer.el, on: !!state.permissionDialogOpen },
+      { node: shareQr.el, on: !!state.shareQr },
     ])
     permissionButton.disabled = state.shareCanManagePermission === false
     attr(permissionButton, 'aria-disabled', String(permissionButton.disabled))
@@ -281,7 +304,7 @@ function createShareView(options) {
     setText(avatarMore, state.shareMembers?.status === 'ready' && state.shareMembers.items?.length > 1 ? `+${state.shareMembers.items.length - 1}` : '')
     avatarMore.hidden = !avatarMore.textContent
     const scopeConfigured = !!state.shareLinkState
-    orgButton.replaceChildren(...(scopeConfigured ? [['collaborators', '仅协作者'], ['public', '互联网用户']] : [['', '未配置']]).map(([value, label]) => {
+    orgButton.replaceChildren(...(scopeConfigured ? [['collaborators', '仅协作者'], ['public', '互联网获得链接的人']] : [['', '未配置']]).map(([value, label]) => {
       const option = document.createElement('option'); option.value = value; option.textContent = label; return option
     }))
     orgButton.value = state.shareLinkState?.audience || ''
@@ -293,7 +316,10 @@ function createShareView(options) {
     linkReload.hidden = !state.shareLinkAvailable
     linkReload.disabled = !!state.shareLinkBusy
     setText(linkReload, state.shareLinkPending ? '查询原操作' : '重新载入')
-    setText(linkTagValue, scopeConfigured ? state.shareLinkPermLabel : '未配置')
+    setText(linkTagValue, state.shareLinkScopeTag || (scopeConfigured ? state.shareLinkPermLabel : '未配置'))
+    setText(copyLabel, state.shareCopyLabel || '复制链接')
+    setText(passwordLink, state.sharePasswordEnabled ? '修改密码' : '启用密码')
+    passwordLink.hidden = state.sharePasswordSettingEnabled === false
     setText(scopeText, scopeConfigured ? state.shareScopeText : '链接范围与权限服务尚未配置')
     linkSelect.textContent = ''
     ;(scopeConfigured ? state.shareLinkPermOptions || [] : ['未配置']).forEach((option) => {

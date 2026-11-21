@@ -1030,14 +1030,16 @@
   z-index: 99;
   width: min(480px, calc(100vw - 16px));
   max-height: calc(100vh - 16px);
-  height: 331px;
+  min-height: 331px;
+  height: auto;
   padding: 2px 0 0;
   border-radius: 0;
   background: transparent;
 }
 .lark-doc-share-popover-inner {
   width: 100%;
-  height: 329px;
+  height: auto;
+  min-height: 329px;
   overflow: hidden;
   border-radius: 8px;
   background: var(--ld-share-surface);
@@ -1118,8 +1120,8 @@
   height: 26px;
   overflow: hidden;
   border-radius: 50%;
-  background: var(--ld-share-border);
-  color: var(--ld-share-text-secondary);
+  background: var(--ld-share-brand);
+  color: var(--ld-share-surface);
   font-size: 12px;
   line-height: 26px;
   text-align: center;
@@ -1173,7 +1175,8 @@
 .lark-doc-share-lower {
   box-sizing: border-box;
   width: 480px;
-  height: 194px;
+  height: auto;
+  min-height: 194px;
   padding: 12px 0 0;
 }
 .lark-doc-share-link-card {
@@ -1186,8 +1189,11 @@
 .lark-doc-share-link-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
+.lark-doc-share-link-head-main { display: flex; align-items: center; gap: 8px; }
+.lark-doc-share-pwd-link { padding: 0; border: 0; background: transparent; color: var(--ld-share-brand); font-size: 14px; cursor: pointer; }
 .lark-doc-share-link-title {
   color: var(--ld-share-text);
   font-size: 14px;
@@ -1219,7 +1225,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--ld-share-avatar-bg);
+  background: var(--ld-share-brand);
   color: var(--ld-share-surface);
   font-size: 14px;
 }
@@ -1231,8 +1237,8 @@
 }
 .lark-doc-share-org-btn {
   align-self: flex-start;
-  padding: 2px 4px;
-  border: none;
+  padding: 2px 8px;
+  border: 1px solid var(--ld-share-border-control);
   border-radius: 6px;
   background: transparent;
   color: var(--ld-share-text);
@@ -1246,8 +1252,8 @@
   line-height: 18px;
 }
 .lark-doc-share-perm-select {
-  padding: 2px 4px;
-  border: none;
+  padding: 2px 8px;
+  border: 1px solid var(--ld-share-border-control);
   border-radius: 6px;
   background: transparent;
   color: var(--ld-share-text);
@@ -1258,11 +1264,53 @@
 .lark-doc-share-copy-row {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  gap: 8px;
   box-sizing: border-box;
   width: 480px;
-  padding: 0 16px;
+  min-height: 64px;
+  padding: 12px 16px;
+  background: var(--ld-bg-code);
 }
+.lark-doc .lark-doc-share-copy-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--ld-share-border-control);
+  border-radius: 29px;
+  background: transparent;
+  color: var(--ld-share-text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-share-channel {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--ld-share-border-control);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ld-share-text);
+  font-size: 18px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-share-channel:hover { background: var(--ld-bg-hover-select); }
+.lark-doc-share-qr-layer { position: fixed; z-index: 1001; inset: 0; display: grid; place-items: center; }
+.lark-doc-share-qr-mask { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+.lark-doc-share-qr-dialog { position: relative; box-sizing: border-box; width: 320px; padding: 16px 24px 24px; border-radius: 8px; background: var(--ld-share-surface); box-shadow: var(--ld-shadow-menu); text-align: center; }
+.lark-doc-share-qr-head { display: flex; align-items: center; height: 24px; }
+.lark-doc-share-qr-back { width: 24px; padding: 0; border: 0; background: transparent; color: var(--ld-share-text-secondary); font-size: 20px; cursor: pointer; }
+.lark-doc-share-qr-title { flex: 1; color: var(--ld-share-text); font-size: 16px; font-weight: 400; line-height: 24px; }
+.lark-doc-share-qr-dialog canvas { display: block; margin: 16px auto 8px; image-rendering: pixelated; }
+.lark-doc-share-qr-desc { margin: 0; color: var(--ld-share-text); font-size: 14px; line-height: 22px; }
+.lark-doc-share-qr-tip { margin: 12px 0 0; padding: 8px; border-radius: 6px; background: var(--ld-bg-code); color: var(--ld-share-text-secondary); font-size: 12px; line-height: 18px; }
 .lark-doc-permission-layer {
   position: fixed;
   z-index: 1000;

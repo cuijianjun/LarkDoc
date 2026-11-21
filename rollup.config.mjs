@@ -865,9 +865,33 @@ export function cssInjection(target) {
   }
 }
 
+/**
+ * Element UMD runtime 用 inlineDynamicImports，动态块会被内联进 runtime 预算。
+ * 分享二维码编码器只在 ESM/CDN 路径（含本地预览）按需分块加载；UMD 形态下换成
+ * 降级 stub：点击二维码走「链接过长/生成失败 → 复制链接」的既有诚实分支。
+ */
+function stubShareQrCode(target) {
+  const qrEncoder = ['element', 'elementRuntime'].includes(target)
+  const qrView = target === 'feature:uiOverlays:umd'
+  if (!qrEncoder && !qrView) return null
+  return {
+    name: 'lark-doc-stub-share-qr',
+    transform(code, id) {
+      // UMD runtime 内联动态 import：二维码编码器与面板内联会撑爆既有预算。
+      // ESM/CDN 路径（含本地预览）保留真实现；UMD 形态走「复制分享文案」降级。
+      if (qrEncoder && id.includes('/utils/shareQrCode.js')) return { code: 'export function encodeQrMatrix(){ return null }', map: { mappings: '' } }
+      if (qrView && id.includes('/ui/shareQrView.js')) return {
+        code: 'export function createShareQrView(){ const el=document.createElement("div"); return {el,update(){}} }', map: { mappings: '' },
+      }
+      return null
+    },
+  }
+}
+
 function plugins(target, cssFile) {
   return [
     ...(['element', 'elementRuntime'].includes(target) || target.endsWith(':umd') ? [reactionCatalogAssets()] : []),
+    ...(stubShareQrCode(target) ? [stubShareQrCode(target)] : []),
     ...(MERMAID_FILES[target] ? [{
       name: 'lark-doc-mermaid-entry',
       resolveId(id) { return id === MERMAID_ENTRY ? id : null },

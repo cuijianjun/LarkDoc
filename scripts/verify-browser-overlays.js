@@ -92,6 +92,39 @@ function editorCall(page, source) {
       share.options.length === 1 && share.options[0] === '未配置' &&
       (!share.toast || share.toast === '链接权限服务尚未接入，当前不可用。'), JSON.stringify(share))
 
+  // 飞书新版渠道行：桌面端 5 个圆形按钮可见可点，复制链接为药丸按钮。
+  const channels = await page.evaluate(() => [...document.querySelectorAll('.lark-doc-share-popover [data-share-channel]')].map(node => ({
+    id: node.getAttribute('data-share-channel'), disabled: node.disabled,
+    display: getComputedStyle(node).display, radius: getComputedStyle(node).borderRadius,
+  })))
+  record('桌面分享弹窗展示飞书新版渠道行：5 个圆形按钮全部可点',
+    channels.length === 5 && channels.every(node => !node.disabled && node.display !== 'none' && node.radius === '50%') &&
+      channels.map(node => node.id).join(',') === 'lark,favorite,wechat,qrcode,secure', JSON.stringify(channels))
+
+  // 二维码按钮：按飞书面板结构渲染返回、标题、扫码提示与 canvas 矩阵。
+  await page.locator('[data-share-channel="qrcode"]').evaluate((node) => node.click())
+  await page.waitForTimeout(200)
+  const qr = await page.evaluate(() => {
+    const dialog = document.querySelector('.lark-doc-share-qr-dialog')
+    const canvas = dialog?.querySelector('canvas')
+    return { open: !!dialog, role: dialog?.getAttribute('role'), title: dialog?.querySelector('.lark-doc-share-qr-title')?.textContent.trim(), desc: dialog?.querySelector('.lark-doc-share-qr-desc')?.textContent.trim(), w: canvas?.width, h: canvas?.height }
+  })
+  record('「分享二维码」进入飞书扫码面板：返回 + 标题 + canvas 矩阵 + 提示',
+    qr.open && qr.role === 'dialog' && qr.title === '扫码分享' && qr.desc === '扫码分享文档' && qr.w > 0 && qr.w === qr.h, JSON.stringify(qr))
+  await page.locator('.lark-doc-share-qr-back').evaluate((node) => node.click())
+  await page.waitForTimeout(60)
+  record('返回后二维码面板不留下残留层', !(await page.locator('.lark-doc-share-qr-dialog').count()))
+
+  // 飞书会话 handler 的真实效果是进入邀请视图并聚焦搜索框，不是 Web Share。
+  await page.locator('[data-share-channel="lark"]').evaluate((node) => node.click())
+  await page.waitForTimeout(120)
+  const inviteFocused = await page.evaluate(() => document.activeElement === document.querySelector('.lark-doc-share-invite input'))
+  record('飞书会话渠道聚焦邀请输入框', inviteFocused)
+  await page.locator('[data-share-channel="favorite"]').evaluate((node) => node.click())
+  await page.waitForTimeout(60)
+  const channelToast = await page.evaluate(() => document.querySelector('.lark-doc-share-toast')?.textContent.trim() || '')
+  record('订阅号渠道无宿主 handler 时给出明确 toast 反馈', /订阅号/.test(channelToast), channelToast)
+
   await page.locator('.lark-doc-share-perm-btn').evaluate((node) => node.click())
   await page.waitForTimeout(80)
   const permission = await page.evaluate(() => ({

@@ -130,6 +130,7 @@ export default {
       },
       /** 当前 toast：`{ kind: 'success' | 'warning', text }`。 */
       shareToast: null,
+      shareQr: null,
       /** 组织名（④-2 实测「北京八人科技有限公司」）。宿主接了组织服务可覆盖。 */
       shareOrgName: '链接范围未配置',
       /** 邀请输入框（一级 popover 与二级 Dialog 各有一个，取值分开存）。 */
@@ -201,7 +202,7 @@ export default {
     },
     /** 一级 popover 的 scope 文案。 */
     shareScopeText() {
-      return this.shareLinkState ? `${this.shareLinkState.audience === 'public' ? '互联网用户' : '仅协作者'}${this.shareLinkState.permission === 'edit' ? '可编辑' : '可阅读'}` : '链接范围与权限服务尚未配置'
+      return this.shareLinkState ? `${this.shareLinkState.audience === 'public' ? '互联网获得链接的人' : '仅协作者'}${this.shareLinkState.permission === 'edit' ? '可编辑' : '可阅读'}` : '链接范围与权限服务尚未配置'
     },
     /** 二级 Dialog 里的 scope 文案（取值与一级不同，见 data 注释）。 */
     shareDialogScopeText() {

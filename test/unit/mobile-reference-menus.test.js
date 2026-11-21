@@ -383,17 +383,51 @@ describe('browser reference mobile document menus', () => {
     expect(card.querySelector('.lark-doc-share-popover-inner').hidden).toBe(false)
     expect(card.querySelector('.lark-doc-share-mobile').hidden).toBe(true)
     expect(card.textContent).toContain('邀请协作者'); expect(card.textContent).toContain('链接分享')
+    expect(card.querySelector('.lark-doc-share-pwd-link').textContent).toBe('启用密码')
     expect(ui.el.querySelector('.lark-doc-share-mobile-mask')).toBeNull()
     expect(card.querySelector('[aria-label="链接权限"]').disabled).toBe(true)
     expect(card.textContent).toContain('链接范围与权限服务尚未配置')
-    expect(card.querySelectorAll('.lark-doc-share-channel:disabled')).toHaveLength(10)
-    expect(card.querySelector('[aria-label="QQ服务尚未配置，暂不可用"]').disabled).toBe(true)
+    expect([...card.querySelectorAll('.lark-doc-share-org-btn option')].map(option => option.textContent)).toEqual(['未配置'])
+    // 飞书真实渠道行：5 个按钮全部可点，按钮顺序与 279 bundle 的 render 一致
+    expect(card.querySelectorAll('.lark-doc-share-channel:disabled')).toHaveLength(0)
+    expect([...card.querySelectorAll('.lark-doc-share-channel')].map(node => node.getAttribute('data-share-channel')))
+      .toEqual(['lark', 'favorite', 'wechat', 'qrcode', 'secure'])
   })
   it('keeps document link copying distinct from selection-recipient sharing', () => {
     const onCopyShareLink = vi.fn(), onSubmitImageShare = vi.fn(), ui = overlays({ onCopyShareLink, onSubmitImageShare })
     ui.update(shareState()); const copy = ui.el.querySelector('.lark-doc-share-copy-link')
     copy.click(); expect(onCopyShareLink).toHaveBeenCalledOnce(); expect(onSubmitImageShare).not.toHaveBeenCalled()
     ui.update(shareState({ sharePopoverOpen: false })); copy.click(); expect(onCopyShareLink).toHaveBeenCalledOnce()
+  })
+  it('dispatches each Feishu-style channel button through onShareChannel', () => {
+    const onShareChannel = vi.fn(), ui = overlays({ onShareChannel })
+    ui.update(shareState())
+    for (const id of ['lark', 'favorite', 'wechat', 'qrcode', 'secure']) {
+      ui.el.querySelector(`[data-share-channel="${id}"]`).click()
+      expect(onShareChannel).toHaveBeenCalledWith(id)
+    }
+    expect(onShareChannel).toHaveBeenCalledTimes(5)
+    expect(document.activeElement).toBe(ui.el.querySelector('.lark-doc-share-invite input'))
+  })
+  it('maps share channels to the Feishu source handlers without Web Share guesses', async () => {
+    const showQr = vi.fn(async () => true), setAudience = vi.fn(async () => ({})), openPasswordDialog = vi.fn()
+    const subscription = vi.fn(), showShareToast = vi.fn()
+    const ed = {
+      shareCan: () => true, showShareToast,
+      larkDocConfig: { shareMethodConfig: { subscriptionConfig: { enable: true, handler: subscription } } },
+      shareLinkState: { audience: 'public', passwordAvailable: false },
+      showShareQrCode: showQr, setShareLinkAudience: setAudience, openPasswordDialog,
+      handleSharePasswordSetting: shareMixin.methods.handleSharePasswordSetting,
+    }
+    const invoke = id => shareMixin.methods.shareViaChannel.call(ed, id)
+    expect(await invoke('lark')).toBe(true)
+    expect(await invoke('favorite')).toBe(true); expect(subscription).toHaveBeenCalledOnce()
+    expect(await invoke('wechat')).toBe(true); expect(showQr).toHaveBeenCalledWith('wechat')
+    expect(await invoke('secure')).toBe(true); expect(setAudience).not.toHaveBeenCalled()
+    expect(openPasswordDialog).toHaveBeenCalledOnce()
+    ed.shareLinkState = { audience: 'collaborators', passwordAvailable: false }
+    expect(await invoke('secure')).toBe(true); expect(setAudience).toHaveBeenCalledWith('public')
+    expect(showShareToast).not.toHaveBeenCalled()
   })
   it('retains the real invitation pending/query path behind the document share card', () => {
     const onQueryShareInvitation = vi.fn(), onSubmitShareInvitation = vi.fn(), ui = overlays({ onQueryShareInvitation, onSubmitShareInvitation })

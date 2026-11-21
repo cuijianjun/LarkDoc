@@ -299,7 +299,7 @@ export function createTopBar(options = {}) {
   const avatarBadge = document.createElement('span')
   avatarBadge.className = 'lark-doc-mobile-avatar-badge'
   avatarButton.replaceChildren(avatarBadge)
-  const membersButton = actionButton('lark-doc-mobile-members', '管理成员', 'share-link', 'dialog', 'openMembers', 16)
+  const membersButton = actionButton('lark-doc-mobile-members', '管理成员', 'share-globe', 'dialog', 'openMembers', 16)
   const membersIcon = membersButton.firstChild, membersLabel = document.createElement('span')
   const membersTip = document.createElement('span')
   membersTip.className = 'lark-doc-header-tip'

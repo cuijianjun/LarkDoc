@@ -63,6 +63,7 @@ export default {
     notifyContext() { this.refreshOverlays() },
     shareEntryMode() { this.refreshOverlays() },
     shareViewMaskVisible() { this.refreshOverlays() },
+    shareQr() { this.refreshOverlays() },
   },
   methods: {
     mountOverlays() {
@@ -127,6 +128,9 @@ export default {
         onLoadShareLink: () => this.loadShareLink(),
         onQueryShareLink: () => this.queryShareLink(),
         onCopyShareLink: () => this.copyShareLink(),
+        onPasswordSetting: () => this.handleSharePasswordSetting(),
+        onShareChannel: (id) => this.shareViaChannel(id),
+        onCloseShareQrCode: () => this.closeShareQrCode(),
         onClosePermissionDialog: () => this.closePermissionDialog(),
         onTogglePermissionValue: (id) => this.setPermissionValue(id, id === 'shareOutsideOrg' ? this.shareLinkState?.audience !== 'public' : !this.permissionValues[id]),
         onSetPermissionValue: (id, value) => this.setPermissionValue(id, value),
@@ -151,6 +155,7 @@ export default {
     },
     buildOverlaysState() {
       const link = this.shareLinkAvailable && this._shareLinkSnapshotOwner?.() === true ? this.shareLinkState : null
+      const shareMethods = this.larkDocConfig?.shareMethodConfig || {}
       const selectionShare = this.imageShare?.target === 'selection'
       const imageShareAllowed = !selectionShare || this.selectionShareAllowed()
       const imageShareConfigured = typeof (selectionShare ? this.onSelectionShare : this.onImageShare) === 'function'
@@ -171,7 +176,7 @@ export default {
         shareDirectory: this.shareDirectory,
         shareInvitation: this.shareInvitation,
         shareCollaboratorInitial: this.shareCollaboratorInitial,
-        shareOrgName: link ? (link.audience === 'public' ? '互联网用户' : '仅协作者') : '链接范围未配置',
+        shareOrgName: link ? (link.audience === 'public' ? '互联网获得链接的人' : '仅协作者') : '链接范围未配置',
         shareLinkState: link,
         shareLinkAvailable: this.shareLinkAvailable,
         shareLinkWritable: this.shareLinkWritable,
@@ -180,8 +185,13 @@ export default {
         shareLinkError: this.shareLinkError,
         shareLinkPermLabel: this.shareLinkPermLabel,
         shareLinkPermOptions: this.shareLinkPermOptions,
+        shareLinkScopeTag: link ? '仅当前页面' : '未配置',
+        shareCopyLabel: link?.passwordAvailable ? '复制链接和密码' : '复制链接',
+        sharePasswordEnabled: !!link?.passwordAvailable,
+        sharePasswordSettingEnabled: shareMethods.passwordSharingEnabled !== false,
         shareScopeText: this.shareScopeText,
         shareToast: this.shareToast,
+        shareQr: this.shareQr,
         permissionDialogOpen: this.permissionDialogOpen && this.shareCan('canView') && this.shareCan('canManagePermission'),
         permissionAdvancedOpen: this.permissionAdvancedOpen,
         permissionValues: { ...this.permissionValues, shareOutsideOrg: link?.audience === 'public' },
