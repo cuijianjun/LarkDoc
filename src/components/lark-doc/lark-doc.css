@@ -2860,6 +2860,9 @@
 .lark-doc .lark-doc-create-btn, .lark-doc .lark-doc-notify-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; min-width: 28px; min-height: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ld-text-icon-tertiary); }
 .lark-doc .lark-doc-create-btn:hover:not(:disabled), .lark-doc .lark-doc-create-btn:focus-visible, .lark-doc .lark-doc-create-btn[aria-expanded="true"],
 .lark-doc .lark-doc-notify-btn:hover:not(:disabled), .lark-doc .lark-doc-notify-btn:focus-visible, .lark-doc .lark-doc-notify-btn[aria-expanded="true"] { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--ld-text-secondary); outline: 0; }
+/* 通知入口按飞书截图实测：图标字形 12×13.5 CSS（本库 18px 图标）、色 #646A73，
+   hover / 展开只加底色**不改图标色**（飞书那张就是灰底 + 灰铃铛）。这两条随 ui 特性包
+   到（写在 deferred-ui.css），否则会顶爆首屏样式那 7 B 余量。 */
 /* 未读角标：18 高红底白字，压住按钮右上角。数字位数变化靠 min-width 撑，
    不用固定宽度 —— 「99+」是三位，固定 18 会溢出。 */
 .lark-doc .lark-doc-notify-dot { position: absolute; top: -2px; right: -2px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--ld-danger); color: var(--ld-text-inverse); font-size: 11px; font-weight: 500; line-height: 1; }

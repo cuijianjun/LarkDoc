@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOverlays } from '../../src/ui/overlays'
 import { createNotifications } from '../../src/ui/notifications'
 import { createCommentPanel as createPlainCommentPanel, createVersionPanel } from '../../src/ui/panels'
+import { NOTIFY_BRAND_BLUE, NOTIFY_CARD, NOTIFY_TEAL } from '../../src/ui/palette'
 import overlaysUiMixin from '../../src/components/lark-doc/editor/overlaysUiMixin'
 import panelsUiMixin from '../../src/components/lark-doc/editor/panelsUiMixin'
 import commentsMixin from '../../src/components/lark-doc/editor/commentsMixin'
@@ -622,8 +623,18 @@ describe('原生浮层迁移契约', () => {
     expect(ui.el.getAttribute('aria-label')).toBe('当前文档通知')
     expect(ui.el.querySelector('.lark-doc-notify-loading-nested > .lark-doc-notify-loading-container > .lark-doc-notify-content')).not.toBeNull()
     expect(ui.el.querySelector('.lark-doc-notify-header-desc').textContent).toBe('当前文档通知')
-    expect(ui.el.querySelector('.lark-doc-notify-header-bell .lark-doc-icon').style.width).toBe('14px')
-    expect(ui.el.querySelector('.lark-doc-notify-empty-img .lark-doc-icon').style.width).toBe('72px')
+    expect(ui.el.querySelector('.lark-doc-notify-mute-text').textContent).toBe('关闭通知')
+    // 飞书头部：开关状态铃铛挂在标题后面，右侧「关闭通知」是纯文字按钮，不带图标。
+    expect(ui.el.querySelector('.lark-doc-notify-status .lark-doc-icon')).not.toBeNull()
+    expect(ui.el.querySelector('.lark-doc-notify-mute .lark-doc-icon')).toBeNull()
+    expect(ui.el.querySelector('.lark-doc-notify-empty-img svg').getAttribute('width')).toBe('120')
+    // 空态插图是多色图标资源，取色统一由 palette.js 供给（12 T0-05 禁止组件里写字面色），
+    // 断言插值后确实落到 SVG 属性上，避免以后改回字面 hex。
+    const emptySvg = ui.el.querySelector('.lark-doc-notify-empty-img svg')
+    expect(emptySvg.querySelector('path').getAttribute('stroke')).toBe(NOTIFY_TEAL)
+    expect(emptySvg.querySelector('rect').getAttribute('fill')).toBe(NOTIFY_CARD)
+    expect(emptySvg.querySelector('circle').getAttribute('fill')).toBe(NOTIFY_BRAND_BLUE)
+    expect(host.textContent).toContain('当有人在当前文档提及你')
     expect(ui.el.querySelector('.lark-doc-notify-readall').disabled).toBe(true)
     expect(ui.el.querySelector('.lark-doc-notify-readall').classList.contains('is-disabled')).toBe(true)
     expect(host.textContent).toContain('暂无通知')
@@ -656,6 +667,9 @@ describe('原生浮层迁移契约', () => {
     ui.update(state)
     const mute = ui.el.querySelector('.lark-doc-notify-mute')
     const readAll = ui.el.querySelector('.lark-doc-notify-readall')
+    // 头部状态铃铛：开=三段路径（钟身 + 裙边 + 铃舌），关=四段（多一道斜杠）。
+    const statusPaths = () => ui.el.querySelectorAll('.lark-doc-notify-status svg path').length
+    expect(statusPaths()).toBe(3)
     const event = new MouseEvent('mousedown', { cancelable: true })
     mute.dispatchEvent(event)
     readAll.dispatchEvent(new MouseEvent('mousedown'))
@@ -686,8 +700,18 @@ describe('原生浮层迁移契约', () => {
     ui.update({ ...state, muteLabel: '开启通知' })
     expect(ui.el.getAttribute('aria-busy')).toBe('false')
     expect(mute.textContent).toBe('开启通知')
+    expect(statusPaths()).toBe(4)
     expect(mute.disabled).toBe(false)
     expect(readAll.classList.contains('is-disabled')).toBe(false)
+  })
+
+  it('单行系统通知标记 is-line，有正文的条目仍走两行版式', () => {
+    const host = hostNode(), ui = createNotifications({ host }); cleanups.push(() => ui.destroy())
+    const state = { open: true, style: { left: 0, top: 0 }, allReadDisabled: true }
+    ui.update({ ...state, items: [{ id: 'a', title: '文档权限已更新', readAt: 1 }] })
+    expect(host.querySelector('.lark-doc-notify-item').classList.contains('is-line')).toBe(true)
+    ui.update({ ...state, items: [{ id: 'b', title: '评论有新动态', body: '正文', readAt: 1 }] })
+    expect(host.querySelector('.lark-doc-notify-item').classList.contains('is-line')).toBe(false)
   })
 
   it('new notification popover owns focus while loading and exposes keyboard actions after loading', () => {

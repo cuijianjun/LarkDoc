@@ -184,7 +184,12 @@ export const ICONS = {
   // 上传及导入）是彩色图形 —— 颜色由项的 `iconColor` 走 `style.color` 覆盖，图标本身仍用
   // currentColor，这样彩色/单色两态共用同一份路径，不用画两套。
   'chevron-right': wrap('<path d="m6.2 4.2 3.8 3.8-3.8 3.8"/>'),
-  bell: wrap('<path d="M8 2.2a4 4 0 0 0-4 4v2.6L2.9 11h10.2L12 8.8V6.2a4 4 0 0 0-4-4z"/><path d="M6.4 13.2a1.7 1.7 0 0 0 3.2 0"/>'),
+  // 钟身竖直两侧收到一条平底，裙边另画一条更宽的横线（飞书铃铛是「细横线裙边」，
+  // 不是把梯形描边加粗 —— 后者在 16px 下会糊成一块）。
+  bell: wrap('<path d="M4.4 10.2V5.9a3.6 3.6 0 0 1 7.2 0v4.3z"/><path d="M3.1 10.2h9.8"/><path d="M6.6 13a1.5 1.5 0 0 0 2.8 0"/>'),
+  // 通知面板「关闭/开启通知」与「关注文档更新」：飞书真源分别是铃铛斜杠、圆勾、书签加号。
+  'bell-off': wrap('<path d="M4.4 10.2V5.9a3.6 3.6 0 0 1 7.2 0v4.3z"/><path d="M3.1 10.2h9.8"/><path d="M6.6 13a1.5 1.5 0 0 0 2.8 0"/><path d="m2.2 2.2 11.6 11.6"/>'),
+  'check-circle': wrap('<circle cx="8" cy="8" r="6"/><path d="m5.4 8.1 1.8 1.8 3.4-3.6"/>'),
   subscribe: wrap('<path d="M3.6 2.4h8.8v11.2L8 11l-4.4 2.6z"/><path d="M8 4.8v3.6"/><path d="M6.2 6.6h3.6"/>'),
   doc: wrap('<path d="M4.2 2.4h4.6l3 3v8.2H4.2z"/><path d="M8.6 2.4v3.2h3.2"/><path d="M6.2 8.6h3.6"/><path d="M6.2 11h3.6"/>'),
   'doc-grid': wrap('<rect x="2.6" y="2.6" width="10.8" height="10.8" rx="1.6"/><path d="M2.6 6.4h10.8"/><path d="M2.6 10.2h10.8"/><path d="M6.4 2.6v10.8"/>'),

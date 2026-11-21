@@ -707,31 +707,59 @@
 .lark-doc .lark-doc-code-lang-item.is-cursor { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); }
 .lark-doc .lark-doc-code-lang-item.is-active { background: transparent; color: var(--ld-brand-content); }
 .lark-doc .lark-doc-code-lang-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.lark-doc .lark-doc-notify-popover { position: fixed; z-index: 999; display: flex; flex-direction: column; box-sizing: border-box; width: 402px; max-width: calc(100vw - 16px); height: 555px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 3px 0 0; }
+/* 通知面板：四支取色与两个尺寸都是飞书截图逐像素实测（2 倍 DPR）。
+   面板固定 400×550、头部 47（46 内容 + 1 描边）、标题 14/22 700、
+   标题后铃铛 #8F959E、右侧按钮 14/22 400 #646A73、单行系统通知行高 50（12 内边距 + 14/26）。
+   四个颜色只服务这块面板，就近声明在作用域里，不上抬到 lark-doc.css 的全局 --ld-* 表。 */
+.lark-doc { --ld-notify-icon: #646a73; --ld-notify-status: #8f959e; --ld-notify-item-read: #9fa0a2; }
+.lark-doc[data-theme="dark"] { --ld-notify-icon: #a6a6a6; --ld-notify-status: #8c8c8c; --ld-notify-item-read: #8c8c8c; }
+/* 顶栏铃铛：常态与 hover 都是 #646A73（飞书那张就是灰底 + 灰铃铛），改色随本特性包到。 */
+.lark-doc .lark-doc-notify-btn { color: var(--ld-notify-icon); }
+.lark-doc .lark-doc-notify-btn:hover:not(:disabled),
+.lark-doc .lark-doc-notify-btn:focus-visible,
+.lark-doc .lark-doc-notify-btn[aria-expanded="true"] { color: var(--ld-notify-icon); }
+.lark-doc .lark-doc-notify-popover { position: fixed; z-index: 999; display: flex; flex-direction: column; box-sizing: border-box; width: 400px; max-width: calc(100vw - 16px); height: 550px; max-height: calc(100vh - 16px); overflow-y: auto; }
 .lark-doc .lark-doc-notify-loading-nested { display: flex; flex: 1 1 auto; min-height: 0; }
 .lark-doc .lark-doc-notify-loading-container { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); overflow: hidden; }
 .lark-doc .lark-doc-notify-content { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
-.lark-doc .lark-doc-notify-header { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; box-sizing: border-box; padding: 12px; border-bottom: 1px solid var(--ld-border-chrome); }
-.lark-doc .lark-doc-notify-header-desc { flex: 0 0 auto; margin: 0; color: var(--ld-text); font-size: 14px; font-weight: 700; line-height: 17px; white-space: nowrap; }
-.lark-doc .lark-doc-notify-header-bell { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 14px; height: 14px; color: var(--ld-text-tertiary); }
+.lark-doc .lark-doc-notify-header { display: flex; align-items: center; flex: 0 0 auto; box-sizing: border-box; min-height: 47px; padding: 0 12px; border-bottom: 1px solid var(--ld-border-chrome); color: var(--ld-text); font-size: 14px; font-weight: 700; }
+.lark-doc .lark-doc-notify-header-desc { flex: 0 0 auto; max-width: 215px; margin: 0; overflow: hidden; font-size: 14px; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-notify-readall-icon,
+.lark-doc .lark-doc-notify-status { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; }
+.lark-doc .lark-doc-notify-status { margin-left: 6px; color: var(--ld-notify-status); }
 .lark-doc .lark-doc-notify-mute,
-.lark-doc .lark-doc-notify-readall { flex: 0 0 auto; min-height: 22px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; white-space: nowrap; }
-.lark-doc .lark-doc-notify-mute { margin-left: auto; }
+.lark-doc .lark-doc-notify-readall { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; height: 28px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); font-size: 14px; font-weight: 400; line-height: 22px; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-notify-mute { margin-left: auto; margin-right: 8px; }
+.lark-doc .lark-doc-notify-readall { color: var(--ld-text-accent); }
 .lark-doc .lark-doc-notify-mute:hover:not(:disabled),
 .lark-doc .lark-doc-notify-mute:focus-visible,
 .lark-doc .lark-doc-notify-readall:hover:not(:disabled),
-.lark-doc .lark-doc-notify-readall:focus-visible { background: var(--ld-bg-hover-chrome); color: var(--ld-text-accent-hover); outline: 0; }
+.lark-doc .lark-doc-notify-readall:focus-visible { background: var(--ld-bg-hover-chrome); outline: 0; }
 .lark-doc .lark-doc-notify-readall:disabled,
-.lark-doc .lark-doc-notify-readall.is-disabled { background: transparent; color: var(--ld-text-disabled); cursor: default; }
-.lark-doc .lark-doc-notify-empty { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; min-height: 0; padding: 0 24px; text-align: center; }
-.lark-doc .lark-doc-notify-empty-img { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 120px; height: 120px; color: var(--ld-border-strong); }
+.lark-doc .lark-doc-notify-readall.is-disabled { background: transparent; color: var(--ld-text-disabled); opacity: .5; cursor: default; }
+.lark-doc .lark-doc-notify-readall:disabled .lark-doc-notify-readall-icon,
+.lark-doc .lark-doc-notify-readall.is-disabled .lark-doc-notify-readall-icon { display: none; }
+.lark-doc .lark-doc-notify-empty { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; min-height: 0; padding: 0 24px; text-align: center; }
+.lark-doc .lark-doc-notify-empty-img { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 120px; height: 120px; margin-top: 115px; }
 .lark-doc .lark-doc-notify-empty-title { margin: 16px 0 0; color: var(--ld-text); font-size: 16px; font-weight: 500; line-height: 24px; }
-.lark-doc .lark-doc-notify-empty-sub { max-width: 250px; margin: 8px 0 0; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; }
+.lark-doc .lark-doc-notify-empty-sub { width: 250px; margin: 4px 0 0; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; white-space: break-spaces; }
 .lark-doc .lark-doc-notify-list { flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
-.lark-doc .lark-doc-notify-item { display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; }
-.lark-doc .lark-doc-notify-item.is-unread { background: var(--ld-bg-soft); }
-.lark-doc .lark-doc-notify-item-title { color: var(--ld-text); font-size: 14px; font-weight: 500; line-height: 20px; }
-.lark-doc .lark-doc-notify-item-body { color: var(--ld-text-tertiary); font-size: 12px; line-height: 18px; }
+.lark-doc .lark-doc-notify-item { border-radius: 6px; }
+.lark-doc .lark-doc-notify-item-action { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; padding: 9px 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-notify-item-action:hover:not(:disabled),
+.lark-doc .lark-doc-notify-item-action:focus-visible { background: var(--ld-bg-hover-chrome); outline: 0; }
+.lark-doc .lark-doc-notify-item.is-unread .lark-doc-notify-item-action { background: var(--ld-bg-soft); }
+/* 条目是 `button`，但「不可跳转」不等于「灰掉」：飞书里这类系统通知就是正常灰字。
+   通用 `button:disabled{opacity:.43}` 会把 14px 字洗成 #D5D6D7，这里按行恢复原色。 */
+.lark-doc .lark-doc-notify-item-action:disabled { opacity: 1; cursor: default; }
+/* 单行系统通知（无正文）：飞书实测行高 50、首行文字 ink 落在列表顶下 17、
+   左内边距 12（列表 4 + 12），正文 14/22/400 灰 #9FA0A2。文字靠上对齐（padding 9 +
+   min-height 50），不是垂直居中 —— 居中会把首行压到 22.25。 */
+.lark-doc .lark-doc-notify-item.is-line .lark-doc-notify-item-action { padding: 9px 12px; min-height: 50px; }
+.lark-doc .lark-doc-notify-item.is-line .lark-doc-notify-item-title { color: var(--ld-notify-item-read); font-weight: 400; }
+.lark-doc .lark-doc-notify-item.is-line.is-unread .lark-doc-notify-item-title { color: var(--ld-text); font-weight: 500; }
+.lark-doc .lark-doc-notify-item-title { color: var(--ld-text); font-size: 14px; font-weight: 500; line-height: 22px; }
+.lark-doc .lark-doc-notify-item-body { color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
 .lark-doc .lark-doc-notify-more,
 .lark-doc .lark-doc-notify-query { flex: 0 0 auto; min-height: 44px; margin: 4px 8px 8px; color: var(--ld-text-accent); }
 /* 「更多」菜单的关注引导卡（飞书 subscribe_guide）与关注成功 toast。两者都挂在菜单上，

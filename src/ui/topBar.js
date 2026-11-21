@@ -190,7 +190,8 @@ export function createTopBar(options = {}) {
   }
   const createButton = actionButton('lark-doc-create-btn', '新建', 'plus', 'menu', 'toggleCreateMenu')
   const searchButton = actionButton('lark-doc-topbar-search', '查找', 'search', 'dialog', 'openSearch', 18)
-  const notifyButton = actionButton('lark-doc-notify-btn', '当前文档通知', 'bell', 'dialog', 'toggleNotify')
+  // 铃铛 18px：飞书顶栏这枚图标的字形实测 12×13.5 CSS，比同排的 16px 图标大一号。
+  const notifyButton = actionButton('lark-doc-notify-btn', '当前文档通知', 'bell', 'dialog', 'toggleNotify', 18)
   const notifyDot = document.createElement('span')
   notifyDot.className = 'lark-doc-notify-dot'
   const moreButton = actionButton('lark-doc-more-btn', '更多', 'more', 'menu', 'toggleTopbarMore')
