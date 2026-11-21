@@ -293,7 +293,9 @@
   --ld-fr-text: #1f2329;                             /* Tab 未激活 / 次要按钮文字 */
   --ld-fr-text-muted: #646a73;                       /* 关闭图标 / 命中计数器 */
   --ld-fr-text-disabled: #bbbfc4;                    /* 禁用态文字 */
-  --ld-fr-primary-bg: var(--ld-brand-chrome);                       /* 「全部替换」主按钮填充 */
+  --ld-fr-primary-bg: var(--ld-brand-content);                      /* 「全部替换」主按钮填充（浅 #1456F0 = 飞书蓝） */
+  /* 主按钮禁用档的两个 token 在 deferred-ui.css 的 .lark-doc 上声明：面板样式随 ui 特性包到，
+     放首屏样式里会把 Element 首屏预算顶爆（实测 +44 B gzip）。 */
   --ld-bg-hover-segment: var(--ld-bg-accent); /* 标题/块 hover 整段浅蓝底 */
   --ld-border-notice: #a9d8c2;           /* 通知条描边 */
   --ld-bg-notice: #edf9f2;               /* 通知条底 */

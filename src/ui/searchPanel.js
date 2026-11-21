@@ -140,7 +140,7 @@ export function createSearchPanel({ host, handlers = {} } = {}) {
 
     const close = buttonNode('lark-doc-fr-close', '关闭查找')
     close.addEventListener('click', () => handlers.onClose?.())
-    close.appendChild(iconNode('close', 20))
+    close.appendChild(iconNode('close', 16))
     pane.append(findField, replaceField, actions)
     root.append(bar, pane, close)
     root.__ld = { findTab, replaceTab, ink, pane, findField, findLabel, findInputWrap, replaceField, input, replaceInput, counter, actions, replaceAll, replaceOne, previous, next }

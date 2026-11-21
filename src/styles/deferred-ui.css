@@ -4,12 +4,20 @@
 .lark-doc .lark-doc-table-tools { position: fixed; z-index: 40; box-sizing: border-box; display: block; width: max-content; max-width: calc(100% - 16px); padding: 8px; border: 1px solid var(--ld-table-float-border); border-radius: 6px; background: var(--ld-table-float-bg); box-shadow: var(--ld-shadow-tooltip); color: var(--ld-table-float-text); white-space: nowrap; user-select: none; -webkit-user-select: none; pointer-events: auto; }
 .lark-doc .lark-doc-table-tools-bar { display: flex; flex-wrap: wrap; align-items: center; min-height: 24px; row-gap: 4px; }
 .lark-doc .lark-doc-fr { position: fixed; z-index: 100; right: 16px; top: 72px; box-sizing: border-box; display: flex; flex-direction: column; width: 406px; max-width: calc(100vw - 32px); padding: 0 24px; border: 1px solid var(--ld-fr-border); border-radius: 8px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; box-shadow: var(--ld-fr-shadow); }
-.lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 28px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
+/* 主按钮禁用档：飞书不是「主色降透明」，而是浅蓝底 + 灰字（实测合成值 157/183/249 与灰字 #8F959E）。
+   声明挂在 .lark-doc 而不是 .lark-doc-fr 上——深档由 .lark-doc[data-theme="dark"]（0,2,0）覆盖，
+   若挂在子元素上，子元素自身声明会压住继承来的深档值。
+   深档值也写在这里（选择器与本档一致，特异性不变）：等价于「品牌蓝 42% 压在面板底上」+ 同档灰字。
+   两者都不进 lark-doc.css / theme-dark.css，是因为面板样式随 ui 特性包到，
+   写进首屏样式会顶爆 Element 首屏预算。⚠️ 改浅档时同看深档，反之亦然。 */
+.lark-doc { --ld-fr-primary-disabled-bg: #9db7f9; --ld-fr-primary-disabled-text: #8f959e; }
+.lark-doc[data-theme="dark"] { --ld-fr-primary-disabled-bg: #27417a; --ld-fr-primary-disabled-text: #8c8c8c; }
+.lark-doc .lark-doc-fr .lark-doc-fr-bar { position: relative; display: flex; align-items: flex-start; gap: 30px; box-sizing: border-box; width: 100%; height: 48px; border-bottom: 1px solid var(--ld-divider); cursor: move; user-select: none; }
 .lark-doc .lark-doc-fr .lark-doc-fr-tab { width: 32px; min-width: 32px; height: 48px; min-height: 48px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 16px; line-height: 48px; cursor: pointer; }
 .lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active { color: var(--ld-brand-content); }
 .lark-doc .lark-doc-fr .lark-doc-fr-ink { position: absolute; bottom: 0; left: 0; z-index: 1; overflow: hidden; width: 32px; height: 3px; }
-.lark-doc .lark-doc-fr .lark-doc-fr-ink::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 6px; border-radius: 3px; background: var(--ld-brand-chrome); }
-.lark-doc .lark-doc-fr.is-replace .lark-doc-fr-ink { transform: translateX(60px); }
+.lark-doc .lark-doc-fr .lark-doc-fr-ink::before { content: ''; position: absolute; top: 0; left: 0; width: 32px; height: 6px; border-radius: 3px; background: var(--ld-brand-content); }
+.lark-doc .lark-doc-fr.is-replace .lark-doc-fr-ink { transform: translateX(62px); }
 .lark-doc .lark-doc-fr .lark-doc-fr-pane { padding-top: 16px; }
 .lark-doc .lark-doc-fr .lark-doc-fr-field { display: flex; flex-direction: column; }
 .lark-doc .lark-doc-fr:not(.is-replace) .lark-doc-fr-field { padding-top: 8px; }
@@ -17,10 +25,18 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-label { padding-top: 3px; margin-bottom: 10px; color: var(--ld-fr-text); font-size: 14px; line-height: 17px; }
 .lark-doc .lark-doc-fr .lark-doc-fr-input { box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 5px 9px 5px 12px; border: 1px solid var(--ld-fr-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); }
 .lark-doc .lark-doc-fr .lark-doc-fr-input input { flex: 1 1 auto; min-width: 0; height: 22px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ld-fr-text); font-size: 14px; line-height: 22px; }
+/* 输入元素自身不再画 UA 焦点框：聚焦态由外壳的 2px 内环表达，否则计数器左侧会多一条竖线。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-input input:focus,
+.lark-doc .lark-doc-fr .lark-doc-fr-input input:focus-visible { outline: 0; }
 .lark-doc .lark-doc-fr .lark-doc-fr-input input::placeholder { color: var(--ld-text-tertiary); }
+/* 聚焦态照飞书放大 4 倍的逐像素结构：描边仍是 1px 常态灰，内侧 1px 白间隔 + 2px 品牌蓝，
+   不是「描边换色加粗」（那样在 2 倍屏上会显成一整圈粗蓝边）。 */
+.lark-doc .lark-doc-fr .lark-doc-fr-input:focus-within { border-color: var(--ld-fr-border-control); box-shadow: inset 0 0 0 1px var(--ld-bg-surface-chrome), inset 0 0 0 3px var(--ld-brand-content); }
 .lark-doc .lark-doc-fr .lark-doc-fr-counter { flex: 0 0 auto; color: var(--ld-fr-text-muted); font-size: 14px; line-height: 22px; white-space: nowrap; }
 .lark-doc .lark-doc-fr .lark-doc-fr-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
 .lark-doc .lark-doc-fr.is-replace .lark-doc-fr-actions { justify-content: flex-start; }
+/* 按钮实测 80×32、间距 12：四块 80 + 三条 12 = 356，正好等于内容宽（406 − 24×2 − 1×2）。
+   注意别在圆角行（y 偏 ±5px）上量宽，那里左右各内缩 2px，会误读出 78/76。 */
 .lark-doc .lark-doc-fr .lark-doc-fr-btn { box-sizing: border-box; width: 80px; min-width: 80px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--ld-fr-border-control); border-radius: 6px; background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text); font-size: 14px; line-height: 30px; }
 @media (max-width: 438px) {
   .lark-doc .lark-doc-fr { padding-inline: 16px; }
@@ -31,7 +47,7 @@
 .lark-doc .lark-doc-fr .lark-doc-fr-btn:disabled { opacity: 1; border-color: var(--ld-fr-border-disabled); background: var(--ld-bg-surface-chrome); color: var(--ld-fr-text-disabled); cursor: not-allowed; }
 .lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary { border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-code-bg); }
 .lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:hover:not(:disabled) { background: var(--ld-fr-primary-bg); border-color: transparent; color: var(--ld-code-bg); }
-.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:disabled { opacity: .43; border-color: transparent; background: var(--ld-fr-primary-bg); color: var(--ld-code-bg); cursor: not-allowed; }
+.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:disabled { border-color: transparent; background: var(--ld-fr-primary-disabled-bg); color: var(--ld-fr-primary-disabled-text); cursor: not-allowed; }
 .lark-doc .lark-doc-fr .lark-doc-fr-close { position: absolute; z-index: 10; top: 10px; right: 21px; display: grid; place-items: center; width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ld-fr-text-muted); }
 .lark-doc .lark-doc-fr .lark-doc-fr-close:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--ld-fr-text-muted); }
 .lark-doc .lark-doc-table-tools label { display: flex; align-items: center; gap: 4px; }

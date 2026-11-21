@@ -177,7 +177,11 @@
   --ld-fr-text: #F0F0F0;              /* A：Tab 未激活 / 次要按钮文字 */
   --ld-fr-text-muted: #A6A6A6;        /* A：关闭图标 / 命中计数器 */
   --ld-fr-text-disabled: #5F5F5F;     /* A：禁用态文字（≠ --ld-text-disabled 的 #757575） */
-  --ld-fr-primary-bg: var(--ld-brand-chrome);        /* A：主按钮填充 */
+  /* A：主按钮填充。深档实测 #3370EB —— 比「文字/描边品牌蓝」#4C88FF 暗一档，是真飞书里的两个值，
+     不要写成 var(--ld-brand-content)。浅档取 var(--ld-brand-content) 的 #1456F0。 */
+  --ld-fr-primary-bg: #3370EB;
+  /* 主按钮禁用档的深档值与浅档一起写在 deferred-ui.css（选择器仍是本档的
+     .lark-doc[data-theme="dark"]，特异性不变），免得为查换面板多占首屏样式预算。 */
 }
 
 /* ------------------------------------------------------------------

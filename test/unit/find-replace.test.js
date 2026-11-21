@@ -18,11 +18,20 @@ import overlayDismissMixin from '../../src/components/lark-doc/editor/overlayDis
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 // 浮层样式已抽到 deferred-ui.css（由 src/features/ui.js 加载）；测试须把两份都读进来。
+// 查换面板的主按钮禁用档 token 成对写在 deferred-ui.css：浅档挂 .lark-doc、深档挂
+// .lark-doc[data-theme="dark"]。这里按「行内是否带深档选择器」切开，两边各入各的集合，
+// 免得深档声明混进浅档集合里自证通过（下面那条「浅档每个 --ld-fr-* 都有深档同名覆盖」）。
+const deferredCss = fs.readFileSync(path.join(root, 'src/styles/deferred-ui.css'), 'utf8')
+const DARK_SELECTOR = '.lark-doc[data-theme="dark"] {'
+const deferredLines = deferredCss.split('\n')
 const css = [
   fs.readFileSync(path.join(root, 'src/components/lark-doc/lark-doc.css'), 'utf8'),
-  fs.readFileSync(path.join(root, 'src/styles/deferred-ui.css'), 'utf8'),
+  deferredLines.filter((line) => !line.includes(DARK_SELECTOR)).join('\n'),
 ].join('\n')
-const darkCss = fs.readFileSync(path.join(root, 'src/components/lark-doc/theme-dark.css'), 'utf8')
+const darkCss = [
+  fs.readFileSync(path.join(root, 'src/components/lark-doc/theme-dark.css'), 'utf8'),
+  deferredLines.filter((line) => line.includes(DARK_SELECTOR)).join('\n'),
+].join('\n')
 const panel = fs.readFileSync(path.join(root, 'src/ui/searchPanel.js'), 'utf8')
 const panelMixin = fs.readFileSync(path.join(root, 'src/components/lark-doc/editor/searchPanelUiMixin.js'), 'utf8')
 const nativeHost = fs.readFileSync(path.join(root, 'src/editor/nativeEditorHost.js'), 'utf8')
@@ -185,10 +194,13 @@ describe('P4-05 查找替换 —— 面板规格（04 §3.2 实测像素）', ()
     expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-tab.is-active')).toMatch(/color: var\(--ld-brand-content\)/)
   })
 
-  it('激活 ink：容器 32×3 裁 ::before 32×6，替换 Tab 右移 60px', () => {
+  it('激活 ink：容器 32×3 裁 ::before 32×6，替换 Tab 右移 62px（页签间距 30）', () => {
+    expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-bar')).toMatch(/gap: 30px/)
     expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-ink')).toMatch(/width: 32px; height: 3px/)
     expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-ink::before')).toMatch(/height: 6px/)
-    expect(ruleFor('.lark-doc .lark-doc-fr.is-replace .lark-doc-fr-ink')).toMatch(/translateX\(60px\)/)
+    // 下划线是品牌蓝而不是外壳绿：飞书截图的 ink 实测 rgb(21,86,240)，本档取 --ld-brand-content。
+    expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-ink::before')).toMatch(/background: var\(--ld-brand-content\)/)
+    expect(ruleFor('.lark-doc .lark-doc-fr.is-replace .lark-doc-fr-ink')).toMatch(/translateX\(62px\)/)
   })
 
   it('输入框外壳 356 等效宽 + 32 高 + radius 6；按钮 80×32 间距 12', () => {
@@ -197,6 +209,17 @@ describe('P4-05 查找替换 —— 面板规格（04 §3.2 实测像素）', ()
     const actions = ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-actions')
     expect(actions).toMatch(/gap: 12px/)
     expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-btn')).toMatch(/width: 80px; min-width: 80px; height: 32px/)
+  })
+
+  it('聚焦态是「描边不变 + 内侧 1px 白 + 2px 品牌蓝」的双内环（飞书逐像素实测）', () => {
+    const focus = ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-input:focus-within')
+    expect(focus).toMatch(/inset 0 0 0 1px var\(--ld-bg-surface-chrome\), inset 0 0 0 3px var\(--ld-brand-content\)/)
+    expect(focus).toMatch(/border-color: var\(--ld-fr-border-control\)/)
+  })
+
+  it('主按钮禁用是浅蓝底 + 灰字，不是主色降透明（否则字色被一起压掉）', () => {
+    expect(ruleFor('.lark-doc .lark-doc-fr .lark-doc-fr-btn.is-primary:disabled'))
+      .toMatch(/background: var\(--ld-fr-primary-disabled-bg\); color: var\(--ld-fr-primary-disabled-text\)/)
   })
 
   it('关闭按钮 28×28、主按钮填 --ld-fr-primary-bg（深档是 #3370EB 不是品牌蓝）', () => {
