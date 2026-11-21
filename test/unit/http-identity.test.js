@@ -228,6 +228,16 @@ describe('DocumentSession production identity boundary', () => {
     expect(value.can('canView')).toBe(false); expect(vm.commentTranslationState).toBeNull(); expect(vm.commentThreads).toEqual([]); expect(vm.commentPendingTranslationOperation).toBe(''); expect(value._resourceOperations.size).toBe(0)
     expect(remote.reset).toHaveBeenCalled(); expect(authorizer.reset).toHaveBeenCalled(); expect(assets.reset).toHaveBeenCalled(); expect(versioning.resetConversions).toHaveBeenCalled(); expect(collab.disconnect).toHaveBeenCalled()
   })
+  it('same-principal credential renewal keeps collaboration and private views intact', async () => {
+    const collab = { connect: vi.fn(), disconnect: vi.fn(async () => {}) }, remote = comments(), assets = assetsPort(), versioning = versionsPort()
+    const { value, proof } = await session({ collaboration: collab, comments: remote, assets, versioning })
+    collab.disconnect.mockClear(); remote.reset.mockClear(); assets.reset.mockClear(); versioning.resetConversions.mockClear()
+    proof.publish('alice')
+    await value._capabilitiesPromise
+    expect(value.user.id).toBe('alice'); expect(value.can('canView')).toBe(true)
+    expect(collab.disconnect).not.toHaveBeenCalled(); expect(remote.reset).not.toHaveBeenCalled()
+    expect(assets.reset).not.toHaveBeenCalled(); expect(versioning.resetConversions).not.toHaveBeenCalled()
+  })
   it('an old capability refresh cannot restore permissions across identity A-B-A even with the same provider', async () => {
     const deferred = held(), entered = held(), getCapabilities = vi.fn(async () => capabilities), authorization = { getCapabilities, reset: vi.fn() }
     const { value, proof } = await session({ authorization })

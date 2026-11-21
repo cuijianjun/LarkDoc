@@ -90,7 +90,7 @@ export function createHttpCommentsProvider(options = {}) {
   function checkContext(epoch, id) { if (disposed || epoch !== generation) throw contextChanged(id) }
   function checkRecord(record, records) { if (disposed || records.get(record.operationId) !== record) throw contextChanged(record.operationId) }
   const recoverableComments = new Map(), recoverableFollows = new Map()
-  function reset(reason) {
+  function reset(reason, options) {
     generation++
     // 同一身份的授权刷新/端口替换只留原键和校验元数据，绝不保留正文或重发意图。
     if (['authorization-required', 'provider-replaced'].includes(reason)) {
@@ -102,7 +102,8 @@ export function createHttpCommentsProvider(options = {}) {
     for (const [records, preparing, retired] of [[operations, preparingComments, retiredComments], [followOperations, preparingFollows, retiredFollows], [translationOperations, preparingTranslations, retiredTranslations]]) {
       records.forEach((_, id) => retired.add(id)); preparing.forEach((_, id) => retired.add(id)); records.clear(); preparing.clear()
     }
-    threads.clear(); controllers.forEach(controller => controller.abort()); controllers.clear()
+    if (!options?.keepThreads) threads.clear()
+    controllers.forEach(controller => controller.abort()); controllers.clear()
   }
 
   async function preparingResult(pending, intent, revisionKey, id) {
@@ -687,6 +688,9 @@ export function createHttpCommentsProvider(options = {}) {
     }
   }
   provider.reset = reset
+  /** 同一主体凭据轮换（CSRF 换票）：在途请求必须停（旧凭据不能落地、更不能重发），
+   *  但已缓存的线程保留 —— 每次续期都清空评论区会让用户看到一闪而空的面板。 */
+  provider.retirePending = reason => reset(reason || 'authorization-required', { keepThreads: true })
   provider.dispose = () => { disposed = true; reset() }
   return provider
 }

@@ -21,6 +21,21 @@ export const identityMethods = {
     this.providers.comments?.reset?.(reason); this.providers.authorization?.reset?.(reason); this.providers.resources?.reset?.(reason); if (reason !== 'authorization-required') this.providers.documentBusiness?.reset(reason)
   },
 
+  /**
+   * 同一主体的凭据轮换（CSRF 换票）：在途私有操作必须退休 —— 旧凭据的请求不能落地，
+   * 更不能被重发；但已缓存的线程、版本、通知不清，否则每次续期都会闪一次空列表。
+   * 所以只调 provider 的 retirePending（保留原键与校验元数据、只中止在途控制器），
+   * 不走整份 _clearPrivateIdentityView。
+   */
+  _retirePendingPrivateOperations(reason = 'authorization-required') {
+    // 只认 retirePending：没有这个能力的 provider（老端口/测试桩）保持原样，绝不回退到 reset ——
+    // 回退会把「续期不清私有视图」的边界又捅破。
+    const retire = provider => provider?.retirePending?.(reason)
+    this._retiredCommentProviders.forEach(retire)
+    retire(this.providers.comments)
+    this._commentGeneration++; this.emit('comments-reset', reason)
+  },
+
   _identityError() { return Object.assign(new Error('IDENTITY_CONTEXT_CHANGED'), { code: 'IDENTITY_CONTEXT_CHANGED', status: 'unknown' }) },
 
   _identityCurrent(generation = this._identityGeneration) {
@@ -57,21 +72,24 @@ export const identityMethods = {
     if (!force && prior && prior.status === next.status && prior.principalId === next.principalId && prior.generation === next.generation) return
     const generation = ++this._identityGeneration; this._authorizationGeneration++; this._capabilities = { ...DENIED_CAPABILITIES }
     const priorId = this.user && this.user.id
+    // 同一主体的凭据轮换只需复权：服务端仍认原 WS Cookie，断开重连反而制造可避免的掉线。
+    const renewal = !force && authenticated && prior?.status === 'authenticated' && priorId === next.principalId
     this._identityUpdating = true
     try { this.user = authenticated ? Object.freeze({ id: next.principalId }) : null }
     finally { this._identityUpdating = false }
-    if (priorId === next.principalId) {
-      // 连续认证的同主体凭据轮换仍须复权；未知、登出和主体切换继续退休旧操作。
-      const renewed = !force && authenticated && prior?.status === 'authenticated'
-      this._clearPrivateIdentityView(renewed ? 'authorization-required' : 'identity-changed')
-    }
+    if (priorId === next.principalId && !renewal) this._clearPrivateIdentityView('identity-changed')
+    // 续期不清视图，但在途私有请求要停：否则带旧 CSRF 的写入会挂到超时，用户看到的是永远转圈的评论。
+    else if (renewal) this._retirePendingPrivateOperations()
     this.emit('capabilities', this.getCapabilities()); this.emit('identity', this._identityState)
     if (generation !== this._identityGeneration) return
-    const collaboration = this.providers.collaboration
-    try { this._identityDisconnect = Promise.resolve(collaboration?.disconnect?.({ documentId: this.documentId, session: this })).catch(() => { throw this._identityError() }) }
-    catch (_) { this._identityDisconnect = Promise.reject(this._identityError()) }
-    this._identityDisconnect.catch(() => {})
-    if (authenticated && this.providers.authorization) this._capabilitiesPromise = this.refreshCapabilities().catch(() => this.getCapabilities())
+    if (renewal) this._identityDisconnect = Promise.resolve()
+    else {
+      const collaboration = this.providers.collaboration
+      try { this._identityDisconnect = Promise.resolve(collaboration?.disconnect?.({ documentId: this.documentId, session: this })).catch(() => { throw this._identityError() }) }
+      catch (_) { this._identityDisconnect = Promise.reject(this._identityError()) }
+      this._identityDisconnect.catch(() => {})
+    }
+    if (authenticated && this.providers.authorization) this._capabilitiesPromise = this.refreshCapabilities(renewal).catch(() => this.getCapabilities())
     else this._capabilitiesPromise = Promise.resolve(this.getCapabilities())
   },
 
@@ -90,14 +108,16 @@ export const identityMethods = {
   /** UI 只用能力控制交互，服务端仍是最终授权方。 */
   can(capability) { return !this._destroyed && this._identityCurrent() && this._capabilities[capability] === true },
 
-  async refreshCapabilities() {
+  async refreshCapabilities(preserveCurrent = false) {
     if (this._destroyed) throw new Error('DocumentSession 已销毁')
     const provider = this.providers.authorization
     const generation = ++this._authorizationGeneration, identityGeneration = this._identityGeneration
     const current = () => !this._destroyed && generation === this._authorizationGeneration && provider === this.providers.authorization && this._identityCurrent(identityGeneration)
-    this._capabilities = { ...DENIED_CAPABILITIES }
-    this._clearPrivateIdentityView('authorization-required')
-    this.emit('capabilities', this.getCapabilities())
+    if (!preserveCurrent) {
+      this._capabilities = { ...DENIED_CAPABILITIES }
+      this._clearPrivateIdentityView('authorization-required')
+      this.emit('capabilities', this.getCapabilities())
+    }
     try {
       if (this._identityRequired) { this._assertIdentity(identityGeneration); await this._identityDisconnect; this._assertIdentity(identityGeneration) }
       if (!provider) throw new Error('未配置 authorization Provider')
