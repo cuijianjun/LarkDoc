@@ -10,10 +10,10 @@
  * （`bubbleSafeTop()`、气泡条标题下拉的「同款」比对、`icon-align` 系列）连带打破。
  *
  * 量法说明（两处与交接文档口径不同，以实测 + CSS 为准）：
- * - 按钮高度实测 **30px**（`lark-doc.css` 里 `.lark-doc-tools button { height: 30px }`），
- *   不是 32px；断言锁 30px，因为原生版必须复刻现状而不是改设计。
- * - 「图标垂直居中」不只看图标在按钮里居中，还要看按钮在 45px 工具栏里居中
- *   （`align-items: center` + 上下 `padding: 5px`），两条都按 1px 阈值卡。
+ * - 按钮高度实测 **28px**（`lark-doc.css` 里 `.lark-doc-tools button { height: 28px }`），
+ *   2026-11-22 按飞书量级收窄（原 30px / 工具栏 45px → 28px / 40px），断言随之锁 28px。
+ * - 「图标垂直居中」不只看图标在按钮里居中，还要看按钮在 40px 工具栏里居中
+ *   （`align-items: center` + 上下 `padding: 4px`），两条都按 1px 阈值卡。
  *
  * 顶栏在 demo 里被显式关掉（`layout.headerVisible: false`，操作入口移入工具栏「⋯」），
  * 所以顶栏本身用 `new (window.__larkDoc.constructor)({ layout: { headerVisible: true } })`
@@ -236,10 +236,10 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
 
   // ——————————————————— ② 盒模型与图标对齐 ———————————————————
   const heights = buttons ? [...new Set(buttons.rows.map((row) => row.h))] : []
-  record('[尺寸] 工具按钮统一 30px 高', heights.length === 1 && heights[0] === 30, `高度集合 ${heights.join(',')}`)
+  record('[尺寸] 工具按钮统一 28px 高', heights.length === 1 && heights[0] === 28, `高度集合 ${heights.join(',')}`)
 
   // 当前 SVG/文字工具按钮采用放大后的字号；marks 组为 14px，其余为 13px。
-  const boxBad = buttons ? buttons.rows.filter((row) => !(row.minWidth === '29px' && row.padding === '3px 6px' && row.radius === '6px' && row.fontSize === (row.group === 2 ? '14px' : '13px'))) : []
+  const boxBad = buttons ? buttons.rows.filter((row) => !(row.minWidth === '28px' && row.padding === '2px 5px' && row.radius === '6px' && row.fontSize === (row.group === 2 ? '14px' : '13px'))) : []
   record('[尺寸] 按钮盒模型统一（min-width 29 / padding 3px 6px / 圆角 6 / 字号 13，marks 组 14）', !!buttons && boxBad.length === 0,
     boxBad.length ? boxBad.map((row) => `${row.label}=${row.minWidth}/${row.padding}/${row.radius}/${row.fontSize}`).join(' | ') : `字号分组 ${[...new Set(buttons.rows.map((row) => `组${row.group}:${row.fontSize}`))].join(' ')}`)
 
@@ -282,8 +282,8 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     const rect = document.querySelector('.lark-doc-toolbar').getBoundingClientRect()
     return { top: Math.round(rect.top), bottom: Math.round(rect.bottom), scrollY: Math.round(window.scrollY) }
   })
-  record('[吸顶] 页面滚动后工具栏仍吸在顶边（top 0，底边 45）',
-    scrolled.scrollY > 100 && scrolled.top === 0 && scrolled.bottom === 45,
+  record('[吸顶] 页面滚动后工具栏仍吸在顶边（top 0，底边 40）',
+    scrolled.scrollY > 100 && scrolled.top === 0 && scrolled.bottom === 40,
     `scrollY=${scrolled.scrollY} top=${scrolled.top} bottom=${scrolled.bottom}`)
   await page.evaluate(() => { window.scrollTo(0, 0); return true })
   await page.waitForTimeout(400)
@@ -467,10 +467,10 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   await setDoc(page, '<p>吸顶滚动探针</p>'.repeat(90))
   await page.locator('.ProseMirror p').nth(50).scrollIntoViewIfNeeded()
   const demoTop = await page.evaluate(safeTop)
-  record('[安全线] 顶栏隐藏时安全线 = 工具栏 sticky 底边 45 + 6 = 51', demoTop === 51, `实得 ${demoTop}`)
+  record('[安全线] 顶栏隐藏时安全线 = 工具栏 sticky 底边 40 + 6 = 46', demoTop === 46, `实得 ${demoTop}`)
 
   const barBottom = await page.evaluate(() => Math.round(document.querySelector('.lark-doc-toolbar').getBoundingClientRect().bottom))
-  record('[安全线] 折叠往返 + 滚动往返之后工具栏底边仍恒定 45px', barBottom === 45, `底边 ${barBottom}`)
+  record('[安全线] 折叠往返 + 滚动往返之后工具栏底边仍恒定 40px', barBottom === 40, `底边 ${barBottom}`)
 
   // ——————————————————— ⑨ 顶栏本体（单起实例，headerVisible=true） ———————————————————
   const topPage = await context.newPage()

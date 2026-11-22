@@ -451,18 +451,18 @@
 .lark-doc .lark-doc-header-actions > :first-child { margin-left: auto; }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-header-actions .lark-doc-header-more { width: 32px; min-width: 32px; padding: 0; border-color: transparent; }
-.lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 45px; padding: 5px 18px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; -ms-overflow-style: none; }
-.lark-doc .lark-doc-toolbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
-.lark-doc .lark-doc-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 7px; border-right: 1px solid var(--ld-border-chrome); }
+.lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 40px; padding: 4px 12px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; }
+.lark-doc .lark-doc-toolbar::-webkit-scrollbar { display: none; }
+.lark-doc .lark-doc-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 6px; border-right: 1px solid var(--ld-border-chrome); }
 .lark-doc .lark-doc-tools-end { margin-left: auto; border-right: 0; }
-.lark-doc .lark-doc-tools select { max-width: 115px; height: 30px; border-color: transparent; background: transparent; padding: 3px 5px; }
-.lark-doc .lark-doc-tools button { min-width: 29px; height: 30px; padding: 3px 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 13px; color: var(--ld-text-secondary); }
+.lark-doc .lark-doc-tools select { max-width: 115px; height: 28px; border-color: transparent; background: transparent; padding: 2px 5px; }
+.lark-doc .lark-doc-tools button { min-width: 28px; min-height: 28px; padding: 2px 5px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-size: 13px; color: var(--ld-text-secondary); }
 /* 扁平化（对齐飞书）：hover 仅浅灰底无边框；展开（aria-expanded）/激活（aria-pressed）浅绿底 + 主色图标。 */
 .lark-doc .lark-doc-tools button:hover:not(:disabled), .lark-doc .lark-doc-select-trigger:hover:not(:disabled) { background: var(--ld-bg-hover-chrome); border-color: transparent; color: var(--lark-doc-ink); }
 .lark-doc .lark-doc-tools button[aria-pressed="true"], .lark-doc .lark-doc-tools button[aria-expanded="true"], .lark-doc .lark-doc-select-open .lark-doc-select-trigger { background: var(--ld-bg-accent-active); border-color: transparent; color: var(--ld-text-accent-hover); }
 /* 格式字母按钮（B/I/U/S 等）：用排版本身当图标，飞书同款做法。 */
 .lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] { font-size: 14px; font-weight: 700; }
-.lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] .lark-doc-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.lark-doc .lark-doc-tools button[class*="lark-doc-mark-"] .lark-doc-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .lark-doc .lark-doc-mark-bold { font-weight: 800; }
 .lark-doc .lark-doc-mark-italic { font-family: Georgia, "Times New Roman", serif; font-style: italic; }
 .lark-doc .lark-doc-mark-underline { text-decoration: underline; text-underline-offset: 2px; }
@@ -472,7 +472,7 @@
 .lark-doc .lark-doc-color { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
 .lark-doc .lark-doc-color:hover { background: var(--ld-bg-hover-chrome); }
 .lark-doc .lark-doc-color-letter { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; line-height: 1; color: var(--ld-text-secondary); padding: 0; }
-.lark-doc .lark-doc-color-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.lark-doc .lark-doc-color-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 /* 颜色触发器箭头：与「字号 / 行高」等下拉箭头同轴（30px 触发区里 12px 图标 → 上下各 9px），不再用 margin 微调。 */
 .lark-doc .lark-doc-color-arrow { flex: 0 0 12px; width: 12px; height: 12px; color: var(--ld-text-icon-tertiary); transition: transform 0.18s ease; }
 .lark-doc .lark-doc-color[aria-expanded="true"] .lark-doc-color-arrow { transform: rotate(180deg); }
@@ -509,7 +509,7 @@
 .lark-doc .lark-doc-menu-check .lark-doc-check-icon { width: 14px; height: 14px; flex: 0 0 14px; }
 /* 共享下拉原语（LarkDocSelect）：触发按钮沿用工具栏按钮观感，选项列表为 fixed 自绘弹层。 */
 .lark-doc .lark-doc-select { position: relative; display: inline-flex; }
-.lark-doc .lark-doc-select-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 29px; height: 30px; padding: 3px 6px; font-size: 12px; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.lark-doc .lark-doc-select-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 28px; min-height: 28px; padding: 2px 5px; font-size: 12px; color: var(--lark-doc-ink); background: transparent; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .lark-doc .lark-doc-tools .lark-doc-select-trigger:hover { background: var(--ld-bg-hover-strong); }
 .lark-doc .lark-doc-select-trigger:disabled { opacity: 0.45; cursor: default; }
 .lark-doc .lark-doc-select-caret { font-size: 10px; color: var(--lark-doc-muted); }
