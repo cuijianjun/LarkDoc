@@ -1,7 +1,7 @@
 /**
  * P4-06 三态契约：纯数据/键位、原生行为宿主、真实 createTopBar/select DOM 与 controller。
  * 菜单开合/定位由共享 select 所有，模式状态/持久化由 viewModesMixin 所有。
- * 几何锁当前共享下拉契约：84×32 按钮、340 最小宽、两行 22/18+2、5px 内衬；
+ * 几何锁当前共享下拉契约：84×32 按钮、210 最小宽（飞书实测 421 device @2x）、两行 22/18+2、5px 内衬；
  * 成功提示为顶部居中卡片 @y32/z9999。JSDOM 只桩布局测量，不替换交互实现。
  */
 
@@ -173,8 +173,10 @@ describe('P4-06 三态数据（07 §1.1 三项文案原样）', () => {
     expect(MODE_TOAST_MS).toBe(3300)
   })
 
-  it('共享模式下拉保留明确的 340px 最小宽度，行高由两行内容撑开', () => {
-    expect(MODE_MENU_MIN_WIDTH).toBe(340)
+  it('共享模式下拉保留明确的 210px 最小宽度，行高由两行内容撑开', () => {
+    // 飞书前台实测菜单外框 421 device（2 倍 DPR）= 210.5 CSS；原 340 是按「标题副标题挤一行」估的，
+    // 实际两行排版用不到，收窄后「仅查看或评论文档」仍不折行。
+    expect(MODE_MENU_MIN_WIDTH).toBe(210)
   })
 
   it('图标映射与飞书截图一致：编辑铅笔 / 修订方框带笔 / 阅读眼睛', () => {
@@ -395,19 +397,19 @@ describe('P4-06 模式切换行为（viewModesMixin）', () => {
     const ui = createModeBar()
     ui.trigger.click()
     expect(ui.trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(ui.menu().style.minWidth).toBe('340px')
+    expect(ui.menu().style.minWidth).toBe('210px')
     expect(ui.menu().style.left).toBe('1088px')
     expect(ui.menu().style.top).toBe('52px')
   })
 
-  it('原生下拉贴右时按 340px 宽度夹取，视口右侧保留 8px', () => {
+  it('原生下拉贴右时按 210px 宽度夹取，视口右侧保留 8px', () => {
     const ui = createModeBar({ rect: { left: 1416, right: 1500, top: 16, bottom: 48, width: 84 } })
     ui.trigger.click()
-    expect(ui.menu().style.left).toBe('1164px')
+    expect(ui.menu().style.left).toBe('1274px')
     ui.rect.left = 1436
     ui.rect.right = 1520
     window.dispatchEvent(new window.Event('resize'))
-    expect(ui.menu().style.left).toBe('1164px')
+    expect(ui.menu().style.left).toBe('1274px')
   })
 
   it('原生下拉贴左至少留 8px，下方不足则翻到按钮上方', () => {

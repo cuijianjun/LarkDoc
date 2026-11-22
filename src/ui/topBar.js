@@ -17,7 +17,7 @@
  *   hover 即开 / 移开 150ms 关 / 键盘 ↑↓ Enter Esc / 外部点击关 / 下方放不下翻转，
  *   弹层 `position: fixed`（`.lark-doc-header-actions` 是 `overflow-x: auto`，absolute
  *   会被裁掉）。所以本模块**不再自己管开合与坐标**，只把选项表推给 select；
- *   容器宽度靠 `menuMinWidth`（340）撑，贴右边界时由 select 自己夹取。
+ *   容器宽度靠 `menuMinWidth`（210，飞书实测 421 device @2x）撑，贴右边界时由 select 自己夹取。
  *   旧的手搓按钮 / 菜单（`toggleModeMenu(anchor)` + `modeMenuPos`）已删除 ——
  *   别把「自己算 fixed 坐标」那套再加回来，那正是两套下拉观感不一致的根源。
  *

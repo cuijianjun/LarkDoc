@@ -34,13 +34,14 @@ export const DOC_MODE_IDS = ['edit', 'suggest', 'read']
 export const MODE_ICONS = { edit: 'mode-edit', suggest: 'mode-suggest', read: 'mode-read' }
 
 /**
- * 下拉最小宽度。旧实现是手搓的 180×160 定宽弹层（每项 170×50、副标题居中两行）；
- * 现在改用共享下拉原语（`src/ui/select.js`，与工具栏「字号」同一套交互与弹层 UI），
- * 高度由「三项 × 两行」自然撑开，宽度只保一个下限：最长一句「仅查看或评论文档」
- * 配上 14px/12px 两行排版，340 刚好不折行。改这个值要同步看 `topBar.js` 的
- * `menuMinWidth`（它从这里取，不另写一份）。
+ * 下拉最小宽度。旧实现是手搓的 180×160 定宽弹层（每项 170×50、副标题居中两行），
+ * 后来换成共享下拉原语（`src/ui/select.js`，与工具栏「字号」同一套交互与弹层 UI）时
+ * 一度放到 340 —— 那是按「标题和副标题挤在一行」估的，实际渲染成两行根本用不到。
+ * 飞书前台实测菜单外框 421 device（2 倍 DPR）= 210.5 CSS，这里取 210：
+ * 最长一句「仅查看或评论文档」8×14=112，加图标 16、列间距、左右内边距共约 166，仍有余量。
+ * 改这个值要同步看 `topBar.js` 的 `menuMinWidth`（它从这里取，不另写一份）。
  */
-export const MODE_MENU_MIN_WIDTH = 340
+export const MODE_MENU_MIN_WIDTH = 210
 
 /** 切换成功后的提示文案（07 §1.1「页面出现『已切换为修订模式』提示」）。 */
 export const MODE_TOAST = {
