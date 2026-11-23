@@ -648,11 +648,14 @@ const vueCall = (page, body) => page.evaluate((source) => {
 
   // 收起钮的读屏名是「收起目录」（飞书 `.catalogue__pin-btn-unpin` 的动作就是收起，不是关闭），
   // 图标 18×18 双左尖角 —— 尺寸逐字取真身 `background-size: contain` 的 18×18 视图。
-  record('[目录] 头部 = strong「目录」+ 关闭钮（icon 18×18）',
-    !!outline && outline.headingStrong === '目录' && outline.closeLabel === '收起目录' &&
+  // 头部**没有「目录」标题**：飞书 `.catalogue` 第一子项就是 `.catalogue__pin`（34×40、textContent 为空、
+  // 顶部 60px 内量不到任何文字节点），所以这里反过来守 `headingStrong === null` 且 `strong` 不出现。
+  record('[目录] 头部只有关闭钮（icon 18×18），无「目录」标题',
+    !!outline && outline.headingStrong === null && JSON.stringify(outline.headingChildren) === JSON.stringify(['button']) &&
+      outline.closeLabel === '收起目录' &&
       outline.closeType === 'button' && !!outline.closeIcon && outline.closeIcon.w === 18 && outline.closeIcon.h === 18 &&
       outline.closeIcon.svg === true,
-    outline ? `${outline.headingStrong}/${outline.closeLabel}/${JSON.stringify(outline.closeIcon)}` : '没渲染')
+    outline ? `${outline.headingStrong}/${JSON.stringify(outline.headingChildren)}/${outline.closeLabel}/${JSON.stringify(outline.closeIcon)}` : '没渲染')
 
   // 缩进：h1 → 0px、h2 → 10px、h3 → 20px，封顶 50。
   // 注意只统计**标题**：`HEADING_CONTENT` 里的两段 `<p>` 不产出目录条目，所以是 4 项不是 6 项。

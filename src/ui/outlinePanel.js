@@ -38,10 +38,11 @@ export function createOutlinePanel(options = {}) {
   el.className = 'lark-doc-outline'
   el.setAttribute('aria-label', '文档目录')
 
+  // 头部只有一枚收起钮，**没有「目录」标题文字**：飞书 `.catalogue` 顶部 `padding-top: 54px`
+  // 之下第一子项就是 `.catalogue__pin`（4/54 起、34×40、内衬 `10px 0 6px`），量 `textContent`
+  // 为空、顶部 60px 内无任何文字节点。
   const heading = document.createElement('div')
   heading.className = 'lark-doc-outline-heading'
-  const headingTitle = document.createElement('strong')
-  headingTitle.textContent = '目录'
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
   closeButton.setAttribute('aria-label', '收起目录')
@@ -50,7 +51,6 @@ export function createOutlinePanel(options = {}) {
   closeButton.appendChild(iconNode('outline-collapse', 18))
   const tips = bindHoverTips(heading)
   closeButton.addEventListener('click', () => { tips.hide(); call('onToggleOpen') })
-  heading.appendChild(headingTitle)
   heading.appendChild(closeButton)
 
   // 空态：必须是 `aside` 的**直系** `<p>`（断言读 `:scope > p`）。
