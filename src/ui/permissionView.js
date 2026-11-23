@@ -3,10 +3,31 @@
  *
  * 从 `ui/overlays.js` 原样搬出。三组候选行（toggle / select / 安全段）只在这里用，
  * 与确认、密码两个子视图一起留在本文件，不必再往外拆。
+ *
+ * B20 · 视觉按飞书 `suite-config-item-v2` 1:1：
+ * - 标题「权限设置」+ 帮助问号（`menu-help` = MaybeOutlined，tooltip「帮助中心」，
+ *   源码 `invite.suite_config_header` / `guide.help_doc` / `suite-config-title_v2`）；
+ * - 权限行是**复选框**（`!disabled && pk(icon)` 语义见 B19），不是开关：勾=蓝实心白勾、
+ *   未选=灰描边空心、禁用=浅灰描边 + 浅灰字；
+ * - 值是**下划线式下拉**（飞书 `At.Select bordered:"underlined"`），三档
+ *   「可阅读的用户 / 可编辑的用户 / 可管理的用户」（源码
+ *   `LarkCCM_Perm_UserWith*PermCanViewAddRemoveCollaborator_Dropdown`）；
+ * - 折叠头是实心下三角，问号/信息图标走 `svgIcon`。
+ *
+ * 结构类名、`aria-label`、handler 与 disabled/capability 契约全部保留，测试与既有功能不回归。
  */
 import { SECURE_CONFIRM_MESSAGES, SECURE_LINK_TIP } from '../components/lark-doc/editor/shareContent'
 import { setAttr, setText, syncChildren } from './dom'
+import { iconNode } from './icon'
 import { attr, button, callHandler, makeShareClose, selectNode, setInputValue, svgIcon, text } from './overlayShared'
+
+/** 权限下拉三档（飞书源码 i18n，见文件头）。组织服务未接入时仍展示默认档但置灰。 */
+const SCOPE_OPTIONS = ['可阅读的用户', '可编辑的用户', '可管理的用户']
+
+/** 帮助 tooltip 文案：`guide.help_doc` = 帮助中心（源码 `suite-config-title_v2`）。 */
+const HELP_TIP = '帮助中心'
+/** 申请引用文档权限项后的 info tooltip：源码 `LarkCCM_Docs_Perm_DisableViewDescription_Tooltip_1_Common`。 */
+const REQUEST_ACCESS_TIP = '如文档内的引用文档涉及敏感信息可勾选此选项'
 
 function createPermissionView(options) {
   const handlers = options.handlers || {}
@@ -20,12 +41,23 @@ function createPermissionView(options) {
   const header = text('div', 'lark-doc-permission-header')
   header.appendChild(text('div', 'lark-doc-permission-crumb', '分享文档'))
   const headRow = text('div', 'lark-doc-permission-head-row')
-  headRow.appendChild(text('h3', 'lark-doc-permission-title', '权限设置'))
+  const titleWrap = text('div', 'lark-doc-permission-title-wrap')
+  titleWrap.appendChild(text('h3', 'lark-doc-permission-title', '权限设置'))
+  const help = text('span', 'lark-doc-permission-help')
+  // MaybeOutlined = 飞书 suite-config-title__help 的圆圈问号（SHARE_REFERENCE_ICONS 收录）。
+  help.appendChild(svgIcon('MaybeOutlined', 16))
+  attr(help, 'title', HELP_TIP)
+  attr(help, 'role', 'img')
+  attr(help, 'aria-label', HELP_TIP)
+  titleWrap.appendChild(help)
+  headRow.appendChild(titleWrap)
   headRow.appendChild(makeShareClose('lark-doc-share-close', '关闭', () => callHandler(handlers, 'onClosePermissionDialog')))
   header.appendChild(headRow)
   dialog.appendChild(header)
   const body = text('div', 'lark-doc-permission-body')
   const column = text('div', 'lark-doc-permission-column')
+
+  // —— 对外分享（飞书：`CreationDoc_ECM_Permission_ExternalSharing`）——
   column.appendChild(text('div', 'lark-doc-permission-invite-row', '邀请协作者'))
   column.appendChild(text('div', 'lark-doc-permission-group-title', '对外分享'))
   const search = text('div', 'lark-doc-permission-search')
@@ -36,12 +68,15 @@ function createPermissionView(options) {
   search.appendChild(searchInput)
   column.appendChild(search)
 
+  // 飞书三项复选框：允许分享到组织外 / 仅"可管理权限"可将内容分享到组织外 / 启用加密链接。
+  // 第一项接既有 handler；第二项是组织分享范围的另一种口径，服务未接入——做成禁用展示，不新增写入。
   const outside = createToggleRow('shareOutsideOrg', '允许内容被分享到组织外', '', handlers, () => currentState.permissionDialogOpen)
-  const outsideDesc = text('div', 'lark-doc-permission-desc', '仅"可管理权限"可以将内容分享到组织外')
   column.appendChild(outside.root)
-  column.appendChild(outsideDesc)
+  const outsideOnly = createStaticCheckbox('仅“可管理权限”可以将内容分享到组织外')
+  column.appendChild(outsideOnly)
   const secure = createSecureSection(handlers)
   column.appendChild(secure.root)
+
   const detail = text('div', 'lark-doc-permission-link-detail')
   const detailOrg = selectNode('lark-doc-permission-org-btn', '链接范围', '', ['仅协作者', '互联网用户'], value => {
     if (dialog.isConnected && currentState.permissionDialogOpen && currentState.shareLinkWritable) callHandler(handlers, 'onSetShareLinkAudience', value === '互联网用户' ? 'public' : 'collaborators')
@@ -63,6 +98,7 @@ function createPermissionView(options) {
   feedback.append(feedbackText, reload)
   column.appendChild(feedback)
 
+  // 飞书四个下拉项。文案按源码 i18n；「谁可以查看、添加、移除协作者」下带一枚说明复选框。
   const selectRows = [
     ['collaborators', '谁可以查看、添加、移除协作者', '仅组织内的用户可以查看、添加、移除协作者'],
     ['copy', '谁可以复制内容', ''],
@@ -70,7 +106,7 @@ function createPermissionView(options) {
     ['comment', '谁可以评论', ''],
   ]
   const selectNodes = {}
-  const staticChildren = [column.children[0], column.children[1], column.children[2], outside.root, outsideDesc, secure.root, detail, feedback]
+  const staticChildren = [column.children[0], column.children[1], column.children[2], outside.root, outsideOnly, secure.root, detail, feedback]
   selectRows.forEach(([id, title, desc]) => {
     const row = createPermissionSelectRow(id, title, desc, handlers)
     selectNodes[id] = row.select
@@ -87,14 +123,17 @@ function createPermissionView(options) {
   column.appendChild(advancedButton)
   const advancedChildren = [text('div', 'lark-doc-permission-group-title', '企业信息公开设置')]
   const advancedSelects = {}
-  const advancedToggle1 = createToggleRow('ownerLeaderAutoPass', '文档所有者上级', '申请访问时自动通过', handlers, () => currentState.permissionDialogOpen)
-  const advancedToggle2 = createToggleRow('ownerLeaderSearchable', '文档所有者上级', '可搜索和访问该文档', handlers, () => currentState.permissionDialogOpen)
+  // 飞书源码文案（273 i18n）：两行都是**单行**复选，desc 不再单独成行。
+  const advancedToggle1 = createToggleRow('ownerLeaderAutoPass', '文档所有者上级申请访问时自动通过', '', handlers, () => currentState.permissionDialogOpen)
+  const advancedToggle2 = createToggleRow('ownerLeaderSearchable', '文档所有者上级可搜索和访问该文档', '', handlers, () => currentState.permissionDialogOpen)
+  advancedToggle2.setDisabledReason(true)
   advancedChildren.push(advancedToggle1.root, advancedToggle2.root)
   ;[
     ['visitorAvatar', '谁可以查看访问者头像和点赞者头像', ''],
     ['requestAccess', '谁可以在文档内申请引用文档访问权限', '仅可管理权限的用户可以申请'],
   ].forEach(([id, title, desc]) => {
     const row = createPermissionSelectRow(id, title, desc, handlers)
+    if (id === 'requestAccess') row.setInfoTip(REQUEST_ACCESS_TIP)
     advancedSelects[id] = row.select
     advancedChildren.push(row.root)
   })
@@ -115,6 +154,8 @@ function createPermissionView(options) {
     attr(dialog, 'aria-modal', state.shareMobile && !state.passwordDialogOpen && !state.secureLinkConfirmOpen ? 'true' : null)
     setInputValue(searchInput, state.shareInviteQuery)
     outside.update(state.permissionValues || {}, !!state.shareLinkWritable)
+    // 「仅可管理权限…」是组织分享范围的另一种口径，服务未接入——正常色空心展示，不写入。
+    setStaticCheckbox(outsideOnly, false, false)
     secure.update(state)
     advancedToggle1.update(state.permissionValues || {}, false)
     advancedToggle2.update(state.permissionValues || {}, false)
@@ -123,20 +164,21 @@ function createPermissionView(options) {
     detailPermission.disabled = !state.shareLinkWritable
     detailPermission.value = state.shareLinkState?.permission === 'edit' ? '可编辑' : '可阅读'
     setText(detailScope, state.shareDialogScopeText)
+    // 组织权限服务未接入：三档真实选项照飞书展示，但保持 disabled 与说明（能力门控，不捏造写入）。
     Object.keys(selectNodes).forEach((id) => {
       const node = selectNodes[id]
-      node.disabled = true; node.title = '此项组织权限服务尚未接入，当前不可用。'
-      node.textContent = ''
-      const item = document.createElement('option'); item.value = ''; item.textContent = '服务尚未接入'; node.appendChild(item)
+      node.disabled = true
+      node.title = '此项组织权限服务尚未接入，当前不可用。'
+      syncOptions(node, (state.permissionValues || {})[id])
     })
     Object.keys(advancedSelects).forEach((id) => {
       const node = advancedSelects[id]
-      node.disabled = true; node.title = '此项组织权限服务尚未接入，当前不可用。'
-      node.textContent = ''
-      const item = document.createElement('option'); item.value = ''; item.textContent = '服务尚未接入'; node.appendChild(item)
+      node.disabled = true
+      node.title = '此项组织权限服务尚未接入，当前不可用。'
+      syncOptions(node, (state.permissionValues || {})[id])
     })
-    setText(advancedCaret, state.permissionAdvancedOpen ? '▾' : '▸')
-    setAttr(advancedButton, 'aria-expanded', state.permissionAdvancedOpen ? 'true' : 'false')
+    attr(advancedButton, 'aria-expanded', state.permissionAdvancedOpen ? 'true' : 'false')
+    advancedCaret.classList.toggle('is-open', !!state.permissionAdvancedOpen)
     syncChildren(column, [
       ...staticChildren.map((node) => ({ node, on: true })),
       { node: advancedButton, on: true },
@@ -155,38 +197,100 @@ function createPermissionView(options) {
   return { el: layer, update }
 }
 
-function createToggleRow(id, title, desc, handlers, isOpen) {
-  const root = text('div', 'lark-doc-permission-item')
+/** 把原生 select 的选项刷成飞书三档，并选中当前值（未知值回落第一档）。 */
+function syncOptions(node, value) {
+  const next = value == null ? SCOPE_OPTIONS[0] : String(value)
+  const labels = [...node.options].map(option => option.value)
+  if (labels.length !== SCOPE_OPTIONS.length || labels.some((label, i) => label !== SCOPE_OPTIONS[i])) {
+    node.textContent = ''
+    SCOPE_OPTIONS.forEach((label) => {
+      const item = document.createElement('option')
+      item.value = label
+      item.textContent = label
+      node.appendChild(item)
+    })
+  }
+  node.value = SCOPE_OPTIONS.includes(next) ? next : SCOPE_OPTIONS[0]
+}
+
+/**
+ * 纯展示复选框（飞书里独立成行的说明项，如「仅可管理权限可以将内容分享到组织外」、
+ * 「仅组织内的用户可以查看、添加、移除协作者」）。组织权限服务未接入，禁用且无写入。
+ * 不占用 `.lark-doc-permission-switch` 类名（那是接 handler 的开关，测试按序取用）。
+ */
+function createStaticCheckbox(label) {
+  const root = text('div', 'lark-doc-permission-item lark-doc-permission-static-check')
   const row = text('div', 'lark-doc-permission-row')
-  row.appendChild(text('span', 'lark-doc-permission-item-title', title))
+  const box = text('span', 'lark-doc-permission-static-box')
+  attr(box, 'aria-hidden', 'true')
+  row.appendChild(box)
+  row.appendChild(text('span', 'lark-doc-permission-static-label', label))
+  root.appendChild(row)
+  return root
+}
+function setStaticCheckbox(root, checked, disabled) {
+  root.classList.toggle('is-on', !!checked)
+  root.classList.toggle('is-disabled', !!disabled)
+}
+
+/**
+ * 复选行。视觉是飞书复选框，但保留 `.lark-doc-permission-switch` 类名与 role=switch、
+ * aria-label、capability、disabled 契约（既有测试与 B24 能力门控依赖它们）。
+ */
+function createToggleRow(id, title, desc, handlers, isOpen) {
+  const root = text('div', 'lark-doc-permission-item lark-doc-permission-check-item')
+  const row = text('div', 'lark-doc-permission-row')
+  const label = text('span', 'lark-doc-permission-item-title', title)
+  row.appendChild(label)
   const toggle = button('lark-doc-permission-switch')
   attr(toggle, 'role', 'switch')
-  attr(toggle, 'aria-label', desc ? `${title} ${desc}` : title)
+  attr(toggle, 'aria-label', title)
   toggle.addEventListener('click', () => { if (root.isConnected && isOpen() && !toggle.disabled) callHandler(handlers, 'onTogglePermissionValue', id) })
   row.appendChild(toggle)
   root.appendChild(row)
   if (desc) root.appendChild(text('div', 'lark-doc-permission-desc', desc))
-  return { root, update(values, canManage) {
-    const on = !!values[id]
-    toggle.classList.toggle('is-on', on)
-    attr(toggle, 'aria-checked', on ? 'true' : 'false')
-    attr(toggle, 'data-capability', 'canManagePermission')
-    toggle.disabled = canManage === false
-    attr(toggle, 'aria-disabled', String(toggle.disabled))
-  } }
+  let reason = false
+  const api = {
+    root,
+    setDisabledReason(on) { reason = on },
+    update(values, canManage) {
+      const on = !!values[id]
+      toggle.classList.toggle('is-on', on)
+      attr(toggle, 'aria-checked', on ? 'true' : 'false')
+      attr(toggle, 'data-capability', 'canManagePermission')
+      toggle.disabled = reason === true || canManage === false
+      attr(toggle, 'aria-disabled', String(toggle.disabled))
+      root.classList.toggle('is-disabled', reason === true)
+    },
+  }
+  return api
 }
 
+/** 下拉行：标题（可带 info 图标）+ 下划线式 select + 可选说明复选框行。 */
 function createPermissionSelectRow(id, title, desc, handlers) {
-  const root = text('div', 'lark-doc-permission-item')
-  const row = text('div', 'lark-doc-permission-row')
-  row.appendChild(text('span', 'lark-doc-permission-item-title', title))
-  root.appendChild(row)
+  const root = text('div', 'lark-doc-permission-item lark-doc-permission-select-item')
+  const heading = text('div', 'lark-doc-permission-select-heading', title)
+  root.appendChild(heading)
   const value = text('div', 'lark-doc-permission-value')
-  const select = selectNode('lark-doc-permission-select', title, '', [], (next) => callHandler(handlers, 'onSetPermissionValue', id, next))
+  const select = selectNode('lark-doc-permission-select', title, SCOPE_OPTIONS[0], SCOPE_OPTIONS, (next) => callHandler(handlers, 'onSetPermissionValue', id, next))
   value.appendChild(select)
   root.appendChild(value)
-  if (desc) root.appendChild(text('div', 'lark-doc-permission-desc', desc))
-  return { root, select }
+  // 飞书把「仅组织内的用户…」「仅可管理权限的用户可以申请」渲染成独立复选框，不是描述文字；
+  // 这两项属组织权限能力，服务未接入——禁用展示，不接写入 handler。
+  if (desc) root.appendChild(createStaticCheckbox(desc))
+  const api = {
+    root,
+    select,
+    setInfoTip(tip) {
+      const info = text('span', 'lark-doc-permission-info')
+      info.appendChild(iconNode('menu-info', 14))
+      attr(info, 'title', tip)
+      attr(info, 'role', 'img')
+      attr(info, 'aria-label', tip)
+      heading.appendChild(info)
+    },
+  }
+  return api
 }
 
 function createSecureSection(handlers) {
@@ -212,7 +316,8 @@ function createSecureSection(handlers) {
   passwordRow.appendChild(passwordValue)
   const editPassword = button('lark-doc-secure-link-edit', '', () => { if (root.isConnected && !editPassword.disabled) callHandler(handlers, 'onOpenPasswordDialog') })
   attr(editPassword, 'aria-label', '修改密码')
-  editPassword.appendChild(svgIcon('pencil'))
+  // 飞书真身是实心斜铅笔；svgIcon('pencil') 是描边细线，实测几乎不可见（B22）。
+  editPassword.appendChild(iconNode('pencil-solid', 16))
   passwordRow.appendChild(editPassword)
   const copy = button('lark-doc-secure-link-copy-btn', '复制链接和密码', copyPassword)
   passwordRow.appendChild(copy)
@@ -228,6 +333,7 @@ function createSecureSection(handlers) {
       editPassword.disabled = !state.shareLinkWritable || !state.shareLinkState?.cryptoReady
       copy.disabled = passwordValue.disabled = !state.shareLinkWritable || !state.shareLinkState?.passwordAvailable
       checkbox.checked = !!state.secureLinkEnabled
+      checkbox.classList.toggle('is-on', !!state.secureLinkEnabled)
       setText(passwordValue, state.secureLinkPassword)
       syncChildren(root, [
         { node: operation, on: true },

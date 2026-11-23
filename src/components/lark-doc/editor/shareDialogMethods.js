@@ -65,6 +65,7 @@ export const shareDialogMethods = {
       this.sharePopoverOpen = false
       this.resetShareLink()
       this.closePermissionDialog()
+      this.closeCollaboratorManage()
       const keepInvitation = unresolvedInvitation(this.shareInvitation)
       // Reads may be discarded on dismissal; an unresolved write must retain its query guard.
       this.clearShareReads?.({ keepInvitation })
@@ -79,14 +80,38 @@ export const shareDialogMethods = {
       }
       this.closeSharePopover()
     },
-    /** Esc 逐层收（互斥链，一次只收一层）：改密 → 提示 → 权限 → popover。 */
+    /** Esc 逐层收（互斥链，一次只收一层）：改密 → 提示 → 权限 → 添加协作者 → 管理协作者 → popover。 */
     onShareWindowKeydown(event) {
       if (!event || event.key !== 'Escape') return
       if (this.passwordDialogOpen) this.closePasswordDialog()
       else if (this.secureLinkConfirmOpen) this.cancelSecureLinkConfirm()
       else if (this.permissionDialogOpen) this.closePermissionDialog()
+      else if (this.collaboratorAddOpen) this.closeCollaboratorAdd()
+      else if (this.collaboratorManageOpen) this.closeCollaboratorManage()
       else if (this.sharePopoverOpen) this.closeSharePopover()
     },
+
+    // —— 协作者二级弹窗（04 §4.2.3）——
+    openCollaboratorManage() {
+      if (!this.shareCan('canView') || !this.shareCan('canManagePermission')) return
+      this.collaboratorManageOpen = true
+      this.collaboratorAddOpen = false
+      void this.loadShareMembers()
+    },
+    closeCollaboratorManage() {
+      this.collaboratorManageOpen = false
+      this.collaboratorAddOpen = false
+    },
+    openCollaboratorAdd() {
+      if (!this.collaboratorManageOpen) this.collaboratorManageOpen = true
+      this.collaboratorAddOpen = true
+    },
+    closeCollaboratorAdd() {
+      this.collaboratorAddOpen = false
+    },
+    setCollaboratorSubpage(value) { this.collaboratorSubpage = !!value },
+    setCollaboratorNotify(value) { this.collaboratorNotify = !!value },
+    setCollaboratorNote(value) { this.collaboratorNote = String(value ?? '') },
 
     // —— 二级权限 Dialog ——
     openPermissionDialog() {
@@ -179,20 +204,10 @@ export const shareDialogMethods = {
     },
 
     // —— 底部渠道（web-scripts/279-33888.b3a2968c.js 真实 handler 口径）——
-    /** `handleLark` 聚焦邀请搜索框（渲染层完成）；`subscriptionConfig.handler` 交给宿主；
-     *  `handleWechat` / `handleQrcode` / `handlePasswordSetting` 进入各自面板。 */
+    /** `handleWechat` / `handleQrcode` / `handlePasswordSetting` 进入各自面板。
+     *  用户口径只保留这三枚：飞书会话 logo 与订阅号紫星连同功能一起去掉。 */
     async shareViaChannel(id) {
       if (!this.shareCan('canView')) return false
-      if (id === 'lark') return true
-      if (id === 'favorite') {
-        const config = this.larkDocConfig?.shareMethodConfig?.subscriptionConfig
-        if (!config?.enable || typeof config.handler !== 'function') {
-          this.showShareToast('warning', '订阅号服务尚未接入。')
-          return false
-        }
-        try { await config.handler(); return true }
-        catch { this.showShareToast('warning', '订阅号操作失败，请重试。'); return false }
-      }
       if (id === 'wechat' || id === 'qrcode') return this.showShareQrCode(id)
       if (id === 'secure') return this.handleSharePasswordSetting()
       return false

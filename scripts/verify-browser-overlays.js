@@ -135,13 +135,14 @@ function editorCall(page, source) {
       const node = document.querySelector('.lark-doc-permission-dialog')
       return node ? { role: node.getAttribute('role'), label: node.getAttribute('aria-label') } : null
     })(),
-    outsideDesc: document.querySelector('.lark-doc-permission-desc')?.textContent.trim(),
+    // B20：飞书把这一项渲染成独立复选框（静态展示，服务未接入），不再是描述文字。
+    outsideDesc: [...document.querySelectorAll('.lark-doc-permission-static-label')].map(n => n.textContent.trim()),
     secure: !!document.querySelector('.lark-doc-secure-link'),
   }))
   record('权限 Dialog 打开时一级 popover 保持打开，遮罩与结构真实存在',
     permission.popover && permission.layer && permission.mask && permission.dialog &&
       permission.dialog.role === 'dialog' && permission.dialog.label === '权限设置' &&
-      permission.outsideDesc === '仅"可管理权限"可以将内容分享到组织外' && permission.secure,
+      permission.outsideDesc.includes('仅“可管理权限”可以将内容分享到组织外') && permission.secure,
     JSON.stringify(permission))
 
   const switchNode = page.locator('.lark-doc-secure-link-desc')

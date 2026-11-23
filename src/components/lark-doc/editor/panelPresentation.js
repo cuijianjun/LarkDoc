@@ -632,6 +632,8 @@ export function createPanelPresentation(dependencies) {
             await opening
             if (id && this.versionPanelOpen && scope === this.versionOperationScope() && this.versionList.some(record => record.id === id)) await this.selectVersion(id)
           },
+          // 右上角关闭（飞书 `.ud__notice-closable` 的那个 24×24 图标钮）。
+          onNoticeClose: () => this.dismissVersionNotice(),
         },
         comment: {
           onActivate: (id) => this.activateComment(id),

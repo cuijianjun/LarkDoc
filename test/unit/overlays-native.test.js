@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createOverlays } from '../../src/ui/overlays'
-import { createNotifications } from '../../src/ui/notifications'
+import { createNotifications, formatNotifyTime, NOTIFY_ACTIONS } from '../../src/ui/notifications'
 import { createCommentPanel as createPlainCommentPanel, createVersionPanel } from '../../src/ui/panels'
 import { NOTIFY_BRAND_BLUE, NOTIFY_CARD, NOTIFY_TEAL } from '../../src/ui/palette'
 import overlaysUiMixin from '../../src/components/lark-doc/editor/overlaysUiMixin'
@@ -80,10 +80,17 @@ describe('authoritative share link manager overlay', () => {
     await vm.loadShareLink(); await settleLinks(vm)
     const scope = container.querySelector('[aria-label="链接范围"]'), permission = container.querySelector('[aria-label="链接权限"]')
     expect(scope.disabled).toBe(false); expect(permission.disabled).toBe(false)
-    permission.value = '可编辑'; permission.dispatchEvent(new Event('change', { bubbles: true })); await settleLinks(vm)
+    // 这两颗已换成共享下拉原语（无原生 select），走「点开触发按钮 → 点选项」。
+    const pick = (trigger, label) => {
+      trigger.click()
+      const option = [...trigger.closest('.lark-doc-select').querySelectorAll('[role="option"]')]
+        .find(node => node.getAttribute('aria-disabled') !== 'true' && node.textContent.includes(label))
+      option.click()
+    }
+    pick(permission, '可编辑'); await settleLinks(vm)
     expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '7', changes: { permission: 'edit' } })
     expect(vm.shareLinkState.permission).toBe('edit')
-    scope.value = 'collaborators'; scope.dispatchEvent(new Event('change', { bubbles: true })); await settleLinks(vm)
+    pick(scope, '仅协作者'); await settleLinks(vm)
     expect(provider.shareLink).toHaveBeenCalledWith('request', { expectedRevision: '8', changes: { audience: 'collaborators', enabled: false } })
     expect(vm.shareLinkState.audience).toBe('collaborators')
     vm.openPermissionDialog(); await settleLinks(vm)
@@ -624,9 +631,13 @@ describe('原生浮层迁移契约', () => {
     expect(ui.el.querySelector('.lark-doc-notify-loading-nested > .lark-doc-notify-loading-container > .lark-doc-notify-content')).not.toBeNull()
     expect(ui.el.querySelector('.lark-doc-notify-header-desc').textContent).toBe('当前文档通知')
     expect(ui.el.querySelector('.lark-doc-notify-mute-text').textContent).toBe('关闭通知')
-    // 飞书头部：开关状态铃铛挂在标题后面，右侧「关闭通知」是纯文字按钮，不带图标。
-    expect(ui.el.querySelector('.lark-doc-notify-status .lark-doc-icon')).not.toBeNull()
+    // 飞书真身（截图 970×1264）：铃铛紧贴标题右侧（16×16，ink 102.5..112），
+    // 右侧「关闭通知」「全部已读」都是纯文字，不带图标。
+    expect(ui.el.querySelector('.lark-doc-notify-header-desc .lark-doc-icon')).toBeNull()
+    expect(ui.el.querySelector('.lark-doc-notify-status .lark-doc-icon').style.width).toBe('16px')
     expect(ui.el.querySelector('.lark-doc-notify-mute .lark-doc-icon')).toBeNull()
+    // 「全部已读」禁用态在源码里只渲染 span.disable-text，不带图标。
+    expect(ui.el.querySelector('.lark-doc-notify-readall .lark-doc-icon')).toBeNull()
     expect(ui.el.querySelector('.lark-doc-notify-empty-img svg').getAttribute('width')).toBe('120')
     // 空态插图是多色图标资源，取色统一由 palette.js 供给（12 T0-05 禁止组件里写字面色），
     // 断言插值后确实落到 SVG 属性上，避免以后改回字面 hex。
@@ -658,6 +669,23 @@ describe('原生浮层迁移契约', () => {
     expect(host.querySelector('.lark-doc-notify-popover')).toBeNull()
   })
 
+  it('通知时间行与类型文案表对齐飞书（刚刚 / N 分钟前 / HH:mm / 昨天 / 日期）', () => {
+    const now = new Date(2026, 10, 22, 15, 30, 0).getTime()
+    expect(formatNotifyTime(now - 20 * 1000, now)).toBe('刚刚')
+    expect(formatNotifyTime(now - 8 * 60 * 1000, now)).toBe('8 分钟前')
+    expect(formatNotifyTime(new Date(2026, 10, 22, 9, 5).getTime(), now)).toBe('09:05')
+    expect(formatNotifyTime(new Date(2026, 10, 21, 20, 41).getTime(), now)).toBe('昨天 20:41')
+    expect(formatNotifyTime(new Date(2026, 8, 3, 10, 0).getTime(), now)).toBe('9月3日')
+    expect(formatNotifyTime(new Date(2025, 11, 31, 10, 0).getTime(), now)).toBe('2025年12月31日')
+    expect(formatNotifyTime(null, now)).toBe('')
+    // 源码 notice_type 的主干类型都要有确定文案，缺一个就会掉回「文档有新动态」。
+    for (const type of ['comment', 'mention', 'mention-comment', 'reply', 'whole-comment', 'reaction',
+      'content-reaction', 'resolved', 'whole-resolved', 'reopened', 'whole-reopened', 'suggestion',
+      'suggestion-accepted', 'suggestion-rejected', 'deleted', 'share', 'permission', 'resource-binding']) {
+      expect(NOTIFY_ACTIONS[type], type).toBeTruthy()
+    }
+  })
+
   it('通知操作阻止焦点丢失，忙碌时不重复派发', () => {
     const onToggleMute = vi.fn()
     const onMarkAllRead = vi.fn()
@@ -667,7 +695,7 @@ describe('原生浮层迁移契约', () => {
     ui.update(state)
     const mute = ui.el.querySelector('.lark-doc-notify-mute')
     const readAll = ui.el.querySelector('.lark-doc-notify-readall')
-    // 头部状态铃铛：开=三段路径（钟身 + 裙边 + 铃舌），关=四段（多一道斜杠）。
+    // 标题后的静音态铃铛：开=三段路径（钟身 + 裙边 + 铃舌），关=四段（多一道斜杠）。
     const statusPaths = () => ui.el.querySelectorAll('.lark-doc-notify-status svg path').length
     expect(statusPaths()).toBe(3)
     const event = new MouseEvent('mousedown', { cancelable: true })
@@ -705,13 +733,47 @@ describe('原生浮层迁移契约', () => {
     expect(readAll.classList.contains('is-disabled')).toBe(false)
   })
 
-  it('单行系统通知标记 is-line，有正文的条目仍走两行版式', () => {
+  it('通知条目复刻飞书 nf-feed-message：头像 + 标题 + 灰卡 + 时间 + 未读红点', () => {
     const host = hostNode(), ui = createNotifications({ host }); cleanups.push(() => ui.destroy())
     const state = { open: true, style: { left: 0, top: 0 }, allReadDisabled: true }
-    ui.update({ ...state, items: [{ id: 'a', title: '文档权限已更新', readAt: 1 }] })
-    expect(host.querySelector('.lark-doc-notify-item').classList.contains('is-line')).toBe(true)
-    ui.update({ ...state, items: [{ id: 'b', title: '评论有新动态', body: '正文', readAt: 1 }] })
-    expect(host.querySelector('.lark-doc-notify-item').classList.contains('is-line')).toBe(false)
+    // 评论类：actor + 类型 ⇒ 标题「张三 评论了你编辑的内容」，正文进灰卡，带作者与剩余条数。
+    ui.update({ ...state, items: [{
+      id: 'c1', type: 'comment', actor: '张三', excerpt: '这段建议再补个例子', excerptAuthor: '张三',
+      quote: '被引用的原文', restCount: 2, createdAt: Date.now(), read: false,
+    }] })
+    const row = host.querySelector('.lark-doc-notify-item')
+    expect(row.classList.contains('is-unread')).toBe(true)
+    expect(row.querySelector('.lark-doc-notify-item-title').textContent).toBe('张三 评论了你编辑的内容')
+    expect(row.querySelector('.lark-doc-notify-item-avatar').textContent.slice(0, 1)).toBe('张')
+    expect(row.querySelector('.lark-doc-notify-item-quote').textContent).toBe('被引用的原文')
+    expect(row.querySelector('.lark-doc-notify-item-card-name').textContent).toBe('张三:')
+    expect(row.querySelector('.lark-doc-notify-item-card-text').textContent).toBe('这段建议再补个例子')
+    expect(row.querySelector('.lark-doc-notify-item-rest').textContent).toBe('查看剩余 2 条评论')
+    expect(row.querySelector('.lark-doc-notify-item-time').textContent).toBe('刚刚')
+    // 系统通知（无正文、无引用）：走 is-line —— 无头像、单行灰字、不带时间（飞书真身同款）。
+    ui.update({ ...state, items: [{ id: 'p1', type: 'permission', actor: '李四', readAt: 1 }] })
+    const plain = host.querySelector('.lark-doc-notify-item')
+    expect(plain.classList.contains('is-line')).toBe(true)
+    expect(plain.querySelector('.lark-doc-notify-item-avatar')).toBeNull()
+    expect(plain.querySelector('.lark-doc-notify-item-time')).toBeNull()
+    expect(plain.querySelector('.lark-doc-notify-item-title').textContent).toBe('李四 更新了文档权限')
+    expect(plain.classList.contains('is-unread')).toBe(false)
+    // 带引用的非评论通知：引用挂在卡片**外**（源码 `_quote` 与 `_summary-wrapper` 是两个分支）。
+    ui.update({ ...state, items: [{ id: 'p2', type: 'permission', actor: '李四', quote: '权限已变更', readAt: 1 }] })
+    const quoted = host.querySelector('.lark-doc-notify-item')
+    expect(quoted.classList.contains('is-line')).toBe(false)
+    expect(quoted.querySelector('.lark-doc-notify-item-card')).toBeNull()
+    expect(quoted.querySelector('.lark-doc-notify-item-quote').textContent).toBe('权限已变更')
+    // 每种类型都有确定文案，不落回「文档有新动态」。
+    const kinds = [['mention', '在文档中提及了你'], ['reply', '回复了你的评论'], ['whole-comment', '发表了全文评论'], ['share', '分享文档给你']]
+    for (const [type, text] of kinds) {
+      ui.update({ ...state, items: [{ id: type, type, actor: '王五', readAt: 1 }] })
+      expect(host.querySelector('.lark-doc-notify-item-title').textContent).toBe(`王五 ${text}`)
+    }
+    // 宿主显式给 title 时以宿主为准（老宿主注入的字段仍然通）。
+    ui.update({ ...state, items: [{ id: 'legacy', title: '宿主标题', body: '正文', readAt: 1 }] })
+    expect(host.querySelector('.lark-doc-notify-item-title').textContent).toBe('宿主标题')
+    expect(host.querySelector('.lark-doc-notify-item-card-text').textContent).toBe('正文')
   })
 
   it('new notification popover owns focus while loading and exposes keyboard actions after loading', () => {
@@ -1194,6 +1256,50 @@ describe('原生浮层迁移契约', () => {
     expect(calls.onDocumentComposerDraft).toHaveBeenCalledWith('全文', expect.any(Event))
     ui.el.querySelector('.lark-doc-document-composer-actions button:last-child').click()
     expect(calls.onDocumentComposerSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('桌面「查看协作者」打开管理协作者弹窗并展示成员角色', () => {
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
+    const host = hostNode()
+    const onManage = vi.fn(), onAdd = vi.fn()
+    const ui = createOverlays({ host, handlers: { onOpenCollaboratorManage: onManage, onOpenCollaboratorAdd: onAdd } })
+    cleanups.push(() => { ui.destroy(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: width }) })
+    ui.update({ sharePopoverOpen: true, shareCanManagePermission: true })
+    host.querySelector('.lark-doc-share-avatars').click()
+    expect(onManage).toHaveBeenCalledOnce()
+    ui.update({ collaboratorManageOpen: true, shareMembers: { status: 'ready', items: [{ principalId: 'bob', scopes: ['grant.manage'] }] } })
+    const dialog = host.querySelector('.lark-doc-collab-manage')
+    expect(dialog).not.toBeNull()
+    expect(dialog.querySelector('.lark-doc-collab-title').textContent).toBe('管理协作者')
+    expect(dialog.querySelector('.lark-doc-collab-name').textContent).toBe('bob')
+    expect(dialog.querySelector('.lark-doc-collab-role').textContent).toBe('可管理')
+    dialog.querySelector('[aria-label="添加协作者"]').click()
+    expect(onAdd).toHaveBeenCalledOnce()
+  })
+
+  it('添加协作者弹窗渲染表单并锁定未选人时的发送按钮', () => {
+    const host = hostNode()
+    const onSelect = vi.fn(), onSend = vi.fn(), onNote = vi.fn()
+    const ui = createOverlays({ host, handlers: { onSelectShareInviteCandidate: onSelect, onSubmitShareInvitation: onSend, onSetCollaboratorNote: onNote } })
+    cleanups.push(() => ui.destroy())
+    ui.update({ collaboratorAddOpen: true, shareDirectory: { status: 'ready', items: [{ principalId: 'bob', displayName: 'Bob' }] } })
+    const dialog = host.querySelector('.lark-doc-collab-add')
+    expect(dialog).not.toBeNull()
+    expect(dialog.querySelector('[aria-label="搜索用户、群组、部门、用户组或智能体"]')).not.toBeNull()
+    expect(dialog.querySelectorAll('.lark-doc-collab-checkbox').length).toBe(2)
+    const send = dialog.querySelector('.lark-doc-collab-btn-filled')
+    expect(send.textContent).toBe('发送')
+    expect(send.disabled).toBe(true)
+    dialog.querySelector('.lark-doc-collab-candidate').click()
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('bob')
+    ui.update({ shareInvitation: { candidate: { principalId: 'bob' }, status: 'confirm' } })
+    expect(host.querySelector('.lark-doc-collab-add .lark-doc-collab-btn-filled').disabled).toBe(false)
+    host.querySelector('.lark-doc-collab-add .lark-doc-collab-btn-filled').click()
+    expect(onSend).toHaveBeenCalledOnce()
+    const note = dialog.querySelector('textarea')
+    note.value = 'hello'; note.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(onNote).toHaveBeenCalledWith('hello')
   })
 
 })

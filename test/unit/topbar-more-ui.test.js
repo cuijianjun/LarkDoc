@@ -10,12 +10,16 @@
  */
 import { describe, expect, it } from 'vitest'
 import { referenceDocumentMenuItems, runReferenceDocumentMenuAction } from '../../src/components/lark-doc/editor/documentMenuView'
+import { ICONS } from '../../src/ui/icons'
 import topbarMoreMixin, {
   TOPBAR_MORE_CAPABILITY,
   TOPBAR_MORE_DIVIDER_AFTER,
   TOPBAR_MORE_ITEMS,
   TOPBAR_MORE_READONLY_DISABLED,
   TOPBAR_MORE_SUBPANELS,
+  TOPBAR_MORE_WIDTH_LINES,
+  TOPBAR_MORE_WIDTH_PANEL,
+  TOPBAR_MORE_WIDTH_TIP,
   topbarMoreHasArrow,
   topbarMoreMenuStyle,
   topbarMoreRows,
@@ -96,20 +100,35 @@ function hostCtx(extra = {}) {
   return ctx
 }
 
-describe('顶栏更多 · 清单结构（§4.2.1 逐字）', () => {
-  it('一级菜单是 22 项，id 唯一，order 连续 1..22', () => {
-    expect(TOPBAR_MORE_ITEMS).toHaveLength(22)
-    expect(new Set(ids).size).toBe(22)
+describe('顶栏更多 · 清单结构（飞书 2× 截图逐行）', () => {
+  it('一级菜单是 23 项，id 唯一，order 连续 1..23', () => {
+    expect(TOPBAR_MORE_ITEMS).toHaveLength(23)
+    expect(new Set(ids).size).toBe(23)
     TOPBAR_MORE_ITEMS.forEach((item, index) => {
       expect(item.order).toBe(index + 1)
     })
   })
 
-  it('「查看已存版本」是独立一级项，夹在「打印」与「文档权限」之间（另存为版本已下线）', () => {
-    expect(ids).toContain('view-versions')
-    expect(ids).not.toContain('save-version')
-    expect(idAt('view-versions')).toBe(idAt('print') + 1)
-    expect(idAt('view-versions')).toBe(idAt('doc-permission') - 1)
+  it('「另存为版本」与「查看已存版本」都在，且「打印 → 另存为版本 → 查看已存版本 → 文档权限」顺序固定', () => {
+    expect(ids).toEqual(['width', 'slides', 'follow', 'find', 'shortcut', 'move', 'pin', 'favorite',
+      'template', 'duplicate', 'download-as', 'translate', 'print', 'save-version', 'view-versions',
+      'doc-permission', 'widgets', 'doc-info', 'mentioned', 'history', 'history-comments', 'more', 'delete'])
+  })
+
+  it('每项都带 icon，且图标名在 icons.js 里真实存在（拼错只会渲染空 span，不报错）', () => {
+    for (const item of TOPBAR_MORE_ITEMS) {
+      expect(item.icon).toMatch(/^menu-/)
+      expect(Object.keys(ICONS)).toContain(item.icon)
+    }
+    expect(new Set(TOPBAR_MORE_ITEMS.map((item) => item.icon)).size).toBe(23)
+  })
+
+  it('「添加快捷方式到」右侧是 help 圆点（有文案、无箭头），其余项不带 help', () => {
+    const helped = TOPBAR_MORE_ITEMS.filter((item) => item.help)
+    expect(helped.map((item) => item.id)).toEqual(['shortcut'])
+    expect(helped[0].help).toBe('添加后支持从不同位置展示并链接到原始内容')
+    expect(helped[0].affordance).toBe('none')
+    expect(Object.keys(ICONS)).toContain('menu-help')
   })
 
   it('§4.2 的 5 项离屏菜单（上传日志/联系客服/功能更新/帮助中心/快捷键）不在一级菜单里', () => {
@@ -122,11 +141,12 @@ describe('顶栏更多 · 清单结构（§4.2.1 逐字）', () => {
 
   it('首项「页宽设置」、末项「删除」——顺序由 order 守，不由数组位置守', () => {
     expect(TOPBAR_MORE_ITEMS[0].id).toBe('width')
-    expect(TOPBAR_MORE_ITEMS[21].id).toBe('delete')
+    expect(TOPBAR_MORE_ITEMS[22].id).toBe('delete')
   })
 
-  it('分隔线 8 条：每个 id 都真在清单里，且数量随 22 项口径（21 项是 9 条）', () => {
-    expect(TOPBAR_MORE_DIVIDER_AFTER).toHaveLength(8)
+  it('分隔线 9 条：位置照截图（「页宽设置」与「演示模式」之间无线，「打印」前后各一条）', () => {
+    expect(TOPBAR_MORE_DIVIDER_AFTER).toEqual(['slides', 'find', 'favorite', 'translate', 'print',
+      'view-versions', 'doc-permission', 'widgets', 'history-comments'])
     for (const id of TOPBAR_MORE_DIVIDER_AFTER) expect(ids).toContain(id)
     // 单列「打印」组只有一项，所以相邻分隔线允许只差 1 —— 这里守的是「严格递增、
     // 无重复」，也就是不会出现两条线连在一起（连在一起会画出双线）。
@@ -143,10 +163,11 @@ describe('顶栏更多 · 清单结构（§4.2.1 逐字）', () => {
 })
 
 describe('顶栏更多 · 子菜单归属（kind 与子面板必须一一对应）', () => {
-  it('5 个 kind=submenu 的项，每个都能在 SUBPANELS 里取到非空中面板', () => {
+  it('6 个 kind=submenu 的项：5 个走静态 SUBPANELS，1 个（文档小组件）走动态列表', () => {
     const submenus = TOPBAR_MORE_ITEMS.filter((item) => item.kind === 'submenu').map((item) => item.id)
-    expect(submenus.sort()).toEqual(Object.keys(TOPBAR_MORE_SUBPANELS).sort())
-    for (const id of submenus) expect(TOPBAR_MORE_SUBPANELS[id].length).toBeGreaterThan(0)
+    // 「文档小组件」的子面板来自 documentWidgetItems（已装小组件 + 更多/管理两个入口），不在静态表里。
+    expect(submenus.sort()).toEqual([...Object.keys(TOPBAR_MORE_SUBPANELS), 'widgets'].sort())
+    for (const id of Object.keys(TOPBAR_MORE_SUBPANELS)) expect(TOPBAR_MORE_SUBPANELS[id].length).toBeGreaterThan(0)
   })
 
   it('「翻译为英语」是 route（有箭头无面板、点击即执行），不能被当成 submenu', () => {
@@ -156,9 +177,17 @@ describe('顶栏更多 · 子菜单归属（kind 与子面板必须一一对应�
     expect(TOPBAR_MORE_SUBPANELS.translate).toBeUndefined()
   })
 
-  it('带箭头的项 = 5 个 submenu + 1 个 route，共 6 个；其余一律无箭头', () => {
+  it('带箭头的项 = 6 个 submenu + 1 个 route，共 7 个；开关项与 help 项都不带箭头', () => {
     const arrows = TOPBAR_MORE_ITEMS.filter((item) => topbarMoreHasArrow(item)).map((item) => item.id)
-    expect(arrows).toEqual(['width', 'download-as', 'translate', 'view-versions', 'doc-permission', 'more'])
+    expect(arrows).toEqual(['width', 'download-as', 'translate', 'view-versions', 'doc-permission', 'widgets', 'more'])
+    expect(arrows).not.toContain('follow')
+    expect(arrows).not.toContain('template')
+    expect(arrows).not.toContain('shortcut')
+  })
+
+  it('右侧是开关的项恰好 2 个：关注文档更新 / 转换为模板', () => {
+    const switches = TOPBAR_MORE_ITEMS.filter((item) => item.kind === 'switch').map((item) => item.id)
+    expect(switches).toEqual(['follow', 'template'])
   })
 
   it('子面板项 id 在各自面板内唯一（模板用 id 做 key，撞了会渲染错行）', () => {
@@ -170,6 +199,30 @@ describe('顶栏更多 · 子菜单归属（kind 与子面板必须一一对应�
 
   it('页宽三档映射内核 widthMode：standard / wide / full', () => {
     expect(TOPBAR_MORE_SUBPANELS.width.map((entry) => entry.id)).toEqual(['standard', 'wide', 'full'])
+  })
+
+  it('页宽三档带线形预览的几何（2026-11-23 Playwright 实测的 20/28/38 与末线缩进）', () => {
+    expect(TOPBAR_MORE_WIDTH_TIP).toBe('为当前窗口选择合适页宽')
+    expect(TOPBAR_MORE_SUBPANELS.width.map((entry) => entry.lines)).toEqual([
+      [20, 20, 20, 16], [28, 28, 28, 22], [38, 38, 38, 26],
+    ])
+    // 末线比前三条短，`末线宽 + tailInset` 必须**恰好等于**前三条的宽度 ——
+    // 否则居中后左缘对不齐首线（飞书是靠末线的 margin-right 补回去的）。
+    TOPBAR_MORE_SUBPANELS.width.forEach((entry) => {
+      const lines = entry.lines
+      expect(lines).toHaveLength(4)
+      expect(lines[3] + entry.tailInset).toBe(lines[0])
+    })
+    // 全宽卡多一层左右各 4 的内衬；默认/较宽没有。
+    expect(TOPBAR_MORE_SUBPANELS.width.map((entry) => entry.iconPad)).toEqual([0, 0, 4])
+  })
+
+  it('页宽浮层的外框 242×136 与卡片布局自洽（改动任一常量都要能对上）', () => {
+    expect(TOPBAR_MORE_WIDTH_PANEL).toEqual({ width: 242, height: 136 })
+    // 宽：卡片 56×3 + 间距 16×2 = 200 内容，加左右各 20 内衬 + 各 1 描边。
+    expect(56 * 3 + 16 * 2 + 20 * 2 + 2).toBe(TOPBAR_MORE_WIDTH_PANEL.width)
+    // 高：上内衬 16 + 提示行 20 + 间距 12 + 卡片 66 + 下内衬 20 + 上下各 1 描边。
+    expect(16 + 20 + 12 + 66 + 20 + 2).toBe(TOPBAR_MORE_WIDTH_PANEL.height)
   })
 
   it('权限面板含一条 divider 行，且它不参与动作分发', () => {
@@ -253,12 +306,51 @@ describe('顶栏更多 · 定位纯函数', () => {
     expect(style.top + 108).toBeLessThanOrEqual(900 - 8)
     expect(style.top).toBeGreaterThanOrEqual(8)
   })
+
+  // 页宽浮层是个例外：飞书实测父菜单右缘 1175、视口 1440、浮层 242 **明明放得下**，
+  // 它仍然给 `data-popper-placement="left-start"` —— 所以是「无条件贴左」，
+  // 不能沿用「右侧放不下才翻左」的通用判断。
+  it('页宽浮层 left-start：无条件贴父菜单左侧，且右缘压住左缘 1px', () => {
+    const style = topbarMoreSubmenuStyle(
+      { left: 1000, top: 49, right: 1175 },
+      { top: 57, height: 30.38 },
+      { width: 242, height: 136 },
+      { width: 1440, height: 900 },
+      'left-start',
+    )
+    expect(style.left).toBe(1000 - 242 + 1)
+    // 纵向对齐被 hover 那一行的**顶边**，没有通用的 -2。
+    expect(style.top).toBe(57)
+  })
+
+  it('页宽浮层 left-start 在窄视口也贴左（不是翻左，是恒定贴左）', () => {
+    const style = topbarMoreSubmenuStyle(
+      { left: 100, top: 49, right: 260 },
+      { top: 120, height: 30 },
+      { width: 242, height: 136 },
+      { width: 1440, height: 900 },
+      'left-start',
+    )
+    expect(style.left).toBe(Math.max(8, 100 - 242 + 1))
+  })
+
+  it('页宽浮层 left-start 贴底时同样被上提并夹住 8px', () => {
+    const style = topbarMoreSubmenuStyle(
+      { left: 1000, top: 49, right: 1175 },
+      { top: 880, height: 30 },
+      { width: 242, height: 136 },
+      { width: 1440, height: 900 },
+      'left-start',
+    )
+    expect(style.top + 136).toBeLessThanOrEqual(900 - 8)
+    expect(style.top).toBeGreaterThanOrEqual(8)
+  })
 })
 
 describe('顶栏更多 · 渲染行', () => {
-  it('行数 = 22 项 + 8 条分隔线，且分隔线紧跟在被标记的项之后', () => {
+  it('行数 = 23 项 + 9 条分隔线，且分隔线紧跟在被标记的项之后', () => {
     const rows = topbarMoreRows()
-    expect(rows).toHaveLength(30)
+    expect(rows).toHaveLength(32)
     expect(rows[0]).toEqual({ kind: 'item', item: TOPBAR_MORE_ITEMS[0] })
     expect(rows[1].kind).toBe('item')
     // slides 之后是第一条分隔线。
@@ -269,7 +361,7 @@ describe('顶栏更多 · 渲染行', () => {
     const orders = topbarMoreRows()
       .filter((row) => row.kind === 'item')
       .map((row) => row.item.order)
-    expect(orders).toEqual(Array.from({ length: 22 }, (_, i) => i + 1))
+    expect(orders).toEqual(Array.from({ length: 23 }, (_, i) => i + 1))
   })
 
   it('分隔线 id 互不相同（模板拿它当 key）', () => {

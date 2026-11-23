@@ -59,6 +59,13 @@
   --ld-border: #dcdfe6;                /* input-border-color */
   --ld-border-strong: #7d8592;         /* 强化档取占位符色（同 feishu 档取 disabled 色的口径） */
   --ld-border-cell: #dfe6ec;           /* table-row-border-bottom */
+  /* 页宽设置浮层的线形预览卡：§4.2.1 的实测值是飞书轨的，本档无实测 → 按本档主色
+     #06A17D 派生（口径同本文件其它 C 类「主色派生」注释）。 */
+  --ld-width-card-border-active: rgba(6, 161, 125, 0.45);
+  --ld-width-card-line: #C0C4CC;
+  --ld-width-card-line-active: #06A17D;
+  --ld-width-card-icon-bg: #F3F5F9;
+  --ld-width-card-icon-bg-active: rgba(6, 161, 125, 0.12);
   /* 网页卡片（P3-05）：描边跟本档线色；骨架两色沿用 02 §24 实测（浅档唯一出处） */
   --ld-border-bookmark: #dfe6ec;
   --ld-divider: #dfe6ec;
@@ -159,6 +166,13 @@
   --ld-border-handle-hover: #4b5b5c;
   --ld-border-bubble-divider: #425756;
   --ld-border-help: #4b5b5c;
+  --ld-border-menu-divider: #425756;
+  /* 页宽卡（同浅档 5 支）：深档按本档深色阶梯 + 品牌提亮档派生。 */
+  --ld-width-card-border-active: rgba(31, 214, 165, 0.45);
+  --ld-width-card-line: #4b5b5c;
+  --ld-width-card-line-active: #1FD6A5;
+  --ld-width-card-icon-bg: rgba(207, 207, 207, 0.08);
+  --ld-width-card-icon-bg-active: rgba(31, 214, 165, 0.14);
   --ld-border-swatch: #425756;
   --ld-border-swatch-palette: #425756;
   --ld-border-columns-picker: #4b5b5c;

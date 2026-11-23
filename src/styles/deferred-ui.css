@@ -710,12 +710,16 @@
 .lark-doc .lark-doc-code-lang-item.is-cursor { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); }
 .lark-doc .lark-doc-code-lang-item.is-active { background: transparent; color: var(--ld-brand-content); }
 .lark-doc .lark-doc-code-lang-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* 通知面板：四支取色与两个尺寸都是飞书截图逐像素实测（2 倍 DPR）。
-   面板固定 400×550、头部 47（46 内容 + 1 描边）、标题 14/22 700、
-   标题后铃铛 #8F959E、右侧按钮 14/22 400 #646A73、单行系统通知行高 50（12 内边距 + 14/26）。
-   四个颜色只服务这块面板，就近声明在作用域里，不上抬到 lark-doc.css 的全局 --ld-* 表。 */
-.lark-doc { --ld-notify-icon: #646a73; --ld-notify-status: #8f959e; --ld-notify-item-read: #9fa0a2; }
-.lark-doc[data-theme="dark"] { --ld-notify-icon: #a6a6a6; --ld-notify-status: #8c8c8c; --ld-notify-item-read: #8c8c8c; }
+/* 通知面板：几何与取色都来自飞书源码 + 截图的逐像素实测（截图 970×1264，面板 801 device
+   ⇒ 2× DPR、正好 400×550 CSS；描边内第一行在 y111）。
+   外壳 400×550；头部 47（46 内容 + 1 描边，标题 ink 落在 16.5..29.5、居中于 46）；
+   标题 14/22 700；标题后 16 铃铛 ink 102.5..112；右侧「关闭通知」纯文字 ink 255.5..309；
+   「全部已读」0 未读时转 #BBBFC4 且不渲染图标；列表 padding 4；
+   条目 9px 8px + 32 圆头像 + 11 红点 + 标题 14/500 + 时间 12/20 + 灰卡（344 宽 / padding 8 / radius 8）。
+   系统通知走 `.is-line`（无头像单行灰字，行距 50）。
+   两枚局部色（顶栏铃铛灰、未读红点）与系统通知灰字只服务这块面板，就近声明在作用域里。 */
+.lark-doc { --ld-notify-icon: #646a73; --ld-notify-status: #8f959e; --ld-notify-item-read: #9fa0a2; --ld-notify-badge: #f54a45; }
+.lark-doc[data-theme="dark"] { --ld-notify-icon: #a6a6a6; --ld-notify-status: #8c8c8c; --ld-notify-item-read: #8c8c8c; --ld-notify-badge: #f54a45; }
 /* 顶栏铃铛：常态与 hover 都是 #646A73（飞书那张就是灰底 + 灰铃铛），改色随本特性包到。 */
 .lark-doc .lark-doc-notify-btn { color: var(--ld-notify-icon); }
 .lark-doc .lark-doc-notify-btn:hover:not(:disabled),
@@ -725,44 +729,76 @@
 .lark-doc .lark-doc-notify-loading-nested { display: flex; flex: 1 1 auto; min-height: 0; }
 .lark-doc .lark-doc-notify-loading-container { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; border: 1px solid var(--ld-border-chrome); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); overflow: hidden; }
 .lark-doc .lark-doc-notify-content { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
-.lark-doc .lark-doc-notify-header { display: flex; align-items: center; flex: 0 0 auto; box-sizing: border-box; min-height: 47px; padding: 0 12px; border-bottom: 1px solid var(--ld-border-chrome); color: var(--ld-text); font-size: 14px; font-weight: 700; }
+/* 内衬左右不等是实测结果：标题 ink 从 14 起（对应左侧 12），而「全部已读」ink 右缘落在 388
+   （面板右侧只留 11 = 8 内衬 + 按钮 2 内衬 + 1 字形边距）。源码写的是 `padding:0 12px`，
+   但真身截图右侧那颗明显更靠边，按截图取 8。 */
+.lark-doc .lark-doc-notify-header { display: flex; align-items: center; flex: 0 0 auto; box-sizing: border-box; min-height: 47px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--ld-border-chrome); color: var(--ld-text); font-size: 14px; font-weight: 700; }
 .lark-doc .lark-doc-notify-header-desc { flex: 0 0 auto; max-width: 215px; margin: 0; overflow: hidden; font-size: 14px; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
-.lark-doc .lark-doc-notify-readall-icon,
-.lark-doc .lark-doc-notify-status { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; }
-.lark-doc .lark-doc-notify-status { margin-left: 6px; color: var(--ld-notify-status); }
+/* 静音态铃铛紧贴标题右侧：飞书 ink 落 102.5..112，标题 ink 收在 95，间隔 7.5。 */
+.lark-doc .lark-doc-notify-status { display: inline-flex; align-items: center; flex: 0 0 auto; margin-left: 3px; color: var(--ld-notify-status); }
+/* 头部两颗按钮都是纯文字 + 14/22/400。源码 `_header_mutebtn_wrapper` 给的是
+   `margin-left:auto; margin-right:18px` —— 18 是「关闭通知」与「全部已读」之间的外距，
+   实测 ink 间隙 24.5（= 18 + 两侧 2px 内衬 + 字形边距），所以外距写在左侧那颗上。 */
 .lark-doc .lark-doc-notify-mute,
-.lark-doc .lark-doc-notify-readall { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; height: 28px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text-secondary); font-size: 14px; font-weight: 400; line-height: 22px; white-space: nowrap; cursor: pointer; }
-.lark-doc .lark-doc-notify-mute { margin-left: auto; margin-right: 8px; }
-.lark-doc .lark-doc-notify-readall { color: var(--ld-text-accent); }
+.lark-doc .lark-doc-notify-readall { display: inline-flex; align-items: center; flex: 0 0 auto; height: 28px; padding: 0 2px; border: 0; border-radius: 4px; background: transparent; color: var(--ld-text); font-size: 14px; font-weight: 400; line-height: 22px; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-notify-mute { margin-left: auto; margin-right: 18px; }
 .lark-doc .lark-doc-notify-mute:hover:not(:disabled),
 .lark-doc .lark-doc-notify-mute:focus-visible,
 .lark-doc .lark-doc-notify-readall:hover:not(:disabled),
 .lark-doc .lark-doc-notify-readall:focus-visible { background: var(--ld-bg-hover-chrome); outline: 0; }
+/* 0 条未读时「全部已读」整颗转灰 #BBBFC4 且**不带图标**（源码 disabled 分支只渲染 span.disable-text）。 */
 .lark-doc .lark-doc-notify-readall:disabled,
-.lark-doc .lark-doc-notify-readall.is-disabled { background: transparent; color: var(--ld-text-disabled); opacity: .5; cursor: default; }
-.lark-doc .lark-doc-notify-readall:disabled .lark-doc-notify-readall-icon,
-.lark-doc .lark-doc-notify-readall.is-disabled .lark-doc-notify-readall-icon { display: none; }
-.lark-doc .lark-doc-notify-empty { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; min-height: 0; padding: 0 24px; text-align: center; }
+.lark-doc .lark-doc-notify-readall.is-disabled { background: transparent; color: var(--ld-text-disabled); cursor: default; }
+.lark-doc .lark-doc-notify-empty { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; min-height: 0; padding: 4px 24px 0; text-align: center; }
 .lark-doc .lark-doc-notify-empty-img { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 120px; height: 120px; margin-top: 115px; }
 .lark-doc .lark-doc-notify-empty-title { margin: 16px 0 0; color: var(--ld-text); font-size: 16px; font-weight: 500; line-height: 24px; }
-.lark-doc .lark-doc-notify-empty-sub { width: 250px; margin: 4px 0 0; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; white-space: break-spaces; }
+.lark-doc .lark-doc-notify-empty-sub { width: 250px; margin: 4px 0 0; color: var(--ld-text-secondary); font-size: 14px; line-height: 22px; text-align: center; white-space: break-spaces; }
 .lark-doc .lark-doc-notify-list { flex: 1 1 auto; min-height: 0; margin: 0; padding: 4px; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
 .lark-doc .lark-doc-notify-item { border-radius: 6px; }
-.lark-doc .lark-doc-notify-item-action { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; padding: 9px 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+/* 条目几何照源码 `.nc-feed-message_wrapper`：9px 8px 内衬、横排、6 圆角、hover 灰底。
+   未读**不靠底色**区分（飞书只画右上角那颗 11 的红点）。 */
+.lark-doc .lark-doc-notify-item-action { display: flex; align-items: flex-start; box-sizing: border-box; width: 100%; padding: 9px 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
 .lark-doc .lark-doc-notify-item-action:hover:not(:disabled),
 .lark-doc .lark-doc-notify-item-action:focus-visible { background: var(--ld-bg-hover-chrome); outline: 0; }
-.lark-doc .lark-doc-notify-item.is-unread .lark-doc-notify-item-action { background: var(--ld-bg-soft); }
 /* 条目是 `button`，但「不可跳转」不等于「灰掉」：飞书里这类系统通知就是正常灰字。
    通用 `button:disabled{opacity:.43}` 会把 14px 字洗成 #D5D6D7，这里按行恢复原色。 */
 .lark-doc .lark-doc-notify-item-action:disabled { opacity: 1; cursor: default; }
-/* 单行系统通知（无正文）：飞书实测行高 50、首行文字 ink 落在列表顶下 17、
-   左内边距 12（列表 4 + 12），正文 14/22/400 灰 #9FA0A2。文字靠上对齐（padding 9 +
-   min-height 50），不是垂直居中 —— 居中会把首行压到 22.25。 */
+/* 系统通知（无正文）：无头像的单行灰字。飞书实测行距 50、首行 ink 落在列表顶下 17
+   （面板 y111 起算 65），对应 padding-top 9 + 14/400。未读才提亮成正文色 + 500。 */
 .lark-doc .lark-doc-notify-item.is-line .lark-doc-notify-item-action { padding: 9px 12px; min-height: 50px; }
+.lark-doc .lark-doc-notify-item.is-line .lark-doc-notify-item-content { max-width: 100%; margin-left: 0; }
 .lark-doc .lark-doc-notify-item.is-line .lark-doc-notify-item-title { color: var(--ld-notify-item-read); font-weight: 400; }
 .lark-doc .lark-doc-notify-item.is-line.is-unread .lark-doc-notify-item-title { color: var(--ld-text); font-weight: 500; }
-.lark-doc .lark-doc-notify-item-title { color: var(--ld-text); font-size: 14px; font-weight: 500; line-height: 22px; }
-.lark-doc .lark-doc-notify-item-body { color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
+/* 32 圆头像 + 未读红点：红点 `top:-3; right:-1`（源码 `_badge`），11×11，白描边压住头像边。 */
+.lark-doc .lark-doc-notify-item-avatar img,
+.lark-doc .lark-doc-notify-item-card-avatar img { border-radius: 50%; object-fit: cover; }
+.lark-doc .lark-doc-notify-item-avatar { position: relative; display: inline-flex; flex: 0 0 32px; align-items: center; justify-content: center; width: 32px; height: 32px; overflow: visible; border-radius: 50%; background: var(--ld-bg-soft); color: var(--ld-text); font-size: 14px; line-height: 1; }
+.lark-doc .lark-doc-notify-item-avatar img { width: 32px; height: 32px; }
+.lark-doc .lark-doc-notify-item-badge { display: none; position: absolute; top: -3px; right: -1px; box-sizing: border-box; width: 11px; height: 11px; border: 1px solid var(--ld-bg-surface-chrome); border-radius: 50%; background: var(--ld-notify-badge); }
+.lark-doc .lark-doc-notify-item.is-unread .lark-doc-notify-item-badge { display: block; }
+.lark-doc .lark-doc-notify-item-content { display: flex; flex: 1; flex-direction: column; align-items: flex-start; min-width: 0; max-width: calc(100% - 40px); margin-left: 8px; white-space: normal; }
+.lark-doc .lark-doc-notify-item-title { color: var(--ld-text); font-size: 14px; font-weight: 500; line-height: 22px; word-break: break-word; }
+.lark-doc .lark-doc-notify-item-suffix { margin-left: 2px; color: var(--ld-text-tertiary); font-size: 14px; font-weight: 400; line-height: 22px; }
+.lark-doc .lark-doc-notify-item-time { color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; }
+/* 引用一行：12/20 + 左侧 2×14 竖条（源码 `_quote` + `:after`）。
+   `display:block` 不能省：它是 `<span>`，在灰卡里是行内元素时 `max-width` / `text-overflow`
+   全部失效，长引用会顶出卡片；块级 + `align-self:stretch` 才能在「卡片内」和「标题下」两处都按宽度截断。 */
+.lark-doc .lark-doc-notify-item-quote { display: block; align-self: stretch; position: relative; box-sizing: border-box; max-width: 100%; height: 20px; margin: 4px 0; padding: 0 6px; overflow: hidden; color: var(--ld-text-tertiary); font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-notify-item-quote::after { content: ""; position: absolute; top: 3px; left: 0; width: 2px; height: 14px; border-radius: 1px; background: var(--ld-border-chrome); }
+/* 灰卡：源码写死 344 宽（`_summary-wrapper{width:344px;margin-left:-8px}`、padding 8、radius 8）。
+   它的父级内容列只有 334 宽（`_content{max-width:calc(100% - 40px)}`），所以卡片在飞书里
+   本来就比内容列宽 10px —— 左溢 8 进头像栏、右溢 2 进 wrapper 的 8px 内衬，不会出横向滚动条。
+   因此这里不能用 `max-width: 100%`（会把它钳成 334、右边多留 10px 空白）。 */
+.lark-doc .lark-doc-notify-item-card { box-sizing: border-box; width: 344px; max-width: calc(100% + 10px); margin: 8px 0 8px -8px; padding: 8px; border-radius: 8px; background: var(--ld-bg-soft); word-break: break-word; }
+.lark-doc .lark-doc-notify-item-block { display: flex; }
+.lark-doc .lark-doc-notify-item-card-avatar { display: inline-flex; flex: 0 0 16px; align-items: center; justify-content: center; width: 16px; height: 16px; margin: 4px 0; overflow: hidden; border-radius: 50%; background: var(--ld-bg-surface-chrome); color: var(--ld-text-tertiary); font-size: 10px; line-height: 1; }
+.lark-doc .lark-doc-notify-item-card-avatar img { width: 16px; height: 16px; }
+.lark-doc .lark-doc-notify-item-card-message { min-width: 0; margin-left: 6px; color: var(--ld-text); font-size: 14px; line-height: 22px; white-space: pre-line; }
+.lark-doc .lark-doc-notify-item-card-name { margin-right: 4px; font-weight: 500; white-space: nowrap; }
+/* 「查看剩余 N 条评论」：源码 `margin-left:18px; padding:2px 8px 2px 4px`，右侧 12 的箭头。 */
+.lark-doc .lark-doc-notify-item-rest-node { display: inline-flex; align-items: center; margin-top: 8px; margin-left: 18px; padding: 2px 8px 2px 4px; border-radius: 6px; color: var(--ld-text-tertiary); font-size: 14px; line-height: 20px; cursor: pointer; }
+.lark-doc .lark-doc-notify-item-rest-node:hover { background: var(--ld-bg-surface-chrome); }
+.lark-doc .lark-doc-notify-item-rest-caret { display: inline-flex; margin-bottom: -2px; margin-left: 2px; color: var(--ld-text-tertiary); }
 .lark-doc .lark-doc-notify-more,
 .lark-doc .lark-doc-notify-query { flex: 0 0 auto; min-height: 44px; margin: 4px 8px 8px; color: var(--ld-text-accent); }
 /* 「更多」菜单的关注引导卡（飞书 subscribe_guide）与关注成功 toast。两者都挂在菜单上，
@@ -784,9 +820,14 @@
 .lark-doc .lark-doc-follow-tip-msg em { color: var(--tip-accent); font-style: normal; }
 .lark-doc .lark-doc-follow-tip-btn { display: inline-block; padding: 3px 8px; border: 1px solid var(--tip-accent); border-radius: 4px; color: var(--tip-accent); font-size: 12px; line-height: 18px; }
 .lark-doc .lark-doc-follow-tip-desc { margin: 12px 0 0; color: var(--ld-text); font-size: 16px; line-height: 26px; }
-/* toast 成功底同样是飞书实测固有色（rgb(228,250,225)），与 --ld-bg-notice 的绿不同源。 */
-.lark-doc .lark-doc-doc-toast { --toast-bg: #E4FAE1; position: fixed; z-index: 1040; top: 56px; left: 50%; display: flex; align-items: center; gap: 8px; box-sizing: border-box; max-width: 420px; padding: 10px 20px; border-radius: 8px; background: var(--toast-bg); color: var(--ld-text); box-shadow: 0 4px 12px rgba(31,35,41,.08); transform: translateX(-50%); font-size: 14px; line-height: 22px; }
+/* 飞书顶部正式消息条（ud__msg-manager--top → ud__notice--outlined）。真身逐像素：
+   容器 fixed z9999 / 顶 40（外层 32 + padding 8）；条体高 54、6px 圆角、padding 15px 3px 15px 19px，
+   outlined 绿边 1px #32A645、绿底 #E4FAE1、正文 #1F2329 14px/22、16px 实心圆对勾、gap 8。
+   多条上下堆叠、每条独立 3s 自收；不是右下角气泡，也不是文档流里的黄横幅。 */
+.lark-doc .lark-doc-toast-stack { position: fixed; z-index: 9999; top: 32px; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 24px; box-sizing: border-box; width: max-content; max-width: min(600px, calc(100vw - 32px)); padding: 8px 16px 16px; transform: translateX(-50%); pointer-events: none; }
+.lark-doc .lark-doc-doc-toast { --toast-bg: var(--ld-share-toast-success-bg); --toast-border: var(--ld-share-success); display: inline-flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 54px; max-width: 100%; padding: 15px 19px; border: 1px solid var(--toast-border); border-radius: 6px; background: var(--toast-bg); color: var(--ld-text); box-shadow: rgba(31,35,41,.04) 0 8px 24px 8px, rgba(31,35,41,.04) 0 6px 12px 0, rgba(31,35,41,.06) 0 4px 8px -8px; font-size: 14px; line-height: 22px; }
 .lark-doc .lark-doc-doc-toast-icon { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; }
+.lark-doc .lark-doc-doc-toast-text { min-width: 0; overflow-wrap: anywhere; }
 .lark-doc .lark-doc-relation-layer { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: center; justify-content: center; }
 .lark-doc .lark-doc-relation-mask { position: absolute; inset: 0; background-color: var(--ld-mask-solid); }
 .lark-doc .lark-doc-relation-content { position: relative; z-index: 1; display: flex; flex-direction: column; box-sizing: border-box; width: 1080px; max-width: calc(100vw - 32px); height: 676px; max-height: calc(100vh - 32px); border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-float); overflow: hidden; }
@@ -1112,7 +1153,9 @@
   overflow: hidden;
   border-radius: 8px;
   background: var(--ld-share-surface);
-  box-shadow: 0 6px 24px rgba(31, 35, 41, 0.12);
+  /* 飞书面板是「480 内容 + 外面一圈 1px #DEE0E3」：描边画成外环，
+     用 border 会把内容压到 478，实测内容正好 480（截图 108..1067 device）。 */
+  box-shadow: 0 0 0 1px var(--ld-share-border), 0 6px 24px rgba(31, 35, 41, 0.12);
 }
 @media (max-width: 496px) {
   .lark-doc .lark-doc-share-header,
@@ -1136,6 +1179,8 @@
   align-items: center;
   gap: 4px;
   margin: 0;
+  /* h3 默认粗体比飞书重一档（同框同字号下墨量多 21%），飞书是 500。 */
+  font-weight: 500;
   color: var(--ld-share-text);
   font-size: 16px;
   line-height: 22px;
@@ -1145,13 +1190,16 @@
   display: flex;
   align-items: center;
 }
-.lark-doc-share-perm-btn {
+/* 必须带 `.lark-doc` 前缀：通用兜底 `.lark-doc button`（0,1,1）会把 height/padding
+   顶回 30 / 4px 8px，裸类名（0,1,0）压不住，齿轮前面就多出 8px。 */
+.lark-doc .lark-doc-share-perm-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  width: 84px;
+  /* 飞书是自动宽、右贴 16 内衬（文字墨迹止于 463/480），不是定宽左对齐的 84。 */
   height: 24px;
-  padding: 0 4px;
+  min-height: 24px;
+  padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -1160,7 +1208,8 @@
   cursor: pointer;
 }
 .lark-doc-share-perm-btn svg {
-  width: 20px;
+  /* 齿轮在飞书实测墨迹 14×15，20×16 会把 16 的方图横拉成扁的。 */
+  width: 16px;
   height: 16px;
 }
 .lark-doc-share-member-row {
@@ -1177,12 +1226,22 @@
   font-size: 14px;
   line-height: 20px;
 }
-.lark-doc-share-avatars {
+/* 带 `.lark-doc` 前缀：通用兜底 `.lark-doc button`（0,1,1）的 `padding: 4px 8px`
+   会把头像整体右推 8，和右侧三角只剩 1.5 的缝（飞书是 10.5）。 */
+.lark-doc .lark-doc-share-avatars {
   display: flex;
   align-items: center;
   padding: 0;
   border: 0;
   background: transparent;
+}
+/* 「查看更多协作者」的右向实心三角：16 的框里 ink 只占中间 5×9，
+   左边补 4 才落在飞书的 450..454.5。 */
+.lark-doc-share-members-chevron {
+  display: inline-flex;
+  flex: 0 0 16px;
+  margin-left: 8px;
+  color: var(--ld-share-text-tertiary);
 }
 .lark-doc-share-avatar {
   width: 26px;
@@ -1213,7 +1272,8 @@
   width: 448px;
   height: 36px;
   margin: 0 16px;
-  padding: 0 0 0 12px;
+  /* 占位符 ink 起点 x=173 device ⇒ 距输入框左边 16 CSS（原来是 12）。 */
+  padding: 0 0 0 16px;
   border: 1px solid var(--ld-share-brand);
   border-radius: 6px;
 }
@@ -1245,7 +1305,8 @@
   box-sizing: border-box;
   width: 480px;
   height: auto;
-  min-height: 194px;
+  /* 128 = 12 上距 + 链接卡 116（灰条已挪到面板内层，不再算在这块里）。 */
+  min-height: 128px;
   padding: 12px 0 0;
 }
 .lark-doc-share-link-card {
@@ -1261,8 +1322,12 @@
   justify-content: space-between;
   gap: 8px;
 }
-.lark-doc-share-link-head-main { display: flex; align-items: center; gap: 8px; }
-.lark-doc-share-pwd-link { padding: 0; border: 0; background: transparent; color: var(--ld-share-brand); font-size: 14px; cursor: pointer; }
+/* 「链接分享」到「仅当前页面」标签实测 4（标签底 76 起）；8 会把它右推 4。 */
+.lark-doc-share-link-head-main { display: flex; align-items: center; gap: 4px; }
+/* 「启用密码」实测 ink 高 23 device ⇒ 12px（不是 14）。 */
+/* 必须带 `.lark-doc` 前缀：全局 `.lark-doc button`（0,1,1）压得住裸类名（0,1,0），
+   否则 font-size 会被那条通用规则顶回 14。 */
+.lark-doc .lark-doc-share-pwd-link { height: 22px; min-height: 22px; padding: 0; border: 0; background: transparent; color: var(--ld-share-brand); font-size: 12px; line-height: 22px; cursor: pointer; }
 .lark-doc-share-link-title {
   color: var(--ld-share-text);
   font-size: 14px;
@@ -1273,19 +1338,23 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 4px;
-  background: var(--ld-bg-brand-hover);
+  background: var(--ld-share-tag-bg);
   color: var(--ld-share-brand);
   font-size: 10px;
   line-height: 16px;
 }
+/* 标签整体实测宽 58 CSS（116 device）= 5 字 × 10 + 左右各 4 内衬，
+   所以内容 span 也是 10px，不是 12（12 会撑到 68）。 */
 .lark-doc-share-link-tag span {
-  font-size: 12px;
+  font-size: 10px;
 }
 .lark-doc-share-link-body {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 12px;
+  /* 飞书实测（截图面板顶起算）：head 墨迹 168.5..181，地球顶 209.5 ⇒ 间距 19。
+     26 是早前按「灰条在链接卡内」的旧箱子量出来的，会整体压下去 7。 */
+  margin-top: 19px;
 }
 .lark-doc-share-link-icon {
   display: flex;
@@ -1294,41 +1363,45 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--ld-share-brand);
+  /* 这枚地球在飞书里恒为蓝色圆底（截图 rgb(51,109,244)），不跟随宿主品牌色。 */
+  background: var(--ld-share-globe);
   color: var(--ld-share-surface);
   font-size: 14px;
 }
 .lark-doc-share-link-main {
   display: flex;
   flex: 1;
+  min-width: 0;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
 }
-.lark-doc-share-org-btn {
-  align-self: flex-start;
-  padding: 2px 8px;
-  border: 1px solid var(--ld-share-border-control);
-  border-radius: 6px;
+/* 链接范围 / 权限这两颗下拉在飞书里是**无框纯文字 + 实心三角**（截图三角 ink 487..504 device），
+   不是带描边的 select。共享下拉原语自带 trigger 的 28 高与边框，这里整块抹平。 */
+.lark-doc .lark-doc-share-scope-select,
+.lark-doc .lark-doc-share-perm-select { display: inline-flex; flex: 0 0 auto; }
+.lark-doc .lark-doc-share-scope-select .lark-doc-select-trigger,
+.lark-doc .lark-doc-share-perm-select .lark-doc-select-trigger {
+  min-width: 0;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
   background: transparent;
   color: var(--ld-share-text);
   font-size: 14px;
   line-height: 22px;
-  cursor: pointer;
+  /* 文字到三角 ink 的缝实测 6.5（三角在 16 框里左偏 3.5），8 会把它推右 6。 */
+  gap: 3px;
 }
+.lark-doc .lark-doc-share-scope-select .lark-doc-select-trigger:hover:not(:disabled),
+.lark-doc .lark-doc-share-perm-select .lark-doc-select-trigger:hover:not(:disabled) { background: var(--ld-bg-hover-select); }
+.lark-doc .lark-doc-share-scope-select .lark-doc-select-caret,
+.lark-doc .lark-doc-share-perm-select .lark-doc-select-caret { flex: 0 0 16px; width: 16px; height: 16px; color: var(--ld-share-text); }
 .lark-doc-share-scope-text {
   color: var(--ld-share-text-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-.lark-doc-share-perm-select {
-  padding: 2px 8px;
-  border: 1px solid var(--ld-share-border-control);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ld-share-text);
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
 }
 .lark-doc-share-copy-row {
   display: flex;
@@ -1337,8 +1410,9 @@
   gap: 8px;
   box-sizing: border-box;
   width: 480px;
-  min-height: 64px;
-  padding: 12px 16px;
+  min-height: 66px;
+  /* 飞书实测：灰条 66 高、按钮 32，上下各 17 才居中（截图 y722..785 / 688..819）。 */
+  padding: 17px 16px;
   background: var(--ld-bg-code);
 }
 .lark-doc .lark-doc-share-copy-link {
@@ -1347,8 +1421,8 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 34px;
-  padding: 0 14px;
+  height: 32px;
+  padding: 0 11px;
   border: 1px solid var(--ld-share-border-control);
   border-radius: 29px;
   background: transparent;
@@ -1360,8 +1434,8 @@
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 1px solid var(--ld-share-border-control);
   border-radius: 50%;
@@ -1628,6 +1702,188 @@
 .lark-doc-secure-link-desc {
   cursor: pointer;
 }
+
+/* —— B20 · 权限设置页按飞书 suite-config-item-v2 视觉（2026-11-22）——
+   几何按两张 2× DPR 截图实测；色值一律走 token，字面 hex 会被 check:theme-tokens 拦。 */
+
+/* 标题栏：「权限设置」+ 帮助问号 + 关闭；面包屑在飞书真身没有，隐藏但保留 DOM。 */
+.lark-doc-permission-header { position: relative; }
+.lark-doc-permission-crumb { display: none; }
+/* 飞书二级权限页是纯权限项列表：邀请行 / 搜索框 / 链接范围-权限 detail / 服务提示行
+   都属一级分享面板，真身这里没有。隐藏节点但保留 DOM 与 handler（能力门控仍走 disabled + title）。 */
+.lark-doc-permission-dialog .lark-doc-permission-invite-row,
+.lark-doc-permission-dialog .lark-doc-permission-search,
+.lark-doc-permission-dialog .lark-doc-permission-link-detail,
+.lark-doc-permission-dialog .lark-doc-permission-desc[role="status"] { display: none; }
+.lark-doc-permission-header .lark-doc-permission-head-row { align-items: flex-start; padding-top: 0; }
+.lark-doc-permission-title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lark-doc-permission-title { width: auto; }
+.lark-doc-permission-help,
+.lark-doc-permission-info { display: inline-flex; align-items: center; justify-content: center; color: var(--ld-share-text-tertiary); cursor: help; }
+.lark-doc-permission-help svg { width: 16px; height: 16px; }
+.lark-doc-permission-info { margin-left: 4px; vertical-align: -2px; }
+.lark-doc-permission-info svg { width: 14px; height: 14px; }
+
+/* 分组标题/行距：飞书「对外分享」「企业信息公开设置」行标题 14/22 500。 */
+.lark-doc-permission-group-title { margin: 24px 0 8px; }
+
+/* 复选行：仍未选是灰描边空心、勾选是蓝实心白勾、禁用是浅灰描边 + 浅灰字。
+   保留 `.lark-doc-permission-switch` 类名与 role=switch（测试/B24 契约），只重画外观。 */
+.lark-doc .lark-doc-permission-switch {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--ld-share-text-tertiary);
+  border-radius: 3px;
+  background: var(--ld-share-surface);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-permission-switch::after {
+  top: 1px;
+  left: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ld-share-surface);
+  border-width: 0 2px 2px 0;
+  border-radius: 1px;
+  background: transparent;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.12s linear;
+}
+.lark-doc .lark-doc-permission-switch.is-on {
+  /* 飞书勾选框是内容蓝 #1456F0（不是外壳绿 --ld-share-brand），与查换面板激活页签同源。 */
+  border-color: var(--ld-brand-content);
+  background: var(--ld-brand-content);
+}
+.lark-doc .lark-doc-permission-switch.is-on::after { transform: rotate(45deg) scale(1); }
+.lark-doc .lark-doc-permission-switch:disabled,
+.lark-doc .lark-doc-permission-item.is-disabled .lark-doc-permission-switch {
+  border-color: var(--ld-share-text-disabled);
+  background: var(--ld-share-surface);
+  cursor: not-allowed;
+}
+.lark-doc .lark-doc-permission-switch:disabled::after,
+.lark-doc .lark-doc-permission-item.is-disabled .lark-doc-permission-switch::after { transform: rotate(45deg) scale(0); }
+.lark-doc-permission-check-item .lark-doc-permission-row { justify-content: flex-start; gap: 8px; }
+.lark-doc-permission-check-item .lark-doc-permission-item-title { order: 2; }
+.lark-doc-permission-item.is-disabled .lark-doc-permission-item-title { color: var(--ld-share-text-disabled); }
+
+/* 说明性复选框（无写入）：灰描边空心 + 常规文字；禁用态整行浅灰。 */
+.lark-doc-permission-static-check .lark-doc-permission-row { justify-content: flex-start; gap: 8px; }
+.lark-doc-permission-static-box {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid var(--ld-share-text-tertiary);
+  border-radius: 3px;
+  background: var(--ld-share-surface);
+}
+.lark-doc-permission-static-label { color: var(--ld-share-text); font-size: 14px; line-height: 22px; }
+.lark-doc-permission-static-check.is-disabled .lark-doc-permission-static-box { border-color: var(--ld-share-text-disabled); }
+.lark-doc-permission-static-check.is-disabled .lark-doc-permission-static-label { color: var(--ld-share-text-disabled); }
+
+/* 加密链接复选框：由原生 checkbox 重画为同款飞书方块。 */
+.lark-doc .lark-doc-secure-link-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  border: 1px solid var(--ld-share-text-tertiary);
+  border-radius: 3px;
+  background: var(--ld-share-surface);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-secure-link-checkbox::after {
+  position: absolute;
+  top: 1px;
+  left: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ld-share-surface);
+  border-width: 0 2px 2px 0;
+  content: '';
+  transform: rotate(45deg) scale(0);
+}
+.lark-doc .lark-doc-secure-link-checkbox:checked { border-color: var(--ld-brand-content); background: var(--ld-brand-content); }
+.lark-doc .lark-doc-secure-link-checkbox:checked::after { transform: rotate(45deg) scale(1); }
+.lark-doc .lark-doc-secure-link-checkbox:disabled { border-color: var(--ld-share-text-disabled); cursor: not-allowed; }
+
+/* 值下拉：飞书 At.Select bordered:underlined——无外框、仅底边、自绘灰色 chevron。 */
+.lark-doc-permission-select-item .lark-doc-permission-value { height: auto; }
+.lark-doc .lark-doc-permission-select {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 96px;
+  height: 28px;
+  padding: 0 18px 0 0;
+  border: 0;
+  border-bottom: 1px solid var(--ld-share-border-control);
+  border-radius: 0;
+  background-image: none;
+  color: var(--ld-share-text);
+  font-size: 14px;
+  line-height: 28px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-permission-select:disabled { cursor: not-allowed; }
+/* chevron：细线人字，紧跟文字。value 容器贴合内容宽度（不继承 437px），箭头贴其右缘。 */
+.lark-doc-permission-select-item .lark-doc-permission-value { position: relative; display: inline-flex; width: auto; height: auto; }
+.lark-doc-permission-select-item .lark-doc-permission-value::after {
+  position: absolute;
+  top: 10px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border: solid var(--ld-share-text-tertiary);
+  border-width: 0 1.5px 1.5px 0;
+  content: '';
+  pointer-events: none;
+  transform: rotate(45deg);
+}
+.lark-doc-permission-select-heading {
+  color: var(--ld-share-text-strong);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+/* 折叠头：飞书实心下三角（展开朝下、收起朝右）。 */
+.lark-doc .lark-doc-permission-collapse-head { gap: 8px; }
+.lark-doc-permission-caret {
+  width: 0;
+  height: 0;
+  border-top: 5px solid var(--ld-share-text-secondary);
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+  font-size: 0;
+  transform: rotate(-90deg);
+}
+.lark-doc-permission-caret.is-open { transform: rotate(0); }
+
+/* —— B22 · 二级权限弹窗逐像素对齐飞书真身（2026-11-22）——
+   证据：用户两张 2x DPR 真身截图量取；色值走 token，字面 hex 会被 check:theme-tokens 拦。 */
+/* 标题栏下 1px 分隔线（真身 y=158 device），栏高 79px + 文字下移对齐。 */
+.lark-doc-permission-header { box-sizing: border-box; height: 79px; padding-top: 19px; border-bottom: 1px solid var(--ld-share-border); }
+/* 「更多高级设置」上方整行分隔线（真身 y=582 device），折叠文字距线 43px。 */
+.lark-doc .lark-doc-permission-collapse-head { border-top: 1px solid var(--ld-share-border); padding-top: 31px; }
+/* 复选三行行距 30px（真身文字 y=135/165/195），本地原 42px。 */
+.lark-doc .lark-doc-permission-check-item,
+.lark-doc .lark-doc-permission-static-check,
+.lark-doc .lark-doc-secure-link { padding: 4px 0; }
+/* 下拉标题→值 34px（真身 y=305→339），本地原 25px。 */
+.lark-doc-permission-select-heading { margin-bottom: 8px; }
+/* 下拉值→说明复选 36px（真身 y=339→375），本地原 33px。 */
+.lark-doc-permission-select-item .lark-doc-permission-static-check { padding-top: 7px; }
+
 .lark-doc-secure-link-password-area {
   display: block;
   width: 437px;
@@ -1677,14 +1933,16 @@
   width: 16px;
   height: 16px;
 }
-.lark-doc-secure-link-copy-btn {
+/* 铅笔图标 span 在 flex 行里被压缩到 6px（B22），锁定 16×16 与真身一致。 */
+.lark-doc .lark-doc-secure-link-edit > .lark-doc-icon { flex: 0 0 16px; width: 16px; height: 16px; }
+.lark-doc .lark-doc-secure-link-copy-btn {
   width: 92px;
   height: 24px;
   padding: 2px 4px;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--ld-share-brand);
+  color: var(--ld-brand-content);
   font-size: 12px;
   cursor: pointer;
 }
@@ -2301,3 +2559,204 @@
 .lark-doc .lark-doc-tooltip { position: fixed; z-index: 10000; box-sizing: border-box; max-width: min(420px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font: 13px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; white-space: normal; overflow-wrap: anywhere; pointer-events: none; }
 .lark-doc .lark-doc-tooltip::after { content: ''; position: absolute; top: 100%; left: var(--ld-tip-arrow, 50%); transform: translateX(-50%); width: 0; height: 0; border: 6px solid transparent; border-top-color: var(--ld-bg-tooltip); border-bottom: 0; }
 .lark-doc .lark-doc-tooltip.is-below::after { top: -6px; border: 6px solid transparent; border-top: 0; border-bottom-color: var(--ld-bg-tooltip); }
+
+/* ============================================================
+ * B23 · 协作者二级弹窗（04 §4.2.3 / 真身 2× 截图）
+ * 管理协作者 → 添加协作者：替换分享 popover 位置，无暗遮罩、无 ×，
+ * 头部是「返回箭头 + 标题」；定位沿用 sharePopoverStyle 注入的 top/right。
+ * ============================================================ */
+.lark-doc .lark-doc-collab-manage,
+.lark-doc .lark-doc-collab-add {
+  position: fixed;
+  z-index: 101;
+  box-sizing: border-box;
+  width: min(480px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--ld-share-surface);
+  box-shadow: 0 0 0 1px var(--ld-share-border), 0 6px 24px rgba(31, 35, 41, 0.12);
+  color: var(--ld-share-text);
+  font-size: 14px;
+  line-height: 22px;
+}
+.lark-doc .lark-doc-collab-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 20px;
+}
+.lark-doc .lark-doc-collab-title { margin: 0; font-size: 16px; font-weight: 600; }
+.lark-doc .lark-doc-collab-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ld-share-text-secondary);
+  cursor: pointer;
+}
+/* chevron-right 旋转 180° = 返回左箭头 */
+.lark-doc .lark-doc-collab-back svg { transform: rotate(180deg); }
+.lark-doc .lark-doc-collab-subtitle {
+  margin: 0;
+  padding: 8px 24px 4px;
+  color: var(--ld-share-text-secondary);
+  font-size: 13px;
+}
+.lark-doc .lark-doc-collab-list { min-height: 120px; padding: 4px 24px 16px; }
+.lark-doc .lark-doc-collab-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.lark-doc .lark-doc-collab-avatar {
+  display: inline-flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  /* 真身成员头像是蓝底 #1556F0，不是外壳绿 --ld-share-avatar-bg（B20 同坑）。 */
+  background: var(--ld-brand-content);
+  color: var(--ld-share-surface);
+  font-size: 13px;
+}
+.lark-doc .lark-doc-collab-member-name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.lark-doc .lark-doc-collab-name { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-collab-role { flex: none; color: var(--ld-share-text-secondary); }
+.lark-doc .lark-doc-collab-footer { border-top: 1px solid var(--ld-share-border); padding: 12px 24px; }
+.lark-doc .lark-doc-collab-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ld-share-text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-collab-add-btn svg { color: var(--ld-share-text-secondary); }
+
+/* 添加协作者 */
+.lark-doc .lark-doc-collab-search {
+  display: flex;
+  align-items: center;
+  margin: 0 24px 16px;
+  border: 1px solid var(--ld-brand-content);
+  border-radius: 6px;
+  height: 36px;
+  overflow: hidden;
+}
+.lark-doc .lark-doc-collab-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 12px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ld-share-text);
+  font-size: 14px;
+}
+.lark-doc .lark-doc-collab-search input::placeholder { color: var(--ld-share-text-tertiary); }
+.lark-doc .lark-doc-collab-search-add {
+  display: inline-flex;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border: none;
+  border-left: 1px solid var(--ld-share-border);
+  background: transparent;
+  color: var(--ld-share-text-secondary);
+  cursor: pointer;
+}
+.lark-doc .lark-doc-collab-results { padding: 0 24px; }
+.lark-doc .lark-doc-collab-candidate {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ld-share-text);
+  text-align: left;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-collab-candidate:hover { background: var(--ld-share-bg-subtle); }
+.lark-doc .lark-doc-collab-status { margin: 4px 24px; color: var(--ld-share-text-secondary); font-size: 13px; }
+.lark-doc .lark-doc-collab-check-row {
+  display: grid;
+  grid-template-columns: 16px auto;
+  column-gap: 8px;
+  align-items: center;
+  margin: 0 24px 12px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-collab-checkbox {
+  grid-column: 1;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ld-brand-content);
+}
+.lark-doc .lark-doc-collab-check-label { grid-column: 2; font-size: 14px; }
+.lark-doc .lark-doc-collab-check-desc { grid-column: 2; color: var(--ld-share-text-secondary); font-size: 12px; }
+.lark-doc .lark-doc-collab-add textarea {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 48px);
+  height: 180px;
+  margin: 4px 24px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--ld-share-border-control);
+  border-radius: 6px;
+  color: var(--ld-share-text);
+  font: 14px/22px inherit;
+  resize: vertical;
+}
+.lark-doc .lark-doc-collab-add textarea::placeholder { color: var(--ld-share-text-tertiary); }
+.lark-doc .lark-doc-collab-add-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px;
+}
+.lark-doc .lark-doc-collab-btn-outlined,
+.lark-doc .lark-doc-collab-btn-filled {
+  min-width: 72px;
+  height: 32px;
+  padding: 4px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.lark-doc .lark-doc-collab-btn-outlined {
+  border: 1px solid var(--ld-share-border-control);
+  background: var(--ld-share-surface);
+  color: var(--ld-share-text);
+}
+.lark-doc .lark-doc-collab-btn-filled {
+  border: none;
+  background: var(--ld-share-brand);
+  color: var(--ld-share-surface);
+}
+/* 未选收件人时「发送」灰底禁用（04 §4.2.3）。 */
+.lark-doc .lark-doc-collab-btn-filled:disabled { background: var(--ld-share-border-control); color: var(--ld-share-text-disabled); cursor: not-allowed; }

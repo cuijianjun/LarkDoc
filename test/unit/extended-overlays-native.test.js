@@ -68,7 +68,7 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     expect(create).toHaveBeenCalledTimes(11)
   })
 
-  it('更多收纳主题并保留原有 22 个一级项和分发动作', async () => {
+  it('更多收纳主题并保留原有 23 个一级项和分发动作', async () => {
     const { vm, root, tick } = mount({ capabilities: { canManagePermission: true } })
     const action = vi.spyOn(vm, 'runTopbarMoreAction').mockImplementation(() => vm.closeTopbarMore())
     // 「关注文档更新」是开关项（role=menuitemcheckbox），走参考动作通道而不是 runTopbarMoreAction。
@@ -78,7 +78,7 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
       await tick()
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"], .lark-doc-topbar-more-list [role="menuitemcheckbox"]')).toHaveLength(TOPBAR_MORE_ITEMS.length + 1)
       expect(root.querySelector('[data-topbar-more-id="theme"]').textContent).toBe('主题')
-      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(8)
+      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(9)
       const row = root.querySelector(`[data-topbar-more-id="${item.id}"]`)
       // 历史评论等项受运行时能力门控（远端评论服务 + canView），门控关闭时不派发动作。
       if (row.disabled) {
@@ -104,7 +104,8 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
         continue
       }
       expect(vm.topbarMoreSubmenu).toBe(item.id)
-      const entries = TOPBAR_MORE_SUBPANELS[item.id].filter(entry => entry.kind !== 'divider')
+      // 「文档小组件」的子面板来自 documentWidgetItems（本用例没装小组件 ⇒ 空），不在静态表里。
+      const entries = (TOPBAR_MORE_SUBPANELS[item.id] || []).filter(entry => entry.kind !== 'divider')
       for (const entry of entries) {
         const submenu = root.querySelector('.lark-doc-topbar-more-submenu')
         expect(submenu.closest('.lark-doc-topbar-more')).not.toBeNull()
@@ -117,7 +118,9 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
           expect(row.querySelector('.is-on')).not.toBeNull()
           expect(vm.topbarMoreOpen).toBe(true)
         } else {
-          expect(action).toHaveBeenLastCalledWith(entry.action, entry)
+          // 子面板项的载荷会在静态表之上补运行时态（页宽三档补 `checked`），
+          // 所以不能拿冻结的静态 entry 做全等，只校验静态字段都在。
+          expect(action).toHaveBeenLastCalledWith(entry.action, expect.objectContaining(entry))
           vm.topbarMoreOpen = true
           vm.topbarMoreSubmenu = item.id
           await tick()
@@ -126,6 +129,35 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
       vm.closeTopbarMore()
       await tick()
     }
+  })
+
+  it('页宽子面板渲染成「提示行 + 三张线形预览卡」，选中态来自 widthMode', async () => {
+    const { vm, root, tick } = mount({})
+    vm.topbarMoreOpen = true
+    vm.topbarMoreSubmenu = 'width'
+    await tick()
+    const submenu = root.querySelector('.lark-doc-topbar-more-submenu')
+    // 桌面端走卡片网格；`is-width-settings` 只留给窄屏的单列列表。
+    expect(submenu.classList.contains('is-width-cards')).toBe(true)
+    expect(submenu.classList.contains('is-width-settings')).toBe(false)
+    expect(submenu.querySelector('.lark-doc-topbar-more-width-tip').textContent).toBe('为当前窗口选择合适页宽')
+    const cards = [...submenu.querySelectorAll('.lark-doc-topbar-more-width-card')]
+    expect(cards.map(card => card.textContent)).toEqual(['默认', '较宽', '全宽'])
+    expect(cards.map(card => card.getAttribute('role'))).toEqual(['menuitemradio', 'menuitemradio', 'menuitemradio'])
+    // 默认 widthMode = standard ⇒ 只有第一张是选中态（飞书无 aria，我们照既有约定给 menuitemradio）。
+    expect(cards.map(card => card.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false'])
+    // 线形预览的 4 条线是纯几何：宽度走 style、末线补 margin-right，不进 textContent。
+    const lineStyle = card => [...card.querySelectorAll('.lark-doc-topbar-more-width-card-line')].map(line => `${line.style.width}/${line.style.marginRight || '0'}`)
+    expect(lineStyle(cards[0])).toEqual(['20px/0', '20px/0', '20px/0', '16px/4px'])
+    expect(lineStyle(cards[1])).toEqual(['28px/0', '28px/0', '28px/0', '22px/6px'])
+    expect(lineStyle(cards[2])).toEqual(['38px/0', '38px/0', '38px/0', '26px/12px'])
+    // 全宽卡的预览底多一层左右各 4 的内衬（jsdom 会把 `0 4px` 规范化成 `0px 4px`）。
+    expect(cards[2].querySelector('.lark-doc-topbar-more-width-card-icon').style.padding).toBe('0px 4px')
+    expect(cards[0].querySelector('.lark-doc-topbar-more-width-card-icon').style.padding).toBe('')
+    // 卡片不能带行内 100% 宽度（那会把 56 宽的格子撑满面宽）。
+    expect(cards[0].style.width).toBe('')
+    vm.closeTopbarMore()
+    await tick()
   })
 
   it('更多仍执行内置能力并保留两个开关和未内置动作的宿主事件', async () => {

@@ -279,6 +279,7 @@ const options = {
         topbarMoreShowAuthor: this.topbarMoreShowAuthor,
         topbarMoreOffline: this.topbarMoreOffline,
         docToast: this.docToast || '',
+        docToasts: this.docToasts || [],
       })
       this.parkActionsHost()
     },

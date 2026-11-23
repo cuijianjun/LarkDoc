@@ -1,7 +1,7 @@
 /** 默认原生 DOM 渲染器；编辑器行为由无框架宿主装配现有纯 JavaScript 模块。 */
 import { Editor } from '@tiptap/core'
 import { createLarkDocExtensions } from '../components/lark-doc/extensions'
-import { sanitizeHTML, createBlockId } from '../components/lark-doc/documentOperations'
+import { sanitizeHTML, createBlockId, collectHeadingEntries, headingOutlineText } from '../components/lark-doc/documentOperations'
 import { isAbortError, normalizeUploader } from '../core/media/upload'
 import { normalizeVditorHtml } from '../legacy'
 import { createEditorController } from '../editor/EditorController'
@@ -198,11 +198,39 @@ export function createDomRenderer() {
         if (typeof viewWindow.requestAnimationFrame === 'function') largeDocumentRuntimeTransactionFrame = viewWindow.requestAnimationFrame(refresh)
         else largeDocumentRuntimeTransactionFrame = setTimeout(refresh, 16)
       }
+      // 顶栏标题与正文首个 H1 是同一份数据的两个视图；写入一侧时压住另一侧回写。
+      let syncingTitleHeading = false
+      const firstVisibleHeading = doc => {
+        if (!doc) return null
+        return collectHeadingEntries(doc).find(entry => entry.level === 1 && !entry.hidden) || null
+      }
+      const setFirstHeadingText = text => {
+        if (!editor || editor.isDestroyed || workspaceController?.isReadonly()) return false
+        const entry = firstVisibleHeading(editor.state.doc)
+        if (!entry || headingOutlineText(entry.node) === text) return false
+        const from = entry.pos + 1, to = from + entry.node.content.size
+        syncingTitleHeading = true
+        try { editor.view.dispatch(editor.state.tr.insertText(text, from, to)) }
+        finally { syncingTitleHeading = false }
+        return true
+      }
+      // 只有改动完全落在首个 H1 的文字区间里才算「用户改了标题」；
+      // 插模板、setContent、协同/导入会动到区间外，不能据此改标题。
+      const firstHeadingTextEdited = transaction => {
+        if (!transaction.docChanged) return false
+        const entry = firstVisibleHeading(transaction.before)
+        if (!entry) return false
+        const from = entry.pos + 1, to = from + entry.node.content.size
+        return transaction.steps.length > 0 && transaction.steps.every(step =>
+          typeof step.from === 'number' && typeof step.to === 'number' && step.from >= from && step.to <= to)
+      }
       const emit = (name, payload) => {
         if (destroyed) return
         if (name === 'workspace-import') return workspaceUi?.requestImport(payload)
         if (name === 'workspace-export') return workspaceController?.exportDocument(payload)
-        if (name === 'update:title') workspaceController?.setTitle(payload)
+        if (name === 'update:title') {
+          if (workspaceController?.setTitle(payload)) setFirstHeadingText(String(payload == null ? '' : payload))
+        }
         if (name === 'mode-change') {
           if (payload.readonly) resolveImageFile.cancelAll('readonly')
           runtime.state.effectiveReadonly = payload.readonly
@@ -628,7 +656,15 @@ export function createDomRenderer() {
           // runtime setContent/insert transaction after the initial render.
           // Re-project once after the view has applied that transaction so
           // the CSS fast path is enabled (or removed) at the same boundary.
-          onUpdate: ({ transaction }) => { if (editor?.storage.larkDoc?.pagedImport) return; refreshLargeDocumentViewport(); refreshChange(transaction); requestRender() },
+          onUpdate: ({ transaction }) => {
+            if (editor?.storage.larkDoc?.pagedImport) return
+            if (!syncingTitleHeading && !workspaceController?.isReadonly() && firstHeadingTextEdited(transaction)) {
+              const after = firstVisibleHeading(editor.state.doc)
+              const afterText = after ? headingOutlineText(after.node) : null
+              if (afterText !== null && afterText !== state.title) workspaceController?.setTitle(afterText)
+            }
+            refreshLargeDocumentViewport(); refreshChange(transaction); requestRender()
+          },
           onTransaction: () => { largeDocumentProjection?.completeSelection(); if (editor?.storage.larkDoc?.pagedImport) { scheduleLargeDocumentLayout(); return } refreshLargeDocumentViewport(); refreshRuntimeTransaction(); requestRender() },
           onSelectionUpdate: () => {
             if (documentHost.editor) {

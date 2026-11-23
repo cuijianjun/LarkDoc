@@ -64,6 +64,34 @@ export function createTopBar(options = {}) {
   const actionsHost = options.actionsHost || null
   const paperTitle = document.createElement('h1')
   paperTitle.className = 'lark-doc-mobile-document-title'
+  // 正文大标题与顶栏 `titleInput` 同源：飞书里这行标题可以直接点进去改。
+  // `plaintext-only` 与 docModes 的可编辑区判定同口径，粘贴只进纯文本。
+  paperTitle.setAttribute('data-placeholder', DEFAULT_TITLE_PLACEHOLDER)
+  paperTitle.setAttribute('role', 'textbox')
+  paperTitle.setAttribute('aria-label', '文档标题')
+  paperTitle.setAttribute('contenteditable', 'false')
+  paperTitle.spellcheck = false
+  paperTitle.addEventListener('beforeinput', (event) => {
+    // 标题恒单行：回车不插换行（飞书按下回车是进正文，这里至少不能撑成两行）。
+    if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') event.preventDefault()
+  })
+  paperTitle.addEventListener('input', () => {
+    let value = paperTitle.textContent
+    const limit = latestState.titleLength
+    if (typeof limit === 'number' && limit >= 0 && value.length > limit) {
+      value = value.slice(0, limit)
+      paperTitle.textContent = value
+      const range = document.createRange(), selection = window.getSelection()
+      range.selectNodeContents(paperTitle); range.collapse(false)
+      selection.removeAllRanges(); selection.addRange(range)
+    }
+    call('updateTitle', value)
+  })
+  paperTitle.addEventListener('blur', () => {
+    // 失焦按 state 归一（截断/异常输入后两处显示必须一致）。
+    const title = latestState.title == null ? '' : String(latestState.title)
+    if (paperTitle.textContent !== title) paperTitle.textContent = title
+  })
   const paperHeader = document.createElement('section'), paperHeading = document.createElement('div'), paperMeta = document.createElement('div')
   const paperMetaRow = document.createElement('div')
   paperHeader.className = 'lark-doc-mobile-document-header'; paperHeading.className = 'lark-doc-mobile-document-heading'; paperMeta.className = 'lark-doc-mobile-document-meta'
@@ -624,7 +652,8 @@ export function createTopBar(options = {}) {
 
     // ② 标题：只在真变了才写 value，否则用户输入时光标会被重置到末尾
     const title = state.title == null ? '' : String(state.title)
-    setText(paperTitle, title || DEFAULT_TITLE_PLACEHOLDER)
+    // 空标题交给 CSS 的 `:empty::before` 画占位符；正在输入时不回写，否则光标跳尾。
+    if (document.activeElement !== paperTitle && paperTitle.textContent !== title) paperTitle.textContent = title
     const metadata = state.documentMetadata || {}, author = typeof metadata.author?.name === 'string' ? metadata.author.name.trim() : ''
     const modifiedAt = metadata.modifiedAt
     const stamp = typeof modifiedAt === 'number' ? modifiedAt : Date.parse(modifiedAt)
@@ -648,6 +677,14 @@ export function createTopBar(options = {}) {
     setAttr(titleInput, 'maxlength', state.titleLength == null ? null : state.titleLength)
     const readonly = Boolean(state.readonly)
     setAttr(titleInput, 'readonly', readonly ? '' : null)
+    // 正文大标题同源可编辑：只读时摘掉 contenteditable 并收回焦点，
+    // 可编辑时用 `plaintext-only`（粘贴只进纯文本，与顶栏 input 同口径）。
+    const editable = readonly ? 'false' : 'plaintext-only'
+    setAttr(paperTitle, 'aria-readonly', readonly ? 'true' : null)
+    if (paperTitle.getAttribute('contenteditable') !== editable) {
+      paperTitle.setAttribute('contenteditable', editable)
+      if (readonly && document.activeElement === paperTitle) paperTitle.blur()
+    }
     const sub = readonly ? SUB_READONLY : SUB_EDITABLE
     if (titleSub.textContent !== sub) titleSub.textContent = sub
 

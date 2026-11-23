@@ -113,6 +113,15 @@
   --ld-border-handle-hover: #757575;      /* B */
   --ld-border-bubble-divider: #434343;    /* B */
   --ld-border-help: #757575;              /* B */
+  --ld-border-menu-divider: #434343;      /* B：同 bubble-divider */
+  /* 页宽设置浮层的线形预览卡（浅档有 §4.2.1 实测值，深档无实测 → 按「深档中性阶梯
+     + 主色」派生）：未选的线取 B 档 #757575，选中的线/预览底直接用主题强调色，
+     这样飞书轨（#4C88FF）与默认绿轨（#1FD6A5）各自自动跟随，不必分两套。 */
+  --ld-width-card-border-active: rgba(255, 255, 255, 0.24);
+  --ld-width-card-line: #757575;
+  --ld-width-card-line-active: var(--ld-text-accent);
+  --ld-width-card-icon-bg: rgba(207, 207, 207, 0.08);
+  --ld-width-card-icon-bg-active: var(--ld-bg-accent);
   --ld-border-swatch: #5F5F5F;            /* B */
   --ld-border-swatch-palette: #5F5F5F;    /* B */
   --ld-border-color-grid: rgba(207, 207, 207, 0.12); /* B */

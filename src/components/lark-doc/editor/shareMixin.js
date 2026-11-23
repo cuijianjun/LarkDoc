@@ -106,6 +106,12 @@ export default {
       sharePopoverPos: { top: 0, right: 0 },
       sharePopoverAnchor: null,
       permissionDialogOpen: false,
+      /** 协作者二级弹窗（04 §4.2.3）：管理 → 添加，替换分享 popover 位置。 */
+      collaboratorManageOpen: false,
+      collaboratorAddOpen: false,
+      collaboratorSubpage: true,
+      collaboratorNotify: true,
+      collaboratorNote: '',
       /** 「更多高级设置」折叠头。 */
       permissionAdvancedOpen: false,
       /** 加密链接状态机：`secureLinkEnabled` + `secureLinkPassword` 同进同退。 */

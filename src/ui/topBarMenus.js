@@ -1,7 +1,9 @@
 /** Private create/More surfaces. The top bar supplies live state and shared menu ownership. */
 import { applyStyle, mountNode, setAttr, syncChildren } from './dom'
 import { iconNode } from './icon'
-import { NOTIFY_BRAND_BLUE, NOTIFY_ON_BRAND, NOTIFY_SUCCESS_GREEN } from './palette'
+import { NOTIFY_BRAND_BLUE, NOTIFY_ON_BRAND, TOAST_SUCCESS_BORDER } from './palette'
+// 页宽浮层提示行的文案与菜单表同源，写在这里会与 mixin 的常量各说一套。
+import { TOPBAR_MORE_WIDTH_TIP } from '../components/lark-doc/editor/topbarMoreMixin'
 
 export function createTopBarMenus(options) {
   const { el, mobileButton, moreButton, createButton, call, activeMoreMenus } = options
@@ -32,6 +34,19 @@ export function createTopBarMenus(options) {
   submenu.className = 'lark-doc-topbar-more-submenu'
   submenu.setAttribute('role', 'menu')
   moreMenu.appendChild(submenu)
+  // 页宽浮层的提示行（飞书原文「为当前窗口选择合适页宽」+ 行内紧跟 2px 的 help 圆点）。
+  // 它不是菜单项、也不参与 `menuRows` 缓存，所以单独持有一个节点：身份稳定，
+  // `syncChildren` 才会判定「已在正确位置」而不重插（重插会补发 mouseenter，见 dom.js）。
+  const widthTip = document.createElement('div')
+  widthTip.className = 'lark-doc-topbar-more-width-tip'
+  const widthTipText = document.createElement('span')
+  widthTipText.className = 'lark-doc-topbar-more-width-tip-text'
+  widthTipText.textContent = TOPBAR_MORE_WIDTH_TIP
+  const widthTipHelp = document.createElement('span')
+  widthTipHelp.className = 'lark-doc-topbar-more-width-tip-help'
+  widthTipHelp.setAttribute('aria-hidden', 'true')
+  widthTipHelp.appendChild(iconNode('menu-help', 12))
+  widthTip.append(widthTipText, widthTipHelp)
   // 飞书「关注文档更新」hover 引导卡：静态预览 + 说明，不接收指针事件。
   const followTip = document.createElement('div')
   followTip.className = 'lark-doc-follow-tip'
@@ -40,6 +55,25 @@ export function createTopBarMenus(options) {
   followTip.innerHTML = `<div class="lark-doc-follow-tip-preview"><div class="lark-doc-follow-tip-app">${followLogo}<span class="lark-doc-follow-tip-name">云文档助手</span><span class="lark-doc-follow-tip-tag">机器人</span></div><div class="lark-doc-follow-tip-feed">${followLogo}<div class="lark-doc-follow-tip-msg"><b>文档内容变更提醒</b><p><em>@李天天</em> 编辑了文档 <em>项目进展</em></p><span class="lark-doc-follow-tip-btn">查看变更详情</span></div></div></div><p class="lark-doc-follow-tip-desc">开启后，云文档助手将在文档更新时通知你，时刻掌握文档动态。</p>`
   const tipHost = () => options.host || el
   const hideFollowTip = () => { followTip.remove() }
+  // 「添加快捷方式到」右侧 help 圆点的说明气泡：飞书是无箭头深色气泡，贴在圆点右侧，
+  // 右边放不下时翻到左侧。尺寸按 2× 截图实测（264×36：12px 字 ×20 字 + 左右各 12 内衬）。
+  const helpTip = document.createElement('div')
+  helpTip.className = 'lark-doc-topbar-more-tip'
+  helpTip.setAttribute('role', 'tooltip')
+  const hideHelpTip = () => { helpTip.remove() }
+  function showHelpTip(row) {
+    const text = row?._item?.help
+    if (isDisposed() || !text || !row.isConnected) return
+    helpTip.textContent = text
+    if (helpTip.parentNode !== tipHost()) tipHost().appendChild(helpTip)
+    // 锚在整行右缘而不是圆点上：飞书气泡的左缘正好落在面板右边线上（截图 x4 vs 面板 x0..3）。
+    const rect = row.getBoundingClientRect(), box = helpTip.getBoundingClientRect()
+    const right = rect.right + 2
+    applyStyle(helpTip, {
+      left: `${right + box.width > window.innerWidth - 8 ? Math.max(8, rect.left - box.width - 2) : right}px`,
+      top: `${Math.max(8, Math.min(rect.top + rect.height / 2 - box.height / 2, window.innerHeight - box.height - 8))}px`,
+    })
+  }
   function showFollowTip(node) {
     if (isDisposed() || !node.isConnected) return
     followTip._owner = node
@@ -51,18 +85,29 @@ export function createTopBarMenus(options) {
       visibility: 'visible',
     })
   }
-  const docToast = document.createElement('div')
-  docToast.className = 'lark-doc-doc-toast'
-  docToast.setAttribute('role', 'status')
-  docToast.innerHTML = `<span class="lark-doc-doc-toast-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="8" fill="${NOTIFY_SUCCESS_GREEN}"/><path d="m4.8 8.1 2 2 4.4-4.5" stroke="${NOTIFY_ON_BRAND}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lark-doc-doc-toast-text"></span>`
-  const docToastText = docToast.querySelector('.lark-doc-doc-toast-text')
+  // 飞书顶部正式消息条：`.ud__msg-manager--top` 单例 + 多条堆叠，条体是 outlined 绿底 + 16px
+  // 实心圆对勾。真身截图两条上下排列、文案不同也各占一条，故这里用栈而不是替换单条。
+  // 本层只按状态渲染，3s 自动消失的计时由 mixin / 宿主持有。
+  const docToastHost = document.createElement('div')
+  docToastHost.className = 'lark-doc-toast-stack'
+  const docToastSvg = `<span class="lark-doc-doc-toast-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="${TOAST_SUCCESS_BORDER}"/><path d="m7 12.3 3.3 3.3L17 9" stroke="${NOTIFY_ON_BRAND}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
+  function makeDocToast(text) {
+    const node = document.createElement('div')
+    node.className = 'lark-doc-doc-toast'
+    node.setAttribute('role', 'status')
+    node.innerHTML = `${docToastSvg}<span class="lark-doc-doc-toast-text"></span>`
+    node.querySelector('.lark-doc-doc-toast-text').textContent = text
+    return node
+  }
+  // 旧契约（单条 `docToast` state 字符串）仍由 update() 驱动；新栈容纳连续多条。
+  let docToastTextValue = ''
   const refs = options.refs || {}
   Object.assign(refs, { createMenu, createMenuList: createList, topbarMoreMenu: moreMenu, topbarMoreSubmenu: submenu })
   const menuDocument = el.ownerDocument
   const moreTriggerNode = options.moreTriggerNode
   function dismissMore(restoreFocus = false) {
     if (isDisposed() || !moreMenu.isConnected) return
-    hideFollowTip()
+    hideFollowTip(); hideHelpTip()
     options.setMoreDismissed(true)
     moreMenu.remove()
     if (!menus.children.length) menus.remove()
@@ -140,8 +185,12 @@ export function createTopBarMenus(options) {
     })
   })
   function updateMenu(parent, entries, kind, state) {
+    // 页宽设置是唯一一个「卡片网格」面板：顶部一行提示 + 三张 56×66 的线形预览卡。
+    // 窄屏（compactHeader）走旧的单列 `is-width-settings` 列表，不在这里改造。
+    const widthCards = kind === 'sub' && state.topbarMoreSubmenu === 'width' && !state.compactHeader
     const children = entries.map((entry, index) => {
       const item = entry.item || entry
+      const card = widthCards && entry.kind !== 'divider' && entry.kind !== 'group'
       const id = `${kind}:${item.id || index}:${item.value ?? ''}`
       let node = menuRows.get(id)
       if (!node) {
@@ -164,6 +213,10 @@ export function createTopBarMenus(options) {
             node.addEventListener('mouseleave', hideFollowTip)
             node.addEventListener('focus', () => { if (node._item?.id === 'follow' && !node.disabled) showFollowTip(node) })
             node.addEventListener('blur', hideFollowTip)
+            node.addEventListener('mouseenter', () => { if (node._item?.help && !node.disabled) showHelpTip(node) })
+            node.addEventListener('mouseleave', hideHelpTip)
+            node.addEventListener('focus', () => { if (node._item?.help && !node.disabled) showHelpTip(node) })
+            node.addEventListener('blur', hideHelpTip)
             node.addEventListener('pointerenter', event => {
               if (!options.readState().compactHeader || event.pointerType !== 'mouse' || node._item.kind !== 'submenu' || node.disabled) return
               clearTimeout(submenuHover)
@@ -177,9 +230,12 @@ export function createTopBarMenus(options) {
         menuRows.set(id, node)
       }
       node._item = item
-      node.className = entry.kind === 'divider' ? (kind === 'create' ? 'lark-doc-create-menu-divider' : 'lark-doc-topbar-more-divider') : entry.kind === 'group' ? 'lark-doc-create-menu-group' : kind.startsWith('create') ? 'lark-doc-create-menu-item' : kind === 'sub' ? 'lark-doc-topbar-more-submenu-item' : 'lark-doc-topbar-more-item'
+      node.className = entry.kind === 'divider' ? (kind === 'create' ? 'lark-doc-create-menu-divider' : 'lark-doc-topbar-more-divider') : entry.kind === 'group' ? 'lark-doc-create-menu-group' : card ? 'lark-doc-topbar-more-width-card' : kind.startsWith('create') ? 'lark-doc-create-menu-item' : kind === 'sub' ? 'lark-doc-topbar-more-submenu-item' : 'lark-doc-topbar-more-item'
       const label = entry.kind === 'divider' ? '' : item.label
-      const renderLabel = `${label}|${item.icon || ''}|${item.arrow || item.affordance || ''}`
+      // 卡片的线宽 / 末线右缩 / 图标内衬都是数据，进签名 —— 几何变了要重建线节点。
+      const renderLabel = card
+        ? `${label}|width-card|${(item.lines || []).join(' ')}|${item.tailInset || 0}|${item.iconPad || 0}`
+        : `${label}|${item.icon || ''}|${item.arrow || item.affordance || ''}|${item.help || ''}`
       if (node._renderLabel !== renderLabel) {
         node._renderLabel = renderLabel
         node.textContent = ''
@@ -187,7 +243,25 @@ export function createTopBarMenus(options) {
         text.className = kind === 'create' ? 'lark-doc-create-menu-label' : 'lark-doc-topbar-more-item-label'
         text.textContent = label || ''
         node.appendChild(text)
-        if (node.tagName === 'BUTTON' && item.icon) {
+        if (card) {
+          // 线形预览：4 条**无文本** div —— 子面板单测靠 `button.textContent === label` 定位行，
+          // 线里塞文案会让定位全部失配。宽度/末线缩进走 style，颜色随 `[aria-checked]` 走 CSS。
+          const preview = document.createElement('span')
+          preview.className = 'lark-doc-topbar-more-width-card-icon'
+          preview.setAttribute('aria-hidden', 'true')
+          if (item.iconPad) preview.style.padding = `0 ${item.iconPad}px`
+          const lines = item.lines || []
+          lines.forEach((lineWidth, lineIndex) => {
+            const line = document.createElement('span')
+            line.className = 'lark-doc-topbar-more-width-card-line'
+            line.style.width = `${lineWidth}px`
+            // 末线比前三条短，用 margin-right 把「末线 + 缩进」补回前三条的宽度，
+            // 于是居中后左缘仍与首线对齐（实测 20+4 / 28+6 / 38+12）。
+            if (lineIndex === lines.length - 1 && item.tailInset) line.style.marginRight = `${item.tailInset}px`
+            preview.appendChild(line)
+          })
+          node.prepend(preview)
+        } else if (node.tagName === 'BUTTON' && item.icon) {
           const icon = document.createElement('span')
           icon.className = kind === 'create' ? 'lark-doc-create-menu-icon' : 'lark-doc-topbar-more-item-icon'
           icon.style.color = item.iconColor || ''
@@ -198,8 +272,16 @@ export function createTopBarMenus(options) {
           const arrow = document.createElement('span')
           arrow.className = kind === 'create' ? 'lark-doc-create-menu-arrow' : 'lark-doc-topbar-more-item-arrow'
           arrow.setAttribute('aria-hidden', 'true')
-          if (kind === 'create') arrow.appendChild(iconNode('chevron-right', 13))
+          arrow.appendChild(iconNode(kind === 'create' ? 'chevron-right' : 'menu-arrow', kind === 'create' ? 13 : 12))
           node.appendChild(arrow)
+        }
+        // help 圆点排在箭头之后（互斥：带 help 的项都不是 submenu）。
+        if (kind === 'more' && item.help) {
+          const help = document.createElement('span')
+          help.className = 'lark-doc-topbar-more-item-help'
+          help.setAttribute('aria-hidden', 'true')
+          help.appendChild(iconNode('menu-help', 14))
+          node.appendChild(help)
         }
       }
       if (entry.kind === 'divider') node.setAttribute('role', 'separator')
@@ -211,10 +293,11 @@ export function createTopBarMenus(options) {
         const parentItem = (state.topbarMoreRows || []).find(row => row.item?.id === state.topbarMoreSubmenu)?.item
         node.disabled = item.enabled === false || item.disabled === true || (kind === 'create' && !!state.readonly) || (kind === 'sub' && parentItem?.enabled === false)
         if (item.id === 'follow' && (node.disabled || item.kind !== 'switch')) hideFollowTip()
-        node.title = item.title || item.label || ''
+        // 卡片是 56 宽的固定格子：行内联的 100% 宽度会把它撑满面宽，必须让给 CSS。
+        node.title = card ? '' : (item.title || item.label || '')
         node.classList.toggle('is-disabled', node.disabled)
-        node.style.width = '100%'
-        node.style.textAlign = 'left'
+        node.style.width = card ? '' : '100%'
+        node.style.textAlign = card ? '' : 'left'
         setAttr(node, 'aria-disabled', String(node.disabled))
         setAttr(node, 'data-topbar-more-id', kind === 'more' ? item.id : null)
         const capability = options.capabilities[kind === 'sub' ? state.topbarMoreSubmenu : item.id]
@@ -244,21 +327,30 @@ export function createTopBarMenus(options) {
       }
       return { node, on: true }
     })
-    syncChildren(parent, children)
+    syncChildren(parent, widthCards ? [{ node: widthTip, on: true }, ...children] : children)
   }
 
   function update() {
     if (isDisposed()) return
     const state = options.readState(), visible = state.headerVisible !== false
-    if (!state.topbarMoreOpen) hideFollowTip()
-    if (state.docToast) {
-      if (docToast.parentNode !== tipHost()) tipHost().appendChild(docToast)
-      docToastText.textContent = state.docToast
-    } else if (docToast.parentNode) { docToast.remove(); docToastText.textContent = '' }
+    if (!state.topbarMoreOpen) { hideFollowTip(); hideHelpTip() }
+    // 兼容两种入参：新栈 `docToasts`（多条）与旧单条 `docToast`。
+    const toastItems = Array.isArray(state.docToasts) && state.docToasts.length
+      ? state.docToasts
+      : (state.docToast ? [{ text: state.docToast, id: 'legacy' }] : [])
+    const toastSignature = toastItems.map(item => `${item.id}:${item.text}`).join('|')
+    if (toastSignature !== docToastTextValue) {
+      docToastTextValue = toastSignature
+      docToastHost.replaceChildren(...toastItems.map(item => makeDocToast(item.text)))
+    }
+    if (toastItems.length) {
+      if (docToastHost.parentNode !== tipHost()) tipHost().appendChild(docToastHost)
+    } else if (docToastHost.parentNode) docToastHost.remove()
     const createOpen = state.createMenuOpen && (!state.compactHeader || window.innerWidth <= 760)
     if (!createOpen || !visible || state.readonly) createChildrenOpen = false
     const moreWasOpen = moreMenu.isConnected
     submenu.classList.toggle('is-width-settings', state.compactHeader === true && state.topbarMoreSubmenu === 'width')
+    submenu.classList.toggle('is-width-cards', state.compactHeader !== true && state.topbarMoreSubmenu === 'width')
     updateMenu(createList, state.createMenuRows || [], 'create', state)
     const children = (state.createMenuRows || []).find(row => row.children)?.children
     if (createChildrenOpen && children) updateMenu(createChildren, children, 'create-child', state)
@@ -288,7 +380,7 @@ export function createTopBarMenus(options) {
     menuDocument.removeEventListener('pointerdown', closeMoreOutside)
     menuDocument.removeEventListener('keydown', closeMoreEscape)
     if (activeMoreMenus.get(menuDocument) === moreMenu) activeMoreMenus.delete(menuDocument)
-    menus.remove(); followTip.remove(); docToast.remove()
+    menus.remove(); followTip.remove(); helpTip.remove(); docToastHost.remove()
     menuRows.clear(); shortcutNodes.clear(); shortcuts.remove()
     ;['createMenu', 'createMenuList', 'topbarMoreMenu', 'topbarMoreSubmenu'].forEach(key => {
       if ([createMenu, createList, moreMenu, submenu].includes(refs[key])) delete refs[key]

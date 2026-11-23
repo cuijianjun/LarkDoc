@@ -415,6 +415,23 @@ describe('mobile reference document shell', () => {
     expect(host.querySelector('.lark-doc-doc-toast')).toBeNull()
   })
 
+  it('renders stacked Feishu success toasts with outlined style and status icon', () => {
+    const { host, set } = shell({})
+    set({ docToasts: [
+      { id: 1, text: '已取消关注，你将不再收到该文档的内容更新提醒。' },
+      { id: 2, text: '已关注，你将会收到该文档的内容更新提醒' },
+    ] })
+    const stack = host.querySelector('.lark-doc-toast-stack')
+    const bars = stack.querySelectorAll('.lark-doc-doc-toast')
+    expect(bars).toHaveLength(2)
+    expect(bars[0].textContent).toContain('已取消关注')
+    expect(bars[1].textContent).toContain('已关注')
+    expect(bars[0].querySelector('.lark-doc-doc-toast-icon svg circle')).not.toBeNull()
+    expect(bars[0].getAttribute('role')).toBe('status')
+    set({ docToasts: [] })
+    expect(host.querySelector('.lark-doc-doc-toast')).toBeNull()
+  })
+
   it('opens a heading popup beside the body title independently of the document library', () => {
     const { host, onHeading } = shell({ outlineItems: [{ pos: 10, level: 2, text: 'Section two' }, { pos: 30, level: 1, text: 'Next section' }] })
     host.querySelector('.lark-doc-document-outline-trigger').click()

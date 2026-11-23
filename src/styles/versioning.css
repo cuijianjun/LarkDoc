@@ -508,11 +508,163 @@
   .lark-doc .lark-doc-version-right-footer { padding: 0 12px; }
 }
 
-/* ── 版本提示 toast 418 × 54（04 §⑤-2 末尾；手动另存为下线后只剩还原成功等提示） ── */
-.lark-doc .lark-doc-save-version-dialog label { position: relative; }
-.lark-doc .lark-doc-dialog.lark-doc-save-version-dialog input { padding-inline-end: 78px; }
-.lark-doc .lark-doc-version-name-count { position: absolute; inset-inline-end: 10px; bottom: 9px; color: var(--ld-text-secondary); }
+/* ── B. 另存为版本 Dialog：420 × 242（飞书 `SaveVersionDialog`，实测 header 72 / body 90 / footer 56） ──
+   高度账：72（header）+ 22（label）+ 8（间隔）+ 32（输入盒）+ 28（控件下留白）+ 24（body 下留白）+ 56（footer：32 + 24）。
+   按钮组 `row-reverse` → DOM 先 `确定` 后 `取消`，视觉上确定贴右缘（与飞书 `.ud__modal__footer__btns` 同构）。 */
+.lark-doc .lark-doc-dialog.lark-doc-save-version-dialog {
+  box-sizing: border-box;
+  width: 420px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border-radius: 8px;
+  background-color: rgb(255, 255, 255);
+}
 
+/* 右侧 22 而非 24：飞书关闭钮右缘离弹窗右缘正好 22（`[880,352,28,28]` 对 `[510,…,420]`），
+   也就是 `420 - 22 - 28 = 370` 的偏移。 */
+.lark-doc .lark-doc-save-version-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 24px 22px 24px 24px;
+  box-sizing: border-box;
+}
+
+.lark-doc .lark-doc-save-version-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: rgb(31, 35, 41);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 关闭钮 28 × 28（图标 20 × 20，path 14 × 14）：主样式 `button` 兜底会把它撑到 30 高，必须压回。
+   `margin: -2px 0` 是飞书 `margin:-2px -4px` 的纵轴部分——上下各 -2 把外层高从 28 压到 24，
+   header 行高才等于标题的 24，头部总高才是 `24 + 24 + 24 = 72`（否则 74，整窗被顶到 244）。 */
+.lark-doc .lark-doc-dialog .lark-doc-save-version-close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin: -2px 0;
+  padding: 4px;
+  border: 0 none;
+  border-radius: 6px;
+  background-color: transparent;
+  color: rgb(100, 106, 115);
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-dialog .lark-doc-save-version-close:hover { background-color: rgba(31, 35, 41, 0.1); color: rgb(43, 47, 54); }
+
+.lark-doc .lark-doc-save-version-body { padding: 0 24px; margin-bottom: 24px; }
+
+.lark-doc .lark-doc-save-version-field { display: flex; flex-direction: column; }
+
+.lark-doc .lark-doc-save-version-label { color: rgb(31, 35, 41); font-size: 14px; line-height: 22px; }
+
+/* 输入盒 372 × 32 @radius 6：默认边框 `#D0D3D6`，聚焦转品牌蓝；内衬与飞书 `4px 8px 4px 11px` 一致。 */
+.lark-doc .lark-doc-save-version-input {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 32px;
+  margin: 8px 0 28px;
+  padding: 4px 8px 4px 11px;
+  border: 1px solid rgb(208, 211, 214);
+  border-radius: 6px;
+  background-color: rgb(255, 255, 255);
+}
+
+.lark-doc .lark-doc-save-version-input:focus-within { border-color: var(--ld-brand-chrome); }
+
+.lark-doc .lark-doc-save-version-input input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: 0 none;
+  background-color: transparent;
+  color: rgb(31, 35, 41);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  outline: none;
+}
+
+.lark-doc .lark-doc-save-version-clear {
+  flex: none;
+  display: flex;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(100, 106, 115);
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-save-version-clear[hidden] { display: none; }
+
+/* 计数 tag 58 × 20：`#EFF0F1` 底 + radius 4 + `0 6px`，当前值 `#1F2329`、上限 `#646A73`。 */
+.lark-doc .lark-doc-save-version-count {
+  flex: none;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 20px;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background-color: rgb(239, 240, 241);
+  color: rgb(100, 106, 115);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.lark-doc .lark-doc-save-version-count-current { color: rgb(31, 35, 41); }
+
+.lark-doc .lark-doc-save-version-error { margin: 0; color: rgb(227, 71, 71); font-size: 12px; line-height: 20px; }
+.lark-doc .lark-doc-save-version-error[hidden] { display: none; }
+
+.lark-doc .lark-doc-save-version-footer { padding: 0 24px 24px; }
+
+.lark-doc .lark-doc-save-version-actions { display: flex; flex-direction: row-reverse; gap: 12px; }
+
+.lark-doc .lark-doc-dialog .lark-doc-save-version-actions button {
+  min-width: 80px;
+  height: 32px;
+  min-height: 32px;
+  padding: 4px 11px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* 「取消」outlined：边框 `#D0D3D6`、hover 底 `#F2F3F5`。 */
+.lark-doc .lark-doc-dialog .lark-doc-save-version-cancel { border: 1px solid rgb(208, 211, 214); background-color: rgb(255, 255, 255); color: rgb(31, 35, 41); }
+.lark-doc .lark-doc-dialog .lark-doc-save-version-cancel:hover { background-color: rgb(242, 243, 245); }
+
+/* 「确定」filled：brand 底 + 白字，hover `#336DF4`，禁用 `#BBBFC4` + `not-allowed`。 */
+.lark-doc .lark-doc-dialog .lark-doc-save-version-confirm { border: 1px solid var(--ld-brand-chrome); background-color: var(--ld-brand-chrome); color: rgb(255, 255, 255); }
+.lark-doc .lark-doc-dialog .lark-doc-save-version-confirm:hover:enabled { border-color: rgb(51, 109, 244); background-color: rgb(51, 109, 244); }
+.lark-doc .lark-doc-dialog .lark-doc-save-version-confirm:disabled { border-color: rgb(187, 191, 196); background-color: rgb(187, 191, 196); color: rgb(255, 255, 255); cursor: not-allowed; }
+
+/* ── 版本提示 toast：飞书 `.ud__toast` 的 success 版 ──
+   浅绿底 + 16 状态图标 + 正文（行内「立即查看」）+ 24 关闭；宽 418 高 54 圆角 6。
+   z-index 9999：必须压过全屏历史记录层（z 99）与所有菜单浮层（z 1050）。 */
 .lark-doc .lark-doc-version-notice {
   position: fixed;
   top: 40px;
@@ -520,30 +672,76 @@
   transform: translateX(-50%);
   width: 418px;
   max-width: calc(100vw - 32px);
-  min-height: 54px;
-  padding: 0 16px;
   box-sizing: border-box;
-  border-radius: 8px;
-  background-color: rgb(255, 255, 255);
-  box-shadow: 0 4px 16px rgba(31, 35, 41, 0.16);
-  z-index: 1001;
+  padding: 15px 3px 15px 19px;
+  border-radius: 6px;
+  background-color: var(--ld-share-toast-success-bg);
+  box-shadow: var(--ld-shadow-float);
+  z-index: 9999;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
   font-size: 14px;
+  line-height: 22px;
   color: rgb(31, 35, 41);
 }
 
-.lark-doc .lark-doc-version-notice-link {
+.lark-doc .lark-doc-version-notice-icon {
   flex: 0 0 auto;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  color: var(--ld-share-success);
+}
+
+/* 正文占满中段，把「立即查看」顶到正文行尾、关闭钮顶到最右。
+   高度锁 24：行内按钮是 26 高，会各溢出 1px（飞书实测 rect 54..80 而内容区 55..79），
+   靠这一格把 toast 总高压在 `15 + 24 + 15 = 54`。 */
+.lark-doc .lark-doc-version-notice-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  display: block;
+}
+
+/* 「立即查看」= primary 文本按钮：`padding:2px 4px` + 22 行高 = 26 高。
+   `min-height` 必须显式写，否则会被 `.lark-doc button` 兜底的 30px 顶起来。 */
+.lark-doc .lark-doc-version-notice-link {
+  display: inline-block;
+  min-height: 26px;
+  margin: 0;
+  padding: 2px 4px;
   border: 0 none;
+  border-radius: 6px;
   background-color: transparent;
   color: var(--ld-brand-chrome);
   font-size: 14px;
+  line-height: 22px;
   cursor: pointer;
 }
+
+.lark-doc .lark-doc-version-notice-link:hover { background-color: rgba(20, 86, 240, 0.08); }
+
+.lark-doc .lark-doc-version-notice-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin-left: 12px;
+  padding: 4px;
+  border: 0 none;
+  border-radius: 6px;
+  background-color: transparent;
+  color: rgb(100, 106, 115);
+  cursor: pointer;
+}
+
+.lark-doc .lark-doc-version-notice-close:hover { background-color: rgba(31, 35, 41, 0.1); color: rgb(43, 47, 54); }
 
 /* 窄屏顶栏按行排布，分页不能覆盖返回入口；历史列表仍保留独立滚动。 */
 @media (min-width: 761px) and (max-width: 980px), (max-width: 980px) and (pointer: fine) {

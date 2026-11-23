@@ -272,28 +272,83 @@ export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
   return { destroy() { destroyed = true; backdrop.remove() } }
 }
 
+/**
+ * 另存为版本 Dialog —— 结构与飞书 `SaveVersionDialog` 逐格对齐（420 × 242）：
+ *
+ *   header 72  `padding: 24px 20px 24px 24px`，标题 16/24 500「保存 今天 HH:mm 的文档版本」，右缘 28 × 28 关闭钮
+ *   body        `padding: 0 24px` + `margin-bottom: 24px`；label 22 高「版本名称」→ 间隔 8 → 输入盒 372 × 32
+ *   input       盒 radius 6、边框 `--ld-input-border`（聚焦转 `--ld-brand-chrome`）、内衬 `4px 8px 4px 11px`
+ *               内含原生 input / 12 × 12 clear 图标 / 计数 tag（`#EFF0F1` 底 + `#646A73` 字，radius 4，`0 6px`）
+ *   footer 56   `padding: 0 24px 24px`，按钮组 `row-reverse`：`确定`(filled 80 × 32) 在右、`取消`(outlined) 在左
+ *
+ * 三处口径来自实测：计数用**原始长度**（`"   "` 显示 `3/1000`）、`确定` 的可用性用 `trim()`（全空格仍禁用）、
+ * 无错误行时该行不占位（飞书默认态 `err: []`）。
+ */
 export function createSaveVersionDialog({ host, name, title, maxLength, handlers }) {
   const owner = host.ownerDocument
   let destroyed = false, busy = false
   const close = () => { if (!busy) handlers.onClose?.() }
   const { backdrop, section } = createDialogShell(title, close)
-  section.classList.add('lark-doc-template-save-dialog', 'lark-doc-save-version-dialog')
-  const { header, button: dismiss } = createDialogHeader({ title, closeLabel: '关闭另存为版本', onClose: close })
-  const label = owner.createElement('label'), input = owner.createElement('input')
-  label.textContent = '版本名称'
+  section.classList.add('lark-doc-save-version-dialog')
+
+  const header = owner.createElement('header')
+  header.className = 'lark-doc-save-version-header'
+  const heading = owner.createElement('strong')
+  heading.className = 'lark-doc-save-version-title'
+  heading.textContent = title
+  const dismiss = closeButtonNode('关闭另存为版本', 20)
+  dismiss.className = 'lark-doc-save-version-close'
+  dismiss.addEventListener('click', close)
+  header.append(heading, dismiss)
+
+  const body = owner.createElement('div')
+  body.className = 'lark-doc-save-version-body'
+  const field = owner.createElement('div')
+  field.className = 'lark-doc-save-version-field'
+  const caption = owner.createElement('span')
+  caption.className = 'lark-doc-save-version-label'
+  caption.textContent = '版本名称'
+  const box = owner.createElement('div')
+  box.className = 'lark-doc-save-version-input'
+  const input = owner.createElement('input')
   input.setAttribute('aria-label', '版本名称'); input.maxLength = maxLength; input.value = name
   input.placeholder = '请输入名称'
-  const counter = owner.createElement('small')
-  counter.className = 'lark-doc-version-name-count'
-  label.append(input, counter)
-  const error = owner.createElement('p'); error.setAttribute('role', 'alert')
-  const footer = owner.createElement('footer'), cancel = owner.createElement('button'), save = owner.createElement('button')
+  const clear = owner.createElement('span')
+  clear.className = 'lark-doc-save-version-clear'
+  clear.setAttribute('role', 'button')
+  clear.setAttribute('aria-label', '清空版本名称')
+  clear.appendChild(iconNode('close', 12))
+  const count = owner.createElement('span')
+  count.className = 'lark-doc-save-version-count'
+  const counter = owner.createElement('span')
+  counter.className = 'lark-doc-save-version-count-current'
+  const limit = owner.createElement('span')
+  limit.className = 'lark-doc-save-version-count-limit'
+  count.append(counter, limit)
+  box.append(input, clear, count)
+  field.append(caption, box)
+  const error = owner.createElement('p')
+  error.className = 'lark-doc-save-version-error'; error.setAttribute('role', 'alert')
+  body.append(field, error)
+
+  const footer = owner.createElement('footer')
+  footer.className = 'lark-doc-save-version-footer'
+  const actions = owner.createElement('div')
+  actions.className = 'lark-doc-save-version-actions'
+  const cancel = owner.createElement('button'), save = owner.createElement('button')
   cancel.type = save.type = 'button'; cancel.textContent = '取消'
-  save.className = 'primary'
+  cancel.className = 'lark-doc-save-version-cancel'
+  save.className = 'primary lark-doc-save-version-confirm'
   cancel.addEventListener('click', close)
+  actions.append(save, cancel)
+  footer.appendChild(actions)
+
   const sync = () => {
     const pending = handlers.isPending?.()
-    counter.textContent = `${input.value.length}/${input.maxLength}`
+    counter.textContent = String(input.value.length)
+    limit.textContent = `/${input.maxLength > 0 ? input.maxLength : 0}`
+    clear.hidden = !input.value
+    error.hidden = !error.textContent
     if (busy && owner.activeElement === save) input.focus({ preventScroll: true })
     cancel.disabled = dismiss.disabled = busy
     input.readOnly = Boolean(busy || pending)
@@ -310,9 +365,14 @@ export function createSaveVersionDialog({ host, name, title, maxLength, handlers
       if (!destroyed && handlers.isCurrent?.() !== false) error.textContent = failure?.message || '版本保存失败，请重试'
     } finally { if (!destroyed) { busy = false; sync() } }
   }
+  clear.addEventListener('click', () => {
+    if (destroyed || input.readOnly) return
+    input.value = ''
+    sync(); input.focus({ preventScroll: true })
+  })
   input.addEventListener('input', sync); save.addEventListener('click', submit)
   bindNameDialogKeys(backdrop, section, input, submit, close)
-  footer.append(cancel, save); section.append(header, label, error, footer)
+  section.append(header, body, footer)
   host.appendChild(backdrop); sync(); input.focus()
   input.setSelectionRange(input.value.length, input.value.length)
   return { destroy() { destroyed = true; backdrop.remove() } }

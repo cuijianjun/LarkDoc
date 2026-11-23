@@ -369,16 +369,21 @@ describe('version document lifecycle through the real facade and provider', () =
     expect(doc.getJSON()).toEqual(original)
   })
 
-  it('keeps 查看已存版本 enabled in readonly menus now that 另存为版本 is gone', async () => {
+  it('gates 另存为版本 by writability while 查看已存版本 stays enabled in readonly menus', async () => {
     const { doc } = mount()
     const host = doc._handle.nativeHost.host
     doc.setReadonly(true)
     host.topbarMoreOpen = true
     await host.$nextTick()
-    const items = host.topbarMoreItems
-    expect(items.some(item => item.label === '另存为版本')).toBe(false)
+    let items = host.topbarMoreItems
+    // 飞书桌面端「更多」里这一项是在的（B18 依截图加回），只读时禁用而不是消失。
+    expect(items.find(item => item.label === '另存为版本').enabled).toBe(false)
     const versionItem = items.find(item => item.id === 'view-versions' || item.id === 'saved-versions')
     expect(versionItem.enabled).toBe(true)
+    doc.setReadonly(false)
+    await host.$nextTick()
+    items = host.topbarMoreItems
+    expect(items.find(item => item.label === '另存为版本').enabled).toBe(true)
   })
 
   it.each(['offline', 'allowlist'])('rechecks current %s resource policy after an awaited provider restore', async mode => {

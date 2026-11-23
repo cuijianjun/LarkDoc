@@ -143,11 +143,18 @@ export const ICON_PALETTE = { highlightSwatch: '#ffd50a', highlightGlyph: '#4a3b
  *  刻意拆成扁平字符串常量而不是一个对象：打包时字符串常量会在使用处被内联，
  *  对象字面量则会把整个对象搬进每个引用它的特性包（实测 uiOverlays 因此超预算 12 B）。 */
 export const NOTIFY_BRAND_BLUE = '#3370FF'
-export const NOTIFY_DEEP_BLUE = '#1F55D8'
-export const NOTIFY_TEAL = '#00D6A5'
+// 空态插图里那两支深蓝/青绿弧线的实测值（截图 932×1286 直方图：#0D296E 1211 px、#01D6B9 3238 px）。
+// 早前写的 #1F55D8 / #00D6A5 是目测近似，整图比对时会把弧线压出肉眼可见的偏色。
+export const NOTIFY_DEEP_BLUE = '#0D296E'
+export const NOTIFY_TEAL = '#01D6B9'
 export const NOTIFY_SUCCESS_GREEN = '#34A853'
-export const NOTIFY_CARD = '#D8DADE'
-export const NOTIFY_CARD_LINE = '#F7F8FA'
+// 飞书 ud__notice-success  toast 固有色（真身截图直方图：底 228,250,225 / 边 49,166,69）。
+// 与 NOTIFY_SUCCESS_GREEN（通知插图绿）不是同一个值，别复用。
+export const TOAST_SUCCESS_BG = '#E4FAE1'
+export const TOAST_SUCCESS_BORDER = '#32A645'
+// 文档卡底色与卡内两条灰线：截图取样 #E1E2E4 / #8F959E（不是 #D8DADE / #F7F8FA）。
+export const NOTIFY_CARD = '#E1E2E4'
+export const NOTIFY_CARD_LINE = '#8F959E'
 /** 品牌色底上的白（logo 页面 / 成功勾）。 */
 export const NOTIFY_ON_BRAND = '#fff'
 
