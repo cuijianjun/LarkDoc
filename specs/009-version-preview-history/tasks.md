@@ -202,7 +202,14 @@
 
 ## 附：跨分支合并遗留（阻塞「尽可能合并」）
 
-- [ ] **M1** `src/ui/permissionView.js` 两侧两套平行实现，待用户裁定 A/B/C
+- [x] **M1** `src/ui/permissionView.js` 两侧两套平行实现 → 用户裁定 **A：并到 dev 版，功能全部保留** ✅
   - dev 版（502 行，B20/B22 逐像素对齐飞书）：纯权限项列表 = 复选框 + 下划线式下拉 + 灰色说明复选，`selectNode` 命中 0
   - 本分支版（423 行）：保留「邀请协作者」行、搜索框、「链接范围/链接权限」detail 行、服务提示反馈行、原生 select（`selectNode` 命中 8）
-  - 连带：`setPermissionValue` 语义（dev 写本地 mock 零请求 / mine 弹 warning toast，`overlays-native.test.js` 两侧断言互斥）、`applyEmbed` 字段（仅 dev 有）、`caretRight` 尺寸（14 vs 16）、`collaboratorView` 是否升级为 dev 的 `avatarLabel`/`roleLabel`/标签/部门结构
+  - **裁定结论：dev 版为唯一实现，旧版多出来的能力并未丢失，而是归属到了「分享」面板**（飞书本身就是两个弹窗）。逐项核对：
+    - 「邀请协作者」行 + 搜索框 → `ui/shareView.js:84` 邀请输入框（`onSetShareInviteQuery`）
+    - 链接范围 / 链接权限下拉 + 范围文本 → `ui/shareView.js:137/141/153`（`onSetShareLinkAudience` / `onSetShareLinkPerm` / `shareDialogScopeText`）
+    - 「重新载入 / 查询原操作」反馈行 → `ui/shareView.js:160`（`onLoadShareLink` / `onQueryShareLink`，状态文案仍读 `shareLinkBusy` / `shareLinkError` / `shareLinkPending` / `shareLinkAvailable`）
+    - 「仅“可管理权限”可以将内容分享到组织外」→ dev 为 `createRuleTip` 灰字说明（B25 实测真身是说明文字，不是可勾选项）
+  - 核对方式：把 423 行版里每一处 `callHandler` 抽出来反查入口，16 个 handler 全部仍有活 UI（13 个在 `permissionView.js`、3 个在 `shareView.js` / `collaboratorView.js`），无「只剩空 handler」的能力
+  - 连带项一并按 dev 收口：`setPermissionValue` 走本地 mock 零请求（`overlays-native.test.js` 现口径）、`applyEmbed` 字段保留、`caretRight` 取 14（`shareView.js:76`）、`collaboratorView` 已是升级版（`avatarLabel`/`roleLabel`/所有者外部标签/部门）
+  - 分支关系：`agent/topbar-more-menu`(`c140ae9`) 已是 `dev` 祖先，`permissionView.js` 的 423→502 演进发生在合入之后的 B25 重写里，无需再做文件级合并
