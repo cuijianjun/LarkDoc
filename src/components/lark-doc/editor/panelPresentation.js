@@ -616,7 +616,8 @@ export function createPanelPresentation(dependencies) {
           onChangeNext: () => this.stepVersionChange(1),
           onToggleShowChanges: () => this.toggleVersionShowChanges(),
           onSelect: (id) => this.selectVersion(id),
-          onOpenTrash: () => this.openVersionTrash(),
+          // 面板内不再有「回收站」按钮（飞书把入口放在「已存版本」子菜单），
+          // 因此这里不接 `onOpenTrash`；菜单那条走 documentMenuView 直连 openVersionTrash()。
           onCloseTrash: () => this.closeVersionTrash(),
           onRestoreDeleted: (id) => this.restoreDeletedVersion(id),
           onPurgeDeleted: (id) => this.purgeDeletedVersion(id),

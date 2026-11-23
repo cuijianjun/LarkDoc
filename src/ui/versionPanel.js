@@ -186,8 +186,8 @@ export function createVersionPanel(options = {}) {
   const restoreConfirmMask = document.createElement('div'); restoreConfirmMask.className = 'lark-doc-version-restore-mask'
   restoreConfirmMask.addEventListener('mousedown', event => { if (event.target === restoreConfirmMask) event.preventDefault() })
   const restoreConfirm = document.createElement('section'); restoreConfirm.className = 'lark-doc-version-restore-dialog'
-  restoreConfirm.setAttribute('role', 'alertdialog'); restoreConfirm.setAttribute('aria-modal', 'true'); restoreConfirm.setAttribute('aria-label', '还原历史版本确认')
-  const restoreConfirmTitle = document.createElement('h2'); restoreConfirmTitle.textContent = '还原此历史版本？'
+  restoreConfirm.setAttribute('role', 'alertdialog'); restoreConfirm.setAttribute('aria-modal', 'true'); restoreConfirm.setAttribute('aria-label', '还原此记录确认')
+  const restoreConfirmTitle = document.createElement('h2'); restoreConfirmTitle.textContent = '还原此记录？'
   const restoreConfirmText = document.createElement('p')
   const restoreCancel = document.createElement('button'), restoreConfirmButton = document.createElement('button')
   restoreCancel.type = restoreConfirmButton.type = 'button'
@@ -252,20 +252,13 @@ export function createVersionPanel(options = {}) {
   rightInfo.setAttribute('role', 'img')
   rightInfo.setAttribute('aria-label', '历史记录会自动保存，可随时还原任意一条')
   setAttr(rightInfo, 'title', '历史记录会自动保存，可随时还原任意一条')
-  rightInfo.appendChild(iconNode('info', 16))
+  // 飞书头部是「圆圈问号」（MaybeOutlined），不是 info 的「i」——放大截图逐像素确认。
+  rightInfo.appendChild(iconNode('menu-help', 16))
   rightHeading.appendChild(rightTitle)
   rightHeading.appendChild(rightInfo)
-  const rightIcon = document.createElement('span')
-  rightIcon.className = 'lark-doc-version-right-icon'
-  rightIcon.appendChild(iconNode('chevronDown', 24))
+  // 飞书历史记录头部只有「历史记录 + 圆圈问号」两个元素：既没有折叠用的 chevronDown，
+  // 也没有「回收站」按钮。回收站入口在「已存版本」子菜单末尾（documentMenuView.js）。
   rightHeader.appendChild(rightHeading)
-  const trashToggle = document.createElement('button')
-  trashToggle.type = 'button'
-  trashToggle.className = 'lark-doc-version-trash-toggle'
-  trashToggle.textContent = '回收站'
-  trashToggle.addEventListener('click', () => { if (!trashToggle.disabled) call('onOpenTrash') })
-  rightHeader.appendChild(trashToggle)
-  rightHeader.appendChild(rightIcon)
 
   const timeline = document.createElement('div')
   timeline.className = 'lark-doc-version-timeline'
@@ -318,14 +311,6 @@ export function createVersionPanel(options = {}) {
 
   function renderTrash() {
     const stateTrash = state.trash
-    // 接线尚未提供时不展示无效入口；由 panelsUiMixin 明确传入完整契约。
-    trashToggle.hidden = !stateTrash
-    trashToggle.disabled = !stateTrash || !stateTrash.canManage
-    setAttr(trashToggle, 'title', stateTrash ? stateTrash.reason : '')
-    // 回收站的两个动作是「恢复」与「彻底删除」，能力口径跟还原按钮一致；
-    // 手动「另存为版本」下线后 `canCreateVersion` 在前端已无对应入口，不能再拿它当回收站门禁。
-    setAttr(trashToggle, 'data-capability', 'canRestoreVersion')
-    setAttr(trashToggle, 'aria-disabled', String(trashToggle.disabled))
     const items = stateTrash ? stateTrash.items || [] : []
     const signature = JSON.stringify({ items, busy: stateTrash?.busy, canManage: stateTrash?.canManage })
     if (signature !== trashSignature) {

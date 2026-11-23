@@ -1085,11 +1085,15 @@ describe('原生浮层迁移契约', () => {
     cleanups.push(() => ui.destroy())
     const trash = { open: true, canManage: true, busy: false, items: [{ id: 'v1', name: '10月27日', label: '版本' }] }
     ui.update({ open: true, trash })
-    ui.el.querySelector('.lark-doc-version-trash-toggle').click()
+    // 飞书历史记录头部只有「历史记录 + 圆圈问号」：面板内既没有回收站按钮，也没有
+    // chevronDown。回收站入口在「已存版本」子菜单末尾（documentMenuView.js:195 直连
+    // `openVersionTrash()`），因此面板这一层不再派发 onOpenTrash。
+    expect(ui.el.querySelector('.lark-doc-version-trash-toggle')).toBeNull()
+    expect(ui.el.querySelector('.lark-doc-version-right-icon')).toBeNull()
     const actions = ui.el.querySelectorAll('.lark-doc-version-trash-list button')
     actions[0].click()
     actions[1].click()
-    expect(handlers.onOpenTrash).toHaveBeenCalledTimes(1)
+    expect(handlers.onOpenTrash).not.toHaveBeenCalled()
     expect(handlers.onRestoreDeleted).toHaveBeenCalledWith('v1')
     expect(handlers.onPurgeDeleted).toHaveBeenCalledWith('v1')
     expect(ui.el.querySelector('.lark-doc-version-restore').getAttribute('data-capability')).toBe('canRestoreVersion')

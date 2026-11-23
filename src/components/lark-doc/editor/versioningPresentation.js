@@ -214,7 +214,9 @@ export function createVersioningPresentation(dependencies) {
       const record = this.versionList.find(item => item.id === this.versionRestoreTargetId)
       if (!record) return ''
       const date = new Date(record.createdAt)
-      return `将当前文档还原为「${this.versionRestoreTargetLabel || '未命名版本'}」：${date.getMonth() + 1}月${date.getDate()}日 ${formatVersionClock(record.createdAt)}。当前内容将被替换，历史记录仍保留。`
+      // 飞书真身正文只有一句：「将当前文档还原至 10月25日 17:05 的状态」——
+      // 不点版本名、不追加「当前内容将被替换」那句（截图实测，别加戏）。
+      return `将当前文档还原至 ${date.getMonth() + 1}月${date.getDate()}日 ${formatVersionClock(record.createdAt)} 的状态`
     },
 
     /** 右栏时间线：按天分组后的 `[{ key, label, items }]`。 */

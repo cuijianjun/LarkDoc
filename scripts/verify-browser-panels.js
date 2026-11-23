@@ -241,9 +241,10 @@ const measureVersions = () => {
   const leftHeader = el.querySelector('.lark-doc-version-left-header')
   const pager = el.querySelector('.lark-doc-version-pager')
   const rightHeader = el.querySelector('.lark-doc-version-right-header')
-  // 标题旁还有一个 16px 的 info 图标（「历史记录 ⓘ」是一个整体），所以必须限定到
-  // chevron 容器里取，否则量到的是 info 而不是 chevronDown。
-  const rightIcon = rightHeader ? rightHeader.querySelector('.lark-doc-version-right-icon .lark-doc-icon') : null
+  // 飞书历史记录头部只有「历史记录 + 圆圈问号」：没有 chevronDown，也没有回收站按钮。
+  // 这里量问号图标本身（16px），同时断言两个多余节点已不存在。
+  const helpIcon = rightHeader ? rightHeader.querySelector('.lark-doc-version-right-info .lark-doc-icon') : null
+  const headerExtras = rightHeader ? rightHeader.querySelectorAll('.lark-doc-version-right-icon, .lark-doc-version-trash-toggle').length : -1
   const backIcon = el.querySelector('.lark-doc-version-back .lark-doc-icon')
   const size = (node) => {
     if (!node) return null
@@ -304,7 +305,8 @@ const measureVersions = () => {
       }
     })(),
     rightTitle: rightHeader && rightHeader.querySelector('.lark-doc-version-right-title') ? rightHeader.querySelector('.lark-doc-version-right-title').textContent.trim() : null,
-    rightIconSize: size(rightIcon),
+    helpIconSize: size(helpIcon),
+    headerExtras,
     days: [...el.querySelectorAll('.lark-doc-version-day')].map((day) => ({
       label: day.querySelector('.lark-doc-version-day-label') ? day.querySelector('.lark-doc-version-day-label').textContent.trim() : null,
       items: [...day.querySelectorAll('.lark-doc-version-item')].map((item) => ({
@@ -826,8 +828,9 @@ const vueCall = (page, body) => page.evaluate((source) => {
     degraded ? degraded.empties.join(' | ') : '没渲染')
 
   record('[版本] 右栏标题「历史记录」+ chevronDown 24 + 底栏「显示更改」',
-    !!degraded && degraded.rightTitle === '历史记录' && degraded.rightIconSize.w === 24 &&
-      degraded.rightIconSize.h === 24 && degraded.footer === '显示更改' && degraded.days.length === 0,
+    !!degraded && degraded.rightTitle === '历史记录' && degraded.helpIconSize.w === 16 &&
+      degraded.helpIconSize.h === 16 && degraded.headerExtras === 0 &&
+      degraded.footer === '显示更改' && degraded.days.length === 0,
     degraded ? `${degraded.rightTitle}/${degraded.footer}` : '没渲染')
 
   // Esc 关不掉（与另存为 Dialog 相反）

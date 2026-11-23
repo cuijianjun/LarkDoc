@@ -21,7 +21,7 @@ async function main() {
   const json = () => page.evaluate(() => window.__versionDoc.getJSON())
   const editor = () => page.locator('.lark-doc-paper .tiptap').first()
   const history = () => page.getByRole('dialog', { name: '历史记录', exact: true })
-  const confirm = () => page.getByRole('alertdialog', { name: '还原历史版本确认', exact: true })
+  const confirm = () => page.getByRole('alertdialog', { name: '还原此记录确认', exact: true })
   const openAction = async name => {
     await click(page.locator('.lark-doc-topbar .lark-doc-more-btn'))
     await click(page.locator('.lark-doc-topbar-more').getByRole('menuitem', { name, exact: true }))
