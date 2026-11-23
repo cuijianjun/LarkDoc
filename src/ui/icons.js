@@ -129,6 +129,11 @@ export const ICONS = {
   search: wrap('<circle cx="7" cy="7" r="4.4"/><path d="m10.4 10.4 3.4 3.4"/>'),
   outline: wrap('<path d="M3 4h10"/><path d="M3 8h10"/><path d="M3 12h6"/>'),
   'outline-expand': wrap('<path d="M2.5 4h11"/><path d="M2.5 8h11"/><path d="M2.5 12h11"/>'),
+  // 目录的「收起」双左尖角：**实心 path，18 视图**，不能用 `wrap()`（那是 16 视图 + stroke，
+  // 画出来会散架）。path 与 viewBox 逐字取飞书 `.catalogue__pin-btn-unpin` 的
+  // `background-image`（2026-11-23 Playwright 解 base64 得到），fill 走 currentColor，
+  // 颜色由容器 CSS 定成 `rgb(100, 106, 115)`（真身同值）。
+  'outline-collapse': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" fill="none"><path d="M7.987 13.228L3.76 9l4.457-4.458.627-.63A.75.75 0 107.78 2.858l-.498.5L2.17 8.47a.75.75 0 000 1.06l4.854 4.855.759.76a.75.75 0 001.062-1.057l-.857-.86z" fill="currentColor"/><path d="M14.668 13.228L10.44 9l4.457-4.458.627-.63a.75.75 0 10-1.064-1.056l-.498.5L8.85 8.47a.75.75 0 000 1.06l4.854 4.855.758.76a.75.75 0 001.062-1.057l-.856-.86z" fill="currentColor"/></svg>',
   reading: wrap('<path d="M8 5.2A2.2 2.2 0 0 0 5.8 3H2.8v9.5h3.4A1.8 1.8 0 0 1 8 13.7"/><path d="M8 5.2A2.2 2.2 0 0 1 10.2 3h3v9.5h-3.4A1.8 1.8 0 0 0 8 13.7"/>'),
   fullscreen: wrap('<path d="M2.5 6V3.9a1.4 1.4 0 0 1 1.4-1.4H6"/><path d="M10 2.5h2.1a1.4 1.4 0 0 1 1.4 1.4V6"/><path d="M13.5 10v2.1a1.4 1.4 0 0 1-1.4 1.4H10"/><path d="M6 13.5H3.9a1.4 1.4 0 0 1-1.4-1.4V10"/>'),
   slides: wrap('<rect x="2.5" y="3" width="11" height="7.6" rx="1.3"/><path d="M7 5.6 9.6 6.8 7 8z" fill="currentColor" stroke="none"/><path d="M8 10.6v2"/><path d="M5.6 13h4.8"/>'),

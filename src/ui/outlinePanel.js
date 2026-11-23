@@ -45,7 +45,9 @@ export function createOutlinePanel(options = {}) {
   const closeButton = document.createElement('button')
   closeButton.type = 'button'
   closeButton.setAttribute('aria-label', '收起目录')
-  closeButton.appendChild(iconNode('outline-collapse', 14))
+  // 收起图标 18×18（飞书 `.catalogue__pin-btn-unpin` 的 `background-size: contain` 真身尺寸，
+  // 早先传 14 且图标名未收录，`iconNode` 只回了空 span —— E2E 量到 0×0、`svg:false`。
+  closeButton.appendChild(iconNode('outline-collapse', 18))
   const tips = bindHoverTips(heading)
   closeButton.addEventListener('click', () => { tips.hide(); call('onToggleOpen') })
   heading.appendChild(headingTitle)

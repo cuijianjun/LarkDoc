@@ -625,7 +625,10 @@
 
 .lark-doc .lark-doc-save-version-label { color: rgb(31, 35, 41); font-size: 14px; line-height: 22px; }
 
-/* 输入盒 372 × 32 @radius 6：默认边框 `#D0D3D6`，聚焦转品牌蓝；内衬与飞书 `4px 8px 4px 11px` 一致。 */
+/* 输入盒 371 × 32 @radius 6（飞书 `.ud__input--size-md` 实测 371.22 × 31.93）：
+   默认边框 `#D0D3D6`，聚焦转品牌蓝；内衬与飞书 `4px 8px 4px 11px` 逐值一致。
+   宽度由父级 `-body` 的 `0 24px` 内衬撑满（420 − 48 = 372，差 0.78 为亚像素），
+   不写死 width —— 真身也是撑满，右侧计数 tag 走 flex 收缩。 */
 .lark-doc .lark-doc-save-version-input {
   display: flex;
   align-items: center;
@@ -724,7 +727,11 @@
   width: 418px;
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
-  padding: 15px 3px 15px 19px;
+  /* 总高锁 54 = 15 + 24 + 15。光靠内层 `-body` 的 24 压不住：`align-items:center`
+     的行高由最高的子项「立即查看」(26) 决定，会算成 15+26+15=56。飞书 `.ud__notice`
+     实测 54 高、正文 22 而「立即查看」26 是**溢出 1px 各一边**（rect 54、内容 55..79），
+     所以这里显式锁高、允许子项溢出，与真身同形。 */
+  height: 54px;
   border-radius: 6px;
   background-color: var(--ld-share-toast-success-bg);
   box-shadow: var(--ld-shadow-float);
@@ -775,12 +782,17 @@
 
 .lark-doc .lark-doc-version-notice-link:hover { background-color: rgba(20, 86, 240, 0.08); }
 
-.lark-doc .lark-doc-version-notice-close {
+/* 关闭钮 24×24（飞书 `.ud__notice` 的 icon 按钮实测 24×24、pad 4 + icon 16）。
+   必须带 `.lark-doc-version-notice` 前缀把特异性抬到 (0,3,0)：`lark-doc.css` 里
+   `.lark-doc button[aria-label^="关闭"]` 是 (0,2,1)，会把无害的 `aria-label="关闭"`
+   顶成 26×26 —— 这正是此前 E2E 量到 26 的原因。 */
+.lark-doc .lark-doc-version-notice .lark-doc-version-notice-close {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 24px;
+  min-width: 24px;
   height: 24px;
   min-height: 24px;
   margin-left: 12px;
@@ -792,7 +804,7 @@
   cursor: pointer;
 }
 
-.lark-doc .lark-doc-version-notice-close:hover { background-color: rgba(31, 35, 41, 0.1); color: rgb(43, 47, 54); }
+.lark-doc .lark-doc-version-notice .lark-doc-version-notice-close:hover { background-color: rgba(31, 35, 41, 0.1); color: rgb(43, 47, 54); }
 
 /* 窄屏顶栏按行排布，分页不能覆盖返回入口；历史列表仍保留独立滚动。 */
 @media (min-width: 761px) and (max-width: 980px), (max-width: 980px) and (pointer: fine) {

@@ -646,9 +646,11 @@ const vueCall = (page, body) => page.evaluate((source) => {
       outline.flexBasis === '210px' && outline.padding === '26px 12px 30px 18px' && outline.overflowY === 'auto',
     outline ? `${outline.width}px ${outline.position} ${outline.padding}` : '没渲染')
 
-  record('[目录] 头部 = strong「目录」+ 关闭钮（icon 14×14）',
-    !!outline && outline.headingStrong === '目录' && outline.closeLabel === '关闭目录' &&
-      outline.closeType === 'button' && !!outline.closeIcon && outline.closeIcon.w === 14 && outline.closeIcon.h === 14 &&
+  // 收起钮的读屏名是「收起目录」（飞书 `.catalogue__pin-btn-unpin` 的动作就是收起，不是关闭），
+  // 图标 18×18 双左尖角 —— 尺寸逐字取真身 `background-size: contain` 的 18×18 视图。
+  record('[目录] 头部 = strong「目录」+ 关闭钮（icon 18×18）',
+    !!outline && outline.headingStrong === '目录' && outline.closeLabel === '收起目录' &&
+      outline.closeType === 'button' && !!outline.closeIcon && outline.closeIcon.w === 18 && outline.closeIcon.h === 18 &&
       outline.closeIcon.svg === true,
     outline ? `${outline.headingStrong}/${outline.closeLabel}/${JSON.stringify(outline.closeIcon)}` : '没渲染')
 
@@ -729,9 +731,11 @@ const vueCall = (page, body) => page.evaluate((source) => {
       aside: !!document.querySelector('.lark-doc-outline'),
     }
   })
-  record('[目录] 关闭后移除侧栏，展开按钮保留图标与读屏名称（fixed / z44 / 34×34）',
+  // 定位是 `absolute`：宿主 `.lark-doc-body` 是 `position: relative` 的 flex 容器，absolute 即贴正文
+  // 左上角；飞书用 sticky 是因为它的目录泡在正文流里（收起后只留 4px 条），两边的定位上下文不同。
+  record('[目录] 关闭后移除侧栏，展开按钮保留图标与读屏名称（absolute / z44 / 34×34）',
     !!reopen && reopen.aside === false && reopen.label === '展开目录' && reopen.title === null &&
-      reopen.svg && reopen.position === 'fixed' && reopen.zIndex === '44' &&
+      reopen.svg && reopen.position === 'absolute' && reopen.zIndex === '44' &&
       reopen.size.w === 34 && reopen.size.h === 34,
     JSON.stringify(reopen))
 
@@ -1110,10 +1114,17 @@ const vueCall = (page, body) => page.evaluate((source) => {
       saveDialog.close.size.w === 28 && saveDialog.close.size.h === 28,
     saveDialog && saveDialog.close ? JSON.stringify(saveDialog.close) : '没渲染')
 
-  record('[另存为版本] 「版本名称」label + 输入盒 368 × 32 圆角 6 + 原生 input（maxlength 1000）',
+  // 宽度真身是 **371**（飞书 `.ud__input--size-md` 实测 371.22 × 31.93：dialog 420 − body
+  // 内衬 24 × 2 = 372，再扣掉 0.78 亚像素）。早先写死 368 无出处，量到 372 一直判红；
+  // 这里按真身 371 收 1px 容差，高度 32 / 圆角 6 / 内衬 4-8-4-11 与真身逐值一致。
+  // `type` 必须判 null：真身 `.ud__native-input` 只有 class / placeholder / value 三个属性，
+  // **不写 type**（`el.type` 取到 `text` 是浏览器默认值）；早先要求 `type === 'text'`
+  // 属于凭空加的实现要求。1000 上限真身也不落在属性上（靠 JS 截断 + 计数 tag 分母），
+  // 我们显式写成 `maxlength` 是语义等价的增强，继续守。
+  record('[另存为版本] 「版本名称」label + 输入盒 371 × 32 圆角 6 + 原生 input（maxlength 1000）',
     !!saveDialog && !!saveDialog.label && saveDialog.label.text === '版本名称' && saveDialog.label.tag === 'span' &&
-      !!saveDialog.input && saveDialog.input.box.w === 368 && saveDialog.input.box.h === 32 &&
-      saveDialog.input.boxRadius === '6px' && saveDialog.input.type === 'text' &&
+      !!saveDialog.input && Math.abs(saveDialog.input.box.w - 371) <= 1 && saveDialog.input.box.h === 32 &&
+      saveDialog.input.boxRadius === '6px' && saveDialog.input.type === null &&
       saveDialog.input.maxlength === '1000' && saveDialog.input.placeholder === '请输入名称',
     saveDialog && saveDialog.input ? JSON.stringify(saveDialog.input) : '没渲染')
 
