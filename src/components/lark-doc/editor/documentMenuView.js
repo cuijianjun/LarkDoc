@@ -3,19 +3,21 @@ import { normalizeAIProvider } from '../ai'
 import { isExportEnabled, isImportEnabled, resolveExportOptions } from '../larkDocConfig'
 // Shared presentation of the observed document menu. Business-owned actions are UI intents,
 // never local substitutes for a Java grant, move, deletion or persisted preference.
+// 图标用 `menu-*`（= 飞书 `data-icon` 原图，见 icons.js）。桌面端「更多」菜单的同一批图标
+// 由 topbarMoreMixin 引，两份表指向同一组图标名，避免同一项在两个入口长成两副样子。
 const definitions = [
-  ['width', '页宽设置', 'link-view-preview', 'submenu'], ['presentation', '演示模式', 'slides', 'submenu'],
-  ['follow', '关注文档更新', 'subscribe', 'host'], ['search', '查找和替换', 'search'],
-  ['shortcut', '添加快捷方式到', 'link', 'host'], ['move', '移动到', 'move-down', 'host'],
-  ['pin', '添加到“置顶”', 'outline', 'host'], ['favorite', '添加到收藏', 'sparkle', 'host'],
-  ['template', '转换为模板', 'copy', 'host'], ['duplicate', '创建副本', 'copy', 'host'],
-  ['download', '下载为', 'rev-next', 'submenu'], ['translate', '翻译为英语', 'translate', 'host'],
-  ['print', '打印', 'block-text'], ['save-version', '另存为版本', 'doc'],
-  ['saved-versions', '查看已存版本', 'undo', 'submenu'], ['permissions', '文档权限', 'outline', 'submenu'],
-  ['widgets', '文档小组件', 'plus', 'submenu'], ['information', '文档信息', 'info'],
-  ['mentions', '提及的人', 'mode-comment'], ['history', '历史记录', 'undo'],
-  ['history-comments', '历史评论', 'mode-comment'], ['more', '更多', 'more', 'submenu'],
-  ['theme', '主题', 'sparkle', 'submenu'], ['delete', '删除', 'trash', 'host'],
+  ['width', '页宽设置', 'menu-width', 'submenu'], ['presentation', '演示模式', 'menu-presentation', 'submenu'],
+  ['follow', '关注文档更新', 'menu-follow', 'host'], ['search', '查找和替换', 'menu-find'],
+  ['shortcut', '添加快捷方式到', 'menu-shortcut', 'host'], ['move', '移动到', 'menu-move', 'host'],
+  ['pin', '添加到“置顶”', 'menu-pin', 'host'], ['favorite', '添加到收藏', 'menu-favorite', 'host'],
+  ['template', '转换为模板', 'menu-template', 'host'], ['duplicate', '创建副本', 'menu-duplicate', 'host'],
+  ['download', '下载为', 'menu-download', 'submenu'], ['translate', '翻译为英语', 'menu-translate', 'host'],
+  ['print', '打印', 'menu-print'], ['save-version', '另存为版本', 'menu-save-version'],
+  ['saved-versions', '查看已存版本', 'menu-versions', 'submenu'], ['permissions', '文档权限', 'menu-permission', 'submenu'],
+  ['widgets', '文档小组件', 'menu-widgets', 'submenu'], ['information', '文档信息', 'menu-info'],
+  ['mentions', '提及的人', 'menu-mention'], ['history', '历史记录', 'menu-history'],
+  ['history-comments', '历史评论', 'menu-history-comments'], ['more', '更多', 'menu-more', 'submenu'],
+  ['theme', '主题', 'sparkle', 'submenu'], ['delete', '删除', 'menu-delete', 'host'],
 ]
 const separators = new Set(['follow', 'shortcut', 'template', 'print', 'save-version', 'permissions', 'widgets', 'information', 'more'])
 const can = (ed, capability) => !ed.session || typeof ed.session.can !== 'function' || ed.session.can(capability)

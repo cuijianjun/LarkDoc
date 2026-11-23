@@ -330,9 +330,9 @@
   },
   "size-limit": [
     {
-      "name": "ESM 主包 (gzip)（编辑器代码，运行时与总初始图另列；310 → 395 的理由见 performance.md）",
+      "name": "ESM 主包 (gzip)（编辑器代码，运行时与总初始图另列；310 → 395 的理由见 performance.md，395 → 405 是「更多」菜单 25 枚 menu-* 图标：飞书 data-icon 原路径进初始图，实测 399,692）",
       "path": "dist/lark-doc.esm.js",
-      "limit": "395 KB",
+      "limit": "405 KB",
       "gzip": true,
       "scope": "editor"
     },
@@ -344,9 +344,9 @@
       "scope": "bootstrap"
     },
     {
-      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 → 550 KB；导出/浮层/上传已移到同目录特性包）",
+      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 → 550 → 550.2 → 556 KB；导出/浮层/上传已移到同目录特性包；550 → 550.2 通知面板点击分流：已删除/无权限/已解决的短路提示；550.2 → 556「更多」菜单 25 枚 menu-* 图标原路径进包，实测 555,008）",
       "path": "dist/lark-doc-element.runtime.umd.min.js",
-      "limit": "550 KB",
+      "limit": "556 KB",
       "gzip": true,
       "scope": "lazy"
     },
@@ -358,23 +358,23 @@
       "scope": "lazy"
     },
     {
-      "name": "Element 首屏样式 (gzip)（与 runtime 并行下载，不阻塞脚本求值）",
+      "name": "Element 首屏样式 (gzip)（与 runtime 并行下载，不阻塞脚本求值；45 → 45.05：分享面板链接范围标签底与地球圆底两枚 token 落在 share.css 的 token 块里，随首屏一起下发；45.05 → 45.1：「更多」菜单按飞书 2× 截图收口，行 30 / 面板 186 / 分隔线满宽 / help 气泡）",
       "path": "dist/lark-doc-element.css",
-      "limit": "45 KB",
+      "limit": "45.1 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 交互包 (gzip)（选区/悬浮/表格/顶栏，鼠标一动就要用；164 → 42 的理由见 performance.md）",
+      "name": "Element UI 交互包 (gzip)（选区/悬浮/表格/顶栏，鼠标一动就要用；164 → 42 的理由见 performance.md；42 → 43.1「更多」菜单 help 气泡与箭头图标，实测 43,006）",
       "path": "dist/lark-doc-element.umd.min.ui.js",
-      "limit": "43 KB",
+      "limit": "43.1 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 面板包 (gzip)（侧栏面板/对话框/浮层，点了才用；与交互包共用同一张样式表）",
+      "name": "Element UI 面板包 (gzip)（侧栏面板/对话框/浮层，点了才用；与交互包共用同一张样式表；99 → 99.6 通知面板按飞书 nf-feed-message 重写条目：头像/未读点/类型文案表/灰卡摘要/时间行，99.6 → 99.7 空态插图按飞书真身逐件收窄：缎带线宽 10→8、气泡 45×34→39×31、卡片高 54→58）",
       "path": "dist/lark-doc-element.umd.min.uiPanels.js",
-      "limit": "99 KB",
+      "limit": "99.7 KB",
       "gzip": true,
       "scope": "lazy"
     },
@@ -386,9 +386,9 @@
       "scope": "lazy"
     },
     {
-      "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载；21 → 21.1 查换禁用档与关注卡 token，21.1 → 21.25 通知面板单行条目 + 标题后状态铃铛 + 顶栏铃铛取色，首屏样式零增长）",
+      "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载；21 → 21.1 查换禁用档与关注卡 token，21.1 → 21.25 通知面板单行条目 + 标题后状态铃铛 + 顶栏铃铛取色，21.25 → 21.4 分享面板按飞书像素级收口：灰条通栏、链接卡几何、共享下拉去皮、齿轮/三角/地球取真身，21.4 → 21.6 通知面板条目结构重写（头像 32/红点 11/灰卡 344/时间 12）+ 空态插图按截图重绘，21.6 → 21.75 系统通知 is-line 单行（无头像/9px 12px/50 高）、灰卡 344 不再被 max-width 钳窄、引用块级化可截断）",
       "path": "dist/lark-doc-element.ui.css",
-      "limit": "21.25 KB",
+      "limit": "21.75 KB",
       "gzip": true,
       "scope": "lazy"
     },

@@ -349,6 +349,15 @@ export default {
           else { this.notifyItems = this.notifyItems.map(value => value.id === id ? { ...value, read: true, readAt: Date.now() } : value); this.$emit('notify-read', { all: false, id }) }
         }
         if (!current()) return null
+        // 飞书 `messageClick` 的三条短路分支（307-19777）：评论已删 / 无权限 / 已解决时**不定位**，
+        // 只弹提示。已读回执照旧先发出去 —— 用户确实看过这条通知了。
+        const blocked = item.type === 'deleted' || item.status === 'deleted' ? '该条评论已被删除'
+          : item.type === 'no-permission' || item.status === 'no-permission' ? '你没有查看这条评论的权限'
+          : item.resolved === true || item.status === 'resolved' ? '该条评论已被解决' : ''
+        if (blocked) {
+          this.notifyActionError = blocked
+          return null
+        }
         if (item.threadId && typeof context.provider?.openThread === 'function') {
           const comments = this.commentProvider?.()
           const result = await context.provider.openThread(id)

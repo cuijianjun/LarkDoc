@@ -50,6 +50,8 @@ const HOVER_CLOSE_MS = 150
  * @param {string} [options.className] 额外根类名（宿主换皮用，如 `lark-doc-mode-select`）
  * @param {number} [options.menuMinWidth] 菜单最小宽度，默认 132
  * @param {string} [options.icon] 触发按钮前导图标（`icons.js` 的键）；不传则没有图标节点
+ * @param {string} [options.caret] 尾部指示图标，默认 `chevronDown`；飞书分享面板那种实心三角传 `caretSolid`
+ * @param {number} [options.caretSize] 尾部指示图标边长，默认 12
  * @param {(value: any) => void} [options.onChange] 选中新值时回调（同值不触发，与 SFC 一致）
  * @returns {{ el: HTMLSpanElement, update(state: object): void, close(): void, destroy(): void }}
  */
@@ -63,6 +65,8 @@ export function createSelect(options = {}) {
     className = '',
     menuMinWidth = 132,
     icon = '',
+    caret = 'chevronDown',
+    caretSize = 12,
   } = options
 
   let config = {
@@ -94,7 +98,7 @@ export function createSelect(options = {}) {
   const labelNode = document.createElement('span')
   labelNode.className = 'lark-doc-select-label'
   trigger.appendChild(labelNode)
-  trigger.appendChild(iconNode('chevronDown', 12, 'lark-doc-select-caret'))
+  trigger.appendChild(iconNode(caret, caretSize, 'lark-doc-select-caret'))
 
   el.appendChild(trigger)
 

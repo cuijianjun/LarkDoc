@@ -68,7 +68,7 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
     expect(create).toHaveBeenCalledTimes(11)
   })
 
-  it('更多收纳主题并保留原有 22 个一级项和分发动作', async () => {
+  it('更多收纳主题并保留原有 23 个一级项和分发动作', async () => {
     const { vm, root, tick } = mount({ capabilities: { canManagePermission: true } })
     const action = vi.spyOn(vm, 'runTopbarMoreAction').mockImplementation(() => vm.closeTopbarMore())
     // 「关注文档更新」是开关项（role=menuitemcheckbox），走参考动作通道而不是 runTopbarMoreAction。
@@ -78,7 +78,7 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
       await tick()
       expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="menuitem"], .lark-doc-topbar-more-list [role="menuitemcheckbox"]')).toHaveLength(TOPBAR_MORE_ITEMS.length + 1)
       expect(root.querySelector('[data-topbar-more-id="theme"]').textContent).toBe('主题')
-      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(8)
+      expect(root.querySelectorAll('.lark-doc-topbar-more-list [role="separator"]')).toHaveLength(9)
       const row = root.querySelector(`[data-topbar-more-id="${item.id}"]`)
       // 历史评论等项受运行时能力门控（远端评论服务 + canView），门控关闭时不派发动作。
       if (row.disabled) {
@@ -104,7 +104,8 @@ describe('六个旧 Vue 的原生宿主迁移', () => {
         continue
       }
       expect(vm.topbarMoreSubmenu).toBe(item.id)
-      const entries = TOPBAR_MORE_SUBPANELS[item.id].filter(entry => entry.kind !== 'divider')
+      // 「文档小组件」的子面板来自 documentWidgetItems（本用例没装小组件 ⇒ 空），不在静态表里。
+      const entries = (TOPBAR_MORE_SUBPANELS[item.id] || []).filter(entry => entry.kind !== 'divider')
       for (const entry of entries) {
         const submenu = root.querySelector('.lark-doc-topbar-more-submenu')
         expect(submenu.closest('.lark-doc-topbar-more')).not.toBeNull()

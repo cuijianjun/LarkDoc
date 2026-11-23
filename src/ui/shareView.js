@@ -6,8 +6,27 @@
 import { applyStyle, setAttr, setText, syncChildren } from './dom'
 import { iconNode } from './icon'
 import { attr, button, callHandler, setInputValue, svgIcon, text } from './overlayShared'
+import { createSelect } from './select'
 import { createPermissionView } from './permissionView'
+import { createManageView, createAddView } from './collaboratorView'
 import { createShareQrView } from './shareQrView'
+
+/**
+ * 链接范围四档（飞书 `linkShareScope`，文案见 279-33888 的 `Lf()/Mf()`）。
+ * `tenant` / `partner` 需要密级与关联组织能力，本库协议层 `organizationBypass`
+ * 恒为 unavailable，所以只置灰不隐藏 —— 与飞书「能力不足时禁用」的形态一致。
+ */
+const SHARE_SCOPE_OPTIONS = Object.freeze([
+  { value: 'collaborators', label: '仅协作者' },
+  { value: 'tenant', label: '本组织', disabled: true },
+  { value: 'public', label: '互联网获得链接的人' },
+  { value: 'partner', label: '本组织及关联组织', disabled: true },
+])
+const SHARE_PERM_OPTIONS = Object.freeze([
+  { value: '可阅读', label: '可阅读' },
+  { value: '可编辑', label: '可编辑' },
+])
+const SHARE_SCOPE_UNSET = Object.freeze([{ value: '', label: '未配置', disabled: true }])
 
 function createShareView(options) {
   const handlers = options.handlers || {}
@@ -41,12 +60,21 @@ function createShareView(options) {
   memberRow.appendChild(text('span', 'lark-doc-share-member-text', '邀请协作者'))
   const avatars = button('lark-doc-share-avatars', '', () => {
     if (!popover.isConnected || !state.sharePopoverOpen || state.shareCanManagePermission === false) return
-    setPage('members'); callHandler(handlers, 'onLoadShareMembers')
+    // 桌面端点「我 ▾」进飞书「管理协作者」二级弹窗；移动端保持原单页 members 路由。
+    if (isMobile()) { setPage('members'); callHandler(handlers, 'onLoadShareMembers') }
+    else callHandler(handlers, 'onOpenCollaboratorManage')
   })
   attr(avatars, 'aria-label', '查看协作者')
-  avatars.appendChild(text('span', 'lark-doc-share-avatar'))
-  const avatarMore = text('span', 'lark-doc-share-avatar-more'); avatars.appendChild(avatarMore)
-  avatars.appendChild(text('span', 'lark-doc-share-members-chevron', '›'))
+  /**
+   * 真身是一颗**整块浅蓝胶囊**（50×30、圆角 5、底 #E0E9FF）：里面左侧是 26 的
+   * 品牌蓝圆（白字「我」），右侧是三级灰的右向实心三角（ink 4.5×7）。
+   * 不是「圆头像 + 独立灰胶囊 +N」那种拼装 —— 见 2× 截图量取：
+   * 胶囊 x936..1035 / 圆 x936..987 / 三角 ink x1008..1016 y243..256（device）。
+   */
+  avatars.appendChild(text('span', 'lark-doc-share-avatar', '我'))
+  const membersChevron = text('span', 'lark-doc-share-members-chevron')
+  membersChevron.appendChild(iconNode('caretRight', 14))
+  avatars.appendChild(membersChevron)
   memberRow.appendChild(avatars)
   popoverInner.appendChild(memberRow)
 
@@ -60,7 +88,13 @@ function createShareView(options) {
     if (isMobile()) setPage('invite')
   })
   invite.appendChild(inviteInput)
-  const inviteEntry = attr(button('lark-doc-share-org-entry', '', () => { if (popover.isConnected && state.sharePopoverOpen) setPage('invite') }), 'aria-label', '添加协作者')
+  // 飞书这一格是输入框内的「+」：桌面端把焦点送回输入框（候选列表跟着输入出现），
+  // 手机端才走整页路由。
+  const inviteEntry = attr(button('lark-doc-share-org-entry', '', () => {
+    if (!popover.isConnected || !state.sharePopoverOpen) return
+    if (isMobile()) setPage('invite')
+    else inviteInput.focus()
+  }), 'aria-label', '添加协作者')
   inviteEntry.appendChild(svgIcon('AddOutlined', 16)); invite.appendChild(inviteEntry)
   popoverInner.appendChild(invite)
 
@@ -80,27 +114,46 @@ function createShareView(options) {
   linkCard.appendChild(linkHead)
   const linkBody = text('div', 'lark-doc-share-link-body')
   const linkIcon = text('span', 'lark-doc-share-link-icon')
-  linkIcon.appendChild(iconNode('link', 14))
+  // 飞书这一格是蓝色圆底 + 白色地球（不是链环）。图形见 icons.js 的 share-globe。
+  // 地球墨迹实测 12.5 CSS（圆盘 30），20 的图标画出来是 15.5，偏大。
+  linkIcon.appendChild(iconNode('share-globe', 16))
   linkBody.appendChild(linkIcon)
   const linkMain = text('div', 'lark-doc-share-link-main')
-  const orgButton = document.createElement('select')
-  orgButton.className = 'lark-doc-share-org-btn'
-  attr(orgButton, 'aria-label', '链接范围')
-  orgButton.addEventListener('change', () => {
-    if (popover.isConnected && state.sharePopoverOpen && state.shareLinkWritable && !orgButton.disabled) callHandler(handlers, 'onSetShareLinkAudience', orgButton.value)
+  /**
+   * 范围下拉。飞书桌面 V3 是 `linkShareScope` 四档（仅协作者 / 组织内 / 互联网 / 关联组织，
+   * 见 279-33888 的 `Lf()`），不是 7 项那份扁平列表（`ZH()` 是另一处 UI 用的）。
+   * 后两档要 securityLevel 与关联组织能力：本库 share-links 协议把 `organizationBypass`
+   * 固定成 unavailable，所以只能置灰，不假装可写。
+   */
+  const scopeSelect = createSelect({
+    ariaLabel: '链接范围',
+    className: 'lark-doc-share-scope-select',
+    menuMinWidth: 240,
+    caret: 'caretWide',
+    caretSize: 16,
+    options: SHARE_SCOPE_OPTIONS,
+    onChange: (value) => {
+      if (!popover.isConnected || !state.sharePopoverOpen || !state.shareLinkWritable) return
+      callHandler(handlers, 'onSetShareLinkAudience', value)
+    },
   })
-  linkMain.appendChild(orgButton)
+  linkMain.appendChild(scopeSelect.el)
   const scopeText = text('span', 'lark-doc-share-scope-text')
   linkMain.appendChild(scopeText)
   linkBody.appendChild(linkMain)
-  const linkSelect = document.createElement('select')
-  linkSelect.className = 'lark-doc-share-perm-select'
-  attr(linkSelect, 'aria-label', '链接权限')
-  linkSelect.disabled = true; linkSelect.title = '链接权限设置尚未接入文档服务。'
-  linkSelect.addEventListener('change', () => {
-    if (popover.isConnected && state.sharePopoverOpen && state.shareLinkWritable && !linkSelect.disabled) callHandler(handlers, 'onSetShareLinkPerm', linkSelect.value)
+  const permSelect = createSelect({
+    ariaLabel: '链接权限',
+    className: 'lark-doc-share-perm-select',
+    menuMinWidth: 120,
+    caret: 'caretWide',
+    caretSize: 16,
+    options: SHARE_PERM_OPTIONS,
+    onChange: (value) => {
+      if (!popover.isConnected || !state.sharePopoverOpen || !state.shareLinkWritable) return
+      callHandler(handlers, 'onSetShareLinkPerm', value)
+    },
   })
-  linkBody.appendChild(linkSelect)
+  linkBody.appendChild(permSelect.el)
   linkCard.appendChild(linkBody)
   const linkFeedback = text('div', 'lark-doc-share-status')
   attr(linkFeedback, 'role', 'status')
@@ -114,24 +167,24 @@ function createShareView(options) {
   const copyLink = button('lark-doc-share-copy-link', '', () => { if (popover.isConnected && state.sharePopoverOpen) callHandler(handlers, 'onCopyShareLink') })
   const copyLabel = text('span', '', '复制链接')
   copyLink.append(iconNode('link', 14), copyLabel); copyRow.appendChild(copyLink)
-  // 飞书真实渠道行：lark=会话、subscriptionConfig.handler=订阅号、wechat/qrcode=面板、
-  // passwordSetting=密码面板（web-scripts/279-33888.b3a2968c.js）；data-share-channel 供验收定位。
+  // 飞书真实渠道行：wechat/qrcode=面板、passwordSetting=密码面板（web-scripts/279-33888.b3a2968c.js）；
+  // data-share-channel 供验收定位。用户口径（截图红框）只保留后三枚：飞书会话 logo 与
+  // 订阅号紫星连同功能一并去掉，不再渲染。
   const onChannel = (event) => {
     if (popover.isConnected && state.sharePopoverOpen) {
-      const channel = event.currentTarget.dataset.shareChannel
-      if (channel === 'lark') inviteInput.focus()
-      callHandler(handlers, 'onShareChannel', channel)
+      callHandler(handlers, 'onShareChannel', event.currentTarget.dataset.shareChannel)
     }
   }
-  for (const [channelId, label, icon, size] of [['lark', '飞书会话', 'LarkLogoColorful', 18], ['favorite', '订阅号', 'SubscriptionShareColorful', 20], ['wechat', '微信', 'WechatColorful', 20], ['qrcode', '二维码', 'QrOutlined', 16], ['secure', '加密链接', 'LinkLockOutlined', 16]]) {
+  for (const [channelId, label, icon, size] of [['wechat', '微信', 'WechatColorful', 20], ['qrcode', '二维码', 'QrOutlined', 16], ['secure', '加密链接', 'LinkLockOutlined', 16]]) {
     const channel = button('lark-doc-share-channel', '', onChannel)
     attr(channel, 'aria-label', label); channel.title = label
     attr(channel, 'data-share-channel', channelId)
     channel.appendChild(svgIcon(icon, size)); copyRow.appendChild(channel)
   }
-  linkCard.appendChild(copyRow)
+  // 灰条挂在面板内层而不是链接卡里：飞书这条是**贴面板左右边的通栏**（480 宽），
+  // 链接卡自带 16px 内衬，挂进去会右移 16、底下再白留 16（实测 335 → 343）。
   lower.appendChild(linkCard)
-  popoverInner.appendChild(lower)
+  popoverInner.append(lower, copyRow)
   popover.appendChild(popoverInner)
 
   // Mobile routes reuse the same guarded business actions as the desktop view.
@@ -203,6 +256,8 @@ function createShareView(options) {
   })
 
   const permissionLayer = createPermissionView({ handlers })
+  const manageLayer = createManageView({ handlers })
+  const addLayer = createAddView({ handlers })
 
   const shareQr = createShareQrView(handlers)
 
@@ -211,6 +266,14 @@ function createShareView(options) {
     if (event.key === 'Escape' && state.shareQr) {
       event.preventDefault(); event.stopPropagation()
       callHandler(handlers, 'onCloseShareQrCode'); return
+    }
+    if (event.key === 'Escape' && state.collaboratorAddOpen) {
+      event.preventDefault(); event.stopPropagation()
+      callHandler(handlers, 'onCloseCollaboratorAdd'); return
+    }
+    if (event.key === 'Escape' && state.collaboratorManageOpen) {
+      event.preventDefault(); event.stopPropagation()
+      callHandler(handlers, 'onCloseCollaboratorManage'); return
     }
     if (!mobileVisible || !state.permissionDialogOpen || !permissionLayer.el.contains(event.target)) return
     const dialog = permissionLayer.el.querySelector(state.passwordDialogOpen ? '.lark-doc-share-password' : state.secureLinkConfirmOpen ? '.lark-doc-share-confirm' : '.lark-doc-permission-dialog')
@@ -225,6 +288,8 @@ function createShareView(options) {
   })
   layer.appendChild(popover)
   layer.appendChild(permissionLayer.el)
+  layer.appendChild(manageLayer.el)
+  layer.appendChild(addLayer.el)
 
   function render(next) {
     const inviteFocusOwned = mobileSearch.contains(layer.ownerDocument.activeElement)
@@ -238,10 +303,9 @@ function createShareView(options) {
     const visible = !!state.sharePopoverOpen && state.shareCanManagePermission !== false && isMobile()
     if (visible && !mobileVisible) { restoreFocus = layer.ownerDocument.activeElement; mobilePage = 'index' }
     popover.classList.toggle('is-mobile-reference', visible)
-    if (visible && copyRow.parentNode !== popoverInner) popoverInner.appendChild(copyRow)
-    else if (!visible && copyRow.parentNode !== linkCard) linkCard.appendChild(copyRow)
-    // 桌面与手机都展示渠道行：新版飞书底部是「复制链接 + 5 渠道」整行（图2），
-    // 不再按手机态隐藏；两种形态的几何差异由 CSS 的 is-mobile-reference 区分。
+    // 桌面与手机同父级（弹窗内层），几何差异交给 CSS 的 is-mobile-reference；
+    // 渠道行两态都展示：飞书底部是「复制链接 + 渠道」整行，不再按手机态隐藏。
+    if (copyRow.parentNode !== popoverInner) popoverInner.appendChild(copyRow)
     copyLink.className = 'lark-doc-share-copy-link'
     popoverInner.hidden = state.sharePopoverOpen && !['index', 'settings'].includes(mobilePage)
     mobile.hidden = !state.sharePopoverOpen || mobilePage === 'index'
@@ -288,47 +352,53 @@ function createShareView(options) {
     mobileReselect.hidden = !(invitation.status === 'failed' || invitation.status === 'committed' && invitation.verified)
     setText(mobileInviteFeedback, invitation.error || (invitation.status === 'preparing' ? '正在确认协作者版本…' : invitation.status === 'sending' ? '正在发送邀请…' : invitation.status === 'querying' ? '正在查询原邀请操作…' : invitation.status === 'committed' && invitation.verified ? '协作者权限已保存' : '确认邀请后，将为此协作者授予所选权限。'))
     shareQr.update(state.shareQr)
+    const collabOpen = !!state.collaboratorManageOpen || !!state.collaboratorAddOpen
+    const popoverStyle = state.sharePopoverStyle || {}
+    // 协作者二级弹窗替换分享 popover 的位置；打开时收起 popover（移动端子页同样收起）。
+    manageLayer.update({ ...state, shareMembers: state.shareMembers })
+    addLayer.update({ ...state, collaboratorSubpage: state.collaboratorSubpage, collaboratorNotify: state.collaboratorNotify, collaboratorNote: state.collaboratorNote })
     syncChildren(layer, [
       { node: mobileMask, on: false },
-      { node: popover, on: !!state.sharePopoverOpen },
+      // 权限 Dialog 是两层叠加（popover 保留）；只有协作者弹窗才是替换位置。
+      { node: popover, on: !!state.sharePopoverOpen && !collabOpen },
       { node: permissionLayer.el, on: !!state.permissionDialogOpen },
+      { node: manageLayer.el, on: !!state.collaboratorManageOpen },
+      { node: addLayer.el, on: !!state.collaboratorAddOpen },
       { node: shareQr.el, on: !!state.shareQr },
     ])
     permissionButton.disabled = state.shareCanManagePermission === false
     attr(permissionButton, 'aria-disabled', String(permissionButton.disabled))
-    applyStyle(popover, state.sharePopoverStyle || {})
+    applyStyle(popover, popoverStyle)
+    applyStyle(manageLayer.el, popoverStyle)
+    applyStyle(addLayer.el, popoverStyle)
     setInputValue(inviteInput, state.shareInviteQuery)
-    const firstMember = state.shareMembers?.status === 'ready' ? state.shareMembers.items?.[0]?.principalId : null
-    setText(avatars.children[0], state.shareMembers ? firstMember?.slice(0, 1) || '' : state.shareCollaboratorInitial)
-    avatars.children[0].style.display = avatars.children[0].textContent ? '' : 'none'
-    setText(avatarMore, state.shareMembers?.status === 'ready' && state.shareMembers.items?.length > 1 ? `+${state.shareMembers.items.length - 1}` : '')
-    avatarMore.hidden = !avatarMore.textContent
+    // 真身这一格恒为「我」的单颗头像：账号名是「崔健军」，头像里写的是「我」。
+    // 也不再拼 +N 灰胶囊（真身胶囊里只有头像 + 右三角，见构造处的量取注释）。
+    setText(avatars.children[0], '我')
     const scopeConfigured = !!state.shareLinkState
-    orgButton.replaceChildren(...(scopeConfigured ? [['collaborators', '仅协作者'], ['public', '互联网获得链接的人']] : [['', '未配置']]).map(([value, label]) => {
-      const option = document.createElement('option'); option.value = value; option.textContent = label; return option
-    }))
-    orgButton.value = state.shareLinkState?.audience || ''
-    orgButton.disabled = !state.shareLinkWritable
-    orgButton.title = scopeConfigured ? '' : '链接范围设置尚未接入文档服务。'
-    linkSelect.disabled = !state.shareLinkWritable
-    linkSelect.title = scopeConfigured ? '' : '链接权限设置尚未接入文档服务。'
+    scopeSelect.update({
+      options: scopeConfigured ? SHARE_SCOPE_OPTIONS : SHARE_SCOPE_UNSET,
+      value: scopeConfigured ? (state.shareLinkState.audience === 'public' ? 'public' : 'collaborators') : '',
+      disabled: !state.shareLinkWritable,
+    })
+    permSelect.update({
+      options: scopeConfigured ? SHARE_PERM_OPTIONS : SHARE_SCOPE_UNSET,
+      value: scopeConfigured ? state.shareLinkPermLabel || '' : '',
+      disabled: !state.shareLinkWritable,
+    })
     setText(linkStatus, state.shareLinkBusy ? '正在读取或保存链接权限…' : state.shareLinkError || (state.shareLinkPending ? '链接操作待确认，请查询原操作。' : !state.shareLinkAvailable ? '链接权限服务尚未接入，当前不可用。' : ''))
-    linkReload.hidden = !state.shareLinkAvailable
+    // 截图是正常态，链接卡里没有「重新载入」这一行；它只在真出错/待查询时才是恢复入口。
+    linkReload.hidden = !state.shareLinkAvailable || (!state.shareLinkBusy && !state.shareLinkError && !state.shareLinkPending)
     linkReload.disabled = !!state.shareLinkBusy
     setText(linkReload, state.shareLinkPending ? '查询原操作' : '重新载入')
+    // 整条状态行在「无文案且无按钮」时收起来 —— 空 span 仍吃 8px margin-top，
+    // 会让链接卡比飞书高 8（196 vs 188）。
+    linkFeedback.hidden = !linkStatus.textContent && linkReload.hidden
     setText(linkTagValue, state.shareLinkScopeTag || (scopeConfigured ? state.shareLinkPermLabel : '未配置'))
     setText(copyLabel, state.shareCopyLabel || '复制链接')
     setText(passwordLink, state.sharePasswordEnabled ? '修改密码' : '启用密码')
     passwordLink.hidden = state.sharePasswordSettingEnabled === false
     setText(scopeText, scopeConfigured ? state.shareScopeText : '链接范围与权限服务尚未配置')
-    linkSelect.textContent = ''
-    ;(scopeConfigured ? state.shareLinkPermOptions || [] : ['未配置']).forEach((option) => {
-      const item = document.createElement('option')
-      item.value = option
-      item.textContent = option
-      linkSelect.appendChild(item)
-    })
-    linkSelect.value = scopeConfigured ? state.shareLinkPermLabel || '' : '未配置'
     permissionLayer.update({ ...state, shareMobile: visible })
     if (visible && openingChildren.length) {
       const selector = state.passwordDialogOpen ? '.lark-doc-share-password' : state.secureLinkConfirmOpen ? '.lark-doc-share-confirm' : '.lark-doc-permission-dialog'

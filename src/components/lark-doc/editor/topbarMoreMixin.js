@@ -5,21 +5,24 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
 /**
  * 顶栏「更多」菜单（P6b 顶栏四浮层之一）。
  *
- * 规格真源：requirements/04 §4.2.1（当前租户 **23 项**，最新真源）+ §4.2（历史 22 项快照
- * 的像素规格：z 1030、项 167×32、子菜单项 173×34、分隔线 173×1、子面板 z 1050）。
+ * 规格真源：requirements/04 §4.2.1 + 2026-11-22 的飞书「更多」菜单 2× 截图逐行复核
+ * （像素规格：z 1030、面板 186 宽、行 30 高、9 条分隔线穿满整宽、子面板 z 1050）。
  *
  * 三条必须守住的红线：
  *
- *   1. **一级菜单是 22 项**（§4.2.1 的 23 项去掉 `另存为版本` —— 手动建版本已按飞书口径
- *      改为后端自动记录，见 `versioning` 的自动快照）。§4.2.1 白纸黑字：`查看已存版本`
- *      是独立一级项，位于 `文档权限` 之前，带右侧箭头。历史上把 22 项当真源会漏掉
- *      这一项；把「更多」子菜单里的 5 项（上传日志/联系客服/功能更新/帮助中心/快捷键）
- *      计进来又会多出 5 项 —— 那 5 项来自**另一个离屏预挂载菜单**（采集快照坐标
- *      -8560,-9123），§4.2 明确「不要写进『更多』子菜单」。
- *   2. **4 个 submenu 里只有 3 个真的有子面板**（下载为 / 文档权限 / 更多）。
- *      `翻译为英语` 的类名是 `ud__menu-normal-submenu` 但 **hover 与 click 都不展开**，
- *      它是**立即执行的命令**（点击进入翻译模式）——飞书自身的类名复用，不是我们漏读。
- *      所以它的 `kind` 记成 `route`（有箭头、无面板、点击即执行），不能当成 submenu。
+ *   1. **一级菜单是 23 项**，顺序照截图自上而下；`主题` 是我们自加的第 24 项，恒在末尾
+ *      （飞书没有这一项，见 `topbarMoreItems` 的追加）。历史上曾按「手动建版本已改为
+ *      后端自动快照」把 `另存为版本` 从表里删掉 —— 截图证明飞书桌面端仍然保留它，
+ *      已恢复，并落在「打印」与「查看已存版本」之间。把「更多」子菜单里的 5 项
+ *      （上传日志/联系客服/功能更新/帮助中心/快捷键）计进来会多出 5 项 —— 那 5 项来自
+ *      **另一个离屏预挂载菜单**（采集快照坐标 -8560,-9123），§4.2 明确「不要写进『更多』
+ *      子菜单」。
+ *   2. **7 个项带右侧箭头**（页宽设置 / 下载为 / 翻译为英语 / 查看已存版本 / 文档权限 /
+ *      文档小组件 / 更多），其中「文档小组件」的子面板内容来自 `documentWidgetItems`
+ *      而非静态表。`翻译为英语` 的类名是 `ud__menu-normal-submenu` 但 **hover 与 click
+ *      都不展开**，它是**立即执行的命令**（点击进入翻译模式）——飞书自身的类名复用，
+ *      不是我们漏读。所以它的 `kind` 记成 `route`（有箭头、无面板、点击即执行）。
+ *      另外 2 个项右侧是开关（关注文档更新 / 转换为模板），1 个是 help 圆点（添加快捷方式到）。
  *   3. **菜单宽度不许硬编码 175**。§4.2 ④-2 末尾给的反证：翻译模式菜单宽 160、项 152、
  *      分隔线 158，整体窄 15 —— 宽度由**最长文案自适应**。所以这里用 `fit-content`
  *      + `min-width`，CSS 里不写 175。
@@ -31,55 +34,66 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
  *   ② 单测要能脱离 Vue 验证「顺序 / 分组 / 子面板归属 / 定位」，逻辑必须是纯函数。
  */
 
-/** 一级菜单 22 项。顺序与 §4.2.1 一致（去掉了已下线的 `另存为版本`）；`order` 从 1 起。 */
+/**
+ * 一级菜单 23 项，逐项对齐飞书「更多」菜单的 2× 截图（行 30 高、面板 186 宽、
+ * 右侧附属物 7 个箭头 / 2 个开关 / 1 个 help 圆点全部逐行核对过）。
+ *
+ * `icon` 指向 `src/ui/icons.js` 的 `menu-*`，注释里是飞书的 `data-icon` 原名 ——
+ * 逐个用 16px 截图做过墨迹重合度校验（IoU ≥ 0.98），只有 `menu-history` 是拟合的。
+ * 第 5 列 `help` 存在时，右侧画 `?` 圆点并在悬停时给说明气泡（文案取飞书原文）。
+ */
 export const TOPBAR_MORE_ITEMS = Object.freeze([
-  ['width', '页宽设置', 'submenu'],
-  ['slides', '演示模式'],
-  ['follow', '关注文档更新', 'switch'],
-  ['find', '查找和替换'],
-  ['shortcut', '添加快捷方式到'],
-  ['move', '移动到'],
-  ['pin', '添加到“置顶”'],
-  ['favorite', '添加到收藏'],
-  ['template', '转换为模板'],
-  ['duplicate', '创建副本'],
-  ['download-as', '下载为', 'submenu'],
+  ['width', '页宽设置', 'menu-width', 'submenu'], // FullWidthOutlined
+  ['slides', '演示模式', 'menu-presentation'], // PresentationOutlined
+  ['follow', '关注文档更新', 'menu-follow', 'switch'], // SubscribeAddOutlined
+  ['find', '查找和替换', 'menu-find'], // CardSearchOutlined
+  // 「添加快捷方式到」右侧是 help 圆点而非子菜单箭头，悬停出说明。
+  ['shortcut', '添加快捷方式到', 'menu-shortcut', 'item', '添加后支持从不同位置展示并链接到原始内容'], // NewShortcutOutlined
+  ['move', '移动到', 'menu-move'], // MoveToOutlined
+  ['pin', '添加到“置顶”', 'menu-pin'], // ChatPinOutlined
+  ['favorite', '添加到收藏', 'menu-favorite'], // CollectionOutlined
+  ['template', '转换为模板', 'menu-template', 'switch'], // TemplateOutlined
+  ['duplicate', '创建副本', 'menu-duplicate'], // CopyOutlined
+  ['download-as', '下载为', 'menu-download', 'submenu'], // ExportOutlined
   // 翻译点击后进入翻译模式，右侧箭头指向该操作。
-  ['translate', '翻译为英语', 'route'],
-  ['print', '打印'],
-  ['view-versions', '查看已存版本', 'submenu'],
-  ['doc-permission', '文档权限', 'submenu'],
-  ['widgets', '文档小组件'],
-  ['doc-info', '文档信息'],
-  ['mentioned', '提及的人'],
-  ['history', '历史记录'],
-  ['history-comments', '历史评论'],
-  ['more', '更多', 'submenu'],
-  ['delete', '删除'],
-].map(([id, label, kind = 'item'], index) => ({
-  id, label, kind, order: index + 1, enabled: true, action: id,
-  // switch 项（关注文档更新）右侧是开关，不画子面板箭头。
+  ['translate', '翻译为英语', 'menu-translate', 'route'], // TranslateOutlined
+  ['print', '打印', 'menu-print'], // PrinterOutlined
+  ['save-version', '另存为版本', 'menu-save-version'], // ReadinfoOutlined
+  ['view-versions', '查看已存版本', 'menu-versions', 'submenu'], // OperationrecordOutlined
+  ['doc-permission', '文档权限', 'menu-permission', 'submenu'], // SettingOutlined
+  ['widgets', '文档小组件', 'menu-widgets', 'submenu'], // PluginOutlined
+  ['doc-info', '文档信息', 'menu-info'], // InfoOutlined
+  ['mentioned', '提及的人', 'menu-mention'], // AtOutlined
+  ['history', '历史记录', 'menu-history'], // 飞书该图标未捕获，按截图拟合
+  ['history-comments', '历史评论', 'menu-history-comments'], // HistoryCommantOutlined
+  ['more', '更多', 'menu-more', 'submenu'], // MoreOutlined
+  ['delete', '删除', 'menu-delete'], // DeleteTrashOutlined
+].map(([id, label, icon, kind = 'item', help], index) => ({
+  id, label, icon, kind, order: index + 1, enabled: true, action: id,
+  ...(help ? { help } : {}),
+  // 右侧是开关的项（关注文档更新 / 转换为模板）不画子面板箭头。
   affordance: kind === 'submenu' || kind === 'route' ? 'arrow' : 'none',
 })))
 
 /**
  * 分隔线：标记「哪一项之后画线」。
  *
- * 依据 §4.2 ④-2 的 9 条分隔线 y 序列（127/202/345/488/529/570/611/651/794）反推出的
- * 10 个分组，再把 §4.2.1 新增的 `查看已存版本` 并入「版本」组：
+ * 直接照 2× 截图里 9 条线的位置写死（y 序列 236/370/624/886/960/1102/1184/1264 + 尾段
+ * 「历史评论」之后那条），落成 10 个分组：
  *
  *   ① 视图（页宽设置/演示模式）② 关注（关注文档更新/查找和替换）
  *   ③ 快捷方式（添加快捷方式到/移动到/添加到「置顶」/添加到收藏）
  *   ④ 模板与副本（转换为模板/创建副本）⑤ 导出（下载为/翻译为英语）
- *   ⑥ 打印 ⑦ 版本（查看已存版本）⑧ 权限与小组件（文档权限/文档小组件）
- *   ⑨ 信息（文档信息/提及的人/历史记录/历史评论）⑩ 危险区（更多/删除）
+ *   ⑥ 打印 ⑦ 版本（另存为版本/查看已存版本）⑧ 权限（文档权限）
+ *   ⑨ 小组件（文档小组件）⑩ 信息（文档信息/提及的人/历史记录/历史评论）
+ *   ⑪ 危险区（更多/删除）
  *
- * `另存为版本` 下线前，版本组是「另存为版本/查看已存版本」两项，两条线分别在组首组尾；
- * 现在版本组只剩「查看已存版本」一项，线仍在组尾（`view-versions` 之后）⇒ 仍是 **8 条**。
- * 这不是随手改的，是「组间只有一条线」这个不变量决定的。
+ * 注意两处「反直觉」但截图确凿的事实：
+ *   ① 「页宽设置」与「演示模式」之间**没有**线（都在视图组里）；
+ *   ② 「打印」独自成组 —— 它前后各有一条线，别把「另存为版本」并进去。
  */
 export const TOPBAR_MORE_DIVIDER_AFTER = Object.freeze([
-  'slides', 'find', 'favorite', 'translate', 'print', 'view-versions', 'widgets', 'history-comments',
+  'slides', 'find', 'favorite', 'translate', 'print', 'view-versions', 'doc-permission', 'widgets', 'history-comments',
 ])
 
 /**
@@ -96,7 +110,8 @@ export const TOPBAR_MORE_SUBPANELS = Object.freeze({
     { id: 'markdown', label: 'Markdown', action: 'export.markdown' },
   ]),
   'doc-permission': Object.freeze([
-    { id: 'manage-collaborator', label: '管理协作者', action: 'permission.manage' },
+    // 飞书只有「管理协作者」这一项带图标（`AdminSettingOutlined`），另两项源码无 icon，别补。
+    { id: 'manage-collaborator', label: '管理协作者', icon: 'menu-admin-setting', action: 'permission.manage' },
     { id: 'permission-settings', label: '权限设置', action: 'permission.settings' },
     { id: 'divider', label: '', kind: 'divider' },
     { id: 'transfer-owner', label: '转移所有权', action: 'permission.transfer' },
@@ -105,7 +120,8 @@ export const TOPBAR_MORE_SUBPANELS = Object.freeze({
     { id: 'add-app', label: '添加文档应用', action: 'more.add-app' },
     { id: 'show-author', label: '在段落前显示作者', kind: 'switch', action: 'more.show-author' },
     { id: 'offline', label: '设为离线可使用', kind: 'switch', action: 'more.offline' },
-    { id: 'report', label: '举报', action: 'more.report' },
+    // 飞书该项带图标（`WarnReportOutlined`）；同面板其余项源码无 icon。
+    { id: 'report', label: '举报', icon: 'menu-report', action: 'more.report' },
   ]),
   'view-versions': Object.freeze([
     { id: 'v1', label: '/code 第 1 版复盘V1', action: 'version.open' },
@@ -228,6 +244,8 @@ export default {
       /** 关注状态来自 Provider（非 Vue 响应式），成功后靠 revision 强制刷新开关。 */
       topbarMoreRevision: 0,
       docToast: '',
+      /** 飞书消息条栈：连续操作各占一条，互不替换（真身截图两条上下并存）。 */
+      docToasts: [],
     }
   },
   computed: {
@@ -242,7 +260,8 @@ export default {
       const capability = TOPBAR_MORE_CAPABILITY
       // 读取 revision 建立依赖：关注写入后开关必须立刻反映新状态（Provider 状态不是响应式的）。
       if (this.topbarMoreRevision < 0) return []
-      const followed = this.session?.getProvider?.('documentBusiness')?.getState?.()?.followed
+      const business = this.session?.getProvider?.('documentBusiness')?.getState?.()
+      const followed = business?.followed
       return [...TOPBAR_MORE_ITEMS, { id: 'theme', label: '主题', kind: 'submenu', icon: 'sparkle', enabled: true }].map((item) => {
         const key = capability[item.id]
         let enabled = item.enabled
@@ -250,9 +269,13 @@ export default {
         // 阅读态（只读）下写操作一律置灰：删除/创建副本/转换为模板/翻译。
         if (enabled && this.effectiveReadonly && TOPBAR_MORE_READONLY_DISABLED.indexOf(item.id) >= 0) enabled = false
         if (item.id === 'history-comments') enabled = enabled && this.commentCanViewHistory?.() === true
-        // 关注是开关：勾选态来自 documentBusiness，写入期间整行禁用（飞书同款）。
-        if (item.id === 'follow') return { ...item, enabled: enabled && !this.topbarMoreBusy,
-          ...(this.topbarMoreBusy ? { title: '正在处理文档操作。' } : {}), checked: followed === true }
+        if (item.id === 'save-version') enabled = enabled && this.versionCanSave === true
+        // 没有任何已装小组件时子面板会是空的，飞书此时也不给入口。
+        if (item.id === 'widgets') enabled = enabled && !!this.documentWidgetItems?.length
+        // 关注 / 转换为模板是开关：勾选态来自 documentBusiness，写入期间整行禁用（飞书同款）。
+        if (item.id === 'follow' || item.id === 'template') return { ...item, enabled: enabled && !this.topbarMoreBusy,
+          ...(this.topbarMoreBusy ? { title: '正在处理文档操作。' } : {}),
+          checked: (item.id === 'follow' ? followed : business?.isTemplate) === true }
         return { ...item, enabled, ...(!enabled && item.id === 'history-comments' ? { title: '当前评论服务不可用或没有查看权限' } : {}) }
       })
     },
@@ -281,6 +304,8 @@ export default {
         return items
       }
       if (this.topbarMoreSubmenu === 'theme') return documentMenuChildren(this, 'theme')
+      // 文档小组件的子面板是动态的（已装小组件 + 「更多/管理小组件」两个入口），不在静态表里。
+      if (this.topbarMoreSubmenu === 'widgets') return (this.documentWidgetItems || []).map(item => ({ ...item, action: 'widgets' }))
       return TOPBAR_MORE_SUBPANELS[this.topbarMoreSubmenu] || []
     },
   },
@@ -293,20 +318,36 @@ export default {
   },
   beforeDestroy() {
     this.closeDocumentInformation(); this.retireSavedVersionsMenu()
-    if (this._docToastTimer) { clearTimeout(this._docToastTimer); this._docToastTimer = null }
+    if (this._docToastTimers) { this._docToastTimers.forEach(clearTimeout); this._docToastTimers = null }
   },
   methods: {
-    /** 飞书文档级提示条（关注/取消关注）。3s 后自收，复用顶栏浮层宿主。 */
+    /**
+     * 飞书文档级消息条（关注/取消关注）：顶部居中、每条独立 3s 自收、连续操作上下堆叠。
+     * 真身两条并存（见 specs/008 的 REA 截图），所以不再用单条替换。
+     * `docToast` 保留为最后一条的影子，兼容旧调用方与测试。
+     */
     showDocumentToast(text = '') {
-      if (this._docToastTimer) { clearTimeout(this._docToastTimer); this._docToastTimer = null }
+      if (!text) {
+        if (this._docToastTimers) { this._docToastTimers.forEach(clearTimeout); this._docToastTimers = [] }
+        this.docToasts = []; this.docToast = ''
+        this.refreshTopBar?.()
+        return
+      }
+      const timers = this._docToastTimers || (this._docToastTimers = [])
+      if (!this._docToastSeq) this._docToastSeq = 0
+      const id = ++this._docToastSeq
+      this.docToasts = [...(this.docToasts || []), { id, text }]
       this.docToast = text
       this.refreshTopBar?.()
-      if (!text) return
-      this._docToastTimer = setTimeout(() => {
-        this._docToastTimer = null
-        this.docToast = ''
+      // 用闭包 id 精确摘除自己，避免并发时误删别的消息条。
+      const timer = setTimeout(() => {
+        const at = timers.indexOf(timer)
+        if (at >= 0) timers.splice(at, 1)
+        this.docToasts = (this.docToasts || []).filter(item => item.id !== id)
+        this.docToast = this.docToasts.length ? this.docToasts[this.docToasts.length - 1].text : ''
         this.refreshTopBar?.()
       }, 3000)
+      timers.push(timer)
     },
     retireSavedVersionsMenu() {
       this._savedVersionsMenuRead = null
@@ -551,6 +592,15 @@ export default {
         case 'version.open':
           this.closeTopbarMore()
           this.openVersionPanel()
+          return
+        case 'save-version':
+          this.closeTopbarMore()
+          this.openSaveVersion(this._topbarMoreTrigger)
+          return
+        // 文档小组件的子面板项：值即小组件 id（含 discover / manage 两个入口）。
+        case 'widgets':
+          this.closeTopbarMore()
+          this.runDocumentWidget(payload && payload.value)
           return
         case 'permission.manage':
           this.closeTopbarMore()

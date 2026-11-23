@@ -87,7 +87,8 @@
   /* ---- 菜单 / 浮层背景（06 §1.4：hover = #1F2329 低透明，选中 = #E0E9FF） ---- */
   --ld-bg-tooltip: #1F2329;           /* 飞书 tooltip 底色 = 主文字色 */
   --ld-bg-soft: #F5F6F7;              /* = --bg-code / --bg-page */
-  --ld-bg-switch-off: #BBBFC4;
+  /* 关闭态轨道 = 主文字色 20%（白底合成 rgb(209,211,214)，与「更多」菜单 2× 截图逐像素一致） */
+  --ld-bg-switch-off: rgba(31, 35, 41, 0.2);
   --ld-bg-handle-hover: rgba(31, 35, 41, 0.05);
   --ld-bg-menu-item-active: #E0E9FF;  /* = --bg-selected */
   --ld-bg-brand-hover: #336DF4;

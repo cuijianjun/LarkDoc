@@ -43,7 +43,9 @@ function editorCall(page, source) {
       ;(node.$children || []).forEach(walk)
     }
     walk(anchor && anchor.__vue__ ? anchor.__vue__.$root : null)
-    const editor = window.__larkDoc?._handle?.nativeHost?.host || all.find((node) => node.$options && node.$options.name === 'LarkDocEditor')
+    const editor = window.__larkDoc?._handle?.nativeHost?.host ||
+      document.querySelector('lark-doc')?.getInstance?.()._handle?.nativeHost?.host ||
+      all.find((node) => node.$options && node.$options.name === 'LarkDocEditor')
     // eslint-disable-next-line no-new-func
     return new Function('editor', `return (async () => { ${body} })()`)(editor)
   }, source)
@@ -55,7 +57,8 @@ function editorCall(page, source) {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(BASE, { waitUntil: 'networkidle' })
-  await page.waitForFunction(() => window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor(), { timeout: 60000 })
+  await page.waitForFunction(() => (window.__larkDoc && window.__larkDoc.getEditor && window.__larkDoc.getEditor()) ||
+    document.querySelector('lark-doc')?.getInstance?.()?._handle, { timeout: 60000 })
 
   // Demo 默认 session 是降级态；验证完整权限链路时只在页面内打开能力，不改业务逻辑。
   await editorCall(page, 'window.__overlayOriginalSession = editor.session; editor.session = { can: () => true }; editor.$forceUpdate(); editor.refreshOverlays()')
@@ -73,7 +76,8 @@ function editorCall(page, source) {
   record('初始状态分享入口同步挂载，按需面板包与条件浮层都不在 DOM',
     !initial.root && initial.entry && !initial.popover && !initial.permission && !initial.export, JSON.stringify(initial))
 
-  await page.locator('.lark-doc-share-entry button').click()
+  // demo 页面同时挂了多个编辑器实例，取第一个可见入口。
+  await page.locator('.lark-doc-share-entry button').first().evaluate((node) => node.click())
   await page.waitForTimeout(300)
   const share = await page.evaluate(() => {
     const popover = document.querySelector('.lark-doc-share-popover')
@@ -135,13 +139,14 @@ function editorCall(page, source) {
       const node = document.querySelector('.lark-doc-permission-dialog')
       return node ? { role: node.getAttribute('role'), label: node.getAttribute('aria-label') } : null
     })(),
-    outsideDesc: document.querySelector('.lark-doc-permission-desc')?.textContent.trim(),
+    // B20：飞书把这一项渲染成独立复选框（静态展示，服务未接入），不再是描述文字。
+    outsideDesc: [...document.querySelectorAll('.lark-doc-permission-check-label')].map(n => n.textContent.trim()),
     secure: !!document.querySelector('.lark-doc-secure-link'),
   }))
   record('权限 Dialog 打开时一级 popover 保持打开，遮罩与结构真实存在',
     permission.popover && permission.layer && permission.mask && permission.dialog &&
       permission.dialog.role === 'dialog' && permission.dialog.label === '权限设置' &&
-      permission.outsideDesc === '仅"可管理权限"可以将内容分享到组织外' && permission.secure,
+      permission.outsideDesc.includes('仅“可管理权限”可以将内容分享到组织外') && permission.secure,
     JSON.stringify(permission))
 
   const switchNode = page.locator('.lark-doc-secure-link-desc')

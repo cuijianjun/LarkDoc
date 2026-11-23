@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lark-doc · 权限设置弹窗预览</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../dist/lark-doc-element.ui.css">
+  <style>
+    html, body { width: 100%; min-width: 0; }
+    body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; color: #1f2329; background: #f5f6f7; }
+    body > header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e5e6eb; }
+    body > header h1 { margin: 0 0 4px; font-size: 18px; }
+    body > header p { margin: 0; color: #86909c; font-size: 13px; }
+    body > main { width: calc(100% - 32px); margin: 0 auto; padding: 20px 0 60px; }
+    lark-doc { display: block; width: 100%; height: clamp(560px, calc(100vh - 200px), 820px); overflow: hidden; border-radius: 10px; background: #fff; box-shadow: 0 2px 12px rgba(31, 35, 41, .08); }
+    #reopen { padding: 6px 14px; border: 1px solid #d0d3d6; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
+    #reopen:hover { border-color: #1456f0; color: #1456f0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>权限设置弹窗预览</h1>
+    <p>打开即自动弹出「权限设置」；关掉后点下面的按钮可再次打开。</p>
+  </header>
+  <main>
+    <p><button id="reopen" type="button">再次打开权限设置</button></p>
+    <lark-doc
+      id="perm-demo"
+      document-id="permission-preview"
+      features='{"ai":false,"persistence":false}'
+      title="权限设置预览文档"
+      theme="light"
+    ><h1>权限设置预览</h1><p>这个页面只用来核对权限弹窗的样式与交互，正文内容随意。</p></lark-doc>
+  </main>
+  <script type="module" src="../dist/lark-doc-element.esm.js"></script>
+  <script>
+    // 权限弹窗的开关在编辑器内部状态上，这里用最小注入打开它：
+    // session 给一个全允许的 mock（只影响弹窗里按钮的禁用态），不写任何后端。
+    function openPermissionDialog() {
+      var el = document.getElementById('perm-demo');
+      var instance = el && el.getInstance && el.getInstance();
+      var handle = instance && instance._handle;
+      if (!handle) return false;
+      var host = handle.nativeHost && handle.nativeHost.host;
+      if (!host || !handle.state) return false;
+      if (!host.session) host.session = { can: function () { return true } };
+      handle.state.permissionDialogOpen = true;
+      if (typeof host.refreshOverlays === 'function') host.refreshOverlays();
+      return true;
+    }
+
+    function boot() {
+      if (openPermissionDialog()) return;
+      // 实例还没挂好就等 ready 事件，再退一步兜底重试。
+      var el = document.getElementById('perm-demo');
+      el.addEventListener('lark-doc-ready', function () { setTimeout(openPermissionDialog, 0) }, { once: true });
+      var tries = 0;
+      var timer = setInterval(function () {
+        tries += 1;
+        if (openPermissionDialog() || tries > 40) clearInterval(timer);
+      }, 100);
+    }
+
+    customElements.whenDefined('lark-doc').then(function () { boot() });
+    document.getElementById('reopen').addEventListener('click', openPermissionDialog);
+  </script>
+</body>
+</html>

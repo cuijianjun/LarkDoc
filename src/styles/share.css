@@ -33,8 +33,16 @@
   --ld-share-text-tertiary: #8F959E;    /* 三级：占位 / 未激活提示 */
   --ld-share-text-disabled: #BBBFC4;    /* 禁用文字 / 规则未达图标 */
   --ld-share-border: #DEE0E3;           /* 分隔线 / 头像底 / 开关关 */
-  --ld-share-border-control: #D0D3D6;   /* 描边按钮 / 竖直分隔 */
+  --ld-share-border-control: #D0D3D6;   /* 描边按钮 / 竖直分隔 / 下划线下拉静止态 */
+  /* —— 权限 Dialog 真身实测档（suite-config-modal，2026-11-22）—— */
+  --ld-share-divider: rgba(31, 35, 41, 0.15);        /* header/body 之间与折叠区上方的 1px 线 */
+  --ld-share-fill-disabled: #EFF0F1;                 /* 复选禁用底（真身 rgb(239,240,241)） */
+  --ld-share-fill-active: rgba(31, 35, 41, 0.08);    /* 下拉菜单选中项底 */
+  --ld-share-fill-hover: rgba(31, 35, 41, 0.06);     /* 下拉菜单 hover 底（真身同档色阶） */
+  --ld-share-shadow-menu: rgba(31, 35, 41, 0.04) 0 8px 24px 8px, rgba(31, 35, 41, 0.04) 0 6px 12px 0, rgba(31, 35, 41, 0.06) 0 4px 8px -8px;
   --ld-share-bg-subtle: #F5F6F7;        /* 浅底：图标底 / 人数溢出块 / 规则框 */
+  --ld-share-tag-bg: #D2DEFD;           /* 「仅当前页面」浅蓝标签底（截图 rgb(210,222,253)） */
+  --ld-share-globe: #336DF4;            /* 链接范围左侧圆底地球（截图 rgb(51,109,244)） */
   --ld-share-success: #32A645;          /* 规则达标的勾 */
   --ld-share-danger: #F54A45;           /* 规则未达 / 校验失败的叉与文字 */
   --ld-share-toast-success-bg: #E4FAE1; /* 成功 toast 底（⑤-4） */

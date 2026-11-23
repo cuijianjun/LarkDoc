@@ -2752,27 +2752,37 @@
    宽度**自适应**：§4.2 ④-2 末尾的反证是「翻译模式菜单整体窄 15px」，硬编码 175 会把
    所有菜单锁死在同一宽度。所以这里只给 min-width，最终宽度由最长文案撑开，
    JS 再按实测尺寸回写定位（见 topbarMoreMixin#measureTopbarMore）。 */
-.lark-doc .lark-doc-topbar-more { position: fixed; z-index: 1030; box-sizing: border-box; min-width: 160px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+/* 几何全部取自飞书「更多」菜单的 2× 截图（面板 372×? device ⇒ 186 CSS 宽、行 30 高、
+   图标框 16 居中于 x40、文字左缘 36、右侧附属物右缘 162 ⇒ 左右内衬 12 / 24）。
+   padding 恒 0：分隔线在截图里是**穿满整宽**的，行内衬由 item 自己撑。 */
+.lark-doc .lark-doc-topbar-more { position: fixed; z-index: 1030; box-sizing: border-box; min-width: 188px; padding: 0; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-topbar-more-list, .lark-doc .lark-doc-topbar-more-submenu { margin: 0; padding: 0; list-style: none; }
-/* 23 项 × 32 + 8 条线 ≈ 800，超过窄屏高度时转成滚动 —— 宁可滚也不能截断尾部的「删除」。 */
+/* 23 项 × 30 + 9 条线 ≈ 750，超过窄屏高度时转成滚动 —— 宁可滚也不能截断尾部的「删除」。 */
 .lark-doc .lark-doc-topbar-more-list { max-height: min(760px, calc(100vh - 24px)); overflow-y: auto; overscroll-behavior: contain; }
-.lark-doc .lark-doc-topbar-more-item { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 32px; padding: 0 12px; border-radius: 4px; color: var(--ld-text-menu); font-size: 13px; line-height: 1; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-topbar-more-item { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 30px; padding: 0 24px 0 12px; border: 0; border-radius: 0; color: var(--ld-text-menu); font-size: 14px; line-height: 1; white-space: nowrap; cursor: pointer; }
 .lark-doc .lark-doc-topbar-more-item:hover, .lark-doc .lark-doc-topbar-more-item:focus-visible { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); outline: 0; }
 .lark-doc .lark-doc-topbar-more-item.is-disabled { color: var(--ld-text-disabled); cursor: default; }
 .lark-doc .lark-doc-topbar-more-item.is-disabled:hover { background: transparent; }
 .lark-doc .lark-doc-topbar-more-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* 右侧箭头用 CSS 三角：§4.2 只给了「有箭头」这件事，没给字形，不值得为它引一颗图标。 */
-.lark-doc .lark-doc-topbar-more-item-arrow { flex: 0 0 auto; width: 0; height: 0; margin-left: 6px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid var(--ld-text-icon-tertiary); }
-.lark-doc .lark-doc-topbar-more-divider { height: 1px; margin: 4px 8px; background: var(--ld-border-chrome); }
+/* 行首图标：16 框、灰 #646A73（飞书 data-icon 原图，24 视图塞进 16 框自动缩放）。 */
+.lark-doc .lark-doc-topbar-more-item-icon { display: inline-flex; flex: 0 0 16px; color: var(--ld-text-menu-icon); }
+/* 右侧箭头是 24 视图的 RightOutlined，不是 CSS 三角（截图里墨迹 5.5×9、右缘与下方附属物齐平）。 */
+.lark-doc .lark-doc-topbar-more-item-arrow { display: inline-flex; flex: 0 0 16px; color: var(--ld-text-icon-tertiary); }
+/* 「添加快捷方式到」的 help 圆点（MaybeOutlined），与箭头同一个右侧槽位。 */
+.lark-doc .lark-doc-topbar-more-item-help { display: inline-flex; flex: 0 0 16px; color: var(--ld-text-menu-icon); }
+.lark-doc .lark-doc-topbar-more-divider { height: 1px; margin: 4px 0; background: var(--ld-border-chrome); }
+/* help 气泡：2× 截图 264×36 CSS ⇒ 12px 字 / 20 行高 / 左右 12 上下 8，无箭头。 */
+.lark-doc .lark-doc-topbar-more-tip { position: fixed; z-index: 1060; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
 /* 二级子面板：z 1050（§4.2 ④-4），零间隙贴父菜单右缘 —— 不是常见的 +4 偏移。 */
 .lark-doc .lark-doc-topbar-more-submenu { position: fixed; z-index: 1050; box-sizing: border-box; min-width: 120px; padding: 4px; border: 1px solid var(--ld-border-chrome); border-radius: 7px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-topbar-more-submenu-item { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 34px; padding: 0 12px; border-radius: 4px; color: var(--ld-text-menu); font-size: 13px; line-height: 1; white-space: nowrap; cursor: pointer; }
 .lark-doc .lark-doc-topbar-more-submenu-item:hover, .lark-doc .lark-doc-topbar-more-submenu-item:focus-visible { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); outline: 0; }
-/* 「在段落前显示作者 / 设为离线可使用」两个 switch（§4.2.1 前台复核项）。 */
-.lark-doc .lark-doc-topbar-more-switch { position: relative; flex: 0 0 auto; width: 32px; height: 18px; margin-left: 6px; border-radius: 9px; background: var(--ld-bg-switch-off); transition: background .15s ease; }
+/* 「关注文档更新 / 转换为模板」两个 switch：截图实测轨道 28×16、圆点 12 居中留 2 边。
+   关闭态轨道是主文字色 20%（白底上 ≈ rgb(209,211,214)），不是 --ld-text-disabled 那支灰。 */
+.lark-doc .lark-doc-topbar-more-switch { position: relative; flex: 0 0 auto; width: 28px; height: 16px; border-radius: 8px; background: var(--ld-bg-switch-off); transition: background .15s ease; }
 .lark-doc .lark-doc-topbar-more-switch.is-on { background: var(--ld-brand-content); }
-.lark-doc .lark-doc-topbar-more-switch-handler { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ld-bg-switch-thumb); box-shadow: var(--ld-shadow-thumb); transition: left .15s ease; }
-.lark-doc .lark-doc-topbar-more-switch.is-on .lark-doc-topbar-more-switch-handler { left: 16px; }
+.lark-doc .lark-doc-topbar-more-switch-handler { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--ld-bg-switch-thumb); box-shadow: var(--ld-shadow-thumb); transition: left .15s ease; }
+.lark-doc .lark-doc-topbar-more-switch.is-on .lark-doc-topbar-more-switch-handler { left: 14px; }
 /* 关注引导卡与关注成功 toast 的样式在 deferred-ui.css：它们随「更多」菜单所在的
    ui 特性包一起到，首屏样式不必为未点开的菜单先背上这 2.4 KB。 */
 

@@ -387,11 +387,13 @@ describe('browser reference mobile document menus', () => {
     expect(ui.el.querySelector('.lark-doc-share-mobile-mask')).toBeNull()
     expect(card.querySelector('[aria-label="链接权限"]').disabled).toBe(true)
     expect(card.textContent).toContain('链接范围与权限服务尚未配置')
-    expect([...card.querySelectorAll('.lark-doc-share-org-btn option')].map(option => option.textContent)).toEqual(['未配置'])
-    // 飞书真实渠道行：5 个按钮全部可点，按钮顺序与 279 bundle 的 render 一致
+    // 未配置时范围下拉只剩「未配置」一项且置灰（共享下拉原语不暴露原生 option，读触发文案）。
+    expect(card.querySelector('.lark-doc-share-scope-select .lark-doc-select-label').textContent).toBe('未配置')
+    expect(card.querySelector('.lark-doc-share-scope-select .lark-doc-select-trigger').disabled).toBe(true)
+    // 飞书真实渠道行：用户口径只留后三枚（飞书会话 logo / 订阅号紫星连同功能一并去掉）
     expect(card.querySelectorAll('.lark-doc-share-channel:disabled')).toHaveLength(0)
     expect([...card.querySelectorAll('.lark-doc-share-channel')].map(node => node.getAttribute('data-share-channel')))
-      .toEqual(['lark', 'favorite', 'wechat', 'qrcode', 'secure'])
+      .toEqual(['wechat', 'qrcode', 'secure'])
   })
   it('keeps document link copying distinct from selection-recipient sharing', () => {
     const onCopyShareLink = vi.fn(), onSubmitImageShare = vi.fn(), ui = overlays({ onCopyShareLink, onSubmitImageShare })
@@ -402,26 +404,30 @@ describe('browser reference mobile document menus', () => {
   it('dispatches each Feishu-style channel button through onShareChannel', () => {
     const onShareChannel = vi.fn(), ui = overlays({ onShareChannel })
     ui.update(shareState())
-    for (const id of ['lark', 'favorite', 'wechat', 'qrcode', 'secure']) {
+    for (const id of ['wechat', 'qrcode', 'secure']) {
       ui.el.querySelector(`[data-share-channel="${id}"]`).click()
       expect(onShareChannel).toHaveBeenCalledWith(id)
     }
-    expect(onShareChannel).toHaveBeenCalledTimes(5)
+    expect(onShareChannel).toHaveBeenCalledTimes(3)
+    // 搜索框右侧的「+」在桌面端把焦点送回输入框（飞书这一格的作用）。
+    // `overlays()` 会把 innerWidth 钉在 393，桌面分支要在点击前改回来（isMobile 是点击时才求值）。
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
+    ui.el.querySelector('[aria-label="添加协作者"]').click()
     expect(document.activeElement).toBe(ui.el.querySelector('.lark-doc-share-invite input'))
   })
-  it('maps share channels to the Feishu source handlers without Web Share guesses', async () => {
+  it('maps the three remaining channels to their Feishu source handlers', async () => {
     const showQr = vi.fn(async () => true), setAudience = vi.fn(async () => ({})), openPasswordDialog = vi.fn()
-    const subscription = vi.fn(), showShareToast = vi.fn()
+    const showShareToast = vi.fn()
     const ed = {
       shareCan: () => true, showShareToast,
-      larkDocConfig: { shareMethodConfig: { subscriptionConfig: { enable: true, handler: subscription } } },
       shareLinkState: { audience: 'public', passwordAvailable: false },
       showShareQrCode: showQr, setShareLinkAudience: setAudience, openPasswordDialog,
       handleSharePasswordSetting: shareMixin.methods.handleSharePasswordSetting,
     }
     const invoke = id => shareMixin.methods.shareViaChannel.call(ed, id)
-    expect(await invoke('lark')).toBe(true)
-    expect(await invoke('favorite')).toBe(true); expect(subscription).toHaveBeenCalledOnce()
+    // 飞书会话 / 订阅号两枚已按用户口径移除：连 id 都不再分发，返回 false 且不留侧效。
+    expect(await invoke('lark')).toBe(false)
+    expect(await invoke('favorite')).toBe(false)
     expect(await invoke('wechat')).toBe(true); expect(showQr).toHaveBeenCalledWith('wechat')
     expect(await invoke('secure')).toBe(true); expect(setAudience).not.toHaveBeenCalled()
     expect(openPasswordDialog).toHaveBeenCalledOnce()
