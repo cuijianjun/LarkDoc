@@ -94,17 +94,34 @@ export function formatVersionDayLabel(createdAt, now) {
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
+/** 某个自然月的 `YYYY-MM` 键（跨年同月不能并组，所以带上年份）。 */
+function monthKeyOf(createdAt) {
+  const date = new Date(createdAt)
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`
+}
+
 /**
- * 按天分组（04 §3.4-C）。
+ * 时间线的分组标题：`M月`。
+ *
+ * 飞书真身按**月**分组：`hist_i_select2.png` 里分组标题是 `10月`，而条目自身的时间
+ * 已经带日期（`10月26日 12:08`），所以组标题不再重复日期。
+ * （`formatVersionDayLabel` 那套「今天 / 昨天 / M月D日」只剩保存版本 Dialog 的标题在用。）
+ */
+export function formatVersionMonthLabel(createdAt) {
+  if (!Number.isFinite(createdAt) || createdAt <= 0) return VERSIONING_DAY_LABELS.unknown
+  return `${new Date(createdAt).getMonth() + 1}月`
+}
+
+/**
+ * 按自然月分组（04 §3.4-C）。
  *
  * **不做二次排序**：`provider.list()` 已保证新→旧（同毫秒按写入次序），面板再排一次
- * 就是两处口径打架。分组只做「连续同日切一段」，这样同一天不会跨到两个组里。
+ * 就是两处口径打架。分组只做「连续同月切一段」，这样同一个月不会跨到两个组里。
  *
  * @param {Array} records `provider.list()` 的返回
- * @param {number} [now] 注入的「当前时间」
  * @returns {Array<{ key: string, label: string, items: Array }>}
  */
-export function groupVersionsByDay(records, now) {
+export function groupVersionsByMonth(records) {
   const groups = []
   if (!Array.isArray(records)) return groups
   for (let i = 0; i < records.length; i += 1) {
@@ -112,14 +129,14 @@ export function groupVersionsByDay(records, now) {
     if (!record || typeof record !== 'object') continue
     const createdAt = Number.isFinite(record.createdAt) ? record.createdAt : 0
     // `createdAt <= 0` 是 `normalizeSnapshot` 给缺失时间的兜底；单独归到「未知时间」组，
-    // 否则 `new Date(0)` 会让它掉进 1970-01-01，看着像一份真实的远古版本。
-    const key = createdAt > 0 ? dayKeyOf(createdAt) : ''
+    // 否则 `new Date(0)` 会让它掉进 1970-01，看着像一份真实的远古版本。
+    const key = createdAt > 0 ? monthKeyOf(createdAt) : ''
     const tail = groups.length ? groups[groups.length - 1] : null
     if (tail && tail.key === key) {
       tail.items.push(record)
       continue
     }
-    groups.push({ key, label: formatVersionDayLabel(createdAt, now), items: [record] })
+    groups.push({ key, label: formatVersionMonthLabel(createdAt), items: [record] })
   }
   return groups
 }
@@ -205,7 +222,7 @@ function confirmedVersionResult(result, provider, field) {
 
 export function createVersioningPresentation(dependencies) {
   const { Editor, createLarkDocExtensions, validateDocument, createNetworkPolicy, versionCapabilityGate,
-    groupVersionsByDay: versionDayGroups = groupVersionsByDay,
+    groupVersionsByMonth: versionGroupsOf = groupVersionsByMonth,
     versioningErrorMessage: errorMessage = versioningErrorMessage,
     confirmedVersionResult: confirmResult = confirmedVersionResult } = dependencies
 
@@ -219,9 +236,55 @@ export function createVersioningPresentation(dependencies) {
       return `将当前文档还原至 ${date.getMonth() + 1}月${date.getDate()}日 ${formatVersionClock(record.createdAt)} 的状态`
     },
 
-    /** 右栏时间线：按天分组后的 `[{ key, label, items }]`。 */
-    versionDayGroups() {
-      return versionDayGroups(this.versionList)
+    /** 右栏时间线：按自然月分组后的 `[{ key, label, items }]`。 */
+    versionGroups() {
+      return versionGroupsOf(this.versionList)
+    },
+
+    /**
+     * 预览态顶栏那条记录。真身指示器显示的是**版本名本身**
+     * （截图实测 `当前版本： 测试版本 自动化 ⌄`，不带时间），所以优先取 `label`，
+     * 取不到才退回 `versionItemName()` 的「名字 · 时间」。
+     */
+    versionPreviewPageRecord() {
+      if (!this.versionPreviewPageId) return null
+      return (this.versionList || []).find(item => item.id === this.versionPreviewPageId) || null
+    },
+
+    /**
+     * 预览态顶栏 state（`buildTopBarState()` 消费）。
+     *
+     * 下拉面板的每行文案照飞书真身 `_pv4_dd.png` 的字面拼：
+     * `<文档名> 第 N 版<版本名>`（例：`会议/主题：… 第 3 版` / `/code 第 1 版复盘V1`）——
+     * 只有标注了名字的那条才在「第 N 版」后面紧跟名字，中间不留空格。
+     * N 按**列表倒序**算：最新一条是「第 <总数> 版」。
+     */
+    versionPreviewTopBar() {
+      if (!this.versionPreviewPageId) return null
+      const record = this.versionPreviewPageRecord
+      const label = typeof record?.label === 'string' ? record.label.trim() : ''
+      const list = Array.isArray(this.versionList) ? this.versionList : []
+      const docTitle = this.localTitle || this.title || ''
+      const total = list.length
+      const savedAt = record && Number.isFinite(record.createdAt) && record.createdAt > 0
+        ? `${formatVersionDayLabel(record.createdAt, Date.now())} ${formatVersionClock(record.createdAt)}`
+        : ''
+      return {
+        open: true,
+        name: label || (record ? this.versionItemName(record) : this.versionPreviewPageLabel || ''),
+        menuOpen: this.versionIndicatorOpen === true,
+        // 胶囊 hover 的深色提示条：`<作者> 保存于 <时间>`（实测 `崔健军 保存于 今天 02:07`）。
+        author: record ? this.versionActorLabel(record) : '',
+        savedAt,
+        options: list.map((item, index) => {
+          const name = typeof item.label === 'string' ? item.label.trim() : ''
+          return {
+            id: item.id,
+            name: `${docTitle} 第 ${total - index} 版${name}`.trim(),
+            current: item.id === this.versionPreviewPageId,
+          }
+        }),
+      }
     },
 
     versionChangeCursor() { return `编辑记录 ${this.versionChangeIndex}/${this.versionChanges.length}` },
@@ -474,7 +537,7 @@ export function createVersioningPresentation(dependencies) {
     /**
      * 时间线条目名（04 §3.4-C：`-item-name` 实测「10月25日 00:04」）。
      *
-     * 做成方法而不是 computed：`groupVersionsByDay` 会打散下标，模板按记录取比按
+     * 做成方法而不是 computed：`groupVersionsByMonth` 会打散下标，模板按记录取比按
      * 下标取更不容易错位（差一位就会把 A 的时间贴到 B 上）。
      */
     versionItemName(record) {
@@ -484,27 +547,21 @@ export function createVersioningPresentation(dependencies) {
     },
 
     /**
-     * 时间线 `-item-desc`：与**更早**那条的块数差。
+     * 时间线第二行：最新一条是 `最近更新`，其余是与**更早**那条的块数差。
      *
-     * 飞书这一行是「最近更新编辑了封面」这种「标签 + 做了什么」，块数差是同一栏里
-     * 我们唯一拿得到、且不编造的事实（历史快照只有 blockCount，没有正文）。
+     * 飞书这一行是「最近更新编辑了封面」这种单句事件描述（`hist_i_select2.png` 里还出现
+     * `还原自 10月25日 15:00 的版本` / `文档命名为会议/`），只有一行、没有单独的状态徽标 ——
+     * 所以「最近更新」是**这一行的文案**，不是另一枚绿标。
      */
     versionItemDesc(record) {
+      // `versionList` 是 new → old，所以判据是**首条**而不是最大时间戳：`createdAt` 缺失
+      // （`normalizeSnapshot` 兜 0）时按时间比会把一条远古记录认成最新。
+      const newest = this.versionList[0]
+      if (record && newest && record.id === newest.id) return '最近更新'
       const index = this.indexOfVersion(record ? record.id : '')
       if (index < 0) return ''
       const pair = pairOf(this.versionList, index)
       return describeVersionDiff(pair.prev, pair.current)
-    },
-
-    /**
-     * 最新一条才挂「最近更新」绿标。
-     *
-     * `versionList` 是 new → old，所以判据是**首条**而不是最大时间戳：`createdAt` 缺失
-     * （`normalizeSnapshot` 兜 0）时按时间比会把一条远古记录认成最新。
-     */
-    versionItemBadge(record) {
-      const newest = this.versionList[0]
-      return record && newest && record.id === newest.id ? '最近更新' : ''
     },
 
     /** `kind` 徽标文案（09 §5.8 要求区分「自动 / 手动 / 恢复产生」）。 */
@@ -524,6 +581,159 @@ export function createVersioningPresentation(dependencies) {
         selected: Boolean(record) && record.id === this.versionSelectedId,
       }
     },
+    // ——————————————— 已存版本整页预览态（T4 / T6 / T7 / T8） ———————————————
+    // 飞书真身：`立即查看` 把**整页**换成只读版本正文，顶栏换
+    // `当前版本：<名> ⌄` + 「回到源文档」「复制版本链接」。这里只管状态与 URL 契约，
+    // 顶栏 DOM 落地在 `src/ui/topBar.js`。
+
+    /**
+     * 进整页预览态（飞书「立即查看」）。
+     *
+     * 真身是**整页替换**（`_pm_half.png`）：左侧文档库侧栏还在，正文区换成只读版本正文，
+     * 顶栏换 T4 那套；**没有格式工具栏、没有历史记录侧栏面板、也没有版本信息条**。
+     * 所以这里先收面板，再拉正文（`selectVersion` 才拿得到 `document.content`）再挂。
+     */
+    async enterVersionPreview(id) {
+      if (!id || typeof id !== 'string') return false
+      // 面板与预览态互斥：飞书预览态里没有历史记录侧栏。
+      this.versionPanelOpen = false
+      this.versionRestoreConfirmOpen = false
+      this.closeVersionRestoreConfirm()
+      this.versionPreviewPageId = id
+      this.versionIndicatorOpen = false
+      const loaded = await this.selectVersion(id)
+      if (this.versionPreviewPageId !== id) return false
+      const record = this.versionPreviewPageRecord
+      this.versionPreviewPageLabel = typeof record?.label === 'string' ? record.label.trim() : ''
+      this.mountVersionPreviewPage()
+      this.refreshTopBar?.()
+      return Boolean(loaded)
+    },
+
+    /** 预览态里从下拉切另一条版本：正文重挂，顶栏指示器跟着换。 */
+    async selectVersionPreview(id) {
+      if (!id || typeof id !== 'string' || !this.versionPreviewPageId) return false
+      this.versionIndicatorOpen = false
+      if (id === this.versionPreviewPageId) { this.refreshTopBar?.(); return true }
+      this.versionPreviewPageId = id
+      const loaded = await this.selectVersion(id)
+      if (this.versionPreviewPageId !== id) return false
+      const record = this.versionPreviewPageRecord
+      this.versionPreviewPageLabel = typeof record?.label === 'string' ? record.label.trim() : ''
+      this.mountVersionPreviewPage()
+      this.refreshTopBar?.()
+      return Boolean(loaded)
+    },
+
+    /**
+     * 把版本正文挂进 `paper` 里的只读宿主。
+     *
+     * 换装靠 root 的 `.is-version-preview`：真编辑器与格式工具栏整块不显示，
+     * 只留这棵只读正文（见 lark-doc.css「已存版本整页预览」段）。
+     */
+    mountVersionPreviewPage() {
+      const host = this.$refs && this.$refs.versionPreviewHost
+      if (!host) return false
+      this.unmountVersionPreviewPage()
+      const root = this.$refs && this.$refs.root
+      if (root) root.classList.add('is-version-preview')
+      const page = this.versionPreview && this.versionPreview.document
+      if (!page) {
+        // 没有正文（二进制快照）就不硬造一棵空树，照飞书给一句降级话。
+        host.textContent = this.versionPreviewError || '此版本没有可预览的正文'
+        return false
+      }
+      this._versionPagePreviewDispose = this.mountVersionDocumentPreview(host, page) || null
+      return true
+    },
+
+    /** 摘掉只读正文并把编辑器/工具栏还回去。 */
+    unmountVersionPreviewPage() {
+      if (this._versionPagePreviewDispose) {
+        try { this._versionPagePreviewDispose() } catch { /* 预览编辑器可能已被整体销毁 */ }
+        this._versionPagePreviewDispose = null
+      }
+      const host = this.$refs && this.$refs.versionPreviewHost
+      if (host) host.replaceChildren()
+      const root = this.$refs && this.$refs.root
+      if (root) root.classList.remove('is-version-preview')
+    },
+
+    /** 预览态顶栏指示器开合。非预览态下是无源之水，直接拒绝。 */
+    toggleVersionIndicator() {
+      if (!this.versionPreviewPageId) return false
+      this.versionIndicatorOpen = !this.versionIndicatorOpen
+      this.refreshTopBar?.()
+      return this.versionIndicatorOpen
+    },
+
+    /** 点空白/Esc 关下拉（不动预览态本身）。 */
+    closeVersionIndicator() {
+      if (!this.versionIndicatorOpen) return false
+      this.versionIndicatorOpen = false
+      this.refreshTopBar?.()
+      return true
+    },
+
+    /**
+     * 版本预览链接 `<文档链接>?edition_id=<版本 id>`。
+     * 飞书这条 URL 契约全仓原本 0 命中（见 tasks.md T7），所以从零接：
+     * hash 一并清掉，否则 `#share-xxx` 会跟着版本链接一起发出去。
+     */
+    versionPreviewLink(id = this.versionPreviewPageId) {
+      const base = this.shareDocumentLink ? this.shareDocumentLink() : ''
+      if (!base || !id) return ''
+      try {
+        const url = new URL(base, typeof window !== 'undefined' ? window.location?.href : undefined)
+        url.searchParams.set('edition_id', id)
+        url.hash = ''
+        return url.href
+      } catch { return '' }
+    },
+
+    /** 「复制版本链接」：写剪贴板 → 复用既有 `showDocumentToast('复制成功')`。 */
+    async copyVersionPreviewLink() {
+      const link = this.versionPreviewLink()
+      if (!link) {
+        this.showDocumentToast?.('当前版本链接不可用')
+        return false
+      }
+      const copied = typeof this.copyShareText === 'function' ? await this.copyShareText(link) : false
+      if (!copied) {
+        this.showDocumentToast?.('复制失败，请检查剪贴板权限')
+        return false
+      }
+      this.showDocumentToast?.('复制成功')
+      return true
+    },
+
+    /**
+     * 「回到源文档」：退出预览态并摘掉 `?edition_id=`。
+     * 只改地址不压历史栈（`replaceState`）—— 预览不该在浏览器后退里留痕。
+     */
+    exitVersionPreview() {
+      if (!this.versionPreviewPageId) return false
+      this.unmountVersionPreviewPage()
+      this.versionPreviewPageId = ''
+      this.versionPreviewPageLabel = ''
+      this.versionIndicatorOpen = false
+      this.versionPreview = null
+      this.versionChanges = []
+      this.versionSelectedId = ''
+      this.versionError = ''
+      if (typeof window !== 'undefined' && window.location && window.history?.replaceState) {
+        try {
+          const url = new URL(window.location.href)
+          if (url.searchParams.has('edition_id')) {
+            url.searchParams.delete('edition_id')
+            window.history.replaceState(window.history.state, '', url.href)
+          }
+        } catch { /* 地址不可解析时不动它，也没有别的地方可改 */ }
+      }
+      this.refreshTopBar?.()
+      return true
+    },
+
     /** 右栏底部「显示更改」：只翻转本屏呈现，不重新拉差异数据。 */
     toggleVersionShowChanges() {
       this.versionShowChanges = !this.versionShowChanges

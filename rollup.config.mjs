@@ -245,7 +245,7 @@ export function createVersioningPresentation(dependencies){
   }
   if(${JSON.stringify(actions)}.includes(name))throw new Error('版本界面尚未加载');
   if(name==='mountVersionDocumentPreview')throw new Error('版本预览界面尚未加载');
-  if(name==='versionDayGroups')return [];
+  if(name==='versionGroups')return [];
   if(name==='versionSelectedDiff'||name==='versionCurrentProjection')return null;
   if(name==='versionTimelineClass')return {selected:false};
   return '';

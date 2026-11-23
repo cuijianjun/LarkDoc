@@ -327,126 +327,140 @@
   font-size: 16px;
 }
 
-/* 日期分组容器 293 × 32，fs 12 / fw 500 / rgb(100,106,115) / padding 0 0 0 14px。 */
+/* 月份分组标题 `10月`：293 × 32，fs 12 / fw 500 / rgb(100,106,115) / padding-left 14。
+   上下各 1px `rgb(222,224,227)` 分隔线，配 `margin: -1px 0` 与相邻条目的分隔线叠成一条
+   （飞书真身 `history-timeline-date-group-container` 就是 32 高 + 上下 1px + 负 1px 外边距；
+   头部自己不带下边框，`历史记录` 下面那条线由这里的 border-top 提供）。 */
 .lark-doc .lark-doc-version-day-label {
   height: 32px;
+  margin: -1px 0;
   padding: 0 0 0 14px;
   box-sizing: border-box;
-  display: flex;
-  align-items: center;
   font-size: 12px;
   font-weight: 500;
+  line-height: 32px;
   color: rgb(100, 106, 115);
+  background-color: rgb(255, 255, 255);
+  border-top: 1px solid rgb(222, 224, 227);
+  border-bottom: 1px solid rgb(222, 224, 227);
 }
 
-/* 单条记录 293 宽，padding 10px 13px 10px 30px；三角 / 主体横向排布。 */
+/* 单条记录 293 × 66（两行）/ 88（三行）：padding 12px 13px 12px 40px。
+   40 是文字左起点（飞书 `history-timeline-item` 的 padding-left 实测值）。 */
 .lark-doc .lark-doc-version-item {
   position: relative;
+  display: block;
   width: 293px;
-  padding: 10px 13px 10px 30px;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 13px 12px 40px;
   box-sizing: border-box;
+  border: 0 none;
+  text-align: left;
   background-color: transparent;
+  color: rgb(31, 35, 41);
   cursor: pointer;
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
 }
 
-/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF）+ 左侧 3px 蓝色竖条 `rgb(51,109,244)`（= #336DF4），
-   条目宽 293 → 278（右侧让出 15px 滚动条）。 */
-.lark-doc .lark-doc-version-item.selected {
-  width: 278px;
-  background-color: rgb(224, 233, 255);
-}
-
-.lark-doc .lark-doc-version-item.selected::before {
+/* 选中竖条 3px `rgb(51,109,244)`：常驻但 `opacity: 0`，选中才点亮
+   （飞书真身是 `::before` + opacity 切换，不是按需插节点）。 */
+.lark-doc .lark-doc-version-item::before {
   content: '';
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: 3px;
+  opacity: 0;
   background-color: rgb(51, 109, 244);
 }
 
-/* 第二行：「最近更新」绿标 + 改动描述（飞书是「最近更新编辑了封面」这种「标签 + 做了什么」）。 */
-.lark-doc .lark-doc-version-item-meta {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  line-height: 18px;
+/* 条目分隔线 1px `rgb(222,224,227)`：从面板左缘铺到右缘，没有左缩进；
+   绝对定位所以不占高度，66 / 88 的高度是完全由内容撑出来的。 */
+.lark-doc .lark-doc-version-item::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  background-color: rgb(222, 224, 227);
 }
 
-/* 「最近更新」绿标：只给时间线最新一条，其余条目这一行只剩描述。
-   色取分享面板的同族成功色（rgb(50,166,69) = #32A645），12% 透明度做底。 */
-.lark-doc .lark-doc-version-item-badge {
-  flex: 0 0 auto;
-  padding: 0 4px;
-  border-radius: 2px;
-  background-color: rgba(50, 166, 69, 0.12);
-  color: rgb(50, 166, 69);
-  font-size: 11px;
-  line-height: 16px;
-  white-space: nowrap;
+/* hover 底 `rgb(239,240,241)`。 */
+.lark-doc .lark-doc-version-item:hover {
+  background-color: rgb(239, 240, 241);
 }
 
-/* `hidden` 要显式兜底：UA 的 `[hidden]` 是 `display: none`（权重 0,1,0），被类名一压
-   就失效，空标签会在两行之间撑出一条缝。 */
-.lark-doc .lark-doc-version-item-badge[hidden],
-.lark-doc .lark-doc-version-item-desc[hidden] {
-  display: none;
-}
-
-/* 改动描述：fs 12 / rgb(31,35,41)，选中时转 `rgb(51,109,244)`；240 宽内允许换行。 */
-.lark-doc .lark-doc-version-item-desc {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: rgb(31, 35, 41);
-}
-
-/* 主体（时间 / 摘要 / 作者）竖排。 */
-.lark-doc .lark-doc-version-item-main {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* 作者：fs 12 / fw 500 / rgb(31,35,41)，独占第三行。 */
-.lark-doc .lark-doc-version-item-user {
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
+/* 选中态：底 `rgb(224,233,255)`（= #E0E9FF），整条转蓝 —— 文字色在这里统一下发，
+   「最近更新」这类描述行因此跟着变蓝（飞书真身同样靠 `.selected { color }` 继承）。 */
+.lark-doc .lark-doc-version-item.selected {
+  width: 100%;
+  background-color: rgb(224, 233, 255);
   color: rgb(51, 109, 244);
 }
 
-/* 选中态整条转蓝（含作者），但绿标保持原色 —— 它是状态标识，不该跟着选中变色。 */
-.lark-doc .lark-doc-version-item.selected .lark-doc-version-item-user {
-  color: var(--ld-brand-chrome);
+.lark-doc .lark-doc-version-item.selected::before {
+  opacity: 1;
 }
 
-/* 底栏 293 × 42 @(1219,908)：左侧「显示更改」，右侧开关。
+/* 第一行时间：fs 14 / fw 500 / rgb(51,109,244)，行高 20，下距 4。 */
+.lark-doc .lark-doc-version-item-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: rgb(51, 109, 244);
+}
+
+/* 第二行事件描述（`最近更新` / `还原自 10月25日 15:00 的版本`）：fs 12 / 行高 18 / 上下 4。
+   颜色不写死，跟条目色走（普通 `rgb(31,35,41)`，选中转蓝）。空描述高度为 0，
+   上下外边距自折叠成一个 4px 间隙 —— 条目因此正好停在 66 高，与飞书一致。 */
+.lark-doc .lark-doc-version-item-desc {
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 第三行作者：fs 12 / fw 500 / rgb(100,106,115)，行高 18，前面是 6px 圆点 `rgb(141,85,237)`。 */
+.lark-doc .lark-doc-version-item-user {
+  position: relative;
+  padding-left: 18px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: rgb(100, 106, 115);
+}
+
+.lark-doc .lark-doc-version-item-user::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: rgb(141, 85, 237);
+}
+
+/* 底栏 293 × 42：左右各 16 内边距，左侧「显示更改」，右侧开关（36 × 22）。
    飞书这是 toggle，不是说明文字 —— 关掉后预览不再叠改动高亮。 */
 .lark-doc .lark-doc-version-right-footer {
   flex: 0 0 42px;
   height: 42px;
-  padding: 0 14px;
+  padding: 0 16px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 12px;
-  color: rgb(100, 106, 115);
+  color: rgb(31, 35, 41);
 }
 
 .lark-doc .lark-doc-version-changes-label {
   font-size: 12px;
   line-height: 18px;
-  color: rgb(100, 106, 115);
+  color: rgb(31, 35, 41);
 }
 
 /* 开关 28 × 16，滑块 12 × 12。主样式有 `.lark-doc button { min-height: 30px;
@@ -746,31 +760,10 @@
   .lark-doc .lark-doc-version-cursor { margin-right: auto; }
   .lark-doc .lark-doc-version-left-content { flex: 1 1 auto; min-height: 0; height: auto; padding: 16px 12px; }
   .lark-doc .lark-doc-version-right { flex-basis: 40%; width: 40%; max-width: 294px; min-width: 0; }
-  .lark-doc .lark-doc-version-item, .lark-doc .lark-doc-version-item.selected { width: 100%; padding-left: 14px; overflow-wrap: anywhere; }
-  /* 窄屏条目左内边距压到 14px，展开箭头跟着对齐，否则会凸出 3px。 */
-  .lark-doc .lark-doc-version-more-history { margin-left: 14px; }
+  .lark-doc .lark-doc-version-item, .lark-doc .lark-doc-version-item.selected { width: 100%; overflow-wrap: anywhere; }
 }
 
 /* Captured phone history: list and immutable preview are separate steps. */
-.lark-doc .lark-doc-version-day-label { width: 100%; border: 0; text-align: left; background: transparent; }
-.lark-doc .lark-doc-version-item { display: block; width: 100%; border: 0; text-align: left; background: transparent; }
-/* 展开箭头 = 飞书 `history-timeline-open-icon`：20 × 20 @(1235,106)、radius 4、cursor pointer。
-   文案只留 `aria-label` / `title`，可见面是箭头本身（条目 `padding-left: 40px` 就是给它让的位）。 */
-.lark-doc .lark-doc-version-more-history {
-  display: flex;
-  width: 20px;
-  height: 20px;
-  min-height: 20px;
-  margin: 4px 0 4px 17px;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 4px;
-  color: rgb(100, 106, 115);
-  background-color: transparent;
-  cursor: pointer;
-}
 .lark-doc .lark-doc-version-document .ProseMirror { outline: none; }
 .lark-doc .lark-doc-version-change-pager { display: flex; position: sticky; bottom: 0; z-index: 1; gap: 12px; align-items: center; justify-content: flex-end; min-height: 52px; padding: 0 8px; background: var(--ld-bg-surface-chrome); border-top: 1px solid var(--ld-border-chrome); }
 .lark-doc .lark-doc-version-change-pager button { min-height: 40px; }

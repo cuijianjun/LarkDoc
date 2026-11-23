@@ -239,6 +239,12 @@ const options = {
           topbarMoreItem: (item, event) => this.onTopbarMoreItem(item, event),
           hoverTopbarMoreItem: item => this.hoverTopbarMoreItem(item),
           topbarMoreSubmenuItem: (item, event) => this.onTopbarMoreSubmenuItem(item, event),
+          // 已存版本预览态顶栏：版本指示下拉 / 回到源文档 / 复制版本链接。
+          toggleVersionIndicator: () => this.toggleVersionIndicator(),
+          closeVersionIndicator: () => this.closeVersionIndicator(),
+          selectVersionPreview: id => this.selectVersionPreview(id),
+          exitVersionPreview: () => this.exitVersionPreview(),
+          copyVersionLink: () => this.copyVersionPreviewLink(),
         },
       })
       this.refreshTopBar()

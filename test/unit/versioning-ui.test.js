@@ -41,7 +41,7 @@ import {
   formatVersionClock,
   formatVersionDayLabel,
   formatVersionTime,
-  groupVersionsByDay,
+  groupVersionsByMonth,
   historyDiffSummary,
   recordMetrics,
   versioningErrorMessage,
@@ -433,48 +433,61 @@ describe('版本时间格式化', () => {
   })
 })
 
-/* ---------------- 2. 列表排序与按天分组 ---------------- */
+/* ---------------- 2. 列表排序与按月分组 ---------------- */
 
-describe('按天分组（04 §3.4-C 时间线）', () => {
+describe('按月分组（009 §T9 时间线）', () => {
   it('provider.list() 保证新→旧，分组只切段不重排', async () => {
     const { list } = await listAcrossDays()
     expect(list.map((item) => item.id)).toEqual(['v2', 'v4', 'v3', 'v1'])
   })
 
-  it('同一天连续归并成一组，跨天另起一组', async () => {
-    const { list, now } = await listAcrossDays()
-    const groups = groupVersionsByDay(list, now)
-    expect(groups.map((group) => group.label)).toEqual(['今天', '昨天', '10月25日'])
-    expect(groups[0].items.map((item) => item.id)).toEqual(['v2', 'v4'])
-    expect(groups[1].items.map((item) => item.id)).toEqual(['v3'])
-    expect(groups[2].items.map((item) => item.id)).toEqual(['v1'])
+  it('同一个月连续归并成一组，标题只写 `M月`', async () => {
+    // 飞书真身（`hist_i_select2.png`）分组标题是 `10月`：条目自己已经带 `10月26日 12:08`，
+    // 组标题不再重复日期。
+    const { list } = await listAcrossDays()
+    const groups = groupVersionsByMonth(list)
+    expect(groups.map((group) => group.label)).toEqual(['10月'])
+    expect(groups[0].items.map((item) => item.id)).toEqual(['v2', 'v4', 'v3', 'v1'])
   })
 
-  it('分组后条目总数不变，且不打散顺序（下标错位会把 A 的时间贴到 B 上）', async () => {
-    const { list, now } = await listAcrossDays()
+  it('跨月另起一组；跨年同月不能并组（key 带年份）', () => {
+    const groups = groupVersionsByMonth([
+      { id: 'a', createdAt: Date.UTC(2026, 9, 27, 10, 0) },
+      { id: 'b', createdAt: Date.UTC(2026, 9, 2, 10, 0) },
+      { id: 'c', createdAt: Date.UTC(2026, 8, 30, 10, 0) },
+      { id: 'd', createdAt: Date.UTC(2025, 8, 30, 10, 0) },
+    ])
+    expect(groups.map((group) => group.label)).toEqual(['10月', '9月', '9月'])
+    expect(groups.map((group) => group.key)).toEqual(['2026-10', '2026-09', '2025-09'])
+    expect(groups[0].items.map((item) => item.id)).toEqual(['a', 'b'])
+  })
+
+  it('分组只切连续段，不打散顺序（下标错位会把 A 的时间贴到 B 上）', async () => {
+    const { list } = await listAcrossDays()
     const flat = []
-    const groups = groupVersionsByDay(list, now)
-    for (let i = 0; i < groups.length; i += 1) {
-      for (let j = 0; j < groups[i].items.length; j += 1) flat.push(groups[i].items[j].id)
+    for (const group of groupVersionsByMonth(list)) {
+      for (const item of group.items) flat.push(item.id)
     }
     expect(flat).toEqual(list.map((item) => item.id))
   })
 
-  it('缺失时间的条目单独归到「未知时间」，不掉进 1970-01-01', () => {
-    const groups = groupVersionsByDay([
+  it('缺失时间的条目单独归到「未知时间」，key 留空而不是 1970-01', () => {
+    const groups = groupVersionsByMonth([
       { id: 'a', createdAt: Date.UTC(2026, 9, 27, 10, 0) },
       { id: 'b', createdAt: 0 },
-    ], Date.UTC(2026, 9, 27, 12, 0))
-    expect(groups.map((group) => group.label)).toEqual(['今天', VERSIONING_DAY_LABELS.unknown])
+    ])
+    expect(groups.map((group) => group.label)).toEqual(['10月', VERSIONING_DAY_LABELS.unknown])
+    expect(groups[1].key).toBe('')
     expect(groups[1].items.map((item) => item.id)).toEqual(['b'])
   })
 
   it('空输入与非数组输入都返回空数组（面板右栏走降级而不是白屏）', () => {
-    expect(groupVersionsByDay([], Date.now())).toEqual([])
-    expect(groupVersionsByDay(null, Date.now())).toEqual([])
-    expect(groupVersionsByDay(undefined, Date.now())).toEqual([])
+    expect(groupVersionsByMonth([])).toEqual([])
+    expect(groupVersionsByMonth(null)).toEqual([])
+    expect(groupVersionsByMonth(undefined)).toEqual([])
   })
 })
+
 
 /* ---------------- 3. diffSummary 投影 ---------------- */
 
@@ -1006,8 +1019,8 @@ describe('C07真实版本投影与原操作状态（mixin行为，非浏览器�
 /**
  * 右栏与飞书 1:1 对齐的 DOM 契约。
  *
- * 飞书历史面板的右栏条目是两行（时间 / 「最近更新」绿标 + 作者），底栏「显示更改」是
- * 开关而不是说明文字。这三条都是纯 DOM 结构，只有真的把面板建出来才断言得到 ——
+ * 飞书历史面板的右栏条目是固定三行（时间 / 事件描述 / 作者），底栏「显示更改」是
+ * 开关而不是说明文字。这两条都是纯 DOM 结构，只有真的把面板建出来才断言得到 ——
  * 上面那些 describe 走的都是纯函数，覆盖不到。
  */
 describe('右栏飞书对齐的 DOM 契约', () => {
@@ -1022,11 +1035,11 @@ describe('右栏飞书对齐的 DOM 契约', () => {
       restore: { disabled: false }, ...hosted, ...extra }) }
   }
 
-  it('时间线条目三行：时间 / 「最近更新」+ 改动描述 / 作者，绿标只给最新一条', () => {
+  it('时间线条目固定三行：时间 / 事件描述 / 作者，描述为空时节点仍在但不撑高', () => {
     const { dom, panel, update } = mountPanel({
-      days: [{ key: 'd1', label: '今天', items: [
-        { id: 'v2', name: '11月17日 10:00', badge: '最近更新', desc: '新增 2 个块', user: '张三' },
-        { id: 'v1', name: '11月17日 09:00', badge: '', desc: '', user: '李四' },
+      days: [{ key: '2026-11', label: '11月', items: [
+        { id: 'v2', name: '11月17日 10:00', desc: '最近更新', user: '张三' },
+        { id: 'v1', name: '11月17日 09:00', desc: '', user: '李四' },
       ] }],
     })
     try {
@@ -1035,16 +1048,15 @@ describe('右栏飞书对齐的 DOM 契约', () => {
       expect(items).toHaveLength(2)
       const [newest, older] = items
       expect(newest.querySelector('.lark-doc-version-item-name').textContent).toBe('11月17日 10:00')
-      // 第二行 = 绿标 + 改动描述；作者必须独占第三行，合成两行会把条目高度压掉 18px。
-      expect(newest.querySelector('.lark-doc-version-item-meta').textContent).toBe('最近更新新增 2 个块')
-      expect(newest.querySelector('.lark-doc-version-item-badge').hidden).toBe(false)
-      expect(newest.querySelector('.lark-doc-version-item-desc').textContent).toBe('新增 2 个块')
+      // 飞书真身里「最近更新」就是这一行的文案，不是另挂的状态徽标（没有绿底块）。
+      expect(newest.querySelector('.lark-doc-version-item-desc').textContent).toBe('最近更新')
       expect(newest.querySelector('.lark-doc-version-item-user').textContent).toBe('张三')
-      // 空标签/空描述必须真的不可见，否则第二行会多出空白。
-      expect(older.querySelector('.lark-doc-version-item-badge').hidden).toBe(true)
-      expect(older.querySelector('.lark-doc-version-item-desc').hidden).toBe(true)
+      // 空描述也要留节点：飞书同样是常驻节点靠高度 0 + 外边距自折叠维持 66 高，
+      // 改成条件渲染会让两行条目的高度口径和真身分叉。
+      expect(older.querySelector('.lark-doc-version-item-desc').textContent).toBe('')
       expect(older.querySelector('.lark-doc-version-item-user').textContent).toBe('李四')
       expect(items[0].children).toHaveLength(3)
+      expect(items[1].children).toHaveLength(3)
     } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
   })
 
@@ -1082,21 +1094,18 @@ describe('右栏飞书对齐的 DOM 契约', () => {
     } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
   })
 
-  it('「展开更多历史记录」是 20×20 箭头图标按钮，不是一条文字按钮（history-timeline-open-icon）', () => {
-    const items = Array.from({ length: 4 }, (_, index) => ({ id: `v${index}`, name: `条目 ${index}`, user: '张三' }))
-    const { dom, panel, update } = mountPanel({ days: [{ key: 'd1', label: '今天', items }] })
+  it('整月条目一次性铺开，没有「先给三条 + 更多历史」的截断', () => {
+    const items = Array.from({ length: 4 }, (_, index) => ({ id: `v${index}`, name: `条目 ${index}`, desc: '', user: '张三' }))
+    const { dom, panel, update } = mountPanel({ days: [{ key: '2026-11', label: '11月', items }] })
     try {
       update()
-      expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(3)
-      const more = panel.el.querySelector('.lark-doc-version-more-history')
-      expect(more).not.toBeNull()
-      // 飞书这一格只有箭头：可见面不含文案，文案退到 aria-label / title。
-      expect(more.textContent).toBe('')
-      expect(more.getAttribute('aria-label')).toBe('展开更多历史记录')
-      expect(more.getAttribute('title')).toBe('展开更多历史记录')
-      expect(more.querySelector('svg')).not.toBeNull()
-      more.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      // 飞书（`hist_i_select2.png`）一个月 11 条全在，没有折叠闸门。
       expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(4)
+      expect(panel.el.querySelector('.lark-doc-version-more-history')).toBeNull()
+      // 月份标题是纯文字分组头，不是可点按钮。
+      const label = panel.el.querySelector('.lark-doc-version-day-label')
+      expect(label.tagName).toBe('DIV')
+      expect(label.textContent).toBe('11月')
     } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
   })
 })

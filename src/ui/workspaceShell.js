@@ -106,7 +106,11 @@ export function createWorkspaceShell(ownerDocument = document) {
 
   actionsPark.appendChild(actionsHost)
   externalPanel.appendChild(panelHost)
-  append(paper, blockHandleHost, dropLine, editorEl, tableBoundaryHost, calloutToolsHost)
+  // 已存版本整页预览的只读正文宿主。放在 paper 里是为了直接继承页宽与内边距，
+  // 预览态下由 root 的 `.is-version-preview` 把真编辑器整块换掉（见 lark-doc.css）。
+  const versionPreviewHost = ownerDocument.createElement('div')
+  versionPreviewHost.className = 'lark-doc-version-preview-body'
+  append(paper, blockHandleHost, dropLine, editorEl, tableBoundaryHost, calloutToolsHost, versionPreviewHost)
   append(main, stageHost, paper, status)
   append(body, outlineHost, main, externalPanel)
   append(root, skip, topBarHost, actionsPark, modeToast, toolbarHost, noticeHost, searchPanelHost, tableToolsHost,
@@ -140,6 +144,7 @@ export function createWorkspaceShell(ownerDocument = document) {
     editorEl,
     tableBoundaryHost,
     calloutToolsHost,
+    versionPreviewHost,
     status,
     statusSummary,
     statusHint,

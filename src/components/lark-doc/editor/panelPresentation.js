@@ -623,15 +623,17 @@ export function createPanelPresentation(dependencies) {
           onPurgeDeleted: (id) => this.purgeDeletedVersion(id),
         },
         versionToast: {
-          // 提示里的「立即查看」：先开面板再收提示（与模板里的内联两调用顺序一致）。
+          // 提示里的「立即查看」：飞书进的是**整页预览态**（正文换成该版本只读正文 + 整条换顶栏），
+          // 不是开历史记录面板。只有拿不到版本 id 时才退回开面板。
           onNoticeLink: async () => {
             const id = this.versionNotice?.startsWith('版本已保存') ? this._versionNoticeVersion : null
             const scope = id ? this.versionOperationScope() : null
-            const opening = this.openVersionPanel(id ? { kind: 'saved' } : undefined)
             this.dismissVersionNotice()
-            if (!id) return opening
-            await opening
-            if (id && this.versionPanelOpen && scope === this.versionOperationScope() && this.versionList.some(record => record.id === id)) await this.selectVersion(id)
+            if (!id) return this.openVersionPanel()
+            const entered = await this.enterVersionPreview(id)
+            // 拉取期间版本被删或文档被换掉：退回「已存版本」面板，至少让人看见为什么没进去。
+            if (!entered && !this.versionPreviewPageId && scope === this.versionOperationScope()) await this.openVersionPanel({ kind: 'saved' })
+            return entered
           },
           // 右上角关闭（飞书 `.ud__notice-closable` 的那个 24×24 图标钮）。
           onNoticeClose: () => this.dismissVersionNotice(),
@@ -788,15 +790,14 @@ export function createPanelPresentation(dependencies) {
           preview: total ? this.buildVersionPreviewState(selected, preview, diff) : null,
           // 右栏时间线：错误时只留一条降级文案（`v-else` 挂在 for 上）。
           timelineError: error,
-          days: error ? [] : (this.versionDayGroups || []).map((group) => ({
+          days: error ? [] : (this.versionGroups || []).map((group) => ({
             key: group.key,
             label: group.label,
             items: (group.items || []).map((item) => ({
               id: item.id,
               cls: this.versionTimelineClass(item).selected ? 'selected' : '',
               name: this.versionItemName(item),
-              // 飞书条目是三行：时间 / 「最近更新」绿标 + 改动描述 / 作者。
-              badge: this.versionItemBadge(item),
+              // 飞书条目是三行：时间（蓝 14px）/ 事件描述（`最近更新` 等，12px）/ 作者（灰 12px + 紫点）。
               desc: this.versionItemDesc(item),
               user: this.versionActorLabel(item),
             })),

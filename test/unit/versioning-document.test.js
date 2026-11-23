@@ -68,7 +68,7 @@ describe('version document lifecycle through the real facade and provider', () =
     expect(session.getEditor()).toBe(doc.getEditor())
   })
 
-  it('opens a phone history list, expands a day and returns through the readonly preview to its source', async () => {
+  it('opens a phone history list, shows the whole month and returns through the readonly preview to its source', async () => {
     const width = window.innerWidth
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 393 })
     try {
@@ -79,9 +79,9 @@ describe('version document lifecycle through the real facade and provider', () =
       await host.openVersionPanel()
       const layer = element.querySelector('.lark-doc-version-layer')
       expect(layer.classList.contains('is-phone-list')).toBe(true)
-      expect(layer.querySelectorAll('.lark-doc-version-item')).toHaveLength(3)
-      layer.querySelector('.lark-doc-version-more-history').click()
+      // 飞书整月全量铺开，没有「先给三条 + 更多历史」这一层折叠。
       expect(layer.querySelectorAll('.lark-doc-version-item')).toHaveLength(4)
+      expect(layer.querySelector('.lark-doc-version-more-history')).toBeNull()
       layer.querySelector('.lark-doc-version-item').click()
       await vi.waitFor(() => expect(layer.classList.contains('is-phone-preview')).toBe(true))
       const previewBack = layer.querySelector('[aria-label="返回版本列表"]')

@@ -39,7 +39,6 @@ export function createVersionPanel(options = {}) {
   const win = (host?.ownerDocument || document).defaultView
   const mobile = () => win.innerWidth <= 760
   let mobileView = 'list', mobileSelectedId = '', previewRecord = null, releasePreview = null, mountedPolicy = null, destroyed = false
-  const collapsedDays = new Set(), expandedDays = new Set()
   function clearDocument() { releasePreview?.(); releasePreview = null; previewRecord = null; mountedPolicy = null; documentBody.replaceChildren(); lastChangeIndex = -1 }
   const call = handlerCaller(options.handlers || {})
 
@@ -352,16 +351,14 @@ export function createVersionPanel(options = {}) {
   function buildDay(day) {
     const box = document.createElement('div')
     box.className = 'lark-doc-version-day'
-    const label = document.createElement('button')
-    label.type = 'button'
+    // 飞书的月份标题是纯文字，不是折叠按钮（折叠落在条目自己的三角上，见 009 T9/C4）。
+    const label = document.createElement('div')
     label.className = 'lark-doc-version-day-label'
     label.textContent = day.label == null ? '' : String(day.label)
     box.appendChild(label)
-    const rows = document.createElement('div'); rows.hidden = collapsedDays.has(day.key); box.appendChild(rows)
-    label.setAttribute('aria-expanded', String(!rows.hidden))
-    label.addEventListener('click', () => { rows.hidden = !rows.hidden; label.setAttribute('aria-expanded', String(!rows.hidden)); if (rows.hidden) collapsedDays.add(day.key); else collapsedDays.delete(day.key) })
-    const items = day.items || [], visible = expandedDays.has(day.key) ? items : items.slice(0, 3)
-    visible.forEach((item) => {
+    const rows = document.createElement('div'); box.appendChild(rows)
+    // 飞书整月一次性铺开（`hist_i_select2.png` 一个月 11 条全在），没有「先给三条 + 更多」。
+    ;(day.items || []).forEach((item) => {
       const row = document.createElement('button')
       row.type = 'button'
       row.className = item.cls ? `lark-doc-version-item ${item.cls}` : 'lark-doc-version-item'
@@ -369,39 +366,20 @@ export function createVersionPanel(options = {}) {
       const name = document.createElement('div')
       name.className = 'lark-doc-version-item-name'
       name.textContent = item.name == null ? '' : String(item.name)
-      // 第二行是「最近更新」绿标 + 改动描述，第三行才是作者 —— 飞书实测三行结构
-      // （name 20 / desc 36 / user 18），合成两行会把条目高度从 104 压到 86。
-      const meta = document.createElement('div')
-      meta.className = 'lark-doc-version-item-meta'
-      const badge = document.createElement('span')
-      badge.className = 'lark-doc-version-item-badge'
-      badge.textContent = item.badge == null ? '' : String(item.badge)
-      badge.hidden = !badge.textContent
-      const desc = document.createElement('span')
+      row.appendChild(name)
+      // 第二行事件描述。飞书这个节点**始终存在**（空的时候高度 0，上下外边距自折叠成一个
+      // 4px 间隙），条目因此停在 66 高；有描述时多一行 18 高，条目 88 高。别改成条件渲染，
+      // 否则两行条目的高度就和飞书差 0px 之外的塌陷行为。
+      const desc = document.createElement('div')
       desc.className = 'lark-doc-version-item-desc'
       desc.textContent = item.desc == null ? '' : String(item.desc)
-      desc.hidden = !desc.textContent
+      row.appendChild(desc)
       const user = document.createElement('div')
       user.className = 'lark-doc-version-item-user'
       user.textContent = item.user == null ? '' : String(item.user)
-      meta.appendChild(badge)
-      meta.appendChild(desc)
-      row.appendChild(name)
-      row.appendChild(meta)
       row.appendChild(user)
       rows.appendChild(row)
     })
-    if (items.length > visible.length) {
-      // 飞书这一格是 `history-timeline-open-icon`（20×20、radius 4），不是一条文字按钮；
-      // 文案退到 `aria-label` / `title`，可见面只留箭头。
-      const more = document.createElement('button')
-      more.type = 'button'
-      more.className = 'lark-doc-version-more-history'
-      more.setAttribute('aria-label', '展开更多历史记录')
-      setAttr(more, 'title', '展开更多历史记录')
-      more.appendChild(iconNode('chevronDown', 20))
-      more.addEventListener('click', () => { expandedDays.add(day.key); daysSignature = null; renderTimeline() }); rows.appendChild(more)
-    }
     return box
   }
 

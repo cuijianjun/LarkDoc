@@ -227,6 +227,144 @@ export function createTopBar(options = {}) {
   // 飞书文档的常用操作顺序排列。这样宿主按钮不会被新增原生入口挤到模式之后。
   headerActions.append(modeSelect.el, createButton, notifyButton, moreButton)
 
+  // ——————————————————— 版本预览态（已存版本整页预览） ———————————————————
+  // 飞书真身：`当前版本：<名> ⌄` 顶掉标题输入框；右侧多出「回到源文档」「复制版本链接」
+  // 两枚胶囊（前者黑字灰描边、后者蓝字蓝描边 + 链条图标），`···` 仍在。
+  // 模式切换 / 新建 / 通知整块不出现；竖线后的搜索与头像照旧。
+  const versionIndicator = document.createElement('button')
+  versionIndicator.type = 'button'
+  versionIndicator.className = 'lark-doc-version-indicator'
+  versionIndicator.setAttribute('aria-label', '当前版本')
+  versionIndicator.setAttribute('aria-haspopup', 'listbox')
+  versionIndicator.setAttribute('aria-expanded', 'false')
+  versionIndicator.addEventListener('click', () => call('toggleVersionIndicator'))
+  const versionIndicatorPrefix = document.createElement('span')
+  versionIndicatorPrefix.className = 'lark-doc-version-indicator-prefix'
+  versionIndicatorPrefix.textContent = '当前版本：'
+  // 只有「版本名 + 箭头」吃浅灰底：实测 `当前版本：` 是胶囊外的纯文字。
+  const versionIndicatorPill = document.createElement('span')
+  versionIndicatorPill.className = 'lark-doc-version-indicator-pill'
+  const versionIndicatorName = document.createElement('span')
+  versionIndicatorName.className = 'lark-doc-version-indicator-name'
+  const versionIndicatorCaret = document.createElement('span')
+  versionIndicatorCaret.className = 'lark-doc-version-indicator-caret'
+  versionIndicatorCaret.appendChild(iconNode('chevronDown', 12))
+  versionIndicatorPill.append(versionIndicatorName, versionIndicatorCaret)
+  versionIndicator.append(versionIndicatorPrefix, versionIndicatorPill)
+
+  /** 预览态胶囊按钮：图标 + 文本，无 `aria-haspopup`（都是动作，不展开）。 */
+  function previewPill(className, label, icon, handler) {
+    const node = document.createElement('button')
+    node.type = 'button'
+    node.className = className
+    node.setAttribute('aria-label', label)
+    node.appendChild(iconNode(icon, 14))
+    node.appendChild(document.createTextNode(label))
+    node.addEventListener('click', () => call(handler))
+    return node
+  }
+  const backToSourceButton = previewPill('lark-doc-version-preview-back', '回到源文档', 'version-preview-exit', 'exitVersionPreview')
+  const copyVersionLinkButton = previewPill('lark-doc-version-preview-copy', '复制版本链接', 'version-preview-link', 'copyVersionLink')
+  /** 进预览时是否真摘掉了「新建」—— 退出预览只补自己摘过的东西。 */
+  let previewStashedCreate = false
+
+  // ——— 版本指示下拉 + 深色提示条 ———
+  // 飞书真身（`_pv4_dd.png`）：白底圆角卡，行内 `文档名 第 N 版<版本名>`，当前行右侧蓝勾；
+  // **没有分隔线、没有底部按钮**。提示条是独立深色气泡，带下指小三角，
+  // 展开时叠在面板上方（它比面板更靠左，别照着面板左边距去对齐）。
+  const versionMenu = document.createElement('div')
+  versionMenu.className = 'lark-doc-version-menu'
+  versionMenu.setAttribute('role', 'listbox')
+  versionMenu.setAttribute('aria-label', '版本列表')
+  const versionTip = document.createElement('div')
+  versionTip.className = 'lark-doc-version-tip'
+  versionTip.setAttribute('role', 'tooltip')
+
+  function hideVersionTip() { if (versionTip.parentNode) versionTip.remove() }
+  /**
+   * 气泡挂在锚点正下方并水平居中，小三角由 CSS `::before` 画在上缘。
+   * 位置用 `position: fixed`：`.lark-doc-header-actions` 是 `overflow-x: auto`，
+   * 放进去的 absolute 浮层会被裁掉（同模式下拉那条教训）。
+   */
+  function showVersionTip(anchor, text) {
+    if (disposed || !text || !anchor.isConnected) return
+    versionTip.textContent = text
+    const hostNode = options.overlayHost || host || el
+    if (versionTip.parentNode !== hostNode) hostNode.appendChild(versionTip)
+    const rect = anchor.getBoundingClientRect(), box = versionTip.getBoundingClientRect()
+    versionTip.style.left = `${Math.max(8, Math.min(rect.left + rect.width / 2 - box.width / 2, window.innerWidth - box.width - 8))}px`
+    versionTip.style.top = `${rect.bottom + 6}px`
+  }
+
+  /** 下拉每行：文本 + （当前版本才有的）蓝勾。 */
+  let versionMenuSignature = ''
+  function renderVersionMenu(preview) {
+    const list = Array.isArray(preview.options) ? preview.options : []
+    versionMenu.replaceChildren()
+    for (const option of list) {
+      const row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'lark-doc-version-menu-item'
+      row.dataset.versionId = option.id
+      row.setAttribute('role', 'option')
+      row.setAttribute('aria-selected', String(option.current === true))
+      row.classList.toggle('is-current', option.current === true)
+      const text = document.createElement('span')
+      text.className = 'lark-doc-version-menu-text'
+      text.textContent = option.name == null ? '' : String(option.name)
+      row.appendChild(text)
+      if (option.current === true) {
+        const tick = document.createElement('span')
+        tick.className = 'lark-doc-version-menu-check'
+        tick.setAttribute('aria-hidden', 'true')
+        tick.appendChild(iconNode('check', 16))
+        row.appendChild(tick)
+      }
+      row.addEventListener('click', () => call('selectVersionPreview', option.id))
+      versionMenu.appendChild(row)
+    }
+    versionMenuSignature = JSON.stringify(list.map(option => [option.id, option.name, option.current]))
+  }
+
+  /** 面板左缘对齐**胶囊**左缘（`当前版本：` 是胶囊外的纯文字，不能拿整枚按钮算）。 */
+  function placeVersionMenu() {
+    if (!versionMenu.parentNode) return
+    const rect = versionIndicatorPill.getBoundingClientRect()
+    versionMenu.style.left = `${Math.max(8, rect.left)}px`
+    versionMenu.style.top = `${rect.bottom + 6}px`
+    versionMenu.style.minWidth = `${Math.round(rect.width)}px`
+  }
+  const repositionVersionMenu = () => { if (versionMenu.parentNode) placeVersionMenu() }
+  // fixed 坐标不跟滚动：开着的时候滚一下就得重算，否则面板会"留在原地"。
+  window.addEventListener('scroll', repositionVersionMenu, true)
+  window.addEventListener('resize', repositionVersionMenu)
+  const topBarDocument = el.ownerDocument
+  const closeVersionMenuOutside = event => {
+    if (!versionMenu.parentNode) return
+    if (versionMenu.contains(event.target) || versionIndicator.contains(event.target)) return
+    hideVersionTip()
+    call('closeVersionIndicator')
+  }
+  const closeVersionMenuEscape = event => {
+    if (event.key !== 'Escape' || !versionMenu.parentNode) return
+    hideVersionTip()
+    call('closeVersionIndicator')
+  }
+  topBarDocument.addEventListener('pointerdown', closeVersionMenuOutside, true)
+  topBarDocument.addEventListener('keydown', closeVersionMenuEscape, true)
+
+  versionIndicator.addEventListener('mouseenter', () => {
+    const preview = latestState.versionPreview
+    if (!preview || preview.open !== true) return
+    showVersionTip(versionIndicatorPill, [preview.author, preview.savedAt ? `保存于 ${preview.savedAt}` : ''].filter(Boolean).join(' '))
+  })
+  versionIndicator.addEventListener('mouseleave', hideVersionTip)
+  // 复制链接的说明气泡：飞书原文「有文档阅读权限的用户可通过链接阅读此版本」。
+  copyVersionLinkButton.addEventListener('mouseenter', () => {
+    showVersionTip(copyVersionLinkButton, '有文档阅读权限的用户可通过链接阅读此版本')
+  })
+  copyVersionLinkButton.addEventListener('mouseleave', hideVersionTip)
+
   // Mobile keeps a single header row. Reuse the actual action nodes in an
   // overflow popover, so modes, host actions and notification state stay live.
   let mobileOpen = false, mobileRelease = null, disposed = false
@@ -601,6 +739,10 @@ export function createTopBar(options = {}) {
     const focusedAction = mobileOpen && headerActions.contains(document.activeElement) ? document.activeElement : null
     // ① 整行 v-if：挂/摘都按锚点定位，插在锚点之前（锚点始终留在原地）
     const visible = state.headerVisible !== false
+    // 版本预览态：整条顶栏换 `当前版本：<名> ⌄` + 「回到源文档」「复制版本链接」，
+    // 编辑类入口（模式切换 / 新建 / 通知 / 宿主动作区）全部不出现。
+    const preview = state.versionPreview || {}
+    const previewOpen = preview.open === true
     if (!visible) setMobileOpen(false)
     homeButton.disabled = state.homeEnabled !== true
     membersButton.disabled = state.membersEnabled !== true
@@ -626,7 +768,7 @@ export function createTopBar(options = {}) {
     // 顶栏隐藏期间调用方会把宿主搬回停泊位（否则 DOM 更新会落进游离子树），
     // 重新显示时必须搬回来，否则宿主控件整块消失。
     el.classList.toggle('is-compact-header', state.compactHeader === true)
-    if (visible && actionsHost && !state.compactHeader) {
+    if (visible && actionsHost && !state.compactHeader && !previewOpen) {
       const hostAnchor = modeSelect.el.parentNode === headerActions ? modeSelect.el.nextSibling : headerActions.firstChild
       if (actionsHost.parentNode !== headerActions || actionsHost.previousSibling !== modeSelect.el) headerActions.insertBefore(actionsHost, hostAnchor || null)
     }
@@ -689,12 +831,56 @@ export function createTopBar(options = {}) {
     if (titleSub.textContent !== sub) titleSub.textContent = sub
 
     // 隐藏时摘掉整个控件，不留按钮或间距占位；重新显示仍排在宿主动作之前。
-    if (state.modeVisible !== false) {
+    if (state.modeVisible !== false && !previewOpen) {
       if (modeSelect.el.parentNode !== headerActions) headerActions.insertBefore(modeSelect.el, headerActions.firstChild)
     } else {
       modeSelect.close()
       if (modeSelect.el.parentNode) modeSelect.el.parentNode.removeChild(modeSelect.el)
     }
+
+    // ②' 版本预览态落地：标题位换成 `当前版本：<名> ⌄`，右侧补两枚胶囊。
+    // titleWrap 用内联 display 收起（不动 DOM 位置，`referenceMobileMenu` 的插锚点还靠它）。
+    el.classList.toggle('is-version-preview', previewOpen)
+    titleWrap.style.display = previewOpen ? 'none' : ''
+    if (previewOpen) {
+      setText(versionIndicatorName, preview.name == null ? '' : String(preview.name))
+      setAttr(versionIndicator, 'aria-expanded', String(preview.menuOpen === true))
+      // 展开时箭头翻上去（实测 `_pv4_top.png` 是 ^ 而不是 ⌄）。
+      versionIndicatorPill.classList.toggle('is-open', preview.menuOpen === true)
+      if (versionIndicator.parentNode !== el) el.insertBefore(versionIndicator, headerActions)
+      // 只在「本来挂着」时摘并记账：紧凑标题栏等状态自己摘过 createButton，
+      // 退出预览时不能替它擅自装回去（否则「+」在紧凑态复活）。
+      if (createButton.parentNode === headerActions) { createButton.remove(); previewStashedCreate = true }
+      notifyButton.remove()
+      if (actionsHost?.parentNode === headerActions) actionsHost.remove()
+      if (copyVersionLinkButton.parentNode !== headerActions) headerActions.insertBefore(copyVersionLinkButton, moreButton)
+      if (backToSourceButton.parentNode !== headerActions) headerActions.insertBefore(backToSourceButton, copyVersionLinkButton)
+    } else {
+      versionIndicator.remove()
+      backToSourceButton.remove()
+      copyVersionLinkButton.remove()
+      // 退出预览把「新建」装回去：上面是按 previewStashedCreate 真摘的节点，
+      // 只补通知不补新建，回源文档后「+」就永久消失了。原始顺序是 mode → create → notify → more。
+      if (previewStashedCreate) {
+        previewStashedCreate = false
+        if (createButton.parentNode !== headerActions) headerActions.insertBefore(createButton, notifyButton.parentNode === headerActions ? notifyButton : moreButton)
+      }
+      if (notifyButton.parentNode !== headerActions) headerActions.insertBefore(notifyButton, moreButton)
+    }
+
+    // ②'' 版本指示下拉：开合与坐标都跟着指示器走；收起时连节点一起摘。
+    if (previewOpen && preview.menuOpen === true) {
+      const list = Array.isArray(preview.options) ? preview.options : []
+      const signature = JSON.stringify(list.map(option => [option.id, option.name, option.current]))
+      if (signature !== versionMenuSignature) renderVersionMenu(preview)
+      const hostNode = options.overlayHost || host || el
+      if (versionMenu.parentNode !== hostNode) hostNode.appendChild(versionMenu)
+      placeVersionMenu()
+    } else if (versionMenu.parentNode) {
+      versionMenu.remove()
+    }
+    // 退出预览态时提示条必须一起收：它锚的是预览态才有的节点。
+    if (!previewOpen) hideVersionTip()
 
     // ③ 模式下拉：选项表 / 当前值 / 前导图标 / 禁用态一次推完，开合与坐标不归这里管。
     const label = state.modeLabel == null ? '' : String(state.modeLabel)
@@ -742,6 +928,12 @@ export function createTopBar(options = {}) {
     if (actionsHost && actionsHost.parentNode === headerActions) headerActions.removeChild(actionsHost)
     modeSelect.destroy()
     menusUi.destroy()
+    window.removeEventListener('scroll', repositionVersionMenu, true)
+    window.removeEventListener('resize', repositionVersionMenu)
+    topBarDocument.removeEventListener('pointerdown', closeVersionMenuOutside, true)
+    topBarDocument.removeEventListener('keydown', closeVersionMenuEscape, true)
+    hideVersionTip()
+    if (versionMenu.parentNode) versionMenu.remove()
     if (el.parentNode) el.parentNode.removeChild(el)
   }
 

@@ -268,6 +268,8 @@ export default {
         mobileAuthority: this.session?.getProvider?.('authorization'),
         mobileContextKey: [this.session?.documentId, actor?.id, this.session?._identityGeneration, this.session?._privateIdentityGeneration, this.session?._authorizationGeneration, readable].join('|'),
         headerVisible: layout.headerVisible !== false,
+        // 已存版本整页预览态：顶栏换 `当前版本：<名> ⌄` + 「回到源文档」「复制版本链接」。
+        versionPreview: this.versionPreviewTopBar || null,
         stackToolbar: layout.titleBarFixed && layout.toolbarFixed,
         title: this.localTitle,
         titleLength: this.titleLength,

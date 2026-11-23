@@ -388,11 +388,11 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
       presentationHosts.push(callout)
       expect(callout.host.calloutEmojiCategories).toEqual([])
       expect(callout.host.filteredCalloutEmojiItems).toEqual([])
-      const versioning = dom.window.LarkDoc.createVersioningPresentation({ groupVersionsByDay: list => list.map(item => ({ key: item.id })) })
+      const versioning = dom.window.LarkDoc.createVersioningPresentation({ groupVersionsByMonth: list => list.map(item => ({ key: item.id })) })
       const versioningRuntime = dom.window.LarkDoc.createNativeOptionsHost({ options: { computed: versioning.computed },
         state: { panelPresentationRevision: 0, versionList: [{ id: 'current' }] } })
       presentationHosts.push(versioningRuntime)
-      expect(versioningRuntime.host.versionDayGroups).toEqual([])
+      expect(versioningRuntime.host.versionGroups).toEqual([])
       expect(versioningRuntime.host.versionSelectedDiff).toBeNull()
       expect(versioningRuntime.host.versionChangeCursor).toBe('')
       expect(versioningRuntime.host.versionRestoreConfirmText).toBe('')
@@ -545,11 +545,11 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
       expect(lateOwner.setCommentDocumentDraft).toHaveBeenCalledWith('当前宿主输入', [], [])
       // UI readiness alone is not reactive: the native panel's onReady revision
       // invalidates the cold computed cache before painting its full projection.
-      expect(versioningRuntime.host.versionDayGroups).toEqual([])
+      expect(versioningRuntime.host.versionGroups).toEqual([])
       versioningRuntime.host.panelPresentationRevision++
-      expect(versioningRuntime.host.versionDayGroups).toEqual([{ key: 'current' }])
+      expect(versioningRuntime.host.versionGroups).toEqual([{ key: 'current' }])
       versioningRuntime.host.versionList = [{ id: 'new-current' }]
-      expect(versioningRuntime.host.versionDayGroups).toEqual([{ key: 'new-current' }])
+      expect(versioningRuntime.host.versionGroups).toEqual([{ key: 'new-current' }])
       expect(versioning.methods.versionActorLabel.call({}, { author: '当前作者' })).toBe('当前作者')
       expect(versioning.methods.versionTimelineClass.call({ versionSelectedId: 'current' }, { id: 'current' })).toEqual({ selected: true })
       expect(typeof versioning.methods.mountVersionDocumentPreview.call({}, previewElement, {})).toBe('function')
@@ -731,8 +731,8 @@ publishSharedModules({${sharedExports.map(([, name], index) => `${JSON.stringify
     const id = alias.resolveId('./versioningPresentation', importer)
     expect(id).toBe('\0lark-doc-versioning-presentation')
     const shape = versioningPresentationShape()
-    expect(shape.computed).toEqual(['versionRestoreConfirmText', 'versionDayGroups', 'versionChangeCursor', 'versionSelectedDiff', 'versionCurrentProjection'])
-    expect(shape.methods).toEqual(['loadVersions', 'selectVersion', 'loadVersionChanges', 'openNamedVersion', 'mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionItemBadge', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'toggleVersionShowChanges', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
+    expect(shape.computed).toEqual(['versionRestoreConfirmText', 'versionGroups', 'versionPreviewPageRecord', 'versionPreviewTopBar', 'versionChangeCursor', 'versionSelectedDiff', 'versionCurrentProjection'])
+    expect(shape.methods).toEqual(['loadVersions', 'selectVersion', 'loadVersionChanges', 'openNamedVersion', 'mountVersionDocumentPreview', 'versionItemName', 'versionItemDesc', 'versionKindLabel', 'versionActorLabel', 'versionTimelineClass', 'enterVersionPreview', 'selectVersionPreview', 'mountVersionPreviewPage', 'unmountVersionPreviewPage', 'toggleVersionIndicator', 'closeVersionIndicator', 'versionPreviewLink', 'copyVersionPreviewLink', 'exitVersionPreview', 'toggleVersionShowChanges', 'stepVersionChange', 'stepVersion', 'versionPrev', 'versionNext', 'requestVersionRestore', 'confirmVersionRestore', 'restoreSelectedVersion', 'openVersionTrash', 'loadDeletedVersions', 'restoreDeletedVersion', 'purgeDeletedVersion', 'updateVersionTrash'])
     const code = alias.load(id)
     for (const hot of ['restoreVersion', 'queryRestoreVersion']) expect(code).not.toContain(hot)
     expect(code).toContain('loadFeature("ui.panels")')

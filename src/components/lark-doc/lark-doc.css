@@ -34,6 +34,9 @@
   --ld-bg-hover-select: #eef5f0;    /* select 菜单选项 hover/高亮底 */
   --ld-bg-hover-menu: #f1f2f4;      /* 浮层菜单项 hover 底（中性灰，两档近似同） */
   --ld-bg-active: rgba(31, 35, 41, 0.10); /* 飞书口径，绿档暂无引用 */
+  /* 中性灰填充（实测 rgb(229,230,230)）。绿档底色（--ld-bg-hover 系）都带绿味，
+     这个胶囊要的是纯中性灰，混用会看出偏色，所以单列一个。 */
+  --ld-bg-neutral-fill: #e5e6e6;
   --ld-bg-accent: #eaf8f3;          /* 激活底（button.active / aria-pressed） */
   --ld-bg-accent-active: #e3f2ea;   /* 展开态底（工具栏 aria-expanded / 气泡 pressed） */
   --ld-bg-selected: var(--ld-bg-accent);        /* 飞书口径：格式已生效开关底（绿档暂无引用） */
@@ -451,6 +454,53 @@
 .lark-doc .lark-doc-header-actions > :first-child { margin-left: auto; }
 .lark-doc .lark-doc-header-actions button, .lark-doc .lark-doc-header-actions select { border-color: var(--ld-border-chrome); }
 .lark-doc .lark-doc-header-actions .lark-doc-header-more { width: 32px; min-width: 32px; padding: 0; border-color: transparent; }
+
+/* ── 已存版本预览态顶栏（「立即查看」进入） ─────────────────────────────────────
+   实测 `_pm_top.png` / `_pv4_top.png`：
+     `当前版本：` 是胶囊**外**的纯文字，只有「版本名 + 箭头」吃浅灰底（rgb(229,230,230)）；
+     右侧「回到源文档」黑字灰描边、「复制版本链接」蓝字蓝描边，都带 14px 图标；
+     展开时箭头翻成 ^（不是换个图标）。
+   注意：`.lark-doc-header-actions button` 是 (0,2,1)，两枚胶囊必须写到 (0,3,1) 才压得住
+   那条 `border-color: var(--ld-border-chrome)`，否则「复制版本链接」的蓝边会被洗掉。 */
+.lark-doc .lark-doc-version-indicator { display: flex; align-items: center; flex: 0 0 auto; min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--ld-text); font-size: 14px; line-height: 22px; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-version-indicator:hover { background: transparent; }
+.lark-doc .lark-doc-version-indicator-prefix { flex: 0 0 auto; }
+.lark-doc .lark-doc-version-indicator-pill { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 240px; height: 32px; padding: 0 10px; border-radius: 6px; background: var(--ld-bg-neutral-fill); }
+.lark-doc .lark-doc-version-indicator-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-version-indicator-caret { display: flex; flex: 0 0 auto; transition: transform .15s ease; }
+.lark-doc .lark-doc-version-indicator-pill.is-open .lark-doc-version-indicator-caret { transform: rotate(180deg); }
+.lark-doc .lark-doc-header-actions .lark-doc-version-preview-back,
+.lark-doc .lark-doc-header-actions .lark-doc-version-preview-copy { display: inline-flex; align-items: center; gap: 4px; height: 32px; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--ld-border-chrome); background: var(--ld-bg-surface-chrome); color: var(--ld-text); font-size: 14px; line-height: 22px; white-space: nowrap; cursor: pointer; }
+.lark-doc .lark-doc-header-actions .lark-doc-version-preview-copy { border-color: var(--ld-brand-content); color: var(--ld-brand-content); }
+
+/* 版本指示下拉（实测 `_pv4_dd.png`）：白底圆角卡，**无分隔线、无底部按钮**，
+   当前行右侧一枚蓝勾。行文案是 `文档名 第 N 版<版本名>`，长了就省略号收。 */
+.lark-doc .lark-doc-version-menu { position: fixed; z-index: 1055; box-sizing: border-box; display: flex; flex-direction: column; max-width: 420px; padding: 4px; border-radius: 8px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
+.lark-doc .lark-doc-version-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ld-text); font-size: 14px; line-height: 22px; text-align: left; cursor: pointer; }
+.lark-doc .lark-doc-version-menu-item:hover { background: var(--ld-bg-hover-menu); }
+.lark-doc .lark-doc-version-menu-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lark-doc .lark-doc-version-menu-check { flex: 0 0 auto; display: flex; color: var(--ld-brand-content); }
+
+/* 深色提示条（胶囊 hover 的「<作者> 保存于 <时间>」、复制链接的说明）。
+   真身是**独立气泡带下指小三角**，展开时可叠在面板上方；左缘比面板更靠左，
+   所以锚点取胶囊本身、不用面板的左边。 */
+.lark-doc .lark-doc-version-tip { position: fixed; z-index: 1070; box-sizing: border-box; padding: 6px 12px; border-radius: 6px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
+.lark-doc .lark-doc-version-tip::before { content: ''; position: absolute; top: -4px; left: 50%; width: 8px; height: 8px; margin-left: -4px; border-radius: 1px; background: inherit; transform: rotate(45deg); }
+
+/* ── 已存版本整页预览 ───────────────────────────────────────────────────────
+   实测 `_pm_half.png`：左侧文档库侧栏保留，正文区整块换成只读版本正文，
+   **没有格式工具栏、没有底部状态栏**，也没有版本信息条。真编辑器不销毁、只不显示，
+   退出预览即恢复（节点与 ProseMirror 状态都不用重建）。 */
+.lark-doc .lark-doc-version-preview-body { display: none; }
+.lark-doc.is-version-preview .lark-doc-version-preview-body { display: block; }
+.lark-doc.is-version-preview .lark-doc-editor-content,
+.lark-doc.is-version-preview .lark-doc-toolbar,
+.lark-doc.is-version-preview .lark-doc-outline,
+.lark-doc.is-version-preview .lark-doc-outline-reopen,
+.lark-doc.is-version-preview .lark-doc-status,
+.lark-doc.is-version-preview .lark-doc-cover-slot,
+.lark-doc.is-version-preview .lark-doc-cover-entry,
+.lark-doc.is-version-preview .lark-doc-cover-layer { display: none; }
 .lark-doc .lark-doc-toolbar { position: relative; z-index: 20; display: flex; gap: 2px; align-items: center; min-height: 40px; padding: 4px 12px; overflow-x: auto; overflow-y: visible; background: var(--ld-bg-surface-chrome); border-bottom: 1px solid var(--ld-border-chrome); scrollbar-width: none; }
 .lark-doc .lark-doc-toolbar::-webkit-scrollbar { display: none; }
 .lark-doc .lark-doc-tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; padding: 0 6px; border-right: 1px solid var(--ld-border-chrome); }

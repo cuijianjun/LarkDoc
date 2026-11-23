@@ -97,6 +97,16 @@ export default {
       versionPreviewError: '',
       /** 成功提示（④-2 的 toast「版本已保存，可在 ··· 更多菜单中找到」）。 */
       versionNotice: '',
+      /**
+       * 版本预览态（已存版本整页预览）：非空 = 正在整页预览这条记录。
+       * 顶栏换成 `当前版本：<名> ⌄` + 「回到源文档」「复制版本链接」，
+       * 模式切换 / 新建 / 通知 / 宿主动作区整块不出现。
+       */
+      versionPreviewPageId: '',
+      /** 进预览态时记下的版本名：列表还没回来时指示器也不至于空着。 */
+      versionPreviewPageLabel: '',
+      /** 预览态顶栏版本指示下拉的开合。 */
+      versionIndicatorOpen: false,
     }
   },
 

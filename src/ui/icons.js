@@ -105,6 +105,11 @@ export const ICONS = {
   'link-unset': wrap('<path d="m2 2 12 12M6 6l-3 3a3 3 0 0 0 4 4l2-2M7 5l2-2a3 3 0 0 1 4 4l-2 2"/>'),
   'link-view-more': wrap('<circle cx="3" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="13" cy="8" r="1"/>'),
   'open-external': wrap('<path d="M9 2h5v5M14 2 7 9M6 3H3v10h10v-3"/>'),
+  // 版本预览态顶栏「回到源文档」：飞书这枚是**闭合方框 + 右向箭头穿出右边**，
+  // 与上面 open-external（↗ 斜箭头）、share-link（同为 ↗）都不同，别互相顶替。
+  'version-preview-exit': wrap('<path d="M10.6 5.4V4a1.4 1.4 0 0 0-1.4-1.4H3.6A1.4 1.4 0 0 0 2.2 4v8a1.4 1.4 0 0 0 1.4 1.4h5.6A1.4 1.4 0 0 0 10.6 12v-1.4"/><path d="M6.4 8h6.6"/><path d="m10.6 5.4 2.6 2.6-2.6 2.6"/>'),
+  // 版本预览态顶栏「复制版本链接」：真身是标准链条（两个互扣的挂钩），非 ↗。
+  'version-preview-link': wrap('<path d="M6.7 9.3a2.9 2.9 0 0 1 0-4.1l1.9-1.9a2.9 2.9 0 0 1 4.1 4.1L11.6 8.5"/><path d="M9.3 6.7a2.9 2.9 0 0 1 0 4.1l-1.9 1.9a2.9 2.9 0 0 1-4.1-4.1L4.4 7.5"/>'),
   refresh: wrap('<path d="M13 6a5 5 0 1 0 0 4M13 2v4H9"/>'),
   'align-left': wrap('<path d="M2.5 4h11"/><path d="M2.5 8h7"/><path d="M2.5 12h9"/>'),
   'align-center': wrap('<path d="M2.5 4h11"/><path d="M4.5 8h7"/><path d="M3.5 12h9"/>'),
