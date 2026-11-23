@@ -123,7 +123,9 @@
   --ld-text-badge: #09805e;               /* 本地标记徽标文字 */
   --ld-text-slide-title: #214c37;         /* 幻灯片舞台标题 */
   --ld-text-inverse: #FFFFFF;             /* 深色浮层（tooltip / 边界按钮）上的反白文字 */
-  --ld-bg-tooltip: #24282c;               /* tooltip 深底 */
+  /* tooltip 深底 = `#1F2329`（2026-11-23 真身 `.ud__tooltip-content` 实测 `rgb(31, 35, 41)`；
+     原值 `#24282c` 是早先目测取的，偏亮 5 个色阶，已按实测校正）。 */
+  --ld-bg-tooltip: #1F2329;
   --ld-bg-soft: #f5f8f7;                  /* 侧栏软底（AI 结果区 / 消息条；旧 --lark-doc-soft） */
   --ld-bg-switch-off: #bbbfc4;            /* 开关关闭轨道 */
   --ld-bg-switch-thumb: #FFFFFF;          /* 开关圆点 */

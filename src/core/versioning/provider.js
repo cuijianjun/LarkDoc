@@ -24,8 +24,8 @@ import { createRestoreRecord } from './restore'
 import { encodeVersionDocument, decodeVersionDocument } from './document-codec'
 import { pruneSnapshots } from './retention'
 import {
-  E_SNAPSHOT_INVALID, E_VERSION_DELETED, E_VERSION_EVICTED, E_VERSION_GONE,
-  E_VERSION_NOT_FOUND, versioningError,
+  E_SNAPSHOT_INVALID, E_SNAPSHOT_LABEL, E_VERSION_DELETED, E_VERSION_EVICTED, E_VERSION_GONE,
+  E_VERSION_NOT_FOUND, SNAPSHOT_LABEL_MAX, versioningError,
 } from './types'
 
 export function createMemoryVersioningProvider(options) {
@@ -148,6 +148,26 @@ export function createMemoryVersioningProvider(options) {
     /** 05 §5.4：取单个版本全文（含二进制）。 */
     async get(versionId) {
       return cloneRecord(requireEntry(versionId).record)
+    },
+
+    /**
+     * 演示扩展（不在 05 §5.4 契约里，同 `prune`）：改**版本名**。
+     *
+     * 为什么允许改：正文不可变，名字是元信息 —— 飞书预览态「···」里的「重命名」改的
+     * 就是它（`重命名版本` 对话框，字段 `版本名称`，计数 `N/1000`）。
+     * 只换 `label`，`id / createdAt / seq` 全不动，于是链上顺序和「谁是谁」都不受影响。
+     * 校验口径与 `createSnapshot` 的 `normalizeLabel` 一致：非字符串、超长都报
+     * `E_SNAPSHOT_LABEL`，不做静默截断。
+     */
+    async rename(versionId, label) {
+      const entry = requireEntry(versionId)
+      if (typeof label !== 'string') throw versioningError(E_SNAPSHOT_LABEL, '版本名必须是字符串')
+      if (label.length > SNAPSHOT_LABEL_MAX) {
+        throw versioningError(E_SNAPSHOT_LABEL, `版本名上限 ${SNAPSHOT_LABEL_MAX} 字符（04 §⑤-2 计数口径），当前 ${label.length}`)
+      }
+      // 换一条 record 而不是改原对象：`list()` 已发出去的元信息快照不该被事后改写。
+      entry.record = Object.assign({}, entry.record, { label })
+      return normalizeSnapshot(entry.record)
     },
 
     /** 05 §5.4：恢复 = 新建版本，不覆盖原版本；原版本仍在链上。 */

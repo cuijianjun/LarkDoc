@@ -48,6 +48,9 @@ import {
 } from '../../src/components/lark-doc/editor/versioningPresentation'
 import versioningMixin, { VERSIONING_CURSOR_LABEL, versionCapabilityGate } from '../../src/components/lark-doc/editor/versioningMixin'
 
+/** 一个月度组里每个折叠节点的父行 id（`versionGroups` 已是两层：月份 → 折叠组）。 */
+const headIds = (month) => (month.groups || []).map((node) => node.head.id)
+
 describe('历史版本窄屏样式覆盖', () => {
   it.each(['layer', 'left', 'right', 'left-header', 'left-content', 'restore', 'pager'])(
     '%s 的窄屏规则与桌面规则使用相同作用域及优先级',
@@ -447,7 +450,7 @@ describe('按月分组（009 §T9 时间线）', () => {
     const { list } = await listAcrossDays()
     const groups = groupVersionsByMonth(list)
     expect(groups.map((group) => group.label)).toEqual(['10月'])
-    expect(groups[0].items.map((item) => item.id)).toEqual(['v2', 'v4', 'v3', 'v1'])
+    expect(headIds(groups[0])).toEqual(['v2', 'v4', 'v3', 'v1'])
   })
 
   it('跨月另起一组；跨年同月不能并组（key 带年份）', () => {
@@ -459,15 +462,13 @@ describe('按月分组（009 §T9 时间线）', () => {
     ])
     expect(groups.map((group) => group.label)).toEqual(['10月', '9月', '9月'])
     expect(groups.map((group) => group.key)).toEqual(['2026-10', '2026-09', '2025-09'])
-    expect(groups[0].items.map((item) => item.id)).toEqual(['a', 'b'])
+    expect(headIds(groups[0])).toEqual(['a', 'b'])
   })
 
   it('分组只切连续段，不打散顺序（下标错位会把 A 的时间贴到 B 上）', async () => {
     const { list } = await listAcrossDays()
     const flat = []
-    for (const group of groupVersionsByMonth(list)) {
-      for (const item of group.items) flat.push(item.id)
-    }
+    for (const month of groupVersionsByMonth(list)) flat.push(...headIds(month))
     expect(flat).toEqual(list.map((item) => item.id))
   })
 
@@ -478,13 +479,56 @@ describe('按月分组（009 §T9 时间线）', () => {
     ])
     expect(groups.map((group) => group.label)).toEqual(['10月', VERSIONING_DAY_LABELS.unknown])
     expect(groups[1].key).toBe('')
-    expect(groups[1].items.map((item) => item.id)).toEqual(['b'])
+    expect(headIds(groups[1])).toEqual(['b'])
   })
 
   it('空输入与非数组输入都返回空数组（面板右栏走降级而不是白屏）', () => {
     expect(groupVersionsByMonth([])).toEqual([])
     expect(groupVersionsByMonth(null)).toEqual([])
     expect(groupVersionsByMonth(undefined)).toEqual([])
+  })
+
+  // ——— 父子折叠（009 C4）：分组口径只有 `groupId` 一条，禁止按时间间隔聚类 ———
+  it('同一 groupId 且相邻的记录并成一个折叠组，父行是组内第一条', () => {
+    const groups = groupVersionsByMonth([
+      { id: 'c', createdAt: Date.UTC(2026, 9, 26, 12, 8), groupId: 'g1' },
+      { id: 'b', createdAt: Date.UTC(2026, 9, 26, 12, 8), groupId: 'g1' },
+      { id: 'a', createdAt: Date.UTC(2026, 9, 26, 12, 2), groupId: 'g1' },
+    ])
+    expect(groups[0].groups).toHaveLength(1)
+    const [node] = groups[0].groups
+    expect(node.id).toBe('g1')
+    expect(node.head.id).toBe('c')
+    // 父行 === children[0]：飞书父行就是 `minor_history[0]`，展开后前两行同刻同文。
+    expect(node.children.map((item) => item.id)).toEqual(['c', 'b', 'a'])
+    expect(node.children[0]).toBe(node.head)
+  })
+
+  it('groupId 只在**相邻**时并组：中间夹了别的组就断开（不跨组回捞）', () => {
+    const groups = groupVersionsByMonth([
+      { id: 'c', createdAt: Date.UTC(2026, 9, 26, 12, 8), groupId: 'g1' },
+      { id: 'b', createdAt: Date.UTC(2026, 9, 26, 11, 0), groupId: 'g2' },
+      { id: 'a', createdAt: Date.UTC(2026, 9, 26, 10, 0), groupId: 'g1' },
+    ])
+    expect(groups[0].groups.map((node) => node.id)).toEqual(['g1', 'g2', 'g1'])
+    expect(groups[0].groups.map((node) => node.children.length)).toEqual([0, 0, 0])
+  })
+
+  it('单条组没有折叠子项（飞书 type 1/3 的 minor_history 恒 1 条 → 不画三角）', () => {
+    const groups = groupVersionsByMonth([
+      { id: 'b', createdAt: Date.UTC(2026, 9, 26, 12, 8), groupId: 'g1' },
+      { id: 'a', createdAt: Date.UTC(2026, 9, 26, 10, 0) },
+    ])
+    expect([...groups[0].groups].map((node) => node.children)).toEqual([[], []])
+  })
+
+  it('没有 groupId 的记录各自成组（缺省空串，不做时间聚类）', () => {
+    // 两条相隔 1 分钟：任何「按间隔聚类」都会把它们并起来，这里必须仍是两组。
+    const groups = groupVersionsByMonth([
+      { id: 'b', createdAt: Date.UTC(2026, 9, 26, 12, 8) },
+      { id: 'a', createdAt: Date.UTC(2026, 9, 26, 12, 7) },
+    ])
+    expect(groups[0].groups.map((node) => node.id)).toEqual(['b', 'a'])
   })
 })
 
@@ -1037,9 +1081,9 @@ describe('右栏飞书对齐的 DOM 契约', () => {
 
   it('时间线条目固定三行：时间 / 事件描述 / 作者，描述为空时节点仍在但不撑高', () => {
     const { dom, panel, update } = mountPanel({
-      days: [{ key: '2026-11', label: '11月', items: [
-        { id: 'v2', name: '11月17日 10:00', desc: '最近更新', user: '张三' },
-        { id: 'v1', name: '11月17日 09:00', desc: '', user: '李四' },
+      days: [{ key: '2026-11', label: '11月', groups: [
+        { id: 'v2', head: { id: 'v2', name: '11月17日 10:00', desc: '最近更新', user: '张三' }, children: [] },
+        { id: 'v1', head: { id: 'v1', name: '11月17日 09:00', desc: '', user: '李四' }, children: [] },
       ] }],
     })
     try {
@@ -1095,8 +1139,12 @@ describe('右栏飞书对齐的 DOM 契约', () => {
   })
 
   it('整月条目一次性铺开，没有「先给三条 + 更多历史」的截断', () => {
-    const items = Array.from({ length: 4 }, (_, index) => ({ id: `v${index}`, name: `条目 ${index}`, desc: '', user: '张三' }))
-    const { dom, panel, update } = mountPanel({ days: [{ key: '2026-11', label: '11月', items }] })
+    const nodes = Array.from({ length: 4 }, (_, index) => ({
+      id: `v${index}`,
+      head: { id: `v${index}`, name: `条目 ${index}`, desc: '', user: '张三' },
+      children: [],
+    }))
+    const { dom, panel, update } = mountPanel({ days: [{ key: '2026-11', label: '11月', groups: nodes }] })
     try {
       update()
       // 飞书（`hist_i_select2.png`）一个月 11 条全在，没有折叠闸门。
@@ -1106,6 +1154,101 @@ describe('右栏飞书对齐的 DOM 契约', () => {
       const label = panel.el.querySelector('.lark-doc-version-day-label')
       expect(label.tagName).toBe('DIV')
       expect(label.textContent).toBe('11月')
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  /* ——— 父子折叠（009 C4）：三角只在有子项时出现；三角管折叠，行管选中 ——— */
+
+  const foldDays = () => [{
+    key: '2026-11', label: '11月', groups: [
+      {
+        id: 'g1',
+        head: { id: 'v3', name: '11月17日 10:00', desc: '', user: '张三' },
+        children: [
+          { id: 'v3', name: '11月17日 10:00', desc: '', user: '张三' },
+          { id: 'v2', name: '11月17日 09:58', desc: '', user: '张三' },
+        ],
+      },
+      { id: 'v1', head: { id: 'v1', name: '11月16日 20:00', desc: '', user: '李四' }, children: [] },
+    ],
+  }]
+
+  it('默认全折叠：只铺父行，三角朝向折叠态（不写 is-open）', () => {
+    const { dom, panel, update } = mountPanel({ days: foldDays() })
+    try {
+      update()
+      expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(2)
+      const toggle = panel.el.querySelector('.lark-doc-version-item-toggle')
+      expect(toggle).not.toBeNull()
+      expect(toggle.classList.contains('is-open')).toBe(false)
+      expect(toggle.querySelector('svg')).not.toBeNull()
+      // 三角没有 tooltip 文案（真身面板内 title/aria-label 探测为空）。
+      expect(toggle.hasAttribute('title')).toBe(false)
+      expect(toggle.getAttribute('aria-hidden')).toBe('true')
+      expect(panel.el.querySelector('.lark-doc-version-item.has-children').getAttribute('aria-expanded')).toBe('false')
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('无子的组不出现三角（飞书 type 1/3 没有 minor_history 可折叠）', () => {
+    const { dom, panel, update } = mountPanel({ days: foldDays() })
+    try {
+      update()
+      // 两颗条目里只有第一颗有三角。
+      expect(panel.el.querySelectorAll('.lark-doc-version-item-toggle')).toHaveLength(1)
+      expect(panel.el.querySelectorAll('.lark-doc-version-item.has-padding')).toHaveLength(0)
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('点三角 = 展开（子行带 has-padding 缩进、三角转 90°），再点收回，全程不选中', () => {
+    const { dom, panel, update } = mountPanel({ days: foldDays() })
+    try {
+      update()
+      const group = panel.el.querySelector('.lark-doc-version-group')
+      group.querySelector('.lark-doc-version-item-toggle').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      // 父行 1 + 子行 2 = 3，同一组的容器没被整体重建掉顺序。
+      expect(panel.el.querySelectorAll('.lark-doc-version-group')[0].querySelectorAll('.lark-doc-version-item')).toHaveLength(3)
+      const padded = panel.el.querySelectorAll('.lark-doc-version-item.has-padding')
+      expect([...padded].map(row => row.querySelector('.lark-doc-version-item-name').textContent))
+        .toEqual(['11月17日 10:00', '11月17日 09:58'])
+      expect(panel.el.querySelector('.lark-doc-version-item-toggle').classList.contains('is-open')).toBe(true)
+      // 折叠是折叠、选中是选中：三角拦住了冒泡，父行的选中回调一次都不该响。
+      expect(panel.el.querySelector('.lark-doc-version-item.has-children').getAttribute('aria-expanded')).toBe('true')
+      // 再点一次收回。
+      panel.el.querySelector('.lark-doc-version-item-toggle').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(2)
+      expect(panel.el.querySelector('.lark-doc-version-item-toggle').classList.contains('is-open')).toBe(false)
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('点父行（组头）是选中并回传它自己的 id，不折叠', () => {
+    const onSelect = vi.fn()
+    const dom = new JSDOM('<div id="host"></div>')
+    vi.stubGlobal('document', dom.window.document)
+    const host = dom.window.document.querySelector('#host')
+    const panel = createVersionPanel({ host, handlers: { onSelect } })
+    try {
+      panel.update({ open: true, view: 'timeline', days: foldDays(), pager: { cursor: '', prev: {}, next: {} }, restore: {} })
+      panel.el.querySelector('.lark-doc-version-item.has-children').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      // 组头就是 `minor_history[0]` 那条版本 —— 打开面板时自动选中的正是它，必须点得到。
+      expect(onSelect).toHaveBeenLastCalledWith('v3')
+      // 行没折叠：子行一个都没铺出来。
+      expect(panel.el.querySelectorAll('.lark-doc-version-item')).toHaveLength(2)
+    } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
+  })
+
+  it('点子行是选中并回传 id；无三角的父行点自己也选中', () => {
+    const onSelect = vi.fn()
+    const dom = new JSDOM('<div id="host"></div>')
+    vi.stubGlobal('document', dom.window.document)
+    const host = dom.window.document.querySelector('#host')
+    const panel = createVersionPanel({ host, handlers: { onSelect } })
+    try {
+      panel.update({ open: true, view: 'timeline', days: foldDays(), pager: { cursor: '', prev: {}, next: {} }, restore: {} })
+      panel.el.querySelector('.lark-doc-version-item-toggle').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      panel.el.querySelectorAll('.lark-doc-version-item.has-padding')[1].dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      expect(onSelect).toHaveBeenLastCalledWith('v2')
+      panel.el.querySelectorAll('.lark-doc-version-item.has-children')[0].dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      expect(onSelect).toHaveBeenLastCalledWith('v3')
     } finally { panel.destroy(); vi.unstubAllGlobals(); dom.window.close() }
   })
 })

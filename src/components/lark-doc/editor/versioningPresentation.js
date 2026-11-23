@@ -113,13 +113,23 @@ export function formatVersionMonthLabel(createdAt) {
 }
 
 /**
- * 按自然月分组（04 §3.4-C）。
+ * 按自然月分组，月内再按**服务端组标识**分父子两层（04 §3.4-C + 009 C4）。
  *
  * **不做二次排序**：`provider.list()` 已保证新→旧（同毫秒按写入次序），面板再排一次
  * 就是两处口径打架。分组只做「连续同月切一段」，这样同一个月不会跨到两个组里。
  *
+ * 传 `groups`（折叠组）而不是 `items`（扁平条目）的原因：飞书时间线是**父子折叠**结构，
+ * 父行 + 子行，父行左上角一颗三角。层级只有一层，`month → groups[].children` 足够。
+ *
+ * 🔴 **禁止按时间间隔聚类**。真身 20 组实测：「组内最大间隔 30.1 分钟」比
+ * 「组间最小间隔 2.1 分钟」还大，区间反向重叠 —— 任何阈值都复现不出飞书的分组。
+ * 分组口径只有一条：`record.groupId` 相同且相邻即同组（`groupId` 空则自成一组）。
+ *
  * @param {Array} records `provider.list()` 的返回
- * @returns {Array<{ key: string, label: string, items: Array }>}
+ * @returns {Array<{ key: string, label: string, groups: Array<{ id: string, head: object, children: Array }> }>}
+ *   `children` 为空数组 = 这一条没有折叠子项（不画三角、只铺一行）；
+ *   非空时 `children[0] === head` —— 飞书的父行就是 `minor_history[0]`，展开后第一行
+ *   与父行同刻同文（实测 3 条 minors 展开成 4 行，其中前两行时间相同）。
  */
 export function groupVersionsByMonth(records) {
   const groups = []
@@ -131,13 +141,25 @@ export function groupVersionsByMonth(records) {
     // `createdAt <= 0` 是 `normalizeSnapshot` 给缺失时间的兜底；单独归到「未知时间」组，
     // 否则 `new Date(0)` 会让它掉进 1970-01，看着像一份真实的远古版本。
     const key = createdAt > 0 ? monthKeyOf(createdAt) : ''
-    const tail = groups.length ? groups[groups.length - 1] : null
-    if (tail && tail.key === key) {
-      tail.items.push(record)
+    const groupId = typeof record.groupId === 'string' ? record.groupId : ''
+    let month = groups.length ? groups[groups.length - 1] : null
+    if (!month || month.key !== key) {
+      month = { key, label: formatVersionMonthLabel(createdAt), groups: [] }
+      groups.push(month)
+    }
+    const tail = month.groups.length ? month.groups[month.groups.length - 1] : null
+    if (groupId && tail && tail.id === groupId) {
+      tail.children.push(record)
       continue
     }
-    groups.push({ key, label: formatVersionMonthLabel(createdAt), items: [record] })
+    // 有 groupId 时 `children` 从 `[record]` 起算：父行即 `children[0]`，与真身一致。
+    month.groups.push({ id: groupId || record.id || '', head: record, children: groupId ? [record] : [] })
   }
+  // 单条组抹平：飞书 `type 1/3`（创建 / 还原）的 `minor_history` 恒 1 条、**没有三角**，
+  // 这时父行就是唯一那行。清成空数组让渲染层不必再判长度。
+  groups.forEach((month) => {
+    month.groups.forEach((node) => { if (node.children.length < 2) node.children = [] })
+  })
   return groups
 }
 
@@ -236,7 +258,7 @@ export function createVersioningPresentation(dependencies) {
       return `将当前文档还原至 ${date.getMonth() + 1}月${date.getDate()}日 ${formatVersionClock(record.createdAt)} 的状态`
     },
 
-    /** 右栏时间线：按自然月分组后的 `[{ key, label, items }]`。 */
+    /** 右栏时间线：按自然月分组、月内按服务端组标识分父子后的 `[{ key, label, groups }]`。 */
     versionGroups() {
       return versionGroupsOf(this.versionList)
     },
@@ -579,6 +601,21 @@ export function createVersioningPresentation(dependencies) {
     versionTimelineClass(record) {
       return {
         selected: Boolean(record) && record.id === this.versionSelectedId,
+      }
+    },
+
+    /**
+     * 一条记录 → 时间线一行的渲染描述（父行与子行共用，避免两处字段口径走散）。
+     *
+     * 三行节点：时间（蓝 14）/ 事件描述（12）/ 作者（灰 12 + 紫点）。
+     */
+    versionTimelineItem(record) {
+      return {
+        id: record ? record.id : '',
+        cls: this.versionTimelineClass(record).selected ? 'selected' : '',
+        name: this.versionItemName(record),
+        desc: this.versionItemDesc(record),
+        user: this.versionActorLabel(record),
       }
     },
     // ——————————————— 已存版本整页预览态（T4 / T6 / T7 / T8） ———————————————

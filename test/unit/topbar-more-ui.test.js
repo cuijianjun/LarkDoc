@@ -15,6 +15,8 @@ import topbarMoreMixin, {
   TOPBAR_MORE_CAPABILITY,
   TOPBAR_MORE_DIVIDER_AFTER,
   TOPBAR_MORE_ITEMS,
+  TOPBAR_MORE_PREVIEW_DIVIDER_AFTER,
+  TOPBAR_MORE_PREVIEW_ITEMS,
   TOPBAR_MORE_READONLY_DISABLED,
   TOPBAR_MORE_SUBPANELS,
   TOPBAR_MORE_WIDTH_LINES,
@@ -473,6 +475,84 @@ describe('顶栏更多 · action 分发（哪些真接了线，一眼数得清�
     const ctx = hostCtx({ topbarMoreOpen: true, printDocument: () => { ctx.printed = true } })
     ctx.runTopbarMoreAction('print', {})
     expect(ctx.printed).toBe(true)
+    expect(ctx.emitted).toEqual([])
+  })
+})
+
+describe('顶栏更多 · 版本预览态是一张 9 项独立名单（2026-11-23 真身实测）', () => {
+  /**
+   * 不是「编辑态 23 项的子集」：预览态少 16 项、多一项 `重命名`，`查找和替换` 也只叫 `查找`。
+   * 这里把差异写成断言，免得以后有人「顺手」用过滤把两张表合并回一张。
+   */
+  const previewIds = () => TOPBAR_MORE_PREVIEW_ITEMS.map((item) => item.id)
+
+  it('9 项、顺序与真身逐行一致', () => {
+    expect(previewIds()).toEqual(['width', 'slides', 'find', 'show-author', 'download-as', 'translate', 'print', 'rename', 'delete'])
+    expect(new Set(previewIds()).size).toBe(9)
+    TOPBAR_MORE_PREVIEW_ITEMS.forEach((item, index) => expect(item.order).toBe(index + 1))
+  })
+
+  it('只有两条分隔线：在段落前显示作者之后、重命名之后（实测 y195 / y338）', () => {
+    expect(TOPBAR_MORE_PREVIEW_DIVIDER_AFTER).toEqual(['show-author', 'rename'])
+    const rows = topbarMoreRows(TOPBAR_MORE_PREVIEW_ITEMS, TOPBAR_MORE_PREVIEW_DIVIDER_AFTER)
+    expect(rows.filter((row) => row.kind === 'divider').map((row) => row.id)).toEqual(['divider-show-author', 'divider-rename'])
+  })
+
+  it('差异清单：多 重命名、少 16 项、查找换了文案', () => {
+    const preview = new Set(previewIds())
+    const edit = new Set(ids)
+    expect([...preview].filter((id) => !edit.has(id))).toEqual(['show-author', 'rename'])
+    expect([...edit].filter((id) => !preview.has(id))).toEqual(['follow', 'shortcut', 'move', 'pin', 'favorite', 'template',
+      'duplicate', 'save-version', 'view-versions', 'doc-permission', 'widgets', 'doc-info', 'mentioned', 'history',
+      'history-comments', 'more'])
+    expect(TOPBAR_MORE_PREVIEW_ITEMS.find((item) => item.id === 'find').label).toBe('查找')
+  })
+
+  it('图标：重命名用新增的 menu-rename；在段落前显示作者没有图标；其余与编辑态同源', () => {
+    expect(ICONS['menu-rename']).toContain('<svg')
+    expect(TOPBAR_MORE_PREVIEW_ITEMS.find((item) => item.id === 'show-author').icon).toBeUndefined()
+    for (const item of TOPBAR_MORE_PREVIEW_ITEMS) {
+      const source = TOPBAR_MORE_ITEMS.find((entry) => entry.id === item.id)
+      if (source) expect(item.icon).toBe(source.icon)
+    }
+  })
+
+  it('只有 页宽设置 / 下载为 / 翻译为英语 带右箭头', () => {
+    expect(TOPBAR_MORE_PREVIEW_ITEMS.filter((item) => topbarMoreHasArrow(item)).map((item) => item.id))
+      .toEqual(['width', 'download-as', 'translate'])
+  })
+
+  it('只读下也全部可用（真身这 9 项没有置灰的），且不把编辑态那 23 项带出来', () => {
+    const ctx = mixinCtx({ versionPreviewPageId: 'v3', effectiveReadonly: true, shareCan: () => false })
+    const items = topbarMoreMixin.computed.topbarMoreItems.call(ctx)
+    expect(items.map((item) => item.id)).toEqual(previewIds())
+    expect(items.every((item) => item.enabled)).toBe(true)
+    expect(items.some((item) => item.id === 'template' || item.id === 'theme' || item.id === 'follow')).toBe(false)
+  })
+
+  it('行表按预览态的两条分隔线切组', () => {
+    const ctx = mixinCtx({ versionPreviewPageId: 'v3' })
+    // computed 之间不自动串联（这里没有 Vue 实例），手动把上一步结果喂进去。
+    ctx.topbarMoreItems = topbarMoreMixin.computed.topbarMoreItems.call(ctx)
+    const rows = topbarMoreMixin.computed.topbarMoreRows.call(ctx)
+    expect(rows.filter((row) => row.kind === 'divider').map((row) => row.id)).toEqual(['divider-show-author', 'divider-rename'])
+  })
+
+  it('一级开关「在段落前显示作者」翻本地态 + 抛宿主事件，菜单不关', () => {
+    const ctx = mixinCtx({ topbarMoreOpen: true })
+    ctx.onTopbarMoreItem(TOPBAR_MORE_PREVIEW_ITEMS.find((item) => item.id === 'show-author'))
+    expect(ctx.topbarMoreShowAuthor).toBe(true)
+    expect(ctx.topbarMoreOpen).toBe(true)
+    expect(ctx.emitted).toEqual([{ name: 'topbar-more', payload: { action: 'more.show-author', on: true } }])
+  })
+
+  it('「重命名」改的是当前预览的那条版本，且先收菜单', () => {
+    const seen = []
+    const ctx = mixinCtx({ topbarMoreOpen: true, versionPreviewPageId: 'v3', _topbarMoreTrigger: { tag: 'trigger' },
+      openRenameVersion: (id, opener) => { seen.push([id, opener?.tag]) } })
+    ctx.runTopbarMoreAction('rename', { id: 'rename' })
+    expect(seen).toEqual([['v3', 'trigger']])
+    expect(ctx.topbarMoreOpen).toBe(false)
     expect(ctx.emitted).toEqual([])
   })
 })

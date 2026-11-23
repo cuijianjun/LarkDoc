@@ -344,9 +344,9 @@
       "scope": "bootstrap"
     },
     {
-      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 → 550 → 550.2 → 556 KB；导出/浮层/上传已移到同目录特性包；550 → 550.2 通知面板点击分流：已删除/无权限/已解决的短路提示；550.2 → 556「更多」菜单 25 枚 menu-* 图标原路径进包，实测 555,008）",
+      "name": "Element runtime (gzip)（惰性拉取；620 → 600 → 560 → 550 → 550.2 → 556 → 559 KB；导出/浮层/上传已移到同目录特性包；550 → 550.2 通知面板点击分流：已删除/无权限/已解决的短路提示；550.2 → 556「更多」菜单 25 枚 menu-* 图标原路径进包，实测 555,008；556 → 559 版本面板 Phase 2–4 随编辑器内核进包：时间线父子折叠组、三角图标与版本预览视图，实测 558,784）",
       "path": "dist/lark-doc-element.runtime.umd.min.js",
-      "limit": "556 KB",
+      "limit": "559 KB",
       "gzip": true,
       "scope": "lazy"
     },
@@ -358,37 +358,37 @@
       "scope": "lazy"
     },
     {
-      "name": "Element 首屏样式 (gzip)（与 runtime 并行下载，不阻塞脚本求值；45 → 45.05：分享面板链接范围标签底与地球圆底两枚 token 落在 share.css 的 token 块里，随首屏一起下发；45.05 → 45.1：「更多」菜单按飞书 2× 截图收口，行 30 / 面板 186 / 分隔线满宽 / help 气泡）",
+      "name": "Element 首屏样式 (gzip)（与 runtime 并行下载，不阻塞脚本求值；45 → 45.05：分享面板链接范围标签底与地球圆底两枚 token 落在 share.css 的 token 块里，随首屏一起下发；45.05 → 45.1：「更多」菜单按飞书 2× 截图收口，行 30 / 面板 186 / 分隔线满宽 / help 气泡；45.1 → 46.1：合入 agent/topbar-more-menu 后实测 46,005，上一轮提额没跟上那批样式，本次仅对齐存量，版本面板的折叠样式落在 ui.css 不占这里）",
       "path": "dist/lark-doc-element.css",
-      "limit": "45.1 KB",
+      "limit": "46.1 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 交互包 (gzip)（选区/悬浮/表格/顶栏，鼠标一动就要用；164 → 42 的理由见 performance.md；42 → 43.1「更多」菜单 help 气泡与箭头图标，实测 43,006）",
+      "name": "Element UI 交互包 (gzip)（选区/悬浮/表格/顶栏，鼠标一动就要用；164 → 42 的理由见 performance.md；42 → 43.1「更多」菜单 help 气泡与箭头图标，实测 43,006；43.1 → 44.2 合入 agent/topbar-more-menu 后实测 44,032，上一轮提额没跟上，本条本轮增量 0）",
       "path": "dist/lark-doc-element.umd.min.ui.js",
-      "limit": "43.1 KB",
+      "limit": "44.2 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 面板包 (gzip)（侧栏面板/对话框/浮层，点了才用；与交互包共用同一张样式表；99 → 99.6 通知面板按飞书 nf-feed-message 重写条目：头像/未读点/类型文案表/灰卡摘要/时间行，99.6 → 99.7 空态插图按飞书真身逐件收窄：缎带线宽 10→8、气泡 45×34→39×31、卡片高 54→58）",
+      "name": "Element UI 面板包 (gzip)（侧栏面板/对话框/浮层，点了才用；与交互包共用同一张样式表；99 → 99.6 通知面板按飞书 nf-feed-message 重写条目：头像/未读点/类型文案表/灰卡摘要/时间行，99.6 → 99.7 空态插图按飞书真身逐件收窄：缎带线宽 10→8、气泡 45×34→39×31、卡片高 54→58；99.7 → 101.2 版本面板 Phase 2–4：时间线父子折叠（父行/子行/三角热区）与版本预览视图，实测 101,057，其中 Phase 4 占 463 B）",
       "path": "dist/lark-doc-element.umd.min.uiPanels.js",
-      "limit": "99.7 KB",
+      "limit": "101.2 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 浮层与对话框 (gzip)（32 → 32.1：扫码分享浮层与查换面板浮层归此包）",
+      "name": "Element UI 浮层与对话框 (gzip)（32 → 32.1：扫码分享浮层与查换面板浮层归此包；32.1 → 34.6 合入 agent/topbar-more-menu 后实测 34,448，上一轮提额没跟上，本条本轮增量 0）",
       "path": "dist/lark-doc-element.umd.min.uiOverlays.js",
-      "limit": "32.1 KB",
+      "limit": "34.6 KB",
       "gzip": true,
       "scope": "lazy"
     },
     {
-      "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载；21 → 21.1 查换禁用档与关注卡 token，21.1 → 21.25 通知面板单行条目 + 标题后状态铃铛 + 顶栏铃铛取色，21.25 → 21.4 分享面板按飞书像素级收口：灰条通栏、链接卡几何、共享下拉去皮、齿轮/三角/地球取真身，21.4 → 21.6 通知面板条目结构重写（头像 32/红点 11/灰卡 344/时间 12）+ 空态插图按截图重绘，21.6 → 21.75 系统通知 is-line 单行（无头像/9px 12px/50 高）、灰卡 344 不再被 max-width 钳窄、引用块级化可截断）",
+      "name": "Element UI 样式 (gzip)（交互包与面板包共用一张表，先到的注入 <link>，与两个包并行下载；21 → 21.1 查换禁用档与关注卡 token，21.1 → 21.25 通知面板单行条目 + 标题后状态铃铛 + 顶栏铃铛取色，21.25 → 21.4 分享面板按飞书像素级收口：灰条通栏、链接卡几何、共享下拉去皮、齿轮/三角/地球取真身，21.4 → 21.6 通知面板条目结构重写（头像 32/红点 11/灰卡 344/时间 12）+ 空态插图按截图重绘，21.6 → 21.75 系统通知 is-line 单行（无头像/9px 12px/50 高）、灰卡 344 不再被 max-width 钳窄、引用块级化可截断；21.75 → 23.7 合入 agent/topbar-more-menu 的存量 + 版本面板折叠组样式（三角 20×20 定位/子行缩进 56/展开旋转），实测 23,612，本轮新增 118 B）",
       "path": "dist/lark-doc-element.ui.css",
-      "limit": "21.75 KB",
+      "limit": "23.7 KB",
       "gzip": true,
       "scope": "lazy"
     },
@@ -433,9 +433,9 @@
       "gzip": true
     },
     {
-      "name": "lite 主包 (gzip)（与 ESM 同一口径，编辑器代码；310 → 395 的理由见 performance.md）",
+      "name": "lite 主包 (gzip)（与 ESM 同一口径，编辑器代码；310 → 395 的理由见 performance.md；395 → 404 版本面板 Phase 2–4 随编辑器代码进包，实测 403,433）",
       "path": "dist/lark-doc-lite.esm.js",
-      "limit": "395 KB",
+      "limit": "404 KB",
       "gzip": true,
       "scope": "editor"
     }

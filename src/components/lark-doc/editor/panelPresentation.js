@@ -793,13 +793,11 @@ export function createPanelPresentation(dependencies) {
           days: error ? [] : (this.versionGroups || []).map((group) => ({
             key: group.key,
             label: group.label,
-            items: (group.items || []).map((item) => ({
-              id: item.id,
-              cls: this.versionTimelineClass(item).selected ? 'selected' : '',
-              name: this.versionItemName(item),
-              // 飞书条目是三行：时间（蓝 14px）/ 事件描述（`最近更新` 等，12px）/ 作者（灰 12px + 紫点）。
-              desc: this.versionItemDesc(item),
-              user: this.versionActorLabel(item),
+            // 父子折叠（009 C4）：`head` 是父行，`children` 非空才画三角、才可展开。
+            groups: (group.groups || []).map((node) => ({
+              id: node.id,
+              head: this.versionTimelineItem(node.head),
+              children: (node.children || []).map((item) => this.versionTimelineItem(item)),
             })),
           })),
         }

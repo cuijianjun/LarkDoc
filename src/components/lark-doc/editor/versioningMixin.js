@@ -10,6 +10,7 @@ import { createLarkDocExtensions } from '../extensions'
 import { validateDocument } from '../../../core/documentOperations'
 import { createNetworkPolicy } from '../../../core/policy/network'
 import { projectCapabilityUi } from '../../../core/policy/capability'
+import { SNAPSHOT_LABEL_MAX } from '../../../core/versioning'
 import { createVersioningPresentation } from './versioningPresentation'
 
 /** 「编辑记录 N/M」的分隔口径：**版本条目** = `provider.list()` 的一条。 */
@@ -119,6 +120,7 @@ export default {
   },
   beforeDestroy() {
     this.closeSaveVersion()
+    this.closeRenameVersion()
     this.closeVersionRestoreConfirm()
     this.closeVersionTrash()
     this._versionLoadToken = (this._versionLoadToken || 0) + 1
@@ -211,6 +213,60 @@ export default {
       this._namedVersionDialog?.destroy()
       this._namedVersionDialog = null
     },
+    closeRenameVersion() {
+      this._renameVersionDialog?.destroy()
+      this._renameVersionDialog = null
+    },
+    /**
+     * 重命名**版本**（不是文档）。
+     *
+     * 入参只有一条记录 id：飞书预览态 `···` →「重命名」改的就是当前预览的这条版本，
+     * 对话框的字段与计数口径和「另存为版本」完全同构 —— 真身类名同为
+     * `ud__modal save-version-dialog`、420×242、标题「重命名版本」、字段「版本名称」、
+     * 计数 `8/1000`（输入框预填当前名）、按钮 `取消`(outlined) / `确定`(filled)，
+     * 2026-11-23 Playwright 逐节点实测（`/tmp/c2_rename.json`）。
+     *
+     * 不重建列表：`loadVersions()` 会把 `versionSelectedId` 重置到第一条，
+     * 预览态下那等于把用户从正在看的版本上踢下来。改成原地换掉这一条的 `label`，
+     * 时间线、顶栏「当前版本：<名>」、预览下拉三处都读同一份 `versionList`，一次改完同时刷新。
+     */
+    async openRenameVersion(versionId, opener, actionCurrent = () => true) {
+      const id = typeof versionId === 'string' ? versionId : ''
+      const provider = this.versionProvider
+      if (!id || typeof provider?.rename !== 'function' || this._renameVersionDialog) return false
+      const record = (this.versionList || []).find(item => item.id === id)
+      if (!record) return false
+      const context = { session: this.session, provider, editor: this.editor, documentId: this.documentId, scope: this.versionOperationScope() }
+      const current = () => this.versionOperationMatches(context) && actionCurrent()
+      const host = this.$refs?.dialogHost || this.$el
+      if (!host?.isConnected) return false
+      const { createSaveVersionDialog } = await import('../../../ui/dialogs')
+      if (!current() || this._renameVersionDialog) return false
+      const close = () => {
+        this.closeRenameVersion()
+        if (current() && opener?.isConnected) opener.focus({ preventScroll: true })
+      }
+      this._renameVersionDialog = createSaveVersionDialog({
+        host,
+        name: typeof record.label === 'string' ? record.label : '',
+        title: '重命名版本',
+        dismissLabel: '关闭重命名版本',
+        maxLength: SNAPSHOT_LABEL_MAX,
+        handlers: {
+          onClose: close,
+          isCurrent: current,
+          onSave: async (label) => {
+            if (!current() || !label) return false
+            const updated = await provider.rename(id, label)
+            if (!current()) return false
+            const nextLabel = updated && typeof updated.label === 'string' ? updated.label : label
+            this.versionList = (this.versionList || []).map(item => (item.id === id ? { ...item, label: nextLabel } : item))
+            return true
+          },
+        },
+      })
+      return true
+    },
     versionOperationScope() {
       const session = this.session
       return JSON.stringify([session?.documentId, session?.user?.id, session?._identityGeneration,
@@ -225,6 +281,7 @@ export default {
     },
     resetVersionContext() {
       this.closeSaveVersion()
+      this.closeRenameVersion()
       this._namedVersionPending = null
       this._versionNoticeVersion = null
       this._versionLoadToken = (this._versionLoadToken || 0) + 1

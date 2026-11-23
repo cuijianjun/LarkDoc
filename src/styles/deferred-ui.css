@@ -2479,9 +2479,13 @@
   .lark-doc .lark-doc-link-dialog-actions { min-width: 0; grid-column: 1; grid-row: auto; }
   .lark-doc .lark-doc-link-dialog-actions button { min-width: 0; max-width: 100%; grid-column: auto; grid-row: auto; }
 }
-.lark-doc .lark-doc-tooltip { position: fixed; z-index: 10000; box-sizing: border-box; max-width: min(420px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: var(--ld-shadow-tooltip); font: 13px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; white-space: normal; overflow-wrap: anywhere; pointer-events: none; }
-.lark-doc .lark-doc-tooltip::after { content: ''; position: absolute; top: 100%; left: var(--ld-tip-arrow, 50%); transform: translateX(-50%); width: 0; height: 0; border: 6px solid transparent; border-top-color: var(--ld-bg-tooltip); border-bottom: 0; }
-.lark-doc .lark-doc-tooltip.is-below::after { top: -6px; border: 6px solid transparent; border-top: 0; border-bottom-color: var(--ld-bg-tooltip); }
+/* 共享 tooltip —— 几何/字级/阴影全部对齐真身 `.ud__tooltip-content`（2026-11-23 Playwright 实测
+   历史记录面板 ⓘ：「帮助中心」气泡 72×36 @(1205,53)、`padding 8px 12px`、`radius 8px`、
+   `12px/20px 400`、底 `rgb(31,35,41)`、白字、三层阴影；包裹层 `.ud__tooltip` 的
+   `__arrow` 是 16×8，本实现用 `::after` 边框三角等价画出。原 `13px/1.6` + 单层阴影是早先估值。 */
+.lark-doc .lark-doc-tooltip { position: fixed; z-index: 10000; box-sizing: border-box; max-width: min(420px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 8px; background: var(--ld-bg-tooltip); color: var(--ld-text-inverse); box-shadow: 0 8px 24px 8px rgba(31, 35, 41, 0.04), 0 6px 12px rgba(31, 35, 41, 0.04), 0 4px 8px -8px rgba(31, 35, 41, 0.06); font: 12px/20px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; white-space: normal; overflow-wrap: anywhere; pointer-events: none; }
+.lark-doc .lark-doc-tooltip::after { content: ''; position: absolute; top: 100%; left: var(--ld-tip-arrow, 50%); transform: translateX(-50%); width: 0; height: 0; border: 8px solid transparent; border-top-color: var(--ld-bg-tooltip); border-bottom: 0; }
+.lark-doc .lark-doc-tooltip.is-below::after { top: -8px; border: 8px solid transparent; border-top: 0; border-bottom-color: var(--ld-bg-tooltip); }
 
 /* ============================================================
  * B23 · 协作者二级弹窗（04 §4.2.3 / 真身 2× 截图）

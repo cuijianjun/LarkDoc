@@ -309,12 +309,24 @@ const measureVersions = () => {
     headerExtras,
     days: [...el.querySelectorAll('.lark-doc-version-day')].map((day) => ({
       label: day.querySelector('.lark-doc-version-day-label') ? day.querySelector('.lark-doc-version-day-label').textContent.trim() : null,
-      items: [...day.querySelectorAll('.lark-doc-version-item')].map((item) => ({
-        cls: item.className,
-        name: item.querySelector('.lark-doc-version-item-name') ? item.querySelector('.lark-doc-version-item-name').textContent.trim() : null,
-        desc: item.querySelector('.lark-doc-version-item-desc') ? item.querySelector('.lark-doc-version-item-desc').textContent.trim() : null,
-        user: item.querySelector('.lark-doc-version-item-user') ? item.querySelector('.lark-doc-version-item-user').textContent.trim() : null,
-      })),
+      // 父子折叠（009 C4）：一天里是「月份 → 折叠组 → 父行/子行」，不再是拍平的条目列表。
+      // `children` 只统计**已铺出来**的子行（`has-padding` 才带缩进），默认折叠时为 0。
+      groups: [...day.querySelectorAll('.lark-doc-version-group')].map((group) => {
+        const item = (row) => (row ? {
+          cls: row.className,
+          name: row.querySelector('.lark-doc-version-item-name') ? row.querySelector('.lark-doc-version-item-name').textContent.trim() : null,
+          desc: row.querySelector('.lark-doc-version-item-desc') ? row.querySelector('.lark-doc-version-item-desc').textContent.trim() : null,
+          user: row.querySelector('.lark-doc-version-item-user') ? row.querySelector('.lark-doc-version-item-user').textContent.trim() : null,
+        } : null)
+        const toggle = group.querySelector('.lark-doc-version-item-toggle')
+        return {
+          foldable: !!toggle,
+          open: !!toggle && toggle.classList.contains('is-open'),
+          expanded: group.querySelector('.lark-doc-version-item.has-children') ? group.querySelector('.lark-doc-version-item.has-children').getAttribute('aria-expanded') : null,
+          head: item(group.querySelector('.lark-doc-version-item')),
+          children: [...group.querySelectorAll('.lark-doc-version-item.has-padding')].map(item),
+        }
+      }),
     })),
     footer: el.querySelector('.lark-doc-version-right-footer') ? el.querySelector('.lark-doc-version-right-footer').textContent.trim() : null,
   }
@@ -554,8 +566,10 @@ const installVersioningProvider = () => {
   const today = now - 60 * 1000
   const yesterday = now - 26 * 3600 * 1000
   const records = [
-    { id: 'v3', documentId, label: '终稿', author: '张三', kind: 'manual', createdAt: today, blockCount: 7, sizeBytes: 1024, payload: new Uint8Array(1024) },
-    { id: 'v2', documentId, label: '二稿', author: '', kind: 'auto', createdAt: today - 90 * 1000, blockCount: 5, sizeBytes: 900, payload: new Uint8Array(900) },
+    // 前两条同组（飞书 `major_history[0]` + 2 条 `minor_history`）：用来验三角与折叠。
+    // 第三条不给 `groupId` = 自成一组、没有三角（飞书 `type 1/3` 的形态）。
+    { id: 'v3', documentId, label: '终稿', author: '张三', kind: 'manual', createdAt: today, blockCount: 7, sizeBytes: 1024, groupId: 'g-today', payload: new Uint8Array(1024) },
+    { id: 'v2', documentId, label: '二稿', author: '', kind: 'auto', createdAt: today - 90 * 1000, blockCount: 5, sizeBytes: 900, groupId: 'g-today', payload: new Uint8Array(900) },
     { id: 'v1', documentId, label: '初稿', author: '李四', kind: 'restore', createdAt: yesterday, blockCount: 5, sizeBytes: 800, payload: new Uint8Array(800) },
   ]
   session.setProvider('versioning', {
@@ -850,11 +864,16 @@ const vueCall = (page, body) => page.evaluate((source) => {
   await vueCall(page, 'await vue.openVersionPanel(); await sleep(420)')
   const filled = await page.evaluate(measureVersions)
 
-  record('[版本] 三条记录 → 按天分 2 组（今天 / 昨天），页码 编辑记录 1/3',
+  // 今天：v3 + v2 同组 = 1 个折叠组（默认折叠，只铺父行）；昨天：v1 自成一组、无三角。
+  const dayShape = (d) => `${d.label}:${d.groups.length}组/${d.groups.map((g) => `${g.head ? 1 : 0}+${g.children.length}`).join(',')}`
+  record('[版本] 三条记录 → 按天分 2 组（今天 / 昨天），今天同组为 1 个折叠组、默认折叠',
     !!filled && filled.days.length === 2 && filled.days[0].label === '今天' &&
-      filled.days[0].items.length === 2 && filled.days[1].items.length === 1 &&
+      filled.days[0].groups.length === 1 && filled.days[1].groups.length === 1 &&
+      filled.days[0].groups[0].children.length === 0 && filled.days[0].groups[0].foldable === true &&
+      filled.days[0].groups[0].open === false && filled.days[0].groups[0].expanded === 'false' &&
+      filled.days[1].groups[0].foldable === false &&
       filled.pager.cursor === '编辑记录 1/3',
-    filled ? `${filled.days.map((d) => `${d.label}:${d.items.length}`).join(' ')} / ${filled.pager.cursor}` : '没渲染')
+    filled ? `${filled.days.map(dayShape).join(' ')} / ${filled.pager.cursor}` : '没渲染')
 
   record('[版本] 载入记录但二进制无效 → 不允许还原，仍可浏览下一项',
     !!filled && filled.empties.length === 0 && filled.restore.disabled === true &&
@@ -877,30 +896,46 @@ const vueCall = (page, body) => page.evaluate((source) => {
     filled && filled.preview ? filled.preview.binary.join(' | ') : '没渲染')
 
   // 命名版本在时间线上保留名称（`终稿 · 11月19日 05:49`），未命名才只有时间；
-  // 两种形态都要求以「月日 时:分」收尾。
-  record('[版本] 时间线条目 = 名称 / 描述 / 作者三行，最新一条带 selected',
-    !!filled && filled.days[0].items[0].cls.indexOf('selected') !== -1 &&
-      /^(?:.+ · )?\d+月\d+日 \d{2}:\d{2}$/.test(filled.days[0].items[0].name) &&
-      filled.days[0].items[0].desc === '新增 2 个块' &&
-      filled.days[0].items[0].user === '张三',
-    filled ? JSON.stringify(filled.days[0].items[0]) : '没渲染')
+  // 两种形态都要求以「月日 时:分」收尾。组头 = 飞书 `minor_history[0]`，即最新那条。
+  const todayHead = filled && filled.days[0] && filled.days[0].groups[0] ? filled.days[0].groups[0].head : null
+  record('[版本] 时间线条目 = 名称 / 描述 / 作者三行，最新一条（组头）带 selected',
+    !!todayHead && todayHead.cls.indexOf('selected') !== -1 &&
+      /^(?:.+ · )?\d+月\d+日 \d{2}:\d{2}$/.test(todayHead.name) &&
+      todayHead.desc === '新增 2 个块' &&
+      todayHead.user === '张三',
+    todayHead ? JSON.stringify(todayHead) : '没渲染')
 
+  const yesterdayHead = filled && filled.days[1] && filled.days[1].groups[0] ? filled.days[1].groups[0].head : null
   record('[版本] 最早一条的 desc = 「最早一条记录，无更早版本可比」',
-    !!filled && filled.days[1].items[0].desc === '最早一条记录，无更早版本可比',
-    filled ? filled.days[1].items[0].desc : '没渲染')
+    !!yesterdayHead && yesterdayHead.desc === '最早一条记录，无更早版本可比',
+    yesterdayHead ? yesterdayHead.desc : '没渲染')
+
+  // 三角是独立热区（真身 `.history-timeline-open-icon` 是 20×20 的独立元素）：
+  // 点它只展开、不选中；展开后子行带缩进铺出来。
+  await page.evaluate(() => document.querySelector('.lark-doc-version-item-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  await page.waitForTimeout(320)
+  const unfolded = await page.evaluate(measureVersions)
+  const unfoldedGroup = unfolded && unfolded.days[0] && unfolded.days[0].groups[0] ? unfolded.days[0].groups[0] : null
+  record('[版本] 点三角 → 展开出 2 条子行（带缩进）、三角转 open、aria-expanded 同步，且不改变选中项',
+    !!unfoldedGroup && unfoldedGroup.children.length === 2 && unfoldedGroup.open === true &&
+      unfoldedGroup.expanded === 'true' &&
+      unfoldedGroup.children.every((row) => row.cls.indexOf('has-padding') !== -1) &&
+      unfoldedGroup.head.cls.indexOf('selected') !== -1,
+    unfoldedGroup ? `children=${unfoldedGroup.children.length} open=${unfoldedGroup.open} aria=${unfoldedGroup.expanded}` : '没渲染')
 
   record('[版本] 块数相同 → desc「块数无变化」，作者缺失回落「未知作者」',
-    !!filled && filled.days[0].items[1].desc === '块数无变化' &&
-      filled.days[0].items[1].user === '未知作者',
-    filled ? JSON.stringify(filled.days[0].items[1]) : '没渲染')
+    !!unfoldedGroup && unfoldedGroup.children[1] && unfoldedGroup.children[1].desc === '块数无变化' &&
+      unfoldedGroup.children[1].user === '未知作者',
+    unfoldedGroup && unfoldedGroup.children[1] ? JSON.stringify(unfoldedGroup.children[1]) : '没渲染')
 
-  // 选中一条 → 预览换成真实的版本名与降级文案
-  await page.evaluate(() => document.querySelectorAll('.lark-doc-version-item')[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  // 选中一条 → 预览换成真实的版本名与降级文案。点的是组头那一行（行 = 选中热区）。
+  await page.evaluate(() => document.querySelectorAll('.lark-doc-version-item.has-children')[0].dispatchEvent(new MouseEvent('click', { bubbles: true })))
   await page.waitForTimeout(400)
   const selected = await page.evaluate(measureVersions)
+  const selectedHead = selected && selected.days[0] && selected.days[0].groups[0] ? selected.days[0].groups[0].head : null
   record('[版本] 点时间线条目 → 预览头换成该版本名（终稿）且 selected 类跟着走',
     !!selected && !!selected.preview && selected.preview.title === '终稿' &&
-      selected.days[0].items[0].cls.indexOf('selected') !== -1,
+      !!selectedHead && selectedHead.cls.indexOf('selected') !== -1,
     selected && selected.preview ? selected.preview.title : '没渲染')
 
   // 选中后 `versionPreview` 才有值 → meta 补上后两项、diff 与二进制文案一起出现

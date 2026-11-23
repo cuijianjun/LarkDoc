@@ -2,7 +2,7 @@
  * 快照模型：读路径宽容的 `normalizeSnapshot` + 写路径严格的 `createSnapshot`。
  *
  * 形状（任务给定，与 05 §5.4 的 `Version` 字段对齐但更窄）：
- *   `{ id, documentId, label, createdAt, author, sizeBytes, blockCount, pinned, kind }`
+ *   `{ id, documentId, label, createdAt, author, sizeBytes, blockCount, pinned, kind, groupId }`
  *
  * 正文**不在**这九个字段里（09 §5.7.2-9）：存储形态是「这九个字段 + `payload` 二进制」，
  * 列表只给元信息，取正文走 `get()`。这样面板拉时间线时不会把每份快照的字节都读进内存。
@@ -45,6 +45,20 @@ export function normalizeSnapshot(raw) {
     blockCount: Number.isInteger(input.blockCount) && input.blockCount >= 0 ? input.blockCount : null,
     pinned: Boolean(input.pinned),
     kind: SNAPSHOT_KINDS.indexOf(input.kind) >= 0 ? input.kind : SNAPSHOT_KIND.MANUAL,
+    /**
+     * 时间线「父子折叠」的组标识（009 C4 取证）。
+     *
+     * 飞书真身的分组**完全由服务端给出**：`GET /space/api/docx/history/page/list/`
+     * 的 `data.major_history[]` 是一组，`major_history[i].minor_history[]` 是组内子项，
+     * 且 `minor_history[0].edit_time === major_history[i].edit_time`。
+     * 客户端不做任何时间阈值聚类 —— 实测「组内最大间隔 30.1 分钟」>「组间最小间隔
+     * 2.1 分钟」，区间反向重叠，按间隔聚类不可能复现。所以这里只要一个显式标识，
+     * 真实适配层把 `major_history[i].version`（或该组 `edit_time`）填进来即可。
+     *
+     * 缺省空串 = 「这一条自成一组」（飞书 `type 1/3` 的 `minor_history` 恒 1 条，
+     * 因此没有折叠箭头）。读路径只做透传，不做归组推断。
+     */
+    groupId: typeof input.groupId === 'string' ? input.groupId : '',
   }
 }
 

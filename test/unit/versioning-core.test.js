@@ -86,12 +86,20 @@ describe('快照模型 · 读路径宽容', () => {
     expect(normalizeSnapshot({ blockCount: 7 }).blockCount).toBe(7)
   })
 
-  it('元信息形状固定为九个字段，二进制不进列表', () => {
+  it('元信息形状固定为十个字段，二进制不进列表', () => {
     const meta = normalizeSnapshot(createSnapshot(input()))
     expect(Object.keys(meta).sort()).toEqual([
-      'author', 'blockCount', 'createdAt', 'documentId', 'id', 'kind', 'label', 'pinned', 'sizeBytes',
+      'author', 'blockCount', 'createdAt', 'documentId', 'groupId', 'id', 'kind', 'label', 'pinned', 'sizeBytes',
     ].sort())
     expect(meta.payload).toBeUndefined()
+    // 缺省 `groupId` 是空串 = 这一条自成一组（不做时间聚类，009 C4）。
+    expect(meta.groupId).toBe('')
+  })
+
+  it('groupId 读路径原样透传（非字符串按缺省空串，不猜）', () => {
+    expect(normalizeSnapshot({ groupId: 'g-20480' }).groupId).toBe('g-20480')
+    expect(normalizeSnapshot({ groupId: 20480 }).groupId).toBe('')
+    expect(normalizeSnapshot({}).groupId).toBe('')
   })
 })
 
@@ -355,6 +363,22 @@ describe('内存 versioning Provider', () => {
     first.payload[0] = 0
     expect((await provider.get(created.id)).payload[0]).toBe(6)
     expect(await codeOf(() => provider.get('nope'))).toBe(E_VERSION_NOT_FOUND)
+  })
+
+  it('rename 只换名字：id / 时间 / 正文 / 链上顺序全不动，校验口径同 createSnapshot', async () => {
+    const { provider } = makeProvider()
+    const first = await provider.createSnapshot({ documentId: 'doc-1', kind: 'manual', label: '旧名字', payload: bytes(3, 6) })
+    await provider.createSnapshot({ documentId: 'doc-1', kind: 'auto', payload: bytes(2) })
+    const renamed = await provider.rename(first.id, '新名字')
+    expect(renamed.label).toBe('新名字')
+    expect(renamed.id).toBe(first.id)
+    expect(renamed.createdAt).toBe(first.createdAt)
+    expect(Array.from((await provider.get(first.id)).payload)).toEqual([6, 6, 6])
+    expect((await provider.list({ documentId: 'doc-1' })).map((item) => item.id)).toEqual(['v2', 'v1'])
+    expect((await provider.list({ documentId: 'doc-1' }))[1].label).toBe('新名字')
+    expect(await codeOf(() => provider.rename(first.id, 'x'.repeat(SNAPSHOT_LABEL_MAX + 1)))).toBe(E_SNAPSHOT_LABEL)
+    expect(await codeOf(() => provider.rename(first.id, 42))).toBe(E_SNAPSHOT_LABEL)
+    expect(await codeOf(() => provider.rename('nope', '名字'))).toBe(E_VERSION_NOT_FOUND)
   })
 
   it('restore 新建版本，原版本仍在链上（只增不减）', async () => {

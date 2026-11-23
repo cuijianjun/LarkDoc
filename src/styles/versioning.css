@@ -404,6 +404,50 @@
   opacity: 1;
 }
 
+/* 折叠组的容器（飞书 `history-timeline-majorHistory-item-container`）：
+   293 × 281 实测，`overflow: hidden` 是折叠动画裁切子行的本体，`margin: -1px 0`
+   让组与组之间的 1px 分隔线与相邻条目的 `::after` 叠成一条（不叠就是双线）。
+   ⚠️ 真身容器另有 `::after` 1px，本仓**故意不补**：条目的 `::after` 已经铺满每行、
+   包括一组的最后一行，再叠一条会在组底部画出 2px。T9 已按条目 `::after` 逐像素校验过。 */
+.lark-doc .lark-doc-version-group {
+  position: relative;
+  overflow: hidden;
+  margin: -1px 0;
+}
+
+/* 子行缩进：56px = 父行 40 + 三角占位 16（真身实测父行文字左起 1187、子行 1203）。 */
+.lark-doc .lark-doc-version-item.has-padding {
+  padding-left: 56px;
+}
+
+/* 折叠三角 20 × 20 @ left 16 / top 12，圆角 4（真身 `.history-timeline-open-icon` 实测）。
+   内嵌 SVG 12 × 12，`fill` 走 currentColor → 这里定 `rgb(100,106,115)`（真身 `#646A73`）。
+   两态靠 transform：折叠 `matrix(1,0,0,1,0,0)`（▶）、展开 `matrix(0,1,-1,0,0,0)`（▼），
+   即同一颗向右实心三角转 90°。 */
+.lark-doc .lark-doc-version-item-toggle {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: rgb(100, 106, 115);
+}
+
+.lark-doc .lark-doc-version-item-toggle svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s ease;
+}
+
+.lark-doc .lark-doc-version-item-toggle.is-open svg {
+  transform: rotate(90deg);
+}
+
 /* 第一行时间：fs 14 / fw 500 / rgb(51,109,244)，行高 20，下距 4。 */
 .lark-doc .lark-doc-version-item-name {
   margin: 0 0 4px;

@@ -283,8 +283,13 @@ export function createTemplateSaveDialog({ host, name = '', handlers = {} }) {
  *
  * 三处口径来自实测：计数用**原始长度**（`"   "` 显示 `3/1000`）、`确定` 的可用性用 `trim()`（全空格仍禁用）、
  * 无错误行时该行不占位（飞书默认态 `err: []`）。
+ *
+ * 同一套壳也承载「重命名版本」：飞书那两个对话框的真身类名都是 `ud__modal save-version-dialog`
+ * （420×242、标题 + 「版本名称」+ `N/1000` + 确定/取消，2026-11-23 Playwright 实测
+ * `cls: "ud__dialog__content ud__modal save-version-dialog"`），所以这里不另写一份壳，
+ * 只把标题与关闭钮的读屏文案开成入参。
  */
-export function createSaveVersionDialog({ host, name, title, maxLength, handlers }) {
+export function createSaveVersionDialog({ host, name, title, maxLength, handlers, dismissLabel = '关闭另存为版本' }) {
   const owner = host.ownerDocument
   let destroyed = false, busy = false
   const close = () => { if (!busy) handlers.onClose?.() }
@@ -296,7 +301,7 @@ export function createSaveVersionDialog({ host, name, title, maxLength, handlers
   const heading = owner.createElement('strong')
   heading.className = 'lark-doc-save-version-title'
   heading.textContent = title
-  const dismiss = closeButtonNode('关闭另存为版本', 20)
+  const dismiss = closeButtonNode(dismissLabel, 20)
   dismiss.className = 'lark-doc-save-version-close'
   dismiss.addEventListener('click', close)
   header.append(heading, dismiss)

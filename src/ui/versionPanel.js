@@ -8,6 +8,7 @@
 import { applyStyle, mountNode, setAttr, setText, syncChildren } from './dom'
 import { iconNode } from './icon'
 import { handlerCaller, onMouseDownPrevent } from './panelShared'
+import { createTooltip } from './tooltip'
 
 /* ═══════════════════════ ② 历史记录全屏层 ═══════════════════════ */
 
@@ -30,7 +31,8 @@ import { handlerCaller, onMouseDownPrevent } from './panelShared'
  *   view: 'error' | 'empty' | 'preview',
  *   errorText, emptyText,
  *   preview: null | { title, kind, meta: [String], degraded, diff: null | { row }, payload },
- *   timelineError, days: [{ key, label, items: [{ id, cls, name, desc, user }] }],
+ *   timelineError,
+ *   days: [{ key, label, groups: [{ id, head: { id, cls, name, desc, user }, children: [...] }] }],
  * }
  * ```
  */
@@ -249,8 +251,15 @@ export function createVersionPanel(options = {}) {
   const rightInfo = document.createElement('span')
   rightInfo.className = 'lark-doc-version-right-info'
   rightInfo.setAttribute('role', 'img')
-  rightInfo.setAttribute('aria-label', '历史记录会自动保存，可随时还原任意一条')
-  setAttr(rightInfo, 'title', '历史记录会自动保存，可随时还原任意一条')
+  // hover 文案是 `帮助中心`（真身 `.docx-history-right-header-help-icon` 的
+  // `ud__tooltip-content` 实测逐字），不是「历史记录会自动保存…」——
+  // 那句是本仓早先的臆造，已按取证推翻。样式同 permissionView 的 HELP_TIP。
+  rightInfo.setAttribute('aria-label', '帮助中心')
+  // ⚠️ 不写 `title`：那会弹浏览器原生灰气泡。真身是 `.ud__tooltip-content` 深色气泡
+  // （72×36 / `rgb(31, 35, 41)` / 白字 12px-20px / radius 8 / padding 8×12 / 上指小三角，
+  // 图标下 9.5px，2026-11-23 实测），走共享 tooltip 自绘。
+  const helpTip = host ? createTooltip({ host }) : null
+  helpTip?.bind(rightInfo)
   // 飞书头部是「圆圈问号」（MaybeOutlined），不是 info 的「i」——放大截图逐像素确认。
   rightInfo.appendChild(iconNode('menu-help', 16))
   rightHeading.appendChild(rightTitle)
@@ -347,6 +356,102 @@ export function createVersionPanel(options = {}) {
 
   /** 时间线的重建闸门：签名没变就一个节点都不动。 */
   let daysSignature = null
+  /**
+   * 折叠组的展开态。
+   *
+   * **闭包变量，绝不进 `daysSignature`** —— 展开是局部状态，塞进签名会让每次展开都把
+   * 整条时间线重建一遍（丢焦点、丢滚动位置）。这里改用「只重建被点的那一组」：
+   * `buildGroup` 产出的容器整块 `replaceWith`，其它组一个节点都不动。
+   */
+  const expandedGroups = new Set()
+
+  /** 三行节点（时间 / 事件描述 / 作者）。父行与子行共用，避免两处字段口径走散。 */
+  function fillItemRow(row, item) {
+    const name = document.createElement('div')
+    name.className = 'lark-doc-version-item-name'
+    name.textContent = item.name == null ? '' : String(item.name)
+    row.appendChild(name)
+    // 第二行事件描述。飞书这个节点**始终存在**（空的时候高度 0，上下外边距自折叠成一个
+    // 4px 间隙），条目因此停在 66 高；有描述时多一行 18 高，条目 88 高。别改成条件渲染，
+    // 否则两行条目的高度就和飞书差 0px 之外的塌陷行为。
+    const desc = document.createElement('div')
+    desc.className = 'lark-doc-version-item-desc'
+    desc.textContent = item.desc == null ? '' : String(item.desc)
+    row.appendChild(desc)
+    const user = document.createElement('div')
+    user.className = 'lark-doc-version-item-user'
+    user.textContent = item.user == null ? '' : String(item.user)
+    row.appendChild(user)
+    return row
+  }
+
+  function selectVersionId(id) {
+    if (destroyed) return
+    mobileView = 'preview'; mobileSelectedId = id; call('onSelect', id); render()
+  }
+
+  function itemClass(item, ...extra) {
+    return ['lark-doc-version-item', ...extra, item.cls].filter(Boolean).join(' ')
+  }
+
+  /**
+   * 一个折叠组 = 父行 + 展开态下的子行（009 C4，飞书 `history-timeline-majorHistory-item-container`）。
+   *
+   * 三条硬约束（都是真身实测，别凭感觉改）：
+   *   · 三角**只在 `children` 非空时**出现 —— 飞书 `type 1/3`（创建 / 还原）的
+   *     `minor_history` 恒 1 条、没有三角；
+   *   · **三角是独立热区，行是选中热区**。真身把三角做成一颗独立的
+   *     `.history-timeline-open-icon`（20×20，`absolute left:16 top:12`，类名
+   *     `pulldown-icon`），和 40px 起排的文字区是两颗元素；而父行本身就是
+   *     `minor_history[0]` 这条版本，必须可选中 —— 让整行只做折叠会让「组头」
+   *     这条版本用鼠标永远选不到（打开面板时自动选中的恰好就是它）。
+   *   · 展开后子行里的第一行与父行同刻同文 —— 飞书父行就是 `minor_history[0]`，
+   *     3 条 minors 展开成 4 行，其中前两行时间相同（逐字量过）。
+   */
+  function buildGroup(node) {
+    const box = document.createElement('div')
+    box.className = 'lark-doc-version-group'
+    const foldable = Array.isArray(node.children) && node.children.length > 0
+    const open = foldable && expandedGroups.has(node.id)
+    const head = document.createElement('button')
+    head.type = 'button'
+    head.className = itemClass(node.head, foldable ? 'has-children' : '')
+    head.addEventListener('click', () => selectVersionId(node.head.id))
+    if (foldable) {
+      const toggle = document.createElement('span')
+      toggle.className = open ? 'lark-doc-version-item-toggle is-open' : 'lark-doc-version-item-toggle'
+      // 三角**没有 tooltip 文案**（真身面板内 `[title]` / `[aria-label]` 探测为空），
+      // 只有 `aria-expanded` 供读屏，不加 `title`（那会弹浏览器原生灰气泡）。
+      toggle.setAttribute('aria-hidden', 'true')
+      toggle.appendChild(iconNode('version-group-arrow', 12))
+      toggle.addEventListener('click', (event) => {
+        // 拦在这里就等于把「折叠」从整行上摘下来：否则这一下会冒到父行按钮，
+        // 变成「展开的同时把组头选中」。
+        event.stopPropagation()
+        if (destroyed) return
+        if (open) expandedGroups.delete(node.id); else expandedGroups.add(node.id)
+        const next = buildGroup(node)
+        box.replaceWith(next)
+        next.querySelector('.lark-doc-version-item.has-children')?.focus({ preventScroll: true })
+      })
+      head.appendChild(toggle)
+      head.setAttribute('aria-expanded', String(open))
+    }
+    fillItemRow(head, node.head)
+    box.appendChild(head)
+    if (open) {
+      node.children.forEach((child) => {
+        const row = document.createElement('button')
+        row.type = 'button'
+        // 子行缩进 56px（父行 40 + 三角占位 16，真身实测父 1187 / 子 1203）。
+        row.className = itemClass(child, 'has-padding')
+        row.addEventListener('click', () => selectVersionId(child.id))
+        fillItemRow(row, child)
+        box.appendChild(row)
+      })
+    }
+    return box
+  }
 
   function buildDay(day) {
     const box = document.createElement('div')
@@ -358,28 +463,7 @@ export function createVersionPanel(options = {}) {
     box.appendChild(label)
     const rows = document.createElement('div'); box.appendChild(rows)
     // 飞书整月一次性铺开（`hist_i_select2.png` 一个月 11 条全在），没有「先给三条 + 更多」。
-    ;(day.items || []).forEach((item) => {
-      const row = document.createElement('button')
-      row.type = 'button'
-      row.className = item.cls ? `lark-doc-version-item ${item.cls}` : 'lark-doc-version-item'
-      row.addEventListener('click', () => { if (destroyed) return; mobileView = 'preview'; mobileSelectedId = item.id; call('onSelect', item.id); render() })
-      const name = document.createElement('div')
-      name.className = 'lark-doc-version-item-name'
-      name.textContent = item.name == null ? '' : String(item.name)
-      row.appendChild(name)
-      // 第二行事件描述。飞书这个节点**始终存在**（空的时候高度 0，上下外边距自折叠成一个
-      // 4px 间隙），条目因此停在 66 高；有描述时多一行 18 高，条目 88 高。别改成条件渲染，
-      // 否则两行条目的高度就和飞书差 0px 之外的塌陷行为。
-      const desc = document.createElement('div')
-      desc.className = 'lark-doc-version-item-desc'
-      desc.textContent = item.desc == null ? '' : String(item.desc)
-      row.appendChild(desc)
-      const user = document.createElement('div')
-      user.className = 'lark-doc-version-item-user'
-      user.textContent = item.user == null ? '' : String(item.user)
-      row.appendChild(user)
-      rows.appendChild(row)
-    })
+    ;(day.groups || []).forEach((node) => { rows.appendChild(buildGroup(node)) })
     return box
   }
 
@@ -508,7 +592,7 @@ export function createVersionPanel(options = {}) {
   function update(patch) {
     if (destroyed) return
     const opening = !state.open && patch?.open, changed = patch?.contextKey !== undefined && patch.contextKey !== state.contextKey
-    if (opening || changed) { mobileView = 'list'; mobileSelectedId = ''; clearDocument(); changesSignature = ''; lastChangeIndex = -1 }
+    if (opening || changed) { mobileView = 'list'; mobileSelectedId = ''; clearDocument(); changesSignature = ''; lastChangeIndex = -1; expandedGroups.clear() }
     Object.assign(state, patch || {})
     mountNode(host, el, !!state.open)
     if (!state.open) { clearDocument(); restoreWasOpen = false; left.inert = right.inert = false; restoreConfirmMask.remove(); setText(restoreConfirmText, ''); return }
@@ -518,7 +602,7 @@ export function createVersionPanel(options = {}) {
   return {
     el,
     update,
-    destroy() { if (destroyed) return; destroyed = true; clearDocument(); restoreConfirmMask.remove(); setText(restoreConfirmText, ''); if (el.parentNode) el.parentNode.removeChild(el) },
+    destroy() { if (destroyed) return; destroyed = true; helpTip?.destroy(); clearDocument(); restoreConfirmMask.remove(); setText(restoreConfirmText, ''); if (el.parentNode) el.parentNode.removeChild(el) },
   }
 }
 

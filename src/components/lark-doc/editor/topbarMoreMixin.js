@@ -100,6 +100,55 @@ export const TOPBAR_MORE_DIVIDER_AFTER = Object.freeze([
 ])
 
 /**
+ * 版本预览态「···」菜单：**9 项独立名单**（不是 23 项的子集）。
+ *
+ * 取证来源：2026-11-23 Playwright 直连飞书真身，进入「查看已存版本 → 预览」后点顶栏
+ * `···`，逐行走 DOM + computed style。外框 198×326 @(1101,53)、白底、`radius: 6px`、
+ * `padding: 2px 0`；每行 190×32；只有两条分隔线（y195 / y338，1px，贯穿 196 宽）。
+ *
+ * 逐行实测（`aria-haspopup` / 右侧附属物）：
+ *
+ *   页宽设置 ›            演示模式        查找        在段落前显示作者[开关 28×16]
+ *   ── 分隔线 ──
+ *   下载为 ›              翻译为英语 ›     打印        重命名
+ *   ── 分隔线 ──
+ *   删除
+ *
+ * 为什么另起一张表，而不是从 `TOPBAR_MORE_ITEMS` 过滤：
+ *   ① 预览态**多**一项 `重命名` —— 编辑态 23 项里没有（那是文档重命名，预览态生效的是
+ *      **版本**重命名，点开是 `重命名版本` 对话框，见 `openRenameVersion`）；
+ *   ② 预览态**少** 16 项：关注文档更新 / 添加快捷方式到 / 移动到 / 置顶 / 收藏 /
+ *      转换为模板 / 创建副本 / 另存为版本 / 查看已存版本 / 文档权限 / 文档小组件 /
+ *      文档信息 / 提及的人 / 历史记录 / 历史评论 / 更多；
+ *   ③ `查找和替换` 在这里只叫 `查找`（同名命令、不同文案）。
+ *   靠过滤 + 条件剔除拼出这 9 项，会把「少了哪些」藏进否定条件里；独立表更难以骗自己。
+ *
+ * 图标：除 `重命名` 用新增的 `menu-rename`（path 逐字取自真身），其余 7 项的
+ * `svg path[d]` 与 `TOPBAR_MORE_ITEMS` 同名项**逐字节相同**（已用真身导出串接比对）。
+ * `在段落前显示作者` 在该菜单里**没有图标**，只有右侧开关 —— 实测 `iconCls` 为空数组。
+ */
+export const TOPBAR_MORE_PREVIEW_ITEMS = Object.freeze([
+  ['width', '页宽设置', 'menu-width', 'submenu'],
+  ['slides', '演示模式', 'menu-presentation'],
+  ['find', '查找', 'menu-find'],
+  // 动作名沿用编辑态子面板里那个开关的 `more.show-author`：同一个宿主事件、同一份宿主逻辑，
+  // 只是这一份出现在一级菜单里（`id` 必须是 `show-author`，渲染器按它找开关状态）。
+  ['show-author', '在段落前显示作者', '', 'switch', 'more.show-author'],
+  ['download-as', '下载为', 'menu-download', 'submenu'],
+  ['translate', '翻译为英语', 'menu-translate', 'route'],
+  ['print', '打印', 'menu-print'],
+  ['rename', '重命名', 'menu-rename'],
+  ['delete', '删除', 'menu-delete'],
+].map(([id, label, icon, kind = 'item', action = id], index) => ({
+  id, label, kind, order: index + 1, enabled: true, action,
+  ...(icon ? { icon } : {}),
+  affordance: kind === 'submenu' || kind === 'route' ? 'arrow' : 'none',
+})))
+
+/** 预览态的两条分隔线：`在段落前显示作者` 之后、`重命名` 之后（实测 y195 / y338）。 */
+export const TOPBAR_MORE_PREVIEW_DIVIDER_AFTER = Object.freeze(['show-author', 'rename'])
+
+/**
  * 页宽设置浮层的提示行文案（飞书原文，2026-11-23 前台实测）。
  *
  * 浮层结构照飞书是「提示行 + 三张卡片」，不是三行文字 —— 卡片是 56×66 的
@@ -309,6 +358,9 @@ export default {
       const capability = TOPBAR_MORE_CAPABILITY
       // 读取 revision 建立依赖：关注写入后开关必须立刻反映新状态（Provider 状态不是响应式的）。
       if (this.topbarMoreRevision < 0) return []
+      // 版本预览态：顶栏换成 `当前版本：…`，但 `···` 仍在，点开是一张 9 项的独立名单。
+      // 预览态文档只读，可这 9 项在真身里都不置灰（删除也在），所以不走下面的 readonly 逻辑。
+      if (this.versionPreviewPageId) return TOPBAR_MORE_PREVIEW_ITEMS.map(item => ({ ...item }))
       const business = this.session?.getProvider?.('documentBusiness')?.getState?.()
       const followed = business?.followed
       return [...TOPBAR_MORE_ITEMS, { id: 'theme', label: '主题', kind: 'submenu', icon: 'sparkle', enabled: true }].map((item) => {
@@ -342,7 +394,7 @@ export default {
         if (this.topbarMoreMessage) rows.push({ kind: 'item', item: { id: 'operation-status', label: this.topbarMoreMessage, enabled: false, title: this.topbarMoreMessage } })
         return rows
       }
-      return topbarMoreRows(this.topbarMoreItems)
+      return topbarMoreRows(this.topbarMoreItems, this.versionPreviewPageId ? TOPBAR_MORE_PREVIEW_DIVIDER_AFTER : TOPBAR_MORE_DIVIDER_AFTER)
     },
     /** 当前子面板项列表；无子面板时为 []。 */
     topbarMoreSubmenuItems() {
@@ -525,6 +577,13 @@ export default {
         return this.runReferenceMoreAction(current.id, undefined, event)
       }
       if (!item || item.enabled === false) return
+      // 预览态的一级开关「在段落前显示作者」（编辑态它藏在「更多」子面板里）：
+      // 只翻本地态 + 抛事件给宿主，菜单不关 —— 与 `onTopbarMoreSubmenuItem` 同口径。
+      if (item.kind === 'switch' && item.id === 'show-author') {
+        this.topbarMoreShowAuthor = !this.topbarMoreShowAuthor
+        this.$emit('topbar-more', { action: item.action, on: this.topbarMoreShowAuthor })
+        return
+      }
       // 关注文档更新：原地翻开关并写 documentBusiness，菜单不关（飞书同款）。
       if (item.kind === 'switch') return this.runReferenceMoreAction(item.id, undefined, event)
       if (item.kind === 'submenu') {
@@ -656,6 +715,11 @@ export default {
         case 'save-version':
           this.closeTopbarMore()
           this.openSaveVersion(this._topbarMoreTrigger)
+          return
+        // 预览态独有：改的是**这条版本**的名字，不是文档名（编辑态 23 项里没有它）。
+        case 'rename':
+          this.closeTopbarMore()
+          this.openRenameVersion(this.versionPreviewPageId, this._topbarMoreTrigger)
           return
         // 文档小组件的子面板项：值即小组件 id（含 discover / manage 两个入口）。
         case 'widgets':

@@ -70,13 +70,120 @@
 ## 待取证
 
 - [x] **C1** 版本指示下拉几何 —— 已量：左缘与胶囊左缘对齐（≈784 native / 392 CSS）、白底圆角卡、3 项、无分隔线、无底部按钮；项高/阴影待落码后浏览器实测
-- [ ] **C2** 已存版本预览态「···」菜单项名单与顺序 —— 截图未展开，需补证（阻塞 T4 的 `···` 面板）
-- [ ] **C3** ⓘ 图标的 hover 文案 —— 截图未展开（Phase 1 已先按 `aria-label` 兜住）
-- [ ] **C4** 时间线**父子折叠结构** —— 真身确认存在，但数据来源未确认，**未落码**
-  - 结构：`history-timeline-majorHistory-item-container`（`overflow: hidden` + `::after` 底部 1px）里放父条目，父条目左上角 `.history-timeline-open-icon` 20×20（`absolute left:16 top:12 z-index:1 radius:4`，内含 12×12 SVG `fill: rgb(100,106,115)`，`transform: matrix(0,1,-1,0,0,0)` = ▶，可旋转成 ▼）
-  - 子条目带 `.has-padding`：`padding-left: 56px`（父级文字起点 1187 → 子级 1203，缩进 16）
-  - ❓ 未确认：哪些连续快照该折叠成一个 `majorHistory` 组（触发条件 / 分组口径 / 展开状态记忆）—— 当前数据模型是扁平 `versionList`，没有语义来源。**取证到之前不臆造**
+- [x] **C2** 已存版本预览态「···」菜单项名单与顺序 ✅ 已取证 + 已落码（2026-11-23 Playwright 直连真身）
+  - **9 项独立名单，不是编辑态 23 项的子集**。逐行走 DOM + computed style（产物 `/tmp/c2_menu_full.json`）
+  - 名单与顺序：`页宽设置 ›` / `演示模式` / `查找` / `在段落前显示作者`[开关] — 分隔线 — `下载为 ›` / `翻译为英语 ›` / `打印` / `重命名` — 分隔线 — `删除`
+  - 外框：198×326 @(1101,53)、白底、`radius: 6px`、`padding: 2px 0`；每行 190×32
+  - 分隔线只有两条：y195（`在段落前显示作者`之后）、y338（`重命名`之后），1px 贯穿 196 宽
+  - 与编辑态的差异必须写死在表里，不靠过滤推导：
+    - **多** 1 项 `重命名` —— 改的是**版本名**（`重命名版本` 对话框），不是文档名
+    - **少** 16 项：关注文档更新 / 添加快捷方式到 / 移动到 / 置顶 / 收藏 / 转换为模板 / 创建副本 / 另存为版本 / 查看已存版本 / 文档权限 / 文档小组件 / 文档信息 / 提及的人 / 历史记录 / 历史评论 / 更多
+    - `查找和替换` 在这里只叫 `查找`（同命令不同文案）
+  - 图标：`重命名` 用新增 `menu-rename`（path 逐字取自真身）；`在段落前显示作者` **无图标**（`iconCls` 空数组，只有右侧 28×16 开关）；其余 7 项 `svg path[d]` 与 `TOPBAR_MORE_ITEMS` 同名项**逐字节相同**（`/tmp/c2_icons.json`）
+  - 只读下这 9 项**全部不置灰**（含 `删除`），所以预览态不走 readonly 置灰逻辑
+  - 「立即查看」落点的**重命名对话框**实测（`/tmp/c2_rename.json`）：
+    - `cls: "ud__dialog__content ud__modal save-version-dialog ud__dialog__content-sm"`、`role: dialog`、420×242 @(510,329)、`radius 8px`、白底
+    - header 420×72；body 420×90，文本 `版本名称` + 计数 `8/1000`
+    - 输入框 `ud__native-input` 271×22 @(546,436)、placeholder `请输入名称`、预填当前版本名
+    - 按钮 `取消` 80×32 @(734,515)（outlined）/ `确定` 80×32 @(826,515)（filled）
+    - 遮罩 `ud__dialog__mask` 1440×900 `rgba(0,0,0,0.55)`
+    - 🔑 **与「另存为版本」是同一套壳**（真身类名同为 `ud__modal save-version-dialog`、同 420×242），因此复用 `createSaveVersionDialog`，只把标题与关闭钮读屏文案开成入参
+  - 落码：
+    - `topbarMoreMixin.js` 新增 `TOPBAR_MORE_PREVIEW_ITEMS`（9 项冻结表，含 `action` 列）+ `TOPBAR_MORE_PREVIEW_DIVIDER_AFTER = ['show-author','rename']`
+    - `topbarMoreItems` 加 `if (this.versionPreviewPageId) return TOPBAR_MORE_PREVIEW_ITEMS.map(...)`（**分支在 readonly 逻辑之前**，否则会被置灰）
+    - `topbarMoreRows` 按态切分隔线；`onTopbarMoreItem` 加一级 switch 分支（`id` 保持 `show-author` 让渲染器找到开关状态，`action` 走 `more.show-author` 复用宿主事件，菜单不关）
+    - `runTopbarMoreAction` 加 `case 'rename'` → `openRenameVersion(this.versionPreviewPageId, trigger)`
+    - `versioningMixin.js` 新增 `openRenameVersion` / `closeRenameVersion`；`provider.js` 新增 `rename(versionId, label)`（只换 `label`，`id/createdAt/seq` 不动，校验口径同 `createSnapshot` → `E_SNAPSHOT_LABEL`）；`icons.js` 新增 `menu-rename`；`dialogs.js` `createSaveVersionDialog` 开 `dismissLabel` 入参
+    - 重命名后**不调 `loadVersions()`** —— 那会把 `versionSelectedId` 重置回第一条，等于把用户踢出预览态；改为原地替换 `versionList` 那一条的 `label`，时间线 / 顶栏「当前版本：<名>」/ 预览下拉三处同源刷新
+  - 单测：`test/unit/topbar-more-ui.test.js` 新增 8 组 → **56 passed**；`test/unit/versioning-core.test.js` 新增 `rename` 用例；三支版本单测 **196 passed**
+- [x] **C3** ⓘ 图标的 hover 文案 ✅ 已取证（落码见下方遗留）
+  - 文案是 **`帮助中心`** —— 真身 `.docx-history-right-header-help-icon` 的 `ud__tooltip-content` 实测逐字
+  - ⚠️ **旧结论已推翻**：本仓原先写的「历史记录会自动保存，可随时还原任意一条」是**臆造**，已删除
+  - 气泡几何（`/tmp/c3_tooltip.json`）：72×36、底 `rgb(31,35,41)`、白字、`12px/20px 400`、`radius 8px`、`padding 8px 12px`、三层阴影、位于图标正下方（tooltip y53 vs 图标 bottom 43.5）
+  - 落码：`versionPanel.js` 的 `aria-label` 改 `帮助中心`，**不再写 `title`**（那会弹浏览器原生灰气泡），改走共享 `createTooltip({ host })` + `bind(rightInfo)`，`destroy()` 里补 `helpTip?.destroy()`
+  - 气泡样式对齐真身（`src/styles/deferred-ui.css` 的 `.lark-doc-tooltip`）：`padding 8px 12px` / `radius 8px` / `12px-20px 400` / 三层阴影 `0 8px 24px 8px rgba(31,35,41,.04), 0 6px 12px rgba(31,35,41,.04), 0 4px 8px -8px rgba(31,35,41,.06)` / 箭头 `border: 8px` → 16×8（真身 `.ud__tooltip__arrow` 即 16×8）
+  - 🔴 同时校正 token：`--ld-bg-tooltip` `#24282c` → **`#1F2329`**（真身 `rgb(31,35,41)`；原值是早先目测取的，偏亮）。这是「改值」不是「新增字面 hex」，`check:theme-tokens` 基线计数不变
+  - ✅ 本地渲染实测复核（`/tmp/tip-check.html` + Playwright 量盒模型）：72×36 / `rgb(31, 35, 41)` / 白字 / `12px/20px 400` / `radius 8px` / `padding 8px 12px` / 三层阴影 / 箭头 16×8 —— **与真身逐项相同**
+- [x] **C4** 时间线**父子折叠结构** ✅ 已取证（2026-11-23 Playwright 直连真身，产物 `/tmp/c4_net3.json` / `/tmp/fs_c4i.mjs` / `/tmp/fs_c4svg.mjs`）—— **数据源已锁定，阈值假设已证伪**，落码见 C6
+
+  **① 数据源（接口逐字）**
+  - `GET /space/api/docx/history/page/list/?page_id=<docToken>&count=10[&cursor=<n>]`
+  - 响应 `data` 键：`major_history` / `next_cursor` / `user` / `has_more`
+  - `major_history[i]` 键：`type` / `editor_ids` / `page_info` / `minor_history` / `version` / `name` / `description` / `edit_time`
+  - `minor_history[j]` 同键 + `external_block_info`
+  - 🔑 **分组完全由服务端给出**：`major_history` = 一个父组，`minor_history[]` = 该组下的子条目数组，且 `minor_history[0].edit_time === major_history[i].edit_time`。客户端**不做任何时间聚类**
+
+  **② `type` 枚举实测**
+  - `1` = 创建（`title_changes` 为 `{origin:'',now:''}`、`from_ver/to_ver = 1`、`external_block_info {}`、`minor_history` 恰 1 条）
+  - `2` = 编辑保存（绝大多数）
+  - `3` = 还原（`minor_history[0].page_info.revert_info = { time, revert_task_id }`）
+  - 🔑 `type 1 / 3` 的 `minor_history` **恒为 1 条**，与 DOM 上「这两类条目没有箭头」严格对应
+  - ⚠️ 本仓 `SNAPSHOT_KINDS = ['auto','manual','restore']`（`src/core/versioning/types.js:21`）与飞书 `1/2/3` **不是同一枚举**，落码必须显式映射，不得混用
+
+  **③ 翻页**
+  - 第一页 `has_more=true` / `next_cursor=11264`；第二页 `has_more=false`
+  - 两页各 10 组，合计 20 组，与面板滚动加载出的 20 个 container 一一对齐
+
+  **④ DOM ↔ 接口的严格对应**
+  - `DOM 条目数 = 1 个父行（head） + minor_history.length 个子行`
+  - 父行时间 = `minor_history[0]` 时间（秒被隐藏，所以父行与首个子行看起来同刻）
+  - 实测 group0：minors 3 条（12:08:29 / 12:08:14 / 12:02:25）→ DOM 4 条（12:08 / 12:08 / 12:08 / 12:02）
+  - 实测 group1：minors 2 条（01:31:08 / 01:29:40）→ 展开后 DOM 3 条
+
+  **⑤ 阈值假设已证伪（关键结论）**
+  - 统计 20 组：**组内最大间隔 30.1 分钟**（group18，39 条）；**组间最小间隔 2.1 分钟**（group18→19，type2→type1）
+  - 十二个最小组间间隔：2.1 / 4.8 / 5.7 / 41.4 / 42.9 / 60.7 / 62.1 / 64.0 / 65.0 / 68.3 / 89.6 / 90.7 分钟
+  - 🔴 组内 30.1 > 组间 2.1，**区间反向重叠 → 不存在任何时间阈值**
+  - ⇒ **「按间隔聚类」是实现方向错误**，必须改为「按服务端组标识（`version` / `edit_time` 作为 groupId）透传」
+
+  **⑥ 容器 / 父行 / 子行几何（computed style 实测）**
+  - container `.history-timeline-majorHistory-item-container`：293×281 @(1147,94)、`overflow: hidden`、`position: relative`、`margin: -1px 0`、`::after` = `absolute left0 right0 bottom0 1px rgb(222,224,227)`
+  - 父行 `.history-timeline-item`：293×**88**、`padding: 12px 13px 12px **40px**`、`margin: -1px 0`；选中态 `background rgb(224,233,255)`
+  - 子行 `.has-padding.history-timeline-item`：293×**66**、`padding: 12px 13px 12px **56px**`、`margin: -1px 0`
+  - 文字左起点：父 1187 / 子 1203（**差 16px**）
+
+  **⑦ 箭头（逐字）**
+  - 容器 `.history-timeline-open-icon`：20×20 @(1163,106)、`absolute`、`left: 16`、`top: 12`、`border-radius: 4px`
+  - 内含 `svg 12×12 viewBox="0 0 12 12" fill="none"`
+  - path（逐字）：`M9.166 6.243l-4.69 3.41A.3.3 0 014 9.412V2.589a.3.3 0 01.476-.242l4.69 3.41a.3.3 0 010 .486z`，`fill="#646A73"`
+  - 两态**同一份 SVG（向右实心三角）靠 class + transform 旋转**：
+    - 展开：`class="pulldown-icon open"` + `transform: matrix(0, 1, -1, 0, 0, 0)`
+    - 折叠：`class="pulldown-icon"` + `transform: matrix(1, 0, 0, 1, 0, 0)`
+  - ⚠️ **旧记录两处错值已更正**：`fill` 是 `#646A73`（不是 `rgb(100,106,115)` 之外的写法，两者同色但落码写 `#646A73`）；`matrix(0,1,-1,0,0,0)` 是**展开态**（▼），`matrix(1,0,0,1,0,0)` 才是折叠态（▶）—— 旧条目的方向记反了
+  - 箭头**只在 `minor_history.length > 1` 时存在**（type 1/3 恒单条 ⇒ 无箭头）
+  - 面板内 `[title]` / `[aria-label]` 探测为空 ⇒ 箭头**没有 tooltip 文案，不加气泡**
+
+  **⑧ 分片代码检索结论（避免重复劳动）**
+  - 下载 4 个 revision 相关 chunk（37KB / 3.5KB / 12KB / 102KB）+ `bear-docx-loadable-revision.6d6a114f.css`，`grep major_history|majorHistory|history-timeline` **0 命中**
+  - 页内 `fetch` 扫全部 525 个已加载 JS，`majorHistory` **0 命中** ⇒ 该段渲染代码不在首屏 chunk 里（或用了压缩别名）。此路不再追，结论以接口 + DOM 实测为准
 - [x] **C5** 条目视觉全量 —— 已被 T9 用 computed style 取证覆盖（见 T9 明细）
+
+## Phase 4 · 时间线父子折叠结构（C4 落码）
+
+- [x] **C6** 数据层：把「服务端分组」贯通到 `versionGroups` ✅
+  - `snapshot.js`：`normalizeSnapshot` 新增第十个字段 `groupId`（非字符串 → 缺省空串），纯透传、不做任何归组推断
+  - `versioningPresentation.js:groupVersionsByMonth` 语义扩成两层：先按月，月内按 `groupId` 再分组 → `{ key, label, groups: [{ id, head, children }] }`
+    （任务原文写的 `items` 字段名在落码时改叫 `groups`：`items` 是旧的扁平口径，改名避免与新结构「组内含行」混淆）
+  - 关键语义三条：`groupId` 非空时 `children[0] === head`（父行即 `minor_history[0]`）；`children.length < 2` 抹平成 `[]`（渲染层不必再判长度）；`groupId` 空则自成一组
+  - 未改 `SNAPSHOT_KINDS`；飞书 `type 1/2/3` 与本仓 `kind` 的映射仍在 provider 侧适配（尚未接真实数据源，见附「遗留」）
+- [x] **C7** 渲染层：`versionPanel.js` 三层节点 ✅
+  - `buildDay(day)` → `buildGroup(node)`：容器 `.lark-doc-version-group` + 父行 `button` + 展开态子行（`has-padding`）
+  - 箭头节点：20×20 `span` + 内嵌 12×12 SVG（`icons.js` 新增 `version-group-arrow`，逐字取真身 path；**不用 `wrap()`**，它的 16 视图 + stroke 会把实心三角画变形）
+  - 展开态是闭包 `expandedGroups = new Set()`，**不进 `daysSignature`**；展开只 `replaceWith` 被点的那一组，其它组一个节点都不动（否则丢焦点/丢滚动）
+  - 默认**全部折叠**（与真身首屏一致）；`update()` 复位时 `expandedGroups.clear()`
+  - 🔴 **对任务原文的一处更正**：原文写「点击父行 = 切换展开（不是选中）」，落码改成**三角管折叠、行管选中**。理由是真身把三角做成一颗独立元素（`.history-timeline-open-icon` 20×20 `absolute left:16 top:12`，类名 `pulldown-icon`），文字区从 40px 起排、是另一颗元素；而父行本身就是 `minor_history[0]` 这条版本 —— 整行只做折叠会让「组头」用鼠标永远选不到，而打开面板时自动选中的恰好就是它
+- [x] **C8** 样式层：`src/styles/versioning.css` 补 ✅
+  - `.lark-doc-version-group`：`position: relative`、`overflow: hidden`、`margin: -1px 0`
+  - `.lark-doc-version-item.has-padding`：`padding-left: 56px`（父行 40 + 三角占位 16）
+  - `.lark-doc-version-item-toggle`：20×20 / `absolute` / `left: 16px` / `top: 12px` / `radius: 4px` / `color: rgb(100, 106, 115)`；`svg` 12×12；`is-open` → `transform: rotate(90deg)`
+  - 真身 container 另有 `::after` 1px `rgb(222,224,227)`，本仓**故意不补**：条目的 `::after` 已铺满每行，再叠一条会画出 2px
+  - 新样式全部 `rgb()`；同时修掉 `icons.js` / `versionPanel.js` 注释里的两处字面 hex（`check:theme-tokens` 连注释一起算基线）
+- [x] **C9** 断言 ✅
+  - 单测：`versioning-ui.test.js` 迁移 4 条旧分组断言（`headIds()` 辅助）+ 新增 4 条分组纯函数用例 + 迁移 2 条 DOM 用例 + 新增 4 条折叠 DOM 用例（默认折叠 / 无子无三角 / 点三角展开 / 点行选中）；`versioning-core.test.js` 字段数九→十 + `groupId` 透传
+  - `build-contract.test.js`：`versioningPresentationShape().methods` 名单补 `versionTimelineItem`
+  - E2E `verify-browser-panels.js`：`measureVersions` 的 `days[].items` 改 `days[].groups[{ foldable, open, expanded, head, children }]`；注入 provider 给前两条同 `groupId` 造出真折叠组；新增「点三角展开 2 条子行且不改变选中」一条
+  - `verify-browser-versions.js` / `verify-browser-mobile.js` **无需改**：它们走真实内存 provider，记录不带 `groupId` ⇒ 每条自成一组、无三角，`nth()` 顺序与扁平口径一致（已核对 `provider.js` 不写 `groupId`）
+- [x] **C10** 门禁五连后提交（结果见本轮提交说明）
 
 ## 附：跨分支合并遗留（阻塞「尽可能合并」）
 
