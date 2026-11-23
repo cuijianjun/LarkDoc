@@ -29,6 +29,23 @@ export const SNAPSHOT_KIND = Object.freeze({
   RESTORE: 'restore',
 })
 
+/**
+ * `purpose`（服务端口径）→ 快照 `kind`（本仓三分类）。
+ *
+ * 两套词表不是一回事：远端用 `manual / approval / pre_restore / post_restore` 说明
+ * 「谁因为什么建的版本」，本地只关心「能不能被保留策略淘汰」。恢复相关的两种 purpose
+ * 都映成 `restore` —— 恢复点一旦被淘汰，用户就再也回不到那个状态；`approval` 是审批流
+ * 产生的持久版本，按 `manual` 永久保留。未知值同样按 `manual`（与 `normalizeSnapshot`
+ * 同口径：误判成 `auto` 会永久删掉用户的历史）。
+ *
+ * 只做词表翻译，不猜语义、不读时钟。
+ */
+export function snapshotKindFromPurpose(purpose) {
+  if (purpose === SNAPSHOT_KIND.AUTO) return SNAPSHOT_KIND.AUTO
+  if (purpose === 'pre_restore' || purpose === 'post_restore') return SNAPSHOT_KIND.RESTORE
+  return SNAPSHOT_KIND.MANUAL
+}
+
 /** 04 §⑤-2：版本名输入框计数为 `11/1000`，上限 1000 字符。 */
 export const SNAPSHOT_LABEL_MAX = 1000
 

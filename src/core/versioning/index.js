@@ -13,7 +13,7 @@ export {
   E_SNAPSHOT_LABEL, E_SNAPSHOT_PAYLOAD_MISSING, E_SNAPSHOT_JSON_NOT_ALLOWED,
   E_SNAPSHOT_SIZE_MISMATCH, E_SNAPSHOT_BLOCK_COUNT, E_POLICY_KEEP_AUTO,
   E_VERSION_NOT_FOUND, E_VERSION_EVICTED, E_VERSION_DELETED, E_VERSION_GONE,
-  versioningError, isBinaryPayload, toBytes, payloadSize,
+  versioningError, isBinaryPayload, toBytes, payloadSize, snapshotKindFromPurpose,
 } from './types'
 
 export { normalizeSnapshot, createSnapshot } from './snapshot'

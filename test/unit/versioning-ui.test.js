@@ -659,6 +659,39 @@ describe('版本状态投影', () => {
   })
 })
 
+describe('服务端 purpose → 快照 kind（provider 侧适配）', () => {
+  /** 造一条服务端元数据：真实后端 `kind` 与 `purpose` 同值，面板要的是本仓三分类。 */
+  const remote = (versionId, purpose, extra) => ({ tenantId: 'tenant-1', docId: 'doc-1', status: 'durable',
+    versionId, operationId: 'op-' + versionId, createdBy: 'alice', createdAt: '2026-11-15T00:00:00Z',
+    capturedSeq: '1', sourceRevision: '1', sourceEpoch: '1', schemaVersion: '2', label: '', purpose, kind: purpose,
+    contentHash: 'sha256:' + 'a'.repeat(64), stateHash: 'sha256:' + 'b'.repeat(64),
+    protocolVersion: 'editor-crdt-v1', sizeBytes: 16, ...extra })
+
+  it('pre/post_restore 翻成 restore、approval 翻成 manual，purpose 原样保留给恢复校验', async () => {
+    const rows = [remote('v-auto', 'auto'), remote('v-pre', 'pre_restore'), remote('v-post', 'post_restore'), remote('v-appr', 'approval')]
+    const provider = createHttpVersioningProvider({ tenantId: 'tenant-1', docId: 'doc-1',
+      request: async () => ({ status: 200, json: async () => rows }) })
+    try {
+      expect((await provider.list()).map(({ id, kind, purpose }) => [id, kind, purpose])).toEqual([
+        ['v-auto', 'auto', 'auto'],
+        ['v-pre', 'restore', 'pre_restore'],
+        ['v-post', 'restore', 'post_restore'],
+        ['v-appr', 'manual', 'approval'],
+      ])
+    } finally { provider.dispose() }
+  })
+
+  it('groupId 透传服务端分组标识；缺失或非字符串按空串（这一条自成一组）', async () => {
+    const rows = [remote('v1', 'auto', { groupId: 'g-1' }), remote('v2', 'auto', { groupId: 123 }), remote('v3', 'auto')]
+    const provider = createHttpVersioningProvider({ tenantId: 'tenant-1', docId: 'doc-1',
+      request: async () => ({ status: 200, json: async () => rows }) })
+    try {
+      expect((await provider.list()).map(({ id, groupId }) => [id, groupId]))
+        .toEqual([['v1', 'g-1'], ['v2', ''], ['v3', '']])
+    } finally { provider.dispose() }
+  })
+})
+
 describe('错误码 → 面板文案', () => {
   it('两个「找不到」必须分开：不存在可重试，已淘汰回不去', () => {
     expect(VERSIONING_ERROR_TEXT[E_VERSION_NOT_FOUND]).toContain('刷新')

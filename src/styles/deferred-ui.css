@@ -2414,7 +2414,6 @@
 .lark-doc .lark-doc-widget-list > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--ld-border-chrome); }
 .lark-doc .lark-doc-widget-list button { flex: 0 0 auto; }
 .lark-doc .lark-doc-widget-dialog p[role="status"]:empty { display: none; }
-.lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
 @media (min-width: 761px) {
   .lark-doc .lark-doc-link-tools { position: fixed; z-index: 600; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 440px; height: 42px; max-width: calc(100vw - 16px); padding: 8px; border: 1px solid var(--ld-border-cell); border-radius: 6px; background: var(--ld-bg-surface); box-shadow: var(--ld-shadow-bubble); color: var(--ld-text); font-size: 14px; }
   .lark-doc .lark-doc-link-tools-url { flex: 0 1 184px; width: 184px; height: 24px; margin-right: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 24px; color: var(--ld-text); text-decoration: none; }

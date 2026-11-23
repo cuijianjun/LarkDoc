@@ -350,7 +350,9 @@ export function createVersioningPresentation(dependencies) {
       try {
         const list = await provider.list({ documentId })
         if (!current()) return []
-        this.versionList = Array.isArray(list) ? list.filter(item => this.versionPanelKind !== 'saved' || item.pinned || ['manual', 'approval'].includes(item.kind)) : []
+        // 「另存为版本」只列用户显式命名的版本：`manual` 已含审批流产生的 `approval`
+        // （`snapshotKindFromPurpose` 在 provider 侧就翻好了），不再按服务端 purpose 判。
+        this.versionList = Array.isArray(list) ? list.filter(item => this.versionPanelKind !== 'saved' || item.pinned || item.kind === SNAPSHOT_KIND.MANUAL) : []
         this.versionIndex = this.versionList.length ? 1 : 0
         this.versionSelectedId = this.versionList.length ? this.versionList[0].id : ''
         return this.versionList

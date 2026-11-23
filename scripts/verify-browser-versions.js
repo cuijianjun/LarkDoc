@@ -70,8 +70,12 @@ async function main() {
     check('Decoded history displays the document instead of binary metadata cards', await history().locator('.lark-doc-version-binary,.lark-doc-version-preview-meta,.lark-doc-version-diff').count() === 0)
     await click(history().getByRole('button', { name: '还原此历史记录', exact: true }))
     const confirmGeometry = await confirm().evaluate(e => ({ rect: e.getBoundingClientRect().toJSON(), radius: getComputedStyle(e).borderRadius, buttons: [...e.querySelectorAll('button')].map(b => ({ text: b.textContent, rect: b.getBoundingClientRect().toJSON() })), focused: document.activeElement.textContent, modal: e.getAttribute('aria-modal') }))
-    check('Restore confirmation is 420px wide, has two usable controls and focuses Cancel', confirmGeometry.rect.width === 420 && confirmGeometry.radius === '12px'
-      && confirmGeometry.buttons.length === 2 && confirmGeometry.buttons.every(b => b.rect.height >= 40) && confirmGeometry.focused === '取消' && confirmGeometry.modal === 'true', confirmGeometry)
+    // 飞书原样：420px 面板、12px 圆角，操作是右下角两个 32px 文字按钮（取消 / 还原），
+    // 打开时焦点落在「取消」上。早期本地实现用的是 40px 实心按钮，已按真身收回。
+    check('Restore confirmation is 420px wide, has two 32px text controls and focuses Cancel', confirmGeometry.rect.width === 420 && confirmGeometry.radius === '12px'
+      && confirmGeometry.buttons.length === 2 && confirmGeometry.buttons.every(b => b.rect.height === 32)
+      && confirmGeometry.buttons.map(b => b.text).join('/') === '取消/还原'
+      && confirmGeometry.focused === '取消' && confirmGeometry.modal === 'true', confirmGeometry)
     await page.mouse.click(20, 20)
     check('Clicking outside the restore confirmation keeps it open', await confirm().count() === 1)
     await page.keyboard.press('Escape')
@@ -109,8 +113,11 @@ async function main() {
     await page.evaluate(() => { window.__versionDoc.setReadonly(true) })
     await click(page.locator('.lark-doc-topbar .lark-doc-more-btn'))
     const readonlyMenu = page.locator('.lark-doc-topbar-more')
-    check('Readonly menu preserves access to history with no manual creation item', await readonlyMenu.getByRole('menuitem', { name: '历史记录', exact: true }).isEnabled()
-      && await readonlyMenu.getByRole('menuitem', { name: '另存为版本', exact: true }).count() === 0)
+    // 飞书桌面端只读文档里「另存为版本」仍然在位、只是灰掉不可点（`topbarMoreMixin` 已按实测保留）；
+    // 早期本地实现是把它整条删掉，断言跟着删法写成 count === 0，这里改回真身行为。
+    const readonlySaveVersion = readonlyMenu.getByRole('menuitem', { name: '另存为版本', exact: true })
+    check('Readonly menu keeps history enabled and greys out manual creation', await readonlyMenu.getByRole('menuitem', { name: '历史记录', exact: true }).isEnabled()
+      && await readonlySaveVersion.count() === 1 && !await readonlySaveVersion.isEnabled())
     await page.keyboard.press('Escape')
     await openAction('历史记录')
     await history().locator('[aria-label="历史版本正文"]').waitFor()

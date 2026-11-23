@@ -11,7 +11,7 @@ import {
   E_SNAPSHOT_PAYLOAD_MISSING, E_SNAPSHOT_SIZE_MISMATCH, E_VERSION_DELETED, E_VERSION_EVICTED,
   E_VERSION_GONE, E_VERSION_NOT_FOUND,
   SNAPSHOT_LABEL_MAX, createMemoryVersioningProvider, createRestoreRecord, createSnapshot,
-  diffSummary, normalizeSnapshot, projectionMetrics, pruneSnapshots,
+  diffSummary, normalizeSnapshot, projectionMetrics, pruneSnapshots, snapshotKindFromPurpose,
 } from '../../src/core/versioning/index'
 // 契约真源：内存实现必须过这一关，否则就是「看起来能用、换远端就缺方法」。
 import { VERSIONING_METHODS, createVersioningProvider } from '../../src/providers/versioning'
@@ -100,6 +100,18 @@ describe('快照模型 · 读路径宽容', () => {
     expect(normalizeSnapshot({ groupId: 'g-20480' }).groupId).toBe('g-20480')
     expect(normalizeSnapshot({ groupId: 20480 }).groupId).toBe('')
     expect(normalizeSnapshot({}).groupId).toBe('')
+  })
+
+  it('purpose → kind 只做词表翻译：恢复相关两种都算 restore，其余归 manual', () => {
+    expect(snapshotKindFromPurpose('auto')).toBe('auto')
+    expect(snapshotKindFromPurpose('manual')).toBe('manual')
+    expect(snapshotKindFromPurpose('pre_restore')).toBe('restore')
+    expect(snapshotKindFromPurpose('post_restore')).toBe('restore')
+    // 审批流产生的是持久版本，按 manual 永久保留，不新开第四分类。
+    expect(snapshotKindFromPurpose('approval')).toBe('manual')
+    // 未知值同 `normalizeSnapshot`：宁可不删，绝不当 auto 淘汰掉。
+    expect(snapshotKindFromPurpose('weird')).toBe('manual')
+    expect(snapshotKindFromPurpose(undefined)).toBe('manual')
   })
 })
 

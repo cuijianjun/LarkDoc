@@ -6,24 +6,12 @@
  */
 import { normalizeDocumentRecord } from '../core/documentSchema'
 import { decodeVersionDocument } from '../core/versioning/document-codec'
+import { snapshotKindFromPurpose } from '../core/versioning/types'
 import { validateDocument } from '../core/documentOperations'
 import { TRANSACTION_ORIGINS } from '../core/transactionMetadata'
 
 export const AUTO_VERSION_INTERVAL_MS = 60000
 export const AUTO_SNAPSHOT_DEBOUNCE_MS = 2500
-
-/**
- * `purpose`（服务端口径）→ 本地快照 `kind`（`core/versioning` 的三分类）。
- *
- * 两套词表不是一回事：远端用 `manual / approval / pre_restore / post_restore` 说明
- * 「谁因为什么建的版本」，本地只关心「能不能被保留策略淘汰」。恢复相关的两种 purpose
- * 都映成 `restore` —— 恢复点一旦被淘汰，用户就再也回不到那个状态。
- */
-function localSnapshotKind(purpose) {
-  if (purpose === 'auto') return 'auto'
-  if (purpose === 'pre_restore' || purpose === 'post_restore') return 'restore'
-  return 'manual'
-}
 
 export const versionMethods = {
   setAutoVersion(enabled) {
@@ -152,7 +140,7 @@ export const versionMethods = {
     // `kind` 必须跟着 `purpose` 走：这里以前硬编码 `'manual'`，于是 `purpose: 'auto'`
     // 的自动快照会被记成手动 —— 而手动是「永久保留」，结果是自动版本永远不被保留策略
     // 淘汰，保留策略形同虚设，历史记录只增不减。
-    if (record.kind === undefined) record.kind = localSnapshotKind(record.purpose)
+    if (record.kind === undefined) record.kind = snapshotKindFromPurpose(record.purpose)
     if (record.payload === undefined) record.payload = await provider.documentCodec.encode(record)
     scope.check()
     const result = await this._identityAction(() => provider.createSnapshot(record))

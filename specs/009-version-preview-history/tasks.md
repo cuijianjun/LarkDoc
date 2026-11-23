@@ -59,7 +59,7 @@
   - 🔴 修复真 bug：**`rollup.config.mjs:248` 惰性降级值表仍写死 `versionDayGroups`**，改名后 `versionGroups` 冷缓存落到兜底 `return ''`（面板包未加载时应为 `[]`）。这是 `build-contract.test.js:395`「expected '' to deeply equal []」的唯一根因，改名为 `versionGroups` 后 73/73 通过
   - `test/unit/versioning-ui.test.js`：「按天分组」整段重写为「按月分组」（跨月另起组、跨年同月不并组、`createdAt<=0` → `未知时间` 且 key 留空）；条目三行断言重写；「更多历史」断言换成「整月全量铺开 + label 是 DIV」
   - `test/unit/versioning-document.test.js`：手机端用例改为整月全量 4 条 + `more-history` 为 null
-  - ⚠️ `scripts/verify-browser-panels.js` / `verify-browser-versions.js` / `verify-browser-mobile.js` 三支 E2E 断言**仍是按天分组 + 徽标的旧口径**，需在 T11 之后单独同步（不在本轮单测范围内）
+  - ~~⚠️ 三支 E2E 断言仍是旧口径~~ → 已在 C9 同步（`panels` 改折叠组口径 90/90 通过；`versions` / `mobile` 走真实内存 provider，无 `groupId` ⇒ 口径本就一致），`versions` 剩下的两处过期断言见 C12
 - [x] **T11** 门禁全绿（2026-11-23）
   - `npx vitest run` → 174 files / 5265 passed, 1 skipped, 0 failed
   - `npm run test:affected` → 99 files / 3617 passed, 1 skipped
@@ -165,7 +165,13 @@
   - `versioningPresentation.js:groupVersionsByMonth` 语义扩成两层：先按月，月内按 `groupId` 再分组 → `{ key, label, groups: [{ id, head, children }] }`
     （任务原文写的 `items` 字段名在落码时改叫 `groups`：`items` 是旧的扁平口径，改名避免与新结构「组内含行」混淆）
   - 关键语义三条：`groupId` 非空时 `children[0] === head`（父行即 `minor_history[0]`）；`children.length < 2` 抹平成 `[]`（渲染层不必再判长度）；`groupId` 空则自成一组
-  - 未改 `SNAPSHOT_KINDS`；飞书 `type 1/2/3` 与本仓 `kind` 的映射仍在 provider 侧适配（尚未接真实数据源，见附「遗留」）
+  - 未改 `SNAPSHOT_KINDS`；飞书 `type 1/2/3` 与本仓 `kind` 的映射落在 provider 侧 ✅（见 C11）
+- [x] **C11** provider 侧词表适配：`purpose` → `kind`、`groupId` 透传 ✅
+  - `core/versioning/types.js` 新增 `snapshotKindFromPurpose(purpose)`：`auto→auto`、`pre_restore/post_restore→restore`、`approval` 与未知值 `→manual`（与 `normalizeSnapshot` 同口径，误判成 auto 会永久删历史）
+  - `providers/versioning.js` 的 `metadata()` 用它落 `kind`，并把 `raw.groupId`（非字符串 → 空串）显式带进元信息；`purpose` **原样保留**（恢复/重试校验都比它，不能翻）
+  - `session/sessionVersionMethods.js` 删本地同名私有 `localSnapshotKind`，改用共享函数（写路径与读路径一张表）
+  - `versioningPresentation.js` 的「另存为版本」过滤由 `['manual','approval']` 收回 `kind === MANUAL` —— 那处 `'approval'` 正是 provider 漏翻词表的补丁
+  - 单测：`versioning-core` 补 1 条纯映射用例；`versioning-ui` 新增 2 条走真实 `createHttpVersioningProvider` 的用例（4 种 purpose 的 kind 投影、`groupId` 透传与降级）
 - [x] **C7** 渲染层：`versionPanel.js` 三层节点 ✅
   - `buildDay(day)` → `buildGroup(node)`：容器 `.lark-doc-version-group` + 父行 `button` + 展开态子行（`has-padding`）
   - 箭头节点：20×20 `span` + 内嵌 12×12 SVG（`icons.js` 新增 `version-group-arrow`，逐字取真身 path；**不用 `wrap()`**，它的 16 视图 + stroke 会把实心三角画变形）
@@ -184,6 +190,15 @@
   - E2E `verify-browser-panels.js`：`measureVersions` 的 `days[].items` 改 `days[].groups[{ foldable, open, expanded, head, children }]`；注入 provider 给前两条同 `groupId` 造出真折叠组；新增「点三角展开 2 条子行且不改变选中」一条
   - `verify-browser-versions.js` / `verify-browser-mobile.js` **无需改**：它们走真实内存 provider，记录不带 `groupId` ⇒ 每条自成一组、无三角，`nth()` 顺序与扁平口径一致（已核对 `provider.js` 不写 `groupId`）
 - [x] **C10** 门禁五连后提交（结果见本轮提交说明）
+- [x] **C12** E2E 过期断言按真身收回（`scripts/verify-browser-versions.js`）✅
+  - 还原确认框：旧断言要求按钮 `height >= 40`，是按本地早期实心按钮写的；飞书真身是右下角两颗 **32px 文字按钮**（实测 取消 80×32 / 还原 80×32、面板 420×178、圆角 12px、焦点落「取消」、`aria-modal=true`）。断言改为 `height === 32` 且文本为 `取消/还原`
+  - 只读文档菜单：旧断言要求「另存为版本」`count === 0`；真身是**保留但灰掉**（`topbarMoreMixin` 实测结论），断言改为「存在且不可用」，同时保留「历史记录」仍可用
+  - 复跑：`BASE_URL=http://127.0.0.1:8877/lark-doc node scripts/verify.mjs panels versions` → panels 90/90、versions 全过
+- [x] **C13** 修全量门禁红：冷层与首屏层重复了同一条 `:has` 规则 ✅
+  - `src/styles/deferred-ui.css` 与 `src/components/lark-doc/lark-doc.css` 各有一份 `.lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100 }`
+  - 之前能过是因为首屏那份多带了 `.lark-doc-save-version-mask`（死类名），两份文本不同 ⇒ `element-ui.test.js` 的规则指纹当成两条；`7613583` 把死类名删掉后两份变成完全一致，指纹撞车 → `fullRules.get(key) === count` 期望 1 实得 2
+  - 收口：删掉冷层那份（首屏那份与同族的 `:has(.lark-doc-ai-panel:only-child)` 规则待在一起，且冷层覆盖的遮罩只在冷层加载后才出现，首屏那份已足够）
+  - 全量 `npx vitest run` → 174 files / 5288 passed / 1 skipped ✅
 
 ## 附：跨分支合并遗留（阻塞「尽可能合并」）
 

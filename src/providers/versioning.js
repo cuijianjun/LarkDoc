@@ -1,5 +1,6 @@
 /* global globalThis */
 import { normalizeRemoteVersionDiff, normalizeVersionDiffSource } from '../core/versioning/diff'
+import { snapshotKindFromPurpose } from '../core/versioning/types'
 /**
  * 版本 Provider 保存不可变快照和恢复操作。恢复应由服务端创建新版本，
  * 不覆盖原版本；本阶段只定义接口，不启用远端实现。
@@ -109,7 +110,15 @@ export function createHttpVersioningProvider(options = {}) {
       !['auto', 'manual', 'approval', 'pre_restore', 'post_restore'].includes(raw.purpose) || raw.kind !== raw.purpose || raw.status !== 'durable' ||
       raw.protocolVersion !== 'editor-crdt-v1' || !Number.isSafeInteger(raw.sizeBytes) || raw.sizeBytes < 0) throw failure('VERSION_INVALID_RESPONSE')
     const meta = { ...raw, id: raw.versionId, documentId: raw.docId, author: raw.createdBy,
-      createdAtIso: raw.createdAt, createdAt: Date.parse(raw.createdAt) }
+      createdAtIso: raw.createdAt, createdAt: Date.parse(raw.createdAt),
+      // 服务端给的是 `purpose`（auto/manual/approval/pre_restore/post_restore），面板读的是
+      // 本仓三分类 `kind`。不翻译的话 `pre_restore` / `post_restore` 会原样漏到渲染层：
+      // 徽标回落成「手动保存」、`restore` 标记恒 false（恢复产生的版本看不出来）。
+      // `purpose` 原样保留 —— 恢复 / 重试的校验都比较它。
+      kind: snapshotKindFromPurpose(raw.purpose),
+      // 时间线父子折叠的组标识由服务端给（飞书 `major_history[]` 一组）；没给就是空串，
+      // 读路径按「这一条自成一组」处理，客户端不做时间聚类。
+      groupId: typeof raw.groupId === 'string' ? raw.groupId : '' }
     delete meta.payloadBase64
     delete meta.contentJson
     return meta
