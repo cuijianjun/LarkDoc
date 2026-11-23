@@ -9,7 +9,7 @@
  *
  *   span.lark-doc-select[.lark-doc-select-open][.自定义 className]
  *     button.lark-doc-select-trigger[type=button][role=combobox]
- *            [aria-label][title][aria-expanded][aria-haspopup=listbox][disabled]
+ *            [aria-label][aria-expanded][aria-haspopup=listbox][disabled]
  *       span.lark-doc-select-icon       ← **可选**前导图标（只有传了 icon 才有这个节点）
  *       span.lark-doc-select-label      ← 当前项文案（纯文本，无 icon 包裹）
  *       span.lark-doc-select-caret.lark-doc-icon  ← chevronDown 12px
@@ -40,11 +40,10 @@ const HOVER_CLOSE_MS = 150
 
 /**
  * @param {object} options
- * @param {string} options.ariaLabel `role=combobox` / `role=listbox` 的 aria-label，同时兜底 title
+ * @param {string} options.ariaLabel `role=combobox` / `role=listbox` 的 aria-label（唯一可访问名称）
  * @param {Array<{value: any, label: string, hint?: string}>} [options.options]
  * @param {any} [options.value] 当前值；未命中 options 时显示 placeholder
  * @param {boolean} [options.disabled]
- * @param {string} [options.title] 覆盖 title（默认等于 ariaLabel）
  * @param {string} [options.placeholder] value 未命中时的兜底文案
  * @param {string} [options.buttonId] 触发按钮 id（少数宿主需要 label for）
  * @param {string} [options.className] 额外根类名（宿主换皮用，如 `lark-doc-mode-select`）
@@ -58,7 +57,6 @@ const HOVER_CLOSE_MS = 150
 export function createSelect(options = {}) {
   const {
     ariaLabel,
-    title = '',
     placeholder = '',
     buttonId = '',
     onChange,
@@ -89,8 +87,10 @@ export function createSelect(options = {}) {
   trigger.type = 'button'
   trigger.className = 'lark-doc-select-trigger'
   trigger.setAttribute('role', 'combobox')
+  // 不写原生 `title`：combobox 一按就开下一级 listbox，`hoverTips` 的
+  // `hasNextLevelPopup()` 本来就判它「不出提示」，留着 title 只会闪一个灰底原生小框
+  // （飞书真身整页按钮都不带 title）。可访问名称由 `aria-label` 承担。
   trigger.setAttribute('aria-label', ariaLabel)
-  trigger.setAttribute('title', title || ariaLabel)
   trigger.setAttribute('aria-expanded', 'false')
   trigger.setAttribute('aria-haspopup', 'listbox')
   if (buttonId) trigger.id = buttonId

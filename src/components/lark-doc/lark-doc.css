@@ -1233,7 +1233,7 @@
    之前这里是 `padding-right: 400px` + 400 宽分栏，点视频「问问AI」整页会跳一下。 */
 .lark-doc.lark-doc-has-image-ai .lark-doc-external-panel { border: 0; border-radius: 8px; background: transparent; box-shadow: none; z-index: 89; }
 .lark-doc.lark-doc-has-image-ai .lark-doc-external-panel > div { height: auto; }
-.lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-save-version-mask, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
+.lark-doc .lark-doc-external-panel:has(.lark-doc-dialog-backdrop, .lark-doc-version-layer, .lark-doc-drawer-mask) { z-index: 100; }
 /* 居中的槽位不建立新的 containing block，拖动后的 fixed 面板仍以视口定位。 */
 .lark-doc .lark-doc-external-panel:has(.lark-doc-ai-panel:only-child) { inset-block: 0; height: fit-content; margin-block: auto; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
 .lark-doc .lark-doc-external-panel .lark-doc-ai-panel:only-child { margin-bottom: 0; }

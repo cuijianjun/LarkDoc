@@ -110,6 +110,7 @@ const measureButtons = () => {
         group: groupIndex,
         label: b.getAttribute('aria-label') || b.textContent.trim(),
         aria: b.getAttribute('aria-label'),
+        combo: b.getAttribute('role') === 'combobox',
         title: b.getAttribute('title'),
         popup: b.getAttribute('aria-haspopup'),
         h: Math.round(rect.height),
@@ -219,9 +220,11 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   record('[结构] 每组按钮的 aria-label 序列与契约一致', labelsMatch,
     snap ? snap.groups.map((group) => group.labels.join('/')).join(' ‖ ') : '未取到')
 
-  record('[结构] 收尾组靠右（右边缘贴工具栏内容盒右边界，18px 内边距）',
-    !!snap && Math.abs(snap.groups[6].right - (snap.bar.right - 18)) <= 2,
-    snap ? `组右 ${snap.groups[6].right} / 期望 ${Math.round(snap.bar.right - 18)}` : '')
+  // 工具栏横向内衬是 12px（`lark-doc.css` 的 `padding: 4px 12px`，对齐飞书收窄后的值）。
+  // 早先写 18 是收窄前的旧值，量出来永远是「组右 1908 / 期望 1902」。
+  record('[结构] 收尾组靠右（右边缘贴工具栏内容盒右边界，12px 内边距）',
+    !!snap && Math.abs(snap.groups[6].right - (snap.bar.right - 12)) <= 2,
+    snap ? `组右 ${snap.groups[6].right} / 期望 ${Math.round(snap.bar.right - 12)}` : '')
 
   record('[结构] 前六个分组有 1px 右分隔线，收尾组无',
     !!snap && snap.groups.slice(0, 6).every((group) => group.borderRight === '1px') && snap.groups[6].borderRight === '0px',
@@ -230,9 +233,16 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
   const buttons = await page.evaluate(measureButtons)
   record('[结构] 工具栏共 34 个按钮（2+1+8+3+8+4+8）', !!buttons && buttons.count === 34, buttons ? `${buttons.count} 个` : '')
 
-  const badLabels = buttons?.rows.filter(row => !row.aria || (row.aria === '插入表格' ? row.title !== null || row.popup !== 'dialog' : !row.title))
-  record('[结构] 按钮都有 aria-label，插入表格用下拉反馈，其余保留 title',
-    !!badLabels && badLabels.length === 0, badLabels?.map(row => row.label).join(' | ') || '')
+  // 下拉 combobox **不留**原生 title：`hoverTips` 的 `hasNextLevelPopup()` 判它不出自绘
+  // 提示，留着只有浏览器的灰底原生小框（飞书真身整页按钮都不带 title，实测 `[title]`
+  // 只命中一个 `<style>`）；可见文案 + `aria-label` 已足够。插入表格同理（弹窗反馈）。
+  // 其余按钮保留 title —— 它同时是自绘气泡的文案来源（`tipText()` 的兜底链）。
+  const badLabels = buttons?.rows.filter(row => !row.aria
+    || (row.combo ? row.title !== null
+      : row.aria === '插入表格' ? row.title !== null || row.popup !== 'dialog'
+        : !row.title))
+  record('[结构] 按钮都有 aria-label；combobox 与插入表格不留原生 title，其余保留 title',
+    !!badLabels && badLabels.length === 0, badLabels?.map(row => `${row.label}:${row.popup}/${row.title}`).join(' | ') || '')
 
   // ——————————————————— ② 盒模型与图标对齐 ———————————————————
   const heights = buttons ? [...new Set(buttons.rows.map((row) => row.h))] : []
@@ -611,8 +621,10 @@ const headingOpen = (page) => page.evaluate(() => !!document.querySelector('.lar
     !!modeMenu && modeMenu.role === 'listbox' && modeMenu.options.length === 3 && modeMenu.options[0].includes('编辑') && modeMenu.options[1].includes('修订') && modeMenu.options[2].includes('阅读'),
     modeMenu ? modeMenu.options.join(' | ') : '未展开')
 
-  record('[顶栏] 模式菜单贴按钮下沿 4px 展开、宽不小于 340、当前项高亮',
-    !!modeMenu && modeMenu.gap === 4 && modeMenu.w >= 340 && modeMenu.expanded === 'true'
+  // 宽 210 是飞书真身值（421 device @2x = 210.5，两行排版用不到更宽）。
+  // 早先写 340 是按「主副标题挤一行」估的老口径，源码 `MODE_MENU_MIN_WIDTH` 已改 210。
+  record('[顶栏] 模式菜单贴按钮下沿 4px 展开、宽 210、当前项高亮',
+    !!modeMenu && modeMenu.gap === 4 && Math.abs(modeMenu.w - 210) <= 1 && modeMenu.expanded === 'true'
       // 高亮项必须就是按钮上显示的那一项（不写死 index：localStorage 里可能记着上次的模式）。
       && !!modeMenu.options[modeMenu.active] && modeMenu.options[modeMenu.active].startsWith(modeMenu.triggerLabel),
     modeMenu ? `gap=${modeMenu.gap} w=${modeMenu.w} expanded=${modeMenu.expanded} active=${modeMenu.active}/${modeMenu.triggerLabel}` : '')

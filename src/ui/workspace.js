@@ -69,7 +69,6 @@ export function createWorkspace(options = {}) {
   const saveButton = button('保存', () => call(handlers, 'save'))
   const templateSelect = createSelect({
     ariaLabel: '选择文档模板',
-    title: '选择本地模板',
     placeholder: '模板',
     onChange: value => call(handlers, 'applyTemplate', value),
   })
@@ -90,7 +89,6 @@ export function createWorkspace(options = {}) {
   importInput.addEventListener('change', event => call(handlers, 'importDocument', event))
   const exportSelect = createSelect({
     ariaLabel: '导出文档格式',
-    title: '导出文档',
     placeholder: '导出',
     onChange: value => call(handlers, 'exportDocument', value),
   })
