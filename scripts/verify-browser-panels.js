@@ -864,14 +864,15 @@ const vueCall = (page, body) => page.evaluate((source) => {
   await vueCall(page, 'await vue.openVersionPanel(); await sleep(420)')
   const filled = await page.evaluate(measureVersions)
 
-  // 今天：v3 + v2 同组 = 1 个折叠组（默认折叠，只铺父行）；昨天：v1 自成一组、无三角。
+  // 分组标题按**月**（`formatVersionMonthLabel` → `11月`），不是按天。三条记录都在同一个月：
+  // 组一 = v3 + v2（同 groupId，默认折叠，只铺父行、不铺子行）；组二 = v1（无 groupId，无三角）。
   const dayShape = (d) => `${d.label}:${d.groups.length}组/${d.groups.map((g) => `${g.head ? 1 : 0}+${g.children.length}`).join(',')}`
-  record('[版本] 三条记录 → 按天分 2 组（今天 / 昨天），今天同组为 1 个折叠组、默认折叠',
-    !!filled && filled.days.length === 2 && filled.days[0].label === '今天' &&
-      filled.days[0].groups.length === 1 && filled.days[1].groups.length === 1 &&
+  record('[版本] 三条记录 → 同月 1 个分组下 2 个折叠组，第一组默认折叠、第二组无三角',
+    !!filled && filled.days.length === 1 && filled.days[0].label === '11月' &&
+      filled.days[0].groups.length === 2 &&
       filled.days[0].groups[0].children.length === 0 && filled.days[0].groups[0].foldable === true &&
       filled.days[0].groups[0].open === false && filled.days[0].groups[0].expanded === 'false' &&
-      filled.days[1].groups[0].foldable === false &&
+      filled.days[0].groups[1].foldable === false &&
       filled.pager.cursor === '编辑记录 1/3',
     filled ? `${filled.days.map(dayShape).join(' ')} / ${filled.pager.cursor}` : '没渲染')
 
@@ -901,14 +902,15 @@ const vueCall = (page, body) => page.evaluate((source) => {
   record('[版本] 时间线条目 = 名称 / 描述 / 作者三行，最新一条（组头）带 selected',
     !!todayHead && todayHead.cls.indexOf('selected') !== -1 &&
       /^(?:.+ · )?\d+月\d+日 \d{2}:\d{2}$/.test(todayHead.name) &&
-      todayHead.desc === '新增 2 个块' &&
+      // `versionItemDesc` 的判据是「是不是 `versionList[0]`」——组头就是最新一条，文案固定「最近更新」。
+      todayHead.desc === '最近更新' &&
       todayHead.user === '张三',
     todayHead ? JSON.stringify(todayHead) : '没渲染')
 
-  const yesterdayHead = filled && filled.days[1] && filled.days[1].groups[0] ? filled.days[1].groups[0].head : null
+  const earliestHead = filled && filled.days[0] && filled.days[0].groups[1] ? filled.days[0].groups[1].head : null
   record('[版本] 最早一条的 desc = 「最早一条记录，无更早版本可比」',
-    !!yesterdayHead && yesterdayHead.desc === '最早一条记录，无更早版本可比',
-    yesterdayHead ? yesterdayHead.desc : '没渲染')
+    !!earliestHead && earliestHead.desc === '最早一条记录，无更早版本可比',
+    earliestHead ? earliestHead.desc : '没渲染')
 
   // 三角是独立热区（真身 `.history-timeline-open-icon` 是 20×20 的独立元素）：
   // 点它只展开、不选中；展开后子行带缩进铺出来。
