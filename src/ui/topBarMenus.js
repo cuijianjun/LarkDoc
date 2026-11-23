@@ -2,6 +2,8 @@
 import { applyStyle, mountNode, setAttr, syncChildren } from './dom'
 import { iconNode } from './icon'
 import { NOTIFY_BRAND_BLUE, NOTIFY_ON_BRAND, TOAST_SUCCESS_BORDER } from './palette'
+// 页宽浮层提示行的文案与菜单表同源，写在这里会与 mixin 的常量各说一套。
+import { TOPBAR_MORE_WIDTH_TIP } from '../components/lark-doc/editor/topbarMoreMixin'
 
 export function createTopBarMenus(options) {
   const { el, mobileButton, moreButton, createButton, call, activeMoreMenus } = options
@@ -32,6 +34,19 @@ export function createTopBarMenus(options) {
   submenu.className = 'lark-doc-topbar-more-submenu'
   submenu.setAttribute('role', 'menu')
   moreMenu.appendChild(submenu)
+  // 页宽浮层的提示行（飞书原文「为当前窗口选择合适页宽」+ 行内紧跟 2px 的 help 圆点）。
+  // 它不是菜单项、也不参与 `menuRows` 缓存，所以单独持有一个节点：身份稳定，
+  // `syncChildren` 才会判定「已在正确位置」而不重插（重插会补发 mouseenter，见 dom.js）。
+  const widthTip = document.createElement('div')
+  widthTip.className = 'lark-doc-topbar-more-width-tip'
+  const widthTipText = document.createElement('span')
+  widthTipText.className = 'lark-doc-topbar-more-width-tip-text'
+  widthTipText.textContent = TOPBAR_MORE_WIDTH_TIP
+  const widthTipHelp = document.createElement('span')
+  widthTipHelp.className = 'lark-doc-topbar-more-width-tip-help'
+  widthTipHelp.setAttribute('aria-hidden', 'true')
+  widthTipHelp.appendChild(iconNode('menu-help', 12))
+  widthTip.append(widthTipText, widthTipHelp)
   // 飞书「关注文档更新」hover 引导卡：静态预览 + 说明，不接收指针事件。
   const followTip = document.createElement('div')
   followTip.className = 'lark-doc-follow-tip'
@@ -170,8 +185,12 @@ export function createTopBarMenus(options) {
     })
   })
   function updateMenu(parent, entries, kind, state) {
+    // 页宽设置是唯一一个「卡片网格」面板：顶部一行提示 + 三张 56×66 的线形预览卡。
+    // 窄屏（compactHeader）走旧的单列 `is-width-settings` 列表，不在这里改造。
+    const widthCards = kind === 'sub' && state.topbarMoreSubmenu === 'width' && !state.compactHeader
     const children = entries.map((entry, index) => {
       const item = entry.item || entry
+      const card = widthCards && entry.kind !== 'divider' && entry.kind !== 'group'
       const id = `${kind}:${item.id || index}:${item.value ?? ''}`
       let node = menuRows.get(id)
       if (!node) {
@@ -211,9 +230,12 @@ export function createTopBarMenus(options) {
         menuRows.set(id, node)
       }
       node._item = item
-      node.className = entry.kind === 'divider' ? (kind === 'create' ? 'lark-doc-create-menu-divider' : 'lark-doc-topbar-more-divider') : entry.kind === 'group' ? 'lark-doc-create-menu-group' : kind.startsWith('create') ? 'lark-doc-create-menu-item' : kind === 'sub' ? 'lark-doc-topbar-more-submenu-item' : 'lark-doc-topbar-more-item'
+      node.className = entry.kind === 'divider' ? (kind === 'create' ? 'lark-doc-create-menu-divider' : 'lark-doc-topbar-more-divider') : entry.kind === 'group' ? 'lark-doc-create-menu-group' : card ? 'lark-doc-topbar-more-width-card' : kind.startsWith('create') ? 'lark-doc-create-menu-item' : kind === 'sub' ? 'lark-doc-topbar-more-submenu-item' : 'lark-doc-topbar-more-item'
       const label = entry.kind === 'divider' ? '' : item.label
-      const renderLabel = `${label}|${item.icon || ''}|${item.arrow || item.affordance || ''}|${item.help || ''}`
+      // 卡片的线宽 / 末线右缩 / 图标内衬都是数据，进签名 —— 几何变了要重建线节点。
+      const renderLabel = card
+        ? `${label}|width-card|${(item.lines || []).join(' ')}|${item.tailInset || 0}|${item.iconPad || 0}`
+        : `${label}|${item.icon || ''}|${item.arrow || item.affordance || ''}|${item.help || ''}`
       if (node._renderLabel !== renderLabel) {
         node._renderLabel = renderLabel
         node.textContent = ''
@@ -221,7 +243,25 @@ export function createTopBarMenus(options) {
         text.className = kind === 'create' ? 'lark-doc-create-menu-label' : 'lark-doc-topbar-more-item-label'
         text.textContent = label || ''
         node.appendChild(text)
-        if (node.tagName === 'BUTTON' && item.icon) {
+        if (card) {
+          // 线形预览：4 条**无文本** div —— 子面板单测靠 `button.textContent === label` 定位行，
+          // 线里塞文案会让定位全部失配。宽度/末线缩进走 style，颜色随 `[aria-checked]` 走 CSS。
+          const preview = document.createElement('span')
+          preview.className = 'lark-doc-topbar-more-width-card-icon'
+          preview.setAttribute('aria-hidden', 'true')
+          if (item.iconPad) preview.style.padding = `0 ${item.iconPad}px`
+          const lines = item.lines || []
+          lines.forEach((lineWidth, lineIndex) => {
+            const line = document.createElement('span')
+            line.className = 'lark-doc-topbar-more-width-card-line'
+            line.style.width = `${lineWidth}px`
+            // 末线比前三条短，用 margin-right 把「末线 + 缩进」补回前三条的宽度，
+            // 于是居中后左缘仍与首线对齐（实测 20+4 / 28+6 / 38+12）。
+            if (lineIndex === lines.length - 1 && item.tailInset) line.style.marginRight = `${item.tailInset}px`
+            preview.appendChild(line)
+          })
+          node.prepend(preview)
+        } else if (node.tagName === 'BUTTON' && item.icon) {
           const icon = document.createElement('span')
           icon.className = kind === 'create' ? 'lark-doc-create-menu-icon' : 'lark-doc-topbar-more-item-icon'
           icon.style.color = item.iconColor || ''
@@ -232,7 +272,7 @@ export function createTopBarMenus(options) {
           const arrow = document.createElement('span')
           arrow.className = kind === 'create' ? 'lark-doc-create-menu-arrow' : 'lark-doc-topbar-more-item-arrow'
           arrow.setAttribute('aria-hidden', 'true')
-          arrow.appendChild(iconNode(kind === 'create' ? 'chevron-right' : 'menu-arrow', kind === 'create' ? 13 : 16))
+          arrow.appendChild(iconNode(kind === 'create' ? 'chevron-right' : 'menu-arrow', kind === 'create' ? 13 : 12))
           node.appendChild(arrow)
         }
         // help 圆点排在箭头之后（互斥：带 help 的项都不是 submenu）。
@@ -240,7 +280,7 @@ export function createTopBarMenus(options) {
           const help = document.createElement('span')
           help.className = 'lark-doc-topbar-more-item-help'
           help.setAttribute('aria-hidden', 'true')
-          help.appendChild(iconNode('menu-help', 16))
+          help.appendChild(iconNode('menu-help', 14))
           node.appendChild(help)
         }
       }
@@ -253,10 +293,11 @@ export function createTopBarMenus(options) {
         const parentItem = (state.topbarMoreRows || []).find(row => row.item?.id === state.topbarMoreSubmenu)?.item
         node.disabled = item.enabled === false || item.disabled === true || (kind === 'create' && !!state.readonly) || (kind === 'sub' && parentItem?.enabled === false)
         if (item.id === 'follow' && (node.disabled || item.kind !== 'switch')) hideFollowTip()
-        node.title = item.title || item.label || ''
+        // 卡片是 56 宽的固定格子：行内联的 100% 宽度会把它撑满面宽，必须让给 CSS。
+        node.title = card ? '' : (item.title || item.label || '')
         node.classList.toggle('is-disabled', node.disabled)
-        node.style.width = '100%'
-        node.style.textAlign = 'left'
+        node.style.width = card ? '' : '100%'
+        node.style.textAlign = card ? '' : 'left'
         setAttr(node, 'aria-disabled', String(node.disabled))
         setAttr(node, 'data-topbar-more-id', kind === 'more' ? item.id : null)
         const capability = options.capabilities[kind === 'sub' ? state.topbarMoreSubmenu : item.id]
@@ -286,7 +327,7 @@ export function createTopBarMenus(options) {
       }
       return { node, on: true }
     })
-    syncChildren(parent, children)
+    syncChildren(parent, widthCards ? [{ node: widthTip, on: true }, ...children] : children)
   }
 
   function update() {
@@ -309,6 +350,7 @@ export function createTopBarMenus(options) {
     if (!createOpen || !visible || state.readonly) createChildrenOpen = false
     const moreWasOpen = moreMenu.isConnected
     submenu.classList.toggle('is-width-settings', state.compactHeader === true && state.topbarMoreSubmenu === 'width')
+    submenu.classList.toggle('is-width-cards', state.compactHeader !== true && state.topbarMoreSubmenu === 'width')
     updateMenu(createList, state.createMenuRows || [], 'create', state)
     const children = (state.createMenuRows || []).find(row => row.children)?.children
     if (createChildrenOpen && children) updateMenu(createChildren, children, 'create-child', state)

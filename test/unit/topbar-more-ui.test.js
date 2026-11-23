@@ -17,6 +17,9 @@ import topbarMoreMixin, {
   TOPBAR_MORE_ITEMS,
   TOPBAR_MORE_READONLY_DISABLED,
   TOPBAR_MORE_SUBPANELS,
+  TOPBAR_MORE_WIDTH_LINES,
+  TOPBAR_MORE_WIDTH_PANEL,
+  TOPBAR_MORE_WIDTH_TIP,
   topbarMoreHasArrow,
   topbarMoreMenuStyle,
   topbarMoreRows,
@@ -198,6 +201,30 @@ describe('顶栏更多 · 子菜单归属（kind 与子面板必须一一对应�
     expect(TOPBAR_MORE_SUBPANELS.width.map((entry) => entry.id)).toEqual(['standard', 'wide', 'full'])
   })
 
+  it('页宽三档带线形预览的几何（2026-11-23 Playwright 实测的 20/28/38 与末线缩进）', () => {
+    expect(TOPBAR_MORE_WIDTH_TIP).toBe('为当前窗口选择合适页宽')
+    expect(TOPBAR_MORE_SUBPANELS.width.map((entry) => entry.lines)).toEqual([
+      [20, 20, 20, 16], [28, 28, 28, 22], [38, 38, 38, 26],
+    ])
+    // 末线比前三条短，`末线宽 + tailInset` 必须**恰好等于**前三条的宽度 ——
+    // 否则居中后左缘对不齐首线（飞书是靠末线的 margin-right 补回去的）。
+    TOPBAR_MORE_SUBPANELS.width.forEach((entry) => {
+      const lines = entry.lines
+      expect(lines).toHaveLength(4)
+      expect(lines[3] + entry.tailInset).toBe(lines[0])
+    })
+    // 全宽卡多一层左右各 4 的内衬；默认/较宽没有。
+    expect(TOPBAR_MORE_SUBPANELS.width.map((entry) => entry.iconPad)).toEqual([0, 0, 4])
+  })
+
+  it('页宽浮层的外框 242×136 与卡片布局自洽（改动任一常量都要能对上）', () => {
+    expect(TOPBAR_MORE_WIDTH_PANEL).toEqual({ width: 242, height: 136 })
+    // 宽：卡片 56×3 + 间距 16×2 = 200 内容，加左右各 20 内衬 + 各 1 描边。
+    expect(56 * 3 + 16 * 2 + 20 * 2 + 2).toBe(TOPBAR_MORE_WIDTH_PANEL.width)
+    // 高：上内衬 16 + 提示行 20 + 间距 12 + 卡片 66 + 下内衬 20 + 上下各 1 描边。
+    expect(16 + 20 + 12 + 66 + 20 + 2).toBe(TOPBAR_MORE_WIDTH_PANEL.height)
+  })
+
   it('权限面板含一条 divider 行，且它不参与动作分发', () => {
     const divider = TOPBAR_MORE_SUBPANELS['doc-permission'].filter((entry) => entry.kind === 'divider')
     expect(divider).toHaveLength(1)
@@ -277,6 +304,45 @@ describe('顶栏更多 · 定位纯函数', () => {
       { width: 1440, height: 900 },
     )
     expect(style.top + 108).toBeLessThanOrEqual(900 - 8)
+    expect(style.top).toBeGreaterThanOrEqual(8)
+  })
+
+  // 页宽浮层是个例外：飞书实测父菜单右缘 1175、视口 1440、浮层 242 **明明放得下**，
+  // 它仍然给 `data-popper-placement="left-start"` —— 所以是「无条件贴左」，
+  // 不能沿用「右侧放不下才翻左」的通用判断。
+  it('页宽浮层 left-start：无条件贴父菜单左侧，且右缘压住左缘 1px', () => {
+    const style = topbarMoreSubmenuStyle(
+      { left: 1000, top: 49, right: 1175 },
+      { top: 57, height: 30.38 },
+      { width: 242, height: 136 },
+      { width: 1440, height: 900 },
+      'left-start',
+    )
+    expect(style.left).toBe(1000 - 242 + 1)
+    // 纵向对齐被 hover 那一行的**顶边**，没有通用的 -2。
+    expect(style.top).toBe(57)
+  })
+
+  it('页宽浮层 left-start 在窄视口也贴左（不是翻左，是恒定贴左）', () => {
+    const style = topbarMoreSubmenuStyle(
+      { left: 100, top: 49, right: 260 },
+      { top: 120, height: 30 },
+      { width: 242, height: 136 },
+      { width: 1440, height: 900 },
+      'left-start',
+    )
+    expect(style.left).toBe(Math.max(8, 100 - 242 + 1))
+  })
+
+  it('页宽浮层 left-start 贴底时同样被上提并夹住 8px', () => {
+    const style = topbarMoreSubmenuStyle(
+      { left: 1000, top: 49, right: 1175 },
+      { top: 880, height: 30 },
+      { width: 242, height: 136 },
+      { width: 1440, height: 900 },
+      'left-start',
+    )
+    expect(style.top + 136).toBeLessThanOrEqual(900 - 8)
     expect(style.top).toBeGreaterThanOrEqual(8)
   })
 })

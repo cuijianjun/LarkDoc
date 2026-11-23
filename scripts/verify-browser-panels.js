@@ -318,63 +318,101 @@ const measureVersions = () => {
   }
 }
 
-/** 另存为版本 Dialog + toast。 */
+/**
+ * 另存为版本 Dialog + 版本提示 toast。
+ *
+ * 结构口径见 `src/ui/dialogs.js:createSaveVersionDialog`（外壳复用
+ * `createDialogShell` 的 `.lark-doc-dialog-backdrop > section.lark-doc-dialog`）与
+ * `src/ui/versionPanel.js:createVersionToast`。
+ * 注意两处易错点：`-input` 是**包着原生 input 的盒子**（原生 input 无类名，只能
+ * `-input input` 取），计数容器已改名 `-count`（内含 `-count-current` / `-count-limit`）。
+ */
 const measureSaveDialog = () => {
-  const mask = document.querySelector('.lark-doc-save-version-mask')
-  const wrap = document.querySelector('.lark-doc-save-version-wrap')
+  const backdrop = document.querySelector('.lark-doc-dialog-backdrop')
   const dialog = document.querySelector('.lark-doc-save-version-dialog')
   const notice = document.querySelector('.lark-doc-version-notice')
-  const rect = dialog ? dialog.getBoundingClientRect() : null
-  const header = dialog ? dialog.querySelector('.lark-doc-save-version-header') : null
-  const closeBtn = header ? header.querySelector('.lark-doc-save-version-close') : null
-  const input = dialog ? dialog.querySelector('.lark-doc-save-version-input') : null
   const size = (node) => {
     if (!node) return null
     const r = node.getBoundingClientRect()
     return { w: Math.round(r.width), h: Math.round(r.height) }
   }
+  const style = (node) => (node ? getComputedStyle(node) : null)
+  const one = (node, selector) => (node ? node.querySelector(selector) : null)
+  const box = one(dialog, '.lark-doc-save-version-input')
+  const input = box ? box.querySelector('input') : null
+  const count = one(dialog, '.lark-doc-save-version-count')
+  const actions = one(dialog, '.lark-doc-save-version-actions')
+  const noticeBody = one(notice, '.lark-doc-version-notice-body')
   return {
-    mask: !!mask,
-    wrap: wrap ? {
-      role: wrap.getAttribute('role'),
-      ariaModal: wrap.getAttribute('aria-modal'),
-      tabindex: wrap.getAttribute('tabindex'),
-      ariaLabel: wrap.getAttribute('aria-label'),
-    } : null,
+    backdrop: !!backdrop,
     dialog: dialog ? {
-      w: Math.round(rect.width),
-      h: Math.round(rect.height),
-      radius: getComputedStyle(dialog).borderTopLeftRadius,
-      title: dialog.querySelector('.lark-doc-save-version-title') ? dialog.querySelector('.lark-doc-save-version-title').textContent.trim() : null,
-      titleTag: dialog.querySelector('.lark-doc-save-version-title') ? dialog.querySelector('.lark-doc-save-version-title').tagName.toLowerCase() : null,
+      role: dialog.getAttribute('role'),
+      ariaModal: dialog.getAttribute('aria-modal'),
+      ariaLabel: dialog.getAttribute('aria-label'),
+      w: size(dialog).w,
+      h: size(dialog).h,
+      radius: style(dialog).borderTopLeftRadius,
+      flexDirection: style(dialog).flexDirection,
+      header: size(one(dialog, '.lark-doc-save-version-header')),
+      title: one(dialog, '.lark-doc-save-version-title') ? one(dialog, '.lark-doc-save-version-title').textContent.trim() : null,
+      titleTag: one(dialog, '.lark-doc-save-version-title') ? one(dialog, '.lark-doc-save-version-title').tagName.toLowerCase() : null,
     } : null,
-    close: closeBtn ? { label: closeBtn.getAttribute('aria-label'), type: closeBtn.getAttribute('type'), iconSize: size(closeBtn.querySelector('.lark-doc-icon')) } : null,
+    close: (() => {
+      const node = one(dialog, '.lark-doc-save-version-close')
+      return node ? { label: node.getAttribute('aria-label'), type: node.getAttribute('type'), size: size(node) } : null
+    })(),
     label: (() => {
-      const node = dialog ? dialog.querySelector('.lark-doc-save-version-label') : null
-      return node ? { text: node.textContent.trim(), for: node.getAttribute('for'), tag: node.tagName.toLowerCase() } : null
+      const node = one(dialog, '.lark-doc-save-version-label')
+      return node ? { text: node.textContent.trim(), tag: node.tagName.toLowerCase() } : null
     })(),
     input: input ? {
       type: input.getAttribute('type'),
       maxlength: input.getAttribute('maxlength'),
       placeholder: input.getAttribute('placeholder'),
       value: input.value,
-      id: input.id,
+      ariaLabel: input.getAttribute('aria-label'),
+      box: size(box),
+      boxRadius: style(box).borderTopLeftRadius,
     } : null,
-    counter: dialog && dialog.querySelector('.lark-doc-save-version-counter') ? dialog.querySelector('.lark-doc-save-version-counter').textContent.trim() : null,
-    footer: dialog ? [...dialog.querySelectorAll('.lark-doc-save-version-footer button')].map((b) => ({
-      cls: b.className,
-      text: b.textContent.trim(),
-      type: b.getAttribute('type'),
-      disabled: b.disabled,
-      title: b.getAttribute('title'),
-    })) : [],
-    error: dialog && dialog.querySelector('.lark-doc-save-version-error') ? dialog.querySelector('.lark-doc-save-version-error').textContent.trim() : null,
+    clear: (() => {
+      const node = one(dialog, '.lark-doc-save-version-clear')
+      return node ? { role: node.getAttribute('role'), hidden: node.hidden, size: size(node) } : null
+    })(),
+    count: count ? {
+      text: count.textContent.trim(),
+      radius: style(count).borderTopLeftRadius,
+      bg: style(count).backgroundColor,
+      h: size(count).h,
+    } : null,
+    actions: actions ? {
+      flexDirection: style(actions).flexDirection,
+      buttons: [...actions.querySelectorAll('button')].map((b) => ({
+        cls: b.className, text: b.textContent.trim(), type: b.getAttribute('type'),
+        disabled: b.disabled, size: size(b),
+      })),
+    } : null,
+    error: (() => {
+      const node = one(dialog, '.lark-doc-save-version-error')
+      return node ? { text: node.textContent.trim(), hidden: node.hidden } : null
+    })(),
     notice: notice ? {
       role: notice.getAttribute('role'),
-      text: notice.tagName.toLowerCase() === 'div' && notice.firstChild ? notice.firstChild.textContent.trim() : notice.textContent.trim(),
+      // 首子节点是图标 span，正文在 `-notice-body > span`，不能再读 firstChild。
+      text: (() => {
+        const first = noticeBody ? noticeBody.querySelector('span') : null
+        return first ? first.textContent.trim() : notice.textContent.trim()
+      })(),
+      bg: style(notice).backgroundColor,
+      radius: style(notice).borderTopLeftRadius,
+      size: size(notice),
+      icon: size(one(notice, '.lark-doc-version-notice-icon')),
       link: (() => {
-        const a = notice.querySelector('.lark-doc-version-notice-link')
-        return a ? { text: a.textContent.trim(), tag: a.tagName.toLowerCase() } : null
+        const node = one(notice, '.lark-doc-version-notice-link')
+        return node ? { text: node.textContent.trim(), tag: node.tagName.toLowerCase(), size: size(node) } : null
+      })(),
+      close: (() => {
+        const node = one(notice, '.lark-doc-version-notice-close')
+        return node ? { label: node.getAttribute('aria-label'), size: size(node) } : null
       })(),
     } : null,
   }
@@ -1004,28 +1042,129 @@ const vueCall = (page, body) => page.evaluate((source) => {
     !!cleared.panel && cleared.rect.h === 156 && cleared.actions === null,
     cleared.panel ? `h=${cleared.rect.h} actions=${cleared.actions}` : '没渲染')
 
-  /* ═══════════════════ ⑤ 恢复 toast ═══════════════════ */
+  /* ═══════════════════ ⑤ 另存为版本 Dialog + 版本提示 toast ═══════════════════ */
 
-  // 「另存为版本」Dialog 已在 6da84cc 随「飞书式自动历史版本」下线（D-24 产品决策偏离），
-  // 手动入口不复存在，这里只保留仍在上游的恢复成功 toast。
+  // ③ 已注入带 `createSnapshot` 的 versioning Provider，所以「另存为版本」入口是活的。
+  const saveReady = await vueCall(page, 'return vue.versionCanSave === true')
+  record('[另存为版本] 注入 Provider 后 `versionCanSave` 为真（入口可点）', saveReady === true, `versionCanSave=${saveReady}`)
 
-  // 恢复成功 toast
+  await vueCall(page, 'await vue.openSaveVersion(); await sleep(420)')
+  const saveDialog = await page.evaluate(measureSaveDialog)
+
+  record('[另存为版本] `role=dialog[aria-modal][aria-label="保存 … 的文档版本"]` + 遮罩 + flex 纵排',
+    !!saveDialog && !!saveDialog.dialog && saveDialog.backdrop === true &&
+      saveDialog.dialog.role === 'dialog' && saveDialog.dialog.ariaModal === 'true' &&
+      /^保存 .+ 的文档版本$/.test(saveDialog.dialog.ariaLabel || '') &&
+      saveDialog.dialog.flexDirection === 'column',
+    saveDialog && saveDialog.dialog ? `${saveDialog.dialog.role}/${saveDialog.dialog.ariaLabel}` : '没渲染')
+
+  record('[另存为版本] 420 × 242、圆角 8、头部 420 × 72',
+    !!saveDialog && !!saveDialog.dialog && saveDialog.dialog.w === 420 && saveDialog.dialog.h === 242 &&
+      saveDialog.dialog.radius === '8px' && !!saveDialog.dialog.header &&
+      saveDialog.dialog.header.w === 420 && saveDialog.dialog.header.h === 72,
+    saveDialog && saveDialog.dialog ? `${saveDialog.dialog.w}x${saveDialog.dialog.h} header=${JSON.stringify(saveDialog.dialog.header)}` : '没渲染')
+
+  record('[另存为版本] 标题 strong 16/24 字重 500 + 关闭钮 28 × 28',
+    !!saveDialog && !!saveDialog.dialog && saveDialog.dialog.titleTag === 'strong' &&
+      !!saveDialog.close && saveDialog.close.label === '关闭另存为版本' && saveDialog.close.type === 'button' &&
+      saveDialog.close.size.w === 28 && saveDialog.close.size.h === 28,
+    saveDialog && saveDialog.close ? JSON.stringify(saveDialog.close) : '没渲染')
+
+  record('[另存为版本] 「版本名称」label + 输入盒 368 × 32 圆角 6 + 原生 input（maxlength 1000）',
+    !!saveDialog && !!saveDialog.label && saveDialog.label.text === '版本名称' && saveDialog.label.tag === 'span' &&
+      !!saveDialog.input && saveDialog.input.box.w === 368 && saveDialog.input.box.h === 32 &&
+      saveDialog.input.boxRadius === '6px' && saveDialog.input.type === 'text' &&
+      saveDialog.input.maxlength === '1000' && saveDialog.input.placeholder === '请输入名称',
+    saveDialog && saveDialog.input ? JSON.stringify(saveDialog.input) : '没渲染')
+
+  record('[另存为版本] 计数 tag 20 高 / 圆角 4 / `#EFF0F1` 底，默认 `N/1000` + clear 常显',
+    !!saveDialog && !!saveDialog.count && saveDialog.count.h === 20 && saveDialog.count.radius === '4px' &&
+      saveDialog.count.bg === 'rgb(239, 240, 241)' && /^\d+\/1000$/.test(saveDialog.count.text) &&
+      !!saveDialog.clear && saveDialog.clear.role === 'button' && saveDialog.clear.hidden === false,
+    saveDialog && saveDialog.count ? `${saveDialog.count.text} ${saveDialog.count.bg}` : '没渲染')
+
+  record('[另存为版本] 底栏按钮组 `row-reverse`：DOM 序 确定 → 取消，两钮 80 × 32 均在右',
+    !!saveDialog && !!saveDialog.actions && saveDialog.actions.flexDirection === 'row-reverse' &&
+      saveDialog.actions.buttons.length === 2 &&
+      saveDialog.actions.buttons[0].text === '确定' && saveDialog.actions.buttons[0].cls.includes('lark-doc-save-version-confirm') &&
+      saveDialog.actions.buttons[1].text === '取消' && saveDialog.actions.buttons[1].cls.includes('lark-doc-save-version-cancel') &&
+      saveDialog.actions.buttons.every((b) => b.size.w === 80 && b.size.h === 32),
+    saveDialog && saveDialog.actions ? JSON.stringify(saveDialog.actions) : '没渲染')
+
+  record('[另存为版本] 默认名称已填 → 确定可用；无错误行时不占位',
+    !!saveDialog && !!saveDialog.actions && saveDialog.actions.buttons[0].disabled === false &&
+      !!saveDialog.error && saveDialog.error.hidden === true,
+    saveDialog && saveDialog.actions ? `disabled=${saveDialog.actions.buttons[0].disabled}` : '没渲染')
+
+  // 清空 → 0/1000、clear 收起、确定禁用
+  await page.evaluate(() => {
+    const input = document.querySelector('.lark-doc-save-version-input input')
+    input.value = ''
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await page.waitForTimeout(160)
+  const saveEmpty = await page.evaluate(measureSaveDialog)
+  record('[另存为版本] 清空 → 计数 `0/1000`、clear 收起、确定禁用（灰底 not-allowed）',
+    !!saveEmpty && !!saveEmpty.count && saveEmpty.count.text === '0/1000' &&
+      !!saveEmpty.clear && saveEmpty.clear.hidden === true &&
+      !!saveEmpty.actions && saveEmpty.actions.buttons[0].disabled === true,
+    saveEmpty && saveEmpty.count ? `${saveEmpty.count.text} hidden=${saveEmpty.clear && saveEmpty.clear.hidden}` : '没渲染')
+
+  // 只输空格 → 计数按原始长度 3，仍禁用（判可用走 trim）
+  await page.evaluate(() => {
+    const input = document.querySelector('.lark-doc-save-version-input input')
+    input.value = '   '
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await page.waitForTimeout(160)
+  const saveBlank = await page.evaluate(measureSaveDialog)
+  record('[另存为版本] 只输 3 个空格 → 计数 3（原始长度）但确定仍禁用（trim 判可用）',
+    !!saveBlank && !!saveBlank.count && saveBlank.count.text === '3/1000' &&
+      !!saveBlank.actions && saveBlank.actions.buttons[0].disabled === true,
+    saveBlank && saveBlank.count ? `${saveBlank.count.text} disabled=${saveBlank.actions && saveBlank.actions.buttons[0].disabled}` : '没渲染')
+
+  // 关闭钮收掉对话框
+  await page.evaluate(() => document.querySelector('.lark-doc-save-version-close').click())
+  await page.waitForTimeout(320)
+  record('[另存为版本] 点右上关闭钮 → 整层摘掉', !(await open(page, '.lark-doc-save-version-dialog')))
+
+  // 版本提示 toast（另存为成功与还原成功共用一套皮肤）
   await vueCall(page, 'vue.versionNotice = "已恢复为新版本，原版本仍保留在历史记录中"; await sleep(320)')
   const notice = await page.evaluate(measureSaveDialog)
-  record('[版本弹窗] 恢复后 `role=status` toast + 「立即查看」链接',
-    !!notice.notice && notice.notice.role === 'status' &&
+  record('[版本提示] `role=status` + 16 状态图标 + 正文 + 「立即查看」+ 24 关闭钮',
+    !!notice && !!notice.notice && notice.notice.role === 'status' &&
       notice.notice.text === '已恢复为新版本，原版本仍保留在历史记录中' &&
+      !!notice.notice.icon && notice.notice.icon.w === 16 && notice.notice.icon.h === 16 &&
       !!notice.notice.link && notice.notice.link.text === '立即查看' &&
-      notice.notice.link.tag === 'button',
-    notice.notice ? JSON.stringify(notice.notice) : '没渲染')
+      notice.notice.link.tag === 'button' && notice.notice.link.size.h === 26 &&
+      !!notice.notice.close && notice.notice.close.label === '关闭' &&
+      notice.notice.close.size.w === 24 && notice.notice.close.size.h === 24,
+    notice && notice.notice ? JSON.stringify(notice.notice) : '没渲染')
 
+  record('[版本提示] 418 × 54、圆角 6、浅绿底 rgb(228,250,225)',
+    !!notice && !!notice.notice && notice.notice.size.w === 418 && notice.notice.size.h === 54 &&
+      notice.notice.radius === '6px' && notice.notice.bg === 'rgb(228, 250, 225)',
+    notice && notice.notice ? `${notice.notice.size.w}x${notice.notice.size.h} ${notice.notice.bg}` : '没渲染')
+
+  // 右上关闭钮收掉 toast（不进面板）
+  await page.evaluate(() => document.querySelector('.lark-doc-version-notice-close').click())
+  await page.waitForTimeout(280)
+  const noticeClosed = await page.evaluate(() => ({
+    notice: !!document.querySelector('.lark-doc-version-notice'),
+    panel: !!document.querySelector('.lark-doc-version-layer'),
+  }))
+  record('[版本提示] 点右上关闭钮 → 只收 toast，不开面板',
+    noticeClosed.notice === false && noticeClosed.panel === false,
+    JSON.stringify(noticeClosed))
+
+  await vueCall(page, 'vue.versionNotice = "已恢复为新版本，原版本仍保留在历史记录中"; await sleep(320)')
   await page.evaluate(() => document.querySelector('.lark-doc-version-notice-link').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
   await page.waitForTimeout(420)
   const noticeClick = await page.evaluate(() => ({
     panel: !!document.querySelector('.lark-doc-version-layer'),
     notice: !!document.querySelector('.lark-doc-version-notice'),
   }))
-  record('[版本弹窗] 点「立即查看」→ 开历史记录面板并收掉 toast',
+  record('[版本提示] 点「立即查看」→ 开历史记录面板并收掉 toast',
     noticeClick.panel === true && noticeClick.notice === false,
     JSON.stringify(noticeClick))
 

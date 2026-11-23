@@ -6,7 +6,10 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
  * 顶栏「更多」菜单（P6b 顶栏四浮层之一）。
  *
  * 规格真源：requirements/04 §4.2.1 + 2026-11-22 的飞书「更多」菜单 2× 截图逐行复核
- * （像素规格：z 1030、面板 186 宽、行 30 高、9 条分隔线穿满整宽、子面板 z 1050）。
+ * （像素规格：z 1030、行 30 高、9 条分隔线穿满整宽、子面板 z 1050）。
+ * 面板宽度由最长文案自适应，**没有固定值** —— 2026-11-23 用 Playwright 连测三次拿到
+ * 175 / 176 / 180 三个宽度（同一份菜单，只因为当次渲染的字体度量略有差别），
+ * 早先注释里的「186 宽」是照 2× 截图反推出来的估值，已作废。
  *
  * 三条必须守住的红线：
  *
@@ -35,7 +38,7 @@ const referenceMenu = host => host._mobileEditorMedia ? host._mobileEditorMedia.
  */
 
 /**
- * 一级菜单 23 项，逐项对齐飞书「更多」菜单的 2× 截图（行 30 高、面板 186 宽、
+ * 一级菜单 23 项，逐项对齐飞书「更多」菜单的 2× 截图（行 30 高、面板宽随最长文案、
  * 右侧附属物 7 个箭头 / 2 个开关 / 1 个 help 圆点全部逐行核对过）。
  *
  * `icon` 指向 `src/ui/icons.js` 的 `menu-*`，注释里是飞书的 `data-icon` 原名 ——
@@ -97,11 +100,45 @@ export const TOPBAR_MORE_DIVIDER_AFTER = Object.freeze([
 ])
 
 /**
+ * 页宽设置浮层的提示行文案（飞书原文，2026-11-23 前台实测）。
+ *
+ * 浮层结构照飞书是「提示行 + 三张卡片」，不是三行文字 —— 卡片是 56×66 的
+ * 迷你页面示意图，靠 4 条 2px 横线的宽度差表达「页宽」，见下表的线宽。
+ */
+export const TOPBAR_MORE_WIDTH_TIP = '为当前窗口选择合适页宽'
+
+/**
+ * 三档线形预览的几何（2026-11-23 Playwright 实测，单位 CSS px）。
+ *
+ * 每档 4 条横线：前 3 条等宽、末条更短并带 `tailInset` 的右外边距 ——
+ * 「末线宽 + tailInset」恒等于前三条的宽度，配合 `align-items: center` 让
+ * 末线与首线的**左缘**对齐（截图上三档都是右侧收进一块，就是这个技巧）。
+ * 全宽档的 `iconPad` 再往内让 4px：它的线最长（38），46 宽的图标底已经撑满了。
+ *
+ * 线条本身恒为高 2 / 圆角 4 / 下外边距 2（末条无下外边距），所以纵向 pitch = 4，
+ * 4 条线正好落在图标底 28 高的正中（4×4 = 16，上下各留 6）。
+ */
+export const TOPBAR_MORE_WIDTH_LINES = Object.freeze({
+  standard: Object.freeze({ lines: Object.freeze([20, 20, 20, 16]), tailInset: 4, iconPad: 0 }),
+  wide: Object.freeze({ lines: Object.freeze([28, 28, 28, 22]), tailInset: 6, iconPad: 0 }),
+  full: Object.freeze({ lines: Object.freeze([38, 38, 38, 26]), tailInset: 12, iconPad: 4 }),
+})
+
+/**
+ * 页宽浮层的外框尺寸（实测 242×136，含 1px 描边）。
+ *
+ * 之所以要写死而不用 fit-content：卡片是固定 56 宽 + 16 间距 = 200 内容宽，
+ * 加左右各 20 内衬与各 1 描边正好 242 —— 它**不随文案浮动**，
+ * 与一级菜单「宽度自适应」的规矩相反。
+ */
+export const TOPBAR_MORE_WIDTH_PANEL = Object.freeze({ width: 242, height: 136 })
+
+/**
  * 5 个子面板。
  *
  * 前 3 个来自 §4.2 ④-3 的实测（下载为 120×108 / 文档权限 121×115 / 更多 198×142），
  * 后 2 个来自 §4.2.1 的前台复核（查看已存版本窄面板 / 页宽设置三档）。
- * 宽度同样是自适应，不做常量断言。
+ * 宽度同样是自适应，不做常量断言（页宽浮层除外，见 TOPBAR_MORE_WIDTH_PANEL）。
  */
 export const TOPBAR_MORE_SUBPANELS = Object.freeze({
   'download-as': Object.freeze([
@@ -128,10 +165,11 @@ export const TOPBAR_MORE_SUBPANELS = Object.freeze({
     { id: 'trash', label: '版本回收站', action: 'version.trash' },
   ]),
   // §4.2.1：页宽三档文案是 默认 / 较宽 / 全宽，映射到内核 widthMode 的 standard/wide/full。
+  // `lines` / `tailInset` / `iconPad` 是线形预览的几何，见 TOPBAR_MORE_WIDTH_LINES。
   width: Object.freeze([
-    { id: 'standard', label: '默认', action: 'width.standard' },
-    { id: 'wide', label: '较宽', action: 'width.wide' },
-    { id: 'full', label: '全宽', action: 'width.full' },
+    { id: 'standard', label: '默认', action: 'width.standard', ...TOPBAR_MORE_WIDTH_LINES.standard },
+    { id: 'wide', label: '较宽', action: 'width.wide', ...TOPBAR_MORE_WIDTH_LINES.wide },
+    { id: 'full', label: '全宽', action: 'width.full', ...TOPBAR_MORE_WIDTH_LINES.full },
   ]),
 })
 
@@ -189,19 +227,30 @@ export function referenceTopbarMoreMenuStyle(anchor, size, viewport) {
  * §4.2 ④-4「子面板贴边规律（补）」：主菜单右边缘 1247 = 子面板左边缘 1247 ⇒ **零间隙
  * 贴靠**，不是常见的 +4 偏移（内容区才从 +4 起）。右侧放不下时翻到父菜单左侧。
  *
+ * `mode === 'left-start'` 是页宽浮层专用的口径（2026-11-23 Playwright 实测）：
+ * 它**无条件**贴在父菜单左侧 —— 实测父菜单右缘 1175、视口 1440、浮层宽 242 明明放得下，
+ * 飞书仍然翻到左边（popper 的 `data-popper-placement="left-start"`）。另外两处偏差：
+ *
+ *   ① 横向上浮层的右缘压住父菜单左缘 **1px**（实测浮层 x 759 / 父菜单 x 1000 / 宽 242），
+ *      不是零间隙 —— 所以这里 `+1`；
+ *   ② 纵向直接对齐被 hover 的那一行**顶边**（实测浮层 y 57 = 行 y 57），没有通用的 -2。
+ *
  * @param {{left:number,top:number,right:number}} menu 一级菜单 rect
  * @param {{top:number,height:number}} item 被 hover 的一级项 rect
  * @param {{width:number,height:number}} size 子面板尺寸
  * @param {{width:number,height:number}} viewport 视口尺寸
+ * @param {'right-start'|'left-start'} [mode] 贴靠方向（默认右侧优先、放不下才翻左）
  */
-export function topbarMoreSubmenuStyle(menu, item, size, viewport) {
+export function topbarMoreSubmenuStyle(menu, item, size, viewport, mode = 'right-start') {
   if (!menu || !size) return { left: 0, top: 0 }
   const width = size.width || 0
   const height = size.height || 0
   const right = menu.right || 0
-  const overflowRight = right + width > (viewport && viewport.width ? viewport.width : Infinity)
-  const left = overflowRight ? Math.max(8, (menu.left || 0) - width) : right
-  let top = item && typeof item.top === 'number' ? item.top - 2 : (menu.top || 0)
+  const limitRight = viewport && viewport.width ? viewport.width : Infinity
+  const forceLeft = mode === 'left-start'
+  const overflowRight = right + width > limitRight
+  const left = forceLeft || overflowRight ? Math.max(8, (menu.left || 0) - width + (forceLeft ? 1 : 0)) : right
+  let top = item && typeof item.top === 'number' ? item.top - (forceLeft ? 0 : 2) : (menu.top || 0)
   const limit = (viewport && viewport.height ? viewport.height : Infinity) - height - 8
   if (top > limit) top = Math.max(8, limit)
   return { left, top: Math.max(8, top) }
@@ -272,6 +321,9 @@ export default {
         if (item.id === 'save-version') enabled = enabled && this.versionCanSave === true
         // 没有任何已装小组件时子面板会是空的，飞书此时也不给入口。
         if (item.id === 'widgets') enabled = enabled && !!this.documentWidgetItems?.length
+        // 「置顶」是**状态化文案**（2026-11-23 扩展模式实测：该文档已置顶时飞书显示
+        // `从“置顶”移除`）。移动参考菜单那边是「取消置顶」，两条链路各自保留，不合并。
+        if (item.id === 'pin') return { ...item, enabled, label: business?.pinned === true ? '从“置顶”移除' : item.label }
         // 关注 / 转换为模板是开关：勾选态来自 documentBusiness，写入期间整行禁用（飞书同款）。
         if (item.id === 'follow' || item.id === 'template') return { ...item, enabled: enabled && !this.topbarMoreBusy,
           ...(this.topbarMoreBusy ? { title: '正在处理文档操作。' } : {}),
@@ -304,6 +356,12 @@ export default {
         return items
       }
       if (this.topbarMoreSubmenu === 'theme') return documentMenuChildren(this, 'theme')
+      // 页宽三档的选中态来自内核 widthMode。飞书这边只加 `.wide-mode-active` 类、没有
+      // aria-checked，但我们照既有约定继续给 role=menuitemradio（可访问性更好，视觉一致）。
+      if (this.topbarMoreSubmenu === 'width') {
+        const current = this.widthMode
+        return (TOPBAR_MORE_SUBPANELS.width || []).map(entry => ({ ...entry, checked: current === entry.id }))
+      }
       // 文档小组件的子面板是动态的（已装小组件 + 「更多/管理小组件」两个入口），不在静态表里。
       if (this.topbarMoreSubmenu === 'widgets') return (this.documentWidgetItems || []).map(item => ({ ...item, action: 'widgets' }))
       return TOPBAR_MORE_SUBPANELS[this.topbarMoreSubmenu] || []
@@ -492,10 +550,12 @@ export default {
       // ref-in-v-for 的下标会把分隔线也算进去，导致面板对齐到错误的行。
       const anchor = menu.querySelector(`[data-topbar-more-id="${this.topbarMoreSubmenu}"]`)
       const itemRect = anchor ? anchor.getBoundingClientRect() : menu.getBoundingClientRect()
+      // 页宽浮层强制贴左（飞书 popper 的 left-start），其余面板仍是右侧优先。
+      const mode = this.topbarMoreSubmenu === 'width' ? 'left-start' : 'right-start'
       this.topbarMoreSubmenuStyle = topbarMoreSubmenuStyle(menu.getBoundingClientRect(), itemRect, sub.getBoundingClientRect(), {
         width: window.innerWidth,
         height: window.innerHeight,
-      })
+      }, mode)
     },
     /** 子面板项点击。switch 项只翻本地态，不关菜单（与飞书 Switch 行为一致）。 */
     onTopbarMoreSubmenuItem(entry, event) {

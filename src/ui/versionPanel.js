@@ -562,10 +562,22 @@ export function createVersionPanel(options = {}) {
 /* ═════════════════════ ③ 版本提示 toast ═════════════════════ */
 
 /**
- * 版本提示 toast（`SaveVersionDialog.vue` 里与 Dialog 同级的那一条）。
+ * 版本提示 toast（对应飞书 `.ud__toast` 里的 success 通知）。
  *
- * 手动「另存为版本」按飞书口径改为**后端自动记录**后，Dialog 整块下线，只剩这条提示 ——
- * 还原成功（「已恢复为新版本，原版本仍保留在历史记录中」）仍要靠它回话。
+ * 手动「另存为版本」成功后与还原成功后都靠它回话。
+ *
+ * 实测一份（`[510.95,40,418.09,54]`、viewport 1440×900）：
+ * ```
+ * div.ud__notice.ud__notice-success.ud__notice-closable.ud__notice-showIcon.ud__notice-has-action.ud__notice--outlined.ud__toast
+ * ├ span.universe-icon.ud__notice__statusIcon   16×16 @[530,59]  rgb(50,166,69)
+ * ├ div.ud__notice__description                 14/22  #1F2329  @[554,56]
+ * │ └ button.ud__button--text.ud__button--text-primary  立即查看 24×26 @[813.05,54]
+ * │      padding:2px 4px  radius:6px  color:#1456F0
+ * └ button.ud__button--icon                     24×24 @[889.05,55]  padding:4px  #646A73
+ * ```
+ * 三个数对上才敢落笔：`19 + 16 + 8 + 正文 + 12 + 24 + 3 = 418`（内边距 + 图标 + 间隔 + 正文
+ * + 关闭前留白 + 关闭 + 内边距）；行高 24 由关闭钮撑开（正文 22 居中、图标 16 居中）；
+ * 高度 54 = `15 + 24 + 15`。底色是浅绿 `rgb(228,250,225)`，圆角 6（不是历史记录面板的 8）。
  *
  * state: `{ notice }`；空串即整棵摘掉。
  */
@@ -577,10 +589,16 @@ export function createVersionToast(options = {}) {
 
   const el = document.createElement('div')
 
-  // toast：首个子节点**必须**是 span（断言读 `notice.firstChild.textContent`）。
   const notice = document.createElement('div')
   notice.className = 'lark-doc-version-notice'
   notice.setAttribute('role', 'status')
+  const noticeIcon = document.createElement('span')
+  noticeIcon.className = 'lark-doc-version-notice-icon'
+  noticeIcon.setAttribute('aria-hidden', 'true')
+  noticeIcon.appendChild(iconNode('check-circle', 16))
+  // 正文与「立即查看」同处一个行盒：按钮是行内元素，行高被它从 22 顶到 26。
+  const noticeBody = document.createElement('div')
+  noticeBody.className = 'lark-doc-version-notice-body'
   const noticeText = document.createElement('span')
   const noticeLink = document.createElement('button')
   noticeLink.type = 'button'
@@ -588,8 +606,14 @@ export function createVersionToast(options = {}) {
   noticeLink.textContent = '立即查看'
   onMouseDownPrevent(noticeLink, () => call('onNoticeLink'))
   noticeLink.addEventListener('click', event => { if (event.detail === 0) call('onNoticeLink') })
-  notice.appendChild(noticeText)
-  notice.appendChild(noticeLink)
+  const noticeClose = document.createElement('button')
+  noticeClose.type = 'button'
+  noticeClose.className = 'lark-doc-version-notice-close'
+  noticeClose.setAttribute('aria-label', '关闭')
+  noticeClose.appendChild(iconNode('close', 16))
+  noticeClose.addEventListener('click', () => call('onNoticeClose'))
+  noticeBody.append(noticeText, noticeLink)
+  notice.append(noticeIcon, noticeBody, noticeClose)
   el.appendChild(notice)
 
   function update(patch) {
