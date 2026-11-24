@@ -916,7 +916,11 @@
 /* 桌面顶栏分享入口：飞书 `.suite-share-btn-container` 984,16 · 100×32 实心主按钮（04 §4.1.1）。
    只在宽屏生效 —— 手机档是 60×32 蓝底小按钮，不能被这里的 min-width 撑大。 */
 @media (min-width: 761px) {
-  .lark-doc .lark-doc-topbar.is-compact-header > .lark-doc-header-actions { order: 1; }
+  /* 紧凑档右侧是一组：分享 → 编辑▾ → 铃铛 → ⋯ → 搜索，整组贴右。
+     `order: 1` 会把 header-actions 排到分享按钮后面，而它默认 `flex: 1` 吃掉全部
+     余宽，分享就卡在标题与按钮组之间（实测 x=757，飞书在 1243）。这里让它只占内容
+     宽度，余量交给标题吸收。 */
+  .lark-doc .lark-doc-topbar.is-compact-header > .lark-doc-header-actions { order: 1; flex: 0 1 auto; }
   .lark-doc .lark-doc-topbar.is-compact-header .lark-doc-create-btn { order: 1; }
   .lark-doc .lark-doc-mobile-members { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 80px; height: 32px; margin-left: 8px; padding: 4px 14px; border: 1px solid var(--ld-brand-chrome); border-radius: 6px; background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); font-size: 14px; font-weight: 400; line-height: 22px; white-space: nowrap; }
   .lark-doc .lark-doc-mobile-members:hover:not(:disabled) { border-color: var(--ld-brand-chrome); background: var(--ld-brand-chrome); color: var(--ld-text-on-brand); filter: brightness(1.08); }
@@ -2815,8 +2819,12 @@
    padding 恒 0：分隔线在截图里是**穿满整宽**的，行内衬由 item 自己撑。 */
 .lark-doc .lark-doc-topbar-more { position: fixed; z-index: 1030; box-sizing: border-box; min-width: 0; padding: 0; border: 1px solid var(--ld-border-chrome); border-radius: 6px; background: var(--ld-bg-surface-chrome); box-shadow: var(--ld-shadow-menu); }
 .lark-doc .lark-doc-topbar-more-list, .lark-doc .lark-doc-topbar-more-submenu { margin: 0; padding: 0; list-style: none; }
-/* 23 项 × 30 + 9 条线 ≈ 750，超过窄屏高度时转成滚动 —— 宁可滚也不能截断尾部的「删除」。 */
-.lark-doc .lark-doc-topbar-more-list { max-height: min(760px, calc(100vh - 24px)); overflow-y: auto; overscroll-behavior: contain; }
+/* 23 项 × 30 + 9 条线 ≈ 750，超过窄屏高度时转成滚动 —— 宁可滚也不能截断尾部的「删除」。
+   菜单是 `position: fixed` 挂在顶栏下方（y≈51），所以扣掉的不只是底边距：按 60px 预留
+   （顶栏 51 + 余量，与 `has-reference-mobile-menu` 同一口径）。原先是 `100vh - 24px`，
+   在 782 高的窗口里面板伸到 811px，滚到底最后一项「字数上限」仍停在 780～810px，
+   露不出 2px 也没法点。 */
+.lark-doc .lark-doc-topbar-more-list { max-height: min(760px, calc(100vh - 60px)); overflow-y: auto; overscroll-behavior: contain; }
 .lark-doc .lark-doc-topbar-more-item { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 30px; padding: 0 22px 0 11px; border: 0; border-radius: 0; color: var(--ld-text-menu); font-size: 14px; line-height: 1; white-space: nowrap; cursor: pointer; }
 .lark-doc .lark-doc-topbar-more-item:hover, .lark-doc .lark-doc-topbar-more-item:focus-visible { background: var(--ld-bg-hover-menu); color: var(--ld-text-menu); outline: 0; }
 .lark-doc .lark-doc-topbar-more-item.is-disabled { color: var(--ld-text-disabled); cursor: default; }
