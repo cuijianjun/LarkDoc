@@ -1,22 +1,37 @@
+---
+pageClass: feature-guide
+---
+
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 工具栏配置
+
+<div class="feature-summary">
+
+## 介绍
 
 工具栏用 `toolbarKeys` 白名单 / `toolbarExcludes` 黑名单裁剪，key 对齐 AiEditor 的写法。分组粒度对应工具栏的 12 个按钮区，行内格式额外支持按 mark 单独裁剪；常用别名（`heading`、`table`、`undo`）会自动落到正确分组，未知 key 记录在 `instance.unknownToolbarKeys`，不会导致初始化失败。
 
-::: details dev 源码的工具栏显示
-dev 分支的格式工具栏默认隐藏。用 `layout: { toolbarVisible: true }` 显示，或在 `layout` 中设置 `toolbarFixed: true` 显示并吸顶。显式设置 `toolbarVisible: false` 时隐藏。按钮组仍通过 `toolbarKeys` 和 `toolbarExcludes` 选择。
+</div>
+
+## 基础用法 {#demo}
+
+<FeatureDemo name="toolbar" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `toolbarKeys` | 只显示指定按钮或分组 | `string[]` | 见下方 key 表 | 默认工具栏 |
+| `toolbarExcludes` | 从当前工具栏排除指定按钮或分组 | `string[]` | 见下方 key 表 | — |
+| `layout.toolbarVisible` | 显示兼容格式工具栏 | `boolean` | true / false | false |
+| `layout.toolbarFixed` | 将格式工具栏固定在顶部 | `boolean` | true / false | false |
+
+::: details 显示格式工具栏
+格式工具栏默认隐藏。用 `layout: { toolbarVisible: true }` 显示，或在 `layout` 中设置 `toolbarFixed: true` 显示并吸顶。显式设置 `toolbarVisible: false` 时隐藏。按钮组仍通过 `toolbarKeys` 和 `toolbarExcludes` 选择。
 :::
-
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  // 只保留这些分组（按顺序不生效，顺序由内部分组决定）
-  toolbarKeys: ['history', 'headings', 'bold', 'italic', 'insert', 'tables', 'ai'],
-  // 再剔除个别分组或 mark
-  toolbarExcludes: ['shortcuts', 'highlight'],
-})
-```
 
 ## key 表与规则
 

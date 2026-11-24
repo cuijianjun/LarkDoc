@@ -1,26 +1,34 @@
+---
+pageClass: feature-guide
+---
+
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 段落样式
+
+<div class="feature-summary">
+
+## 介绍
 
 段落样式组件控制块级排版：对齐（左 / 居中 / 右 / 两端）、缩进（层级由前一个块决定，最深 5 级）、行高与清除格式。气泡菜单与块句柄菜单同步提供入口。
 
-## 配置示例
+</div>
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { blockStyle: true },
-  toolbarKeys: ['blockStyle'],  // 别名 align / indent / lineHeight / clear 均落到此分组
-  limits: { maxIndent: 5 },     // 缩进层级硬上限（飞书是 6 层 = 5 级缩进）
-  content: '<p style="text-align:center">居中段落</p>',
-})
-```
+## 基础用法 {#demo}
+
+<FeatureDemo name="paragraph" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.blockStyle` | 关闭后整组入口隐藏。 | `boolean` | true / false | `true` |
+| `limits.maxIndent` | 缩进层级硬上限，只能往下调（传 99 也是 5）。 | `number` | — | `5` |
+| `blockMenu.disabled` | 可禁用块菜单中的对齐 / 缩进动作。 | `string[]` | — | `[]` |
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.blockStyle` | `boolean` | `true` | 关闭后整组入口隐藏。 |
-| `limits.maxIndent` | `number` | `5` | 缩进层级硬上限，只能往下调（传 99 也是 5）。 |
-| `blockMenu.disabled` | `string[]` | `[]` | 可禁用块菜单中的对齐 / 缩进动作。 |
 
 ### 缩进上限
 

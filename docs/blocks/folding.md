@@ -1,6 +1,31 @@
+---
+pageClass: feature-guide
+---
+
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 折叠块
 
+<div class="feature-summary">
+
+## 介绍
+
 折叠范围是块的**缩进子树**，与块类型、标题级别都无关：块模型里每个块只有一个父块，子块靠缩进挂在父块下面，所以折叠一个块只带走缩进比它更深的块。
+
+</div>
+
+## 基础用法 {#demo}
+
+<FeatureDemo name="folding" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.folding` | 关闭后折叠箭头与菜单项隐藏，已有折叠状态保留在 storage 里。 | `boolean` | true / false | `true` |
+| `documentId` | 折叠偏好的分键依据；不传时落到 `local`，同一浏览器共用一个键。 | `string` | — | `''` |
 
 这一点与飞书一致，也是它与直觉最容易冲突的地方：
 
@@ -34,34 +59,7 @@
 
 折叠偏好按文档（`documentId`，无则 `local`）写入 `localStorage`，刷新 / 重新打开后自动恢复。
 
-## 配置示例
-
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { folding: true },   // 关闭后箭头与菜单项隐藏
-  documentId: 'doc-42',          // 决定折叠偏好存哪个键；Web Component 用 document-id 属性
-  // 子块靠 data-indent 缩进挂在父块下面（= 飞书块模型里的父子关系）
-  content: '<h2>第一节</h2><p data-indent="1">…</p><h2>第二节</h2><p data-indent="1">…</p>',
-})
-```
-
-```ts
-// 命令式（editor 是 Tiptap 实例）
-const editor = doc.getEditor()
-
-editor.commands.toggleLarkDocFold(pos)         // 按文档位置切换（内部换算成 blockId）
-editor.commands.toggleLarkDocFoldById(id)      // 已知 blockId 时直接切换
-editor.commands.resetLarkDocFolds()            // 全部展开
-editor.commands.foldLarkDocByIds(['b1', 'b2']) // 按 id 批量折叠（宿主自建大纲 / 书签时用）
-```
-
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.folding` | `boolean` | `true` | 关闭后折叠箭头与菜单项隐藏，已有折叠状态保留在 storage 里。 |
-| `documentId` | `string` | `''` | 折叠偏好的分键依据；不传时落到 `local`，同一浏览器共用一个键。 |
 
 ### 使用方式
 

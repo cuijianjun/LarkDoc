@@ -1,25 +1,34 @@
+---
+pageClass: feature-guide
+---
+
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 目录
+
+<div class="feature-summary">
+
+## 介绍
 
 目录组件根据正文标题层级实时生成大纲，支持跳转定位、当前章节高亮、章节收起。面板默认在宽屏（>760px）自动展开，可整体收起为图标。
 
-## 配置示例
+</div>
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { outline: true },
-  toolbarKeys: ['outline'],       // 目录面板开关（别名 toc）
-  content: '<h1>章节一</h1><h2>小节</h2><h1>章节二</h1>',
-})
-```
+## 基础用法 {#demo}
+
+<FeatureDemo name="outline" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.outline` | 关闭后目录面板与工具栏入口隐藏。 | `boolean` | true / false | `true` |
+| `features.headings` | 目录依赖标题；标题能力关闭时目录为空。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['toggleOutline']` | 禁用面板开关命令。 | `string[]` | — | `[]` |
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.outline` | `boolean` | `true` | 关闭后目录面板与工具栏入口隐藏。 |
-| `features.headings` | `boolean` | `true` | 目录依赖标题；标题能力关闭时目录为空。 |
-| `commands.disabled: ['toggleOutline']` | `string[]` | `[]` | 禁用面板开关命令。 |
 
 ### 使用方式
 

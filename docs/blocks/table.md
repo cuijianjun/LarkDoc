@@ -1,26 +1,34 @@
+---
+pageClass: feature-guide
+---
+
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 表格
+
+<div class="feature-summary">
+
+## 介绍
 
 表格组件支持行列增删、单元格合并 / 拆分、表头行 / 表头列切换、均分列宽与拖拽调宽，上限 9×9。工具条按当前光标所在单元格动态显示。
 
-## 配置示例
+</div>
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { tables: true },
-  toolbarKeys: ['tables'],             // 表格工具条分组（别名 table）
-  limits: { maxTableRows: 9, maxTableColumns: 9 },
-  content: '<table><tr><th>事项</th><th>状态</th></tr><tr><td><p>…</p></td><td><p>进行中</p></td></tr></table>',
-})
-```
+## 基础用法 {#demo}
+
+<FeatureDemo name="table" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.tables` | 关闭后表格入口与工具条隐藏。 | `boolean` | true / false | `true` |
+| `limits.maxTableRows` | 行数上限（硬上限 9）。 | `number` | 1–9 | `9` |
+| `limits.maxTableColumns` | 列数上限（硬上限 9）。 | `number` | 1–9 | `9` |
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.tables` | `boolean` | `true` | 关闭后表格入口与工具条隐藏。 |
-| `limits.maxTableRows` | `number` | `9` | 行数上限（硬上限 9）。 |
-| `limits.maxTableColumns` | `number` | `9` | 列数上限（硬上限 9）。 |
 
 ### 工具条动作（命令 id）
 

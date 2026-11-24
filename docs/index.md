@@ -1,31 +1,17 @@
----
-layout: home
-hero:
-  name: lark-doc
-  text: 在你的项目里运行 LarkDoc 编辑器
-  tagline: 先跑一个示例，再接入 Vue、React 或普通 HTML。当前示例使用 lark-doc 0.14.10。
-  actions:
-    - theme: brand
-      text: 快速开始
-      link: /guide/getting-started
-    - theme: alt
-      text: 选择示例
-      link: /examples/
-    - theme: alt
-      text: 在线试用
-      link: /demo/
-      target: _blank
-features:
-  - icon: 🧩
-    title: 运行完整示例
-    details: 每个环境都包含可复制的代码、启动命令和编辑预览。
-  - icon: 🖼️
-    title: 测试图片上传
-    details: 先在浏览器试选图，再按需接入自己的上传接口。
-  - icon: 📝
-    title: 读取文档内容
-    details: 获取标题和正文 JSON，监听更新并保存到自己的应用。
----
+# LarkDoc 开发文档
+
+从左侧选择功能，在同一页试用编辑器、复制 Vue 3 代码和查参数。功能页示例使用 `lark-doc@0.14.12`。
+
+第一次接入可以先跑一个最小工程。[快速开始](/guide/getting-started) · [选择接入环境](/examples/)
+
+## 常用功能
+
+| 要完成的事 | 步骤和代码 |
+| --- | --- |
+| 给文字加格式 | [标题](/blocks/heading#demo)、[加粗与斜体](/blocks/marks#demo) |
+| 在正文里组织内容 | [表格](/blocks/table#demo)、[列表](/blocks/lists#demo)、[分栏](/blocks/columns#demo) |
+| 加入图片和公式 | [图片](/blocks/image#demo)、[图片上传](/blocks/uploader#demo)、[数学公式](/blocks/math#demo)、[视频](/blocks/video#demo) |
+| 接入应用能力 | [评论](/blocks/comment#demo)、[协同与权限](/guide/collaboration#demo)、[导入导出](/blocks/import-export#demo) |
 
 ::: warning 项目声明
 本项目为**个人学习用途**的开源练习项目，界面与交互模仿飞书文档（Lark Docs），

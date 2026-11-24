@@ -1,23 +1,33 @@
+---
+pageClass: feature-guide
+---
+
+<script setup>
+import FeatureDemo from '../examples/FeatureDemo.vue'
+</script>
+
 # 分栏
+
+<div class="feature-summary">
+
+## 介绍
 
 分栏组件把一段内容切分为多列排版，适合对比展示、图文并排。列间支持拖拽分隔线调整宽度，列内可放任意块级内容。
 
-## 配置示例
+</div>
 
-```ts
-new LarkDoc({
-  element: '#editor',
-  features: { columns: true },
-  toolbarKeys: ['insert'],        // 分栏入口在插入分组（别名 column / columns）
-})
-```
+## 基础用法 {#demo}
+
+<FeatureDemo name="columns" />
+
+## API
+
+| 参数 | 说明 | 类型 | 可选值 | 默认值 |
+| --- | --- | --- | --- | --- |
+| `features.columns` | 关闭后分栏入口隐藏，已有分栏仍按原结构渲染。 | `boolean` | true / false | `true` |
+| `commands.disabled: ['setColumn']` | 按命令禁用。 | `string[]` | — | `[]` |
 
 ## 配置与用法
-
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `features.columns` | `boolean` | `true` | 关闭后分栏入口隐藏，已有分栏仍按原结构渲染。 |
-| `commands.disabled: ['setColumn']` | `string[]` | `[]` | 按命令禁用。 |
 
 ### 使用方式
 
