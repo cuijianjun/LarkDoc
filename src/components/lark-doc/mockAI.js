@@ -185,4 +185,4 @@ function anchorValid(anchor, doc) {
     doc.textBetween(anchor.from, anchor.to, '\n') === anchor.source)
 }
 
-module.exports = { AI_ACTIONS, AI_CONTEXTS, mockResult, streamMock, createContextSnapshot, createReviewResult, createToolProposal, createAnchor, mapAnchor, anchorValid }
+export { AI_ACTIONS, AI_CONTEXTS, mockResult, streamMock, createContextSnapshot, createReviewResult, createToolProposal, createAnchor, mapAnchor, anchorValid }

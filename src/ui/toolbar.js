@@ -653,6 +653,10 @@ export function createToolbar(options = {}) {
       { node: moreButton, on: !!more.visible },
       { node: moreMenu, on: !!more.open },
     ])
+    // 空壳不占位：toolsEnd 有 `margin-left:auto` + `padding:0 6px`，
+    // 内层全隐藏时这 12px 加两侧 gap 会白吃 14px，正好把 1080 宽挤进「更多」。
+    // 飞书此时右侧就是空白，所以整组一起收起。
+    setVisible(groupEls.toolsEnd, toolsEndInner.childElementCount > 0 || !!more.visible || !!headerState.open)
     if (next.mobileAccessory) renderMobile(next)
     syncTooltip()
   }

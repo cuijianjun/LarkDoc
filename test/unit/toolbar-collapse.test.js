@@ -71,7 +71,7 @@ describe('工具栏折叠布局生命周期', () => {
     const task = h.ctx.evaluateToolbarFit()
     await h.drain()
     await task
-    expect(h.ctx.collapsedGroups).toEqual(['toolsEnd', 'insert', 'blockStyle'])
+    expect(h.ctx.collapsedGroups).toEqual(['toolsEnd', 'textStyle', 'blockStyle'])
     h.widen()
     const restore = h.ctx.evaluateToolbarFit()
     await h.drain()
@@ -165,7 +165,7 @@ describe('工具栏折叠布局生命周期', () => {
     callback()
     expect(h.ctx._fitPending).toBe(true)
     await h.drain()
-    expect(h.ctx.collapsedGroups).toEqual(['toolsEnd', 'insert', 'blockStyle'])
+    expect(h.ctx.collapsedGroups).toEqual(['toolsEnd', 'textStyle', 'blockStyle'])
     expect(h.ctx._fitPending).toBe(false)
     expect(h.ctx._fitRunning).toBe(false)
   })

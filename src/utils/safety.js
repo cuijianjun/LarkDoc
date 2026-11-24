@@ -56,7 +56,7 @@ function wrapJsonDocument(document) {
   return { schemaVersion: 1, document: parseJsonDocument(document) }
 }
 
-module.exports = {
+export {
   ROOM_NAME_PATTERN,
   normalizeCommentThread,
   normalizeTimestamp,

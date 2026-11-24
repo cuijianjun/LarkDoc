@@ -3,7 +3,7 @@ const configuredLevel = String(
   typeof process !== 'undefined' && process.env ? process.env.VUE_APP_LOG_LEVEL || 'info' : 'info',
 ).toLowerCase()
 const threshold = LEVELS[configuredLevel] || LEVELS.info
-const { sanitizeMetadata } = require('./safety')
+import { sanitizeMetadata } from './safety'
 
 function write(level, category, event, metadata) {
   if (LEVELS[level] < threshold) return

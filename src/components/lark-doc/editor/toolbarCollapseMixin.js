@@ -13,8 +13,12 @@ import { diagramTypes } from './constants'
 import { placeMenu } from '../../../ui/menuLayout'
 import { isCommandEnabled } from '../larkDocConfig'
 
-/** 收纳优先序：靠前的组先收进「更多」（核心的文本格式/历史最后收）。 */
-const TOOLBAR_COLLAPSE_ORDER = ['toolsEnd', 'insert', 'blockStyle', 'textStyle', 'marks', 'headings', 'history']
+/**
+ * 收纳优先序：靠前的组先收进「更多」（核心的文本格式/历史最后收）。
+ * `insert`（插入 / 表格 / 图表 / AI）是飞书工具栏里必须常驻平铺的一组，
+ * 只在宽度连文本格式都放不下时才收，所以排在最后。
+ */
+const TOOLBAR_COLLAPSE_ORDER = ['toolsEnd', 'textStyle', 'blockStyle', 'marks', 'headings', 'history', 'insert']
 
 export default {
   data() {
